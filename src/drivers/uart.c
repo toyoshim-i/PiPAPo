@@ -102,6 +102,7 @@
 #define UART0_CR     REG(0x40034030u)  /* Control Register */
 
 #define UART_FR_TXFF     (1u << 5)     /* FR: TX FIFO full — must wait */
+#define UART_FR_BUSY     (1u << 3)     /* FR: UART busy (TX in progress or FIFO not empty) */
 
 /* LCR_H: WLEN[6:5]=3 (8-bit), FEN[4]=1 (FIFOs on) → 0x70 */
 #define UART_LCR_8N1_FIFO  ((3u << 5) | (1u << 4))
@@ -110,20 +111,17 @@
 #define UART_CR_ENABLE  ((1u << 0) | (1u << 8) | (1u << 9))
 
 /*
- * Baud rate divisor for 115200 bps at 12 MHz XOSC:
+ * Baud rate divisors:
  *
- *   BAUDDIV = UARTCLK / (16 × baud) = 12_000_000 / 1_843_200 = 6.5104…
- *   IBRD    = 6
- *   FBRD    = round(0.5104 × 64) = 33
+ *   BAUDDIV = UARTCLK / (16 × baud)
  *
- *   Actual rate = 12_000_000 / (16 × (6 + 33/64)) = 115_107 bps  (0.08% error)
- *
- * Step 7 will recalculate for 133 MHz PLL:
- *   BAUDDIV = 133_000_000 / 1_843_200 = 72.1701…
- *   IBRD = 72, FBRD = round(0.1701 × 64) = 11
+ *   @ 12 MHz XOSC:  12_000_000 / 1_843_200 = 6.5104  → IBRD=6,  FBRD=33
+ *   @ 133 MHz PLL: 133_000_000 / 1_843_200 = 72.1701 → IBRD=72, FBRD=11
  */
-#define UART_IBRD_115200_12MHZ   6u
-#define UART_FBRD_115200_12MHZ  33u
+#define UART_IBRD_115200_12MHZ    6u
+#define UART_FBRD_115200_12MHZ   33u
+#define UART_IBRD_115200_133MHZ  72u
+#define UART_FBRD_115200_133MHZ  11u
 
 /* ==========================================================================
  * Local helpers
@@ -229,4 +227,25 @@ void uart_puts(const char *s)
             uart_putc('\r');    /* expand LF → CR+LF for terminal compatibility */
         uart_putc(*s++);
     }
+}
+
+void uart_flush(void)
+{
+    while (UART0_FR & UART_FR_BUSY)  /* wait until TX FIFO empty and shift reg idle */
+        ;
+}
+
+void uart_reinit_133mhz(void)
+{
+    /* Disable UART before touching the baud rate registers (PL011 requirement) */
+    UART0_CR = 0;
+
+    /* Update divisors for 115200 bps at 133 MHz clk_peri.
+     * Writing LCR_H commits the new IBRD/FBRD values into the baud counter. */
+    UART0_IBRD = UART_IBRD_115200_133MHZ;
+    UART0_FBRD = UART_FBRD_115200_133MHZ;
+    UART0_LCR_H = UART_LCR_8N1_FIFO;
+
+    /* Re-enable UART, TX and RX */
+    UART0_CR = UART_CR_ENABLE;
 }

@@ -15,6 +15,7 @@ add_executable(ppap
     src/boot/startup.S      # Vector table + Reset_Handler (Step 4)
     src/kernel/main.c
     src/drivers/uart.c
+    src/drivers/clock.c     # PLL_SYS → 133 MHz (Step 7)
 )
 
 target_include_directories(ppap PRIVATE src)
