@@ -6,10 +6,9 @@
  * and XIP verification output.
  */
 
-int main(void) {
-    /* Placeholder: spin forever until real init code is written.
-     * Step 4 will replace pico_crt0 with our custom startup.S,
-     * at which point this entry point becomes kmain(). */
+void kmain(void) {
+    /* Placeholder: spin forever.
+     * Steps 5–7 will add clock init, UART init, and XIP verification. */
     for (;;) {
     }
 }

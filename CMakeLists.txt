@@ -12,28 +12,30 @@ set(CMAKE_CXX_STANDARD 17)
 pico_sdk_init()
 
 add_executable(ppap
-    # src/boot/startup.S  -- added in Step 4 (replaces pico_crt0)
+    src/boot/startup.S      # Vector table + Reset_Handler (Step 4)
     src/kernel/main.c
     src/drivers/uart.c
 )
 
 target_include_directories(ppap PRIVATE src)
 
-# hardware_regs: register definitions only, no runtime library dependency
+# Bare SDK headers only — no pico_stdlib / pico_runtime / pico_crt0.
+# We provide our own startup.S entry point.
+# hardware_* implementation libraries will be added in Steps 5+ (UART, clocks).
 target_link_libraries(ppap
-    pico_stdlib
-    hardware_uart
-    hardware_clocks
-    hardware_gpio
+    pico_base_headers   # Platform / board definitions (INTERFACE, headers only)
+    hardware_regs       # RP2040 register address definitions (INTERFACE, headers only)
+    bs2_default_library # Pico SDK boot stage 2 (.boot2 section); replaced in Step 8
 )
 
-# Custom linker script — activated in Step 4 (replaces pico_crt0 default script)
-# pico_set_linker_script(ppap ${CMAKE_SOURCE_DIR}/ldscripts/ppap.ld)
+# Custom linker script (ppap.ld) + bare-metal link flags:
+#   -nostartfiles    do not link default crt0 / startup files
+#   --gc-sections    discard unused sections to keep binary small
+target_link_options(ppap PRIVATE
+    -T ${CMAKE_SOURCE_DIR}/ldscripts/ppap.ld
+    -nostartfiles
+    -Wl,--gc-sections
+)
 
 # Produce ppap.bin and ppap.uf2 alongside ppap.elf
 pico_add_extra_outputs(ppap)
-
-# Route stdout/stderr to UART (not USB) — we implement our own UART driver
-# but pico_stdlib needs a console target set
-pico_enable_stdio_uart(ppap 0)
-pico_enable_stdio_usb(ppap 0)

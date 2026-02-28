@@ -71,9 +71,13 @@ SECTIONS {
      * Stage 1 bootloader — first 4KB of flash
      * The RP2040 boot ROM loads the first 256 bytes and executes them.
      * The remaining 3840 bytes pad to the 4KB boundary.
+     *
+     * Section name ".boot2" matches what the Pico SDK's
+     * bs2_default_padded_checksummed.S emits.  Step 8 will replace
+     * bs2_default_library with our own stage1.S in this section.
      * ------------------------------------------------------------------ */
-    .boot_stage1 : {
-        KEEP(*(.boot_stage1))
+    .boot2 : {
+        KEEP(*(.boot2))
         . = ALIGN(4K);
     } > FLASH_BOOT
 
