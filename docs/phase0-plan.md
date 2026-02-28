@@ -124,37 +124,43 @@ PicoPiAndPortable booting...
 UART: 115200 bps @ 12 MHz XOSC
 ```
 
-### Step 6 — OpenOCD + GDB Setup
+### ✓ Step 6 — OpenOCD + GDB Setup
 
-Create `openocd.cfg` targeting the RP2040 via a Picoprobe or CMSIS-DAP adapter:
+`openocd.cfg` with Picoprobe/CMSIS-DAP (default), J-Link, ST-Link, RPi GPIO options.
+`ppap.gdb` — flash + debug workflow (uses `load` for reliable reset-halt).
+`ppap-attach.gdb` — attach to already-running firmware without reflashing.
 
-```
-source [find interface/cmsis-dap.cfg]
-source [find target/rp2040.cfg]
-adapter speed 5000
-```
-
-Verify:
-- `openocd` connects and detects the RP2040 (two Cortex-M0+ cores)
-- `arm-none-eabi-gdb ppap.elf` can attach, set a breakpoint in `kmain()`, and step through code
-- Memory reads at `0x20000000` (SRAM) and `0x10000000` (flash XIP base) work correctly
+**Gotchas resolved:**
+- XIP flash is read-only → `gdb_breakpoint_override hard` in openocd.cfg
+- Dual-core GDB hang: `set USE_CORE 0` before `source rp2040.cfg`
+- `continue` never stopping: `load` required before `monitor reset halt`
+- GDB binary is `gdb-multiarch` on Ubuntu (no `gdb-arm-none-eabi` package)
 
 ---
 
 ## Week 2: Clock Setup, Stage 1 Bootloader, and XIP Verification
 
-### Step 7 — System Clock at 133 MHz
+### ✓ Step 7 — System Clock at 133 MHz
 
-Configure the RP2040's PLL to run at 133 MHz before UART init (Section 7, Stage 2):
+`src/drivers/clock.c` — `clock_init_pll()`:
 
-1. Use the crystal oscillator (12 MHz XOSC) as the reference
-2. Configure PLL_SYS: VCO = 1596 MHz (12 × 133), post-dividers = 1 × 1 → 133 MHz
-3. Switch the system clock source to PLL_SYS
-4. Update the UART baud rate divisor after the clock switch (IBRD=72, FBRD=11)
+1. Switch clk_sys to clk_ref (safe glitchless transition)
+2. Reset PLL_SYS via RESETS block
+3. REFDIV=1, FBDIV=133 → VCO = 12 × 133 = 1596 MHz
+4. Power up VCO; wait for LOCK
+5. POSTDIV1=6, POSTDIV2=2 → output = 1596 / 12 = **133 MHz**
+6. Power up post-dividers
+7. Switch clk_sys to PLL_SYS (via AUX mux)
 
-Confirm via UART output: `System clock: 133 MHz`.
+`uart_flush()` called before PLL switch to drain TX shift register.
+`uart_reinit_133mhz()` reconfigures PL011 baud divisors (IBRD=72, FBRD=11).
 
-Consider using the Pico SDK's `clocks_init()` as a reference, but implement it directly without SDK abstractions to understand the hardware.
+**Verified on hardware:**
+```
+PicoPiAndPortable booting...
+UART: 115200 bps @ 12 MHz XOSC
+System clock: 133 MHz
+```
 
 ### Step 8 — Stage 1 Bootloader (`stage1.S`)
 
