@@ -3,12 +3,12 @@
 # Two workflows:
 #
 #   Flash + debug from scratch (recommended):
-#     arm-none-eabi-gdb -x ppap.gdb build/ppap.elf
+#     gdb-multiarch -x ppap.gdb build/ppap.elf
 #     (gdb) hbreak kmain
 #     (gdb) continue
 #
 #   Attach to already-running firmware (no reflash):
-#     arm-none-eabi-gdb -x ppap-attach.gdb build/ppap.elf
+#     gdb-multiarch -x ppap-attach.gdb build/ppap.elf
 #
 # Requires openocd to be running:
 #   openocd -f openocd.cfg

@@ -4,7 +4,7 @@
 # The CPU will be wherever it currently is (likely in kmain's for(;;) loop).
 #
 # Usage:
-#   arm-none-eabi-gdb -x ppap-attach.gdb build/ppap.elf
+#   gdb-multiarch -x ppap-attach.gdb build/ppap.elf
 #
 # Requires openocd to be running:
 #   openocd -f openocd.cfg
