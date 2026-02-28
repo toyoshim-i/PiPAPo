@@ -3,28 +3,38 @@
 # Usage:
 #   arm-none-eabi-gdb -x ppap.gdb build/ppap.elf
 #
-# Or from within GDB:
-#   (gdb) source ppap.gdb
-#
 # Requires openocd to be running:
 #   openocd -f openocd.cfg
 
-# Connect to OpenOCD's GDB server
-target extended-remote :3333
+set pagination off
 
-# Halt both cores and reset to a clean state
-monitor reset init
+# Connect to OpenOCD's GDB server (Core 0 on port 3333)
+target remote :3333
 
-# NOTE: always use hardware breakpoints (hbreak / hb) for code in XIP flash.
-# openocd.cfg sets gdb_breakpoint_override hard so plain `break` also works,
-# but `hbreak` is explicit and safe regardless of that setting.
-# The Cortex-M0+ FPB has 4 hardware breakpoint slots.
+# Reset and halt Core 0 before the boot ROM runs.
+# Using `reset halt` (not `reset init`) — on the RP2040 there is no
+# reset-init script, but `reset init` can have subtle timing differences
+# with CMSIS-DAP adapters.  `reset halt` is the safer choice.
+monitor reset halt
 
-# Useful aliases
-define flash
-  monitor program build/ppap.elf verify reset
+# All code lives in XIP flash (read-only at runtime) — use hardware BPs.
+# openocd.cfg already sets gdb_breakpoint_override hard, but `hbreak` is
+# explicit here as a reminder.  The FPB has 4 comparator slots.
+#
+# Typical session:
+#   (gdb) hbreak kmain
+#   (gdb) continue          -- runs boot ROM + boot2 + Reset_Handler → kmain
+#   (gdb) next / step       -- step through kmain
+#   (gdb) info registers
+#   (gdb) x/4wx 0x10000100  -- inspect vector table in flash
+#   (gdb) x/4wx 0x20000000  -- inspect SRAM
+
+# Useful command aliases
+define flash_and_reset
+  monitor program build/ppap.elf verify
+  monitor reset halt
 end
 
 define restart
-  monitor reset init
+  monitor reset halt
 end
