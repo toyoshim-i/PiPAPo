@@ -1,14 +1,22 @@
 /*
- * main.c — Kernel early init entry point (Phase 0 stub)
+ * main.c — Kernel early init entry point
  *
- * Phase 0 Step 2: minimal stub to verify the build pipeline.
- * Steps 5–7 will replace this with real clock init, UART init,
- * and XIP verification output.
+ * Called from Reset_Handler (startup.S) after .data copy and .bss zero.
+ * Step 5: UART init + first console output at 12 MHz XOSC.
+ * Step 7: will add PLL setup for 133 MHz and reinit UART.
+ * Step 9: will add XIP verification output.
  */
 
-void kmain(void) {
-    /* Placeholder: spin forever.
-     * Steps 5–7 will add clock init, UART init, and XIP verification. */
+#include "drivers/uart.h"
+
+void kmain(void)
+{
+    uart_init_console();
+    uart_puts("PicoPiAndPortable booting...\n");
+    uart_puts("UART: 115200 bps @ 12 MHz XOSC\n");
+
+    /* Step 7: clock_init_pll() + uart_reinit_133mhz() go here */
+
     for (;;) {
     }
 }
