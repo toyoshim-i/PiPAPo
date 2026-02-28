@@ -98,6 +98,25 @@ else
   info "All apt packages already installed, skipping apt-get."
 fi
 
+# --- Step 1b: arm-none-eabi-gdb symlink --------------------------------------
+#
+# Ubuntu/Debian dropped the gdb-arm-none-eabi package in favour of
+# gdb-multiarch.  Many tools (OpenOCD docs, ppap.gdb, Pico SDK examples)
+# invoke `arm-none-eabi-gdb` by name, so create a symlink if absent.
+
+info "=== Step 1b: arm-none-eabi-gdb symlink ==="
+
+if command -v arm-none-eabi-gdb &>/dev/null; then
+  success "arm-none-eabi-gdb already available: $(command -v arm-none-eabi-gdb)"
+elif command -v gdb-multiarch &>/dev/null; then
+  GDB_TARGET="/usr/local/bin/arm-none-eabi-gdb"
+  sudo ln -sf "$(command -v gdb-multiarch)" "${GDB_TARGET}"
+  success "Created symlink: ${GDB_TARGET} -> $(command -v gdb-multiarch)"
+else
+  warn "Neither arm-none-eabi-gdb nor gdb-multiarch found — GDB unavailable"
+  FAIL=1
+fi
+
 # --- Step 2: Pico SDK --------------------------------------------------------
 
 info "=== Step 2: Cloning Pico SDK ==="
@@ -194,11 +213,11 @@ else
   FAIL=1
 fi
 
-# gdb-multiarch
-if check_cmd gdb-multiarch; then
+# arm-none-eabi-gdb (symlink to gdb-multiarch created in Step 1b)
+if check_cmd arm-none-eabi-gdb; then
   :
 else
-  warn "gdb-multiarch not found in PATH"
+  warn "arm-none-eabi-gdb not found in PATH"
   FAIL=1
 fi
 
