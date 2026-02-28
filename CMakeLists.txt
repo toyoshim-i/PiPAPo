@@ -25,8 +25,14 @@ target_include_directories(ppap PRIVATE src)
 target_link_libraries(ppap
     pico_base_headers   # Platform / board definitions (INTERFACE, headers only)
     hardware_regs       # RP2040 register address definitions (INTERFACE, headers only)
-    bs2_default_library # Pico SDK boot stage 2 (.boot2 section); replaced in Step 8
 )
+
+# Include the Pico SDK boot2 objects directly as sources, not via target_link_libraries.
+# Using target_link_libraries(ppap bs2_default_library) causes CMake to emit the .o file
+# twice in the link command (once as a source object, once as a library object),
+# producing a 512-byte .boot2 section that overflows the 256-byte FLASH_BOOT region.
+# $<TARGET_OBJECTS:...> adds the object files exactly once as compile-time inputs.
+target_sources(ppap PRIVATE $<TARGET_OBJECTS:bs2_default_library>)
 
 # Custom linker script (ppap.ld) + bare-metal link flags:
 #   -nostartfiles    do not link default crt0 / startup files
