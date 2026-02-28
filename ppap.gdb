@@ -1,39 +1,41 @@
 # ppap.gdb — GDB init script for PicoPiAndPortable
 #
-# Usage:
-#   arm-none-eabi-gdb -x ppap.gdb build/ppap.elf
+# Two workflows:
+#
+#   Flash + debug from scratch (recommended):
+#     arm-none-eabi-gdb -x ppap.gdb build/ppap.elf
+#     (gdb) hbreak kmain
+#     (gdb) continue
+#
+#   Attach to already-running firmware (no reflash):
+#     arm-none-eabi-gdb -x ppap-attach.gdb build/ppap.elf
 #
 # Requires openocd to be running:
 #   openocd -f openocd.cfg
 
 set pagination off
 
-# Connect to OpenOCD's GDB server (Core 0 on port 3333)
+# Connect to OpenOCD (Core 0, port 3333)
 target remote :3333
 
-# Reset and halt Core 0 before the boot ROM runs.
-# Using `reset halt` (not `reset init`) — on the RP2040 there is no
-# reset-init script, but `reset init` can have subtle timing differences
-# with CMSIS-DAP adapters.  `reset halt` is the safer choice.
+# Flash the ELF and halt.
+# `load` writes ppap.elf to flash via OpenOCD, then halts the CPU.
+# This is the officially documented RP2040 debug workflow and is required
+# for `monitor reset halt` to reliably stop before our code runs.
+# Without `load`, OpenOCD may not have the memory map initialised and
+# reset-halt timing over CMSIS-DAP can be unreliable.
+load
+
+# Reset and halt at the very start of the boot ROM.
 monitor reset halt
 
-# All code lives in XIP flash (read-only at runtime) — use hardware BPs.
-# openocd.cfg already sets gdb_breakpoint_override hard, but `hbreak` is
-# explicit here as a reminder.  The FPB has 4 comparator slots.
-#
-# Typical session:
-#   (gdb) hbreak kmain
-#   (gdb) continue          -- runs boot ROM + boot2 + Reset_Handler → kmain
-#   (gdb) next / step       -- step through kmain
+# Ready.  Typical session:
+#   (gdb) hbreak kmain          -- hardware BP (XIP flash is read-only)
+#   (gdb) continue              -- runs boot ROM + boot2 + Reset_Handler → kmain
+#   (gdb) next                  -- step over uart_init_console()
 #   (gdb) info registers
-#   (gdb) x/4wx 0x10000100  -- inspect vector table in flash
-#   (gdb) x/4wx 0x20000000  -- inspect SRAM
-
-# Useful command aliases
-define flash_and_reset
-  monitor program build/ppap.elf verify
-  monitor reset halt
-end
+#   (gdb) x/4wx 0x10000100      -- vector table in flash (SP + Reset_Handler)
+#   (gdb) x/4wx 0x20000000      -- start of SRAM
 
 define restart
   monitor reset halt
