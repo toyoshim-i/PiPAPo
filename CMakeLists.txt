@@ -27,6 +27,9 @@ target_link_libraries(ppap
     hardware_gpio
 )
 
+# Custom linker script — activated in Step 4 (replaces pico_crt0 default script)
+# pico_set_linker_script(ppap ${CMAKE_SOURCE_DIR}/ldscripts/ppap.ld)
+
 # Produce ppap.bin and ppap.uf2 alongside ppap.elf
 pico_add_extra_outputs(ppap)
 
