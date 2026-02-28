@@ -21,70 +21,66 @@ Establish a complete, working development environment and verify the foundationa
 
 ## Week 1: Toolchain, Build System, and UART
 
-### Step 1 — Install the Toolchain
+### ✓ Step 1 — Install the Toolchain
 
 Install the ARM cross-compiler and supporting tools:
 
 ```
-arm-none-eabi-gcc  (>= 12.x recommended)
-arm-none-eabi-gdb
-cmake (>= 3.13)
-ninja or make
-openocd (>= 0.12 with RP2040 support)
-minicom or screen
+arm-none-eabi-gcc  13.2.1
+arm-none-eabi-gdb  (via gdb-multiarch 15.0)
+cmake              3.28.3
+ninja-build
+openocd            0.12.0
+minicom
 ```
 
-Clone the Pico SDK and set `PICO_SDK_PATH`:
+Pico SDK cloned to `~/pico-sdk`; `PICO_SDK_PATH` set in `~/.bashrc` and `~/.zshrc`.
+Reproducible setup script: `scripts/setup-toolchain.sh`.
 
-```sh
-git clone https://github.com/raspberrypi/pico-sdk --recurse-submodules
-export PICO_SDK_PATH=/path/to/pico-sdk
-```
+### ✓ Step 2 — Project Skeleton and CMake Build
 
-Verify the toolchain produces a valid armv6m binary:
-
-```sh
-arm-none-eabi-gcc -mcpu=cortex-m0plus -mthumb -o hello.elf hello.c
-arm-none-eabi-readelf -h hello.elf   # expect: Machine: ARM, Class: ELF32
-```
-
-### Step 2 — Project Skeleton and CMake Build
-
-Create the initial project structure:
+Project structure:
 
 ```
 PPAP/
-  CMakeLists.txt          # top-level; imports pico_sdk_import.cmake
+  CMakeLists.txt
+  pico_sdk_import.cmake
   src/
-    boot/
-      stage1.S            # Stage 1 bootloader (QSPI init)
-      startup.S           # Reset handler, stack setup, BSS zero
-    kernel/
-      main.c              # Early init entry point
-    drivers/
-      uart.c / uart.h     # UART driver
-  ldscripts/
-    ppap.ld               # Linker script (flash layout)
-  tools/
-    (mkromfs, mkufs — Phase 2+)
+    boot/startup.S          # Vector table + Reset_Handler
+    kernel/main.c           # kmain() entry point
+    drivers/uart.c / uart.h # Bare-metal UART0 driver
+  ldscripts/ppap.ld         # Custom linker script
+  scripts/setup-toolchain.sh
 ```
 
-The CMake build must produce:
-- `ppap.elf` — ELF with debug info for GDB
-- `ppap.bin` — raw binary for flash writing
-- `ppap.uf2` — UF2 image for drag-and-drop flashing
+Build produces `ppap.elf`, `ppap.bin`, `ppap.uf2`.
 
-### Step 3 — Linker Script (Flash Memory Layout)
+### ✓ Step 3 — Linker Script (Flash Memory Layout)
 
-Define the flash memory layout as specified in the design doc (Section 2.2):
+> **Note — Interim layout (Steps 4–7):**
+> The RP2040 boot ROM hardcodes reading the application vector table from
+> `XIP_BASE + 0x100 = 0x10000100` after boot2 returns.  While we use the
+> Pico SDK's 256-byte boot2, the kernel must start at `0x10000100`.
+> Step 8 replaces boot2 with our own 4 KB Stage 1 and restores the
+> final layout from the design spec (kernel at `0x10001000`).
 
-| Region | Flash Offset | Size | Purpose |
+Current (interim) flash layout:
+
+| Region | Flash Address | Size | Purpose |
 |---|---|---|---|
-| Stage 1 bootloader | `0x00000000` | 4 KB | QSPI init; must fit in 256 B for RP2040 boot ROM |
-| Kernel `.text` / `.rodata` | `0x00001000` | 48–64 KB | XIP-executed kernel code |
-| romfs image | `0x00011000` | Remaining | Read-only file system (Phase 2+) |
+| boot2 (Pico SDK) | `0x10000000` | 256 B | QSPI init; loaded by boot ROM |
+| Kernel `.text` / `.rodata` | `0x10000100` | 64 KB | XIP-executed kernel code + vector table |
+| romfs image | `0x10010100` | ~16 MB remainder | Read-only file system (Phase 2+) |
 
-SRAM regions (Section 2.3):
+Final layout (after Step 8):
+
+| Region | Flash Address | Size | Purpose |
+|---|---|---|---|
+| Stage 1 bootloader | `0x10000000` | 4 KB | QSPI init + sets VTOR, jumps to kernel |
+| Kernel `.text` / `.rodata` | `0x10001000` | 64 KB | XIP-executed kernel code |
+| romfs image | `0x10011000` | ~16 MB remainder | Read-only file system (Phase 2+) |
+
+SRAM regions:
 
 | Region | Address | Size | Purpose |
 |---|---|---|---|
@@ -93,37 +89,39 @@ SRAM regions (Section 2.3):
 | I/O buffer | `0x20038000` | 24 KB | SD / FS cache |
 | DMA / Reserved | `0x2003E000` | 16 KB | DMA, PIO, Core 1 stack |
 
-At this phase only the kernel data region is used; define others as placeholder symbols for future phases.
+**boot2 double-link pitfall:** `target_link_libraries(ppap bs2_default_library)` causes
+CMake to emit the `.o` file twice (512 B in `.boot2`, overflowing 256-byte `FLASH_BOOT`).
+Fix: `target_sources(ppap PRIVATE $<TARGET_OBJECTS:bs2_default_library>)`.
 
-### Step 4 — Startup Code (`startup.S`)
+### ✓ Step 4 — Startup Code (`startup.S`)
 
-Write the minimal ARM Thumb startup sequence:
+Minimal ARM Thumb startup in `src/boot/startup.S`:
 
-1. Place the vector table at `0x10001000` (flash offset `0x00001000`), with the stack pointer and reset handler as the first two entries.
-2. Reset handler:
-   - Load the initial stack pointer (top of kernel data region, `0x20004000`)
-   - Zero the `.bss` section
-   - Copy `.data` from flash to SRAM
-   - Branch to `kmain()`
+1. `.vectors` section placed at `0x10000100` (interim; `0x10001000` in final layout).
+   First two words: `__stack_top` (initial SP) and `Reset_Handler` address (Thumb bit set).
+   Cortex-M0+ table: 16 system exception slots + 26 IRQ handlers → `Default_Handler`.
+2. `Reset_Handler`:
+   - Copy `.data` from flash LMA to SRAM VMA
+   - Zero `.bss`
+   - Call `kmain()`
+3. `Default_Handler`: infinite loop (catches unexpected exceptions).
 
-No C runtime library — write the startup entirely in assembly or minimal C.
+No C runtime library — pure assembly.
 
-### Step 5 — UART Driver (`uart.c`)
+### ✓ Step 5 — UART Driver (`uart.c`)
 
-Initialize UART0 on the RP2040 at 115200 bps (Section 8, Section 7 Stage 2):
+Bare-metal UART0 in `src/drivers/uart.c` (no Pico SDK runtime):
 
-1. Enable UART0 peripheral clock via `RESETS` block
-2. Set the baud rate divisor for 133 MHz system clock
-3. Enable TX (and optionally RX)
-4. Configure GPIO 0 (TX) and GPIO 1 (RX) to UART function
-5. Provide `uart_putc()`, `uart_puts()`, `uart_printf()` (using a minimal printf or `sprintf` from newlib-nano)
+1. `clock_switch_to_xosc()`: ROSC → 12 MHz XOSC, then enable `clk_peri`
+2. Release `IO_BANK0`, `PADS_BANK0`, `UART0` from reset via atomic CLR alias
+3. Baud rate: IBRD=6, FBRD=33 → 115200 bps @ 12 MHz (0.08% error)
+4. 8N1 with TX FIFO enabled; GPIO 0 = TX, GPIO 1 = RX (FUNCSEL=2)
+5. `uart_putc()`, `uart_puts()` with LF→CRLF expansion
 
-**Verification:** Power on the board with a USB-to-serial adapter; observe:
-
+**Verified on hardware** — UART output observed at 115200 bps:
 ```
 PicoPiAndPortable booting...
-UART initialized at 115200 bps
-System clock: 133 MHz
+UART: 115200 bps @ 12 MHz XOSC
 ```
 
 ### Step 6 — OpenOCD + GDB Setup
@@ -152,7 +150,7 @@ Configure the RP2040's PLL to run at 133 MHz before UART init (Section 7, Stage 
 1. Use the crystal oscillator (12 MHz XOSC) as the reference
 2. Configure PLL_SYS: VCO = 1596 MHz (12 × 133), post-dividers = 1 × 1 → 133 MHz
 3. Switch the system clock source to PLL_SYS
-4. Update the UART baud rate divisor after the clock switch
+4. Update the UART baud rate divisor after the clock switch (IBRD=72, FBRD=11)
 
 Confirm via UART output: `System clock: 133 MHz`.
 
@@ -167,11 +165,12 @@ The RP2040 boot ROM loads the first 256 bytes of flash into SRAM and executes it
    - Configure `SPI_CTRLR0` for Quad Read command (`0xEB`, 6 dummy cycles)
    - Enable XIP mode: set `XIP_CTRL` to enable the XIP cache
 2. Verify the configuration by reading a known flash address via XIP and comparing to the expected value
-3. Branch to the kernel entry point at `0x10001000`
+3. Set VTOR to `0x10001000` and branch to the kernel entry point there
 
 **Note:** The Pico SDK ships several `boot2_*.S` files for common flash chips (W25Q080, AT25SF128A, etc.). These are good references, but you must select the correct one for your board's flash chip.
 
-After Stage 1 completes, the entire flash is accessible at `0x10000000`–`0x10FFFFFF` via XIP.
+After Stage 1 completes, the entire flash is accessible at `0x10000000`–`0x10FFFFFF` via XIP
+and the linker script reverts to the final layout (kernel at `0x10001000`).
 
 ### Step 9 — XIP Verification
 

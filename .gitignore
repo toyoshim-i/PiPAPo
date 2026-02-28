@@ -3,3 +3,5 @@ build/
 *.bin
 *.uf2
 *.map
+.gdb_history
+.gdb-index
