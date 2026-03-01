@@ -74,8 +74,13 @@ Fixed 4 KB pages map directly onto the SRAM layout from the design spec.
 - **Free stack** (not linked list): page frames are fixed-size; a stack is
   O(1) push/pop with no per-page overhead.  A 52-entry array of `uint8_t *`
   costs only 208 bytes in kernel data.
-- No reference counts in Phase 1 (single-owner pages); add in Phase 3 for
-  vfork copy-on-write.
+- No reference counts: every page has exactly one owner.  True Copy-on-Write
+  is not feasible on the RP2040 — the 4-region MPU cannot mark individual
+  pages read-only across multiple processes, and there is no per-page write
+  fault mechanism without an MMU.  CoW fork() is deferred to the RP2350 port
+  (§4.3 of the design spec).  The vfork()+execve() model used here needs no
+  CoW: the parent is blocked while the child shares its address space, then
+  execve() allocates fresh pages from the pool.
 
 **API:**
 
