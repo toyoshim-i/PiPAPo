@@ -18,6 +18,7 @@ add_executable(ppap
     src/kernel/xip_test.c   # XIP verification + SysTick benchmark (Step 9)
     src/kernel/mm/page.c    # Page allocator + boot memory map (Phase 1 Step 1)
     src/kernel/mm/kmem.c    # Fixed-size kernel object pool (Phase 1 Step 2)
+    src/kernel/proc/proc.c  # PCB definition + process table (Phase 1 Step 3)
     src/drivers/uart.c
     src/drivers/clock.c     # PLL_SYS → 133 MHz (Step 7)
 )
@@ -68,6 +69,7 @@ add_executable(ppap_qemu
     src/kernel/xip_test.c       # xip_add works on any ARM Cortex-M
     src/kernel/mm/page.c        # Page allocator + boot memory map (Phase 1 Step 1)
     src/kernel/mm/kmem.c        # Fixed-size kernel object pool (Phase 1 Step 2)
+    src/kernel/proc/proc.c      # PCB definition + process table (Phase 1 Step 3)
     src/drivers/uart_qemu.c     # CMSDK UART for mps2-an500
 )
 

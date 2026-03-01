@@ -20,6 +20,7 @@
 
 #include "drivers/uart.h"
 #include "mm/page.h"
+#include "proc/proc.h"
 #include "xip_test.h"
 
 void kmain(void)
@@ -30,6 +31,9 @@ void kmain(void)
     uart_puts("Clock: emulated (no PLL — skipping clock_init_pll)\n");
 
     mm_init();
+
+    /* Phase 1 Step 3: process table init */
+    proc_init();
 
     /* xip_add is pure arithmetic — runs identically in QEMU and on hardware */
     uart_puts("XIP: xip_add @ ");

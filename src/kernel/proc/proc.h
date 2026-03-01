@@ -1,0 +1,115 @@
+/*
+ * proc.h — Process Control Block (PCB) definition and process table
+ *
+ * The PCB holds all per-process state: saved CPU registers, identity (pid/ppid),
+ * memory (stack page, user pages), file descriptors, and scheduling fields.
+ *
+ * Layout (≈204 bytes — fits comfortably in 256 B):
+ *   [0..35]   saved callee registers r4–r11 + sp  (must match switch.S offsets)
+ *   [36..47]  pid, ppid, state
+ *   [48..71]  stack_page + user_pages[4]
+ *   [72..135] fd_table[FD_MAX]
+ *   [136..199] cwd[64]
+ *   [200..207] ticks_remaining, sleep_until
+ *
+ * PROC_MAX is intentionally small (8).  Every PCB lives in the static
+ * proc_table[] array in kernel BSS — no dynamic allocation needed for Phase 1.
+ */
+
+#ifndef PPAP_PROC_PROC_H
+#define PPAP_PROC_PROC_H
+
+#include <stdint.h>
+
+/* Forward declaration — struct file is defined in fd/file.h (Step 10).
+ * We only store pointers here so the incomplete type is sufficient. */
+struct file;
+
+/* ── Constants ─────────────────────────────────────────────────────────────── */
+
+#define PROC_MAX           8    /* maximum concurrent processes               */
+#define FD_MAX            16    /* file descriptors per process               */
+#define PROC_DEFAULT_TICKS 10   /* default time-slice length in SysTick ticks */
+
+/* ── Types ─────────────────────────────────────────────────────────────────── */
+
+/* pid_t: POSIX process ID type.  Not provided by arm-none-eabi without
+ * POSIX headers, so we define it here for bare-metal use. */
+typedef int32_t pid_t;
+
+typedef enum {
+    PROC_FREE     = 0,   /* slot is not in use                              */
+    PROC_RUNNABLE = 1,   /* ready to run, or currently executing            */
+    PROC_SLEEPING = 2,   /* blocked until sleep_until SysTick count         */
+    PROC_ZOMBIE   = 3,   /* exited; slot freed when parent calls waitpid()  */
+} proc_state_t;
+
+typedef struct pcb {
+    /*
+     * Saved CPU context.
+     * IMPORTANT: the byte offsets of r4–r11 and sp MUST match the
+     * #defines used in switch.S.  Do not reorder these fields.
+     */
+    uint32_t r4, r5, r6, r7;       /* callee-saved low registers  (offsets 0–15)  */
+    uint32_t r8, r9, r10, r11;     /* callee-saved high registers (offsets 16–31) */
+    uint32_t sp;                    /* saved PSP                   (offset 32)     */
+    /* r0–r3, r12, lr, pc, xpsr are saved automatically by hardware on exception
+     * entry; the PendSV handler saves only the callee-saved registers above.   */
+
+    /* ── Identity ───────────────────────────────────────────────────────── */
+    pid_t        pid;
+    pid_t        ppid;
+    proc_state_t state;
+
+    /* ── Memory ─────────────────────────────────────────────────────────── */
+    void    *stack_page;        /* 4 KB page from page_alloc(): process stack */
+    void    *user_pages[4];     /* user data pages — allocated in Phase 3+    */
+
+    /* ── File descriptors ───────────────────────────────────────────────── */
+    struct file *fd_table[FD_MAX];
+    char         cwd[64];       /* current working directory (Phase 2+)       */
+
+    /* ── Scheduling ─────────────────────────────────────────────────────── */
+    uint32_t ticks_remaining;   /* SysTick ticks left in current time-slice   */
+    uint32_t sleep_until;       /* wake when SysTick count reaches this value */
+} pcb_t;
+
+/* ── Globals ────────────────────────────────────────────────────────────────── */
+
+/* Flat process table: proc_table[0] is the initial kernel thread (pid 0).
+ * All entries live in BSS and are zero-initialised by startup.S. */
+extern pcb_t  proc_table[PROC_MAX];
+
+/* Pointer to the currently executing PCB.  Always non-NULL after proc_init(). */
+extern pcb_t *current;
+
+/* ── API ────────────────────────────────────────────────────────────────────── */
+
+/*
+ * Initialise the process table.
+ * - Clears all slots and marks them PROC_FREE.
+ * - Pre-initialises proc_table[0] as the initial kernel thread (pid 0,
+ *   PROC_RUNNABLE) and sets current = &proc_table[0].
+ * - Runs a brief self-test and prints the result over UART.
+ * Must be called once from kmain() after UART and mm are ready.
+ */
+void proc_init(void);
+
+/*
+ * Allocate a free PCB slot (slots 1..PROC_MAX-1).
+ * Clears the slot, assigns a unique pid, and returns a pointer to it.
+ * Returns NULL if all slots are in use.
+ * The caller is responsible for setting state, stack_page, and any other
+ * fields before making the process PROC_RUNNABLE.
+ */
+pcb_t *proc_alloc(void);
+
+/*
+ * Release a PCB slot.
+ * Marks the PCB PROC_FREE; the caller must have already freed any pages
+ * held by the process (stack_page, user_pages[]) before calling this.
+ * No-op if p is NULL.
+ */
+void proc_free(pcb_t *p);
+
+#endif /* PPAP_PROC_PROC_H */

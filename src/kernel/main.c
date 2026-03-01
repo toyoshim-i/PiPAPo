@@ -10,6 +10,7 @@
 #include "drivers/uart.h"
 #include "drivers/clock.h"
 #include "mm/page.h"
+#include "proc/proc.h"
 #include "xip_test.h"
 
 void kmain(void)
@@ -33,6 +34,9 @@ void kmain(void)
 
     /* Phase 1 Step 1: memory manager init + boot-time memory map */
     mm_init();
+
+    /* Phase 1 Step 3: process table init */
+    proc_init();
 
     /* ------------------------------------------------------------------
      * Step 9: XIP verification
