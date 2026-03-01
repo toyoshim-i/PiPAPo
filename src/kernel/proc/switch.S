@@ -71,9 +71,17 @@ PendSV_Handler:
     str  r0, [r3, #PCB_SP_OFFSET]  @ current->sp = r0
 
     @ ── Call C scheduler to select next process ────────────────────────
-    @ Preserve &current (r2) and EXC_RETURN (lr) across the C call.
+    @ Preserve &current (r2) and EXC_RETURN (lr) across C calls.
     push {r2, lr}
-    bl   sched_next           @ returns next pcb_t* in r0
+    bl   sched_next           @ r0 = next pcb_t*
+
+    @ ── Update MPU region 2 for incoming process stack ─────────────────
+    @ r0 = next pcb_t*  (argument for mpu_switch — already in place)
+    @ Push r0 with padding to maintain 8-byte stack alignment for the call.
+    push {r0, r1}             @ r0 = next (arg), r1 = padding
+    bl   mpu_switch           @ mpu_switch(next) — reprograms MPU region 2
+    pop  {r0, r1}             @ r0 = next pcb_t* restored, r1 discarded
+
     pop  {r2, r3}             @ r2 = &current, r3 = EXC_RETURN (was lr)
 
     @ Update the current global and restore EXC_RETURN in lr.

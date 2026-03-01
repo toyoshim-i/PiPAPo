@@ -16,10 +16,14 @@
  * Expected output: interleaved "0\n" and "1\n" — proves that PendSV_Handler
  * correctly saves and restores per-thread stacks.
  * (On real hardware SysTick drives preemptive scheduling; see main.c.)
+ *
+ * Phase 1 Step 11: mpu_init() self-stubs on QEMU (MPU_TYPE == 0).
+ * mpu_switch() in switch.S is also a no-op via the mpu_present flag.
  */
 
 #include "drivers/uart.h"
 #include "mm/page.h"
+#include "mm/mpu.h"
 #include "proc/proc.h"
 #include "proc/sched.h"
 #include "fd/fd.h"
@@ -80,6 +84,9 @@ void kmain(void)
     p1->stack_page = page_alloc();
     proc_setup_stack(p1, thread1);
     p1->state = PROC_RUNNABLE;
+
+    /* Phase 1 Step 11: configure MPU (no-op on QEMU — MPU_TYPE reads 0) */
+    mpu_init();
 
     uart_puts("SCHED: starting cooperative context-switch test (QEMU)\n");
     sched_start();

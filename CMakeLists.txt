@@ -18,6 +18,7 @@ add_executable(ppap
     src/kernel/xip_test.c   # XIP verification + SysTick benchmark (Step 9)
     src/kernel/mm/page.c    # Page allocator + boot memory map (Phase 1 Step 1)
     src/kernel/mm/kmem.c    # Fixed-size kernel object pool (Phase 1 Step 2)
+    src/kernel/mm/mpu.c     # MPU 4-region layout + per-context switch (Phase 1 Step 11)
     src/kernel/proc/proc.c  # PCB definition + process table (Phase 1 Step 3)
     src/kernel/proc/switch.S # PendSV context switch (Phase 1 Step 4)
     src/kernel/proc/sched.c # Round-robin scheduler + SysTick (Phase 1 Steps 4-5)
@@ -78,6 +79,7 @@ add_executable(ppap_qemu
     src/kernel/xip_test.c       # xip_add works on any ARM Cortex-M
     src/kernel/mm/page.c        # Page allocator + boot memory map (Phase 1 Step 1)
     src/kernel/mm/kmem.c        # Fixed-size kernel object pool (Phase 1 Step 2)
+    src/kernel/mm/mpu.c         # MPU 4-region layout + per-context switch (Phase 1 Step 11)
     src/kernel/proc/proc.c      # PCB definition + process table (Phase 1 Step 3)
     src/kernel/proc/switch.S    # PendSV context switch (Phase 1 Step 4)
     src/kernel/proc/sched.c     # Round-robin scheduler + SysTick (Phase 1 Steps 4-5)

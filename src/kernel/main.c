@@ -8,11 +8,13 @@
  * Phase 1 Steps 1-5: mm_init, proc_init, context switch, SysTick scheduler.
  * Phase 1 Step 6: UART0 IRQ mode — uart_init_irq() before sched_start().
  * Phase 1 Step 10: fd_stdio_init() — fd 0/1/2 wired to UART tty driver.
+ * Phase 1 Step 11: mpu_init() — 4-region MPU layout; mpu_switch() on context switch.
  */
 
 #include "drivers/uart.h"
 #include "drivers/clock.h"
 #include "mm/page.h"
+#include "mm/mpu.h"
 #include "proc/proc.h"
 #include "proc/sched.h"
 #include "fd/fd.h"
@@ -87,6 +89,9 @@ void kmain(void)
     uart_flush();
     uart_init_irq();
     uart_puts("UART: switched to interrupt-driven mode\n");
+
+    /* Phase 1 Step 11: configure MPU regions and enable memory protection */
+    mpu_init();
 
     sched_start();
 
