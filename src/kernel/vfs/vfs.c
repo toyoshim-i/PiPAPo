@@ -140,7 +140,7 @@ int vfs_mount(const char *path, const vfs_ops_t *ops, uint8_t flags,
 
     uart_puts("VFS: mounted at ");
     uart_puts(mnt->path);
-    uart_putc('\n');
+    uart_puts("\n");
 
     return 0;
 }
