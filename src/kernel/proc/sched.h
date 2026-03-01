@@ -64,4 +64,12 @@ void sched_tick(void);
  */
 void sched_yield(void);
 
+/*
+ * Put the current process to sleep for `ticks` SysTick ticks.
+ * Marks current as PROC_SLEEPING and triggers PendSV so another RUNNABLE
+ * process takes the CPU.  sched_tick() wakes the process when the tick
+ * count reaches sleep_until.  Called from sys_nanosleep() (sys_time.c).
+ */
+void sched_sleep(uint32_t ticks);
+
 #endif /* PPAP_PROC_SCHED_H */

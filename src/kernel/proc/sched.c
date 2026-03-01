@@ -31,6 +31,12 @@
 /* System Handler Priority Register 3 — PendSV priority at [23:16] */
 #define SCB_SHPR3   (*(volatile uint32_t *)0xE000ED20u)
 
+/* ── Tick counter ───────────────────────────────────────────────────────────── */
+
+/* Incremented by SysTick_Handler every tick.  Declared here (before sched_tick
+ * and sched_sleep) so both functions can access it in the same translation unit. */
+static volatile uint32_t tick_count = 0u;
+
 /* ── Scheduler ─────────────────────────────────────────────────────────────── */
 
 pcb_t *sched_next(void)
@@ -47,6 +53,17 @@ pcb_t *sched_next(void)
 
 void sched_tick(void)
 {
+    /* Wake any sleeping processes whose sleep_until has been reached.
+     * Comparison uses signed subtraction to handle tick_count wrap-around:
+     *   (int32_t)(tick_count - sleep_until) >= 0  is true when
+     *   tick_count >= sleep_until even after the uint32_t counter wraps. */
+    for (uint32_t i = 0u; i < PROC_MAX; i++) {
+        pcb_t *p = &proc_table[i];
+        if (p->state == PROC_SLEEPING
+                && (int32_t)(tick_count - p->sleep_until) >= 0)
+            p->state = PROC_RUNNABLE;
+    }
+
     if (!current)
         return;
 
@@ -54,12 +71,9 @@ void sched_tick(void)
         current->ticks_remaining = PROC_DEFAULT_TICKS;
         SCB_ICSR |= PENDSVSET;   /* trigger PendSV (runs after SysTick exits) */
     }
-    /* Phase 1 Step 9+: wake sleeping processes based on sleep_until */
 }
 
 /* ── SysTick exception handler ─────────────────────────────────────────────── */
-
-static volatile uint32_t tick_count = 0u;
 
 void SysTick_Handler(void)
 {
@@ -118,5 +132,16 @@ void sched_start(void)
 void sched_yield(void)
 {
     SCB_ICSR |= PENDSVSET;   /* pend PendSV; fires at next instruction boundary */
+}
+
+/* ── Sleep ──────────────────────────────────────────────────────────────────── */
+
+void sched_sleep(uint32_t ticks)
+{
+    current->sleep_until    = tick_count + ticks;
+    current->state          = PROC_SLEEPING;
+    SCB_ICSR |= PENDSVSET;  /* yield CPU; PendSV fires after caller returns */
+    /* Execution resumes here after sched_tick() marks us RUNNABLE again
+     * and PendSV restores our context. */
 }
 

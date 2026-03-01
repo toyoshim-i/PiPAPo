@@ -7,6 +7,7 @@
  * Step 9: XIP verification — address check, correctness, SysTick benchmark.
  * Phase 1 Steps 1-5: mm_init, proc_init, context switch, SysTick scheduler.
  * Phase 1 Step 6: UART0 IRQ mode — uart_init_irq() before sched_start().
+ * Phase 1 Step 10: fd_stdio_init() — fd 0/1/2 wired to UART tty driver.
  */
 
 #include "drivers/uart.h"
@@ -14,6 +15,7 @@
 #include "mm/page.h"
 #include "proc/proc.h"
 #include "proc/sched.h"
+#include "fd/fd.h"
 #include "xip_test.h"
 
 /* ── Kernel entry point ──────────────────────────────────────────────────── */
@@ -42,6 +44,10 @@ void kmain(void)
 
     /* Phase 1 Step 3: process table init */
     proc_init();
+
+    /* Phase 1 Step 10: wire fd 0/1/2 to the UART tty driver */
+    fd_stdio_init(&proc_table[0]);
+    uart_puts("FD: fd 0/1/2 wired to UART tty\n");
 
     /* ------------------------------------------------------------------
      * Step 9: XIP verification

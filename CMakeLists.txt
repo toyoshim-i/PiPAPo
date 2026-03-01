@@ -21,6 +21,13 @@ add_executable(ppap
     src/kernel/proc/proc.c  # PCB definition + process table (Phase 1 Step 3)
     src/kernel/proc/switch.S # PendSV context switch (Phase 1 Step 4)
     src/kernel/proc/sched.c # Round-robin scheduler + SysTick (Phase 1 Steps 4-5)
+    src/kernel/syscall/svc.S      # SVC exception handler entry (Phase 1 Step 8)
+    src/kernel/syscall/syscall.c  # Syscall dispatch table (Phase 1 Step 8)
+    src/kernel/syscall/sys_proc.c # sys_exit, sys_getpid (Phase 1 Step 9)
+    src/kernel/syscall/sys_io.c   # sys_write, sys_read via fd table (Phase 1 Step 9)
+    src/kernel/syscall/sys_time.c # sys_nanosleep (Phase 1 Step 9)
+    src/kernel/fd/fd.c            # fd table helpers + fd_stdio_init (Phase 1 Step 10)
+    src/kernel/fd/tty.c           # UART tty driver (Phase 1 Step 10)
     src/drivers/uart.c
     src/drivers/clock.c     # PLL_SYS → 133 MHz (Step 7)
 )
@@ -74,6 +81,13 @@ add_executable(ppap_qemu
     src/kernel/proc/proc.c      # PCB definition + process table (Phase 1 Step 3)
     src/kernel/proc/switch.S    # PendSV context switch (Phase 1 Step 4)
     src/kernel/proc/sched.c     # Round-robin scheduler + SysTick (Phase 1 Steps 4-5)
+    src/kernel/syscall/svc.S          # SVC exception handler entry (Phase 1 Step 8)
+    src/kernel/syscall/syscall.c      # Syscall dispatch table (Phase 1 Step 8)
+    src/kernel/syscall/sys_proc.c     # sys_exit, sys_getpid (Phase 1 Step 9)
+    src/kernel/syscall/sys_io.c       # sys_write, sys_read via fd table (Phase 1 Step 9)
+    src/kernel/syscall/sys_time.c     # sys_nanosleep (Phase 1 Step 9)
+    src/kernel/fd/fd.c                # fd table helpers + fd_stdio_init (Phase 1 Step 10)
+    src/kernel/fd/tty.c               # UART tty driver (Phase 1 Step 10)
     src/drivers/uart_qemu.c     # CMSDK UART for mps2-an500
 )
 

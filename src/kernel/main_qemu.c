@@ -22,6 +22,7 @@
 #include "mm/page.h"
 #include "proc/proc.h"
 #include "proc/sched.h"
+#include "fd/fd.h"
 #include "xip_test.h"
 
 /* ── Test thread ─────────────────────────────────────────────────────────── */
@@ -47,6 +48,9 @@ void kmain(void)
 
     /* Phase 1 Step 3: process table init */
     proc_init();
+
+    /* Phase 1 Step 10: wire fd 0/1/2 to the UART tty driver */
+    fd_stdio_init(&proc_table[0]);
 
     /* xip_add is pure arithmetic — runs identically in QEMU and on hardware */
     uart_puts("XIP: xip_add @ ");
