@@ -308,3 +308,36 @@ long sys_chdir(const char *path)
     __builtin_memcpy(current->cwd, normalized, (size_t)nlen + 1);
     return 0;
 }
+
+/* ── sys_dup ──────────────────────────────────────────────────────────────── */
+
+long sys_dup(long oldfd)
+{
+    if (oldfd < 0 || (uint32_t)oldfd >= FD_MAX)
+        return -(long)EBADF;
+    struct file *f = fd_get(current, (int)oldfd);
+    if (!f)
+        return -(long)EBADF;
+    return (long)fd_alloc(current, f);
+}
+
+/* ── sys_dup2 ─────────────────────────────────────────────────────────────── */
+
+long sys_dup2(long oldfd, long newfd)
+{
+    if (oldfd < 0 || (uint32_t)oldfd >= FD_MAX)
+        return -(long)EBADF;
+    if (newfd < 0 || (uint32_t)newfd >= FD_MAX)
+        return -(long)EBADF;
+    struct file *f = fd_get(current, (int)oldfd);
+    if (!f)
+        return -(long)EBADF;
+    if (oldfd == newfd)
+        return newfd;
+    /* Close newfd if it is currently open */
+    fd_free(current, (int)newfd);
+    /* Point newfd at the same struct file, increment refcnt */
+    current->fd_table[(int)newfd] = f;
+    f->refcnt++;
+    return newfd;
+}

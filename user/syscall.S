@@ -104,6 +104,17 @@ getpid:
     svc  0
     pop  {r7, pc}
 
+@ --- dup (SYS_DUP = 41) -------------------------------------------------------
+@ int dup(int oldfd);
+.section .text.dup, "ax", %progbits
+.global dup
+.thumb_func
+dup:
+    push {r7, lr}
+    movs r7, #41
+    svc  0
+    pop  {r7, pc}
+
 @ --- pipe (SYS_PIPE = 42) -----------------------------------------------------
 @ int pipe(int fds[2]);
 .section .text.pipe, "ax", %progbits
@@ -112,6 +123,17 @@ getpid:
 pipe:
     push {r7, lr}
     movs r7, #42
+    svc  0
+    pop  {r7, pc}
+
+@ --- dup2 (SYS_DUP2 = 63) -----------------------------------------------------
+@ int dup2(int oldfd, int newfd);
+.section .text.dup2, "ax", %progbits
+.global dup2
+.thumb_func
+dup2:
+    push {r7, lr}
+    movs r7, #63
     svc  0
     pop  {r7, pc}
 

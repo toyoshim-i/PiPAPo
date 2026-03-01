@@ -36,7 +36,9 @@
 #define SYS_GETDENTS 141
 #define SYS_NANOSLEEP 162
 #define SYS_GETCWD   183
+#define SYS_DUP       41
 #define SYS_PIPE      42
+#define SYS_DUP2      63
 #define SYS_VFORK    190
 
 /* ── Dispatch ──────────────────────────────────────────────────────────────── */
@@ -93,6 +95,10 @@ long sys_nanosleep(void *req, void *rem);
 
 /* fd/pipe.c */
 long sys_pipe(int *fds);
+
+/* sys_fs.c — dup/dup2 */
+long sys_dup(long oldfd);
+long sys_dup2(long oldfd, long newfd);
 
 /* sys_fs.c — VFS-routed file system calls */
 struct stat;

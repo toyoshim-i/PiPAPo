@@ -377,6 +377,115 @@ static void pipe_integration_test(void)
     uart_puts(" failed ===\n\n");
 }
 
+/* ── dup/dup2 integration tests ──────────────────────────────────────────── */
+
+static void dup_integration_test(void)
+{
+    uart_puts("\n=== Phase 3 Step 8: dup/dup2 integration tests ===\n");
+    test_pass = 0;
+    test_fail = 0;
+
+    /* 1. dup basic: pipe, dup read-end, read from dup'd fd */
+    {
+        int fds[2];
+        long rc = sys_pipe(fds);
+        int ok = 0;
+        if (rc == 0) {
+            long dup_fd = sys_dup(fds[0]);
+            if (dup_fd >= 0) {
+                sys_write(fds[1], "dup!", 4);
+                char buf[8] = {0};
+                long nr = sys_read(dup_fd, buf, sizeof(buf));
+                ok = (nr == 4 && buf[0]=='d' && buf[1]=='u'
+                   && buf[2]=='p' && buf[3]=='!');
+                sys_close(dup_fd);
+            }
+            sys_close(fds[0]);
+            sys_close(fds[1]);
+        }
+        test_report("dup basic", ok);
+    }
+
+    /* 2. dup2 redirect: pipe + dup2(write_end, 4) → write via fd 4 */
+    {
+        int fds[2];
+        long rc = sys_pipe(fds);
+        int ok = 0;
+        if (rc == 0) {
+            long rc2 = sys_dup2(fds[1], 4);
+            if (rc2 == 4) {
+                sys_write(4, "hi", 2);
+                char buf[4] = {0};
+                long nr = sys_read(fds[0], buf, sizeof(buf));
+                ok = (nr == 2 && buf[0]=='h' && buf[1]=='i');
+            }
+            sys_close(4);
+            sys_close(fds[0]);
+            sys_close(fds[1]);
+        }
+        test_report("dup2 redirect", ok);
+    }
+
+    /* 3. dup2 same fd: dup2(fd, fd) → returns fd (no-op) */
+    {
+        int fds[2];
+        long rc = sys_pipe(fds);
+        int ok = 0;
+        if (rc == 0) {
+            long rc2 = sys_dup2(fds[0], fds[0]);
+            ok = (rc2 == fds[0]);
+            sys_close(fds[0]);
+            sys_close(fds[1]);
+        }
+        test_report("dup2 same fd", ok);
+    }
+
+    /* 4. dup2 closes target: dup2 over an open pipe fd */
+    {
+        int fds_a[2], fds_b[2];
+        long rca = sys_pipe(fds_a);
+        long rcb = sys_pipe(fds_b);
+        int ok = 0;
+        if (rca == 0 && rcb == 0) {
+            /* dup2(fds_a[0], fds_b[0]) — closes fds_b[0] (read end of pipe B) */
+            sys_dup2(fds_a[0], fds_b[0]);
+            /* Writing to pipe B write-end should now get EPIPE since
+             * its read-end was closed by dup2 */
+            long nw = sys_write(fds_b[1], "x", 1);
+            ok = (nw == -(long)EPIPE);
+            sys_close(fds_a[0]);
+            sys_close(fds_a[1]);
+            sys_close(fds_b[0]);  /* now points to fds_a's read file */
+            sys_close(fds_b[1]);
+        }
+        test_report("dup2 close target", ok);
+    }
+
+    /* 5. dup invalid fd → -EBADF */
+    {
+        long rc = sys_dup(-1);
+        test_report("dup invalid fd", rc == -(long)EBADF);
+    }
+
+    /* Summary */
+    uart_puts("=== dup/dup2 results: ");
+    char digit[4];
+    int idx = 0;
+    int v = test_pass;
+    if (v >= 10) digit[idx++] = '0' + (v / 10);
+    digit[idx++] = '0' + (v % 10);
+    digit[idx] = '\0';
+    uart_puts(digit);
+    uart_puts(" passed, ");
+    idx = 0;
+    v = test_fail;
+    if (v >= 10) digit[idx++] = '0' + (v / 10);
+    digit[idx++] = '0' + (v % 10);
+    digit[idx] = '\0';
+    uart_puts(digit);
+    uart_puts(" failed ===\n\n");
+}
+
 /* ── Context-switch partner (prints "1" in a loop) ───────────────────────── */
 
 static void thread_loop(void)
@@ -429,6 +538,9 @@ void kmain(void)
 
     /* Phase 3 Step 7: pipe integration tests */
     pipe_integration_test();
+
+    /* Phase 3 Step 8: dup/dup2 integration tests */
+    dup_integration_test();
 
     /* ------------------------------------------------------------------
      * Phase 3 Step 5: exec /bin/test_vfork as the init process (pid 1)
