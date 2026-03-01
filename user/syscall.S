@@ -71,6 +71,28 @@ close:
     svc  0
     pop  {r7, pc}
 
+@ --- waitpid (SYS_WAITPID = 7) ------------------------------------------------
+@ pid_t waitpid(pid_t pid, int *status, int options);
+.section .text.waitpid, "ax", %progbits
+.global waitpid
+.thumb_func
+waitpid:
+    push {r7, lr}
+    movs r7, #7
+    svc  0
+    pop  {r7, pc}
+
+@ --- execve (SYS_EXECVE = 11) ------------------------------------------------
+@ int execve(const char *path, char *const argv[], char *const envp[]);
+.section .text.execve, "ax", %progbits
+.global execve
+.thumb_func
+execve:
+    push {r7, lr}
+    movs r7, #11
+    svc  0
+    pop  {r7, pc}
+
 @ --- getpid (SYS_GETPID = 20) -----------------------------------------------
 @ int getpid(void);
 .section .text.getpid, "ax", %progbits
@@ -79,5 +101,16 @@ close:
 getpid:
     push {r7, lr}
     movs r7, #20
+    svc  0
+    pop  {r7, pc}
+
+@ --- vfork (SYS_VFORK = 190) -------------------------------------------------
+@ pid_t vfork(void);
+.section .text.vfork, "ax", %progbits
+.global vfork
+.thumb_func
+vfork:
+    push {r7, lr}
+    movs r7, #190
     svc  0
     pop  {r7, pc}

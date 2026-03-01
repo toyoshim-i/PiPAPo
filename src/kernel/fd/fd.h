@@ -44,4 +44,10 @@ void fd_free(pcb_t *p, int fd);
  */
 struct file *fd_get(pcb_t *p, int fd);
 
+/*
+ * Close all open file descriptors for the given process.
+ * Called from sys_exit() and sys_execve() during cleanup.
+ */
+void fd_close_all(pcb_t *p);
+
 #endif /* PPAP_FD_FD_H */

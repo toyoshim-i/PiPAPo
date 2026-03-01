@@ -55,3 +55,11 @@ struct file *fd_get(pcb_t *p, int fd)
         return NULL;
     return p->fd_table[fd];
 }
+
+/* ── fd_close_all ──────────────────────────────────────────────────────────── */
+
+void fd_close_all(pcb_t *p)
+{
+    for (int i = 0; i < FD_MAX; i++)
+        fd_free(p, i);
+}

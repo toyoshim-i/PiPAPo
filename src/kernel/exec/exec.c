@@ -154,6 +154,9 @@ int do_execve(pcb_t *p, const char *path)
         sw[5] = got_sram_addr;
     }
 
+    /* Save GOT base in PCB for vfork — child needs parent's r9 */
+    p->got_base = got_sram_addr;
+
     /* ── 10. Initialise file descriptors (stdin/stdout/stderr → tty) ──── */
     fd_stdio_init(p);
 

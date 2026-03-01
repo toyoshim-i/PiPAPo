@@ -12,6 +12,7 @@
 #define EIO      5   /* I/O error                           */
 #define ENOEXEC  8   /* Exec format error                   */
 #define EBADF    9   /* Bad file descriptor                 */
+#define ECHILD  10   /* No child processes                  */
 #define ENOMEM  12   /* Out of memory                       */
 #define EACCES  13   /* Permission denied                   */
 #define EBUSY   16   /* Device or resource busy             */

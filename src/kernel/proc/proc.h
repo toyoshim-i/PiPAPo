@@ -45,7 +45,8 @@ typedef enum {
     PROC_FREE     = 0,   /* slot is not in use                              */
     PROC_RUNNABLE = 1,   /* ready to run, or currently executing            */
     PROC_SLEEPING = 2,   /* blocked until sleep_until SysTick count         */
-    PROC_ZOMBIE   = 3,   /* exited; slot freed when parent calls waitpid()  */
+    PROC_BLOCKED  = 3,   /* blocked on vfork/waitpid                        */
+    PROC_ZOMBIE   = 4,   /* exited; slot freed when parent calls waitpid()  */
 } proc_state_t;
 
 typedef struct pcb {
@@ -76,6 +77,11 @@ typedef struct pcb {
     /* ── Scheduling ─────────────────────────────────────────────────────── */
     uint32_t ticks_remaining;   /* SysTick ticks left in current time-slice   */
     uint32_t sleep_until;       /* wake when SysTick count reaches this value */
+
+    /* ── vfork / waitpid ──────────────────────────────────────────────── */
+    struct pcb *vfork_parent;   /* non-NULL while child shares parent's space */
+    int         exit_status;    /* set by _exit(), read by waitpid()          */
+    uint32_t    got_base;       /* r9 value (GOT SRAM address) for PIC       */
 } pcb_t;
 
 /* ── Globals ────────────────────────────────────────────────────────────────── */

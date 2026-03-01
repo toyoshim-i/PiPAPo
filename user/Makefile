@@ -37,7 +37,7 @@ COMMON_OBJS := crt0.o syscall.o
 
 # ── Programs ─────────────────────────────────────────────────────────────────
 # Add new programs here.  Each FOO needs a FOO.c source file.
-PROGRAMS := hello
+PROGRAMS := hello test_vfork
 
 ELFS := $(addsuffix .elf, $(PROGRAMS))
 

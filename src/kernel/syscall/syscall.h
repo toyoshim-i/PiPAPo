@@ -26,6 +26,7 @@
 #define SYS_WRITE      4
 #define SYS_OPEN       5
 #define SYS_CLOSE      6
+#define SYS_WAITPID    7
 #define SYS_EXECVE    11
 #define SYS_CHDIR     12
 #define SYS_LSEEK     19
@@ -35,6 +36,7 @@
 #define SYS_GETDENTS 141
 #define SYS_NANOSLEEP 162
 #define SYS_GETCWD   183
+#define SYS_VFORK    190
 
 /* ── Dispatch ──────────────────────────────────────────────────────────────── */
 
@@ -48,6 +50,26 @@
  */
 void syscall_dispatch(uint32_t *frame, uint32_t nr);
 
+/* Set by sys_execve after do_execve succeeds.  Checked by SVC_Handler
+ * to perform a PendSV-like context restore from the new process image
+ * before exception return (so r9/GOT base is correct). */
+extern volatile int exec_pending;
+
+/* Syscall restart mechanism for blocking syscalls (waitpid, read, etc.).
+ *
+ * Problem: sched_yield() from SVC context only pends PendSV — it cannot
+ * actually context-switch because PendSV has lower priority than SVC.
+ * After SVC returns, PendSV tail-chains and performs the switch.  But the
+ * syscall has already returned a (wrong) value to frame[0].
+ *
+ * Solution: blocking syscalls set svc_restart = 1.  SVC_Handler detects
+ * this, restores frame[0] from svc_saved_a0, and adjusts the stacked PC
+ * back by 2 bytes (size of "svc 0").  When the process is rescheduled,
+ * PendSV exception-returns to the SVC instruction, which re-executes the
+ * syscall with the original arguments. */
+extern volatile int      svc_restart;
+extern volatile uint32_t svc_saved_a0;
+
 /* ── Syscall implementations ───────────────────────────────────────────────── */
 /*
  * Declared here; defined in syscall.c (stubs) until Steps 9-10 wire them
@@ -58,6 +80,8 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr);
 long sys_exit(long status);
 long sys_getpid(void);
 long sys_execve(const char *path);
+long sys_vfork(uint32_t *frame);
+long sys_waitpid(long pid, long status_ptr, long options);
 
 /* sys_io.c */
 long sys_read(long fd, char *buf, size_t n);

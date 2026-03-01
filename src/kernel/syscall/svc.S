@@ -18,7 +18,24 @@
 @
 @ syscall_dispatch() writes the return value into frame[0] (stacked r0)
 @ so the caller sees it in r0 after exception return.
+@
+@ Post-dispatch checks (in priority order):
+@
+@   1. exec_pending — sys_execve loaded a new process image.  Do a full
+@      PendSV-style context restore from current->sp so r4-r11 (including
+@      r9/GOT base) are correct for the new program.
+@
+@   2. Process not RUNNABLE — the syscall blocked (PROC_BLOCKED/ZOMBIE/
+@      SLEEPING).  sched_yield() already pended PendSV, which will
+@      tail-chain after our exception return and perform the context
+@      switch.  If svc_restart is set (e.g. by sys_waitpid), we restore
+@      the original frame[0] and adjust the stacked PC back by 2 so the
+@      SVC re-executes when the process is rescheduled.
 @ =============================================================================
+
+.equ PCB_SP_OFFSET,    32      @ offsetof(pcb_t, sp) — see proc.h
+.equ PCB_STATE_OFFSET, 44      @ offsetof(pcb_t, state) — r4..r11(32)+sp(4)+pid(4)+ppid(4)
+.equ PROC_RUNNABLE,     1
 
 .syntax unified
 .cpu cortex-m0plus
@@ -33,13 +50,87 @@ SVC_Handler:
     push  {r7, lr}          @ [sp]   = r7 (syscall nr)
                             @ [sp+4] = lr (EXC_RETURN — 0xFFFFFFFD)
 
+    @ --- Save original frame[0] for potential syscall restart ---
+    mrs   r0, psp           @ r0 = frame pointer on PSP
+    ldr   r2, [r0]          @ r2 = original frame[0] (a0)
+    ldr   r3, =svc_saved_a0
+    str   r2, [r3]          @ svc_saved_a0 = original a0
+
     @ --- Build argument registers for syscall_dispatch(frame, nr) ---
-    mrs   r0, psp           @ r0 = frame: stacked {r0,r1,r2,r3,...} on PSP
+    @     r0 already = frame (PSP)
     ldr   r1, [sp, #0]      @ r1 = saved r7 = syscall number
 
     @ --- Dispatch ---
     bl    syscall_dispatch   @ writes return value into frame[0] (stacked r0)
 
-    @ --- Return from exception ---
+    @ --- Check 1: exec_pending (sys_execve loaded new image) ---
+    ldr   r0, =exec_pending
+    ldr   r1, [r0]
+    cmp   r1, #0
+    bne   .Lexec_restore
+
+    @ --- Check 2: process state — did the syscall block/exit? ---
+    ldr   r0, =current
+    ldr   r0, [r0]                  @ r0 = current PCB
+    ldr   r1, [r0, #PCB_STATE_OFFSET] @ r1 = current->state
+    cmp   r1, #PROC_RUNNABLE
+    beq   .Lnormal_return
+
+    @ Process is not runnable.  PendSV (already pended by sched_yield)
+    @ will tail-chain after our exception return and switch context.
+    @ Check if we need to restart the syscall on next schedule.
+    ldr   r0, =svc_restart
+    ldr   r1, [r0]
+    cmp   r1, #0
+    beq   .Lnormal_return           @ no restart — just return
+
+    @ --- Syscall restart: restore frame[0] and adjust PC-2 ---
+    movs  r1, #0
+    str   r1, [r0]                  @ svc_restart = 0
+
+    mrs   r0, psp
+    ldr   r1, =svc_saved_a0
+    ldr   r1, [r1]
+    str   r1, [r0, #0]             @ frame[0] = original a0 (pid arg etc.)
+    ldr   r1, [r0, #24]            @ frame[6] = stacked PC
+    subs  r1, #2                   @ PC -= 2 (back to "svc 0" instruction)
+    str   r1, [r0, #24]
+
+    @ Fall through to normal return — PendSV tail-chains and saves
+    @ the adjusted context.  When rescheduled, SVC re-executes.
+
+.Lnormal_return:
+    @ --- Normal return from exception ---
     pop   {r7, pc}           @ r7  = restored caller's r7
                              @ pc  = EXC_RETURN → exception return to Thread mode
+                             @ If PendSV pending, it tail-chains immediately.
+
+.Lexec_restore:
+    @ --- sys_execve: full context restore from new process image ---
+    @ Clear the flag
+    movs  r1, #0
+    str   r1, [r0]
+
+    @ Load current->sp (points at the new SW frame built by do_execve)
+    ldr   r0, =current
+    ldr   r0, [r0]           @ r0 = current PCB
+    ldr   r0, [r0, #PCB_SP_OFFSET]  @ r0 = current->sp (SW frame base)
+
+    @ Restore r4-r11 from the SW frame (same code as PendSV_Handler)
+    ldmia r0!, {r4-r7}       @ restore r4-r7; r0 advances to r8 area
+    push  {r4-r7}             @ preserve real r4-r7 on MSP
+    ldmia r0!, {r4-r7}       @ load saved r8-r11 into r4-r7
+    mov   r8,  r4
+    mov   r9,  r5             @ ← r9 = GOT base from new process
+    mov   r10, r6
+    mov   r11, r7
+    pop   {r4-r7}             @ recover real r4-r7
+
+    @ Set PSP to the new HW exception frame
+    msr   psp, r0             @ PSP = SW frame + 32 = HW frame base
+
+    @ Return from exception (clean up the push {r7, lr} from entry)
+    pop   {r7, pc}            @ pc = EXC_RETURN → exception return
+
+    @ Literal pool
+    .ltorg

@@ -304,19 +304,20 @@ void kmain(void)
     vfs_integration_test();
 
     /* ------------------------------------------------------------------
-     * Phase 3 Step 3: exec /bin/hello as the init process (pid 1)
+     * Phase 3 Step 5: exec /bin/test_vfork as the init process (pid 1)
+     * Tests vfork + execve + waitpid integration.
      * ------------------------------------------------------------------ */
     proc_table[0].stack_page = page_alloc();
 
     pcb_t *init = proc_alloc();
-    int exec_err = do_execve(init, "/bin/hello");
+    int exec_err = do_execve(init, "/bin/test_vfork");
     if (exec_err == 0) {
         init->state = PROC_RUNNABLE;
-        uart_puts("EXEC: /bin/hello loaded, pid=");
+        uart_puts("EXEC: /bin/test_vfork loaded, pid=");
         uart_print_dec(init->pid);
         uart_puts("\n");
     } else {
-        uart_puts("EXEC: /bin/hello FAILED (err=");
+        uart_puts("EXEC: /bin/test_vfork FAILED (err=");
         uart_print_dec((uint32_t)(-(int)exec_err));
         uart_puts(")\n");
     }

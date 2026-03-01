@@ -16,8 +16,11 @@ typedef int32_t pid_t;
 
 /* ── Process management ──────────────────────────────────────────────────── */
 
-void _exit(int status) __attribute__((noreturn));
+void  _exit(int status) __attribute__((noreturn));
 pid_t getpid(void);
+pid_t vfork(void);
+int   execve(const char *path, char *const argv[], char *const envp[]);
+pid_t waitpid(pid_t pid, int *status, int options);
 
 /* ── File I/O ────────────────────────────────────────────────────────────── */
 
