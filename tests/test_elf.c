@@ -247,6 +247,141 @@ static void test_entry_preserves_thumb_bit(void)
     ASSERT_EQ((int)elf_entry(&h), (int)0x10001001u);
 }
 
+/* ── elf_find_got tests ──────────────────────────────────────────────────── */
+
+/*
+ * Build a synthetic ELF in a byte buffer with section headers including .got.
+ *
+ * Layout:
+ *   [0x000] ELF header (52 bytes)
+ *   [0x034] 2 program headers (64 bytes)
+ *   [0x074] padding to 0x100
+ *   [0x100] .text data (16 bytes)
+ *   [0x110] .got data (8 bytes)
+ *   [0x118] section name string table (.shstrtab)
+ *   [0x200] section header table (5 entries × 40 bytes)
+ */
+
+/* Section name strings: "\0.text\0.got\0.shstrtab\0" */
+static const char shstrtab_data[] = "\0.text\0.got\0.shstrtab\0";
+/* Offsets:                          0  1     7     12          */
+
+#define TEST_SHSTRTAB_OFF  0x118
+#define TEST_SHDR_OFF      0x200
+
+static void build_got_test_elf(uint8_t *buf, size_t bufsz)
+{
+    memset(buf, 0, bufsz);
+
+    /* ELF header */
+    elf32_ehdr_t *ehdr = (elf32_ehdr_t *)buf;
+    elf32_ehdr_t h = make_valid_ehdr();
+    h.e_phnum     = 2;
+    h.e_shoff     = TEST_SHDR_OFF;
+    h.e_shnum     = 5;   /* NULL, .text, .got, .shstrtab, + one spare */
+    h.e_shentsize = sizeof(elf32_shdr_t);
+    h.e_shstrndx  = 3;   /* index of .shstrtab in section header table */
+    memcpy(ehdr, &h, sizeof(h));
+
+    /* Program headers */
+    elf32_phdr_t text_ph = make_load_phdr();
+    text_ph.p_offset = 0x100;
+    text_ph.p_vaddr  = 0x0000;
+    text_ph.p_filesz = 16;
+    text_ph.p_memsz  = 16;
+    text_ph.p_flags  = PF_R | PF_X;
+    memcpy(buf + sizeof(elf32_ehdr_t), &text_ph, sizeof(text_ph));
+
+    elf32_phdr_t data_ph;
+    memset(&data_ph, 0, sizeof(data_ph));
+    data_ph.p_type   = PT_LOAD;
+    data_ph.p_offset = 0x110;
+    data_ph.p_vaddr  = 0x0010;
+    data_ph.p_filesz = 8;
+    data_ph.p_memsz  = 8;
+    data_ph.p_flags  = PF_R | PF_W;
+    memcpy(buf + sizeof(elf32_ehdr_t) + sizeof(elf32_phdr_t), &data_ph, sizeof(data_ph));
+
+    /* .shstrtab data */
+    memcpy(buf + TEST_SHSTRTAB_OFF, shstrtab_data, sizeof(shstrtab_data));
+
+    /* Section header table */
+    elf32_shdr_t *shdrs = (elf32_shdr_t *)(buf + TEST_SHDR_OFF);
+
+    /* [0] NULL */
+    memset(&shdrs[0], 0, sizeof(elf32_shdr_t));
+
+    /* [1] .text */
+    memset(&shdrs[1], 0, sizeof(elf32_shdr_t));
+    shdrs[1].sh_name   = 1;      /* ".text" at shstrtab+1 */
+    shdrs[1].sh_type   = 1;      /* SHT_PROGBITS */
+    shdrs[1].sh_flags  = 6;      /* SHF_ALLOC | SHF_EXECINSTR */
+    shdrs[1].sh_addr   = 0x0000;
+    shdrs[1].sh_offset = 0x100;
+    shdrs[1].sh_size   = 16;
+
+    /* [2] .got */
+    memset(&shdrs[2], 0, sizeof(elf32_shdr_t));
+    shdrs[2].sh_name   = 7;      /* ".got" at shstrtab+7 */
+    shdrs[2].sh_type   = 1;      /* SHT_PROGBITS */
+    shdrs[2].sh_flags  = 3;      /* SHF_WRITE | SHF_ALLOC */
+    shdrs[2].sh_addr   = 0x0010;
+    shdrs[2].sh_offset = 0x110;
+    shdrs[2].sh_size   = 8;
+    shdrs[2].sh_addralign = 4;
+    shdrs[2].sh_entsize   = 4;
+
+    /* [3] .shstrtab */
+    memset(&shdrs[3], 0, sizeof(elf32_shdr_t));
+    shdrs[3].sh_name   = 12;     /* ".shstrtab" at shstrtab+12 */
+    shdrs[3].sh_type   = 3;      /* SHT_STRTAB */
+    shdrs[3].sh_offset = TEST_SHSTRTAB_OFF;
+    shdrs[3].sh_size   = sizeof(shstrtab_data);
+
+    /* [4] spare (unused) */
+    memset(&shdrs[4], 0, sizeof(elf32_shdr_t));
+}
+
+static void test_find_got_present(void)
+{
+    uint8_t buf[0x400];
+    build_got_test_elf(buf, sizeof(buf));
+
+    elf_got_info_t got;
+    int rc = elf_find_got((const elf32_ehdr_t *)buf, buf, &got);
+    ASSERT_EQ(rc, 0);
+    ASSERT_EQ((int)got.offset, 0x110);
+    ASSERT_EQ((int)got.addr, 0x0010);
+    ASSERT_EQ((int)got.size, 8);
+}
+
+static void test_find_got_absent(void)
+{
+    /* Build ELF, then rename .got to .xxx in the string table */
+    uint8_t buf[0x400];
+    build_got_test_elf(buf, sizeof(buf));
+    /* Corrupt the ".got" name to ".xxx" */
+    buf[TEST_SHSTRTAB_OFF + 7] = '.';
+    buf[TEST_SHSTRTAB_OFF + 8] = 'x';
+    buf[TEST_SHSTRTAB_OFF + 9] = 'x';
+    buf[TEST_SHSTRTAB_OFF + 10] = 'x';
+
+    elf_got_info_t got;
+    int rc = elf_find_got((const elf32_ehdr_t *)buf, buf, &got);
+    ASSERT_EQ(rc, 1);   /* not found */
+}
+
+static void test_find_got_no_sections(void)
+{
+    elf32_ehdr_t h = make_valid_ehdr();
+    h.e_shoff = 0;
+    h.e_shnum = 0;
+
+    elf_got_info_t got;
+    int rc = elf_find_got(&h, (const uint8_t *)&h, &got);
+    ASSERT_EQ(rc, 1);   /* no section headers */
+}
+
 /* ── main ────────────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -274,6 +409,11 @@ int main(void)
     TEST_GROUP("elf_entry");
     RUN_TEST(test_entry_returns_address);
     RUN_TEST(test_entry_preserves_thumb_bit);
+
+    TEST_GROUP("elf_find_got");
+    RUN_TEST(test_find_got_present);
+    RUN_TEST(test_find_got_absent);
+    RUN_TEST(test_find_got_no_sections);
 
     TEST_SUMMARY();
 }

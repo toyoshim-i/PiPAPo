@@ -22,8 +22,13 @@ NM      := $(CROSS)nm
 ROMFS_BIN ?= ../romfs/bin
 
 # Compiler / assembler flags — Cortex-M0+ Thumb, freestanding, no libc
+# PIC flags: all data references go through GOT (r9 = GOT base, set by kernel).
+# -mno-pic-data-is-text-relative is essential: .text lives in flash (XIP) while
+# .data/.got live in SRAM — they are at unrelated addresses.
 CFLAGS  := -mthumb -mcpu=cortex-m0plus -march=armv6s-m \
-           -ffreestanding -nostdlib -Os -g -Wall -Werror
+           -ffreestanding -nostdlib -Os -g -Wall -Werror \
+           -fPIC -msingle-pic-base -mpic-register=r9 \
+           -mno-pic-data-is-text-relative
 ASFLAGS := -mthumb -mcpu=cortex-m0plus -march=armv6s-m
 LDFLAGS := -nostdlib -T user.ld -Wl,--gc-sections
 

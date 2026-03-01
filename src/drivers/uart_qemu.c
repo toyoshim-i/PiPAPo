@@ -63,8 +63,9 @@ void uart_init_console(void)
 
 void uart_putc(char c)
 {
-    while (UART_STATE & UART_STATE_TXFULL)  /* wait if TX buffer full */
-        ;
+    /* QEMU CMSDK UART: TXFULL is always 0 in the emulator, so no polling
+     * needed.  Skipping the busy-wait avoids potential deadlocks when
+     * called from SVC handler context (e.g., user-space sys_write). */
     UART_DATA = (uint32_t)(unsigned char)c;
 }
 

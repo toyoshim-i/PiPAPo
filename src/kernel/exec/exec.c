@@ -1,11 +1,15 @@
 /*
- * exec.c — ELF binary loader for PPAP
+ * exec.c — ELF binary loader for PPAP (XIP + PIC/GOT relocation)
  *
- * Loads an ELF binary from romfs flash into SRAM and prepares a process
- * to execute it.  Code/data segments are copied to their linked SRAM
- * addresses (USER_CODE_BASE region).  The stack is allocated from the
- * page pool.  The process is ready for scheduling after do_execve()
- * returns successfully.
+ * Loads a PIC ELF binary for Execute-In-Place (XIP) from flash:
+ *   - .text + .rodata stay in flash (no SRAM copy)
+ *   - .got + .data + .bss are copied to a single SRAM page
+ *   - GOT entries are relocated to point to actual flash/SRAM addresses
+ *   - r9 is loaded with the SRAM address of the .got section
+ *
+ * The binary is linked at address 0 with two PT_LOAD segments:
+ *   text (PF_R|PF_X): code + rodata  → executes from flash
+ *   data (PF_R|PF_W): .got + .data + .bss → lives in SRAM
  */
 
 #include "exec.h"
@@ -14,7 +18,6 @@
 #include "kernel/mm/page.h"
 #include "kernel/fd/fd.h"
 #include "kernel/errno.h"
-#include "config.h"
 #include <string.h>
 
 /* Maximum PT_LOAD segments we handle */
@@ -53,66 +56,115 @@ int do_execve(pcb_t *p, const char *path)
         return -(int)ENOEXEC;
     }
 
-    /* ── 4. Load each segment into SRAM ────────────────────────────────── */
-    int pages_used = 0;
-    void *allocated_pages[MAX_LOAD_SEGS];
+    /* ── 4. Identify text and data segments ────────────────────────────── */
+    const elf32_phdr_t *text_seg = NULL;
+    const elf32_phdr_t *data_seg = NULL;
 
     for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
-        const elf32_phdr_t *seg = &segs[i];
+        if (segs[i].p_flags & PF_X)
+            text_seg = &segs[i];
+        else if (segs[i].p_flags & PF_W)
+            data_seg = &segs[i];
+    }
 
-        /* Determine which page(s) this segment occupies.
-         * For Phase 3, each segment fits in one page (hello.elf is 68 bytes). */
-        void *page_addr = (void *)(uintptr_t)(seg->p_vaddr & ~(PAGE_SIZE - 1u));
-        void *page = page_alloc_at(page_addr);
-        if (!page) {
-            /* Clean up previously allocated pages */
-            for (int j = 0; j < pages_used; j++)
-                page_free(allocated_pages[j]);
+    if (!text_seg) {
+        vnode_put(vn);
+        return -(int)ENOEXEC;
+    }
+
+    /* ── 5. Text segment: stays in flash (XIP) ─────────────────────────── */
+    uint32_t flash_text_base =
+        (uint32_t)(uintptr_t)file_base + text_seg->p_offset;
+
+    /* Compute the runtime entry point in flash */
+    uint32_t e_entry = elf_entry(ehdr);
+    uint32_t entry = flash_text_base + (e_entry & ~1u) - text_seg->p_vaddr;
+    entry |= (e_entry & 1u);   /* restore Thumb bit */
+
+    /* ── 6. Data segment: copy to SRAM page ────────────────────────────── */
+    uint8_t *sram_page = NULL;
+    uint32_t got_sram_addr = 0;
+
+    if (data_seg) {
+        sram_page = (uint8_t *)page_alloc();
+        if (!sram_page) {
             vnode_put(vn);
             return -(int)ENOMEM;
         }
-        allocated_pages[pages_used++] = page;
 
-        /* Copy file data from flash to SRAM */
-        uint8_t *dest = (uint8_t *)(uintptr_t)seg->p_vaddr;
-        const uint8_t *src = file_base + seg->p_offset;
-        if (seg->p_filesz > 0)
-            memcpy(dest, src, seg->p_filesz);
+        /* Copy initialised data (.got + .data) from flash */
+        if (data_seg->p_filesz > 0)
+            memcpy(sram_page, file_base + data_seg->p_offset,
+                   data_seg->p_filesz);
 
         /* Zero BSS (p_memsz > p_filesz) */
-        if (seg->p_memsz > seg->p_filesz)
-            memset(dest + seg->p_filesz, 0, seg->p_memsz - seg->p_filesz);
+        if (data_seg->p_memsz > data_seg->p_filesz)
+            memset(sram_page + data_seg->p_filesz, 0,
+                   data_seg->p_memsz - data_seg->p_filesz);
+
+        /* ── 7. GOT relocation ─────────────────────────────────────────── */
+        elf_got_info_t got_info;
+        if (elf_find_got(ehdr, file_base, &got_info) == 0) {
+            uint32_t got_offset_in_data =
+                got_info.addr - data_seg->p_vaddr;
+            got_sram_addr =
+                (uint32_t)(uintptr_t)sram_page + got_offset_in_data;
+
+            uint32_t *got =
+                (uint32_t *)(sram_page + got_offset_in_data);
+            uint32_t n_entries = got_info.size / 4;
+
+            for (uint32_t i = 0; i < n_entries; i++) {
+                uint32_t val = got[i];
+                if (val == 0)
+                    continue;   /* reserved / unused entry */
+
+                if (val < data_seg->p_vaddr) {
+                    /* Text/rodata reference → points into flash */
+                    got[i] = val + flash_text_base;
+                } else {
+                    /* Data/BSS reference → points into SRAM page */
+                    got[i] = val - data_seg->p_vaddr +
+                             (uint32_t)(uintptr_t)sram_page;
+                }
+            }
+        }
+
+        p->user_pages[0] = sram_page;
     }
 
-    /* Store code pages in user_pages[] */
-    for (int i = 0; i < pages_used && i < 4; i++)
-        p->user_pages[i] = allocated_pages[i];
-
-    /* ── 5. Allocate stack page ────────────────────────────────────────── */
+    /* ── 8. Allocate stack page ────────────────────────────────────────── */
     void *stack = page_alloc();
     if (!stack) {
-        for (int j = 0; j < pages_used; j++)
-            page_free(allocated_pages[j]);
+        if (sram_page)
+            page_free(sram_page);
         vnode_put(vn);
         return -(int)ENOMEM;
     }
     p->stack_page = stack;
 
-    /* ── 6. Set up the exception frame ─────────────────────────────────── */
-    uint32_t entry = elf_entry(ehdr);
+    /* ── 9. Set up the exception frame ─────────────────────────────────── */
     proc_setup_stack(p, (void (*)(void))(uintptr_t)entry);
 
-    /* ── 7. Initialise file descriptors (stdin/stdout/stderr → tty) ────── */
+    /* Patch r9 (GOT base) in the software frame.
+     * proc_setup_stack builds: [r4, r5, r6, r7, r8, r9, r10, r11]
+     * at p->sp, so r9 is at offset 5 (index 5). */
+    if (got_sram_addr) {
+        uint32_t *sw = (uint32_t *)(uintptr_t)p->sp;
+        sw[5] = got_sram_addr;
+    }
+
+    /* ── 10. Initialise file descriptors (stdin/stdout/stderr → tty) ──── */
     fd_stdio_init(p);
 
-    /* ── 8. Set working directory ──────────────────────────────────────── */
+    /* ── 11. Set working directory ─────────────────────────────────────── */
     extern pcb_t *current;
     if (current)
         memcpy(p->cwd, current->cwd, sizeof(p->cwd));
     else
         strcpy(p->cwd, "/");
 
-    /* ── 9. Release the vnode ──────────────────────────────────────────── */
+    /* ── 12. Release the vnode ─────────────────────────────────────────── */
     vnode_put(vn);
 
     return 0;

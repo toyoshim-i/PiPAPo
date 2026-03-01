@@ -80,3 +80,37 @@ uint32_t elf_entry(const elf32_ehdr_t *ehdr)
 {
     return ehdr->e_entry;
 }
+
+/* ── elf_find_got ───────────────────────────────────────────────────────── */
+
+static int str_eq(const char *a, const char *b)
+{
+    while (*a && *a == *b) { a++; b++; }
+    return *a == *b;
+}
+
+int elf_find_got(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
+                 elf_got_info_t *out)
+{
+    if (ehdr->e_shoff == 0 || ehdr->e_shnum == 0)
+        return 1;   /* no section headers */
+    if (ehdr->e_shstrndx == 0 || ehdr->e_shstrndx >= ehdr->e_shnum)
+        return 1;
+
+    const elf32_shdr_t *sh_table =
+        (const elf32_shdr_t *)(file_base + ehdr->e_shoff);
+    const char *strtab =
+        (const char *)(file_base + sh_table[ehdr->e_shstrndx].sh_offset);
+
+    for (uint16_t i = 0; i < ehdr->e_shnum; i++) {
+        const char *name = strtab + sh_table[i].sh_name;
+        if (str_eq(name, ".got")) {
+            out->offset = sh_table[i].sh_offset;
+            out->addr   = sh_table[i].sh_addr;
+            out->size   = sh_table[i].sh_size;
+            return 0;
+        }
+    }
+
+    return 1;   /* no .got section */
+}

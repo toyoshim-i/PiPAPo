@@ -5,8 +5,8 @@
  * segment-extraction API used by execve() to load user-space binaries
  * from romfs XIP flash.
  *
- * Only static ELF32 ARM Thumb binaries are supported (no dynamic linking,
- * no relocation).  ET_DYN is accepted for future PIC binaries.
+ * PIC binaries (ET_EXEC compiled with -fPIC, linked at address 0) are
+ * loaded via XIP from flash with GOT relocation into SRAM.
  */
 
 #ifndef PPAP_EXEC_ELF_H
@@ -96,6 +96,29 @@ typedef struct {
     uint32_t p_align;
 } elf32_phdr_t;
 
+/* ── ELF32 section header (40 bytes) ────────────────────────────────────── */
+
+typedef struct {
+    uint32_t sh_name;           /* index into section name string table */
+    uint32_t sh_type;
+    uint32_t sh_flags;
+    uint32_t sh_addr;           /* virtual address in linked image */
+    uint32_t sh_offset;         /* file offset */
+    uint32_t sh_size;           /* section size in bytes */
+    uint32_t sh_link;
+    uint32_t sh_info;
+    uint32_t sh_addralign;
+    uint32_t sh_entsize;
+} elf32_shdr_t;
+
+/* ── GOT location descriptor ────────────────────────────────────────────── */
+
+typedef struct {
+    uint32_t offset;    /* file offset of .got section */
+    uint32_t addr;      /* link address (virtual address) of .got */
+    uint32_t size;      /* size in bytes */
+} elf_got_info_t;
+
 /* ── Parser API ──────────────────────────────────────────────────────────── */
 
 /*
@@ -126,5 +149,17 @@ int elf_load_segments(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
  * For ARM Thumb binaries the address has bit 0 set (Thumb bit).
  */
 uint32_t elf_entry(const elf32_ehdr_t *ehdr);
+
+/*
+ * elf_find_got — locate the .got section in an ELF binary.
+ *
+ * Searches the section header table for a section named ".got" and fills
+ * `out` with its file offset, link address, and size.
+ *
+ * Returns 0 on success, 1 if no .got section exists (binary has no global
+ * data references), or -ENOEXEC if section headers are absent or malformed.
+ */
+int elf_find_got(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
+                 elf_got_info_t *out);
 
 #endif /* PPAP_EXEC_ELF_H */
