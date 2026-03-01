@@ -21,6 +21,7 @@
 #include "vfs/vfs.h"
 #include "fs/romfs.h"
 #include "fs/devfs.h"
+#include "fs/procfs.h"
 #include "syscall/syscall.h"
 #include "smp.h"
 
@@ -84,6 +85,13 @@ void kmain(void)
         uart_puts("VFS: devfs mounted at /dev\n");
     } else {
         uart_puts("VFS: devfs mount FAILED\n");
+    }
+
+    /* Phase 2 Step 9: mount procfs at /proc */
+    if (vfs_mount("/proc", &procfs_ops, MNT_RDONLY, NULL) == 0) {
+        uart_puts("VFS: procfs mounted at /proc\n");
+    } else {
+        uart_puts("VFS: procfs mount FAILED\n");
     }
 
     /* Phase 1 Step 10: wire fd 0/1/2 to the UART tty driver */

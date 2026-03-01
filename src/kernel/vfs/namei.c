@@ -219,8 +219,11 @@ static int lookup_walk(const char *normalized, vnode_t **result, int symloop)
 
         /* ── FS lookup ────────────────────────────────────────────────
          * Ask the current directory's FS driver to find the child.
+         * Use cur->mount when set (always valid for mount roots and
+         * for vnodes returned by FS lookup); fall back to root_mnt
+         * only for the initial root vnode before any mount crossing.
          */
-        mount_entry_t *cur_mnt = cur_from_lookup ? cur->mount : root_mnt;
+        mount_entry_t *cur_mnt = cur->mount ? cur->mount : root_mnt;
         if (!cur_mnt || !cur_mnt->ops || !cur_mnt->ops->lookup) {
             if (cur_from_lookup)
                 vnode_put(cur);
