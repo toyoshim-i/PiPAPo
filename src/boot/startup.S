@@ -49,11 +49,11 @@ _vectors:
     .word 0                     @ 8:  Reserved
     .word 0                     @ 9:  Reserved
     .word 0                     @ 10: Reserved
-    .word Default_Handler       @ 11: SVCall
+    .word Default_Handler       @ 11: SVCall  (Step 8: replaced by SVC_Handler)
     .word 0                     @ 12: Reserved
     .word 0                     @ 13: Reserved
-    .word Default_Handler       @ 14: PendSV
-    .word Default_Handler       @ 15: SysTick
+    .word PendSV_Handler        @ 14: PendSV  (switch.S — context switch)
+    .word SysTick_Handler       @ 15: SysTick (sched.c — tick + PendSV trigger)
 
     @ --- RP2040 external interrupts: IRQ0-IRQ25 ---
     .rept 26

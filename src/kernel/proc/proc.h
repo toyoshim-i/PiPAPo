@@ -31,6 +31,15 @@ struct file;
 #define FD_MAX            16    /* file descriptors per process               */
 #define PROC_DEFAULT_TICKS 10   /* default time-slice length in SysTick ticks */
 
+/*
+ * PCB_SP_OFFSET: byte offset of the `sp` field within pcb_t.
+ * Used in switch.S to save/restore the process stack pointer.
+ * A _Static_assert in proc.c verifies this at compile time.
+ *
+ * Layout: r4(0) r5(4) r6(8) r7(12) r8(16) r9(20) r10(24) r11(28) sp(32)
+ */
+#define PCB_SP_OFFSET  32u
+
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
 /* pid_t: POSIX process ID type.  Not provided by arm-none-eabi without
@@ -111,5 +120,18 @@ pcb_t *proc_alloc(void);
  * No-op if p is NULL.
  */
 void proc_free(pcb_t *p);
+
+/*
+ * Set up an initial kernel stack frame for a new process so that
+ * PendSV_Handler can restore it on the first context switch.
+ *
+ * Pre-condition: p->stack_page must already point to a 4 KB page obtained
+ * from page_alloc().  After this call p->sp is set and the process is ready
+ * to be made PROC_RUNNABLE.
+ *
+ * On entry to `entry`, all callee-saved registers are zero, r0–r3 are zero,
+ * and lr = 0xFFFFFFFD (EXC_RETURN: Thread mode, PSP, basic frame).
+ */
+void proc_setup_stack(pcb_t *p, void (*entry)(void));
 
 #endif /* PPAP_PROC_PROC_H */

@@ -19,6 +19,8 @@ add_executable(ppap
     src/kernel/mm/page.c    # Page allocator + boot memory map (Phase 1 Step 1)
     src/kernel/mm/kmem.c    # Fixed-size kernel object pool (Phase 1 Step 2)
     src/kernel/proc/proc.c  # PCB definition + process table (Phase 1 Step 3)
+    src/kernel/proc/switch.S # PendSV context switch (Phase 1 Step 4)
+    src/kernel/proc/sched.c # Round-robin scheduler + SysTick (Phase 1 Steps 4-5)
     src/drivers/uart.c
     src/drivers/clock.c     # PLL_SYS → 133 MHz (Step 7)
 )
@@ -70,6 +72,8 @@ add_executable(ppap_qemu
     src/kernel/mm/page.c        # Page allocator + boot memory map (Phase 1 Step 1)
     src/kernel/mm/kmem.c        # Fixed-size kernel object pool (Phase 1 Step 2)
     src/kernel/proc/proc.c      # PCB definition + process table (Phase 1 Step 3)
+    src/kernel/proc/switch.S    # PendSV context switch (Phase 1 Step 4)
+    src/kernel/proc/sched.c     # Round-robin scheduler + SysTick (Phase 1 Steps 4-5)
     src/drivers/uart_qemu.c     # CMSDK UART for mps2-an500
 )
 

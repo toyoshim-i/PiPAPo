@@ -12,13 +12,20 @@
 # GDB session (in a second terminal):
 #   gdb-multiarch -ex "target remote :1234" build/ppap_qemu.elf
 #
-# Expected output:
+# Expected output (boot header followed by interleaved "0" / "1" indefinitely):
 #   PicoPiAndPortable booting (QEMU mps2-an500)...
 #   UART: CMSDK UART0 @ 0x40004000
 #   Clock: emulated (no PLL — skipping clock_init_pll)
+#   MM: ...
+#   PROC: ...
 #   XIP: xip_add @ 0x000xxxxx (ROM, 0x000xxxxx in QEMU)
 #   XIP: xip_add(3,4) = 7
-#   QEMU smoke test PASSED
+#   SCHED: starting cooperative context-switch test (QEMU)
+#   0
+#   1
+#   0
+#   1
+#   ...  (interleaved output proves PendSV context switch works)
 #
 # Press Ctrl-A X to quit QEMU.
 

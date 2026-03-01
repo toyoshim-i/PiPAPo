@@ -11,8 +11,14 @@
  */
 
 #include "proc.h"
-#include "drivers/uart.h"
-#include <stddef.h>   /* NULL */
+#include "../mm/page.h"   /* PAGE_SIZE — for proc_setup_stack */
+#include "drivers/uart.h" /* uart_puts, uart_print_dec — for proc_init diagnostics */
+#include <stddef.h>   /* NULL, offsetof */
+
+/* Verify PCB_SP_OFFSET matches the actual struct layout at compile time.
+ * If this fires, update PCB_SP_OFFSET in proc.h to match offsetof(pcb_t,sp). */
+_Static_assert(offsetof(pcb_t, sp) == PCB_SP_OFFSET,
+               "PCB_SP_OFFSET does not match offsetof(pcb_t, sp) — update proc.h");
 
 /* ── Globals ─────────────────────────────────────────────────────────────── */
 
@@ -86,4 +92,46 @@ void proc_free(pcb_t *p)
     if (!p)
         return;
     p->state = PROC_FREE;
+}
+
+void proc_setup_stack(pcb_t *p, void (*entry)(void))
+{
+    /*
+     * Build the initial stack frame that PendSV_Handler will restore on
+     * the first context switch into this process.
+     *
+     * Stack grows downward from the top of the 4 KB page.  We push two
+     * layers (high address to low):
+     *
+     *  1. Hardware exception frame (8 words): the CPU pops this when
+     *     PendSV does `bx lr` with EXC_RETURN = 0xFFFFFFFD.
+     *
+     *  2. Software callee-saved frame (8 words): PendSV_Handler loads
+     *     r4–r11 from here, then sets PSP to the start of layer 1.
+     *
+     * p->sp is set to the bottom of layer 2 (= the `r4` slot).
+     */
+    uint32_t *sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
+
+    /* ── Layer 1: hardware exception frame (high → low) ──────────────── */
+    *--sp = 0x01000000u;                  /* xpsr: Thumb bit (T=1)       */
+    *--sp = (uint32_t)entry & ~1u;        /* pc: entry point (bit0 clear)*/
+    *--sp = 0xFFFFFFFDu;                  /* lr: EXC_RETURN thread/PSP   */
+    *--sp = 0u;                           /* r12                         */
+    *--sp = 0u;                           /* r3                          */
+    *--sp = 0u;                           /* r2                          */
+    *--sp = 0u;                           /* r1                          */
+    *--sp = 0u;                           /* r0                          */
+
+    /* ── Layer 2: software callee-saved frame (r11..r4, high → low) ─── */
+    *--sp = 0u;   /* r11 */
+    *--sp = 0u;   /* r10 */
+    *--sp = 0u;   /* r9  */
+    *--sp = 0u;   /* r8  */
+    *--sp = 0u;   /* r7  */
+    *--sp = 0u;   /* r6  */
+    *--sp = 0u;   /* r5  */
+    *--sp = 0u;   /* r4  */   /* ← pcb_t.sp points here */
+
+    p->sp = (uint32_t)(uintptr_t)sp;
 }
