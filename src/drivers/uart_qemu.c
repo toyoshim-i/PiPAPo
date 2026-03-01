@@ -44,6 +44,7 @@
 #define UART_BAUDDIV REG(UART_BASE + 0x10u)
 
 #define UART_STATE_TXFULL  (1u << 0)  /* TX buffer full — wait before writing */
+#define UART_STATE_RXFULL  (1u << 1)  /* RX byte ready to read               */
 #define UART_CTRL_TX_EN    (1u << 0)  /* enable transmitter */
 #define UART_CTRL_RX_EN    (1u << 1)  /* enable receiver */
 
@@ -84,6 +85,20 @@ void uart_flush(void)
 void uart_reinit_133mhz(void)
 {
     /* No clock change in QEMU — baud rate stays at 25 MHz / 217 */
+}
+
+void uart_init_irq(void)
+{
+    /* CMSDK UART has no FIFO interrupt support in QEMU.
+     * TX is already effectively non-blocking (TXFULL never set in QEMU).
+     * Leave in polling mode — no IRQ setup needed. */
+}
+
+int uart_getc(void)
+{
+    if (UART_STATE & UART_STATE_RXFULL)
+        return (int)(unsigned char)UART_DATA;
+    return -1;
 }
 
 void uart_print_hex32(uint32_t v)

@@ -6,6 +6,7 @@
  * Step 7: PLL_SYS to 133 MHz + UART baud rate update.
  * Step 9: XIP verification — address check, correctness, SysTick benchmark.
  * Phase 1 Steps 1-5: mm_init, proc_init, context switch, SysTick scheduler.
+ * Phase 1 Step 6: UART0 IRQ mode — uart_init_irq() before sched_start().
  */
 
 #include "drivers/uart.h"
@@ -95,6 +96,13 @@ void kmain(void)
     p1->state = PROC_RUNNABLE;
 
     uart_puts("SCHED: starting preemptive scheduler (10 ms slices @ 133 MHz)\n");
+
+    /* Drain any remaining polling TX, then switch UART0 to IRQ-driven mode.
+     * After uart_init_irq() all uart_putc/uart_puts calls from threads are
+     * non-blocking ring-buffer writes; UART0_IRQ_Handler does the draining. */
+    uart_flush();
+    uart_init_irq();
+
     sched_start();
 
     /* Thread 0 continues here — print "0\n" in a loop */

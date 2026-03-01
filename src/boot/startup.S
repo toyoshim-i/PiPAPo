@@ -56,7 +56,13 @@ _vectors:
     .word SysTick_Handler       @ 15: SysTick (sched.c — tick + PendSV trigger)
 
     @ --- RP2040 external interrupts: IRQ0-IRQ25 ---
-    .rept 26
+    @ IRQ0-IRQ19
+    .rept 20
+    .word Default_Handler
+    .endr
+    .word UART0_IRQ_Handler     @ IRQ20 = UART0 (uart.c — uart_init_irq arms it)
+    @ IRQ21-IRQ25
+    .rept 5
     .word Default_Handler
     .endr
 
@@ -155,3 +161,9 @@ Reset_Handler:
 .global Default_Handler
 Default_Handler:
     b    Default_Handler
+
+@ Weak alias: uart.c provides the real UART0_IRQ_Handler for the hardware
+@ build.  The QEMU build (uart_qemu.c) never enables this IRQ, so the
+@ alias to Default_Handler is a safe fallback.
+.weak UART0_IRQ_Handler
+.thumb_set UART0_IRQ_Handler, Default_Handler

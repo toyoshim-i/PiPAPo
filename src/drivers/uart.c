@@ -14,6 +14,7 @@
 
 #include "uart.h"
 #include <stdint.h>
+#include <stddef.h>
 
 /* ==========================================================================
  * Register access helper
@@ -101,14 +102,61 @@
 #define UART0_LCR_H  REG(0x4003402Cu)  /* Line Control Register */
 #define UART0_CR     REG(0x40034030u)  /* Control Register */
 
-#define UART_FR_TXFF     (1u << 5)     /* FR: TX FIFO full — must wait */
-#define UART_FR_BUSY     (1u << 3)     /* FR: UART busy (TX in progress or FIFO not empty) */
+#define UART_FR_TXFF     (1u << 5)     /* FR: TX FIFO full — must wait     */
+#define UART_FR_RXFE     (1u << 4)     /* FR: RX FIFO empty                */
+#define UART_FR_BUSY     (1u << 3)     /* FR: UART busy (shift reg active) */
 
 /* LCR_H: WLEN[6:5]=3 (8-bit), FEN[4]=1 (FIFOs on) → 0x70 */
 #define UART_LCR_8N1_FIFO  ((3u << 5) | (1u << 4))
 
 /* CR: UARTEN[0]=1, TXE[8]=1, RXE[9]=1 → 0x301 */
 #define UART_CR_ENABLE  ((1u << 0) | (1u << 8) | (1u << 9))
+
+/* ==========================================================================
+ * UART0 interrupt registers (base 0x40034000)
+ * ========================================================================== */
+
+#define UART0_IMSC   REG(0x40034038u)  /* Interrupt Mask Set/Clear          */
+#define UART0_ICR    REG(0x40034044u)  /* Interrupt Clear (write-1-to-clear)*/
+
+#define UART_IMSC_RXIM  (1u << 4)  /* mask: RX FIFO at/above level     */
+#define UART_IMSC_TXIM  (1u << 5)  /* mask: TX FIFO at/below level     */
+#define UART_IMSC_RTIM  (1u << 6)  /* mask: RX timeout (data in FIFO)  */
+
+#define UART_ICR_RXIC   (1u << 4)  /* clear RX interrupt flag          */
+#define UART_ICR_RTIC   (1u << 6)  /* clear RX timeout interrupt flag  */
+
+/* ==========================================================================
+ * NVIC — enable UART0 IRQ (IRQ 20 on RP2040)
+ * ========================================================================== */
+
+#define NVIC_ISER       REG(0xE000E100u)  /* Interrupt Set-Enable Register */
+#define UART0_IRQ_BIT   (1u << 20u)       /* UART0 = IRQ 20                */
+
+/* ==========================================================================
+ * TX/RX ring buffers — used only after uart_init_irq()
+ *
+ * TX: 256 bytes, uint8_t indices auto-wrap at 256.
+ *     One slot reserved to distinguish full from empty.
+ *     Effective capacity: 255 bytes.
+ *     Empty: tx_head == tx_tail
+ *     Full:  (uint8_t)(tx_head + 1) == tx_tail
+ *
+ * RX: 64 bytes, uint8_t indices (0..255).
+ *     Access via index & (UART_RX_SIZE-1).
+ *     Capacity: 64 bytes (no slot reserved; count used for full check).
+ *     Empty: rx_head == rx_tail
+ *     Full:  (uint8_t)(rx_head - rx_tail) == UART_RX_SIZE
+ * ========================================================================== */
+
+#define UART_TX_SIZE  256u
+#define UART_RX_SIZE   64u
+
+static int              irq_mode;              /* 0 = polling, 1 = IRQ     */
+static char             tx_buf[UART_TX_SIZE];
+static char             rx_buf[UART_RX_SIZE];
+static volatile uint8_t tx_head, tx_tail;
+static volatile uint8_t rx_head, rx_tail;
 
 /*
  * Baud rate divisors:
@@ -215,9 +263,33 @@ void uart_init_console(void)
 
 void uart_putc(char c)
 {
-    while (UART0_FR & UART_FR_TXFF)  /* block while TX FIFO is full */
-        ;
-    UART0_DR = (uint32_t)(unsigned char)c;
+    if (!irq_mode) {
+        /* Polling mode: spin until TX FIFO has room */
+        while (UART0_FR & UART_FR_TXFF)
+            ;
+        UART0_DR = (uint32_t)(unsigned char)c;
+        return;
+    }
+
+    /* IRQ mode: write into TX ring buffer, arm TX interrupt.
+     *
+     * Critical section with interrupt-safe spin:
+     *   We disable interrupts to protect the shared ring pointers, but
+     *   re-enable them while waiting if the ring is full so the UART0 IRQ
+     *   handler can drain it. */
+    uint32_t primask;
+    for (;;) {
+        __asm__ volatile("mrs %0, primask\n cpsid i" : "=r"(primask));
+        if ((uint8_t)(tx_head + 1u) != tx_tail)
+            break;  /* ring has space; remain in critical section */
+        /* Ring full — re-enable interrupts so UART0_IRQ_Handler can drain */
+        __asm__ volatile("msr primask, %0" :: "r"(primask));
+    }
+
+    tx_buf[tx_head] = c;
+    tx_head++;
+    UART0_IMSC |= UART_IMSC_TXIM;   /* arm TX interrupt to drain ring */
+    __asm__ volatile("msr primask, %0" :: "r"(primask));
 }
 
 void uart_puts(const char *s)
@@ -231,7 +303,12 @@ void uart_puts(const char *s)
 
 void uart_flush(void)
 {
-    while (UART0_FR & UART_FR_BUSY)  /* wait until TX FIFO empty and shift reg idle */
+    if (irq_mode) {
+        /* IRQ mode: first wait for ring to drain into FIFO */
+        while (tx_head != tx_tail)
+            ;
+    }
+    while (UART0_FR & UART_FR_BUSY)  /* wait for FIFO + shift register to empty */
         ;
 }
 
@@ -248,6 +325,63 @@ void uart_reinit_133mhz(void)
 
     /* Re-enable UART, TX and RX */
     UART0_CR = UART_CR_ENABLE;
+}
+
+/* ==========================================================================
+ * IRQ-mode API
+ * ========================================================================== */
+
+/*
+ * UART0_IRQ_Handler — runs at interrupt priority, drains ring ↔ FIFO.
+ *
+ * TX path: while TX ring is non-empty and TX FIFO has room, move one byte.
+ *          Disarm TXIM when the ring empties so the interrupt stops firing.
+ *
+ * RX path: while RX FIFO has data, move bytes into the RX ring.
+ *          Drop silently on RX ring full (overrun; acceptable in Phase 1).
+ *          Clear RXIC and RTIC so the interrupt de-asserts.
+ */
+void UART0_IRQ_Handler(void)
+{
+    /* TX: drain ring → TX FIFO */
+    while (tx_head != tx_tail && !(UART0_FR & UART_FR_TXFF)) {
+        UART0_DR = (uint32_t)(unsigned char)tx_buf[tx_tail];
+        tx_tail++;
+    }
+    if (tx_head == tx_tail)
+        UART0_IMSC &= ~UART_IMSC_TXIM;  /* ring empty — stop TX interrupts */
+
+    /* RX: drain RX FIFO → ring */
+    while (!(UART0_FR & UART_FR_RXFE)) {
+        uint8_t c = (uint8_t)(UART0_DR & 0xFFu);
+        if ((uint8_t)(rx_head - rx_tail) < UART_RX_SIZE)
+            rx_buf[rx_head++ & (UART_RX_SIZE - 1u)] = (char)c;
+        /* else: RX ring full — byte dropped */
+    }
+    /* Clear RX and RX-timeout interrupt flags */
+    UART0_ICR = UART_ICR_RXIC | UART_ICR_RTIC;
+}
+
+void uart_init_irq(void)
+{
+    /* Leave UARTIFLS at its reset default (TXIFLSEL = ½, RXIFLSEL = ½).
+     * Enable RX and RX-timeout interrupts.  TX interrupt is armed on demand
+     * by uart_putc() so it only fires when there is data to send. */
+    UART0_IMSC = UART_IMSC_RXIM | UART_IMSC_RTIM;
+
+    /* Enable UART0 IRQ in the NVIC (bit 20 = IRQ 20) */
+    NVIC_ISER = UART0_IRQ_BIT;
+
+    irq_mode = 1;
+}
+
+int uart_getc(void)
+{
+    if (rx_head == rx_tail)
+        return -1;  /* RX ring empty */
+    int c = (unsigned char)rx_buf[rx_tail & (UART_RX_SIZE - 1u)];
+    rx_tail++;
+    return c;
 }
 
 void uart_print_hex32(uint32_t v)
