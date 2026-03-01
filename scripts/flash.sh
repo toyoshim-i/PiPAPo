@@ -44,6 +44,13 @@ if ! command -v openocd &>/dev/null; then
     exit 1
 fi
 
+# ── Stop any running OpenOCD (holds the adapter exclusively) ──────────────────
+if pgrep -x openocd &>/dev/null; then
+    echo "[flash] Stopping existing OpenOCD instance..."
+    pkill -x openocd
+    sleep 0.5   # give the adapter a moment to release
+fi
+
 # ── Flash ─────────────────────────────────────────────────────────────────────
 # 'program <elf> verify reset exit':
 #   - Loads all ELF segments into flash (addresses embedded in the ELF)
@@ -53,6 +60,6 @@ fi
 echo "[flash] Flashing $ELF ..."
 openocd \
     -f "$CFG" \
-    -c "program $ELF verify reset exit"
+    -c "program \"$ELF\" verify reset exit"
 
 echo "[flash] Done."
