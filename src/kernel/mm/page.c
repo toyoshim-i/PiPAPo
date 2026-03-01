@@ -12,6 +12,7 @@
  */
 
 #include "page.h"
+#include "kmem.h"
 #include "drivers/uart.h"
 #include <stddef.h>
 
@@ -109,6 +110,26 @@ void mm_init(void)
     uart_puts("  ");
     print_kb(SRAM_DMA_SIZE);
     uart_puts("\n");
+
+    /* ── kmem self-test ───────────────────────────────────────────────────── */
+    /* Exercise the pool mechanism with a tiny local buffer before any real
+     * pool (PCBs, etc.) is created.  Validates alloc, free, and free_count. */
+    typedef struct { uint32_t a; uint32_t b; } test_obj_t;
+    static uint8_t       test_mem[4 * sizeof(test_obj_t)];
+    static kmem_pool_t   test_pool;
+    kmem_pool_init(&test_pool, test_mem, sizeof(test_obj_t), 4u);
+
+    test_obj_t *o1 = kmem_alloc(&test_pool);   /* 3 free */
+    test_obj_t *o2 = kmem_alloc(&test_pool);   /* 2 free */
+    kmem_free(&test_pool, o1);                  /* 3 free */
+    test_obj_t *o3 = kmem_alloc(&test_pool);   /* 2 free */
+    (void)o2; (void)o3;
+
+    uint32_t ok = (o1 != NULL) && (o2 != NULL) && (o3 != NULL)
+               && (kmem_free_count(&test_pool) == 2u);
+
+    uart_puts("MM: kmem self-test ");
+    uart_puts(ok ? "PASSED\n" : "FAILED\n");
 }
 
 void *page_alloc(void)
