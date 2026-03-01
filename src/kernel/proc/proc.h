@@ -83,6 +83,10 @@ typedef struct pcb {
     int         exit_status;    /* set by _exit(), read by waitpid()          */
     uint32_t    got_base;       /* r9 value (GOT SRAM address) for PIC       */
     void       *wait_channel;   /* sleep/wakeup target (e.g. pipe_t*)        */
+
+    /* ── Heap (brk) ──────────────────────────────────────────────────── */
+    uint32_t    brk_base;      /* initial break = end of .data+.bss         */
+    uint32_t    brk_current;   /* current break (grows upward)              */
 } pcb_t;
 
 /* ── Globals ────────────────────────────────────────────────────────────────── */

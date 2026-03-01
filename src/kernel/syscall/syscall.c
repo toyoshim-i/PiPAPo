@@ -90,6 +90,9 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr)
     case SYS_PIPE:
         ret = sys_pipe((int *)(uintptr_t)a0);
         break;
+    case SYS_BRK:
+        ret = sys_brk(a0);
+        break;
     case SYS_DUP2:
         ret = sys_dup2(a0, a1);
         break;

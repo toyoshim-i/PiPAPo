@@ -131,6 +131,11 @@ int do_execve(pcb_t *p, const char *path)
         }
 
         p->user_pages[0] = sram_page;
+
+        /* Set initial program break at end of .data+.bss */
+        uint32_t data_end = (uint32_t)(uintptr_t)sram_page + data_seg->p_memsz;
+        p->brk_base    = data_end;
+        p->brk_current = data_end;
     }
 
     /* ── 8. Allocate stack page ────────────────────────────────────────── */

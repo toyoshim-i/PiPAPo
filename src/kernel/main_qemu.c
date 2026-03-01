@@ -486,6 +486,65 @@ static void dup_integration_test(void)
     uart_puts(" failed ===\n\n");
 }
 
+/* ── brk integration tests ───────────────────────────────────────────────── */
+
+static void brk_integration_test(void)
+{
+    uart_puts("\n=== Phase 3 Step 9: brk integration tests ===\n");
+    test_pass = 0;
+    test_fail = 0;
+
+    /* Set up a fake data page for proc_table[0] so sys_brk works.
+     * In real use, do_execve sets brk_base/brk_current. */
+    void *fake_page = page_alloc();
+    current->user_pages[0] = fake_page;
+    uint32_t base = (uint32_t)(uintptr_t)fake_page + 256;  /* pretend 256B used */
+    current->brk_base    = base;
+    current->brk_current = base;
+
+    /* 1. brk query: sys_brk(0) → returns current break */
+    {
+        long rc = sys_brk(0);
+        test_report("brk query", rc == (long)base);
+    }
+
+    /* 2. brk expand within same page */
+    {
+        long rc = sys_brk((long)(base + 64));
+        test_report("brk expand +64", rc == (long)(base + 64));
+    }
+
+    /* 3. brk below base → -ENOMEM */
+    {
+        long rc = sys_brk((long)(base - 1));
+        test_report("brk below base", rc == -(long)ENOMEM);
+    }
+
+    /* Clean up */
+    current->brk_base = 0;
+    current->brk_current = 0;
+    page_free(fake_page);
+    current->user_pages[0] = NULL;
+
+    /* Summary */
+    uart_puts("=== brk results: ");
+    char digit[4];
+    int idx = 0;
+    int v = test_pass;
+    if (v >= 10) digit[idx++] = '0' + (v / 10);
+    digit[idx++] = '0' + (v % 10);
+    digit[idx] = '\0';
+    uart_puts(digit);
+    uart_puts(" passed, ");
+    idx = 0;
+    v = test_fail;
+    if (v >= 10) digit[idx++] = '0' + (v / 10);
+    digit[idx++] = '0' + (v % 10);
+    digit[idx] = '\0';
+    uart_puts(digit);
+    uart_puts(" failed ===\n\n");
+}
+
 /* ── Context-switch partner (prints "1" in a loop) ───────────────────────── */
 
 static void thread_loop(void)
@@ -541,6 +600,9 @@ void kmain(void)
 
     /* Phase 3 Step 8: dup/dup2 integration tests */
     dup_integration_test();
+
+    /* Phase 3 Step 9: brk integration tests */
+    brk_integration_test();
 
     /* ------------------------------------------------------------------
      * Phase 3 Step 5: exec /bin/test_vfork as the init process (pid 1)

@@ -38,6 +38,7 @@
 #define SYS_GETCWD   183
 #define SYS_DUP       41
 #define SYS_PIPE      42
+#define SYS_BRK       45
 #define SYS_DUP2      63
 #define SYS_VFORK    190
 
@@ -95,6 +96,9 @@ long sys_nanosleep(void *req, void *rem);
 
 /* fd/pipe.c */
 long sys_pipe(int *fds);
+
+/* sys_mem.c */
+long sys_brk(long addr);
 
 /* sys_fs.c — dup/dup2 */
 long sys_dup(long oldfd);

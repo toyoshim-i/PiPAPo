@@ -32,4 +32,8 @@ int     pipe(int fds[2]);
 int     dup(int oldfd);
 int     dup2(int oldfd, int newfd);
 
+/* ── Memory management ──────────────────────────────────────────────────── */
+
+void *brk(void *addr);
+
 #endif /* PPAP_USER_SYSCALL_H */

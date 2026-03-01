@@ -104,6 +104,17 @@ getpid:
     svc  0
     pop  {r7, pc}
 
+@ --- brk (SYS_BRK = 45) -------------------------------------------------------
+@ void *brk(void *addr);
+.section .text.brk, "ax", %progbits
+.global brk
+.thumb_func
+brk:
+    push {r7, lr}
+    movs r7, #45
+    svc  0
+    pop  {r7, pc}
+
 @ --- dup (SYS_DUP = 41) -------------------------------------------------------
 @ int dup(int oldfd);
 .section .text.dup, "ax", %progbits
