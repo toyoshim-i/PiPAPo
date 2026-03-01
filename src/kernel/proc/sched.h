@@ -72,4 +72,12 @@ void sched_yield(void);
  */
 void sched_sleep(uint32_t ticks);
 
+/*
+ * Wake all processes blocked on the given channel.
+ * Scans proc_table for PROC_BLOCKED processes whose wait_channel matches,
+ * sets them to PROC_RUNNABLE, and clears their wait_channel.
+ * Used by pipe_read/pipe_write/pipe_close to wake blocked counterparts.
+ */
+void sched_wakeup(void *channel);
+
 #endif /* PPAP_PROC_SCHED_H */

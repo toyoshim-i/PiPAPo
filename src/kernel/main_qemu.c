@@ -253,6 +253,130 @@ static void vfs_integration_test(void)
     uart_puts(" failed ===\n\n");
 }
 
+/* ── Pipe integration tests ──────────────────────────────────────────────── */
+
+static void pipe_integration_test(void)
+{
+    uart_puts("\n=== Phase 3 Step 7: Pipe integration tests ===\n");
+    test_pass = 0;
+    test_fail = 0;
+
+    /* 1. pipe + write + read */
+    {
+        int fds[2];
+        long rc = sys_pipe(fds);
+        int ok = 0;
+        if (rc == 0) {
+            long nw = sys_write(fds[1], "hello", 5);
+            if (nw == 5) {
+                char buf[8] = {0};
+                long nr = sys_read(fds[0], buf, sizeof(buf));
+                if (nr == 5)
+                    ok = (buf[0]=='h' && buf[1]=='e' && buf[2]=='l'
+                       && buf[3]=='l' && buf[4]=='o');
+            }
+            sys_close(fds[0]);
+            sys_close(fds[1]);
+        }
+        test_report("pipe write+read", ok);
+    }
+
+    /* 2. pipe EOF: close write end, read → returns 0 */
+    {
+        int fds[2];
+        long rc = sys_pipe(fds);
+        int ok = 0;
+        if (rc == 0) {
+            sys_close(fds[1]);   /* close write end */
+            char buf[4];
+            long nr = sys_read(fds[0], buf, sizeof(buf));
+            ok = (nr == 0);      /* EOF */
+            sys_close(fds[0]);
+        }
+        test_report("pipe EOF on close", ok);
+    }
+
+    /* 3. pipe EPIPE: close read end, write → returns -EPIPE */
+    {
+        int fds[2];
+        long rc = sys_pipe(fds);
+        int ok = 0;
+        if (rc == 0) {
+            sys_close(fds[0]);   /* close read end */
+            long nw = sys_write(fds[1], "x", 1);
+            ok = (nw == -(long)EPIPE);
+            sys_close(fds[1]);
+        }
+        test_report("pipe EPIPE on close", ok);
+    }
+
+    /* 4. pipe partial fill: fill buffer, verify partial write count */
+    {
+        int fds[2];
+        long rc = sys_pipe(fds);
+        int ok = 0;
+        if (rc == 0) {
+            /* PIPE_BUF_SIZE=512, usable=511 (1-byte gap).
+             * Write 256 bytes twice: first succeeds fully, second is partial. */
+            char wbuf[256];
+            for (int i = 0; i < 256; i++) wbuf[i] = (char)i;
+
+            long n1 = sys_write(fds[1], wbuf, 256);
+            long n2 = sys_write(fds[1], wbuf, 256);
+            /* n1=256, n2=255 (only 255 bytes of space left) */
+            ok = (n1 == 256 && n2 == 255);
+
+            /* Drain and verify first byte */
+            char rbuf[512];
+            long nr = sys_read(fds[0], rbuf, sizeof(rbuf));
+            if (nr == 511)
+                ok = ok && (rbuf[0] == 0);
+
+            sys_close(fds[0]);
+            sys_close(fds[1]);
+        }
+        test_report("pipe partial fill", ok);
+    }
+
+    /* 5. pipe close cleans up: close both ends, pipe freed */
+    {
+        int fds[2];
+        long rc = sys_pipe(fds);
+        int ok = 0;
+        if (rc == 0) {
+            sys_close(fds[0]);
+            sys_close(fds[1]);
+            /* Allocating another pipe should succeed (slot reused) */
+            int fds2[2];
+            long rc2 = sys_pipe(fds2);
+            ok = (rc2 == 0);
+            if (rc2 == 0) {
+                sys_close(fds2[0]);
+                sys_close(fds2[1]);
+            }
+        }
+        test_report("pipe close cleanup", ok);
+    }
+
+    /* Summary */
+    uart_puts("=== Pipe results: ");
+    char digit[4];
+    int idx = 0;
+    int v = test_pass;
+    if (v >= 10) digit[idx++] = '0' + (v / 10);
+    digit[idx++] = '0' + (v % 10);
+    digit[idx] = '\0';
+    uart_puts(digit);
+    uart_puts(" passed, ");
+    idx = 0;
+    v = test_fail;
+    if (v >= 10) digit[idx++] = '0' + (v / 10);
+    digit[idx++] = '0' + (v % 10);
+    digit[idx] = '\0';
+    uart_puts(digit);
+    uart_puts(" failed ===\n\n");
+}
+
 /* ── Context-switch partner (prints "1" in a loop) ───────────────────────── */
 
 static void thread_loop(void)
@@ -302,6 +426,9 @@ void kmain(void)
 
     /* Phase 2 Step 10: syscall-level VFS integration tests */
     vfs_integration_test();
+
+    /* Phase 3 Step 7: pipe integration tests */
+    pipe_integration_test();
 
     /* ------------------------------------------------------------------
      * Phase 3 Step 5: exec /bin/test_vfork as the init process (pid 1)

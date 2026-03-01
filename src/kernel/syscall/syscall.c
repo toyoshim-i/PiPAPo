@@ -84,6 +84,9 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr)
     case SYS_GETCWD:
         ret = sys_getcwd((char *)(uintptr_t)a0, (size_t)a1);
         break;
+    case SYS_PIPE:
+        ret = sys_pipe((int *)(uintptr_t)a0);
+        break;
     case SYS_VFORK:
         ret = sys_vfork(frame);
         break;

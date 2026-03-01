@@ -42,12 +42,12 @@ void file_pool_init(void)
                    sizeof(struct file), FILE_MAX);
 }
 
-static struct file *file_alloc(void)
+struct file *file_alloc(void)
 {
     return kmem_alloc(&file_pool);
 }
 
-static void file_free(struct file *f)
+void file_free(struct file *f)
 {
     kmem_free(&file_pool, f);
 }

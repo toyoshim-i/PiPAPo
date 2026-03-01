@@ -23,6 +23,7 @@
 #define EMFILE  24   /* Too many open files                 */
 #define ENOSPC  28   /* No space left on device             */
 #define ESPIPE  29   /* Illegal seek (pipe/socket/tty)      */
+#define EPIPE   32   /* Broken pipe                         */
 #define ERANGE  34   /* Result too large (buffer too small) */
 #define ENAMETOOLONG 36 /* File name too long               */
 #define ENOSYS  38   /* Function not implemented            */

@@ -28,5 +28,6 @@ ssize_t read(int fd, void *buf, size_t n);
 ssize_t write(int fd, const void *buf, size_t n);
 int     open(const char *path, int flags, int mode);
 int     close(int fd);
+int     pipe(int fds[2]);
 
 #endif /* PPAP_USER_SYSCALL_H */

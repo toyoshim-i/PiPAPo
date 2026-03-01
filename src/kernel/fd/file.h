@@ -66,4 +66,11 @@ struct file {
     uint32_t               offset;/* current file position              */
 };
 
+/*
+ * Allocate / free a struct file from the kernel file pool.
+ * file_pool_init() must be called from kmain() before any allocations.
+ */
+struct file *file_alloc(void);
+void         file_free(struct file *f);
+
 #endif /* PPAP_FD_FILE_H */

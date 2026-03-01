@@ -82,6 +82,7 @@ typedef struct pcb {
     struct pcb *vfork_parent;   /* non-NULL while child shares parent's space */
     int         exit_status;    /* set by _exit(), read by waitpid()          */
     uint32_t    got_base;       /* r9 value (GOT SRAM address) for PIC       */
+    void       *wait_channel;   /* sleep/wakeup target (e.g. pipe_t*)        */
 } pcb_t;
 
 /* ── Globals ────────────────────────────────────────────────────────────────── */

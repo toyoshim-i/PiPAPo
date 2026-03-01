@@ -104,6 +104,17 @@ getpid:
     svc  0
     pop  {r7, pc}
 
+@ --- pipe (SYS_PIPE = 42) -----------------------------------------------------
+@ int pipe(int fds[2]);
+.section .text.pipe, "ax", %progbits
+.global pipe
+.thumb_func
+pipe:
+    push {r7, lr}
+    movs r7, #42
+    svc  0
+    pop  {r7, pc}
+
 @ --- vfork (SYS_VFORK = 190) -------------------------------------------------
 @ pid_t vfork(void);
 .section .text.vfork, "ax", %progbits

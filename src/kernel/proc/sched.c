@@ -15,6 +15,7 @@
 
 #include "sched.h"    /* includes proc.h via sched.h */
 #include "../mm/page.h"    /* PAGE_SIZE */
+#include <stddef.h>
 #include <stdint.h>
 
 /* ── Cortex-M system registers ─────────────────────────────────────────────── */
@@ -132,6 +133,19 @@ void sched_start(void)
 void sched_yield(void)
 {
     SCB_ICSR |= PENDSVSET;   /* pend PendSV; fires at next instruction boundary */
+}
+
+/* ── Channel-based wakeup ──────────────────────────────────────────────────── */
+
+void sched_wakeup(void *channel)
+{
+    for (uint32_t i = 0u; i < PROC_MAX; i++) {
+        pcb_t *p = &proc_table[i];
+        if (p->state == PROC_BLOCKED && p->wait_channel == channel) {
+            p->state = PROC_RUNNABLE;
+            p->wait_channel = NULL;
+        }
+    }
 }
 
 /* ── Sleep ──────────────────────────────────────────────────────────────────── */
