@@ -24,12 +24,12 @@
 #include "proc.h"
 
 /*
- * SysTick reload value.
- * Hardware (RP2040 @ 133 MHz): 10 ms = 133,000,000/100 − 1 = 1,329,999
+ * SysTick reload value — derived from config.h.
+ * Hardware (RP2040): PPAP_SYS_HZ / PPAP_TICK_HZ − 1 = 1,329,999 (10 ms)
  * QEMU (mps2-an500): SysTick counter runs but TICKINT is never asserted,
  * so preemptive scheduling on QEMU uses cooperative sched_yield() instead.
  */
-#define SYSTICK_RELOAD  (133000000u / 100u - 1u)
+#define SYSTICK_RELOAD  (PPAP_SYS_HZ / PPAP_TICK_HZ - 1u)
 
 /*
  * Pick the next RUNNABLE process in round-robin order starting after

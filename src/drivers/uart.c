@@ -13,6 +13,7 @@
  */
 
 #include "uart.h"
+#include "config.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -136,21 +137,18 @@
 /* ==========================================================================
  * TX/RX ring buffers — used only after uart_init_irq()
  *
- * TX: 256 bytes, uint8_t indices auto-wrap at 256.
+ * TX: UART_TX_SIZE bytes (config.h), uint8_t indices auto-wrap at 256.
  *     One slot reserved to distinguish full from empty.
- *     Effective capacity: 255 bytes.
+ *     Effective capacity: UART_TX_SIZE - 1 bytes.
  *     Empty: tx_head == tx_tail
  *     Full:  (uint8_t)(tx_head + 1) == tx_tail
  *
- * RX: 64 bytes, uint8_t indices (0..255).
+ * RX: UART_RX_SIZE bytes (config.h), uint8_t indices (0..255).
  *     Access via index & (UART_RX_SIZE-1).
- *     Capacity: 64 bytes (no slot reserved; count used for full check).
+ *     Capacity: UART_RX_SIZE bytes (count used for full check).
  *     Empty: rx_head == rx_tail
  *     Full:  (uint8_t)(rx_head - rx_tail) == UART_RX_SIZE
  * ========================================================================== */
-
-#define UART_TX_SIZE  256u
-#define UART_RX_SIZE   64u
 
 static int              irq_mode;              /* 0 = polling, 1 = IRQ     */
 static char             tx_buf[UART_TX_SIZE];

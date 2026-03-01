@@ -20,16 +20,11 @@
 #define PPAP_PROC_PROC_H
 
 #include <stdint.h>
+#include "config.h"
 
 /* Forward declaration — struct file is defined in fd/file.h (Step 10).
  * We only store pointers here so the incomplete type is sufficient. */
 struct file;
-
-/* ── Constants ─────────────────────────────────────────────────────────────── */
-
-#define PROC_MAX           8    /* maximum concurrent processes               */
-#define FD_MAX            16    /* file descriptors per process               */
-#define PROC_DEFAULT_TICKS 10   /* default time-slice length in SysTick ticks */
 
 /*
  * PCB_SP_OFFSET: byte offset of the `sp` field within pcb_t.

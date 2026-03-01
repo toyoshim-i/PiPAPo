@@ -13,11 +13,10 @@
 #define PPAP_MM_PAGE_H
 
 #include <stdint.h>
+#include "config.h"
 
 /* ── Memory map constants (must match ppap.ld / qemu.ld) ──────────────────── */
-
-#define PAGE_SIZE        4096u              /* bytes per page                  */
-#define PAGE_COUNT         52u              /* pages in the pool               */
+/* PAGE_SIZE and PAGE_COUNT are defined in config.h */
 
 #define SRAM_KERNEL_BASE  0x20000000u       /* kernel data region start        */
 #define SRAM_KERNEL_SIZE     (16u * 1024u)  /* 16 KB reserved for kernel       */
