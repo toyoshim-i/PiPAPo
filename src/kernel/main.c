@@ -9,6 +9,7 @@
 
 #include "drivers/uart.h"
 #include "drivers/clock.h"
+#include "mm/page.h"
 #include "xip_test.h"
 
 void kmain(void)
@@ -29,6 +30,9 @@ void kmain(void)
     uart_reinit_133mhz();
 
     uart_puts("System clock: 133 MHz\n");
+
+    /* Phase 1 Step 1: memory manager init + boot-time memory map */
+    mm_init();
 
     /* ------------------------------------------------------------------
      * Step 9: XIP verification

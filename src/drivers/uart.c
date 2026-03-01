@@ -258,3 +258,12 @@ void uart_print_hex32(uint32_t v)
         uart_putc(nibble < 10u ? (char)('0' + nibble) : (char)('a' + nibble - 10u));
     }
 }
+
+void uart_print_dec(uint32_t v)
+{
+    char buf[10];   /* 2^32 = 4294967296 — at most 10 digits */
+    int  i = 0;
+    if (v == 0u) { uart_putc('0'); return; }
+    while (v > 0u) { buf[i++] = (char)('0' + (v % 10u)); v /= 10u; }
+    while (--i >= 0) uart_putc(buf[i]);
+}

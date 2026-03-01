@@ -34,4 +34,7 @@ void uart_reinit_133mhz(void);
 /* Print a 32-bit value as "0xXXXXXXXX" (8 lowercase hex digits, no newline). */
 void uart_print_hex32(uint32_t v);
 
+/* Print a 32-bit value as an unsigned decimal integer (no newline). */
+void uart_print_dec(uint32_t v);
+
 #endif /* PPAP_UART_H */

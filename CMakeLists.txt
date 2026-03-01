@@ -16,6 +16,7 @@ add_executable(ppap
     src/boot/stage1.S       # Stage 1 extension: VTOR redirect to 0x10001000 (Step 8)
     src/kernel/main.c
     src/kernel/xip_test.c   # XIP verification + SysTick benchmark (Step 9)
+    src/kernel/mm/page.c    # Page allocator + boot memory map (Phase 1 Step 1)
     src/drivers/uart.c
     src/drivers/clock.c     # PLL_SYS → 133 MHz (Step 7)
 )
@@ -64,6 +65,7 @@ add_executable(ppap_qemu
     src/boot/startup.S          # Same Reset_Handler (startup is portable)
     src/kernel/main_qemu.c      # No RP2040-specific hardware init
     src/kernel/xip_test.c       # xip_add works on any ARM Cortex-M
+    src/kernel/mm/page.c        # Page allocator + boot memory map (Phase 1 Step 1)
     src/drivers/uart_qemu.c     # CMSDK UART for mps2-an500
 )
 

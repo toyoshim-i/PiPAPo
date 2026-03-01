@@ -19,6 +19,7 @@
  */
 
 #include "drivers/uart.h"
+#include "mm/page.h"
 #include "xip_test.h"
 
 void kmain(void)
@@ -27,6 +28,8 @@ void kmain(void)
     uart_puts("PicoPiAndPortable booting (QEMU mps2-an500)...\n");
     uart_puts("UART: CMSDK UART0 @ 0x40004000\n");
     uart_puts("Clock: emulated (no PLL — skipping clock_init_pll)\n");
+
+    mm_init();
 
     /* xip_add is pure arithmetic — runs identically in QEMU and on hardware */
     uart_puts("XIP: xip_add @ ");
