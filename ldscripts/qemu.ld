@@ -52,6 +52,18 @@ SECTIONS {
 
 
     /* ------------------------------------------------------------------
+     * romfs image — same content as on RP2040, placed in ROM.
+     * __romfs_start is used by vfs_mount() as the image base address.
+     * ------------------------------------------------------------------ */
+    .romfs : {
+        __romfs_start = .;
+        KEEP(*(.romfs))
+        . = ALIGN(4);
+        __romfs_end = .;
+    } > ROM
+
+
+    /* ------------------------------------------------------------------
      * Initialized data — LMA in ROM, VMA in RAM (copied by Reset_Handler)
      * ------------------------------------------------------------------ */
     .data : {

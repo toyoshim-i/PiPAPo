@@ -19,8 +19,13 @@
 #include "proc/sched.h"
 #include "fd/fd.h"
 #include "vfs/vfs.h"
+#include "fs/romfs.h"
 #include "syscall/syscall.h"
 #include "smp.h"
+
+/* Linker-provided romfs image location in flash */
+extern const uint8_t __romfs_start[];
+extern const uint8_t __romfs_end[];
 
 /* ── Kernel entry point ──────────────────────────────────────────────────── */
 
@@ -52,6 +57,26 @@ void kmain(void)
     /* Phase 2 Steps 1-3: VFS layer + file pool for sys_open */
     vfs_init();
     file_pool_init();
+
+    /* Phase 2 Step 7: mount romfs at / */
+    if (vfs_mount("/", &romfs_ops, MNT_RDONLY, __romfs_start) == 0) {
+        uart_puts("VFS: romfs mounted at /\n");
+
+        /* Smoke test: read /etc/hostname via VFS path resolution */
+        vnode_t *vn = 0;
+        if (vfs_lookup("/etc/hostname", &vn) == 0 && vn) {
+            char buf[32];
+            long n = vn->mount->ops->read(vn, buf, sizeof(buf) - 1, 0);
+            if (n > 0) {
+                buf[n] = '\0';
+                uart_puts("ROMFS: /etc/hostname = ");
+                uart_puts(buf);
+            }
+            vnode_put(vn);
+        }
+    } else {
+        uart_puts("VFS: romfs mount FAILED\n");
+    }
 
     /* Phase 1 Step 10: wire fd 0/1/2 to the UART tty driver */
     fd_stdio_init(&proc_table[0]);

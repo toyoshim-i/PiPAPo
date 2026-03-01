@@ -114,3 +114,53 @@ target_link_options(ppap_qemu PRIVATE
     -nostartfiles
     -Wl,--gc-sections
 )
+
+# =============================================================================
+# romfs image build pipeline (Phase 2 Step 7)
+# =============================================================================
+# 1. Build mkromfs with the host compiler (not cross-compiled)
+# 2. Generate romfs.bin from the romfs/ content directory
+# 3. Convert romfs.bin → romfs.o (linkable ELF with .romfs section)
+# 4. Link romfs.o into both ppap and ppap_qemu targets
+# =============================================================================
+
+# Step 1: Build mkromfs host tool
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/mkromfs
+    COMMAND cc -O2 -I ${CMAKE_SOURCE_DIR}/src/kernel/fs
+            -o ${CMAKE_BINARY_DIR}/mkromfs
+            ${CMAKE_SOURCE_DIR}/tools/mkromfs/mkromfs.c
+    DEPENDS ${CMAKE_SOURCE_DIR}/tools/mkromfs/mkromfs.c
+            ${CMAKE_SOURCE_DIR}/src/kernel/fs/romfs_format.h
+    COMMENT "Building mkromfs host tool"
+)
+
+# Step 2: Generate romfs.bin from romfs/ directory
+# Note: we depend on the romfs directory itself rather than GLOB_RECURSE,
+# because symlinks inside romfs/ (e.g., bin/ls -> busybox) are dangling on
+# the host and would cause CMake to fail.  Touch a stamp file to track changes.
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/romfs.bin
+    COMMAND ${CMAKE_BINARY_DIR}/mkromfs
+            ${CMAKE_SOURCE_DIR}/romfs
+            ${CMAKE_BINARY_DIR}/romfs.bin
+    DEPENDS ${CMAKE_BINARY_DIR}/mkromfs
+    COMMENT "Generating romfs image from romfs/"
+)
+
+# Step 3: Generate romfs_data.S — an assembly file that .incbin's the romfs image
+# into a .romfs section.  We use .incbin instead of objcopy because some
+# toolchain versions zero the section data when --rename-section is combined
+# with -I binary.  The .S file is written at configure time; it always refers
+# to the same romfs.bin path, and the assembler reads the binary at build time.
+file(WRITE ${CMAKE_BINARY_DIR}/romfs_data.S
+"    .section .romfs, \"a\", %progbits\n    .incbin \"${CMAKE_BINARY_DIR}/romfs.bin\"\n")
+
+# Ensure romfs.bin is built before assembling romfs_data.S
+add_custom_target(romfs_image DEPENDS ${CMAKE_BINARY_DIR}/romfs.bin)
+add_dependencies(ppap romfs_image)
+add_dependencies(ppap_qemu romfs_image)
+
+# Add romfs_data.S as a source to both targets — CMake assembles it automatically
+target_sources(ppap      PRIVATE ${CMAKE_BINARY_DIR}/romfs_data.S)
+target_sources(ppap_qemu PRIVATE ${CMAKE_BINARY_DIR}/romfs_data.S)

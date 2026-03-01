@@ -135,11 +135,15 @@ SECTIONS {
 
 
     /* ------------------------------------------------------------------
-     * romfs placeholder — populated by mkromfs in Phase 2.
-     * Marked NOLOAD so the linker does not try to fill it.
+     * romfs image — built by mkromfs, linked via objcopy'd romfs.o.
+     * Contains the root filesystem (/, /etc, /bin, ...).
+     * __romfs_start is passed to vfs_mount() as the image base address.
      * ------------------------------------------------------------------ */
-    .romfs (NOLOAD) : {
+    .romfs : {
         __romfs_start = .;
+        KEEP(*(.romfs))
+        . = ALIGN(4);
+        __romfs_end = .;
     } > FLASH_ROMFS
 
 
