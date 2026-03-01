@@ -23,6 +23,7 @@ set(SRC ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 add_library(stubs STATIC
     stubs/uart_stub.c
     stubs/tty_stub.c
+    stubs/xip_stub.c
 )
 target_include_directories(stubs PUBLIC ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
 

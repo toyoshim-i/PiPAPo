@@ -120,15 +120,41 @@ target_link_options(ppap_qemu PRIVATE
 )
 
 # =============================================================================
-# romfs image build pipeline (Phase 2 Step 7)
+# User-space build + romfs image pipeline
 # =============================================================================
-# 1. Build mkromfs with the host compiler (not cross-compiled)
-# 2. Generate romfs.bin from the romfs/ content directory
-# 3. Convert romfs.bin → romfs.o (linkable ELF with .romfs section)
-# 4. Link romfs.o into both ppap and ppap_qemu targets
+# 1. Build user-space ELF binaries (user/Makefile)
+# 2. Install user binaries into romfs/bin/
+# 3. Build mkromfs with the host compiler (not cross-compiled)
+# 4. Generate romfs.bin from the romfs/ content directory
+# 5. Link romfs_data.S (.incbin romfs.bin) into both ppap and ppap_qemu
 # =============================================================================
 
-# Step 1: Build mkromfs host tool
+# --- User-space binaries (Phase 3 Step 1) ---
+# Build ARM Thumb ELFs from user/ and install into romfs/bin/.
+# Uses a stamp file to track build completion.
+set(USER_SRC_DIR ${CMAKE_SOURCE_DIR}/user)
+set(USER_STAMP ${CMAKE_BINARY_DIR}/user_binaries.stamp)
+
+# Glob user sources for dependency tracking
+file(GLOB USER_SOURCES ${USER_SRC_DIR}/*.c ${USER_SRC_DIR}/*.S
+                       ${USER_SRC_DIR}/*.h ${USER_SRC_DIR}/*.ld
+                       ${USER_SRC_DIR}/Makefile)
+
+find_program(MAKE_CMD make REQUIRED)
+
+add_custom_command(
+    OUTPUT ${USER_STAMP}
+    COMMAND ${MAKE_CMD} -C ${USER_SRC_DIR} clean
+    COMMAND ${MAKE_CMD} -C ${USER_SRC_DIR} install
+            ROMFS_BIN=${CMAKE_SOURCE_DIR}/romfs/bin
+    COMMAND ${CMAKE_COMMAND} -E touch ${USER_STAMP}
+    DEPENDS ${USER_SOURCES}
+    COMMENT "Building user-space binaries and installing to romfs/bin/"
+)
+
+add_custom_target(user_binaries DEPENDS ${USER_STAMP})
+
+# --- mkromfs host tool ---
 add_custom_command(
     OUTPUT ${CMAKE_BINARY_DIR}/mkromfs
     COMMAND cc -O2 -I ${CMAKE_SOURCE_DIR}/src/kernel/fs
@@ -139,24 +165,18 @@ add_custom_command(
     COMMENT "Building mkromfs host tool"
 )
 
-# Step 2: Generate romfs.bin from romfs/ directory
-# Note: we depend on the romfs directory itself rather than GLOB_RECURSE,
-# because symlinks inside romfs/ (e.g., bin/ls -> busybox) are dangling on
-# the host and would cause CMake to fail.  Touch a stamp file to track changes.
+# --- Generate romfs.bin from romfs/ directory ---
+# Depends on user_binaries stamp so romfs is rebuilt when user code changes.
 add_custom_command(
     OUTPUT ${CMAKE_BINARY_DIR}/romfs.bin
     COMMAND ${CMAKE_BINARY_DIR}/mkromfs
             ${CMAKE_SOURCE_DIR}/romfs
             ${CMAKE_BINARY_DIR}/romfs.bin
-    DEPENDS ${CMAKE_BINARY_DIR}/mkromfs
+    DEPENDS ${CMAKE_BINARY_DIR}/mkromfs ${USER_STAMP}
     COMMENT "Generating romfs image from romfs/"
 )
 
-# Step 3: Generate romfs_data.S — an assembly file that .incbin's the romfs image
-# into a .romfs section.  We use .incbin instead of objcopy because some
-# toolchain versions zero the section data when --rename-section is combined
-# with -I binary.  The .S file is written at configure time; it always refers
-# to the same romfs.bin path, and the assembler reads the binary at build time.
+# --- romfs_data.S: .incbin the romfs image into a .romfs section ---
 file(WRITE ${CMAKE_BINARY_DIR}/romfs_data.S
 "    .section .romfs, \"a\", %progbits\n    .incbin \"${CMAKE_BINARY_DIR}/romfs.bin\"\n")
 

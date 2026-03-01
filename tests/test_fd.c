@@ -22,7 +22,7 @@ extern struct file tty_stdout;
 extern struct file tty_stderr;
 
 /* A trivial non-tty file for fd_alloc tests */
-static struct file extra_file = { NULL, NULL, O_RDWR, 0u };
+static struct file extra_file = { NULL, NULL, O_RDWR, 0u, NULL, 0 };
 
 /* Helpers */
 static pcb_t make_pcb(void)

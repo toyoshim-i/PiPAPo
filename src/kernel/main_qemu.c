@@ -223,30 +223,13 @@ static void vfs_integration_test(void)
         sys_chdir("/");
     }
 
-    /* 12. symlink readlink: /bin/ls → "busybox" (via VFS layer) */
+    /* 12. stat /bin/hello — user-space ELF binary in romfs (Phase 3 Step 1) */
     {
-        /* Look up /bin to get the directory vnode */
-        vnode_t *dir = NULL;
-        int ok = 0;
-        if (vfs_lookup("/bin", &dir) == 0 && dir) {
-            /* Lookup "ls" within /bin — this gives us the symlink vnode
-             * directly (FS lookup doesn't follow symlinks). */
-            vnode_t *lnk = NULL;
-            if (dir->mount->ops->lookup(dir, "ls", &lnk) == 0 && lnk) {
-                if (lnk->type == VNODE_SYMLINK) {
-                    char target[32];
-                    long tlen = lnk->mount->ops->readlink(
-                        lnk, target, sizeof(target) - 1);
-                    if (tlen == 7) {
-                        target[tlen] = '\0';
-                        ok = (__builtin_strcmp(target, "busybox") == 0);
-                    }
-                }
-                vnode_put(lnk);
-            }
-            vnode_put(dir);
-        }
-        test_report("readlink /bin/ls → busybox", ok);
+        struct stat st;
+        int ok = (sys_stat("/bin/hello", &st) == 0
+                  && (st.st_mode & 0170000) == 0100000  /* S_IFREG */
+                  && st.st_size > 0);
+        test_report("stat /bin/hello → regular file", ok);
     }
 
     /* Summary */

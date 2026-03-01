@@ -12,6 +12,6 @@
 
 #include "kernel/fd/file.h"
 
-struct file tty_stdin  = { NULL, NULL, O_RDONLY, 1u };
-struct file tty_stdout = { NULL, NULL, O_WRONLY, 1u };
-struct file tty_stderr = { NULL, NULL, O_WRONLY, 1u };
+struct file tty_stdin  = { NULL, NULL, O_RDONLY, 1u, NULL, 0 };
+struct file tty_stdout = { NULL, NULL, O_WRONLY, 1u, NULL, 0 };
+struct file tty_stderr = { NULL, NULL, O_WRONLY, 1u, NULL, 0 };

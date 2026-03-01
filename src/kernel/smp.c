@@ -39,6 +39,12 @@
 #define SIO_FIFO_VLD  (1u << 0)   /* RX FIFO has data      */
 #define SIO_FIFO_RDY  (1u << 1)   /* TX FIFO has free slot */
 
+/* PSM (Power-on State Machine) — force Core 1 off/on (§2.12) */
+#define PSM_FRCE_OFF      (*(volatile uint32_t *)0x40010004u)
+#define PSM_FRCE_OFF_SET  (*(volatile uint32_t *)0x40012004u)  /* atomic SET alias */
+#define PSM_FRCE_OFF_CLR  (*(volatile uint32_t *)0x40013004u)  /* atomic CLR alias */
+#define PSM_PROC1         (1u << 16)   /* bit 16 = proc1 (Core 1 processor) */
+
 /* SCB.VTOR — vector table base currently used by Core 0 */
 #define SCB_VTOR      (*(volatile uint32_t *)0xE000ED08u)
 
@@ -77,6 +83,38 @@ void core1_io_worker(void)
     }
 }
 
+/* ── core1_reset ─────────────────────────────────────────────────────────── */
+/*
+ * Force Core 1 back into its boot ROM via the PSM (Power-on State Machine).
+ *
+ * After a GDB load + reset-halt, only Core 0 is reset — Core 1 may still
+ * be executing stale user code from a previous session.  In that state the
+ * boot ROM handshake will never receive a response and core1_launch hangs.
+ *
+ * The fix (same approach as pico-sdk multicore_reset_core1):
+ *   1. Assert PSM_FRCE_OFF.PROC1 → power off Core 1
+ *   2. Wait until the bit reads back 1 (Core 1 is off)
+ *   3. Deassert PSM_FRCE_OFF.PROC1 → Core 1 restarts in boot ROM
+ *   4. Wait until the bit reads back 0 (Core 1 is alive)
+ *   5. Drain the SIO RX FIFO to discard any stale data
+ */
+static void core1_reset(void)
+{
+    /* Force Core 1 off */
+    PSM_FRCE_OFF_SET = PSM_PROC1;
+    while (!(PSM_FRCE_OFF & PSM_PROC1))
+        ;
+
+    /* Let Core 1 restart — it will re-enter the boot ROM */
+    PSM_FRCE_OFF_CLR = PSM_PROC1;
+    while (PSM_FRCE_OFF & PSM_PROC1)
+        ;
+
+    /* Drain any stale words from the SIO RX FIFO */
+    while (SIO_FIFO_ST & SIO_FIFO_VLD)
+        (void)SIO_FIFO_RD;
+}
+
 /* ── core1_launch ────────────────────────────────────────────────────────── */
 
 void core1_launch(void (*entry)(void))
@@ -91,6 +129,11 @@ void core1_launch(void (*entry)(void))
         uart_puts("SMP: not Cortex-M0+ — skipping Core 1 launch (QEMU)\n");
         return;
     }
+
+    /* Reset Core 1 via PSM so it re-enters the boot ROM handshake.
+     * Without this, a GDB reload without power-cycle leaves Core 1
+     * running stale code — the handshake below would hang forever. */
+    core1_reset();
 
     /* Allocate a 4 KB stack page for Core 1.
      * Stacks grow downward, so Core 1's initial SP = top of the page. */
