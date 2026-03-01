@@ -46,6 +46,9 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr)
     case SYS_CLOSE:
         ret = sys_close(a0);
         break;
+    case SYS_EXECVE:
+        ret = sys_execve((const char *)(uintptr_t)a0);
+        break;
     case SYS_CHDIR:
         ret = sys_chdir((const char *)(uintptr_t)a0);
         break;

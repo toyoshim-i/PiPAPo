@@ -143,6 +143,29 @@ void *page_alloc(void)
     return free_stack[--free_top];
 }
 
+void *page_alloc_at(void *addr)
+{
+    uint32_t target = (uint32_t)(uintptr_t)addr;
+
+    /* Validate: must be page-aligned and within the pool */
+    if (target < PAGE_POOL_BASE || target >= PAGE_POOL_BASE + PAGE_POOL_SIZE)
+        return NULL;
+    if (target & (PAGE_SIZE - 1u))
+        return NULL;
+
+    /* Scan the free stack for the requested page */
+    for (uint32_t i = 0u; i < free_top; i++) {
+        if (free_stack[i] == addr) {
+            /* Remove by swapping with the top element */
+            free_top--;
+            free_stack[i] = free_stack[free_top];
+            return addr;
+        }
+    }
+
+    return NULL;   /* already allocated */
+}
+
 void page_free(void *page)
 {
     /* Rudimentary double-free / out-of-range guard */

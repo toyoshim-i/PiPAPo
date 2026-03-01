@@ -25,6 +25,7 @@
 #include "fs/devfs.h"
 #include "fs/procfs.h"
 #include "syscall/syscall.h"
+#include "exec/exec.h"
 #include "errno.h"
 #include "smp.h"
 
@@ -190,6 +191,24 @@ void kmain(void)
      * thread idles with WFI, waking only on interrupts.
      * ------------------------------------------------------------------ */
     proc_table[0].stack_page = page_alloc();
+
+    /* ------------------------------------------------------------------
+     * Phase 3 Step 3: exec /bin/hello as the init process (pid 1)
+     * ------------------------------------------------------------------ */
+    {
+        pcb_t *init = proc_alloc();
+        int exec_err = do_execve(init, "/bin/hello");
+        if (exec_err == 0) {
+            init->state = PROC_RUNNABLE;
+            uart_puts("EXEC: /bin/hello loaded, pid=");
+            uart_print_dec(init->pid);
+            uart_puts("\n");
+        } else {
+            uart_puts("EXEC: /bin/hello FAILED (err=");
+            uart_print_dec((uint32_t)(-(int)exec_err));
+            uart_puts(")\n");
+        }
+    }
 
     /* Drain any remaining polling TX, then switch UART0 to IRQ-driven mode.
      * After uart_init_irq() all uart_putc/uart_puts calls are non-blocking

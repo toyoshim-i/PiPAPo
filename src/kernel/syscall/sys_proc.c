@@ -8,6 +8,7 @@
 #include "syscall.h"
 #include "../proc/proc.h"
 #include "../proc/sched.h"
+#include "../errno.h"
 
 /* ── sys_exit ───────────────────────────────────────────────────────────────── */
 
@@ -36,4 +37,18 @@ long sys_exit(long status)
 long sys_getpid(void)
 {
     return (long)current->pid;
+}
+
+/* ── sys_execve ────────────────────────────────────────────────────────────── */
+/*
+ * Stub — returns -ENOSYS for now.  The full user-callable execve (replacing
+ * the current process image via SVC) requires PSP manipulation that comes
+ * with vfork in Phase 3 Step 5.  For Step 3, the kernel calls do_execve()
+ * directly to create the init process.
+ */
+
+long sys_execve(const char *path)
+{
+    (void)path;
+    return -(long)ENOSYS;
 }

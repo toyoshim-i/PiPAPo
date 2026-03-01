@@ -63,6 +63,16 @@
 #define PAGE_SIZE          4096u    /* bytes per page                       */
 #define PAGE_COUNT           52u    /* pages in the pool (208 KB total)     */
 
+/* ── User-space code loading ──────────────────────────────────────────────
+ * USER_CODE_BASE  Fixed SRAM address where user ELF code segments are
+ *                 loaded.  User binaries are linked at this address
+ *                 (user.ld) so absolute addresses in literal pools are
+ *                 correct at runtime.  Page 28 of the pool, far from the
+ *                 LIFO top (page_alloc returns highest addresses first).
+ *                 Phase 4 replaces this with -fPIC + GOT relocation.
+ * ────────────────────────────────────────────────────────────────────────── */
+#define USER_CODE_BASE  0x20020000u  /* page 28 within page pool            */
+
 /* ── VFS (Virtual File System) ────────────────────────────────────────────
  * VFS_MOUNT_MAX     Maximum concurrent mount points (romfs /, devfs /dev,
  *                   procfs /proc, tmpfs /tmp, UFS /usr, /home, /var, spare).

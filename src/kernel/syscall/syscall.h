@@ -26,6 +26,7 @@
 #define SYS_WRITE      4
 #define SYS_OPEN       5
 #define SYS_CLOSE      6
+#define SYS_EXECVE    11
 #define SYS_CHDIR     12
 #define SYS_LSEEK     19
 #define SYS_GETPID    20
@@ -56,6 +57,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr);
 /* sys_proc.c */
 long sys_exit(long status);
 long sys_getpid(void);
+long sys_execve(const char *path);
 
 /* sys_io.c */
 long sys_read(long fd, char *buf, size_t n);

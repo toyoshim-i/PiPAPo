@@ -29,6 +29,7 @@
 #include "fs/devfs.h"
 #include "fs/procfs.h"
 #include "syscall/syscall.h"
+#include "exec/exec.h"
 #include "errno.h"
 #include "smp.h"
 
@@ -252,9 +253,9 @@ static void vfs_integration_test(void)
     uart_puts(" failed ===\n\n");
 }
 
-/* ── Test thread ─────────────────────────────────────────────────────────── */
+/* ── Context-switch partner (prints "1" in a loop) ───────────────────────── */
 
-static void thread1(void)
+static void thread_loop(void)
 {
     for (;;) {
         uart_puts("1\n");
@@ -303,14 +304,28 @@ void kmain(void)
     vfs_integration_test();
 
     /* ------------------------------------------------------------------
-     * Phase 1 Steps 4+5: context switch via cooperative sched_yield()
+     * Phase 3 Step 3: exec /bin/hello as the init process (pid 1)
      * ------------------------------------------------------------------ */
     proc_table[0].stack_page = page_alloc();
 
-    pcb_t *p1 = proc_alloc();
-    p1->stack_page = page_alloc();
-    proc_setup_stack(p1, thread1);
-    p1->state = PROC_RUNNABLE;
+    pcb_t *init = proc_alloc();
+    int exec_err = do_execve(init, "/bin/hello");
+    if (exec_err == 0) {
+        init->state = PROC_RUNNABLE;
+        uart_puts("EXEC: /bin/hello loaded, pid=");
+        uart_print_dec(init->pid);
+        uart_puts("\n");
+    } else {
+        uart_puts("EXEC: /bin/hello FAILED (err=");
+        uart_print_dec((uint32_t)(-(int)exec_err));
+        uart_puts(")\n");
+    }
+
+    /* Also create a plain context-switch partner thread */
+    pcb_t *p2 = proc_alloc();
+    p2->stack_page = page_alloc();
+    proc_setup_stack(p2, thread_loop);
+    p2->state = PROC_RUNNABLE;
 
     /* Phase 1 Step 11: configure MPU (no-op on QEMU — MPU_TYPE reads 0) */
     mpu_init();
@@ -318,7 +333,7 @@ void kmain(void)
     /* Phase 1 Step 12: launch Core 1 (no-op on QEMU — SIO not mapped) */
     core1_launch(core1_io_worker);
 
-    uart_puts("SCHED: starting cooperative context-switch test (QEMU)\n");
+    uart_puts("SCHED: starting scheduler (QEMU)\n");
     sched_start();
 
     /* Thread 0 continues here — print "0\n" and yield each iteration */

@@ -59,3 +59,12 @@ add_executable(test_fd
 target_include_directories(test_fd PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(test_fd PRIVATE stubs)
 add_test(NAME fd COMMAND test_fd)
+
+# ── test_elf ──────────────────────────────────────────────────────────────────
+# elf.c is pure C — no hardware dependencies, no stubs needed.
+add_executable(test_elf
+    ${SRC}/kernel/exec/elf.c
+    test_elf.c
+)
+target_include_directories(test_elf PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME elf COMMAND test_elf)

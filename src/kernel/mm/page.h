@@ -37,6 +37,11 @@ void mm_init(void);
  * or NULL if the pool is exhausted (OOM). */
 void *page_alloc(void);
 
+/* Allocate the specific page at `addr`.  Returns `addr` on success, or NULL
+ * if the address is not page-aligned, out of range, or already allocated.
+ * Used by do_execve() to place user code at its linked address. */
+void *page_alloc_at(void *addr);
+
 /* Return a page to the pool.  Behaviour is undefined if `page` was not
  * obtained from page_alloc(), or if it is freed more than once. */
 void page_free(void *page);

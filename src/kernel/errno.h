@@ -10,6 +10,7 @@
 
 #define ENOENT   2   /* No such file or directory           */
 #define EIO      5   /* I/O error                           */
+#define ENOEXEC  8   /* Exec format error                   */
 #define EBADF    9   /* Bad file descriptor                 */
 #define ENOMEM  12   /* Out of memory                       */
 #define EACCES  13   /* Permission denied                   */
