@@ -162,64 +162,132 @@ UART: 115200 bps @ 12 MHz XOSC
 System clock: 133 MHz
 ```
 
-### Step 8 — Stage 1 Bootloader (`stage1.S`)
+### ✓ Step 8 — Stage 1 Bootloader (`stage1.S`)
 
-The RP2040 boot ROM loads the first 256 bytes of flash into SRAM and executes it. This Stage 1 code must:
+**Approach:** hybrid — SDK boot2 handles QSPI init (first 256 bytes with CRC); `stage1.S`
+is a 32-byte extension at `0x10000100` that redirects to the kernel at `0x10001000`.
 
-1. Configure the QSPI SSI controller for Quad-SPI (QSPI) mode:
-   - Set the clock divider (target: ~31.25 MHz QSPI clock at 133 MHz sys clock, or tune for stability)
-   - Configure `SPI_CTRLR0` for Quad Read command (`0xEB`, 6 dummy cycles)
-   - Enable XIP mode: set `XIP_CTRL` to enable the XIP cache
-2. Verify the configuration by reading a known flash address via XIP and comparing to the expected value
-3. Set VTOR to `0x10001000` and branch to the kernel entry point there
+`src/boot/stage1.S` places the `.stage1` section at `0x10000100`:
+- Word 0: `__stack_top` — SDK boot2 exit reads this to set MSP
+- Word 1: `stage1_entry` (Thumb bit set) — SDK boot2 exit branches here
+- `stage1_entry` (8 instructions):
+  1. Set VTOR = `0x10001000`
+  2. Load `Reset_Handler` from `[0x10001004]`
+  3. Load `__stack_top` from `[0x10001000]`; set MSP; branch to `Reset_Handler`
 
-**Note:** The Pico SDK ships several `boot2_*.S` files for common flash chips (W25Q080, AT25SF128A, etc.). These are good references, but you must select the correct one for your board's flash chip.
+`ldscripts/ppap.ld` updated to the **final layout**:
 
-After Stage 1 completes, the entire flash is accessible at `0x10000000`–`0x10FFFFFF` via XIP
-and the linker script reverts to the final layout (kernel at `0x10001000`).
+| Region | Flash Address | Size | Purpose |
+|---|---|---|---|
+| FLASH_BOOT | `0x10000000` | 4 KB | SDK boot2 (256 B) + stage1 extension (32 B) |
+| FLASH_KERNEL | `0x10001000` | 64 KB | Kernel vector table + `.text` / `.rodata` |
+| FLASH_ROMFS | `0x10011000` | ~16 MB | romfs (Phase 2+) |
 
-### Step 9 — XIP Verification
-
-Place a test function explicitly in flash (via linker section attribute) and call it from `kmain()`:
-
-```c
-__attribute__((section(".text.xip_test")))
-int xip_add(int a, int b) { return a + b; }
+Verified section addresses:
+```
+.boot2   256 B @ 0x10000000  (SDK boot2 — QSPI init + CRC)
+.stage1   32 B @ 0x10000100  (stage1_entry — VTOR redirect)
+.vectors 168 B @ 0x10001000  (kernel vector table — final layout ✓)
+.text        … @ 0x100010a8  (kernel code)
 ```
 
-Verify via GDB:
-- `info address xip_add` shows the address is in the flash XIP range (`0x10001xxx`)
-- Disassembly shows Thumb instructions (not a copy in SRAM)
-- The function returns the correct result
+The UART output is unchanged (QSPI and XIP were already working via SDK boot2).
 
-Measure XIP cache performance qualitatively:
-- Run a tight loop from flash and time it with SysTick
-- Compare to the same loop copied to SRAM
-- Confirm the flash version is within 2–3× of SRAM speed (indicating cache hits)
+### ✓ Step 9 — XIP Verification
 
-### Step 10 — Flash Image Build and Flashing Script
+`src/kernel/xip_test.c` — three functions, output from `kmain()`:
 
-Finalize the build pipeline:
+1. **`xip_add`** in `.text.xip_test` (XIP flash):  address printed at boot proves `0x10001xxx`.
+2. **`xip_bench(10000)`** in `.text.xip_test`: SysTick-timed tight loop from flash.
+3. **`sram_bench(10000)`** in `.ramfunc.sram_bench`: identical loop copied to SRAM by
+   `Reset_Handler`; compares against flash timing to confirm cache effectiveness.
 
-1. `CMake` produces `ppap.elf`, `ppap.bin`, and `ppap.uf2`
-2. Write `flash.sh` that uses OpenOCD to flash `ppap.bin`:
-   ```sh
-   openocd -f openocd.cfg \
-     -c "program ppap.bin verify reset exit 0x10000000"
-   ```
-3. Alternatively, `ppap.uf2` can be dragged to the RP2040's USB mass storage (BOOTSEL mode)
-4. Document which method to use for daily development vs. release
+New linker section `.ramfunc` in `ppap.ld`: VMA in `RAM_KERNEL`, LMA in `FLASH_KERNEL`,
+copied to SRAM by `startup.S` alongside `.data`.
 
-### Step 11 — QEMU Smoke Test (Optional but Recommended)
+`uart_print_hex32()` added to `uart.c`/`uart.h` for printing cycle counts.
 
-QEMU's `raspi` target does not support the RP2040, but the `mps2-an385` (Cortex-M3) or `mps2-an500` (Cortex-M0) machines can run armv6m Thumb code without XIP. This is useful for unit-testing pure-C kernel logic (scheduler, memory manager) without hardware.
+**Verified on hardware:**
+```
+XIP: xip_add @ 0x100011cd
+XIP: xip_add(3,4) = 7
+XIP: flash bench(10000) = 0x00016098 cycles   (90,264 cycles)
+XIP: sram  bench(10000) = 0x00015f9a cycles   (90,010 cycles)
+```
 
-Set up a QEMU target:
+Flash/SRAM ratio: **1.003×** — essentially identical.  The XIP cache warms after the
+first loop iteration; all subsequent instruction fetches hit the cache, so flash and
+SRAM performance are indistinguishable for a hot tight loop.
+
+Key addresses confirmed by `arm-none-eabi-nm`:
+```
+xip_add   @ 0x100011cc  T  (XIP flash — .text.xip_test) ✓
+xip_bench @ 0x100011d0  T  (XIP flash — .text.xip_test) ✓
+sram_bench@ 0x20000000  T  (SRAM VMA  — .ramfunc copy)  ✓
+__ramfunc_load 0x10001510   (flash LMA, copied to SRAM by startup.S) ✓
+```
+
+### ✓ Step 10 — Flash Image Build and Flashing Script
+
+CMake already produces `ppap.elf`, `ppap.bin`, and `ppap.uf2` via
+`pico_add_extra_outputs(ppap)`.
+
+`scripts/flash.sh` — one-command flash via OpenOCD:
 ```sh
-qemu-system-arm -M mps2-an385 -cpu cortex-m3 \
-  -kernel ppap.elf -nographic -serial stdio
+./scripts/flash.sh           # flash build/ppap.elf
+./scripts/flash.sh --build   # cmake --build first, then flash
 ```
-Adapt the linker script for the QEMU memory map (SRAM at `0x20000000`, 256 KB). This will be the basis for automated CI tests in later phases.
+
+Internally uses the **ELF** (not `.bin`) so addresses are embedded:
+```sh
+openocd -f openocd.cfg -c "program build/ppap.elf verify reset exit"
+```
+
+| Method | When to use |
+|---|---|
+| `./scripts/flash.sh` (OpenOCD) | Daily dev — no unplug required; verifies write |
+| `ppap.uf2` drag-and-drop | No debug adapter — hold BOOTSEL, plug USB, copy |
+
+### ✓ Step 11 — QEMU Smoke Test
+
+QEMU's `raspi` target does not support the RP2040, but the `mps2-an500` (Cortex-M0+) machine runs ARMv6-M Thumb code without XIP. This provides a fast, hardware-free test loop for pure-C kernel logic (scheduler, memory manager).
+
+New files:
+
+| File | Purpose |
+|---|---|
+| `ldscripts/qemu.ld` | ROM at `0x00000000` (8 MB), RAM at `0x20000000` (512 KB), stack 16 KB |
+| `src/drivers/uart_qemu.c` | CMSDK UART at `0x40004000`; BAUDDIV=217 for 115200 bps @ 25 MHz |
+| `src/kernel/main_qemu.c` | No RP2040 clock/PLL; calls `xip_add(3,4)`, prints "QEMU smoke test PASSED" |
+| `scripts/qemu.sh` | `--build` (rebuild first), `--gdb` (pause at reset, GDB on :1234) |
+
+CMake target `ppap_qemu` builds successfully using the same arm-none-eabi-gcc toolchain:
+
+```
+arm-none-eabi-nm --numeric-sort build/ppap_qemu.elf | grep -E 'vectors|kmain|xip_add|__stack_top'
+00000000 T _vectors
+0000010c T kmain
+00000184 T xip_add
+20004000 A __stack_top
+```
+
+Run with:
+```sh
+sudo apt install qemu-system-arm   # one-time install
+./scripts/qemu.sh                  # or --build to rebuild first
+```
+
+Expected output:
+```
+PicoPiAndPortable booting (QEMU mps2-an500)...
+UART: CMSDK UART0 @ 0x40004000
+Clock: emulated (no PLL — skipping clock_init_pll)
+XIP: xip_add @ 0x00000185 (ROM, 0x000xxxxx in QEMU)
+XIP: xip_add(3,4) = 7
+QEMU smoke test PASSED
+```
+
+Press **Ctrl-A X** to quit QEMU.
 
 ---
 

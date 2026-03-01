@@ -13,7 +13,9 @@ pico_sdk_init()
 
 add_executable(ppap
     src/boot/startup.S      # Vector table + Reset_Handler (Step 4)
+    src/boot/stage1.S       # Stage 1 extension: VTOR redirect to 0x10001000 (Step 8)
     src/kernel/main.c
+    src/kernel/xip_test.c   # XIP verification + SysTick benchmark (Step 9)
     src/drivers/uart.c
     src/drivers/clock.c     # PLL_SYS → 133 MHz (Step 7)
 )
@@ -46,3 +48,33 @@ target_link_options(ppap PRIVATE
 
 # Produce ppap.bin and ppap.uf2 alongside ppap.elf
 pico_add_extra_outputs(ppap)
+
+# =============================================================================
+# QEMU smoke-test target — mps2-an500 (Cortex-M0+)  [Step 11]
+# =============================================================================
+# Builds a standalone ELF for QEMU.  Uses the same startup.S and xip_test.c
+# but replaces main.c with main_qemu.c (no RP2040 clock/PLL init) and
+# uart.c with uart_qemu.c (CMSDK UART at 0x40004000).
+#
+# Run with:  ./scripts/qemu.sh
+# Install:   sudo apt install qemu-system-arm
+# =============================================================================
+
+add_executable(ppap_qemu
+    src/boot/startup.S          # Same Reset_Handler (startup is portable)
+    src/kernel/main_qemu.c      # No RP2040-specific hardware init
+    src/kernel/xip_test.c       # xip_add works on any ARM Cortex-M
+    src/drivers/uart_qemu.c     # CMSDK UART for mps2-an500
+)
+
+target_include_directories(ppap_qemu PRIVATE src)
+
+# No Pico SDK libraries — ppap_qemu is a raw ARM bare-metal target.
+# The toolchain (arm-none-eabi-gcc / Cortex-M0+) is inherited from
+# pico_sdk_init() and is identical to the mps2-an500 ISA.
+
+target_link_options(ppap_qemu PRIVATE
+    -T ${CMAKE_SOURCE_DIR}/ldscripts/qemu.ld
+    -nostartfiles
+    -Wl,--gc-sections
+)

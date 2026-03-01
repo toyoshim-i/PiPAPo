@@ -249,3 +249,12 @@ void uart_reinit_133mhz(void)
     /* Re-enable UART, TX and RX */
     UART0_CR = UART_CR_ENABLE;
 }
+
+void uart_print_hex32(uint32_t v)
+{
+    uart_puts("0x");
+    for (int i = 7; i >= 0; i--) {
+        unsigned nibble = (v >> (i * 4)) & 0xFu;
+        uart_putc(nibble < 10u ? (char)('0' + nibble) : (char)('a' + nibble - 10u));
+    }
+}

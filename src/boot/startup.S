@@ -7,11 +7,10 @@
 @   Reset_Handler     → copies .data, zeros .bss, calls kmain()
 @   Default_Handler   → infinite loop for unhandled exceptions / IRQs
 @
-@ The RP2040 boot ROM reads the Stage 1 bootloader from the first 256 bytes
-@ of flash, which configures XIP.  After that, it loads SP from word 0 and
-@ jumps to word 1 of the vector table.  Our vector table sits at 0x10001000,
-@ so Stage 1 must set VTOR = 0x10001000 before handing off (Step 8).
-@ For now, the Pico SDK boot2 handles this automatically.
+@ The RP2040 boot ROM executes the SDK boot2 (first 256 B of flash), which
+@ configures XIP/QSPI and exits by reading {SP, entry} from 0x10000100.
+@ stage1.S sits there: it sets VTOR=0x10001000, then reads {SP, Reset_Handler}
+@ from this vector table and branches to Reset_Handler.
 @
 @ Cortex-M0+ vector table layout (ARMv6-M):
 @   0:     Initial Stack Pointer value
@@ -98,6 +97,23 @@ Reset_Handler:
 .Lcopy_check:
     cmp  r0, r1
     blo  .Lcopy_loop
+
+    @ -----------------------------------------------------------------
+    @ Copy .ramfunc: flash image → SRAM
+    @   Same pattern as .data copy; moves RAM-resident code into SRAM.
+    @ -----------------------------------------------------------------
+    ldr  r0, =__ramfunc_start
+    ldr  r1, =__ramfunc_end
+    ldr  r2, =__ramfunc_load
+    b    .Lramfunc_check
+.Lramfunc_loop:
+    ldr  r3, [r2]
+    adds r2, r2, #4
+    str  r3, [r0]
+    adds r0, r0, #4
+.Lramfunc_check:
+    cmp  r0, r1
+    blo  .Lramfunc_loop
 
     @ -----------------------------------------------------------------
     @ Zero .bss

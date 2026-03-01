@@ -10,6 +10,8 @@
 #ifndef PPAP_UART_H
 #define PPAP_UART_H
 
+#include <stdint.h>
+
 /* Initialize UART0 console (115200 8N1, GPIO 0=TX / GPIO 1=RX).
  * Also switches clk_sys from ROSC to 12 MHz XOSC.
  * Must be called before any uart_putc / uart_puts calls. */
@@ -28,5 +30,8 @@ void uart_flush(void);
 /* Update baud rate divisors for 115200 bps at 133 MHz (after clock_init_pll()).
  * Briefly disables and re-enables the UART. */
 void uart_reinit_133mhz(void);
+
+/* Print a 32-bit value as "0xXXXXXXXX" (8 lowercase hex digits, no newline). */
+void uart_print_hex32(uint32_t v);
 
 #endif /* PPAP_UART_H */

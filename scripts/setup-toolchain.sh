@@ -78,6 +78,7 @@ APT_PACKAGES=(
   ninja-build             # Fast build backend for CMake
   git                     # Version control
   python3                 # Required by Pico SDK scripts
+  qemu-system-arm         # QEMU mps2-an500 smoke tests (scripts/qemu.sh)
 )
 
 # Check which packages are already installed
@@ -220,6 +221,11 @@ else
   warn "arm-none-eabi-gdb not found in PATH"
   FAIL=1
 fi
+
+# qemu-system-arm
+verify_version "qemu-system-arm" \
+  "qemu-system-arm --version" \
+  "QEMU emulator"
 
 # --- Summary -----------------------------------------------------------------
 

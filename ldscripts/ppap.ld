@@ -9,19 +9,18 @@
  * All flash regions are execute-in-place; no code copying to SRAM.
  *
  * =============================================================================
- * INTERIM LAYOUT (Steps 4–7)
+ * FINAL LAYOUT (Step 8+)
  * =============================================================================
- * The RP2040 boot ROM, after executing boot2, reads the application vector
- * table from XIP_BASE + 0x100 (= 0x10000100).  While we still use the Pico
- * SDK's 256-byte boot2, the kernel must start there.
+ * The SDK boot2 (first 256 bytes of FLASH_BOOT) initialises QSPI/XIP and
+ * exits by reading {SP, entry} from XIP_BASE+0x100 = 0x10000100.
+ * Our stage1.S is placed there: it sets VTOR=0x10001000, then loads SP and
+ * Reset_Handler from the kernel vector table at 0x10001000 and branches.
  *
- * Step 8 replaces boot2 with our own 4 KB Stage 1 that sets VTOR and jumps
- * to 0x10001000, restoring the final layout described in the design spec:
- *
- *   FINAL (Step 8+):            INTERIM (now):
- *   0x10000000  Stage 1 (4KB)   0x10000000  boot2 (256 B)
- *   0x10001000  Kernel           0x10000100  Kernel (vector table here)
- *   0x10011000  romfs            0x10010100  romfs
+ *   0x10000000  Stage 1 (4KB):
+ *               [0x10000000–0x100000FF]  Pico SDK boot2 (256 B, QSPI init)
+ *               [0x10000100–0x10000FFF]  stage1.S (VTOR redirect to kernel)
+ *   0x10001000  Kernel (64KB):           Vector table + .text + .rodata
+ *   0x10011000  romfs (~16MB remainder): Populated by mkromfs (Phase 2+)
  *
  * =============================================================================
  * MEMORY REGIONS
@@ -29,12 +28,13 @@
  *
  * Flash layout (XIP base = 0x10000000):
  *
- *   0x10000000  +-----------------------+  <- FLASH_BOOT  (256 B)
- *               | Pico SDK boot2        |     QSPI init, enables XIP
- *   0x10000100  +-----------------------+  <- FLASH_KERNEL (64KB)
- *               | Kernel .text/.rodata  |     Vector table at 0x10000100,
+ *   0x10000000  +-----------------------+  <- FLASH_BOOT  (4 KB)
+ *               | SDK boot2 (256 B)     |     QSPI init, enables XIP
+ *               | stage1 extension      |     Sets VTOR, jumps to kernel
+ *   0x10001000  +-----------------------+  <- FLASH_KERNEL (64 KB)
+ *               | Kernel .text/.rodata  |     Vector table at 0x10001000,
  *               | (vector table first)  |     then kernel code + data
- *   0x10010100  +-----------------------+  <- FLASH_ROMFS  (~16MB remainder)
+ *   0x10011000  +-----------------------+  <- FLASH_ROMFS  (~16 MB remainder)
  *               | romfs image           |     Populated by mkromfs (Phase 2+)
  *               +-----------------------+
  *
@@ -55,10 +55,10 @@
 
 MEMORY {
     /* External QSPI Flash — XIP mapped at 0x10000000
-     * FLASH_BOOT: 256 B for Pico SDK boot2 (Step 8 expands this to 4KB) */
-    FLASH_BOOT   (rx)  : ORIGIN = 0x10000000, LENGTH = 256
-    FLASH_KERNEL (rx)  : ORIGIN = 0x10000100, LENGTH = 64K
-    FLASH_ROMFS  (r)   : ORIGIN = 0x10010100, LENGTH = 16M - 0x10100
+     * FLASH_BOOT: 4 KB — SDK boot2 (256 B) + stage1 extension */
+    FLASH_BOOT   (rx)  : ORIGIN = 0x10000000, LENGTH = 4K
+    FLASH_KERNEL (rx)  : ORIGIN = 0x10001000, LENGTH = 64K
+    FLASH_ROMFS  (r)   : ORIGIN = 0x10011000, LENGTH = 16M - 0x11000
 
     /* On-chip SRAM — 264KB total */
     RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 16K
@@ -80,12 +80,8 @@ SECTIONS {
      *
      * The RP2040 boot ROM copies these 256 bytes to SRAM, verifies the
      * CRC32 in the last 4 bytes, and executes them.  Boot2 configures
-     * the QSPI controller for XIP, then returns to the boot ROM, which
-     * reads SP (word 0) and Reset_Handler (word 1) from 0x10000100 and
-     * branches to Reset_Handler.
-     *
-     * Step 8 will replace bs2_default_library with our own stage1.S
-     * and expand FLASH_BOOT to 4 KB.
+     * the QSPI controller for XIP, then exits by reading SP (word 0)
+     * and entry (word 1) from 0x10000100 (start of .stage1 below).
      * ------------------------------------------------------------------ */
     .boot2 : {
         KEEP(*(.boot2))
@@ -93,10 +89,25 @@ SECTIONS {
 
 
     /* ------------------------------------------------------------------
+     * Stage 1 extension — placed immediately after boot2 at 0x10000100.
+     *
+     * The SDK boot2 exit stub reads:
+     *   [0x10000100] = __stack_top    → sets MSP
+     *   [0x10000104] = stage1_entry   → branches here (Thumb bit set)
+     *
+     * stage1_entry sets VTOR=0x10001000 and jumps to the kernel.
+     * ------------------------------------------------------------------ */
+    .stage1 : {
+        KEEP(*(.stage1))
+        . = ALIGN(4);
+    } > FLASH_BOOT
+
+
+    /* ------------------------------------------------------------------
      * Interrupt vector table — placed at the very start of FLASH_KERNEL
-     * (= 0x10000100).  The boot ROM reads:
-     *   [0x10000100] = __stack_top    → initial SP
-     *   [0x10000104] = Reset_Handler  → entry point
+     * (= 0x10001000).  stage1_entry reads:
+     *   [0x10001000] = __stack_top    → initial SP
+     *   [0x10001004] = Reset_Handler  → entry point
      * ------------------------------------------------------------------ */
     .vectors : {
         KEEP(*(.vectors))
@@ -146,6 +157,26 @@ SECTIONS {
 
     /* Flash address where .data image is stored (used by startup.S) */
     __data_load = LOADADDR(.data);
+
+
+    /* ------------------------------------------------------------------
+     * RAM-resident functions (.ramfunc)
+     * LMA: stored in flash immediately after .data image
+     * VMA: copied to RAM_KERNEL at boot by startup.S
+     *
+     * Used for code that must run from SRAM (e.g., sram_bench for XIP
+     * cache comparison).  Unlike .data, the section type is "ax"
+     * (allocated + executable) so the assembler does not warn.
+     * ------------------------------------------------------------------ */
+    .ramfunc : {
+        __ramfunc_start = .;
+        *(.ramfunc*)
+        . = ALIGN(4);
+        __ramfunc_end = .;
+    } > RAM_KERNEL AT> FLASH_KERNEL
+
+    /* Flash address where .ramfunc image is stored (used by startup.S) */
+    __ramfunc_load = LOADADDR(.ramfunc);
 
 
     /* ------------------------------------------------------------------
