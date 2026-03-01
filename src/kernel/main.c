@@ -16,20 +16,6 @@
 #include "proc/sched.h"
 #include "xip_test.h"
 
-/* ── Test thread ─────────────────────────────────────────────────────────── */
-/*
- * Kernel thread 1: runs concurrently with the kernel init thread (thread 0).
- * Prints "1\n" in a loop so we can see preemptive scheduling in the output.
- * The busy-wait delay gives SysTick time to fire and trigger a context switch.
- */
-static void thread1(void)
-{
-    for (;;) {
-        uart_puts("1\n");
-        for (volatile uint32_t d = 0u; d < 200000u; d++) {}
-    }
-}
-
 /* ── Kernel entry point ──────────────────────────────────────────────────── */
 
 void kmain(void)
@@ -81,33 +67,24 @@ void kmain(void)
     /* ------------------------------------------------------------------
      * Phase 1 Steps 4+5: context switch + SysTick preemption
      *
-     * Set up a second kernel thread, then start the round-robin scheduler.
-     * After sched_start() returns, this function continues as thread 0 and
-     * will be preempted by SysTick every SYSTICK_RELOAD+1 CPU cycles.
+     * Give the kernel init thread (thread 0) its own PSP stack page, then
+     * start the round-robin scheduler.  After sched_start() returns, this
+     * thread idles with WFI, waking only on interrupts.
      * ------------------------------------------------------------------ */
-    /* Give Thread 0 (the kernel init thread) its own stack page so that its
-     * PSP stack is separate from the MSP exception-handler stack.
-     * Must be allocated before sched_start() reads proc_table[0].stack_page. */
     proc_table[0].stack_page = page_alloc();
-
-    pcb_t *p1 = proc_alloc();
-    p1->stack_page = page_alloc();
-    proc_setup_stack(p1, thread1);
-    p1->state = PROC_RUNNABLE;
 
     uart_puts("SCHED: starting preemptive scheduler (10 ms slices @ 133 MHz)\n");
 
     /* Drain any remaining polling TX, then switch UART0 to IRQ-driven mode.
-     * After uart_init_irq() all uart_putc/uart_puts calls from threads are
-     * non-blocking ring-buffer writes; UART0_IRQ_Handler does the draining. */
+     * After uart_init_irq() all uart_putc/uart_puts calls are non-blocking
+     * ring-buffer writes; UART0_IRQ_Handler does the draining. */
     uart_flush();
     uart_init_irq();
+    uart_puts("UART: switched to interrupt-driven mode\n");
 
     sched_start();
 
-    /* Thread 0 continues here — print "0\n" in a loop */
-    for (;;) {
-        uart_puts("0\n");
-        for (volatile uint32_t d = 0u; d < 200000u; d++) {}
-    }
+    /* Idle thread — wake on every interrupt, then sleep again. */
+    for (;;)
+        __asm__ volatile ("wfi");
 }
