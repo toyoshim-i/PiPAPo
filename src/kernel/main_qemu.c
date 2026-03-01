@@ -30,6 +30,7 @@
 #include "fd/fd.h"
 #include "vfs/vfs.h"
 #include "fs/romfs.h"
+#include "fs/devfs.h"
 #include "syscall/syscall.h"
 #include "smp.h"
 
@@ -83,6 +84,13 @@ void kmain(void)
         }
     } else {
         uart_puts("VFS: romfs mount FAILED\n");
+    }
+
+    /* Phase 2 Step 8: mount devfs at /dev */
+    if (vfs_mount("/dev", &devfs_ops, 0, NULL) == 0) {
+        uart_puts("VFS: devfs mounted at /dev\n");
+    } else {
+        uart_puts("VFS: devfs mount FAILED\n");
     }
 
     /* Phase 1 Step 10: wire fd 0/1/2 to the UART tty driver */

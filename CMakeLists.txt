@@ -33,6 +33,7 @@ add_executable(ppap
     src/kernel/vfs/namei.c        # Path resolution: vfs_lookup (Phase 2 Step 2)
     src/kernel/syscall/sys_fs.c   # VFS-routed syscalls: open/close/lseek/stat (Phase 2 Step 3)
     src/kernel/fs/romfs.c         # romfs driver: mount/lookup/read/readdir (Phase 2 Step 6)
+    src/kernel/fs/devfs.c         # devfs pseudo-FS: /dev/null, zero, ttyS0, urandom (Phase 2 Step 8)
     src/kernel/smp.c              # Core 1 launch + SIO FIFO IPC (Phase 1 Step 12)
     src/drivers/uart.c
     src/drivers/clock.c     # PLL_SYS → 133 MHz (Step 7)
@@ -99,6 +100,7 @@ add_executable(ppap_qemu
     src/kernel/vfs/namei.c            # Path resolution: vfs_lookup (Phase 2 Step 2)
     src/kernel/syscall/sys_fs.c       # VFS-routed syscalls (Phase 2 Step 3)
     src/kernel/fs/romfs.c             # romfs driver: mount/lookup/read/readdir (Phase 2 Step 6)
+    src/kernel/fs/devfs.c             # devfs pseudo-FS (Phase 2 Step 8)
     src/kernel/smp.c                  # Core 1 launch + SIO FIFO IPC (Phase 1 Step 12)
     src/drivers/uart_qemu.c     # CMSDK UART for mps2-an500
 )
