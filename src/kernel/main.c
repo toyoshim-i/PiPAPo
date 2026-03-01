@@ -9,6 +9,7 @@
  * Phase 1 Step 10: fd_stdio_init() — fd 0/1/2 wired to UART tty driver.
  * Phase 1 Step 11: mpu_init() — 4-region MPU layout; mpu_switch() on context switch.
  * Phase 1 Step 12: core1_launch() — start Core 1 running the SIO echo worker.
+ * Phase 2 Step 10: syscall-level VFS integration test.
  */
 
 #include "drivers/uart.h"
@@ -18,16 +19,114 @@
 #include "proc/proc.h"
 #include "proc/sched.h"
 #include "fd/fd.h"
+#include "fd/file.h"
 #include "vfs/vfs.h"
 #include "fs/romfs.h"
 #include "fs/devfs.h"
 #include "fs/procfs.h"
 #include "syscall/syscall.h"
+#include "errno.h"
 #include "smp.h"
 
 /* Linker-provided romfs image location in flash */
 extern const uint8_t __romfs_start[];
 extern const uint8_t __romfs_end[];
+
+/* ── Syscall-level integration test ───────────────────────────────────────── */
+
+static void vfs_integration_test(void)
+{
+    uart_puts("VFS: integration test ... ");
+    int ok = 1;
+
+    /* open + read /etc/hostname via syscall layer */
+    {
+        long fd = sys_open("/etc/hostname", O_RDONLY, 0);
+        if (fd >= 0) {
+            char buf[32];
+            long n = sys_read(fd, buf, sizeof(buf) - 1);
+            if (n == 5) {
+                buf[n] = '\0';
+                uart_puts(buf);
+            } else {
+                ok = 0;
+            }
+            sys_close(fd);
+        } else {
+            ok = 0;
+        }
+    }
+
+    /* open nonexistent file → -ENOENT */
+    {
+        long fd = sys_open("/nonexistent", O_RDONLY, 0);
+        if (fd != -(long)ENOENT)
+            ok = 0;
+    }
+
+    /* open + write /dev/null */
+    {
+        long fd = sys_open("/dev/null", O_WRONLY, 0);
+        if (fd >= 0) {
+            long n = sys_write(fd, "discarded", 9);
+            if (n != 9) ok = 0;
+            sys_close(fd);
+        } else {
+            ok = 0;
+        }
+    }
+
+    /* open + read /dev/zero → all zero bytes */
+    {
+        long fd = sys_open("/dev/zero", O_RDONLY, 0);
+        if (fd >= 0) {
+            char buf[4] = {0xFF, 0xFF, 0xFF, 0xFF};
+            long n = sys_read(fd, buf, 4);
+            if (n != 4 || buf[0] || buf[1] || buf[2] || buf[3])
+                ok = 0;
+            sys_close(fd);
+        } else {
+            ok = 0;
+        }
+    }
+
+    /* open + read /proc/meminfo */
+    {
+        long fd = sys_open("/proc/meminfo", O_RDONLY, 0);
+        if (fd >= 0) {
+            char buf[128];
+            long n = sys_read(fd, buf, sizeof(buf) - 1);
+            if (n <= 0) ok = 0;
+            sys_close(fd);
+        } else {
+            ok = 0;
+        }
+    }
+
+    /* stat /etc/hostname → regular file */
+    {
+        struct stat st;
+        long rc = sys_stat("/etc/hostname", &st);
+        if (rc != 0 || !S_ISREG(st.st_mode) || st.st_size != 5)
+            ok = 0;
+    }
+
+    /* chdir + getcwd */
+    {
+        long rc = sys_chdir("/etc");
+        if (rc == 0) {
+            char buf[64];
+            long n = sys_getcwd(buf, sizeof(buf));
+            if (n <= 0 || __builtin_strcmp(buf, "/etc") != 0)
+                ok = 0;
+        } else {
+            ok = 0;
+        }
+        sys_chdir("/");
+    }
+
+    uart_puts(ok ? "PASS\n" : "FAIL\n");
+}
 
 /* ── Kernel entry point ──────────────────────────────────────────────────── */
 
@@ -60,43 +159,28 @@ void kmain(void)
     vfs_init();
     file_pool_init();
 
-    /* Phase 2 Step 7: mount romfs at / */
-    if (vfs_mount("/", &romfs_ops, MNT_RDONLY, __romfs_start) == 0) {
+    /* Phase 2 Steps 7-9: mount romfs, devfs, procfs */
+    if (vfs_mount("/", &romfs_ops, MNT_RDONLY, __romfs_start) == 0)
         uart_puts("VFS: romfs mounted at /\n");
-
-        /* Smoke test: read /etc/hostname via VFS path resolution */
-        vnode_t *vn = 0;
-        if (vfs_lookup("/etc/hostname", &vn) == 0 && vn) {
-            char buf[32];
-            long n = vn->mount->ops->read(vn, buf, sizeof(buf) - 1, 0);
-            if (n > 0) {
-                buf[n] = '\0';
-                uart_puts("ROMFS: /etc/hostname = ");
-                uart_puts(buf);
-            }
-            vnode_put(vn);
-        }
-    } else {
+    else
         uart_puts("VFS: romfs mount FAILED\n");
-    }
 
-    /* Phase 2 Step 8: mount devfs at /dev */
-    if (vfs_mount("/dev", &devfs_ops, 0, NULL) == 0) {
+    if (vfs_mount("/dev", &devfs_ops, 0, NULL) == 0)
         uart_puts("VFS: devfs mounted at /dev\n");
-    } else {
+    else
         uart_puts("VFS: devfs mount FAILED\n");
-    }
 
-    /* Phase 2 Step 9: mount procfs at /proc */
-    if (vfs_mount("/proc", &procfs_ops, MNT_RDONLY, NULL) == 0) {
+    if (vfs_mount("/proc", &procfs_ops, MNT_RDONLY, NULL) == 0)
         uart_puts("VFS: procfs mounted at /proc\n");
-    } else {
+    else
         uart_puts("VFS: procfs mount FAILED\n");
-    }
 
     /* Phase 1 Step 10: wire fd 0/1/2 to the UART tty driver */
     fd_stdio_init(&proc_table[0]);
     uart_puts("FD: fd 0/1/2 wired to UART tty\n");
+
+    /* Phase 2 Step 10: syscall-level VFS integration test */
+    vfs_integration_test();
 
     /* ------------------------------------------------------------------
      * Phase 1 Steps 4+5: context switch + SysTick preemption

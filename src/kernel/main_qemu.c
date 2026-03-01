@@ -7,19 +7,14 @@
  *   - No clock_init_pll()      (QEMU has no PLL or XOSC to configure)
  *   - No uart_reinit_133mhz()  (clock never changes)
  *   - UART via CMSDK UART0     (uart_qemu.c, not uart.c)
- *   - xip_verify() still runs  (address/correctness probe + benches via SysTick)
  *   - Cooperative sched_yield() instead of SysTick preemption
  *     (QEMU mps2-an500 runs the SysTick counter but never asserts TICKINT;
  *      we use explicit sched_yield() calls to trigger PendSV instead)
  *
- * Phase 1 Steps 4+5: PendSV context switch verified on QEMU.
- * Expected output: interleaved "0\n" and "1\n" — proves that PendSV_Handler
- * correctly saves and restores per-thread stacks.
- * (On real hardware SysTick drives preemptive scheduling; see main.c.)
- *
- * Phase 1 Step 11: mpu_init() self-stubs on QEMU (MPU_TYPE == 0).
- * mpu_switch() in switch.S is also a no-op via the mpu_present flag.
- * Phase 1 Step 12: core1_launch() self-stubs on QEMU (SIO_FIFO_ST.RDY == 0).
+ * Phase 2 Step 10: syscall-level integration tests for the VFS stack.
+ * Tests exercise sys_open, sys_read, sys_write, sys_close, sys_stat,
+ * sys_getdents, sys_chdir, sys_getcwd, and VFS readlink through the
+ * full fd → file → vfs_ops path.
  */
 
 #include "drivers/uart.h"
@@ -28,16 +23,251 @@
 #include "proc/proc.h"
 #include "proc/sched.h"
 #include "fd/fd.h"
+#include "fd/file.h"
 #include "vfs/vfs.h"
 #include "fs/romfs.h"
 #include "fs/devfs.h"
 #include "fs/procfs.h"
 #include "syscall/syscall.h"
+#include "errno.h"
 #include "smp.h"
 
 /* Linker-provided romfs image location */
 extern const uint8_t __romfs_start[];
 extern const uint8_t __romfs_end[];
+
+/* ── Integration test helpers ─────────────────────────────────────────────── */
+
+static int test_pass;
+static int test_fail;
+
+static void test_report(const char *name, int ok)
+{
+    uart_puts("TEST: ");
+    uart_puts(name);
+    if (ok) {
+        uart_puts(" ... PASS\n");
+        test_pass++;
+    } else {
+        uart_puts(" ... FAIL\n");
+        test_fail++;
+    }
+}
+
+/* ── VFS integration tests ────────────────────────────────────────────────── */
+
+static void vfs_integration_test(void)
+{
+    uart_puts("\n=== Phase 2 Step 10: VFS integration tests ===\n");
+    test_pass = 0;
+    test_fail = 0;
+
+    /* 1. open + read /etc/hostname via syscall layer */
+    {
+        long fd = sys_open("/etc/hostname", O_RDONLY, 0);
+        int ok = 0;
+        if (fd >= 0) {
+            char buf[32];
+            long n = sys_read(fd, buf, sizeof(buf) - 1);
+            if (n == 5) {
+                buf[n] = '\0';
+                /* "ppap\n" */
+                ok = (buf[0]=='p' && buf[1]=='p' && buf[2]=='a' &&
+                      buf[3]=='p' && buf[4]=='\n');
+            }
+            sys_close(fd);
+        }
+        test_report("open+read /etc/hostname", ok);
+    }
+
+    /* 2. open + read /etc/motd */
+    {
+        long fd = sys_open("/etc/motd", O_RDONLY, 0);
+        int ok = 0;
+        if (fd >= 0) {
+            char buf[64];
+            long n = sys_read(fd, buf, sizeof(buf) - 1);
+            if (n > 0) {
+                buf[n] = '\0';
+                /* starts with "Welcome" */
+                ok = (buf[0]=='W' && buf[1]=='e' && buf[2]=='l');
+            }
+            sys_close(fd);
+        }
+        test_report("open+read /etc/motd", ok);
+    }
+
+    /* 3. open nonexistent file → -ENOENT */
+    {
+        long fd = sys_open("/nonexistent", O_RDONLY, 0);
+        test_report("open /nonexistent → ENOENT", fd == -(long)ENOENT);
+    }
+
+    /* 4. open + write /dev/null */
+    {
+        long fd = sys_open("/dev/null", O_WRONLY, 0);
+        int ok = 0;
+        if (fd >= 0) {
+            long n = sys_write(fd, "discarded", 9);
+            ok = (n == 9);
+            sys_close(fd);
+        }
+        test_report("open+write /dev/null", ok);
+    }
+
+    /* 5. open + read /dev/zero → all zero bytes */
+    {
+        long fd = sys_open("/dev/zero", O_RDONLY, 0);
+        int ok = 0;
+        if (fd >= 0) {
+            char buf[4] = {0xFF, 0xFF, 0xFF, 0xFF};
+            long n = sys_read(fd, buf, 4);
+            if (n == 4)
+                ok = (buf[0]==0 && buf[1]==0 && buf[2]==0 && buf[3]==0);
+            sys_close(fd);
+        }
+        test_report("open+read /dev/zero", ok);
+    }
+
+    /* 6. open + read /proc/meminfo */
+    {
+        long fd = sys_open("/proc/meminfo", O_RDONLY, 0);
+        int ok = 0;
+        if (fd >= 0) {
+            char buf[128];
+            long n = sys_read(fd, buf, sizeof(buf) - 1);
+            if (n > 0) {
+                buf[n] = '\0';
+                /* should start with "MemTotal:" */
+                ok = (buf[0]=='M' && buf[1]=='e' && buf[2]=='m' &&
+                      buf[3]=='T');
+            }
+            sys_close(fd);
+        }
+        test_report("open+read /proc/meminfo", ok);
+    }
+
+    /* 7. stat /etc/hostname → regular file, size 5 */
+    {
+        struct stat st;
+        long rc = sys_stat("/etc/hostname", &st);
+        int ok = (rc == 0 && S_ISREG(st.st_mode) && st.st_size == 5);
+        test_report("stat /etc/hostname", ok);
+    }
+
+    /* 8. stat /etc → directory */
+    {
+        struct stat st;
+        long rc = sys_stat("/etc", &st);
+        int ok = (rc == 0 && S_ISDIR(st.st_mode));
+        test_report("stat /etc → DIR", ok);
+    }
+
+    /* 9. getdents / → should list "etc" and "bin" */
+    {
+        long fd = sys_open("/", O_RDONLY, 0);
+        int ok = 0;
+        if (fd >= 0) {
+            struct dirent entries[8];
+            long n = sys_getdents(fd, entries, 8);
+            if (n >= 2) {
+                int found_etc = 0, found_bin = 0;
+                for (long i = 0; i < n; i++) {
+                    if (__builtin_strcmp(entries[i].d_name, "etc") == 0)
+                        found_etc = 1;
+                    if (__builtin_strcmp(entries[i].d_name, "bin") == 0)
+                        found_bin = 1;
+                }
+                ok = found_etc && found_bin;
+            }
+            sys_close(fd);
+        }
+        test_report("getdents /", ok);
+    }
+
+    /* 10. getdents /dev → should list device nodes */
+    {
+        long fd = sys_open("/dev", O_RDONLY, 0);
+        int ok = 0;
+        if (fd >= 0) {
+            struct dirent entries[8];
+            long n = sys_getdents(fd, entries, 8);
+            if (n >= 4) {
+                int found_null = 0, found_zero = 0;
+                for (long i = 0; i < n; i++) {
+                    if (__builtin_strcmp(entries[i].d_name, "null") == 0)
+                        found_null = 1;
+                    if (__builtin_strcmp(entries[i].d_name, "zero") == 0)
+                        found_zero = 1;
+                }
+                ok = found_null && found_zero;
+            }
+            sys_close(fd);
+        }
+        test_report("getdents /dev", ok);
+    }
+
+    /* 11. chdir + getcwd */
+    {
+        long rc = sys_chdir("/etc");
+        int ok = 0;
+        if (rc == 0) {
+            char buf[64];
+            long n = sys_getcwd(buf, sizeof(buf));
+            if (n > 0) {
+                ok = (__builtin_strcmp(buf, "/etc") == 0);
+            }
+        }
+        test_report("chdir+getcwd /etc", ok);
+        /* Restore cwd to / */
+        sys_chdir("/");
+    }
+
+    /* 12. symlink readlink: /bin/ls → "busybox" (via VFS layer) */
+    {
+        /* Look up /bin to get the directory vnode */
+        vnode_t *dir = NULL;
+        int ok = 0;
+        if (vfs_lookup("/bin", &dir) == 0 && dir) {
+            /* Lookup "ls" within /bin — this gives us the symlink vnode
+             * directly (FS lookup doesn't follow symlinks). */
+            vnode_t *lnk = NULL;
+            if (dir->mount->ops->lookup(dir, "ls", &lnk) == 0 && lnk) {
+                if (lnk->type == VNODE_SYMLINK) {
+                    char target[32];
+                    long tlen = lnk->mount->ops->readlink(
+                        lnk, target, sizeof(target) - 1);
+                    if (tlen == 7) {
+                        target[tlen] = '\0';
+                        ok = (__builtin_strcmp(target, "busybox") == 0);
+                    }
+                }
+                vnode_put(lnk);
+            }
+            vnode_put(dir);
+        }
+        test_report("readlink /bin/ls → busybox", ok);
+    }
+
+    /* Summary */
+    uart_puts("=== Results: ");
+    /* Print pass count */
+    char digit[4];
+    int idx = 0;
+    int v = test_pass;
+    if (v >= 10) digit[idx++] = '0' + (v / 10);
+    digit[idx++] = '0' + (v % 10);
+    digit[idx] = '\0';
+    uart_puts(digit);
+    uart_puts(" passed, ");
+    idx = 0;
+    v = test_fail;
+    if (v >= 10) digit[idx++] = '0' + (v / 10);
+    digit[idx++] = '0' + (v % 10);
+    digit[idx] = '\0';
+    uart_puts(digit);
+    uart_puts(" failed ===\n\n");
+}
 
 /* ── Test thread ─────────────────────────────────────────────────────────── */
 
@@ -67,68 +297,31 @@ void kmain(void)
     vfs_init();
     file_pool_init();
 
-    /* Phase 2 Step 7: mount romfs at / */
-    if (vfs_mount("/", &romfs_ops, MNT_RDONLY, __romfs_start) == 0) {
+    /* Phase 2 Steps 7-9: mount romfs, devfs, procfs */
+    if (vfs_mount("/", &romfs_ops, MNT_RDONLY, __romfs_start) == 0)
         uart_puts("VFS: romfs mounted at /\n");
-
-        /* Smoke test: read /etc/hostname via VFS path resolution */
-        vnode_t *vn = 0;
-        if (vfs_lookup("/etc/hostname", &vn) == 0 && vn) {
-            char buf[32];
-            long n = vn->mount->ops->read(vn, buf, sizeof(buf) - 1, 0);
-            if (n > 0) {
-                buf[n] = '\0';
-                uart_puts("ROMFS: /etc/hostname = ");
-                uart_puts(buf);
-            }
-            vnode_put(vn);
-        }
-    } else {
+    else
         uart_puts("VFS: romfs mount FAILED\n");
-    }
 
-    /* Phase 2 Step 8: mount devfs at /dev */
-    if (vfs_mount("/dev", &devfs_ops, 0, NULL) == 0) {
+    if (vfs_mount("/dev", &devfs_ops, 0, NULL) == 0)
         uart_puts("VFS: devfs mounted at /dev\n");
-    } else {
+    else
         uart_puts("VFS: devfs mount FAILED\n");
-    }
 
-    /* Phase 2 Step 9: mount procfs at /proc */
-    if (vfs_mount("/proc", &procfs_ops, MNT_RDONLY, NULL) == 0) {
+    if (vfs_mount("/proc", &procfs_ops, MNT_RDONLY, NULL) == 0)
         uart_puts("VFS: procfs mounted at /proc\n");
-
-        /* Smoke test: read /proc/version */
-        vnode_t *vn = 0;
-        if (vfs_lookup("/proc/version", &vn) == 0 && vn) {
-            char buf[64];
-            long n = vn->mount->ops->read(vn, buf, sizeof(buf) - 1, 0);
-            if (n > 0) {
-                buf[n] = '\0';
-                uart_puts("PROCFS: ");
-                uart_puts(buf);
-            }
-            vnode_put(vn);
-        }
-    } else {
+    else
         uart_puts("VFS: procfs mount FAILED\n");
-    }
 
     /* Phase 1 Step 10: wire fd 0/1/2 to the UART tty driver */
     fd_stdio_init(&proc_table[0]);
 
+    /* Phase 2 Step 10: syscall-level VFS integration tests */
+    vfs_integration_test();
+
     /* ------------------------------------------------------------------
      * Phase 1 Steps 4+5: context switch via cooperative sched_yield()
-     *
-     * Each thread calls sched_yield() which sets PENDSVSET.  PendSV_Handler
-     * saves the caller's callee-saved registers onto its PSP stack, calls
-     * sched_next() to select the next RUNNABLE thread, then restores the
-     * new thread's saved context.  Interleaved "0\n" / "1\n" output proves
-     * that both threads run and that their stacks are isolated.
      * ------------------------------------------------------------------ */
-    /* Give Thread 0 (the kernel init thread) its own stack page so that its
-     * PSP stack is separate from the MSP exception-handler stack.
-     * Must be allocated before sched_start() reads proc_table[0].stack_page. */
     proc_table[0].stack_page = page_alloc();
 
     pcb_t *p1 = proc_alloc();
