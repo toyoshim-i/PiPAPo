@@ -8,16 +8,19 @@ Estimated Duration: 4 weeks
 ## Goals
 
 Build the core kernel infrastructure that all subsequent phases depend on:
-a preemptive scheduler, a page allocator, a system call interface, MPU
-protection, and Core 1 startup.
+a preemptive scheduler, a page allocator, interrupt-driven UART, a file
+descriptor abstraction, a system call interface, MPU protection, and Core 1
+startup.
 
 **Exit Criteria (all must pass before moving to Phase 2):**
-- Page pool initialised: 52 × 4 KB pages on the free list, `page_alloc` / `page_free` work
+- Page pool initialised: 52 × 4 KB pages on the free list, `page_alloc` / `page_free` work ✓ (done)
+- UART switches to interrupt-driven TX/RX just before `sched_start()`; no busy-wait in scheduler context
+- fd 0/1/2 pre-wired to the UART tty driver at boot; `sys_write(1, …)` goes through `struct file_ops`
 - Two kernel threads run concurrently, switched by PendSV every 10 ms (SysTick)
-- `SVC` instruction dispatches to the correct handler; `_exit`, `getpid`, `write` (→ UART), `nanosleep` implemented
+- `SVC` instruction dispatches to the correct handler; `_exit`, `getpid`, `write`, `read`, `nanosleep` implemented
 - MPU 4-region layout active; privileged access to kernel data verified
 - Core 1 started and responds to SIO FIFO messages from Core 0
-- QEMU smoke test runs scheduler and syscalls without hardware (Core 1 and MPU stubbed)
+- QEMU smoke test runs scheduler and syscalls without hardware (UART stays polling on QEMU; Core 1 and MPU stubbed)
 
 ---
 
@@ -26,36 +29,42 @@ protection, and Core 1 startup.
 ```
 src/
   boot/
-    startup.S           (existing — add PendSV / SysTick vectors)
+    startup.S             (existing — add PendSV / SysTick / UART0 IRQ vectors)
   kernel/
-    main.c              (existing — call mm_init, proc_init, sched_start)
-    main_qemu.c         (existing — same init path, Core 1 stubbed)
+    main.c                (existing — call mm_init, uart_init_irq, proc_init,
+                                       fd_stdio_init, mpu_init, core1_launch, sched_start)
+    main_qemu.c           (existing — same init path; uart stays polling; Core 1/MPU stubbed)
     mm/
-      page.c / page.h   # Page allocator — free-stack, 52 × 4 KB pages
-      kmem.c / kmem.h   # Kernel object pool — fixed-size slab for PCBs
-      mpu.c  / mpu.h    # MPU 4-region configuration + per-context switch
+      page.c / page.h     # Page allocator — free-stack, 52 × 4 KB pages  ✓ (done)
+      kmem.c / kmem.h     # Kernel object pool — fixed-size slab for PCBs
+      mpu.c  / mpu.h      # MPU 4-region configuration + per-context switch
     proc/
-      proc.h            # PCB definition (pid, state, regs, fd table, …)
-      proc.c            # process table, proc_alloc, proc_free
-      switch.S          # PendSV handler — save/restore Cortex-M0+ context
-      sched.c / sched.h # Round-robin scheduler, tick handler, yield
+      proc.h              # PCB definition (pid, state, regs, fd table, …)
+      proc.c              # process table, proc_alloc, proc_free
+      switch.S            # PendSV handler — save/restore Cortex-M0+ context
+      sched.c / sched.h   # Round-robin scheduler, tick handler, yield
     syscall/
-      syscall.c         # SVC handler, dispatch table
-      sys_proc.c        # _exit, getpid, vfork (stub), waitpid (stub)
-      sys_io.c          # write (→ UART for now), read (stub)
-      sys_time.c        # nanosleep, time
-    smp.c / smp.h       # Core 1 launch + SIO FIFO IPC helpers
-    xip_test.c/h        (existing)
+      syscall.c           # SVC handler, dispatch table
+      sys_proc.c          # _exit, getpid, vfork (stub), waitpid (stub)
+      sys_io.c            # write / read — routed through fd table
+      sys_time.c          # nanosleep, time
+    fd/
+      file.h              # struct file, struct file_ops (read/write/close)
+      fd.c / fd.h         # fd table helpers: fd_alloc, fd_free, fd_get
+      tty.c / tty.h       # UART tty driver — file_ops backed by uart_getc/uart_putc
+    smp.c / smp.h         # Core 1 launch + SIO FIFO IPC helpers
+    xip_test.c/h          (existing)
   drivers/
-    uart.c/h            (existing)
-    clock.c/h           (existing)
+    uart.c/h              (existing — add IRQ mode: uart_init_irq, TX/RX ring buffers)
+    uart_qemu.c           (existing — stays polling; no IRQ on QEMU)
+    clock.c/h             (existing)
 ```
 
 ---
 
 ## Week 1: Page Allocator and Kernel Object Pool
 
-### Step 1 — Page Allocator (`src/kernel/mm/page.c`)
+### ✓ Step 1 — Page Allocator (`src/kernel/mm/page.c`)
 
 The page pool is the foundation for all dynamic memory in the OS.
 Fixed 4 KB pages map directly onto the SRAM layout from the design spec.
@@ -89,18 +98,20 @@ Fixed 4 KB pages map directly onto the SRAM layout from the design spec.
 #define PAGE_SIZE   4096u
 #define PAGE_COUNT  52u
 
-void     mm_init(void);                /* build free stack from PAGE_POOL_BASE */
+void     mm_init(void);                /* build free stack; print boot memory map */
 void    *page_alloc(void);             /* pop from free stack; returns NULL if OOM */
 void     page_free(void *page);        /* push back onto free stack */
 uint32_t page_free_count(void);        /* for diagnostics / OOM decisions */
 ```
 
-**Verification (UART output at boot):**
+**Verified boot output (QEMU):**
 ```
-MM: page pool 0x20004000–0x20037fff (52 pages × 4096 B = 208 KB)
-MM: page_alloc → 0x20004000
-MM: page_free  ← 0x20004000
-MM: free pages: 52
+MM: SRAM memory map
+MM:   kernel  0x20000000–0x20003fff  16 KB reserved
+MM:     .data/.bss:  0x000000d4 B used, 0x00004004 B to stack top
+MM:   pages   0x20004000–0x20037fff 208 KB (52 × 4 KB, all free)
+MM:   io_buf  0x20038000–0x2003dfff  24 KB
+MM:   dma     0x2003e000–0x20041fff  16 KB
 ```
 
 ### Step 2 — Kernel Object Pool (`src/kernel/mm/kmem.c`)
@@ -126,7 +137,7 @@ avoiding dynamic pool allocation.
 
 ---
 
-## Week 2: PCB, Context Switch, and Preemption
+## Week 2: PCB, Context Switch, Preemption, and UART IRQ
 
 ### Step 3 — PCB Definition and Process Table (`src/kernel/proc/`)
 
@@ -154,9 +165,9 @@ typedef struct {
     void    *stack_page;          /* 4 KB page — process kernel stack */
     void    *user_pages[4];       /* up to 4 user data pages (Phase 3+) */
 
-    /* Files */
-    void    *fd_table[FD_MAX];    /* Phase 3+: replace void* with struct file* */
-    char     cwd[64];
+    /* Files — populated with tty at boot; expanded in Phase 2+ */
+    struct file *fd_table[FD_MAX];
+    char         cwd[64];
 
     /* Scheduling */
     uint32_t ticks_remaining;
@@ -256,21 +267,110 @@ void SysTick_Handler(void) {
 |---|---|
 | 14 (offset 0x38) | `PendSV_Handler` |
 | 15 (offset 0x3C) | `SysTick_Handler` |
+| 32 (offset 0x80) | `UART0_IRQ_Handler` (IRQ 16 = vector 32; see Step 6) |
+
+### Step 6 — Interrupt-Driven UART (`src/drivers/uart.c`)
+
+**Why:** Once the scheduler is running, a process blocked on `uart_putc()`
+holds the CPU with interrupts disabled and no preemption — effectively
+freezing all other processes.  Interrupt-driven TX solves this; interrupt-
+driven RX is required for an interactive shell so no keypress is lost
+between polls.
+
+**Transition strategy:** Boot output before `sched_start()` stays polling —
+it is simpler and there are no race conditions during single-threaded init.
+`uart_init_irq()` is called once, just before `sched_start()`, to switch
+both TX and RX to interrupt mode.
+
+**Ring buffer layout (power-of-2 size → cheap modulo via `& MASK`):**
+
+```c
+#define UART_TX_SIZE  256u   /* must be power of 2 */
+#define UART_RX_SIZE   64u   /* must be power of 2 */
+
+static char     tx_buf[UART_TX_SIZE];
+static char     rx_buf[UART_RX_SIZE];
+static volatile uint8_t tx_head, tx_tail;   /* producer=head, consumer=tail */
+static volatile uint8_t rx_head, rx_tail;
+```
+
+**TX flow:**
+
+1. `uart_putc(c)` (IRQ mode): write `c` into `tx_buf[tx_head]`; advance
+   `tx_head`.  If the UART TX FIFO was empty and no TX interrupt is
+   pending, write the first byte directly and arm `TXIM` in `UARTIMSC`.
+2. `UART0_IRQ_Handler` (TX path): while UART TX FIFO not full and
+   `tx_head != tx_tail`: write `tx_buf[tx_tail]`, advance `tx_tail`.
+   When ring is empty, clear `TXIM` to stop TX interrupts.
+
+**RX flow:**
+
+1. `UART0_IRQ_Handler` (RX path): while UART RX FIFO not empty: read byte,
+   write to `rx_buf[rx_head]`, advance `rx_head` (drop if full).
+2. `uart_getc()`: if `rx_tail != rx_head` return and advance `rx_tail`;
+   otherwise return −1 (non-blocking) or block (spin with `WFI`).
+
+**RP2040 PL011 IRQ registers (UART0 base = 0x40034000):**
+
+```
+UARTIMSC  @ +0x038   bit4=RXIM, bit5=TXIM  (interrupt mask set/clear)
+UARTRIS   @ +0x03C   raw interrupt status
+UARTMIS   @ +0x040   masked interrupt status
+UARTICR   @ +0x044   interrupt clear (write-1-to-clear)
+UARTIFLS  @ +0x034   FIFO level select: RX=000 (≥ 1/8), TX=000 (≤ 1/8)
+```
+
+UART0 is IRQ 20 on the RP2040 → vector table position 36 (= 16 + 20) →
+startup.S offset `0x90`.  Enable via `NVIC_ISER @ 0xE000E100`, bit 20.
+
+**New API additions to `uart.h`:**
+
+```c
+/* Switch UART0 to interrupt-driven mode (call once, before sched_start).
+ * After this call, uart_putc/uart_puts are non-blocking ring-buffer writes.
+ * Polling mode is used for all output before this call. */
+void uart_init_irq(void);
+
+/* Non-blocking RX read.  Returns character, or -1 if RX ring is empty. */
+int  uart_getc(void);
+```
+
+**QEMU:** `uart_qemu.c` does not implement `uart_init_irq()` — it is a no-op.
+The CMSDK UART in QEMU never blocks (TXFULL is always 0), so the polling
+loop completes immediately. No IRQ setup needed on the QEMU path.
+
+**Race condition gotcha:** `tx_head` and `tx_tail` are modified from both
+thread context (`uart_putc`) and IRQ context (`UART0_IRQ_Handler`).  On
+Cortex-M0+ there is no hardware `LDREX`/`STREX`, so the only safe approach
+is to disable interrupts briefly around the ring pointer updates in
+`uart_putc`:
+
+```c
+void uart_putc(char c) {
+    uint32_t primask;
+    __asm__ volatile("mrs %0, primask\n cpsid i" : "=r"(primask));
+    tx_buf[tx_head & (UART_TX_SIZE-1)] = c;
+    tx_head++;
+    /* kick TX if idle */
+    if (!(UARTIMSC & UART_IMSC_TXIM)) { ... }
+    __asm__ volatile("msr primask, %0" :: "r"(primask));
+}
+```
 
 ---
 
-## Week 3: Scheduler and System Call Interface
+## Week 3: Scheduler, Syscalls, and File Descriptors
 
-### Step 6 — Round-Robin Scheduler (`src/kernel/proc/sched.c`)
+### Step 7 — Round-Robin Scheduler (`src/kernel/proc/sched.c`)
 
 **API:**
 
 ```c
-void  sched_start(void);           /* enable SysTick, switch to first process */
+void   sched_start(void);          /* enable SysTick, switch to first process */
 pcb_t *sched_next(void);           /* called from PendSV — pick next RUNNABLE */
-void  sched_sleep(uint32_t ticks); /* put current process to sleep */
-void  sched_wake(pcb_t *p);        /* wake a sleeping process */
-void  sched_tick(void);            /* called from SysTick — advance sleep timers */
+void   sched_sleep(uint32_t ticks);/* put current process to sleep */
+void   sched_wake(pcb_t *p);       /* wake a sleeping process */
+void   sched_tick(void);           /* called from SysTick — advance sleep timers */
 ```
 
 `sched_next()` scans `proc_table` in round-robin order starting after
@@ -281,7 +381,7 @@ finds no other runnable process it returns `current` unchanged — the
 interrupted process continues running.  A proper idle thread (WFI loop on
 Core 0) will be added in Phase 2.
 
-### Step 7 — SVC Handler and Syscall Dispatch (`src/kernel/syscall/`)
+### Step 8 — SVC Handler and Syscall Dispatch (`src/kernel/syscall/`)
 
 ARM EABI Linux convention (compatible with musl libc):
 - `r7` = syscall number
@@ -301,48 +401,105 @@ static const syscall_fn_t syscall_table[] = {
     [SYS_nanosleep] = sys_nanosleep,
     /* … */
 };
-
-/* SVC_Handler — called from startup.S exception vector */
-void SVC_Handler(void) {
-    /* Recover stacked frame: r0–r3 are at (sp+0..12), r7 at ... */
-    /* Extract syscall number from r7; dispatch */
-}
 ```
 
-**Stacked frame recovery:** The hardware exception frame (pushed to the
-process stack by the CPU) layout is:
-`[r0, r1, r2, r3, r12, lr, pc, xpsr]` at offsets `[0, 4, 8, 12, 16, 20, 24, 28]`
-from PSP at exception entry.  The SVC handler reads PSP and indexes this
-frame to recover `r0–r3` (arguments) and `r7` (syscall number, saved by the
-compiler as a callee-saved register — already on the process stack before
-SVC).
+**Stacked frame recovery:** The hardware exception frame layout is
+`[r0, r1, r2, r3, r12, lr, pc, xpsr]` at offsets `[0..28]` from PSP.
+The SVC handler reads PSP and indexes this frame to recover `r0–r3`.
+`r7` is callee-saved by the compiler before `svc 0`; it sits on the
+process stack below the hardware frame.
 
-**Gotcha:** `r7` is a callee-saved register; the compiler saves it to the
-process stack before issuing `svc 0`.  It is **not** part of the hardware
-exception frame.  To retrieve it: read PSP, then find `r7` at the standard
-offset below the exception frame.
+**Gotcha:** `r7` is **not** in the hardware exception frame.  Its offset
+from PSP at SVC entry depends on the compiler's prologue.  Inspect the
+generated assembly with `arm-none-eabi-objdump -d` to verify.
 
-### Step 8 — Minimal Syscall Implementations
+### Step 9 — Minimal Syscall Implementations
 
 Phase 1 syscalls — enough to run a trivial two-process test:
 
 | Syscall | Number | Implementation |
 |---|---|---|
 | `_exit(status)` | 1 | Mark PCB as ZOMBIE; call `sched_next()` |
-| `write(fd, buf, n)` | 4 | fd 1/2: write `n` bytes to UART; other fds: `-EBADF` |
-| `read(fd, buf, n)` | 3 | fd 0: stub returning 0 (EOF) |
+| `write(fd, buf, n)` | 4 | Dispatch through `current->fd_table[fd]->ops->write` (Step 10) |
+| `read(fd, buf, n)` | 3 | Dispatch through `current->fd_table[fd]->ops->read` (Step 10) |
 | `getpid()` | 20 | Return `current->pid` |
 | `nanosleep(req, rem)` | 162 | Convert `tv_nsec/tv_sec` to SysTick ticks; `sched_sleep()` |
 
-`write` to UART is the key integration test: a user-mode process calling
-`write(1, "hello\n", 6)` that produces UART output proves SVC dispatch, stack
-frame recovery, and fd routing all work.
+`write(1, "hello\n", 6)` from user mode is the key integration test: it
+proves SVC dispatch → fd table → tty driver → UART IRQ ring buffer → output.
+
+### Step 10 — File Descriptor Table and stdio (`src/kernel/fd/`)
+
+This step introduces the `struct file` abstraction that all subsequent
+phases build on (VFS, devfs, romfs, UFS).  In Phase 1 only the UART tty
+driver exists, but the interface is the permanent one.
+
+**`struct file` and `file_ops` (`src/kernel/fd/file.h`):**
+
+```c
+struct file_ops {
+    ssize_t (*read) (struct file *f, char *buf,       size_t n);
+    ssize_t (*write)(struct file *f, const char *buf, size_t n);
+    int     (*close)(struct file *f);   /* release driver state */
+};
+
+struct file {
+    const struct file_ops *ops;
+    void                  *priv;    /* driver-private state pointer */
+    uint32_t               flags;   /* O_RDONLY / O_WRONLY / O_RDWR */
+    uint32_t               refcnt;  /* for dup() / fork() sharing */
+};
+```
+
+**UART tty driver (`src/kernel/fd/tty.c`):**
+
+```c
+static ssize_t tty_write(struct file *f, const char *buf, size_t n) {
+    for (size_t i = 0; i < n; i++) uart_putc(buf[i]);
+    return (ssize_t)n;
+}
+static ssize_t tty_read(struct file *f, char *buf, size_t n) {
+    size_t i = 0;
+    while (i < n) {
+        int c = uart_getc();           /* -1 = no data */
+        if (c < 0) { if (i) break; continue; }  /* block until ≥ 1 byte */
+        buf[i++] = (char)c;
+        if (c == '\n') break;          /* line-buffered */
+    }
+    return (ssize_t)i;
+}
+static int tty_close(struct file *f) { return 0; }  /* tty never closes */
+
+static const struct file_ops tty_fops = { tty_read, tty_write, tty_close };
+       struct file tty_stdin  = { &tty_fops, NULL, O_RDONLY, 1 };
+       struct file tty_stdout = { &tty_fops, NULL, O_WRONLY, 1 };
+       struct file tty_stderr = { &tty_fops, NULL, O_WRONLY, 1 };
+```
+
+**stdio init (`src/kernel/fd/fd.c` — `fd_stdio_init`):**
+
+```c
+void fd_stdio_init(pcb_t *p) {
+    p->fd_table[0] = &tty_stdin;   /* stdin  — fd 0 */
+    p->fd_table[1] = &tty_stdout;  /* stdout — fd 1 */
+    p->fd_table[2] = &tty_stderr;  /* stderr — fd 2 */
+}
+```
+
+Called from `kmain()` after `proc_init()` for `proc_table[0]` (the initial
+kernel/init thread).  Child processes inherit the fd table from their parent
+in `vfork()` (Phase 3+).
+
+**Why separate stdin/stdout/stderr structs (not a single `tty_file`)?**
+`dup2()` can later replace individual fds — e.g., shell pipelines redirect
+stdout to a pipe while stdin stays as tty.  Separate file objects make that
+natural.
 
 ---
 
 ## Week 4: MPU Setup and Core 1
 
-### Step 9 — MPU 4-Region Layout (`src/kernel/mm/mpu.c`)
+### Step 11 — MPU 4-Region Layout (`src/kernel/mm/mpu.c`)
 
 The Cortex-M0+ MPU has 8 regions (on RP2040, only 8 are wired).  We use 4:
 
@@ -381,7 +538,7 @@ normally while the MPU only restricts user-mode accesses.
 `mpu_init()` reads `MPU_TYPE`; if it returns 0 (no MPU), skip configuration.
 This allows `main_qemu.c` to call `mpu_init()` without a separate `#ifdef`.
 
-### Step 10 — Core 1 Startup (`src/kernel/smp.c`)
+### Step 12 — Core 1 Startup (`src/kernel/smp.c`)
 
 The RP2040 boot ROM requires a specific handshake sequence to start Core 1:
 send `[0, 0, 1, VTOR, SP, entry]` over the SIO FIFO.
@@ -421,21 +578,25 @@ checks `SIO_FIFO_ST` for a sentinel value; on QEMU, skip the launch entirely.
 
 | File | Description |
 |---|---|
-| `src/kernel/mm/page.c/h` | Free-stack page allocator (52 × 4 KB) |
+| `src/kernel/mm/page.c/h` | Free-stack page allocator (52 × 4 KB) ✓ |
 | `src/kernel/mm/kmem.c/h` | Fixed-size kernel object pool (PCB slab) |
 | `src/kernel/mm/mpu.c/h` | MPU 4-region setup + per-context switch update |
 | `src/kernel/proc/proc.h` | PCB definition, process table, states |
 | `src/kernel/proc/proc.c` | `proc_alloc`, `proc_free`, `proc_init` |
 | `src/kernel/proc/switch.S` | PendSV handler — Cortex-M0+ context save/restore |
 | `src/kernel/proc/sched.c/h` | Round-robin scheduler, SysTick tick handler |
+| `src/kernel/fd/file.h` | `struct file`, `struct file_ops` |
+| `src/kernel/fd/fd.c/h` | fd table helpers, `fd_stdio_init` |
+| `src/kernel/fd/tty.c/h` | UART tty driver — `file_ops` backed by ring-buffer UART |
 | `src/kernel/syscall/syscall.c` | SVC exception handler, dispatch table |
 | `src/kernel/syscall/sys_proc.c` | `_exit`, `getpid` |
-| `src/kernel/syscall/sys_io.c` | `write` (UART), `read` (stub) |
+| `src/kernel/syscall/sys_io.c` | `write` / `read` — dispatch through fd table |
 | `src/kernel/syscall/sys_time.c` | `nanosleep`, `time` |
 | `src/kernel/smp.c/h` | Core 1 boot handshake + SIO FIFO helpers |
-| `src/boot/startup.S` | Add PendSV and SysTick vectors |
-| `src/kernel/main.c` | Call `mm_init`, `proc_init`, `mpu_init`, `core1_launch`, `sched_start` |
-| `src/kernel/main_qemu.c` | Same call sequence; MPU/Core 1 self-stub on QEMU |
+| `src/drivers/uart.c/h` | Add `uart_init_irq()`, `uart_getc()`, TX/RX ring buffers |
+| `src/boot/startup.S` | Add PendSV, SysTick, UART0 IRQ vectors |
+| `src/kernel/main.c` | Call `mm_init`, `proc_init`, `uart_init_irq`, `fd_stdio_init`, `mpu_init`, `core1_launch`, `sched_start` |
+| `src/kernel/main_qemu.c` | Same sequence; `uart_init_irq` is no-op; MPU/Core 1 self-stub |
 
 ---
 
@@ -445,16 +606,19 @@ checks `SIO_FIFO_ST` for a sentinel value; on QEMU, skip the launch entirely.
 |---|---|---|
 | PendSV context switch bugs (corrupted registers) | High | Test with exactly 2 hardcoded threads printing alternating output; single-step in GDB |
 | SVC frame recovery differs between compiler versions | Medium | Inspect generated assembly; check `r7` offset explicitly with `arm-none-eabi-objdump` |
-| SysTick reload value wrong for 133 MHz | Low | Verify with SysTick benchmark from Step 9 (Phase 0) |
+| SysTick reload value wrong for 133 MHz | Low | Verify with SysTick benchmark from Phase 0 Step 9 |
+| UART TX ring buffer race: `uart_putc` vs IRQ handler | High | Disable interrupts (`cpsid i`/`cpsie i`) around ring pointer update in `uart_putc` |
+| UART RX overrun: fast input fills 64-byte ring before read() drains it | Low | Phase 1 has no real user input load; add flow control (RTS) in Phase 5 |
 | MPU fault during kernel init (before regions configured) | Medium | Enable MPU only after all regions programmed; set `PRIVDEFENA` |
-| Core 1 boot handshake timeout | Medium | Use the exact 6-word sequence from the RP2040 datasheet §2.8.2; drain FIFO first |
+| Core 1 boot handshake timeout | Medium | Use exact 6-word sequence from RP2040 datasheet §2.8.2; drain FIFO first |
 | QEMU not emulating SIO / MPU | Certain | Read sentinel registers; skip gracefully without `#ifdef` |
 | Stack overflow in kernel threads (only 4 KB per process) | Low | Place a guard pattern (`0xDEADBEEF`) at stack bottom; check in SysTick handler |
+| `tty_read` blocking forever if no RX data and no other runnable process | Medium | Use non-blocking `uart_getc()` and `sched_sleep()` between polls |
 
 ---
 
 ## References
 
-- [RP2040 Datasheet](https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf) — §2.8.2 (SIO/Core 1 launch), §2.4 (SysTick), §2.26 (MPU)
+- [RP2040 Datasheet](https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf) — §2.8.2 (SIO/Core 1 launch), §2.4 (SysTick), §2.26 (MPU), §4.2.3 (PL011 UART interrupts)
 - [ARMv6-M Architecture Reference Manual](https://developer.arm.com/documentation/ddi0419/) — §B1.5 (exception model), §B3.5 (MPU), §B3.2 (SysTick)
-- [PicoPiAndPortable Design Spec v0.2](PicoPiAndPortable-spec-v02.md) — §4 (Kernel Design), §2.3 (SRAM map)
+- [PicoPiAndPortable Design Spec v0.2](PicoPiAndPortable-spec-v02.md) — §4 (Kernel Design), §2.3 (SRAM map), §5.2 (file syscalls)
