@@ -134,4 +134,5 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void))
     *--sp = 0u;   /* r4  */   /* ← pcb_t.sp points here */
 
     p->sp = (uint32_t)(uintptr_t)sp;
+    p->ticks_remaining = PROC_DEFAULT_TICKS;
 }
