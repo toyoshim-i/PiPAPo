@@ -19,6 +19,7 @@
  *
  * Phase 1 Step 11: mpu_init() self-stubs on QEMU (MPU_TYPE == 0).
  * mpu_switch() in switch.S is also a no-op via the mpu_present flag.
+ * Phase 1 Step 12: core1_launch() self-stubs on QEMU (SIO_FIFO_ST.RDY == 0).
  */
 
 #include "drivers/uart.h"
@@ -27,6 +28,7 @@
 #include "proc/proc.h"
 #include "proc/sched.h"
 #include "fd/fd.h"
+#include "smp.h"
 #include "xip_test.h"
 
 /* ── Test thread ─────────────────────────────────────────────────────────── */
@@ -87,6 +89,9 @@ void kmain(void)
 
     /* Phase 1 Step 11: configure MPU (no-op on QEMU — MPU_TYPE reads 0) */
     mpu_init();
+
+    /* Phase 1 Step 12: launch Core 1 (no-op on QEMU — SIO not mapped) */
+    core1_launch(core1_io_worker);
 
     uart_puts("SCHED: starting cooperative context-switch test (QEMU)\n");
     sched_start();

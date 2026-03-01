@@ -29,6 +29,7 @@ add_executable(ppap
     src/kernel/syscall/sys_time.c # sys_nanosleep (Phase 1 Step 9)
     src/kernel/fd/fd.c            # fd table helpers + fd_stdio_init (Phase 1 Step 10)
     src/kernel/fd/tty.c           # UART tty driver (Phase 1 Step 10)
+    src/kernel/smp.c              # Core 1 launch + SIO FIFO IPC (Phase 1 Step 12)
     src/drivers/uart.c
     src/drivers/clock.c     # PLL_SYS → 133 MHz (Step 7)
 )
@@ -90,6 +91,7 @@ add_executable(ppap_qemu
     src/kernel/syscall/sys_time.c     # sys_nanosleep (Phase 1 Step 9)
     src/kernel/fd/fd.c                # fd table helpers + fd_stdio_init (Phase 1 Step 10)
     src/kernel/fd/tty.c               # UART tty driver (Phase 1 Step 10)
+    src/kernel/smp.c                  # Core 1 launch + SIO FIFO IPC (Phase 1 Step 12)
     src/drivers/uart_qemu.c     # CMSDK UART for mps2-an500
 )
 

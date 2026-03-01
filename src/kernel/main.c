@@ -9,6 +9,7 @@
  * Phase 1 Step 6: UART0 IRQ mode — uart_init_irq() before sched_start().
  * Phase 1 Step 10: fd_stdio_init() — fd 0/1/2 wired to UART tty driver.
  * Phase 1 Step 11: mpu_init() — 4-region MPU layout; mpu_switch() on context switch.
+ * Phase 1 Step 12: core1_launch() — start Core 1 running the SIO echo worker.
  */
 
 #include "drivers/uart.h"
@@ -18,6 +19,7 @@
 #include "proc/proc.h"
 #include "proc/sched.h"
 #include "fd/fd.h"
+#include "smp.h"
 #include "xip_test.h"
 
 /* ── Kernel entry point ──────────────────────────────────────────────────── */
@@ -92,6 +94,9 @@ void kmain(void)
 
     /* Phase 1 Step 11: configure MPU regions and enable memory protection */
     mpu_init();
+
+    /* Phase 1 Step 12: launch Core 1 running the SIO FIFO echo worker */
+    core1_launch(core1_io_worker);
 
     sched_start();
 
