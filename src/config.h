@@ -62,4 +62,24 @@
 #define PAGE_SIZE          4096u    /* bytes per page                       */
 #define PAGE_COUNT           52u    /* pages in the pool (208 KB total)     */
 
+/* ── VFS (Virtual File System) ────────────────────────────────────────────
+ * VFS_MOUNT_MAX     Maximum concurrent mount points (romfs /, devfs /dev,
+ *                   procfs /proc, tmpfs /tmp, UFS /usr, /home, /var, spare).
+ *
+ * VFS_VNODE_MAX     Maximum concurrent in-memory vnodes.  Each open file
+ *                   or directory holds a vnode; freed on last close.
+ *                   64 × 32 B = 2 KB in kernel BSS.
+ *
+ * VFS_NAME_MAX      Maximum filename component length (excluding NUL).
+ *
+ * VFS_PATH_MAX      Maximum absolute path length (including NUL).
+ *
+ * VFS_SYMLOOP_MAX   Maximum symlink resolution depth before returning ELOOP.
+ * ────────────────────────────────────────────────────────────────────────── */
+#define VFS_MOUNT_MAX        8     /* maximum concurrent mounts             */
+#define VFS_VNODE_MAX       64     /* maximum concurrent vnodes             */
+#define VFS_NAME_MAX        28     /* max filename component length         */
+#define VFS_PATH_MAX       128     /* max absolute path length              */
+#define VFS_SYMLOOP_MAX      8     /* max symlink resolution depth          */
+
 #endif /* PPAP_CONFIG_H */

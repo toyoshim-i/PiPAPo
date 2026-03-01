@@ -60,8 +60,6 @@ void kmain(void)
      * ------------------------------------------------------------------ */
     proc_table[0].stack_page = page_alloc();
 
-    uart_puts("SCHED: starting preemptive scheduler (10 ms slices @ 133 MHz)\n");
-
     /* Drain any remaining polling TX, then switch UART0 to IRQ-driven mode.
      * After uart_init_irq() all uart_putc/uart_puts calls are non-blocking
      * ring-buffer writes; UART0_IRQ_Handler does the draining. */
@@ -75,6 +73,7 @@ void kmain(void)
     /* Phase 1 Step 12: launch Core 1 running the SIO FIFO echo worker */
     core1_launch(core1_io_worker);
 
+    uart_puts("SCHED: starting preemptive scheduler (10 ms slices @ 133 MHz)\n");
     sched_start();
 
     /* Idle thread — wake on every interrupt, then sleep again. */
