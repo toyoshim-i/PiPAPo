@@ -15,7 +15,7 @@ add_executable(ppap
     src/boot/startup.S      # Vector table + Reset_Handler (Step 4)
     src/boot/stage1.S       # Stage 1 extension: VTOR redirect to 0x10001000 (Step 8)
     src/kernel/main.c
-    src/kernel/xip_test.c   # XIP verification + SysTick benchmark (Step 9)
+    src/kernel/mm/xip.c     # XIP verification + SysTick benchmark (Step 9)
     src/kernel/mm/page.c    # Page allocator + boot memory map (Phase 1 Step 1)
     src/kernel/mm/kmem.c    # Fixed-size kernel object pool (Phase 1 Step 2)
     src/kernel/mm/mpu.c     # MPU 4-region layout + per-context switch (Phase 1 Step 11)
@@ -66,7 +66,7 @@ pico_add_extra_outputs(ppap)
 # =============================================================================
 # QEMU smoke-test target — mps2-an500 (Cortex-M0+)  [Step 11]
 # =============================================================================
-# Builds a standalone ELF for QEMU.  Uses the same startup.S and xip_test.c
+# Builds a standalone ELF for QEMU.  Uses the same startup.S and mm/xip.c
 # but replaces main.c with main_qemu.c (no RP2040 clock/PLL init) and
 # uart.c with uart_qemu.c (CMSDK UART at 0x40004000).
 #
@@ -77,7 +77,7 @@ pico_add_extra_outputs(ppap)
 add_executable(ppap_qemu
     src/boot/startup.S          # Same Reset_Handler (startup is portable)
     src/kernel/main_qemu.c      # No RP2040-specific hardware init
-    src/kernel/xip_test.c       # xip_add works on any ARM Cortex-M
+    src/kernel/mm/xip.c         # XIP verification + SysTick benchmark (Step 9)
     src/kernel/mm/page.c        # Page allocator + boot memory map (Phase 1 Step 1)
     src/kernel/mm/kmem.c        # Fixed-size kernel object pool (Phase 1 Step 2)
     src/kernel/mm/mpu.c         # MPU 4-region layout + per-context switch (Phase 1 Step 11)

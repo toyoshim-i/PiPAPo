@@ -4,8 +4,7 @@
  * Called from Reset_Handler (startup.S) after .data copy and .bss zero.
  * Step 5: UART init + first console output at 12 MHz XOSC.
  * Step 7: PLL_SYS to 133 MHz + UART baud rate update.
- * Step 9: XIP verification — address check, correctness, SysTick benchmark.
- * Phase 1 Steps 1-5: mm_init, proc_init, context switch, SysTick scheduler.
+ * Phase 1 Steps 1-5: mm_init (incl. XIP verify+bench), proc_init, context switch, SysTick scheduler.
  * Phase 1 Step 6: UART0 IRQ mode — uart_init_irq() before sched_start().
  * Phase 1 Step 10: fd_stdio_init() — fd 0/1/2 wired to UART tty driver.
  * Phase 1 Step 11: mpu_init() — 4-region MPU layout; mpu_switch() on context switch.
@@ -20,7 +19,6 @@
 #include "proc/sched.h"
 #include "fd/fd.h"
 #include "smp.h"
-#include "xip_test.h"
 
 /* ── Kernel entry point ──────────────────────────────────────────────────── */
 
@@ -52,27 +50,6 @@ void kmain(void)
     /* Phase 1 Step 10: wire fd 0/1/2 to the UART tty driver */
     fd_stdio_init(&proc_table[0]);
     uart_puts("FD: fd 0/1/2 wired to UART tty\n");
-
-    /* ------------------------------------------------------------------
-     * Step 9: XIP verification
-     * ------------------------------------------------------------------ */
-    uart_puts("XIP: xip_add @ ");
-    uart_print_hex32((uint32_t)(uintptr_t)xip_add);
-    uart_puts("\n");
-
-    int result = xip_add(3, 4);
-    uart_puts("XIP: xip_add(3,4) = ");
-    uart_putc('0' + (char)result);
-    uart_puts("\n");
-
-    uint32_t flash_cyc = xip_bench(10000);
-    uint32_t sram_cyc  = sram_bench(10000);
-    uart_puts("XIP: flash bench(10000) = ");
-    uart_print_hex32(flash_cyc);
-    uart_puts(" cycles\n");
-    uart_puts("XIP: sram  bench(10000) = ");
-    uart_print_hex32(sram_cyc);
-    uart_puts(" cycles\n");
 
     /* ------------------------------------------------------------------
      * Phase 1 Steps 4+5: context switch + SysTick preemption

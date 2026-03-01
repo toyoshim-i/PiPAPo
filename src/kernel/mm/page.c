@@ -13,6 +13,7 @@
 
 #include "page.h"
 #include "kmem.h"
+#include "xip.h"
 #include "drivers/uart.h"
 #include <stddef.h>
 
@@ -130,6 +131,9 @@ void mm_init(void)
 
     uart_puts("MM: kmem self-test ");
     uart_puts(ok ? "PASSED\n" : "FAILED\n");
+
+    /* ── XIP verification and benchmark ──────────────────────────────────── */
+    xip_verify();
 }
 
 void *page_alloc(void)

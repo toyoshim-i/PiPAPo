@@ -1,20 +1,31 @@
 /*
- * xip_test.c — XIP verification and SysTick benchmark (Step 9)
+ * xip.c — XIP (Execute-In-Place) verification and SysTick benchmark
  *
- * xip_add()    — minimal function in .text.xip_test; address proves XIP flash
- *                execution (should be 0x10001xxx).
+ * xip_verify() is called from mm_init() and:
+ *   1. Prints the runtime address of xip_add — on real hardware this should
+ *      be in the XIP flash window (0x10001xxx).
+ *   2. Runs xip_add(3,4) and checks the result is 7.
+ *   3. Benchmarks the same summation loop executing from XIP flash
+ *      (xip_bench) and from SRAM (sram_bench) using the Cortex-M SysTick
+ *      counter, then prints both cycle counts so the cache benefit is visible.
  *
- * xip_bench()  — tight loop measured with SysTick; runs from XIP flash.
+ * xip_add()    — minimal function in .text.xip_test; its address proves XIP
+ *                flash execution (0x10001xxx on real hardware).
  *
- * sram_bench() — identical loop in .ramfunc.sram_bench; Reset_Handler copies
- *                .ramfunc to SRAM so this function executes from SRAM.
- *                Comparing the two cycle counts shows cache effectiveness.
+ * xip_bench()  — tight summation loop measured with SysTick; executes from
+ *                XIP flash.
+ *
+ * sram_bench() — identical loop placed in .ramfunc.sram_bench; Reset_Handler
+ *                copies the entire .ramfunc section (flash LMA → SRAM VMA)
+ *                at startup, so this function runs from SRAM.  Comparing its
+ *                cycle count with xip_bench() shows the XIP cache benefit.
  *
  * SysTick is a 24-bit down-counter clocked from the processor (133 MHz).
  * At 133 MHz, 0xFFFFFF ticks ≈ 126 ms — more than enough for short benchmarks.
  */
 
-#include "xip_test.h"
+#include "xip.h"
+#include "drivers/uart.h"
 #include <stdint.h>
 
 /* ==========================================================================
@@ -35,12 +46,12 @@
 #define SYST_MAX  0x00FFFFFFu
 
 /* ==========================================================================
- * XIP test functions
+ * XIP functions
  * ========================================================================== */
 
 /*
- * xip_add — placed in .text.xip_test so its address (printed by kmain) is
- * visibly in the XIP flash window (0x10001xxx).
+ * xip_add — placed in .text.xip_test so its address (printed by xip_verify)
+ * is visibly in the XIP flash window (0x10001xxx on real hardware).
  */
 __attribute__((section(".text.xip_test"), noinline))
 int xip_add(int a, int b)
@@ -97,4 +108,32 @@ uint32_t sram_bench(uint32_t n)
     uint32_t elapsed = (SYST_MAX - SYST_CVR) & SYST_MAX;
     SYST_CSR = 0;
     return elapsed;
+}
+
+/* ==========================================================================
+ * xip_verify — called from mm_init()
+ * ========================================================================== */
+
+void xip_verify(void)
+{
+    /* Address probe: on real hardware xip_add lives in XIP flash (0x10001xxx) */
+    uart_puts("XIP: xip_add @ ");
+    uart_print_hex32((uint32_t)(uintptr_t)xip_add);
+    uart_puts("\n");
+
+    /* Correctness check */
+    int result = xip_add(3, 4);
+    uart_puts("XIP: xip_add(3,4) = ");
+    uart_putc('0' + (char)result);
+    uart_puts(result == 7 ? " OK\n" : " FAIL\n");
+
+    /* Benchmark: compare XIP flash vs SRAM execution speed */
+    uint32_t flash_cyc = xip_bench(10000);
+    uint32_t sram_cyc  = sram_bench(10000);
+    uart_puts("XIP: flash bench(10000) = ");
+    uart_print_hex32(flash_cyc);
+    uart_puts(" cycles\n");
+    uart_puts("XIP: sram  bench(10000) = ");
+    uart_print_hex32(sram_cyc);
+    uart_puts(" cycles\n");
 }

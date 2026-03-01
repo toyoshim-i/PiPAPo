@@ -7,7 +7,7 @@
  *   - No clock_init_pll()      (QEMU has no PLL or XOSC to configure)
  *   - No uart_reinit_133mhz()  (clock never changes)
  *   - UART via CMSDK UART0     (uart_qemu.c, not uart.c)
- *   - xip_add() still works    (pure integer arithmetic, no hardware)
+ *   - xip_verify() still runs  (address/correctness probe + benches via SysTick)
  *   - Cooperative sched_yield() instead of SysTick preemption
  *     (QEMU mps2-an500 runs the SysTick counter but never asserts TICKINT;
  *      we use explicit sched_yield() calls to trigger PendSV instead)
@@ -29,7 +29,6 @@
 #include "proc/sched.h"
 #include "fd/fd.h"
 #include "smp.h"
-#include "xip_test.h"
 
 /* ── Test thread ─────────────────────────────────────────────────────────── */
 
@@ -57,16 +56,6 @@ void kmain(void)
 
     /* Phase 1 Step 10: wire fd 0/1/2 to the UART tty driver */
     fd_stdio_init(&proc_table[0]);
-
-    /* xip_add is pure arithmetic — runs identically in QEMU and on hardware */
-    uart_puts("XIP: xip_add @ ");
-    uart_print_hex32((uint32_t)(uintptr_t)xip_add);
-    uart_puts(" (ROM, 0x000xxxxx in QEMU)\n");
-
-    int result = xip_add(3, 4);
-    uart_puts("XIP: xip_add(3,4) = ");
-    uart_putc('0' + (char)result);
-    uart_puts("\n");
 
     /* ------------------------------------------------------------------
      * Phase 1 Steps 4+5: context switch via cooperative sched_yield()
