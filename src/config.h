@@ -36,6 +36,7 @@
 #define PROC_MAX              8     /* maximum concurrent processes         */
 #define FD_MAX               16     /* file descriptors per process         */
 #define PROC_DEFAULT_TICKS   10     /* time-slice length in SysTick ticks   */
+#define FILE_MAX             32     /* max concurrent open struct file objs */
 
 /* ── UART ring buffers ─────────────────────────────────────────────────────
  * Sizes must be powers of two.

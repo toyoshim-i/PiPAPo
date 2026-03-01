@@ -193,6 +193,14 @@ void vnode_put(vnode_t *vn);
 int vfs_lookup(const char *path, vnode_t **result);
 
 /*
+ * Normalize an absolute path: resolve "." and ".." lexically, collapse
+ * consecutive '/' characters.  buf receives the result.
+ *
+ * Returns length of normalized path (≥ 1), or negative errno.
+ */
+int vfs_path_normalize(const char *path, char *buf, int bufsiz);
+
+/*
  * Look up the mount entry whose path is the longest prefix of `path`.
  * Sets *remainder to point into `path` past the mount point prefix
  * (skipping any leading '/').

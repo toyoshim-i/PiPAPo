@@ -20,6 +20,8 @@
 #define EINVAL  22   /* Invalid argument                    */
 #define EMFILE  24   /* Too many open files                 */
 #define ENOSPC  28   /* No space left on device             */
+#define ESPIPE  29   /* Illegal seek (pipe/socket/tty)      */
+#define ERANGE  34   /* Result too large (buffer too small) */
 #define ENAMETOOLONG 36 /* File name too long               */
 #define ENOSYS  38   /* Function not implemented            */
 #define ENOTEMPTY 39 /* Directory not empty                 */

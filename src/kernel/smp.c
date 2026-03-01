@@ -18,10 +18,10 @@
  *   the exact word back before sending the next word.
  *
  * QEMU self-stub:
- *   On real RP2040, SIO_FIFO_ST.RDY is set at boot (TX FIFO is empty →
- *   writable).  On QEMU mps2-an500 the SIO address range is not mapped
- *   and reads as 0x00000000, so RDY is clear.  core1_launch() uses this
- *   to detect QEMU and return immediately without touching the FIFO.
+ *   On QEMU mps2-an500 (Cortex-M3), the SIO address range (0xD0000000)
+ *   is unmapped — any read triggers a BusFault → HardFault.  We detect
+ *   QEMU by checking SCB.CPUID: Cortex-M0+ returns PARTNO = 0xC60,
+ *   Cortex-M3 returns 0xC23.  Only proceed with SIO if we're on M0+.
  */
 
 #include "smp.h"
@@ -41,6 +41,11 @@
 
 /* SCB.VTOR — vector table base currently used by Core 0 */
 #define SCB_VTOR      (*(volatile uint32_t *)0xE000ED08u)
+
+/* SCB.CPUID — processor identification (always accessible, never faults) */
+#define SCB_CPUID     (*(volatile uint32_t *)0xE000ED00u)
+#define CPUID_PARTNO_MASK  0x0000FFF0u   /* bits [15:4] = Part Number */
+#define CPUID_PARTNO_M0P   0x0000C600u   /* Cortex-M0+ part number   */
 
 /* ── sio_fifo_push ───────────────────────────────────────────────────────── */
 
@@ -77,12 +82,13 @@ void core1_io_worker(void)
 void core1_launch(void (*entry)(void))
 {
     /*
-     * QEMU self-stub: on real RP2040 at boot, SIO_FIFO_ST.RDY = 1 because
-     * the TX FIFO is empty (writable).  On QEMU mps2-an500, the SIO region
-     * is unmapped and reads as 0, so RDY = 0 → skip the launch.
+     * QEMU self-stub: check CPUID to verify we're on Cortex-M0+ (RP2040).
+     * On QEMU mps2-an500 (Cortex-M3), the SIO region at 0xD0000000 is
+     * unmapped — any read from it triggers a BusFault → HardFault.
+     * SCB.CPUID is in the System Control Space and is always accessible.
      */
-    if ((SIO_FIFO_ST & SIO_FIFO_RDY) == 0u) {
-        uart_puts("SMP: SIO not present — skipping Core 1 launch (QEMU)\n");
+    if ((SCB_CPUID & CPUID_PARTNO_MASK) != CPUID_PARTNO_M0P) {
+        uart_puts("SMP: not Cortex-M0+ — skipping Core 1 launch (QEMU)\n");
         return;
     }
 

@@ -12,9 +12,12 @@
  *   sys_proc.c  — sys_exit, sys_getpid
  *   sys_io.c    — sys_write, sys_read  (routes through fd_table → file_ops)
  *   sys_time.c  — sys_nanosleep
+ *   sys_fs.c    — sys_open, sys_close, sys_lseek, sys_stat, sys_fstat,
+ *                 sys_getdents, sys_getcwd, sys_chdir
  */
 
 #include "syscall.h"
+#include "../vfs/vfs.h"
 #include "../errno.h"
 #include <stdint.h>
 
@@ -37,11 +40,36 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr)
     case SYS_WRITE:
         ret = sys_write(a0, (const char *)(uintptr_t)a1, (size_t)a2);
         break;
+    case SYS_OPEN:
+        ret = sys_open((const char *)(uintptr_t)a0, a1, a2);
+        break;
+    case SYS_CLOSE:
+        ret = sys_close(a0);
+        break;
+    case SYS_CHDIR:
+        ret = sys_chdir((const char *)(uintptr_t)a0);
+        break;
+    case SYS_LSEEK:
+        ret = sys_lseek(a0, a1, a2);
+        break;
     case SYS_GETPID:
         ret = sys_getpid();
         break;
+    case SYS_STAT:
+        ret = sys_stat((const char *)(uintptr_t)a0,
+                       (struct stat *)(uintptr_t)a1);
+        break;
+    case SYS_FSTAT:
+        ret = sys_fstat(a0, (struct stat *)(uintptr_t)a1);
+        break;
+    case SYS_GETDENTS:
+        ret = sys_getdents(a0, (struct dirent *)(uintptr_t)a1, (size_t)a2);
+        break;
     case SYS_NANOSLEEP:
         ret = sys_nanosleep((void *)(uintptr_t)a0, (void *)(uintptr_t)a1);
+        break;
+    case SYS_GETCWD:
+        ret = sys_getcwd((char *)(uintptr_t)a0, (size_t)a1);
         break;
     default:
         ret = -(long)ENOSYS;

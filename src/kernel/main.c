@@ -18,6 +18,8 @@
 #include "proc/proc.h"
 #include "proc/sched.h"
 #include "fd/fd.h"
+#include "vfs/vfs.h"
+#include "syscall/syscall.h"
 #include "smp.h"
 
 /* ── Kernel entry point ──────────────────────────────────────────────────── */
@@ -46,6 +48,10 @@ void kmain(void)
 
     /* Phase 1 Step 3: process table init */
     proc_init();
+
+    /* Phase 2 Steps 1-3: VFS layer + file pool for sys_open */
+    vfs_init();
+    file_pool_init();
 
     /* Phase 1 Step 10: wire fd 0/1/2 to the UART tty driver */
     fd_stdio_init(&proc_table[0]);

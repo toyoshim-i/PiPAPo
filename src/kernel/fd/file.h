@@ -25,8 +25,14 @@
 #define O_WRONLY  1u
 #define O_RDWR    2u
 
-/* Forward declaration so struct file_ops can reference struct file */
+/* Seek origin constants (for sys_lseek) */
+#define SEEK_SET  0
+#define SEEK_CUR  1
+#define SEEK_END  2
+
+/* Forward declarations */
 struct file;
+struct vnode;
 
 /*
  * struct file_ops — driver vtable.
@@ -56,6 +62,8 @@ struct file {
     void                  *priv;  /* driver-private state (NULL = none) */
     uint32_t               flags; /* O_RDONLY / O_WRONLY / O_RDWR       */
     uint32_t               refcnt;/* reference count (dup/fork sharing) */
+    struct vnode          *vnode;  /* backing vnode (NULL for tty files) */
+    uint32_t               offset;/* current file position              */
 };
 
 #endif /* PPAP_FD_FILE_H */

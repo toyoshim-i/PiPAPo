@@ -344,3 +344,8 @@ int vfs_lookup(const char *path, vnode_t **result)
 
     return lookup_walk(normalized, result, 0);
 }
+
+int vfs_path_normalize(const char *path, char *buf, int bufsiz)
+{
+    return path_normalize(path, buf, bufsiz);
+}

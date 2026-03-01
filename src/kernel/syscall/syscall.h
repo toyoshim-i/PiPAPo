@@ -24,8 +24,16 @@
 #define SYS_EXIT       1
 #define SYS_READ       3
 #define SYS_WRITE      4
+#define SYS_OPEN       5
+#define SYS_CLOSE      6
+#define SYS_CHDIR     12
+#define SYS_LSEEK     19
 #define SYS_GETPID    20
+#define SYS_STAT     106
+#define SYS_FSTAT    108
+#define SYS_GETDENTS 141
 #define SYS_NANOSLEEP 162
+#define SYS_GETCWD   183
 
 /* ── Dispatch ──────────────────────────────────────────────────────────────── */
 
@@ -45,10 +53,28 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr);
  * up to the process table, fd table, and sleep timer.
  */
 
+/* sys_proc.c */
 long sys_exit(long status);
+long sys_getpid(void);
+
+/* sys_io.c */
 long sys_read(long fd, char *buf, size_t n);
 long sys_write(long fd, const char *buf, size_t n);
-long sys_getpid(void);
+
+/* sys_time.c */
 long sys_nanosleep(void *req, void *rem);
+
+/* sys_fs.c — VFS-routed file system calls */
+struct stat;
+struct dirent;
+void file_pool_init(void);
+long sys_open(const char *path, long flags, long mode);
+long sys_close(long fd);
+long sys_lseek(long fd, long off, long whence);
+long sys_stat(const char *path, struct stat *buf);
+long sys_fstat(long fd, struct stat *buf);
+long sys_getdents(long fd, struct dirent *buf, size_t count);
+long sys_getcwd(char *buf, size_t size);
+long sys_chdir(const char *path);
 
 #endif /* PPAP_SYSCALL_H */
