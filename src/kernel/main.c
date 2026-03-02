@@ -26,6 +26,7 @@
 #include "fs/romfs.h"
 #include "fs/devfs.h"
 #include "fs/procfs.h"
+#include "fs/tmpfs.h"
 #include "syscall/syscall.h"
 #include "exec/exec.h"
 #include "blkdev/blkdev.h"
@@ -204,6 +205,12 @@ void kmain(void)
         uart_puts("VFS: procfs mounted at /proc\n");
     else
         uart_puts("VFS: procfs mount FAILED\n");
+
+    /* Phase 5 Step 2: mount tmpfs at /tmp */
+    if (vfs_mount("/tmp", &tmpfs_ops, 0, NULL) == 0)
+        uart_puts("VFS: tmpfs mounted at /tmp\n");
+    else
+        uart_puts("VFS: tmpfs mount FAILED\n");
 
     /* Phase 4 Step 6: mount FAT32 partition from SD card */
     {

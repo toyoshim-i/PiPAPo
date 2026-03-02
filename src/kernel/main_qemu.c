@@ -28,6 +28,7 @@
 #include "fs/romfs.h"
 #include "fs/devfs.h"
 #include "fs/procfs.h"
+#include "fs/tmpfs.h"
 #include "syscall/syscall.h"
 #include "exec/exec.h"
 #include "signal/signal.h"
@@ -1033,6 +1034,155 @@ static void loopback_integration_test(void)
     /* testloop.bin is ROM-resident (from mkfatimg), no cleanup needed */
 }
 
+/* ── Phase 5 Step 2: tmpfs integration tests ─────────────────────────────── */
+
+static void tmpfs_integration_test(void)
+{
+    uart_puts("\n=== Phase 5 Step 2: tmpfs integration tests ===\n");
+    test_pass = 0;
+    test_fail = 0;
+
+    /* 1. Verify /tmp is mounted */
+    {
+        vnode_t *vn = (void *)0;
+        int rc = vfs_lookup("/tmp", &vn);
+        int ok = (rc == 0 && vn && vn->type == VNODE_DIR);
+        if (vn) vnode_put(vn);
+        test_report("/tmp mounted (DIR)", ok);
+        if (!ok) return;
+    }
+
+    /* 2. Create a file, write, close, re-open, read back */
+    {
+        long fd = sys_open("/tmp/hello.txt", O_CREAT | O_WRONLY, 0644);
+        int ok = (fd >= 0);
+        if (ok) {
+            long n = sys_write(fd, "hello", 5);
+            ok = (n == 5);
+            sys_close(fd);
+        }
+        if (ok) {
+            fd = sys_open("/tmp/hello.txt", O_RDONLY, 0);
+            if (fd >= 0) {
+                char buf[16];
+                long n = sys_read(fd, buf, 16);
+                ok = (n == 5 && buf[0] == 'h' && buf[4] == 'o');
+                sys_close(fd);
+            } else {
+                ok = 0;
+            }
+        }
+        test_report("create + write + read /tmp/hello.txt", ok);
+    }
+
+    /* 3. stat the file */
+    {
+        struct stat st;
+        long rc = sys_stat("/tmp/hello.txt", &st);
+        int ok = (rc == 0 && st.st_size == 5 && S_ISREG(st.st_mode));
+        test_report("stat /tmp/hello.txt (5 bytes, REG)", ok);
+    }
+
+    /* 4. Unlink and verify ENOENT */
+    {
+        long rc = sys_unlink("/tmp/hello.txt");
+        int ok = (rc == 0);
+        if (ok) {
+            long fd = sys_open("/tmp/hello.txt", O_RDONLY, 0);
+            ok = (fd == -ENOENT);
+            if (fd >= 0) sys_close(fd);
+        }
+        test_report("unlink + open → ENOENT", ok);
+    }
+
+    /* 5. mkdir + nested file */
+    {
+        long rc = sys_mkdir("/tmp/sub", 0755);
+        int ok = (rc == 0);
+        if (ok) {
+            long fd = sys_open("/tmp/sub/nested.txt", O_CREAT | O_WRONLY, 0644);
+            ok = (fd >= 0);
+            if (fd >= 0) {
+                sys_write(fd, "nest", 4);
+                sys_close(fd);
+            }
+        }
+        if (ok) {
+            long fd = sys_open("/tmp/sub/nested.txt", O_RDONLY, 0);
+            if (fd >= 0) {
+                char buf[8];
+                long n = sys_read(fd, buf, 8);
+                ok = (n == 4 && buf[0] == 'n');
+                sys_close(fd);
+            } else {
+                ok = 0;
+            }
+        }
+        test_report("mkdir + nested file /tmp/sub/nested.txt", ok);
+    }
+
+    /* 6. readdir /tmp */
+    {
+        struct dirent entries[8];
+        long fd = sys_open("/tmp", O_RDONLY, 0);
+        int ok = 0;
+        if (fd >= 0) {
+            long n = sys_getdents(fd, entries, 8);
+            /* Should have at least "sub" directory */
+            ok = (n >= 1);
+            sys_close(fd);
+        }
+        test_report("getdents /tmp (has entries)", ok);
+    }
+
+    /* 7. Write exceeds TMPFS_DATA_MAX → ENOSPC */
+    {
+        /* TMPFS_DATA_MAX = 8192, PAGE_SIZE = 4096, max 2 pages.
+         * nested.txt already used 1 page. big1 uses the 2nd.
+         * big2 write should fail (3rd page needed, only 2 allowed). */
+        long fd1 = sys_open("/tmp/big1.bin", O_CREAT | O_WRONLY, 0644);
+        long fd2 = sys_open("/tmp/big2.bin", O_CREAT | O_WRONLY, 0644);
+        int ok = 0;
+        if (fd1 >= 0 && fd2 >= 0) {
+            char buf[64];
+            __builtin_memset(buf, 'A', 64);
+            long n1 = sys_write(fd1, buf, 64);  /* allocates page 2 of 2 */
+            long n2 = sys_write(fd2, buf, 64);  /* 3rd page → ENOSPC */
+            ok = (n1 == 64 && n2 == -(long)ENOSPC);
+        }
+        if (fd1 >= 0) sys_close(fd1);
+        if (fd2 >= 0) sys_close(fd2);
+        test_report("write beyond TMPFS_DATA_MAX → ENOSPC", ok);
+    }
+
+    /* 8. Unlink reclaims page, write succeeds */
+    {
+        sys_unlink("/tmp/big1.bin");
+        long fd = sys_open("/tmp/big2.bin", O_WRONLY, 0);
+        int ok = 0;
+        if (fd >= 0) {
+            char buf[32];
+            __builtin_memset(buf, 'B', 32);
+            long n = sys_write(fd, buf, 32);
+            ok = (n == 32);
+            sys_close(fd);
+        }
+        test_report("unlink reclaims page, write succeeds", ok);
+    }
+
+    /* Cleanup */
+    sys_unlink("/tmp/sub/nested.txt");
+    sys_unlink("/tmp/sub");
+    sys_unlink("/tmp/big2.bin");
+
+    /* Summary */
+    uart_puts("Phase 5 Step 2 tmpfs: ");
+    uart_print_dec((uint32_t)test_pass);
+    uart_puts(" passed, ");
+    uart_print_dec((uint32_t)test_fail);
+    uart_puts(" failed\n");
+}
+
 /* ── Context-switch partner (prints "1" in a loop) ───────────────────────── */
 
 static void thread_loop(void)
@@ -1111,6 +1261,12 @@ void kmain(void)
     else
         uart_puts("VFS: procfs mount FAILED\n");
 
+    /* Phase 5 Step 2: mount tmpfs at /tmp */
+    if (vfs_mount("/tmp", &tmpfs_ops, 0, NULL) == 0)
+        uart_puts("VFS: tmpfs mounted at /tmp\n");
+    else
+        uart_puts("VFS: tmpfs mount FAILED\n");
+
     /* Phase 4 Step 6: mount FAT32 from ramblk if available */
     {
         blkdev_t *sd = blkdev_find("mmcblk0");
@@ -1149,6 +1305,9 @@ void kmain(void)
 
     /* Phase 5 Step 1: loopback block device integration tests */
     loopback_integration_test();
+
+    /* Phase 5 Step 2: tmpfs integration tests */
+    tmpfs_integration_test();
 
     /* ------------------------------------------------------------------
      * Phase 3 Step 5: exec /bin/test_vfork as the init process (pid 1)

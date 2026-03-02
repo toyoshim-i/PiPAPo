@@ -92,4 +92,19 @@
 #define BLKDEV_MAX            4     /* maximum registered block devices      */
 #define BLKDEV_SECTOR_SIZE  512u    /* bytes per sector                      */
 
+/* ── tmpfs (RAM-backed temporary filesystem) ─────────────────────────────
+ * TMPFS_INODE_MAX   Maximum files + directories in tmpfs.
+ *
+ * TMPFS_NAME_MAX    Maximum filename length in tmpfs (shorter than
+ *                   VFS_NAME_MAX to save BSS).  16 inodes × 32 B name
+ *                   = 512 B vs 1024 B at 64 B.
+ *
+ * TMPFS_DATA_MAX    Maximum total file data stored in tmpfs.  Enforced at
+ *                   write time (returns -ENOSPC when exceeded).  Data is
+ *                   allocated in PAGE_SIZE chunks via page_alloc().
+ * ────────────────────────────────────────────────────────────────────────── */
+#define TMPFS_INODE_MAX     16     /* maximum files + directories in tmpfs   */
+#define TMPFS_NAME_MAX      31     /* max filename in tmpfs (31 chars + NUL) */
+#define TMPFS_DATA_MAX    8192u    /* max total file data (8 KB = 2 pages)   */
+
 #endif /* PPAP_CONFIG_H */
