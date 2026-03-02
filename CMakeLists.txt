@@ -42,7 +42,8 @@ add_executable(ppap
     src/kernel/blkdev/blkdev.c    # Block device registry (Phase 4 Step 1)
     src/kernel/blkdev/loopback.c  # Loopback block device (Phase 5 Step 1)
     src/kernel/fs/vfat.c          # FAT32 (VFAT) filesystem driver (Phase 4 Steps 5+7)
-    src/kernel/fs/ufs.c           # UFS filesystem driver (Phase 5 Step 6)
+    # ufs.c omitted from hardware target — UFS only used in QEMU tests
+    src/kernel/fs/fstab.c         # fstab parser + boot mount (Phase 5 Step 10)
     src/kernel/exec/elf.c         # ELF32 parser (Phase 3 Step 2)
     src/kernel/exec/exec.c        # ELF loader + do_execve (Phase 3 Step 3)
     src/kernel/smp.c              # Core 1 launch + SIO FIFO IPC (Phase 1 Step 12)
@@ -124,6 +125,7 @@ add_executable(ppap_qemu
     src/kernel/blkdev/loopback.c      # Loopback block device (Phase 5 Step 1)
     src/kernel/fs/vfat.c              # FAT32 (VFAT) filesystem driver (Phase 4 Steps 5+7)
     src/kernel/fs/ufs.c               # UFS filesystem driver (Phase 5 Step 6)
+    src/kernel/fs/fstab.c             # fstab parser + boot mount (Phase 5 Step 10)
     src/kernel/exec/elf.c             # ELF32 parser (Phase 3 Step 2)
     src/kernel/exec/exec.c            # ELF loader + do_execve (Phase 3 Step 3)
     src/kernel/smp.c                  # Core 1 launch + SIO FIFO IPC (Phase 1 Step 12)
@@ -131,6 +133,7 @@ add_executable(ppap_qemu
 )
 
 target_include_directories(ppap_qemu PRIVATE src)
+target_compile_definitions(ppap_qemu PRIVATE PPAP_QEMU=1)
 
 # No Pico SDK libraries — ppap_qemu is a raw ARM bare-metal target.
 # The toolchain (arm-none-eabi-gcc / Cortex-M0+) is inherited from

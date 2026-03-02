@@ -32,6 +32,7 @@
 #include "blkdev/blkdev.h"
 #include "blkdev/loopback.h"
 #include "fs/vfat.h"
+#include "fs/fstab.h"
 #include "errno.h"
 #include "smp.h"
 
@@ -190,36 +191,23 @@ void kmain(void)
         }
     }
 
-    /* Phase 2 Steps 7-9: mount romfs, devfs, procfs */
+    /* Bootstrap: mount romfs at / (needed to read /etc/fstab) */
     if (vfs_mount("/", &romfs_ops, MNT_RDONLY, __romfs_start) == 0)
         uart_puts("VFS: romfs mounted at /\n");
     else
         uart_puts("VFS: romfs mount FAILED\n");
 
-    if (vfs_mount("/dev", &devfs_ops, 0, NULL) == 0)
-        uart_puts("VFS: devfs mounted at /dev\n");
-    else
-        uart_puts("VFS: devfs mount FAILED\n");
-
-    if (vfs_mount("/proc", &procfs_ops, MNT_RDONLY, NULL) == 0)
-        uart_puts("VFS: procfs mounted at /proc\n");
-    else
-        uart_puts("VFS: procfs mount FAILED\n");
-
-    /* Phase 5 Step 2: mount tmpfs at /tmp */
-    if (vfs_mount("/tmp", &tmpfs_ops, 0, NULL) == 0)
-        uart_puts("VFS: tmpfs mounted at /tmp\n");
-    else
-        uart_puts("VFS: tmpfs mount FAILED\n");
-
-    /* Phase 4 Step 6: mount FAT32 partition from SD card */
+    /* Phase 5 Step 10: parse /etc/fstab and mount all entries */
     {
-        blkdev_t *sd = blkdev_find("mmcblk0");
-        if (sd) {
-            if (vfs_mount("/mnt/sd", &vfat_ops, 0, sd) == 0)
-                uart_puts("VFS: vfat mounted at /mnt/sd\n");
-            else
-                uart_puts("VFS: vfat mount FAILED\n");
+        fstab_entry_t fstab[FSTAB_MAX_ENTRIES];
+        int nfstab = fstab_parse(fstab, FSTAB_MAX_ENTRIES);
+        if (nfstab > 0) {
+            uart_puts("fstab: ");
+            uart_print_dec((uint32_t)nfstab);
+            uart_puts(" entries parsed\n");
+            fstab_mount_all(fstab, nfstab);
+        } else {
+            uart_puts("fstab: no entries (fallback not implemented)\n");
         }
     }
 

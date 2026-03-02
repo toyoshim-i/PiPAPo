@@ -37,6 +37,7 @@
 #include "blkdev/loopback.h"
 #include "fs/vfat.h"
 #include "fs/ufs.h"
+#include "fs/fstab.h"
 #include "errno.h"
 #include "smp.h"
 
@@ -1480,6 +1481,58 @@ static void ufs_integration_test(void)
     uart_puts(" failed\n");
 }
 
+/* ── Phase 5 Step 10: fstab integration tests ────────────────────────────── */
+
+static void fstab_integration_test(void)
+{
+    uart_puts("\n=== Phase 5 Step 10: fstab integration tests ===\n");
+    test_pass = 0;
+    test_fail = 0;
+
+    /* 1. fstab_parse returns expected count */
+    {
+        fstab_entry_t entries[FSTAB_MAX_ENTRIES];
+        int n = fstab_parse(entries, FSTAB_MAX_ENTRIES);
+        test_report("fstab_parse >= 4 entries", n >= 4);
+    }
+
+    /* 2. /dev is mounted (devfs) */
+    {
+        struct stat st;
+        long rc = sys_stat("/dev/null", &st);
+        test_report("/dev mounted (devfs)", rc == 0);
+    }
+
+    /* 3. /proc is mounted (procfs) */
+    {
+        long fd = sys_open("/proc/meminfo", O_RDONLY, 0);
+        int ok = (fd >= 0);
+        if (fd >= 0) sys_close(fd);
+        test_report("/proc mounted (procfs)", ok);
+    }
+
+    /* 4. /tmp is mounted (tmpfs) */
+    {
+        struct stat st;
+        long rc = sys_stat("/tmp", &st);
+        test_report("/tmp mounted (tmpfs)", rc == 0 && S_ISDIR(st.st_mode));
+    }
+
+    /* 5. /mnt/sd is mounted (vfat) */
+    {
+        struct stat st;
+        long rc = sys_stat("/mnt/sd/hello.txt", &st);
+        test_report("/mnt/sd mounted (vfat)", rc == 0);
+    }
+
+    /* Summary */
+    uart_puts("Phase 5 Step 10 fstab: ");
+    uart_print_dec((uint32_t)test_pass);
+    uart_puts(" passed, ");
+    uart_print_dec((uint32_t)test_fail);
+    uart_puts(" failed\n");
+}
+
 /* ── Context-switch partner (prints "1" in a loop) ───────────────────────── */
 
 static void thread_loop(void)
@@ -1542,37 +1595,23 @@ void kmain(void)
         }
     }
 
-    /* Phase 2 Steps 7-9: mount romfs, devfs, procfs */
+    /* Bootstrap: mount romfs at / (needed to read /etc/fstab) */
     if (vfs_mount("/", &romfs_ops, MNT_RDONLY, __romfs_start) == 0)
         uart_puts("VFS: romfs mounted at /\n");
     else
         uart_puts("VFS: romfs mount FAILED\n");
 
-    if (vfs_mount("/dev", &devfs_ops, 0, NULL) == 0)
-        uart_puts("VFS: devfs mounted at /dev\n");
-    else
-        uart_puts("VFS: devfs mount FAILED\n");
-
-    if (vfs_mount("/proc", &procfs_ops, MNT_RDONLY, NULL) == 0)
-        uart_puts("VFS: procfs mounted at /proc\n");
-    else
-        uart_puts("VFS: procfs mount FAILED\n");
-
-    /* Phase 5 Step 2: mount tmpfs at /tmp */
-    if (vfs_mount("/tmp", &tmpfs_ops, 0, NULL) == 0)
-        uart_puts("VFS: tmpfs mounted at /tmp\n");
-    else
-        uart_puts("VFS: tmpfs mount FAILED\n");
-
-    /* Phase 4 Step 6: mount FAT32 from ramblk if available */
+    /* Phase 5 Step 10: parse /etc/fstab and mount all entries */
     {
-        blkdev_t *sd = blkdev_find("mmcblk0");
-        uint32_t fatimg_size = (uint32_t)(__fatimg_end - __fatimg_start);
-        if (sd && fatimg_size >= BLKDEV_SECTOR_SIZE) {
-            if (vfs_mount("/mnt/sd", &vfat_ops, 0, sd) == 0)
-                uart_puts("VFS: vfat mounted at /mnt/sd\n");
-            else
-                uart_puts("VFS: vfat mount FAILED\n");
+        fstab_entry_t fstab[FSTAB_MAX_ENTRIES];
+        int nfstab = fstab_parse(fstab, FSTAB_MAX_ENTRIES);
+        if (nfstab > 0) {
+            uart_puts("fstab: ");
+            uart_print_dec((uint32_t)nfstab);
+            uart_puts(" entries parsed\n");
+            fstab_mount_all(fstab, nfstab);
+        } else {
+            uart_puts("fstab: no entries (fallback not implemented)\n");
         }
     }
 
@@ -1608,6 +1647,9 @@ void kmain(void)
 
     /* Phase 5 Step 6: UFS read-only integration tests */
     ufs_integration_test();
+
+    /* Phase 5 Step 10: fstab integration tests */
+    fstab_integration_test();
 
     /* ------------------------------------------------------------------
      * Phase 3 Step 5: exec /bin/test_vfork as the init process (pid 1)
