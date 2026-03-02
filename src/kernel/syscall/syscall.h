@@ -2,15 +2,18 @@
  * syscall.h — Syscall numbers and dispatch interface
  *
  * ARM EABI Linux convention (compatible with musl libc):
- *   r7  = syscall number
- *   r0–r3 = arguments (up to 4)
- *   r0  = return value (negative errno on error)
+ *   r7    = syscall number
+ *   r0–r3 = arguments 1–4 (hardware-stacked by Cortex-M0+)
+ *   r4    = argument 5 (callee-saved, captured by SVC_Handler)
+ *   r5    = argument 6 (callee-saved, captured by SVC_Handler)
+ *   r0    = return value (negative errno on error)
  *   svc 0 triggers the SVC exception
  *
- * SVC_Handler (svc.S) captures r7 before the compiler can clobber it,
- * reads the stacked r0–r3 exception frame from PSP, and calls
- * syscall_dispatch().  syscall_dispatch() writes the return value back
- * into the stacked r0 so the caller sees it in r0 after exception return.
+ * SVC_Handler (svc.S) captures r4, r5, r7 before the compiler can
+ * clobber them, reads the stacked r0–r3 exception frame from PSP,
+ * and calls syscall_dispatch(frame, nr, a4, a5).  syscall_dispatch()
+ * writes the return value back into the stacked r0 so the caller sees
+ * it in r0 after exception return.
  */
 
 #ifndef PPAP_SYSCALL_H
@@ -53,11 +56,13 @@
  * Called from SVC_Handler (svc.S) with:
  *   frame[0..3] = stacked r0-r3 (syscall arguments a0-a3)
  *   nr          = syscall number (captured from r7)
+ *   a4          = 5th argument (captured from r4)
+ *   a5          = 6th argument (captured from r5)
  *
  * Dispatches to the appropriate sys_* implementation and writes the return
  * value into frame[0] (stacked r0) so the caller sees it after SVC return.
  */
-void syscall_dispatch(uint32_t *frame, uint32_t nr);
+void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5);
 
 /* Set by sys_execve after do_execve succeeds.  Checked by SVC_Handler
  * to perform a PendSV-like context restore from the new process image

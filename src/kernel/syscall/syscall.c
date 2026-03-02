@@ -4,6 +4,7 @@
  * syscall_dispatch() is called from SVC_Handler (svc.S):
  *   frame[0..3] = stacked r0-r3 (syscall arguments a0-a3)
  *   nr          = syscall number (captured from r7 by svc.S)
+ *   a4, a5      = 5th/6th arguments (captured from r4/r5 by svc.S)
  *
  * The return value is written into frame[0] (stacked r0) so the calling
  * thread sees it in r0 after the SVC exception returns.
@@ -29,12 +30,13 @@ volatile int exec_pending = 0;
 volatile int      svc_restart  = 0;
 volatile uint32_t svc_saved_a0 = 0;
 
-void syscall_dispatch(uint32_t *frame, uint32_t nr)
+void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
 {
     long a0 = (long)frame[0];
     long a1 = (long)frame[1];
     long a2 = (long)frame[2];
-    /* a3 (frame[3]) unused in Phase 1 */
+    long a3 = (long)frame[3];
+    (void)a3; (void)a4; (void)a5; /* available for 4-6 arg syscalls */
 
     long ret;
 

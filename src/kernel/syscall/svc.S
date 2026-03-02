@@ -2,19 +2,23 @@
 @ svc.S — SVC exception handler entry point
 @ =============================================================================
 @
-@ ARM EABI Linux syscall convention:
-@   r7  = syscall number (set by caller just before "svc 0")
-@   r0–r3 = arguments (stacked automatically by Cortex-M0+ hardware)
+@ ARM EABI Linux syscall convention (compatible with musl libc):
+@   r7    = syscall number (set by caller just before "svc 0")
+@   r0–r3 = arguments 1–4 (stacked automatically by Cortex-M0+ hardware)
+@   r4    = argument 5 (callee-saved, still live at SVC entry)
+@   r5    = argument 6 (callee-saved, still live at SVC entry)
 @
 @ When SVC fires in Thread mode (using PSP):
 @   • Hardware pushes {r0,r1,r2,r3,r12,lr,pc,xpsr} onto PSP.
 @   • CPU switches to Handler mode, MSP becomes the active stack.
-@   • r7 is NOT in the hardware-saved frame — it is still live in r7.
+@   • r4, r5, r7 are NOT in the hardware-saved frame — still live.
 @
-@ This handler must capture r7 BEFORE any C compiler prologue can clobber it,
-@ then hand off to syscall_dispatch(frame, nr) in C:
+@ This handler captures r4, r5, r7 BEFORE any C compiler prologue can
+@ clobber them, then hands off to syscall_dispatch(frame, nr, a4, a5):
 @   r0 = frame  — pointer to PSP (stacked r0–r3 at offsets 0–12)
 @   r1 = nr     — syscall number from r7
+@   r2 = a4     — 5th argument from r4
+@   r3 = a5     — 6th argument from r5
 @
 @ syscall_dispatch() writes the return value into frame[0] (stacked r0)
 @ so the caller sees it in r0 after exception return.
@@ -46,9 +50,11 @@
 .thumb_func
 .global SVC_Handler
 SVC_Handler:
-    @ --- Capture syscall number before any compiler prologue runs ---
-    push  {r7, lr}          @ [sp]   = r7 (syscall nr)
-                            @ [sp+4] = lr (EXC_RETURN — 0xFFFFFFFD)
+    @ --- Capture r4, r5, r7 before any compiler prologue can clobber ---
+    push  {r4, r5, r7, lr}  @ [sp]   = r4 (5th arg)
+                            @ [sp+4] = r5 (6th arg)
+                            @ [sp+8] = r7 (syscall nr)
+                            @ [sp+12]= lr (EXC_RETURN — 0xFFFFFFFD)
 
     @ --- Save original frame[0] for potential syscall restart ---
     mrs   r0, psp           @ r0 = frame pointer on PSP
@@ -56,9 +62,11 @@ SVC_Handler:
     ldr   r3, =svc_saved_a0
     str   r2, [r3]          @ svc_saved_a0 = original a0
 
-    @ --- Build argument registers for syscall_dispatch(frame, nr) ---
+    @ --- Build argument registers for syscall_dispatch(frame, nr, a4, a5) ---
     @     r0 already = frame (PSP)
-    ldr   r1, [sp, #0]      @ r1 = saved r7 = syscall number
+    ldr   r1, [sp, #8]      @ r1 = saved r7 = syscall number
+    ldr   r2, [sp, #0]      @ r2 = saved r4 = 5th arg
+    ldr   r3, [sp, #4]      @ r3 = saved r5 = 6th arg
 
     @ --- Dispatch ---
     bl    syscall_dispatch   @ writes return value into frame[0] (stacked r0)
@@ -107,7 +115,7 @@ SVC_Handler:
 
 .Lnormal_return:
     @ --- Normal return from exception ---
-    pop   {r7, pc}           @ r7  = restored caller's r7
+    pop   {r4, r5, r7, pc}  @ restore callee-saved r4, r5, r7
                              @ pc  = EXC_RETURN → exception return to Thread mode
                              @ If PendSV pending, it tail-chains immediately.
 
@@ -135,8 +143,10 @@ SVC_Handler:
     @ Set PSP to the new HW exception frame
     msr   psp, r0             @ PSP = SW frame + 32 = HW frame base
 
-    @ Return from exception (clean up the push {r7, lr} from entry)
-    pop   {r7, pc}            @ pc = EXC_RETURN → exception return
+    @ Return from exception — skip saved {r4,r5,r7} on MSP since we just
+    @ loaded the correct r4-r11 from the new process image.  Only pop lr→pc.
+    add   sp, sp, #12         @ skip stacked r4, r5, r7
+    pop   {pc}                @ pc = EXC_RETURN → exception return
 
     @ Literal pool
     .ltorg
