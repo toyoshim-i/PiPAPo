@@ -31,6 +31,8 @@
 #include "syscall/syscall.h"
 #include "exec/exec.h"
 #include "signal/signal.h"
+#include "blkdev/blkdev.h"
+#include "blkdev/ramblk.h"
 #include "errno.h"
 #include "smp.h"
 
@@ -618,6 +620,102 @@ static void signal_integration_test(void)
     uart_puts(" failed ===\n\n");
 }
 
+/* ── Phase 4 Step 1: blkdev integration tests ────────────────────────────── */
+
+/* Small test buffer: 8 sectors (4 KB) allocated from page pool */
+static void blkdev_integration_test(void)
+{
+    uart_puts("\n=== Phase 4 Step 1: blkdev integration tests ===\n");
+    test_pass = 0;
+    test_fail = 0;
+
+    /* 1. blkdev_init + register: ramblk already called from kmain */
+    {
+        blkdev_t *bd = blkdev_find("mmcblk0");
+        test_report("blkdev register", bd != (void *)0);
+    }
+
+    /* 2. blkdev_find by name */
+    {
+        blkdev_t *bd = blkdev_find("mmcblk0");
+        int ok = (bd != (void *)0 && bd->sector_count == 8);
+        test_report("blkdev find", ok);
+    }
+
+    /* 3. blkdev_find nonexistent → NULL */
+    {
+        blkdev_t *bd = blkdev_find("nodev");
+        test_report("blkdev find nonexistent", bd == (void *)0);
+    }
+
+    /* 4. read/write round-trip: write a pattern, read it back */
+    {
+        blkdev_t *bd = blkdev_find("mmcblk0");
+        int ok = 0;
+        if (bd) {
+            uint8_t wbuf[BLKDEV_SECTOR_SIZE];
+            uint8_t rbuf[BLKDEV_SECTOR_SIZE];
+
+            /* Fill write buffer with a pattern */
+            for (uint32_t i = 0; i < BLKDEV_SECTOR_SIZE; i++)
+                wbuf[i] = (uint8_t)(i & 0xFF);
+
+            /* Write sector 1, then read it back */
+            int wrc = bd->write(bd, wbuf, 1, 1);
+            int rrc = bd->read(bd, rbuf, 1, 1);
+
+            if (wrc == 0 && rrc == 0) {
+                ok = 1;
+                for (uint32_t i = 0; i < BLKDEV_SECTOR_SIZE; i++) {
+                    if (rbuf[i] != wbuf[i]) { ok = 0; break; }
+                }
+            }
+        }
+        test_report("blkdev read/write round-trip", ok);
+    }
+
+    /* 5. read original data (sector 0 has test pattern from init) */
+    {
+        blkdev_t *bd = blkdev_find("mmcblk0");
+        int ok = 0;
+        if (bd) {
+            uint8_t rbuf[BLKDEV_SECTOR_SIZE];
+            int rrc = bd->read(bd, rbuf, 0, 1);
+            if (rrc == 0) {
+                /* Sector 0 was filled with 0xAA by kmain before ramblk_init */
+                ok = (rbuf[0] == 0xAA && rbuf[1] == 0xAA);
+            }
+        }
+        test_report("blkdev read original data", ok);
+    }
+
+    /* 6. /dev/mmcblk0 accessible via devfs */
+    {
+        long fd = sys_open("/dev/mmcblk0", O_RDONLY, 0);
+        test_report("/dev/mmcblk0 open", fd >= 0);
+        if (fd >= 0)
+            sys_close(fd);
+    }
+
+    /* Summary */
+    uart_puts("=== blkdev results: ");
+    char digit[4];
+    int idx = 0;
+    int v = test_pass;
+    if (v >= 10) digit[idx++] = '0' + (v / 10);
+    digit[idx++] = '0' + (v % 10);
+    digit[idx] = '\0';
+    uart_puts(digit);
+    uart_puts(" passed, ");
+    idx = 0;
+    v = test_fail;
+    if (v >= 10) digit[idx++] = '0' + (v / 10);
+    digit[idx++] = '0' + (v % 10);
+    digit[idx] = '\0';
+    uart_puts(digit);
+    uart_puts(" failed ===\n\n");
+}
+
 /* ── Context-switch partner (prints "1" in a loop) ───────────────────────── */
 
 static void thread_loop(void)
@@ -645,6 +743,25 @@ void kmain(void)
     /* Phase 2 Steps 1-3: VFS layer + file pool for sys_open */
     vfs_init();
     file_pool_init();
+
+    /* Phase 4 Step 1: block device layer + RAM-backed test device.
+     * Allocate a page (4 KB = 8 sectors) and fill sector 0 with 0xAA
+     * as a recognisable test pattern for the integration test. */
+    blkdev_init();
+    {
+        uint8_t *test_img = (uint8_t *)page_alloc();
+        if (test_img) {
+            __builtin_memset(test_img, 0, PAGE_SIZE);
+            __builtin_memset(test_img, 0xAA, BLKDEV_SECTOR_SIZE);
+            int rc = ramblk_init(test_img, PAGE_SIZE);
+            if (rc >= 0)
+                uart_puts("BLKDEV: ramblk mmcblk0 registered (8 sectors)\n");
+            else
+                uart_puts("BLKDEV: ramblk init FAILED\n");
+        } else {
+            uart_puts("BLKDEV: page_alloc failed for test image\n");
+        }
+    }
 
     /* Phase 2 Steps 7-9: mount romfs, devfs, procfs */
     if (vfs_mount("/", &romfs_ops, MNT_RDONLY, __romfs_start) == 0)
@@ -679,6 +796,9 @@ void kmain(void)
 
     /* Phase 3 Step 10: signal integration tests */
     signal_integration_test();
+
+    /* Phase 4 Step 1: blkdev integration tests */
+    blkdev_integration_test();
 
     /* ------------------------------------------------------------------
      * Phase 3 Step 5: exec /bin/test_vfork as the init process (pid 1)

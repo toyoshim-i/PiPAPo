@@ -83,4 +83,13 @@
 #define VFS_PATH_MAX       128     /* max absolute path length              */
 #define VFS_SYMLOOP_MAX      8     /* max symlink resolution depth          */
 
+/* ── Block device layer ───────────────────────────────────────────────────
+ * BLKDEV_MAX          Maximum registered block devices (mmcblk0, loop0, …).
+ *
+ * BLKDEV_SECTOR_SIZE  Bytes per sector.  All blkdev I/O is in these units.
+ *                     512 is the universal standard for SD / eMMC / ATA.
+ * ────────────────────────────────────────────────────────────────────────── */
+#define BLKDEV_MAX            4     /* maximum registered block devices      */
+#define BLKDEV_SECTOR_SIZE  512u    /* bytes per sector                      */
+
 #endif /* PPAP_CONFIG_H */

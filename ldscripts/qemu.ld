@@ -64,6 +64,19 @@ SECTIONS {
 
 
     /* ------------------------------------------------------------------
+     * FAT32 image — placeholder for Phase 4 Step 8.
+     * When fatimg_data.S is added, it places the .incbin image here.
+     * Until then, __fatimg_start == __fatimg_end (zero-size).
+     * ------------------------------------------------------------------ */
+    .fatimg : {
+        __fatimg_start = .;
+        KEEP(*(.fatimg))
+        . = ALIGN(4);
+        __fatimg_end = .;
+    } > ROM
+
+
+    /* ------------------------------------------------------------------
      * Initialized data — LMA in ROM, VMA in RAM (copied by Reset_Handler)
      * ------------------------------------------------------------------ */
     .data : {
