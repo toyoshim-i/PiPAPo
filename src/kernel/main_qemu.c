@@ -719,6 +719,174 @@ static void blkdev_integration_test(void)
     uart_puts(" failed ===\n\n");
 }
 
+/* ── Phase 4 Step 9: VFAT integration tests ──────────────────────────────── */
+
+static void vfat_integration_test(void)
+{
+    uart_puts("\n=== Phase 4 Step 9: VFAT integration tests ===\n");
+    test_pass = 0;
+    test_fail = 0;
+
+    /* 1. Read /mnt/sd/hello.txt */
+    {
+        long fd = sys_open("/mnt/sd/hello.txt", O_RDONLY, 0);
+        int ok = 0;
+        if (fd >= 0) {
+            char buf[32];
+            long n = sys_read(fd, buf, sizeof(buf) - 1);
+            if (n == 19) {
+                buf[n] = '\0';
+                /* "Hello from FAT32!\n\0" (18 chars + NUL = 19 bytes) */
+                ok = (buf[0] == 'H' && buf[5] == ' '
+                   && buf[11] == 'F' && buf[16] == '!' && buf[17] == '\n');
+            }
+            sys_close(fd);
+        }
+        test_report("read /mnt/sd/hello.txt", ok);
+    }
+
+    /* 2. Read /mnt/sd/data.bin (256 bytes: 0x00..0xFF) */
+    {
+        long fd = sys_open("/mnt/sd/data.bin", O_RDONLY, 0);
+        int ok = 0;
+        if (fd >= 0) {
+            char buf[256];
+            long n = sys_read(fd, buf, 256);
+            if (n == 256) {
+                ok = 1;
+                for (int i = 0; i < 256; i++) {
+                    if ((uint8_t)buf[i] != (uint8_t)i) { ok = 0; break; }
+                }
+            }
+            sys_close(fd);
+        }
+        test_report("read /mnt/sd/data.bin", ok);
+    }
+
+    /* 3. stat /mnt/sd/hello.txt — regular file, 19 bytes */
+    {
+        struct stat st;
+        long rc = sys_stat("/mnt/sd/hello.txt", &st);
+        int ok = (rc == 0 && S_ISREG(st.st_mode) && st.st_size == 19);
+        test_report("stat /mnt/sd/hello.txt", ok);
+    }
+
+    /* 4. stat /mnt/sd/subdir — directory */
+    {
+        struct stat st;
+        long rc = sys_stat("/mnt/sd/subdir", &st);
+        int ok = (rc == 0 && S_ISDIR(st.st_mode));
+        test_report("stat /mnt/sd/subdir", ok);
+    }
+
+    /* 5. getdents /mnt/sd → list hello.txt, data.bin, subdir */
+    {
+        long fd = sys_open("/mnt/sd", O_RDONLY, 0);
+        int ok = 0;
+        if (fd >= 0) {
+            struct dirent entries[8];
+            long n = sys_getdents(fd, entries, 8);
+            if (n >= 3) {
+                int found_hello = 0, found_data = 0, found_subdir = 0;
+                for (long i = 0; i < n; i++) {
+                    if (__builtin_strcmp(entries[i].d_name, "hello.txt") == 0)
+                        found_hello = 1;
+                    if (__builtin_strcmp(entries[i].d_name, "data.bin") == 0)
+                        found_data = 1;
+                    if (__builtin_strcmp(entries[i].d_name, "subdir") == 0)
+                        found_subdir = 1;
+                }
+                ok = found_hello && found_data && found_subdir;
+            }
+            sys_close(fd);
+        }
+        test_report("getdents /mnt/sd", ok);
+    }
+
+    /* 6. Create + write + read a new file */
+    {
+        long fd = sys_open("/mnt/sd/newfile.txt", O_WRONLY | O_CREAT, 0644);
+        int ok = 0;
+        if (fd >= 0) {
+            long nw = sys_write(fd, "test data", 9);
+            sys_close(fd);
+            if (nw == 9) {
+                /* Read it back */
+                fd = sys_open("/mnt/sd/newfile.txt", O_RDONLY, 0);
+                if (fd >= 0) {
+                    char buf[16] = {0};
+                    long nr = sys_read(fd, buf, sizeof(buf));
+                    ok = (nr == 9 && buf[0] == 't' && buf[4] == ' '
+                       && buf[8] == 'a');
+                    sys_close(fd);
+                }
+            }
+        }
+        test_report("create+write+read newfile", ok);
+    }
+
+    /* 7. mkdir /mnt/sd/testdir */
+    {
+        long rc = sys_mkdir("/mnt/sd/testdir", 0755);
+        int ok = 0;
+        if (rc == 0) {
+            struct stat st;
+            ok = (sys_stat("/mnt/sd/testdir", &st) == 0 && S_ISDIR(st.st_mode));
+        }
+        test_report("mkdir /mnt/sd/testdir", ok);
+    }
+
+    /* 8. unlink /mnt/sd/newfile.txt */
+    {
+        long rc = sys_unlink("/mnt/sd/newfile.txt");
+        int ok = 0;
+        if (rc == 0) {
+            /* Should no longer exist */
+            ok = (sys_stat("/mnt/sd/newfile.txt", &(struct stat){0}) == -(long)ENOENT);
+        }
+        test_report("unlink /mnt/sd/newfile.txt", ok);
+    }
+
+    /* 9. lseek + partial read */
+    {
+        long fd = sys_open("/mnt/sd/data.bin", O_RDONLY, 0);
+        int ok = 0;
+        if (fd >= 0) {
+            sys_lseek(fd, 128, SEEK_SET);
+            char buf[4];
+            long n = sys_read(fd, buf, 4);
+            ok = (n == 4 && (uint8_t)buf[0] == 128 && (uint8_t)buf[1] == 129
+               && (uint8_t)buf[2] == 130 && (uint8_t)buf[3] == 131);
+            sys_close(fd);
+        }
+        test_report("lseek+read /mnt/sd/data.bin", ok);
+    }
+
+    /* 10. open nonexistent on vfat → -ENOENT */
+    {
+        long fd = sys_open("/mnt/sd/nofile", O_RDONLY, 0);
+        test_report("open nonexistent on vfat", fd == -(long)ENOENT);
+    }
+
+    /* Summary */
+    uart_puts("=== VFAT results: ");
+    char digit[4];
+    int idx = 0;
+    int v = test_pass;
+    if (v >= 10) digit[idx++] = '0' + (v / 10);
+    digit[idx++] = '0' + (v % 10);
+    digit[idx] = '\0';
+    uart_puts(digit);
+    uart_puts(" passed, ");
+    idx = 0;
+    v = test_fail;
+    if (v >= 10) digit[idx++] = '0' + (v / 10);
+    digit[idx++] = '0' + (v % 10);
+    digit[idx] = '\0';
+    uart_puts(digit);
+    uart_puts(" failed ===\n\n");
+}
+
 /* ── Context-switch partner (prints "1" in a loop) ───────────────────────── */
 
 static void thread_loop(void)
@@ -828,6 +996,9 @@ void kmain(void)
 
     /* Phase 4 Step 1: blkdev integration tests */
     blkdev_integration_test();
+
+    /* Phase 4 Step 9: VFAT integration tests */
+    vfat_integration_test();
 
     /* ------------------------------------------------------------------
      * Phase 3 Step 5: exec /bin/test_vfork as the init process (pid 1)

@@ -280,9 +280,17 @@ static void sfn_generate(const char *name, uint8_t sfn[11])
 /* ── Private vnode data ─────────────────────────────────────────────────── */
 
 /* We store the cluster number in the vnode's ino field (repurposed).
- * fs_priv points to the superblock. */
+ * fs_priv points to the superblock.
+ * xip_addr encodes the directory entry position (sector << 16 | byte_off)
+ * so we can update file_size on writes. */
 
 #define VNODE_CLUSTER(vn)  ((vn)->ino)
+
+/* Pack/unpack directory entry position in xip_addr */
+#define DIRENT_POS_PACK(sec, off) \
+    ((const void *)(uintptr_t)(((uint32_t)(sec) << 16) | ((uint32_t)(off) & 0xFFFF)))
+#define DIRENT_POS_SEC(vn)  ((uint32_t)(uintptr_t)(vn)->xip_addr >> 16)
+#define DIRENT_POS_OFF(vn)  ((uint32_t)(uintptr_t)(vn)->xip_addr & 0xFFFF)
 
 /* ── vfat_mount ─────────────────────────────────────────────────────────── */
 
@@ -421,6 +429,7 @@ static int vfat_lookup(vnode_t *dir, const char *name, vnode_t **result)
                     vn->ino = clus;
                     vn->fs_priv = sb;
                     vn->mount = dir->mount;
+                    vn->xip_addr = DIRENT_POS_PACK(sec + s, off);
 
                     if (de->attr & FAT_ATTR_DIRECTORY) {
                         vn->type = VNODE_DIR;
@@ -593,8 +602,21 @@ static long vfat_write(vnode_t *vn, const void *buf, size_t n, uint32_t off)
     }
 
     /* Update file size if we wrote past the end */
-    if (off + total > vn->size)
+    if (off + total > vn->size) {
         vn->size = off + (uint32_t)total;
+
+        /* Sync file_size to the on-disk directory entry */
+        uint32_t de_sec = DIRENT_POS_SEC(vn);
+        uint32_t de_off = DIRENT_POS_OFF(vn);
+        if (de_sec > 0 || de_off > 0) {
+            int rc2 = read_sector(sb, de_sec, sector_buf);
+            if (rc2 == 0) {
+                fat_dirent_t *de = (fat_dirent_t *)&sector_buf[de_off];
+                de->file_size = vn->size;
+                write_sector(sb, de_sec, sector_buf);
+            }
+        }
+    }
 
     fat_flush(sb);
     return (long)total;
@@ -770,6 +792,7 @@ static int vfat_create(vnode_t *dir, const char *name, uint32_t mode,
                     vn->size = 0;
                     vn->fs_priv = sb;
                     vn->mount = dir->mount;
+                    vn->xip_addr = DIRENT_POS_PACK(sec + s, off);
                     *result = vn;
                     return 0;
                 }
