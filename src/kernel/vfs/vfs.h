@@ -107,6 +107,10 @@ struct vnode {
  *   readdir:  number of entries filled (≥ 0), or negative errno
  *   stat:     0 on success, negative errno on failure
  *   readlink: bytes written to buf (≥ 0), or negative errno
+ *   create:   0 on success (sets *result), negative errno on failure
+ *   mkdir:    0 on success, negative errno on failure
+ *   unlink:   0 on success, negative errno on failure
+ *   truncate: 0 on success, negative errno on failure
  */
 
 struct vfs_ops {
@@ -118,6 +122,11 @@ struct vfs_ops {
                      uint32_t *cookie);
     int  (*stat)    (vnode_t *vn, struct stat *st);
     long (*readlink)(vnode_t *vn, char *buf, size_t bufsiz);
+    int  (*create)  (vnode_t *dir, const char *name, uint32_t mode,
+                     vnode_t **result);
+    int  (*mkdir)   (vnode_t *dir, const char *name, uint32_t mode);
+    int  (*unlink)  (vnode_t *dir, const char *name);
+    int  (*truncate)(vnode_t *vn, uint32_t length);
 };
 
 /* ── mount_entry — one entry in the kernel mount table ────────────────────── */
@@ -191,6 +200,18 @@ void vnode_put(vnode_t *vn);
  *   -ENAMETOOLONG   a component or the total path exceeds limits
  */
 int vfs_lookup(const char *path, vnode_t **result);
+
+/*
+ * Resolve a path to its parent directory vnode and extract the final
+ * component name.  Used by sys_open(O_CREAT), sys_mkdir, sys_unlink.
+ *
+ * On success:
+ *   *parent  = parent directory vnode (refcnt incremented)
+ *   name_out = final component (NUL-terminated, points into `namebuf`)
+ * Returns 0, or negative errno.
+ */
+int vfs_lookup_parent(const char *path, vnode_t **parent,
+                      char *namebuf, int namebuf_size);
 
 /*
  * Normalize an absolute path: resolve "." and ".." lexically, collapse

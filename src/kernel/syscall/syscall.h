@@ -27,6 +27,7 @@
 #define SYS_OPEN       5
 #define SYS_CLOSE      6
 #define SYS_WAITPID    7
+#define SYS_UNLINK    10
 #define SYS_EXECVE    11
 #define SYS_CHDIR     12
 #define SYS_LSEEK     19
@@ -43,6 +44,7 @@
 #define SYS_DUP2      63
 #define SYS_SIGACTION 67
 #define SYS_SIGRETURN 119
+#define SYS_MKDIR     39
 #define SYS_VFORK    190
 
 /* ── Dispatch ──────────────────────────────────────────────────────────────── */
@@ -124,5 +126,7 @@ long sys_fstat(long fd, struct stat *buf);
 long sys_getdents(long fd, struct dirent *buf, size_t count);
 long sys_getcwd(char *buf, size_t size);
 long sys_chdir(const char *path);
+long sys_mkdir(const char *path, long mode);
+long sys_unlink(const char *path);
 
 #endif /* PPAP_SYSCALL_H */

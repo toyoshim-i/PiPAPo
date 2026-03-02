@@ -33,12 +33,17 @@
 #include "signal/signal.h"
 #include "blkdev/blkdev.h"
 #include "blkdev/ramblk.h"
+#include "fs/vfat.h"
 #include "errno.h"
 #include "smp.h"
 
 /* Linker-provided romfs image location */
 extern const uint8_t __romfs_start[];
 extern const uint8_t __romfs_end[];
+
+/* Linker-provided FAT32 image location (populated in Step 8) */
+extern const uint8_t __fatimg_start[];
+extern const uint8_t __fatimg_end[];
 
 /* ── Integration test helpers ─────────────────────────────────────────────── */
 
@@ -744,22 +749,36 @@ void kmain(void)
     vfs_init();
     file_pool_init();
 
-    /* Phase 4 Step 1: block device layer + RAM-backed test device.
-     * Allocate a page (4 KB = 8 sectors) and fill sector 0 with 0xAA
-     * as a recognisable test pattern for the integration test. */
+    /* Phase 4 Step 1: block device layer + RAM-backed device.
+     * If a FAT32 image is embedded (.fatimg section), use it.
+     * Otherwise fall back to a small test-pattern image. */
     blkdev_init();
     {
-        uint8_t *test_img = (uint8_t *)page_alloc();
-        if (test_img) {
-            __builtin_memset(test_img, 0, PAGE_SIZE);
-            __builtin_memset(test_img, 0xAA, BLKDEV_SECTOR_SIZE);
-            int rc = ramblk_init(test_img, PAGE_SIZE);
-            if (rc >= 0)
-                uart_puts("BLKDEV: ramblk mmcblk0 registered (8 sectors)\n");
-            else
+        uint32_t fatimg_size = (uint32_t)(__fatimg_end - __fatimg_start);
+        if (fatimg_size >= BLKDEV_SECTOR_SIZE) {
+            /* ROM-embedded FAT32 image */
+            int rc = ramblk_init(__fatimg_start, fatimg_size);
+            if (rc >= 0) {
+                uart_puts("BLKDEV: ramblk mmcblk0 (FAT32 image, ");
+                uart_print_dec(fatimg_size / 1024);
+                uart_puts(" KB)\n");
+            } else {
                 uart_puts("BLKDEV: ramblk init FAILED\n");
+            }
         } else {
-            uart_puts("BLKDEV: page_alloc failed for test image\n");
+            /* No FAT32 image — use test pattern (4 KB = 8 sectors) */
+            uint8_t *test_img = (uint8_t *)page_alloc();
+            if (test_img) {
+                __builtin_memset(test_img, 0, PAGE_SIZE);
+                __builtin_memset(test_img, 0xAA, BLKDEV_SECTOR_SIZE);
+                int rc = ramblk_init(test_img, PAGE_SIZE);
+                if (rc >= 0)
+                    uart_puts("BLKDEV: ramblk mmcblk0 (test, 8 sectors)\n");
+                else
+                    uart_puts("BLKDEV: ramblk init FAILED\n");
+            } else {
+                uart_puts("BLKDEV: page_alloc failed\n");
+            }
         }
     }
 
@@ -778,6 +797,18 @@ void kmain(void)
         uart_puts("VFS: procfs mounted at /proc\n");
     else
         uart_puts("VFS: procfs mount FAILED\n");
+
+    /* Phase 4 Step 6: mount FAT32 from ramblk if available */
+    {
+        blkdev_t *sd = blkdev_find("mmcblk0");
+        uint32_t fatimg_size = (uint32_t)(__fatimg_end - __fatimg_start);
+        if (sd && fatimg_size >= BLKDEV_SECTOR_SIZE) {
+            if (vfs_mount("/mnt/sd", &vfat_ops, 0, sd) == 0)
+                uart_puts("VFS: vfat mounted at /mnt/sd\n");
+            else
+                uart_puts("VFS: vfat mount FAILED\n");
+        }
+    }
 
     /* Phase 1 Step 10: wire fd 0/1/2 to the UART tty driver */
     fd_stdio_init(&proc_table[0]);

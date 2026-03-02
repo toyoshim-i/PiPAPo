@@ -970,4 +970,8 @@ const vfs_ops_t vfat_ops = {
     .readdir  = vfat_readdir,
     .stat     = vfat_stat,
     .readlink = NULL,
+    .create   = vfat_create,
+    .mkdir    = vfat_mkdir,
+    .unlink   = vfat_unlink,
+    .truncate = NULL,
 };

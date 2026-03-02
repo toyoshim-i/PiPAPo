@@ -24,6 +24,12 @@
 #define O_RDONLY  0u
 #define O_WRONLY  1u
 #define O_RDWR    2u
+#define O_CREAT   0x0040u   /* create file if it doesn't exist          */
+#define O_TRUNC   0x0200u   /* truncate file to zero length             */
+#define O_APPEND  0x0400u   /* append writes to end of file             */
+
+/* Access-mode mask (low 2 bits) */
+#define O_ACCMODE 3u
 
 /* Seek origin constants (for sys_lseek) */
 #define SEEK_SET  0

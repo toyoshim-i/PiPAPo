@@ -29,6 +29,7 @@
 #include "syscall/syscall.h"
 #include "exec/exec.h"
 #include "blkdev/blkdev.h"
+#include "fs/vfat.h"
 #include "errno.h"
 #include "smp.h"
 
@@ -199,6 +200,17 @@ void kmain(void)
         uart_puts("VFS: procfs mounted at /proc\n");
     else
         uart_puts("VFS: procfs mount FAILED\n");
+
+    /* Phase 4 Step 6: mount FAT32 partition from SD card */
+    {
+        blkdev_t *sd = blkdev_find("mmcblk0");
+        if (sd) {
+            if (vfs_mount("/mnt/sd", &vfat_ops, 0, sd) == 0)
+                uart_puts("VFS: vfat mounted at /mnt/sd\n");
+            else
+                uart_puts("VFS: vfat mount FAILED\n");
+        }
+    }
 
     /* Phase 1 Step 10: wire fd 0/1/2 to the UART tty driver */
     fd_stdio_init(&proc_table[0]);

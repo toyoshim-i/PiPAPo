@@ -352,3 +352,52 @@ int vfs_path_normalize(const char *path, char *buf, int bufsiz)
 {
     return path_normalize(path, buf, bufsiz);
 }
+
+int vfs_lookup_parent(const char *path, vnode_t **parent,
+                      char *namebuf, int namebuf_size)
+{
+    if (!path || !parent || !namebuf || namebuf_size < 2)
+        return -EINVAL;
+    if (path[0] != '/')
+        return -EINVAL;
+
+    /* Normalize the full path */
+    char normalized[VFS_PATH_MAX];
+    int nlen = path_normalize(path, normalized, (int)sizeof(normalized));
+    if (nlen < 0)
+        return nlen;
+
+    /* Cannot get parent of "/" */
+    if (nlen == 1 && normalized[0] == '/')
+        return -EINVAL;
+
+    /* Split: find last '/' to separate parent path from final component */
+    int last_slash = 0;
+    for (int i = nlen - 1; i >= 0; i--) {
+        if (normalized[i] == '/') {
+            last_slash = i;
+            break;
+        }
+    }
+
+    /* Extract the final component name */
+    const char *name = &normalized[last_slash + 1];
+    int name_len = nlen - last_slash - 1;
+    if (name_len <= 0 || name_len >= namebuf_size)
+        return -ENAMETOOLONG;
+    __builtin_memcpy(namebuf, name, (size_t)name_len);
+    namebuf[name_len] = '\0';
+
+    /* Build parent path: everything up to last_slash, or "/" if at root */
+    char parent_path[VFS_PATH_MAX];
+    if (last_slash == 0) {
+        parent_path[0] = '/';
+        parent_path[1] = '\0';
+    } else {
+        __builtin_memcpy(parent_path, normalized, (size_t)last_slash);
+        parent_path[last_slash] = '\0';
+    }
+
+    /* Look up the parent directory */
+    return lookup_walk(parent_path, parent, 0);
+}

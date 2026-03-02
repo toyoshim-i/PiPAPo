@@ -72,6 +72,10 @@ static long vfs_file_write(struct file *f, const char *buf, size_t n)
         !f->vnode->mount->ops->write)
         return -(long)EBADF;
 
+    /* O_APPEND: always write at end of file */
+    if (f->flags & O_APPEND)
+        f->offset = f->vnode->size;
+
     long ret = f->vnode->mount->ops->write(
         f->vnode, (const void *)buf, n, f->offset);
     if (ret > 0)
@@ -98,15 +102,53 @@ static const struct file_ops vfs_file_ops = {
 
 long sys_open(const char *path, long flags, long mode)
 {
-    (void)mode;   /* permissions not enforced in Phase 2 */
-
     if (!path)
         return -(long)EINVAL;
 
     vnode_t *vn = NULL;
     int err = vfs_lookup(path, &vn);
-    if (err)
+
+    /* O_CREAT: if file doesn't exist, create it via the FS driver */
+    if (err == -ENOENT && ((uint32_t)flags & O_CREAT)) {
+        vnode_t *parent = NULL;
+        char namebuf[VFS_NAME_MAX + 1];
+        err = vfs_lookup_parent(path, &parent, namebuf,
+                                (int)sizeof(namebuf));
+        if (err) return (long)err;
+
+        if (parent->type != VNODE_DIR) {
+            vnode_put(parent);
+            return -(long)ENOTDIR;
+        }
+
+        /* Check that the FS supports create */
+        if (!parent->mount || !parent->mount->ops ||
+            !parent->mount->ops->create) {
+            vnode_put(parent);
+            return -(long)ENOSYS;
+        }
+
+        /* Check read-only mount */
+        if (parent->mount->flags & MNT_RDONLY) {
+            vnode_put(parent);
+            return -(long)EROFS;
+        }
+
+        err = parent->mount->ops->create(parent, namebuf,
+                                          (uint32_t)mode, &vn);
+        vnode_put(parent);
+        if (err) return (long)err;
+    } else if (err) {
         return (long)err;
+    }
+
+    /* O_TRUNC: truncate existing file to zero length */
+    if (((uint32_t)flags & O_TRUNC) && vn->type == VNODE_FILE) {
+        if (vn->mount && vn->mount->ops && vn->mount->ops->truncate)
+            vn->mount->ops->truncate(vn, 0);
+        else
+            vn->size = 0;  /* simple fallback */
+    }
 
     /* Allocate a struct file from the pool */
     struct file *f = file_alloc();
@@ -120,7 +162,7 @@ long sys_open(const char *path, long flags, long mode)
     f->flags  = (uint32_t)flags;
     f->refcnt = 0;     /* fd_alloc will increment to 1 */
     f->vnode  = vn;
-    f->offset = 0;
+    f->offset = ((uint32_t)flags & O_APPEND) ? vn->size : 0;
 
     int fd = fd_alloc(current, f);
     if (fd < 0) {
@@ -340,4 +382,72 @@ long sys_dup2(long oldfd, long newfd)
     current->fd_table[(int)newfd] = f;
     f->refcnt++;
     return newfd;
+}
+
+/* ── sys_mkdir ─────────────────────────────────────────────────────────────── */
+
+long sys_mkdir(const char *path, long mode)
+{
+    if (!path)
+        return -(long)EINVAL;
+
+    vnode_t *parent = NULL;
+    char namebuf[VFS_NAME_MAX + 1];
+    int err = vfs_lookup_parent(path, &parent, namebuf,
+                                (int)sizeof(namebuf));
+    if (err) return (long)err;
+
+    if (parent->type != VNODE_DIR) {
+        vnode_put(parent);
+        return -(long)ENOTDIR;
+    }
+
+    if (!parent->mount || !parent->mount->ops ||
+        !parent->mount->ops->mkdir) {
+        vnode_put(parent);
+        return -(long)ENOSYS;
+    }
+
+    if (parent->mount->flags & MNT_RDONLY) {
+        vnode_put(parent);
+        return -(long)EROFS;
+    }
+
+    err = parent->mount->ops->mkdir(parent, namebuf, (uint32_t)mode);
+    vnode_put(parent);
+    return (long)err;
+}
+
+/* ── sys_unlink ────────────────────────────────────────────────────────────── */
+
+long sys_unlink(const char *path)
+{
+    if (!path)
+        return -(long)EINVAL;
+
+    vnode_t *parent = NULL;
+    char namebuf[VFS_NAME_MAX + 1];
+    int err = vfs_lookup_parent(path, &parent, namebuf,
+                                (int)sizeof(namebuf));
+    if (err) return (long)err;
+
+    if (parent->type != VNODE_DIR) {
+        vnode_put(parent);
+        return -(long)ENOTDIR;
+    }
+
+    if (!parent->mount || !parent->mount->ops ||
+        !parent->mount->ops->unlink) {
+        vnode_put(parent);
+        return -(long)ENOSYS;
+    }
+
+    if (parent->mount->flags & MNT_RDONLY) {
+        vnode_put(parent);
+        return -(long)EROFS;
+    }
+
+    err = parent->mount->ops->unlink(parent, namebuf);
+    vnode_put(parent);
+    return (long)err;
 }

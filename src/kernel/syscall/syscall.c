@@ -106,6 +106,12 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr)
     case SYS_SIGRETURN:
         ret = sys_sigreturn();
         break;
+    case SYS_UNLINK:
+        ret = sys_unlink((const char *)(uintptr_t)a0);
+        break;
+    case SYS_MKDIR:
+        ret = sys_mkdir((const char *)(uintptr_t)a0, a1);
+        break;
     case SYS_VFORK:
         ret = sys_vfork(frame);
         break;
