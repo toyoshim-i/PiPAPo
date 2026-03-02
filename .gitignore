@@ -1,7 +1,12 @@
 build/
+build_tests/
 *.elf
 *.bin
 *.uf2
 *.map
 .gdb_history
 .gdb-index
+
+# Build-generated artifacts
+romfs/bin/
+tools/mkromfs/mkromfs
