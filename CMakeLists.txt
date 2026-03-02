@@ -190,10 +190,15 @@ add_custom_command(
 file(WRITE ${CMAKE_BINARY_DIR}/romfs_data.S
 "    .section .romfs, \"a\", %progbits\n    .incbin \"${CMAKE_BINARY_DIR}/romfs.bin\"\n")
 
-# Ensure romfs.bin is built before assembling romfs_data.S
+# Ensure romfs.bin is built before assembling romfs_data.S.
+# OBJECT_DEPENDS tells CMake to reassemble romfs_data.S when romfs.bin changes
+# (CMake cannot track .incbin dependencies automatically).
 add_custom_target(romfs_image DEPENDS ${CMAKE_BINARY_DIR}/romfs.bin)
 add_dependencies(ppap romfs_image)
 add_dependencies(ppap_qemu romfs_image)
+
+set_source_files_properties(${CMAKE_BINARY_DIR}/romfs_data.S
+    PROPERTIES OBJECT_DEPENDS ${CMAKE_BINARY_DIR}/romfs.bin)
 
 # Add romfs_data.S as a source to both targets — CMake assembles it automatically
 target_sources(ppap      PRIVATE ${CMAKE_BINARY_DIR}/romfs_data.S)

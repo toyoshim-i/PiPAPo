@@ -687,14 +687,14 @@ void kmain(void)
     proc_table[0].stack_page = page_alloc();
 
     pcb_t *init = proc_alloc();
-    int exec_err = do_execve(init, "/bin/test_vfork");
+    int exec_err = do_execve(init, "/bin/runtests");
     if (exec_err == 0) {
         init->state = PROC_RUNNABLE;
-        uart_puts("EXEC: /bin/test_vfork loaded, pid=");
+        uart_puts("EXEC: /bin/runtests loaded, pid=");
         uart_print_dec(init->pid);
         uart_puts("\n");
     } else {
-        uart_puts("EXEC: /bin/test_vfork FAILED (err=");
+        uart_puts("EXEC: /bin/runtests FAILED (err=");
         uart_print_dec((uint32_t)(-(int)exec_err));
         uart_puts(")\n");
     }

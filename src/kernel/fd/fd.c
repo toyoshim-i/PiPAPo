@@ -56,6 +56,18 @@ struct file *fd_get(pcb_t *p, int fd)
     return p->fd_table[fd];
 }
 
+/* ── fd_inherit ────────────────────────────────────────────────────────────── */
+
+void fd_inherit(pcb_t *child, const pcb_t *parent)
+{
+    for (int i = 0; i < FD_MAX; i++) {
+        struct file *f = parent->fd_table[i];
+        child->fd_table[i] = f;
+        if (f)
+            f->refcnt++;
+    }
+}
+
 /* ── fd_close_all ──────────────────────────────────────────────────────────── */
 
 void fd_close_all(pcb_t *p)

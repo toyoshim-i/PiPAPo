@@ -152,8 +152,8 @@ long sys_vfork(uint32_t *frame)
     child->got_base = current->got_base;
     memcpy(child->cwd, current->cwd, sizeof(child->cwd));
 
-    /* 6. Inherit file descriptors */
-    fd_stdio_init(child);
+    /* 6. Inherit file descriptors from parent */
+    fd_inherit(child, current);
 
     /* 7. Set parent's return value (child PID) in stacked r0 */
     frame[0] = (uint32_t)child->pid;

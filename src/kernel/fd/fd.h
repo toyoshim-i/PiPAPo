@@ -45,6 +45,12 @@ void fd_free(pcb_t *p, int fd);
 struct file *fd_get(pcb_t *p, int fd);
 
 /*
+ * Inherit file descriptors from parent to child (for vfork).
+ * Copies all fd_table entries and increments refcnt on each file.
+ */
+void fd_inherit(pcb_t *child, const pcb_t *parent);
+
+/*
  * Close all open file descriptors for the given process.
  * Called from sys_exit() and sys_execve() during cleanup.
  */

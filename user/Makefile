@@ -37,7 +37,7 @@ COMMON_OBJS := crt0.o syscall.o
 
 # ── Programs ─────────────────────────────────────────────────────────────────
 # Add new programs here.  Each FOO needs a FOO.c source file.
-PROGRAMS := hello test_vfork
+PROGRAMS := hello test_vfork test_exec test_pipe test_brk test_fd test_signal runtests
 
 ELFS := $(addsuffix .elf, $(PROGRAMS))
 
@@ -52,7 +52,7 @@ all: $(ELFS)
 	@$(NM) --numeric-sort $@ | grep -E '_start|main|write|_exit'
 
 # Compile C sources
-%.o: %.c syscall.h
+%.o: %.c syscall.h $(wildcard utest.h)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # Assemble .S sources
