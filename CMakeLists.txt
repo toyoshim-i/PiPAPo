@@ -42,6 +42,7 @@ add_executable(ppap
     src/kernel/blkdev/blkdev.c    # Block device registry (Phase 4 Step 1)
     src/kernel/blkdev/loopback.c  # Loopback block device (Phase 5 Step 1)
     src/kernel/fs/vfat.c          # FAT32 (VFAT) filesystem driver (Phase 4 Steps 5+7)
+    src/kernel/fs/ufs.c           # UFS filesystem driver (Phase 5 Step 6)
     src/kernel/exec/elf.c         # ELF32 parser (Phase 3 Step 2)
     src/kernel/exec/exec.c        # ELF loader + do_execve (Phase 3 Step 3)
     src/kernel/smp.c              # Core 1 launch + SIO FIFO IPC (Phase 1 Step 12)
@@ -122,6 +123,7 @@ add_executable(ppap_qemu
     src/kernel/blkdev/ramblk.c        # RAM/ROM block device for QEMU (Phase 4 Step 1)
     src/kernel/blkdev/loopback.c      # Loopback block device (Phase 5 Step 1)
     src/kernel/fs/vfat.c              # FAT32 (VFAT) filesystem driver (Phase 4 Steps 5+7)
+    src/kernel/fs/ufs.c               # UFS filesystem driver (Phase 5 Step 6)
     src/kernel/exec/elf.c             # ELF32 parser (Phase 3 Step 2)
     src/kernel/exec/exec.c            # ELF loader + do_execve (Phase 3 Step 3)
     src/kernel/smp.c                  # Core 1 launch + SIO FIFO IPC (Phase 1 Step 12)
@@ -232,12 +234,33 @@ add_custom_command(
     COMMENT "Building mkfatimg host tool"
 )
 
-# --- Generate fatimg.bin ---
+# --- mkufs host tool ---
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/mkufs
+    COMMAND cc -O2 -o ${CMAKE_BINARY_DIR}/mkufs
+            ${CMAKE_SOURCE_DIR}/tools/mkufs/mkufs.c
+    DEPENDS ${CMAKE_SOURCE_DIR}/tools/mkufs/mkufs.c
+    COMMENT "Building mkufs host tool"
+)
+
+# --- Generate UFS test image (populated from tools/ufs_testdata/) ---
+file(GLOB UFS_TESTDATA ${CMAKE_SOURCE_DIR}/tools/ufs_testdata/*)
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/ufstest.img
+    COMMAND ${CMAKE_BINARY_DIR}/mkufs -s 64K
+            -p ${CMAKE_SOURCE_DIR}/tools/ufs_testdata
+            ${CMAKE_BINARY_DIR}/ufstest.img
+    DEPENDS ${CMAKE_BINARY_DIR}/mkufs ${UFS_TESTDATA}
+    COMMENT "Generating UFS test image"
+)
+
+# --- Generate fatimg.bin (with embedded UFS image) ---
 add_custom_command(
     OUTPUT ${CMAKE_BINARY_DIR}/fatimg.bin
     COMMAND ${CMAKE_BINARY_DIR}/mkfatimg ${CMAKE_BINARY_DIR}/fatimg.bin
-    DEPENDS ${CMAKE_BINARY_DIR}/mkfatimg
-    COMMENT "Generating FAT32 test image"
+            ${CMAKE_BINARY_DIR}/ufstest.img
+    DEPENDS ${CMAKE_BINARY_DIR}/mkfatimg ${CMAKE_BINARY_DIR}/ufstest.img
+    COMMENT "Generating FAT32 test image (with UFS)"
 )
 
 # --- fatimg_data.S: .incbin the FAT32 image into a .fatimg section ---

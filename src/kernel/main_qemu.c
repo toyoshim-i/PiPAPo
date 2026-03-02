@@ -36,6 +36,7 @@
 #include "blkdev/ramblk.h"
 #include "blkdev/loopback.h"
 #include "fs/vfat.h"
+#include "fs/ufs.h"
 #include "errno.h"
 #include "smp.h"
 
@@ -1183,6 +1184,107 @@ static void tmpfs_integration_test(void)
     uart_puts(" failed\n");
 }
 
+/* ── Phase 5 Step 6: UFS read-only integration tests ─────────────────────── */
+
+static void ufs_integration_test(void)
+{
+    uart_puts("\n=== Phase 5 Step 6: UFS read-only integration tests ===\n");
+    test_pass = 0;
+    test_fail = 0;
+
+    /* 1. Verify testufs.img exists on VFAT */
+    {
+        struct stat st;
+        long rc = sys_stat("/mnt/sd/testufs.img", &st);
+        int ok = (rc == 0 && S_ISREG(st.st_mode) && st.st_size > 0);
+        test_report("stat /mnt/sd/testufs.img", ok);
+        if (!ok) {
+            uart_puts("SKIP: testufs.img not found\n");
+            return;
+        }
+    }
+
+    /* 2. Set up loopback device */
+    int loop_idx;
+    {
+        loop_idx = loopback_setup("/mnt/sd/testufs.img");
+        test_report("loopback_setup(testufs.img)", loop_idx >= 0);
+        if (loop_idx < 0) return;
+    }
+
+    /* 3. Mount UFS at /mnt/ufs */
+    {
+        char loop_name[8];
+        loop_name[0] = 'l'; loop_name[1] = 'o'; loop_name[2] = 'o';
+        loop_name[3] = 'p'; loop_name[4] = (char)('0' + loop_idx);
+        loop_name[5] = '\0';
+
+        blkdev_t *bd = blkdev_find(loop_name);
+        int ok = (bd != (void *)0);
+        test_report("blkdev_find loopN", ok);
+        if (!ok) return;
+
+        int rc = vfs_mount("/mnt/ufs", &ufs_ops, MNT_RDONLY, bd);
+        test_report("vfs_mount UFS at /mnt/ufs", rc == 0);
+        if (rc != 0) return;
+    }
+
+    /* 4. readdir /mnt/ufs → should find "hello.txt" */
+    {
+        long fd = sys_open("/mnt/ufs", O_RDONLY, 0);
+        int ok = 0;
+        if (fd >= 0) {
+            struct dirent entries[8];
+            long n = sys_getdents(fd, entries, 8);
+            for (long i = 0; i < n; i++) {
+                if (__builtin_strcmp(entries[i].d_name, "hello.txt") == 0)
+                    ok = 1;
+            }
+            sys_close(fd);
+        }
+        test_report("readdir /mnt/ufs (hello.txt)", ok);
+    }
+
+    /* 5. stat /mnt/ufs/hello.txt — regular file, 16 bytes */
+    {
+        struct stat st;
+        long rc = sys_stat("/mnt/ufs/hello.txt", &st);
+        int ok = (rc == 0 && S_ISREG(st.st_mode) && st.st_size == 16);
+        test_report("stat /mnt/ufs/hello.txt (16 B, REG)", ok);
+    }
+
+    /* 6. read /mnt/ufs/hello.txt — "Hello from UFS!\n" */
+    {
+        long fd = sys_open("/mnt/ufs/hello.txt", O_RDONLY, 0);
+        int ok = 0;
+        if (fd >= 0) {
+            char buf[32];
+            long n = sys_read(fd, buf, sizeof(buf) - 1);
+            if (n == 16) {
+                buf[n] = '\0';
+                ok = (buf[0] == 'H' && buf[6] == 'f'
+                   && buf[11] == 'U' && buf[14] == '!'
+                   && buf[15] == '\n');
+            }
+            sys_close(fd);
+        }
+        test_report("read /mnt/ufs/hello.txt", ok);
+    }
+
+    /* 7. open nonexistent → -ENOENT */
+    {
+        long fd = sys_open("/mnt/ufs/nofile", O_RDONLY, 0);
+        test_report("open /mnt/ufs/nofile → ENOENT", fd == -(long)ENOENT);
+    }
+
+    /* Summary */
+    uart_puts("Phase 5 Step 6 UFS: ");
+    uart_print_dec((uint32_t)test_pass);
+    uart_puts(" passed, ");
+    uart_print_dec((uint32_t)test_fail);
+    uart_puts(" failed\n");
+}
+
 /* ── Context-switch partner (prints "1" in a loop) ───────────────────────── */
 
 static void thread_loop(void)
@@ -1308,6 +1410,9 @@ void kmain(void)
 
     /* Phase 5 Step 2: tmpfs integration tests */
     tmpfs_integration_test();
+
+    /* Phase 5 Step 6: UFS read-only integration tests */
+    ufs_integration_test();
 
     /* ------------------------------------------------------------------
      * Phase 3 Step 5: exec /bin/test_vfork as the init process (pid 1)

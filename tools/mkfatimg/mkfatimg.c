@@ -5,13 +5,14 @@
  * with pre-populated test files.  The image is written to stdout or
  * to a named output file.
  *
- * Usage:   mkfatimg <output.bin>
+ * Usage:   mkfatimg <output.bin> [<ufs_image>]
  *
  * The generated image contains:
  *   /hello.txt     "Hello from FAT32!\n"
  *   /data.bin      256 bytes: 0x00..0xFF
  *   /subdir/       empty directory
  *   /testloop.bin  2048 bytes: sector N filled with byte N (loopback test)
+ *   /testufs.img   optional UFS image (from mkufs, passed as 2nd arg)
  *
  * Build:   cc -O2 -o mkfatimg mkfatimg.c
  *
@@ -86,10 +87,32 @@ static void write_dirent(uint8_t *p, const char name[11], uint8_t attr,
 
 int main(int argc, char *argv[])
 {
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <output.bin>\n", argv[0]);
+    if (argc < 2 || argc > 3) {
+        fprintf(stderr, "Usage: %s <output.bin> [<ufs_image>]\n", argv[0]);
         return 1;
     }
+
+    /* Read optional UFS image */
+    uint8_t *ufs_data = NULL;
+    uint32_t ufs_size = 0;
+    if (argc == 3) {
+        FILE *uf = fopen(argv[2], "rb");
+        if (!uf) { perror(argv[2]); return 1; }
+        fseek(uf, 0, SEEK_END);
+        ufs_size = (uint32_t)ftell(uf);
+        fseek(uf, 0, SEEK_SET);
+        if (ufs_size == 0 || (ufs_size % SECTOR_SIZE) != 0) {
+            fprintf(stderr, "mkfatimg: UFS image must be sector-aligned\n");
+            return 1;
+        }
+        ufs_data = malloc(ufs_size);
+        if (!ufs_data) { perror("malloc"); return 1; }
+        if (fread(ufs_data, 1, ufs_size, uf) != ufs_size) {
+            perror("fread"); return 1;
+        }
+        fclose(uf);
+    }
+    uint32_t ufs_sectors = ufs_size / SECTOR_SIZE;
 
     memset(img, 0, sizeof(img));
 
@@ -145,6 +168,13 @@ int main(int argc, char *argv[])
     fat_set(7, 8);
     fat_set(8, 9);
     fat_set(9, 0x0FFFFFFF);
+    /* Clusters 10..(10+ufs_sectors-1): testufs.img (if provided) */
+    for (uint32_t c = 0; c < ufs_sectors; c++) {
+        if (c + 1 < ufs_sectors)
+            fat_set(10 + c, 10 + c + 1);
+        else
+            fat_set(10 + c, 0x0FFFFFFF);  /* EOC */
+    }
 
     /* ── Root directory (cluster 2) ─────────────────────────────────── */
     uint8_t *root = &img[cluster_offset(2)];
@@ -166,6 +196,10 @@ int main(int argc, char *argv[])
     /*                "TESTLOOPBIN" in 8.3 format */
     write_dirent(&root[128], "TESTLOOPBIN", 0x20, 6, 2048);
 
+    /* testufs.img — optional UFS image (from mkufs) */
+    if (ufs_data)
+        write_dirent(&root[160], "TESTUFS IMG", 0x20, 10, ufs_size);
+
     /* ── hello.txt data (cluster 3) ─────────────────────────────────── */
     memcpy(&img[cluster_offset(3)], "Hello from FAT32!\n", 19);
 
@@ -183,6 +217,20 @@ int main(int argc, char *argv[])
     uint8_t *subdir = &img[cluster_offset(5)];
     write_dirent(&subdir[0],  ".          ", 0x10, 5, 0);  /* . */
     write_dirent(&subdir[32], "..         ", 0x10, 2, 0);  /* .. */
+
+    /* ── testufs.img data (clusters 10..) ──────────────────────────── */
+    if (ufs_data) {
+        if (cluster_offset(10) + ufs_size > TOTAL_SIZE) {
+            fprintf(stderr, "mkfatimg: UFS image (%u B) exceeds FAT image\n",
+                    ufs_size);
+            free(ufs_data);
+            return 1;
+        }
+        for (uint32_t s = 0; s < ufs_sectors; s++)
+            memcpy(&img[cluster_offset(10 + s)],
+                   &ufs_data[s * SECTOR_SIZE], SECTOR_SIZE);
+        free(ufs_data);
+    }
 
     /* ── Write output file ──────────────────────────────────────────── */
     FILE *fp = fopen(argv[1], "wb");
