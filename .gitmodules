@@ -1,3 +1,6 @@
 [submodule "third_party/musl"]
 	path = third_party/musl
 	url = git://git.musl-libc.org/musl
+[submodule "third_party/busybox"]
+	path = third_party/busybox
+	url = https://git.busybox.net/busybox

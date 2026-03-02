@@ -1375,6 +1375,6 @@ cannot emulate SPI or SD:
 - [SD Physical Layer Simplified Specification](https://www.sdcard.org/downloads/pls/) — §7.2 (SPI mode), §7.3.1.3 (CMD0/CMD8/ACMD41 init), §7.2.3 (block read/write)
 - [Microsoft FAT32 File System Specification](https://download.microsoft.com/download/1/6/1/161ba512-40e2-4cc9-843a-923143f3456c/fatgen103.doc) — BPB, FAT, directory entry format
 - [VFAT Long File Name specification](https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system#VFAT_long_file_names) — LFN entry structure, checksum algorithm
-- [PicoPiAndPortable Design Spec v0.3](PicoPiAndPortable-spec-v03.md) — §3.7 (VFAT driver), §7 (boot sequence Stage 4), §8 (device drivers), §10.3–10.4 (risks)
+- [PicoPiAndPortable Design Spec v0.4](PicoPiAndPortable-spec-v04.md) — §3.7 (VFAT driver), §7 (boot sequence Stage 4), §8 (device drivers), §10.3–10.4 (risks)
 - [PicoCalc Hardware Specs](PicoCalc.md) — SD card pinout (SPI0: GP16–19, CD: GP22), LCD, keyboard, PSRAM
 - [ClockworkPi Forum GPIO Reference](https://forum.clockworkpi.com/t/gpio-for-pico-calc-how-to-make-firmware-for-pico-calc/20905/6) — Complete PicoCalc GPIO mapping

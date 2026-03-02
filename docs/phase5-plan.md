@@ -1262,5 +1262,5 @@ echo "SD card ready"
 - [RP2040 Datasheet](https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf) — §2.6 (SSI/XIP), §4.7.1 (SRAM banks)
 - [4.4BSD FFS / UFS](https://docs.freebsd.org/en/books/design-44bsd/) — Chapter 7: File Systems (inode structure, allocation policies)
 - [Linux loop device](https://www.kernel.org/doc/html/latest/admin-guide/blockdev/loop.html) — Loopback block device concept
-- [PicoPiAndPortable Design Spec v0.3](PicoPiAndPortable-spec-v03.md) — §3.5 (Loopback), §3.8 (UFS), §3.9 (FS Layout), §3.10 (fstab)
+- [PicoPiAndPortable Design Spec v0.4](PicoPiAndPortable-spec-v04.md) — §3.5 (Loopback), §3.8 (UFS), §3.9 (FS Layout), §3.10 (fstab)
 - [Phase 4 Plan](phase4-plan.md) — Block device abstraction, VFS write extensions, VFAT driver

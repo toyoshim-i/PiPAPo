@@ -1349,5 +1349,5 @@ After boot to ash prompt:
 - [busybox NOMMU docs](https://busybox.net/FAQ.html#nommu) — vfork restrictions and NOMMU applet support
 - [RP2040 Datasheet](https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf) — SysTick timer for boot_ticks
 - [ARMv6-M Architecture Reference Manual](https://developer.arm.com/documentation/ddi0419/) — SVC exception, CONTROL register
-- [PicoPiAndPortable Design Spec v0.3](PicoPiAndPortable-spec-v03.md) — §5 (System Calls), §6 (busybox Strategy), §7 (Boot Sequence)
+- [PicoPiAndPortable Design Spec v0.4](PicoPiAndPortable-spec-v04.md) — §5 (System Calls), §6 (busybox Strategy), §7 (Boot Sequence)
 - [FUZIX on RP2040](https://github.com/EtchedPixels/FUZIX) — Reference for NOMMU UNIX on Cortex-M0+
