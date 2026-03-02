@@ -1224,7 +1224,7 @@ static void ufs_integration_test(void)
         test_report("blkdev_find loopN", ok);
         if (!ok) return;
 
-        int rc = vfs_mount("/mnt/ufs", &ufs_ops, MNT_RDONLY, bd);
+        int rc = vfs_mount("/mnt/ufs", &ufs_ops, 0, bd);
         test_report("vfs_mount UFS at /mnt/ufs", rc == 0);
         if (rc != 0) return;
     }
@@ -1298,6 +1298,107 @@ static void ufs_integration_test(void)
         uart_print_dec((uint32_t)alloc_fail);
         uart_puts(" failed\n");
     }
+
+    /* ── Step 8: write/create/truncate tests ──────────────────────────── */
+    uart_puts("\n=== Phase 5 Step 8: UFS write/create/truncate tests ===\n");
+
+    /* 1. Create + write + read back */
+    {
+        long fd = sys_open("/mnt/ufs/newfile.txt", O_CREAT | O_WRONLY, 0644);
+        int ok = 0;
+        if (fd >= 0) {
+            long n = sys_write(fd, "test data\n", 10);
+            sys_close(fd);
+            if (n == 10) {
+                fd = sys_open("/mnt/ufs/newfile.txt", O_RDONLY, 0);
+                if (fd >= 0) {
+                    char buf[16];
+                    long r = sys_read(fd, buf, sizeof(buf));
+                    ok = (r == 10 && buf[0] == 't' && buf[4] == ' '
+                       && buf[5] == 'd' && buf[9] == '\n');
+                    sys_close(fd);
+                }
+            }
+        }
+        test_report("create+write+read /mnt/ufs/newfile.txt", ok);
+    }
+
+    /* 2. Stat new file */
+    {
+        struct stat st;
+        long rc = sys_stat("/mnt/ufs/newfile.txt", &st);
+        int ok = (rc == 0 && S_ISREG(st.st_mode) && st.st_size == 10);
+        test_report("stat /mnt/ufs/newfile.txt (10 B, REG)", ok);
+    }
+
+    /* 3. Open with O_TRUNC → size becomes 0 */
+    {
+        long fd = sys_open("/mnt/ufs/newfile.txt", O_WRONLY | O_TRUNC, 0);
+        int ok = 0;
+        if (fd >= 0) {
+            sys_close(fd);
+            struct stat st;
+            long rc = sys_stat("/mnt/ufs/newfile.txt", &st);
+            ok = (rc == 0 && st.st_size == 0);
+        }
+        test_report("open O_TRUNC → size 0", ok);
+    }
+
+    /* 4. Write after truncate + read back */
+    {
+        long fd = sys_open("/mnt/ufs/newfile.txt", O_WRONLY, 0);
+        int ok = 0;
+        if (fd >= 0) {
+            long n = sys_write(fd, "rewritten\n", 10);
+            sys_close(fd);
+            if (n == 10) {
+                fd = sys_open("/mnt/ufs/newfile.txt", O_RDONLY, 0);
+                if (fd >= 0) {
+                    char buf[16];
+                    long r = sys_read(fd, buf, sizeof(buf));
+                    ok = (r == 10 && buf[0] == 'r' && buf[2] == 'w');
+                    sys_close(fd);
+                }
+            }
+        }
+        test_report("write after truncate + read back", ok);
+    }
+
+    /* 5. Readdir sees new file */
+    {
+        long fd = sys_open("/mnt/ufs", O_RDONLY, 0);
+        int ok = 0;
+        if (fd >= 0) {
+            struct dirent entries[8];
+            long n = sys_getdents(fd, entries, 8);
+            for (long i = 0; i < n; i++) {
+                if (__builtin_strcmp(entries[i].d_name, "newfile.txt") == 0)
+                    ok = 1;
+            }
+            sys_close(fd);
+        }
+        test_report("readdir /mnt/ufs sees newfile.txt", ok);
+    }
+
+    /* 6. Existing file still intact */
+    {
+        long fd = sys_open("/mnt/ufs/hello.txt", O_RDONLY, 0);
+        int ok = 0;
+        if (fd >= 0) {
+            char buf[32];
+            long n = sys_read(fd, buf, sizeof(buf) - 1);
+            ok = (n == 16 && buf[0] == 'H' && buf[14] == '!');
+            sys_close(fd);
+        }
+        test_report("existing hello.txt still intact", ok);
+    }
+
+    /* Summary */
+    uart_puts("Phase 5 Step 8 UFS write: ");
+    uart_print_dec((uint32_t)test_pass);
+    uart_puts(" passed, ");
+    uart_print_dec((uint32_t)test_fail);
+    uart_puts(" failed\n");
 }
 
 /* ── Context-switch partner (prints "1" in a loop) ───────────────────────── */

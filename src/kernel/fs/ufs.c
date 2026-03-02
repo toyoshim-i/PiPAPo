@@ -7,6 +7,7 @@
  *
  * Step 6: read-only mount/lookup/read/readdir/stat/readlink
  * Step 7: block/inode allocation, inode write-back, superblock sync
+ * Step 8: write, create, truncate
  *
  * Operations:
  *   mount    — verify magic, parse superblock, allocate root vnode
@@ -375,6 +376,47 @@ static int ufs_block_map(ufs_priv_t *priv, const ufs_inode_t *inode,
     return 0;
 }
 
+/* Set a logical block pointer in an inode.
+ * For direct blocks (0-9): stores in i_direct[].
+ * For indirect blocks (10+): allocates indirect block if needed,
+ * then writes the pointer into the correct indirect block sector.
+ * The caller must write the inode back after this call.
+ * Clobbers ufs_buf. */
+static int ufs_block_set(ufs_priv_t *priv, ufs_inode_t *inode,
+                          uint32_t logical, uint32_t phys)
+{
+    if (logical < UFS_DIRECT_BLOCKS) {
+        inode->i_direct[logical] = phys;
+        return 0;
+    }
+
+    uint32_t ind_idx = logical - UFS_DIRECT_BLOCKS;
+    if (ind_idx >= UFS_BLOCK_SIZE / sizeof(uint32_t))
+        return -ENOSPC;
+
+    /* Allocate indirect block on first use */
+    if (inode->i_indirect == 0) {
+        uint32_t ind_blk;
+        int rc = ufs_alloc_block(priv, &ind_blk);
+        if (rc < 0) return rc;
+        rc = ufs_zero_block(priv, ind_blk);
+        if (rc < 0) return rc;
+        inode->i_indirect = ind_blk;
+    }
+
+    /* Read the relevant sector, set the pointer, write back */
+    uint32_t ptrs_per_sec = BLKDEV_SECTOR_SIZE / sizeof(uint32_t);
+    uint32_t sec = ind_idx / ptrs_per_sec;
+    uint32_t off = ind_idx % ptrs_per_sec;
+
+    int rc = ufs_read_blk_sector(priv, inode->i_indirect, sec);
+    if (rc < 0) return rc;
+
+    uint32_t *ptrs = (uint32_t *)ufs_buf;
+    ptrs[off] = phys;
+    return ufs_write_blk_sector(priv, inode->i_indirect, sec);
+}
+
 /* ── vnode from inode ─────────────────────────────────────────────────── */
 
 static vnode_t *ufs_vnode_from_inode(mount_entry_t *mnt, uint32_t ino,
@@ -542,6 +584,87 @@ static long ufs_read(vnode_t *vn, void *buf, size_t n, uint32_t off)
     return (long)(n - remaining);
 }
 
+/* ── ufs_write ─────────────────────────────────────────────────────────── */
+
+static long ufs_write(vnode_t *vn, const void *buf, size_t n, uint32_t off)
+{
+    if (vn->type == VNODE_DIR)
+        return -(long)EISDIR;
+
+    ufs_priv_t *priv = (ufs_priv_t *)vn->fs_priv;
+
+    ufs_inode_t inode;
+    int rc = ufs_read_inode(priv, vn->ino, &inode);
+    if (rc < 0) return (long)rc;
+
+    const uint8_t *src = (const uint8_t *)buf;
+    uint32_t remaining = (uint32_t)n;
+    uint32_t pos = off;
+
+    while (remaining > 0) {
+        uint32_t logical     = pos / UFS_BLOCK_SIZE;
+        uint32_t off_in_blk  = pos % UFS_BLOCK_SIZE;
+        uint32_t sec_in_blk  = off_in_blk / BLKDEV_SECTOR_SIZE;
+        uint32_t off_in_sec  = off_in_blk % BLKDEV_SECTOR_SIZE;
+
+        /* Ensure the logical block is allocated */
+        uint32_t phys;
+        rc = ufs_block_map(priv, &inode, logical, &phys);
+        if (rc < 0)
+            return (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
+
+        if (phys == 0) {
+            /* Allocate a new data block */
+            rc = ufs_alloc_block(priv, &phys);
+            if (rc < 0)
+                return (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
+            rc = ufs_zero_block(priv, phys);
+            if (rc < 0)
+                return (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
+            rc = ufs_block_set(priv, &inode, logical, phys);
+            if (rc < 0)
+                return (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
+        }
+
+        uint32_t avail = BLKDEV_SECTOR_SIZE - off_in_sec;
+        if (avail > remaining) avail = remaining;
+
+        if (off_in_sec != 0 || avail < BLKDEV_SECTOR_SIZE) {
+            /* Partial sector: read-modify-write */
+            rc = ufs_read_blk_sector(priv, phys, sec_in_blk);
+            if (rc < 0)
+                return (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
+            __builtin_memcpy(&ufs_buf[off_in_sec], src, avail);
+        } else {
+            /* Full sector: write directly */
+            __builtin_memcpy(ufs_buf, src, BLKDEV_SECTOR_SIZE);
+        }
+
+        rc = ufs_write_blk_sector(priv, phys, sec_in_blk);
+        if (rc < 0)
+            return (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
+
+        src += avail;
+        pos += avail;
+        remaining -= avail;
+    }
+
+    /* Update file size if extended */
+    uint32_t end = off + (uint32_t)(n - remaining);
+    if (end > inode.i_size) {
+        inode.i_size = end;
+        vn->size = end;
+    }
+
+    /* Write inode back and sync superblock */
+    rc = ufs_write_inode(priv, vn->ino, &inode);
+    if (rc < 0) return (long)rc;
+
+    ufs_sync_super(priv);
+
+    return (long)(n - remaining);
+}
+
 /* ── ufs_readdir ──────────────────────────────────────────────────────── */
 
 static int ufs_readdir(vnode_t *dir, struct dirent *entries,
@@ -627,6 +750,232 @@ done:
     return count;
 }
 
+/* ── ufs_dir_add_entry (helper for create/mkdir) ─────────────────────── */
+
+/* Add a directory entry (name → child_ino) into dir.
+ * Searches for a free slot (d_ino == 0) in existing blocks; if none
+ * found, extends the directory by one block.  Clobbers ufs_buf. */
+static int ufs_dir_add_entry(ufs_priv_t *priv, vnode_t *dir,
+                              const char *name, uint32_t child_ino)
+{
+    ufs_inode_t dir_inode;
+    int rc = ufs_read_inode(priv, dir->ino, &dir_inode);
+    if (rc < 0) return rc;
+
+    uint32_t nblocks = (dir_inode.i_size + UFS_BLOCK_SIZE - 1) / UFS_BLOCK_SIZE;
+
+    /* Scan existing directory blocks for a free slot */
+    for (uint32_t b = 0; b < nblocks; b++) {
+        uint32_t phys;
+        rc = ufs_block_map(priv, &dir_inode, b, &phys);
+        if (rc < 0) return rc;
+        if (phys == 0) continue;
+
+        for (uint32_t s = 0; s < SECTORS_PER_BLOCK; s++) {
+            rc = ufs_read_blk_sector(priv, phys, s);
+            if (rc < 0) return rc;
+
+            for (uint32_t d = 0; d < DIRENTS_PER_SECTOR; d++) {
+                ufs_dirent_t *de =
+                    (ufs_dirent_t *)&ufs_buf[d * UFS_DIRENT_SIZE];
+                if (de->d_ino != 0) continue;
+
+                /* Found free slot — fill it in */
+                de->d_ino = child_ino;
+                int i = 0;
+                while (name[i] && i < UFS_NAME_MAX) {
+                    de->d_name[i] = name[i];
+                    i++;
+                }
+                while (i <= UFS_NAME_MAX)
+                    de->d_name[i++] = '\0';
+
+                return ufs_write_blk_sector(priv, phys, s);
+            }
+        }
+    }
+
+    /* No free slot — extend directory by one block */
+    uint32_t new_blk;
+    rc = ufs_alloc_block(priv, &new_blk);
+    if (rc < 0) return rc;
+
+    rc = ufs_zero_block(priv, new_blk);
+    if (rc < 0) return rc;
+
+    /* Write entry into first sector of new block */
+    __builtin_memset(ufs_buf, 0, BLKDEV_SECTOR_SIZE);
+    ufs_dirent_t *de = (ufs_dirent_t *)ufs_buf;
+    de->d_ino = child_ino;
+    {
+        int i = 0;
+        while (name[i] && i < UFS_NAME_MAX) {
+            de->d_name[i] = name[i];
+            i++;
+        }
+        while (i <= UFS_NAME_MAX)
+            de->d_name[i++] = '\0';
+    }
+    rc = ufs_write_blk_sector(priv, new_blk, 0);
+    if (rc < 0) return rc;
+
+    /* Link new block into directory inode and update size */
+    rc = ufs_block_set(priv, &dir_inode, nblocks, new_blk);
+    if (rc < 0) return rc;
+
+    dir_inode.i_size += UFS_BLOCK_SIZE;
+    rc = ufs_write_inode(priv, dir->ino, &dir_inode);
+    if (rc < 0) return rc;
+
+    dir->size = dir_inode.i_size;
+    return 0;
+}
+
+/* ── ufs_create ──────────────────────────────────────────────────────── */
+
+static int ufs_create(vnode_t *dir, const char *name, uint32_t mode,
+                       vnode_t **result)
+{
+    ufs_priv_t *priv = (ufs_priv_t *)dir->fs_priv;
+
+    /* Allocate a new inode */
+    uint32_t new_ino;
+    int rc = ufs_alloc_inode(priv, &new_ino);
+    if (rc < 0) return rc;
+
+    /* Initialize the inode */
+    ufs_inode_t inode;
+    __builtin_memset(&inode, 0, sizeof(inode));
+    inode.i_mode  = (uint16_t)(S_IFREG | (mode & 0777u));
+    inode.i_nlink = 1;
+
+    rc = ufs_write_inode(priv, new_ino, &inode);
+    if (rc < 0) {
+        ufs_free_inode(priv, new_ino);
+        return rc;
+    }
+
+    /* Add entry to parent directory */
+    rc = ufs_dir_add_entry(priv, dir, name, new_ino);
+    if (rc < 0) {
+        ufs_free_inode(priv, new_ino);
+        return rc;
+    }
+
+    ufs_sync_super(priv);
+
+    /* Allocate and return vnode */
+    vnode_t *vn = ufs_vnode_from_inode(dir->mount, new_ino, &inode);
+    if (!vn) return -ENOMEM;
+
+    *result = vn;
+    return 0;
+}
+
+/* ── ufs_truncate ────────────────────────────────────────────────────── */
+
+static int ufs_truncate(vnode_t *vn, uint32_t length)
+{
+    if (vn->type == VNODE_DIR)
+        return -EISDIR;
+
+    ufs_priv_t *priv = (ufs_priv_t *)vn->fs_priv;
+
+    ufs_inode_t inode;
+    int rc = ufs_read_inode(priv, vn->ino, &inode);
+    if (rc < 0) return rc;
+
+    if (length >= inode.i_size) {
+        /* Extend (or no change) — just update size */
+        inode.i_size = length;
+    } else if (length == 0) {
+        /* Truncate to zero — free all blocks */
+        for (int i = 0; i < UFS_DIRECT_BLOCKS; i++) {
+            if (inode.i_direct[i] != 0) {
+                ufs_free_block(priv, inode.i_direct[i]);
+                inode.i_direct[i] = 0;
+            }
+        }
+
+        if (inode.i_indirect != 0) {
+            /* Free blocks pointed to by the indirect block.
+             * Process one sector at a time; save pointers locally
+             * since ufs_free_block clobbers ufs_buf. */
+            for (uint32_t s = 0; s < SECTORS_PER_BLOCK; s++) {
+                rc = ufs_read_blk_sector(priv, inode.i_indirect, s);
+                if (rc < 0) break;
+
+                /* Save pointers from this sector */
+                uint32_t saved[BLKDEV_SECTOR_SIZE / sizeof(uint32_t)];
+                __builtin_memcpy(saved, ufs_buf, BLKDEV_SECTOR_SIZE);
+
+                for (uint32_t j = 0;
+                     j < BLKDEV_SECTOR_SIZE / sizeof(uint32_t); j++) {
+                    if (saved[j] != 0)
+                        ufs_free_block(priv, saved[j]);
+                }
+            }
+            ufs_free_block(priv, inode.i_indirect);
+            inode.i_indirect = 0;
+        }
+        inode.i_size = 0;
+    } else {
+        /* General shrink: free blocks beyond the new length */
+        uint32_t keep_blocks = (length + UFS_BLOCK_SIZE - 1) / UFS_BLOCK_SIZE;
+
+        /* Free direct blocks beyond keep_blocks */
+        for (uint32_t i = keep_blocks; i < UFS_DIRECT_BLOCKS; i++) {
+            if (inode.i_direct[i] != 0) {
+                ufs_free_block(priv, inode.i_direct[i]);
+                inode.i_direct[i] = 0;
+            }
+        }
+
+        /* Free indirect entries beyond keep_blocks */
+        if (inode.i_indirect != 0 && keep_blocks <= UFS_DIRECT_BLOCKS) {
+            /* All indirect blocks should be freed */
+            for (uint32_t s = 0; s < SECTORS_PER_BLOCK; s++) {
+                rc = ufs_read_blk_sector(priv, inode.i_indirect, s);
+                if (rc < 0) break;
+                uint32_t saved[BLKDEV_SECTOR_SIZE / sizeof(uint32_t)];
+                __builtin_memcpy(saved, ufs_buf, BLKDEV_SECTOR_SIZE);
+                for (uint32_t j = 0;
+                     j < BLKDEV_SECTOR_SIZE / sizeof(uint32_t); j++) {
+                    if (saved[j] != 0)
+                        ufs_free_block(priv, saved[j]);
+                }
+            }
+            ufs_free_block(priv, inode.i_indirect);
+            inode.i_indirect = 0;
+        } else if (inode.i_indirect != 0 && keep_blocks > UFS_DIRECT_BLOCKS) {
+            /* Free only indirect entries beyond keep_blocks */
+            uint32_t first_free_ind = keep_blocks - UFS_DIRECT_BLOCKS;
+            uint32_t ptrs_per_sec = BLKDEV_SECTOR_SIZE / sizeof(uint32_t);
+            for (uint32_t s = first_free_ind / ptrs_per_sec;
+                 s < SECTORS_PER_BLOCK; s++) {
+                rc = ufs_read_blk_sector(priv, inode.i_indirect, s);
+                if (rc < 0) break;
+                uint32_t saved[BLKDEV_SECTOR_SIZE / sizeof(uint32_t)];
+                __builtin_memcpy(saved, ufs_buf, BLKDEV_SECTOR_SIZE);
+                uint32_t start = (s == first_free_ind / ptrs_per_sec)
+                               ? first_free_ind % ptrs_per_sec : 0;
+                for (uint32_t j = start; j < ptrs_per_sec; j++) {
+                    if (saved[j] != 0)
+                        ufs_free_block(priv, saved[j]);
+                }
+            }
+        }
+        inode.i_size = length;
+    }
+
+    vn->size = inode.i_size;
+    rc = ufs_write_inode(priv, vn->ino, &inode);
+    if (rc < 0) return rc;
+
+    ufs_sync_super(priv);
+    return 0;
+}
+
 /* ── ufs_stat ─────────────────────────────────────────────────────────── */
 
 static int ufs_stat(vnode_t *vn, struct stat *st)
@@ -683,12 +1032,12 @@ const vfs_ops_t ufs_ops = {
     .mount    = ufs_mount,
     .lookup   = ufs_lookup,
     .read     = ufs_read,
-    .write    = NULL,      /* read-only (Phase 5 Step 8) */
+    .write    = ufs_write,
     .readdir  = ufs_readdir,
     .stat     = ufs_stat,
     .readlink = ufs_readlink,
-    .create   = NULL,      /* read-only */
-    .mkdir    = NULL,      /* read-only */
-    .unlink   = NULL,      /* read-only */
-    .truncate = NULL,      /* read-only */
+    .create   = ufs_create,
+    .mkdir    = NULL,      /* Phase 5 Step 9 */
+    .unlink   = NULL,      /* Phase 5 Step 9 */
+    .truncate = ufs_truncate,
 };
