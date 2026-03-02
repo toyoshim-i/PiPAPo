@@ -156,8 +156,8 @@ static int pipe_close(struct file *f)
 
 /* ── File ops vtables ─────────────────────────────────────────────────────── */
 
-static const struct file_ops pipe_read_ops  = { pipe_read,  NULL,       pipe_close };
-static const struct file_ops pipe_write_ops = { NULL,       pipe_write, pipe_close };
+static const struct file_ops pipe_read_ops  = { pipe_read,  NULL,       pipe_close, NULL };
+static const struct file_ops pipe_write_ops = { NULL,       pipe_write, pipe_close, NULL };
 
 /* ── sys_pipe ─────────────────────────────────────────────────────────────── */
 

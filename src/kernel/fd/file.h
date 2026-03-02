@@ -55,6 +55,7 @@ struct file_ops {
     long (*read) (struct file *f, char *buf,       size_t n);
     long (*write)(struct file *f, const char *buf, size_t n);
     int  (*close)(struct file *f);
+    int  (*ioctl)(struct file *f, uint32_t cmd, void *arg);
 };
 
 /*

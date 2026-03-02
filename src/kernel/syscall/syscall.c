@@ -19,6 +19,7 @@
  */
 
 #include "syscall.h"
+#include "../proc/proc.h"
 #include "../vfs/vfs.h"
 #include "../errno.h"
 #include <stdint.h>
@@ -26,6 +27,9 @@
 #ifdef SYSCALL_TRACE
 #include "../../drivers/uart.h"
 #endif
+
+/* SIGCHLD — needed for clone() fast-path detection */
+#define SIGCHLD_NR 17
 
 /* Flag set by sys_execve to tell SVC_Handler to do a full context restore */
 volatile int exec_pending = 0;
@@ -45,7 +49,10 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
     long ret;
 
     switch (nr) {
+
+    /* ── Existing syscalls (Phase 1-3) ──────────────────────────────────── */
     case SYS_EXIT:
+    case SYS_EXIT_GROUP:       /* single-threaded: exit_group = exit */
         ret = sys_exit(a0);
         break;
     case SYS_READ:
@@ -121,6 +128,166 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
     case SYS_VFORK:
         ret = sys_vfork(frame);
         break;
+
+    /* ── P0: musl boot-critical ─────────────────────────────────────────── */
+    case SYS_FORK:             /* musl's vfork() calls fork(2) */
+        ret = sys_vfork(frame);
+        break;
+    case SYS_CLONE:            /* musl's _Fork() uses clone(SIGCHLD, 0) */
+        if (a0 == SIGCHLD_NR && a1 == 0)
+            ret = sys_vfork(frame);
+        else
+            ret = -(long)ENOSYS;
+        break;
+    case SYS_SET_TID_ADDRESS:
+        ret = sys_set_tid_address((void *)(uintptr_t)a0);
+        break;
+    case SYS_UNAME:
+        ret = sys_uname((void *)(uintptr_t)a0);
+        break;
+    case SYS_WRITEV:
+        ret = sys_writev(a0, (const void *)(uintptr_t)a1, a2);
+        break;
+    case SYS_READV:
+        ret = sys_readv(a0, (const void *)(uintptr_t)a1, a2);
+        break;
+    case SYS_IOCTL:
+        ret = sys_ioctl(a0, a1, a2);
+        break;
+    case SYS_MMAP2:
+        ret = sys_mmap2((uint32_t)a0, (uint32_t)a1, (uint32_t)a2,
+                        (uint32_t)a3, a4, a5);
+        break;
+    case SYS_MUNMAP:
+        ret = sys_munmap((uint32_t)a0, (uint32_t)a1);
+        break;
+    case SYS_RT_SIGACTION:
+        ret = sys_rt_sigaction(a0, (const void *)(uintptr_t)a1,
+                               (void *)(uintptr_t)a2, a3);
+        break;
+    case SYS_RT_SIGPROCMASK:
+        ret = sys_rt_sigprocmask(a0, (const void *)(uintptr_t)a1,
+                                 (void *)(uintptr_t)a2, a3);
+        break;
+    case SYS_RT_SIGRETURN:
+        ret = sys_rt_sigreturn();
+        break;
+    case SYS_FCNTL64:
+        ret = sys_fcntl64(a0, a1, a2);
+        break;
+    case SYS_STAT64:
+        ret = sys_stat64((const char *)(uintptr_t)a0,
+                         (void *)(uintptr_t)a1);
+        break;
+    case SYS_FSTAT64:
+        ret = sys_fstat64(a0, (void *)(uintptr_t)a1);
+        break;
+    case SYS_LSTAT64:
+        ret = sys_lstat64((const char *)(uintptr_t)a0,
+                          (void *)(uintptr_t)a1);
+        break;
+    case SYS_GETDENTS64:
+        ret = sys_getdents64(a0, (void *)(uintptr_t)a1, a2);
+        break;
+    case SYS_WAIT4:
+        ret = sys_wait4(a0, a1, a2, (void *)(uintptr_t)a3);
+        break;
+    case SYS_LLSEEK:
+        ret = sys_llseek(a0, a1, a2, (void *)(uintptr_t)a3, (long)a4);
+        break;
+    case SYS_CLOCK_GETTIME32:
+        ret = sys_clock_gettime32(a0, (void *)(uintptr_t)a1);
+        break;
+    case SYS_CLOCK_GETTIME64:
+        ret = sys_clock_gettime64(a0, (void *)(uintptr_t)a1);
+        break;
+
+    /* ── P0: trivial return-0 stubs ─────────────────────────────────────── */
+    case SYS_GETUID32:
+    case SYS_GETEUID32:
+    case SYS_GETGID32:
+    case SYS_GETEGID32:
+        ret = 0;               /* always root */
+        break;
+    case SYS_FUTEX:
+        ret = 0;               /* single-threaded: locks are NOPs */
+        break;
+    case SYS_MPROTECT:
+        ret = 0;               /* no MMU */
+        break;
+
+    /* ── P1: interactive shell ──────────────────────────────────────────── */
+    case SYS_ACCESS:
+        ret = sys_access((const char *)(uintptr_t)a0, a1);
+        break;
+    case SYS_READLINK:
+        ret = sys_readlink((const char *)(uintptr_t)a0,
+                           (char *)(uintptr_t)a1, a2);
+        break;
+    case SYS_GETPPID:
+        ret = (long)current->ppid;
+        break;
+    case SYS_SETPGID:
+        ret = sys_setpgid(a0, a1);
+        break;
+    case SYS_SETSID:
+        ret = sys_setsid();
+        break;
+    case SYS_UMASK:
+        ret = sys_umask(a0);
+        break;
+    case SYS_RMDIR:
+        ret = sys_rmdir((const char *)(uintptr_t)a0);
+        break;
+    case SYS_GETTIMEOFDAY:
+        ret = sys_gettimeofday((void *)(uintptr_t)a0,
+                               (void *)(uintptr_t)a1);
+        break;
+    case SYS_CLOCK_NANOSLEEP32:
+        ret = sys_clock_nanosleep32(a0, a1,
+                                    (const void *)(uintptr_t)a2,
+                                    (void *)(uintptr_t)a3);
+        break;
+    case SYS_CLOCK_NANOSLEEP64:
+        ret = sys_clock_nanosleep64(a0, a1,
+                                    (const void *)(uintptr_t)a2,
+                                    (void *)(uintptr_t)a3);
+        break;
+    case SYS_FSTATAT64:
+        /* AT_FDCWD fast-path: dirfd ignored, route to stat64/lstat64 */
+        ret = sys_stat64((const char *)(uintptr_t)a1,
+                         (void *)(uintptr_t)a2);
+        break;
+    case SYS_MREMAP:
+        ret = -(long)ENOMEM;   /* force malloc to mmap new region */
+        break;
+
+    /* ── P2: stubs for applet completeness ──────────────────────────────── */
+    case SYS_MKNOD:
+        ret = -(long)EPERM;
+        break;
+    case SYS_CHMOD:
+        ret = 0;               /* stub — no real permission model */
+        break;
+    case SYS_RENAME:
+        ret = -(long)ENOSYS;
+        break;
+    case SYS_LCHOWN32:
+    case SYS_FCHOWN32:
+    case SYS_CHOWN32:
+    case SYS_SETGROUPS32:
+        ret = 0;               /* single-user: ownership ops succeed */
+        break;
+    case SYS_GETCPU:
+        ret = 0;               /* single-core */
+        break;
+    case SYS_UTIMES:
+        ret = 0;               /* no RTC — timestamp update is no-op */
+        break;
+    case SYS_STATX:
+        ret = -(long)ENOSYS;   /* stat64 suffices */
+        break;
+
     default:
 #ifdef SYSCALL_TRACE
         uart_puts("SYS? ");

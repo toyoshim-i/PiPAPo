@@ -97,6 +97,18 @@ typedef struct pcb {
     sighandler_t sig_handlers[NSIG]; /* SIG_DFL(0) or SIG_IGN(1) or func */
     uint32_t     sig_pending;        /* bitmask of pending signals        */
     uint32_t     sig_blocked;        /* bitmask of blocked signals        */
+
+    /* ── Process group / session (Phase 6 Step 7) ────────────────── */
+    pid_t        pgid;              /* process group ID                  */
+    pid_t        sid;               /* session ID                        */
+    uint32_t     umask_val;         /* file creation mask (default 022)  */
+    int         *clear_child_tid;   /* set_tid_address pointer           */
+
+    /* ── mmap regions (Phase 6 Step 7) ───────────────────────────── */
+    struct {
+        void    *addr;              /* base address of mapped region     */
+        uint32_t pages;             /* number of pages in this region    */
+    } mmap_regions[4];              /* max 4 concurrent mmap regions     */
 } pcb_t;
 
 /* ── Globals ────────────────────────────────────────────────────────────────── */

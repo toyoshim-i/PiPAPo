@@ -125,7 +125,8 @@ static mount_entry_t *mount_at(const char *resolved)
 
 /* ── Internal: walk a normalized path ─────────────────────────────────────── */
 
-static int lookup_walk(const char *normalized, vnode_t **result, int symloop)
+static int lookup_walk_flags(const char *normalized, vnode_t **result,
+                             int symloop, int flags)
 {
     if (symloop >= VFS_SYMLOOP_MAX)
         return -ELOOP;
@@ -248,6 +249,17 @@ static int lookup_walk(const char *normalized, vnode_t **result, int symloop)
          * recurse with incremented depth counter.
          */
         if (child->type == VNODE_SYMLINK) {
+            /* NOFOLLOW: if this is the final component, return the
+             * symlink vnode itself instead of following it */
+            if (flags & VFS_LOOKUP_NOFOLLOW) {
+                const char *trail = p;
+                while (*trail == '/') trail++;
+                if (*trail == '\0') {
+                    *result = child;
+                    return 0;
+                }
+            }
+
             char target[VFS_PATH_MAX];
 
             if (!child->mount || !child->mount->ops ||
@@ -311,7 +323,7 @@ static int lookup_walk(const char *normalized, vnode_t **result, int symloop)
             if (norm_len < 0)
                 return norm_len;
 
-            return lookup_walk(norm, result, symloop + 1);
+            return lookup_walk_flags(norm, result, symloop + 1, flags);
         }
 
         /* Regular file or directory — advance */
@@ -334,6 +346,11 @@ static int lookup_walk(const char *normalized, vnode_t **result, int symloop)
 
 int vfs_lookup(const char *path, vnode_t **result)
 {
+    return vfs_lookup_flags(path, result, 0);
+}
+
+int vfs_lookup_flags(const char *path, vnode_t **result, int flags)
+{
     if (!path || !result)
         return -EINVAL;
     if (path[0] != '/')
@@ -345,7 +362,7 @@ int vfs_lookup(const char *path, vnode_t **result)
     if (nlen < 0)
         return nlen;
 
-    return lookup_walk(normalized, result, 0);
+    return lookup_walk_flags(normalized, result, 0, flags);
 }
 
 int vfs_path_normalize(const char *path, char *buf, int bufsiz)
@@ -399,5 +416,5 @@ int vfs_lookup_parent(const char *path, vnode_t **parent,
     }
 
     /* Look up the parent directory */
-    return lookup_walk(parent_path, parent, 0);
+    return lookup_walk_flags(parent_path, parent, 0, 0);
 }

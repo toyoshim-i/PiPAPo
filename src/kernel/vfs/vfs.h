@@ -201,6 +201,15 @@ void vnode_put(vnode_t *vn);
  */
 int vfs_lookup(const char *path, vnode_t **result);
 
+/* Lookup flags for vfs_lookup_flags() */
+#define VFS_LOOKUP_NOFOLLOW  0x01  /* don't follow final symlink */
+
+/*
+ * Like vfs_lookup() but with flags.  VFS_LOOKUP_NOFOLLOW stops symlink
+ * resolution on the final path component — needed for lstat64 and readlink.
+ */
+int vfs_lookup_flags(const char *path, vnode_t **result, int flags);
+
 /*
  * Resolve a path to its parent directory vnode and extract the final
  * component name.  Used by sys_open(O_CREAT), sys_mkdir, sys_unlink.

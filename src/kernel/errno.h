@@ -33,5 +33,8 @@
 #define ELOOP   40   /* Too many levels of symbolic links   */
 #define ETIMEDOUT 110 /* Connection timed out                */
 #define EROFS   30   /* Read-only file system               */
+#define ENOTTY  25   /* Not a typewriter (inappropriate ioctl) */
+#define EFAULT  14   /* Bad address                         */
+#define EPERM    1   /* Operation not permitted             */
 
 #endif /* PPAP_ERRNO_H */

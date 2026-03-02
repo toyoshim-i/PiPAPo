@@ -309,3 +309,97 @@ long sys_execve(const char *path)
 
     return 0;
 }
+
+/* ── sys_set_tid_address ───────────────────────────────────────────────────── */
+
+long sys_set_tid_address(void *tidptr)
+{
+    current->clear_child_tid = (int *)tidptr;
+    return (long)current->pid;
+}
+
+/* ── sys_uname ──────────────────────────────────────────────────────────────── */
+
+/*
+ * struct utsname layout (65 bytes per field × 6 fields = 390 bytes).
+ * Matches Linux/musl: each field is char[65].
+ */
+#define UTS_LEN 65
+
+long sys_uname(void *buf)
+{
+    if (!buf)
+        return -(long)EINVAL;
+
+    char *p = (char *)buf;
+    __builtin_memset(p, 0, UTS_LEN * 6);
+
+    /* sysname */
+    const char *s = "PicoPiAndPortable";
+    for (int i = 0; s[i] && i < UTS_LEN - 1; i++) p[i] = s[i];
+    p += UTS_LEN;
+
+    /* nodename */
+    s = "ppap";
+    for (int i = 0; s[i] && i < UTS_LEN - 1; i++) p[i] = s[i];
+    p += UTS_LEN;
+
+    /* release */
+    s = "0.6.0";
+    for (int i = 0; s[i] && i < UTS_LEN - 1; i++) p[i] = s[i];
+    p += UTS_LEN;
+
+    /* version */
+    s = "#1 PPAP";
+    for (int i = 0; s[i] && i < UTS_LEN - 1; i++) p[i] = s[i];
+    p += UTS_LEN;
+
+    /* machine */
+    s = "armv6m";
+    for (int i = 0; s[i] && i < UTS_LEN - 1; i++) p[i] = s[i];
+    /* p += UTS_LEN; — domainname follows but we leave it zeroed */
+
+    return 0;
+}
+
+/* ── sys_setpgid ────────────────────────────────────────────────────────────── */
+
+long sys_setpgid(long pid, long pgid)
+{
+    pcb_t *target;
+
+    if (pid == 0)
+        target = current;
+    else {
+        target = NULL;
+        for (uint32_t i = 0; i < PROC_MAX; i++) {
+            if (proc_table[i].state != PROC_FREE &&
+                proc_table[i].pid == (pid_t)pid) {
+                target = &proc_table[i];
+                break;
+            }
+        }
+        if (!target)
+            return -(long)ESRCH;
+    }
+
+    target->pgid = (pgid == 0) ? target->pid : (pid_t)pgid;
+    return 0;
+}
+
+/* ── sys_setsid ─────────────────────────────────────────────────────────────── */
+
+long sys_setsid(void)
+{
+    current->sid  = current->pid;
+    current->pgid = current->pid;
+    return (long)current->pid;
+}
+
+/* ── sys_wait4 ──────────────────────────────────────────────────────────────── */
+
+long sys_wait4(long pid, long status_ptr, long options, void *rusage)
+{
+    (void)rusage;   /* rusage not supported */
+    return sys_waitpid(pid, status_ptr, options);
+}

@@ -70,3 +70,129 @@ long sys_brk(long addr)
     current->brk_current = new_brk;
     return (long)new_brk;
 }
+
+/* ── sys_mmap2 ──────────────────────────────────────────────────────────────── */
+/*
+ * Anonymous-only mmap.  Allocates pages from the page pool and tracks
+ * them in current->mmap_regions[].  File-backed mmap is not supported.
+ *
+ * mmap2 takes page-offset (not byte-offset): pgoff = byte_offset / 4096.
+ */
+#define MAP_ANONYMOUS  0x20u
+#define MAP_PRIVATE    0x02u
+#define MAP_FIXED      0x10u
+
+long sys_mmap2(uint32_t addr, uint32_t len, uint32_t prot,
+               uint32_t flags, uint32_t fd, uint32_t pgoff)
+{
+    (void)prot; (void)pgoff;
+
+    /* Only anonymous+private mappings supported */
+    if (!(flags & MAP_ANONYMOUS))
+        return -(long)ENOSYS;
+
+    /* fd must be -1 for anonymous */
+    if ((int)fd != -1)
+        return -(long)EINVAL;
+
+    if (len == 0)
+        return -(long)EINVAL;
+
+    uint32_t num_pages = (len + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    /* Find a free mmap_regions slot */
+    int slot = -1;
+    for (int i = 0; i < 4; i++) {
+        if (current->mmap_regions[i].addr == NULL) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot < 0)
+        return -(long)ENOMEM;
+
+    /* MAP_FIXED: try to allocate at specific address */
+    if ((flags & MAP_FIXED) && addr != 0) {
+        void *base = (void *)(uintptr_t)addr;
+        for (uint32_t i = 0; i < num_pages; i++) {
+            void *pg = page_alloc_at((void *)((uintptr_t)base + i * PAGE_SIZE));
+            if (!pg) {
+                /* Rollback */
+                for (uint32_t j = 0; j < i; j++)
+                    page_free((void *)((uintptr_t)base + j * PAGE_SIZE));
+                return -(long)ENOMEM;
+            }
+            memset(pg, 0, PAGE_SIZE);
+        }
+        current->mmap_regions[slot].addr  = base;
+        current->mmap_regions[slot].pages = num_pages;
+        return (long)(uintptr_t)base;
+    }
+
+    /* Non-fixed: allocate from pool. Try contiguous first, fall back to
+     * single-page if only 1 page needed. */
+    if (num_pages == 1) {
+        void *pg = page_alloc();
+        if (!pg)
+            return -(long)ENOMEM;
+        memset(pg, 0, PAGE_SIZE);
+        current->mmap_regions[slot].addr  = pg;
+        current->mmap_regions[slot].pages = 1;
+        return (long)(uintptr_t)pg;
+    }
+
+    /* Multi-page: scan for contiguous block */
+    uint32_t pool_base = PAGE_POOL_BASE;
+    uint32_t pool_end  = pool_base + PAGE_POOL_SIZE;
+
+    for (uint32_t base = pool_base; base + num_pages * PAGE_SIZE <= pool_end;
+         base += PAGE_SIZE) {
+        uint32_t k;
+        for (k = 0; k < num_pages; k++) {
+            void *pg = page_alloc_at((void *)(uintptr_t)(base + k * PAGE_SIZE));
+            if (!pg) {
+                for (uint32_t l = 0; l < k; l++)
+                    page_free((void *)(uintptr_t)(base + l * PAGE_SIZE));
+                break;
+            }
+        }
+        if (k == num_pages) {
+            void *result = (void *)(uintptr_t)base;
+            for (uint32_t i = 0; i < num_pages; i++)
+                memset((void *)(uintptr_t)(base + i * PAGE_SIZE), 0, PAGE_SIZE);
+            current->mmap_regions[slot].addr  = result;
+            current->mmap_regions[slot].pages = num_pages;
+            return (long)(uintptr_t)result;
+        }
+    }
+
+    return -(long)ENOMEM;
+}
+
+/* ── sys_munmap ─────────────────────────────────────────────────────────────── */
+
+long sys_munmap(uint32_t addr, uint32_t len)
+{
+    if (addr == 0 || len == 0)
+        return -(long)EINVAL;
+
+    /* Find the matching mmap region */
+    for (int i = 0; i < 4; i++) {
+        if (current->mmap_regions[i].addr == (void *)(uintptr_t)addr) {
+            uint32_t pages = current->mmap_regions[i].pages;
+            for (uint32_t j = 0; j < pages; j++) {
+                page_free((void *)(uintptr_t)(addr + j * PAGE_SIZE));
+            }
+            current->mmap_regions[i].addr  = NULL;
+            current->mmap_regions[i].pages = 0;
+            return 0;
+        }
+    }
+
+    /* Not found in mmap_regions — try freeing as a single page anyway.
+     * musl may mmap then munmap pages we didn't track (edge case). */
+    uint32_t num_pages = (len + PAGE_SIZE - 1) / PAGE_SIZE;
+    for (uint32_t j = 0; j < num_pages; j++)
+        page_free((void *)(uintptr_t)(addr + j * PAGE_SIZE));
+    return 0;
+}

@@ -58,3 +58,117 @@ long sys_nanosleep(void *req, void *rem)
     (void)rem;  /* not filled in Phase 1 */
     return 0;
 }
+
+/* ── Time conversion helper ─────────────────────────────────────────────────── */
+
+/* Nanoseconds per SysTick tick */
+#define NS_PER_TICK  (1000000000u / PPAP_TICK_HZ)
+
+/* ── sys_clock_gettime32 ───────────────────────────────────────────────────── */
+/*
+ * 32-bit timespec: { long tv_sec; long tv_nsec; }
+ * clk_id: CLOCK_REALTIME(0), CLOCK_MONOTONIC(1), etc. — we treat all the same.
+ */
+long sys_clock_gettime32(long clk_id, void *tp)
+{
+    (void)clk_id;
+    if (!tp)
+        return -(long)EINVAL;
+
+    uint32_t ticks = sched_get_ticks();
+    uint32_t sec  = ticks / PPAP_TICK_HZ;
+    uint32_t frac = ticks % PPAP_TICK_HZ;
+
+    long *ts = (long *)tp;
+    ts[0] = (long)sec;
+    ts[1] = (long)(frac * NS_PER_TICK);
+    return 0;
+}
+
+/* ── sys_clock_gettime64 ───────────────────────────────────────────────────── */
+/*
+ * 64-bit timespec: { int64_t tv_sec; int64_t tv_nsec; }
+ * musl time64 first-try path.
+ */
+long sys_clock_gettime64(long clk_id, void *tp)
+{
+    (void)clk_id;
+    if (!tp)
+        return -(long)EINVAL;
+
+    uint32_t ticks = sched_get_ticks();
+    uint32_t sec  = ticks / PPAP_TICK_HZ;
+    uint32_t frac = ticks % PPAP_TICK_HZ;
+
+    int64_t *ts = (int64_t *)tp;
+    ts[0] = (int64_t)sec;
+    ts[1] = (int64_t)(frac * NS_PER_TICK);
+    return 0;
+}
+
+/* ── sys_gettimeofday ──────────────────────────────────────────────────────── */
+/*
+ * struct timeval { long tv_sec; long tv_usec; }
+ */
+long sys_gettimeofday(void *tv, void *tz)
+{
+    (void)tz;
+    if (!tv)
+        return -(long)EINVAL;
+
+    uint32_t ticks = sched_get_ticks();
+    uint32_t sec  = ticks / PPAP_TICK_HZ;
+    uint32_t frac = ticks % PPAP_TICK_HZ;
+
+    long *t = (long *)tv;
+    t[0] = (long)sec;
+    t[1] = (long)(frac * (1000000u / PPAP_TICK_HZ));   /* microseconds */
+    return 0;
+}
+
+/* ── sys_clock_nanosleep32 ─────────────────────────────────────────────────── */
+/*
+ * clock_nanosleep(clk, flags, req, rem)
+ * 32-bit timespec { long tv_sec; long tv_nsec; }
+ */
+long sys_clock_nanosleep32(long clk, long flags, const void *req, void *rem)
+{
+    (void)clk; (void)flags; (void)rem;
+    if (!req)
+        return -(long)EINVAL;
+
+    const long *ts = (const long *)req;
+    if (ts[0] < 0 || ts[1] < 0 || ts[1] >= 1000000000L)
+        return -(long)EINVAL;
+
+    uint32_t ticks = (uint32_t)ts[0] * PPAP_TICK_HZ
+                   + (uint32_t)ts[1] / NS_PER_TICK;
+    if (ticks == 0u)
+        ticks = 1u;
+
+    sched_sleep(ticks);
+    return 0;
+}
+
+/* ── sys_clock_nanosleep64 ─────────────────────────────────────────────────── */
+/*
+ * 64-bit timespec { int64_t tv_sec; int64_t tv_nsec; }
+ */
+long sys_clock_nanosleep64(long clk, long flags, const void *req, void *rem)
+{
+    (void)clk; (void)flags; (void)rem;
+    if (!req)
+        return -(long)EINVAL;
+
+    const int64_t *ts = (const int64_t *)req;
+    if (ts[0] < 0 || ts[1] < 0 || ts[1] >= 1000000000LL)
+        return -(long)EINVAL;
+
+    uint32_t ticks = (uint32_t)ts[0] * PPAP_TICK_HZ
+                   + (uint32_t)ts[1] / NS_PER_TICK;
+    if (ticks == 0u)
+        ticks = 1u;
+
+    sched_sleep(ticks);
+    return 0;
+}

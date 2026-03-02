@@ -30,6 +30,7 @@
 #include "../errno.h"
 #include "config.h"
 #include <stddef.h>
+#include <string.h>
 
 /* ── File object pool ──────────────────────────────────────────────────────── */
 
@@ -96,6 +97,7 @@ static const struct file_ops vfs_file_ops = {
     vfs_file_read,
     vfs_file_write,
     vfs_file_close,
+    NULL,   /* ioctl — regular files don't support ioctl */
 };
 
 /* ── sys_open ──────────────────────────────────────────────────────────────── */
@@ -450,4 +452,351 @@ long sys_unlink(const char *path)
     err = parent->mount->ops->unlink(parent, namebuf);
     vnode_put(parent);
     return (long)err;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * Phase 6 Step 7: Linux-compatible syscalls (musl libc ABI)
+ * ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Linux ARM struct stat64 (88 bytes) ──────────────────────────────────── */
+/*
+ * Layout must exactly match musl's arch/arm/bits/stat.h.
+ * We define it locally to avoid polluting the kernel VFS headers.
+ */
+struct linux_stat64 {
+    uint64_t st_dev;             /* +0  */
+    uint32_t __pad1;             /* +8  */
+    uint32_t __st_ino_truncated; /* +12 */
+    uint32_t st_mode;            /* +16 */
+    uint32_t st_nlink;           /* +20 */
+    uint32_t st_uid;             /* +24 */
+    uint32_t st_gid;             /* +28 */
+    uint64_t st_rdev;            /* +32 */
+    uint32_t __pad2;             /* +40 */
+    int64_t  st_size;            /* +44 */
+    uint32_t st_blksize;         /* +52 */
+    uint64_t st_blocks;          /* +56 */
+    uint32_t st_atime;           /* +64 */
+    uint32_t st_atime_nsec;      /* +68 */
+    uint32_t st_mtime;           /* +72 */
+    uint32_t st_mtime_nsec;      /* +76 */
+    uint32_t st_ctime;           /* +80 */
+    uint32_t st_ctime_nsec;      /* +84 */
+    uint64_t st_ino;             /* +88 */
+};
+/* Note: actual size is 96 bytes including the trailing st_ino */
+
+static void fill_stat64(const struct stat *src, struct linux_stat64 *dst)
+{
+    memset(dst, 0, sizeof(*dst));
+    dst->st_ino = src->st_ino;
+    dst->__st_ino_truncated = src->st_ino;
+    dst->st_mode = src->st_mode;
+    dst->st_nlink = src->st_nlink;
+    dst->st_size = (int64_t)src->st_size;
+    dst->st_blksize = 4096;
+    dst->st_blocks = ((uint64_t)src->st_size + 511u) / 512u;
+    /* uid, gid, dev, rdev, times left as zero */
+}
+
+/* ── sys_stat64 ────────────────────────────────────────────────────────────── */
+
+long sys_stat64(const char *path, void *buf)
+{
+    if (!path || !buf)
+        return -(long)EINVAL;
+
+    vnode_t *vn = NULL;
+    int err = vfs_lookup(path, &vn);
+    if (err)
+        return (long)err;
+
+    if (!vn->mount || !vn->mount->ops || !vn->mount->ops->stat) {
+        vnode_put(vn);
+        return -(long)ENOSYS;
+    }
+
+    struct stat st;
+    err = vn->mount->ops->stat(vn, &st);
+    vnode_put(vn);
+    if (err)
+        return (long)err;
+
+    fill_stat64(&st, (struct linux_stat64 *)buf);
+    return 0;
+}
+
+/* ── sys_fstat64 ───────────────────────────────────────────────────────────── */
+
+long sys_fstat64(long fd, void *buf)
+{
+    if (fd < 0 || (uint32_t)fd >= FD_MAX || !buf)
+        return -(long)EBADF;
+
+    struct file *f = fd_get(current, (int)fd);
+    if (!f)
+        return -(long)EBADF;
+
+    /* tty files (no vnode): synthesize a minimal char-device stat */
+    if (!f->vnode) {
+        struct linux_stat64 *dst = (struct linux_stat64 *)buf;
+        memset(dst, 0, sizeof(*dst));
+        dst->st_mode = S_IFCHR | 0666u;
+        dst->st_nlink = 1;
+        dst->st_blksize = 4096;
+        return 0;
+    }
+
+    if (!f->vnode->mount || !f->vnode->mount->ops ||
+        !f->vnode->mount->ops->stat)
+        return -(long)ENOSYS;
+
+    struct stat st;
+    int err = f->vnode->mount->ops->stat(f->vnode, &st);
+    if (err)
+        return (long)err;
+
+    fill_stat64(&st, (struct linux_stat64 *)buf);
+    return 0;
+}
+
+/* ── sys_lstat64 ───────────────────────────────────────────────────────────── */
+
+long sys_lstat64(const char *path, void *buf)
+{
+    if (!path || !buf)
+        return -(long)EINVAL;
+
+    vnode_t *vn = NULL;
+    int err = vfs_lookup_flags(path, &vn, VFS_LOOKUP_NOFOLLOW);
+    if (err)
+        return (long)err;
+
+    if (!vn->mount || !vn->mount->ops || !vn->mount->ops->stat) {
+        vnode_put(vn);
+        return -(long)ENOSYS;
+    }
+
+    struct stat st;
+    err = vn->mount->ops->stat(vn, &st);
+    vnode_put(vn);
+    if (err)
+        return (long)err;
+
+    fill_stat64(&st, (struct linux_stat64 *)buf);
+    return 0;
+}
+
+/* ── sys_getdents64 ────────────────────────────────────────────────────────── */
+/*
+ * Linux struct dirent64 (variable-length):
+ *   uint64_t d_ino;     +0
+ *   int64_t  d_off;     +8   (next cookie)
+ *   uint16_t d_reclen;  +16  (total record length)
+ *   uint8_t  d_type;    +18
+ *   char     d_name[];  +19  (NUL-terminated, padded to 4-byte align)
+ */
+long sys_getdents64(long fd, void *buf, long count)
+{
+    if (fd < 0 || (uint32_t)fd >= FD_MAX || !buf)
+        return -(long)EBADF;
+
+    struct file *f = fd_get(current, (int)fd);
+    if (!f)
+        return -(long)EBADF;
+
+    if (!f->vnode || f->vnode->type != VNODE_DIR)
+        return -(long)ENOTDIR;
+
+    if (!f->vnode->mount || !f->vnode->mount->ops ||
+        !f->vnode->mount->ops->readdir)
+        return -(long)ENOSYS;
+
+    /* Read internal dirent entries */
+    struct dirent entries[8];
+    uint32_t cookie = f->offset;
+    int n = f->vnode->mount->ops->readdir(f->vnode, entries, 8, &cookie);
+    if (n < 0)
+        return (long)n;
+
+    /* Pack into linux dirent64 format */
+    uint8_t *out = (uint8_t *)buf;
+    long total = 0;
+
+    for (int i = 0; i < n; i++) {
+        size_t name_len = strlen(entries[i].d_name);
+        /* reclen = 19 (header) + name_len + 1 (NUL), aligned to 8 */
+        uint16_t reclen = (uint16_t)((19 + name_len + 1 + 7) & ~7u);
+
+        if (total + reclen > count)
+            break;
+
+        memset(out + total, 0, reclen);
+
+        /* d_ino (uint64_t at offset 0) */
+        uint64_t ino = entries[i].d_ino;
+        memcpy(out + total, &ino, 8);
+
+        /* d_off (int64_t at offset 8) — next cookie */
+        int64_t d_off = (int64_t)(f->offset + (uint32_t)i + 1);
+        memcpy(out + total + 8, &d_off, 8);
+
+        /* d_reclen (uint16_t at offset 16) */
+        memcpy(out + total + 16, &reclen, 2);
+
+        /* d_type (uint8_t at offset 18) */
+        out[total + 18] = entries[i].d_type;
+
+        /* d_name (at offset 19) */
+        memcpy(out + total + 19, entries[i].d_name, name_len + 1);
+
+        total += reclen;
+    }
+
+    f->offset = cookie;
+    return total;
+}
+
+/* ── sys_llseek ────────────────────────────────────────────────────────────── */
+/*
+ * _llseek(fd, offset_hi, offset_lo, &result, whence)
+ * result is a pointer to loff_t (int64_t).
+ */
+long sys_llseek(long fd, long off_hi, long off_lo, void *result, long whence)
+{
+    /* PPAP files are small — ignore off_hi */
+    (void)off_hi;
+
+    long pos = sys_lseek(fd, off_lo, whence);
+    if (pos < 0)
+        return pos;
+
+    if (result) {
+        int64_t res = (int64_t)pos;
+        memcpy(result, &res, sizeof(res));
+    }
+    return 0;
+}
+
+/* ── sys_fcntl64 ───────────────────────────────────────────────────────────── */
+/*
+ * F_DUPFD(0), F_GETFD(1), F_SETFD(2), F_GETFL(3), F_SETFL(4)
+ * F_DUPFD_CLOEXEC(1030)
+ */
+#define F_DUPFD       0
+#define F_GETFD       1
+#define F_SETFD       2
+#define F_GETFL       3
+#define F_SETFL       4
+#define F_DUPFD_CLOEXEC 1030
+
+long sys_fcntl64(long fd, long cmd, long arg)
+{
+    if (fd < 0 || (uint32_t)fd >= FD_MAX)
+        return -(long)EBADF;
+
+    struct file *f = fd_get(current, (int)fd);
+    if (!f)
+        return -(long)EBADF;
+
+    switch (cmd) {
+    case F_DUPFD:
+    case F_DUPFD_CLOEXEC:
+        /* Find lowest fd >= arg */
+        for (long i = arg; i < FD_MAX; i++) {
+            if (!current->fd_table[i]) {
+                current->fd_table[i] = f;
+                f->refcnt++;
+                return i;
+            }
+        }
+        return -(long)EMFILE;
+
+    case F_GETFD:
+        return 0;   /* no CLOEXEC tracking yet */
+
+    case F_SETFD:
+        return 0;   /* ignore CLOEXEC */
+
+    case F_GETFL:
+        return (long)f->flags;
+
+    case F_SETFL:
+        /* Only O_APPEND and O_NONBLOCK can be changed; we support O_APPEND */
+        f->flags = (f->flags & O_ACCMODE) | ((uint32_t)arg & ~O_ACCMODE);
+        return 0;
+
+    default:
+        return -(long)EINVAL;
+    }
+}
+
+/* ── sys_access ────────────────────────────────────────────────────────────── */
+
+long sys_access(const char *path, long mode)
+{
+    (void)mode;   /* always root — all access checks pass */
+
+    if (!path)
+        return -(long)EINVAL;
+
+    vnode_t *vn = NULL;
+    int err = vfs_lookup(path, &vn);
+    if (err)
+        return (long)err;
+
+    vnode_put(vn);
+    return 0;
+}
+
+/* ── sys_readlink ──────────────────────────────────────────────────────────── */
+
+long sys_readlink(const char *path, char *buf, long bufsiz)
+{
+    if (!path || !buf || bufsiz <= 0)
+        return -(long)EINVAL;
+
+    /* Special case: /proc/self/exe — busybox needs this */
+    if (strcmp(path, "/proc/self/exe") == 0) {
+        const char *exe = "/bin/busybox";
+        size_t len = strlen(exe);
+        if ((long)len > bufsiz) len = (size_t)bufsiz;
+        memcpy(buf, exe, len);
+        return (long)len;
+    }
+
+    vnode_t *vn = NULL;
+    int err = vfs_lookup_flags(path, &vn, VFS_LOOKUP_NOFOLLOW);
+    if (err)
+        return (long)err;
+
+    if (vn->type != VNODE_SYMLINK) {
+        vnode_put(vn);
+        return -(long)EINVAL;
+    }
+
+    if (!vn->mount || !vn->mount->ops || !vn->mount->ops->readlink) {
+        vnode_put(vn);
+        return -(long)EINVAL;
+    }
+
+    long ret = vn->mount->ops->readlink(vn, buf, (size_t)bufsiz);
+    vnode_put(vn);
+    return ret;
+}
+
+/* ── sys_rmdir ─────────────────────────────────────────────────────────────── */
+
+long sys_rmdir(const char *path)
+{
+    return sys_unlink(path);   /* VFS unlink handles directories too */
+}
+
+/* ── sys_umask ─────────────────────────────────────────────────────────────── */
+
+long sys_umask(long mask)
+{
+    uint32_t old = current->umask_val;
+    current->umask_val = (uint32_t)mask & 0777u;
+    return (long)old;
 }

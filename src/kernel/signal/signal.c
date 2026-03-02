@@ -32,13 +32,14 @@
 /*
  * Placed in kernel .text (flash XIP).  User-mode code can execute flash.
  * When the signal handler does bx lr, it lands here.
- * 4 bytes: movs r7, #119 (SYS_SIGRETURN) + svc 0.
+ * Uses SYS_RT_SIGRETURN(173) since musl's rt_sigaction is used.
+ * Note: movs can encode immediates 0-255, so 173 fits.
  */
 __attribute__((naked, used, section(".text.sigreturn_trampoline")))
 void sigreturn_trampoline(void)
 {
     __asm volatile(
-        "movs r7, #119\n"    /* SYS_SIGRETURN */
+        "movs r7, #173\n"    /* SYS_RT_SIGRETURN */
         "svc  0\n"
         "b    .\n"           /* should never reach */
     );
@@ -183,4 +184,95 @@ long sys_sigreturn(void)
     psp += 32;
     __asm volatile("msr psp, %0" :: "r"(psp));
     return 0;  /* value ignored — sigframe[0] has original r0 */
+}
+
+/* ── sys_rt_sigreturn ────────────────────────────────────────────────────── */
+
+long sys_rt_sigreturn(void)
+{
+    return sys_sigreturn();   /* same mechanism */
+}
+
+/* ── sys_rt_sigaction ────────────────────────────────────────────────────── */
+/*
+ * musl's sigaction() calls rt_sigaction(sig, act, oact, sigsetsize).
+ *
+ * struct k_sigaction {
+ *     void (*handler)(int);    // offset 0
+ *     unsigned long sa_flags;  // offset 4
+ *     void (*sa_restorer)(void); // offset 8
+ *     unsigned long sa_mask[2];  // offset 12
+ * };
+ */
+long sys_rt_sigaction(long sig, const void *act, void *oact, long sigsetsize)
+{
+    (void)sigsetsize;
+
+    if (sig < 1 || sig >= NSIG)
+        return -(long)EINVAL;
+    if (sig == SIGKILL || sig == SIGSTOP)
+        return -(long)EINVAL;
+
+    /* Return old handler if requested */
+    if (oact) {
+        uint32_t *out = (uint32_t *)oact;
+        out[0] = (uint32_t)(uintptr_t)current->sig_handlers[sig];
+        out[1] = 0;   /* sa_flags */
+        out[2] = 0;   /* sa_restorer */
+        out[3] = 0;   /* sa_mask[0] */
+        out[4] = 0;   /* sa_mask[1] */
+    }
+
+    /* Install new handler */
+    if (act) {
+        const uint32_t *in = (const uint32_t *)act;
+        current->sig_handlers[sig] = (sighandler_t)(uintptr_t)in[0];
+        /* sa_flags and sa_mask are noted but not fully supported yet */
+    }
+
+    return 0;
+}
+
+/* ── sys_rt_sigprocmask ──────────────────────────────────────────────────── */
+/*
+ * Manipulate the signal mask.
+ *   how: SIG_BLOCK(0), SIG_UNBLOCK(1), SIG_SETMASK(2)
+ *   set/oset: pointer to 64-bit signal mask (we use low 32 bits)
+ */
+#define SIG_BLOCK   0
+#define SIG_UNBLOCK 1
+#define SIG_SETMASK 2
+
+long sys_rt_sigprocmask(long how, const void *set, void *oset, long sigsetsize)
+{
+    (void)sigsetsize;
+
+    /* Return current mask if requested */
+    if (oset) {
+        uint32_t *out = (uint32_t *)oset;
+        out[0] = current->sig_blocked;
+        if (sigsetsize >= 8)
+            out[1] = 0;   /* high 32 bits — always 0 */
+    }
+
+    if (!set)
+        return 0;
+
+    uint32_t mask = *(const uint32_t *)set;
+
+    switch (how) {
+    case SIG_BLOCK:
+        current->sig_blocked |= mask;
+        break;
+    case SIG_UNBLOCK:
+        current->sig_blocked &= ~mask;
+        break;
+    case SIG_SETMASK:
+        current->sig_blocked = mask;
+        break;
+    default:
+        return -(long)EINVAL;
+    }
+
+    return 0;
 }

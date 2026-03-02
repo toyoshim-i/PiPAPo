@@ -24,31 +24,85 @@
 
 /* ── Syscall numbers (ARM EABI Linux-compatible) ───────────────────────────── */
 
-#define SYS_EXIT       1
-#define SYS_READ       3
-#define SYS_WRITE      4
-#define SYS_OPEN       5
-#define SYS_CLOSE      6
-#define SYS_WAITPID    7
-#define SYS_UNLINK    10
-#define SYS_EXECVE    11
-#define SYS_CHDIR     12
-#define SYS_LSEEK     19
-#define SYS_GETPID    20
-#define SYS_STAT     106
-#define SYS_FSTAT    108
-#define SYS_GETDENTS 141
-#define SYS_NANOSLEEP 162
-#define SYS_GETCWD   183
-#define SYS_KILL      37
-#define SYS_DUP       41
-#define SYS_PIPE      42
-#define SYS_BRK       45
-#define SYS_DUP2      63
-#define SYS_SIGACTION 67
-#define SYS_SIGRETURN 119
-#define SYS_MKDIR     39
-#define SYS_VFORK    190
+/* Existing (Phase 1-3) */
+#define SYS_EXIT         1
+#define SYS_FORK         2
+#define SYS_READ         3
+#define SYS_WRITE        4
+#define SYS_OPEN         5
+#define SYS_CLOSE        6
+#define SYS_WAITPID      7
+#define SYS_UNLINK      10
+#define SYS_EXECVE      11
+#define SYS_CHDIR       12
+#define SYS_MKNOD       14
+#define SYS_CHMOD       15
+#define SYS_LSEEK       19
+#define SYS_GETPID      20
+#define SYS_ACCESS      33
+#define SYS_KILL        37
+#define SYS_RENAME      38
+#define SYS_MKDIR       39
+#define SYS_RMDIR       40
+#define SYS_DUP         41
+#define SYS_PIPE        42
+#define SYS_BRK         45
+#define SYS_IOCTL       54
+#define SYS_SETPGID     57
+#define SYS_UMASK       60
+#define SYS_DUP2        63
+#define SYS_GETPPID     64
+#define SYS_SETSID      66
+#define SYS_SIGACTION   67
+#define SYS_GETTIMEOFDAY 78
+#define SYS_READLINK    85
+#define SYS_MUNMAP      91
+#define SYS_STAT       106
+#define SYS_FSTAT      108
+#define SYS_SIGRETURN  119
+#define SYS_CLONE      120
+#define SYS_UNAME      122
+#define SYS_MPROTECT   125
+#define SYS_LLSEEK     140
+#define SYS_GETDENTS   141
+#define SYS_READV      145
+#define SYS_WRITEV     146
+#define SYS_NANOSLEEP  162
+#define SYS_MREMAP     163
+#define SYS_RT_SIGRETURN   173
+#define SYS_RT_SIGACTION   174
+#define SYS_RT_SIGPROCMASK 175
+#define SYS_GETCWD     183
+#define SYS_VFORK      190
+#define SYS_MMAP2      192
+#define SYS_STAT64     195
+#define SYS_LSTAT64    196
+#define SYS_FSTAT64    197
+#define SYS_LCHOWN32   198
+#define SYS_GETUID32   199
+#define SYS_GETGID32   200
+#define SYS_GETEUID32  201
+#define SYS_GETEGID32  202
+#define SYS_SETGROUPS32 206
+#define SYS_FCHOWN32   207
+#define SYS_CHOWN32    212
+#define SYS_GETDENTS64 217
+#define SYS_FCNTL64    221
+#define SYS_FUTEX      240
+#define SYS_EXIT_GROUP 248
+#define SYS_SET_TID_ADDRESS 256
+#define SYS_CLOCK_GETTIME32 263
+#define SYS_CLOCK_NANOSLEEP32 265
+#define SYS_UTIMES     269
+#define SYS_WAIT4      114
+#define SYS_FSTATAT64  327
+#define SYS_GETCPU     345
+#define SYS_STATX      397
+#define SYS_CLOCK_GETTIME64  403
+#define SYS_CLOCK_NANOSLEEP64 407
+
+/* AT_FDCWD: musl's *at syscalls use this as dirfd for cwd-relative paths */
+#define AT_FDCWD       (-100)
 
 /* ── Dispatch ──────────────────────────────────────────────────────────────── */
 
@@ -96,19 +150,35 @@ long sys_getpid(void);
 long sys_execve(const char *path);
 long sys_vfork(uint32_t *frame);
 long sys_waitpid(long pid, long status_ptr, long options);
+long sys_set_tid_address(void *tidptr);
+long sys_uname(void *buf);
+long sys_setpgid(long pid, long pgid);
+long sys_setsid(void);
+long sys_wait4(long pid, long status_ptr, long options, void *rusage);
 
 /* sys_io.c */
 long sys_read(long fd, char *buf, size_t n);
 long sys_write(long fd, const char *buf, size_t n);
+long sys_writev(long fd, const void *iov, long iovcnt);
+long sys_readv(long fd, const void *iov, long iovcnt);
+long sys_ioctl(long fd, long cmd, long arg);
 
 /* sys_time.c */
 long sys_nanosleep(void *req, void *rem);
+long sys_clock_gettime32(long clk_id, void *tp);
+long sys_clock_gettime64(long clk_id, void *tp);
+long sys_gettimeofday(void *tv, void *tz);
+long sys_clock_nanosleep32(long clk, long flags, const void *req, void *rem);
+long sys_clock_nanosleep64(long clk, long flags, const void *req, void *rem);
 
 /* fd/pipe.c */
 long sys_pipe(int *fds);
 
 /* sys_mem.c */
 long sys_brk(long addr);
+long sys_mmap2(uint32_t addr, uint32_t len, uint32_t prot,
+               uint32_t flags, uint32_t fd, uint32_t pgoff);
+long sys_munmap(uint32_t addr, uint32_t len);
 
 /* sys_fs.c — dup/dup2 */
 long sys_dup(long oldfd);
@@ -118,6 +188,9 @@ long sys_dup2(long oldfd, long newfd);
 long sys_kill(long pid, long sig);
 long sys_sigaction(long sig, long handler, long old_ptr);
 long sys_sigreturn(void);
+long sys_rt_sigaction(long sig, const void *act, void *oact, long sigsetsize);
+long sys_rt_sigprocmask(long how, const void *set, void *oset, long sigsetsize);
+long sys_rt_sigreturn(void);
 
 /* sys_fs.c — VFS-routed file system calls */
 struct stat;
@@ -133,5 +206,15 @@ long sys_getcwd(char *buf, size_t size);
 long sys_chdir(const char *path);
 long sys_mkdir(const char *path, long mode);
 long sys_unlink(const char *path);
+long sys_stat64(const char *path, void *buf);
+long sys_fstat64(long fd, void *buf);
+long sys_lstat64(const char *path, void *buf);
+long sys_getdents64(long fd, void *buf, long count);
+long sys_llseek(long fd, long off_hi, long off_lo, void *result, long whence);
+long sys_fcntl64(long fd, long cmd, long arg);
+long sys_access(const char *path, long mode);
+long sys_readlink(const char *path, char *buf, long bufsiz);
+long sys_rmdir(const char *path);
+long sys_umask(long mask);
 
 #endif /* PPAP_SYSCALL_H */

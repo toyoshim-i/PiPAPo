@@ -38,6 +38,11 @@
  * and sched_sleep) so both functions can access it in the same translation unit. */
 static volatile uint32_t tick_count = 0u;
 
+uint32_t sched_get_ticks(void)
+{
+    return tick_count;
+}
+
 /* ── Scheduler ─────────────────────────────────────────────────────────────── */
 
 pcb_t *sched_next(void)

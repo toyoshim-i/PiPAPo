@@ -80,4 +80,10 @@ void sched_sleep(uint32_t ticks);
  */
 void sched_wakeup(void *channel);
 
+/*
+ * Return the current SysTick tick count.
+ * Used by time syscalls (clock_gettime, gettimeofday) to derive wall time.
+ */
+uint32_t sched_get_ticks(void);
+
 #endif /* PPAP_PROC_SCHED_H */

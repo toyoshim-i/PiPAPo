@@ -79,6 +79,10 @@ pcb_t *proc_alloc(void)
         if (proc_table[i].state == PROC_FREE) {
             __builtin_memset(&proc_table[i], 0, sizeof(pcb_t));
             proc_table[i].pid = next_pid++;
+            /* Init process group / session to self */
+            proc_table[i].pgid = proc_table[i].pid;
+            proc_table[i].sid  = proc_table[i].pid;
+            proc_table[i].umask_val = 022;
             /* state left as PROC_FREE — caller sets it to PROC_RUNNABLE
              * only after filling in stack_page and setting up the stack frame */
             return &proc_table[i];
