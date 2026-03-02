@@ -1399,6 +1399,85 @@ static void ufs_integration_test(void)
     uart_puts(" passed, ");
     uart_print_dec((uint32_t)test_fail);
     uart_puts(" failed\n");
+
+    /* ── Step 9: directory ops + links tests ──────────────────────────── */
+    uart_puts("\n=== Phase 5 Step 9: UFS mkdir/unlink tests ===\n");
+
+    /* 1. mkdir /mnt/ufs/testdir */
+    {
+        long rc = sys_mkdir("/mnt/ufs/testdir", 0755);
+        test_report("mkdir /mnt/ufs/testdir", rc == 0);
+    }
+
+    /* 2. stat /mnt/ufs/testdir → DIR, nlink == 2 */
+    {
+        struct stat st;
+        long rc = sys_stat("/mnt/ufs/testdir", &st);
+        int ok = (rc == 0 && S_ISDIR(st.st_mode) && st.st_nlink == 2);
+        test_report("stat /mnt/ufs/testdir (DIR, nlink=2)", ok);
+    }
+
+    /* 3. readdir sees testdir */
+    {
+        long fd = sys_open("/mnt/ufs", O_RDONLY, 0);
+        int ok = 0;
+        if (fd >= 0) {
+            struct dirent entries[8];
+            long n = sys_getdents(fd, entries, 8);
+            for (long i = 0; i < n; i++) {
+                if (__builtin_strcmp(entries[i].d_name, "testdir") == 0)
+                    ok = 1;
+            }
+            sys_close(fd);
+        }
+        test_report("readdir /mnt/ufs sees testdir", ok);
+    }
+
+    /* 4. unlink /mnt/ufs/newfile.txt */
+    {
+        long rc = sys_unlink("/mnt/ufs/newfile.txt");
+        test_report("unlink /mnt/ufs/newfile.txt", rc == 0);
+    }
+
+    /* 5. stat after unlink → ENOENT */
+    {
+        struct stat st;
+        long rc = sys_stat("/mnt/ufs/newfile.txt", &st);
+        test_report("stat after unlink → ENOENT", rc == -(long)ENOENT);
+    }
+
+    /* 6. unlink empty directory */
+    {
+        long rc = sys_unlink("/mnt/ufs/testdir");
+        test_report("unlink /mnt/ufs/testdir (empty)", rc == 0);
+    }
+
+    /* 7. stat after rmdir → ENOENT */
+    {
+        struct stat st;
+        long rc = sys_stat("/mnt/ufs/testdir", &st);
+        test_report("stat after rmdir → ENOENT", rc == -(long)ENOENT);
+    }
+
+    /* 8. Existing hello.txt still intact */
+    {
+        long fd = sys_open("/mnt/ufs/hello.txt", O_RDONLY, 0);
+        int ok = 0;
+        if (fd >= 0) {
+            char buf[32];
+            long n = sys_read(fd, buf, sizeof(buf) - 1);
+            ok = (n == 16 && buf[0] == 'H' && buf[14] == '!');
+            sys_close(fd);
+        }
+        test_report("hello.txt still intact after ops", ok);
+    }
+
+    /* Summary */
+    uart_puts("Phase 5 Step 9 UFS dir ops: ");
+    uart_print_dec((uint32_t)test_pass);
+    uart_puts(" passed, ");
+    uart_print_dec((uint32_t)test_fail);
+    uart_puts(" failed\n");
 }
 
 /* ── Context-switch partner (prints "1" in a loop) ───────────────────────── */

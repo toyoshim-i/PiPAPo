@@ -8,6 +8,7 @@
  * Step 6: read-only mount/lookup/read/readdir/stat/readlink
  * Step 7: block/inode allocation, inode write-back, superblock sync
  * Step 8: write, create, truncate
+ * Step 9: mkdir, unlink (directory ops + link count management)
  *
  * Operations:
  *   mount    — verify magic, parse superblock, allocate root vnode
@@ -872,6 +873,162 @@ static int ufs_create(vnode_t *dir, const char *name, uint32_t mode,
     return 0;
 }
 
+/* ── ufs_dir_remove_entry ─────────────────────────────────────────────── */
+
+/* Remove a directory entry by name.  Sets *removed_ino to the inode
+ * number of the removed entry.  Clobbers ufs_buf. */
+static int ufs_dir_remove_entry(ufs_priv_t *priv, vnode_t *dir,
+                                 const char *name, uint32_t *removed_ino)
+{
+    ufs_inode_t dir_inode;
+    int rc = ufs_read_inode(priv, dir->ino, &dir_inode);
+    if (rc < 0) return rc;
+
+    uint32_t nblocks = (dir_inode.i_size + UFS_BLOCK_SIZE - 1) / UFS_BLOCK_SIZE;
+
+    for (uint32_t b = 0; b < nblocks; b++) {
+        uint32_t phys;
+        rc = ufs_block_map(priv, &dir_inode, b, &phys);
+        if (rc < 0) return rc;
+        if (phys == 0) continue;
+
+        for (uint32_t s = 0; s < SECTORS_PER_BLOCK; s++) {
+            rc = ufs_read_blk_sector(priv, phys, s);
+            if (rc < 0) return rc;
+
+            for (uint32_t d = 0; d < DIRENTS_PER_SECTOR; d++) {
+                ufs_dirent_t *de =
+                    (ufs_dirent_t *)&ufs_buf[d * UFS_DIRENT_SIZE];
+                if (de->d_ino == 0) continue;
+
+                const char *a = de->d_name;
+                const char *p = name;
+                while (*a && *a == *p) { a++; p++; }
+                if (*a != '\0' || *p != '\0') continue;
+
+                /* Match — remove entry */
+                *removed_ino = de->d_ino;
+                de->d_ino = 0;
+                return ufs_write_blk_sector(priv, phys, s);
+            }
+        }
+    }
+    return -ENOENT;
+}
+
+/* ── ufs_dir_is_empty ────────────────────────────────────────────────── */
+
+/* Check if a directory has no entries beyond "." and "..".
+ * Returns 1 if empty, 0 if non-empty, negative on error. */
+static int ufs_dir_is_empty(ufs_priv_t *priv, uint32_t dir_ino)
+{
+    ufs_inode_t dir_inode;
+    int rc = ufs_read_inode(priv, dir_ino, &dir_inode);
+    if (rc < 0) return rc;
+
+    uint32_t nblocks = (dir_inode.i_size + UFS_BLOCK_SIZE - 1) / UFS_BLOCK_SIZE;
+
+    for (uint32_t b = 0; b < nblocks; b++) {
+        uint32_t phys;
+        rc = ufs_block_map(priv, &dir_inode, b, &phys);
+        if (rc < 0) return rc;
+        if (phys == 0) continue;
+
+        for (uint32_t s = 0; s < SECTORS_PER_BLOCK; s++) {
+            rc = ufs_read_blk_sector(priv, phys, s);
+            if (rc < 0) return rc;
+
+            for (uint32_t d = 0; d < DIRENTS_PER_SECTOR; d++) {
+                ufs_dirent_t *de =
+                    (ufs_dirent_t *)&ufs_buf[d * UFS_DIRENT_SIZE];
+                if (de->d_ino == 0) continue;
+
+                /* Skip "." and ".." */
+                if (de->d_name[0] == '.') {
+                    if (de->d_name[1] == '\0') continue;
+                    if (de->d_name[1] == '.' && de->d_name[2] == '\0')
+                        continue;
+                }
+                return 0;  /* non-empty */
+            }
+        }
+    }
+    return 1;  /* empty */
+}
+
+/* ── ufs_mkdir ───────────────────────────────────────────────────────── */
+
+static int ufs_mkdir(vnode_t *dir, const char *name, uint32_t mode)
+{
+    ufs_priv_t *priv = (ufs_priv_t *)dir->fs_priv;
+
+    /* Allocate inode for new directory */
+    uint32_t new_ino;
+    int rc = ufs_alloc_inode(priv, &new_ino);
+    if (rc < 0) return rc;
+
+    /* Allocate data block for "." and ".." entries */
+    uint32_t data_blk;
+    rc = ufs_alloc_block(priv, &data_blk);
+    if (rc < 0) {
+        ufs_free_inode(priv, new_ino);
+        return rc;
+    }
+
+    rc = ufs_zero_block(priv, data_blk);
+    if (rc < 0) {
+        ufs_free_block(priv, data_blk);
+        ufs_free_inode(priv, new_ino);
+        return rc;
+    }
+
+    /* Write "." and ".." entries into first sector of new block */
+    __builtin_memset(ufs_buf, 0, BLKDEV_SECTOR_SIZE);
+    ufs_dirent_t *dot = (ufs_dirent_t *)&ufs_buf[0];
+    dot->d_ino = new_ino;
+    dot->d_name[0] = '.';
+    dot->d_name[1] = '\0';
+
+    ufs_dirent_t *dotdot = (ufs_dirent_t *)&ufs_buf[UFS_DIRENT_SIZE];
+    dotdot->d_ino = dir->ino;
+    dotdot->d_name[0] = '.';
+    dotdot->d_name[1] = '.';
+    dotdot->d_name[2] = '\0';
+
+    rc = ufs_write_blk_sector(priv, data_blk, 0);
+    if (rc < 0) {
+        ufs_free_block(priv, data_blk);
+        ufs_free_inode(priv, new_ino);
+        return rc;
+    }
+
+    /* Initialize and write the new directory inode */
+    ufs_inode_t inode;
+    __builtin_memset(&inode, 0, sizeof(inode));
+    inode.i_mode      = (uint16_t)(S_IFDIR | (mode & 0777u));
+    inode.i_nlink     = 2;  /* "." from self + entry from parent */
+    inode.i_size      = UFS_BLOCK_SIZE;
+    inode.i_direct[0] = data_blk;
+
+    rc = ufs_write_inode(priv, new_ino, &inode);
+    if (rc < 0) return rc;
+
+    /* Add entry in parent directory */
+    rc = ufs_dir_add_entry(priv, dir, name, new_ino);
+    if (rc < 0) return rc;
+
+    /* Increment parent's nlink (for ".." backlink) */
+    ufs_inode_t parent_inode;
+    rc = ufs_read_inode(priv, dir->ino, &parent_inode);
+    if (rc < 0) return rc;
+    parent_inode.i_nlink++;
+    rc = ufs_write_inode(priv, dir->ino, &parent_inode);
+    if (rc < 0) return rc;
+
+    ufs_sync_super(priv);
+    return 0;
+}
+
 /* ── ufs_truncate ────────────────────────────────────────────────────── */
 
 static int ufs_truncate(vnode_t *vn, uint32_t length)
@@ -976,6 +1133,80 @@ static int ufs_truncate(vnode_t *vn, uint32_t length)
     return 0;
 }
 
+/* ── ufs_unlink ──────────────────────────────────────────────────────── */
+
+static int ufs_unlink(vnode_t *dir, const char *name)
+{
+    ufs_priv_t *priv = (ufs_priv_t *)dir->fs_priv;
+
+    /* Remove directory entry and get the child inode number */
+    uint32_t child_ino;
+    int rc = ufs_dir_remove_entry(priv, dir, name, &child_ino);
+    if (rc < 0) return rc;
+
+    /* Read child inode */
+    ufs_inode_t child;
+    rc = ufs_read_inode(priv, child_ino, &child);
+    if (rc < 0) return rc;
+
+    /* If directory: check it's empty, decrement parent nlink */
+    if (S_ISDIR(child.i_mode)) {
+        int empty = ufs_dir_is_empty(priv, child_ino);
+        if (empty <= 0) {
+            /* Not empty or error — re-add the entry (best effort) */
+            ufs_dir_add_entry(priv, dir, name, child_ino);
+            return (empty == 0) ? -ENOTEMPTY : empty;
+        }
+
+        /* Decrement parent's nlink (removing ".." backlink) */
+        ufs_inode_t parent;
+        rc = ufs_read_inode(priv, dir->ino, &parent);
+        if (rc == 0 && parent.i_nlink > 0) {
+            parent.i_nlink--;
+            ufs_write_inode(priv, dir->ino, &parent);
+        }
+    }
+
+    /* Decrement link count */
+    if (child.i_nlink > 0)
+        child.i_nlink--;
+
+    if (child.i_nlink == 0) {
+        /* Free all data blocks */
+        for (int i = 0; i < UFS_DIRECT_BLOCKS; i++) {
+            if (child.i_direct[i] != 0) {
+                ufs_free_block(priv, child.i_direct[i]);
+                child.i_direct[i] = 0;
+            }
+        }
+
+        if (child.i_indirect != 0) {
+            for (uint32_t s = 0; s < SECTORS_PER_BLOCK; s++) {
+                rc = ufs_read_blk_sector(priv, child.i_indirect, s);
+                if (rc < 0) break;
+                uint32_t saved[BLKDEV_SECTOR_SIZE / sizeof(uint32_t)];
+                __builtin_memcpy(saved, ufs_buf, BLKDEV_SECTOR_SIZE);
+                for (uint32_t j = 0;
+                     j < BLKDEV_SECTOR_SIZE / sizeof(uint32_t); j++) {
+                    if (saved[j] != 0)
+                        ufs_free_block(priv, saved[j]);
+                }
+            }
+            ufs_free_block(priv, child.i_indirect);
+            child.i_indirect = 0;
+        }
+
+        child.i_size = 0;
+        ufs_write_inode(priv, child_ino, &child);
+        ufs_free_inode(priv, child_ino);
+    } else {
+        ufs_write_inode(priv, child_ino, &child);
+    }
+
+    ufs_sync_super(priv);
+    return 0;
+}
+
 /* ── ufs_stat ─────────────────────────────────────────────────────────── */
 
 static int ufs_stat(vnode_t *vn, struct stat *st)
@@ -1037,7 +1268,7 @@ const vfs_ops_t ufs_ops = {
     .stat     = ufs_stat,
     .readlink = ufs_readlink,
     .create   = ufs_create,
-    .mkdir    = NULL,      /* Phase 5 Step 9 */
-    .unlink   = NULL,      /* Phase 5 Step 9 */
+    .mkdir    = ufs_mkdir,
+    .unlink   = ufs_unlink,
     .truncate = ufs_truncate,
 };
