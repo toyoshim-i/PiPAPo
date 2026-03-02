@@ -12,4 +12,7 @@
 
 extern const vfs_ops_t ufs_ops;
 
+/* Step 7: allocation self-test (exercised by main_qemu.c) */
+void ufs_alloc_selftest(int *out_pass, int *out_fail);
+
 #endif /* PPAP_FS_UFS_H */

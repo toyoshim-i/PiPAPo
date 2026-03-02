@@ -1,12 +1,12 @@
 /*
- * ufs.c — UFS read-only filesystem driver
+ * ufs.c — UFS filesystem driver
  *
  * Implements vfs_ops_t for mounting UFS filesystem images via the block
- * device layer.  The driver reads the on-disk superblock, inode table,
- * and data blocks through sector-level blkdev I/O.
+ * device layer.  The driver reads and writes the on-disk superblock,
+ * inode table, bitmaps, and data blocks through sector-level blkdev I/O.
  *
- * This is the read-only phase (Step 6).  Write support (Steps 7-9) will
- * add block/inode allocation, file creation, and directory modification.
+ * Step 6: read-only mount/lookup/read/readdir/stat/readlink
+ * Step 7: block/inode allocation, inode write-back, superblock sync
  *
  * Operations:
  *   mount    — verify magic, parse superblock, allocate root vnode
@@ -21,6 +21,7 @@
 #include "ufs_format.h"
 #include "../vfs/vfs.h"
 #include "../blkdev/blkdev.h"
+#include "drivers/uart.h"
 #include "../errno.h"
 #include <stddef.h>
 
@@ -39,6 +40,10 @@ typedef struct {
     uint32_t  itable_block;    /* first inode table block */
     uint32_t  data_block;      /* first data block */
     uint32_t  inode_blocks;    /* number of inode table blocks */
+    uint32_t  bmap_block;      /* block bitmap block (1) */
+    uint32_t  imap_block;      /* inode bitmap block (2) */
+    uint32_t  free_blocks;     /* cached s_free_blocks */
+    uint32_t  free_inodes;     /* cached s_free_inodes */
 } ufs_priv_t;
 
 static ufs_priv_t ufs_priv;
@@ -62,6 +67,21 @@ static int ufs_read_blk_sector(ufs_priv_t *priv, uint32_t block,
     return ufs_read_sector(priv, block * SECTORS_PER_BLOCK + sec_within);
 }
 
+/* ── Block write helpers ──────────────────────────────────────────────── */
+
+/* Write ufs_buf to one sector on the underlying block device */
+static int ufs_write_sector(ufs_priv_t *priv, uint32_t abs_sector)
+{
+    return priv->dev->write(priv->dev, ufs_buf, abs_sector, 1);
+}
+
+/* Write ufs_buf to one sector within a UFS block */
+static int ufs_write_blk_sector(ufs_priv_t *priv, uint32_t block,
+                                 uint32_t sec_within)
+{
+    return ufs_write_sector(priv, block * SECTORS_PER_BLOCK + sec_within);
+}
+
 /* ── Inode I/O ────────────────────────────────────────────────────────── */
 
 /* Read an on-disk inode.  Reads a single sector of the inode table
@@ -78,6 +98,246 @@ static int ufs_read_inode(ufs_priv_t *priv, uint32_t ino, ufs_inode_t *out)
 
     __builtin_memcpy(out, &ufs_buf[off], UFS_INODE_SIZE);
     return 0;
+}
+
+/* Write an on-disk inode.  Reads the inode table sector, patches the
+ * 64-byte inode struct, and writes the sector back.  Clobbers ufs_buf. */
+static int ufs_write_inode(ufs_priv_t *priv, uint32_t ino,
+                            const ufs_inode_t *inode)
+{
+    uint32_t block = priv->itable_block + ino / UFS_INODES_PER_BLOCK;
+    uint32_t idx   = ino % UFS_INODES_PER_BLOCK;
+    uint32_t sec   = idx / INODES_PER_SECTOR;
+    uint32_t off   = (idx % INODES_PER_SECTOR) * UFS_INODE_SIZE;
+
+    int rc = ufs_read_blk_sector(priv, block, sec);
+    if (rc < 0) return rc;
+
+    __builtin_memcpy(&ufs_buf[off], inode, UFS_INODE_SIZE);
+    return ufs_write_blk_sector(priv, block, sec);
+}
+
+/* ── Bitmap helpers ──────────────────────────────────────────────────── */
+
+/* Bits per bitmap sector */
+#define BITS_PER_SECTOR (BLKDEV_SECTOR_SIZE * 8)  /* 4096 */
+
+/* Test, set, clear a bit within the current ufs_buf contents.
+ * `bit` is relative to the start of the sector (0..4095). */
+static int ufs_bmap_test(uint32_t bit)
+{
+    return (ufs_buf[bit / 8] >> (bit % 8)) & 1;
+}
+
+static void ufs_bmap_set(uint32_t bit)
+{
+    ufs_buf[bit / 8] |= (uint8_t)(1u << (bit % 8));
+}
+
+static void ufs_bmap_clear(uint32_t bit)
+{
+    ufs_buf[bit / 8] &= (uint8_t)~(1u << (bit % 8));
+}
+
+/* ── Block allocation ────────────────────────────────────────────────── */
+
+/* Allocate a free data block.  Returns 0 on success (*out = block number)
+ * or -ENOSPC if the filesystem is full.  Clobbers ufs_buf. */
+static int ufs_alloc_block(ufs_priv_t *priv, uint32_t *out)
+{
+    for (uint32_t s = 0; s < SECTORS_PER_BLOCK; s++) {
+        int rc = ufs_read_blk_sector(priv, priv->bmap_block, s);
+        if (rc < 0) return rc;
+
+        for (uint32_t bit = 0; bit < BITS_PER_SECTOR; bit++) {
+            uint32_t blkno = s * BITS_PER_SECTOR + bit;
+            if (blkno >= priv->block_count) return -ENOSPC;
+            if (ufs_bmap_test(bit)) continue;  /* already allocated */
+
+            ufs_bmap_set(bit);
+            rc = ufs_write_blk_sector(priv, priv->bmap_block, s);
+            if (rc < 0) return rc;
+
+            priv->free_blocks--;
+            *out = blkno;
+            return 0;
+        }
+    }
+    return -ENOSPC;
+}
+
+/* Free a previously allocated block.  Clobbers ufs_buf. */
+static int ufs_free_block(ufs_priv_t *priv, uint32_t blkno)
+{
+    if (blkno >= priv->block_count) return -EINVAL;
+
+    uint32_t sec = blkno / BITS_PER_SECTOR;
+    uint32_t bit = blkno % BITS_PER_SECTOR;
+
+    int rc = ufs_read_blk_sector(priv, priv->bmap_block, sec);
+    if (rc < 0) return rc;
+
+    ufs_bmap_clear(bit);
+    rc = ufs_write_blk_sector(priv, priv->bmap_block, sec);
+    if (rc < 0) return rc;
+
+    priv->free_blocks++;
+    return 0;
+}
+
+/* ── Inode allocation ────────────────────────────────────────────────── */
+
+/* Allocate a free inode.  Returns 0 on success (*out = inode number)
+ * or -ENOSPC.  Clobbers ufs_buf. */
+static int ufs_alloc_inode(ufs_priv_t *priv, uint32_t *out)
+{
+    for (uint32_t s = 0; s < SECTORS_PER_BLOCK; s++) {
+        int rc = ufs_read_blk_sector(priv, priv->imap_block, s);
+        if (rc < 0) return rc;
+
+        for (uint32_t bit = 0; bit < BITS_PER_SECTOR; bit++) {
+            uint32_t ino = s * BITS_PER_SECTOR + bit;
+            if (ino >= priv->inode_count) return -ENOSPC;
+            if (ufs_bmap_test(bit)) continue;
+
+            ufs_bmap_set(bit);
+            rc = ufs_write_blk_sector(priv, priv->imap_block, s);
+            if (rc < 0) return rc;
+
+            priv->free_inodes--;
+            *out = ino;
+            return 0;
+        }
+    }
+    return -ENOSPC;
+}
+
+/* Free a previously allocated inode.  Clobbers ufs_buf. */
+static int ufs_free_inode(ufs_priv_t *priv, uint32_t ino)
+{
+    if (ino >= priv->inode_count) return -EINVAL;
+
+    uint32_t sec = ino / BITS_PER_SECTOR;
+    uint32_t bit = ino % BITS_PER_SECTOR;
+
+    int rc = ufs_read_blk_sector(priv, priv->imap_block, sec);
+    if (rc < 0) return rc;
+
+    ufs_bmap_clear(bit);
+    rc = ufs_write_blk_sector(priv, priv->imap_block, sec);
+    if (rc < 0) return rc;
+
+    priv->free_inodes++;
+    return 0;
+}
+
+/* ── Superblock sync ─────────────────────────────────────────────────── */
+
+/* Write cached free counts back to the on-disk superblock.  Clobbers ufs_buf. */
+static int ufs_sync_super(ufs_priv_t *priv)
+{
+    int rc = ufs_read_sector(priv, 0);
+    if (rc < 0) return rc;
+
+    ufs_super_t *sb = (ufs_super_t *)ufs_buf;
+    sb->s_free_blocks = priv->free_blocks;
+    sb->s_free_inodes = priv->free_inodes;
+
+    return ufs_write_sector(priv, 0);
+}
+
+/* ── Data block zeroing ──────────────────────────────────────────────── */
+
+/* Zero all 8 sectors of a UFS block.  Clobbers ufs_buf. */
+static int ufs_zero_block(ufs_priv_t *priv, uint32_t block)
+{
+    __builtin_memset(ufs_buf, 0, BLKDEV_SECTOR_SIZE);
+    for (uint32_t s = 0; s < SECTORS_PER_BLOCK; s++) {
+        int rc = ufs_write_blk_sector(priv, block, s);
+        if (rc < 0) return rc;
+    }
+    return 0;
+}
+
+/* ── Allocation self-test (called from main_qemu.c) ──────────────────── */
+
+static void alloc_check(const char *name, int ok, int *pass, int *fail)
+{
+    uart_puts("TEST: ");
+    uart_puts(name);
+    if (ok) { uart_puts(" ... PASS\n"); (*pass)++; }
+    else    { uart_puts(" ... FAIL\n"); (*fail)++; }
+}
+
+void ufs_alloc_selftest(int *out_pass, int *out_fail)
+{
+    int pass = 0, fail = 0;
+    uint32_t orig_fb = ufs_priv.free_blocks;
+    uint32_t orig_fi = ufs_priv.free_inodes;
+
+    /* 1. Alloc block → free_blocks decremented */
+    uint32_t blk = 0;
+    int rc = ufs_alloc_block(&ufs_priv, &blk);
+    alloc_check("alloc_block", rc == 0 && blk >= ufs_priv.data_block
+                && ufs_priv.free_blocks == orig_fb - 1, &pass, &fail);
+
+    /* 2. Free block → free_blocks restored */
+    rc = ufs_free_block(&ufs_priv, blk);
+    alloc_check("free_block", rc == 0
+                && ufs_priv.free_blocks == orig_fb, &pass, &fail);
+
+    /* 3. Alloc inode → free_inodes decremented */
+    uint32_t ino = 0;
+    rc = ufs_alloc_inode(&ufs_priv, &ino);
+    alloc_check("alloc_inode", rc == 0 && ino >= 2
+                && ufs_priv.free_inodes == orig_fi - 1, &pass, &fail);
+
+    /* 4. Free inode → free_inodes restored */
+    rc = ufs_free_inode(&ufs_priv, ino);
+    alloc_check("free_inode", rc == 0
+                && ufs_priv.free_inodes == orig_fi, &pass, &fail);
+
+    /* 5. Write inode + read back → data matches */
+    rc = ufs_alloc_inode(&ufs_priv, &ino);
+    if (rc == 0) {
+        ufs_inode_t test_in;
+        __builtin_memset(&test_in, 0, sizeof(test_in));
+        test_in.i_mode  = 0100644;
+        test_in.i_nlink = 1;
+        test_in.i_size  = 12345;
+        test_in.i_direct[0] = 42;
+
+        rc = ufs_write_inode(&ufs_priv, ino, &test_in);
+        ufs_inode_t test_out;
+        int rc2 = ufs_read_inode(&ufs_priv, ino, &test_out);
+        alloc_check("write+read inode",
+                     rc == 0 && rc2 == 0
+                     && test_out.i_mode == 0100644
+                     && test_out.i_nlink == 1
+                     && test_out.i_size == 12345
+                     && test_out.i_direct[0] == 42,
+                     &pass, &fail);
+
+        /* Clean up test inode */
+        __builtin_memset(&test_in, 0, sizeof(test_in));
+        ufs_write_inode(&ufs_priv, ino, &test_in);
+        ufs_free_inode(&ufs_priv, ino);
+    } else {
+        alloc_check("write+read inode (alloc failed)", 0, &pass, &fail);
+    }
+
+    /* 6. Sync super → re-read → free counts match */
+    rc = ufs_sync_super(&ufs_priv);
+    int rc2 = ufs_read_sector(&ufs_priv, 0);
+    ufs_super_t *sb = (ufs_super_t *)ufs_buf;
+    alloc_check("sync_super",
+                 rc == 0 && rc2 == 0
+                 && sb->s_free_blocks == ufs_priv.free_blocks
+                 && sb->s_free_inodes == ufs_priv.free_inodes,
+                 &pass, &fail);
+
+    *out_pass = pass;
+    *out_fail = fail;
 }
 
 /* ── Block mapping ────────────────────────────────────────────────────── */
@@ -163,6 +423,10 @@ static int ufs_mount(mount_entry_t *mnt, const void *dev_data)
     ufs_priv.itable_block = sb->s_itable_block;
     ufs_priv.data_block   = sb->s_data_block;
     ufs_priv.inode_blocks = sb->s_inode_blocks;
+    ufs_priv.bmap_block   = sb->s_bmap_block;
+    ufs_priv.imap_block   = sb->s_imap_block;
+    ufs_priv.free_blocks  = sb->s_free_blocks;
+    ufs_priv.free_inodes  = sb->s_free_inodes;
 
     /* Read root inode (inode 1) */
     ufs_inode_t root_inode;

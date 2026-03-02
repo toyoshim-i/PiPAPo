@@ -1283,6 +1283,21 @@ static void ufs_integration_test(void)
     uart_puts(" passed, ");
     uart_print_dec((uint32_t)test_fail);
     uart_puts(" failed\n");
+
+    /* ── Step 7: allocation self-test (requires UFS already mounted) ──── */
+    uart_puts("\n=== Phase 5 Step 7: UFS allocation tests ===\n");
+    {
+        int alloc_pass = 0, alloc_fail = 0;
+        ufs_alloc_selftest(&alloc_pass, &alloc_fail);
+        test_pass += alloc_pass;
+        test_fail += alloc_fail;
+
+        uart_puts("Phase 5 Step 7 UFS alloc: ");
+        uart_print_dec((uint32_t)alloc_pass);
+        uart_puts(" passed, ");
+        uart_print_dec((uint32_t)alloc_fail);
+        uart_puts(" failed\n");
+    }
 }
 
 /* ── Context-switch partner (prints "1" in a loop) ───────────────────────── */
