@@ -29,6 +29,7 @@
 #include "syscall/syscall.h"
 #include "exec/exec.h"
 #include "blkdev/blkdev.h"
+#include "blkdev/loopback.h"
 #include "fs/vfat.h"
 #include "errno.h"
 #include "smp.h"
@@ -170,6 +171,9 @@ void kmain(void)
 
     /* Phase 4 Step 1: block device registry */
     blkdev_init();
+
+    /* Phase 5 Step 1: loopback block device subsystem */
+    loopback_init();
 
     /* Phase 4 Step 3: SD card init (skipped gracefully if no card) */
     {

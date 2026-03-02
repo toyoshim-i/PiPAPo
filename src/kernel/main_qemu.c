@@ -33,6 +33,7 @@
 #include "signal/signal.h"
 #include "blkdev/blkdev.h"
 #include "blkdev/ramblk.h"
+#include "blkdev/loopback.h"
 #include "fs/vfat.h"
 #include "errno.h"
 #include "smp.h"
@@ -887,6 +888,151 @@ static void vfat_integration_test(void)
     uart_puts(" failed ===\n\n");
 }
 
+/* ── Phase 5 Step 1: Loopback integration tests ─────────────────────────── */
+
+static void loopback_integration_test(void)
+{
+    uart_puts("\n=== Phase 5 Step 1: loopback integration tests ===\n");
+    test_pass = 0;
+    test_fail = 0;
+
+    /* Check if VFAT is mounted (need a real filesystem to test loopback) */
+    {
+        vnode_t *vn = (void *)0;
+        int rc = vfs_lookup("/mnt/sd", &vn);
+        if (rc < 0) {
+            uart_puts("SKIP: /mnt/sd not mounted, cannot test loopback\n");
+            return;
+        }
+        vnode_put(vn);
+    }
+
+    /* 1. Verify pre-populated testloop.bin exists (from mkfatimg) */
+    {
+        struct stat st;
+        long rc = sys_stat("/mnt/sd/testloop.bin", &st);
+        int ok = (rc == 0 && st.st_size == 2048);
+        test_report("stat /mnt/sd/testloop.bin (2048 B)", ok);
+        if (!ok) return;  /* can't continue without the test file */
+    }
+
+    /* 2. Set up loopback device from the test file */
+    {
+        int idx = loopback_setup("/mnt/sd/testloop.bin");
+        test_report("loopback_setup → loop0", idx == 0);
+        if (idx < 0) return;  /* can't continue */
+    }
+
+    /* 3. Verify blkdev registered */
+    {
+        blkdev_t *bd = blkdev_find("loop0");
+        test_report("blkdev_find(loop0)", bd != (void *)0);
+    }
+
+    /* 4. Verify sector count */
+    {
+        blkdev_t *bd = blkdev_find("loop0");
+        int ok = (bd && bd->sector_count == 4);
+        test_report("loop0 sector_count == 4", ok);
+    }
+
+    /* 5. Read sector 0 and verify pattern */
+    {
+        blkdev_t *bd = blkdev_find("loop0");
+        int ok = 0;
+        if (bd) {
+            uint8_t buf[BLKDEV_SECTOR_SIZE];
+            int rc = bd->read(bd, buf, 0, 1);
+            if (rc == 0) {
+                ok = 1;
+                for (int i = 0; i < (int)BLKDEV_SECTOR_SIZE; i++) {
+                    if (buf[i] != 0x00) { ok = 0; break; }
+                }
+            }
+        }
+        test_report("read sector 0 (pattern 0x00)", ok);
+    }
+
+    /* 6. Read sector 3 and verify pattern */
+    {
+        blkdev_t *bd = blkdev_find("loop0");
+        int ok = 0;
+        if (bd) {
+            uint8_t buf[BLKDEV_SECTOR_SIZE];
+            int rc = bd->read(bd, buf, 3, 1);
+            if (rc == 0) {
+                ok = 1;
+                for (int i = 0; i < (int)BLKDEV_SECTOR_SIZE; i++) {
+                    if (buf[i] != 0x03) { ok = 0; break; }
+                }
+            }
+        }
+        test_report("read sector 3 (pattern 0x03)", ok);
+    }
+
+    /* 7. Read out-of-range sector → EIO */
+    {
+        blkdev_t *bd = blkdev_find("loop0");
+        int ok = 0;
+        if (bd) {
+            uint8_t buf[BLKDEV_SECTOR_SIZE];
+            int rc = bd->read(bd, buf, 4, 1);
+            ok = (rc == -EIO);
+        }
+        test_report("read sector 4 (out of range) → EIO", ok);
+    }
+
+    /* 8. Write sector 0 + read back */
+    {
+        blkdev_t *bd = blkdev_find("loop0");
+        int ok = 0;
+        if (bd) {
+            uint8_t wbuf[BLKDEV_SECTOR_SIZE];
+            __builtin_memset(wbuf, 0xAB, BLKDEV_SECTOR_SIZE);
+            int rc = bd->write(bd, wbuf, 0, 1);
+            if (rc == 0) {
+                uint8_t rbuf[BLKDEV_SECTOR_SIZE];
+                rc = bd->read(bd, rbuf, 0, 1);
+                if (rc == 0) {
+                    ok = 1;
+                    for (int i = 0; i < (int)BLKDEV_SECTOR_SIZE; i++) {
+                        if (rbuf[i] != 0xAB) { ok = 0; break; }
+                    }
+                }
+            }
+        }
+        test_report("write sector 0 + read back (0xAB)", ok);
+    }
+
+    /* 9. loopback_is_active check */
+    {
+        test_report("loopback_is_active(0)", loopback_is_active(0) == 1);
+        test_report("loopback_is_active(1)", loopback_is_active(1) == 0);
+    }
+
+    /* 10. Teardown loop0 */
+    {
+        int rc = loopback_teardown(0);
+        test_report("loopback_teardown(0)", rc == 0);
+        test_report("is_active(0) after teardown", loopback_is_active(0) == 0);
+    }
+
+    /* 11. Teardown inactive → EINVAL */
+    {
+        int rc = loopback_teardown(0);
+        test_report("teardown inactive → EINVAL", rc == -EINVAL);
+    }
+
+    /* Summary */
+    uart_puts("Phase 5 Step 1 loopback: ");
+    uart_print_dec((uint32_t)test_pass);
+    uart_puts(" passed, ");
+    uart_print_dec((uint32_t)test_fail);
+    uart_puts(" failed\n");
+
+    /* testloop.bin is ROM-resident (from mkfatimg), no cleanup needed */
+}
+
 /* ── Context-switch partner (prints "1" in a loop) ───────────────────────── */
 
 static void thread_loop(void)
@@ -919,6 +1065,7 @@ void kmain(void)
      * If a FAT32 image is embedded (.fatimg section), use it.
      * Otherwise fall back to a small test-pattern image. */
     blkdev_init();
+    loopback_init();
     {
         uint32_t fatimg_size = (uint32_t)(__fatimg_end - __fatimg_start);
         if (fatimg_size >= BLKDEV_SECTOR_SIZE) {
@@ -999,6 +1146,9 @@ void kmain(void)
 
     /* Phase 4 Step 9: VFAT integration tests */
     vfat_integration_test();
+
+    /* Phase 5 Step 1: loopback block device integration tests */
+    loopback_integration_test();
 
     /* ------------------------------------------------------------------
      * Phase 3 Step 5: exec /bin/test_vfork as the init process (pid 1)

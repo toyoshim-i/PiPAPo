@@ -15,6 +15,7 @@
 #include "devfs.h"
 #include "../vfs/vfs.h"
 #include "../blkdev/blkdev.h"
+#include "../blkdev/loopback.h"
 #include "../errno.h"
 #include "../../drivers/uart.h"
 #include <stddef.h>
@@ -162,6 +163,70 @@ static long devblk_write(const void *buf, size_t n, uint32_t off)
     return (long)n;
 }
 
+/* ── /dev/loopN — loopback block devices ──────────────────────────────────── */
+
+static long devloop_read_n(int idx, void *buf, size_t n, uint32_t off)
+{
+    if (!loopback_is_active(idx))
+        return -(long)ENODEV;
+
+    static const char *names[] = { "loop0", "loop1", "loop2" };
+    blkdev_t *bd = blkdev_find(names[idx]);
+    if (!bd)
+        return -(long)ENOENT;
+
+    /* Sector-aligned access only */
+    if ((off % BLKDEV_SECTOR_SIZE) != 0 || (n % BLKDEV_SECTOR_SIZE) != 0)
+        return -(long)EINVAL;
+
+    uint32_t sector = off / BLKDEV_SECTOR_SIZE;
+    uint32_t count  = (uint32_t)n / BLKDEV_SECTOR_SIZE;
+    if (count == 0)
+        return 0;
+
+    int rc = bd->read(bd, buf, sector, count);
+    if (rc < 0)
+        return (long)rc;
+    return (long)n;
+}
+
+static long devloop_write_n(int idx, const void *buf, size_t n, uint32_t off)
+{
+    if (!loopback_is_active(idx))
+        return -(long)ENODEV;
+
+    static const char *names[] = { "loop0", "loop1", "loop2" };
+    blkdev_t *bd = blkdev_find(names[idx]);
+    if (!bd)
+        return -(long)ENOENT;
+
+    if ((off % BLKDEV_SECTOR_SIZE) != 0 || (n % BLKDEV_SECTOR_SIZE) != 0)
+        return -(long)EINVAL;
+
+    uint32_t sector = off / BLKDEV_SECTOR_SIZE;
+    uint32_t count  = (uint32_t)n / BLKDEV_SECTOR_SIZE;
+    if (count == 0)
+        return 0;
+
+    int rc = bd->write(bd, buf, sector, count);
+    if (rc < 0)
+        return (long)rc;
+    return (long)n;
+}
+
+static long devloop0_read(void *buf, size_t n, uint32_t off)
+{ return devloop_read_n(0, buf, n, off); }
+static long devloop0_write(const void *buf, size_t n, uint32_t off)
+{ return devloop_write_n(0, buf, n, off); }
+static long devloop1_read(void *buf, size_t n, uint32_t off)
+{ return devloop_read_n(1, buf, n, off); }
+static long devloop1_write(const void *buf, size_t n, uint32_t off)
+{ return devloop_write_n(1, buf, n, off); }
+static long devloop2_read(void *buf, size_t n, uint32_t off)
+{ return devloop_read_n(2, buf, n, off); }
+static long devloop2_write(const void *buf, size_t n, uint32_t off)
+{ return devloop_write_n(2, buf, n, off); }
+
 /* ── Device table ─────────────────────────────────────────────────────────── */
 
 static const devfs_node_t devfs_nodes[] = {
@@ -170,6 +235,9 @@ static const devfs_node_t devfs_nodes[] = {
     { "ttyS0",   devtty_read,    devtty_write   },
     { "urandom", devrandom_read, devnull_write  },
     { "mmcblk0", devblk_read,    devblk_write   },
+    { "loop0",   devloop0_read,  devloop0_write },
+    { "loop1",   devloop1_read,  devloop1_write },
+    { "loop2",   devloop2_read,  devloop2_write },
 };
 
 #define DEVFS_NODE_COUNT \

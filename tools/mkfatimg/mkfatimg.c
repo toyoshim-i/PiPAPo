@@ -11,6 +11,7 @@
  *   /hello.txt     "Hello from FAT32!\n"
  *   /data.bin      256 bytes: 0x00..0xFF
  *   /subdir/       empty directory
+ *   /testloop.bin  2048 bytes: sector N filled with byte N (loopback test)
  *
  * Build:   cc -O2 -o mkfatimg mkfatimg.c
  *
@@ -139,6 +140,11 @@ int main(int argc, char *argv[])
     fat_set(4, 0x0FFFFFFF);
     /* Cluster 5: subdir directory (EOC) */
     fat_set(5, 0x0FFFFFFF);
+    /* Clusters 6-9: testloop.bin (4 sectors, chain: 6→7→8→9→EOC) */
+    fat_set(6, 7);
+    fat_set(7, 8);
+    fat_set(8, 9);
+    fat_set(9, 0x0FFFFFFF);
 
     /* ── Root directory (cluster 2) ─────────────────────────────────── */
     uint8_t *root = &img[cluster_offset(2)];
@@ -156,12 +162,22 @@ int main(int argc, char *argv[])
     /* subdir/ — directory */
     write_dirent(&root[96], "SUBDIR     ", 0x10, 5, 0);
 
+    /* testloop.bin — 2048 bytes (4 sectors, for loopback testing) */
+    /*                "TESTLOOPBIN" in 8.3 format */
+    write_dirent(&root[128], "TESTLOOPBIN", 0x20, 6, 2048);
+
     /* ── hello.txt data (cluster 3) ─────────────────────────────────── */
     memcpy(&img[cluster_offset(3)], "Hello from FAT32!\n", 19);
 
     /* ── data.bin data (cluster 4) ──────────────────────────────────── */
     for (int i = 0; i < 256; i++)
         img[cluster_offset(4) + i] = (uint8_t)i;
+
+    /* ── testloop.bin data (clusters 6-9) ────────────────────────────── */
+    /* Each sector (cluster) is filled with its sector index byte:
+     * sector 0 → all 0x00, sector 1 → all 0x01, etc. */
+    for (int s = 0; s < 4; s++)
+        memset(&img[cluster_offset(6 + s)], s, SECTOR_SIZE);
 
     /* ── subdir/ directory (cluster 5) ──────────────────────────────── */
     uint8_t *subdir = &img[cluster_offset(5)];
