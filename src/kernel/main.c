@@ -14,6 +14,7 @@
 
 #include "drivers/uart.h"
 #include "drivers/clock.h"
+#include "drivers/spi.h"
 #include "mm/page.h"
 #include "mm/mpu.h"
 #include "proc/proc.h"
@@ -26,6 +27,7 @@
 #include "fs/procfs.h"
 #include "syscall/syscall.h"
 #include "exec/exec.h"
+#include "blkdev/blkdev.h"
 #include "errno.h"
 #include "smp.h"
 
@@ -150,6 +152,10 @@ void kmain(void)
 
     uart_puts("System clock: 133 MHz\n");
 
+    /* Phase 4 Step 2: SPI0 at 400 kHz for SD card init sequence */
+    spi_init(400000);
+    uart_puts("SPI0: initialised at 400 kHz\n");
+
     /* Phase 1 Step 1: memory manager init + boot-time memory map */
     mm_init();
 
@@ -159,6 +165,9 @@ void kmain(void)
     /* Phase 2 Steps 1-3: VFS layer + file pool for sys_open */
     vfs_init();
     file_pool_init();
+
+    /* Phase 4 Step 1: block device registry */
+    blkdev_init();
 
     /* Phase 2 Steps 7-9: mount romfs, devfs, procfs */
     if (vfs_mount("/", &romfs_ops, MNT_RDONLY, __romfs_start) == 0)

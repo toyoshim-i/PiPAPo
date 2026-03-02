@@ -44,6 +44,7 @@ add_executable(ppap
     src/kernel/smp.c              # Core 1 launch + SIO FIFO IPC (Phase 1 Step 12)
     src/drivers/uart.c
     src/drivers/clock.c     # PLL_SYS → 133 MHz (Step 7)
+    src/drivers/spi.c       # SPI0 PL022 driver (Phase 4 Step 2)
 )
 
 target_include_directories(ppap PRIVATE src)
