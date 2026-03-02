@@ -74,8 +74,14 @@ SVC_Handler:
     ldr   r0, [r0]                  @ r0 = current PCB
     ldr   r1, [r0, #PCB_STATE_OFFSET] @ r1 = current->state
     cmp   r1, #PROC_RUNNABLE
-    beq   .Lnormal_return
+    bne   .Lcheck_restart
 
+    @ --- Check 3: pending signals (process is RUNNABLE) ---
+    @ signal_check() may modify PSP (signal frame setup) or call sys_exit.
+    bl    signal_check
+    b     .Lnormal_return
+
+.Lcheck_restart:
     @ Process is not runnable.  PendSV (already pended by sched_yield)
     @ will tail-chain after our exception return and switch context.
     @ Check if we need to restart the syscall on next schedule.

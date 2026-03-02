@@ -30,6 +30,7 @@
 #include "fs/procfs.h"
 #include "syscall/syscall.h"
 #include "exec/exec.h"
+#include "signal/signal.h"
 #include "errno.h"
 #include "smp.h"
 
@@ -545,6 +546,78 @@ static void brk_integration_test(void)
     uart_puts(" failed ===\n\n");
 }
 
+/* ── Phase 3 Step 10: signal integration tests ───────────────────────────── */
+
+/* Dummy handler address for testing (never actually called from kernel) */
+static void dummy_sig_handler(int sig) { (void)sig; }
+
+static void signal_integration_test(void)
+{
+    uart_puts("\n=== Phase 3 Step 10: signal integration tests ===\n");
+    test_pass = 0;
+    test_fail = 0;
+
+    /* 1. sigaction installs handler */
+    {
+        long rc = sys_sigaction(10 /* SIGUSR1 */,
+                                (long)(uintptr_t)dummy_sig_handler, 0);
+        test_report("sigaction install",
+                    rc == 0 &&
+                    current->sig_handlers[10] ==
+                        (sighandler_t)(uintptr_t)dummy_sig_handler);
+    }
+
+    /* 2. SIGKILL cannot be caught */
+    {
+        long rc = sys_sigaction(9 /* SIGKILL */,
+                                (long)(uintptr_t)dummy_sig_handler, 0);
+        test_report("SIGKILL reject", rc == -(long)EINVAL);
+    }
+
+    /* 3. sys_kill sets pending bit */
+    {
+        current->sig_pending = 0;
+        long rc = sys_kill((long)current->pid, 10 /* SIGUSR1 */);
+        test_report("kill sets pending",
+                    rc == 0 && (current->sig_pending & (1u << 10)));
+    }
+
+    /* 4. sigaction returns old handler */
+    {
+        sighandler_t old = 0;
+        long rc = sys_sigaction(10 /* SIGUSR1 */,
+                                0 /* SIG_DFL */,
+                                (long)(uintptr_t)&old);
+        test_report("sigaction query old",
+                    rc == 0 &&
+                    old == (sighandler_t)(uintptr_t)dummy_sig_handler);
+    }
+
+    /* Clean up */
+    current->sig_pending = 0;
+    current->sig_blocked = 0;
+    for (int i = 0; i < 32; i++)
+        current->sig_handlers[i] = (sighandler_t)0;
+
+    /* Summary */
+    uart_puts("=== signal results: ");
+    char digit[4];
+    int idx = 0;
+    int v = test_pass;
+    if (v >= 10) digit[idx++] = '0' + (v / 10);
+    digit[idx++] = '0' + (v % 10);
+    digit[idx] = '\0';
+    uart_puts(digit);
+    uart_puts(" passed, ");
+    idx = 0;
+    v = test_fail;
+    if (v >= 10) digit[idx++] = '0' + (v / 10);
+    digit[idx++] = '0' + (v % 10);
+    digit[idx] = '\0';
+    uart_puts(digit);
+    uart_puts(" failed ===\n\n");
+}
+
 /* ── Context-switch partner (prints "1" in a loop) ───────────────────────── */
 
 static void thread_loop(void)
@@ -603,6 +676,9 @@ void kmain(void)
 
     /* Phase 3 Step 9: brk integration tests */
     brk_integration_test();
+
+    /* Phase 3 Step 10: signal integration tests */
+    signal_integration_test();
 
     /* ------------------------------------------------------------------
      * Phase 3 Step 5: exec /bin/test_vfork as the init process (pid 1)

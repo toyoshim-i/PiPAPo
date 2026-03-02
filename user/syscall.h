@@ -36,4 +36,9 @@ int     dup2(int oldfd, int newfd);
 
 void *brk(void *addr);
 
+/* ── Signals ───────────────────────────────────────────────────────────── */
+
+int kill(pid_t pid, int sig);
+int sigaction(int sig, void *handler, void *old_handler);
+
 #endif /* PPAP_USER_SYSCALL_H */

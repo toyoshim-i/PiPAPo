@@ -148,6 +148,28 @@ dup2:
     svc  0
     pop  {r7, pc}
 
+@ --- kill (SYS_KILL = 37) -----------------------------------------------------
+@ int kill(pid_t pid, int sig);
+.section .text.kill, "ax", %progbits
+.global kill
+.thumb_func
+kill:
+    push {r7, lr}
+    movs r7, #37
+    svc  0
+    pop  {r7, pc}
+
+@ --- sigaction (SYS_SIGACTION = 67) -------------------------------------------
+@ int sigaction(int sig, void *handler, void *old_handler);
+.section .text.sigaction, "ax", %progbits
+.global sigaction
+.thumb_func
+sigaction:
+    push {r7, lr}
+    movs r7, #67
+    svc  0
+    pop  {r7, pc}
+
 @ --- vfork (SYS_VFORK = 190) -------------------------------------------------
 @ pid_t vfork(void);
 .section .text.vfork, "ax", %progbits

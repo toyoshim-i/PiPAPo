@@ -9,6 +9,7 @@
 #define PPAP_ERRNO_H
 
 #define ENOENT   2   /* No such file or directory           */
+#define ESRCH    3   /* No such process                     */
 #define EIO      5   /* I/O error                           */
 #define ENOEXEC  8   /* Exec format error                   */
 #define EBADF    9   /* Bad file descriptor                 */

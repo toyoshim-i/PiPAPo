@@ -14,6 +14,7 @@
  *   sys_time.c  — sys_nanosleep
  *   sys_fs.c    — sys_open, sys_close, sys_lseek, sys_stat, sys_fstat,
  *                 sys_getdents, sys_getcwd, sys_chdir
+ *   signal.c    — sys_kill, sys_sigaction, sys_sigreturn
  */
 
 #include "syscall.h"
@@ -95,6 +96,15 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr)
         break;
     case SYS_DUP2:
         ret = sys_dup2(a0, a1);
+        break;
+    case SYS_KILL:
+        ret = sys_kill(a0, a1);
+        break;
+    case SYS_SIGACTION:
+        ret = sys_sigaction(a0, a1, a2);
+        break;
+    case SYS_SIGRETURN:
+        ret = sys_sigreturn();
         break;
     case SYS_VFORK:
         ret = sys_vfork(frame);

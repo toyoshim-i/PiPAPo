@@ -36,10 +36,13 @@
 #define SYS_GETDENTS 141
 #define SYS_NANOSLEEP 162
 #define SYS_GETCWD   183
+#define SYS_KILL      37
 #define SYS_DUP       41
 #define SYS_PIPE      42
 #define SYS_BRK       45
 #define SYS_DUP2      63
+#define SYS_SIGACTION 67
+#define SYS_SIGRETURN 119
 #define SYS_VFORK    190
 
 /* ── Dispatch ──────────────────────────────────────────────────────────────── */
@@ -103,6 +106,11 @@ long sys_brk(long addr);
 /* sys_fs.c — dup/dup2 */
 long sys_dup(long oldfd);
 long sys_dup2(long oldfd, long newfd);
+
+/* signal/signal.c */
+long sys_kill(long pid, long sig);
+long sys_sigaction(long sig, long handler, long old_ptr);
+long sys_sigreturn(void);
 
 /* sys_fs.c — VFS-routed file system calls */
 struct stat;

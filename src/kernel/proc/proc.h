@@ -26,6 +26,11 @@
  * We only store pointers here so the incomplete type is sufficient. */
 struct file;
 
+/* Signal handler type — matches signal/signal.h.
+ * Duplicated here to avoid circular include (signal.h needs pcb_t). */
+typedef void (*sighandler_t)(int);
+#define NSIG 32
+
 /*
  * PCB_SP_OFFSET: byte offset of the `sp` field within pcb_t.
  * Used in switch.S to save/restore the process stack pointer.
@@ -87,6 +92,11 @@ typedef struct pcb {
     /* ── Heap (brk) ──────────────────────────────────────────────────── */
     uint32_t    brk_base;      /* initial break = end of .data+.bss         */
     uint32_t    brk_current;   /* current break (grows upward)              */
+
+    /* ── Signals ─────────────────────────────────────────────────────── */
+    sighandler_t sig_handlers[NSIG]; /* SIG_DFL(0) or SIG_IGN(1) or func */
+    uint32_t     sig_pending;        /* bitmask of pending signals        */
+    uint32_t     sig_blocked;        /* bitmask of blocked signals        */
 } pcb_t;
 
 /* ── Globals ────────────────────────────────────────────────────────────────── */
