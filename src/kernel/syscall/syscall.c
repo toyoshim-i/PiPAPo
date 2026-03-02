@@ -23,6 +23,10 @@
 #include "../errno.h"
 #include <stdint.h>
 
+#ifdef SYSCALL_TRACE
+#include "../../drivers/uart.h"
+#endif
+
 /* Flag set by sys_execve to tell SVC_Handler to do a full context restore */
 volatile int exec_pending = 0;
 
@@ -118,6 +122,17 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
         ret = sys_vfork(frame);
         break;
     default:
+#ifdef SYSCALL_TRACE
+        uart_puts("SYS? ");
+        uart_print_dec(nr);
+        uart_puts("(");
+        uart_print_hex32((uint32_t)a0);
+        uart_puts(",");
+        uart_print_hex32((uint32_t)a1);
+        uart_puts(",");
+        uart_print_hex32((uint32_t)a2);
+        uart_puts(") = -ENOSYS\n");
+#endif
         ret = -(long)ENOSYS;
         break;
     }
