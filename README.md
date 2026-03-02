@@ -32,9 +32,9 @@ A UNIX-like micro OS for the RP2040 — bare-metal, no SDK runtime.
 | 1 | Kernel Foundation — memory management, context switch, scheduler, syscalls, MPU, ELF loader | ✓ Complete |
 | 2 | romfs + VFS — mkromfs tool, romfs driver, VFS layer, devfs, procfs | ✓ Complete |
 | 3 | Process Execution — ELF loader, vfork/exec, pipe, signals, on-target tests | ✓ Complete |
-| 4 | SD + VFAT — SPI driver, SD card init, FAT32 read/write | In progress (Step 1 done) |
-| 5 | UFS + Loopback — UFS driver, loopback block device, fstab mounts | Planned |
-| 6 | musl + busybox — musl porting, busybox build, interactive ash shell | Planned |
+| 4 | SD + VFAT — SPI driver, SD card init, FAT32 read/write | ✓ Complete |
+| 5 | UFS + Loopback — UFS driver, loopback block device, fstab mounts | ✓ Complete |
+| 6 | musl + busybox — musl porting, busybox build, interactive ash shell | In progress (Step 6/12) |
 | 7 | Board Support Packages — split target code into per-board directories | Planned |
 | 8 | Stabilization — error handling, OOM killer, performance tuning | Planned |
 | 9 | RP2350 Port — MPU 8-region, PSRAM, Thumb-2 optimization | Planned |
@@ -61,8 +61,8 @@ PPAP/
       syscall/              System call layer (SVC handler, dispatch, sys_*)
       fd/                   File descriptors (fd table, tty, pipe)
       vfs/                  Virtual filesystem (mount table, path resolution)
-      fs/                   Filesystem drivers (romfs, devfs, procfs)
-      blkdev/               Block device layer (registry, RAM block device)
+      fs/                   Filesystem drivers (romfs, devfs, procfs, vfat, ufs, tmpfs)
+      blkdev/               Block device layer (registry, RAM, SD, loopback)
       exec/                 ELF loader + execve
       signal/               Signal infrastructure
     drivers/
@@ -74,6 +74,14 @@ PPAP/
   tests/                    Host-native unit tests
   tools/
     mkromfs/                Host tool: generate romfs.bin image
+    mkufs/                  Host tool: generate UFS filesystem image
+  third_party/
+    musl/                   git submodule — musl libc v1.2.5
+    busybox/                git submodule — busybox 1_36_1
+    patches/                PPAP-specific patches for musl and busybox
+    configs/                Build configs (busybox defconfig)
+    build-musl.sh           Build script: musl libc.a for ARMv6-M
+    build-busybox.sh        Build script: static busybox binary
   romfs/                    Root filesystem template (/bin, /etc, /dev)
   scripts/
     setup-toolchain.sh      One-shot toolchain install
