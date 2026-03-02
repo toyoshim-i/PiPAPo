@@ -15,6 +15,7 @@
 #include "drivers/uart.h"
 #include "drivers/clock.h"
 #include "drivers/spi.h"
+#include "drivers/sd.h"
 #include "mm/page.h"
 #include "mm/mpu.h"
 #include "proc/proc.h"
@@ -168,6 +169,20 @@ void kmain(void)
 
     /* Phase 4 Step 1: block device registry */
     blkdev_init();
+
+    /* Phase 4 Step 3: SD card init (skipped gracefully if no card) */
+    {
+        int rc = sd_init();
+        if (rc == 0)
+            uart_puts("SD: card initialised, mmcblk0 registered\n");
+        else if (rc == -ENODEV)
+            uart_puts("SD: no card detected (skipping)\n");
+        else {
+            uart_puts("SD: init failed (err=");
+            uart_print_dec((uint32_t)(-(int)rc));
+            uart_puts(")\n");
+        }
+    }
 
     /* Phase 2 Steps 7-9: mount romfs, devfs, procfs */
     if (vfs_mount("/", &romfs_ops, MNT_RDONLY, __romfs_start) == 0)

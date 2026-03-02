@@ -45,6 +45,7 @@ add_executable(ppap
     src/drivers/uart.c
     src/drivers/clock.c     # PLL_SYS → 133 MHz (Step 7)
     src/drivers/spi.c       # SPI0 PL022 driver (Phase 4 Step 2)
+    src/drivers/sd.c        # SD card SPI-mode protocol (Phase 4 Step 3)
 )
 
 target_include_directories(ppap PRIVATE src)

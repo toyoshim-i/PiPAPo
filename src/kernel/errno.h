@@ -17,6 +17,7 @@
 #define ENOMEM  12   /* Out of memory                       */
 #define EACCES  13   /* Permission denied                   */
 #define EBUSY   16   /* Device or resource busy             */
+#define ENODEV  19   /* No such device                      */
 #define EEXIST  17   /* File exists                         */
 #define ENOTDIR 20   /* Not a directory                     */
 #define EISDIR  21   /* Is a directory                      */
@@ -30,5 +31,7 @@
 #define ENOSYS  38   /* Function not implemented            */
 #define ENOTEMPTY 39 /* Directory not empty                 */
 #define ELOOP   40   /* Too many levels of symbolic links   */
+#define ETIMEDOUT 110 /* Connection timed out                */
+#define EROFS   30   /* Read-only file system               */
 
 #endif /* PPAP_ERRNO_H */
