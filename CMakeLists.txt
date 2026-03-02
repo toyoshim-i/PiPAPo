@@ -210,3 +210,41 @@ set_source_files_properties(${CMAKE_BINARY_DIR}/romfs_data.S
 # Add romfs_data.S as a source to both targets — CMake assembles it automatically
 target_sources(ppap      PRIVATE ${CMAKE_BINARY_DIR}/romfs_data.S)
 target_sources(ppap_qemu PRIVATE ${CMAKE_BINARY_DIR}/romfs_data.S)
+
+# =============================================================================
+# FAT32 test image pipeline (QEMU only — Phase 4 Step 8)
+# =============================================================================
+# 1. Build mkfatimg with the host compiler
+# 2. Generate fatimg.bin (256 KB FAT32 image with test files)
+# 3. Link fatimg_data.S (.incbin fatimg.bin) into ppap_qemu only
+# =============================================================================
+
+# --- mkfatimg host tool ---
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/mkfatimg
+    COMMAND cc -O2 -o ${CMAKE_BINARY_DIR}/mkfatimg
+            ${CMAKE_SOURCE_DIR}/tools/mkfatimg/mkfatimg.c
+    DEPENDS ${CMAKE_SOURCE_DIR}/tools/mkfatimg/mkfatimg.c
+    COMMENT "Building mkfatimg host tool"
+)
+
+# --- Generate fatimg.bin ---
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/fatimg.bin
+    COMMAND ${CMAKE_BINARY_DIR}/mkfatimg ${CMAKE_BINARY_DIR}/fatimg.bin
+    DEPENDS ${CMAKE_BINARY_DIR}/mkfatimg
+    COMMENT "Generating FAT32 test image"
+)
+
+# --- fatimg_data.S: .incbin the FAT32 image into a .fatimg section ---
+file(WRITE ${CMAKE_BINARY_DIR}/fatimg_data.S
+"    .section .fatimg, \"a\", %progbits\n    .incbin \"${CMAKE_BINARY_DIR}/fatimg.bin\"\n")
+
+add_custom_target(fatimg_image DEPENDS ${CMAKE_BINARY_DIR}/fatimg.bin)
+add_dependencies(ppap_qemu fatimg_image)
+
+set_source_files_properties(${CMAKE_BINARY_DIR}/fatimg_data.S
+    PROPERTIES OBJECT_DEPENDS ${CMAKE_BINARY_DIR}/fatimg.bin)
+
+# Only link FAT32 image into ppap_qemu (not ppap — hardware uses real SD card)
+target_sources(ppap_qemu PRIVATE ${CMAKE_BINARY_DIR}/fatimg_data.S)
