@@ -1,0 +1,60 @@
+# PicoPiAndPortable — busybox config fragment
+# Applied on top of allnoconfig via build-busybox.sh
+#
+# Key design choices:
+#   - NOMMU mode (no fork, vfork-only, standalone applets)
+#   - Static linking with musl libc
+#   - Minimal applet set: hush shell + coreutils
+#   - No Linux-specific features (sendfile, utmp, syslog, proc)
+
+# -- Platform -----------------------------------------------------------------
+CONFIG_STATIC=y
+CONFIG_NOMMU=y
+CONFIG_CROSS_COMPILER_PREFIX="arm-none-eabi-"
+
+# -- Size optimization --------------------------------------------------------
+CONFIG_LFS=y
+
+# -- Shell (hush) -------------------------------------------------------------
+CONFIG_HUSH=y
+CONFIG_HUSH_BASH_COMPAT=y
+CONFIG_HUSH_HELP=y
+CONFIG_HUSH_INTERACTIVE=y
+CONFIG_HUSH_EXPORT=y
+CONFIG_HUSH_READONLY=y
+CONFIG_HUSH_TICK=y
+CONFIG_HUSH_IF=y
+CONFIG_HUSH_LOOPS=y
+CONFIG_HUSH_CASE=y
+CONFIG_HUSH_FUNCTIONS=y
+CONFIG_HUSH_LOCAL=y
+CONFIG_FEATURE_SH_STANDALONE=y
+CONFIG_FEATURE_PREFER_APPLETS=y
+
+# -- File operations ----------------------------------------------------------
+CONFIG_LS=y
+CONFIG_CAT=y
+CONFIG_CP=y
+CONFIG_MV=y
+CONFIG_RM=y
+CONFIG_MKDIR=y
+CONFIG_RMDIR=y
+CONFIG_LN=y
+CONFIG_CHMOD=y
+
+# -- Text processing ----------------------------------------------------------
+CONFIG_ECHO=y
+CONFIG_PRINTF=y
+CONFIG_GREP=y
+CONFIG_HEAD=y
+CONFIG_TAIL=y
+CONFIG_WC=y
+CONFIG_SORT=y
+CONFIG_SED=y
+
+# -- Process management -------------------------------------------------------
+CONFIG_KILL=y
+CONFIG_SLEEP=y
+
+# -- System -------------------------------------------------------------------
+CONFIG_UNAME=y
