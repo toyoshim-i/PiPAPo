@@ -3,7 +3,7 @@
  *
  * Loads a PIC ELF binary for Execute-In-Place (XIP) from flash:
  *   - .text + .rodata stay in flash (no SRAM copy)
- *   - .got + .data + .bss are copied to a single SRAM page
+ *   - .got + .data + .bss are copied to contiguous SRAM page(s)
  *   - GOT entries are relocated to point to actual flash/SRAM addresses
  *   - r9 is loaded with the SRAM address of the .got section
  *
@@ -81,12 +81,49 @@ int do_execve(pcb_t *p, const char *path)
     uint32_t entry = flash_text_base + (e_entry & ~1u) - text_seg->p_vaddr;
     entry |= (e_entry & 1u);   /* restore Thumb bit */
 
-    /* ── 6. Data segment: copy to SRAM page ────────────────────────────── */
+    /* ── 6. Data segment: copy to contiguous SRAM page(s) ────────────── */
     uint8_t *sram_page = NULL;
     uint32_t got_sram_addr = 0;
 
     if (data_seg) {
-        sram_page = (uint8_t *)page_alloc();
+        /* Calculate how many contiguous pages we need */
+        uint32_t data_pages =
+            (data_seg->p_memsz + PAGE_SIZE - 1) / PAGE_SIZE;
+        if (data_pages == 0)
+            data_pages = 1;
+        if (data_pages > 4) {
+            vnode_put(vn);
+            return -(int)ENOMEM;
+        }
+
+        /* Allocate contiguous pages for the data segment.
+         * Single-page: fast path via page_alloc().
+         * Multi-page:  scan the pool for a contiguous block using
+         *              page_alloc_at() to claim each page. */
+        if (data_pages == 1) {
+            sram_page = (uint8_t *)page_alloc();
+        } else {
+            for (uint32_t base = PAGE_POOL_BASE;
+                 base + data_pages * PAGE_SIZE <=
+                     PAGE_POOL_BASE + PAGE_POOL_SIZE;
+                 base += PAGE_SIZE) {
+                uint32_t k;
+                for (k = 0; k < data_pages; k++) {
+                    void *pg = page_alloc_at(
+                        (void *)(uintptr_t)(base + k * PAGE_SIZE));
+                    if (!pg) {
+                        for (uint32_t l = 0; l < k; l++)
+                            page_free(
+                                (void *)(uintptr_t)(base + l * PAGE_SIZE));
+                        break;
+                    }
+                }
+                if (k == data_pages) {
+                    sram_page = (uint8_t *)(uintptr_t)base;
+                    break;
+                }
+            }
+        }
         if (!sram_page) {
             vnode_put(vn);
             return -(int)ENOMEM;
@@ -123,14 +160,16 @@ int do_execve(pcb_t *p, const char *path)
                     /* Text/rodata reference → points into flash */
                     got[i] = val + flash_text_base;
                 } else {
-                    /* Data/BSS reference → points into SRAM page */
+                    /* Data/BSS reference → points into SRAM page(s) */
                     got[i] = val - data_seg->p_vaddr +
                              (uint32_t)(uintptr_t)sram_page;
                 }
             }
         }
 
-        p->user_pages[0] = sram_page;
+        /* Store all data pages in user_pages[] */
+        for (uint32_t i = 0; i < data_pages; i++)
+            p->user_pages[i] = sram_page + i * PAGE_SIZE;
 
         /* Set initial program break at end of .data+.bss */
         uint32_t data_end = (uint32_t)(uintptr_t)sram_page + data_seg->p_memsz;
@@ -141,8 +180,12 @@ int do_execve(pcb_t *p, const char *path)
     /* ── 8. Allocate stack page ────────────────────────────────────────── */
     void *stack = page_alloc();
     if (!stack) {
-        if (sram_page)
-            page_free(sram_page);
+        for (int i = 0; i < 4; i++) {
+            if (p->user_pages[i]) {
+                page_free(p->user_pages[i]);
+                p->user_pages[i] = NULL;
+            }
+        }
         vnode_put(vn);
         return -(int)ENOMEM;
     }

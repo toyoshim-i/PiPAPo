@@ -155,6 +155,52 @@ target_link_options(ppap_qemu PRIVATE
 # 5. Link romfs_data.S (.incbin romfs.bin) into both ppap and ppap_qemu
 # =============================================================================
 
+# --- musl libc (Phase 6 Step 1) ---
+# Build musl as a static PIC library for Cortex-M0+.
+# The script is idempotent — it skips if libc.a already exists.
+set(MUSL_SYSROOT ${CMAKE_BINARY_DIR}/musl-sysroot)
+set(MUSL_LIBC ${MUSL_SYSROOT}/lib/libc.a)
+
+file(GLOB_RECURSE MUSL_OVERLAY ${CMAKE_SOURCE_DIR}/third_party/patches/musl/overlay/*)
+
+add_custom_command(
+    OUTPUT ${MUSL_LIBC}
+    COMMAND ${CMAKE_SOURCE_DIR}/third_party/build-musl.sh
+    DEPENDS ${CMAKE_SOURCE_DIR}/third_party/build-musl.sh
+            ${MUSL_OVERLAY}
+    COMMENT "Building musl libc (PIC, Cortex-M0+)"
+)
+
+# --- busybox (Phase 6 Step 4) ---
+# Build busybox as a static PIC binary linked against musl.
+# The script is idempotent — it skips if busybox already exists.
+set(BUSYBOX_BIN ${CMAKE_BINARY_DIR}/busybox/busybox)
+
+add_custom_command(
+    OUTPUT ${BUSYBOX_BIN}
+    COMMAND ${CMAKE_SOURCE_DIR}/third_party/build-busybox.sh
+    DEPENDS ${CMAKE_SOURCE_DIR}/third_party/build-busybox.sh
+            ${CMAKE_SOURCE_DIR}/third_party/configs/busybox_ppap.fragment
+            ${CMAKE_SOURCE_DIR}/third_party/configs/busybox.ld
+            ${MUSL_LIBC}
+    COMMENT "Building busybox (PIC, Cortex-M0+)"
+)
+
+# --- busybox install (Phase 6 Step 6) ---
+# Install busybox binary + applet symlinks into romfs/.
+set(BUSYBOX_STAMP ${CMAKE_BINARY_DIR}/busybox_install.stamp)
+
+add_custom_command(
+    OUTPUT ${BUSYBOX_STAMP}
+    COMMAND ${CMAKE_SOURCE_DIR}/third_party/install-busybox.sh
+    COMMAND ${CMAKE_COMMAND} -E touch ${BUSYBOX_STAMP}
+    DEPENDS ${CMAKE_SOURCE_DIR}/third_party/install-busybox.sh
+            ${BUSYBOX_BIN}
+    COMMENT "Installing busybox + applet symlinks into romfs/"
+)
+
+add_custom_target(busybox_install DEPENDS ${BUSYBOX_STAMP})
+
 # --- User-space binaries (Phase 3 Step 1) ---
 # Build ARM Thumb ELFs from user/ and install into romfs/bin/.
 # Uses a stamp file to track build completion.
@@ -198,7 +244,7 @@ add_custom_command(
     COMMAND ${CMAKE_BINARY_DIR}/mkromfs
             ${CMAKE_SOURCE_DIR}/romfs
             ${CMAKE_BINARY_DIR}/romfs.bin
-    DEPENDS ${CMAKE_BINARY_DIR}/mkromfs ${USER_STAMP}
+    DEPENDS ${CMAKE_BINARY_DIR}/mkromfs ${USER_STAMP} ${BUSYBOX_STAMP}
     COMMENT "Generating romfs image from romfs/"
 )
 

@@ -4,9 +4,9 @@
  *   sys_brk(addr) — adjust the program break (heap boundary)
  *
  * The heap starts at brk_base (end of .data+.bss) and grows upward
- * within user_pages[0..3].  user_pages[0] is the data/GOT page
- * allocated by do_execve; pages 1-3 are allocated on demand when
- * brk crosses a page boundary.
+ * within user_pages[0..3].  user_pages[0..N-1] are the data/GOT pages
+ * allocated by do_execve; remaining slots are heap expansion pages
+ * allocated on demand via page_alloc_at() to ensure contiguity.
  */
 
 #include "syscall.h"
@@ -30,8 +30,9 @@ long sys_brk(long addr)
         return -(long)ENOMEM;
 
     /* Calculate old and new page counts from user_pages[0] base.
-     * user_pages[0] is always the data page (allocated by do_execve).
-     * user_pages[1..3] are heap expansion pages. */
+     * user_pages[0..N-1] hold the data segment (allocated by do_execve).
+     * Remaining slots are heap pages, allocated contiguously via
+     * page_alloc_at() so brk addresses map to valid physical memory. */
     uint32_t page0_base = (uint32_t)(uintptr_t)current->user_pages[0];
     uint32_t old_top = current->brk_current;
     uint32_t new_top = new_brk;
@@ -42,9 +43,10 @@ long sys_brk(long addr)
     if (new_pages > 4)
         return -(long)ENOMEM;   /* max 4 user_pages slots */
 
-    /* Expand: allocate new pages */
+    /* Expand: allocate contiguous pages after existing ones */
     for (uint32_t i = old_pages; i < new_pages; i++) {
-        void *pg = page_alloc();
+        uint32_t target = page0_base + i * PAGE_SIZE;
+        void *pg = page_alloc_at((void *)(uintptr_t)target);
         if (!pg) {
             /* Roll back any pages we just allocated */
             for (uint32_t j = old_pages; j < i; j++) {

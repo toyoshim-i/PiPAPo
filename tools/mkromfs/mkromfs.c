@@ -34,7 +34,7 @@
 /* ── Limits ────────────────────────────────────────────────────────────────── */
 
 #define MAX_NODES   512        /* max files+dirs+symlinks in the tree */
-#define MAX_IMAGE   (1 << 20) /* 1 MB max image size */
+#define MAX_IMAGE   (2 << 20) /* 2 MB max image size */
 #define MAX_PATH    1024
 
 /* ── In-memory node representation ─────────────────────────────────────────── */

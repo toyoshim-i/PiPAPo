@@ -30,7 +30,11 @@ GCC_INCLUDE="$(arm-none-eabi-gcc -print-file-name=include)"
 GCC_LIBDIR="$(dirname "$(arm-none-eabi-gcc -mthumb -mcpu=cortex-m0plus -print-libgcc-file-name)")"
 
 # CFLAGS: Thumb-1 target flags + musl headers (before GCC builtins to win stdint.h)
-CFLAGS_PPAP="-mthumb -mcpu=cortex-m0plus -march=armv6s-m -mfloat-abi=soft -Os -nostdinc -isystem $MUSL_SYSROOT/include -isystem $GCC_INCLUDE"
+# PIC flags: all data references go through GOT (r9 = GOT base, set by kernel).
+# -mno-pic-data-is-text-relative: .text lives in flash (XIP) while .data/.got live in SRAM.
+# -T busybox.ld: link at address 0 with text+data PT_LOAD segments (ignored by gcc -c).
+BUSYBOX_LD="$SCRIPT_DIR/configs/busybox.ld"
+CFLAGS_PPAP="-mthumb -mcpu=cortex-m0plus -march=armv6s-m -mfloat-abi=soft -Os -nostdinc -isystem $MUSL_SYSROOT/include -isystem $GCC_INCLUDE -fPIC -msingle-pic-base -mpic-register=r9 -mno-pic-data-is-text-relative"
 
 # --- Handle --clean ---
 if [[ "${1:-}" == "--clean" ]]; then
@@ -124,7 +128,7 @@ done < "$FRAGMENT"
 # CONFIG_EXTRA_LDFLAGS must stay empty because it feeds LDFLAGS which is
 # shared between "ld -r" partial links and the final gcc link.
 sed -i 's|^CONFIG_SYSROOT=.*|CONFIG_SYSROOT=""|' .config
-sed -i 's|^CONFIG_EXTRA_CFLAGS=.*|CONFIG_EXTRA_CFLAGS="'"$CFLAGS_PPAP -specs=$SPECS_FILE"'"|' .config
+sed -i 's|^CONFIG_EXTRA_CFLAGS=.*|CONFIG_EXTRA_CFLAGS="'"$CFLAGS_PPAP -specs=$SPECS_FILE -T $BUSYBOX_LD"'"|' .config
 sed -i 's|^CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS=""|' .config
 sed -i 's|^CONFIG_EXTRA_LDLIBS=.*|CONFIG_EXTRA_LDLIBS=""|' .config
 
