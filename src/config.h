@@ -79,7 +79,7 @@
  * ────────────────────────────────────────────────────────────────────────── */
 #define VFS_MOUNT_MAX        8     /* maximum concurrent mounts             */
 #define VFS_VNODE_MAX       64     /* maximum concurrent vnodes             */
-#define VFS_NAME_MAX        28     /* max filename component length         */
+#define VFS_NAME_MAX        63     /* max filename component (LFN support)  */
 #define VFS_PATH_MAX       128     /* max absolute path length              */
 #define VFS_SYMLOOP_MAX      8     /* max symlink resolution depth          */
 
