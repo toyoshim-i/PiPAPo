@@ -53,6 +53,8 @@ extern const uint8_t __fatimg_end[];
 
 static int test_pass;
 static int test_fail;
+static int total_pass;
+static int total_fail;
 
 static void test_report(const char *name, int ok)
 {
@@ -1618,38 +1620,54 @@ void kmain(void)
     /* Phase 1 Step 10: wire fd 0/1/2 to the UART tty driver */
     fd_stdio_init(&proc_table[0]);
 
-    /* Phase 2 Step 10: syscall-level VFS integration tests */
+    /* Phase 5 Step 11: run all kernel-side integration tests */
+    total_pass = 0;
+    total_fail = 0;
+
     vfs_integration_test();
+    total_pass += test_pass; total_fail += test_fail;
 
-    /* Phase 3 Step 7: pipe integration tests */
     pipe_integration_test();
+    total_pass += test_pass; total_fail += test_fail;
 
-    /* Phase 3 Step 8: dup/dup2 integration tests */
     dup_integration_test();
+    total_pass += test_pass; total_fail += test_fail;
 
-    /* Phase 3 Step 9: brk integration tests */
     brk_integration_test();
+    total_pass += test_pass; total_fail += test_fail;
 
-    /* Phase 3 Step 10: signal integration tests */
     signal_integration_test();
+    total_pass += test_pass; total_fail += test_fail;
 
-    /* Phase 4 Step 1: blkdev integration tests */
     blkdev_integration_test();
+    total_pass += test_pass; total_fail += test_fail;
 
-    /* Phase 4 Step 9: VFAT integration tests */
     vfat_integration_test();
+    total_pass += test_pass; total_fail += test_fail;
 
-    /* Phase 5 Step 1: loopback block device integration tests */
     loopback_integration_test();
+    total_pass += test_pass; total_fail += test_fail;
 
-    /* Phase 5 Step 2: tmpfs integration tests */
     tmpfs_integration_test();
+    total_pass += test_pass; total_fail += test_fail;
 
-    /* Phase 5 Step 6: UFS read-only integration tests */
     ufs_integration_test();
+    total_pass += test_pass; total_fail += test_fail;
 
-    /* Phase 5 Step 10: fstab integration tests */
     fstab_integration_test();
+    total_pass += test_pass; total_fail += test_fail;
+
+    /* Final summary */
+    uart_puts("\n=== KERNEL TEST SUMMARY ===\n");
+    uart_puts("Total: ");
+    uart_print_dec((uint32_t)total_pass);
+    uart_puts(" passed, ");
+    uart_print_dec((uint32_t)total_fail);
+    uart_puts(" failed\n");
+    if (total_fail == 0)
+        uart_puts("ALL KERNEL TESTS PASSED\n");
+    else
+        uart_puts("KERNEL TESTS FAILED\n");
 
     /* ------------------------------------------------------------------
      * Phase 3 Step 5: exec /bin/test_vfork as the init process (pid 1)
