@@ -9,32 +9,33 @@ Prerequisites: Phase 6 (musl + busybox) complete
 ## Goals
 
 Split target-specific code (drivers, pin definitions, boot sequences, linker
-scripts, kernel entry points) into per-target directories and define four
-official build targets: `qemu_arm`, `qemu_arm_test`, `pico1`, and `pico1calc`.
-After this phase the same kernel source tree produces four independent binaries
-from a single `ninja` invocation, with no `#ifdef` guards scattered through
-shared kernel code.
+scripts, kernel entry points) into per-target directories and define three
+official build targets: `qemu_arm`, `pico1`, and `pico1calc`.  After this phase
+the same kernel source tree produces three independent binaries from a single
+`ninja` invocation, with no `#ifdef` guards scattered through shared kernel
+code.
 
-The QEMU target is split into two variants:
-- **`qemu_arm`** — boots to ash shell, mirrors hardware target behaviour
-  (suitable for interactive development and manual testing)
-- **`qemu_arm_test`** — runs kernel integration tests + userland test suite
-  automatically, then exits (suitable for CI and automated regression)
+A CMake build option **`PPAP_TESTS`** (default OFF) enables kernel integration
+tests and the userland test suite for any target.  When enabled, the target
+runs `ktest_run_all()` after fstab mount and execs `/bin/runtests` as PID 1
+instead of `/sbin/init`.  This replaces the old `main_qemu.c` test harness
+with a mechanism that works on any target (including future ones).
 
 **Exit Criteria (all must pass before moving to Phase 8):**
-- Four CMake targets: `ppap_qemu_arm`, `ppap_qemu_arm_test`, `ppap_pico1`, `ppap_pico1calc`
+- Three CMake targets: `ppap_qemu_arm`, `ppap_pico1`, `ppap_pico1calc`
 - Each target produces a working binary (ELF + UF2 for hardware targets)
-- Per-target directories: `src/target/qemu_arm/`, `src/target/qemu_arm_test/`, `src/target/pico1/`, `src/target/pico1calc/`
+- Per-target directories: `src/target/qemu_arm/`, `src/target/pico1/`, `src/target/pico1calc/`
 - Target abstraction header (`src/target/target.h`) provides a uniform init API
 - No `#ifdef PPAP_QEMU` (or similar) in shared kernel code (`src/kernel/`)
 - `ppap_pico1` boots to ash shell on the official Raspberry Pi Pico (romfs-only, no SD)
 - `ppap_pico1calc` boots to ash shell on PicoCalc (full filesystem with SD)
 - `ppap_qemu_arm` boots to ash shell under QEMU mps2-an500
-- `ppap_qemu_arm_test` runs all kernel integration tests + userland tests, prints PASS/FAIL summary
+- `-DPPAP_TESTS=ON` builds any target with kernel + userland tests enabled
+- `-DPPAP_TESTS=OFF` (default) builds without any test code or test binaries
 - Linker scripts are per-target (not shared between incompatible targets)
-- `ninja ppap_qemu_arm ppap_qemu_arm_test ppap_pico1 ppap_pico1calc` builds all four from one build directory
-- QEMU CI smoke test (`scripts/qemu-test.sh`) passes using `ppap_qemu_arm_test`
-- QEMU interactive test (`scripts/qemu.sh`) boots `ppap_qemu_arm` to ash shell
+- `ninja ppap_qemu_arm ppap_pico1 ppap_pico1calc` builds all three from one build directory
+- QEMU CI smoke test (`scripts/qemu-test.sh`) builds with `PPAP_TESTS=ON` and passes
+- QEMU interactive test (`scripts/qemu.sh`) builds default and boots to ash shell
 - Hardware test: `ppap_pico1.uf2` flashed to official Pico, ash shell works over UART
 - Hardware test: `ppap_pico1calc.uf2` flashed to PicoCalc, ash shell + SD access works
 
@@ -48,14 +49,9 @@ src/
     target.h                    ✓ New: target abstraction API (function declarations)
     qemu_arm/
       CMakeLists.txt            ✓ New: ppap_qemu_arm target definition
-      target_qemu_arm.c         ✓ New: target hooks for QEMU (boots to shell)
+      target_qemu_arm.c         ✓ New: target hooks for QEMU
       drivers/
         uart_qemu.c             ← moved from src/drivers/uart_qemu.c
-    qemu_arm_test/
-      CMakeLists.txt            ✓ New: ppap_qemu_arm_test target definition
-      target_qemu_arm_test.c    ✓ New: target hooks + kernel/userland test runner
-      ktest.c                   ✓ New: kernel integration tests (extracted from main_qemu.c)
-      ktest.h                   ✓ New: ktest_run_all() declaration
     pico1/
       CMakeLists.txt            ✓ New: ppap_pico1 target definition
       target_pico1.c            ✓ New: target_early_init(), target_late_init() for Pico
@@ -78,8 +74,11 @@ src/
     stage1.S                    (existing — shared by pico1 + pico1calc)
   kernel/
     main.c                      (modified — shared kmain(), calls target_*() hooks)
-    main_qemu.c                 ← REMOVED (init logic → target/qemu_arm/, tests → target/qemu_arm_test/)
+    main_qemu.c                 ← REMOVED (init logic → target/qemu_arm/, tests → src/test/)
     ...                         (all other kernel code unchanged)
+  test/
+    ktest.c                     ✓ New: kernel integration tests (extracted from main_qemu.c)
+    ktest.h                     ✓ New: ktest_run_all() declaration
   config.h                      (existing — shared constants)
 ldscripts/
   qemu.ld                       (existing — unchanged)
@@ -87,8 +86,8 @@ ldscripts/
   pico1calc.ld                  ← renamed from ppap.ld (RP2040 layout, 16 MB flash)
 scripts/
   qemu.sh                       (existing — updated for ppap_qemu_arm binary name)
-  qemu-test.sh                  (existing — updated for ppap_qemu_arm_test binary name)
-  test_all_targets.sh           ✓ New: build + smoke test all 4 targets
+  qemu-test.sh                  (existing — updated to use PPAP_TESTS=ON build)
+  test_all_targets.sh           ✓ New: build + smoke test all 3 targets
 cmake/
   kernel_sources.cmake          ✓ New: KERNEL_COMMON_SOURCES list (included by each target CMakeLists)
 CMakeLists.txt                  (modified — project setup, shared pipelines, add_subdirectory() per target)
@@ -106,13 +105,6 @@ bits.  The top-level `CMakeLists.txt` handles project setup, Pico SDK
 init, and shared pipelines (romfs, tools, user binaries), then includes
 each target via `add_subdirectory()`.  Adding a new target = new directory
 + one `add_subdirectory()` line in the root.
-
-**Variant targets** (like `qemu_arm_test`) can reference files from a
-sibling target directory.  `qemu_arm_test` reuses `qemu_arm`'s UART
-driver via a CMake source path (`../qemu_arm/drivers/uart_qemu.c`)
-rather than duplicating the file.  The variant adds its own sources
-(kernel test harness) and overrides `target_post_mount()` /
-`target_init_path()` to drive automated testing.
 
 A future x68k target might look like:
 
@@ -139,8 +131,11 @@ calls these hooks instead of directly invoking hardware-specific functions.
 - Function-pointer vtable rejected (adds indirection + flash overhead on M0+).
   Instead, use link-time selection: each target provides the same function
   symbols, and CMake links the correct `target_<name>.c`.
-- Keep the API surface small: 4 hooks + 1 query function.  Targets that
-  need more (e.g., PicoCalc SD detect) expose them through their own headers.
+- Keep the API surface small: 4 hooks + 1 query function.  Two of the hooks
+  (`target_post_mount`, `target_init_path`) are test-aware via `#ifdef
+  PPAP_TESTS` in each target's implementation — this keeps the `#ifdef` in
+  target-specific code, never in shared kernel code.  Targets that need more
+  (e.g., PicoCalc SD detect) expose them through their own headers.
 - `target.h` is the *only* header shared kernel code includes for
   target-specific behavior.  Individual target headers (`pico1.h`,
   `picocalc.h`) are included only from their own `target_*.c` files.
@@ -195,16 +190,20 @@ void target_late_init(void);
 /*
  * target_post_mount() — called after VFS + fstab mount, before sched_start().
  *
- * Production targets: empty (no-op).
- * Test targets: run kernel integration tests (VFS, pipe, blkdev, UFS, …).
+ * Default build (PPAP_TESTS off): empty (no-op).
+ * Test build  (PPAP_TESTS on):   runs kernel integration tests via ktest_run_all().
+ *
+ * Each target implements this with #ifdef PPAP_TESTS in its own .c file.
  */
 void target_post_mount(void);
 
 /*
  * target_init_path() — returns the path to exec as PID 1.
  *
- * Production targets: "/sbin/init" (busybox ash shell).
- * Test targets: "/bin/runtests" (automated userland test runner).
+ * Default build (PPAP_TESTS off): "/sbin/init" (busybox ash shell).
+ * Test build  (PPAP_TESTS on):   "/bin/runtests" (automated test runner).
+ *
+ * Each target implements this with #ifdef PPAP_TESTS in its own .c file.
  */
 const char *target_init_path(void);
 
@@ -241,7 +240,7 @@ void kmain(void) {
     if (nfstab > 0)
         fstab_mount_all(fstab, nfstab);
 
-    target_post_mount();    /* kernel integration tests (test targets only) */
+    target_post_mount();    /* kernel integration tests (PPAP_TESTS=ON only) */
 
     /* Wire fd 0/1/2, launch init, start scheduler */
     fd_stdio_init(&proc_table[0]);
@@ -255,7 +254,10 @@ void kmain(void) {
 
 ### Step 2 — Per-Target Implementations
 
-Create the four `target_*.c` files, each implementing the `target.h` API.
+Create the three `target_*.c` files, each implementing the `target.h` API.
+Each target includes `#ifdef PPAP_TESTS` blocks for `target_post_mount()`
+and `target_init_path()` — these are in target-specific code, not shared
+kernel code, so they don't violate the zero-ifdef principle.
 
 **`src/target/pico1calc/target_pico1calc.c`:**
 
@@ -294,8 +296,19 @@ void target_late_init(void) {
     core1_launch(core1_io_worker);
 }
 
-void target_post_mount(void) { /* no-op */ }
-const char *target_init_path(void) { return "/sbin/init"; }
+void target_post_mount(void) {
+#ifdef PPAP_TESTS
+    ktest_run_all();
+#endif
+}
+
+const char *target_init_path(void) {
+#ifdef PPAP_TESTS
+    return "/bin/runtests";
+#else
+    return "/sbin/init";
+#endif
+}
 
 uint32_t target_caps(void) {
     return TARGET_CAP_SD | TARGET_CAP_SPI | TARGET_CAP_CORE1 | TARGET_CAP_REALUART;
@@ -331,8 +344,19 @@ void target_late_init(void) {
     core1_launch(core1_io_worker);
 }
 
-void target_post_mount(void) { /* no-op */ }
-const char *target_init_path(void) { return "/sbin/init"; }
+void target_post_mount(void) {
+#ifdef PPAP_TESTS
+    ktest_run_all();
+#endif
+}
+
+const char *target_init_path(void) {
+#ifdef PPAP_TESTS
+    return "/bin/runtests";
+#else
+    return "/sbin/init";
+#endif
+}
 
 uint32_t target_caps(void) {
     return TARGET_CAP_CORE1 | TARGET_CAP_REALUART;
@@ -365,55 +389,26 @@ void target_late_init(void) {
     /* No IRQ UART switch, no MPU, no Core 1 on QEMU */
 }
 
-void target_post_mount(void) { /* no-op — boots to shell */ }
-const char *target_init_path(void) { return "/sbin/init"; }
+void target_post_mount(void) {
+#ifdef PPAP_TESTS
+    ktest_run_all();
+#endif
+}
+
+const char *target_init_path(void) {
+#ifdef PPAP_TESTS
+    return "/bin/runtests";
+#else
+    return "/sbin/init";
+#endif
+}
 
 uint32_t target_caps(void) {
     return 0;  /* No SD, no SPI, no Core 1, no PL011 */
 }
 ```
 
-**`src/target/qemu_arm_test/target_qemu_arm_test.c`:**
-
-This target reuses the same early/late init as `qemu_arm` but adds:
-- `target_post_mount()` → runs all kernel integration tests
-- `target_init_path()` → returns `/bin/runtests` (userland test runner)
-
-```c
-#include "../target.h"
-#include "ktest.h"
-#include "drivers/uart.h"
-#include "blkdev/ramblk.h"
-
-extern const uint8_t __fatimg_start[];
-extern const uint8_t __fatimg_end[];
-
-void target_early_init(void) {
-    uart_init_console();
-    uart_puts("PicoPiAndPortable booting... [qemu_arm_test]\n");
-}
-
-void target_late_init(void) {
-    uint32_t fatimg_size = (uint32_t)(__fatimg_end - __fatimg_start);
-    if (fatimg_size > 0)
-        ramblk_register(__fatimg_start, fatimg_size);
-}
-
-void target_post_mount(void) {
-    /* Run all kernel integration tests */
-    ktest_run_all();
-}
-
-const char *target_init_path(void) {
-    return "/bin/runtests";     /* automated userland test suite */
-}
-
-uint32_t target_caps(void) {
-    return 0;
-}
-```
-
-**`src/target/qemu_arm_test/ktest.c`** (extracted from `main_qemu.c`):
+**`src/test/ktest.c`** (extracted from `main_qemu.c`):
 
 Contains all kernel integration test functions currently in `main_qemu.c`:
 `vfs_integration_test()`, `pipe_integration_test()`, `dup_integration_test()`,
@@ -421,16 +416,17 @@ Contains all kernel integration test functions currently in `main_qemu.c`:
 `vfat_integration_test()`, `loopback_integration_test()`, `tmpfs_integration_test()`,
 `ufs_integration_test()`, `fstab_integration_test()`.
 
-Single entry point:
+This file is **only compiled when `PPAP_TESTS=ON`** — CMake conditionally
+adds it to each target's source list.
 
 ```c
-/* ktest.h */
+/* src/test/ktest.h */
 #ifndef PPAP_KTEST_H
 #define PPAP_KTEST_H
 void ktest_run_all(void);
 #endif
 
-/* ktest.c — ktest_run_all() calls each test suite, prints summary */
+/* src/test/ktest.c — ktest_run_all() calls each test suite, prints summary */
 void ktest_run_all(void) {
     int pass = 0, fail = 0;
 
@@ -481,20 +477,22 @@ target-specific work to the target hooks.
   `spi_init()`, `sd_init()`, etc. with `target_early_init()`
 - Replace direct calls to `uart_init_irq()`, `mpu_init()`,
   `core1_launch()`, `sd_init()` with `target_late_init()`
-- Add `target_post_mount()` call after fstab mount (kernel tests for test targets)
+- Add `target_post_mount()` call after fstab mount (runs tests if PPAP_TESTS=ON)
 - Use `target_init_path()` when exec'ing PID 1 (instead of hardcoded path)
 - Remove all `#include` of hardware-specific headers (clock.h, spi.h, sd.h)
 - Add `#include "target/target.h"`
 - Delete `main_qemu.c` entirely — init logic moves to `target_qemu_arm.c`,
-  test functions move to `qemu_arm_test/ktest.c`
+  test functions move to `src/test/ktest.c`
 
-**Kernel integration tests are no longer in shared code.**  The test functions
-that were in `main_qemu.c` are extracted into `src/target/qemu_arm_test/ktest.c`
-and only linked into the `ppap_qemu_arm_test` target.
+**Kernel integration tests are no longer in shared kernel code.**  The test
+functions that were in `main_qemu.c` are extracted into `src/test/ktest.c`
+and only compiled when `PPAP_TESTS=ON` (CMake adds it conditionally).
+The `#ifdef PPAP_TESTS` guard in each target's `target_post_mount()`
+and `target_init_path()` is in target-specific code, not shared kernel code.
 
-**QEMU ramblk/FAT32/UFS test logic:** Both QEMU targets' `target_late_init()`
+**QEMU ramblk/FAT32/UFS test logic:** The QEMU target's `target_late_init()`
 handles registering the RAM block device.  The UFS/ramblk source files are
-included only in the QEMU CMake targets' source lists (no `#ifdef` needed).
+included only in the QEMU CMake target's source list (no `#ifdef` needed).
 
 
 ### Step 4 — Remove `#ifdef PPAP_QEMU` from Shared Kernel Code
@@ -562,8 +560,9 @@ convention.  Keep the content identical.
 The CMakeLists.txt currently defines `ppap` and `ppap_qemu` in a single
 file.  Refactor into a split structure: the top-level file handles project
 setup and shared pipelines, a common include defines kernel sources, and
-each target has its own CMakeLists.txt.  Four targets are defined:
-`ppap_qemu_arm`, `ppap_qemu_arm_test`, `ppap_pico1`, `ppap_pico1calc`.
+each target has its own CMakeLists.txt.  Three targets are defined:
+`ppap_qemu_arm`, `ppap_pico1`, `ppap_pico1calc`.  A top-level CMake option
+`PPAP_TESTS` (default OFF) controls whether test code is compiled.
 
 **File layout:**
 
@@ -571,7 +570,7 @@ each target has its own CMakeLists.txt.  Four targets are defined:
 |---|---|
 | `CMakeLists.txt` | `project()`, `pico_sdk_init()`, shared pipelines (romfs, mkfatimg, mkufs, user binaries), `add_subdirectory()` per target |
 | `cmake/kernel_sources.cmake` | `KERNEL_COMMON_SOURCES` list — included by each target's CMakeLists.txt |
-| `src/target/<name>/CMakeLists.txt` | `add_executable()`, link options, compile defs, SDK bits for that target (4 targets) |
+| `src/target/<name>/CMakeLists.txt` | `add_executable()`, link options, compile defs, SDK bits for that target (3 targets) |
 
 **`cmake/kernel_sources.cmake`:**
 
@@ -624,29 +623,40 @@ include(pico_sdk_import.cmake)
 project(ppap C CXX ASM)
 pico_sdk_init()
 
+option(PPAP_TESTS "Enable kernel integration tests and userland test suite" OFF)
+
 include(cmake/kernel_sources.cmake)
 
 # ── Shared pipelines (romfs, tools, user binaries) ───────────────────
-# ... mkromfs, mkfatimg, mkufs, user_binaries (unchanged from current) ...
+# ... mkromfs, mkfatimg, mkufs ...
+# User binaries: when PPAP_TESTS=ON, also build test_exec, test_vfork,
+# test_pipe, test_fd, test_brk, test_signal, runtests and include them
+# in romfs.  When OFF, only production binaries (hello, init, sh, ...).
 
 # ── Targets ──────────────────────────────────────────────────────────
 add_subdirectory(src/target/qemu_arm)
-add_subdirectory(src/target/qemu_arm_test)
 add_subdirectory(src/target/pico1)
 add_subdirectory(src/target/pico1calc)
 
+# ── Test support (conditional) ────────────────────────────────────────
+set(PPAP_ALL_TARGETS ppap_qemu_arm ppap_pico1 ppap_pico1calc)
+if(PPAP_TESTS)
+    foreach(tgt ${PPAP_ALL_TARGETS})
+        target_sources(${tgt} PRIVATE ${CMAKE_SOURCE_DIR}/src/test/ktest.c)
+        target_compile_definitions(${tgt} PRIVATE PPAP_TESTS=1)
+    endforeach()
+endif()
+
 # ── romfs + image linkage (shared by all targets) ────────────────────
-foreach(tgt ppap_qemu_arm ppap_qemu_arm_test ppap_pico1 ppap_pico1calc)
+foreach(tgt ${PPAP_ALL_TARGETS})
     add_dependencies(${tgt} romfs_image)
     target_sources(${tgt} PRIVATE ${CMAKE_BINARY_DIR}/romfs_data.S)
     target_include_directories(${tgt} PRIVATE src)
 endforeach()
 
-# FAT32 test image — both QEMU targets
-foreach(tgt ppap_qemu_arm ppap_qemu_arm_test)
-    add_dependencies(${tgt} fatimg_image)
-    target_sources(${tgt} PRIVATE ${CMAKE_BINARY_DIR}/fatimg_data.S)
-endforeach()
+# FAT32 test image — QEMU only
+add_dependencies(ppap_qemu_arm fatimg_image)
+target_sources(ppap_qemu_arm PRIVATE ${CMAKE_BINARY_DIR}/fatimg_data.S)
 
 # UF2 outputs for hardware targets
 pico_add_extra_outputs(ppap_pico1)
@@ -664,24 +674,6 @@ add_executable(ppap_qemu_arm
 )
 target_compile_definitions(ppap_qemu_arm PRIVATE PPAP_QEMU=1)
 target_link_options(ppap_qemu_arm PRIVATE
-    -T ${CMAKE_SOURCE_DIR}/ldscripts/qemu.ld
-    -nostartfiles -Wl,--gc-sections
-)
-```
-
-**`src/target/qemu_arm_test/CMakeLists.txt`:**
-
-```cmake
-add_executable(ppap_qemu_arm_test
-    ${KERNEL_COMMON_SOURCES}
-    ${CMAKE_CURRENT_SOURCE_DIR}/target_qemu_arm_test.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/ktest.c
-    # Reuse UART driver from qemu_arm (no duplication)
-    ${CMAKE_CURRENT_SOURCE_DIR}/../qemu_arm/drivers/uart_qemu.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/blkdev/ramblk.c
-)
-target_compile_definitions(ppap_qemu_arm_test PRIVATE PPAP_QEMU=1)
-target_link_options(ppap_qemu_arm_test PRIVATE
     -T ${CMAKE_SOURCE_DIR}/ldscripts/qemu.ld
     -nostartfiles -Wl,--gc-sections
 )
@@ -726,16 +718,17 @@ target_link_options(ppap_pico1calc PRIVATE
 ```
 
 **Key decisions:**
-- `PPAP_QEMU=1` compile definition is **retained** for both QEMU targets.
+- `PPAP_QEMU=1` compile definition is **retained** for the QEMU target.
   It is no longer used in kernel code, but remains available for
   target-level code and test images.  It may be removed entirely in
   Phase 8 if no references remain.
+- `PPAP_TESTS` is a top-level CMake option.  When ON, the top-level
+  CMakeLists.txt adds `src/test/ktest.c` to every target's source list
+  and defines `PPAP_TESTS=1`.  Userland test binaries (test_exec, …,
+  runtests) are also only built and included in romfs when ON.
 - The old `ppap` target is removed.  `ppap_pico1calc` replaces it.
-- All four targets share `KERNEL_COMMON_SOURCES` via
+- All three targets share `KERNEL_COMMON_SOURCES` via
   `cmake/kernel_sources.cmake`.
-- `ppap_qemu_arm_test` references `../qemu_arm/drivers/uart_qemu.c`
-  instead of duplicating the file.  Only `ktest.c` and
-  `target_qemu_arm_test.c` are unique to the test variant.
 - Shared pipelines (romfs, tools, user binaries, image linking) remain in
   the top-level CMakeLists.txt.
 - Pico SDK integration (`pico_base_headers`, `hardware_regs`,
@@ -760,8 +753,8 @@ Update debug scripts for the renamed targets.
 - Used for manual testing and development
 
 **`scripts/qemu-test.sh`:**
-- Update binary path to `build/ppap_qemu_arm_test` (automated test target)
-- Grep for `ALL KERNEL TESTS PASSED` and `ALL TESTS PASSED` (userland)
+- Reconfigures build with `-DPPAP_TESTS=ON`, builds `ppap_qemu_arm`
+- Runs QEMU, greps for `ALL KERNEL TESTS PASSED` and `ALL TESTS PASSED`
 - Used for CI
 
 **New `scripts/test_all_targets.sh`:**
@@ -771,14 +764,19 @@ Update debug scripts for the renamed targets.
 set -e
 cd "$(dirname "$0")/.."
 
-echo "=== Building all targets ==="
-cd build && ninja ppap_qemu_arm ppap_qemu_arm_test ppap_pico1 ppap_pico1calc && cd ..
+echo "=== Building all targets (production) ==="
+cmake -B build -DPPAP_TESTS=OFF
+cmake --build build -- ppap_qemu_arm ppap_pico1 ppap_pico1calc
+
+echo "=== Building QEMU with tests ==="
+cmake -B build_test -DPPAP_TESTS=ON
+cmake --build build_test -- ppap_qemu_arm
 
 echo "=== QEMU automated test ==="
 ./scripts/qemu-test.sh || { echo "QEMU TEST FAIL"; exit 1; }
 
-echo "=== Build sizes ==="
-arm-none-eabi-size build/ppap_qemu_arm build/ppap_qemu_arm_test \
+echo "=== Build sizes (production) ==="
+arm-none-eabi-size build/ppap_qemu_arm \
                    build/ppap_pico1.elf build/ppap_pico1calc.elf
 
 echo "=== All targets OK ==="
@@ -787,19 +785,31 @@ echo "=== All targets OK ==="
 
 ### Step 8 — Cross-Target Testing and Validation
 
-Systematic verification that all four targets build and run correctly.
+Systematic verification that all three targets build and run correctly,
+both with and without `PPAP_TESTS`.
 
-**Build verification:**
+**Build verification (PPAP_TESTS=OFF, default):**
 
-| Check | ppap_qemu_arm | ppap_qemu_arm_test | ppap_pico1 | ppap_pico1calc |
-|---|---|---|---|---|
-| `ninja` builds without error | Yes | Yes | Yes | Yes |
-| No `#ifdef PPAP_QEMU` in `src/kernel/` | Yes | Yes | Yes | Yes |
-| Binary size (flash) | ~500 KB | ~550 KB | ~400 KB | ~400 KB |
-| SRAM usage (.data + .bss) | < 20 KB | < 20 KB | < 20 KB | < 20 KB |
-| UF2 output exists | N/A | N/A | Yes | Yes |
+| Check | ppap_qemu_arm | ppap_pico1 | ppap_pico1calc |
+|---|---|---|---|
+| `ninja` builds without error | Yes | Yes | Yes |
+| No `#ifdef PPAP_QEMU` in `src/kernel/` | Yes | Yes | Yes |
+| Binary size (flash) | ~500 KB (ROM) | ~400 KB (flash) | ~400 KB (flash) |
+| SRAM usage (.data + .bss) | < 20 KB | < 20 KB | < 20 KB |
+| UF2 output exists | N/A | Yes | Yes |
+| No test code compiled | ktest.c absent | ktest.c absent | ktest.c absent |
+| No test binaries in romfs | No runtests, test_* | Same | Same |
 
-**QEMU interactive test (`ppap_qemu_arm`):**
+**Build verification (PPAP_TESTS=ON):**
+
+| Check | ppap_qemu_arm | ppap_pico1 | ppap_pico1calc |
+|---|---|---|---|
+| `ninja` builds without error | Yes | Yes | Yes |
+| ktest.c compiled + linked | Yes | Yes | Yes |
+| Test binaries in romfs | runtests, test_* | Same | Same |
+| Binary size increase | ~50 KB | ~50 KB | ~50 KB |
+
+**QEMU interactive test (PPAP_TESTS=OFF):**
 
 | Test | Expected |
 |---|---|
@@ -810,11 +820,11 @@ Systematic verification that all four targets build and run correctly.
 | exec /sbin/init | Boots to ash shell |
 | Basic ash commands | `echo hello`, `ls /`, `cat /etc/hostname` |
 
-**QEMU automated test (`ppap_qemu_arm_test`):**
+**QEMU automated test (PPAP_TESTS=ON):**
 
 | Test | Expected |
 |---|---|
-| Boot message contains `[qemu_arm_test]` | "PicoPiAndPortable booting... [qemu_arm_test]" |
+| Boot message contains `[qemu_arm]` | "PicoPiAndPortable booting... [qemu_arm]" |
 | VFS integration tests | All PASS (open, read, stat, getdents, …) |
 | Pipe integration tests | All PASS (basic, EOF, EPIPE) |
 | dup/dup2 integration tests | All PASS |
@@ -862,9 +872,9 @@ Systematic verification that all four targets build and run correctly.
 | ash shell with full FS access | `ls /mnt/sd`, file I/O on SD |
 
 **Regression checks:**
-- All Phase 6 exit criteria still pass on all four targets
-- `ppap_qemu_arm_test` passes both kernel and userland test suites
-- `ppap_qemu_arm` boots to interactive shell (no test output in boot log)
+- All Phase 6 exit criteria still pass on all three targets
+- `PPAP_TESTS=ON` build passes both kernel and userland test suites on QEMU
+- `PPAP_TESTS=OFF` (default) builds boot to interactive shell (no test output)
 - No increase in kernel SRAM usage (target_*.c data is in .text on flash)
 - Boot time unchanged (target_early_init/late_init is a reorganization, not
   new work)
@@ -877,12 +887,10 @@ Systematic verification that all four targets build and run correctly.
 |---|---|
 | `src/target/target.h` | Target abstraction API: early_init, late_init, post_mount, init_path, caps |
 | `src/target/qemu_arm/CMakeLists.txt` | ppap_qemu_arm target definition |
-| `src/target/qemu_arm/target_qemu_arm.c` | QEMU interactive target (boots to shell) |
+| `src/target/qemu_arm/target_qemu_arm.c` | QEMU target implementation (test-aware via PPAP_TESTS) |
 | `src/target/qemu_arm/drivers/uart_qemu.c` | CMSDK UART driver (moved from src/drivers/) |
-| `src/target/qemu_arm_test/CMakeLists.txt` | ppap_qemu_arm_test target definition |
-| `src/target/qemu_arm_test/target_qemu_arm_test.c` | QEMU test target (runs kernel + userland tests) |
-| `src/target/qemu_arm_test/ktest.c` | Kernel integration tests (extracted from main_qemu.c) |
-| `src/target/qemu_arm_test/ktest.h` | ktest_run_all() declaration |
+| `src/test/ktest.c` | Kernel integration tests (extracted from main_qemu.c, compiled only with PPAP_TESTS=ON) |
+| `src/test/ktest.h` | ktest_run_all() declaration |
 | `src/target/pico1/CMakeLists.txt` | ppap_pico1 target definition |
 | `src/target/pico1/target_pico1.c` | Official Pico target implementation |
 | `src/target/pico1/pico1.h` | Pico GPIO pin definitions |
@@ -895,7 +903,7 @@ Systematic verification that all four targets build and run correctly.
 | `ldscripts/pico1.ld` | Linker script for official Pico (2 MB flash) |
 | `ldscripts/pico1calc.ld` | Linker script for PicoCalc (renamed from ppap.ld) |
 | `CMakeLists.txt` | Project setup, shared pipelines, add_subdirectory per target |
-| `scripts/test_all_targets.sh` | Build + smoke test all 4 targets |
+| `scripts/test_all_targets.sh` | Build + smoke test all 3 targets (production + test) |
 | `pico1.gdb` | GDB script for official Pico debugging |
 | `pico1calc.gdb` | GDB script for PicoCalc (renamed from ppap.gdb) |
 
@@ -903,7 +911,7 @@ Systematic verification that all four targets build and run correctly.
 
 | File | Reason |
 |---|---|
-| `src/kernel/main_qemu.c` | Init logic → `target_qemu_arm.c`; tests → `qemu_arm_test/ktest.c` |
+| `src/kernel/main_qemu.c` | Init logic → `target_qemu_arm.c`; tests → `src/test/ktest.c` |
 | `src/board/picocalc.h` | Moved to `src/target/pico1calc/picocalc.h` (old `src/board/` removed) |
 | `src/drivers/uart_qemu.c` | Moved to `src/target/qemu_arm/drivers/uart_qemu.c` |
 | `ldscripts/ppap.ld` | Renamed to `ldscripts/pico1calc.ld` |
@@ -919,9 +927,9 @@ Systematic verification that all four targets build and run correctly.
 | UFS code on hardware targets wastes ~8 KB flash | Low | 8 KB is within the 64 KB kernel region budget; gc-sections eliminates unused code if UFS is never called |
 | Target abstraction adds function call overhead | Negligible | target_early_init/late_init/post_mount called once at boot; no hot-path impact |
 | Renaming ppap → ppap_pico1calc breaks existing scripts/habits | Medium | Update all scripts, GDB files, and CI in the same step; old `ppap` target is removed cleanly |
-| QEMU target split causes test code duplication | Low | `qemu_arm_test` reuses `qemu_arm`'s UART driver via CMake path; only ktest.c and target file are unique |
+| PPAP_TESTS=ON bloats production romfs | Low | Test binaries only built and included when PPAP_TESTS=ON; default OFF produces a clean romfs |
 | ktest.c extraction breaks test functions | Low | Tests are self-contained; extraction is mechanical (move functions, add ktest.h header) |
-| smp.c Core 1 code linked into QEMU targets but unused | Low | `core1_launch()` is called from target_late_init only on HW targets; gc-sections may remove it from QEMU binaries |
+| smp.c Core 1 code linked into QEMU target but unused | Low | `core1_launch()` is called from target_late_init only on HW targets; gc-sections may remove it from QEMU binary |
 | Official Pico GPIO conflicts (UART0 on GP0/GP1) | Low | GP0/GP1 for UART0 is the Pico default; no conflicts with other peripherals on the official Pico |
 | Removing #ifdef PPAP_QEMU from fstab.c causes UFS link errors on HW | Low | Add ufs.c to all targets' source lists; verify with a clean build |
 
