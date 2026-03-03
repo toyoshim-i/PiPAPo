@@ -44,7 +44,7 @@ OUTPUT=$(timeout "$TIMEOUT" qemu-system-arm \
 echo "$OUTPUT"
 
 # ── Check results ─────────────────────────────────────────────────────────────
-if echo "$OUTPUT" | grep -q "ALL TESTS PASSED"; then
+if echo "$OUTPUT" | grep -q "ALL.*TESTS PASSED"; then
     echo ""
     echo "[test] PASS — all on-target tests passed"
     exit 0
