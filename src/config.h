@@ -63,10 +63,8 @@
  * ────────────────────────────────────────────────────────────────────────── */
 #define PAGE_SIZE          4096u    /* bytes per page                       */
 
-#ifdef PPAP_QEMU
-#define PAGE_COUNT           96u    /* QEMU: 384 KB pool (512 KB RAM avail) */
-#else
-#define PAGE_COUNT           51u    /* RP2040: 204 KB pool (264 KB SRAM)    */
+#ifndef PAGE_COUNT
+#define PAGE_COUNT           51u    /* RP2040 default: 204 KB pool          */
 #endif
 
 /* ── VFS (Virtual File System) ────────────────────────────────────────────

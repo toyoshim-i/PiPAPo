@@ -21,9 +21,7 @@
 #include "procfs.h"
 #include "tmpfs.h"
 #include "vfat.h"
-#ifdef PPAP_QEMU
 #include "ufs.h"
-#endif
 #include "../errno.h"
 #include <stddef.h>
 
@@ -167,7 +165,6 @@ int fstab_mount_all(const fstab_entry_t *entries, int count)
                 continue;
             }
             dev_data = bd;
-#ifdef PPAP_QEMU
         } else if (str_eq(e->fstype, "ufs")) {
             ops = &ufs_ops;
             if (e->loop) {
@@ -191,7 +188,6 @@ int fstab_mount_all(const fstab_entry_t *entries, int count)
                 if (!bd) continue;
                 dev_data = bd;
             }
-#endif
         } else {
             uart_puts("fstab: unknown fstype '");
             uart_puts(e->fstype);

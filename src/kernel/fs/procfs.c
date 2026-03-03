@@ -20,9 +20,7 @@
 #include "devfs.h"
 #include "tmpfs.h"
 #include "vfat.h"
-#ifdef PPAP_QEMU
 #include "ufs.h"
-#endif
 #include "../vfs/vfs.h"
 #include "../mm/page.h"
 #include "../proc/proc.h"
@@ -204,9 +202,7 @@ static const char *ops_to_fstype(const vfs_ops_t *ops)
     if (ops == &procfs_ops) return "proc";
     if (ops == &tmpfs_ops)  return "tmpfs";
     if (ops == &vfat_ops)   return "vfat";
-#ifdef PPAP_QEMU
     if (ops == &ufs_ops)    return "ufs";
-#endif
     return "unknown";
 }
 

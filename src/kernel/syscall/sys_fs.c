@@ -33,9 +33,7 @@
 #include "../fs/tmpfs.h"
 #include "../fs/vfat.h"
 #include "../blkdev/blkdev.h"
-#ifdef PPAP_QEMU
 #include "../fs/ufs.h"
-#endif
 #include "../errno.h"
 #include "config.h"
 #include <stddef.h>
@@ -897,7 +895,6 @@ long sys_mount(const char *source, const char *target,
                 return -(long)ENODEV;
             dev_data = bd;
         }
-#ifdef PPAP_QEMU
     } else if (fs_str_eq(fstype, "ufs")) {
         ops = &ufs_ops;
         if (source) {
@@ -910,7 +907,6 @@ long sys_mount(const char *source, const char *target,
                 return -(long)ENODEV;
             dev_data = bd;
         }
-#endif
     } else {
         return -(long)ENODEV;
     }
