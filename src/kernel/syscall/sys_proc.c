@@ -5,7 +5,7 @@
  *   sys_getpid()        — return the calling process's PID
  *   sys_vfork(frame)    — create child process (parent blocked)
  *   sys_waitpid(pid,st) — wait for child to exit, reap zombie
- *   sys_execve(path)    — replace process image with new ELF binary
+ *   sys_execve(path,argv) — replace process image with new ELF binary
  */
 
 #include "syscall.h"
@@ -253,7 +253,7 @@ long sys_waitpid(long pid, long status_ptr, long options)
  * On success: never returns — the new program starts executing.
  * On failure: returns negative errno.
  */
-long sys_execve(const char *path)
+long sys_execve(const char *path, const char *const *argv)
 {
     /* Save old pages to free after successful load */
     void *old_stack = current->stack_page;
@@ -270,8 +270,9 @@ long sys_execve(const char *path)
     /* Close old fds — do_execve will set up new ones */
     fd_close_all(current);
 
-    /* Load the new binary */
-    int err = do_execve(current, path);
+    /* Load the new binary.  argv points into the old stack/data pages
+     * which are still valid (detached from current but not yet freed). */
+    int err = do_execve(current, path, argv);
     if (err < 0) {
         /* Restore old pages on failure */
         current->stack_page = old_stack;

@@ -147,7 +147,7 @@ extern volatile uint32_t svc_saved_a0;
 /* sys_proc.c */
 long sys_exit(long status);
 long sys_getpid(void);
-long sys_execve(const char *path);
+long sys_execve(const char *path, const char *const *argv);
 long sys_vfork(uint32_t *frame);
 long sys_waitpid(long pid, long status_ptr, long options);
 long sys_set_tid_address(void *tidptr);

@@ -18,9 +18,11 @@
  * segments to SRAM (at their linked addresses), allocates a stack page,
  * and initialises the PCB's stack frame so PendSV can restore it.
  *
+ * argv: NULL-terminated argument array.  If NULL, defaults to {path, NULL}.
+ *
  * On success: returns 0.  The PCB is ready; caller sets state = RUNNABLE.
  * On failure: returns negative errno, PCB is unchanged.
  */
-int do_execve(pcb_t *p, const char *path);
+int do_execve(pcb_t *p, const char *path, const char *const *argv);
 
 #endif /* PPAP_EXEC_EXEC_H */

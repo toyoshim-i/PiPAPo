@@ -23,7 +23,7 @@
 /* Maximum PT_LOAD segments we handle */
 #define MAX_LOAD_SEGS  4
 
-int do_execve(pcb_t *p, const char *path)
+int do_execve(pcb_t *p, const char *path, const char *const *argv)
 {
     vnode_t *vn = NULL;
     int err;
@@ -242,30 +242,56 @@ int do_execve(pcb_t *p, const char *path)
      * musl's _start reads:  argc = [SP], argv = SP+4, ...
      *
      * Layout (high → low):
-     *   path string data (NUL-terminated)
+     *   argv string data (each NUL-terminated)
      *   <8-byte alignment padding>
      *   auxv[1] = {AT_NULL, 0}
      *   auxv[0] = {AT_PAGESZ, PAGE_SIZE}
      *   envp[0] = NULL
-     *   argv[1] = NULL
-     *   argv[0] = pointer to path string
-     *   argc    = 1
+     *   argv[argc] = NULL
+     *   argv[argc-1..0] = pointers to string data
+     *   argc
      *              ← user_sp (PSP after exception return)
      */
     {
         uint32_t stack_top = (uint32_t)(uintptr_t)stack + PAGE_SIZE;
         uint32_t sp = stack_top;
 
-        /* Copy path string to top of stack */
-        uint32_t pathlen = (uint32_t)strlen(path) + 1;
-        sp -= pathlen;
-        memcpy((void *)(uintptr_t)sp, path, pathlen);
-        uint32_t path_str_addr = sp;
+        /* Count arguments */
+        int argc = 0;
+        if (argv) {
+            while (argv[argc] != NULL && argc < 32)
+                argc++;
+        }
+        if (argc == 0) {
+            /* No argv provided (kernel init): use path as argv[0] */
+            argc = 1;
+            argv = NULL;   /* signal fallback below */
+        }
+
+        /* Copy argument strings to top of stack (high → low) */
+        uint32_t str_addrs[32];
+        if (argv) {
+            for (int i = argc - 1; i >= 0; i--) {
+                uint32_t len = (uint32_t)strlen(argv[i]) + 1;
+                sp -= len;
+                memcpy((void *)(uintptr_t)sp, argv[i], len);
+                str_addrs[i] = sp;
+            }
+        } else {
+            /* Fallback: use path as sole argument */
+            uint32_t len = (uint32_t)strlen(path) + 1;
+            sp -= len;
+            memcpy((void *)(uintptr_t)sp, path, len);
+            str_addrs[0] = sp;
+        }
 
         /* Align down to 8 bytes before pushing word-sized data.
-         * We push exactly 8 words (32 bytes) below, and 32 is a multiple
-         * of 8, so the final SP remains 8-byte aligned (ARM AAPCS). */
+         * Total words below: 4 (auxv) + 1 (envp NULL) + (argc+1) (argv
+         * array + NULL) + 1 (argc) = argc + 7.  If this is odd, add a
+         * padding word to keep the final SP 8-byte aligned (ARM AAPCS). */
         sp &= ~7u;
+        if ((argc + 7) & 1)
+            sp -= 4;   /* padding word for 8-byte alignment */
 
         /* auxv[1]: AT_NULL */
         sp -= 4; *(uint32_t *)(uintptr_t)sp = 0;          /* val */
@@ -277,13 +303,15 @@ int do_execve(pcb_t *p, const char *path)
         /* envp[0] = NULL */
         sp -= 4; *(uint32_t *)(uintptr_t)sp = 0;
 
-        /* argv[1] = NULL */
+        /* argv[argc] = NULL */
         sp -= 4; *(uint32_t *)(uintptr_t)sp = 0;
-        /* argv[0] = path string */
-        sp -= 4; *(uint32_t *)(uintptr_t)sp = path_str_addr;
+        /* argv[argc-1..0] */
+        for (int i = argc - 1; i >= 0; i--) {
+            sp -= 4; *(uint32_t *)(uintptr_t)sp = str_addrs[i];
+        }
 
-        /* argc = 1 */
-        sp -= 4; *(uint32_t *)(uintptr_t)sp = 1;
+        /* argc */
+        sp -= 4; *(uint32_t *)(uintptr_t)sp = (uint32_t)argc;
 
         /* ── 9. Set up the exception frame ─────────────────────────────── */
         proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, sp);

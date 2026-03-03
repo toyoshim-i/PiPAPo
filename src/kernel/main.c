@@ -236,10 +236,10 @@ void kmain(void)
         init->pgid = init->pid;
         init->sid  = init->pid;
 
-        int exec_err = do_execve(init, "/sbin/init");
+        int exec_err = do_execve(init, "/sbin/init", NULL);
         if (exec_err < 0) {
             uart_puts("INIT: /sbin/init failed, trying /bin/sh\n");
-            exec_err = do_execve(init, "/bin/sh");
+            exec_err = do_execve(init, "/bin/sh", NULL);
         }
         if (exec_err == 0) {
             init->state = PROC_RUNNABLE;
