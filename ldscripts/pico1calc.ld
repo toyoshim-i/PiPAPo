@@ -1,7 +1,7 @@
 /*
- * ppap.ld — PicoPiAndPortable Linker Script
+ * pico1calc.ld — Linker script for PicoCalc target (16 MB flash)
  *
- * Defines the flash and SRAM memory layout for the RP2040 target.
+ * Defines the flash and SRAM memory layout for the PicoCalc RP2040 target.
  * Based on design specification Section 2.2 (Flash Layout) and
  * Section 2.3 (SRAM Memory Map).
  *
