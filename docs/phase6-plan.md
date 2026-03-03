@@ -1503,12 +1503,14 @@ CPU:   0% usr   0% sys   0% nic 100% idle   0% io   0% irq   0% sirq
 | 3 concurrent processes (`sleep 10 & sleep 10 & ps`) | ps shows 5 processes (init, ash, 2×sleep, ps) | QEMU + HW |
 
 
-### Step 15 — Enable mount, umount, and vi Applets
+### Step 15 — Enable mount, umount, df, and vi Applets ✓
 
-Enable user-space `mount`/`umount` commands and the `vi` text editor.
-The VFS mount infrastructure already exists in the kernel (used by romfs,
-devfs, procfs, tmpfs, vfat, ufs); this step adds the syscall interface so
-busybox can invoke it from user space.
+Enable user-space `mount`/`umount` commands, the `df` disk-space utility,
+and the `vi` text editor.  The VFS mount infrastructure already exists in
+the kernel; this step adds the syscall interface, per-filesystem statfs
+callbacks, and `/proc/mounts` so busybox can query and manage mounts.
+
+**Status: Complete**
 
 **New syscalls:**
 
@@ -1516,87 +1518,71 @@ busybox can invoke it from user space.
 |---|---|---|
 | `SYS_MOUNT` | 21 | `mount(source, target, fstype, flags, data)` |
 | `SYS_UMOUNT2` | 52 | `umount2(target, flags)` |
+| `SYS_STATFS64` | 266 | `statfs64(path, sz, buf)` |
+| `SYS_FSTATFS64` | 267 | `fstatfs64(fd, sz, buf)` |
 
-`sys_mount()` implementation:
-- Copy `source`, `target`, and `fstype` strings from user space
-- Look up filesystem ops by `fstype` name (e.g., "vfat" → `vfat_ops`)
-- For block-backed filesystems, resolve `source` to a block device
-- Call existing `vfs_mount(target, ops, flags, dev_data)`
-- Support `MS_RDONLY` flag; other flags can be ignored initially
+**Implementation details:**
 
-`sys_umount2()` implementation:
-- Find mount entry matching `target` path
-- Release vnodes and mark mount entry inactive
-- Support `MNT_DETACH` flag (lazy umount — mark inactive, defer cleanup)
+- `sys_mount()`: maps fstype string → vfs_ops_t (devfs, procfs, tmpfs,
+  vfat, ufs), strips `/dev/` prefix for blkdev lookup, converts
+  `MS_RDONLY` → `MNT_RDONLY`, calls `vfs_mount()`
+- `sys_umount2()`: normalizes path, calls `vfs_umount()` which checks
+  for busy vnodes before deactivating the mount entry
+- `sys_statfs64()` / `sys_fstatfs64()`: find mount entry via
+  `vfs_find_mount()` or fd→vnode→mount chain, call `ops->statfs()`
+- Added `statfs` callback to `vfs_ops_t` and implemented it in all 6
+  filesystems (romfs, devfs, procfs, tmpfs, vfat, ufs) with correct
+  Linux magic numbers
+- Added `/proc/mounts` to procfs — `gen_mounts()` iterates
+  `vfs_mount_table` and outputs Linux-format mount lines; required by
+  busybox `mount` (no args) and `df`
+
+**Bug fix — ENOMEM on RP2040 init:**
+
+busybox data segment (.got + .data + .bss) grew to 34 KB (9 pages) with
+the new applets, exceeding the hardcoded 8-page `user_pages[]` limit.
+Introduced `USER_PAGES_MAX = 12` in `config.h` and updated all iteration
+sites (exec.c, sys_proc.c, sys_mem.c, procfs.c).
+
+**Other fix — QEMU "0/1" output noise:**
+
+Removed obsolete Phase 1 context-switch test threads from main_qemu.c.
+Thread 0 now idles with `wfi` (matching the real board).
 
 **busybox config additions:**
 
 ```
 CONFIG_MOUNT=y
 CONFIG_UMOUNT=y
+CONFIG_DF=y
 CONFIG_VI=y
 CONFIG_FEATURE_VI_COLON=y
 CONFIG_FEATURE_VI_SEARCH=y
 ```
 
-**vi terminal requirements:**
-
-busybox vi needs raw-mode terminal input and cursor positioning via ANSI
-escape sequences.  Current tty.c status:
-
-| Feature | Status |
-|---|---|
-| TCGETS/TCSETS (termios get/set) | Implemented |
-| TIOCGWINSZ/TIOCSWINSZ (window size) | Implemented (24×80 default) |
-| Raw mode (disable ICANON+ECHO) | Implemented |
-| VMIN/VTIME in c_cc | Need verification |
-| SIGWINCH on resize | Not implemented (optional — fixed terminal size) |
-
-vi should work for basic editing on a fixed-size terminal.  SIGWINCH is
-not needed since the UART terminal does not resize.
-
-**romfs changes:**
-
-Add symlinks to the romfs template:
-- `romfs/bin/vi` → `busybox`
-- `romfs/sbin/mount` → `../bin/busybox`
-- `romfs/sbin/umount` → `../bin/busybox`
-
-Rebuild busybox and regenerate romfs image.
-
 **Files modified:**
 
 | File | Change |
 |---|---|
-| `src/kernel/syscall/syscall.h` | Add `SYS_MOUNT` (21), `SYS_UMOUNT2` (52) |
-| `src/kernel/syscall/syscall.c` | Dispatch entries for mount/umount2 |
-| `src/kernel/syscall/sys_fs.c` | Implement `sys_mount()`, `sys_umount2()` |
-| `src/kernel/vfs/vfs.c` | Add `vfs_umount()` if not present; add fs-type lookup table |
-| `third_party/configs/busybox_ppap.fragment` | Enable CONFIG_MOUNT, CONFIG_UMOUNT, CONFIG_VI |
-| `romfs/bin/vi` | Symlink → busybox |
-| `romfs/sbin/mount` | Symlink → ../bin/busybox |
-| `romfs/sbin/umount` | Symlink → ../bin/busybox |
-
-**Verification:**
-
-```
-$ mount
-rootfs on / type romfs (ro)
-devfs on /dev type devfs (rw)
-proc on /proc type procfs (rw)
-tmpfs on /tmp type tmpfs (rw)
-
-$ mount -t vfat /dev/sd0 /mnt/sd
-$ ls /mnt/sd
-hello.txt
-
-$ umount /mnt/sd
-
-$ vi /tmp/test.txt
-  (opens editor, insert text, :wq saves and quits)
-$ cat /tmp/test.txt
-hello from vi
-```
+| `src/kernel/vfs/vfs.h` | Add `struct kernel_statfs`, `statfs` in `vfs_ops_t`, `vfs_umount()` decl |
+| `src/kernel/vfs/vfs.c` | Implement `vfs_umount()` |
+| `src/kernel/fs/romfs.c` | Add `romfs_statfs` |
+| `src/kernel/fs/devfs.c` | Add `devfs_statfs` |
+| `src/kernel/fs/procfs.c` | Add `procfs_statfs`, `/proc/mounts` via `gen_mounts()` |
+| `src/kernel/fs/tmpfs.c` | Add `tmpfs_statfs` |
+| `src/kernel/fs/vfat.c` | Add `vfat_statfs` (scans FAT for free clusters) |
+| `src/kernel/fs/ufs.c` | Add `ufs_statfs` |
+| `src/kernel/syscall/syscall.h` | Add 4 syscall numbers + declarations |
+| `src/kernel/syscall/syscall.c` | Dispatch entries for all 4 syscalls |
+| `src/kernel/syscall/sys_fs.c` | Implement `sys_mount`, `sys_umount2`, `sys_statfs64`, `sys_fstatfs64` |
+| `src/config.h` | Add `USER_PAGES_MAX = 12` |
+| `src/kernel/proc/proc.h` | `user_pages[USER_PAGES_MAX]` (was `[8]`) |
+| `src/kernel/exec/exec.c` | Use `USER_PAGES_MAX` for cap + cleanup |
+| `src/kernel/syscall/sys_proc.c` | Use `USER_PAGES_MAX` in exit/vfork/execve |
+| `src/kernel/syscall/sys_mem.c` | Use `USER_PAGES_MAX` in brk |
+| `src/kernel/main_qemu.c` | Remove "0/1" test threads, idle with wfi |
+| `third_party/configs/busybox_ppap.fragment` | Enable mount/umount/df/vi |
+| `third_party/install-busybox.sh` | Add df, vi, mount, umount symlinks |
 
 ### Step 16 — General Blocking I/O and poll Syscall
 

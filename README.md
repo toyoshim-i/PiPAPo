@@ -34,7 +34,7 @@ A UNIX-like micro OS for the RP2040 — bare-metal, no SDK runtime.
 | 3 | Process Execution — ELF loader, vfork/exec, pipe, signals, on-target tests | ✓ Complete |
 | 4 | SD + VFAT — SPI driver, SD card init, FAT32 read/write | ✓ Complete |
 | 5 | UFS + Loopback — UFS driver, loopback block device, fstab mounts | ✓ Complete |
-| 6 | musl + busybox — musl porting, busybox build, interactive ash shell | In progress (Step 14/16) |
+| 6 | musl + busybox — musl porting, busybox build, interactive ash shell | In progress (Step 15/16) |
 | 7 | Board Support Packages — split target code into per-board directories | Planned |
 | 8 | Stabilization — error handling, OOM killer, performance tuning | Planned |
 | 9 | RP2350 Port — MPU 8-region, PSRAM, Thumb-2 optimization | Planned |
