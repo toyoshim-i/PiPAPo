@@ -23,8 +23,10 @@
  */
 
 #include "vfs.h"
+#include "../proc/proc.h"     /* current->cwd for relative path resolution */
 #include "../errno.h"
 #include <stddef.h>
+#include <string.h>
 
 /* ── Path normalization ───────────────────────────────────────────────────── */
 
@@ -353,12 +355,36 @@ int vfs_lookup_flags(const char *path, vnode_t **result, int flags)
 {
     if (!path || !result)
         return -EINVAL;
-    if (path[0] != '/')
-        return -EINVAL;
+
+    /* Resolve relative paths against current->cwd */
+    const char *abs = path;
+    char abs_buf[VFS_PATH_MAX];
+
+    if (path[0] != '/') {
+        const char *cwd = (current && current->cwd[0]) ? current->cwd : "/";
+        int cwdlen = (int)strlen(cwd);
+        int pathlen = (int)strlen(path);
+
+        if (cwdlen == 1) {
+            /* cwd is "/" → "/path" */
+            if (1 + pathlen >= VFS_PATH_MAX)
+                return -ENAMETOOLONG;
+            abs_buf[0] = '/';
+            memcpy(abs_buf + 1, path, (size_t)pathlen + 1);
+        } else {
+            /* cwd is "/foo" → "/foo/path" */
+            if (cwdlen + 1 + pathlen >= VFS_PATH_MAX)
+                return -ENAMETOOLONG;
+            memcpy(abs_buf, cwd, (size_t)cwdlen);
+            abs_buf[cwdlen] = '/';
+            memcpy(abs_buf + cwdlen + 1, path, (size_t)pathlen + 1);
+        }
+        abs = abs_buf;
+    }
 
     /* Normalize the path (resolve . and .. lexically) */
     char normalized[VFS_PATH_MAX];
-    int nlen = path_normalize(path, normalized, (int)sizeof(normalized));
+    int nlen = path_normalize(abs, normalized, (int)sizeof(normalized));
     if (nlen < 0)
         return nlen;
 

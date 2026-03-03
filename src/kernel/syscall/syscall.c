@@ -254,6 +254,10 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
                                     (const void *)(uintptr_t)a2,
                                     (void *)(uintptr_t)a3);
         break;
+    case SYS_OPENAT:
+        /* AT_FDCWD fast-path: route to sys_open (path=a1, flags=a2, mode=a3) */
+        ret = sys_open((const char *)(uintptr_t)a1, a2, a3);
+        break;
     case SYS_FSTATAT64:
         /* AT_FDCWD fast-path: dirfd ignored, route to stat64/lstat64 */
         ret = sys_stat64((const char *)(uintptr_t)a1,

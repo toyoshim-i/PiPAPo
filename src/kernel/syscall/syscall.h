@@ -95,6 +95,7 @@
 #define SYS_CLOCK_NANOSLEEP32 265
 #define SYS_UTIMES     269
 #define SYS_WAIT4      114
+#define SYS_OPENAT     322
 #define SYS_FSTATAT64  327
 #define SYS_GETCPU     345
 #define SYS_STATX      397
