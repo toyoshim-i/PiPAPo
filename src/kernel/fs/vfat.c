@@ -983,6 +983,38 @@ static int vfat_unlink(vnode_t *dir, const char *name)
     return -ENOENT;
 }
 
+/* ── vfat_statfs ─────────────────────────────────────────────────────────── */
+
+static int vfat_statfs(mount_entry_t *mnt, struct kernel_statfs *buf)
+{
+    vfat_sb_t *sb = (vfat_sb_t *)mnt->sb_priv;
+    if (!sb)
+        return -EINVAL;
+
+    __builtin_memset(buf, 0, sizeof(*buf));
+
+    /* Count free clusters by scanning FAT */
+    uint64_t free_clusters = 0;
+    for (uint32_t c = 2; c < sb->total_clusters + 2; c++) {
+        uint32_t val;
+        int rc = fat_get(sb, c, &val);
+        if (rc < 0) break;
+        if (val == FAT_FREE)
+            free_clusters++;
+    }
+
+    buf->f_type    = 0x4D44u;           /* MSDOS_SUPER_MAGIC */
+    buf->f_bsize   = sb->bytes_per_cluster;
+    buf->f_frsize  = sb->bytes_per_cluster;
+    buf->f_blocks  = sb->total_clusters;
+    buf->f_bfree   = free_clusters;
+    buf->f_bavail  = free_clusters;
+    buf->f_files   = 0;                /* FAT has no inode concept */
+    buf->f_ffree   = 0;
+    buf->f_namelen = 255;              /* LFN max */
+    return 0;
+}
+
 /* ── Operations table ───────────────────────────────────────────────────── */
 
 const vfs_ops_t vfat_ops = {
@@ -997,4 +1029,5 @@ const vfs_ops_t vfat_ops = {
     .mkdir    = vfat_mkdir,
     .unlink   = vfat_unlink,
     .truncate = NULL,
+    .statfs   = vfat_statfs,
 };

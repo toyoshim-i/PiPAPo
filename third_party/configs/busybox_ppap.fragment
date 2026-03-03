@@ -62,6 +62,16 @@ CONFIG_TOP=y
 CONFIG_FEATURE_TOP_CPU_USAGE_PERCENTAGE=y
 CONFIG_FEATURE_TOP_CPU_GLOBAL_PERCENTS=y
 
+# -- Filesystem utilities -----------------------------------------------------
+CONFIG_MOUNT=y
+CONFIG_UMOUNT=y
+CONFIG_DF=y
+
+# -- Editor -------------------------------------------------------------------
+CONFIG_VI=y
+CONFIG_FEATURE_VI_COLON=y
+CONFIG_FEATURE_VI_SEARCH=y
+
 # -- System -------------------------------------------------------------------
 CONFIG_INIT=y
 CONFIG_FEATURE_USE_INITTAB=y

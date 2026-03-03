@@ -1598,6 +1598,244 @@ $ cat /tmp/test.txt
 hello from vi
 ```
 
+### Step 16 — General Blocking I/O and poll Syscall
+
+Three blocking I/O problems remain after Steps 1–15:
+
+1. **tty_read busy-waits** (WFI loop in SVC handler) — prevents signal delivery to the blocked process and wastes CPU scheduling time.
+2. **Ctrl-C can't interrupt sleeping processes** — `tty_send_signal()` sets `sig_pending` but doesn't wake `PROC_SLEEPING`/`PROC_BLOCKED` processes (unlike `sys_kill()` which does).
+3. **No poll/select** — busybox `top` uses `poll()` for keyboard input; any program that checks fd readiness before reading has no way to do so.
+
+All three share a root cause: the kernel lacks a general mechanism for blocking on I/O events with proper signal interruption and readiness queries.
+
+**Design: extend the existing PROC_BLOCKED + svc_restart pattern to all I/O sources**
+
+The pipe driver already implements correct non-spinning blocking I/O:
+process marks `PROC_BLOCKED` + `svc_restart=1`, the other end calls
+`sched_wakeup(channel)`, and the syscall re-executes on wakeup.  This
+step extends that same pattern to TTY read, poll, and nanosleep.
+
+---
+
+**A. Convert tty_read to non-spinning blocking**
+
+Replace the WFI busy-wait with the pipe-style block pattern:
+
+```c
+// tty_read_canon: when uart_getc() returns -1 (no data)
+if (c < 0) {
+    if (current->sig_pending & ~current->sig_blocked)
+        return -(long)EINTR;       // signal arrived — don't block
+    current->wait_channel = &tty_stdin;
+    current->state = PROC_BLOCKED;
+    svc_restart = 1;
+    sched_yield();
+    return 0;                      // ignored — svc_restart re-executes
+}
+```
+
+This works because `line_buf` and `line_pos` are static — state is
+preserved across re-entries.  Each wakeup processes all buffered chars,
+then re-blocks if the line isn't complete.
+
+Raw mode (`tty_read_raw`) gets the same treatment: block when no data
+and `got == 0`.
+
+**B. UART ISR: data-arrival wakeup + inline Ctrl-C detection**
+
+Add to `UART0RX_IRQ_Handler` (both `uart_qemu.c` and `uart.c`):
+
+1. After buffering each byte, call `sched_wakeup(&tty_stdin)` to wake
+   any process blocked on tty read.
+2. If the byte is 0x03 (Ctrl-C) and the `tty_isig` flag is set, call
+   `tty_send_signal(SIGINT)` directly from the ISR.  This delivers
+   SIGINT even when no process is reading the TTY (e.g., during
+   `sleep 10`).
+
+New `uart_rx_avail()` function returns non-zero if the RX ring buffer
+is non-empty (for poll readiness without consuming data).
+
+**C. Fix tty_send_signal to wake blocked/sleeping processes**
+
+Align with `sys_kill()` — after setting `sig_pending`, also set
+`PROC_RUNNABLE` if the target is `PROC_BLOCKED` or `PROC_SLEEPING`:
+
+```c
+static void tty_send_signal(int sig)
+{
+    for (uint32_t i = 0; i < PROC_MAX; i++) {
+        if (proc_table[i].state != PROC_FREE &&
+            (int32_t)proc_table[i].pgid == tty_fg_pgrp) {
+            proc_table[i].sig_pending |= (1u << (uint32_t)sig);
+            if (proc_table[i].state == PROC_BLOCKED ||
+                proc_table[i].state == PROC_SLEEPING)
+                proc_table[i].state = PROC_RUNNABLE;
+        }
+    }
+}
+```
+
+**D. Signal-aware nanosleep (return -EINTR)**
+
+Convert `sys_nanosleep` / `sys_clock_nanosleep*` to use `svc_restart`:
+
+```c
+long sys_nanosleep(void *req, void *rem)
+{
+    // Restart detection: sleep_until still set from previous call
+    if (current->sleep_until != 0) {
+        if ((int32_t)(sched_get_ticks() - current->sleep_until) >= 0) {
+            current->sleep_until = 0;
+            return 0;                  // timer expired normally
+        }
+        if (current->sig_pending & ~current->sig_blocked) {
+            current->sleep_until = 0;
+            return -(long)EINTR;       // interrupted by signal
+        }
+        // Spurious wakeup — re-sleep
+        current->state = PROC_SLEEPING;
+        svc_restart = 1;
+        sched_yield();
+        return 0;
+    }
+    // First call — compute ticks, start sleeping
+    sched_sleep(ticks);
+    svc_restart = 1;
+    return 0;
+}
+```
+
+On wakeup the syscall re-executes via `svc_restart`.  The restart
+path checks whether the timer expired (return 0) or a signal is
+pending (return -EINTR).  SVC_Handler then calls `signal_check()` on
+the RUNNABLE-return path, delivering the signal after the syscall.
+
+**E. Add `poll` callback to file_ops**
+
+```c
+// file.h
+struct file_ops {
+    long  (*read) (struct file *f, char *buf, size_t n);
+    long  (*write)(struct file *f, const char *buf, size_t n);
+    int   (*close)(struct file *f);
+    int   (*ioctl)(struct file *f, uint32_t cmd, void *arg);
+    short (*poll) (struct file *f, short events);   // NEW
+};
+```
+
+Implementations:
+
+| Source | POLLIN | POLLOUT | POLLHUP / POLLERR |
+|---|---|---|---|
+| tty (read fd) | `uart_rx_avail() > 0` or `line_ready` (ICANON) | — | never |
+| tty (write fd) | — | always | never |
+| pipe read end | buffer non-empty OR `writers == 0` | — | `writers == 0` → POLLHUP |
+| pipe write end | — | buffer has space OR `readers == 0` | `readers == 0` → POLLERR |
+| regular file | always | always | never |
+| procfs / devfs | always | always | never |
+
+A NULL `poll` pointer means "always ready" (POLLIN\|POLLOUT).
+
+**F. sys_ppoll / sys_ppoll_time64**
+
+New file `src/kernel/syscall/sys_poll.c`.
+
+```
+long sys_ppoll_time64(struct pollfd *fds, uint32_t nfds,
+                      const struct timespec64 *tmo, const void *sigmask)
+```
+
+Algorithm:
+1. Scan all `nfds` entries: look up `fd_table[fd]`, call `poll()` callback
+2. If any revents non-zero → return count of ready fds
+3. If `tmo` is zero-duration → return 0 (non-blocking)
+4. Block: set `PROC_BLOCKED`, `wait_channel = &poll_wake_sentinel`,
+   `svc_restart = 1`.  If timeout > 0, set `sleep_until` deadline.
+5. On wakeup (svc_restart re-executes): re-scan fds.
+   If ready → return.  If sig_pending → return -EINTR.
+   If timeout expired → return 0.  Else re-block.
+
+All I/O event sources (`sched_wakeup(&tty_stdin)`, `sched_wakeup(pipe)`,
+etc.) also call `sched_wakeup(&poll_wake_sentinel)` to wake ALL
+poll-blocked processes.  With max 8 processes, the "thundering herd"
+cost is negligible.
+
+musl calls `SYS_ppoll_time64` (414) first, then `SYS_ppoll` (336).
+Implement both; the 32-bit variant just converts the timespec.
+
+**G. Timeout support for PROC_BLOCKED in sched_tick**
+
+Add to `sched_tick()`:
+
+```c
+if (p->state == PROC_BLOCKED
+        && p->sleep_until != 0
+        && (int32_t)(tick_count - p->sleep_until) >= 0)
+    p->state = PROC_RUNNABLE;
+```
+
+Existing PROC_BLOCKED uses (pipe, waitpid, vfork) have `sleep_until=0`,
+so this check is a no-op for them.  Only poll-with-timeout sets both
+`PROC_BLOCKED` and `sleep_until`.
+
+---
+
+**New syscalls:**
+
+| Syscall | Number | Signature |
+|---|---|---|
+| `SYS_PPOLL` | 336 | `ppoll(fds, nfds, tmo_p, sigmask, sigsetsize)` |
+| `SYS_PPOLL_TIME64` | 414 | `ppoll_time64(fds, nfds, tmo_p, sigmask, sigsetsize)` |
+
+**Poll event constants (Linux-compatible):**
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `POLLIN` | 0x0001 | data available for reading |
+| `POLLOUT` | 0x0004 | writing possible |
+| `POLLERR` | 0x0008 | error condition |
+| `POLLHUP` | 0x0010 | hung up |
+| `POLLNVAL` | 0x0020 | invalid fd |
+
+**Files modified:**
+
+| File | Change |
+|---|---|
+| `src/kernel/fd/file.h` | Add `poll` to `file_ops` |
+| `src/kernel/fd/tty.c` | Non-spinning read, poll callback, fix `tty_send_signal`, export `tty_isig` flag |
+| `src/kernel/fd/tty.h` | Declare `tty_send_signal()` for UART ISR |
+| `src/kernel/fd/pipe.c` | Poll callback, add `sched_wakeup(&poll_wake_sentinel)` calls |
+| `src/drivers/uart_qemu.c` | Add `uart_rx_avail()`, ISR wakeup + Ctrl-C detection |
+| `src/drivers/uart.c` | Same as `uart_qemu.c` |
+| `src/drivers/uart.h` | Declare `uart_rx_avail()` |
+| `src/kernel/syscall/sys_poll.c` | **New**: `sys_ppoll`, `sys_ppoll_time64` |
+| `src/kernel/syscall/sys_time.c` | nanosleep/clock_nanosleep with svc_restart + -EINTR |
+| `src/kernel/syscall/syscall.h` | Add `SYS_PPOLL` (336), `SYS_PPOLL_TIME64` (414), poll constants |
+| `src/kernel/syscall/syscall.c` | Dispatch entries for ppoll/ppoll_time64 |
+| `src/kernel/proc/sched.c` | PROC_BLOCKED+timeout in `sched_tick`, export `poll_wake_sentinel` |
+| `src/kernel/proc/sched.h` | Declare `poll_wake_sentinel` |
+| `CMakeLists.txt` | Add `sys_poll.c` to build |
+
+**Verification:**
+
+```
+# Ctrl-C interrupts sleep
+$ sleep 100
+^C
+$                      ← shell prompt returns immediately
+
+# top responds to 'q'
+$ top
+  PID ... CPU%
+    1 ... 0.0%
+(press q)
+$                      ← returns to shell
+
+# Interactive shell remains responsive during background work
+```
+
+---
+
 ---
 
 ## Deliverables

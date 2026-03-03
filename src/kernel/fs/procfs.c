@@ -219,7 +219,7 @@ static uint32_t proc_vsz(const pcb_t *p)
     /* Stack page */
     if (p->stack_page) pages++;
     /* User data pages */
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < USER_PAGES_MAX; i++) {
         if (p->user_pages[i]) pages++;
     }
     /* mmap pages */
@@ -567,6 +567,21 @@ static int procfs_stat(vnode_t *vn, struct stat *st)
     return 0;
 }
 
+/* ── procfs_statfs ─────────────────────────────────────────────────────────── */
+
+static int procfs_statfs(mount_entry_t *mnt, struct kernel_statfs *buf)
+{
+    (void)mnt;
+    __builtin_memset(buf, 0, sizeof(*buf));
+
+    buf->f_type    = 0x9FA0u;           /* Linux PROC_SUPER_MAGIC */
+    buf->f_bsize   = PAGE_SIZE;
+    buf->f_frsize  = PAGE_SIZE;
+    buf->f_namelen = VFS_NAME_MAX;
+    buf->f_flags   = 1;                /* ST_RDONLY */
+    return 0;
+}
+
 /* ── Operations table ─────────────────────────────────────────────────────── */
 
 const vfs_ops_t procfs_ops = {
@@ -577,4 +592,5 @@ const vfs_ops_t procfs_ops = {
     .readdir  = procfs_readdir,
     .stat     = procfs_stat,
     .readlink = NULL,    /* no symlinks in procfs */
+    .statfs   = procfs_statfs,
 };

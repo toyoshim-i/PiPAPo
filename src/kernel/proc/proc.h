@@ -4,13 +4,11 @@
  * The PCB holds all per-process state: saved CPU registers, identity (pid/ppid),
  * memory (stack page, user pages), file descriptors, and scheduling fields.
  *
- * Layout (≈204 bytes — fits comfortably in 256 B):
+ * Layout (fits in 256 B):
  *   [0..35]   saved callee registers r4–r11 + sp  (must match switch.S offsets)
  *   [36..47]  pid, ppid, state
- *   [48..87]  stack_page + user_pages[8]
- *   [72..135] fd_table[FD_MAX]
- *   [136..199] cwd[64]
- *   [200..207] ticks_remaining, sleep_until
+ *   [48..99]  stack_page + user_pages[USER_PAGES_MAX]
+ *   fd_table[FD_MAX], cwd[64], scheduling fields, etc.
  *
  * PROC_MAX is intentionally small (8).  Every PCB lives in the static
  * proc_table[] array in kernel BSS — no dynamic allocation needed for Phase 1.
@@ -73,7 +71,7 @@ typedef struct pcb {
 
     /* ── Memory ─────────────────────────────────────────────────────────── */
     void    *stack_page;        /* 4 KB page from page_alloc(): process stack */
-    void    *user_pages[8];     /* user data pages — allocated in Phase 3+    */
+    void    *user_pages[USER_PAGES_MAX]; /* user data pages (exec data segment) */
 
     /* ── File descriptors ───────────────────────────────────────────────── */
     struct file *fd_table[FD_MAX];

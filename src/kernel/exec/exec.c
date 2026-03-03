@@ -91,7 +91,7 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
             (data_seg->p_memsz + PAGE_SIZE - 1) / PAGE_SIZE;
         if (data_pages == 0)
             data_pages = 1;
-        if (data_pages > 8) {
+        if (data_pages > USER_PAGES_MAX) {
             vnode_put(vn);
             return -(int)ENOMEM;
         }
@@ -226,7 +226,7 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
     /* ── 8. Allocate stack page ────────────────────────────────────────── */
     void *stack = page_alloc();
     if (!stack) {
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < USER_PAGES_MAX; i++) {
             if (p->user_pages[i]) {
                 page_free(p->user_pages[i]);
                 p->user_pages[i] = NULL;

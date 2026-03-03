@@ -39,6 +39,7 @@
 #define SYS_CHMOD       15
 #define SYS_LSEEK       19
 #define SYS_GETPID      20
+#define SYS_MOUNT       21
 #define SYS_ACCESS      33
 #define SYS_KILL        37
 #define SYS_RENAME      38
@@ -47,6 +48,7 @@
 #define SYS_DUP         41
 #define SYS_PIPE        42
 #define SYS_BRK         45
+#define SYS_UMOUNT2     52
 #define SYS_IOCTL       54
 #define SYS_SETPGID     57
 #define SYS_UMASK       60
@@ -93,6 +95,8 @@
 #define SYS_SET_TID_ADDRESS 256
 #define SYS_CLOCK_GETTIME32 263
 #define SYS_CLOCK_NANOSLEEP32 265
+#define SYS_STATFS64   266
+#define SYS_FSTATFS64  267
 #define SYS_UTIMES     269
 #define SYS_WAIT4      114
 #define SYS_OPENAT     322
@@ -217,5 +221,10 @@ long sys_access(const char *path, long mode);
 long sys_readlink(const char *path, char *buf, long bufsiz);
 long sys_rmdir(const char *path);
 long sys_umask(long mask);
+long sys_mount(const char *source, const char *target,
+               const char *fstype, long flags, const void *data);
+long sys_umount2(const char *target, long flags);
+long sys_statfs64(const char *path, long sz, void *buf);
+long sys_fstatfs64(long fd, long sz, void *buf);
 
 #endif /* PPAP_SYSCALL_H */

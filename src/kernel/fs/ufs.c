@@ -1257,6 +1257,28 @@ static long ufs_readlink(vnode_t *vn, char *buf, size_t bufsiz)
     return (long)len;
 }
 
+/* ── ufs_statfs ──────────────────────────────────────────────────────── */
+
+static int ufs_statfs(mount_entry_t *mnt, struct kernel_statfs *buf)
+{
+    ufs_priv_t *priv = (ufs_priv_t *)mnt->sb_priv;
+    if (!priv)
+        return -EINVAL;
+
+    __builtin_memset(buf, 0, sizeof(*buf));
+
+    buf->f_type    = UFS_MAGIC;
+    buf->f_bsize   = UFS_BLOCK_SIZE;
+    buf->f_frsize  = UFS_BLOCK_SIZE;
+    buf->f_blocks  = priv->block_count;
+    buf->f_bfree   = priv->free_blocks;
+    buf->f_bavail  = priv->free_blocks;
+    buf->f_files   = priv->inode_count;
+    buf->f_ffree   = priv->free_inodes;
+    buf->f_namelen = VFS_NAME_MAX;
+    return 0;
+}
+
 /* ── Operations table ─────────────────────────────────────────────────── */
 
 const vfs_ops_t ufs_ops = {
@@ -1271,4 +1293,5 @@ const vfs_ops_t ufs_ops = {
     .mkdir    = ufs_mkdir,
     .unlink   = ufs_unlink,
     .truncate = ufs_truncate,
+    .statfs   = ufs_statfs,
 };

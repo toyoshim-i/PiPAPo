@@ -4,7 +4,7 @@
  *   sys_brk(addr) — adjust the program break (heap boundary)
  *
  * The heap starts at brk_base (end of .data+.bss) and grows upward
- * within user_pages[0..7].  user_pages[0..N-1] are the data/GOT pages
+ * within user_pages[].  user_pages[0..N-1] are the data/GOT pages
  * allocated by do_execve; remaining slots are heap expansion pages
  * allocated on demand via page_alloc_at() to ensure contiguity.
  */
@@ -44,7 +44,7 @@ long sys_brk(long addr)
     uint32_t old_pages = (old_top - page0_base + PAGE_SIZE - 1) / PAGE_SIZE;
     uint32_t new_pages = (new_top - page0_base + PAGE_SIZE - 1) / PAGE_SIZE;
 
-    if (new_pages > 8)
+    if (new_pages > USER_PAGES_MAX)
         return (long)current->brk_current;   /* unchanged = failure */
 
     /* Expand: allocate contiguous pages after existing ones */

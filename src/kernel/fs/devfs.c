@@ -377,6 +377,22 @@ static int devfs_stat(vnode_t *vn, struct stat *st)
     return 0;
 }
 
+/* ── devfs_statfs ─────────────────────────────────────────────────────────── */
+
+static int devfs_statfs(mount_entry_t *mnt, struct kernel_statfs *buf)
+{
+    (void)mnt;
+    __builtin_memset(buf, 0, sizeof(*buf));
+
+    buf->f_type    = 0x1373u;           /* Linux DEVFS_SUPER_MAGIC */
+    buf->f_bsize   = 4096u;
+    buf->f_frsize  = 4096u;
+    buf->f_files   = DEVFS_NODE_COUNT;
+    buf->f_ffree   = 0;
+    buf->f_namelen = VFS_NAME_MAX;
+    return 0;
+}
+
 /* ── Operations table ─────────────────────────────────────────────────────── */
 
 const vfs_ops_t devfs_ops = {
@@ -387,4 +403,5 @@ const vfs_ops_t devfs_ops = {
     .readdir  = devfs_readdir,
     .stat     = devfs_stat,
     .readlink = NULL,   /* no symlinks in devfs */
+    .statfs   = devfs_statfs,
 };

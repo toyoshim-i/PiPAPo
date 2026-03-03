@@ -14,12 +14,15 @@ ROMFS_SBIN="$PROJECT_ROOT/romfs/sbin"
 
 # Applet list — must match busybox_ppap.fragment
 APPLETS=(
-    cat chmod cp echo grep head kill ln ls mkdir mv
-    printf ps rm rmdir sed sleep sort tail top uname wc
+    cat chmod cp df echo grep head kill ln ls mkdir mv
+    printf ps rm rmdir sed sleep sort tail top uname vi wc
 )
 
 # Shell applets — these link to busybox as shell interpreters
 SHELL_APPLETS=(sh hush)
+
+# Sbin applets — linked in /sbin/
+SBIN_APPLETS=(mount umount)
 
 # --- Handle --clean ---
 if [[ "${1:-}" == "--clean" ]]; then
@@ -27,6 +30,9 @@ if [[ "${1:-}" == "--clean" ]]; then
     rm -f "$ROMFS_BIN/busybox"
     for applet in "${APPLETS[@]}" "${SHELL_APPLETS[@]}"; do
         rm -f "$ROMFS_BIN/$applet"
+    done
+    for applet in "${SBIN_APPLETS[@]}"; do
+        rm -f "$ROMFS_SBIN/$applet"
     done
     rm -f "$ROMFS_SBIN/init"
     echo "busybox: clean done."
@@ -67,6 +73,12 @@ for applet in "${APPLETS[@]}" "${SHELL_APPLETS[@]}"; do
     ln -sv busybox "$ROMFS_BIN/$applet" | sed 's/^/  /'
 done
 
+# Create sbin applet symlinks
+for applet in "${SBIN_APPLETS[@]}"; do
+    rm -f "$ROMFS_SBIN/$applet"
+    ln -sv ../bin/busybox "$ROMFS_SBIN/$applet" | sed 's/^/  /'
+done
+
 # Create /sbin/init -> ../bin/busybox
 rm -f "$ROMFS_SBIN/init"
 ln -sv ../bin/busybox "$ROMFS_SBIN/init" | sed 's/^/  /'
@@ -74,4 +86,4 @@ ln -sv ../bin/busybox "$ROMFS_SBIN/init" | sed 's/^/  /'
 # --- Verify ---
 echo "busybox: installation complete."
 echo "  binary: $ROMFS_BIN/busybox ($(stat -c%s "$ROMFS_BIN/busybox") bytes)"
-echo "  applets: ${#APPLETS[@]} + ${#SHELL_APPLETS[@]} shell = $((${#APPLETS[@]} + ${#SHELL_APPLETS[@]})) symlinks"
+echo "  applets: ${#APPLETS[@]} + ${#SHELL_APPLETS[@]} shell + ${#SBIN_APPLETS[@]} sbin = $((${#APPLETS[@]} + ${#SHELL_APPLETS[@]} + ${#SBIN_APPLETS[@]})) symlinks"

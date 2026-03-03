@@ -1535,15 +1535,7 @@ static void fstab_integration_test(void)
     uart_puts(" failed\n");
 }
 
-/* ── Context-switch partner (prints "1" in a loop) ───────────────────────── */
-
-static void thread_loop(void)
-{
-    for (;;) {
-        uart_puts("1\n");
-        sched_yield();
-    }
-}
+/* (Removed: old Phase 1 context-switch test thread — no longer needed) */
 
 /* ── Kernel entry point ──────────────────────────────────────────────────── */
 
@@ -1699,13 +1691,6 @@ void kmain(void)
         uart_puts(")\n");
     }
 
-    /* Also create a plain context-switch partner thread */
-    pcb_t *p2 = proc_alloc();
-    p2->stack_page = page_alloc();
-    proc_setup_stack(p2, thread_loop, 0);
-    __builtin_memcpy(p2->comm, "kworker", 8);
-    p2->state = PROC_RUNNABLE;
-
     /* Phase 1 Step 11: configure MPU (no-op on QEMU — MPU_TYPE reads 0) */
     mpu_init();
 
@@ -1719,9 +1704,7 @@ void kmain(void)
     uart_puts("SCHED: starting scheduler (QEMU)\n");
     sched_start();
 
-    /* Thread 0 continues here — print "0\n" and yield each iteration */
-    for (;;) {
-        uart_puts("0\n");
-        sched_yield();
-    }
+    /* Idle thread — wake on every interrupt, then sleep again. */
+    for (;;)
+        __asm__ volatile ("wfi");
 }

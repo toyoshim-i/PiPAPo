@@ -356,6 +356,30 @@ static int tmpfs_truncate(vnode_t *vn, uint32_t length)
     return 0;
 }
 
+/* ── tmpfs_statfs ─────────────────────────────────────────────────────── */
+
+static int tmpfs_statfs(mount_entry_t *mnt, struct kernel_statfs *buf)
+{
+    (void)mnt;
+    __builtin_memset(buf, 0, sizeof(*buf));
+
+    /* Count active inodes */
+    uint32_t active = 0;
+    for (int i = 0; i < TMPFS_INODE_MAX; i++)
+        if (inodes[i].active) active++;
+
+    buf->f_type    = 0x01021994u;       /* Linux TMPFS_MAGIC */
+    buf->f_bsize   = PAGE_SIZE;
+    buf->f_frsize  = PAGE_SIZE;
+    buf->f_blocks  = TMPFS_MAX_PAGES;
+    buf->f_bfree   = TMPFS_MAX_PAGES - data_pages_used;
+    buf->f_bavail  = TMPFS_MAX_PAGES - data_pages_used;
+    buf->f_files   = TMPFS_INODE_MAX;
+    buf->f_ffree   = TMPFS_INODE_MAX - active;
+    buf->f_namelen = TMPFS_NAME_MAX;
+    return 0;
+}
+
 /* ── Operations table ─────────────────────────────────────────────────── */
 
 const vfs_ops_t tmpfs_ops = {
@@ -370,4 +394,5 @@ const vfs_ops_t tmpfs_ops = {
     .mkdir    = tmpfs_mkdir,
     .unlink   = tmpfs_unlink,
     .truncate = tmpfs_truncate,
+    .statfs   = tmpfs_statfs,
 };

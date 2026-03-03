@@ -28,6 +28,14 @@
 #include "../fd/tty.h"
 #include "../proc/proc.h"
 #include "../mm/kmem.h"
+#include "../fs/devfs.h"
+#include "../fs/procfs.h"
+#include "../fs/tmpfs.h"
+#include "../fs/vfat.h"
+#include "../blkdev/blkdev.h"
+#ifdef PPAP_QEMU
+#include "../fs/ufs.h"
+#endif
 #include "../errno.h"
 #include "config.h"
 #include <stddef.h>
@@ -842,4 +850,146 @@ long sys_umask(long mask)
     uint32_t old = current->umask_val;
     current->umask_val = (uint32_t)mask & 0777u;
     return (long)old;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * Phase 6 Step 15: mount / umount / statfs syscalls
+ * ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── String comparison helper (local) ─────────────────────────────────────── */
+
+static int fs_str_eq(const char *a, const char *b)
+{
+    while (*a && *a == *b) { a++; b++; }
+    return (*a == '\0' && *b == '\0');
+}
+
+/* ── sys_mount ─────────────────────────────────────────────────────────────── */
+
+long sys_mount(const char *source, const char *target,
+               const char *fstype, long flags, const void *data)
+{
+    (void)data;
+
+    if (!target || !fstype)
+        return -(long)EINVAL;
+
+    /* Map fstype string to vfs_ops_t pointer */
+    const vfs_ops_t *ops = NULL;
+    const void *dev_data = NULL;
+
+    if (fs_str_eq(fstype, "devfs"))
+        ops = &devfs_ops;
+    else if (fs_str_eq(fstype, "proc") || fs_str_eq(fstype, "procfs"))
+        ops = &procfs_ops;
+    else if (fs_str_eq(fstype, "tmpfs"))
+        ops = &tmpfs_ops;
+    else if (fs_str_eq(fstype, "vfat")) {
+        ops = &vfat_ops;
+        if (source) {
+            /* Strip leading "/dev/" from source to get blkdev name */
+            const char *devname = source;
+            if (devname[0] == '/' && devname[1] == 'd' && devname[2] == 'e' &&
+                devname[3] == 'v' && devname[4] == '/')
+                devname += 5;
+            blkdev_t *bd = blkdev_find(devname);
+            if (!bd)
+                return -(long)ENODEV;
+            dev_data = bd;
+        }
+#ifdef PPAP_QEMU
+    } else if (fs_str_eq(fstype, "ufs")) {
+        ops = &ufs_ops;
+        if (source) {
+            const char *devname = source;
+            if (devname[0] == '/' && devname[1] == 'd' && devname[2] == 'e' &&
+                devname[3] == 'v' && devname[4] == '/')
+                devname += 5;
+            blkdev_t *bd = blkdev_find(devname);
+            if (!bd)
+                return -(long)ENODEV;
+            dev_data = bd;
+        }
+#endif
+    } else {
+        return -(long)ENODEV;
+    }
+
+    /* Convert Linux mount flags: MS_RDONLY → MNT_RDONLY */
+    uint8_t mnt_flags = 0;
+    if ((uint32_t)flags & MS_RDONLY)
+        mnt_flags |= MNT_RDONLY;
+
+    return (long)vfs_mount(target, ops, mnt_flags, dev_data);
+}
+
+/* ── sys_umount2 ──────────────────────────────────────────────────────────── */
+
+long sys_umount2(const char *target, long flags)
+{
+    (void)flags;
+
+    if (!target)
+        return -(long)EINVAL;
+
+    /* Normalize path for comparison */
+    char norm[VFS_PATH_MAX];
+    int nlen = vfs_path_normalize(target, norm, (int)sizeof(norm));
+    if (nlen < 0)
+        return (long)nlen;
+
+    return (long)vfs_umount(norm);
+}
+
+/* ── sys_statfs64 ─────────────────────────────────────────────────────────── */
+
+long sys_statfs64(const char *path, long sz, void *buf)
+{
+    (void)sz;   /* struct size — fixed layout */
+
+    if (!path || !buf)
+        return -(long)EINVAL;
+
+    /* Find the mount that covers this path */
+    const char *remainder;
+    mount_entry_t *mnt = vfs_find_mount(path, &remainder);
+    if (!mnt)
+        return -(long)ENOENT;
+
+    struct kernel_statfs ksf;
+    __builtin_memset(&ksf, 0, sizeof(ksf));
+
+    if (mnt->ops && mnt->ops->statfs)
+        mnt->ops->statfs(mnt, &ksf);
+
+    __builtin_memcpy(buf, &ksf, sizeof(ksf));
+    return 0;
+}
+
+/* ── sys_fstatfs64 ────────────────────────────────────────────────────────── */
+
+long sys_fstatfs64(long fd, long sz, void *buf)
+{
+    (void)sz;
+
+    if (fd < 0 || (uint32_t)fd >= FD_MAX || !buf)
+        return -(long)EBADF;
+
+    struct file *f = fd_get(current, (int)fd);
+    if (!f)
+        return -(long)EBADF;
+
+    mount_entry_t *mnt = NULL;
+
+    if (f->vnode && f->vnode->mount)
+        mnt = f->vnode->mount;
+
+    struct kernel_statfs ksf;
+    __builtin_memset(&ksf, 0, sizeof(ksf));
+
+    if (mnt && mnt->ops && mnt->ops->statfs)
+        mnt->ops->statfs(mnt, &ksf);
+
+    __builtin_memcpy(buf, &ksf, sizeof(ksf));
+    return 0;
 }

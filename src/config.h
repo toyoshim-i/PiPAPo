@@ -105,6 +105,13 @@
  * ────────────────────────────────────────────────────────────────────────── */
 #define MMAP_REGIONS_MAX      8     /* max concurrent mmap regions per proc  */
 
+/* ── ELF loader (exec) ───────────────────────────────────────────────────
+ * USER_PAGES_MAX  Maximum data-segment pages per process.  Must match
+ *                 the user_pages[] array size in pcb_t (proc.h).
+ *                 busybox .data+.bss ≈ 34 KB → 9 pages; 12 gives headroom.
+ * ────────────────────────────────────────────────────────────────────────── */
+#define USER_PAGES_MAX       12     /* max data-segment pages per process    */
+
 /* ── tmpfs (RAM-backed temporary filesystem) ─────────────────────────────
  * TMPFS_INODE_MAX   Maximum files + directories in tmpfs.
  *

@@ -145,6 +145,53 @@ int vfs_mount(const char *path, const vfs_ops_t *ops, uint8_t flags,
     return 0;
 }
 
+/* ── vfs_umount ──────────────────────────────────────────────────────────── */
+
+int vfs_umount(const char *path)
+{
+    if (!path)
+        return -EINVAL;
+
+    /* Cannot unmount root */
+    if (path[0] == '/' && path[1] == '\0')
+        return -EINVAL;
+
+    /* Find the mount entry matching path exactly */
+    mount_entry_t *mnt = NULL;
+    for (int i = 0; i < VFS_MOUNT_MAX; i++) {
+        mount_entry_t *m = &vfs_mount_table[i];
+        if (!m->active)
+            continue;
+        if (__builtin_strcmp(m->path, path) == 0) {
+            mnt = m;
+            break;
+        }
+    }
+    if (!mnt)
+        return -ENOENT;
+
+    /* Check no vnodes still reference this mount (scan vnode pool) */
+    for (int i = 0; i < VFS_VNODE_MAX; i++) {
+        if (vnode_storage[i].refcnt > 0 &&
+            vnode_storage[i].mount == mnt &&
+            &vnode_storage[i] != mnt->root)
+            return -EBUSY;
+    }
+
+    /* Release root vnode and deactivate */
+    if (mnt->root)
+        vnode_put(mnt->root);
+    mnt->root   = NULL;
+    mnt->active = 0;
+    mount_count--;
+
+    uart_puts("VFS: unmounted ");
+    uart_puts(path);
+    uart_puts("\n");
+
+    return 0;
+}
+
 /* ── vfs_find_mount ───────────────────────────────────────────────────────── */
 
 mount_entry_t *vfs_find_mount(const char *path, const char **remainder)

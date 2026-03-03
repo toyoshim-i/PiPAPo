@@ -73,6 +73,29 @@ struct dirent {
 
 #define MNT_RDONLY  0x01u   /* read-only mount (romfs, procfs)             */
 
+/* Linux mount flags used by busybox mount(2) — only MS_RDONLY is honoured */
+#define MS_RDONLY   1u
+
+/* ── struct kernel_statfs — filesystem statistics ─────────────────────────── */
+/*
+ * Matches the Linux ARM statfs64 layout that musl expects from
+ * SYS_statfs64 / SYS_fstatfs64.  64-bit fields for block/inode counts.
+ */
+struct kernel_statfs {
+    uint32_t f_type;       /* filesystem magic number                       */
+    uint32_t f_bsize;      /* optimal transfer block size                   */
+    uint64_t f_blocks;     /* total data blocks in filesystem               */
+    uint64_t f_bfree;      /* free blocks in filesystem                     */
+    uint64_t f_bavail;     /* free blocks available to non-root             */
+    uint64_t f_files;      /* total file nodes in filesystem                */
+    uint64_t f_ffree;      /* free file nodes in filesystem                 */
+    uint32_t f_fsid[2];    /* filesystem ID                                 */
+    uint32_t f_namelen;    /* maximum filename length                       */
+    uint32_t f_frsize;     /* fragment size (same as f_bsize for us)        */
+    uint32_t f_flags;      /* mount flags (ST_RDONLY, etc.)                 */
+    uint32_t f_spare[4];   /* padding to match Linux layout                 */
+};
+
 /* ── vnode — in-memory file/directory node ─────────────────────────────────── */
 
 typedef enum {
@@ -127,6 +150,7 @@ struct vfs_ops {
     int  (*mkdir)   (vnode_t *dir, const char *name, uint32_t mode);
     int  (*unlink)  (vnode_t *dir, const char *name);
     int  (*truncate)(vnode_t *vn, uint32_t length);
+    int  (*statfs)  (mount_entry_t *mnt, struct kernel_statfs *buf);
 };
 
 /* ── mount_entry — one entry in the kernel mount table ────────────────────── */
@@ -163,6 +187,14 @@ void vfs_init(void);
  */
 int vfs_mount(const char *path, const vfs_ops_t *ops, uint8_t flags,
               const void *dev_data);
+
+/*
+ * Unmount a filesystem at `path`.  Returns 0 on success, negative errno:
+ *   -EINVAL  path is "/" (cannot unmount root)
+ *   -ENOENT  no mount at this path
+ *   -EBUSY   vnodes still reference this mount
+ */
+int vfs_umount(const char *path);
 
 /*
  * Allocate a fresh vnode from the pool.

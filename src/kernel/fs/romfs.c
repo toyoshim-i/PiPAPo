@@ -22,6 +22,7 @@
 #include "romfs_format.h"
 #include "../vfs/vfs.h"
 #include "../errno.h"
+#include "config.h"
 #include <stddef.h>
 
 /* ── Flash accessor helpers ────────────────────────────────────────────────── */
@@ -225,6 +226,27 @@ static long romfs_readlink(vnode_t *vn, char *buf, size_t bufsiz)
     return (long)len;
 }
 
+/* ── romfs_statfs ──────────────────────────────────────────────────────────── */
+
+static int romfs_statfs(mount_entry_t *mnt, struct kernel_statfs *buf)
+{
+    __builtin_memset(buf, 0, sizeof(*buf));
+
+    const romfs_super_t *sb = (const romfs_super_t *)mnt->sb_priv;
+
+    buf->f_type    = 0x7275u;           /* Linux ROMFS_MAGIC */
+    buf->f_bsize   = PAGE_SIZE;
+    buf->f_frsize  = PAGE_SIZE;
+    buf->f_blocks  = (sb->size + PAGE_SIZE - 1) / PAGE_SIZE;
+    buf->f_bfree   = 0;                /* read-only */
+    buf->f_bavail  = 0;
+    buf->f_files   = sb->file_count;
+    buf->f_ffree   = 0;
+    buf->f_namelen = VFS_NAME_MAX;
+    buf->f_flags   = 1;                /* ST_RDONLY */
+    return 0;
+}
+
 /* ── Operations table ──────────────────────────────────────────────────────── */
 
 const vfs_ops_t romfs_ops = {
@@ -235,4 +257,5 @@ const vfs_ops_t romfs_ops = {
     .readdir  = romfs_readdir,
     .stat     = romfs_stat,
     .readlink = romfs_readlink,
+    .statfs   = romfs_statfs,
 };

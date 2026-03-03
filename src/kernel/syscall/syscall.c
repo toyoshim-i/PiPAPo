@@ -293,6 +293,24 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
         ret = -(long)ENOSYS;   /* stat64 suffices */
         break;
 
+    /* ── P3: mount / umount / statfs ──────────────────────────────────────── */
+    case SYS_MOUNT:
+        ret = sys_mount((const char *)(uintptr_t)a0,
+                        (const char *)(uintptr_t)a1,
+                        (const char *)(uintptr_t)a2,
+                        a3, (const void *)(uintptr_t)a4);
+        break;
+    case SYS_UMOUNT2:
+        ret = sys_umount2((const char *)(uintptr_t)a0, a1);
+        break;
+    case SYS_STATFS64:
+        ret = sys_statfs64((const char *)(uintptr_t)a0, a1,
+                           (void *)(uintptr_t)a2);
+        break;
+    case SYS_FSTATFS64:
+        ret = sys_fstatfs64(a0, a1, (void *)(uintptr_t)a2);
+        break;
+
     default:
 #ifdef SYSCALL_DEBUG
         uart_puts("ENOSYS: syscall ");
