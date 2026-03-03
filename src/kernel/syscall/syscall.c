@@ -24,6 +24,10 @@
 #include "../errno.h"
 #include <stdint.h>
 
+#ifdef SYSCALL_DEBUG
+#include "../../drivers/uart.h"
+#endif
+
 /* SIGCHLD — needed for clone() fast-path detection */
 #define SIGCHLD_NR 17
 
@@ -285,6 +289,11 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
         break;
 
     default:
+#ifdef SYSCALL_DEBUG
+        uart_puts("ENOSYS: syscall ");
+        uart_print_dec((uint32_t)nr);
+        uart_putc('\n');
+#endif
         ret = -(long)ENOSYS;
         break;
     }
