@@ -19,7 +19,11 @@
 
 long sys_brk(long addr)
 {
-    /* Query: addr == 0 → return current break */
+    /* Query: addr == 0 → return current break.
+     *
+     * Linux semantics: brk ALWAYS returns the current program break.
+     * On failure, it returns the unchanged break (never a negative errno).
+     * musl relies on this to detect brk failure and fall back to mmap. */
     if (addr == 0)
         return (long)current->brk_current;
 
@@ -27,7 +31,7 @@ long sys_brk(long addr)
 
     /* Cannot shrink below initial break */
     if (new_brk < current->brk_base)
-        return -(long)ENOMEM;
+        return (long)current->brk_current;   /* unchanged = failure */
 
     /* Calculate old and new page counts from user_pages[0] base.
      * user_pages[0..N-1] hold the data segment (allocated by do_execve).
@@ -41,7 +45,7 @@ long sys_brk(long addr)
     uint32_t new_pages = (new_top - page0_base + PAGE_SIZE - 1) / PAGE_SIZE;
 
     if (new_pages > 8)
-        return -(long)ENOMEM;   /* max 8 user_pages slots */
+        return (long)current->brk_current;   /* unchanged = failure */
 
     /* Expand: allocate contiguous pages after existing ones */
     for (uint32_t i = old_pages; i < new_pages; i++) {
@@ -53,7 +57,7 @@ long sys_brk(long addr)
                 page_free(current->user_pages[j]);
                 current->user_pages[j] = NULL;
             }
-            return -(long)ENOMEM;
+            return (long)current->brk_current;   /* unchanged = failure */
         }
         memset(pg, 0, PAGE_SIZE);
         current->user_pages[i] = pg;
@@ -102,7 +106,7 @@ long sys_mmap2(uint32_t addr, uint32_t len, uint32_t prot,
 
     /* Find a free mmap_regions slot */
     int slot = -1;
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < MMAP_REGIONS_MAX; i++) {
         if (current->mmap_regions[i].addr == NULL) {
             slot = i;
             break;
@@ -177,7 +181,7 @@ long sys_munmap(uint32_t addr, uint32_t len)
         return -(long)EINVAL;
 
     /* Find the matching mmap region */
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < MMAP_REGIONS_MAX; i++) {
         if (current->mmap_regions[i].addr == (void *)(uintptr_t)addr) {
             uint32_t pages = current->mmap_regions[i].pages;
             for (uint32_t j = 0; j < pages; j++) {

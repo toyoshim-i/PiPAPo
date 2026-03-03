@@ -59,9 +59,15 @@
  * PAGE_COUNT  Number of pages in the free pool.  Must not exceed the size
  *             of the PAGE_POOL region defined in the linker script
  *             (PAGE_POOL_SIZE = PAGE_COUNT × PAGE_SIZE).
+ *             QEMU has 512 KB RAM so we use a larger pool there.
  * ────────────────────────────────────────────────────────────────────────── */
 #define PAGE_SIZE          4096u    /* bytes per page                       */
-#define PAGE_COUNT           51u    /* pages in the pool (204 KB total)     */
+
+#ifdef PPAP_QEMU
+#define PAGE_COUNT           96u    /* QEMU: 384 KB pool (512 KB RAM avail) */
+#else
+#define PAGE_COUNT           51u    /* RP2040: 204 KB pool (264 KB SRAM)    */
+#endif
 
 /* ── VFS (Virtual File System) ────────────────────────────────────────────
  * VFS_MOUNT_MAX     Maximum concurrent mount points (romfs /, devfs /dev,
@@ -91,6 +97,13 @@
  * ────────────────────────────────────────────────────────────────────────── */
 #define BLKDEV_MAX            4     /* maximum registered block devices      */
 #define BLKDEV_SECTOR_SIZE  512u    /* bytes per sector                      */
+
+/* ── mmap regions ─────────────────────────────────────────────────────────
+ * MMAP_REGIONS_MAX  Maximum concurrent anonymous mmap regions per process.
+ *                   musl's malloc uses mmap for large allocations; busybox
+ *                   applets need 5–6 concurrent regions.
+ * ────────────────────────────────────────────────────────────────────────── */
+#define MMAP_REGIONS_MAX      8     /* max concurrent mmap regions per proc  */
 
 /* ── tmpfs (RAM-backed temporary filesystem) ─────────────────────────────
  * TMPFS_INODE_MAX   Maximum files + directories in tmpfs.

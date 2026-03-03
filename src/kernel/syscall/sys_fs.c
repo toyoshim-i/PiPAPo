@@ -294,6 +294,11 @@ long sys_fstat(long fd, struct stat *buf)
 
 /* ── sys_getdents ──────────────────────────────────────────────────────────── */
 
+/* Sentinel: directory fully read.  Prevents romfs (which uses byte-offset
+ * cookies where 0 means "start from first child") from restarting when the
+ * last child's next_off is 0. */
+#define GETDENTS_EOF  0xFFFFFFFFu
+
 long sys_getdents(long fd, struct dirent *buf, size_t count)
 {
     if (fd < 0 || (uint32_t)fd >= FD_MAX || !buf)
@@ -310,12 +315,18 @@ long sys_getdents(long fd, struct dirent *buf, size_t count)
         !f->vnode->mount->ops->readdir)
         return -(long)ENOSYS;
 
+    /* Already reached end of directory */
+    if (f->offset == GETDENTS_EOF)
+        return 0;
+
     /* Use the file offset as the readdir cookie */
     uint32_t cookie = f->offset;
     int n = f->vnode->mount->ops->readdir(
         f->vnode, buf, count, &cookie);
-    if (n >= 0)
-        f->offset = cookie;
+    if (n > 0)
+        f->offset = (cookie == 0) ? GETDENTS_EOF : cookie;
+    else if (n == 0)
+        f->offset = GETDENTS_EOF;
     return (long)n;
 }
 
@@ -636,12 +647,20 @@ long sys_getdents64(long fd, void *buf, long count)
         !f->vnode->mount->ops->readdir)
         return -(long)ENOSYS;
 
+    /* Already reached end of directory */
+    if (f->offset == GETDENTS_EOF)
+        return 0;
+
     /* Read internal dirent entries */
     struct dirent entries[8];
     uint32_t cookie = f->offset;
     int n = f->vnode->mount->ops->readdir(f->vnode, entries, 8, &cookie);
     if (n < 0)
         return (long)n;
+    if (n == 0) {
+        f->offset = GETDENTS_EOF;
+        return 0;
+    }
 
     /* Pack into linux dirent64 format */
     uint8_t *out = (uint8_t *)buf;
@@ -677,7 +696,7 @@ long sys_getdents64(long fd, void *buf, long count)
         total += reclen;
     }
 
-    f->offset = cookie;
+    f->offset = (cookie == 0) ? GETDENTS_EOF : cookie;
     return total;
 }
 

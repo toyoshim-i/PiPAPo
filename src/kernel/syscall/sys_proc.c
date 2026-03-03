@@ -55,6 +55,16 @@ long sys_exit(long status)
                 current->user_pages[i] = NULL;
             }
         }
+        /* Free mmap regions */
+        for (int i = 0; i < MMAP_REGIONS_MAX; i++) {
+            if (current->mmap_regions[i].addr) {
+                uint32_t base = (uint32_t)(uintptr_t)current->mmap_regions[i].addr;
+                for (uint32_t j = 0; j < current->mmap_regions[i].pages; j++)
+                    page_free((void *)(uintptr_t)(base + j * PAGE_SIZE));
+                current->mmap_regions[i].addr  = NULL;
+                current->mmap_regions[i].pages = 0;
+            }
+        }
     }
 
     /* Unblock vfork parent if we are a vfork child */

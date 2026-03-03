@@ -108,7 +108,7 @@ typedef struct pcb {
     struct {
         void    *addr;              /* base address of mapped region     */
         uint32_t pages;             /* number of pages in this region    */
-    } mmap_regions[4];              /* max 4 concurrent mmap regions     */
+    } mmap_regions[MMAP_REGIONS_MAX]; /* max concurrent mmap regions     */
 } pcb_t;
 
 /* ── Globals ────────────────────────────────────────────────────────────────── */

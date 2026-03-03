@@ -1,7 +1,7 @@
 /*
  * page.h — Physical page allocator
  *
- * Manages the 204 KB page pool (51 × 4 KB pages) at 0x20005000–0x20037FFF.
+ * Manages the page pool starting at 0x20005000 (size set by PAGE_COUNT).
  * Uses a free-stack (array-based LIFO) for O(1) alloc/free with no per-page
  * overhead.
  *
@@ -21,10 +21,10 @@
 #define SRAM_KERNEL_BASE  0x20000000u       /* kernel data region start        */
 #define SRAM_KERNEL_SIZE     (20u * 1024u)  /* 20 KB reserved for kernel       */
 #define PAGE_POOL_BASE    0x20005000u       /* first page in the pool          */
-#define PAGE_POOL_SIZE    (PAGE_COUNT * PAGE_SIZE)  /* 196 KB                  */
-#define SRAM_IOBUF_BASE   0x20038000u       /* I/O buffer region               */
+#define PAGE_POOL_SIZE    (PAGE_COUNT * PAGE_SIZE)
+#define SRAM_IOBUF_BASE   (PAGE_POOL_BASE + PAGE_POOL_SIZE)  /* after pool    */
 #define SRAM_IOBUF_SIZE      (24u * 1024u)  /* 24 KB                           */
-#define SRAM_DMA_BASE     0x2003E000u       /* DMA / Core 1 region             */
+#define SRAM_DMA_BASE     (SRAM_IOBUF_BASE + SRAM_IOBUF_SIZE)
 #define SRAM_DMA_SIZE        (16u * 1024u)  /* 16 KB                           */
 
 /* ── API ───────────────────────────────────────────────────────────────────── */
