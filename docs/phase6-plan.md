@@ -1245,15 +1245,16 @@ Systematic testing of the complete boot-to-shell flow.
 | `uname -a` | "PicoPiAndPortable ppap 0.6.0 ... armv6m" | QEMU + HW |
 | `echo hello \| cat` | Pipeline: prints "hello" | QEMU + HW |
 | `echo hello > /tmp/test; cat /tmp/test` | Redirect to tmpfs file | QEMU + HW |
-| `ps` | Lists running processes (init, ash) | QEMU + HW |
 | `kill -0 1` | Success (init is alive) | QEMU + HW |
 | Ctrl-C during `sleep 100` | Interrupts sleep, returns to prompt | QEMU + HW |
-| `free` | Shows memory usage (total/used/free) | QEMU + HW |
-| `df` | Shows mounted filesystems and space | QEMU + HW |
 | `ls /mnt/sd` | Lists files on FAT32 SD card | HW only |
 | `cat /mnt/sd/somefile.txt` | Reads file from SD | HW only |
 | Exit ash (Ctrl-D) | init respawns ash — new prompt appears | QEMU + HW |
-| 3 concurrent processes (`sleep 10 & sleep 10 & ps`) | ps shows 5 processes (init, ash, 2×sleep, ps) | QEMU + HW |
+
+> **Note:** Tests for `ps`, `top`, `free`, `df`, and concurrent process listing
+> require procfs per-PID directories (`/proc/<pid>/stat`, `/proc/<pid>/cmdline`)
+> and `sys_statfs`, which are not yet implemented at this step.
+> These are covered as follow-up verification in **Step 14**.
 
 **Common failure modes and debugging:**
 
@@ -1491,6 +1492,15 @@ CPU:   0% usr   0% sys   0% nic 100% idle   0% io   0% irq   0% sirq
     2     1 root     S    16384   4%   0%  ash
     3     2 root     R     4096   1%   0%  top
 ```
+
+**Follow-up test matrix** (deferred from Step 12 — now possible with procfs per-PID support):
+
+| Test | Expected Result | Platform |
+|---|---|---|
+| `ps` | Lists running processes (init, ash) | QEMU + HW |
+| `free` | Shows memory usage (total/used/free) | QEMU + HW |
+| `df` | Shows mounted filesystems and space (requires `sys_statfs`) | QEMU + HW |
+| 3 concurrent processes (`sleep 10 & sleep 10 & ps`) | ps shows 5 processes (init, ash, 2×sleep, ps) | QEMU + HW |
 
 ---
 
