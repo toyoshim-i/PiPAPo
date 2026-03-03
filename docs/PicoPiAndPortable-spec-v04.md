@@ -106,12 +106,12 @@ The 264KB of on-chip SRAM is partitioned as follows. The I/O buffer is sized at 
 
 | Region | Address Range | Size | Purpose |
 |---|---|---|---|
-| Kernel Data | 0x20000000 – 0x20003FFF | 16KB | Kernel BSS, stack, global data |
-| Page Pool | 0x20004000 – 0x20037FFF | 208KB | User process pages (4KB × 52 pages) |
+| Kernel Data | 0x20000000 – 0x20004FFF | 20KB | Kernel BSS, stack, global data |
+| Page Pool | 0x20005000 – 0x20037FFF | 204KB | User process pages (4KB × 51 pages) |
 | I/O Buffer | 0x20038000 – 0x2003DFFF | 24KB | SD card I/O, VFAT/UFS metadata cache |
 | DMA / Reserved | 0x2003E000 – 0x20041FFF | 16KB | DMA, PIO, Core 1 stack, interrupt stack |
 
-Since the kernel's code (.text) and read-only data (.rodata) are executed via XIP from flash, only the data sections reside in SRAM. This reduces the kernel's SRAM footprint from 48KB to 16KB.
+Since the kernel's code (.text) and read-only data (.rodata) are executed via XIP from flash, only the data sections reside in SRAM. This reduces the kernel's SRAM footprint from 48KB to 20KB.
 
 ### 2.4 Paging Mechanism
 
@@ -120,7 +120,7 @@ As the Cortex-M0+ lacks an MMU, a software-based overlay paging scheme is implem
 - Page size: fixed at 4KB
 - User process data (stack, heap) is managed in page-sized units
 - Code segments are either XIP from flash or loaded on demand from SD
-- The SRAM page pool (52 pages, 208KB) is managed with an LRU algorithm
+- The SRAM page pool (51 pages, 204KB) is managed with an LRU algorithm
 - Page-in source: binaries in flash romfs → direct XIP (no page-in needed)
 - Page-in source: binaries on SD → loaded into SRAM (~1–5ms per 4KB)
 - Dirty pages (heap, stack) are written back to SD on swap-out
@@ -286,7 +286,7 @@ A monolithic kernel architecture is adopted. A microkernel design is disadvantag
 | MPU Abstraction Layer | 2KB | 0.5KB | RP2040 (4) / RP2350 (8) region support |
 | **Total** | **~58KB** | **~15.5KB** | **Flash XIP + SRAM data** |
 
-Compared to v0.2 (~47KB code, ~12.5KB data), the addition of the VFAT driver and loopback layer increases the kernel by approximately 11KB of code and 3KB of data. Code remains on flash (XIP), and the 15.5KB data footprint still fits within the 16KB kernel data region, though with less headroom. If necessary, the I/O buffer region can be adjusted to reclaim space.
+Compared to v0.2 (~47KB code, ~12.5KB data), the addition of the VFAT driver and loopback layer increases the kernel by approximately 11KB of code and 3KB of data. Code remains on flash (XIP), and the data footprint fits within the 20KB kernel data region. The kernel data region was expanded from 16KB to 20KB in Phase 6 to accommodate additional per-process state (8 user pages per PCB).
 
 ### 4.3 Process Model
 
@@ -406,7 +406,7 @@ The boot sequence from power-on to shell prompt is described below.
 
 **Stage 2 — Kernel Early Init:** Sets the system clock to 133MHz. Zeroes SRAM. Copies the interrupt vector table to SRAM (or references the table on flash). Initializes UART (115200bps) — console output begins here.
 
-**Stage 3 — Kernel Init:** Initializes the memory manager (builds the page pool, registers 52 pages on the free list). Configures the MPU (4-region layout). Initializes the romfs driver (validates the romfs header on flash, mounts as root). Starts Core 1 (begins I/O worker thread standby).
+**Stage 3 — Kernel Init:** Initializes the memory manager (builds the page pool, registers 51 pages on the free list). Configures the MPU (4-region layout). Initializes the romfs driver (validates the romfs header on flash, mounts as root). Starts Core 1 (begins I/O worker thread standby).
 
 **Stage 4 — SD and VFAT Mount:** Initializes the SPI0 bus, detects the SD card, and runs the CMD0/CMD8/ACMD41 initialization sequence. Reads the MBR/partition table on the SD card, locates the FAT32 partition, and mounts it at /mnt/sd.
 
@@ -480,7 +480,7 @@ FAT32 metadata updates (FAT table, directory entries) are not atomic. A power lo
 
 ### 10.5 Kernel Size Growth
 
-Adding the VFAT driver (~8KB code, ~2KB data) and loopback layer (~2KB code, ~0.5KB data) increases the kernel footprint compared to v0.2. The kernel code on flash grows from ~47KB to ~58KB, which is still well within the 48–64KB flash allocation for the kernel region. The SRAM data grows from ~12.5KB to ~15.5KB, which is tight against the 16KB kernel data allocation. If additional SRAM is needed, the page pool can be reduced by 1–2 pages (4–8KB), with minimal impact on user process capacity.
+Adding the VFAT driver (~8KB code, ~2KB data) and loopback layer (~2KB code, ~0.5KB data) increases the kernel footprint compared to v0.2. The kernel code on flash grows from ~47KB to ~58KB, which is still well within the 48–64KB flash allocation for the kernel region. The SRAM data grew beyond the original 16KB allocation; the kernel data region was expanded to 20KB in Phase 6 (reducing the page pool from 52 to 51 pages) to accommodate the larger per-process state needed for busybox support.
 
 ### 10.6 busybox Compatibility
 

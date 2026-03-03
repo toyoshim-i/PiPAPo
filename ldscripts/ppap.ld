@@ -207,14 +207,14 @@ SECTIONS {
         __stack_top = .;
     } > RAM_KERNEL
 
-    /* Sanity check: kernel data + bss + stack must fit in 16KB */
+    /* Sanity check: kernel data + bss + stack must fit in 20KB */
     ASSERT((__stack_top <= ORIGIN(RAM_KERNEL) + LENGTH(RAM_KERNEL)),
            "ERROR: Kernel data + bss + stack overflow RAM_KERNEL (20KB)")
 
 
     /* ------------------------------------------------------------------
      * Page pool — managed by the memory manager (Phase 1+).
-     * 52 pages × 4KB = 208KB.  Symbols exposed for kernel use.
+     * 51 pages × 4KB = 204KB.  Symbols exposed for kernel use.
      * ------------------------------------------------------------------ */
     .page_pool (NOLOAD) : {
         __page_pool_start = .;

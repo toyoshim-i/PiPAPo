@@ -1,7 +1,7 @@
 /*
  * test_page.c — Unit tests for src/kernel/mm/page.c
  *
- * page.c manages a fixed-address page pool (PAGE_POOL_BASE = 0x20004000 on
+ * page.c manages a fixed-address page pool (PAGE_POOL_BASE = 0x20005000 on
  * RP2040).  On the host, page_alloc() returns pointers with those RP2040
  * addresses — we NEVER dereference them; we only inspect the addresses and
  * test the allocator's bookkeeping.

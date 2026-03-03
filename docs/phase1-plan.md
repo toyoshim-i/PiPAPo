@@ -13,7 +13,7 @@ descriptor abstraction, a system call interface, MPU protection, and Core 1
 startup.
 
 **Exit Criteria (all must pass before moving to Phase 2):**
-- Page pool initialised: 52 × 4 KB pages on the free list, `page_alloc` / `page_free` work ✓ (done)
+- Page pool initialised: 51 × 4 KB pages on the free list, `page_alloc` / `page_free` work ✓ (done)
 - UART switches to interrupt-driven TX/RX just before `sched_start()`; no busy-wait in scheduler context
 - fd 0/1/2 pre-wired to the UART tty driver at boot; `sys_write(1, …)` goes through `struct file_ops`
 - Two kernel threads run concurrently, switched by PendSV every 10 ms (SysTick)
@@ -35,7 +35,7 @@ src/
                                        fd_stdio_init, mpu_init, core1_launch, sched_start)
     main_qemu.c           (existing — same init path; uart stays polling; Core 1/MPU stubbed)
     mm/
-      page.c / page.h     # Page allocator — free-stack, 52 × 4 KB pages  ✓ (done)
+      page.c / page.h     # Page allocator — free-stack, 51 × 4 KB pages  ✓ (done)
       kmem.c / kmem.h     # Kernel object pool — fixed-size slab for PCBs
       mpu.c  / mpu.h      # MPU 4-region configuration + per-context switch
     proc/
@@ -73,8 +73,8 @@ Fixed 4 KB pages map directly onto the SRAM layout from the design spec.
 
 | Region | Address | Size | Pages |
 |---|---|---|---|
-| Kernel data | `0x20000000` | 16 KB | — |
-| **Page pool** | `0x20004000` | 208 KB | 52 × 4 KB |
+| Kernel data | `0x20000000` | 20 KB | — |
+| **Page pool** | `0x20005000` | 204 KB | 51 × 4 KB |
 | I/O buffer | `0x20038000` | 24 KB | — |
 | DMA/Reserved | `0x2003E000` | 16 KB | — |
 
@@ -96,7 +96,7 @@ Fixed 4 KB pages map directly onto the SRAM layout from the design spec.
 ```c
 /* src/kernel/mm/page.h */
 #define PAGE_SIZE   4096u
-#define PAGE_COUNT  52u
+#define PAGE_COUNT  51u
 
 void     mm_init(void);                /* build free stack; print boot memory map */
 void    *page_alloc(void);             /* pop from free stack; returns NULL if OOM */
@@ -107,9 +107,9 @@ uint32_t page_free_count(void);        /* for diagnostics / OOM decisions */
 **Verified boot output (QEMU):**
 ```
 MM: SRAM memory map
-MM:   kernel  0x20000000–0x20003fff  16 KB reserved
-MM:     .data/.bss:  0x000000d4 B used, 0x00004004 B to stack top
-MM:   pages   0x20004000–0x20037fff 208 KB (52 × 4 KB, all free)
+MM:   kernel  0x20000000–0x20004fff  20 KB reserved
+MM:     .data/.bss:  0x000035ec B used, 0x00004004 B to stack top
+MM:   pages   0x20008000–0x20037fff 192 KB (48 × 4 KB, all free)
 MM:   io_buf  0x20038000–0x2003dfff  24 KB
 MM:   dma     0x2003e000–0x20041fff  16 KB
 ```
@@ -163,7 +163,7 @@ typedef struct {
 
     /* Memory */
     void    *stack_page;          /* 4 KB page — process kernel stack */
-    void    *user_pages[4];       /* up to 4 user data pages (Phase 3+) */
+    void    *user_pages[8];       /* up to 8 user data pages (32 KB max) */
 
     /* Files — populated with tty at boot; expanded in Phase 2+ */
     struct file *fd_table[FD_MAX];
@@ -505,7 +505,7 @@ The Cortex-M0+ MPU has 8 regions (on RP2040, only 8 are wired).  We use 4:
 
 | Region | Base | Size | Attributes | Purpose |
 |---|---|---|---|---|
-| 0 | `0x20000000` | 16 KB | RW, privileged only | Kernel data — fault on user access |
+| 0 | `0x20000000` | 20 KB | RW, privileged only | Kernel data — fault on user access |
 | 1 | `0x10000000` | 16 MB | RO+X, all modes | Entire flash (XIP) — no write |
 | 2 | *per-process* | 8 KB | RW, user+priv | Current process stack (2 pages) |
 | 3 | `0x40000000` | 512 MB | RW, privileged | Peripherals and I/O |
@@ -578,7 +578,7 @@ checks `SIO_FIFO_ST` for a sentinel value; on QEMU, skip the launch entirely.
 
 | File | Description |
 |---|---|
-| `src/kernel/mm/page.c/h` | Free-stack page allocator (52 × 4 KB) ✓ |
+| `src/kernel/mm/page.c/h` | Free-stack page allocator (51 × 4 KB) ✓ |
 | `src/kernel/mm/kmem.c/h` | Fixed-size kernel object pool (PCB slab) |
 | `src/kernel/mm/mpu.c/h` | MPU 4-region setup + per-context switch update |
 | `src/kernel/proc/proc.h` | PCB definition, process table, states |

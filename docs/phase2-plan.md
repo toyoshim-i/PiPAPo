@@ -642,7 +642,7 @@ void kmain(void) {
 
 ```
 MM: SRAM memory map
-MM:   pages   0x20004000–0x20037fff 208 KB (52 × 4 KB, all free)
+MM:   pages   0x20005000–0x20037fff 204 KB (51 × 4 KB, all free)
 VFS: mounting romfs at / (image at 0x10011000, 1234 bytes)
 VFS: mounting devfs at /dev (4 devices)
 VFS: mounting procfs at /proc (2 entries)

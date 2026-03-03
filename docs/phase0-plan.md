@@ -84,8 +84,8 @@ SRAM regions:
 
 | Region | Address | Size | Purpose |
 |---|---|---|---|
-| Kernel data | `0x20000000` | 16 KB | BSS, stack, globals |
-| Page pool | `0x20004000` | 208 KB | User process pages |
+| Kernel data | `0x20000000` | 20 KB | BSS, stack, globals |
+| Page pool | `0x20005000` | 204 KB | User process pages |
 | I/O buffer | `0x20038000` | 24 KB | SD / FS cache |
 | DMA / Reserved | `0x2003E000` | 16 KB | DMA, PIO, Core 1 stack |
 

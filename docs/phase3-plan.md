@@ -790,10 +790,9 @@ static inline void *sbrk(int32_t incr) {
 }
 ```
 
-**Limitation:** `user_pages[]` in the PCB currently has 4 slots (from
-Phase 1).  This limits a process to 4 data/heap pages = 16 KB max heap.
-Sufficient for Phase 3 testing; expanded in Phase 5 when musl malloc
-needs more.
+**Note:** `user_pages[]` in the PCB has 8 slots (expanded in Phase 6
+from the original 4).  This gives each process up to 8 data/heap pages
+= 32 KB max heap, sufficient for busybox and musl malloc.
 
 ---
 
