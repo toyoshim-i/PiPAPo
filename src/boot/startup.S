@@ -55,12 +55,14 @@ _vectors:
     .word PendSV_Handler        @ 14: PendSV  (switch.S — context switch)
     .word SysTick_Handler       @ 15: SysTick (sched.c — tick + PendSV trigger)
 
-    @ --- RP2040 external interrupts: IRQ0-IRQ25 ---
-    @ IRQ0-IRQ19
-    .rept 20
+    @ --- External interrupts: IRQ0-IRQ25 ---
+    .word UART0RX_IRQ_Handler   @ IRQ0  — UART0 RX on mps2-an500 (uart_qemu.c)
+    .word Default_Handler       @ IRQ1  — UART0 TX on mps2-an500 (unused)
+    @ IRQ2-IRQ19
+    .rept 18
     .word Default_Handler
     .endr
-    .word UART0_IRQ_Handler     @ IRQ20 = UART0 (uart.c — uart_init_irq arms it)
+    .word UART0_IRQ_Handler     @ IRQ20 = UART0 on RP2040 (uart.c — uart_init_irq arms it)
     @ IRQ21-IRQ25
     .rept 5
     .word Default_Handler
@@ -162,8 +164,10 @@ Reset_Handler:
 Default_Handler:
     b    Default_Handler
 
-@ Weak alias: uart.c provides the real UART0_IRQ_Handler for the hardware
-@ build.  The QEMU build (uart_qemu.c) never enables this IRQ, so the
-@ alias to Default_Handler is a safe fallback.
+@ Weak aliases: real handlers are provided by the driver for each build target.
+@ - UART0_IRQ_Handler:   uart.c (hardware RP2040, IRQ 20)
+@ - UART0RX_IRQ_Handler: uart_qemu.c (QEMU mps2-an500, IRQ 1)
 .weak UART0_IRQ_Handler
 .thumb_set UART0_IRQ_Handler, Default_Handler
+.weak UART0RX_IRQ_Handler
+.thumb_set UART0RX_IRQ_Handler, Default_Handler

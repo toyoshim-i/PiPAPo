@@ -1711,6 +1711,10 @@ void kmain(void)
     /* Phase 1 Step 12: launch Core 1 (no-op on QEMU — SIO not mapped) */
     core1_launch(core1_io_worker);
 
+    /* Enable UART RX interrupt so tty_read can receive keyboard input.
+     * Must be called before sched_start() — same as the hardware build. */
+    uart_init_irq();
+
     uart_puts("SCHED: starting scheduler (QEMU)\n");
     sched_start();
 

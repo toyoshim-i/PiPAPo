@@ -50,6 +50,11 @@
 /* ICSR bits */
 #define PENDSVSET  (1u << 28)  /* set pending PendSV exception           */
 
+/* SHPR2: SVCall priority at [31:24] */
+#define SCB_SHPR2  (*(volatile uint32_t *)0xE000ED1Cu)
+#define SVCALL_PRIO_SHIFT  24u
+#define SVCALL_PRIO_MASK   (0xFFu << SVCALL_PRIO_SHIFT)
+
 /* SHPR3: PendSV priority at [23:16] */
 #define PENDSV_PRIO_SHIFT  16u
 #define PENDSV_PRIO_MASK   (0xFFu << PENDSV_PRIO_SHIFT)

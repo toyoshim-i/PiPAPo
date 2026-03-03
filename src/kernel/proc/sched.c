@@ -82,6 +82,12 @@ void sched_start(void)
      * SHPR3[23:16] is the PendSV priority byte on Cortex-M0+. */
     SCB_SHPR3 = (SCB_SHPR3 & ~PENDSV_PRIO_MASK) | PENDSV_PRIO_LOWEST;
 
+    /* Lower SVCall priority (0x80) so hardware interrupts (SysTick, UART)
+     * can preempt the SVC handler.  Without this, WFI inside blocking
+     * syscalls (e.g. tty_read) would never wake — no interrupt can preempt
+     * a handler at the default priority 0x00. */
+    SCB_SHPR2 = (SCB_SHPR2 & ~SVCALL_PRIO_MASK) | (0x80u << SVCALL_PRIO_SHIFT);
+
     /*
      * Switch Thread mode from MSP to PSP using Thread 0's dedicated stack.
      *

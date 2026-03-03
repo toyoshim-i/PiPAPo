@@ -12,6 +12,9 @@
  *   +0x0C  INTSTATUS [0] TX interrupt, [1] RX interrupt (write-1-to-clear)
  *   +0x10  BAUDDIV   [19:0] baud rate = clk / BAUDDIV
  *
+ * mps2-an500 interrupt map (see QEMU hw/arm/mps2.c uartirq[]):
+ *   IRQ 0 = UART0 RX    IRQ 1 = UART0 TX
+ *
  * mps2-an500 system clock: 25 MHz
  *   115200 bps → BAUDDIV = 25000000 / 115200 ≈ 217
  *
@@ -24,6 +27,7 @@
  */
 
 #include "uart.h"
+#include "config.h"          /* UART_RX_SIZE */
 #include <stdint.h>
 
 /* ==========================================================================
@@ -43,13 +47,29 @@
 #define UART_CTRL    REG(UART_BASE + 0x08u)
 #define UART_BAUDDIV REG(UART_BASE + 0x10u)
 
-#define UART_STATE_TXFULL  (1u << 0)  /* TX buffer full — wait before writing */
-#define UART_STATE_RXFULL  (1u << 1)  /* RX byte ready to read               */
-#define UART_CTRL_TX_EN    (1u << 0)  /* enable transmitter */
-#define UART_CTRL_RX_EN    (1u << 1)  /* enable receiver */
+#define UART_INTSTATUS REG(UART_BASE + 0x0Cu)
+
+#define UART_STATE_TXFULL    (1u << 0)  /* TX buffer full — wait before writing */
+#define UART_STATE_RXFULL    (1u << 1)  /* RX byte ready to read               */
+#define UART_CTRL_TX_EN      (1u << 0)  /* enable transmitter  */
+#define UART_CTRL_RX_EN      (1u << 1)  /* enable receiver     */
+#define UART_CTRL_RX_INT_EN  (1u << 3)  /* enable RX interrupt */
+#define UART_INT_RX          (1u << 1)  /* RX interrupt bit    */
+
+/* NVIC: UART0 RX = IRQ 0 on mps2-an500 (QEMU hw/arm/mps2.c uartirq[]) */
+#define NVIC_ISER    REG(0xE000E100u)
+#define UART0RX_IRQ_BIT  (1u << 0)
 
 /* 25 MHz system clock / 115200 bps */
 #define UART_BAUDDIV_115200  217u
+
+/* ==========================================================================
+ * RX ring buffer — used after uart_init_irq()
+ * ========================================================================== */
+
+static int              irq_mode;              /* 0 = polling, 1 = IRQ     */
+static char             rx_buf[UART_RX_SIZE];
+static volatile uint8_t rx_head, rx_tail;
 
 /* ==========================================================================
  * Public API
@@ -90,13 +110,40 @@ void uart_reinit_133mhz(void)
 
 void uart_init_irq(void)
 {
-    /* CMSDK UART has no FIFO interrupt support in QEMU.
-     * TX is already effectively non-blocking (TXFULL never set in QEMU).
-     * Leave in polling mode — no IRQ setup needed. */
+    /* Enable RX interrupt in CMSDK UART CTRL register.
+     * TX is already effectively non-blocking (TXFULL never set in QEMU). */
+    UART_CTRL = UART_CTRL_TX_EN | UART_CTRL_RX_EN | UART_CTRL_RX_INT_EN;
+
+    /* Enable UART0 RX IRQ in NVIC (IRQ 0 on mps2-an500) */
+    NVIC_ISER = UART0RX_IRQ_BIT;
+
+    irq_mode = 1;
+}
+
+/* UART0 RX interrupt handler — CMSDK UART0 RX is IRQ 0 on mps2-an500.
+ * Reads one byte into the ring buffer and clears the RX interrupt. */
+void UART0RX_IRQ_Handler(void)
+{
+    while (UART_STATE & UART_STATE_RXFULL) {
+        uint8_t c = (uint8_t)(UART_DATA & 0xFFu);
+        if ((uint8_t)(rx_head - rx_tail) < UART_RX_SIZE)
+            rx_buf[rx_head++ & (UART_RX_SIZE - 1u)] = (char)c;
+    }
+    /* Clear RX interrupt */
+    UART_INTSTATUS = UART_INT_RX;
 }
 
 int uart_getc(void)
 {
+    if (irq_mode) {
+        /* IRQ mode: read from ring buffer filled by UART0RX_IRQ_Handler */
+        if (rx_head == rx_tail)
+            return -1;
+        int c = (unsigned char)rx_buf[rx_tail & (UART_RX_SIZE - 1u)];
+        rx_tail++;
+        return c;
+    }
+    /* Polling mode (before uart_init_irq) */
     if (UART_STATE & UART_STATE_RXFULL)
         return (int)(unsigned char)UART_DATA;
     return -1;
