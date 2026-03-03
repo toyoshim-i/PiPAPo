@@ -1238,23 +1238,23 @@ Systematic testing of the complete boot-to-shell flow.
 |---|---|---|
 | Boot to `ppap# ` prompt | init spawns ash, profile prints motd + sets PS1 | QEMU + HW |
 | `echo hello` | Prints "hello" | QEMU + HW |
-| `ls /` | Lists: `bin dev etc mnt proc root sbin tmp` | QEMU + HW |
-| `ls /bin` | Lists all symlinks + `busybox` | QEMU + HW |
-| `cat /etc/hostname` | Prints "ppap" | QEMU + HW |
-| `cat /etc/passwd` | Prints "root:x:0:0:root:/root:/bin/ash" | QEMU + HW |
-| `uname -a` | "PicoPiAndPortable ppap 0.6.0 ... armv6m" | QEMU + HW |
-| `echo hello \| cat` | Pipeline: prints "hello" | QEMU + HW |
-| `echo hello > /tmp/test; cat /tmp/test` | Redirect to tmpfs file | QEMU + HW |
 | `kill -0 1` | Success (init is alive) | QEMU + HW |
 | Ctrl-C during `sleep 100` | Interrupts sleep, returns to prompt | QEMU + HW |
-| `ls /mnt/sd` | Lists files on FAT32 SD card | HW only |
-| `cat /mnt/sd/somefile.txt` | Reads file from SD | HW only |
 | Exit ash (Ctrl-D) | init respawns ash — new prompt appears | QEMU + HW |
 
-> **Note:** Tests for `ps`, `top`, `free`, `df`, and concurrent process listing
-> require procfs per-PID directories (`/proc/<pid>/stat`, `/proc/<pid>/cmdline`)
-> and `sys_statfs`, which are not yet implemented at this step.
-> These are covered as follow-up verification in **Step 14**.
+> **Note:** Several tests originally planned here were deferred due to bugs
+> found during integration:
+>
+> - `ls /`, `ls /bin` — blocked by the getdents infinite loop and brk
+>   semantics bugs fixed in **Step 13** (verified there).
+> - `cat /etc/hostname`, `cat /etc/passwd`, `uname -a`, `echo hello | cat`,
+>   `echo hello > /tmp/test; cat /tmp/test` — depend on musl malloc (which
+>   uses brk); may have been affected by the brk bug fixed in **Step 13**.
+>   Moved to follow-up verification in **Step 14**.
+> - `ls /mnt/sd`, `cat /mnt/sd/somefile.txt` — HW-only SD card tests;
+>   moved to follow-up verification in **Step 14**.
+> - `ps`, `top`, `free`, `df`, concurrent process listing — require procfs
+>   per-PID directories not yet implemented. Covered in **Step 14**.
 
 **Common failure modes and debugging:**
 
@@ -1493,14 +1493,21 @@ CPU:   0% usr   0% sys   0% nic 100% idle   0% io   0% irq   0% sirq
     3     2 root     R     4096   1%   0%  top
 ```
 
-**Follow-up test matrix** (deferred from Step 12 — now possible with procfs per-PID support):
+**Follow-up test matrix** (deferred from Step 12 — dependencies resolved by Steps 13–14):
 
-| Test | Expected Result | Platform |
-|---|---|---|
-| `ps` | Lists running processes (init, ash) | QEMU + HW |
-| `free` | Shows memory usage (total/used/free) | QEMU + HW |
-| `df` | Shows mounted filesystems and space (requires `sys_statfs`) | QEMU + HW |
-| 3 concurrent processes (`sleep 10 & sleep 10 & ps`) | ps shows 5 processes (init, ash, 2×sleep, ps) | QEMU + HW |
+| Test | Expected Result | Dependency | Platform |
+|---|---|---|---|
+| `cat /etc/hostname` | Prints "ppap" | brk fix (Step 13) | QEMU + HW |
+| `cat /etc/passwd` | Prints "root:x:0:0:root:/root:/bin/ash" | brk fix (Step 13) | QEMU + HW |
+| `uname -a` | "PicoPiAndPortable ppap 0.6.0 ... armv6m" | brk fix (Step 13) | QEMU + HW |
+| `echo hello \| cat` | Pipeline: prints "hello" | brk fix (Step 13) | QEMU + HW |
+| `echo hello > /tmp/test; cat /tmp/test` | Redirect to tmpfs file | brk fix (Step 13) | QEMU + HW |
+| `ls /mnt/sd` | Lists files on FAT32 SD card | brk fix (Step 13) | HW only |
+| `cat /mnt/sd/somefile.txt` | Reads file from SD | brk fix (Step 13) | HW only |
+| `ps` | Lists running processes (init, ash) | procfs per-PID (Step 14) | QEMU + HW |
+| `free` | Shows memory usage (total/used/free) | procfs (existing) | QEMU + HW |
+| `df` | Shows mounted filesystems and space | `sys_statfs` (Step 14) | QEMU + HW |
+| 3 concurrent processes (`sleep 10 & sleep 10 & ps`) | ps shows 5 processes (init, ash, 2×sleep, ps) | procfs per-PID (Step 14) | QEMU + HW |
 
 ---
 
