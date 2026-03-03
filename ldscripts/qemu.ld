@@ -108,6 +108,7 @@ SECTIONS {
     .bss (NOLOAD) : {
         __bss_start = .;
         *(.bss*)
+        *(.iobuf .iobuf.*)
         *(COMMON)
         . = ALIGN(4);
         __bss_end = .;

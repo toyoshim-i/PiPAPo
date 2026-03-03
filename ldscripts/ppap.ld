@@ -40,10 +40,10 @@
  *
  * SRAM layout (total 264KB):
  *
- *   0x20000000  +-----------------------+  <- RAM_KERNEL  (16KB)
+ *   0x20000000  +-----------------------+  <- RAM_KERNEL  (20KB)
  *               | Kernel .data/.bss     |     Kernel globals, initial stack
  *               | Stack (grows down)    |
- *   0x20004000  +-----------------------+  <- RAM_PAGES   (208KB = 52 × 4KB)
+ *   0x20005000  +-----------------------+  <- RAM_PAGES   (204KB = 51 × 4KB)
  *               | Page pool             |     User process pages (Phase 1+)
  *   0x20038000  +-----------------------+  <- RAM_IOBUF   (24KB)
  *               | I/O buffer            |     SD card DMA, FS metadata cache
@@ -61,8 +61,8 @@ MEMORY {
     FLASH_ROMFS  (r)   : ORIGIN = 0x10011000, LENGTH = 16M - 0x11000
 
     /* On-chip SRAM — 264KB total */
-    RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 16K
-    RAM_PAGES    (rwx) : ORIGIN = 0x20004000, LENGTH = 208K
+    RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 20K
+    RAM_PAGES    (rwx) : ORIGIN = 0x20005000, LENGTH = 204K
     RAM_IOBUF    (rw)  : ORIGIN = 0x20038000, LENGTH = 24K
     RAM_DMA      (rw)  : ORIGIN = 0x2003E000, LENGTH = 16K
 }
@@ -209,7 +209,7 @@ SECTIONS {
 
     /* Sanity check: kernel data + bss + stack must fit in 16KB */
     ASSERT((__stack_top <= ORIGIN(RAM_KERNEL) + LENGTH(RAM_KERNEL)),
-           "ERROR: Kernel data + bss + stack overflow RAM_KERNEL (16KB)")
+           "ERROR: Kernel data + bss + stack overflow RAM_KERNEL (20KB)")
 
 
     /* ------------------------------------------------------------------
@@ -228,7 +228,10 @@ SECTIONS {
      * ------------------------------------------------------------------ */
     .iobuf (NOLOAD) : {
         __iobuf_start = .;
-        . += LENGTH(RAM_IOBUF);
+        *(.iobuf .iobuf.*)
+        . = ALIGN(4);
+        __iobuf_alloc_end = .;
+        . = __iobuf_start + LENGTH(RAM_IOBUF);
         __iobuf_end = .;
     } > RAM_IOBUF
 

@@ -33,8 +33,10 @@ GCC_LIBDIR="$(dirname "$(arm-none-eabi-gcc -mthumb -mcpu=cortex-m0plus -print-li
 # PIC flags: all data references go through GOT (r9 = GOT base, set by kernel).
 # -mno-pic-data-is-text-relative: .text lives in flash (XIP) while .data/.got live in SRAM.
 # -T busybox.ld: link at address 0 with text+data PT_LOAD segments (ignored by gcc -c).
+# -pie: generate R_ARM_RELATIVE relocations so exec.c can fix up function-pointer
+#        arrays in .data (e.g. applet_main[]) whose entries are raw link-time addresses.
 BUSYBOX_LD="$SCRIPT_DIR/configs/busybox.ld"
-CFLAGS_PPAP="-mthumb -mcpu=cortex-m0plus -march=armv6s-m -mfloat-abi=soft -Os -nostdinc -isystem $MUSL_SYSROOT/include -isystem $GCC_INCLUDE -fPIC -msingle-pic-base -mpic-register=r9 -mno-pic-data-is-text-relative"
+CFLAGS_PPAP="-mthumb -mcpu=cortex-m0plus -march=armv6s-m -mfloat-abi=soft -Os -nostdinc -isystem $MUSL_SYSROOT/include -isystem $GCC_INCLUDE -fPIC -msingle-pic-base -mpic-register=r9 -mno-pic-data-is-text-relative -pie"
 
 # --- Handle --clean ---
 if [[ "${1:-}" == "--clean" ]]; then

@@ -114,3 +114,32 @@ int elf_find_got(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
 
     return 1;   /* no .got section */
 }
+
+/* ── elf_find_rel ────────────────────────────────────────────────────────── */
+
+int elf_find_rel(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
+                 elf_rel_info_t *out)
+{
+    if (ehdr->e_shoff == 0 || ehdr->e_shnum == 0)
+        return 1;
+    if (ehdr->e_shstrndx == 0 || ehdr->e_shstrndx >= ehdr->e_shnum)
+        return 1;
+
+    const elf32_shdr_t *sh_table =
+        (const elf32_shdr_t *)(file_base + ehdr->e_shoff);
+    const char *strtab =
+        (const char *)(file_base + sh_table[ehdr->e_shstrndx].sh_offset);
+
+    for (uint16_t i = 0; i < ehdr->e_shnum; i++) {
+        if (sh_table[i].sh_type != SHT_REL)
+            continue;
+        const char *name = strtab + sh_table[i].sh_name;
+        if (str_eq(name, ".rel.dyn")) {
+            out->offset = sh_table[i].sh_offset;
+            out->size   = sh_table[i].sh_size;
+            return 0;
+        }
+    }
+
+    return 1;   /* no .rel.dyn section */
+}

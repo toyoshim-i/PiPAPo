@@ -91,7 +91,7 @@ int do_execve(pcb_t *p, const char *path)
             (data_seg->p_memsz + PAGE_SIZE - 1) / PAGE_SIZE;
         if (data_pages == 0)
             data_pages = 1;
-        if (data_pages > 4) {
+        if (data_pages > 8) {
             vnode_put(vn);
             return -(int)ENOMEM;
         }
@@ -167,6 +167,52 @@ int do_execve(pcb_t *p, const char *path)
             }
         }
 
+        /* ── 7b. R_ARM_RELATIVE relocations (.rel.dyn from PIE builds) ─── */
+        /* PIE binaries have function-pointer arrays in .data (e.g.
+         * applet_main[]) whose entries are raw link-time vaddrs.
+         * .rel.dyn lists these locations so we can fix them up. */
+        elf_rel_info_t rel_info;
+        if (elf_find_rel(ehdr, file_base, &rel_info) == 0) {
+            const elf32_rel_t *rel =
+                (const elf32_rel_t *)(file_base + rel_info.offset);
+            uint32_t n_rel = rel_info.size / sizeof(elf32_rel_t);
+
+            for (uint32_t i = 0; i < n_rel; i++) {
+                if (ELF32_R_TYPE(rel[i].r_info) != R_ARM_RELATIVE)
+                    continue;
+
+                uint32_t off = rel[i].r_offset;
+
+                /* Only patch words in the data segment (SRAM).
+                 * Text-segment relocations can't be patched (flash XIP). */
+                if (off < data_seg->p_vaddr ||
+                    off >= data_seg->p_vaddr + data_seg->p_memsz)
+                    continue;
+
+                /* Skip words already handled by GOT relocation */
+                if (got_sram_addr != 0 &&
+                    off >= got_info.addr &&
+                    off < got_info.addr + got_info.size)
+                    continue;
+
+                uint32_t off_in_sram = off - data_seg->p_vaddr;
+                uint32_t *word = (uint32_t *)(sram_page + off_in_sram);
+                uint32_t val = *word;
+
+                if (val == 0)
+                    continue;
+
+                if (val < data_seg->p_vaddr) {
+                    /* Text/rodata reference → flash */
+                    *word = val + flash_text_base;
+                } else {
+                    /* Data/BSS reference → SRAM */
+                    *word = val - data_seg->p_vaddr +
+                            (uint32_t)(uintptr_t)sram_page;
+                }
+            }
+        }
+
         /* Store all data pages in user_pages[] */
         for (uint32_t i = 0; i < data_pages; i++)
             p->user_pages[i] = sram_page + i * PAGE_SIZE;
@@ -180,7 +226,7 @@ int do_execve(pcb_t *p, const char *path)
     /* ── 8. Allocate stack page ────────────────────────────────────────── */
     void *stack = page_alloc();
     if (!stack) {
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 8; i++) {
             if (p->user_pages[i]) {
                 page_free(p->user_pages[i]);
                 p->user_pages[i] = NULL;
@@ -191,8 +237,57 @@ int do_execve(pcb_t *p, const char *path)
     }
     p->stack_page = stack;
 
-    /* ── 9. Set up the exception frame ─────────────────────────────────── */
-    proc_setup_stack(p, (void (*)(void))(uintptr_t)entry);
+    /* ── 8a. Build argc/argv/envp/auxv at top of stack ─────────────────
+     *
+     * musl's _start reads:  argc = [SP], argv = SP+4, ...
+     *
+     * Layout (high → low):
+     *   path string data (NUL-terminated)
+     *   <8-byte alignment padding>
+     *   auxv[1] = {AT_NULL, 0}
+     *   auxv[0] = {AT_PAGESZ, PAGE_SIZE}
+     *   envp[0] = NULL
+     *   argv[1] = NULL
+     *   argv[0] = pointer to path string
+     *   argc    = 1
+     *              ← user_sp (PSP after exception return)
+     */
+    {
+        uint32_t stack_top = (uint32_t)(uintptr_t)stack + PAGE_SIZE;
+        uint32_t sp = stack_top;
+
+        /* Copy path string to top of stack */
+        uint32_t pathlen = (uint32_t)strlen(path) + 1;
+        sp -= pathlen;
+        memcpy((void *)(uintptr_t)sp, path, pathlen);
+        uint32_t path_str_addr = sp;
+
+        /* Align down to 8 bytes before pushing word-sized data.
+         * We push exactly 8 words (32 bytes) below, and 32 is a multiple
+         * of 8, so the final SP remains 8-byte aligned (ARM AAPCS). */
+        sp &= ~7u;
+
+        /* auxv[1]: AT_NULL */
+        sp -= 4; *(uint32_t *)(uintptr_t)sp = 0;          /* val */
+        sp -= 4; *(uint32_t *)(uintptr_t)sp = 0;          /* AT_NULL */
+        /* auxv[0]: AT_PAGESZ */
+        sp -= 4; *(uint32_t *)(uintptr_t)sp = PAGE_SIZE;  /* val */
+        sp -= 4; *(uint32_t *)(uintptr_t)sp = 6;          /* AT_PAGESZ */
+
+        /* envp[0] = NULL */
+        sp -= 4; *(uint32_t *)(uintptr_t)sp = 0;
+
+        /* argv[1] = NULL */
+        sp -= 4; *(uint32_t *)(uintptr_t)sp = 0;
+        /* argv[0] = path string */
+        sp -= 4; *(uint32_t *)(uintptr_t)sp = path_str_addr;
+
+        /* argc = 1 */
+        sp -= 4; *(uint32_t *)(uintptr_t)sp = 1;
+
+        /* ── 9. Set up the exception frame ─────────────────────────────── */
+        proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, sp);
+    }
 
     /* Patch r9 (GOT base) in the software frame.
      * proc_setup_stack builds: [r4, r5, r6, r7, r8, r9, r10, r11]

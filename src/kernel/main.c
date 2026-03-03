@@ -228,18 +228,26 @@ void kmain(void)
     proc_table[0].stack_page = page_alloc();
 
     /* ------------------------------------------------------------------
-     * Phase 3 Step 3: exec /bin/hello as the init process (pid 1)
+     * Phase 6 Step 8: launch /sbin/init (busybox) as PID 1
+     * Fallback to /bin/sh if init is missing.
      * ------------------------------------------------------------------ */
     {
         pcb_t *init = proc_alloc();
-        int exec_err = do_execve(init, "/bin/hello");
+        init->pgid = init->pid;
+        init->sid  = init->pid;
+
+        int exec_err = do_execve(init, "/sbin/init");
+        if (exec_err < 0) {
+            uart_puts("INIT: /sbin/init failed, trying /bin/sh\n");
+            exec_err = do_execve(init, "/bin/sh");
+        }
         if (exec_err == 0) {
             init->state = PROC_RUNNABLE;
-            uart_puts("EXEC: /bin/hello loaded, pid=");
+            uart_puts("INIT: pid=");
             uart_print_dec(init->pid);
-            uart_puts("\n");
+            uart_puts(" loaded\n");
         } else {
-            uart_puts("EXEC: /bin/hello FAILED (err=");
+            uart_puts("PANIC: no init or shell (err=");
             uart_print_dec((uint32_t)(-(int)exec_err));
             uart_puts(")\n");
         }

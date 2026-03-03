@@ -49,7 +49,7 @@ long sys_exit(long status)
     /* Free user pages only if we own them (vfork_parent == NULL means
      * either this isn't a vfork child, or execve already replaced them) */
     if (!current->vfork_parent) {
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 8; i++) {
             if (current->user_pages[i]) {
                 page_free(current->user_pages[i]);
                 current->user_pages[i] = NULL;
@@ -115,7 +115,7 @@ long sys_vfork(uint32_t *frame)
     child->stack_page = stack;
 
     /* 3. Share parent's user_pages with child */
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < 8; i++)
         child->user_pages[i] = current->user_pages[i];
 
     /* 4. Build child's stack: copy the parent's entire stack page.
@@ -257,14 +257,14 @@ long sys_execve(const char *path)
 {
     /* Save old pages to free after successful load */
     void *old_stack = current->stack_page;
-    void *old_user[4];
+    void *old_user[8];
     int owns_pages = (current->vfork_parent == NULL);
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < 8; i++)
         old_user[i] = current->user_pages[i];
 
     /* Clear pages so do_execve allocates fresh ones */
     current->stack_page = NULL;
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < 8; i++)
         current->user_pages[i] = NULL;
 
     /* Close old fds — do_execve will set up new ones */
@@ -275,7 +275,7 @@ long sys_execve(const char *path)
     if (err < 0) {
         /* Restore old pages on failure */
         current->stack_page = old_stack;
-        for (int i = 0; i < 4; i++)
+        for (int i = 0; i < 8; i++)
             current->user_pages[i] = old_user[i];
         fd_stdio_init(current);
         return (long)err;
@@ -287,7 +287,7 @@ long sys_execve(const char *path)
 
     /* Free old user pages only if we owned them */
     if (owns_pages) {
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 8; i++) {
             if (old_user[i])
                 page_free(old_user[i]);
         }

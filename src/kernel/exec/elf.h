@@ -57,6 +57,24 @@
 /* ── Program header types ────────────────────────────────────────────────── */
 
 #define PT_LOAD     1
+#define PT_DYNAMIC  2
+
+/* ── Relocation types ───────────────────────────────────────────────────── */
+
+#define R_ARM_RELATIVE  23      /* Adjust by load base (PIE relocation) */
+
+/* ── Section types ──────────────────────────────────────────────────────── */
+
+#define SHT_REL     9           /* Relocation entries (without addend) */
+
+/* ── ELF32 relocation entry (8 bytes) ───────────────────────────────────── */
+
+typedef struct {
+    uint32_t r_offset;          /* address of the word to relocate */
+    uint32_t r_info;            /* type + symbol index */
+} elf32_rel_t;
+
+#define ELF32_R_TYPE(i)  ((i) & 0xffu)
 
 /* ── Program header flags ────────────────────────────────────────────────── */
 
@@ -119,6 +137,13 @@ typedef struct {
     uint32_t size;      /* size in bytes */
 } elf_got_info_t;
 
+/* ── Relocation table descriptor ───────────────────────────────────────── */
+
+typedef struct {
+    uint32_t offset;    /* file offset of .rel.dyn section */
+    uint32_t size;      /* size in bytes (each entry = 8 bytes) */
+} elf_rel_info_t;
+
 /* ── Parser API ──────────────────────────────────────────────────────────── */
 
 /*
@@ -161,5 +186,17 @@ uint32_t elf_entry(const elf32_ehdr_t *ehdr);
  */
 int elf_find_got(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
                  elf_got_info_t *out);
+
+/*
+ * elf_find_rel — locate the .rel.dyn section in an ELF binary.
+ *
+ * PIE binaries contain R_ARM_RELATIVE entries that tell the loader
+ * which data-segment words hold addresses needing relocation (e.g.
+ * function-pointer arrays like applet_main[]).
+ *
+ * Returns 0 on success, 1 if no .rel.dyn exists, -ENOEXEC on error.
+ */
+int elf_find_rel(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
+                 elf_rel_info_t *out);
 
 #endif /* PPAP_EXEC_ELF_H */

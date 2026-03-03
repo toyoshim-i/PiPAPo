@@ -3,12 +3,14 @@
 #
 # Key design choices:
 #   - NOMMU mode (no fork, vfork-only, standalone applets)
-#   - Static linking with musl libc
+#   - PIE linking with musl libc (R_ARM_RELATIVE relocations for XIP)
 #   - Minimal applet set: hush shell + coreutils
 #   - No Linux-specific features (sendfile, utmp, syslog, proc)
 
 # -- Platform -----------------------------------------------------------------
-CONFIG_STATIC=y
+# CONFIG_STATIC is NOT set — we use -pie to get .rel.dyn relocations.
+# The exec.c loader needs these to fix up function-pointer arrays
+# (e.g. applet_main[]) whose entries are raw link-time addresses.
 CONFIG_NOMMU=y
 CONFIG_CROSS_COMPILER_PREFIX="arm-none-eabi-"
 
@@ -57,4 +59,5 @@ CONFIG_KILL=y
 CONFIG_SLEEP=y
 
 # -- System -------------------------------------------------------------------
+CONFIG_INIT=y
 CONFIG_UNAME=y

@@ -52,12 +52,17 @@ void mm_init(void)
     uint32_t stack_top = (uint32_t)(uintptr_t)&__stack_top;
     uint32_t kern_used = bss_end - SRAM_KERNEL_BASE;
 
-    /* Build the free stack: push all pages from the pool, lowest address first
-     * so page_alloc() returns the lowest-addressed page first (predictable). */
+    /* Build the free stack: push pages from the pool that don't overlap
+     * with the kernel stack.  On QEMU (flat memory model) the initial
+     * stack may extend into the page pool region.  Skip those pages. */
+    uint32_t stack_page_top = (stack_top + PAGE_SIZE - 1u) & ~(PAGE_SIZE - 1u);
+    free_top = 0;
     for (uint32_t i = 0u; i < PAGE_COUNT; i++) {
-        free_stack[i] = (void *)(uintptr_t)(PAGE_POOL_BASE + i * PAGE_SIZE);
+        uint32_t paddr = PAGE_POOL_BASE + i * PAGE_SIZE;
+        if (paddr < stack_page_top)
+            continue;   /* overlaps with kernel stack */
+        free_stack[free_top++] = (void *)(uintptr_t)paddr;
     }
-    free_top = PAGE_COUNT;
 
     /* ── Boot-time memory map ─────────────────────────────────────────────── */
     uart_puts("MM: SRAM memory map\n");
@@ -83,15 +88,17 @@ void mm_init(void)
         uart_puts("\n");
     }
 
-    /* Page pool */
+    /* Page pool — show actual usable start (may skip kernel-stack overlap) */
+    uint32_t actual_base = (free_top > 0)
+        ? (uint32_t)(uintptr_t)free_stack[0] : PAGE_POOL_BASE;
     uart_puts("MM:   pages   ");
-    uart_print_hex32(PAGE_POOL_BASE);
+    uart_print_hex32(actual_base);
     uart_puts("–");
     uart_print_hex32(PAGE_POOL_BASE + PAGE_POOL_SIZE - 1u);
     uart_puts(" ");
-    print_kb(PAGE_POOL_SIZE);
+    print_kb(free_top * PAGE_SIZE);
     uart_puts(" (");
-    uart_print_dec(PAGE_COUNT);
+    uart_print_dec(free_top);
     uart_puts(" × 4 KB, all free)\n");
 
     /* I/O buffer */

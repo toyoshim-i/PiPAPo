@@ -233,6 +233,8 @@ static const devfs_node_t devfs_nodes[] = {
     { "null",    devnull_read,   devnull_write  },
     { "zero",    devzero_read,   devnull_write  },
     { "ttyS0",   devtty_read,    devtty_write   },
+    { "console", devtty_read,    devtty_write   },
+    { "tty",     devtty_read,    devtty_write   },
     { "urandom", devrandom_read, devnull_write  },
     { "mmcblk0", devblk_read,    devblk_write   },
     { "loop0",   devloop0_read,  devloop0_write },

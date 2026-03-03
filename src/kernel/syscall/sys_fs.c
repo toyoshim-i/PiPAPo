@@ -25,6 +25,7 @@
 #include "../vfs/vfs.h"
 #include "../fd/fd.h"
 #include "../fd/file.h"
+#include "../fd/tty.h"
 #include "../proc/proc.h"
 #include "../mm/kmem.h"
 #include "../errno.h"
@@ -150,6 +151,29 @@ long sys_open(const char *path, long flags, long mode)
             vn->mount->ops->truncate(vn, 0);
         else
             vn->size = 0;  /* simple fallback */
+    }
+
+    /* TTY device detection: redirect /dev/ttyS0, /dev/console, /dev/tty
+     * opens to the tty driver so they get line discipline processing.
+     * devfs vnodes have fs_priv → devfs_node_t whose first field is name. */
+    if (vn->type == VNODE_DEV && vn->fs_priv) {
+        const char *devname = *(const char **)vn->fs_priv;
+        if (devname &&
+            (strcmp(devname, "ttyS0") == 0 ||
+             strcmp(devname, "console") == 0 ||
+             strcmp(devname, "tty") == 0)) {
+            /* Use the tty driver file objects with line discipline */
+            struct file *ttyf;
+            if ((uint32_t)flags & O_WRONLY)
+                ttyf = &tty_stdout;
+            else
+                ttyf = &tty_stdin;   /* O_RDONLY or O_RDWR → stdin ops */
+            int fd = fd_alloc(current, ttyf);
+            vnode_put(vn);
+            if (fd < 0)
+                return (long)fd;
+            return (long)fd;
+        }
     }
 
     /* Allocate a struct file from the pool */

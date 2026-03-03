@@ -63,7 +63,7 @@ SVC_Handler:
     str   r2, [r3]          @ svc_saved_a0 = original a0
 
     @ --- Build argument registers for syscall_dispatch(frame, nr, a4, a5) ---
-    @     r0 already = frame (PSP)
+    mrs   r0, psp            @ r0 = frame (re-read PSP — r0 was used above)
     ldr   r1, [sp, #8]      @ r1 = saved r7 = syscall number
     ldr   r2, [sp, #0]      @ r2 = saved r4 = 5th arg
     ldr   r3, [sp, #4]      @ r3 = saved r5 = 6th arg

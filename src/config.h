@@ -61,7 +61,7 @@
  *             (PAGE_POOL_SIZE = PAGE_COUNT × PAGE_SIZE).
  * ────────────────────────────────────────────────────────────────────────── */
 #define PAGE_SIZE          4096u    /* bytes per page                       */
-#define PAGE_COUNT           52u    /* pages in the pool (208 KB total)     */
+#define PAGE_COUNT           51u    /* pages in the pool (204 KB total)     */
 
 /* ── VFS (Virtual File System) ────────────────────────────────────────────
  * VFS_MOUNT_MAX     Maximum concurrent mount points (romfs /, devfs /dev,

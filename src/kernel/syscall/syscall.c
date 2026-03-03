@@ -24,10 +24,6 @@
 #include "../errno.h"
 #include <stdint.h>
 
-#ifdef SYSCALL_TRACE
-#include "../../drivers/uart.h"
-#endif
-
 /* SIGCHLD — needed for clone() fast-path detection */
 #define SIGCHLD_NR 17
 
@@ -289,17 +285,6 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
         break;
 
     default:
-#ifdef SYSCALL_TRACE
-        uart_puts("SYS? ");
-        uart_print_dec(nr);
-        uart_puts("(");
-        uart_print_hex32((uint32_t)a0);
-        uart_puts(",");
-        uart_print_hex32((uint32_t)a1);
-        uart_puts(",");
-        uart_print_hex32((uint32_t)a2);
-        uart_puts(") = -ENOSYS\n");
-#endif
         ret = -(long)ENOSYS;
         break;
     }

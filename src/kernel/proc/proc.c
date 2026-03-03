@@ -68,6 +68,10 @@ void proc_init(void)
     if (p)
         proc_free(p);
 
+    /* Reset PID counter so the first real process gets PID 1.
+     * busybox init requires PID == 1. */
+    next_pid = 1;
+
     uart_puts("PROC: self-test ");
     uart_puts(ok ? "PASSED\n" : "FAILED\n");
 }
@@ -98,14 +102,13 @@ void proc_free(pcb_t *p)
     p->state = PROC_FREE;
 }
 
-void proc_setup_stack(pcb_t *p, void (*entry)(void))
+void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp)
 {
     /*
      * Build the initial stack frame that PendSV_Handler will restore on
      * the first context switch into this process.
      *
-     * Stack grows downward from the top of the 4 KB page.  We push two
-     * layers (high address to low):
+     * Stack grows downward.  We push two layers (high address to low):
      *
      *  1. Hardware exception frame (8 words): the CPU pops this when
      *     PendSV does `bx lr` with EXC_RETURN = 0xFFFFFFFD.
@@ -113,9 +116,17 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void))
      *  2. Software callee-saved frame (8 words): PendSV_Handler loads
      *     r4–r11 from here, then sets PSP to the start of layer 1.
      *
+     * user_sp is the PSP after the hardware frame pop.  For exec'd
+     * processes it points to the argc slot; for plain threads it's
+     * the top of the stack page.
+     *
      * p->sp is set to the bottom of layer 2 (= the `r4` slot).
      */
-    uint32_t *sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
+    uint32_t *sp;
+    if (user_sp)
+        sp = (uint32_t *)(uintptr_t)user_sp;
+    else
+        sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
 
     /* ── Layer 1: hardware exception frame (high → low) ──────────────── */
     *--sp = 0x01000000u;                  /* xpsr: Thumb bit (T=1)       */

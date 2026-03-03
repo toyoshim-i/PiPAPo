@@ -1670,20 +1670,31 @@ void kmain(void)
         uart_puts("KERNEL TESTS FAILED\n");
 
     /* ------------------------------------------------------------------
-     * Phase 3 Step 5: exec /bin/test_vfork as the init process (pid 1)
-     * Tests vfork + execve + waitpid integration.
+     * Phase 6 Step 8: launch /sbin/init (busybox) as PID 1
+     * Fallback chain: /sbin/init → /bin/sh → /bin/runtests
      * ------------------------------------------------------------------ */
     proc_table[0].stack_page = page_alloc();
 
     pcb_t *init = proc_alloc();
-    int exec_err = do_execve(init, "/bin/runtests");
+    init->pgid = init->pid;
+    init->sid  = init->pid;
+
+    int exec_err = do_execve(init, "/sbin/init");
+    if (exec_err < 0) {
+        uart_puts("INIT: /sbin/init failed, trying /bin/sh\n");
+        exec_err = do_execve(init, "/bin/sh");
+    }
+    if (exec_err < 0) {
+        uart_puts("INIT: /bin/sh failed, falling back to /bin/runtests\n");
+        exec_err = do_execve(init, "/bin/runtests");
+    }
     if (exec_err == 0) {
         init->state = PROC_RUNNABLE;
-        uart_puts("EXEC: /bin/runtests loaded, pid=");
+        uart_puts("INIT: pid=");
         uart_print_dec(init->pid);
-        uart_puts("\n");
+        uart_puts(" loaded\n");
     } else {
-        uart_puts("EXEC: /bin/runtests FAILED (err=");
+        uart_puts("PANIC: no init, shell, or runtests (err=");
         uart_print_dec((uint32_t)(-(int)exec_err));
         uart_puts(")\n");
     }
@@ -1691,7 +1702,7 @@ void kmain(void)
     /* Also create a plain context-switch partner thread */
     pcb_t *p2 = proc_alloc();
     p2->stack_page = page_alloc();
-    proc_setup_stack(p2, thread_loop);
+    proc_setup_stack(p2, thread_loop, 0);
     p2->state = PROC_RUNNABLE;
 
     /* Phase 1 Step 11: configure MPU (no-op on QEMU — MPU_TYPE reads 0) */

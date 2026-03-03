@@ -7,7 +7,7 @@
  * Layout (≈204 bytes — fits comfortably in 256 B):
  *   [0..35]   saved callee registers r4–r11 + sp  (must match switch.S offsets)
  *   [36..47]  pid, ppid, state
- *   [48..71]  stack_page + user_pages[4]
+ *   [48..87]  stack_page + user_pages[8]
  *   [72..135] fd_table[FD_MAX]
  *   [136..199] cwd[64]
  *   [200..207] ticks_remaining, sleep_until
@@ -73,7 +73,7 @@ typedef struct pcb {
 
     /* ── Memory ─────────────────────────────────────────────────────────── */
     void    *stack_page;        /* 4 KB page from page_alloc(): process stack */
-    void    *user_pages[4];     /* user data pages — allocated in Phase 3+    */
+    void    *user_pages[8];     /* user data pages — allocated in Phase 3+    */
 
     /* ── File descriptors ───────────────────────────────────────────────── */
     struct file *fd_table[FD_MAX];
@@ -159,7 +159,11 @@ void proc_free(pcb_t *p);
  *
  * On entry to `entry`, all callee-saved registers are zero, r0–r3 are zero,
  * and lr = 0xFFFFFFFD (EXC_RETURN: Thread mode, PSP, basic frame).
+ *
+ * user_sp: the PSP value after the hardware frame pop.  For plain kernel
+ * threads pass 0 (defaults to stack_page + PAGE_SIZE).  For exec'd
+ * processes this points to the argc slot built by do_execve().
  */
-void proc_setup_stack(pcb_t *p, void (*entry)(void));
+void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp);
 
 #endif /* PPAP_PROC_PROC_H */
