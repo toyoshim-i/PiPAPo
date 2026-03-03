@@ -1238,21 +1238,21 @@ Systematic testing of the complete boot-to-shell flow.
 |---|---|---|
 | Boot to `ppap# ` prompt | init spawns ash, profile prints motd + sets PS1 | QEMU + HW |
 | `echo hello` | Prints "hello" | QEMU + HW |
+| `cat /etc/hostname` | Prints "ppap" | QEMU + HW |
+| `cat /etc/passwd` | Prints "root:x:0:0:root:/root:/bin/ash" | QEMU + HW |
+| `uname -a` | "PicoPiAndPortable ppap 0.6.0 ... armv6m" | QEMU + HW |
+| `echo hello \| cat` | Pipeline: prints "hello" | QEMU + HW |
+| `echo hello > /tmp/test; cat /tmp/test` | Redirect to tmpfs file | QEMU + HW |
 | `kill -0 1` | Success (init is alive) | QEMU + HW |
 | Ctrl-C during `sleep 100` | Interrupts sleep, returns to prompt | QEMU + HW |
+| `ls /mnt/sd` | Lists files on FAT32 SD card | HW only |
+| `cat /mnt/sd/somefile.txt` | Reads file from SD | HW only |
 | Exit ash (Ctrl-D) | init respawns ash — new prompt appears | QEMU + HW |
 
-> **Note:** Several tests originally planned here were deferred due to bugs
-> found during integration:
+> **Note:** Some tests originally planned here were deferred:
 >
-> - `ls /`, `ls /bin` — blocked by the getdents infinite loop and brk
->   semantics bugs fixed in **Step 13** (verified there).
-> - `cat /etc/hostname`, `cat /etc/passwd`, `uname -a`, `echo hello | cat`,
->   `echo hello > /tmp/test; cat /tmp/test` — depend on musl malloc (which
->   uses brk); may have been affected by the brk bug fixed in **Step 13**.
->   Moved to follow-up verification in **Step 14**.
-> - `ls /mnt/sd`, `cat /mnt/sd/somefile.txt` — HW-only SD card tests;
->   moved to follow-up verification in **Step 14**.
+> - `ls /`, `ls /bin` — blocked by the getdents infinite loop bug;
+>   fixed and verified in **Step 13**.
 > - `ps`, `top`, `free`, `df`, concurrent process listing — require procfs
 >   per-PID directories not yet implemented. Covered in **Step 14**.
 
@@ -1493,21 +1493,110 @@ CPU:   0% usr   0% sys   0% nic 100% idle   0% io   0% irq   0% sirq
     3     2 root     R     4096   1%   0%  top
 ```
 
-**Follow-up test matrix** (deferred from Step 12 — dependencies resolved by Steps 13–14):
+**Follow-up test matrix** (deferred from Step 12):
 
-| Test | Expected Result | Dependency | Platform |
-|---|---|---|---|
-| `cat /etc/hostname` | Prints "ppap" | brk fix (Step 13) | QEMU + HW |
-| `cat /etc/passwd` | Prints "root:x:0:0:root:/root:/bin/ash" | brk fix (Step 13) | QEMU + HW |
-| `uname -a` | "PicoPiAndPortable ppap 0.6.0 ... armv6m" | brk fix (Step 13) | QEMU + HW |
-| `echo hello \| cat` | Pipeline: prints "hello" | brk fix (Step 13) | QEMU + HW |
-| `echo hello > /tmp/test; cat /tmp/test` | Redirect to tmpfs file | brk fix (Step 13) | QEMU + HW |
-| `ls /mnt/sd` | Lists files on FAT32 SD card | brk fix (Step 13) | HW only |
-| `cat /mnt/sd/somefile.txt` | Reads file from SD | brk fix (Step 13) | HW only |
-| `ps` | Lists running processes (init, ash) | procfs per-PID (Step 14) | QEMU + HW |
-| `free` | Shows memory usage (total/used/free) | procfs (existing) | QEMU + HW |
-| `df` | Shows mounted filesystems and space | `sys_statfs` (Step 14) | QEMU + HW |
-| 3 concurrent processes (`sleep 10 & sleep 10 & ps`) | ps shows 5 processes (init, ash, 2×sleep, ps) | procfs per-PID (Step 14) | QEMU + HW |
+| Test | Expected Result | Platform |
+|---|---|---|
+| `ps` | Lists running processes (init, ash) | QEMU + HW |
+| `free` | Shows memory usage (total/used/free) | QEMU + HW |
+| `df` | Shows mounted filesystems and space (requires `sys_statfs`) | QEMU + HW |
+| 3 concurrent processes (`sleep 10 & sleep 10 & ps`) | ps shows 5 processes (init, ash, 2×sleep, ps) | QEMU + HW |
+
+
+### Step 15 — Enable mount, umount, and vi Applets
+
+Enable user-space `mount`/`umount` commands and the `vi` text editor.
+The VFS mount infrastructure already exists in the kernel (used by romfs,
+devfs, procfs, tmpfs, vfat, ufs); this step adds the syscall interface so
+busybox can invoke it from user space.
+
+**New syscalls:**
+
+| Syscall | Number | Signature |
+|---|---|---|
+| `SYS_MOUNT` | 21 | `mount(source, target, fstype, flags, data)` |
+| `SYS_UMOUNT2` | 52 | `umount2(target, flags)` |
+
+`sys_mount()` implementation:
+- Copy `source`, `target`, and `fstype` strings from user space
+- Look up filesystem ops by `fstype` name (e.g., "vfat" → `vfat_ops`)
+- For block-backed filesystems, resolve `source` to a block device
+- Call existing `vfs_mount(target, ops, flags, dev_data)`
+- Support `MS_RDONLY` flag; other flags can be ignored initially
+
+`sys_umount2()` implementation:
+- Find mount entry matching `target` path
+- Release vnodes and mark mount entry inactive
+- Support `MNT_DETACH` flag (lazy umount — mark inactive, defer cleanup)
+
+**busybox config additions:**
+
+```
+CONFIG_MOUNT=y
+CONFIG_UMOUNT=y
+CONFIG_VI=y
+CONFIG_FEATURE_VI_COLON=y
+CONFIG_FEATURE_VI_SEARCH=y
+```
+
+**vi terminal requirements:**
+
+busybox vi needs raw-mode terminal input and cursor positioning via ANSI
+escape sequences.  Current tty.c status:
+
+| Feature | Status |
+|---|---|
+| TCGETS/TCSETS (termios get/set) | Implemented |
+| TIOCGWINSZ/TIOCSWINSZ (window size) | Implemented (24×80 default) |
+| Raw mode (disable ICANON+ECHO) | Implemented |
+| VMIN/VTIME in c_cc | Need verification |
+| SIGWINCH on resize | Not implemented (optional — fixed terminal size) |
+
+vi should work for basic editing on a fixed-size terminal.  SIGWINCH is
+not needed since the UART terminal does not resize.
+
+**romfs changes:**
+
+Add symlinks to the romfs template:
+- `romfs/bin/vi` → `busybox`
+- `romfs/sbin/mount` → `../bin/busybox`
+- `romfs/sbin/umount` → `../bin/busybox`
+
+Rebuild busybox and regenerate romfs image.
+
+**Files modified:**
+
+| File | Change |
+|---|---|
+| `src/kernel/syscall/syscall.h` | Add `SYS_MOUNT` (21), `SYS_UMOUNT2` (52) |
+| `src/kernel/syscall/syscall.c` | Dispatch entries for mount/umount2 |
+| `src/kernel/syscall/sys_fs.c` | Implement `sys_mount()`, `sys_umount2()` |
+| `src/kernel/vfs/vfs.c` | Add `vfs_umount()` if not present; add fs-type lookup table |
+| `third_party/configs/busybox_ppap.fragment` | Enable CONFIG_MOUNT, CONFIG_UMOUNT, CONFIG_VI |
+| `romfs/bin/vi` | Symlink → busybox |
+| `romfs/sbin/mount` | Symlink → ../bin/busybox |
+| `romfs/sbin/umount` | Symlink → ../bin/busybox |
+
+**Verification:**
+
+```
+$ mount
+rootfs on / type romfs (ro)
+devfs on /dev type devfs (rw)
+proc on /proc type procfs (rw)
+tmpfs on /tmp type tmpfs (rw)
+
+$ mount -t vfat /dev/sd0 /mnt/sd
+$ ls /mnt/sd
+hello.txt
+
+$ umount /mnt/sd
+
+$ vi /tmp/test.txt
+  (opens editor, insert text, :wq saves and quits)
+$ cat /tmp/test.txt
+hello from vi
+```
 
 ---
 
