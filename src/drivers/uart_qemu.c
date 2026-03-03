@@ -27,7 +27,8 @@
  */
 
 #include "uart.h"
-#include "config.h"          /* UART_RX_SIZE */
+#include "config.h"              /* UART_RX_SIZE */
+#include "kernel/fd/tty.h"       /* tty_rx_notify, tty_signal_intr */
 #include <stdint.h>
 
 /* ==========================================================================
@@ -121,16 +122,28 @@ void uart_init_irq(void)
 }
 
 /* UART0 RX interrupt handler — CMSDK UART0 RX is IRQ 0 on mps2-an500.
- * Reads one byte into the ring buffer and clears the RX interrupt. */
+ * Reads bytes into the ring buffer, clears the RX interrupt, and
+ * notifies the tty layer to wake blocked readers. */
 void UART0RX_IRQ_Handler(void)
 {
+    int got_rx = 0;
+    int got_ctrl_c = 0;
     while (UART_STATE & UART_STATE_RXFULL) {
         uint8_t c = (uint8_t)(UART_DATA & 0xFFu);
+        if (c == 0x03u)
+            got_ctrl_c = 1;
         if ((uint8_t)(rx_head - rx_tail) < UART_RX_SIZE)
             rx_buf[rx_head++ & (UART_RX_SIZE - 1u)] = (char)c;
+        got_rx = 1;
     }
     /* Clear RX interrupt */
     UART_INTSTATUS = UART_INT_RX;
+
+    /* Wake processes blocked on tty read / deliver Ctrl-C signal */
+    if (got_ctrl_c)
+        tty_signal_intr();
+    if (got_rx)
+        tty_rx_notify();
 }
 
 int uart_getc(void)
@@ -147,6 +160,13 @@ int uart_getc(void)
     if (UART_STATE & UART_STATE_RXFULL)
         return (int)(unsigned char)UART_DATA;
     return -1;
+}
+
+int uart_rx_avail(void)
+{
+    if (irq_mode)
+        return rx_head != rx_tail;
+    return (UART_STATE & UART_STATE_RXFULL) ? 1 : 0;
 }
 
 void uart_print_hex32(uint32_t v)

@@ -5,6 +5,7 @@
  */
 
 #include "syscall.h"
+#include "../proc/proc.h"
 #include "../proc/sched.h"
 #include "../errno.h"
 #include "config.h"
@@ -36,27 +37,43 @@ struct timespec {
  */
 long sys_nanosleep(void *req, void *rem)
 {
+    (void)rem;
     if (!req)
         return -(long)EINVAL;
 
-    const struct timespec *ts = (const struct timespec *)req;
-    if (ts->tv_sec < 0 || ts->tv_nsec < 0 || ts->tv_nsec >= 1000000000L)
-        return -(long)EINVAL;
+    /* On svc_restart re-entry: check for pending signal first */
+    if (current->sig_pending & ~current->sig_blocked) {
+        current->sleep_until = 0;
+        return -(long)EINTR;
+    }
 
-    /* Nanoseconds per SysTick tick */
-    const uint32_t NS_PER_TICK = 1000000000u / PPAP_TICK_HZ;
+    /* On svc_restart re-entry: check if sleep has expired */
+    if (current->sleep_until != 0 &&
+        (int32_t)(sched_get_ticks() - current->sleep_until) >= 0) {
+        current->sleep_until = 0;
+        return 0;
+    }
 
-    uint32_t ticks = (uint32_t)ts->tv_sec * PPAP_TICK_HZ
-                   + (uint32_t)ts->tv_nsec / NS_PER_TICK;
+    /* First entry (sleep_until == 0): compute deadline */
+    if (current->sleep_until == 0) {
+        const struct timespec *ts = (const struct timespec *)req;
+        if (ts->tv_sec < 0 || ts->tv_nsec < 0 || ts->tv_nsec >= 1000000000L)
+            return -(long)EINVAL;
 
-    if (ticks == 0u)
-        ticks = 1u;  /* always sleep at least one tick */
+        const uint32_t NS_PER_TICK = 1000000000u / PPAP_TICK_HZ;
+        uint32_t ticks = (uint32_t)ts->tv_sec * PPAP_TICK_HZ
+                       + (uint32_t)ts->tv_nsec / NS_PER_TICK;
+        if (ticks == 0u)
+            ticks = 1u;
 
-    sched_sleep(ticks);
-    /* Process resumes here after being woken by sched_tick() */
+        current->sleep_until = sched_get_ticks() + ticks;
+    }
 
-    (void)rem;  /* not filled in Phase 1 */
-    return 0;
+    /* Block with svc_restart so SVC re-executes when woken */
+    current->state = PROC_SLEEPING;
+    svc_restart = 1;
+    sched_yield();
+    return 0;   /* ignored — SVC restores original args */
 }
 
 /* ── Time conversion helper ─────────────────────────────────────────────────── */
@@ -137,16 +154,37 @@ long sys_clock_nanosleep32(long clk, long flags, const void *req, void *rem)
     if (!req)
         return -(long)EINVAL;
 
-    const long *ts = (const long *)req;
-    if (ts[0] < 0 || ts[1] < 0 || ts[1] >= 1000000000L)
-        return -(long)EINVAL;
+    /* On svc_restart re-entry: check for pending signal first */
+    if (current->sig_pending & ~current->sig_blocked) {
+        current->sleep_until = 0;
+        return -(long)EINTR;
+    }
 
-    uint32_t ticks = (uint32_t)ts[0] * PPAP_TICK_HZ
-                   + (uint32_t)ts[1] / NS_PER_TICK;
-    if (ticks == 0u)
-        ticks = 1u;
+    /* On svc_restart re-entry: check if sleep has expired */
+    if (current->sleep_until != 0 &&
+        (int32_t)(sched_get_ticks() - current->sleep_until) >= 0) {
+        current->sleep_until = 0;
+        return 0;
+    }
 
-    sched_sleep(ticks);
+    /* First entry: compute deadline */
+    if (current->sleep_until == 0) {
+        const long *ts = (const long *)req;
+        if (ts[0] < 0 || ts[1] < 0 || ts[1] >= 1000000000L)
+            return -(long)EINVAL;
+
+        uint32_t ticks = (uint32_t)ts[0] * PPAP_TICK_HZ
+                       + (uint32_t)ts[1] / NS_PER_TICK;
+        if (ticks == 0u)
+            ticks = 1u;
+
+        current->sleep_until = sched_get_ticks() + ticks;
+    }
+
+    /* Block with svc_restart */
+    current->state = PROC_SLEEPING;
+    svc_restart = 1;
+    sched_yield();
     return 0;
 }
 
@@ -160,15 +198,36 @@ long sys_clock_nanosleep64(long clk, long flags, const void *req, void *rem)
     if (!req)
         return -(long)EINVAL;
 
-    const int64_t *ts = (const int64_t *)req;
-    if (ts[0] < 0 || ts[1] < 0 || ts[1] >= 1000000000LL)
-        return -(long)EINVAL;
+    /* On svc_restart re-entry: check for pending signal first */
+    if (current->sig_pending & ~current->sig_blocked) {
+        current->sleep_until = 0;
+        return -(long)EINTR;
+    }
 
-    uint32_t ticks = (uint32_t)ts[0] * PPAP_TICK_HZ
-                   + (uint32_t)ts[1] / NS_PER_TICK;
-    if (ticks == 0u)
-        ticks = 1u;
+    /* On svc_restart re-entry: check if sleep has expired */
+    if (current->sleep_until != 0 &&
+        (int32_t)(sched_get_ticks() - current->sleep_until) >= 0) {
+        current->sleep_until = 0;
+        return 0;
+    }
 
-    sched_sleep(ticks);
+    /* First entry: compute deadline */
+    if (current->sleep_until == 0) {
+        const int64_t *ts = (const int64_t *)req;
+        if (ts[0] < 0 || ts[1] < 0 || ts[1] >= 1000000000LL)
+            return -(long)EINVAL;
+
+        uint32_t ticks = (uint32_t)ts[0] * PPAP_TICK_HZ
+                       + (uint32_t)ts[1] / NS_PER_TICK;
+        if (ticks == 0u)
+            ticks = 1u;
+
+        current->sleep_until = sched_get_ticks() + ticks;
+    }
+
+    /* Block with svc_restart */
+    current->state = PROC_SLEEPING;
+    svc_restart = 1;
+    sched_yield();
     return 0;
 }

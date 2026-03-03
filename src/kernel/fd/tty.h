@@ -21,4 +21,10 @@ extern struct file tty_stdin;
 extern struct file tty_stdout;
 extern struct file tty_stderr;
 
+/* Called from UART ISR when RX data arrives — wakes processes blocked on tty */
+void tty_rx_notify(void);
+
+/* Called from UART ISR when Ctrl-C (0x03) is received — delivers SIGINT */
+void tty_signal_intr(void);
+
 #endif /* PPAP_FD_TTY_H */

@@ -65,6 +65,7 @@
 #define SYS_CLONE      120
 #define SYS_UNAME      122
 #define SYS_MPROTECT   125
+#define SYS_GETPGID    132
 #define SYS_LLSEEK     140
 #define SYS_GETDENTS   141
 #define SYS_READV      145
@@ -103,8 +104,10 @@
 #define SYS_FSTATAT64  327
 #define SYS_GETCPU     345
 #define SYS_STATX      397
+#define SYS_PPOLL            336
 #define SYS_CLOCK_GETTIME64  403
 #define SYS_CLOCK_NANOSLEEP64 407
+#define SYS_PPOLL_TIME64     414
 
 /* AT_FDCWD: musl's *at syscalls use this as dirfd for cwd-relative paths */
 #define AT_FDCWD       (-100)
@@ -226,5 +229,11 @@ long sys_mount(const char *source, const char *target,
 long sys_umount2(const char *target, long flags);
 long sys_statfs64(const char *path, long sz, void *buf);
 long sys_fstatfs64(long fd, long sz, void *buf);
+
+/* sys_poll.c */
+long sys_ppoll(void *fds, uint32_t nfds, const void *timeout,
+               const void *sigmask, uint32_t sigsetsize);
+long sys_ppoll_time64(void *fds, uint32_t nfds, const void *timeout,
+                      const void *sigmask, uint32_t sigsetsize);
 
 #endif /* PPAP_SYSCALL_H */

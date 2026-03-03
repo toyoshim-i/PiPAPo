@@ -56,4 +56,8 @@ void uart_init_irq(void);
  * On QEMU reads the CMSDK UART DATA register if RX is ready. */
 int uart_getc(void);
 
+/* Returns 1 if the RX ring buffer has data available, 0 otherwise.
+ * Non-blocking, does not consume data.  Used by tty_poll(). */
+int uart_rx_avail(void);
+
 #endif /* PPAP_UART_H */

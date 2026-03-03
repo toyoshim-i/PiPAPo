@@ -90,9 +90,9 @@ pcb_t *proc_alloc(void)
         if (proc_table[i].state == PROC_FREE) {
             __builtin_memset(&proc_table[i], 0, sizeof(pcb_t));
             proc_table[i].pid = next_pid++;
-            /* Init process group / session to self */
-            proc_table[i].pgid = proc_table[i].pid;
-            proc_table[i].sid  = proc_table[i].pid;
+            /* pgid and sid are left at 0 (from memset).
+             * sys_vfork copies them from the parent (like real fork).
+             * Only setsid/setpgid should change them explicitly. */
             proc_table[i].umask_val = DEFAULT_UMASK;
             proc_table[i].start_time = sched_get_ticks();
             /* state left as PROC_FREE — caller sets it to PROC_RUNNABLE

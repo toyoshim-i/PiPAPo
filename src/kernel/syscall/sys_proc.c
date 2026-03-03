@@ -158,6 +158,8 @@ long sys_vfork(uint32_t *frame)
 
     /* 5. Set up identity and relationships */
     child->ppid = current->pid;
+    child->pgid = current->pgid;   /* inherit process group (like real fork) */
+    child->sid  = current->sid;    /* inherit session ID */
     child->vfork_parent = current;
     child->got_base = current->got_base;
     memcpy(child->cwd, current->cwd, sizeof(child->cwd));

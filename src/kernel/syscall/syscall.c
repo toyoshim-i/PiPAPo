@@ -231,6 +231,23 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
     case SYS_SETPGID:
         ret = sys_setpgid(a0, a1);
         break;
+    case SYS_GETPGID: {
+        /* getpgid(pid): pid==0 means self */
+        pcb_t *t = current;
+        if (a0 != 0) {
+            t = NULL;
+            for (uint32_t i = 0; i < PROC_MAX; i++) {
+                if (proc_table[i].state != PROC_FREE &&
+                    proc_table[i].pid == (pid_t)a0) {
+                    t = &proc_table[i];
+                    break;
+                }
+            }
+            if (!t) { ret = -(long)ESRCH; break; }
+        }
+        ret = (long)t->pgid;
+        break;
+    }
     case SYS_SETSID:
         ret = sys_setsid();
         break;
@@ -309,6 +326,18 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
         break;
     case SYS_FSTATFS64:
         ret = sys_fstatfs64(a0, a1, (void *)(uintptr_t)a2);
+        break;
+
+    /* ── P4: poll / blocking I/O ─────────────────────────────────────────── */
+    case SYS_PPOLL:
+        ret = sys_ppoll((void *)(uintptr_t)a0, (uint32_t)a1,
+                        (const void *)(uintptr_t)a2,
+                        (const void *)(uintptr_t)a3, a4);
+        break;
+    case SYS_PPOLL_TIME64:
+        ret = sys_ppoll_time64((void *)(uintptr_t)a0, (uint32_t)a1,
+                               (const void *)(uintptr_t)a2,
+                               (const void *)(uintptr_t)a3, a4);
         break;
 
     default:

@@ -16,6 +16,7 @@
 #include "config.h"
 #include "../hw/rp2040.h"
 #include "../hw/cortex_m0plus.h"
+#include "kernel/fd/tty.h"      /* tty_rx_notify, tty_signal_intr */
 #include <stdint.h>
 #include <stddef.h>
 
@@ -299,14 +300,24 @@ void UART0_IRQ_Handler(void)
         UART0_IMSC &= ~UART_IMSC_TXIM;  /* ring empty — stop TX interrupts */
 
     /* RX: drain RX FIFO → ring */
+    int got_rx = 0;
+    int got_ctrl_c = 0;
     while (!(UART0_FR & UART_FR_RXFE)) {
         uint8_t c = (uint8_t)(UART0_DR & 0xFFu);
+        if (c == 0x03u)
+            got_ctrl_c = 1;
         if ((uint8_t)(rx_head - rx_tail) < UART_RX_SIZE)
             rx_buf[rx_head++ & (UART_RX_SIZE - 1u)] = (char)c;
-        /* else: RX ring full — byte dropped */
+        got_rx = 1;
     }
     /* Clear RX and RX-timeout interrupt flags */
     UART0_ICR = UART_ICR_RXIC | UART_ICR_RTIC;
+
+    /* Wake processes blocked on tty read / deliver Ctrl-C signal */
+    if (got_ctrl_c)
+        tty_signal_intr();
+    if (got_rx)
+        tty_rx_notify();
 }
 
 void uart_init_irq(void)
@@ -329,6 +340,11 @@ int uart_getc(void)
     int c = (unsigned char)rx_buf[rx_tail & (UART_RX_SIZE - 1u)];
     rx_tail++;
     return c;
+}
+
+int uart_rx_avail(void)
+{
+    return rx_head != rx_tail;
 }
 
 void uart_print_hex32(uint32_t v)

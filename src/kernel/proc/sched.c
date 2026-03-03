@@ -60,6 +60,14 @@ void sched_tick(void)
         if (p->state == PROC_SLEEPING
                 && (int32_t)(tick_count - p->sleep_until) >= 0)
             p->state = PROC_RUNNABLE;
+        /* PROC_BLOCKED + sleep_until: poll/select timeout.
+         * Wake the process so svc_restart re-checks the condition. */
+        if (p->state == PROC_BLOCKED && p->sleep_until != 0
+                && (int32_t)(tick_count - p->sleep_until) >= 0) {
+            p->state = PROC_RUNNABLE;
+            p->wait_channel = NULL;
+            p->sleep_until = 0;
+        }
     }
 
     if (!current)

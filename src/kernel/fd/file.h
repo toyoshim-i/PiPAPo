@@ -56,7 +56,15 @@ struct file_ops {
     long (*write)(struct file *f, const char *buf, size_t n);
     int  (*close)(struct file *f);
     int  (*ioctl)(struct file *f, uint32_t cmd, void *arg);
+    int  (*poll) (struct file *f);   /* returns POLLIN/POLLOUT bitmask */
 };
+
+/* poll event bitmask (matches Linux values) */
+#define POLLIN    0x0001u
+#define POLLOUT   0x0004u
+#define POLLERR   0x0008u
+#define POLLHUP   0x0010u
+#define POLLNVAL  0x0020u
 
 /*
  * struct file — open-file instance.

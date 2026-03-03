@@ -19,9 +19,11 @@
 #include "tty.h"
 #include "file.h"
 #include "drivers/uart.h"
-#include "../proc/proc.h"     /* proc_table, PROC_MAX, PROC_FREE */
-#include "../signal/signal.h" /* SIGINT */
-#include "../errno.h"         /* ENOTTY */
+#include "../proc/proc.h"      /* proc_table, PROC_MAX, PROC_FREE */
+#include "../proc/sched.h"     /* sched_wakeup, sched_yield */
+#include "../syscall/syscall.h" /* svc_restart */
+#include "../signal/signal.h"  /* SIGINT */
+#include "../errno.h"          /* ENOTTY, EINTR */
 #include <stddef.h>
 #include <stdint.h>
 
@@ -114,9 +116,18 @@ static int32_t tty_fg_pgrp = 0;
 static void tty_send_signal(int sig)
 {
     for (uint32_t i = 0; i < PROC_MAX; i++) {
-        if (proc_table[i].state != PROC_FREE &&
-            (int32_t)proc_table[i].pgid == tty_fg_pgrp)
-            proc_table[i].sig_pending |= (1u << (uint32_t)sig);
+        pcb_t *p = &proc_table[i];
+        if (p->state != PROC_FREE &&
+            (int32_t)p->pgid == tty_fg_pgrp) {
+            p->sig_pending |= (1u << (uint32_t)sig);
+            /* Wake the process so it can handle the signal */
+            if (p->state == PROC_BLOCKED) {
+                p->state = PROC_RUNNABLE;
+                p->wait_channel = NULL;
+            } else if (p->state == PROC_SLEEPING) {
+                p->state = PROC_RUNNABLE;
+            }
+        }
     }
 }
 
@@ -139,12 +150,19 @@ static long tty_write(struct file *f, const char *buf, size_t n)
 
 static long tty_read_canon(char *buf, size_t n)
 {
-    /* If there's already a buffered line, deliver it */
+    /* Drain all available characters from UART ring buffer */
     while (!line_ready) {
         int c = uart_getc();
         if (c < 0) {
-            __asm__ volatile("wfi");
-            continue;
+            /* No data — check for pending signal before blocking */
+            if (current->sig_pending & ~current->sig_blocked)
+                return -(long)EINTR;
+            /* Block via svc_restart: re-executes this syscall when woken */
+            current->wait_channel = &tty_stdin;
+            current->state = PROC_BLOCKED;
+            svc_restart = 1;
+            sched_yield();
+            return 0;  /* ignored — SVC restores original args */
         }
 
         /* ICRNL: map CR to NL */
@@ -163,7 +181,7 @@ static long tty_read_canon(char *buf, size_t n)
                     uart_putc('\n');
                 }
                 line_pos = 0;
-                continue;
+                return -(long)EINTR;
             }
         }
 
@@ -244,39 +262,41 @@ static long tty_read_canon(char *buf, size_t n)
 
 static long tty_read_raw(char *buf, size_t n)
 {
-    size_t got = 0;
-    while (got < n) {
-        int c = uart_getc();
-        if (c < 0) {
-            if (got > 0)
-                return (long)got;   /* return what we have */
-            __asm__ volatile("wfi");
-            continue;
-        }
-
-        /* ICRNL: map CR to NL */
-        if ((tty_termios.c_iflag & ICRNL) && c == '\r')
-            c = '\n';
-
-        /* ISIG in raw mode too */
-        if (tty_termios.c_lflag & ISIG) {
-            if (c == CTRL_C) {
-                tty_send_signal(SIGINT);
-                continue;
-            }
-        }
-
-        if (tty_termios.c_lflag & ECHO) {
-            if (c == '\n' && (tty_termios.c_oflag & OPOST) &&
-                (tty_termios.c_oflag & ONLCR))
-                uart_putc('\r');
-            uart_putc((char)c);
-        }
-
-        buf[got++] = (char)c;
-        return (long)got;   /* raw mode: return after first char (VMIN=1) */
+    (void)n;
+    int c = uart_getc();
+    if (c < 0) {
+        /* Check for pending signal before blocking */
+        if (current->sig_pending & ~current->sig_blocked)
+            return -(long)EINTR;
+        /* Block via svc_restart */
+        current->wait_channel = &tty_stdin;
+        current->state = PROC_BLOCKED;
+        svc_restart = 1;
+        sched_yield();
+        return 0;  /* ignored — SVC restores original args */
     }
-    return (long)got;
+
+    /* ICRNL: map CR to NL */
+    if ((tty_termios.c_iflag & ICRNL) && c == '\r')
+        c = '\n';
+
+    /* ISIG in raw mode too */
+    if (tty_termios.c_lflag & ISIG) {
+        if (c == CTRL_C) {
+            tty_send_signal(SIGINT);
+            return -(long)EINTR;
+        }
+    }
+
+    if (tty_termios.c_lflag & ECHO) {
+        if (c == '\n' && (tty_termios.c_oflag & OPOST) &&
+            (tty_termios.c_oflag & ONLCR))
+            uart_putc('\r');
+        uart_putc((char)c);
+    }
+
+    buf[0] = (char)c;
+    return 1;   /* raw mode: return after first char (VMIN=1) */
 }
 
 /* ── tty_read dispatcher ───────────────────────────────────────────────────── */
@@ -341,10 +361,35 @@ static int tty_ioctl(struct file *f, uint32_t cmd, void *arg)
     }
 }
 
+/* ── tty_poll ──────────────────────────────────────────────────────────────── */
+
+static int tty_poll(struct file *f)
+{
+    (void)f;
+    int mask = POLLOUT;   /* write never blocks */
+
+    if (line_ready || uart_rx_avail())
+        mask |= POLLIN;
+
+    return mask;
+}
+
+/* ── ISR notification hooks ────────────────────────────────────────────────── */
+
+void tty_rx_notify(void)
+{
+    sched_wakeup(&tty_stdin);
+}
+
+void tty_signal_intr(void)
+{
+    tty_send_signal(SIGINT);
+}
+
 /* ── Static file objects ────────────────────────────────────────────────────── */
 
 static const struct file_ops tty_fops = {
-    tty_read, tty_write, tty_close, tty_ioctl
+    tty_read, tty_write, tty_close, tty_ioctl, tty_poll
 };
 
 struct file tty_stdin  = { &tty_fops, NULL, O_RDONLY, 1u };
