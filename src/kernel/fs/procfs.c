@@ -10,11 +10,19 @@
  *   /proc/version        — kernel version string
  *   /proc/stat           — aggregate CPU jiffy counters
  *   /proc/uptime         — seconds since boot
+ *   /proc/mounts         — mounted filesystems (device path fstype opts 0 0)
  *   /proc/<pid>/stat     — per-process stat line (Linux 52-field format)
  *   /proc/<pid>/cmdline  — NUL-terminated command name
  */
 
 #include "procfs.h"
+#include "romfs.h"
+#include "devfs.h"
+#include "tmpfs.h"
+#include "vfat.h"
+#ifdef PPAP_QEMU
+#include "ufs.h"
+#endif
 #include "../vfs/vfs.h"
 #include "../mm/page.h"
 #include "../proc/proc.h"
@@ -186,6 +194,51 @@ static int gen_uptime(char *buf, int bufsiz)
     return pos;
 }
 
+/* ── /proc/mounts — mounted filesystems ───────────────────────────────────── */
+
+/* Map ops pointer → fstype name string */
+static const char *ops_to_fstype(const vfs_ops_t *ops)
+{
+    if (ops == &romfs_ops)  return "romfs";
+    if (ops == &devfs_ops)  return "devfs";
+    if (ops == &procfs_ops) return "proc";
+    if (ops == &tmpfs_ops)  return "tmpfs";
+    if (ops == &vfat_ops)   return "vfat";
+#ifdef PPAP_QEMU
+    if (ops == &ufs_ops)    return "ufs";
+#endif
+    return "unknown";
+}
+
+static int gen_mounts(char *buf, int bufsiz)
+{
+    int pos = 0;
+
+    for (uint32_t i = 0; i < VFS_MOUNT_MAX; i++) {
+        const mount_entry_t *mnt = &vfs_mount_table[i];
+        if (!mnt->active)
+            continue;
+
+        const char *fstype = ops_to_fstype(mnt->ops);
+
+        /* device — use fstype as device name (like Linux pseudo-FS) */
+        pos = fmt_append(buf, pos, bufsiz, fstype);
+        pos = fmt_append(buf, pos, bufsiz, " ");
+        /* mount point */
+        pos = fmt_append(buf, pos, bufsiz, mnt->path);
+        pos = fmt_append(buf, pos, bufsiz, " ");
+        /* fstype */
+        pos = fmt_append(buf, pos, bufsiz, fstype);
+        pos = fmt_append(buf, pos, bufsiz, " ");
+        /* options */
+        pos = fmt_append(buf, pos, bufsiz,
+                         (mnt->flags & MNT_RDONLY) ? "ro" : "rw");
+        pos = fmt_append(buf, pos, bufsiz, " 0 0\n");
+    }
+
+    return pos;
+}
+
 /* ── Node table ───────────────────────────────────────────────────────────── */
 
 static const procfs_node_t procfs_nodes[] = {
@@ -193,6 +246,7 @@ static const procfs_node_t procfs_nodes[] = {
     { "version", gen_version },
     { "stat",    gen_stat },
     { "uptime",  gen_uptime },
+    { "mounts",  gen_mounts },
 };
 
 #define PROCFS_NODE_COUNT \
