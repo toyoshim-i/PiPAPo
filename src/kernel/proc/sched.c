@@ -169,13 +169,19 @@ void sched_yield(void)
 
 void sched_wakeup(void *channel)
 {
+    int woke = 0;
     for (uint32_t i = 0u; i < PROC_MAX; i++) {
         pcb_t *p = &proc_table[i];
         if (p->state == PROC_BLOCKED && p->wait_channel == channel) {
             p->state = PROC_RUNNABLE;
             p->wait_channel = NULL;
+            woke = 1;
         }
     }
+    /* Trigger context switch so woken process runs promptly.
+     * PendSV has lowest priority — fires after the current ISR returns. */
+    if (woke)
+        SCB_ICSR |= PENDSVSET;
 }
 
 /* ── Sleep ──────────────────────────────────────────────────────────────────── */

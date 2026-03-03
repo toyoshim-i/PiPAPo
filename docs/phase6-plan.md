@@ -1584,7 +1584,35 @@ CONFIG_FEATURE_VI_SEARCH=y
 | `third_party/configs/busybox_ppap.fragment` | Enable mount/umount/df/vi |
 | `third_party/install-busybox.sh` | Add df, vi, mount, umount symlinks |
 
-### Step 16 — General Blocking I/O and poll Syscall
+### Step 16 — General Blocking I/O and poll Syscall ✓
+
+**Status: Complete** (core implementation done; Ctrl-C signal delivery to
+foreground process still under investigation)
+
+Commits:
+- `ad10e45` Phase 6 Step 16: blocking I/O, poll syscall, signal-aware nanosleep
+- `1d3e9ed` Fix signal delivery infrastructure, POSIX exec signal reset
+
+**Implemented:**
+- Non-spinning tty_read (PROC_BLOCKED + svc_restart pattern)
+- Signal-aware nanosleep (svc_restart, returns -EINTR on pending signal)
+- ppoll / ppoll_time64 syscalls (SYS_PPOLL 336, SYS_PPOLL_TIME64 414)
+- poll callback in file_ops (tty, pipe, devnull, procfs)
+- UART ISR Ctrl-C detection → tty_signal_intr → tty_send_signal
+- tty_send_signal wakes PROC_BLOCKED and PROC_SLEEPING processes
+- sched_wakeup triggers PendSV for prompt context switch
+- tty_set_fg_pgrp API; set tty_fg_pgrp = init->pid at boot
+- POSIX exec signal reset (caught handlers → SIG_DFL, clear sig_pending/sig_blocked)
+- SYSCALL_DEBUG tracing infrastructure (filtered, QEMU-only)
+- Kernel tests: 11 blocking I/O tests (ppoll, signal delivery, nanosleep)
+- User-space tests: test_poll, test_sleep_intr
+
+**Known issue:** Ctrl-C does not yet reliably interrupt `sleep` or `top`
+from the interactive shell. Signal delivery path (tty_fg_pgrp matching,
+process wakeup, signal_check → SIG_DFL termination) needs further debugging.
+All 110 kernel tests pass.
+
+---
 
 Three blocking I/O problems remain after Steps 1–15:
 

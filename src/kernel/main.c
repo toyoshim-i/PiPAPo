@@ -22,6 +22,7 @@
 #include "proc/sched.h"
 #include "fd/fd.h"
 #include "fd/file.h"
+#include "fd/tty.h"
 #include "vfs/vfs.h"
 #include "fs/romfs.h"
 #include "fs/devfs.h"
@@ -243,6 +244,7 @@ void kmain(void)
         }
         if (exec_err == 0) {
             init->state = PROC_RUNNABLE;
+            tty_set_fg_pgrp((int)init->pid);
             uart_puts("INIT: pid=");
             uart_print_dec(init->pid);
             uart_puts(" loaded\n");

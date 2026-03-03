@@ -48,6 +48,22 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
 
     long ret;
 
+#ifdef SYSCALL_DEBUG
+    /* Trace interesting syscalls — filter high-frequency I/O to avoid flood */
+    int _sc_trace = (nr != SYS_READ && nr != SYS_WRITE && nr != SYS_WRITEV
+                  && nr != SYS_READV && nr != SYS_IOCTL
+                  && nr != SYS_CLOCK_GETTIME32 && nr != SYS_CLOCK_GETTIME64
+                  && nr != SYS_FSTAT64 && nr != SYS_STAT64
+                  && nr != SYS_OPENAT && nr != SYS_CLOSE && nr != SYS_OPEN
+                  && nr != SYS_FCNTL64 && nr != SYS_RT_SIGPROCMASK
+                  && nr != SYS_GETPID && nr != SYS_MMAP2
+                  && nr != SYS_SET_TID_ADDRESS && nr != SYS_BRK
+                  && nr != SYS_RT_SIGACTION && nr != SYS_MPROTECT
+                  && nr != SYS_GETUID32 && nr != SYS_GETEUID32
+                  && nr != SYS_GETGID32 && nr != SYS_GETEGID32
+                  && nr != SYS_FUTEX);
+#endif
+
     switch (nr) {
 
     /* ── Existing syscalls (Phase 1-3) ──────────────────────────────────── */
@@ -349,6 +365,20 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
         ret = -(long)ENOSYS;
         break;
     }
+
+#ifdef SYSCALL_DEBUG
+    if (_sc_trace || ret == -(long)ENOSYS) {
+        uart_puts("SC ");
+        uart_print_dec(nr);
+        uart_puts("(");
+        uart_print_hex32((uint32_t)a0);
+        uart_puts(",");
+        uart_print_hex32((uint32_t)a1);
+        uart_puts(")=");
+        uart_print_hex32((uint32_t)ret);
+        uart_putc('\n');
+    }
+#endif
 
     frame[0] = (uint32_t)ret;   /* write return value into stacked r0 */
 }

@@ -27,4 +27,9 @@ void tty_rx_notify(void);
 /* Called from UART ISR when Ctrl-C (0x03) is received — delivers SIGINT */
 void tty_signal_intr(void);
 
+/* Set the foreground process group (for Ctrl-C / SIGINT delivery).
+ * Must be called after init is launched so tty_fg_pgrp matches
+ * the pgid of user processes. */
+void tty_set_fg_pgrp(int pgid);
+
 #endif /* PPAP_FD_TTY_H */

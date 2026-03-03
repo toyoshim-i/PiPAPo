@@ -115,6 +115,7 @@ static int32_t tty_fg_pgrp = 0;
 
 static void tty_send_signal(int sig)
 {
+    int woke = 0;
     for (uint32_t i = 0; i < PROC_MAX; i++) {
         pcb_t *p = &proc_table[i];
         if (p->state != PROC_FREE &&
@@ -124,11 +125,16 @@ static void tty_send_signal(int sig)
             if (p->state == PROC_BLOCKED) {
                 p->state = PROC_RUNNABLE;
                 p->wait_channel = NULL;
+                woke = 1;
             } else if (p->state == PROC_SLEEPING) {
                 p->state = PROC_RUNNABLE;
+                woke = 1;
             }
         }
     }
+    /* Trigger context switch so woken process handles the signal promptly */
+    if (woke)
+        sched_yield();
 }
 
 /* ── tty_write ─────────────────────────────────────────────────────────────── */
@@ -384,6 +390,11 @@ void tty_rx_notify(void)
 void tty_signal_intr(void)
 {
     tty_send_signal(SIGINT);
+}
+
+void tty_set_fg_pgrp(int pgid)
+{
+    tty_fg_pgrp = (int32_t)pgid;
 }
 
 /* ── Static file objects ────────────────────────────────────────────────────── */

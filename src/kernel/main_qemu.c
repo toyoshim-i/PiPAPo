@@ -24,6 +24,7 @@
 #include "proc/sched.h"
 #include "fd/fd.h"
 #include "fd/file.h"
+#include "fd/tty.h"
 #include "vfs/vfs.h"
 #include "fs/romfs.h"
 #include "fs/devfs.h"
@@ -528,10 +529,10 @@ static void brk_integration_test(void)
         test_report("brk expand +64", rc == (long)(base + 64));
     }
 
-    /* 3. brk below base → -ENOMEM */
+    /* 3. brk below base → returns unchanged brk_current (Linux semantics) */
     {
         long rc = sys_brk((long)(base - 1));
-        test_report("brk below base", rc == -(long)ENOMEM);
+        test_report("brk below base", rc == (long)current->brk_current);
     }
 
     /* Clean up */
@@ -1535,7 +1536,115 @@ static void fstab_integration_test(void)
     uart_puts(" failed\n");
 }
 
-/* (Removed: old Phase 1 context-switch test thread — no longer needed) */
+/* ── Phase 6 Step 16: blocking I/O, poll, signal integration tests ──────── */
+
+/* pollfd layout (matches Linux ARM) */
+struct test_pollfd { int fd; short events; short revents; };
+
+static void blocking_io_integration_test(void)
+{
+    uart_puts("\n=== Phase 6 Step 16: blocking I/O integration tests ===\n");
+    test_pass = 0;
+    test_fail = 0;
+
+    /* 1. ppoll non-blocking on tty (fd 0) — 32-bit timespec */
+    {
+        struct test_pollfd pfd;
+        pfd.fd = 0;
+        pfd.events = (short)(POLLIN | POLLOUT);
+        pfd.revents = 0;
+        long ts32[2] = {0, 0};   /* zero timeout = non-blocking */
+        long r = sys_ppoll(&pfd, 1, ts32, NULL, 0);
+        test_report("ppoll32 tty non-blocking >= 0", r >= 0);
+        test_report("ppoll32 tty POLLOUT set",
+                    (pfd.revents & (short)POLLOUT) != 0);
+    }
+
+    /* 2. ppoll_time64 non-blocking on tty (fd 0) */
+    {
+        struct test_pollfd pfd;
+        pfd.fd = 0;
+        pfd.events = (short)(POLLIN | POLLOUT);
+        pfd.revents = 0;
+        int64_t ts64[2] = {0, 0};
+        long r = sys_ppoll_time64(&pfd, 1, ts64, NULL, 0);
+        test_report("ppoll64 tty non-blocking >= 0", r >= 0);
+        test_report("ppoll64 tty POLLOUT set",
+                    (pfd.revents & (short)POLLOUT) != 0);
+    }
+
+    /* 3. ppoll with invalid fd → POLLNVAL */
+    {
+        struct test_pollfd pfd;
+        pfd.fd = 99;
+        pfd.events = (short)POLLIN;
+        pfd.revents = 0;
+        long ts32[2] = {0, 0};
+        long r = sys_ppoll(&pfd, 1, ts32, NULL, 0);
+        test_report("ppoll bad fd returns ready", r > 0);
+        test_report("ppoll bad fd POLLNVAL",
+                    (pfd.revents & (short)POLLNVAL) != 0);
+    }
+
+    /* 4. Signal delivery — pgid matching via tty_signal_intr.
+     * proc_table[0].pgid = 0 (init), tty_fg_pgrp = 0 (default).
+     * After tty_signal_intr(), sig_pending should have SIGINT bit. */
+    {
+        current->sig_pending = 0;
+        tty_signal_intr();
+        int ok = (current->sig_pending & (1u << SIGINT)) != 0;
+        test_report("tty_signal_intr delivers SIGINT to pgid=0", ok);
+        current->sig_pending = 0;  /* clean up */
+    }
+
+    /* 5. Nanosleep re-entry with expired deadline — returns 0 immediately.
+     * NOTE: Cannot call sys_nanosleep with a fresh request from kernel
+     * context because it calls sched_yield() which blocks forever
+     * before the scheduler is started.  Instead, simulate the re-entry
+     * path by pre-setting sleep_until to an already-expired value.
+     *
+     * sched_get_ticks() is 0 here (scheduler not started), and
+     * sleep_until==0 is the "not sleeping" sentinel, so we use
+     * 0xFFFFFFFF which is "expired" via signed wrap-around:
+     *   (int32_t)(0 - 0xFFFFFFFF) = 1 >= 0 → expired. */
+    {
+        struct { long tv_sec; long tv_nsec; } ts = { 0, 1 };  /* 1 ns */
+        current->sleep_until = 0xFFFFFFFFu;  /* expired via wrap-around */
+        current->sig_pending = 0;
+        current->sig_blocked = 0;
+
+        long r = sys_nanosleep(&ts, NULL);
+        test_report("nanosleep expired re-entry returns 0", r == 0);
+        test_report("nanosleep clears sleep_until on expiry",
+                    current->sleep_until == 0);
+    }
+
+    /* 6. Nanosleep signal check — sig_pending returns -EINTR */
+    {
+        struct { long tv_sec; long tv_nsec; } ts = { 1, 0 };
+        current->sleep_until = 0;
+        current->sig_pending = (1u << SIGINT);
+        current->sig_blocked = 0;
+
+        long r = sys_nanosleep(&ts, NULL);
+        test_report("nanosleep returns -EINTR on signal",
+                    r == -(long)EINTR);
+        test_report("nanosleep clears sleep_until on signal",
+                    current->sleep_until == 0);
+
+        /* Clean up */
+        current->sig_pending = 0;
+        current->state = PROC_RUNNABLE;
+        svc_restart = 0;
+    }
+
+    /* Summary */
+    uart_puts("Phase 6 Step 16 blocking I/O: ");
+    uart_print_dec((uint32_t)test_pass);
+    uart_puts(" passed, ");
+    uart_print_dec((uint32_t)test_fail);
+    uart_puts(" failed\n");
+}
 
 /* ── Kernel entry point ──────────────────────────────────────────────────── */
 
@@ -1649,6 +1758,9 @@ void kmain(void)
     fstab_integration_test();
     total_pass += test_pass; total_fail += test_fail;
 
+    blocking_io_integration_test();
+    total_pass += test_pass; total_fail += test_fail;
+
     /* Final summary */
     uart_puts("\n=== KERNEL TEST SUMMARY ===\n");
     uart_puts("Total: ");
@@ -1682,6 +1794,10 @@ void kmain(void)
     }
     if (exec_err == 0) {
         init->state = PROC_RUNNABLE;
+        /* Set TTY foreground pgrp to init's PID.  At this point pgid is
+         * still 0 (from proc_alloc memset); once the shell calls setsid(),
+         * pgid becomes pid (== 1), matching tty_fg_pgrp. */
+        tty_set_fg_pgrp((int)init->pid);
         uart_puts("INIT: pid=");
         uart_print_dec(init->pid);
         uart_puts(" loaded\n");

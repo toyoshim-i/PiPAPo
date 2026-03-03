@@ -135,7 +135,7 @@ add_executable(ppap_qemu
 )
 
 target_include_directories(ppap_qemu PRIVATE src)
-target_compile_definitions(ppap_qemu PRIVATE PPAP_QEMU=1)
+target_compile_definitions(ppap_qemu PRIVATE PPAP_QEMU=1 SYSCALL_DEBUG=1)
 
 # No Pico SDK libraries — ppap_qemu is a raw ARM bare-metal target.
 # The toolchain (arm-none-eabi-gcc / Cortex-M0+) is inherited from

@@ -180,3 +180,19 @@ vfork:
     movs r7, #190
     svc  0
     pop  {r7, pc}
+
+@ --- ppoll (SYS_PPOLL_TIME64 = 414) ------------------------------------------
+@ int ppoll(struct pollfd *fds, int nfds, void *timeout, void *sigmask, int sigsetsize);
+@ 5-arg syscall: arg5 (sigsetsize) goes in r4.
+@ 414 > 255 so movs r7, #414 won't fit in Thumb-1; use ldr r7, =414 instead.
+.section .text.ppoll, "ax", %progbits
+.global ppoll
+.thumb_func
+ppoll:
+    push {r4, r7, lr}
+    ldr  r4, [sp, #12]    @ 5th arg from stack (above saved r4,r7,lr)
+    ldr  r7, =414         @ SYS_PPOLL_TIME64
+    svc  0
+    pop  {r4, r7, pc}
+
+    .ltorg                 @ literal pool for the ldr r7, =414
