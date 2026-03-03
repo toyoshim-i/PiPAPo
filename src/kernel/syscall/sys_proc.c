@@ -161,6 +161,7 @@ long sys_vfork(uint32_t *frame)
     child->vfork_parent = current;
     child->got_base = current->got_base;
     memcpy(child->cwd, current->cwd, sizeof(child->cwd));
+    memcpy(child->comm, current->comm, sizeof(child->comm));
 
     /* 6. Inherit file descriptors from parent */
     fd_inherit(child, current);

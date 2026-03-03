@@ -1703,6 +1703,7 @@ void kmain(void)
     pcb_t *p2 = proc_alloc();
     p2->stack_page = page_alloc();
     proc_setup_stack(p2, thread_loop, 0);
+    __builtin_memcpy(p2->comm, "kworker", 8);
     p2->state = PROC_RUNNABLE;
 
     /* Phase 1 Step 11: configure MPU (no-op on QEMU — MPU_TYPE reads 0) */

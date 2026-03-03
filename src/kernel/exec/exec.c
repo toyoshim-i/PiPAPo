@@ -328,17 +328,30 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
     /* Save GOT base in PCB for vfork — child needs parent's r9 */
     p->got_base = got_sram_addr;
 
-    /* ── 10. Initialise file descriptors (stdin/stdout/stderr → tty) ──── */
+    /* ── 10. Set process comm from executable basename ────────────────── */
+    {
+        const char *base = path;
+        for (const char *s = path; *s; s++) {
+            if (*s == '/')
+                base = s + 1;
+        }
+        size_t clen = strlen(base);
+        if (clen > 15) clen = 15;
+        memcpy(p->comm, base, clen);
+        p->comm[clen] = '\0';
+    }
+
+    /* ── 11. Initialise file descriptors (stdin/stdout/stderr → tty) ──── */
     fd_stdio_init(p);
 
-    /* ── 11. Set working directory ─────────────────────────────────────── */
+    /* ── 12. Set working directory ─────────────────────────────────────── */
     extern pcb_t *current;
     if (current)
         memcpy(p->cwd, current->cwd, sizeof(p->cwd));
     else
         strcpy(p->cwd, "/");
 
-    /* ── 12. Release the vnode ─────────────────────────────────────────── */
+    /* ── 13. Release the vnode ─────────────────────────────────────────── */
     vnode_put(vn);
 
     return 0;

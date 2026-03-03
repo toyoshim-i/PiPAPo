@@ -25,6 +25,11 @@
  * and sched_sleep) so both functions can access it in the same translation unit. */
 static volatile uint32_t tick_count = 0u;
 
+/* ── Global CPU jiffy counters (for /proc/stat) ──────────────────────────── */
+uint32_t cpu_user_ticks   = 0;
+uint32_t cpu_system_ticks = 0;
+uint32_t cpu_idle_ticks   = 0;
+
 uint32_t sched_get_ticks(void)
 {
     return tick_count;
@@ -71,6 +76,25 @@ void sched_tick(void)
 void SysTick_Handler(void)
 {
     tick_count++;
+
+    /* CPU tick accounting: determine if the interrupted context was
+     * Thread mode (user) or Handler mode (kernel).
+     * ICSR.RETTOBASE (bit 11): set when the current exception (SysTick)
+     * is the only active exception — meaning we preempted Thread mode
+     * (user code).  If clear, another handler was already active (SVC
+     * or similar) — meaning kernel code. */
+    if (current && current->state == PROC_RUNNABLE) {
+        if (SCB_ICSR & (1u << 11)) {
+            current->utime++;
+            cpu_user_ticks++;
+        } else {
+            current->stime++;
+            cpu_system_ticks++;
+        }
+    } else {
+        cpu_idle_ticks++;
+    }
+
     sched_tick();
 }
 

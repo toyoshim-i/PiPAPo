@@ -15,7 +15,7 @@ ROMFS_SBIN="$PROJECT_ROOT/romfs/sbin"
 # Applet list — must match busybox_ppap.fragment
 APPLETS=(
     cat chmod cp echo grep head kill ln ls mkdir mv
-    printf rm rmdir sed sleep sort tail uname wc
+    printf ps rm rmdir sed sleep sort tail top uname wc
 )
 
 # Shell applets — these link to busybox as shell interpreters

@@ -5,7 +5,7 @@
 #   - NOMMU mode (no fork, vfork-only, standalone applets)
 #   - PIE linking with musl libc (R_ARM_RELATIVE relocations for XIP)
 #   - Minimal applet set: hush shell + coreutils
-#   - No Linux-specific features (sendfile, utmp, syslog, proc)
+#   - No Linux-specific features (sendfile, utmp, syslog)
 
 # -- Platform -----------------------------------------------------------------
 # CONFIG_STATIC is NOT set — we use -pie to get .rel.dyn relocations.
@@ -57,6 +57,10 @@ CONFIG_SED=y
 # -- Process management -------------------------------------------------------
 CONFIG_KILL=y
 CONFIG_SLEEP=y
+CONFIG_PS=y
+CONFIG_TOP=y
+CONFIG_FEATURE_TOP_CPU_USAGE_PERCENTAGE=y
+CONFIG_FEATURE_TOP_CPU_GLOBAL_PERCENTS=y
 
 # -- System -------------------------------------------------------------------
 CONFIG_INIT=y

@@ -11,6 +11,7 @@
  */
 
 #include "proc.h"
+#include "sched.h"        /* sched_get_ticks — for start_time */
 #include "../mm/page.h"   /* PAGE_SIZE — for proc_setup_stack */
 #include "drivers/uart.h" /* uart_puts, uart_print_dec — for proc_init diagnostics */
 #include "hw/cortex_m0plus.h" /* XPSR_THUMB_BIT, EXC_RETURN_THREAD_PSP */
@@ -49,6 +50,8 @@ void proc_init(void)
     proc_table[0].ppid            = 0;
     proc_table[0].state           = PROC_RUNNABLE;
     proc_table[0].ticks_remaining = PROC_DEFAULT_TICKS;
+    /* comm is set to "init" once do_execve() runs; "kernel" for now */
+    __builtin_memcpy(proc_table[0].comm, "kernel", 7);
 
     current = &proc_table[0];
 
@@ -91,6 +94,7 @@ pcb_t *proc_alloc(void)
             proc_table[i].pgid = proc_table[i].pid;
             proc_table[i].sid  = proc_table[i].pid;
             proc_table[i].umask_val = DEFAULT_UMASK;
+            proc_table[i].start_time = sched_get_ticks();
             /* state left as PROC_FREE — caller sets it to PROC_RUNNABLE
              * only after filling in stack_page and setting up the stack frame */
             return &proc_table[i];

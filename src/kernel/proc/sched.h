@@ -86,4 +86,12 @@ void sched_wakeup(void *channel);
  */
 uint32_t sched_get_ticks(void);
 
+/*
+ * Global CPU jiffy counters — updated in SysTick_Handler.
+ * Used by procfs to generate /proc/stat and /proc/uptime.
+ */
+extern uint32_t cpu_user_ticks;
+extern uint32_t cpu_system_ticks;
+extern uint32_t cpu_idle_ticks;
+
 #endif /* PPAP_PROC_SCHED_H */
