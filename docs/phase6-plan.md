@@ -1286,6 +1286,214 @@ After boot to ash prompt:
 
 ---
 
+## Week 5: Debugging, Stability, and Extended Applets
+
+### Step 13 — Memory and Readdir Bug Fixes
+
+Debug session that resolved "ls: out of memory" failure when running
+`ls /` from busybox ash.  Three root causes were identified and fixed:
+
+**Root cause 1: getdents infinite loop (primary)**
+
+`romfs_readdir()` uses byte-offset cookies where `*cookie == 0` means
+"start from first child."  When the last child's `next_off` is 0 (end of
+sibling chain), the cookie resets to 0 — indistinguishable from "start
+over."  This caused `sys_getdents64` to endlessly re-read the same
+directory entries, with busybox `ls` allocating memory for each duplicate
+batch until OOM.
+
+Fix: added a `GETDENTS_EOF` sentinel (`0xFFFFFFFF`) in `sys_fs.c`.  When
+`readdir` returns entries but sets cookie to 0, `sys_getdents64` stores
+`GETDENTS_EOF` in `f->offset`.  Subsequent calls return 0 immediately.
+Applied to both `sys_getdents` and `sys_getdents64`.
+
+Only romfs had this bug — devfs, procfs, tmpfs, vfat, and ufs all use
+sequential integer indices for cookies.
+
+**Root cause 2: brk Linux semantics violation**
+
+`sys_brk()` was returning `-(long)ENOMEM` on failure.  Linux brk always
+returns the current program break — on failure it returns the *unchanged*
+break (never a negative errno).  musl relies on this: it calls brk, checks
+whether the return value changed, and falls back to mmap if it didn't.
+With a negative return, musl interpreted it as a valid (huge) address and
+never fell back to mmap.
+
+Fix: `sys_brk()` now returns `(long)current->brk_current` on all failure
+paths, matching Linux semantics.
+
+**Root cause 3: insufficient QEMU page pool**
+
+The page allocator was hardcoded to 51 pages (204 KB) — sized for RP2040's
+264 KB SRAM.  QEMU's mps2-an500 has 512 KB, so we can afford more.
+Additionally, `SRAM_IOBUF_BASE` and `SRAM_DMA_BASE` were hardcoded
+addresses that didn't move when `PAGE_COUNT` changed.
+
+Fix: conditional `PAGE_COUNT` in `config.h` (96 for QEMU, 51 for RP2040).
+Made `SRAM_IOBUF_BASE` and `SRAM_DMA_BASE` computed from pool end in
+`page.h`.
+
+**Additional fixes:**
+
+- `MMAP_REGIONS_MAX` raised from 4 to 8 (musl malloc can use many mmap
+  regions simultaneously)
+- `sys_exit()` now frees all mmap regions on process termination (was
+  leaking pages)
+
+**Files modified:**
+
+| File | Change |
+|---|---|
+| `src/config.h` | Conditional `PAGE_COUNT` (96 QEMU / 51 RP2040), `MMAP_REGIONS_MAX=8` |
+| `src/kernel/mm/page.h` | Computed `SRAM_IOBUF_BASE`/`SRAM_DMA_BASE` from pool end |
+| `src/kernel/proc/proc.h` | `mmap_regions[MMAP_REGIONS_MAX]` |
+| `src/kernel/syscall/sys_mem.c` | brk Linux semantics fix, use `MMAP_REGIONS_MAX` |
+| `src/kernel/syscall/sys_fs.c` | `GETDENTS_EOF` sentinel in `sys_getdents`/`sys_getdents64` |
+| `src/kernel/syscall/sys_proc.c` | mmap region cleanup in `sys_exit` |
+
+**Verification:**
+
+```
+$ ls /
+bin     dev     etc     mnt     proc    root    sbin    tmp
+
+$ ls /bin
+ash        busybox    cat        echo       grep       kill       ls
+mkdir      mount      ps         rm         rmdir      sleep      top
+umount
+
+$ cat /etc/hostname
+ppap
+```
+
+
+### Step 14 — Enable ps and top Applets (procfs Extensions)
+
+Enable busybox `ps` and `top` applets by extending procfs with per-process
+entries and adding CPU/memory accounting fields to the PCB.
+
+**busybox ps requirements:**
+
+busybox `ps` (via `libbb/procps.c`) reads:
+- `/proc/<pid>/stat` — PID, comm, state, ppid, pgid, sid, tty, utime, stime, vsz, rss
+- `/proc/<pid>/cmdline` — NUL-separated argv (for process name display)
+- `/proc/` directory listing — to enumerate all PIDs
+
+**busybox top additional requirements:**
+
+- `/proc/stat` — aggregate CPU jiffy counters (user, nice, system, idle)
+- `/proc/uptime` — seconds since boot
+- `/proc/meminfo` — memory stats (already implemented)
+
+**PCB extensions:**
+
+```c
+/* Add to pcb_t in proc.h */
+char     comm[16];       /* command name (basename of executable) */
+uint32_t utime;          /* user-mode ticks consumed */
+uint32_t stime;          /* kernel-mode ticks consumed */
+uint32_t start_time;     /* boot tick when process was created */
+```
+
+- `comm`: set during `do_execve()` from the basename of the executable path
+- `utime`/`stime`: incremented in the SysTick handler based on whether the
+  interrupted context was Thread mode (user) or Handler mode (kernel)
+- `start_time`: set to the global tick counter at `proc_alloc()` time
+
+**Global kernel counters:**
+
+```c
+/* Kernel-wide jiffy counters for /proc/stat */
+uint32_t cpu_user_ticks;    /* ticks in user mode */
+uint32_t cpu_system_ticks;  /* ticks in kernel mode */
+uint32_t cpu_idle_ticks;    /* ticks in idle (no runnable process) */
+```
+
+Updated in `sched_tick()` alongside the existing preemption logic.
+
+**New procfs entries:**
+
+| Path | Content |
+|---|---|
+| `/proc/<pid>/` | Directory per live process (enumerated by scanning proc_table) |
+| `/proc/<pid>/stat` | `<pid> (<comm>) <state> <ppid> <pgid> <sid> <tty> 0 0 0 0 0 <utime> <stime> 0 0 0 <nice> 1 0 <start_time> <vsz> <rss> ...` |
+| `/proc/<pid>/cmdline` | `<comm>\0` (simplified: just the command name with NUL terminator) |
+| `/proc/stat` | `cpu <user> 0 <system> <idle> 0 0 0 0 0 0` |
+| `/proc/uptime` | `<seconds>.<hundredths> <idle_seconds>.<hundredths>` |
+
+The `/proc/<pid>/stat` format follows Linux's 52-field format. Fields not
+tracked are filled with zeros. busybox's parser extracts only the fields
+it needs.
+
+**procfs implementation changes:**
+
+The current procfs is flat (only `/proc/meminfo` and `/proc/version`).
+Extend it to support dynamic per-PID directories:
+
+1. `procfs_readdir()` on root: enumerate fixed entries (`meminfo`,
+   `version`, `stat`, `uptime`) plus one directory entry per live process
+2. `procfs_lookup()` on root: parse numeric names to find matching PID
+3. `procfs_readdir()` on `<pid>` dir: return `stat` and `cmdline` entries
+4. `procfs_read()` on `<pid>/stat`: format the stat line from PCB fields
+5. `procfs_read()` on `<pid>/cmdline`: return `comm` with NUL terminator
+
+**State mapping:**
+
+| `proc_state_t` | Linux char |
+|---|---|
+| `PROC_RUNNABLE` | `R` |
+| `PROC_BLOCKED` / `PROC_SLEEPING` | `S` |
+| `PROC_ZOMBIE` | `Z` |
+
+**vsz/rss calculation:**
+
+- `vsz` = (number of non-NULL `user_pages[]` + mmap pages + 1 stack page) × `PAGE_SIZE`
+- `rss` = same as vsz (no swapping on RP2040)
+
+**Busybox config changes:**
+
+Add to `third_party/configs/busybox_ppap.fragment`:
+```
+CONFIG_PS=y
+CONFIG_TOP=y
+CONFIG_FEATURE_TOP_CPU_USAGE_PERCENTAGE=y
+CONFIG_FEATURE_TOP_CPU_GLOBAL_PERCENTS=y
+```
+
+Rebuild busybox and regenerate the romfs image to include `ps` and `top`
+symlinks.
+
+**Files modified:**
+
+| File | Change |
+|---|---|
+| `src/kernel/proc/proc.h` | Add `comm[16]`, `utime`, `stime`, `start_time` to PCB |
+| `src/kernel/proc/sched.c` | Increment `utime`/`stime`/global CPU counters in `sched_tick()` |
+| `src/kernel/proc/proc.c` | Set `start_time` in `proc_alloc()` |
+| `src/kernel/exec/exec.c` | Set `comm` from executable basename in `do_execve()` |
+| `src/kernel/fs/procfs.c` | Per-PID directories, `/proc/<pid>/stat`, `/proc/<pid>/cmdline`, `/proc/stat`, `/proc/uptime` |
+| `third_party/configs/busybox_ppap.fragment` | Enable `CONFIG_PS`, `CONFIG_TOP` |
+
+**Verification:**
+
+```
+$ ps
+  PID   Uid       VSZ Stat Command
+    1     0     16384 S    init
+    2     0     16384 S    ash
+    3     0      4096 R    ps
+
+$ top -b -n1
+Mem: 384K used, 0K free, 0K shrd, 0K buff, 0K cached
+CPU:   0% usr   0% sys   0% nic 100% idle   0% io   0% irq   0% sirq
+  PID  PPID USER     STAT   VSZ %VSZ  %CPU COMMAND
+    1     0 root     S    16384   4%   0%  init
+    2     1 root     S    16384   4%   0%  ash
+    3     2 root     R     4096   1%   0%  top
+```
+
+---
+
 ## Deliverables
 
 | File | Description |
