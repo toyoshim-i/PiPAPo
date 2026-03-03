@@ -26,24 +26,11 @@
 
 #include "xip.h"
 #include "drivers/uart.h"
+#include "hw/cortex_m0plus.h"
 #include <stdint.h>
 
-/* ==========================================================================
- * SysTick — ARM Cortex-M0+ system timer (PPB, always accessible)
- * ========================================================================== */
-
-#define REG(addr)  (*(volatile uint32_t *)(uintptr_t)(addr))
-
-#define SYST_CSR  REG(0xE000E010u)  /* Control and Status Register */
-#define SYST_RVR  REG(0xE000E014u)  /* Reload Value Register (24-bit) */
-#define SYST_CVR  REG(0xE000E018u)  /* Current Value Register (counts down) */
-
-/* CSR bits */
-#define SYST_CSR_CLKSOURCE_CPU  (1u << 2)  /* use processor clock (not ref clock) */
-#define SYST_CSR_ENABLE         (1u << 0)
-
-/* 24-bit maximum reload / mask */
-#define SYST_MAX  0x00FFFFFFu
+/* Alias: xip.c uses CLKSOURCE name without _CPU suffix for brevity */
+#define SYST_CSR_CLKSOURCE_CPU  SYST_CSR_CLKSOURCE
 
 /* ==========================================================================
  * XIP functions

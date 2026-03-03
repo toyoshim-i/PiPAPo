@@ -23,6 +23,9 @@
 @ active (the SDK boot2 enabled it), so the entire flash window is readable.
 @ =============================================================================
 
+.equ KERNEL_VTOR, 0x10001000     @ kernel vector table address (FLASH_KERNEL start)
+.equ SCB_VTOR,    0xE000ED08     @ Vector Table Offset Register (PPB + 0xED08)
+
 .syntax unified
 .cpu cortex-m0plus
 .thumb
@@ -55,9 +58,9 @@ stage1_entry:
     @ 1. Update VTOR to point at the kernel vector table.
     @    VTOR (Vector Table Offset Register) is at PPB + 0xED08 on M0+.
     @ -------------------------------------------------------------------
-    ldr  r0, =0x10001000
-    ldr  r1, =0xE000ED08        @ PPB: VTOR
-    str  r0, [r1]               @ VTOR = 0x10001000
+    ldr  r0, =KERNEL_VTOR
+    ldr  r1, =SCB_VTOR
+    str  r0, [r1]               @ VTOR = KERNEL_VTOR
 
     @ -------------------------------------------------------------------
     @ 2. Load initial SP and Reset_Handler from the kernel vector table.

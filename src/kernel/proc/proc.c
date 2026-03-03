@@ -13,7 +13,11 @@
 #include "proc.h"
 #include "../mm/page.h"   /* PAGE_SIZE — for proc_setup_stack */
 #include "drivers/uart.h" /* uart_puts, uart_print_dec — for proc_init diagnostics */
+#include "hw/cortex_m0plus.h" /* XPSR_THUMB_BIT, EXC_RETURN_THREAD_PSP */
 #include <stddef.h>   /* NULL, offsetof */
+
+/* Default file creation mask (octal 022 → owner rw, group/other r) */
+#define DEFAULT_UMASK  022
 
 /* Verify PCB_SP_OFFSET matches the actual struct layout at compile time.
  * If this fires, update PCB_SP_OFFSET in proc.h to match offsetof(pcb_t,sp). */
@@ -86,7 +90,7 @@ pcb_t *proc_alloc(void)
             /* Init process group / session to self */
             proc_table[i].pgid = proc_table[i].pid;
             proc_table[i].sid  = proc_table[i].pid;
-            proc_table[i].umask_val = 022;
+            proc_table[i].umask_val = DEFAULT_UMASK;
             /* state left as PROC_FREE — caller sets it to PROC_RUNNABLE
              * only after filling in stack_page and setting up the stack frame */
             return &proc_table[i];
@@ -129,9 +133,9 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp)
         sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
 
     /* ── Layer 1: hardware exception frame (high → low) ──────────────── */
-    *--sp = 0x01000000u;                  /* xpsr: Thumb bit (T=1)       */
+    *--sp = XPSR_THUMB_BIT;              /* xpsr: Thumb bit (T=1)       */
     *--sp = (uint32_t)entry & ~1u;        /* pc: entry point (bit0 clear)*/
-    *--sp = 0xFFFFFFFDu;                  /* lr: EXC_RETURN thread/PSP   */
+    *--sp = EXC_RETURN_THREAD_PSP;        /* lr: EXC_RETURN thread/PSP   */
     *--sp = 0u;                           /* r12                         */
     *--sp = 0u;                           /* r3                          */
     *--sp = 0u;                           /* r2                          */

@@ -14,23 +14,8 @@
  */
 
 #include "clock.h"
+#include "../hw/rp2040.h"
 #include <stdint.h>
-
-/* ==========================================================================
- * Register access helper
- * ========================================================================== */
-
-#define REG(addr)  (*(volatile uint32_t *)(uintptr_t)(addr))
-
-/* ==========================================================================
- * RESETS peripheral — same atomic aliases as uart.c
- * ========================================================================== */
-
-#define RESETS_RESET_DONE  REG(0x4000C008u)
-#define RESETS_RESET_SET   REG(0x4000E000u)   /* SET alias: write 1 → assert reset  */
-#define RESETS_RESET_CLR   REG(0x4000F000u)   /* CLR alias: write 1 → release reset */
-
-#define RESET_PLL_SYS      (1u << 12)
 
 /* ==========================================================================
  * PLL_SYS — base 0x40028000
@@ -53,19 +38,21 @@
 #define PLL_PWR_POSTDIVPD  (1u << 3)
 #define PLL_PWR_VCOPD      (1u << 5)
 
-/* ==========================================================================
- * CLOCKS peripheral — clk_sys generator (offset 0x3C)
- *
- * CLK_SYS_CTRL  0x4000803C
- *   SRC    [0]     0 = clk_ref (glitchless), 1 = AUX mux
- *   AUXSRC [7:5]   0 = PLL_SYS, 1 = PLL_USB, 2 = ROSC, 3 = XOSC, …
- *
- * CLK_SYS_SELECTED  0x40008044
- *   One-hot: bit 0 = clk_ref active, bit 1 = AUX mux active
- * ========================================================================== */
+/*
+ * PLL configuration for 133 MHz output:
+ *   ref = XOSC / REFDIV = 12 MHz / 1 = 12 MHz
+ *   VCO = ref × FBDIV   = 12 × 133 = 1596 MHz
+ *   out = VCO / (POSTDIV1 × POSTDIV2) = 1596 / (6 × 2) = 133 MHz
+ */
+#define PLL_REFDIV           1u
+#define PLL_FBDIV            133u
+#define PLL_POSTDIV1         6u
+#define PLL_POSTDIV2         2u
+#define PLL_PRIM_VALUE       ((PLL_POSTDIV1 << 16) | (PLL_POSTDIV2 << 12))
 
-#define CLK_SYS_CTRL      REG(0x4000803Cu)
-#define CLK_SYS_SELECTED  REG(0x40008044u)
+/* CLK_SYS_CTRL AUXSRC field [7:5] */
+#define CLK_SYS_AUXSRC_PLL  0u      /* AUXSRC = 0 → PLL_SYS */
+#define CLK_SYS_SRC_AUX     1u      /* SRC = 1 → AUX mux    */
 
 /* ==========================================================================
  * Public API
@@ -88,8 +75,8 @@ void clock_init_pll(void)
 
     /* Step 3: Program reference divisor and feedback divisor.
      * Must be written before powering up the VCO. */
-    PLL_SYS_CS = 1u;          /* REFDIV = 1 → reference = 12 MHz */
-    PLL_SYS_FBDIV_INT = 133u; /* VCO = 12 × 133 = 1596 MHz       */
+    PLL_SYS_CS = PLL_REFDIV;          /* REFDIV = 1 → reference = 12 MHz */
+    PLL_SYS_FBDIV_INT = PLL_FBDIV;    /* VCO = 12 × 133 = 1596 MHz       */
 
     /* Step 4: Power up the VCO and the main PLL (clear PD and VCOPD).
      * DSMPD and POSTDIVPD remain set until the VCO has locked. */
@@ -100,14 +87,14 @@ void clock_init_pll(void)
         ;
 
     /* Step 6: Program the post-dividers: POSTDIV1=6, POSTDIV2=2 → 133 MHz. */
-    PLL_SYS_PRIM = (6u << 16) | (2u << 12);
+    PLL_SYS_PRIM = PLL_PRIM_VALUE;
 
     /* Step 7: Power up the post-dividers. */
     PLL_SYS_PWR &= ~PLL_PWR_POSTDIVPD;
 
     /* Step 8: Point clk_sys AUX mux at PLL_SYS (AUXSRC = 0) and switch
      * clk_sys from clk_ref to the AUX mux (SRC = 1). */
-    CLK_SYS_CTRL = (0u << 5) | 1u;   /* AUXSRC=PLL_SYS, SRC=AUX */
-    while (!(CLK_SYS_SELECTED & 2u)) /* wait for AUX mux active  */
+    CLK_SYS_CTRL = (CLK_SYS_AUXSRC_PLL << 5) | CLK_SYS_SRC_AUX;
+    while (!(CLK_SYS_SELECTED & (1u << CLK_SYS_SRC_AUX)))
         ;
 }

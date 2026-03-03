@@ -15,22 +15,9 @@
 
 #include "sched.h"    /* includes proc.h via sched.h */
 #include "../mm/page.h"    /* PAGE_SIZE */
+#include "hw/cortex_m0plus.h"
 #include <stddef.h>
 #include <stdint.h>
-
-/* ── Cortex-M system registers ─────────────────────────────────────────────── */
-
-/* SysTick — ARM standard (Cortex-M0+ §B3.3) */
-#define SYST_CSR    (*(volatile uint32_t *)0xE000E010u)
-#define SYST_RVR    (*(volatile uint32_t *)0xE000E014u)
-#define SYST_CVR    (*(volatile uint32_t *)0xE000E018u)
-
-/* Interrupt Control and State Register — bit 28 = PENDSVSET */
-#define SCB_ICSR    (*(volatile uint32_t *)0xE000ED04u)
-#define PENDSVSET   (1u << 28)
-
-/* System Handler Priority Register 3 — PendSV priority at [23:16] */
-#define SCB_SHPR3   (*(volatile uint32_t *)0xE000ED20u)
 
 /* ── Tick counter ───────────────────────────────────────────────────────────── */
 
@@ -93,7 +80,7 @@ void sched_start(void)
 {
     /* Set PendSV to lowest priority (0xFF) so it never preempts real IRQs.
      * SHPR3[23:16] is the PendSV priority byte on Cortex-M0+. */
-    SCB_SHPR3 = (SCB_SHPR3 & ~(0xFFu << 16)) | (0xFFu << 16);
+    SCB_SHPR3 = (SCB_SHPR3 & ~PENDSV_PRIO_MASK) | PENDSV_PRIO_LOWEST;
 
     /*
      * Switch Thread mode from MSP to PSP using Thread 0's dedicated stack.
@@ -127,7 +114,7 @@ void sched_start(void)
     /* Configure SysTick: reload value, clear current count, start. */
     SYST_RVR = SYSTICK_RELOAD;
     SYST_CVR = 0u;
-    SYST_CSR = 0x7u;   /* ENABLE | TICKINT | CLKSOURCE (processor clock) */
+    SYST_CSR = SYST_CSR_ENABLE | SYST_CSR_TICKINT | SYST_CSR_CLKSOURCE;
 
     /* Enable interrupts — scheduler is now live. */
     __asm__ volatile("cpsie i");

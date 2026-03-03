@@ -14,32 +14,10 @@
 
 #include "uart.h"
 #include "config.h"
+#include "../hw/rp2040.h"
+#include "../hw/cortex_m0plus.h"
 #include <stdint.h>
 #include <stddef.h>
-
-/* ==========================================================================
- * Register access helper
- * ========================================================================== */
-
-#define REG(addr)  (*(volatile uint32_t *)(uintptr_t)(addr))
-
-/* ==========================================================================
- * RESETS peripheral (base 0x4000C000)
- *
- * Atomic register aliases (RP2040 bus fabric feature):
- *   +0x0000  normal R/W
- *   +0x1000  XOR
- *   +0x2000  SET  (write 1 to set bits  → hold peripheral in reset)
- *   +0x3000  CLR  (write 1 to clear bits → release peripheral from reset)
- * ========================================================================== */
-
-#define RESETS_RESET       REG(0x4000C000u)   /* reset control */
-#define RESETS_RESET_DONE  REG(0x4000C008u)   /* 1 = peripheral out of reset */
-#define RESETS_RESET_CLR   REG(0x4000F000u)   /* CLR alias: write 1 to unreset */
-
-#define RESET_IO_BANK0     (1u << 5)          /* GPIO pin-function mux */
-#define RESET_PADS_BANK0   (1u << 8)          /* GPIO pad settings */
-#define RESET_UART0        (1u << 22)         /* UART0 (PL011) */
 
 /* ==========================================================================
  * XOSC — Crystal oscillator (base 0x40024000)
@@ -55,31 +33,6 @@
 /* Combined CTRL value: FREQ_RANGE=1–15 MHz, ENABLE */
 #define XOSC_CTRL_START   ((0xFABu << 12) | 0xAA0u)
 #define XOSC_STATUS_STABLE (1u << 31)
-
-/* ==========================================================================
- * CLOCKS peripheral (base 0x40008000)
- *
- * Each clock generator occupies 12 bytes: CTRL (+0), DIV (+4), SELECTED (+8)
- *   clk_ref  offset 0x30  — reference clock fed to clk_sys
- *   clk_sys  offset 0x3C  — system clock (CPU, bus fabric)
- *   clk_peri offset 0x48  — peripheral clock (UART, SPI, I2C, …)
- * ========================================================================== */
-
-#define CLK_REF_CTRL      REG(0x40008030u)
-#define CLK_REF_SELECTED  REG(0x40008038u)   /* one-hot: bit N = source N active */
-#define CLK_SYS_CTRL      REG(0x4000803Cu)
-#define CLK_SYS_SELECTED  REG(0x40008044u)
-#define CLK_PERI_CTRL     REG(0x40008048u)
-
-/* clk_ref SRC field [1:0]: 0=ROSC, 1=AUX, 2=XOSC */
-#define CLK_REF_SRC_ROSC  0u
-#define CLK_REF_SRC_XOSC  2u
-
-/* clk_sys SRC bit [0]: 0=clk_ref (glitchless), 1=AUX */
-#define CLK_SYS_SRC_REF   0u
-
-/* clk_peri CTRL: AUXSRC[7:5]=0 (=clk_sys), ENABLE bit 11 */
-#define CLK_PERI_ENABLE   (1u << 11)
 
 /* ==========================================================================
  * IO_BANK0 — GPIO pin function select (base 0x40014000)
@@ -127,11 +80,7 @@
 #define UART_ICR_RXIC   (1u << 4)  /* clear RX interrupt flag          */
 #define UART_ICR_RTIC   (1u << 6)  /* clear RX timeout interrupt flag  */
 
-/* ==========================================================================
- * NVIC — enable UART0 IRQ (IRQ 20 on RP2040)
- * ========================================================================== */
-
-#define NVIC_ISER       REG(0xE000E100u)  /* Interrupt Set-Enable Register */
+/* NVIC_ISER is provided by cortex_m0plus.h */
 #define UART0_IRQ_BIT   (1u << 20u)       /* UART0 = IRQ 20                */
 
 /* ==========================================================================

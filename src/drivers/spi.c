@@ -13,21 +13,9 @@
 
 #include "spi.h"
 #include "../board/picocalc.h"
+#include "../hw/rp2040.h"
+#include "config.h"
 #include <stdint.h>
-
-/* ── Register access ────────────────────────────────────────────────────── */
-
-#define REG(addr) (*(volatile uint32_t *)(uintptr_t)(addr))
-
-/* ── RESETS ──────────────────────────────────────────────────────────────── */
-
-#define RESETS_RESET_DONE  REG(0x4000C008u)
-#define RESETS_RESET_SET   REG(0x4000E000u)
-#define RESETS_RESET_CLR   REG(0x4000F000u)
-
-#define RESET_SPI0         (1u << 16)
-#define RESET_IO_BANK0     (1u << 5)
-#define RESET_PADS_BANK0   (1u << 8)
 
 /* ── SPI0 (PL022) — base 0x4003C000 ─────────────────────────────────────── */
 
@@ -80,10 +68,8 @@
 #define SIO_GPIO_OE_CLR    REG(SIO_BASE + 0x028u)
 #define SIO_GPIO_IN        REG(SIO_BASE + 0x004u)
 
-/* ── Configuration constant ──────────────────────────────────────────────── */
-
-/* F_peri = 133 MHz after clock_init_pll().  Used for baud rate computation. */
-#define F_PERI  133000000u
+/* CR0 low-byte mask: preserves DSS + FRF + CPOL + CPHA fields [7:0] */
+#define CR0_LOW_MASK  0x00FFu
 
 /* ── Internal helpers ───────────────────────────────────────────────────── */
 
@@ -98,11 +84,11 @@ static void compute_prescaler(uint32_t baud_hz, uint32_t *cpsdvsr, uint32_t *scr
      * We want the highest frequency <= baud_hz.
      * Try CPSDVSR = 2,4,6,...,254; find smallest SCR that satisfies. */
     for (uint32_t cp = 2; cp <= 254; cp += 2) {
-        uint32_t s = (F_PERI / (cp * baud_hz));
+        uint32_t s = (PPAP_SYS_HZ / (cp * baud_hz));
         if (s == 0) s = 0;
         else s -= 1;          /* SCR = ceil(F_peri/(cp*baud)) - 1 */
         /* Verify: F_peri / (cp * (1+s)) <= baud_hz */
-        if (F_PERI / (cp * (1 + s)) > baud_hz) {
+        if (PPAP_SYS_HZ / (cp * (1 + s)) > baud_hz) {
             s++;  /* bump SCR to reduce frequency */
         }
         if (s <= 255) {
@@ -170,7 +156,7 @@ void spi_set_baud(uint32_t baud_hz)
     uint32_t cpsdvsr, scr;
     compute_prescaler(baud_hz, &cpsdvsr, &scr);
     SPI0_CPSR = cpsdvsr;
-    SPI0_CR0 = (SPI0_CR0 & 0x00FFu) | (scr << 8);
+    SPI0_CR0 = (SPI0_CR0 & CR0_LOW_MASK) | (scr << 8);
 
     SPI0_CR1 |= CR1_SSE;
 }

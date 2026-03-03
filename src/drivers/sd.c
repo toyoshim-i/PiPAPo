@@ -17,6 +17,7 @@
 #include "spi.h"
 #include "../kernel/blkdev/blkdev.h"
 #include "../kernel/errno.h"
+#include "config.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -35,6 +36,37 @@
 #define R1_IDLE     (1u << 0)
 #define R1_ILLEGAL  (1u << 2)
 
+/* ── SD SPI protocol constants ─────────────────────────────────────────── */
+
+#define SD_CMD_PREFIX       0x40u          /* command byte = 0x40 | cmd_idx  */
+#define SD_R1_START_BIT     0x80u          /* R1 valid when bit 7 is 0       */
+#define SD_TOKEN_DATA       0xFEu          /* data block start token         */
+#define SD_DRESP_MASK       0x1Fu          /* data response mask bits        */
+#define SD_DRESP_ACCEPTED   0x05u          /* data response: accepted (010)  */
+#define SD_CRC_CMD0         0x95u          /* precomputed CRC7 for CMD0(0)   */
+#define SD_CRC_CMD8         0x87u          /* precomputed CRC7 for CMD8(0x1AA) */
+#define SD_CRC_DUMMY        0x01u          /* dummy CRC + stop bit           */
+#define CMD8_CHECK_PATTERN  0x000001AAu    /* voltage + check pattern        */
+#define ACMD41_HCS          0x40000000u    /* HCS bit: host supports SDHC    */
+#define OCR_CCS             0x40u          /* CCS bit in OCR byte 0          */
+#define SD_SPI_FAST_HZ      25000000u      /* normal-mode SPI clock (25 MHz) */
+
+/* Timeout loop counts */
+#define SD_DATA_TIMEOUT     4096           /* data token wait iterations     */
+#define SD_WRITE_TIMEOUT    65535          /* write-busy wait iterations     */
+
+/* ── MBR constants ─────────────────────────────────────────────────────── */
+
+#define MBR_SIG_BYTE0       0x55u          /* MBR signature at offset 510    */
+#define MBR_SIG_BYTE1       0xAAu          /* MBR signature at offset 511    */
+#define MBR_PART_OFFSET     0x1BEu         /* first partition entry offset   */
+#define MBR_PART_ENTRY_SIZE 16u            /* bytes per partition entry       */
+#define PART_TYPE_FAT32     0x0Bu          /* FAT32 with CHS addressing      */
+#define PART_TYPE_FAT32_LBA 0x0Cu          /* FAT32 with LBA addressing      */
+
+/* Delay loop calibration: ~1 ms at 133 MHz (imprecise, sufficient for init) */
+#define DELAY_LOOPS_PER_MS  13300u
+
 /* ── Driver state ───────────────────────────────────────────────────────── */
 
 static int sd_sdhc;              /* 1 = SDHC/SDXC (block addressing) */
@@ -46,7 +78,7 @@ static uint32_t sd_part_sectors; /* sector count of partition */
 /* Busy-wait ~1 ms at 133 MHz (imprecise but sufficient for SD init) */
 static void delay_ms(uint32_t ms)
 {
-    volatile uint32_t count = ms * 13300u;
+    volatile uint32_t count = ms * DELAY_LOOPS_PER_MS;
     while (count--) ;
 }
 
@@ -59,7 +91,7 @@ static void delay_ms(uint32_t ms)
 static uint8_t sd_send_cmd(uint8_t cmd, uint32_t arg)
 {
     uint8_t frame[6];
-    frame[0] = 0x40u | cmd;
+    frame[0] = SD_CMD_PREFIX | cmd;
     frame[1] = (uint8_t)(arg >> 24);
     frame[2] = (uint8_t)(arg >> 16);
     frame[3] = (uint8_t)(arg >> 8);
@@ -67,18 +99,18 @@ static uint8_t sd_send_cmd(uint8_t cmd, uint32_t arg)
 
     /* CRC7 is only checked for CMD0 and CMD8 in SPI mode */
     if (cmd == CMD0)
-        frame[5] = 0x95u;      /* precomputed CRC7 for CMD0(0) */
+        frame[5] = SD_CRC_CMD0;
     else if (cmd == CMD8)
-        frame[5] = 0x87u;      /* precomputed CRC7 for CMD8(0x1AA) */
+        frame[5] = SD_CRC_CMD8;
     else
-        frame[5] = 0x01u;      /* dummy CRC + stop bit */
+        frame[5] = SD_CRC_DUMMY;
 
     spi_xfer_block(frame, NULL, 6);
 
     /* Wait for response: card drives MISO low (bit 7 = 0) */
     for (int i = 0; i < 10; i++) {
         uint8_t r = spi_xfer(0xFFu);
-        if (!(r & 0x80u))
+        if (!(r & SD_R1_START_BIT))
             return r;
     }
     return 0xFFu;   /* timeout */
@@ -107,10 +139,10 @@ static int sd_read_sector(uint32_t addr, uint8_t *buf)
         return -EIO;
     }
 
-    /* Wait for data token 0xFE */
-    for (int i = 0; i < 4096; i++) {
+    /* Wait for data token */
+    for (int i = 0; i < SD_DATA_TIMEOUT; i++) {
         uint8_t tok = spi_xfer(0xFFu);
-        if (tok == 0xFEu)
+        if (tok == SD_TOKEN_DATA)
             goto got_token;
         if (tok != 0xFFu) {
             sd_cs_high();
@@ -121,8 +153,7 @@ static int sd_read_sector(uint32_t addr, uint8_t *buf)
     return -ETIMEDOUT;
 
 got_token:
-    /* Read 512 data bytes */
-    spi_xfer_block(NULL, buf, 512);
+    spi_xfer_block(NULL, buf, BLKDEV_SECTOR_SIZE);
     /* Discard 2-byte CRC */
     spi_xfer(0xFFu);
     spi_xfer(0xFFu);
@@ -145,22 +176,22 @@ static int sd_write_sector(uint32_t addr, const uint8_t *buf)
     }
 
     /* Send data token */
-    spi_xfer(0xFEu);
-    /* Send 512 data bytes */
-    spi_xfer_block(buf, NULL, 512);
+    spi_xfer(SD_TOKEN_DATA);
+    /* Send sector data */
+    spi_xfer_block(buf, NULL, BLKDEV_SECTOR_SIZE);
     /* Send dummy CRC */
     spi_xfer(0xFFu);
     spi_xfer(0xFFu);
 
     /* Check data response: xxx0sss1, sss should be 010 (accepted) */
     uint8_t resp = spi_xfer(0xFFu);
-    if ((resp & 0x1Fu) != 0x05u) {
+    if ((resp & SD_DRESP_MASK) != SD_DRESP_ACCEPTED) {
         sd_cs_high();
         return -EIO;
     }
 
     /* Wait for write completion (busy = MISO low) */
-    for (int i = 0; i < 65535; i++) {
+    for (int i = 0; i < SD_WRITE_TIMEOUT; i++) {
         if (spi_xfer(0xFFu) != 0x00u)
             break;
     }
@@ -179,11 +210,11 @@ static int sd_blk_read(struct blkdev *dev, void *buf,
 
     for (uint32_t i = 0; i < count; i++) {
         uint32_t raw_sector = sd_part_lba + sector + i;
-        uint32_t addr = sd_sdhc ? raw_sector : raw_sector * 512u;
+        uint32_t addr = sd_sdhc ? raw_sector : raw_sector * BLKDEV_SECTOR_SIZE;
         int rc = sd_read_sector(addr, p);
         if (rc < 0)
             return rc;
-        p += 512;
+        p += BLKDEV_SECTOR_SIZE;
     }
     return 0;
 }
@@ -196,11 +227,11 @@ static int sd_blk_write(struct blkdev *dev, const void *buf,
 
     for (uint32_t i = 0; i < count; i++) {
         uint32_t raw_sector = sd_part_lba + sector + i;
-        uint32_t addr = sd_sdhc ? raw_sector : raw_sector * 512u;
+        uint32_t addr = sd_sdhc ? raw_sector : raw_sector * BLKDEV_SECTOR_SIZE;
         int rc = sd_write_sector(addr, p);
         if (rc < 0)
             return rc;
-        p += 512;
+        p += BLKDEV_SECTOR_SIZE;
     }
     return 0;
 }
@@ -214,21 +245,21 @@ static int sd_blk_write(struct blkdev *dev, const void *buf,
  */
 static int sd_parse_mbr(void)
 {
-    uint8_t mbr[512];
+    uint8_t mbr[BLKDEV_SECTOR_SIZE];
     uint32_t addr = sd_sdhc ? 0 : 0;  /* sector 0 */
     int rc = sd_read_sector(addr, mbr);
     if (rc < 0)
         return rc;
 
     /* Verify MBR signature */
-    if (mbr[510] != 0x55u || mbr[511] != 0xAAu)
+    if (mbr[510] != MBR_SIG_BYTE0 || mbr[511] != MBR_SIG_BYTE1)
         return -EIO;
 
     /* Scan 4 partition entries at offsets 0x1BE, 0x1CE, 0x1DE, 0x1EE */
     for (int i = 0; i < 4; i++) {
-        uint8_t *ent = &mbr[0x1BEu + i * 16u];
+        uint8_t *ent = &mbr[MBR_PART_OFFSET + i * MBR_PART_ENTRY_SIZE];
         uint8_t type = ent[4];
-        if (type == 0x0Bu || type == 0x0Cu) {
+        if (type == PART_TYPE_FAT32 || type == PART_TYPE_FAT32_LBA) {
             /* FAT32 partition found */
             sd_part_lba = (uint32_t)ent[8]
                         | ((uint32_t)ent[9]  << 8)
@@ -272,7 +303,7 @@ int sd_init(void)
 
     /* 4. CMD8 — SEND_IF_COND (SD v2.0 check) */
     sd_cs_low();
-    r1 = sd_send_cmd(CMD8, 0x000001AAu);
+    r1 = sd_send_cmd(CMD8, CMD8_CHECK_PATTERN);
     if (r1 == R1_IDLE) {
         /* SD v2.0+: read R7 trailing 4 bytes */
         uint8_t r7[4];
@@ -290,7 +321,7 @@ int sd_init(void)
         int attempts = 1000;
         while (attempts-- > 0) {
             sd_cs_low();
-            r1 = sd_send_acmd(ACMD41, 0x40000000u);  /* HCS = 1 */
+            r1 = sd_send_acmd(ACMD41, ACMD41_HCS);
             sd_cs_high();
             if (r1 == 0x00u)
                 break;
@@ -308,7 +339,7 @@ int sd_init(void)
     if (r1 == 0x00u) {
         uint8_t ocr[4];
         spi_xfer_block(NULL, ocr, 4);
-        sd_sdhc = (ocr[0] & 0x40u) ? 1 : 0;
+        sd_sdhc = (ocr[0] & OCR_CCS) ? 1 : 0;
     } else {
         sd_sdhc = 0;
     }
@@ -317,12 +348,12 @@ int sd_init(void)
     /* 7. For SDSC: set block length to 512 */
     if (!sd_sdhc) {
         sd_cs_low();
-        sd_send_cmd(CMD16, 512);
+        sd_send_cmd(CMD16, BLKDEV_SECTOR_SIZE);
         sd_cs_high();
     }
 
     /* 8. Raise SPI to 25 MHz for normal operation */
-    spi_set_baud(25000000);
+    spi_set_baud(SD_SPI_FAST_HZ);
 
     /* 9. Parse MBR to find FAT32 partition */
     int rc = sd_parse_mbr();

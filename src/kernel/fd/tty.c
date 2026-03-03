@@ -21,6 +21,7 @@
 #include "drivers/uart.h"
 #include "../proc/proc.h"     /* proc_table, PROC_MAX, PROC_FREE */
 #include "../signal/signal.h" /* SIGINT */
+#include "../errno.h"         /* ENOTTY */
 #include <stddef.h>
 #include <stdint.h>
 
@@ -28,15 +29,37 @@
 
 /* c_iflag */
 #define ICRNL   0x0100u   /* map CR to NL on input */
+#define IXON    0x0400u   /* enable XON/XOFF output control */
 
 /* c_oflag */
 #define OPOST   0x0001u   /* post-process output */
 #define ONLCR   0x0004u   /* map NL to CR-NL on output */
 
+/* c_cflag */
+#define CFLAG_DEFAULT  0x00BFu   /* CS8 | CREAD | HUPCL | B38400 */
+
 /* c_lflag */
 #define ISIG    0x0001u   /* enable signals (INTR, QUIT, etc.) */
 #define ICANON  0x0002u   /* canonical (line) mode */
 #define ECHO    0x0008u   /* echo input characters */
+#define LFLAG_DEFAULT  0x8A3Bu   /* ECHO|ECHOE|ECHOK|ICANON|ISIG|IEXTEN|ECHOCTL|ECHOKE */
+
+/* ── Control character codes ──────────────────────────────────────────────── */
+
+#define CTRL_C     0x03   /* ETX — interrupt (SIGINT)      */
+#define CTRL_D     0x04   /* EOT — end of file             */
+#define CTRL_U     0x15   /* NAK — kill line               */
+#define ASCII_BS   0x08   /* backspace                     */
+#define ASCII_DEL  0x7F   /* delete                        */
+
+/* ── Default terminal size ────────────────────────────────────────────────── */
+
+#define TTY_DEFAULT_ROWS  24
+#define TTY_DEFAULT_COLS  80
+
+/* ── c_cc array size ──────────────────────────────────────────────────────── */
+
+#define NCCS  19   /* number of control characters (matches Linux ARM) */
 
 /* ── Line discipline state ─────────────────────────────────────────────────── */
 
@@ -63,7 +86,7 @@ struct kernel_termios {
     uint32_t c_cflag;
     uint32_t c_lflag;
     uint8_t  c_line;
-    uint8_t  c_cc[19];
+    uint8_t  c_cc[NCCS];
 };
 
 struct winsize {
@@ -75,10 +98,10 @@ struct winsize {
 
 /* Default termios: canonical mode, echo on, signals enabled */
 static struct kernel_termios tty_termios = {
-    .c_iflag = 0x0500,   /* ICRNL | IXON */
-    .c_oflag = 0x0005,   /* OPOST | ONLCR */
-    .c_cflag = 0x00BF,   /* CS8 | CREAD | HUPCL | B38400 */
-    .c_lflag = 0x8A3B,   /* ECHO | ECHOE | ECHOK | ICANON | ISIG | IEXTEN | ECHOCTL | ECHOKE */
+    .c_iflag = ICRNL | IXON,
+    .c_oflag = OPOST | ONLCR,
+    .c_cflag = CFLAG_DEFAULT,     /* CS8 | CREAD | HUPCL | B38400 */
+    .c_lflag = LFLAG_DEFAULT,     /* ECHO|ECHOE|ECHOK|ICANON|ISIG|IEXTEN|ECHOCTL|ECHOKE */
     .c_line = 0,
     .c_cc = { 0 },
 };
@@ -130,7 +153,7 @@ static long tty_read_canon(char *buf, size_t n)
 
         /* ISIG: signal characters */
         if (tty_termios.c_lflag & ISIG) {
-            if (c == 0x03) {   /* Ctrl-C → SIGINT */
+            if (c == CTRL_C) {   /* Ctrl-C → SIGINT */
                 tty_send_signal(SIGINT);
                 /* Discard line buffer, echo ^C */
                 if (tty_termios.c_lflag & ECHO) {
@@ -145,7 +168,7 @@ static long tty_read_canon(char *buf, size_t n)
         }
 
         /* Backspace / DEL */
-        if (c == 0x7F || c == 0x08) {
+        if (c == ASCII_DEL || c == ASCII_BS) {
             if (line_pos > 0) {
                 line_pos--;
                 if (tty_termios.c_lflag & ECHO) {
@@ -158,7 +181,7 @@ static long tty_read_canon(char *buf, size_t n)
         }
 
         /* Ctrl-U: kill line */
-        if (c == 0x15) {
+        if (c == CTRL_U) {
             while (line_pos > 0) {
                 line_pos--;
                 if (tty_termios.c_lflag & ECHO) {
@@ -171,7 +194,7 @@ static long tty_read_canon(char *buf, size_t n)
         }
 
         /* Ctrl-D: EOF / flush */
-        if (c == 0x04) {
+        if (c == CTRL_D) {
             if (line_pos == 0)
                 return 0;           /* EOF */
             line_ready = 1;         /* flush what we have */
@@ -237,7 +260,7 @@ static long tty_read_raw(char *buf, size_t n)
 
         /* ISIG in raw mode too */
         if (tty_termios.c_lflag & ISIG) {
-            if (c == 0x03) {
+            if (c == CTRL_C) {
                 tty_send_signal(SIGINT);
                 continue;
             }
@@ -295,8 +318,8 @@ static int tty_ioctl(struct file *f, uint32_t cmd, void *arg)
         return 0;
     case TIOCGWINSZ: {
         struct winsize *ws = (struct winsize *)arg;
-        ws->ws_row = 24;
-        ws->ws_col = 80;
+        ws->ws_row = TTY_DEFAULT_ROWS;
+        ws->ws_col = TTY_DEFAULT_COLS;
         ws->ws_xpixel = 0;
         ws->ws_ypixel = 0;
         return 0;
@@ -314,7 +337,7 @@ static int tty_ioctl(struct file *f, uint32_t cmd, void *arg)
         return 0;
     }
     default:
-        return -25;   /* ENOTTY */
+        return -ENOTTY;
     }
 }
 
