@@ -72,7 +72,7 @@ Both `pico1` and `pico1calc` share the same RP2040 clock initialization, stage 1
 
 The RP2350's Cortex-M33 is based on the ARMv8-M architecture, with the MPU expanded to 8 regions. The OS design includes an abstraction layer for memory protection boundaries that is independent of the number of MPU regions. On the RP2350, the additional regions enable per-process stack/heap protection on top of kernel region protection. Furthermore, the RP2350 optionally supports PSRAM (QSPI-connected external SRAM, up to 16MB), which can be used to extend the page pool and dramatically increase the number of concurrent processes and per-process memory. Note that the RP2350 does not have a hardware MMU, but practical memory protection and near-virtual-memory behavior can be achieved through the enhanced MPU and PSRAM.
 
-Target signatures `pico2` and `pico2calc` are reserved for the RP2350 port (Phase 9).
+Target signatures `pico2` and `pico2calc` are reserved for the RP2350 port (Phase 11).
 
 ---
 
@@ -451,12 +451,16 @@ All drivers are built into the kernel (statically linked). Loadable modules are 
 | Phase 5: UFS + Loopback | 4 weeks | UFS driver, loopback block device, image file mounting at /usr etc. |
 | Phase 6: musl + busybox | 4 weeks | musl porting, busybox build, syscall coverage, interactive ash |
 | Phase 7: Board Support Packages | 2 weeks | Split target-specific code into per-board directories; define `qemu`, `pico1`, `pico1calc` targets |
-| Phase 8: Stabilization | 4 weeks | Error handling, OOM killer, performance tuning |
-| Phase 9: RP2350 Port | 4 weeks | MPU 8-region support, PSRAM support, Thumb-2 optimization; add `pico2`/`pico2calc` targets |
+| Phase 8: PIE Binary Optimization | 2–3 days | .rodata flash migration, split init/sh binaries, PPAP_HAS_BLKDEV gating, per-target romfs |
+| Phase 9: Stabilization | 4 weeks | Error handling, OOM killer, performance tuning |
+| Phase 10: PicoCalc Device Support | 4 weeks | Embedded display driver (console + graphics), I2C keyboard input |
+| Phase 11: RP2350 Port | 4 weeks | MPU 8-region support, PSRAM support, Thumb-2 optimization; add `pico2`/`pico2calc` targets |
 
 Note: Phase 4 (VFAT) and Phase 5 (UFS + loopback) were a single phase in v0.2. They are split here because the two-layer approach requires the VFAT driver to be functional before loopback mounts can be tested.
 
 Note: Phase 7 (Board Support Packages) was added in v0.4 to formalize multi-board support before stabilization. Prior phases developed code for `qemu` and `pico1calc` (as the implicit RP2040 target); Phase 7 restructures that code into per-target directories and adds the `pico1` target for the official Raspberry Pi Pico board.
+
+Note: Phase 8 (PIE Binary Optimization) was inserted in v0.5 to address SRAM pressure from resident processes. Stabilization was renumbered to Phase 9. Phase 10 (PicoCalc Device Support) adds `pico1calc`-specific peripherals: the embedded SPI/I2C display for console output and framebuffer graphics, and the I2C keyboard for interactive input. The RP2350 port was renumbered to Phase 11.
 
 ---
 
@@ -532,3 +536,4 @@ SD card communication in SPI mode supports CRC-based error detection, but is vul
 | v0.2 | Feb 2026 | Removed flash block cache, adopted UFS on raw SD, added RP2350 porting plan |
 | v0.3 | Mar 2026 | SD card changed to VFAT (FAT32) for interoperability; UFS provided via loopback-mounted image files on the VFAT partition; added loopback block device, VFAT driver, fstab configuration |
 | v0.4 | Mar 2026 | Defined three build targets (`qemu`, `pico1`, `pico1calc`); added Phase 7 (Board Support Packages) to roadmap; renumbered Stabilization → Phase 8, RP2350 Port → Phase 9 |
+| v0.5 | Mar 2026 | Inserted Phase 8 (PIE Binary Optimization: .rodata flash migration, split init/sh, PPAP_HAS_BLKDEV, per-target romfs); added Phase 10 (PicoCalc Device Support: display + I2C keyboard); renumbered Stabilization → Phase 9, RP2350 Port → Phase 11 |
