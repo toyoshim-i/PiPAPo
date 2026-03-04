@@ -3,6 +3,7 @@
 **PicoPiAndPortable Development Roadmap**
 Estimated Duration: 3 weeks
 Target Board: ClockworkPi PicoCalc (RP2040 + full-size SD slot)
+**Status: Complete**
 
 ---
 

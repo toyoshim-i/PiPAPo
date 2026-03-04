@@ -3,6 +3,7 @@
 **PicoPiAndPortable Development Roadmap**
 Estimated Duration: 4 weeks
 Prerequisites: Phase 5 (UFS + Loopback) complete
+**Status: Complete**
 
 ---
 

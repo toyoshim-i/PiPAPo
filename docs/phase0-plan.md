@@ -2,6 +2,7 @@
 
 **PicoPiAndPortable Development Roadmap**
 Estimated Duration: 2 weeks
+**Status: Complete**
 
 ---
 

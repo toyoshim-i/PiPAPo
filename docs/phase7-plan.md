@@ -3,6 +3,7 @@
 **PicoPiAndPortable Development Roadmap**
 Estimated Duration: 2 weeks
 Prerequisites: Phase 6 (musl + busybox) complete
+**Status: Complete**
 
 ---
 
@@ -59,7 +60,7 @@ src/
     pico1calc/
       CMakeLists.txt            ✓ New: ppap_pico1calc target definition
       target_pico1calc.c        ✓ New: target_early_init(), target_late_init() for PicoCalc
-      picocalc.h                ← moved from src/board/picocalc.h
+      pico1calc.h               ← merged + renamed from src/board/picocalc.h
   drivers/
     uart.c                      (existing — RP2040 PL011, shared by pico1 + pico1calc)
     uart.h                      (existing)
@@ -76,9 +77,18 @@ src/
     main.c                      (modified — shared kmain(), calls target_*() hooks)
     main_qemu.c                 ← REMOVED (init logic → target/qemu_arm/, tests → src/test/)
     ...                         (all other kernel code unchanged)
-  test/
-    ktest.c                     ✓ New: kernel integration tests (extracted from main_qemu.c)
-    ktest.h                     ✓ New: ktest_run_all() declaration
+tests/
+  kernel/
+    ktest.c                     ✓ Kernel integration tests (extracted from main_qemu.c)
+    ktest.h                     ✓ ktest_run_all() declaration
+  host/
+    CMakeLists.txt              ✓ Host-native unit test build
+    test_kmem.c                 ✓ kmem unit tests
+    test_fd.c                   ✓ fd unit tests
+    test_elf.c                  ✓ ELF parser unit tests
+    stubs/                      ✓ UART/tty/xip stubs for host builds
+  user/
+    test_vfork.c ... runtests.c ✓ User-space test programs (moved from user/)
   config.h                      (existing — shared constants)
 ldscripts/
   qemu.ld                       (existing — unchanged)
@@ -889,14 +899,14 @@ both with and without `PPAP_TESTS`.
 | `src/target/qemu_arm/CMakeLists.txt` | ppap_qemu_arm target definition |
 | `src/target/qemu_arm/target_qemu_arm.c` | QEMU target implementation (test-aware via PPAP_TESTS) |
 | `src/target/qemu_arm/drivers/uart_qemu.c` | CMSDK UART driver (moved from src/drivers/) |
-| `src/test/ktest.c` | Kernel integration tests (extracted from main_qemu.c, compiled only with PPAP_TESTS=ON) |
-| `src/test/ktest.h` | ktest_run_all() declaration |
+| `tests/kernel/ktest.c` | Kernel integration tests (extracted from main_qemu.c, compiled only with PPAP_TESTS=ON) |
+| `tests/kernel/ktest.h` | ktest_run_all() declaration |
 | `src/target/pico1/CMakeLists.txt` | ppap_pico1 target definition |
 | `src/target/pico1/target_pico1.c` | Official Pico target implementation |
 | `src/target/pico1/pico1.h` | Pico GPIO pin definitions |
 | `src/target/pico1calc/CMakeLists.txt` | ppap_pico1calc target definition |
 | `src/target/pico1calc/target_pico1calc.c` | PicoCalc target implementation |
-| `src/target/pico1calc/picocalc.h` | PicoCalc GPIO pin definitions (moved) |
+| `src/target/pico1calc/pico1calc.h` | PicoCalc GPIO pin definitions (merged + renamed) |
 | `cmake/kernel_sources.cmake` | Shared KERNEL_COMMON_SOURCES list |
 | `src/kernel/main.c` | Unified kernel entry point (target-agnostic) |
 | `src/kernel/fs/fstab.c` | UFS support unconditional (no ifdef) |
@@ -911,8 +921,8 @@ both with and without `PPAP_TESTS`.
 
 | File | Reason |
 |---|---|
-| `src/kernel/main_qemu.c` | Init logic → `target_qemu_arm.c`; tests → `src/test/ktest.c` |
-| `src/board/picocalc.h` | Moved to `src/target/pico1calc/picocalc.h` (old `src/board/` removed) |
+| `src/kernel/main_qemu.c` | Init logic → `target_qemu_arm.c`; tests → `tests/kernel/ktest.c` |
+| `src/board/picocalc.h` | Merged + renamed to `src/target/pico1calc/pico1calc.h` (old `src/board/` removed) |
 | `src/drivers/uart_qemu.c` | Moved to `src/target/qemu_arm/drivers/uart_qemu.c` |
 | `ldscripts/ppap.ld` | Renamed to `ldscripts/pico1calc.ld` |
 | `ppap.gdb` | Renamed to `pico1calc.gdb` |
