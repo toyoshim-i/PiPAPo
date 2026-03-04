@@ -6,7 +6,7 @@
  */
 
 #include "../target.h"
-#include "picocalc.h"
+#include "pico1calc.h"
 #include "drivers/uart.h"
 #include "drivers/clock.h"
 #include "drivers/spi.h"

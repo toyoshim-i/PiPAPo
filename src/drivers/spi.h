@@ -2,7 +2,7 @@
  * spi.h — SPI0 driver interface (RP2040 PL022)
  *
  * Drives the PL022 (ARM PrimeCell SSP) SPI0 controller on the RP2040.
- * Pin assignments come from src/board/picocalc.h.
+ * Pin assignments come from src/target/pico1calc/pico1calc.h.
  *
  * Usage:
  *   spi_init(400000)          — initialise SPI0 at 400 kHz (SD card init)

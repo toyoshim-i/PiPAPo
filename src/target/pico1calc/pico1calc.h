@@ -1,5 +1,5 @@
 /*
- * picocalc.h — ClockworkPi PicoCalc board pin definitions
+ * pico1calc.h — PicoCalc board pin definitions (SPI0 / SD card)
  *
  * The PicoCalc carries an RP2040 with a full-size SD card slot wired to
  * SPI0.  This header centralises all board-specific GPIO assignments so
@@ -13,8 +13,8 @@
  *   SD_CD          : GP22   FUNCSEL 5 (SIO — input, active low)
  */
 
-#ifndef PPAP_BOARD_PICOCALC_H
-#define PPAP_BOARD_PICOCALC_H
+#ifndef PPAP_TARGET_PICO1CALC_H
+#define PPAP_TARGET_PICO1CALC_H
 
 /* ── SPI0 / SD card pins ──────────────────────────────────────────────────── */
 
@@ -29,4 +29,4 @@
 #define GPIO_FUNC_SPI        1   /* SPI function (FUNCSEL = 1) */
 #define GPIO_FUNC_SIO        5   /* SIO — manual GPIO (FUNCSEL = 5) */
 
-#endif /* PPAP_BOARD_PICOCALC_H */
+#endif /* PPAP_TARGET_PICO1CALC_H */
