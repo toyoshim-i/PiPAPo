@@ -7,7 +7,7 @@
 #   ./scripts/flash.sh build/ppap_pico1.elf  # flash a specific ELF
 #
 # Alternatively, without a debug adapter, hold BOOTSEL, plug in USB, then:
-#   cp build/ppap_pico1calc.uf2 /media/$USER/RPI-RP2/
+#   cp build/src/target/pico1calc/ppap_pico1calc.uf2 /media/$USER/RPI-RP2/
 #
 # Requirements:
 #   - openocd in PATH (v0.12 or later)

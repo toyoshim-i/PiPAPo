@@ -26,6 +26,11 @@ add_subdirectory(src/target/pico1calc)
 
 set(PPAP_ALL_TARGETS ppap_qemu_arm ppap_pico1 ppap_pico1calc)
 
+# Place ELF outputs in the build root (scripts expect build/ppap_*.elf)
+foreach(tgt ${PPAP_ALL_TARGETS})
+    set_target_properties(${tgt} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+endforeach()
+
 # =============================================================================
 # Test support (conditional on PPAP_TESTS)
 # =============================================================================
