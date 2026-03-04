@@ -6,7 +6,7 @@
  * overhead.
  *
  * All pages are single-owner; no reference counting.  True CoW is not
- * feasible on the RP2040's 4-region MPU — see phase1-plan.md §Step 1.
+ * feasible on the RP2040's 4-region MPU — see phase01-plan.md §Step 1.
  */
 
 #ifndef PPAP_MM_PAGE_H

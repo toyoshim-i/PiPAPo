@@ -2,7 +2,7 @@
 
 A UNIX-like micro OS for the RP2040 — bare-metal, no SDK runtime.
 
-> Full design specification: [docs/PicoPiAndPortable-spec-v04.md](docs/PicoPiAndPortable-spec-v04.md)
+> Full design specification: [docs/PicoPiAndPortable-spec-v06.md](docs/PicoPiAndPortable-spec-v06.md)
 
 ---
 
@@ -36,8 +36,11 @@ A UNIX-like micro OS for the RP2040 — bare-metal, no SDK runtime.
 | 5 | UFS + Loopback — UFS driver, loopback block device, fstab mounts | ✓ Complete |
 | 6 | musl + busybox — musl porting, busybox build, interactive ash shell | ✓ Complete |
 | 7 | Target Support Packages — per-target directories, 3 build targets, test cleanup | ✓ Complete |
-| 8 | PIE Binary Optimization — reduce SRAM footprint for user-space binaries | Planned |
-| 9 | RP2350 Port — MPU 8-region, PSRAM, Thumb-2 optimization | Planned |
+| 8 | PIE Binary Optimization — reduce SRAM footprint for user-space binaries | ✓ Complete |
+| 9 | Dual-Core Scheduling — hardware spinlocks, per-core state, Core 1 execution | Planned |
+| 10 | Stabilization — process lifecycle, memory safety, FS correctness | Planned |
+| 11 | PicoCalc Devices — LCD, keyboard, audio drivers | Planned |
+| 12 | RP2350 Port — MPU 8-region, PSRAM, Thumb-2 optimization | Planned |
 
 ## Repository Layout
 
@@ -95,8 +98,8 @@ PPAP/
     qemu.sh                 Run ppap_qemu_arm on mps2-an500
     test_all_targets.sh     Build all targets + run QEMU automated tests
   docs/
-    PicoPiAndPortable-spec-v04.md   Full design specification
-    phase0-plan.md .. phase8-plan.md   Phase detailed plans
+    PicoPiAndPortable-spec-v06.md   Full design specification
+    phase00-plan.md .. phase10-plan.md  Phase detailed plans
 ```
 
 ## Quick Start

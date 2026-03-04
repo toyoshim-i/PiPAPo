@@ -947,7 +947,7 @@ both with and without `PPAP_TESTS`.
 
 ## References
 
-- [PicoPiAndPortable Design Spec v0.4](PicoPiAndPortable-spec-v04.md) — §1.4 (Build Targets), §9 (Development Roadmap, Phase 7)
+- [PicoPiAndPortable Design Spec v0.4](PicoPiAndPortable-spec-v06.md) — §1.4 (Build Targets), §9 (Development Roadmap, Phase 7)
 - [Raspberry Pi Pico Datasheet](https://datasheets.raspberrypi.com/pico/pico-datasheet.pdf) — Pico GPIO pinout, 2 MB flash capacity
 - [RP2040 Datasheet](https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf) — UART, SPI, GPIO function select
 - [ClockworkPi PicoCalc](https://www.clockworkpi.com/picocalc) — PicoCalc schematic, SPI0 pin assignments
