@@ -1,5 +1,5 @@
 build/
-build_tests/
+build_test/
 *.elf
 *.bin
 *.uf2
@@ -9,4 +9,5 @@ build_tests/
 
 # Build-generated artifacts
 romfs/bin/
+romfs/sbin/
 tools/mkromfs/mkromfs
