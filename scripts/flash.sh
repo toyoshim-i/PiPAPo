@@ -1,34 +1,41 @@
 #!/usr/bin/env bash
-# flash.sh — Flash ppap.elf to the RP2040 via OpenOCD (Picoprobe / CMSIS-DAP)
+# flash.sh — Flash ppap_pico1calc.elf to the RP2040 via OpenOCD
 #
 # Usage (from project root):
-#   ./scripts/flash.sh            # flash build/ppap.elf
-#   ./scripts/flash.sh --build    # rebuild first, then flash
+#   ./scripts/flash.sh                     # flash build/ppap_pico1calc.elf
+#   ./scripts/flash.sh --build             # rebuild first, then flash
+#   ./scripts/flash.sh build/ppap_pico1.elf  # flash a specific ELF
 #
 # Alternatively, without a debug adapter, hold BOOTSEL, plug in USB, then:
-#   cp build/ppap.uf2 /media/$USER/RPI-RP2/
+#   cp build/ppap_pico1calc.uf2 /media/$USER/RPI-RP2/
 #
 # Requirements:
 #   - openocd in PATH (v0.12 or later)
 #   - Picoprobe (or any CMSIS-DAP adapter) wired to the target Pico
 #   - openocd.cfg present in the project root
-#   - build/ppap.elf already built (or use --build)
+#   - ELF already built (or use --build)
 #
 # For daily development: use this script (OpenOCD keeps the adapter alive;
 # you can re-flash without unplugging anything).
-# For release: use ppap.uf2 (no adapter required).
+# For release: use the .uf2 file (no adapter required).
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-ELF="$PROJECT_DIR/build/ppap.elf"
+ELF="$PROJECT_DIR/build/ppap_pico1calc.elf"
 CFG="$PROJECT_DIR/openocd.cfg"
 
 # ── Optional rebuild ──────────────────────────────────────────────────────────
 if [[ "${1:-}" == "--build" ]]; then
-    echo "[flash] Building..."
-    cmake --build "$PROJECT_DIR/build"
+    echo "[flash] Building ppap_pico1calc..."
+    cmake --build "$PROJECT_DIR/build" --target ppap_pico1calc
+    shift
+fi
+
+# ── Optional ELF path override ───────────────────────────────────────────────
+if [[ -n "${1:-}" && -f "${1:-}" ]]; then
+    ELF="$1"
 fi
 
 # ── Pre-flight checks ─────────────────────────────────────────────────────────

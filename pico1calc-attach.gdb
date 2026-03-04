@@ -1,10 +1,10 @@
-# ppap-attach.gdb — attach to already-running firmware (no reflash)
+# pico1calc-attach.gdb — attach to already-running firmware (no reflash)
 #
 # Use this when the firmware is already flashed and running.
 # The CPU will be wherever it currently is (likely in kmain's for(;;) loop).
 #
 # Usage:
-#   gdb-multiarch -x ppap-attach.gdb build/ppap.elf
+#   gdb-multiarch -x pico1calc-attach.gdb build/ppap_pico1calc.elf
 #
 # Requires openocd to be running:
 #   openocd -f openocd.cfg

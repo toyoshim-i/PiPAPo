@@ -1,14 +1,14 @@
-# ppap.gdb — GDB init script for PicoPiAndPortable
+# pico1calc.gdb — GDB init script for PicoCalc target
 #
 # Two workflows:
 #
 #   Flash + debug from scratch (recommended):
-#     gdb-multiarch -x ppap.gdb build/ppap.elf
+#     gdb-multiarch -x pico1calc.gdb build/ppap_pico1calc.elf
 #     (gdb) hbreak kmain
 #     (gdb) continue
 #
 #   Attach to already-running firmware (no reflash):
-#     gdb-multiarch -x ppap-attach.gdb build/ppap.elf
+#     gdb-multiarch -x pico1calc-attach.gdb build/ppap_pico1calc.elf
 #
 # Requires openocd to be running:
 #   openocd -f openocd.cfg
@@ -19,7 +19,7 @@ set pagination off
 target remote :3333
 
 # Flash the ELF and halt.
-# `load` writes ppap.elf to flash via OpenOCD, then halts the CPU.
+# `load` writes ppap_pico1calc.elf to flash via OpenOCD, then halts the CPU.
 # This is the officially documented RP2040 debug workflow and is required
 # for `monitor reset halt` to reliably stop before our code runs.
 # Without `load`, OpenOCD may not have the memory map initialised and

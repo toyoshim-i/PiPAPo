@@ -49,4 +49,4 @@ umount "$MOUNT"
 rmdir "$MOUNT" 2>/dev/null || true
 
 echo "=== SD card ready ==="
-echo "Flash ppap.elf and boot to test."
+echo "Flash ppap_pico1calc.elf and boot to test."

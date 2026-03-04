@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# qemu.sh — Run ppap_qemu under QEMU mps2-an500 (Cortex-M0+)
+# qemu.sh — Run ppap_qemu_arm under QEMU mps2-an500 (Cortex-M0+)
 #
 # Usage (from project root):
-#   ./scripts/qemu.sh            # run build/ppap_qemu.elf
+#   ./scripts/qemu.sh            # run build/ppap_qemu_arm.elf
 #   ./scripts/qemu.sh --build    # rebuild first, then run
 #   ./scripts/qemu.sh --gdb      # pause at reset, wait for GDB on :1234
 #
@@ -10,7 +10,7 @@
 #   sudo apt install qemu-system-arm
 #
 # GDB session (in a second terminal):
-#   gdb-multiarch -ex "target remote :1234" build/ppap_qemu.elf
+#   gdb-multiarch -ex "target remote :1234" build/ppap_qemu_arm.elf
 #
 # Expected output (boot header followed by interleaved "0" / "1" indefinitely):
 #   PicoPiAndPortable booting (QEMU mps2-an500)...
