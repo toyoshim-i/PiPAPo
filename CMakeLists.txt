@@ -112,6 +112,7 @@ add_custom_command(
     COMMAND ${MAKE_CMD} -C ${USER_SRC_DIR} clean
     COMMAND ${MAKE_CMD} -C ${USER_SRC_DIR} install
             ROMFS_BIN=${CMAKE_SOURCE_DIR}/romfs/bin
+            PPAP_TESTS=$<BOOL:${PPAP_TESTS}>
     COMMAND ${CMAKE_COMMAND} -E touch ${USER_STAMP}
     DEPENDS ${USER_SOURCES}
     COMMENT "Building user-space binaries and installing to romfs/bin/"

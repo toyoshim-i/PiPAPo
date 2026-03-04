@@ -62,6 +62,7 @@ void proc_init(void)
     uart_print_dec((uint32_t)(PROC_MAX - 1u));
     uart_puts(" available)\n");
 
+#ifdef PPAP_TESTS
     /* ── Self-test ─────────────────────────────────────────────────────── */
     /* Allocate a slot, verify it looks sane, then free it. */
     pcb_t *p = proc_alloc();
@@ -81,6 +82,7 @@ void proc_init(void)
 
     uart_puts("PROC: self-test ");
     uart_puts(ok ? "PASSED\n" : "FAILED\n");
+#endif
 }
 
 pcb_t *proc_alloc(void)

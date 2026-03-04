@@ -119,6 +119,7 @@ void mm_init(void)
     print_kb(SRAM_DMA_SIZE);
     uart_puts("\n");
 
+#ifdef PPAP_TESTS
     /* ── kmem self-test ───────────────────────────────────────────────────── */
     /* Exercise the pool mechanism with a tiny local buffer before any real
      * pool (PCBs, etc.) is created.  Validates alloc, free, and free_count. */
@@ -138,9 +139,12 @@ void mm_init(void)
 
     uart_puts("MM: kmem self-test ");
     uart_puts(ok ? "PASSED\n" : "FAILED\n");
+#endif
 
+#ifdef PPAP_TESTS
     /* ── XIP verification and benchmark ──────────────────────────────────── */
     xip_verify();
+#endif
 }
 
 void *page_alloc(void)

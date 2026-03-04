@@ -1,10 +1,21 @@
 #!/usr/bin/env bash
-# flash.sh — Flash ppap_pico1calc.elf to the RP2040 via OpenOCD
+# flash.sh — Build and flash a PPAP target to the RP2040 via OpenOCD
 #
-# Usage (from project root):
-#   ./scripts/flash.sh                     # flash build/ppap_pico1calc.elf
-#   ./scripts/flash.sh --build             # rebuild first, then flash
-#   ./scripts/flash.sh build/ppap_pico1.elf  # flash a specific ELF
+# Usage:
+#   ./scripts/flash.sh [OPTIONS] TARGET
+#
+# TARGET is one of: pico1, pico1calc, qemu_arm
+#
+# Options:
+#   --build   Build only (skip flash)
+#   --test    Enable PPAP_TESTS (kernel integration tests + userland test suite)
+#
+# Examples:
+#   ./scripts/flash.sh pico1              # build & flash pico1
+#   ./scripts/flash.sh pico1calc          # build & flash pico1calc
+#   ./scripts/flash.sh --test pico1       # build & flash pico1 with tests
+#   ./scripts/flash.sh --build pico1      # build only, no flash
+#   ./scripts/flash.sh --build qemu_arm   # build qemu_arm ELF
 #
 # Alternatively, without a debug adapter, hold BOOTSEL, plug in USB, then:
 #   cp build/src/target/pico1calc/ppap_pico1calc.uf2 /media/$USER/RPI-RP2/
@@ -13,38 +24,69 @@
 #   - openocd in PATH (v0.12 or later)
 #   - Picoprobe (or any CMSIS-DAP adapter) wired to the target Pico
 #   - openocd.cfg present in the project root
-#   - ELF already built (or use --build)
-#
-# For daily development: use this script (OpenOCD keeps the adapter alive;
-# you can re-flash without unplugging anything).
-# For release: use the .uf2 file (no adapter required).
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-ELF="$PROJECT_DIR/build/ppap_pico1calc.elf"
+BUILD_DIR="$PROJECT_DIR/build"
 CFG="$PROJECT_DIR/openocd.cfg"
 
-# ── Optional rebuild ──────────────────────────────────────────────────────────
-if [[ "${1:-}" == "--build" ]]; then
-    echo "[flash] Building ppap_pico1calc..."
-    cmake --build "$PROJECT_DIR/build" --target ppap_pico1calc
-    shift
+# ── Parse arguments ──────────────────────────────────────────────────────────
+TESTS=OFF
+BUILD_ONLY=false
+TARGET=""
+
+for arg in "$@"; do
+    case "$arg" in
+        --test)   TESTS=ON ;;
+        --build)  BUILD_ONLY=true ;;
+        -*)       echo "Unknown option: $arg" >&2; exit 1 ;;
+        *)        TARGET="$arg" ;;
+    esac
+done
+
+# Show usage if no target specified
+if [[ -z "$TARGET" ]]; then
+    sed -n '2,/^$/{ s/^# //; s/^#$//; p }' "$0"
+    exit 0
 fi
 
-# ── Optional ELF path override ───────────────────────────────────────────────
-if [[ -n "${1:-}" && -f "${1:-}" ]]; then
-    ELF="$1"
-fi
+# Validate target name
+case "$TARGET" in
+    pico1|pico1calc|qemu_arm) ;;
+    *)
+        echo "[flash] Error: unknown target '$TARGET'"
+        echo "        Valid targets: pico1, pico1calc, qemu_arm"
+        exit 1
+        ;;
+esac
 
-# ── Pre-flight checks ─────────────────────────────────────────────────────────
+CMAKE_TARGET="ppap_${TARGET}"
+ELF="$BUILD_DIR/${CMAKE_TARGET}.elf"
+
+# ── Build ────────────────────────────────────────────────────────────────────
+echo "[flash] Building $CMAKE_TARGET (PPAP_TESTS=$TESTS)..."
+cmake -B "$BUILD_DIR" -DPPAP_TESTS="$TESTS" "$PROJECT_DIR" >/dev/null 2>&1
+cmake --build "$BUILD_DIR" --target "$CMAKE_TARGET" -- -j"$(nproc)"
+
 if [[ ! -f "$ELF" ]]; then
-    echo "[flash] Error: $ELF not found."
-    echo "        Run 'cmake --build build' or use --build flag."
+    echo "[flash] Error: $ELF not found after build."
     exit 1
 fi
 
+# ── Skip flash if --build or qemu_arm ──────────────────────────────────────────
+if $BUILD_ONLY; then
+    echo "[flash] Built $ELF"
+    exit 0
+fi
+
+if [[ "$TARGET" == "qemu_arm" ]]; then
+    echo "[flash] Built $ELF (qemu_arm — use qemu-system-arm to run)"
+    exit 0
+fi
+
+# ── Pre-flight checks ─────────────────────────────────────────────────────────
 if ! command -v openocd &>/dev/null; then
     echo "[flash] Error: openocd not found in PATH."
     echo "        Install with: sudo apt install openocd"
@@ -55,15 +97,10 @@ fi
 if pgrep -x openocd &>/dev/null; then
     echo "[flash] Stopping existing OpenOCD instance..."
     pkill -x openocd
-    sleep 0.5   # give the adapter a moment to release
+    sleep 0.5
 fi
 
 # ── Flash ─────────────────────────────────────────────────────────────────────
-# 'program <elf> verify reset exit':
-#   - Loads all ELF segments into flash (addresses embedded in the ELF)
-#   - Verifies the written data by re-reading and comparing
-#   - Resets the target so it starts running immediately
-#   - Exits OpenOCD (no server left running)
 echo "[flash] Flashing $ELF ..."
 openocd \
     -f "$CFG" \

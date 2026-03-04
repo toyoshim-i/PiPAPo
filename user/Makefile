@@ -44,7 +44,13 @@ COMMON_OBJS := crt0.o syscall.o
 # Application programs (sources in user/)
 APPS := hello
 # Test programs (sources in tests/user/, found via VPATH)
-TESTS := test_vfork test_exec test_pipe test_brk test_fd test_signal test_poll test_sleep_intr runtests
+# Only built when PPAP_TESTS=1 is passed from CMake
+TESTS_ALL := test_vfork test_exec test_pipe test_brk test_fd test_signal test_poll test_sleep_intr runtests
+ifeq ($(PPAP_TESTS),1)
+TESTS := $(TESTS_ALL)
+else
+TESTS :=
+endif
 PROGRAMS := $(APPS) $(TESTS)
 
 ELFS := $(addsuffix .elf, $(PROGRAMS))
@@ -70,6 +76,10 @@ all: $(ELFS)
 # Install ELFs into the romfs bin directory
 install: all
 	@mkdir -p $(ROMFS_BIN)
+	@# Remove stale test binaries when PPAP_TESTS is off
+ifneq ($(PPAP_TESTS),1)
+	@for t in $(TESTS_ALL); do rm -f $(ROMFS_BIN)/$$t; done
+endif
 	@for elf in $(ELFS); do \
 		name=$$(basename $$elf .elf); \
 		cp $$elf $(ROMFS_BIN)/$$name; \
