@@ -28,7 +28,7 @@ PPAP runs on the RP2040 microcontroller (dual Cortex-M0+, 264 KB SRAM,
 
 | Resource | Limit |
 |----------|-------|
-| Data segment (GOT + .data + .bss + .rodata) | 8 pages = 32 KB |
+| Data segment (GOT + .data + .bss + .rodata) | 32 pages = 128 KB |
 | Stack | 1 page = 4 KB |
 | File descriptors | 16 |
 | Concurrent processes | 8 (system-wide) |
@@ -248,7 +248,7 @@ After linking, verify the binary has the correct structure:
 # Check program headers — must have exactly 2 LOAD segments
 arm-none-eabi-readelf -l myapp
 
-# Check data segment size (must be <= 32 KB)
+# Check data segment size (must be <= 128 KB)
 arm-none-eabi-size myapp
 
 # Check relocations (PIE binaries only)
@@ -281,7 +281,7 @@ The kernel ELF loader (`src/kernel/exec/exec.c`) imposes these constraints:
 ### Segment Limits
 
 - Maximum PT_LOAD segments: 4
-- Maximum data pages: 8 (32 KB)
+- Maximum data pages: 32 (128 KB)
 - Stack allocation: 1 page (4 KB)
 
 ### Relocation
@@ -690,8 +690,8 @@ with the shell.
 - **No FPU**: all floating point is software-emulated
 - **No threads**: `clone()` only supports `SIGCHLD+0` (equivalent to vfork).
   `pthread_create()` will fail. `futex()` returns 0 (locks are no-ops).
-- **32 KB data limit**: the data segment (GOT + .rodata + .data + .bss)
-  must fit in 8 pages
+- **128 KB data limit**: the data segment (GOT + .rodata + .data + .bss)
+  must fit in 32 pages
 - **4 KB stack**: deep recursion or large stack allocations will overflow
 - **Single-user**: all uid/gid syscalls return 0
 - **No RTC**: time starts at 0 on boot, incremented by SysTick
