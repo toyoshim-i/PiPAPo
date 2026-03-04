@@ -14,7 +14,7 @@ enable_testing()
 # ── Include path for kernel headers ──────────────────────────────────────────
 # All kernel source files use paths relative to src/ (e.g. "config.h",
 # "kernel/mm/page.h").  Point the host compiler at the same root.
-set(SRC ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+set(SRC ${CMAKE_CURRENT_SOURCE_DIR}/../../src)
 
 # ── Shared stub library ───────────────────────────────────────────────────────
 # Provides UART no-ops, linker-symbol stubs, and tty file objects so that

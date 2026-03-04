@@ -20,6 +20,10 @@ SIZE    := $(CROSS)size
 NM      := $(CROSS)nm
 
 ROMFS_BIN ?= ../romfs/bin
+TESTS_DIR ?= ../tests/user
+
+# Search tests/user/ for test_*.c and runtests.c sources
+VPATH := $(TESTS_DIR)
 
 # Compiler / assembler flags — Cortex-M0+ Thumb, freestanding, no libc
 # PIC flags: all data references go through GOT (r9 = GOT base, set by kernel).
@@ -28,7 +32,8 @@ ROMFS_BIN ?= ../romfs/bin
 CFLAGS  := -mthumb -mcpu=cortex-m0plus -march=armv6s-m \
            -ffreestanding -nostdlib -Os -g -Wall -Werror \
            -fPIC -msingle-pic-base -mpic-register=r9 \
-           -mno-pic-data-is-text-relative
+           -mno-pic-data-is-text-relative \
+           -I. -I$(TESTS_DIR)
 ASFLAGS := -mthumb -mcpu=cortex-m0plus -march=armv6s-m
 LDFLAGS := -nostdlib -T user.ld -Wl,--gc-sections
 
@@ -36,8 +41,11 @@ LDFLAGS := -nostdlib -T user.ld -Wl,--gc-sections
 COMMON_OBJS := crt0.o syscall.o
 
 # ── Programs ─────────────────────────────────────────────────────────────────
-# Add new programs here.  Each FOO needs a FOO.c source file.
-PROGRAMS := hello test_vfork test_exec test_pipe test_brk test_fd test_signal test_poll test_sleep_intr runtests
+# Application programs (sources in user/)
+APPS := hello
+# Test programs (sources in tests/user/, found via VPATH)
+TESTS := test_vfork test_exec test_pipe test_brk test_fd test_signal test_poll test_sleep_intr runtests
+PROGRAMS := $(APPS) $(TESTS)
 
 ELFS := $(addsuffix .elf, $(PROGRAMS))
 
@@ -52,7 +60,7 @@ all: $(ELFS)
 	@$(NM) --numeric-sort $@ | grep -E '_start|main|write|_exit'
 
 # Compile C sources
-%.o: %.c syscall.h $(wildcard utest.h)
+%.o: %.c syscall.h $(wildcard $(TESTS_DIR)/utest.h)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # Assemble .S sources
