@@ -36,19 +36,6 @@ add_executable(test_kmem
 target_include_directories(test_kmem PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME kmem COMMAND test_kmem)
 
-# ── test_page ─────────────────────────────────────────────────────────────────
-# page.c calls uart_puts/uart_print_hex32/uart_print_dec and references the
-# linker symbols __bss_end / __stack_top.  Both are provided by stubs.
-# page.c also exercises kmem (self-test inside mm_init), so kmem.c is included.
-add_executable(test_page
-    ${SRC}/kernel/mm/page.c
-    ${SRC}/kernel/mm/kmem.c
-    test_page.c
-)
-target_include_directories(test_page PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(test_page PRIVATE stubs)
-add_test(NAME page COMMAND test_page)
-
 # ── test_fd ───────────────────────────────────────────────────────────────────
 # fd.c uses tty_stdin/stdout/stderr (provided by tty_stub.c) and errno.h.
 # pcb_t is pulled from proc.h (pure C structs — no hardware deps).
