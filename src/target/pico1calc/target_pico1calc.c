@@ -16,7 +16,7 @@
 #include "errno.h"
 
 #ifdef PPAP_TESTS
-#include "test/ktest.h"
+#include "ktest.h"
 #endif
 
 void target_early_init(void)

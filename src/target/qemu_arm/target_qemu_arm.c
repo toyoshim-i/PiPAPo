@@ -12,7 +12,7 @@
 #include "blkdev/ramblk.h"
 
 #ifdef PPAP_TESTS
-#include "test/ktest.h"
+#include "ktest.h"
 #endif
 
 /* Linker-provided FAT32 test image (from fatimg_data.S) */
