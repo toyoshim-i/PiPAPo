@@ -13,3 +13,5 @@ CONFIG_LFS=y
 # -- Init only ----------------------------------------------------------------
 CONFIG_INIT=y
 CONFIG_FEATURE_USE_INITTAB=y
+# Use syslog for init messages instead of /dev/tty5 (which doesn't exist)
+CONFIG_FEATURE_INIT_SYSLOG=y
