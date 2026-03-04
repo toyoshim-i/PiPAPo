@@ -29,12 +29,16 @@ set(KERNEL_COMMON_SOURCES
     ${CMAKE_SOURCE_DIR}/src/kernel/fs/devfs.c
     ${CMAKE_SOURCE_DIR}/src/kernel/fs/procfs.c
     ${CMAKE_SOURCE_DIR}/src/kernel/fs/tmpfs.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/fs/vfat.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/fs/ufs.c
     ${CMAKE_SOURCE_DIR}/src/kernel/fs/fstab.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/blkdev/blkdev.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/blkdev/loopback.c
     ${CMAKE_SOURCE_DIR}/src/kernel/exec/elf.c
     ${CMAKE_SOURCE_DIR}/src/kernel/exec/exec.c
     ${CMAKE_SOURCE_DIR}/src/kernel/smp.c
+)
+
+# Block device + VFAT/UFS sources — only for targets with PPAP_HAS_BLKDEV.
+set(KERNEL_BLKDEV_SOURCES
+    ${CMAKE_SOURCE_DIR}/src/kernel/blkdev/blkdev.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/blkdev/loopback.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/fs/vfat.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/fs/ufs.c
 )

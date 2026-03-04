@@ -486,3 +486,48 @@ Part B captures the permanent savings at modest flash cost.  All-individual
 provides only transient savings at 9× the flash cost.  If pipeline memory
 pressure becomes an issue in practice, a targeted split of frequently piped
 applets (grep, sed, sort) can be revisited.
+
+---
+
+## Part C — Build Hygiene and Per-Target Configuration
+
+Post Part A+B clean-up: gate test code, init config fixes, conditional
+SD/VFAT/UFS compilation, and per-target romfs generation.
+
+### Changes
+
+1. **PPAP_TESTS gating** — kernel self-tests (kmem, PROC, XIP verify) now
+   compile only when `PPAP_TESTS=1`.  User-space test binaries (test_vfork,
+   runtests, etc.) only built/installed when the flag is set.  Stale test
+   binaries removed from romfs/bin on non-test builds.
+
+2. **flash.sh rewrite** — accepts target name (pico1, pico1calc, qemu_arm)
+   instead of ELF path.  `--test` flag passes `-DPPAP_TESTS=ON` to cmake.
+   `--build` flag skips flash (build only).
+
+3. **busybox.init: FEATURE_INIT_SYSLOG** — added to init fragment to suppress
+   `/dev/tty5` log errors (tty5 doesn't exist on PPAP).
+
+4. **PPAP_HAS_BLKDEV compile flag** — gates SD card, VFAT, UFS, block device,
+   and loopback support at build time:
+
+   | Target | PPAP_HAS_BLKDEV | Effect |
+   |--------|-----------------|--------|
+   | pico1 | OFF | No blkdev/vfat/ufs code; ~20 KB flash saved |
+   | pico1calc | ON | Full SD + VFAT + UFS + loopback |
+   | qemu_arm | ON | ramblk + VFAT + UFS + loopback |
+
+   Files gated with `#ifdef PPAP_HAS_BLKDEV`:
+   - `main.c` — blkdev_init/loopback_init calls
+   - `fstab.c` — vfat/ufs mount paths
+   - `procfs.c` — /proc/mounts vfat/ufs entries
+   - `devfs.c` — /dev/mmcblk0, /dev/loopN devices
+   - `sys_fs.c` — sys_mount vfat/ufs support
+
+   CMake: `KERNEL_BLKDEV_SOURCES` list separated from `KERNEL_COMMON_SOURCES`;
+   only linked into pico1calc and qemu_arm targets.
+
+5. **Per-target romfs** — each target gets its own romfs.bin with an
+   appropriate `/etc/fstab`.  Base fstab has pseudo-FS only (devfs, procfs,
+   tmpfs).  PPAP_HAS_BLKDEV targets get `mmcblk0 /mnt/sd vfat rw` appended.
+   Staging directories (`build/romfs_<target>/`) ensure parallel builds work.

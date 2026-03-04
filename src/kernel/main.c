@@ -18,8 +18,10 @@
 #include "vfs/vfs.h"
 #include "fs/romfs.h"
 #include "fs/fstab.h"
+#ifdef PPAP_HAS_BLKDEV
 #include "blkdev/blkdev.h"
 #include "blkdev/loopback.h"
+#endif
 #include "exec/exec.h"
 #include "errno.h"
 
@@ -44,9 +46,11 @@ void kmain(void)
     vfs_init();
     file_pool_init();
 
+#ifdef PPAP_HAS_BLKDEV
     /* Block device registry + loopback subsystem */
     blkdev_init();
     loopback_init();
+#endif
 
     /* Target-specific late init: SD/ramblk, IRQ UART, MPU, Core 1 */
     target_late_init();

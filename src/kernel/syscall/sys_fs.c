@@ -31,9 +31,11 @@
 #include "../fs/devfs.h"
 #include "../fs/procfs.h"
 #include "../fs/tmpfs.h"
+#ifdef PPAP_HAS_BLKDEV
 #include "../fs/vfat.h"
 #include "../blkdev/blkdev.h"
 #include "../fs/ufs.h"
+#endif
 #include "../errno.h"
 #include "config.h"
 #include <stddef.h>
@@ -882,6 +884,7 @@ long sys_mount(const char *source, const char *target,
         ops = &procfs_ops;
     else if (fs_str_eq(fstype, "tmpfs"))
         ops = &tmpfs_ops;
+#ifdef PPAP_HAS_BLKDEV
     else if (fs_str_eq(fstype, "vfat")) {
         ops = &vfat_ops;
         if (source) {
@@ -907,7 +910,9 @@ long sys_mount(const char *source, const char *target,
                 return -(long)ENODEV;
             dev_data = bd;
         }
-    } else {
+    }
+#endif
+    else {
         return -(long)ENODEV;
     }
 

@@ -14,8 +14,10 @@
 
 #include "devfs.h"
 #include "../vfs/vfs.h"
+#ifdef PPAP_HAS_BLKDEV
 #include "../blkdev/blkdev.h"
 #include "../blkdev/loopback.h"
+#endif
 #include "../errno.h"
 #include "../../drivers/uart.h"
 #include <stddef.h>
@@ -120,6 +122,7 @@ static long devrandom_read(void *buf, size_t n, uint32_t off)
     return (long)n;
 }
 
+#ifdef PPAP_HAS_BLKDEV
 /* ── /dev/mmcblk0 — raw block device ──────────────────────────────────────── */
 
 static long devblk_read(void *buf, size_t n, uint32_t off)
@@ -226,6 +229,7 @@ static long devloop2_read(void *buf, size_t n, uint32_t off)
 { return devloop_read_n(2, buf, n, off); }
 static long devloop2_write(const void *buf, size_t n, uint32_t off)
 { return devloop_write_n(2, buf, n, off); }
+#endif /* PPAP_HAS_BLKDEV */
 
 /* ── Device table ─────────────────────────────────────────────────────────── */
 
@@ -236,10 +240,12 @@ static const devfs_node_t devfs_nodes[] = {
     { "console", devtty_read,    devtty_write   },
     { "tty",     devtty_read,    devtty_write   },
     { "urandom", devrandom_read, devnull_write  },
+#ifdef PPAP_HAS_BLKDEV
     { "mmcblk0", devblk_read,    devblk_write   },
     { "loop0",   devloop0_read,  devloop0_write },
     { "loop1",   devloop1_read,  devloop1_write },
     { "loop2",   devloop2_read,  devloop2_write },
+#endif
 };
 
 #define DEVFS_NODE_COUNT \

@@ -12,16 +12,18 @@
 
 #include "fstab.h"
 #include "../vfs/vfs.h"
+#ifdef PPAP_HAS_BLKDEV
 #include "../blkdev/blkdev.h"
 #include "../blkdev/loopback.h"
+#include "vfat.h"
+#include "ufs.h"
+#endif
 #include "../syscall/syscall.h"
 #include "drivers/uart.h"
 #include "romfs.h"
 #include "devfs.h"
 #include "procfs.h"
 #include "tmpfs.h"
-#include "vfat.h"
-#include "ufs.h"
 #include "../errno.h"
 #include <stddef.h>
 
@@ -153,6 +155,7 @@ int fstab_mount_all(const fstab_entry_t *entries, int count)
             ops = &procfs_ops;
         else if (str_eq(e->fstype, "tmpfs"))
             ops = &tmpfs_ops;
+#ifdef PPAP_HAS_BLKDEV
         else if (str_eq(e->fstype, "vfat")) {
             ops = &vfat_ops;
             blkdev_t *bd = blkdev_find(e->device);
@@ -188,7 +191,9 @@ int fstab_mount_all(const fstab_entry_t *entries, int count)
                 if (!bd) continue;
                 dev_data = bd;
             }
-        } else {
+        }
+#endif
+        else {
             uart_puts("fstab: unknown fstype '");
             uart_puts(e->fstype);
             uart_puts("'\n");

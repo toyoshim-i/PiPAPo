@@ -19,8 +19,10 @@
 #include "romfs.h"
 #include "devfs.h"
 #include "tmpfs.h"
+#ifdef PPAP_HAS_BLKDEV
 #include "vfat.h"
 #include "ufs.h"
+#endif
 #include "../vfs/vfs.h"
 #include "../mm/page.h"
 #include "../proc/proc.h"
@@ -201,8 +203,10 @@ static const char *ops_to_fstype(const vfs_ops_t *ops)
     if (ops == &devfs_ops)  return "devfs";
     if (ops == &procfs_ops) return "proc";
     if (ops == &tmpfs_ops)  return "tmpfs";
+#ifdef PPAP_HAS_BLKDEV
     if (ops == &vfat_ops)   return "vfat";
     if (ops == &ufs_ops)    return "ufs";
+#endif
     return "unknown";
 }
 

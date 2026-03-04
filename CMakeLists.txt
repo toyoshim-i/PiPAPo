@@ -131,29 +131,51 @@ add_custom_command(
     COMMENT "Building mkromfs host tool"
 )
 
-# --- Generate romfs.bin from romfs/ directory ---
-add_custom_command(
-    OUTPUT ${CMAKE_BINARY_DIR}/romfs.bin
-    COMMAND ${CMAKE_BINARY_DIR}/mkromfs
-            ${CMAKE_SOURCE_DIR}/romfs
-            ${CMAKE_BINARY_DIR}/romfs.bin
-    DEPENDS ${CMAKE_BINARY_DIR}/mkromfs ${USER_STAMP} ${BUSYBOX_STAMP}
-    COMMENT "Generating romfs image from romfs/"
-)
+# --- Per-target romfs generation ---
+# Each target gets its own romfs.bin with an appropriate /etc/fstab.
+# Targets with PPAP_HAS_BLKDEV get the mmcblk0 vfat mount entry appended.
+set(PPAP_BLKDEV_TARGETS ppap_qemu_arm ppap_pico1calc)
 
-# --- romfs_data.S: .incbin the romfs image into a .romfs section ---
-file(WRITE ${CMAKE_BINARY_DIR}/romfs_data.S
-"    .section .romfs, \"a\", %progbits\n    .incbin \"${CMAKE_BINARY_DIR}/romfs.bin\"\n")
-
-add_custom_target(romfs_image DEPENDS ${CMAKE_BINARY_DIR}/romfs.bin)
-
-set_source_files_properties(${CMAKE_BINARY_DIR}/romfs_data.S
-    PROPERTIES OBJECT_DEPENDS ${CMAKE_BINARY_DIR}/romfs.bin)
-
-# --- Link romfs into all targets ---
+# Generate per-target fstab files at configure time
+set(FSTAB_BLKDEV_LINE "mmcblk0          /mnt/sd     vfat    rw\n")
 foreach(tgt ${PPAP_ALL_TARGETS})
-    add_dependencies(${tgt} romfs_image)
-    target_sources(${tgt} PRIVATE ${CMAKE_BINARY_DIR}/romfs_data.S)
+    file(READ ${CMAKE_SOURCE_DIR}/romfs/etc/fstab _fstab_base)
+    list(FIND PPAP_BLKDEV_TARGETS ${tgt} _blkdev_idx)
+    if(_blkdev_idx GREATER_EQUAL 0)
+        set(_fstab_content "${_fstab_base}${FSTAB_BLKDEV_LINE}")
+    else()
+        set(_fstab_content "${_fstab_base}")
+    endif()
+    file(WRITE ${CMAKE_BINARY_DIR}/fstab_${tgt} "${_fstab_content}")
+endforeach()
+
+foreach(tgt ${PPAP_ALL_TARGETS})
+    set(ROMFS_STAGING ${CMAKE_BINARY_DIR}/romfs_${tgt})
+    set(ROMFS_BIN     ${CMAKE_BINARY_DIR}/romfs_${tgt}.bin)
+    set(ROMFS_ASM     ${CMAKE_BINARY_DIR}/romfs_data_${tgt}.S)
+
+    add_custom_command(
+        OUTPUT ${ROMFS_BIN}
+        COMMAND ${CMAKE_COMMAND} -E rm -rf ${ROMFS_STAGING}
+        COMMAND cp -a ${CMAKE_SOURCE_DIR}/romfs ${ROMFS_STAGING}
+        COMMAND ${CMAKE_COMMAND} -E copy
+                ${CMAKE_BINARY_DIR}/fstab_${tgt} ${ROMFS_STAGING}/etc/fstab
+        COMMAND ${CMAKE_BINARY_DIR}/mkromfs
+                ${ROMFS_STAGING} ${ROMFS_BIN}
+        DEPENDS ${CMAKE_BINARY_DIR}/mkromfs ${USER_STAMP} ${BUSYBOX_STAMP}
+                ${CMAKE_SOURCE_DIR}/romfs/etc/fstab
+        COMMENT "Generating romfs for ${tgt}"
+    )
+
+    file(WRITE ${ROMFS_ASM}
+        "    .section .romfs, \"a\", %progbits\n    .incbin \"${ROMFS_BIN}\"\n")
+
+    set_source_files_properties(${ROMFS_ASM}
+        PROPERTIES OBJECT_DEPENDS ${ROMFS_BIN})
+
+    add_custom_target(romfs_image_${tgt} DEPENDS ${ROMFS_BIN})
+    add_dependencies(${tgt} romfs_image_${tgt})
+    target_sources(${tgt} PRIVATE ${ROMFS_ASM})
 endforeach()
 
 # =============================================================================

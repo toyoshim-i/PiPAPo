@@ -3,4 +3,3 @@
 none             /dev        devfs   rw
 none             /proc       procfs  ro
 none             /tmp        tmpfs   rw
-mmcblk0          /mnt/sd     vfat    rw
