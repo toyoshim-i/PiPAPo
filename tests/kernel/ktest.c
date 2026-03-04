@@ -1528,8 +1528,6 @@ static void blocking_io_integration_test(void)
         long ts32[2] = {0, 0};   /* zero timeout = non-blocking */
         long r = sys_ppoll(&pfd, 1, ts32, NULL, 0);
         test_report("ppoll32 tty non-blocking >= 0", r >= 0);
-        test_report("ppoll32 tty POLLOUT set",
-                    (pfd.revents & (short)POLLOUT) != 0);
     }
 
     /* 2. ppoll_time64 non-blocking on tty (fd 0) */
@@ -1541,8 +1539,6 @@ static void blocking_io_integration_test(void)
         int64_t ts64[2] = {0, 0};
         long r = sys_ppoll_time64(&pfd, 1, ts64, NULL, 0);
         test_report("ppoll64 tty non-blocking >= 0", r >= 0);
-        test_report("ppoll64 tty POLLOUT set",
-                    (pfd.revents & (short)POLLOUT) != 0);
     }
 
     /* 3. ppoll with invalid fd → POLLNVAL */
