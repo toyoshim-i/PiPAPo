@@ -1,0 +1,36 @@
+# PicoPiAndPortable — busybox shell-only config fragment
+# Applied on top of allnoconfig via build-busybox.sh
+#
+# Builds a dedicated shell binary (hush) for interactive use.
+# Includes a few lightweight built-in applets that the shell can
+# execute without forking the full busybox binary.
+#
+# NOTE: FEATURE_SH_STANDALONE and FEATURE_PREFER_APPLETS are
+# intentionally omitted — this binary does not contain ls, cat, etc.
+# Non-builtin commands exec the full busybox via /bin/<applet> symlinks.
+
+# -- Platform -----------------------------------------------------------------
+CONFIG_NOMMU=y
+CONFIG_CROSS_COMPILER_PREFIX="arm-none-eabi-"
+CONFIG_LFS=y
+
+# -- Shell (hush) -------------------------------------------------------------
+CONFIG_HUSH=y
+CONFIG_HUSH_BASH_COMPAT=y
+CONFIG_HUSH_HELP=y
+CONFIG_HUSH_INTERACTIVE=y
+CONFIG_HUSH_EXPORT=y
+CONFIG_HUSH_READONLY=y
+CONFIG_HUSH_TICK=y
+CONFIG_HUSH_IF=y
+CONFIG_HUSH_LOOPS=y
+CONFIG_HUSH_CASE=y
+CONFIG_HUSH_FUNCTIONS=y
+CONFIG_HUSH_LOCAL=y
+
+# -- Built-in applets (lightweight, commonly used in scripts) -----------------
+CONFIG_ECHO=y
+CONFIG_PRINTF=y
+CONFIG_KILL=y
+CONFIG_SLEEP=y
+CONFIG_PS=y

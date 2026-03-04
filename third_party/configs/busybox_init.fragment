@@ -1,0 +1,15 @@
+# PicoPiAndPortable — busybox init-only config fragment
+# Applied on top of allnoconfig via build-busybox.sh
+#
+# Builds a minimal init binary (PID 1 resident process).
+# Only includes CONFIG_INIT — no shell, no applets.
+# Paired with busybox.sh for the interactive shell.
+
+# -- Platform -----------------------------------------------------------------
+CONFIG_NOMMU=y
+CONFIG_CROSS_COMPILER_PREFIX="arm-none-eabi-"
+CONFIG_LFS=y
+
+# -- Init only ----------------------------------------------------------------
+CONFIG_INIT=y
+CONFIG_FEATURE_USE_INITTAB=y

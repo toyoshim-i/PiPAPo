@@ -41,19 +41,24 @@ SECTIONS
         KEEP(*(.fini))
     } :text
 
-    /* String literals and numeric constants never contain addresses,
-     * so they can safely stay in flash (XIP).  Everything else in
-     * .rodata (function-pointer tables like applet_main[]) may
-     * contain absolute addresses that need R_ARM_RELATIVE patching,
-     * so it must go in the writable data segment.  GCC emits string
-     * pools as .rodata.str* and float/int constant pools as
-     * .rodata.cst* regardless of -fdata-sections. */
+    /* With -fdata-sections, each const variable gets a named section
+     * (.rodata.<name>).  String pools (.rodata.str*) and numeric
+     * constant pools (.rodata.cst*) are always named regardless of
+     * the flag.  All named subsections are pure constants — safe in
+     * flash.  Only bare .rodata (from pre-compiled libgcc, which was
+     * built without -fdata-sections) may contain jump tables with
+     * R_ARM_RELATIVE entries and must stay in the writable data
+     * segment. */
     .rodata.str : {
         *(.rodata.str*)
     } :text
 
     .rodata.cst : {
         *(.rodata.cst*)
+    } :text
+
+    .rodata.sub : {
+        *(.rodata.*)
     } :text
 
     /* PIE relocation table — read by exec.c at load time */
@@ -91,11 +96,12 @@ SECTIONS
         *(.got*)
     } :data
 
-    /* Remaining .rodata (function-pointer arrays, dispatch tables)
-     * that may contain absolute addresses needing relocation.
-     * Must be in SRAM so exec.c can patch R_ARM_RELATIVE entries. */
+    /* Bare .rodata from pre-compiled libraries (libgcc) that may
+     * contain jump tables with R_ARM_RELATIVE entries.  Must stay in
+     * SRAM so exec.c can patch them.  Named subsections were already
+     * consumed by .rodata.sub above. */
     .rodata : {
-        *(.rodata*)
+        *(.rodata)
     } :data
 
     .data : {

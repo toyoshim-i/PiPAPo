@@ -1,10 +1,14 @@
-# PicoPiAndPortable — busybox config fragment
+# PicoPiAndPortable — busybox full config fragment
 # Applied on top of allnoconfig via build-busybox.sh
 #
+# This is the "full" busybox used for transient commands (ls, cat, grep, …).
+# Init and shell have dedicated binaries (busybox.init, busybox.sh), so
+# CONFIG_INIT, CONFIG_HUSH, and FEATURE_SH_STANDALONE are excluded here.
+#
 # Key design choices:
-#   - NOMMU mode (no fork, vfork-only, standalone applets)
+#   - NOMMU mode (no fork, vfork-only)
 #   - PIE linking with musl libc (R_ARM_RELATIVE relocations for XIP)
-#   - Minimal applet set: hush shell + coreutils
+#   - Coreutils + editors + filesystem utilities only
 #   - No Linux-specific features (sendfile, utmp, syslog)
 
 # -- Platform -----------------------------------------------------------------
@@ -16,22 +20,6 @@ CONFIG_CROSS_COMPILER_PREFIX="arm-none-eabi-"
 
 # -- Size optimization --------------------------------------------------------
 CONFIG_LFS=y
-
-# -- Shell (hush) -------------------------------------------------------------
-CONFIG_HUSH=y
-CONFIG_HUSH_BASH_COMPAT=y
-CONFIG_HUSH_HELP=y
-CONFIG_HUSH_INTERACTIVE=y
-CONFIG_HUSH_EXPORT=y
-CONFIG_HUSH_READONLY=y
-CONFIG_HUSH_TICK=y
-CONFIG_HUSH_IF=y
-CONFIG_HUSH_LOOPS=y
-CONFIG_HUSH_CASE=y
-CONFIG_HUSH_FUNCTIONS=y
-CONFIG_HUSH_LOCAL=y
-CONFIG_FEATURE_SH_STANDALONE=y
-CONFIG_FEATURE_PREFER_APPLETS=y
 
 # -- File operations ----------------------------------------------------------
 CONFIG_LS=y
@@ -73,7 +61,4 @@ CONFIG_FEATURE_VI_COLON=y
 CONFIG_FEATURE_VI_SEARCH=y
 
 # -- System -------------------------------------------------------------------
-CONFIG_INIT=y
-CONFIG_FEATURE_USE_INITTAB=y
-CONFIG_FEATURE_INIT_SYSLOG=y
 CONFIG_UNAME=y

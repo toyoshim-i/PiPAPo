@@ -106,7 +106,7 @@ mkdir -p "$MUSL_SYSROOT"
     --enable-static \
     CROSS_COMPILE=arm-none-eabi- \
     CC=arm-none-eabi-gcc \
-    CFLAGS="-mthumb -mcpu=cortex-m0plus -march=armv6s-m -mfloat-abi=soft -Os -g -fPIC -msingle-pic-base -mpic-register=r9 -mno-pic-data-is-text-relative"
+    CFLAGS="-mthumb -mcpu=cortex-m0plus -march=armv6s-m -mfloat-abi=soft -Os -g -fPIC -msingle-pic-base -mpic-register=r9 -mno-pic-data-is-text-relative -ffunction-sections -fdata-sections"
 
 # --- Build ---
 echo "musl: building libc.a..."

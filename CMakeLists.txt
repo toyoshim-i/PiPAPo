@@ -66,17 +66,21 @@ add_custom_command(
     COMMENT "Building musl libc (PIC, Cortex-M0+)"
 )
 
-# --- busybox (Phase 6 Step 4) ---
+# --- busybox variants (Phase 6 Step 4, Phase 8 Part B) ---
 set(BUSYBOX_BIN ${CMAKE_BINARY_DIR}/busybox/busybox)
+set(BUSYBOX_INIT ${CMAKE_BINARY_DIR}/busybox/busybox.init)
+set(BUSYBOX_SH ${CMAKE_BINARY_DIR}/busybox/busybox.sh)
 
 add_custom_command(
-    OUTPUT ${BUSYBOX_BIN}
+    OUTPUT ${BUSYBOX_BIN} ${BUSYBOX_INIT} ${BUSYBOX_SH}
     COMMAND ${CMAKE_SOURCE_DIR}/third_party/build-busybox.sh
     DEPENDS ${CMAKE_SOURCE_DIR}/third_party/build-busybox.sh
             ${CMAKE_SOURCE_DIR}/third_party/configs/busybox_ppap.fragment
+            ${CMAKE_SOURCE_DIR}/third_party/configs/busybox_init.fragment
+            ${CMAKE_SOURCE_DIR}/third_party/configs/busybox_sh.fragment
             ${CMAKE_SOURCE_DIR}/third_party/configs/busybox.ld
             ${MUSL_LIBC}
-    COMMENT "Building busybox (PIC, Cortex-M0+)"
+    COMMENT "Building busybox variants (PIC, Cortex-M0+)"
 )
 
 # --- busybox install (Phase 6 Step 6) ---
@@ -87,8 +91,8 @@ add_custom_command(
     COMMAND ${CMAKE_SOURCE_DIR}/third_party/install-busybox.sh
     COMMAND ${CMAKE_COMMAND} -E touch ${BUSYBOX_STAMP}
     DEPENDS ${CMAKE_SOURCE_DIR}/third_party/install-busybox.sh
-            ${BUSYBOX_BIN}
-    COMMENT "Installing busybox + applet symlinks into romfs/"
+            ${BUSYBOX_BIN} ${BUSYBOX_INIT} ${BUSYBOX_SH}
+    COMMENT "Installing busybox variants + applet symlinks into romfs/"
 )
 
 add_custom_target(busybox_install DEPENDS ${BUSYBOX_STAMP})
