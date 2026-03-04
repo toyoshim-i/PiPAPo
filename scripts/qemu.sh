@@ -33,12 +33,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-ELF="$PROJECT_DIR/build/ppap_qemu.elf"
+ELF="$PROJECT_DIR/build/ppap_qemu_arm.elf"
 
 # ── Optional rebuild ──────────────────────────────────────────────────────────
 if [[ "${1:-}" == "--build" ]]; then
-    echo "[qemu] Building ppap_qemu..."
-    cmake --build "$PROJECT_DIR/build" --target ppap_qemu
+    echo "[qemu] Building ppap_qemu_arm..."
+    cmake --build "$PROJECT_DIR/build" --target ppap_qemu_arm
     shift
 fi
 
@@ -51,7 +51,7 @@ fi
 
 if [[ ! -f "$ELF" ]]; then
     echo "[qemu] Error: $ELF not found."
-    echo "       Run: cmake --build build --target ppap_qemu"
+    echo "       Run: cmake --build build --target ppap_qemu_arm"
     exit 1
 fi
 

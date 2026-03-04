@@ -11,155 +11,42 @@ set(CMAKE_CXX_STANDARD 17)
 # Initialize the Pico SDK
 pico_sdk_init()
 
-add_executable(ppap
-    src/boot/startup.S      # Vector table + Reset_Handler (Step 4)
-    src/boot/stage1.S       # Stage 1 extension: VTOR redirect to 0x10001000 (Step 8)
-    src/kernel/main.c
-    src/kernel/mm/xip.c     # XIP verification + SysTick benchmark (Step 9)
-    src/kernel/mm/page.c    # Page allocator + boot memory map (Phase 1 Step 1)
-    src/kernel/mm/kmem.c    # Fixed-size kernel object pool (Phase 1 Step 2)
-    src/kernel/mm/mpu.c     # MPU 4-region layout + per-context switch (Phase 1 Step 11)
-    src/kernel/proc/proc.c  # PCB definition + process table (Phase 1 Step 3)
-    src/kernel/proc/switch.S # PendSV context switch (Phase 1 Step 4)
-    src/kernel/proc/sched.c # Round-robin scheduler + SysTick (Phase 1 Steps 4-5)
-    src/kernel/syscall/svc.S      # SVC exception handler entry (Phase 1 Step 8)
-    src/kernel/syscall/syscall.c  # Syscall dispatch table (Phase 1 Step 8)
-    src/kernel/syscall/sys_proc.c # sys_exit, sys_getpid (Phase 1 Step 9)
-    src/kernel/syscall/sys_io.c   # sys_write, sys_read via fd table (Phase 1 Step 9)
-    src/kernel/syscall/sys_time.c # sys_nanosleep (Phase 1 Step 9)
-    src/kernel/syscall/sys_mem.c  # sys_brk heap management (Phase 3 Step 9)
-    src/kernel/syscall/sys_poll.c # ppoll/ppoll_time64 (Phase 6 Step 16)
-    src/kernel/fd/fd.c            # fd table helpers + fd_stdio_init (Phase 1 Step 10)
-    src/kernel/fd/tty.c           # UART tty driver (Phase 1 Step 10)
-    src/kernel/fd/pipe.c          # pipe() IPC: ring buffer + blocking (Phase 3 Step 7)
-    src/kernel/signal/signal.c    # Signal infrastructure (Phase 3 Step 10)
-    src/kernel/vfs/vfs.c          # VFS layer: mount table, vnode pool (Phase 2 Step 1)
-    src/kernel/vfs/namei.c        # Path resolution: vfs_lookup (Phase 2 Step 2)
-    src/kernel/syscall/sys_fs.c   # VFS-routed syscalls: open/close/lseek/stat (Phase 2 Step 3)
-    src/kernel/fs/romfs.c         # romfs driver: mount/lookup/read/readdir (Phase 2 Step 6)
-    src/kernel/fs/devfs.c         # devfs pseudo-FS: /dev/null, zero, ttyS0, urandom (Phase 2 Step 8)
-    src/kernel/fs/procfs.c        # procfs pseudo-FS: /proc/meminfo, version (Phase 2 Step 9)
-    src/kernel/fs/tmpfs.c         # tmpfs: RAM-backed filesystem at /tmp (Phase 5 Step 2)
-    src/kernel/blkdev/blkdev.c    # Block device registry (Phase 4 Step 1)
-    src/kernel/blkdev/loopback.c  # Loopback block device (Phase 5 Step 1)
-    src/kernel/fs/vfat.c          # FAT32 (VFAT) filesystem driver (Phase 4 Steps 5+7)
-    # ufs.c omitted from hardware target — UFS only used in QEMU tests
-    src/kernel/fs/fstab.c         # fstab parser + boot mount (Phase 5 Step 10)
-    src/kernel/exec/elf.c         # ELF32 parser (Phase 3 Step 2)
-    src/kernel/exec/exec.c        # ELF loader + do_execve (Phase 3 Step 3)
-    src/kernel/smp.c              # Core 1 launch + SIO FIFO IPC (Phase 1 Step 12)
-    src/drivers/uart.c
-    src/drivers/clock.c     # PLL_SYS → 133 MHz (Step 7)
-    src/drivers/spi.c       # SPI0 PL022 driver (Phase 4 Step 2)
-    src/drivers/sd.c        # SD card SPI-mode protocol (Phase 4 Step 3)
-)
+# Build option: enable kernel integration tests + userland test suite
+option(PPAP_TESTS "Enable kernel integration tests and userland test suite" OFF)
 
-target_include_directories(ppap PRIVATE src)
-
-# Bare SDK headers only — no pico_stdlib / pico_runtime / pico_crt0.
-# We provide our own startup.S entry point.
-# hardware_* implementation libraries will be added in Steps 5+ (UART, clocks).
-target_link_libraries(ppap
-    pico_base_headers   # Platform / board definitions (INTERFACE, headers only)
-    hardware_regs       # RP2040 register address definitions (INTERFACE, headers only)
-)
-
-# Include the Pico SDK boot2 objects directly as sources, not via target_link_libraries.
-# Using target_link_libraries(ppap bs2_default_library) causes CMake to emit the .o file
-# twice in the link command (once as a source object, once as a library object),
-# producing a 512-byte .boot2 section that overflows the 256-byte FLASH_BOOT region.
-# $<TARGET_OBJECTS:...> adds the object files exactly once as compile-time inputs.
-target_sources(ppap PRIVATE $<TARGET_OBJECTS:bs2_default_library>)
-
-# Custom linker script (ppap.ld) + bare-metal link flags:
-#   -nostartfiles    do not link default crt0 / startup files
-#   --gc-sections    discard unused sections to keep binary small
-target_link_options(ppap PRIVATE
-    -T ${CMAKE_SOURCE_DIR}/ldscripts/ppap.ld
-    -nostartfiles
-    -Wl,--gc-sections
-)
-
-# Produce ppap.bin and ppap.uf2 alongside ppap.elf
-pico_add_extra_outputs(ppap)
+# Shared kernel source list (used by each target's CMakeLists.txt)
+include(cmake/kernel_sources.cmake)
 
 # =============================================================================
-# QEMU smoke-test target — mps2-an500 (Cortex-M0+)  [Step 11]
+# Per-target build definitions
 # =============================================================================
-# Builds a standalone ELF for QEMU.  Uses the same startup.S and mm/xip.c
-# but replaces main.c with main_qemu.c (no RP2040 clock/PLL init) and
-# uart.c with uart_qemu.c (CMSDK UART at 0x40004000).
-#
-# Run with:  ./scripts/qemu.sh
-# Install:   sudo apt install qemu-system-arm
+add_subdirectory(src/target/qemu_arm)
+add_subdirectory(src/target/pico1)
+add_subdirectory(src/target/pico1calc)
+
+set(PPAP_ALL_TARGETS ppap_qemu_arm ppap_pico1 ppap_pico1calc)
+
 # =============================================================================
-
-add_executable(ppap_qemu
-    src/boot/startup.S          # Same Reset_Handler (startup is portable)
-    src/kernel/main_qemu.c      # No RP2040-specific hardware init
-    src/kernel/mm/xip.c         # XIP verification + SysTick benchmark (Step 9)
-    src/kernel/mm/page.c        # Page allocator + boot memory map (Phase 1 Step 1)
-    src/kernel/mm/kmem.c        # Fixed-size kernel object pool (Phase 1 Step 2)
-    src/kernel/mm/mpu.c         # MPU 4-region layout + per-context switch (Phase 1 Step 11)
-    src/kernel/proc/proc.c      # PCB definition + process table (Phase 1 Step 3)
-    src/kernel/proc/switch.S    # PendSV context switch (Phase 1 Step 4)
-    src/kernel/proc/sched.c     # Round-robin scheduler + SysTick (Phase 1 Steps 4-5)
-    src/kernel/syscall/svc.S          # SVC exception handler entry (Phase 1 Step 8)
-    src/kernel/syscall/syscall.c      # Syscall dispatch table (Phase 1 Step 8)
-    src/kernel/syscall/sys_proc.c     # sys_exit, sys_getpid (Phase 1 Step 9)
-    src/kernel/syscall/sys_io.c       # sys_write, sys_read via fd table (Phase 1 Step 9)
-    src/kernel/syscall/sys_time.c     # sys_nanosleep (Phase 1 Step 9)
-    src/kernel/syscall/sys_mem.c      # sys_brk heap management (Phase 3 Step 9)
-    src/kernel/syscall/sys_poll.c     # ppoll/ppoll_time64 (Phase 6 Step 16)
-    src/kernel/fd/fd.c                # fd table helpers + fd_stdio_init (Phase 1 Step 10)
-    src/kernel/fd/tty.c               # UART tty driver (Phase 1 Step 10)
-    src/kernel/fd/pipe.c              # pipe() IPC: ring buffer + blocking (Phase 3 Step 7)
-    src/kernel/signal/signal.c        # Signal infrastructure (Phase 3 Step 10)
-    src/kernel/vfs/vfs.c              # VFS layer: mount table, vnode pool (Phase 2 Step 1)
-    src/kernel/vfs/namei.c            # Path resolution: vfs_lookup (Phase 2 Step 2)
-    src/kernel/syscall/sys_fs.c       # VFS-routed syscalls (Phase 2 Step 3)
-    src/kernel/fs/romfs.c             # romfs driver: mount/lookup/read/readdir (Phase 2 Step 6)
-    src/kernel/fs/devfs.c             # devfs pseudo-FS (Phase 2 Step 8)
-    src/kernel/fs/procfs.c            # procfs pseudo-FS (Phase 2 Step 9)
-    src/kernel/fs/tmpfs.c             # tmpfs: RAM-backed filesystem at /tmp (Phase 5 Step 2)
-    src/kernel/blkdev/blkdev.c        # Block device registry (Phase 4 Step 1)
-    src/kernel/blkdev/ramblk.c        # RAM/ROM block device for QEMU (Phase 4 Step 1)
-    src/kernel/blkdev/loopback.c      # Loopback block device (Phase 5 Step 1)
-    src/kernel/fs/vfat.c              # FAT32 (VFAT) filesystem driver (Phase 4 Steps 5+7)
-    src/kernel/fs/ufs.c               # UFS filesystem driver (Phase 5 Step 6)
-    src/kernel/fs/fstab.c             # fstab parser + boot mount (Phase 5 Step 10)
-    src/kernel/exec/elf.c             # ELF32 parser (Phase 3 Step 2)
-    src/kernel/exec/exec.c            # ELF loader + do_execve (Phase 3 Step 3)
-    src/kernel/smp.c                  # Core 1 launch + SIO FIFO IPC (Phase 1 Step 12)
-    src/drivers/uart_qemu.c     # CMSDK UART for mps2-an500
-)
-
-target_include_directories(ppap_qemu PRIVATE src)
-target_compile_definitions(ppap_qemu PRIVATE PPAP_QEMU=1 SYSCALL_DEBUG=1)
-
-# No Pico SDK libraries — ppap_qemu is a raw ARM bare-metal target.
-# The toolchain (arm-none-eabi-gcc / Cortex-M0+) is inherited from
-# pico_sdk_init() and is identical to the mps2-an500 ISA.
-
-target_link_options(ppap_qemu PRIVATE
-    -T ${CMAKE_SOURCE_DIR}/ldscripts/qemu.ld
-    -nostartfiles
-    -Wl,--gc-sections
-)
+# Test support (conditional on PPAP_TESTS)
+# =============================================================================
+if(PPAP_TESTS)
+    foreach(tgt ${PPAP_ALL_TARGETS})
+        target_sources(${tgt} PRIVATE ${CMAKE_SOURCE_DIR}/src/test/ktest.c)
+        target_compile_definitions(${tgt} PRIVATE PPAP_TESTS=1)
+    endforeach()
+endif()
 
 # =============================================================================
 # User-space build + romfs image pipeline
 # =============================================================================
-# 1. Build user-space ELF binaries (user/Makefile)
-# 2. Install user binaries into romfs/bin/
-# 3. Build mkromfs with the host compiler (not cross-compiled)
-# 4. Generate romfs.bin from the romfs/ content directory
-# 5. Link romfs_data.S (.incbin romfs.bin) into both ppap and ppap_qemu
+# 1. Build musl libc + busybox
+# 2. Build user-space ELF binaries (user/Makefile)
+# 3. Install into romfs/
+# 4. Build mkromfs, generate romfs.bin
+# 5. Link romfs_data.S (.incbin romfs.bin) into all targets
 # =============================================================================
 
 # --- musl libc (Phase 6 Step 1) ---
-# Build musl as a static PIC library for Cortex-M0+.
-# The script is idempotent — it skips if libc.a already exists.
 set(MUSL_SYSROOT ${CMAKE_BINARY_DIR}/musl-sysroot)
 set(MUSL_LIBC ${MUSL_SYSROOT}/lib/libc.a)
 
@@ -174,8 +61,6 @@ add_custom_command(
 )
 
 # --- busybox (Phase 6 Step 4) ---
-# Build busybox as a static PIC binary linked against musl.
-# The script is idempotent — it skips if busybox already exists.
 set(BUSYBOX_BIN ${CMAKE_BINARY_DIR}/busybox/busybox)
 
 add_custom_command(
@@ -189,7 +74,6 @@ add_custom_command(
 )
 
 # --- busybox install (Phase 6 Step 6) ---
-# Install busybox binary + applet symlinks into romfs/.
 set(BUSYBOX_STAMP ${CMAKE_BINARY_DIR}/busybox_install.stamp)
 
 add_custom_command(
@@ -204,12 +88,9 @@ add_custom_command(
 add_custom_target(busybox_install DEPENDS ${BUSYBOX_STAMP})
 
 # --- User-space binaries (Phase 3 Step 1) ---
-# Build ARM Thumb ELFs from user/ and install into romfs/bin/.
-# Uses a stamp file to track build completion.
 set(USER_SRC_DIR ${CMAKE_SOURCE_DIR}/user)
 set(USER_STAMP ${CMAKE_BINARY_DIR}/user_binaries.stamp)
 
-# Glob user sources for dependency tracking
 file(GLOB USER_SOURCES ${USER_SRC_DIR}/*.c ${USER_SRC_DIR}/*.S
                        ${USER_SRC_DIR}/*.h ${USER_SRC_DIR}/*.ld
                        ${USER_SRC_DIR}/Makefile)
@@ -240,7 +121,6 @@ add_custom_command(
 )
 
 # --- Generate romfs.bin from romfs/ directory ---
-# Depends on user_binaries stamp so romfs is rebuilt when user code changes.
 add_custom_command(
     OUTPUT ${CMAKE_BINARY_DIR}/romfs.bin
     COMMAND ${CMAKE_BINARY_DIR}/mkromfs
@@ -254,26 +134,19 @@ add_custom_command(
 file(WRITE ${CMAKE_BINARY_DIR}/romfs_data.S
 "    .section .romfs, \"a\", %progbits\n    .incbin \"${CMAKE_BINARY_DIR}/romfs.bin\"\n")
 
-# Ensure romfs.bin is built before assembling romfs_data.S.
-# OBJECT_DEPENDS tells CMake to reassemble romfs_data.S when romfs.bin changes
-# (CMake cannot track .incbin dependencies automatically).
 add_custom_target(romfs_image DEPENDS ${CMAKE_BINARY_DIR}/romfs.bin)
-add_dependencies(ppap romfs_image)
-add_dependencies(ppap_qemu romfs_image)
 
 set_source_files_properties(${CMAKE_BINARY_DIR}/romfs_data.S
     PROPERTIES OBJECT_DEPENDS ${CMAKE_BINARY_DIR}/romfs.bin)
 
-# Add romfs_data.S as a source to both targets — CMake assembles it automatically
-target_sources(ppap      PRIVATE ${CMAKE_BINARY_DIR}/romfs_data.S)
-target_sources(ppap_qemu PRIVATE ${CMAKE_BINARY_DIR}/romfs_data.S)
+# --- Link romfs into all targets ---
+foreach(tgt ${PPAP_ALL_TARGETS})
+    add_dependencies(${tgt} romfs_image)
+    target_sources(${tgt} PRIVATE ${CMAKE_BINARY_DIR}/romfs_data.S)
+endforeach()
 
 # =============================================================================
-# FAT32 test image pipeline (QEMU only — Phase 4 Step 8)
-# =============================================================================
-# 1. Build mkfatimg with the host compiler
-# 2. Generate fatimg.bin (256 KB FAT32 image with test files)
-# 3. Link fatimg_data.S (.incbin fatimg.bin) into ppap_qemu only
+# FAT32 test image pipeline (QEMU only)
 # =============================================================================
 
 # --- mkfatimg host tool ---
@@ -319,10 +192,11 @@ file(WRITE ${CMAKE_BINARY_DIR}/fatimg_data.S
 "    .section .fatimg, \"a\", %progbits\n    .incbin \"${CMAKE_BINARY_DIR}/fatimg.bin\"\n")
 
 add_custom_target(fatimg_image DEPENDS ${CMAKE_BINARY_DIR}/fatimg.bin)
-add_dependencies(ppap_qemu fatimg_image)
+add_dependencies(ppap_qemu_arm fatimg_image)
 
 set_source_files_properties(${CMAKE_BINARY_DIR}/fatimg_data.S
     PROPERTIES OBJECT_DEPENDS ${CMAKE_BINARY_DIR}/fatimg.bin)
 
-# Only link FAT32 image into ppap_qemu (not ppap — hardware uses real SD card)
-target_sources(ppap_qemu PRIVATE ${CMAKE_BINARY_DIR}/fatimg_data.S)
+# Only link FAT32 image into ppap_qemu_arm (hardware uses real SD card)
+target_sources(ppap_qemu_arm PRIVATE ${CMAKE_BINARY_DIR}/fatimg_data.S)
+

@@ -1,0 +1,40 @@
+# kernel_sources.cmake — Shared kernel sources common to all targets.
+# Included by each target's CMakeLists.txt.
+
+set(KERNEL_COMMON_SOURCES
+    ${CMAKE_SOURCE_DIR}/src/boot/startup.S
+    ${CMAKE_SOURCE_DIR}/src/kernel/main.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/mm/xip.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/mm/page.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/mm/kmem.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/mm/mpu.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/proc/proc.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/proc/switch.S
+    ${CMAKE_SOURCE_DIR}/src/kernel/proc/sched.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/syscall/svc.S
+    ${CMAKE_SOURCE_DIR}/src/kernel/syscall/syscall.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/syscall/sys_proc.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/syscall/sys_io.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/syscall/sys_time.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/syscall/sys_mem.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/syscall/sys_poll.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/fd/fd.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/fd/tty.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/fd/pipe.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/signal/signal.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/vfs/vfs.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/vfs/namei.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/syscall/sys_fs.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/fs/romfs.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/fs/devfs.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/fs/procfs.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/fs/tmpfs.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/fs/vfat.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/fs/ufs.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/fs/fstab.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/blkdev/blkdev.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/blkdev/loopback.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/exec/elf.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/exec/exec.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/smp.c
+)

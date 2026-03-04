@@ -26,7 +26,7 @@
  * switch and the CMSDK UART has no busy flag.
  */
 
-#include "uart.h"
+#include "drivers/uart.h"
 #include "config.h"              /* UART_RX_SIZE */
 #include "kernel/fd/tty.h"       /* tty_rx_notify, tty_signal_intr */
 #include <stdint.h>
