@@ -23,6 +23,7 @@
 #include "blkdev/loopback.h"
 #endif
 #include "exec/exec.h"
+#include "smp.h"
 #include "spinlock.h"
 #include "errno.h"
 
@@ -116,6 +117,11 @@ void kmain(void)
             uart_puts(")\n");
         }
     }
+
+    /* Launch Core 1 after init has PID 1 — core1_sched_entry() calls
+     * proc_alloc() which would steal PID 1 if called earlier.
+     * Self-stubs on QEMU (no SIO). */
+    core1_launch(core1_sched_entry);
 
     uart_puts("SCHED: starting scheduler\n");
     sched_start();

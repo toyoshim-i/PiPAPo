@@ -10,7 +10,6 @@
 #include "drivers/uart.h"
 #include "drivers/clock.h"
 #include "mm/mpu.h"
-#include "smp.h"
 
 #ifdef PPAP_TESTS
 #include "ktest.h"
@@ -35,7 +34,7 @@ void target_late_init(void)
     uart_init_irq();
     uart_puts("UART: switched to interrupt-driven mode\n");
     mpu_init();
-    core1_launch(core1_sched_entry);
+    /* core1_launch moved to kmain — must run after init gets PID 1 */
 }
 
 void target_post_mount(void)
