@@ -276,35 +276,36 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
                 return (int)tlen;
             target[tlen] = '\0';
 
-            /* Build the new path to resolve */
-            char new_path[VFS_PATH_MAX];
+            /* Build the new path to resolve (reuse `target` via
+             * intermediate `resolved` prefix for relative symlinks,
+             * then normalize into `norm`). */
+            char norm[VFS_PATH_MAX];
             int nlen = 0;
 
             if (target[0] == '/') {
-                /* Absolute symlink: use target directly */
-                __builtin_memcpy(new_path, target, (size_t)tlen);
+                /* Absolute symlink: start from target directly */
                 nlen = (int)tlen;
+                /* target already holds the path */
             } else {
-                /* Relative symlink: resolve from parent directory.
-                 * Parent = resolved path with the last component removed. */
+                /* Relative symlink: prepend parent directory.
+                 * Parent = resolved path with the last component removed.
+                 * We must shift target right to make room for the prefix. */
                 int parent_len = rlen;
                 while (parent_len > 0 && resolved[parent_len - 1] != '/')
                     parent_len--;
-                /* parent_len now points just past the last '/'.
-                 * Keep the '/' to form "/parent/" */
-                if (parent_len == 0) {
-                    /* Symlink in the root directory */
-                    new_path[0] = '/';
-                    nlen = 1;
-                } else {
-                    __builtin_memcpy(new_path, resolved, (size_t)parent_len);
-                    nlen = parent_len;
-                }
-                /* Append the symlink target */
-                if (nlen + (int)tlen >= VFS_PATH_MAX)
+                if (parent_len == 0)
+                    parent_len = 1;  /* root directory: "/" */
+
+                if (parent_len + (int)tlen >= VFS_PATH_MAX)
                     return -ENAMETOOLONG;
-                __builtin_memcpy(new_path + nlen, target, (size_t)tlen);
-                nlen += (int)tlen;
+                /* Shift target right to make room for parent prefix */
+                __builtin_memmove(target + parent_len, target, (size_t)tlen + 1);
+                if (parent_len == 1 && rlen == 0) {
+                    target[0] = '/';
+                } else {
+                    __builtin_memcpy(target, resolved, (size_t)parent_len);
+                }
+                nlen = parent_len + (int)tlen;
             }
 
             /* Append any remaining path components after the symlink */
@@ -312,16 +313,15 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
                 int rem_len = (int)__builtin_strlen(p);
                 if (nlen + 1 + rem_len >= VFS_PATH_MAX)
                     return -ENAMETOOLONG;
-                new_path[nlen++] = '/';
-                __builtin_memcpy(new_path + nlen, p, (size_t)rem_len);
+                target[nlen++] = '/';
+                __builtin_memcpy(target + nlen, p, (size_t)rem_len);
                 nlen += rem_len;
             }
-            new_path[nlen] = '\0';
+            target[nlen] = '\0';
 
             /* Normalize (resolve any . / .. introduced by the target)
              * and recurse */
-            char norm[VFS_PATH_MAX];
-            int norm_len = path_normalize(new_path, norm, (int)sizeof(norm));
+            int norm_len = path_normalize(target, norm, (int)sizeof(norm));
             if (norm_len < 0)
                 return norm_len;
 

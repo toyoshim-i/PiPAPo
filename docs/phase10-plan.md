@@ -191,7 +191,7 @@ Check `truncate()` return value; propagate error.
 
 ## Week 3 — Performance, Tests, and Polish
 
-### ☐ Step 16 — Path resolution stack reduction
+### ✓ Step 16 — Path resolution stack reduction
 
 **File:** `src/kernel/vfs/namei.c`
 

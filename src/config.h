@@ -85,7 +85,7 @@
 #define VFS_VNODE_MAX       64     /* maximum concurrent vnodes             */
 #define VFS_NAME_MAX        63     /* max filename component (LFN support)  */
 #define VFS_PATH_MAX       128     /* max absolute path length              */
-#define VFS_SYMLOOP_MAX      8     /* max symlink resolution depth          */
+#define VFS_SYMLOOP_MAX      4     /* max symlink resolution depth          */
 
 /* ── Block device layer ───────────────────────────────────────────────────
  * BLKDEV_MAX          Maximum registered block devices (mmcblk0, loop0, …).
