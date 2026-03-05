@@ -266,37 +266,20 @@ Approximate shim size: **~800–1200 lines of C**, **~4 KB code**.
 
 ### Step 3: Create build script
 
+**Status: COMPLETE**
+
 **File:** `third_party/build-rogue.sh`
 
-Pattern follows `build-busybox.sh`:
+Follows `build-busybox.sh` pattern: musl specs file, busybox.ld linker script,
+`-pie` for R_ARM_RELATIVE relocations. Compiles all 32 rogue .c files (excluding
+xcrypt.c) plus the curses shim. Uses `--gc-sections` for dead-code stripping.
 
-```sh
-#!/bin/bash
-# Build rogue for PPAP (ARMv6-M Thumb / Cortex-M0+)
-set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-ROGUE_SRC="$SCRIPT_DIR/rogue"
-ROGUE_OUT="$PROJECT_ROOT/build/rogue"
-MUSL_SYSROOT="$PROJECT_ROOT/build/musl-sysroot"
-CURSES_DIR="$SCRIPT_DIR/rogue-curses"
-
-CC=arm-none-eabi-gcc
-CFLAGS="-mthumb -mcpu=cortex-m0plus -march=armv6s-m \
-  -fPIC -msingle-pic-base -mpic-register=r9 \
-  -mno-pic-data-is-text-relative \
-  -ffreestanding -Os \
-  -isystem $MUSL_SYSROOT/include \
-  -isystem $CURSES_DIR \
-  -DHAVE_CONFIG_H"
-LDFLAGS="-nostdlib -T $PROJECT_ROOT/third_party/configs/busybox.ld \
-  -pie -L$MUSL_SYSROOT/lib"
-
-# Compile rogue .c files + curses shim
-# Link against musl libc + libgcc
-# Strip and install to $ROGUE_OUT/rogue
 ```
+./third_party/build-rogue.sh          # build
+./third_party/build-rogue.sh --clean  # clean + rebuild
+```
+
+Output: `build/rogue/rogue` (160 KB stripped ELF).
 
 ### Step 4: PPAP patches (overlay)
 
@@ -399,9 +382,10 @@ Verify rendering and input at hardware speed.
 | File | Purpose |
 |------|---------|
 | `third_party/rogue/` | Upstream submodule (Davidslv/rogue) |
-| `third_party/rogue-curses/curses.h` | Minimal curses shim header |
-| `third_party/rogue-curses/curses.c` | Minimal curses shim implementation |
+| `third_party/patches/rogue/curses.h` | Minimal curses shim header |
+| `third_party/patches/rogue/curses.c` | Minimal curses shim implementation |
+| `third_party/patches/rogue/config.h` | Autoconf replacement for PPAP |
+| `third_party/patches/rogue/pwd.h` | Stub getpwuid() |
 | `third_party/build-rogue.sh` | Cross-compile build script |
-| `third_party/patches/rogue/overlay/` | PPAP-specific patches |
 | `romfs/bin/rogue` | Installed ELF binary |
 | `docs/port-rogue.md` | This document |
