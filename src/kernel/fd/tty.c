@@ -166,7 +166,7 @@ static long tty_read_canon(char *buf, size_t n)
             /* Block via svc_restart: re-executes this syscall when woken */
             current->wait_channel = &tty_stdin;
             current->state = PROC_BLOCKED;
-            svc_restart = 1;
+            svc_restart[0] = 1;
             sched_yield();
             return 0;  /* ignored — SVC restores original args */
         }
@@ -277,7 +277,7 @@ static long tty_read_raw(char *buf, size_t n)
         /* Block via svc_restart */
         current->wait_channel = &tty_stdin;
         current->state = PROC_BLOCKED;
-        svc_restart = 1;
+        svc_restart[0] = 1;
         sched_yield();
         return 0;  /* ignored — SVC restores original args */
     }

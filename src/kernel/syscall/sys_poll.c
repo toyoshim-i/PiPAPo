@@ -121,7 +121,7 @@ static long do_ppoll(struct pollfd *fds, uint32_t nfds,
      * polling the tty for keyboard input (top, vi). */
     current->wait_channel = &tty_stdin;
     current->state = PROC_BLOCKED;
-    svc_restart = 1;
+    svc_restart[0] = 1;
     sched_yield();
     return 0;   /* ignored — SVC restores original args */
 }

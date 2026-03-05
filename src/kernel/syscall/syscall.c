@@ -31,12 +31,12 @@
 /* SIGCHLD — needed for clone() fast-path detection */
 #define SIGCHLD_NR 17
 
-/* Flag set by sys_execve to tell SVC_Handler to do a full context restore */
-volatile int exec_pending = 0;
-
-/* Syscall restart state — see syscall.h for the full explanation */
-volatile int      svc_restart  = 0;
-volatile uint32_t svc_saved_a0 = 0;
+/* Per-core SVC state — indexed by core_id() (Step 9 converts assembly).
+ * For single-core (Steps 6-7), C uses [0]; assembly accesses [0] implicitly
+ * because the symbol address = &array[0]. */
+volatile int      exec_pending[2] = {0, 0};
+volatile int      svc_restart[2]  = {0, 0};
+volatile uint32_t svc_saved_a0[2] = {0, 0};
 
 void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
 {
