@@ -269,9 +269,11 @@ static const procfs_node_t procfs_nodes[] = {
 /* ── Per-PID content generators ──────────────────────────────────────────── */
 
 /* Map proc_state_t to Linux single-char state */
-static char state_char(proc_state_t s)
+static char state_char(const pcb_t *p)
 {
-    switch (s) {
+    if (p->is_idle)
+        return 'I';   /* idle kernel thread */
+    switch (p->state) {
     case PROC_RUNNABLE:  return 'R';
     case PROC_SLEEPING:  return 'S';
     case PROC_BLOCKED:   return 'S';
@@ -314,7 +316,7 @@ static int gen_pid_stat(char *buf, int bufsiz, const pcb_t *p)
     pos = fmt_append(buf, pos, bufsiz, p->comm[0] ? p->comm : "?");
     pos = fmt_append(buf, pos, bufsiz, ") ");
     /* 3: state */
-    char sc[2] = { state_char(p->state), '\0' };
+    char sc[2] = { state_char(p), '\0' };
     pos = fmt_append(buf, pos, bufsiz, sc);
     pos = fmt_append(buf, pos, bufsiz, " ");
     /* 4: ppid */
