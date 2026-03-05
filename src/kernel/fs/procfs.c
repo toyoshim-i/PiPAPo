@@ -158,15 +158,28 @@ static int gen_version(char *buf, int bufsiz)
 
 static int gen_stat(char *buf, int bufsiz)
 {
-    /* Format: cpu <user> <nice> <system> <idle> 0 0 0 0 0 0 */
+    /* Aggregate line: cpu <user> <nice> <system> <idle> 0 0 0 0 0 0 */
     int pos = 0;
     pos = fmt_append(buf, pos, bufsiz, "cpu ");
-    pos = fmt_append_u32(buf, pos, bufsiz, cpu_user_ticks);
+    pos = fmt_append_u32(buf, pos, bufsiz, cpu_user_ticks[0] + cpu_user_ticks[1]);
     pos = fmt_append(buf, pos, bufsiz, " 0 ");
-    pos = fmt_append_u32(buf, pos, bufsiz, cpu_system_ticks);
+    pos = fmt_append_u32(buf, pos, bufsiz, cpu_system_ticks[0] + cpu_system_ticks[1]);
     pos = fmt_append(buf, pos, bufsiz, " ");
-    pos = fmt_append_u32(buf, pos, bufsiz, cpu_idle_ticks);
+    pos = fmt_append_u32(buf, pos, bufsiz, cpu_idle_ticks[0] + cpu_idle_ticks[1]);
     pos = fmt_append(buf, pos, bufsiz, " 0 0 0 0 0 0\n");
+
+    /* Per-core lines: cpu0/cpu1 */
+    for (int c = 0; c < 2; c++) {
+        pos = fmt_append(buf, pos, bufsiz, "cpu");
+        pos = fmt_append_u32(buf, pos, bufsiz, (uint32_t)c);
+        pos = fmt_append(buf, pos, bufsiz, " ");
+        pos = fmt_append_u32(buf, pos, bufsiz, cpu_user_ticks[c]);
+        pos = fmt_append(buf, pos, bufsiz, " 0 ");
+        pos = fmt_append_u32(buf, pos, bufsiz, cpu_system_ticks[c]);
+        pos = fmt_append(buf, pos, bufsiz, " ");
+        pos = fmt_append_u32(buf, pos, bufsiz, cpu_idle_ticks[c]);
+        pos = fmt_append(buf, pos, bufsiz, " 0 0 0 0 0 0\n");
+    }
     return pos;
 }
 
@@ -177,8 +190,9 @@ static int gen_uptime(char *buf, int bufsiz)
     uint32_t ticks = sched_get_ticks();
     uint32_t secs = ticks / PPAP_TICK_HZ;
     uint32_t hundredths = (ticks % PPAP_TICK_HZ) * 100 / PPAP_TICK_HZ;
-    uint32_t idle_secs = cpu_idle_ticks / PPAP_TICK_HZ;
-    uint32_t idle_hund = (cpu_idle_ticks % PPAP_TICK_HZ) * 100 / PPAP_TICK_HZ;
+    uint32_t total_idle = cpu_idle_ticks[0] + cpu_idle_ticks[1];
+    uint32_t idle_secs = total_idle / PPAP_TICK_HZ;
+    uint32_t idle_hund = (total_idle % PPAP_TICK_HZ) * 100 / PPAP_TICK_HZ;
 
     int pos = 0;
     pos = fmt_append_u32(buf, pos, bufsiz, secs);
