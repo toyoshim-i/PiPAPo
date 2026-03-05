@@ -76,12 +76,13 @@ void sched_tick(void)
                     && (int32_t)(tick_count - p->sleep_until) >= 0)
                 p->state = PROC_RUNNABLE;
             /* PROC_BLOCKED + sleep_until: poll/select timeout.
-             * Wake the process so svc_restart re-checks the condition. */
+             * Wake the process so svc_restart re-checks the condition.
+             * Leave sleep_until set so do_ppoll can detect the expired
+             * deadline on re-entry and return 0 (timeout). */
             if (p->state == PROC_BLOCKED && p->sleep_until != 0
                     && (int32_t)(tick_count - p->sleep_until) >= 0) {
                 p->state = PROC_RUNNABLE;
                 p->wait_channel = NULL;
-                p->sleep_until = 0;
             }
         }
     }
