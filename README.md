@@ -47,16 +47,15 @@ A UNIX-like micro OS for the RP2040 — bare-metal, no SDK runtime.
 ```
 PPAP/
   CMakeLists.txt            Build system (3 targets: ppap_qemu_arm, ppap_pico1, ppap_pico1calc)
-  ldscripts/
-    pico1calc.ld            PicoCalc: 16 MB flash, 80 KB kernel @ 0x10001000
-    pico1.ld                Official Pico: 2 MB flash, 80 KB kernel @ 0x10001000
-    qemu.ld                 QEMU layout: ROM @ 0x0, RAM @ 0x20000000
   src/
     target/
       target.h              Target abstraction API (5-function interface)
       qemu_arm/             QEMU mps2-an500: CMSDK UART, RAM block device
+        qemu.ld             QEMU layout: ROM @ 0x0, RAM @ 0x20000000
       pico1/                Official Raspberry Pi Pico: romfs-only, no SD
+        pico1.ld            Official Pico: 2 MB flash, 80 KB kernel @ 0x10001000
       pico1calc/            ClockworkPi PicoCalc: SPI SD card, 16 MB flash
+        pico1calc.ld        PicoCalc: 16 MB flash, 80 KB kernel @ 0x10001000
     boot/
       startup.S             Vector table + Reset_Handler
       stage1.S              Stage 1: sets VTOR=0x10001000, jumps to kernel

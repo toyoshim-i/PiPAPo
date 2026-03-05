@@ -13,7 +13,7 @@ target_include_directories(ppap_qemu_arm PRIVATE
 target_compile_definitions(ppap_qemu_arm PRIVATE PPAP_QEMU=1 PPAP_HAS_BLKDEV=1)
 
 target_link_options(ppap_qemu_arm PRIVATE
-    -T ${CMAKE_SOURCE_DIR}/ldscripts/qemu.ld
+    -T ${CMAKE_CURRENT_SOURCE_DIR}/qemu.ld
     -nostartfiles
     -Wl,--gc-sections
 )

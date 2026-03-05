@@ -18,7 +18,7 @@ target_link_libraries(ppap_pico1calc pico_base_headers hardware_regs)
 target_sources(ppap_pico1calc PRIVATE $<TARGET_OBJECTS:bs2_default_library>)
 
 target_link_options(ppap_pico1calc PRIVATE
-    -T ${CMAKE_SOURCE_DIR}/ldscripts/pico1calc.ld
+    -T ${CMAKE_CURRENT_SOURCE_DIR}/pico1calc.ld
     -nostartfiles
     -Wl,--gc-sections
 )
