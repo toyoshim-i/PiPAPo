@@ -152,6 +152,16 @@ void page_free(void *page)
         return;   /* ignore bogus pointer rather than corrupt the stack */
 
     uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
+
+    /* Scan for double-free: O(free_top) ≈ O(51) at 133 MHz ≈ 1 µs */
+    for (uint32_t i = 0u; i < free_top; i++) {
+        if (free_stack[i] == page) {
+            spin_unlock_irqrestore(SPIN_PAGE, saved);
+            klogf("MM: double-free detected @ %x\n", addr);
+            return;
+        }
+    }
+
     if (free_top < PAGE_COUNT)
         free_stack[free_top++] = page;
     spin_unlock_irqrestore(SPIN_PAGE, saved);

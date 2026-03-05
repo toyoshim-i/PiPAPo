@@ -94,7 +94,7 @@ and `sched_start()`.  Fix: if both init and /bin/sh fail to exec,
 `proc_free(init)` then halt with `wfi` — must not reach `core1_launch()` or
 `sched_start()`.
 
-### ☐ Step 4 — Fix page_free() double-free detection
+### ✓ Step 4 — Fix page_free() double-free detection
 
 **File:** `src/kernel/mm/page.c`
 
