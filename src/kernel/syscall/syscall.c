@@ -317,7 +317,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
         ret = 0;               /* single-user: ownership ops succeed */
         break;
     case SYS_GETCPU:
-        ret = 0;               /* single-core */
+        ret = (long)core_id();
         break;
     case SYS_UTIMES:
         ret = 0;               /* no RTC — timestamp update is no-op */
