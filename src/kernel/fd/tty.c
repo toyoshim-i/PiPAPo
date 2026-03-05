@@ -242,6 +242,9 @@ static long tty_read_canon(char *buf, size_t n)
             line_buf[line_pos++] = (char)c;
             if (tty_termios.c_lflag & ECHO)
                 uart_putc((char)c);
+        } else {
+            /* Line buffer full — ring bell to notify user */
+            uart_putc('\a');
         }
     }
 

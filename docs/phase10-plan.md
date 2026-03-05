@@ -138,13 +138,13 @@ calls `fd_stdio_init(p)` at line 346.  Fix: move `fd_close_all()` to after
 successful `do_execve()`, remove `fd_stdio_init()` from `exec.c`.  On failure,
 fds untouched (POSIX-correct).
 
-### ☐ Step 9 — TTY line buffer overflow prevention
+### ✓ Step 9 — TTY line buffer overflow prevention
 
 **File:** `src/kernel/fd/tty.c`
 
 When `line_pos == LINE_BUF_SIZE`, auto-complete line and ring bell.
 
-### ☐ Step 10 — romfs sibling chain cycle detection
+### ✓ Step 10 — romfs sibling chain cycle detection
 
 **File:** `src/kernel/fs/romfs.c`
 
