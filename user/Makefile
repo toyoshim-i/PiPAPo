@@ -45,7 +45,7 @@ COMMON_OBJS := crt0.o syscall.o
 APPS := hello
 # Test programs (sources in tests/user/, found via VPATH)
 # Only built when PPAP_TESTS=1 is passed from CMake
-TESTS_ALL := test_vfork test_exec test_pipe test_brk test_fd test_signal test_poll test_sleep_intr runtests
+TESTS_ALL := test_vfork test_exec test_pipe test_brk test_fd test_signal test_poll test_sleep_intr test_orphan runtests
 ifeq ($(PPAP_TESTS),1)
 TESTS := $(TESTS_ALL)
 else

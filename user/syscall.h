@@ -41,6 +41,10 @@ void *brk(void *addr);
 int kill(pid_t pid, int sig);
 int sigaction(int sig, void *handler, void *old_handler);
 
+/* ── Sleep ─────────────────────────────────────────────────────────────── */
+
+int nanosleep(const void *req, void *rem);
+
 /* ── Poll ──────────────────────────────────────────────────────────────── */
 
 struct pollfd {

@@ -196,3 +196,14 @@ ppoll:
     pop  {r4, r7, pc}
 
     .ltorg                 @ literal pool for the ldr r7, =414
+
+@ --- nanosleep (SYS_NANOSLEEP = 162) -----------------------------------------
+@ int nanosleep(const void *req, void *rem);
+.section .text.nanosleep, "ax", %progbits
+.global nanosleep
+.thumb_func
+nanosleep:
+    push {r7, lr}
+    movs r7, #162
+    svc  0
+    pop  {r7, pc}
