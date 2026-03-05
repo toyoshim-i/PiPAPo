@@ -252,7 +252,7 @@ long sys_waitpid(long pid, long status_ptr, long options)
      * sys_exit will wake us by setting PROC_RUNNABLE.
      * SVC_Handler will restore frame[0] and PC-2 so the SVC re-executes. */
     current->state = PROC_BLOCKED;
-    svc_restart[0] = 1;
+    svc_restart[core_id()] = 1;
     sched_yield();
     return 0;  /* value ignored — SVC_Handler restores original frame[0] */
 }
@@ -319,7 +319,7 @@ long sys_execve(const char *path, const char *const *argv)
      *
      * We cannot set r9 via inline asm here because the C compiler's
      * function epilogue (callee-saved register restores) would undo it. */
-    exec_pending[0] = 1;
+    exec_pending[core_id()] = 1;
 
     return 0;
 }

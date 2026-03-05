@@ -43,9 +43,11 @@ static inline int spin_have_hw(void)
 
 static inline uint32_t core_id(void)
 {
-    if (!spin_have_hw())
-        return 0;
-    return SIO_CPUID;
+#ifdef PPAP_QEMU
+    return 0;   /* QEMU: single core, no SIO */
+#else
+    return SIO_CPUID;   /* RP2040: single MMIO read, ~1 cycle */
+#endif
 }
 
 /*

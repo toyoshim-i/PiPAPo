@@ -101,7 +101,7 @@ static long pipe_read(struct file *f, char *buf, size_t n)
     /* Block: wait for data */
     current->wait_channel = p;
     current->state = PROC_BLOCKED;
-    svc_restart[0] = 1;
+    svc_restart[core_id()] = 1;
     sched_yield();
     return 0;   /* ignored — SVC_Handler restores original frame[0] */
 }
@@ -130,7 +130,7 @@ static long pipe_write(struct file *f, const char *buf, size_t n)
     /* Buffer full — block: wait for space */
     current->wait_channel = p;
     current->state = PROC_BLOCKED;
-    svc_restart[0] = 1;
+    svc_restart[core_id()] = 1;
     sched_yield();
     return 0;   /* ignored — SVC_Handler restores original frame[0] */
 }

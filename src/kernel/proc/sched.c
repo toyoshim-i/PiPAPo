@@ -46,14 +46,14 @@ pcb_t *sched_next(void)
     pcb_t *result = current;   /* default: keep running */
     for (uint32_t i = 1u; i < PROC_MAX; i++) {
         uint32_t next = (idx + i) % PROC_MAX;
-        if (proc_table[next].state == PROC_RUNNABLE) {
+        if (proc_table[next].state == PROC_RUNNABLE
+                && proc_table[next].running_on_core < 0) {
             result = &proc_table[next];
             break;
         }
     }
 
-    /* Track which core is running which process.
-     * Step 10 will use this to skip processes running on the other core. */
+    /* Track which core is running which process. */
     if (result != current) {
         current->running_on_core = -1;
         result->running_on_core = (int8_t)core_id();
@@ -65,25 +65,28 @@ pcb_t *sched_next(void)
 
 void sched_tick(void)
 {
-    /* Wake any sleeping processes whose sleep_until has been reached.
+    /* Only Core 0 handles sleep/timeout wakeups (avoids double-waking).
      * Comparison uses signed subtraction to handle tick_count wrap-around:
      *   (int32_t)(tick_count - sleep_until) >= 0  is true when
      *   tick_count >= sleep_until even after the uint32_t counter wraps. */
-    for (uint32_t i = 0u; i < PROC_MAX; i++) {
-        pcb_t *p = &proc_table[i];
-        if (p->state == PROC_SLEEPING
-                && (int32_t)(tick_count - p->sleep_until) >= 0)
-            p->state = PROC_RUNNABLE;
-        /* PROC_BLOCKED + sleep_until: poll/select timeout.
-         * Wake the process so svc_restart re-checks the condition. */
-        if (p->state == PROC_BLOCKED && p->sleep_until != 0
-                && (int32_t)(tick_count - p->sleep_until) >= 0) {
-            p->state = PROC_RUNNABLE;
-            p->wait_channel = NULL;
-            p->sleep_until = 0;
+    if (core_id() == 0) {
+        for (uint32_t i = 0u; i < PROC_MAX; i++) {
+            pcb_t *p = &proc_table[i];
+            if (p->state == PROC_SLEEPING
+                    && (int32_t)(tick_count - p->sleep_until) >= 0)
+                p->state = PROC_RUNNABLE;
+            /* PROC_BLOCKED + sleep_until: poll/select timeout.
+             * Wake the process so svc_restart re-checks the condition. */
+            if (p->state == PROC_BLOCKED && p->sleep_until != 0
+                    && (int32_t)(tick_count - p->sleep_until) >= 0) {
+                p->state = PROC_RUNNABLE;
+                p->wait_channel = NULL;
+                p->sleep_until = 0;
+            }
         }
     }
 
+    /* Per-core: decrement time slice and pend PendSV when expired */
     if (!current)
         return;
 
@@ -97,7 +100,9 @@ void sched_tick(void)
 
 void SysTick_Handler(void)
 {
-    tick_count++;
+    /* Only Core 0 maintains the global tick counter */
+    if (core_id() == 0)
+        tick_count++;
 
     /* CPU tick accounting: determine if the interrupted context was
      * Thread mode (user) or Handler mode (kernel).
