@@ -9,9 +9,18 @@ Prerequisites: Phase 9 (Dual-Core Scheduling) complete
 
 ## Context
 
-With dual-core scheduling in place (Phase 9), this phase hardens the kernel
-for reliable interactive use.  Focus areas: process lifecycle bugs, OOM
-visibility, signal/buffer safety, filesystem correctness, and input validation.
+Phase 9 (Dual-Core Scheduling) is complete.  The kernel now runs both RP2040
+cores with hardware spinlock protection:
+- **SPIN_PAGE** guards `page_alloc`/`page_free`/`page_free_count`
+- **SPIN_PROC** guards `proc_table` and scheduler state
+- **SPIN_FS** serializes VFS + VFAT/UFS sector buffers (per-entry-point wrappers)
+- **SPIN_VFS** guards vnode pool and mount table
+- `core1_launch()` is deferred to after init gets PID 1 (commit b2a28cd)
+- Per-core arrays: `svc_restart[core_id()]`, `exec_pending[core_id()]`
+
+This phase hardens the kernel for reliable interactive use.  Focus areas:
+process lifecycle bugs, OOM visibility, signal/buffer safety, filesystem
+correctness, and input validation.
 
 ## Design Decisions
 
@@ -19,9 +28,9 @@ visibility, signal/buffer safety, filesystem correctness, and input validation.
 processes, the operator controls what runs.  When `page_alloc()` fails, print
 UART warning and return NULL.  `/proc/meminfo` reports `OomCount`.
 
-**Spinlock-aware fixes:** All fixes in this phase must respect the spinlock
-discipline established in Phase 9.  Proc_table modifications acquire SPIN_PROC,
-FS operations are already serialized by SPIN_FS.
+**Spinlock-aware fixes:** All fixes must respect the spinlock discipline now
+operational.  Proc_table modifications acquire SPIN_PROC, page allocator
+operations acquire SPIN_PAGE, FS operations are serialized by SPIN_FS wrappers.
 
 ## Exit Criteria
 
@@ -58,20 +67,27 @@ Check `page_alloc()` return for Thread 0 stack.  Panic + `wfi` on failure.
 
 **File:** `src/kernel/main.c`
 
-If both init and /bin/sh fail to exec, `proc_free(init)` then halt with `wfi`.
+Currently prints "PANIC: no init or shell" but falls through to `core1_launch()`
+and `sched_start()`.  Fix: if both init and /bin/sh fail to exec,
+`proc_free(init)` then halt with `wfi` — must not reach `core1_launch()` or
+`sched_start()`.
 
-### ☐ Step 4 — Fix page_free() silent drop
+### ☐ Step 4 — Fix page_free() double-free detection
 
 **File:** `src/kernel/mm/page.c`
 
-Add double-free detection (scan free_stack under SPIN_PAGE) and page-alignment
-check.  O(51) at 133 MHz ≈ 1 µs.
+Phase 9 added SPIN_PAGE protection and a range guard (addr < PAGE_POOL_BASE
+check) to `page_free()`.  Remaining: add a duplicate scan of `free_stack` inside
+the existing SPIN_PAGE critical section to detect double-free.
+O(51) at 133 MHz ≈ 1 µs.
 
 ### ☐ Step 5 — OOM warning on page_alloc failure
 
 **File:** `src/kernel/mm/page.c`
 
-When `free_top == 0`, increment `oom_count` and print UART warning.
+`page_alloc()` already returns NULL under SPIN_PAGE when `free_top == 0`.
+Add: increment `oom_count` and print UART warning inside the existing critical
+section.
 
 ### ☐ Step 6 — Document stack page lifecycle
 
@@ -94,8 +110,11 @@ Bounds-check `new_psp >= stack_page` before writing signal frame.
 
 **Files:** `src/kernel/syscall/sys_proc.c`, `src/kernel/exec/exec.c`
 
-Move `fd_close_all()` to after successful `do_execve()`.  On failure, fds
-untouched (POSIX-correct).
+Currently `sys_execve()` calls `fd_close_all()` before `do_execve()` and
+restores via `fd_stdio_init()` on failure.  Also, `do_execve()` unconditionally
+calls `fd_stdio_init(p)` at line 346.  Fix: move `fd_close_all()` to after
+successful `do_execve()`, remove `fd_stdio_init()` from `exec.c`.  On failure,
+fds untouched (POSIX-correct).
 
 ### ☐ Step 9 — TTY line buffer overflow prevention
 
@@ -119,20 +138,26 @@ Validate `e_phentsize`, `e_phnum`, segment offsets within file size.
 
 **File:** `src/kernel/fs/vfat.c`
 
-Validate `num_fats`, `reserved_sectors`, `fat_size_32`, `data_start_sector`.
+`vfat_mount()` already validates `bytes_per_sector == 512` and
+`sectors_per_cluster != 0`.  Phase 9 added SPIN_FS wrappers around all entry
+points.  Remaining: validate `num_fats`, `reserved_sectors`, `fat_size_32`,
+`data_start_sector` for zero / overflow.
 
 ### ☐ Step 13 — VFAT directory entry cluster field update
 
 **File:** `src/kernel/fs/vfat.c`
 
-Fix TODO at line 535: write `first_cluster_hi/lo` to directory entry after
+Fix TODO at line 536: write `first_cluster_hi/lo` to directory entry after
 allocating a cluster for an empty file.
 
 ### ☐ Step 14 — UFS symlink buffer overflow fix
 
 **File:** `src/kernel/fs/ufs.c`
 
-Cap `len` to `UFS_FAST_SYMLINK_MAX` in fast symlink path.
+Phase 9 added SPIN_FS wrappers around `ufs_readlink()`.  The underlying
+`ufs_readlink()` still needs a fix: cap `len` to `UFS_FAST_SYMLINK_MAX` (40)
+in the fast symlink path before `memcpy(buf, inode.i_direct, len)` to prevent
+out-of-bounds read from a corrupted inode.
 
 ### ☐ Step 15 — O_TRUNC failure check
 
@@ -167,6 +192,7 @@ Orphan reparenting test, OOM ENOMEM test, signal stack overflow test.
 **Files:**
 - `src/kernel/fs/procfs.c` — bump version to "0.10.0"
 - `src/kernel/syscall/sys_proc.c` — document orphan/zombie lifecycle
+- `docs/procfs.md` — update OomCount entry after Step 17
 
 ---
 
@@ -182,7 +208,7 @@ Orphan reparenting test, OOM ENOMEM test, signal stack overflow test.
 | `src/kernel/fd/tty.c` | Line buffer overflow fix |
 | `src/kernel/fs/romfs.c` | Cycle detection limit |
 | `src/kernel/exec/elf.c` | ELF header validation |
-| `src/kernel/exec/exec.c` | Segment bounds validation; remove fd_stdio_init |
+| `src/kernel/exec/exec.c` | Segment bounds validation; remove fd_stdio_init (line 346) |
 | `src/kernel/fs/vfat.c` | BPB validation; cluster field TODO fix |
 | `src/kernel/fs/ufs.c` | Fast symlink buffer cap |
 | `src/kernel/syscall/sys_fs.c` | O_TRUNC check |
