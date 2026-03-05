@@ -103,7 +103,7 @@ check) to `page_free()`.  Remaining: add a duplicate scan of `free_stack` inside
 the existing SPIN_PAGE critical section to detect double-free.
 O(51) at 133 MHz ≈ 1 µs.
 
-### ☐ Step 5 — OOM warning on page_alloc failure
+### ✓ Step 5 — OOM warning on page_alloc failure
 
 **File:** `src/kernel/mm/page.c`
 

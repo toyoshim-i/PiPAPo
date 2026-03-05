@@ -49,4 +49,7 @@ void page_free(void *page);
 /* Return the number of pages currently on the free stack. */
 uint32_t page_free_count(void);
 
+/* OOM event counter (incremented each time page_alloc returns NULL). */
+extern uint32_t oom_count;
+
 #endif /* PPAP_MM_PAGE_H */

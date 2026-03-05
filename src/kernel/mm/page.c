@@ -35,6 +35,7 @@ extern char __stack_top;
 
 static void    *free_stack[PAGE_COUNT];
 static uint32_t free_top = 0u;   /* index of next empty slot (0 = pool empty) */
+uint32_t        oom_count = 0u;  /* number of page_alloc() failures */
 
 /* ── Internal helpers ─────────────────────────────────────────────────────── */
 
@@ -110,9 +111,14 @@ void *page_alloc(void)
 {
     uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
     void *p = NULL;
-    if (free_top != 0u)
+    if (free_top != 0u) {
         p = free_stack[--free_top];
+    } else {
+        oom_count++;
+    }
     spin_unlock_irqrestore(SPIN_PAGE, saved);
+    if (!p)
+        klog("MM: OOM — page_alloc failed\n");
     return p;
 }
 
