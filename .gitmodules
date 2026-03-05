@@ -4,3 +4,6 @@
 [submodule "third_party/busybox"]
 	path = third_party/busybox
 	url = https://git.busybox.net/busybox
+[submodule "third_party/rogue"]
+	path = third_party/rogue
+	url = https://github.com/Davidslv/rogue.git

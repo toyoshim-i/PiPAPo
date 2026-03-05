@@ -155,10 +155,15 @@ long sys_open(const char *path, long flags, long mode)
 
     /* O_TRUNC: truncate existing file to zero length */
     if (((uint32_t)flags & O_TRUNC) && vn->type == VNODE_FILE) {
-        if (vn->mount && vn->mount->ops && vn->mount->ops->truncate)
-            vn->mount->ops->truncate(vn, 0);
-        else
+        if (vn->mount && vn->mount->ops && vn->mount->ops->truncate) {
+            int terr = vn->mount->ops->truncate(vn, 0);
+            if (terr) {
+                vnode_put(vn);
+                return (long)terr;
+            }
+        } else {
             vn->size = 0;  /* simple fallback */
+        }
     }
 
     /* TTY device detection: redirect /dev/ttyS0, /dev/console, /dev/tty

@@ -181,7 +181,7 @@ Phase 9 added SPIN_FS wrappers around `ufs_readlink()`.  The underlying
 in the fast symlink path before `memcpy(buf, inode.i_direct, len)` to prevent
 out-of-bounds read from a corrupted inode.
 
-### ☐ Step 15 — O_TRUNC failure check
+### ✓ Step 15 — O_TRUNC failure check
 
 **File:** `src/kernel/syscall/sys_fs.c`
 
