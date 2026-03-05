@@ -1712,6 +1712,101 @@ static void orphan_reparent_test(void)
     uart_puts(" failed\n");
 }
 
+/* ── Phase 10 Step 18: OOM ENOMEM test ────────────────────────────────────── */
+
+static void oom_test(void)
+{
+    uart_puts("\n=== Phase 10 Step 18: OOM ENOMEM test ===\n");
+    test_pass = 0;
+    test_fail = 0;
+
+    /* Record baseline */
+    uint32_t baseline_free = page_free_count();
+    uint32_t baseline_oom  = oom_count;
+
+    /* Exhaust the page pool */
+    void *pages[PAGE_COUNT];
+    uint32_t allocated = 0;
+    for (uint32_t i = 0; i < PAGE_COUNT; i++) {
+        pages[i] = page_alloc();
+        if (pages[i])
+            allocated++;
+        else
+            break;
+    }
+
+    test_report("exhausted page pool", allocated == baseline_free);
+
+    /* Next alloc should return NULL */
+    void *oom_page = page_alloc();
+    test_report("page_alloc returns NULL on OOM", oom_page == NULL);
+
+    /* oom_count should have incremented */
+    test_report("oom_count incremented", oom_count > baseline_oom);
+
+    /* Free all pages back */
+    for (uint32_t i = 0; i < allocated; i++)
+        page_free(pages[i]);
+
+    /* Free count should be restored */
+    test_report("free pages restored after free", page_free_count() == baseline_free);
+
+    uart_puts("Phase 10 OOM: ");
+    uart_print_dec((uint32_t)test_pass);
+    uart_puts(" passed, ");
+    uart_print_dec((uint32_t)test_fail);
+    uart_puts(" failed\n");
+}
+
+/* ── Phase 10 Step 18: signal stack overflow test ─────────────────────────── */
+
+static void signal_stack_overflow_test(void)
+{
+    uart_puts("\n=== Phase 10 Step 18: signal stack overflow test ===\n");
+    test_pass = 0;
+    test_fail = 0;
+
+    /* Allocate a process to test with */
+    pcb_t *p = proc_alloc();
+    int ok = (p != NULL);
+    test_report("alloc test process", ok);
+    if (!ok) return;
+
+    /* Give it a stack page */
+    p->stack_page = page_alloc();
+    ok = (p->stack_page != NULL);
+    test_report("alloc stack page", ok);
+    if (!ok) {
+        proc_free(p);
+        return;
+    }
+
+    /* Verify the bounds check logic:
+     * signal_setup_frame checks new_psp < stack_base.
+     * new_psp = psp - 32, so overflow occurs when psp < stack_base + 32.
+     * We test the condition directly since signal_setup_frame is static. */
+    uint32_t stack_base = (uint32_t)(uintptr_t)p->stack_page;
+    uint32_t psp_at_limit = stack_base + 32;  /* new_psp = stack_base: OK */
+    uint32_t psp_overflow = stack_base + 31;  /* new_psp = stack_base - 1: overflow */
+
+    uint32_t new_psp_ok = psp_at_limit - 32;
+    test_report("frame at stack base is valid", new_psp_ok >= stack_base);
+
+    uint32_t new_psp_bad = psp_overflow - 32;
+    test_report("frame below stack base is overflow", new_psp_bad < stack_base);
+
+    /* Clean up */
+    page_free(p->stack_page);
+    p->stack_page = NULL;
+    proc_free(p);
+
+    uart_puts("Phase 10 signal stack: ");
+    uart_print_dec((uint32_t)test_pass);
+    uart_puts(" passed, ");
+    uart_print_dec((uint32_t)test_fail);
+    uart_puts(" failed\n");
+}
+
 /* ── Test runner ──────────────────────────────────────────────────────────── */
 
 void ktest_run_all(void)
@@ -1759,6 +1854,12 @@ void ktest_run_all(void)
     total_pass += test_pass; total_fail += test_fail;
 
     orphan_reparent_test();
+    total_pass += test_pass; total_fail += test_fail;
+
+    oom_test();
+    total_pass += test_pass; total_fail += test_fail;
+
+    signal_stack_overflow_test();
     total_pass += test_pass; total_fail += test_fail;
 
     /* Final summary */

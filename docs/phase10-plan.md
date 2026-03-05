@@ -203,7 +203,7 @@ Reduce symlink recursion limit from 8 to 4.  Eliminate one 128-byte buffer.
 
 Add `OomCount` line using `oom_count` from page.c.
 
-### ☐ Step 18 — New test suites
+### ✓ Step 18 — New test suites
 
 **File:** `tests/kernel/ktest.c`
 
