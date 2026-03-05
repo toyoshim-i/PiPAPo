@@ -16,8 +16,8 @@
 #include "vfs.h"
 #include "../mm/kmem.h"
 #include "../spinlock.h"   /* SPIN_VFS */
+#include "../klog.h"
 #include "../errno.h"
-#include "drivers/uart.h"
 #include <stddef.h>
 
 /* ── Static storage ───────────────────────────────────────────────────────── */
@@ -44,11 +44,8 @@ void vfs_init(void)
     /* Initialise the vnode slab pool */
     kmem_pool_init(&vnode_pool, vnode_storage, sizeof(vnode_t), VFS_VNODE_MAX);
 
-    uart_puts("VFS: initialised (");
-    uart_print_dec(VFS_VNODE_MAX);
-    uart_puts(" vnodes, ");
-    uart_print_dec(VFS_MOUNT_MAX);
-    uart_puts(" mount slots)\n");
+    klogf("VFS: initialised (%u vnodes, %u mount slots)\n",
+          (uint32_t)VFS_VNODE_MAX, (uint32_t)VFS_MOUNT_MAX);
 }
 
 /* ── vnode_alloc / vnode_ref / vnode_put ───────────────────────────────────── */
@@ -165,9 +162,7 @@ int vfs_mount(const char *path, const vfs_ops_t *ops, uint8_t flags,
     mount_count++;
     spin_unlock_irqrestore(SPIN_VFS, saved);
 
-    uart_puts("VFS: mounted at ");
-    uart_puts(mnt->path);
-    uart_puts("\n");
+    klogf("VFS: mounted at %s\n", mnt->path);
 
     return 0;
 }
@@ -226,9 +221,7 @@ int vfs_umount(const char *path)
 
     spin_unlock_irqrestore(SPIN_VFS, saved);
 
-    uart_puts("VFS: unmounted ");
-    uart_puts(path);
-    uart_puts("\n");
+    klogf("VFS: unmounted %s\n", path);
 
     return 0;
 }

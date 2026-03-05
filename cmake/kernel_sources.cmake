@@ -33,6 +33,7 @@ set(KERNEL_COMMON_SOURCES
     ${CMAKE_SOURCE_DIR}/src/kernel/exec/elf.c
     ${CMAKE_SOURCE_DIR}/src/kernel/exec/exec.c
     ${CMAKE_SOURCE_DIR}/src/kernel/smp.c
+    ${CMAKE_SOURCE_DIR}/src/kernel/klog.c
 )
 
 # Block device + VFAT/UFS sources — only for targets with PPAP_HAS_BLKDEV.

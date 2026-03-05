@@ -19,7 +19,7 @@
 #include "ufs.h"
 #endif
 #include "../syscall/syscall.h"
-#include "drivers/uart.h"
+#include "../klog.h"
 #include "romfs.h"
 #include "devfs.h"
 #include "procfs.h"
@@ -160,11 +160,8 @@ int fstab_mount_all(const fstab_entry_t *entries, int count)
             ops = &vfat_ops;
             blkdev_t *bd = blkdev_find(e->device);
             if (!bd) {
-                uart_puts("fstab: ");
-                uart_puts(e->device);
-                uart_puts(" not found, skipping ");
-                uart_puts(e->mountpoint);
-                uart_puts("\n");
+                klogf("fstab: %s not found, skipping %s\n",
+                      e->device, e->mountpoint);
                 continue;
             }
             dev_data = bd;
@@ -174,11 +171,8 @@ int fstab_mount_all(const fstab_entry_t *entries, int count)
                 /* Loopback mount: set up loop device first */
                 int loop_idx = loopback_setup(e->device);
                 if (loop_idx < 0) {
-                    uart_puts("fstab: loopback_setup(");
-                    uart_puts(e->device);
-                    uart_puts(") failed, skipping ");
-                    uart_puts(e->mountpoint);
-                    uart_puts("\n");
+                    klogf("fstab: loopback_setup(%s) failed, skipping %s\n",
+                          e->device, e->mountpoint);
                     continue;
                 }
                 char loop_name[8] = "loop0";
@@ -194,24 +188,15 @@ int fstab_mount_all(const fstab_entry_t *entries, int count)
         }
 #endif
         else {
-            uart_puts("fstab: unknown fstype '");
-            uart_puts(e->fstype);
-            uart_puts("'\n");
+            klogf("fstab: unknown fstype '%s'\n", e->fstype);
             continue;
         }
 
         int rc = vfs_mount(e->mountpoint, ops, e->flags, dev_data);
-        if (rc == 0) {
-            uart_puts("VFS: ");
-            uart_puts(e->fstype);
-            uart_puts(" mounted at ");
-            uart_puts(e->mountpoint);
-            uart_puts("\n");
-        } else {
-            uart_puts("VFS: mount ");
-            uart_puts(e->mountpoint);
-            uart_puts(" failed\n");
-        }
+        if (rc == 0)
+            klogf("VFS: %s mounted at %s\n", e->fstype, e->mountpoint);
+        else
+            klogf("VFS: mount %s failed\n", e->mountpoint);
     }
 
     return 0;

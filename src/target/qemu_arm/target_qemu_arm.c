@@ -7,6 +7,7 @@
 
 #include "../target.h"
 #include "drivers/uart.h"
+#include "klog.h"
 #include "mm/page.h"
 #include "blkdev/blkdev.h"
 #include "blkdev/ramblk.h"
@@ -22,9 +23,9 @@ extern const uint8_t __fatimg_end[];
 void target_early_init(void)
 {
     uart_init_console();
-    uart_puts("PicoPiAndPortable booting... [qemu_arm]\n");
-    uart_puts("UART: CMSDK UART0 @ 0x40004000\n");
-    uart_puts("Clock: emulated (no PLL)\n");
+    klog("PicoPiAndPortable booting... [qemu_arm]\n");
+    klog("UART: CMSDK UART0 @ 0x40004000\n");
+    klog("Clock: emulated (no PLL)\n");
     /* No PLL, no SPI */
 }
 
@@ -34,13 +35,11 @@ void target_late_init(void)
     uint32_t fatimg_size = (uint32_t)(__fatimg_end - __fatimg_start);
     if (fatimg_size >= BLKDEV_SECTOR_SIZE) {
         int rc = ramblk_init(__fatimg_start, fatimg_size);
-        if (rc >= 0) {
-            uart_puts("BLKDEV: ramblk mmcblk0 (FAT32 image, ");
-            uart_print_dec(fatimg_size / 1024);
-            uart_puts(" KB)\n");
-        } else {
-            uart_puts("BLKDEV: ramblk init FAILED\n");
-        }
+        if (rc >= 0)
+            klogf("BLKDEV: ramblk mmcblk0 (FAT32 image, %u KB)\n",
+                  fatimg_size / 1024);
+        else
+            klog("BLKDEV: ramblk init FAILED\n");
     } else {
         /* No FAT32 image — use test pattern (4 KB = 8 sectors) */
         uint8_t *test_img = (uint8_t *)page_alloc();
@@ -49,11 +48,11 @@ void target_late_init(void)
             __builtin_memset(test_img, 0xAA, BLKDEV_SECTOR_SIZE);
             int rc = ramblk_init(test_img, PAGE_SIZE);
             if (rc >= 0)
-                uart_puts("BLKDEV: ramblk mmcblk0 (test, 8 sectors)\n");
+                klog("BLKDEV: ramblk mmcblk0 (test, 8 sectors)\n");
             else
-                uart_puts("BLKDEV: ramblk init FAILED\n");
+                klog("BLKDEV: ramblk init FAILED\n");
         } else {
-            uart_puts("BLKDEV: page_alloc failed\n");
+            klog("BLKDEV: page_alloc failed\n");
         }
     }
     /* Enable UART RX interrupts so tty_rx_notify() wakes blocked readers */

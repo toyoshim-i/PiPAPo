@@ -224,14 +224,28 @@ void uart_putc(char c)
      * Critical section with interrupt-safe spin:
      *   We disable interrupts to protect the shared ring pointers, but
      *   re-enable them while waiting if the ring is full so the UART0 IRQ
-     *   handler can drain it. */
+     *   handler can drain it.
+     *
+     *   Special case: if the caller already disabled IRQs (e.g. klog holds
+     *   SPIN_UART), restoring PRIMASK would leave IRQs off and the UART IRQ
+     *   handler could never drain the ring — deadlock.  Detect this via the
+     *   saved PRIMASK bit 0 and poll-drain the ring into the TX FIFO instead. */
     uint32_t primask;
     for (;;) {
         __asm__ volatile("mrs %0, primask\n cpsid i" : "=r"(primask));
         if ((uint8_t)(tx_head + 1u) != tx_tail)
             break;  /* ring has space; remain in critical section */
-        /* Ring full — re-enable interrupts so UART0_IRQ_Handler can drain */
-        __asm__ volatile("msr primask, %0" :: "r"(primask));
+        if (primask & 1u) {
+            /* IRQs already disabled — manually drain ring → TX FIFO */
+            while (tx_head != tx_tail && !(UART0_FR & UART_FR_TXFF)) {
+                UART0_DR = (uint32_t)(unsigned char)tx_buf[tx_tail];
+                tx_tail++;
+            }
+            /* Loop back; HW shift register will free FIFO slots. */
+        } else {
+            /* Re-enable interrupts so UART0_IRQ_Handler can drain */
+            __asm__ volatile("msr primask, %0" :: "r"(primask));
+        }
     }
 
     tx_buf[tx_head] = c;

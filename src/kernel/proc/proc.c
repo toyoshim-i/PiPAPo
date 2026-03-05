@@ -14,7 +14,7 @@
 #include "sched.h"        /* sched_get_ticks — for start_time */
 #include "../mm/page.h"   /* PAGE_SIZE — for proc_setup_stack */
 #include "../spinlock.h"  /* SPIN_PROC */
-#include "drivers/uart.h" /* uart_puts, uart_print_dec — for proc_init diagnostics */
+#include "../klog.h"
 #include "hw/cortex_m0plus.h" /* XPSR_THUMB_BIT, EXC_RETURN_THREAD_PSP */
 #include <stddef.h>   /* NULL, offsetof */
 
@@ -69,11 +69,8 @@ void proc_init(void)
         core_id_reg = (volatile uint32_t *)0xD0000000u;
 
     /* ── Print boot diagnostic ─────────────────────────────────────────── */
-    uart_puts("PROC: process table  slots=");
-    uart_print_dec(PROC_MAX);
-    uart_puts("  (pid 0 = kernel, pids 1–");
-    uart_print_dec((uint32_t)(PROC_MAX - 1u));
-    uart_puts(" available)\n");
+    klogf("PROC: process table  slots=%u  (pid 0 = kernel, pids 1–%u available)\n",
+          (uint32_t)PROC_MAX, (uint32_t)(PROC_MAX - 1u));
 
 #ifdef PPAP_TESTS
     /* ── Self-test ─────────────────────────────────────────────────────── */
@@ -93,8 +90,7 @@ void proc_init(void)
      * busybox init requires PID == 1. */
     next_pid = 1;
 
-    uart_puts("PROC: self-test ");
-    uart_puts(ok ? "PASSED\n" : "FAILED\n");
+    klogf("PROC: self-test %s\n", ok ? "PASSED" : "FAILED");
 #endif
 }
 

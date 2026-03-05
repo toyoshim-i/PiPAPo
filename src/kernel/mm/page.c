@@ -15,7 +15,7 @@
 #include "kmem.h"
 #include "xip.h"
 #include "../spinlock.h"
-#include "drivers/uart.h"
+#include "../klog.h"
 #include <stddef.h>
 
 /* ── Linker-provided symbols ──────────────────────────────────────────────── */
@@ -38,13 +38,6 @@ static uint32_t free_top = 0u;   /* index of next empty slot (0 = pool empty) */
 
 /* ── Internal helpers ─────────────────────────────────────────────────────── */
 
-/* Print "NNN KB" where NNN = bytes / 1024 */
-static void print_kb(uint32_t bytes)
-{
-    uart_print_dec(bytes / 1024u);
-    uart_puts(" KB");
-}
-
 /* ── Public API ───────────────────────────────────────────────────────────── */
 
 void mm_init(void)
@@ -66,64 +59,30 @@ void mm_init(void)
     }
 
     /* ── Boot-time memory map ─────────────────────────────────────────────── */
-    uart_puts("MM: SRAM memory map\n");
+    klog("MM: SRAM memory map\n");
+    klogf("MM:   kernel  %x–%x  %u KB reserved\n",
+          SRAM_KERNEL_BASE, SRAM_KERNEL_BASE + SRAM_KERNEL_SIZE - 1u,
+          SRAM_KERNEL_SIZE / 1024u);
+    if (stack_top > bss_end)
+        klogf("MM:     .data/.bss:  %x B used, %x B to stack top\n",
+              kern_used, stack_top - bss_end);
+    else
+        klogf("MM:     .data/.bss:  %x B used\n", kern_used);
 
-    /* Kernel region */
-    uart_puts("MM:   kernel  ");
-    uart_print_hex32(SRAM_KERNEL_BASE);
-    uart_puts("–");
-    uart_print_hex32(SRAM_KERNEL_BASE + SRAM_KERNEL_SIZE - 1u);
-    uart_puts("  ");
-    print_kb(SRAM_KERNEL_SIZE);
-    uart_puts(" reserved\n");
-
-    /* Kernel data usage */
-    uart_puts("MM:     .data/.bss:  ");
-    uart_print_hex32(kern_used);
-    uart_puts(" B used");
-    if (stack_top > bss_end) {
-        uart_puts(", ");
-        uart_print_hex32(stack_top - bss_end);
-        uart_puts(" B to stack top\n");
-    } else {
-        uart_puts("\n");
-    }
-
-    /* Page pool — show actual usable start (may skip kernel-stack overlap) */
     uint32_t actual_base = (free_top > 0)
         ? (uint32_t)(uintptr_t)free_stack[0] : PAGE_POOL_BASE;
-    uart_puts("MM:   pages   ");
-    uart_print_hex32(actual_base);
-    uart_puts("–");
-    uart_print_hex32(PAGE_POOL_BASE + PAGE_POOL_SIZE - 1u);
-    uart_puts(" ");
-    print_kb(free_top * PAGE_SIZE);
-    uart_puts(" (");
-    uart_print_dec(free_top);
-    uart_puts(" × 4 KB, all free)\n");
-
-    /* I/O buffer */
-    uart_puts("MM:   io_buf  ");
-    uart_print_hex32(SRAM_IOBUF_BASE);
-    uart_puts("–");
-    uart_print_hex32(SRAM_IOBUF_BASE + SRAM_IOBUF_SIZE - 1u);
-    uart_puts("  ");
-    print_kb(SRAM_IOBUF_SIZE);
-    uart_puts("\n");
-
-    /* DMA / Core 1 */
-    uart_puts("MM:   dma     ");
-    uart_print_hex32(SRAM_DMA_BASE);
-    uart_puts("–");
-    uart_print_hex32(SRAM_DMA_BASE + SRAM_DMA_SIZE - 1u);
-    uart_puts("  ");
-    print_kb(SRAM_DMA_SIZE);
-    uart_puts("\n");
+    klogf("MM:   pages   %x–%x %u KB (%u × 4 KB, all free)\n",
+          actual_base, PAGE_POOL_BASE + PAGE_POOL_SIZE - 1u,
+          free_top * PAGE_SIZE / 1024u, free_top);
+    klogf("MM:   io_buf  %x–%x  %u KB\n",
+          SRAM_IOBUF_BASE, SRAM_IOBUF_BASE + SRAM_IOBUF_SIZE - 1u,
+          SRAM_IOBUF_SIZE / 1024u);
+    klogf("MM:   dma     %x–%x  %u KB\n",
+          SRAM_DMA_BASE, SRAM_DMA_BASE + SRAM_DMA_SIZE - 1u,
+          SRAM_DMA_SIZE / 1024u);
 
 #ifdef PPAP_TESTS
     /* ── kmem self-test ───────────────────────────────────────────────────── */
-    /* Exercise the pool mechanism with a tiny local buffer before any real
-     * pool (PCBs, etc.) is created.  Validates alloc, free, and free_count. */
     typedef struct { uint32_t a; uint32_t b; } test_obj_t;
     static uint8_t       test_mem[4 * sizeof(test_obj_t)];
     static kmem_pool_t   test_pool;
@@ -138,8 +97,7 @@ void mm_init(void)
     uint32_t ok = (o1 != NULL) && (o2 != NULL) && (o3 != NULL)
                && (kmem_free_count(&test_pool) == 2u);
 
-    uart_puts("MM: kmem self-test ");
-    uart_puts(ok ? "PASSED\n" : "FAILED\n");
+    klogf("MM: kmem self-test %s\n", ok ? "PASSED" : "FAILED");
 #endif
 
 #ifdef PPAP_TESTS

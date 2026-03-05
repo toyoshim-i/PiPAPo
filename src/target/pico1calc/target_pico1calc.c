@@ -11,6 +11,7 @@
 #include "drivers/clock.h"
 #include "drivers/spi.h"
 #include "drivers/sd.h"
+#include "klog.h"
 #include "mm/mpu.h"
 #include "errno.h"
 
@@ -21,32 +22,29 @@
 void target_early_init(void)
 {
     uart_init_console();
-    uart_puts("PicoPiAndPortable booting... [pico1calc]\n");
-    uart_puts("UART: 115200 bps @ 12 MHz XOSC\n");
+    klog("PicoPiAndPortable booting... [pico1calc]\n");
+    klog("UART: 115200 bps @ 12 MHz XOSC\n");
     uart_flush();
     clock_init_pll();
     uart_reinit_133mhz();
-    uart_puts("System clock: 133 MHz\n");
+    klog("System clock: 133 MHz\n");
     spi_init(400000);
-    uart_puts("SPI0: initialised at 400 kHz\n");
+    klog("SPI0: initialised at 400 kHz\n");
 }
 
 void target_late_init(void)
 {
     int rc = sd_init();
     if (rc == 0)
-        uart_puts("SD: card initialised, mmcblk0 registered\n");
+        klog("SD: card initialised, mmcblk0 registered\n");
     else if (rc == -ENODEV)
-        uart_puts("SD: no card detected (skipping)\n");
-    else {
-        uart_puts("SD: init failed (err=");
-        uart_print_dec((uint32_t)(-(int)rc));
-        uart_puts(")\n");
-    }
+        klog("SD: no card detected (skipping)\n");
+    else
+        klogf("SD: init failed (err=%u)\n", (uint32_t)(-(int)rc));
 
     uart_flush();
     uart_init_irq();
-    uart_puts("UART: switched to interrupt-driven mode\n");
+    klog("UART: switched to interrupt-driven mode\n");
     mpu_init();
     /* core1_launch moved to kmain — must run after init gets PID 1 */
 }

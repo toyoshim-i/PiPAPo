@@ -8,7 +8,7 @@
  */
 
 #include "target/target.h"
-#include "drivers/uart.h"
+#include "klog.h"
 #include "mm/page.h"
 #include "proc/proc.h"
 #include "proc/sched.h"
@@ -63,21 +63,19 @@ void kmain(void)
 
     /* Bootstrap: mount romfs at / (needed to read /etc/fstab) */
     if (vfs_mount("/", &romfs_ops, MNT_RDONLY, __romfs_start) == 0)
-        uart_puts("VFS: romfs mounted at /\n");
+        klog("VFS: romfs mounted at /\n");
     else
-        uart_puts("VFS: romfs mount FAILED\n");
+        klog("VFS: romfs mount FAILED\n");
 
     /* Parse /etc/fstab and mount all entries */
     {
         fstab_entry_t fstab[FSTAB_MAX_ENTRIES];
         int nfstab = fstab_parse(fstab, FSTAB_MAX_ENTRIES);
         if (nfstab > 0) {
-            uart_puts("fstab: ");
-            uart_print_dec((uint32_t)nfstab);
-            uart_puts(" entries parsed\n");
+            klogf("fstab: %u entries parsed\n", (uint32_t)nfstab);
             fstab_mount_all(fstab, nfstab);
         } else {
-            uart_puts("fstab: no entries (fallback not implemented)\n");
+            klog("fstab: no entries (fallback not implemented)\n");
         }
     }
 
@@ -86,7 +84,7 @@ void kmain(void)
 
     /* Wire fd 0/1/2 to the UART tty driver */
     fd_stdio_init(&proc_table[0]);
-    uart_puts("FD: fd 0/1/2 wired to UART tty\n");
+    klog("FD: fd 0/1/2 wired to UART tty\n");
 
     /* Give the kernel init thread (thread 0) its own PSP stack page */
     proc_table[0].stack_page = page_alloc();
@@ -100,21 +98,16 @@ void kmain(void)
 
         int exec_err = do_execve(init, init_path, NULL);
         if (exec_err < 0) {
-            uart_puts("INIT: ");
-            uart_puts(init_path);
-            uart_puts(" failed, trying /bin/sh\n");
+            klogf("INIT: %s failed, trying /bin/sh\n", init_path);
             exec_err = do_execve(init, "/bin/sh", NULL);
         }
         if (exec_err == 0) {
             init->state = PROC_RUNNABLE;
             tty_set_fg_pgrp((int)init->pid);
-            uart_puts("INIT: pid=");
-            uart_print_dec(init->pid);
-            uart_puts(" loaded\n");
+            klogf("INIT: pid=%u loaded\n", init->pid);
         } else {
-            uart_puts("PANIC: no init or shell (err=");
-            uart_print_dec((uint32_t)(-(int)exec_err));
-            uart_puts(")\n");
+            klogf("PANIC: no init or shell (err=%u)\n",
+                  (uint32_t)(-(int)exec_err));
         }
     }
 
@@ -123,7 +116,7 @@ void kmain(void)
      * Self-stubs on QEMU (no SIO). */
     core1_launch(core1_sched_entry);
 
-    uart_puts("SCHED: starting scheduler\n");
+    klog("SCHED: starting scheduler\n");
     sched_start();
 
     /* Idle thread — wake on every interrupt, then sleep again. */

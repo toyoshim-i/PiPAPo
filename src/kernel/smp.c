@@ -30,6 +30,7 @@
 #include "mm/page.h"
 #include "mm/mpu.h"           /* mpu_init */
 #include "../drivers/uart.h"
+#include "klog.h"
 #include "hw/cortex_m0plus.h" /* SCB_SHPR2/3, SYST_*, priority masks */
 #include "config.h"
 #include <stdint.h>
@@ -108,12 +109,12 @@ void core1_sched_entry(void)
      * PendSV_Handler requires current_core[1] to be valid. */
     pcb_t *idle = proc_alloc();
     if (!idle) {
-        uart_puts("SMP: Core 1 idle alloc FAILED\n");
+        klog("SMP: Core 1 idle alloc FAILED\n");
         for (;;) __asm__ volatile("wfi");
     }
     idle->stack_page = page_alloc();
     if (!idle->stack_page) {
-        uart_puts("SMP: Core 1 stack alloc FAILED\n");
+        klog("SMP: Core 1 stack alloc FAILED\n");
         for (;;) __asm__ volatile("wfi");
     }
     idle->state = PROC_RUNNABLE;
@@ -138,7 +139,7 @@ void core1_sched_entry(void)
     SYST_CVR = 0u;
     SYST_CSR = SYST_CSR_ENABLE | SYST_CSR_TICKINT | SYST_CSR_CLKSOURCE;
 
-    uart_puts("SMP: Core 1 scheduler started\n");
+    klog("SMP: Core 1 scheduler started\n");
 
     /* 6. Enable interrupts and enter idle loop.
      * PendSV switches to a RUNNABLE process when one becomes available. */
@@ -191,7 +192,7 @@ void core1_launch(void (*entry)(void))
      * SCB.CPUID is in the System Control Space and is always accessible.
      */
     if ((SCB_CPUID & CPUID_PARTNO_MASK) != CPUID_PARTNO_M0P) {
-        uart_puts("SMP: not Cortex-M0+ — skipping Core 1 launch (QEMU)\n");
+        klog("SMP: not Cortex-M0+ — skipping Core 1 launch (QEMU)\n");
         return;
     }
 
@@ -256,5 +257,5 @@ void core1_launch(void (*entry)(void))
         }
     }
 
-    uart_puts("SMP: Core 1 launched\n");
+    klog("SMP: Core 1 launched\n");
 }

@@ -18,6 +18,7 @@
 #include "mpu.h"
 #include "../proc/proc.h"
 #include "../../drivers/uart.h"
+#include "../klog.h"
 #include <stdint.h>
 
 /* ── MPU register addresses (ARMv6-M §B3.5) ─────────────────────────────── */
@@ -102,7 +103,7 @@ static void mpu_set_region(uint32_t region, uint32_t base, uint32_t rasr)
 void mpu_init(void)
 {
     if (MPU_TYPE == 0u) {
-        uart_puts("MPU: not present — skipping (QEMU)\n");
+        klog("MPU: not present — skipping (QEMU)\n");
         return;
     }
 
@@ -134,7 +135,7 @@ void mpu_init(void)
     __asm__ volatile ("dsb\n isb" ::: "memory");
 
     mpu_present = 1;
-    uart_puts("MPU: 4 regions active (kernel/flash/stack/periph)\n");
+    klog("MPU: 4 regions active (kernel/flash/stack/periph)\n");
 }
 
 /* ── mpu_switch ──────────────────────────────────────────────────────────── */

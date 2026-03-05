@@ -25,7 +25,7 @@
  */
 
 #include "xip.h"
-#include "drivers/uart.h"
+#include "../klog.h"
 #include "hw/cortex_m0plus.h"
 #include <stdint.h>
 
@@ -103,24 +103,14 @@ uint32_t sram_bench(uint32_t n)
 
 void xip_verify(void)
 {
-    /* Address probe: on real hardware xip_add lives in XIP flash (0x10001xxx) */
-    uart_puts("XIP: xip_add @ ");
-    uart_print_hex32((uint32_t)(uintptr_t)xip_add);
-    uart_puts("\n");
+    klogf("XIP: xip_add @ %x\n", (uint32_t)(uintptr_t)xip_add);
 
-    /* Correctness check */
     int result = xip_add(3, 4);
-    uart_puts("XIP: xip_add(3,4) = ");
-    uart_putc('0' + (char)result);
-    uart_puts(result == 7 ? " OK\n" : " FAIL\n");
+    klogf("XIP: xip_add(3,4) = %u %s\n",
+          (uint32_t)result, result == 7 ? "OK" : "FAIL");
 
-    /* Benchmark: compare XIP flash vs SRAM execution speed */
     uint32_t flash_cyc = xip_bench(10000);
     uint32_t sram_cyc  = sram_bench(10000);
-    uart_puts("XIP: flash bench(10000) = ");
-    uart_print_hex32(flash_cyc);
-    uart_puts(" cycles\n");
-    uart_puts("XIP: sram  bench(10000) = ");
-    uart_print_hex32(sram_cyc);
-    uart_puts(" cycles\n");
+    klogf("XIP: flash bench(10000) = %x cycles\n", flash_cyc);
+    klogf("XIP: sram  bench(10000) = %x cycles\n", sram_cyc);
 }
