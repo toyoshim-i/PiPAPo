@@ -56,7 +56,9 @@ void target_late_init(void)
             uart_puts("BLKDEV: page_alloc failed\n");
         }
     }
-    /* No IRQ UART switch, no MPU, no Core 1 on QEMU */
+    /* Enable UART RX interrupts so tty_rx_notify() wakes blocked readers */
+    uart_init_irq();
+    /* No MPU, no Core 1 on QEMU */
 }
 
 void target_post_mount(void)

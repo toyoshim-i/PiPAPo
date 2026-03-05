@@ -93,10 +93,8 @@ PendSV_Handler:
 
     pop  {r2, r3}             @ r2 = &current_core[core_id], r3 = EXC_RETURN
 
-    @ Update current_core[core_id] and legacy `current` (for svc.S until Step 9).
+    @ Update current_core[core_id] and restore EXC_RETURN.
     str  r0, [r2]             @ current_core[core_id] = next PCB
-    ldr  r1, =current
-    str  r0, [r1]             @ current = next (removed after Step 9)
     mov  lr, r3               @ restore EXC_RETURN
 
     @ ── Restore incoming context ───────────────────────────────────────

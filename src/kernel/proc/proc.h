@@ -19,6 +19,7 @@
 
 #include <stdint.h>
 #include "config.h"
+#include "../spinlock.h"   /* core_id() — needed by #define current */
 
 /* Forward declaration — struct file is defined in fd/file.h (Step 10).
  * We only store pointers here so the incomplete type is sufficient. */
@@ -122,15 +123,14 @@ typedef struct pcb {
  * All entries live in BSS and are zero-initialised by startup.S. */
 extern pcb_t  proc_table[PROC_MAX];
 
-/* Pointer to the currently executing PCB.  Always non-NULL after proc_init().
- * After Steps 8-9 convert assembly, this becomes:
- *   #define current (current_core[core_id()])
- * For now, kept as a real global for switch.S/svc.S literal pool references. */
-extern pcb_t *current;
-
-/* Per-core current process.  current_core[core_id()] is the authoritative
- * current pointer.  `current` is kept as legacy alias until Step 9. */
+/* Per-core current process pointer.  Indexed by core_id() (0 or 1).
+ * Assembly (switch.S, svc.S) uses core_id_reg indirection to index this. */
 extern pcb_t *current_core[2];
+
+/* `current` — pointer to the PCB of the process executing on this core.
+ * Expands to current_core[core_id()]: single MMIO read on RP2040, zero on QEMU.
+ * Works as both lvalue and rvalue: `current->pid` and `current = p` both work. */
+#define current (current_core[core_id()])
 
 /* Indirect pointer to core-ID register, used by assembly (switch.S, svc.S).
  * Points to SIO_CPUID (0xD0000000) on RP2040, or a zero variable on QEMU.

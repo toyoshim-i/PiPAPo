@@ -25,16 +25,19 @@
 @
 @ Post-dispatch checks (in priority order):
 @
-@   1. exec_pending — sys_execve loaded a new process image.  Do a full
-@      PendSV-style context restore from current->sp so r4-r11 (including
-@      r9/GOT base) are correct for the new program.
+@   1. exec_pending[core_id] — sys_execve loaded a new process image.
+@      Do a full PendSV-style context restore from current->sp so r4-r11
+@      (including r9/GOT base) are correct for the new program.
 @
 @   2. Process not RUNNABLE — the syscall blocked (PROC_BLOCKED/ZOMBIE/
 @      SLEEPING).  sched_yield() already pended PendSV, which will
 @      tail-chain after our exception return and perform the context
-@      switch.  If svc_restart is set (e.g. by sys_waitpid), we restore
-@      the original frame[0] and adjust the stacked PC back by 2 so the
-@      SVC re-executes when the process is rescheduled.
+@      switch.  If svc_restart[core_id] is set (e.g. by sys_waitpid),
+@      we restore the original frame[0] and adjust the stacked PC back
+@      by 2 so the SVC re-executes when the process is rescheduled.
+@
+@ All per-core state (exec_pending, svc_restart, svc_saved_a0, current_core)
+@ is indexed by core_id via the core_id_reg indirect pointer.
 @ =============================================================================
 
 .equ PCB_SP_OFFSET,    32      @ offsetof(pcb_t, sp) — see proc.h
@@ -50,36 +53,47 @@
 .thumb_func
 .global SVC_Handler
 SVC_Handler:
-    @ --- Capture r4, r5, r7 before any compiler prologue can clobber ---
-    push  {r4, r5, r7, lr}  @ [sp]   = r4 (5th arg)
-                            @ [sp+4] = r5 (6th arg)
-                            @ [sp+8] = r7 (syscall nr)
-                            @ [sp+12]= lr (EXC_RETURN — 0xFFFFFFFD)
+    @ --- Capture r4, r5, r6, r7 and EXC_RETURN before any clobber ---
+    @ r6 is saved/restored because we use it for core_byte_offset.
+    @ 6 words = 24 bytes keeps MSP 8-byte aligned for C calls.
+    push  {r3, r4, r5, r6, r7, lr}
+    @ Stack: [sp+0]=pad, [sp+4]=r4, [sp+8]=r5, [sp+12]=r6, [sp+16]=r7, [sp+20]=lr
+
+    @ --- Compute core_byte_offset into r6 (preserved across C calls) ---
+    @ Indirect pointer: core_id_reg → SIO_CPUID (RP2040) or zero (QEMU).
+    ldr   r6, =core_id_reg
+    ldr   r6, [r6]             @ r6 = pointer to core-ID source
+    ldr   r6, [r6]             @ r6 = core_id (0 or 1)
+    lsls  r6, r6, #2           @ r6 = byte offset (0 or 4)
 
     @ --- Save original frame[0] for potential syscall restart ---
-    mrs   r0, psp           @ r0 = frame pointer on PSP
-    ldr   r2, [r0]          @ r2 = original frame[0] (a0)
+    mrs   r0, psp              @ r0 = frame pointer on PSP
+    ldr   r2, [r0]             @ r2 = original frame[0] (a0)
     ldr   r3, =svc_saved_a0
-    str   r2, [r3]          @ svc_saved_a0 = original a0
+    adds  r3, r3, r6
+    str   r2, [r3]             @ svc_saved_a0[core_id] = original a0
 
     @ --- Build argument registers for syscall_dispatch(frame, nr, a4, a5) ---
-    mrs   r0, psp            @ r0 = frame (re-read PSP — r0 was used above)
-    ldr   r1, [sp, #8]      @ r1 = saved r7 = syscall number
-    ldr   r2, [sp, #0]      @ r2 = saved r4 = 5th arg
-    ldr   r3, [sp, #4]      @ r3 = saved r5 = 6th arg
+    mrs   r0, psp              @ r0 = frame
+    ldr   r1, [sp, #16]       @ r1 = saved r7 = syscall number
+    ldr   r2, [sp, #4]        @ r2 = saved r4 = 5th arg
+    ldr   r3, [sp, #8]        @ r3 = saved r5 = 6th arg
 
     @ --- Dispatch ---
-    bl    syscall_dispatch   @ writes return value into frame[0] (stacked r0)
+    bl    syscall_dispatch     @ writes return value into frame[0] (stacked r0)
 
-    @ --- Check 1: exec_pending (sys_execve loaded new image) ---
+    @ --- Check 1: exec_pending[core_id] (sys_execve loaded new image) ---
+    @ r6 is callee-saved, still holds core_byte_offset after bl.
     ldr   r0, =exec_pending
+    adds  r0, r0, r6
     ldr   r1, [r0]
     cmp   r1, #0
     bne   .Lexec_restore
 
     @ --- Check 2: process state — did the syscall block/exit? ---
-    ldr   r0, =current
-    ldr   r0, [r0]                  @ r0 = current PCB
+    ldr   r0, =current_core
+    adds  r0, r0, r6
+    ldr   r0, [r0]                    @ r0 = current PCB
     ldr   r1, [r0, #PCB_STATE_OFFSET] @ r1 = current->state
     cmp   r1, #PROC_RUNNABLE
     bne   .Lcheck_restart
@@ -94,20 +108,22 @@ SVC_Handler:
     @ will tail-chain after our exception return and switch context.
     @ Check if we need to restart the syscall on next schedule.
     ldr   r0, =svc_restart
+    adds  r0, r0, r6
     ldr   r1, [r0]
     cmp   r1, #0
-    beq   .Lnormal_return           @ no restart — just return
+    beq   .Lnormal_return             @ no restart — just return
 
     @ --- Syscall restart: restore frame[0] and adjust PC-2 ---
     movs  r1, #0
-    str   r1, [r0]                  @ svc_restart = 0
+    str   r1, [r0]                    @ svc_restart[core_id] = 0
 
     mrs   r0, psp
     ldr   r1, =svc_saved_a0
+    adds  r1, r1, r6
     ldr   r1, [r1]
-    str   r1, [r0, #0]             @ frame[0] = original a0 (pid arg etc.)
-    ldr   r1, [r0, #24]            @ frame[6] = stacked PC
-    subs  r1, #2                   @ PC -= 2 (back to "svc 0" instruction)
+    str   r1, [r0, #0]               @ frame[0] = original a0 (pid arg etc.)
+    ldr   r1, [r0, #24]              @ frame[6] = stacked PC
+    subs  r1, #2                     @ PC -= 2 (back to "svc 0" instruction)
     str   r1, [r0, #24]
 
     @ Fall through to normal return — PendSV tail-chains and saves
@@ -115,20 +131,23 @@ SVC_Handler:
 
 .Lnormal_return:
     @ --- Normal return from exception ---
-    pop   {r4, r5, r7, pc}  @ restore callee-saved r4, r5, r7
-                             @ pc  = EXC_RETURN → exception return to Thread mode
-                             @ If PendSV pending, it tail-chains immediately.
+    pop   {r3, r4, r5, r6, r7, pc}
+    @ Restore callee-saved r4, r5, r6, r7 (r3 is padding).
+    @ pc = EXC_RETURN → exception return to Thread mode.
+    @ If PendSV pending, it tail-chains immediately.
 
 .Lexec_restore:
     @ --- sys_execve: full context restore from new process image ---
+    @ r0 = &exec_pending[core_id] (from check above)
     @ Clear the flag
     movs  r1, #0
-    str   r1, [r0]
+    str   r1, [r0]                    @ exec_pending[core_id] = 0
 
     @ Load current->sp (points at the new SW frame built by do_execve)
-    ldr   r0, =current
-    ldr   r0, [r0]           @ r0 = current PCB
-    ldr   r0, [r0, #PCB_SP_OFFSET]  @ r0 = current->sp (SW frame base)
+    ldr   r0, =current_core
+    adds  r0, r0, r6
+    ldr   r0, [r0]                    @ r0 = current PCB
+    ldr   r0, [r0, #PCB_SP_OFFSET]   @ r0 = current->sp (SW frame base)
 
     @ Restore r4-r11 from the SW frame (same code as PendSV_Handler)
     ldmia r0!, {r4-r7}       @ restore r4-r7; r0 advances to r8 area
@@ -143,9 +162,9 @@ SVC_Handler:
     @ Set PSP to the new HW exception frame
     msr   psp, r0             @ PSP = SW frame + 32 = HW frame base
 
-    @ Return from exception — skip saved {r4,r5,r7} on MSP since we just
-    @ loaded the correct r4-r11 from the new process image.  Only pop lr→pc.
-    add   sp, sp, #12         @ skip stacked r4, r5, r7
+    @ Return from exception — skip saved {r3,r4,r5,r6,r7} on MSP since we
+    @ just loaded the correct r4-r11 from the new process image.  Only pop lr→pc.
+    add   sp, sp, #20         @ skip stacked r3, r4, r5, r6, r7
     pop   {pc}                @ pc = EXC_RETURN → exception return
 
     @ Literal pool

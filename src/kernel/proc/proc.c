@@ -29,7 +29,6 @@ _Static_assert(offsetof(pcb_t, sp) == PCB_SP_OFFSET,
 /* ── Globals ─────────────────────────────────────────────────────────────── */
 
 pcb_t  proc_table[PROC_MAX];
-pcb_t *current = NULL;
 pcb_t *current_core[2] = { NULL, NULL };
 
 /* Indirect core-ID register pointer for assembly (switch.S, svc.S).
@@ -62,7 +61,6 @@ void proc_init(void)
     /* comm is set to "init" once do_execve() runs; "kernel" for now */
     __builtin_memcpy(proc_table[0].comm, "kernel", 7);
 
-    current = &proc_table[0];
     current_core[0] = &proc_table[0];
 
     /* Point assembly's core_id_reg at the SIO_CPUID register on RP2040.

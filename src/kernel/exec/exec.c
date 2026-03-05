@@ -346,7 +346,6 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
     fd_stdio_init(p);
 
     /* ── 12. Set working directory ─────────────────────────────────────── */
-    extern pcb_t *current;
     if (current)
         memcpy(p->cwd, current->cwd, sizeof(p->cwd));
     else
