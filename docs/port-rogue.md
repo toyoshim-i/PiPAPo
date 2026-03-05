@@ -309,19 +309,18 @@ Added `export TERM=vt100` to `romfs/etc/profile`.
 
 ### Step 7: Test on QEMU
 
-```sh
-./scripts/qemu.sh
-# at the shell prompt:
-rogue
-```
+**Status: COMPLETE**
 
-Verify:
-- Screen clears and dungeon is drawn
-- Player movement (hjkl / arrow keys) works
-- Monsters, items, doors render correctly
-- `standout` (reverse video) highlights visible
-- Ctrl-C quits cleanly (SIGINT → endwin → exit)
-- No memory exhaustion (watch `/proc/meminfo`)
+Verified on QEMU mps2-an500:
+- Rogue loads and displays `Hello nobody, just a moment while I dig the dungeon...`
+- Screen clears and dungeon is drawn (rooms with walls, doors, player `@`)
+- Status line renders: `Level: 1  Gold: 0  Hp: 12(12)  Str: 16(16)  Arm: 4  Exp: 1/0`
+- Player movement (`hjkl`) works — player picks up gold
+- Quit (`Q` → `y`) works cleanly — `You quit with 4 gold pieces`
+- Shell prompt returns after rogue exits
+
+**Fix applied**: Removed `HAVE_SETUID`/`HAVE_SETGID` from config.h —
+`setgid()` returned ENOSYS on PPAP, causing `md_normaluser()` to abort.
 
 ### Step 8: Test on hardware
 

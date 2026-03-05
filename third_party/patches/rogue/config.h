@@ -22,8 +22,8 @@
 /* Functions */
 #define HAVE_GETUID 1
 #define HAVE_GETGID 1
-#define HAVE_SETUID 1
-#define HAVE_SETGID 1
+/* HAVE_SETUID / HAVE_SETGID — not defined; PPAP returns ENOSYS.
+ * md_normaluser() falls to if(0) no-ops, which is fine (single-user). */
 #define HAVE_ERASECHAR 1
 #define HAVE_KILLCHAR 1
 
