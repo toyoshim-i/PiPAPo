@@ -134,7 +134,9 @@ static int gen_meminfo(char *buf, int bufsiz)
     pos = fmt_append_u32(buf, pos, bufsiz, free_kb);
     pos = fmt_append(buf, pos, bufsiz, " kB\nPageSize:   ");
     pos = fmt_append_u32(buf, pos, bufsiz, PAGE_SIZE);
-    pos = fmt_append(buf, pos, bufsiz, " B\n");
+    pos = fmt_append(buf, pos, bufsiz, " B\nOomCount:   ");
+    pos = fmt_append_u32(buf, pos, bufsiz, oom_count);
+    pos = fmt_append(buf, pos, bufsiz, "\n");
     return pos;
 }
 

@@ -197,7 +197,7 @@ Check `truncate()` return value; propagate error.
 
 Reduce symlink recursion limit from 8 to 4.  Eliminate one 128-byte buffer.
 
-### ☐ Step 17 — procfs OOM count in /proc/meminfo
+### ✓ Step 17 — procfs OOM count in /proc/meminfo
 
 **File:** `src/kernel/fs/procfs.c`
 
