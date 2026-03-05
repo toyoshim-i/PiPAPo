@@ -48,6 +48,28 @@ static inline uint32_t core_id(void)
     return SIO_CPUID;
 }
 
+/*
+ * Release all 32 hardware spinlocks.
+ *
+ * Must be called once at early boot before any spin_lock_irqsave().
+ * On RP2040, the SIO block is NOT reset by a Core 0 reset (e.g. GDB
+ * reload + `monitor reset halt`).  If the previous session was
+ * interrupted while a spinlock was held, the lock stays claimed and
+ * the first acquire in the new session hangs forever.
+ *
+ * The pico-sdk does the same in runtime_init → spin_locks_reset().
+ */
+static inline void spin_locks_reset(void)
+{
+    if (!spin_have_hw())
+        return;
+    for (uint32_t i = 0; i < 32u; i++) {
+        volatile uint32_t *lock =
+            (volatile uint32_t *)(SIO_SPINLOCK_BASE + i * 4u);
+        *lock = 0u;   /* write any value to release */
+    }
+}
+
 static inline uint32_t spin_lock_irqsave(uint32_t lock_num)
 {
     uint32_t saved;

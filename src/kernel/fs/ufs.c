@@ -23,6 +23,7 @@
 #include "ufs_format.h"
 #include "../vfs/vfs.h"
 #include "../blkdev/blkdev.h"
+#include "../spinlock.h"   /* SPIN_FS */
 #include "drivers/uart.h"
 #include "../errno.h"
 #include <stddef.h>
@@ -50,7 +51,8 @@ typedef struct {
 
 static ufs_priv_t ufs_priv;
 
-/* ── Sector I/O buffer (single-threaded kernel) ──────────────────────── */
+/* ── Sector I/O buffer ────────────────────────────────────────────────── */
+/* Protected by SPIN_FS for dual-core safety — acquired at VFS entry points. */
 
 static uint8_t ufs_buf[BLKDEV_SECTOR_SIZE];
 
@@ -1279,19 +1281,123 @@ static int ufs_statfs(mount_entry_t *mnt, struct kernel_statfs *buf)
     return 0;
 }
 
+/* ── SPIN_FS wrappers ─────────────────────────────────────────────────── */
+/*
+ * Each VFS entry point acquires SPIN_FS to serialize access to ufs_buf.
+ * ufs_statfs uses only cached values, but wrapped for consistency.
+ */
+
+static int ufs_mount_locked(mount_entry_t *mnt, const void *dev_data)
+{
+    uint32_t s = spin_lock_irqsave(SPIN_FS);
+    int r = ufs_mount(mnt, dev_data);
+    spin_unlock_irqrestore(SPIN_FS, s);
+    return r;
+}
+
+static int ufs_lookup_locked(vnode_t *dir, const char *name, vnode_t **result)
+{
+    uint32_t s = spin_lock_irqsave(SPIN_FS);
+    int r = ufs_lookup(dir, name, result);
+    spin_unlock_irqrestore(SPIN_FS, s);
+    return r;
+}
+
+static long ufs_read_locked(vnode_t *vn, void *buf, size_t n, uint32_t off)
+{
+    uint32_t s = spin_lock_irqsave(SPIN_FS);
+    long r = ufs_read(vn, buf, n, off);
+    spin_unlock_irqrestore(SPIN_FS, s);
+    return r;
+}
+
+static long ufs_write_locked(vnode_t *vn, const void *buf, size_t n, uint32_t off)
+{
+    uint32_t s = spin_lock_irqsave(SPIN_FS);
+    long r = ufs_write(vn, buf, n, off);
+    spin_unlock_irqrestore(SPIN_FS, s);
+    return r;
+}
+
+static int ufs_readdir_locked(vnode_t *dir, struct dirent *entries,
+                              size_t max_entries, uint32_t *cookie)
+{
+    uint32_t s = spin_lock_irqsave(SPIN_FS);
+    int r = ufs_readdir(dir, entries, max_entries, cookie);
+    spin_unlock_irqrestore(SPIN_FS, s);
+    return r;
+}
+
+static int ufs_stat_locked(vnode_t *vn, struct stat *st)
+{
+    uint32_t s = spin_lock_irqsave(SPIN_FS);
+    int r = ufs_stat(vn, st);
+    spin_unlock_irqrestore(SPIN_FS, s);
+    return r;
+}
+
+static long ufs_readlink_locked(vnode_t *vn, char *buf, size_t bufsiz)
+{
+    uint32_t s = spin_lock_irqsave(SPIN_FS);
+    long r = ufs_readlink(vn, buf, bufsiz);
+    spin_unlock_irqrestore(SPIN_FS, s);
+    return r;
+}
+
+static int ufs_create_locked(vnode_t *dir, const char *name, uint32_t mode,
+                             vnode_t **result)
+{
+    uint32_t s = spin_lock_irqsave(SPIN_FS);
+    int r = ufs_create(dir, name, mode, result);
+    spin_unlock_irqrestore(SPIN_FS, s);
+    return r;
+}
+
+static int ufs_mkdir_locked(vnode_t *dir, const char *name, uint32_t mode)
+{
+    uint32_t s = spin_lock_irqsave(SPIN_FS);
+    int r = ufs_mkdir(dir, name, mode);
+    spin_unlock_irqrestore(SPIN_FS, s);
+    return r;
+}
+
+static int ufs_unlink_locked(vnode_t *dir, const char *name)
+{
+    uint32_t s = spin_lock_irqsave(SPIN_FS);
+    int r = ufs_unlink(dir, name);
+    spin_unlock_irqrestore(SPIN_FS, s);
+    return r;
+}
+
+static int ufs_truncate_locked(vnode_t *vn, uint32_t length)
+{
+    uint32_t s = spin_lock_irqsave(SPIN_FS);
+    int r = ufs_truncate(vn, length);
+    spin_unlock_irqrestore(SPIN_FS, s);
+    return r;
+}
+
+static int ufs_statfs_locked(mount_entry_t *mnt, struct kernel_statfs *buf)
+{
+    uint32_t s = spin_lock_irqsave(SPIN_FS);
+    int r = ufs_statfs(mnt, buf);
+    spin_unlock_irqrestore(SPIN_FS, s);
+    return r;
+}
+
 /* ── Operations table ─────────────────────────────────────────────────── */
 
 const vfs_ops_t ufs_ops = {
-    .mount    = ufs_mount,
-    .lookup   = ufs_lookup,
-    .read     = ufs_read,
-    .write    = ufs_write,
-    .readdir  = ufs_readdir,
-    .stat     = ufs_stat,
-    .readlink = ufs_readlink,
-    .create   = ufs_create,
-    .mkdir    = ufs_mkdir,
-    .unlink   = ufs_unlink,
-    .truncate = ufs_truncate,
-    .statfs   = ufs_statfs,
+    .mount    = ufs_mount_locked,
+    .lookup   = ufs_lookup_locked,
+    .read     = ufs_read_locked,
+    .write    = ufs_write_locked,
+    .readdir  = ufs_readdir_locked,
+    .stat     = ufs_stat_locked,
+    .readlink = ufs_readlink_locked,
+    .create   = ufs_create_locked,
+    .mkdir    = ufs_mkdir_locked,
+    .unlink   = ufs_unlink_locked,
+    .truncate = ufs_truncate_locked,
+    .statfs   = ufs_statfs_locked,
 };

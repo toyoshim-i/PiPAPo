@@ -23,6 +23,7 @@
 #include "blkdev/loopback.h"
 #endif
 #include "exec/exec.h"
+#include "spinlock.h"
 #include "errno.h"
 
 /* Linker-provided romfs image location in flash */
@@ -33,6 +34,10 @@ extern const uint8_t __romfs_end[];
 
 void kmain(void)
 {
+    /* Release any stale hardware spinlocks left over from a previous
+     * session (e.g. GDB reload).  Must happen before any spinlock use. */
+    spin_locks_reset();
+
     /* Target-specific early init: UART console, clock PLL, SPI bus */
     target_early_init();
 

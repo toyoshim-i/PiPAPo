@@ -16,6 +16,7 @@
 #include "vfat_format.h"
 #include "../vfs/vfs.h"
 #include "../blkdev/blkdev.h"
+#include "../spinlock.h"   /* SPIN_FS */
 #include "../errno.h"
 #include "config.h"
 #include <stddef.h>
@@ -23,7 +24,7 @@
 /* ── Sector buffer (on stack or static) ─────────────────────────────────── */
 
 /* We use a static sector buffer to avoid 512-byte stack allocations.
- * Not re-entrant, but the kernel is single-threaded for FS operations. */
+ * Protected by SPIN_FS for dual-core safety — acquired at VFS entry points. */
 static uint8_t sector_buf[512];
 
 /* ── Superblock storage ─────────────────────────────────────────────────── */
@@ -1015,19 +1016,99 @@ static int vfat_statfs(mount_entry_t *mnt, struct kernel_statfs *buf)
     return 0;
 }
 
+/* ── SPIN_FS wrappers ──────────────────────────────────────────────────── */
+/*
+ * Each VFS entry point acquires SPIN_FS to serialize access to sector_buf.
+ * vfat_stat does not use sector_buf, so no wrapper needed.
+ */
+
+static int vfat_mount_locked(mount_entry_t *mnt, const void *dev_data)
+{
+    uint32_t s = spin_lock_irqsave(SPIN_FS);
+    int r = vfat_mount(mnt, dev_data);
+    spin_unlock_irqrestore(SPIN_FS, s);
+    return r;
+}
+
+static int vfat_lookup_locked(vnode_t *dir, const char *name, vnode_t **result)
+{
+    uint32_t s = spin_lock_irqsave(SPIN_FS);
+    int r = vfat_lookup(dir, name, result);
+    spin_unlock_irqrestore(SPIN_FS, s);
+    return r;
+}
+
+static long vfat_read_locked(vnode_t *vn, void *buf, size_t n, uint32_t off)
+{
+    uint32_t s = spin_lock_irqsave(SPIN_FS);
+    long r = vfat_read(vn, buf, n, off);
+    spin_unlock_irqrestore(SPIN_FS, s);
+    return r;
+}
+
+static long vfat_write_locked(vnode_t *vn, const void *buf, size_t n, uint32_t off)
+{
+    uint32_t s = spin_lock_irqsave(SPIN_FS);
+    long r = vfat_write(vn, buf, n, off);
+    spin_unlock_irqrestore(SPIN_FS, s);
+    return r;
+}
+
+static int vfat_readdir_locked(vnode_t *dir, struct dirent *entries,
+                               size_t max_entries, uint32_t *cookie)
+{
+    uint32_t s = spin_lock_irqsave(SPIN_FS);
+    int r = vfat_readdir(dir, entries, max_entries, cookie);
+    spin_unlock_irqrestore(SPIN_FS, s);
+    return r;
+}
+
+static int vfat_create_locked(vnode_t *dir, const char *name, uint32_t mode,
+                              vnode_t **result)
+{
+    uint32_t s = spin_lock_irqsave(SPIN_FS);
+    int r = vfat_create(dir, name, mode, result);
+    spin_unlock_irqrestore(SPIN_FS, s);
+    return r;
+}
+
+static int vfat_mkdir_locked(vnode_t *dir, const char *name, uint32_t mode)
+{
+    uint32_t s = spin_lock_irqsave(SPIN_FS);
+    int r = vfat_mkdir(dir, name, mode);
+    spin_unlock_irqrestore(SPIN_FS, s);
+    return r;
+}
+
+static int vfat_unlink_locked(vnode_t *dir, const char *name)
+{
+    uint32_t s = spin_lock_irqsave(SPIN_FS);
+    int r = vfat_unlink(dir, name);
+    spin_unlock_irqrestore(SPIN_FS, s);
+    return r;
+}
+
+static int vfat_statfs_locked(mount_entry_t *mnt, struct kernel_statfs *buf)
+{
+    uint32_t s = spin_lock_irqsave(SPIN_FS);
+    int r = vfat_statfs(mnt, buf);
+    spin_unlock_irqrestore(SPIN_FS, s);
+    return r;
+}
+
 /* ── Operations table ───────────────────────────────────────────────────── */
 
 const vfs_ops_t vfat_ops = {
-    .mount    = vfat_mount,
-    .lookup   = vfat_lookup,
-    .read     = vfat_read,
-    .write    = vfat_write,
-    .readdir  = vfat_readdir,
+    .mount    = vfat_mount_locked,
+    .lookup   = vfat_lookup_locked,
+    .read     = vfat_read_locked,
+    .write    = vfat_write_locked,
+    .readdir  = vfat_readdir_locked,
     .stat     = vfat_stat,
     .readlink = NULL,
-    .create   = vfat_create,
-    .mkdir    = vfat_mkdir,
-    .unlink   = vfat_unlink,
+    .create   = vfat_create_locked,
+    .mkdir    = vfat_mkdir_locked,
+    .unlink   = vfat_unlink_locked,
     .truncate = NULL,
-    .statfs   = vfat_statfs,
+    .statfs   = vfat_statfs_locked,
 };

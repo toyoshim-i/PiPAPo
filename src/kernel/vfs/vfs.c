@@ -142,19 +142,27 @@ int vfs_mount(const char *path, const vfs_ops_t *ops, uint8_t flags,
     mnt->root     = NULL;
     mnt->sb_priv  = NULL;
 
+    /* Release SPIN_VFS before calling the FS mount callback.
+     * The callback may call vnode_alloc() which also acquires SPIN_VFS —
+     * RP2040 hardware spinlocks are NOT re-entrant (same-core re-acquire
+     * returns 0 → infinite spin).  The slot is safe: it's not yet active,
+     * so no other code path will find or modify it. */
+    spin_unlock_irqrestore(SPIN_VFS, saved);
+
     /* Let the FS driver initialise */
     int err = 0;
     if (ops->mount)
         err = ops->mount(mnt, dev_data);
     if (err) {
+        uint32_t s2 = spin_lock_irqsave(SPIN_VFS);
         mnt->active = 0;
-        spin_unlock_irqrestore(SPIN_VFS, saved);
+        spin_unlock_irqrestore(SPIN_VFS, s2);
         return err;
     }
 
+    saved = spin_lock_irqsave(SPIN_VFS);
     mnt->active = 1;
     mount_count++;
-
     spin_unlock_irqrestore(SPIN_VFS, saved);
 
     uart_puts("VFS: mounted at ");

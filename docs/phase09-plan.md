@@ -70,76 +70,56 @@ disable/enable), but with no contention the spin never loops.
 
 ## Week 1 — Hardware Spinlock API + Shared State Protection
 
-### ☐ Step 1 — Hardware spinlock API
+### ✓ Step 1 — Hardware spinlock API
 
 **File:** NEW `src/kernel/spinlock.h`
 
-```c
-#include <stdint.h>
+QEMU fix: `spin_have_hw()` checks SCB.CPUID (Cortex-M0+ PARTNO = 0xC60) to
+detect RP2040 vs QEMU (mps2-an500/Cortex-M3).  Hardware lock acquire/release
+is skipped on non-M0+ targets — IRQ disable alone is sufficient for
+single-core.
 
-#define SIO_BASE            0xD0000000u
-#define SIO_CPUID           (*(volatile uint32_t *)(SIO_BASE + 0x000u))
-#define SIO_SPINLOCK_BASE   (SIO_BASE + 0x100u)
+Boot fix: `spin_locks_reset()` writes all 32 SIO spinlock registers at early
+boot (called from `kmain()` before any init).  On RP2040, the SIO block is NOT
+reset by a Core 0 reset (e.g. GDB reload + `monitor reset halt`), so stale
+locks from a previous session would cause the first acquire to hang forever.
+The pico-sdk does the same in `runtime_init → spin_locks_reset()`.
 
-enum {
-    SPIN_PAGE = 0,
-    SPIN_PROC = 1,
-    SPIN_VFS  = 2,
-    SPIN_FS   = 3,
-};
-
-static inline uint32_t core_id(void) {
-    return SIO_CPUID;
-}
-
-static inline uint32_t spin_lock_irqsave(uint32_t lock_num) {
-    uint32_t saved;
-    __asm__ volatile ("mrs %0, primask" : "=r"(saved));
-    __asm__ volatile ("cpsid i");
-    volatile uint32_t *lock =
-        (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
-    while (!*lock)
-        ;
-    return saved;
-}
-
-static inline void spin_unlock_irqrestore(uint32_t lock_num, uint32_t saved) {
-    volatile uint32_t *lock =
-        (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
-    *lock = 0u;
-    __asm__ volatile ("msr primask, %0" :: "r"(saved));
-}
-```
-
-### ☐ Step 2 — Protect page allocator with SPIN_PAGE
+### ✓ Step 2 — Protect page allocator with SPIN_PAGE
 
 **File:** `src/kernel/mm/page.c`
 
-Wrap `page_alloc()` and `page_free()` with
-`spin_lock_irqsave(SPIN_PAGE)` / `spin_unlock_irqrestore(SPIN_PAGE, saved)`.
+Wrapped `page_alloc()`, `page_alloc_at()`, `page_free()`, `page_free_count()`
+with `spin_lock_irqsave(SPIN_PAGE)` / `spin_unlock_irqrestore(SPIN_PAGE, saved)`.
 
-### ☐ Step 3 — Protect proc_table with SPIN_PROC
+### ✓ Step 3 — Protect proc_table with SPIN_PROC
 
 **Files:** `src/kernel/proc/proc.c`, `src/kernel/proc/sched.c`
 
 - `proc_alloc()`: SPIN_PROC around proc_table scan + `next_pid++`
 - `proc_free()`: SPIN_PROC around state = PROC_FREE
 - `sched_next()`: SPIN_PROC around runnable scan
-- `sched_wakeup()`: SPIN_PROC around state transitions
+- `sched_wakeup()`: SPIN_PROC around state transitions; PENDSVSET moved outside lock
 
-### ☐ Step 4 — Protect VFS with SPIN_VFS
+### ✓ Step 4 — Protect VFS with SPIN_VFS
 
 **File:** `src/kernel/vfs/vfs.c`
 
-- `vnode_alloc()`, `vnode_put()`: SPIN_VFS around vnode pool scan
-- `vfs_mount()`, `vfs_umount()`: SPIN_VFS around mount table
+- `vnode_alloc()`, `vnode_ref()`, `vnode_put()`: SPIN_VFS around pool/refcnt ops
+- `vfs_mount()`: SPIN_VFS around mount table; **releases lock before calling
+  ops->mount()** to avoid re-entrant deadlock (RP2040 hardware spinlocks are
+  NOT re-entrant — same-core re-acquire returns 0 → infinite spin)
+- `vfs_umount()`: SPIN_VFS with inlined vnode_put logic (direct kmem_free)
+  to avoid recursive SPIN_VFS acquire
 
-### ☐ Step 5 — Protect FS I/O with SPIN_FS
+### ✓ Step 5 — Protect FS I/O with SPIN_FS
 
 **Files:** `src/kernel/fs/vfat.c`, `src/kernel/fs/ufs.c`
 
-Acquire SPIN_FS at entry of each vfat/ufs operation that uses the static
-sector buffer, release on exit.
+Used `_locked()` wrapper pattern: each VFS operation gets a thin wrapper that
+acquires SPIN_FS, calls the original function, then releases.  The wrappers
+are registered in the `vfs_ops_t` table.  `vfat_stat` left unwrapped (no
+sector_buf access).
 
 ---
 
@@ -246,7 +226,8 @@ processes.  Verify no deadlocks during concurrent fork/exec.
 
 | File | Change |
 |------|--------|
-| NEW `src/kernel/spinlock.h` | Hardware spinlock API |
+| NEW `src/kernel/spinlock.h` | Hardware spinlock API (QEMU detect + boot reset) |
+| `src/kernel/main.c` | Call `spin_locks_reset()` at start of `kmain()` |
 | `src/kernel/proc/proc.h` | `current_core[2]`, `#define current`, `running_on_core` |
 | `src/kernel/proc/proc.c` | Define `current_core[2]`, init running_on_core |
 | `src/kernel/proc/sched.c` | SPIN_PROC in sched_next, skip other-core, per-core tick |
@@ -271,3 +252,5 @@ processes.  Verify no deadlocks during concurrent fork/exec.
 | Core 1 SysTick misconfigured | Low | Same SYSTICK_RELOAD; verified in ktest |
 | QEMU regression from per-core changes | Low | core_id()=0 on QEMU; current_core[0] = old behavior |
 | FS throughput degraded by SPIN_FS | Low | SD card SPI is the bottleneck |
+| Stale spinlocks after GDB reload | **Fixed** | `spin_locks_reset()` at boot; SIO block not reset by Core 0 reset |
+| Re-entrant SPIN_VFS in vfs_mount | **Fixed** | Release lock before `ops->mount()` callback |
