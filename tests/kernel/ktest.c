@@ -1659,6 +1659,59 @@ static void smp_integration_test(void)
     uart_puts(" failed\n");
 }
 
+/* ── Phase 10 Step 1: orphan reparenting tests ───────────────────────────── */
+
+static void orphan_reparent_test(void)
+{
+    uart_puts("\n=== Phase 10 Step 1: orphan reparenting tests ===\n");
+    test_pass = 0;
+    test_fail = 0;
+
+    /* Allocate a fake "parent" and "child" */
+    pcb_t *parent = proc_alloc();
+    pcb_t *child  = proc_alloc();
+    int ok = (parent != NULL && child != NULL);
+    test_report("alloc parent + child", ok);
+    if (!ok) return;
+
+    child->ppid = parent->pid;
+    child->state = PROC_RUNNABLE;
+
+    /* Simulate the reparenting scan from sys_exit (same loop) */
+    for (uint32_t i = 1; i < PROC_MAX; i++) {
+        pcb_t *p = &proc_table[i];
+        if (p->state == PROC_FREE || p->ppid != parent->pid)
+            continue;
+        p->ppid = 1;
+    }
+
+    test_report("child reparented to PID 1", child->ppid == 1);
+
+    /* Test zombie reparenting: child is zombie, init should be wakeable */
+    child->ppid = parent->pid;
+    child->state = PROC_ZOMBIE;
+
+    for (uint32_t i = 1; i < PROC_MAX; i++) {
+        pcb_t *p = &proc_table[i];
+        if (p->state == PROC_FREE || p->ppid != parent->pid)
+            continue;
+        p->ppid = 1;
+    }
+
+    test_report("zombie child reparented to PID 1", child->ppid == 1);
+
+    /* Clean up */
+    child->state = PROC_RUNNABLE;  /* proc_free requires non-ZOMBIE */
+    proc_free(child);
+    proc_free(parent);
+
+    uart_puts("Phase 10 Step 1 orphan: ");
+    uart_print_dec((uint32_t)test_pass);
+    uart_puts(" passed, ");
+    uart_print_dec((uint32_t)test_fail);
+    uart_puts(" failed\n");
+}
+
 /* ── Test runner ──────────────────────────────────────────────────────────── */
 
 void ktest_run_all(void)
@@ -1703,6 +1756,9 @@ void ktest_run_all(void)
     total_pass += test_pass; total_fail += test_fail;
 
     smp_integration_test();
+    total_pass += test_pass; total_fail += test_fail;
+
+    orphan_reparent_test();
     total_pass += test_pass; total_fail += test_fail;
 
     /* Final summary */

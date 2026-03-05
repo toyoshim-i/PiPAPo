@@ -68,7 +68,7 @@ Two root causes:
 **Files:** `src/kernel/proc/sched.c`, `src/kernel/proc/proc.h`,
 `src/kernel/proc/proc.c`, `src/kernel/smp.c`
 
-### ☐ Step 1 — Orphan reparenting to init
+### ✓ Step 1 — Orphan reparenting to init
 
 **Problem:** When a parent exits, children become unreachable zombies.  Stack
 pages leak permanently.

@@ -84,6 +84,24 @@ long sys_exit(long status)
         }
     }
 
+    /* Reparent children to init (PID 1) so they can be reaped.
+     * If a reparented child is already zombie, wake init. */
+    for (uint32_t i = 1; i < PROC_MAX; i++) {
+        pcb_t *child = &proc_table[i];
+        if (child->state == PROC_FREE || child->ppid != current->pid)
+            continue;
+        child->ppid = 1;
+        if (child->state == PROC_ZOMBIE) {
+            for (uint32_t j = 0; j < PROC_MAX; j++) {
+                if (proc_table[j].pid == 1 &&
+                    proc_table[j].state == PROC_BLOCKED) {
+                    proc_table[j].state = PROC_RUNNABLE;
+                    break;
+                }
+            }
+        }
+    }
+
     current->state = PROC_ZOMBIE;
     sched_yield();
     return 0;  /* never reached — PendSV switches away after SVC returns */
