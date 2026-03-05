@@ -46,6 +46,28 @@ operations acquire SPIN_PAGE, FS operations are serialized by SPIN_FS wrappers.
 
 ## Week 1 — Process Lifecycle and Memory Safety
 
+### ✓ Step 0 — Fix /proc/stat tick accounting
+
+**Problem:** `/proc/stat` shows user=0 and idle=0; all ticks counted as system.
+
+Two root causes:
+1. **RETTOBASE (ICSR bit 11) is RAZ on Cortex-M0+** — the ARMv6-M architecture
+   does not implement this field.  It always reads 0, so the user-tick branch
+   was never taken.
+2. **Idle threads are PROC_RUNNABLE** — proc_table[0] ("kernel") and Core 1's
+   idle process ("idle1") have `state == PROC_RUNNABLE`, so they enter the
+   running-process branch instead of the idle branch.
+
+**Fix:**
+- Replace RETTOBASE check with EXC_RETURN (LR) bit 3 in `SysTick_Handler`.
+  Naked assembly wrapper captures EXC_RETURN before the C prologue clobbers it.
+  Bit 3 = 1 → Thread mode (user), bit 3 = 0 → Handler mode (system).
+- Add `pcb_t.is_idle` flag; set for proc_table[0] and Core 1 idle process.
+  Ticks for idle threads go to `cpu_idle_ticks[]`.
+
+**Files:** `src/kernel/proc/sched.c`, `src/kernel/proc/proc.h`,
+`src/kernel/proc/proc.c`, `src/kernel/smp.c`
+
 ### ☐ Step 1 — Orphan reparenting to init
 
 **Problem:** When a parent exits, children become unreachable zombies.  Stack

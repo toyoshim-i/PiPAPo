@@ -98,21 +98,37 @@ void sched_tick(void)
 
 /* ── SysTick exception handler ─────────────────────────────────────────────── */
 
-void SysTick_Handler(void)
+/* CPU tick accounting needs the EXC_RETURN value that the hardware places in
+ * LR on exception entry.  A normal C function's prologue clobbers LR, so we
+ * use a naked wrapper to capture it and pass it as the first argument.
+ *
+ * EXC_RETURN bit 3:  1 = return to Thread mode (user),
+ *                    0 = return to Handler mode (kernel).
+ *
+ * Note: ICSR.RETTOBASE (bit 11) is RAZ on ARMv6-M / Cortex-M0+, so we
+ * cannot use it for user-vs-kernel distinction. */
+
+__attribute__((used)) static void SysTick_Handler_c(uint32_t exc_return);
+
+__attribute__((naked)) void SysTick_Handler(void)
+{
+    __asm__ volatile(
+        "push {r0, lr}\n"  /* 8-byte aligned; save EXC_RETURN for return */
+        "mov  r0, lr\n"    /* pass EXC_RETURN as first argument */
+        "bl   SysTick_Handler_c\n"
+        "pop  {r0, pc}\n"  /* pop EXC_RETURN into PC → exception return */
+    );
+}
+
+static void SysTick_Handler_c(uint32_t exc_return)
 {
     /* Only Core 0 maintains the global tick counter */
     if (core_id() == 0)
         tick_count++;
 
-    /* CPU tick accounting: determine if the interrupted context was
-     * Thread mode (user) or Handler mode (kernel).
-     * ICSR.RETTOBASE (bit 11): set when the current exception (SysTick)
-     * is the only active exception — meaning we preempted Thread mode
-     * (user code).  If clear, another handler was already active (SVC
-     * or similar) — meaning kernel code. */
     uint32_t cid = core_id();
-    if (current && current->state == PROC_RUNNABLE) {
-        if (SCB_ICSR & (1u << 11)) {
+    if (current && current->state == PROC_RUNNABLE && !current->is_idle) {
+        if (exc_return & (1u << 3)) {
             current->utime++;
             cpu_user_ticks[cid]++;
         } else {

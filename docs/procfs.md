@@ -66,9 +66,14 @@ The `cpu` line is the sum of all cores.
 
 Tick rate: `PPAP_TICK_HZ` (100 Hz, i.e., 10 ms per tick).
 
-User vs. system distinction: `SysTick_Handler` checks `SCB->ICSR` RETTOBASE
-bit to determine whether the interrupted context was Thread mode (user) or
-Handler mode (system).
+User vs. system distinction: `SysTick_Handler` checks EXC_RETURN bit 3 (captured
+from LR via a naked assembly wrapper) to determine whether the interrupted
+context was Thread mode (user, bit 3 = 1) or Handler mode (system, bit 3 = 0).
+Note: `ICSR.RETTOBASE` (bit 11) is RAZ on ARMv6-M / Cortex-M0+, so it cannot
+be used for this purpose.
+
+Idle detection: processes with `pcb_t.is_idle == 1` (Thread 0 "kernel" on Core 0,
+"idle1" on Core 1) have their ticks counted as idle regardless of EXC_RETURN.
 
 Source: `cpu_user_ticks[]`, `cpu_system_ticks[]`, `cpu_idle_ticks[]` in `proc/sched.c`.
 

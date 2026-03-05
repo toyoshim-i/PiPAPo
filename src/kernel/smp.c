@@ -120,6 +120,7 @@ void core1_sched_entry(void)
     idle->state = PROC_RUNNABLE;
     idle->ticks_remaining = PROC_DEFAULT_TICKS;
     idle->running_on_core = 1;
+    idle->is_idle = 1;
     __builtin_memcpy(idle->comm, "idle1", 6);
     current_core[1] = idle;
 

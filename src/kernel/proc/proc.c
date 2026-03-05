@@ -58,6 +58,7 @@ void proc_init(void)
     proc_table[0].ppid            = 0;
     proc_table[0].state           = PROC_RUNNABLE;
     proc_table[0].ticks_remaining = PROC_DEFAULT_TICKS;
+    proc_table[0].is_idle         = 1;
     /* comm is set to "init" once do_execve() runs; "kernel" for now */
     __builtin_memcpy(proc_table[0].comm, "kernel", 7);
 

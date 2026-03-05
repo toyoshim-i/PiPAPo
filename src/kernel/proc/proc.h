@@ -82,6 +82,7 @@ typedef struct pcb {
     uint32_t ticks_remaining;   /* SysTick ticks left in current time-slice   */
     uint32_t sleep_until;       /* wake when SysTick count reaches this value */
     int8_t   running_on_core;   /* -1 = not running, 0/1 = core ID           */
+    uint8_t  is_idle;           /* 1 = idle thread (ticks count as idle)      */
 
     /* ── vfork / waitpid ──────────────────────────────────────────────── */
     struct pcb *vfork_parent;   /* non-NULL while child shares parent's space */
