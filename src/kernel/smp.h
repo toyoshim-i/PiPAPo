@@ -43,10 +43,11 @@ void sio_fifo_push(uint32_t value);
 uint32_t sio_fifo_pop(void);
 
 /*
- * core1_io_worker() — Phase 1 Core 1 entry function.
- * Loops forever: pops a command word sent by Core 0 and echoes it back.
- * Placeholder for Phase 4 SD / block-device dispatch.
+ * core1_sched_entry() — Core 1 scheduler entry point.
+ * Programs Core 1's MPU, sets exception priorities, allocates an idle PCB,
+ * configures SysTick, switches to PSP, and enters a WFI idle loop.
+ * PendSV on Core 1 picks up RUNNABLE processes from the shared proc_table.
  */
-void core1_io_worker(void);
+void core1_sched_entry(void);
 
 #endif /* PPAP_KERNEL_SMP_H */

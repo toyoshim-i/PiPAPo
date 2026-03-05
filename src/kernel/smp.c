@@ -25,8 +25,12 @@
  */
 
 #include "smp.h"
+#include "proc/proc.h"        /* pcb_t, proc_alloc, current_core */
+#include "proc/sched.h"       /* SYSTICK_RELOAD */
 #include "mm/page.h"
+#include "mm/mpu.h"           /* mpu_init */
 #include "../drivers/uart.h"
+#include "hw/cortex_m0plus.h" /* SCB_SHPR2/3, SYST_*, priority masks */
 #include "config.h"
 #include <stdint.h>
 
@@ -72,15 +76,76 @@ uint32_t sio_fifo_pop(void)
     return SIO_FIFO_RD;
 }
 
-/* ── core1_io_worker ─────────────────────────────────────────────────────── */
-
-void core1_io_worker(void)
+/* ── core1_sched_entry ───────────────────────────────────────────────────── */
+/*
+ * Core 1 entry point for dual-core scheduling.
+ *
+ * Mirrors sched_start() on Core 0:
+ *   1. Program Core 1's MPU (each core has its own on Cortex-M0+)
+ *   2. Set PendSV/SVCall priorities (per-core PPB registers)
+ *   3. Allocate an idle PCB so PendSV_Handler has a valid current_core[1]
+ *   4. Switch from MSP (set by core1_launch) to PSP
+ *   5. Configure Core 1's SysTick (per-core timer)
+ *   6. Enable interrupts and enter WFI idle loop
+ *
+ * PendSV_Handler on Core 1 picks up RUNNABLE processes; when none are
+ * available, sched_next() returns the idle PCB and we resume WFI.
+ */
+void core1_sched_entry(void)
 {
-    for (;;) {
-        uint32_t cmd = sio_fifo_pop();
-        /* Phase 4: dispatch to SD / block-device handler based on cmd */
-        sio_fifo_push(cmd);     /* echo for now — signals Core 0 that cmd was processed */
+    /* Disable interrupts until everything is configured */
+    __asm__ volatile("cpsid i");
+
+    /* 1. Program Core 1's MPU (regions 0, 1, 3) */
+    mpu_init();
+
+    /* 2. Set exception priorities — same as sched_start() on Core 0.
+     * SHPR2/SHPR3 are per-core (Private Peripheral Bus). */
+    SCB_SHPR3 = (SCB_SHPR3 & ~PENDSV_PRIO_MASK) | PENDSV_PRIO_LOWEST;
+    SCB_SHPR2 = (SCB_SHPR2 & ~SVCALL_PRIO_MASK) | (0x80u << SVCALL_PRIO_SHIFT);
+
+    /* 3. Allocate an idle PCB for Core 1.
+     * PendSV_Handler requires current_core[1] to be valid. */
+    pcb_t *idle = proc_alloc();
+    if (!idle) {
+        uart_puts("SMP: Core 1 idle alloc FAILED\n");
+        for (;;) __asm__ volatile("wfi");
     }
+    idle->stack_page = page_alloc();
+    if (!idle->stack_page) {
+        uart_puts("SMP: Core 1 stack alloc FAILED\n");
+        for (;;) __asm__ volatile("wfi");
+    }
+    idle->state = PROC_RUNNABLE;
+    idle->ticks_remaining = PROC_DEFAULT_TICKS;
+    idle->running_on_core = 1;
+    __builtin_memcpy(idle->comm, "idle1", 6);
+    current_core[1] = idle;
+
+    /* 4. Switch Thread mode to PSP using idle's stack page.
+     * MSP (set by core1_launch) remains the exception stack. */
+    uint32_t psp_top = (uint32_t)(uintptr_t)idle->stack_page + PAGE_SIZE;
+    __asm__ volatile(
+        "msr  psp, %0      \n"   /* PSP = top of idle's stack page */
+        "movs r0, #2       \n"   /* CONTROL.SPSEL = 1 */
+        "msr  control, r0  \n"
+        "isb               \n"
+        :: "r"(psp_top) : "r0"
+    );
+
+    /* 5. Configure Core 1's SysTick (per-core timer) */
+    SYST_RVR = SYSTICK_RELOAD;
+    SYST_CVR = 0u;
+    SYST_CSR = SYST_CSR_ENABLE | SYST_CSR_TICKINT | SYST_CSR_CLKSOURCE;
+
+    uart_puts("SMP: Core 1 scheduler started\n");
+
+    /* 6. Enable interrupts and enter idle loop.
+     * PendSV switches to a RUNNABLE process when one becomes available. */
+    __asm__ volatile("cpsie i");
+
+    for (;;)
+        __asm__ volatile("wfi");
 }
 
 /* ── core1_reset ─────────────────────────────────────────────────────────── */

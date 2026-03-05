@@ -35,7 +35,7 @@ void target_late_init(void)
     uart_init_irq();
     uart_puts("UART: switched to interrupt-driven mode\n");
     mpu_init();
-    core1_launch(core1_io_worker);
+    core1_launch(core1_sched_entry);
 }
 
 void target_post_mount(void)
