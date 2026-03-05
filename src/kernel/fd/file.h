@@ -85,6 +85,7 @@ struct file {
  * Allocate / free a struct file from the kernel file pool.
  * file_pool_init() must be called from kmain() before any allocations.
  */
+void         file_pool_init(void);
 struct file *file_alloc(void);
 void         file_free(struct file *f);
 
