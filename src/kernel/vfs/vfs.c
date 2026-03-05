@@ -15,6 +15,7 @@
 
 #include "vfs.h"
 #include "../mm/kmem.h"
+#include "../spinlock.h"   /* SPIN_VFS */
 #include "../errno.h"
 #include "drivers/uart.h"
 #include <stddef.h>
@@ -54,9 +55,12 @@ void vfs_init(void)
 
 vnode_t *vnode_alloc(void)
 {
+    uint32_t saved = spin_lock_irqsave(SPIN_VFS);
     vnode_t *vn = kmem_alloc(&vnode_pool);
-    if (!vn)
+    if (!vn) {
+        spin_unlock_irqrestore(SPIN_VFS, saved);
         return NULL;
+    }
     /* Zero the vnode and set initial refcnt */
     vn->type     = VNODE_FILE;
     vn->size     = 0;
@@ -66,23 +70,29 @@ vnode_t *vnode_alloc(void)
     vn->fs_priv  = NULL;
     vn->mount    = NULL;
     vn->xip_addr = NULL;
+    spin_unlock_irqrestore(SPIN_VFS, saved);
     return vn;
 }
 
 void vnode_ref(vnode_t *vn)
 {
-    if (vn)
-        vn->refcnt++;
+    if (!vn)
+        return;
+    uint32_t saved = spin_lock_irqsave(SPIN_VFS);
+    vn->refcnt++;
+    spin_unlock_irqrestore(SPIN_VFS, saved);
 }
 
 void vnode_put(vnode_t *vn)
 {
     if (!vn)
         return;
+    uint32_t saved = spin_lock_irqsave(SPIN_VFS);
     if (vn->refcnt > 0)
         vn->refcnt--;
     if (vn->refcnt == 0)
         kmem_free(&vnode_pool, vn);
+    spin_unlock_irqrestore(SPIN_VFS, saved);
 }
 
 uint32_t vnode_free_count(void)
@@ -98,6 +108,8 @@ int vfs_mount(const char *path, const vfs_ops_t *ops, uint8_t flags,
     if (!path || !ops)
         return -EINVAL;
 
+    uint32_t saved = spin_lock_irqsave(SPIN_VFS);
+
     /* Find a free slot */
     mount_entry_t *mnt = NULL;
     for (int i = 0; i < VFS_MOUNT_MAX; i++) {
@@ -106,13 +118,17 @@ int vfs_mount(const char *path, const vfs_ops_t *ops, uint8_t flags,
             break;
         }
     }
-    if (!mnt)
+    if (!mnt) {
+        spin_unlock_irqrestore(SPIN_VFS, saved);
         return -ENOMEM;
+    }
 
     /* Copy the mount point path */
     size_t plen = __builtin_strlen(path);
-    if (plen >= VFS_PATH_MAX)
+    if (plen >= VFS_PATH_MAX) {
+        spin_unlock_irqrestore(SPIN_VFS, saved);
         return -ENAMETOOLONG;
+    }
 
     /* Strip trailing '/' except for the root mount */
     while (plen > 1 && path[plen - 1] == '/')
@@ -132,11 +148,14 @@ int vfs_mount(const char *path, const vfs_ops_t *ops, uint8_t flags,
         err = ops->mount(mnt, dev_data);
     if (err) {
         mnt->active = 0;
+        spin_unlock_irqrestore(SPIN_VFS, saved);
         return err;
     }
 
     mnt->active = 1;
     mount_count++;
+
+    spin_unlock_irqrestore(SPIN_VFS, saved);
 
     uart_puts("VFS: mounted at ");
     uart_puts(mnt->path);
@@ -156,6 +175,8 @@ int vfs_umount(const char *path)
     if (path[0] == '/' && path[1] == '\0')
         return -EINVAL;
 
+    uint32_t saved = spin_lock_irqsave(SPIN_VFS);
+
     /* Find the mount entry matching path exactly */
     mount_entry_t *mnt = NULL;
     for (int i = 0; i < VFS_MOUNT_MAX; i++) {
@@ -167,23 +188,35 @@ int vfs_umount(const char *path)
             break;
         }
     }
-    if (!mnt)
+    if (!mnt) {
+        spin_unlock_irqrestore(SPIN_VFS, saved);
         return -ENOENT;
+    }
 
     /* Check no vnodes still reference this mount (scan vnode pool) */
     for (int i = 0; i < VFS_VNODE_MAX; i++) {
         if (vnode_storage[i].refcnt > 0 &&
             vnode_storage[i].mount == mnt &&
-            &vnode_storage[i] != mnt->root)
+            &vnode_storage[i] != mnt->root) {
+            spin_unlock_irqrestore(SPIN_VFS, saved);
             return -EBUSY;
+        }
     }
 
-    /* Release root vnode and deactivate */
-    if (mnt->root)
-        vnode_put(mnt->root);
+    /* Release root vnode and deactivate.
+     * Note: vnode_put() also acquires SPIN_VFS, but we already hold it.
+     * Use kmem_free() directly to avoid recursive lock. */
+    if (mnt->root) {
+        if (mnt->root->refcnt > 0)
+            mnt->root->refcnt--;
+        if (mnt->root->refcnt == 0)
+            kmem_free(&vnode_pool, mnt->root);
+    }
     mnt->root   = NULL;
     mnt->active = 0;
     mount_count--;
+
+    spin_unlock_irqrestore(SPIN_VFS, saved);
 
     uart_puts("VFS: unmounted ");
     uart_puts(path);
