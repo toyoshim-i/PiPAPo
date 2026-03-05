@@ -122,7 +122,7 @@ With Step 1's reparenting, init always reaps orphans.
 
 ## Week 2 — Defensive Checks and FS Correctness
 
-### ☐ Step 7 — Signal handler stack overflow check
+### ✓ Step 7 — Signal handler stack overflow check
 
 **File:** `src/kernel/signal/signal.c`
 

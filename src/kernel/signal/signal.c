@@ -62,13 +62,19 @@ void sigreturn_trampoline(void)
  * and runs the handler.  The handler's SP = PSP - 32 + 32 = old PSP,
  * where the sigframe sits.
  */
-static void signal_setup_frame(int sig, sighandler_t handler)
+static int signal_setup_frame(int sig, sighandler_t handler)
 {
     uint32_t psp;
     __asm volatile("mrs %0, psp" : "=r"(psp));
 
     /* New HW frame goes 32 bytes below current PSP */
     uint32_t new_psp = psp - 32;
+
+    /* Bounds check: don't write below the stack page */
+    uint32_t stack_base = (uint32_t)(uintptr_t)current->stack_page;
+    if (new_psp < stack_base)
+        return -1;  /* stack overflow — cannot deliver signal */
+
     uint32_t *frame = (uint32_t *)new_psp;
 
     frame[0] = (uint32_t)sig;                                 /* r0 = signal number  */
@@ -81,6 +87,7 @@ static void signal_setup_frame(int sig, sighandler_t handler)
     frame[7] = 0x01000000u;                                    /* xpsr (Thumb bit)    */
 
     __asm volatile("msr psp, %0" :: "r"(new_psp));
+    return 0;
 }
 
 /* ── signal_check ─────────────────────────────────────────────────────────── */
@@ -108,7 +115,10 @@ void signal_check(void)
     }
 
     /* User handler — set up trampoline frame on user stack */
-    signal_setup_frame(sig, handler);
+    if (signal_setup_frame(sig, handler) < 0) {
+        /* Stack overflow — cannot deliver signal, terminate process */
+        sys_exit(128 + sig);
+    }
 }
 
 /* ── sys_kill ─────────────────────────────────────────────────────────────── */
