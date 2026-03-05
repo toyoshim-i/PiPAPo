@@ -14,6 +14,7 @@
 #include "page.h"
 #include "kmem.h"
 #include "xip.h"
+#include "../spinlock.h"
 #include "drivers/uart.h"
 #include <stddef.h>
 
@@ -149,9 +150,12 @@ void mm_init(void)
 
 void *page_alloc(void)
 {
-    if (free_top == 0u)
-        return NULL;   /* OOM */
-    return free_stack[--free_top];
+    uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
+    void *p = NULL;
+    if (free_top != 0u)
+        p = free_stack[--free_top];
+    spin_unlock_irqrestore(SPIN_PAGE, saved);
+    return p;
 }
 
 void *page_alloc_at(void *addr)
@@ -164,17 +168,22 @@ void *page_alloc_at(void *addr)
     if (target & (PAGE_SIZE - 1u))
         return NULL;
 
+    uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
+    void *result = NULL;
+
     /* Scan the free stack for the requested page */
     for (uint32_t i = 0u; i < free_top; i++) {
         if (free_stack[i] == addr) {
             /* Remove by swapping with the top element */
             free_top--;
             free_stack[i] = free_stack[free_top];
-            return addr;
+            result = addr;
+            break;
         }
     }
 
-    return NULL;   /* already allocated */
+    spin_unlock_irqrestore(SPIN_PAGE, saved);
+    return result;
 }
 
 void page_free(void *page)
@@ -183,11 +192,17 @@ void page_free(void *page)
     uint32_t addr = (uint32_t)(uintptr_t)page;
     if (addr < PAGE_POOL_BASE || addr >= PAGE_POOL_BASE + PAGE_POOL_SIZE)
         return;   /* ignore bogus pointer rather than corrupt the stack */
+
+    uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
     if (free_top < PAGE_COUNT)
         free_stack[free_top++] = page;
+    spin_unlock_irqrestore(SPIN_PAGE, saved);
 }
 
 uint32_t page_free_count(void)
 {
-    return free_top;
+    uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
+    uint32_t count = free_top;
+    spin_unlock_irqrestore(SPIN_PAGE, saved);
+    return count;
 }
