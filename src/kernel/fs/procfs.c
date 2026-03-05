@@ -143,7 +143,7 @@ static int gen_meminfo(char *buf, int bufsiz)
 /* ── /proc/version ────────────────────────────────────────────────────────── */
 
 static const char version_str[] =
-    "PicoPiAndPortable v0.3 (armv6m)\n";
+    "PicoPiAndPortable v0.10.0 (armv6m)\n";
 
 static int gen_version(char *buf, int bufsiz)
 {

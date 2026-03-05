@@ -17,6 +17,7 @@ Reports physical memory statistics.
 MemTotal:     264 kB
 MemFree:      132 kB
 PageSize:    4096 B
+OomCount:      0
 ```
 
 | Field      | Description                                      |
@@ -24,8 +25,9 @@ PageSize:    4096 B
 | MemTotal   | Total allocatable pages x PAGE_SIZE, in kB       |
 | MemFree    | Free pages x PAGE_SIZE, in kB                    |
 | PageSize   | Page allocator granularity in bytes (always 4096) |
+| OomCount   | Number of `page_alloc()` failures since boot     |
 
-Source: `page_free_count()` and `PAGE_COUNT` from `mm/page.c`.
+Source: `page_free_count()`, `PAGE_COUNT`, and `oom_count` from `mm/page.c`.
 
 ---
 
@@ -34,7 +36,7 @@ Source: `page_free_count()` and `PAGE_COUNT` from `mm/page.c`.
 Single-line kernel version string.
 
 ```
-PicoPiAndPortable v0.3 (armv6m)
+PicoPiAndPortable v0.10.0 (armv6m)
 ```
 
 Hardcoded; no dynamic content.
@@ -133,7 +135,7 @@ Key fields used by PPAP:
 |---|------------|---------------------------------------------------|
 | 1 | pid        | Process ID                                        |
 | 2 | comm       | Command name in parentheses, from `pcb->comm`     |
-| 3 | state      | R = runnable, S = sleeping/blocked, Z = zombie    |
+| 3 | state      | R = runnable, S = sleeping/blocked, Z = zombie, I = idle |
 | 4 | ppid       | Parent PID                                        |
 | 5 | pgrp       | Process group ID (`pcb->pgid`)                    |
 | 6 | session    | Session ID (`pcb->sid`)                           |

@@ -3,7 +3,7 @@
 **PicoPiAndPortable Development Roadmap**
 Estimated Duration: 3 weeks
 Prerequisites: Phase 9 (Dual-Core Scheduling) complete
-**Status: Not started**
+**Status: Complete**
 
 ---
 
@@ -209,7 +209,7 @@ Add `OomCount` line using `oom_count` from page.c.
 
 Orphan reparenting test, OOM ENOMEM test, signal stack overflow test.
 
-### ☐ Step 19 — Documentation and version bump
+### ✓ Step 19 — Documentation and version bump
 
 **Files:**
 - `src/kernel/fs/procfs.c` — bump version to "0.10.0"
