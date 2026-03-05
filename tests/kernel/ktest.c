@@ -13,6 +13,7 @@
 #include "drivers/uart.h"
 #include "mm/page.h"
 #include "proc/proc.h"
+#include "proc/sched.h"
 #include "fd/fd.h"
 #include "fd/tty.h"
 #include "vfs/vfs.h"
@@ -1614,6 +1615,50 @@ static void blocking_io_integration_test(void)
     uart_puts(" failed\n");
 }
 
+/* ── Dual-core infrastructure tests ──────────────────────────────────────── */
+
+static void smp_integration_test(void)
+{
+    uart_puts("\n=== Phase 9 Step 14: SMP infrastructure tests ===\n");
+    test_pass = 0;
+    test_fail = 0;
+
+    /* 1. core_id() returns 0 on QEMU (single-core).
+     * SYS_GETCPU returns core_id() — tested indirectly. */
+    test_report("core_id() == 0 (QEMU)", core_id() == 0);
+
+    /* 2. current_core[0] is valid and points to a RUNNABLE process */
+    test_report("current_core[0] is non-NULL", current_core[0] != NULL);
+    test_report("current is RUNNABLE",
+                current != NULL && current->state == PROC_RUNNABLE);
+
+    /* 3. Per-core CPU tick arrays are accessible and consistent */
+    {
+        uint32_t total_user   = cpu_user_ticks[0]   + cpu_user_ticks[1];
+        uint32_t total_system = cpu_system_ticks[0] + cpu_system_ticks[1];
+        uint32_t total_idle   = cpu_idle_ticks[0]   + cpu_idle_ticks[1];
+        /* On QEMU (single core), cpu1 counters should be 0 */
+        test_report("cpu_user_ticks[1] == 0 (QEMU)", cpu_user_ticks[1] == 0);
+        test_report("cpu_system_ticks[1] == 0 (QEMU)", cpu_system_ticks[1] == 0);
+        /* Counters are accessible and consistent (may be 0 before sched_start) */
+        test_report("per-core tick arrays accessible",
+                    total_user == cpu_user_ticks[0]
+                    && total_system == cpu_system_ticks[0]
+                    && total_idle == cpu_idle_ticks[0]);
+    }
+
+    /* 4. running_on_core is set for current process */
+    test_report("current->running_on_core >= 0",
+                current->running_on_core >= 0);
+
+    /* Summary */
+    uart_puts("Phase 9 Step 14 SMP: ");
+    uart_print_dec((uint32_t)test_pass);
+    uart_puts(" passed, ");
+    uart_print_dec((uint32_t)test_fail);
+    uart_puts(" failed\n");
+}
+
 /* ── Test runner ──────────────────────────────────────────────────────────── */
 
 void ktest_run_all(void)
@@ -1655,6 +1700,9 @@ void ktest_run_all(void)
     total_pass += test_pass; total_fail += test_fail;
 
     blocking_io_integration_test();
+    total_pass += test_pass; total_fail += test_fail;
+
+    smp_integration_test();
     total_pass += test_pass; total_fail += test_fail;
 
     /* Final summary */
