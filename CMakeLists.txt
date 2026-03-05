@@ -97,6 +97,35 @@ add_custom_command(
 
 add_custom_target(busybox_install DEPENDS ${BUSYBOX_STAMP})
 
+# --- rogue (port-rogue.md Step 5) ---
+set(ROGUE_BIN ${CMAKE_BINARY_DIR}/rogue/rogue)
+
+file(GLOB ROGUE_PATCHES ${CMAKE_SOURCE_DIR}/third_party/patches/rogue/*)
+
+add_custom_command(
+    OUTPUT ${ROGUE_BIN}
+    COMMAND ${CMAKE_SOURCE_DIR}/third_party/build-rogue.sh
+    DEPENDS ${CMAKE_SOURCE_DIR}/third_party/build-rogue.sh
+            ${ROGUE_PATCHES}
+            ${CMAKE_SOURCE_DIR}/third_party/configs/busybox.ld
+            ${MUSL_LIBC}
+    COMMENT "Building rogue (PIC, Cortex-M0+)"
+)
+
+# Install rogue ELF into romfs/bin/
+set(ROGUE_STAMP ${CMAKE_BINARY_DIR}/rogue_install.stamp)
+
+add_custom_command(
+    OUTPUT ${ROGUE_STAMP}
+    COMMAND ${CMAKE_COMMAND} -E copy ${ROGUE_BIN}
+            ${CMAKE_SOURCE_DIR}/romfs/bin/rogue
+    COMMAND ${CMAKE_COMMAND} -E touch ${ROGUE_STAMP}
+    DEPENDS ${ROGUE_BIN}
+    COMMENT "Installing rogue into romfs/bin/"
+)
+
+add_custom_target(rogue_install DEPENDS ${ROGUE_STAMP})
+
 # --- User-space binaries (Phase 3 Step 1) ---
 set(USER_SRC_DIR ${CMAKE_SOURCE_DIR}/user)
 set(USER_STAMP ${CMAKE_BINARY_DIR}/user_binaries.stamp)
@@ -163,7 +192,7 @@ foreach(tgt ${PPAP_ALL_TARGETS})
         COMMAND ${CMAKE_BINARY_DIR}/mkromfs
                 ${ROMFS_STAGING} ${ROMFS_BIN}
         DEPENDS ${CMAKE_BINARY_DIR}/mkromfs ${USER_STAMP} ${BUSYBOX_STAMP}
-                ${CMAKE_SOURCE_DIR}/romfs/etc/fstab
+                ${ROGUE_STAMP} ${CMAKE_SOURCE_DIR}/romfs/etc/fstab
         COMMENT "Generating romfs for ${tgt}"
     )
 

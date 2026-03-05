@@ -283,60 +283,29 @@ Output: `build/rogue/rogue` (160 KB stripped ELF).
 
 ### Step 4: PPAP patches (overlay)
 
-**Directory:** `third_party/patches/rogue/overlay/`
+**Status: COMPLETE** — all items handled in Step 2.
 
-Create a `config.h` (the autoconf-generated header) with PPAP-specific
-defines:
-
-```c
-/* PPAP config.h for rogue */
-#define HAVE_FORK 1
-#define HAVE_GETUID 1
-#define HAVE_GETGID 1
-#define HAVE_UNISTD_H 1
-#define HAVE_SYS_STAT_H 1
-#define HAVE_STRING_H 1
-#define HAVE_STDLIB_H 1
-#define HAVE_CURSES_H 1
-#define HAVE_TERMIOS_H 1
-/* No CHECKTIME — disables alarm()/SIGALRM load checking */
-/* No SCOREFILE — disables score file (initially) */
-/* No HAVE_GETPWUID — stub returns "player" */
-/* No HAVE_NLIST_H — no /dev/kmem load average */
-/* No HAVE_UTMP_H — no user counting */
-#define MASTER 0           /* disable wizard mode */
-```
-
-**mdport.c patches** (via overlay or sed):
-- `md_getusername()`: return `"player"` when `!HAVE_GETPWUID`
-- `md_gethomedir()`: return `"/tmp"` when `!HAVE_GETPWUID`
-- `md_shellescape()`: can disable (`#if 0`) or keep (busybox shell works)
-
-**main.c patch**:
-- Replace `curscr->_cury` / `curscr->_curx` with `getyx(curscr, cy, cx)`
-
-**Score/save strategy**:
-- Initially: no SCOREFILE, save to `/tmp/rogue.save` (lost on reboot)
-- PicoCalc: redirect to `/mnt/sd/rogue.save` and `/mnt/sd/rogue.score`
+- `config.h` → `third_party/patches/rogue/config.h` (created in Step 2)
+- `pwd.h` stub → `third_party/patches/rogue/pwd.h` (created in Step 2)
+- `mdport.c` patches → not needed: `md_gethomedir()` uses our `getpwuid()` stub
+  (returns "/tmp"), `md_getusername()` falls to `getenv()`→"nobody" (acceptable),
+  `md_shellescape()` uses fork+execl (works on PPAP)
+- `main.c:curscr->_cury/_curx` → compiles fine with our WINDOW struct
+- Score/save: no SCOREFILE defined, save to `~/rogue.save` (→ `/tmp/rogue.save`)
 
 ### Step 5: Integration with PPAP build
 
-Update `CMakeLists.txt` to:
+**Status: COMPLETE**
 
-1. Call `third_party/build-rogue.sh` as a custom command
-2. Install `build/rogue/rogue` to `romfs/bin/rogue`
-3. Add dependency so romfs regeneration picks it up
+- `CMakeLists.txt`: custom command for `build-rogue.sh`, install to `romfs/bin/`,
+  `${ROGUE_STAMP}` added to romfs DEPENDS so image regeneration picks it up.
+- `ninja ppap_qemu_arm` builds and links successfully with rogue in romfs.
 
 ### Step 6: Terminal environment setup
 
-Update `romfs/etc/profile` to:
+**Status: COMPLETE**
 
-```sh
-export TERM=vt100
-```
-
-This ensures musl's `getenv("TERM")` returns a value and any termcap
-lookups (if used) match VT100 capabilities.
+Added `export TERM=vt100` to `romfs/etc/profile`.
 
 ### Step 7: Test on QEMU
 

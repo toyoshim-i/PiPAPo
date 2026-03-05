@@ -1,3 +1,4 @@
 export PATH=/bin:/sbin
 export HOME=/root
 export PS1='ppap# '
+export TERM=vt100
