@@ -394,6 +394,14 @@ The Linux system call wrapper layer in musl libc is rewritten for this OS. Speci
 - signal: POSIX-compliant sigaction/sigprocmask; required by busybox's ash and wait
 - stdio: standard fd-based operations; internal buffering uses musl's user-space implementation as-is
 
+### 6.5 Third-Party Applications
+
+Beyond busybox, the platform supports porting existing UNIX applications that fit within the RP2040's memory constraints (128 KB data+bss per process, Thumb-1 ISA).
+
+**Rogue 5.4.4** — The classic BSD dungeon crawler, ported with a minimal VT100 curses shim (~800 lines of C) that translates curses calls to ANSI escape sequences. The upstream source is unmodified; PPAP-specific headers (`config.h`, `curses.h`, `pwd.h`) are injected via `-isystem`. The binary is 158 KB stripped ELF (139 KB text in flash, 75 KB data+bss in SRAM). See `docs/port-rogue.md` for the full porting plan and audit.
+
+The porting pattern — git submodule + patches directory + standalone build script + CMake integration — is designed to be reusable for future application ports.
+
 ---
 
 ## 7. Boot Sequence
@@ -454,6 +462,7 @@ All drivers are built into the kernel (statically linked). Loadable modules are 
 | Phase 8: PIE Binary Optimization | 2–3 days | .rodata flash migration, split init/sh binaries, PPAP_HAS_BLKDEV gating, per-target romfs |
 | Phase 9: Dual-Core Scheduling | 3 weeks | Hardware spinlocks, per-core scheduling, both cores execute user processes |
 | Phase 10: Stabilization | 3 weeks | Error handling, OOM visibility, input validation, FS correctness |
+| Rogue 5.4.4 Port | — | Classic dungeon crawler with minimal VT100 curses shim; verified on QEMU and hardware |
 | Phase 11: PicoCalc Device Support | 4 weeks | Embedded display driver (console + graphics), I2C keyboard input |
 | Phase 12: RP2350 Port | 4 weeks | MPU 8-region support, PSRAM support, Thumb-2 optimization; add `pico2`/`pico2calc` targets |
 

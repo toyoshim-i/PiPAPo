@@ -52,7 +52,9 @@ Link against musl libc for full POSIX C library support (`printf`,
 `malloc`, `fopen`, etc.). This is what busybox uses and is the
 recommended path for non-trivial applications.
 
-Reference implementation: `third_party/build-busybox.sh`.
+Reference implementations:
+- `third_party/build-busybox.sh` — busybox (multicall binary, custom Makefile integration)
+- `third_party/build-rogue.sh` — Rogue 5.4.4 (standalone build script, minimal curses shim)
 
 ## 3. Toolchain Requirements
 
@@ -593,7 +595,7 @@ kernel binary. The romfs filesystem is read-only and lives in flash.
 
 ```
 romfs/
-  bin/          User binaries (hello, busybox applet symlinks)
+  bin/          User binaries (hello, rogue, busybox applet symlinks)
   sbin/         System binaries (init → busybox)
   etc/
     inittab     busybox init configuration
@@ -618,8 +620,9 @@ romfs/
 The CMake pipeline automatically:
 1. Builds user binaries (`user/Makefile`)
 2. Builds busybox and installs applet symlinks
-3. Runs `mkromfs romfs/ build/romfs.bin`
-4. Links `romfs.bin` into the kernel via `.incbin`
+3. Builds rogue and installs to `romfs/bin/rogue`
+4. Runs `mkromfs romfs/ build/romfs.bin`
+5. Links `romfs.bin` into the kernel via `.incbin`
 
 #### mkromfs Tool
 
@@ -680,7 +683,26 @@ gdb-multiarch -x ppap.gdb build/ppap.elf
 Connect a serial terminal to the UART (115200 baud, 8N1) to interact
 with the shell.
 
-## 12. Known Limitations
+## 12. Porting Third-Party Applications
+
+Existing UNIX applications can be ported to PPAP if they fit within the
+per-process memory budget (128 KB data+bss) and use only Thumb-1 compatible
+code. The recommended pattern:
+
+1. **Import** the upstream source as a git submodule under `third_party/`
+2. **Create patches** under `third_party/patches/<app>/` — PPAP-specific
+   headers injected via `-isystem` (avoids modifying upstream source)
+3. **Write a build script** `third_party/build-<app>.sh` that cross-compiles
+   against musl using the same CFLAGS/linker script as busybox
+4. **Integrate with CMake** — add a custom command in `CMakeLists.txt` and
+   wire into the romfs dependency chain
+
+**Example: Rogue 5.4.4** — see `docs/port-rogue.md` and `third_party/build-rogue.sh`.
+The port required a minimal curses shim (~800 lines) translating curses calls
+to VT100 escape sequences, plus `config.h` and `pwd.h` stubs. The upstream
+source is completely unmodified.
+
+## 13. Known Limitations
 
 - **No shared libraries**: all linking is static (`libc.a`)
 - **No `fork()`**: only `vfork()` is available (NOMMU model). The child

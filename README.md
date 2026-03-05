@@ -12,6 +12,7 @@ A UNIX-like micro OS for the RP2040 — bare-metal, no SDK runtime.
 - SD card as **VFAT (FAT32)** for PC/Mac interoperability; UFS image files mounted via **loopback** for full UNIX semantics
 - POSIX-subset system call interface
 - Run **busybox** (statically linked) with an interactive `ash` shell
+- Run **Rogue 5.4.4** (classic dungeon crawler) via a minimal VT100 curses shim
 - Three build targets: `qemu` (testing), `pico1` (official Pico, romfs-only), `pico1calc` (PicoCalc with SD)
 - Clean porting path to RP2350 (Cortex-M33 + enhanced MPU)
 
@@ -37,8 +38,9 @@ A UNIX-like micro OS for the RP2040 — bare-metal, no SDK runtime.
 | 6 | musl + busybox — musl porting, busybox build, interactive ash shell | ✓ Complete |
 | 7 | Target Support Packages — per-target directories, 3 build targets, test cleanup | ✓ Complete |
 | 8 | PIE Binary Optimization — reduce SRAM footprint for user-space binaries | ✓ Complete |
-| 9 | Dual-Core Scheduling — hardware spinlocks, per-core state, Core 1 execution | Planned |
-| 10 | Stabilization — process lifecycle, memory safety, FS correctness | Planned |
+| 9 | Dual-Core Scheduling — hardware spinlocks, per-core state, Core 1 execution | ✓ Complete |
+| 10 | Stabilization — process lifecycle, memory safety, FS correctness | ✓ Complete |
+| — | **Rogue 5.4.4** — classic dungeon crawler ported with minimal curses shim | ✓ Complete |
 | 11 | PicoCalc Devices — LCD, keyboard, audio drivers | Planned |
 | 12 | RP2350 Port — MPU 8-region, PSRAM, Thumb-2 optimization | Planned |
 
@@ -86,10 +88,12 @@ PPAP/
   third_party/
     musl/                   git submodule — musl libc v1.2.5
     busybox/                git submodule — busybox 1_36_1
-    patches/                PPAP-specific patches for musl and busybox
+    rogue/                  git submodule — Rogue 5.4.4 (Davidslv/rogue)
+    patches/                PPAP-specific patches (musl, busybox, rogue curses shim)
     configs/                Build configs (busybox defconfig, linker script)
     build-musl.sh           Build script: musl libc.a for ARMv6-M
     build-busybox.sh        Build script: static busybox binary
+    build-rogue.sh          Build script: Rogue with minimal curses shim
   romfs/                    Root filesystem template (/bin, /etc, /dev)
   scripts/
     setup-toolchain.sh      One-shot toolchain install
@@ -99,6 +103,7 @@ PPAP/
   docs/
     PicoPiAndPortable-spec-v06.md   Full design specification
     phase00-plan.md .. phase10-plan.md  Phase detailed plans
+    port-rogue.md               Rogue porting plan and audit
 ```
 
 ## Quick Start
@@ -135,6 +140,8 @@ Or drag the UF2 onto the RP2040 in BOOTSEL mode:
 ./scripts/qemu.sh            # run build/ppap_qemu_arm.elf — boots to BusyBox ash shell
 ./scripts/qemu.sh --build    # rebuild first, then run
 ```
+
+At the shell prompt, try `rogue` to play the classic dungeon crawler.
 
 Press **Ctrl-A X** to quit QEMU.
 
