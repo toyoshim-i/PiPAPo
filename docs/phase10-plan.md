@@ -172,7 +172,7 @@ points.  Remaining: validate `num_fats`, `reserved_sectors`, `fat_size_32`,
 Fix TODO at line 536: write `first_cluster_hi/lo` to directory entry after
 allocating a cluster for an empty file.
 
-### ☐ Step 14 — UFS symlink buffer overflow fix
+### ✓ Step 14 — UFS symlink buffer overflow fix
 
 **File:** `src/kernel/fs/ufs.c`
 

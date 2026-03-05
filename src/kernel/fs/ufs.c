@@ -1244,6 +1244,8 @@ static long ufs_readlink(vnode_t *vn, char *buf, size_t bufsiz)
 
     if (inode.i_size <= UFS_FAST_SYMLINK_MAX) {
         /* Fast symlink: data stored inline in i_direct[] */
+        if (len > UFS_FAST_SYMLINK_MAX)
+            len = UFS_FAST_SYMLINK_MAX;
         __builtin_memcpy(buf, inode.i_direct, len);
         return (long)len;
     }
