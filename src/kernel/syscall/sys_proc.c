@@ -305,20 +305,20 @@ long sys_execve(const char *path, const char *const *argv)
     for (int i = 0; i < USER_PAGES_MAX; i++)
         current->user_pages[i] = NULL;
 
-    /* Close old fds — do_execve will set up new ones */
-    fd_close_all(current);
-
     /* Load the new binary.  argv points into the old stack/data pages
      * which are still valid (detached from current but not yet freed). */
     int err = do_execve(current, path, argv);
     if (err < 0) {
-        /* Restore old pages on failure */
+        /* Restore old pages on failure — fds are untouched (POSIX) */
         current->stack_page = old_stack;
         for (int i = 0; i < USER_PAGES_MAX; i++)
             current->user_pages[i] = old_user[i];
-        fd_stdio_init(current);
         return (long)err;
     }
+
+    /* Close old fds and set up fresh stdio for the new image */
+    fd_close_all(current);
+    fd_stdio_init(current);
 
     /* Free old stack page */
     if (old_stack)

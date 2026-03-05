@@ -128,7 +128,7 @@ With Step 1's reparenting, init always reaps orphans.
 
 Bounds-check `new_psp >= stack_page` before writing signal frame.
 
-### ☐ Step 8 — Fix execve fd_close_all ordering
+### ✓ Step 8 — Fix execve fd_close_all ordering
 
 **Files:** `src/kernel/syscall/sys_proc.c`, `src/kernel/exec/exec.c`
 

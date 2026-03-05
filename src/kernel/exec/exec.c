@@ -16,7 +16,6 @@
 #include "elf.h"
 #include "kernel/vfs/vfs.h"
 #include "kernel/mm/page.h"
-#include "kernel/fd/fd.h"
 #include "kernel/signal/signal.h"
 #include "kernel/errno.h"
 #include <string.h>
@@ -342,10 +341,7 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
         p->comm[clen] = '\0';
     }
 
-    /* ── 11. Initialise file descriptors (stdin/stdout/stderr → tty) ──── */
-    fd_stdio_init(p);
-
-    /* ── 12. Set working directory ─────────────────────────────────────── */
+    /* ── 11. Set working directory ─────────────────────────────────────── */
     if (current)
         memcpy(p->cwd, current->cwd, sizeof(p->cwd));
     else
