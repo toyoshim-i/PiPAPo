@@ -79,7 +79,7 @@ After "wake parent" block, before `current->state = PROC_ZOMBIE`, scan
 proc_table (under SPIN_PROC) and reparent children whose `ppid == current->pid`
 to PID 1.  If reparented child is already zombie, wake init.
 
-### ☐ Step 2 — Kernel thread stack NULL check
+### ✓ Step 2 — Kernel thread stack NULL check
 
 **File:** `src/kernel/main.c`
 

@@ -88,6 +88,10 @@ void kmain(void)
 
     /* Give the kernel init thread (thread 0) its own PSP stack page */
     proc_table[0].stack_page = page_alloc();
+    if (!proc_table[0].stack_page) {
+        klog("PANIC: no page for thread 0 stack\n");
+        for (;;) __asm__ volatile ("wfi");
+    }
 
     /* Launch init as PID 1 */
     {
