@@ -15,6 +15,7 @@
 
 #include "sched.h"    /* includes proc.h via sched.h */
 #include "../mm/page.h"    /* PAGE_SIZE */
+#include "../spinlock.h"   /* SPIN_PROC */
 #include "hw/cortex_m0plus.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -39,14 +40,19 @@ uint32_t sched_get_ticks(void)
 
 pcb_t *sched_next(void)
 {
+    uint32_t saved = spin_lock_irqsave(SPIN_PROC);
     uint32_t idx = (uint32_t)(current - proc_table);   /* slot of current */
 
+    pcb_t *result = current;   /* default: keep running */
     for (uint32_t i = 1u; i < PROC_MAX; i++) {
         uint32_t next = (idx + i) % PROC_MAX;
-        if (proc_table[next].state == PROC_RUNNABLE)
-            return &proc_table[next];
+        if (proc_table[next].state == PROC_RUNNABLE) {
+            result = &proc_table[next];
+            break;
+        }
     }
-    return current;   /* no other runnable process — keep running */
+    spin_unlock_irqrestore(SPIN_PROC, saved);
+    return result;
 }
 
 void sched_tick(void)
@@ -169,6 +175,7 @@ void sched_yield(void)
 
 void sched_wakeup(void *channel)
 {
+    uint32_t saved = spin_lock_irqsave(SPIN_PROC);
     int woke = 0;
     for (uint32_t i = 0u; i < PROC_MAX; i++) {
         pcb_t *p = &proc_table[i];
@@ -178,6 +185,7 @@ void sched_wakeup(void *channel)
             woke = 1;
         }
     }
+    spin_unlock_irqrestore(SPIN_PROC, saved);
     /* Trigger context switch so woken process runs promptly.
      * PendSV has lowest priority — fires after the current ISR returns. */
     if (woke)

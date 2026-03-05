@@ -13,6 +13,7 @@
 #include "proc.h"
 #include "sched.h"        /* sched_get_ticks — for start_time */
 #include "../mm/page.h"   /* PAGE_SIZE — for proc_setup_stack */
+#include "../spinlock.h"  /* SPIN_PROC */
 #include "drivers/uart.h" /* uart_puts, uart_print_dec — for proc_init diagnostics */
 #include "hw/cortex_m0plus.h" /* XPSR_THUMB_BIT, EXC_RETURN_THREAD_PSP */
 #include <stddef.h>   /* NULL, offsetof */
@@ -87,6 +88,9 @@ void proc_init(void)
 
 pcb_t *proc_alloc(void)
 {
+    uint32_t saved = spin_lock_irqsave(SPIN_PROC);
+    pcb_t *result = NULL;
+
     /* Scan slots 1..PROC_MAX-1; slot 0 belongs to the kernel thread */
     for (uint32_t i = 1u; i < PROC_MAX; i++) {
         if (proc_table[i].state == PROC_FREE) {
@@ -99,17 +103,22 @@ pcb_t *proc_alloc(void)
             proc_table[i].start_time = sched_get_ticks();
             /* state left as PROC_FREE — caller sets it to PROC_RUNNABLE
              * only after filling in stack_page and setting up the stack frame */
-            return &proc_table[i];
+            result = &proc_table[i];
+            break;
         }
     }
-    return NULL;   /* all slots occupied */
+
+    spin_unlock_irqrestore(SPIN_PROC, saved);
+    return result;
 }
 
 void proc_free(pcb_t *p)
 {
     if (!p)
         return;
+    uint32_t saved = spin_lock_irqsave(SPIN_PROC);
     p->state = PROC_FREE;
+    spin_unlock_irqrestore(SPIN_PROC, saved);
 }
 
 void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp)
