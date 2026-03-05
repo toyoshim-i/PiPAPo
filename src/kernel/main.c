@@ -112,6 +112,8 @@ void kmain(void)
         } else {
             klogf("PANIC: no init or shell (err=%u)\n",
                   (uint32_t)(-(int)exec_err));
+            proc_free(init);
+            for (;;) __asm__ volatile ("wfi");
         }
     }
 

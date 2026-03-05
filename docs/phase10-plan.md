@@ -85,7 +85,7 @@ to PID 1.  If reparented child is already zombie, wake init.
 
 Check `page_alloc()` return for Thread 0 stack.  Panic + `wfi` on failure.
 
-### ☐ Step 3 — Init load failure halts scheduler
+### ✓ Step 3 — Init load failure halts scheduler
 
 **File:** `src/kernel/main.c`
 
