@@ -32,6 +32,13 @@ pcb_t  proc_table[PROC_MAX];
 pcb_t *current = NULL;
 pcb_t *current_core[2] = { NULL, NULL };
 
+/* Indirect core-ID register pointer for assembly (switch.S, svc.S).
+ * Points to SIO_CPUID on RP2040, or core_id_zero on QEMU.
+ * Assembly does: ldr rN, =core_id_reg; ldr rN, [rN]; ldr rN, [rN]
+ * → two loads, no branches, works on both platforms. */
+static uint32_t core_id_zero = 0;
+volatile uint32_t *core_id_reg = &core_id_zero;
+
 /* Monotonically increasing PID counter.  Starts at 1; pid 0 is the kernel. */
 static pid_t next_pid = 1;
 
@@ -57,6 +64,11 @@ void proc_init(void)
 
     current = &proc_table[0];
     current_core[0] = &proc_table[0];
+
+    /* Point assembly's core_id_reg at the SIO_CPUID register on RP2040.
+     * On QEMU (no SIO), it stays pointing at core_id_zero → always 0. */
+    if (spin_have_hw())
+        core_id_reg = (volatile uint32_t *)0xD0000000u;
 
     /* ── Print boot diagnostic ─────────────────────────────────────────── */
     uart_puts("PROC: process table  slots=");

@@ -56,7 +56,7 @@ pcb_t *sched_next(void)
      * Step 10 will use this to skip processes running on the other core. */
     if (result != current) {
         current->running_on_core = -1;
-        result->running_on_core = 0;  /* core_id() for dual-core */
+        result->running_on_core = (int8_t)core_id();
     }
 
     spin_unlock_irqrestore(SPIN_PROC, saved);

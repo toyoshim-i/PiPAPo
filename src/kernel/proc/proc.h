@@ -128,9 +128,14 @@ extern pcb_t  proc_table[PROC_MAX];
  * For now, kept as a real global for switch.S/svc.S literal pool references. */
 extern pcb_t *current;
 
-/* Per-core current process.  current_core[0] mirrors `current` until the
- * assembly handlers are converted to use core_id() indexing (Steps 8-9). */
+/* Per-core current process.  current_core[core_id()] is the authoritative
+ * current pointer.  `current` is kept as legacy alias until Step 9. */
 extern pcb_t *current_core[2];
+
+/* Indirect pointer to core-ID register, used by assembly (switch.S, svc.S).
+ * Points to SIO_CPUID (0xD0000000) on RP2040, or a zero variable on QEMU.
+ * Assembly dereferences twice: &core_id_reg → pointer → core_id value. */
+extern volatile uint32_t *core_id_reg;
 
 /* ── API ────────────────────────────────────────────────────────────────────── */
 

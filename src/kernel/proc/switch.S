@@ -65,13 +65,22 @@ PendSV_Handler:
     @ Rewind r0 to the bottom of the saved context (= new saved PSP).
     subs r0, r0, #32
 
+    @ ── Compute &current_core[core_id] ──────────────────────────────────
+    @ Indirect pointer: core_id_reg → SIO_CPUID (RP2040) or zero (QEMU).
+    @ Two loads, no branches — works on both platforms.
+    ldr  r1, =core_id_reg
+    ldr  r1, [r1]             @ r1 = pointer to core-ID source
+    ldr  r1, [r1]             @ r1 = core_id (0 or 1)
+    lsls r1, r1, #2           @ r1 = byte offset (0 or 4)
+    ldr  r2, =current_core
+    adds r2, r2, r1           @ r2 = &current_core[core_id]
+
     @ ── Write saved PSP into the outgoing PCB ──────────────────────────
-    ldr  r2, =current         @ r2 = &current  (address of the global pcb_t*)
     ldr  r3, [r2]             @ r3 = current PCB pointer
     str  r0, [r3, #PCB_SP_OFFSET]  @ current->sp = r0
 
     @ ── Call C scheduler to select next process ────────────────────────
-    @ Preserve &current (r2) and EXC_RETURN (lr) across C calls.
+    @ Preserve &current_core[core_id] (r2) and EXC_RETURN (lr) across calls.
     push {r2, lr}
     bl   sched_next           @ r0 = next pcb_t*
 
@@ -82,12 +91,12 @@ PendSV_Handler:
     bl   mpu_switch           @ mpu_switch(next) — reprograms MPU region 2
     pop  {r0, r1}             @ r0 = next pcb_t* restored, r1 discarded
 
-    pop  {r2, r3}             @ r2 = &current, r3 = EXC_RETURN (was lr)
+    pop  {r2, r3}             @ r2 = &current_core[core_id], r3 = EXC_RETURN
 
-    @ Update the current global and restore EXC_RETURN in lr.
-    str  r0, [r2]             @ current = next PCB
-    ldr  r1, =current_core
-    str  r0, [r1]             @ current_core[0] = next (Step 8 adds core_id)
+    @ Update current_core[core_id] and legacy `current` (for svc.S until Step 9).
+    str  r0, [r2]             @ current_core[core_id] = next PCB
+    ldr  r1, =current
+    str  r0, [r1]             @ current = next (removed after Step 9)
     mov  lr, r3               @ restore EXC_RETURN
 
     @ ── Restore incoming context ───────────────────────────────────────
