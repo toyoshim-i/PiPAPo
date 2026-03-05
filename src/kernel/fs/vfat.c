@@ -307,10 +307,21 @@ static int vfat_mount(mount_entry_t *mnt, const void *dev_data)
 
     fat32_bpb_t *bpb = (fat32_bpb_t *)sector_buf;
 
-    /* Validate */
+    /* Validate BPB fields */
     if (bpb->bytes_per_sector != 512)
         return -EINVAL;
     if (bpb->sectors_per_cluster == 0)
+        return -EINVAL;
+    if (bpb->num_fats == 0)
+        return -EINVAL;
+    if (bpb->reserved_sectors == 0)
+        return -EINVAL;
+    if (bpb->fat_size_32 == 0)
+        return -EINVAL;
+    /* data_start must not exceed total sectors */
+    uint32_t data_start = (uint32_t)bpb->reserved_sectors
+                        + (uint32_t)bpb->num_fats * bpb->fat_size_32;
+    if (data_start >= bpb->total_sectors_32)
         return -EINVAL;
 
     /* Populate superblock */
@@ -533,7 +544,19 @@ static long vfat_write(vnode_t *vn, const void *buf, size_t n, uint32_t off)
         if (rc < 0) return (long)rc;
         cluster = new_clus;
         vn->ino = new_clus;
-        /* TODO: update directory entry's cluster field */
+
+        /* Write cluster number back to the on-disk directory entry */
+        uint32_t de_sec = DIRENT_POS_SEC(vn);
+        uint32_t de_off = DIRENT_POS_OFF(vn);
+        if (de_sec > 0 || de_off > 0) {
+            rc = read_sector(sb, de_sec, sector_buf);
+            if (rc == 0) {
+                fat_dirent_t *de = (fat_dirent_t *)&sector_buf[de_off];
+                de->first_cluster_hi = (uint16_t)(new_clus >> 16);
+                de->first_cluster_lo = (uint16_t)(new_clus & 0xFFFF);
+                write_sector(sb, de_sec, sector_buf);
+            }
+        }
     }
 
     /* Navigate to the cluster containing `off` */

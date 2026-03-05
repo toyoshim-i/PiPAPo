@@ -156,7 +156,7 @@ Add iteration limit (1024) to `romfs_lookup()` and `romfs_readdir()`.
 
 Validate `e_phentsize`, `e_phnum`, segment offsets within file size.
 
-### ☐ Step 12 — VFAT BPB validation
+### ✓ Step 12 — VFAT BPB validation
 
 **File:** `src/kernel/fs/vfat.c`
 
@@ -165,7 +165,7 @@ Validate `e_phentsize`, `e_phnum`, segment offsets within file size.
 points.  Remaining: validate `num_fats`, `reserved_sectors`, `fat_size_32`,
 `data_start_sector` for zero / overflow.
 
-### ☐ Step 13 — VFAT directory entry cluster field update
+### ✓ Step 13 — VFAT directory entry cluster field update
 
 **File:** `src/kernel/fs/vfat.c`
 
