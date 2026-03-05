@@ -52,7 +52,7 @@ void fd_inherit(pcb_t *child, const pcb_t *parent);
 
 /*
  * Close all open file descriptors for the given process.
- * Called from sys_exit() and sys_execve() during cleanup.
+ * Called from sys_exit() during cleanup.
  */
 void fd_close_all(pcb_t *p);
 

@@ -316,9 +316,12 @@ long sys_execve(const char *path, const char *const *argv)
         return (long)err;
     }
 
-    /* Close old fds and set up fresh stdio for the new image */
-    fd_close_all(current);
-    fd_stdio_init(current);
+    /* POSIX: preserve open fds across execve (redirections, pipes).
+     * Only install default tty stdio if fd 0/1/2 are not already open
+     * (e.g. init's first exec before any shell sets up fds). */
+    if (!current->fd_table[0] && !current->fd_table[1] &&
+        !current->fd_table[2])
+        fd_stdio_init(current);
 
     /* Free old stack page */
     if (old_stack)
