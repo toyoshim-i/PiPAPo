@@ -114,7 +114,8 @@ static int romfs_lookup(vnode_t *dir, const char *name, vnode_t **result)
     const romfs_entry_t *dir_e = get_entry(base, dir->ino);
 
     uint32_t child_off = dir_e->child_off;
-    while (child_off) {
+    uint32_t iter = 0;
+    while (child_off && iter++ < 1024) {
         const romfs_entry_t *child = get_entry(base, child_off);
         const char *child_name = get_name(child);
 
@@ -170,8 +171,9 @@ static int romfs_readdir(vnode_t *dir, struct dirent *entries,
      * to return (0 on first call = start from first child). */
     uint32_t child_off = (*cookie == 0) ? dir_e->child_off : *cookie;
     int count = 0;
+    uint32_t iter = 0;
 
-    while (child_off && (size_t)count < max_entries) {
+    while (child_off && (size_t)count < max_entries && iter++ < 1024) {
         const romfs_entry_t *child = get_entry(base, child_off);
         const char *name = get_name(child);
 
