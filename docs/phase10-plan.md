@@ -111,7 +111,7 @@ O(51) at 133 MHz ≈ 1 µs.
 Add: increment `oom_count` and print UART warning inside the existing critical
 section.
 
-### ☐ Step 6 — Document stack page lifecycle
+### ✓ Step 6 — Document stack page lifecycle
 
 **File:** `src/kernel/syscall/sys_proc.c`
 

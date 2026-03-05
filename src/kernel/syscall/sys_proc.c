@@ -32,7 +32,14 @@
  *   3. Free user pages (if owned — not shared via vfork)
  *   4. Unblock vfork parent if applicable
  *   5. Wake parent (if blocked in waitpid)
- *   6. Mark ZOMBIE and yield
+ *   6. Reparent children to init (PID 1)
+ *   7. Mark ZOMBIE and yield
+ *
+ * Page lifecycle:
+ *   - user_pages[] are freed here in sys_exit() (step 3).
+ *   - stack_page is freed later in sys_waitpid() when the parent reaps
+ *     the zombie.  Orphans are reparented to init (step 6), ensuring
+ *     init can always reap them.
  *
  * Note: sys_exit runs inside SVC_Handler (Handler mode).  sched_yield()
  * only pends PendSV, which tail-chains after SVC returns.  There is no
