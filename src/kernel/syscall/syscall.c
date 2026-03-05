@@ -345,6 +345,9 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
         break;
 
     /* ── P4: poll / blocking I/O ─────────────────────────────────────────── */
+    case SYS_POLL:
+        ret = sys_poll((void *)(uintptr_t)a0, (uint32_t)a1, a2);
+        break;
     case SYS_PPOLL:
         ret = sys_ppoll((void *)(uintptr_t)a0, (uint32_t)a1,
                         (const void *)(uintptr_t)a2,

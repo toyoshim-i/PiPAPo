@@ -126,6 +126,23 @@ static long do_ppoll(struct pollfd *fds, uint32_t nfds,
     return 0;   /* ignored — SVC restores original args */
 }
 
+/* ── sys_poll (SYS_POLL = 168) ─────────────────────────────────────────────── */
+/*
+ * poll(fds, nfds, timeout_ms)
+ *   timeout_ms < 0  → wait forever
+ *   timeout_ms == 0 → non-blocking
+ *   timeout_ms > 0  → wait up to timeout_ms milliseconds
+ */
+long sys_poll(void *fds, uint32_t nfds, long timeout_ms)
+{
+    int has_timeout = (timeout_ms >= 0);
+    uint32_t ticks = 0;
+    if (timeout_ms > 0)
+        ticks = (uint32_t)timeout_ms * PPAP_TICK_HZ / 1000u;
+
+    return do_ppoll((struct pollfd *)fds, nfds, ticks, has_timeout);
+}
+
 /* ── sys_ppoll (SYS_PPOLL = 336) ──────────────────────────────────────────── */
 /*
  * ppoll(fds, nfds, timeout_ts, sigmask, sigsetsize)

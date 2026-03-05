@@ -104,6 +104,7 @@
 #define SYS_FSTATAT64  327
 #define SYS_GETCPU     345
 #define SYS_STATX      397
+#define SYS_POLL             168
 #define SYS_PPOLL            336
 #define SYS_CLOCK_GETTIME64  403
 #define SYS_CLOCK_NANOSLEEP64 407
@@ -226,6 +227,7 @@ long sys_statfs64(const char *path, long sz, void *buf);
 long sys_fstatfs64(long fd, long sz, void *buf);
 
 /* sys_poll.c */
+long sys_poll(void *fds, uint32_t nfds, long timeout_ms);
 long sys_ppoll(void *fds, uint32_t nfds, const void *timeout,
                const void *sigmask, uint32_t sigsetsize);
 long sys_ppoll_time64(void *fds, uint32_t nfds, const void *timeout,
