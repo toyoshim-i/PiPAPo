@@ -166,7 +166,7 @@ int elf_validate(const elf32_ehdr_t *ehdr);
  * the program header table is malformed.
  */
 int elf_load_segments(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
-                      elf32_phdr_t *out, int max);
+                      elf32_phdr_t *out, int max, uint32_t file_size);
 
 /*
  * elf_entry — return the entry point address from the ELF header.
@@ -185,7 +185,7 @@ uint32_t elf_entry(const elf32_ehdr_t *ehdr);
  * data references), or -ENOEXEC if section headers are absent or malformed.
  */
 int elf_find_got(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
-                 elf_got_info_t *out);
+                 elf_got_info_t *out, uint32_t file_size);
 
 /*
  * elf_find_rel — locate the .rel.dyn section in an ELF binary.
@@ -197,6 +197,6 @@ int elf_find_got(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
  * Returns 0 on success, 1 if no .rel.dyn exists, -ENOEXEC on error.
  */
 int elf_find_rel(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
-                 elf_rel_info_t *out);
+                 elf_rel_info_t *out, uint32_t file_size);
 
 #endif /* PPAP_EXEC_ELF_H */

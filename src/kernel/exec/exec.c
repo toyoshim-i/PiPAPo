@@ -50,7 +50,9 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
 
     /* ── 3. Extract PT_LOAD segments ───────────────────────────────────── */
     elf32_phdr_t segs[MAX_LOAD_SEGS];
-    int nseg = elf_load_segments(ehdr, file_base, segs, MAX_LOAD_SEGS);
+    uint32_t file_size = vn->size;
+    int nseg = elf_load_segments(ehdr, file_base, segs, MAX_LOAD_SEGS,
+                                 file_size);
     if (nseg <= 0) {
         vnode_put(vn);
         return -(int)ENOEXEC;
@@ -141,7 +143,7 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
 
         /* ── 7. GOT relocation ─────────────────────────────────────────── */
         elf_got_info_t got_info;
-        if (elf_find_got(ehdr, file_base, &got_info) == 0) {
+        if (elf_find_got(ehdr, file_base, &got_info, file_size) == 0) {
             uint32_t got_offset_in_data =
                 got_info.addr - data_seg->p_vaddr;
             got_sram_addr =
@@ -172,7 +174,7 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
          * applet_main[]) whose entries are raw link-time vaddrs.
          * .rel.dyn lists these locations so we can fix them up. */
         elf_rel_info_t rel_info;
-        if (elf_find_rel(ehdr, file_base, &rel_info) == 0) {
+        if (elf_find_rel(ehdr, file_base, &rel_info, file_size) == 0) {
             const elf32_rel_t *rel =
                 (const elf32_rel_t *)(file_base + rel_info.offset);
             uint32_t n_rel = rel_info.size / sizeof(elf32_rel_t);

@@ -43,8 +43,10 @@ int elf_validate(const elf32_ehdr_t *ehdr)
     if ((ehdr->e_flags & EF_ARM_EABI_VER_MASK) != EF_ARM_EABI_VER5)
         return -(int)ENOEXEC;
 
-    /* Must have program headers */
+    /* Must have program headers with valid entry size */
     if (ehdr->e_phoff == 0 || ehdr->e_phnum == 0)
+        return -(int)ENOEXEC;
+    if (ehdr->e_phentsize < sizeof(elf32_phdr_t))
         return -(int)ENOEXEC;
 
     return 0;
@@ -53,8 +55,14 @@ int elf_validate(const elf32_ehdr_t *ehdr)
 /* ── elf_load_segments ───────────────────────────────────────────────────── */
 
 int elf_load_segments(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
-                      elf32_phdr_t *out, int max)
+                      elf32_phdr_t *out, int max, uint32_t file_size)
 {
+    /* Validate program header table fits within the file */
+    uint32_t ph_end = ehdr->e_phoff +
+                      (uint32_t)ehdr->e_phnum * ehdr->e_phentsize;
+    if (ph_end < ehdr->e_phoff || ph_end > file_size)
+        return -(int)ENOEXEC;
+
     const uint8_t *ph_table = file_base + ehdr->e_phoff;
     int count = 0;
 
@@ -64,6 +72,11 @@ int elf_load_segments(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
 
         if (ph->p_type != PT_LOAD)
             continue;
+
+        /* Validate segment file data fits within the file */
+        if (ph->p_offset + ph->p_filesz < ph->p_offset ||
+            ph->p_offset + ph->p_filesz > file_size)
+            return -(int)ENOEXEC;
 
         if (count < max) {
             memcpy(&out[count], ph, sizeof(elf32_phdr_t));
@@ -90,15 +103,26 @@ static int str_eq(const char *a, const char *b)
 }
 
 int elf_find_got(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
-                 elf_got_info_t *out)
+                 elf_got_info_t *out, uint32_t file_size)
 {
     if (ehdr->e_shoff == 0 || ehdr->e_shnum == 0)
         return 1;   /* no section headers */
     if (ehdr->e_shstrndx == 0 || ehdr->e_shstrndx >= ehdr->e_shnum)
         return 1;
 
+    /* Validate section header table fits within the file */
+    uint32_t sh_end = ehdr->e_shoff +
+                      (uint32_t)ehdr->e_shnum * sizeof(elf32_shdr_t);
+    if (sh_end < ehdr->e_shoff || sh_end > file_size)
+        return 1;
+
     const elf32_shdr_t *sh_table =
         (const elf32_shdr_t *)(file_base + ehdr->e_shoff);
+
+    /* Validate strtab offset */
+    if (sh_table[ehdr->e_shstrndx].sh_offset >= file_size)
+        return 1;
+
     const char *strtab =
         (const char *)(file_base + sh_table[ehdr->e_shstrndx].sh_offset);
 
@@ -118,15 +142,26 @@ int elf_find_got(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
 /* ── elf_find_rel ────────────────────────────────────────────────────────── */
 
 int elf_find_rel(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
-                 elf_rel_info_t *out)
+                 elf_rel_info_t *out, uint32_t file_size)
 {
     if (ehdr->e_shoff == 0 || ehdr->e_shnum == 0)
         return 1;
     if (ehdr->e_shstrndx == 0 || ehdr->e_shstrndx >= ehdr->e_shnum)
         return 1;
 
+    /* Validate section header table fits within the file */
+    uint32_t sh_end = ehdr->e_shoff +
+                      (uint32_t)ehdr->e_shnum * sizeof(elf32_shdr_t);
+    if (sh_end < ehdr->e_shoff || sh_end > file_size)
+        return 1;
+
     const elf32_shdr_t *sh_table =
         (const elf32_shdr_t *)(file_base + ehdr->e_shoff);
+
+    /* Validate strtab offset */
+    if (sh_table[ehdr->e_shstrndx].sh_offset >= file_size)
+        return 1;
+
     const char *strtab =
         (const char *)(file_base + sh_table[ehdr->e_shstrndx].sh_offset);
 

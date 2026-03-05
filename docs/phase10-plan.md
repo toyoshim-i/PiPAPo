@@ -150,7 +150,7 @@ When `line_pos == LINE_BUF_SIZE`, auto-complete line and ring bell.
 
 Add iteration limit (1024) to `romfs_lookup()` and `romfs_readdir()`.
 
-### ☐ Step 11 — ELF metadata bounds validation
+### ✓ Step 11 — ELF metadata bounds validation
 
 **Files:** `src/kernel/exec/elf.c`, `src/kernel/exec/exec.c`
 
