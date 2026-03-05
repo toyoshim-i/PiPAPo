@@ -52,17 +52,19 @@ interprets them.
 
 ### Memory budget
 
-Rogue 5.4.4 is famously small:
+Rogue 5.4.4 with PPAP curses shim (measured, xcrypt.c excluded):
 
-| Component       | Estimated size |
-|-----------------|---------------|
-| .text (code)    | ~40–60 KB |
-| .data + .bss    | ~8–12 KB |
-| Heap (runtime)  | ~10–20 KB |
-| Stack           | ~2 KB |
-| **Total**       | **~60–95 KB** |
+| Component       | Size |
+|-----------------|------|
+| .text (code)    | 143 KB (flash — no limit) |
+| .data           | 14 KB |
+| .bss            | 61 KB |
+| **data+bss**    | **75 KB** |
+| Stripped ELF    | 162 KB |
 
-Well within the 128 KB per-process data limit and 4 KB stack page.
+75 KB data+bss is well within the 128 KB per-process limit.
+Excluding `xcrypt.c` (71 KB BSS for DES tables) is critical — it's only
+used for wizard mode (`MASTER`), which is disabled.
 
 ---
 
