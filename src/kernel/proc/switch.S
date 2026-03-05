@@ -86,6 +86,8 @@ PendSV_Handler:
 
     @ Update the current global and restore EXC_RETURN in lr.
     str  r0, [r2]             @ current = next PCB
+    ldr  r1, =current_core
+    str  r0, [r1]             @ current_core[0] = next (Step 8 adds core_id)
     mov  lr, r3               @ restore EXC_RETURN
 
     @ ── Restore incoming context ───────────────────────────────────────

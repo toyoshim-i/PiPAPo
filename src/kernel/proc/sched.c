@@ -51,6 +51,14 @@ pcb_t *sched_next(void)
             break;
         }
     }
+
+    /* Track which core is running which process.
+     * Step 10 will use this to skip processes running on the other core. */
+    if (result != current) {
+        current->running_on_core = -1;
+        result->running_on_core = 0;  /* core_id() for dual-core */
+    }
+
     spin_unlock_irqrestore(SPIN_PROC, saved);
     return result;
 }

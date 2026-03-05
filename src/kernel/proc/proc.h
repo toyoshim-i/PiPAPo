@@ -80,6 +80,7 @@ typedef struct pcb {
     /* ── Scheduling ─────────────────────────────────────────────────────── */
     uint32_t ticks_remaining;   /* SysTick ticks left in current time-slice   */
     uint32_t sleep_until;       /* wake when SysTick count reaches this value */
+    int8_t   running_on_core;   /* -1 = not running, 0/1 = core ID           */
 
     /* ── vfork / waitpid ──────────────────────────────────────────────── */
     struct pcb *vfork_parent;   /* non-NULL while child shares parent's space */
@@ -121,8 +122,15 @@ typedef struct pcb {
  * All entries live in BSS and are zero-initialised by startup.S. */
 extern pcb_t  proc_table[PROC_MAX];
 
-/* Pointer to the currently executing PCB.  Always non-NULL after proc_init(). */
+/* Pointer to the currently executing PCB.  Always non-NULL after proc_init().
+ * After Steps 8-9 convert assembly, this becomes:
+ *   #define current (current_core[core_id()])
+ * For now, kept as a real global for switch.S/svc.S literal pool references. */
 extern pcb_t *current;
+
+/* Per-core current process.  current_core[0] mirrors `current` until the
+ * assembly handlers are converted to use core_id() indexing (Steps 8-9). */
+extern pcb_t *current_core[2];
 
 /* ── API ────────────────────────────────────────────────────────────────────── */
 

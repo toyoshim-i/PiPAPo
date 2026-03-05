@@ -30,6 +30,7 @@ _Static_assert(offsetof(pcb_t, sp) == PCB_SP_OFFSET,
 
 pcb_t  proc_table[PROC_MAX];
 pcb_t *current = NULL;
+pcb_t *current_core[2] = { NULL, NULL };
 
 /* Monotonically increasing PID counter.  Starts at 1; pid 0 is the kernel. */
 static pid_t next_pid = 1;
@@ -55,6 +56,7 @@ void proc_init(void)
     __builtin_memcpy(proc_table[0].comm, "kernel", 7);
 
     current = &proc_table[0];
+    current_core[0] = &proc_table[0];
 
     /* ── Print boot diagnostic ─────────────────────────────────────────── */
     uart_puts("PROC: process table  slots=");
@@ -100,6 +102,7 @@ pcb_t *proc_alloc(void)
              * sys_vfork copies them from the parent (like real fork).
              * Only setsid/setpgid should change them explicitly. */
             proc_table[i].umask_val = DEFAULT_UMASK;
+            proc_table[i].running_on_core = -1;
             proc_table[i].start_time = sched_get_ticks();
             /* state left as PROC_FREE — caller sets it to PROC_RUNNABLE
              * only after filling in stack_page and setting up the stack frame */
