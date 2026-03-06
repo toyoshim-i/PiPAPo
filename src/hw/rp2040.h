@@ -33,6 +33,7 @@
 #define RESETS_RESET_CLR   REG(0x4000F000u)   /* CLR alias: write 1 → release */
 
 /* Reset bit positions */
+#define RESET_I2C1         (1u << 4)          /* I2C1 (DW_apb_i2c)            */
 #define RESET_IO_BANK0     (1u << 5)          /* GPIO pin-function mux        */
 #define RESET_PADS_BANK0   (1u << 8)          /* GPIO pad settings            */
 #define RESET_PLL_SYS      (1u << 12)         /* PLL_SYS                      */

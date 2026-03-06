@@ -7,6 +7,7 @@ add_executable(ppap_pico1calc
     ${CMAKE_SOURCE_DIR}/src/drivers/clock.c
     ${CMAKE_SOURCE_DIR}/src/drivers/spi.c
     ${CMAKE_SOURCE_DIR}/src/drivers/sd.c
+    ${CMAKE_SOURCE_DIR}/src/drivers/i2c.c
 )
 
 target_include_directories(ppap_pico1calc PRIVATE
