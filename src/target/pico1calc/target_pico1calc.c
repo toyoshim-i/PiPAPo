@@ -69,6 +69,8 @@ void target_early_init(void)
         klog("LCD: ST7796S initialised (320x320 RGB565)\n");
         fbcon_init();
         klog("FBCON: text console initialised (40x20)\n");
+        klog_set_mirror(fbcon_putc, fbcon_flush);
+        klog("KLOG: output mirrored to LCD\n");
         tty_set_backend(&fbcon_backend);
         sched_set_input_poll(fbcon_avail_wrapper);
         klog("TTY: backend switched to LCD+keyboard\n");
@@ -79,6 +81,12 @@ void target_early_init(void)
 
 void target_late_init(void)
 {
+    /* TODO: SD init disabled — spi_xfer() hangs on the first SPI0 data
+     * transfer after UF2 bootloader warm boot.  The PL022 accepts TX data
+     * but never produces RX data, suggesting clk_peri or GPIO mux issue.
+     * Investigate: try SPI0 loopback test, verify clk_peri, check if the
+     * bootloader's boot2 reconfigures pin mux for QSPI that conflicts. */
+#if 0
     int rc = sd_init();
     if (rc == 0)
         klog("SD: card initialised, mmcblk0 registered\n");
@@ -86,6 +94,9 @@ void target_late_init(void)
         klog("SD: no card detected (skipping)\n");
     else
         klogf("SD: init failed (err=%u)\n", (uint32_t)(-(int)rc));
+#else
+    klog("SD: disabled (SPI0 hang under investigation)\n");
+#endif
 
     uart_flush();
     uart_init_irq();

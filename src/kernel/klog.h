@@ -14,16 +14,10 @@
 #ifndef PPAP_KLOG_H
 #define PPAP_KLOG_H
 
-#include "spinlock.h"
-#include "drivers/uart.h"
+#include <stdint.h>
 
 /* Atomic single-string log (no format parsing). */
-static inline void klog(const char *msg)
-{
-    uint32_t s = spin_lock_irqsave(SPIN_UART);
-    uart_puts(msg);
-    spin_unlock_irqrestore(SPIN_UART, s);
-}
+void klog(const char *msg);
 
 /*
  * klogf(fmt, ...) — formatted atomic log.
@@ -34,5 +28,12 @@ static inline void klog(const char *msg)
  *   %%  literal '%'
  */
 void klogf(const char *fmt, ...);
+
+/*
+ * Register a mirror output sink (e.g. fbcon for LCD).
+ * When set, all klog/klogf output is sent to both UART and the mirror.
+ * UART always remains the primary debug channel.
+ */
+void klog_set_mirror(void (*putc)(char c), void (*flush)(void));
 
 #endif /* PPAP_KLOG_H */
