@@ -31,6 +31,9 @@ void fbcon_flush(void);
 /* Clear the entire screen. */
 void fbcon_clear(void);
 
+/* Move cursor to (x, y), clamped to grid bounds. */
+void fbcon_set_cursor(int x, int y);
+
 /* Switch display mode (FBCON_MODE_NORMAL or FBCON_MODE_COMPACT). */
 void fbcon_set_mode(int mode);
 
