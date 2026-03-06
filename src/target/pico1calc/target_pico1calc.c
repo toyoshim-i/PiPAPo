@@ -12,6 +12,7 @@
 #include "drivers/spi.h"
 #include "drivers/sd.h"
 #include "drivers/i2c.h"
+#include "drivers/spi_lcd.h"
 #include "klog.h"
 #include "mm/mpu.h"
 #include "errno.h"
@@ -33,6 +34,8 @@ void target_early_init(void)
     klog("SPI0: initialised at 400 kHz\n");
     i2c_init();
     klog("I2C1: initialised at 10 kHz\n");
+    spi_lcd_init();
+    klog("SPI1: LCD initialised at 33 MHz\n");
 }
 
 void target_late_init(void)

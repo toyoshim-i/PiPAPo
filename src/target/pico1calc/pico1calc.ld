@@ -19,8 +19,8 @@
  *   0x10000000  Stage 1 (4KB):
  *               [0x10000000–0x100000FF]  Pico SDK boot2 (256 B, QSPI init)
  *               [0x10000100–0x10000FFF]  stage1.S (VTOR redirect to kernel)
- *   0x10001000  Kernel (80KB):           Vector table + .text + .rodata
- *   0x10011000  romfs (~16MB remainder): Populated by mkromfs (Phase 2+)
+ *   0x10001000  Kernel (96KB):           Vector table + .text + .rodata
+ *   0x10019000  romfs (~16MB remainder): Populated by mkromfs (Phase 2+)
  *
  * =============================================================================
  * MEMORY REGIONS
@@ -31,10 +31,10 @@
  *   0x10000000  +-----------------------+  <- FLASH_BOOT  (4 KB)
  *               | SDK boot2 (256 B)     |     QSPI init, enables XIP
  *               | stage1 extension      |     Sets VTOR, jumps to kernel
- *   0x10001000  +-----------------------+  <- FLASH_KERNEL (80 KB)
+ *   0x10001000  +-----------------------+  <- FLASH_KERNEL (96 KB)
  *               | Kernel .text/.rodata  |     Vector table at 0x10001000,
  *               | (vector table first)  |     then kernel code + data
- *   0x10015000  +-----------------------+  <- FLASH_ROMFS  (~16 MB remainder)
+ *   0x10019000  +-----------------------+  <- FLASH_ROMFS  (~16 MB remainder)
  *               | romfs image           |     Populated by mkromfs (Phase 2+)
  *               +-----------------------+
  *
@@ -57,8 +57,8 @@ MEMORY {
     /* External QSPI Flash — XIP mapped at 0x10000000
      * FLASH_BOOT: 4 KB — SDK boot2 (256 B) + stage1 extension */
     FLASH_BOOT   (rx)  : ORIGIN = 0x10000000, LENGTH = 4K
-    FLASH_KERNEL (rx)  : ORIGIN = 0x10001000, LENGTH = 80K
-    FLASH_ROMFS  (r)   : ORIGIN = 0x10015000, LENGTH = 16M - 0x15000
+    FLASH_KERNEL (rx)  : ORIGIN = 0x10001000, LENGTH = 96K
+    FLASH_ROMFS  (r)   : ORIGIN = 0x10019000, LENGTH = 16M - 0x19000
 
     /* On-chip SRAM — 264KB total */
     RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 20K

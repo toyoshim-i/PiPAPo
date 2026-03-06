@@ -38,6 +38,7 @@
 #define RESET_PADS_BANK0   (1u << 8)          /* GPIO pad settings            */
 #define RESET_PLL_SYS      (1u << 12)         /* PLL_SYS                      */
 #define RESET_SPI0         (1u << 16)         /* SPI0 (PL022)                 */
+#define RESET_SPI1         (1u << 17)         /* SPI1 (PL022)                 */
 #define RESET_UART0        (1u << 22)         /* UART0 (PL011)                */
 
 /* ── CLOCKS peripheral (base 0x40008000) ─────────────────────────────────

@@ -26,6 +26,14 @@
 #define PICOCALC_SPI0_TX     19   /* MOSI — GP19, FUNCSEL 1 */
 #define PICOCALC_SD_CD       22   /* Card detect — GP22, active low */
 
+/* ── SPI1 / LCD display ──────────────────────────────────────────────────── */
+
+#define PICOCALC_SPI1_SCK    10   /* SCK  — GP10, FUNCSEL 1 */
+#define PICOCALC_SPI1_TX     11   /* MOSI — GP11, FUNCSEL 1 */
+#define PICOCALC_LCD_CS      13   /* CS   — GP13, manual GPIO */
+#define PICOCALC_LCD_DC      14   /* DC   — GP14, manual GPIO */
+#define PICOCALC_LCD_RST     15   /* RST  — GP15, manual GPIO */
+
 /* ── I2C1 / Keyboard (STM32 co-processor) ────────────────────────────────── */
 
 #define PICOCALC_I2C1_SDA     6   /* SDA — GP6, FUNCSEL 3 */
