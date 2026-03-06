@@ -139,7 +139,9 @@ void spi_lcd_reset(void)
 
 void spi_lcd_init(void)
 {
-    /* 1. Release SPI1 from reset */
+    /* 1. Full reset cycle — assert then de-assert (same rationale as SPI0
+     *    in spi.c: the UF2 bootloader may leave the peripheral in use). */
+    RESETS_RESET_SET = RESET_SPI1;
     RESETS_RESET_CLR = RESET_SPI1;
     while (!(RESETS_RESET_DONE & RESET_SPI1))
         ;

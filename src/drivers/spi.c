@@ -106,7 +106,13 @@ static void compute_prescaler(uint32_t baud_hz, uint32_t *cpsdvsr, uint32_t *scr
 
 void spi_init(uint32_t baud_hz)
 {
-    /* 1. Release SPI0 from reset */
+    /* 1. Full reset cycle — assert then de-assert to ensure SPI0 starts in
+     *    a clean state.  The UF2 bootloader's stage3 may have taken SPI0
+     *    out of reset and used it before jumping to our code, leaving stale
+     *    FIFO data or an in-progress transfer.  A bare RESET_CLR is a no-op
+     *    if SPI0 is already out of reset; the SET+CLR sequence guarantees a
+     *    true hardware reset that clears FIFOs and all internal state. */
+    RESETS_RESET_SET = RESET_SPI0;
     RESETS_RESET_CLR = RESET_SPI0;
     while (!(RESETS_RESET_DONE & RESET_SPI0))
         ;

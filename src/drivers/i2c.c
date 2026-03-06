@@ -166,7 +166,9 @@ static int i2c_wait_idle(void)
 
 void i2c_init(void)
 {
-    /* 1. Release I2C1 from reset */
+    /* 1. Full reset cycle — assert then de-assert (same rationale as SPI0/SPI1:
+     *    the UF2 bootloader may leave the peripheral in an unknown state). */
+    RESETS_RESET_SET = RESET_I2C1;
     RESETS_RESET_CLR = RESET_I2C1;
     while (!(RESETS_RESET_DONE & RESET_I2C1))
         ;
