@@ -1,9 +1,15 @@
 /*
- * tty.c — TTY driver with line discipline
+ * tty.c — Multi-TTY driver with line discipline
  *
- * By default, backed by uart_putc() / uart_getc() from drivers/uart.h.
- * Call tty_set_backend() to switch to an alternate I/O backend (e.g.
- * fbcon + keyboard on PicoCalc).
+ * Supports multiple independent TTY instances, each with its own backend,
+ * line buffer, termios, and foreground process group.
+ *
+ *   tty_devs[0] — /dev/ttyS0 (UART, always available)
+ *   tty_devs[1] — /dev/tty1  (fbcon+kbd on PicoCalc, NULL if no display)
+ *
+ * Each open of a /dev/ttyXX device allocates a struct file with
+ * f->priv = &tty_devs[idx], so tty_read/tty_write dispatch to the
+ * correct instance.
  *
  * tty_write: iterates the buffer; if OPOST is set, expands '\n' → '\r\n'.
  *
@@ -63,32 +69,9 @@
 
 #define NCCS  19   /* number of control characters (matches Linux ARM) */
 
-/* ── Line discipline state ─────────────────────────────────────────────────── */
+/* ── Per-instance TTY state ───────────────────────────────────────────────── */
 
 #define LINE_BUF_SIZE  128
-static char line_buf[LINE_BUF_SIZE] __attribute__((section(".iobuf")));
-static uint16_t line_pos;           /* next write position in line_buf */
-static volatile uint8_t line_ready; /* 1 when complete line available */
-
-/* ── I/O backend function pointers (default: UART) ─────────────────────────── */
-
-static void (*tty_out)(char c)       = uart_putc;
-static void (*tty_out_flush)(void)   = NULL;
-static int  (*tty_in)(void)          = uart_getc;
-static int  (*tty_in_avail)(void)    = uart_rx_avail;
-static int  (*tty_win_cols)(void)    = NULL;
-static int  (*tty_win_rows)(void)    = NULL;
-
-/* ── tty ioctl numbers ─────────────────────────────────────────────────────── */
-
-#define TCGETS      0x5401u
-#define TCSETS      0x5402u
-#define TCSETSW     0x5403u
-#define TCSETSF     0x5404u
-#define TIOCGWINSZ  0x5413u
-#define TIOCGPGRP   0x540Fu
-#define TIOCSPGRP   0x5410u
-#define TIOCSWINSZ  0x5414u
 
 /* Minimal termios for musl compatibility (matches Linux ARM layout) */
 struct kernel_termios {
@@ -107,54 +90,115 @@ struct winsize {
     uint16_t ws_ypixel;
 };
 
-/* Default termios: canonical mode, echo on, signals enabled */
-static struct kernel_termios tty_termios = {
-    .c_iflag = ICRNL | IXON,
-    .c_oflag = OPOST | ONLCR,
-    .c_cflag = CFLAG_DEFAULT,     /* CS8 | CREAD | HUPCL | B38400 */
-    .c_lflag = LFLAG_DEFAULT,     /* ECHO|ECHOE|ECHOK|ICANON|ISIG|IEXTEN|ECHOCTL|ECHOKE */
-    .c_line = 0,
-    .c_cc = { 0 },
+typedef struct {
+    /* I/O backend callbacks */
+    void (*out)(char c);
+    void (*out_flush)(void);
+    int  (*in)(void);
+    int  (*in_avail)(void);
+    int  (*win_cols)(void);
+    int  (*win_rows)(void);
+
+    /* Line discipline state */
+    char line_buf[LINE_BUF_SIZE];
+    uint16_t line_pos;
+    volatile uint8_t line_ready;
+
+    /* Termios settings */
+    struct kernel_termios termios;
+
+    /* Foreground process group (for job control) */
+    int32_t fg_pgrp;
+} tty_dev_t;
+
+static tty_dev_t tty_devs[TTY_MAX] = {
+    [TTY_SERIAL] = {
+        .out       = uart_putc,
+        .out_flush = NULL,
+        .in        = uart_getc,
+        .in_avail  = uart_rx_avail,
+        .win_cols  = NULL,
+        .win_rows  = NULL,
+        .termios   = {
+            .c_iflag = ICRNL | IXON,
+            .c_oflag = OPOST | ONLCR,
+            .c_cflag = CFLAG_DEFAULT,
+            .c_lflag = LFLAG_DEFAULT,
+            .c_line  = 0,
+            .c_cc    = { 0 },
+        },
+        .fg_pgrp = 0,
+    },
+    [TTY_DISPLAY] = {
+        /* All NULL — pico1calc registers fbcon backend via tty_set_backend() */
+        .termios = {
+            .c_iflag = ICRNL | IXON,
+            .c_oflag = OPOST | ONLCR,
+            .c_cflag = CFLAG_DEFAULT,
+            .c_lflag = LFLAG_DEFAULT,
+            .c_line  = 0,
+            .c_cc    = { 0 },
+        },
+        .fg_pgrp = 0,
+    },
 };
 
-/* Foreground process group (for job control) */
-static int32_t tty_fg_pgrp = 0;
+/* ── tty ioctl numbers ─────────────────────────────────────────────────────── */
+
+#define TCGETS      0x5401u
+#define TCSETS      0x5402u
+#define TCSETSW     0x5403u
+#define TCSETSF     0x5404u
+#define TIOCGWINSZ  0x5413u
+#define TIOCGPGRP   0x540Fu
+#define TIOCSPGRP   0x5410u
+#define TIOCSWINSZ  0x5414u
 
 /* ── Backend setup ─────────────────────────────────────────────────────────── */
 
-void tty_set_backend(const tty_backend_t *be)
+void tty_set_backend(int idx, const tty_backend_t *be)
 {
-    tty_out       = be->putc;
-    tty_out_flush = be->flush;
-    tty_in        = be->getc;
-    tty_in_avail  = be->rx_avail;
-    tty_win_cols  = be->get_cols;
-    tty_win_rows  = be->get_rows;
+    if ((unsigned)idx >= TTY_MAX)
+        return;
+    tty_dev_t *t = &tty_devs[idx];
+    t->out       = be->putc;
+    t->out_flush = be->flush;
+    t->in        = be->getc;
+    t->in_avail  = be->rx_avail;
+    t->win_cols  = be->get_cols;
+    t->win_rows  = be->get_rows;
+}
+
+void *tty_get_dev(int idx)
+{
+    if ((unsigned)idx >= TTY_MAX)
+        return &tty_devs[0];
+    return &tty_devs[idx];
 }
 
 /* ── Output helper (putc + optional flush) ────────────────────────────────── */
 
-static inline void tty_echo_flush(void)
+static inline void dev_echo_flush(tty_dev_t *t)
 {
-    if (tty_out_flush)
-        tty_out_flush();
+    if (t->out_flush)
+        t->out_flush();
 }
 
 /* ── SIGINT delivery ───────────────────────────────────────────────────────── */
 
-static void tty_send_signal(int sig)
+static void dev_send_signal(tty_dev_t *t, int sig)
 {
     int woke = 0;
     for (uint32_t i = 0; i < PROC_MAX; i++) {
         pcb_t *p = &proc_table[i];
         if (p->state == PROC_FREE)
             continue;
-        /* Match foreground process group.  When tty_fg_pgrp == 0 (no job
+        /* Match foreground process group.  When fg_pgrp == 0 (no job
          * control — hush without CONFIG_HUSH_JOB never calls tcsetpgrp),
          * signal all non-init processes: on a single-terminal system
          * without job control everything is "foreground". */
-        if (tty_fg_pgrp != 0) {
-            if ((int32_t)p->pgid != tty_fg_pgrp)
+        if (t->fg_pgrp != 0) {
+            if ((int32_t)p->pgid != t->fg_pgrp)
                 continue;
         } else {
             if (p->pid <= 1)
@@ -180,31 +224,34 @@ static void tty_send_signal(int sig)
 
 static long tty_write(struct file *f, const char *buf, size_t n)
 {
-    (void)f;
-    int opost = (tty_termios.c_oflag & OPOST) != 0;
+    tty_dev_t *t = (tty_dev_t *)f->priv;
+    if (!t || !t->out)
+        return -(long)ENODEV;
+
+    int opost = (t->termios.c_oflag & OPOST) != 0;
 
     for (size_t i = 0u; i < n; i++) {
-        if (opost && buf[i] == '\n' && (tty_termios.c_oflag & ONLCR))
-            tty_out('\r');    /* NL → CR+NL when OPOST|ONLCR set */
-        tty_out(buf[i]);
+        if (opost && buf[i] == '\n' && (t->termios.c_oflag & ONLCR))
+            t->out('\r');    /* NL → CR+NL when OPOST|ONLCR set */
+        t->out(buf[i]);
     }
-    tty_echo_flush();
+    dev_echo_flush(t);
     return (long)n;
 }
 
 /* ── tty_read: canonical (cooked) mode ─────────────────────────────────────── */
 
-static long tty_read_canon(char *buf, size_t n)
+static long tty_read_canon(tty_dev_t *t, char *buf, size_t n)
 {
     /* Drain all available characters from input */
-    while (!line_ready) {
-        int c = tty_in();
+    while (!t->line_ready) {
+        int c = t->in();
         if (c < 0) {
             /* No data — check for pending signal before blocking */
             if (current->sig_pending & ~current->sig_blocked)
                 return -(long)EINTR;
             /* Block via svc_restart: re-executes this syscall when woken */
-            current->wait_channel = &tty_stdin;
+            current->wait_channel = t;
             current->state = PROC_BLOCKED;
             svc_restart[core_id()] = 1;
             sched_yield();
@@ -212,35 +259,35 @@ static long tty_read_canon(char *buf, size_t n)
         }
 
         /* ICRNL: map CR to NL */
-        if ((tty_termios.c_iflag & ICRNL) && c == '\r')
+        if ((t->termios.c_iflag & ICRNL) && c == '\r')
             c = '\n';
 
         /* ISIG: signal characters */
-        if (tty_termios.c_lflag & ISIG) {
+        if (t->termios.c_lflag & ISIG) {
             if (c == CTRL_C) {   /* Ctrl-C → SIGINT */
-                tty_send_signal(SIGINT);
+                dev_send_signal(t, SIGINT);
                 /* Discard line buffer, echo ^C */
-                if (tty_termios.c_lflag & ECHO) {
-                    tty_out('^');
-                    tty_out('C');
-                    tty_out('\r');
-                    tty_out('\n');
-                    tty_echo_flush();
+                if (t->termios.c_lflag & ECHO) {
+                    t->out('^');
+                    t->out('C');
+                    t->out('\r');
+                    t->out('\n');
+                    dev_echo_flush(t);
                 }
-                line_pos = 0;
+                t->line_pos = 0;
                 return -(long)EINTR;
             }
         }
 
         /* Backspace / DEL */
         if (c == ASCII_DEL || c == ASCII_BS) {
-            if (line_pos > 0) {
-                line_pos--;
-                if (tty_termios.c_lflag & ECHO) {
-                    tty_out('\b');
-                    tty_out(' ');
-                    tty_out('\b');
-                    tty_echo_flush();
+            if (t->line_pos > 0) {
+                t->line_pos--;
+                if (t->termios.c_lflag & ECHO) {
+                    t->out('\b');
+                    t->out(' ');
+                    t->out('\b');
+                    dev_echo_flush(t);
                 }
             }
             continue;
@@ -248,67 +295,67 @@ static long tty_read_canon(char *buf, size_t n)
 
         /* Ctrl-U: kill line */
         if (c == CTRL_U) {
-            while (line_pos > 0) {
-                line_pos--;
-                if (tty_termios.c_lflag & ECHO) {
-                    tty_out('\b');
-                    tty_out(' ');
-                    tty_out('\b');
+            while (t->line_pos > 0) {
+                t->line_pos--;
+                if (t->termios.c_lflag & ECHO) {
+                    t->out('\b');
+                    t->out(' ');
+                    t->out('\b');
                 }
             }
-            tty_echo_flush();
+            dev_echo_flush(t);
             continue;
         }
 
         /* Ctrl-D: EOF / flush */
         if (c == CTRL_D) {
-            if (line_pos == 0)
+            if (t->line_pos == 0)
                 return 0;           /* EOF */
-            line_ready = 1;         /* flush what we have */
+            t->line_ready = 1;     /* flush what we have */
             break;
         }
 
         /* Newline: complete the line */
         if (c == '\n') {
-            if (line_pos < LINE_BUF_SIZE)
-                line_buf[line_pos++] = (char)c;
-            if (tty_termios.c_lflag & ECHO) {
-                tty_out('\r');
-                tty_out('\n');
-                tty_echo_flush();
+            if (t->line_pos < LINE_BUF_SIZE)
+                t->line_buf[t->line_pos++] = (char)c;
+            if (t->termios.c_lflag & ECHO) {
+                t->out('\r');
+                t->out('\n');
+                dev_echo_flush(t);
             }
-            line_ready = 1;
+            t->line_ready = 1;
             break;
         }
 
         /* Regular character */
-        if (line_pos < LINE_BUF_SIZE) {
-            line_buf[line_pos++] = (char)c;
-            if (tty_termios.c_lflag & ECHO) {
-                tty_out((char)c);
-                tty_echo_flush();
+        if (t->line_pos < LINE_BUF_SIZE) {
+            t->line_buf[t->line_pos++] = (char)c;
+            if (t->termios.c_lflag & ECHO) {
+                t->out((char)c);
+                dev_echo_flush(t);
             }
         } else {
             /* Line buffer full — ring bell to notify user */
-            tty_out('\a');
-            tty_echo_flush();
+            t->out('\a');
+            dev_echo_flush(t);
         }
     }
 
     /* Deliver buffered data to user */
-    size_t avail = line_pos;
+    size_t avail = t->line_pos;
     if (avail > n)
         avail = n;
-    __builtin_memcpy(buf, line_buf, avail);
+    __builtin_memcpy(buf, t->line_buf, avail);
 
     /* Shift remaining data (if partial read) */
-    if (avail < line_pos) {
-        for (uint16_t i = 0; i < line_pos - (uint16_t)avail; i++)
-            line_buf[i] = line_buf[(uint16_t)avail + i];
-        line_pos -= (uint16_t)avail;
+    if (avail < t->line_pos) {
+        for (uint16_t i = 0; i < t->line_pos - (uint16_t)avail; i++)
+            t->line_buf[i] = t->line_buf[(uint16_t)avail + i];
+        t->line_pos -= (uint16_t)avail;
     } else {
-        line_pos = 0;
-        line_ready = 0;
+        t->line_pos = 0;
+        t->line_ready = 0;
     }
 
     return (long)avail;
@@ -316,16 +363,16 @@ static long tty_read_canon(char *buf, size_t n)
 
 /* ── tty_read: raw mode ────────────────────────────────────────────────────── */
 
-static long tty_read_raw(char *buf, size_t n)
+static long tty_read_raw(tty_dev_t *t, char *buf, size_t n)
 {
     (void)n;
-    int c = tty_in();
+    int c = t->in();
     if (c < 0) {
         /* Check for pending signal before blocking */
         if (current->sig_pending & ~current->sig_blocked)
             return -(long)EINTR;
         /* Block via svc_restart */
-        current->wait_channel = &tty_stdin;
+        current->wait_channel = t;
         current->state = PROC_BLOCKED;
         svc_restart[core_id()] = 1;
         sched_yield();
@@ -333,23 +380,23 @@ static long tty_read_raw(char *buf, size_t n)
     }
 
     /* ICRNL: map CR to NL */
-    if ((tty_termios.c_iflag & ICRNL) && c == '\r')
+    if ((t->termios.c_iflag & ICRNL) && c == '\r')
         c = '\n';
 
     /* ISIG in raw mode too */
-    if (tty_termios.c_lflag & ISIG) {
+    if (t->termios.c_lflag & ISIG) {
         if (c == CTRL_C) {
-            tty_send_signal(SIGINT);
+            dev_send_signal(t, SIGINT);
             return -(long)EINTR;
         }
     }
 
-    if (tty_termios.c_lflag & ECHO) {
-        if (c == '\n' && (tty_termios.c_oflag & OPOST) &&
-            (tty_termios.c_oflag & ONLCR))
-            tty_out('\r');
-        tty_out((char)c);
-        tty_echo_flush();
+    if (t->termios.c_lflag & ECHO) {
+        if (c == '\n' && (t->termios.c_oflag & OPOST) &&
+            (t->termios.c_oflag & ONLCR))
+            t->out('\r');
+        t->out((char)c);
+        dev_echo_flush(t);
     }
 
     buf[0] = (char)c;
@@ -360,14 +407,16 @@ static long tty_read_raw(char *buf, size_t n)
 
 static long tty_read(struct file *f, char *buf, size_t n)
 {
-    (void)f;
+    tty_dev_t *t = (tty_dev_t *)f->priv;
+    if (!t || !t->in)
+        return -(long)ENODEV;
     if (n == 0)
         return 0;
 
-    if (tty_termios.c_lflag & ICANON)
-        return tty_read_canon(buf, n);
+    if (t->termios.c_lflag & ICANON)
+        return tty_read_canon(t, buf, n);
     else
-        return tty_read_raw(buf, n);
+        return tty_read_raw(t, buf, n);
 }
 
 /* ── tty_close ─────────────────────────────────────────────────────────────── */
@@ -382,23 +431,25 @@ static int tty_close(struct file *f)
 
 static int tty_ioctl(struct file *f, uint32_t cmd, void *arg)
 {
-    (void)f;
+    tty_dev_t *t = (tty_dev_t *)f->priv;
+    if (!t)
+        return -ENOTTY;
 
     switch (cmd) {
     case TCGETS:
-        __builtin_memcpy(arg, &tty_termios, sizeof(tty_termios));
+        __builtin_memcpy(arg, &t->termios, sizeof(t->termios));
         return 0;
     case TCSETS:
     case TCSETSW:
     case TCSETSF:
-        __builtin_memcpy(&tty_termios, arg, sizeof(tty_termios));
+        __builtin_memcpy(&t->termios, arg, sizeof(t->termios));
         return 0;
     case TIOCGWINSZ: {
         struct winsize *ws = (struct winsize *)arg;
-        ws->ws_col    = (uint16_t)(tty_win_cols ? tty_win_cols()
-                                                : TTY_DEFAULT_COLS);
-        ws->ws_row    = (uint16_t)(tty_win_rows ? tty_win_rows()
-                                                : TTY_DEFAULT_ROWS);
+        ws->ws_col    = (uint16_t)(t->win_cols ? t->win_cols()
+                                               : TTY_DEFAULT_COLS);
+        ws->ws_row    = (uint16_t)(t->win_rows ? t->win_rows()
+                                               : TTY_DEFAULT_ROWS);
         ws->ws_xpixel = 0;
         ws->ws_ypixel = 0;
         return 0;
@@ -407,12 +458,12 @@ static int tty_ioctl(struct file *f, uint32_t cmd, void *arg)
         return 0;   /* ignore — fixed-size terminal */
     case TIOCGPGRP: {
         int32_t *pg = (int32_t *)arg;
-        *pg = tty_fg_pgrp;
+        *pg = t->fg_pgrp;
         return 0;
     }
     case TIOCSPGRP: {
         const int32_t *pg = (const int32_t *)arg;
-        tty_fg_pgrp = *pg;
+        t->fg_pgrp = *pg;
         return 0;
     }
     default:
@@ -424,10 +475,10 @@ static int tty_ioctl(struct file *f, uint32_t cmd, void *arg)
 
 static int tty_poll(struct file *f)
 {
-    (void)f;
+    tty_dev_t *t = (tty_dev_t *)f->priv;
     int mask = POLLOUT;   /* write never blocks */
 
-    if (line_ready || tty_in_avail())
+    if (t && (t->line_ready || (t->in_avail && t->in_avail())))
         mask |= POLLIN;
 
     return mask;
@@ -435,38 +486,48 @@ static int tty_poll(struct file *f)
 
 /* ── ISR notification hooks ────────────────────────────────────────────────── */
 
-void tty_rx_notify(void)
+void tty_rx_notify(int idx)
 {
-    sched_wakeup(&tty_stdin);
+    if ((unsigned)idx >= TTY_MAX)
+        return;
+    sched_wakeup(&tty_devs[idx]);
 }
 
-int tty_signal_intr(void)
+int tty_signal_intr(int idx)
 {
-    if (!(tty_termios.c_lflag & ISIG))
+    if ((unsigned)idx >= TTY_MAX)
+        return 0;
+    tty_dev_t *t = &tty_devs[idx];
+
+    if (!(t->termios.c_lflag & ISIG))
         return 0;   /* signals disabled — leave 0x03 for tty_read */
     /* Echo ^C + newline (like Linux n_tty when ECHO/ECHOCTL are set) */
-    if (tty_termios.c_lflag & ECHO) {
-        tty_out('^');
-        tty_out('C');
-        tty_out('\r');
-        tty_out('\n');
-        tty_echo_flush();
+    if (t->termios.c_lflag & ECHO) {
+        if (t->out) {
+            t->out('^');
+            t->out('C');
+            t->out('\r');
+            t->out('\n');
+        }
+        dev_echo_flush(t);
     }
     /* Discard any partial canonical line buffer */
-    line_pos = 0;
-    line_ready = 0;
-    tty_send_signal(SIGINT);
+    t->line_pos = 0;
+    t->line_ready = 0;
+    dev_send_signal(t, SIGINT);
     return 1;   /* consumed — ISR should not queue this byte */
 }
 
-void tty_set_fg_pgrp(int pgid)
+void tty_set_fg_pgrp(int idx, int pgid)
 {
-    tty_fg_pgrp = (int32_t)pgid;
+    if ((unsigned)idx >= TTY_MAX)
+        return;
+    tty_devs[idx].fg_pgrp = (int32_t)pgid;
 }
 
 /* ── Static file objects ────────────────────────────────────────────────────── */
 
-static const struct file_ops tty_fops = {
+const struct file_ops tty_fops = {
     tty_read, tty_write, tty_close, tty_ioctl, tty_poll
 };
 

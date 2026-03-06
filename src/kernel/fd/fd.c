@@ -12,9 +12,13 @@
 
 void fd_stdio_init(pcb_t *p)
 {
-    p->fd_table[0] = &tty_stdin;    /* stdin  — read from UART  */
-    p->fd_table[1] = &tty_stdout;   /* stdout — write to UART   */
-    p->fd_table[2] = &tty_stderr;   /* stderr — write to UART   */
+    /* Point static tty files at the default console (UART / ttyS0) */
+    tty_stdin.priv  = tty_get_dev(TTY_SERIAL);
+    tty_stdout.priv = tty_get_dev(TTY_SERIAL);
+    tty_stderr.priv = tty_get_dev(TTY_SERIAL);
+    p->fd_table[0] = &tty_stdin;    /* stdin  — read from console  */
+    p->fd_table[1] = &tty_stdout;   /* stdout — write to console   */
+    p->fd_table[2] = &tty_stderr;   /* stderr — write to console   */
 }
 
 /* ── fd_alloc ───────────────────────────────────────────────────────────────── */

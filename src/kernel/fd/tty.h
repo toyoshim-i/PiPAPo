@@ -1,19 +1,18 @@
 /*
- * tty.h — TTY driver public interface
+ * tty.h — Multi-TTY driver public interface
  *
- * Provides three static struct file objects for the system console:
+ * Supports multiple independent TTY instances:
+ *   tty_devs[0] — /dev/ttyS0 (UART, always available)
+ *   tty_devs[1] — /dev/tty1  (fbcon+kbd on PicoCalc)
+ *
+ * Three static struct file objects for the default console:
  *   tty_stdin  — read-only
  *   tty_stdout — write-only
  *   tty_stderr — write-only
  *
- * By default, I/O is backed by UART (uart_putc / uart_getc).
- * Call tty_set_backend() to switch to an alternate backend (e.g.
- * fbcon + keyboard on PicoCalc).
- *
- * These are shared across processes (refcnt = 1 at boot; dup/fork may
- * increment it).  A single tty_fops vtable handles all three.
- *
- * fd_stdio_init() (fd.c) points fd_table[0/1/2] at these objects.
+ * These default objects have priv = &tty_devs[0] (set in fd_stdio_init).
+ * When getty/askfirst opens /dev/ttyXX, sys_fs.c allocates a new file
+ * from file_pool with priv = tty_get_dev(idx).
  */
 
 #ifndef PPAP_FD_TTY_H
@@ -21,9 +20,17 @@
 
 #include "file.h"
 
+/* TTY instance indices */
+#define TTY_MAX     2
+#define TTY_SERIAL  0   /* /dev/ttyS0 — UART */
+#define TTY_DISPLAY 1   /* /dev/tty1  — fbcon+kbd */
+
 extern struct file tty_stdin;
 extern struct file tty_stdout;
 extern struct file tty_stderr;
+
+/* File operations table — shared by all TTY instances */
+extern const struct file_ops tty_fops;
 
 /* I/O backend descriptor — all fields required */
 typedef struct {
@@ -35,21 +42,24 @@ typedef struct {
     int  (*get_rows)(void);     /* terminal height (NULL → default)   */
 } tty_backend_t;
 
-/* Switch the tty I/O backend.  Must be called before processes start. */
-void tty_set_backend(const tty_backend_t *be);
+/* Set the I/O backend for TTY instance idx.
+ * idx=0: ttyS0 (UART), idx=1: tty1 (display). */
+void tty_set_backend(int idx, const tty_backend_t *be);
 
-/* Called from ISR / scheduler when RX data arrives — wakes blocked tty readers */
-void tty_rx_notify(void);
+/* Return an opaque pointer to the tty_dev_t for instance idx.
+ * Used by sys_fs.c to set file->priv when opening TTY devices. */
+void *tty_get_dev(int idx);
 
-/* Called from UART ISR when Ctrl-C (0x03) is received — delivers SIGINT.
- * Echoes ^C and sends the signal when ISIG is enabled.
- * Returns 1 if the character was consumed (ISIG on), 0 otherwise.
- * When consumed, the ISR should NOT put 0x03 in the RX ring buffer. */
-int tty_signal_intr(void);
+/* Called from ISR / scheduler when RX data arrives on instance idx.
+ * Wakes processes blocked on that TTY. */
+void tty_rx_notify(int idx);
 
-/* Set the foreground process group (for Ctrl-C / SIGINT delivery).
- * Must be called after init is launched so tty_fg_pgrp matches
- * the pgid of user processes. */
-void tty_set_fg_pgrp(int pgid);
+/* Called from UART ISR when Ctrl-C (0x03) is received on instance idx.
+ * Echoes ^C and sends SIGINT when ISIG is enabled.
+ * Returns 1 if the character was consumed, 0 otherwise. */
+int tty_signal_intr(int idx);
+
+/* Set the foreground process group for TTY instance idx. */
+void tty_set_fg_pgrp(int idx, int pgid);
 
 #endif /* PPAP_FD_TTY_H */

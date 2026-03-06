@@ -166,26 +166,38 @@ long sys_open(const char *path, long flags, long mode)
         }
     }
 
-    /* TTY device detection: redirect /dev/ttyS0, /dev/console, /dev/tty
-     * opens to the tty driver so they get line discipline processing.
-     * devfs vnodes have fs_priv → devfs_node_t whose first field is name. */
+    /* TTY device detection: redirect /dev/ttyS0, /dev/tty1, /dev/console,
+     * /dev/tty opens to the tty driver so they get line discipline processing.
+     * devfs vnodes have fs_priv → devfs_node_t whose first field is name.
+     * Each open allocates a new file object with priv pointing to the
+     * appropriate tty_dev_t instance for independent per-TTY state. */
     if (vn->type == VNODE_DEV && vn->fs_priv) {
         const char *devname = *(const char **)vn->fs_priv;
-        if (devname &&
-            (strcmp(devname, "ttyS0") == 0 ||
-             strcmp(devname, "tty1") == 0 ||
-             strcmp(devname, "console") == 0 ||
-             strcmp(devname, "tty") == 0)) {
-            /* Use the tty driver file objects with line discipline */
-            struct file *ttyf;
-            if ((uint32_t)flags & O_WRONLY)
-                ttyf = &tty_stdout;
-            else
-                ttyf = &tty_stdin;   /* O_RDONLY or O_RDWR → stdin ops */
+        int tty_idx = -1;
+        if (devname) {
+            if (strcmp(devname, "ttyS0") == 0)        tty_idx = TTY_SERIAL;
+            else if (strcmp(devname, "tty1") == 0)    tty_idx = TTY_DISPLAY;
+            else if (strcmp(devname, "console") == 0) tty_idx = TTY_SERIAL;
+            else if (strcmp(devname, "tty") == 0)     tty_idx = TTY_SERIAL;
+        }
+        if (tty_idx >= 0) {
+            struct file *ttyf = file_alloc();
+            if (!ttyf) {
+                vnode_put(vn);
+                return -(long)ENOMEM;
+            }
+            ttyf->ops    = &tty_fops;
+            ttyf->priv   = tty_get_dev(tty_idx);
+            ttyf->flags  = (uint32_t)flags;
+            ttyf->refcnt = 0;     /* fd_alloc will increment to 1 */
+            ttyf->vnode  = NULL;
+            ttyf->offset = 0;
             int fd = fd_alloc(current, ttyf);
             vnode_put(vn);
-            if (fd < 0)
+            if (fd < 0) {
+                file_free(ttyf);
                 return (long)fd;
+            }
             return (long)fd;
         }
     }

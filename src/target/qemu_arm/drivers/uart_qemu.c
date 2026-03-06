@@ -131,7 +131,7 @@ void UART0RX_IRQ_Handler(void)
         uint8_t c = (uint8_t)(UART_DATA & 0xFFu);
         /* Ctrl-C: deliver SIGINT immediately.  If ISIG is active,
          * tty_signal_intr() consumes the byte (don't queue it). */
-        if (c == 0x03u && tty_signal_intr()) {
+        if (c == 0x03u && tty_signal_intr(TTY_SERIAL)) {
             got_rx = 1;
             continue;   /* consumed — skip ring buffer */
         }
@@ -143,7 +143,7 @@ void UART0RX_IRQ_Handler(void)
     UART_INTSTATUS = UART_INT_RX;
 
     if (got_rx)
-        tty_rx_notify();
+        tty_rx_notify(TTY_SERIAL);
 }
 
 int uart_getc(void)

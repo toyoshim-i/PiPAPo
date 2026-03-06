@@ -125,13 +125,15 @@ __attribute__((naked)) void SysTick_Handler(void)
 /* Optional input-available callback, registered by target via sched_set_input_poll().
  * Returns non-zero if input is available (e.g. keyboard FIFO has data). */
 static int (*input_poll_fn)(void);
+static int  input_poll_tty_idx;
 
 /* Keyboard polling counter (Core 0 only, every other tick = 20 ms) */
 static uint32_t input_poll_counter;
 
-void sched_set_input_poll(int (*fn)(void))
+void sched_set_input_poll(int (*fn)(void), int tty_idx)
 {
     input_poll_fn = fn;
+    input_poll_tty_idx = tty_idx;
 }
 
 static void SysTick_Handler_c(uint32_t exc_return)
@@ -144,7 +146,7 @@ static void SysTick_Handler_c(uint32_t exc_return)
         if (input_poll_fn && ++input_poll_counter >= 2u) {
             input_poll_counter = 0;
             if (input_poll_fn())
-                tty_rx_notify();
+                tty_rx_notify(input_poll_tty_idx);
         }
     }
 

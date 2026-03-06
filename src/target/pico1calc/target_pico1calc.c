@@ -100,13 +100,13 @@ void target_early_init(void)
         spi_lcd_init();
         klog("SPI1: LCD initialised at 33 MHz\n");
         lcd_init();
-        klog("LCD: ST7796S initialised (320x320 RGB565)\n");
+        klog("LCD: ST7365P initialised (320x320 RGB565)\n");
         fbcon_init();
         klog("FBCON: text console initialised (40x20)\n");
         klog_set_mirror(fbcon_putc, fbcon_flush);
         klog("KLOG: output mirrored to LCD\n");
-        tty_set_backend(&fbcon_backend);
-        sched_set_input_poll(fbcon_avail_wrapper);
+        tty_set_backend(TTY_DISPLAY, &fbcon_backend);
+        sched_set_input_poll(fbcon_avail_wrapper, TTY_DISPLAY);
         klog("TTY: backend switched to LCD+keyboard\n");
         devfs_set_backlight(bl_i2c_get, bl_i2c_set);
         bl_i2c_set(128);

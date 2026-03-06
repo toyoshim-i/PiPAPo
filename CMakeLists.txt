@@ -178,6 +178,21 @@ foreach(tgt ${PPAP_ALL_TARGETS})
     file(WRITE ${CMAKE_BINARY_DIR}/fstab_${tgt} "${_fstab_content}")
 endforeach()
 
+# Generate per-target inittab files at configure time
+# PicoCalc gets askfirst on both ttyS0 (UART) and tty1 (LCD+kbd);
+# other targets keep the default single-TTY respawn.
+set(PPAP_MULTITTY_TARGETS ppap_pico1calc)
+set(INITTAB_MULTITTY "ttyS0::askfirst:/bin/sh\ntty1::askfirst:/bin/sh\n")
+foreach(tgt ${PPAP_ALL_TARGETS})
+    list(FIND PPAP_MULTITTY_TARGETS ${tgt} _multitty_idx)
+    if(_multitty_idx GREATER_EQUAL 0)
+        file(WRITE ${CMAKE_BINARY_DIR}/inittab_${tgt} "${INITTAB_MULTITTY}")
+    else()
+        file(READ ${CMAKE_SOURCE_DIR}/romfs/etc/inittab _inittab_base)
+        file(WRITE ${CMAKE_BINARY_DIR}/inittab_${tgt} "${_inittab_base}")
+    endif()
+endforeach()
+
 foreach(tgt ${PPAP_ALL_TARGETS})
     set(ROMFS_STAGING ${CMAKE_BINARY_DIR}/romfs_${tgt})
     set(ROMFS_BIN     ${CMAKE_BINARY_DIR}/romfs_${tgt}.bin)
@@ -189,10 +204,13 @@ foreach(tgt ${PPAP_ALL_TARGETS})
         COMMAND cp -a ${CMAKE_SOURCE_DIR}/romfs ${ROMFS_STAGING}
         COMMAND ${CMAKE_COMMAND} -E copy
                 ${CMAKE_BINARY_DIR}/fstab_${tgt} ${ROMFS_STAGING}/etc/fstab
+        COMMAND ${CMAKE_COMMAND} -E copy
+                ${CMAKE_BINARY_DIR}/inittab_${tgt} ${ROMFS_STAGING}/etc/inittab
         COMMAND ${CMAKE_BINARY_DIR}/mkromfs
                 ${ROMFS_STAGING} ${ROMFS_BIN}
         DEPENDS ${CMAKE_BINARY_DIR}/mkromfs ${USER_STAMP} ${BUSYBOX_STAMP}
                 ${ROGUE_STAMP} ${CMAKE_SOURCE_DIR}/romfs/etc/fstab
+                ${CMAKE_SOURCE_DIR}/romfs/etc/inittab
         COMMENT "Generating romfs for ${tgt}"
     )
 
