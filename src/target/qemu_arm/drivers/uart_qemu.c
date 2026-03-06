@@ -127,11 +127,14 @@ void uart_init_irq(void)
 void UART0RX_IRQ_Handler(void)
 {
     int got_rx = 0;
-    int got_ctrl_c = 0;
     while (UART_STATE & UART_STATE_RXFULL) {
         uint8_t c = (uint8_t)(UART_DATA & 0xFFu);
-        if (c == 0x03u)
-            got_ctrl_c = 1;
+        /* Ctrl-C: deliver SIGINT immediately.  If ISIG is active,
+         * tty_signal_intr() consumes the byte (don't queue it). */
+        if (c == 0x03u && tty_signal_intr()) {
+            got_rx = 1;
+            continue;   /* consumed — skip ring buffer */
+        }
         if ((uint8_t)(rx_head - rx_tail) < UART_RX_SIZE)
             rx_buf[rx_head++ & (UART_RX_SIZE - 1u)] = (char)c;
         got_rx = 1;
@@ -139,9 +142,6 @@ void UART0RX_IRQ_Handler(void)
     /* Clear RX interrupt */
     UART_INTSTATUS = UART_INT_RX;
 
-    /* Wake processes blocked on tty read / deliver Ctrl-C signal */
-    if (got_ctrl_c)
-        tty_signal_intr();
     if (got_rx)
         tty_rx_notify();
 }

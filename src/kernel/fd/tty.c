@@ -118,18 +118,28 @@ static void tty_send_signal(int sig)
     int woke = 0;
     for (uint32_t i = 0; i < PROC_MAX; i++) {
         pcb_t *p = &proc_table[i];
-        if (p->state != PROC_FREE &&
-            (int32_t)p->pgid == tty_fg_pgrp) {
-            p->sig_pending |= (1u << (uint32_t)sig);
-            /* Wake the process so it can handle the signal */
-            if (p->state == PROC_BLOCKED) {
-                p->state = PROC_RUNNABLE;
-                p->wait_channel = NULL;
-                woke = 1;
-            } else if (p->state == PROC_SLEEPING) {
-                p->state = PROC_RUNNABLE;
-                woke = 1;
-            }
+        if (p->state == PROC_FREE)
+            continue;
+        /* Match foreground process group.  When tty_fg_pgrp == 0 (no job
+         * control — hush without CONFIG_HUSH_JOB never calls tcsetpgrp),
+         * signal all non-init processes: on a single-terminal system
+         * without job control everything is "foreground". */
+        if (tty_fg_pgrp != 0) {
+            if ((int32_t)p->pgid != tty_fg_pgrp)
+                continue;
+        } else {
+            if (p->pid <= 1)
+                continue;   /* skip idle (0) and init (1) */
+        }
+        p->sig_pending |= (1u << (uint32_t)sig);
+        /* Wake the process so it can handle the signal */
+        if (p->state == PROC_BLOCKED) {
+            p->state = PROC_RUNNABLE;
+            p->wait_channel = NULL;
+            woke = 1;
+        } else if (p->state == PROC_SLEEPING) {
+            p->state = PROC_RUNNABLE;
+            woke = 1;
         }
     }
     /* Trigger context switch so woken process handles the signal promptly */
@@ -390,9 +400,22 @@ void tty_rx_notify(void)
     sched_wakeup(&tty_stdin);
 }
 
-void tty_signal_intr(void)
+int tty_signal_intr(void)
 {
+    if (!(tty_termios.c_lflag & ISIG))
+        return 0;   /* signals disabled — leave 0x03 for tty_read */
+    /* Echo ^C + newline (like Linux n_tty when ECHO/ECHOCTL are set) */
+    if (tty_termios.c_lflag & ECHO) {
+        uart_putc('^');
+        uart_putc('C');
+        uart_putc('\r');
+        uart_putc('\n');
+    }
+    /* Discard any partial canonical line buffer */
+    line_pos = 0;
+    line_ready = 0;
     tty_send_signal(SIGINT);
+    return 1;   /* consumed — ISR should not queue this byte */
 }
 
 void tty_set_fg_pgrp(int pgid)

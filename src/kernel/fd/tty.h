@@ -24,8 +24,11 @@ extern struct file tty_stderr;
 /* Called from UART ISR when RX data arrives — wakes processes blocked on tty */
 void tty_rx_notify(void);
 
-/* Called from UART ISR when Ctrl-C (0x03) is received — delivers SIGINT */
-void tty_signal_intr(void);
+/* Called from UART ISR when Ctrl-C (0x03) is received — delivers SIGINT.
+ * Echoes ^C and sends the signal when ISIG is enabled.
+ * Returns 1 if the character was consumed (ISIG on), 0 otherwise.
+ * When consumed, the ISR should NOT put 0x03 in the RX ring buffer. */
+int tty_signal_intr(void);
 
 /* Set the foreground process group (for Ctrl-C / SIGINT delivery).
  * Must be called after init is launched so tty_fg_pgrp matches

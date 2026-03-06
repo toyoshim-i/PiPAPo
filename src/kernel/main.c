@@ -108,7 +108,9 @@ void kmain(void)
         if (exec_err == 0) {
             fd_stdio_init(init);
             init->state = PROC_RUNNABLE;
-            tty_set_fg_pgrp((int)init->pid);
+            /* tty_fg_pgrp stays 0: without CONFIG_HUSH_JOB the shell
+             * never calls tcsetpgrp(), so tty_send_signal uses the
+             * fallback of signaling all non-init processes. */
             klogf("INIT: pid=%u loaded\n", init->pid);
         } else {
             klogf("PANIC: no init or shell (err=%u)\n",
