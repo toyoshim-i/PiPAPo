@@ -11,16 +11,18 @@
  * =============================================================================
  * FINAL LAYOUT (Step 8+)
  * =============================================================================
- * The SDK boot2 (first 256 bytes of FLASH_BOOT) initialises QSPI/XIP and
- * exits by reading {SP, entry} from XIP_BASE+0x100 = 0x10000100.
- * Our stage1.S is placed there: it sets VTOR=0x10001000, then loads SP and
- * Reset_Handler from the kernel vector table at 0x10001000 and branches.
+ * The PicoCalc uses a third-party UF2 bootloader that reserves the first
+ * 16 KB (0x10000000–0x10003FFF).  The UF2 loader skips blocks targeting
+ * this range, so all application content must start at 0x10004000.
  *
- *   0x10000000  Stage 1 (4KB):
+ * For SWD flashing, boot2 + stage1 occupy the first 4 KB and redirect
+ * to the kernel at 0x10004000.
+ *
+ *   0x10000000  Boot area (16KB, reserved by UF2 bootloader):
  *               [0x10000000–0x100000FF]  Pico SDK boot2 (256 B, QSPI init)
- *               [0x10000100–0x10000FFF]  stage1.S (VTOR redirect to kernel)
- *   0x10001000  Kernel (96KB):           Vector table + .text + .rodata
- *   0x10019000  romfs (~16MB remainder): Populated by mkromfs (Phase 2+)
+ *               [0x10000100–0x10003FFF]  stage1.S + padding
+ *   0x10004000  Kernel (96KB):           Vector table + .text + .rodata
+ *   0x1001C000  romfs (~16MB remainder): Populated by mkromfs (Phase 2+)
  *
  * =============================================================================
  * MEMORY REGIONS
@@ -28,13 +30,14 @@
  *
  * Flash layout (XIP base = 0x10000000):
  *
- *   0x10000000  +-----------------------+  <- FLASH_BOOT  (4 KB)
+ *   0x10000000  +-----------------------+  <- FLASH_BOOT  (16 KB)
  *               | SDK boot2 (256 B)     |     QSPI init, enables XIP
  *               | stage1 extension      |     Sets VTOR, jumps to kernel
- *   0x10001000  +-----------------------+  <- FLASH_KERNEL (96 KB)
- *               | Kernel .text/.rodata  |     Vector table at 0x10001000,
+ *               | (padding)             |     Reserved by UF2 bootloader
+ *   0x10004000  +-----------------------+  <- FLASH_KERNEL (96 KB)
+ *               | Kernel .text/.rodata  |     Vector table at 0x10004000,
  *               | (vector table first)  |     then kernel code + data
- *   0x10019000  +-----------------------+  <- FLASH_ROMFS  (~16 MB remainder)
+ *   0x1001C000  +-----------------------+  <- FLASH_ROMFS  (~16 MB remainder)
  *               | romfs image           |     Populated by mkromfs (Phase 2+)
  *               +-----------------------+
  *
@@ -55,10 +58,12 @@
 
 MEMORY {
     /* External QSPI Flash — XIP mapped at 0x10000000
-     * FLASH_BOOT: 4 KB — SDK boot2 (256 B) + stage1 extension */
-    FLASH_BOOT   (rx)  : ORIGIN = 0x10000000, LENGTH = 4K
-    FLASH_KERNEL (rx)  : ORIGIN = 0x10001000, LENGTH = 96K
-    FLASH_ROMFS  (r)   : ORIGIN = 0x10019000, LENGTH = 16M - 0x19000
+     * FLASH_BOOT: 16 KB — reserved by third-party UF2 bootloader.
+     * SDK boot2 (256 B) + stage1 use only the first ~300 B; the rest
+     * is padding that the UF2 loader preserves (its own code lives here). */
+    FLASH_BOOT   (rx)  : ORIGIN = 0x10000000, LENGTH = 16K
+    FLASH_KERNEL (rx)  : ORIGIN = 0x10004000, LENGTH = 96K
+    FLASH_ROMFS  (r)   : ORIGIN = 0x1001C000, LENGTH = 16M - 0x1C000
 
     /* On-chip SRAM — 264KB total */
     RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 20K
@@ -72,6 +77,9 @@ MEMORY {
  * SECTIONS
  * =============================================================================
  */
+
+/* Linker symbol used by stage1.S to set VTOR */
+__kernel_vtor = ORIGIN(FLASH_KERNEL);
 
 SECTIONS {
 
@@ -95,7 +103,7 @@ SECTIONS {
      *   [0x10000100] = __stack_top    → sets MSP
      *   [0x10000104] = stage1_entry   → branches here (Thumb bit set)
      *
-     * stage1_entry sets VTOR=0x10001000 and jumps to the kernel.
+     * stage1_entry sets VTOR=0x10004000 and jumps to the kernel.
      * ------------------------------------------------------------------ */
     .stage1 : {
         KEEP(*(.stage1))
@@ -105,9 +113,9 @@ SECTIONS {
 
     /* ------------------------------------------------------------------
      * Interrupt vector table — placed at the very start of FLASH_KERNEL
-     * (= 0x10001000).  stage1_entry reads:
-     *   [0x10001000] = __stack_top    → initial SP
-     *   [0x10001004] = Reset_Handler  → entry point
+     * (= 0x10004000).  stage1_entry reads:
+     *   [0x10004000] = __stack_top    → initial SP
+     *   [0x10004004] = Reset_Handler  → entry point
      * ------------------------------------------------------------------ */
     .vectors : {
         KEEP(*(.vectors))

@@ -80,6 +80,9 @@ static uint8_t seq_len;
 /* Modifier state */
 static uint8_t ctrl_held;
 
+/* Set by kbd_init() if STM32 responded on I2C */
+static uint8_t kbd_detected;
+
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 
 /* Buffer a multi-byte escape sequence; returns first byte. */
@@ -172,12 +175,15 @@ static int translate(uint8_t state, uint8_t keycode)
 
 void kbd_init(void)
 {
+    kbd_detected = 0;
+
     uint8_t ver = 0;
     int rc = i2c_read_reg(KBD_ADDR, REG_ID_VER, &ver, 1);
     if (rc < 0) {
         klog("KBD: STM32 not responding on I2C1\n");
         return;
     }
+    kbd_detected = 1;
     klogf("KBD: STM32 firmware version %u\n", (uint32_t)ver);
 
     /* Drain any stale FIFO entries */
@@ -195,6 +201,8 @@ void kbd_init(void)
     seq_pos = 0;
     ctrl_held = 0;
 }
+
+int kbd_present(void) { return kbd_detected; }
 
 int kbd_poll(void)
 {

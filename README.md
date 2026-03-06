@@ -57,10 +57,10 @@ PPAP/
       pico1/                Official Raspberry Pi Pico: romfs-only, no SD
         pico1.ld            Official Pico: 2 MB flash, 80 KB kernel @ 0x10001000
       pico1calc/            ClockworkPi PicoCalc: SPI SD card, 16 MB flash
-        pico1calc.ld        PicoCalc: 16 MB flash, 80 KB kernel @ 0x10001000
+        pico1calc.ld        PicoCalc: 16 MB flash, 96 KB kernel @ 0x10004000
     boot/
       startup.S             Vector table + Reset_Handler
-      stage1.S              Stage 1: sets VTOR=0x10001000, jumps to kernel
+      stage1.S              Stage 1: sets VTOR, jumps to kernel
     kernel/
       main.c                Unified kmain() — uses target hooks for all platforms
       mm/                   Memory management (page allocator, kmem, MPU, XIP)
@@ -85,6 +85,7 @@ PPAP/
     mkromfs/                Host tool: generate romfs.bin image
     mkufs/                  Host tool: generate UFS filesystem image
     mkfatimg/               Host tool: generate FAT32 test image
+    uf2sanitize.py          Post-process UF2 for PicoCalc bootloader
   third_party/
     musl/                   git submodule — musl libc v1.2.5
     busybox/                git submodule — busybox 1_36_1
@@ -166,11 +167,25 @@ gdb-multiarch -x pico1calc-attach.gdb build/ppap_pico1calc.elf
 
 ## Flash Memory Layout
 
+**pico1** (Official Raspberry Pi Pico — 2 MB flash):
+
 | Region | Address | Size | Contents |
 |---|---|---|---|
 | `FLASH_BOOT` | `0x10000000` | 4 KB | SDK boot2 (256 B) + `stage1.S` (VTOR redirect) |
 | `FLASH_KERNEL` | `0x10001000` | 80 KB | Vector table + `.text` + `.rodata` |
-| `FLASH_ROMFS` | `0x10015000` | ~16 MB | romfs image (Phase 2+) |
+| `FLASH_ROMFS` | `0x10015000` | ~1.9 MB | romfs image |
+
+**pico1calc** (ClockworkPi PicoCalc — 16 MB flash):
+
+| Region | Address | Size | Contents |
+|---|---|---|---|
+| `FLASH_BOOT` | `0x10000000` | 16 KB | SDK boot2 (256 B) + `stage1.S` (reserved by UF2 bootloader) |
+| `FLASH_KERNEL` | `0x10004000` | 96 KB | Vector table + `.text` + `.rodata` |
+| `FLASH_ROMFS` | `0x1001C000` | ~16 MB | romfs image |
+
+The PicoCalc uses a third-party UF2 bootloader ([pelrun/uf2loader](https://github.com/pelrun/uf2loader))
+that reserves the first 16 KB of flash. The build system automatically sanitizes the
+UF2 output to exclude this region (`tools/uf2sanitize.py`).
 
 ## SRAM Layout
 

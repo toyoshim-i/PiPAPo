@@ -39,6 +39,9 @@ MEMORY {
  * =============================================================================
  */
 
+/* Linker symbol used by stage1.S to set VTOR */
+__kernel_vtor = ORIGIN(FLASH_KERNEL);
+
 SECTIONS {
 
     .boot2 : {

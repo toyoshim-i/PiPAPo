@@ -30,20 +30,30 @@ void target_early_init(void)
     klog("PicoPiAndPortable booting... [pico1calc]\n");
     klog("UART: 115200 bps @ 12 MHz XOSC\n");
     uart_flush();
+    klog("PLL: configuring...\n");
+    uart_flush();
     clock_init_pll();
     uart_reinit_133mhz();
     klog("System clock: 133 MHz\n");
     spi_init(400000);
     klog("SPI0: initialised at 400 kHz\n");
+    /* Probe I2C first to detect PicoCalc carrier board (STM32 keyboard
+     * controller).  LCD init is gated on this because PL022 SPI master
+     * mode completes transfers even without a slave, so spi_lcd_ok()
+     * cannot detect a missing LCD. */
     i2c_init();
     klog("I2C1: initialised at 10 kHz\n");
-    spi_lcd_init();
-    klog("SPI1: LCD initialised at 33 MHz\n");
-    lcd_init();
-    klog("LCD: ST7796S initialised (320x320 RGB565)\n");
     kbd_init();
-    fbcon_init();
-    klog("FBCON: text console initialised (40x20)\n");
+    if (kbd_present()) {
+        spi_lcd_init();
+        klog("SPI1: LCD initialised at 33 MHz\n");
+        lcd_init();
+        klog("LCD: ST7796S initialised (320x320 RGB565)\n");
+        fbcon_init();
+        klog("FBCON: text console initialised (40x20)\n");
+    } else {
+        klog("PicoCalc peripherals not detected (skipping LCD/fbcon)\n");
+    }
 }
 
 void target_late_init(void)

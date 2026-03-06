@@ -30,3 +30,16 @@ target_link_options(ppap_pico1calc PRIVATE
 
 # Produce ppap_pico1calc.bin, ppap_pico1calc.uf2 alongside ppap_pico1calc.elf
 pico_add_extra_outputs(ppap_pico1calc)
+
+# Post-process UF2 for PicoCalc's third-party UF2 bootloader (pelrun/uf2loader).
+# The bootloader requires contiguous blocks and rejects blocks targeting its
+# own reserved first 16KB (0x10000000–0x10003FFF).  Overwrite the SDK-generated
+# UF2 in place so the output filename stays ppap_pico1calc.uf2.
+add_custom_command(TARGET ppap_pico1calc POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E echo "Sanitizing UF2 for PicoCalc bootloader..."
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/tools/uf2sanitize.py
+        ${CMAKE_CURRENT_BINARY_DIR}/ppap_pico1calc.uf2
+        ${CMAKE_CURRENT_BINARY_DIR}/ppap_pico1calc.uf2
+        --start 0x10000100
+    VERBATIM
+)

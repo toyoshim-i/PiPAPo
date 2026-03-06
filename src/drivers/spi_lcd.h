@@ -34,4 +34,7 @@ void spi_lcd_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
 /* Fill `count` pixels with a solid RGB565 colour (after set_window). */
 void spi_lcd_fill(uint16_t color, uint32_t count);
 
+/* Returns non-zero if the LCD is responding (no SPI timeout detected). */
+int spi_lcd_ok(void);
+
 #endif /* PPAP_DRIVERS_SPI_LCD_H */

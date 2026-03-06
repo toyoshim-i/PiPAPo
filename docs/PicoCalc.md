@@ -6,8 +6,11 @@ This document summarizes the hardware specifications and development information
 
 - **Core Module**: Raspberry Pi Pico (RP2040) or Pico 2 (RP2350).
 - **Display**: 4-inch 320x320 IPS LCD (Color).
-  - Driver: ST7796S or ILI9488.
-  - Interface: SPI1.
+  - Driver: ST7796S or ILI9488 (both support MIPI DCS, same init sequence).
+  - Interface: SPI1 (TX-only, no MISO line).
+  - SPI Clock: ~33 MHz (133 MHz / 4, CPSDVSR=2, SCR=1).
+  - Pixel Format: RGB565 (16-bit, 65K colours).
+  - Panel is 320x480 controller constrained to top 320 rows.
 - **Keyboard**: Full QWERTY physical keyboard.
   - Controller: STM32 (connected via I2C).
   - Key Scanning: Managed by STM32, Pico polls key events via I2C.
@@ -86,13 +89,48 @@ screen /dev/tty.usbserial-21440 115200
 1. **Read Status**: Read 1 byte from `REG_ID_KEY` (`0x04`) to check FIFO count.
 2. **Check Count**: Extract count from `value & 0x1F`.
 3. **Read FIFO**: If count > 0, read 2 bytes from `REG_ID_FIF` (`0x09`).
-   - Byte 0: Key State (Pressed/Released)
-   - Byte 1: Key Code (ASCII/Scancode)
+   - Byte 0: Key State (`1`=Pressed, `2`=Hold/Repeat, `3`=Released)
+   - Byte 1: Key Code (ASCII 0x20-0x7E for printable, special codes below)
 4. **Repeat**: Repeat until FIFO is empty.
+
+### Key Codes
+The STM32 handles Shift and produces ASCII directly for printable keys.
+Special keycodes (from `keyboard.h` in STM32 firmware):
+
+| Code | Key | Code | Key |
+|------|-----|------|-----|
+| `0x08` | Backspace | `0x09` | Tab |
+| `0x0A` | Enter | `0x81-0x90` | F1-F10 |
+| `0x91` | Power | `0xA1` | Alt |
+| `0xA2` | Left Shift | `0xA3` | Right Shift |
+| `0xA4` | Sym | `0xA5` | Ctrl |
+| `0xB1` | Escape | `0xB4` | Left Arrow |
+| `0xB5` | Up Arrow | `0xB6` | Down Arrow |
+| `0xB7` | Right Arrow | `0xC1` | Caps Lock |
+| `0xD0` | Break | `0xD1` | Insert |
+| `0xD2` | Home | `0xD4` | Delete |
+| `0xD5` | End | `0xD6` | Page Up |
+| `0xD7` | Page Down | | |
 
 ### Hardware Details
 - **Pull-ups**: Mainboard V2.0 has 4.7kΩ external pull-up resistors on GP6/GP7.
 - **Initialization**: No hardware reset pin for STM32. Add ~100ms delay after I2C init.
+
+## LCD Initialization
+
+The LCD uses standard MIPI DCS commands, compatible with both ST7796S and ILI9488:
+
+1. **Hardware Reset**: RST low 10ms, release, wait 120ms.
+2. **Software Reset**: CMD `0x01`, wait 120ms.
+3. **Sleep Out**: CMD `0x11`, wait 120ms.
+4. **Pixel Format**: CMD `0x3A`, data `0x55` (RGB565, 16-bit).
+5. **Memory Access Control**: CMD `0x36`, data `0x00` (normal orientation).
+6. **Set Address Window**: CASET `0x2A` + RASET `0x2B` to 320x320.
+7. **Display On**: CMD `0x29`.
+8. **Fill Black**: Write 320x320 pixels of `0x0000` via CMD `0x2C`.
+
+**Note**: MADCTL (`0x36`) value may need adjustment depending on panel mounting
+orientation. The correct value must be verified on hardware.
 
 ## SD Card Interface
 - **SPI Bus**: `spi0` (hardware SPI0 peripheral)
@@ -119,13 +157,4 @@ Pin assignments verified from:
 - [Official ClockworkPi PicoCalc Schematics](https://github.com/clockworkpi/PicoCalc/tree/master/schematics)
 - [STM32 Co-processor Firmware Source](https://github.com/clockworkpi/PicoCalc/tree/master/Code/picocalc_keyboard)
 - [Pico SDK (C/C++)](https://github.com/raspberrypi/pico-sdk)
-- **Pico SDK (C/C++)**: Recommended for high-performance applications.
-- **MicroPython**: Good for rapid prototyping.
-
-### Firmwares
-- **MMBasic**: Default firmware, easy to use BASIC interpreter.
-
-### Useful Libraries
 - [picocalc-text-starter](https://github.com/blairleduc/picocalc-text-starter): Minimal C++ framework for text-based apps.
-
-

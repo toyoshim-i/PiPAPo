@@ -90,13 +90,23 @@ The flash block cache mode considered in v0.1 was rejected due to the high cost 
 
 ### 2.2 External Flash Layout
 
-The external flash is partitioned as follows. The romfs image is generated at build time, and the entire flash is written as a single image.
+The external flash is partitioned as follows. The romfs image is generated at build time, and the entire flash is written as a single image. The boot region size differs per target because the PicoCalc's third-party UF2 bootloader ([pelrun/uf2loader](https://github.com/pelrun/uf2loader)) reserves the first 16KB of flash.
 
-| Offset | Size (approx.) | Contents |
+**pico1** (Official Raspberry Pi Pico — 2 MB flash):
+
+| Offset | Size | Contents |
 |---|---|---|
-| 0x00000000 | 4KB | Stage 1 bootloader (RP2040 QSPI initialization) |
-| 0x00001000 | 48–64KB | Kernel code (.text, .rodata) — XIP execution |
-| 0x00011000 | Remaining space | romfs image (/bin, /sbin, /etc file tree) — XIP execution |
+| 0x00000000 | 4KB | Boot2 (256 B QSPI init) + stage1 (VTOR redirect) |
+| 0x00001000 | 80KB | Kernel code (.text, .rodata) — XIP execution |
+| 0x00015000 | ~1.9MB | romfs image (/bin, /sbin, /etc file tree) — XIP execution |
+
+**pico1calc** (ClockworkPi PicoCalc — 16 MB flash):
+
+| Offset | Size | Contents |
+|---|---|---|
+| 0x00000000 | 16KB | Boot2 (256 B QSPI init) + stage1 (reserved by UF2 bootloader) |
+| 0x00004000 | 96KB | Kernel code (.text, .rodata) — XIP execution |
+| 0x0001C000 | ~16MB | romfs image (/bin, /sbin, /etc file tree) — XIP execution |
 
 The statically linked busybox binary (200–400KB in minimal Thumb configuration) is placed within the romfs at /bin. Since all romfs content is executed directly from flash via XIP, there is no need to copy code into SRAM — only stack and heap are allocated in RAM.
 
@@ -410,7 +420,7 @@ The boot sequence from power-on to shell prompt is described below.
 
 **Stage 0 — ROM Boot (RP2040 built-in):** The on-chip boot ROM loads and executes the Stage 1 bootloader from the first 256 bytes of external QSPI flash.
 
-**Stage 1 — Flash Init (4KB):** Configures the QSPI controller (clock divider, XIP mode enable, Quad Read setup). From this point on, the entire flash is memory-mapped and accessible via XIP.
+**Stage 1 — Flash Init (4–16KB):** The Pico SDK boot2 (256 B) configures the QSPI controller for XIP. stage1.S then sets VTOR to the kernel's vector table origin (target-dependent: 0x10001000 on pico1, 0x10004000 on pico1calc) and jumps to the kernel entry point. On PicoCalc, the first 16KB is reserved by the UF2 bootloader.
 
 **Stage 2 — Kernel Early Init:** Sets the system clock to 133MHz. Zeroes SRAM. Copies the interrupt vector table to SRAM (or references the table on flash). Initializes UART (115200bps) — console output begins here.
 
@@ -494,7 +504,7 @@ FAT32 metadata updates (FAT table, directory entries) are not atomic. A power lo
 
 ### 10.5 Kernel Size Growth
 
-Adding the VFAT driver (~8KB code, ~2KB data) and loopback layer (~2KB code, ~0.5KB data) increases the kernel footprint compared to v0.2. The kernel code on flash grows from ~47KB to ~58KB, which is still well within the 48–64KB flash allocation for the kernel region. The SRAM data grew beyond the original 16KB allocation; the kernel data region was expanded to 20KB in Phase 6 (reducing the page pool from 52 to 51 pages) to accommodate the larger per-process state needed for busybox support.
+Adding the VFAT driver (~8KB code, ~2KB data) and loopback layer (~2KB code, ~0.5KB data) increases the kernel footprint compared to v0.2. The kernel code on flash grows from ~47KB to ~58KB, which is well within the flash allocation for the kernel region (80KB on pico1, 96KB on pico1calc). The SRAM data grew beyond the original 16KB allocation; the kernel data region was expanded to 20KB in Phase 6 (reducing the page pool from 52 to 51 pages) to accommodate the larger per-process state needed for busybox support.
 
 ### 10.6 busybox Compatibility
 

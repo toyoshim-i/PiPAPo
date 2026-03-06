@@ -11,6 +11,9 @@
 /* Initialise keyboard: verify STM32 presence, drain stale FIFO. */
 void kbd_init(void);
 
+/* Returns non-zero if the STM32 keyboard was detected during kbd_init(). */
+int kbd_present(void);
+
 /* Poll for one input byte.  Returns a character (0x00–0xFF) or -1 if
  * no input is available.  Multi-byte escape sequences (e.g. arrow keys)
  * are buffered internally and returned one byte per call. */

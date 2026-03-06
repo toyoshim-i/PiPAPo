@@ -80,6 +80,12 @@ static void delay_ms(uint32_t ms)
     while (count--) ;
 }
 
+/* ── Timeout — ~50 ms at 133 MHz (generous for any single SPI op) ─────── */
+
+#define SPI_TIMEOUT  (133000u * 50u)
+
+static int lcd_ok = 1;   /* cleared on first timeout → skip all LCD ops */
+
 /* ── Internal helpers ───────────────────────────────────────────────────── */
 
 static inline void cs_low(void)  { SIO_GPIO_OUT_CLR = CS_MASK; }
@@ -93,18 +99,24 @@ static inline void drain_rx(void)
         (void)SPI1_DR;
 }
 
-static inline void wait_idle(void)
+static inline int wait_idle(void)
 {
-    while (SPI1_SR & SR_BSY)
+    uint32_t t = SPI_TIMEOUT;
+    while ((SPI1_SR & SR_BSY) && --t)
         ;
+    if (!t) { lcd_ok = 0; return -1; }
     drain_rx();
+    return 0;
 }
 
-static void spi1_write_byte(uint8_t b)
+static int spi1_write_byte(uint8_t b)
 {
-    while (!(SPI1_SR & SR_TNF))
+    uint32_t t = SPI_TIMEOUT;
+    while (!(SPI1_SR & SR_TNF) && --t)
         ;
+    if (!t) { lcd_ok = 0; return -1; }
     SPI1_DR = b;
+    return 0;
 }
 
 static void gpio_set_func(uint32_t gpio, uint32_t funcsel)
@@ -114,8 +126,11 @@ static void gpio_set_func(uint32_t gpio, uint32_t funcsel)
 
 /* ── Public API ─────────────────────────────────────────────────────────── */
 
+int spi_lcd_ok(void) { return lcd_ok; }
+
 void spi_lcd_reset(void)
 {
+    if (!lcd_ok) return;
     SIO_GPIO_OUT_CLR = RST_MASK;   /* assert RST low */
     delay_ms(10);
     SIO_GPIO_OUT_SET = RST_MASK;   /* release RST */
@@ -163,20 +178,22 @@ void spi_lcd_init(void)
 
 void spi_lcd_cmd(uint8_t cmd)
 {
-    wait_idle();
+    if (!lcd_ok) return;
+    if (wait_idle()) return;
     dc_low();
     cs_low();
-    spi1_write_byte(cmd);
+    if (spi1_write_byte(cmd)) { cs_high(); return; }
     wait_idle();
     cs_high();
 }
 
 void spi_lcd_data(const uint8_t *buf, size_t len)
 {
+    if (!lcd_ok) return;
     dc_high();
     cs_low();
     for (size_t i = 0; i < len; i++) {
-        spi1_write_byte(buf[i]);
+        if (spi1_write_byte(buf[i])) { cs_high(); return; }
         /* Drain RX periodically to prevent FIFO overflow (FIFO depth = 8) */
         if ((i & 7u) == 7u)
             drain_rx();
@@ -187,12 +204,13 @@ void spi_lcd_data(const uint8_t *buf, size_t len)
 
 void spi_lcd_data16(const uint16_t *buf, size_t count)
 {
+    if (!lcd_ok) return;
     dc_high();
     cs_low();
     for (size_t i = 0; i < count; i++) {
         uint16_t v = buf[i];
-        spi1_write_byte((uint8_t)(v >> 8));    /* MSB first */
-        spi1_write_byte((uint8_t)(v & 0xFF));
+        if (spi1_write_byte((uint8_t)(v >> 8)))  { cs_high(); return; }
+        if (spi1_write_byte((uint8_t)(v & 0xFF))) { cs_high(); return; }
         if ((i & 3u) == 3u)
             drain_rx();
     }
@@ -220,14 +238,15 @@ void spi_lcd_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
 
 void spi_lcd_fill(uint16_t color, uint32_t count)
 {
+    if (!lcd_ok) return;
     uint8_t hi = (uint8_t)(color >> 8);
     uint8_t lo = (uint8_t)(color & 0xFF);
 
     dc_high();
     cs_low();
     for (uint32_t i = 0; i < count; i++) {
-        spi1_write_byte(hi);
-        spi1_write_byte(lo);
+        if (spi1_write_byte(hi)) { cs_high(); return; }
+        if (spi1_write_byte(lo)) { cs_high(); return; }
         if ((i & 3u) == 3u)
             drain_rx();
     }

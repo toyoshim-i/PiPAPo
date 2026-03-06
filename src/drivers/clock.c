@@ -58,19 +58,26 @@
  * Public API
  * ========================================================================== */
 
+/* ~500 ms timeout at 12 MHz (pre-PLL boot clock) */
+#define PLL_TIMEOUT  6000000u
+
 void clock_init_pll(void)
 {
+    uint32_t t;
+
     /* Step 1: Move clk_sys to clk_ref (SRC = 0) for a safe glitchless
      * transition — clk_sys must not be on the AUX mux while we reconfigure
      * PLL_SYS. */
     CLK_SYS_CTRL = CLK_SYS_CTRL & ~1u;
-    while (!(CLK_SYS_SELECTED & 1u))   /* wait for clk_ref active */
+    t = PLL_TIMEOUT;
+    while (!(CLK_SYS_SELECTED & 1u) && --t)   /* wait for clk_ref active */
         ;
 
     /* Step 2: Reset PLL_SYS, then release it so registers are at defaults. */
     RESETS_RESET_SET = RESET_PLL_SYS;
     RESETS_RESET_CLR = RESET_PLL_SYS;
-    while (!(RESETS_RESET_DONE & RESET_PLL_SYS))
+    t = PLL_TIMEOUT;
+    while (!(RESETS_RESET_DONE & RESET_PLL_SYS) && --t)
         ;
 
     /* Step 3: Program reference divisor and feedback divisor.
@@ -83,7 +90,8 @@ void clock_init_pll(void)
     PLL_SYS_PWR &= ~(PLL_PWR_PD | PLL_PWR_VCOPD);
 
     /* Step 5: Wait for the VCO to lock. */
-    while (!(PLL_SYS_CS & PLL_CS_LOCK))
+    t = PLL_TIMEOUT;
+    while (!(PLL_SYS_CS & PLL_CS_LOCK) && --t)
         ;
 
     /* Step 6: Program the post-dividers: POSTDIV1=6, POSTDIV2=2 → 133 MHz. */
@@ -95,6 +103,7 @@ void clock_init_pll(void)
     /* Step 8: Point clk_sys AUX mux at PLL_SYS (AUXSRC = 0) and switch
      * clk_sys from clk_ref to the AUX mux (SRC = 1). */
     CLK_SYS_CTRL = (CLK_SYS_AUXSRC_PLL << 5) | CLK_SYS_SRC_AUX;
-    while (!(CLK_SYS_SELECTED & (1u << CLK_SYS_SRC_AUX)))
+    t = PLL_TIMEOUT;
+    while (!(CLK_SYS_SELECTED & (1u << CLK_SYS_SRC_AUX)) && --t)
         ;
 }
