@@ -16,6 +16,9 @@
 /* Initialise SPI1 peripheral and GPIO pins for LCD communication. */
 void spi_lcd_init(void);
 
+/* Hardware reset: assert RST low 10 ms, release, wait 120 ms. */
+void spi_lcd_reset(void);
+
 /* Send a single command byte (DC=0). */
 void spi_lcd_cmd(uint8_t cmd);
 

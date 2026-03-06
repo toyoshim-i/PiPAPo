@@ -70,6 +70,16 @@
 #define DC_MASK   (1u << PICOCALC_LCD_DC)
 #define RST_MASK  (1u << PICOCALC_LCD_RST)
 
+/* ── Timing helpers ────────────────────────────────────────────────────── */
+
+#define DELAY_LOOPS_PER_MS  13300u   /* ~1 ms at 133 MHz (imprecise) */
+
+static void delay_ms(uint32_t ms)
+{
+    volatile uint32_t count = ms * DELAY_LOOPS_PER_MS;
+    while (count--) ;
+}
+
 /* ── Internal helpers ───────────────────────────────────────────────────── */
 
 static inline void cs_low(void)  { SIO_GPIO_OUT_CLR = CS_MASK; }
@@ -103,6 +113,14 @@ static void gpio_set_func(uint32_t gpio, uint32_t funcsel)
 }
 
 /* ── Public API ─────────────────────────────────────────────────────────── */
+
+void spi_lcd_reset(void)
+{
+    SIO_GPIO_OUT_CLR = RST_MASK;   /* assert RST low */
+    delay_ms(10);
+    SIO_GPIO_OUT_SET = RST_MASK;   /* release RST */
+    delay_ms(120);
+}
 
 void spi_lcd_init(void)
 {

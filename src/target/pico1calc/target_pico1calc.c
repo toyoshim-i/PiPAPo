@@ -13,6 +13,7 @@
 #include "drivers/sd.h"
 #include "drivers/i2c.h"
 #include "drivers/spi_lcd.h"
+#include "drivers/lcd.h"
 #include "klog.h"
 #include "mm/mpu.h"
 #include "errno.h"
@@ -36,6 +37,8 @@ void target_early_init(void)
     klog("I2C1: initialised at 10 kHz\n");
     spi_lcd_init();
     klog("SPI1: LCD initialised at 33 MHz\n");
+    lcd_init();
+    klog("LCD: ST7796S initialised (320x320 RGB565)\n");
 }
 
 void target_late_init(void)
