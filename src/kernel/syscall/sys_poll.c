@@ -117,9 +117,19 @@ static long do_ppoll(struct pollfd *fds, uint32_t nfds,
         current->sleep_until = sched_get_ticks() + timeout_ticks;
 
     /* Block: wait for data or timeout.
-     * Use &tty_stdin as wait channel — handles the common case of
-     * polling the tty for keyboard input (top, vi). */
-    current->wait_channel = &tty_stdin;
+     * Use the first polled fd's priv as wait channel — for tty fds this
+     * is the tty_dev_t*, matching what tty_rx_notify() wakes. */
+    current->wait_channel = NULL;
+    for (uint32_t i = 0; i < nfds; i++) {
+        int fd = fds[i].fd;
+        if (fd >= 0 && fd < FD_MAX && current->fd_table[fd]) {
+            struct file *f = current->fd_table[fd];
+            if (f->priv) {
+                current->wait_channel = f->priv;
+                break;
+            }
+        }
+    }
     current->state = PROC_BLOCKED;
     svc_restart[core_id()] = 1;
     sched_yield();
