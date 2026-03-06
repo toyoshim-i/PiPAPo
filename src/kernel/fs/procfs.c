@@ -255,6 +255,47 @@ static int gen_mounts(char *buf, int bufsiz)
     return pos;
 }
 
+/* ── /proc/battery — battery voltage and percentage ────────────────────────── */
+
+static int (*battery_hw_read)(uint8_t *buf, int len);
+
+void procfs_set_battery(int (*read_fn)(uint8_t *buf, int len))
+{
+    battery_hw_read = read_fn;
+}
+
+static int gen_battery(char *buf, int bufsiz)
+{
+    if (!battery_hw_read)
+        return fmt_append(buf, 0, bufsiz, "not available\n");
+
+    uint8_t raw[2] = {0, 0};
+    if (battery_hw_read(raw, 2) < 0)
+        return fmt_append(buf, 0, bufsiz, "read error\n");
+
+    /* STM32 returns 2-byte little-endian ADC value.
+     * Voltage (mV) = raw * 3300 / 4095 * 2 (resistor divider).
+     * Exact formula may need tuning on real hardware. */
+    uint32_t adc = (uint32_t)raw[0] | ((uint32_t)raw[1] << 8);
+    uint32_t mv = adc * 6600u / 4095u;
+
+    int pos = 0;
+    pos = fmt_append(buf, pos, bufsiz, "voltage: ");
+    pos = fmt_append_u32(buf, pos, bufsiz, mv);
+    pos = fmt_append(buf, pos, bufsiz, " mV\n");
+
+    /* Rough percentage: 3.0V = 0%, 4.2V = 100% */
+    uint32_t pct = 0;
+    if (mv >= 4200)
+        pct = 100;
+    else if (mv > 3000)
+        pct = (mv - 3000u) * 100u / 1200u;
+    pos = fmt_append(buf, pos, bufsiz, "percentage: ");
+    pos = fmt_append_u32(buf, pos, bufsiz, pct);
+    pos = fmt_append(buf, pos, bufsiz, "%\n");
+    return pos;
+}
+
 /* ── Node table ───────────────────────────────────────────────────────────── */
 
 static const procfs_node_t procfs_nodes[] = {
@@ -263,6 +304,7 @@ static const procfs_node_t procfs_nodes[] = {
     { "stat",    gen_stat },
     { "uptime",  gen_uptime },
     { "mounts",  gen_mounts },
+    { "battery", gen_battery },
 };
 
 #define PROCFS_NODE_COUNT \

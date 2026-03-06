@@ -19,6 +19,7 @@
 #include "kernel/fd/tty.h"
 #include "kernel/proc/sched.h"
 #include "kernel/fs/devfs.h"
+#include "kernel/fs/procfs.h"
 #include "klog.h"
 #include "mm/mpu.h"
 #include "errno.h"
@@ -34,6 +35,8 @@ static int fbcon_get_rows(void)      { return fbcon_rows(); }
 
 #define PICO_STM32_ADDR  0x1F
 #define REG_ID_BKL       0x05
+#define REG_ID_BAT       0x0B
+#define REG_ID_OFF       0x0E
 
 static int bl_i2c_get(uint8_t *val)
 {
@@ -43,6 +46,19 @@ static int bl_i2c_get(uint8_t *val)
 static int bl_i2c_set(uint8_t val)
 {
     return i2c_write_reg(PICO_STM32_ADDR, REG_ID_BKL, &val, 1);
+}
+
+/* ── Battery and power (STM32 I2C registers 0x0B, 0x0E) ──────────────── */
+
+static int bat_i2c_read(uint8_t *buf, int len)
+{
+    return i2c_read_reg(PICO_STM32_ADDR, REG_ID_BAT, buf, (size_t)len);
+}
+
+static int power_i2c_off(void)
+{
+    uint8_t val = 1;
+    return i2c_write_reg(PICO_STM32_ADDR, REG_ID_OFF, &val, 1);
 }
 
 /* ── TTY backend ──────────────────────────────────────────────────────── */
@@ -95,6 +111,9 @@ void target_early_init(void)
         devfs_set_backlight(bl_i2c_get, bl_i2c_set);
         bl_i2c_set(128);
         klog("BACKLIGHT: set to 128/255\n");
+        procfs_set_battery(bat_i2c_read);
+        devfs_set_power(power_i2c_off);
+        klog("POWER: battery monitor and power-off registered\n");
     } else {
         klog("PicoCalc peripherals not detected (skipping LCD/fbcon)\n");
     }

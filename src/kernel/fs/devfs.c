@@ -185,6 +185,46 @@ static long devbacklight_write(const void *buf, size_t n, uint32_t off)
     return (long)n;
 }
 
+/* ── /dev/power ──────────────────────────────────────────────────────────── */
+
+static int (*power_hw_off)(void);
+
+void devfs_set_power(int (*off_fn)(void))
+{
+    power_hw_off = off_fn;
+}
+
+/* Read: returns "on\n" — system is running */
+static long devpower_read(void *buf, size_t n, uint32_t off)
+{
+    const char *msg = "on\n";
+    int len = 3;
+    if (off >= (uint32_t)len)
+        return 0;
+    size_t avail = (size_t)(len - (int)off);
+    if (avail > n)
+        avail = n;
+    __builtin_memcpy(buf, msg + off, avail);
+    return (long)avail;
+}
+
+/* Write "off" or "0" to power down */
+static long devpower_write(const void *buf, size_t n, uint32_t off)
+{
+    (void)off;
+    if (!power_hw_off)
+        return -(long)ENODEV;
+    const char *p = (const char *)buf;
+    /* Accept "off", "off\n", "0", "0\n" */
+    if ((n >= 3 && p[0] == 'o' && p[1] == 'f' && p[2] == 'f') ||
+        (n >= 1 && p[0] == '0')) {
+        power_hw_off();
+        /* Should not return, but just in case: */
+        return (long)n;
+    }
+    return -(long)EINVAL;
+}
+
 #ifdef PPAP_HAS_BLKDEV
 /* ── /dev/mmcblk0 — raw block device ──────────────────────────────────────── */
 
@@ -305,6 +345,7 @@ static const devfs_node_t devfs_nodes[] = {
     { "tty",     devtty_read,    devtty_write   },
     { "urandom",    devrandom_read,     devnull_write       },
     { "backlight",  devbacklight_read,  devbacklight_write  },
+    { "power",      devpower_read,      devpower_write      },
 #ifdef PPAP_HAS_BLKDEV
     { "mmcblk0", devblk_read,    devblk_write   },
     { "loop0",   devloop0_read,  devloop0_write },

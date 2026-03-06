@@ -20,4 +20,9 @@ extern const vfs_ops_t devfs_ops;
  * /dev/backlight returns ENODEV if not registered. */
 void devfs_set_backlight(int (*get)(uint8_t *val), int (*set)(uint8_t val));
 
+/* Register hardware power-off callback (pico1calc I2C).
+ * off_fn: trigger power-down; should not return.
+ * /dev/power write returns ENODEV if not registered. */
+void devfs_set_power(int (*off_fn)(void));
+
 #endif /* PPAP_FS_DEVFS_H */
