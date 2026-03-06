@@ -122,6 +122,69 @@ static long devrandom_read(void *buf, size_t n, uint32_t off)
     return (long)n;
 }
 
+/* ── /dev/backlight ──────────────────────────────────────────────────────── */
+
+static int (*bl_hw_get)(uint8_t *val);   /* NULL = not available */
+static int (*bl_hw_set)(uint8_t val);
+
+void devfs_set_backlight(int (*get)(uint8_t *), int (*set)(uint8_t))
+{
+    bl_hw_get = get;
+    bl_hw_set = set;
+}
+
+/* Read: returns ASCII decimal brightness + newline, e.g. "128\n" */
+static long devbacklight_read(void *buf, size_t n, uint32_t off)
+{
+    if (!bl_hw_get)
+        return -(long)ENODEV;
+    uint8_t val;
+    if (bl_hw_get(&val) < 0)
+        return -(long)EIO;
+    /* Format as ASCII decimal */
+    char tmp[5];   /* "255\n" max */
+    int len = 0;
+    if (val >= 100) tmp[len++] = (char)('0' + val / 100);
+    if (val >= 10)  tmp[len++] = (char)('0' + (val / 10) % 10);
+    tmp[len++] = (char)('0' + val % 10);
+    tmp[len++] = '\n';
+    /* Handle offset (for sequential reads) */
+    if (off >= (uint32_t)len)
+        return 0;
+    size_t avail = (size_t)(len - (int)off);
+    if (avail > n)
+        avail = n;
+    __builtin_memcpy(buf, tmp + off, avail);
+    return (long)avail;
+}
+
+/* Write: parse ASCII decimal 0–255, set brightness */
+static long devbacklight_write(const void *buf, size_t n, uint32_t off)
+{
+    (void)off;
+    if (!bl_hw_set)
+        return -(long)ENODEV;
+    const uint8_t *p = (const uint8_t *)buf;
+    uint32_t val = 0;
+    int digits = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (p[i] >= '0' && p[i] <= '9') {
+            val = val * 10 + (uint32_t)(p[i] - '0');
+            digits++;
+        } else if (p[i] == '\n' || p[i] == '\r' || p[i] == ' ') {
+            if (digits)
+                break;   /* trailing whitespace */
+        } else {
+            return -(long)EINVAL;
+        }
+    }
+    if (!digits || val > 255)
+        return -(long)EINVAL;
+    if (bl_hw_set((uint8_t)val) < 0)
+        return -(long)EIO;
+    return (long)n;
+}
+
 #ifdef PPAP_HAS_BLKDEV
 /* ── /dev/mmcblk0 — raw block device ──────────────────────────────────────── */
 
@@ -240,7 +303,8 @@ static const devfs_node_t devfs_nodes[] = {
     { "tty1",    devtty_read,    devtty_write   },
     { "console", devtty_read,    devtty_write   },
     { "tty",     devtty_read,    devtty_write   },
-    { "urandom", devrandom_read, devnull_write  },
+    { "urandom",    devrandom_read,     devnull_write       },
+    { "backlight",  devbacklight_read,  devbacklight_write  },
 #ifdef PPAP_HAS_BLKDEV
     { "mmcblk0", devblk_read,    devblk_write   },
     { "loop0",   devloop0_read,  devloop0_write },

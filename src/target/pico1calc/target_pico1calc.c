@@ -18,6 +18,7 @@
 #include "drivers/fbcon.h"
 #include "kernel/fd/tty.h"
 #include "kernel/proc/sched.h"
+#include "kernel/fs/devfs.h"
 #include "klog.h"
 #include "mm/mpu.h"
 #include "errno.h"
@@ -28,6 +29,23 @@ static int fbcon_getc_wrapper(void)  { return kbd_poll(); }
 static int fbcon_avail_wrapper(void) { return kbd_poll_avail(); }
 static int fbcon_get_cols(void)      { return fbcon_cols(); }
 static int fbcon_get_rows(void)      { return fbcon_rows(); }
+
+/* ── LCD backlight (STM32 I2C register 0x05) ──────────────────────────── */
+
+#define PICO_STM32_ADDR  0x1F
+#define REG_ID_BKL       0x05
+
+static int bl_i2c_get(uint8_t *val)
+{
+    return i2c_read_reg(PICO_STM32_ADDR, REG_ID_BKL, val, 1);
+}
+
+static int bl_i2c_set(uint8_t val)
+{
+    return i2c_write_reg(PICO_STM32_ADDR, REG_ID_BKL, &val, 1);
+}
+
+/* ── TTY backend ──────────────────────────────────────────────────────── */
 
 static const tty_backend_t fbcon_backend = {
     .putc     = fbcon_putc,
@@ -74,6 +92,9 @@ void target_early_init(void)
         tty_set_backend(&fbcon_backend);
         sched_set_input_poll(fbcon_avail_wrapper);
         klog("TTY: backend switched to LCD+keyboard\n");
+        devfs_set_backlight(bl_i2c_get, bl_i2c_set);
+        bl_i2c_set(128);
+        klog("BACKLIGHT: set to 128/255\n");
     } else {
         klog("PicoCalc peripherals not detected (skipping LCD/fbcon)\n");
     }

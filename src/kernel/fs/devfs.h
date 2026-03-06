@@ -14,4 +14,10 @@
 /* FS operations table — pass to vfs_mount() as the ops parameter */
 extern const vfs_ops_t devfs_ops;
 
+/* Register hardware backlight callbacks (pico1calc I2C).
+ * get: read current brightness (0–255) into *val; return 0 or -1.
+ * set: write brightness (0–255); return 0 or -1.
+ * /dev/backlight returns ENODEV if not registered. */
+void devfs_set_backlight(int (*get)(uint8_t *val), int (*set)(uint8_t val));
+
 #endif /* PPAP_FS_DEVFS_H */
