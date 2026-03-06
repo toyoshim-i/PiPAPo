@@ -2,7 +2,7 @@
  * spi_lcd.c — SPI1 LCD driver for PicoCalc 320×320 IPS display
  *
  * Drives the SPI1 (PL022) controller at ~33 MHz to send commands and pixel
- * data to the LCD.  Three additional GPIO pins provide chip-select (CS),
+ * data to the LCD (ST7365P / ILI9488).  Three additional GPIO pins provide chip-select (CS),
  * data/command (DC), and hardware reset (RST).
  *
  * This is a TX-only transport layer — the LCD has no MISO line.  The PL022
@@ -18,9 +18,9 @@
 #include "config.h"
 #include <stdint.h>
 
-/* ── SPI1 (PL022) — base 0x4003D000 ─────────────────────────────────────── */
+/* ── SPI1 (PL022) — base 0x40040000 ─────────────────────────────────────── */
 
-#define SPI1_BASE   0x4003D000u
+#define SPI1_BASE   0x40040000u
 
 #define SPI1_CR0    REG(SPI1_BASE + 0x00u)  /* Control Register 0          */
 #define SPI1_CR1    REG(SPI1_BASE + 0x04u)  /* Control Register 1          */
@@ -127,6 +127,7 @@ static void gpio_set_func(uint32_t gpio, uint32_t funcsel)
 /* ── Public API ─────────────────────────────────────────────────────────── */
 
 int spi_lcd_ok(void) { return lcd_ok; }
+uint32_t spi_lcd_read_sr(void) { return SPI1_SR; }
 
 void spi_lcd_reset(void)
 {

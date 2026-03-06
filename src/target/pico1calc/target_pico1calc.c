@@ -100,7 +100,10 @@ void target_early_init(void)
         spi_lcd_init();
         klog("SPI1: LCD initialised at 33 MHz\n");
         lcd_init();
-        klog("LCD: ST7365P initialised (320x320 RGB565)\n");
+        if (!spi_lcd_ok())
+            klog("LCD: *** SPI timeout during init ***\n");
+        else
+            klog("LCD: ST7365P initialised (320x320 RGB565)\n");
         fbcon_init();
         klog("FBCON: text console initialised (40x20)\n");
         klog_set_mirror(fbcon_putc, fbcon_flush);

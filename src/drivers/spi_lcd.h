@@ -2,7 +2,7 @@
  * spi_lcd.h — SPI1 LCD driver for PicoCalc 320×320 IPS display
  *
  * Low-level SPI1 transport layer.  Sends commands and pixel data to the
- * LCD controller (ST7796S / ILI9488) via the PL022 SPI1 peripheral.
+ * LCD controller (ST7365P / ILI9488) via the PL022 SPI1 peripheral.
  * Controller initialisation sequence is handled by the higher-level
  * display driver (Step 3).
  */
@@ -36,5 +36,8 @@ void spi_lcd_fill(uint16_t color, uint32_t count);
 
 /* Returns non-zero if the LCD is responding (no SPI timeout detected). */
 int spi_lcd_ok(void);
+
+/* Diagnostic: read SPI1 status register (SR) raw value. */
+uint32_t spi_lcd_read_sr(void);
 
 #endif /* PPAP_DRIVERS_SPI_LCD_H */

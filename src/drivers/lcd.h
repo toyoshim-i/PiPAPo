@@ -1,5 +1,5 @@
 /*
- * lcd.h — LCD controller driver for PicoCalc (ST7796S / ILI9488)
+ * lcd.h — LCD controller driver for PicoCalc (ST7365P / ILI9488)
  *
  * High-level LCD initialization and drawing primitives.  Uses the SPI1
  * transport layer (spi_lcd.h) for hardware communication.
