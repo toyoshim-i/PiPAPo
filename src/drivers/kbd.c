@@ -204,6 +204,19 @@ void kbd_init(void)
 
 int kbd_present(void) { return kbd_detected; }
 
+int kbd_poll_avail(void)
+{
+    /* Buffered escape sequence bytes pending? */
+    if (seq_pos < seq_len)
+        return 1;
+
+    /* Check STM32 FIFO count without consuming data */
+    uint8_t status = 0;
+    if (i2c_read_reg(KBD_ADDR, REG_ID_KEY, &status, 1) < 0)
+        return 0;
+    return (status & 0x1F) != 0;
+}
+
 int kbd_poll(void)
 {
     /* Return buffered escape sequence bytes first */

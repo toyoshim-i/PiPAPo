@@ -19,4 +19,8 @@ int kbd_present(void);
  * are buffered internally and returned one byte per call. */
 int kbd_poll(void);
 
+/* Returns non-zero if keyboard input is available (buffered escape sequence
+ * bytes or FIFO entries from the STM32).  Does not consume any data. */
+int kbd_poll_avail(void);
+
 #endif /* PPAP_DRIVERS_KBD_H */

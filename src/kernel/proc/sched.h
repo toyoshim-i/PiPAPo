@@ -73,6 +73,13 @@ void sched_yield(void);
 void sched_sleep(uint32_t ticks);
 
 /*
+ * Register an input-available callback, polled every 20 ms from SysTick.
+ * When fn() returns non-zero, tty_rx_notify() is called to wake blocked
+ * tty readers.  Used by PicoCalc to poll the STM32 keyboard controller.
+ */
+void sched_set_input_poll(int (*fn)(void));
+
+/*
  * Wake all processes blocked on the given channel.
  * Scans proc_table for PROC_BLOCKED processes whose wait_channel matches,
  * sets them to PROC_RUNNABLE, and clears their wait_channel.

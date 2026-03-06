@@ -16,9 +16,27 @@
 #include "drivers/lcd.h"
 #include "drivers/kbd.h"
 #include "drivers/fbcon.h"
+#include "kernel/fd/tty.h"
+#include "kernel/proc/sched.h"
 #include "klog.h"
 #include "mm/mpu.h"
 #include "errno.h"
+
+/* ── LCD + keyboard TTY backend ─────────────────────────────────────────── */
+
+static int fbcon_getc_wrapper(void)  { return kbd_poll(); }
+static int fbcon_avail_wrapper(void) { return kbd_poll_avail(); }
+static int fbcon_get_cols(void)      { return fbcon_cols(); }
+static int fbcon_get_rows(void)      { return fbcon_rows(); }
+
+static const tty_backend_t fbcon_backend = {
+    .putc     = fbcon_putc,
+    .flush    = fbcon_flush,
+    .getc     = fbcon_getc_wrapper,
+    .rx_avail = fbcon_avail_wrapper,
+    .get_cols = fbcon_get_cols,
+    .get_rows = fbcon_get_rows,
+};
 
 #ifdef PPAP_TESTS
 #include "ktest.h"
@@ -51,6 +69,9 @@ void target_early_init(void)
         klog("LCD: ST7796S initialised (320x320 RGB565)\n");
         fbcon_init();
         klog("FBCON: text console initialised (40x20)\n");
+        tty_set_backend(&fbcon_backend);
+        sched_set_input_poll(fbcon_avail_wrapper);
+        klog("TTY: backend switched to LCD+keyboard\n");
     } else {
         klog("PicoCalc peripherals not detected (skipping LCD/fbcon)\n");
     }
@@ -91,5 +112,9 @@ const char *target_init_path(void)
 
 uint32_t target_caps(void)
 {
-    return TARGET_CAP_SD | TARGET_CAP_SPI | TARGET_CAP_CORE1 | TARGET_CAP_REALUART;
+    uint32_t caps = TARGET_CAP_SD | TARGET_CAP_SPI | TARGET_CAP_CORE1
+                  | TARGET_CAP_REALUART;
+    if (kbd_present())
+        caps |= TARGET_CAP_DISPLAY | TARGET_CAP_KBD;
+    return caps;
 }

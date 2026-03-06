@@ -1,10 +1,14 @@
 /*
- * tty.h — UART tty driver public interface
+ * tty.h — TTY driver public interface
  *
- * Provides three static struct file objects pre-wired to the UART:
- *   tty_stdin  — read-only,  backed by uart_getc()
- *   tty_stdout — write-only, backed by uart_putc()
- *   tty_stderr — write-only, backed by uart_putc()
+ * Provides three static struct file objects for the system console:
+ *   tty_stdin  — read-only
+ *   tty_stdout — write-only
+ *   tty_stderr — write-only
+ *
+ * By default, I/O is backed by UART (uart_putc / uart_getc).
+ * Call tty_set_backend() to switch to an alternate backend (e.g.
+ * fbcon + keyboard on PicoCalc).
  *
  * These are shared across processes (refcnt = 1 at boot; dup/fork may
  * increment it).  A single tty_fops vtable handles all three.
@@ -21,7 +25,20 @@ extern struct file tty_stdin;
 extern struct file tty_stdout;
 extern struct file tty_stderr;
 
-/* Called from UART ISR when RX data arrives — wakes processes blocked on tty */
+/* I/O backend descriptor — all fields required */
+typedef struct {
+    void (*putc)(char c);       /* write one character                */
+    void (*flush)(void);        /* flush output (NULL if not needed)  */
+    int  (*getc)(void);         /* read one character (-1 if none)    */
+    int  (*rx_avail)(void);     /* non-zero if input available        */
+    int  (*get_cols)(void);     /* terminal width  (NULL → default)   */
+    int  (*get_rows)(void);     /* terminal height (NULL → default)   */
+} tty_backend_t;
+
+/* Switch the tty I/O backend.  Must be called before processes start. */
+void tty_set_backend(const tty_backend_t *be);
+
+/* Called from ISR / scheduler when RX data arrives — wakes blocked tty readers */
 void tty_rx_notify(void);
 
 /* Called from UART ISR when Ctrl-C (0x03) is received — delivers SIGINT.

@@ -1,9 +1,9 @@
 /*
- * tty.c — UART tty driver with line discipline
+ * tty.c — TTY driver with line discipline
  *
- * Backed by uart_putc() / uart_getc() from drivers/uart.h.
- * After uart_init_irq() those calls are non-blocking ring-buffer operations;
- * the UART0_IRQ_Handler drains TX and fills RX asynchronously.
+ * By default, backed by uart_putc() / uart_getc() from drivers/uart.h.
+ * Call tty_set_backend() to switch to an alternate I/O backend (e.g.
+ * fbcon + keyboard on PicoCalc).
  *
  * tty_write: iterates the buffer; if OPOST is set, expands '\n' → '\r\n'.
  *
@@ -70,6 +70,15 @@ static char line_buf[LINE_BUF_SIZE] __attribute__((section(".iobuf")));
 static uint16_t line_pos;           /* next write position in line_buf */
 static volatile uint8_t line_ready; /* 1 when complete line available */
 
+/* ── I/O backend function pointers (default: UART) ─────────────────────────── */
+
+static void (*tty_out)(char c)       = uart_putc;
+static void (*tty_out_flush)(void)   = NULL;
+static int  (*tty_in)(void)          = uart_getc;
+static int  (*tty_in_avail)(void)    = uart_rx_avail;
+static int  (*tty_win_cols)(void)    = NULL;
+static int  (*tty_win_rows)(void)    = NULL;
+
 /* ── tty ioctl numbers ─────────────────────────────────────────────────────── */
 
 #define TCGETS      0x5401u
@@ -110,6 +119,26 @@ static struct kernel_termios tty_termios = {
 
 /* Foreground process group (for job control) */
 static int32_t tty_fg_pgrp = 0;
+
+/* ── Backend setup ─────────────────────────────────────────────────────────── */
+
+void tty_set_backend(const tty_backend_t *be)
+{
+    tty_out       = be->putc;
+    tty_out_flush = be->flush;
+    tty_in        = be->getc;
+    tty_in_avail  = be->rx_avail;
+    tty_win_cols  = be->get_cols;
+    tty_win_rows  = be->get_rows;
+}
+
+/* ── Output helper (putc + optional flush) ────────────────────────────────── */
+
+static inline void tty_echo_flush(void)
+{
+    if (tty_out_flush)
+        tty_out_flush();
+}
 
 /* ── SIGINT delivery ───────────────────────────────────────────────────────── */
 
@@ -156,9 +185,10 @@ static long tty_write(struct file *f, const char *buf, size_t n)
 
     for (size_t i = 0u; i < n; i++) {
         if (opost && buf[i] == '\n' && (tty_termios.c_oflag & ONLCR))
-            uart_putc('\r');    /* NL → CR+NL when OPOST|ONLCR set */
-        uart_putc(buf[i]);
+            tty_out('\r');    /* NL → CR+NL when OPOST|ONLCR set */
+        tty_out(buf[i]);
     }
+    tty_echo_flush();
     return (long)n;
 }
 
@@ -166,9 +196,9 @@ static long tty_write(struct file *f, const char *buf, size_t n)
 
 static long tty_read_canon(char *buf, size_t n)
 {
-    /* Drain all available characters from UART ring buffer */
+    /* Drain all available characters from input */
     while (!line_ready) {
-        int c = uart_getc();
+        int c = tty_in();
         if (c < 0) {
             /* No data — check for pending signal before blocking */
             if (current->sig_pending & ~current->sig_blocked)
@@ -191,10 +221,11 @@ static long tty_read_canon(char *buf, size_t n)
                 tty_send_signal(SIGINT);
                 /* Discard line buffer, echo ^C */
                 if (tty_termios.c_lflag & ECHO) {
-                    uart_putc('^');
-                    uart_putc('C');
-                    uart_putc('\r');
-                    uart_putc('\n');
+                    tty_out('^');
+                    tty_out('C');
+                    tty_out('\r');
+                    tty_out('\n');
+                    tty_echo_flush();
                 }
                 line_pos = 0;
                 return -(long)EINTR;
@@ -206,9 +237,10 @@ static long tty_read_canon(char *buf, size_t n)
             if (line_pos > 0) {
                 line_pos--;
                 if (tty_termios.c_lflag & ECHO) {
-                    uart_putc('\b');
-                    uart_putc(' ');
-                    uart_putc('\b');
+                    tty_out('\b');
+                    tty_out(' ');
+                    tty_out('\b');
+                    tty_echo_flush();
                 }
             }
             continue;
@@ -219,11 +251,12 @@ static long tty_read_canon(char *buf, size_t n)
             while (line_pos > 0) {
                 line_pos--;
                 if (tty_termios.c_lflag & ECHO) {
-                    uart_putc('\b');
-                    uart_putc(' ');
-                    uart_putc('\b');
+                    tty_out('\b');
+                    tty_out(' ');
+                    tty_out('\b');
                 }
             }
+            tty_echo_flush();
             continue;
         }
 
@@ -240,8 +273,9 @@ static long tty_read_canon(char *buf, size_t n)
             if (line_pos < LINE_BUF_SIZE)
                 line_buf[line_pos++] = (char)c;
             if (tty_termios.c_lflag & ECHO) {
-                uart_putc('\r');
-                uart_putc('\n');
+                tty_out('\r');
+                tty_out('\n');
+                tty_echo_flush();
             }
             line_ready = 1;
             break;
@@ -250,11 +284,14 @@ static long tty_read_canon(char *buf, size_t n)
         /* Regular character */
         if (line_pos < LINE_BUF_SIZE) {
             line_buf[line_pos++] = (char)c;
-            if (tty_termios.c_lflag & ECHO)
-                uart_putc((char)c);
+            if (tty_termios.c_lflag & ECHO) {
+                tty_out((char)c);
+                tty_echo_flush();
+            }
         } else {
             /* Line buffer full — ring bell to notify user */
-            uart_putc('\a');
+            tty_out('\a');
+            tty_echo_flush();
         }
     }
 
@@ -282,7 +319,7 @@ static long tty_read_canon(char *buf, size_t n)
 static long tty_read_raw(char *buf, size_t n)
 {
     (void)n;
-    int c = uart_getc();
+    int c = tty_in();
     if (c < 0) {
         /* Check for pending signal before blocking */
         if (current->sig_pending & ~current->sig_blocked)
@@ -310,8 +347,9 @@ static long tty_read_raw(char *buf, size_t n)
     if (tty_termios.c_lflag & ECHO) {
         if (c == '\n' && (tty_termios.c_oflag & OPOST) &&
             (tty_termios.c_oflag & ONLCR))
-            uart_putc('\r');
-        uart_putc((char)c);
+            tty_out('\r');
+        tty_out((char)c);
+        tty_echo_flush();
     }
 
     buf[0] = (char)c;
@@ -357,8 +395,10 @@ static int tty_ioctl(struct file *f, uint32_t cmd, void *arg)
         return 0;
     case TIOCGWINSZ: {
         struct winsize *ws = (struct winsize *)arg;
-        ws->ws_row = TTY_DEFAULT_ROWS;
-        ws->ws_col = TTY_DEFAULT_COLS;
+        ws->ws_col    = (uint16_t)(tty_win_cols ? tty_win_cols()
+                                                : TTY_DEFAULT_COLS);
+        ws->ws_row    = (uint16_t)(tty_win_rows ? tty_win_rows()
+                                                : TTY_DEFAULT_ROWS);
         ws->ws_xpixel = 0;
         ws->ws_ypixel = 0;
         return 0;
@@ -387,7 +427,7 @@ static int tty_poll(struct file *f)
     (void)f;
     int mask = POLLOUT;   /* write never blocks */
 
-    if (line_ready || uart_rx_avail())
+    if (line_ready || tty_in_avail())
         mask |= POLLIN;
 
     return mask;
@@ -406,10 +446,11 @@ int tty_signal_intr(void)
         return 0;   /* signals disabled — leave 0x03 for tty_read */
     /* Echo ^C + newline (like Linux n_tty when ECHO/ECHOCTL are set) */
     if (tty_termios.c_lflag & ECHO) {
-        uart_putc('^');
-        uart_putc('C');
-        uart_putc('\r');
-        uart_putc('\n');
+        tty_out('^');
+        tty_out('C');
+        tty_out('\r');
+        tty_out('\n');
+        tty_echo_flush();
     }
     /* Discard any partial canonical line buffer */
     line_pos = 0;

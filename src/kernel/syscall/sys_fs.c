@@ -173,6 +173,7 @@ long sys_open(const char *path, long flags, long mode)
         const char *devname = *(const char **)vn->fs_priv;
         if (devname &&
             (strcmp(devname, "ttyS0") == 0 ||
+             strcmp(devname, "tty1") == 0 ||
              strcmp(devname, "console") == 0 ||
              strcmp(devname, "tty") == 0)) {
             /* Use the tty driver file objects with line discipline */

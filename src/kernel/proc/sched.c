@@ -16,6 +16,7 @@
 #include "sched.h"    /* includes proc.h via sched.h */
 #include "../mm/page.h"    /* PAGE_SIZE */
 #include "../spinlock.h"   /* SPIN_PROC */
+#include "../fd/tty.h"     /* tty_rx_notify */
 #include "hw/cortex_m0plus.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -121,11 +122,31 @@ __attribute__((naked)) void SysTick_Handler(void)
     );
 }
 
+/* Optional input-available callback, registered by target via sched_set_input_poll().
+ * Returns non-zero if input is available (e.g. keyboard FIFO has data). */
+static int (*input_poll_fn)(void);
+
+/* Keyboard polling counter (Core 0 only, every other tick = 20 ms) */
+static uint32_t input_poll_counter;
+
+void sched_set_input_poll(int (*fn)(void))
+{
+    input_poll_fn = fn;
+}
+
 static void SysTick_Handler_c(uint32_t exc_return)
 {
     /* Only Core 0 maintains the global tick counter */
-    if (core_id() == 0)
+    if (core_id() == 0) {
         tick_count++;
+
+        /* Poll input device every 2 ticks (20 ms) — wake blocked tty readers */
+        if (input_poll_fn && ++input_poll_counter >= 2u) {
+            input_poll_counter = 0;
+            if (input_poll_fn())
+                tty_rx_notify();
+        }
+    }
 
     uint32_t cid = core_id();
     if (current && current->state == PROC_RUNNABLE && !current->is_idle) {

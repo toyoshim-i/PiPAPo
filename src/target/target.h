@@ -23,6 +23,8 @@
 #define TARGET_CAP_SPI      (1u << 1)   /* Has SPI bus for peripherals */
 #define TARGET_CAP_CORE1    (1u << 2)   /* Dual-core (Core 1 usable)   */
 #define TARGET_CAP_REALUART (1u << 3)   /* PL011 UART (not CMSDK)      */
+#define TARGET_CAP_DISPLAY  (1u << 4)   /* LCD display (fbcon)         */
+#define TARGET_CAP_KBD      (1u << 5)   /* Keyboard controller         */
 
 /*
  * target_early_init() — called first in kmain(), before mm_init().
