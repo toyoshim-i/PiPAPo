@@ -15,6 +15,7 @@
 #include "drivers/spi_lcd.h"
 #include "drivers/lcd.h"
 #include "drivers/kbd.h"
+#include "drivers/fbcon.h"
 #include "klog.h"
 #include "mm/mpu.h"
 #include "errno.h"
@@ -41,6 +42,8 @@ void target_early_init(void)
     lcd_init();
     klog("LCD: ST7796S initialised (320x320 RGB565)\n");
     kbd_init();
+    fbcon_init();
+    klog("FBCON: text console initialised (40x20)\n");
 }
 
 void target_late_init(void)

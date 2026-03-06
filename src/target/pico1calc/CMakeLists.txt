@@ -11,6 +11,7 @@ add_executable(ppap_pico1calc
     ${CMAKE_SOURCE_DIR}/src/drivers/spi_lcd.c
     ${CMAKE_SOURCE_DIR}/src/drivers/lcd.c
     ${CMAKE_SOURCE_DIR}/src/drivers/kbd.c
+    ${CMAKE_SOURCE_DIR}/src/drivers/fbcon.c
 )
 
 target_include_directories(ppap_pico1calc PRIVATE
