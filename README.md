@@ -39,7 +39,7 @@ A UNIX-like micro OS for the RP2040 — bare-metal, no SDK runtime.
 | 7 | Target Support Packages — per-target directories, 3 build targets, test cleanup | ✓ Complete |
 | 8 | PIE Binary Optimization — reduce SRAM footprint for user-space binaries | ✓ Complete |
 | 9 | Dual-Core Scheduling — hardware spinlocks, per-core state, Core 1 execution | ✓ Complete |
-| 10 | Stabilization — process lifecycle, memory safety, FS correctness | ✓ Complete |
+| 10 | Stabilization — process lifecycle, memory safety, FS correctness, signal delivery | ✓ Complete |
 | — | **Rogue 5.4.4** — classic dungeon crawler ported with minimal curses shim | ✓ Complete |
 | 11 | PicoCalc Devices — LCD, keyboard, audio drivers | Planned |
 | 12 | RP2350 Port — MPU 8-region, PSRAM, Thumb-2 optimization | Planned |
