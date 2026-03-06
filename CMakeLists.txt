@@ -262,3 +262,51 @@ set_source_files_properties(${CMAKE_BINARY_DIR}/fatimg_data.S
 # Only link FAT32 image into ppap_qemu_arm (hardware uses real SD card)
 target_sources(ppap_qemu_arm PRIVATE ${CMAKE_BINARY_DIR}/fatimg_data.S)
 
+# =============================================================================
+# Font generation pipeline (PicoCalc LCD console)
+# =============================================================================
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/generated)
+
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/generated/font8x16.c
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/bdf2c.py
+            --input ${CMAKE_SOURCE_DIR}/third_party/fonts/8x16.bdf
+            --output ${CMAKE_BINARY_DIR}/generated/font8x16.c
+            --name font8x16 --width 8 --height 16
+    DEPENDS ${CMAKE_SOURCE_DIR}/third_party/fonts/8x16.bdf
+            ${CMAKE_SOURCE_DIR}/tools/bdf2c.py
+    COMMENT "Generating font8x16.c from 8x16.bdf"
+)
+
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/generated/font4x8.c
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/bdf2c.py
+            --input ${CMAKE_SOURCE_DIR}/third_party/fonts/4x6.bdf
+            --output ${CMAKE_BINARY_DIR}/generated/font4x8.c
+            --name font4x8 --width 4 --height 8
+    DEPENDS ${CMAKE_SOURCE_DIR}/third_party/fonts/4x6.bdf
+            ${CMAKE_SOURCE_DIR}/tools/bdf2c.py
+    COMMENT "Generating font4x8.c from 4x6.bdf"
+)
+
+add_custom_target(generate_fonts
+    DEPENDS ${CMAKE_BINARY_DIR}/generated/font8x16.c
+            ${CMAKE_BINARY_DIR}/generated/font4x8.c
+)
+
+add_dependencies(ppap_pico1calc generate_fonts)
+
+set_source_files_properties(
+    ${CMAKE_BINARY_DIR}/generated/font8x16.c
+    ${CMAKE_BINARY_DIR}/generated/font4x8.c
+    TARGET_DIRECTORY ppap_pico1calc
+    PROPERTIES GENERATED TRUE
+)
+
+target_sources(ppap_pico1calc PRIVATE
+    ${CMAKE_BINARY_DIR}/generated/font8x16.c
+    ${CMAKE_BINARY_DIR}/generated/font4x8.c
+)
+
