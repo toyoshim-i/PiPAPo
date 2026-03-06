@@ -503,9 +503,35 @@ to REG_ID_OFF (0x0E).  Or expose via `/dev/power` with write "off".
 
 ---
 
+### Step 13 — Multi-TTY + Getty
+
+**Files:** `src/kernel/fd/tty.c`, `src/kernel/fd/tty.h`, `src/kernel/syscall/sys_fs.c`,
+`src/kernel/proc/sched.c`, `src/kernel/proc/sched.h`, `src/drivers/uart.c`,
+`src/kernel/fd/fd.c`, `src/target/pico1calc/target_pico1calc.c`,
+`third_party/configs/busybox_ppap.fragment`, `third_party/install-busybox.sh`,
+`CMakeLists.txt`
+
+Refactor the TTY driver from single-session to multi-instance so PicoCalc can
+run independent shell sessions on both ttyS0 (UART) and tty1 (LCD+keyboard).
+
+Introduce `tty_dev_t` per-instance struct with backend pointers, line buffer,
+termios, and fg_pgrp.  Two global instances: `tty_devs[0]` (ttyS0/UART) and
+`tty_devs[1]` (tty1/display).  `struct file.priv` points to the correct
+instance.  sys_fs.c allocates per-open file objects instead of returning shared
+statics.
+
+Enable BusyBox `CONFIG_GETTY` and add `/sbin/getty` symlink.  Generate
+per-target inittab files (same pattern as fstab): PicoCalc gets `askfirst`
+on both ttyS0 and tty1; other targets keep `::respawn:/bin/sh`.
+
+Update sched_set_input_poll() and tty_rx_notify()/tty_signal_intr() to take
+a TTY index parameter.
+
+---
+
 ## Week 4 — Polish and Hardware Verification
 
-### Step 13 — Scroll performance optimization
+### Step 14 — Scroll performance optimization
 
 **File:** `src/drivers/fbcon.c`
 
@@ -525,7 +551,7 @@ Current scroll: memmove cell buffer + mark all 20 rows dirty → full redraw
    the display start line without rewriting pixel data — only the new
    bottom row needs rendering.  Reduces scroll cost from ~40 ms to ~2 ms.
 
-### Step 14 — Terminal compatibility testing
+### Step 15 — Terminal compatibility testing
 
 **On pico1calc hardware:**
 
@@ -538,7 +564,7 @@ Current scroll: memmove cell buffer + mark all 20 rows dirty → full redraw
 - Ctrl-C interrupt during `sleep` or `cat`
 - Ctrl-D to exit shell
 
-### Step 15 — `ttyctl` utility
+### Step 16 — `ttyctl` utility
 
 **New file:** `apps/ttyctl/ttyctl.c`
 **Installed to:** `/usr/bin/ttyctl` (pico1calc romfs only)
@@ -576,7 +602,7 @@ or from scripts that need to query/set the display mode.
 -mthumb -Os -static`.  Added to pico1calc romfs via mkromfs.
 CMake target: `ttyctl` in `apps/ttyctl/CMakeLists.txt`.
 
-### Step 16 — Rogue on display (font switching verification)
+### Step 17 — Rogue on display (font switching verification)
 
 Verify Rogue 5.4.4 renders correctly on the PicoCalc display:
 
@@ -589,7 +615,7 @@ Verify Rogue 5.4.4 renders correctly on the PicoCalc display:
 - Keyboard input for movement and commands (hjkl, arrow keys)
 - On exit, emit `ESC [ ? 80 l` to restore 40×20 shell mode
 
-### Step 17 — Documentation and version bump
+### Step 18 — Documentation and version bump
 
 **Files:**
 - `src/kernel/fs/procfs.c` — bump version to "0.11.0"
