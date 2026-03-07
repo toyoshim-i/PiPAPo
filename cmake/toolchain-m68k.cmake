@@ -1,8 +1,8 @@
 # toolchain-m68k.cmake — Cross-compilation toolchain for Motorola 68000
 #
 # Usage:
-#   mkdir build-m68k && cd build-m68k
-#   cmake -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain-m68k.cmake ..
+#   mkdir -p build/m68k && cd build/m68k
+#   cmake -DCMAKE_TOOLCHAIN_FILE=../../cmake/toolchain-m68k.cmake ..
 #
 # Uses m68k-linux-gnu-gcc from Debian/Ubuntu (apt install gcc-m68k-linux-gnu).
 # Targets the 68000 ISA (-m68000) for X68000 hardware compatibility.

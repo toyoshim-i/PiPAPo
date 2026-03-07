@@ -32,7 +32,7 @@ done
 
 # ── Target-specific configuration ────────────────────────────────────────────
 if [[ "$TARGET" == "m68k" ]]; then
-    ELF="$PROJECT_DIR/build-m68k/ppap_qemu_m68k.elf"
+    ELF="$PROJECT_DIR/build/m68k/ppap_qemu_m68k.elf"
     QEMU_BIN="qemu-system-m68k"
     # Prefer locally-built QEMU if available
     LOCAL_QEMU="$PROJECT_DIR/third_party/qemu/build/qemu-system-m68k"
@@ -40,8 +40,8 @@ if [[ "$TARGET" == "m68k" ]]; then
         QEMU_BIN="$LOCAL_QEMU"
     fi
     QEMU_ARGS=(-machine virt -cpu m68000)
-    BUILD_CMD="cmake -DCMAKE_TOOLCHAIN_FILE=$PROJECT_DIR/cmake/toolchain-m68k.cmake -S $PROJECT_DIR/src/target/qemu_m68k -B $PROJECT_DIR/build-m68k && make -C $PROJECT_DIR/build-m68k"
-    BUILD_HINT="cd build-m68k && cmake -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain-m68k.cmake -S ../src/target/qemu_m68k -B . && make"
+    BUILD_CMD="cmake -DCMAKE_TOOLCHAIN_FILE=$PROJECT_DIR/cmake/toolchain-m68k.cmake -S $PROJECT_DIR/src/target/qemu_m68k -B $PROJECT_DIR/build/m68k && make -C $PROJECT_DIR/build/m68k"
+    BUILD_HINT="cd build/m68k && cmake -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain-m68k.cmake -S ../src/target/qemu_m68k -B . && make"
 else
     ELF="$PROJECT_DIR/build/ppap_qemu_arm.elf"
     QEMU_BIN="qemu-system-arm"

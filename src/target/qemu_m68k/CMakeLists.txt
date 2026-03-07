@@ -3,9 +3,9 @@
 # This target builds independently from the ARM/Pico SDK targets.
 #
 # Build:
-#   mkdir -p build-m68k && cd build-m68k
-#   cmake -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain-m68k.cmake \
-#         -S ../src/target/qemu_m68k -B .
+#   mkdir -p build/m68k && cd build/m68k
+#   cmake -DCMAKE_TOOLCHAIN_FILE=../../cmake/toolchain-m68k.cmake \
+#         -S ../../src/target/qemu_m68k -B .
 #   make
 #
 # Run:
