@@ -517,6 +517,9 @@ void fbcon_set_cursor(int x, int y)
 
 void fbcon_set_mode(int mode)
 {
+    int old_cols = cols;
+    int old_rows = rows;
+
     if (mode == FBCON_MODE_COMPACT) {
         cols = 80;
         rows = 40;
@@ -537,7 +540,29 @@ void fbcon_set_mode(int mode)
     vt_state = ST_NORMAL;
     scroll_top = 0;
     scroll_bot = rows - 1;
-    fbcon_clear();
+
+    /* Clear newly-visible cells when expanding */
+    if (cols > old_cols) {
+        for (int r = 0; r < old_rows && r < rows; r++) {
+            memset(&cell_char[r][old_cols], ' ', (size_t)(cols - old_cols));
+            memset(&cell_attr[r][old_cols], cur_attr,
+                   (size_t)(cols - old_cols));
+        }
+    }
+    if (rows > old_rows) {
+        for (int r = old_rows; r < rows; r++) {
+            memset(cell_char[r], ' ', (size_t)cols);
+            memset(cell_attr[r], cur_attr, (size_t)cols);
+        }
+    }
+
+    /* Clamp cursor to new grid */
+    if (cursor_x >= cols) cursor_x = cols - 1;
+    if (cursor_y >= rows) cursor_y = rows - 1;
+
+    /* Redraw everything with the new font */
+    for (int r = 0; r < rows; r++)
+        dirty[r] = 1;
     fbcon_flush();
 }
 

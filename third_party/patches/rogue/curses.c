@@ -11,6 +11,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <termios.h>
+#include <sys/ioctl.h>
 
 /*
  * Globals
@@ -128,6 +129,13 @@ alloc_win(int nlines, int ncols, int begy, int begx, chtype *shared_buf)
 WINDOW *
 initscr(void)
 {
+    /* Query terminal size from the TTY driver */
+    struct winsize ws;
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_row > 0 && ws.ws_col > 0) {
+        LINES = ws.ws_row;
+        COLS  = ws.ws_col;
+    }
+
     /* Save and set raw terminal mode */
     if (!termios_saved && tcgetattr(STDIN_FILENO, &orig_termios) == 0)
         termios_saved = 1;

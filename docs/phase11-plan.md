@@ -615,18 +615,24 @@ Implementation details:
 objects (crt0.o + syscall.o) via the standard `%.elf` pattern rule.
 Install rule routes `ttyctl` to `$(ROMFS_USR_BIN)` (`/usr/bin`).
 
-### Step 17 — Rogue on display (font switching verification)
+### Step 17 — Rogue on display (curses adaptation)
 
-Verify Rogue 5.4.4 renders correctly on the PicoCalc display:
+**Modified file:** `third_party/patches/rogue/curses.c`
 
-- Rogue's startup script (or curses shim init) emits `ESC [ ? 80 h` to
-  switch to 80×40 mode before launching
-- Dungeon map at full 80-column width — classic layout, no compromise
-- Box-drawing characters for room borders
-- Cursor positioning via VT100 sequences
-- Color attributes for monsters/items
-- Keyboard input for movement and commands (hjkl, arrow keys)
-- On exit, emit `ESC [ ? 80 l` to restore 40×20 shell mode
+Update the minimal curses shim to query the current display mode via
+TIOCGWINSZ instead of hardcoding LINES=24, COLS=80.
+
+- `initscr()` calls `ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws)` to set
+  LINES/COLS from the TTY driver's actual window size
+- In 80×40 mode: Rogue runs at full 80-column width (NUMLINES=24,
+  NUMCOLS=80 fits comfortably in 80×40)
+- In 40×20 mode: Rogue's startup check (`LINES < NUMLINES`) correctly
+  rejects the too-small terminal — user should `ttyctl 80` first
+- No mode switching by Rogue itself — respects current terminal size
+- User workflow: `ttyctl 80 && rogue` for the classic experience
+
+**Also fixed:** `fbcon_set_mode()` now preserves existing text content
+when switching modes, redrawing with the new font instead of clearing.
 
 ### Step 18 — Documentation and version bump
 
