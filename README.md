@@ -2,7 +2,7 @@
 
 A UNIX-like micro OS for the RP2040 — bare-metal, no SDK runtime.
 
-> Full design specification: [docs/PicoPiAndPortable-spec-v06.md](docs/PicoPiAndPortable-spec-v06.md)
+> Full design specification: [docs/PicoPiAndPortable-spec-v07.md](docs/PicoPiAndPortable-spec-v07.md)
 
 ---
 
@@ -14,16 +14,16 @@ A UNIX-like micro OS for the RP2040 — bare-metal, no SDK runtime.
 - Run **busybox** (statically linked) with an interactive `ash` shell
 - Run **Rogue 5.4.4** (classic dungeon crawler) via a minimal VT100 curses shim
 - Three build targets: `qemu` (testing), `pico1` (official Pico, romfs-only), `pico1calc` (PicoCalc with SD)
-- Clean porting path to RP2350 (Cortex-M33 + enhanced MPU)
+- **PicoCalc standalone**: embedded LCD console (40×20 / 80×40), I2C keyboard — no host PC required
 
 ## Hardware
 
-| | RP2040 (current) | RP2350 (future) |
-|---|---|---|
-| CPU | Dual Cortex-M0+ @ 133 MHz | Dual Cortex-M33 @ 150 MHz |
-| SRAM | 264 KB | 520 KB |
-| Flash | 2–16 MB QSPI (XIP) | Same + optional PSRAM |
-| MPU | 4 regions | 8 regions + TrustZone |
+| | RP2040 |
+|---|---|
+| CPU | Dual Cortex-M0+ @ 133 MHz |
+| SRAM | 264 KB |
+| Flash | 2–16 MB QSPI (XIP) |
+| MPU | 4 regions |
 
 ## Project Status
 
@@ -41,8 +41,13 @@ A UNIX-like micro OS for the RP2040 — bare-metal, no SDK runtime.
 | 9 | Dual-Core Scheduling — hardware spinlocks, per-core state, Core 1 execution | ✓ Complete |
 | 10 | Stabilization — process lifecycle, memory safety, FS correctness, signal delivery | ✓ Complete |
 | — | **Rogue 5.4.4** — classic dungeon crawler ported with minimal curses shim | ✓ Complete |
-| 11 | PicoCalc Devices — LCD, keyboard, audio drivers | Planned |
-| 12 | RP2350 Port — MPU 8-region, PSRAM, Thumb-2 optimization | Planned |
+| 11 | PicoCalc Devices — SPI LCD, I2C keyboard, framebuffer console, VT100 emulator, multi-TTY | ✓ Complete |
+
+## Future Work
+
+- **RP2350 Port** — Cortex-M33, 8-region MPU, PSRAM support, Thumb-2 optimization; `pico2`/`pico2calc` targets
+- Additional application ports
+- Audio driver support
 
 ## Repository Layout
 
@@ -76,6 +81,12 @@ PPAP/
       uart.c/h              RP2040 PL011 UART0 driver (IRQ mode)
       clock.c/h             PLL_SYS → 133 MHz
       spi.c/h               SPI0 PL022 driver (SD card)
+      spi_lcd.c/h           SPI1 driver for LCD (PicoCalc)
+      lcd.c/h               ST7365P LCD init + primitives
+      i2c.c/h               I2C1 master driver (keyboard)
+      kbd.c/h               STM32 keyboard controller
+      fbcon.c/h             Framebuffer text console + VT100 parser
+      font8x16.c font4x8.c Bitmap fonts (40×20 / 80×40 mode)
   user/                     User-space programs (ARM Thumb ELFs) + build Makefile
   tests/
     kernel/                 On-target kernel integration tests (ktest.c)
@@ -102,8 +113,8 @@ PPAP/
     qemu.sh                 Run ppap_qemu_arm on mps2-an500
     test_all_targets.sh     Build all targets + run QEMU automated tests
   docs/
-    PicoPiAndPortable-spec-v06.md   Full design specification
-    phase00-plan.md .. phase10-plan.md  Phase detailed plans
+    PicoPiAndPortable-spec-v07.md   Full design specification
+    phase00-plan.md .. phase11-plan.md  Phase detailed plans
     port-rogue.md               Rogue porting plan and audit
 ```
 

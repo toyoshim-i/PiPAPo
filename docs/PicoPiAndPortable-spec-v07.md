@@ -72,7 +72,7 @@ Both `pico1` and `pico1calc` share the same RP2040 clock initialization, stage 1
 
 The RP2350's Cortex-M33 is based on the ARMv8-M architecture, with the MPU expanded to 8 regions. The OS design includes an abstraction layer for memory protection boundaries that is independent of the number of MPU regions. On the RP2350, the additional regions enable per-process stack/heap protection on top of kernel region protection. Furthermore, the RP2350 optionally supports PSRAM (QSPI-connected external SRAM, up to 16MB), which can be used to extend the page pool and dramatically increase the number of concurrent processes and per-process memory. Note that the RP2350 does not have a hardware MMU, but practical memory protection and near-virtual-memory behavior can be achieved through the enhanced MPU and PSRAM.
 
-Target signatures `pico2` and `pico2calc` are reserved for the RP2350 port (Phase 12).
+Target signatures `pico2` and `pico2calc` are reserved for a future RP2350 port.
 
 ---
 
@@ -479,13 +479,14 @@ All drivers are built into the kernel (statically linked). Loadable modules are 
 | Phase 10: Stabilization | 3 weeks | Error handling, OOM visibility, input validation, FS correctness |
 | Rogue 5.4.4 Port | — | Classic dungeon crawler with minimal VT100 curses shim; verified on QEMU and hardware |
 | Phase 11: PicoCalc Device Support | 4 weeks | SPI LCD driver, I2C keyboard, framebuffer text console (40×20 / 80×40), VT100 emulator, multi-TTY, `ttyctl` utility |
-| Phase 12: RP2350 Port | 4 weeks | MPU 8-region support, PSRAM support, Thumb-2 optimization; add `pico2`/`pico2calc` targets |
+
+All phases through Phase 11 are complete.  The RP2350 port (Cortex-M33, 8-region MPU, PSRAM) is future work beyond the current MVP scope.
 
 Note: Phase 4 (VFAT) and Phase 5 (UFS + loopback) were a single phase in v0.2. They are split here because the two-layer approach requires the VFAT driver to be functional before loopback mounts can be tested.
 
 Note: Phase 7 (Board Support Packages) was added in v0.4 to formalize multi-board support before stabilization. Prior phases developed code for `qemu` and `pico1calc` (as the implicit RP2040 target); Phase 7 restructures that code into per-target directories and adds the `pico1` target for the official Raspberry Pi Pico board.
 
-Note: Phase 8 (PIE Binary Optimization) was inserted in v0.5 to address SRAM pressure from resident processes. Phase 9 (Dual-Core Scheduling) was added in v0.6 to utilize the RP2040's second core for user process execution. Stabilization was renumbered to Phase 10. Phase 11 (PicoCalc Device Support) adds `pico1calc`-specific peripherals: the embedded SPI/I2C display for console output and framebuffer graphics, and the I2C keyboard for interactive input. The RP2350 port was renumbered to Phase 12.
+Note: Phase 8 (PIE Binary Optimization) was inserted in v0.5 to address SRAM pressure from resident processes. Phase 9 (Dual-Core Scheduling) was added in v0.6 to utilize the RP2040's second core for user process execution. Stabilization was renumbered to Phase 10. Phase 11 (PicoCalc Device Support) adds `pico1calc`-specific peripherals: the embedded SPI/I2C display for console output and framebuffer graphics, and the I2C keyboard for interactive input.
 
 ---
 
