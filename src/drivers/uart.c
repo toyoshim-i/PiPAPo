@@ -336,6 +336,13 @@ void UART0_IRQ_Handler(void)
 
 void uart_init_irq(void)
 {
+    /* Drain any garbage bytes from the RX FIFO before enabling interrupts.
+     * UART noise during boot (PLL switch, klog output) can leave stale
+     * bytes that would otherwise be delivered to getty's ASKFIRST wait,
+     * causing it to launch sh immediately without user input. */
+    while (!(UART0_FR & UART_FR_RXFE))
+        (void)UART0_DR;
+
     /* Leave UARTIFLS at its reset default (TXIFLSEL = ½, RXIFLSEL = ½).
      * Enable RX and RX-timeout interrupts.  TX interrupt is armed on demand
      * by uart_putc() so it only fires when there is data to send. */

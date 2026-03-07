@@ -42,7 +42,7 @@ COMMON_OBJS := crt0.o syscall.o
 
 # ── Programs ─────────────────────────────────────────────────────────────────
 # Application programs (sources in user/)
-APPS := hello
+APPS := hello getty
 # Test programs (sources in tests/user/, found via VPATH)
 # Only built when PPAP_TESTS=1 is passed from CMake
 TESTS_ALL := test_vfork test_exec test_pipe test_brk test_fd test_signal test_poll test_sleep_intr test_orphan runtests

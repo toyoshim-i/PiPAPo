@@ -109,6 +109,9 @@ typedef struct {
 
     /* Foreground process group (for job control) */
     int32_t fg_pgrp;
+
+    /* Session leader PID that owns this TTY (set by TIOCSCTTY) */
+    pid_t session;
 } tty_dev_t;
 
 static tty_dev_t tty_devs[TTY_MAX] = {
@@ -150,9 +153,11 @@ static tty_dev_t tty_devs[TTY_MAX] = {
 #define TCSETSW     0x5403u
 #define TCSETSF     0x5404u
 #define TIOCGWINSZ  0x5413u
+#define TIOCSCTTY   0x540Eu
 #define TIOCGPGRP   0x540Fu
 #define TIOCSPGRP   0x5410u
 #define TIOCSWINSZ  0x5414u
+#define TIOCGSID    0x5429u
 
 /* ── Backend setup ─────────────────────────────────────────────────────────── */
 
@@ -464,6 +469,23 @@ static int tty_ioctl(struct file *f, uint32_t cmd, void *arg)
     case TIOCSPGRP: {
         const int32_t *pg = (const int32_t *)arg;
         t->fg_pgrp = *pg;
+        return 0;
+    }
+    case TIOCSCTTY: {
+        /* Set controlling terminal.  Record the caller's session ID. */
+        pcb_t *p = current;
+        if (!p)
+            return -EPERM;
+        /* Only a session leader may acquire a ctty */
+        if (p->pid != p->sid)
+            return -EPERM;
+        t->session = p->sid;
+        t->fg_pgrp = (int32_t)p->pgid;
+        return 0;
+    }
+    case TIOCGSID: {
+        pid_t *sp = (pid_t *)arg;
+        *sp = t->session;
         return 0;
     }
     default:

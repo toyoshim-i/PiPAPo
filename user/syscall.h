@@ -21,6 +21,8 @@ pid_t getpid(void);
 pid_t vfork(void);
 int   execve(const char *path, char *const argv[], char *const envp[]);
 pid_t waitpid(pid_t pid, int *status, int options);
+pid_t setsid(void);
+int   ioctl(int fd, unsigned long cmd, void *arg);
 
 /* ── File I/O ────────────────────────────────────────────────────────────── */
 

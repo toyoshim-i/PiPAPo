@@ -179,10 +179,11 @@ foreach(tgt ${PPAP_ALL_TARGETS})
 endforeach()
 
 # Generate per-target inittab files at configure time
-# PicoCalc gets askfirst on both ttyS0 (UART) and tty1 (LCD+kbd);
+# PicoCalc uses our tiny /bin/getty on both ttyS0 (UART) and tty1 (LCD+kbd);
 # other targets keep the default single-TTY respawn.
+# /bin/getty: setsid, open TTY, TIOCSCTTY, "Press Enter" prompt, exec /bin/sh.
 set(PPAP_MULTITTY_TARGETS ppap_pico1calc)
-set(INITTAB_MULTITTY "ttyS0::askfirst:/bin/sh\ntty1::askfirst:/bin/sh\n")
+set(INITTAB_MULTITTY "ttyS0::respawn:/bin/getty ttyS0\ntty1::respawn:/bin/getty tty1\n")
 foreach(tgt ${PPAP_ALL_TARGETS})
     list(FIND PPAP_MULTITTY_TARGETS ${tgt} _multitty_idx)
     if(_multitty_idx GREATER_EQUAL 0)
@@ -211,6 +212,8 @@ foreach(tgt ${PPAP_ALL_TARGETS})
         DEPENDS ${CMAKE_BINARY_DIR}/mkromfs ${USER_STAMP} ${BUSYBOX_STAMP}
                 ${ROGUE_STAMP} ${CMAKE_SOURCE_DIR}/romfs/etc/fstab
                 ${CMAKE_SOURCE_DIR}/romfs/etc/inittab
+                ${CMAKE_BINARY_DIR}/fstab_${tgt}
+                ${CMAKE_BINARY_DIR}/inittab_${tgt}
         COMMENT "Generating romfs for ${tgt}"
     )
 

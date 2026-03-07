@@ -34,7 +34,7 @@ APPLETS=(
 SHELL_APPLETS=(sh hush)
 
 # Sbin applets — link to full busybox via ../bin/busybox
-SBIN_APPLETS=(mount umount getty)
+SBIN_APPLETS=(mount umount)
 
 # --- Handle --clean ---
 if [[ "${1:-}" == "--clean" ]]; then

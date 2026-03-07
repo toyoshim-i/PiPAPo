@@ -93,6 +93,28 @@ execve:
     svc  0
     pop  {r7, pc}
 
+@ --- setsid (SYS_SETSID = 66) ------------------------------------------------
+@ pid_t setsid(void);
+.section .text.setsid, "ax", %progbits
+.global setsid
+.thumb_func
+setsid:
+    push {r7, lr}
+    movs r7, #66
+    svc  0
+    pop  {r7, pc}
+
+@ --- ioctl (SYS_IOCTL = 54) --------------------------------------------------
+@ int ioctl(int fd, unsigned long cmd, void *arg);
+.section .text.ioctl, "ax", %progbits
+.global ioctl
+.thumb_func
+ioctl:
+    push {r7, lr}
+    movs r7, #54
+    svc  0
+    pop  {r7, pc}
+
 @ --- getpid (SYS_GETPID = 20) -----------------------------------------------
 @ int getpid(void);
 .section .text.getpid, "ax", %progbits
