@@ -68,15 +68,13 @@ add_custom_command(
 
 # --- busybox variants (Phase 6 Step 4, Phase 8 Part B) ---
 set(BUSYBOX_BIN ${CMAKE_BINARY_DIR}/busybox/busybox)
-set(BUSYBOX_INIT ${CMAKE_BINARY_DIR}/busybox/busybox.init)
 set(BUSYBOX_SH ${CMAKE_BINARY_DIR}/busybox/busybox.sh)
 
 add_custom_command(
-    OUTPUT ${BUSYBOX_BIN} ${BUSYBOX_INIT} ${BUSYBOX_SH}
+    OUTPUT ${BUSYBOX_BIN} ${BUSYBOX_SH}
     COMMAND ${CMAKE_SOURCE_DIR}/third_party/build-busybox.sh
     DEPENDS ${CMAKE_SOURCE_DIR}/third_party/build-busybox.sh
             ${CMAKE_SOURCE_DIR}/third_party/configs/busybox_ppap.fragment
-            ${CMAKE_SOURCE_DIR}/third_party/configs/busybox_init.fragment
             ${CMAKE_SOURCE_DIR}/third_party/configs/busybox_sh.fragment
             ${CMAKE_SOURCE_DIR}/third_party/configs/busybox.ld
             ${MUSL_LIBC}
@@ -91,7 +89,7 @@ add_custom_command(
     COMMAND ${CMAKE_SOURCE_DIR}/third_party/install-busybox.sh
     COMMAND ${CMAKE_COMMAND} -E touch ${BUSYBOX_STAMP}
     DEPENDS ${CMAKE_SOURCE_DIR}/third_party/install-busybox.sh
-            ${BUSYBOX_BIN} ${BUSYBOX_INIT} ${BUSYBOX_SH}
+            ${BUSYBOX_BIN} ${BUSYBOX_SH}
     COMMENT "Installing busybox variants + applet symlinks into romfs/"
 )
 
@@ -141,10 +139,11 @@ add_custom_command(
     COMMAND ${MAKE_CMD} -C ${USER_SRC_DIR} clean
     COMMAND ${MAKE_CMD} -C ${USER_SRC_DIR} install
             ROMFS_BIN=${CMAKE_SOURCE_DIR}/romfs/bin
+            ROMFS_SBIN=${CMAKE_SOURCE_DIR}/romfs/sbin
             PPAP_TESTS=$<BOOL:${PPAP_TESTS}>
     COMMAND ${CMAKE_COMMAND} -E touch ${USER_STAMP}
     DEPENDS ${USER_SOURCES}
-    COMMENT "Building user-space binaries and installing to romfs/bin/"
+    COMMENT "Building user-space binaries and installing to romfs/"
 )
 
 add_custom_target(user_binaries DEPENDS ${USER_STAMP})

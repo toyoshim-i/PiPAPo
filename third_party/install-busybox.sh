@@ -40,7 +40,6 @@ SBIN_APPLETS=(mount umount)
 if [[ "${1:-}" == "--clean" ]]; then
     echo "busybox: cleaning romfs installation..."
     rm -f "$ROMFS_BIN/busybox" "$ROMFS_BIN/busybox.sh"
-    rm -f "$ROMFS_SBIN/busybox.init"
     for applet in "${APPLETS[@]}"; do
         rm -f "$ROMFS_BIN/$applet"
     done
@@ -50,13 +49,13 @@ if [[ "${1:-}" == "--clean" ]]; then
     for applet in "${SBIN_APPLETS[@]}"; do
         rm -f "$ROMFS_SBIN/$applet"
     done
-    rm -f "$ROMFS_SBIN/init"
+    # Note: /sbin/init is now from user/init, not busybox
     echo "busybox: clean done."
     exit 0
 fi
 
 # --- Check prerequisites ---
-for bin in busybox busybox.init busybox.sh; do
+for bin in busybox busybox.sh; do
     if [[ ! -f "$BB_BUILD/$bin" ]]; then
         echo "ERROR: $bin not found at $BB_BUILD/$bin" >&2
         echo "  Run: ./third_party/build-busybox.sh" >&2
@@ -65,11 +64,10 @@ for bin in busybox busybox.init busybox.sh; do
 done
 
 # --- Skip if already installed ---
-if [[ -f "$ROMFS_BIN/busybox" && -f "$ROMFS_BIN/busybox.sh" && \
-      -f "$ROMFS_SBIN/busybox.init" ]]; then
+if [[ -f "$ROMFS_BIN/busybox" && -f "$ROMFS_BIN/busybox.sh" ]]; then
     # Check if all binaries are up to date
     up_to_date=true
-    for pair in "busybox:$ROMFS_BIN" "busybox.sh:$ROMFS_BIN" "busybox.init:$ROMFS_SBIN"; do
+    for pair in "busybox:$ROMFS_BIN" "busybox.sh:$ROMFS_BIN"; do
         bin="${pair%%:*}"
         dest="${pair#*:}"
         if ! cmp -s "$BB_BUILD/$bin" "$dest/$bin"; then
@@ -90,15 +88,12 @@ echo "busybox: installing into romfs..."
 mkdir -p "$ROMFS_BIN"
 mkdir -p "$ROMFS_SBIN"
 
-# Copy all three binaries
+# Copy busybox binaries (init is provided by user/init.c, not busybox)
 cp "$BB_BUILD/busybox" "$ROMFS_BIN/busybox"
 echo "  installed: $ROMFS_BIN/busybox ($(stat -c%s "$ROMFS_BIN/busybox") bytes)"
 
 cp "$BB_BUILD/busybox.sh" "$ROMFS_BIN/busybox.sh"
 echo "  installed: $ROMFS_BIN/busybox.sh ($(stat -c%s "$ROMFS_BIN/busybox.sh") bytes)"
-
-cp "$BB_BUILD/busybox.init" "$ROMFS_SBIN/busybox.init"
-echo "  installed: $ROMFS_SBIN/busybox.init ($(stat -c%s "$ROMFS_SBIN/busybox.init") bytes)"
 
 # Create applet symlinks → full busybox (transient commands)
 for applet in "${APPLETS[@]}"; do
@@ -121,13 +116,9 @@ for applet in "${SBIN_APPLETS[@]}"; do
 done
 echo "  symlinks: ${SBIN_APPLETS[*]} → ../bin/busybox"
 
-# Create /sbin/init → busybox.init (dedicated init)
-rm -f "$ROMFS_SBIN/init"
-ln -s busybox.init "$ROMFS_SBIN/init"
-echo "  symlinks: init → busybox.init"
-
 # --- Summary ---
 echo "busybox: installation complete."
-echo "  binaries: busybox + busybox.init + busybox.sh"
-total=$((${#APPLETS[@]} + ${#SHELL_APPLETS[@]} + ${#SBIN_APPLETS[@]} + 1))
-echo "  symlinks: $total total (${#APPLETS[@]} applets + ${#SHELL_APPLETS[@]} shell + ${#SBIN_APPLETS[@]} sbin + 1 init)"
+echo "  binaries: busybox + busybox.sh"
+echo "  note: /sbin/init and /bin/getty provided by user/ (not busybox)"
+total=$((${#APPLETS[@]} + ${#SHELL_APPLETS[@]} + ${#SBIN_APPLETS[@]}))
+echo "  symlinks: $total total (${#APPLETS[@]} applets + ${#SHELL_APPLETS[@]} shell + ${#SBIN_APPLETS[@]} sbin)"

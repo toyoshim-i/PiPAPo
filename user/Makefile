@@ -42,7 +42,7 @@ COMMON_OBJS := crt0.o syscall.o
 
 # ── Programs ─────────────────────────────────────────────────────────────────
 # Application programs (sources in user/)
-APPS := hello getty
+APPS := hello getty init
 # Test programs (sources in tests/user/, found via VPATH)
 # Only built when PPAP_TESTS=1 is passed from CMake
 TESTS_ALL := test_vfork test_exec test_pipe test_brk test_fd test_signal test_poll test_sleep_intr test_orphan runtests
@@ -82,18 +82,24 @@ getty.elf: getty.o user.ld
 %.o: %.S
 	$(AS) $(ASFLAGS) -c -o $@ $<
 
-# Install ELFs into the romfs bin directory
+ROMFS_SBIN ?= ../romfs/sbin
+
+# Install ELFs into the romfs bin directory (init goes to sbin)
 install: all
-	@mkdir -p $(ROMFS_BIN)
+	@mkdir -p $(ROMFS_BIN) $(ROMFS_SBIN)
 	@# Remove stale test binaries when PPAP_TESTS is off
 ifneq ($(PPAP_TESTS),1)
 	@for t in $(TESTS_ALL); do rm -f $(ROMFS_BIN)/$$t; done
 endif
 	@for elf in $(ELFS); do \
 		name=$$(basename $$elf .elf); \
-		cp $$elf $(ROMFS_BIN)/$$name; \
+		if [ "$$name" = "init" ]; then \
+			cp $$elf $(ROMFS_SBIN)/$$name; \
+		else \
+			cp $$elf $(ROMFS_BIN)/$$name; \
+		fi; \
 	done
-	@echo "Installed $(ELFS) → $(ROMFS_BIN)/"
+	@echo "Installed $(ELFS) → $(ROMFS_BIN)/ and $(ROMFS_SBIN)/"
 
 clean:
 	rm -f *.o *.elf

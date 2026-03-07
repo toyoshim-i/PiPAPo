@@ -42,9 +42,9 @@ BUSYBOX_LD="$CONFIGS_DIR/busybox.ld"
 CFLAGS_PPAP="-mthumb -mcpu=cortex-m0plus -march=armv6s-m -mfloat-abi=soft -Os -nostdinc -isystem $MUSL_SYSROOT/include -isystem $GCC_INCLUDE -fPIC -msingle-pic-base -mpic-register=r9 -mno-pic-data-is-text-relative -ffunction-sections -fdata-sections -pie"
 
 # Variant definitions: output_name:fragment_file
+# Note: busybox.init removed — /sbin/init is now user/init.c (custom minimal init).
 VARIANTS=(
     "busybox:busybox_ppap.fragment"
-    "busybox.init:busybox_init.fragment"
     "busybox.sh:busybox_sh.fragment"
 )
 
