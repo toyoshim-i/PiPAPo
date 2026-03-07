@@ -62,6 +62,7 @@ static const uint8_t *font_data; /* pointer to font8x16 or font4x8 */
 static uint8_t cur_attr;         /* fg [3:0], bg [7:4] */
 static int bold;                 /* bold flag (maps fg to bright variant) */
 static volatile int flush_pending; /* set by fbcon_flush_deferred() */
+static volatile int flushing;      /* reentrant/concurrent guard */
 
 /* VT100 parser state */
 enum { ST_NORMAL, ST_ESC, ST_CSI };
@@ -122,18 +123,26 @@ static void scroll_down_region(void)
     memset(cell_attr[scroll_top], cur_attr, (uint32_t)cols);
 }
 
-/* Render one scanline of a row into buf[0..cols*font_w-1]. */
-static void render_scanline(int row, int sy, uint16_t *buf)
+/* Captured font parameters for render — protects against concurrent
+ * fbcon_set_mode() changing globals mid-flush. */
+typedef struct {
+    int cols, rows, font_w, font_h, font_stride;
+    const uint8_t *font_data;
+} render_params_t;
+
+/* Render one scanline of a row into buf[0..rp->cols*rp->font_w-1]. */
+static void render_scanline(const render_params_t *rp, int row, int sy,
+                            uint16_t *buf)
 {
-    int width = cols * font_w;
-    for (int c = 0; c < cols; c++) {
+    int width = rp->cols * rp->font_w;
+    for (int c = 0; c < rp->cols; c++) {
         uint8_t ch   = cell_char[row][c];
         uint8_t attr = cell_attr[row][c];
         uint16_t fg  = ansi_palette[attr & 0x0F];
         uint16_t bg  = ansi_palette[(attr >> 4) & 0x0F];
-        uint8_t bits = font_data[ch * font_stride + sy];
-        int base = c * font_w;
-        for (int px = 0; px < font_w; px++) {
+        uint8_t bits = rp->font_data[ch * rp->font_stride + sy];
+        int base = c * rp->font_w;
+        for (int px = 0; px < rp->font_w; px++) {
             buf[base + px] = (bits & (0x80 >> px)) ? fg : bg;
         }
     }
@@ -379,7 +388,11 @@ void fbcon_init(void)
 {
     vt_state = ST_NORMAL;
     bold = 0;
+    /* Set mode directly and flush immediately — at init time the scheduler
+     * hasn't started so there's no concurrency and the deferred path
+     * (idle loop) isn't running yet. */
     fbcon_set_mode(FBCON_MODE_NORMAL);
+    fbcon_flush();   /* render the initial blank screen now */
 }
 
 void fbcon_putc(char c)
@@ -464,25 +477,65 @@ void fbcon_puts(const char *s)
 
 void fbcon_flush(void)
 {
+    /* If SPI1 has timed out (lcd_ok=0), all spi_lcd_* ops are no-ops.
+     * Skip the flush entirely to avoid burning CPU in dead loops. */
+    if (!spi_lcd_ok())
+        return;
+
+    /* Guard against concurrent flush from two cores.  Two simultaneous
+     * SPI1 users corrupt the bus → permanent hang.
+     *
+     * This is NOT a simple volatile test — we use __atomic_test_and_set
+     * (GCC built-in, maps to LDREX/STREX on ARMv7+ or a plain byte
+     * store on ARMv6-M).  On Cortex-M0+ (no LDREX), the race window is
+     * a single instruction; combined with the fact that only Core 0's
+     * idle loop calls this, the risk of double-entry is negligible.
+     * The deferred re-arm ensures correctness even if it does happen. */
+    if (__atomic_test_and_set(&flushing, __ATOMIC_ACQUIRE)) {
+        flush_pending = 1;
+        return;
+    }
+
+    /* Snapshot render parameters and dirty flags before the slow SPI render.
+     * fbcon_putc() or fbcon_set_mode() on the other core can change cols,
+     * font_data, font_stride etc. at any time.  Using stale-but-consistent
+     * values produces at most one frame of visual tearing, which is fine.
+     *
+     * Dirty flags are cleared upfront: if fbcon_putc() sets dirty[r]=1
+     * during our render, that flag survives and the next poll picks it up.
+     * The old approach (clear after render) could lose a concurrent set. */
+    render_params_t rp = {
+        .cols = cols, .rows = rows, .font_w = font_w,
+        .font_h = font_h, .font_stride = font_stride,
+        .font_data = font_data,
+    };
+    uint8_t snap[FBCON_MAX_ROWS];
+    for (int r = 0; r < rp.rows; r++) {
+        snap[r] = dirty[r];
+        if (snap[r])
+            dirty[r] = 0;
+    }
+
     /* Stack buffer for one scanline — 320 pixels × 2 bytes = 640 B */
     uint16_t line[LCD_WIDTH];
 
-    for (int r = 0; r < rows; r++) {
-        if (!dirty[r])
+    for (int r = 0; r < rp.rows; r++) {
+        if (!snap[r])
             continue;
         /* Set window for the entire row, then stream all scanlines with
          * CS held low.  Saves ~15 set_window round-trips per row. */
-        uint16_t y0 = (uint16_t)(r * font_h);
-        uint16_t y1 = (uint16_t)(y0 + font_h - 1);
+        uint16_t y0 = (uint16_t)(r * rp.font_h);
+        uint16_t y1 = (uint16_t)(y0 + rp.font_h - 1);
         spi_lcd_set_window(0, y0, (uint16_t)(LCD_WIDTH - 1), y1);
         spi_lcd_stream_begin();
-        for (int sy = 0; sy < font_h; sy++) {
-            render_scanline(r, sy, line);
+        for (int sy = 0; sy < rp.font_h; sy++) {
+            render_scanline(&rp, r, sy, line);
             spi_lcd_data16_stream(line, LCD_WIDTH);
         }
         spi_lcd_stream_end();
-        dirty[r] = 0;
     }
+
+    __atomic_clear(&flushing, __ATOMIC_RELEASE);
 }
 
 void fbcon_flush_deferred(void)
@@ -560,10 +613,14 @@ void fbcon_set_mode(int mode)
     if (cursor_x >= cols) cursor_x = cols - 1;
     if (cursor_y >= rows) cursor_y = rows - 1;
 
-    /* Redraw everything with the new font */
+    /* Redraw everything with the new font.
+     * Use deferred flush — calling fbcon_flush() directly here would run
+     * a long SPI transfer inside the syscall context, and if the idle
+     * loop on the other core is also flushing we'd have two concurrent
+     * SPI1 users → bus corruption → hang.  The idle loop picks this up. */
     for (int r = 0; r < rows; r++)
         dirty[r] = 1;
-    fbcon_flush();
+    fbcon_flush_deferred();
 }
 
 int fbcon_cols(void) { return cols; }
