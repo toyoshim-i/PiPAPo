@@ -3,9 +3,14 @@
 @ =============================================================================
 @
 @ Entry point: _start
-@   1. Call main(0, NULL)      — argc=0, argv=NULL (Phase 3 simplicity)
-@   2. Call _exit(main's return value)
-@   3. Dead loop (safety net — _exit should never return)
+@   1. Read argc/argv from the stack (set up by do_execve)
+@   2. Call main(argc, argv)
+@   3. Call _exit(main's return value)
+@   4. Dead loop (safety net — _exit should never return)
+@
+@ Stack layout at entry (set by do_execve):
+@   [SP+0] = argc
+@   [SP+4] = argv[0], argv[1], ..., argv[argc]=NULL, envp..., auxv...
 @
 @ Linked first via user.ld so _start is at the ELF entry point.
 @ =============================================================================
@@ -19,9 +24,10 @@
 .global _start
 .thumb_func
 _start:
-    @ main(argc=0, argv=NULL)
-    movs r0, #0
-    movs r1, #0
+    @ Read argc and argv from stack (set up by kernel's do_execve)
+    ldr  r0, [sp]          @ r0 = argc
+    mov  r1, sp
+    adds r1, #4            @ r1 = argv = &SP[1]
     bl   main
 
     @ _exit(main's return value in r0)

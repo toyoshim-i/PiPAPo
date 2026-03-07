@@ -181,6 +181,13 @@ void *tty_get_dev(int idx)
     return &tty_devs[idx];
 }
 
+int tty_backend_ready(int idx)
+{
+    if ((unsigned)idx >= TTY_MAX)
+        return 0;
+    return tty_devs[idx].out != NULL;
+}
+
 /* ── Output helper (putc + optional flush) ────────────────────────────────── */
 
 static inline void dev_echo_flush(tty_dev_t *t)
@@ -230,8 +237,10 @@ static void dev_send_signal(tty_dev_t *t, int sig)
 static long tty_write(struct file *f, const char *buf, size_t n)
 {
     tty_dev_t *t = (tty_dev_t *)f->priv;
-    if (!t || !t->out)
+    if (!t)
         return -(long)ENODEV;
+    if (!t->out)
+        return (long)n;   /* no backend — silently discard */
 
     int opost = (t->termios.c_oflag & OPOST) != 0;
 
@@ -413,8 +422,16 @@ static long tty_read_raw(tty_dev_t *t, char *buf, size_t n)
 static long tty_read(struct file *f, char *buf, size_t n)
 {
     tty_dev_t *t = (tty_dev_t *)f->priv;
-    if (!t || !t->in)
+    if (!t)
         return -(long)ENODEV;
+    if (!t->in) {
+        /* No backend — block forever (process sleeps until killed) */
+        current->wait_channel = t;
+        current->state = PROC_BLOCKED;
+        svc_restart[core_id()] = 1;
+        sched_yield();
+        return 0;
+    }
     if (n == 0)
         return 0;
 

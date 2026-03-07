@@ -59,7 +59,9 @@ struct file *file_alloc(void)
 
 void file_free(struct file *f)
 {
-    kmem_free(&file_pool, f);
+    /* Only free if f is within the file pool (not a static tty file) */
+    if (f >= &file_storage[0] && f < &file_storage[FILE_MAX])
+        kmem_free(&file_pool, f);
 }
 
 /* ── VFS bridge file_ops ───────────────────────────────────────────────────── */
@@ -98,7 +100,8 @@ static int vfs_file_close(struct file *f)
     if (f->vnode)
         vnode_put(f->vnode);
     f->vnode = NULL;
-    file_free(f);
+    /* Note: file_free is called by fd_free when refcnt reaches 0.
+     * Do NOT call file_free here — that would be a double-free. */
     return 0;
 }
 

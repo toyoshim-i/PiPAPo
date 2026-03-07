@@ -62,4 +62,7 @@ int tty_signal_intr(int idx);
 /* Set the foreground process group for TTY instance idx. */
 void tty_set_fg_pgrp(int idx, int pgid);
 
+/* Return non-zero if TTY instance idx has an I/O backend registered. */
+int tty_backend_ready(int idx);
+
 #endif /* PPAP_FD_TTY_H */

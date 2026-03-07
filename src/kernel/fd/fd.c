@@ -5,6 +5,7 @@
  */
 
 #include "fd.h"
+#include "file.h"
 #include "tty.h"
 #include "../errno.h"
 
@@ -47,8 +48,11 @@ void fd_free(pcb_t *p, int fd)
     p->fd_table[fd] = NULL;
     if (f->refcnt > 0u)
         f->refcnt--;
-    if (f->refcnt == 0u && f->ops && f->ops->close)
-        f->ops->close(f);
+    if (f->refcnt == 0u) {
+        if (f->ops && f->ops->close)
+            f->ops->close(f);
+        file_free(f);   /* return to pool (no-op for static tty files) */
+    }
 }
 
 /* ── fd_get ─────────────────────────────────────────────────────────────────── */
