@@ -87,12 +87,10 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
     uint8_t *sram_page = NULL;
     uint32_t got_sram_addr = 0;
 
-    if (data_seg) {
+    if (data_seg && data_seg->p_memsz > 0) {
         /* Calculate how many contiguous pages we need */
         uint32_t data_pages =
             (data_seg->p_memsz + PAGE_SIZE - 1) / PAGE_SIZE;
-        if (data_pages == 0)
-            data_pages = 1;
         if (data_pages > USER_PAGES_MAX) {
             vnode_put(vn);
             return -(int)ENOMEM;

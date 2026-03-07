@@ -182,15 +182,14 @@ endforeach()
 # PicoCalc uses our tiny /bin/getty on both ttyS0 (UART) and tty1 (LCD+kbd);
 # other targets keep the default single-TTY respawn.
 # /bin/getty: setsid, open TTY, TIOCSCTTY, "Press Enter" prompt, exec /bin/sh.
-set(PPAP_MULTITTY_TARGETS ppap_pico1calc)
-set(INITTAB_MULTITTY "ttyS0::respawn:/bin/getty ttyS0\ntty1::respawn:/bin/getty tty1\n")
+set(INITTAB_SERIAL_ONLY "ttyS0::respawn:/bin/getty ttyS0\n")
+set(INITTAB_DUAL_TTY "ttyS0::respawn:/bin/getty ttyS0\ntty1::respawn:/bin/getty tty1\n")
 foreach(tgt ${PPAP_ALL_TARGETS})
-    list(FIND PPAP_MULTITTY_TARGETS ${tgt} _multitty_idx)
-    if(_multitty_idx GREATER_EQUAL 0)
-        file(WRITE ${CMAKE_BINARY_DIR}/inittab_${tgt} "${INITTAB_MULTITTY}")
+    if(tgt STREQUAL "ppap_pico1calc")
+        file(WRITE ${CMAKE_BINARY_DIR}/inittab_${tgt} "${INITTAB_DUAL_TTY}")
     else()
-        file(READ ${CMAKE_SOURCE_DIR}/romfs/etc/inittab _inittab_base)
-        file(WRITE ${CMAKE_BINARY_DIR}/inittab_${tgt} "${_inittab_base}")
+        # All targets use getty for proper session/controlling-terminal setup
+        file(WRITE ${CMAKE_BINARY_DIR}/inittab_${tgt} "${INITTAB_SERIAL_ONLY}")
     endif()
 endforeach()
 

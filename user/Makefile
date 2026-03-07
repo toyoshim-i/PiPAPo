@@ -60,6 +60,15 @@ ELFS := $(addsuffix .elf, $(PROGRAMS))
 all: $(ELFS)
 	@for elf in $(ELFS); do $(SIZE) $$elf; done
 
+# getty: pure assembly (no crt0/syscall needed, no data segment → 1 page)
+# See getty.c for a portable C reference (requires PIC, uses 2 pages).
+getty.o: getty.S
+	$(AS) $(ASFLAGS) -c -o $@ $<
+
+getty.elf: getty.o user.ld
+	$(LD) $(LDFLAGS) -o $@ getty.o
+	@$(NM) --numeric-sort $@ | grep -E '_start|main|write|_exit'
+
 # Link: common objects + program-specific object → ELF
 %.elf: $(COMMON_OBJS) %.o user.ld
 	$(LD) $(LDFLAGS) -o $@ $(COMMON_OBJS) $*.o
