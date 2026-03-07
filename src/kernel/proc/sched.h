@@ -87,6 +87,12 @@ void sched_set_input_poll(int (*fn)(void), int tty_idx);
 void sched_set_display_poll(void (*fn)(void));
 
 /*
+ * Run the display poll callback if registered.  Must be called from
+ * thread context (not ISR) because the LCD flush does long SPI transfers.
+ */
+void sched_display_poll(void);
+
+/*
  * Wake all processes blocked on the given channel.
  * Scans proc_table for PROC_BLOCKED processes whose wait_channel matches,
  * sets them to PROC_RUNNABLE, and clears their wait_channel.

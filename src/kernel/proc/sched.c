@@ -144,6 +144,12 @@ void sched_set_display_poll(void (*fn)(void))
     display_poll_fn = fn;
 }
 
+void sched_display_poll(void)
+{
+    if (display_poll_fn)
+        display_poll_fn();
+}
+
 static void SysTick_Handler_c(uint32_t exc_return)
 {
     /* Only Core 0 maintains the global tick counter */
@@ -155,9 +161,6 @@ static void SysTick_Handler_c(uint32_t exc_return)
             input_poll_counter = 0;
             if (input_poll_fn())
                 tty_rx_notify(input_poll_tty_idx);
-            /* Flush deferred LCD writes (same 20 ms cadence) */
-            if (display_poll_fn)
-                display_poll_fn();
         }
     }
 

@@ -77,26 +77,49 @@ static int scroll_top, scroll_bot;
 
 static void scroll_up_region(void)
 {
+    /* Compare before memmove: only mark rows whose content actually changes.
+     * Row r will receive row r+1's content, so compare them pairwise. */
+    for (int r = scroll_top; r < scroll_bot; r++) {
+        if (memcmp(cell_char[r], cell_char[r + 1], (size_t)cols) != 0 ||
+            memcmp(cell_attr[r], cell_attr[r + 1], (size_t)cols) != 0)
+            dirty[r] = 1;
+    }
     memmove(cell_char[scroll_top], cell_char[scroll_top + 1],
             (uint32_t)(scroll_bot - scroll_top) * FBCON_MAX_COLS);
     memmove(cell_attr[scroll_top], cell_attr[scroll_top + 1],
             (uint32_t)(scroll_bot - scroll_top) * FBCON_MAX_COLS);
+    /* Bottom row: only dirty if it wasn't already blank */
+    for (int c = 0; c < cols; c++) {
+        if (cell_char[scroll_bot][c] != ' ' || cell_attr[scroll_bot][c] != cur_attr) {
+            dirty[scroll_bot] = 1;
+            break;
+        }
+    }
     memset(cell_char[scroll_bot], ' ', (uint32_t)cols);
     memset(cell_attr[scroll_bot], cur_attr, (uint32_t)cols);
-    for (int r = scroll_top; r <= scroll_bot; r++)
-        dirty[r] = 1;
 }
 
 static void scroll_down_region(void)
 {
+    /* Compare before memmove: row r will receive row r-1's content. */
+    for (int r = scroll_bot; r > scroll_top; r--) {
+        if (memcmp(cell_char[r], cell_char[r - 1], (size_t)cols) != 0 ||
+            memcmp(cell_attr[r], cell_attr[r - 1], (size_t)cols) != 0)
+            dirty[r] = 1;
+    }
     memmove(cell_char[scroll_top + 1], cell_char[scroll_top],
             (uint32_t)(scroll_bot - scroll_top) * FBCON_MAX_COLS);
     memmove(cell_attr[scroll_top + 1], cell_attr[scroll_top],
             (uint32_t)(scroll_bot - scroll_top) * FBCON_MAX_COLS);
+    /* Top row: only dirty if it wasn't already blank */
+    for (int c = 0; c < cols; c++) {
+        if (cell_char[scroll_top][c] != ' ' || cell_attr[scroll_top][c] != cur_attr) {
+            dirty[scroll_top] = 1;
+            break;
+        }
+    }
     memset(cell_char[scroll_top], ' ', (uint32_t)cols);
     memset(cell_attr[scroll_top], cur_attr, (uint32_t)cols);
-    for (int r = scroll_top; r <= scroll_bot; r++)
-        dirty[r] = 1;
 }
 
 /* Render one scanline of a row into buf[0..cols*font_w-1]. */

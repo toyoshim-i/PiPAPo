@@ -128,7 +128,9 @@ void kmain(void)
     klog("SCHED: starting scheduler\n");
     sched_start();
 
-    /* Idle thread — wake on every interrupt, then sleep again. */
-    for (;;)
+    /* Idle thread — wake on every interrupt, flush LCD if needed, sleep. */
+    for (;;) {
+        sched_display_poll();
         __asm__ volatile ("wfi");
+    }
 }
