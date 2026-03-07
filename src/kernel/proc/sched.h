@@ -81,6 +81,12 @@ void sched_sleep(uint32_t ticks);
 void sched_set_input_poll(int (*fn)(void), int tty_idx);
 
 /*
+ * Register a display flush callback, polled every 20 ms from SysTick.
+ * Used by PicoCalc to defer LCD flush (fbcon_poll_flush) out of critical sections.
+ */
+void sched_set_display_poll(void (*fn)(void));
+
+/*
  * Wake all processes blocked on the given channel.
  * Scans proc_table for PROC_BLOCKED processes whose wait_channel matches,
  * sets them to PROC_RUNNABLE, and clears their wait_channel.

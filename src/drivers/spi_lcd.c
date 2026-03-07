@@ -221,6 +221,32 @@ void spi_lcd_data16(const uint16_t *buf, size_t count)
     cs_high();
 }
 
+void spi_lcd_stream_begin(void)
+{
+    if (!lcd_ok) return;
+    dc_high();
+    cs_low();
+}
+
+void spi_lcd_data16_stream(const uint16_t *buf, size_t count)
+{
+    if (!lcd_ok) return;
+    for (size_t i = 0; i < count; i++) {
+        uint16_t v = buf[i];
+        if (spi1_write_byte((uint8_t)(v >> 8)))  { cs_high(); return; }
+        if (spi1_write_byte((uint8_t)(v & 0xFF))) { cs_high(); return; }
+        if ((i & 3u) == 3u)
+            drain_rx();
+    }
+}
+
+void spi_lcd_stream_end(void)
+{
+    if (!lcd_ok) return;
+    wait_idle();
+    cs_high();
+}
+
 void spi_lcd_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
 {
     uint8_t col[4] = {

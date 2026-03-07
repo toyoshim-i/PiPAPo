@@ -61,6 +61,7 @@ static int font_stride;          /* bytes per glyph = font_h */
 static const uint8_t *font_data; /* pointer to font8x16 or font4x8 */
 static uint8_t cur_attr;         /* fg [3:0], bg [7:4] */
 static int bold;                 /* bold flag (maps fg to bright variant) */
+static volatile int flush_pending; /* set by fbcon_flush_deferred() */
 
 /* VT100 parser state */
 enum { ST_NORMAL, ST_ESC, ST_CSI };
@@ -446,14 +447,31 @@ void fbcon_flush(void)
     for (int r = 0; r < rows; r++) {
         if (!dirty[r])
             continue;
+        /* Set window for the entire row, then stream all scanlines with
+         * CS held low.  Saves ~15 set_window round-trips per row. */
+        uint16_t y0 = (uint16_t)(r * font_h);
+        uint16_t y1 = (uint16_t)(y0 + font_h - 1);
+        spi_lcd_set_window(0, y0, (uint16_t)(LCD_WIDTH - 1), y1);
+        spi_lcd_stream_begin();
         for (int sy = 0; sy < font_h; sy++) {
-            int y = r * font_h + sy;
-            spi_lcd_set_window(0, (uint16_t)y,
-                               (uint16_t)(LCD_WIDTH - 1), (uint16_t)y);
             render_scanline(r, sy, line);
-            spi_lcd_data16(line, LCD_WIDTH);
+            spi_lcd_data16_stream(line, LCD_WIDTH);
         }
+        spi_lcd_stream_end();
         dirty[r] = 0;
+    }
+}
+
+void fbcon_flush_deferred(void)
+{
+    flush_pending = 1;
+}
+
+void fbcon_poll_flush(void)
+{
+    if (flush_pending) {
+        flush_pending = 0;
+        fbcon_flush();
     }
 }
 

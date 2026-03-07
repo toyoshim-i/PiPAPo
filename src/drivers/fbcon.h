@@ -28,6 +28,13 @@ void fbcon_puts(const char *s);
 /* Redraw dirty rows to the LCD. */
 void fbcon_flush(void);
 
+/* Mark that a flush is needed (no SPI transfer — safe in IRQ/spinlock context).
+ * The actual flush happens on the next fbcon_poll_flush() call from SysTick. */
+void fbcon_flush_deferred(void);
+
+/* Poll: flush LCD if deferred flush is pending.  Called from SysTick (~20 ms). */
+void fbcon_poll_flush(void);
+
 /* Clear the entire screen. */
 void fbcon_clear(void);
 

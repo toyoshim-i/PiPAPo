@@ -533,23 +533,41 @@ a TTY index parameter.
 
 ### Step 14 — Scroll performance optimization
 
-**File:** `src/drivers/fbcon.c`
+**Files:** `src/drivers/spi_lcd.c`, `src/drivers/spi_lcd.h`, `src/drivers/fbcon.c`,
+`src/kernel/fd/tty.c`, `src/kernel/klog.c`
 
 Current scroll: memmove cell buffer + mark all 20 rows dirty → full redraw
-(~40 ms).  Optimizations:
+(~40 ms).  Each dirty row sends 16 scanlines × (set_window + 640 B data).
 
-1. **Dirty-cell tracking**: Instead of per-row dirty bits, use per-cell dirty
-   bits (800 bits = 100 bytes).  Only redraw changed cells during normal
-   output.  Scroll still marks all dirty.
+**Completed:**
+- klog mirror flush moved outside SPIN_UART critical section (commit c9bae07).
+  Prevents UART RX FIFO overflow during LCD rendering.
 
-2. **Row pixel buffer**: Pre-render one row of pixels (320×16×2 = 10 KB).
-   This is too large for SRAM.  Instead, render and send one scanline at a
-   time: 320×2 = 640 bytes buffer, sent 16 times per row.
+**Rejected (hardware tested):**
+- Hardware scroll (VSCRDEF 0x33 / VSCRSADD 0x37): ST7365P does not support
+  this correctly — screen goes black or shows noise.
+- Batched row window (one set_window per row, stream all scanlines):
+  `spi_lcd_data16()` toggles CS between calls, breaking the LCD write stream.
+  Would need CS-less streaming (see 14a below).
 
-3. **Hardware scroll** (if supported): ST7796S supports Vertical Scroll
-   Definition (0x33) + Vertical Scroll Start Address (0x37).  This shifts
-   the display start line without rewriting pixel data — only the new
-   bottom row needs rendering.  Reduces scroll cost from ~40 ms to ~2 ms.
+**Remaining optimizations (in order):**
+
+**14a. CS-less SPI streaming** — Add `spi_lcd_data16_stream()` that keeps CS
+asserted across multiple calls.  Pair with `spi_lcd_stream_begin()` /
+`spi_lcd_stream_end()` for explicit CS control.  Then `fbcon_flush()` sets
+one window per row and streams all scanlines without CS toggling.  Saves
+~15 set_window round-trips per dirty row.
+
+**14b. Deferred flush** — Instead of flushing after every `tty_write()` and
+every `klog()`, defer LCD flush to a periodic callback (e.g. SysTick poll
+every 20 ms or a dedicated flush flag).  Multiple rapid writes accumulate
+dirty flags and flush once.  Reduces flush frequency during heavy output
+(boot messages, `ls`, `cat`).
+
+**14c. Skip unchanged rows on scroll** — After memmove, compare each row's
+cell_char against a shadow buffer of previously-rendered content.  Rows
+whose content didn't change (e.g. static prompt) skip redraw.  Costs
+~800 bytes SRAM for shadow buffer (40×20 mode).
 
 ### Step 15 — Terminal compatibility testing
 

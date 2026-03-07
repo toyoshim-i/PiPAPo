@@ -65,7 +65,7 @@ static int power_i2c_off(void)
 
 static const tty_backend_t fbcon_backend = {
     .putc     = fbcon_putc,
-    .flush    = fbcon_flush,
+    .flush    = fbcon_flush_deferred,
     .getc     = fbcon_getc_wrapper,
     .rx_avail = fbcon_avail_wrapper,
     .get_cols = fbcon_get_cols,
@@ -106,10 +106,11 @@ void target_early_init(void)
             klog("LCD: ST7365P initialised (320x320 RGB565)\n");
         fbcon_init();
         klog("FBCON: text console initialised (40x20)\n");
-        klog_set_mirror(fbcon_putc, fbcon_flush);
+        klog_set_mirror(fbcon_putc, fbcon_flush_deferred);
         klog("KLOG: output mirrored to LCD\n");
         tty_set_backend(TTY_DISPLAY, &fbcon_backend);
         sched_set_input_poll(fbcon_avail_wrapper, TTY_DISPLAY);
+        sched_set_display_poll(fbcon_poll_flush);
         klog("TTY: backend switched to LCD+keyboard\n");
         devfs_set_backlight(bl_i2c_get, bl_i2c_set);
         bl_i2c_set(128);

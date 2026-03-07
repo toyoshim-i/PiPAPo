@@ -28,6 +28,12 @@ void spi_lcd_data(const uint8_t *buf, size_t len);
 /* Send 16-bit values as big-endian byte pairs (DC=1).  Used for RGB565. */
 void spi_lcd_data16(const uint16_t *buf, size_t count);
 
+/* Streaming API: keep CS asserted across multiple data16 calls.
+ * Call stream_begin before the first data16_stream, stream_end after last. */
+void spi_lcd_stream_begin(void);
+void spi_lcd_data16_stream(const uint16_t *buf, size_t count);
+void spi_lcd_stream_end(void);
+
 /* Set the column/row address window for subsequent pixel writes. */
 void spi_lcd_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
 
