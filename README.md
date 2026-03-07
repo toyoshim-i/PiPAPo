@@ -35,10 +35,17 @@ A UNIX-like micro OS for the RP2040 — bare-metal, no SDK runtime.
 - **Multi-TTY** — serial console + LCD console with getty login on each
 - **PIE binaries** — position-independent ELFs, code runs from flash (zero SRAM for .text)
 
+## Known Issues
+
+- **LCD TTY unstable** — the framebuffer console occasionally hangs or glitches during heavy scrolling
+- **SD card disabled** — SD/VFAT support is tentatively disabled in the current build
+
 ## Future Work
 
 - **RP2350 Port** — Cortex-M33, 8-region MPU, PSRAM support, Thumb-2 optimization; `pico2`/`pico2calc` targets
-- Additional application ports
+- **68000 CPU support** — Motorola 68000 as an additional target architecture
+- **CPU emulation** — kernel-embedded emulators for retro CPUs (Z80, 6502, 6809, 8086), enabling cross-architecture binary execution
+- **Subsystem support** — load and run applications from other OSes on top of PPAP via syscall bridge (e.g. CP/M, Human68K, DOS)
 - Audio driver support
 
 ## Repository Layout
