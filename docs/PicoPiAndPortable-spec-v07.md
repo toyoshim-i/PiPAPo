@@ -1,6 +1,6 @@
 # PicoPiAndPortable
 
-**A UNIX-like Micro OS for RP2040/RP2350 — Design Specification v0.6**
+**A UNIX-like Micro OS for RP2040/RP2350 — Design Specification v0.7**
 
 March 2026
 
@@ -454,6 +454,11 @@ All drivers are built into the kernel (statically linked). Loadable modules are 
 | null / zero | /dev/null, /dev/zero | Pseudo devices |
 | random | /dev/urandom | Random number source based on RP2040's ring oscillator |
 | Watchdog | /dev/watchdog | Watchdog timer |
+| SPI LCD | (fbcon) | ST7365P 320×320 LCD via SPI1 (`pico1calc` only). Drives the framebuffer text console |
+| I2C Keyboard | (kbd) | STM32 keyboard controller on I2C1 (`pico1calc` only). Polled input with keymap translation |
+| Backlight | /dev/backlight | LCD backlight brightness control (write 0–255) (`pico1calc` only) |
+| Power | /dev/power | System power control (write "off" to power down) (`pico1calc` only) |
+| Battery | /proc/battery | Battery voltage and percentage readout via ADC (`pico1calc` only) |
 
 ---
 
@@ -473,7 +478,7 @@ All drivers are built into the kernel (statically linked). Loadable modules are 
 | Phase 9: Dual-Core Scheduling | 3 weeks | Hardware spinlocks, per-core scheduling, both cores execute user processes |
 | Phase 10: Stabilization | 3 weeks | Error handling, OOM visibility, input validation, FS correctness |
 | Rogue 5.4.4 Port | — | Classic dungeon crawler with minimal VT100 curses shim; verified on QEMU and hardware |
-| Phase 11: PicoCalc Device Support | 4 weeks | Embedded display driver (console + graphics), I2C keyboard input |
+| Phase 11: PicoCalc Device Support | 4 weeks | SPI LCD driver, I2C keyboard, framebuffer text console (40×20 / 80×40), VT100 emulator, multi-TTY, `ttyctl` utility |
 | Phase 12: RP2350 Port | 4 weeks | MPU 8-region support, PSRAM support, Thumb-2 optimization; add `pico2`/`pico2calc` targets |
 
 Note: Phase 4 (VFAT) and Phase 5 (UFS + loopback) were a single phase in v0.2. They are split here because the two-layer approach requires the VFAT driver to be functional before loopback mounts can be tested.
@@ -558,3 +563,4 @@ SD card communication in SPI mode supports CRC-based error detection, but is vul
 | v0.4 | Mar 2026 | Defined three build targets (`qemu`, `pico1`, `pico1calc`); added Phase 7 (Board Support Packages) to roadmap; renumbered Stabilization → Phase 8, RP2350 Port → Phase 9 |
 | v0.5 | Mar 2026 | Inserted Phase 8 (PIE Binary Optimization: .rodata flash migration, split init/sh, PPAP_HAS_BLKDEV, per-target romfs); added Phase 10 (PicoCalc Device Support: display + I2C keyboard); renumbered Stabilization → Phase 9, RP2350 Port → Phase 11 |
 | v0.6 | Mar 2026 | Inserted Phase 9 (Dual-Core Scheduling: hardware spinlocks, per-core state, both RP2040 cores run user processes); renumbered Stabilization → Phase 10, PicoCalc → Phase 11, RP2350 → Phase 12 |
+| v0.7 | Mar 2026 | Phase 11 complete: SPI LCD driver (ST7365P), I2C keyboard (STM32), framebuffer text console with dual-mode fonts (40×20 / 80×40), VT100/ANSI escape sequence parser, multi-TTY with getty, `ttyctl` terminal utility, curses shim TIOCGWINSZ query; added display/kbd/backlight/power/battery to device driver table |

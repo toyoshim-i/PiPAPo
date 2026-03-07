@@ -636,12 +636,18 @@ when switching modes, redrawing with the new font instead of clearing.
 
 ### Step 18 — Documentation and version bump
 
-**Files:**
+**Modified files:**
 - `src/kernel/fs/procfs.c` — bump version to "0.11.0"
-- `src/target/target.h` — add `TARGET_CAP_DISPLAY`, `TARGET_CAP_KBD`
-- `src/target/pico1calc/pico1calc.h` — add SPI1 + I2C1 pin definitions
-- `src/target/pico1calc/CMakeLists.txt` — add new driver sources
-- `docs/PicoPiAndPortable-spec-v06.md` or v07 — update Phase 11 status
+- `docs/PicoPiAndPortable-spec-v06.md` → renamed to `v07.md`:
+  - Updated header to v0.7
+  - Added SPI LCD, I2C Keyboard, Backlight, Power, Battery to device driver table
+  - Updated Phase 11 roadmap description
+  - Added v0.7 revision history entry
+
+**Already done in earlier steps (no changes needed):**
+- `src/target/target.h` — `TARGET_CAP_DISPLAY`, `TARGET_CAP_KBD` added in Step 9
+- `src/target/pico1calc/pico1calc.h` — SPI1 + I2C1 pin definitions added in Step 1
+- `src/target/pico1calc/CMakeLists.txt` — driver sources added incrementally
 
 ---
 
