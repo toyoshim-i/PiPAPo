@@ -92,6 +92,7 @@ $(BUILD_DIR)/%.o: %.S
 	$(AS) $(ASFLAGS) -c -o $@ $<
 
 ROMFS_SBIN ?= ../romfs/sbin
+ROMFS_USR_BIN ?= ../romfs/usr/bin
 
 # Install ELFs into the romfs bin directory (init goes to sbin)
 install: all
@@ -100,10 +101,13 @@ install: all
 ifneq ($(PPAP_TESTS),1)
 	@for t in $(TESTS_ALL); do rm -f $(ROMFS_BIN)/$$t; done
 endif
+	@mkdir -p $(ROMFS_USR_BIN)
 	@for elf in $(ELFS); do \
 		name=$$(basename $$elf .elf); \
 		if [ "$$name" = "init" ]; then \
 			cp $$elf $(ROMFS_SBIN)/$$name; \
+		elif [ "$$name" = "ttyctl" ]; then \
+			cp $$elf $(ROMFS_USR_BIN)/$$name; \
 		else \
 			cp $$elf $(ROMFS_BIN)/$$name; \
 		fi; \
