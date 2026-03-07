@@ -16,10 +16,11 @@ March 2026
 6. [busybox Support Strategy](#6-busybox-support-strategy)
 7. [Boot Sequence](#7-boot-sequence)
 8. [Device Drivers](#8-device-drivers)
-9. [Development Roadmap](#9-development-roadmap)
+9. [Feature Summary](#9-feature-summary)
 10. [Technical Challenges and Risks](#10-technical-challenges-and-risks)
 11. [Development Environment](#11-development-environment)
 12. [Design Principles Summary](#12-design-principles-summary)
+13. [Documentation Index](#13-documentation-index)
 
 ---
 
@@ -408,7 +409,7 @@ The Linux system call wrapper layer in musl libc is rewritten for this OS. Speci
 
 Beyond busybox, the platform supports porting existing UNIX applications that fit within the RP2040's memory constraints (128 KB data+bss per process, Thumb-1 ISA).
 
-**Rogue 5.4.4** — The classic BSD dungeon crawler, ported with a minimal VT100 curses shim (~800 lines of C) that translates curses calls to ANSI escape sequences. The upstream source is unmodified; PPAP-specific headers (`config.h`, `curses.h`, `pwd.h`) are injected via `-isystem`. The binary is 158 KB stripped ELF (139 KB text in flash, 75 KB data+bss in SRAM). See `docs/port-rogue.md` for the full porting plan and audit.
+**Rogue 5.4.4** — The classic BSD dungeon crawler, ported with a minimal VT100 curses shim (~800 lines of C) that translates curses calls to ANSI escape sequences. The upstream source is unmodified; PPAP-specific headers (`config.h`, `curses.h`, `pwd.h`) are injected via `-isystem`. The binary is 158 KB stripped ELF (139 KB text in flash, 75 KB data+bss in SRAM). See `docs/history/port-rogue.md` for the full porting plan and audit.
 
 The porting pattern — git submodule + patches directory + standalone build script + CMake integration — is designed to be reusable for future application ports.
 
@@ -570,6 +571,22 @@ SD card communication in SPI mode supports CRC-based error detection, but is vul
 - **Investment in the Future:** Ensure the RP2350 porting path from the outset through the MPU abstraction layer and process model design
 - **POSIX-compliant by default, Linux-specific as needed:** uname returns "PicoPiAndPortable"
 - **Correctness First:** Prioritize correct behavior above all else; optimize later based on profiling
+
+---
+
+## 13. Documentation Index
+
+| Document | Audience | Description |
+|---|---|---|
+| [architecture.md](architecture.md) | Kernel developers | Boot sequence, memory layout, process model, scheduler, MPU, signals |
+| [filesystems.md](filesystems.md) | Kernel developers | VFS layer, romfs, VFAT, UFS, loopback, devfs, procfs, tmpfs |
+| [syscall.md](syscall.md) | All developers | Complete system call reference with arguments and error codes |
+| [procfs.md](procfs.md) | All developers | /proc filesystem file formats |
+| [userland-dev-guide.md](userland-dev-guide.md) | User-space developers | Toolchain, compiler flags, linking, bare-metal and musl development |
+| [porting.md](porting.md) | Application porters | Third-party porting pattern (musl, busybox, rogue as examples) |
+| [PicoCalc.md](PicoCalc.md) | Hardware developers | PicoCalc pinout, I2C keyboard protocol, SD card, serial debug |
+| [PicoCalc-LCD.md](PicoCalc-LCD.md) | Driver developers | ST7365P LCD driver architecture, SPI protocol, VT100 emulator |
+| [history/](history/) | — | Development phase plans (archived) |
 
 ---
 

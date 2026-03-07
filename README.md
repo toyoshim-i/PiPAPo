@@ -112,8 +112,16 @@ PPAP/
     qemu.sh                 Run ppap_qemu_arm on mps2-an500
     test_all_targets.sh     Build all targets + run QEMU automated tests
   docs/
-    spec-v07.md                     Full design specification
-    history/                        Development phase plans and porting notes
+    spec-v07.md             Full design specification
+    architecture.md         Kernel internals (boot, memory, scheduler, MPU, multi-core)
+    filesystems.md          VFS layer and filesystem drivers
+    syscall.md              System call reference
+    procfs.md               /proc filesystem specification
+    userland-dev-guide.md   User-space development guide
+    porting.md              Third-party application porting guide
+    PicoCalc.md             PicoCalc hardware reference
+    PicoCalc-LCD.md         LCD display driver technical reference
+    history/                Development phase plans and porting notes
 ```
 
 ## Quick Start

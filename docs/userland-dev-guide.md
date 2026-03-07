@@ -697,7 +697,7 @@ code. The recommended pattern:
 4. **Integrate with CMake** — add a custom command in `CMakeLists.txt` and
    wire into the romfs dependency chain
 
-**Example: Rogue 5.4.4** — see `docs/port-rogue.md` and `third_party/build-rogue.sh`.
+**Example: Rogue 5.4.4** — see `docs/history/port-rogue.md` and `third_party/build-rogue.sh`.
 The port required a minimal curses shim (~800 lines) translating curses calls
 to VT100 escape sequences, plus `config.h` and `pwd.h` stubs. The upstream
 source is completely unmodified.
