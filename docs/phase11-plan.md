@@ -584,41 +584,36 @@ whose content didn't change (e.g. static prompt) skip redraw.  Costs
 
 ### Step 16 — `ttyctl` utility
 
-**New file:** `apps/ttyctl/ttyctl.c`
-**Installed to:** `/usr/bin/ttyctl` (pico1calc romfs only)
+**New file:** `user/ttyctl.c`
+**Installed to:** `/usr/bin/ttyctl` via romfs
 
-A target-specific terminal management CLI for the PicoCalc display console.
-Statically linked standalone binary (not a busybox applet), compiled for
-Thumb and placed in the pico1calc romfs at `/usr/bin/ttyctl`.
+A terminal management CLI for the PicoCalc display console, built as a
+standard PPAP user-space program (linked with crt0.S + syscall.o, PIC
+Thumb binary).  Receives argc/argv from crt0.S like all user programs.
 
 Usage:
 ```
-ttyctl reset          # Reset all terminal state to defaults:
-                      #   - 40×20 mode (8×16 font)
-                      #   - default fg/bg colors (white on black)
-                      #   - clear screen, cursor to (0,0)
-                      #   - cursor visible, no scroll region
-                      #   - canonical echo mode restored
-ttyctl 80             # Switch to 80-col mode (4×8 font, 80×40)
-ttyctl 40             # Switch to 40-col mode (8×16 font, 40×20)
-ttyctl cols           # Print current column count (for scripts)
-ttyctl backlight N    # Set LCD backlight brightness (0–255)
-ttyctl battery        # Print battery voltage and percentage
-ttyctl poweroff       # Power off the device
+ttyctl reset          # Reset terminal: ESC c (RIS), 40-col mode,
+                      #   default colors, clear screen, cursor home
+ttyctl 80             # Switch to 80-col mode (ESC[?80h)
+ttyctl 40             # Switch to 40-col mode (ESC[?80l)
+ttyctl cols           # Print current column count via TIOCGWINSZ ioctl
+ttyctl backlight N    # Set LCD backlight (write N to /dev/backlight)
+ttyctl battery        # Print battery info (read /proc/battery)
+ttyctl poweroff       # Power off (write "off" to /dev/power)
 ```
 
-Implementation: each subcommand emits the appropriate escape sequences to
-stdout or reads/writes the relevant `/dev/backlight` and `/proc/battery`
-files.  The `reset` subcommand emits: `ESC c` (RIS — full reset),
-`ESC [ ? 80 l` (40-col mode), `ESC [ 0 m` (default colors),
-`ESC [ 2 J` (clear screen), `ESC [ H` (cursor home).
+Implementation details:
+- Each subcommand emits escape sequences to stdout or reads/writes device
+  files (`/dev/backlight`, `/dev/power`, `/proc/battery`).
+- `cols` uses `ioctl(1, TIOCGWINSZ, &ws)` to query the TTY driver.
+- Division-free `put_u32()` for decimal output (subtracts powers of 10,
+  no libgcc dependency in freestanding environment).
+- No libc — uses only raw SVC syscalls via `syscall.h`.
 
-This is useful for recovering from programs that crash mid-escape-sequence,
-or from scripts that need to query/set the display mode.
-
-**Build:** Standalone C source, compiled with `arm-none-eabi-gcc -mcpu=cortex-m0plus
--mthumb -Os -static`.  Added to pico1calc romfs via mkromfs.
-CMake target: `ttyctl` in `apps/ttyctl/CMakeLists.txt`.
+**Build:** Added to `APPS` list in `user/Makefile`.  Linked with common
+objects (crt0.o + syscall.o) via the standard `%.elf` pattern rule.
+Install rule routes `ttyctl` to `$(ROMFS_USR_BIN)` (`/usr/bin`).
 
 ### Step 17 — Rogue on display (font switching verification)
 
