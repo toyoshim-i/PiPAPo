@@ -69,20 +69,17 @@ static void klog_print_dec(uint32_t v)
     while (--i >= 0) klog_putc(buf[i]);
 }
 
-static inline void klog_finish(void)
-{
-    if (mirror_flush)
-        mirror_flush();
-}
-
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
 void klog(const char *msg)
 {
     uint32_t s = spin_lock_irqsave(SPIN_UART);
     klog_puts_raw(msg);
-    klog_finish();
     spin_unlock_irqrestore(SPIN_UART, s);
+    /* Flush mirror (LCD) outside the critical section — SPI transfer is slow
+     * and holding SPIN_UART with IRQs off would starve the UART RX FIFO. */
+    if (mirror_flush)
+        mirror_flush();
 }
 
 void klogf(const char *fmt, ...)
@@ -124,6 +121,7 @@ void klogf(const char *fmt, ...)
     }
 done:
     va_end(ap);
-    klog_finish();
     spin_unlock_irqrestore(SPIN_UART, saved);
+    if (mirror_flush)
+        mirror_flush();
 }
