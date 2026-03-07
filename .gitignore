@@ -1,5 +1,4 @@
 build/
-build_test/
 *.o
 *.elf
 *.bin

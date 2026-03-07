@@ -22,12 +22,12 @@ cmake --build build -- ppap_qemu_arm ppap_pico1 ppap_pico1calc
 
 echo ""
 echo "=== Building QEMU with tests ==="
-cmake -B build_test -DPPAP_TESTS=ON
-cmake --build build_test -- ppap_qemu_arm
+cmake -B build/test -DPPAP_TESTS=ON
+cmake --build build/test -- ppap_qemu_arm
 
 echo ""
 echo "=== QEMU automated test ==="
-ELF="$PROJECT_DIR/build_test/ppap_qemu_arm.elf"
+ELF="$PROJECT_DIR/build/test/ppap_qemu_arm.elf"
 TIMEOUT=30
 OUTPUT=$(timeout "$TIMEOUT" qemu-system-arm \
     -M mps2-an500 \
