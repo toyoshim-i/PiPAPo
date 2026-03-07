@@ -36,7 +36,7 @@ Source: `page_free_count()`, `PAGE_COUNT`, and `oom_count` from `mm/page.c`.
 Single-line kernel version string.
 
 ```
-PicoPiAndPortable v0.10.0 (armv6m)
+PicoPiAndPortable v0.11.0 (armv6m)
 ```
 
 Hardcoded; no dynamic content.

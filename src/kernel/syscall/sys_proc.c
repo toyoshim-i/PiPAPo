@@ -387,7 +387,7 @@ long sys_uname(void *buf)
     p += UTS_LEN;
 
     /* release */
-    s = "0.6.0";
+    s = "0.11.0";
     for (int i = 0; s[i] && i < UTS_LEN - 1; i++) p[i] = s[i];
     p += UTS_LEN;
 

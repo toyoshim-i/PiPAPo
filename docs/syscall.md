@@ -279,7 +279,7 @@ Fill `buf` (390 bytes = 6 x 65-byte fields) with system identification:
 |-------|-------|
 | sysname | `PicoPiAndPortable` |
 | nodename | `ppap` |
-| release | `0.6.0` |
+| release | `0.11.0` |
 | version | `#1 PPAP` |
 | machine | `armv6m` |
 | domainname | (empty) |
