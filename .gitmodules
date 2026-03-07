@@ -7,3 +7,6 @@
 [submodule "third_party/rogue"]
 	path = third_party/rogue
 	url = https://github.com/Davidslv/rogue.git
+[submodule "third_party/qemu"]
+	path = third_party/qemu
+	url = https://gitlab.com/qemu-project/qemu.git

@@ -1,31 +1,14 @@
 #!/usr/bin/env bash
-# qemu.sh — Run ppap_qemu_arm under QEMU mps2-an500 (Cortex-M0+)
+# qemu.sh — Run PPAP under QEMU
 #
 # Usage (from project root):
-#   ./scripts/qemu.sh            # run build/ppap_qemu_arm.elf
-#   ./scripts/qemu.sh --build    # rebuild first, then run
-#   ./scripts/qemu.sh --gdb      # pause at reset, wait for GDB on :1234
+#   ./scripts/qemu.sh                # run ARM target (default)
+#   ./scripts/qemu.sh --m68k         # run M68K target
+#   ./scripts/qemu.sh --build        # rebuild first, then run
+#   ./scripts/qemu.sh --gdb          # pause at reset, wait for GDB on :1234
+#   ./scripts/qemu.sh --m68k --build # rebuild and run M68K target
 #
-# Install QEMU if not present:
-#   sudo apt install qemu-system-arm
-#
-# GDB session (in a second terminal):
-#   gdb-multiarch -ex "target remote :1234" build/ppap_qemu_arm.elf
-#
-# Expected output (boot header followed by interleaved "0" / "1" indefinitely):
-#   PicoPiAndPortable booting (QEMU mps2-an500)...
-#   UART: CMSDK UART0 @ 0x40004000
-#   Clock: emulated (no PLL — skipping clock_init_pll)
-#   MM: ...
-#   PROC: ...
-#   XIP: xip_add @ 0x000xxxxx (ROM, 0x000xxxxx in QEMU)
-#   XIP: xip_add(3,4) = 7
-#   SCHED: starting cooperative context-switch test (QEMU)
-#   0
-#   1
-#   0
-#   1
-#   ...  (interleaved output proves PendSV context switch works)
+# Flags can be combined in any order.
 #
 # Press Ctrl-A X to quit QEMU.
 
@@ -33,45 +16,76 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-ELF="$PROJECT_DIR/build/ppap_qemu_arm.elf"
+
+# ── Parse flags ───────────────────────────────────────────────────────────────
+TARGET="arm"
+DO_BUILD=0
+DO_GDB=0
+for arg in "$@"; do
+    case "$arg" in
+        --m68k)  TARGET="m68k" ;;
+        --build) DO_BUILD=1 ;;
+        --gdb)   DO_GDB=1 ;;
+        *)       echo "Unknown option: $arg"; echo "Usage: $0 [--m68k] [--build] [--gdb]"; exit 1 ;;
+    esac
+done
+
+# ── Target-specific configuration ────────────────────────────────────────────
+if [[ "$TARGET" == "m68k" ]]; then
+    ELF="$PROJECT_DIR/build-m68k/ppap_qemu_m68k.elf"
+    QEMU_BIN="qemu-system-m68k"
+    # Prefer locally-built QEMU if available
+    LOCAL_QEMU="$PROJECT_DIR/third_party/qemu/build/qemu-system-m68k"
+    if [[ -x "$LOCAL_QEMU" ]]; then
+        QEMU_BIN="$LOCAL_QEMU"
+    fi
+    QEMU_ARGS=(-machine virt -cpu m68000)
+    BUILD_CMD="cmake -DCMAKE_TOOLCHAIN_FILE=$PROJECT_DIR/cmake/toolchain-m68k.cmake -S $PROJECT_DIR/src/target/qemu_m68k -B $PROJECT_DIR/build-m68k && make -C $PROJECT_DIR/build-m68k"
+    BUILD_HINT="cd build-m68k && cmake -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain-m68k.cmake -S ../src/target/qemu_m68k -B . && make"
+else
+    ELF="$PROJECT_DIR/build/ppap_qemu_arm.elf"
+    QEMU_BIN="qemu-system-arm"
+    QEMU_ARGS=(-M mps2-an500 -serial mon:stdio)
+    BUILD_CMD="cmake --build $PROJECT_DIR/build --target ppap_qemu_arm"
+    BUILD_HINT="cmake --build build --target ppap_qemu_arm"
+fi
 
 # ── Optional rebuild ──────────────────────────────────────────────────────────
-if [[ "${1:-}" == "--build" ]]; then
-    echo "[qemu] Building ppap_qemu_arm..."
-    cmake --build "$PROJECT_DIR/build" --target ppap_qemu_arm
-    shift
+if [[ $DO_BUILD -eq 1 ]]; then
+    echo "[qemu] Building ppap_qemu_${TARGET}..."
+    eval "$BUILD_CMD"
 fi
 
 # ── Pre-flight checks ─────────────────────────────────────────────────────────
-if ! command -v qemu-system-arm &>/dev/null; then
-    echo "[qemu] Error: qemu-system-arm not found."
-    echo "       Install with: sudo apt install qemu-system-arm"
+if ! command -v "$QEMU_BIN" &>/dev/null && [[ ! -x "$QEMU_BIN" ]]; then
+    echo "[qemu] Error: $QEMU_BIN not found."
+    if [[ "$TARGET" == "m68k" ]]; then
+        echo "       Install with: sudo apt install qemu-system-misc"
+        echo "       Or build from source: ./scripts/build-qemu.sh"
+    else
+        echo "       Install with: sudo apt install qemu-system-arm"
+    fi
     exit 1
 fi
 
 if [[ ! -f "$ELF" ]]; then
     echo "[qemu] Error: $ELF not found."
-    echo "       Run: cmake --build build --target ppap_qemu_arm"
+    echo "       Run: $BUILD_HINT"
     exit 1
 fi
 
 # ── GDB stub option ───────────────────────────────────────────────────────────
 GDB_ARGS=()
-if [[ "${1:-}" == "--gdb" ]]; then
+if [[ $DO_GDB -eq 1 ]]; then
     GDB_ARGS=(-s -S)   # -s = GDB server on :1234, -S = pause at reset
     echo "[qemu] Waiting for GDB on :1234 ..."
     echo "       Connect with: gdb-multiarch -ex 'target remote :1234' $ELF"
 fi
 
 # ── Run ───────────────────────────────────────────────────────────────────────
-# -M mps2-an500     ARM MPS2 board with Cortex-M0+ (same ISA as RP2040)
-# -nographic        disable GUI window; redirects QEMU monitor to stdio
-# -serial mon:stdio multiplex UART + QEMU monitor on stdio (Ctrl-A X to quit)
-#                   (-serial stdio alone conflicts with -nographic on QEMU 8+)
 echo "[qemu] Running $ELF ..."
-qemu-system-arm \
-    -M mps2-an500 \
+"$QEMU_BIN" \
+    "${QEMU_ARGS[@]}" \
     -nographic \
-    -serial mon:stdio \
     -kernel "$ELF" \
     "${GDB_ARGS[@]+"${GDB_ARGS[@]}"}"

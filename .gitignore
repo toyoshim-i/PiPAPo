@@ -1,4 +1,5 @@
 build/
+build-m68k/
 build_test/
 *.o
 *.elf

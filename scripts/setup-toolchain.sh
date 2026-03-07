@@ -71,7 +71,9 @@ info "=== Step 1: Installing apt packages ==="
 APT_PACKAGES=(
   gcc-arm-none-eabi       # ARM cross-compiler (armv6m/Thumb)
   binutils-arm-none-eabi  # Assembler, linker, objcopy, objdump
-  gdb-multiarch           # GDB with ARM support
+  gcc-m68k-linux-gnu      # M68K cross-compiler (68000 port)
+  binutils-m68k-linux-gnu # M68K assembler, linker, objcopy
+  gdb-multiarch           # GDB with ARM and m68k support
   openocd                 # SWD/JTAG on-chip debugger (v0.12+)
   minicom                 # Serial console
   cmake                   # Build system (>= 3.13 required by Pico SDK)
@@ -79,6 +81,7 @@ APT_PACKAGES=(
   git                     # Version control
   python3                 # Required by Pico SDK scripts
   qemu-system-arm         # QEMU mps2-an500 smoke tests (scripts/qemu.sh)
+  qemu-system-misc        # QEMU m68k (virt) for 68000 target
 )
 
 # Check which packages are already installed
@@ -159,9 +162,19 @@ add_to_shell_rc "${HOME}/.zshrc"
 # Make it available in the current session too
 export PICO_SDK_PATH="${PICO_SDK_DIR}"
 
-# --- Step 4: Verification ----------------------------------------------------
+# --- Step 4: QEMU m68k check ------------------------------------------------
+#
+# The system qemu-system-m68k (apt: qemu-system-misc) usually works.
+# If you need a newer version, run: ./scripts/build-qemu.sh
+# which builds QEMU 9.1.x from the third_party/qemu submodule.
 
-info "=== Step 4: Verification ==="
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PPAP_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+QEMU_M68K="${PPAP_ROOT}/third_party/qemu/build/qemu-system-m68k"
+
+# --- Step 5: Verification ----------------------------------------------------
+
+info "=== Step 5: Verification ==="
 
 FAIL=0
 
@@ -196,6 +209,23 @@ else
 fi
 rm -f /tmp/ppap_check.c /tmp/ppap_check.elf
 
+# m68k-linux-gnu-gcc
+verify_version "m68k-linux-gnu-gcc" \
+  "m68k-linux-gnu-gcc --version" \
+  "m68k-linux-gnu-gcc"
+
+# Check it produces valid m68k output
+echo 'int main(void){return 0;}' > /tmp/ppap_m68k_check.c
+if m68k-linux-gnu-gcc -m68000 -nostdlib -static \
+     -o /tmp/ppap_m68k_check.elf /tmp/ppap_m68k_check.c 2>/dev/null; then
+  ARCH=$(m68k-linux-gnu-readelf -h /tmp/ppap_m68k_check.elf | grep Machine)
+  success "m68k-linux-gnu-gcc produces valid ELF: ${ARCH}"
+else
+  warn "m68k-linux-gnu-gcc failed to compile a minimal test program"
+  FAIL=1
+fi
+rm -f /tmp/ppap_m68k_check.c /tmp/ppap_m68k_check.elf
+
 # OpenOCD
 verify_version "openocd" \
   "openocd --version" \
@@ -226,6 +256,20 @@ fi
 verify_version "qemu-system-arm" \
   "qemu-system-arm --version" \
   "QEMU emulator"
+
+# qemu-system-m68k (prefer local build, fall back to system)
+if [[ -x "${QEMU_M68K}" ]]; then
+  verify_version "qemu-system-m68k (local)" \
+    "${QEMU_M68K} --version" \
+    "QEMU emulator"
+elif command -v qemu-system-m68k &>/dev/null; then
+  verify_version "qemu-system-m68k (system)" \
+    "qemu-system-m68k --version" \
+    "QEMU emulator"
+else
+  warn "qemu-system-m68k: not found (install qemu-system-misc or pass --build-qemu)"
+  FAIL=1
+fi
 
 # --- Summary -----------------------------------------------------------------
 
