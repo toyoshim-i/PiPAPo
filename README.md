@@ -128,14 +128,23 @@ cmake --build build          # builds ppap_qemu_arm, ppap_pico1, ppap_pico1calc
 
 ### 3. Flash to hardware
 
+**PicoCalc (UF2):** The PicoCalc ships with
+[UF2 Loader](https://github.com/pelrun/uf2loader) — hold the bootloader key
+during power-on, then copy the UF2 file:
+
+```sh
+cp build/src/target/pico1calc/ppap_pico1calc.uf2 /media/$USER/RPI-RP2/
+```
+
+**Pico (BOOTSEL):** Hold BOOTSEL during plug-in and copy the UF2.
+
+**OpenOCD (any target):**
+
 ```sh
 ./scripts/flash.sh                     # flash build/ppap_pico1calc.elf via OpenOCD
 ./scripts/flash.sh --build             # rebuild first, then flash
 ./scripts/flash.sh build/ppap_pico1.elf  # flash a specific target
 ```
-
-Or drag the UF2 onto the RP2040 in BOOTSEL mode:
-`cp build/src/target/pico1calc/ppap_pico1calc.uf2 /media/$USER/RPI-RP2/`
 
 ### 4. QEMU
 
