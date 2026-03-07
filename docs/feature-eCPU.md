@@ -202,7 +202,8 @@ See `feature-subsystem.md` for details on each personality layer.
 
 The emulated program sees a flat virtual address space within the
 emulator process's memory. The emulator allocates a contiguous region
-(e.g., 1 MB) via `mmap()` and maps the foreign ELF segments into it.
+(e.g., 64 KB for Z80, 1 MB for 8086) via `brk()` or `mmap()` and
+loads the foreign binary segments into it.
 
 Pointer arguments in syscalls (e.g., `read(fd, buf, count)` where `buf`
 is a pointer) require translation: the emulated pointer is an offset

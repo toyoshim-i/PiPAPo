@@ -167,7 +167,7 @@ void ppap_m68k_personality(ecpu_state_t *cpu) {
         cpu->dregs[3],  /* d3  = arg3 */
         cpu->dregs[4],  /* d4  = arg4 */
         cpu->dregs[5],  /* d5  = arg5 */
-        0               /* no arg6 */
+        0               /* m68k ABI has 5 args only (see target-68000.md) */
     );
     cpu->dregs[0] = ret;
 }
@@ -395,19 +395,18 @@ On PPAP-ARM: uses ecpu-m68k from eCPU.
 Human68k uses the F-line exception (opcodes $FFxx) for DOS calls.
 The emulator/trap handler intercepts these and translates:
 
-| DOS call | Name | PPAP translation |
+| DOS call | Number | PPAP translation |
 |---|---|---|
-| $FF01 | GETCHAR | `read(0, &ch, 1)` |
-| $FF02 | PUTCHAR | `write(1, &ch, 1)` |
-| $FF09 | PRINT | `write(1, str, len)` |
-| $FF0E | FFLUSH | `fsync()` |
-| $FF23 | CREATE | `open(O_CREAT)` |
-| $FF24 | OPEN | `open()` |
-| $FF25 | CLOSE | `close()` |
-| $FF26 | READ | `read()` |
-| $FF27 | WRITE | `write()` |
-| $FF2B | SEEK | `lseek()` |
-| $FF4C | EXIT2 | `_exit()` |
+| `_EXIT` | $FF00 | `_exit()` |
+| `_GETCHAR` | $FF01 | `read(0, &ch, 1)` |
+| `_PUTCHAR` | $FF02 | `write(1, &ch, 1)` |
+| `_PRINT` | $FF09 | `write(1, str, len)` |
+| `_CREATE` | $FF39 | `open(O_CREAT)` |
+| `_OPEN` | $FF3D | `open()` |
+| `_CLOSE` | $FF3E | `close()` |
+| `_READ` | $FF3F | `read()` |
+| `_WRITE` | $FF40 | `write()` |
+| `_SEEK` | $FF42 | `lseek()` |
 
 See `target-68000.md` §7.5 for the full design including IOCS (TRAP
 #15) passthrough on real X68000 hardware.

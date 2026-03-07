@@ -138,7 +138,7 @@ These files have **no** architecture-specific code:
 ```
 src/
   arch/
-    arm/
+    arm_m/
       boot.S            ← startup.S (renamed)
       switch.S           ← from proc/switch.S
       svc.S              ← from syscall/svc.S
@@ -156,6 +156,10 @@ src/
   hw/
     rp2040.h             ← stays (RP2040 peripheral regs, used by drivers)
 ```
+
+Note: the ARM Cortex-M (M-profile) directory is `arm_m/`, not `arm/`,
+to distinguish it from the ARM1176 (A-profile) directory `arm_a/` used
+by the Pi Zero port (see `target-pizero.md`).
 
 ### 4.2 Architecture Interface (`arch/*/arch.h`)
 
@@ -264,6 +268,10 @@ d4 = arg4
 d5 = arg5
 d0 = return value (negative = -errno)
 ```
+
+Note: m68k supports 5 syscall arguments (d1-d5), while ARM supports 6
+(r0-r5). PPAP syscalls requiring 6 arguments (e.g., mmap) must use a
+pointer-to-struct argument on m68k, matching the Linux m68k convention.
 
 ### 4.5 Context Switch
 
@@ -624,15 +632,16 @@ clean on 68k: no binary patching needed, the CPU traps automatically.
 
 ### Phase A — Architecture Abstraction (no new code yet)
 
-Refactor existing ARM code into `src/arch/arm/` without changing behavior:
+Refactor existing ARM code into `src/arch/arm_m/` without changing behavior
+(M-profile, to distinguish from Pi Zero's A-profile `arm_a/`):
 
-1. Move `startup.S` → `src/arch/arm/boot.S`
-2. Move `switch.S` → `src/arch/arm/switch.S`
-3. Move `svc.S` → `src/arch/arm/trap.S`
-4. Move `cortex_m0plus.h` → `src/arch/arm/cpu.h`
+1. Move `startup.S` → `src/arch/arm_m/boot.S`
+2. Move `switch.S` → `src/arch/arm_m/switch.S`
+3. Move `svc.S` → `src/arch/arm_m/trap.S`
+4. Move `cortex_m0plus.h` → `src/arch/arm_m/cpu.h`
 5. Extract `arch.h` interface from `spinlock.h` and `sched.c` inline asm
 6. Make `proc.h` PCB register area arch-dependent
-7. Update CMake to use `src/arch/arm/` sources
+7. Update CMake to use `src/arch/arm_m/` sources
 8. Verify all three existing targets still build and pass tests
 
 ### Phase B — M68K QEMU Bringup
