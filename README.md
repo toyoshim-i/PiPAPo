@@ -137,8 +137,8 @@ Installs: `arm-none-eabi-gcc`, `cmake`, `ninja`, `openocd`, `gdb-multiarch`, `qe
 ### 2. Configure and build
 
 ```sh
-cmake -B build
-cmake --build build          # builds ppap_qemu_arm, ppap_pico1, ppap_pico1calc
+cmake -B build/arm_m
+cmake --build build/arm_m    # builds ppap_qemu_arm, ppap_pico1, ppap_pico1calc
 ```
 
 ### 3. Flash to hardware
@@ -148,7 +148,7 @@ cmake --build build          # builds ppap_qemu_arm, ppap_pico1, ppap_pico1calc
 during power-on, then copy the UF2 file:
 
 ```sh
-cp build/src/target/pico1calc/ppap_pico1calc.uf2 /media/$USER/RPI-RP2/
+cp build/arm_m/src/target/pico1calc/ppap_pico1calc.uf2 /media/$USER/RPI-RP2/
 ```
 
 **Pico (BOOTSEL):** Hold BOOTSEL during plug-in and copy the UF2.
@@ -156,15 +156,15 @@ cp build/src/target/pico1calc/ppap_pico1calc.uf2 /media/$USER/RPI-RP2/
 **OpenOCD (any target):**
 
 ```sh
-./scripts/flash.sh                     # flash build/ppap_pico1calc.elf via OpenOCD
-./scripts/flash.sh --build             # rebuild first, then flash
-./scripts/flash.sh build/ppap_pico1.elf  # flash a specific target
+./scripts/flash.sh pico1calc           # build & flash pico1calc via OpenOCD
+./scripts/flash.sh --build pico1       # build only, no flash
+./scripts/flash.sh --test pico1        # build & flash with tests enabled
 ```
 
 ### 4. QEMU
 
 ```sh
-./scripts/qemu.sh            # run build/ppap_qemu_arm.elf — boots to BusyBox hush shell
+./scripts/qemu.sh            # run build/arm_m/ppap_qemu_arm.elf — boots to BusyBox hush shell
 ./scripts/qemu.sh --build    # rebuild first, then run
 ```
 
@@ -185,10 +185,10 @@ Press **Ctrl-A X** to quit QEMU.
 openocd -f openocd.cfg
 
 # Terminal 2 — flash and debug PicoCalc
-gdb-multiarch -x pico1calc.gdb build/ppap_pico1calc.elf
+gdb-multiarch -x pico1calc.gdb build/arm_m/ppap_pico1calc.elf
 
 # Or attach to already-running firmware
-gdb-multiarch -x pico1calc-attach.gdb build/ppap_pico1calc.elf
+gdb-multiarch -x pico1calc-attach.gdb build/arm_m/ppap_pico1calc.elf
 ```
 
 ## Flash Memory Layout

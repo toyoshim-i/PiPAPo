@@ -615,13 +615,13 @@ romfs/
    ```sh
    cp myapp.elf romfs/bin/myapp
    ```
-2. Rebuild: `cd build && ninja`
+2. Rebuild: `cmake --build build/arm_m`
 
 The CMake pipeline automatically:
 1. Builds user binaries (`user/Makefile`)
 2. Builds busybox and installs applet symlinks
 3. Builds rogue and installs to `romfs/bin/rogue`
-4. Runs `mkromfs romfs/ build/romfs.bin`
+4. Runs `mkromfs romfs/ romfs.bin`
 5. Links `romfs.bin` into the kernel via `.incbin`
 
 #### mkromfs Tool
@@ -630,13 +630,13 @@ The `tools/mkromfs/mkromfs.c` tool creates romfs images:
 
 ```sh
 # Build the tool (host compiler, not cross-compiler)
-cc -O2 -I src/kernel/fs -o build/mkromfs tools/mkromfs/mkromfs.c
+cc -O2 -I src/kernel/fs -o build/arm_m/mkromfs tools/mkromfs/mkromfs.c
 
 # Create image
-build/mkromfs romfs/ build/romfs.bin
+build/arm_m/mkromfs romfs/ build/arm_m/romfs.bin
 
 # Inspect image contents
-build/mkromfs --dump build/romfs.bin
+build/arm_m/mkromfs --dump build/arm_m/romfs.bin
 ```
 
 Limits: max 512 entries, max 2 MB image size.
@@ -660,12 +660,10 @@ PPAP includes a QEMU target (`ppap_qemu`) that runs on the `mps2-an500`
 machine (Cortex-M3, compatible with M0+ Thumb-1 code):
 
 ```sh
-cd build && ninja ppap_qemu
+cmake --build build/arm_m --target ppap_qemu_arm
 
-qemu-system-arm -M mps2-an500 -nographic \
-    -kernel ppap_qemu.elf \
-    -device loader,file=fat_test.img,addr=0x21000000 \
-    -semihosting
+# Or use the convenience script:
+./scripts/qemu.sh --build
 ```
 
 The kernel runs all integration tests at boot, then launches `/sbin/init`
@@ -674,10 +672,10 @@ which starts an interactive shell.
 ### Hardware (RP2040)
 
 ```sh
-cd build && ninja ppap
+./scripts/flash.sh pico1calc
 
-# Flash via OpenOCD + GDB
-gdb-multiarch -x ppap.gdb build/ppap.elf
+# Or debug via OpenOCD + GDB
+gdb-multiarch -x pico1calc.gdb build/arm_m/ppap_pico1calc.elf
 ```
 
 Connect a serial terminal to the UART (115200 baud, 8N1) to interact

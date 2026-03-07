@@ -18,7 +18,7 @@
 #   ./scripts/flash.sh --build qemu_arm   # build qemu_arm ELF
 #
 # Alternatively, without a debug adapter, hold BOOTSEL, plug in USB, then:
-#   cp build/src/target/pico1calc/ppap_pico1calc.uf2 /media/$USER/RPI-RP2/
+#   cp build/arm_m/src/target/pico1calc/ppap_pico1calc.uf2 /media/$USER/RPI-RP2/
 #
 # Requirements:
 #   - openocd in PATH (v0.12 or later)
@@ -29,7 +29,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-BUILD_DIR="$PROJECT_DIR/build"
+BUILD_DIR="$PROJECT_DIR/build/arm_m"
 CFG="$PROJECT_DIR/openocd.cfg"
 
 # ── Parse arguments ──────────────────────────────────────────────────────────

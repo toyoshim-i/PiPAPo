@@ -4,7 +4,7 @@
 # The CPU will be wherever it currently is (likely in kmain's for(;;) loop).
 #
 # Usage:
-#   gdb-multiarch -x pico1calc-attach.gdb build/ppap_pico1calc.elf
+#   gdb-multiarch -x pico1calc-attach.gdb build/arm_m/ppap_pico1calc.elf
 #
 # Requires openocd to be running:
 #   openocd -f openocd.cfg

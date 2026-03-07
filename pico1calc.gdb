@@ -3,12 +3,12 @@
 # Two workflows:
 #
 #   Flash + debug from scratch (recommended):
-#     gdb-multiarch -x pico1calc.gdb build/ppap_pico1calc.elf
+#     gdb-multiarch -x pico1calc.gdb build/arm_m/ppap_pico1calc.elf
 #     (gdb) hbreak kmain
 #     (gdb) continue
 #
 #   Attach to already-running firmware (no reflash):
-#     gdb-multiarch -x pico1calc-attach.gdb build/ppap_pico1calc.elf
+#     gdb-multiarch -x pico1calc-attach.gdb build/arm_m/ppap_pico1calc.elf
 #
 # Requires openocd to be running:
 #   openocd -f openocd.cfg

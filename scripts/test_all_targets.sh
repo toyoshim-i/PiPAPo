@@ -17,8 +17,8 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_DIR"
 
 echo "=== Building all targets (production) ==="
-cmake -B build -DPPAP_TESTS=OFF
-cmake --build build -- ppap_qemu_arm ppap_pico1 ppap_pico1calc
+cmake -B build/arm_m -DPPAP_TESTS=OFF
+cmake --build build/arm_m -- ppap_qemu_arm ppap_pico1 ppap_pico1calc
 
 echo ""
 echo "=== Building QEMU with tests ==="
@@ -48,9 +48,9 @@ fi
 
 echo ""
 echo "=== Build sizes (production) ==="
-arm-none-eabi-size build/ppap_qemu_arm.elf \
-                   build/ppap_pico1.elf \
-                   build/ppap_pico1calc.elf 2>/dev/null || true
+arm-none-eabi-size build/arm_m/ppap_qemu_arm.elf \
+                   build/arm_m/ppap_pico1.elf \
+                   build/arm_m/ppap_pico1calc.elf 2>/dev/null || true
 
 echo ""
 echo "=== All targets OK ==="

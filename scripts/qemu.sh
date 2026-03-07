@@ -43,11 +43,11 @@ if [[ "$TARGET" == "m68k" ]]; then
     BUILD_CMD="cmake -DCMAKE_TOOLCHAIN_FILE=$PROJECT_DIR/cmake/toolchain-m68k.cmake -S $PROJECT_DIR/src/target/qemu_m68k -B $PROJECT_DIR/build/m68k && make -C $PROJECT_DIR/build/m68k"
     BUILD_HINT="cd build/m68k && cmake -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain-m68k.cmake -S ../src/target/qemu_m68k -B . && make"
 else
-    ELF="$PROJECT_DIR/build/ppap_qemu_arm.elf"
+    ELF="$PROJECT_DIR/build/arm_m/ppap_qemu_arm.elf"
     QEMU_BIN="qemu-system-arm"
     QEMU_ARGS=(-M mps2-an500 -serial mon:stdio)
-    BUILD_CMD="cmake --build $PROJECT_DIR/build --target ppap_qemu_arm"
-    BUILD_HINT="cmake --build build --target ppap_qemu_arm"
+    BUILD_CMD="cmake --build $PROJECT_DIR/build/arm_m --target ppap_qemu_arm"
+    BUILD_HINT="cmake --build build/arm_m --target ppap_qemu_arm"
 fi
 
 # ── Optional rebuild ──────────────────────────────────────────────────────────

@@ -281,8 +281,8 @@ if [[ $FAIL -eq 0 ]]; then
   echo " PICO_SDK_PATH=${PICO_SDK_PATH}"
   echo ""
   echo " Next step: run CMake to configure the project build."
-  echo "   mkdir -p build && cd build"
-  echo "   cmake .. && cmake --build ."
+  echo "   cmake -B build/arm_m"
+  echo "   cmake --build build/arm_m"
 else
   echo " Setup completed with warnings. Review [WARN] lines above."
 fi

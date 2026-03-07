@@ -7,7 +7,7 @@
 # images for /usr, /home, and /var.  Requires root for mount operations.
 #
 # Prerequisites:
-#   - Build mkufs: cd build && ninja mkufs
+#   - Build mkufs: cmake --build build/arm_m --target mkufs
 #   - SD card with at least one partition
 
 set -euo pipefail
@@ -21,7 +21,7 @@ fi
 DEVICE="$1"
 PARTITION="${DEVICE}1"
 MOUNT="/tmp/ppap_sd"
-BUILD_DIR="$(cd "$(dirname "$0")/../build" && pwd)"
+BUILD_DIR="$(cd "$(dirname "$0")/../build/arm_m" && pwd)"
 
 if [ ! -b "$PARTITION" ]; then
     echo "Error: $PARTITION is not a block device"
@@ -30,7 +30,7 @@ fi
 
 if [ ! -x "$BUILD_DIR/mkufs" ]; then
     echo "Error: mkufs not found at $BUILD_DIR/mkufs"
-    echo "Run: cd build && ninja mkufs"
+    echo "Run: cmake --build build/arm_m --target mkufs"
     exit 1
 fi
 
