@@ -134,10 +134,14 @@ file(GLOB USER_SOURCES ${USER_SRC_DIR}/*.c ${USER_SRC_DIR}/*.S
 
 find_program(MAKE_CMD make REQUIRED)
 
+set(USER_BUILD_DIR ${CMAKE_BINARY_DIR}/user)
+
 add_custom_command(
     OUTPUT ${USER_STAMP}
     COMMAND ${MAKE_CMD} -C ${USER_SRC_DIR} clean
+            BUILD_DIR=${USER_BUILD_DIR}
     COMMAND ${MAKE_CMD} -C ${USER_SRC_DIR} install
+            BUILD_DIR=${USER_BUILD_DIR}
             ROMFS_BIN=${CMAKE_SOURCE_DIR}/romfs/bin
             ROMFS_SBIN=${CMAKE_SOURCE_DIR}/romfs/sbin
             PPAP_TESTS=$<BOOL:${PPAP_TESTS}>

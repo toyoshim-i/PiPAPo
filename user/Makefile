@@ -6,9 +6,9 @@
 # Integrated into the main CMake build via custom command.
 #
 # Usage:
-#   make                           # build all user binaries
-#   make install ROMFS_BIN=<dir>   # copy ELFs to romfs/bin/
-#   make clean                     # remove build artifacts
+#   make BUILD_DIR=../build/user   # build all user binaries (out-of-source)
+#   make install BUILD_DIR=../build/user ROMFS_BIN=<dir>  # install to romfs
+#   make clean BUILD_DIR=../build/user   # remove build artifacts
 # =============================================================================
 
 CROSS   ?= arm-none-eabi-
@@ -19,11 +19,17 @@ OBJDUMP := $(CROSS)objdump
 SIZE    := $(CROSS)size
 NM      := $(CROSS)nm
 
+# Source directory (where this Makefile lives)
+SRC_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
+
+# Build output directory (defaults to source dir for standalone use)
+BUILD_DIR ?= .
+
 ROMFS_BIN ?= ../romfs/bin
 TESTS_DIR ?= ../tests/user
 
-# Search tests/user/ for test_*.c and runtests.c sources
-VPATH := $(TESTS_DIR)
+# Search tests/user/ and source dir for sources
+VPATH := $(SRC_DIR) $(TESTS_DIR)
 
 # Compiler / assembler flags — Cortex-M0+ Thumb, freestanding, no libc
 # PIC flags: all data references go through GOT (r9 = GOT base, set by kernel).
@@ -33,12 +39,12 @@ CFLAGS  := -mthumb -mcpu=cortex-m0plus -march=armv6s-m \
            -ffreestanding -nostdlib -Os -g -Wall -Werror \
            -fPIC -msingle-pic-base -mpic-register=r9 \
            -mno-pic-data-is-text-relative \
-           -I. -I$(TESTS_DIR)
+           -I$(SRC_DIR) -I$(TESTS_DIR)
 ASFLAGS := -mthumb -mcpu=cortex-m0plus -march=armv6s-m
-LDFLAGS := -nostdlib -T user.ld -Wl,--gc-sections
+LDFLAGS := -nostdlib -T $(SRC_DIR)user.ld -Wl,--gc-sections
 
 # Common objects linked into every user program
-COMMON_OBJS := crt0.o syscall.o
+COMMON_OBJS := $(BUILD_DIR)/crt0.o $(BUILD_DIR)/syscall.o
 
 # ── Programs ─────────────────────────────────────────────────────────────────
 # Application programs (sources in user/)
@@ -53,33 +59,36 @@ TESTS :=
 endif
 PROGRAMS := $(APPS) $(TESTS)
 
-ELFS := $(addsuffix .elf, $(PROGRAMS))
+ELFS := $(addprefix $(BUILD_DIR)/, $(addsuffix .elf, $(PROGRAMS)))
 
 # ── Rules ────────────────────────────────────────────────────────────────────
 
-all: $(ELFS)
+all: $(BUILD_DIR) $(ELFS)
 	@for elf in $(ELFS); do $(SIZE) $$elf; done
+
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
 
 # getty: pure assembly (no crt0/syscall needed, no data segment → 1 page)
 # See getty.c for a portable C reference (requires PIC, uses 2 pages).
-getty.o: getty.S
+$(BUILD_DIR)/getty.o: getty.S
 	$(AS) $(ASFLAGS) -c -o $@ $<
 
-getty.elf: getty.o user.ld
-	$(LD) $(LDFLAGS) -o $@ getty.o
+$(BUILD_DIR)/getty.elf: $(BUILD_DIR)/getty.o $(SRC_DIR)user.ld
+	$(LD) $(LDFLAGS) -o $@ $(BUILD_DIR)/getty.o
 	@$(NM) --numeric-sort $@ | grep -E '_start|main|write|_exit'
 
 # Link: common objects + program-specific object → ELF
-%.elf: $(COMMON_OBJS) %.o user.ld
-	$(LD) $(LDFLAGS) -o $@ $(COMMON_OBJS) $*.o
+$(BUILD_DIR)/%.elf: $(COMMON_OBJS) $(BUILD_DIR)/%.o $(SRC_DIR)user.ld
+	$(LD) $(LDFLAGS) -o $@ $(COMMON_OBJS) $(BUILD_DIR)/$*.o
 	@$(NM) --numeric-sort $@ | grep -E '_start|main|write|_exit'
 
 # Compile C sources
-%.o: %.c syscall.h $(wildcard $(TESTS_DIR)/utest.h)
+$(BUILD_DIR)/%.o: %.c $(SRC_DIR)syscall.h $(wildcard $(TESTS_DIR)/utest.h)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # Assemble .S sources
-%.o: %.S
+$(BUILD_DIR)/%.o: %.S
 	$(AS) $(ASFLAGS) -c -o $@ $<
 
 ROMFS_SBIN ?= ../romfs/sbin
@@ -102,6 +111,9 @@ endif
 	@echo "Installed $(ELFS) → $(ROMFS_BIN)/ and $(ROMFS_SBIN)/"
 
 clean:
-	rm -f *.o *.elf
+	rm -rf $(BUILD_DIR)/*.o $(BUILD_DIR)/*.elf
+
+# Prevent make from deleting .o files as intermediates
+.PRECIOUS: $(BUILD_DIR)/%.o
 
 .PHONY: all install clean
