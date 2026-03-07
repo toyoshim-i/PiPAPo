@@ -2,7 +2,7 @@
 
 A UNIX-like micro OS for the RP2040 — bare-metal, no SDK runtime.
 
-> Full design specification: [docs/PicoPiAndPortable-spec-v07.md](docs/PicoPiAndPortable-spec-v07.md)
+> Full design specification: [docs/spec-v07.md](docs/spec-v07.md)
 
 ---
 
@@ -105,7 +105,7 @@ PPAP/
     qemu.sh                 Run ppap_qemu_arm on mps2-an500
     test_all_targets.sh     Build all targets + run QEMU automated tests
   docs/
-    PicoPiAndPortable-spec-v07.md   Full design specification
+    spec-v07.md                     Full design specification
     history/                        Development phase plans and porting notes
 ```
 
