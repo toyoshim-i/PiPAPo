@@ -25,23 +25,15 @@ A UNIX-like micro OS for the RP2040 — bare-metal, no SDK runtime.
 | Flash | 2–16 MB QSPI (XIP) |
 | MPU | 4 regions |
 
-## Project Status
+## Features
 
-| Phase | Description | Status |
-|---|---|---|
-| 0 | Environment Setup — toolchain, UART, bootloader, XIP verification | ✓ Complete |
-| 1 | Kernel Foundation — memory management, context switch, scheduler, syscalls, MPU, ELF loader | ✓ Complete |
-| 2 | romfs + VFS — mkromfs tool, romfs driver, VFS layer, devfs, procfs | ✓ Complete |
-| 3 | Process Execution — ELF loader, vfork/exec, pipe, signals, on-target tests | ✓ Complete |
-| 4 | SD + VFAT — SPI driver, SD card init, FAT32 read/write | ✓ Complete |
-| 5 | UFS + Loopback — UFS driver, loopback block device, fstab mounts | ✓ Complete |
-| 6 | musl + busybox — musl porting, busybox build, interactive ash shell | ✓ Complete |
-| 7 | Target Support Packages — per-target directories, 3 build targets, test cleanup | ✓ Complete |
-| 8 | PIE Binary Optimization — reduce SRAM footprint for user-space binaries | ✓ Complete |
-| 9 | Dual-Core Scheduling — hardware spinlocks, per-core state, Core 1 execution | ✓ Complete |
-| 10 | Stabilization — process lifecycle, memory safety, FS correctness, signal delivery | ✓ Complete |
-| — | **Rogue 5.4.4** — classic dungeon crawler ported with minimal curses shim | ✓ Complete |
-| 11 | PicoCalc Devices — SPI LCD, I2C keyboard, framebuffer console, VT100 emulator, multi-TTY | ✓ Complete |
+- **Kernel** — preemptive dual-core scheduler, vfork/exec, signals, pipes, MPU protection
+- **File systems** — romfs (flash XIP), VFAT (SD card), UFS (loopback images), devfs, procfs, tmpfs
+- **User space** — musl libc, busybox (ash shell + 100+ applets), Rogue 5.4.4
+- **PicoCalc display** — SPI LCD framebuffer console (40×20 / 80×40), VT100/ANSI color emulator
+- **PicoCalc keyboard** — I2C STM32 co-processor, full keymap with function keys
+- **Multi-TTY** — serial console + LCD console with getty login on each
+- **PIE binaries** — position-independent ELFs, code runs from flash (zero SRAM for .text)
 
 ## Future Work
 
@@ -114,8 +106,7 @@ PPAP/
     test_all_targets.sh     Build all targets + run QEMU automated tests
   docs/
     PicoPiAndPortable-spec-v07.md   Full design specification
-    phase00-plan.md .. phase11-plan.md  Phase detailed plans
-    port-rogue.md               Rogue porting plan and audit
+    history/                        Development phase plans and porting notes
 ```
 
 ## Quick Start

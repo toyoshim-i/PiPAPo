@@ -462,31 +462,50 @@ All drivers are built into the kernel (statically linked). Loadable modules are 
 
 ---
 
-## 9. Development Roadmap
+## 9. Feature Summary
 
-| Phase | Estimated Duration | Milestone |
+### 9.1 Kernel
+
+- **Process model:** vfork/exec, waitpid, process groups, sessions
+- **Scheduler:** preemptive round-robin, dual-core (both RP2040 cores run user processes), hardware spinlock synchronization
+- **Memory:** page allocator (4 KB pages), sbrk/brk heap, MPU-based protection (4-region)
+- **Signals:** POSIX sigaction/sigprocmask, signal delivery on return to user-space
+- **IPC:** pipe, dup/dup2, file descriptor passing
+
+### 9.2 File Systems
+
+- **VFS:** mount table, path resolution, per-process file descriptor table
+- **romfs:** read-only root filesystem on QSPI flash, executed via XIP (zero SRAM for code)
+- **VFAT (FAT32):** SD card filesystem for PC/Mac interoperability
+- **UFS:** UNIX filesystem on loopback-mounted image files (full POSIX semantics)
+- **devfs / procfs / tmpfs:** in-memory pseudo-filesystems
+
+### 9.3 User Space
+
+- **musl libc:** ported to ARMv6-M SVC syscall interface; provides full C library
+- **busybox:** statically linked multicall binary with interactive ash shell
+- **Rogue 5.4.4:** classic dungeon crawler with minimal VT100 curses shim
+- **User programs:** hello, init, getty, ttyctl (terminal management utility)
+- **PIE binaries:** position-independent ELFs with GOT-based relocation (r9 = GOT base)
+
+### 9.4 Display and Input (PicoCalc)
+
+- **SPI LCD:** ST7365P 320×320 display via SPI1 at ~33 MHz
+- **Framebuffer console:** dual-mode text rendering (40×20 with 8×16 font, 80×40 with 4×8 font)
+- **VT100/ANSI emulator:** cursor movement, scroll regions, 16-color attributes, erase/insert/delete
+- **I2C keyboard:** STM32 co-processor on I2C1, polled input with keymap translation
+- **Multi-TTY:** /dev/ttyS0 (serial) + /dev/tty1 (LCD+keyboard), getty login on each
+- **Device files:** /dev/backlight, /dev/power, /proc/battery
+
+### 9.5 Build Targets
+
+| Target | Board | Features |
 |---|---|---|
-| Phase 0: Environment Setup | 2 weeks | Toolchain, UART output, minimal bootloader, flash XIP verification |
-| Phase 1: Kernel Foundation | 4 weeks | Memory management, context switch, SVC, MPU setup, Core 1 startup |
-| Phase 2: romfs + VFS | 3 weeks | mkromfs tool, romfs driver, VFS layer, root mount |
-| Phase 3: Process Execution | 4 weeks | ELF loader, vfork/exec, pipe, signals, XIP execution verification |
-| Phase 4: SD + VFAT | 3 weeks | SPI driver, SD card initialization, FAT32 read/write, /mnt/sd mount |
-| Phase 5: UFS + Loopback | 4 weeks | UFS driver, loopback block device, image file mounting at /usr etc. |
-| Phase 6: musl + busybox | 4 weeks | musl porting, busybox build, syscall coverage, interactive ash |
-| Phase 7: Board Support Packages | 2 weeks | Split target-specific code into per-board directories; define `qemu`, `pico1`, `pico1calc` targets |
-| Phase 8: PIE Binary Optimization | 2–3 days | .rodata flash migration, split init/sh binaries, PPAP_HAS_BLKDEV gating, per-target romfs |
-| Phase 9: Dual-Core Scheduling | 3 weeks | Hardware spinlocks, per-core scheduling, both cores execute user processes |
-| Phase 10: Stabilization | 3 weeks | Error handling, OOM visibility, input validation, FS correctness |
-| Rogue 5.4.4 Port | — | Classic dungeon crawler with minimal VT100 curses shim; verified on QEMU and hardware |
-| Phase 11: PicoCalc Device Support | 4 weeks | SPI LCD driver, I2C keyboard, framebuffer text console (40×20 / 80×40), VT100 emulator, multi-TTY, `ttyctl` utility |
+| `ppap_qemu_arm` | QEMU mps2-an500 | CMSDK UART, RAM block device, automated testing |
+| `ppap_pico1` | Raspberry Pi Pico | romfs-only, PL011 UART, no SD card |
+| `ppap_pico1calc` | ClockworkPi PicoCalc | Full feature set: SD, LCD, keyboard, dual-core |
 
-All phases through Phase 11 are complete.  The RP2350 port (Cortex-M33, 8-region MPU, PSRAM) is future work beyond the current MVP scope.
-
-Note: Phase 4 (VFAT) and Phase 5 (UFS + loopback) were a single phase in v0.2. They are split here because the two-layer approach requires the VFAT driver to be functional before loopback mounts can be tested.
-
-Note: Phase 7 (Board Support Packages) was added in v0.4 to formalize multi-board support before stabilization. Prior phases developed code for `qemu` and `pico1calc` (as the implicit RP2040 target); Phase 7 restructures that code into per-target directories and adds the `pico1` target for the official Raspberry Pi Pico board.
-
-Note: Phase 8 (PIE Binary Optimization) was inserted in v0.5 to address SRAM pressure from resident processes. Phase 9 (Dual-Core Scheduling) was added in v0.6 to utilize the RP2040's second core for user process execution. Stabilization was renumbered to Phase 10. Phase 11 (PicoCalc Device Support) adds `pico1calc`-specific peripherals: the embedded SPI/I2C display for console output and framebuffer graphics, and the I2C keyboard for interactive input.
+Development history is archived in `docs/history/` (phase plans and porting notes).
 
 ---
 
@@ -564,4 +583,4 @@ SD card communication in SPI mode supports CRC-based error detection, but is vul
 | v0.4 | Mar 2026 | Defined three build targets (`qemu`, `pico1`, `pico1calc`); added Phase 7 (Board Support Packages) to roadmap; renumbered Stabilization → Phase 8, RP2350 Port → Phase 9 |
 | v0.5 | Mar 2026 | Inserted Phase 8 (PIE Binary Optimization: .rodata flash migration, split init/sh, PPAP_HAS_BLKDEV, per-target romfs); added Phase 10 (PicoCalc Device Support: display + I2C keyboard); renumbered Stabilization → Phase 9, RP2350 Port → Phase 11 |
 | v0.6 | Mar 2026 | Inserted Phase 9 (Dual-Core Scheduling: hardware spinlocks, per-core state, both RP2040 cores run user processes); renumbered Stabilization → Phase 10, PicoCalc → Phase 11, RP2350 → Phase 12 |
-| v0.7 | Mar 2026 | Phase 11 complete: SPI LCD driver (ST7365P), I2C keyboard (STM32), framebuffer text console with dual-mode fonts (40×20 / 80×40), VT100/ANSI escape sequence parser, multi-TTY with getty, `ttyctl` terminal utility, curses shim TIOCGWINSZ query; added display/kbd/backlight/power/battery to device driver table |
+| v0.7 | Mar 2026 | All features complete (MVP). Replaced phase-based roadmap with feature summary. Added PicoCalc devices (LCD, keyboard, backlight, power, battery) to driver table. Phase plans archived to `docs/history/` |
