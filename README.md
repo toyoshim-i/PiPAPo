@@ -11,7 +11,7 @@ A UNIX-like micro OS for the RP2040 — bare-metal, no SDK runtime.
 - Root file system (`/bin`, `/sbin`, `/etc`) on external QSPI flash as **romfs**, executed via XIP
 - SD card as **VFAT (FAT32)** for PC/Mac interoperability; UFS image files mounted via **loopback** for full UNIX semantics
 - POSIX-subset system call interface
-- Run **busybox** (statically linked) with an interactive `ash` shell
+- Run **busybox** (statically linked) with an interactive `hush` shell
 - Run **Rogue 5.4.4** (classic dungeon crawler) via a minimal VT100 curses shim
 - Three build targets: `qemu` (testing), `pico1` (official Pico, romfs-only), `pico1calc` (PicoCalc with SD)
 - **PicoCalc standalone**: embedded LCD console (40×20 / 80×40), I2C keyboard — no host PC required
@@ -29,7 +29,7 @@ A UNIX-like micro OS for the RP2040 — bare-metal, no SDK runtime.
 
 - **Kernel** — preemptive dual-core scheduler, vfork/exec, signals, pipes, MPU protection
 - **File systems** — romfs (flash XIP), VFAT (SD card), UFS (loopback images), devfs, procfs, tmpfs
-- **User space** — musl libc, busybox (ash shell + 100+ applets), Rogue 5.4.4
+- **User space** — musl libc, busybox (hush shell + 100+ applets), Rogue 5.4.4
 - **PicoCalc display** — SPI LCD framebuffer console (40×20 / 80×40), VT100/ANSI color emulator
 - **PicoCalc keyboard** — I2C STM32 co-processor, full keymap with function keys
 - **Multi-TTY** — serial console + LCD console with getty login on each
@@ -140,7 +140,7 @@ Or drag the UF2 onto the RP2040 in BOOTSEL mode:
 ### 4. QEMU
 
 ```sh
-./scripts/qemu.sh            # run build/ppap_qemu_arm.elf — boots to BusyBox ash shell
+./scripts/qemu.sh            # run build/ppap_qemu_arm.elf — boots to BusyBox hush shell
 ./scripts/qemu.sh --build    # rebuild first, then run
 ```
 
@@ -194,6 +194,6 @@ UF2 output to exclude this region (`tools/uf2sanitize.py`).
 | Region | Address | Size | Purpose |
 |---|---|---|---|
 | Kernel data | `0x20000000` | 20 KB | BSS, stack, globals, `.ramfunc` copy |
-| Page pool | `0x20005000` | 204 KB | User process pages (Phase 1+) |
-| I/O buffer | `0x20038000` | 24 KB | SD / FS cache (Phase 2+) |
+| Page pool | `0x20005000` | 204 KB | User process pages  |
+| I/O buffer | `0x20038000` | 24 KB | SD / FS cache  |
 | DMA / Reserved | `0x2003E000` | 16 KB | DMA, PIO, Core 1 stack |

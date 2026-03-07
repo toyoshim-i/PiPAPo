@@ -35,7 +35,7 @@ The RP2040 is a dual-core ARM Cortex-M0+ microcontroller developed by the Raspbe
 - Mount the SD card's VFAT partition for universal PC/Mac interoperability
 - Support UFS image files on the VFAT partition, mounted via loopback for full UNIX semantics
 - Provide a POSIX-subset system call interface
-- Run busybox (statically linked) with an interactive ash shell
+- Run busybox (statically linked) with an interactive hush shell
 - Maintain a clear porting path to the RP2350 (Cortex-M33 + enhanced MPU)
 
 ### 1.3 Target Hardware
@@ -376,23 +376,23 @@ A minimal POSIX subset is implemented to support busybox operation. The SVC inst
 
 ### 6.1 Build Approach
 
-busybox is cross-compiled for ARM Thumb (armv6m) using musl libc with full static linking. In minimal configuration (ash + basic coreutils), the binary is approximately 200–400KB. This binary is placed in the flash romfs at /bin/busybox and executed directly via XIP.
+busybox is cross-compiled for ARM Thumb (armv6m) using musl libc with full static linking. In minimal configuration (hush + basic coreutils), the binary is approximately 200–400KB. This binary is placed in the flash romfs at /bin/busybox and executed directly via XIP.
 
 ### 6.2 Minimum Applet Set
 
 | Category | Applets | Notes |
 |---|---|---|
-| Shell | ash | POSIX-compliant lightweight shell. Pipes, redirection, variable expansion |
+| Shell | hush | Lightweight shell with bash compatibility. Pipes, redirection, variable expansion |
 | File Operations | ls, cp, mv, rm, cat, mkdir, rmdir, ln, chmod | Basic file operations |
 | Text Processing | echo, printf, grep, head, tail, wc, sort, sed | Pipeline processing |
 | Process Management | ps, kill, sleep | Process control |
 | System | mount, umount, df, free, uname, dmesg | System administration |
-| Initialization | init | PID 1 process. Launches ash based on /etc/inittab |
+| Initialization | init | PID 1 process. Launches hush based on /etc/inittab |
 | Block Devices | losetup | Loop device setup (maps image files to /dev/loopN) |
 
 ### 6.3 XIP Execution Model
 
-The busybox binary resides on flash and is executed directly by the CPU via XIP. Since busybox is a multicall binary, all applets are contained in a single binary and invoked through symbolic links (e.g., /bin/ls → /bin/busybox). SRAM consumption per applet execution is limited to each process's stack (4–8KB) and heap only — the code segment consumes no SRAM at all. This means that even with 4 concurrent processes (e.g., ash shell + 3-stage pipeline), no additional memory is needed for code.
+The busybox binary resides on flash and is executed directly by the CPU via XIP. Since busybox is a multicall binary, all applets are contained in a single binary and invoked through symbolic links (e.g., /bin/ls → /bin/busybox). SRAM consumption per applet execution is limited to each process's stack (4–8KB) and heap only — the code segment consumes no SRAM at all. This means that even with 4 concurrent processes (e.g., hush shell + 3-stage pipeline), no additional memory is needed for code.
 
 ### 6.4 musl libc Porting
 
@@ -401,7 +401,7 @@ The Linux system call wrapper layer in musl libc is rewritten for this OS. Speci
 - syscall(): SVC instruction trap mapped to PicoPiAndPortable's syscall numbers
 - pthread: single-thread stub in the initial stage; TLS via a simplified implementation (single global variable)
 - mmap: anonymous mappings only (malloc backend); file mappings not supported
-- signal: POSIX-compliant sigaction/sigprocmask; required by busybox's ash and wait
+- signal: POSIX-compliant sigaction/sigprocmask; required by busybox's hush and wait
 - stdio: standard fd-based operations; internal buffering uses musl's user-space implementation as-is
 
 ### 6.5 Third-Party Applications
@@ -430,7 +430,7 @@ The boot sequence from power-on to shell prompt is described below.
 
 **Stage 5 — Loopback Mounts:** Opens ppap_usr.img, ppap_home.img, and ppap_var.img on the VFAT partition. Creates loopback block devices (/dev/loop0, /dev/loop1, /dev/loop2). Mounts each as UFS at /usr, /home, and /var respectively.
 
-**Stage 6 — User Space:** Launches /sbin/init (busybox init) as PID 1 (XIP execution from romfs). init reads /etc/inittab and spawns ash on the console (/dev/ttyS0). The shell reads /etc/profile and displays the prompt.
+**Stage 6 — User Space:** Launches /sbin/init (busybox init) as PID 1 (XIP execution from romfs). init reads /etc/inittab and spawns hush on the console (/dev/ttyS0). The shell reads /etc/profile and displays the prompt.
 
 The boot time target is under 2 seconds from power-on to shell prompt on `pico1calc`. SD card initialization (200–500ms) is the largest bottleneck. The sequential VFAT mount + 3 loopback mounts add approximately 100–300ms.
 
@@ -483,7 +483,7 @@ All drivers are built into the kernel (statically linked). Loadable modules are 
 ### 9.3 User Space
 
 - **musl libc:** ported to ARMv6-M SVC syscall interface; provides full C library
-- **busybox:** statically linked multicall binary with interactive ash shell
+- **busybox:** statically linked multicall binary with interactive hush shell
 - **Rogue 5.4.4:** classic dungeon crawler with minimal VT100 curses shim
 - **User programs:** hello, init, getty, ttyctl (terminal management utility)
 - **PIE binaries:** position-independent ELFs with GOT-based relocation (r9 = GOT base)
@@ -533,7 +533,7 @@ Adding the VFAT driver (~8KB code, ~2KB data) and loopback layer (~2KB code, ~0.
 
 ### 10.6 busybox Compatibility
 
-busybox is developed with the assumption of a Linux kernel, and some applets depend on Linux-specific system calls (clone, epoll, inotify, specific /proc entries, etc.). The ash shell and basic command set are prioritized, with Linux-specific features returning stubs or ENOSYS. Syscall coverage will be expanded incrementally.
+busybox is developed with the assumption of a Linux kernel, and some applets depend on Linux-specific system calls (clone, epoll, inotify, specific /proc entries, etc.). The hush shell and basic command set are prioritized, with Linux-specific features returning stubs or ENOSYS. Syscall coverage will be expanded incrementally.
 
 ### 10.7 SD Card Reliability
 
@@ -564,7 +564,7 @@ SD card communication in SPI mode supports CRC-based error detection, but is vul
 - **Traditional UNIX:** romfs (/) + UFS (loopback on VFAT) maintains UNIX semantics while embracing real-world interoperability
 - **Universal Interoperability:** The SD card is standard FAT32, readable by any PC/Mac. No special tools needed to set up or exchange files
 - **Maximize XIP:** Execute all kernel and busybox code via XIP from flash, reserving SRAM exclusively for data
-- **busybox First:** All design decisions prioritize running busybox ash as the primary goal
+- **busybox First:** All design decisions prioritize running busybox hush as the primary goal
 - **Incremental Development:** Start with single-process shell execution, then expand to multi-process and eventually multi-user
 - **Multi-board from day one:** Target-specific code (drivers, pin definitions, boot sequences, linker scripts) is isolated in per-board directories, enabling the same kernel to run on QEMU, official Pico, and PicoCalc with minimal `#ifdef` usage
 - **Investment in the Future:** Ensure the RP2350 porting path from the outset through the MPU abstraction layer and process model design
