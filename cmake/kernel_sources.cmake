@@ -1,17 +1,23 @@
 # kernel_sources.cmake — Shared kernel sources common to all targets.
 # Included by each target's CMakeLists.txt.
 
+# Architecture-specific assembly sources (ARM Cortex-M for now).
+# Future architectures (m68k, arm_a) will have their own ARCH_*_SOURCES.
+set(ARCH_ARM_M_SOURCES
+    ${CMAKE_SOURCE_DIR}/src/arch/arm_m/boot.S
+    ${CMAKE_SOURCE_DIR}/src/arch/arm_m/switch.S
+    ${CMAKE_SOURCE_DIR}/src/arch/arm_m/trap.S
+)
+
 set(KERNEL_COMMON_SOURCES
-    ${CMAKE_SOURCE_DIR}/src/boot/startup.S
+    ${ARCH_ARM_M_SOURCES}
     ${CMAKE_SOURCE_DIR}/src/kernel/main.c
     ${CMAKE_SOURCE_DIR}/src/kernel/mm/xip.c
     ${CMAKE_SOURCE_DIR}/src/kernel/mm/page.c
     ${CMAKE_SOURCE_DIR}/src/kernel/mm/kmem.c
     ${CMAKE_SOURCE_DIR}/src/kernel/mm/mpu.c
     ${CMAKE_SOURCE_DIR}/src/kernel/proc/proc.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/proc/switch.S
     ${CMAKE_SOURCE_DIR}/src/kernel/proc/sched.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/syscall/svc.S
     ${CMAKE_SOURCE_DIR}/src/kernel/syscall/syscall.c
     ${CMAKE_SOURCE_DIR}/src/kernel/syscall/sys_proc.c
     ${CMAKE_SOURCE_DIR}/src/kernel/syscall/sys_io.c

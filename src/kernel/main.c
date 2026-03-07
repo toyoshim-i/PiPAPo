@@ -25,6 +25,7 @@
 #include "exec/exec.h"
 #include "smp.h"
 #include "spinlock.h"
+#include "arch/arm_m/arch.h"
 #include "errno.h"
 
 /* Linker-provided romfs image location in flash */
@@ -90,7 +91,7 @@ void kmain(void)
     proc_table[0].stack_page = page_alloc();
     if (!proc_table[0].stack_page) {
         klog("PANIC: no page for thread 0 stack\n");
-        for (;;) __asm__ volatile ("wfi");
+        for (;;) arch_wfi();
     }
 
     /* Launch init as PID 1 */
@@ -116,7 +117,7 @@ void kmain(void)
             klogf("PANIC: no init or shell (err=%u)\n",
                   (uint32_t)(-(int)exec_err));
             proc_free(init);
-            for (;;) __asm__ volatile ("wfi");
+            for (;;) arch_wfi();
         }
     }
 
@@ -131,6 +132,6 @@ void kmain(void)
     /* Idle thread — wake on every interrupt, flush LCD if needed, sleep. */
     for (;;) {
         sched_display_poll();
-        __asm__ volatile ("wfi");
+        arch_wfi();
     }
 }

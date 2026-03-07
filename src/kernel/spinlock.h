@@ -19,6 +19,7 @@
 #define PPAP_SPINLOCK_H
 
 #include <stdint.h>
+#include "arch/arm_m/arch.h"
 
 #define SIO_BASE            0xD0000000u
 #define SIO_CPUID           (*(volatile uint32_t *)(SIO_BASE + 0x000u))
@@ -75,9 +76,7 @@ static inline void spin_locks_reset(void)
 
 static inline uint32_t spin_lock_irqsave(uint32_t lock_num)
 {
-    uint32_t saved;
-    __asm__ volatile ("mrs %0, primask" : "=r"(saved));
-    __asm__ volatile ("cpsid i");
+    uint32_t saved = arch_irq_save();
     if (spin_have_hw()) {
         volatile uint32_t *lock =
             (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
@@ -94,7 +93,7 @@ static inline void spin_unlock_irqrestore(uint32_t lock_num, uint32_t saved)
             (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
         *lock = 0u;
     }
-    __asm__ volatile ("msr primask, %0" :: "r"(saved));
+    arch_irq_restore(saved);
 }
 
 #endif /* PPAP_SPINLOCK_H */

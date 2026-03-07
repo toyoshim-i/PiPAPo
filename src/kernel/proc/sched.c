@@ -17,7 +17,8 @@
 #include "../mm/page.h"    /* PAGE_SIZE */
 #include "../spinlock.h"   /* SPIN_PROC */
 #include "../fd/tty.h"     /* tty_rx_notify */
-#include "hw/cortex_m0plus.h"
+#include "arch/arm_m/arch.h"
+#include "arch/arm_m/cpu.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -94,7 +95,7 @@ void sched_tick(void)
 
     if (--current->ticks_remaining == 0u) {
         current->ticks_remaining = PROC_DEFAULT_TICKS;
-        SCB_ICSR |= PENDSVSET;   /* trigger PendSV (runs after SysTick exits) */
+        arch_yield();   /* trigger PendSV (runs after SysTick exits) */
     }
 }
 
@@ -229,14 +230,14 @@ void sched_start(void)
     SYST_CSR = SYST_CSR_ENABLE | SYST_CSR_TICKINT | SYST_CSR_CLKSOURCE;
 
     /* Enable interrupts — scheduler is now live. */
-    __asm__ volatile("cpsie i");
+    arch_irq_enable();
 }
 
 /* ── Cooperative yield ─────────────────────────────────────────────────────── */
 
 void sched_yield(void)
 {
-    SCB_ICSR |= PENDSVSET;   /* pend PendSV; fires at next instruction boundary */
+    arch_yield();   /* pend PendSV; fires at next instruction boundary */
 }
 
 /* ── Channel-based wakeup ──────────────────────────────────────────────────── */
@@ -257,7 +258,7 @@ void sched_wakeup(void *channel)
     /* Trigger context switch so woken process runs promptly.
      * PendSV has lowest priority — fires after the current ISR returns. */
     if (woke)
-        SCB_ICSR |= PENDSVSET;
+        arch_yield();
 }
 
 /* ── Sleep ──────────────────────────────────────────────────────────────────── */
@@ -266,7 +267,7 @@ void sched_sleep(uint32_t ticks)
 {
     current->sleep_until    = tick_count + ticks;
     current->state          = PROC_SLEEPING;
-    SCB_ICSR |= PENDSVSET;  /* yield CPU; PendSV fires after caller returns */
+    arch_yield();  /* yield CPU; PendSV fires after caller returns */
     /* Execution resumes here after sched_tick() marks us RUNNABLE again
      * and PendSV restores our context. */
 }

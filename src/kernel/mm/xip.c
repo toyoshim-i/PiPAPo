@@ -26,7 +26,7 @@
 
 #include "xip.h"
 #include "../klog.h"
-#include "hw/cortex_m0plus.h"
+#include "arch/arm_m/cpu.h"
 #include <stdint.h>
 
 /* Alias: xip.c uses CLKSOURCE name without _CPU suffix for brevity */

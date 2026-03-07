@@ -15,7 +15,7 @@
 #include "../mm/page.h"   /* PAGE_SIZE — for proc_setup_stack */
 #include "../spinlock.h"  /* SPIN_PROC */
 #include "../klog.h"
-#include "hw/cortex_m0plus.h" /* XPSR_THUMB_BIT, EXC_RETURN_THREAD_PSP */
+#include "arch/arm_m/cpu.h" /* XPSR_THUMB_BIT, EXC_RETURN_THREAD_PSP */
 #include <stddef.h>   /* NULL, offsetof */
 
 /* Default file creation mask (octal 022 → owner rw, group/other r) */

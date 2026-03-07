@@ -35,9 +35,16 @@ typedef void (*sighandler_t)(int);
  * Used in switch.S to save/restore the process stack pointer.
  * A _Static_assert in proc.c verifies this at compile time.
  *
- * Layout: r4(0) r5(4) r6(8) r7(12) r8(16) r9(20) r10(24) r11(28) sp(32)
+ * ARM Cortex-M: r4..r11 (8×4=32) → sp at offset 32
+ * m68k:         d2..d7,a2..a6 (11×4=44) → sp at offset 44
  */
+#if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
 #define PCB_SP_OFFSET  32u
+#elif defined(__m68k__)
+#define PCB_SP_OFFSET  44u
+#else
+#error "Unsupported architecture — define PCB_SP_OFFSET"
+#endif
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
@@ -55,15 +62,25 @@ typedef enum {
 
 typedef struct pcb {
     /*
-     * Saved CPU context.
-     * IMPORTANT: the byte offsets of r4–r11 and sp MUST match the
-     * #defines used in switch.S.  Do not reorder these fields.
+     * Saved CPU context — architecture-dependent.
+     * IMPORTANT: the byte offsets MUST match the #defines used in switch.S
+     * (PCB_SP_OFFSET).  Do not reorder these fields.
+     *
+     * ARM Cortex-M: callee-saved r4–r11 + saved PSP.
+     *   r0–r3, r12, lr, pc, xpsr are saved by hardware on exception entry.
+     * m68k (future): callee-saved d2–d7/a2–a6 + saved SP.
      */
+#if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
     uint32_t r4, r5, r6, r7;       /* callee-saved low registers  (offsets 0–15)  */
     uint32_t r8, r9, r10, r11;     /* callee-saved high registers (offsets 16–31) */
     uint32_t sp;                    /* saved PSP                   (offset 32)     */
-    /* r0–r3, r12, lr, pc, xpsr are saved automatically by hardware on exception
-     * entry; the PendSV handler saves only the callee-saved registers above.   */
+#elif defined(__m68k__)
+    uint32_t d2, d3, d4, d5, d6, d7;  /* callee-saved data regs  (offsets 0–23)   */
+    uint32_t a2, a3, a4, a5, a6;      /* callee-saved addr regs  (offsets 24–43)  */
+    uint32_t sp;                       /* saved SP                (offset 44)      */
+#else
+    #error "Unsupported architecture — define PCB register save area"
+#endif
 
     /* ── Identity ───────────────────────────────────────────────────────── */
     pid_t        pid;

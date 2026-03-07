@@ -19,6 +19,7 @@
 #include "../proc/proc.h"
 #include "../../drivers/uart.h"
 #include "../klog.h"
+#include "arch/arm_m/arch.h"
 #include <stdint.h>
 
 /* ── MPU register addresses (ARMv6-M §B3.5) ─────────────────────────────── */
@@ -132,7 +133,7 @@ void mpu_init(void)
 
     /* Data and instruction synchronisation barriers required after enabling
      * the MPU to ensure subsequent memory accesses use the new configuration */
-    __asm__ volatile ("dsb\n isb" ::: "memory");
+    arch_dsb_isb();
 
     mpu_present = 1;
     klog("MPU: 4 regions active (kernel/flash/stack/periph)\n");
@@ -155,5 +156,5 @@ void mpu_switch(pcb_t *next)
     /* Reprogram region 2 for the incoming process's 4 KB stack page */
     mpu_set_region(2u, (uint32_t)(uintptr_t)next->stack_page, RASR_R2);
 
-    __asm__ volatile ("dsb\n isb" ::: "memory");
+    arch_dsb_isb();
 }

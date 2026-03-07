@@ -31,7 +31,8 @@
 #include "mm/mpu.h"           /* mpu_init */
 #include "../drivers/uart.h"
 #include "klog.h"
-#include "hw/cortex_m0plus.h" /* SCB_SHPR2/3, SYST_*, priority masks */
+#include "arch/arm_m/arch.h"
+#include "arch/arm_m/cpu.h" /* SCB_SHPR2/3, SYST_*, priority masks */
 #include "config.h"
 #include <stdint.h>
 
@@ -65,7 +66,7 @@ void sio_fifo_push(uint32_t value)
     while (!(SIO_FIFO_ST & SIO_FIFO_RDY))
         ;
     SIO_FIFO_WR = value;
-    __asm__ volatile ("sev");   /* wake the other core if it is in WFE */
+    arch_sev();   /* wake the other core if it is in WFE */
 }
 
 /* ── sio_fifo_pop ────────────────────────────────────────────────────────── */
@@ -73,7 +74,7 @@ void sio_fifo_push(uint32_t value)
 uint32_t sio_fifo_pop(void)
 {
     while (!(SIO_FIFO_ST & SIO_FIFO_VLD))
-        __asm__ volatile ("wfe");   /* sleep until other core signals SEV */
+        arch_wfe();   /* sleep until other core signals SEV */
     return SIO_FIFO_RD;
 }
 
@@ -95,7 +96,7 @@ uint32_t sio_fifo_pop(void)
 void core1_sched_entry(void)
 {
     /* Disable interrupts until everything is configured */
-    __asm__ volatile("cpsid i");
+    arch_irq_disable();
 
     /* 1. Program Core 1's MPU (regions 0, 1, 3) */
     mpu_init();
@@ -110,12 +111,12 @@ void core1_sched_entry(void)
     pcb_t *idle = proc_alloc();
     if (!idle) {
         klog("SMP: Core 1 idle alloc FAILED\n");
-        for (;;) __asm__ volatile("wfi");
+        for (;;) arch_wfi();
     }
     idle->stack_page = page_alloc();
     if (!idle->stack_page) {
         klog("SMP: Core 1 stack alloc FAILED\n");
-        for (;;) __asm__ volatile("wfi");
+        for (;;) arch_wfi();
     }
     idle->state = PROC_RUNNABLE;
     idle->ticks_remaining = PROC_DEFAULT_TICKS;
@@ -144,10 +145,10 @@ void core1_sched_entry(void)
 
     /* 6. Enable interrupts and enter idle loop.
      * PendSV switches to a RUNNABLE process when one becomes available. */
-    __asm__ volatile("cpsie i");
+    arch_irq_enable();
 
     for (;;)
-        __asm__ volatile("wfi");
+        arch_wfi();
 }
 
 /* ── core1_reset ─────────────────────────────────────────────────────────── */
@@ -238,21 +239,21 @@ void core1_launch(void (*entry)(void))
             while (SIO_FIFO_ST & SIO_FIFO_VLD)
                 (void)SIO_FIFO_RD;
             /* Wake Core 1 so it re-polls the FIFO */
-            __asm__ volatile ("sev");
+            arch_sev();
         }
 
         /* Wait for TX FIFO to have space, then send the word */
         while (!(SIO_FIFO_ST & SIO_FIFO_RDY))
             ;
         SIO_FIFO_WR = word;
-        __asm__ volatile ("sev");
+        arch_sev();
 
         /* For non-zero words, wait for Core 1's echo acknowledgement */
         if (word != 0u) {
             uint32_t resp;
             do {
                 while (!(SIO_FIFO_ST & SIO_FIFO_VLD))
-                    __asm__ volatile ("wfe");
+                    arch_wfe();
                 resp = SIO_FIFO_RD;
             } while (resp != word);
         }
