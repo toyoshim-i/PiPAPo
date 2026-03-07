@@ -6,7 +6,7 @@ This document summarizes the hardware specifications and development information
 
 - **Core Module**: Raspberry Pi Pico (RP2040) or Pico 2 (RP2350).
 - **Display**: 4-inch 320x320 IPS LCD (Color).
-  - Driver: ST7796S or ILI9488 (both support MIPI DCS, same init sequence).
+  - Controller: ST7365P (Sitronix, ILI9488-compatible). See [PicoCalc-LCD.md](PicoCalc-LCD.md).
   - Interface: SPI1 (TX-only, no MISO line).
   - SPI Clock: ~33 MHz (133 MHz / 4, CPSDVSR=2, SCR=1).
   - Pixel Format: RGB565 (16-bit, 65K colours).
@@ -118,19 +118,20 @@ Special keycodes (from `keyboard.h` in STM32 firmware):
 
 ## LCD Initialization
 
-The LCD uses standard MIPI DCS commands, compatible with both ST7796S and ILI9488:
+The LCD controller is an ST7365P (Sitronix), marketed as ILI9488-compatible.
+It uses MIPI DCS commands plus vendor-specific extensions that require an
+unlock sequence. The actual initialization is an 18-step sequence including
+vendor command unlock, power control, gamma correction, and display inversion.
 
-1. **Hardware Reset**: RST low 10ms, release, wait 120ms.
-2. **Software Reset**: CMD `0x01`, wait 120ms.
-3. **Sleep Out**: CMD `0x11`, wait 120ms.
-4. **Pixel Format**: CMD `0x3A`, data `0x55` (RGB565, 16-bit).
-5. **Memory Access Control**: CMD `0x36`, data `0x00` (normal orientation).
-6. **Set Address Window**: CASET `0x2A` + RASET `0x2B` to 320x320.
-7. **Display On**: CMD `0x29`.
-8. **Fill Black**: Write 320x320 pixels of `0x0000` via CMD `0x2C`.
+See [PicoCalc-LCD.md](PicoCalc-LCD.md) for the full initialization sequence,
+SPI transport details, and framebuffer console architecture.
 
-**Note**: MADCTL (`0x36`) value may need adjustment depending on panel mounting
-orientation. The correct value must be verified on hardware.
+Key differences from a naive MIPI DCS init:
+- **Vendor unlock required**: CMD `0xF0` with keys `0xC3` and `0x96` to enable
+  RGB565 over 4-wire SPI (without this, COLMOD `0x55` is silently ignored).
+- **MADCTL**: `0x48` (MX | BGR) — MX mirrors for panel orientation, BGR for
+  the ST7365P's native subpixel order.
+- **Display inversion on** (CMD `0x21`) is required for correct colour polarity.
 
 ## SD Card Interface
 - **SPI Bus**: `spi0` (hardware SPI0 peripheral)
