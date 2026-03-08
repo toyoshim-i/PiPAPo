@@ -162,8 +162,6 @@ int vfs_mount(const char *path, const vfs_ops_t *ops, uint8_t flags,
     mount_count++;
     spin_unlock_irqrestore(SPIN_VFS, saved);
 
-    klogf("VFS: mounted at %s\n", mnt->path);
-
     return 0;
 }
 

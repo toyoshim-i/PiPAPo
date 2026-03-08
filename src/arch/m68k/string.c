@@ -65,6 +65,24 @@ int strncmp(const char *a, const char *b, size_t n)
     return n ? ((int)(unsigned char)*a - (int)(unsigned char)*b) : 0;
 }
 
+char *strcpy(char *dest, const char *src)
+{
+    char *d = dest;
+    while ((*d++ = *src++))
+        ;
+    return dest;
+}
+
+char *strncpy(char *dest, const char *src, size_t n)
+{
+    char *d = dest;
+    while (n && (*d++ = *src++))
+        n--;
+    while (n--)
+        *d++ = '\0';
+    return dest;
+}
+
 int memcmp(const void *s1, const void *s2, size_t n)
 {
     const uint8_t *a = (const uint8_t *)s1;

@@ -25,6 +25,17 @@
  */
 
 #include "smp.h"
+
+/* ── m68k: single-core stubs ─────────────────────────────────────────── */
+#if defined(__m68k__)
+
+void core1_launch(void (*entry)(void)) { (void)entry; }
+void core1_sched_entry(void) { }
+void sio_fifo_push(uint32_t value) { (void)value; }
+uint32_t sio_fifo_pop(void) { return 0; }
+
+#else /* ARM */
+
 #include "proc/proc.h"        /* pcb_t, proc_alloc, current_core */
 #include "proc/sched.h"       /* SYSTICK_RELOAD */
 #include "mm/page.h"
@@ -261,3 +272,5 @@ void core1_launch(void (*entry)(void))
 
     klog("SMP: Core 1 launched\n");
 }
+
+#endif /* __m68k__ */

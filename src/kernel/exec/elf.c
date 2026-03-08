@@ -1,9 +1,10 @@
 /*
  * elf.c — Minimal ELF32 parser for PPAP
  *
- * Validates ELF32 ARM Thumb headers and extracts PT_LOAD segments.
- * Used by execve() (Phase 3 Step 3) to locate the entry point and
- * loadable segments of user-space binaries stored in romfs XIP flash.
+ * Validates ELF32 headers and extracts PT_LOAD segments.
+ * Supports ARM (little-endian) and m68k (big-endian) targets.
+ * Used by execve() to locate the entry point and loadable segments
+ * of user-space binaries stored in romfs.
  *
  * Pure C — no hardware dependencies, no memory allocation.
  */
@@ -27,21 +28,28 @@ int elf_validate(const elf32_ehdr_t *ehdr)
     if (ehdr->e_ident[EI_CLASS] != ELFCLASS32)
         return -(int)ENOEXEC;
 
-    /* Data: must be little-endian */
+    /* Architecture-specific checks */
+#if defined(__m68k__)
+    if (ehdr->e_ident[EI_DATA] != ELFDATA2MSB)
+        return -(int)ENOEXEC;
+    if (ehdr->e_machine != EM_68K)
+        return -(int)ENOEXEC;
+#else
     if (ehdr->e_ident[EI_DATA] != ELFDATA2LSB)
         return -(int)ENOEXEC;
-
-    /* Machine: must be ARM */
     if (ehdr->e_machine != EM_ARM)
         return -(int)ENOEXEC;
+#endif
 
     /* Type: ET_EXEC (static) or ET_DYN (PIC) */
     if (ehdr->e_type != ET_EXEC && ehdr->e_type != ET_DYN)
         return -(int)ENOEXEC;
 
+#if !defined(__m68k__)
     /* ARM EABI version 5 */
     if ((ehdr->e_flags & EF_ARM_EABI_VER_MASK) != EF_ARM_EABI_VER5)
         return -(int)ENOEXEC;
+#endif
 
     /* Must have program headers with valid entry size */
     if (ehdr->e_phoff == 0 || ehdr->e_phnum == 0)

@@ -28,12 +28,27 @@
 #include "../errno.h"
 #include <stddef.h>
 
-/* ── sigreturn_trampoline ─────────────────────────────────────────────────── */
+/* ── Architecture-specific signal delivery ─────────────────────────────────
+ *
+ * ARM: sigreturn_trampoline (naked ASM), signal_setup_frame (PSP
+ *      manipulation), signal_check (delivers via HW exception frame).
+ *
+ * m68k: not yet implemented — stubs only.  signal_check is a no-op;
+ *       sys_sigreturn / sys_rt_sigreturn return -ENOSYS.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+#if defined(__m68k__)
+
+/* m68k stubs — signal delivery not yet supported */
+void sigreturn_trampoline(void) { for (;;); }
+void signal_check(void) { }
+
+#else /* ARM */
+
 /*
  * Placed in kernel .text (flash XIP).  User-mode code can execute flash.
  * When the signal handler does bx lr, it lands here.
  * Uses SYS_RT_SIGRETURN(173) since musl's rt_sigaction is used.
- * Note: movs can encode immediates 0-255, so 173 fits.
  */
 __attribute__((naked, used, section(".text.sigreturn_trampoline")))
 void sigreturn_trampoline(void)
@@ -121,6 +136,8 @@ void signal_check(void)
     }
 }
 
+#endif /* __m68k__ */
+
 /* ── sys_kill ─────────────────────────────────────────────────────────────── */
 
 long sys_kill(long pid, long sig)
@@ -179,6 +196,14 @@ long sys_sigaction(long sig, long handler, long old_ptr)
 }
 
 /* ── sys_sigreturn ────────────────────────────────────────────────────────── */
+
+#if defined(__m68k__)
+
+long sys_sigreturn(void)  { return -(long)ENOSYS; }
+long sys_rt_sigreturn(void) { return -(long)ENOSYS; }
+
+#else /* ARM */
+
 /*
  * Restore context after a signal handler returns via sigreturn_trampoline.
  *
@@ -196,12 +221,12 @@ long sys_sigreturn(void)
     return 0;  /* value ignored — sigframe[0] has original r0 */
 }
 
-/* ── sys_rt_sigreturn ────────────────────────────────────────────────────── */
-
 long sys_rt_sigreturn(void)
 {
     return sys_sigreturn();   /* same mechanism */
 }
+
+#endif /* __m68k__ */
 
 /* ── sys_rt_sigaction ────────────────────────────────────────────────────── */
 /*

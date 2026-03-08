@@ -71,7 +71,7 @@ void timer_init(void)
     /* Enable the RTC IRQ */
     RTC_IRQ_ENABLED = 1u;
 
-    klog("TIMER: Goldfish RTC @ 0xFF006000  period=10ms  IRQ=level6\n");
+    /* Timer ready — no boot log (consistent with ARM SysTick) */
 }
 
 /* ── Timer ISR C handler ─────────────────────────────────────────────────── *

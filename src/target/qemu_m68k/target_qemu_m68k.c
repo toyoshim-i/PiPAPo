@@ -1,39 +1,103 @@
 /*
  * target_qemu_m68k.c — Target implementation for QEMU virt m68k
  *
- * Phase C: shared kernel subsystems compiled for m68k.
- * Exercises the memory manager, process table, context switch
- * (cooperative + preemptive), and TRAP #0 syscall entry.
+ * Implements the target hook API (target.h) for the QEMU virt m68k machine.
+ * QEMU virt m68k: RAM at 0x0, Goldfish TTY at 0xFF008000, Goldfish RTC
+ * timer at 0xFF006000.
  *
- * QEMU virt m68k: RAM at 0x0, Goldfish TTY at 0xFF008000.
  * Run with:
  *   qemu-system-m68k -machine virt -cpu m68000 -nographic \
  *       -kernel ppap_qemu_m68k.elf
  */
 
+#include "../target.h"
 #include "drivers/uart.h"
 #include "mm/page.h"
 #include "proc/proc.h"
 #include "proc/sched.h"
-#include "vfs/vfs.h"
-#include "fs/romfs.h"
 #include "fs/romfs_format.h"
 #include "klog.h"
 #include "arch/arch.h"
+#include "errno.h"
 #include <stdint.h>
-
-/* ── Stubs for subsystems not yet ported to m68k ─────────────────────── */
-
-/* tty_rx_notify is called from sched_timer_tick's input polling path.
- * No tty subsystem on m68k yet — stub it out. */
-void tty_rx_notify(int idx) { (void)idx; }
+#include <stddef.h>
 
 /* ── Timer driver ────────────────────────────────────────────────────── */
 
 /* Defined in drivers/timer_qemu_m68k.c */
 extern void timer_init(void);
 
-/* ── TRAP #0 syscall dispatch (Phase C Step 8) ───────────────────────── *
+/* ── In-memory romfs image ───────────────────────────────────────────── *
+ *
+ * On m68k, the romfs image must be in target-native endian (big-endian).
+ * mkromfs builds on the host (little-endian x86), so we cannot use a
+ * pre-built image.  Instead, we place a buffer in the .romfs section
+ * (so that the linker symbols __romfs_start/__romfs_end bracket it)
+ * and fill it at runtime in target_early_init().
+ *
+ * The image contains:
+ *   /              — root directory
+ *   /etc/          — directory
+ *   /etc/fstab     — mount table (devfs, procfs, tmpfs)
+ * ────────────────────────────────────────────────────────────────────── */
+
+static uint8_t m68k_romfs_buf[512]
+    __attribute__((section(".romfs"), aligned(4)));
+
+static void build_boot_romfs(void)
+{
+    __builtin_memset(m68k_romfs_buf, 0, sizeof(m68k_romfs_buf));
+
+    static const char fstab_data[] =
+        "none /dev devfs rw\n"
+        "none /proc procfs ro\n"
+        "none /tmp tmpfs rw\n";
+
+    /* Superblock at offset 0 */
+    romfs_super_t *sb = (romfs_super_t *)m68k_romfs_buf;
+    sb->magic      = ROMFS_MAGIC;
+    sb->file_count = 3;
+    sb->root_off   = (uint32_t)sizeof(romfs_super_t);   /* 16 */
+
+    /* ── Root directory "/" (offset 16) ─────────────────────────────── */
+    uint32_t root_off = sb->root_off;
+    romfs_entry_t *root = (romfs_entry_t *)(m68k_romfs_buf + root_off);
+    root->type     = ROMFS_TYPE_DIR;
+    root->size     = 0;
+    root->name_len = 0;
+    m68k_romfs_buf[root_off + ROMFS_NAME_OFF] = '\0';
+    uint32_t etc_off = root_off + ROMFS_NAME_OFF + ROMFS_ALIGN4(1);
+    root->child_off = etc_off;
+
+    /* ── /etc directory (follows root) ─────────────────────────────── */
+    romfs_entry_t *etc = (romfs_entry_t *)(m68k_romfs_buf + etc_off);
+    etc->type     = ROMFS_TYPE_DIR;
+    etc->size     = 0;
+    etc->name_len = 3;   /* "etc" */
+    etc->next_off = 0;
+    __builtin_memcpy(m68k_romfs_buf + etc_off + ROMFS_NAME_OFF,
+                     "etc", 4);   /* "etc\0" */
+    uint32_t fstab_off = etc_off + ROMFS_NAME_OFF + ROMFS_ALIGN4(4);
+    etc->child_off = fstab_off;
+
+    /* ── /etc/fstab file ───────────────────────────────────────────── */
+    uint32_t fstab_len = (uint32_t)(sizeof(fstab_data) - 1);
+    romfs_entry_t *fe = (romfs_entry_t *)(m68k_romfs_buf + fstab_off);
+    fe->type      = ROMFS_TYPE_FILE;
+    fe->size      = fstab_len;
+    fe->child_off = 0;
+    fe->next_off  = 0;
+    fe->name_len  = 5;   /* "fstab" */
+    __builtin_memcpy(m68k_romfs_buf + fstab_off + ROMFS_NAME_OFF,
+                     "fstab", 6);   /* "fstab\0" */
+    uint32_t data_off = fstab_off + ROMFS_DATA_OFF(fe);
+    __builtin_memcpy(m68k_romfs_buf + data_off,
+                     fstab_data, fstab_len);
+
+    sb->size = data_off + ROMFS_ALIGN4(fstab_len);
+}
+
+/* ── TRAP #0 syscall dispatch ────────────────────────────────────────── *
  *
  * Called from m68k_trap0_handler (trap.S) with a pointer to the saved
  * register frame.  Register layout (Linux m68k / musl convention):
@@ -51,10 +115,8 @@ extern void timer_init(void);
  * ────────────────────────────────────────────────────────────────────── */
 
 /* Linux m68k syscall numbers (matching musl) */
-#define SYS_EXIT   1
-#define SYS_WRITE  4
-#define ENOSYS     38
-#define EBADF       9
+#define M68K_SYS_EXIT   1
+#define M68K_SYS_WRITE  4
 
 void m68k_syscall_entry(uint32_t *regs)
 {
@@ -66,9 +128,8 @@ void m68k_syscall_entry(uint32_t *regs)
 
     switch (nr) {
 
-    case SYS_EXIT:
+    case M68K_SYS_EXIT:
         /* exit(status) — mark process free and yield forever */
-        klogf("SYSCALL: exit(%u)\n", (uint32_t)a0);
         current->state = PROC_FREE;
         for (;;)
             sched_yield();
@@ -76,7 +137,7 @@ void m68k_syscall_entry(uint32_t *regs)
         ret = 0;
         break;
 
-    case SYS_WRITE: {
+    case M68K_SYS_WRITE: {
         /* write(fd, buf, count) → d1=fd, d2=buf, d3=count */
         int fd             = (int)a0;
         const char *buf    = (const char *)(uintptr_t)a1;
@@ -99,267 +160,81 @@ void m68k_syscall_entry(uint32_t *regs)
     regs[0] = (uint32_t)ret;
 }
 
-/* ── In-memory romfs test ─────────────────────────────────────────────── */
-
-/*
- * Build a tiny romfs image in SRAM and verify mount + lookup + read.
- * The image is target-native endian (big-endian on m68k), which is
- * exactly what we get by assigning struct fields at runtime.
- *
- * Layout:
- *   [0..15]   romfs_super_t
- *   [16..39]  root dir entry (name_len=0, padded name = 4 bytes)
- *   [40..91]  "hello.txt" file entry (9-char name + 18-byte content)
- */
-static uint8_t romfs_image[128] __attribute__((aligned(4)));
-
-static void build_test_romfs(void)
-{
-    __builtin_memset(romfs_image, 0, sizeof(romfs_image));
-
-    static const char file_name[] = "hello.txt";
-    static const char file_data[] = "Hello from romfs!\n";
-
-    /* Superblock at offset 0 */
-    romfs_super_t *sb = (romfs_super_t *)romfs_image;
-    sb->magic      = ROMFS_MAGIC;
-    sb->file_count = 2;
-    sb->root_off   = (uint32_t)sizeof(romfs_super_t);   /* 16 */
-
-    /* Root directory at offset 16 */
-    uint32_t root_off = sb->root_off;
-    romfs_entry_t *root = (romfs_entry_t *)(romfs_image + root_off);
-    root->next_off  = 0;
-    root->type      = ROMFS_TYPE_DIR;
-    root->size      = 0;
-    root->name_len  = 0;       /* root has empty name */
-    /* NUL terminator for name (1 byte, padded to 4) */
-    romfs_image[root_off + ROMFS_NAME_OFF] = '\0';
-
-    /* hello.txt entry follows root */
-    uint32_t file_off = root_off + ROMFS_NAME_OFF + ROMFS_ALIGN4(1);
-    root->child_off = file_off;
-
-    romfs_entry_t *fe = (romfs_entry_t *)(romfs_image + file_off);
-    fe->next_off  = 0;
-    fe->type      = ROMFS_TYPE_FILE;
-    fe->size      = (uint32_t)(sizeof(file_data) - 1);
-    fe->child_off = 0;
-    fe->name_len  = (uint32_t)(sizeof(file_name) - 1);
-
-    /* Copy name + data */
-    __builtin_memcpy(romfs_image + file_off + ROMFS_NAME_OFF,
-                     file_name, sizeof(file_name));
-    uint32_t data_off = file_off + ROMFS_DATA_OFF(fe);
-    __builtin_memcpy(romfs_image + data_off,
-                     file_data, sizeof(file_data) - 1);
-
-    sb->size = data_off + ROMFS_ALIGN4(fe->size);
-}
-
-static void romfs_test(void)
-{
-    build_test_romfs();
-    vfs_init();
-
-    int rc = vfs_mount("/", &romfs_ops, MNT_RDONLY, romfs_image);
-    if (rc != 0) {
-        klog("ROMFS: mount FAILED\n");
-        return;
-    }
-    klog("ROMFS: mounted OK\n");
-
-    vnode_t *vn = 0;
-    rc = vfs_lookup("/hello.txt", &vn);
-    if (rc != 0) {
-        klog("ROMFS: lookup /hello.txt FAILED\n");
-        return;
-    }
-    klogf("ROMFS: /hello.txt size=%u\n", vn->size);
-
-    char buf[64];
-    long n = vn->mount->ops->read(vn, buf, sizeof(buf) - 1, 0);
-    if (n > 0) {
-        buf[n] = '\0';
-        klogf("ROMFS: read %u bytes: %s", (uint32_t)n, buf);
-    } else {
-        klog("ROMFS: read FAILED\n");
-        return;
-    }
-
-    vnode_put(vn);
-    klog("ROMFS: test PASSED\n");
-}
-
 /* ── Test processes ──────────────────────────────────────────────────── */
 
-static volatile uint32_t counter1 = 0;
-static volatile uint32_t counter2 = 0;
-
 /* Process 1: spins and counts.  Preemptive scheduling switches it out. */
-void test_process1(void)
+static void test_process1(void)
 {
-    for (;;) {
-        counter1++;
-        if ((counter1 % 100000u) == 0u)
-            klogf("P1: count=%u\n", counter1);
-    }
+    for (;;)
+        __asm__ volatile ("nop");
 }
 
 /* Process 2: spins and counts.  Preemptive scheduling switches it out. */
-void test_process2(void)
+static void test_process2(void)
 {
-    for (;;) {
-        counter2++;
-        if ((counter2 % 100000u) == 0u)
-            klogf("P2: count=%u\n", counter2);
-    }
+    for (;;)
+        __asm__ volatile ("nop");
 }
 
-/* ── Syscall dispatch test process ────────────────────────────────────── */
+/* ── Target hooks ────────────────────────────────────────────────────── */
 
-/* Helper: invoke TRAP #0 syscall with up to 3 arguments */
-static long m68k_syscall3(long nr, long a0, long a1, long a2)
-{
-    long ret;
-    __asm__ volatile (
-        "move.l  %1,%%d0\n"
-        "move.l  %2,%%d1\n"
-        "move.l  %3,%%d2\n"
-        "move.l  %4,%%d3\n"
-        "trap    #0\n"
-        "move.l  %%d0,%0\n"
-        : "=d"(ret)
-        : "g"(nr), "g"(a0), "g"(a1), "g"(a2)
-        : "d0", "d1", "d2", "d3", "cc", "memory"
-    );
-    return ret;
-}
-
-/*
- * Tests the syscall dispatch (Phase C Step 8):
- *   1. write(1, "hello", 5)  — the canonical test from the plan
- *   2. write(1, "\n", 1)     — newline
- *   3. exit(0)               — clean process termination via syscall
- */
-static void syscall_test_process(void)
-{
-    long ret;
-
-    /* write(1, "hello", 5) — the canonical Step 8 test */
-    ret = m68k_syscall3(SYS_WRITE, 1, (long)"hello", 5);
-    if (ret != 5) {
-        klog("\nSYSCALL: write(1,\"hello\",5) FAILED\n");
-        current->state = PROC_FREE;
-        for (;;) sched_yield();
-    }
-
-    /* newline for clean output */
-    m68k_syscall3(SYS_WRITE, 1, (long)"\n", 1);
-
-    klogf("SYSCALL: write returned %u (expected 5)\n", (uint32_t)ret);
-    klog("SYSCALL: dispatch test PASSED\n");
-
-    /* exit(0) via syscall */
-    m68k_syscall3(SYS_EXIT, 0, 0, 0);
-
-    /* not reached */
-    for (;;) sched_yield();
-}
-
-/* ── Phase C kernel entry ─────────────────────────────────────────────── */
-
-void kmain(void)
+void target_early_init(void)
 {
     uart_init_console();
-
     klog("PicoPiAndPortable booting... [qemu_m68k]\n");
-    klog("CPU: Motorola 68000\n");
+    klog("UART: Goldfish TTY @ 0xFF008000\n");
+    klog("Clock: emulated (no PLL)\n");
 
-    /* Memory manager */
-    mm_init();
+    /* Build the in-memory romfs image (big-endian native).
+     * Must be done before main.c calls vfs_mount(). */
+    build_boot_romfs();
+}
 
-    /* Process table */
-    proc_init();
-
-    /* ── romfs read-only mount test ────────────────────────────────────── */
-    romfs_test();
-
-    /* ── Cooperative context switch test ──────────────────────────────── */
-    proc_table[0].stack_page = page_alloc();
-    if (!proc_table[0].stack_page) {
-        klog("PANIC: no page for thread 0 stack\n");
-        for (;;) __asm__ volatile ("nop");
-    }
-
-    pcb_t *p1 = proc_alloc();
-    p1->stack_page = page_alloc();
-    extern void yield_test_process(void);
-    proc_setup_stack(p1, yield_test_process, 0);
-    p1->state = PROC_RUNNABLE;
-
-    klog("SCHED: cooperative yield test...\n");
-    for (int i = 0; i < 4; i++) {
-        klogf("Thread 0: iteration %u, yielding...\n", (uint32_t)i);
-        sched_yield();
-    }
-    klog("SCHED: cooperative yield test PASSED\n");
-    p1->state = PROC_FREE;
-
-    /* ── Syscall dispatch test (Phase C Step 8) ──────────────────────── */
-    klog("SYSCALL: testing dispatch via TRAP #0...\n");
-    pcb_t *ps = proc_alloc();
-    ps->stack_page = page_alloc();
-    proc_setup_stack(ps, syscall_test_process, 0);
-    ps->state = PROC_RUNNABLE;
-
-    /* Yield to let the syscall test process run */
-    sched_yield();
-    /* Back — syscall test process should have completed */
-
-    /* ── Preemptive scheduling test ───────────────────────────────────── */
-    klog("SCHED: starting preemptive scheduling test...\n");
-
-    pcb_t *pa = proc_alloc();
-    pa->stack_page = page_alloc();
-    proc_setup_stack(pa, test_process1, 0);
-    pa->state = PROC_RUNNABLE;
-
-    pcb_t *pb = proc_alloc();
-    pb->stack_page = page_alloc();
-    proc_setup_stack(pb, test_process2, 0);
-    pb->state = PROC_RUNNABLE;
-
+void target_late_init(void)
+{
     /* Initialize the Goldfish RTC timer (10 ms periodic) */
     timer_init();
+    /* No IRQ UART, no MPU, no Core 1 on m68k */
+}
 
-    /* Start the scheduler (enables interrupts) */
-    sched_start();
-
-    /* Thread 0 (idle): spin and report tick count periodically */
-    uint32_t last_report = 0;
-    for (;;) {
-        uint32_t ticks = sched_get_ticks();
-        if (ticks >= last_report + 100u) {
-            last_report = ticks;
-            klogf("IDLE: ticks=%u  P1=%u  P2=%u\n",
-                  ticks, counter1, counter2);
-
-            if (ticks >= 500u) {
-                klog("Phase C preemptive scheduling test PASSED\n");
-                for (;;) __asm__ volatile ("nop");
-            }
-        }
+void target_post_mount(void)
+{
+    /* Launch two test processes for preemptive scheduling validation.
+     * These will be scheduled by the timer once sched_start() runs.
+     * TODO: replace with m68k ELF user-mode init when available. */
+    pcb_t *pa = proc_alloc();
+    if (pa) {
+        pa->stack_page = page_alloc();
+        proc_setup_stack(pa, test_process1, 0);
+        pa->state = PROC_RUNNABLE;
+        __builtin_memcpy(pa->comm, "test1", 6);
     }
+
+    pcb_t *pb = proc_alloc();
+    if (pb) {
+        pb->stack_page = page_alloc();
+        proc_setup_stack(pb, test_process2, 0);
+        pb->state = PROC_RUNNABLE;
+        __builtin_memcpy(pb->comm, "test2", 6);
+    }
+}
+
+const char *target_init_path(void)
+{
+    /* No m68k ELF user-mode binaries yet — skip exec */
+    return NULL;
+}
+
+uint32_t target_caps(void)
+{
+    return 0;  /* No SD, no SPI, no Core 1 */
 }
 
 /* Yield-test process — runs on its own stack, yields back to thread 0 */
 void yield_test_process(void)
 {
-    for (int i = 0; i < 4; i++) {
-        klogf("Yield P1: iteration %u, yielding...\n", (uint32_t)i);
+    for (int i = 0; i < 4; i++)
         sched_yield();
-    }
 
     current->state = PROC_FREE;
     for (;;)

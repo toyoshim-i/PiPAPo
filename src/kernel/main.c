@@ -63,9 +63,7 @@ void kmain(void)
     target_late_init();
 
     /* Bootstrap: mount romfs at / (needed to read /etc/fstab) */
-    if (vfs_mount("/", &romfs_ops, MNT_RDONLY, __romfs_start) == 0)
-        klog("VFS: romfs mounted at /\n");
-    else
+    if (vfs_mount("/", &romfs_ops, MNT_RDONLY, __romfs_start) != 0)
         klog("VFS: romfs mount FAILED\n");
 
     /* Parse /etc/fstab and mount all entries */
@@ -94,30 +92,30 @@ void kmain(void)
         for (;;) arch_wfi();
     }
 
-    /* Launch init as PID 1 */
+    /* Launch init as PID 1 (skipped when target_init_path() returns NULL,
+     * e.g. m68k targets that don't have ELF user-mode binaries yet). */
     {
         const char *init_path = target_init_path();
-        pcb_t *init = proc_alloc();
-        init->pgid = init->pid;
-        init->sid  = init->pid;
+        if (init_path) {
+            pcb_t *init = proc_alloc();
+            init->pgid = init->pid;
+            init->sid  = init->pid;
 
-        int exec_err = do_execve(init, init_path, NULL);
-        if (exec_err < 0) {
-            klogf("INIT: %s failed, trying /bin/sh\n", init_path);
-            exec_err = do_execve(init, "/bin/sh", NULL);
-        }
-        if (exec_err == 0) {
-            fd_stdio_init(init);
-            init->state = PROC_RUNNABLE;
-            /* tty_fg_pgrp stays 0: without CONFIG_HUSH_JOB the shell
-             * never calls tcsetpgrp(), so tty_send_signal uses the
-             * fallback of signaling all non-init processes. */
-            klogf("INIT: pid=%u loaded\n", init->pid);
-        } else {
-            klogf("PANIC: no init or shell (err=%u)\n",
-                  (uint32_t)(-(int)exec_err));
-            proc_free(init);
-            for (;;) arch_wfi();
+            int exec_err = do_execve(init, init_path, NULL);
+            if (exec_err < 0) {
+                klogf("INIT: %s failed, trying /bin/sh\n", init_path);
+                exec_err = do_execve(init, "/bin/sh", NULL);
+            }
+            if (exec_err == 0) {
+                fd_stdio_init(init);
+                init->state = PROC_RUNNABLE;
+                klogf("INIT: pid=%u loaded\n", init->pid);
+            } else {
+                klogf("PANIC: no init or shell (err=%u)\n",
+                      (uint32_t)(-(int)exec_err));
+                proc_free(init);
+                for (;;) arch_wfi();
+            }
         }
     }
 
