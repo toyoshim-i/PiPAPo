@@ -45,9 +45,15 @@ add_executable(ppap_qemu_m68k
     ${PPAP_ROOT}/src/kernel/mm/kmem.c
     ${PPAP_ROOT}/src/kernel/proc/proc.c
     ${PPAP_ROOT}/src/kernel/proc/sched.c
+
+    # VFS + romfs
+    ${PPAP_ROOT}/src/kernel/vfs/vfs.c
+    ${PPAP_ROOT}/src/kernel/vfs/namei.c
+    ${PPAP_ROOT}/src/kernel/fs/romfs.c
 )
 
 target_include_directories(ppap_qemu_m68k PRIVATE
+    ${PPAP_ROOT}/src/arch/m68k/include
     ${PPAP_ROOT}/src
     ${PPAP_ROOT}/src/kernel
 )

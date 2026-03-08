@@ -15,6 +15,9 @@
 #include "mm/page.h"
 #include "proc/proc.h"
 #include "proc/sched.h"
+#include "vfs/vfs.h"
+#include "fs/romfs.h"
+#include "fs/romfs_format.h"
 #include "klog.h"
 #include "arch/arch.h"
 #include <stdint.h>
@@ -77,6 +80,98 @@ void m68k_syscall_entry(uint32_t *regs)
     }
 
     regs[0] = (uint32_t)ret;
+}
+
+/* ── In-memory romfs test ─────────────────────────────────────────────── */
+
+/*
+ * Build a tiny romfs image in SRAM and verify mount + lookup + read.
+ * The image is target-native endian (big-endian on m68k), which is
+ * exactly what we get by assigning struct fields at runtime.
+ *
+ * Layout:
+ *   [0..15]   romfs_super_t
+ *   [16..39]  root dir entry (name_len=0, padded name = 4 bytes)
+ *   [40..91]  "hello.txt" file entry (9-char name + 18-byte content)
+ */
+static uint8_t romfs_image[128] __attribute__((aligned(4)));
+
+static void build_test_romfs(void)
+{
+    __builtin_memset(romfs_image, 0, sizeof(romfs_image));
+
+    static const char file_name[] = "hello.txt";
+    static const char file_data[] = "Hello from romfs!\n";
+
+    /* Superblock at offset 0 */
+    romfs_super_t *sb = (romfs_super_t *)romfs_image;
+    sb->magic      = ROMFS_MAGIC;
+    sb->file_count = 2;
+    sb->root_off   = (uint32_t)sizeof(romfs_super_t);   /* 16 */
+
+    /* Root directory at offset 16 */
+    uint32_t root_off = sb->root_off;
+    romfs_entry_t *root = (romfs_entry_t *)(romfs_image + root_off);
+    root->next_off  = 0;
+    root->type      = ROMFS_TYPE_DIR;
+    root->size      = 0;
+    root->name_len  = 0;       /* root has empty name */
+    /* NUL terminator for name (1 byte, padded to 4) */
+    romfs_image[root_off + ROMFS_NAME_OFF] = '\0';
+
+    /* hello.txt entry follows root */
+    uint32_t file_off = root_off + ROMFS_NAME_OFF + ROMFS_ALIGN4(1);
+    root->child_off = file_off;
+
+    romfs_entry_t *fe = (romfs_entry_t *)(romfs_image + file_off);
+    fe->next_off  = 0;
+    fe->type      = ROMFS_TYPE_FILE;
+    fe->size      = (uint32_t)(sizeof(file_data) - 1);
+    fe->child_off = 0;
+    fe->name_len  = (uint32_t)(sizeof(file_name) - 1);
+
+    /* Copy name + data */
+    __builtin_memcpy(romfs_image + file_off + ROMFS_NAME_OFF,
+                     file_name, sizeof(file_name));
+    uint32_t data_off = file_off + ROMFS_DATA_OFF(fe);
+    __builtin_memcpy(romfs_image + data_off,
+                     file_data, sizeof(file_data) - 1);
+
+    sb->size = data_off + ROMFS_ALIGN4(fe->size);
+}
+
+static void romfs_test(void)
+{
+    build_test_romfs();
+    vfs_init();
+
+    int rc = vfs_mount("/", &romfs_ops, MNT_RDONLY, romfs_image);
+    if (rc != 0) {
+        klog("ROMFS: mount FAILED\n");
+        return;
+    }
+    klog("ROMFS: mounted OK\n");
+
+    vnode_t *vn = 0;
+    rc = vfs_lookup("/hello.txt", &vn);
+    if (rc != 0) {
+        klog("ROMFS: lookup /hello.txt FAILED\n");
+        return;
+    }
+    klogf("ROMFS: /hello.txt size=%u\n", vn->size);
+
+    char buf[64];
+    long n = vn->mount->ops->read(vn, buf, sizeof(buf) - 1, 0);
+    if (n > 0) {
+        buf[n] = '\0';
+        klogf("ROMFS: read %u bytes: %s", (uint32_t)n, buf);
+    } else {
+        klog("ROMFS: read FAILED\n");
+        return;
+    }
+
+    vnode_put(vn);
+    klog("ROMFS: test PASSED\n");
 }
 
 /* ── Test processes ──────────────────────────────────────────────────── */
@@ -156,6 +251,9 @@ void kmain(void)
 
     /* Process table */
     proc_init();
+
+    /* ── romfs read-only mount test ────────────────────────────────────── */
+    romfs_test();
 
     /* ── Cooperative context switch test ──────────────────────────────── */
     proc_table[0].stack_page = page_alloc();

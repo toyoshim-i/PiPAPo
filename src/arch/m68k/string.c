@@ -1,9 +1,12 @@
 /*
- * string.c — Minimal memset/memcpy/memmove for freestanding m68k
+ * string.c — Minimal string/memory functions for freestanding m68k
  *
  * GCC on m68k emits calls to these even with __builtin_memset/memcpy
  * because the 68000 lacks block-copy instructions, so GCC prefers
  * to call the library version for non-trivial sizes.
+ *
+ * Also provides strlen, strcmp, strncmp for VFS/FS code that uses
+ * <string.h> functions directly (rather than __builtin_ variants).
  */
 
 #include <stddef.h>
@@ -40,4 +43,37 @@ void *memmove(void *dest, const void *src, size_t n)
             *--d = *--s;
     }
     return dest;
+}
+
+size_t strlen(const char *s)
+{
+    const char *p = s;
+    while (*p)
+        p++;
+    return (size_t)(p - s);
+}
+
+int strcmp(const char *a, const char *b)
+{
+    while (*a && *a == *b) { a++; b++; }
+    return (int)(unsigned char)*a - (int)(unsigned char)*b;
+}
+
+int strncmp(const char *a, const char *b, size_t n)
+{
+    while (n && *a && *a == *b) { a++; b++; n--; }
+    return n ? ((int)(unsigned char)*a - (int)(unsigned char)*b) : 0;
+}
+
+int memcmp(const void *s1, const void *s2, size_t n)
+{
+    const uint8_t *a = (const uint8_t *)s1;
+    const uint8_t *b = (const uint8_t *)s2;
+    while (n--) {
+        if (*a != *b)
+            return (int)*a - (int)*b;
+        a++;
+        b++;
+    }
+    return 0;
 }
