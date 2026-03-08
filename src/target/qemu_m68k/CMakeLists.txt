@@ -262,7 +262,8 @@ add_custom_command(
     # Stage romfs
     COMMAND bash ${ROMFS_SCRIPT}
             ${ROMFS_STAGING} ${M68K_BB_DIR} ${M68K_ROGUE}
-    # Copy config files
+    # Copy shared /etc files, then override with target-specific config
+    COMMAND cp -a ${PPAP_ROOT}/src/etc/. ${ROMFS_STAGING}/etc/
     COMMAND ${CMAKE_COMMAND} -E copy
             ${CMAKE_CURRENT_SOURCE_DIR}/romfs/etc/fstab
             ${ROMFS_STAGING}/etc/fstab
@@ -274,6 +275,8 @@ add_custom_command(
             ${ROMFS_STAGING} ${ROMFS_BIN}
     DEPENDS ${CMAKE_BINARY_DIR}/mkromfs
             ${M68K_USER_ELFS}
+            ${PPAP_ROOT}/src/etc/fstab
+            ${PPAP_ROOT}/src/etc/inittab
             ${CMAKE_CURRENT_SOURCE_DIR}/romfs/etc/fstab
             ${CMAKE_CURRENT_SOURCE_DIR}/romfs/etc/inittab
     COMMENT "Generating big-endian romfs for m68k"
