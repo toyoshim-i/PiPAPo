@@ -7,7 +7,4 @@ build/
 .gdb_history
 .gdb-index
 
-# Build-generated artifacts
-romfs/bin/
-romfs/sbin/
 tools/mkromfs/mkromfs

@@ -25,7 +25,7 @@ SRC_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
 # Build output directory (defaults to source dir for standalone use)
 BUILD_DIR ?= .
 
-ROMFS_BIN ?= ../romfs/bin
+ROMFS_BIN ?= ../build/arm_m/romfs/bin
 TESTS_DIR ?= ../tests/user
 
 # Search tests/user/ and source dir for sources
@@ -91,8 +91,8 @@ $(BUILD_DIR)/%.o: %.c $(SRC_DIR)syscall.h $(wildcard $(TESTS_DIR)/utest.h)
 $(BUILD_DIR)/%.o: %.S
 	$(AS) $(ASFLAGS) -c -o $@ $<
 
-ROMFS_SBIN ?= ../romfs/sbin
-ROMFS_USR_BIN ?= ../romfs/usr/bin
+ROMFS_SBIN ?= ../build/arm_m/romfs/sbin
+ROMFS_USR_BIN ?= ../build/arm_m/romfs/usr/bin
 
 # Install ELFs into the romfs bin directory (init goes to sbin)
 install: all

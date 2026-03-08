@@ -106,7 +106,7 @@ PPAP/
     build-musl.sh           Build script: musl libc.a for ARMv6-M
     build-busybox.sh        Build script: static busybox binary
     build-rogue.sh          Build script: Rogue with minimal curses shim
-  romfs/                    Root filesystem template (/bin, /etc, /dev)
+  src/etc/                  Root filesystem config templates (fstab, passwd, …)
   scripts/
     setup-toolchain.sh      One-shot toolchain install
     build.sh                Build any target (pico1, pico1calc, qemu_arm, qemu_m68k)

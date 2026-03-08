@@ -52,10 +52,13 @@ endif()
 # =============================================================================
 # 1. Build musl libc + busybox
 # 2. Build user-space ELF binaries (user/Makefile)
-# 3. Install into romfs/
+# 3. Install into ${ROMFS_DIR} (build/arm_m/romfs/)
 # 4. Build mkromfs, generate romfs.bin
 # 5. Link romfs_data.S (.incbin romfs.bin) into all targets
 # =============================================================================
+
+# Base romfs installation directory (built binaries go here, NOT the source tree)
+set(ROMFS_DIR ${CMAKE_BINARY_DIR}/romfs)
 
 # --- musl libc (Phase 6 Step 1) ---
 set(MUSL_SYSROOT ${CMAKE_BINARY_DIR}/musl-sysroot)
@@ -95,7 +98,7 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E touch ${BUSYBOX_STAMP}
     DEPENDS ${CMAKE_SOURCE_DIR}/third_party/install-busybox.sh
             ${BUSYBOX_BIN} ${BUSYBOX_SH}
-    COMMENT "Installing busybox variants + applet symlinks into romfs/"
+    COMMENT "Installing busybox variants + applet symlinks into build romfs/"
 )
 
 add_custom_target(busybox_install DEPENDS ${BUSYBOX_STAMP})
@@ -115,16 +118,17 @@ add_custom_command(
     COMMENT "Building rogue (PIC, Cortex-M0+)"
 )
 
-# Install rogue ELF into romfs/bin/
+# Install rogue ELF into build romfs/bin/
 set(ROGUE_STAMP ${CMAKE_BINARY_DIR}/rogue_install.stamp)
 
 add_custom_command(
     OUTPUT ${ROGUE_STAMP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${ROMFS_DIR}/bin
     COMMAND ${CMAKE_COMMAND} -E copy ${ROGUE_BIN}
-            ${CMAKE_SOURCE_DIR}/romfs/bin/rogue
+            ${ROMFS_DIR}/bin/rogue
     COMMAND ${CMAKE_COMMAND} -E touch ${ROGUE_STAMP}
     DEPENDS ${ROGUE_BIN}
-    COMMENT "Installing rogue into romfs/bin/"
+    COMMENT "Installing rogue into build romfs/bin/"
 )
 
 add_custom_target(rogue_install DEPENDS ${ROGUE_STAMP})
@@ -147,12 +151,13 @@ add_custom_command(
             BUILD_DIR=${USER_BUILD_DIR}
     COMMAND ${MAKE_CMD} -C ${USER_SRC_DIR} install
             BUILD_DIR=${USER_BUILD_DIR}
-            ROMFS_BIN=${CMAKE_SOURCE_DIR}/romfs/bin
-            ROMFS_SBIN=${CMAKE_SOURCE_DIR}/romfs/sbin
+            ROMFS_BIN=${ROMFS_DIR}/bin
+            ROMFS_SBIN=${ROMFS_DIR}/sbin
+            ROMFS_USR_BIN=${ROMFS_DIR}/usr/bin
             PPAP_TESTS=$<BOOL:${PPAP_TESTS}>
     COMMAND ${CMAKE_COMMAND} -E touch ${USER_STAMP}
     DEPENDS ${USER_SOURCES}
-    COMMENT "Building user-space binaries and installing to romfs/"
+    COMMENT "Building user-space binaries and installing to build romfs/"
 )
 
 add_custom_target(user_binaries DEPENDS ${USER_STAMP})
@@ -176,7 +181,7 @@ set(PPAP_BLKDEV_TARGETS ppap_qemu_arm ppap_pico1calc)
 # Generate per-target fstab files at configure time
 set(FSTAB_BLKDEV_LINE "mmcblk0          /mnt/sd     vfat    rw\n")
 foreach(tgt ${PPAP_ALL_TARGETS})
-    file(READ ${CMAKE_SOURCE_DIR}/romfs/etc/fstab _fstab_base)
+    file(READ ${CMAKE_SOURCE_DIR}/src/etc/fstab _fstab_base)
     list(FIND PPAP_BLKDEV_TARGETS ${tgt} _blkdev_idx)
     if(_blkdev_idx GREATER_EQUAL 0)
         set(_fstab_content "${_fstab_base}${FSTAB_BLKDEV_LINE}")
@@ -208,8 +213,14 @@ foreach(tgt ${PPAP_ALL_TARGETS})
 
     add_custom_command(
         OUTPUT ${ROMFS_BIN}
+        # Assemble romfs staging from src/etc + built binaries
         COMMAND ${CMAKE_COMMAND} -E rm -rf ${ROMFS_STAGING}
-        COMMAND cp -a ${CMAKE_SOURCE_DIR}/romfs ${ROMFS_STAGING}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${ROMFS_STAGING}/etc
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${ROMFS_STAGING}/mnt/sd
+        COMMAND cp -a ${CMAKE_SOURCE_DIR}/src/etc/. ${ROMFS_STAGING}/etc/
+        # Overlay built binaries (bin/, sbin/, usr/) preserving symlinks
+        COMMAND ${CMAKE_SOURCE_DIR}/cmake/overlay-romfs.sh ${ROMFS_DIR} ${ROMFS_STAGING}
+        # Per-target config overrides
         COMMAND ${CMAKE_COMMAND} -E copy
                 ${CMAKE_BINARY_DIR}/fstab_${tgt} ${ROMFS_STAGING}/etc/fstab
         COMMAND ${CMAKE_COMMAND} -E copy
@@ -217,8 +228,8 @@ foreach(tgt ${PPAP_ALL_TARGETS})
         COMMAND ${CMAKE_BINARY_DIR}/mkromfs
                 ${ROMFS_STAGING} ${ROMFS_BIN}
         DEPENDS ${CMAKE_BINARY_DIR}/mkromfs ${USER_STAMP} ${BUSYBOX_STAMP}
-                ${ROGUE_STAMP} ${CMAKE_SOURCE_DIR}/romfs/etc/fstab
-                ${CMAKE_SOURCE_DIR}/romfs/etc/inittab
+                ${ROGUE_STAMP} ${CMAKE_SOURCE_DIR}/src/etc/fstab
+                ${CMAKE_SOURCE_DIR}/src/etc/inittab
                 ${CMAKE_BINARY_DIR}/fstab_${tgt}
                 ${CMAKE_BINARY_DIR}/inittab_${tgt}
         COMMENT "Generating romfs for ${tgt}"
