@@ -37,6 +37,7 @@ SECTIONS
     . = ALIGN(4);
 
     .got : {
+        _GLOBAL_OFFSET_TABLE_ = .;
         *(.got*)
     } :data
 

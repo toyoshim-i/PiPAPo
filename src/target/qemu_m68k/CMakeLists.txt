@@ -127,16 +127,47 @@ target_link_libraries(ppap_qemu_m68k PRIVATE ${M68K_LIBGCC})
 set(M68K_USER_DIR ${PPAP_ROOT}/user/m68k)
 set(M68K_USER_LD  ${M68K_USER_DIR}/user.ld)
 
-# --- Build hello.elf (m68k user-space binary) ---
+# --- Build m68k user-space binaries ---
+# Common objects: crt0.o + syscall.o (linked into every user program)
+set(M68K_CFLAGS  -m68000 -ffreestanding -nostdlib -Os -g -Wall
+                 -msep-data
+                 -I${PPAP_ROOT}/user/m68k -I${PPAP_ROOT}/user)
+set(M68K_ASFLAGS -m68000)
+set(M68K_LDFLAGS -nostdlib -T ${M68K_USER_LD}
+                 -Wl,--gc-sections -Wl,--build-id=none)
+
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/crt0.o
+    COMMAND ${CMAKE_C_COMPILER} ${M68K_ASFLAGS} -c
+            -o ${CMAKE_BINARY_DIR}/crt0.o ${M68K_USER_DIR}/crt0.S
+    DEPENDS ${M68K_USER_DIR}/crt0.S
+    COMMENT "Assembling m68k crt0.o"
+)
+
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/syscall.o
+    COMMAND ${CMAKE_C_COMPILER} ${M68K_ASFLAGS} -c
+            -o ${CMAKE_BINARY_DIR}/syscall.o ${M68K_USER_DIR}/syscall.S
+    DEPENDS ${M68K_USER_DIR}/syscall.S
+    COMMENT "Assembling m68k syscall.o"
+)
+
+# hello.elf: compiled from shared user/hello.c with m68k crt0+syscall
 add_custom_command(
     OUTPUT ${CMAKE_BINARY_DIR}/hello.elf
-    COMMAND ${CMAKE_C_COMPILER} -m68000 -c -o ${CMAKE_BINARY_DIR}/hello.o
-            ${M68K_USER_DIR}/hello.S
-    COMMAND ${CMAKE_C_COMPILER} -m68000 -nostdlib
-            -T ${M68K_USER_LD} -Wl,--gc-sections -Wl,--build-id=none
-            -o ${CMAKE_BINARY_DIR}/hello.elf ${CMAKE_BINARY_DIR}/hello.o
-    DEPENDS ${M68K_USER_DIR}/hello.S ${M68K_USER_LD}
-    COMMENT "Building m68k hello.elf"
+    COMMAND ${CMAKE_C_COMPILER} ${M68K_CFLAGS} -c
+            -o ${CMAKE_BINARY_DIR}/hello.o ${PPAP_ROOT}/user/hello.c
+    COMMAND ${CMAKE_C_COMPILER} -m68000 ${M68K_LDFLAGS}
+            -o ${CMAKE_BINARY_DIR}/hello.elf
+            ${CMAKE_BINARY_DIR}/crt0.o
+            ${CMAKE_BINARY_DIR}/syscall.o
+            ${CMAKE_BINARY_DIR}/hello.o
+    DEPENDS ${PPAP_ROOT}/user/hello.c
+            ${CMAKE_BINARY_DIR}/crt0.o
+            ${CMAKE_BINARY_DIR}/syscall.o
+            ${M68K_USER_LD}
+            ${PPAP_ROOT}/user/syscall.h
+    COMMENT "Building m68k hello.elf (from user/hello.c)"
 )
 
 # --- Build mkromfs host tool ---

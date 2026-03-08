@@ -39,54 +39,27 @@ extern void timer_init(void);
  *   regs[5]  = d5  (arg 5)
  *   regs[8]  = a0  (arg 6)
  *
- * Syscall numbers match Linux m68k (same as i386 for common calls).
- * Phase C implements: exit(1), write(4).  Phase D adds the rest.
+ * Maps the m68k register frame onto the shared syscall_dispatch() API:
+ *   frame[0..3] = d1..d4 (args 0-3), nr = d0, a4 = d5, a5 = a0.
+ * syscall_dispatch() writes the return value into frame[0] (d1 slot);
+ * we then copy it to regs[0] (d0) for the caller.
  * ────────────────────────────────────────────────────────────────────── */
 
-/* Linux m68k syscall numbers (matching musl) */
-#define M68K_SYS_EXIT   1
-#define M68K_SYS_WRITE  4
+#include "syscall/syscall.h"
 
 void m68k_syscall_entry(uint32_t *regs)
 {
-    uint32_t nr  = regs[0];
-    long a0 = (long)regs[1];
-    long a1 = (long)regs[2];
-    long a2 = (long)regs[3];
-    long ret;
+    uint32_t nr   = regs[0];       /* d0 = syscall number */
+    uint32_t *frame = &regs[1];    /* frame[0]=d1(a0), [1]=d2(a1),
+                                      [2]=d3(a2), [3]=d4(a3)       */
+    uint32_t a4   = regs[5];       /* d5 = arg 5 */
+    uint32_t a5   = regs[8];       /* a0 = arg 6 */
 
-    switch (nr) {
+    syscall_dispatch(frame, nr, a4, a5);
 
-    case M68K_SYS_EXIT:
-        /* exit(status) — mark process free and yield forever */
-        current->state = PROC_FREE;
-        for (;;)
-            sched_yield();
-        /* not reached */
-        ret = 0;
-        break;
-
-    case M68K_SYS_WRITE: {
-        /* write(fd, buf, count) → d1=fd, d2=buf, d3=count */
-        int fd             = (int)a0;
-        const char *buf    = (const char *)(uintptr_t)a1;
-        uint32_t count     = (uint32_t)a2;
-        if (fd == 1 || fd == 2) {
-            for (uint32_t i = 0; i < count; i++)
-                uart_putc(buf[i]);
-            ret = (long)count;
-        } else {
-            ret = -(long)EBADF;
-        }
-        break;
-    }
-
-    default:
-        ret = -(long)ENOSYS;
-        break;
-    }
-
-    regs[0] = (uint32_t)ret;
+    /* syscall_dispatch wrote return value to frame[0] (= regs[1]).
+     * Move it to d0 (regs[0]) for the Linux m68k ABI. */
+    regs[0] = regs[1];
 }
 
 /* ── Target hooks ────────────────────────────────────────────────────── */

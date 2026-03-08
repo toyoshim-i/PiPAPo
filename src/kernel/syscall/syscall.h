@@ -22,9 +22,13 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/* ── Syscall numbers (ARM EABI Linux-compatible) ───────────────────────────── */
+/* ── Syscall numbers (Linux-compatible) ─────────────────────────────────────
+ *
+ * Numbers 1–197 are identical between ARM EABI and m68k Linux.
+ * Higher numbers diverge; arch-specific overrides are in the #ifdef below.
+ */
 
-/* Existing (Phase 1-3) */
+/* Common: identical on ARM and m68k (Linux old ABI, numbers 1–197) */
 #define SYS_EXIT         1
 #define SYS_FORK         2
 #define SYS_READ         3
@@ -81,6 +85,35 @@
 #define SYS_STAT64     195
 #define SYS_LSTAT64    196
 #define SYS_FSTAT64    197
+#define SYS_WAIT4      114
+#define SYS_POLL       168
+
+/* Arch-specific: numbers that differ between ARM and m68k Linux */
+#if defined(__m68k__)
+#define SYS_CHOWN32    198
+#define SYS_GETUID32   199
+#define SYS_GETGID32   200
+#define SYS_GETEUID32  201
+#define SYS_GETEGID32  202
+#define SYS_SETGROUPS32 206
+#define SYS_FCHOWN32   207
+#define SYS_LCHOWN32   212
+#define SYS_GETDENTS64 220
+#define SYS_FUTEX      235
+#define SYS_FCNTL64    239
+#define SYS_EXIT_GROUP 247
+#define SYS_SET_TID_ADDRESS 253
+#define SYS_CLOCK_GETTIME32 260
+#define SYS_CLOCK_NANOSLEEP32 262
+#define SYS_STATFS64   263
+#define SYS_FSTATFS64  264
+#define SYS_UTIMES     266
+#define SYS_OPENAT     288
+#define SYS_FSTATAT64  293
+#define SYS_PPOLL      302
+#define SYS_GETCPU     314
+#define SYS_STATX      379
+#else /* ARM */
 #define SYS_LCHOWN32   198
 #define SYS_GETUID32   199
 #define SYS_GETGID32   200
@@ -99,13 +132,14 @@
 #define SYS_STATFS64   266
 #define SYS_FSTATFS64  267
 #define SYS_UTIMES     269
-#define SYS_WAIT4      114
 #define SYS_OPENAT     322
 #define SYS_FSTATAT64  327
+#define SYS_PPOLL      336
 #define SYS_GETCPU     345
 #define SYS_STATX      397
-#define SYS_POLL             168
-#define SYS_PPOLL            336
+#endif
+
+/* Common time64 syscalls (same on ARM and m68k) */
 #define SYS_CLOCK_GETTIME64  403
 #define SYS_CLOCK_NANOSLEEP64 407
 #define SYS_PPOLL_TIME64     414
