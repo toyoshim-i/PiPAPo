@@ -158,20 +158,33 @@ static int gen_version(char *buf, int bufsiz)
 
 /* ── /proc/stat — aggregate CPU counters ──────────────────────────────────── */
 
+/* Number of CPU cores: RP2040 has 2, everything else (QEMU ARM, m68k) has 1 */
+#if defined(__m68k__) || defined(PPAP_QEMU)
+#define NUM_CORES 1
+#else
+#define NUM_CORES 2
+#endif
+
 static int gen_stat(char *buf, int bufsiz)
 {
     /* Aggregate line: cpu <user> <nice> <system> <idle> 0 0 0 0 0 0 */
     int pos = 0;
+    uint32_t user_total = 0, sys_total = 0, idle_total = 0;
+    for (int c = 0; c < NUM_CORES; c++) {
+        user_total += cpu_user_ticks[c];
+        sys_total  += cpu_system_ticks[c];
+        idle_total += cpu_idle_ticks[c];
+    }
     pos = fmt_append(buf, pos, bufsiz, "cpu ");
-    pos = fmt_append_u32(buf, pos, bufsiz, cpu_user_ticks[0] + cpu_user_ticks[1]);
+    pos = fmt_append_u32(buf, pos, bufsiz, user_total);
     pos = fmt_append(buf, pos, bufsiz, " 0 ");
-    pos = fmt_append_u32(buf, pos, bufsiz, cpu_system_ticks[0] + cpu_system_ticks[1]);
+    pos = fmt_append_u32(buf, pos, bufsiz, sys_total);
     pos = fmt_append(buf, pos, bufsiz, " ");
-    pos = fmt_append_u32(buf, pos, bufsiz, cpu_idle_ticks[0] + cpu_idle_ticks[1]);
+    pos = fmt_append_u32(buf, pos, bufsiz, idle_total);
     pos = fmt_append(buf, pos, bufsiz, " 0 0 0 0 0 0\n");
 
-    /* Per-core lines: cpu0/cpu1 */
-    for (int c = 0; c < 2; c++) {
+    /* Per-core lines */
+    for (int c = 0; c < NUM_CORES; c++) {
         pos = fmt_append(buf, pos, bufsiz, "cpu");
         pos = fmt_append_u32(buf, pos, bufsiz, (uint32_t)c);
         pos = fmt_append(buf, pos, bufsiz, " ");
@@ -192,7 +205,9 @@ static int gen_uptime(char *buf, int bufsiz)
     uint32_t ticks = sched_get_ticks();
     uint32_t secs = ticks / PPAP_TICK_HZ;
     uint32_t hundredths = (ticks % PPAP_TICK_HZ) * 100 / PPAP_TICK_HZ;
-    uint32_t total_idle = cpu_idle_ticks[0] + cpu_idle_ticks[1];
+    uint32_t total_idle = 0;
+    for (int c = 0; c < NUM_CORES; c++)
+        total_idle += cpu_idle_ticks[c];
     uint32_t idle_secs = total_idle / PPAP_TICK_HZ;
     uint32_t idle_hund = (total_idle % PPAP_TICK_HZ) * 100 / PPAP_TICK_HZ;
 
