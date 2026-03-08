@@ -22,10 +22,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BB_SRC="$SCRIPT_DIR/busybox"
-BB_OUT="$PROJECT_ROOT/build/busybox"
-MUSL_SYSROOT="$PROJECT_ROOT/build/musl-sysroot"
+BB_OUT="$PROJECT_ROOT/build/arm_m/busybox"
+MUSL_SYSROOT="$PROJECT_ROOT/build/arm_m/musl-sysroot"
 CONFIGS_DIR="$SCRIPT_DIR/configs"
-SPECS_FILE="$PROJECT_ROOT/build/musl-arm.specs"
+SPECS_FILE="$PROJECT_ROOT/build/arm_m/musl-arm.specs"
 
 GCC_INCLUDE="$(arm-none-eabi-gcc -print-file-name=include)"
 GCC_LIBDIR="$(dirname "$(arm-none-eabi-gcc -mthumb -mcpu=cortex-m0plus -print-libgcc-file-name)")"

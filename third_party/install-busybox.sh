@@ -20,7 +20,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-BB_BUILD="$PROJECT_ROOT/build/busybox"
+BB_BUILD="$PROJECT_ROOT/build/arm_m/busybox"
 ROMFS_BIN="$PROJECT_ROOT/romfs/bin"
 ROMFS_SBIN="$PROJECT_ROOT/romfs/sbin"
 

@@ -33,6 +33,7 @@ done
 # ── Target-specific configuration ────────────────────────────────────────────
 if [[ "$TARGET" == "m68k" ]]; then
     ELF="$PROJECT_DIR/build/m68k/ppap_qemu_m68k.elf"
+    BUILD_TARGET="qemu_m68k"
     QEMU_BIN="qemu-system-m68k"
     # Prefer locally-built QEMU if available
     LOCAL_QEMU="$PROJECT_DIR/third_party/qemu/build/qemu-system-m68k"
@@ -40,20 +41,16 @@ if [[ "$TARGET" == "m68k" ]]; then
         QEMU_BIN="$LOCAL_QEMU"
     fi
     QEMU_ARGS=(-machine virt -cpu m68000)
-    BUILD_CMD="cmake -DCMAKE_TOOLCHAIN_FILE=$PROJECT_DIR/cmake/toolchain-m68k.cmake -S $PROJECT_DIR/src/target/qemu_m68k -B $PROJECT_DIR/build/m68k && make -C $PROJECT_DIR/build/m68k"
-    BUILD_HINT="cd build/m68k && cmake -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain-m68k.cmake -S ../src/target/qemu_m68k -B . && make"
 else
     ELF="$PROJECT_DIR/build/arm_m/ppap_qemu_arm.elf"
+    BUILD_TARGET="qemu_arm"
     QEMU_BIN="qemu-system-arm"
     QEMU_ARGS=(-M mps2-an500 -serial mon:stdio)
-    BUILD_CMD="cmake --build $PROJECT_DIR/build/arm_m --target ppap_qemu_arm"
-    BUILD_HINT="cmake --build build/arm_m --target ppap_qemu_arm"
 fi
 
 # ── Optional rebuild ──────────────────────────────────────────────────────────
 if [[ $DO_BUILD -eq 1 ]]; then
-    echo "[qemu] Building ppap_qemu_${TARGET}..."
-    eval "$BUILD_CMD"
+    "$SCRIPT_DIR/build.sh" "$BUILD_TARGET"
 fi
 
 # ── Pre-flight checks ─────────────────────────────────────────────────────────
@@ -70,7 +67,7 @@ fi
 
 if [[ ! -f "$ELF" ]]; then
     echo "[qemu] Error: $ELF not found."
-    echo "       Run: $BUILD_HINT"
+    echo "       Run: ./scripts/build.sh $BUILD_TARGET"
     exit 1
 fi
 

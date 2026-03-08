@@ -7,16 +7,12 @@
 #
 # What this script does:
 #   1. Installs required apt packages (ARM cross-toolchain, OpenOCD, etc.)
-#   2. Clones the Raspberry Pi Pico SDK (with submodules)
-#   3. Writes PICO_SDK_PATH to ~/.bashrc (and ~/.zshrc if zsh is present)
-#   4. Verifies the installation
+#   2. Initializes git submodules (Pico SDK, musl, busybox, etc.)
+#   3. Verifies the installation
 #
 # Usage:
 #   chmod +x scripts/setup-toolchain.sh
-#   ./scripts/setup-toolchain.sh [--sdk-dir <path>]
-#
-# Options:
-#   --sdk-dir <path>   Where to clone the Pico SDK (default: ~/pico-sdk)
+#   ./scripts/setup-toolchain.sh
 #
 # Requirements:
 #   - Debian/Ubuntu-based Linux (uses apt)
@@ -28,25 +24,8 @@
 
 set -euo pipefail
 
-# --- Configuration -----------------------------------------------------------
-
-PICO_SDK_REPO="https://github.com/raspberrypi/pico-sdk.git"
-PICO_SDK_DIR="${HOME}/pico-sdk"   # overridable via --sdk-dir
-
-# Parse arguments
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --sdk-dir)
-      PICO_SDK_DIR="$2"
-      shift 2
-      ;;
-    *)
-      echo "Unknown option: $1" >&2
-      echo "Usage: $0 [--sdk-dir <path>]" >&2
-      exit 1
-      ;;
-  esac
-done
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PPAP_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # --- Helpers -----------------------------------------------------------------
 
@@ -121,60 +100,33 @@ else
   FAIL=1
 fi
 
-# --- Step 2: Pico SDK --------------------------------------------------------
+# --- Step 2: Git submodules --------------------------------------------------
 
-info "=== Step 2: Cloning Pico SDK ==="
+info "=== Step 2: Initializing git submodules ==="
 
+# Initialize all submodules (pico-sdk, musl, busybox, rogue, qemu)
+git -C "${PPAP_ROOT}" submodule update --init --recursive --quiet
+success "All git submodules initialized."
+
+# Verify Pico SDK submodule
+PICO_SDK_DIR="${PPAP_ROOT}/third_party/pico-sdk"
 if [[ -f "${PICO_SDK_DIR}/pico_sdk_init.cmake" ]]; then
-  success "Pico SDK already present at ${PICO_SDK_DIR}"
-  info "Updating submodules..."
-  git -C "${PICO_SDK_DIR}" submodule update --init --recursive --quiet
+  success "Pico SDK present at ${PICO_SDK_DIR}"
 else
-  info "Cloning Pico SDK into ${PICO_SDK_DIR} ..."
-  git clone --recurse-submodules "${PICO_SDK_REPO}" "${PICO_SDK_DIR}"
-  success "Pico SDK cloned."
+  warn "Pico SDK submodule not found — run: git submodule update --init --recursive"
 fi
 
-# --- Step 3: Set PICO_SDK_PATH environment variable -------------------------
-
-info "=== Step 3: Configuring PICO_SDK_PATH ==="
-
-ENV_LINE="export PICO_SDK_PATH=\"${PICO_SDK_DIR}\""
-
-add_to_shell_rc() {
-  local rc_file="$1"
-  if [[ -f "$rc_file" ]]; then
-    if grep -qF "PICO_SDK_PATH" "$rc_file"; then
-      success "PICO_SDK_PATH already set in ${rc_file}"
-    else
-      echo "" >> "$rc_file"
-      echo "# PicoPiAndPortable — Pico SDK path" >> "$rc_file"
-      echo "${ENV_LINE}" >> "$rc_file"
-      success "Added PICO_SDK_PATH to ${rc_file}"
-      warn "Run 'source ${rc_file}' or open a new terminal for it to take effect."
-    fi
-  fi
-}
-
-add_to_shell_rc "${HOME}/.bashrc"
-add_to_shell_rc "${HOME}/.zshrc"
-
-# Make it available in the current session too
-export PICO_SDK_PATH="${PICO_SDK_DIR}"
-
-# --- Step 4: QEMU m68k check ------------------------------------------------
+# --- Step 3: QEMU m68k check ------------------------------------------------
 #
 # The system qemu-system-m68k (apt: qemu-system-misc) usually works.
 # If you need a newer version, run: ./scripts/build-qemu.sh
 # which builds QEMU 9.1.x from the third_party/qemu submodule.
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PPAP_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 QEMU_M68K="${PPAP_ROOT}/third_party/qemu/build/qemu-system-m68k"
 
-# --- Step 5: Verification ----------------------------------------------------
+# --- Step 4: Verification ----------------------------------------------------
 
-info "=== Step 5: Verification ==="
+info "=== Step 4: Verification ==="
 
 FAIL=0
 
@@ -267,7 +219,7 @@ elif command -v qemu-system-m68k &>/dev/null; then
     "qemu-system-m68k --version" \
     "QEMU emulator"
 else
-  warn "qemu-system-m68k: not found (install qemu-system-misc or pass --build-qemu)"
+  warn "qemu-system-m68k: not found (install qemu-system-misc or run ./scripts/build-qemu.sh)"
   FAIL=1
 fi
 
@@ -278,11 +230,9 @@ echo "============================================================"
 if [[ $FAIL -eq 0 ]]; then
   echo " Toolchain setup complete. All checks passed."
   echo ""
-  echo " PICO_SDK_PATH=${PICO_SDK_PATH}"
-  echo ""
-  echo " Next step: run CMake to configure the project build."
-  echo "   cmake -B build/arm_m"
-  echo "   cmake --build build/arm_m"
+  echo " Next step: build a target."
+  echo "   ./scripts/build.sh pico1calc"
+  echo "   ./scripts/build.sh qemu_arm"
 else
   echo " Setup completed with warnings. Review [WARN] lines above."
 fi

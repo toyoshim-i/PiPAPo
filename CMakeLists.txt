@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.13)
 
+# Default to the in-tree Pico SDK submodule; allow env override
+if (NOT DEFINED PICO_SDK_PATH AND NOT DEFINED ENV{PICO_SDK_PATH})
+    set(PICO_SDK_PATH "${CMAKE_CURRENT_LIST_DIR}/third_party/pico-sdk")
+endif()
+
 # Pull in Pico SDK (must be before project())
 include(pico_sdk_import.cmake)
 

@@ -17,15 +17,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROGUE_SRC="$SCRIPT_DIR/rogue"
-ROGUE_OUT="$PROJECT_ROOT/build/rogue"
-MUSL_SYSROOT="$PROJECT_ROOT/build/musl-sysroot"
+ROGUE_OUT="$PROJECT_ROOT/build/arm_m/rogue"
+MUSL_SYSROOT="$PROJECT_ROOT/build/arm_m/musl-sysroot"
 PATCHES_DIR="$SCRIPT_DIR/patches/rogue"
 CONFIGS_DIR="$SCRIPT_DIR/configs"
 
 CC=arm-none-eabi-gcc
 GCC_INCLUDE="$(arm-none-eabi-gcc -print-file-name=include)"
 GCC_LIBDIR="$(dirname "$(arm-none-eabi-gcc -mthumb -mcpu=cortex-m0plus -print-libgcc-file-name)")"
-SPECS_FILE="$PROJECT_ROOT/build/musl-arm.specs"
+SPECS_FILE="$PROJECT_ROOT/build/arm_m/musl-arm.specs"
 LINKER_SCRIPT="$CONFIGS_DIR/busybox.ld"
 
 # Target flags (same as busybox build)

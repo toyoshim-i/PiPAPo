@@ -6,7 +6,7 @@
 #   2. Copies PPAP overlay files (Thumb-1 compatible replacements)
 #   3. Deletes ARM assembly files that have generic C fallbacks
 #   4. Configures and builds musl as a static library
-#   5. Installs headers + libc.a into build/musl-sysroot/
+#   5. Installs headers + libc.a into build/arm_m/musl-sysroot/
 #   6. Restores the submodule to its clean upstream state
 #
 # Usage: ./third_party/build-musl.sh [--clean]
@@ -17,7 +17,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 MUSL_SRC="$SCRIPT_DIR/musl"
-MUSL_SYSROOT="$PROJECT_ROOT/build/musl-sysroot"
+MUSL_SYSROOT="$PROJECT_ROOT/build/arm_m/musl-sysroot"
 OVERLAY_DIR="$SCRIPT_DIR/patches/musl/overlay"
 
 # --- Handle --clean ---

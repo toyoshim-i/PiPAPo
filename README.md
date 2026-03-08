@@ -97,6 +97,7 @@ PPAP/
     mkfatimg/               Host tool: generate FAT32 test image
     uf2sanitize.py          Post-process UF2 for PicoCalc bootloader
   third_party/
+    pico-sdk/               git submodule — Raspberry Pi Pico SDK
     musl/                   git submodule — musl libc v1.2.5
     busybox/                git submodule — busybox 1_36_1
     rogue/                  git submodule — Rogue 5.4.4 (Davidslv/rogue)
@@ -108,8 +109,9 @@ PPAP/
   romfs/                    Root filesystem template (/bin, /etc, /dev)
   scripts/
     setup-toolchain.sh      One-shot toolchain install
-    flash.sh                Flash ppap_pico1calc via OpenOCD
-    qemu.sh                 Run ppap_qemu_arm on mps2-an500
+    build.sh                Build any target (pico1, pico1calc, qemu_arm, qemu_m68k)
+    flash.sh                Flash pico1/pico1calc via OpenOCD
+    qemu.sh                 Run ppap_qemu_arm or ppap_qemu_m68k
     test_all_targets.sh     Build all targets + run QEMU automated tests
   docs/
     spec-v07.md             Full design specification
@@ -132,9 +134,17 @@ PPAP/
 ./scripts/setup-toolchain.sh
 ```
 
-Installs: `arm-none-eabi-gcc`, `cmake`, `ninja`, `openocd`, `gdb-multiarch`, `qemu-system-arm`, Pico SDK.
+Installs apt packages (`arm-none-eabi-gcc`, `cmake`, `ninja`, `openocd`, `gdb-multiarch`, `qemu-system-arm`) and initializes git submodules (Pico SDK, musl, busybox, etc.).
 
-### 2. Configure and build
+### 2. Build
+
+```sh
+./scripts/build.sh pico1calc           # build a single target
+./scripts/build.sh --test qemu_arm     # build with tests enabled
+./scripts/build.sh qemu_m68k           # build m68k QEMU target
+```
+
+Or invoke CMake directly:
 
 ```sh
 cmake -B build/arm_m
@@ -156,9 +166,9 @@ cp build/arm_m/src/target/pico1calc/ppap_pico1calc.uf2 /media/$USER/RPI-RP2/
 **OpenOCD (any target):**
 
 ```sh
-./scripts/flash.sh pico1calc           # build & flash pico1calc via OpenOCD
-./scripts/flash.sh --build pico1       # build only, no flash
-./scripts/flash.sh --test pico1        # build & flash with tests enabled
+./scripts/flash.sh pico1calc           # flash pre-built pico1calc via OpenOCD
+./scripts/flash.sh --build pico1calc   # build & flash pico1calc
+./scripts/flash.sh --test pico1        # build with tests & flash pico1
 ```
 
 ### 4. QEMU

@@ -1,21 +1,19 @@
 #!/usr/bin/env bash
-# flash.sh — Build and flash a PPAP target to the RP2040 via OpenOCD
+# flash.sh — Flash a PPAP target to the RP2040 via OpenOCD
 #
 # Usage:
 #   ./scripts/flash.sh [OPTIONS] TARGET
 #
-# TARGET is one of: pico1, pico1calc, qemu_arm
+# TARGET is one of: pico1, pico1calc
 #
 # Options:
-#   --build   Build only (skip flash)
-#   --test    Enable PPAP_TESTS (kernel integration tests + userland test suite)
+#   --build   Build before flashing (calls scripts/build.sh)
+#   --test    Enable PPAP_TESTS (passed to build.sh, implies --build)
 #
 # Examples:
-#   ./scripts/flash.sh pico1              # build & flash pico1
-#   ./scripts/flash.sh pico1calc          # build & flash pico1calc
-#   ./scripts/flash.sh --test pico1       # build & flash pico1 with tests
-#   ./scripts/flash.sh --build pico1      # build only, no flash
-#   ./scripts/flash.sh --build qemu_arm   # build qemu_arm ELF
+#   ./scripts/flash.sh pico1              # flash pico1 (must be pre-built)
+#   ./scripts/flash.sh --build pico1calc  # build & flash pico1calc
+#   ./scripts/flash.sh --test pico1       # build with tests & flash pico1
 #
 # Alternatively, without a debug adapter, hold BOOTSEL, plug in USB, then:
 #   cp build/arm_m/src/target/pico1calc/ppap_pico1calc.uf2 /media/$USER/RPI-RP2/
@@ -33,14 +31,14 @@ BUILD_DIR="$PROJECT_DIR/build/arm_m"
 CFG="$PROJECT_DIR/openocd.cfg"
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
-TESTS=OFF
-BUILD_ONLY=false
+DO_BUILD=false
+BUILD_ARGS=()
 TARGET=""
 
 for arg in "$@"; do
     case "$arg" in
-        --test)   TESTS=ON ;;
-        --build)  BUILD_ONLY=true ;;
+        --build)  DO_BUILD=true ;;
+        --test)   DO_BUILD=true; BUILD_ARGS+=(--test) ;;
         -*)       echo "Unknown option: $arg" >&2; exit 1 ;;
         *)        TARGET="$arg" ;;
     esac
@@ -54,10 +52,10 @@ fi
 
 # Validate target name
 case "$TARGET" in
-    pico1|pico1calc|qemu_arm) ;;
+    pico1|pico1calc) ;;
     *)
         echo "[flash] Error: unknown target '$TARGET'"
-        echo "        Valid targets: pico1, pico1calc, qemu_arm"
+        echo "        Valid targets: pico1, pico1calc"
         exit 1
         ;;
 esac
@@ -65,28 +63,18 @@ esac
 CMAKE_TARGET="ppap_${TARGET}"
 ELF="$BUILD_DIR/${CMAKE_TARGET}.elf"
 
-# ── Build ────────────────────────────────────────────────────────────────────
-echo "[flash] Building $CMAKE_TARGET (PPAP_TESTS=$TESTS)..."
-cmake -B "$BUILD_DIR" -DPPAP_TESTS="$TESTS" "$PROJECT_DIR" >/dev/null 2>&1
-cmake --build "$BUILD_DIR" --target "$CMAKE_TARGET" -- -j"$(nproc)"
-
-if [[ ! -f "$ELF" ]]; then
-    echo "[flash] Error: $ELF not found after build."
-    exit 1
-fi
-
-# ── Skip flash if --build or qemu_arm ──────────────────────────────────────────
-if $BUILD_ONLY; then
-    echo "[flash] Built $ELF"
-    exit 0
-fi
-
-if [[ "$TARGET" == "qemu_arm" ]]; then
-    echo "[flash] Built $ELF (qemu_arm — use qemu-system-arm to run)"
-    exit 0
+# ── Optional build ────────────────────────────────────────────────────────────
+if $DO_BUILD; then
+    "$SCRIPT_DIR/build.sh" "${BUILD_ARGS[@]}" "$TARGET"
 fi
 
 # ── Pre-flight checks ─────────────────────────────────────────────────────────
+if [[ ! -f "$ELF" ]]; then
+    echo "[flash] Error: $ELF not found."
+    echo "        Run: ./scripts/build.sh $TARGET"
+    exit 1
+fi
+
 if ! command -v openocd &>/dev/null; then
     echo "[flash] Error: openocd not found in PATH."
     echo "        Install with: sudo apt install openocd"
