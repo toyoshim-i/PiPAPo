@@ -109,7 +109,6 @@ void kmain(void)
                 exec_err = do_execve(init, "/bin/sh", NULL);
             }
             if (exec_err == 0) {
-                fd_stdio_init(init);
                 init->state = PROC_RUNNABLE;
                 klogf("INIT: pid=%u loaded\n", init->pid);
             } else {
