@@ -256,8 +256,20 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
      * (same as link time).  We load text+data into contiguous SRAM pages.
      *
      * Layout in SRAM: load_base + text_vaddr .. load_base + data_end
+     *
+     * Stack allocation: done FIRST so page_alloc() takes from the top of
+     * the free stack (high addresses) while alloc_contiguous scans from
+     * the bottom.  This prevents the stack from landing adjacent to the
+     * code block where brk needs to expand contiguously.
      * ──────────────────────────────────────────────────────────────────── */
     {
+        /* Pre-allocate stack page before code pages (see note above) */
+        void *early_stack = page_alloc();
+        if (!early_stack) {
+            vnode_put(vn);
+            return -(int)ENOMEM;
+        }
+
         /* Total virtual address span: from text start to data end */
         uint32_t span_end = data_seg
             ? data_seg->p_vaddr + data_seg->p_memsz
@@ -267,15 +279,18 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
         uint32_t total_pages = (total_size + PAGE_SIZE - 1) / PAGE_SIZE;
 
         if (total_pages > USER_PAGES_MAX) {
+            page_free(early_stack);
             vnode_put(vn);
             return -(int)ENOMEM;
         }
 
         uint8_t *load_base = alloc_contiguous(total_pages);
         if (!load_base) {
+            page_free(early_stack);
             vnode_put(vn);
             return -(int)ENOMEM;
         }
+        p->stack_page = early_stack;
 
         /* Zero the entire region first (covers BSS and gaps) */
         memset(load_base, 0, total_pages * PAGE_SIZE);
@@ -422,6 +437,10 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
 #endif
 
     /* ── 8. Allocate stack page ────────────────────────────────────────── */
+#if defined(__m68k__)
+    /* m68k: stack was pre-allocated before alloc_contiguous (see above) */
+    void *stack = p->stack_page;
+#else
     void *stack = page_alloc();
     if (!stack) {
         for (int i = 0; i < USER_PAGES_MAX; i++) {
@@ -434,6 +453,7 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
         return -(int)ENOMEM;
     }
     p->stack_page = stack;
+#endif
 
     /* ── 8a. Build argc/argv/envp/auxv at top of stack ─────────────────
      *
