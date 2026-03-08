@@ -33,10 +33,10 @@ void tty_rx_notify(int idx) { (void)idx; }
 /* Defined in drivers/timer_qemu_m68k.c */
 extern void timer_init(void);
 
-/* ── TRAP #0 syscall entry (Phase C Step 3) ──────────────────────────── *
+/* ── TRAP #0 syscall dispatch (Phase C Step 8) ───────────────────────── *
  *
  * Called from m68k_trap0_handler (trap.S) with a pointer to the saved
- * register frame.  Register layout:
+ * register frame.  Register layout (Linux m68k / musl convention):
  *
  *   regs[0]  = d0  (syscall number → overwritten with return value)
  *   regs[1]  = d1  (arg 1)
@@ -46,34 +46,51 @@ extern void timer_init(void);
  *   regs[5]  = d5  (arg 5)
  *   regs[8]  = a0  (arg 6)
  *
- * For Phase C testing, only SYS_WRITE (4) is handled.  Full dispatch
- * will be wired in Phase C Step 8.
+ * Syscall numbers match Linux m68k (same as i386 for common calls).
+ * Phase C implements: exit(1), write(4).  Phase D adds the rest.
  * ────────────────────────────────────────────────────────────────────── */
 
+/* Linux m68k syscall numbers (matching musl) */
+#define SYS_EXIT   1
 #define SYS_WRITE  4
 #define ENOSYS     38
+#define EBADF       9
 
 void m68k_syscall_entry(uint32_t *regs)
 {
     uint32_t nr  = regs[0];
+    long a0 = (long)regs[1];
+    long a1 = (long)regs[2];
+    long a2 = (long)regs[3];
     long ret;
 
     switch (nr) {
+
+    case SYS_EXIT:
+        /* exit(status) — mark process free and yield forever */
+        klogf("SYSCALL: exit(%u)\n", (uint32_t)a0);
+        current->state = PROC_FREE;
+        for (;;)
+            sched_yield();
+        /* not reached */
+        ret = 0;
+        break;
+
     case SYS_WRITE: {
         /* write(fd, buf, count) → d1=fd, d2=buf, d3=count */
-        int fd             = (int)regs[1];
-        const char *buf    = (const char *)(uintptr_t)regs[2];
-        uint32_t count     = regs[3];
+        int fd             = (int)a0;
+        const char *buf    = (const char *)(uintptr_t)a1;
+        uint32_t count     = (uint32_t)a2;
         if (fd == 1 || fd == 2) {
-            /* stdout/stderr → UART */
             for (uint32_t i = 0; i < count; i++)
                 uart_putc(buf[i]);
             ret = (long)count;
         } else {
-            ret = -9;  /* -EBADF */
+            ret = -(long)EBADF;
         }
         break;
     }
+
     default:
         ret = -(long)ENOSYS;
         break;
@@ -199,42 +216,55 @@ void test_process2(void)
     }
 }
 
-/* ── Syscall test process ────────────────────────────────────────────── */
+/* ── Syscall dispatch test process ────────────────────────────────────── */
 
-/* Uses TRAP #0 with the Linux m68k convention to invoke write(). */
-static void syscall_test_process(void)
+/* Helper: invoke TRAP #0 syscall with up to 3 arguments */
+static long m68k_syscall3(long nr, long a0, long a1, long a2)
 {
-    static const char msg[] = "Hello from TRAP #0 syscall!\n";
     long ret;
-
-    /* Inline TRAP #0: d0=SYS_WRITE(4), d1=fd(1), d2=buf, d3=count */
     __asm__ volatile (
-        "move.l  %1,%%d0\n"       /* d0 = SYS_WRITE (4) */
-        "move.l  %2,%%d1\n"       /* d1 = fd (1 = stdout) */
-        "move.l  %3,%%d2\n"       /* d2 = buf */
-        "move.l  %4,%%d3\n"       /* d3 = count */
+        "move.l  %1,%%d0\n"
+        "move.l  %2,%%d1\n"
+        "move.l  %3,%%d2\n"
+        "move.l  %4,%%d3\n"
         "trap    #0\n"
-        "move.l  %%d0,%0\n"       /* ret = d0 (return value) */
+        "move.l  %%d0,%0\n"
         : "=d"(ret)
-        : "i"(SYS_WRITE),
-          "i"(1),
-          "g"(msg),
-          "i"((uint32_t)sizeof(msg) - 1)
+        : "g"(nr), "g"(a0), "g"(a1), "g"(a2)
         : "d0", "d1", "d2", "d3", "cc", "memory"
     );
+    return ret;
+}
 
-    klogf("SYSCALL: write returned %u (expected %u)\n",
-          (uint32_t)ret, (uint32_t)(sizeof(msg) - 1));
+/*
+ * Tests the syscall dispatch (Phase C Step 8):
+ *   1. write(1, "hello", 5)  — the canonical test from the plan
+ *   2. write(1, "\n", 1)     — newline
+ *   3. exit(0)               — clean process termination via syscall
+ */
+static void syscall_test_process(void)
+{
+    long ret;
 
-    if (ret == (long)(sizeof(msg) - 1))
-        klog("SYSCALL: TRAP #0 test PASSED\n");
-    else
-        klog("SYSCALL: TRAP #0 test FAILED\n");
+    /* write(1, "hello", 5) — the canonical Step 8 test */
+    ret = m68k_syscall3(SYS_WRITE, 1, (long)"hello", 5);
+    if (ret != 5) {
+        klog("\nSYSCALL: write(1,\"hello\",5) FAILED\n");
+        current->state = PROC_FREE;
+        for (;;) sched_yield();
+    }
 
-    /* Done — mark free and yield forever */
-    current->state = PROC_FREE;
-    for (;;)
-        sched_yield();
+    /* newline for clean output */
+    m68k_syscall3(SYS_WRITE, 1, (long)"\n", 1);
+
+    klogf("SYSCALL: write returned %u (expected 5)\n", (uint32_t)ret);
+    klog("SYSCALL: dispatch test PASSED\n");
+
+    /* exit(0) via syscall */
+    m68k_syscall3(SYS_EXIT, 0, 0, 0);
+
+    /* not reached */
+    for (;;) sched_yield();
 }
 
 /* ── Phase C kernel entry ─────────────────────────────────────────────── */
@@ -276,8 +306,8 @@ void kmain(void)
     klog("SCHED: cooperative yield test PASSED\n");
     p1->state = PROC_FREE;
 
-    /* ── TRAP #0 syscall test ────────────────────────────────────────── */
-    klog("SYSCALL: testing TRAP #0...\n");
+    /* ── Syscall dispatch test (Phase C Step 8) ──────────────────────── */
+    klog("SYSCALL: testing dispatch via TRAP #0...\n");
     pcb_t *ps = proc_alloc();
     ps->stack_page = page_alloc();
     proc_setup_stack(ps, syscall_test_process, 0);
