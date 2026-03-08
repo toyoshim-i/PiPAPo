@@ -83,6 +83,10 @@ static long devtty_write(const void *buf, size_t n, uint32_t off)
 
 /* ── /dev/urandom ─────────────────────────────────────────────────────────── */
 
+/* Simple LFSR for QEMU / m68k fallback (no ROSC hardware) */
+static uint32_t lfsr_state = 0xDEADBEEFu;
+
+#if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
 /* RP2040 ROSC random bit register (§4.7):
  *   ROSC_BASE = 0x40060000, RANDOMBIT offset = 0x1C
  *   Each read returns a single random bit in bit 0. */
@@ -92,12 +96,11 @@ static long devtty_write(const void *buf, size_t n, uint32_t off)
 #define SCB_CPUID       (*(volatile uint32_t *)0xE000ED00u)
 #define CPUID_PARTNO_MASK  0x0000FFF0u
 #define CPUID_PARTNO_M0P   0x0000C600u
-
-/* Simple LFSR for QEMU fallback (no ROSC hardware) */
-static uint32_t lfsr_state = 0xDEADBEEFu;
+#endif
 
 static uint8_t random_byte(void)
 {
+#if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
     if ((SCB_CPUID & CPUID_PARTNO_MASK) == CPUID_PARTNO_M0P) {
         /* Real RP2040: collect 8 random bits from ROSC */
         uint8_t byte = 0;
@@ -105,8 +108,9 @@ static uint8_t random_byte(void)
             byte = (uint8_t)((byte << 1) | (ROSC_RANDOMBIT & 1u));
         return byte;
     }
+#endif
 
-    /* QEMU fallback: 32-bit Galois LFSR with taps at 32,22,2,1 */
+    /* QEMU / m68k fallback: 32-bit Galois LFSR with taps at 32,22,2,1 */
     uint32_t bit = ((lfsr_state >> 0) ^ (lfsr_state >> 1) ^
                     (lfsr_state >> 21) ^ (lfsr_state >> 31)) & 1u;
     lfsr_state = (lfsr_state >> 1) | (bit << 31);

@@ -15,9 +15,19 @@
 #include <stdint.h>
 #include "config.h"
 
-/* ── Memory map constants (must match ppap.ld / qemu.ld) ──────────────────── */
+/* ── Memory map constants (must match the target linker script) ─────────────── */
 /* PAGE_SIZE and PAGE_COUNT are defined in config.h */
 
+#if defined(__m68k__)
+/* M68K QEMU: RAM at 0x0, page pool placed by linker after stack.
+ * No IOBUF/DMA regions — those are RP2040-specific. */
+#define SRAM_KERNEL_BASE  0x00000000u
+#define SRAM_KERNEL_SIZE     (20u * 1024u)
+extern char __page_pool_start;
+#define PAGE_POOL_BASE    ((uint32_t)(uintptr_t)&__page_pool_start)
+#define PAGE_POOL_SIZE    (PAGE_COUNT * PAGE_SIZE)
+#else
+/* ARM / RP2040: SRAM at 0x20000000, fixed layout matching ppap.ld / qemu.ld */
 #define SRAM_KERNEL_BASE  0x20000000u       /* kernel data region start        */
 #define SRAM_KERNEL_SIZE     (20u * 1024u)  /* 20 KB reserved for kernel       */
 #define PAGE_POOL_BASE    0x20005000u       /* first page in the pool          */
@@ -26,6 +36,7 @@
 #define SRAM_IOBUF_SIZE      (24u * 1024u)  /* 24 KB                           */
 #define SRAM_DMA_BASE     (SRAM_IOBUF_BASE + SRAM_IOBUF_SIZE)
 #define SRAM_DMA_SIZE        (16u * 1024u)  /* 16 KB                           */
+#endif
 
 /* ── API ───────────────────────────────────────────────────────────────────── */
 

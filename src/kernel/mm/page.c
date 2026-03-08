@@ -13,7 +13,9 @@
 
 #include "page.h"
 #include "kmem.h"
+#if !defined(__m68k__)
 #include "xip.h"
+#endif
 #include "../spinlock.h"
 #include "../klog.h"
 #include <stddef.h>
@@ -75,12 +77,14 @@ void mm_init(void)
     klogf("MM:   pages   %x–%x %u KB (%u × 4 KB, all free)\n",
           actual_base, PAGE_POOL_BASE + PAGE_POOL_SIZE - 1u,
           free_top * PAGE_SIZE / 1024u, free_top);
+#if !defined(__m68k__)
     klogf("MM:   io_buf  %x–%x  %u KB\n",
           SRAM_IOBUF_BASE, SRAM_IOBUF_BASE + SRAM_IOBUF_SIZE - 1u,
           SRAM_IOBUF_SIZE / 1024u);
     klogf("MM:   dma     %x–%x  %u KB\n",
           SRAM_DMA_BASE, SRAM_DMA_BASE + SRAM_DMA_SIZE - 1u,
           SRAM_DMA_SIZE / 1024u);
+#endif
 
 #ifdef PPAP_TESTS
     /* ── kmem self-test ───────────────────────────────────────────────────── */
@@ -101,8 +105,8 @@ void mm_init(void)
     klogf("MM: kmem self-test %s\n", ok ? "PASSED" : "FAILED");
 #endif
 
-#ifdef PPAP_TESTS
-    /* ── XIP verification and benchmark ──────────────────────────────────── */
+#if defined(PPAP_TESTS) && !defined(__m68k__)
+    /* ── XIP verification and benchmark (ARM only) ───────────────────────── */
     xip_verify();
 #endif
 }

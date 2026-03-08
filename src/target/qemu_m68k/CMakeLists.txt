@@ -20,15 +20,28 @@ set(CMAKE_C_STANDARD 11)
 # Project root (three levels up from src/target/qemu_m68k/)
 set(PPAP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
-# Phase B: minimal bringup — only the target provides kmain().
-# Phase C will add shared kernel sources (proc, vfs, etc.) as they are ported.
+# Phase C: shared kernel sources compiled for m68k.
+# ARM-only files (smp.c, mpu.c, xip.c) are excluded.
 
 set(CMAKE_EXECUTABLE_SUFFIX .elf)
 
 add_executable(ppap_qemu_m68k
+    # Architecture
     ${PPAP_ROOT}/src/arch/m68k/boot.S
+    ${PPAP_ROOT}/src/arch/m68k/m68k_common.c
+    ${PPAP_ROOT}/src/arch/m68k/string.c
+    ${PPAP_ROOT}/src/arch/m68k/divmod.c
+
+    # Target
     ${CMAKE_CURRENT_SOURCE_DIR}/target_qemu_m68k.c
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/uart_qemu_m68k.c
+
+    # Shared kernel — core subsystems
+    ${PPAP_ROOT}/src/kernel/klog.c
+    ${PPAP_ROOT}/src/kernel/mm/page.c
+    ${PPAP_ROOT}/src/kernel/mm/kmem.c
+    ${PPAP_ROOT}/src/kernel/proc/proc.c
+    ${PPAP_ROOT}/src/kernel/proc/sched.c
 )
 
 target_include_directories(ppap_qemu_m68k PRIVATE
@@ -55,8 +68,11 @@ target_link_options(ppap_qemu_m68k PRIVATE
     -Wl,--build-id=none
 )
 
-# Link libgcc for 68000 helper functions (__udivsi3, __umodsi3, etc.)
-# The 68000 has no hardware divide — GCC emits calls into libgcc.
+# Link libgcc for 68000 helper functions (__mulsi3, etc.).
+# Division helpers (__udivsi3, __umodsi3, __divsi3, __modsi3) are
+# provided by src/arch/m68k/divmod.c because the system libgcc uses
+# 68020+ instructions (BSR.L) that fault on the 68000.  Our versions
+# override the libgcc ones (linker picks first definition).
 execute_process(
     COMMAND ${CMAKE_C_COMPILER} -m68000 -print-libgcc-file-name
     OUTPUT_VARIABLE M68K_LIBGCC

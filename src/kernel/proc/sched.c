@@ -17,8 +17,8 @@
 #include "../mm/page.h"    /* PAGE_SIZE */
 #include "../spinlock.h"   /* SPIN_PROC */
 #include "../fd/tty.h"     /* tty_rx_notify */
-#include "arch/arm_m/arch.h"
-#include "arch/arm_m/cpu.h"
+#include "arch/arch.h"
+#include "arch/cpu.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -99,29 +99,7 @@ void sched_tick(void)
     }
 }
 
-/* ── SysTick exception handler ─────────────────────────────────────────────── */
-
-/* CPU tick accounting needs the EXC_RETURN value that the hardware places in
- * LR on exception entry.  A normal C function's prologue clobbers LR, so we
- * use a naked wrapper to capture it and pass it as the first argument.
- *
- * EXC_RETURN bit 3:  1 = return to Thread mode (user),
- *                    0 = return to Handler mode (kernel).
- *
- * Note: ICSR.RETTOBASE (bit 11) is RAZ on ARMv6-M / Cortex-M0+, so we
- * cannot use it for user-vs-kernel distinction. */
-
-__attribute__((used)) static void SysTick_Handler_c(uint32_t exc_return);
-
-__attribute__((naked)) void SysTick_Handler(void)
-{
-    __asm__ volatile(
-        "push {r0, lr}\n"  /* 8-byte aligned; save EXC_RETURN for return */
-        "mov  r0, lr\n"    /* pass EXC_RETURN as first argument */
-        "bl   SysTick_Handler_c\n"
-        "pop  {r0, pc}\n"  /* pop EXC_RETURN into PC → exception return */
-    );
-}
+/* ── Periodic polling callbacks (shared across architectures) ──────────────── */
 
 /* Optional input-available callback, registered by target via sched_set_input_poll().
  * Returns non-zero if input is available (e.g. keyboard FIFO has data). */
@@ -151,7 +129,12 @@ void sched_display_poll(void)
         display_poll_fn();
 }
 
-static void SysTick_Handler_c(uint32_t exc_return)
+/* ── Timer tick handler (shared logic) ─────────────────────────────────────── */
+
+/* Common tick processing: tick counter, input polling, CPU accounting.
+ * Called from the architecture-specific timer ISR.
+ * from_user: 1 if interrupted from user mode, 0 if from kernel/supervisor. */
+void sched_timer_tick(int from_user)
 {
     /* Only Core 0 maintains the global tick counter */
     if (core_id() == 0) {
@@ -167,7 +150,7 @@ static void SysTick_Handler_c(uint32_t exc_return)
 
     uint32_t cid = core_id();
     if (current && current->state == PROC_RUNNABLE && !current->is_idle) {
-        if (exc_return & (1u << 3)) {
+        if (from_user) {
             current->utime++;
             cpu_user_ticks[cid]++;
         } else {
@@ -181,7 +164,40 @@ static void SysTick_Handler_c(uint32_t exc_return)
     sched_tick();
 }
 
-/* ── Scheduler startup ─────────────────────────────────────────────────────── */
+/* ── Architecture-specific: timer ISR + scheduler startup ─────────────────── */
+
+#if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
+
+/* ARM Cortex-M SysTick exception handler.
+ *
+ * CPU tick accounting needs the EXC_RETURN value that the hardware places in
+ * LR on exception entry.  A normal C function's prologue clobbers LR, so we
+ * use a naked wrapper to capture it and pass it as the first argument.
+ *
+ * EXC_RETURN bit 3:  1 = return to Thread mode (user),
+ *                    0 = return to Handler mode (kernel).
+ *
+ * Note: ICSR.RETTOBASE (bit 11) is RAZ on ARMv6-M / Cortex-M0+, so we
+ * cannot use it for user-vs-kernel distinction. */
+
+__attribute__((used)) static void SysTick_Handler_c(uint32_t exc_return);
+
+__attribute__((naked)) void SysTick_Handler(void)
+{
+    __asm__ volatile(
+        "push {r0, lr}\n"  /* 8-byte aligned; save EXC_RETURN for return */
+        "mov  r0, lr\n"    /* pass EXC_RETURN as first argument */
+        "bl   SysTick_Handler_c\n"
+        "pop  {r0, pc}\n"  /* pop EXC_RETURN into PC → exception return */
+    );
+}
+
+static void SysTick_Handler_c(uint32_t exc_return)
+{
+    sched_timer_tick((exc_return & (1u << 3)) != 0);
+}
+
+/* ── Scheduler startup (ARM) ──────────────────────────────────────────────── */
 
 void sched_start(void)
 {
@@ -232,6 +248,23 @@ void sched_start(void)
     /* Enable interrupts — scheduler is now live. */
     arch_irq_enable();
 }
+
+#elif defined(__m68k__)
+
+/* ── Scheduler startup (m68k) ─────────────────────────────────────────────── */
+
+/* M68K timer ISR and context switch are implemented in Phase C Steps 2-5.
+ * sched_timer_tick() is called from the m68k timer ISR. */
+
+void sched_start(void)
+{
+    /* M68K: no PSP/MSP split, no PendSV priorities to set.
+     * Timer ISR setup is done by target_late_init().
+     * Just enable interrupts to start the scheduler. */
+    arch_irq_enable();
+}
+
+#endif /* __ARM_ARCH / __m68k__ */
 
 /* ── Cooperative yield ─────────────────────────────────────────────────────── */
 

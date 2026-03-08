@@ -31,8 +31,8 @@
 #include "mm/mpu.h"           /* mpu_init */
 #include "../drivers/uart.h"
 #include "klog.h"
-#include "arch/arm_m/arch.h"
-#include "arch/arm_m/cpu.h" /* SCB_SHPR2/3, SYST_*, priority masks */
+#include "arch/arch.h"
+#include "arch/cpu.h"
 #include "config.h"
 #include <stdint.h>
 

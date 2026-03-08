@@ -25,7 +25,7 @@
 #include "exec/exec.h"
 #include "smp.h"
 #include "spinlock.h"
-#include "arch/arm_m/arch.h"
+#include "arch/arch.h"
 #include "errno.h"
 
 /* Linker-provided romfs image location in flash */

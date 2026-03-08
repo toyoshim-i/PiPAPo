@@ -19,7 +19,7 @@
 #include "../proc/proc.h"
 #include "../../drivers/uart.h"
 #include "../klog.h"
-#include "arch/arm_m/arch.h"
+#include "arch/arch.h"
 #include <stdint.h>
 
 /* ── MPU register addresses (ARMv6-M §B3.5) ─────────────────────────────── */

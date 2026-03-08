@@ -19,16 +19,18 @@
 #define PPAP_SPINLOCK_H
 
 #include <stdint.h>
-#include "arch/arm_m/arch.h"
+#include "arch/arch.h"
 
 #define SIO_BASE            0xD0000000u
 #define SIO_CPUID           (*(volatile uint32_t *)(SIO_BASE + 0x000u))
 #define SIO_SPINLOCK_BASE   (SIO_BASE + 0x100u)
 
 /* SCB.CPUID — always accessible on any Cortex-M */
+#if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
 #define SCB_CPUID_REG       (*(volatile uint32_t *)0xE000ED00u)
 #define CPUID_PARTNO_MASK   0x0000FFF0u
 #define CPUID_PARTNO_M0P    0x0000C600u
+#endif
 
 enum {
     SPIN_PAGE = 0,   /* free_stack, free_top (page allocator) */
@@ -40,13 +42,17 @@ enum {
 
 static inline int spin_have_hw(void)
 {
+#if defined(__m68k__)
+    return 0;   /* no hardware spinlocks on 68k */
+#else
     return (SCB_CPUID_REG & CPUID_PARTNO_MASK) == CPUID_PARTNO_M0P;
+#endif
 }
 
 static inline uint32_t core_id(void)
 {
-#ifdef PPAP_QEMU
-    return 0;   /* QEMU: single core, no SIO */
+#if defined(__m68k__) || defined(PPAP_QEMU)
+    return 0;   /* single core: m68k or QEMU ARM */
 #else
     return SIO_CPUID;   /* RP2040: single MMIO read, ~1 cycle */
 #endif

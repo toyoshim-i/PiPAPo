@@ -57,6 +57,14 @@ void sched_start(void);
 void sched_tick(void);
 
 /*
+ * Common timer tick handler: tick counter, input polling, CPU accounting.
+ * Called from the architecture-specific timer ISR (SysTick on ARM, timer
+ * handler on m68k).
+ * from_user: 1 if interrupted from user mode, 0 if from kernel/supervisor.
+ */
+void sched_timer_tick(int from_user);
+
+/*
  * Voluntarily yield the CPU to the next RUNNABLE process.
  * Sets PENDSVSET so PendSV_Handler runs at the next opportunity and
  * switches context.  Safe to call from Thread mode at any time.

@@ -15,7 +15,7 @@
 #include "../mm/page.h"   /* PAGE_SIZE — for proc_setup_stack */
 #include "../spinlock.h"  /* SPIN_PROC */
 #include "../klog.h"
-#include "arch/arm_m/cpu.h" /* XPSR_THUMB_BIT, EXC_RETURN_THREAD_PSP */
+#include "arch/cpu.h"
 #include <stddef.h>   /* NULL, offsetof */
 
 /* Default file creation mask (octal 022 → owner rw, group/other r) */
@@ -133,31 +133,18 @@ void proc_free(pcb_t *p)
 
 void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp)
 {
-    /*
-     * Build the initial stack frame that PendSV_Handler will restore on
-     * the first context switch into this process.
-     *
-     * Stack grows downward.  We push two layers (high address to low):
-     *
-     *  1. Hardware exception frame (8 words): the CPU pops this when
-     *     PendSV does `bx lr` with EXC_RETURN = 0xFFFFFFFD.
-     *
-     *  2. Software callee-saved frame (8 words): PendSV_Handler loads
-     *     r4–r11 from here, then sets PSP to the start of layer 1.
-     *
-     * user_sp is the PSP after the hardware frame pop.  For exec'd
-     * processes it points to the argc slot; for plain threads it's
-     * the top of the stack page.
-     *
-     * p->sp is set to the bottom of layer 2 (= the `r4` slot).
-     */
     uint32_t *sp;
     if (user_sp)
         sp = (uint32_t *)(uintptr_t)user_sp;
     else
         sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
 
-    /* ── Layer 1: hardware exception frame (high → low) ──────────────── */
+#if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
+    /*
+     * ARM Cortex-M: two layers on the stack (high → low):
+     *  1. Hardware exception frame (8 words): popped by EXC_RETURN.
+     *  2. Software callee-saved frame (8 words, r4–r11): loaded by PendSV.
+     */
     *--sp = XPSR_THUMB_BIT;              /* xpsr: Thumb bit (T=1)       */
     *--sp = (uint32_t)entry & ~1u;        /* pc: entry point (bit0 clear)*/
     *--sp = EXC_RETURN_THREAD_PSP;        /* lr: EXC_RETURN thread/PSP   */
@@ -166,8 +153,7 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp)
     *--sp = 0u;                           /* r2                          */
     *--sp = 0u;                           /* r1                          */
     *--sp = 0u;                           /* r0                          */
-
-    /* ── Layer 2: software callee-saved frame (r11..r4, high → low) ─── */
+    /* Software callee-saved frame (r11..r4, high → low) */
     *--sp = 0u;   /* r11 */
     *--sp = 0u;   /* r10 */
     *--sp = 0u;   /* r9  */
@@ -176,6 +162,35 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp)
     *--sp = 0u;   /* r6  */
     *--sp = 0u;   /* r5  */
     *--sp = 0u;   /* r4  */   /* ← pcb_t.sp points here */
+
+#elif defined(__m68k__)
+    /*
+     * M68K: two layers on the stack (high → low):
+     *  1. Exception frame (SR + PC, 3 words / 6 bytes): popped by RTE.
+     *  2. Software callee-saved frame (11 longs, d2–d7/a2–a6): loaded
+     *     by switch.S.
+     */
+    /* Exception frame: SR (16-bit) + PC (32-bit) = 6 bytes.
+     * On 68000, SR and PC are packed as {SR[15:0], PC[31:0]}.
+     * We push as 32-bit words but the top word is {SR, PC_high}. */
+    *--sp = (uint32_t)entry;              /* PC: entry point             */
+    /* SR: supervisor mode with IRQs enabled (will switch to user later) */
+    *((uint16_t *)--sp + 1) = 0;  /* pad to keep alignment */
+    sp = (uint32_t *)((uint8_t *)sp - 2);
+    *(uint16_t *)sp = SR_SUPV_IRQ;        /* SR: supervisor, IPL=0       */
+    /* Software callee-saved frame (a6..a2, d7..d2, high → low) */
+    *--sp = 0u;   /* a6 */
+    *--sp = 0u;   /* a5 */
+    *--sp = 0u;   /* a4 */
+    *--sp = 0u;   /* a3 */
+    *--sp = 0u;   /* a2 */
+    *--sp = 0u;   /* d7 */
+    *--sp = 0u;   /* d6 */
+    *--sp = 0u;   /* d5 */
+    *--sp = 0u;   /* d4 */
+    *--sp = 0u;   /* d3 */
+    *--sp = 0u;   /* d2 */   /* ← pcb_t.sp points here */
+#endif
 
     p->sp = (uint32_t)(uintptr_t)sp;
     p->ticks_remaining = PROC_DEFAULT_TICKS;
