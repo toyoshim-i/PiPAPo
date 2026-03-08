@@ -32,6 +32,7 @@ add_executable(ppap_qemu_m68k
     ${PPAP_ROOT}/src/arch/m68k/string.c
     ${PPAP_ROOT}/src/arch/m68k/divmod.c
     ${PPAP_ROOT}/src/arch/m68k/switch.S
+    ${PPAP_ROOT}/src/arch/m68k/trap.S
 
     # Target
     ${CMAKE_CURRENT_SOURCE_DIR}/target_qemu_m68k.c
