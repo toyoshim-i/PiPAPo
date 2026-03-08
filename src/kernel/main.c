@@ -63,7 +63,9 @@ void kmain(void)
     target_late_init();
 
     /* Bootstrap: mount romfs at / (needed to read /etc/fstab) */
-    if (vfs_mount("/", &romfs_ops, MNT_RDONLY, __romfs_start) != 0)
+    if (vfs_mount("/", &romfs_ops, MNT_RDONLY, __romfs_start) == 0)
+        klog("VFS: romfs mounted at /\n");
+    else
         klog("VFS: romfs mount FAILED\n");
 
     /* Parse /etc/fstab and mount all entries */

@@ -193,7 +193,9 @@ int fstab_mount_all(const fstab_entry_t *entries, int count)
         }
 
         int rc = vfs_mount(e->mountpoint, ops, e->flags, dev_data);
-        if (rc != 0)
+        if (rc == 0)
+            klogf("VFS: %s mounted at %s\n", e->fstype, e->mountpoint);
+        else
             klogf("VFS: mount %s failed\n", e->mountpoint);
     }
 
