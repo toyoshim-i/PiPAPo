@@ -522,11 +522,26 @@ long sys_unlink(const char *path)
  * Phase 6 Step 7: Linux-compatible syscalls (musl libc ABI)
  * ══════════════════════════════════════════════════════════════════════════════ */
 
-/* ── Linux ARM struct stat64 (88 bytes) ──────────────────────────────────── */
+/* ── Linux struct stat64 — architecture-specific layout ─────────────────── */
 /*
- * Layout must exactly match musl's arch/arm/bits/stat.h.
- * We define it locally to avoid polluting the kernel VFS headers.
+ * Layout must exactly match musl's arch/{arm,m68k}/bits/stat.h.
+ * ARM and m68k have different padding and field sizes.
+ *
+ * The m68k musl layout has a 2-byte __st_dev_padding (vs 4 on ARM),
+ * shifting all subsequent fields.  We write m68k fields at their exact
+ * offsets (verified with offsetof against the musl sysroot):
+ *
+ *   m68k:  st_dev=0 st_mode=14 st_nlink=18 st_uid=22 st_gid=26
+ *          st_rdev=30 st_size=40 st_blksize=48 st_blocks=52
+ *          st_ino=84 st_atim=92 sizeof=140
+ *
+ *   ARM:   st_dev=0 st_mode=16 st_nlink=20 st_uid=24 st_gid=28
+ *          st_rdev=32 st_size=44 st_blksize=52 st_blocks=56
+ *          st_ino=88 st_atim=96 sizeof=152 (struct linux_stat64=96)
  */
+
+#if !defined(__m68k__)
+/* ARM: compact struct linux_stat64 (96 bytes, musl arch/arm/bits/stat.h) */
 struct linux_stat64 {
     uint64_t st_dev;             /* +0  */
     uint32_t __pad1;             /* +8  */
@@ -548,10 +563,44 @@ struct linux_stat64 {
     uint32_t st_ctime_nsec;      /* +84 */
     uint64_t st_ino;             /* +88 */
 };
-/* Note: actual size is 96 bytes including the trailing st_ino */
+#endif
 
-static void fill_stat64(const struct stat *src, struct linux_stat64 *dst)
+/* Helper: write a big-endian uint32 at a byte offset */
+static void put_be32(uint8_t *base, int off, uint32_t v)
 {
+    base[off]   = (uint8_t)(v >> 24);
+    base[off+1] = (uint8_t)(v >> 16);
+    base[off+2] = (uint8_t)(v >> 8);
+    base[off+3] = (uint8_t)v;
+}
+
+static void fill_stat64(const struct stat *src, void *buf)
+{
+#if defined(__m68k__)
+    /*
+     * m68k musl struct stat (140 bytes).
+     * Offsets verified by compiling against musl sysroot with offsetof().
+     */
+    uint8_t *d = (uint8_t *)buf;
+    memset(d, 0, 140);
+
+    /* __st_ino_truncated at +10 (2-byte __st_dev_padding at +8, then long) */
+    put_be32(d, 10, (uint32_t)src->st_ino);
+    /* st_mode at +14 */
+    put_be32(d, 14, src->st_mode);
+    /* st_nlink at +18 */
+    put_be32(d, 18, src->st_nlink);
+    /* st_uid at +22 = 0, st_gid at +26 = 0 — already zeroed */
+    /* st_size at +40 (off_t is 8 bytes; write low 4 bytes at +44) */
+    put_be32(d, 44, (uint32_t)src->st_size);
+    /* st_blksize at +48 */
+    put_be32(d, 48, 4096);
+    /* st_blocks at +52 (blkcnt_t is 8 bytes; write low 4 bytes at +56) */
+    put_be32(d, 56, ((uint32_t)src->st_size + 511u) / 512u);
+    /* st_ino at +84 (ino_t is 8 bytes; write low 4 bytes at +88) */
+    put_be32(d, 88, (uint32_t)src->st_ino);
+#else
+    struct linux_stat64 *dst = (struct linux_stat64 *)buf;
     memset(dst, 0, sizeof(*dst));
     dst->st_ino = src->st_ino;
     dst->__st_ino_truncated = src->st_ino;
@@ -561,6 +610,7 @@ static void fill_stat64(const struct stat *src, struct linux_stat64 *dst)
     dst->st_blksize = 4096;
     dst->st_blocks = ((uint64_t)src->st_size + 511u) / 512u;
     /* uid, gid, dev, rdev, times left as zero */
+#endif
 }
 
 /* ── sys_stat64 ────────────────────────────────────────────────────────────── */
@@ -586,7 +636,7 @@ long sys_stat64(const char *path, void *buf)
     if (err)
         return (long)err;
 
-    fill_stat64(&st, (struct linux_stat64 *)buf);
+    fill_stat64(&st, buf);
     return 0;
 }
 
@@ -603,11 +653,11 @@ long sys_fstat64(long fd, void *buf)
 
     /* tty files (no vnode): synthesize a minimal char-device stat */
     if (!f->vnode) {
-        struct linux_stat64 *dst = (struct linux_stat64 *)buf;
-        memset(dst, 0, sizeof(*dst));
-        dst->st_mode = S_IFCHR | 0666u;
-        dst->st_nlink = 1;
-        dst->st_blksize = 4096;
+        struct stat tty_st;
+        memset(&tty_st, 0, sizeof(tty_st));
+        tty_st.st_mode = S_IFCHR | 0666u;
+        tty_st.st_nlink = 1;
+        fill_stat64(&tty_st, buf);
         return 0;
     }
 
@@ -620,7 +670,7 @@ long sys_fstat64(long fd, void *buf)
     if (err)
         return (long)err;
 
-    fill_stat64(&st, (struct linux_stat64 *)buf);
+    fill_stat64(&st, buf);
     return 0;
 }
 
@@ -647,7 +697,7 @@ long sys_lstat64(const char *path, void *buf)
     if (err)
         return (long)err;
 
-    fill_stat64(&st, (struct linux_stat64 *)buf);
+    fill_stat64(&st, buf);
     return 0;
 }
 
