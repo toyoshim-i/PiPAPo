@@ -1,5 +1,5 @@
 # =============================================================================
-# user/Makefile — Cross-compilation build for PPAP user-space programs
+# src/user/Makefile — Cross-compilation build for PPAP user-space programs
 # =============================================================================
 #
 # Builds ARM Thumb ELF binaries using raw SVC syscalls (no libc).

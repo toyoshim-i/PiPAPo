@@ -49,7 +49,7 @@ if [[ "${1:-}" == "--clean" ]]; then
     for applet in "${SBIN_APPLETS[@]}"; do
         rm -f "$ROMFS_SBIN/$applet"
     done
-    # Note: /sbin/init is now from user/init, not busybox
+    # Note: /sbin/init is now from src/user/init, not busybox
     echo "busybox: clean done."
     exit 0
 fi
@@ -88,7 +88,7 @@ echo "busybox: installing into romfs..."
 mkdir -p "$ROMFS_BIN"
 mkdir -p "$ROMFS_SBIN"
 
-# Copy busybox binaries (init is provided by user/init.c, not busybox)
+# Copy busybox binaries (init is provided by src/user/init.c, not busybox)
 cp "$BB_BUILD/busybox" "$ROMFS_BIN/busybox"
 echo "  installed: $ROMFS_BIN/busybox ($(stat -c%s "$ROMFS_BIN/busybox") bytes)"
 
@@ -119,6 +119,6 @@ echo "  symlinks: ${SBIN_APPLETS[*]} → ../bin/busybox"
 # --- Summary ---
 echo "busybox: installation complete."
 echo "  binaries: busybox + busybox.sh"
-echo "  note: /sbin/init and /bin/getty provided by user/ (not busybox)"
+echo "  note: /sbin/init and /bin/getty provided by src/user/ (not busybox)"
 total=$((${#APPLETS[@]} + ${#SHELL_APPLETS[@]} + ${#SBIN_APPLETS[@]}))
 echo "  symlinks: $total total (${#APPLETS[@]} applets + ${#SHELL_APPLETS[@]} shell + ${#SBIN_APPLETS[@]} sbin)"

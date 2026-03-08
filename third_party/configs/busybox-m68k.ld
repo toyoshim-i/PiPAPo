@@ -1,7 +1,7 @@
 /*
  * busybox-m68k.ld — Linker script for PPAP m68k busybox (sep-data, XIP)
  *
- * Same model as user/arch/m68k/user.ld: binary linked at address 0 with
+ * Same model as src/user/arch/m68k/user.ld: binary linked at address 0 with
  * two PT_LOAD segments.  The kernel's exec.c handles GOT base (a5) setup
  * and data segment relocation.
  *

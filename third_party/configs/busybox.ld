@@ -1,7 +1,7 @@
 /*
  * busybox.ld — Linker script for PPAP busybox (PIC, PIE, XIP from flash)
  *
- * Same model as user/user.ld: binary linked at address 0 with two
+ * Same model as src/user/arch/arm_m/user.ld: binary linked at address 0 with two
  * PT_LOAD segments.  The kernel's exec.c relocates GOT entries at
  * load time so text refs point into flash and data refs into SRAM.
  *

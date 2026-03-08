@@ -44,7 +44,7 @@ Use raw SVC syscall stubs. No standard C library — only freestanding
 headers (`<stdint.h>`, `<stddef.h>`). This produces the smallest binaries
 and is suitable for test programs and simple utilities.
 
-Reference implementation: `user/` directory.
+Reference implementation: `src/user/` directory.
 
 ### Path B: musl libc
 
@@ -168,7 +168,7 @@ The kernel's ELF loader identifies segments by their flags:
 
 #### Simple Linker Script (Path A)
 
-The `user/user.ld` script is sufficient for bare-metal programs:
+The `src/user/arch/arm_m/user.ld` script is sufficient for bare-metal programs:
 
 ```ld
 ENTRY(_start)
@@ -229,7 +229,7 @@ musl programs built with `-pie` need additional sections. See
 
 **Path A (bare-metal):**
 ```sh
-arm-none-eabi-gcc -nostdlib -T user/user.ld -Wl,--gc-sections \
+arm-none-eabi-gcc -nostdlib -T src/user/arch/arm_m/user.ld -Wl,--gc-sections \
     crt0.o syscall.o myapp.o -o myapp.elf
 ```
 
@@ -461,12 +461,11 @@ my_syscall:
 ### Directory Structure
 
 ```
-user/
-  crt0.S        Minimal CRT: _start → main() → _exit()
-  syscall.S     SVC syscall stubs (read, write, open, etc.)
+src/user/
+  arch/arm_m/   ARM-specific: crt0.S, syscall.S, getty.S, user.ld
+  arch/m68k/    m68k-specific: crt0.S, syscall.S, hello.S, user.ld
   syscall.h     C declarations for the stubs
-  user.ld       Linker script (two-segment PIC layout)
-  Makefile      Build rules
+  Makefile      Build rules (ARM)
   hello.c       Example: "Hello from user space!"
 ```
 
@@ -488,8 +487,8 @@ with main's return value.
 
 ### Adding a New Program
 
-1. Create `user/myapp.c`
-2. Add `myapp` to the `PROGRAMS` list in `user/Makefile`:
+1. Create `src/user/myapp.c`
+2. Add `myapp` to the `PROGRAMS` list in `src/user/Makefile`:
    ```make
    PROGRAMS := hello myapp ...
    ```
@@ -507,7 +506,7 @@ arm-none-eabi-gcc -mthumb -mcpu=cortex-m0plus -march=armv6s-m \
     -c -o myapp.o myapp.c
 
 # Link
-arm-none-eabi-gcc -nostdlib -T user/user.ld -Wl,--gc-sections \
+arm-none-eabi-gcc -nostdlib -T src/user/arch/arm_m/user.ld -Wl,--gc-sections \
     crt0.o syscall.o myapp.o -o myapp.elf
 ```
 
@@ -526,7 +525,7 @@ ls build/musl-sysroot/lib/libc.a
 ### Build Process
 
 1. **Generate specs file** (see section 5)
-2. **Write or copy a linker script** — start from `user/user.ld` for simple
+2. **Write or copy a linker script** — start from `src/user/arch/arm_m/user.ld` for simple
    programs, or copy `third_party/configs/busybox.ld` for PIE binaries with
    function-pointer tables in `.rodata`
 3. **Compile and link**:
@@ -562,7 +561,7 @@ argv[0]=path at exec time.
 ### When to Use `-pie` and `.rodata` Splitting
 
 **Simple programs** (no function pointer arrays in const data): use
-`user/user.ld` without `-pie`. All `.rodata` stays in the text segment
+`src/user/arch/arm_m/user.ld` without `-pie`. All `.rodata` stays in the text segment
 (flash).
 
 **Complex programs** (function pointer dispatch tables, vtable-like
@@ -626,7 +625,7 @@ romfs_ppap_pico1calc/
 2. Rebuild: `cmake --build build/arm_m`
 
 The CMake pipeline automatically:
-1. Builds user binaries (`user/Makefile`) into `build/arm_m/romfs/`
+1. Builds user binaries (`src/user/Makefile`) into `build/arm_m/romfs/`
 2. Builds busybox and installs applet symlinks into `build/arm_m/romfs/`
 3. Builds rogue and installs to `build/arm_m/romfs/bin/rogue`
 4. Assembles per-target staging dir from `src/etc/` + built binaries

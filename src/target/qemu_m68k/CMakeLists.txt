@@ -94,6 +94,7 @@ target_compile_definitions(ppap_qemu_m68k PRIVATE
     PPAP_QEMU=1
     PPAP_M68K=1
     PAGE_COUNT=256u
+    SYSCALL_DEBUG=1
 )
 
 target_compile_options(ppap_qemu_m68k PRIVATE
@@ -126,14 +127,14 @@ target_link_libraries(ppap_qemu_m68k PRIVATE ${M68K_LIBGCC})
 # User-space programs + romfs image pipeline
 # =============================================================================
 
-set(M68K_USER_DIR ${PPAP_ROOT}/user/arch/m68k)
+set(M68K_USER_DIR ${PPAP_ROOT}/src/user/arch/m68k)
 set(M68K_USER_LD  ${M68K_USER_DIR}/user.ld)
 
 # --- Build m68k user-space binaries ---
 # Common objects: crt0.o + syscall.o (linked into every user program)
 set(M68K_CFLAGS  -m68000 -ffreestanding -nostdlib -Os -g -Wall
                  -msep-data
-                 -I${PPAP_ROOT}/user/arch/m68k -I${PPAP_ROOT}/user)
+                 -I${PPAP_ROOT}/src/user/arch/m68k -I${PPAP_ROOT}/src/user)
 set(M68K_ASFLAGS -m68000)
 set(M68K_LDFLAGS -nostdlib -T ${M68K_USER_LD}
                  -Wl,--gc-sections -Wl,--build-id=none)
@@ -155,7 +156,7 @@ add_custom_command(
 )
 
 set(M68K_COMMON_OBJS ${CMAKE_BINARY_DIR}/crt0.o ${CMAKE_BINARY_DIR}/syscall.o)
-set(M68K_COMMON_DEPS ${M68K_COMMON_OBJS} ${M68K_USER_LD} ${PPAP_ROOT}/user/syscall.h)
+set(M68K_COMMON_DEPS ${M68K_COMMON_OBJS} ${M68K_USER_LD} ${PPAP_ROOT}/src/user/syscall.h)
 
 # Build a user program from shared C source
 function(m68k_user_program name source)
@@ -172,10 +173,10 @@ function(m68k_user_program name source)
     )
 endfunction()
 
-m68k_user_program(hello  ${PPAP_ROOT}/user/hello.c)
-m68k_user_program(init   ${PPAP_ROOT}/user/init.c)
-m68k_user_program(getty  ${PPAP_ROOT}/user/getty.c)
-m68k_user_program(ttyctl ${PPAP_ROOT}/user/ttyctl.c)
+m68k_user_program(hello  ${PPAP_ROOT}/src/user/hello.c)
+m68k_user_program(init   ${PPAP_ROOT}/src/user/init.c)
+m68k_user_program(getty  ${PPAP_ROOT}/src/user/getty.c)
+m68k_user_program(ttyctl ${PPAP_ROOT}/src/user/ttyctl.c)
 
 set(M68K_USER_ELFS
     ${CMAKE_BINARY_DIR}/hello.elf

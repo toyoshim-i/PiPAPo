@@ -51,7 +51,7 @@ endif()
 # User-space build + romfs image pipeline
 # =============================================================================
 # 1. Build musl libc + busybox
-# 2. Build user-space ELF binaries (user/Makefile)
+# 2. Build user-space ELF binaries (src/user/Makefile)
 # 3. Install into ${ROMFS_DIR} (build/arm_m/romfs/)
 # 4. Build mkromfs, generate romfs.bin
 # 5. Link romfs_data.S (.incbin romfs.bin) into all targets
@@ -134,7 +134,7 @@ add_custom_command(
 add_custom_target(rogue_install DEPENDS ${ROGUE_STAMP})
 
 # --- User-space binaries (Phase 3 Step 1) ---
-set(USER_SRC_DIR ${CMAKE_SOURCE_DIR}/user)
+set(USER_SRC_DIR ${CMAKE_SOURCE_DIR}/src/user)
 set(USER_STAMP ${CMAKE_BINARY_DIR}/user_binaries.stamp)
 
 file(GLOB USER_SOURCES ${USER_SRC_DIR}/*.c ${USER_SRC_DIR}/*.S

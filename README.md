@@ -86,7 +86,7 @@ PPAP/
       kbd.c/h               STM32 keyboard controller
       fbcon.c/h             Framebuffer text console + VT100 parser
       font8x16.c font4x8.c Bitmap fonts (40×20 / 80×40 mode)
-  user/                     User-space programs (ARM Thumb ELFs) + build Makefile
+  src/user/                 User-space programs (ARM Thumb ELFs) + build Makefile
   tests/
     kernel/                 On-target kernel integration tests (ktest.c)
     host/                   Host-native unit tests (test_kmem, test_fd, test_elf)
