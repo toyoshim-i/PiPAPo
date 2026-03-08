@@ -138,7 +138,9 @@ set(USER_SRC_DIR ${CMAKE_SOURCE_DIR}/user)
 set(USER_STAMP ${CMAKE_BINARY_DIR}/user_binaries.stamp)
 
 file(GLOB USER_SOURCES ${USER_SRC_DIR}/*.c ${USER_SRC_DIR}/*.S
-                       ${USER_SRC_DIR}/*.h ${USER_SRC_DIR}/*.ld
+                       ${USER_SRC_DIR}/*.h
+                       ${USER_SRC_DIR}/arch/arm_m/*.S
+                       ${USER_SRC_DIR}/arch/arm_m/*.ld
                        ${USER_SRC_DIR}/Makefile)
 
 find_program(MAKE_CMD make REQUIRED)

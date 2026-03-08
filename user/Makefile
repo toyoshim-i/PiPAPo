@@ -28,8 +28,11 @@ BUILD_DIR ?= .
 ROMFS_BIN ?= ../build/arm_m/romfs/bin
 TESTS_DIR ?= ../tests/user
 
-# Search tests/user/ and source dir for sources
-VPATH := $(SRC_DIR) $(TESTS_DIR)
+# Arch-specific directory (crt0.S, syscall.S, getty.S, user.ld)
+ARCH_DIR := $(SRC_DIR)arch/arm_m
+
+# Search arch dir, source dir, and tests/user/ for sources
+VPATH := $(ARCH_DIR) $(SRC_DIR) $(TESTS_DIR)
 
 # Compiler / assembler flags — Cortex-M0+ Thumb, freestanding, no libc
 # PIC flags: all data references go through GOT (r9 = GOT base, set by kernel).
@@ -41,7 +44,7 @@ CFLAGS  := -mthumb -mcpu=cortex-m0plus -march=armv6s-m \
            -mno-pic-data-is-text-relative \
            -I$(SRC_DIR) -I$(TESTS_DIR)
 ASFLAGS := -mthumb -mcpu=cortex-m0plus -march=armv6s-m
-LDFLAGS := -nostdlib -T $(SRC_DIR)user.ld -Wl,--gc-sections
+LDFLAGS := -nostdlib -T $(ARCH_DIR)/user.ld -Wl,--gc-sections
 
 # Common objects linked into every user program
 COMMON_OBJS := $(BUILD_DIR)/crt0.o $(BUILD_DIR)/syscall.o
@@ -74,12 +77,12 @@ $(BUILD_DIR):
 $(BUILD_DIR)/getty.o: getty.S
 	$(AS) $(ASFLAGS) -c -o $@ $<
 
-$(BUILD_DIR)/getty.elf: $(BUILD_DIR)/getty.o $(SRC_DIR)user.ld
+$(BUILD_DIR)/getty.elf: $(BUILD_DIR)/getty.o $(ARCH_DIR)/user.ld
 	$(LD) $(LDFLAGS) -o $@ $(BUILD_DIR)/getty.o
 	@$(NM) --numeric-sort $@ | grep -E '_start|main|write|_exit'
 
 # Link: common objects + program-specific object → ELF
-$(BUILD_DIR)/%.elf: $(COMMON_OBJS) $(BUILD_DIR)/%.o $(SRC_DIR)user.ld
+$(BUILD_DIR)/%.elf: $(COMMON_OBJS) $(BUILD_DIR)/%.o $(ARCH_DIR)/user.ld
 	$(LD) $(LDFLAGS) -o $@ $(COMMON_OBJS) $(BUILD_DIR)/$*.o
 	@$(NM) --numeric-sort $@ | grep -E '_start|main|write|_exit'
 
