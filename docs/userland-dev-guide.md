@@ -675,7 +675,7 @@ which starts an interactive shell.
 ./scripts/flash.sh pico1calc
 
 # Or debug via OpenOCD + GDB
-gdb-multiarch -x pico1calc.gdb build/arm_m/ppap_pico1calc.elf
+gdb-multiarch -x scripts/debug/pico1calc.gdb build/arm_m/ppap_pico1calc.elf
 ```
 
 Connect a serial terminal to the UART (115200 baud, 8N1) to interact

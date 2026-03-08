@@ -192,13 +192,13 @@ Press **Ctrl-A X** to quit QEMU.
 
 ```sh
 # Terminal 1 — start OpenOCD
-openocd -f openocd.cfg
+openocd -f scripts/debug/openocd.cfg
 
 # Terminal 2 — flash and debug PicoCalc
-gdb-multiarch -x pico1calc.gdb build/arm_m/ppap_pico1calc.elf
+gdb-multiarch -x scripts/debug/pico1calc.gdb build/arm_m/ppap_pico1calc.elf
 
 # Or attach to already-running firmware
-gdb-multiarch -x pico1calc-attach.gdb build/arm_m/ppap_pico1calc.elf
+gdb-multiarch -x scripts/debug/pico1calc-attach.gdb build/arm_m/ppap_pico1calc.elf
 ```
 
 ## Flash Memory Layout

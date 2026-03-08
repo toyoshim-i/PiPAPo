@@ -1,10 +1,10 @@
 # pico1-attach.gdb — attach to already-running firmware (no reflash)
 #
 # Usage:
-#   gdb-multiarch -x pico1-attach.gdb build/arm_m/ppap_pico1.elf
+#   gdb-multiarch -x scripts/debug/pico1-attach.gdb build/arm_m/ppap_pico1.elf
 #
 # Requires openocd to be running:
-#   openocd -f openocd.cfg
+#   openocd -f scripts/debug/openocd.cfg
 
 set pagination off
 

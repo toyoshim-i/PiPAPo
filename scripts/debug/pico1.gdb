@@ -1,12 +1,12 @@
 # pico1.gdb — GDB init script for official Raspberry Pi Pico target
 #
 # Usage:
-#   gdb-multiarch -x pico1.gdb build/arm_m/ppap_pico1.elf
+#   gdb-multiarch -x scripts/debug/pico1.gdb build/arm_m/ppap_pico1.elf
 #   (gdb) hbreak kmain
 #   (gdb) continue
 #
 # Requires openocd to be running:
-#   openocd -f openocd.cfg
+#   openocd -f scripts/debug/openocd.cfg
 
 set pagination off
 

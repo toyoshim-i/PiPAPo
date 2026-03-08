@@ -6,7 +6,7 @@ if (NOT DEFINED PICO_SDK_PATH AND NOT DEFINED ENV{PICO_SDK_PATH})
 endif()
 
 # Pull in Pico SDK (must be before project())
-include(pico_sdk_import.cmake)
+include(cmake/pico_sdk_import.cmake)
 
 project(ppap C CXX ASM)
 

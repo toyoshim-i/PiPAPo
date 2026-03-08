@@ -21,14 +21,14 @@
 # Requirements:
 #   - openocd in PATH (v0.12 or later)
 #   - Picoprobe (or any CMSIS-DAP adapter) wired to the target Pico
-#   - openocd.cfg present in the project root
+#   - scripts/debug/openocd.cfg present in the project
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="$PROJECT_DIR/build/arm_m"
-CFG="$PROJECT_DIR/openocd.cfg"
+CFG="$SCRIPT_DIR/debug/openocd.cfg"
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
 DO_BUILD=false
