@@ -2,11 +2,11 @@
 # qemu.sh — Run PPAP under QEMU
 #
 # Usage (from project root):
-#   ./scripts/qemu.sh                # run ARM target (default)
-#   ./scripts/qemu.sh --m68k         # run M68K target
-#   ./scripts/qemu.sh --build        # rebuild first, then run
+#   ./scripts/qemu.sh                # build (if needed) & run ARM target
+#   ./scripts/qemu.sh --m68k         # build (if needed) & run M68K target
+#   ./scripts/qemu.sh --no-build     # skip build, run existing binary
 #   ./scripts/qemu.sh --gdb          # pause at reset, wait for GDB on :1234
-#   ./scripts/qemu.sh --m68k --build # rebuild and run M68K target
+#   ./scripts/qemu.sh --m68k --gdb   # M68K with GDB stub
 #
 # Flags can be combined in any order.
 #
@@ -19,14 +19,15 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # ── Parse flags ───────────────────────────────────────────────────────────────
 TARGET="arm"
-DO_BUILD=0
+DO_BUILD=1
 DO_GDB=0
 for arg in "$@"; do
     case "$arg" in
-        --m68k)  TARGET="m68k" ;;
-        --build) DO_BUILD=1 ;;
-        --gdb)   DO_GDB=1 ;;
-        *)       echo "Unknown option: $arg"; echo "Usage: $0 [--m68k] [--build] [--gdb]"; exit 1 ;;
+        --m68k)     TARGET="m68k" ;;
+        --no-build) DO_BUILD=0 ;;
+        --build)    DO_BUILD=1 ;;  # kept for back-compat (now default)
+        --gdb)      DO_GDB=1 ;;
+        *)          echo "Unknown option: $arg"; echo "Usage: $0 [--m68k] [--no-build] [--gdb]"; exit 1 ;;
     esac
 done
 
@@ -48,7 +49,7 @@ else
     QEMU_ARGS=(-M mps2-an500 -serial mon:stdio)
 fi
 
-# ── Optional rebuild ──────────────────────────────────────────────────────────
+# ── Build ────────────────────────────────────────────────────────────────────
 if [[ $DO_BUILD -eq 1 ]]; then
     "$SCRIPT_DIR/build.sh" "$BUILD_TARGET"
 fi
@@ -67,7 +68,7 @@ fi
 
 if [[ ! -f "$ELF" ]]; then
     echo "[qemu] Error: $ELF not found."
-    echo "       Run: ./scripts/build.sh $BUILD_TARGET"
+    echo "       Run without --no-build to build first."
     exit 1
 fi
 
