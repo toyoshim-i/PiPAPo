@@ -1,15 +1,16 @@
 #!/bin/bash
-# Build Rogue 5.4.4 for PicoPiAndPortable (ARMv6-M Thumb / Cortex-M0+)
+# Build Rogue 5.4.4 for PicoPiAndPortable
 #
 # Cross-compiles rogue against musl libc with a minimal curses shim.
 # xcrypt.c is excluded (71 KB BSS for DES tables, only used by disabled
 # wizard mode); a stub xcrypt() is provided in the curses shim.
 #
-# Usage: ./third_party/build-rogue.sh [--clean]
+# Usage: ./third_party/build-rogue.sh [--m68k] [--clean]
+#   --m68k    Build for m68k (default: ARM Cortex-M0+)
 #   --clean   Remove build artifacts and exit
 #
 # Prerequisites:
-#   - arm-none-eabi-gcc in PATH
+#   - Cross compiler in PATH (arm-none-eabi-gcc or m68k-linux-gnu-gcc)
 #   - musl sysroot already built (run build-musl.sh first)
 
 set -euo pipefail
@@ -17,23 +18,55 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROGUE_SRC="$SCRIPT_DIR/rogue"
-ROGUE_OUT="$PROJECT_ROOT/build/arm_m/rogue"
-MUSL_SYSROOT="$PROJECT_ROOT/build/arm_m/musl-sysroot"
 PATCHES_DIR="$SCRIPT_DIR/patches/rogue"
 CONFIGS_DIR="$SCRIPT_DIR/configs"
 
-CC=arm-none-eabi-gcc
-GCC_INCLUDE="$(arm-none-eabi-gcc -print-file-name=include)"
-GCC_LIBDIR="$(dirname "$(arm-none-eabi-gcc -mthumb -mcpu=cortex-m0plus -print-libgcc-file-name)")"
-SPECS_FILE="$PROJECT_ROOT/build/arm_m/musl-arm.specs"
-LINKER_SCRIPT="$CONFIGS_DIR/busybox.ld"
+# --- Parse flags ---
+ARCH=arm
+CLEAN=false
+for arg in "$@"; do
+    case "$arg" in
+        --m68k) ARCH=m68k ;;
+        --clean) CLEAN=true ;;
+        *) echo "Unknown option: $arg" >&2; exit 1 ;;
+    esac
+done
 
-# Target flags (same as busybox build)
-CFLAGS="-mthumb -mcpu=cortex-m0plus -march=armv6s-m -mfloat-abi=soft -Os"
+# --- Arch-specific configuration ---
+if [[ "$ARCH" == "m68k" ]]; then
+    ROGUE_OUT="$PROJECT_ROOT/build/m68k/rogue"
+    MUSL_SYSROOT="$PROJECT_ROOT/build/m68k/musl-sysroot"
+    SPECS_FILE="$PROJECT_ROOT/build/m68k/musl-m68k.specs"
+    CC=m68k-linux-gnu-gcc
+    STRIP=m68k-linux-gnu-strip
+    SIZE_CMD=m68k-linux-gnu-size
+    LINKER_SCRIPT="$CONFIGS_DIR/busybox-m68k.ld"
+    GCC_INCLUDE="$(m68k-linux-gnu-gcc -print-file-name=include)"
+    GCC_LIBDIR="$(dirname "$(m68k-linux-gnu-gcc -m68000 -print-libgcc-file-name)")"
+    TARGET_FLAGS="-m68000"
+    PIC_FLAGS="-msep-data"
+    ARCH_LABEL="m68k (68000)"
+else
+    ROGUE_OUT="$PROJECT_ROOT/build/arm_m/rogue"
+    MUSL_SYSROOT="$PROJECT_ROOT/build/arm_m/musl-sysroot"
+    SPECS_FILE="$PROJECT_ROOT/build/arm_m/musl-arm.specs"
+    CC=arm-none-eabi-gcc
+    STRIP=arm-none-eabi-strip
+    SIZE_CMD=arm-none-eabi-size
+    LINKER_SCRIPT="$CONFIGS_DIR/busybox.ld"
+    GCC_INCLUDE="$(arm-none-eabi-gcc -print-file-name=include)"
+    GCC_LIBDIR="$(dirname "$(arm-none-eabi-gcc -mthumb -mcpu=cortex-m0plus -print-libgcc-file-name)")"
+    TARGET_FLAGS="-mthumb -mcpu=cortex-m0plus -march=armv6s-m -mfloat-abi=soft"
+    PIC_FLAGS="-fPIC -msingle-pic-base -mpic-register=r9 -mno-pic-data-is-text-relative"
+    ARCH_LABEL="armv6m-thumb (Cortex-M0+)"
+fi
+
+# Build CFLAGS
+CFLAGS="$TARGET_FLAGS -Os"
 # musl headers before GCC builtins
 CFLAGS="$CFLAGS -nostdinc -isystem $MUSL_SYSROOT/include -isystem $GCC_INCLUDE"
-# PIC for PPAP's XIP-from-flash model
-CFLAGS="$CFLAGS -fPIC -msingle-pic-base -mpic-register=r9 -mno-pic-data-is-text-relative"
+# PIC for PPAP's XIP model
+CFLAGS="$CFLAGS $PIC_FLAGS"
 # Dead-code stripping
 CFLAGS="$CFLAGS -ffunction-sections -fdata-sections"
 # Our curses shim / config.h / pwd.h override system headers
@@ -53,29 +86,29 @@ ROGUE_SRCS=(
 )
 
 # --- Handle --clean ---
-if [[ "${1:-}" == "--clean" ]]; then
-    echo "rogue: cleaning build artifacts..."
+if $CLEAN; then
+    echo "rogue [$ARCH]: cleaning build artifacts..."
     rm -rf "$ROGUE_OUT"
-    echo "rogue: clean done."
+    echo "rogue [$ARCH]: clean done."
     exit 0
 fi
 
 # --- Skip if already built ---
 if [[ -f "$ROGUE_OUT/rogue" ]]; then
-    echo "rogue: already exists at $ROGUE_OUT/rogue — skipping."
-    echo "rogue: run '$0 --clean' to force rebuild."
+    echo "rogue [$ARCH]: already exists at $ROGUE_OUT/rogue — skipping."
+    echo "rogue [$ARCH]: run '$0 --clean' to force rebuild."
     exit 0
 fi
 
 # --- Check prerequisites ---
-if ! command -v arm-none-eabi-gcc &>/dev/null; then
-    echo "ERROR: arm-none-eabi-gcc not found in PATH" >&2
+if ! command -v "$CC" &>/dev/null; then
+    echo "ERROR: $CC not found in PATH" >&2
     exit 1
 fi
 
 if [[ ! -f "$MUSL_SYSROOT/lib/libc.a" ]]; then
     echo "ERROR: musl sysroot not found at $MUSL_SYSROOT" >&2
-    echo "  Run: ./third_party/build-musl.sh" >&2
+    echo "  Run: ./third_party/build-musl.sh${ARCH:+ --$ARCH}" >&2
     exit 1
 fi
 
@@ -87,7 +120,7 @@ fi
 
 # --- Generate musl specs file (if not already present) ---
 if [[ ! -f "$SPECS_FILE" ]]; then
-    echo "rogue: generating musl specs file..."
+    echo "rogue [$ARCH]: generating musl specs file..."
     mkdir -p "$(dirname "$SPECS_FILE")"
     cat > "$SPECS_FILE" <<SPECS
 *startfile:
@@ -107,7 +140,7 @@ fi
 mkdir -p "$ROGUE_OUT/obj"
 
 # --- Compile rogue sources ---
-echo "rogue: compiling (musl, Cortex-M0+)..."
+echo "rogue [$ARCH]: compiling (musl, $ARCH_LABEL)..."
 OBJS=()
 for src in "${ROGUE_SRCS[@]}"; do
     obj="$ROGUE_OUT/obj/${src%.c}.o"
@@ -116,16 +149,16 @@ for src in "${ROGUE_SRCS[@]}"; do
 done
 
 # Compile curses shim
-echo "rogue: compiling curses shim..."
+echo "rogue [$ARCH]: compiling curses shim..."
 $CC $CFLAGS -c "$PATCHES_DIR/curses.c" -o "$ROGUE_OUT/obj/curses.o"
 OBJS+=("$ROGUE_OUT/obj/curses.o")
 
 # --- Link ---
 # Use -specs= to provide musl CRT/libc/libgcc (do NOT use -nostdlib,
-# which overrides specs startfile/endfile).  -pie emits R_ARM_RELATIVE
-# relocations for exec.c to patch at load time.
-echo "rogue: linking..."
-$CC -mthumb -mcpu=cortex-m0plus \
+# which overrides specs startfile/endfile).  -pie emits relocations
+# for exec.c to patch at load time.
+echo "rogue [$ARCH]: linking..."
+$CC $TARGET_FLAGS \
     -pie \
     -specs="$SPECS_FILE" \
     -T "$LINKER_SCRIPT" \
@@ -134,13 +167,13 @@ $CC -mthumb -mcpu=cortex-m0plus \
     -o "$ROGUE_OUT/rogue.elf"
 
 # --- Strip ---
-arm-none-eabi-strip -s -o "$ROGUE_OUT/rogue" "$ROGUE_OUT/rogue.elf"
+$STRIP -s -o "$ROGUE_OUT/rogue" "$ROGUE_OUT/rogue.elf"
 
 # --- Summary ---
 echo ""
-echo "rogue: build summary"
+echo "rogue [$ARCH]: build summary"
 echo "========================================"
 SIZE=$(stat -c%s "$ROGUE_OUT/rogue" 2>/dev/null || stat -f%z "$ROGUE_OUT/rogue")
 echo "  stripped ELF: $SIZE bytes"
-arm-none-eabi-size "$ROGUE_OUT/rogue.elf" 2>/dev/null | tail -1 | sed 's/^/  /'
-echo "rogue: SUCCESS — installed to $ROGUE_OUT/rogue"
+$SIZE_CMD "$ROGUE_OUT/rogue.elf" 2>/dev/null | tail -1 | sed 's/^/  /'
+echo "rogue [$ARCH]: SUCCESS — installed to $ROGUE_OUT/rogue"
