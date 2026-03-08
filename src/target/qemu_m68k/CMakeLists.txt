@@ -120,6 +120,74 @@ execute_process(
 )
 target_link_libraries(ppap_qemu_m68k PRIVATE ${M68K_LIBGCC})
 
+# =============================================================================
+# User-space programs + romfs image pipeline
+# =============================================================================
+
+set(M68K_USER_DIR ${PPAP_ROOT}/user/m68k)
+set(M68K_USER_LD  ${M68K_USER_DIR}/user.ld)
+
+# --- Build hello.elf (m68k user-space binary) ---
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/hello.elf
+    COMMAND ${CMAKE_C_COMPILER} -m68000 -c -o ${CMAKE_BINARY_DIR}/hello.o
+            ${M68K_USER_DIR}/hello.S
+    COMMAND ${CMAKE_C_COMPILER} -m68000 -nostdlib
+            -T ${M68K_USER_LD} -Wl,--gc-sections -Wl,--build-id=none
+            -o ${CMAKE_BINARY_DIR}/hello.elf ${CMAKE_BINARY_DIR}/hello.o
+    DEPENDS ${M68K_USER_DIR}/hello.S ${M68K_USER_LD}
+    COMMENT "Building m68k hello.elf"
+)
+
+# --- Build mkromfs host tool ---
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/mkromfs
+    COMMAND cc -O2 -I ${PPAP_ROOT}/src/kernel/fs
+            -o ${CMAKE_BINARY_DIR}/mkromfs
+            ${PPAP_ROOT}/tools/mkromfs/mkromfs.c
+    DEPENDS ${PPAP_ROOT}/tools/mkromfs/mkromfs.c
+            ${PPAP_ROOT}/src/kernel/fs/romfs_format.h
+    COMMENT "Building mkromfs host tool"
+)
+
+# --- Stage romfs directory and generate big-endian romfs.bin ---
+set(ROMFS_STAGING ${CMAKE_BINARY_DIR}/romfs)
+set(ROMFS_BIN     ${CMAKE_BINARY_DIR}/romfs_m68k.bin)
+set(ROMFS_ASM     ${CMAKE_BINARY_DIR}/romfs_data_m68k.S)
+
+add_custom_command(
+    OUTPUT ${ROMFS_BIN}
+    # Create staging directory structure
+    COMMAND ${CMAKE_COMMAND} -E rm -rf ${ROMFS_STAGING}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${ROMFS_STAGING}/etc
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${ROMFS_STAGING}/bin
+    # Copy fstab from source tree
+    COMMAND ${CMAKE_COMMAND} -E copy
+            ${CMAKE_CURRENT_SOURCE_DIR}/romfs/etc/fstab
+            ${ROMFS_STAGING}/etc/fstab
+    # Copy hello.elf to /bin/hello
+    COMMAND ${CMAKE_COMMAND} -E copy
+            ${CMAKE_BINARY_DIR}/hello.elf
+            ${ROMFS_STAGING}/bin/hello
+    # Build big-endian romfs image
+    COMMAND ${CMAKE_BINARY_DIR}/mkromfs -b
+            ${ROMFS_STAGING} ${ROMFS_BIN}
+    DEPENDS ${CMAKE_BINARY_DIR}/mkromfs
+            ${CMAKE_BINARY_DIR}/hello.elf
+            ${CMAKE_CURRENT_SOURCE_DIR}/romfs/etc/fstab
+    COMMENT "Generating big-endian romfs for m68k"
+)
+
+# Generate .S file that includes the romfs binary
+file(WRITE ${ROMFS_ASM}
+    "    .section .romfs, \"a\"\n    .incbin \"${ROMFS_BIN}\"\n")
+set_source_files_properties(${ROMFS_ASM}
+    PROPERTIES OBJECT_DEPENDS ${ROMFS_BIN})
+
+add_custom_target(romfs_image_m68k DEPENDS ${ROMFS_BIN})
+add_dependencies(ppap_qemu_m68k romfs_image_m68k)
+target_sources(ppap_qemu_m68k PRIVATE ${ROMFS_ASM})
+
 # Generate binary and size report
 add_custom_command(TARGET ppap_qemu_m68k POST_BUILD
     COMMAND ${CMAKE_OBJCOPY} -O binary ppap_qemu_m68k.elf ppap_qemu_m68k.bin

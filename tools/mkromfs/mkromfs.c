@@ -2,8 +2,11 @@
  * mkromfs.c — Host tool: build a PPAP romfs image from a directory tree
  *
  * Usage:
- *   mkromfs <input_dir> <output_file>   — build romfs image
- *   mkromfs --dump <romfs_file>         — dump image contents (debug)
+ *   mkromfs [-b] <input_dir> <output_file>  — build romfs image
+ *   mkromfs --dump <romfs_file>             — dump image contents (debug)
+ *
+ * The -b flag produces a big-endian romfs image (for m68k targets).
+ * Without -b, the image is native (little-endian on x86 hosts).
  *
  * The output is a binary romfs image with a romfs_super_t header followed
  * by romfs_entry_t entries.  The image is position-independent (all
@@ -258,6 +261,35 @@ static int write_image(uint8_t *buf, uint32_t buf_size, uint32_t *out_size)
     return 0;
 }
 
+/* ── Big-endian byte-swap pass ──────────────────────────────────────────────── *
+ *
+ * When building for a big-endian target (m68k) on a little-endian host,
+ * we need to byte-swap all uint32_t struct fields in the romfs image.
+ * Name strings and file data are byte arrays and stay as-is.
+ */
+
+static void bswap32_inplace(uint8_t *p)
+{
+    uint8_t t;
+    t = p[0]; p[0] = p[3]; p[3] = t;
+    t = p[1]; p[1] = p[2]; p[2] = t;
+}
+
+static void swap_to_big_endian(uint8_t *buf)
+{
+    /* Swap superblock: 4 × uint32_t at offset 0 */
+    for (int i = 0; i < 4; i++)
+        bswap32_inplace(buf + i * 4);
+
+    /* Swap each entry header: 5 × uint32_t (next_off, type, size,
+     * child_off, name_len) at the start of each entry */
+    for (int i = 0; i < node_count; i++) {
+        uint8_t *entry = buf + nodes[i].offset;
+        for (int j = 0; j < 5; j++)
+            bswap32_inplace(entry + j * 4);
+    }
+}
+
 /* ── Dump mode ─────────────────────────────────────────────────────────────── */
 
 static void dump_image(const char *path)
@@ -326,14 +358,22 @@ int main(int argc, char *argv[])
         return 0;
     }
 
-    if (argc != 3) {
-        fprintf(stderr, "Usage: mkromfs <input_dir> <output_file>\n");
+    /* Parse optional -b flag for big-endian output */
+    int big_endian = 0;
+    int arg_base = 1;
+    if (argc >= 2 && strcmp(argv[1], "-b") == 0) {
+        big_endian = 1;
+        arg_base = 2;
+    }
+
+    if (argc - arg_base + 1 != 3) {
+        fprintf(stderr, "Usage: mkromfs [-b] <input_dir> <output_file>\n");
         fprintf(stderr, "       mkromfs --dump <romfs_file>\n");
         return 1;
     }
 
-    const char *input_dir = argv[1];
-    const char *output_file = argv[2];
+    const char *input_dir = argv[arg_base];
+    const char *output_file = argv[arg_base + 1];
 
     /* Verify input is a directory */
     struct stat st;
@@ -357,6 +397,11 @@ int main(int argc, char *argv[])
     if (write_image(buf, MAX_IMAGE, &image_size) < 0) {
         free(buf);
         return 1;
+    }
+
+    if (big_endian) {
+        swap_to_big_endian(buf);
+        printf("mkromfs: byte-swapped to big-endian\n");
     }
 
     /* Write to file */

@@ -15,7 +15,6 @@
 #include "mm/page.h"
 #include "proc/proc.h"
 #include "proc/sched.h"
-#include "fs/romfs_format.h"
 #include "klog.h"
 #include "arch/arch.h"
 #include "errno.h"
@@ -26,76 +25,6 @@
 
 /* Defined in drivers/timer_qemu_m68k.c */
 extern void timer_init(void);
-
-/* ── In-memory romfs image ───────────────────────────────────────────── *
- *
- * On m68k, the romfs image must be in target-native endian (big-endian).
- * mkromfs builds on the host (little-endian x86), so we cannot use a
- * pre-built image.  Instead, we place a buffer in the .romfs section
- * (so that the linker symbols __romfs_start/__romfs_end bracket it)
- * and fill it at runtime in target_early_init().
- *
- * The image contains:
- *   /              — root directory
- *   /etc/          — directory
- *   /etc/fstab     — mount table (devfs, procfs, tmpfs)
- * ────────────────────────────────────────────────────────────────────── */
-
-static uint8_t m68k_romfs_buf[512]
-    __attribute__((section(".romfs"), aligned(4)));
-
-static void build_boot_romfs(void)
-{
-    __builtin_memset(m68k_romfs_buf, 0, sizeof(m68k_romfs_buf));
-
-    static const char fstab_data[] =
-        "none /dev devfs rw\n"
-        "none /proc procfs ro\n"
-        "none /tmp tmpfs rw\n";
-
-    /* Superblock at offset 0 */
-    romfs_super_t *sb = (romfs_super_t *)m68k_romfs_buf;
-    sb->magic      = ROMFS_MAGIC;
-    sb->file_count = 3;
-    sb->root_off   = (uint32_t)sizeof(romfs_super_t);   /* 16 */
-
-    /* ── Root directory "/" (offset 16) ─────────────────────────────── */
-    uint32_t root_off = sb->root_off;
-    romfs_entry_t *root = (romfs_entry_t *)(m68k_romfs_buf + root_off);
-    root->type     = ROMFS_TYPE_DIR;
-    root->size     = 0;
-    root->name_len = 0;
-    m68k_romfs_buf[root_off + ROMFS_NAME_OFF] = '\0';
-    uint32_t etc_off = root_off + ROMFS_NAME_OFF + ROMFS_ALIGN4(1);
-    root->child_off = etc_off;
-
-    /* ── /etc directory (follows root) ─────────────────────────────── */
-    romfs_entry_t *etc = (romfs_entry_t *)(m68k_romfs_buf + etc_off);
-    etc->type     = ROMFS_TYPE_DIR;
-    etc->size     = 0;
-    etc->name_len = 3;   /* "etc" */
-    etc->next_off = 0;
-    __builtin_memcpy(m68k_romfs_buf + etc_off + ROMFS_NAME_OFF,
-                     "etc", 4);   /* "etc\0" */
-    uint32_t fstab_off = etc_off + ROMFS_NAME_OFF + ROMFS_ALIGN4(4);
-    etc->child_off = fstab_off;
-
-    /* ── /etc/fstab file ───────────────────────────────────────────── */
-    uint32_t fstab_len = (uint32_t)(sizeof(fstab_data) - 1);
-    romfs_entry_t *fe = (romfs_entry_t *)(m68k_romfs_buf + fstab_off);
-    fe->type      = ROMFS_TYPE_FILE;
-    fe->size      = fstab_len;
-    fe->child_off = 0;
-    fe->next_off  = 0;
-    fe->name_len  = 5;   /* "fstab" */
-    __builtin_memcpy(m68k_romfs_buf + fstab_off + ROMFS_NAME_OFF,
-                     "fstab", 6);   /* "fstab\0" */
-    uint32_t data_off = fstab_off + ROMFS_DATA_OFF(fe);
-    __builtin_memcpy(m68k_romfs_buf + data_off,
-                     fstab_data, fstab_len);
-
-    sb->size = data_off + ROMFS_ALIGN4(fstab_len);
-}
 
 /* ── TRAP #0 syscall dispatch ────────────────────────────────────────── *
  *
@@ -160,22 +89,6 @@ void m68k_syscall_entry(uint32_t *regs)
     regs[0] = (uint32_t)ret;
 }
 
-/* ── Test processes ──────────────────────────────────────────────────── */
-
-/* Process 1: spins and counts.  Preemptive scheduling switches it out. */
-static void test_process1(void)
-{
-    for (;;)
-        __asm__ volatile ("nop");
-}
-
-/* Process 2: spins and counts.  Preemptive scheduling switches it out. */
-static void test_process2(void)
-{
-    for (;;)
-        __asm__ volatile ("nop");
-}
-
 /* ── Target hooks ────────────────────────────────────────────────────── */
 
 void target_early_init(void)
@@ -184,10 +97,7 @@ void target_early_init(void)
     klog("PicoPiAndPortable booting... [qemu_m68k]\n");
     klog("UART: Goldfish TTY @ 0xFF008000\n");
     klog("Clock: emulated (no PLL)\n");
-
-    /* Build the in-memory romfs image (big-endian native).
-     * Must be done before main.c calls vfs_mount(). */
-    build_boot_romfs();
+    /* romfs is pre-built by mkromfs -b and linked via .incbin */
 }
 
 void target_late_init(void)
@@ -199,30 +109,12 @@ void target_late_init(void)
 
 void target_post_mount(void)
 {
-    /* Launch two test processes for preemptive scheduling validation.
-     * These will be scheduled by the timer once sched_start() runs.
-     * TODO: replace with m68k ELF user-mode init when available. */
-    pcb_t *pa = proc_alloc();
-    if (pa) {
-        pa->stack_page = page_alloc();
-        proc_setup_stack(pa, test_process1, 0);
-        pa->state = PROC_RUNNABLE;
-        __builtin_memcpy(pa->comm, "test1", 6);
-    }
-
-    pcb_t *pb = proc_alloc();
-    if (pb) {
-        pb->stack_page = page_alloc();
-        proc_setup_stack(pb, test_process2, 0);
-        pb->state = PROC_RUNNABLE;
-        __builtin_memcpy(pb->comm, "test2", 6);
-    }
+    /* User-space init (/bin/hello) is launched by main.c via do_execve() */
 }
 
 const char *target_init_path(void)
 {
-    /* No m68k ELF user-mode binaries yet — skip exec */
-    return NULL;
+    return "/bin/hello";
 }
 
 uint32_t target_caps(void)
