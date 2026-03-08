@@ -18,6 +18,7 @@
 #define __NR_exit_group		0x0001
 #define __NR_vfork		0x0002
 #define __NR_execve		0x0003
+#define __NR_waitpid		0x0004
 #define __NR_wait4		0x0005
 #define __NR_getpid		0x0006
 #define __NR_uname		0x0007

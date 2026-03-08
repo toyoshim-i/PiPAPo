@@ -5,9 +5,38 @@ kernel, with usage details and notes on how each differs from POSIX / Linux.
 
 ---
 
-## Calling Convention (ARM EABI)
+## Syscall Numbering
 
-PPAP uses the Linux ARM EABI syscall convention:
+PPAP uses a **16-bit grouped numbering** scheme: the high byte is the group,
+the low byte is the index.  The same numbers are used on both ARM and m68k.
+
+| Group  | Category       | Range          |
+|--------|---------------|----------------|
+| 0x00xx | Process        | exit, fork, exec, wait, ... |
+| 0x01xx | I/O            | read, write, open, close, ... |
+| 0x02xx | FS paths       | stat, access, mkdir, openat, ... |
+| 0x03xx | FS extended    | stat64, getdents64, llseek, ... |
+| 0x04xx | Memory         | brk, mmap2, munmap, ... |
+| 0x05xx | Time           | nanosleep, clock_gettime, ... |
+| 0x06xx | Signals        | kill, sigaction, rt_sigaction, ... |
+| 0x07xx | Poll           | poll, ppoll |
+| 0x08xx | User/group     | getuid, getgid, chown, ... |
+| 0x09xx | Mount          | mount, umount2 |
+| 0x0Axx | Misc           | futex, getcpu |
+| 0xF0xx | Unimplemented  | Return -ENOSYS (musl compile stubs) |
+
+Unimplemented syscalls (0xF0xx) exist so that musl libc compiles, but the
+kernel returns `-ENOSYS` for all of them.
+
+The canonical definitions are in `src/kernel/syscall/syscall.h` (kernel) and
+`third_party/patches/musl/overlay/arch/{arm,m68k}/bits/syscall.h.in` (musl).
+Both architectures must use identical numbers for all implemented syscalls.
+
+---
+
+## Calling Convention
+
+### ARM (Thumb / EABI)
 
 | Register | Purpose |
 |----------|---------|
@@ -17,98 +46,120 @@ PPAP uses the Linux ARM EABI syscall convention:
 | `r5` | Argument 6 |
 | `r0` | Return value |
 
-Invoke with `svc 0`.  On success the return value is zero or positive.
+Invoke with `svc 0`.
+
+### m68k (Linux m68k / musl convention)
+
+| Register | Purpose |
+|----------|---------|
+| `d0` | Syscall number → return value |
+| `d1`–`d5` | Arguments 1–5 |
+| `a0` | Argument 6 |
+
+Invoke with `trap #0`.
+
+On success the return value is zero or positive.
 On error the return value is a negative errno (e.g. `-ENOENT`).
 
 ---
 
 ## Syscall Table
 
-| # | Name | Signature |
-|---|------|-----------|
-| 1 | exit | `void exit(int status)` |
-| 2 | fork | `pid_t fork(void)` |
-| 3 | read | `ssize_t read(int fd, void *buf, size_t n)` |
-| 4 | write | `ssize_t write(int fd, const void *buf, size_t n)` |
-| 5 | open | `int open(const char *path, int flags, mode_t mode)` |
-| 6 | close | `int close(int fd)` |
-| 7 | waitpid | `pid_t waitpid(pid_t pid, int *status, int options)` |
-| 10 | unlink | `int unlink(const char *path)` |
-| 11 | execve | `int execve(const char *path, char *const argv[], char *const envp[])` |
-| 12 | chdir | `int chdir(const char *path)` |
-| 14 | mknod | `int mknod(const char *path, mode_t mode, dev_t dev)` |
-| 15 | chmod | `int chmod(const char *path, mode_t mode)` |
-| 19 | lseek | `off_t lseek(int fd, off_t off, int whence)` |
-| 20 | getpid | `pid_t getpid(void)` |
-| 21 | mount | `int mount(const char *src, const char *tgt, const char *fs, unsigned long flags, const void *data)` |
-| 33 | access | `int access(const char *path, int mode)` |
-| 37 | kill | `int kill(pid_t pid, int sig)` |
-| 38 | rename | `int rename(const char *old, const char *new)` |
-| 39 | mkdir | `int mkdir(const char *path, mode_t mode)` |
-| 40 | rmdir | `int rmdir(const char *path)` |
-| 41 | dup | `int dup(int oldfd)` |
-| 42 | pipe | `int pipe(int fds[2])` |
-| 45 | brk | `void *brk(void *addr)` |
-| 52 | umount2 | `int umount2(const char *target, int flags)` |
-| 54 | ioctl | `int ioctl(int fd, unsigned long cmd, ...)` |
-| 57 | setpgid | `int setpgid(pid_t pid, pid_t pgid)` |
-| 60 | umask | `mode_t umask(mode_t mask)` |
-| 63 | dup2 | `int dup2(int oldfd, int newfd)` |
-| 64 | getppid | `pid_t getppid(void)` |
-| 66 | setsid | `pid_t setsid(void)` |
-| 67 | sigaction | `int sigaction(int sig, uintptr_t handler, uintptr_t *old)` |
-| 78 | gettimeofday | `int gettimeofday(struct timeval *tv, void *tz)` |
-| 85 | readlink | `ssize_t readlink(const char *path, char *buf, size_t bufsiz)` |
-| 91 | munmap | `int munmap(void *addr, size_t len)` |
-| 106 | stat | `int stat(const char *path, struct stat *buf)` |
-| 108 | fstat | `int fstat(int fd, struct stat *buf)` |
-| 114 | wait4 | `pid_t wait4(pid_t pid, int *status, int options, struct rusage *ru)` |
-| 119 | sigreturn | `void sigreturn(void)` |
-| 120 | clone | `pid_t clone(unsigned long flags, void *stack, ...)` |
-| 122 | uname | `int uname(struct utsname *buf)` |
-| 125 | mprotect | `int mprotect(void *addr, size_t len, int prot)` |
-| 132 | getpgid | `pid_t getpgid(pid_t pid)` |
-| 140 | _llseek | `int _llseek(int fd, long off_hi, long off_lo, loff_t *result, int whence)` |
-| 141 | getdents | `int getdents(int fd, struct dirent *buf, size_t count)` |
-| 145 | readv | `ssize_t readv(int fd, const struct iovec *iov, int iovcnt)` |
-| 146 | writev | `ssize_t writev(int fd, const struct iovec *iov, int iovcnt)` |
-| 162 | nanosleep | `int nanosleep(const struct timespec *req, struct timespec *rem)` |
-| 163 | mremap | `void *mremap(void *addr, size_t old, size_t new, int flags)` |
-| 173 | rt_sigreturn | `void rt_sigreturn(void)` |
-| 174 | rt_sigaction | `int rt_sigaction(int sig, const struct sigaction *act, struct sigaction *oact, size_t sigsetsize)` |
-| 175 | rt_sigprocmask | `int rt_sigprocmask(int how, const sigset_t *set, sigset_t *oset, size_t sigsetsize)` |
-| 183 | getcwd | `char *getcwd(char *buf, size_t size)` |
-| 190 | vfork | `pid_t vfork(void)` |
-| 192 | mmap2 | `void *mmap2(void *addr, size_t len, int prot, int flags, int fd, off_t pgoff)` |
-| 195 | stat64 | `int stat64(const char *path, struct stat64 *buf)` |
-| 196 | lstat64 | `int lstat64(const char *path, struct stat64 *buf)` |
-| 197 | fstat64 | `int fstat64(int fd, struct stat64 *buf)` |
-| 198 | lchown32 | `int lchown(const char *path, uid_t uid, gid_t gid)` |
-| 199 | getuid32 | `uid_t getuid(void)` |
-| 200 | getgid32 | `gid_t getgid(void)` |
-| 201 | geteuid32 | `uid_t geteuid(void)` |
-| 202 | getegid32 | `gid_t getegid(void)` |
-| 206 | setgroups32 | `int setgroups(int size, const gid_t *list)` |
-| 207 | fchown32 | `int fchown(int fd, uid_t uid, gid_t gid)` |
-| 212 | chown32 | `int chown(const char *path, uid_t uid, gid_t gid)` |
-| 217 | getdents64 | `int getdents64(int fd, struct dirent64 *buf, size_t count)` |
-| 221 | fcntl64 | `int fcntl(int fd, int cmd, ...)` |
-| 240 | futex | `int futex(int *uaddr, int op, int val, ...)` |
-| 248 | exit_group | `void exit_group(int status)` |
-| 256 | set_tid_address | `pid_t set_tid_address(int *tidptr)` |
-| 263 | clock_gettime | `int clock_gettime(clockid_t clk, struct timespec *tp)` |
-| 265 | clock_nanosleep | `int clock_nanosleep(clockid_t clk, int flags, const struct timespec *req, struct timespec *rem)` |
-| 266 | statfs64 | `int statfs64(const char *path, size_t sz, struct statfs64 *buf)` |
-| 267 | fstatfs64 | `int fstatfs64(int fd, size_t sz, struct statfs64 *buf)` |
-| 269 | utimes | `int utimes(const char *path, const struct timeval tv[2])` |
-| 322 | openat | `int openat(int dirfd, const char *path, int flags, mode_t mode)` |
-| 327 | fstatat64 | `int fstatat64(int dirfd, const char *path, struct stat64 *buf, int flags)` |
-| 336 | ppoll | `int ppoll(struct pollfd *fds, nfds_t n, const struct timespec *timeout, const sigset_t *sigmask)` |
-| 345 | getcpu | `int getcpu(unsigned *cpu, unsigned *node, void *unused)` |
-| 397 | statx | `int statx(int dirfd, const char *path, int flags, unsigned mask, struct statx *buf)` |
-| 403 | clock_gettime64 | `int clock_gettime64(clockid_t clk, struct timespec64 *tp)` |
-| 407 | clock_nanosleep64 | `int clock_nanosleep64(clockid_t clk, int flags, const struct timespec64 *req, struct timespec64 *rem)` |
-| 414 | ppoll_time64 | `int ppoll_time64(struct pollfd *fds, nfds_t n, const struct timespec64 *timeout, const sigset_t *sigmask)` |
+| Number | Name | Signature |
+|--------|------|-----------|
+| 0x0000 | exit | `void exit(int status)` |
+| 0x0001 | exit_group | `void exit_group(int status)` |
+| 0x0002 | vfork | `pid_t vfork(void)` |
+| 0x0003 | execve | `int execve(const char *path, char *const argv[], char *const envp[])` |
+| 0x0004 | waitpid | `pid_t waitpid(pid_t pid, int *status, int options)` |
+| 0x0005 | wait4 | `pid_t wait4(pid_t pid, int *status, int options, struct rusage *ru)` |
+| 0x0006 | getpid | `pid_t getpid(void)` |
+| 0x0007 | uname | `int uname(struct utsname *buf)` |
+| 0x0008 | getppid | `pid_t getppid(void)` |
+| 0x0009 | setpgid | `int setpgid(pid_t pid, pid_t pgid)` |
+| 0x000A | getpgid | `pid_t getpgid(pid_t pid)` |
+| 0x000B | setsid | `pid_t setsid(void)` |
+| 0x000C | clone | `pid_t clone(unsigned long flags, void *stack, ...)` |
+| 0x000D | set_tid_address | `pid_t set_tid_address(int *tidptr)` |
+| 0x000E | fork | `pid_t fork(void)` |
+| 0x0100 | read | `ssize_t read(int fd, void *buf, size_t n)` |
+| 0x0101 | write | `ssize_t write(int fd, const void *buf, size_t n)` |
+| 0x0102 | open | `int open(const char *path, int flags, mode_t mode)` |
+| 0x0103 | close | `int close(int fd)` |
+| 0x0104 | dup | `int dup(int oldfd)` |
+| 0x0105 | dup2 | `int dup2(int oldfd, int newfd)` |
+| 0x0106 | pipe | `int pipe(int fds[2])` |
+| 0x0107 | ioctl | `int ioctl(int fd, unsigned long cmd, ...)` |
+| 0x0108 | fcntl / fcntl64 | `int fcntl(int fd, int cmd, ...)` |
+| 0x0109 | readv | `ssize_t readv(int fd, const struct iovec *iov, int iovcnt)` |
+| 0x010A | writev | `ssize_t writev(int fd, const struct iovec *iov, int iovcnt)` |
+| 0x010B | lseek | `off_t lseek(int fd, off_t off, int whence)` |
+| 0x0200 | stat | `int stat(const char *path, struct stat *buf)` |
+| 0x0201 | fstat | `int fstat(int fd, struct stat *buf)` |
+| 0x0202 | access | `int access(const char *path, int mode)` |
+| 0x0203 | getcwd | `char *getcwd(char *buf, size_t size)` |
+| 0x0204 | mkdir | `int mkdir(const char *path, mode_t mode)` |
+| 0x0205 | rmdir | `int rmdir(const char *path)` |
+| 0x0206 | unlink | `int unlink(const char *path)` |
+| 0x0207 | chdir | `int chdir(const char *path)` |
+| 0x0208 | readlink | `ssize_t readlink(const char *path, char *buf, size_t bufsiz)` |
+| 0x0209 | rename | `int rename(const char *old, const char *new)` |
+| 0x020A | mknod | `int mknod(const char *path, mode_t mode, dev_t dev)` |
+| 0x020B | chmod | `int chmod(const char *path, mode_t mode)` |
+| 0x020C | openat | `int openat(int dirfd, const char *path, int flags, mode_t mode)` |
+| 0x020D | fstatat64 | `int fstatat64(int dirfd, const char *path, struct stat64 *buf, int flags)` |
+| 0x0300 | getdents | `int getdents(int fd, struct dirent *buf, size_t count)` |
+| 0x0301 | stat64 | `int stat64(const char *path, struct stat64 *buf)` |
+| 0x0302 | fstat64 | `int fstat64(int fd, struct stat64 *buf)` |
+| 0x0303 | umask | `mode_t umask(mode_t mask)` |
+| 0x0304 | lstat64 | `int lstat64(const char *path, struct stat64 *buf)` |
+| 0x0305 | statfs64 | `int statfs64(const char *path, size_t sz, struct statfs64 *buf)` |
+| 0x0306 | fstatfs64 | `int fstatfs64(int fd, size_t sz, struct statfs64 *buf)` |
+| 0x0307 | _llseek | `int _llseek(int fd, long off_hi, long off_lo, loff_t *result, int whence)` |
+| 0x0308 | statx | `int statx(...)` — always returns `-ENOSYS` |
+| 0x0309 | utimes | `int utimes(const char *path, const struct timeval tv[2])` |
+| 0x030A | getdents64 | `int getdents64(int fd, struct dirent64 *buf, size_t count)` |
+| 0x0400 | brk | `void *brk(void *addr)` |
+| 0x0401 | mmap2 | `void *mmap2(void *addr, size_t len, int prot, int flags, int fd, off_t pgoff)` |
+| 0x0402 | munmap | `int munmap(void *addr, size_t len)` |
+| 0x0403 | mprotect | `int mprotect(void *addr, size_t len, int prot)` — always returns 0 |
+| 0x0404 | mremap | `void *mremap(...)` — always returns `-ENOMEM` |
+| 0x0500 | nanosleep | `int nanosleep(const struct timespec *req, struct timespec *rem)` |
+| 0x0501 | clock_gettime32 | `int clock_gettime(clockid_t clk, struct timespec *tp)` |
+| 0x0502 | gettimeofday | `int gettimeofday(struct timeval *tv, void *tz)` |
+| 0x0503 | clock_nanosleep32 | `int clock_nanosleep(clockid_t clk, int flags, ...)` |
+| 0x0504 | clock_gettime64 | `int clock_gettime64(clockid_t clk, struct timespec64 *tp)` |
+| 0x0505 | clock_nanosleep64 | `int clock_nanosleep64(clockid_t clk, int flags, ...)` |
+| 0x0600 | kill | `int kill(pid_t pid, int sig)` |
+| 0x0601 | sigaction | `int sigaction(int sig, uintptr_t handler, uintptr_t *old)` |
+| 0x0602 | sigreturn | `void sigreturn(void)` |
+| 0x0603 | rt_sigaction | `int rt_sigaction(int sig, const struct sigaction *act, ...)` |
+| 0x0604 | rt_sigprocmask | `int rt_sigprocmask(int how, const sigset_t *set, ...)` |
+| 0x0605 | rt_sigreturn | `void rt_sigreturn(void)` |
+| 0x0700 | poll | `int poll(struct pollfd *fds, nfds_t nfds, int timeout)` |
+| 0x0701 | ppoll / ppoll_time64 | `int ppoll(struct pollfd *fds, nfds_t n, ...)` |
+| 0x0800 | getuid / getuid32 | `uid_t getuid(void)` — always returns 0 |
+| 0x0801 | getgid / getgid32 | `gid_t getgid(void)` — always returns 0 |
+| 0x0802 | geteuid / geteuid32 | `uid_t geteuid(void)` — always returns 0 |
+| 0x0803 | getegid / getegid32 | `gid_t getegid(void)` — always returns 0 |
+| 0x0804 | chown / chown32 | `int chown(...)` — no-op, returns 0 |
+| 0x0805 | lchown / lchown32 | `int lchown(...)` — no-op, returns 0 |
+| 0x0806 | setgroups / setgroups32 | `int setgroups(...)` — no-op, returns 0 |
+| 0x0807 | fchown / fchown32 | `int fchown(...)` — no-op, returns 0 |
+| 0x0900 | mount | `int mount(const char *src, const char *tgt, const char *fs, ...)` |
+| 0x0901 | umount2 | `int umount2(const char *target, int flags)` |
+| 0x0A00 | futex / futex_time64 | `int futex(...)` — no-op, returns 0 |
+| 0x0A01 | getcpu | `int getcpu(unsigned *cpu, unsigned *node, void *unused)` |
+
+### m68k-specific kernel syscalls
+
+| Number | Name | Notes |
+|--------|------|-------|
+| 0xF0A8 | get_thread_area | Returns TLS pointer (musl m68k TLS) |
+| 0xF0A9 | set_thread_area | Sets TLS pointer |
+
+These use 0xF0xx numbers because they are m68k-specific and not part of the
+shared PPAP numbering.  The kernel dispatches them explicitly in syscall.c.
 
 ---
 
@@ -116,7 +167,7 @@ On error the return value is a negative errno (e.g. `-ENOENT`).
 
 ### Process Management
 
-#### exit (1) / exit_group (248)
+#### exit (0x0000) / exit_group (0x0001)
 
 ```c
 void exit(int status);
@@ -139,7 +190,7 @@ because PPAP is single-threaded (no thread groups).
 
 ---
 
-#### fork (2) / clone (120) / vfork (190)
+#### fork (0x000E) / clone (0x000C) / vfork (0x0002)
 
 ```c
 pid_t fork(void);
@@ -164,7 +215,7 @@ Returns the child PID in the parent and 0 in the child.
 
 ---
 
-#### waitpid (7) / wait4 (114)
+#### waitpid (0x0004) / wait4 (0x0005)
 
 ```c
 pid_t waitpid(pid_t pid, int *status, int options);
@@ -191,7 +242,7 @@ the syscall with the original arguments.
 
 ---
 
-#### execve (11)
+#### execve (0x0003)
 
 ```c
 int execve(const char *path, char *const argv[], char *const envp[]);
@@ -216,7 +267,7 @@ Replace the current process image with a new ELF binary.
 
 ---
 
-#### getpid (20) / getppid (64)
+#### getpid (0x0006) / getppid (0x0008)
 
 ```c
 pid_t getpid(void);
@@ -227,7 +278,7 @@ Return the process ID / parent process ID.  Identical to POSIX.
 
 ---
 
-#### setpgid (57) / getpgid (132)
+#### setpgid (0x0009) / getpgid (0x000A)
 
 ```c
 int setpgid(pid_t pid, pid_t pgid);
@@ -241,7 +292,7 @@ restrictions.
 
 ---
 
-#### setsid (66)
+#### setsid (0x000B)
 
 ```c
 pid_t setsid(void);
@@ -254,7 +305,7 @@ Returns the new session ID.
 
 ---
 
-#### set_tid_address (256)
+#### set_tid_address (0x000D)
 
 ```c
 pid_t set_tid_address(int *tidptr);
@@ -267,7 +318,7 @@ Store `tidptr` in the PCB for thread library use.  Returns the caller's PID.
 
 ---
 
-#### uname (122)
+#### uname (0x0007)
 
 ```c
 int uname(struct utsname *buf);
@@ -281,14 +332,14 @@ Fill `buf` (390 bytes = 6 x 65-byte fields) with system identification:
 | nodename | `ppap` |
 | release | `0.11.0` |
 | version | `#1 PPAP` |
-| machine | `armv6m` |
+| machine | `armv6m` (ARM) or `m68k` (m68k) |
 | domainname | (empty) |
 
 **vs POSIX/Linux:**  Identical interface.  Values are hardcoded.
 
 ---
 
-#### getcpu (345)
+#### getcpu (0x0A01)
 
 ```c
 int getcpu(unsigned *cpu, unsigned *node, void *unused);
@@ -302,7 +353,7 @@ Write the current CPU core number (0 or 1) to `*cpu`.  `node` is set to 0.
 
 ### File I/O
 
-#### read (3) / write (4)
+#### read (0x0100) / write (0x0101)
 
 ```c
 ssize_t read(int fd, void *buf, size_t n);
@@ -317,7 +368,7 @@ driver (tty, VFS file, pipe, device file).
 
 ---
 
-#### readv (145) / writev (146)
+#### readv (0x0109) / writev (0x010A)
 
 ```c
 ssize_t readv(int fd, const struct iovec *iov, int iovcnt);
@@ -332,7 +383,7 @@ of single read/write calls (not truly atomic across iovecs).
 
 ---
 
-#### open (5) / openat (322)
+#### open (0x0102) / openat (0x020C)
 
 ```c
 int open(const char *path, int flags, mode_t mode);
@@ -363,7 +414,7 @@ cwd-relative.  Other `dirfd` values are not supported.
 
 ---
 
-#### close (6)
+#### close (0x0103)
 
 ```c
 int close(int fd);
@@ -374,7 +425,7 @@ object is freed when the count reaches zero.  Identical to POSIX.
 
 ---
 
-#### lseek (19) / _llseek (140)
+#### lseek (0x010B) / _llseek (0x0307)
 
 ```c
 off_t lseek(int fd, off_t off, int whence);
@@ -394,7 +445,7 @@ Linux compat syscall; PPAP ignores `off_hi`.
 
 ---
 
-#### dup (41) / dup2 (63)
+#### dup (0x0104) / dup2 (0x0105)
 
 ```c
 int dup(int oldfd);
@@ -408,7 +459,7 @@ atomically closes `newfd` (if open) and makes it a copy of `oldfd`.
 
 ---
 
-#### fcntl64 (221)
+#### fcntl64 (0x0108)
 
 ```c
 int fcntl(int fd, int cmd, ...);
@@ -430,7 +481,7 @@ File control operations:
 
 ---
 
-#### pipe (42)
+#### pipe (0x0106)
 
 ```c
 int pipe(int fds[2]);
@@ -454,7 +505,7 @@ Blocking uses the svc_restart mechanism (syscall re-executes on wake).
 
 ---
 
-#### ioctl (54)
+#### ioctl (0x0107)
 
 ```c
 int ioctl(int fd, unsigned long cmd, ...);
@@ -473,7 +524,7 @@ implemented.
 
 ### File Metadata
 
-#### stat (106) / fstat (108)
+#### stat (0x0200) / fstat (0x0201)
 
 ```c
 int stat(const char *path, struct stat *buf);
@@ -485,7 +536,7 @@ to the filesystem's `stat` operation.
 
 ---
 
-#### stat64 (195) / lstat64 (196) / fstat64 (197) / fstatat64 (327)
+#### stat64 (0x0301) / lstat64 (0x0304) / fstat64 (0x0302) / fstatat64 (0x020D)
 
 ```c
 int stat64(const char *path, struct stat64 *buf);
@@ -498,44 +549,14 @@ Get file status in Linux `struct stat64` format (96 bytes).  These are the
 primary stat calls used by musl.  `lstat64` does not follow symlinks.
 `fstatat64` only supports `dirfd == AT_FDCWD`.
 
-Layout of `struct stat64` (ARM):
-
-| Offset | Size | Field |
-|--------|------|-------|
-| 0 | 8 | st_dev |
-| 12 | 4 | st_ino (truncated) |
-| 16 | 4 | st_mode |
-| 20 | 4 | st_nlink |
-| 24 | 4 | st_uid |
-| 28 | 4 | st_gid |
-| 32 | 8 | st_rdev |
-| 44 | 8 | st_size |
-| 52 | 4 | st_blksize (always 4096) |
-| 56 | 8 | st_blocks (ceil(size/512)) |
-| 64 | 8 | st_atime + nsec |
-| 72 | 8 | st_mtime + nsec |
-| 80 | 8 | st_ctime + nsec |
-| 88 | 8 | st_ino (full) |
-
 **vs POSIX/Linux:**  Wire-compatible with the Linux ARM stat64 structure.
 Timestamps are zero (no RTC).  `st_uid`/`st_gid` are always 0.
 
 ---
 
-#### statx (397)
-
-```c
-int statx(int dirfd, const char *path, int flags, unsigned mask,
-          struct statx *buf);
-```
-
-Always returns `-ENOSYS`.  The `stat64` family suffices for musl.
-
----
-
 ### Directory Operations
 
-#### getdents (141) / getdents64 (217)
+#### getdents (0x0300) / getdents64 (0x030A)
 
 ```c
 int getdents(int fd, struct dirent *buf, size_t count);
@@ -545,73 +566,14 @@ int getdents64(int fd, struct dirent64 *buf, size_t count);
 Read directory entries from an open directory fd.  Returns the number of
 entries written, or 0 at end-of-directory.
 
-`getdents64` outputs Linux `struct dirent64`:
-
-| Offset | Size | Field |
-|--------|------|-------|
-| 0 | 8 | d_ino |
-| 8 | 8 | d_off (next cookie) |
-| 16 | 2 | d_reclen |
-| 18 | 1 | d_type |
-| 19 | var | d_name (NUL-terminated, 8-byte aligned) |
-
-The file offset serves as the readdir cookie.  An internal `GETDENTS_EOF`
-sentinel (0xFFFFFFFF) prevents restarting after reaching the end.
-
 **vs POSIX/Linux:**  Same wire format as Linux.  `readdir(3)` in musl works
 on top of `getdents64`.
 
 ---
 
-#### mkdir (39)
-
-```c
-int mkdir(const char *path, mode_t mode);
-```
-
-Create a directory.  The `mode` is passed to the filesystem but not enforced
-(PPAP has no permission model).  Returns `-EROFS` on read-only mounts.
-
-**vs POSIX/Linux:**  Same interface.  `mode` is stored but not checked.
-
----
-
-#### unlink (10) / rmdir (40)
-
-```c
-int unlink(const char *path);
-int rmdir(const char *path);
-```
-
-Remove a file or directory.  `rmdir` delegates to `unlink` — the VFS unlink
-handler checks whether the target is a non-empty directory.
-
-**vs POSIX/Linux:**  `unlink` can remove both files and empty directories
-(Linux `unlink` only removes files; `rmdir` only removes directories).
-
----
-
-#### chdir (12) / getcwd (183)
-
-```c
-int chdir(const char *path);
-char *getcwd(char *buf, size_t size);
-```
-
-Change or query the working directory.
-
-`getcwd` returns the length including the NUL terminator (not a pointer)
-on success.
-
-**vs POSIX/Linux:**  `getcwd` returns a length rather than a pointer in `r0`
-(the musl wrapper handles the difference).  Maximum path length is 128 bytes
-(`VFS_PATH_MAX`).
-
----
-
 ### Memory Management
 
-#### brk (45)
+#### brk (0x0400)
 
 ```c
 void *brk(void *addr);
@@ -631,7 +593,7 @@ Linux semantics so musl can fall back to `mmap` on failure.
 
 ---
 
-#### mmap2 (192)
+#### mmap2 (0x0401)
 
 ```c
 void *mmap2(void *addr, size_t len, int prot, int flags, int fd, off_t pgoff);
@@ -640,58 +602,16 @@ void *mmap2(void *addr, size_t len, int prot, int flags, int fd, off_t pgoff);
 Map anonymous memory.  Only `MAP_ANONYMOUS | MAP_PRIVATE` is supported.
 `fd` must be -1.  `pgoff` is ignored.
 
-- `MAP_FIXED`: try to allocate at the specified address.
-- Otherwise: kernel chooses the address from the page pool.
-- Maximum 8 mmap regions per process (`MMAP_REGIONS_MAX`).
-
 **vs POSIX/Linux:**
 - **No file-backed mappings** — only anonymous memory.
 - **No shared mappings** — `MAP_SHARED` is not supported.
 - **No protection enforcement** — `prot` is accepted but ignored (no MMU).
-- Pages are always zero-filled on allocation.
-
----
-
-#### munmap (91)
-
-```c
-int munmap(void *addr, size_t len);
-```
-
-Unmap a previously mapped region.  Frees the underlying pages.
-
-**vs POSIX/Linux:**  Same interface.  Partial unmaps within a region are not
-supported — the entire region is freed.
-
----
-
-#### mremap (163)
-
-```c
-void *mremap(void *addr, size_t old, size_t new, int flags);
-```
-
-Always returns `-ENOMEM`.  This forces musl's `realloc` to fall back to
-`mmap` + copy + `munmap` instead of trying to grow a mapping in-place.
-
----
-
-#### mprotect (125)
-
-```c
-int mprotect(void *addr, size_t len, int prot);
-```
-
-Always returns 0 (no-op).  PPAP has no MMU-based page protection.
-
-**vs POSIX/Linux:**  Linux enforces per-page R/W/X permissions.  PPAP
-accepts the call silently to satisfy musl startup.
 
 ---
 
 ### Signal Handling
 
-#### kill (37)
+#### kill (0x0600)
 
 ```c
 int kill(pid_t pid, int sig);
@@ -703,14 +623,9 @@ Send a signal to a process.
 - Sets `sig_pending |= (1 << sig)` on the target process.
 - Wakes the target if it is `PROC_BLOCKED` or `PROC_SLEEPING`.
 
-**vs POSIX/Linux:**
-- `pid == 0` (all in process group) and `pid == -1` (all processes) are not
-  implemented — only specific `pid > 0`.
-- No permission checks (single-user system).
-
 ---
 
-#### sigaction (67) / rt_sigaction (174)
+#### sigaction (0x0601) / rt_sigaction (0x0603)
 
 ```c
 int sigaction(int sig, uintptr_t handler, uintptr_t *old);
@@ -718,66 +633,24 @@ int rt_sigaction(int sig, const struct sigaction *act,
                  struct sigaction *oact, size_t sigsetsize);
 ```
 
-Install a signal handler.
-
-- `SIGKILL` (9) and `SIGSTOP` (19) cannot be caught.
-- `SIG_DFL` (0): default action (terminate).
-- `SIG_IGN` (1): ignore the signal.
-- Function pointer: user handler invoked on signal delivery.
-
-`rt_sigaction` uses the Linux `struct k_sigaction` (48 bytes) with `sa_flags`
-and `sa_mask` fields that are accepted but not fully honoured.
-
-**vs POSIX/Linux:**
-- `sa_flags` (`SA_RESTART`, `SA_SIGINFO`, etc.) are stored but ignored.
-- `sa_mask` is stored but not applied during handler execution.
-- Signal queuing is not supported — signals are a simple bitmask.
+Install a signal handler.  `SIGKILL` (9) and `SIGSTOP` (19) cannot be caught.
 
 ---
 
-#### rt_sigprocmask (175)
+#### rt_sigprocmask (0x0604)
 
 ```c
 int rt_sigprocmask(int how, const sigset_t *set, sigset_t *oset,
                    size_t sigsetsize);
 ```
 
-Manipulate the blocked signal mask.
-
-| `how` | Action |
-|-------|--------|
-| `SIG_BLOCK` (0) | Add signals in `set` to blocked mask |
-| `SIG_UNBLOCK` (1) | Remove signals in `set` from blocked mask |
-| `SIG_SETMASK` (2) | Replace blocked mask with `set` |
-
-Only the low 32 bits of the signal set are used.
-
-**vs POSIX/Linux:**  Same interface.  Only 32 signals supported (Linux
-supports 64).
-
----
-
-#### sigreturn (119) / rt_sigreturn (173)
-
-```c
-void sigreturn(void);
-void rt_sigreturn(void);
-```
-
-Restore context after a signal handler returns.  Called from the signal
-trampoline.  Advances PSP past the trampoline frame so the hardware exception
-return pops the original (pre-signal) context.
-
-Both route to the same handler.  `rt_sigreturn` is the musl-preferred variant.
-
-**vs POSIX/Linux:**  Same mechanism.  The trampoline is injected by the kernel
-onto the user stack.
+Manipulate the blocked signal mask (`SIG_BLOCK`, `SIG_UNBLOCK`, `SIG_SETMASK`).
 
 ---
 
 ### Time
 
-#### nanosleep (162) / clock_nanosleep (265, 407)
+#### nanosleep (0x0500) / clock_nanosleep (0x0503, 0x0505)
 
 ```c
 int nanosleep(const struct timespec *req, struct timespec *rem);
@@ -785,29 +658,13 @@ int clock_nanosleep(clockid_t clk, int flags,
                     const struct timespec *req, struct timespec *rem);
 ```
 
-Sleep for the specified duration.
+Sleep for the specified duration.  Resolution: 10 ms (100 Hz tick).
 
-- Resolution: 10 ms (100 Hz tick).  Sleeps shorter than 10 ms round up to
-  one tick.
-- The `clk` and `flags` parameters are accepted but ignored — all clocks
-  are the same monotonic tick counter.
-- `rem` is not filled in on return.
-- Returns `-EINTR` if a signal is delivered during sleep.
-
-Uses the svc_restart mechanism: the process is marked `PROC_SLEEPING` with
-a deadline; on each reschedule the syscall re-executes and checks whether the
-deadline has passed.
-
-Syscall 265 uses 32-bit `struct timespec`; 407 uses 64-bit.
-
-**vs POSIX/Linux:**
-- 10 ms granularity (Linux: ~1 ns with hrtimers).
-- `TIMER_ABSTIME` flag is not supported.
-- `rem` is never filled in.
+0x0503 uses 32-bit `struct timespec`; 0x0505 uses 64-bit.
 
 ---
 
-#### gettimeofday (78)
+#### gettimeofday (0x0502)
 
 ```c
 int gettimeofday(struct timeval *tv, void *tz);
@@ -815,229 +672,55 @@ int gettimeofday(struct timeval *tv, void *tz);
 
 Get elapsed time since boot as `struct timeval`.
 
-- `tv_sec = ticks / 100`
-- `tv_usec = (ticks % 100) * 10000`
-- `tz` is ignored.
-
-**vs POSIX/Linux:**  Returns time since boot, not wall-clock time (no RTC).
-
 ---
 
-#### clock_gettime (263, 403)
+#### clock_gettime (0x0501, 0x0504)
 
 ```c
 int clock_gettime(clockid_t clk, struct timespec *tp);
 int clock_gettime64(clockid_t clk, struct timespec64 *tp);
 ```
 
-Get elapsed time since boot as `struct timespec`.
-
-- `tv_sec = ticks / 100`
-- `tv_nsec = (ticks % 100) * 10000000`
-- `clk` is ignored — all clocks return the same value.
-
-Syscall 263 uses 32-bit timespec; 403 uses 64-bit.
-
-**vs POSIX/Linux:**
-- `CLOCK_MONOTONIC`, `CLOCK_REALTIME`, etc. are all equivalent.
-- Time is since boot, not epoch.
-- No RTC — the counter starts at zero.
+Get elapsed time since boot.  All clock IDs return the same monotonic value.
 
 ---
 
-### File Descriptor Polling
+### Polling
 
-#### ppoll (336) / ppoll_time64 (414)
+#### poll (0x0700) / ppoll (0x0701)
 
 ```c
-int ppoll(struct pollfd *fds, nfds_t nfds,
+int poll(struct pollfd *fds, nfds_t nfds, int timeout);
+int ppoll(struct pollfd *fds, nfds_t n,
           const struct timespec *timeout, const sigset_t *sigmask);
 ```
 
-Poll file descriptors for readiness.
-
-Each `struct pollfd` contains `fd`, `events` (requested), and `revents`
-(returned):
-
-| Mask | Value | Meaning |
-|------|-------|---------|
-| `POLLIN` | 0x0001 | Data available for reading |
-| `POLLOUT` | 0x0004 | Ready for writing |
-| `POLLERR` | 0x0008 | Error condition |
-| `POLLHUP` | 0x0010 | Hang up |
-| `POLLNVAL` | 0x0020 | Invalid fd |
-
-- If any fd is ready, returns immediately with the count.
-- If `timeout` is zero (`tv_sec == 0 && tv_nsec == 0`): non-blocking poll.
-- If `timeout` is NULL: block indefinitely.
-- Returns `-EINTR` if a signal is pending.
-
-Uses svc_restart for blocking.  Woken by `tty_rx_notify()` or timeout.
-
-Syscall 336 uses 32-bit timespec; 414 uses 64-bit.
-
-**vs POSIX/Linux:**
-- `sigmask` is accepted but not applied (signal mask is not temporarily
-  changed during the poll).
-- Maximum number of fds per poll is limited by `FD_MAX` (16).
+Poll file descriptors for readiness.  `sigmask` is accepted but not applied.
 
 ---
 
 ### Filesystem Management
 
-#### mount (21)
+#### mount (0x0900) / umount2 (0x0901)
 
 ```c
 int mount(const char *source, const char *target, const char *fstype,
           unsigned long flags, const void *data);
-```
-
-Mount a filesystem at `target`.
-
-Supported filesystem types:
-
-| Type | Source | Description |
-|------|--------|-------------|
-| `devfs` | ignored | Device filesystem |
-| `procfs` / `proc` | ignored | Process information filesystem |
-| `tmpfs` | ignored | RAM-backed temporary filesystem |
-| `vfat` | block device | FAT32 filesystem |
-| `ufs` | block device | UFS filesystem |
-
-For `vfat` and `ufs`, `source` should be the block device path (e.g.
-`/dev/mmcblk0p1`); the `/dev/` prefix is stripped and the device is looked up
-in the block device registry.
-
-`flags & MS_RDONLY` mounts the filesystem read-only.
-
-**vs POSIX/Linux:**  Same interface.  Only the listed filesystem types are
-supported.  `data` (mount options string) is ignored.
-
----
-
-#### umount2 (52)
-
-```c
 int umount2(const char *target, int flags);
 ```
 
-Unmount the filesystem at `target`.  `flags` (e.g. `MNT_DETACH`) are accepted
-but ignored.
-
-**vs POSIX/Linux:**  Same interface.  Lazy unmount is not supported.
+Supported filesystem types: `devfs`, `procfs`/`proc`, `tmpfs`, `vfat`, `ufs`.
 
 ---
 
-#### statfs64 (266) / fstatfs64 (267)
+#### statfs64 (0x0305) / fstatfs64 (0x0306)
 
 ```c
 int statfs64(const char *path, size_t sz, struct statfs64 *buf);
 int fstatfs64(int fd, size_t sz, struct statfs64 *buf);
 ```
 
-Get filesystem statistics for the mount containing `path` or `fd`.
-
-**vs POSIX/Linux:**  Same interface.  Values come from the filesystem driver's
-`statfs` operation.
-
----
-
-### Ownership and Permissions
-
-PPAP is a single-user system running as root.  Ownership and permission
-syscalls are stubs that satisfy musl and standard utilities.
-
-#### getuid32 (199) / geteuid32 (201) / getgid32 (200) / getegid32 (202)
-
-All return 0 (root).
-
-#### chown32 (212) / lchown32 (198) / fchown32 (207)
-
-All return 0 (success, no-op).
-
-#### chmod (15)
-
-Returns 0 (success, no-op).
-
-#### setgroups32 (206)
-
-Returns 0 (success, no-op).
-
-#### umask (60)
-
-```c
-mode_t umask(mode_t mask);
-```
-
-Set the file creation mask.  Returns the previous mask.  The mask is stored
-in the PCB but not enforced by any filesystem.
-
-#### access (33)
-
-```c
-int access(const char *path, int mode);
-```
-
-Check file accessibility.  Verifies the path exists via VFS lookup but always
-grants access (root user).  Returns `-ENOENT` if the path does not exist.
-
----
-
-### Miscellaneous
-
-#### readlink (85)
-
-```c
-ssize_t readlink(const char *path, char *buf, size_t bufsiz);
-```
-
-Read the target of a symbolic link.  Does **not** NUL-terminate the output.
-
-Special case: `/proc/self/exe` returns `/bin/busybox`.
-
-**vs POSIX/Linux:**  Same interface.  The `/proc/self/exe` mapping is
-hardcoded.
-
----
-
-#### rename (38)
-
-```c
-int rename(const char *oldpath, const char *newpath);
-```
-
-Always returns `-ENOSYS`.  Not implemented.
-
----
-
-#### mknod (14)
-
-```c
-int mknod(const char *path, mode_t mode, dev_t dev);
-```
-
-Always returns `-EPERM`.  Device nodes are created via devfs, not `mknod`.
-
----
-
-#### utimes (269)
-
-```c
-int utimes(const char *path, const struct timeval tv[2]);
-```
-
-Returns 0 (no-op).  No RTC — timestamps are meaningless.
-
----
-
-#### futex (240)
-
-```c
-int futex(int *uaddr, int op, int val, ...);
-```
-
-Returns 0 (no-op).  PPAP is single-threaded — futex synchronisation is
-unnecessary.  Exists to satisfy musl's lock initialisation.
+Get filesystem statistics.
 
 ---
 
@@ -1065,7 +748,7 @@ unnecessary.  Exists to satisfy musl's lock initialisation.
 
 ## Error Codes
 
-PPAP uses standard POSIX errno values (Linux ARM ABI numbering):
+PPAP uses standard POSIX errno values (Linux ABI numbering):
 
 | Errno | Value | Description |
 |-------|-------|-------------|
@@ -1123,3 +806,7 @@ Blocking uses the **svc_restart** mechanism:
    instruction).
 5. The syscall re-executes with the original arguments and checks whether the
    blocking condition has been resolved.
+
+On m68k, a per-process `svc_needs_restart` flag is used instead of the global
+`svc_restart` array, because the m68k TRAP handler re-executes in a C loop
+rather than adjusting the stacked PC.
