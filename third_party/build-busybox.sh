@@ -139,8 +139,8 @@ EXTRA_LDFLAGS_PPAP=""
 if [[ "$ARCH" == "m68k" ]]; then
     echo "busybox [$ARCH]: building 68000-safe divmod replacements..."
     DIVMOD_DIR="$PROJECT_ROOT/src/arch/m68k"
-    $CC -m68000 -Os -c -o "$BB_OUT/divmod.o"   "$DIVMOD_DIR/divmod.c"
-    $CC -m68000 -Os -c -o "$BB_OUT/divmod64.o" "$DIVMOD_DIR/divmod64.c"
+    $CC -m68000 -Os -msep-data -fPIC -c -o "$BB_OUT/divmod.o"   "$DIVMOD_DIR/divmod.c"
+    $CC -m68000 -Os -msep-data -fPIC -c -o "$BB_OUT/divmod64.o" "$DIVMOD_DIR/divmod64.c"
     EXTRA_LDFLAGS_PPAP="$BB_OUT/divmod.o $BB_OUT/divmod64.o"
     echo "  built: divmod.o divmod64.o"
 fi

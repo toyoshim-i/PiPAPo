@@ -7,12 +7,13 @@
  *   - GOT entries are relocated to point to actual text/SRAM addresses
  *   - GOT base register: r9 (set by kernel, compiler doesn't recalculate)
  *
- * m68k: Full RAM loading (no XIP)
- *   - Both text and data segments loaded into contiguous SRAM pages
- *   - GCC's PIC code uses `lea @GOTPC(%pc), %a5` to compute GOT address
- *     relative to PC, so text and data must be at the correct relative
- *     offset from each other (same as link-time layout)
- *   - Relocations add the load base address
+ * m68k: Execute-In-Place (XIP) from romfs
+ *   - .text stays in romfs (execute in place — romfs is in RAM)
+ *   - .got + .data + .bss are copied to contiguous SRAM page(s)
+ *   - With -msep-data, a5 holds the GOT base (set by kernel), so text
+ *     and data locations are fully independent (no PC-relative GOT lookup)
+ *   - Text relocations are rejected at load time (binaries must be
+ *     compiled with -msep-data -fPIC)
  */
 
 #include "exec.h"
@@ -136,28 +137,8 @@ static void apply_relocations(const elf32_ehdr_t *ehdr,
 
         uint32_t off = r_offset;
 
-#if defined(__m68k__)
-        /* m68k: text is in writable RAM — handle text relocations */
-        if (text_ram && text_seg &&
-            off >= text_seg->p_vaddr &&
-            off < text_seg->p_vaddr + text_seg->p_memsz) {
-            uint32_t off_in_text = off - text_seg->p_vaddr;
-            uint32_t *word = (uint32_t *)(text_ram + off_in_text);
-            uint32_t val = rel_info.has_addend
-                ? (uint32_t)r_addend : *word;
-            if (val == 0)
-                continue;
-            if (val < data_seg->p_vaddr)
-                *word = val + text_base;
-            else
-                *word = val - data_seg->p_vaddr +
-                        (uint32_t)(uintptr_t)sram_page;
-            continue;
-        }
-#else
         (void)text_seg;
         (void)text_ram;
-#endif
 
         /* Only patch words in the data segment (SRAM) */
         if (off < data_seg->p_vaddr ||
@@ -247,144 +228,57 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
     uint32_t got_sram_addr = 0;
     elf_got_info_t got_info = {0, 0, 0};
 
-#if defined(__m68k__)
-    /* ── m68k: Load entire binary into contiguous SRAM ────────────────── *
+    /* ── Pre-allocate stack page before data pages ─────────────────────
      *
-     * m68k GCC PIC computes the GOT address using PC-relative addressing:
-     *   lea _GLOBAL_OFFSET_TABLE_@GOTPC(%pc), %a5
-     * This requires text and data to be at the correct relative offset
-     * (same as link time).  We load text+data into contiguous SRAM pages.
+     * page_alloc() returns the most-recently-freed page (LIFO).  After a
+     * process exits, its brk pages are near the top of the free stack.
+     * If we allocated data pages first (via alloc_contiguous scanning
+     * from the bottom), page_alloc() for the stack would pop a recently
+     * freed brk page — often the page right after the data block.  That
+     * blocks brk expansion → OOM.
      *
-     * Layout in SRAM: load_base + text_vaddr .. load_base + data_end
-     *
-     * Stack allocation: done FIRST so page_alloc() takes from the top of
-     * the free stack (high addresses) while alloc_contiguous scans from
-     * the bottom.  This prevents the stack from landing adjacent to the
-     * code block where brk needs to expand contiguously.
-     * ──────────────────────────────────────────────────────────────────── */
-    {
-        /* Pre-allocate stack page before code pages (see note above) */
-        void *early_stack = page_alloc();
-        if (!early_stack) {
-            vnode_put(vn);
-            return -(int)ENOMEM;
-        }
-
-        /* Total virtual address span: from text start to data end */
-        uint32_t span_end = data_seg
-            ? data_seg->p_vaddr + data_seg->p_memsz
-            : text_seg->p_vaddr + text_seg->p_memsz;
-        uint32_t span_start = text_seg->p_vaddr;
-        uint32_t total_size = span_end - span_start;
-        uint32_t total_pages = (total_size + PAGE_SIZE - 1) / PAGE_SIZE;
-
-        if (total_pages > USER_PAGES_MAX) {
-            page_free(early_stack);
-            vnode_put(vn);
-            return -(int)ENOMEM;
-        }
-
-        uint8_t *load_base = alloc_contiguous(total_pages);
-        if (!load_base) {
-            page_free(early_stack);
-            vnode_put(vn);
-            return -(int)ENOMEM;
-        }
-        p->stack_page = early_stack;
-
-        /* Zero the entire region first (covers BSS and gaps) */
-        memset(load_base, 0, total_pages * PAGE_SIZE);
-
-        /* Copy text segment */
-        uint32_t text_off = text_seg->p_vaddr - span_start;
-        memcpy(load_base + text_off,
-               file_base + text_seg->p_offset,
-               text_seg->p_filesz);
-
-        text_base = (uint32_t)(uintptr_t)load_base + text_off;
-        entry = text_base + e_entry - text_seg->p_vaddr;
-
-        /* Copy data segment */
-        if (data_seg && data_seg->p_filesz > 0) {
-            uint32_t data_off = data_seg->p_vaddr - span_start;
-            sram_page = load_base + data_off;
-            memcpy(sram_page,
-                   file_base + data_seg->p_offset,
-                   data_seg->p_filesz);
-            /* BSS already zeroed by memset above */
-        } else if (data_seg) {
-            sram_page = load_base + (data_seg->p_vaddr - span_start);
-        }
-
-        /* Store all pages in user_pages[] */
-        for (uint32_t i = 0; i < total_pages; i++)
-            p->user_pages[i] = load_base + i * PAGE_SIZE;
-
-        /* GOT relocation */
-        if (data_seg &&
-            elf_find_got(ehdr, file_base, &got_info, file_size) == 0) {
-            uint32_t got_offset_in_data =
-                got_info.addr - data_seg->p_vaddr;
-            got_sram_addr =
-                (uint32_t)(uintptr_t)sram_page + got_offset_in_data;
-
-            uint32_t *got =
-                (uint32_t *)((uint8_t *)sram_page + got_offset_in_data);
-            uint32_t n_entries = got_info.size / 4;
-
-            for (uint32_t i = 0; i < n_entries; i++) {
-                uint32_t val = got[i];
-                if (val == 0)
-                    continue;
-                if (val < data_seg->p_vaddr)
-                    got[i] = val + text_base;
-                else
-                    got[i] = val - data_seg->p_vaddr +
-                             (uint32_t)(uintptr_t)sram_page;
-            }
-        }
-
-        /* Apply .rela.dyn relocations (including text relocations) */
-        if (data_seg)
-            apply_relocations(ehdr, file_base, file_size,
-                              text_seg, data_seg,
-                              load_base + (text_seg->p_vaddr - span_start),
-                              sram_page, text_base,
-                              got_sram_addr, &got_info);
-
-        /* Set program break */
-        if (data_seg) {
-            uint32_t data_end = (uint32_t)(uintptr_t)sram_page
-                                + data_seg->p_memsz;
-            p->brk_base    = data_end;
-            p->brk_current = data_end;
-        }
+     * Pre-allocating the stack drains that dangerous LIFO entry before
+     * alloc_contiguous runs.
+     */
+    void *stack = page_alloc();
+    if (!stack) {
+        vnode_put(vn);
+        return -(int)ENOMEM;
     }
-#else
-    /* ── ARM: XIP — text stays in flash, data goes to SRAM ────────────── */
-    {
-        uint32_t flash_text_base =
-            (uint32_t)(uintptr_t)file_base + text_seg->p_offset;
-        text_base = flash_text_base;
+    p->stack_page = stack;
 
-        entry = flash_text_base + (e_entry & ~1u) - text_seg->p_vaddr;
+    /* ── XIP: text stays in romfs/flash, data goes to SRAM ─────────── */
+    {
+        uint32_t xip_text_base =
+            (uint32_t)(uintptr_t)file_base + text_seg->p_offset;
+        text_base = xip_text_base;
+
+#if defined(__m68k__)
+        entry = xip_text_base + e_entry - text_seg->p_vaddr;
+#else
+        entry = xip_text_base + (e_entry & ~1u) - text_seg->p_vaddr;
         entry |= (e_entry & 1u);   /* restore Thumb bit */
+#endif
 
         if (data_seg && data_seg->p_memsz > 0) {
             uint32_t data_pages =
                 (data_seg->p_memsz + PAGE_SIZE - 1) / PAGE_SIZE;
             if (data_pages > USER_PAGES_MAX) {
+                page_free(stack);
+                p->stack_page = NULL;
                 vnode_put(vn);
                 return -(int)ENOMEM;
             }
 
             sram_page = alloc_contiguous(data_pages);
             if (!sram_page) {
+                page_free(stack);
+                p->stack_page = NULL;
                 vnode_put(vn);
                 return -(int)ENOMEM;
             }
 
-            /* Copy initialised data from flash */
+            /* Copy initialised data */
             if (data_seg->p_filesz > 0)
                 memcpy(sram_page, file_base + data_seg->p_offset,
                        data_seg->p_filesz);
@@ -410,17 +304,17 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
                     if (val == 0)
                         continue;
                     if (val < data_seg->p_vaddr)
-                        got[i] = val + flash_text_base;
+                        got[i] = val + xip_text_base;
                     else
                         got[i] = val - data_seg->p_vaddr +
                                  (uint32_t)(uintptr_t)sram_page;
                 }
             }
 
-            /* Apply .rel.dyn relocations (no text relocs on ARM XIP) */
+            /* Apply relocations (data segment only — no text relocs) */
             apply_relocations(ehdr, file_base, file_size,
                               NULL, data_seg, NULL,
-                              sram_page, flash_text_base,
+                              sram_page, xip_text_base,
                               got_sram_addr, &got_info);
 
             /* Store data pages in user_pages[] */
@@ -434,26 +328,6 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
             p->brk_current = data_end;
         }
     }
-#endif
-
-    /* ── 8. Allocate stack page ────────────────────────────────────────── */
-#if defined(__m68k__)
-    /* m68k: stack was pre-allocated before alloc_contiguous (see above) */
-    void *stack = p->stack_page;
-#else
-    void *stack = page_alloc();
-    if (!stack) {
-        for (int i = 0; i < USER_PAGES_MAX; i++) {
-            if (p->user_pages[i]) {
-                page_free(p->user_pages[i]);
-                p->user_pages[i] = NULL;
-            }
-        }
-        vnode_put(vn);
-        return -(int)ENOMEM;
-    }
-    p->stack_page = stack;
-#endif
 
     /* ── 8a. Build argc/argv/envp/auxv at top of stack ─────────────────
      *
