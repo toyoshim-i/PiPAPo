@@ -131,7 +131,7 @@ static long do_ppoll(struct pollfd *fds, uint32_t nfds,
         }
     }
     current->state = PROC_BLOCKED;
-    svc_restart[core_id()] = 1;
+    set_svc_restart();
     sched_yield();
     return 0;   /* ignored — SVC restores original args */
 }

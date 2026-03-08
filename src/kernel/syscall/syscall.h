@@ -160,6 +160,11 @@ extern volatile int      exec_pending[2];
 extern volatile int      svc_restart[2];
 extern volatile uint32_t svc_saved_a0[2];
 
+/* Helper: mark current syscall for restart after blocking yield.
+ * Sets both the global svc_restart (for ARM trap.S) and the per-process
+ * flag (for m68k, where globals leak between nested TRAP #0 handlers). */
+void set_svc_restart(void);
+
 /* ── Syscall implementations ───────────────────────────────────────────────── */
 
 /* sys_proc.c */

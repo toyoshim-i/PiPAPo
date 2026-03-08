@@ -45,50 +45,55 @@
 #define __NR_writev		0x010A
 #define __NR_lseek		0x010B
 
-/* Group 0x02: File system - paths */
+/* Group 0x02: File system - paths (must match kernel syscall.h) */
 #define __NR_stat		0x0200
-#define __NR_stat64		0x0200
 #define __NR_fstat		0x0201
-#define __NR_fstat64		0x0201
 #define __NR_access		0x0202
-#define __NR_mkdir		0x0203
-#define __NR_rmdir		0x0204
-#define __NR_unlink		0x0205
-#define __NR_rename		0x0206
-#define __NR_link		0x0207
-#define __NR_symlink		0x0208
-#define __NR_readlink		0x0209
-#define __NR_chdir		0x020A
-#define __NR_fchdir		0x020B
-#define __NR_getcwd		0x020C
-#define __NR_chmod		0x020D
-#define __NR_chown		0x020E
-#define __NR_chown32		0x020E
-#define __NR_lstat		0x020F
-#define __NR_lstat64		0x020F
-#define __NR_mknod		0x0210
-#define __NR_umask		0x0211
-#define __NR_getdents64		0x0212
+#define __NR_getcwd		0x0203
+#define __NR_mkdir		0x0204
+#define __NR_rmdir		0x0205
+#define __NR_unlink		0x0206
+#define __NR_chdir		0x0207
+#define __NR_readlink		0x0208
+#define __NR_rename		0x0209
+#define __NR_mknod		0x020A
+#define __NR_chmod		0x020B
+#define __NR_openat		0x020C
+#define __NR_fstatat64		0x020D
+#define __NR_link		0x020E
+#define __NR_symlink		0x020F
+#define __NR_fchdir		0x0210
+#define __NR_chown		0x0211
+#define __NR_chown32		0x0211
+#define __NR_lstat		0x0212
 #define __NR_fchmod		0x0213
 #define __NR_fchown		0x0214
 #define __NR_fchown32		0x0214
 
-/* Group 0x03: File system - extended */
-#define __NR_openat		0x0300
-#define __NR_mkdirat		0x0301
-#define __NR_unlinkat		0x0302
-#define __NR_renameat		0x0303
-#define __NR_fstatat64		0x0304
-#define __NR_readlinkat		0x0305
-#define __NR_fchmodat		0x0306
-#define __NR_fchownat		0x0307
-#define __NR_linkat		0x0308
-#define __NR_symlinkat		0x0309
-#define __NR_mknodat		0x030A
-#define __NR_faccessat		0x030B
-#define __NR_utimensat		0x030C
-#define __NR_renameat2		0x030D
-#define __NR_statx		0x030E
+/* Group 0x03: File system - extended (must match kernel syscall.h) */
+#define __NR_getdents		0x0300
+#define __NR_stat64		0x0301
+#define __NR_fstat64		0x0302
+#define __NR_umask		0x0303
+#define __NR_lstat64		0x0304
+#define __NR_statfs64		0x0305
+#define __NR_fstatfs64		0x0306
+#define __NR__llseek		0x0307
+#define __NR_statx		0x0308
+#define __NR_utimes		0x0309
+#define __NR_getdents64		0x030A
+#define __NR_mkdirat		0x030B
+#define __NR_unlinkat		0x030C
+#define __NR_renameat		0x030D
+#define __NR_readlinkat		0x030E
+#define __NR_fchmodat		0x030F
+#define __NR_fchownat		0x0310
+#define __NR_linkat		0x0311
+#define __NR_symlinkat		0x0312
+#define __NR_mknodat		0x0313
+#define __NR_faccessat		0x0314
+#define __NR_utimensat		0x0315
+#define __NR_renameat2		0x0316
 
 /* Group 0x04: Memory management */
 #define __NR_brk		0x0400
@@ -111,18 +116,20 @@
 #define __NR_clock_gettime64	0x0504
 #define __NR_clock_settime32	0x0505
 
-/* Group 0x06: Signals */
+/* Group 0x06: Signals — must match kernel syscall.h */
 #define __NR_kill		0x0600
-#define __NR_rt_sigaction	0x0601
-#define __NR_rt_sigprocmask	0x0602
-#define __NR_rt_sigpending	0x0603
-#define __NR_rt_sigsuspend	0x0604
+/* 0x0601 = SYS_SIGACTION (old-style, kernel-only) */
+/* 0x0602 = SYS_SIGRETURN (old-style, kernel-only) */
+#define __NR_rt_sigaction	0x0603
+#define __NR_rt_sigprocmask	0x0604
 #define __NR_rt_sigreturn	0x0605
 #define __NR_sigaltstack	0x0606
 #define __NR_rt_sigtimedwait	0x0607
 #define __NR_rt_sigqueueinfo	0x0608
 #define __NR_tgkill		0x0609
 #define __NR_tkill		0x060A
+#define __NR_rt_sigpending	0x060B
+#define __NR_rt_sigsuspend	0x060C
 
 /* Group 0x07: Poll */
 #define __NR_ppoll		0x0701
@@ -245,7 +252,7 @@
 #define __NR_bdflush		0xF034
 #define __NR_sysfs		0xF035
 #define __NR_personality	0xF036
-#define __NR__llseek		0xF037
+#define __NR__llseek		0x0307
 #define __NR_getdents		0xF038
 #define __NR__newselect		0xF039
 #define __NR_flock		0xF03A
@@ -261,7 +268,7 @@
 #define __NR_sched_rr_get_interval	0xF044
 #define __NR_getpagesize	0xF045
 #define __NR_query_module	0xF046
-#define __NR_poll		0xF047
+#define __NR_poll		0x0700
 #define __NR_nfsservctl		0xF048
 #define __NR_pread64		0xF049
 #define __NR_pwrite64		0xF04A
@@ -307,9 +314,9 @@
 #define __NR_timer_getoverrun	0xF072
 #define __NR_timer_delete	0xF073
 #define __NR_clock_getres_time32	0xF074
-#define __NR_statfs64		0xF075
-#define __NR_fstatfs64		0xF076
-#define __NR_utimes		0xF077
+#define __NR_statfs64		0x0305
+#define __NR_fstatfs64		0x0306
+#define __NR_utimes		0x0309
 #define __NR_fadvise64_64	0xF078
 #define __NR_mbind		0xF079
 #define __NR_get_mempolicy	0xF07A

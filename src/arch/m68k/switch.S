@@ -24,8 +24,8 @@
 |   [SP+48]  a4
 |   [SP+52]  a5
 |   [SP+56]  a6
-|   [SP+60]  SR  (16-bit) ─┐  exception frame (pushed by hardware or
-|   [SP+62]  PC  (32-bit)  ┘  constructed by proc_setup_stack)
+|   [SP+60]  SR  (16-bit)  ─┐  exception frame (pushed by hardware or
+|   [SP+62]  PC  (32-bit)   ┘  constructed by proc_setup_stack)
 |
 | PCB_SP_OFFSET: byte offset of `sp` in pcb_t (= 44 on m68k).
 | MUST match offsetof(pcb_t, sp); verified by _Static_assert in proc.c.

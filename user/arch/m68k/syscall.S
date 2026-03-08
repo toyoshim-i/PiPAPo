@@ -12,7 +12,7 @@
 | m68k C ABI: arguments on stack, return value in d0.
 | d2-d7/a2-a6 are callee-saved; d0-d1/a0-a1 are caller-saved.
 | For syscalls that use d2+ as arguments, we must save/restore
-| callee-saved registers around the trap.
+| ALL callee-saved registers we modify around the trap.
 |
 | Group 0 (0x00xx) fits in moveq.  Groups 1+ need move.l #N, %d0.
 | =============================================================================
@@ -35,39 +35,39 @@ _exit:
 | ssize_t read(int fd, void *buf, size_t n);
     .globl read
 read:
-    move.l  %d2, %sp@-
-    move.l  8(%sp), %d1         | fd
-    move.l  12(%sp), %d2        | buf
-    move.l  16(%sp), %d3        | n
+    movem.l %d2-%d3, %sp@-      | save d2-d3 (8 bytes)
+    move.l  12(%sp), %d1        | fd
+    move.l  16(%sp), %d2        | buf
+    move.l  20(%sp), %d3        | n
     move.l  #0x0100, %d0
     trap    #0
-    move.l  %sp@+, %d2
+    movem.l %sp@+, %d2-%d3
     rts
 
 | --- write (SYS_WRITE = 0x0101) -----------------------------------------------
 | ssize_t write(int fd, const void *buf, size_t n);
     .globl write
 write:
-    move.l  %d2, %sp@-
-    move.l  8(%sp), %d1         | fd
-    move.l  12(%sp), %d2        | buf
-    move.l  16(%sp), %d3        | n
+    movem.l %d2-%d3, %sp@-      | save d2-d3 (8 bytes)
+    move.l  12(%sp), %d1        | fd
+    move.l  16(%sp), %d2        | buf
+    move.l  20(%sp), %d3        | n
     move.l  #0x0101, %d0
     trap    #0
-    move.l  %sp@+, %d2
+    movem.l %sp@+, %d2-%d3
     rts
 
 | --- open (SYS_OPEN = 0x0102) -------------------------------------------------
 | int open(const char *path, int flags, int mode);
     .globl open
 open:
-    move.l  %d2, %sp@-
-    move.l  8(%sp), %d1         | path
-    move.l  12(%sp), %d2        | flags
-    move.l  16(%sp), %d3        | mode
+    movem.l %d2-%d3, %sp@-      | save d2-d3 (8 bytes)
+    move.l  12(%sp), %d1        | path
+    move.l  16(%sp), %d2        | flags
+    move.l  20(%sp), %d3        | mode
     move.l  #0x0102, %d0
     trap    #0
-    move.l  %sp@+, %d2
+    movem.l %sp@+, %d2-%d3
     rts
 
 | --- close (SYS_CLOSE = 0x0103) -----------------------------------------------
@@ -83,26 +83,26 @@ close:
 | pid_t waitpid(pid_t pid, int *status, int options);
     .globl waitpid
 waitpid:
-    move.l  %d2, %sp@-
-    move.l  8(%sp), %d1         | pid
-    move.l  12(%sp), %d2        | status
-    move.l  16(%sp), %d3        | options
+    movem.l %d2-%d3, %sp@-      | save d2-d3 (8 bytes)
+    move.l  12(%sp), %d1        | pid
+    move.l  16(%sp), %d2        | status
+    move.l  20(%sp), %d3        | options
     moveq   #4, %d0             | SYS_WAITPID
     trap    #0
-    move.l  %sp@+, %d2
+    movem.l %sp@+, %d2-%d3
     rts
 
 | --- execve (SYS_EXECVE = 0x0003) ---------------------------------------------
 | int execve(const char *path, char *const argv[], char *const envp[]);
     .globl execve
 execve:
-    move.l  %d2, %sp@-
-    move.l  8(%sp), %d1         | path
-    move.l  12(%sp), %d2        | argv
-    move.l  16(%sp), %d3        | envp
+    movem.l %d2-%d3, %sp@-      | save d2-d3 (8 bytes)
+    move.l  12(%sp), %d1        | path
+    move.l  16(%sp), %d2        | argv
+    move.l  20(%sp), %d3        | envp
     moveq   #3, %d0             | SYS_EXECVE
     trap    #0
-    move.l  %sp@+, %d2
+    movem.l %sp@+, %d2-%d3
     rts
 
 | --- getpid (SYS_GETPID = 0x0006) ---------------------------------------------
@@ -156,13 +156,13 @@ brk:
 | int ioctl(int fd, unsigned long cmd, void *arg);
     .globl ioctl
 ioctl:
-    move.l  %d2, %sp@-
-    move.l  8(%sp), %d1         | fd
-    move.l  12(%sp), %d2        | cmd
-    move.l  16(%sp), %d3        | arg
+    movem.l %d2-%d3, %sp@-      | save d2-d3 (8 bytes)
+    move.l  12(%sp), %d1        | fd
+    move.l  16(%sp), %d2        | cmd
+    move.l  20(%sp), %d3        | arg
     move.l  #0x0107, %d0
     trap    #0
-    move.l  %sp@+, %d2
+    movem.l %sp@+, %d2-%d3
     rts
 
 | --- dup2 (SYS_DUP2 = 0x0105) -------------------------------------------------
@@ -189,13 +189,13 @@ setsid:
 | int sigaction(int sig, void *handler, void *old_handler);
     .globl sigaction
 sigaction:
-    move.l  %d2, %sp@-
-    move.l  8(%sp), %d1         | sig
-    move.l  12(%sp), %d2        | handler
-    move.l  16(%sp), %d3        | old_handler
+    movem.l %d2-%d3, %sp@-      | save d2-d3 (8 bytes)
+    move.l  12(%sp), %d1        | sig
+    move.l  16(%sp), %d2        | handler
+    move.l  20(%sp), %d3        | old_handler
     move.l  #0x0601, %d0
     trap    #0
-    move.l  %sp@+, %d2
+    movem.l %sp@+, %d2-%d3
     rts
 
 | --- nanosleep (SYS_NANOSLEEP = 0x0500) ----------------------------------------

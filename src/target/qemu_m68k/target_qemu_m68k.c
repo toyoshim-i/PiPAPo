@@ -15,6 +15,7 @@
 #include "mm/page.h"
 #include "proc/proc.h"
 #include "proc/sched.h"
+#include "fd/tty.h"
 #include "klog.h"
 #include "arch/arch.h"
 #include "errno.h"
@@ -50,16 +51,35 @@ extern void timer_init(void);
 void m68k_syscall_entry(uint32_t *regs)
 {
     uint32_t nr   = regs[0];       /* d0 = syscall number */
-    uint32_t *frame = &regs[1];    /* frame[0]=d1(a0), [1]=d2(a1),
-                                      [2]=d3(a2), [3]=d4(a3)       */
     uint32_t a4   = regs[5];       /* d5 = arg 5 */
     uint32_t a5   = regs[8];       /* a0 = arg 6 */
 
-    syscall_dispatch(frame, nr, a4, a5);
+    /* Save original d1 (first arg) for potential restart.
+     * These are C locals on the process stack, so they survive context
+     * switches (TRAP #1 / timer ISR) — unlike the globals m68k_saved_nr
+     * and svc_saved_a0 which leak between processes. */
+    uint32_t saved_d1 = regs[1];
 
-    /* syscall_dispatch wrote return value to frame[0] (= regs[1]).
+    current->svc_needs_restart = 0;
+
+    syscall_dispatch(&regs[1], nr, a4, a5);
+
+    /* syscall_dispatch wrote return value to regs[1] (frame[0]).
      * Move it to d0 (regs[0]) for the Linux m68k ABI. */
     regs[0] = regs[1];
+
+    /* Handle restart: blocking syscalls (read, waitpid, sleep, etc.)
+     * set current->svc_needs_restart = 1 before yielding.  When woken,
+     * we loop here to re-execute the syscall with original arguments.
+     * The per-process flag is safe across context switches, unlike the
+     * global svc_restart which gets corrupted by other processes. */
+    while (current->svc_needs_restart) {
+        current->svc_needs_restart = 0;
+        regs[0] = nr;
+        regs[1] = saved_d1;
+        syscall_dispatch(&regs[1], nr, a4, a5);
+        regs[0] = regs[1];
+    }
 }
 
 /* ── Target hooks ────────────────────────────────────────────────────── */
@@ -77,17 +97,21 @@ void target_late_init(void)
 {
     /* Initialize the Goldfish RTC timer (10 ms periodic) */
     timer_init();
+
+    /* Register UART input polling so blocked TTY reads get woken up */
+    sched_set_input_poll(uart_rx_avail, TTY_SERIAL);
+
     /* No IRQ UART, no MPU, no Core 1 on m68k */
 }
 
 void target_post_mount(void)
 {
-    /* User-space init (/bin/hello) is launched by main.c via do_execve() */
+    /* User-space init (/sbin/init) is launched by main.c via do_execve() */
 }
 
 const char *target_init_path(void)
 {
-    return "/bin/hello";
+    return "/sbin/init";
 }
 
 uint32_t target_caps(void)

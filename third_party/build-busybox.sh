@@ -134,6 +134,17 @@ echo "  specs: $SPECS_FILE"
 
 mkdir -p "$BB_OUT"
 
+# --- Build 68000-safe libgcc replacement objects (m68k only) ---
+EXTRA_LDFLAGS_PPAP=""
+if [[ "$ARCH" == "m68k" ]]; then
+    echo "busybox [$ARCH]: building 68000-safe divmod replacements..."
+    DIVMOD_DIR="$PROJECT_ROOT/src/arch/m68k"
+    $CC -m68000 -Os -c -o "$BB_OUT/divmod.o"   "$DIVMOD_DIR/divmod.c"
+    $CC -m68000 -Os -c -o "$BB_OUT/divmod64.o" "$DIVMOD_DIR/divmod64.c"
+    EXTRA_LDFLAGS_PPAP="$BB_OUT/divmod.o $BB_OUT/divmod64.o"
+    echo "  built: divmod.o divmod64.o"
+fi
+
 # --- Build each variant ---
 for variant in "${VARIANTS[@]}"; do
     name="${variant%%:*}"
@@ -181,7 +192,11 @@ for variant in "${VARIANTS[@]}"; do
     # Inject CFLAGS into .config
     sed -i 's|^CONFIG_SYSROOT=.*|CONFIG_SYSROOT=""|' .config
     sed -i 's|^CONFIG_EXTRA_CFLAGS=.*|CONFIG_EXTRA_CFLAGS="'"$CFLAGS_PPAP -specs=$SPECS_FILE -T $BUSYBOX_LD"'"|' .config
-    sed -i 's|^CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS=""|' .config
+    if [[ -n "$EXTRA_LDFLAGS_PPAP" ]]; then
+        sed -i 's|^CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS="'"$EXTRA_LDFLAGS_PPAP"' -Wl,--allow-multiple-definition"|' .config
+    else
+        sed -i 's|^CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS=""|' .config
+    fi
     sed -i 's|^CONFIG_EXTRA_LDLIBS=.*|CONFIG_EXTRA_LDLIBS=""|' .config
 
     # Resolve dependencies

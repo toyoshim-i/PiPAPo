@@ -64,20 +64,44 @@
 /* ── Relocation types ───────────────────────────────────────────────────── */
 
 #define R_ARM_RELATIVE  23      /* Adjust by load base (PIE relocation) */
+#define R_ARM_JMP_SLOT  22      /* ARM PLT GOT slot                      */
 #define R_68K_RELATIVE  22      /* m68k PIE base relocation              */
+#define R_68K_JMP_SLOT  21      /* m68k PLT GOT slot                     */
 
 /* ── Section types ──────────────────────────────────────────────────────── */
 
 #define SHT_REL     9           /* Relocation entries (without addend) */
+#define SHT_RELA    4           /* Relocation entries (with addend)    */
+#define SHT_DYNSYM  11          /* Dynamic symbol table                */
 
-/* ── ELF32 relocation entry (8 bytes) ───────────────────────────────────── */
+/* ── ELF32 relocation entry (8 bytes, no addend) ───────────────────────── */
 
 typedef struct {
     uint32_t r_offset;          /* address of the word to relocate */
     uint32_t r_info;            /* type + symbol index */
 } elf32_rel_t;
 
+/* ── ELF32 relocation entry with addend (12 bytes) ─────────────────────── */
+
+typedef struct {
+    uint32_t r_offset;          /* address of the word to relocate */
+    uint32_t r_info;            /* type + symbol index */
+    int32_t  r_addend;          /* explicit addend */
+} elf32_rela_t;
+
 #define ELF32_R_TYPE(i)  ((i) & 0xffu)
+#define ELF32_R_SYM(i)   ((i) >> 8)
+
+/* ── ELF32 symbol table entry (16 bytes) ────────────────────────────────── */
+
+typedef struct {
+    uint32_t st_name;
+    uint32_t st_value;
+    uint32_t st_size;
+    uint8_t  st_info;
+    uint8_t  st_other;
+    uint16_t st_shndx;
+} elf32_sym_t;
 
 /* ── Program header flags ────────────────────────────────────────────────── */
 
@@ -140,11 +164,19 @@ typedef struct {
     uint32_t size;      /* size in bytes */
 } elf_got_info_t;
 
+/* ── Dynamic symbol table descriptor ───────────────────────────────────── */
+
+typedef struct {
+    uint32_t offset;    /* file offset of .dynsym section */
+    uint32_t count;     /* number of entries */
+} elf_dynsym_info_t;
+
 /* ── Relocation table descriptor ───────────────────────────────────────── */
 
 typedef struct {
-    uint32_t offset;    /* file offset of .rel.dyn section */
-    uint32_t size;      /* size in bytes (each entry = 8 bytes) */
+    uint32_t offset;    /* file offset of .rel.dyn/.rela.dyn section */
+    uint32_t size;      /* size in bytes */
+    uint8_t  has_addend; /* 1 if .rela.dyn (SHT_RELA), 0 if .rel.dyn (SHT_REL) */
 } elf_rel_info_t;
 
 /* ── Parser API ──────────────────────────────────────────────────────────── */
@@ -201,5 +233,13 @@ int elf_find_got(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
  */
 int elf_find_rel(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
                  elf_rel_info_t *out, uint32_t file_size);
+
+/*
+ * elf_find_dynsym — locate the .dynsym section in an ELF binary.
+ *
+ * Returns 0 on success, 1 if no .dynsym exists, -ENOEXEC on error.
+ */
+int elf_find_dynsym(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
+                    elf_dynsym_info_t *out, uint32_t file_size);
 
 #endif /* PPAP_EXEC_ELF_H */

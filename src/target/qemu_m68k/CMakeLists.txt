@@ -33,6 +33,7 @@ add_executable(ppap_qemu_m68k
     ${PPAP_ROOT}/src/arch/m68k/m68k_common.c
     ${PPAP_ROOT}/src/arch/m68k/string.c
     ${PPAP_ROOT}/src/arch/m68k/divmod.c
+    ${PPAP_ROOT}/src/arch/m68k/divmod64.c
     ${PPAP_ROOT}/src/arch/m68k/switch.S
     ${PPAP_ROOT}/src/arch/m68k/trap.S
 
@@ -92,6 +93,7 @@ target_include_directories(ppap_qemu_m68k PRIVATE
 target_compile_definitions(ppap_qemu_m68k PRIVATE
     PPAP_QEMU=1
     PPAP_M68K=1
+    PAGE_COUNT=256u
 )
 
 target_compile_options(ppap_qemu_m68k PRIVATE
@@ -152,23 +154,45 @@ add_custom_command(
     COMMENT "Assembling m68k syscall.o"
 )
 
-# hello.elf: compiled from shared user/hello.c with m68k crt0+syscall
-add_custom_command(
-    OUTPUT ${CMAKE_BINARY_DIR}/hello.elf
-    COMMAND ${CMAKE_C_COMPILER} ${M68K_CFLAGS} -c
-            -o ${CMAKE_BINARY_DIR}/hello.o ${PPAP_ROOT}/user/hello.c
-    COMMAND ${CMAKE_C_COMPILER} -m68000 ${M68K_LDFLAGS}
-            -o ${CMAKE_BINARY_DIR}/hello.elf
-            ${CMAKE_BINARY_DIR}/crt0.o
-            ${CMAKE_BINARY_DIR}/syscall.o
-            ${CMAKE_BINARY_DIR}/hello.o
-    DEPENDS ${PPAP_ROOT}/user/hello.c
-            ${CMAKE_BINARY_DIR}/crt0.o
-            ${CMAKE_BINARY_DIR}/syscall.o
-            ${M68K_USER_LD}
-            ${PPAP_ROOT}/user/syscall.h
-    COMMENT "Building m68k hello.elf (from user/hello.c)"
+set(M68K_COMMON_OBJS ${CMAKE_BINARY_DIR}/crt0.o ${CMAKE_BINARY_DIR}/syscall.o)
+set(M68K_COMMON_DEPS ${M68K_COMMON_OBJS} ${M68K_USER_LD} ${PPAP_ROOT}/user/syscall.h)
+
+# Build a user program from shared C source
+function(m68k_user_program name source)
+    add_custom_command(
+        OUTPUT ${CMAKE_BINARY_DIR}/${name}.elf
+        COMMAND ${CMAKE_C_COMPILER} ${M68K_CFLAGS} -c
+                -o ${CMAKE_BINARY_DIR}/${name}.o ${source}
+        COMMAND ${CMAKE_C_COMPILER} -m68000 ${M68K_LDFLAGS}
+                -o ${CMAKE_BINARY_DIR}/${name}.elf
+                ${M68K_COMMON_OBJS}
+                ${CMAKE_BINARY_DIR}/${name}.o
+        DEPENDS ${source} ${M68K_COMMON_DEPS}
+        COMMENT "Building m68k ${name}.elf"
+    )
+endfunction()
+
+m68k_user_program(hello  ${PPAP_ROOT}/user/hello.c)
+m68k_user_program(init   ${PPAP_ROOT}/user/init.c)
+m68k_user_program(getty  ${PPAP_ROOT}/user/getty.c)
+m68k_user_program(ttyctl ${PPAP_ROOT}/user/ttyctl.c)
+
+set(M68K_USER_ELFS
+    ${CMAKE_BINARY_DIR}/hello.elf
+    ${CMAKE_BINARY_DIR}/init.elf
+    ${CMAKE_BINARY_DIR}/getty.elf
+    ${CMAKE_BINARY_DIR}/ttyctl.elf
 )
+
+# --- Busybox and rogue (pre-built by build-busybox.sh/build-rogue.sh --m68k) ---
+set(M68K_BB_DIR  ${PPAP_ROOT}/build/m68k/busybox)
+set(M68K_ROGUE   ${PPAP_ROOT}/build/m68k/rogue/rogue)
+
+# Busybox applet symlinks (same as ARM install-busybox.sh)
+set(BB_APPLETS cat chmod cp df echo grep head kill ln ls mkdir mv
+               printf ps rm rmdir sed sleep sort tail top uname vi wc)
+set(BB_SHELL_APPLETS sh hush)
+set(BB_SBIN_APPLETS mount umount)
 
 # --- Build mkromfs host tool ---
 add_custom_command(
@@ -186,26 +210,72 @@ set(ROMFS_STAGING ${CMAKE_BINARY_DIR}/romfs)
 set(ROMFS_BIN     ${CMAKE_BINARY_DIR}/romfs_m68k.bin)
 set(ROMFS_ASM     ${CMAKE_BINARY_DIR}/romfs_data_m68k.S)
 
+# Convert CMake lists to space-separated strings for shell script
+string(REPLACE ";" " " M68K_USER_ELFS_STR "${M68K_USER_ELFS}")
+string(REPLACE ";" " " BB_APPLETS_STR "${BB_APPLETS}")
+string(REPLACE ";" " " BB_SHELL_APPLETS_STR "${BB_SHELL_APPLETS}")
+string(REPLACE ";" " " BB_SBIN_APPLETS_STR "${BB_SBIN_APPLETS}")
+
+# Build a shell script to assemble the romfs staging directory.
+# This handles symlink creation which cmake -E can't do portably.
+set(ROMFS_SCRIPT ${CMAKE_BINARY_DIR}/stage_romfs.sh)
+file(WRITE ${ROMFS_SCRIPT}
+"#!/bin/bash
+set -e
+STAGING=$1
+BB_DIR=$2
+ROGUE=$3
+
+# Create directory structure
+rm -rf $STAGING
+mkdir -p $STAGING/bin $STAGING/sbin $STAGING/etc $STAGING/dev
+mkdir -p $STAGING/proc $STAGING/tmp $STAGING/usr/bin
+
+# Install user programs
+for elf in ${M68K_USER_ELFS_STR}; do
+    name=$(basename $elf .elf)
+    case $name in
+        init)   cp $elf $STAGING/sbin/$name ;;
+        ttyctl) cp $elf $STAGING/usr/bin/$name ;;
+        *)      cp $elf $STAGING/bin/$name ;;
+    esac
+done
+
+# Install busybox (if built)
+if [ -f $BB_DIR/busybox ]; then
+    cp $BB_DIR/busybox $STAGING/bin/busybox
+    cp $BB_DIR/busybox.sh $STAGING/bin/busybox.sh
+    # Applet symlinks
+    for a in ${BB_APPLETS_STR}; do ln -sf busybox $STAGING/bin/$a; done
+    for a in ${BB_SHELL_APPLETS_STR}; do ln -sf busybox.sh $STAGING/bin/$a; done
+    for a in ${BB_SBIN_APPLETS_STR}; do ln -sf ../bin/busybox $STAGING/sbin/$a; done
+fi
+
+# Install rogue (if built)
+if [ -f $ROGUE ]; then
+    cp $ROGUE $STAGING/bin/rogue
+fi
+")
+
 add_custom_command(
     OUTPUT ${ROMFS_BIN}
-    # Create staging directory structure
-    COMMAND ${CMAKE_COMMAND} -E rm -rf ${ROMFS_STAGING}
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${ROMFS_STAGING}/etc
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${ROMFS_STAGING}/bin
-    # Copy fstab from source tree
+    # Stage romfs
+    COMMAND bash ${ROMFS_SCRIPT}
+            ${ROMFS_STAGING} ${M68K_BB_DIR} ${M68K_ROGUE}
+    # Copy config files
     COMMAND ${CMAKE_COMMAND} -E copy
             ${CMAKE_CURRENT_SOURCE_DIR}/romfs/etc/fstab
             ${ROMFS_STAGING}/etc/fstab
-    # Copy hello.elf to /bin/hello
     COMMAND ${CMAKE_COMMAND} -E copy
-            ${CMAKE_BINARY_DIR}/hello.elf
-            ${ROMFS_STAGING}/bin/hello
+            ${CMAKE_CURRENT_SOURCE_DIR}/romfs/etc/inittab
+            ${ROMFS_STAGING}/etc/inittab
     # Build big-endian romfs image
     COMMAND ${CMAKE_BINARY_DIR}/mkromfs -b
             ${ROMFS_STAGING} ${ROMFS_BIN}
     DEPENDS ${CMAKE_BINARY_DIR}/mkromfs
-            ${CMAKE_BINARY_DIR}/hello.elf
+            ${M68K_USER_ELFS}
             ${CMAKE_CURRENT_SOURCE_DIR}/romfs/etc/fstab
+            ${CMAKE_CURRENT_SOURCE_DIR}/romfs/etc/inittab
     COMMENT "Generating big-endian romfs for m68k"
 )
 

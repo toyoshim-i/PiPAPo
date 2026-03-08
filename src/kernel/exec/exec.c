@@ -1,15 +1,18 @@
 /*
- * exec.c — ELF binary loader for PPAP (XIP + PIC/GOT relocation)
+ * exec.c — ELF binary loader for PPAP
  *
- * Loads a PIC ELF binary for Execute-In-Place (XIP):
- *   - .text + .rodata stay in place (flash on ARM, RAM on m68k)
+ * ARM: Execute-In-Place (XIP)
+ *   - .text + .rodata stay in flash (execute in place)
  *   - .got + .data + .bss are copied to contiguous SRAM page(s)
  *   - GOT entries are relocated to point to actual text/SRAM addresses
- *   - GOT base register: r9 (ARM), a5 (m68k)
+ *   - GOT base register: r9 (set by kernel, compiler doesn't recalculate)
  *
- * The binary is linked at address 0 with two PT_LOAD segments:
- *   text (PF_R|PF_X): code + rodata  → executes in place
- *   data (PF_R|PF_W): .got + .data + .bss → lives in SRAM
+ * m68k: Full RAM loading (no XIP)
+ *   - Both text and data segments loaded into contiguous SRAM pages
+ *   - GCC's PIC code uses `lea @GOTPC(%pc), %a5` to compute GOT address
+ *     relative to PC, so text and data must be at the correct relative
+ *     offset from each other (same as link-time layout)
+ *   - Relocations add the load base address
  */
 
 #include "exec.h"
@@ -22,6 +25,169 @@
 
 /* Maximum PT_LOAD segments we handle */
 #define MAX_LOAD_SEGS  4
+
+/* ── Contiguous page allocation helper ─────────────────────────────────── */
+
+static uint8_t *alloc_contiguous(uint32_t n_pages)
+{
+    if (n_pages == 1)
+        return (uint8_t *)page_alloc();
+
+    for (uint32_t base = PAGE_POOL_BASE;
+         base + n_pages * PAGE_SIZE <= PAGE_POOL_BASE + PAGE_POOL_SIZE;
+         base += PAGE_SIZE) {
+        uint32_t k;
+        for (k = 0; k < n_pages; k++) {
+            void *pg = page_alloc_at(
+                (void *)(uintptr_t)(base + k * PAGE_SIZE));
+            if (!pg) {
+                for (uint32_t l = 0; l < k; l++)
+                    page_free((void *)(uintptr_t)(base + l * PAGE_SIZE));
+                break;
+            }
+        }
+        if (k == n_pages)
+            return (uint8_t *)(uintptr_t)base;
+    }
+    return NULL;
+}
+
+/* ── Relocation helper: apply .rel.dyn / .rela.dyn ─────────────────────── */
+
+static void apply_relocations(const elf32_ehdr_t *ehdr,
+                              const uint8_t *file_base,
+                              uint32_t file_size,
+                              const elf32_phdr_t *text_seg,
+                              const elf32_phdr_t *data_seg,
+                              uint8_t *text_ram,
+                              uint8_t *sram_page,
+                              uint32_t text_base,
+                              uint32_t got_sram_addr,
+                              const elf_got_info_t *got_info)
+{
+    elf_rel_info_t rel_info;
+    if (elf_find_rel(ehdr, file_base, &rel_info, file_size) != 0)
+        return;
+
+    const uint8_t *rel_base = file_base + rel_info.offset;
+    uint32_t entry_size = rel_info.has_addend
+        ? sizeof(elf32_rela_t) : sizeof(elf32_rel_t);
+    uint32_t n_rel = rel_info.size / entry_size;
+
+    /* Find .dynsym for JMP_SLOT resolution */
+    elf_dynsym_info_t dynsym_info = {0, 0};
+    const elf32_sym_t *dynsym = NULL;
+    if (elf_find_dynsym(ehdr, file_base, &dynsym_info, file_size) == 0)
+        dynsym = (const elf32_sym_t *)(file_base + dynsym_info.offset);
+
+    for (uint32_t i = 0; i < n_rel; i++) {
+        uint32_t r_offset, r_info;
+        int32_t  r_addend = 0;
+
+        if (rel_info.has_addend) {
+            const elf32_rela_t *rela =
+                (const elf32_rela_t *)(rel_base + i * entry_size);
+            r_offset = rela->r_offset;
+            r_info   = rela->r_info;
+            r_addend = rela->r_addend;
+        } else {
+            const elf32_rel_t *rel =
+                (const elf32_rel_t *)(rel_base + i * entry_size);
+            r_offset = rel->r_offset;
+            r_info   = rel->r_info;
+        }
+
+        uint32_t rtype = ELF32_R_TYPE(r_info);
+
+        /* ── Handle JMP_SLOT: resolve PLT GOT entry ─────────── */
+#if defined(__m68k__)
+        if (rtype == R_68K_JMP_SLOT) {
+#else
+        if (rtype == R_ARM_JMP_SLOT) {
+#endif
+            if (!dynsym)
+                continue;
+            uint32_t sym_idx = ELF32_R_SYM(r_info);
+            if (sym_idx >= dynsym_info.count)
+                continue;
+            uint32_t off = r_offset;
+            if (off < data_seg->p_vaddr ||
+                off >= data_seg->p_vaddr + data_seg->p_memsz)
+                continue;
+            uint32_t off_in_sram = off - data_seg->p_vaddr;
+            uint32_t *word = (uint32_t *)(sram_page + off_in_sram);
+            uint32_t sym_val = dynsym[sym_idx].st_value
+                              + (uint32_t)r_addend;
+            if (sym_val < data_seg->p_vaddr)
+                *word = sym_val + text_base;
+            else
+                *word = sym_val - data_seg->p_vaddr +
+                        (uint32_t)(uintptr_t)sram_page;
+            continue;
+        }
+
+        /* ── Handle RELATIVE ────────────────────────────────── */
+#if defined(__m68k__)
+        if (rtype != R_68K_RELATIVE)
+#else
+        if (rtype != R_ARM_RELATIVE)
+#endif
+            continue;
+
+        uint32_t off = r_offset;
+
+#if defined(__m68k__)
+        /* m68k: text is in writable RAM — handle text relocations */
+        if (text_ram && text_seg &&
+            off >= text_seg->p_vaddr &&
+            off < text_seg->p_vaddr + text_seg->p_memsz) {
+            uint32_t off_in_text = off - text_seg->p_vaddr;
+            uint32_t *word = (uint32_t *)(text_ram + off_in_text);
+            uint32_t val = rel_info.has_addend
+                ? (uint32_t)r_addend : *word;
+            if (val == 0)
+                continue;
+            if (val < data_seg->p_vaddr)
+                *word = val + text_base;
+            else
+                *word = val - data_seg->p_vaddr +
+                        (uint32_t)(uintptr_t)sram_page;
+            continue;
+        }
+#else
+        (void)text_seg;
+        (void)text_ram;
+#endif
+
+        /* Only patch words in the data segment (SRAM) */
+        if (off < data_seg->p_vaddr ||
+            off >= data_seg->p_vaddr + data_seg->p_memsz)
+            continue;
+
+        /* Skip words already handled by GOT relocation */
+        if (got_sram_addr != 0 && got_info &&
+            off >= got_info->addr &&
+            off < got_info->addr + got_info->size)
+            continue;
+
+        uint32_t off_in_sram = off - data_seg->p_vaddr;
+        uint32_t *word = (uint32_t *)(sram_page + off_in_sram);
+
+        uint32_t val = rel_info.has_addend
+            ? (uint32_t)r_addend : *word;
+
+        if (val == 0)
+            continue;
+
+        if (val < data_seg->p_vaddr)
+            *word = val + text_base;
+        else
+            *word = val - data_seg->p_vaddr +
+                    (uint32_t)(uintptr_t)sram_page;
+    }
+}
+
+/* ── do_execve ─────────────────────────────────────────────────────────── */
 
 int do_execve(pcb_t *p, const char *path, const char *const *argv)
 {
@@ -74,162 +240,186 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
         return -(int)ENOEXEC;
     }
 
-    /* ── 5. Text segment: stays in flash (XIP) ─────────────────────────── */
-    uint32_t flash_text_base =
-        (uint32_t)(uintptr_t)file_base + text_seg->p_offset;
-
-    /* Compute the runtime entry point */
     uint32_t e_entry = elf_entry(ehdr);
-#if defined(__m68k__)
-    uint32_t entry = flash_text_base + e_entry - text_seg->p_vaddr;
-#else
-    uint32_t entry = flash_text_base + (e_entry & ~1u) - text_seg->p_vaddr;
-    entry |= (e_entry & 1u);   /* restore Thumb bit */
-#endif
-
-    /* ── 6. Data segment: copy to contiguous SRAM page(s) ────────────── */
+    uint32_t entry;
+    uint32_t text_base;    /* runtime base of text segment */
     uint8_t *sram_page = NULL;
     uint32_t got_sram_addr = 0;
+    elf_got_info_t got_info = {0, 0, 0};
 
-    if (data_seg && data_seg->p_memsz > 0) {
-        /* Calculate how many contiguous pages we need */
-        uint32_t data_pages =
-            (data_seg->p_memsz + PAGE_SIZE - 1) / PAGE_SIZE;
-        if (data_pages > USER_PAGES_MAX) {
+#if defined(__m68k__)
+    /* ── m68k: Load entire binary into contiguous SRAM ────────────────── *
+     *
+     * m68k GCC PIC computes the GOT address using PC-relative addressing:
+     *   lea _GLOBAL_OFFSET_TABLE_@GOTPC(%pc), %a5
+     * This requires text and data to be at the correct relative offset
+     * (same as link time).  We load text+data into contiguous SRAM pages.
+     *
+     * Layout in SRAM: load_base + text_vaddr .. load_base + data_end
+     * ──────────────────────────────────────────────────────────────────── */
+    {
+        /* Total virtual address span: from text start to data end */
+        uint32_t span_end = data_seg
+            ? data_seg->p_vaddr + data_seg->p_memsz
+            : text_seg->p_vaddr + text_seg->p_memsz;
+        uint32_t span_start = text_seg->p_vaddr;
+        uint32_t total_size = span_end - span_start;
+        uint32_t total_pages = (total_size + PAGE_SIZE - 1) / PAGE_SIZE;
+
+        if (total_pages > USER_PAGES_MAX) {
             vnode_put(vn);
             return -(int)ENOMEM;
         }
 
-        /* Allocate contiguous pages for the data segment.
-         * Single-page: fast path via page_alloc().
-         * Multi-page:  scan the pool for a contiguous block using
-         *              page_alloc_at() to claim each page. */
-        if (data_pages == 1) {
-            sram_page = (uint8_t *)page_alloc();
-        } else {
-            for (uint32_t base = PAGE_POOL_BASE;
-                 base + data_pages * PAGE_SIZE <=
-                     PAGE_POOL_BASE + PAGE_POOL_SIZE;
-                 base += PAGE_SIZE) {
-                uint32_t k;
-                for (k = 0; k < data_pages; k++) {
-                    void *pg = page_alloc_at(
-                        (void *)(uintptr_t)(base + k * PAGE_SIZE));
-                    if (!pg) {
-                        for (uint32_t l = 0; l < k; l++)
-                            page_free(
-                                (void *)(uintptr_t)(base + l * PAGE_SIZE));
-                        break;
-                    }
-                }
-                if (k == data_pages) {
-                    sram_page = (uint8_t *)(uintptr_t)base;
-                    break;
-                }
-            }
-        }
-        if (!sram_page) {
+        uint8_t *load_base = alloc_contiguous(total_pages);
+        if (!load_base) {
             vnode_put(vn);
             return -(int)ENOMEM;
         }
 
-        /* Copy initialised data (.got + .data) from flash */
-        if (data_seg->p_filesz > 0)
-            memcpy(sram_page, file_base + data_seg->p_offset,
+        /* Zero the entire region first (covers BSS and gaps) */
+        memset(load_base, 0, total_pages * PAGE_SIZE);
+
+        /* Copy text segment */
+        uint32_t text_off = text_seg->p_vaddr - span_start;
+        memcpy(load_base + text_off,
+               file_base + text_seg->p_offset,
+               text_seg->p_filesz);
+
+        text_base = (uint32_t)(uintptr_t)load_base + text_off;
+        entry = text_base + e_entry - text_seg->p_vaddr;
+
+        /* Copy data segment */
+        if (data_seg && data_seg->p_filesz > 0) {
+            uint32_t data_off = data_seg->p_vaddr - span_start;
+            sram_page = load_base + data_off;
+            memcpy(sram_page,
+                   file_base + data_seg->p_offset,
                    data_seg->p_filesz);
+            /* BSS already zeroed by memset above */
+        } else if (data_seg) {
+            sram_page = load_base + (data_seg->p_vaddr - span_start);
+        }
 
-        /* Zero BSS (p_memsz > p_filesz) */
-        if (data_seg->p_memsz > data_seg->p_filesz)
-            memset(sram_page + data_seg->p_filesz, 0,
-                   data_seg->p_memsz - data_seg->p_filesz);
+        /* Store all pages in user_pages[] */
+        for (uint32_t i = 0; i < total_pages; i++)
+            p->user_pages[i] = load_base + i * PAGE_SIZE;
 
-        /* ── 7. GOT relocation ─────────────────────────────────────────── */
-        elf_got_info_t got_info;
-        if (elf_find_got(ehdr, file_base, &got_info, file_size) == 0) {
+        /* GOT relocation */
+        if (data_seg &&
+            elf_find_got(ehdr, file_base, &got_info, file_size) == 0) {
             uint32_t got_offset_in_data =
                 got_info.addr - data_seg->p_vaddr;
             got_sram_addr =
                 (uint32_t)(uintptr_t)sram_page + got_offset_in_data;
 
             uint32_t *got =
-                (uint32_t *)(sram_page + got_offset_in_data);
+                (uint32_t *)((uint8_t *)sram_page + got_offset_in_data);
             uint32_t n_entries = got_info.size / 4;
 
             for (uint32_t i = 0; i < n_entries; i++) {
                 uint32_t val = got[i];
                 if (val == 0)
-                    continue;   /* reserved / unused entry */
-
-                if (val < data_seg->p_vaddr) {
-                    /* Text/rodata reference → points into flash */
-                    got[i] = val + flash_text_base;
-                } else {
-                    /* Data/BSS reference → points into SRAM page(s) */
+                    continue;
+                if (val < data_seg->p_vaddr)
+                    got[i] = val + text_base;
+                else
                     got[i] = val - data_seg->p_vaddr +
                              (uint32_t)(uintptr_t)sram_page;
-                }
             }
         }
 
-        /* ── 7b. R_ARM_RELATIVE relocations (.rel.dyn from PIE builds) ─── */
-        /* PIE binaries have function-pointer arrays in .data (e.g.
-         * applet_main[]) whose entries are raw link-time vaddrs.
-         * .rel.dyn lists these locations so we can fix them up. */
-        elf_rel_info_t rel_info;
-        if (elf_find_rel(ehdr, file_base, &rel_info, file_size) == 0) {
-            const elf32_rel_t *rel =
-                (const elf32_rel_t *)(file_base + rel_info.offset);
-            uint32_t n_rel = rel_info.size / sizeof(elf32_rel_t);
+        /* Apply .rela.dyn relocations (including text relocations) */
+        if (data_seg)
+            apply_relocations(ehdr, file_base, file_size,
+                              text_seg, data_seg,
+                              load_base + (text_seg->p_vaddr - span_start),
+                              sram_page, text_base,
+                              got_sram_addr, &got_info);
 
-            for (uint32_t i = 0; i < n_rel; i++) {
-#if defined(__m68k__)
-                if (ELF32_R_TYPE(rel[i].r_info) != R_68K_RELATIVE)
-#else
-                if (ELF32_R_TYPE(rel[i].r_info) != R_ARM_RELATIVE)
-#endif
-                    continue;
-
-                uint32_t off = rel[i].r_offset;
-
-                /* Only patch words in the data segment (SRAM).
-                 * Text-segment relocations can't be patched (flash XIP). */
-                if (off < data_seg->p_vaddr ||
-                    off >= data_seg->p_vaddr + data_seg->p_memsz)
-                    continue;
-
-                /* Skip words already handled by GOT relocation */
-                if (got_sram_addr != 0 &&
-                    off >= got_info.addr &&
-                    off < got_info.addr + got_info.size)
-                    continue;
-
-                uint32_t off_in_sram = off - data_seg->p_vaddr;
-                uint32_t *word = (uint32_t *)(sram_page + off_in_sram);
-                uint32_t val = *word;
-
-                if (val == 0)
-                    continue;
-
-                if (val < data_seg->p_vaddr) {
-                    /* Text/rodata reference → flash */
-                    *word = val + flash_text_base;
-                } else {
-                    /* Data/BSS reference → SRAM */
-                    *word = val - data_seg->p_vaddr +
-                            (uint32_t)(uintptr_t)sram_page;
-                }
-            }
+        /* Set program break */
+        if (data_seg) {
+            uint32_t data_end = (uint32_t)(uintptr_t)sram_page
+                                + data_seg->p_memsz;
+            p->brk_base    = data_end;
+            p->brk_current = data_end;
         }
-
-        /* Store all data pages in user_pages[] */
-        for (uint32_t i = 0; i < data_pages; i++)
-            p->user_pages[i] = sram_page + i * PAGE_SIZE;
-
-        /* Set initial program break at end of .data+.bss */
-        uint32_t data_end = (uint32_t)(uintptr_t)sram_page + data_seg->p_memsz;
-        p->brk_base    = data_end;
-        p->brk_current = data_end;
     }
+#else
+    /* ── ARM: XIP — text stays in flash, data goes to SRAM ────────────── */
+    {
+        uint32_t flash_text_base =
+            (uint32_t)(uintptr_t)file_base + text_seg->p_offset;
+        text_base = flash_text_base;
+
+        entry = flash_text_base + (e_entry & ~1u) - text_seg->p_vaddr;
+        entry |= (e_entry & 1u);   /* restore Thumb bit */
+
+        if (data_seg && data_seg->p_memsz > 0) {
+            uint32_t data_pages =
+                (data_seg->p_memsz + PAGE_SIZE - 1) / PAGE_SIZE;
+            if (data_pages > USER_PAGES_MAX) {
+                vnode_put(vn);
+                return -(int)ENOMEM;
+            }
+
+            sram_page = alloc_contiguous(data_pages);
+            if (!sram_page) {
+                vnode_put(vn);
+                return -(int)ENOMEM;
+            }
+
+            /* Copy initialised data from flash */
+            if (data_seg->p_filesz > 0)
+                memcpy(sram_page, file_base + data_seg->p_offset,
+                       data_seg->p_filesz);
+
+            /* Zero BSS */
+            if (data_seg->p_memsz > data_seg->p_filesz)
+                memset(sram_page + data_seg->p_filesz, 0,
+                       data_seg->p_memsz - data_seg->p_filesz);
+
+            /* GOT relocation */
+            if (elf_find_got(ehdr, file_base, &got_info, file_size) == 0) {
+                uint32_t got_offset_in_data =
+                    got_info.addr - data_seg->p_vaddr;
+                got_sram_addr =
+                    (uint32_t)(uintptr_t)sram_page + got_offset_in_data;
+
+                uint32_t *got =
+                    (uint32_t *)(sram_page + got_offset_in_data);
+                uint32_t n_entries = got_info.size / 4;
+
+                for (uint32_t i = 0; i < n_entries; i++) {
+                    uint32_t val = got[i];
+                    if (val == 0)
+                        continue;
+                    if (val < data_seg->p_vaddr)
+                        got[i] = val + flash_text_base;
+                    else
+                        got[i] = val - data_seg->p_vaddr +
+                                 (uint32_t)(uintptr_t)sram_page;
+                }
+            }
+
+            /* Apply .rel.dyn relocations (no text relocs on ARM XIP) */
+            apply_relocations(ehdr, file_base, file_size,
+                              NULL, data_seg, NULL,
+                              sram_page, flash_text_base,
+                              got_sram_addr, &got_info);
+
+            /* Store data pages in user_pages[] */
+            for (uint32_t i = 0; i < data_pages; i++)
+                p->user_pages[i] = sram_page + i * PAGE_SIZE;
+
+            /* Set program break */
+            uint32_t data_end = (uint32_t)(uintptr_t)sram_page
+                                + data_seg->p_memsz;
+            p->brk_base    = data_end;
+            p->brk_current = data_end;
+        }
+    }
+#endif
 
     /* ── 8. Allocate stack page ────────────────────────────────────────── */
     void *stack = page_alloc();
@@ -251,14 +441,14 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
      *
      * Layout (high → low):
      *   argv string data (each NUL-terminated)
-     *   <8-byte alignment padding>
+     *   <alignment padding>
      *   auxv[1] = {AT_NULL, 0}
      *   auxv[0] = {AT_PAGESZ, PAGE_SIZE}
      *   envp[0] = NULL
      *   argv[argc] = NULL
      *   argv[argc-1..0] = pointers to string data
      *   argc
-     *              ← user_sp (PSP after exception return)
+     *              ← user_sp
      */
     {
         uint32_t stack_top = (uint32_t)(uintptr_t)stack + PAGE_SIZE;
@@ -271,12 +461,11 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
                 argc++;
         }
         if (argc == 0) {
-            /* No argv provided (kernel init): use path as argv[0] */
             argc = 1;
-            argv = NULL;   /* signal fallback below */
+            argv = NULL;
         }
 
-        /* Copy argument strings to top of stack (high → low) */
+        /* Copy argument strings to top of stack */
         uint32_t str_addrs[32];
         if (argv) {
             for (int i = argc - 1; i >= 0; i--) {
@@ -286,39 +475,33 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
                 str_addrs[i] = sp;
             }
         } else {
-            /* Fallback: use path as sole argument */
             uint32_t len = (uint32_t)strlen(path) + 1;
             sp -= len;
             memcpy((void *)(uintptr_t)sp, path, len);
             str_addrs[0] = sp;
         }
 
-        /* Align stack before pushing word-sized data.
-         * Total words below: 4 (auxv) + 1 (envp NULL) + (argc+1) (argv
-         * array + NULL) + 1 (argc) = argc + 7. */
+        /* Align stack */
 #if defined(__m68k__)
-        /* m68k: 4-byte alignment is sufficient */
         sp &= ~3u;
 #else
-        /* ARM AAPCS: 8-byte alignment required */
         sp &= ~7u;
         if ((argc + 7) & 1)
-            sp -= 4;   /* padding word for 8-byte alignment */
+            sp -= 4;
 #endif
 
         /* auxv[1]: AT_NULL */
-        sp -= 4; *(uint32_t *)(uintptr_t)sp = 0;          /* val */
-        sp -= 4; *(uint32_t *)(uintptr_t)sp = 0;          /* AT_NULL */
+        sp -= 4; *(uint32_t *)(uintptr_t)sp = 0;
+        sp -= 4; *(uint32_t *)(uintptr_t)sp = 0;
         /* auxv[0]: AT_PAGESZ */
-        sp -= 4; *(uint32_t *)(uintptr_t)sp = PAGE_SIZE;  /* val */
-        sp -= 4; *(uint32_t *)(uintptr_t)sp = 6;          /* AT_PAGESZ */
+        sp -= 4; *(uint32_t *)(uintptr_t)sp = PAGE_SIZE;
+        sp -= 4; *(uint32_t *)(uintptr_t)sp = 6;
 
         /* envp[0] = NULL */
         sp -= 4; *(uint32_t *)(uintptr_t)sp = 0;
 
-        /* argv[argc] = NULL */
+        /* argv array + NULL terminator */
         sp -= 4; *(uint32_t *)(uintptr_t)sp = 0;
-        /* argv[argc-1..0] */
         for (int i = argc - 1; i >= 0; i--) {
             sp -= 4; *(uint32_t *)(uintptr_t)sp = str_addrs[i];
         }
@@ -330,20 +513,16 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
         proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, sp);
     }
 
-    /* Patch GOT base register in the software frame.
-     * proc_setup_stack builds the callee-saved frame at p->sp. */
+    /* Patch GOT base register in the software frame */
     if (got_sram_addr) {
         uint32_t *sw = (uint32_t *)(uintptr_t)p->sp;
 #if defined(__m68k__)
-        /* m68k frame: d0(0)..d7(7), a0(8)..a6(14) → a5 is index 13 */
         sw[13] = got_sram_addr;
 #else
-        /* ARM frame: r4(0)..r11(7) → r9 is index 5 */
         sw[5] = got_sram_addr;
 #endif
     }
 
-    /* Save GOT base in PCB for vfork — child needs parent's r9 */
     p->got_base = got_sram_addr;
 
     /* ── 10. Set process comm from executable basename ────────────────── */
@@ -366,8 +545,6 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
         strcpy(p->cwd, "/");
 
     /* ── 13. Reset signal state (POSIX exec semantics) ────────────────── */
-    /*  Caught signals → SIG_DFL; SIG_IGN signals stay ignored.
-     *  Clear pending and blocked masks so the new image starts clean. */
     for (int i = 0; i < NSIG; i++) {
         if (p->sig_handlers[i] != SIG_IGN)
             p->sig_handlers[i] = SIG_DFL;

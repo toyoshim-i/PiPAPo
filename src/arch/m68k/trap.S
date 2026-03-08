@@ -37,7 +37,14 @@
 |   [SP+62]  PC  (32-bit, exception frame)
 |
 | m68k_syscall_entry(regs) reads arguments from this frame and writes
-| the return value into regs[0] (the d0 slot).
+| the return value into regs[0] (the d0 slot).  It also handles syscall
+| restart internally (looping on current->svc_needs_restart) instead of
+| using the global svc_restart flag, which is unsafe on m68k because
+| nested TRAP handlers share globals across processes.
+|
+| Post-dispatch check:
+|   exec_pending — sys_execve loaded a new process image.
+|   Do a full context restore from current->sp (new SW frame).
 | =============================================================================
 
     .equ PCB_SP_OFFSET, 44       | offsetof(pcb_t, sp) — see proc.h
@@ -50,11 +57,18 @@ m68k_trap0_handler:
     | Save ALL registers (d0-d7/a0-a6 = 15 × 4 = 60 bytes)
     movem.l %d0-%d7/%a0-%a6,%sp@-
 
-    | Pass pointer to saved register frame as argument
-    | m68k C ABI: first arg on stack
-    move.l  %sp,%sp@-
+    | Pass pointer to saved register frame as argument.
+    | m68k C ABI: first arg on stack.
+    | Avoid `move.l %sp,%sp@-` — 68000 stores the decremented value,
+    | making the passed pointer 4 bytes too low.  Use a scratch register.
+    move.l  %sp,%d0              | d0 = pointer to saved register frame
+    move.l  %d0,%sp@-            | push as argument
     jsr     m68k_syscall_entry
     addq.l  #4,%sp               | clean up 1 arg
+
+    | --- Check: exec_pending (sys_execve loaded new image) ---
+    tst.l   exec_pending
+    bne.s   .Lexec_restore
 
     | Return value is already in regs[0] (d0 slot on stack),
     | written by m68k_syscall_entry.
@@ -63,4 +77,20 @@ m68k_trap0_handler:
     movem.l %sp@+,%d0-%d7/%a0-%a6
 
     | Return from exception — pops SR + PC
+    rte
+
+.Lexec_restore:
+    | --- sys_execve: full context restore from new process image ---
+    clr.l   exec_pending
+
+    | Load current->sp (points to the new frame built by do_execve).
+    | Switch stack to the new process's frame and restore from there.
+    move.l  current_core,%a0
+    move.l  %a0@(PCB_SP_OFFSET),%sp
+
+    | Now on the NEW stack — safe to free the old stack page.
+    jsr     m68k_exec_free_old_stack
+
+    | Restore all registers from the new frame and return
+    movem.l %sp@+,%d0-%d7/%a0-%a6
     rte

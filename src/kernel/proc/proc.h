@@ -128,6 +128,12 @@ typedef struct pcb {
     uint32_t     umask_val;         /* file creation mask (default 022)  */
     int         *clear_child_tid;   /* set_tid_address pointer           */
 
+    /* ── m68k syscall restart (per-process, not global) ─────────── */
+    uint8_t      svc_needs_restart;  /* set by blocking syscalls            */
+
+    /* ── Thread-local storage (TLS) ──────────────────────────── */
+    uint32_t     tp_value;           /* set/get_thread_area value           */
+
     /* ── mmap regions (Phase 6 Step 7) ───────────────────────────── */
     struct {
         void    *addr;              /* base address of mapped region     */

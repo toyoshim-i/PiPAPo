@@ -46,6 +46,7 @@ if [[ "$ARCH" == "m68k" ]]; then
         src/signal/m68k/sigsetjmp.s
         src/thread/m68k/clone.s
         src/thread/m68k/syscall_cp.s
+        src/thread/m68k/__m68k_read_tp.s
         src/ldso/m68k/dlsym.s
         src/ldso/m68k/dlsym_time64.S
     )

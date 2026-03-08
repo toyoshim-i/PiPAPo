@@ -171,9 +171,11 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp)
      *     by switch.S via movem.l.  All registers are saved (not just
      *     callee-saved) so timer ISR and TRAP #1 use the same format.
      */
-    /* Exception frame: SR (16-bit) + PC (32-bit) = 6 bytes.
-     * RTE pops: SR from [SP], PC from [SP+2].
-     * Layout (low→high): SR(2B) | PC(4B)  — total 6 bytes. */
+    /* 68000 exception frame: SR(2B) + PC(4B) = 6 bytes.
+     * RTE pops SR then PC.  No format/vector word on 68000.
+     * Layout (low→high): SR(2B) | PC(4B).
+     * Note: SP ends up 2-byte aligned (not necessarily 4-byte), which
+     * is fine — m68k long word access only requires word alignment. */
     *--sp = (uint32_t)entry;              /* PC: entry point (4 bytes)   */
     sp = (uint32_t *)((uint8_t *)sp - 2); /* back up 2 bytes for SR      */
     *(uint16_t *)sp = SR_SUPV_IRQ;        /* SR: supervisor, IPL=0       */

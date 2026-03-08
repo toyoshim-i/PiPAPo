@@ -174,15 +174,47 @@ int elf_find_rel(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
         (const char *)(file_base + sh_table[ehdr->e_shstrndx].sh_offset);
 
     for (uint16_t i = 0; i < ehdr->e_shnum; i++) {
-        if (sh_table[i].sh_type != SHT_REL)
-            continue;
         const char *name = strtab + sh_table[i].sh_name;
-        if (str_eq(name, ".rel.dyn")) {
+        if (sh_table[i].sh_type == SHT_REL && str_eq(name, ".rel.dyn")) {
             out->offset = sh_table[i].sh_offset;
             out->size   = sh_table[i].sh_size;
+            out->has_addend = 0;
+            return 0;
+        }
+        if (sh_table[i].sh_type == SHT_RELA && str_eq(name, ".rela.dyn")) {
+            out->offset = sh_table[i].sh_offset;
+            out->size   = sh_table[i].sh_size;
+            out->has_addend = 1;
             return 0;
         }
     }
 
-    return 1;   /* no .rel.dyn section */
+    return 1;   /* no .rel.dyn/.rela.dyn section */
+}
+
+/* ── elf_find_dynsym ─────────────────────────────────────────────────────── */
+
+int elf_find_dynsym(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
+                    elf_dynsym_info_t *out, uint32_t file_size)
+{
+    if (ehdr->e_shoff == 0 || ehdr->e_shnum == 0)
+        return 1;
+
+    uint32_t sh_end = ehdr->e_shoff +
+                      (uint32_t)ehdr->e_shnum * sizeof(elf32_shdr_t);
+    if (sh_end < ehdr->e_shoff || sh_end > file_size)
+        return 1;
+
+    const elf32_shdr_t *sh_table =
+        (const elf32_shdr_t *)(file_base + ehdr->e_shoff);
+
+    for (uint16_t i = 0; i < ehdr->e_shnum; i++) {
+        if (sh_table[i].sh_type == SHT_DYNSYM) {
+            out->offset = sh_table[i].sh_offset;
+            out->count  = sh_table[i].sh_size / sizeof(elf32_sym_t);
+            return 0;
+        }
+    }
+
+    return 1;
 }

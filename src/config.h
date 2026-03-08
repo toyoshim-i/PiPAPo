@@ -108,7 +108,7 @@
  *                 the user_pages[] array size in pcb_t (proc.h).
  *                 32 pages = 128 KB; costs 32 × 4 B = 128 B per PCB slot.
  * ────────────────────────────────────────────────────────────────────────── */
-#define USER_PAGES_MAX       32     /* max data-segment pages per process    */
+#define USER_PAGES_MAX       64     /* max data-segment pages per process    */
 
 /* ── tmpfs (RAM-backed temporary filesystem) ─────────────────────────────
  * TMPFS_INODE_MAX   Maximum files + directories in tmpfs.

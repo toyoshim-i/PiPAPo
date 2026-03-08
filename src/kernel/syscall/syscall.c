@@ -38,6 +38,27 @@ volatile int      exec_pending[2] = {0, 0};
 volatile int      svc_restart[2]  = {0, 0};
 volatile uint32_t svc_saved_a0[2] = {0, 0};
 
+void set_svc_restart(void)
+{
+    svc_restart[core_id()] = 1;
+    current->svc_needs_restart = 1;
+}
+
+#if defined(__m68k__)
+/* m68k has no MSP/PSP split — kernel runs on the process stack page.
+ * sys_execve cannot free the old stack while still executing on it.
+ * Store it here; trap.S frees it after switching SP to the new stack. */
+#include "../mm/page.h"
+volatile void *m68k_exec_old_stack = NULL;
+void m68k_exec_free_old_stack(void)
+{
+    void *p = (void *)m68k_exec_old_stack;
+    m68k_exec_old_stack = NULL;
+    if (p)
+        page_free(p);
+}
+#endif
+
 void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
 {
     long a0 = (long)frame[0];
@@ -352,6 +373,15 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
         ret = sys_ppoll((void *)(uintptr_t)a0, (uint32_t)a1,
                         (const void *)(uintptr_t)a2,
                         (const void *)(uintptr_t)a3, a4);
+        break;
+
+    /* ── TLS: set/get_thread_area (m68k musl uses these for TLS) ──────── */
+    case 0xF0A8:                   /* __NR_get_thread_area */
+        ret = (long)current->tp_value;
+        break;
+    case 0xF0A9:                   /* __NR_set_thread_area */
+        current->tp_value = (uint32_t)a0;
+        ret = 0;
         break;
 
     default:

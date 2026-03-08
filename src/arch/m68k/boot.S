@@ -38,9 +38,9 @@ _vectors:
     .long Reset_Handler            | 1: Initial PC (reset entry point)
 
     | --- Exception vectors 2-7 ---
-    .long Default_Handler          | 2:  Bus Error
-    .long Default_Handler          | 3:  Address Error
-    .long Default_Handler          | 4:  Illegal Instruction
+    .long m68k_fault_handler       | 2:  Bus Error
+    .long m68k_fault_handler       | 3:  Address Error
+    .long m68k_illegal_handler      | 4:  Illegal Instruction
     .long Default_Handler          | 5:  Zero Divide
     .long Default_Handler          | 6:  CHK
     .long Default_Handler          | 7:  TRAPV
@@ -157,6 +157,60 @@ Reset_Handler:
 
     .section .text, "ax"
     .align 2
+
+| --- Fault handler for Bus Error / Address Error / Illegal Instruction ---
+| 68000 pushes extra info for group 0 faults (bus/addr error):
+|   [SP+0]  Function code (word)
+|   [SP+2]  Access address (long)
+|   [SP+6]  Instruction register (word)
+|   [SP+8]  SR (word)
+|   [SP+10] PC (long)
+| For Illegal Instruction (group 1):
+|   [SP+0]  SR (word)
+|   [SP+2]  PC (long)
+| We pass SP to C for decoding.
+    .global m68k_fault_handler
+m68k_fault_handler:
+    move.l  %sp,%d0
+    move.l  %d0,%sp@-
+    jsr     m68k_fault_handler_c
+    addq.l  #4,%sp
+    stop    #0x2700
+    bra.s   m68k_fault_handler
+
+| --- Illegal instruction handler with 68020 instruction emulation ---
+| Saves all registers like trap.S, calls the C emulator which may modify
+| the frame (register values + PC), then restores and returns via RTE.
+| If the C handler returns non-zero (unhandled), we halt.
+    .global m68k_illegal_handler
+m68k_illegal_handler:
+    | Save ALL registers (d0-d7/a0-a6 = 15 × 4 = 60 bytes)
+    movem.l %d0-%d7/%a0-%a6,%sp@-
+
+    | Pass pointer to register frame
+    move.l  %sp,%d0
+    move.l  %d0,%sp@-
+    jsr     m68k_emulate_insn
+    addq.l  #4,%sp
+
+    | d0 = 0: emulated OK, d0 != 0: unhandled
+    tst.l   %d0
+    bne.s   .Lillegal_halt
+
+    | Success — restore and return (PC was advanced by emulator)
+    movem.l %sp@+,%d0-%d7/%a0-%a6
+    rte
+
+.Lillegal_halt:
+    | Unhandled — restore regs for debug, then halt
+    movem.l %sp@+,%d0-%d7/%a0-%a6
+    move.l  %sp,%d0
+    move.l  %d0,%sp@-
+    jsr     m68k_fault_handler_c
+    addq.l  #4,%sp
+    stop    #0x2700
+    bra.s   .Lillegal_halt
+
     .global Default_Handler
 Default_Handler:
     stop     #0x2700             | halt with all IRQs masked

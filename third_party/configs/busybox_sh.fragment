@@ -16,6 +16,7 @@ CONFIG_LFS=y
 
 # -- Shell (hush) -------------------------------------------------------------
 CONFIG_HUSH=y
+CONFIG_SH_IS_HUSH=y
 CONFIG_HUSH_BASH_COMPAT=y
 CONFIG_HUSH_HELP=y
 CONFIG_HUSH_INTERACTIVE=y

@@ -15,6 +15,7 @@
 #include "../fd/fd.h"
 #include "../mm/page.h"
 #include "../errno.h"
+#include "../klog.h"
 #include <string.h>
 
 /* Wait status encoding (POSIX-compatible) */
@@ -127,12 +128,13 @@ long sys_getpid(void)
  * Create a child process.  The parent is blocked until the child calls
  * execve() or _exit().
  *
- * The child gets its own stack page with a copy of the parent's HW exception
- * frame (r0=0 for child return value).  The child shares the parent's
+ * The child gets its own stack page with a copy of the parent's exception
+ * frame (return register = 0 for child).  The child shares the parent's
  * user_pages (GOT/data).
  *
- * frame: pointer to the parent's stacked exception frame on PSP
- *        [r0, r1, r2, r3, r12, lr, pc, xpsr]
+ * frame: pointer to the parent's stacked exception frame
+ *   ARM:  [r0, r1, r2, r3, r12, lr, pc, xpsr] on PSP
+ *   m68k: &regs[1] (d1 slot) in the TRAP #0 saved register frame
  */
 long sys_vfork(uint32_t *frame)
 {
@@ -169,7 +171,19 @@ long sys_vfork(uint32_t *frame)
     uintptr_t frame_off = (uintptr_t)frame - (uintptr_t)current->stack_page;
     uint32_t *child_frame = (uint32_t *)((uint8_t *)stack + frame_off);
 
-    /* Set child's r0 = 0 (child sees vfork return 0) */
+#if defined(__m68k__)
+    /* m68k: The TRAP #0 frame (15 regs + SR + PC) has the same layout as
+     * the switch.S context frame.  The child returns directly to user code
+     * via switch.S restore (movem.l + rte), bypassing TRAP #0 cleanup.
+     *
+     * frame = &regs[1] (d1 slot).  child_frame - 1 = d0 slot. */
+    uint32_t *child_regs = child_frame - 1;   /* d0 slot */
+    child_regs[0] = 0;                        /* d0 = 0 (child return) */
+    child_regs[13] = current->got_base;       /* a5 = GOT base for PIC */
+
+    child->sp = (uint32_t)(uintptr_t)child_regs;
+#else
+    /* ARM: Set child's r0 = 0 (child sees vfork return 0) */
     child_frame[0] = 0;
 
     /* Build SW callee-saved frame below the HW frame.
@@ -179,6 +193,7 @@ long sys_vfork(uint32_t *frame)
     sw[5] = current->got_base;   /* r9 = GOT SRAM address for PIC */
 
     child->sp = (uint32_t)(uintptr_t)sw;
+#endif
     child->ticks_remaining = PROC_DEFAULT_TICKS;
 
     /* 5. Set up identity and relationships */
@@ -187,6 +202,7 @@ long sys_vfork(uint32_t *frame)
     child->sid  = current->sid;    /* inherit session ID */
     child->vfork_parent = current;
     child->got_base = current->got_base;
+    child->tp_value = current->tp_value;
     memcpy(child->cwd, current->cwd, sizeof(child->cwd));
     memcpy(child->comm, current->comm, sizeof(child->comm));
 
@@ -205,6 +221,12 @@ long sys_vfork(uint32_t *frame)
      * code below still executes.  This is harmless — the parent is BLOCKED,
      * so PendSV tail-chains and switches it out after our SVC return. */
     sched_yield();
+
+    /* Clear stale flags left by the child's syscalls while we were blocked.
+     * exec_pending and svc_restart are global (not per-process), so a child's
+     * execve or blocking read can leave flags that would corrupt our return. */
+    exec_pending[core_id()] = 0;
+    svc_restart[core_id()]  = 0;
 
     return (long)child->pid;
 }
@@ -277,7 +299,7 @@ long sys_waitpid(long pid, long status_ptr, long options)
      * sys_exit will wake us by setting PROC_RUNNABLE.
      * SVC_Handler will restore frame[0] and PC-2 so the SVC re-executes. */
     current->state = PROC_BLOCKED;
-    svc_restart[core_id()] = 1;
+    set_svc_restart();
     sched_yield();
     return 0;  /* value ignored — SVC_Handler restores original frame[0] */
 }
@@ -323,9 +345,16 @@ long sys_execve(const char *path, const char *const *argv)
         !current->fd_table[2])
         fd_stdio_init(current);
 
-    /* Free old stack page */
+    /* Free old stack page.
+     * m68k has no MSP/PSP split — we're still executing on old_stack.
+     * Defer the free until trap.S switches SP to the new stack. */
+#if defined(__m68k__)
+    extern volatile void *m68k_exec_old_stack;
+    m68k_exec_old_stack = old_stack;
+#else
     if (old_stack)
         page_free(old_stack);
+#endif
 
     /* Free old user pages only if we owned them */
     if (owns_pages) {
@@ -397,7 +426,11 @@ long sys_uname(void *buf)
     p += UTS_LEN;
 
     /* machine */
+#if defined(__m68k__)
+    s = "m68k";
+#else
     s = "armv6m";
+#endif
     for (int i = 0; s[i] && i < UTS_LEN - 1; i++) p[i] = s[i];
     /* p += UTS_LEN; — domainname follows but we leave it zeroed */
 
