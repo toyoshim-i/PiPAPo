@@ -2,9 +2,10 @@
  * romfs_format.h — On-flash romfs structures
  *
  * Shared between the kernel romfs driver (romfs.c) and the host-side
- * mkromfs tool (tools/mkromfs/).  All fields are little-endian (ARM
- * native byte order).  All structures are 4-byte aligned for direct
- * Thumb instruction fetch from XIP flash.
+ * mkromfs tool (tools/mkromfs/).  All fields are target-native endian
+ * (little-endian on ARM, big-endian on m68k).  The romfs image is
+ * built per-target by mkromfs, so no byte-swapping is needed at
+ * runtime.  All structures are 4-byte aligned.
  *
  * Image layout:
  *   [romfs_super_t]            — 16-byte superblock at offset 0
@@ -22,7 +23,7 @@
 
 /* ── Superblock ────────────────────────────────────────────────────────────── */
 
-#define ROMFS_MAGIC  0x50504653u   /* "PPFS" in little-endian */
+#define ROMFS_MAGIC  0x50504653u   /* "PPFS" in native endian */
 
 typedef struct {
     uint32_t magic;       /* ROMFS_MAGIC                                  */

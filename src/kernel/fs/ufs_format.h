@@ -1,9 +1,12 @@
 /*
  * ufs_format.h — UFS on-disk data structures
  *
- * Simplified 4.4BSD-style Unix File System format for RP2040.
- * All fields are little-endian (ARM native).  Block size is 4 KB
- * (matching PAGE_SIZE and SD card erase granularity).
+ * Simplified 4.4BSD-style Unix File System format.
+ * All on-disk fields are always little-endian (regardless of CPU
+ * endianness) for cross-architecture portability — UFS images on
+ * FAT32 SD cards can be shared between ARM and m68k targets.
+ * Use le16()/le32() from endian.h when reading/writing fields.
+ * Block size is 4 KB (matching PAGE_SIZE and SD card erase granularity).
  *
  * Disk layout:
  *   Block 0:        Superblock
