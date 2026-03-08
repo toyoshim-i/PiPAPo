@@ -64,6 +64,7 @@
 /* ── Relocation types ───────────────────────────────────────────────────── */
 
 #define R_ARM_RELATIVE  23      /* Adjust by load base (PIE relocation) */
+#define R_68K_RELATIVE  22      /* m68k PIE base relocation              */
 
 /* ── Section types ──────────────────────────────────────────────────────── */
 

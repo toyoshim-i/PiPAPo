@@ -1,14 +1,14 @@
 /*
  * exec.c — ELF binary loader for PPAP (XIP + PIC/GOT relocation)
  *
- * Loads a PIC ELF binary for Execute-In-Place (XIP) from flash:
- *   - .text + .rodata stay in flash (no SRAM copy)
+ * Loads a PIC ELF binary for Execute-In-Place (XIP):
+ *   - .text + .rodata stay in place (flash on ARM, RAM on m68k)
  *   - .got + .data + .bss are copied to contiguous SRAM page(s)
- *   - GOT entries are relocated to point to actual flash/SRAM addresses
- *   - r9 is loaded with the SRAM address of the .got section
+ *   - GOT entries are relocated to point to actual text/SRAM addresses
+ *   - GOT base register: r9 (ARM), a5 (m68k)
  *
  * The binary is linked at address 0 with two PT_LOAD segments:
- *   text (PF_R|PF_X): code + rodata  → executes from flash
+ *   text (PF_R|PF_X): code + rodata  → executes in place
  *   data (PF_R|PF_W): .got + .data + .bss → lives in SRAM
  */
 
@@ -78,10 +78,14 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
     uint32_t flash_text_base =
         (uint32_t)(uintptr_t)file_base + text_seg->p_offset;
 
-    /* Compute the runtime entry point in flash */
+    /* Compute the runtime entry point */
     uint32_t e_entry = elf_entry(ehdr);
+#if defined(__m68k__)
+    uint32_t entry = flash_text_base + e_entry - text_seg->p_vaddr;
+#else
     uint32_t entry = flash_text_base + (e_entry & ~1u) - text_seg->p_vaddr;
     entry |= (e_entry & 1u);   /* restore Thumb bit */
+#endif
 
     /* ── 6. Data segment: copy to contiguous SRAM page(s) ────────────── */
     uint8_t *sram_page = NULL;
@@ -178,7 +182,11 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
             uint32_t n_rel = rel_info.size / sizeof(elf32_rel_t);
 
             for (uint32_t i = 0; i < n_rel; i++) {
+#if defined(__m68k__)
+                if (ELF32_R_TYPE(rel[i].r_info) != R_68K_RELATIVE)
+#else
                 if (ELF32_R_TYPE(rel[i].r_info) != R_ARM_RELATIVE)
+#endif
                     continue;
 
                 uint32_t off = rel[i].r_offset;
@@ -285,13 +293,18 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
             str_addrs[0] = sp;
         }
 
-        /* Align down to 8 bytes before pushing word-sized data.
+        /* Align stack before pushing word-sized data.
          * Total words below: 4 (auxv) + 1 (envp NULL) + (argc+1) (argv
-         * array + NULL) + 1 (argc) = argc + 7.  If this is odd, add a
-         * padding word to keep the final SP 8-byte aligned (ARM AAPCS). */
+         * array + NULL) + 1 (argc) = argc + 7. */
+#if defined(__m68k__)
+        /* m68k: 4-byte alignment is sufficient */
+        sp &= ~3u;
+#else
+        /* ARM AAPCS: 8-byte alignment required */
         sp &= ~7u;
         if ((argc + 7) & 1)
             sp -= 4;   /* padding word for 8-byte alignment */
+#endif
 
         /* auxv[1]: AT_NULL */
         sp -= 4; *(uint32_t *)(uintptr_t)sp = 0;          /* val */
@@ -317,12 +330,17 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
         proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, sp);
     }
 
-    /* Patch r9 (GOT base) in the software frame.
-     * proc_setup_stack builds: [r4, r5, r6, r7, r8, r9, r10, r11]
-     * at p->sp, so r9 is at offset 5 (index 5). */
+    /* Patch GOT base register in the software frame.
+     * proc_setup_stack builds the callee-saved frame at p->sp. */
     if (got_sram_addr) {
         uint32_t *sw = (uint32_t *)(uintptr_t)p->sp;
+#if defined(__m68k__)
+        /* m68k frame: d0(0)..d7(7), a0(8)..a6(14) → a5 is index 13 */
+        sw[13] = got_sram_addr;
+#else
+        /* ARM frame: r4(0)..r11(7) → r9 is index 5 */
         sw[5] = got_sram_addr;
+#endif
     }
 
     /* Save GOT base in PCB for vfork — child needs parent's r9 */
