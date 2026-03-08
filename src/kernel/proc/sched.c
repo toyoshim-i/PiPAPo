@@ -270,7 +270,14 @@ void sched_start(void)
 
 void sched_yield(void)
 {
+#if defined(__m68k__)
+    /* TRAP #1 enters m68k_trap1_handler which does the context switch
+     * immediately.  arch_yield() only sets a flag — insufficient from
+     * thread context where no timer ISR is pending to check it. */
+    __asm__ volatile ("trap #1");
+#else
     arch_yield();   /* pend PendSV; fires at next instruction boundary */
+#endif
 }
 
 /* ── Channel-based wakeup ──────────────────────────────────────────────────── */
@@ -300,8 +307,12 @@ void sched_sleep(uint32_t ticks)
 {
     current->sleep_until    = tick_count + ticks;
     current->state          = PROC_SLEEPING;
+#if defined(__m68k__)
+    __asm__ volatile ("trap #1");   /* immediate context switch */
+#else
     arch_yield();  /* yield CPU; PendSV fires after caller returns */
+#endif
     /* Execution resumes here after sched_tick() marks us RUNNABLE again
-     * and PendSV restores our context. */
+     * and the context switch restores our context. */
 }
 

@@ -43,10 +43,61 @@ void kmain(void)
     /* Process table */
     proc_init();
 
-    klog("Phase C bringup: shared subsystems OK\n");
+    /* ── Context switch smoke test ──────────────────────────────────────── */
+    /* Allocate a second process and do cooperative context switching
+     * via TRAP #1 (sched_yield).  If switch.S works correctly, the two
+     * processes alternate printing their PIDs. */
 
-    /* Halt — timer ISR and context switch not yet implemented.
-     * Use a simple busy loop; STOP triggers a QEMU assertion. */
+    /* Give thread 0 a stack page so the context switch can save its state */
+    proc_table[0].stack_page = page_alloc();
+    if (!proc_table[0].stack_page) {
+        klog("PANIC: no page for thread 0 stack\n");
+        for (;;) __asm__ volatile ("nop");
+    }
+
+    /* Allocate process 1 */
+    pcb_t *p1 = proc_alloc();
+    if (!p1) {
+        klog("PANIC: proc_alloc failed\n");
+        for (;;) __asm__ volatile ("nop");
+    }
+    p1->stack_page = page_alloc();
+    if (!p1->stack_page) {
+        klog("PANIC: no page for p1 stack\n");
+        for (;;) __asm__ volatile ("nop");
+    }
+
+    /* Set up process 1's stack to enter test_process1 */
+    extern void test_process1(void);
+    proc_setup_stack(p1, test_process1, 0);
+    p1->state = PROC_RUNNABLE;
+    klogf("SCHED: p1 pid=%u allocated, stack @ %x\n",
+          p1->pid, (uint32_t)(uintptr_t)p1->stack_page);
+
+    klog("SCHED: starting cooperative context switch test\n");
+
+    /* Thread 0 yields back and forth with process 1 */
+    for (int i = 0; i < 4; i++) {
+        klogf("Thread 0: iteration %u, yielding...\n", (uint32_t)i);
+        sched_yield();
+    }
+
+    klog("Phase C context switch test PASSED\n");
+
     for (;;)
         __asm__ volatile ("nop");
+}
+
+/* Test process 1 — runs on its own stack, yields back to thread 0 */
+void test_process1(void)
+{
+    for (int i = 0; i < 4; i++) {
+        klogf("Process 1: iteration %u, yielding...\n", (uint32_t)i);
+        sched_yield();
+    }
+
+    /* Mark ourselves done and yield forever */
+    current->state = PROC_FREE;
+    for (;;)
+        sched_yield();
 }

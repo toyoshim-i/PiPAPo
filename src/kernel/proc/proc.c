@@ -171,12 +171,10 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp)
      *     by switch.S.
      */
     /* Exception frame: SR (16-bit) + PC (32-bit) = 6 bytes.
-     * On 68000, SR and PC are packed as {SR[15:0], PC[31:0]}.
-     * We push as 32-bit words but the top word is {SR, PC_high}. */
-    *--sp = (uint32_t)entry;              /* PC: entry point             */
-    /* SR: supervisor mode with IRQs enabled (will switch to user later) */
-    *((uint16_t *)--sp + 1) = 0;  /* pad to keep alignment */
-    sp = (uint32_t *)((uint8_t *)sp - 2);
+     * RTE pops: SR from [SP], PC from [SP+2].
+     * Layout (low→high): SR(2B) | PC(4B)  — total 6 bytes. */
+    *--sp = (uint32_t)entry;              /* PC: entry point (4 bytes)   */
+    sp = (uint32_t *)((uint8_t *)sp - 2); /* back up 2 bytes for SR      */
     *(uint16_t *)sp = SR_SUPV_IRQ;        /* SR: supervisor, IPL=0       */
     /* Software callee-saved frame (a6..a2, d7..d2, high → low) */
     *--sp = 0u;   /* a6 */

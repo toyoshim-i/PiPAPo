@@ -67,8 +67,8 @@ _vectors:
     .long Default_Handler          | 31: Level 7 autovector (NMI)
 
     | --- Exception vectors 32-47: TRAP #0-#15 ---
-    .long Default_Handler          | 32: TRAP #0 (PPAP syscall)
-    .long Default_Handler          | 33: TRAP #1 (yield)
+    .long Default_Handler          | 32: TRAP #0 (PPAP syscall — Phase C Step 3)
+    .long m68k_trap1_handler       | 33: TRAP #1 (cooperative yield)
     .rept 14
     .long Default_Handler          | 34-47: TRAP #2 - TRAP #15
     .endr
