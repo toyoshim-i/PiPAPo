@@ -184,9 +184,20 @@ set(M68K_USER_ELFS
     ${CMAKE_BINARY_DIR}/ttyctl.elf
 )
 
-# --- Busybox and rogue (pre-built by build-busybox.sh/build-rogue.sh --m68k) ---
+# --- Busybox (pre-built by build-busybox.sh --m68k) ---
 set(M68K_BB_DIR  ${PPAP_ROOT}/build/m68k/busybox)
-set(M68K_ROGUE   ${PPAP_ROOT}/build/m68k/rogue/rogue)
+
+# --- rogue (built automatically, matching ARM approach) ---
+set(M68K_ROGUE ${CMAKE_BINARY_DIR}/rogue/rogue)
+file(GLOB ROGUE_PATCHES ${PPAP_ROOT}/third_party/patches/rogue/*)
+add_custom_command(
+    OUTPUT ${M68K_ROGUE}
+    COMMAND ${PPAP_ROOT}/third_party/build-rogue.sh --m68k
+    DEPENDS ${PPAP_ROOT}/third_party/build-rogue.sh
+            ${ROGUE_PATCHES}
+            ${PPAP_ROOT}/third_party/configs/busybox-m68k.ld
+    COMMENT "Building rogue (PIC, m68k)"
+)
 
 # Busybox applet symlinks (same as ARM install-busybox.sh)
 set(BB_APPLETS cat chmod cp df echo grep head kill ln ls mkdir mv
@@ -275,6 +286,7 @@ add_custom_command(
             ${ROMFS_STAGING} ${ROMFS_BIN}
     DEPENDS ${CMAKE_BINARY_DIR}/mkromfs
             ${M68K_USER_ELFS}
+            ${M68K_ROGUE}
             ${PPAP_ROOT}/src/etc/fstab
             ${PPAP_ROOT}/src/etc/inittab
             ${CMAKE_CURRENT_SOURCE_DIR}/romfs/etc/fstab
