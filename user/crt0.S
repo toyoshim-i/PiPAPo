@@ -31,7 +31,7 @@ _start:
     bl   main
 
     @ _exit(main's return value in r0)
-    movs r7, #1         @ SYS_EXIT = 1
+    movs r7, #0         @ SYS_EXIT = 0x0000
     svc  0
 
     @ Should never reach here

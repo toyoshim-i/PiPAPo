@@ -15,16 +15,16 @@
     .globl _start
 
 _start:
-    | write(1, msg, len) — SYS_WRITE = 4
-    move.l  #4, %d0             | syscall number
+    | write(1, msg, len) — SYS_WRITE = 0x0101
+    move.l  #0x0101, %d0        | syscall number
     move.l  #1, %d1             | fd = stdout
     lea     msg(%pc), %a0
     move.l  %a0, %d2            | buf = &msg
     move.l  #(msg_end - msg), %d3  | count
     trap    #0
 
-    | exit(0) — SYS_EXIT = 1
-    move.l  #1, %d0
+    | exit(0) — SYS_EXIT = 0x0000
+    moveq   #0, %d0
     move.l  #0, %d1
     trap    #0
 

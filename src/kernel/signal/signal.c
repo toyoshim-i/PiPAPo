@@ -48,13 +48,13 @@ void signal_check(void) { }
 /*
  * Placed in kernel .text (flash XIP).  User-mode code can execute flash.
  * When the signal handler does bx lr, it lands here.
- * Uses SYS_RT_SIGRETURN(173) since musl's rt_sigaction is used.
+ * Uses SYS_RT_SIGRETURN (0x0605).
  */
 __attribute__((naked, used, section(".text.sigreturn_trampoline")))
 void sigreturn_trampoline(void)
 {
     __asm volatile(
-        "movs r7, #173\n"    /* SYS_RT_SIGRETURN */
+        "ldr  r7, =0x0605\n" /* SYS_RT_SIGRETURN */
         "svc  0\n"
         "b    .\n"           /* should never reach */
     );

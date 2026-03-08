@@ -28,16 +28,16 @@
 .cpu cortex-m0plus
 .thumb
 
-@ ── Syscall numbers (Linux ARM EABI) ─────────────────────────────────────────
-.equ SYS_EXIT,    1
-.equ SYS_READ,    3
-.equ SYS_WRITE,   4
-.equ SYS_OPEN,    5
-.equ SYS_CLOSE,   6
-.equ SYS_EXECVE, 11
-.equ SYS_SETSID, 66
-.equ SYS_DUP2,   63
-.equ SYS_IOCTL,  54
+@ ── PPAP syscall numbers ───────────────────────────────────────────────────────
+.equ SYS_EXIT,    0x0000
+.equ SYS_EXECVE,  0x0003
+.equ SYS_SETSID,  0x000B
+.equ SYS_READ,    0x0100
+.equ SYS_WRITE,   0x0101
+.equ SYS_OPEN,    0x0102
+.equ SYS_CLOSE,   0x0103
+.equ SYS_DUP2,    0x0105
+.equ SYS_IOCTL,   0x0107
 
 .equ O_RDWR,      2
 .equ TIOCSCTTY,   0x540E
@@ -74,7 +74,7 @@ _start:
     strb r1, [r0]              @ NUL terminate
 
     @ close(0), close(1), close(2)
-    movs r7, #SYS_CLOSE
+    ldr  r7, .Lsys_close
     movs r0, #0
     svc  0
     movs r0, #1
@@ -86,7 +86,7 @@ _start:
     mov  r0, sp
     movs r1, #O_RDWR
     movs r2, #0
-    movs r7, #SYS_OPEN
+    ldr  r7, .Lsys_open
     svc  0
 
     @ If open failed, try argv[1] as-is (might be a full path)
@@ -95,7 +95,7 @@ _start:
     mov  r0, r4
     movs r1, #O_RDWR
     movs r2, #0
-    movs r7, #SYS_OPEN
+    ldr  r7, .Lsys_open
     svc  0
     cmp  r0, #0
     bge  .Lopen_ok
@@ -117,37 +117,37 @@ _start:
     beq  .Lfd_is_zero
     mov  r0, r5
     movs r1, #0
-    movs r7, #SYS_DUP2
+    ldr  r7, .Lsys_dup2
     svc  0
     mov  r0, r5
-    movs r7, #SYS_CLOSE
+    ldr  r7, .Lsys_close
     svc  0
 .Lfd_is_zero:
 
     @ dup2(0, 1)
     movs r0, #0
     movs r1, #1
-    movs r7, #SYS_DUP2
+    ldr  r7, .Lsys_dup2
     svc  0
 
     @ dup2(0, 2)
     movs r0, #0
     movs r1, #2
-    movs r7, #SYS_DUP2
+    ldr  r7, .Lsys_dup2
     svc  0
 
     @ 3. ioctl(0, TIOCSCTTY, 1)
     movs r0, #0
     ldr  r1, .Ltiocsctty     @ constant value, not an address — literal pool OK
     movs r2, #1
-    movs r7, #SYS_IOCTL
+    ldr  r7, .Lsys_ioctl
     svc  0
 
     @ 4. Write prompt
     movs r0, #1               @ fd = stdout
     adr  r1, str_prompt        @ PC-relative address
     movs r2, #str_prompt_len
-    movs r7, #SYS_WRITE
+    ldr  r7, .Lsys_write
     svc  0
 
     @ 5. Wait for Enter
@@ -156,7 +156,7 @@ _start:
     movs r0, #0               @ fd = stdin
     mov  r1, sp               @ buf on stack
     movs r2, #1               @ count = 1
-    movs r7, #SYS_READ
+    ldr  r7, .Lsys_read
     svc  0
     cmp  r0, #0
     ble  .Lexit_fail           @ read error or EOF
@@ -174,7 +174,7 @@ _start:
     movs r0, #1
     adr  r1, str_nl
     movs r2, #1
-    movs r7, #SYS_WRITE
+    ldr  r7, .Lsys_write
     svc  0
 
     @ 6. execve("/bin/sh", {"-sh", NULL}, {NULL})
@@ -199,7 +199,7 @@ _start:
     movs r0, #2               @ fd = stderr
     adr  r1, str_exec_fail
     movs r2, #str_exec_fail_len
-    movs r7, #SYS_WRITE
+    ldr  r7, .Lsys_write
     svc  0
 
 .Lexit_fail:
@@ -223,10 +223,22 @@ _start:
 .Lstr_done:
     bx   lr
 
-@ ── Literal pool for non-address constants ───────────────────────────────────
+@ ── Literal pool for constants and syscall numbers > 255 ─────────────────────
 .align 2
 .Ltiocsctty:
     .word TIOCSCTTY
+.Lsys_read:
+    .word SYS_READ
+.Lsys_write:
+    .word SYS_WRITE
+.Lsys_open:
+    .word SYS_OPEN
+.Lsys_close:
+    .word SYS_CLOSE
+.Lsys_dup2:
+    .word SYS_DUP2
+.Lsys_ioctl:
+    .word SYS_IOCTL
 
 @ ── String constants (in .text for PC-relative ADR access on XIP) ────────────
 @ ADR requires word-aligned targets within +1020 bytes forward.

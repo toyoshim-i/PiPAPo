@@ -2,8 +2,8 @@
 | syscall.S — TRAP #0 syscall stubs for PPAP m68k user-space programs
 | =============================================================================
 |
-| Linux m68k syscall convention:
-|   d0    = syscall number
+| PPAP m68k syscall convention:
+|   d0    = syscall number (16-bit: high byte = group, low byte = index)
 |   d1-d5 = arguments 1-5
 |   a0    = argument 6
 |   d0    = return value (negative errno on error)
@@ -13,23 +13,25 @@
 | d2-d7/a2-a6 are callee-saved; d0-d1/a0-a1 are caller-saved.
 | For syscalls that use d2+ as arguments, we must save/restore
 | callee-saved registers around the trap.
+|
+| Group 0 (0x00xx) fits in moveq.  Groups 1+ need move.l #N, %d0.
 | =============================================================================
 
     .text
     .even
 
-| --- _exit (SYS_EXIT = 1) ---------------------------------------------------
+| --- _exit (SYS_EXIT = 0x0000) ------------------------------------------------
 | void _exit(int status);
     .globl __exit
     .globl _exit
 __exit:
 _exit:
     move.l  4(%sp), %d1         | status
-    moveq   #1, %d0             | SYS_EXIT
+    moveq   #0, %d0             | SYS_EXIT
     trap    #0
     bra.s   _exit               | should never return
 
-| --- read (SYS_READ = 3) ----------------------------------------------------
+| --- read (SYS_READ = 0x0100) -------------------------------------------------
 | ssize_t read(int fd, void *buf, size_t n);
     .globl read
 read:
@@ -37,12 +39,12 @@ read:
     move.l  8(%sp), %d1         | fd
     move.l  12(%sp), %d2        | buf
     move.l  16(%sp), %d3        | n
-    moveq   #3, %d0
+    move.l  #0x0100, %d0
     trap    #0
     move.l  %sp@+, %d2
     rts
 
-| --- write (SYS_WRITE = 4) --------------------------------------------------
+| --- write (SYS_WRITE = 0x0101) -----------------------------------------------
 | ssize_t write(int fd, const void *buf, size_t n);
     .globl write
 write:
@@ -50,12 +52,12 @@ write:
     move.l  8(%sp), %d1         | fd
     move.l  12(%sp), %d2        | buf
     move.l  16(%sp), %d3        | n
-    moveq   #4, %d0
+    move.l  #0x0101, %d0
     trap    #0
     move.l  %sp@+, %d2
     rts
 
-| --- open (SYS_OPEN = 5) ----------------------------------------------------
+| --- open (SYS_OPEN = 0x0102) -------------------------------------------------
 | int open(const char *path, int flags, int mode);
     .globl open
 open:
@@ -63,21 +65,21 @@ open:
     move.l  8(%sp), %d1         | path
     move.l  12(%sp), %d2        | flags
     move.l  16(%sp), %d3        | mode
-    moveq   #5, %d0
+    move.l  #0x0102, %d0
     trap    #0
     move.l  %sp@+, %d2
     rts
 
-| --- close (SYS_CLOSE = 6) --------------------------------------------------
+| --- close (SYS_CLOSE = 0x0103) -----------------------------------------------
 | int close(int fd);
     .globl close
 close:
     move.l  4(%sp), %d1         | fd
-    moveq   #6, %d0
+    move.l  #0x0103, %d0
     trap    #0
     rts
 
-| --- waitpid (SYS_WAITPID = 7) ----------------------------------------------
+| --- waitpid (SYS_WAITPID = 0x0004) -------------------------------------------
 | pid_t waitpid(pid_t pid, int *status, int options);
     .globl waitpid
 waitpid:
@@ -85,12 +87,12 @@ waitpid:
     move.l  8(%sp), %d1         | pid
     move.l  12(%sp), %d2        | status
     move.l  16(%sp), %d3        | options
-    moveq   #7, %d0
+    moveq   #4, %d0             | SYS_WAITPID
     trap    #0
     move.l  %sp@+, %d2
     rts
 
-| --- execve (SYS_EXECVE = 11) -----------------------------------------------
+| --- execve (SYS_EXECVE = 0x0003) ---------------------------------------------
 | int execve(const char *path, char *const argv[], char *const envp[]);
     .globl execve
 execve:
@@ -98,59 +100,59 @@ execve:
     move.l  8(%sp), %d1         | path
     move.l  12(%sp), %d2        | argv
     move.l  16(%sp), %d3        | envp
-    moveq   #11, %d0
+    moveq   #3, %d0             | SYS_EXECVE
     trap    #0
     move.l  %sp@+, %d2
     rts
 
-| --- getpid (SYS_GETPID = 20) -----------------------------------------------
+| --- getpid (SYS_GETPID = 0x0006) ---------------------------------------------
 | int getpid(void);
     .globl getpid
 getpid:
-    moveq   #20, %d0
+    moveq   #6, %d0             | SYS_GETPID
     trap    #0
     rts
 
-| --- kill (SYS_KILL = 37) ---------------------------------------------------
+| --- kill (SYS_KILL = 0x0600) -------------------------------------------------
 | int kill(pid_t pid, int sig);
     .globl kill
 kill:
     move.l  %d2, %sp@-
     move.l  8(%sp), %d1         | pid
     move.l  12(%sp), %d2        | sig
-    moveq   #37, %d0
+    move.l  #0x0600, %d0
     trap    #0
     move.l  %sp@+, %d2
     rts
 
-| --- dup (SYS_DUP = 41) -----------------------------------------------------
+| --- dup (SYS_DUP = 0x0104) ---------------------------------------------------
 | int dup(int oldfd);
     .globl dup
 dup:
     move.l  4(%sp), %d1         | oldfd
-    moveq   #41, %d0
+    move.l  #0x0104, %d0
     trap    #0
     rts
 
-| --- pipe (SYS_PIPE = 42) ---------------------------------------------------
+| --- pipe (SYS_PIPE = 0x0106) -------------------------------------------------
 | int pipe(int fds[2]);
     .globl pipe
 pipe:
     move.l  4(%sp), %d1         | fds
-    moveq   #42, %d0
+    move.l  #0x0106, %d0
     trap    #0
     rts
 
-| --- brk (SYS_BRK = 45) -----------------------------------------------------
+| --- brk (SYS_BRK = 0x0400) ---------------------------------------------------
 | void *brk(void *addr);
     .globl brk
 brk:
     move.l  4(%sp), %d1         | addr
-    moveq   #45, %d0
+    move.l  #0x0400, %d0
     trap    #0
     rts
 
-| --- ioctl (SYS_IOCTL = 54) -------------------------------------------------
+| --- ioctl (SYS_IOCTL = 0x0107) -----------------------------------------------
 | int ioctl(int fd, unsigned long cmd, void *arg);
     .globl ioctl
 ioctl:
@@ -158,32 +160,32 @@ ioctl:
     move.l  8(%sp), %d1         | fd
     move.l  12(%sp), %d2        | cmd
     move.l  16(%sp), %d3        | arg
-    moveq   #54, %d0
+    move.l  #0x0107, %d0
     trap    #0
     move.l  %sp@+, %d2
     rts
 
-| --- dup2 (SYS_DUP2 = 63) ---------------------------------------------------
+| --- dup2 (SYS_DUP2 = 0x0105) -------------------------------------------------
 | int dup2(int oldfd, int newfd);
     .globl dup2
 dup2:
     move.l  %d2, %sp@-
     move.l  8(%sp), %d1         | oldfd
     move.l  12(%sp), %d2        | newfd
-    moveq   #63, %d0
+    move.l  #0x0105, %d0
     trap    #0
     move.l  %sp@+, %d2
     rts
 
-| --- setsid (SYS_SETSID = 66) -----------------------------------------------
+| --- setsid (SYS_SETSID = 0x000B) ---------------------------------------------
 | pid_t setsid(void);
     .globl setsid
 setsid:
-    moveq   #66, %d0
+    moveq   #0x0B, %d0          | SYS_SETSID
     trap    #0
     rts
 
-| --- sigaction (SYS_SIGACTION = 67) ------------------------------------------
+| --- sigaction (SYS_SIGACTION = 0x0601) ----------------------------------------
 | int sigaction(int sig, void *handler, void *old_handler);
     .globl sigaction
 sigaction:
@@ -191,32 +193,32 @@ sigaction:
     move.l  8(%sp), %d1         | sig
     move.l  12(%sp), %d2        | handler
     move.l  16(%sp), %d3        | old_handler
-    moveq   #67, %d0
+    move.l  #0x0601, %d0
     trap    #0
     move.l  %sp@+, %d2
     rts
 
-| --- nanosleep (SYS_NANOSLEEP = 162) ----------------------------------------
+| --- nanosleep (SYS_NANOSLEEP = 0x0500) ----------------------------------------
 | int nanosleep(const void *req, void *rem);
     .globl nanosleep
 nanosleep:
     move.l  %d2, %sp@-
     move.l  8(%sp), %d1         | req
     move.l  12(%sp), %d2        | rem
-    move.l  #162, %d0
+    move.l  #0x0500, %d0
     trap    #0
     move.l  %sp@+, %d2
     rts
 
-| --- vfork (SYS_VFORK = 190) ------------------------------------------------
+| --- vfork (SYS_VFORK = 0x0002) -----------------------------------------------
 | pid_t vfork(void);
     .globl vfork
 vfork:
-    move.l  #190, %d0
+    moveq   #2, %d0             | SYS_VFORK
     trap    #0
     rts
 
-| --- ppoll (SYS_PPOLL_TIME64 = 414) -----------------------------------------
+| --- ppoll (SYS_PPOLL = 0x0701) -----------------------------------------------
 | int ppoll(struct pollfd *fds, int nfds, void *timeout,
 |           void *sigmask, int sigsetsize);
     .globl ppoll
@@ -227,7 +229,7 @@ ppoll:
     move.l  28(%sp), %d3        | timeout
     move.l  32(%sp), %d4        | sigmask
     move.l  36(%sp), %d5        | sigsetsize
-    move.l  #414, %d0           | SYS_PPOLL_TIME64
+    move.l  #0x0701, %d0        | SYS_PPOLL
     trap    #0
     movem.l %sp@+, %d2-%d5
     rts

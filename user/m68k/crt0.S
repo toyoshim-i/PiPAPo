@@ -32,7 +32,7 @@ _start:
 
     | _exit(main's return value in d0)
     move.l  %d0, %d1            | d1 = status (arg 1)
-    move.l  #1, %d0             | d0 = SYS_EXIT = 1
+    moveq   #0, %d0             | d0 = SYS_EXIT = 0x0000
     trap    #0
 
     | Should never reach here

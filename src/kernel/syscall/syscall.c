@@ -55,12 +55,12 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
                   && nr != SYS_CLOCK_GETTIME32 && nr != SYS_CLOCK_GETTIME64
                   && nr != SYS_FSTAT64 && nr != SYS_STAT64
                   && nr != SYS_OPENAT && nr != SYS_CLOSE && nr != SYS_OPEN
-                  && nr != SYS_FCNTL64 && nr != SYS_RT_SIGPROCMASK
+                  && nr != SYS_FCNTL && nr != SYS_RT_SIGPROCMASK
                   && nr != SYS_GETPID && nr != SYS_MMAP2
                   && nr != SYS_SET_TID_ADDRESS && nr != SYS_BRK
                   && nr != SYS_RT_SIGACTION && nr != SYS_MPROTECT
-                  && nr != SYS_GETUID32 && nr != SYS_GETEUID32
-                  && nr != SYS_GETGID32 && nr != SYS_GETEGID32
+                  && nr != SYS_GETUID && nr != SYS_GETEUID
+                  && nr != SYS_GETGID && nr != SYS_GETEGID
                   && nr != SYS_FUTEX);
 #endif
 
@@ -189,7 +189,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
     case SYS_RT_SIGRETURN:
         ret = sys_rt_sigreturn();
         break;
-    case SYS_FCNTL64:
+    case SYS_FCNTL:
         ret = sys_fcntl64(a0, a1, a2);
         break;
     case SYS_STAT64:
@@ -220,10 +220,10 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
         break;
 
     /* ── P0: trivial return-0 stubs ─────────────────────────────────────── */
-    case SYS_GETUID32:
-    case SYS_GETEUID32:
-    case SYS_GETGID32:
-    case SYS_GETEGID32:
+    case SYS_GETUID:
+    case SYS_GETEUID:
+    case SYS_GETGID:
+    case SYS_GETEGID:
         ret = 0;               /* always root */
         break;
     case SYS_FUTEX:
@@ -310,10 +310,10 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
     case SYS_RENAME:
         ret = -(long)ENOSYS;
         break;
-    case SYS_LCHOWN32:
-    case SYS_FCHOWN32:
-    case SYS_CHOWN32:
-    case SYS_SETGROUPS32:
+    case SYS_LCHOWN:
+    case SYS_FCHOWN:
+    case SYS_CHOWN:
+    case SYS_SETGROUPS:
         ret = 0;               /* single-user: ownership ops succeed */
         break;
     case SYS_GETCPU:
@@ -352,11 +352,6 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
         ret = sys_ppoll((void *)(uintptr_t)a0, (uint32_t)a1,
                         (const void *)(uintptr_t)a2,
                         (const void *)(uintptr_t)a3, a4);
-        break;
-    case SYS_PPOLL_TIME64:
-        ret = sys_ppoll_time64((void *)(uintptr_t)a0, (uint32_t)a1,
-                               (const void *)(uintptr_t)a2,
-                               (const void *)(uintptr_t)a3, a4);
         break;
 
     default:

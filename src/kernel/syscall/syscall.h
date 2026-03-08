@@ -1,19 +1,14 @@
 /*
- * syscall.h — Syscall numbers and dispatch interface
+ * syscall.h — PPAP syscall numbers and dispatch interface
  *
- * ARM EABI Linux convention (compatible with musl libc):
- *   r7    = syscall number
- *   r0–r3 = arguments 1–4 (hardware-stacked by Cortex-M0+)
- *   r4    = argument 5 (callee-saved, captured by SVC_Handler)
- *   r5    = argument 6 (callee-saved, captured by SVC_Handler)
- *   r0    = return value (negative errno on error)
- *   svc 0 triggers the SVC exception
+ * PPAP syscall convention:
+ *   ARM:  r7 = syscall number, r0–r3 = args 1–4, r4/r5 = args 5–6,
+ *         svc 0 triggers SVC exception, return value in r0.
+ *   m68k: d0 = syscall number, d1–d5 = args 1–5, a0 = arg 6,
+ *         trap #0 triggers syscall, return value in d0.
  *
- * SVC_Handler (svc.S) captures r4, r5, r7 before the compiler can
- * clobber them, reads the stacked r0–r3 exception frame from PSP,
- * and calls syscall_dispatch(frame, nr, a4, a5).  syscall_dispatch()
- * writes the return value back into the stacked r0 so the caller sees
- * it in r0 after exception return.
+ * Syscall numbers use a 16-bit scheme: high byte = group, low byte = index.
+ * Each group has 256 slots for future expansion.
  */
 
 #ifndef PPAP_SYSCALL_H
@@ -22,142 +17,131 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/* ── Syscall numbers (Linux-compatible) ─────────────────────────────────────
+/* ── Syscall numbers ──────────────────────────────────────────────────────────
  *
- * Numbers 1–197 are identical between ARM EABI and m68k Linux.
- * Higher numbers diverge; arch-specific overrides are in the #ifdef below.
+ * 16-bit numbering: group (high byte) | index (low byte).
+ * Architecture-independent — same numbers on ARM and m68k.
  */
 
-/* Common: identical on ARM and m68k (Linux old ABI, numbers 1–197) */
-#define SYS_EXIT         1
-#define SYS_FORK         2
-#define SYS_READ         3
-#define SYS_WRITE        4
-#define SYS_OPEN         5
-#define SYS_CLOSE        6
-#define SYS_WAITPID      7
-#define SYS_UNLINK      10
-#define SYS_EXECVE      11
-#define SYS_CHDIR       12
-#define SYS_MKNOD       14
-#define SYS_CHMOD       15
-#define SYS_LSEEK       19
-#define SYS_GETPID      20
-#define SYS_MOUNT       21
-#define SYS_ACCESS      33
-#define SYS_KILL        37
-#define SYS_RENAME      38
-#define SYS_MKDIR       39
-#define SYS_RMDIR       40
-#define SYS_DUP         41
-#define SYS_PIPE        42
-#define SYS_BRK         45
-#define SYS_UMOUNT2     52
-#define SYS_IOCTL       54
-#define SYS_SETPGID     57
-#define SYS_UMASK       60
-#define SYS_DUP2        63
-#define SYS_GETPPID     64
-#define SYS_SETSID      66
-#define SYS_SIGACTION   67
-#define SYS_GETTIMEOFDAY 78
-#define SYS_READLINK    85
-#define SYS_MUNMAP      91
-#define SYS_STAT       106
-#define SYS_FSTAT      108
-#define SYS_SIGRETURN  119
-#define SYS_CLONE      120
-#define SYS_UNAME      122
-#define SYS_MPROTECT   125
-#define SYS_GETPGID    132
-#define SYS_LLSEEK     140
-#define SYS_GETDENTS   141
-#define SYS_READV      145
-#define SYS_WRITEV     146
-#define SYS_NANOSLEEP  162
-#define SYS_MREMAP     163
-#define SYS_RT_SIGRETURN   173
-#define SYS_RT_SIGACTION   174
-#define SYS_RT_SIGPROCMASK 175
-#define SYS_GETCWD     183
-#define SYS_VFORK      190
-#define SYS_MMAP2      192
-#define SYS_STAT64     195
-#define SYS_LSTAT64    196
-#define SYS_FSTAT64    197
-#define SYS_WAIT4      114
-#define SYS_POLL       168
+/* Group 0x00: Process lifecycle */
+#define SYS_EXIT              0x0000
+#define SYS_EXIT_GROUP        0x0001
+#define SYS_VFORK             0x0002
+#define SYS_EXECVE            0x0003
+#define SYS_WAITPID           0x0004
+#define SYS_WAIT4             0x0005
+#define SYS_GETPID            0x0006
+#define SYS_UNAME             0x0007
+#define SYS_GETPPID           0x0008
+#define SYS_SETPGID           0x0009
+#define SYS_GETPGID           0x000A
+#define SYS_SETSID            0x000B
+#define SYS_CLONE             0x000C
+#define SYS_SET_TID_ADDRESS   0x000D
+#define SYS_FORK              0x000E
 
-/* Arch-specific: numbers that differ between ARM and m68k Linux */
-#if defined(__m68k__)
-#define SYS_CHOWN32    198
-#define SYS_GETUID32   199
-#define SYS_GETGID32   200
-#define SYS_GETEUID32  201
-#define SYS_GETEGID32  202
-#define SYS_SETGROUPS32 206
-#define SYS_FCHOWN32   207
-#define SYS_LCHOWN32   212
-#define SYS_GETDENTS64 220
-#define SYS_FUTEX      235
-#define SYS_FCNTL64    239
-#define SYS_EXIT_GROUP 247
-#define SYS_SET_TID_ADDRESS 253
-#define SYS_CLOCK_GETTIME32 260
-#define SYS_CLOCK_NANOSLEEP32 262
-#define SYS_STATFS64   263
-#define SYS_FSTATFS64  264
-#define SYS_UTIMES     266
-#define SYS_OPENAT     288
-#define SYS_FSTATAT64  293
-#define SYS_PPOLL      302
-#define SYS_GETCPU     314
-#define SYS_STATX      379
-#else /* ARM */
-#define SYS_LCHOWN32   198
-#define SYS_GETUID32   199
-#define SYS_GETGID32   200
-#define SYS_GETEUID32  201
-#define SYS_GETEGID32  202
-#define SYS_SETGROUPS32 206
-#define SYS_FCHOWN32   207
-#define SYS_CHOWN32    212
-#define SYS_GETDENTS64 217
-#define SYS_FCNTL64    221
-#define SYS_FUTEX      240
-#define SYS_EXIT_GROUP 248
-#define SYS_SET_TID_ADDRESS 256
-#define SYS_CLOCK_GETTIME32 263
-#define SYS_CLOCK_NANOSLEEP32 265
-#define SYS_STATFS64   266
-#define SYS_FSTATFS64  267
-#define SYS_UTIMES     269
-#define SYS_OPENAT     322
-#define SYS_FSTATAT64  327
-#define SYS_PPOLL      336
-#define SYS_GETCPU     345
-#define SYS_STATX      397
-#endif
+/* Group 0x01: I/O */
+#define SYS_READ              0x0100
+#define SYS_WRITE             0x0101
+#define SYS_OPEN              0x0102
+#define SYS_CLOSE             0x0103
+#define SYS_DUP               0x0104
+#define SYS_DUP2              0x0105
+#define SYS_PIPE              0x0106
+#define SYS_IOCTL             0x0107
+#define SYS_FCNTL             0x0108
+#define SYS_READV             0x0109
+#define SYS_WRITEV            0x010A
+#define SYS_LSEEK             0x010B
 
-/* Common time64 syscalls (same on ARM and m68k) */
-#define SYS_CLOCK_GETTIME64  403
-#define SYS_CLOCK_NANOSLEEP64 407
-#define SYS_PPOLL_TIME64     414
+/* Group 0x02: File system — paths */
+#define SYS_STAT              0x0200
+#define SYS_FSTAT             0x0201
+#define SYS_ACCESS            0x0202
+#define SYS_GETCWD            0x0203
+#define SYS_MKDIR             0x0204
+#define SYS_RMDIR             0x0205
+#define SYS_UNLINK            0x0206
+#define SYS_CHDIR             0x0207
+#define SYS_READLINK          0x0208
+#define SYS_RENAME            0x0209
+#define SYS_MKNOD             0x020A
+#define SYS_CHMOD             0x020B
+#define SYS_OPENAT            0x020C
+#define SYS_FSTATAT64         0x020D
 
-/* AT_FDCWD: musl's *at syscalls use this as dirfd for cwd-relative paths */
+/* Group 0x03: File system — extended */
+#define SYS_GETDENTS          0x0300
+#define SYS_STAT64            0x0301
+#define SYS_FSTAT64           0x0302
+#define SYS_UMASK             0x0303
+#define SYS_LSTAT64           0x0304
+#define SYS_STATFS64          0x0305
+#define SYS_FSTATFS64         0x0306
+#define SYS_LLSEEK            0x0307
+#define SYS_STATX             0x0308
+#define SYS_UTIMES            0x0309
+#define SYS_GETDENTS64        0x030A
+
+/* Group 0x04: Memory management */
+#define SYS_BRK               0x0400
+#define SYS_MMAP2             0x0401
+#define SYS_MUNMAP            0x0402
+#define SYS_MPROTECT          0x0403
+#define SYS_MREMAP            0x0404
+
+/* Group 0x05: Time */
+#define SYS_NANOSLEEP         0x0500
+#define SYS_CLOCK_GETTIME32   0x0501
+#define SYS_GETTIMEOFDAY      0x0502
+#define SYS_CLOCK_NANOSLEEP32 0x0503
+#define SYS_CLOCK_GETTIME64   0x0504
+#define SYS_CLOCK_NANOSLEEP64 0x0505
+
+/* Group 0x06: Signals */
+#define SYS_KILL              0x0600
+#define SYS_SIGACTION         0x0601
+#define SYS_SIGRETURN         0x0602
+#define SYS_RT_SIGACTION      0x0603
+#define SYS_RT_SIGPROCMASK    0x0604
+#define SYS_RT_SIGRETURN      0x0605
+
+/* Group 0x07: Poll */
+#define SYS_POLL              0x0700
+#define SYS_PPOLL             0x0701
+
+/* Group 0x08: User/group identity */
+#define SYS_GETUID            0x0800
+#define SYS_GETGID            0x0801
+#define SYS_GETEUID           0x0802
+#define SYS_GETEGID           0x0803
+#define SYS_CHOWN             0x0804
+#define SYS_LCHOWN            0x0805
+#define SYS_SETGROUPS         0x0806
+#define SYS_FCHOWN            0x0807
+
+/* Group 0x09: Mount / filesystem ops */
+#define SYS_MOUNT             0x0900
+#define SYS_UMOUNT2           0x0901
+
+/* Group 0x0A: Misc */
+#define SYS_FUTEX             0x0A00
+#define SYS_GETCPU            0x0A01
+
+/* AT_FDCWD: *at syscalls use this as dirfd for cwd-relative paths */
 #define AT_FDCWD       (-100)
 
 /* ── Dispatch ──────────────────────────────────────────────────────────────── */
 
 /*
- * Called from SVC_Handler (svc.S) with:
- *   frame[0..3] = stacked r0-r3 (syscall arguments a0-a3)
- *   nr          = syscall number (captured from r7)
- *   a4          = 5th argument (captured from r4)
- *   a5          = 6th argument (captured from r5)
+ * Called from the arch-specific trap handler with:
+ *   frame[0..3] = syscall arguments a0-a3
+ *   nr          = syscall number
+ *   a4          = 5th argument
+ *   a5          = 6th argument
  *
  * Dispatches to the appropriate sys_* implementation and writes the return
- * value into frame[0] (stacked r0) so the caller sees it after SVC return.
+ * value into frame[0] so the caller sees it after trap return.
  */
 void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5);
 
@@ -177,10 +161,6 @@ extern volatile int      svc_restart[2];
 extern volatile uint32_t svc_saved_a0[2];
 
 /* ── Syscall implementations ───────────────────────────────────────────────── */
-/*
- * Declared here; defined in syscall.c (stubs) until Steps 9-10 wire them
- * up to the process table, fd table, and sleep timer.
- */
 
 /* sys_proc.c */
 long sys_exit(long status);
@@ -264,7 +244,5 @@ long sys_fstatfs64(long fd, long sz, void *buf);
 long sys_poll(void *fds, uint32_t nfds, long timeout_ms);
 long sys_ppoll(void *fds, uint32_t nfds, const void *timeout,
                const void *sigmask, uint32_t sigsetsize);
-long sys_ppoll_time64(void *fds, uint32_t nfds, const void *timeout,
-                      const void *sigmask, uint32_t sigsetsize);
 
 #endif /* PPAP_SYSCALL_H */
