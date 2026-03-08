@@ -63,7 +63,7 @@ _vectors:
     .long Default_Handler          | 27: Level 3 autovector
     .long Default_Handler          | 28: Level 4 autovector
     .long Default_Handler          | 29: Level 5 autovector
-    .long Default_Handler          | 30: Level 6 autovector
+    .long m68k_timer_isr           | 30: Level 6 autovector (Goldfish RTC)
     .long Default_Handler          | 31: Level 7 autovector (NMI)
 
     | --- Exception vectors 32-47: TRAP #0-#15 ---

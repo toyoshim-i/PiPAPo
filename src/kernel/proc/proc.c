@@ -166,9 +166,10 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp)
 #elif defined(__m68k__)
     /*
      * M68K: two layers on the stack (high → low):
-     *  1. Exception frame (SR + PC, 3 words / 6 bytes): popped by RTE.
-     *  2. Software callee-saved frame (11 longs, d2–d7/a2–a6): loaded
-     *     by switch.S.
+     *  1. Exception frame (SR + PC, 6 bytes): popped by RTE.
+     *  2. Software register frame (15 longs, d0–d7/a0–a6): loaded
+     *     by switch.S via movem.l.  All registers are saved (not just
+     *     callee-saved) so timer ISR and TRAP #1 use the same format.
      */
     /* Exception frame: SR (16-bit) + PC (32-bit) = 6 bytes.
      * RTE pops: SR from [SP], PC from [SP+2].
@@ -176,18 +177,23 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp)
     *--sp = (uint32_t)entry;              /* PC: entry point (4 bytes)   */
     sp = (uint32_t *)((uint8_t *)sp - 2); /* back up 2 bytes for SR      */
     *(uint16_t *)sp = SR_SUPV_IRQ;        /* SR: supervisor, IPL=0       */
-    /* Software callee-saved frame (a6..a2, d7..d2, high → low) */
+    /* Software register frame (a6..a0, d7..d0, high → low).
+     * Must match movem.l %d0-%d7/%a0-%a6 register order. */
     *--sp = 0u;   /* a6 */
     *--sp = 0u;   /* a5 */
     *--sp = 0u;   /* a4 */
     *--sp = 0u;   /* a3 */
     *--sp = 0u;   /* a2 */
+    *--sp = 0u;   /* a1 */
+    *--sp = 0u;   /* a0 */
     *--sp = 0u;   /* d7 */
     *--sp = 0u;   /* d6 */
     *--sp = 0u;   /* d5 */
     *--sp = 0u;   /* d4 */
     *--sp = 0u;   /* d3 */
-    *--sp = 0u;   /* d2 */   /* ← pcb_t.sp points here */
+    *--sp = 0u;   /* d2 */
+    *--sp = 0u;   /* d1 */
+    *--sp = 0u;   /* d0 */   /* ← pcb_t.sp points here */
 #endif
 
     p->sp = (uint32_t)(uintptr_t)sp;

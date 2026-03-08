@@ -36,6 +36,7 @@ add_executable(ppap_qemu_m68k
     # Target
     ${CMAKE_CURRENT_SOURCE_DIR}/target_qemu_m68k.c
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/uart_qemu_m68k.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/drivers/timer_qemu_m68k.c
 
     # Shared kernel — core subsystems
     ${PPAP_ROOT}/src/kernel/klog.c
