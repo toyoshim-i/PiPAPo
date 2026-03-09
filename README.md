@@ -22,7 +22,7 @@ A portable UNIX-like micro OS for bare-metal microcontrollers and retro CPUs.
 | `qemu_arm` | QEMU mps2-an500 | ARM Cortex-M0+ | ARMv6-M (Thumb-1) | 4 MB |
 | `pico1` | Raspberry Pi Pico | ARM Cortex-M0+ | Dual-core @ 133 MHz | 264 KB |
 | `pico1calc` | ClockworkPi PicoCalc | ARM Cortex-M0+ | Dual-core @ 133 MHz | 264 KB |
-| `qemu_m68k` | QEMU MCF5208 | Motorola 68000 | ColdFire V2 | 32 MB |
+| `qemu_m68k` | QEMU virt m68k | Motorola 68000 | m68000 | Up to 16 MB (auto-detected) |
 
 All targets share the same kernel source, syscall interface, VFS, and process model. Only drivers, boot sequences, linker scripts, and architecture-specific code (context switch, syscall trap) differ per target.
 
@@ -237,6 +237,18 @@ UF2 output to exclude this region (`tools/uf2sanitize.py`).
 | I/O buffer | `0x20038000` | 24 KB | SD / FS cache  |
 | DMA / Reserved | `0x2003E000` | 16 KB | DMA, PIO, Core 1 stack |
 
-### m68k (QEMU MCF5208)
+### m68k (QEMU virt)
 
-The m68k target runs on QEMU's MCF5208 ColdFire emulation with 32 MB RAM. The kernel and romfs are loaded into RAM. See [docs/target-68000.md](docs/target-68000.md) for architecture-specific details.
+The m68k target runs on QEMU's `virt` machine with a pure 68000 CPU. Available
+RAM is auto-detected at boot via a two-phase probe (1 MB coarse + 4 KB fine
+steps), supporting up to 16 MB (`PAGE_COUNT_MAX=4096`). The kernel, romfs, and
+page pool all reside in RAM.
+
+| Region | Address | Size | Purpose |
+|---|---|---|---|
+| Vector table | `0x00000000` | 1 KB | 68000 exception vectors |
+| Kernel | `0x00000400` | ~variable | `.text` + `.rodata` + `.data` + `.bss` |
+| Kernel stack | after BSS | 16 KB | Supervisor stack |
+| Page pool | after stack (4 KB aligned) | runtime-detected | User process pages |
+
+See [docs/target-68000.md](docs/target-68000.md) for architecture-specific details.

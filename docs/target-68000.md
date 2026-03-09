@@ -404,10 +404,27 @@ Recommended: **`virt`** if available in the QEMU version, otherwise
 
 | Region | Address | Size | Purpose |
 |---|---|---|---|
-| RAM | 0x00000000 | 128 MB (configurable) | Vector table + kernel + page pool |
-| UART | 0xFF000000 (TBD) | 4 KB | Goldfish or 8250-style UART |
+| RAM | 0x00000000 | Up to 16 MB (runtime-detected) | Vector table + kernel + romfs + page pool |
+| UART | 0xFF008000 | 4 KB | Goldfish TTY |
 
-Exact addresses depend on QEMU machine type; verify with `-machine dumpdtb`.
+RAM size is auto-detected at boot by `m68k_probe_ram()` (assembly routine in
+`src/arch/m68k/probe_ram.S`). The probe uses a two-phase approach for efficiency:
+
+1. **Coarse phase** — 1 MB steps to find the approximate RAM boundary
+2. **Fine phase** — 4 KB steps to find the exact page-aligned boundary
+
+Each step writes a unique pattern (0xA5F01234), reads it back to verify, and
+restores the original value. This handles both real hardware (bus errors on
+unmapped access) and emulators (QEMU returns 0 for unmapped reads without
+generating a bus error).
+
+The probe range is bounded by `RAM_END` (target-configurable via CMake
+`-DRAM_END=...`). Default: `PAGE_POOL_BASE + PAGE_COUNT_MAX * PAGE_SIZE`.
+For X68000, `RAM_END=0xC00000` excludes VRAM.
+
+`PAGE_COUNT_MAX` (compile-time, 4096 for QEMU = 16 MB capacity) sizes the
+static free-stack array; `page_count` (runtime) holds the actual detected
+page count.
 
 ### 6.3 Target Files
 
@@ -422,14 +439,19 @@ src/target/qemu_m68k/
 ### 6.4 Toolchain
 
 ```
-m68k-elf-gcc            — bare-metal cross compiler
+m68k-elf-gcc            — bare-metal cross compiler (custom-built)
 m68k-elf-as / m68k-elf-ld
 m68k-elf-gdb            — debugger
 qemu-system-m68k        — emulator
 ```
 
-Install: `apt install gcc-m68k-linux-gnu` or build from source for
-`m68k-elf` target (bare-metal, newlib).
+The m68k toolchain is a custom-built `m68k-elf-gcc` (bare-metal, no libc).
+Build it with `third_party/build-gcc-m68k.sh`, which produces a 68000-safe
+toolchain (no 68020+ instructions in libgcc). The `gcc-m68k-linux-gnu`
+package from apt targets Linux userspace and is **not** suitable for
+bare-metal kernel builds.
+
+QEMU: `apt install qemu-system-m68k`.
 
 ---
 

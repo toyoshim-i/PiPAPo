@@ -27,7 +27,7 @@ OomCount:      0
 | PageSize   | Page allocator granularity in bytes (always 4096) |
 | OomCount   | Number of `page_alloc()` failures since boot     |
 
-Source: `page_free_count()`, `PAGE_COUNT`, and `oom_count` from `mm/page.c`.
+Source: `page_free_count()`, `page_count` (runtime-detected), and `oom_count` from `mm/page.c`.
 
 ---
 

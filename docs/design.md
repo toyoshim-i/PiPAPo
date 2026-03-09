@@ -48,9 +48,11 @@ Memory layout varies per target. Each target defines its own linker script and m
 Code and read-only data execute directly via XIP from flash — no SRAM copy needed.
 The romfs image follows the kernel in flash and is accessed via memory-mapped reads.
 
-### m68k (QEMU MCF5208) — RAM (32 MB)
+### m68k (QEMU virt) — RAM (runtime-detected, up to 16 MB)
 
-Kernel, data, and romfs are all in RAM. The page pool is allocated from remaining memory after the kernel BSS.
+Kernel, data, and romfs are all in RAM. The page pool starts after the kernel
+BSS and stack (linker symbol `__page_pool_start`). Available RAM is detected
+at boot by `m68k_probe_ram()` — see Page Allocator below.
 
 ## Page Allocator
 
@@ -58,11 +60,20 @@ Free-stack design: O(1) alloc and free using a simple stack of page addresses.
 No linked-list traversal.
 
 ```
-page_alloc()  → pop from free stack, zero page
+page_alloc()  → pop from free stack
 page_free()   → push back to free stack (with double-free detection)
 ```
 
-The number of available pages depends on the target's memory (e.g. 51 pages on RP2040, more on m68k QEMU).
+The static free-stack array is sized by `PAGE_COUNT_MAX` (compile-time maximum),
+while the runtime `page_count` variable holds the actual number of usable pages:
+
+- **ARM (RP2040):** `page_count = PAGE_COUNT_MAX = 51` (fixed 204 KB SRAM pool).
+- **m68k:** `page_count` is set by `m68k_probe_ram()`, which detects installed
+  RAM at boot using a two-phase write-pattern-verify probe (1 MB coarse steps,
+  then 4 KB fine steps). The probe ceiling is target-configurable via `RAM_END`
+  (e.g., X68000 sets `RAM_END=0xC00000` to exclude VRAM). Probed values are
+  saved and restored to avoid corrupting existing memory contents (e.g., the
+  vector table at address 0).
 
 On dual-core targets (RP2040), the allocator is protected by a hardware spinlock (`SPIN_PAGE`).
 
