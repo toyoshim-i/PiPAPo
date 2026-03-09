@@ -82,6 +82,13 @@ case "$TARGET" in
             "$PROJECT_DIR/third_party/build-gcc-m68k.sh"
         fi
 
+        # Ensure musl sysroot exists (--clean wipes build/m68k/ including it)
+        M68K_MUSL="$BUILD_DIR/musl-sysroot/lib/libc.a"
+        if [[ ! -f "$M68K_MUSL" ]]; then
+            echo "[build] Building musl libc for m68k..."
+            "$PROJECT_DIR/third_party/build-musl.sh" --m68k
+        fi
+
         echo "[build] Building $CMAKE_TARGET (PPAP_TESTS=$TESTS)..."
         cmake -DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/cmake/toolchain-m68k.cmake" \
               -DPPAP_TESTS="$TESTS" \

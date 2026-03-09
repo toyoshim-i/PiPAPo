@@ -21,6 +21,10 @@ set(CMAKE_C_STANDARD 11)
 # Project root (three levels up from src/target/qemu_m68k/)
 set(PPAP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
+# Shared applet and user program lists
+include(${PPAP_ROOT}/cmake/busybox_applets.cmake)
+include(${PPAP_ROOT}/cmake/user_programs.cmake)
+
 # Shared kernel sources compiled for m68k.
 # ARM-only files (xip.c, mpu.c) are excluded.
 # smp.c, signal.c, elf.c have m68k guards.
@@ -173,17 +177,14 @@ function(m68k_user_program name source)
     )
 endfunction()
 
-m68k_user_program(hello  ${PPAP_ROOT}/src/user/hello.c)
-m68k_user_program(init   ${PPAP_ROOT}/src/user/init.c)
-m68k_user_program(getty  ${PPAP_ROOT}/src/user/getty.c)
-m68k_user_program(ttyctl ${PPAP_ROOT}/src/user/ttyctl.c)
+foreach(app ${USER_APPS})
+    m68k_user_program(${app} ${PPAP_ROOT}/src/user/${app}.c)
+endforeach()
 
-set(M68K_USER_ELFS
-    ${CMAKE_BINARY_DIR}/hello.elf
-    ${CMAKE_BINARY_DIR}/init.elf
-    ${CMAKE_BINARY_DIR}/getty.elf
-    ${CMAKE_BINARY_DIR}/ttyctl.elf
-)
+set(M68K_USER_ELFS "")
+foreach(app ${USER_APPS})
+    list(APPEND M68K_USER_ELFS ${CMAKE_BINARY_DIR}/${app}.elf)
+endforeach()
 
 # Test programs (only built when PPAP_TESTS=ON)
 if(PPAP_TESTS)
@@ -205,45 +206,10 @@ if(PPAP_TESTS)
         )
     endfunction()
 
-    m68k_test_program(test_exec       ${M68K_TESTS_DIR}/test_exec.c)
-    m68k_test_program(test_vfork      ${M68K_TESTS_DIR}/test_vfork.c)
-    m68k_test_program(test_fault      ${M68K_TESTS_DIR}/test_fault.c)
-    m68k_test_program(test_pipe       ${M68K_TESTS_DIR}/test_pipe.c)
-    m68k_test_program(test_brk        ${M68K_TESTS_DIR}/test_brk.c)
-    m68k_test_program(test_fd         ${M68K_TESTS_DIR}/test_fd.c)
-    m68k_test_program(test_signal     ${M68K_TESTS_DIR}/test_signal.c)
-    m68k_test_program(test_poll       ${M68K_TESTS_DIR}/test_poll.c)
-    m68k_test_program(test_sleep_intr ${M68K_TESTS_DIR}/test_sleep_intr.c)
-    m68k_test_program(test_orphan     ${M68K_TESTS_DIR}/test_orphan.c)
-    m68k_test_program(test_id         ${M68K_TESTS_DIR}/test_id.c)
-    m68k_test_program(test_fs         ${M68K_TESTS_DIR}/test_fs.c)
-    m68k_test_program(test_rw         ${M68K_TESTS_DIR}/test_rw.c)
-    m68k_test_program(test_time       ${M68K_TESTS_DIR}/test_time.c)
-    m68k_test_program(test_iov        ${M68K_TESTS_DIR}/test_iov.c)
-    m68k_test_program(test_stat       ${M68K_TESTS_DIR}/test_stat.c)
-    m68k_test_program(test_tmpfs      ${M68K_TESTS_DIR}/test_tmpfs.c)
-    m68k_test_program(runtests        ${M68K_TESTS_DIR}/runtests.c)
-
-    list(APPEND M68K_USER_ELFS
-        ${CMAKE_BINARY_DIR}/test_exec.elf
-        ${CMAKE_BINARY_DIR}/test_vfork.elf
-        ${CMAKE_BINARY_DIR}/test_fault.elf
-        ${CMAKE_BINARY_DIR}/test_pipe.elf
-        ${CMAKE_BINARY_DIR}/test_brk.elf
-        ${CMAKE_BINARY_DIR}/test_fd.elf
-        ${CMAKE_BINARY_DIR}/test_signal.elf
-        ${CMAKE_BINARY_DIR}/test_poll.elf
-        ${CMAKE_BINARY_DIR}/test_sleep_intr.elf
-        ${CMAKE_BINARY_DIR}/test_orphan.elf
-        ${CMAKE_BINARY_DIR}/test_id.elf
-        ${CMAKE_BINARY_DIR}/test_fs.elf
-        ${CMAKE_BINARY_DIR}/test_rw.elf
-        ${CMAKE_BINARY_DIR}/test_time.elf
-        ${CMAKE_BINARY_DIR}/test_iov.elf
-        ${CMAKE_BINARY_DIR}/test_stat.elf
-        ${CMAKE_BINARY_DIR}/test_tmpfs.elf
-        ${CMAKE_BINARY_DIR}/runtests.elf
-    )
+    foreach(tst ${USER_TESTS})
+        m68k_test_program(${tst} ${M68K_TESTS_DIR}/${tst}.c)
+        list(APPEND M68K_USER_ELFS ${CMAKE_BINARY_DIR}/${tst}.elf)
+    endforeach()
 endif()
 
 # --- Busybox (pre-built by build-busybox.sh --m68k) ---
@@ -261,12 +227,6 @@ add_custom_command(
     COMMENT "Building rogue (PIC, m68k)"
 )
 
-# Busybox applet symlinks (same as ARM install-busybox.sh)
-set(BB_APPLETS cat chmod cp df echo grep head kill ln ls mkdir mv
-               printf ps rm rmdir sed sleep sort tail top uname vi wc)
-set(BB_SHELL_APPLETS sh hush)
-set(BB_SBIN_APPLETS mount umount)
-
 # --- Build mkromfs host tool ---
 add_custom_command(
     OUTPUT ${CMAKE_BINARY_DIR}/mkromfs
@@ -283,69 +243,19 @@ set(ROMFS_STAGING ${CMAKE_BINARY_DIR}/romfs)
 set(ROMFS_BIN     ${CMAKE_BINARY_DIR}/romfs_m68k.bin)
 set(ROMFS_ASM     ${CMAKE_BINARY_DIR}/romfs_data_m68k.S)
 
-# Convert CMake lists to space-separated strings for shell script
-string(REPLACE ";" " " M68K_USER_ELFS_STR "${M68K_USER_ELFS}")
-string(REPLACE ";" " " BB_APPLETS_STR "${BB_APPLETS}")
-string(REPLACE ";" " " BB_SHELL_APPLETS_STR "${BB_SHELL_APPLETS}")
-string(REPLACE ";" " " BB_SBIN_APPLETS_STR "${BB_SBIN_APPLETS}")
-
-# Build a shell script to assemble the romfs staging directory.
-# This handles symlink creation which cmake -E can't do portably.
-set(ROMFS_SCRIPT ${CMAKE_BINARY_DIR}/stage_romfs.sh)
-file(WRITE ${ROMFS_SCRIPT}
-"#!/bin/bash
-set -e
-STAGING=$1
-BB_DIR=$2
-ROGUE=$3
-
-# Create directory structure
-rm -rf $STAGING
-mkdir -p $STAGING/bin $STAGING/sbin $STAGING/etc $STAGING/dev
-mkdir -p $STAGING/proc $STAGING/tmp $STAGING/usr/bin $STAGING/usr/include
-
-# Install user programs
-for elf in ${M68K_USER_ELFS_STR}; do
-    name=$(basename $elf .elf)
-    case $name in
-        init)   cp $elf $STAGING/sbin/$name ;;
-        ttyctl) cp $elf $STAGING/usr/bin/$name ;;
-        *)      cp $elf $STAGING/bin/$name ;;
-    esac
-done
-
-# Install busybox (if built)
-if [ -f $BB_DIR/busybox ]; then
-    cp $BB_DIR/busybox $STAGING/bin/busybox
-    cp $BB_DIR/busybox.sh $STAGING/bin/busybox.sh
-    # Applet symlinks
-    for a in ${BB_APPLETS_STR}; do ln -sf busybox $STAGING/bin/$a; done
-    for a in ${BB_SHELL_APPLETS_STR}; do ln -sf busybox.sh $STAGING/bin/$a; done
-    for a in ${BB_SBIN_APPLETS_STR}; do ln -sf ../bin/busybox $STAGING/sbin/$a; done
-fi
-
-# Install rogue (if built)
-if [ -f $ROGUE ]; then
-    cp $ROGUE $STAGING/bin/rogue
-fi
-
-# Install shared ABI headers into /usr/include/
-cp ${PPAP_ROOT}/src/common/*.h $STAGING/usr/include/
-")
-
 add_custom_command(
     OUTPUT ${ROMFS_BIN}
-    # Stage romfs
-    COMMAND bash ${ROMFS_SCRIPT}
-            ${ROMFS_STAGING} ${M68K_BB_DIR} ${M68K_ROGUE}
-    # Copy shared /etc files, then override with target-specific config
-    COMMAND cp -a ${PPAP_ROOT}/src/etc/. ${ROMFS_STAGING}/etc/
-    COMMAND ${CMAKE_COMMAND} -E copy
-            ${CMAKE_CURRENT_SOURCE_DIR}/romfs/etc/fstab
-            ${ROMFS_STAGING}/etc/fstab
-    COMMAND ${CMAKE_COMMAND} -E copy
-            ${CMAKE_CURRENT_SOURCE_DIR}/romfs/etc/inittab
-            ${ROMFS_STAGING}/etc/inittab
+    COMMAND ${PPAP_ROOT}/cmake/stage-romfs.sh
+            ${ROMFS_STAGING} ${PPAP_ROOT}
+            --user-elfs ${M68K_USER_ELFS}
+            --bb-dir ${M68K_BB_DIR}
+            --bb-applets ${BB_APPLETS}
+            --bb-shell-applets ${BB_SHELL_APPLETS}
+            --bb-sbin-applets ${BB_SBIN_APPLETS}
+            --rogue ${M68K_ROGUE}
+            --etc-dir ${PPAP_ROOT}/src/etc
+            --fstab ${CMAKE_CURRENT_SOURCE_DIR}/romfs/etc/fstab
+            --inittab ${CMAKE_CURRENT_SOURCE_DIR}/romfs/etc/inittab
     # Build big-endian romfs image
     COMMAND ${CMAKE_BINARY_DIR}/mkromfs -b
             ${ROMFS_STAGING} ${ROMFS_BIN}
@@ -356,6 +266,7 @@ add_custom_command(
             ${PPAP_ROOT}/src/etc/inittab
             ${CMAKE_CURRENT_SOURCE_DIR}/romfs/etc/fstab
             ${CMAKE_CURRENT_SOURCE_DIR}/romfs/etc/inittab
+            ${PPAP_ROOT}/cmake/stage-romfs.sh
     COMMENT "Generating big-endian romfs for m68k"
 )
 
