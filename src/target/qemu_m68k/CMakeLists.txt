@@ -178,11 +178,15 @@ m68k_user_program(init   ${PPAP_ROOT}/src/user/init.c)
 m68k_user_program(getty  ${PPAP_ROOT}/src/user/getty.c)
 m68k_user_program(ttyctl ${PPAP_ROOT}/src/user/ttyctl.c)
 
+# Test programs
+m68k_user_program(test_fault  ${PPAP_ROOT}/tests/user/test_fault.c)
+
 set(M68K_USER_ELFS
     ${CMAKE_BINARY_DIR}/hello.elf
     ${CMAKE_BINARY_DIR}/init.elf
     ${CMAKE_BINARY_DIR}/getty.elf
     ${CMAKE_BINARY_DIR}/ttyctl.elf
+    ${CMAKE_BINARY_DIR}/test_fault.elf
 )
 
 # --- Busybox (pre-built by build-busybox.sh --m68k) ---

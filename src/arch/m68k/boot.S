@@ -38,15 +38,15 @@ _vectors:
     .long Reset_Handler            | 1: Initial PC (reset entry point)
 
     | --- Exception vectors 2-7 ---
-    .long m68k_fault_handler       | 2:  Bus Error
-    .long m68k_fault_handler       | 3:  Address Error
-    .long m68k_illegal_handler      | 4:  Illegal Instruction
-    .long Default_Handler          | 5:  Zero Divide
-    .long Default_Handler          | 6:  CHK
-    .long Default_Handler          | 7:  TRAPV
+    .long m68k_fault_handler       | 2:  Bus Error      (group 0, 14-byte frame)
+    .long m68k_fault_handler       | 3:  Address Error   (group 0, 14-byte frame)
+    .long m68k_illegal_handler     | 4:  Illegal Instruction (group 1, 6-byte frame)
+    .long m68k_zerodiv_handler     | 5:  Zero Divide     (group 1, 6-byte frame)
+    .long m68k_chk_handler         | 6:  CHK             (group 1, 6-byte frame)
+    .long m68k_chk_handler         | 7:  TRAPV           (group 1, 6-byte frame)
 
     | --- Exception vectors 8-11 ---
-    .long Default_Handler          | 8:  Privilege Violation
+    .long m68k_priv_handler        | 8:  Privilege Violation (group 1, 6-byte frame)
     .long Default_Handler          | 9:  Trace
     .long Default_Handler          | 10: A-line emulator
     .long Default_Handler          | 11: F-line emulator
@@ -158,60 +158,141 @@ Reset_Handler:
     .section .text, "ax"
     .align 2
 
-| --- Fault handler for Bus Error / Address Error / Illegal Instruction ---
-| 68000 pushes extra info for group 0 faults (bus/addr error):
+| =============================================================================
+| Fault handlers
+|
+| Bus Error / Address Error (group 0) push a 14-byte frame:
 |   [SP+0]  Function code (word)
 |   [SP+2]  Access address (long)
 |   [SP+6]  Instruction register (word)
 |   [SP+8]  SR (word)
 |   [SP+10] PC (long)
-| For Illegal Instruction (group 1):
+|
+| Illegal Instruction / Zero Divide / etc. (group 1/2) push a 6-byte frame:
 |   [SP+0]  SR (word)
 |   [SP+2]  PC (long)
-| We pass SP to C for decoding.
+|
+| All fault handlers save full register state, call the C handler which
+| prints a crash report.  If the faulting process is a user process, the
+| C handler kills it and we reschedule.  If it's the kernel (pid 0), we halt.
+| =============================================================================
+
+| --- Bus Error / Address Error (group 0 — 14-byte exception frame) ---
     .global m68k_fault_handler
 m68k_fault_handler:
-    move.l  %sp,%d0
-    move.l  %d0,%sp@-
-    jsr     m68k_fault_handler_c
-    addq.l  #4,%sp
-    stop    #0x2700
-    bra.s   m68k_fault_handler
+    movem.l %d0-%d7/%a0-%a6,%sp@-   | save all regs (60 bytes)
+    move.l  %sp,%sp@-               | arg2: register frame
+    pea.l   2                        | arg1: fault_type = FAULT_BUS
+    jsr     m68k_crash_handler
+    addq.l  #8,%sp
+    | If crash_handler returns, it killed the process — reschedule
+    tst.l   %d0
+    beq.s   .Lfault_halt
+    | Discard saved regs + group-0 exception frame (60+14=74 bytes)
+    lea.l   %sp@(74),%sp
+    jmp     m68k_schedule_next
 
-| --- Illegal instruction handler with 68020 instruction emulation ---
-| Saves all registers like trap.S, calls the C emulator which may modify
-| the frame (register values + PC), then restores and returns via RTE.
-| If the C handler returns non-zero (unhandled), we halt.
+.Lfault_halt:
+    stop    #0x2700
+    bra.s   .Lfault_halt
+
+| --- Illegal Instruction (group 1 — 6-byte exception frame) ---
+| Tries 68020 emulation first; on failure, crash the process.
     .global m68k_illegal_handler
 m68k_illegal_handler:
-    | Save ALL registers (d0-d7/a0-a6 = 15 × 4 = 60 bytes)
     movem.l %d0-%d7/%a0-%a6,%sp@-
-
-    | Pass pointer to register frame
     move.l  %sp,%d0
     move.l  %d0,%sp@-
     jsr     m68k_emulate_insn
     addq.l  #4,%sp
 
-    | d0 = 0: emulated OK, d0 != 0: unhandled
     tst.l   %d0
-    bne.s   .Lillegal_halt
+    bne.s   .Lillegal_unhandled
 
-    | Success — restore and return (PC was advanced by emulator)
+    | Emulated OK — restore and return
     movem.l %sp@+,%d0-%d7/%a0-%a6
     rte
 
+.Lillegal_unhandled:
+    | Not emulatable — crash the process
+    move.l  %sp,%sp@-               | arg2: register frame
+    pea.l   4                        | arg1: fault_type = FAULT_ILLEGAL
+    jsr     m68k_crash_handler
+    addq.l  #8,%sp
+    tst.l   %d0
+    beq.s   .Lillegal_halt
+    lea.l   %sp@(66),%sp             | discard regs + group-1 frame (60+6)
+    jmp     m68k_schedule_next
 .Lillegal_halt:
-    | Unhandled — restore regs for debug, then halt
-    movem.l %sp@+,%d0-%d7/%a0-%a6
-    move.l  %sp,%d0
-    move.l  %d0,%sp@-
-    jsr     m68k_fault_handler_c
-    addq.l  #4,%sp
     stop    #0x2700
     bra.s   .Lillegal_halt
+
+| --- Zero Divide (group 1 — 6-byte exception frame) ---
+    .global m68k_zerodiv_handler
+m68k_zerodiv_handler:
+    movem.l %d0-%d7/%a0-%a6,%sp@-
+    move.l  %sp,%sp@-
+    pea.l   5                        | fault_type = FAULT_ZERODIV
+    jsr     m68k_crash_handler
+    addq.l  #8,%sp
+    tst.l   %d0
+    beq.s   .Lzerodiv_halt
+    lea.l   %sp@(66),%sp
+    jmp     m68k_schedule_next
+.Lzerodiv_halt:
+    stop    #0x2700
+    bra.s   .Lzerodiv_halt
+
+| --- CHK / TRAPV (group 1 — 6-byte exception frame) ---
+    .global m68k_chk_handler
+m68k_chk_handler:
+    movem.l %d0-%d7/%a0-%a6,%sp@-
+    move.l  %sp,%sp@-
+    pea.l   6                        | fault_type = FAULT_CHK
+    jsr     m68k_crash_handler
+    addq.l  #8,%sp
+    tst.l   %d0
+    beq.s   .Lchk_halt
+    lea.l   %sp@(66),%sp
+    jmp     m68k_schedule_next
+.Lchk_halt:
+    stop    #0x2700
+    bra.s   .Lchk_halt
+
+| --- Privilege Violation (group 1 — 6-byte exception frame) ---
+    .global m68k_priv_handler
+m68k_priv_handler:
+    movem.l %d0-%d7/%a0-%a6,%sp@-
+    move.l  %sp,%sp@-
+    pea.l   8                        | fault_type = FAULT_PRIV
+    jsr     m68k_crash_handler
+    addq.l  #8,%sp
+    tst.l   %d0
+    beq.s   .Lpriv_halt
+    lea.l   %sp@(66),%sp
+    jmp     m68k_schedule_next
+.Lpriv_halt:
+    stop    #0x2700
+    bra.s   .Lpriv_halt
+
+| --- Schedule next process after killing a faulting process ---
+| The old process is dead.  Switch to the kernel stack, pick the next
+| runnable process via sched_next(), and restore its full context.
+| Same restore sequence as m68k_trap1_handler / m68k_timer_isr.
+    .global m68k_schedule_next
+m68k_schedule_next:
+    lea.l   __stack_top,%sp
+    jsr     sched_next
+    | d0 = next pcb_t*; update current_core[0]
+    move.l  %d0,current_core
+    | Restore SP from next PCB
+    move.l  %d0,%a0
+    move.l  44(%a0),%sp              | PCB_SP_OFFSET = 44
+    | Restore all registers (d0-d7/a0-a6) and return via RTE
+    movem.l %sp@+,%d0-%d7/%a0-%a6
+    rte
 
     .global Default_Handler
 Default_Handler:
     stop     #0x2700             | halt with all IRQs masked
-    bra.s    Default_Handler
+    bra.w    Default_Handler
