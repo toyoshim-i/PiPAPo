@@ -589,6 +589,10 @@ busybox is developed with the assumption of a Linux kernel, and some applets dep
 | [PicoCalc.md](PicoCalc.md) | Hardware developers | PicoCalc pinout, I2C keyboard protocol, SD card, serial debug |
 | [PicoCalc-LCD.md](PicoCalc-LCD.md) | Driver developers | ST7365P LCD driver architecture, SPI protocol, VT100 emulator |
 | [target-68000.md](target-68000.md) | m68k developers | m68k target-specific notes |
+| [target-pizero.md](target-pizero.md) | ARM developers | Pi Zero port plan (draft) |
+| [testing.md](testing.md) | All developers | Test framework, categories, adding tests |
+| [feature-eCPU.md](feature-eCPU.md) | — | CPU emulation layer design (future) |
+| [feature-subsystem.md](feature-subsystem.md) | — | OS personality layers design (future) |
 | [history/](history/) | — | Development phase plans (archived) |
 
 ---

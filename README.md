@@ -45,8 +45,9 @@ All targets share the same kernel source, syscall interface, VFS, and process mo
 ## Future Work
 
 - **RP2350 Port** — Cortex-M33, 8-region MPU, PSRAM support, Thumb-2 optimization; `pico2`/`pico2calc` targets
-- **CPU emulation** — kernel-embedded emulators for retro CPUs (Z80, 6502, 6809, 8086), enabling cross-architecture binary execution
-- **Subsystem support** — load and run applications from other OSes on top of PPAP via syscall bridge (e.g. CP/M, Human68K, DOS)
+- **Pi Zero Port** — ARM1176JZF-S with full MMU, SD card boot; see [docs/target-pizero.md](docs/target-pizero.md)
+- **CPU emulation** — user-space interpretive emulators for retro CPUs (Z80, 6502, 6809, 8086), enabling cross-architecture binary execution; see [docs/feature-eCPU.md](docs/feature-eCPU.md)
+- **Subsystem support** — load and run applications from other OSes on top of PPAP via syscall bridge (e.g. CP/M, Human68K, DOS); see [docs/feature-subsystem.md](docs/feature-subsystem.md)
 - Audio driver support
 
 ## Repository Layout

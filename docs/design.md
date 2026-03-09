@@ -4,6 +4,48 @@ Internal design reference for kernel developers.
 
 ---
 
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  User Space                                             │
+│  busybox (hush shell + applets), rogue, user programs   │
+│  musl libc (static) — or bare-metal syscall stubs       │
+├────────────────────────┬────────────────────────────────┤
+│  Syscall Interface     │  Signal Delivery               │
+│  svc 0 (ARM)           │  sigaction, sigprocmask        │
+│  trap #0 (m68k)        │  user-stack trampoline         │
+├────────────────────────┴────────────────────────────────┤
+│  Kernel                                                 │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────┐  │
+│  │ Process  │ │ Memory   │ │ FD/TTY/  │ │ Scheduler │  │
+│  │ (PCB,    │ │ (page    │ │ Pipe     │ │ (round-   │  │
+│  │  exec,   │ │  alloc,  │ │          │ │  robin,   │  │
+│  │  vfork)  │ │  brk,    │ │          │ │  SMP)     │  │
+│  │          │ │  mmap)   │ │          │ │           │  │
+│  └──────────┘ └──────────┘ └──────────┘ └───────────┘  │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │ VFS  (mount table, path resolution, vnodes)      │   │
+│  ├─────────┬────────┬──────┬───────┬───────┬───────┤   │
+│  │ romfs   │ devfs  │procfs│ tmpfs │ VFAT  │  UFS  │   │
+│  └────┬────┴────────┴──────┴───────┴───┬───┴───┬───┘   │
+│       │                                │       │        │
+│  ┌────┴────────────────────────────────┴───────┴───┐   │
+│  │ Block Device Layer  (SD, RAM disk, loopback)    │   │
+│  └─────────────────────────────────────────────────┘   │
+├─────────────────────────────────────────────────────────┤
+│  Architecture Layer (src/arch/)                         │
+│  boot.S, switch.S, trap.S, arch.h, cpu.h                │
+├──────────────────────┬──────────────────────────────────┤
+│  Target Layer        │  Drivers                         │
+│  (src/target/)       │  UART, SPI, LCD, I2C, keyboard   │
+│  early_init,         │  (target-specific)               │
+│  late_init, etc.     │                                  │
+└──────────────────────┴──────────────────────────────────┘
+```
+
+---
+
 ## Boot Sequence
 
 The boot sequence is target-specific but follows a common pattern:
