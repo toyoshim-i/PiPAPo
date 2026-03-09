@@ -47,6 +47,7 @@ extern void timer_init(void);
  * ────────────────────────────────────────────────────────────────────── */
 
 #include "syscall/syscall.h"
+#include "signal/signal.h"
 
 void m68k_syscall_entry(uint32_t *regs)
 {
@@ -80,6 +81,9 @@ void m68k_syscall_entry(uint32_t *regs)
         syscall_dispatch(&regs[1], nr, a4, a5);
         regs[0] = regs[1];
     }
+
+    /* Check pending signals before returning to user mode */
+    signal_check(regs);
 }
 
 /* ── Target hooks ────────────────────────────────────────────────────── */

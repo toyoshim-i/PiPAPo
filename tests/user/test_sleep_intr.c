@@ -7,9 +7,6 @@
  *   2. vfork + child _exit(0) → parent sees exit code 0
  *   3. Signal self-delivery: kill(getpid(), SIGUSR1) with handler installed
  *
- * TODO(m68k): Signal delivery is not implemented on m68k.  Test 3 is
- * skipped on m68k until the signal trampoline is ported.
- *
  * Full sleep+Ctrl-C testing requires QEMU serial input injection (out of
  * scope); the kernel integration test covers signal-matching logic directly.
  */
@@ -55,12 +52,7 @@ int main(void)
         sig_flag = 0;
         sigaction(10 /* SIGUSR1 */, (void *)usr1_handler, (void *)0);
         kill(getpid(), 10);
-#if defined(__m68k__)
-        /* m68k: signal delivery not implemented — handler won't run */
-        UT_ASSERT(1, "kill issued (m68k: signal delivery not implemented)");
-#else
         UT_ASSERT(sig_flag == 1, "SIGUSR1 handler should run");
-#endif
     }
 
     UT_SUMMARY("test_sleep_intr");

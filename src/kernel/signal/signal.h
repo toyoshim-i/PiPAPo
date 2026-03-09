@@ -32,15 +32,24 @@ typedef void (*sighandler_t)(int);
 #define SIGSTOP   19
 
 /*
- * Called from SVC_Handler (svc.S) after syscall_dispatch(), when the
+ * Called from the trap/SVC handler after syscall_dispatch(), when the
  * process is still RUNNABLE.  Checks sig_pending & ~sig_blocked; if
  * a signal is deliverable, dispatches it (SIG_IGN → discard, SIG_DFL →
- * terminate/ignore, user handler → set up trampoline frame on PSP).
+ * terminate/ignore, user handler → set up trampoline frame).
+ *
+ * m68k: takes a pointer to the saved register frame (d0-d7/a0-a6 + SR + PC)
+ *       on the supervisor stack so it can modify the return context.
+ * ARM:  takes no args — manipulates PSP directly.
  */
+#if defined(__m68k__)
+void signal_check(uint32_t *regs);
+#else
 void signal_check(void);
+#endif
 
 /* Trampoline in kernel .text (flash XIP) — signal handler returns here
- * via bx lr, which triggers SVC SYS_SIGRETURN to restore context. */
+ * via bx lr (ARM) which triggers SVC SYS_SIGRETURN to restore context.
+ * On m68k this is a stub (synchronous delivery, no trampoline needed). */
 extern void sigreturn_trampoline(void);
 
 #endif /* PPAP_SIGNAL_H */

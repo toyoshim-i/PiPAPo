@@ -39,9 +39,100 @@
 
 #if defined(__m68k__)
 
-/* m68k stubs — signal delivery not yet supported */
-void sigreturn_trampoline(void) { for (;;); }
-void signal_check(void) { }
+/*
+ * m68k signal delivery — synchronous call model
+ *
+ * On PPAP m68k, processes run in supervisor mode (no user/supervisor split,
+ * no MMU).  USP is never initialized.  This means the ARM-style RTE-based
+ * signal delivery (push frame onto user stack, modify exception frame, RTE
+ * to handler) doesn't work.
+ *
+ * Instead, signal_check() calls the handler directly as a C function via
+ * an assembly thunk that sets a5 = GOT base (required for PIC/-msep-data).
+ * The SSP register frame is saved/restored around the handler call so the
+ * original context is preserved.
+ *
+ * This is equivalent to the RTE model in terms of observable behavior:
+ * the handler runs synchronously on syscall return, just like ARM.
+ */
+
+#define SIGFRAME_SIZE  66   /* d0-d7/a0-a6 (60) + SR (2) + PC (4) */
+
+/*
+ * Portable count-trailing-zeros — avoids __builtin_ctz which pulls in
+ * __ctzsi2 from libgcc.  The kernel can't link libgcc on m68k because
+ * it uses GOT-relative addressing (a5) that isn't set up in kernel context.
+ */
+static int ctz32(uint32_t x)
+{
+    int n = 0;
+    if (!(x & 0xFFFF)) { n += 16; x >>= 16; }
+    if (!(x & 0xFF))   { n += 8;  x >>= 8;  }
+    if (!(x & 0xF))    { n += 4;  x >>= 4;  }
+    if (!(x & 0x3))    { n += 2;  x >>= 2;  }
+    if (!(x & 0x1))    { n += 1; }
+    return n;
+}
+
+/*
+ * Trampoline stub — not used on m68k (synchronous delivery), but kept
+ * so the linker doesn't complain about the extern declaration in signal.h.
+ */
+__attribute__((naked, used, section(".text.sigreturn_trampoline")))
+void sigreturn_trampoline(void)
+{
+    __asm volatile("rts\n");
+}
+
+/*
+ * m68k_call_signal_handler — assembly thunk to call a PIC signal handler.
+ *
+ * Sets a5 = GOT base before calling the handler (required for -msep-data),
+ * saves/restores the kernel's a5 around the call.
+ *
+ * Defined in signal_m68k.S.
+ */
+extern void m68k_call_signal_handler(sighandler_t handler, int sig,
+                                     uint32_t got_base);
+
+/* ── signal_check ─────────────────────────────────────────────────────────── */
+
+void signal_check(uint32_t *regs)
+{
+    uint32_t deliverable = current->sig_pending & ~current->sig_blocked;
+    if (!deliverable)
+        return;
+
+    int sig = ctz32(deliverable);  /* lowest pending signal */
+    current->sig_pending &= ~(1u << sig);
+
+    sighandler_t handler = current->sig_handlers[sig];
+
+    if (handler == SIG_IGN)
+        return;
+
+    if (handler == SIG_DFL) {
+        if (sig == SIGCHLD)
+            return;
+        sys_exit(128 + sig);
+        return;
+    }
+
+    /* Save SSP register frame (restored after handler returns) */
+    uint8_t saved_frame[SIGFRAME_SIZE];
+    __builtin_memcpy(saved_frame, regs, SIGFRAME_SIZE);
+
+    /* Block signal during handler to prevent infinite recursion */
+    uint32_t old_blocked = current->sig_blocked;
+    current->sig_blocked |= (1u << sig);
+
+    /* Call handler synchronously with correct GOT base */
+    m68k_call_signal_handler(handler, sig, current->got_base);
+
+    /* Restore SSP frame and signal mask */
+    __builtin_memcpy(regs, saved_frame, SIGFRAME_SIZE);
+    current->sig_blocked = old_blocked;
+}
 
 #else /* ARM */
 
@@ -199,6 +290,8 @@ long sys_sigaction(long sig, long handler, long old_ptr)
 
 #if defined(__m68k__)
 
+/* m68k uses synchronous signal delivery — no sigreturn needed.
+ * These stubs exist for the syscall dispatch table. */
 long sys_sigreturn(void)  { return -(long)ENOSYS; }
 long sys_rt_sigreturn(void) { return -(long)ENOSYS; }
 
