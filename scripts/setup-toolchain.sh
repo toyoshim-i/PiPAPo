@@ -58,7 +58,7 @@ APT_PACKAGES=(
   ninja-build             # Fast build backend for CMake
   git                     # Version control
   python3                 # Required by Pico SDK scripts
-  qemu-system-arm         # QEMU mps2-an500 smoke tests (scripts/qemu.sh)
+  qemu-system-arm         # QEMU mps2-an500 smoke tests (scripts/run.sh)
   qemu-system-misc        # QEMU m68k (virt) for 68000 target
 )
 

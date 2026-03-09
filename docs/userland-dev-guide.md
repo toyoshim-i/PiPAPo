@@ -357,12 +357,13 @@ PPAP includes QEMU targets for both architectures:
 
 ```sh
 # ARM
-./scripts/build.sh --test qemu_arm
-./scripts/qemu.sh --build
+./scripts/run.sh --build qemu_arm
 
 # m68k
-./scripts/build.sh --test qemu_m68k
-./scripts/qemu.sh --build qemu_m68k
+./scripts/run.sh --build qemu_m68k
+
+# With tests
+./scripts/run.sh --test qemu_arm
 ```
 
 The kernel runs integration tests at boot, then launches `/sbin/init`
@@ -371,7 +372,7 @@ The kernel runs integration tests at boot, then launches `/sbin/init`
 ### Hardware (ARM / RP2040)
 
 ```sh
-./scripts/flash.sh pico1calc
+./scripts/run.sh --build pico1calc
 ```
 
 Connect a serial terminal to the UART (115200 baud, 8N1).

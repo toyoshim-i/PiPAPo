@@ -7,7 +7,7 @@
 # Steps:
 #   1. Build all targets (production, PPAP_TESTS=OFF)
 #   2. Print binary sizes
-#   3. Build & run QEMU test suite (PPAP_TESTS=ON via qemu.sh --test)
+#   3. Build & run QEMU test suite (PPAP_TESTS=ON via run.sh --test)
 
 set -euo pipefail
 
@@ -27,7 +27,7 @@ arm-none-eabi-size build/arm_m/ppap_qemu_arm.elf \
 
 echo ""
 echo "=== QEMU automated test (ARM) ==="
-"$SCRIPT_DIR/qemu.sh" --test qemu_arm
+"$SCRIPT_DIR/run.sh" --test qemu_arm
 
 echo ""
 echo "=== All targets OK ==="

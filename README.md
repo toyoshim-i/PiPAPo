@@ -103,9 +103,8 @@ PPAP/
   src/etc/                  Root filesystem config templates (fstab, passwd, …)
   scripts/
     setup-toolchain.sh      One-shot toolchain install
-    build.sh                Build any target (pico1, pico1calc, qemu_arm, qemu_m68k)
-    flash.sh                Flash pico1/pico1calc via OpenOCD
-    qemu.sh                 Run ppap_qemu_arm or ppap_qemu_m68k
+    build.sh                Build any target (pico1, pico1calc, qemu_arm, qemu_m68k, host_qemu)
+    run.sh                  Flash or run any target
     test_all_targets.sh     Build all targets + run QEMU automated tests
   docs/
     spec-v07.md             Full design specification
@@ -152,47 +151,38 @@ cmake -B build/m68k -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-m68k.cmake
 cmake --build build/m68k     # builds ppap_qemu_m68k
 ```
 
-### 3. Flash to hardware (ARM targets)
+### 3. Run / Flash
 
-**PicoCalc (UF2):** The PicoCalc ships with
-[UF2 Loader](https://github.com/pelrun/uf2loader) — hold the bootloader key
-during power-on, then copy the UF2 file:
+```sh
+./scripts/run.sh                        # run qemu_arm (must be pre-built)
+./scripts/run.sh --build                # build & run qemu_arm
+./scripts/run.sh --build qemu_m68k      # build & run m68k
+./scripts/run.sh --test                 # build with tests, run & check results
+./scripts/run.sh --test qemu_m68k       # same for m68k
+./scripts/run.sh --gdb                  # run existing binary under GDB
+./scripts/run.sh pico1calc              # flash pre-built pico1calc via OpenOCD
+./scripts/run.sh --build pico1calc      # build & flash pico1calc
+./scripts/run.sh --test pico1           # build with tests & flash pico1
+```
+
+**UF2 (no debug adapter):** Hold BOOTSEL (Pico) or bootloader key (PicoCalc)
+during power-on, then copy the UF2:
 
 ```sh
 cp build/arm_m/src/target/pico1calc/ppap_pico1calc.uf2 /media/$USER/RPI-RP2/
-```
-
-**Pico (BOOTSEL):** Hold BOOTSEL during plug-in and copy the UF2.
-
-**OpenOCD (any ARM target):**
-
-```sh
-./scripts/flash.sh pico1calc           # flash pre-built pico1calc via OpenOCD
-./scripts/flash.sh --build pico1calc   # build & flash pico1calc
-./scripts/flash.sh --test pico1        # build with tests & flash pico1
-```
-
-### 4. QEMU
-
-```sh
-./scripts/qemu.sh                     # build & run ARM QEMU target (default)
-./scripts/qemu.sh qemu_m68k           # build & run m68k QEMU target
-./scripts/qemu.sh --test              # build with tests, run & check results
-./scripts/qemu.sh --test qemu_m68k    # same for m68k
-./scripts/qemu.sh --no-build --gdb    # run existing binary under GDB
 ```
 
 At the shell prompt, try `rogue` to play the classic dungeon crawler.
 
 Press **Ctrl-A X** to quit QEMU.
 
-### 5. Run all tests
+### 4. Run all tests
 
 ```sh
 ./scripts/test_all_targets.sh   # build all targets + QEMU automated tests
 ```
 
-### 6. Debug with GDB (ARM hardware)
+### 5. Debug with GDB (ARM hardware)
 
 ```sh
 # Terminal 1 — start OpenOCD
