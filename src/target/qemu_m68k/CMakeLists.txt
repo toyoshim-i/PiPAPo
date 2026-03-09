@@ -134,7 +134,7 @@ set(M68K_USER_LD  ${M68K_USER_DIR}/user.ld)
 # Common objects: crt0.o + syscall.o (linked into every user program)
 set(M68K_CFLAGS  -m68000 -ffreestanding -nostdlib -Os -g -Wall
                  -msep-data
-                 -I${PPAP_ROOT}/src/user/arch/m68k -I${PPAP_ROOT}/src/user)
+                 -I${PPAP_ROOT}/src/user/arch/m68k -I${PPAP_ROOT}/src/user -I${PPAP_ROOT}/src)
 set(M68K_ASFLAGS -m68000)
 set(M68K_LDFLAGS -nostdlib -T ${M68K_USER_LD}
                  -Wl,--gc-sections -Wl,--build-id=none)

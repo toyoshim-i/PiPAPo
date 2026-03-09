@@ -24,12 +24,7 @@
 #include "config.h"
 #include <stdint.h>
 
-/* Linux pollfd structure (matches musl ARM layout) */
-struct pollfd {
-    int   fd;
-    short events;
-    short revents;
-};
+/* struct pollfd is now in common/poll.h, included via file.h */
 
 /* Convert timespec to ticks.  Returns 0 for zero timeout, UINT32_MAX
  * for negative/overflow. */

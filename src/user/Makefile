@@ -42,7 +42,7 @@ CFLAGS  := -mthumb -mcpu=cortex-m0plus -march=armv6s-m \
            -ffreestanding -nostdlib -Os -g -Wall -Werror \
            -fPIC -msingle-pic-base -mpic-register=r9 \
            -mno-pic-data-is-text-relative \
-           -I$(SRC_DIR) -I$(TESTS_DIR)
+           -I$(SRC_DIR) -I$(SRC_DIR).. -I$(TESTS_DIR)
 ASFLAGS := -mthumb -mcpu=cortex-m0plus -march=armv6s-m
 LDFLAGS := -nostdlib -T $(ARCH_DIR)/user.ld -Wl,--gc-sections
 

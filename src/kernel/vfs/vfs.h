@@ -32,42 +32,14 @@ typedef struct vnode     vnode_t;
 typedef struct vfs_ops   vfs_ops_t;
 typedef struct mount_entry mount_entry_t;
 
-/* ── File mode constants (POSIX-compatible) ───────────────────────────────── */
+/* ── Shared ABI types (common/) ────────────────────────────────────────────── */
 
-#define S_IFMT   0170000u  /* type-of-file mask                           */
-#define S_IFDIR  0040000u  /* directory                                    */
-#define S_IFCHR  0020000u  /* character special (device)                   */
-#define S_IFREG  0100000u  /* regular file                                 */
-#define S_IFLNK  0120000u  /* symbolic link                                */
+#include "common/stat.h"
+#include "common/dirent.h"
 
-#define S_ISDIR(m)  (((m) & S_IFMT) == S_IFDIR)
-#define S_ISREG(m)  (((m) & S_IFMT) == S_IFREG)
-#define S_ISLNK(m)  (((m) & S_IFMT) == S_IFLNK)
-#define S_ISCHR(m)  (((m) & S_IFMT) == S_IFCHR)
-
-/* ── Directory entry type constants (Linux d_type values) ─────────────────── */
-
-#define DT_REG   8   /* regular file   */
-#define DT_DIR   4   /* directory      */
-#define DT_LNK  10   /* symbolic link  */
-#define DT_CHR   2   /* character dev  */
-
-/* ── struct stat — file metadata ──────────────────────────────────────────── */
-
-struct stat {
-    uint32_t st_ino;     /* inode number (FS-specific)                    */
-    uint32_t st_mode;    /* file type + permissions (S_IF* | 0755)        */
-    uint32_t st_nlink;   /* number of hard links (always 1 for romfs)     */
-    uint32_t st_size;    /* file size in bytes                            */
-};
-
-/* ── struct dirent — directory entry ──────────────────────────────────────── */
-
-struct dirent {
-    uint32_t d_ino;                    /* inode number                    */
-    uint8_t  d_type;                   /* DT_REG / DT_DIR / DT_LNK / …  */
-    char     d_name[VFS_NAME_MAX + 1]; /* NUL-terminated filename        */
-};
+/* Verify that PPAP_NAME_MAX matches VFS_NAME_MAX */
+_Static_assert(PPAP_NAME_MAX == VFS_NAME_MAX,
+               "PPAP_NAME_MAX (common/dirent.h) must match VFS_NAME_MAX (config.h)");
 
 /* ── Mount flags ──────────────────────────────────────────────────────────── */
 

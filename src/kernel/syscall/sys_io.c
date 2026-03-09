@@ -45,11 +45,7 @@ long sys_read(long fd, char *buf, size_t n)
 
 /* ── sys_writev ─────────────────────────────────────────────────────────────── */
 
-/* struct iovec layout (matches musl/Linux ARM) */
-struct iovec {
-    void   *iov_base;
-    size_t  iov_len;
-};
+#include "common/iovec.h"
 
 long sys_writev(long fd, const void *iov_ptr, long iovcnt)
 {
