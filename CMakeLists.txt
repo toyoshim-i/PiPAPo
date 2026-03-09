@@ -19,11 +19,8 @@ pico_sdk_init()
 # Build option: enable kernel integration tests + userland test suite
 option(PPAP_TESTS "Enable kernel integration tests and userland test suite" OFF)
 
-# Shared kernel source list (used by each target's CMakeLists.txt)
-include(cmake/kernel_sources.cmake)
-
-# Common userland build configuration (compiler flags, build functions)
-# Also includes busybox_applets.cmake and user_programs.cmake.
+# Common build configuration (kernel sources, userland, romfs functions).
+# Also includes kernel_sources.cmake, busybox_applets.cmake, user_programs.cmake.
 include(cmake/ppap-userland.cmake)
 
 # =============================================================================
@@ -69,20 +66,11 @@ ppap_add_rogue()
 # --- User-space binaries ---
 ppap_build_user_programs(ARM_USER_ELF_PATHS)
 
-# --- mkromfs host tool ---
-add_custom_command(
-    OUTPUT ${CMAKE_BINARY_DIR}/mkromfs
-    COMMAND cc -O2 -I ${CMAKE_SOURCE_DIR}/src/kernel/fs
-            -o ${CMAKE_BINARY_DIR}/mkromfs
-            ${CMAKE_SOURCE_DIR}/tools/mkromfs/mkromfs.c
-    DEPENDS ${CMAKE_SOURCE_DIR}/tools/mkromfs/mkromfs.c
-            ${CMAKE_SOURCE_DIR}/src/kernel/fs/romfs_format.h
-    COMMENT "Building mkromfs host tool"
-)
-
-# --- Per-target romfs generation ---
+# --- mkromfs + per-target romfs generation ---
 # Each target gets its own romfs.bin with an appropriate /etc/fstab.
 # Targets with PPAP_HAS_BLKDEV get the mmcblk0 vfat mount entry appended.
+ppap_add_mkromfs()
+
 set(PPAP_BLKDEV_TARGETS ppap_qemu_arm ppap_pico1calc)
 
 # Generate per-target fstab files at configure time
@@ -101,7 +89,6 @@ endforeach()
 # Generate per-target inittab files at configure time
 # PicoCalc uses our tiny /bin/getty on both ttyS0 (UART) and tty1 (LCD+kbd);
 # other targets keep the default single-TTY respawn.
-# /bin/getty: setsid, open TTY, TIOCSCTTY, "Press Enter" prompt, exec /bin/sh.
 set(INITTAB_SERIAL_ONLY "ttyS0::respawn:/bin/getty ttyS0\n")
 set(INITTAB_DUAL_TTY "ttyS0::respawn:/bin/getty ttyS0\ntty1::respawn:/bin/getty tty1\n")
 foreach(tgt ${PPAP_ALL_TARGETS})
@@ -113,46 +100,10 @@ foreach(tgt ${PPAP_ALL_TARGETS})
 endforeach()
 
 foreach(tgt ${PPAP_ALL_TARGETS})
-    set(ROMFS_STAGING ${CMAKE_BINARY_DIR}/romfs_${tgt})
-    set(ROMFS_BIN     ${CMAKE_BINARY_DIR}/romfs_${tgt}.bin)
-    set(ROMFS_ASM     ${CMAKE_BINARY_DIR}/romfs_data_${tgt}.S)
-
-    add_custom_command(
-        OUTPUT ${ROMFS_BIN}
-        COMMAND ${CMAKE_SOURCE_DIR}/cmake/stage-romfs.sh
-                ${ROMFS_STAGING} ${CMAKE_SOURCE_DIR}
-                --user-elfs ${ARM_USER_ELF_PATHS}
-                --bb-dir ${PPAP_BB_DIR}
-                --bb-applets ${BB_APPLETS}
-                --bb-shell-applets ${BB_SHELL_APPLETS}
-                --bb-sbin-applets ${BB_SBIN_APPLETS}
-                --rogue ${PPAP_ROGUE_DIR}/rogue
-                --etc-dir ${CMAKE_SOURCE_DIR}/src/etc
-                --fstab ${CMAKE_BINARY_DIR}/fstab_${tgt}
-                --inittab ${CMAKE_BINARY_DIR}/inittab_${tgt}
-        COMMAND ${CMAKE_BINARY_DIR}/mkromfs
-                ${ROMFS_STAGING} ${ROMFS_BIN}
-        DEPENDS ${CMAKE_BINARY_DIR}/mkromfs
-                ${ARM_USER_ELF_PATHS}
-                ${PPAP_BB_DIR}/busybox
-                ${PPAP_ROGUE_DIR}/rogue
-                ${CMAKE_SOURCE_DIR}/src/etc/fstab
-                ${CMAKE_SOURCE_DIR}/src/etc/inittab
-                ${CMAKE_BINARY_DIR}/fstab_${tgt}
-                ${CMAKE_BINARY_DIR}/inittab_${tgt}
-                ${CMAKE_SOURCE_DIR}/cmake/stage-romfs.sh
-        COMMENT "Generating romfs for ${tgt}"
-    )
-
-    file(WRITE ${ROMFS_ASM}
-        "    .section .romfs, \"a\", %progbits\n    .incbin \"${ROMFS_BIN}\"\n")
-
-    set_source_files_properties(${ROMFS_ASM}
-        PROPERTIES OBJECT_DEPENDS ${ROMFS_BIN})
-
-    add_custom_target(romfs_image_${tgt} DEPENDS ${ROMFS_BIN})
-    add_dependencies(${tgt} romfs_image_${tgt})
-    target_sources(${tgt} PRIVATE ${ROMFS_ASM})
+    ppap_generate_romfs(${tgt}
+        ${CMAKE_BINARY_DIR}/fstab_${tgt}
+        ${CMAKE_BINARY_DIR}/inittab_${tgt}
+        USER_ELFS ${ARM_USER_ELF_PATHS})
 endforeach()
 
 # =============================================================================

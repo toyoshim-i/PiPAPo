@@ -24,7 +24,8 @@ else()
     set(PPAP_ARCH arm)
 endif()
 
-# --- Include shared program/applet lists ---
+# --- Include shared source and program lists ---
+include(${CMAKE_CURRENT_LIST_DIR}/kernel_sources.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/user_programs.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/busybox_applets.cmake)
 
@@ -298,4 +299,87 @@ function(ppap_add_rogue)
                 ${PPAP_MUSL_LIBC}
         COMMENT "Building rogue (${PPAP_ARCH_LABEL})"
     )
+endfunction()
+
+# =============================================================================
+# Romfs image pipeline
+# =============================================================================
+
+# ppap_add_mkromfs()
+# Registers a custom command to build the mkromfs host tool.
+# Output: ${CMAKE_BINARY_DIR}/mkromfs
+function(ppap_add_mkromfs)
+    add_custom_command(
+        OUTPUT ${CMAKE_BINARY_DIR}/mkromfs
+        COMMAND cc -O2 -I ${PPAP_ROOT}/src/kernel/fs
+                -o ${CMAKE_BINARY_DIR}/mkromfs
+                ${PPAP_ROOT}/tools/mkromfs/mkromfs.c
+        DEPENDS ${PPAP_ROOT}/tools/mkromfs/mkromfs.c
+                ${PPAP_ROOT}/src/kernel/fs/romfs_format.h
+        COMMENT "Building mkromfs host tool"
+    )
+endfunction()
+
+# ppap_generate_romfs(target fstab inittab
+#                     [BIG_ENDIAN]
+#                     USER_ELFS elf1 elf2 ...)
+#
+# Generates a romfs image and links it into the given cmake target.
+# BIG_ENDIAN passes -b to mkromfs (for m68k).
+# Requires ppap_add_mkromfs() to have been called first.
+function(ppap_generate_romfs target fstab inittab)
+    cmake_parse_arguments(ARG "BIG_ENDIAN" "" "USER_ELFS" ${ARGN})
+
+    set(_romfs_staging ${CMAKE_BINARY_DIR}/romfs_${target})
+    set(_romfs_bin     ${CMAKE_BINARY_DIR}/romfs_${target}.bin)
+    set(_romfs_asm     ${CMAKE_BINARY_DIR}/romfs_data_${target}.S)
+
+    # mkromfs flags
+    set(_mkromfs_flags "")
+    if(ARG_BIG_ENDIAN)
+        set(_mkromfs_flags -b)
+    endif()
+
+    # .section syntax: ARM uses %progbits, m68k omits it
+    if(PPAP_ARCH STREQUAL "m68k")
+        set(_section "    .section .romfs, \"a\"")
+    else()
+        set(_section "    .section .romfs, \"a\", %progbits")
+    endif()
+
+    add_custom_command(
+        OUTPUT ${_romfs_bin}
+        COMMAND ${PPAP_ROOT}/cmake/stage-romfs.sh
+                ${_romfs_staging} ${PPAP_ROOT}
+                --user-elfs ${ARG_USER_ELFS}
+                --bb-dir ${PPAP_BB_DIR}
+                --bb-applets ${BB_APPLETS}
+                --bb-shell-applets ${BB_SHELL_APPLETS}
+                --bb-sbin-applets ${BB_SBIN_APPLETS}
+                --rogue ${PPAP_ROGUE_DIR}/rogue
+                --etc-dir ${PPAP_ROOT}/src/etc
+                --fstab ${fstab}
+                --inittab ${inittab}
+        COMMAND ${CMAKE_BINARY_DIR}/mkromfs ${_mkromfs_flags}
+                ${_romfs_staging} ${_romfs_bin}
+        DEPENDS ${CMAKE_BINARY_DIR}/mkromfs
+                ${ARG_USER_ELFS}
+                ${PPAP_BB_DIR}/busybox
+                ${PPAP_ROGUE_DIR}/rogue
+                ${PPAP_ROOT}/src/etc/fstab
+                ${PPAP_ROOT}/src/etc/inittab
+                ${fstab}
+                ${inittab}
+                ${PPAP_ROOT}/cmake/stage-romfs.sh
+        COMMENT "Generating romfs for ${target}"
+    )
+
+    file(WRITE ${_romfs_asm}
+        "${_section}\n    .incbin \"${_romfs_bin}\"\n")
+    set_source_files_properties(${_romfs_asm}
+        PROPERTIES OBJECT_DEPENDS ${_romfs_bin})
+
+    add_custom_target(romfs_image_${target} DEPENDS ${_romfs_bin})
+    add_dependencies(${target} romfs_image_${target})
+    target_sources(${target} PRIVATE ${_romfs_asm})
 endfunction()

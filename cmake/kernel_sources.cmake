@@ -1,52 +1,87 @@
-# kernel_sources.cmake — Shared kernel sources common to all targets.
-# Included by each target's CMakeLists.txt.
+# kernel_sources.cmake — Shared kernel source lists for all targets.
+#
+# Defines arch-specific and arch-independent source lists that targets
+# compose as needed:
+#   ARM targets:  ${KERNEL_COMMON_SOURCES} [+ ${KERNEL_BLKDEV_SOURCES}]
+#   m68k targets: ${ARCH_M68K_SOURCES} ${KERNEL_SHARED_SOURCES}
 
-# Architecture-specific assembly sources (ARM Cortex-M for now).
-# Future architectures (m68k, arm_a) will have their own ARCH_*_SOURCES.
+include_guard(GLOBAL)
+
+get_filename_component(_KS_ROOT ${CMAKE_CURRENT_LIST_DIR}/.. ABSOLUTE)
+
+# ── Architecture-specific sources ───────────────────────────────────────────
+
 set(ARCH_ARM_M_SOURCES
-    ${CMAKE_SOURCE_DIR}/src/arch/arm_m/boot.S
-    ${CMAKE_SOURCE_DIR}/src/arch/arm_m/switch.S
-    ${CMAKE_SOURCE_DIR}/src/arch/arm_m/trap.S
-    ${CMAKE_SOURCE_DIR}/src/arch/arm_m/arm_m_common.c
+    ${_KS_ROOT}/src/arch/arm_m/boot.S
+    ${_KS_ROOT}/src/arch/arm_m/switch.S
+    ${_KS_ROOT}/src/arch/arm_m/trap.S
+    ${_KS_ROOT}/src/arch/arm_m/arm_m_common.c
 )
+
+set(ARCH_M68K_SOURCES
+    ${_KS_ROOT}/src/arch/m68k/boot.S
+    ${_KS_ROOT}/src/arch/m68k/m68k_common.c
+    ${_KS_ROOT}/src/arch/m68k/probe_ram.S
+    ${_KS_ROOT}/src/arch/m68k/string.c
+    ${_KS_ROOT}/src/arch/m68k/switch.S
+    ${_KS_ROOT}/src/arch/m68k/trap.S
+    ${_KS_ROOT}/src/arch/m68k/math.S
+    ${_KS_ROOT}/src/arch/m68k/signal_m68k.S
+)
+
+# ── Kernel sources shared across ALL architectures ──────────────────────────
+
+set(KERNEL_SHARED_SOURCES
+    ${_KS_ROOT}/src/kernel/main.c
+    ${_KS_ROOT}/src/kernel/klog.c
+    ${_KS_ROOT}/src/kernel/mm/page.c
+    ${_KS_ROOT}/src/kernel/mm/kmem.c
+    ${_KS_ROOT}/src/kernel/proc/proc.c
+    ${_KS_ROOT}/src/kernel/proc/sched.c
+    ${_KS_ROOT}/src/kernel/smp.c
+    ${_KS_ROOT}/src/kernel/syscall/syscall.c
+    ${_KS_ROOT}/src/kernel/syscall/sys_proc.c
+    ${_KS_ROOT}/src/kernel/syscall/sys_io.c
+    ${_KS_ROOT}/src/kernel/syscall/sys_time.c
+    ${_KS_ROOT}/src/kernel/syscall/sys_mem.c
+    ${_KS_ROOT}/src/kernel/syscall/sys_poll.c
+    ${_KS_ROOT}/src/kernel/syscall/sys_fs.c
+    ${_KS_ROOT}/src/kernel/fd/fd.c
+    ${_KS_ROOT}/src/kernel/fd/tty.c
+    ${_KS_ROOT}/src/kernel/fd/pipe.c
+    ${_KS_ROOT}/src/kernel/signal/signal.c
+    ${_KS_ROOT}/src/kernel/vfs/vfs.c
+    ${_KS_ROOT}/src/kernel/vfs/namei.c
+    ${_KS_ROOT}/src/kernel/fs/romfs.c
+    ${_KS_ROOT}/src/kernel/fs/devfs.c
+    ${_KS_ROOT}/src/kernel/fs/procfs.c
+    ${_KS_ROOT}/src/kernel/fs/tmpfs.c
+    ${_KS_ROOT}/src/kernel/fs/fstab.c
+    ${_KS_ROOT}/src/kernel/exec/elf.c
+    ${_KS_ROOT}/src/kernel/exec/exec.c
+)
+
+# ── ARM-only kernel modules (XIP flash, MPU) ────────────────────────────────
+
+set(KERNEL_ARM_ONLY_SOURCES
+    ${_KS_ROOT}/src/kernel/mm/xip.c
+    ${_KS_ROOT}/src/kernel/mm/mpu.c
+)
+
+# ── Convenience: complete kernel sources for ARM targets ────────────────────
+# Backward-compatible with existing ARM target CMakeLists.txt files.
 
 set(KERNEL_COMMON_SOURCES
     ${ARCH_ARM_M_SOURCES}
-    ${CMAKE_SOURCE_DIR}/src/kernel/main.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/mm/xip.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/mm/page.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/mm/kmem.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/mm/mpu.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/proc/proc.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/proc/sched.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/syscall/syscall.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/syscall/sys_proc.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/syscall/sys_io.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/syscall/sys_time.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/syscall/sys_mem.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/syscall/sys_poll.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/fd/fd.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/fd/tty.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/fd/pipe.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/signal/signal.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/vfs/vfs.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/vfs/namei.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/syscall/sys_fs.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/fs/romfs.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/fs/devfs.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/fs/procfs.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/fs/tmpfs.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/fs/fstab.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/exec/elf.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/exec/exec.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/smp.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/klog.c
+    ${KERNEL_ARM_ONLY_SOURCES}
+    ${KERNEL_SHARED_SOURCES}
 )
 
-# Block device + VFAT/UFS sources — only for targets with PPAP_HAS_BLKDEV.
+# ── Block device + VFAT/UFS sources (targets with PPAP_HAS_BLKDEV) ─────────
+
 set(KERNEL_BLKDEV_SOURCES
-    ${CMAKE_SOURCE_DIR}/src/kernel/blkdev/blkdev.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/blkdev/loopback.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/fs/vfat.c
-    ${CMAKE_SOURCE_DIR}/src/kernel/fs/ufs.c
+    ${_KS_ROOT}/src/kernel/blkdev/blkdev.c
+    ${_KS_ROOT}/src/kernel/blkdev/loopback.c
+    ${_KS_ROOT}/src/kernel/fs/vfat.c
+    ${_KS_ROOT}/src/kernel/fs/ufs.c
 )
