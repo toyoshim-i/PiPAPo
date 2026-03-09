@@ -198,6 +198,81 @@ sigaction:
     movem.l %sp@+, %d2-%d3
     rts
 
+| --- getppid (SYS_GETPPID = 0x0008) ---------------------------------------------
+| pid_t getppid(void);
+    .globl getppid
+getppid:
+    moveq   #8, %d0             | SYS_GETPPID
+    trap    #0
+    rts
+
+| --- setpgid (SYS_SETPGID = 0x0009) -------------------------------------------
+| int setpgid(pid_t pid, pid_t pgid);
+    .globl setpgid
+setpgid:
+    move.l  %d2, %sp@-
+    move.l  8(%sp), %d1         | pid
+    move.l  12(%sp), %d2        | pgid
+    moveq   #9, %d0             | SYS_SETPGID
+    trap    #0
+    move.l  %sp@+, %d2
+    rts
+
+| --- getpgid (SYS_GETPGID = 0x000A) -------------------------------------------
+| pid_t getpgid(pid_t pid);
+    .globl getpgid
+getpgid:
+    move.l  4(%sp), %d1         | pid
+    moveq   #0x0A, %d0          | SYS_GETPGID
+    trap    #0
+    rts
+
+| --- lseek (SYS_LSEEK = 0x010B) -----------------------------------------------
+| int lseek(int fd, int offset, int whence);
+    .globl lseek
+lseek:
+    movem.l %d2-%d3, %sp@-      | save d2-d3 (8 bytes)
+    move.l  12(%sp), %d1        | fd
+    move.l  16(%sp), %d2        | offset
+    move.l  20(%sp), %d3        | whence
+    move.l  #0x010B, %d0
+    trap    #0
+    movem.l %sp@+, %d2-%d3
+    rts
+
+| --- getcwd (SYS_GETCWD = 0x0203) ---------------------------------------------
+| int getcwd(char *buf, size_t size);
+    .globl getcwd
+getcwd:
+    move.l  %d2, %sp@-
+    move.l  8(%sp), %d1         | buf
+    move.l  12(%sp), %d2        | size
+    move.l  #0x0203, %d0
+    trap    #0
+    move.l  %sp@+, %d2
+    rts
+
+| --- chdir (SYS_CHDIR = 0x0207) -----------------------------------------------
+| int chdir(const char *path);
+    .globl chdir
+chdir:
+    move.l  4(%sp), %d1         | path
+    move.l  #0x0207, %d0
+    trap    #0
+    rts
+
+| --- access (SYS_ACCESS = 0x0202) ---------------------------------------------
+| int access(const char *path, int mode);
+    .globl access
+access:
+    move.l  %d2, %sp@-
+    move.l  8(%sp), %d1         | path
+    move.l  12(%sp), %d2        | mode
+    move.l  #0x0202, %d0
+    trap    #0
+    move.l  %sp@+, %d2
+    rts
+
 | --- nanosleep (SYS_NANOSLEEP = 0x0500) ----------------------------------------
 | int nanosleep(const void *req, void *rem);
     .globl nanosleep

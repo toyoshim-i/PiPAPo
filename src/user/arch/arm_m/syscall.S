@@ -220,6 +220,85 @@ ppoll:
 
     .ltorg                 @ literal pool
 
+@ --- getppid (SYS_GETPPID = 0x0008) -------------------------------------------
+@ pid_t getppid(void);
+.section .text.getppid, "ax", %progbits
+.global getppid
+.thumb_func
+getppid:
+    push {r7, lr}
+    movs r7, #8          @ SYS_GETPPID
+    svc  0
+    pop  {r7, pc}
+
+@ --- setpgid (SYS_SETPGID = 0x0009) -------------------------------------------
+@ int setpgid(pid_t pid, pid_t pgid);
+.section .text.setpgid, "ax", %progbits
+.global setpgid
+.thumb_func
+setpgid:
+    push {r7, lr}
+    movs r7, #9          @ SYS_SETPGID
+    svc  0
+    pop  {r7, pc}
+
+@ --- getpgid (SYS_GETPGID = 0x000A) -------------------------------------------
+@ pid_t getpgid(pid_t pid);
+.section .text.getpgid, "ax", %progbits
+.global getpgid
+.thumb_func
+getpgid:
+    push {r7, lr}
+    movs r7, #0x0A       @ SYS_GETPGID
+    svc  0
+    pop  {r7, pc}
+
+@ --- lseek (SYS_LSEEK = 0x010B) -----------------------------------------------
+@ int lseek(int fd, int offset, int whence);
+.section .text.lseek, "ax", %progbits
+.global lseek
+.thumb_func
+lseek:
+    push {r7, lr}
+    ldr  r7, =0x010B    @ SYS_LSEEK
+    svc  0
+    pop  {r7, pc}
+
+@ --- getcwd (SYS_GETCWD = 0x0203) ---------------------------------------------
+@ int getcwd(char *buf, size_t size);
+.section .text.getcwd, "ax", %progbits
+.global getcwd
+.thumb_func
+getcwd:
+    push {r7, lr}
+    ldr  r7, =0x0203    @ SYS_GETCWD
+    svc  0
+    pop  {r7, pc}
+
+@ --- chdir (SYS_CHDIR = 0x0207) -----------------------------------------------
+@ int chdir(const char *path);
+.section .text.chdir, "ax", %progbits
+.global chdir
+.thumb_func
+chdir:
+    push {r7, lr}
+    ldr  r7, =0x0207    @ SYS_CHDIR
+    svc  0
+    pop  {r7, pc}
+
+@ --- access (SYS_ACCESS = 0x0202) ---------------------------------------------
+@ int access(const char *path, int mode);
+.section .text.access, "ax", %progbits
+.global access
+.thumb_func
+access:
+    push {r7, lr}
+    ldr  r7, =0x0202    @ SYS_ACCESS
+    svc  0
+    pop  {r7, pc}
+
+    .ltorg                 @ literal pool for new stubs
+
 @ --- nanosleep (SYS_NANOSLEEP = 0x0500) ---------------------------------------
 @ int nanosleep(const void *req, void *rem);
 .section .text.nanosleep, "ax", %progbits

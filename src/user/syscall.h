@@ -18,10 +18,13 @@ typedef int32_t pid_t;
 
 void  _exit(int status) __attribute__((noreturn));
 pid_t getpid(void);
+pid_t getppid(void);
 pid_t vfork(void);
 int   execve(const char *path, char *const argv[], char *const envp[]);
 pid_t waitpid(pid_t pid, int *status, int options);
 pid_t setsid(void);
+int   setpgid(pid_t pid, pid_t pgid);
+pid_t getpgid(pid_t pid);
 int   ioctl(int fd, unsigned long cmd, void *arg);
 
 /* ── File I/O ────────────────────────────────────────────────────────────── */
@@ -33,6 +36,27 @@ int     close(int fd);
 int     pipe(int fds[2]);
 int     dup(int oldfd);
 int     dup2(int oldfd, int newfd);
+
+/* ── File system ─────────────────────────────────────────────────────────── */
+
+int     lseek(int fd, int offset, int whence);
+int     getcwd(char *buf, size_t size);
+int     chdir(const char *path);
+int     access(const char *path, int mode);
+
+/* lseek whence values */
+#define SEEK_SET  0
+#define SEEK_CUR  1
+#define SEEK_END  2
+
+/* open flags */
+#define O_RDONLY  0
+#define O_WRONLY  1
+#define O_RDWR    2
+
+/* access mode bits */
+#define F_OK  0
+#define R_OK  4
 
 /* ── Memory management ──────────────────────────────────────────────────── */
 

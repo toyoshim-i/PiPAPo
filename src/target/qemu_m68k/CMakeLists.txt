@@ -215,6 +215,8 @@ if(PPAP_TESTS)
     m68k_test_program(test_poll       ${M68K_TESTS_DIR}/test_poll.c)
     m68k_test_program(test_sleep_intr ${M68K_TESTS_DIR}/test_sleep_intr.c)
     m68k_test_program(test_orphan     ${M68K_TESTS_DIR}/test_orphan.c)
+    m68k_test_program(test_id         ${M68K_TESTS_DIR}/test_id.c)
+    m68k_test_program(test_fs         ${M68K_TESTS_DIR}/test_fs.c)
     m68k_test_program(runtests        ${M68K_TESTS_DIR}/runtests.c)
 
     list(APPEND M68K_USER_ELFS
@@ -228,6 +230,8 @@ if(PPAP_TESTS)
         ${CMAKE_BINARY_DIR}/test_poll.elf
         ${CMAKE_BINARY_DIR}/test_sleep_intr.elf
         ${CMAKE_BINARY_DIR}/test_orphan.elf
+        ${CMAKE_BINARY_DIR}/test_id.elf
+        ${CMAKE_BINARY_DIR}/test_fs.elf
         ${CMAKE_BINARY_DIR}/runtests.elf
     )
 endif()
