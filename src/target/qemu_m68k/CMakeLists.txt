@@ -5,7 +5,7 @@
 #
 # Build:
 #   mkdir -p build/m68k && cd build/m68k
-#   cmake -DCMAKE_TOOLCHAIN_FILE=../../cmake/toolchain-m68k.cmake \
+#   cmake -DCMAKE_TOOLCHAIN_FILE=../../cmake/toolchain_m68k.cmake \
 #         -S ../../src/target/qemu_m68k -B .
 #   make
 #
@@ -22,7 +22,7 @@ set(CMAKE_C_STANDARD 11)
 set(PPAP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
 # Common build configuration (kernel sources, userland, romfs functions).
-include(${PPAP_ROOT}/cmake/ppap-userland.cmake)
+include(${PPAP_ROOT}/cmake/ppap_userland.cmake)
 
 set(CMAKE_EXECUTABLE_SUFFIX .elf)
 
@@ -73,21 +73,13 @@ target_link_options(ppap_qemu_m68k PRIVATE
 # does not set up a5 as GOT base, so it must not link that libgcc.
 
 # =============================================================================
-# User-space programs + romfs image pipeline
+# Romfs (musl, busybox, rogue, user programs, mkromfs auto-registered above)
 # =============================================================================
 
-ppap_add_musl()
-ppap_add_busybox()
-ppap_add_rogue()
-ppap_build_user_programs(M68K_USER_ELFS)
-
-ppap_add_mkromfs()
 ppap_generate_romfs(ppap_qemu_m68k
     ${CMAKE_CURRENT_SOURCE_DIR}/romfs/etc/fstab
     ${CMAKE_CURRENT_SOURCE_DIR}/romfs/etc/inittab
-    BIG_ENDIAN
-    USER_ELFS ${M68K_USER_ELFS}
-)
+    BIG_ENDIAN)
 
 # Generate binary and size report
 add_custom_command(TARGET ppap_qemu_m68k POST_BUILD

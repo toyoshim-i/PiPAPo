@@ -1,5 +1,5 @@
 # PicoPiAndPortable — busybox shell-only config fragment
-# Applied on top of allnoconfig via build-busybox.sh
+# Applied on top of allnoconfig via build_busybox.sh
 #
 # Builds a dedicated shell binary (hush) for interactive use.
 # Includes a few lightweight built-in applets that the shell can

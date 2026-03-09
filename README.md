@@ -98,9 +98,9 @@ PPAP/
     rogue/                  git submodule — Rogue 5.4.4 (Davidslv/rogue)
     patches/                PPAP-specific patches (musl, busybox, rogue curses shim)
     configs/                Build configs (busybox defconfig, linker script)
-    build-musl.sh           Build script: musl libc.a (ARM and m68k)
-    build-busybox.sh        Build script: static busybox binary
-    build-rogue.sh          Build script: Rogue with minimal curses shim
+    build_musl.sh           Build script: musl libc.a (ARM and m68k)
+    build_busybox.sh        Build script: static busybox binary
+    build_rogue.sh          Build script: Rogue with minimal curses shim
   src/etc/                  Root filesystem config templates (fstab, passwd, …)
   scripts/
     setup-toolchain.sh      One-shot toolchain install
@@ -147,7 +147,7 @@ cmake -B build/arm_m
 cmake --build build/arm_m    # builds ppap_qemu_arm, ppap_pico1, ppap_pico1calc
 
 # m68k targets
-cmake -B build/m68k -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-m68k.cmake
+cmake -B build/m68k -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain_m68k.cmake
 cmake --build build/m68k     # builds ppap_qemu_m68k
 ```
 

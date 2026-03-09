@@ -9,12 +9,12 @@
 # .config (applet selection) differs.  -ffunction-sections + -fdata-sections
 # enable dead-code stripping in the split binaries.
 #
-# Normally invoked from cmake via ppap-userland.cmake (PPAP_CONFIG set).
-# Standalone: ./third_party/build-busybox.sh [--m68k] [--clean]
+# Normally invoked from cmake via ppap_userland.cmake (PPAP_CONFIG set).
+# Standalone: ./third_party/build_busybox.sh [--m68k] [--clean]
 #
 # Prerequisites:
 #   - Cross compiler (arm-none-eabi-gcc or m68k-elf-gcc)
-#   - musl sysroot already built (run build-musl.sh first)
+#   - musl sysroot already built (run build_musl.sh first)
 
 set -euo pipefail
 
@@ -112,7 +112,7 @@ fi
 
 if [[ ! -f "$PPAP_MUSL_SYSROOT/lib/libc.a" ]]; then
     echo "ERROR: musl sysroot not found at $PPAP_MUSL_SYSROOT" >&2
-    echo "  Run: ./third_party/build-musl.sh${PPAP_ARCH:+ --$PPAP_ARCH}" >&2
+    echo "  Run: ./third_party/build_musl.sh${PPAP_ARCH:+ --$PPAP_ARCH}" >&2
     exit 1
 fi
 

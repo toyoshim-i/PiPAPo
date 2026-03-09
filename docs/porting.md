@@ -71,7 +71,7 @@ Link with `-pie` to emit `R_68K_RELATIVE` relocations.
 ## musl libc
 
 musl is cross-compiled for each architecture with PPAP's SVC/TRAP-based syscall interface.
-Build: `third_party/build-musl.sh` → produces `build/musl-sysroot/`.
+Build: `third_party/build_musl.sh` → produces `build/musl-sysroot/`.
 
 ### Syscall Remapping
 
@@ -85,7 +85,7 @@ Key structs that must match musl's expectations:
 
 ## busybox
 
-Built via `third_party/build-busybox.sh` with a custom defconfig.
+Built via `third_party/build_busybox.sh` with a custom defconfig.
 
 ### Configuration
 

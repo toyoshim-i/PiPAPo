@@ -53,8 +53,8 @@ Link against musl libc for full POSIX C library support (`printf`,
 recommended path for non-trivial applications.
 
 Reference implementations:
-- `third_party/build-busybox.sh` — busybox (multicall binary)
-- `third_party/build-rogue.sh` — Rogue 5.4.4 (standalone build script, minimal curses shim)
+- `third_party/build_busybox.sh` — busybox (multicall binary)
+- `third_party/build_rogue.sh` — Rogue 5.4.4 (standalone build script, minimal curses shim)
 
 ## 3. Toolchain Requirements
 
@@ -78,8 +78,8 @@ sudo apt install gcc-arm-none-eabi binutils-arm-none-eabi
 Build the musl sysroot before compiling applications:
 
 ```sh
-./third_party/build-musl.sh       # builds ARM sysroot
-./third_party/build-musl.sh m68k  # builds m68k sysroot (if supported)
+./third_party/build_musl.sh       # builds ARM sysroot
+./third_party/build_musl.sh m68k  # builds m68k sysroot (if supported)
 ```
 
 This produces `build/musl-sysroot/` (or architecture-specific variant) containing:
@@ -291,7 +291,7 @@ then issues `_exit()` with main's return value.
 
 ```sh
 # Build musl sysroot (one-time, per architecture)
-./third_party/build-musl.sh
+./third_party/build_musl.sh
 ```
 
 ### Build Process

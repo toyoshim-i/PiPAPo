@@ -1,12 +1,12 @@
 #!/bin/bash
-# stage-romfs.sh --- Assemble a romfs staging directory
+# stage_romfs.sh --- Assemble a romfs staging directory
 #
 # Shared between ARM and m68k targets.  Creates the full directory
 # structure, installs user ELFs, busybox symlinks, rogue, headers,
 # and /etc files with target-specific overrides.
 #
 # Usage:
-#   stage-romfs.sh STAGING_DIR PROJECT_ROOT \
+#   stage_romfs.sh STAGING_DIR PROJECT_ROOT \
 #       --user-elfs ELF1 ELF2 ... \
 #       --bb-dir DIR \
 #       --bb-applets APP1 APP2 ... \

@@ -1,17 +1,17 @@
-# toolchain-m68k.cmake — Cross-compilation toolchain for Motorola 68000
+# toolchain_m68k.cmake — Cross-compilation toolchain for Motorola 68000
 #
 # Usage:
 #   mkdir -p build/m68k && cd build/m68k
-#   cmake -DCMAKE_TOOLCHAIN_FILE=../../cmake/toolchain-m68k.cmake ..
+#   cmake -DCMAKE_TOOLCHAIN_FILE=../../cmake/toolchain_m68k.cmake ..
 #
-# Uses a custom m68k-elf-gcc built by third_party/build-gcc-m68k.sh.
+# Uses a custom m68k-elf-gcc built by third_party/build_gcc_m68k.sh.
 # Targets the 68000 ISA (-m68000) with a 68000-safe libgcc.
 # No standard C library — bare-metal with -nostdlib.
 
 set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_PROCESSOR m68k)
 
-# Custom m68k-elf toolchain (built by third_party/build-gcc-m68k.sh)
+# Custom m68k-elf toolchain (built by third_party/build_gcc_m68k.sh)
 set(PPAP_M68K_TOOLCHAIN ${CMAKE_CURRENT_LIST_DIR}/../tools/m68k-toolchain)
 
 # Cross-compiler

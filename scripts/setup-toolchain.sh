@@ -50,7 +50,7 @@ info "=== Step 1: Installing apt packages ==="
 APT_PACKAGES=(
   gcc-arm-none-eabi       # ARM cross-compiler (armv6m/Thumb)
   binutils-arm-none-eabi  # Assembler, linker, objcopy, objdump
-  # m68k-elf toolchain is built from source: ./third_party/build-gcc-m68k.sh
+  # m68k-elf toolchain is built from source: ./third_party/build_gcc_m68k.sh
   gdb-multiarch           # GDB with ARM and m68k support
   openocd                 # SWD/JTAG on-chip debugger (v0.12+)
   minicom                 # Serial console
@@ -118,7 +118,7 @@ fi
 # --- Step 3: QEMU m68k check ------------------------------------------------
 #
 # The system qemu-system-m68k (apt: qemu-system-misc) usually works.
-# If you need a newer version, run: ./third_party/build-qemu-system-m68k.sh
+# If you need a newer version, run: ./third_party/build_qemu_system_m68k.sh
 # which builds QEMU 9.1.x from the third_party/qemu submodule.
 
 QEMU_M68K="${PPAP_ROOT}/third_party/qemu/build/qemu-system-m68k"
@@ -167,7 +167,7 @@ if [[ -x "$M68K_GCC" ]]; then
     "$M68K_GCC --version" \
     "m68k-elf-gcc"
 else
-  warn "m68k-elf-gcc not found. Run: ./third_party/build-gcc-m68k.sh"
+  warn "m68k-elf-gcc not found. Run: ./third_party/build_gcc_m68k.sh"
   FAIL=1
 fi
 
@@ -212,7 +212,7 @@ elif command -v qemu-system-m68k &>/dev/null; then
     "qemu-system-m68k --version" \
     "QEMU emulator"
 else
-  warn "qemu-system-m68k: not found (install qemu-system-misc or run ./third_party/build-qemu-system-m68k.sh)"
+  warn "qemu-system-m68k: not found (install qemu-system-misc or run ./third_party/build_qemu_system_m68k.sh)"
   FAIL=1
 fi
 

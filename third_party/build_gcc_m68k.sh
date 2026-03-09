@@ -8,7 +8,7 @@
 # The resulting toolchain produces 68000-safe code and libgcc,
 # eliminating the need for manual divmod overrides.
 #
-# Usage: ./third_party/build-gcc-m68k.sh [--clean]
+# Usage: ./third_party/build_gcc_m68k.sh [--clean]
 #   --clean   Remove toolchain and build artifacts, then exit
 #
 # Prerequisites:

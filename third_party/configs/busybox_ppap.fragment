@@ -1,5 +1,5 @@
 # PicoPiAndPortable — busybox full config fragment
-# Applied on top of allnoconfig via build-busybox.sh
+# Applied on top of allnoconfig via build_busybox.sh
 #
 # This is the "full" busybox used for transient commands (ls, cat, grep, …).
 # Init and shell have dedicated binaries (busybox.init, busybox.sh), so

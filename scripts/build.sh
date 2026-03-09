@@ -77,12 +77,12 @@ case "$TARGET" in
         M68K_TC="$PROJECT_DIR/tools/m68k-toolchain/bin/m68k-elf-gcc"
         if [[ ! -x "$M68K_TC" ]]; then
             echo "[build] m68k-elf-gcc not found. Building toolchain..."
-            "$PROJECT_DIR/third_party/build-gcc-m68k.sh"
+            "$PROJECT_DIR/third_party/build_gcc_m68k.sh"
         fi
 
-        # musl, busybox, and rogue are now built by cmake via ppap-userland.cmake
+        # musl, busybox, and rogue are now built by cmake via ppap_userland.cmake
         echo "[build] Building $CMAKE_TARGET (PPAP_TESTS=$TESTS)..."
-        cmake -DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/cmake/toolchain-m68k.cmake" \
+        cmake -DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/cmake/toolchain_m68k.cmake" \
               -DPPAP_TESTS="$TESTS" \
               -S "$PROJECT_DIR/src/target/qemu_m68k" -B "$BUILD_DIR" >/dev/null 2>&1
         cmake --build "$BUILD_DIR" -- -j"$(nproc)"

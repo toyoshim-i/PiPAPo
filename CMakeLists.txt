@@ -21,7 +21,7 @@ option(PPAP_TESTS "Enable kernel integration tests and userland test suite" OFF)
 
 # Common build configuration (kernel sources, userland, romfs functions).
 # Also includes kernel_sources.cmake, busybox_applets.cmake, user_programs.cmake.
-include(cmake/ppap-userland.cmake)
+include(cmake/ppap_userland.cmake)
 
 # =============================================================================
 # Per-target build definitions
@@ -49,27 +49,12 @@ if(PPAP_TESTS)
 endif()
 
 # =============================================================================
-# User-space build + romfs image pipeline
+# Per-target romfs generation
 # =============================================================================
-# 1. Build musl libc, busybox, rogue (via ppap-userland.cmake functions)
-# 2. Build user-space ELF binaries (via ppap-userland.cmake functions)
-# 3. Stage into per-target romfs directories
-# 4. Build mkromfs, generate romfs.bin
-# 5. Link romfs_data.S (.incbin romfs.bin) into all targets
+# musl, busybox, rogue, user programs, and mkromfs are all registered
+# automatically by ppap_userland.cmake at include time.  Each target
+# just needs its own ppap_generate_romfs() call with fstab/inittab.
 # =============================================================================
-
-# --- Third-party builds (musl, busybox, rogue) ---
-ppap_add_musl()
-ppap_add_busybox()
-ppap_add_rogue()
-
-# --- User-space binaries ---
-ppap_build_user_programs(ARM_USER_ELF_PATHS)
-
-# --- mkromfs + per-target romfs generation ---
-# Each target gets its own romfs.bin with an appropriate /etc/fstab.
-# Targets with PPAP_HAS_BLKDEV get the mmcblk0 vfat mount entry appended.
-ppap_add_mkromfs()
 
 set(PPAP_BLKDEV_TARGETS ppap_qemu_arm ppap_pico1calc)
 
@@ -102,8 +87,7 @@ endforeach()
 foreach(tgt ${PPAP_ALL_TARGETS})
     ppap_generate_romfs(${tgt}
         ${CMAKE_BINARY_DIR}/fstab_${tgt}
-        ${CMAKE_BINARY_DIR}/inittab_${tgt}
-        USER_ELFS ${ARM_USER_ELF_PATHS})
+        ${CMAKE_BINARY_DIR}/inittab_${tgt})
 endforeach()
 
 # =============================================================================

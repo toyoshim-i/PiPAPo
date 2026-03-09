@@ -1,14 +1,20 @@
-# ppap-userland.cmake — Common userland build configuration
+# ppap_userland.cmake — Common userland build configuration
 #
 # Included by root CMakeLists.txt (ARM targets) and
 # qemu_m68k/CMakeLists.txt (m68k target).
 #
-# Provides:
+# At include time, automatically registers build commands for:
+#   - musl libc, busybox, rogue (third-party)
+#   - User-space programs (from user_programs.cmake list)
+#   - mkromfs host tool
+#
+# Sets PPAP_USER_ELFS — list of user ELF paths for romfs generation.
+#
+# Per-target API:
+#   ppap_generate_romfs(target fstab inittab [BIG_ENDIAN])
+#
+# Also provides:
 #   - PPAP_* variables for arch-specific compiler/linker configuration
-#   - ppap_build_user_programs(out_var) — build all user ELFs
-#   - ppap_add_musl() — custom command for musl libc
-#   - ppap_add_busybox() — custom command for busybox variants
-#   - ppap_add_rogue() — custom command for rogue
 #   - Generated ppap-target-config.sh for shell build scripts
 #   - Generated specs file for musl-linked binaries
 
@@ -197,11 +203,11 @@ function(ppap_user_program name source)
     )
 endfunction()
 
-# ppap_build_user_programs(out_var)
+# _ppap_build_user_programs()  [internal]
 #
 # Builds CRT objects, all user apps, and (if PPAP_TESTS) all test programs.
-# Sets ${out_var} to the list of output ELF paths in the caller's scope.
-function(ppap_build_user_programs out_var)
+# Sets PPAP_USER_ELFS in the caller's scope.
+function(_ppap_build_user_programs)
     # --- CRT objects ---
     add_custom_command(
         OUTPUT ${CMAKE_BINARY_DIR}/crt0.o
@@ -242,39 +248,39 @@ function(ppap_build_user_programs out_var)
         endforeach()
     endif()
 
-    set(${out_var} ${_all_elfs} PARENT_SCOPE)
+    set(PPAP_USER_ELFS ${_all_elfs} PARENT_SCOPE)
 endfunction()
 
 # =============================================================================
 # Third-party build targets
 # =============================================================================
 
-# ppap_add_musl()
+# _ppap_add_musl()  [internal]
 # Registers a custom command to build musl libc.
 # Output: ${PPAP_MUSL_LIBC}
-function(ppap_add_musl)
+function(_ppap_add_musl)
     file(GLOB_RECURSE _musl_overlay
         ${PPAP_ROOT}/third_party/patches/musl/overlay/*)
 
     add_custom_command(
         OUTPUT ${PPAP_MUSL_LIBC}
         COMMAND ${CMAKE_COMMAND} -E env "PPAP_CONFIG=${PPAP_CONFIG_FILE}"
-                ${PPAP_ROOT}/third_party/build-musl.sh
-        DEPENDS ${PPAP_ROOT}/third_party/build-musl.sh
+                ${PPAP_ROOT}/third_party/build_musl.sh
+        DEPENDS ${PPAP_ROOT}/third_party/build_musl.sh
                 ${_musl_overlay}
         COMMENT "Building musl libc (${PPAP_ARCH_LABEL})"
     )
 endfunction()
 
-# ppap_add_busybox()
+# _ppap_add_busybox()  [internal]
 # Registers a custom command to build busybox variants.
 # Output: ${PPAP_BB_DIR}/busybox, ${PPAP_BB_DIR}/busybox.sh
-function(ppap_add_busybox)
+function(_ppap_add_busybox)
     add_custom_command(
         OUTPUT ${PPAP_BB_DIR}/busybox ${PPAP_BB_DIR}/busybox.sh
         COMMAND ${CMAKE_COMMAND} -E env "PPAP_CONFIG=${PPAP_CONFIG_FILE}"
-                ${PPAP_ROOT}/third_party/build-busybox.sh
-        DEPENDS ${PPAP_ROOT}/third_party/build-busybox.sh
+                ${PPAP_ROOT}/third_party/build_busybox.sh
+        DEPENDS ${PPAP_ROOT}/third_party/build_busybox.sh
                 ${PPAP_ROOT}/third_party/configs/busybox_ppap.fragment
                 ${PPAP_ROOT}/third_party/configs/busybox_sh.fragment
                 ${PPAP_BUSYBOX_LD}
@@ -283,17 +289,17 @@ function(ppap_add_busybox)
     )
 endfunction()
 
-# ppap_add_rogue()
+# _ppap_add_rogue()  [internal]
 # Registers a custom command to build rogue.
 # Output: ${PPAP_ROGUE_DIR}/rogue
-function(ppap_add_rogue)
+function(_ppap_add_rogue)
     file(GLOB _rogue_patches ${PPAP_ROOT}/third_party/patches/rogue/*)
 
     add_custom_command(
         OUTPUT ${PPAP_ROGUE_DIR}/rogue
         COMMAND ${CMAKE_COMMAND} -E env "PPAP_CONFIG=${PPAP_CONFIG_FILE}"
-                ${PPAP_ROOT}/third_party/build-rogue.sh
-        DEPENDS ${PPAP_ROOT}/third_party/build-rogue.sh
+                ${PPAP_ROOT}/third_party/build_rogue.sh
+        DEPENDS ${PPAP_ROOT}/third_party/build_rogue.sh
                 ${_rogue_patches}
                 ${PPAP_BUSYBOX_LD}
                 ${PPAP_MUSL_LIBC}
@@ -305,10 +311,10 @@ endfunction()
 # Romfs image pipeline
 # =============================================================================
 
-# ppap_add_mkromfs()
+# _ppap_add_mkromfs()  [internal]
 # Registers a custom command to build the mkromfs host tool.
 # Output: ${CMAKE_BINARY_DIR}/mkromfs
-function(ppap_add_mkromfs)
+function(_ppap_add_mkromfs)
     add_custom_command(
         OUTPUT ${CMAKE_BINARY_DIR}/mkromfs
         COMMAND cc -O2 -I ${PPAP_ROOT}/src/kernel/fs
@@ -320,15 +326,13 @@ function(ppap_add_mkromfs)
     )
 endfunction()
 
-# ppap_generate_romfs(target fstab inittab
-#                     [BIG_ENDIAN]
-#                     USER_ELFS elf1 elf2 ...)
+# ppap_generate_romfs(target fstab inittab [BIG_ENDIAN])
 #
 # Generates a romfs image and links it into the given cmake target.
+# Uses PPAP_USER_ELFS (set at include time) for user-space binaries.
 # BIG_ENDIAN passes -b to mkromfs (for m68k).
-# Requires ppap_add_mkromfs() to have been called first.
 function(ppap_generate_romfs target fstab inittab)
-    cmake_parse_arguments(ARG "BIG_ENDIAN" "" "USER_ELFS" ${ARGN})
+    cmake_parse_arguments(ARG "BIG_ENDIAN" "" "" ${ARGN})
 
     set(_romfs_staging ${CMAKE_BINARY_DIR}/romfs_${target})
     set(_romfs_bin     ${CMAKE_BINARY_DIR}/romfs_${target}.bin)
@@ -349,9 +353,9 @@ function(ppap_generate_romfs target fstab inittab)
 
     add_custom_command(
         OUTPUT ${_romfs_bin}
-        COMMAND ${PPAP_ROOT}/cmake/stage-romfs.sh
+        COMMAND ${PPAP_ROOT}/cmake/stage_romfs.sh
                 ${_romfs_staging} ${PPAP_ROOT}
-                --user-elfs ${ARG_USER_ELFS}
+                --user-elfs ${PPAP_USER_ELFS}
                 --bb-dir ${PPAP_BB_DIR}
                 --bb-applets ${BB_APPLETS}
                 --bb-shell-applets ${BB_SHELL_APPLETS}
@@ -363,14 +367,14 @@ function(ppap_generate_romfs target fstab inittab)
         COMMAND ${CMAKE_BINARY_DIR}/mkromfs ${_mkromfs_flags}
                 ${_romfs_staging} ${_romfs_bin}
         DEPENDS ${CMAKE_BINARY_DIR}/mkromfs
-                ${ARG_USER_ELFS}
+                ${PPAP_USER_ELFS}
                 ${PPAP_BB_DIR}/busybox
                 ${PPAP_ROGUE_DIR}/rogue
                 ${PPAP_ROOT}/src/etc/fstab
                 ${PPAP_ROOT}/src/etc/inittab
                 ${fstab}
                 ${inittab}
-                ${PPAP_ROOT}/cmake/stage-romfs.sh
+                ${PPAP_ROOT}/cmake/stage_romfs.sh
         COMMENT "Generating romfs for ${target}"
     )
 
@@ -383,3 +387,17 @@ function(ppap_generate_romfs target fstab inittab)
     add_dependencies(${target} romfs_image_${target})
     target_sources(${target} PRIVATE ${_romfs_asm})
 endfunction()
+
+# =============================================================================
+# Auto-register all shared builds at include time.
+#
+# After this point, callers only need ppap_generate_romfs() per target.
+# Adding a new userland app or third-party component requires editing
+# only this file (or user_programs.cmake) — all targets pick it up.
+# =============================================================================
+
+_ppap_add_musl()
+_ppap_add_busybox()
+_ppap_add_rogue()
+_ppap_build_user_programs()
+_ppap_add_mkromfs()

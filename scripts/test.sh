@@ -34,7 +34,7 @@ done
 BUILD_DIR="$PROJECT_DIR/build/tests"
 
 echo "=== Host unit tests ==="
-cmake -S "$PROJECT_DIR/tests" -B "$BUILD_DIR" \
+cmake -S "$PROJECT_DIR/tests/host" -B "$BUILD_DIR" \
     -DCMAKE_BUILD_TYPE=Debug \
     -DCMAKE_C_COMPILER=gcc \
     > /dev/null

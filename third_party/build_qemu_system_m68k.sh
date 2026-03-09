@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build-qemu-system-m68k.sh — Build QEMU m68k emulator from source
+# build_qemu_system_m68k.sh — Build QEMU m68k emulator from source
 #
 # Builds QEMU from the third_party/qemu submodule, targeting only
 # m68k-softmmu to keep the build fast.
@@ -9,7 +9,7 @@
 # the m68k virt machine.
 #
 # Usage:
-#   ./third_party/build-qemu-system-m68k.sh
+#   ./third_party/build_qemu_system_m68k.sh
 #
 # The built binary lands at:
 #   third_party/qemu/build/qemu-system-m68k

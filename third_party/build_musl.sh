@@ -9,8 +9,8 @@
 #   5. Installs headers + libc.a into the sysroot
 #   6. Restores the submodule to its clean upstream state
 #
-# Normally invoked from cmake via ppap-userland.cmake (PPAP_CONFIG set).
-# Standalone: ./third_party/build-musl.sh [--m68k] [--clean]
+# Normally invoked from cmake via ppap_userland.cmake (PPAP_CONFIG set).
+# Standalone: ./third_party/build_musl.sh [--m68k] [--clean]
 
 set -euo pipefail
 
