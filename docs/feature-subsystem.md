@@ -167,7 +167,7 @@ void ppap_m68k_personality(ecpu_state_t *cpu) {
         cpu->dregs[3],  /* d3  = arg3 */
         cpu->dregs[4],  /* d4  = arg4 */
         cpu->dregs[5],  /* d5  = arg5 */
-        0               /* m68k ABI has 5 args only (see target-68000.md) */
+        0               /* m68k ABI has 5 args in d1-d5 (a0 for 6th) */
     );
     cpu->dregs[0] = ret;
 }
@@ -372,7 +372,7 @@ Additional INT handlers needed:
 ### 6.1 Target
 
 Run X68000 Human68k binaries on PPAP-m68k (and via eCPU on other
-architectures). Detailed design is in `target-68000.md` §7.5.
+architectures). See `target-68000.md` §7 for X68000 hardware details.
 
 ### 6.2 Binary Format
 
@@ -408,8 +408,8 @@ The emulator/trap handler intercepts these and translates:
 | `_WRITE` | $FF40 | `write()` |
 | `_SEEK` | $FF42 | `lseek()` |
 
-See `target-68000.md` §7.5 for the full design including IOCS (TRAP
-#15) passthrough on real X68000 hardware.
+See `target-68000.md` §7 for X68000 hardware details including IOCS
+(TRAP #15) passthrough.
 
 ---
 
