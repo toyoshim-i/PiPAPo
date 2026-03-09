@@ -9,6 +9,7 @@
 # Options:
 #   --build   Build before flashing (calls scripts/build.sh)
 #   --test    Enable PPAP_TESTS (passed to build.sh, implies --build)
+#   --clean   Clean build directory before building (implies --build)
 #
 # Examples:
 #   ./scripts/flash.sh pico1              # flash pico1 (must be pre-built)
@@ -39,6 +40,7 @@ for arg in "$@"; do
     case "$arg" in
         --build)  DO_BUILD=true ;;
         --test)   DO_BUILD=true; BUILD_ARGS+=(--test) ;;
+        --clean)  DO_BUILD=true; BUILD_ARGS+=(--clean) ;;
         -*)       echo "Unknown option: $arg" >&2; exit 1 ;;
         *)        TARGET="$arg" ;;
     esac

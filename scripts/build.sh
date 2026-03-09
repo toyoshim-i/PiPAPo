@@ -8,11 +8,13 @@
 #
 # Options:
 #   --test    Enable PPAP_TESTS (kernel integration tests + userland test suite)
+#   --clean   Remove build directory before building (full rebuild)
 #
 # Examples:
 #   ./scripts/build.sh pico1              # build pico1
 #   ./scripts/build.sh pico1calc          # build pico1calc
 #   ./scripts/build.sh --test qemu_arm    # build qemu_arm with tests
+#   ./scripts/build.sh --clean qemu_m68k  # clean rebuild m68k
 #   ./scripts/build.sh qemu_m68k          # build m68k QEMU target
 
 set -euo pipefail
@@ -22,11 +24,13 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
 TESTS=OFF
+CLEAN=0
 TARGET=""
 
 for arg in "$@"; do
     case "$arg" in
         --test)   TESTS=ON ;;
+        --clean)  CLEAN=1 ;;
         -*)       echo "Unknown option: $arg" >&2; exit 1 ;;
         *)        TARGET="$arg" ;;
     esac
@@ -36,6 +40,18 @@ done
 if [[ -z "$TARGET" ]]; then
     sed -n '2,/^$/{ s/^# //; s/^#$//; p }' "$0"
     exit 0
+fi
+
+# ── Determine build directory ────────────────────────────────────────────────
+case "$TARGET" in
+    pico1|pico1calc|qemu_arm) BUILD_DIR="$PROJECT_DIR/build/arm_m" ;;
+    qemu_m68k)                BUILD_DIR="$PROJECT_DIR/build/m68k" ;;
+esac
+
+# ── Clean build directory if requested ───────────────────────────────────────
+if [[ $CLEAN -eq 1 && -d "$BUILD_DIR" ]]; then
+    echo "[build] Cleaning $BUILD_DIR..."
+    rm -rf "$BUILD_DIR"
 fi
 
 # ── Target-specific build ────────────────────────────────────────────────────

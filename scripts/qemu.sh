@@ -10,6 +10,7 @@
 #   --build     Force rebuild before running (default: build if needed)
 #   --no-build  Skip build, run existing binary
 #   --test      Enable PPAP_TESTS, run automated test suite (implies --build)
+#   --clean     Clean build directory before building (passed to build.sh)
 #   --gdb       Pause at reset, wait for GDB on :1234
 #   --m68k      Shorthand for TARGET=qemu_m68k (back-compat)
 #
@@ -31,6 +32,7 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TARGET=""
 DO_BUILD=1
 DO_TEST=0
+DO_CLEAN=0
 DO_GDB=0
 for arg in "$@"; do
     case "$arg" in
@@ -38,10 +40,11 @@ for arg in "$@"; do
         --no-build) DO_BUILD=0 ;;
         --build)    DO_BUILD=1 ;;
         --test)     DO_TEST=1; DO_BUILD=1 ;;
+        --clean)    DO_CLEAN=1; DO_BUILD=1 ;;
         --gdb)      DO_GDB=1 ;;
         qemu_arm|qemu_m68k) TARGET="$arg" ;;
         *)          echo "Unknown option: $arg"
-                    echo "Usage: $0 [--test] [--no-build] [--gdb] [qemu_arm|qemu_m68k]"
+                    echo "Usage: $0 [--test] [--clean] [--no-build] [--gdb] [qemu_arm|qemu_m68k]"
                     exit 1 ;;
     esac
 done
@@ -71,6 +74,9 @@ fi
 # ── Build ────────────────────────────────────────────────────────────────────
 if [[ $DO_BUILD -eq 1 ]]; then
     BUILD_ARGS=()
+    if [[ $DO_CLEAN -eq 1 ]]; then
+        BUILD_ARGS+=(--clean)
+    fi
     if [[ $DO_TEST -eq 1 ]]; then
         BUILD_ARGS+=(--test)
     fi
