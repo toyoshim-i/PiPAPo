@@ -197,24 +197,9 @@ m68k_fault_handler:
     bra.s   .Lfault_halt
 
 | --- Illegal Instruction (group 1 — 6-byte exception frame) ---
-| Tries 68020 emulation first; on failure, crash the process.
     .global m68k_illegal_handler
 m68k_illegal_handler:
     movem.l %d0-%d7/%a0-%a6,%sp@-
-    move.l  %sp,%d0
-    move.l  %d0,%sp@-
-    jsr     m68k_emulate_insn
-    addq.l  #4,%sp
-
-    tst.l   %d0
-    bne.s   .Lillegal_unhandled
-
-    | Emulated OK — restore and return
-    movem.l %sp@+,%d0-%d7/%a0-%a6
-    rte
-
-.Lillegal_unhandled:
-    | Not emulatable — crash the process
     move.l  %sp,%sp@-               | arg2: register frame
     pea.l   4                        | arg1: fault_type = FAULT_ILLEGAL
     jsr     m68k_crash_handler
