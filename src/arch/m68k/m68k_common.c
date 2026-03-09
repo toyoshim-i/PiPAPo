@@ -123,19 +123,14 @@ int m68k_crash_handler(int fault_type, uint32_t *regs)
 
     /* Check if the process has a signal handler installed.
      * If so, post the signal and let signal_check() deliver it
-     * on the next return to user-mode.  For now on m68k, signal
-     * delivery is not yet implemented, so we fall through to kill.
-     * TODO: when m68k signal delivery is implemented, return the
-     * saved context to the process with the signal pending. */
+     * synchronously on the next syscall return. */
     sighandler_t handler = p->sig_handlers[sig];
     if (handler != (sighandler_t)0 /* SIG_DFL */ &&
         handler != (sighandler_t)1 /* SIG_IGN */) {
         klogf("  Signal %u posted (handler at %x)",
               (uint32_t)sig, (uint32_t)(uintptr_t)handler);
         p->sig_pending |= (1u << sig);
-        /* TODO: once m68k signal_check() can deliver signals,
-         * return here and let the process resume with the signal
-         * pending.  For now, fall through to kill. */
+        return 1;  /* resume — signal_check will deliver the handler */
     }
 
     klogf("  Killed (exit status %u)", (uint32_t)(128 + sig));

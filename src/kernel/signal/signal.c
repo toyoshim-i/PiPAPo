@@ -30,11 +30,12 @@
 
 /* ── Architecture-specific signal delivery ─────────────────────────────────
  *
- * ARM: sigreturn_trampoline (naked ASM), signal_setup_frame (PSP
- *      manipulation), signal_check (delivers via HW exception frame).
+ * ARM:  RTE-based — sigreturn_trampoline (naked ASM), signal_setup_frame
+ *       (PSP manipulation), signal_check (delivers via HW exception frame).
  *
- * m68k: not yet implemented — stubs only.  signal_check is a no-op;
- *       sys_sigreturn / sys_rt_sigreturn return -ENOSYS.
+ * m68k: Synchronous call — signal_check calls the handler directly via
+ *       m68k_call_signal_handler (assembly thunk that sets a5 = GOT base).
+ *       No sigreturn needed; sys_sigreturn / sys_rt_sigreturn return -ENOSYS.
  * ────────────────────────────────────────────────────────────────────────── */
 
 #if defined(__m68k__)
