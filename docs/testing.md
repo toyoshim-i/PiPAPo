@@ -21,8 +21,8 @@ build process, and execution environment.
 # On-target tests (m68k, requires qemu-system-m68k)
 ./scripts/run.sh --test qemu_m68k
 
-# Everything at once (build all targets + run QEMU tests)
-./scripts/test_all_targets.sh
+# Everything at once (host + build all targets + QEMU tests)
+./scripts/test.sh --all
 ```
 
 ## Host unit tests
@@ -236,13 +236,13 @@ and greps output for `ALL.*TESTS PASSED`.
 ./scripts/run.sh --test qemu_m68k    # m68k
 ```
 
-### `test_all_targets.sh`
+### `test.sh --all`
 
 Full CI pipeline:
-1. Build all production targets (`PPAP_TESTS=OFF`)
-2. Build QEMU targets (ARM and m68k) with tests (`PPAP_TESTS=ON`)
-3. Run QEMU test suites
-4. Print binary sizes
+1. Host unit tests
+2. Build all production targets (ARM and m68k, `PPAP_TESTS=OFF`)
+3. Print binary sizes
+4. QEMU on-target tests (ARM and m68k, `PPAP_TESTS=ON`)
 
 ### Test execution flow
 

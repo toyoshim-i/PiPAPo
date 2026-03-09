@@ -105,7 +105,7 @@ PPAP/
     setup-toolchain.sh      One-shot toolchain install
     build.sh                Build any target (pico1, pico1calc, qemu_arm, qemu_m68k, host_qemu)
     run.sh                  Flash or run any target
-    test_all_targets.sh     Build all targets + run QEMU automated tests
+    test.sh                 Run tests (--all for full suite)
   docs/
     spec-v07.md             Full design specification
     design.md               Kernel internals (boot, memory, scheduler, signals)
@@ -176,10 +176,11 @@ At the shell prompt, try `rogue` to play the classic dungeon crawler.
 
 Press **Ctrl-A X** to quit QEMU.
 
-### 4. Run all tests
+### 4. Test
 
 ```sh
-./scripts/test_all_targets.sh   # build all targets + QEMU automated tests
+./scripts/test.sh            # host unit tests only
+./scripts/test.sh --all      # host + build all targets + QEMU tests (ARM & m68k)
 ```
 
 ### 5. Debug with GDB (ARM hardware)

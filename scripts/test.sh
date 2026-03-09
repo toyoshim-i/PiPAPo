@@ -1,42 +1,87 @@
-#!/bin/sh
-# scripts/test.sh — Build and run the PPAP unit-test suite (host native build)
+#!/usr/bin/env bash
+# test.sh — Run PiPAPo tests
 #
 # Usage:
-#   ./scripts/test.sh            # run from the repo root
-#   ./scripts/test.sh --verbose  # show all test output, not just failures
+#   ./scripts/test.sh [OPTIONS]
 #
-# The test suite uses a separate CMake project (tests/CMakeLists.txt) that
-# compiles kernel source files with the host gcc.  No ARM toolchain needed.
+# Options:
+#   --verbose   Show all test output, not just failures (host unit tests)
+#   --all       Run everything: host unit tests, build all targets, QEMU tests
 #
-# Prerequisites:
-#   - cmake >= 3.13
-#   - host gcc / clang
+# Examples:
+#   ./scripts/test.sh            # host unit tests only
+#   ./scripts/test.sh --verbose  # host unit tests with verbose output
+#   ./scripts/test.sh --all      # host + build all targets + QEMU tests
 
-set -e
+set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BUILD_DIR="${REPO_ROOT}/build_tests"
-VERBOSE="${1:-}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-echo "=== PPAP unit tests ==="
-echo "Source: ${REPO_ROOT}/tests"
-echo "Build:  ${BUILD_DIR}"
-echo ""
+# ── Parse arguments ────────────────────────────────────────────────────────
+DO_ALL=0
+VERBOSE=0
 
-# Configure (quiet unless something goes wrong)
-cmake -S "${REPO_ROOT}/tests" -B "${BUILD_DIR}" \
+for arg in "$@"; do
+    case "$arg" in
+        --all)     DO_ALL=1 ;;
+        --verbose) VERBOSE=1 ;;
+        -*)        echo "Unknown option: $arg" >&2; exit 1 ;;
+    esac
+done
+
+# ── Host unit tests ────────────────────────────────────────────────────────
+BUILD_DIR="$PROJECT_DIR/build_tests"
+
+echo "=== Host unit tests ==="
+cmake -S "$PROJECT_DIR/tests" -B "$BUILD_DIR" \
     -DCMAKE_BUILD_TYPE=Debug \
     -DCMAKE_C_COMPILER=gcc \
     > /dev/null
 
-# Build
-cmake --build "${BUILD_DIR}" -- -j"$(nproc)"
-
+cmake --build "$BUILD_DIR" -- -j"$(nproc)"
 echo ""
 
-# Run
-if [ "${VERBOSE}" = "--verbose" ]; then
-    ctest --test-dir "${BUILD_DIR}" --output-on-failure -V
+if [[ $VERBOSE -eq 1 ]]; then
+    ctest --test-dir "$BUILD_DIR" --output-on-failure -V
 else
-    ctest --test-dir "${BUILD_DIR}" --output-on-failure
+    ctest --test-dir "$BUILD_DIR" --output-on-failure
 fi
+
+if [[ $DO_ALL -eq 0 ]]; then
+    exit 0
+fi
+
+# ── Build all production targets ───────────────────────────────────────────
+echo ""
+echo "=== Building all ARM targets (production) ==="
+"$SCRIPT_DIR/build.sh" qemu_arm
+"$SCRIPT_DIR/build.sh" pico1
+"$SCRIPT_DIR/build.sh" pico1calc
+
+echo ""
+echo "=== ARM binary sizes (production) ==="
+arm-none-eabi-size build/arm_m/ppap_qemu_arm.elf \
+                   build/arm_m/ppap_pico1.elf \
+                   build/arm_m/ppap_pico1calc.elf 2>/dev/null || true
+
+echo ""
+echo "=== Building m68k target (production) ==="
+"$SCRIPT_DIR/build.sh" qemu_m68k
+
+echo ""
+echo "=== m68k binary size (production) ==="
+"$PROJECT_DIR/tools/m68k-toolchain/bin/m68k-elf-size" \
+    build/m68k/ppap_qemu_m68k.elf 2>/dev/null || true
+
+# ── QEMU on-target tests ──────────────────────────────────────────────────
+echo ""
+echo "=== QEMU automated test (ARM) ==="
+"$SCRIPT_DIR/run.sh" --test qemu_arm
+
+echo ""
+echo "=== QEMU automated test (m68k) ==="
+"$SCRIPT_DIR/run.sh" --test qemu_m68k
+
+echo ""
+echo "=== All tests passed ==="
