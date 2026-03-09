@@ -48,8 +48,8 @@ Every file that must be rewritten or branched for m68k:
 
 | Current file | Purpose | M68K equivalent |
 |---|---|---|
-| `src/hw/cortex_m0plus.h` | SysTick, SCB, NVIC, SHPR registers | `m68k.h`: SR bits, VBR (68010+), exception frame layout |
-| `src/hw/rp2040.h` | RP2040 peripheral register map | Not needed for m68k (replaced by target-specific headers) |
+| `src/arch/arm_m/cpu.h` | SysTick, SCB, NVIC, SHPR registers | `src/arch/m68k/cpu.h`: SR bits, VBR (68010+), exception frame layout |
+| `src/target/rp2040.h` | RP2040 peripheral register map | Not needed for m68k (replaced by target-specific headers) |
 
 ### 2.3 Kernel C — Partial Rewrite / Abstraction Needed
 

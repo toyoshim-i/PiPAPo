@@ -13,7 +13,7 @@
 
 #include "spi.h"
 #include "../target/pico1calc/pico1calc.h"
-#include "../hw/rp2040.h"
+#include "../target/rp2040.h"
 #include "config.h"
 #include <stdint.h>
 

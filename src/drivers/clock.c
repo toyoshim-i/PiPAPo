@@ -14,7 +14,7 @@
  */
 
 #include "clock.h"
-#include "../hw/rp2040.h"
+#include "../target/rp2040.h"
 #include <stdint.h>
 
 /* ==========================================================================

@@ -14,7 +14,7 @@
 
 #include "uart.h"
 #include "config.h"
-#include "../hw/rp2040.h"
+#include "../target/rp2040.h"
 #include "../arch/arm_m/cpu.h"
 #include "kernel/fd/tty.h"      /* tty_rx_notify, tty_signal_intr */
 #include <stdint.h>
