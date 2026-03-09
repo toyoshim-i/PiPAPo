@@ -173,7 +173,6 @@ cd "$GCC_BUILD"
     --target="$TARGET" \
     --prefix="$PREFIX" \
     --with-cpu=m68000 \
-    --with-float=soft \
     --enable-languages=c \
     --without-headers \
     --disable-shared \
