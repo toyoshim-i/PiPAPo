@@ -89,6 +89,13 @@ case "$TARGET" in
             "$PROJECT_DIR/third_party/build-musl.sh" --m68k
         fi
 
+        # Ensure busybox is built (provides /bin/sh and core utilities)
+        M68K_BB="$BUILD_DIR/busybox/busybox"
+        if [[ ! -f "$M68K_BB" ]]; then
+            echo "[build] Building busybox for m68k..."
+            "$PROJECT_DIR/third_party/build-busybox.sh" --m68k
+        fi
+
         echo "[build] Building $CMAKE_TARGET (PPAP_TESTS=$TESTS)..."
         cmake -DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/cmake/toolchain-m68k.cmake" \
               -DPPAP_TESTS="$TESTS" \

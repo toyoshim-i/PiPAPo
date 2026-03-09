@@ -184,7 +184,8 @@ cd "$GCC_BUILD"
     --disable-libstdcxx \
     --disable-nls \
     --disable-multilib \
-    --with-newlib
+    --with-newlib \
+    CFLAGS_FOR_TARGET="-msep-data -fPIC"
 make -j"$(nproc)" all-gcc all-target-libgcc
 make install-gcc install-target-libgcc
 echo "gcc-m68k: GCC + libgcc installed."
