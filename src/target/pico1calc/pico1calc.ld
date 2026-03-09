@@ -34,10 +34,10 @@
  *               | SDK boot2 (256 B)     |     QSPI init, enables XIP
  *               | stage1 extension      |     Sets VTOR, jumps to kernel
  *               | (padding)             |     Reserved by UF2 bootloader
- *   0x10004000  +-----------------------+  <- FLASH_KERNEL (96 KB)
+ *   0x10004000  +-----------------------+  <- FLASH_KERNEL (100 KB)
  *               | Kernel .text/.rodata  |     Vector table at 0x10004000,
  *               | (vector table first)  |     then kernel code + data
- *   0x1001C000  +-----------------------+  <- FLASH_ROMFS  (~16 MB remainder)
+ *   0x1001D000  +-----------------------+  <- FLASH_ROMFS  (~16 MB remainder)
  *               | romfs image           |     Populated by mkromfs (Phase 2+)
  *               +-----------------------+
  *
@@ -62,8 +62,8 @@ MEMORY {
      * SDK boot2 (256 B) + stage1 use only the first ~300 B; the rest
      * is padding that the UF2 loader preserves (its own code lives here). */
     FLASH_BOOT   (rx)  : ORIGIN = 0x10000000, LENGTH = 16K
-    FLASH_KERNEL (rx)  : ORIGIN = 0x10004000, LENGTH = 96K
-    FLASH_ROMFS  (r)   : ORIGIN = 0x1001C000, LENGTH = 16M - 0x1C000
+    FLASH_KERNEL (rx)  : ORIGIN = 0x10004000, LENGTH = 100K
+    FLASH_ROMFS  (r)   : ORIGIN = 0x1001D000, LENGTH = 16M - 0x1D000
 
     /* On-chip SRAM — 264KB total */
     RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 20K
