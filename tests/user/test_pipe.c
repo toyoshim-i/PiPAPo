@@ -39,7 +39,6 @@ int main(void)
     close(fds[0]);
     close(fds[1]);
 
-#if !defined(__m68k__)
     /* 2. Pipe across vfork + dup2 */
     {
         int fds2[2];
@@ -83,7 +82,6 @@ int main(void)
         UT_ASSERT_EQ(n3, 0);       /* should return EOF */
         close(fds3[0]);
     }
-#endif /* !__m68k__ */
 
     UT_SUMMARY("test_pipe");
 }

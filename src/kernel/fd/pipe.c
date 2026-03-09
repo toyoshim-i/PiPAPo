@@ -150,7 +150,8 @@ static int pipe_close(struct file *f)
     if (p->readers == 0 && p->writers == 0)
         pipe_free(p);
 
-    file_free(f);
+    /* Note: file_free is called by fd_free when refcnt reaches 0.
+     * Do NOT call file_free here — that would be a double-free. */
     return 0;
 }
 
