@@ -23,7 +23,8 @@ Component-by-component walk from root or CWD:
 
 ## romfs (`src/kernel/fs/romfs.c`)
 
-Read-only filesystem stored in QSPI flash, accessed directly via XIP.
+Read-only filesystem. On ARM targets with QSPI flash, accessed directly via XIP.
+On other targets (m68k), the romfs image is loaded into RAM.
 
 ### On-Flash Format
 
@@ -41,6 +42,7 @@ Read-only filesystem stored in QSPI flash, accessed directly via XIP.
 
 All offsets are relative to the romfs base address.
 Entries use sibling/child offsets for flat directory traversal (no pointer chains).
+File data is 4-byte aligned for XIP compatibility on ARM targets.
 
 ### mkromfs (`tools/mkromfs/`)
 
@@ -88,7 +90,7 @@ Static table of device nodes, mounted at `/dev`:
 |---|---|---|
 | `/dev/null` | char | Discards writes, reads return EOF |
 | `/dev/zero` | char | Reads return zeroes |
-| `/dev/urandom` | char | Random bytes from RP2040 ring oscillator |
+| `/dev/urandom` | char | Random bytes (hardware RNG or PRNG) |
 | `/dev/ttyS0` | char | UART serial console |
 | `/dev/tty1` | char | LCD + keyboard console (PicoCalc) |
 | `/dev/backlight` | char | LCD backlight brightness (write 0–255) |
@@ -118,8 +120,8 @@ Parsed sequentially at boot by `kmain()`:
 none  /tmp  tmpfs  defaults  0  0
 ```
 
-On targets without SD card (pico1, qemu), fstab entries that reference
-`/dev/mmcblk0` are silently skipped.
+On targets without SD card (pico1, qemu_arm, qemu_m68k), fstab entries
+that reference `/dev/mmcblk0` are silently skipped.
 
 ## Block Device Layer (`src/kernel/blkdev/`)
 
@@ -134,7 +136,7 @@ Implementations: SD card (SPI), RAM disk (QEMU), loopback.
 
 ## Related Documentation
 
-- [architecture.md](architecture.md) — Kernel internals
+- [design.md](design.md) — Kernel internals
 - [procfs.md](procfs.md) — /proc filesystem details
 - [syscall.md](syscall.md) — File I/O system calls
 - [PicoCalc.md](PicoCalc.md) — SD card hardware interface

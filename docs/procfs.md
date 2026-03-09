@@ -39,7 +39,13 @@ Single-line kernel version string.
 PicoPiAndPortable v0.11.0 (armv6m)
 ```
 
-Hardcoded; no dynamic content.
+or on m68k:
+
+```
+PicoPiAndPortable v0.11.0 (m68k)
+```
+
+The architecture string is target-dependent; other fields are hardcoded.
 
 ---
 
@@ -68,14 +74,14 @@ The `cpu` line is the sum of all cores.
 
 Tick rate: `PPAP_TICK_HZ` (100 Hz, i.e., 10 ms per tick).
 
-User vs. system distinction: `SysTick_Handler` checks EXC_RETURN bit 3 (captured
-from LR via a naked assembly wrapper) to determine whether the interrupted
-context was Thread mode (user, bit 3 = 1) or Handler mode (system, bit 3 = 0).
-Note: `ICSR.RETTOBASE` (bit 11) is RAZ on ARMv6-M / Cortex-M0+, so it cannot
-be used for this purpose.
+User vs. system distinction is architecture-specific:
+- **ARM:** `SysTick_Handler` checks `EXC_RETURN` bit 3 to determine whether
+  the interrupted context was Thread mode (user) or Handler mode (system).
+- **m68k:** The supervisor bit in the status register distinguishes kernel
+  from user context.
 
-Idle detection: processes with `pcb_t.is_idle == 1` (Thread 0 "kernel" on Core 0,
-"idle1" on Core 1) have their ticks counted as idle regardless of EXC_RETURN.
+Idle detection: processes with `pcb_t.is_idle == 1` have their ticks counted
+as idle.
 
 Source: `cpu_user_ticks[]`, `cpu_system_ticks[]`, `cpu_idle_ticks[]` in `proc/sched.c`.
 

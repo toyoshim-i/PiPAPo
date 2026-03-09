@@ -19,13 +19,17 @@ build process, and execution environment.
 ./scripts/build.sh --test qemu_arm
 ./scripts/qemu-test.sh
 
+# On-target tests (m68k, requires qemu-system-m68k)
+./scripts/build.sh --test qemu_m68k
+./scripts/qemu-test.sh qemu_m68k
+
 # Everything at once (build all targets + run QEMU tests)
 ./scripts/test_all_targets.sh
 ```
 
 ## Host unit tests
 
-Pure C unit tests compiled with the system gcc/clang. No ARM or m68k
+Pure C unit tests compiled with the system gcc/clang. No cross-compiler
 toolchain needed. Good for testing kernel modules that have no hardware
 dependencies (memory allocators, ELF parser, fd bookkeeping).
 
@@ -237,9 +241,9 @@ for `ALL.*TESTS PASSED`.
 ### `test_all_targets.sh`
 
 Full CI pipeline:
-1. Build all three production targets (`PPAP_TESTS=OFF`)
-2. Build QEMU ARM with tests (`PPAP_TESTS=ON`)
-3. Run QEMU test suite
+1. Build all production targets (`PPAP_TESTS=OFF`)
+2. Build QEMU targets (ARM and m68k) with tests (`PPAP_TESTS=ON`)
+3. Run QEMU test suites
 4. Print binary sizes
 
 ### Test execution flow

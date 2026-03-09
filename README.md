@@ -1,6 +1,6 @@
 # PicoPiAndPortable (PPAP)
 
-A UNIX-like micro OS for the RP2040 — bare-metal, no SDK runtime.
+A portable UNIX-like micro OS for bare-metal microcontrollers and retro CPUs.
 
 > Full design specification: [docs/spec-v07.md](docs/spec-v07.md)
 
@@ -8,32 +8,34 @@ A UNIX-like micro OS for the RP2040 — bare-metal, no SDK runtime.
 
 ## Goals
 
-- Root file system (`/bin`, `/sbin`, `/etc`) on external QSPI flash as **romfs**, executed via XIP
-- SD card as **VFAT (FAT32)** for PC/Mac interoperability; UFS image files mounted via **loopback** for full UNIX semantics
-- POSIX-subset system call interface
+- POSIX-subset system call interface — same syscall numbers across all architectures
 - Run **busybox** (statically linked) with an interactive `hush` shell
 - Run **Rogue 5.4.4** (classic dungeon crawler) via a minimal VT100 curses shim
-- Three build targets: `qemu` (testing), `pico1` (official Pico, romfs-only), `pico1calc` (PicoCalc with SD)
+- Root file system on flash/ROM as **romfs**; SD card as **VFAT (FAT32)** with **UFS** loopback images
+- Multiple target architectures and boards from a shared kernel codebase
 - **PicoCalc standalone**: embedded LCD console (40×20 / 80×40), I2C keyboard — no host PC required
 
-## Hardware
+## Supported Targets
 
-| | RP2040 |
-|---|---|
-| CPU | Dual Cortex-M0+ @ 133 MHz |
-| SRAM | 264 KB |
-| Flash | 2–16 MB QSPI (XIP) |
-| MPU | 4 regions |
+| Target | Board / Emulator | Architecture | CPU | RAM |
+|---|---|---|---|---|
+| `qemu_arm` | QEMU mps2-an500 | ARM Cortex-M0+ | ARMv6-M (Thumb-1) | 4 MB |
+| `pico1` | Raspberry Pi Pico | ARM Cortex-M0+ | Dual-core @ 133 MHz | 264 KB |
+| `pico1calc` | ClockworkPi PicoCalc | ARM Cortex-M0+ | Dual-core @ 133 MHz | 264 KB |
+| `qemu_m68k` | QEMU MCF5208 | Motorola 68000 | ColdFire V2 | 32 MB |
+
+All targets share the same kernel source, syscall interface, VFS, and process model. Only drivers, boot sequences, linker scripts, and architecture-specific code (context switch, syscall trap) differ per target.
 
 ## Features
 
-- **Kernel** — preemptive dual-core scheduler, vfork/exec, signals, pipes, MPU protection
-- **File systems** — romfs (flash XIP), VFAT (SD card), UFS (loopback images), devfs, procfs, tmpfs
+- **Kernel** — preemptive scheduler, vfork/exec, signals, pipes, memory protection
+- **File systems** — romfs, VFAT (SD card), UFS (loopback images), devfs, procfs, tmpfs
 - **User space** — musl libc, busybox (hush shell + 100+ applets), Rogue 5.4.4
+- **Multi-architecture** — ARM (Thumb-1) and m68k from the same source tree
 - **PicoCalc display** — SPI LCD framebuffer console (40×20 / 80×40), VT100/ANSI color emulator
 - **PicoCalc keyboard** — I2C STM32 co-processor, full keymap with function keys
 - **Multi-TTY** — serial console + LCD console with getty login on each
-- **PIE binaries** — position-independent ELFs, code runs from flash (zero SRAM for .text)
+- **PIE/PIC binaries** — position-independent ELFs; on ARM targets, code runs from flash via XIP
 
 ## Known Issues
 
@@ -43,7 +45,6 @@ A UNIX-like micro OS for the RP2040 — bare-metal, no SDK runtime.
 ## Future Work
 
 - **RP2350 Port** — Cortex-M33, 8-region MPU, PSRAM support, Thumb-2 optimization; `pico2`/`pico2calc` targets
-- **68000 CPU support** — Motorola 68000 as an additional target architecture
 - **CPU emulation** — kernel-embedded emulators for retro CPUs (Z80, 6502, 6809, 8086), enabling cross-architecture binary execution
 - **Subsystem support** — load and run applications from other OSes on top of PPAP via syscall bridge (e.g. CP/M, Human68K, DOS)
 - Audio driver support
@@ -52,41 +53,34 @@ A UNIX-like micro OS for the RP2040 — bare-metal, no SDK runtime.
 
 ```
 PPAP/
-  CMakeLists.txt            Build system (3 targets: ppap_qemu_arm, ppap_pico1, ppap_pico1calc)
+  CMakeLists.txt            Build system (targets: ppap_qemu_arm, ppap_pico1, ppap_pico1calc, ppap_qemu_m68k)
   src/
     target/
       target.h              Target abstraction API (5-function interface)
-      qemu_arm/             QEMU mps2-an500: CMSDK UART, RAM block device
-        qemu.ld             QEMU layout: ROM @ 0x0, RAM @ 0x20000000
+      qemu_arm/             QEMU mps2-an500 (ARM): CMSDK UART, RAM block device
+        qemu.ld             ARM QEMU layout: ROM @ 0x0, RAM @ 0x20000000
+      qemu_m68k/            QEMU MCF5208 (m68k): UART, RAM block device
       pico1/                Official Raspberry Pi Pico: romfs-only, no SD
-        pico1.ld            Official Pico: 2 MB flash, 80 KB kernel @ 0x10001000
+        pico1.ld            Pico: 2 MB flash, 80 KB kernel @ 0x10001000
       pico1calc/            ClockworkPi PicoCalc: SPI SD card, 16 MB flash
         pico1calc.ld        PicoCalc: 16 MB flash, 96 KB kernel @ 0x10004000
     boot/
-      startup.S             Vector table + Reset_Handler
-      stage1.S              Stage 1: sets VTOR, jumps to kernel
+      stage1.S              Stage 1 bootloader (ARM/RP2040: sets VTOR, jumps to kernel)
     kernel/
       main.c                Unified kmain() — uses target hooks for all platforms
-      mm/                   Memory management (page allocator, kmem, MPU, XIP)
+      mm/                   Memory management (page allocator, kmem)
       proc/                 Process management (PCB, scheduler, context switch)
-      syscall/              System call layer (SVC handler, dispatch, sys_*)
+      syscall/              System call layer (trap handler, dispatch, sys_*)
       fd/                   File descriptors (fd table, tty, pipe)
       vfs/                  Virtual filesystem (mount table, path resolution)
       fs/                   Filesystem drivers (romfs, devfs, procfs, vfat, ufs, tmpfs)
       blkdev/               Block device layer (registry, RAM, SD, loopback)
       exec/                 ELF loader + execve
       signal/               Signal infrastructure
-    drivers/
-      uart.c/h              RP2040 PL011 UART0 driver (IRQ mode)
-      clock.c/h             PLL_SYS → 133 MHz
-      spi.c/h               SPI0 PL022 driver (SD card)
-      spi_lcd.c/h           SPI1 driver for LCD (PicoCalc)
-      lcd.c/h               ST7365P LCD init + primitives
-      i2c.c/h               I2C1 master driver (keyboard)
-      kbd.c/h               STM32 keyboard controller
-      fbcon.c/h             Framebuffer text console + VT100 parser
-      font8x16.c font4x8.c Bitmap fonts (40×20 / 80×40 mode)
-  src/user/                 User-space programs (ARM Thumb ELFs) + build Makefile
+    drivers/                Hardware drivers (UART, SPI, LCD, I2C, etc.)
+  src/user/                 User-space programs + per-arch build rules
+    arch/arm_m/             ARM: crt0.S, syscall.S, user.ld
+    arch/m68k/              m68k: crt0.S, syscall.S, user.ld
   tests/
     kernel/                 On-target kernel integration tests (ktest.c)
     host/                   Host-native unit tests (test_kmem, test_fd, test_elf)
@@ -97,13 +91,13 @@ PPAP/
     mkfatimg/               Host tool: generate FAT32 test image
     uf2sanitize.py          Post-process UF2 for PicoCalc bootloader
   third_party/
-    pico-sdk/               git submodule — Raspberry Pi Pico SDK
+    pico-sdk/               git submodule — Raspberry Pi Pico SDK (ARM targets)
     musl/                   git submodule — musl libc v1.2.5
     busybox/                git submodule — busybox 1_36_1
     rogue/                  git submodule — Rogue 5.4.4 (Davidslv/rogue)
     patches/                PPAP-specific patches (musl, busybox, rogue curses shim)
     configs/                Build configs (busybox defconfig, linker script)
-    build-musl.sh           Build script: musl libc.a for ARMv6-M
+    build-musl.sh           Build script: musl libc.a (ARM and m68k)
     build-busybox.sh        Build script: static busybox binary
     build-rogue.sh          Build script: Rogue with minimal curses shim
   src/etc/                  Root filesystem config templates (fstab, passwd, …)
@@ -115,14 +109,16 @@ PPAP/
     test_all_targets.sh     Build all targets + run QEMU automated tests
   docs/
     spec-v07.md             Full design specification
-    architecture.md         Kernel internals (boot, memory, scheduler, MPU, multi-core)
+    design.md               Kernel internals (boot, memory, scheduler, signals)
     filesystems.md          VFS layer and filesystem drivers
-    syscall.md              System call reference
+    syscall.md              System call reference (shared across architectures)
     procfs.md               /proc filesystem specification
     userland-dev-guide.md   User-space development guide
     porting.md              Third-party application porting guide
     PicoCalc.md             PicoCalc hardware reference
     PicoCalc-LCD.md         LCD display driver technical reference
+    target-68000.md         m68k target-specific notes
+    target-pizero.md        Pi Zero target notes
     history/                Development phase plans and porting notes
 ```
 
@@ -134,7 +130,7 @@ PPAP/
 ./scripts/setup-toolchain.sh
 ```
 
-Installs apt packages (`arm-none-eabi-gcc`, `cmake`, `ninja`, `openocd`, `gdb-multiarch`, `qemu-system-arm`) and initializes git submodules (Pico SDK, musl, busybox, etc.).
+Installs apt packages (`arm-none-eabi-gcc`, `cmake`, `ninja`, `openocd`, `gdb-multiarch`, `qemu-system-arm`) and initializes git submodules (Pico SDK, musl, busybox, etc.). For m68k targets, see also `scripts/build-m68k-toolchain.sh`.
 
 ### 2. Build
 
@@ -147,11 +143,16 @@ Installs apt packages (`arm-none-eabi-gcc`, `cmake`, `ninja`, `openocd`, `gdb-mu
 Or invoke CMake directly:
 
 ```sh
+# ARM targets
 cmake -B build/arm_m
 cmake --build build/arm_m    # builds ppap_qemu_arm, ppap_pico1, ppap_pico1calc
+
+# m68k targets
+cmake -B build/m68k -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-m68k.cmake
+cmake --build build/m68k     # builds ppap_qemu_m68k
 ```
 
-### 3. Flash to hardware
+### 3. Flash to hardware (ARM targets)
 
 **PicoCalc (UF2):** The PicoCalc ships with
 [UF2 Loader](https://github.com/pelrun/uf2loader) — hold the bootloader key
@@ -163,7 +164,7 @@ cp build/arm_m/src/target/pico1calc/ppap_pico1calc.uf2 /media/$USER/RPI-RP2/
 
 **Pico (BOOTSEL):** Hold BOOTSEL during plug-in and copy the UF2.
 
-**OpenOCD (any target):**
+**OpenOCD (any ARM target):**
 
 ```sh
 ./scripts/flash.sh pico1calc           # flash pre-built pico1calc via OpenOCD
@@ -174,8 +175,10 @@ cp build/arm_m/src/target/pico1calc/ppap_pico1calc.uf2 /media/$USER/RPI-RP2/
 ### 4. QEMU
 
 ```sh
-./scripts/qemu.sh            # run build/arm_m/ppap_qemu_arm.elf — boots to BusyBox hush shell
-./scripts/qemu.sh --build    # rebuild first, then run
+./scripts/qemu.sh                     # run ARM QEMU target (default)
+./scripts/qemu.sh --build             # rebuild first, then run
+./scripts/qemu.sh qemu_m68k           # run m68k QEMU target
+./scripts/qemu.sh --build qemu_m68k   # rebuild m68k, then run
 ```
 
 At the shell prompt, try `rogue` to play the classic dungeon crawler.
@@ -188,7 +191,7 @@ Press **Ctrl-A X** to quit QEMU.
 ./scripts/test_all_targets.sh   # build all targets + QEMU automated tests
 ```
 
-### 6. Debug with GDB
+### 6. Debug with GDB (ARM hardware)
 
 ```sh
 # Terminal 1 — start OpenOCD
@@ -201,7 +204,9 @@ gdb-multiarch -x scripts/debug/pico1calc.gdb build/arm_m/ppap_pico1calc.elf
 gdb-multiarch -x scripts/debug/pico1calc-attach.gdb build/arm_m/ppap_pico1calc.elf
 ```
 
-## Flash Memory Layout
+## Architecture-Specific Notes
+
+### ARM (RP2040) — Flash Memory Layout
 
 **pico1** (Official Raspberry Pi Pico — 2 MB flash):
 
@@ -223,7 +228,7 @@ The PicoCalc uses a third-party UF2 bootloader ([pelrun/uf2loader](https://githu
 that reserves the first 16 KB of flash. The build system automatically sanitizes the
 UF2 output to exclude this region (`tools/uf2sanitize.py`).
 
-## SRAM Layout
+### ARM (RP2040) — SRAM Layout
 
 | Region | Address | Size | Purpose |
 |---|---|---|---|
@@ -231,3 +236,7 @@ UF2 output to exclude this region (`tools/uf2sanitize.py`).
 | Page pool | `0x20005000` | 204 KB | User process pages  |
 | I/O buffer | `0x20038000` | 24 KB | SD / FS cache  |
 | DMA / Reserved | `0x2003E000` | 16 KB | DMA, PIO, Core 1 stack |
+
+### m68k (QEMU MCF5208)
+
+The m68k target runs on QEMU's MCF5208 ColdFire emulation with 32 MB RAM. The kernel and romfs are loaded into RAM. See [docs/target-68000.md](docs/target-68000.md) for architecture-specific details.

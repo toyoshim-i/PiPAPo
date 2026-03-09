@@ -22,19 +22,31 @@ third_party/
 2. **Inject headers via `-isystem`** — override system headers without patching
 3. **Standalone build scripts** — reproducible, callable from CMake
 4. **CMake integration** — `add_custom_command` triggers the build script, stamps prevent rebuilds
+5. **Multi-architecture** — build scripts should support all target architectures
 
 ## Target Constraints
 
-| Constraint | Limit | Notes |
+Constraints vary by architecture. The common limits are:
+
+| Constraint | All Targets | Notes |
 |---|---|---|
-| ISA | ARMv6-M (Thumb-1) | No Thumb-2, no hardware division |
-| Data+BSS per process | 128 KB | SRAM pages allocated by ELF loader |
-| Code | Unlimited (XIP) | Runs directly from flash |
+| Data+BSS per process | 128 KB | SRAM/RAM pages allocated by ELF loader |
+| Stack | 4 KB | 1 page |
 | libc | musl 1.2.5 | Statically linked, PPAP syscall interface |
-| PIC model | `-fPIC -msingle-pic-base -mpic-register=r9` | GOT-based, r9 set by kernel |
-| Division | Software only | libgcc provides `__aeabi_uidiv` etc. |
+| Division | Software on ARM | m68k has hardware divide |
+
+### Architecture-Specific Constraints
+
+| | ARM (Thumb-1) | m68k |
+|---|---|---|
+| ISA | ARMv6-M, no Thumb-2 | ColdFire V2 (68k subset) |
+| Code location | Flash (XIP, unlimited) | RAM (from page pool) |
+| PIC model | `-fPIC -msingle-pic-base -mpic-register=r9` | `-fPIC -msep-data` |
+| Compiler | `arm-none-eabi-gcc` | `m68k-elf-gcc` |
 
 ## Compiler Flags
+
+### ARM
 
 ```sh
 CFLAGS="-mthumb -mcpu=cortex-m0plus -march=armv6s-m -mfloat-abi=soft -Os"
@@ -43,21 +55,32 @@ CFLAGS="$CFLAGS -fPIC -msingle-pic-base -mpic-register=r9 -mno-pic-data-is-text-
 CFLAGS="$CFLAGS -ffunction-sections -fdata-sections"
 ```
 
-Link with `-pie` to emit `R_ARM_RELATIVE` relocations (patched by the ELF loader at load time).
+Link with `-pie` to emit `R_ARM_RELATIVE` relocations.
+
+### m68k
+
+```sh
+CFLAGS="-mcpu=5208 -Os"
+CFLAGS="$CFLAGS -nostdinc -isystem $MUSL_SYSROOT/include -isystem $GCC_INCLUDE"
+CFLAGS="$CFLAGS -fPIC -msep-data"
+CFLAGS="$CFLAGS -ffunction-sections -fdata-sections"
+```
+
+Link with `-pie` to emit `R_68K_RELATIVE` relocations.
 
 ## musl libc
 
-musl is cross-compiled for ARMv6-M with PPAP's SVC-based syscall interface.
+musl is cross-compiled for each architecture with PPAP's SVC/TRAP-based syscall interface.
 Build: `third_party/build-musl.sh` → produces `build/musl-sysroot/`.
 
 ### Syscall Remapping
 
 musl internally uses Linux `*64` syscall variants (e.g., `stat64` not `stat`,
 `fstat64` not `fstat`). The kernel's syscall table maps these numbers.
-Legacy syscall numbers are dead — musl never emits them.
+PPAP uses a unified 16-bit grouped numbering scheme shared across all architectures.
 
 Key structs that must match musl's expectations:
-- `struct stat` — 88-byte Linux-compatible layout (not the kernel's internal 16-byte version)
+- `struct stat` — Linux-compatible layout
 - `struct dirent64` — variable-length with `d_ino`, `d_off`, `d_reclen`, `d_type`, `d_name`
 
 ## busybox
@@ -74,11 +97,11 @@ Two fragment files in `third_party/configs/`:
 
 1. Start from `allnoconfig`
 2. Apply fragments via `scripts/kconfig/merge_config.sh`
-3. Cross-compile with musl sysroot
-4. Link with `-pie` and custom linker script (`configs/busybox.ld`)
+3. Cross-compile with musl sysroot (per architecture)
+4. Link with `-pie` and custom linker script
 5. Strip → install to romfs
 
-### Split Binaries
+### Split Binaries (ARM)
 
 To reduce per-process SRAM footprint (GOT entries), busybox is optionally
 split into separate binaries:
@@ -110,7 +133,7 @@ Rogue requires curses — PPAP provides a minimal shim (~800 lines) in
 | `curses.h` | Minimal curses API (WINDOW, chtype, key codes) |
 | `pwd.h` | Stub returning fixed values (single-user) |
 
-### Memory Budget
+### Memory Budget (ARM)
 
 | Segment | Size | Location |
 |---|---|---|
@@ -118,8 +141,7 @@ Rogue requires curses — PPAP provides a minimal shim (~800 lines) in
 | .data + .bss | 75 KB | SRAM |
 | **Total SRAM** | **75 KB** | Within 128 KB limit |
 
-`xcrypt.c` is excluded (71 KB BSS for DES tables) — wizard mode disabled,
-stub `xcrypt()` provided in the curses shim.
+On m68k, .text is also in RAM, but the 32 MB QEMU target has ample space.
 
 ## Porting Checklist
 
@@ -128,12 +150,13 @@ stub `xcrypt()` provided in the curses shim.
 3. Audit memory usage: `.data` + `.bss` must fit in 128 KB
 4. Identify and stub unsupported features (e.g., networking, fork, mmap)
 5. Write `third_party/build-<app>.sh` with cross-compilation flags
-6. Add CMake integration: custom command + stamp file + romfs install
-7. Test on QEMU first, then hardware
+6. Support all target architectures in the build script (or document which are supported)
+7. Add CMake integration: custom command + stamp file + romfs install
+8. Test on QEMU first (both ARM and m68k if supported), then hardware
 
 ## Related Documentation
 
 - [userland-dev-guide.md](userland-dev-guide.md) — User-space programming guide
 - [syscall.md](syscall.md) — System call reference
-- [architecture.md](architecture.md) — Kernel internals (ELF loader, PIE model)
+- [design.md](design.md) — Kernel internals (ELF loader, PIE model)
 - [history/port-rogue.md](history/port-rogue.md) — Rogue 5.4.4 porting details
