@@ -321,9 +321,10 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
             for (uint32_t i = 0; i < data_pages; i++)
                 p->user_pages[i] = sram_page + i * PAGE_SIZE;
 
-            /* Set program break */
+            /* Set program break — align to 16 bytes for musl malloc */
             uint32_t data_end = (uint32_t)(uintptr_t)sram_page
                                 + data_seg->p_memsz;
+            data_end = (data_end + 15u) & ~15u;
             p->brk_base    = data_end;
             p->brk_current = data_end;
         }

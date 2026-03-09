@@ -94,7 +94,7 @@ target_compile_definitions(ppap_qemu_m68k PRIVATE
     PPAP_QEMU=1
     PPAP_M68K=1
     PAGE_COUNT=256u
-    SYSCALL_DEBUG=1
+    # SYSCALL_DEBUG=1
 )
 
 target_compile_options(ppap_qemu_m68k PRIVATE

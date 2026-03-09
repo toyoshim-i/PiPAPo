@@ -63,14 +63,12 @@ fi
 
 # Build CFLAGS
 CFLAGS="$TARGET_FLAGS -Os"
-# musl headers before GCC builtins
-CFLAGS="$CFLAGS -nostdinc -isystem $MUSL_SYSROOT/include -isystem $GCC_INCLUDE"
+# Our curses shim / config.h / pwd.h override system headers (must come first)
+CFLAGS="$CFLAGS -nostdinc -isystem $PATCHES_DIR -isystem $MUSL_SYSROOT/include -isystem $GCC_INCLUDE"
 # PIC for PPAP's XIP model
 CFLAGS="$CFLAGS $PIC_FLAGS"
 # Dead-code stripping
 CFLAGS="$CFLAGS -ffunction-sections -fdata-sections"
-# Our curses shim / config.h / pwd.h override system headers
-CFLAGS="$CFLAGS -isystem $PATCHES_DIR"
 # Rogue uses autoconf-style HAVE_CONFIG_H
 CFLAGS="$CFLAGS -DHAVE_CONFIG_H"
 # Suppress upstream warnings we can't fix
@@ -152,6 +150,16 @@ done
 echo "rogue [$ARCH]: compiling curses shim..."
 $CC $CFLAGS -c "$PATCHES_DIR/curses.c" -o "$ROGUE_OUT/obj/curses.o"
 OBJS+=("$ROGUE_OUT/obj/curses.o")
+
+# m68k: compile 68000-safe divmod to override libgcc's BSR.L-using versions
+if [[ "$ARCH" == "m68k" ]]; then
+    echo "rogue [$ARCH]: compiling 68000 divmod overrides..."
+    $CC $TARGET_FLAGS -Os -ffreestanding -c \
+        "$PROJECT_ROOT/src/arch/m68k/divmod.c" -o "$ROGUE_OUT/obj/divmod.o"
+    $CC $TARGET_FLAGS -Os -ffreestanding -c \
+        "$PROJECT_ROOT/src/arch/m68k/divmod64.c" -o "$ROGUE_OUT/obj/divmod64.o"
+    OBJS+=("$ROGUE_OUT/obj/divmod.o" "$ROGUE_OUT/obj/divmod64.o")
+fi
 
 # --- Link ---
 # Use -specs= to provide musl CRT/libc/libgcc (do NOT use -nostdlib,
