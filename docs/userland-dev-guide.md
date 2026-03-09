@@ -16,7 +16,7 @@ PPAP runs on multiple architectures. Key characteristics shared by all targets:
 
 | | ARM (RP2040) | m68k (QEMU) |
 |---|---|---|
-| ISA | ARMv6-M (Thumb-1 only) | ColdFire V2 (68k) |
+| ISA | ARMv6-M (Thumb-1 only) | Motorola 68000 |
 | FPU | None (software FP) | None (software FP) |
 | XIP flash | Yes (code at 0x10000000+) | No (code in RAM) |
 | PIC register | r9 (GOT base) | a5 (data segment base) |
@@ -111,12 +111,12 @@ Every ARM PPAP userland binary **must** be compiled with all of these flags:
 ### Mandatory Flags — m68k
 
 ```
--mcpu=5208 -fPIC -msep-data
+-m68000 -fPIC -msep-data
 ```
 
 | Flag | Purpose |
 |------|---------|
-| `-mcpu=5208` | Target ColdFire V2 |
+| `-m68000` | Target Motorola 68000 |
 | `-fPIC` | Position-independent code |
 | `-msep-data` | Separate text and data segments (a5 = data base) |
 

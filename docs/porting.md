@@ -39,7 +39,7 @@ Constraints vary by architecture. The common limits are:
 
 | | ARM (Thumb-1) | m68k |
 |---|---|---|
-| ISA | ARMv6-M, no Thumb-2 | ColdFire V2 (68k subset) |
+| ISA | ARMv6-M, no Thumb-2 | Motorola 68000 |
 | Code location | Flash (XIP, unlimited) | RAM (from page pool) |
 | PIC model | `-fPIC -msingle-pic-base -mpic-register=r9` | `-fPIC -msep-data` |
 | Compiler | `arm-none-eabi-gcc` | `m68k-elf-gcc` |
@@ -60,7 +60,7 @@ Link with `-pie` to emit `R_ARM_RELATIVE` relocations.
 ### m68k
 
 ```sh
-CFLAGS="-mcpu=5208 -Os"
+CFLAGS="-m68000 -Os"
 CFLAGS="$CFLAGS -nostdinc -isystem $MUSL_SYSROOT/include -isystem $GCC_INCLUDE"
 CFLAGS="$CFLAGS -fPIC -msep-data"
 CFLAGS="$CFLAGS -ffunction-sections -fdata-sections"
@@ -141,7 +141,7 @@ Rogue requires curses — PPAP provides a minimal shim (~800 lines) in
 | .data + .bss | 75 KB | SRAM |
 | **Total SRAM** | **75 KB** | Within 128 KB limit |
 
-On m68k, .text is also in RAM, but the 32 MB QEMU target has ample space.
+On m68k, .text is also in RAM, but the 16 MB QEMU target has ample space.
 
 ## Porting Checklist
 

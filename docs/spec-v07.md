@@ -45,7 +45,7 @@ PiPAPo (PPAP) is a UNIX-like operating system designed for bare-metal microcontr
 | `qemu_arm` | QEMU mps2-an500 | ARM | Cortex-M0+ (ARMv6-M) | 4 MB | — (ROM region) |
 | `pico1` | Raspberry Pi Pico | ARM | Dual Cortex-M0+ @ 133 MHz | 264 KB | 2 MB QSPI (XIP) |
 | `pico1calc` | ClockworkPi PicoCalc | ARM | Dual Cortex-M0+ @ 133 MHz | 264 KB | 16 MB QSPI (XIP) |
-| `qemu_m68k` | QEMU MCF5208 | m68k | ColdFire V2 | 32 MB | — (loaded into RAM) |
+| `qemu_m68k` | QEMU virt m68k | m68k | Motorola 68000 | Up to 16 MB (auto-detected) | — (loaded into RAM) |
 
 The kernel source is shared; only drivers, pin definitions, boot sequences, and linker scripts differ per target.
 
@@ -59,7 +59,7 @@ Each target produces a separate binary:
 
 **`pico1calc`** — The ClockworkPi PicoCalc board (RP2040 + full-size SD card slot on SPI0). Full-featured ARM target with romfs root on flash, VFAT on SD card, LCD display, and I2C keyboard.
 
-**`qemu_m68k`** — An emulated ColdFire V2 environment (QEMU MCF5208) for m68k testing. Uses UART for console output and a RAM-backed block device for storage testing.
+**`qemu_m68k`** — An emulated Motorola 68000 environment (QEMU virt machine) for m68k testing. Uses UART for console output and a RAM-backed block device for storage testing.
 
 ### 1.5 Future Targets
 
@@ -115,9 +115,9 @@ The 264 KB of on-chip SRAM is partitioned as follows:
 
 Since the kernel's code (.text) and read-only data (.rodata) are executed via XIP from flash, only the data sections reside in SRAM.
 
-### 2.4 RAM Layout (m68k / QEMU MCF5208)
+### 2.4 RAM Layout (m68k / QEMU virt)
 
-The m68k QEMU target has 32 MB RAM. Kernel code, data, and romfs are all in RAM. The page pool is allocated from remaining memory after the kernel BSS.
+The m68k QEMU target has up to 16 MB RAM (auto-detected at boot). Kernel code, data, and romfs are all in RAM. The page pool is allocated from remaining memory after the kernel BSS.
 
 ### 2.5 Paging Mechanism
 
@@ -505,7 +505,7 @@ The m68k QEMU target currently uses a UART for console and a RAM-backed block de
 | `ppap_qemu_arm` | QEMU mps2-an500 | CMSDK UART, RAM block device, automated testing |
 | `ppap_pico1` | Raspberry Pi Pico | romfs-only, PL011 UART, no SD card |
 | `ppap_pico1calc` | ClockworkPi PicoCalc | Full feature set: SD, LCD, keyboard, dual-core |
-| `ppap_qemu_m68k` | QEMU MCF5208 | UART, RAM block device, automated testing |
+| `ppap_qemu_m68k` | QEMU virt m68k | UART, RAM block device, automated testing |
 
 Development history is archived in `docs/history/` (phase plans and porting notes).
 
@@ -537,8 +537,8 @@ busybox is developed with the assumption of a Linux kernel, and some applets dep
 
 | Constraint | ARM (RP2040) | m68k (QEMU) |
 |---|---|---|
-| RAM | 264 KB (pico1/pico1calc) | 32 MB |
-| ISA limitations | Thumb-1 only, no HW divide | Full 68k ISA |
+| RAM | 264 KB (pico1/pico1calc) | Up to 16 MB (auto-detected) |
+| ISA limitations | Thumb-1 only, no HW divide | Full 68000 ISA |
 | Flash/XIP | Yes | No |
 | Multi-core | Yes (dual-core) | No |
 | Memory protection | MPU (4 regions) | None |
@@ -554,7 +554,7 @@ busybox is developed with the assumption of a Linux kernel, and some applets dep
 | C Standard Library | musl libc (per-architecture static cross-compiled) |
 | Build System | CMake + Ninja. ARM targets use Pico SDK integration |
 | Debugger | OpenOCD + GDB (ARM hardware); QEMU built-in GDB stub |
-| Emulator | QEMU system-arm (mps2-an500), QEMU system-m68k (mcf5208evb) |
+| Emulator | QEMU system-arm (mps2-an500), QEMU system-m68k (virt, -cpu m68000) |
 | Serial Communication | minicom / screen (115200 bps) |
 | romfs Tool | mkromfs (custom) — generates romfs image on host |
 | UFS Tool | mkufs (custom) — creates UFS image files on host |

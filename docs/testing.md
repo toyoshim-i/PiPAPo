@@ -186,6 +186,13 @@ only relocates GOT entries, not arbitrary data pointers.
 | `test_sleep_intr.c` | Process lifecycle, exit codes |
 | `test_orphan.c` | Orphan reparenting to init |
 | `test_fault.c` | CPU fault handlers (illegal insn, div-by-zero) |
+| `test_id.c` | `getpid`, `getppid`, `getuid`, `getgid` |
+| `test_fs.c` | Filesystem operations (open, read, readdir, stat) |
+| `test_rw.c` | File read/write on writable filesystems |
+| `test_time.c` | `clock_gettime`, `gettimeofday` |
+| `test_iov.c` | `readv`, `writev` scatter/gather I/O |
+| `test_stat.c` | `stat64`, `fstat64`, `lstat64` |
+| `test_tmpfs.c` | tmpfs create, write, read, unlink |
 
 ### Build system
 
@@ -263,6 +270,7 @@ boot → kernel init → VFS mount → target_post_mount()
                           runtests (PID 1)
                             ├── test_exec
                             ├── test_vfork
+                            ├── test_fault
                             ├── test_pipe
                             ├── test_brk
                             ├── test_fd
@@ -270,7 +278,13 @@ boot → kernel init → VFS mount → target_post_mount()
                             ├── test_poll
                             ├── test_sleep_intr
                             ├── test_orphan
-                            └── test_fault
+                            ├── test_id
+                            ├── test_fs
+                            ├── test_rw
+                            ├── test_time
+                            ├── test_iov
+                            ├── test_stat
+                            └── test_tmpfs
                                    │
                         "ALL TESTS PASSED"
                                    │
