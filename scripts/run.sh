@@ -142,7 +142,7 @@ if ! command -v "$QEMU_BIN" &>/dev/null && [[ ! -x "$QEMU_BIN" ]]; then
     echo "[run] Error: $QEMU_BIN not found."
     if [[ "$TARGET" == "qemu_m68k" ]]; then
         echo "      Install with: sudo apt install qemu-system-misc"
-        echo "      Or build from source: ./scripts/build.sh host_qemu"
+        echo "      Or build from source: ./third_party/build-qemu-system-m68k.sh"
     else
         echo "      Install with: sudo apt install qemu-system-arm"
     fi

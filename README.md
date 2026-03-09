@@ -103,7 +103,7 @@ PPAP/
   src/etc/                  Root filesystem config templates (fstab, passwd, …)
   scripts/
     setup-toolchain.sh      One-shot toolchain install
-    build.sh                Build any target (pico1, pico1calc, qemu_arm, qemu_m68k, host_qemu)
+    build.sh                Build any target (pico1, pico1calc, qemu_arm, qemu_m68k)
     run.sh                  Flash or run any target
     test.sh                 Run tests (--all for full suite)
   docs/

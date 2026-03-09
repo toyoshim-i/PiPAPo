@@ -118,7 +118,7 @@ fi
 # --- Step 3: QEMU m68k check ------------------------------------------------
 #
 # The system qemu-system-m68k (apt: qemu-system-misc) usually works.
-# If you need a newer version, run: ./scripts/build.sh host_qemu
+# If you need a newer version, run: ./third_party/build-qemu-system-m68k.sh
 # which builds QEMU 9.1.x from the third_party/qemu submodule.
 
 QEMU_M68K="${PPAP_ROOT}/third_party/qemu/build/qemu-system-m68k"
@@ -212,7 +212,7 @@ elif command -v qemu-system-m68k &>/dev/null; then
     "qemu-system-m68k --version" \
     "QEMU emulator"
 else
-  warn "qemu-system-m68k: not found (install qemu-system-misc or run ./scripts/build.sh host_qemu)"
+  warn "qemu-system-m68k: not found (install qemu-system-misc or run ./third_party/build-qemu-system-m68k.sh)"
   FAIL=1
 fi
 
