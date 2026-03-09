@@ -54,7 +54,7 @@ COMMON_OBJS := $(BUILD_DIR)/crt0.o $(BUILD_DIR)/syscall.o
 APPS := hello getty init ttyctl
 # Test programs (sources in tests/user/, found via VPATH)
 # Only built when PPAP_TESTS=1 is passed from CMake
-TESTS_ALL := test_vfork test_exec test_pipe test_brk test_fd test_signal test_poll test_sleep_intr test_orphan test_fault test_id test_fs runtests
+TESTS_ALL := test_vfork test_exec test_pipe test_brk test_fd test_signal test_poll test_sleep_intr test_orphan test_fault test_id test_fs test_rw runtests
 ifeq ($(PPAP_TESTS),1)
 TESTS := $(TESTS_ALL)
 else
