@@ -224,6 +224,18 @@ foreach(tgt ${PPAP_ALL_TARGETS})
         COMMAND cp -a ${CMAKE_SOURCE_DIR}/src/etc/. ${ROMFS_STAGING}/etc/
         # Overlay built binaries (bin/, sbin/, usr/) preserving symlinks
         COMMAND ${CMAKE_SOURCE_DIR}/cmake/overlay-romfs.sh ${ROMFS_DIR} ${ROMFS_STAGING}
+        # Install shared ABI headers into /usr/include/
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${ROMFS_STAGING}/usr/include
+        COMMAND ${CMAKE_COMMAND} -E copy
+                ${CMAKE_SOURCE_DIR}/src/common/syscall_nr.h
+                ${CMAKE_SOURCE_DIR}/src/common/errno.h
+                ${CMAKE_SOURCE_DIR}/src/common/fcntl.h
+                ${CMAKE_SOURCE_DIR}/src/common/seek.h
+                ${CMAKE_SOURCE_DIR}/src/common/stat.h
+                ${CMAKE_SOURCE_DIR}/src/common/dirent.h
+                ${CMAKE_SOURCE_DIR}/src/common/poll.h
+                ${CMAKE_SOURCE_DIR}/src/common/iovec.h
+                ${ROMFS_STAGING}/usr/include/
         # Per-target config overrides
         COMMAND ${CMAKE_COMMAND} -E copy
                 ${CMAKE_BINARY_DIR}/fstab_${tgt} ${ROMFS_STAGING}/etc/fstab

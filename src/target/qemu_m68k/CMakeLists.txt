@@ -302,7 +302,7 @@ ROGUE=$3
 # Create directory structure
 rm -rf $STAGING
 mkdir -p $STAGING/bin $STAGING/sbin $STAGING/etc $STAGING/dev
-mkdir -p $STAGING/proc $STAGING/tmp $STAGING/usr/bin
+mkdir -p $STAGING/proc $STAGING/tmp $STAGING/usr/bin $STAGING/usr/include
 
 # Install user programs
 for elf in ${M68K_USER_ELFS_STR}; do
@@ -328,6 +328,9 @@ fi
 if [ -f $ROGUE ]; then
     cp $ROGUE $STAGING/bin/rogue
 fi
+
+# Install shared ABI headers into /usr/include/
+cp ${PPAP_ROOT}/src/common/*.h $STAGING/usr/include/
 ")
 
 add_custom_command(
