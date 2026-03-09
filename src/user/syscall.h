@@ -37,12 +37,53 @@ int     pipe(int fds[2]);
 int     dup(int oldfd);
 int     dup2(int oldfd, int newfd);
 
+/* ── Scatter/gather I/O ──────────────────────────────────────────────────── */
+
+struct iovec {
+    void   *iov_base;
+    size_t  iov_len;
+};
+
+ssize_t writev(int fd, const struct iovec *iov, int iovcnt);
+ssize_t readv(int fd, const struct iovec *iov, int iovcnt);
+
 /* ── File system ─────────────────────────────────────────────────────────── */
 
 int     lseek(int fd, int offset, int whence);
 int     getcwd(char *buf, size_t size);
 int     chdir(const char *path);
 int     access(const char *path, int mode);
+int     mkdir(const char *path, int mode);
+int     unlink(const char *path);
+int     rmdir(const char *path);
+
+/* stat — matches kernel struct stat (vfs.h) */
+struct stat {
+    uint32_t st_ino;
+    uint32_t st_mode;
+    uint32_t st_nlink;
+    uint32_t st_size;
+};
+
+#define S_IFMT   0170000
+#define S_IFDIR  0040000
+#define S_IFREG  0100000
+#define S_ISDIR(m)  (((m) & S_IFMT) == S_IFDIR)
+#define S_ISREG(m)  (((m) & S_IFMT) == S_IFREG)
+
+int     stat(const char *path, struct stat *buf);
+
+/* dirent — matches kernel struct dirent (vfs.h, VFS_NAME_MAX=63) */
+struct dirent {
+    uint32_t d_ino;
+    uint8_t  d_type;
+    char     d_name[64];   /* VFS_NAME_MAX + 1 */
+};
+
+#define DT_REG  8
+#define DT_DIR  4
+
+int     getdents(int fd, struct dirent *buf, size_t count);
 
 /* lseek whence values */
 #define SEEK_SET  0
@@ -53,6 +94,8 @@ int     access(const char *path, int mode);
 #define O_RDONLY  0
 #define O_WRONLY  1
 #define O_RDWR    2
+#define O_CREAT   0x0040
+#define O_TRUNC   0x0200
 
 /* access mode bits */
 #define F_OK  0

@@ -273,6 +273,87 @@ access:
     move.l  %sp@+, %d2
     rts
 
+| --- writev (SYS_WRITEV = 0x010A) -----------------------------------------------
+| ssize_t writev(int fd, const struct iovec *iov, int iovcnt);
+    .globl writev
+writev:
+    movem.l %d2-%d3, %sp@-      | save d2-d3 (8 bytes)
+    move.l  12(%sp), %d1        | fd
+    move.l  16(%sp), %d2        | iov
+    move.l  20(%sp), %d3        | iovcnt
+    move.l  #0x010A, %d0
+    trap    #0
+    movem.l %sp@+, %d2-%d3
+    rts
+
+| --- readv (SYS_READV = 0x0109) -----------------------------------------------
+| ssize_t readv(int fd, const struct iovec *iov, int iovcnt);
+    .globl readv
+readv:
+    movem.l %d2-%d3, %sp@-      | save d2-d3 (8 bytes)
+    move.l  12(%sp), %d1        | fd
+    move.l  16(%sp), %d2        | iov
+    move.l  20(%sp), %d3        | iovcnt
+    move.l  #0x0109, %d0
+    trap    #0
+    movem.l %sp@+, %d2-%d3
+    rts
+
+| --- stat (SYS_STAT = 0x0200) -------------------------------------------------
+| int stat(const char *path, struct stat *buf);
+    .globl stat
+stat:
+    move.l  %d2, %sp@-
+    move.l  8(%sp), %d1         | path
+    move.l  12(%sp), %d2        | buf
+    move.l  #0x0200, %d0
+    trap    #0
+    move.l  %sp@+, %d2
+    rts
+
+| --- getdents (SYS_GETDENTS = 0x0300) -----------------------------------------
+| int getdents(int fd, struct dirent *buf, size_t count);
+    .globl getdents
+getdents:
+    movem.l %d2-%d3, %sp@-      | save d2-d3 (8 bytes)
+    move.l  12(%sp), %d1        | fd
+    move.l  16(%sp), %d2        | buf
+    move.l  20(%sp), %d3        | count
+    move.l  #0x0300, %d0
+    trap    #0
+    movem.l %sp@+, %d2-%d3
+    rts
+
+| --- mkdir (SYS_MKDIR = 0x0204) -----------------------------------------------
+| int mkdir(const char *path, int mode);
+    .globl mkdir
+mkdir:
+    move.l  %d2, %sp@-
+    move.l  8(%sp), %d1         | path
+    move.l  12(%sp), %d2        | mode
+    move.l  #0x0204, %d0
+    trap    #0
+    move.l  %sp@+, %d2
+    rts
+
+| --- unlink (SYS_UNLINK = 0x0206) ---------------------------------------------
+| int unlink(const char *path);
+    .globl unlink
+unlink:
+    move.l  4(%sp), %d1         | path
+    move.l  #0x0206, %d0
+    trap    #0
+    rts
+
+| --- rmdir (SYS_RMDIR = 0x0205) -----------------------------------------------
+| int rmdir(const char *path);
+    .globl rmdir
+rmdir:
+    move.l  4(%sp), %d1         | path
+    move.l  #0x0205, %d0
+    trap    #0
+    rts
+
 | --- nanosleep (SYS_NANOSLEEP = 0x0500) ----------------------------------------
 | int nanosleep(const void *req, void *rem);
     .globl nanosleep

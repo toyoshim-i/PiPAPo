@@ -297,6 +297,83 @@ access:
     svc  0
     pop  {r7, pc}
 
+@ --- writev (SYS_WRITEV = 0x010A) ---------------------------------------------
+@ ssize_t writev(int fd, const struct iovec *iov, int iovcnt);
+.section .text.writev, "ax", %progbits
+.global writev
+.thumb_func
+writev:
+    push {r7, lr}
+    ldr  r7, =0x010A    @ SYS_WRITEV
+    svc  0
+    pop  {r7, pc}
+
+@ --- readv (SYS_READV = 0x0109) -----------------------------------------------
+@ ssize_t readv(int fd, const struct iovec *iov, int iovcnt);
+.section .text.readv, "ax", %progbits
+.global readv
+.thumb_func
+readv:
+    push {r7, lr}
+    ldr  r7, =0x0109    @ SYS_READV
+    svc  0
+    pop  {r7, pc}
+
+@ --- stat (SYS_STAT = 0x0200) -------------------------------------------------
+@ int stat(const char *path, struct stat *buf);
+.section .text.stat, "ax", %progbits
+.global stat
+.thumb_func
+stat:
+    push {r7, lr}
+    ldr  r7, =0x0200    @ SYS_STAT
+    svc  0
+    pop  {r7, pc}
+
+@ --- getdents (SYS_GETDENTS = 0x0300) -----------------------------------------
+@ int getdents(int fd, struct dirent *buf, size_t count);
+.section .text.getdents, "ax", %progbits
+.global getdents
+.thumb_func
+getdents:
+    push {r7, lr}
+    ldr  r7, =0x0300    @ SYS_GETDENTS
+    svc  0
+    pop  {r7, pc}
+
+@ --- mkdir (SYS_MKDIR = 0x0204) -----------------------------------------------
+@ int mkdir(const char *path, int mode);
+.section .text.mkdir, "ax", %progbits
+.global mkdir
+.thumb_func
+mkdir:
+    push {r7, lr}
+    ldr  r7, =0x0204    @ SYS_MKDIR
+    svc  0
+    pop  {r7, pc}
+
+@ --- unlink (SYS_UNLINK = 0x0206) ---------------------------------------------
+@ int unlink(const char *path);
+.section .text.unlink, "ax", %progbits
+.global unlink
+.thumb_func
+unlink:
+    push {r7, lr}
+    ldr  r7, =0x0206    @ SYS_UNLINK
+    svc  0
+    pop  {r7, pc}
+
+@ --- rmdir (SYS_RMDIR = 0x0205) -----------------------------------------------
+@ int rmdir(const char *path);
+.section .text.rmdir, "ax", %progbits
+.global rmdir
+.thumb_func
+rmdir:
+    push {r7, lr}
+    ldr  r7, =0x0205    @ SYS_RMDIR
+    svc  0
+    pop  {r7, pc}
+
     .ltorg                 @ literal pool for new stubs
 
 @ --- nanosleep (SYS_NANOSLEEP = 0x0500) ---------------------------------------

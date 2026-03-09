@@ -219,6 +219,9 @@ if(PPAP_TESTS)
     m68k_test_program(test_fs         ${M68K_TESTS_DIR}/test_fs.c)
     m68k_test_program(test_rw         ${M68K_TESTS_DIR}/test_rw.c)
     m68k_test_program(test_time       ${M68K_TESTS_DIR}/test_time.c)
+    m68k_test_program(test_iov        ${M68K_TESTS_DIR}/test_iov.c)
+    m68k_test_program(test_stat       ${M68K_TESTS_DIR}/test_stat.c)
+    m68k_test_program(test_tmpfs      ${M68K_TESTS_DIR}/test_tmpfs.c)
     m68k_test_program(runtests        ${M68K_TESTS_DIR}/runtests.c)
 
     list(APPEND M68K_USER_ELFS
@@ -236,6 +239,9 @@ if(PPAP_TESTS)
         ${CMAKE_BINARY_DIR}/test_fs.elf
         ${CMAKE_BINARY_DIR}/test_rw.elf
         ${CMAKE_BINARY_DIR}/test_time.elf
+        ${CMAKE_BINARY_DIR}/test_iov.elf
+        ${CMAKE_BINARY_DIR}/test_stat.elf
+        ${CMAKE_BINARY_DIR}/test_tmpfs.elf
         ${CMAKE_BINARY_DIR}/runtests.elf
     )
 endif()
