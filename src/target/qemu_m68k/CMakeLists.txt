@@ -39,6 +39,7 @@ add_executable(ppap_qemu_m68k
     ${PPAP_ROOT}/src/arch/m68k/string.c
     ${PPAP_ROOT}/src/arch/m68k/switch.S
     ${PPAP_ROOT}/src/arch/m68k/trap.S
+    ${PPAP_ROOT}/src/arch/m68k/math.S
 
     # Target
     ${CMAKE_CURRENT_SOURCE_DIR}/target_qemu_m68k.c
@@ -117,15 +118,10 @@ target_link_options(ppap_qemu_m68k PRIVATE
     -Wl,--build-id=none
 )
 
-# Link libgcc for 68000 helper functions (__mulsi3, __udivsi3, etc.).
-# The custom m68k-elf-gcc (built by third_party/build-gcc-m68k.sh)
-# produces a 68000-safe libgcc — no 68020+ instruction overrides needed.
-execute_process(
-    COMMAND ${CMAKE_C_COMPILER} -m68000 -print-libgcc-file-name
-    OUTPUT_VARIABLE M68K_LIBGCC
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-)
-target_link_libraries(ppap_qemu_m68k PRIVATE ${M68K_LIBGCC})
+# Integer math helpers (__mulsi3, __udivsi3, __umodsi3) are provided by
+# src/arch/m68k/math.S instead of libgcc.  The toolchain's libgcc is built
+# with -msep-data -fPIC (GOT-relative via a5) for user-space; the kernel
+# does not set up a5 as GOT base, so it must not link that libgcc.
 
 # =============================================================================
 # User-space programs + romfs image pipeline

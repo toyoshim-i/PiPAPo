@@ -123,8 +123,21 @@ echo "gcc-m68k: extracting sources..."
 extract "binutils-${BINUTILS_VER}.tar.xz" "binutils-${BINUTILS_VER}"
 extract "gcc-${GCC_VER}.tar.xz" "gcc-${GCC_VER}"
 
-# --- Download GCC prerequisites (GMP, MPFR, MPC) ---
+# --- Patch GCC sources ---
 GCC_SRC="$BUILD_DIR/gcc-${GCC_VER}"
+PATCH_DIR="$SCRIPT_DIR/patches/gcc"
+PATCH_STAMP="$GCC_SRC/.ppap_patched"
+if [[ -d "$PATCH_DIR" && ! -f "$PATCH_STAMP" ]]; then
+    echo "gcc-m68k: applying PPAP patches..."
+    for p in "$PATCH_DIR"/*.patch; do
+        [[ -f "$p" ]] || continue
+        echo "  applying: $(basename "$p")"
+        patch -d "$GCC_SRC" -p1 < "$p"
+    done
+    touch "$PATCH_STAMP"
+fi
+
+# --- Download GCC prerequisites (GMP, MPFR, MPC) ---
 if [[ ! -d "$GCC_SRC/gmp" ]]; then
     echo "gcc-m68k: downloading GCC prerequisites (GMP, MPFR, MPC)..."
     cd "$GCC_SRC"
