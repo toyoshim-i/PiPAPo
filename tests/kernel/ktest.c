@@ -1725,9 +1725,9 @@ static void oom_test(void)
     uint32_t baseline_oom  = oom_count;
 
     /* Exhaust the page pool */
-    void *pages[PAGE_COUNT];
+    void *pages[PAGE_COUNT_MAX];
     uint32_t allocated = 0;
-    for (uint32_t i = 0; i < PAGE_COUNT; i++) {
+    for (uint32_t i = 0; i < PAGE_COUNT_MAX; i++) {
         pages[i] = page_alloc();
         if (pages[i])
             allocated++;

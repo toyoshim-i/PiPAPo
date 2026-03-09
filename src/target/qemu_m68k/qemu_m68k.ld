@@ -109,6 +109,6 @@ SECTIONS {
         . = ALIGN(4096);
         __page_pool_start = .;
         /* Extends to end of RAM — page_alloc uses __page_pool_start
-         * and a configured PAGE_COUNT */
+         * and runtime-detected page count */
     } > RAM
 }

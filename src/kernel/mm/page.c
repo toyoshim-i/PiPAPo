@@ -1,7 +1,7 @@
 /*
  * page.c — Physical page allocator
  *
- * Free-stack implementation: a fixed array of PAGE_COUNT void* pointers,
+ * Free-stack implementation: a fixed array of PAGE_COUNT_MAX void* pointers,
  * managed as a LIFO stack.  Alloc pops the top; free pushes onto the top.
  * Both operations are O(1) with no heap or dynamic storage needed.
  *
@@ -35,9 +35,16 @@ extern char __stack_top;
 
 /* ── Free-stack state ─────────────────────────────────────────────────────── */
 
-static void    *free_stack[PAGE_COUNT];
+static void    *free_stack[PAGE_COUNT_MAX];
 static uint32_t free_top = 0u;   /* index of next empty slot (0 = pool empty) */
+uint32_t        page_count = 0u; /* runtime page count (set by mm_init)       */
 uint32_t        oom_count = 0u;  /* number of page_alloc() failures */
+
+#if defined(__m68k__)
+/* Assembly RAM probe — detects accessible RAM via bus error catching.
+ * Returns total accessible bytes starting from `start`, up to `max_size`. */
+extern uint32_t m68k_probe_ram(uint32_t start, uint32_t max_size);
+#endif
 
 /* ── Internal helpers ─────────────────────────────────────────────────────── */
 
@@ -49,12 +56,28 @@ void mm_init(void)
     uint32_t stack_top = (uint32_t)(uintptr_t)&__stack_top;
     uint32_t kern_used = bss_end - SRAM_KERNEL_BASE;
 
+    /* Detect available RAM and set runtime page_count.
+     * On m68k: probe RAM via bus error catching (two-phase: 1MB then 4KB).
+     * On ARM:  fixed RAM size, use compile-time PAGE_COUNT_MAX directly. */
+#if defined(__m68k__)
+    {
+        uint32_t probe_end = RAM_END;
+        uint32_t max_bytes = probe_end - PAGE_POOL_BASE;
+        uint32_t ram_bytes = m68k_probe_ram(PAGE_POOL_BASE, max_bytes);
+        page_count = ram_bytes / PAGE_SIZE;
+        if (page_count > PAGE_COUNT_MAX)
+            page_count = PAGE_COUNT_MAX;
+    }
+#else
+    page_count = PAGE_COUNT_MAX;
+#endif
+
     /* Build the free stack: push pages from the pool that don't overlap
      * with the kernel stack.  On QEMU (flat memory model) the initial
      * stack may extend into the page pool region.  Skip those pages. */
     uint32_t stack_page_top = (stack_top + PAGE_SIZE - 1u) & ~(PAGE_SIZE - 1u);
     free_top = 0;
-    for (uint32_t i = 0u; i < PAGE_COUNT; i++) {
+    for (uint32_t i = 0u; i < page_count; i++) {
         uint32_t paddr = PAGE_POOL_BASE + i * PAGE_SIZE;
         if (paddr < stack_page_top)
             continue;   /* overlaps with kernel stack */
@@ -75,7 +98,7 @@ void mm_init(void)
     uint32_t actual_base = (free_top > 0)
         ? (uint32_t)(uintptr_t)free_stack[0] : PAGE_POOL_BASE;
     klogf("MM:   pages   %x–%x %u KB (%u × 4 KB, all free)\n",
-          actual_base, PAGE_POOL_BASE + PAGE_POOL_SIZE - 1u,
+          actual_base, PAGE_POOL_BASE + page_count * PAGE_SIZE - 1u,
           free_top * PAGE_SIZE / 1024u, free_top);
 #if !defined(__m68k__)
     klogf("MM:   io_buf  %x–%x  %u KB\n",
@@ -130,8 +153,8 @@ void *page_alloc_at(void *addr)
 {
     uint32_t target = (uint32_t)(uintptr_t)addr;
 
-    /* Validate: must be page-aligned and within the pool */
-    if (target < PAGE_POOL_BASE || target >= PAGE_POOL_BASE + PAGE_POOL_SIZE)
+    /* Validate: must be page-aligned and within the runtime pool */
+    if (target < PAGE_POOL_BASE || target >= PAGE_POOL_BASE + page_count * PAGE_SIZE)
         return NULL;
     if (target & (PAGE_SIZE - 1u))
         return NULL;
@@ -158,7 +181,7 @@ void page_free(void *page)
 {
     /* Rudimentary double-free / out-of-range guard */
     uint32_t addr = (uint32_t)(uintptr_t)page;
-    if (addr < PAGE_POOL_BASE || addr >= PAGE_POOL_BASE + PAGE_POOL_SIZE)
+    if (addr < PAGE_POOL_BASE || addr >= PAGE_POOL_BASE + page_count * PAGE_SIZE)
         return;   /* ignore bogus pointer rather than corrupt the stack */
 
     uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
@@ -172,7 +195,7 @@ void page_free(void *page)
         }
     }
 
-    if (free_top < PAGE_COUNT)
+    if (free_top < page_count)
         free_stack[free_top++] = page;
     spin_unlock_irqrestore(SPIN_PAGE, saved);
 }

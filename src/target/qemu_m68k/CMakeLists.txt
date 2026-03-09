@@ -31,6 +31,7 @@ add_executable(ppap_qemu_m68k
     # Architecture
     ${PPAP_ROOT}/src/arch/m68k/boot.S
     ${PPAP_ROOT}/src/arch/m68k/m68k_common.c
+    ${PPAP_ROOT}/src/arch/m68k/probe_ram.S
     ${PPAP_ROOT}/src/arch/m68k/string.c
     ${PPAP_ROOT}/src/arch/m68k/switch.S
     ${PPAP_ROOT}/src/arch/m68k/trap.S
@@ -91,7 +92,7 @@ target_include_directories(ppap_qemu_m68k PRIVATE
 target_compile_definitions(ppap_qemu_m68k PRIVATE
     PPAP_QEMU=1
     PPAP_M68K=1
-    PAGE_COUNT=256u
+    PAGE_COUNT_MAX=4096u
     # SYSCALL_DEBUG=1
 )
 

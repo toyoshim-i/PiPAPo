@@ -56,15 +56,15 @@
  *             ppap.ld / qemu.ld (the linker script divides the page pool
  *             region by this value).
  *
- * PAGE_COUNT  Number of pages in the free pool.  Must not exceed the size
- *             of the PAGE_POOL region defined in the linker script
- *             (PAGE_POOL_SIZE = PAGE_COUNT × PAGE_SIZE).
- *             QEMU has 512 KB RAM so we use a larger pool there.
+ * PAGE_COUNT_MAX  Compile-time upper bound on pages.  Sizes the static
+ *                 free_stack[] array.  The actual page count is detected
+ *                 at boot and stored in the runtime variable `page_count`
+ *                 (see page.h).
  * ────────────────────────────────────────────────────────────────────────── */
 #define PAGE_SIZE          4096u    /* bytes per page                       */
 
-#ifndef PAGE_COUNT
-#define PAGE_COUNT           51u    /* RP2040 default: 204 KB pool          */
+#ifndef PAGE_COUNT_MAX
+#define PAGE_COUNT_MAX       51u    /* RP2040 default: 204 KB pool          */
 #endif
 
 /* ── VFS (Virtual File System) ────────────────────────────────────────────

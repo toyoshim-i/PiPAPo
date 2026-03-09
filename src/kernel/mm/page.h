@@ -1,7 +1,7 @@
 /*
  * page.h — Physical page allocator
  *
- * Manages the page pool starting at 0x20005000 (size set by PAGE_COUNT).
+ * Manages the page pool starting at 0x20005000 (size set by PAGE_COUNT_MAX).
  * Uses a free-stack (array-based LIFO) for O(1) alloc/free with no per-page
  * overhead.
  *
@@ -16,22 +16,30 @@
 #include "config.h"
 
 /* ── Memory map constants (must match the target linker script) ─────────────── */
-/* PAGE_SIZE and PAGE_COUNT are defined in config.h */
+/* PAGE_SIZE and PAGE_COUNT_MAX are defined in config.h */
 
 #if defined(__m68k__)
-/* M68K QEMU: RAM at 0x0, page pool placed by linker after stack.
- * No IOBUF/DMA regions — those are RP2040-specific. */
+/* M68K: RAM at 0x0, page pool placed by linker after stack.
+ * No IOBUF/DMA regions — those are RP2040-specific.
+ *
+ * RAM_END is the hard ceiling for the RAM probe — addresses at or above
+ * this value are never probed (e.g. X68000 VRAM starts at 0xC00000).
+ * Targets override via -DRAM_END=... in CMake; default = PAGE_POOL_BASE
+ * + PAGE_COUNT_MAX * PAGE_SIZE (set after PAGE_POOL_BASE is known). */
 #define SRAM_KERNEL_BASE  0x00000000u
 #define SRAM_KERNEL_SIZE     (20u * 1024u)
 extern char __page_pool_start;
 #define PAGE_POOL_BASE    ((uint32_t)(uintptr_t)&__page_pool_start)
-#define PAGE_POOL_SIZE    (PAGE_COUNT * PAGE_SIZE)
+#define PAGE_POOL_SIZE    (PAGE_COUNT_MAX * PAGE_SIZE)
+#ifndef RAM_END
+#define RAM_END           (PAGE_POOL_BASE + PAGE_POOL_SIZE)
+#endif
 #else
 /* ARM / RP2040: SRAM at 0x20000000, fixed layout matching ppap.ld / qemu.ld */
 #define SRAM_KERNEL_BASE  0x20000000u       /* kernel data region start        */
 #define SRAM_KERNEL_SIZE     (20u * 1024u)  /* 20 KB reserved for kernel       */
 #define PAGE_POOL_BASE    0x20005000u       /* first page in the pool          */
-#define PAGE_POOL_SIZE    (PAGE_COUNT * PAGE_SIZE)
+#define PAGE_POOL_SIZE    (PAGE_COUNT_MAX * PAGE_SIZE)
 #define SRAM_IOBUF_BASE   (PAGE_POOL_BASE + PAGE_POOL_SIZE)  /* after pool    */
 #define SRAM_IOBUF_SIZE      (24u * 1024u)  /* 24 KB                           */
 #define SRAM_DMA_BASE     (SRAM_IOBUF_BASE + SRAM_IOBUF_SIZE)
@@ -59,6 +67,11 @@ void page_free(void *page);
 
 /* Return the number of pages currently on the free stack. */
 uint32_t page_free_count(void);
+
+/* Runtime page count — set by mm_init() after probing available RAM.
+ * Always <= PAGE_COUNT_MAX.  Use this (not PAGE_COUNT_MAX) for runtime
+ * decisions such as total-memory reporting. */
+extern uint32_t page_count;
 
 /* OOM event counter (incremented each time page_alloc returns NULL). */
 extern uint32_t oom_count;

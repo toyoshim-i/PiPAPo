@@ -124,7 +124,7 @@ typedef struct {
 static int gen_meminfo(char *buf, int bufsiz)
 {
     uint32_t free_pages = page_free_count();
-    uint32_t total_kb = (PAGE_COUNT * PAGE_SIZE) / 1024u;
+    uint32_t total_kb = (page_count * PAGE_SIZE) / 1024u;
     uint32_t free_kb  = (free_pages * PAGE_SIZE) / 1024u;
 
     int pos = 0;
