@@ -61,8 +61,9 @@ case "$TARGET" in
             "$PROJECT_DIR/third_party/build-gcc-m68k.sh"
         fi
 
-        echo "[build] Building $CMAKE_TARGET..."
+        echo "[build] Building $CMAKE_TARGET (PPAP_TESTS=$TESTS)..."
         cmake -DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/cmake/toolchain-m68k.cmake" \
+              -DPPAP_TESTS="$TESTS" \
               -S "$PROJECT_DIR/src/target/qemu_m68k" -B "$BUILD_DIR" >/dev/null 2>&1
         cmake --build "$BUILD_DIR" -- -j"$(nproc)"
         ;;

@@ -8,8 +8,13 @@ int main(void)
 {
     /* 1. Basic pipe write+read */
     int fds[2];
+    fds[0] = fds[1] = -1;
     int ret = pipe(fds);
     UT_ASSERT_EQ(ret, 0);
+    if (ret != 0) {
+        /* pipe() failed — bail out to avoid hanging on read(stdin) */
+        UT_SUMMARY("test_pipe");
+    }
     UT_ASSERT(fds[0] >= 0, "pipe read fd valid");
     UT_ASSERT(fds[1] >= 0, "pipe write fd valid");
     UT_ASSERT(fds[0] != fds[1], "pipe fds distinct");
@@ -30,7 +35,11 @@ int main(void)
 
     /* 2. Pipe across vfork + dup2 */
     int fds2[2];
+    fds2[0] = fds2[1] = -1;
     pipe(fds2);
+    if (fds2[0] < 0 || fds2[1] < 0) {
+        UT_SUMMARY("test_pipe");
+    }
     pid_t pid = vfork();
     if (pid == 0) {
         close(fds2[0]);

@@ -89,11 +89,14 @@ target_include_directories(ppap_qemu_m68k PRIVATE
     ${PPAP_ROOT}/src/kernel
 )
 
+option(PPAP_TESTS "Enable test suite" OFF)
+
 target_compile_definitions(ppap_qemu_m68k PRIVATE
     PPAP_QEMU=1
     PPAP_M68K=1
     PAGE_COUNT_MAX=4096u
     # SYSCALL_DEBUG=1
+    $<$<BOOL:${PPAP_TESTS}>:PPAP_TESTS=1>
 )
 
 target_compile_options(ppap_qemu_m68k PRIVATE
@@ -181,6 +184,53 @@ set(M68K_USER_ELFS
     ${CMAKE_BINARY_DIR}/getty.elf
     ${CMAKE_BINARY_DIR}/ttyctl.elf
 )
+
+# Test programs (only built when PPAP_TESTS=ON)
+if(PPAP_TESTS)
+    set(M68K_TESTS_DIR ${PPAP_ROOT}/tests/user)
+    # Test sources need include paths to both tests/user (utest.h) and src/user (syscall.h)
+    set(M68K_TEST_CFLAGS ${M68K_CFLAGS} -I${M68K_TESTS_DIR})
+
+    function(m68k_test_program name source)
+        add_custom_command(
+            OUTPUT ${CMAKE_BINARY_DIR}/${name}.elf
+            COMMAND ${CMAKE_C_COMPILER} ${M68K_TEST_CFLAGS} -c
+                    -o ${CMAKE_BINARY_DIR}/${name}.o ${source}
+            COMMAND ${CMAKE_C_COMPILER} -m68000 ${M68K_LDFLAGS}
+                    -o ${CMAKE_BINARY_DIR}/${name}.elf
+                    ${M68K_COMMON_OBJS}
+                    ${CMAKE_BINARY_DIR}/${name}.o
+            DEPENDS ${source} ${M68K_COMMON_DEPS} ${M68K_TESTS_DIR}/utest.h
+            COMMENT "Building m68k ${name}.elf"
+        )
+    endfunction()
+
+    m68k_test_program(test_exec       ${M68K_TESTS_DIR}/test_exec.c)
+    m68k_test_program(test_vfork      ${M68K_TESTS_DIR}/test_vfork.c)
+    m68k_test_program(test_fault      ${M68K_TESTS_DIR}/test_fault.c)
+    m68k_test_program(test_pipe       ${M68K_TESTS_DIR}/test_pipe.c)
+    m68k_test_program(test_brk        ${M68K_TESTS_DIR}/test_brk.c)
+    m68k_test_program(test_fd         ${M68K_TESTS_DIR}/test_fd.c)
+    m68k_test_program(test_signal     ${M68K_TESTS_DIR}/test_signal.c)
+    m68k_test_program(test_poll       ${M68K_TESTS_DIR}/test_poll.c)
+    m68k_test_program(test_sleep_intr ${M68K_TESTS_DIR}/test_sleep_intr.c)
+    m68k_test_program(test_orphan     ${M68K_TESTS_DIR}/test_orphan.c)
+    m68k_test_program(runtests        ${M68K_TESTS_DIR}/runtests.c)
+
+    list(APPEND M68K_USER_ELFS
+        ${CMAKE_BINARY_DIR}/test_exec.elf
+        ${CMAKE_BINARY_DIR}/test_vfork.elf
+        ${CMAKE_BINARY_DIR}/test_fault.elf
+        ${CMAKE_BINARY_DIR}/test_pipe.elf
+        ${CMAKE_BINARY_DIR}/test_brk.elf
+        ${CMAKE_BINARY_DIR}/test_fd.elf
+        ${CMAKE_BINARY_DIR}/test_signal.elf
+        ${CMAKE_BINARY_DIR}/test_poll.elf
+        ${CMAKE_BINARY_DIR}/test_sleep_intr.elf
+        ${CMAKE_BINARY_DIR}/test_orphan.elf
+        ${CMAKE_BINARY_DIR}/runtests.elf
+    )
+endif()
 
 # --- Busybox (pre-built by build-busybox.sh --m68k) ---
 set(M68K_BB_DIR  ${PPAP_ROOT}/build/m68k/busybox)
