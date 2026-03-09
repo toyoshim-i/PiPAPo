@@ -12,25 +12,29 @@
  *
  * Architecture notes:
  *   m68k: Both tests work. ILLEGAL opcode 0x4AFC, DIVS.W by zero.
- *   ARM:  Skipped — Cortex-M0+ HardFault handler doesn't yet kill
- *         the faulting process, so faults loop forever.
+ *   ARM:  illegal_insn works (UDF 0xDEAD). divzero skipped on
+ *         Cortex-M0+ (no hardware divide instruction).
  */
 
 #include "utest.h"
-
-#if defined(__m68k__)
 
 /* ── Fault triggers (child process) ──────────────────────────────────────── */
 
 static void __attribute__((noreturn)) do_illegal_insn(void)
 {
+#if defined(__m68k__)
     /* 0x4AFC is the m68k ILLEGAL instruction */
     __asm__ volatile (".short 0x4afc");
+#else
+    /* 0xDEAD is a permanently undefined Thumb encoding (UDF range 0xDExx) */
+    __asm__ volatile (".short 0xdead");
+#endif
     _exit(99);
 }
 
 static void __attribute__((noreturn)) do_divzero(void)
 {
+#if defined(__m68k__)
     /* Force DIVS.W instruction — C division uses __divsi3 sw routine */
     volatile int zero = 0;
     int result;
@@ -43,6 +47,10 @@ static void __attribute__((noreturn)) do_divzero(void)
         : "d0"
     );
     (void)result;
+#else
+    /* Cortex-M0+ has no hardware divide — SDIV/UDIV are ARMv7-M+.
+     * Exit 99 to signal "not applicable on this arch". */
+#endif
     _exit(99);
 }
 
@@ -81,11 +89,8 @@ static int run_child_test(int idx)
     return (status >> 8) & 0xff;
 }
 
-#endif /* __m68k__ */
-
 int main(int argc, char *argv[])
 {
-#if defined(__m68k__)
     /* Child mode */
     if (argc >= 2 && argv[1][0] >= '0' && argv[1][0] <= '1')
         run_fault(argv[1][0] - '0');
@@ -102,12 +107,6 @@ int main(int argc, char *argv[])
     code = run_child_test(1);
     if (code != 99)
         UT_ASSERT_EQ(code, 128 + SIGFPE);
-#else
-    (void)argc; (void)argv;
-    /* ARM Cortex-M0+ has no user-mode crash handler yet —
-     * HardFault loops forever, so skip all fault tests. */
-    UT_PRINT("test_fault: skipped (no ARM crash handler)\n");
-#endif
 
     UT_SUMMARY("test_fault");
 }

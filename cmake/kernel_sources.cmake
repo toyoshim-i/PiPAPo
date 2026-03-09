@@ -7,6 +7,7 @@ set(ARCH_ARM_M_SOURCES
     ${CMAKE_SOURCE_DIR}/src/arch/arm_m/boot.S
     ${CMAKE_SOURCE_DIR}/src/arch/arm_m/switch.S
     ${CMAKE_SOURCE_DIR}/src/arch/arm_m/trap.S
+    ${CMAKE_SOURCE_DIR}/src/arch/arm_m/arm_m_common.c
 )
 
 set(KERNEL_COMMON_SOURCES

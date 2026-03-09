@@ -41,7 +41,7 @@ _vectors:
     .word __stack_top           @ 0:  Initial SP (loaded by CPU on reset)
     .word Reset_Handler         @ 1:  Reset
     .word Default_Handler       @ 2:  NMI
-    .word Default_Handler       @ 3:  HardFault
+    .word HardFault_Handler     @ 3:  HardFault
     .word 0                     @ 4:  Reserved
     .word 0                     @ 5:  Reserved
     .word 0                     @ 6:  Reserved
@@ -163,6 +163,67 @@ Reset_Handler:
 .global Default_Handler
 Default_Handler:
     b    Default_Handler
+
+@ =============================================================================
+@ HardFault_Handler
+@
+@ On Cortex-M0+, all faults (undefined instruction, bus error, etc.)
+@ escalate to HardFault.  This handler:
+@   1. Checks EXC_RETURN bit 2 to determine if fault was in Thread mode
+@      (user process, using PSP) or Handler mode (kernel, using MSP).
+@   2. For user faults: calls arm_crash_handler() which prints a crash
+@      report, kills the process via sys_exit(128+sig), and patches the
+@      PSP exception frame PC so returning won't re-fault.
+@   3. Returns from exception.  sys_exit() already pended PendSV, which
+@      tail-chains after HardFault returns and performs the context switch.
+@   4. For kernel faults: falls through to Default_Handler (infinite loop).
+@
+@ PSP exception frame layout (hardware-saved on fault):
+@   [PSP+0]  r0      [PSP+16] r12
+@   [PSP+4]  r1      [PSP+20] lr
+@   [PSP+8]  r2      [PSP+24] pc  ← faulting instruction
+@   [PSP+12] r3      [PSP+28] xpsr
+@ =============================================================================
+
+.align 2
+.thumb_func
+.global HardFault_Handler
+HardFault_Handler:
+    @ Check EXC_RETURN in lr: bit 2 indicates which stack was in use.
+    @   lr = 0xFFFFFFF9 → MSP (handler/kernel mode)
+    @   lr = 0xFFFFFFFD → PSP (thread/user mode)
+    movs r0, #4
+    mov  r1, lr
+    tst  r0, r1
+    beq  Default_Handler        @ MSP fault (kernel) → halt
+
+    @ ── User-mode fault ──────────────────────────────────────────────
+    mrs  r0, psp                @ r0 = pointer to stacked {r0..xpsr}
+
+    @ Save callee-saved registers on MSP for crash report.
+    @ 6 + 4 = 10 words = 40 bytes (8-byte aligned for C calls).
+    push {r3, r4, r5, r6, r7, lr}  @ r3 = padding for alignment
+    mov  r4, r8
+    mov  r5, r9
+    mov  r6, r10
+    mov  r7, r11
+    push {r4-r7}                @ save r8-r11 (4 words)
+
+    @ Call arm_crash_handler(psp_frame, callee_regs)
+    @ Calls sys_exit(128+sig) which marks ZOMBIE and pends PendSV.
+    mov  r1, sp                 @ r1 = callee_regs on MSP
+    bl   arm_crash_handler
+
+    @ ── Return from exception ────────────────────────────────────────
+    @ sys_exit() pended PendSV.  Restore our callee-saved registers and
+    @ return via EXC_RETURN.  PendSV tail-chains immediately: it saves
+    @ the dead process's context (harmless) and switches to the parent.
+    pop  {r4-r7}
+    mov  r8,  r4
+    mov  r9,  r5
+    mov  r10, r6
+    mov  r11, r7
+    pop  {r3, r4, r5, r6, r7, pc}  @ pc = EXC_RETURN → PendSV tail-chains
 
 @ Weak aliases: real handlers are provided by the driver for each build target.
 @ - UART0_IRQ_Handler:   uart.c (hardware RP2040, IRQ 20)
