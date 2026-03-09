@@ -192,6 +192,29 @@ The m68k toolchain is a custom-built `m68k-elf-gcc` targeting bare-metal
 package from apt targets Linux userspace and is **not** suitable for
 bare-metal kernel builds.
 
+### libgcc and Kernel Code
+
+The toolchain's libgcc **cannot** be linked into the kernel. libgcc is built
+with `-msep-data -fPIC`, so its routines use GOT-relative addressing via `a5`
+(e.g., `%a5@(0)` for lookup tables). The kernel does not set up `a5` as a GOT
+base — it runs non-PIC code — so any libgcc call would dereference a garbage
+`a5` and crash.
+
+Instead, the kernel provides a self-written subset in `src/arch/m68k/math.S`:
+
+| Routine | Purpose |
+|---|---|
+| `__mulsi3` | 32×32 multiply (68000 only has 16×16 `mulu`) |
+| `__udivsi3` | Unsigned 32-bit divide (shift-and-subtract) |
+| `__umodsi3` | Unsigned 32-bit modulo |
+
+These cover the compiler-generated calls that appear in kernel code. Any new
+libgcc dependency (e.g., `__ctzsi2`, `__divsi3`) must either be added to
+math.S or rewritten as inline C to avoid the PIC/GOT issue.
+
+User-space code **does** link libgcc normally, since user processes have `a5`
+set to their GOT base by the ELF loader.
+
 ---
 
 ## 6. User-Space Details
