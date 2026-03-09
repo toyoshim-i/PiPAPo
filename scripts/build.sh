@@ -54,6 +54,13 @@ case "$TARGET" in
         CMAKE_TARGET="ppap_qemu_m68k"
         ELF="$BUILD_DIR/${CMAKE_TARGET}.elf"
 
+        # Ensure custom m68k-elf toolchain is available
+        M68K_TC="$PROJECT_DIR/tools/m68k-toolchain/bin/m68k-elf-gcc"
+        if [[ ! -x "$M68K_TC" ]]; then
+            echo "[build] m68k-elf-gcc not found. Building toolchain..."
+            "$PROJECT_DIR/third_party/build-gcc-m68k.sh"
+        fi
+
         echo "[build] Building $CMAKE_TARGET..."
         cmake -DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/cmake/toolchain-m68k.cmake" \
               -S "$PROJECT_DIR/src/target/qemu_m68k" -B "$BUILD_DIR" >/dev/null 2>&1

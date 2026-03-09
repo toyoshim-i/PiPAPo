@@ -32,8 +32,6 @@ add_executable(ppap_qemu_m68k
     ${PPAP_ROOT}/src/arch/m68k/boot.S
     ${PPAP_ROOT}/src/arch/m68k/m68k_common.c
     ${PPAP_ROOT}/src/arch/m68k/string.c
-    ${PPAP_ROOT}/src/arch/m68k/divmod.c
-    ${PPAP_ROOT}/src/arch/m68k/divmod64.c
     ${PPAP_ROOT}/src/arch/m68k/switch.S
     ${PPAP_ROOT}/src/arch/m68k/trap.S
 
@@ -111,11 +109,9 @@ target_link_options(ppap_qemu_m68k PRIVATE
     -Wl,--build-id=none
 )
 
-# Link libgcc for 68000 helper functions (__mulsi3, etc.).
-# Division helpers (__udivsi3, __umodsi3, __divsi3, __modsi3) are
-# provided by src/arch/m68k/divmod.c because the system libgcc uses
-# 68020+ instructions (BSR.L) that fault on the 68000.  Our versions
-# override the libgcc ones (linker picks first definition).
+# Link libgcc for 68000 helper functions (__mulsi3, __udivsi3, etc.).
+# The custom m68k-elf-gcc (built by third_party/build-gcc-m68k.sh)
+# produces a 68000-safe libgcc — no 68020+ instruction overrides needed.
 execute_process(
     COMMAND ${CMAKE_C_COMPILER} -m68000 -print-libgcc-file-name
     OUTPUT_VARIABLE M68K_LIBGCC

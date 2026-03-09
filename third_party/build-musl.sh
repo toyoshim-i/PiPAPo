@@ -33,10 +33,11 @@ done
 
 # --- Arch-specific configuration ---
 if [[ "$ARCH" == "m68k" ]]; then
+    M68K_TC="$PROJECT_ROOT/tools/m68k-toolchain"
     MUSL_SYSROOT="$PROJECT_ROOT/build/m68k/musl-sysroot"
-    CROSS_PREFIX=m68k-linux-gnu-
-    MUSL_TARGET=m68k-linux-gnu
-    MUSL_CC=m68k-linux-gnu-gcc
+    CROSS_PREFIX="${M68K_TC}/bin/m68k-elf-"
+    MUSL_TARGET=m68k-elf
+    MUSL_CC="${M68K_TC}/bin/m68k-elf-gcc"
     MUSL_CFLAGS="-m68000 -Os -g -msep-data -ffunction-sections -fdata-sections"
     ARCH_LABEL="m68k (68000)"
     # m68k asm files to delete: setjmp uses FPU (fmovem), ldso not needed

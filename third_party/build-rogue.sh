@@ -10,7 +10,7 @@
 #   --clean   Remove build artifacts and exit
 #
 # Prerequisites:
-#   - Cross compiler in PATH (arm-none-eabi-gcc or m68k-linux-gnu-gcc)
+#   - Cross compiler (arm-none-eabi-gcc or m68k-elf-gcc from build-gcc-m68k.sh)
 #   - musl sysroot already built (run build-musl.sh first)
 
 set -euo pipefail
@@ -34,15 +34,16 @@ done
 
 # --- Arch-specific configuration ---
 if [[ "$ARCH" == "m68k" ]]; then
+    M68K_TC="$PROJECT_ROOT/tools/m68k-toolchain"
     ROGUE_OUT="$PROJECT_ROOT/build/m68k/rogue"
     MUSL_SYSROOT="$PROJECT_ROOT/build/m68k/musl-sysroot"
     SPECS_FILE="$PROJECT_ROOT/build/m68k/musl-m68k.specs"
-    CC=m68k-linux-gnu-gcc
-    STRIP=m68k-linux-gnu-strip
-    SIZE_CMD=m68k-linux-gnu-size
+    CC="${M68K_TC}/bin/m68k-elf-gcc"
+    STRIP="${M68K_TC}/bin/m68k-elf-strip"
+    SIZE_CMD="${M68K_TC}/bin/m68k-elf-size"
     LINKER_SCRIPT="$CONFIGS_DIR/busybox-m68k.ld"
-    GCC_INCLUDE="$(m68k-linux-gnu-gcc -print-file-name=include)"
-    GCC_LIBDIR="$(dirname "$(m68k-linux-gnu-gcc -m68000 -print-libgcc-file-name)")"
+    GCC_INCLUDE="$($CC -print-file-name=include)"
+    GCC_LIBDIR="$(dirname "$($CC -m68000 -print-libgcc-file-name)")"
     TARGET_FLAGS="-m68000"
     PIC_FLAGS="-msep-data"
     ARCH_LABEL="m68k (68000)"
@@ -150,16 +151,6 @@ done
 echo "rogue [$ARCH]: compiling curses shim..."
 $CC $CFLAGS -c "$PATCHES_DIR/curses.c" -o "$ROGUE_OUT/obj/curses.o"
 OBJS+=("$ROGUE_OUT/obj/curses.o")
-
-# m68k: compile 68000-safe divmod to override libgcc's BSR.L-using versions
-if [[ "$ARCH" == "m68k" ]]; then
-    echo "rogue [$ARCH]: compiling 68000 divmod overrides..."
-    $CC $TARGET_FLAGS -Os -ffreestanding -c \
-        "$PROJECT_ROOT/src/arch/m68k/divmod.c" -o "$ROGUE_OUT/obj/divmod.o"
-    $CC $TARGET_FLAGS -Os -ffreestanding -c \
-        "$PROJECT_ROOT/src/arch/m68k/divmod64.c" -o "$ROGUE_OUT/obj/divmod64.o"
-    OBJS+=("$ROGUE_OUT/obj/divmod.o" "$ROGUE_OUT/obj/divmod64.o")
-fi
 
 # --- Link ---
 # Use -specs= to provide musl CRT/libc/libgcc (do NOT use -nostdlib,

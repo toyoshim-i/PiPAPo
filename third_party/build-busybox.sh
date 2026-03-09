@@ -14,7 +14,7 @@
 #   --clean   Remove build artifacts and exit
 #
 # Prerequisites:
-#   - Cross compiler in PATH (arm-none-eabi-gcc or m68k-linux-gnu-gcc)
+#   - Cross compiler (arm-none-eabi-gcc or m68k-elf-gcc from build-gcc-m68k.sh)
 #   - musl sysroot already built (run build-musl.sh first)
 
 set -euo pipefail
@@ -37,16 +37,17 @@ done
 
 # --- Arch-specific configuration ---
 if [[ "$ARCH" == "m68k" ]]; then
+    M68K_TC="$PROJECT_ROOT/tools/m68k-toolchain"
     BB_OUT="$PROJECT_ROOT/build/m68k/busybox"
     MUSL_SYSROOT="$PROJECT_ROOT/build/m68k/musl-sysroot"
     SPECS_FILE="$PROJECT_ROOT/build/m68k/musl-m68k.specs"
-    CC=m68k-linux-gnu-gcc
-    CROSS_PREFIX=m68k-linux-gnu-
-    STRIP=m68k-linux-gnu-strip
-    SIZE_CMD=m68k-linux-gnu-size
+    CC="${M68K_TC}/bin/m68k-elf-gcc"
+    CROSS_PREFIX="${M68K_TC}/bin/m68k-elf-"
+    STRIP="${M68K_TC}/bin/m68k-elf-strip"
+    SIZE_CMD="${M68K_TC}/bin/m68k-elf-size"
     BB_ARCH=m68k
-    GCC_INCLUDE="$(m68k-linux-gnu-gcc -print-file-name=include)"
-    GCC_LIBDIR="$(dirname "$(m68k-linux-gnu-gcc -m68000 -print-libgcc-file-name)")"
+    GCC_INCLUDE="$($CC -print-file-name=include)"
+    GCC_LIBDIR="$(dirname "$($CC -m68000 -print-libgcc-file-name)")"
     BUSYBOX_LD="$CONFIGS_DIR/busybox-m68k.ld"
     CFLAGS_PPAP="-m68000 -Os -nostdinc -isystem $MUSL_SYSROOT/include -isystem $GCC_INCLUDE -msep-data -ffunction-sections -fdata-sections -pie"
     ARCH_LABEL="m68k (68000)"
@@ -134,17 +135,6 @@ echo "  specs: $SPECS_FILE"
 
 mkdir -p "$BB_OUT"
 
-# --- Build 68000-safe libgcc replacement objects (m68k only) ---
-EXTRA_LDFLAGS_PPAP=""
-if [[ "$ARCH" == "m68k" ]]; then
-    echo "busybox [$ARCH]: building 68000-safe divmod replacements..."
-    DIVMOD_DIR="$PROJECT_ROOT/src/arch/m68k"
-    $CC -m68000 -Os -msep-data -fPIC -c -o "$BB_OUT/divmod.o"   "$DIVMOD_DIR/divmod.c"
-    $CC -m68000 -Os -msep-data -fPIC -c -o "$BB_OUT/divmod64.o" "$DIVMOD_DIR/divmod64.c"
-    EXTRA_LDFLAGS_PPAP="$BB_OUT/divmod.o $BB_OUT/divmod64.o"
-    echo "  built: divmod.o divmod64.o"
-fi
-
 # --- Build each variant ---
 for variant in "${VARIANTS[@]}"; do
     name="${variant%%:*}"
@@ -192,11 +182,7 @@ for variant in "${VARIANTS[@]}"; do
     # Inject CFLAGS into .config
     sed -i 's|^CONFIG_SYSROOT=.*|CONFIG_SYSROOT=""|' .config
     sed -i 's|^CONFIG_EXTRA_CFLAGS=.*|CONFIG_EXTRA_CFLAGS="'"$CFLAGS_PPAP -specs=$SPECS_FILE -T $BUSYBOX_LD"'"|' .config
-    if [[ -n "$EXTRA_LDFLAGS_PPAP" ]]; then
-        sed -i 's|^CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS="'"$EXTRA_LDFLAGS_PPAP"' -Wl,--allow-multiple-definition"|' .config
-    else
-        sed -i 's|^CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS=""|' .config
-    fi
+    sed -i 's|^CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS=""|' .config
     sed -i 's|^CONFIG_EXTRA_LDLIBS=.*|CONFIG_EXTRA_LDLIBS=""|' .config
 
     # Resolve dependencies

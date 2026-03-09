@@ -50,8 +50,7 @@ info "=== Step 1: Installing apt packages ==="
 APT_PACKAGES=(
   gcc-arm-none-eabi       # ARM cross-compiler (armv6m/Thumb)
   binutils-arm-none-eabi  # Assembler, linker, objcopy, objdump
-  gcc-m68k-linux-gnu      # M68K cross-compiler (68000 port)
-  binutils-m68k-linux-gnu # M68K assembler, linker, objcopy
+  # m68k-elf toolchain is built from source: ./third_party/build-gcc-m68k.sh
   gdb-multiarch           # GDB with ARM and m68k support
   openocd                 # SWD/JTAG on-chip debugger (v0.12+)
   minicom                 # Serial console
@@ -161,22 +160,16 @@ else
 fi
 rm -f /tmp/ppap_check.c /tmp/ppap_check.elf
 
-# m68k-linux-gnu-gcc
-verify_version "m68k-linux-gnu-gcc" \
-  "m68k-linux-gnu-gcc --version" \
-  "m68k-linux-gnu-gcc"
-
-# Check it produces valid m68k output
-echo 'int main(void){return 0;}' > /tmp/ppap_m68k_check.c
-if m68k-linux-gnu-gcc -m68000 -nostdlib -static \
-     -o /tmp/ppap_m68k_check.elf /tmp/ppap_m68k_check.c 2>/dev/null; then
-  ARCH=$(m68k-linux-gnu-readelf -h /tmp/ppap_m68k_check.elf | grep Machine)
-  success "m68k-linux-gnu-gcc produces valid ELF: ${ARCH}"
+# m68k-elf-gcc (custom toolchain)
+M68K_GCC="${PPAP_ROOT}/tools/m68k-toolchain/bin/m68k-elf-gcc"
+if [[ -x "$M68K_GCC" ]]; then
+  verify_version "m68k-elf-gcc" \
+    "$M68K_GCC --version" \
+    "m68k-elf-gcc"
 else
-  warn "m68k-linux-gnu-gcc failed to compile a minimal test program"
+  warn "m68k-elf-gcc not found. Run: ./third_party/build-gcc-m68k.sh"
   FAIL=1
 fi
-rm -f /tmp/ppap_m68k_check.c /tmp/ppap_m68k_check.elf
 
 # OpenOCD
 verify_version "openocd" \
