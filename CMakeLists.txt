@@ -141,7 +141,9 @@ file(GLOB USER_SOURCES ${USER_SRC_DIR}/*.c ${USER_SRC_DIR}/*.S
                        ${USER_SRC_DIR}/*.h
                        ${USER_SRC_DIR}/arch/arm_m/*.S
                        ${USER_SRC_DIR}/arch/arm_m/*.ld
-                       ${USER_SRC_DIR}/Makefile)
+                       ${USER_SRC_DIR}/Makefile
+                       ${CMAKE_SOURCE_DIR}/tests/user/*.c
+                       ${CMAKE_SOURCE_DIR}/tests/user/*.h)
 
 find_program(MAKE_CMD make REQUIRED)
 

@@ -1560,7 +1560,7 @@ static void blocking_io_integration_test(void)
      * After tty_signal_intr(), sig_pending should have SIGINT bit. */
     {
         current->sig_pending = 0;
-        tty_signal_intr();
+        tty_signal_intr(0);
         int ok = (current->sig_pending & (1u << SIGINT)) != 0;
         test_report("tty_signal_intr delivers SIGINT to pgid=0", ok);
         current->sig_pending = 0;  /* clean up */

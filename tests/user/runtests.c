@@ -48,7 +48,8 @@ int main(void)
     tests[6] = "/bin/test_poll";
     tests[7] = "/bin/test_sleep_intr";
     tests[8] = "/bin/test_orphan";
-    tests[9] = (void *)0;
+    tests[9] = "/bin/test_fault";
+    tests[10] = (void *)0;
 
     print("=== PPAP on-target test suite ===\n");
     int total = 0, failed = 0;

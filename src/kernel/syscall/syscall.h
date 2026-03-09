@@ -249,5 +249,7 @@ long sys_fstatfs64(long fd, long sz, void *buf);
 long sys_poll(void *fds, uint32_t nfds, long timeout_ms);
 long sys_ppoll(void *fds, uint32_t nfds, const void *timeout,
                const void *sigmask, uint32_t sigsetsize);
+long sys_ppoll_time64(void *fds, uint32_t nfds, const void *timeout,
+                      const void *sigmask, uint32_t sigsetsize);
 
 #endif /* PPAP_SYSCALL_H */

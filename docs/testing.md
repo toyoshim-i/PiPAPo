@@ -183,9 +183,9 @@ only relocates GOT entries, not arbitrary data pointers.
 | `test_poll.c` | `ppoll` syscall |
 | `test_sleep_intr.c` | Process lifecycle, exit codes |
 | `test_orphan.c` | Orphan reparenting to init |
-| `test_fault.c` | CPU fault handlers (m68k only) |
+| `test_fault.c` | CPU fault handlers (illegal insn, div-by-zero) |
 
-### Build system (ARM)
+### Build system
 
 User tests are built by `src/user/Makefile`, controlled by
 `PPAP_TESTS=1` from CMake. The Makefile:
@@ -195,17 +195,6 @@ User tests are built by `src/user/Makefile`, controlled by
 - Installs to romfs `/bin/`
 - Compiler flags: `-fPIC -msingle-pic-base -mpic-register=r9`
   (ARM) or `-msep-data` (m68k)
-
-### Build system (m68k)
-
-The m68k QEMU target uses CMake custom commands in
-`src/target/qemu_m68k/CMakeLists.txt`. Test programs are added with:
-
-```cmake
-m68k_user_program(test_fault ${PPAP_ROOT}/tests/user/test_fault.c)
-```
-
-and included in `M68K_USER_ELFS` to be packaged into romfs.
 
 ### Adding a new user-space test
 
@@ -217,11 +206,9 @@ and included in `M68K_USER_ELFS` to be packaged into romfs.
        UT_SUMMARY("test_foo");
    }
    ```
-2. **ARM**: Add `test_foo` to `TESTS_ALL` in `src/user/Makefile`
-3. **m68k**: Add `m68k_user_program(test_foo ...)` and the `.elf` to
-   `M68K_USER_ELFS` in `src/target/qemu_m68k/CMakeLists.txt`
-4. Add `"/bin/test_foo"` to the test list in `tests/user/runtests.c`
-5. Build with `--test` and run
+2. Add `test_foo` to `TESTS_ALL` in `src/user/Makefile`
+3. Add `"/bin/test_foo"` to the test list in `tests/user/runtests.c`
+4. Build with `--test` and run
 
 ### Constraints for user-space test code
 
@@ -281,7 +268,7 @@ boot → kernel init → VFS mount → target_post_mount()
                             ├── test_poll
                             ├── test_sleep_intr
                             ├── test_orphan
-                            └── test_fault (m68k)
+                            └── test_fault
                                    │
                         "ALL TESTS PASSED"
                                    │

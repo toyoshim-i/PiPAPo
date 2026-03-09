@@ -26,7 +26,7 @@ SRC_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
 BUILD_DIR ?= .
 
 ROMFS_BIN ?= ../build/arm_m/romfs/bin
-TESTS_DIR ?= ../tests/user
+TESTS_DIR ?= ../../tests/user
 
 # Arch-specific directory (crt0.S, syscall.S, getty.S, user.ld)
 ARCH_DIR := $(SRC_DIR)arch/arm_m
@@ -54,7 +54,7 @@ COMMON_OBJS := $(BUILD_DIR)/crt0.o $(BUILD_DIR)/syscall.o
 APPS := hello getty init ttyctl
 # Test programs (sources in tests/user/, found via VPATH)
 # Only built when PPAP_TESTS=1 is passed from CMake
-TESTS_ALL := test_vfork test_exec test_pipe test_brk test_fd test_signal test_poll test_sleep_intr test_orphan runtests
+TESTS_ALL := test_vfork test_exec test_pipe test_brk test_fd test_signal test_poll test_sleep_intr test_orphan test_fault runtests
 ifeq ($(PPAP_TESTS),1)
 TESTS := $(TESTS_ALL)
 else
