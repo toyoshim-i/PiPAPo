@@ -62,7 +62,6 @@ fi
 # ── Target-specific build ────────────────────────────────────────────────────
 case "$TARGET" in
     pico1|pico1calc|qemu_arm)
-        BUILD_DIR="$PROJECT_DIR/build/arm_m"
         CMAKE_TARGET="ppap_${TARGET}"
         ELF="$BUILD_DIR/${CMAKE_TARGET}.elf"
 
@@ -71,31 +70,17 @@ case "$TARGET" in
         cmake --build "$BUILD_DIR" --target "$CMAKE_TARGET" -- -j"$(nproc)"
         ;;
     qemu_m68k)
-        BUILD_DIR="$PROJECT_DIR/build/m68k"
         CMAKE_TARGET="ppap_qemu_m68k"
         ELF="$BUILD_DIR/${CMAKE_TARGET}.elf"
 
-        # Ensure custom m68k-elf toolchain is available
+        # Ensure custom m68k-elf toolchain is available (must exist before cmake)
         M68K_TC="$PROJECT_DIR/tools/m68k-toolchain/bin/m68k-elf-gcc"
         if [[ ! -x "$M68K_TC" ]]; then
             echo "[build] m68k-elf-gcc not found. Building toolchain..."
             "$PROJECT_DIR/third_party/build-gcc-m68k.sh"
         fi
 
-        # Ensure musl sysroot exists (--clean wipes build/m68k/ including it)
-        M68K_MUSL="$BUILD_DIR/musl-sysroot/lib/libc.a"
-        if [[ ! -f "$M68K_MUSL" ]]; then
-            echo "[build] Building musl libc for m68k..."
-            "$PROJECT_DIR/third_party/build-musl.sh" --m68k
-        fi
-
-        # Ensure busybox is built (provides /bin/sh and core utilities)
-        M68K_BB="$BUILD_DIR/busybox/busybox"
-        if [[ ! -f "$M68K_BB" ]]; then
-            echo "[build] Building busybox for m68k..."
-            "$PROJECT_DIR/third_party/build-busybox.sh" --m68k
-        fi
-
+        # musl, busybox, and rogue are now built by cmake via ppap-userland.cmake
         echo "[build] Building $CMAKE_TARGET (PPAP_TESTS=$TESTS)..."
         cmake -DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/cmake/toolchain-m68k.cmake" \
               -DPPAP_TESTS="$TESTS" \

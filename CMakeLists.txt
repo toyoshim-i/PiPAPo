@@ -22,9 +22,9 @@ option(PPAP_TESTS "Enable kernel integration tests and userland test suite" OFF)
 # Shared kernel source list (used by each target's CMakeLists.txt)
 include(cmake/kernel_sources.cmake)
 
-# Shared busybox applet lists and user program lists
-include(cmake/busybox_applets.cmake)
-include(cmake/user_programs.cmake)
+# Common userland build configuration (compiler flags, build functions)
+# Also includes busybox_applets.cmake and user_programs.cmake.
+include(cmake/ppap-userland.cmake)
 
 # =============================================================================
 # Per-target build definitions
@@ -54,94 +54,20 @@ endif()
 # =============================================================================
 # User-space build + romfs image pipeline
 # =============================================================================
-# 1. Build musl libc + busybox
-# 2. Build user-space ELF binaries (src/user/Makefile)
-# 3. Install into ${ROMFS_DIR} (build/arm_m/romfs/)
+# 1. Build musl libc, busybox, rogue (via ppap-userland.cmake functions)
+# 2. Build user-space ELF binaries (via ppap-userland.cmake functions)
+# 3. Stage into per-target romfs directories
 # 4. Build mkromfs, generate romfs.bin
 # 5. Link romfs_data.S (.incbin romfs.bin) into all targets
 # =============================================================================
 
-# --- musl libc (Phase 6 Step 1) ---
-set(MUSL_SYSROOT ${CMAKE_BINARY_DIR}/musl-sysroot)
-set(MUSL_LIBC ${MUSL_SYSROOT}/lib/libc.a)
+# --- Third-party builds (musl, busybox, rogue) ---
+ppap_add_musl()
+ppap_add_busybox()
+ppap_add_rogue()
 
-file(GLOB_RECURSE MUSL_OVERLAY ${CMAKE_SOURCE_DIR}/third_party/patches/musl/overlay/*)
-
-add_custom_command(
-    OUTPUT ${MUSL_LIBC}
-    COMMAND ${CMAKE_SOURCE_DIR}/third_party/build-musl.sh
-    DEPENDS ${CMAKE_SOURCE_DIR}/third_party/build-musl.sh
-            ${MUSL_OVERLAY}
-    COMMENT "Building musl libc (PIC, Cortex-M0+)"
-)
-
-# --- busybox variants (Phase 6 Step 4, Phase 8 Part B) ---
-set(BUSYBOX_BIN ${CMAKE_BINARY_DIR}/busybox/busybox)
-set(BUSYBOX_SH ${CMAKE_BINARY_DIR}/busybox/busybox.sh)
-
-add_custom_command(
-    OUTPUT ${BUSYBOX_BIN} ${BUSYBOX_SH}
-    COMMAND ${CMAKE_SOURCE_DIR}/third_party/build-busybox.sh
-    DEPENDS ${CMAKE_SOURCE_DIR}/third_party/build-busybox.sh
-            ${CMAKE_SOURCE_DIR}/third_party/configs/busybox_ppap.fragment
-            ${CMAKE_SOURCE_DIR}/third_party/configs/busybox_sh.fragment
-            ${CMAKE_SOURCE_DIR}/third_party/configs/busybox.ld
-            ${MUSL_LIBC}
-    COMMENT "Building busybox variants (PIC, Cortex-M0+)"
-)
-
-# Busybox stamp: just track the binaries being built (installation
-# is now done per-target by cmake/stage-romfs.sh).
-set(BUSYBOX_STAMP ${BUSYBOX_BIN})
-
-# --- rogue (port-rogue.md Step 5) ---
-set(ROGUE_BIN ${CMAKE_BINARY_DIR}/rogue/rogue)
-
-file(GLOB ROGUE_PATCHES ${CMAKE_SOURCE_DIR}/third_party/patches/rogue/*)
-
-add_custom_command(
-    OUTPUT ${ROGUE_BIN}
-    COMMAND ${CMAKE_SOURCE_DIR}/third_party/build-rogue.sh
-    DEPENDS ${CMAKE_SOURCE_DIR}/third_party/build-rogue.sh
-            ${ROGUE_PATCHES}
-            ${CMAKE_SOURCE_DIR}/third_party/configs/busybox.ld
-            ${MUSL_LIBC}
-    COMMENT "Building rogue (PIC, Cortex-M0+)"
-)
-
-# Rogue stamp: just track the binary being built (installation
-# is now done per-target by cmake/stage-romfs.sh).
-set(ROGUE_STAMP ${ROGUE_BIN})
-
-# --- User-space binaries (Phase 3 Step 1) ---
-set(USER_SRC_DIR ${CMAKE_SOURCE_DIR}/src/user)
-set(USER_STAMP ${CMAKE_BINARY_DIR}/user_binaries.stamp)
-
-file(GLOB USER_SOURCES ${USER_SRC_DIR}/*.c ${USER_SRC_DIR}/*.S
-                       ${USER_SRC_DIR}/*.h
-                       ${USER_SRC_DIR}/arch/arm_m/*.S
-                       ${USER_SRC_DIR}/arch/arm_m/*.ld
-                       ${USER_SRC_DIR}/Makefile
-                       ${CMAKE_SOURCE_DIR}/tests/user/*.c
-                       ${CMAKE_SOURCE_DIR}/tests/user/*.h)
-
-find_program(MAKE_CMD make REQUIRED)
-
-set(USER_BUILD_DIR ${CMAKE_BINARY_DIR}/user)
-
-add_custom_command(
-    OUTPUT ${USER_STAMP}
-    COMMAND ${MAKE_CMD} -C ${USER_SRC_DIR} clean
-            BUILD_DIR=${USER_BUILD_DIR}
-    COMMAND ${MAKE_CMD} -C ${USER_SRC_DIR} all
-            BUILD_DIR=${USER_BUILD_DIR}
-            PPAP_TESTS=$<BOOL:${PPAP_TESTS}>
-    COMMAND ${CMAKE_COMMAND} -E touch ${USER_STAMP}
-    DEPENDS ${USER_SOURCES}
-    COMMENT "Building user-space binaries"
-)
-
-add_custom_target(user_binaries DEPENDS ${USER_STAMP})
+# --- User-space binaries ---
+ppap_build_user_programs(ARM_USER_ELF_PATHS)
 
 # --- mkromfs host tool ---
 add_custom_command(
@@ -153,17 +79,6 @@ add_custom_command(
             ${CMAKE_SOURCE_DIR}/src/kernel/fs/romfs_format.h
     COMMENT "Building mkromfs host tool"
 )
-
-# --- Construct user ELF path list for stage-romfs.sh ---
-set(ARM_USER_ELF_PATHS "")
-foreach(app ${USER_APPS})
-    list(APPEND ARM_USER_ELF_PATHS ${USER_BUILD_DIR}/${app}.elf)
-endforeach()
-if(PPAP_TESTS)
-    foreach(tst ${USER_TESTS})
-        list(APPEND ARM_USER_ELF_PATHS ${USER_BUILD_DIR}/${tst}.elf)
-    endforeach()
-endif()
 
 # --- Per-target romfs generation ---
 # Each target gets its own romfs.bin with an appropriate /etc/fstab.
@@ -193,7 +108,6 @@ foreach(tgt ${PPAP_ALL_TARGETS})
     if(tgt STREQUAL "ppap_pico1calc")
         file(WRITE ${CMAKE_BINARY_DIR}/inittab_${tgt} "${INITTAB_DUAL_TTY}")
     else()
-        # All targets use getty for proper session/controlling-terminal setup
         file(WRITE ${CMAKE_BINARY_DIR}/inittab_${tgt} "${INITTAB_SERIAL_ONLY}")
     endif()
 endforeach()
@@ -208,18 +122,21 @@ foreach(tgt ${PPAP_ALL_TARGETS})
         COMMAND ${CMAKE_SOURCE_DIR}/cmake/stage-romfs.sh
                 ${ROMFS_STAGING} ${CMAKE_SOURCE_DIR}
                 --user-elfs ${ARM_USER_ELF_PATHS}
-                --bb-dir ${CMAKE_BINARY_DIR}/busybox
+                --bb-dir ${PPAP_BB_DIR}
                 --bb-applets ${BB_APPLETS}
                 --bb-shell-applets ${BB_SHELL_APPLETS}
                 --bb-sbin-applets ${BB_SBIN_APPLETS}
-                --rogue ${ROGUE_BIN}
+                --rogue ${PPAP_ROGUE_DIR}/rogue
                 --etc-dir ${CMAKE_SOURCE_DIR}/src/etc
                 --fstab ${CMAKE_BINARY_DIR}/fstab_${tgt}
                 --inittab ${CMAKE_BINARY_DIR}/inittab_${tgt}
         COMMAND ${CMAKE_BINARY_DIR}/mkromfs
                 ${ROMFS_STAGING} ${ROMFS_BIN}
-        DEPENDS ${CMAKE_BINARY_DIR}/mkromfs ${USER_STAMP} ${BUSYBOX_STAMP}
-                ${ROGUE_STAMP} ${CMAKE_SOURCE_DIR}/src/etc/fstab
+        DEPENDS ${CMAKE_BINARY_DIR}/mkromfs
+                ${ARM_USER_ELF_PATHS}
+                ${PPAP_BB_DIR}/busybox
+                ${PPAP_ROGUE_DIR}/rogue
+                ${CMAKE_SOURCE_DIR}/src/etc/fstab
                 ${CMAKE_SOURCE_DIR}/src/etc/inittab
                 ${CMAKE_BINARY_DIR}/fstab_${tgt}
                 ${CMAKE_BINARY_DIR}/inittab_${tgt}
@@ -340,4 +257,3 @@ target_sources(ppap_pico1calc PRIVATE
     ${CMAKE_BINARY_DIR}/generated/font8x16.c
     ${CMAKE_BINARY_DIR}/generated/font4x8.c
 )
-

@@ -21,9 +21,9 @@ set(CMAKE_C_STANDARD 11)
 # Project root (three levels up from src/target/qemu_m68k/)
 set(PPAP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
-# Shared applet and user program lists
-include(${PPAP_ROOT}/cmake/busybox_applets.cmake)
-include(${PPAP_ROOT}/cmake/user_programs.cmake)
+# Common userland build configuration (compiler flags, build functions).
+# Also includes busybox_applets.cmake and user_programs.cmake.
+include(${PPAP_ROOT}/cmake/ppap-userland.cmake)
 
 # Shared kernel sources compiled for m68k.
 # ARM-only files (xip.c, mpu.c) are excluded.
@@ -128,101 +128,13 @@ target_link_options(ppap_qemu_m68k PRIVATE
 # User-space programs + romfs image pipeline
 # =============================================================================
 
-set(M68K_USER_DIR ${PPAP_ROOT}/src/user/arch/m68k)
-set(M68K_USER_LD  ${M68K_USER_DIR}/user.ld)
+# --- Third-party builds (musl, busybox, rogue) ---
+ppap_add_musl()
+ppap_add_busybox()
+ppap_add_rogue()
 
-# --- Build m68k user-space binaries ---
-# Common objects: crt0.o + syscall.o (linked into every user program)
-set(M68K_CFLAGS  -m68000 -ffreestanding -nostdlib -Os -g -Wall
-                 -msep-data
-                 -I${PPAP_ROOT}/src/user/arch/m68k -I${PPAP_ROOT}/src/user -I${PPAP_ROOT}/src)
-set(M68K_ASFLAGS -m68000)
-set(M68K_LDFLAGS -nostdlib -T ${M68K_USER_LD}
-                 -Wl,--gc-sections -Wl,--build-id=none)
-
-add_custom_command(
-    OUTPUT ${CMAKE_BINARY_DIR}/crt0.o
-    COMMAND ${CMAKE_C_COMPILER} ${M68K_ASFLAGS} -c
-            -o ${CMAKE_BINARY_DIR}/crt0.o ${M68K_USER_DIR}/crt0.S
-    DEPENDS ${M68K_USER_DIR}/crt0.S
-    COMMENT "Assembling m68k crt0.o"
-)
-
-add_custom_command(
-    OUTPUT ${CMAKE_BINARY_DIR}/syscall.o
-    COMMAND ${CMAKE_C_COMPILER} ${M68K_ASFLAGS} -c
-            -o ${CMAKE_BINARY_DIR}/syscall.o ${M68K_USER_DIR}/syscall.S
-    DEPENDS ${M68K_USER_DIR}/syscall.S
-    COMMENT "Assembling m68k syscall.o"
-)
-
-set(M68K_COMMON_OBJS ${CMAKE_BINARY_DIR}/crt0.o ${CMAKE_BINARY_DIR}/syscall.o)
-set(M68K_COMMON_DEPS ${M68K_COMMON_OBJS} ${M68K_USER_LD} ${PPAP_ROOT}/src/user/syscall.h)
-
-# Build a user program from shared C source
-function(m68k_user_program name source)
-    add_custom_command(
-        OUTPUT ${CMAKE_BINARY_DIR}/${name}.elf
-        COMMAND ${CMAKE_C_COMPILER} ${M68K_CFLAGS} -c
-                -o ${CMAKE_BINARY_DIR}/${name}.o ${source}
-        COMMAND ${CMAKE_C_COMPILER} -m68000 ${M68K_LDFLAGS}
-                -o ${CMAKE_BINARY_DIR}/${name}.elf
-                ${M68K_COMMON_OBJS}
-                ${CMAKE_BINARY_DIR}/${name}.o
-        DEPENDS ${source} ${M68K_COMMON_DEPS}
-        COMMENT "Building m68k ${name}.elf"
-    )
-endfunction()
-
-foreach(app ${USER_APPS})
-    m68k_user_program(${app} ${PPAP_ROOT}/src/user/${app}.c)
-endforeach()
-
-set(M68K_USER_ELFS "")
-foreach(app ${USER_APPS})
-    list(APPEND M68K_USER_ELFS ${CMAKE_BINARY_DIR}/${app}.elf)
-endforeach()
-
-# Test programs (only built when PPAP_TESTS=ON)
-if(PPAP_TESTS)
-    set(M68K_TESTS_DIR ${PPAP_ROOT}/tests/user)
-    # Test sources need include paths to both tests/user (utest.h) and src/user (syscall.h)
-    set(M68K_TEST_CFLAGS ${M68K_CFLAGS} -I${M68K_TESTS_DIR})
-
-    function(m68k_test_program name source)
-        add_custom_command(
-            OUTPUT ${CMAKE_BINARY_DIR}/${name}.elf
-            COMMAND ${CMAKE_C_COMPILER} ${M68K_TEST_CFLAGS} -c
-                    -o ${CMAKE_BINARY_DIR}/${name}.o ${source}
-            COMMAND ${CMAKE_C_COMPILER} -m68000 ${M68K_LDFLAGS}
-                    -o ${CMAKE_BINARY_DIR}/${name}.elf
-                    ${M68K_COMMON_OBJS}
-                    ${CMAKE_BINARY_DIR}/${name}.o
-            DEPENDS ${source} ${M68K_COMMON_DEPS} ${M68K_TESTS_DIR}/utest.h
-            COMMENT "Building m68k ${name}.elf"
-        )
-    endfunction()
-
-    foreach(tst ${USER_TESTS})
-        m68k_test_program(${tst} ${M68K_TESTS_DIR}/${tst}.c)
-        list(APPEND M68K_USER_ELFS ${CMAKE_BINARY_DIR}/${tst}.elf)
-    endforeach()
-endif()
-
-# --- Busybox (pre-built by build-busybox.sh --m68k) ---
-set(M68K_BB_DIR  ${PPAP_ROOT}/build/m68k/busybox)
-
-# --- rogue (built automatically, matching ARM approach) ---
-set(M68K_ROGUE ${CMAKE_BINARY_DIR}/rogue/rogue)
-file(GLOB ROGUE_PATCHES ${PPAP_ROOT}/third_party/patches/rogue/*)
-add_custom_command(
-    OUTPUT ${M68K_ROGUE}
-    COMMAND ${PPAP_ROOT}/third_party/build-rogue.sh --m68k
-    DEPENDS ${PPAP_ROOT}/third_party/build-rogue.sh
-            ${ROGUE_PATCHES}
-            ${PPAP_ROOT}/third_party/configs/busybox-m68k.ld
-    COMMENT "Building rogue (PIC, m68k)"
-)
+# --- User-space binaries ---
+ppap_build_user_programs(M68K_USER_ELFS)
 
 # --- Build mkromfs host tool ---
 add_custom_command(
@@ -245,11 +157,11 @@ add_custom_command(
     COMMAND ${PPAP_ROOT}/cmake/stage-romfs.sh
             ${ROMFS_STAGING} ${PPAP_ROOT}
             --user-elfs ${M68K_USER_ELFS}
-            --bb-dir ${M68K_BB_DIR}
+            --bb-dir ${PPAP_BB_DIR}
             --bb-applets ${BB_APPLETS}
             --bb-shell-applets ${BB_SHELL_APPLETS}
             --bb-sbin-applets ${BB_SBIN_APPLETS}
-            --rogue ${M68K_ROGUE}
+            --rogue ${PPAP_ROGUE_DIR}/rogue
             --etc-dir ${PPAP_ROOT}/src/etc
             --fstab ${CMAKE_CURRENT_SOURCE_DIR}/romfs/etc/fstab
             --inittab ${CMAKE_CURRENT_SOURCE_DIR}/romfs/etc/inittab
@@ -258,7 +170,8 @@ add_custom_command(
             ${ROMFS_STAGING} ${ROMFS_BIN}
     DEPENDS ${CMAKE_BINARY_DIR}/mkromfs
             ${M68K_USER_ELFS}
-            ${M68K_ROGUE}
+            ${PPAP_BB_DIR}/busybox
+            ${PPAP_ROGUE_DIR}/rogue
             ${PPAP_ROOT}/src/etc/fstab
             ${PPAP_ROOT}/src/etc/inittab
             ${CMAKE_CURRENT_SOURCE_DIR}/romfs/etc/fstab
