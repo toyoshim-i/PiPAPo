@@ -34,16 +34,12 @@ int main(void)
     n = read(fd, buf, 1);
     UT_ASSERT(n < 0, "read after close fails");
 
-    /* 7. write to read-only fd (stdout dup) — verify dup works */
+    /* 7. write to duped stdout — verify dup works */
     int fd2 = dup(1);
-    if (fd2 >= 0) {
-        n = write(fd2, "dup_ok\n", 7);
-        UT_ASSERT(n > 0, "write to duped stdout");
-        close(fd2);
-    } else {
-        /* dup may fail on some configs — just skip */
-        UT_ASSERT(1, "dup skipped");
-    }
+    UT_ASSERT(fd2 >= 3, "dup(1) returns new fd >= 3");
+    n = write(fd2, "dup_ok\n", 7);
+    UT_ASSERT(n > 0, "write to duped stdout");
+    close(fd2);
 
     /* 8. close already-closed fd should fail */
     int ret = close(fd);

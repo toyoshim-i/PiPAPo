@@ -1,13 +1,12 @@
 /*
  * test_pipe.c — pipe + dup2 + cross-process I/O
  *
- * TODO(ARM): pipe() returns ENOMEM when page allocator is exhausted
+ * NOTE(ARM): pipe() may return ENOMEM when page allocator is exhausted
  * after many test processes.  Tests bail out early on pipe() failure.
  *
- * TODO(m68k): Pipe fd reads after close/vfork return EBADF — fd table
- * state is not properly preserved across vfork, and close() on one end
- * may invalidate the other end's fd.  Sections 2 and 3 are skipped on
- * m68k until pipe fd lifecycle is fixed.
+ * TODO(m68k): Pipe fd reads after close/vfork return EBADF — close()
+ * on the vfork child's copy invalidates the parent's fd.  Sections 2
+ * and 3 are skipped on m68k until pipe fd lifecycle is fixed.
  */
 
 #include "utest.h"

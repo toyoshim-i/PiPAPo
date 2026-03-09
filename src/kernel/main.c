@@ -83,10 +83,6 @@ void kmain(void)
     /* Kernel integration tests (no-op unless PPAP_TESTS=ON) */
     target_post_mount();
 
-    /* Wire fd 0/1/2 to the UART tty driver */
-    fd_stdio_init(&proc_table[0]);
-    klog("FD: fd 0/1/2 wired to UART tty\n");
-
     /* Give the kernel init thread (thread 0) its own PSP stack page */
     proc_table[0].stack_page = page_alloc();
     if (!proc_table[0].stack_page) {
@@ -102,6 +98,7 @@ void kmain(void)
             pcb_t *init = proc_alloc();
             init->pgid = init->pid;
             init->sid  = init->pid;
+            fd_stdio_init(init);
 
             int exec_err = do_execve(init, init_path, NULL);
             if (exec_err < 0) {
