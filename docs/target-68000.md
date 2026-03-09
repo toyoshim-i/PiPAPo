@@ -317,7 +317,7 @@ design including the Human68k personality layer.
 
 ## Related Documentation
 
-- [design.md](design.md) — Kernel internals (boot, memory, scheduler, signals)
+- [kernel.md](kernel.md) — Kernel internals (boot, memory, scheduler, signals)
 - [userland-dev-guide.md](userland-dev-guide.md) — Compiler flags, PIC model, ELF details
 - [syscall.md](syscall.md) — Complete syscall reference (shared numbering)
 - [feature-eCPU.md](feature-eCPU.md) — CPU emulation layer (cross-arch execution)

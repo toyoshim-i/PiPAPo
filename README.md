@@ -54,7 +54,7 @@ All targets share the same kernel source, syscall interface, VFS, and process mo
 
 ```
 PPAP/
-  CMakeLists.txt            Build system (targets: ppap_qemu_arm, ppap_pico1, ppap_pico1calc, ppap_qemu_m68k)
+  CMakeLists.txt            Top-level build system
   src/
     target/
       target.h              Target abstraction API (5-function interface)
@@ -109,7 +109,7 @@ PPAP/
     test.sh                 Run tests (--all for full suite)
   docs/
     spec-v07.md             Full design specification
-    design.md               Kernel internals (boot, memory, scheduler, signals)
+    kernel.md               Kernel internals (boot, memory, scheduler, signals)
     filesystems.md          VFS layer and filesystem drivers
     syscall.md              System call reference (shared across architectures)
     procfs.md               /proc filesystem specification
@@ -117,9 +117,7 @@ PPAP/
     porting.md              Third-party application porting guide
     target-68000.md         m68k target-specific notes
     target-pizero.md        Pi Zero target notes
-    reference/              Hardware reference documents
-      PicoCalc.md           PicoCalc hardware reference
-      PicoCalc-LCD.md       LCD display driver technical reference
+    reference/              Hardware reference documents (PicoCalc, LCD)
     history/                Development phase plans and porting notes
 ```
 

@@ -580,7 +580,7 @@ busybox is developed with the assumption of a Linux kernel, and some applets dep
 
 | Document | Audience | Description |
 |---|---|---|
-| [design.md](design.md) | Kernel developers | Boot sequence, memory layout, process model, scheduler, signals |
+| [kernel.md](kernel.md) | Kernel developers | Boot sequence, memory layout, process model, scheduler, signals |
 | [filesystems.md](filesystems.md) | Kernel developers | VFS layer, romfs, VFAT, UFS, loopback, devfs, procfs, tmpfs |
 | [syscall.md](syscall.md) | All developers | Complete system call reference (shared across architectures) |
 | [procfs.md](procfs.md) | All developers | /proc filesystem file formats |
