@@ -54,6 +54,11 @@ const char *target_init_path(void)
 #endif
 }
 
+const char *target_name(void)
+{
+    return "pico1";
+}
+
 uint32_t target_caps(void)
 {
     return TARGET_CAP_CORE1 | TARGET_CAP_REALUART;

@@ -76,6 +76,14 @@ void target_post_mount(void);
 const char *target_init_path(void);
 
 /*
+ * target_name() — returns a short target identifier string.
+ *
+ * Used by sys_uname() for the nodename field, allowing user-space to
+ * distinguish hardware variants (e.g. "pico1", "pico1calc", "qemu_arm").
+ */
+const char *target_name(void);
+
+/*
  * target_caps() — returns a bitmask of TARGET_CAP_* flags.
  *
  * Used by shared code to conditionally skip SD-dependent steps

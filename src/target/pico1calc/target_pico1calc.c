@@ -165,6 +165,11 @@ const char *target_init_path(void)
 #endif
 }
 
+const char *target_name(void)
+{
+    return "pico1calc";
+}
+
 uint32_t target_caps(void)
 {
     uint32_t caps = TARGET_CAP_SD | TARGET_CAP_SPI | TARGET_CAP_CORE1

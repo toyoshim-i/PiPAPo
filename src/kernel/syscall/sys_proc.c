@@ -16,6 +16,7 @@
 #include "../mm/page.h"
 #include "../errno.h"
 #include "../klog.h"
+#include "../../target/target.h"
 #include <string.h>
 
 /* Wait status encoding (POSIX-compatible) */
@@ -410,8 +411,8 @@ long sys_uname(void *buf)
     for (int i = 0; s[i] && i < UTS_LEN - 1; i++) p[i] = s[i];
     p += UTS_LEN;
 
-    /* nodename */
-    s = "ppap";
+    /* nodename — target-specific (e.g. "pico1", "pico1calc", "qemu_arm") */
+    s = target_name();
     for (int i = 0; s[i] && i < UTS_LEN - 1; i++) p[i] = s[i];
     p += UTS_LEN;
 

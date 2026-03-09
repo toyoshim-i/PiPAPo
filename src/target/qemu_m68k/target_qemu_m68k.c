@@ -114,6 +114,11 @@ const char *target_init_path(void)
     return "/sbin/init";
 }
 
+const char *target_name(void)
+{
+    return "qemu_m68k";
+}
+
 uint32_t target_caps(void)
 {
     return 0;  /* No SD, no SPI, no Core 1 */

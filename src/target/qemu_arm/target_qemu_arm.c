@@ -76,6 +76,11 @@ const char *target_init_path(void)
 #endif
 }
 
+const char *target_name(void)
+{
+    return "qemu_arm";
+}
+
 uint32_t target_caps(void)
 {
     return 0;  /* No SD, no SPI, no Core 1, no PL011 */
