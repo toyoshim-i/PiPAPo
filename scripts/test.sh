@@ -31,7 +31,7 @@ for arg in "$@"; do
 done
 
 # ── Host unit tests ────────────────────────────────────────────────────────
-BUILD_DIR="$PROJECT_DIR/build_tests"
+BUILD_DIR="$PROJECT_DIR/build/tests"
 
 echo "=== Host unit tests ==="
 cmake -S "$PROJECT_DIR/tests" -B "$BUILD_DIR" \
