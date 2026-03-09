@@ -544,7 +544,7 @@ m68k porting effort.
 3. Write `src/arch/arm_a/cpu.h` — CP15 registers, TTBR, DACR, DFSR/IFSR
 4. Identity-map first 16 MB + kernel high map, enable MMU
 5. Jump to virtual kernel, init PL011 UART
-6. Boot to `kmain()` with UART output: "PicoPiAndPortable booting... (armv6)"
+6. Boot to `kmain()` with UART output: "PiPAPo booting... (armv6)"
 
 ### Phase C — MMU and Virtual Memory
 

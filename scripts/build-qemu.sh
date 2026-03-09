@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# PicoPiAndPortable — Build QEMU m68k from source
+# PiPAPo — Build QEMU m68k from source
 # =============================================================================
 # Builds QEMU 9.1.x from the third_party/qemu submodule, targeting only
 # m68k-softmmu to keep the build fast.

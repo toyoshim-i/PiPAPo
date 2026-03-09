@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build Rogue 5.4.4 for PicoPiAndPortable
+# Build Rogue 5.4.4 for PiPAPo
 #
 # Cross-compiles rogue against musl libc with a minimal curses shim.
 # xcrypt.c is excluded (71 KB BSS for DES tables, only used by disabled

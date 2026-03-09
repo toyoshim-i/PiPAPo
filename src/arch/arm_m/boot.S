@@ -1,5 +1,5 @@
 @ =============================================================================
-@ startup.S — PicoPiAndPortable Reset Handler and Vector Table
+@ startup.S — PiPAPo Reset Handler and Vector Table
 @ =============================================================================
 @
 @ Provides:

@@ -407,7 +407,7 @@ long sys_uname(void *buf)
     __builtin_memset(p, 0, UTS_LEN * 6);
 
     /* sysname */
-    const char *s = "PicoPiAndPortable";
+    const char *s = "PiPAPo";
     for (int i = 0; s[i] && i < UTS_LEN - 1; i++) p[i] = s[i];
     p += UTS_LEN;
 

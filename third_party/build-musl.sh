@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build musl libc for PicoPiAndPortable
+# Build musl libc for PiPAPo
 #
 # This script:
 #   1. Resets the musl submodule to clean upstream state

@@ -1,4 +1,4 @@
-/* PicoPiAndPortable — Cortex-M0+ (ARMv6-M) thread pointer.
+/* PiPAPo — Cortex-M0+ (ARMv6-M) thread pointer.
  *
  * No CP15 or Linux kuser helpers available.  Single-threaded processes
  * use a static variable set by __set_thread_area() (generic C version

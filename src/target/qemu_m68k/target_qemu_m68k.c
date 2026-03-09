@@ -87,7 +87,7 @@ void m68k_syscall_entry(uint32_t *regs)
 void target_early_init(void)
 {
     uart_init_console();
-    klog("PicoPiAndPortable booting... [qemu_m68k]\n");
+    klog("PiPAPo booting... [qemu_m68k]\n");
     klog("UART: Goldfish TTY @ 0xFF008000\n");
     klog("Clock: emulated (no PLL)\n");
     /* romfs is pre-built by mkromfs -b and linked via .incbin */

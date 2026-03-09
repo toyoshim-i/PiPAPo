@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build busybox variants for PicoPiAndPortable
+# Build busybox variants for PiPAPo
 #
 # This script builds BusyBox variants:
 #   1. busybox       — full (all applets) for transient commands

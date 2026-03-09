@@ -1,4 +1,4 @@
-/* PicoPiAndPortable — Cortex-M0+ (Thumb-1) CRT startup.
+/* PiPAPo — Cortex-M0+ (Thumb-1) CRT startup.
  *
  * Replaces upstream ARM crt_arch.h which uses:
  *   - mov fp, #0     — hi-reg immediate not available in Thumb-1

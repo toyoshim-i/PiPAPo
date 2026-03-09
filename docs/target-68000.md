@@ -675,7 +675,7 @@ Refactor existing ARM code into `src/arch/arm_m/` without changing behavior
 5. Write `qemu_m68k.ld` — RAM-only layout
 6. Write `target_qemu_m68k.c` — UART init, target hooks
 7. Write QEMU UART driver
-8. Boot to `kmain()` with UART output: "PicoPiAndPortable booting... (m68k)"
+8. Boot to `kmain()` with UART output: "PiPAPo booting... (m68k)"
 
 ### Phase C — Kernel Services on M68K
 

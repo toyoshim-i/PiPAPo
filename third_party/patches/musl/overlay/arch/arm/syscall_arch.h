@@ -1,4 +1,4 @@
-/* PicoPiAndPortable — musl syscall arch for ARMv6-M (Cortex-M0+)
+/* PiPAPo — musl syscall arch for ARMv6-M (Cortex-M0+)
  *
  * Identical to upstream musl ARM except:
  *   - VDSO defines removed (PPAP has no Linux VDSO)

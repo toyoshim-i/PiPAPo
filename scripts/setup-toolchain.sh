@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
-# PicoPiAndPortable — Toolchain Setup Script
+# PiPAPo — Toolchain Setup Script
 # =============================================================================
-# Sets up the full development environment for building PicoPiAndPortable on
+# Sets up the full development environment for building PiPAPo on
 # a Debian/Ubuntu-based Linux host.
 #
 # What this script does:

@@ -36,13 +36,13 @@ Source: `page_free_count()`, `page_count` (runtime-detected), and `oom_count` fr
 Single-line kernel version string.
 
 ```
-PicoPiAndPortable v0.11.0 (armv6m)
+PiPAPo v0.11.0 (armv6m)
 ```
 
 or on m68k:
 
 ```
-PicoPiAndPortable v0.11.0 (m68k)
+PiPAPo v0.11.0 (m68k)
 ```
 
 The architecture string is target-dependent; other fields are hardcoded.

@@ -1,4 +1,4 @@
-# PicoPiAndPortable
+# PiPAPo
 
 **A Portable UNIX-like Micro OS — Design Specification v0.7**
 
@@ -28,7 +28,7 @@ March 2026
 
 ### 1.1 Background and Motivation
 
-PicoPiAndPortable (PPAP) is a UNIX-like operating system designed for bare-metal microcontrollers and retro CPUs. The project began targeting the RP2040 (ARM Cortex-M0+) and has since expanded to support the Motorola 68000 (m68k) architecture. The kernel, VFS, process model, and syscall interface are shared across all architectures — only drivers, boot code, context switch, and linker scripts are target-specific.
+PiPAPo (PPAP) is a UNIX-like operating system designed for bare-metal microcontrollers and retro CPUs. The project began targeting the RP2040 (ARM Cortex-M0+) and has since expanded to support the Motorola 68000 (m68k) architecture. The kernel, VFS, process model, and syscall interface are shared across all architectures — only drivers, boot code, context switch, and linker scripts are target-specific.
 
 ### 1.2 Project Goals
 
@@ -158,7 +158,7 @@ The VFS layer also implements the loopback mount mechanism, which interposes a b
 
 ### 3.4 SD Card Layout
 
-The SD card is formatted as a single FAT32 partition, readable by any PC, Mac, or Linux machine. PicoPiAndPortable's system files coexist with arbitrary user files on the same partition.
+The SD card is formatted as a single FAT32 partition, readable by any PC, Mac, or Linux machine. PiPAPo's system files coexist with arbitrary user files on the same partition.
 
 ```
 SD Card (FAT32)
@@ -354,7 +354,7 @@ See [syscall.md](syscall.md) for the complete reference.
 | mmap2 | 0x0401 | Anonymous mappings only (allocated from page pool) |
 | munmap | 0x0402 | Free memory |
 | clock_gettime64 | 0x0504 | Get time |
-| uname | 0x0007 | System information (sysname=PicoPiAndPortable, machine=arch) |
+| uname | 0x0007 | System information (sysname=PiPAPo, machine=arch) |
 | mount / umount2 | 0x0900/0x0901 | File system mount operations |
 
 ---

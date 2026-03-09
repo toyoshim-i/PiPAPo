@@ -79,7 +79,7 @@ static const tty_backend_t fbcon_backend = {
 void target_early_init(void)
 {
     uart_init_console();
-    klog("PicoPiAndPortable booting... [pico1calc]\n");
+    klog("PiPAPo booting... [pico1calc]\n");
     klog("UART: 115200 bps @ 12 MHz XOSC\n");
     uart_flush();
     klog("PLL: configuring...\n");

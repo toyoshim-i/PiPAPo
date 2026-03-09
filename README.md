@@ -1,4 +1,4 @@
-# PicoPiAndPortable (PPAP)
+# PiPAPo (PPAP)
 
 A portable UNIX-like micro OS for bare-metal microcontrollers and retro CPUs.
 

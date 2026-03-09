@@ -1,4 +1,4 @@
-/* PicoPiAndPortable — __set_thread_area for Cortex-M0+.
+/* PiPAPo — __set_thread_area for Cortex-M0+.
  *
  * Upstream ARM version does runtime CPU capability detection and
  * updates atomics/barrier/gettp function pointers.  PPAP runs on

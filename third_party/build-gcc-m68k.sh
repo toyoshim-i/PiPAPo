@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build m68k-elf GCC cross-compiler for PicoPiAndPortable
+# Build m68k-elf GCC cross-compiler for PiPAPo
 #
 # This script downloads and builds:
 #   1. binutils 2.43 for m68k-elf

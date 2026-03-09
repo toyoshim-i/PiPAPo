@@ -1,6 +1,6 @@
 # PPAP System Call Reference
 
-This document describes every system call available in the PicoPiAndPortable
+This document describes every system call available in the PiPAPo
 kernel, with usage details and notes on how each differs from POSIX / Linux.
 
 ---
@@ -328,7 +328,7 @@ Fill `buf` (390 bytes = 6 x 65-byte fields) with system identification:
 
 | Field | Value |
 |-------|-------|
-| sysname | `PicoPiAndPortable` |
+| sysname | `PiPAPo` |
 | nodename | `ppap` |
 | release | `0.11.0` |
 | version | `#1 PPAP` |

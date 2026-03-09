@@ -1,7 +1,7 @@
 # PPAP Userland Application Developer Guide
 
 This document describes how to build, link, and deploy user-space
-applications for the PicoPiAndPortable (PPAP) operating system.
+applications for the PiPAPo (PPAP) operating system.
 
 ## 1. Platform Overview
 

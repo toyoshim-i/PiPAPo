@@ -19,7 +19,7 @@
 void target_early_init(void)
 {
     uart_init_console();
-    klog("PicoPiAndPortable booting... [pico1]\n");
+    klog("PiPAPo booting... [pico1]\n");
     klog("UART: 115200 bps @ 12 MHz XOSC\n");
     uart_flush();
     clock_init_pll();
