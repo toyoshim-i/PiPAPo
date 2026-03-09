@@ -242,6 +242,6 @@ The trampoline and signal frame layout are architecture-specific but the kernel-
 - [procfs.md](procfs.md) — /proc filesystem
 - [filesystems.md](filesystems.md) — VFS and filesystem drivers
 - [userland-dev-guide.md](userland-dev-guide.md) — User-space development
-- [PicoCalc.md](PicoCalc.md) — PicoCalc hardware reference
-- [PicoCalc-LCD.md](PicoCalc-LCD.md) — LCD display driver
+- [PicoCalc.md](reference/PicoCalc.md) — PicoCalc hardware reference
+- [PicoCalc-LCD.md](reference/PicoCalc-LCD.md) — LCD display driver
 - [target-68000.md](target-68000.md) — m68k target notes

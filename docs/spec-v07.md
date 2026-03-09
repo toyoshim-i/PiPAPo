@@ -586,8 +586,8 @@ busybox is developed with the assumption of a Linux kernel, and some applets dep
 | [procfs.md](procfs.md) | All developers | /proc filesystem file formats |
 | [userland-dev-guide.md](userland-dev-guide.md) | User-space developers | Toolchain, compiler flags, linking (ARM and m68k) |
 | [porting.md](porting.md) | Application porters | Third-party porting pattern |
-| [PicoCalc.md](PicoCalc.md) | Hardware developers | PicoCalc pinout, I2C keyboard protocol, SD card, serial debug |
-| [PicoCalc-LCD.md](PicoCalc-LCD.md) | Driver developers | ST7365P LCD driver architecture, SPI protocol, VT100 emulator |
+| [PicoCalc.md](reference/PicoCalc.md) | Hardware developers | PicoCalc pinout, I2C keyboard protocol, SD card, serial debug |
+| [PicoCalc-LCD.md](reference/PicoCalc-LCD.md) | Driver developers | ST7365P LCD driver architecture, SPI protocol, VT100 emulator |
 | [target-68000.md](target-68000.md) | m68k developers | m68k target-specific notes |
 | [target-pizero.md](target-pizero.md) | ARM developers | Pi Zero port plan (draft) |
 | [testing.md](testing.md) | All developers | Test framework, categories, adding tests |

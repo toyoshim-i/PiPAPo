@@ -115,10 +115,11 @@ PPAP/
     procfs.md               /proc filesystem specification
     userland-dev-guide.md   User-space development guide
     porting.md              Third-party application porting guide
-    PicoCalc.md             PicoCalc hardware reference
-    PicoCalc-LCD.md         LCD display driver technical reference
     target-68000.md         m68k target-specific notes
     target-pizero.md        Pi Zero target notes
+    reference/              Hardware reference documents
+      PicoCalc.md           PicoCalc hardware reference
+      PicoCalc-LCD.md       LCD display driver technical reference
     history/                Development phase plans and porting notes
 ```
 

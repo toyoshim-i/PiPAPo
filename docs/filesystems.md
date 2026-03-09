@@ -139,4 +139,4 @@ Implementations: SD card (SPI), RAM disk (QEMU), loopback.
 - [design.md](design.md) — Kernel internals
 - [procfs.md](procfs.md) — /proc filesystem details
 - [syscall.md](syscall.md) — File I/O system calls
-- [PicoCalc.md](PicoCalc.md) — SD card hardware interface
+- [PicoCalc.md](reference/PicoCalc.md) — SD card hardware interface
