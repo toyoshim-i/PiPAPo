@@ -16,12 +16,10 @@ build process, and execution environment.
 ./scripts/test.sh
 
 # On-target tests (ARM, requires qemu-system-arm)
-./scripts/build.sh --test qemu_arm
-./scripts/qemu-test.sh
+./scripts/qemu.sh --test
 
 # On-target tests (m68k, requires qemu-system-m68k)
-./scripts/build.sh --test qemu_m68k
-./scripts/qemu-test.sh qemu_m68k
+./scripts/qemu.sh --test qemu_m68k
 
 # Everything at once (build all targets + run QEMU tests)
 ./scripts/test_all_targets.sh
@@ -228,14 +226,14 @@ User tests are built by `src/user/Makefile`, controlled by
 
 ## Automated QEMU testing
 
-### `qemu-test.sh`
+### `qemu.sh --test`
 
-Runs the test binary under QEMU with a 30-second timeout, greps output
-for `ALL.*TESTS PASSED`.
+Builds with `PPAP_TESTS=ON`, runs under QEMU with a 30-second timeout,
+and greps output for `ALL.*TESTS PASSED`.
 
 ```bash
-./scripts/qemu-test.sh            # run existing binary
-./scripts/qemu-test.sh --build    # rebuild first
+./scripts/qemu.sh --test              # ARM (default)
+./scripts/qemu.sh --test qemu_m68k    # m68k
 ```
 
 ### `test_all_targets.sh`
@@ -276,7 +274,7 @@ boot → kernel init → VFS mount → target_post_mount()
                                    │
                         "ALL TESTS PASSED"
                                    │
-                     qemu-test.sh checks exit
+                   qemu.sh --test checks exit
 ```
 
 ## Build flags reference

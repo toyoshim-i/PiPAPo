@@ -175,10 +175,11 @@ cp build/arm_m/src/target/pico1calc/ppap_pico1calc.uf2 /media/$USER/RPI-RP2/
 ### 4. QEMU
 
 ```sh
-./scripts/qemu.sh                     # run ARM QEMU target (default)
-./scripts/qemu.sh --build             # rebuild first, then run
-./scripts/qemu.sh qemu_m68k           # run m68k QEMU target
-./scripts/qemu.sh --build qemu_m68k   # rebuild m68k, then run
+./scripts/qemu.sh                     # build & run ARM QEMU target (default)
+./scripts/qemu.sh qemu_m68k           # build & run m68k QEMU target
+./scripts/qemu.sh --test              # build with tests, run & check results
+./scripts/qemu.sh --test qemu_m68k    # same for m68k
+./scripts/qemu.sh --no-build --gdb    # run existing binary under GDB
 ```
 
 At the shell prompt, try `rogue` to play the classic dungeon crawler.

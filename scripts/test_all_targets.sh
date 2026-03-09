@@ -5,10 +5,9 @@
 #   ./scripts/test_all_targets.sh
 #
 # Steps:
-#   1. Build all three targets (production, PPAP_TESTS=OFF)
-#   2. Build QEMU target with tests (PPAP_TESTS=ON)
-#   3. Run QEMU automated test suite
-#   4. Print binary sizes
+#   1. Build all targets (production, PPAP_TESTS=OFF)
+#   2. Print binary sizes
+#   3. Build & run QEMU test suite (PPAP_TESTS=ON via qemu.sh --test)
 
 set -euo pipefail
 
@@ -21,36 +20,14 @@ cmake -B build/arm_m -DPPAP_TESTS=OFF
 cmake --build build/arm_m -- ppap_qemu_arm ppap_pico1 ppap_pico1calc
 
 echo ""
-echo "=== Building QEMU with tests ==="
-cmake -B build/test -DPPAP_TESTS=ON
-cmake --build build/test -- ppap_qemu_arm
-
-echo ""
-echo "=== QEMU automated test ==="
-ELF="$PROJECT_DIR/build/test/ppap_qemu_arm.elf"
-TIMEOUT=30
-OUTPUT=$(timeout "$TIMEOUT" qemu-system-arm \
-    -M mps2-an500 \
-    -nographic \
-    -serial mon:stdio \
-    -kernel "$ELF" 2>&1 || true)
-
-echo "$OUTPUT"
-
-if echo "$OUTPUT" | grep -q "ALL.*TESTS PASSED"; then
-    echo ""
-    echo "[test] PASS — all on-target tests passed"
-else
-    echo ""
-    echo "[test] FAIL — tests did not all pass (or QEMU timed out)"
-    exit 1
-fi
-
-echo ""
 echo "=== Build sizes (production) ==="
 arm-none-eabi-size build/arm_m/ppap_qemu_arm.elf \
                    build/arm_m/ppap_pico1.elf \
                    build/arm_m/ppap_pico1calc.elf 2>/dev/null || true
+
+echo ""
+echo "=== QEMU automated test (ARM) ==="
+"$SCRIPT_DIR/qemu.sh" --test qemu_arm
 
 echo ""
 echo "=== All targets OK ==="
