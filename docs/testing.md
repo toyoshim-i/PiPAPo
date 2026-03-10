@@ -196,10 +196,10 @@ only relocates GOT entries, not arbitrary data pointers.
 
 ### Build system
 
-User tests are built by `src/user/Makefile`, controlled by
-`PPAP_TESTS=1` from CMake. The Makefile:
+User tests are built by `cmake/user.cmake` as custom commands, controlled
+by the `PPAP_TESTS` CMake option. The build system:
 
-- Cross-compiles each `test_*.c` from `tests/user/` via VPATH
+- Cross-compiles each `test_*.c` from `tests/user/`
 - Links with `crt0.o` + `syscall.o` (arch-specific SVC stubs)
 - Installs to romfs `/bin/`
 - Compiler flags: `-fPIC -msingle-pic-base -mpic-register=r9`
@@ -215,7 +215,7 @@ User tests are built by `src/user/Makefile`, controlled by
        UT_SUMMARY("test_foo");
    }
    ```
-2. Add `test_foo` to `TESTS_ALL` in `src/user/Makefile`
+2. Add `test_foo` to the `USER_TESTS` list in `cmake/user.cmake`
 3. Add `"/bin/test_foo"` to the test list in `tests/user/runtests.c`
 4. Build with `--test` and run
 
@@ -298,4 +298,4 @@ boot → kernel init → VFS mount → target_post_mount()
 | `--test` | `./scripts/build.sh` | Sets `PPAP_TESTS=ON` in CMake |
 | `PPAP_TESTS=ON` | CMake option | Compiles `ktest.c` into kernel; defines `PPAP_TESTS=1` C macro; enables user test builds |
 | `PPAP_TESTS=1` | C preprocessor | Guards `ktest_run_all()` call in `target_post_mount()`; selects `/bin/runtests` as init path |
-| `PPAP_TESTS=1` | `src/user/Makefile` | Builds test binaries and installs to romfs |
+| `PPAP_TESTS=ON` | `cmake/user.cmake` | Builds test binaries and installs to romfs |

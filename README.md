@@ -54,7 +54,7 @@ All targets share the same kernel source, syscall interface, VFS, and process mo
 
 ```
 PPAP/
-  cmake/                    Shared cmake modules (arm_m, m68k, ppap_userland)
+  cmake/                    Shared cmake modules (arm_m, m68k, kernel, user)
   src/
     target/
       target.h              Target abstraction API (5-function interface)
@@ -96,8 +96,10 @@ PPAP/
     musl/                   git submodule — musl libc v1.2.5
     busybox/                git submodule — busybox 1_36_1
     rogue/                  git submodule — Rogue 5.4.4 (Davidslv/rogue)
-    patches/                PPAP-specific patches (musl, busybox, rogue curses shim)
-    configs/                Build configs (busybox defconfig, linker script)
+    patches/
+      musl/                 musl overlay + PIE linker scripts (libc_arm_m.ld, libc_m68k.ld)
+      busybox/              busybox config fragments
+      rogue/                rogue curses shim + header overrides
     build_musl.sh           Build script: musl libc.a (ARM and m68k)
     build_busybox.sh        Build script: static busybox binary
     build_rogue.sh          Build script: Rogue with minimal curses shim
@@ -142,8 +144,9 @@ Installs apt packages (`arm-none-eabi-gcc`, `cmake`, `ninja`, `openocd`, `gdb-mu
 Or invoke CMake directly (each target is a standalone project):
 
 ```sh
-# ARM targets
-cmake -S src/target/qemu_arm -B build/qemu_arm
+# ARM QEMU target (needs explicit toolchain file)
+cmake -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain_arm_m.cmake \
+      -S src/target/qemu_arm -B build/qemu_arm
 cmake --build build/qemu_arm
 
 # Pico targets (Pico SDK auto-detected)

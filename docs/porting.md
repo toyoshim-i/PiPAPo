@@ -11,9 +11,9 @@ PPAP uses a consistent pattern for all third-party code:
 ```
 third_party/
   <app>/              git submodule (upstream source, never modified)
-  patches/<app>/      PPAP-specific headers and patches
-  configs/            build configurations (defconfig, linker scripts)
-  build-<app>.sh      standalone build script
+  patches/<app>/      PPAP-specific headers, patches, and config fragments
+  patches/musl/       musl overlay + PIE linker scripts (shared by all musl apps)
+  build_<app>.sh      standalone build script
 ```
 
 ### Key Principles
@@ -71,7 +71,7 @@ Link with `-pie` to emit `R_68K_RELATIVE` relocations.
 ## musl libc
 
 musl is cross-compiled for each architecture with PPAP's SVC/TRAP-based syscall interface.
-Build: `third_party/build_musl.sh` → produces `build/musl-sysroot/`.
+Build: `third_party/build_musl.sh` → produces `build/<arch>/musl-sysroot/`.
 
 ### Syscall Remapping
 
@@ -149,7 +149,7 @@ On m68k, .text is also in RAM, but the 16 MB QEMU target has ample space.
 2. Create `third_party/patches/<app>/` with any header overrides
 3. Audit memory usage: `.data` + `.bss` must fit in 128 KB
 4. Identify and stub unsupported features (e.g., networking, fork, mmap)
-5. Write `third_party/build-<app>.sh` with cross-compilation flags
+5. Write `third_party/build_<app>.sh` with cross-compilation flags
 6. Support all target architectures in the build script (or document which are supported)
 7. Add CMake integration: custom command + stamp file + romfs install
 8. Test on QEMU first (both ARM and m68k if supported), then hardware

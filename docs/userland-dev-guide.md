@@ -259,9 +259,11 @@ src/user/
   arch/arm_m/   ARM-specific: crt0.S, syscall.S, user.ld
   arch/m68k/    m68k-specific: crt0.S, syscall.S, user.ld
   syscall.h     C declarations for the stubs
-  Makefile      Build rules
   hello.c       Example: "Hello from user space!"
 ```
+
+Build rules are in `cmake/user.cmake` — user programs are compiled as
+custom commands via `ppap_user_program()` and linked into the romfs image.
 
 ### Example: hello.c
 
@@ -282,8 +284,8 @@ then issues `_exit()` with main's return value.
 ### Adding a New Program
 
 1. Create `src/user/myapp.c`
-2. Add `myapp` to the `PROGRAMS` list in `src/user/Makefile`
-3. Build: the Makefile links `crt0.o + syscall.o + myapp.o → myapp.elf`
+2. Add `myapp` to the `USER_APPS` list in `cmake/user.cmake`
+3. Build: CMake links `crt0.o + syscall.o + myapp.o → myapp.elf`
 
 ## 9. Path B: musl-Based Development
 
