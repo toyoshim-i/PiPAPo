@@ -205,6 +205,38 @@ static inline void z80_write_r8(z80_state_t *cpu, uint8_t code, uint8_t val) {
     }
 }
 
+/* ── ALU operations (ecpu_z80_alu.c) ─────────────────────────────────────── */
+
+extern const uint8_t z80_parity_table[256];
+
+void z80_add_a(z80_state_t *cpu, uint8_t val);
+void z80_adc_a(z80_state_t *cpu, uint8_t val);
+void z80_sub_a(z80_state_t *cpu, uint8_t val);
+void z80_sbc_a(z80_state_t *cpu, uint8_t val);
+void z80_and_a(z80_state_t *cpu, uint8_t val);
+void z80_xor_a(z80_state_t *cpu, uint8_t val);
+void z80_or_a(z80_state_t *cpu, uint8_t val);
+void z80_cp_a(z80_state_t *cpu, uint8_t val);
+void z80_alu_op(z80_state_t *cpu, uint8_t op, uint8_t val);
+
+uint8_t z80_inc8(z80_state_t *cpu, uint8_t val);
+uint8_t z80_dec8(z80_state_t *cpu, uint8_t val);
+void z80_add_hl(z80_state_t *cpu, uint16_t val);
+
+void z80_rlca(z80_state_t *cpu);
+void z80_rrca(z80_state_t *cpu);
+void z80_rla(z80_state_t *cpu);
+void z80_rra(z80_state_t *cpu);
+
+void z80_daa(z80_state_t *cpu);
+void z80_cpl(z80_state_t *cpu);
+void z80_scf(z80_state_t *cpu);
+void z80_ccf(z80_state_t *cpu);
+
+/* 16-bit register pair access by 2-bit pp field */
+uint16_t z80_read_rr(z80_state_t *cpu, uint8_t pp);
+void z80_write_rr(z80_state_t *cpu, uint8_t pp, uint16_t val);
+
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
 /* The Z80 core's ops table — registered for use by subsystems/kernel */

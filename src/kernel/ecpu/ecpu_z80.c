@@ -1,9 +1,9 @@
 /*
- * ecpu_z80.c — Z80 emulator core (Step 1: framework + minimal decode)
+ * ecpu_z80.c — Z80 emulator core
  *
  * Implements the eCPU common interface for the Z80 core.
- * Step 1 provides: NOP, HALT, LD r,r', LD r,n, LD rr,nn,
- * JP nn, JR e, CALL nn, RET.
+ * Step 1: NOP, HALT, LD r,r', LD r,n, LD rr,nn, JP nn, JR e, CALL nn, RET.
+ * Step 2: ALU ops, INC/DEC, ADD HL,rr, rotates, DAA, CPL, SCF, CCF.
  *
  * See docs/ecpu-z80.md for the full design.
  */
@@ -225,8 +225,7 @@ static int ecpu_z80_run(ecpu_state_t *state)
             /* xx=00: miscellaneous */
             switch (zzz) {
             case 0:
-                /* NOP (yyy=0), future: JR cc (yyy=4..7), DJNZ (yyy=1),
-                 * JR e (yyy=3), EX AF,AF' (yyy=1) */
+                /* NOP (yyy=0), JR e (yyy=3), DJNZ/JR cc — Step 3 */
                 if (yyy == 0) {
                     /* NOP */
                 } else if (yyy == 3) {
@@ -234,18 +233,51 @@ static int ecpu_z80_run(ecpu_state_t *state)
                     int8_t offset = (int8_t)z80_fetch8(cpu);
                     cpu->pc += offset;
                 } else {
-                    /* Unimplemented in Step 1 — treat as NOP */
+                    /* DJNZ, EX AF,AF', JR cc — Step 3 */
+                    /* Must still consume displacement byte for JR variants */
+                    if (yyy >= 2) {
+                        (void)z80_fetch8(cpu);  /* skip displacement */
+                    }
                 }
                 break;
 
             case 1:
                 if (yyy & 1) {
-                    /* ADD HL, rr — Step 2 */
+                    /* ADD HL, rr */
+                    z80_add_hl(cpu, z80_read_rr(cpu, yyy >> 1));
                 } else {
                     /* LD rr, nn */
                     uint16_t nn = z80_fetch16(cpu);
                     z80_write_rr(cpu, yyy >> 1, nn);
                 }
+                break;
+
+            case 2:
+                /* LD (BC/DE),A / LD A,(BC/DE) / LD (nn),HL etc. — Step 4 */
+                break;
+
+            case 3:
+                /* INC/DEC rr (16-bit) — no flags affected */
+                {
+                    uint8_t pp = yyy >> 1;
+                    uint16_t val = z80_read_rr(cpu, pp);
+                    if (yyy & 1)
+                        z80_write_rr(cpu, pp, val - 1);
+                    else
+                        z80_write_rr(cpu, pp, val + 1);
+                }
+                break;
+
+            case 4:
+                /* INC r (8-bit) */
+                z80_write_r8(cpu, yyy,
+                             z80_inc8(cpu, z80_read_r8(cpu, yyy)));
+                break;
+
+            case 5:
+                /* DEC r (8-bit) */
+                z80_write_r8(cpu, yyy,
+                             z80_dec8(cpu, z80_read_r8(cpu, yyy)));
                 break;
 
             case 6:
@@ -256,15 +288,25 @@ static int ecpu_z80_run(ecpu_state_t *state)
                 }
                 break;
 
-            default:
-                /* Other xx=00 opcodes — Step 2+ */
+            case 7:
+                /* Accumulator/flag ops: RLCA,RRCA,RLA,RRA,DAA,CPL,SCF,CCF */
+                switch (yyy) {
+                case 0: z80_rlca(cpu); break;
+                case 1: z80_rrca(cpu); break;
+                case 2: z80_rla(cpu);  break;
+                case 3: z80_rra(cpu);  break;
+                case 4: z80_daa(cpu);  break;
+                case 5: z80_cpl(cpu);  break;
+                case 6: z80_scf(cpu);  break;
+                case 7: z80_ccf(cpu);  break;
+                }
                 break;
             }
             break;
 
         case 2:
-            /* xx=10: ALU A, r — Step 2 (for now, just fetch operand) */
-            /* Will be: alu_op(cpu, yyy, z80_read_r8(cpu, zzz)); */
+            /* xx=10: ALU A, r */
+            z80_alu_op(cpu, yyy, z80_read_r8(cpu, zzz));
             break;
 
         case 3:
@@ -309,6 +351,14 @@ static int ecpu_z80_run(ecpu_state_t *state)
                     }
                 } else {
                     /* PUSH rr — Step 3 */
+                }
+                break;
+
+            case 6:
+                /* ALU A, n (immediate): ADD/ADC/SUB/SBC/AND/XOR/OR/CP */
+                {
+                    uint8_t n = z80_fetch8(cpu);
+                    z80_alu_op(cpu, yyy, n);
                 }
                 break;
 
