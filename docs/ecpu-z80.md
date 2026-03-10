@@ -1,0 +1,1498 @@
+# eCPU-Z80 — Z80 Emulator Core Design
+
+Interpretive Zilog Z80 emulator for PPAP, providing the CPU execution
+engine for the CP/M subsystem and potentially other Z80-based OS
+personalities.
+
+---
+
+## Table of Contents
+
+1. [Goals and Scope](#1-goals-and-scope)
+2. [Background: Z80 Architecture](#2-background-z80-architecture)
+3. [eCPU Common Interface](#3-ecpu-common-interface)
+4. [Emulator Architecture](#4-emulator-architecture)
+5. [Instruction Decoding](#5-instruction-decoding)
+6. [Register Model](#6-register-model)
+7. [Memory Model](#7-memory-model)
+8. [Flag Computation](#8-flag-computation)
+9. [Trap and Hook Mechanism](#9-trap-and-hook-mechanism)
+10. [Scheduler Integration](#10-scheduler-integration)
+11. [Performance Considerations](#11-performance-considerations)
+12. [Implementation Plan](#12-implementation-plan)
+13. [Testing Strategy](#13-testing-strategy)
+14. [Open Questions](#14-open-questions)
+
+---
+
+## 1. Goals and Scope
+
+### 1.1 Primary Goal
+
+Provide a correct, compact Z80 interpreter that can run real CP/M 2.2
+programs at acceptable speed on PPAP targets. The emulator handles
+pure CPU emulation; OS-level semantics (BDOS, BIOS) are provided by
+the CP/M subsystem personality layer (see `subsystem-cpm.md`).
+
+### 1.2 Design Priorities
+
+1. **Correctness** — aim for full Z80 compatibility including
+   undocumented instructions and flag behaviors. The goal is to pass
+   ZEXALL (Z80 Exerciser) completely. Real-world software sometimes
+   depends on undocumented behavior (F3/F5 flags, SLL, index register
+   high/low byte access, etc.)
+2. **Code size** — target ~3500 lines of C, ~14 KB binary.
+   Undocumented flag emulation adds modest overhead. The emulator is
+   compiled into the kernel; size discipline still matters on RP2040
+3. **Simplicity** — interpretive loop, no JIT, no dynamic dispatch
+   tables. Straightforward `switch` decoding
+4. **Portability** — pure C with no host-architecture dependencies.
+   Runs on ARM (RP2040), m68k (X68000/QEMU), or any future PPAP target
+5. **Common interface** — the Z80 emulator implements the eCPU common
+   interface (`ecpu_core_ops_t`) so subsystems and the kernel interact
+   with it through a uniform API shared by all eCPU cores
+
+### 1.3 Scope
+
+**In scope:**
+- Full Z80 documented instruction set (including CB/DD/ED/FD prefixes)
+- Undocumented instructions: SLL (CB 30–37), index register
+  high/low byte access (DD/FD prefix on H/L operands), ED 70
+  (IN F,(C)), and other known undocumented opcodes
+- Undocumented flag behavior: F3 (bit 3) and F5 (bit 5) for all
+  instructions, including the complex cases (BIT, block operations,
+  SCF/CCF, DAA, etc.)
+- Intel 8080 compatibility (Z80 is a strict superset)
+- 64 KB flat address space
+- Interrupt state registers (IFF1, IFF2, IM) — for completeness,
+  though CP/M programs rarely use interrupts
+- Trap hook for personality layers via the eCPU common interface
+  (BDOS `CALL 5`, BIOS `CALL 0`, `RST` instructions)
+- `IN`/`OUT` instructions trapped and forwarded to the personality
+  layer via the common interface
+- Integration with PPAP scheduler (preemptible interpreter loop)
+
+**Out of scope:**
+- Cycle-accurate timing (not needed for CP/M text applications)
+- Z80 interrupt modes 0/1/2 hardware emulation — no external
+  interrupt sources. NMI is not emulated
+- Wait states, bus contention, or refresh register accuracy
+- CMOS Z80 (Z84C00) extended instructions
+
+### 1.4 Relationship to Subsystems
+
+The Z80 emulator is a pure CPU engine. It does not know about CP/M,
+BDOS, or file systems. The subsystem personality layer
+(`subsystem-cpm.md`) registers trap handlers that intercept specific
+execution events (e.g., `CALL` to address 0x0005) and translate them
+into PPAP syscalls.
+
+```
+CP/M .COM binary
+    │
+    │ exec() detects .COM → kernel loads binary
+    │ kernel enters ecpu-z80 interpreter loop
+    │
+    ▼
+ecpu-z80 (this document): CALL 0x0005 detected
+    │ fires trap callback
+    ▼
+CP/M BDOS personality (subsystem-cpm.md)
+    │ reads C register (function number)
+    │ reads DE register (parameter)
+    │ translates to PPAP syscall
+    ▼
+PPAP kernel syscall (sys_read, sys_write, sys_open, ...)
+```
+
+The same emulator core could serve other Z80-based personalities
+(e.g., MSX-DOS, ZX Spectrum tape loader) in the future, though
+CP/M is the only planned personality.
+
+---
+
+## 2. Background: Z80 Architecture
+
+### 2.1 Overview
+
+The Zilog Z80 (1976) is an 8-bit CPU with a 16-bit address bus
+(64 KB address space). It is a superset of the Intel 8080, adding:
+- Shadow register set (AF', BC', DE', HL')
+- Index registers (IX, IY)
+- Block transfer/search instructions (LDIR, CPIR, etc.)
+- Bit manipulation instructions (CB prefix group)
+- Relative jumps (JR, DJNZ)
+- Additional interrupt modes (IM 0/1/2)
+
+CP/M was originally written for the Intel 8080, and most CP/M
+software uses only the 8080 subset. The Z80 extensions are needed
+for some later CP/M programs and for Z80-specific software.
+
+### 2.2 Registers
+
+```
+Main registers:       Shadow registers:
+  A   F  (accumulator, flags)     A'  F'
+  B   C                           B'  C'
+  D   E                           D'  E'
+  H   L                           H'  L'
+
+Index registers:
+  IX  (16-bit)
+  IY  (16-bit)
+
+Special:
+  SP  (stack pointer, 16-bit)
+  PC  (program counter, 16-bit)
+  I   (interrupt vector page, 8-bit)
+  R   (memory refresh counter, 8-bit)
+
+Interrupt flip-flops:
+  IFF1, IFF2  (1-bit each)
+  IM   (interrupt mode: 0, 1, or 2)
+```
+
+Register pairs BC, DE, HL can be used as 16-bit values. AF is the
+accumulator + flags pair. The `EXX` instruction swaps BC/DE/HL with
+their shadow counterparts; `EX AF, AF'` swaps AF.
+
+### 2.3 Flags Register (F)
+
+```
+Bit 7: S  — Sign (copy of bit 7 of result)
+Bit 6: Z  — Zero (result is 0)
+Bit 5: F5 — Undocumented (copy of bit 5 of result)
+Bit 4: H  — Half carry (carry from bit 3 to bit 4)
+Bit 3: F3 — Undocumented (copy of bit 3 of result)
+Bit 2: PV — Parity/Overflow (dual-purpose)
+Bit 1: N  — Subtract (set if last operation was subtraction)
+Bit 0: C  — Carry
+```
+
+**Undocumented flag bits 3 and 5 (F3, F5) are emulated.** For most
+ALU operations, F3 and F5 are simply copies of bits 3 and 5 of the
+result. However, several instructions have non-obvious F3/F5
+behavior that must be handled correctly:
+
+- **BIT n, r**: F3/F5 come from the operand value, not the result
+- **BIT n, (HL)**: F3/F5 come from the high byte of the address
+  (internal WZ/MEMPTR register — see §8.6)
+- **BIT n, (IX+d)/(IY+d)**: F3/F5 come from the high byte of
+  IX+d/IY+d
+- **SCF/CCF**: F3/F5 come from `A OR F` (mixing accumulator and
+  current flags)
+- **Block instructions (LDI, LDIR, etc.)**: F3/F5 come from
+  `A + (HL)` (the byte being transferred added to A)
+- **Block compare (CPI, CPIR, etc.)**: F3/F5 come from
+  `A - (HL) - H` (the comparison result minus the half-carry)
+- **DAA**: F3/F5 from the adjusted result
+- **LD A, I / LD A, R**: F3/F5 from the loaded value
+
+### 2.4 Instruction Encoding
+
+Z80 instructions are 1–4 bytes:
+
+| Prefix | Range | Group |
+|---|---|---|
+| (none) | 00–FF | Main instructions (8080 compatible + Z80 extensions) |
+| CB | CB 00–CB FF | Bit manipulation (RLC, RRC, RL, RR, SLA, SRA, SRL, BIT, RES, SET) |
+| DD | DD xx | IX-indexed variants (replace HL with IX) |
+| FD | FD xx | IY-indexed variants (replace HL with IY) |
+| ED | ED 40–ED BF | Extended instructions (block ops, I/O, 16-bit arith) |
+| DD CB | DD CB dd xx | IX-indexed bit operations (with displacement) |
+| FD CB | FD CB dd xx | IY-indexed bit operations (with displacement) |
+
+The main opcode space has a regular structure exploitable for
+compact decoding (see §5).
+
+### 2.5 Addressing Modes
+
+| Mode | Example | Description |
+|---|---|---|
+| Register | `LD A, B` | Register to register |
+| Immediate | `LD A, 42` | 8-bit immediate |
+| Immediate extended | `LD BC, 1234h` | 16-bit immediate |
+| Register indirect | `LD A, (HL)` | Memory at address in HL |
+| Indexed | `LD A, (IX+d)` | Memory at IX + signed displacement |
+| Extended | `LD A, (1234h)` | Memory at absolute 16-bit address |
+| Relative | `JR offset` | PC + signed 8-bit offset |
+| Bit | `BIT 3, A` | Test/set/reset individual bits |
+
+---
+
+## 3. eCPU Common Interface
+
+### 3.1 Motivation
+
+All eCPU emulator cores (Z80, m68k, 8086, ARM, etc.) must interact
+with the same kernel components: subsystem personality layers, the
+`exec()` path, the scheduler, and the process table. Rather than
+each core defining its own bespoke API, all cores implement a
+**common interface** that the kernel and subsystems program against.
+
+This provides:
+- **Uniform subsystem integration** — a personality layer can be
+  written against the common API without knowing which specific
+  eCPU core it will run on
+- **Clean kernel interface** — `exec()`, scheduler, and process
+  management use the same calls for all emulated architectures
+- **Future extensibility** — adding a new eCPU core requires
+  implementing the common ops table, not changing kernel code
+
+### 3.2 Core Operations Table
+
+Each eCPU core registers an operations table:
+
+```c
+/* src/kernel/ecpu/ecpu.h — common to all eCPU cores */
+
+/* Opaque emulator state — each core defines its own struct */
+typedef struct ecpu_state ecpu_state_t;
+
+/* Trap types (common across all cores) */
+#define ECPU_TRAP_CALL     0   /* Subroutine call to hooked address */
+#define ECPU_TRAP_SWI      1   /* Software interrupt / trap instruction */
+#define ECPU_TRAP_HALT     2   /* CPU halt instruction */
+#define ECPU_TRAP_IO_IN    3   /* I/O port read */
+#define ECPU_TRAP_IO_OUT   4   /* I/O port write */
+#define ECPU_TRAP_ILLEGAL  5   /* Illegal/undefined instruction */
+
+/* Return values from trap handler */
+#define ECPU_TRAP_UNHANDLED  0   /* core should execute normally */
+#define ECPU_TRAP_HANDLED    1   /* personality handled it, continue */
+#define ECPU_TRAP_EXIT       2   /* process should exit */
+
+/* Trap handler callback — registered by personality layers */
+typedef int (*ecpu_trap_handler_t)(ecpu_state_t *cpu, int trap_type,
+                                   uint32_t param, void *ctx);
+
+/* Core operations — each eCPU core provides one of these */
+typedef struct ecpu_core_ops {
+    const char *name;              /* "z80", "m68k", "8086", etc. */
+    uint32_t    arch_id;           /* unique ID for this architecture */
+
+    /* Lifecycle */
+    int  (*init)(ecpu_state_t *cpu, uint8_t *memory, uint32_t mem_size);
+    void (*reset)(ecpu_state_t *cpu);
+    int  (*run)(ecpu_state_t *cpu);  /* enter interpreter loop */
+
+    /* Trap hook registration */
+    void (*set_trap_handler)(ecpu_state_t *cpu,
+                             ecpu_trap_handler_t handler, void *ctx);
+
+    /* Register access — generic read/write by register ID.
+     * Each core defines its own register ID constants (e.g.,
+     * Z80_REG_A, Z80_REG_BC, M68K_REG_D0, etc.) */
+    uint32_t (*get_reg)(ecpu_state_t *cpu, int reg_id);
+    void     (*set_reg)(ecpu_state_t *cpu, int reg_id, uint32_t val);
+
+    /* Memory access — translate guest address to host pointer */
+    void    *(*translate_ptr)(ecpu_state_t *cpu, uint32_t guest_addr,
+                              uint32_t size);
+    uint8_t  (*read8)(ecpu_state_t *cpu, uint32_t addr);
+    void     (*write8)(ecpu_state_t *cpu, uint32_t addr, uint8_t val);
+    uint16_t (*read16)(ecpu_state_t *cpu, uint32_t addr);
+    void     (*write16)(ecpu_state_t *cpu, uint32_t addr, uint16_t val);
+
+    /* State size (for allocation) */
+    uint32_t state_size;  /* sizeof the core's concrete state struct */
+} ecpu_core_ops_t;
+```
+
+### 3.3 Architecture IDs
+
+```c
+#define ECPU_ARCH_Z80     1
+#define ECPU_ARCH_M68K    2
+#define ECPU_ARCH_8086    3
+#define ECPU_ARCH_ARM     4
+#define ECPU_ARCH_ARMV6   5
+#define ECPU_ARCH_X86     6
+```
+
+### 3.4 Core Registration
+
+Each eCPU core provides a static `ecpu_core_ops_t` instance:
+
+```c
+/* In ecpu_z80.c */
+const ecpu_core_ops_t ecpu_z80_ops = {
+    .name           = "z80",
+    .arch_id        = ECPU_ARCH_Z80,
+    .init           = ecpu_z80_init,
+    .reset          = ecpu_z80_reset,
+    .run            = ecpu_z80_run,
+    .set_trap_handler = ecpu_z80_set_trap_handler,
+    .get_reg        = ecpu_z80_get_reg,
+    .set_reg        = ecpu_z80_set_reg,
+    .translate_ptr  = ecpu_z80_translate_ptr,
+    .read8          = ecpu_z80_read8,
+    .write8         = ecpu_z80_write8,
+    .read16         = ecpu_z80_read16,
+    .write16        = ecpu_z80_write16,
+    .state_size     = sizeof(z80_state_t),
+};
+```
+
+### 3.5 Subsystem Usage Pattern
+
+Subsystem personality layers interact with the eCPU through the
+common interface, making them independent of the specific core:
+
+```c
+/* Example: CP/M subsystem exec (kernel-side) */
+int cpm_exec(pcb_t *p, const uint8_t *file, uint32_t size,
+             const char *const *argv) {
+    const ecpu_core_ops_t *ops = &ecpu_z80_ops;
+
+    /* Allocate emulator state */
+    ecpu_state_t *cpu = page_alloc_bytes(ops->state_size);
+    p->ecpu_ops = ops;
+    p->ecpu_state = cpu;
+
+    /* Initialize */
+    uint8_t *mem = page_alloc_bytes(65536);
+    ops->init(cpu, mem, 65536);
+
+    /* Register personality trap handler */
+    ops->set_trap_handler(cpu, cpm_bdos_handler, &p->cpm_state);
+
+    /* Load binary */
+    cpm_load_com(cpu, ops, file, size);
+
+    /* Enter interpreter loop (returns when process exits) */
+    return ops->run(cpu);
+}
+```
+
+The personality's trap handler also uses the common interface to
+access registers and memory:
+
+```c
+/* CP/M BDOS handler — uses common interface, not z80_state_t directly */
+int cpm_bdos_handler(ecpu_state_t *cpu, int trap_type,
+                     uint32_t param, void *ctx) {
+    cpm_state_t *cpm = (cpm_state_t *)ctx;
+    const ecpu_core_ops_t *ops = current->ecpu_ops;
+
+    if (trap_type != ECPU_TRAP_CALL) return ECPU_TRAP_UNHANDLED;
+
+    uint8_t fn = ops->get_reg(cpu, Z80_REG_C);
+    uint16_t de = ops->get_reg(cpu, Z80_REG_DE);
+
+    switch (fn) {
+        case 9: { /* Print String */
+            uint16_t addr = de;
+            uint8_t ch;
+            while ((ch = ops->read8(cpu, addr)) != '$') {
+                sys_write(1, &ch, 1);
+                addr++;
+            }
+            break;
+        }
+        /* ... */
+    }
+
+    return ECPU_TRAP_HANDLED;
+}
+```
+
+**Note:** for performance-critical paths, the personality layer may
+also cast `ecpu_state_t *` to `z80_state_t *` and access registers
+directly. The common interface is the *primary* API but does not
+prohibit direct access when the personality is tightly coupled to a
+specific core (as CP/M is to Z80).
+
+### 3.6 Z80 Register IDs
+
+```c
+/* Z80-specific register IDs for get_reg/set_reg */
+#define Z80_REG_A    0
+#define Z80_REG_F    1
+#define Z80_REG_B    2
+#define Z80_REG_C    3
+#define Z80_REG_D    4
+#define Z80_REG_E    5
+#define Z80_REG_H    6
+#define Z80_REG_L    7
+#define Z80_REG_AF   8    /* 16-bit pair */
+#define Z80_REG_BC   9
+#define Z80_REG_DE   10
+#define Z80_REG_HL   11
+#define Z80_REG_IX   12
+#define Z80_REG_IY   13
+#define Z80_REG_SP   14
+#define Z80_REG_PC   15
+#define Z80_REG_I    16
+#define Z80_REG_R    17
+#define Z80_REG_AF2  18   /* shadow registers */
+#define Z80_REG_BC2  19
+#define Z80_REG_DE2  20
+#define Z80_REG_HL2  21
+#define Z80_REG_IFF1 22
+#define Z80_REG_IFF2 23
+#define Z80_REG_IM   24
+#define Z80_REG_WZ   25   /* internal MEMPTR register */
+```
+
+### 3.7 PCB Integration
+
+The process control block stores the eCPU ops pointer and state,
+allowing the kernel to interact with any emulated process uniformly:
+
+```c
+/* In proc.h */
+struct pcb {
+    /* ... existing fields ... */
+
+    /* eCPU emulation (NULL for native processes) */
+    const ecpu_core_ops_t *ecpu_ops;    /* core operations */
+    ecpu_state_t          *ecpu_state;  /* emulated CPU state */
+
+    /* Subsystem personality */
+    uint8_t  subsys;       /* SUBSYS_PPAP, SUBSYS_CPM, etc. */
+    void    *subsys_data;  /* personality-specific state */
+};
+```
+
+### 3.8 File Organization
+
+```
+src/kernel/ecpu/
+├── ecpu.h              Common interface (ecpu_core_ops_t, trap types)
+├── ecpu_z80.h          Z80-specific state and register IDs
+├── ecpu_z80.c          Z80 implementation of common interface + main loop
+├── ecpu_z80_cb.c       CB-prefix instructions
+├── ecpu_z80_ed.c       ED-prefix instructions
+├── ecpu_z80_ix.c       DD-prefix instructions (IX-indexed)
+├── ecpu_z80_iy.c       FD-prefix instructions (IY-indexed)
+└── ecpu_z80_alu.c      ALU helpers (add, sub, and, or, xor, cp, daa)
+```
+
+Future cores (ecpu_m68k.c, ecpu_8086.c, etc.) will each provide
+their own `ecpu_core_ops_t` implementation in this directory.
+
+---
+
+## 4. Emulator Architecture
+
+### 4.1 Interpretive Core
+
+The emulator is a simple fetch-decode-execute loop running in kernel
+context as part of the process's execution:
+
+```c
+int ecpu_z80_run(z80_state_t *cpu) {
+    for (;;) {
+        uint8_t opcode = cpu->memory[cpu->pc++];
+
+        switch (opcode) {
+            case 0x00: /* NOP */  break;
+            case 0x01: /* LD BC, nn */
+                cpu->c = fetch8(cpu);
+                cpu->b = fetch8(cpu);
+                break;
+            /* ... */
+            case 0xCB: return z80_decode_cb(cpu);
+            case 0xDD: return z80_decode_dd(cpu);
+            case 0xED: return z80_decode_ed(cpu);
+            case 0xFD: return z80_decode_fd(cpu);
+            /* ... */
+        }
+
+        /* Check for preemption after N instructions */
+        if (--cpu->slice_counter <= 0) {
+            cpu->slice_counter = Z80_SLICE_SIZE;
+            sched_yield();  /* let other PPAP processes run */
+        }
+    }
+}
+```
+
+### 4.2 Code Organization
+
+File layout is described in §3.8. Splitting by prefix group keeps
+each file manageable (~400–600 lines) and allows the compiler to
+optimize each decode table independently.
+
+The IX and IY prefix decoders are structurally identical (same
+opcodes, different index register). They can share a common
+`z80_decode_index()` implementation parameterised by which register
+to use, avoiding code duplication:
+
+```c
+static int z80_decode_dd(z80_state_t *cpu) {
+    return z80_decode_index(cpu, &cpu->ix);
+}
+static int z80_decode_fd(z80_state_t *cpu) {
+    return z80_decode_index(cpu, &cpu->iy);
+}
+```
+
+### 4.3 Conditional Compilation
+
+The Z80 emulator is compiled into the kernel only when
+`ENABLE_SUBSYS_CPM` (or a future Z80-using subsystem) is defined.
+Targets that don't need Z80 emulation pay zero code size.
+
+```cmake
+if(ENABLE_SUBSYS_CPM)
+    target_sources(ppap PRIVATE
+        src/kernel/ecpu/ecpu_z80.c
+        src/kernel/ecpu/ecpu_z80_cb.c
+        src/kernel/ecpu/ecpu_z80_ed.c
+        src/kernel/ecpu/ecpu_z80_ix.c
+        src/kernel/ecpu/ecpu_z80_iy.c
+        src/kernel/ecpu/ecpu_z80_alu.c
+    )
+    target_compile_definitions(ppap PRIVATE ENABLE_ECPU_Z80=1)
+endif()
+```
+
+---
+
+## 5. Instruction Decoding
+
+### 5.1 Main Opcode Table Structure
+
+The Z80 main opcode byte has a regular structure when viewed as
+three fields: `[xx][yyy][zzz]` (bits 7-6, 5-3, 2-0):
+
+```
+xx = 00: Miscellaneous (loads, arithmetic, jumps, rotates)
+xx = 01: LD r, r' (register-to-register loads; 0x76 = HALT)
+xx = 10: ALU A, r (arithmetic/logic with accumulator)
+xx = 11: Miscellaneous (returns, calls, restarts, I/O, prefixes)
+```
+
+For `xx = 01`: `yyy` = destination register, `zzz` = source register:
+```
+Register encoding: B=000, C=001, D=010, E=011, H=100, L=101, (HL)=110, A=111
+```
+
+For `xx = 10`: `yyy` = ALU operation, `zzz` = source register:
+```
+ALU ops: ADD=000, ADC=001, SUB=010, SBC=011, AND=100, XOR=101, OR=110, CP=111
+```
+
+This regularity enables compact decoding. The `xx=01` block (64
+opcodes minus HALT) and `xx=10` block (64 opcodes) can each be
+handled by a few lines of code rather than 64 individual cases:
+
+```c
+if (xx == 1) {
+    /* LD r, r' — except 0x76 (HALT) */
+    if (opcode == 0x76) { /* HALT */ cpu->halted = 1; return 0; }
+    uint8_t val = read_reg8(cpu, zzz);
+    write_reg8(cpu, yyy, val);
+}
+else if (xx == 2) {
+    /* ALU A, r */
+    uint8_t val = read_reg8(cpu, zzz);
+    alu_op(cpu, yyy, val);  /* dispatches ADD/ADC/SUB/SBC/AND/XOR/OR/CP */
+}
+```
+
+### 5.2 Prefix Decoding Strategy
+
+Prefix bytes modify the meaning of the following opcode:
+
+- **CB**: always followed by exactly one byte. Bits 7-6 select the
+  operation (RLC/RRC/RL/RR/SLA/SRA/SRL/? for 00, BIT for 01,
+  RES for 10, SET for 11), bits 5-3 select the bit number (for
+  BIT/RES/SET) or sub-operation (for shifts), bits 2-0 select the
+  register.
+
+- **DD/FD**: the following byte is decoded as if it were a main
+  opcode, but HL references are replaced with IX/IY, and (HL)
+  becomes (IX+d)/(IY+d) with a displacement byte. If the following
+  byte is itself CB, then the 4-byte sequence DD CB dd op encodes
+  indexed bit operations.
+
+- **ED**: a separate decode table. Most of the 00-3F and C0-FF
+  range is NOP. The useful instructions are in 40-BF.
+
+### 5.3 Instruction Count Estimate
+
+| Group | Approx. opcodes | Description |
+|---|---|---|
+| Unprefixed | ~250 | 8080 base + Z80 extensions (JR, EXX, etc.) |
+| CB prefix | ~256 | Shifts, rotates, BIT/RES/SET × 8 registers |
+| DD prefix | ~250 | IX-indexed mirrors of unprefixed |
+| FD prefix | ~250 | IY-indexed mirrors (shares code with DD) |
+| ED prefix | ~50 | Block ops, 16-bit arith, I/O, IM/interrupt |
+| DD CB / FD CB | ~256 | Indexed bit operations |
+
+Total: ~1300 distinct behaviors, but the regular structure means
+most are parameterised variants of ~30 core operations.
+
+---
+
+## 6. Register Model
+
+### 6.1 State Structure
+
+```c
+typedef struct z80_state {
+    /* Main register set — stored as individual bytes for
+     * direct access (common in Z80 code). Register pairs
+     * are accessed via helper macros/functions. */
+    uint8_t a, f;
+    uint8_t b, c, d, e, h, l;
+
+    /* Shadow register set */
+    uint8_t a2, f2;
+    uint8_t b2, c2, d2, e2, h2, l2;
+
+    /* Index registers (16-bit) */
+    uint16_t ix, iy;
+
+    /* Special registers */
+    uint16_t sp, pc;
+    uint8_t  i;       /* interrupt vector page */
+    uint8_t  r;       /* refresh counter (low 7 bits increment) */
+
+    /* Internal register — not programmer-visible but affects
+     * undocumented flag behavior (F3/F5 in BIT, block ops, etc.) */
+    uint16_t wz;      /* MEMPTR / WZ register */
+
+    /* Interrupt state */
+    uint8_t iff1, iff2;  /* interrupt flip-flops */
+    uint8_t im;          /* interrupt mode (0, 1, or 2) */
+
+    /* Emulator state (not part of real Z80) */
+    uint8_t halted;           /* 1 if HALT executed */
+    int32_t slice_counter;    /* instructions until yield */
+
+    /* Memory (64 KB flat) */
+    uint8_t *memory;
+    uint32_t mem_size;        /* always 65536 for Z80 */
+
+    /* Trap hook — via eCPU common interface (§3) */
+    ecpu_trap_handler_t trap_handler;
+    void *trap_ctx;           /* opaque context for personality */
+} z80_state_t;
+```
+
+The `z80_state_t` is the concrete type behind `ecpu_state_t` for the
+Z80 core. Personality layers typically access it through the common
+interface (`ecpu_core_ops_t` methods), but may also cast to
+`z80_state_t *` for direct register access in performance-critical
+paths.
+
+### 6.2 Register Pair Access
+
+Register pairs are accessed by combining individual bytes. Since
+Z80 is big-endian for register pairs (B is high byte of BC):
+
+```c
+static inline uint16_t z80_bc(const z80_state_t *cpu) {
+    return ((uint16_t)cpu->b << 8) | cpu->c;
+}
+static inline void z80_set_bc(z80_state_t *cpu, uint16_t val) {
+    cpu->b = val >> 8;
+    cpu->c = val & 0xFF;
+}
+/* Similarly for DE, HL, AF */
+```
+
+### 6.3 Register Decode Table
+
+The 3-bit register encoding used throughout Z80 opcodes:
+
+```c
+/* Read 8-bit register by 3-bit code */
+static inline uint8_t read_reg8(z80_state_t *cpu, uint8_t code) {
+    switch (code) {
+        case 0: return cpu->b;
+        case 1: return cpu->c;
+        case 2: return cpu->d;
+        case 3: return cpu->e;
+        case 4: return cpu->h;    /* or IXH/IYH under DD/FD */
+        case 5: return cpu->l;    /* or IXL/IYL under DD/FD */
+        case 6: return cpu->memory[z80_hl(cpu)]; /* (HL) or (IX+d)/(IY+d) */
+        case 7: return cpu->a;
+    }
+}
+```
+
+Under DD/FD prefix, codes 4 and 5 access the high/low bytes of
+IX/IY instead of H/L, and code 6 uses indexed addressing with a
+signed displacement byte.
+
+---
+
+## 7. Memory Model
+
+### 7.1 Address Space
+
+The Z80 has a 16-bit address bus → 64 KB flat address space. The
+emulator allocates a single 65536-byte array for the entire space.
+
+```c
+/* Allocated as part of the process's kernel memory */
+uint8_t z80_mem[65536];
+```
+
+On RP2040 (264 KB SRAM), 64 KB for Z80 memory is a significant
+fraction (~24%) of total RAM. This is acceptable because:
+- Only one CP/M process is expected to run at a time on RP2040
+- The remaining ~200 KB is sufficient for kernel + page pool
+- On m68k QEMU (16 MB RAM), 64 KB is trivial
+
+### 7.2 Memory Access Functions
+
+```c
+static inline uint8_t z80_read8(z80_state_t *cpu, uint16_t addr) {
+    return cpu->memory[addr];
+}
+
+static inline void z80_write8(z80_state_t *cpu, uint16_t addr, uint8_t val) {
+    cpu->memory[addr] = val;
+}
+
+static inline uint16_t z80_read16(z80_state_t *cpu, uint16_t addr) {
+    /* Z80 is little-endian */
+    return cpu->memory[addr] | ((uint16_t)cpu->memory[(uint16_t)(addr + 1)] << 8);
+}
+
+static inline void z80_write16(z80_state_t *cpu, uint16_t addr, uint16_t val) {
+    cpu->memory[addr] = val & 0xFF;
+    cpu->memory[(uint16_t)(addr + 1)] = val >> 8;
+}
+```
+
+Note: address wrapping is handled by the `uint16_t` cast — address
+0xFFFF + 1 wraps to 0x0000, matching Z80 behavior.
+
+### 7.3 Instruction Fetch
+
+```c
+static inline uint8_t fetch8(z80_state_t *cpu) {
+    return cpu->memory[cpu->pc++];  /* PC wraps via uint16_t */
+}
+
+static inline uint16_t fetch16(z80_state_t *cpu) {
+    uint8_t lo = fetch8(cpu);
+    uint8_t hi = fetch8(cpu);
+    return ((uint16_t)hi << 8) | lo;
+}
+```
+
+### 7.4 Stack Operations
+
+```c
+static inline void z80_push16(z80_state_t *cpu, uint16_t val) {
+    cpu->sp -= 2;
+    z80_write16(cpu, cpu->sp, val);
+}
+
+static inline uint16_t z80_pop16(z80_state_t *cpu) {
+    uint16_t val = z80_read16(cpu, cpu->sp);
+    cpu->sp += 2;
+    return val;
+}
+```
+
+### 7.5 Read-Only Regions
+
+CP/M's memory map has no hardware read-only regions — the entire
+64 KB is read-write. The emulator does not enforce any memory
+protection. Write-protection of specific regions (e.g., the BDOS
+entry stubs at 0x0000 and 0x0005) is the personality layer's
+responsibility if needed.
+
+---
+
+## 8. Flag Computation
+
+### 8.1 Strategy
+
+Z80 flag behavior is the most complex part of the emulator. Different
+instructions set flags in different ways. The approach:
+
+- Compute **all 8 flag bits** (including undocumented F3, F5) for
+  every instruction that modifies flags
+- Compute flags **inline** for each ALU operation
+- Use a 256-byte parity lookup table (saves cycles, modest cost)
+- Track the internal WZ (MEMPTR) register for correct F3/F5
+  behavior in BIT, block, and I/O instructions
+
+### 8.2 Flag Constants
+
+```c
+#define FLAG_C   0x01   /* Bit 0: Carry */
+#define FLAG_N   0x02   /* Bit 1: Subtract */
+#define FLAG_PV  0x04   /* Bit 2: Parity/Overflow */
+#define FLAG_F3  0x08   /* Bit 3: Undocumented (copy of bit 3) */
+#define FLAG_H   0x10   /* Bit 4: Half carry */
+#define FLAG_F5  0x20   /* Bit 5: Undocumented (copy of bit 5) */
+#define FLAG_Z   0x40   /* Bit 6: Zero */
+#define FLAG_S   0x80   /* Bit 7: Sign */
+
+#define FLAG_35  (FLAG_F3 | FLAG_F5)  /* Mask for undocumented bits */
+```
+
+### 8.3 Common Flag Patterns
+
+**8-bit arithmetic (ADD, ADC, SUB, SBC, CP, INC, DEC):**
+```c
+static inline void z80_add_a(z80_state_t *cpu, uint8_t val) {
+    uint16_t result = cpu->a + val;
+    uint8_t half = (cpu->a & 0x0F) + (val & 0x0F);
+    uint8_t res8 = result & 0xFF;
+
+    cpu->f = res8 & FLAG_35;  /* F3, F5 from result */
+    if (res8 == 0)            cpu->f |= FLAG_Z;
+    if (res8 & 0x80)          cpu->f |= FLAG_S;
+    if (result > 0xFF)        cpu->f |= FLAG_C;
+    if (half > 0x0F)          cpu->f |= FLAG_H;
+    /* Overflow: operands same sign, result different sign */
+    if ((~(cpu->a ^ val) & (cpu->a ^ result)) & 0x80)
+        cpu->f |= FLAG_PV;
+    /* N = 0 (addition) */
+
+    cpu->a = res8;
+}
+```
+
+**CP (compare):** same as SUB but the result is discarded and
+F3/F5 come from the **operand**, not the result:
+
+```c
+static inline void z80_cp_a(z80_state_t *cpu, uint8_t val) {
+    uint16_t result = cpu->a - val;
+    uint8_t half = (cpu->a & 0x0F) - (val & 0x0F);
+    uint8_t res8 = result & 0xFF;
+
+    cpu->f = val & FLAG_35;   /* F3, F5 from operand, not result! */
+    cpu->f |= FLAG_N;
+    if (res8 == 0)            cpu->f |= FLAG_Z;
+    if (res8 & 0x80)          cpu->f |= FLAG_S;
+    if (result > 0xFF)        cpu->f |= FLAG_C;
+    if (half & 0x10)          cpu->f |= FLAG_H;
+    if (((cpu->a ^ val) & (cpu->a ^ result)) & 0x80)
+        cpu->f |= FLAG_PV;
+    /* A is NOT modified */
+}
+```
+
+**Logic operations (AND, OR, XOR):**
+- S, Z, F3, F5 from result
+- H set for AND, cleared for OR/XOR
+- PV = parity (even number of set bits)
+- N = 0, C = 0
+
+**Parity computation:**
+```c
+/* 256-byte lookup table — parity_table[v] = FLAG_PV if even parity */
+static const uint8_t parity_table[256] = { /* ... */ };
+
+static inline uint8_t parity8(uint8_t val) {
+    return parity_table[val];
+}
+```
+
+The lookup table is preferred over bit-twiddling for both speed
+and clarity. 256 bytes of flash is a modest cost.
+
+### 8.4 DAA (Decimal Adjust Accumulator)
+
+The DAA instruction is the most complex flag operation. It adjusts
+the accumulator after BCD arithmetic using the C, H, and N flags:
+
+```c
+static void z80_daa(z80_state_t *cpu) {
+    uint8_t a = cpu->a;
+    uint8_t correction = 0;
+    uint8_t carry = cpu->f & FLAG_C;
+
+    if ((cpu->f & FLAG_H) || (a & 0x0F) > 9)
+        correction |= 0x06;
+    if (carry || a > 0x99) {
+        correction |= 0x60;
+        carry = FLAG_C;
+    }
+
+    if (cpu->f & FLAG_N)
+        cpu->a -= correction;
+    else
+        cpu->a += correction;
+
+    cpu->f = (cpu->f & FLAG_N) | carry;
+    cpu->f |= cpu->a & FLAG_35;       /* F3, F5 from result */
+    cpu->f |= (cpu->a == 0) ? FLAG_Z : 0;
+    cpu->f |= (cpu->a & 0x80) ? FLAG_S : 0;
+    cpu->f |= parity8(cpu->a);
+    /* H flag: set if low nibble carry occurred */
+    if (cpu->f & FLAG_N)
+        cpu->f |= ((a & 0x0F) < (correction & 0x0F)) ? FLAG_H : 0;
+    else
+        cpu->f |= ((a & 0x0F) + (correction & 0x0F) > 0x0F) ? FLAG_H : 0;
+}
+```
+
+### 8.5 Block Operations (LDIR, CPIR, etc.)
+
+Block instructions have complex undocumented flag behavior:
+
+**LDI/LDD/LDIR/LDDR:**
+- PV set if BC != 0 after decrement
+- F3/F5 come from `A + transferred_byte` (the byte that was just
+  copied, added to the accumulator):
+  ```c
+  uint8_t n = cpu->a + transferred_byte;
+  cpu->f = (cpu->f & ~FLAG_35);
+  cpu->f |= (n & FLAG_F3);       /* bit 3 of (A + byte) */
+  cpu->f |= (n << 4) & FLAG_F5;  /* bit 1 of (A + byte) → bit 5 */
+  ```
+  Note: F5 comes from bit 1 (not bit 5) of `A + byte`. This is one
+  of the most counter-intuitive undocumented behaviors.
+
+**CPI/CPD/CPIR/CPDR:**
+- PV set if BC != 0
+- Z set if A == (HL)
+- F3/F5 come from `A - (HL) - H_flag`:
+  ```c
+  uint8_t n = cpu->a - byte - ((cpu->f & FLAG_H) ? 1 : 0);
+  cpu->f = (cpu->f & ~FLAG_35);
+  cpu->f |= (n & FLAG_F3);       /* bit 3 */
+  cpu->f |= (n << 4) & FLAG_F5;  /* bit 1 → bit 5 */
+  ```
+
+### 8.6 WZ/MEMPTR Register
+
+The Z80 has an internal register variously called WZ, MEMPTR, or
+the "internal temporary register pair". It is not programmer-visible
+but affects F3/F5 in several instructions:
+
+- **BIT n, (HL)**: F3/F5 come from the high byte of WZ
+- **BIT n, (IX+d)/(IY+d)**: F3/F5 come from the high byte of the
+  effective address (IX+d or IY+d)
+- **JR/DJNZ**: WZ = PC after the branch
+- **JP nn / CALL nn**: WZ = target address
+- **LD A, (nn)**: WZ = nn + 1
+- **LD (nn), A**: WZ low = nn + 1, WZ high = A
+- **IN A, (n)**: WZ = (A << 8) | (n + 1)
+- **IN r, (C)**: WZ = BC + 1
+- **OUT (n), A**: WZ low = n + 1, WZ high = A
+- **OUT (C), r**: WZ = BC + 1
+- **Block I/O (INI, OUTI, etc.)**: WZ = BC ± 1
+
+The emulator tracks WZ in `z80_state_t::wz`. Most instructions
+that update WZ are straightforward; the complexity is knowing
+*which* instructions read WZ for flag computation.
+
+### 8.7 SCF/CCF Undocumented Behavior
+
+SCF (Set Carry Flag) and CCF (Complement Carry Flag) have unusual
+F3/F5 behavior:
+
+```c
+/* SCF: F3/F5 = A.3/A.5 OR F.3/F.5 */
+static void z80_scf(z80_state_t *cpu) {
+    cpu->f = (cpu->f & (FLAG_S | FLAG_Z | FLAG_PV))
+           | FLAG_C
+           | ((cpu->a | cpu->f) & FLAG_35);
+    /* H = 0, N = 0 */
+}
+
+/* CCF: same F3/F5 rule, H = previous C */
+static void z80_ccf(z80_state_t *cpu) {
+    uint8_t old_c = cpu->f & FLAG_C;
+    cpu->f = (cpu->f & (FLAG_S | FLAG_Z | FLAG_PV))
+           | (old_c ? FLAG_H : 0)
+           | (old_c ? 0 : FLAG_C)
+           | ((cpu->a | cpu->f) & FLAG_35);
+    /* N = 0 */
+}
+```
+
+Note: there is disagreement among references about whether the
+OR-ing is `A | F` or just `A`. ZEXALL testing will determine the
+correct behavior for our implementation.
+
+### 8.8 Undocumented Instructions
+
+The following undocumented instructions are implemented:
+
+| Encoding | Mnemonic | Behavior |
+|---|---|---|
+| CB 30–37 | SLL r | Shift left, set bit 0 to 1 (not 0 like SLA) |
+| DD/FD + reg4/5 ops | LD IXH,r / LD r,IXH / etc. | Access IX/IY high and low bytes individually |
+| ED 70 | IN (C) / IN F,(C) | Read port (C) into F flags only (discard byte) |
+| ED 71 | OUT (C),0 | Output 0 to port (C) |
+| ED 63/6B etc. | LD (nn),HL / LD HL,(nn) | Redundant ED-prefix versions |
+| DD/FD CB dd xx | Indexed shift+store | Shift (IX+d), also store result in register |
+
+**DD CB / FD CB undocumented behavior:** the indexed bit operations
+(DD CB dd xx and FD CB dd xx) where the register field is not 6
+((HL)) perform the operation on the memory byte AND store the
+result in the specified register. For example, `DD CB 05 06`
+(RLC (IX+5)) with register field 0 also loads the result into B.
+This must be implemented for ZEXALL compatibility.
+
+---
+
+## 9. Trap and Hook Mechanism
+
+### 9.1 Trap Types
+
+The emulator uses the eCPU common trap types (§3.2) to fire
+callbacks to the personality layer. The Z80-specific mapping:
+
+| Common trap type | Z80 trigger | `param` value |
+|---|---|---|
+| `ECPU_TRAP_CALL` | `CALL nn` instruction | target address (nn) |
+| `ECPU_TRAP_SWI` | `RST n` instruction | restart address (0x00–0x38) |
+| `ECPU_TRAP_HALT` | `HALT` instruction | current PC |
+| `ECPU_TRAP_IO_IN` | `IN A,(n)` / `IN r,(C)` | port number |
+| `ECPU_TRAP_IO_OUT` | `OUT (n),A` / `OUT (C),r` | port number |
+
+### 9.2 CALL/RST Interception
+
+The key hook for CP/M: intercept `CALL` instructions to specific
+addresses (0x0000 for warm boot, 0x0005 for BDOS entry):
+
+```c
+/* In the CALL instruction handler */
+case 0xCD: { /* CALL nn */
+    uint16_t target = fetch16(cpu);
+    cpu->wz = target;
+    if (cpu->trap_handler) {
+        int rc = cpu->trap_handler((ecpu_state_t *)cpu,
+                                   ECPU_TRAP_CALL, target, cpu->trap_ctx);
+        if (rc == ECPU_TRAP_HANDLED) break;
+        if (rc == ECPU_TRAP_EXIT) return 0;
+    }
+    /* Normal CALL — push return address and jump */
+    z80_push16(cpu, cpu->pc);
+    cpu->pc = target;
+    break;
+}
+```
+
+The personality layer inspects the target address:
+- `0x0005` → BDOS call, C register = function number, DE = parameter
+- `0x0000` → warm boot (system reset / exit)
+
+Similarly, `RST` instructions (RST 00h through RST 38h) are trapped:
+```c
+/* RST n — single-byte CALL to address n*8 */
+case 0xC7: case 0xCF: case 0xD7: case 0xDF:
+case 0xE7: case 0xEF: case 0xF7: case 0xFF: {
+    uint16_t target = opcode & 0x38;
+    if (cpu->trap_handler) {
+        int rc = cpu->trap_handler((ecpu_state_t *)cpu,
+                                   ECPU_TRAP_SWI, target, cpu->trap_ctx);
+        if (rc != ECPU_TRAP_UNHANDLED) break;
+    }
+    z80_push16(cpu, cpu->pc);
+    cpu->pc = target;
+    break;
+}
+```
+
+### 9.3 I/O Port Trapping
+
+`IN` and `OUT` instructions are trapped to the personality layer.
+CP/M BIOS programs occasionally use port I/O for console status
+checks, though most software uses BDOS calls instead:
+
+```c
+case 0xDB: { /* IN A, (n) */
+    uint8_t port = fetch8(cpu);
+    cpu->wz = (cpu->a << 8) | ((port + 1) & 0xFF);
+    if (cpu->trap_handler) {
+        int rc = cpu->trap_handler((ecpu_state_t *)cpu,
+                                   ECPU_TRAP_IO_IN, port, cpu->trap_ctx);
+        if (rc == ECPU_TRAP_HANDLED) break;
+    }
+    cpu->a = 0xFF;  /* default: no device */
+    break;
+}
+```
+
+### 9.4 HALT Handling
+
+`HALT` stops execution until an interrupt. Since the emulator does
+not generate interrupts, HALT is treated as a trap:
+
+```c
+case 0x76: { /* HALT */
+    if (cpu->trap_handler) {
+        int rc = cpu->trap_handler((ecpu_state_t *)cpu,
+                                   ECPU_TRAP_HALT, cpu->pc, cpu->trap_ctx);
+        if (rc != ECPU_TRAP_UNHANDLED) break;
+    }
+    /* Default: treat as exit (no interrupts to wake us) */
+    return 0;
+}
+```
+
+### 9.5 API Summary
+
+The Z80 core's public API is the `ecpu_z80_ops` operations table
+(§3.4), which implements the common `ecpu_core_ops_t` interface.
+Personality layers and kernel code should use the common interface
+for all interactions.
+
+For convenience, the Z80-specific header also exposes direct
+functions that the ops table points to:
+
+```c
+/* In ecpu_z80.h */
+int  ecpu_z80_init(ecpu_state_t *cpu, uint8_t *memory, uint32_t mem_size);
+void ecpu_z80_reset(ecpu_state_t *cpu);
+int  ecpu_z80_run(ecpu_state_t *cpu);
+void ecpu_z80_set_trap_handler(ecpu_state_t *cpu,
+                               ecpu_trap_handler_t handler, void *ctx);
+uint32_t ecpu_z80_get_reg(ecpu_state_t *cpu, int reg_id);
+void     ecpu_z80_set_reg(ecpu_state_t *cpu, int reg_id, uint32_t val);
+
+/* The registered ops table */
+extern const ecpu_core_ops_t ecpu_z80_ops;
+```
+
+---
+
+## 10. Scheduler Integration
+
+### 10.1 Preemption
+
+The Z80 interpreter loop runs in kernel context as the process's
+"user mode" execution. The PPAP scheduler preempts it like any
+other process — via SysTick timer interrupt on ARM, or via
+cooperative `sched_yield()` on QEMU.
+
+To ensure responsive scheduling, the emulator yields voluntarily
+after executing a fixed number of instructions (a "time slice"):
+
+```c
+#define Z80_SLICE_SIZE  1000  /* instructions per yield check */
+
+int ecpu_z80_run(z80_state_t *cpu) {
+    cpu->slice_counter = Z80_SLICE_SIZE;
+    for (;;) {
+        /* ... decode and execute one instruction ... */
+
+        if (--cpu->slice_counter <= 0) {
+            cpu->slice_counter = Z80_SLICE_SIZE;
+            sched_yield();
+        }
+    }
+}
+```
+
+### 10.2 Slice Size Tuning
+
+The slice size balances responsiveness against overhead:
+- Too small (e.g., 100): excessive yield overhead
+- Too large (e.g., 100000): poor interactive responsiveness
+
+1000 instructions is a reasonable default. At ~5 MHz equivalent
+Z80 speed, this is roughly 0.2 ms per slice — well within the
+10 ms SysTick interval. The scheduler may also preempt the
+interpreter mid-slice via timer interrupt, so the slice counter
+is a cooperative floor, not a ceiling.
+
+### 10.3 State Saving
+
+The Z80 emulator state (`z80_state_t`) is stored in the process's
+PCB (`pcb_t::subsys_data`). When the scheduler preempts the
+interpreter, the host CPU context switch saves the interpreter's
+local variables naturally (they're on the kernel stack). The
+emulated Z80 state is in the heap-allocated `z80_state_t` and
+persists across context switches.
+
+No special save/restore logic is needed — the interpreter is
+just a C function using a persistent state structure.
+
+---
+
+## 11. Performance Considerations
+
+### 11.1 Expected Performance
+
+On RP2040 (133 MHz ARM Cortex-M0+):
+- Estimated ~10–25 host instructions per emulated Z80 instruction
+- At 133 MHz: ~5–13 million Z80 instructions/second
+- Equivalent Z80 clock: **~5–13 MHz**
+- Original CP/M machines ran at 2–4 MHz
+- **Result: faster than original hardware**
+
+On m68k QEMU (emulated 68000, ~50 MHz effective):
+- Overhead is higher (m68k is itself emulated on x86)
+- Still adequate for interactive CP/M programs
+
+### 11.2 Optimization Opportunities
+
+If performance proves insufficient (unlikely for CP/M):
+
+1. **Decode table**: replace the `switch` with a 256-entry function
+   pointer table. Avoids branch misprediction on modern CPUs, but
+   ARM Cortex-M0+ has no branch predictor — switch may be faster
+2. **Common-path inlining**: inline the most frequent instructions
+   (LD, ADD, CP, JP, JR, CALL, RET) to avoid function call overhead
+3. **Flag caching**: defer flag computation until flags are actually
+   read (lazy flags). Adds complexity but avoids computing flags
+   for instructions whose flags are immediately overwritten
+4. **Block operation fast paths**: LDIR/LDDR can be replaced with
+   `memcpy`/`memmove` when the source/dest don't overlap with
+   I/O regions
+
+These optimizations are deferred unless benchmarking shows a need.
+
+### 11.3 Code Size Budget
+
+Target: ~14 KB binary (increased from 12 KB to accommodate
+undocumented instruction/flag emulation and common interface).
+
+| Component | Est. lines | Est. binary |
+|---|---|---|
+| Common interface impl | ~200 | ~0.5 KB |
+| Main decode + helpers | ~900 | ~3.5 KB |
+| CB prefix (bit ops) | ~450 | ~2 KB |
+| ED prefix (extended) | ~500 | ~2.5 KB |
+| DD/FD prefix (indexed) | ~650 | ~2.5 KB |
+| ALU + flag helpers | ~500 | ~2 KB |
+| Parity table | — | ~0.25 KB |
+| API + init + scheduler | ~200 | ~0.75 KB |
+| **Total** | **~3400** | **~14 KB** |
+
+---
+
+## 12. Implementation Plan
+
+### Step 1 — eCPU Common Interface + Core Framework
+
+**Goal:** define the common eCPU interface header and implement the
+Z80 core skeleton that exposes it.
+
+- Define `ecpu_core_ops_t` in `src/kernel/ecpu/ecpu.h`
+- Define `z80_state_t` and `ecpu_z80_ops` in `ecpu_z80.h/c`
+- Implement `ecpu_z80_init()`, `ecpu_z80_run()`,
+  `ecpu_z80_set_trap_handler()`, `ecpu_z80_get_reg()`,
+  `ecpu_z80_set_reg()`, memory access methods
+- Main decode loop with: NOP, HALT, LD r,r' (register-to-register),
+  LD r,n (immediate), `CALL nn`, `RET`, `JP nn`, `JR e`
+- Memory access helpers (fetch, read, write, push, pop)
+- Trap hook fires on CALL and HALT via common trap types
+- Scheduler yield integration (slice counter)
+- PCB integration (`ecpu_ops` / `ecpu_state` fields)
+- **Test:** hand-assembled byte sequence that does LD + CALL + RET
+
+### Step 2 — 8080 Arithmetic + Logic
+
+**Goal:** complete the ALU operations needed for 8080 CP/M programs.
+
+- ADD/ADC/SUB/SBC/AND/OR/XOR/CP (8-bit, register and immediate)
+- INC/DEC (8-bit and 16-bit)
+- Flag computation for all ALU operations
+- DAA, CPL, SCF, CCF
+- Rotate: RLCA, RRCA, RLA, RRA
+- 16-bit arithmetic: ADD HL,rr
+- **Test:** simple arithmetic test program (add, compare, branch)
+
+### Step 3 — Control Flow + Stack
+
+**Goal:** complete conditional jumps, calls, returns.
+
+- JP cc,nn / JR cc,e / DJNZ e
+- CALL cc,nn / RET cc
+- RST instructions (with trap hook)
+- PUSH/POP for all register pairs (BC, DE, HL, AF)
+- EX DE,HL / EX AF,AF' / EXX / EX (SP),HL
+- **Test:** program with loops, subroutines, conditional branches
+
+### Step 4 — Memory and I/O
+
+**Goal:** complete load/store instructions and I/O trapping.
+
+- LD (nn),A / LD A,(nn) — extended addressing
+- LD (HL),n / LD (BC),A / LD (DE),A and reverses
+- LD SP,HL / LD (nn),HL / LD HL,(nn)
+- LD (nn),rr / LD rr,(nn) — 16-bit memory loads
+- IN A,(n) / OUT (n),A (trapped to personality)
+- DI / EI (set IFF1/IFF2)
+- IM 0 / IM 1 / IM 2 (set interrupt mode)
+- **Test:** program that uses memory-indirect loads, I/O ports
+
+### Step 5 — CB Prefix (Bit Operations)
+
+**Goal:** implement the full CB prefix group.
+
+- RLC/RRC/RL/RR/SLA/SRA/SRL for all registers
+- BIT n,r / RES n,r / SET n,r for all registers and bit positions
+- **Test:** program using bit manipulation, shift operations
+
+### Step 6 — ED Prefix (Extended Instructions)
+
+**Goal:** implement the ED prefix group.
+
+- Block transfers: LDI, LDD, LDIR, LDDR
+- Block search: CPI, CPD, CPIR, CPDR
+- 16-bit arithmetic: ADC HL,rr / SBC HL,rr
+- Negate: NEG
+- Return from interrupt: RETI, RETN
+- Rotate: RLD, RRD (BCD rotate through accumulator and memory)
+- Register I/O: IN r,(C) / OUT (C),r
+- LD I,A / LD R,A / LD A,I / LD A,R
+- **Test:** program using LDIR (block copy), CPIR (string search)
+
+### Step 7 — DD/FD Prefix (IX/IY Indexed)
+
+**Goal:** implement IX and IY indexed addressing.
+
+- Shared `z80_decode_index()` parameterised by register
+- LD r,(IX+d) / LD (IX+d),r / LD (IX+d),n
+- ADD/ADC/SUB/SBC/AND/OR/XOR/CP A,(IX+d)
+- INC/DEC (IX+d)
+- LD IX,nn / LD IX,(nn) / LD (nn),IX
+- PUSH IX / POP IX / EX (SP),IX
+- ADD IX,rr
+- DD CB / FD CB double-prefix bit operations on (IX+d)/(IY+d)
+- **Test:** program using indexed addressing for array access
+
+### Step 8 — Integration with CP/M Personality
+
+**Goal:** run a real CP/M .COM binary.
+
+- Wire up CP/M BDOS trap handler (see `subsystem-cpm.md`)
+- Load a .COM binary at 0x0100, set up CP/M memory map
+- Run "Hello World" CP/M program
+- **Test:** HELLO.COM prints a string via BDOS function 9
+
+---
+
+## 13. Testing Strategy
+
+### 13.1 Unit Test Approach
+
+Test the emulator in isolation using hand-assembled Z80 byte
+sequences. Each test loads a short program into emulated memory,
+runs the interpreter, and checks final register/memory state.
+
+```c
+/* Example: test LD A, 42h; ADD A, 03h; HALT */
+void test_add_immediate(void) {
+    z80_state_t cpu;
+    uint8_t mem[65536] = {0};
+
+    mem[0x0100] = 0x3E;  /* LD A, n */
+    mem[0x0101] = 0x42;  /* n = 0x42 */
+    mem[0x0102] = 0xC6;  /* ADD A, n */
+    mem[0x0103] = 0x03;  /* n = 0x03 */
+    mem[0x0104] = 0x76;  /* HALT */
+
+    ecpu_z80_init(&cpu, mem, sizeof(mem));
+    cpu.pc = 0x0100;
+    ecpu_z80_run(&cpu);
+
+    assert(cpu.a == 0x45);
+    assert(!(cpu.f & FLAG_Z));
+    assert(!(cpu.f & FLAG_C));
+}
+```
+
+### 13.2 Test Categories
+
+| Category | Tests | Validates |
+|---|---|---|
+| Register loads | LD r,r' / LD r,n / LD rr,nn | Register decode table |
+| Arithmetic | ADD/SUB/INC/DEC with flag checks | ALU + flag computation |
+| Logic | AND/OR/XOR/CP | Parity flag, zero flag |
+| Control flow | JP/JR/CALL/RET/DJNZ (taken + not taken) | Branch conditions |
+| Stack | PUSH/POP/EX (SP),HL | Stack pointer arithmetic |
+| Bit operations | BIT/SET/RES/shifts | CB prefix decode |
+| Block operations | LDI/LDIR/CPI/CPIR | ED prefix, BC counter |
+| Indexed | LD A,(IX+d) / ADD A,(IY+d) | DD/FD prefix + displacement |
+| DAA | BCD addition/subtraction sequences | DAA correction logic |
+| Undocumented flags | F3/F5 for ADD/SUB/CP/BIT/block ops/SCF/CCF | Full flag accuracy |
+| Undocumented instrs | SLL, IXH/IXL, IN F,(C), DD CB store | Undocumented opcode support |
+| WZ/MEMPTR | BIT n,(HL), LD A,(nn), JP nn, IN/OUT | Internal register tracking |
+| Edge cases | 16-bit overflow, SP wraparound, PC wraparound | Boundary conditions |
+
+### 13.3 Host Test Infrastructure
+
+Z80 unit tests run as host-side tests (compiled for the build
+machine, not the target), matching the existing PPAP test pattern
+(`tests/host/`). This enables fast iteration without QEMU.
+
+### 13.4 Integration Tests
+
+Once the CP/M personality is connected:
+
+| Test binary | BDOS calls | Validates |
+|---|---|---|
+| `HELLO.COM` | fn 9 (print string) | BDOS entry, string output |
+| `ECHO.COM` | fn 1, 2 (console I/O) | Character input/output |
+| `TYPE.COM` | fn 15, 20, 16 (file ops) | FCB file read |
+| `MBASIC.COM` | Various | Real-world CP/M application |
+
+### 13.5 Reference Test Suites
+
+Known Z80 test suites that validate instruction accuracy:
+
+- **ZEXALL** (Z80 Exerciser) — exhaustive Z80 instruction test.
+  Tests all documented and undocumented flag behavior. The goal is
+  to **pass ZEXALL completely** — this is the benchmark for a
+  correct Z80 implementation. ZEXALL runs under CP/M and exercises
+  every instruction with multiple operand combinations, checking
+  all 8 flag bits including F3/F5.
+
+- **ZEXDOC** — subset of ZEXALL testing only documented behavior.
+  Useful as an intermediate milestone before tackling full ZEXALL.
+
+- **CPUTEST** — simpler Z80 CPU test that runs under CP/M. Good
+  for quick smoke-testing during development.
+
+- **z80test** (Patrik Rak) — focused tests for undocumented
+  behavior including flag bits, WZ/MEMPTR, and undocumented
+  instructions. Useful for verifying specific edge cases that
+  ZEXALL may not cover individually.
+
+---
+
+## 14. Open Questions
+
+1. **WZ/MEMPTR accuracy:** the exact behavior of WZ is not fully
+   documented and varies between Z80 silicon revisions (NMOS vs
+   CMOS). The implementation targets NMOS Z80 behavior (the
+   original, used in CP/M-era hardware). If CMOS Z80 compatibility
+   is needed, WZ handling may need adjustment.
+
+2. **SCF/CCF F3/F5 controversy:** different references disagree on
+   whether SCF/CCF set F3/F5 from `A` alone or from `A | F`. The
+   implementation will be validated against ZEXALL and adjusted.
+
+3. **IN/OUT handling:** CP/M's BIOS uses port I/O for console
+   status on some implementations. The personality layer must decide
+   which ports map to which console operations. Initial approach:
+   trap all I/O to the personality via `ECPU_TRAP_IO_IN/OUT`;
+   default to 0xFF (no device) if unhandled.
+
+4. **Interrupt emulation:** CP/M programs generally don't use
+   interrupts (the BIOS handles hardware). EI/DI/IM are implemented
+   as register-state changes but no interrupt delivery mechanism is
+   provided. If needed, a periodic timer interrupt could be added
+   by injecting an interrupt check into the main loop.
+
+5. **64 KB on RP2040:** allocating 64 KB on RP2040 (264 KB total
+   SRAM) is feasible but tight. Possible optimisation: use a
+   smaller TPA (e.g., 48 KB) and map the upper 16 KB as
+   unavailable. Most CP/M programs use far less than 64 KB.
+
+6. **Endianness:** Z80 is little-endian, same as ARM. On m68k
+   (big-endian), the memory array byte order is still little-endian
+   (it's emulated memory, not host memory). The `z80_read16()` /
+   `z80_write16()` helpers handle byte assembly correctly regardless
+   of host endianness.
+
+7. **Common interface overhead:** the `ecpu_core_ops_t` virtual
+   dispatch (function pointer table) adds one indirect call per
+   register/memory access when used by the personality layer. For
+   the hot path (the interpreter loop itself), the Z80 core uses
+   direct struct access — no overhead. The common interface is
+   primarily for personality→core communication, which happens
+   once per BDOS call (not per instruction).
