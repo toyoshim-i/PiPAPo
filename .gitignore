@@ -9,4 +9,3 @@ build/
 
 tools/mkromfs/mkromfs
 tools/m68k-toolchain/
-third_party/dl/

@@ -26,7 +26,7 @@ BINUTILS_VER=2.43
 GCC_VER=14.2.0
 
 # Directories
-DL_DIR="$SCRIPT_DIR/dl"
+DL_DIR="$PROJECT_ROOT/build/downloads"
 BUILD_DIR="$PROJECT_ROOT/build/m68k-gcc-build"
 PREFIX="$PROJECT_ROOT/tools/m68k-toolchain"
 TARGET=m68k-elf
