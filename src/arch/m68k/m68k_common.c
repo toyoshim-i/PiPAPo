@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include "../kernel/proc/proc.h"
 #include "../kernel/klog.h"
+#include "../kernel/subsys/human68k_bridge.h"
 
 /* Context switch pending flag.
  * Set by arch_yield() (via sched_tick or sched_yield).
@@ -145,22 +146,33 @@ int m68k_crash_handler(int fault_type, uint32_t *regs)
  *   regs: saved d0-d7/a0-a6 (60 bytes), followed by group-1 exception
  *         frame (SR + PC, 6 bytes).  The 16-bit F-line opcode is at
  *         the faulting PC.
+ *   usp:  user stack pointer at time of the exception.
  *
- * If the current process is a Human68k process (subsys == SUBSYS_HUMAN68K),
- * dispatches to the DOS call handler (stub for now — falls through to crash).
- * Otherwise, crashes with SIGILL.
- *
- * Returns: 1 = process killed/handled, caller should reschedule
- *          0 = kernel fault, caller should halt
+ * Returns: 0 = kernel fault (halt)
+ *          1 = process killed (schedule next)
+ *          2 = DOS call handled (restore regs, rte)
  */
-int m68k_fline_dispatch(uint32_t *regs)
+int m68k_fline_dispatch(uint32_t *regs, uint32_t usp)
 {
     pcb_t *p = current;
 
-    /* Human68k process: dispatch DOS call (Step 9 replaces this) */
     if (p && p->subsys == SUBSYS_HUMAN68K) {
-        /* TODO: extract opcode from PC, dispatch to human68k_bridge */
-        /* For now, fall through to crash — no DOS calls implemented yet */
+        /* Read the faulting PC from the exception frame.
+         * PC is at byte offset 62 (60 bytes of regs + 2 bytes SR). */
+        uint8_t *frame = (uint8_t *)regs;
+        uint32_t pc = *(uint32_t *)(frame + 62);
+        uint16_t opcode = *(volatile uint16_t *)(uintptr_t)pc;
+
+        /* On m68k PPAP, all processes run in supervisor mode — the "user"
+         * stack is SSP.  Arguments pushed before the F-line instruction
+         * sit above the exception frame: regs(60) + SR(2) + PC(4) = 66. */
+        uint32_t ssp = (uint32_t)(uintptr_t)frame + 66;
+        (void)usp;  /* USP unused in supervisor mode */
+
+        int rc = human68k_dos_dispatch(regs, ssp, opcode);
+        if (rc > 0)
+            return rc;  /* 1 = exited, 2 = handled */
+        /* rc < 0: unhandled DOS call — fall through to crash */
     }
 
     /* Non-Human68k process or unhandled: crash with SIGILL */

@@ -262,18 +262,32 @@ m68k_priv_handler:
 
 | --- F-line emulator (group 1 — 6-byte exception frame) ---
 | Human68k DOS calls are encoded as F-line instructions ($FFxx).
-| Saves all registers, then calls m68k_fline_dispatch() in C which
-| checks current->subsys to decide: Human68k → DOS call, else → crash.
+| Saves all registers, then calls m68k_fline_dispatch(regs, usp) in C.
+|
+| Returns: 0 = kernel fault (halt)
+|          1 = process killed (schedule next)
+|          2 = DOS call handled (restore regs, advance PC, rte)
     .global m68k_fline_handler
 m68k_fline_handler:
     movem.l %d0-%d7/%a0-%a6,%sp@-   | save all regs (60 bytes)
-    move.l  %sp,%sp@-               | arg1: register frame pointer
+    | Get USP (only accessible via move usp in supervisor mode)
+    move.l  %usp,%a0
+    move.l  %a0,%sp@-               | arg2: user stack pointer
+    move.l  %sp,%d0
+    addq.l  #4,%d0
+    move.l  %d0,%sp@-               | arg1: register frame pointer
     jsr     m68k_fline_dispatch
-    addq.l  #4,%sp
+    addq.l  #8,%sp                  | clean up 2 args
+    cmp.l   #2,%d0
+    beq.s   .Lfline_return
     tst.l   %d0
     beq.s   .Lfline_halt
     lea.l   %sp@(66),%sp            | discard regs + group-1 frame (60+6)
     jmp     m68k_schedule_next
+.Lfline_return:
+    | DOS call handled — restore registers and return to user mode
+    movem.l %sp@+,%d0-%d7/%a0-%a6   | restore all regs (60 bytes)
+    rte                              | return (SR+PC on stack)
 .Lfline_halt:
     stop    #0x2700
     bra.s   .Lfline_halt

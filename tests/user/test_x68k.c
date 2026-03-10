@@ -5,9 +5,8 @@
  * to the X-format loader.  The test binary lives at
  * /subsys/human68k/hello.x in romfs.
  *
- * Phase 1 Steps 4+5: loader allocates memory, loads segments, applies
- * relocations, and starts execution.  hello.x hits F-line _SETBLOCK
- * before DOS call dispatch is implemented → SIGILL → exit 132.
+ * Phase 1 Step 9: F-line DOS call dispatch handles _SETBLOCK and _EXIT.
+ * hello.x calls _SETBLOCK to release memory, then _EXIT(0) → exit 0.
  */
 
 #include "utest.h"
@@ -28,9 +27,7 @@ int main(void)
         UT_ASSERT_EQ(code, 127);
     }
 
-    /* 2. execve of hello.x — loader succeeds, program starts executing,
-     *    hits F-line _SETBLOCK ($FF4A) → SIGILL → exit 132 (128+4).
-     *    When F-line DOS call dispatch is implemented, this will change. */
+    /* 2. execve of hello.x — calls _SETBLOCK then _EXIT(0) → exit 0 */
     {
         pid_t pid = vfork();
         if (pid == 0) {
@@ -41,8 +38,7 @@ int main(void)
         int status = 0;
         waitpid(pid, &status, 0);
         int code = (status >> 8) & 0xff;
-        /* Program loads and runs, crashes on F-line with SIGILL */
-        UT_ASSERT_EQ(code, 132);
+        UT_ASSERT_EQ(code, 0);
     }
 
     UT_SUMMARY("test_x68k");
