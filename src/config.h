@@ -106,9 +106,13 @@
 /* ── ELF loader (exec) ───────────────────────────────────────────────────
  * USER_PAGES_MAX  Maximum data-segment pages per process.  Must match
  *                 the user_pages[] array size in pcb_t (proc.h).
- *                 32 pages = 128 KB; costs 32 × 4 B = 128 B per PCB slot.
+ *                 Costs USER_PAGES_MAX × 4 B per PCB slot.
+ *                 Default 64 pages = 256 KB.  m68k targets override to 512
+ *                 (2 MB) since they have ample RAM.
  * ────────────────────────────────────────────────────────────────────────── */
+#ifndef USER_PAGES_MAX
 #define USER_PAGES_MAX       64     /* max data-segment pages per process    */
+#endif
 
 /* ── tmpfs (RAM-backed temporary filesystem) ─────────────────────────────
  * TMPFS_INODE_MAX   Maximum files + directories in tmpfs.

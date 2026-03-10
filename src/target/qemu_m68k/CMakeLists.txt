@@ -32,6 +32,7 @@ target_compile_definitions(ppap_qemu_m68k PRIVATE
     PPAP_QEMU=1
     PPAP_M68K=1
     PAGE_COUNT_MAX=4096u
+    USER_PAGES_MAX=512u
 )
 
 target_compile_options(ppap_qemu_m68k PRIVATE
