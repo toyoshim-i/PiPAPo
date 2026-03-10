@@ -56,7 +56,8 @@ int main(void)
     tests[14] = "/bin/test_iov";
     tests[15] = "/bin/test_stat";
     tests[16] = "/bin/test_tmpfs";
-    tests[17] = (void *)0;
+    tests[17] = "/bin/test_x68k";
+    tests[18] = (void *)0;
 
     print("=== PPAP on-target test suite ===\n");
     int total = 0, failed = 0;
