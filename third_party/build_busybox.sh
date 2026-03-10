@@ -9,7 +9,7 @@
 # .config (applet selection) differs.  -ffunction-sections + -fdata-sections
 # enable dead-code stripping in the split binaries.
 #
-# Normally invoked from cmake via ppap_userland.cmake (PPAP_CONFIG set).
+# Normally invoked from cmake via user.cmake (PPAP_CONFIG set).
 # Standalone: ./third_party/build_busybox.sh [--m68k] [--clean]
 #
 # Prerequisites:

@@ -1,4 +1,4 @@
-# ppap_userland.cmake — Common userland build configuration
+# user.cmake — Common userland build configuration
 #
 # Included by cmake/arm_m.cmake and cmake/m68k.cmake.
 # Expects PPAP_SHARED_BUILD to be set before inclusion (the directory
@@ -6,7 +6,7 @@
 #
 # At include time, automatically registers build commands for:
 #   - musl libc, busybox, rogue (third-party)
-#   - User-space programs (from user_programs.cmake list)
+#   - User-space programs and busybox applet lists
 #   - mkromfs host tool
 #
 # Sets PPAP_USER_ELFS — list of user ELF paths for romfs generation.
@@ -39,10 +39,31 @@ else()
     set(PPAP_ARCH arm)
 endif()
 
-# --- Include shared source and program lists ---
-include(${CMAKE_CURRENT_LIST_DIR}/kernel_sources.cmake)
-include(${CMAKE_CURRENT_LIST_DIR}/user_programs.cmake)
-include(${CMAKE_CURRENT_LIST_DIR}/busybox_applets.cmake)
+# --- User-space program lists ---
+
+# Application programs (sources in src/user/)
+set(USER_APPS hello getty init ttyctl)
+# Install destinations: init -> sbin, ttyctl -> usr/bin, others -> bin
+
+# Test programs (sources in tests/user/)
+set(USER_TESTS
+    test_exec test_vfork test_fault test_pipe test_brk
+    test_fd test_signal test_poll test_sleep_intr test_orphan
+    test_id test_fs test_rw test_time test_iov test_stat test_tmpfs
+    runtests
+)
+
+# --- Busybox applet lists ---
+
+# Applets that link to full busybox binary (transient commands)
+set(BB_APPLETS
+    cat chmod cp df echo grep head kill ln ls mkdir mv
+    printf ps rm rmdir sed sleep sort tail top uname vi wc
+)
+# Shell applets — link to busybox.sh (dedicated shell binary)
+set(BB_SHELL_APPLETS sh hush)
+# Sbin applets — link to full busybox via ../bin/busybox
+set(BB_SBIN_APPLETS mount umount)
 
 # =============================================================================
 # Arch-specific variables
@@ -413,7 +434,7 @@ endfunction()
 #
 # After this point, callers only need ppap_generate_romfs() per target.
 # Adding a new userland app or third-party component requires editing
-# only this file (or user_programs.cmake) — all targets pick it up.
+# only this file — all targets pick it up.
 # =============================================================================
 
 _ppap_add_musl()

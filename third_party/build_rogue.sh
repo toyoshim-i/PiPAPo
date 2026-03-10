@@ -5,7 +5,7 @@
 # xcrypt.c is excluded (71 KB BSS for DES tables, only used by disabled
 # wizard mode); a stub xcrypt() is provided in the curses shim.
 #
-# Normally invoked from cmake via ppap_userland.cmake (PPAP_CONFIG set).
+# Normally invoked from cmake via user.cmake (PPAP_CONFIG set).
 # Standalone: ./third_party/build_rogue.sh [--m68k] [--clean]
 #
 # Prerequisites:

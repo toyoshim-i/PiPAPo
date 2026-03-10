@@ -5,16 +5,19 @@
 #
 # Provides:
 #   - ppap_m68k_target_common(target): common include dirs + test support
-#   - All ppap_userland.cmake functions and variables
+#   - All user.cmake functions and variables
 
 include_guard(GLOBAL)
+
+# Kernel source lists (ARCH_M68K_SOURCES, KERNEL_SHARED_SOURCES, etc.)
+include(${CMAKE_CURRENT_LIST_DIR}/kernel.cmake)
 
 # Shared build directory for userland artifacts (musl, busybox, etc.).
 # All m68k targets share one build to avoid redundant musl/busybox rebuilds.
 set(PPAP_SHARED_BUILD "${PPAP_ROOT}/build/m68k")
 
-# Common build config (kernel sources, userland, romfs)
-include(${CMAKE_CURRENT_LIST_DIR}/ppap_userland.cmake)
+# Userland build config (musl, busybox, romfs pipeline)
+include(${CMAKE_CURRENT_LIST_DIR}/user.cmake)
 
 # ppap_m68k_target_common(target)
 #

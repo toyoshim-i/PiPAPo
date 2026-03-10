@@ -5,16 +5,19 @@
 #
 # Provides:
 #   - ppap_arm_target_common(target): common include dirs + test support
-#   - All ppap_userland.cmake functions and variables
+#   - All user.cmake functions and variables
 
 include_guard(GLOBAL)
+
+# Kernel source lists (KERNEL_COMMON_SOURCES, KERNEL_BLKDEV_SOURCES, etc.)
+include(${CMAKE_CURRENT_LIST_DIR}/kernel.cmake)
 
 # Shared build directory for userland artifacts (musl, busybox, etc.).
 # All ARM targets share one build to avoid redundant musl/busybox rebuilds.
 set(PPAP_SHARED_BUILD "${PPAP_ROOT}/build/arm_m")
 
-# Common build config (kernel sources, userland, romfs)
-include(${CMAKE_CURRENT_LIST_DIR}/ppap_userland.cmake)
+# Userland build config (musl, busybox, romfs pipeline)
+include(${CMAKE_CURRENT_LIST_DIR}/user.cmake)
 
 # ppap_arm_target_common(target)
 #

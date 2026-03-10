@@ -1,4 +1,4 @@
-# kernel_sources.cmake — Shared kernel source lists for all targets.
+# kernel.cmake — Shared kernel source lists for all targets.
 #
 # Defines arch-specific and arch-independent source lists that targets
 # compose as needed:
