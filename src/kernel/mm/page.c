@@ -207,3 +207,33 @@ uint32_t page_free_count(void)
     spin_unlock_irqrestore(SPIN_PAGE, saved);
     return count;
 }
+
+uint32_t page_max_contiguous(void)
+{
+    uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
+
+    /* Build a bitmap of which pages are free */
+    uint32_t n = page_count;
+    uint32_t best = 0, run = 0;
+
+    for (uint32_t i = 0; i < n; i++) {
+        uint32_t paddr = PAGE_POOL_BASE + i * PAGE_SIZE;
+        int is_free = 0;
+        for (uint32_t j = 0; j < free_top; j++) {
+            if ((uint32_t)(uintptr_t)free_stack[j] == paddr) {
+                is_free = 1;
+                break;
+            }
+        }
+        if (is_free) {
+            run++;
+            if (run > best)
+                best = run;
+        } else {
+            run = 0;
+        }
+    }
+
+    spin_unlock_irqrestore(SPIN_PAGE, saved);
+    return best;
+}

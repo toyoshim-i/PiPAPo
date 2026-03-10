@@ -68,6 +68,10 @@ void page_free(void *page);
 /* Return the number of pages currently on the free stack. */
 uint32_t page_free_count(void);
 
+/* Return the length (in pages) of the largest contiguous free run.
+ * Used by _MALLOC to report accurate availability. */
+uint32_t page_max_contiguous(void);
+
 /* Runtime page count — set by mm_init() after probing available RAM.
  * Always <= PAGE_COUNT_MAX.  Use this (not PAGE_COUNT_MAX) for runtime
  * decisions such as total-memory reporting. */

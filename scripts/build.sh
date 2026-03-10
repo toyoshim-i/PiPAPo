@@ -10,6 +10,7 @@
 #   --test              Enable PPAP_TESTS (kernel + userland test suite)
 #   --clean             Remove build directory before building (full rebuild)
 #   --overlay=<dir>     Extra overlay directory copied into romfs (highest priority)
+#   --h68k-debug        Enable Human68k DOS/IOCS call tracing
 #
 # Examples:
 #   ./scripts/build.sh pico1              # build pico1
@@ -28,6 +29,7 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TESTS=OFF
 CLEAN=0
 OVERLAY=""
+H68K_DEBUG=OFF
 TARGET=""
 
 for arg in "$@"; do
@@ -35,6 +37,7 @@ for arg in "$@"; do
         --test)       TESTS=ON ;;
         --clean)      CLEAN=1 ;;
         --overlay=*)  OVERLAY="${arg#--overlay=}" ;;
+        --h68k-debug) H68K_DEBUG=ON ;;
         -*)           echo "Unknown option: $arg" >&2; exit 1 ;;
         *)            TARGET="$arg" ;;
     esac
@@ -102,6 +105,7 @@ fi
 echo "[build] Building $CMAKE_TARGET (PPAP_TESTS=$TESTS)..."
 cmake "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}" \
       -DPPAP_TESTS="$TESTS" \
+      -DH68K_DEBUG="$H68K_DEBUG" \
       -S "$SOURCE_DIR" -B "$BUILD_DIR" >/dev/null 2>&1
 cmake --build "$BUILD_DIR" -- -j"$(nproc)"
 

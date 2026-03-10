@@ -15,6 +15,7 @@
 #   --test              Enable PPAP_TESTS, run automated test suite (implies --build)
 #   --clean             Clean build directory before building (implies --build)
 #   --overlay=<dir>     Extra overlay directory copied into romfs (implies --build)
+#   --h68k-debug        Enable Human68k DOS/IOCS call tracing (implies --build)
 #   --gdb               (QEMU only) Pause at reset, wait for GDB on :1234
 #   --m68k              Shorthand for TARGET=qemu_m68k (back-compat)
 #
@@ -45,6 +46,7 @@ DO_BUILD=0
 DO_TEST=0
 DO_CLEAN=0
 DO_GDB=0
+DO_H68K_DEBUG=0
 OVERLAY=""
 
 for arg in "$@"; do
@@ -55,6 +57,7 @@ for arg in "$@"; do
         --test)     DO_TEST=1; DO_BUILD=1 ;;
         --clean)    DO_CLEAN=1; DO_BUILD=1 ;;
         --overlay=*)OVERLAY="${arg#--overlay=}"; DO_BUILD=1 ;;
+        --h68k-debug) DO_H68K_DEBUG=1; DO_BUILD=1 ;;
         --gdb)      DO_GDB=1 ;;
         pico1|pico1calc|qemu_arm|qemu_m68k) TARGET="$arg" ;;
         -*)         echo "Unknown option: $arg" >&2; exit 1 ;;
@@ -82,6 +85,7 @@ if [[ $DO_BUILD -eq 1 ]]; then
     if [[ $DO_CLEAN -eq 1 ]]; then BUILD_ARGS+=(--clean); fi
     if [[ $DO_TEST -eq 1 ]]; then BUILD_ARGS+=(--test); fi
     if [[ -n "$OVERLAY" ]]; then BUILD_ARGS+=("--overlay=$OVERLAY"); fi
+    if [[ $DO_H68K_DEBUG -eq 1 ]]; then BUILD_ARGS+=(--h68k-debug); fi
     "$SCRIPT_DIR/build.sh" "${BUILD_ARGS[@]}" "$TARGET"
 fi
 

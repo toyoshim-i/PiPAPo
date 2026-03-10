@@ -10,10 +10,18 @@
 #include "human68k_bridge.h"
 #include "kernel/proc/proc.h"
 #include "kernel/mm/page.h"
+#include "kernel/exec/exec.h"
 #include "kernel/syscall/syscall.h"
 #include "kernel/klog.h"
 #include "kernel/errno.h"
 #include <stddef.h>
+
+/* Debug tracing — enable with -DH68K_DEBUG in CMake */
+#ifdef H68K_DEBUG
+#define H68K_TRACE(fmt, ...) klogf("[h68k] " fmt "\n", ##__VA_ARGS__)
+#else
+#define H68K_TRACE(fmt, ...) ((void)0)
+#endif
 
 /* Read big-endian values from user stack (native on m68k) */
 static inline uint16_t ustack_u16(uint32_t usp, int offset)
@@ -52,6 +60,7 @@ static inline void advance_pc(uint32_t *regs)
 static int dos_exit(uint32_t usp)
 {
     uint16_t code = ustack_u16(usp, 0);
+    H68K_TRACE("_EXIT(%x)", (uint32_t)(int16_t)code);
     sys_exit((int)(int16_t)code);
     return 1;  /* unreachable, but sys_exit doesn't return */
 }
@@ -64,6 +73,7 @@ static int dos_exit(uint32_t usp)
 static int dos_putchar(uint32_t *regs, uint32_t usp)
 {
     uint8_t ch = (uint8_t)ustack_u16(usp, 0);
+    H68K_TRACE("_PUTCHAR(%x)", (uint32_t)ch);
     sys_write(1, (const char *)&ch, 1);
     regs[0] = (uint32_t)ch;
     advance_pc(regs);
@@ -79,6 +89,7 @@ static int dos_getchar(uint32_t *regs)
 {
     uint8_t ch = 0;
     sys_read(0, (char *)&ch, 1);
+    H68K_TRACE("_GETCHAR => %x", (uint32_t)ch);
     /* Echo the character back to stdout */
     sys_write(1, (const char *)&ch, 1);
     regs[0] = (uint32_t)ch;
@@ -95,6 +106,7 @@ static int dos_cominp(uint32_t *regs)
 {
     uint8_t ch = 0;
     sys_read(0, (char *)&ch, 1);
+    H68K_TRACE("_COMINP => %x", (uint32_t)ch);
     regs[0] = (uint32_t)ch;
     advance_pc(regs);
     return 2;
@@ -108,6 +120,7 @@ static int dos_cominp(uint32_t *regs)
 static int dos_print(uint32_t *regs, uint32_t usp)
 {
     uint32_t str_addr = ustack_u32(usp, 0);
+    H68K_TRACE("_PRINT(%x)", str_addr);
     const char *str = (const char *)(uintptr_t)str_addr;
 
     /* Find string length (NUL-terminated) */
@@ -137,6 +150,7 @@ static int dos_print(uint32_t *regs, uint32_t usp)
 static int dos_gets(uint32_t *regs, uint32_t usp)
 {
     uint32_t buf_addr = ustack_u32(usp, 0);
+    H68K_TRACE("_GETS(%x)", buf_addr);
     uint8_t *buf = (uint8_t *)(uintptr_t)buf_addr;
     uint8_t max = buf[0];
     uint8_t count = 0;
@@ -163,20 +177,29 @@ static int dos_gets(uint32_t *regs, uint32_t usp)
 /* ── _SETBLOCK ($FF4A) ───────────────────────────────────────────────── *
  *
  * Stack: long block_addr, long new_size
- * Resizes the process memory block.  Shrinking frees pages back to the
- * allocator; growing is not yet supported.
- * Returns d0 = 0 on success, negative error otherwise.
+ * Resizes the process memory block.  block_addr is the user-visible
+ * address (base + 0x10, past the 16-byte MMB header).  new_size is
+ * the desired size starting from block_addr.
+ *
+ * Shrinking frees pages back to the allocator; growing is not yet
+ * supported.  Returns d0 = 0 on success, $81xxxxxx on error.
  */
+#define MMB_HEADER_SIZE  0x10
+
 static int dos_setblock(uint32_t *regs, uint32_t usp)
 {
     uint32_t block_addr = ustack_u32(usp, 0);
     uint32_t new_size   = ustack_u32(usp, 4);
+    H68K_TRACE("_SETBLOCK(%x, %x)", block_addr, new_size);
     pcb_t *p = current;
 
-    /* Find the block in user_pages — must match base address */
+    /* block_addr points past the 16-byte MMB header.  Derive the raw
+     * page base and verify it matches our allocation. */
     uint32_t base = (uint32_t)(uintptr_t)p->user_pages[0];
-    if (block_addr != base) {
-        regs[0] = (uint32_t)(-(int32_t)EFAULT);  /* invalid block */
+    if (block_addr != base + MMB_HEADER_SIZE) {
+        H68K_TRACE("_SETBLOCK: bad block addr %x (expected %x)",
+                   block_addr, base + MMB_HEADER_SIZE);
+        regs[0] = (uint32_t)(-7);  /* Human68k: invalid memory block */
         advance_pc(regs);
         return 2;
     }
@@ -187,16 +210,22 @@ static int dos_setblock(uint32_t *regs, uint32_t usp)
         cur_pages++;
 
     uint32_t cur_size = cur_pages * PAGE_SIZE;
+    /* Total size including MMB header */
+    uint32_t total_new = MMB_HEADER_SIZE + new_size;
 
-    if (new_size > cur_size) {
-        /* Growing not implemented yet — return error -8 (ENOMEM) */
-        regs[0] = (uint32_t)(-(int32_t)ENOMEM);
+    if (total_new > cur_size) {
+        /* Growing not supported — return Human68k error format:
+         * high byte $81 = insufficient memory, low 24 bits = max available */
+        uint32_t avail = (cur_size - MMB_HEADER_SIZE) & 0x00FFFFFFu;
+        H68K_TRACE("_SETBLOCK: grow %x > cur %x, avail=%x",
+                   total_new, cur_size, avail);
+        regs[0] = 0x81000000u | avail;
         advance_pc(regs);
         return 2;
     }
 
     /* Shrink: free pages from the tail */
-    uint32_t new_pages = (new_size + PAGE_SIZE - 1) / PAGE_SIZE;
+    uint32_t new_pages = (total_new + PAGE_SIZE - 1) / PAGE_SIZE;
     if (new_pages < 1)
         new_pages = 1;  /* keep at least the PMB page */
 
@@ -221,23 +250,83 @@ static int dos_setblock(uint32_t *regs, uint32_t usp)
  *
  * Stack: long size
  * If size == -1 ($FFFFFFFF), returns the largest available block size.
- * Otherwise, allocates memory (not implemented in Phase 1).
+ * Otherwise, allocates a contiguous block and returns pointer to
+ * usable area (past the 16-byte MMB header).
+ *
+ * Returns: d0 = pointer to allocated block (past MMB header)
+ *          d0 = $81xxxxxx on error (low 24 bits = max available)
  */
 static int dos_malloc(uint32_t *regs, uint32_t usp)
 {
     uint32_t size = ustack_u32(usp, 0);
+    H68K_TRACE("_MALLOC(%x)", size);
 
-    if (size == 0xFFFFFFFF) {
-        /* Query: return largest available block = free pages × PAGE_SIZE */
-        extern uint32_t page_free_count(void);
-        uint32_t free_bytes = page_free_count() * PAGE_SIZE;
-        regs[0] = free_bytes;
+    extern uint32_t page_max_contiguous(void);
+
+    if (size >= 0x01000000u) {
+        /* Query: size >= 16MB (24-bit address space) or $FFFFFFFF.
+         * Return largest contiguous block size (minus MMB header). */
+        uint32_t contig_bytes = page_max_contiguous() * PAGE_SIZE;
+        uint32_t avail = (contig_bytes > MMB_HEADER_SIZE)
+                       ? contig_bytes - MMB_HEADER_SIZE : 0;
+        H68K_TRACE("_MALLOC: query => %x", avail);
+        regs[0] = avail;
         advance_pc(regs);
         return 2;
     }
 
-    /* Allocation not implemented — return error */
-    regs[0] = (uint32_t)(-(int32_t)ENOMEM);
+    /* Actual allocation — try exact requested size only. */
+    uint32_t total = MMB_HEADER_SIZE + size;
+    uint32_t n_pages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    uint8_t *base = alloc_contiguous(n_pages);
+    if (!base) {
+        /* Report largest contiguous run so caller can retry. */
+        uint32_t contig_bytes = page_max_contiguous() * PAGE_SIZE;
+        uint32_t avail = (contig_bytes > MMB_HEADER_SIZE)
+                       ? (contig_bytes - MMB_HEADER_SIZE) & 0x00FFFFFFu : 0;
+        H68K_TRACE("_MALLOC: alloc %x pages failed, max_contig=%x", n_pages, avail);
+        regs[0] = 0x81000000u | avail;
+        advance_pc(regs);
+        return 2;
+    }
+
+    /* Track this allocation in the per-process table */
+    h68k_proc_t *h = (h68k_proc_t *)current->subsys_data;
+    int slot = -1;
+    if (h) {
+        for (int i = 0; i < H68K_MALLOC_MAX; i++) {
+            if (!h->mallocs[i].base) {
+                slot = i;
+                break;
+            }
+        }
+    }
+    if (slot < 0) {
+        /* No free tracking slot — free the pages and fail */
+        for (uint32_t i = 0; i < n_pages; i++)
+            page_free(base + i * PAGE_SIZE);
+        H68K_TRACE("_MALLOC: no tracking slot");
+        regs[0] = 0x82000000u;  /* Human68k: too many blocks */
+        advance_pc(regs);
+        return 2;
+    }
+    h->mallocs[slot].base = base;
+    h->mallocs[slot].n_pages = n_pages;
+
+    /* Write MMB header */
+    uint32_t base_u = (uint32_t)(uintptr_t)base;
+    uint32_t end_u  = base_u + n_pages * PAGE_SIZE;
+    mem_write32(base_u + 0x00, 0);                   /* prev */
+    mem_write32(base_u + 0x04, base_u);               /* owner = self */
+    mem_write32(base_u + 0x08, end_u);                /* end+1 */
+    mem_write32(base_u + 0x0C, 0);                    /* next */
+
+    /* Return pointer past MMB header */
+    uint32_t user_ptr = base_u + MMB_HEADER_SIZE;
+    H68K_TRACE("_MALLOC: allocated %x pages at %x, user=%x",
+               n_pages, base_u, user_ptr);
+    regs[0] = user_ptr;
     advance_pc(regs);
     return 2;
 }
@@ -245,12 +334,37 @@ static int dos_malloc(uint32_t *regs, uint32_t usp)
 /* ── _MFREE ($FF49) ──────────────────────────────────────────────────── *
  *
  * Stack: long block_addr
- * No-op in Phase 1 minimal implementation.
+ * Frees a block previously allocated by _MALLOC.
+ * block_addr is the user pointer (base + MMB_HEADER_SIZE).
  */
 static int dos_mfree(uint32_t *regs, uint32_t usp)
 {
-    (void)usp;
-    regs[0] = 0;  /* success (no-op) */
+    uint32_t block_addr = ustack_u32(usp, 0);
+    H68K_TRACE("_MFREE(%x)", block_addr);
+
+    h68k_proc_t *h = (h68k_proc_t *)current->subsys_data;
+    if (h) {
+        for (int i = 0; i < H68K_MALLOC_MAX; i++) {
+            if (!h->mallocs[i].base)
+                continue;
+            uint32_t user_ptr = (uint32_t)(uintptr_t)h->mallocs[i].base
+                              + MMB_HEADER_SIZE;
+            if (user_ptr == block_addr) {
+                H68K_TRACE("_MFREE: freeing slot %u (%x pages)",
+                           (uint32_t)i, h->mallocs[i].n_pages);
+                for (uint32_t j = 0; j < h->mallocs[i].n_pages; j++)
+                    page_free(h->mallocs[i].base + j * PAGE_SIZE);
+                h->mallocs[i].base = NULL;
+                h->mallocs[i].n_pages = 0;
+                regs[0] = 0;
+                advance_pc(regs);
+                return 2;
+            }
+        }
+    }
+
+    H68K_TRACE("_MFREE: block %x not found", block_addr);
+    regs[0] = (uint32_t)(-7);  /* invalid memory block */
     advance_pc(regs);
     return 2;
 }
@@ -263,6 +377,7 @@ static int dos_mfree(uint32_t *regs, uint32_t usp)
 static int dos_fgetc(uint32_t *regs, uint32_t usp)
 {
     int fd = (int)(int16_t)ustack_u16(usp, 0);
+    H68K_TRACE("_FGETC(%u)", (uint32_t)fd);
     uint8_t ch = 0;
     long r = sys_read(fd, (char *)&ch, 1);
     regs[0] = (r > 0) ? (uint32_t)ch : (uint32_t)(-1);
@@ -272,7 +387,7 @@ static int dos_fgetc(uint32_t *regs, uint32_t usp)
 
 /* ── _FGETS ($FF1C) ─────────────────────────────────────────────────── *
  *
- * Stack: word fileno, long buf_ptr
+ * Stack: long buf_ptr, word fileno
  * Line-buffered read from file handle into linebuf structure:
  *   byte 0: max (max chars to read)
  *   byte 1: len (filled with actual count)
@@ -281,8 +396,9 @@ static int dos_fgetc(uint32_t *regs, uint32_t usp)
  */
 static int dos_fgets(uint32_t *regs, uint32_t usp)
 {
-    int fd = (int)(int16_t)ustack_u16(usp, 0);
-    uint32_t buf_addr = ustack_u32(usp, 2);
+    uint32_t buf_addr = ustack_u32(usp, 0);
+    int fd = (int)(int16_t)ustack_u16(usp, 4);
+    H68K_TRACE("_FGETS(%u, %x)", (uint32_t)fd, buf_addr);
     uint8_t *buf = (uint8_t *)(uintptr_t)buf_addr;
     uint8_t max = buf[0];
     uint8_t count = 0;
@@ -306,13 +422,14 @@ static int dos_fgets(uint32_t *regs, uint32_t usp)
 
 /* ── _FPUTC ($FF1D) ─────────────────────────────────────────────────── *
  *
- * Stack: word fileno, word code
+ * Stack: word code, word fileno
  * Writes one byte to the specified file handle.  Returns byte in d0.
  */
 static int dos_fputc(uint32_t *regs, uint32_t usp)
 {
-    int fd = (int)(int16_t)ustack_u16(usp, 0);
-    uint8_t ch = (uint8_t)ustack_u16(usp, 2);
+    uint8_t ch = (uint8_t)ustack_u16(usp, 0);
+    int fd = (int)(int16_t)ustack_u16(usp, 2);
+    H68K_TRACE("_FPUTC(%u, %x)", (uint32_t)fd, (uint32_t)ch);
     sys_write(fd, (const char *)&ch, 1);
     regs[0] = (uint32_t)ch;
     advance_pc(regs);
@@ -321,14 +438,15 @@ static int dos_fputc(uint32_t *regs, uint32_t usp)
 
 /* ── _FPUTS ($FF1E) ─────────────────────────────────────────────────── *
  *
- * Stack: word fileno, long str_ptr
+ * Stack: long str_ptr, word fileno
  * Writes a NUL-terminated string to the file handle.
  * The NUL terminator is not written.  Returns 0 in d0.
  */
 static int dos_fputs(uint32_t *regs, uint32_t usp)
 {
-    int fd = (int)(int16_t)ustack_u16(usp, 0);
-    uint32_t str_addr = ustack_u32(usp, 2);
+    uint32_t str_addr = ustack_u32(usp, 0);
+    int fd = (int)(int16_t)ustack_u16(usp, 4);
+    H68K_TRACE("_FPUTS(%u, %x)", (uint32_t)fd, str_addr);
     const char *str = (const char *)(uintptr_t)str_addr;
 
     uint32_t len = 0;
@@ -348,6 +466,7 @@ static int dos_fputs(uint32_t *regs, uint32_t usp)
 int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
 {
     uint8_t func = opcode & 0xFF;
+    int ret;
 
     switch (func) {
     case 0x00:  /* _EXIT */
@@ -355,48 +474,65 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
         return dos_exit(usp);
 
     case 0x01:  /* _GETCHAR — read with echo */
-        return dos_getchar(regs);
+        ret = dos_getchar(regs);
+        break;
 
     case 0x02:  /* _PUTCHAR */
     case 0x04:  /* _COMOUT */
-        return dos_putchar(regs, usp);
+        ret = dos_putchar(regs, usp);
+        break;
 
     case 0x03:  /* _COMINP — raw read, no echo */
-        return dos_cominp(regs);
+        ret = dos_cominp(regs);
+        break;
 
     case 0x09:  /* _PRINT */
-        return dos_print(regs, usp);
+        ret = dos_print(regs, usp);
+        break;
 
     case 0x0A:  /* _GETS */
-        return dos_gets(regs, usp);
+        ret = dos_gets(regs, usp);
+        break;
 
     case 0x1B:  /* _FGETC */
-        return dos_fgetc(regs, usp);
+        ret = dos_fgetc(regs, usp);
+        break;
 
     case 0x1C:  /* _FGETS */
-        return dos_fgets(regs, usp);
+        ret = dos_fgets(regs, usp);
+        break;
 
     case 0x1D:  /* _FPUTC */
-        return dos_fputc(regs, usp);
+        ret = dos_fputc(regs, usp);
+        break;
 
     case 0x1E:  /* _FPUTS */
-        return dos_fputs(regs, usp);
+        ret = dos_fputs(regs, usp);
+        break;
 
     case 0x4A:  /* _SETBLOCK */
-        return dos_setblock(regs, usp);
+        ret = dos_setblock(regs, usp);
+        break;
 
     case 0x48:  /* _MALLOC */
-        return dos_malloc(regs, usp);
+        ret = dos_malloc(regs, usp);
+        break;
 
     case 0x49:  /* _MFREE */
-        return dos_mfree(regs, usp);
+        ret = dos_mfree(regs, usp);
+        break;
 
     default:
-        klogf("[human68k] unimplemented DOS call $FF%x\n", (uint32_t)func);
+        H68K_TRACE("DOS notimpl: opcode=%x",
+              (uint32_t)(0xFF00u | func));
         regs[0] = (uint32_t)(-(int32_t)ENOSYS);
         advance_pc(regs);
-        return 2;
+        ret = 2;
+        break;
     }
+
+    H68K_TRACE("  => d0=%x", regs[0]);
+    return ret;
 }
 
 /* ── Subsystem ops (layering hooks called by the kernel) ──────────── */
@@ -408,10 +544,15 @@ static h68k_proc_t h68k_pool[PROC_MAX];
 /* on_init — called when a Human68k binary is exec'd */
 static void h68k_on_init(struct pcb *p)
 {
+    H68K_TRACE("on_init pid=%u", (uint32_t)p->pid);
     h68k_proc_t *h = &h68k_pool[p->pid];
-    h->exitvc = 0;   /* default: no-op (normal exit proceeds)      */
-    h->ctrlvc = 0;   /* default: _EXIT(-1) on Ctrl+C               */
-    h->errjvc = 0;   /* default: _EXIT(-1) on error abort           */
+    h->exitvc = 0;
+    h->ctrlvc = 0;
+    h->errjvc = 0;
+    for (int i = 0; i < H68K_MALLOC_MAX; i++) {
+        h->mallocs[i].base = NULL;
+        h->mallocs[i].n_pages = 0;
+    }
     p->subsys_data = h;
 }
 
@@ -419,6 +560,7 @@ static void h68k_on_init(struct pcb *p)
 static int h68k_on_crash(struct pcb *p, uint32_t *regs, uint16_t *exc,
                           int is_group0)
 {
+    H68K_TRACE("on_crash pid=%u group0=%u", (uint32_t)p->pid, (uint32_t)is_group0);
     h68k_proc_t *h = (h68k_proc_t *)p->subsys_data;
     if (!h)
         return 0;
@@ -438,6 +580,7 @@ static int h68k_on_crash(struct pcb *p, uint32_t *regs, uint16_t *exc,
 /* on_signal — handle SIGINT for Human68k processes (_CTRLVC) */
 static int h68k_on_signal(struct pcb *p, int sig, uint32_t *regs)
 {
+    H68K_TRACE("on_signal pid=%u sig=%u", (uint32_t)p->pid, (uint32_t)sig);
     /* Only intercept SIGINT (Ctrl+C) */
     if (sig != 2)  /* SIGINT = 2 */
         return 0;
@@ -473,7 +616,7 @@ int human68k_iocs_dispatch(uint32_t *regs)
     /* TODO: implement IOCS calls as needed */
 
     default:
-        klogf("[human68k] unimplemented IOCS call $%x\n", (uint32_t)func);
+        H68K_TRACE("IOCS notimpl: d0=%x", (uint32_t)func);
         regs[0] = (uint32_t)(-1);  /* error return */
         return 2;
     }

@@ -13,12 +13,20 @@
 
 /*
  * Per-process Human68k state (stored in pcb_t::subsys_data).
- * Contains DOS vectors and other personality-specific data.
+ * Contains DOS vectors, dynamic memory allocations, etc.
  */
+#define H68K_MALLOC_MAX  8   /* max dynamic _MALLOC blocks per process */
+
 typedef struct {
     uint32_t exitvc;    /* _EXITVC ($FFF0): exit handler       */
     uint32_t ctrlvc;    /* _CTRLVC ($FFF1): Ctrl+C handler     */
     uint32_t errjvc;    /* _ERRJVC ($FFF2): error abort handler*/
+
+    /* Dynamic allocations from _MALLOC (tracked for _MFREE) */
+    struct {
+        uint8_t *base;      /* raw page base (NULL = free slot) */
+        uint32_t n_pages;   /* number of pages in this block    */
+    } mallocs[H68K_MALLOC_MAX];
 } h68k_proc_t;
 
 /* Subsystem ops for Human68k — registered into subsys_ops_table[] */
