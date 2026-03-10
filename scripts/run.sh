@@ -29,7 +29,7 @@
 #   ./scripts/run.sh --test pico1           # build with tests & flash pico1
 #
 # Alternatively, without a debug adapter, hold BOOTSEL, plug in USB, then:
-#   cp build/arm_m/src/target/pico1calc/ppap_pico1calc.uf2 /media/$USER/RPI-RP2/
+#   cp build/pico1calc/ppap_pico1calc.uf2 /media/$USER/RPI-RP2/
 #
 # Press Ctrl-A X to quit QEMU.
 
@@ -69,18 +69,9 @@ if [[ -z "$TARGET" ]]; then
 fi
 
 # ── Resolve ELF path ───────────────────────────────────────────────────────
-case "$TARGET" in
-    pico1|pico1calc|qemu_arm)
-        BUILD_DIR="$PROJECT_DIR/build/arm_m"
-        CMAKE_TARGET="ppap_${TARGET}"
-        ELF="$BUILD_DIR/${CMAKE_TARGET}.elf"
-        ;;
-    qemu_m68k)
-        BUILD_DIR="$PROJECT_DIR/build/m68k"
-        CMAKE_TARGET="ppap_qemu_m68k"
-        ELF="$BUILD_DIR/${CMAKE_TARGET}.elf"
-        ;;
-esac
+BUILD_DIR="$PROJECT_DIR/build/$TARGET"
+CMAKE_TARGET="ppap_${TARGET}"
+ELF="$BUILD_DIR/${CMAKE_TARGET}.elf"
 
 # ── Build ───────────────────────────────────────────────────────────────────
 if [[ $DO_BUILD -eq 1 ]]; then

@@ -1,0 +1,2 @@
+ttyS0::respawn:/bin/getty ttyS0
+tty1::respawn:/bin/getty tty1

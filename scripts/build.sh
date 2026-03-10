@@ -42,10 +42,16 @@ if [[ -z "$TARGET" ]]; then
     exit 0
 fi
 
-# ── Determine build directory ────────────────────────────────────────────────
+# ── Determine source and build directories ──────────────────────────────────
 case "$TARGET" in
-    pico1|pico1calc|qemu_arm) BUILD_DIR="$PROJECT_DIR/build/arm_m" ;;
-    qemu_m68k)                BUILD_DIR="$PROJECT_DIR/build/m68k" ;;
+    qemu_arm|pico1|pico1calc)
+        SOURCE_DIR="$PROJECT_DIR/src/target/$TARGET"
+        BUILD_DIR="$PROJECT_DIR/build/$TARGET"
+        ;;
+    qemu_m68k)
+        SOURCE_DIR="$PROJECT_DIR/src/target/qemu_m68k"
+        BUILD_DIR="$PROJECT_DIR/build/qemu_m68k"
+        ;;
     *)
         echo "[build] Error: unknown target '$TARGET'"
         echo "        Valid targets: pico1, pico1calc, qemu_arm, qemu_m68k"
@@ -53,41 +59,38 @@ case "$TARGET" in
         ;;
 esac
 
+CMAKE_TARGET="ppap_${TARGET}"
+ELF="$BUILD_DIR/${CMAKE_TARGET}.elf"
+
 # ── Clean build directory if requested ───────────────────────────────────────
 if [[ $CLEAN -eq 1 && -d "$BUILD_DIR" ]]; then
     echo "[build] Cleaning $BUILD_DIR..."
     rm -rf "$BUILD_DIR"
 fi
 
-# ── Target-specific build ────────────────────────────────────────────────────
+# ── Build ────────────────────────────────────────────────────────────────────
+EXTRA_ARGS=()
 case "$TARGET" in
-    pico1|pico1calc|qemu_arm)
-        CMAKE_TARGET="ppap_${TARGET}"
-        ELF="$BUILD_DIR/${CMAKE_TARGET}.elf"
-
-        echo "[build] Building $CMAKE_TARGET (PPAP_TESTS=$TESTS)..."
-        cmake -B "$BUILD_DIR" -DPPAP_TESTS="$TESTS" "$PROJECT_DIR" >/dev/null 2>&1
-        cmake --build "$BUILD_DIR" --target "$CMAKE_TARGET" -- -j"$(nproc)"
+    qemu_arm)
+        # Bare-metal ARM (no Pico SDK) — needs explicit toolchain file
+        EXTRA_ARGS+=(-DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/cmake/toolchain_arm_m.cmake")
         ;;
     qemu_m68k)
-        CMAKE_TARGET="ppap_qemu_m68k"
-        ELF="$BUILD_DIR/${CMAKE_TARGET}.elf"
-
-        # Ensure custom m68k-elf toolchain is available (must exist before cmake)
+        # Ensure custom m68k-elf toolchain is available
         M68K_TC="$PROJECT_DIR/tools/m68k-toolchain/bin/m68k-elf-gcc"
         if [[ ! -x "$M68K_TC" ]]; then
             echo "[build] m68k-elf-gcc not found. Building toolchain..."
             "$PROJECT_DIR/third_party/build_gcc_m68k.sh"
         fi
-
-        # musl, busybox, and rogue are now built by cmake via ppap_userland.cmake
-        echo "[build] Building $CMAKE_TARGET (PPAP_TESTS=$TESTS)..."
-        cmake -DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/cmake/toolchain_m68k.cmake" \
-              -DPPAP_TESTS="$TESTS" \
-              -S "$PROJECT_DIR/src/target/qemu_m68k" -B "$BUILD_DIR" >/dev/null 2>&1
-        cmake --build "$BUILD_DIR" -- -j"$(nproc)"
+        EXTRA_ARGS+=(-DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/cmake/toolchain_m68k.cmake")
         ;;
 esac
+
+echo "[build] Building $CMAKE_TARGET (PPAP_TESTS=$TESTS)..."
+cmake "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}" \
+      -DPPAP_TESTS="$TESTS" \
+      -S "$SOURCE_DIR" -B "$BUILD_DIR" >/dev/null 2>&1
+cmake --build "$BUILD_DIR" -- -j"$(nproc)"
 
 if [[ ! -f "$ELF" ]]; then
     echo "[build] Error: $ELF not found after build."

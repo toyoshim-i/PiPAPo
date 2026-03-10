@@ -14,8 +14,7 @@
 #       --bb-sbin-applets APP1 APP2 ... \
 #       --rogue PATH \
 #       --etc-dir DIR \
-#       --fstab PATH \
-#       --inittab PATH
+#       [--overlay-dir DIR]
 
 set -e
 
@@ -29,8 +28,7 @@ BB_SHELL_APPLETS=()
 BB_SBIN_APPLETS=()
 ROGUE=""
 ETC_DIR=""
-FSTAB=""
-INITTAB=""
+OVERLAY_DIR=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -68,11 +66,8 @@ while [[ $# -gt 0 ]]; do
         --etc-dir)
             ETC_DIR="$2"; shift 2
             ;;
-        --fstab)
-            FSTAB="$2"; shift 2
-            ;;
-        --inittab)
-            INITTAB="$2"; shift 2
+        --overlay-dir)
+            OVERLAY_DIR="$2"; shift 2
             ;;
         *)
             echo "Unknown argument: $1" >&2; exit 1
@@ -113,15 +108,12 @@ fi
 # --- Install shared ABI headers ---
 cp "$PROJECT_ROOT/src/common/"*.h "$STAGING/usr/include/"
 
-# --- Copy /etc files ---
+# --- Copy base /etc files ---
 if [[ -n "$ETC_DIR" && -d "$ETC_DIR" ]]; then
     cp -a "$ETC_DIR/." "$STAGING/etc/"
 fi
 
-# --- Apply target-specific overrides ---
-if [[ -n "$FSTAB" && -f "$FSTAB" ]]; then
-    cp "$FSTAB" "$STAGING/etc/fstab"
-fi
-if [[ -n "$INITTAB" && -f "$INITTAB" ]]; then
-    cp "$INITTAB" "$STAGING/etc/inittab"
+# --- Apply target-specific overlay (overrides base etc files) ---
+if [[ -n "$OVERLAY_DIR" && -d "$OVERLAY_DIR" ]]; then
+    cp -a "$OVERLAY_DIR/." "$STAGING/"
 fi

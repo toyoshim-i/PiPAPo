@@ -54,7 +54,7 @@ All targets share the same kernel source, syscall interface, VFS, and process mo
 
 ```
 PPAP/
-  CMakeLists.txt            Top-level build system
+  cmake/                    Shared cmake modules (arm_m, m68k, ppap_userland)
   src/
     target/
       target.h              Target abstraction API (5-function interface)
@@ -139,16 +139,21 @@ Installs apt packages (`arm-none-eabi-gcc`, `cmake`, `ninja`, `openocd`, `gdb-mu
 ./scripts/build.sh qemu_m68k           # build m68k QEMU target
 ```
 
-Or invoke CMake directly:
+Or invoke CMake directly (each target is a standalone project):
 
 ```sh
 # ARM targets
-cmake -B build/arm_m
-cmake --build build/arm_m    # builds ppap_qemu_arm, ppap_pico1, ppap_pico1calc
+cmake -S src/target/qemu_arm -B build/qemu_arm
+cmake --build build/qemu_arm
+
+# Pico targets (Pico SDK auto-detected)
+cmake -S src/target/pico1calc -B build/pico1calc
+cmake --build build/pico1calc
 
 # m68k targets
-cmake -B build/m68k -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain_m68k.cmake
-cmake --build build/m68k     # builds ppap_qemu_m68k
+cmake -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain_m68k.cmake \
+      -S src/target/qemu_m68k -B build/qemu_m68k
+cmake --build build/qemu_m68k
 ```
 
 ### 3. Run / Flash
@@ -169,7 +174,7 @@ cmake --build build/m68k     # builds ppap_qemu_m68k
 during power-on, then copy the UF2:
 
 ```sh
-cp build/arm_m/src/target/pico1calc/ppap_pico1calc.uf2 /media/$USER/RPI-RP2/
+cp build/pico1calc/ppap_pico1calc.uf2 /media/$USER/RPI-RP2/
 ```
 
 At the shell prompt, try `rogue` to play the classic dungeon crawler.
@@ -190,10 +195,10 @@ Press **Ctrl-A X** to quit QEMU.
 openocd -f scripts/debug/openocd.cfg
 
 # Terminal 2 — flash and debug PicoCalc
-gdb-multiarch -x scripts/debug/pico1calc.gdb build/arm_m/ppap_pico1calc.elf
+gdb-multiarch -x scripts/debug/pico1calc.gdb build/pico1calc/ppap_pico1calc.elf
 
 # Or attach to already-running firmware
-gdb-multiarch -x scripts/debug/pico1calc-attach.gdb build/arm_m/ppap_pico1calc.elf
+gdb-multiarch -x scripts/debug/pico1calc-attach.gdb build/pico1calc/ppap_pico1calc.elf
 ```
 
 ## Architecture-Specific Notes

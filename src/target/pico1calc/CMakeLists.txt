@@ -1,23 +1,47 @@
+# CMakeLists.txt — ClockworkPi PicoCalc target (standalone build)
+#
+# Build:
+#   cmake -S src/target/pico1calc -B build/pico1calc
+#   cmake --build build/pico1calc
+
+cmake_minimum_required(VERSION 3.13)
+
+set(PPAP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
+
+# Pico SDK must be set up before project()
+if(NOT DEFINED PICO_SDK_PATH AND NOT DEFINED ENV{PICO_SDK_PATH})
+    set(PICO_SDK_PATH "${PPAP_ROOT}/third_party/pico-sdk")
+endif()
+include(${PPAP_ROOT}/cmake/pico_sdk_import.cmake)
+
+project(ppap_pico1calc C CXX ASM)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
+
+pico_sdk_init()
+
+option(PPAP_TESTS "Enable test suite" OFF)
+
+include(${PPAP_ROOT}/cmake/arm_m.cmake)
+
 add_executable(ppap_pico1calc
     ${KERNEL_COMMON_SOURCES}
     ${KERNEL_BLKDEV_SOURCES}
-    ${CMAKE_SOURCE_DIR}/src/boot/stage1.S
+    ${PPAP_ROOT}/src/boot/stage1.S
     ${CMAKE_CURRENT_SOURCE_DIR}/target_pico1calc.c
-    ${CMAKE_SOURCE_DIR}/src/drivers/uart.c
-    ${CMAKE_SOURCE_DIR}/src/drivers/clock.c
-    ${CMAKE_SOURCE_DIR}/src/drivers/spi.c
-    ${CMAKE_SOURCE_DIR}/src/drivers/sd.c
-    ${CMAKE_SOURCE_DIR}/src/drivers/i2c.c
-    ${CMAKE_SOURCE_DIR}/src/drivers/spi_lcd.c
-    ${CMAKE_SOURCE_DIR}/src/drivers/lcd.c
-    ${CMAKE_SOURCE_DIR}/src/drivers/kbd.c
-    ${CMAKE_SOURCE_DIR}/src/drivers/fbcon.c
+    ${PPAP_ROOT}/src/drivers/uart.c
+    ${PPAP_ROOT}/src/drivers/clock.c
+    ${PPAP_ROOT}/src/drivers/spi.c
+    ${PPAP_ROOT}/src/drivers/sd.c
+    ${PPAP_ROOT}/src/drivers/i2c.c
+    ${PPAP_ROOT}/src/drivers/spi_lcd.c
+    ${PPAP_ROOT}/src/drivers/lcd.c
+    ${PPAP_ROOT}/src/drivers/kbd.c
+    ${PPAP_ROOT}/src/drivers/fbcon.c
 )
 
-target_include_directories(ppap_pico1calc PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/src/kernel
-)
+ppap_arm_target_common(ppap_pico1calc)
+
 target_compile_definitions(ppap_pico1calc PRIVATE PPAP_HAS_BLKDEV=1)
 target_link_libraries(ppap_pico1calc pico_base_headers hardware_regs)
 target_sources(ppap_pico1calc PRIVATE $<TARGET_OBJECTS:bs2_default_library>)
@@ -28,18 +52,65 @@ target_link_options(ppap_pico1calc PRIVATE
     -Wl,--gc-sections
 )
 
-# Produce ppap_pico1calc.bin, ppap_pico1calc.uf2 alongside ppap_pico1calc.elf
 pico_add_extra_outputs(ppap_pico1calc)
 
-# Post-process UF2 for PicoCalc's third-party UF2 bootloader (pelrun/uf2loader).
-# The bootloader requires contiguous blocks and rejects blocks targeting its
-# own reserved first 16KB (0x10000000–0x10003FFF).  Overwrite the SDK-generated
-# UF2 in place so the output filename stays ppap_pico1calc.uf2.
+# UF2 sanitization for PicoCalc bootloader
 add_custom_command(TARGET ppap_pico1calc POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E echo "Sanitizing UF2 for PicoCalc bootloader..."
-    COMMAND python3 ${CMAKE_SOURCE_DIR}/tools/uf2sanitize.py
+    COMMAND python3 ${PPAP_ROOT}/tools/uf2sanitize.py
         ${CMAKE_CURRENT_BINARY_DIR}/ppap_pico1calc.uf2
         ${CMAKE_CURRENT_BINARY_DIR}/ppap_pico1calc.uf2
         --start 0x10000100
     VERBATIM
 )
+
+# =============================================================================
+# Font generation pipeline (LCD console)
+# =============================================================================
+
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/generated)
+
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/generated/font8x16.c
+    COMMAND ${Python3_EXECUTABLE} ${PPAP_ROOT}/tools/bdf2c.py
+            --input ${PPAP_ROOT}/third_party/fonts/8x16.bdf
+            --output ${CMAKE_BINARY_DIR}/generated/font8x16.c
+            --name font8x16 --width 8 --height 16
+    DEPENDS ${PPAP_ROOT}/third_party/fonts/8x16.bdf
+            ${PPAP_ROOT}/tools/bdf2c.py
+    COMMENT "Generating font8x16.c from 8x16.bdf"
+)
+
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/generated/font4x8.c
+    COMMAND ${Python3_EXECUTABLE} ${PPAP_ROOT}/tools/bdf2c.py
+            --input ${PPAP_ROOT}/third_party/fonts/4x6.bdf
+            --output ${CMAKE_BINARY_DIR}/generated/font4x8.c
+            --name font4x8 --width 4 --height 8
+    DEPENDS ${PPAP_ROOT}/third_party/fonts/4x6.bdf
+            ${PPAP_ROOT}/tools/bdf2c.py
+    COMMENT "Generating font4x8.c from 4x6.bdf"
+)
+
+add_custom_target(generate_fonts
+    DEPENDS ${CMAKE_BINARY_DIR}/generated/font8x16.c
+            ${CMAKE_BINARY_DIR}/generated/font4x8.c
+)
+add_dependencies(ppap_pico1calc generate_fonts)
+
+set_source_files_properties(
+    ${CMAKE_BINARY_DIR}/generated/font8x16.c
+    ${CMAKE_BINARY_DIR}/generated/font4x8.c
+    PROPERTIES GENERATED TRUE
+)
+target_sources(ppap_pico1calc PRIVATE
+    ${CMAKE_BINARY_DIR}/generated/font8x16.c
+    ${CMAKE_BINARY_DIR}/generated/font4x8.c
+)
+
+# =============================================================================
+# Romfs
+# =============================================================================
+
+ppap_generate_romfs(ppap_pico1calc
+    OVERLAY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/romfs)

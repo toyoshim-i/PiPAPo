@@ -61,9 +61,9 @@ echo "=== Building all ARM targets (production) ==="
 
 echo ""
 echo "=== ARM binary sizes (production) ==="
-arm-none-eabi-size build/arm_m/ppap_qemu_arm.elf \
-                   build/arm_m/ppap_pico1.elf \
-                   build/arm_m/ppap_pico1calc.elf 2>/dev/null || true
+arm-none-eabi-size build/qemu_arm/ppap_qemu_arm.elf \
+                   build/pico1/ppap_pico1.elf \
+                   build/pico1calc/ppap_pico1calc.elf 2>/dev/null || true
 
 echo ""
 echo "=== Building m68k target (production) ==="
@@ -72,7 +72,7 @@ echo "=== Building m68k target (production) ==="
 echo ""
 echo "=== m68k binary size (production) ==="
 "$PROJECT_DIR/tools/m68k-toolchain/bin/m68k-elf-size" \
-    build/m68k/ppap_qemu_m68k.elf 2>/dev/null || true
+    build/qemu_m68k/ppap_qemu_m68k.elf 2>/dev/null || true
 
 # ── QEMU on-target tests ──────────────────────────────────────────────────
 echo ""

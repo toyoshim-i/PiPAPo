@@ -1,15 +1,39 @@
+# CMakeLists.txt — Raspberry Pi Pico target (standalone build)
+#
+# Build:
+#   cmake -S src/target/pico1 -B build/pico1
+#   cmake --build build/pico1
+
+cmake_minimum_required(VERSION 3.13)
+
+set(PPAP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
+
+# Pico SDK must be set up before project()
+if(NOT DEFINED PICO_SDK_PATH AND NOT DEFINED ENV{PICO_SDK_PATH})
+    set(PICO_SDK_PATH "${PPAP_ROOT}/third_party/pico-sdk")
+endif()
+include(${PPAP_ROOT}/cmake/pico_sdk_import.cmake)
+
+project(ppap_pico1 C CXX ASM)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
+
+pico_sdk_init()
+
+option(PPAP_TESTS "Enable test suite" OFF)
+
+include(${PPAP_ROOT}/cmake/arm_m.cmake)
+
 add_executable(ppap_pico1
     ${KERNEL_COMMON_SOURCES}
-    ${CMAKE_SOURCE_DIR}/src/boot/stage1.S
+    ${PPAP_ROOT}/src/boot/stage1.S
     ${CMAKE_CURRENT_SOURCE_DIR}/target_pico1.c
-    ${CMAKE_SOURCE_DIR}/src/drivers/uart.c
-    ${CMAKE_SOURCE_DIR}/src/drivers/clock.c
+    ${PPAP_ROOT}/src/drivers/uart.c
+    ${PPAP_ROOT}/src/drivers/clock.c
 )
 
-target_include_directories(ppap_pico1 PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/src/kernel
-)
+ppap_arm_target_common(ppap_pico1)
+
 target_link_libraries(ppap_pico1 pico_base_headers hardware_regs)
 target_sources(ppap_pico1 PRIVATE $<TARGET_OBJECTS:bs2_default_library>)
 
@@ -19,5 +43,11 @@ target_link_options(ppap_pico1 PRIVATE
     -Wl,--gc-sections
 )
 
-# Produce ppap_pico1.bin, ppap_pico1.uf2 alongside ppap_pico1.elf
 pico_add_extra_outputs(ppap_pico1)
+
+# =============================================================================
+# Romfs
+# =============================================================================
+
+ppap_generate_romfs(ppap_pico1
+    OVERLAY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/romfs)
