@@ -676,6 +676,112 @@ static int dos_seek(uint32_t *regs, uint32_t usp)
     return 2;
 }
 
+/* ── _CHDIR ($FF3B) ─────────────────────────────────────────────────── *
+ *
+ * Stack: long path_ptr
+ * Changes the current working directory.  Returns 0 on success.
+ */
+static int dos_chdir(uint32_t *regs, uint32_t usp)
+{
+    uint32_t path_addr = ustack_u32(usp, 0);
+    const char *src = (const char *)(uintptr_t)path_addr;
+    char path[128];
+    if (h68k_translate_path(src, path, sizeof(path)) < 0) {
+        regs[0] = (uint32_t)h68k_errno(-ENAMETOOLONG);
+        advance_pc(regs);
+        return 2;
+    }
+    H68K_TRACE("_CHDIR(%s)", path);
+    long r = sys_chdir(path);
+    regs[0] = (uint32_t)h68k_errno(r);
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _CURDIR ($FF47) ────────────────────────────────────────────────── *
+ *
+ * Stack: word drive, long buf_ptr
+ * Returns the current directory for the specified drive (0=default).
+ * The buffer receives the path without drive letter or leading backslash
+ * (e.g. "DIR\SUBDIR"), NUL-terminated, max 64 bytes.
+ */
+static int dos_curdir(uint32_t *regs, uint32_t usp)
+{
+    uint16_t drive = ustack_u16(usp, 0);
+    uint32_t buf_addr = ustack_u32(usp, 2);
+    H68K_TRACE("_CURDIR(%u, %x)", (uint32_t)drive, buf_addr);
+    (void)drive;  /* single-drive system — ignore drive number */
+
+    char cwd[128];
+    long r = sys_getcwd(cwd, sizeof(cwd));
+    if (r < 0) {
+        regs[0] = (uint32_t)h68k_errno(r);
+        advance_pc(regs);
+        return 2;
+    }
+
+    /* Strip leading slash and convert / to \ for Human68k convention.
+     * Human68k expects the path without drive letter or leading backslash. */
+    char *dst = (char *)(uintptr_t)buf_addr;
+    const char *p = cwd;
+    if (*p == '/') p++;  /* skip leading / */
+    int i = 0;
+    while (*p && i < 63) {
+        dst[i++] = (*p == '/') ? '\\' : *p;
+        p++;
+    }
+    dst[i] = '\0';
+
+    regs[0] = 0;
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _CURDRV ($FF19) ────────────────────────────────────────────────── *
+ *
+ * No stack arguments.
+ * Returns the current drive number in d0 (0=A:, 1=B:, ...).
+ */
+static int dos_curdrv(uint32_t *regs)
+{
+    H68K_TRACE("_CURDRV");
+    regs[0] = 0;  /* always drive A: */
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _DUP ($FF45) ──────────────────────────────────────────────────── *
+ *
+ * Stack: word fileno
+ * Duplicates a file handle.  Returns new handle in d0.
+ */
+static int dos_dup(uint32_t *regs, uint32_t usp)
+{
+    int fd = (int)(int16_t)ustack_u16(usp, 0);
+    H68K_TRACE("_DUP(%u)", (uint32_t)fd);
+    /* Stub: return the same fd (no real dup in PPAP yet) */
+    regs[0] = (uint32_t)fd;
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _DUP2 ($FF46) ─────────────────────────────────────────────────── *
+ *
+ * Stack: word old_fileno, word new_fileno
+ * Duplicates old handle to new handle.  Returns new handle in d0.
+ */
+static int dos_dup2(uint32_t *regs, uint32_t usp)
+{
+    int old_fd = (int)(int16_t)ustack_u16(usp, 0);
+    int new_fd = (int)(int16_t)ustack_u16(usp, 2);
+    H68K_TRACE("_DUP2(%u, %u)", (uint32_t)old_fd, (uint32_t)new_fd);
+    /* Stub: return new_fd (no real dup2 in PPAP yet) */
+    (void)old_fd;
+    regs[0] = (uint32_t)new_fd;
+    advance_pc(regs);
+    return 2;
+}
+
 /* ── Dispatch ─────────────────────────────────────────────────────────── */
 
 int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
@@ -709,6 +815,10 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
         ret = dos_gets(regs, usp);
         break;
 
+    case 0x19:  /* _CURDRV */
+        ret = dos_curdrv(regs);
+        break;
+
     case 0x1B:  /* _FGETC */
         ret = dos_fgetc(regs, usp);
         break;
@@ -723,6 +833,10 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
 
     case 0x1E:  /* _FPUTS */
         ret = dos_fputs(regs, usp);
+        break;
+
+    case 0x3B:  /* _CHDIR */
+        ret = dos_chdir(regs, usp);
         break;
 
     case 0x3C:  /* _CREATE */
@@ -751,6 +865,18 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
 
     case 0x42:  /* _SEEK */
         ret = dos_seek(regs, usp);
+        break;
+
+    case 0x45:  /* _DUP */
+        ret = dos_dup(regs, usp);
+        break;
+
+    case 0x46:  /* _DUP2 */
+        ret = dos_dup2(regs, usp);
+        break;
+
+    case 0x47:  /* _CURDIR */
+        ret = dos_curdir(regs, usp);
         break;
 
     case 0x4A:  /* _SETBLOCK */
