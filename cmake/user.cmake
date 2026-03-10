@@ -388,10 +388,17 @@ function(ppap_generate_romfs target)
     if(ARG_OVERLAY_DIR)
         set(_overlay_args -D "OVERLAY_DIR=${ARG_OVERLAY_DIR}")
     endif()
+    if(PPAP_EXTRA_OVERLAY)
+        list(APPEND _overlay_args -D "EXTRA_OVERLAY_DIR=${PPAP_EXTRA_OVERLAY}")
+    endif()
 
     set(_overlay_deps "")
     if(ARG_OVERLAY_DIR AND EXISTS ${ARG_OVERLAY_DIR})
         file(GLOB_RECURSE _overlay_deps ${ARG_OVERLAY_DIR}/*)
+    endif()
+    if(PPAP_EXTRA_OVERLAY AND EXISTS ${PPAP_EXTRA_OVERLAY})
+        file(GLOB_RECURSE _extra_overlay_deps ${PPAP_EXTRA_OVERLAY}/*)
+        list(APPEND _overlay_deps ${_extra_overlay_deps})
     endif()
 
     # CMake list separator for -D arguments

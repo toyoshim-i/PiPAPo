@@ -14,7 +14,8 @@
 #   ETC_DIR       — base /etc directory
 #
 # Optional:
-#   OVERLAY_DIR   — target-specific overlay directory
+#   OVERLAY_DIR       — target-specific overlay directory
+#   EXTRA_OVERLAY_DIR — user-specified overlay (applied last, highest priority)
 
 # --- Clean and create directory structure ---
 file(REMOVE_RECURSE "${STAGING}")
@@ -86,5 +87,15 @@ if(DEFINED OVERLAY_DIR AND IS_DIRECTORY "${OVERLAY_DIR}")
         get_filename_component(_dir "${f}" DIRECTORY)
         file(MAKE_DIRECTORY "${STAGING}/${_dir}")
         file(COPY "${OVERLAY_DIR}/${f}" DESTINATION "${STAGING}/${_dir}")
+    endforeach()
+endif()
+
+# --- Apply user-specified extra overlay (highest priority) ---
+if(DEFINED EXTRA_OVERLAY_DIR AND IS_DIRECTORY "${EXTRA_OVERLAY_DIR}")
+    file(GLOB_RECURSE _extra_files RELATIVE "${EXTRA_OVERLAY_DIR}" "${EXTRA_OVERLAY_DIR}/*")
+    foreach(f IN LISTS _extra_files)
+        get_filename_component(_dir "${f}" DIRECTORY)
+        file(MAKE_DIRECTORY "${STAGING}/${_dir}")
+        file(COPY "${EXTRA_OVERLAY_DIR}/${f}" DESTINATION "${STAGING}/${_dir}")
     endforeach()
 endif()

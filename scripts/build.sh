@@ -7,8 +7,9 @@
 # TARGET is one of: pico1, pico1calc, qemu_arm, qemu_m68k
 #
 # Options:
-#   --test    Enable PPAP_TESTS (kernel integration tests + userland test suite)
-#   --clean   Remove build directory before building (full rebuild)
+#   --test              Enable PPAP_TESTS (kernel + userland test suite)
+#   --clean             Remove build directory before building (full rebuild)
+#   --overlay=<dir>     Extra overlay directory copied into romfs (highest priority)
 #
 # Examples:
 #   ./scripts/build.sh pico1              # build pico1
@@ -16,6 +17,7 @@
 #   ./scripts/build.sh --test qemu_arm    # build qemu_arm with tests
 #   ./scripts/build.sh --clean qemu_m68k  # clean rebuild m68k
 #   ./scripts/build.sh qemu_m68k          # build m68k QEMU target
+#   ./scripts/build.sh --overlay=~/my_x68k qemu_m68k  # add custom files to romfs
 
 set -euo pipefail
 
@@ -25,14 +27,16 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # ── Parse arguments ──────────────────────────────────────────────────────────
 TESTS=OFF
 CLEAN=0
+OVERLAY=""
 TARGET=""
 
 for arg in "$@"; do
     case "$arg" in
-        --test)   TESTS=ON ;;
-        --clean)  CLEAN=1 ;;
-        -*)       echo "Unknown option: $arg" >&2; exit 1 ;;
-        *)        TARGET="$arg" ;;
+        --test)       TESTS=ON ;;
+        --clean)      CLEAN=1 ;;
+        --overlay=*)  OVERLAY="${arg#--overlay=}" ;;
+        -*)           echo "Unknown option: $arg" >&2; exit 1 ;;
+        *)            TARGET="$arg" ;;
     esac
 done
 
@@ -85,6 +89,15 @@ case "$TARGET" in
         EXTRA_ARGS+=(-DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/cmake/toolchain_m68k.cmake")
         ;;
 esac
+
+if [[ -n "$OVERLAY" ]]; then
+    # Resolve to absolute path
+    OVERLAY="$(cd "$OVERLAY" 2>/dev/null && pwd)" || {
+        echo "[build] Error: overlay directory '$OVERLAY' not found" >&2
+        exit 1
+    }
+    EXTRA_ARGS+=(-DPPAP_EXTRA_OVERLAY="$OVERLAY")
+fi
 
 echo "[build] Building $CMAKE_TARGET (PPAP_TESTS=$TESTS)..."
 cmake "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}" \
