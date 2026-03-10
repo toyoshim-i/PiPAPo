@@ -19,7 +19,7 @@ volatile uint32_t m68k_switch_pending = 0;
  *
  * Called from boot.S fault handlers with:
  *   fault_type: 68000 vector number (2=bus, 3=addr, 4=illegal, 5=zerodiv,
- *               6=CHK, 7=TRAPV, 8=privilege)
+ *               6=CHK, 7=TRAPV, 8=privilege, 11=F-line)
  *   regs:       pointer to saved d0-d7/a0-a6 (60 bytes), followed by
  *               the 68000 exception frame (group 0: 14 bytes, group 1: 6 bytes)
  *
@@ -51,6 +51,7 @@ static const char *fault_name(int fault_type)
     case 6:  return "SIGFPE (CHK)";
     case 7:  return "SIGFPE (TRAPV)";
     case 8:  return "SIGSEGV (privilege violation)";
+    case 11: return "SIGILL (F-line)";
     default: return "SIG??? (unknown)";
     }
 }
@@ -59,7 +60,7 @@ static int fault_signal(int fault_type)
 {
     switch (fault_type) {
     case 2: case 3:  return SIGBUS;
-    case 4:          return SIGILL;
+    case 4: case 11: return SIGILL;
     case 5: case 6: case 7: return SIGFPE;
     case 8:          return SIGSEGV;
     default:         return SIGABRT;
@@ -69,7 +70,7 @@ static int fault_signal(int fault_type)
 /*
  * m68k_crash_handler — called from boot.S fault handlers
  *
- *   fault_type: 68000 vector number (2-8)
+ *   fault_type: 68000 vector number (2-8, 11)
  *   regs:       saved d0-d7/a0-a6 (60 bytes), followed by exception frame
  *
  * Prints a crash report.  For user processes, delivers the corresponding
@@ -136,4 +137,32 @@ int m68k_crash_handler(int fault_type, uint32_t *regs)
     klogf("  Killed (exit status %u)", (uint32_t)(128 + sig));
     sys_exit(128 + sig);
     return 1;
+}
+
+/*
+ * m68k_fline_dispatch — called from boot.S F-line handler (vector 11)
+ *
+ *   regs: saved d0-d7/a0-a6 (60 bytes), followed by group-1 exception
+ *         frame (SR + PC, 6 bytes).  The 16-bit F-line opcode is at
+ *         the faulting PC.
+ *
+ * If the current process is a Human68k process (subsys == SUBSYS_HUMAN68K),
+ * dispatches to the DOS call handler (stub for now — falls through to crash).
+ * Otherwise, crashes with SIGILL.
+ *
+ * Returns: 1 = process killed/handled, caller should reschedule
+ *          0 = kernel fault, caller should halt
+ */
+int m68k_fline_dispatch(uint32_t *regs)
+{
+    pcb_t *p = current;
+
+    /* Human68k process: dispatch DOS call (Step 9 replaces this) */
+    if (p && p->subsys == SUBSYS_HUMAN68K) {
+        /* TODO: extract opcode from PC, dispatch to human68k_bridge */
+        /* For now, fall through to crash — no DOS calls implemented yet */
+    }
+
+    /* Non-Human68k process or unhandled: crash with SIGILL */
+    return m68k_crash_handler(11, regs);
 }

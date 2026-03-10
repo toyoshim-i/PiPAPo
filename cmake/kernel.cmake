@@ -59,6 +59,7 @@ set(KERNEL_SHARED_SOURCES
     ${_KS_ROOT}/src/kernel/fs/fstab.c
     ${_KS_ROOT}/src/kernel/exec/elf.c
     ${_KS_ROOT}/src/kernel/exec/exec.c
+    ${_KS_ROOT}/src/kernel/exec/exec_x68k.c
 )
 
 # ── ARM-only kernel modules (XIP flash, MPU) ────────────────────────────────

@@ -49,7 +49,7 @@ _vectors:
     .long m68k_priv_handler        | 8:  Privilege Violation (group 1, 6-byte frame)
     .long Default_Handler          | 9:  Trace
     .long Default_Handler          | 10: A-line emulator
-    .long Default_Handler          | 11: F-line emulator
+    .long m68k_fline_handler       | 11: F-line emulator (Human68k DOS calls)
 
     | --- Exception vectors 12-23: Reserved ---
     .rept 12
@@ -259,6 +259,24 @@ m68k_priv_handler:
 .Lpriv_halt:
     stop    #0x2700
     bra.s   .Lpriv_halt
+
+| --- F-line emulator (group 1 — 6-byte exception frame) ---
+| Human68k DOS calls are encoded as F-line instructions ($FFxx).
+| Saves all registers, then calls m68k_fline_dispatch() in C which
+| checks current->subsys to decide: Human68k → DOS call, else → crash.
+    .global m68k_fline_handler
+m68k_fline_handler:
+    movem.l %d0-%d7/%a0-%a6,%sp@-   | save all regs (60 bytes)
+    move.l  %sp,%sp@-               | arg1: register frame pointer
+    jsr     m68k_fline_dispatch
+    addq.l  #4,%sp
+    tst.l   %d0
+    beq.s   .Lfline_halt
+    lea.l   %sp@(66),%sp            | discard regs + group-1 frame (60+6)
+    jmp     m68k_schedule_next
+.Lfline_halt:
+    stop    #0x2700
+    bra.s   .Lfline_halt
 
 | --- Schedule next process after killing a faulting process ---
 | The old process is dead.  Switch to the kernel stack, pick the next

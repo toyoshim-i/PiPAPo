@@ -18,6 +18,7 @@
 
 #include "exec.h"
 #include "elf.h"
+#include "exec_x68k.h"
 #include "kernel/vfs/vfs.h"
 #include "kernel/mm/page.h"
 #include "kernel/signal/signal.h"
@@ -185,8 +186,17 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
         return -(int)ENOEXEC;
     }
 
-    /* ── 2. Validate the ELF header ────────────────────────────────────── */
+    /* ── 2. Detect binary format ─────────────────────────────────────── */
     const uint8_t *file_base = (const uint8_t *)vn->xip_addr;
+    uint32_t file_size = vn->size;
+
+    /* Try Human68k X-format ("HU" magic) before ELF */
+    if (x68k_detect(file_base, file_size)) {
+        vnode_put(vn);
+        return exec_x68k(p, file_base, file_size, path, argv);
+    }
+
+    /* ── 2b. Validate the ELF header ───────────────────────────────────── */
     const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)file_base;
 
     err = elf_validate(ehdr);
@@ -197,7 +207,6 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
 
     /* ── 3. Extract PT_LOAD segments ───────────────────────────────────── */
     elf32_phdr_t segs[MAX_LOAD_SEGS];
-    uint32_t file_size = vn->size;
     int nseg = elf_load_segments(ehdr, file_base, segs, MAX_LOAD_SEGS,
                                  file_size);
     if (nseg <= 0) {

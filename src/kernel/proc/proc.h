@@ -46,6 +46,12 @@ typedef void (*sighandler_t)(int);
 #error "Unsupported architecture — define PCB_SP_OFFSET"
 #endif
 
+/* Subsystem tags — identifies which OS personality a process uses.
+ * The F-line handler checks this to dispatch Human68k DOS calls
+ * vs. crashing non-Human68k processes that hit F-line opcodes. */
+#define SUBSYS_PPAP       0   /* native PPAP ELF binary (default)    */
+#define SUBSYS_HUMAN68K   1   /* Human68k X-format binary             */
+
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
 /* pid_t: POSIX process ID type.  Not provided by arm-none-eabi without
@@ -130,6 +136,9 @@ typedef struct pcb {
 
     /* ── m68k syscall restart (per-process, not global) ─────────── */
     uint8_t      svc_needs_restart;  /* set by blocking syscalls            */
+
+    /* ── Subsystem tag ───────────────────────────────────────────── */
+    uint8_t      subsys;             /* SUBSYS_PPAP, SUBSYS_HUMAN68K, etc.  */
 
     /* ── Thread-local storage (TLS) ──────────────────────────── */
     uint32_t     tp_value;           /* set/get_thread_area value           */
