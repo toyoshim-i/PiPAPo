@@ -72,6 +72,11 @@ uint32_t page_free_count(void);
  * Used by _MALLOC to report accurate availability. */
 uint32_t page_max_contiguous(void);
 
+/* Allocate n_pages contiguous pages.  Returns a pointer to the first page,
+ * or NULL if no contiguous run of that size is available.
+ * Uses a bitmap scan — O(page_count), safe for large pools. */
+uint8_t *page_alloc_contiguous(uint32_t n_pages);
+
 /* Runtime page count — set by mm_init() after probing available RAM.
  * Always <= PAGE_COUNT_MAX.  Use this (not PAGE_COUNT_MAX) for runtime
  * decisions such as total-memory reporting. */

@@ -50,7 +50,7 @@ set(USER_TESTS
     test_exec test_vfork test_fault test_pipe test_brk
     test_fd test_signal test_poll test_sleep_intr test_orphan
     test_id test_fs test_rw test_time test_iov test_stat test_tmpfs
-    test_x68k
+    test_x68k test_h68k_dos
     runtests
 )
 
@@ -287,6 +287,9 @@ function(ppap_r68k_program name source)
         DEPENDS ${_elf}
         COMMENT "Generating ${name}.r (r68k flat binary)"
     )
+
+    # Track output for romfs integration
+    set_property(GLOBAL APPEND PROPERTY PPAP_R68K_BINS ${_bin})
 endfunction()
 
 # _ppap_build_user_programs()  [internal]
@@ -332,6 +335,15 @@ function(_ppap_build_user_programs)
                 EXTRA_CFLAGS -I${_tests_dir})
             list(APPEND _all_elfs ${PPAP_SHARED_BUILD}/${tst}.elf)
         endforeach()
+    endif()
+
+    # --- R68K test programs (Human68k DOS call tests) ---
+    if(PPAP_TESTS AND PPAP_ARCH STREQUAL "m68k")
+        set(_r68k_dir ${PPAP_ROOT}/tests/r68k)
+        ppap_r68k_program(test_dos_basic ${_r68k_dir}/test_dos_basic.S)
+        ppap_r68k_program(test_dos_mem   ${_r68k_dir}/test_dos_mem.S)
+        ppap_r68k_program(test_dos_file  ${_r68k_dir}/test_dos_file.S)
+        ppap_r68k_program(test_dos_dir   ${_r68k_dir}/test_dos_dir.S)
     endif()
 
     set(PPAP_USER_ELFS ${_all_elfs} PARENT_SCOPE)
@@ -456,6 +468,20 @@ function(ppap_generate_romfs target)
         list(APPEND _overlay_deps ${_extra_overlay_deps})
     endif()
 
+    # R68K binaries (Human68k .r programs)
+    get_property(_r68k_bins GLOBAL PROPERTY PPAP_R68K_BINS)
+    set(_r68k_copy_cmds "")
+    if(_r68k_bins)
+        list(APPEND _r68k_copy_cmds
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                    ${_romfs_staging}/subsys/human68k)
+        foreach(_rbin IN LISTS _r68k_bins)
+            list(APPEND _r68k_copy_cmds
+                COMMAND ${CMAKE_COMMAND} -E copy ${_rbin}
+                        ${_romfs_staging}/subsys/human68k/)
+        endforeach()
+    endif()
+
     # CMake list separator for -D arguments
     string(REPLACE ";" "\\;" _user_elfs_escaped "${PPAP_USER_ELFS}")
     string(REPLACE ";" "\\;" _bb_applets_escaped "${BB_APPLETS}")
@@ -476,6 +502,7 @@ function(ppap_generate_romfs target)
                 -D "ETC_DIR=${PPAP_ROOT}/src/etc"
                 ${_overlay_args}
                 -P ${PPAP_ROOT}/cmake/stage_romfs.cmake
+        ${_r68k_copy_cmds}
         COMMAND ${PPAP_SHARED_BUILD}/mkromfs ${_mkromfs_flags}
                 ${_romfs_staging} ${_romfs_bin}
         DEPENDS ${PPAP_SHARED_BUILD}/mkromfs
@@ -485,6 +512,7 @@ function(ppap_generate_romfs target)
                 ${PPAP_ROOT}/src/etc/fstab
                 ${PPAP_ROOT}/src/etc/inittab
                 ${_overlay_deps}
+                ${_r68k_bins}
                 ${PPAP_ROOT}/cmake/stage_romfs.cmake
         COMMENT "Generating romfs for ${target}"
     )

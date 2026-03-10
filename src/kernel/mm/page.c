@@ -208,24 +208,37 @@ uint32_t page_free_count(void)
     return count;
 }
 
+/* ── Bitmap helpers for contiguous allocation ────────────────────────────── */
+
+/* Build a bitmap of free pages: bit i set = page i is free.
+ * Must be called with SPIN_PAGE held. */
+static void build_free_bitmap(uint32_t *bmap, uint32_t n_words)
+{
+    for (uint32_t w = 0; w < n_words; w++)
+        bmap[w] = 0;
+    for (uint32_t i = 0; i < free_top; i++) {
+        uint32_t idx = ((uint32_t)(uintptr_t)free_stack[i] - PAGE_POOL_BASE)
+                       / PAGE_SIZE;
+        if (idx < page_count)
+            bmap[idx / 32] |= (1u << (idx % 32));
+    }
+}
+
+static int bmap_test(const uint32_t *bmap, uint32_t idx)
+{
+    return (bmap[idx / 32] >> (idx % 32)) & 1;
+}
+
 uint32_t page_max_contiguous(void)
 {
     uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
+    uint32_t n_words = (page_count + 31) / 32;
+    uint32_t bmap[n_words];
+    build_free_bitmap(bmap, n_words);
 
-    /* Build a bitmap of which pages are free */
-    uint32_t n = page_count;
     uint32_t best = 0, run = 0;
-
-    for (uint32_t i = 0; i < n; i++) {
-        uint32_t paddr = PAGE_POOL_BASE + i * PAGE_SIZE;
-        int is_free = 0;
-        for (uint32_t j = 0; j < free_top; j++) {
-            if ((uint32_t)(uintptr_t)free_stack[j] == paddr) {
-                is_free = 1;
-                break;
-            }
-        }
-        if (is_free) {
+    for (uint32_t i = 0; i < page_count; i++) {
+        if (bmap_test(bmap, i)) {
             run++;
             if (run > best)
                 best = run;
@@ -236,4 +249,64 @@ uint32_t page_max_contiguous(void)
 
     spin_unlock_irqrestore(SPIN_PAGE, saved);
     return best;
+}
+
+/* Allocate n_pages contiguous pages.  Uses a bitmap scan to find a run,
+ * then removes the pages from the free stack. O(page_count). */
+uint8_t *page_alloc_contiguous(uint32_t n_pages)
+{
+    if (n_pages == 0)
+        return NULL;
+    if (n_pages == 1)
+        return (uint8_t *)page_alloc();
+
+    uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
+
+    /* Build bitmap of free pages */
+    uint32_t n_words = (page_count + 31) / 32;
+    uint32_t bmap[n_words];
+    build_free_bitmap(bmap, n_words);
+
+    /* Scan for a contiguous run of n_pages free pages */
+    uint32_t run_start = 0, run_len = 0;
+    uint32_t found_start = 0;
+    int found = 0;
+
+    for (uint32_t i = 0; i < page_count; i++) {
+        if (bmap_test(bmap, i)) {
+            if (run_len == 0)
+                run_start = i;
+            run_len++;
+            if (run_len >= n_pages) {
+                found_start = run_start;
+                found = 1;
+                break;
+            }
+        } else {
+            run_len = 0;
+        }
+    }
+
+    if (!found) {
+        spin_unlock_irqrestore(SPIN_PAGE, saved);
+        return NULL;
+    }
+
+    /* Remove the found pages from the free stack.
+     * Mark which pages to remove, then compact the stack. */
+    uint32_t base_addr = PAGE_POOL_BASE + found_start * PAGE_SIZE;
+    uint32_t end_addr  = base_addr + n_pages * PAGE_SIZE;
+    uint32_t new_top = 0;
+    for (uint32_t i = 0; i < free_top; i++) {
+        uint32_t pa = (uint32_t)(uintptr_t)free_stack[i];
+        if (pa >= base_addr && pa < end_addr) {
+            /* This page is being allocated — skip it */
+        } else {
+            free_stack[new_top++] = free_stack[i];
+        }
+    }
+    free_top = new_top;
+
+    spin_unlock_irqrestore(SPIN_PAGE, saved);
+    return (uint8_t *)(uintptr_t)base_addr;
 }

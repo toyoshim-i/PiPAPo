@@ -32,26 +32,7 @@
 
 uint8_t *alloc_contiguous(uint32_t n_pages)
 {
-    if (n_pages == 1)
-        return (uint8_t *)page_alloc();
-
-    for (uint32_t base = PAGE_POOL_BASE;
-         base + n_pages * PAGE_SIZE <= PAGE_POOL_BASE + PAGE_POOL_SIZE;
-         base += PAGE_SIZE) {
-        uint32_t k;
-        for (k = 0; k < n_pages; k++) {
-            void *pg = page_alloc_at(
-                (void *)(uintptr_t)(base + k * PAGE_SIZE));
-            if (!pg) {
-                for (uint32_t l = 0; l < k; l++)
-                    page_free((void *)(uintptr_t)(base + l * PAGE_SIZE));
-                break;
-            }
-        }
-        if (k == n_pages)
-            return (uint8_t *)(uintptr_t)base;
-    }
-    return NULL;
+    return page_alloc_contiguous(n_pages);
 }
 
 /* ── Relocation helper: apply .rel.dyn / .rela.dyn ─────────────────────── */

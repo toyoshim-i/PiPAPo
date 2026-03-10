@@ -1988,14 +1988,15 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
 /* ── Subsystem ops (layering hooks called by the kernel) ──────────── */
 
 /* Static pool of per-process Human68k state.
- * Indexed by pid (max PROC_MAX).  Zero-initialized = default vectors. */
+ * Indexed by proc_table slot (0..PROC_MAX-1).  Zero-initialized. */
 static h68k_proc_t h68k_pool[PROC_MAX];
 
 /* on_init — called when a Human68k binary is exec'd */
 static void h68k_on_init(struct pcb *p)
 {
     H68K_TRACE("on_init pid=%u", (uint32_t)p->pid);
-    h68k_proc_t *h = &h68k_pool[p->pid];
+    uint32_t slot = (uint32_t)(p - proc_table);
+    h68k_proc_t *h = &h68k_pool[slot];
     h->exitvc = 0;
     h->ctrlvc = 0;
     h->errjvc = 0;
