@@ -1,79 +1,13 @@
 /*
  * test_h68k_path.c — Unit tests for Human68k path translation and error mapping
  *
- * Tests h68k_translate_path() and h68k_errno() which are static functions
- * in human68k_bridge.c.  We extract them by including the source with
- * stubs for kernel dependencies.
+ * Tests h68k_translate_path() and h68k_errno() from h68k_util.c.
  */
 
 #include "test_framework.h"
-#include <string.h>
-#include <stdint.h>
-
-/* ── Minimal stubs to compile the static helpers from bridge.c ─────── */
-
-/* We only need the two static functions.  Replicate them here to avoid
- * pulling in the entire kernel dependency tree. */
-
+#include "kernel/subsys/h68k_util.h"
 #include "kernel/errno.h"
-
-static int h68k_translate_path(const char *src, char *dst, int dstsize)
-{
-    int si = 0, di = 0;
-
-    /* Drive letter: "X:" */
-    if (src[0] && src[1] == ':') {
-        char drive = src[0];
-        if (drive >= 'A' && drive <= 'Z')
-            drive += ('a' - 'A');
-        if (di + 3 > dstsize) return -1;
-        dst[di++] = '/';
-        dst[di++] = drive;
-        dst[di++] = '/';
-        si = 2;
-        /* Skip leading backslash after drive letter */
-        if (src[si] == '\\' || src[si] == '/')
-            si++;
-    } else if (src[0] == '\\' || src[0] == '/') {
-        /* Absolute path without drive letter */
-        if (di + 1 > dstsize) return -1;
-        dst[di++] = '/';
-        si = 1;
-    }
-    /* else: relative path — no prefix */
-
-    /* Copy rest, converting backslash to forward slash */
-    while (src[si]) {
-        if (di + 1 >= dstsize) return -1;
-        dst[di++] = (src[si] == '\\') ? '/' : src[si];
-        si++;
-    }
-    dst[di] = '\0';
-    return di;
-}
-
-static int32_t h68k_errno(long ppap_err)
-{
-    if (ppap_err >= 0)
-        return (int32_t)ppap_err;
-
-    switch ((int)(-ppap_err)) {
-    case ENOENT:     return -2;   /* File not found */
-    case ENOTDIR:    return -3;   /* Directory not found */
-    case EMFILE:     return -4;   /* Too many open files */
-    case EISDIR:     return -5;   /* Is a directory */
-    case EBADF:      return -6;   /* Invalid handle */
-    case ENOMEM:     return -8;   /* Out of memory */
-    case EACCES:     return -13;  /* Access denied */
-    case EROFS:      return -13;  /* Read-only → access denied */
-    case EINVAL:     return -22;  /* Invalid data */
-    case ENOSPC:     return -23;  /* Disk full */
-    case EEXIST:     return -80;  /* File exists */
-    case ENOTEMPTY:  return -21;  /* Directory not empty */
-    case ENOSYS:     return -1;   /* Invalid function */
-    default:         return -1;   /* Generic error */
-    }
-}
+#include <string.h>
 
 /* ── Path translation tests ──────────────────────────────────────────── */
 
