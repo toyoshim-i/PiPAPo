@@ -9,6 +9,7 @@
 #include "exec.h"
 #include "kernel/mm/page.h"
 #include "kernel/signal/signal.h"
+#include "kernel/subsys/subsys.h"
 #include "kernel/errno.h"
 #include <string.h>
 
@@ -309,8 +310,13 @@ int exec_x68k(pcb_t *p, const uint8_t *file, uint32_t size,
         sw[12] = (uint32_t)(uintptr_t)text_dst;            /* a4 = base+0x100 */
     }
 
-    /* ── 8. Tag as Human68k process ────────────────────────────────────── */
+    /* ── 8. Tag as Human68k process and initialize subsystem state ──────── */
     p->subsys = SUBSYS_HUMAN68K;
+    {
+        const subsys_ops_t *ops = subsys_ops_table[SUBSYS_HUMAN68K];
+        if (ops && ops->on_init)
+            ops->on_init(p);
+    }
 
     /* ── 9. Process metadata ───────────────────────────────────────────── */
     {

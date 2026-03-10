@@ -60,6 +60,7 @@ set(KERNEL_SHARED_SOURCES
     ${_KS_ROOT}/src/kernel/exec/elf.c
     ${_KS_ROOT}/src/kernel/exec/exec.c
     ${_KS_ROOT}/src/kernel/exec/exec_x68k.c
+    ${_KS_ROOT}/src/kernel/subsys/subsys.c
     ${_KS_ROOT}/src/kernel/subsys/human68k_bridge.c
 )
 

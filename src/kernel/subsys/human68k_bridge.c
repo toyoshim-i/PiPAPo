@@ -10,6 +10,7 @@
 #include "kernel/proc/proc.h"
 #include "kernel/mm/page.h"
 #include "kernel/syscall/syscall.h"
+#include "kernel/klog.h"
 #include "kernel/errno.h"
 #include <stddef.h>
 
@@ -290,6 +291,89 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
         return dos_mfree(regs, usp);
 
     default:
-        return -1;  /* unhandled */
+        klogf("[human68k] unimplemented DOS call $FF%x\n", (uint32_t)func);
+        regs[0] = (uint32_t)(-(int32_t)ENOSYS);
+        advance_pc(regs);
+        return 2;
+    }
+}
+
+/* ── Subsystem ops (layering hooks called by the kernel) ──────────── */
+
+/* Static pool of per-process Human68k state.
+ * Indexed by pid (max PROC_MAX).  Zero-initialized = default vectors. */
+static h68k_proc_t h68k_pool[PROC_MAX];
+
+/* on_init — called when a Human68k binary is exec'd */
+static void h68k_on_init(struct pcb *p)
+{
+    h68k_proc_t *h = &h68k_pool[p->pid];
+    h->exitvc = 0;   /* default: no-op (normal exit proceeds)      */
+    h->ctrlvc = 0;   /* default: _EXIT(-1) on Ctrl+C               */
+    h->errjvc = 0;   /* default: _EXIT(-1) on error abort           */
+    p->subsys_data = h;
+}
+
+/* on_crash — handle faults for Human68k processes (_ERRJVC) */
+static int h68k_on_crash(struct pcb *p, uint32_t *regs, uint16_t *exc,
+                          int is_group0)
+{
+    h68k_proc_t *h = (h68k_proc_t *)p->subsys_data;
+    if (!h)
+        return 0;
+
+    if (h->errjvc) {
+        klogf("  _ERRJVC: jumping to %x", h->errjvc);
+        exc[is_group0 ? 5 : 1] = (uint16_t)(h->errjvc >> 16);
+        exc[is_group0 ? 6 : 2] = (uint16_t)(h->errjvc & 0xFFFF);
+        return 2;  /* return to (redirected) user mode */
+    }
+
+    klogf("  _ERRJVC default: _EXIT(-1)");
+    sys_exit(-1);
+    return 1;
+}
+
+/* on_signal — handle SIGINT for Human68k processes (_CTRLVC) */
+static int h68k_on_signal(struct pcb *p, int sig, uint32_t *regs)
+{
+    /* Only intercept SIGINT (Ctrl+C) */
+    if (sig != 2)  /* SIGINT = 2 */
+        return 0;
+
+    h68k_proc_t *h = (h68k_proc_t *)p->subsys_data;
+    if (!h)
+        return 0;
+
+    if (h->ctrlvc) {
+        /* Rewrite exception frame PC to _CTRLVC handler */
+        uint8_t *frame = (uint8_t *)regs;
+        *(uint32_t *)(frame + 62) = h->ctrlvc;
+        return 1;  /* handled */
+    }
+
+    sys_exit(-1);
+    return 1;  /* handled (exited) */
+}
+
+const subsys_ops_t human68k_subsys_ops = {
+    .on_crash  = h68k_on_crash,
+    .on_signal = h68k_on_signal,
+    .on_init   = h68k_on_init,
+};
+
+/* ── IOCS dispatch (TRAP #15) ────────────────────────────────────────── */
+
+int human68k_iocs_dispatch(uint32_t *regs)
+{
+    uint8_t func = (uint8_t)regs[0];
+
+    switch (func) {
+    /* TODO: implement IOCS calls as needed */
+
+    default:
+        klogf("[human68k] unimplemented IOCS call $%x\n", (uint32_t)func);
+        regs[0] = (uint32_t)(-1);  /* error return */
+        return 2;
     }
 }

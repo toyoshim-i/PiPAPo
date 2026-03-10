@@ -144,6 +144,7 @@ typedef struct pcb {
 
     /* ── Subsystem tag ───────────────────────────────────────────── */
     uint8_t      subsys;             /* SUBSYS_PPAP, SUBSYS_HUMAN68K, etc.  */
+    void        *subsys_data;        /* opaque per-process subsystem state  */
 
     /* ── Thread-local storage (TLS) ──────────────────────────── */
     uint32_t     tp_value;           /* set/get_thread_area value           */

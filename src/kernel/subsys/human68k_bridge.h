@@ -9,6 +9,20 @@
 #define PPAP_SUBSYS_HUMAN68K_BRIDGE_H
 
 #include <stdint.h>
+#include "subsys.h"
+
+/*
+ * Per-process Human68k state (stored in pcb_t::subsys_data).
+ * Contains DOS vectors and other personality-specific data.
+ */
+typedef struct {
+    uint32_t exitvc;    /* _EXITVC ($FFF0): exit handler       */
+    uint32_t ctrlvc;    /* _CTRLVC ($FFF1): Ctrl+C handler     */
+    uint32_t errjvc;    /* _ERRJVC ($FFF2): error abort handler*/
+} h68k_proc_t;
+
+/* Subsystem ops for Human68k — registered into subsys_ops_table[] */
+extern const subsys_ops_t human68k_subsys_ops;
 
 /*
  * human68k_dos_dispatch — handle one Human68k DOS call.
@@ -23,5 +37,17 @@
  *          -1 = unhandled DOS call (caller should crash/SIGILL)
  */
 int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode);
+
+/*
+ * human68k_iocs_dispatch — handle one Human68k IOCS call (TRAP #15).
+ *
+ * @regs:   saved register frame (d0-d7 at [0..7], a0-a6 at [8..14],
+ *          then SR(2)+PC(4) at byte offset 60).
+ *
+ * The IOCS call number is in d0 (regs[0]).
+ *
+ * Returns:  2 = IOCS call handled (or stubbed), return to user mode
+ */
+int human68k_iocs_dispatch(uint32_t *regs);
 
 #endif /* PPAP_SUBSYS_HUMAN68K_BRIDGE_H */

@@ -69,9 +69,10 @@ _vectors:
     | --- Exception vectors 32-47: TRAP #0-#15 ---
     .long m68k_trap0_handler       | 32: TRAP #0 (PPAP syscall)
     .long m68k_trap1_handler       | 33: TRAP #1 (cooperative yield)
-    .rept 14
-    .long Default_Handler          | 34-47: TRAP #2 - TRAP #15
+    .rept 13
+    .long Default_Handler          | 34-46: TRAP #2 - TRAP #14
     .endr
+    .long m68k_trap15_handler      | 47: TRAP #15 (Human68k IOCS)
 
     | --- Exception vectors 48-63: Reserved ---
     .rept 16
@@ -291,6 +292,20 @@ m68k_fline_handler:
 .Lfline_halt:
     stop    #0x2700
     bra.s   .Lfline_halt
+
+| --- TRAP #15 — Human68k IOCS call (group 1 — 6-byte exception frame) ---
+| IOCS call number is in d0.  Saves all registers, calls
+| human68k_iocs_dispatch(regs) in C.  Always returns 2 (handled).
+    .global m68k_trap15_handler
+m68k_trap15_handler:
+    movem.l %d0-%d7/%a0-%a6,%sp@-   | save all regs (60 bytes)
+    move.l  %sp,%d0
+    move.l  %d0,%sp@-               | arg1: register frame pointer
+    jsr     human68k_iocs_dispatch
+    addq.l  #4,%sp                  | clean up 1 arg
+    | Always returns 2 — restore registers and return to user mode
+    movem.l %sp@+,%d0-%d7/%a0-%a6   | restore all regs (60 bytes)
+    rte                              | return (SR+PC on stack)
 
 | --- Schedule next process after killing a faulting process ---
 | The old process is dead.  Switch to the kernel stack, pick the next

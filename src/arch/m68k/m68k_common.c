@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include "../kernel/proc/proc.h"
 #include "../kernel/klog.h"
+#include "../kernel/subsys/subsys.h"
 #include "../kernel/subsys/human68k_bridge.h"
 
 /* Context switch pending flag.
@@ -121,6 +122,18 @@ int m68k_crash_handler(int fault_type, uint32_t *regs)
     if (!p || p->pid == 0) {
         klogf("  Kernel fault — halting.");
         return 0;
+    }
+
+    /* Subsystem crash hook — lets personality layers (e.g. Human68k _ERRJVC)
+     * handle faults before the default POSIX signal path. */
+    {
+        const subsys_ops_t *ops = p->subsys < SUBSYS_MAX
+                                  ? subsys_ops_table[p->subsys] : 0;
+        if (ops && ops->on_crash) {
+            int rc = ops->on_crash(p, regs, exc, is_group0);
+            if (rc)
+                return rc;
+        }
     }
 
     /* Check if the process has a signal handler installed.

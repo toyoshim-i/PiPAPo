@@ -25,6 +25,7 @@
 #include "../proc/proc.h"
 #include "../proc/sched.h"
 #include "../syscall/syscall.h"
+#include "../subsys/subsys.h"
 #include "../errno.h"
 #include <stddef.h>
 
@@ -115,6 +116,15 @@ void signal_check(uint32_t *regs)
     if (handler == SIG_DFL) {
         if (sig == SIGCHLD)
             return;
+        /* Subsystem signal hook — lets personality layers (e.g. Human68k
+         * _CTRLVC) handle signals before the default termination. */
+        {
+            const subsys_ops_t *ops = current->subsys < SUBSYS_MAX
+                                      ? subsys_ops_table[current->subsys] : 0;
+            if (ops && ops->on_signal &&
+                ops->on_signal(current, sig, regs))
+                return;  /* subsystem handled it */
+        }
         sys_exit(128 + sig);
         return;
     }
