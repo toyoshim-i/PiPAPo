@@ -65,3 +65,12 @@ add_executable(test_h68k_path
 )
 target_include_directories(test_h68k_path PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME h68k_path COMMAND test_h68k_path)
+
+# ── test_ecpu_z80 ─────────────────────────────────────────────────────────
+# Z80 eCPU core — pure C interpreter, no hardware dependencies.
+add_executable(test_ecpu_z80
+    ${SRC}/kernel/ecpu/ecpu_z80.c
+    test_ecpu_z80.c
+)
+target_include_directories(test_ecpu_z80 PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME ecpu_z80 COMMAND test_ecpu_z80)
