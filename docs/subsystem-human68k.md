@@ -821,15 +821,15 @@ provide stubs for commonly used IOCS calls:
 
 | IOCS Call | d0 Value | Function | Status |
 |---|---|---|---|
-| `_B_KEYINP` | $00 | Wait for key input | ✅ `sys_read(0, &ch, 1)` |
+| `_B_KEYINP` | $00 | Wait for key input | ✅ `h68k_keyinp()` |
 | `_B_KEYSNS` | $04 | Key sense (non-blocking) | ✅ returns 0 |
 | `_SKEY_MOD` | $0E | Shift key status | ✅ returns 0 |
 | `_B_UP` | $19 | Cursor up | ✅ ANSI `ESC[A` |
 | `_B_DOWN` | $1A | Cursor down | ✅ ANSI `ESC[B` |
 | `_B_RIGHT` | $1B | Cursor right | ✅ ANSI `ESC[C` |
 | `_B_LEFT` | $1C | Cursor left | ✅ ANSI `ESC[D` |
-| `_B_PUTC` | $20 | Output character | ✅ `sys_write(1, &ch, 1)` |
-| `_B_PRINT` | $21 | Print string | ✅ `sys_write(1, str, len)` |
+| `_B_PUTC` | $20 | Output character | ✅ `h68k_putc()` |
+| `_B_PRINT` | $21 | Print string | ✅ `h68k_print()` |
 | `_B_COLOR` | $22 | Set text color | ✅ stub (returns 0) |
 | `_B_LOCATE` | $23 | Set cursor position | ✅ stub (returns 0) |
 | `_B_CLRST` | $2A | Clear screen | ✅ ANSI `ESC[nJ` |
@@ -840,6 +840,13 @@ provide stubs for commonly used IOCS calls:
 | Others | — | — | returns -1 (logged when H68K_DEBUG) |
 
 **15 IOCS calls implemented.**
+
+**Layering:** IOCS is the base (low-level) I/O layer. Three internal
+primitives — `h68k_putc()`, `h68k_print()`, `h68k_keyinp()` — provide
+the core console I/O. Both IOCS dispatch handlers and DOS call handlers
+delegate to these primitives, ensuring that DOS calls are built on top
+of IOCS-level operations rather than duplicating `sys_read`/`sys_write`
+calls independently.
 
 On the native m68k path (QEMU), the TRAP #15 vector is hooked
 to route to these stubs. On the eCPU path, the emulator intercepts
@@ -1350,11 +1357,11 @@ int human68k_dos_call(h68k_ctx_t *ctx, uint16_t opcode, uint32_t usp) {
 
 **Status:** Complete.
 
-- `_PUTCHAR` ($FF02), `_COMOUT` ($FF04) — character output
-- `_GETCHAR` ($FF01) — character input with echo
-- `_COMINP` ($FF03) — raw character input (no echo)
-- `_PRINT` ($FF09) — string output
-- `_GETS` ($FF0A) — line-buffered input
+- `_PUTCHAR` ($FF02), `_COMOUT` ($FF04) — character output (via `h68k_putc`)
+- `_GETCHAR` ($FF01) — character input with echo (via `h68k_keyinp` + `h68k_putc`)
+- `_COMINP` ($FF03) — raw character input (via `h68k_keyinp`)
+- `_PRINT` ($FF09) — string output (via `h68k_print`)
+- `_GETS` ($FF0A) — line-buffered input (via `h68k_keyinp` + `h68k_putc`)
 - `_FGETC` ($FF1B), `_FGETS` ($FF1C) — per-handle input
 - `_FPUTC` ($FF1D), `_FPUTS` ($FF1E) — per-handle output
 - `_MOVE` ($FF05) — character output with cursor advance
@@ -1435,6 +1442,20 @@ and error code mapping.
 - `_DATEGET` ($5A) — BCD date (fixed 2026-01-01)
 - `_TIMEGET` ($5B) — BCD time (fixed 00:00:00)
 - `_ONTIME` ($7F) — real uptime from scheduler tick counter (100 Hz)
+
+### Phase 8 — IOCS-as-Base-Layer Refactor ✅
+
+**Status:** Complete.
+
+- Extracted IOCS-level primitives: `h68k_putc()`, `h68k_print()`,
+  `h68k_keyinp()` as the low-level I/O building blocks
+- DOS call handlers (`_PUTCHAR`, `_GETCHAR`, `_COMINP`, `_PRINT`,
+  `_GETS`, `_MOVE`, `_INPOUT`, `_KFLUSH`, `_CONCTRL`) now delegate
+  to IOCS primitives instead of calling `sys_read`/`sys_write` directly
+- IOCS dispatch handlers (`_B_KEYINP`, `_B_PUTC`, `_B_PRINT`) also
+  use the same primitives
+- Establishes IOCS as the canonical low-level layer, with DOS calls
+  built on top
 
 ### Future — Abstraction Layer + eCPU Port ☐
 
