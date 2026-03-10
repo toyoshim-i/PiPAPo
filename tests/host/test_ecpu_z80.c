@@ -1611,6 +1611,198 @@ static void test_wz_tracking(void)
     printf("  PASS: wz_tracking\n");
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * Step 4 tests — Memory indirect loads, IN/OUT port trapping
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Test: LD (BC),A / LD A,(BC) ─────────────────────────────────────────── */
+
+static void test_ld_bc_indirect(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0x42;  /* LD A, 0x42 */
+    mem[pc++] = 0x01; mem[pc++] = 0x00; mem[pc++] = 0x80;  /* LD BC, 0x8000 */
+    mem[pc++] = 0x02;  /* LD (BC), A */
+    mem[pc++] = 0x3E; mem[pc++] = 0x00;  /* LD A, 0 */
+    mem[pc++] = 0x0A;  /* LD A, (BC) */
+    mem[pc++] = 0x76;
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x42);
+    assert(mem[0x8000] == 0x42);
+    printf("  PASS: ld_bc_indirect\n");
+}
+
+/* ── Test: LD (DE),A / LD A,(DE) ─────────────────────────────────────────── */
+
+static void test_ld_de_indirect(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0x77;  /* LD A, 0x77 */
+    mem[pc++] = 0x11; mem[pc++] = 0x00; mem[pc++] = 0x90;  /* LD DE, 0x9000 */
+    mem[pc++] = 0x12;  /* LD (DE), A */
+    mem[pc++] = 0x3E; mem[pc++] = 0x00;  /* LD A, 0 */
+    mem[pc++] = 0x1A;  /* LD A, (DE) */
+    mem[pc++] = 0x76;
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x77);
+    assert(mem[0x9000] == 0x77);
+    printf("  PASS: ld_de_indirect\n");
+}
+
+/* ── Test: LD (nn),HL / LD HL,(nn) ──────────────────────────────────────── */
+
+static void test_ld_nn_hl(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x21; mem[pc++] = 0xCD; mem[pc++] = 0xAB;  /* LD HL, 0xABCD */
+    mem[pc++] = 0x22; mem[pc++] = 0x00; mem[pc++] = 0x80;  /* LD (0x8000), HL */
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x00;  /* LD HL, 0 */
+    mem[pc++] = 0x2A; mem[pc++] = 0x00; mem[pc++] = 0x80;  /* LD HL, (0x8000) */
+    mem[pc++] = 0x76;
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(z80_hl(&cpu) == 0xABCD);
+    assert(mem[0x8000] == 0xCD);
+    assert(mem[0x8001] == 0xAB);
+    printf("  PASS: ld_nn_hl\n");
+}
+
+/* ── Test: LD (nn),A / LD A,(nn) ─────────────────────────────────────────── */
+
+static void test_ld_nn_a(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0x99;  /* LD A, 0x99 */
+    mem[pc++] = 0x32; mem[pc++] = 0x00; mem[pc++] = 0x80;  /* LD (0x8000), A */
+    mem[pc++] = 0x3E; mem[pc++] = 0x00;  /* LD A, 0 */
+    mem[pc++] = 0x3A; mem[pc++] = 0x00; mem[pc++] = 0x80;  /* LD A, (0x8000) */
+    mem[pc++] = 0x76;
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x99);
+    assert(mem[0x8000] == 0x99);
+    printf("  PASS: ld_nn_a\n");
+}
+
+/* ── Test: OUT (n),A / IN A,(n) with trap handler ────────────────────────── */
+
+static int io_out_count;
+static uint32_t io_out_addr;
+static uint8_t io_out_data;
+static int io_in_count;
+static uint32_t io_in_addr;
+static uint8_t io_in_data;
+
+static int io_trap_handler(ecpu_state_t *state, int trap_type,
+                           uint32_t param, void *ctx)
+{
+    (void)ctx;
+    z80_state_t *z = (z80_state_t *)state;
+    if (trap_type == ECPU_TRAP_IO_OUT) {
+        io_out_count++;
+        io_out_addr = param;
+        io_out_data = z->a;
+        return ECPU_TRAP_HANDLED;
+    }
+    if (trap_type == ECPU_TRAP_IO_IN) {
+        io_in_count++;
+        io_in_addr = param;
+        z->a = io_in_data;  /* return pre-set value */
+        return ECPU_TRAP_HANDLED;
+    }
+    return ECPU_TRAP_UNHANDLED;
+}
+
+static void test_out_in(void)
+{
+    /* OUT (0x01), A — port address = (A<<8)|port */
+    setup();
+    cpu.pc = 0x100;
+    io_out_count = 0;
+    io_in_count = 0;
+    io_in_data = 0xBB;
+
+    ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&cpu, io_trap_handler, NULL);
+
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0x42;  /* LD A, 0x42 */
+    mem[pc++] = 0xD3; mem[pc++] = 0x01;  /* OUT (0x01), A → addr=0x4201 */
+    mem[pc++] = 0xDB; mem[pc++] = 0x10;  /* IN A, (0x10) → addr=0x4210 (A=0x42 at fetch time) */
+    mem[pc++] = 0x76;
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(io_out_count == 1);
+    assert(io_out_addr == 0x4201);
+    assert(io_out_data == 0x42);
+    assert(io_in_count == 1);
+    assert(io_in_addr == 0x4210);
+    assert(cpu.a == 0xBB);  /* IN loaded value from trap handler */
+
+    printf("  PASS: out_in\n");
+}
+
+/* ── Test: I/O without trap (unhandled) ──────────────────────────────────── */
+
+static void test_io_no_trap(void)
+{
+    setup();
+    cpu.pc = 0x100;
+
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0x42;  /* LD A, 0x42 */
+    mem[pc++] = 0xD3; mem[pc++] = 0x01;  /* OUT (0x01), A — no handler */
+    mem[pc++] = 0xDB; mem[pc++] = 0x10;  /* IN A, (0x10) — no handler */
+    mem[pc++] = 0x76;
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    /* Should not crash; A unchanged from IN since no handler modifies it */
+    assert(cpu.a == 0x42);
+    printf("  PASS: io_no_trap\n");
+}
+
+/* ── Test: memory copy program using indirect loads ──────────────────────── */
+
+static void test_memcpy_program(void)
+{
+    setup();
+    cpu.pc = 0x100;
+
+    /* Copy 4 bytes from 0x8000 to 0x9000 using LD A,(DE) / LD (BC),A loop */
+    mem[0x8000] = 0x11; mem[0x8001] = 0x22;
+    mem[0x8002] = 0x33; mem[0x8003] = 0x44;
+
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x11; mem[pc++] = 0x00; mem[pc++] = 0x80;  /* LD DE, 0x8000 (src) */
+    mem[pc++] = 0x01; mem[pc++] = 0x00; mem[pc++] = 0x90;  /* LD BC, 0x9000 (dst) */
+    mem[pc++] = 0x21; mem[pc++] = 0x04; mem[pc++] = 0x00;  /* LD HL, 4 (count in L) */
+    /* loop at 0x109: */
+    mem[pc++] = 0x1A;  /* LD A, (DE) */
+    mem[pc++] = 0x02;  /* LD (BC), A */
+    mem[pc++] = 0x13;  /* INC DE */
+    mem[pc++] = 0x03;  /* INC BC */
+    mem[pc++] = 0x2D;  /* DEC L */
+    mem[pc++] = 0x20;  /* JR NZ, -7 → back to 0x109 */
+    mem[pc++] = (uint8_t)-7;
+    mem[pc++] = 0x76;
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(mem[0x9000] == 0x11);
+    assert(mem[0x9001] == 0x22);
+    assert(mem[0x9002] == 0x33);
+    assert(mem[0x9003] == 0x44);
+    printf("  PASS: memcpy_program\n");
+}
+
 /* ── Main ────────────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -1669,6 +1861,15 @@ int main(void)
     test_ld_sp_hl();
     test_nested_call_ret();
     test_wz_tracking();
+
+    /* Step 4 tests */
+    test_ld_bc_indirect();
+    test_ld_de_indirect();
+    test_ld_nn_hl();
+    test_ld_nn_a();
+    test_out_in();
+    test_io_no_trap();
+    test_memcpy_program();
 
     printf("All tests passed.\n");
     return 0;

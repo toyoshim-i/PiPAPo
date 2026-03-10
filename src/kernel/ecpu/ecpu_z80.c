@@ -5,6 +5,7 @@
  * Step 1: NOP, HALT, LD r,r', LD r,n, LD rr,nn, JP nn, JR e, CALL nn, RET.
  * Step 2: ALU ops, INC/DEC, ADD HL,rr, rotates, DAA, CPL, SCF, CCF.
  * Step 3: JP/JR/CALL/RET cc, DJNZ, RST, PUSH/POP, EX/EXX.
+ * Step 4: Memory indirect loads, IN/OUT port trapping.
  *
  * See docs/ecpu-z80.md for the full design.
  */
@@ -307,7 +308,53 @@ static int ecpu_z80_run(ecpu_state_t *state)
                 break;
 
             case 2:
-                /* LD (BC/DE),A / LD A,(BC/DE) / LD (nn),HL etc. — Step 4 */
+                /* Memory indirect loads/stores */
+                switch (yyy) {
+                case 0: /* LD (BC), A */
+                    z80_write8(cpu, z80_bc(cpu), cpu->a);
+                    cpu->wz = (z80_bc(cpu) + 1) & 0xFFFF;
+                    break;
+                case 1: /* LD A, (BC) */
+                    cpu->a = z80_read8(cpu, z80_bc(cpu));
+                    cpu->wz = (z80_bc(cpu) + 1) & 0xFFFF;
+                    break;
+                case 2: /* LD (DE), A */
+                    z80_write8(cpu, z80_de(cpu), cpu->a);
+                    cpu->wz = (z80_de(cpu) + 1) & 0xFFFF;
+                    break;
+                case 3: /* LD A, (DE) */
+                    cpu->a = z80_read8(cpu, z80_de(cpu));
+                    cpu->wz = (z80_de(cpu) + 1) & 0xFFFF;
+                    break;
+                case 4: /* LD (nn), HL */
+                    {
+                        uint16_t nn = z80_fetch16(cpu);
+                        z80_write16(cpu, nn, z80_hl(cpu));
+                        cpu->wz = (nn + 1) & 0xFFFF;
+                    }
+                    break;
+                case 5: /* LD HL, (nn) */
+                    {
+                        uint16_t nn = z80_fetch16(cpu);
+                        z80_set_hl(cpu, z80_read16(cpu, nn));
+                        cpu->wz = (nn + 1) & 0xFFFF;
+                    }
+                    break;
+                case 6: /* LD (nn), A */
+                    {
+                        uint16_t nn = z80_fetch16(cpu);
+                        z80_write8(cpu, nn, cpu->a);
+                        cpu->wz = (nn + 1) & 0xFFFF;
+                    }
+                    break;
+                case 7: /* LD A, (nn) */
+                    {
+                        uint16_t nn = z80_fetch16(cpu);
+                        cpu->a = z80_read8(cpu, nn);
+                        cpu->wz = (nn + 1) & 0xFFFF;
+                    }
+                    break;
+                }
                 break;
 
             case 3:
@@ -428,11 +475,25 @@ static int ecpu_z80_run(ecpu_state_t *state)
                     break;
                 case 1: /* CB prefix — Step 5 */
                     break;
-                case 2: /* OUT (n), A — Step 4 */
-                    (void)z80_fetch8(cpu);  /* consume port byte */
+                case 2: /* OUT (n), A (0xD3) */
+                    {
+                        uint8_t port = z80_fetch8(cpu);
+                        uint16_t addr = ((uint16_t)cpu->a << 8) | port;
+                        cpu->wz = ((uint16_t)cpu->a << 8) | ((port + 1) & 0xFF);
+                        int rc = z80_fire_trap(cpu, ECPU_TRAP_IO_OUT, addr);
+                        if (rc == ECPU_TRAP_EXIT)
+                            return 0;
+                    }
                     break;
-                case 3: /* IN A, (n) — Step 4 */
-                    (void)z80_fetch8(cpu);  /* consume port byte */
+                case 3: /* IN A, (n) (0xDB) */
+                    {
+                        uint8_t port = z80_fetch8(cpu);
+                        uint16_t addr = ((uint16_t)cpu->a << 8) | port;
+                        int rc = z80_fire_trap(cpu, ECPU_TRAP_IO_IN, addr);
+                        if (rc == ECPU_TRAP_EXIT)
+                            return 0;
+                        cpu->wz = ((uint16_t)cpu->a << 8) | ((port + 1) & 0xFF);
+                    }
                     break;
                 case 4: /* EX (SP), HL (0xE3) */
                     {
