@@ -404,7 +404,23 @@ long sys_chdir(const char *path)
     }
     vnode_put(vn);
 
-    /* Normalize the path and store in the PCB */
+    /* Resolve relative path to absolute, then normalize */
+    char abs_path[VFS_PATH_MAX];
+    if (path[0] != '/') {
+        const char *cwd = current->cwd[0] ? current->cwd : "/";
+        int cwdlen = (int)__builtin_strlen(cwd);
+        int pathlen = (int)__builtin_strlen(path);
+        if (cwdlen == 1) {
+            abs_path[0] = '/';
+            __builtin_memcpy(abs_path + 1, path, (size_t)pathlen + 1);
+        } else {
+            __builtin_memcpy(abs_path, cwd, (size_t)cwdlen);
+            abs_path[cwdlen] = '/';
+            __builtin_memcpy(abs_path + cwdlen + 1, path, (size_t)pathlen + 1);
+        }
+        path = abs_path;
+    }
+
     char normalized[VFS_PATH_MAX];
     int nlen = vfs_path_normalize(path, normalized, (int)sizeof(normalized));
     if (nlen < 0)

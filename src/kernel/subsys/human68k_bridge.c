@@ -1,8 +1,9 @@
 /*
- * human68k_bridge.c — Human68k DOS call bridge (Phase 1)
+ * human68k_bridge.c — Human68k DOS call bridge
  *
  * Translates F-line DOS calls into PPAP operations.
- * Phase 1 implements: _EXIT, _EXIT2, _SETBLOCK, _MALLOC, _MFREE.
+ * Phase 1: _EXIT, _EXIT2, _SETBLOCK, _MALLOC, _MFREE.
+ * Phase 2: _GETCHAR, _PUTCHAR, _COMINP, _COMOUT, _PRINT, _GETS.
  */
 
 #include "human68k_bridge.h"
@@ -51,6 +52,110 @@ static int dos_exit(uint32_t usp)
     uint16_t code = ustack_u16(usp, 0);
     sys_exit((int)(int16_t)code);
     return 1;  /* unreachable, but sys_exit doesn't return */
+}
+
+/* ── _PUTCHAR ($FF02) / _COMOUT ($FF04) ──────────────────────────────── *
+ *
+ * Stack: word char_code
+ * Writes one character to stdout.  Returns the character in d0.
+ */
+static int dos_putchar(uint32_t *regs, uint32_t usp)
+{
+    uint8_t ch = (uint8_t)ustack_u16(usp, 0);
+    sys_write(1, (const char *)&ch, 1);
+    regs[0] = (uint32_t)ch;
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _GETCHAR ($FF01) ────────────────────────────────────────────────── *
+ *
+ * No arguments on stack.
+ * Reads one character from stdin with echo.  Returns char in d0.
+ */
+static int dos_getchar(uint32_t *regs)
+{
+    uint8_t ch = 0;
+    sys_read(0, (char *)&ch, 1);
+    /* Echo the character back to stdout */
+    sys_write(1, (const char *)&ch, 1);
+    regs[0] = (uint32_t)ch;
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _COMINP ($FF03) ─────────────────────────────────────────────────── *
+ *
+ * No arguments on stack.
+ * Reads one character from stdin (raw, no echo).  Returns char in d0.
+ */
+static int dos_cominp(uint32_t *regs)
+{
+    uint8_t ch = 0;
+    sys_read(0, (char *)&ch, 1);
+    regs[0] = (uint32_t)ch;
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _PRINT ($FF09) ──────────────────────────────────────────────────── *
+ *
+ * Stack: long str_ptr
+ * Writes a NUL-terminated string to stdout.  Returns 0 in d0.
+ */
+static int dos_print(uint32_t *regs, uint32_t usp)
+{
+    uint32_t str_addr = ustack_u32(usp, 0);
+    const char *str = (const char *)(uintptr_t)str_addr;
+
+    /* Find string length (NUL-terminated) */
+    uint32_t len = 0;
+    while (str[len])
+        len++;
+
+    if (len > 0)
+        sys_write(1, str, len);
+
+    regs[0] = 0;
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _GETS ($FF0A) ───────────────────────────────────────────────────── *
+ *
+ * Stack: long buf_ptr
+ * Line-buffered read into a linebuf structure:
+ *   byte 0: max (max chars to read)
+ *   byte 1: len (filled by DOS with actual count)
+ *   byte 2+: buffer (filled with input, no NUL terminator)
+ *
+ * Reads up to max chars, stopping at CR (0x0D).
+ * Echoes input and writes len.  Returns buf_ptr in d0.
+ */
+static int dos_gets(uint32_t *regs, uint32_t usp)
+{
+    uint32_t buf_addr = ustack_u32(usp, 0);
+    uint8_t *buf = (uint8_t *)(uintptr_t)buf_addr;
+    uint8_t max = buf[0];
+    uint8_t count = 0;
+
+    while (count < max) {
+        uint8_t ch;
+        long r = sys_read(0, (char *)&ch, 1);
+        if (r <= 0)
+            break;
+        /* Echo */
+        sys_write(1, (const char *)&ch, 1);
+        if (ch == 0x0D || ch == 0x0A)
+            break;
+        buf[2 + count] = ch;
+        count++;
+    }
+
+    buf[1] = count;
+    regs[0] = buf_addr;
+    advance_pc(regs);
+    return 2;
 }
 
 /* ── _SETBLOCK ($FF4A) ───────────────────────────────────────────────── *
@@ -158,6 +263,22 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
     case 0x00:  /* _EXIT */
     case 0x4C:  /* _EXIT2 */
         return dos_exit(usp);
+
+    case 0x01:  /* _GETCHAR — read with echo */
+        return dos_getchar(regs);
+
+    case 0x02:  /* _PUTCHAR */
+    case 0x04:  /* _COMOUT */
+        return dos_putchar(regs, usp);
+
+    case 0x03:  /* _COMINP — raw read, no echo */
+        return dos_cominp(regs);
+
+    case 0x09:  /* _PRINT */
+        return dos_print(regs, usp);
+
+    case 0x0A:  /* _GETS */
+        return dos_gets(regs, usp);
 
     case 0x4A:  /* _SETBLOCK */
         return dos_setblock(regs, usp);
