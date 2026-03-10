@@ -4,6 +4,7 @@
  * Implements the eCPU common interface for the Z80 core.
  * Step 1: NOP, HALT, LD r,r', LD r,n, LD rr,nn, JP nn, JR e, CALL nn, RET.
  * Step 2: ALU ops, INC/DEC, ADD HL,rr, rotates, DAA, CPL, SCF, CCF.
+ * Step 3: JP/JR/CALL/RET cc, DJNZ, RST, PUSH/POP, EX/EXX.
  *
  * See docs/ecpu-z80.md for the full design.
  */
@@ -184,6 +185,49 @@ void z80_write_rr(z80_state_t *cpu, uint8_t pp, uint16_t val)
     }
 }
 
+/* ── Condition code evaluation ────────────────────────────────────────────
+ * 3-bit condition codes used in JP cc, JR cc, CALL cc, RET cc:
+ *   0=NZ, 1=Z, 2=NC, 3=C, 4=PO, 5=PE, 6=P(plus), 7=M(minus) */
+
+static int z80_condition(z80_state_t *cpu, uint8_t cc)
+{
+    switch (cc) {
+        case 0: return !(cpu->f & FLAG_Z);   /* NZ */
+        case 1: return !!(cpu->f & FLAG_Z);  /* Z  */
+        case 2: return !(cpu->f & FLAG_C);   /* NC */
+        case 3: return !!(cpu->f & FLAG_C);  /* C  */
+        case 4: return !(cpu->f & FLAG_PV);  /* PO */
+        case 5: return !!(cpu->f & FLAG_PV); /* PE */
+        case 6: return !(cpu->f & FLAG_S);   /* P  */
+        case 7: return !!(cpu->f & FLAG_S);  /* M  */
+        default: return 0;
+    }
+}
+
+/* ── PUSH/POP register pair by 2-bit code (qq field) ────────────────────
+ * qq: 0=BC, 1=DE, 2=HL, 3=AF (differs from pp which has SP) */
+
+static uint16_t z80_read_qq(z80_state_t *cpu, uint8_t qq)
+{
+    switch (qq) {
+        case 0: return z80_bc(cpu);
+        case 1: return z80_de(cpu);
+        case 2: return z80_hl(cpu);
+        case 3: return z80_af(cpu);
+        default: return 0;
+    }
+}
+
+static void z80_write_qq(z80_state_t *cpu, uint8_t qq, uint16_t val)
+{
+    switch (qq) {
+        case 0: z80_set_bc(cpu, val); break;
+        case 1: z80_set_de(cpu, val); break;
+        case 2: z80_set_hl(cpu, val); break;
+        case 3: z80_set_af(cpu, val); break;
+    }
+}
+
 /* ── Main interpreter loop ───────────────────────────────────────────────── */
 
 static int ecpu_z80_run(ecpu_state_t *state)
@@ -225,19 +269,29 @@ static int ecpu_z80_run(ecpu_state_t *state)
             /* xx=00: miscellaneous */
             switch (zzz) {
             case 0:
-                /* NOP (yyy=0), JR e (yyy=3), DJNZ/JR cc — Step 3 */
+                /* NOP, EX AF,AF', DJNZ, JR, JR cc */
                 if (yyy == 0) {
                     /* NOP */
+                } else if (yyy == 1) {
+                    /* EX AF, AF' (0x08) */
+                    uint8_t t;
+                    t = cpu->a; cpu->a = cpu->a2; cpu->a2 = t;
+                    t = cpu->f; cpu->f = cpu->f2; cpu->f2 = t;
+                } else if (yyy == 2) {
+                    /* DJNZ e (0x10) */
+                    int8_t offset = (int8_t)z80_fetch8(cpu);
+                    cpu->b--;
+                    if (cpu->b != 0)
+                        cpu->pc += offset;
                 } else if (yyy == 3) {
-                    /* JR e */
+                    /* JR e (0x18) */
                     int8_t offset = (int8_t)z80_fetch8(cpu);
                     cpu->pc += offset;
                 } else {
-                    /* DJNZ, EX AF,AF', JR cc — Step 3 */
-                    /* Must still consume displacement byte for JR variants */
-                    if (yyy >= 2) {
-                        (void)z80_fetch8(cpu);  /* skip displacement */
-                    }
+                    /* JR cc, e (yyy=4..7 → cc=0..3: NZ,Z,NC,C) */
+                    int8_t offset = (int8_t)z80_fetch8(cpu);
+                    if (z80_condition(cpu, yyy - 4))
+                        cpu->pc += offset;
                 }
                 break;
 
@@ -312,50 +366,137 @@ static int ecpu_z80_run(ecpu_state_t *state)
         case 3:
             /* xx=11: miscellaneous */
             switch (zzz) {
+            case 0:
+                /* RET cc */
+                if (z80_condition(cpu, yyy)) {
+                    cpu->pc = z80_pop16(cpu);
+                    cpu->wz = cpu->pc;
+                }
+                break;
+
             case 1:
                 if (yyy & 1) {
-                    /* Odd yyy: various (CALL, EXX, JP (HL), LD SP,HL, etc.) */
-                    if (yyy == 1) {
-                        /* 0xC9: placeholder — actually this is yyy=1,zzz=1
-                         * Let's decode by full opcode below */
+                    /* Odd yyy: RET, EXX, JP (HL), LD SP,HL */
+                    switch (yyy) {
+                    case 1: /* RET (0xC9) */
+                        cpu->pc = z80_pop16(cpu);
+                        cpu->wz = cpu->pc;
+                        break;
+                    case 3: /* EXX (0xD9) */
+                        {
+                            uint8_t t;
+                            t = cpu->b; cpu->b = cpu->b2; cpu->b2 = t;
+                            t = cpu->c; cpu->c = cpu->c2; cpu->c2 = t;
+                            t = cpu->d; cpu->d = cpu->d2; cpu->d2 = t;
+                            t = cpu->e; cpu->e = cpu->e2; cpu->e2 = t;
+                            t = cpu->h; cpu->h = cpu->h2; cpu->h2 = t;
+                            t = cpu->l; cpu->l = cpu->l2; cpu->l2 = t;
+                        }
+                        break;
+                    case 5: /* JP (HL) (0xE9) */
+                        cpu->pc = z80_hl(cpu);
+                        break;
+                    case 7: /* LD SP, HL (0xF9) */
+                        cpu->sp = z80_hl(cpu);
+                        break;
                     }
                 } else {
-                    /* POP rr — Step 3 */
+                    /* POP qq */
+                    z80_write_qq(cpu, yyy >> 1, z80_pop16(cpu));
+                }
+                break;
+
+            case 2:
+                /* JP cc, nn */
+                {
+                    uint16_t nn = z80_fetch16(cpu);
+                    cpu->wz = nn;
+                    if (z80_condition(cpu, yyy))
+                        cpu->pc = nn;
                 }
                 break;
 
             case 3:
-                if (yyy == 0) {
-                    /* JP nn (0xC3) */
+                /* Miscellaneous: JP nn, CB prefix, OUT, IN, EX, DI, EI */
+                switch (yyy) {
+                case 0: /* JP nn (0xC3) */
+                    {
+                        uint16_t nn = z80_fetch16(cpu);
+                        cpu->wz = nn;
+                        cpu->pc = nn;
+                    }
+                    break;
+                case 1: /* CB prefix — Step 5 */
+                    break;
+                case 2: /* OUT (n), A — Step 4 */
+                    (void)z80_fetch8(cpu);  /* consume port byte */
+                    break;
+                case 3: /* IN A, (n) — Step 4 */
+                    (void)z80_fetch8(cpu);  /* consume port byte */
+                    break;
+                case 4: /* EX (SP), HL (0xE3) */
+                    {
+                        uint16_t val = z80_read16(cpu, cpu->sp);
+                        z80_write16(cpu, cpu->sp, z80_hl(cpu));
+                        z80_set_hl(cpu, val);
+                        cpu->wz = val;
+                    }
+                    break;
+                case 5: /* EX DE, HL (0xEB) */
+                    {
+                        uint16_t de = z80_de(cpu);
+                        z80_set_de(cpu, z80_hl(cpu));
+                        z80_set_hl(cpu, de);
+                    }
+                    break;
+                case 6: /* DI (0xF3) */
+                    cpu->iff1 = 0;
+                    cpu->iff2 = 0;
+                    break;
+                case 7: /* EI (0xFB) */
+                    cpu->iff1 = 1;
+                    cpu->iff2 = 1;
+                    break;
+                }
+                break;
+
+            case 4:
+                /* CALL cc, nn */
+                {
                     uint16_t nn = z80_fetch16(cpu);
                     cpu->wz = nn;
-                    cpu->pc = nn;
+                    if (z80_condition(cpu, yyy)) {
+                        z80_push16(cpu, cpu->pc);
+                        cpu->pc = nn;
+                    }
                 }
                 break;
 
             case 5:
                 if (yyy & 1) {
-                    /* CALL nn (0xCD when yyy=1) */
+                    /* Odd yyy: CALL nn, DD/ED/FD prefixes */
                     if (yyy == 1) {
+                        /* CALL nn (0xCD) */
                         uint16_t nn = z80_fetch16(cpu);
                         cpu->wz = nn;
-                        /* Fire CALL trap — personality may intercept */
                         int rc = z80_fire_trap(cpu, ECPU_TRAP_CALL, nn);
                         if (rc == ECPU_TRAP_EXIT)
                             return 0;
                         if (rc == ECPU_TRAP_HANDLED)
                             break;
-                        /* Unhandled — execute CALL normally */
                         z80_push16(cpu, cpu->pc);
                         cpu->pc = nn;
                     }
+                    /* yyy=3: DD prefix, yyy=5: ED prefix,
+                     * yyy=7: FD prefix — Step 5/6/7 */
                 } else {
-                    /* PUSH rr — Step 3 */
+                    /* PUSH qq */
+                    z80_push16(cpu, z80_read_qq(cpu, yyy >> 1));
                 }
                 break;
 
             case 6:
-                /* ALU A, n (immediate): ADD/ADC/SUB/SBC/AND/XOR/OR/CP */
+                /* ALU A, n (immediate) */
                 {
                     uint8_t n = z80_fetch8(cpu);
                     z80_alu_op(cpu, yyy, n);
@@ -363,17 +504,19 @@ static int ecpu_z80_run(ecpu_state_t *state)
                 break;
 
             case 7:
-                /* RST — Step 3 */
+                /* RST p — restart to address p*8 */
+                {
+                    uint16_t addr = yyy * 8;
+                    int rc = z80_fire_trap(cpu, ECPU_TRAP_CALL, addr);
+                    if (rc == ECPU_TRAP_EXIT)
+                        return 0;
+                    if (rc == ECPU_TRAP_HANDLED)
+                        break;
+                    z80_push16(cpu, cpu->pc);
+                    cpu->pc = addr;
+                    cpu->wz = addr;
+                }
                 break;
-
-            default:
-                break;
-            }
-
-            /* Handle RET (0xC9) by full opcode match */
-            if (opcode == 0xC9) {
-                cpu->pc = z80_pop16(cpu);
-                cpu->wz = cpu->pc;
             }
             break;
         }

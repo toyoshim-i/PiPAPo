@@ -1018,6 +1018,599 @@ static void test_f35_add(void)
     printf("  PASS: f35_add\n");
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * Step 3 tests — Control flow, PUSH/POP, EX/EXX, RST, DI/EI
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Test: JP cc, nn (conditional jumps) ─────────────────────────────────── */
+
+static void test_jp_cc(void)
+{
+    /* JP NZ taken (Z=0) */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = 0;  /* Z=0 */
+    mem[0x100] = 0xC2;  /* JP NZ, 0x200 */
+    mem[0x101] = 0x00;
+    mem[0x102] = 0x02;
+    mem[0x200] = 0x3E; mem[0x201] = 0xAA;  /* LD A, 0xAA */
+    mem[0x202] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0xAA);
+
+    /* JP NZ not taken (Z=1) */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = FLAG_Z;
+    mem[0x100] = 0xC2;  /* JP NZ, 0x200 */
+    mem[0x101] = 0x00;
+    mem[0x102] = 0x02;
+    mem[0x103] = 0x3E; mem[0x104] = 0xBB;  /* LD A, 0xBB (fallthrough) */
+    mem[0x105] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0xBB);
+
+    /* JP Z taken */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = FLAG_Z;
+    mem[0x100] = 0xCA;  /* JP Z, 0x200 */
+    mem[0x101] = 0x00;
+    mem[0x102] = 0x02;
+    mem[0x200] = 0x3E; mem[0x201] = 0xCC;
+    mem[0x202] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0xCC);
+
+    /* JP C taken */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = FLAG_C;
+    mem[0x100] = 0xDA;  /* JP C, 0x200 */
+    mem[0x101] = 0x00;
+    mem[0x102] = 0x02;
+    mem[0x200] = 0x3E; mem[0x201] = 0xDD;
+    mem[0x202] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0xDD);
+
+    /* JP NC not taken (C=1) */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = FLAG_C;
+    mem[0x100] = 0xD2;  /* JP NC, 0x200 */
+    mem[0x101] = 0x00;
+    mem[0x102] = 0x02;
+    mem[0x103] = 0x3E; mem[0x104] = 0xEE;
+    mem[0x105] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0xEE);
+
+    printf("  PASS: jp_cc\n");
+}
+
+/* ── Test: JR cc, e (conditional relative jumps) ─────────────────────────── */
+
+static void test_jr_cc(void)
+{
+    /* JR NZ taken */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = 0;
+    mem[0x100] = 0x20;  /* JR NZ, +4 */
+    mem[0x101] = 0x04;
+    mem[0x106] = 0x3E; mem[0x107] = 0x11;
+    mem[0x108] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x11);
+
+    /* JR NZ not taken (Z=1) → falls through */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = FLAG_Z;
+    mem[0x100] = 0x20;  /* JR NZ, +4 */
+    mem[0x101] = 0x04;
+    mem[0x102] = 0x3E; mem[0x103] = 0x22;
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x22);
+
+    /* JR Z taken */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = FLAG_Z;
+    mem[0x100] = 0x28;  /* JR Z, +2 */
+    mem[0x101] = 0x02;
+    mem[0x104] = 0x3E; mem[0x105] = 0x33;
+    mem[0x106] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x33);
+
+    /* JR C taken */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = FLAG_C;
+    mem[0x100] = 0x38;  /* JR C, +2 */
+    mem[0x101] = 0x02;
+    mem[0x104] = 0x3E; mem[0x105] = 0x44;
+    mem[0x106] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x44);
+
+    /* JR NC not taken (C=1) */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = FLAG_C;
+    mem[0x100] = 0x30;  /* JR NC, +4 */
+    mem[0x101] = 0x04;
+    mem[0x102] = 0x3E; mem[0x103] = 0x55;
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x55);
+
+    printf("  PASS: jr_cc\n");
+}
+
+/* ── Test: DJNZ (decrement B and jump if not zero) ──────────────────────── */
+
+static void test_djnz(void)
+{
+    /* Sum 1+2+3+4+5 using DJNZ loop */
+    setup();
+    cpu.pc = 0x100;
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0x00;  /* LD A, 0 */
+    mem[pc++] = 0x06; mem[pc++] = 0x05;  /* LD B, 5 */
+    mem[pc++] = 0x0E; mem[pc++] = 0x01;  /* LD C, 1 — loop start at 0x104 */
+    /* loop body at 0x106 */
+    mem[pc++] = 0x81;                      /* ADD A, C */
+    mem[pc++] = 0x0C;                      /* INC C */
+    mem[pc++] = 0x10;                      /* DJNZ -4 → back to 0x106 */
+    mem[pc++] = (uint8_t)-4;               /* offset: pc(0x10A) + (-4) = 0x106 */
+    mem[pc++] = 0x76;                      /* HALT */
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 15);   /* 1+2+3+4+5 */
+    assert(cpu.b == 0);    /* B decremented to 0 */
+    assert(cpu.c == 6);    /* C incremented past 5 */
+    printf("  PASS: djnz\n");
+}
+
+/* ── Test: PUSH/POP round-trip ───────────────────────────────────────────── */
+
+static void test_push_pop(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    cpu.sp = 0xFFFE;
+
+    uint16_t pc = 0x100;
+    /* Load values and push */
+    mem[pc++] = 0x01; mem[pc++] = 0x34; mem[pc++] = 0x12;  /* LD BC, 0x1234 */
+    mem[pc++] = 0x11; mem[pc++] = 0x78; mem[pc++] = 0x56;  /* LD DE, 0x5678 */
+    mem[pc++] = 0x21; mem[pc++] = 0xBC; mem[pc++] = 0x9A;  /* LD HL, 0x9ABC */
+    mem[pc++] = 0xC5;  /* PUSH BC */
+    mem[pc++] = 0xD5;  /* PUSH DE */
+    mem[pc++] = 0xE5;  /* PUSH HL */
+
+    /* Clear registers */
+    mem[pc++] = 0x01; mem[pc++] = 0x00; mem[pc++] = 0x00;  /* LD BC, 0 */
+    mem[pc++] = 0x11; mem[pc++] = 0x00; mem[pc++] = 0x00;  /* LD DE, 0 */
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x00;  /* LD HL, 0 */
+
+    /* Pop in reverse order */
+    mem[pc++] = 0xE1;  /* POP HL — gets 0x9ABC */
+    mem[pc++] = 0xD1;  /* POP DE — gets 0x5678 */
+    mem[pc++] = 0xC1;  /* POP BC — gets 0x1234 */
+    mem[pc++] = 0x76;  /* HALT */
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(z80_bc(&cpu) == 0x1234);
+    assert(z80_de(&cpu) == 0x5678);
+    assert(z80_hl(&cpu) == 0x9ABC);
+    assert(cpu.sp == 0xFFFE);
+
+    printf("  PASS: push_pop\n");
+}
+
+/* ── Test: PUSH/POP AF ───────────────────────────────────────────────────── */
+
+static void test_push_pop_af(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    cpu.sp = 0xFFFE;
+    cpu.a = 0x42;
+    cpu.f = FLAG_C | FLAG_Z | FLAG_S;
+
+    uint16_t pc = 0x100;
+    mem[pc++] = 0xF5;  /* PUSH AF */
+    /* Clobber AF */
+    mem[pc++] = 0x3E; mem[pc++] = 0x00;  /* LD A, 0 */
+    /* XOR A to clear flags */
+    mem[pc++] = 0xAF;  /* XOR A */
+    /* Restore AF */
+    mem[pc++] = 0xF1;  /* POP AF */
+    mem[pc++] = 0x76;
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x42);
+    assert(cpu.f == (FLAG_C | FLAG_Z | FLAG_S));
+
+    printf("  PASS: push_pop_af\n");
+}
+
+/* ── Test: EX AF, AF' ────────────────────────────────────────────────────── */
+
+static void test_ex_af(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    cpu.a = 0x11; cpu.f = FLAG_C;
+    cpu.a2 = 0x22; cpu.f2 = FLAG_Z;
+
+    mem[0x100] = 0x08;  /* EX AF, AF' */
+    mem[0x101] = 0x76;
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x22);
+    assert(cpu.f == FLAG_Z);
+    assert(cpu.a2 == 0x11);
+    assert(cpu.f2 == FLAG_C);
+
+    printf("  PASS: ex_af\n");
+}
+
+/* ── Test: EXX ───────────────────────────────────────────────────────────── */
+
+static void test_exx(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    cpu.b = 0x11; cpu.c = 0x22;
+    cpu.d = 0x33; cpu.e = 0x44;
+    cpu.h = 0x55; cpu.l = 0x66;
+    cpu.b2 = 0xAA; cpu.c2 = 0xBB;
+    cpu.d2 = 0xCC; cpu.e2 = 0xDD;
+    cpu.h2 = 0xEE; cpu.l2 = 0xFF;
+
+    mem[0x100] = 0xD9;  /* EXX */
+    mem[0x101] = 0x76;
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.b == 0xAA && cpu.c == 0xBB);
+    assert(cpu.d == 0xCC && cpu.e == 0xDD);
+    assert(cpu.h == 0xEE && cpu.l == 0xFF);
+    assert(cpu.b2 == 0x11 && cpu.c2 == 0x22);
+    assert(cpu.d2 == 0x33 && cpu.e2 == 0x44);
+    assert(cpu.h2 == 0x55 && cpu.l2 == 0x66);
+
+    printf("  PASS: exx\n");
+}
+
+/* ── Test: EX DE, HL ─────────────────────────────────────────────────────── */
+
+static void test_ex_de_hl(void)
+{
+    setup();
+    cpu.pc = 0x100;
+
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x11; mem[pc++] = 0x34; mem[pc++] = 0x12;  /* LD DE, 0x1234 */
+    mem[pc++] = 0x21; mem[pc++] = 0x78; mem[pc++] = 0x56;  /* LD HL, 0x5678 */
+    mem[pc++] = 0xEB;  /* EX DE, HL */
+    mem[pc++] = 0x76;
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(z80_de(&cpu) == 0x5678);
+    assert(z80_hl(&cpu) == 0x1234);
+
+    printf("  PASS: ex_de_hl\n");
+}
+
+/* ── Test: EX (SP), HL ───────────────────────────────────────────────────── */
+
+static void test_ex_sp_hl(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    cpu.sp = 0xFF00;
+
+    /* Put 0xABCD on top of stack */
+    mem[0xFF00] = 0xCD;  /* low byte */
+    mem[0xFF01] = 0xAB;  /* high byte */
+
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x21; mem[pc++] = 0x34; mem[pc++] = 0x12;  /* LD HL, 0x1234 */
+    mem[pc++] = 0xE3;  /* EX (SP), HL */
+    mem[pc++] = 0x76;
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(z80_hl(&cpu) == 0xABCD);
+    assert(mem[0xFF00] == 0x34);  /* stack now has 0x1234 */
+    assert(mem[0xFF01] == 0x12);
+    assert(cpu.wz == 0xABCD);
+
+    printf("  PASS: ex_sp_hl\n");
+}
+
+/* ── Test: RET cc (conditional return) ───────────────────────────────────── */
+
+static void test_ret_cc(void)
+{
+    /* RET NZ taken */
+    setup();
+    cpu.pc = 0x200;
+    cpu.sp = 0xFFFE;
+    cpu.f = 0;  /* Z=0 → NZ true */
+    /* Push return address 0x0105 onto stack */
+    z80_push16(&cpu, 0x0105);
+    mem[0x200] = 0xC0;  /* RET NZ */
+    mem[0x105] = 0x3E; mem[0x106] = 0xAA;
+    mem[0x107] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0xAA);
+
+    /* RET NZ not taken (Z=1) */
+    setup();
+    cpu.pc = 0x200;
+    cpu.sp = 0xFFFE;
+    cpu.f = FLAG_Z;
+    z80_push16(&cpu, 0x0105);
+    mem[0x200] = 0xC0;  /* RET NZ — not taken */
+    mem[0x201] = 0x3E; mem[0x202] = 0xBB;
+    mem[0x203] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0xBB);
+
+    /* RET Z taken */
+    setup();
+    cpu.pc = 0x200;
+    cpu.sp = 0xFFFE;
+    cpu.f = FLAG_Z;
+    z80_push16(&cpu, 0x0105);
+    mem[0x200] = 0xC8;  /* RET Z */
+    mem[0x105] = 0x3E; mem[0x106] = 0xCC;
+    mem[0x107] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0xCC);
+
+    printf("  PASS: ret_cc\n");
+}
+
+/* ── Test: CALL cc, nn (conditional call) ────────────────────────────────── */
+
+static void test_call_cc(void)
+{
+    /* CALL NZ taken */
+    setup();
+    cpu.pc = 0x100;
+    cpu.sp = 0xFFFE;
+    cpu.f = 0;
+    mem[0x100] = 0xC4;  /* CALL NZ, 0x200 */
+    mem[0x101] = 0x00;
+    mem[0x102] = 0x02;
+    mem[0x103] = 0x76;  /* HALT (return target) */
+    mem[0x200] = 0x3E; mem[0x201] = 0x11;
+    mem[0x202] = 0xC9;  /* RET */
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x11);
+    assert(cpu.sp == 0xFFFE);
+
+    /* CALL NZ not taken (Z=1) */
+    setup();
+    cpu.pc = 0x100;
+    cpu.sp = 0xFFFE;
+    cpu.f = FLAG_Z;
+    mem[0x100] = 0xC4;  /* CALL NZ, 0x200 */
+    mem[0x101] = 0x00;
+    mem[0x102] = 0x02;
+    mem[0x103] = 0x3E; mem[0x104] = 0x22;
+    mem[0x105] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x22);
+    assert(cpu.sp == 0xFFFE);
+
+    printf("  PASS: call_cc\n");
+}
+
+/* ── Test: RST trap hook ─────────────────────────────────────────────────── */
+
+static int rst_trap_count;
+static uint32_t rst_trap_addr;
+
+static int rst_trap_handler(ecpu_state_t *state, int trap_type,
+                            uint32_t param, void *ctx)
+{
+    (void)state; (void)ctx;
+    if (trap_type == ECPU_TRAP_CALL) {
+        rst_trap_count++;
+        rst_trap_addr = param;
+        return ECPU_TRAP_HANDLED;
+    }
+    return ECPU_TRAP_UNHANDLED;
+}
+
+static void test_rst_trap(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    cpu.sp = 0xFFFE;
+    rst_trap_count = 0;
+
+    ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&cpu, rst_trap_handler, NULL);
+
+    mem[0x100] = 0xC7;  /* RST 0x00 */
+    mem[0x101] = 0xCF;  /* RST 0x08 */
+    mem[0x102] = 0xD7;  /* RST 0x10 */
+    mem[0x103] = 0xDF;  /* RST 0x18 */
+    mem[0x104] = 0xE7;  /* RST 0x20 */
+    mem[0x105] = 0xEF;  /* RST 0x28 */
+    mem[0x106] = 0xF7;  /* RST 0x30 */
+    mem[0x107] = 0xFF;  /* RST 0x38 */
+    mem[0x108] = 0x76;  /* HALT */
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(rst_trap_count == 8);
+    assert(rst_trap_addr == 0x38);  /* last RST address */
+    assert(cpu.sp == 0xFFFE);       /* all handled, no pushes */
+
+    printf("  PASS: rst_trap\n");
+}
+
+/* ── Test: RST without trap → pushes PC and jumps ────────────────────────── */
+
+static void test_rst_no_trap(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    cpu.sp = 0xFFFE;
+
+    mem[0x100] = 0xCF;  /* RST 0x08 */
+    /* At 0x08: return immediately */
+    mem[0x08] = 0x3E; mem[0x09] = 0x77;
+    mem[0x0A] = 0xC9;  /* RET */
+    mem[0x101] = 0x76;  /* HALT (return target) */
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x77);
+    assert(cpu.sp == 0xFFFE);
+
+    printf("  PASS: rst_no_trap\n");
+}
+
+/* ── Test: DI / EI ───────────────────────────────────────────────────────── */
+
+static void test_di_ei(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    cpu.iff1 = 1; cpu.iff2 = 1;
+
+    mem[0x100] = 0xF3;  /* DI */
+    mem[0x101] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.iff1 == 0);
+    assert(cpu.iff2 == 0);
+
+    setup();
+    cpu.pc = 0x100;
+    cpu.iff1 = 0; cpu.iff2 = 0;
+    mem[0x100] = 0xFB;  /* EI */
+    mem[0x101] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.iff1 == 1);
+    assert(cpu.iff2 == 1);
+
+    printf("  PASS: di_ei\n");
+}
+
+/* ── Test: JP (HL) ───────────────────────────────────────────────────────── */
+
+static void test_jp_hl(void)
+{
+    setup();
+    cpu.pc = 0x100;
+
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x02;  /* LD HL, 0x200 */
+    mem[pc++] = 0xE9;  /* JP (HL) */
+    mem[0x200] = 0x3E; mem[0x201] = 0x99;
+    mem[0x202] = 0x76;
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x99);
+
+    printf("  PASS: jp_hl\n");
+}
+
+/* ── Test: LD SP, HL ─────────────────────────────────────────────────────── */
+
+static void test_ld_sp_hl(void)
+{
+    setup();
+    cpu.pc = 0x100;
+
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x80;  /* LD HL, 0x8000 */
+    mem[pc++] = 0xF9;  /* LD SP, HL */
+    mem[pc++] = 0x76;
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.sp == 0x8000);
+
+    printf("  PASS: ld_sp_hl\n");
+}
+
+/* ── Test: nested CALL/RET with conditionals ─────────────────────────────── */
+
+static void test_nested_call_ret(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    cpu.sp = 0xFFFE;
+
+    /* Main: LD A,0; CALL 0x200; HALT */
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0x00;  /* LD A, 0 */
+    mem[pc++] = 0xCD;                      /* CALL 0x200 */
+    mem[pc++] = 0x00; mem[pc++] = 0x02;
+    mem[pc++] = 0x76;                      /* HALT (at 0x105) */
+
+    /* Sub1 at 0x200: INC A; CALL 0x300; INC A; RET */
+    pc = 0x200;
+    mem[pc++] = 0x3C;                      /* INC A → 1 */
+    mem[pc++] = 0xCD;                      /* CALL 0x300 */
+    mem[pc++] = 0x00; mem[pc++] = 0x03;
+    mem[pc++] = 0x3C;                      /* INC A → 3 */
+    mem[pc++] = 0xC9;                      /* RET */
+
+    /* Sub2 at 0x300: INC A; RET */
+    pc = 0x300;
+    mem[pc++] = 0x3C;                      /* INC A → 2 */
+    mem[pc++] = 0xC9;                      /* RET */
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 3);
+    assert(cpu.sp == 0xFFFE);
+
+    printf("  PASS: nested_call_ret\n");
+}
+
+/* ── Test: WZ register set by JP/CALL/RET ────────────────────────────────── */
+
+static void test_wz_tracking(void)
+{
+    /* JP nn sets WZ */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0xC3; mem[0x101] = 0x34; mem[0x102] = 0x12;
+    mem[0x1234] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.wz == 0x1234);
+
+    /* JP cc sets WZ even when not taken */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = FLAG_Z;  /* NZ not met */
+    mem[0x100] = 0xC2; mem[0x101] = 0x78; mem[0x102] = 0x56;  /* JP NZ */
+    mem[0x103] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.wz == 0x5678);
+
+    /* RET sets WZ */
+    setup();
+    cpu.pc = 0x200;
+    cpu.sp = 0xFFFE;
+    z80_push16(&cpu, 0xABCD);
+    mem[0x200] = 0xC9;  /* RET */
+    mem[0xABCD] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.wz == 0xABCD);
+
+    printf("  PASS: wz_tracking\n");
+}
+
 /* ── Main ────────────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -1056,6 +1649,26 @@ int main(void)
     test_scf_ccf();
     test_arith_program();
     test_f35_add();
+
+    /* Step 3 tests */
+    test_jp_cc();
+    test_jr_cc();
+    test_djnz();
+    test_push_pop();
+    test_push_pop_af();
+    test_ex_af();
+    test_exx();
+    test_ex_de_hl();
+    test_ex_sp_hl();
+    test_ret_cc();
+    test_call_cc();
+    test_rst_trap();
+    test_rst_no_trap();
+    test_di_ei();
+    test_jp_hl();
+    test_ld_sp_hl();
+    test_nested_call_ret();
+    test_wz_tracking();
 
     printf("All tests passed.\n");
     return 0;
