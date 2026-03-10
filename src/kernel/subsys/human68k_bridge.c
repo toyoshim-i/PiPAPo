@@ -4,7 +4,8 @@
  * Translates F-line DOS calls into PPAP operations.
  * Phase 1: _EXIT, _EXIT2, _SETBLOCK, _MALLOC, _MFREE.
  * Phase 2: _GETCHAR, _PUTCHAR, _COMINP, _COMOUT, _PRINT, _GETS.
- * Phase 3: _FGETC, _FGETS, _FPUTC, _FPUTS.
+ * Phase 2b: _FGETC, _FGETS, _FPUTC, _FPUTS.
+ * Phase 3: _CREATE, _OPEN, _CLOSE, _READ, _WRITE, _DELETE, _SEEK.
  */
 
 #include "human68k_bridge.h"
@@ -14,7 +15,9 @@
 #include "kernel/syscall/syscall.h"
 #include "kernel/klog.h"
 #include "kernel/errno.h"
+#include "common/fcntl.h"
 #include <stddef.h>
+#include <string.h>
 
 /* Debug tracing — enable with -DH68K_DEBUG in CMake */
 #ifdef H68K_DEBUG
@@ -531,6 +534,148 @@ static int dos_fputs(uint32_t *regs, uint32_t usp)
     return 2;
 }
 
+/* ── _CREATE ($FF3C) ─────────────────────────────────────────────────── *
+ *
+ * Stack: long path_ptr, word attr
+ * Creates a new file (or truncates existing).  Returns handle in d0.
+ */
+static int dos_create(uint32_t *regs, uint32_t usp)
+{
+    uint32_t path_addr = ustack_u32(usp, 0);
+    /* uint16_t attr = ustack_u16(usp, 4); — ignored (PPAP uses mode) */
+    const char *src = (const char *)(uintptr_t)path_addr;
+    char path[128];
+    if (h68k_translate_path(src, path, sizeof(path)) < 0) {
+        regs[0] = (uint32_t)h68k_errno(-ENAMETOOLONG);
+        advance_pc(regs);
+        return 2;
+    }
+    H68K_TRACE("_CREATE(%s)", path);
+    long r = sys_open(path, O_CREAT | O_TRUNC | O_WRONLY, 0644);
+    regs[0] = (uint32_t)h68k_errno(r);
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _OPEN ($FF3D) ──────────────────────────────────────────────────── *
+ *
+ * Stack: long path_ptr, word mode
+ * Opens a file.  mode: 0=read, 1=write, 2=read/write.
+ * Returns handle in d0.
+ */
+static int dos_open(uint32_t *regs, uint32_t usp)
+{
+    uint32_t path_addr = ustack_u32(usp, 0);
+    uint16_t mode = ustack_u16(usp, 4);
+    const char *src = (const char *)(uintptr_t)path_addr;
+    char path[128];
+    if (h68k_translate_path(src, path, sizeof(path)) < 0) {
+        regs[0] = (uint32_t)h68k_errno(-ENAMETOOLONG);
+        advance_pc(regs);
+        return 2;
+    }
+    H68K_TRACE("_OPEN(%s, %x)", path, (uint32_t)mode);
+    int flags;
+    switch (mode & 0x0F) {
+    case 0:  flags = O_RDONLY; break;
+    case 1:  flags = O_WRONLY; break;
+    default: flags = O_RDWR;   break;
+    }
+    long r = sys_open(path, flags, 0644);
+    regs[0] = (uint32_t)h68k_errno(r);
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _CLOSE ($FF3E) ─────────────────────────────────────────────────── *
+ *
+ * Stack: word fileno
+ * Closes the file handle.  Returns 0 on success.
+ */
+static int dos_close(uint32_t *regs, uint32_t usp)
+{
+    int fd = (int)(int16_t)ustack_u16(usp, 0);
+    H68K_TRACE("_CLOSE(%u)", (uint32_t)fd);
+    long r = sys_close(fd);
+    regs[0] = (uint32_t)h68k_errno(r);
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _READ ($FF3F) ──────────────────────────────────────────────────── *
+ *
+ * Stack: word fileno, long buf_ptr, long len
+ * Reads up to len bytes.  Returns bytes read in d0.
+ */
+static int dos_read(uint32_t *regs, uint32_t usp)
+{
+    int fd = (int)(int16_t)ustack_u16(usp, 0);
+    uint32_t buf_addr = ustack_u32(usp, 2);
+    uint32_t len = ustack_u32(usp, 6);
+    H68K_TRACE("_READ(%u, %x, %x)", (uint32_t)fd, buf_addr, len);
+    long r = sys_read(fd, (char *)(uintptr_t)buf_addr, (size_t)len);
+    regs[0] = (uint32_t)h68k_errno(r);
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _WRITE ($FF40) ─────────────────────────────────────────────────── *
+ *
+ * Stack: word fileno, long buf_ptr, long len
+ * Writes len bytes.  Returns bytes written in d0.
+ */
+static int dos_write(uint32_t *regs, uint32_t usp)
+{
+    int fd = (int)(int16_t)ustack_u16(usp, 0);
+    uint32_t buf_addr = ustack_u32(usp, 2);
+    uint32_t len = ustack_u32(usp, 6);
+    H68K_TRACE("_WRITE(%u, %x, %x)", (uint32_t)fd, buf_addr, len);
+    long r = sys_write(fd, (const char *)(uintptr_t)buf_addr, (size_t)len);
+    regs[0] = (uint32_t)h68k_errno(r);
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _DELETE ($FF41) ────────────────────────────────────────────────── *
+ *
+ * Stack: long path_ptr
+ * Deletes a file.  Returns 0 on success.
+ */
+static int dos_delete(uint32_t *regs, uint32_t usp)
+{
+    uint32_t path_addr = ustack_u32(usp, 0);
+    const char *src = (const char *)(uintptr_t)path_addr;
+    char path[128];
+    if (h68k_translate_path(src, path, sizeof(path)) < 0) {
+        regs[0] = (uint32_t)h68k_errno(-ENAMETOOLONG);
+        advance_pc(regs);
+        return 2;
+    }
+    H68K_TRACE("_DELETE(%s)", path);
+    long r = sys_unlink(path);
+    regs[0] = (uint32_t)h68k_errno(r);
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _SEEK ($FF42) ──────────────────────────────────────────────────── *
+ *
+ * Stack: word fileno, long offset, word whence
+ * whence: 0=SET, 1=CUR, 2=END (same as POSIX)
+ * Returns new position in d0.
+ */
+static int dos_seek(uint32_t *regs, uint32_t usp)
+{
+    int fd = (int)(int16_t)ustack_u16(usp, 0);
+    int32_t offset = (int32_t)ustack_u32(usp, 2);
+    uint16_t whence = ustack_u16(usp, 6);
+    H68K_TRACE("_SEEK(%u, %x, %u)", (uint32_t)fd, (uint32_t)offset, (uint32_t)whence);
+    long r = sys_lseek(fd, offset, whence);
+    regs[0] = (uint32_t)h68k_errno(r);
+    advance_pc(regs);
+    return 2;
+}
+
 /* ── Dispatch ─────────────────────────────────────────────────────────── */
 
 int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
@@ -578,6 +723,34 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
 
     case 0x1E:  /* _FPUTS */
         ret = dos_fputs(regs, usp);
+        break;
+
+    case 0x3C:  /* _CREATE */
+        ret = dos_create(regs, usp);
+        break;
+
+    case 0x3D:  /* _OPEN */
+        ret = dos_open(regs, usp);
+        break;
+
+    case 0x3E:  /* _CLOSE */
+        ret = dos_close(regs, usp);
+        break;
+
+    case 0x3F:  /* _READ */
+        ret = dos_read(regs, usp);
+        break;
+
+    case 0x40:  /* _WRITE */
+        ret = dos_write(regs, usp);
+        break;
+
+    case 0x41:  /* _DELETE */
+        ret = dos_delete(regs, usp);
+        break;
+
+    case 0x42:  /* _SEEK */
+        ret = dos_seek(regs, usp);
         break;
 
     case 0x4A:  /* _SETBLOCK */
