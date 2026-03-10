@@ -811,6 +811,135 @@ static int dos_getpdb(uint32_t *regs)
     return 2;
 }
 
+/* ── _MOVE ($FF05) ──────────────────────────────────────────────────── *
+ *
+ * Stack: word char_code
+ * Output character with cursor advance (like _PUTCHAR but also handles
+ * control codes for cursor movement).  We just output the character.
+ */
+static int dos_move(uint32_t *regs, uint32_t usp)
+{
+    uint8_t ch = (uint8_t)ustack_u16(usp, 0);
+    H68K_TRACE("_MOVE(%x)", (uint32_t)ch);
+    sys_write(1, (const char *)&ch, 1);
+    regs[0] = 0;
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _NAMECK ($FF18) ───────────────────────────────────────────────── *
+ *
+ * Stack: long path_ptr, long buf_ptr
+ * Parse a pathname into its components.
+ * Buffer layout (91 bytes):
+ *   [0x00..0x40]  drive+path (65 bytes, NUL-terminated)
+ *   [0x41..0x52]  filename (18 bytes, NUL-terminated)
+ *   [0x53..0x56]  extension (4 bytes, NUL-terminated)
+ *
+ * Returns in d0:
+ *   0  = file or directory
+ *   2  = wildcard in name
+ *  -13 = path too long / invalid
+ */
+static int dos_nameck(uint32_t *regs, uint32_t usp)
+{
+    uint32_t path_addr = ustack_u32(usp, 0);
+    uint32_t buf_addr  = ustack_u32(usp, 4);
+    const char *src = (const char *)(uintptr_t)path_addr;
+    uint8_t *buf = (uint8_t *)(uintptr_t)buf_addr;
+    H68K_TRACE("_NAMECK(%s)", src);
+
+    /* Find last separator */
+    int len = 0, last_sep = -1;
+    while (src[len]) {
+        if (src[len] == '\\' || src[len] == '/')
+            last_sep = len;
+        len++;
+    }
+
+    /* Copy drive+path portion (up to and including last separator) */
+    int path_len = last_sep + 1;
+    if (path_len > 64) path_len = 64;
+    for (int i = 0; i < path_len; i++)
+        buf[i] = (uint8_t)src[i];
+    buf[path_len] = '\0';
+
+    /* Filename starts after last separator */
+    const char *fname = src + last_sep + 1;
+    int has_wild = 0;
+
+    /* Split filename and extension */
+    int dot_pos = -1;
+    int flen = 0;
+    while (fname[flen]) {
+        if (fname[flen] == '.')
+            dot_pos = flen;
+        if (fname[flen] == '*' || fname[flen] == '?')
+            has_wild = 1;
+        flen++;
+    }
+
+    if (dot_pos >= 0) {
+        /* Copy name (before dot) */
+        int nlen = dot_pos;
+        if (nlen > 17) nlen = 17;
+        for (int i = 0; i < nlen; i++)
+            buf[0x41 + i] = (uint8_t)fname[i];
+        buf[0x41 + nlen] = '\0';
+
+        /* Copy extension (including dot) */
+        const char *ext = fname + dot_pos;
+        int elen = flen - dot_pos;
+        if (elen > 3) elen = 3;
+        for (int i = 0; i < elen; i++)
+            buf[0x53 + i] = (uint8_t)ext[i];
+        buf[0x53 + elen] = '\0';
+    } else {
+        /* No extension */
+        int nlen = flen;
+        if (nlen > 17) nlen = 17;
+        for (int i = 0; i < nlen; i++)
+            buf[0x41 + i] = (uint8_t)fname[i];
+        buf[0x41 + nlen] = '\0';
+        buf[0x53] = '\0';
+    }
+
+    regs[0] = has_wild ? 2 : 0;
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _ALLCLOSE ($FF1A) ─────────────────────────────────────────────── *
+ *
+ * No stack arguments.
+ * Close all file handles for the current process (except stdin/out/err).
+ * Returns 0.
+ */
+static int dos_allclose(uint32_t *regs)
+{
+    H68K_TRACE("_ALLCLOSE");
+    /* Close fds 3 and above */
+    for (int fd = 3; fd < 16; fd++)
+        sys_close((long)fd);
+    regs[0] = 0;
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _KEEPPR ($FF31) ───────────────────────────────────────────────── *
+ *
+ * Stack: long code, long nbytes
+ * Terminate and stay resident.  We don't support TSR — just exit.
+ */
+static int dos_keeppr(uint32_t *regs, uint32_t usp)
+{
+    uint32_t code = ustack_u32(usp, 0);
+    H68K_TRACE("_KEEPPR(%u)", code);
+    (void)regs;
+    sys_exit((long)code);
+    return 1;  /* process exited */
+}
+
 /* ── _SUPER ($FF20) ─────────────────────────────────────────────────── *
  *
  * Stack: long ssp
@@ -1629,6 +1758,10 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
         ret = dos_cominp(regs);
         break;
 
+    case 0x05:  /* _MOVE */
+        ret = dos_move(regs, usp);
+        break;
+
     case 0x09:  /* _PRINT */
         ret = dos_print(regs, usp);
         break;
@@ -1649,8 +1782,16 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
         ret = dos_conctrl(regs, usp);
         break;
 
+    case 0x18:  /* _NAMECK */
+        ret = dos_nameck(regs, usp);
+        break;
+
     case 0x19:  /* _CURDRV */
         ret = dos_curdrv(regs);
+        break;
+
+    case 0x1A:  /* _ALLCLOSE */
+        ret = dos_allclose(regs);
         break;
 
     case 0x1B:  /* _FGETC */
@@ -1696,6 +1837,9 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
     case 0x30:  /* _VERNUM */
         ret = dos_vernum(regs);
         break;
+
+    case 0x31:  /* _KEEPPR */
+        return dos_keeppr(regs, usp);
 
     case 0x33:  /* _BREAKCK */
         ret = dos_breakck(regs, usp);
@@ -2022,6 +2166,70 @@ static int iocs_timeget(uint32_t *regs)
     return 2;
 }
 
+/* ── IOCS _SKEY_MOD ($0E) ───────────────────────────────────────────── *
+ *
+ * d1.w = mode (0=get, 1=get+clear).
+ * Returns shift key status in d0.  No physical keyboard — always 0.
+ */
+static int iocs_skey_mod(uint32_t *regs)
+{
+    H68K_TRACE("IOCS _SKEY_MOD");
+    regs[0] = 0;
+    return 2;
+}
+
+/* ── IOCS cursor movement ($19-$1C) ────────────────────────────────── *
+ *
+ * _B_UP ($19), _B_DOWN ($1A), _B_RIGHT ($1B), _B_LEFT ($1C)
+ * Move cursor one position.  Emit ANSI escape sequences.
+ */
+static int iocs_b_curmov(uint32_t *regs, char dir)
+{
+    char seq[4] = { '\033', '[', dir, '\0' };
+    sys_write(1, seq, 3);
+    regs[0] = 0;
+    return 2;
+}
+
+/* ── IOCS _B_CLRST ($2A) ──────────────────────────────────────────── *
+ *
+ * d1.w = mode:
+ *   0 = clear from cursor to end of screen
+ *   1 = clear from start to cursor
+ *   2 = clear entire screen
+ * Emit ANSI escape sequence.
+ */
+static int iocs_b_clrst(uint32_t *regs)
+{
+    uint16_t mode = (uint16_t)(regs[1] & 0xFFFF);
+    H68K_TRACE("IOCS _B_CLRST(%u)", (uint32_t)mode);
+    char seq[5];
+    seq[0] = '\033';
+    seq[1] = '[';
+    if (mode == 2)
+        seq[2] = '2';
+    else if (mode == 1)
+        seq[2] = '1';
+    else
+        seq[2] = '0';
+    seq[3] = 'J';
+    sys_write(1, seq, 4);
+    regs[0] = 0;
+    return 2;
+}
+
+/* ── IOCS _B_ERA_AL ($2B) ─────────────────────────────────────────── *
+ *
+ * Clear from cursor to end of line.  Emit ANSI CSI 0K.
+ */
+static int iocs_b_era_al(uint32_t *regs)
+{
+    H68K_TRACE("IOCS _B_ERA_AL");
+    sys_write(1, "\033[0K", 4);
+    regs[0] = 0;
+    return 2;
+}
+
 int human68k_iocs_dispatch(uint32_t *regs)
 {
     uint8_t func = (uint8_t)regs[0];
@@ -2032,6 +2240,18 @@ int human68k_iocs_dispatch(uint32_t *regs)
 
     case 0x04:  /* _B_KEYSNS */
         return iocs_b_keysns(regs);
+
+    case 0x0E:  /* _SKEY_MOD */
+        return iocs_skey_mod(regs);
+
+    case 0x19:  /* _B_UP */
+        return iocs_b_curmov(regs, 'A');
+    case 0x1A:  /* _B_DOWN */
+        return iocs_b_curmov(regs, 'B');
+    case 0x1B:  /* _B_RIGHT */
+        return iocs_b_curmov(regs, 'C');
+    case 0x1C:  /* _B_LEFT */
+        return iocs_b_curmov(regs, 'D');
 
     case 0x20:  /* _B_PUTC */
         return iocs_b_putc(regs);
@@ -2044,6 +2264,12 @@ int human68k_iocs_dispatch(uint32_t *regs)
 
     case 0x23:  /* _B_LOCATE */
         return iocs_b_locate(regs);
+
+    case 0x2A:  /* _B_CLRST */
+        return iocs_b_clrst(regs);
+
+    case 0x2B:  /* _B_ERA_AL */
+        return iocs_b_era_al(regs);
 
     case 0x5A:  /* _DATEGET */
         return iocs_dateget(regs);
