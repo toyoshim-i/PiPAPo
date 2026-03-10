@@ -810,6 +810,184 @@ static int dos_getpdb(uint32_t *regs)
     return 2;
 }
 
+/* ── _GETDATE ($FF2A) ───────────────────────────────────────────────── *
+ *
+ * No stack arguments.
+ * Returns packed date in d0:
+ *   bits 31..16 = day of week (0=Sun..6=Sat)
+ *   bits 15..9  = year - 1980
+ *   bits  8..5  = month (1-12)
+ *   bits  4..0  = day (1-31)
+ *
+ * We return a fixed date: 2026-01-01 (Thursday = 4).
+ */
+static int dos_getdate(uint32_t *regs)
+{
+    H68K_TRACE("_GETDATE");
+    uint32_t wday  = 4;           /* Thursday */
+    uint32_t year  = 2026 - 1980; /* 46 */
+    uint32_t month = 1;
+    uint32_t day   = 1;
+    regs[0] = (wday << 16) | (year << 9) | (month << 5) | day;
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _SETDATE ($FF2B) ───────────────────────────────────────────────── *
+ *
+ * Stack: word date (packed as above, no wday)
+ * Stub: ignore, return 0.
+ */
+static int dos_setdate(uint32_t *regs, uint32_t usp)
+{
+    (void)usp;
+    H68K_TRACE("_SETDATE");
+    regs[0] = 0;
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _GETTIME ($FF2C) ───────────────────────────────────────────────── *
+ *
+ * No stack arguments.
+ * Returns packed time in d0:
+ *   bits 15..11 = hour (0-23)
+ *   bits 10..5  = minute (0-59)
+ *   bits  4..0  = second / 2 (0-29)
+ *
+ * We return 00:00:00.
+ */
+static int dos_gettime(uint32_t *regs)
+{
+    H68K_TRACE("_GETTIME");
+    regs[0] = 0;
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _SETTIME ($FF2D) ───────────────────────────────────────────────── *
+ *
+ * Stack: word time (packed as above)
+ * Stub: ignore, return 0.
+ */
+static int dos_settime(uint32_t *regs, uint32_t usp)
+{
+    (void)usp;
+    H68K_TRACE("_SETTIME");
+    regs[0] = 0;
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _DSKFRE ($FF36) ───────────────────────────────────────────────── *
+ *
+ * Stack: word drive (0 = current, 1 = A:, …)
+ * Returns free space info in a buffer pointed to by a0 (regs[8]):
+ *   [0]  uint16_t  free_clusters
+ *   [2]  uint16_t  total_clusters
+ *   [4]  uint16_t  sectors_per_cluster
+ *   [6]  uint16_t  bytes_per_sector
+ * d0 = free space in bytes (or -1 on error)
+ *
+ * We synthesize from page allocator info.
+ */
+static int dos_dskfre(uint32_t *regs, uint32_t usp)
+{
+    H68K_TRACE("_DSKFRE(%u)", (uint32_t)ustack_u16(usp, 0));
+
+    uint32_t free_pages = page_free_count();
+    uint32_t total_pages = page_count;
+    uint32_t page_sz = PAGE_SIZE;
+
+    /* Model as: 1 sector = PAGE_SIZE bytes, 1 cluster = 1 sector */
+    uint32_t buf_addr = regs[8];  /* a0 = output buffer */
+    if (buf_addr) {
+        *(volatile uint16_t *)(uintptr_t)(buf_addr + 0) = (uint16_t)free_pages;
+        *(volatile uint16_t *)(uintptr_t)(buf_addr + 2) = (uint16_t)total_pages;
+        *(volatile uint16_t *)(uintptr_t)(buf_addr + 4) = 1;  /* 1 sector/cluster */
+        *(volatile uint16_t *)(uintptr_t)(buf_addr + 6) = (uint16_t)page_sz;
+    }
+
+    regs[0] = free_pages * page_sz;
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _GETENV ($FF38) ────────────────────────────────────────────────── *
+ *
+ * Stack: long name_ptr, long env_ptr, long buf_ptr
+ * Looks up an environment variable.  We have no environment —
+ * return -1 (not found) for all queries.
+ */
+static int dos_getenv(uint32_t *regs, uint32_t usp)
+{
+    H68K_TRACE("_GETENV(%s)", (const char *)(uintptr_t)ustack_u32(usp, 0));
+    regs[0] = (uint32_t)(-1);  /* not found */
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _IOCTRL ($FF44) ───────────────────────────────────────────────── *
+ *
+ * Stack: word mode, word fileno, …
+ * Device I/O control.  Many sub-functions keyed on 'mode'.
+ *
+ * mode 0: get device info → return device word in d0
+ *   For stdin/stdout/stderr (fd 0-2): return 0x80C1 (console, cooked)
+ *   For regular files: return 0x0000
+ *
+ * All other modes: return 0 (no-op).
+ */
+static int dos_ioctrl(uint32_t *regs, uint32_t usp)
+{
+    uint16_t mode = ustack_u16(usp, 0);
+    int fd = (int)(int16_t)ustack_u16(usp, 2);
+    H68K_TRACE("_IOCTRL(%u, %d)", (uint32_t)mode, fd);
+
+    if (mode == 0) {
+        /* Get device info */
+        if (fd >= 0 && fd <= 2)
+            regs[0] = 0x80C1;  /* character device, console */
+        else
+            regs[0] = 0x0000;  /* regular file */
+    } else {
+        regs[0] = 0;
+    }
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _FILEDATE ($FF57) ──────────────────────────────────────────────── *
+ *
+ * Stack: word fileno, long datetime (0 = get, nonzero = set)
+ * Get/set file modification date+time.
+ *
+ * datetime format:  high word = date (year<<9|month<<5|day)
+ *                   low word  = time (hour<<11|min<<5|sec/2)
+ *
+ * Get: return fixed date 2026-01-01 00:00:00 in d0.
+ * Set: ignore, return 0.
+ */
+static int dos_filedate(uint32_t *regs, uint32_t usp)
+{
+    int fd = (int)(int16_t)ustack_u16(usp, 0);
+    uint32_t datetime = ustack_u32(usp, 2);
+    H68K_TRACE("_FILEDATE(%d, %x)", fd, datetime);
+    (void)fd;
+
+    if (datetime == 0) {
+        /* Get: return fixed date 2026-01-01 00:00:00 */
+        uint16_t date = ((2026 - 1980) << 9) | (1 << 5) | 1;
+        uint16_t time = 0;
+        regs[0] = ((uint32_t)date << 16) | time;
+    } else {
+        /* Set: no-op */
+        regs[0] = 0;
+    }
+    advance_pc(regs);
+    return 2;
+}
+
 /* ── _MKDIR ($FF39) ─────────────────────────────────────────────────── *
  *
  * Stack: long path_ptr
@@ -1232,6 +1410,22 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
         ret = dos_fputs(regs, usp);
         break;
 
+    case 0x2A:  /* _GETDATE */
+        ret = dos_getdate(regs);
+        break;
+
+    case 0x2B:  /* _SETDATE */
+        ret = dos_setdate(regs, usp);
+        break;
+
+    case 0x2C:  /* _GETTIME */
+        ret = dos_gettime(regs);
+        break;
+
+    case 0x2D:  /* _SETTIME */
+        ret = dos_settime(regs, usp);
+        break;
+
     case 0x30:  /* _VERNUM */
         ret = dos_vernum(regs);
         break;
@@ -1242,6 +1436,14 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
 
     case 0x35:  /* _INTVCG */
         ret = dos_intvcg(regs, usp);
+        break;
+
+    case 0x36:  /* _DSKFRE */
+        ret = dos_dskfre(regs, usp);
+        break;
+
+    case 0x38:  /* _GETENV */
+        ret = dos_getenv(regs, usp);
         break;
 
     case 0x39:  /* _MKDIR */
@@ -1288,6 +1490,10 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
         ret = dos_chmod(regs, usp);
         break;
 
+    case 0x44:  /* _IOCTRL */
+        ret = dos_ioctrl(regs, usp);
+        break;
+
     case 0x45:  /* _DUP */
         ret = dos_dup(regs, usp);
         break;
@@ -1326,6 +1532,10 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
 
     case 0x56:  /* _RENAME */
         ret = dos_rename(regs, usp);
+        break;
+
+    case 0x57:  /* _FILEDATE */
+        ret = dos_filedate(regs, usp);
         break;
 
     default:
