@@ -86,4 +86,21 @@ int x68k_apply_relocs(uint8_t *image, uint32_t image_size,
 int exec_x68k(pcb_t *p, const uint8_t *file, uint32_t size,
               const char *path, const char *const *argv);
 
+/*
+ * r68k_detect — check if a file is an R-format binary (.r extension,
+ *               no HU or ELF magic).
+ *
+ * Returns 1 if R-format, 0 otherwise.
+ */
+int r68k_detect(const char *path, const uint8_t *file, uint32_t size);
+
+/*
+ * exec_r68k — load and set up an R-format binary for execution.
+ *
+ * R-format is a raw flat binary with no header and no relocations.
+ * Called from do_execve() when r68k_detect() succeeds.
+ */
+int exec_r68k(pcb_t *p, const uint8_t *file, uint32_t size,
+              const char *path, const char *const *argv);
+
 #endif /* PPAP_EXEC_EXEC_X68K_H */

@@ -1,8 +1,8 @@
 /*
- * exec_x68k.c — Human68k X-format binary loader
+ * exec_x68k.c — Human68k binary loaders (X-format and R-format)
  *
- * Phase 1 Steps 1–5: detection, validation, relocation, memory allocation,
- * segment loading, PMB/register setup.
+ * X-format: full header, relocations, separate text/data/bss.
+ * R-format: raw flat binary, no header, no relocation.
  */
 
 #include "exec_x68k.h"
@@ -346,5 +346,187 @@ int exec_x68k(pcb_t *p, const uint8_t *file, uint32_t size,
     (void)argv;   /* TODO: build LASCIIZ command line */
     (void)size;
 
+    return 0;
+}
+
+/* ── R-format detection ───────────────────────────────────────────────────── */
+
+int r68k_detect(const char *path, const uint8_t *file, uint32_t size)
+{
+    /* R-format has no magic — detect by ".r" or ".R" extension */
+    if (size < 2)
+        return 0;
+
+    /* Must NOT be X-format (HU magic) or ELF */
+    if (file[0] == X68K_MAGIC_0 && file[1] == X68K_MAGIC_1)
+        return 0;
+    if (file[0] == 0x7F && file[1] == 'E')
+        return 0;
+
+    /* Check extension */
+    const char *dot = NULL;
+    for (const char *s = path; *s; s++) {
+        if (*s == '.')
+            dot = s;
+        else if (*s == '/')
+            dot = NULL;
+    }
+    if (!dot)
+        return 0;
+    return (dot[1] == 'r' || dot[1] == 'R') && dot[2] == '\0';
+}
+
+/* ── R-format loader ──────────────────────────────────────────────────────── *
+ *
+ * R-format is a raw flat binary with no header.  The entire file is
+ * loaded at base+0x100 (after the PMB).  Entry point is the start
+ * of the loaded image.  No relocation is applied.
+ *
+ * Memory layout matches X-format (§7.2):
+ *   base+0x0000  PMB (256 bytes)
+ *   base+0x0100  Program image (entire file)
+ *   ...          Stack (grows down from top of block)
+ */
+int exec_r68k(pcb_t *p, const uint8_t *file, uint32_t size,
+              const char *path, const char *const *argv)
+{
+    if (size == 0)
+        return -(int)ENOEXEC;
+
+    /* ── 1. Calculate memory requirements ──────────────────────────────── */
+    uint32_t min_bytes = X68K_PMB_SIZE + size;
+    uint32_t min_pages = (min_bytes + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    if (min_pages > USER_PAGES_MAX)
+        return -(int)ENOMEM;
+
+    /* ── 2. Allocate kernel stack page ─────────────────────────────────── */
+    void *stack = page_alloc();
+    if (!stack)
+        return -(int)ENOMEM;
+    p->stack_page = stack;
+
+    /* ── 3. Allocate contiguous pages (same Human68k protocol) ─────────── */
+    uint32_t n_pages = USER_PAGES_MAX;
+    uint8_t *base = NULL;
+    while (n_pages >= min_pages) {
+        base = alloc_contiguous(n_pages);
+        if (base)
+            break;
+        n_pages--;
+    }
+    if (!base) {
+        page_free(stack);
+        p->stack_page = NULL;
+        return -(int)ENOMEM;
+    }
+
+    uint32_t total_bytes = n_pages * PAGE_SIZE;
+
+    for (uint32_t i = 0; i < n_pages; i++)
+        p->user_pages[i] = base + i * PAGE_SIZE;
+
+    /* ── 4. Zero PMB, copy file image ──────────────────────────────────── */
+    memset(base, 0, X68K_PMB_SIZE);
+    uint8_t *image_dst = base + X68K_PMB_SIZE;
+    memcpy(image_dst, file, size);
+
+    /* Zero remaining space after image (acts as BSS + stack area) */
+    if (X68K_PMB_SIZE + size < total_bytes)
+        memset(image_dst + size, 0, total_bytes - X68K_PMB_SIZE - size);
+
+    /* ── 4a. Populate PMB fields ───────────────────────────────────────── */
+    {
+        uint32_t base_u = (uint32_t)(uintptr_t)base;
+        uint32_t end_u  = base_u + total_bytes;
+        uint32_t text_u = (uint32_t)(uintptr_t)image_dst;
+
+        /* MMB header */
+        write_be32(base + 0x00, 0);
+        write_be32(base + 0x04, base_u);
+        write_be32(base + 0x08, end_u);
+        write_be32(base + 0x0C, 0);
+
+        /* PMB fields */
+        write_be32(base + 0x10, 0xFFFFFFFF);       /* env = -1 */
+        write_be32(base + 0x20, base_u + 0x6C);    /* cmdline */
+        base[0x24] = 0x07;                          /* file handles */
+        write_be32(base + 0x30, text_u + size);     /* BSS start = end of image */
+        write_be32(base + 0x34, text_u + size);     /* heap start = same */
+        write_be32(base + 0x38, end_u);             /* initial stack */
+
+        /* Execution path and filename */
+        {
+            const char *last_slash = path;
+            for (const char *s = path; *s; s++) {
+                if (*s == '/')
+                    last_slash = s;
+            }
+            size_t dir_len = (size_t)(last_slash - path);
+            if (dir_len > 65) dir_len = 65;
+            if (dir_len > 0)
+                memcpy(base + 0x82, path, dir_len);
+            base[0x82 + dir_len] = '\0';
+
+            const char *bname = last_slash + 1;
+            size_t name_len = strlen(bname);
+            if (name_len > 23) name_len = 23;
+            memcpy(base + 0xC4, bname, name_len);
+            base[0xC4 + name_len] = '\0';
+        }
+    }
+
+    /* ── 5. Set up entry point (no relocation needed) ──────────────────── */
+    uint32_t entry = (uint32_t)(uintptr_t)image_dst;
+    proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, 0);
+
+#if defined(__m68k__)
+    p->usp = (uint32_t)(uintptr_t)(base + total_bytes);
+#endif
+
+    /* ── 6. Patch initial registers ────────────────────────────────────── */
+    {
+        uint32_t *sw = (uint32_t *)(uintptr_t)p->sp;
+        sw[8]  = (uint32_t)(uintptr_t)base;               /* a0 = PMB */
+        sw[9]  = (uint32_t)(uintptr_t)(base + total_bytes);/* a1 = end+1 */
+        sw[10] = (uint32_t)(uintptr_t)(base + 0x6C);      /* a2 = cmdline */
+        sw[11] = 0xFFFFFFFF;                               /* a3 = env (-1) */
+        sw[12] = (uint32_t)(uintptr_t)image_dst;           /* a4 = image start */
+    }
+
+    /* ── 7. Tag as Human68k and initialize subsystem ───────────────────── */
+    p->subsys = SUBSYS_HUMAN68K;
+    {
+        const subsys_ops_t *ops = subsys_ops_table[SUBSYS_HUMAN68K];
+        if (ops && ops->on_init)
+            ops->on_init(p);
+    }
+
+    /* ── 8. Process metadata ───────────────────────────────────────────── */
+    {
+        const char *bname = path;
+        for (const char *s = path; *s; s++) {
+            if (*s == '/')
+                bname = s + 1;
+        }
+        size_t clen = strlen(bname);
+        if (clen > 15) clen = 15;
+        memcpy(p->comm, bname, clen);
+        p->comm[clen] = '\0';
+    }
+
+    if (current)
+        memcpy(p->cwd, current->cwd, sizeof(p->cwd));
+    else
+        strcpy(p->cwd, "/");
+
+    for (int i = 0; i < NSIG; i++) {
+        if (p->sig_handlers[i] != (sighandler_t)1)
+            p->sig_handlers[i] = (sighandler_t)0;
+    }
+    p->sig_pending = 0;
+    p->sig_blocked = 0;
+
+    (void)argv;
     return 0;
 }

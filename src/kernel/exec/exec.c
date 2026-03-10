@@ -201,6 +201,11 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
 
     err = elf_validate(ehdr);
     if (err < 0) {
+        /* Not ELF — try Human68k R-format (.r extension, raw binary) */
+        if (r68k_detect(path, file_base, file_size)) {
+            vnode_put(vn);
+            return exec_r68k(p, file_base, file_size, path, argv);
+        }
         vnode_put(vn);
         return err;
     }

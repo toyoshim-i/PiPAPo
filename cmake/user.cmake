@@ -75,11 +75,13 @@ if(PPAP_ARCH STREQUAL "m68k")
     set(PPAP_CC            ${PPAP_M68K_TC}/bin/m68k-elf-gcc)
     set(PPAP_CROSS_PREFIX  ${PPAP_M68K_TC}/bin/m68k-elf-)
     set(PPAP_STRIP         ${PPAP_M68K_TC}/bin/m68k-elf-strip)
+    set(PPAP_OBJCOPY       ${PPAP_M68K_TC}/bin/m68k-elf-objcopy)
     set(PPAP_SIZE_CMD      ${PPAP_M68K_TC}/bin/m68k-elf-size)
     set(PPAP_ARCH_DIR      ${PPAP_ROOT}/src/user/arch/m68k)
     set(PPAP_TARGET_FLAGS  -m68000)
     set(PPAP_PIC_FLAGS     -msep-data)
     set(PPAP_USER_LD       ${PPAP_ARCH_DIR}/user.ld)
+    set(PPAP_R68K_LD       ${PPAP_ARCH_DIR}/r68k.ld)
     set(PPAP_BUSYBOX_LD    ${PPAP_ROOT}/third_party/patches/musl/libc_m68k.ld)
     set(PPAP_MUSL_SYSROOT  ${PPAP_SHARED_BUILD}/musl-sysroot)
     set(PPAP_MUSL_TARGET   m68k-elf)
@@ -231,6 +233,59 @@ function(ppap_user_program name source)
                 -o ${_elf} ${_link_objs}
         DEPENDS ${_link_objs} ${PPAP_USER_LD}
         COMMENT "Linking ${name}.elf (${PPAP_ARCH})"
+    )
+endfunction()
+
+# ppap_r68k_program(name source)
+#
+# Creates custom commands to compile, link, and objcopy a Human68k R-format
+# flat binary (.r).  The binary has no headers and no relocations.
+# Only available on m68k targets.
+function(ppap_r68k_program name source)
+    if(NOT PPAP_ARCH STREQUAL "m68k")
+        return()
+    endif()
+
+    set(_obj ${PPAP_SHARED_BUILD}/${name}.o)
+    set(_elf ${PPAP_SHARED_BUILD}/${name}_r68k.elf)
+    set(_bin ${PPAP_SHARED_BUILD}/${name}.r)
+
+    # Compile
+    get_filename_component(_ext ${source} LAST_EXT)
+    if(_ext STREQUAL ".S" OR _ext STREQUAL ".s")
+        add_custom_command(
+            OUTPUT ${_obj}
+            COMMAND ${PPAP_CC} ${PPAP_TARGET_FLAGS} -c -o ${_obj} ${source}
+            DEPENDS ${source}
+            COMMENT "Assembling ${name}.o (r68k)"
+        )
+    else()
+        add_custom_command(
+            OUTPUT ${_obj}
+            COMMAND ${PPAP_CC} ${PPAP_TARGET_FLAGS}
+                    -ffreestanding -nostdlib -Os -Wall -Werror
+                    -c -o ${_obj} ${source}
+            DEPENDS ${source}
+            COMMENT "Compiling ${name}.o (r68k)"
+        )
+    endif()
+
+    # Link (flat binary via r68k.ld, no CRT)
+    add_custom_command(
+        OUTPUT ${_elf}
+        COMMAND ${PPAP_CC} ${PPAP_TARGET_FLAGS}
+                -nostdlib -T ${PPAP_R68K_LD} -Wl,--build-id=none
+                -o ${_elf} ${_obj}
+        DEPENDS ${_obj} ${PPAP_R68K_LD}
+        COMMENT "Linking ${name} (r68k)"
+    )
+
+    # objcopy to raw binary
+    add_custom_command(
+        OUTPUT ${_bin}
+        COMMAND ${PPAP_OBJCOPY} -O binary ${_elf} ${_bin}
+        DEPENDS ${_elf}
+        COMMENT "Generating ${name}.r (r68k flat binary)"
     )
 endfunction()
 
