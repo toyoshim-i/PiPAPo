@@ -1,12 +1,20 @@
 /*
  * exec_x68k.c — Human68k X-format binary loader
  *
- * Phase 1 Steps 1–3: detection, header validation, relocation processor.
- * Subsequent steps add memory allocation, PMB setup, and F-line bridging.
+ * Phase 1 Steps 1–5: detection, validation, relocation, memory allocation,
+ * segment loading, PMB/register setup.
  */
 
 #include "exec_x68k.h"
+#include "exec.h"
+#include "kernel/mm/page.h"
+#include "kernel/signal/signal.h"
 #include "kernel/errno.h"
+#include <string.h>
+
+/* PMB size: 256 bytes at the start of the process memory block.
+ * Program text starts at base+0x100.  See §4.5 / §7.2. */
+#define X68K_PMB_SIZE  0x100
 
 /* ── Detection ─────────────────────────────────────────────────────────────── */
 
@@ -21,45 +29,28 @@ int x68k_detect(const uint8_t *file, uint32_t size)
 
 int x68k_validate(const x68k_header_t *hdr, uint32_t file_size)
 {
-    /* Magic already checked by x68k_detect(), but double-check */
     if (hdr->magic[0] != X68K_MAGIC_0 || hdr->magic[1] != X68K_MAGIC_1)
         return -(int)ENOEXEC;
 
-    /* Entry point must be within the text segment */
     if (hdr->entry_offset >= hdr->text_size && hdr->text_size > 0)
         return -(int)ENOEXEC;
 
-    /* File must contain at least header + text + data + relocation table */
     uint32_t needed = X68K_HEADER_SIZE + hdr->text_size + hdr->data_size
                     + hdr->reloc_size;
     if (needed > file_size)
         return -(int)ENOEXEC;
 
-    /* Overflow check: text + data + bss must not wrap */
     uint32_t image_size = hdr->text_size + hdr->data_size + hdr->bss_size;
-    if (image_size < hdr->text_size)   /* overflow */
+    if (image_size < hdr->text_size)
         return -(int)ENOEXEC;
 
-    /* Must have at least a text segment */
     if (hdr->text_size == 0)
         return -(int)ENOEXEC;
 
     return 0;
 }
 
-/* ── Relocation processor ──────────────────────────────────────────────────
- *
- * X-format relocation table format:
- *   - First entry: 2-byte absolute displacement from image start
- *   - Subsequent entries: 2-byte relative displacement from previous fixup
- *   - If displacement == 0x0001, next 4 bytes are an extended displacement
- *   - Odd displacement → word (16-bit) relocation
- *   - Even displacement → long (32-bit) relocation
- *   - Table ends when reloc_size bytes are consumed
- *
- * Each fixup adds `delta` (= load_addr - base_addr) to the value at the
- * fixup location.
- */
+/* ── Relocation processor ──────────────────────────────────────────────────── */
 
 static uint16_t read_be16(const uint8_t *p)
 {
@@ -91,10 +82,10 @@ int x68k_apply_relocs(uint8_t *image, uint32_t image_size,
                       uint32_t delta)
 {
     if (reloc_size == 0 || delta == 0)
-        return 0;   /* nothing to do */
+        return 0;
 
-    uint32_t pos = 0;       /* position in reloc table */
-    uint32_t fixup = 0;     /* current fixup offset in image */
+    uint32_t pos = 0;
+    uint32_t fixup = 0;
     int first = 1;
 
     while (pos < reloc_size) {
@@ -107,12 +98,10 @@ int x68k_apply_relocs(uint8_t *image, uint32_t image_size,
         pos += 2;
 
         if (first) {
-            /* First entry: absolute displacement from image start */
             fixup = d16;
             first = 0;
         } else {
             if (d16 == 0x0001) {
-                /* Extended displacement: next 4 bytes */
                 if (pos + 4 > reloc_size)
                     return -(int)ENOEXEC;
                 disp = read_be32(reloc_table + pos);
@@ -123,16 +112,13 @@ int x68k_apply_relocs(uint8_t *image, uint32_t image_size,
             }
         }
 
-        /* Apply fixup */
         if (fixup & 1) {
-            /* Odd offset → word (16-bit) relocation */
             uint32_t off = fixup & ~1u;
             if (off + 2 > image_size)
                 return -(int)ENOEXEC;
             uint16_t val = read_be16(image + off);
             write_be16(image + off, (uint16_t)(val + delta));
         } else {
-            /* Even offset → long (32-bit) relocation */
             if (fixup + 4 > image_size)
                 return -(int)ENOEXEC;
             uint32_t val = read_be32(image + fixup);
@@ -143,8 +129,27 @@ int x68k_apply_relocs(uint8_t *image, uint32_t image_size,
     return 0;
 }
 
-/* ── Loader stub ───────────────────────────────────────────────────────────── */
+/* ── Loader ────────────────────────────────────────────────────────────────── */
 
+/*
+ * exec_x68k — Load an X-format binary and set up a process to run it.
+ *
+ * Memory layout (§7.2):
+ *   base+0x0000  PMB (256 bytes: MMB header + process fields)
+ *   base+0x0100  Text segment
+ *   base+text    Data segment
+ *   base+data    BSS (zeroed)
+ *   ...          Heap (grows up)
+ *   top          Stack (grows down)
+ *
+ * Human68k protocol (§7.3): allocate up to USER_PAGES_MAX pages.
+ * The program calls _SETBLOCK at startup to release unneeded pages.
+ *
+ * Initial registers (§4.3):
+ *   a0 = PMB base         a1 = memory end + 1
+ *   a2 = command line      a3 = environment (−1 = none)
+ *   a4 = program start (base+0x100)
+ */
 int exec_x68k(pcb_t *p, const uint8_t *file, uint32_t size,
               const char *path, const char *const *argv)
 {
@@ -154,10 +159,132 @@ int exec_x68k(pcb_t *p, const uint8_t *file, uint32_t size,
     if (err < 0)
         return err;
 
-    (void)p;
-    (void)path;
-    (void)argv;
+    /* ── 1. Calculate memory requirements ──────────────────────────────── */
+    uint32_t image_size = hdr->text_size + hdr->data_size + hdr->bss_size;
+    uint32_t min_bytes = X68K_PMB_SIZE + image_size;
+    uint32_t min_pages = (min_bytes + PAGE_SIZE - 1) / PAGE_SIZE;
 
-    /* TODO: Phase 1 Steps 4–8 implement the actual loader. */
-    return -(int)ENOSYS;
+    if (min_pages > USER_PAGES_MAX)
+        return -(int)ENOMEM;
+
+    /* ── 2. Allocate stack page (before data — same LIFO drain as ELF) ── */
+    void *stack = page_alloc();
+    if (!stack)
+        return -(int)ENOMEM;
+    p->stack_page = stack;
+
+    /* ── 3. Allocate contiguous pages ──────────────────────────────────
+     *
+     * Human68k protocol: try USER_PAGES_MAX first, fall back to minimum.
+     * The program sees the entire block as its own and calls _SETBLOCK
+     * to release what it doesn't need.
+     */
+    uint32_t n_pages = USER_PAGES_MAX;
+    uint8_t *base = NULL;
+    while (n_pages >= min_pages) {
+        base = alloc_contiguous(n_pages);
+        if (base)
+            break;
+        n_pages--;
+    }
+    if (!base) {
+        page_free(stack);
+        p->stack_page = NULL;
+        return -(int)ENOMEM;
+    }
+
+    uint32_t total_bytes = n_pages * PAGE_SIZE;
+
+    for (uint32_t i = 0; i < n_pages; i++)
+        p->user_pages[i] = base + i * PAGE_SIZE;
+
+    /* ── 4. Zero PMB, copy text+data, zero BSS ────────────────────────── */
+    memset(base, 0, X68K_PMB_SIZE);
+
+    uint8_t *text_dst = base + X68K_PMB_SIZE;
+    const uint8_t *text_src = file + X68K_HEADER_SIZE;
+
+    memcpy(text_dst, text_src, hdr->text_size);
+
+    if (hdr->data_size > 0)
+        memcpy(text_dst + hdr->text_size,
+               text_src + hdr->text_size, hdr->data_size);
+
+    if (hdr->bss_size > 0)
+        memset(text_dst + hdr->text_size + hdr->data_size,
+               0, hdr->bss_size);
+
+    /* ── 5. Apply relocations ──────────────────────────────────────────── */
+    if (hdr->reloc_size > 0) {
+        uint32_t load_addr = (uint32_t)(uintptr_t)text_dst;
+        uint32_t delta = load_addr - hdr->base_addr;
+        const uint8_t *reloc_data = file + X68K_HEADER_SIZE
+                                  + hdr->text_size + hdr->data_size;
+        err = x68k_apply_relocs(text_dst, image_size,
+                                reloc_data, hdr->reloc_size, delta);
+        if (err < 0) {
+            for (uint32_t i = 0; i < n_pages; i++)
+                page_free(base + i * PAGE_SIZE);
+            page_free(stack);
+            p->stack_page = NULL;
+            return err;
+        }
+    }
+
+    /* ── 6. Set up entry point and stack frame ─────────────────────────
+     *
+     * Human68k uses the allocated block itself for stack — stack grows
+     * down from the top of the block.  The stack_page is used by the
+     * kernel for the initial exception frame (same as ELF loader).
+     */
+    uint32_t entry = (uint32_t)(uintptr_t)(text_dst + hdr->entry_offset);
+    proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, 0);
+
+    /* ── 7. Patch initial registers in the software frame ──────────────
+     *
+     * proc_setup_stack uses stack_page; we patch the register slots.
+     * Software frame (low → high from p->sp):
+     *   [0..7]  d0–d7    [8..14] a0–a6    then SR(2)+PC(4)
+     */
+    {
+        uint32_t *sw = (uint32_t *)(uintptr_t)p->sp;
+        sw[8]  = (uint32_t)(uintptr_t)base;               /* a0 = PMB */
+        sw[9]  = (uint32_t)(uintptr_t)(base + total_bytes);/* a1 = end+1 */
+        sw[10] = 0;                                        /* a2 = cmdline (TODO) */
+        sw[11] = 0xFFFFFFFF;                               /* a3 = env (-1) */
+        sw[12] = (uint32_t)(uintptr_t)text_dst;            /* a4 = base+0x100 */
+    }
+
+    /* ── 8. Tag as Human68k process ────────────────────────────────────── */
+    p->subsys = SUBSYS_HUMAN68K;
+
+    /* ── 9. Process metadata ───────────────────────────────────────────── */
+    {
+        const char *bname = path;
+        for (const char *s = path; *s; s++) {
+            if (*s == '/')
+                bname = s + 1;
+        }
+        size_t clen = strlen(bname);
+        if (clen > 15) clen = 15;
+        memcpy(p->comm, bname, clen);
+        p->comm[clen] = '\0';
+    }
+
+    if (current)
+        memcpy(p->cwd, current->cwd, sizeof(p->cwd));
+    else
+        strcpy(p->cwd, "/");
+
+    for (int i = 0; i < NSIG; i++) {
+        if (p->sig_handlers[i] != (sighandler_t)1 /* SIG_IGN */)
+            p->sig_handlers[i] = (sighandler_t)0;  /* SIG_DFL */
+    }
+    p->sig_pending = 0;
+    p->sig_blocked = 0;
+
+    (void)argv;   /* TODO: build LASCIIZ command line */
+    (void)size;
+
+    return 0;
 }

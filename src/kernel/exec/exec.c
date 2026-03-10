@@ -30,7 +30,7 @@
 
 /* ── Contiguous page allocation helper ─────────────────────────────────── */
 
-static uint8_t *alloc_contiguous(uint32_t n_pages)
+uint8_t *alloc_contiguous(uint32_t n_pages)
 {
     if (n_pages == 1)
         return (uint8_t *)page_alloc();
