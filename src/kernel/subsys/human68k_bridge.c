@@ -4,6 +4,7 @@
  * Translates F-line DOS calls into PPAP operations.
  * Phase 1: _EXIT, _EXIT2, _SETBLOCK, _MALLOC, _MFREE.
  * Phase 2: _GETCHAR, _PUTCHAR, _COMINP, _COMOUT, _PRINT, _GETS.
+ * Phase 3: _FGETC, _FGETS, _FPUTC, _FPUTS.
  */
 
 #include "human68k_bridge.h"
@@ -254,6 +255,94 @@ static int dos_mfree(uint32_t *regs, uint32_t usp)
     return 2;
 }
 
+/* ── _FGETC ($FF1B) ─────────────────────────────────────────────────── *
+ *
+ * Stack: word fileno
+ * Reads one byte from the specified file handle.  Returns byte in d0.
+ */
+static int dos_fgetc(uint32_t *regs, uint32_t usp)
+{
+    int fd = (int)(int16_t)ustack_u16(usp, 0);
+    uint8_t ch = 0;
+    long r = sys_read(fd, (char *)&ch, 1);
+    regs[0] = (r > 0) ? (uint32_t)ch : (uint32_t)(-1);
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _FGETS ($FF1C) ─────────────────────────────────────────────────── *
+ *
+ * Stack: word fileno, long buf_ptr
+ * Line-buffered read from file handle into linebuf structure:
+ *   byte 0: max (max chars to read)
+ *   byte 1: len (filled with actual count)
+ *   byte 2+: buffer data
+ * Reads until newline or max chars.  Returns count in d0.
+ */
+static int dos_fgets(uint32_t *regs, uint32_t usp)
+{
+    int fd = (int)(int16_t)ustack_u16(usp, 0);
+    uint32_t buf_addr = ustack_u32(usp, 2);
+    uint8_t *buf = (uint8_t *)(uintptr_t)buf_addr;
+    uint8_t max = buf[0];
+    uint8_t count = 0;
+
+    while (count < max) {
+        uint8_t ch;
+        long r = sys_read(fd, (char *)&ch, 1);
+        if (r <= 0)
+            break;
+        if (ch == 0x0D || ch == 0x0A)
+            break;
+        buf[2 + count] = ch;
+        count++;
+    }
+
+    buf[1] = count;
+    regs[0] = (uint32_t)count;
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _FPUTC ($FF1D) ─────────────────────────────────────────────────── *
+ *
+ * Stack: word fileno, word code
+ * Writes one byte to the specified file handle.  Returns byte in d0.
+ */
+static int dos_fputc(uint32_t *regs, uint32_t usp)
+{
+    int fd = (int)(int16_t)ustack_u16(usp, 0);
+    uint8_t ch = (uint8_t)ustack_u16(usp, 2);
+    sys_write(fd, (const char *)&ch, 1);
+    regs[0] = (uint32_t)ch;
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _FPUTS ($FF1E) ─────────────────────────────────────────────────── *
+ *
+ * Stack: word fileno, long str_ptr
+ * Writes a NUL-terminated string to the file handle.
+ * The NUL terminator is not written.  Returns 0 in d0.
+ */
+static int dos_fputs(uint32_t *regs, uint32_t usp)
+{
+    int fd = (int)(int16_t)ustack_u16(usp, 0);
+    uint32_t str_addr = ustack_u32(usp, 2);
+    const char *str = (const char *)(uintptr_t)str_addr;
+
+    uint32_t len = 0;
+    while (str[len])
+        len++;
+
+    if (len > 0)
+        sys_write(fd, str, len);
+
+    regs[0] = 0;
+    advance_pc(regs);
+    return 2;
+}
+
 /* ── Dispatch ─────────────────────────────────────────────────────────── */
 
 int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
@@ -280,6 +369,18 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
 
     case 0x0A:  /* _GETS */
         return dos_gets(regs, usp);
+
+    case 0x1B:  /* _FGETC */
+        return dos_fgetc(regs, usp);
+
+    case 0x1C:  /* _FGETS */
+        return dos_fgets(regs, usp);
+
+    case 0x1D:  /* _FPUTC */
+        return dos_fputc(regs, usp);
+
+    case 0x1E:  /* _FPUTS */
+        return dos_fputs(regs, usp);
 
     case 0x4A:  /* _SETBLOCK */
         return dos_setblock(regs, usp);
