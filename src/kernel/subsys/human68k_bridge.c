@@ -811,6 +811,252 @@ static int dos_getpdb(uint32_t *regs)
     return 2;
 }
 
+/* ── _SUPER ($FF20) ─────────────────────────────────────────────────── *
+ *
+ * Stack: long ssp
+ *   If ssp == 0: switch to supervisor mode, return previous SSP in d0.
+ *   If ssp != 0: switch to user mode, set SSP to given value.
+ *
+ * On m68k PPAP, user programs always run in user mode.  We track the
+ * "logical" supervisor flag in h68k_proc_t but don't actually change
+ * the CPU mode — the kernel already handles traps from user mode.
+ * Programs calling _SUPER(0) just want to access IOCS memory directly;
+ * we return a plausible SSP so they can restore later.
+ */
+static int dos_super(uint32_t *regs, uint32_t usp)
+{
+    uint32_t ssp = ustack_u32(usp, 0);
+    H68K_TRACE("_SUPER(%x)", ssp);
+
+    if (ssp == 0) {
+        /* Enter supervisor: return current SSP (use a dummy value) */
+        regs[0] = usp;  /* return the USP as "previous SSP" */
+    } else {
+        /* Return to user mode: ssp is the saved SSP to restore */
+        regs[0] = 0;
+    }
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _INPOUT ($FF08) ───────────────────────────────────────────────── *
+ *
+ * d1.w = character to test:
+ *   If d1.w == 0x00FF: check for input (return char or 0 if none).
+ *   Otherwise: output d1.b to stdout, return d1.w.
+ *
+ * Stack: word code
+ */
+static int dos_inpout(uint32_t *regs, uint32_t usp)
+{
+    uint16_t code = ustack_u16(usp, 0);
+    H68K_TRACE("_INPOUT(%x)", (uint32_t)code);
+
+    if (code == 0x00FF) {
+        /* Input check — we can't do non-blocking read, return 0 */
+        regs[0] = 0;
+    } else {
+        /* Output character */
+        uint8_t ch = (uint8_t)code;
+        sys_write(1, (const char *)&ch, 1);
+        regs[0] = (uint32_t)code;
+    }
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _KFLUSH ($FF0C) ───────────────────────────────────────────────── *
+ *
+ * Stack: word mode
+ * Flush keyboard buffer, then perform an input function based on mode:
+ *   mode 0x01: _GETCHAR (read with echo)
+ *   mode 0x06: _RAWREAD (direct, return 0 if no input)
+ *   mode 0x07: _RAWREAD (direct, wait)
+ *   mode 0x08: _INPOUT(0xFF) check
+ *   mode 0x0A: _GETS
+ *   else: just flush, return 0
+ */
+static int dos_kflush(uint32_t *regs, uint32_t usp)
+{
+    uint16_t mode = ustack_u16(usp, 0);
+    H68K_TRACE("_KFLUSH(%x)", (uint32_t)mode);
+
+    /* No keyboard buffer to flush on serial.  Perform the secondary op. */
+    switch (mode) {
+    case 0x01:  /* like _GETCHAR */
+    case 0x07: {
+        uint8_t ch = 0;
+        sys_read(0, (char *)&ch, 1);
+        if (mode == 0x01)
+            sys_write(1, (const char *)&ch, 1);  /* echo */
+        regs[0] = (uint32_t)ch;
+        break;
+    }
+    case 0x06:
+    case 0x08:
+        regs[0] = 0;  /* no buffered input */
+        break;
+    default:
+        regs[0] = 0;
+        break;
+    }
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _CONCTRL ($FF10) ──────────────────────────────────────────────── *
+ *
+ * Stack: word sub_func, …
+ * Console control — cursor movement, screen clear, etc.
+ *
+ * sub-functions:
+ *   0: putc (word char)
+ *   1: print (long str_ptr)
+ *   2: set text color (word color) → return old
+ *   3: locate (word x, word y) → move cursor
+ *   6: clear line from cursor to end
+ *   7: insert line
+ *   8: delete line
+ *  10: check for Ctrl+C → return 0 (no break)
+ *  11: set function key display mode → return 0
+ *
+ * Minimal implementation using ANSI escape sequences for locate/clear.
+ */
+static int dos_conctrl(uint32_t *regs, uint32_t usp)
+{
+    uint16_t sub = ustack_u16(usp, 0);
+    H68K_TRACE("_CONCTRL(%u)", (uint32_t)sub);
+
+    switch (sub) {
+    case 0: {  /* putc */
+        uint8_t ch = (uint8_t)ustack_u16(usp, 2);
+        sys_write(1, (const char *)&ch, 1);
+        regs[0] = 0;
+        break;
+    }
+    case 1: {  /* print */
+        const char *str = (const char *)(uintptr_t)ustack_u32(usp, 2);
+        int len = 0;
+        while (str[len]) len++;
+        if (len > 0) sys_write(1, str, (size_t)len);
+        regs[0] = 0;
+        break;
+    }
+    case 2:  /* color */
+        regs[0] = 0;  /* previous color = 0 */
+        break;
+    case 10: /* Ctrl+C check */
+        regs[0] = 0;  /* no break */
+        break;
+    default:
+        regs[0] = 0;
+        break;
+    }
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _FFLUSH ($FF24) ───────────────────────────────────────────────── *
+ *
+ * Stack: word fileno
+ * Flush output buffer for a file handle.
+ * PPAP I/O is unbuffered — always return 0 (success).
+ */
+static int dos_fflush(uint32_t *regs, uint32_t usp)
+{
+    H68K_TRACE("_FFLUSH(%d)", (int)(int16_t)ustack_u16(usp, 0));
+    regs[0] = 0;
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _ASSIGN ($FF4D) ───────────────────────────────────────────────── *
+ *
+ * Stack: word mode, word drive, …
+ * Drive assignment (virtual drives, etc.).
+ * Stub: return 0 (success / no assignment).
+ */
+static int dos_assign(uint32_t *regs, uint32_t usp)
+{
+    H68K_TRACE("_ASSIGN(%u)", (uint32_t)ustack_u16(usp, 0));
+    (void)usp;
+    regs[0] = 0;
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _EXEC ($FF4B) ─────────────────────────────────────────────────── *
+ *
+ * Stack: word mode, long name_ptr, long cmdline_ptr, long envp_ptr
+ *
+ * mode 0 (LOADEXEC): load and execute, wait for child to finish.
+ * mode 1 (LOAD):     load only (return without executing).
+ * mode 2 (PATHCHK):  check if file exists on PATH.
+ * mode 3 (LOADONLY):  load, don't execute, return base address.
+ * mode 4 (EXECONLY):  execute previously loaded image.
+ *
+ * We implement mode 0 using proc_alloc + do_execve + waitpid.
+ */
+static int dos_exec(uint32_t *regs, uint32_t usp)
+{
+    uint16_t mode = ustack_u16(usp, 0);
+    uint32_t name_addr = ustack_u32(usp, 2);
+    uint32_t cmdline_addr = ustack_u32(usp, 6);
+    (void)cmdline_addr;  /* TODO: pass arguments to child */
+
+    const char *raw = (const char *)(uintptr_t)name_addr;
+    char path[128];
+    if (h68k_translate_path(raw, path, sizeof(path)) < 0) {
+        regs[0] = (uint32_t)h68k_errno(-ENAMETOOLONG);
+        advance_pc(regs);
+        return 2;
+    }
+    H68K_TRACE("_EXEC(mode=%u, %s)", (uint32_t)mode, path);
+
+    if (mode != 0) {
+        /* Only LOADEXEC is supported for now */
+        regs[0] = (uint32_t)h68k_errno(-ENOSYS);
+        advance_pc(regs);
+        return 2;
+    }
+
+    /* Allocate child process */
+    pcb_t *child = proc_alloc();
+    if (!child) {
+        regs[0] = (uint32_t)h68k_errno(-ENOMEM);
+        advance_pc(regs);
+        return 2;
+    }
+
+    /* Set child's parent and subsystem */
+    child->ppid = current->pid;
+    child->subsys = current->subsys;
+
+    /* Load the executable */
+    int err = do_execve(child, path, NULL);
+    if (err < 0) {
+        /* do_execve failed — free the child */
+        child->state = PROC_FREE;
+        regs[0] = (uint32_t)h68k_errno((long)err);
+        advance_pc(regs);
+        return 2;
+    }
+
+    /* Wait for child to finish by polling with WNOHANG + yield.
+     * We're in an exception handler, so we can't use the SVC restart
+     * mechanism that sys_waitpid's blocking path relies on. */
+    advance_pc(regs);
+    long wpid;
+    do {
+        wpid = sys_waitpid(child->pid, 0, 1 /* WNOHANG */);
+        if (wpid == 0)
+            sched_yield();
+    } while (wpid == 0);
+
+    regs[0] = (wpid > 0) ? 0 : (uint32_t)h68k_errno(wpid);
+    return 2;
+}
+
 /* ── _GETDATE ($FF2A) ───────────────────────────────────────────────── *
  *
  * No stack arguments.
@@ -1387,8 +1633,20 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
         ret = dos_print(regs, usp);
         break;
 
+    case 0x08:  /* _INPOUT */
+        ret = dos_inpout(regs, usp);
+        break;
+
     case 0x0A:  /* _GETS */
         ret = dos_gets(regs, usp);
+        break;
+
+    case 0x0C:  /* _KFLUSH */
+        ret = dos_kflush(regs, usp);
+        break;
+
+    case 0x10:  /* _CONCTRL */
+        ret = dos_conctrl(regs, usp);
         break;
 
     case 0x19:  /* _CURDRV */
@@ -1409,6 +1667,14 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
 
     case 0x1E:  /* _FPUTS */
         ret = dos_fputs(regs, usp);
+        break;
+
+    case 0x20:  /* _SUPER */
+        ret = dos_super(regs, usp);
+        break;
+
+    case 0x24:  /* _FFLUSH */
+        ret = dos_fflush(regs, usp);
         break;
 
     case 0x2A:  /* _GETDATE */
@@ -1509,6 +1775,14 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
 
     case 0x4A:  /* _SETBLOCK */
         ret = dos_setblock(regs, usp);
+        break;
+
+    case 0x4B:  /* _EXEC */
+        ret = dos_exec(regs, usp);
+        break;
+
+    case 0x4D:  /* _ASSIGN */
+        ret = dos_assign(regs, usp);
         break;
 
     case 0x48:  /* _MALLOC */
