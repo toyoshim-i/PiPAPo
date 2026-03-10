@@ -202,6 +202,55 @@ int exec_x68k(pcb_t *p, const uint8_t *file, uint32_t size,
     memset(base, 0, X68K_PMB_SIZE);
 
     uint8_t *text_dst = base + X68K_PMB_SIZE;
+
+    /* ── 4a. Populate PMB fields (§4.4 MMB + §4.5 PMB) ──────────────── */
+    {
+        uint32_t base_u = (uint32_t)(uintptr_t)base;
+        uint32_t end_u  = base_u + total_bytes;
+        uint32_t text_u = (uint32_t)(uintptr_t)text_dst;
+        uint32_t bss_u  = text_u + hdr->text_size + hdr->data_size;
+        uint32_t heap_u = bss_u + hdr->bss_size;
+
+        /* MMB header (0x00–0x0F) */
+        write_be32(base + 0x00, 0);          /* prev = 0 (first) */
+        write_be32(base + 0x04, base_u);     /* owner = self */
+        write_be32(base + 0x08, end_u);      /* block end + 1 */
+        write_be32(base + 0x0C, 0);          /* next = 0 (last) */
+
+        /* PMB fields (0x10–0xFF) */
+        write_be32(base + 0x10, 0xFFFFFFFF); /* env = -1 (none) */
+        /* 0x14: exit handler — filled when F-line bridge is ready */
+        write_be32(base + 0x20, base_u + 0x6C); /* cmdline (empty LASCIIZ) */
+        /* 0x24: file handle bitmap — stdin/stdout/stderr open */
+        base[0x24] = 0x07;  /* bits 0,1,2 set = handles 0,1,2 */
+        /* 0x30–0x38: segment addresses */
+        write_be32(base + 0x30, bss_u);      /* BSS start */
+        write_be32(base + 0x34, heap_u);     /* heap start */
+        write_be32(base + 0x38, end_u);      /* initial stack (top) */
+
+        /* 0x82: execution file path (up to 65 chars + NUL) */
+        {
+            const char *bname = path;
+            const char *last_slash = path;
+            for (const char *s = path; *s; s++) {
+                if (*s == '/')
+                    last_slash = s;
+            }
+            /* Copy directory portion to 0x82 (max 65 bytes) */
+            size_t dir_len = (size_t)(last_slash - path);
+            if (dir_len > 65) dir_len = 65;
+            if (dir_len > 0)
+                memcpy(base + 0x82, path, dir_len);
+            base[0x82 + dir_len] = '\0';
+
+            /* 0xC4: execution file name (max 23 chars + NUL) */
+            bname = last_slash + 1;
+            size_t name_len = strlen(bname);
+            if (name_len > 23) name_len = 23;
+            memcpy(base + 0xC4, bname, name_len);
+            base[0xC4 + name_len] = '\0';
+        }
+    }
     const uint8_t *text_src = file + X68K_HEADER_SIZE;
 
     memcpy(text_dst, text_src, hdr->text_size);
@@ -250,7 +299,7 @@ int exec_x68k(pcb_t *p, const uint8_t *file, uint32_t size,
         uint32_t *sw = (uint32_t *)(uintptr_t)p->sp;
         sw[8]  = (uint32_t)(uintptr_t)base;               /* a0 = PMB */
         sw[9]  = (uint32_t)(uintptr_t)(base + total_bytes);/* a1 = end+1 */
-        sw[10] = 0;                                        /* a2 = cmdline (TODO) */
+        sw[10] = (uint32_t)(uintptr_t)(base + 0x6C);        /* a2 = cmdline (empty LASCIIZ at PMB+0x6C) */
         sw[11] = 0xFFFFFFFF;                               /* a3 = env (-1) */
         sw[12] = (uint32_t)(uintptr_t)text_dst;            /* a4 = base+0x100 */
     }
