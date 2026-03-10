@@ -55,3 +55,11 @@ add_executable(test_elf
 )
 target_include_directories(test_elf PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME elf COMMAND test_elf)
+
+# ── test_h68k_path ──────────────────────────────────────────────────────────
+# Human68k path translation and error code mapping — pure C, no stubs needed.
+add_executable(test_h68k_path
+    test_h68k_path.c
+)
+target_include_directories(test_h68k_path PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME h68k_path COMMAND test_h68k_path)
