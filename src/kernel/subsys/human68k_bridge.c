@@ -17,6 +17,8 @@
 #include "kernel/klog.h"
 #include "kernel/errno.h"
 #include "common/fcntl.h"
+#include "common/dirent.h"
+#include "common/stat.h"
 #include <stddef.h>
 #include <string.h>
 
@@ -70,6 +72,7 @@ static inline void advance_pc(uint32_t *regs)
  * Returns length of translated path, or -1 on overflow.
  * Implementation in h68k_util.c.
  */
+
 /* ── _EXIT ($FF00) / _EXIT2 ($FF4C) ──────────────────────────────────── */
 
 static int dos_exit(uint32_t usp)
@@ -808,6 +811,371 @@ static int dos_getpdb(uint32_t *regs)
     return 2;
 }
 
+/* ── _MKDIR ($FF39) ─────────────────────────────────────────────────── *
+ *
+ * Stack: long path_ptr
+ * Creates a directory.  Returns 0 on success.
+ */
+static int dos_mkdir(uint32_t *regs, uint32_t usp)
+{
+    uint32_t path_addr = ustack_u32(usp, 0);
+    const char *src = (const char *)(uintptr_t)path_addr;
+    char path[128];
+    if (h68k_translate_path(src, path, sizeof(path)) < 0) {
+        regs[0] = (uint32_t)h68k_errno(-ENAMETOOLONG);
+        advance_pc(regs);
+        return 2;
+    }
+    H68K_TRACE("_MKDIR(%s)", path);
+    long r = sys_mkdir(path, 0755);
+    regs[0] = (uint32_t)h68k_errno(r);
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _RMDIR ($FF3A) ─────────────────────────────────────────────────── *
+ *
+ * Stack: long path_ptr
+ * Removes an empty directory.  Returns 0 on success.
+ */
+static int dos_rmdir(uint32_t *regs, uint32_t usp)
+{
+    uint32_t path_addr = ustack_u32(usp, 0);
+    const char *src = (const char *)(uintptr_t)path_addr;
+    char path[128];
+    if (h68k_translate_path(src, path, sizeof(path)) < 0) {
+        regs[0] = (uint32_t)h68k_errno(-ENAMETOOLONG);
+        advance_pc(regs);
+        return 2;
+    }
+    H68K_TRACE("_RMDIR(%s)", path);
+    long r = sys_rmdir(path);
+    regs[0] = (uint32_t)h68k_errno(r);
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _CHMOD ($FF43) ─────────────────────────────────────────────────── *
+ *
+ * Stack: word attr, long path_ptr
+ * If attr == 0xFF: query mode — return synthesized attributes.
+ * Otherwise: set mode (limited).  Returns 0 or attributes.
+ */
+static int dos_chmod(uint32_t *regs, uint32_t usp)
+{
+    uint16_t attr = ustack_u16(usp, 0);
+    (void)attr;  /* set-mode not supported yet; query-only */
+    uint32_t path_addr = ustack_u32(usp, 2);
+    const char *src = (const char *)(uintptr_t)path_addr;
+    char path[128];
+    if (h68k_translate_path(src, path, sizeof(path)) < 0) {
+        regs[0] = (uint32_t)h68k_errno(-ENAMETOOLONG);
+        advance_pc(regs);
+        return 2;
+    }
+    H68K_TRACE("_CHMOD(%x, %s)", (uint32_t)attr, path);
+
+    struct stat st;
+    long r = sys_stat(path, &st);
+    if (r < 0) {
+        regs[0] = (uint32_t)h68k_errno(r);
+        advance_pc(regs);
+        return 2;
+    }
+
+    /* Synthesize Human68k attributes from UNIX mode */
+    uint8_t h_attr = 0x20;  /* archive bit always set */
+    if (S_ISDIR(st.st_mode))
+        h_attr |= 0x10;     /* directory */
+    if (!(st.st_mode & 0200))
+        h_attr |= 0x01;     /* read-only */
+
+    /* Query mode: return attributes */
+    regs[0] = (uint32_t)h_attr;
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── Wildcard pattern matcher ────────────────────────────────────────── *
+ *
+ * Case-insensitive match with * and ? wildcards.
+ * Returns 1 on match, 0 on no match.
+ */
+static int h68k_wildmatch(const char *pattern, const char *name)
+{
+    while (*pattern) {
+        if (*pattern == '*') {
+            pattern++;
+            /* Skip consecutive stars */
+            while (*pattern == '*') pattern++;
+            if (!*pattern)
+                return 1;  /* trailing * matches everything */
+            /* Try matching the rest from every position */
+            while (*name) {
+                if (h68k_wildmatch(pattern, name))
+                    return 1;
+                name++;
+            }
+            return h68k_wildmatch(pattern, name);
+        } else if (*pattern == '?') {
+            if (!*name) return 0;
+            pattern++;
+            name++;
+        } else {
+            /* Case-insensitive compare */
+            char pc = *pattern, nc = *name;
+            if (pc >= 'a' && pc <= 'z') pc -= 32;
+            if (nc >= 'a' && nc <= 'z') nc -= 32;
+            if (pc != nc) return 0;
+            pattern++;
+            name++;
+        }
+    }
+    return (*name == '\0');
+}
+
+/* ── _FILES ($FF4E) / _NFILES ($FF4F) ─────────────────────────────── *
+ *
+ * FILBUF layout (53 bytes):
+ *   [0x00..0x14]  search[21]  — opaque state for iteration
+ *   [0x15]        attr        — file attributes
+ *   [0x16..0x17]  time        — modification time (DOS format)
+ *   [0x18..0x19]  date        — modification date (DOS format)
+ *   [0x1A..0x1D]  size        — file size (big-endian uint32)
+ *   [0x1E..0x34]  name[23]    — filename (NUL-terminated)
+ *
+ * Search state stored in search[21]:
+ *   [0..3]   fd (dir handle as uint32, big-endian)
+ *   [4..20]  wildcard pattern (NUL-terminated, max 16 chars)
+ *
+ * _FILES: long filbuf_ptr, long pathname_ptr, word attr
+ * _NFILES: long filbuf_ptr
+ */
+
+/* Write big-endian 16-bit to user memory */
+static inline void mem_write16(uint32_t addr, uint16_t val)
+{
+    *(volatile uint16_t *)(uintptr_t)addr = val;
+}
+
+/* Fill FILBUF fields from a matched directory entry */
+static void filbuf_fill(uint32_t filbuf, const char *dir_path,
+                        const char *entry_name, uint8_t d_type)
+{
+    uint8_t *fb = (uint8_t *)(uintptr_t)filbuf;
+
+    /* Synthesize attributes */
+    uint8_t attr = 0x20;  /* archive */
+    if (d_type == DT_DIR)
+        attr |= 0x10;
+
+    /* Get file size via stat */
+    uint32_t fsize = 0;
+    char fullpath[128];
+    int dlen = 0;
+    while (dir_path[dlen]) dlen++;
+    if (dlen > 0 && dlen < 126) {
+        memcpy(fullpath, dir_path, (size_t)dlen);
+        fullpath[dlen] = '/';
+        int nlen = 0;
+        while (entry_name[nlen] && dlen + 1 + nlen < 126) {
+            fullpath[dlen + 1 + nlen] = entry_name[nlen];
+            nlen++;
+        }
+        fullpath[dlen + 1 + nlen] = '\0';
+        struct stat st;
+        if (sys_stat(fullpath, &st) == 0)
+            fsize = st.st_size;
+    }
+
+    fb[0x15] = attr;
+    mem_write16(filbuf + 0x16, 0);      /* time = 0 (no timestamp) */
+    mem_write16(filbuf + 0x18, 0x0021); /* date = 1980-01-01 */
+    mem_write32(filbuf + 0x1A, fsize);
+
+    /* Copy filename (max 22 chars + NUL) */
+    int i = 0;
+    while (entry_name[i] && i < 22) {
+        fb[0x1E + i] = (uint8_t)entry_name[i];
+        i++;
+    }
+    fb[0x1E + i] = '\0';
+}
+
+/* Extract directory and pattern from a Human68k search path.
+ * e.g. "/a/dir/ *.x" → dir_out="/a/dir", pattern_out="*.x"
+ * e.g. "/a/dir" → dir_out="/a/dir", pattern_out="*"
+ */
+static void split_search_path(const char *path,
+                              char *dir_out, int dir_size,
+                              char *pat_out, int pat_size)
+{
+    /* Find last separator */
+    const char *last_sep = NULL;
+    for (const char *p = path; *p; p++) {
+        if (*p == '/')
+            last_sep = p;
+    }
+
+    if (last_sep) {
+        int dlen = (int)(last_sep - path);
+        if (dlen == 0) dlen = 1;  /* root "/" */
+        if (dlen >= dir_size) dlen = dir_size - 1;
+        memcpy(dir_out, path, (size_t)dlen);
+        dir_out[dlen] = '\0';
+        /* Pattern is after the last separator */
+        const char *p = last_sep + 1;
+        int pi = 0;
+        while (*p && pi < pat_size - 1)
+            pat_out[pi++] = *p++;
+        pat_out[pi] = '\0';
+    } else {
+        /* No separator — path is just a pattern, dir is cwd */
+        dir_out[0] = '.';
+        dir_out[1] = '\0';
+        int pi = 0;
+        while (path[pi] && pi < pat_size - 1) {
+            pat_out[pi] = path[pi];
+            pi++;
+        }
+        pat_out[pi] = '\0';
+    }
+
+    /* If pattern is empty, match everything */
+    if (pat_out[0] == '\0') {
+        pat_out[0] = '*';
+        pat_out[1] = '\0';
+    }
+}
+
+static int dos_files(uint32_t *regs, uint32_t usp)
+{
+    uint32_t filbuf_addr = ustack_u32(usp, 0);
+    uint32_t pathname_addr = ustack_u32(usp, 4);
+    /* uint16_t search_attr = ustack_u16(usp, 8); — not used yet */
+    H68K_TRACE("_FILES(%x, %x)", filbuf_addr, pathname_addr);
+
+    const char *raw = (const char *)(uintptr_t)pathname_addr;
+    char path[128];
+    if (h68k_translate_path(raw, path, sizeof(path)) < 0) {
+        regs[0] = (uint32_t)h68k_errno(-ENAMETOOLONG);
+        advance_pc(regs);
+        return 2;
+    }
+
+    /* Split into directory and wildcard pattern */
+    char dir[128], pattern[24];
+    split_search_path(path, dir, sizeof(dir), pattern, sizeof(pattern));
+    H68K_TRACE("_FILES: dir=%s pat=%s", dir, pattern);
+
+    /* Open the directory */
+    long fd = sys_open(dir, O_RDONLY, 0);
+    if (fd < 0) {
+        regs[0] = (uint32_t)h68k_errno(fd);
+        advance_pc(regs);
+        return 2;
+    }
+
+    /* Store fd and pattern in FILBUF search area */
+    uint8_t *fb = (uint8_t *)(uintptr_t)filbuf_addr;
+    mem_write32(filbuf_addr, (uint32_t)fd);
+    /* Store pattern at search[4..20] (max 16 chars + NUL) */
+    int pi = 0;
+    while (pattern[pi] && pi < 16) {
+        fb[4 + pi] = (uint8_t)pattern[pi];
+        pi++;
+    }
+    fb[4 + pi] = '\0';
+
+    /* Also store dir path — we need it for stat lookups.
+     * Store in FILBUF at a separate location: use h68k_proc_t.
+     * Actually, simpler: store it in the process subsys_data. */
+    h68k_proc_t *h = (h68k_proc_t *)current->subsys_data;
+    if (h) {
+        int dlen = 0;
+        while (dir[dlen] && dlen < (int)sizeof(h->files_dir) - 1) {
+            h->files_dir[dlen] = dir[dlen];
+            dlen++;
+        }
+        h->files_dir[dlen] = '\0';
+    }
+
+    /* Read entries until we find one matching the pattern */
+    struct dirent de;
+    while (1) {
+        long n = sys_getdents(fd, &de, 1);
+        if (n <= 0) {
+            sys_close(fd);
+            mem_write32(filbuf_addr, 0xFFFFFFFFu);  /* mark closed */
+            regs[0] = (uint32_t)(-2);  /* Human68k: no more files */
+            advance_pc(regs);
+            return 2;
+        }
+        /* Skip . and .. */
+        if (de.d_name[0] == '.' &&
+            (de.d_name[1] == '\0' ||
+             (de.d_name[1] == '.' && de.d_name[2] == '\0')))
+            continue;
+        if (h68k_wildmatch(pattern, de.d_name)) {
+            filbuf_fill(filbuf_addr, dir, de.d_name, de.d_type);
+            regs[0] = 0;
+            advance_pc(regs);
+            return 2;
+        }
+    }
+}
+
+static int dos_nfiles(uint32_t *regs, uint32_t usp)
+{
+    uint32_t filbuf_addr = ustack_u32(usp, 0);
+    H68K_TRACE("_NFILES(%x)", filbuf_addr);
+
+    uint8_t *fb = (uint8_t *)(uintptr_t)filbuf_addr;
+    uint32_t fd = *(volatile uint32_t *)(uintptr_t)filbuf_addr;
+    if (fd == 0xFFFFFFFFu) {
+        regs[0] = (uint32_t)(-2);  /* no more files */
+        advance_pc(regs);
+        return 2;
+    }
+
+    /* Recover pattern from search[4..20] */
+    char pattern[24];
+    int pi = 0;
+    while (fb[4 + pi] && pi < 16) {
+        pattern[pi] = (char)fb[4 + pi];
+        pi++;
+    }
+    pattern[pi] = '\0';
+
+    /* Recover dir path from process state */
+    const char *dir = ".";
+    h68k_proc_t *h = (h68k_proc_t *)current->subsys_data;
+    if (h)
+        dir = h->files_dir;
+
+    struct dirent de;
+    while (1) {
+        long n = sys_getdents((long)fd, &de, 1);
+        if (n <= 0) {
+            sys_close((long)fd);
+            mem_write32(filbuf_addr, 0xFFFFFFFFu);
+            regs[0] = (uint32_t)(-2);  /* no more files */
+            advance_pc(regs);
+            return 2;
+        }
+        if (de.d_name[0] == '.' &&
+            (de.d_name[1] == '\0' ||
+             (de.d_name[1] == '.' && de.d_name[2] == '\0')))
+            continue;
+        if (h68k_wildmatch(pattern, de.d_name)) {
+            filbuf_fill(filbuf_addr, dir, de.d_name, de.d_type);
+            regs[0] = 0;
+            advance_pc(regs);
+            return 2;
+        }
+    }
+}
+
 /* ── Dispatch ─────────────────────────────────────────────────────────── */
 
 int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
@@ -877,6 +1245,14 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
         ret = dos_intvcg(regs, usp);
         break;
 
+    case 0x39:  /* _MKDIR */
+        ret = dos_mkdir(regs, usp);
+        break;
+
+    case 0x3A:  /* _RMDIR */
+        ret = dos_rmdir(regs, usp);
+        break;
+
     case 0x3B:  /* _CHDIR */
         ret = dos_chdir(regs, usp);
         break;
@@ -909,6 +1285,10 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
         ret = dos_seek(regs, usp);
         break;
 
+    case 0x43:  /* _CHMOD */
+        ret = dos_chmod(regs, usp);
+        break;
+
     case 0x45:  /* _DUP */
         ret = dos_dup(regs, usp);
         break;
@@ -935,6 +1315,14 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
 
     case 0x51:  /* _GETPDB */
         ret = dos_getpdb(regs);
+        break;
+
+    case 0x4E:  /* _FILES */
+        ret = dos_files(regs, usp);
+        break;
+
+    case 0x4F:  /* _NFILES */
+        ret = dos_nfiles(regs, usp);
         break;
 
     case 0x56:  /* _RENAME */

@@ -27,6 +27,9 @@ typedef struct {
         uint8_t *base;      /* raw page base (NULL = free slot) */
         uint32_t n_pages;   /* number of pages in this block    */
     } mallocs[H68K_MALLOC_MAX];
+
+    /* _FILES/_NFILES: directory path for the current search */
+    char files_dir[128];
 } h68k_proc_t;
 
 /* Subsystem ops for Human68k — registered into subsys_ops_table[] */
