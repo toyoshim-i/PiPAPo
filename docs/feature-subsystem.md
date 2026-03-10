@@ -99,9 +99,10 @@ Each subsystem registers a descriptor:
 
 ```c
 typedef struct {
-    const char *name;           /* "ppap-arm", "cpm", "dos", etc. */
+    const char *name;           /* "ppap-arm", "cpm", "human68k", etc. */
     int (*detect)(const uint8_t *file, uint32_t size);
-    const char *emulator_path;  /* "/subsys/ppap-arm" */
+    int (*exec)(pcb_t *p, const uint8_t *file, uint32_t size,
+                const char *const *argv);
 } subsystem_t;
 ```
 
@@ -109,16 +110,89 @@ Detection heuristics vary by format — see per-subsystem sections below.
 
 ### 2.3 Execution Model
 
-All subsystem emulators run as **user-space PPAP processes**.
-The kernel replaces the exec with:
+All subsystem components — eCPU emulator cores, binary loaders, and
+personality layers — are **kernel-embedded**. When `exec()` detects a
+foreign binary, the kernel loads it directly and either:
+
+- **Native architecture match** (e.g., Human68k on m68k): loads the
+  binary into user pages and runs it natively. The personality layer
+  intercepts foreign OS traps (F-line, BDOS calls) via exception
+  handlers in the kernel.
+- **Foreign architecture** (e.g., CP/M on ARM): loads the binary into
+  kernel-allocated emulated memory and enters the eCPU interpreter
+  loop. The interpreter runs in kernel context as the process's
+  execution, preempted by the scheduler like any other process.
 
 ```c
-const char *new_argv[] = { subsys->emulator_path, path, ... };
-return do_execve(p, subsys->emulator_path, new_argv);
+int exec_subsystem(pcb_t *p, const subsystem_t *ss,
+                   const uint8_t *file, uint32_t size,
+                   const char *const *argv) {
+    /* Loader + personality + eCPU (if needed) are all kernel code */
+    return ss->exec(p, file, size, argv);
+}
 ```
 
-The emulator binary (a native PPAP ELF) contains both the eCPU core
-and the personality layer, statically linked as a single binary.
+**Why kernel-embedded, not user-space emulators?**
+
+An earlier design placed emulators as user-space binaries under
+`/subsys/`. The kernel-embedded approach is preferable for PPAP:
+
+- **No re-exec overhead.** User-space emulators require `exec()` of a
+  separate native binary, argv passing, and process image setup.
+- **Direct syscall dispatch.** The personality bridge calls `sys_open()`,
+  `sys_read()`, etc. internally — no trap instruction per translated call.
+- **Simpler pointer handling.** The kernel accesses emulated memory
+  directly (it allocated the pages). No guest-to-host address translation
+  through user-space indirection.
+- **Consistent with PPAP's design.** Monolithic kernel, no MMU on most
+  targets. The kernel/user boundary is thin. Subsystem code is small
+  (~4 KB bridge + ~8–16 KB eCPU per emulator core).
+- **No romfs bloat.** No separate emulator ELF binaries in romfs.
+- **Single code path.** Native-arch subsystems (e.g., Human68k on m68k)
+  already require kernel-side exception handlers. Keeping foreign-arch
+  subsystems in the kernel too avoids maintaining two execution models.
+
+### 2.4 Application Directory Layout
+
+Foreign binaries (the applications, not the emulation infrastructure)
+are stored under `/subsys/<name>/` in romfs:
+
+```
+/subsys/
+├── human68k/        # Human68k .x and .r executables
+│   ├── bin/
+│   └── ...
+├── cpm/             # CP/M .COM files
+│   ├── MBASIC.COM
+│   └── ...
+├── dos/             # DOS .COM and .EXE files
+│   ├── EDIT.COM
+│   └── ...
+└── ppap-arm/        # PPAP ARM ELFs (for cross-arch on m68k)
+    └── hello
+```
+
+This is a top-level directory — subsystems are a first-class PPAP
+feature. The `/subsys/` prefix also serves as a disambiguation hint
+for formats without unique magic bytes (e.g., `.com` files under
+`/subsys/cpm/` use CP/M, under `/subsys/dos/` use DOS — see §8.2).
+
+### 2.5 Per-Target Configuration
+
+Each subsystem is guarded by an `ENABLE_SUBSYS_<NAME>` compile-time
+flag (e.g., `ENABLE_SUBSYS_HUMAN68K`, `ENABLE_SUBSYS_CPM`). Targets
+enable only the subsystems they need:
+
+- A target that does not enable a subsystem pays zero code size —
+  the loader, bridge, and eCPU core are all compiled out.
+- The subsystem registration table is built at compile time from
+  the enabled flags; no runtime probing.
+- The romfs image for each target includes only the `/subsys/`
+  directories matching its enabled subsystems.
+
+This keeps the kernel small on constrained targets (e.g., RP2040
+with 2 MB flash) while allowing full subsystem support on targets
+with more resources (e.g., m68k QEMU with unlimited RAM).
 
 ---
 
@@ -180,11 +254,11 @@ eCPU memory model (see `feature-eCPU.md` §3.3).
 
 ### 3.4 Variants
 
-| Emulator binary | eCPU core | Host → Guest |
+| Subsystem name | eCPU core | Host → Guest |
 |---|---|---|
-| `/subsys/ppap-arm` | ecpu-arm | m68k host runs ARM ELF |
-| `/subsys/ppap-m68k` | ecpu-m68k | ARM host runs m68k ELF |
-| `/subsys/ppap-armv6` | ecpu-armv6 | Any host runs ARMv6 ELF |
+| ppap-arm | ecpu-arm | m68k host runs ARM ELF |
+| ppap-m68k | ecpu-m68k | ARM host runs m68k ELF |
+| ppap-armv6 | ecpu-armv6 | Any host runs ARMv6 ELF |
 
 ---
 
@@ -488,8 +562,8 @@ When `exec()` encounters a non-native binary:
 
 Both CP/M and DOS use `.com` for raw binaries. Resolution:
 
-- **Directory convention:** files under `/cpm/` use CP/M subsystem,
-  files under `/dos/` use DOS subsystem
+- **Directory convention:** files under `/subsys/cpm/` use CP/M subsystem,
+  files under `/subsys/dos/` use DOS subsystem (see §2.4)
 - **Configuration:** `/etc/subsys.conf` maps paths to subsystems
 - **Default:** CP/M (simpler, more likely to work on constrained targets)
 
@@ -514,18 +588,22 @@ personalities:
 ### 9.2 Common Emulator Framework
 
 All eCPU cores expose a common interface with a trap callback hook.
-The subsystem personality registers its handler at init time:
+The subsystem's `exec` function initialises the eCPU, loads the binary,
+and enters the interpreter loop — all in kernel context:
 
 ```c
 /* Common interface — see feature-eCPU.md §3.2 */
 typedef void (*ecpu_trap_handler_t)(ecpu_state_t *cpu, uint32_t trap_id);
 
-/* Each subsystem binary does: */
-ecpu_state_t cpu;
-ecpu_init(&cpu, arch_z80);
-ecpu_set_trap_handler(&cpu, cpm_bdos_handler);  /* personality */
-cpm_load_com(&cpu, binary_path);                /* loader */
-ecpu_run(&cpu);                                 /* execute */
+/* Example: CP/M subsystem exec (kernel-side) */
+int cpm_exec(pcb_t *p, const uint8_t *file, uint32_t size,
+             const char *const *argv) {
+    ecpu_state_t *cpu = &p->ecpu;
+    ecpu_init(cpu, arch_z80);
+    ecpu_set_trap_handler(cpu, cpm_bdos_handler);  /* personality */
+    cpm_load_com(cpu, file, size);                 /* loader */
+    return ecpu_run(cpu);       /* interpreter loop, preempted by scheduler */
+}
 ```
 
 ### 9.3 File System Mapping
@@ -631,7 +709,5 @@ On RP2040 (133 MHz), running a CP/M program through Z80 emulation:
    output to a DOS program? In principle yes — the kernel sees both
    as regular PPAP processes with normal file descriptors.
 
-5. **Self-contained binaries:** each subsystem emulator
-   (e.g., `/subsys/cpm`) includes both the CPU emulator and
-   the OS bridge, statically linked as a single PPAP binary. This
-   avoids needing shared libraries in the emulator itself.
+5. ~~Self-contained binaries~~ — resolved: all subsystem components
+   (eCPU, loader, personality) are kernel-embedded (see §2.3).
