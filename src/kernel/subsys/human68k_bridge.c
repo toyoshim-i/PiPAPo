@@ -74,6 +74,37 @@ static inline void advance_pc(uint32_t *regs)
  * Implementation in h68k_util.c.
  */
 
+/* ── IOCS-level primitives ─────────────────────────────────────────────
+ *
+ * These are the low-level I/O building blocks.  IOCS dispatch handlers
+ * are thin wrappers around them, and DOS call handlers delegate here
+ * so that IOCS is always the base layer.
+ */
+
+/* Write one character to stdout */
+static void h68k_putc(uint8_t ch)
+{
+    sys_write(1, (const char *)&ch, 1);
+}
+
+/* Write a NUL-terminated string to stdout; return length written */
+static int h68k_print(const char *str)
+{
+    int len = 0;
+    while (str[len]) len++;
+    if (len > 0)
+        sys_write(1, str, (size_t)len);
+    return len;
+}
+
+/* Read one character from stdin (blocking) */
+static uint8_t h68k_keyinp(void)
+{
+    uint8_t ch = 0;
+    sys_read(0, (char *)&ch, 1);
+    return ch;
+}
+
 /* ── _EXIT ($FF00) / _EXIT2 ($FF4C) ──────────────────────────────────── */
 
 static int dos_exit(uint32_t usp)
@@ -93,7 +124,7 @@ static int dos_putchar(uint32_t *regs, uint32_t usp)
 {
     uint8_t ch = (uint8_t)ustack_u16(usp, 0);
     H68K_TRACE("_PUTCHAR(%x)", (uint32_t)ch);
-    sys_write(1, (const char *)&ch, 1);
+    h68k_putc(ch);
     regs[0] = (uint32_t)ch;
     advance_pc(regs);
     return 2;
@@ -106,11 +137,10 @@ static int dos_putchar(uint32_t *regs, uint32_t usp)
  */
 static int dos_getchar(uint32_t *regs)
 {
-    uint8_t ch = 0;
-    sys_read(0, (char *)&ch, 1);
+    uint8_t ch = h68k_keyinp();
     H68K_TRACE("_GETCHAR => %x", (uint32_t)ch);
     /* Echo the character back to stdout */
-    sys_write(1, (const char *)&ch, 1);
+    h68k_putc(ch);
     regs[0] = (uint32_t)ch;
     advance_pc(regs);
     return 2;
@@ -123,8 +153,7 @@ static int dos_getchar(uint32_t *regs)
  */
 static int dos_cominp(uint32_t *regs)
 {
-    uint8_t ch = 0;
-    sys_read(0, (char *)&ch, 1);
+    uint8_t ch = h68k_keyinp();
     H68K_TRACE("_COMINP => %x", (uint32_t)ch);
     regs[0] = (uint32_t)ch;
     advance_pc(regs);
@@ -141,15 +170,7 @@ static int dos_print(uint32_t *regs, uint32_t usp)
     uint32_t str_addr = ustack_u32(usp, 0);
     H68K_TRACE("_PRINT(%x)", str_addr);
     const char *str = (const char *)(uintptr_t)str_addr;
-
-    /* Find string length (NUL-terminated) */
-    uint32_t len = 0;
-    while (str[len])
-        len++;
-
-    if (len > 0)
-        sys_write(1, str, len);
-
+    h68k_print(str);
     regs[0] = 0;
     advance_pc(regs);
     return 2;
@@ -175,12 +196,11 @@ static int dos_gets(uint32_t *regs, uint32_t usp)
     uint8_t count = 0;
 
     while (count < max) {
-        uint8_t ch;
-        long r = sys_read(0, (char *)&ch, 1);
-        if (r <= 0)
+        uint8_t ch = h68k_keyinp();
+        if (ch == 0)
             break;
         /* Echo */
-        sys_write(1, (const char *)&ch, 1);
+        h68k_putc(ch);
         if (ch == 0x0D || ch == 0x0A)
             break;
         buf[2 + count] = ch;
@@ -821,7 +841,7 @@ static int dos_move(uint32_t *regs, uint32_t usp)
 {
     uint8_t ch = (uint8_t)ustack_u16(usp, 0);
     H68K_TRACE("_MOVE(%x)", (uint32_t)ch);
-    sys_write(1, (const char *)&ch, 1);
+    h68k_putc(ch);
     regs[0] = 0;
     advance_pc(regs);
     return 2;
@@ -986,8 +1006,7 @@ static int dos_inpout(uint32_t *regs, uint32_t usp)
         regs[0] = 0;
     } else {
         /* Output character */
-        uint8_t ch = (uint8_t)code;
-        sys_write(1, (const char *)&ch, 1);
+        h68k_putc((uint8_t)code);
         regs[0] = (uint32_t)code;
     }
     advance_pc(regs);
@@ -1014,10 +1033,9 @@ static int dos_kflush(uint32_t *regs, uint32_t usp)
     switch (mode) {
     case 0x01:  /* like _GETCHAR */
     case 0x07: {
-        uint8_t ch = 0;
-        sys_read(0, (char *)&ch, 1);
+        uint8_t ch = h68k_keyinp();
         if (mode == 0x01)
-            sys_write(1, (const char *)&ch, 1);  /* echo */
+            h68k_putc(ch);  /* echo */
         regs[0] = (uint32_t)ch;
         break;
     }
@@ -1058,16 +1076,13 @@ static int dos_conctrl(uint32_t *regs, uint32_t usp)
 
     switch (sub) {
     case 0: {  /* putc */
-        uint8_t ch = (uint8_t)ustack_u16(usp, 2);
-        sys_write(1, (const char *)&ch, 1);
+        h68k_putc((uint8_t)ustack_u16(usp, 2));
         regs[0] = 0;
         break;
     }
     case 1: {  /* print */
         const char *str = (const char *)(uintptr_t)ustack_u32(usp, 2);
-        int len = 0;
-        while (str[len]) len++;
-        if (len > 0) sys_write(1, str, (size_t)len);
+        h68k_print(str);
         regs[0] = 0;
         break;
     }
@@ -2050,8 +2065,7 @@ const subsys_ops_t human68k_subsys_ops = {
  */
 static int iocs_b_keyinp(uint32_t *regs)
 {
-    uint8_t ch = 0;
-    sys_read(0, (char *)&ch, 1);
+    uint8_t ch = h68k_keyinp();
     H68K_TRACE("IOCS _B_KEYINP => %x", (uint32_t)ch);
     regs[0] = (uint32_t)ch;  /* scan=0, ascii=ch */
     return 2;
@@ -2080,7 +2094,7 @@ static int iocs_b_putc(uint32_t *regs)
 {
     uint8_t ch = (uint8_t)regs[1];
     H68K_TRACE("IOCS _B_PUTC(%x)", (uint32_t)ch);
-    sys_write(1, (const char *)&ch, 1);
+    h68k_putc(ch);
     regs[0] = 0;
     return 2;
 }
@@ -2093,11 +2107,7 @@ static int iocs_b_print(uint32_t *regs)
 {
     const char *str = (const char *)(uintptr_t)regs[8 + 1]; /* a1 */
     H68K_TRACE("IOCS _B_PRINT(%x)", regs[8 + 1]);
-    int len = 0;
-    while (str[len]) len++;
-    if (len > 0)
-        sys_write(1, str, (size_t)len);
-    regs[0] = (uint32_t)len;
+    regs[0] = (uint32_t)h68k_print(str);
     return 2;
 }
 
