@@ -703,9 +703,9 @@ static int dos_curdrv(uint32_t *regs)
 static int dos_dup(uint32_t *regs, uint32_t usp)
 {
     int fd = (int)(int16_t)ustack_u16(usp, 0);
-    H68K_TRACE("_DUP(%u)", (uint32_t)fd);
-    /* Stub: return the same fd (no real dup in PPAP yet) */
-    regs[0] = (uint32_t)fd;
+    H68K_TRACE("_DUP(%d)", fd);
+    long r = sys_dup((long)fd);
+    regs[0] = (uint32_t)h68k_errno(r);
     advance_pc(regs);
     return 2;
 }
@@ -719,10 +719,9 @@ static int dos_dup2(uint32_t *regs, uint32_t usp)
 {
     int old_fd = (int)(int16_t)ustack_u16(usp, 0);
     int new_fd = (int)(int16_t)ustack_u16(usp, 2);
-    H68K_TRACE("_DUP2(%u, %u)", (uint32_t)old_fd, (uint32_t)new_fd);
-    /* Stub: return new_fd (no real dup2 in PPAP yet) */
-    (void)old_fd;
-    regs[0] = (uint32_t)new_fd;
+    H68K_TRACE("_DUP2(%d, %d)", old_fd, new_fd);
+    long r = sys_dup2((long)old_fd, (long)new_fd);
+    regs[0] = (uint32_t)h68k_errno(r);
     advance_pc(regs);
     return 2;
 }
