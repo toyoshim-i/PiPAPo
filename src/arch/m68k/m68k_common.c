@@ -163,13 +163,9 @@ int m68k_fline_dispatch(uint32_t *regs, uint32_t usp)
         uint32_t pc = *(uint32_t *)(frame + 62);
         uint16_t opcode = *(volatile uint16_t *)(uintptr_t)pc;
 
-        /* On m68k PPAP, all processes run in supervisor mode — the "user"
-         * stack is SSP.  Arguments pushed before the F-line instruction
-         * sit above the exception frame: regs(60) + SR(2) + PC(4) = 66. */
-        uint32_t ssp = (uint32_t)(uintptr_t)frame + 66;
-        (void)usp;  /* USP unused in supervisor mode */
-
-        int rc = human68k_dos_dispatch(regs, ssp, opcode);
+        /* User code runs in user mode — USP has the DOS call arguments
+         * that were pushed before the F-line instruction. */
+        int rc = human68k_dos_dispatch(regs, usp, opcode);
         if (rc > 0)
             return rc;  /* 1 = exited, 2 = handled */
         /* rc < 0: unhandled DOS call — fall through to crash */

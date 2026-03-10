@@ -282,12 +282,17 @@ int exec_x68k(pcb_t *p, const uint8_t *file, uint32_t size,
 
     /* ── 6. Set up entry point and stack frame ─────────────────────────
      *
-     * Human68k uses the allocated block itself for stack — stack grows
-     * down from the top of the block.  The stack_page is used by the
-     * kernel for the initial exception frame (same as ELF loader).
+     * Human68k uses the allocated block itself for user stack — USP
+     * starts at the top of the block and grows down.  stack_page is
+     * the kernel stack (SSP) for exception handling.
      */
     uint32_t entry = (uint32_t)(uintptr_t)(text_dst + hdr->entry_offset);
     proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, 0);
+
+    /* USP = top of allocated block (user stack for Human68k) */
+#if defined(__m68k__)
+    p->usp = (uint32_t)(uintptr_t)(base + total_bytes);
+#endif
 
     /* ── 7. Patch initial registers in the software frame ──────────────
      *

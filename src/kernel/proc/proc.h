@@ -42,6 +42,7 @@ typedef void (*sighandler_t)(int);
 #define PCB_SP_OFFSET  32u
 #elif defined(__m68k__)
 #define PCB_SP_OFFSET  44u
+#define PCB_USP_OFFSET 48u
 #else
 #error "Unsupported architecture — define PCB_SP_OFFSET"
 #endif
@@ -83,7 +84,8 @@ typedef struct pcb {
 #elif defined(__m68k__)
     uint32_t d2, d3, d4, d5, d6, d7;  /* callee-saved data regs  (offsets 0–23)   */
     uint32_t a2, a3, a4, a5, a6;      /* callee-saved addr regs  (offsets 24–43)  */
-    uint32_t sp;                       /* saved SP                (offset 44)      */
+    uint32_t sp;                       /* saved SSP               (offset 44)      */
+    uint32_t usp;                      /* saved USP               (offset 48)      */
 #else
     #error "Unsupported architecture — define PCB register save area"
 #endif
@@ -96,6 +98,9 @@ typedef struct pcb {
     /* ── Memory ─────────────────────────────────────────────────────────── */
     void    *stack_page;        /* 4 KB page from page_alloc(): process stack */
     void    *user_pages[USER_PAGES_MAX]; /* user data pages (exec data segment) */
+#if defined(__m68k__)
+    void    *user_stack_page;   /* m68k: separate user stack page (USP target) */
+#endif
 
     /* ── File descriptors ───────────────────────────────────────────────── */
     struct file *fd_table[FD_MAX];

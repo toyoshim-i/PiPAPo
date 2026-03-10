@@ -47,7 +47,8 @@
 |   Do a full context restore from current->sp (new SW frame).
 | =============================================================================
 
-    .equ PCB_SP_OFFSET, 44       | offsetof(pcb_t, sp) — see proc.h
+    .equ PCB_SP_OFFSET,  44      | offsetof(pcb_t, sp)  — see proc.h
+    .equ PCB_USP_OFFSET, 48      | offsetof(pcb_t, usp) — see proc.h
 
     .text
     .even
@@ -56,6 +57,12 @@
 m68k_trap0_handler:
     | Save ALL registers (d0-d7/a0-a6 = 15 × 4 = 60 bytes)
     movem.l %d0-%d7/%a0-%a6,%sp@-
+
+    | Save USP into current PCB so syscalls (e.g. vfork) see the
+    | actual user stack pointer, not a stale value from the last switch.
+    move.l  current_core,%a0
+    move.l  %usp,%a1
+    move.l  %a1,%a0@(PCB_USP_OFFSET)
 
     | Pass pointer to saved register frame as argument.
     | m68k C ABI: first arg on stack.
@@ -90,6 +97,11 @@ m68k_trap0_handler:
 
     | Now on the NEW stack — safe to free the old stack page.
     jsr     m68k_exec_free_old_stack
+
+    | Restore USP for the new process (set before movem/rte)
+    move.l  current_core,%a0
+    move.l  %a0@(PCB_USP_OFFSET),%a1
+    move.l  %a1,%usp
 
     | Restore all registers from the new frame and return
     movem.l %sp@+,%d0-%d7/%a0-%a6

@@ -165,20 +165,15 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp)
 
 #elif defined(__m68k__)
     /*
-     * M68K: two layers on the stack (high → low):
-     *  1. Exception frame (SR + PC, 6 bytes): popped by RTE.
-     *  2. Software register frame (15 longs, d0–d7/a0–a6): loaded
-     *     by switch.S via movem.l.  All registers are saved (not just
-     *     callee-saved) so timer ISR and TRAP #1 use the same format.
+     * M68K: exception frame built on kernel stack (stack_page / SSP).
+     * SR = user mode so RTE switches to user mode + USP.
+     * The caller must set p->usp to the desired user stack pointer.
      */
-    /* 68000 exception frame: SR(2B) + PC(4B) = 6 bytes.
-     * RTE pops SR then PC.  No format/vector word on 68000.
-     * Layout (low→high): SR(2B) | PC(4B).
-     * Note: SP ends up 2-byte aligned (not necessarily 4-byte), which
-     * is fine — m68k long word access only requires word alignment. */
+    /* Always build on kernel stack — ignore user_sp for m68k */
+    sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
     *--sp = (uint32_t)entry;              /* PC: entry point (4 bytes)   */
     sp = (uint32_t *)((uint8_t *)sp - 2); /* back up 2 bytes for SR      */
-    *(uint16_t *)sp = SR_SUPV_IRQ;        /* SR: supervisor, IPL=0       */
+    *(uint16_t *)sp = SR_USER;            /* SR: user mode, IPL=0        */
     /* Software register frame (a6..a0, d7..d0, high → low).
      * Must match movem.l %d0-%d7/%a0-%a6 register order. */
     *--sp = 0u;   /* a6 */

@@ -31,7 +31,8 @@
 | MUST match offsetof(pcb_t, sp); verified by _Static_assert in proc.c.
 | =============================================================================
 
-    .equ PCB_SP_OFFSET, 44       | offsetof(pcb_t, sp) — see proc.h
+    .equ PCB_SP_OFFSET,  44      | offsetof(pcb_t, sp)  — see proc.h
+    .equ PCB_USP_OFFSET, 48      | offsetof(pcb_t, usp) — see proc.h
 
     .text
     .even
@@ -48,9 +49,11 @@ m68k_trap1_handler:
     | Save ALL registers (d0-d7/a0-a6 = 15 × 4 = 60 bytes)
     movem.l %d0-%d7/%a0-%a6,%sp@-
 
-    | Store SP into current PCB
+    | Store SP (SSP) and USP into current PCB
     move.l  current_core,%a0
     move.l  %sp,%a0@(PCB_SP_OFFSET)
+    move.l  %usp,%a1
+    move.l  %a1,%a0@(PCB_USP_OFFSET)
 
     | Pick next process
     jsr     sched_next             | returns next pcb_t* in d0
@@ -58,14 +61,16 @@ m68k_trap1_handler:
     | Update current_core[0]
     move.l  %d0,current_core
 
-    | Restore incoming context
+    | Restore incoming context (SSP + USP)
     move.l  %d0,%a0
     move.l  %a0@(PCB_SP_OFFSET),%sp
+    move.l  %a0@(PCB_USP_OFFSET),%a1
+    move.l  %a1,%usp
 
-    | Restore all registers
+    | Restore all registers (a1 overwritten by movem from saved frame)
     movem.l %sp@+,%d0-%d7/%a0-%a6
 
-    | Return from exception — pops SR + PC
+    | Return from exception — pops SR + PC (SR restores user/supv mode)
     rte
 
 
@@ -92,9 +97,11 @@ m68k_timer_isr:
     | ── Context switch ────────────────────────────────────────────────────
     clr.l   m68k_switch_pending
 
-    | Store SP into current PCB
+    | Store SP (SSP) and USP into current PCB
     move.l  current_core,%a0
     move.l  %sp,%a0@(PCB_SP_OFFSET)
+    move.l  %usp,%a1
+    move.l  %a1,%a0@(PCB_USP_OFFSET)
 
     | Pick next process
     jsr     sched_next
@@ -102,9 +109,11 @@ m68k_timer_isr:
     | Update current_core[0]
     move.l  %d0,current_core
 
-    | Restore SP from next PCB
+    | Restore SP (SSP) and USP from next PCB
     move.l  %d0,%a0
     move.l  %a0@(PCB_SP_OFFSET),%sp
+    move.l  %a0@(PCB_USP_OFFSET),%a1
+    move.l  %a1,%usp
 
 .Lno_switch:
     | Restore all registers

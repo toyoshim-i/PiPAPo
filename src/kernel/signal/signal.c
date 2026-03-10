@@ -43,10 +43,10 @@
 /*
  * m68k signal delivery — synchronous call model
  *
- * On PPAP m68k, processes run in supervisor mode (no user/supervisor split,
- * no MMU).  USP is never initialized.  This means the ARM-style RTE-based
- * signal delivery (push frame onto user stack, modify exception frame, RTE
- * to handler) doesn't work.
+ * On PPAP m68k, processes run in user mode with USP/SSP separation.
+ * The ARM-style RTE-based signal delivery (push frame onto user stack,
+ * modify exception frame, RTE to handler) is not used because the
+ * m68000 lacks the full frame format needed for safe nested exceptions.
  *
  * Instead, signal_check() calls the handler directly as a C function via
  * an assembly thunk that sets a5 = GOT base (required for PIC/-msep-data).

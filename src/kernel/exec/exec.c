@@ -256,6 +256,18 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
     }
     p->stack_page = stack;
 
+#if defined(__m68k__)
+    /* m68k user mode: stack_page = kernel stack (SSP).
+     * Allocate a separate page for the user stack (USP). */
+    void *user_stack = page_alloc();
+    if (!user_stack) {
+        page_free(stack);
+        p->stack_page = NULL;
+        vnode_put(vn);
+        return -(int)ENOMEM;
+    }
+#endif
+
     /* ── XIP: text stays in romfs/flash, data goes to SRAM ─────────── */
     {
         uint32_t xip_text_base =
@@ -329,6 +341,12 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
             /* Store data pages in user_pages[] */
             for (uint32_t i = 0; i < data_pages; i++)
                 p->user_pages[i] = sram_page + i * PAGE_SIZE;
+#if defined(__m68k__)
+            /* Track user stack page separately — user_pages[] indices above
+             * data_pages are used by sys_brk for heap expansion, so storing
+             * the user stack there would get overwritten on first brk. */
+            p->user_stack_page = user_stack;
+#endif
 
             /* Set program break — align to 16 bytes for musl malloc */
             uint32_t data_end = (uint32_t)(uintptr_t)sram_page
@@ -355,7 +373,11 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
      *              ← user_sp
      */
     {
+#if defined(__m68k__)
+        uint32_t stack_top = (uint32_t)(uintptr_t)user_stack + PAGE_SIZE;
+#else
         uint32_t stack_top = (uint32_t)(uintptr_t)stack + PAGE_SIZE;
+#endif
         uint32_t sp = stack_top;
 
         /* Count arguments */
@@ -415,6 +437,11 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
 
         /* ── 9. Set up the exception frame ─────────────────────────────── */
         proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, sp);
+#if defined(__m68k__)
+        /* m68k: argc/argv built on user_stack page; set USP there.
+         * proc_setup_stack ignores sp on m68k (builds frame on stack_page). */
+        p->usp = sp;
+#endif
     }
 
     /* Patch GOT base register in the software frame */

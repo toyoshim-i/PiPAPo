@@ -64,6 +64,12 @@ long sys_exit(long status)
                 current->user_pages[i] = NULL;
             }
         }
+#if defined(__m68k__)
+        if (current->user_stack_page) {
+            page_free(current->user_stack_page);
+            current->user_stack_page = NULL;
+        }
+#endif
         /* Free mmap regions */
         for (int i = 0; i < MMAP_REGIONS_MAX; i++) {
             if (current->mmap_regions[i].addr) {
@@ -74,6 +80,25 @@ long sys_exit(long status)
                 current->mmap_regions[i].pages = 0;
             }
         }
+    } else {
+        /* vfork child exiting without exec: free child-owned pages only
+         * (e.g. the user stack copy allocated by sys_vfork). */
+        for (int i = 0; i < USER_PAGES_MAX; i++) {
+            if (current->user_pages[i] &&
+                current->user_pages[i] !=
+                    current->vfork_parent->user_pages[i]) {
+                page_free(current->user_pages[i]);
+                current->user_pages[i] = NULL;
+            }
+        }
+#if defined(__m68k__)
+        /* Free child's user stack copy if different from parent's */
+        if (current->user_stack_page &&
+            current->user_stack_page != current->vfork_parent->user_stack_page) {
+            page_free(current->user_stack_page);
+            current->user_stack_page = NULL;
+        }
+#endif
     }
 
     /* Unblock vfork parent if we are a vfork child */
@@ -183,6 +208,41 @@ long sys_vfork(uint32_t *frame)
     child_regs[13] = current->got_base;       /* a5 = GOT base for PIC */
 
     child->sp = (uint32_t)(uintptr_t)child_regs;
+
+    /* m68k user mode: USP points to a user_stack_page (separate from
+     * stack_page / SSP).  The child must have its own user stack copy;
+     * otherwise the child's post-vfork code (pushing execve arguments)
+     * overwrites the parent's return addresses on the shared stack. */
+    {
+        void *parent_ustack = current->user_stack_page;
+
+        if (parent_ustack) {
+            void *child_ustack = page_alloc();
+            if (!child_ustack) {
+                page_free(stack);
+                proc_free(child);
+                return -(long)ENOMEM;
+            }
+            memcpy(child_ustack, parent_ustack, PAGE_SIZE);
+            child->user_stack_page = child_ustack;
+
+            /* Adjust child USP to same offset within the new page */
+            uint32_t parent_usp = current->usp;
+            uint32_t usp_off = parent_usp -
+                               (uint32_t)(uintptr_t)parent_ustack;
+            child->usp = (uint32_t)(uintptr_t)child_ustack + usp_off;
+
+            /* Patch a6 (frame pointer) if it points into the user stack */
+            uint32_t parent_base = (uint32_t)(uintptr_t)parent_ustack;
+            uint32_t child_base = (uint32_t)(uintptr_t)child_ustack;
+            if (child_regs[14] >= parent_base &&
+                child_regs[14] < parent_base + PAGE_SIZE) {
+                child_regs[14] += child_base - parent_base;
+            }
+        } else {
+            child->usp = current->usp;
+        }
+    }
 #else
     /* ARM: Set child's r0 = 0 (child sees vfork return 0) */
     child_frame[0] = 0;
@@ -322,11 +382,17 @@ long sys_execve(const char *path, const char *const *argv)
     int owns_pages = (current->vfork_parent == NULL);
     for (int i = 0; i < USER_PAGES_MAX; i++)
         old_user[i] = current->user_pages[i];
+#if defined(__m68k__)
+    void *old_user_stack = current->user_stack_page;
+#endif
 
     /* Clear pages so do_execve allocates fresh ones */
     current->stack_page = NULL;
     for (int i = 0; i < USER_PAGES_MAX; i++)
         current->user_pages[i] = NULL;
+#if defined(__m68k__)
+    current->user_stack_page = NULL;
+#endif
 
     /* Load the new binary.  argv points into the old stack/data pages
      * which are still valid (detached from current but not yet freed). */
@@ -336,6 +402,9 @@ long sys_execve(const char *path, const char *const *argv)
         current->stack_page = old_stack;
         for (int i = 0; i < USER_PAGES_MAX; i++)
             current->user_pages[i] = old_user[i];
+#if defined(__m68k__)
+        current->user_stack_page = old_user_stack;
+#endif
         return (long)err;
     }
 
@@ -363,6 +432,23 @@ long sys_execve(const char *path, const char *const *argv)
             if (old_user[i])
                 page_free(old_user[i]);
         }
+#if defined(__m68k__)
+        if (old_user_stack)
+            page_free(old_user_stack);
+#endif
+    } else if (current->vfork_parent) {
+        /* vfork child: free pages that were allocated specifically for
+         * the child (e.g. user stack copy), not the shared parent pages. */
+        for (int i = 0; i < USER_PAGES_MAX; i++) {
+            if (old_user[i] &&
+                old_user[i] != current->vfork_parent->user_pages[i])
+                page_free(old_user[i]);
+        }
+#if defined(__m68k__)
+        if (old_user_stack &&
+            old_user_stack != current->vfork_parent->user_stack_page)
+            page_free(old_user_stack);
+#endif
     }
 
     /* Unblock vfork parent — we have our own pages now */

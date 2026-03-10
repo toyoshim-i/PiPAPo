@@ -302,9 +302,11 @@ m68k_schedule_next:
     jsr     sched_next
     | d0 = next pcb_t*; update current_core[0]
     move.l  %d0,current_core
-    | Restore SP from next PCB
+    | Restore SP (SSP) and USP from next PCB
     move.l  %d0,%a0
     move.l  44(%a0),%sp              | PCB_SP_OFFSET = 44
+    move.l  48(%a0),%a1              | PCB_USP_OFFSET = 48
+    move.l  %a1,%usp
     | Restore all registers (d0-d7/a0-a6) and return via RTE
     movem.l %sp@+,%d0-%d7/%a0-%a6
     rte
