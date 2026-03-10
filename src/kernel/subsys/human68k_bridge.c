@@ -782,12 +782,100 @@ static int dos_dup2(uint32_t *regs, uint32_t usp)
     return 2;
 }
 
+/* ── _RENAME ($FF56) ────────────────────────────────────────────────── *
+ *
+ * Stack: long old_path_ptr, long new_path_ptr
+ * Renames (moves) a file or directory.  Returns 0 on success.
+ *
+ * Note: PPAP doesn't have sys_rename() yet.  We implement it directly
+ * via VFS lookup_parent + FS-level operations.  For now, return -1
+ * (unsupported) until sys_rename is added.
+ */
+static int dos_rename(uint32_t *regs, uint32_t usp)
+{
+    uint32_t old_addr = ustack_u32(usp, 0);
+    uint32_t new_addr = ustack_u32(usp, 4);
+    const char *old_src = (const char *)(uintptr_t)old_addr;
+    const char *new_src = (const char *)(uintptr_t)new_addr;
+    char old_path[128], new_path[128];
+    h68k_translate_path(old_src, old_path, sizeof(old_path));
+    h68k_translate_path(new_src, new_path, sizeof(new_path));
+    H68K_TRACE("_RENAME(%s, %s)", old_path, new_path);
+    /* TODO: implement when sys_rename is available */
+    regs[0] = (uint32_t)h68k_errno(-ENOSYS);
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _VERNUM ($FF30) ───────────────────────────────────────────────── *
+ *
+ * No stack arguments.
+ * Returns Human68k version in d0: high word = "HU", low word = version.
+ * Version 3.02 = 0x4855_0302 ("HU" + 0x0302).
+ */
+static int dos_vernum(uint32_t *regs)
+{
+    H68K_TRACE("_VERNUM");
+    regs[0] = 0x36380302u;  /* "68" + version 3.02 */
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _BREAKCK ($FF33) ──────────────────────────────────────────────── *
+ *
+ * Stack: word mode  (0=get, 1=set, 2=get-and-set)
+ * Returns/sets break-check mode.  Always return 1 (break check on).
+ */
+static int dos_breakck(uint32_t *regs, uint32_t usp)
+{
+    uint16_t mode = ustack_u16(usp, 0);
+    H68K_TRACE("_BREAKCK(%u)", (uint32_t)mode);
+    (void)mode;
+    regs[0] = 1;  /* break check on */
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _INTVCG ($FF35) ───────────────────────────────────────────────── *
+ *
+ * Stack: word vecno
+ * Get interrupt vector.  Return 0 (no vector table).
+ */
+static int dos_intvcg(uint32_t *regs, uint32_t usp)
+{
+    uint16_t vecno = ustack_u16(usp, 0);
+    H68K_TRACE("_INTVCG(%x)", (uint32_t)vecno);
+    (void)vecno;
+    regs[0] = 0;
+    advance_pc(regs);
+    return 2;
+}
+
+/* ── _GETPDB ($FF51) ───────────────────────────────────────────────── *
+ *
+ * No stack arguments.
+ * Returns the address of the current Process Descriptor Block (PMB base).
+ */
+static int dos_getpdb(uint32_t *regs)
+{
+    H68K_TRACE("_GETPDB");
+    pcb_t *p = current;
+    /* PMB is at user_pages[0] */
+    regs[0] = (uint32_t)(uintptr_t)p->user_pages[0];
+    advance_pc(regs);
+    return 2;
+}
+
 /* ── Dispatch ─────────────────────────────────────────────────────────── */
 
 int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
 {
     uint8_t func = opcode & 0xFF;
     int ret;
+
+    /* DOS call alias: $FF80–$FFAF maps to $FF50–$FF7F (subtract $30) */
+    if (func >= 0x80 && func <= 0xAF)
+        func -= 0x30;
 
     switch (func) {
     case 0x00:  /* _EXIT */
@@ -833,6 +921,18 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
 
     case 0x1E:  /* _FPUTS */
         ret = dos_fputs(regs, usp);
+        break;
+
+    case 0x30:  /* _VERNUM */
+        ret = dos_vernum(regs);
+        break;
+
+    case 0x33:  /* _BREAKCK */
+        ret = dos_breakck(regs, usp);
+        break;
+
+    case 0x35:  /* _INTVCG */
+        ret = dos_intvcg(regs, usp);
         break;
 
     case 0x3B:  /* _CHDIR */
@@ -889,6 +989,14 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
 
     case 0x49:  /* _MFREE */
         ret = dos_mfree(regs, usp);
+        break;
+
+    case 0x51:  /* _GETPDB */
+        ret = dos_getpdb(regs);
+        break;
+
+    case 0x56:  /* _RENAME */
+        ret = dos_rename(regs, usp);
         break;
 
     default:
