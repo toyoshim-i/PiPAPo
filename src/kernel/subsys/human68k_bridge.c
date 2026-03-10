@@ -11,6 +11,7 @@
 #include "human68k_bridge.h"
 #include "h68k_util.h"
 #include "kernel/proc/proc.h"
+#include "kernel/proc/sched.h"
 #include "kernel/mm/page.h"
 #include "kernel/exec/exec.h"
 #include "kernel/syscall/syscall.h"
@@ -1624,12 +1625,160 @@ const subsys_ops_t human68k_subsys_ops = {
 
 /* ── IOCS dispatch (TRAP #15) ────────────────────────────────────────── */
 
+/* ── IOCS _B_KEYINP ($00) ───────────────────────────────────────────── *
+ *
+ * Wait for key input.  Returns scan code in d0 high byte, ASCII in low byte.
+ * We return 0 in the scan code (no scan code available from serial).
+ */
+static int iocs_b_keyinp(uint32_t *regs)
+{
+    uint8_t ch = 0;
+    sys_read(0, (char *)&ch, 1);
+    H68K_TRACE("IOCS _B_KEYINP => %x", (uint32_t)ch);
+    regs[0] = (uint32_t)ch;  /* scan=0, ascii=ch */
+    return 2;
+}
+
+/* ── IOCS _B_KEYSNS ($04) ──────────────────────────────────────────── *
+ *
+ * Check keyboard buffer (non-blocking).
+ * Returns 0 if no key available, else scan+ascii like _B_KEYINP.
+ *
+ * We always return 0 (no buffered input) since we have no non-blocking
+ * read capability on the serial console yet.
+ */
+static int iocs_b_keysns(uint32_t *regs)
+{
+    H68K_TRACE("IOCS _B_KEYSNS");
+    regs[0] = 0;
+    return 2;
+}
+
+/* ── IOCS _B_PUTC ($20) ────────────────────────────────────────────── *
+ *
+ * d1.w = character code to output.
+ */
+static int iocs_b_putc(uint32_t *regs)
+{
+    uint8_t ch = (uint8_t)regs[1];
+    H68K_TRACE("IOCS _B_PUTC(%x)", (uint32_t)ch);
+    sys_write(1, (const char *)&ch, 1);
+    regs[0] = 0;
+    return 2;
+}
+
+/* ── IOCS _B_PRINT ($21) ───────────────────────────────────────────── *
+ *
+ * a1 = pointer to NUL-terminated string.
+ */
+static int iocs_b_print(uint32_t *regs)
+{
+    const char *str = (const char *)(uintptr_t)regs[8 + 1]; /* a1 */
+    H68K_TRACE("IOCS _B_PRINT(%x)", regs[8 + 1]);
+    int len = 0;
+    while (str[len]) len++;
+    if (len > 0)
+        sys_write(1, str, (size_t)len);
+    regs[0] = (uint32_t)len;
+    return 2;
+}
+
+/* ── IOCS _B_COLOR ($22) ───────────────────────────────────────────── *
+ *
+ * d1.w = color code.  Stub: no color support on serial, return previous (0).
+ */
+static int iocs_b_color(uint32_t *regs)
+{
+    H68K_TRACE("IOCS _B_COLOR(%x)", regs[1]);
+    regs[0] = 0;  /* previous color */
+    return 2;
+}
+
+/* ── IOCS _B_LOCATE ($23) ──────────────────────────────────────────── *
+ *
+ * d1.w = x, d2.w = y.  Stub: no cursor positioning on serial, return 0.
+ */
+static int iocs_b_locate(uint32_t *regs)
+{
+    H68K_TRACE("IOCS _B_LOCATE(%u, %u)", regs[1] & 0xFFFF, regs[2] & 0xFFFF);
+    regs[0] = 0;
+    return 2;
+}
+
+/* ── IOCS _ONTIME ($7F) ────────────────────────────────────────────── *
+ *
+ * Returns uptime in 1/100 second units.
+ * d0 = time of day in 1/100s (wraps at 24h = 8640000).
+ * d1 = date (days since some epoch, we return 0).
+ */
+static int iocs_ontime(uint32_t *regs)
+{
+    uint32_t ticks = sched_get_ticks();  /* 100 Hz tick counter */
+    H68K_TRACE("IOCS _ONTIME => %u", ticks);
+    regs[0] = ticks % 8640000u;  /* wrap at 24 hours */
+    regs[1] = 0;                 /* date = 0 */
+    return 2;
+}
+
+/* ── IOCS _DATEGET ($5A) ───────────────────────────────────────────── *
+ *
+ * Returns BCD date:
+ *   d0.l = BCD year(16) | BCD month(8) | BCD day(8)
+ *          e.g. 0x20260101 for 2026-01-01
+ *   d1.w = day of week (0=Sun..6=Sat)
+ * Fixed: 2026-01-01 Thursday (wday=4)
+ */
+static int iocs_dateget(uint32_t *regs)
+{
+    H68K_TRACE("IOCS _DATEGET");
+    regs[0] = 0x20260101u;  /* BCD 2026-01-01 */
+    regs[1] = 4;            /* Thursday */
+    return 2;
+}
+
+/* ── IOCS _TIMEGET ($5B) ───────────────────────────────────────────── *
+ *
+ * Returns BCD time in d0: 0(8) | hour(8) | min(8) | sec(8)
+ * Fixed: 00:00:00
+ */
+static int iocs_timeget(uint32_t *regs)
+{
+    H68K_TRACE("IOCS _TIMEGET");
+    regs[0] = 0;
+    return 2;
+}
+
 int human68k_iocs_dispatch(uint32_t *regs)
 {
     uint8_t func = (uint8_t)regs[0];
 
     switch (func) {
-    /* TODO: implement IOCS calls as needed */
+    case 0x00:  /* _B_KEYINP */
+        return iocs_b_keyinp(regs);
+
+    case 0x04:  /* _B_KEYSNS */
+        return iocs_b_keysns(regs);
+
+    case 0x20:  /* _B_PUTC */
+        return iocs_b_putc(regs);
+
+    case 0x21:  /* _B_PRINT */
+        return iocs_b_print(regs);
+
+    case 0x22:  /* _B_COLOR */
+        return iocs_b_color(regs);
+
+    case 0x23:  /* _B_LOCATE */
+        return iocs_b_locate(regs);
+
+    case 0x5A:  /* _DATEGET */
+        return iocs_dateget(regs);
+
+    case 0x5B:  /* _TIMEGET */
+        return iocs_timeget(regs);
+
+    case 0x7F:  /* _ONTIME */
+        return iocs_ontime(regs);
 
     default:
         H68K_TRACE("IOCS notimpl: d0=%x", (uint32_t)func);
