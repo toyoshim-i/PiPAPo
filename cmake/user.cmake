@@ -79,7 +79,7 @@ if(PPAP_ARCH STREQUAL "m68k")
     set(PPAP_TARGET_FLAGS  -m68000)
     set(PPAP_PIC_FLAGS     -msep-data)
     set(PPAP_USER_LD       ${PPAP_ARCH_DIR}/user.ld)
-    set(PPAP_BUSYBOX_LD    ${PPAP_ROOT}/third_party/configs/busybox-m68k.ld)
+    set(PPAP_BUSYBOX_LD    ${PPAP_ROOT}/third_party/patches/musl/libc_m68k.ld)
     set(PPAP_MUSL_SYSROOT  ${PPAP_SHARED_BUILD}/musl-sysroot)
     set(PPAP_MUSL_TARGET   m68k-elf)
     set(PPAP_SPECS_FILE    ${PPAP_SHARED_BUILD}/musl-m68k.specs)
@@ -101,7 +101,7 @@ else()
     set(PPAP_PIC_FLAGS     -fPIC -msingle-pic-base -mpic-register=r9
                            -mno-pic-data-is-text-relative)
     set(PPAP_USER_LD       ${PPAP_ARCH_DIR}/user.ld)
-    set(PPAP_BUSYBOX_LD    ${PPAP_ROOT}/third_party/configs/busybox.ld)
+    set(PPAP_BUSYBOX_LD    ${PPAP_ROOT}/third_party/patches/musl/libc_arm_m.ld)
     set(PPAP_MUSL_SYSROOT  ${PPAP_SHARED_BUILD}/musl-sysroot)
     set(PPAP_MUSL_TARGET   arm-none-eabi)
     set(PPAP_SPECS_FILE    ${PPAP_SHARED_BUILD}/musl-arm.specs)
@@ -311,8 +311,8 @@ function(_ppap_add_busybox)
         COMMAND ${CMAKE_COMMAND} -E env "PPAP_CONFIG=${PPAP_CONFIG_FILE}"
                 ${PPAP_ROOT}/third_party/build_busybox.sh
         DEPENDS ${PPAP_ROOT}/third_party/build_busybox.sh
-                ${PPAP_ROOT}/third_party/configs/busybox_ppap.fragment
-                ${PPAP_ROOT}/third_party/configs/busybox_sh.fragment
+                ${PPAP_ROOT}/third_party/patches/busybox/busybox_ppap.fragment
+                ${PPAP_ROOT}/third_party/patches/busybox/busybox_sh.fragment
                 ${PPAP_BUSYBOX_LD}
                 ${PPAP_MUSL_LIBC}
         COMMENT "Building busybox variants (${PPAP_ARCH_LABEL})"

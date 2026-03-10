@@ -21,7 +21,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BB_SRC="$SCRIPT_DIR/busybox"
-CONFIGS_DIR="$SCRIPT_DIR/configs"
+CONFIGS_DIR="$SCRIPT_DIR/patches/busybox"
 
 # --- Parse flags ---
 CLEAN=false
@@ -50,7 +50,7 @@ if [[ -z "${PPAP_CC:-}" ]]; then
         PPAP_SIZE_CMD="${M68K_TC}/bin/m68k-elf-size"
         PPAP_MUSL_SYSROOT="$PROJECT_ROOT/build/m68k/musl-sysroot"
         PPAP_SPECS_FILE="$PROJECT_ROOT/build/m68k/musl-m68k.specs"
-        PPAP_BUSYBOX_LD="$CONFIGS_DIR/busybox-m68k.ld"
+        PPAP_BUSYBOX_LD="$SCRIPT_DIR/patches/musl/libc_m68k.ld"
         PPAP_APP_CFLAGS="-m68000 -Os -nostdinc -isystem $PPAP_MUSL_SYSROOT/include -isystem $($PPAP_CC -print-file-name=include) -msep-data -ffunction-sections -fdata-sections -pie"
         PPAP_GCC_INCLUDE="$($PPAP_CC -print-file-name=include)"
         PPAP_GCC_LIBDIR="$(dirname "$($PPAP_CC -m68000 -print-libgcc-file-name)")"
@@ -63,7 +63,7 @@ if [[ -z "${PPAP_CC:-}" ]]; then
         PPAP_SIZE_CMD=arm-none-eabi-size
         PPAP_MUSL_SYSROOT="$PROJECT_ROOT/build/arm_m/musl-sysroot"
         PPAP_SPECS_FILE="$PROJECT_ROOT/build/arm_m/musl-arm.specs"
-        PPAP_BUSYBOX_LD="$CONFIGS_DIR/busybox.ld"
+        PPAP_BUSYBOX_LD="$SCRIPT_DIR/patches/musl/libc_arm_m.ld"
         PPAP_GCC_INCLUDE="$(arm-none-eabi-gcc -print-file-name=include)"
         PPAP_GCC_LIBDIR="$(dirname "$(arm-none-eabi-gcc -mthumb -mcpu=cortex-m0plus -print-libgcc-file-name)")"
         PPAP_APP_CFLAGS="-mthumb -mcpu=cortex-m0plus -march=armv6s-m -mfloat-abi=soft -Os -nostdinc -isystem $PPAP_MUSL_SYSROOT/include -isystem $PPAP_GCC_INCLUDE -fPIC -msingle-pic-base -mpic-register=r9 -mno-pic-data-is-text-relative -ffunction-sections -fdata-sections -pie"

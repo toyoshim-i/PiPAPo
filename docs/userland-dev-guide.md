@@ -154,7 +154,7 @@ Architecture-specific linker scripts are in `src/user/arch/<arch>/user.ld`.
 #### PIE Linker Script (Path B: musl)
 
 musl programs built with `-pie` need additional sections. See
-`third_party/configs/busybox.ld` for the full ARM reference. Key additions:
+`third_party/patches/musl/libc_arm_m.ld` for the full ARM reference. Key additions:
 
 - `.rel.dyn` / `.rela.dyn` section — contains relocation entries
 - `.dynamic`, `.dynsym`, `.dynstr`, `.hash` sections — required by `-pie`
@@ -298,7 +298,7 @@ then issues `_exit()` with main's return value.
 
 1. **Generate specs file** (see section 5 or reference build scripts)
 2. **Write or copy a linker script** — start from `src/user/arch/<arch>/user.ld`
-   for simple programs, or use `third_party/configs/busybox.ld` for PIE
+   for simple programs, or use `third_party/patches/musl/libc_arm_m.ld` for PIE
 3. **Compile and link** with the appropriate architecture flags
 
 ### When to Use `-pie` and `.rodata` Splitting (ARM)

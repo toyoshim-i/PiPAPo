@@ -18,7 +18,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROGUE_SRC="$SCRIPT_DIR/rogue"
 PATCHES_DIR="$SCRIPT_DIR/patches/rogue"
-CONFIGS_DIR="$SCRIPT_DIR/configs"
+CONFIGS_DIR="$SCRIPT_DIR/patches/busybox"
 
 # --- Parse flags ---
 CLEAN=false
@@ -48,7 +48,7 @@ if [[ -z "${PPAP_CC:-}" ]]; then
         PPAP_PIC_FLAGS="-msep-data"
         PPAP_MUSL_SYSROOT="$PROJECT_ROOT/build/m68k/musl-sysroot"
         PPAP_SPECS_FILE="$PROJECT_ROOT/build/m68k/musl-m68k.specs"
-        PPAP_BUSYBOX_LD="$CONFIGS_DIR/busybox-m68k.ld"
+        PPAP_BUSYBOX_LD="$SCRIPT_DIR/patches/musl/libc_m68k.ld"
         PPAP_GCC_INCLUDE="$($PPAP_CC -print-file-name=include)"
         PPAP_GCC_LIBDIR="$(dirname "$($PPAP_CC -m68000 -print-libgcc-file-name)")"
         PPAP_ARCH_LABEL="m68k (68000)"
@@ -60,7 +60,7 @@ if [[ -z "${PPAP_CC:-}" ]]; then
         PPAP_PIC_FLAGS="-fPIC -msingle-pic-base -mpic-register=r9 -mno-pic-data-is-text-relative"
         PPAP_MUSL_SYSROOT="$PROJECT_ROOT/build/arm_m/musl-sysroot"
         PPAP_SPECS_FILE="$PROJECT_ROOT/build/arm_m/musl-arm.specs"
-        PPAP_BUSYBOX_LD="$CONFIGS_DIR/busybox.ld"
+        PPAP_BUSYBOX_LD="$SCRIPT_DIR/patches/musl/libc_arm_m.ld"
         PPAP_GCC_INCLUDE="$(arm-none-eabi-gcc -print-file-name=include)"
         PPAP_GCC_LIBDIR="$(dirname "$(arm-none-eabi-gcc -mthumb -mcpu=cortex-m0plus -print-libgcc-file-name)")"
         PPAP_ARCH_LABEL="armv6m-thumb (Cortex-M0+)"

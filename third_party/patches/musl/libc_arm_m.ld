@@ -1,5 +1,5 @@
 /*
- * busybox.ld — Linker script for PPAP busybox (PIC, PIE, XIP from flash)
+ * libc_arm_m.ld — Linker script for musl PIE binaries (ARM, XIP from flash)
  *
  * Same model as src/user/arch/arm_m/user.ld: binary linked at address 0 with two
  * PT_LOAD segments.  The kernel's exec.c relocates GOT entries at

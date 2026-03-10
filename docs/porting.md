@@ -89,7 +89,7 @@ Built via `third_party/build_busybox.sh` with a custom defconfig.
 
 ### Configuration
 
-Two fragment files in `third_party/configs/`:
+Two fragment files in `third_party/patches/busybox/`:
 - `busybox_sh.fragment` — hush shell + init (CONFIG_HUSH=y)
 - `busybox_ppap.fragment` — applet selection, static linking, musl sysroot
 
