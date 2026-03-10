@@ -638,104 +638,86 @@ The following table lists all known Human68k DOS calls (based on
 Human68k v3.02 and the run68x emulator). The "Priority" column
 indicates which PPAP implementation phase targets each call.
 
-| DOS Call | Number | PPAP Translation | Priority |
+| DOS Call | Number | PPAP Translation | Status |
 |---|---|---|---|
 | **Console I/O** | | | |
-| `_EXIT` | $FF00 | `_exit(0)` | P1 |
-| `_GETCHAR` | $FF01 | `read(0, &ch, 1)` + echo | P2 |
-| `_PUTCHAR` | $FF02 | `write(1, &ch, 1)` | P2 |
-| `_COMINP` | $FF03 | `read(0, &ch, 1)` (raw, no echo) | P2 |
-| `_COMOUT` | $FF04 | `write(1, &ch, 1)` (raw) | P2 |
-| `_INPOUT` | $FF06 | Non-blocking I/O via `poll()` + `read`/`write` | P4 |
-| `_INKEY` | $FF07 | `read(0, &ch, 1)` (raw, no break check) | P4 |
-| `_GETC` | $FF08 | `read(0, &ch, 1)` (no echo, break check) | P4 |
-| `_PRINT` | $FF09 | `write(1, str, strlen(str))` | P2 |
-| `_GETS` | $FF0A | Line-buffered `read(0, ...)` | P2 |
-| `_KEYSNS` | $FF0B | `poll(stdin, POLLIN, 0)` | P4 |
-| `_KFLUSH` | $FF0C | Flush tty input + call subfunc | P4 |
-| `_FFLUSH` | $FF0D | `/* no-op */` | P4 |
-| `_CHGDRV` | $FF0E | Change current drive (update cwd prefix) | P4 |
-| `_DRVCTRL` | $FF0F | Return 0x02 (drive ready) | stub |
-| `_CONSNS` | $FF10 | Return -1 (console ready) | stub |
-| `_PRNSNS` | $FF11 | Return 0 (no printer) | stub |
-| `_CINSNS` | $FF12 | Return 0 | stub |
-| `_COUTSNS` | $FF13 | Return 0 | stub |
+| `_EXIT` | $FF00 | `sys_exit(0)` | ✅ |
+| `_GETCHAR` | $FF01 | `sys_read(0, &ch, 1)` + echo | ✅ |
+| `_PUTCHAR` | $FF02 | `sys_write(1, &ch, 1)` | ✅ |
+| `_COMINP` | $FF03 | `sys_read(0, &ch, 1)` (raw, no echo) | ✅ |
+| `_COMOUT` | $FF04 | `sys_write(1, &ch, 1)` (raw) | ✅ |
+| `_MOVE` | $FF05 | `sys_write(1, &ch, 1)` | ✅ |
+| `_INPOUT` | $FF08 | Output or check input (0xFF=check) | ✅ |
+| `_PRINT` | $FF09 | `sys_write(1, str, len)` | ✅ |
+| `_GETS` | $FF0A | Line-buffered `sys_read(0, ...)` | ✅ |
+| `_KFLUSH` | $FF0C | Flush keyboard + input subfunc | ✅ |
+| `_CONCTRL` | $FF10 | Console control (putc, print, color, ^C) | ✅ |
+| `_INKEY` | $FF07 | `sys_read(0, &ch, 1)` (raw) | ☐ |
+| `_KEYSNS` | $FF0B | Non-blocking key sense | ☐ |
+| `_CHGDRV` | $FF0E | Change current drive | ☐ |
+| `_DRVCTRL` | $FF0F | Return 0x02 (drive ready) | ☐ |
 | **File Handle I/O** | | | |
-| `_FGETC` | $FF1B | `read(fd, &ch, 1)` | P3 |
-| `_FGETS` | $FF1C | Line read from fd | P3 |
-| `_FPUTC` | $FF1D | `write(fd, &ch, 1)` | P3 |
-| `_FPUTS` | $FF1E | `write(fd, str, len)` | P3 |
-| `_ALLCLOSE` | $FF1F | Close all file handles | P3 |
+| `_FGETC` | $FF1B | `sys_read(fd, &ch, 1)` | ✅ |
+| `_FGETS` | $FF1C | Line read from fd | ✅ |
+| `_FPUTC` | $FF1D | `sys_write(fd, &ch, 1)` | ✅ |
+| `_FPUTS` | $FF1E | `sys_write(fd, str, len)` | ✅ |
+| `_NAMECK` | $FF18 | Parse filename into components | ✅ |
+| `_ALLCLOSE` | $FF1A | Close all file handles (fd 3+) | ✅ |
 | **System** | | | |
-| `_SUPER` | $FF20 | Supervisor mode toggle — no-op/stub | stub |
-| `_FNCKEY` | $FF21 | Function key string get/set — stub | stub |
-| `_CONCTRL` | $FF23 | Console control (cursor, clear) — VT100 | P4 |
-| `_KEYCTRL` | $FF24 | Keyboard control — stub | stub |
-| `_INTVCS` | $FF25 | Set interrupt vector — stub/no-op | stub |
-| `_GETTIM2` | $FF27 | `clock_gettime()` conversion | P4 |
-| `_SETTIM2` | $FF28 | No-op (no RTC) | stub |
-| `_NAMESTS` | $FF29 | Parse pathname into components | P4 |
-| `_GETDATE` | $FF2A | `clock_gettime()` → DOS date format | P4 |
-| `_SETDATE` | $FF2B | No-op | stub |
-| `_GETTIME` | $FF2C | `clock_gettime()` → DOS time format | P4 |
-| `_SETTIME` | $FF2D | No-op | stub |
-| `_VERNUM` | $FF30 | Return emulated version (3.02 = 0x0302) | P1 |
-| `_KEEPPR` | $FF31 | TSR — return ENOSYS | stub |
-| `_GETDPB` | $FF32 | Return -1 (no DPB) | stub |
-| `_BREAKCK` | $FF33 | Return 1 (break check on) | stub |
-| `_DRVXCHG` | $FF34 | Return -15 (not supported) | stub |
-| `_INTVCG` | $FF35 | Get interrupt vector — stub | stub |
-| `_DSKFRE` | $FF36 | `statfs()` → free space | P4 |
-| `_NAMECK` | $FF37 | Parse filename check | P4 |
+| `_SUPER` | $FF20 | Logical supervisor mode toggle | ✅ |
+| `_FFLUSH` | $FF24 | No-op (unbuffered I/O) | ✅ |
+| `_GETDATE` | $FF2A | Fixed date (2026-01-01) | ✅ |
+| `_SETDATE` | $FF2B | No-op, return 0 | ✅ |
+| `_GETTIME` | $FF2C | Fixed time (00:00:00) | ✅ |
+| `_SETTIME` | $FF2D | No-op, return 0 | ✅ |
+| `_VERNUM` | $FF30 | Return 0x48550302 (HU + v3.02) | ✅ |
+| `_KEEPPR` | $FF31 | TSR — just exits | ✅ |
+| `_BREAKCK` | $FF33 | Return 1 (break check on) | ✅ |
+| `_INTVCG` | $FF35 | Get interrupt vector — stub | ✅ |
+| `_DSKFRE` | $FF36 | Free space from page allocator | ✅ |
+| `_GETENV` | $FF38 | Return -1 (not found) | ✅ |
+| `_FNCKEY` | $FF21 | Function key string get/set | ☐ |
+| `_INTVCS` | $FF25 | Set interrupt vector | ☐ |
+| `_GETDPB` | $FF32 | Return -1 (no DPB) | ☐ |
 | **File Operations** | | | |
-| `_MKDIR` | $FF39 | `mkdir(path, 0755)` | P4 |
-| `_RMDIR` | $FF3A | `rmdir(path)` | P4 |
-| `_CHDIR` | $FF3B | `chdir(path)` | P3 |
-| `_CREATE` | $FF3C | `open(path, O_CREAT\|O_TRUNC\|O_WRONLY, mode)` | P3 |
-| `_OPEN` | $FF3D | `open(path, flags)` | P3 |
-| `_CLOSE` | $FF3E | `close(fd)` | P3 |
-| `_READ` | $FF3F | `read(fd, buf, len)` | P3 |
-| `_WRITE` | $FF40 | `write(fd, buf, len)` | P3 |
-| `_DELETE` | $FF41 | `unlink(path)` | P3 |
-| `_SEEK` | $FF42 | `lseek(fd, off, whence)` | P3 |
-| `_CHMOD` | $FF43 | `chmod()` / synthesize attrs from `stat()` | P4 |
-| `_IOCTRL` | $FF44 | `ioctl()` — partial stub | P4 |
-| `_DUP` | $FF45 | `dup(fd)` | P3 |
-| `_DUP2` | $FF46 | `dup2(old, new)` | P3 |
-| `_CURDIR` | $FF47 | `getcwd(buf, size)` | P3 |
-| `_CURDRV` | $FF19 | Return current drive (0=A:) | P3 |
+| `_MKDIR` | $FF39 | `sys_mkdir(path, 0755)` | ✅ |
+| `_RMDIR` | $FF3A | `sys_rmdir(path)` | ✅ |
+| `_CHDIR` | $FF3B | `sys_chdir(path)` | ✅ |
+| `_CREATE` | $FF3C | `sys_open(path, O_CREAT\|O_TRUNC\|O_WRONLY)` | ✅ |
+| `_OPEN` | $FF3D | `sys_open(path, flags)` | ✅ |
+| `_CLOSE` | $FF3E | `sys_close(fd)` | ✅ |
+| `_READ` | $FF3F | `sys_read(fd, buf, len)` | ✅ |
+| `_WRITE` | $FF40 | `sys_write(fd, buf, len)` | ✅ |
+| `_DELETE` | $FF41 | `sys_unlink(path)` | ✅ |
+| `_SEEK` | $FF42 | `sys_lseek(fd, off, whence)` | ✅ |
+| `_CHMOD` | $FF43 | Synthesize attrs from `sys_stat()` (query-only) | ✅ |
+| `_IOCTRL` | $FF44 | Device info query (console vs file) | ✅ |
+| `_DUP` | $FF45 | `sys_dup(fd)` | ✅ |
+| `_DUP2` | $FF46 | `sys_dup2(old, new)` | ✅ |
+| `_CURDIR` | $FF47 | `sys_getcwd(buf, size)` | ✅ |
+| `_CURDRV` | $FF19 | Return 0 (drive A:) | ✅ |
+| `_RENAME` | $FF56 | Stub — returns -ENOSYS (no sys_rename) | ⚠️ |
+| `_FILEDATE` | $FF57 | Get: fixed date; Set: no-op | ✅ |
 | **Memory** | | | |
-| `_MALLOC` | $FF48 | Allocate from free pool (see §7.3–7.4) | P1 |
-| `_MFREE` | $FF49 | Free block (no-op in minimal impl) | P1 |
-| `_SETBLOCK` | $FF4A | Resize block — shrink/grow pages (see §7.3) | P1 |
-| `_MALLOC2` | $FF58 | Same as `_MALLOC` (v2 mode selector) | P5 |
-| `_MALLOC3` | $FF60 | Extended memory alloc (himem) — stub | — |
-| `_SETBLOCK2` | $FF61 | Extended resize — stub | — |
-| `_MALLOC4` | $FF62 | Extended alloc (mode 4) — stub | — |
+| `_MALLOC` | $FF48 | Contiguous page allocation + availability | ✅ |
+| `_MFREE` | $FF49 | Free tracked allocation blocks | ✅ |
+| `_SETBLOCK` | $FF4A | Resize block (shrink/grow pages) | ✅ |
+| `_MALLOC2` | $FF58 | Same as `_MALLOC` (v2 mode selector) | ☐ |
 | **Process** | | | |
-| `_EXEC` | $FF4B | `vfork()` + `execve()` (mode 0/1) | P5 |
-| `_EXIT2` | $FF4C | `_exit(code)` | P1 |
-| `_WAIT` | $FF4D | `waitpid(-1, &st, 0)` | P5 |
-| `_FILES` | $FF4E | `opendir()` + `readdir()` (find first) | P4 |
-| `_NFILES` | $FF4F | `readdir()` (find next) | P4 |
-| `_GETPDB` | $FF51 | Return emulated PDB address | P5 |
-| `_GETENV` | $FF53 | Search env block | P5 |
-| `_VERIFYG` | $FF54 | Return 1 (verify on) | stub |
-| `_RENAME` | $FF56 | `rename(old, new)` | P3 |
-| `_FILEDATE` | $FF57 | `utimes()` (set) / `fstat()` (get) | P4 |
-| `_MAKETMP` | $FF5A | `open()` with generated temp name | P4 |
-| `_NEWFILE` | $FF5B | `open(O_CREAT\|O_EXCL)` | P4 |
-| `_ASSIGN` | $FF5F | Drive assignment — stub | stub |
-| `_GETFCB` | $FF7C | Return FCB pointer — stub | stub |
-| `_SUPER_JSR` | $FFF6 | Jump to supervisor routine — stub | — |
-| `_BUS_ERR` | $FFF7 | Bus error test — stub | — |
+| `_EXEC` | $FF4B | Mode 0: `proc_alloc` + `do_execve` + wait | ✅ |
+| `_EXIT2` | $FF4C | `sys_exit(code)` | ✅ |
+| `_ASSIGN` | $FF4D | Drive assignment — stub (return 0) | ✅ |
+| `_FILES` | $FF4E | Directory search with wildcard matching | ✅ |
+| `_NFILES` | $FF4F | Continue directory search | ✅ |
+| `_GETPDB` | $FF51 | Return PMB address | ✅ |
+
+**48 DOS calls implemented** (44 functional + 4 stubs returning safe defaults).
 
 **Note:** DOS call numbers $FF80–$FFAF map to $FF50–$FF7F (subtract
 $30); this aliasing is handled in the dispatcher.
 
-Stubs return a safe default value (0, -1, or an appropriate constant)
-without performing any real operation. They exist to prevent crashes
-in programs that probe for features.
+Unimplemented DOS calls fall through to the default handler which
+returns -ENOSYS and logs a trace message (when H68K_DEBUG is enabled).
 
 ### 5.2 Console I/O Translation
 
@@ -837,18 +819,29 @@ IOCS calls work without any bridge — the ROM handles them natively.
 On QEMU or non-m68k hosts, IOCS is not available. The subsystem must
 provide stubs for commonly used IOCS calls:
 
-| IOCS Call | d0 Value | Function | Stub Behavior |
+| IOCS Call | d0 Value | Function | Status |
 |---|---|---|---|
-| `_B_PUTC` | $0003 | Output character | → `write(1, &ch, 1)` |
-| `_B_GETC` | $0008 | Input character | → `read(0, &ch, 1)` |
-| `_B_KEYSNS` | $0009 | Key sense (poll) | → `poll(stdin)` |
-| `_B_KEYINP` | $000A | Key input (wait) | → `read(0, &ch, 1)` |
-| `_B_PRINT` | $0020 | Print string | → `write(1, str, len)` |
-| `_DATEGET` | $0054 | Get date | → `clock_gettime()` conversion |
-| `_TIMEGET` | $0055 | Get time | → `clock_gettime()` conversion |
-| Others | — | — | Return 0 (no-op) or -1 (unsupported) |
+| `_B_KEYINP` | $00 | Wait for key input | ✅ `sys_read(0, &ch, 1)` |
+| `_B_KEYSNS` | $04 | Key sense (non-blocking) | ✅ returns 0 |
+| `_SKEY_MOD` | $0E | Shift key status | ✅ returns 0 |
+| `_B_UP` | $19 | Cursor up | ✅ ANSI `ESC[A` |
+| `_B_DOWN` | $1A | Cursor down | ✅ ANSI `ESC[B` |
+| `_B_RIGHT` | $1B | Cursor right | ✅ ANSI `ESC[C` |
+| `_B_LEFT` | $1C | Cursor left | ✅ ANSI `ESC[D` |
+| `_B_PUTC` | $20 | Output character | ✅ `sys_write(1, &ch, 1)` |
+| `_B_PRINT` | $21 | Print string | ✅ `sys_write(1, str, len)` |
+| `_B_COLOR` | $22 | Set text color | ✅ stub (returns 0) |
+| `_B_LOCATE` | $23 | Set cursor position | ✅ stub (returns 0) |
+| `_B_CLRST` | $2A | Clear screen | ✅ ANSI `ESC[nJ` |
+| `_B_ERA_AL` | $2B | Clear to end of line | ✅ ANSI `ESC[0K` |
+| `_DATEGET` | $5A | Get BCD date | ✅ fixed 2026-01-01 |
+| `_TIMEGET` | $5B | Get BCD time | ✅ fixed 00:00:00 |
+| `_ONTIME` | $7F | Uptime (1/100s) | ✅ `sched_get_ticks()` |
+| Others | — | — | returns -1 (logged when H68K_DEBUG) |
 
-On the native m68k path (QEMU), the TRAP #15 vector must be hooked
+**15 IOCS calls implemented.**
+
+On the native m68k path (QEMU), the TRAP #15 vector is hooked
 to route to these stubs. On the eCPU path, the emulator intercepts
 `TRAP #15` instructions the same way it intercepts F-line.
 
@@ -1332,89 +1325,118 @@ int human68k_dos_call(h68k_ctx_t *ctx, uint16_t opcode, uint32_t usp) {
 
 ---
 
-## 10. Implementation Plan
+## 10. Implementation Status
 
-### Phase 1 — X-Format Loader (m68k native only)
+### Phase 1 — X-Format Loader + Minimal DOS ✅
 
-**Goal:** Load and start a Human68k binary on PPAP m68k, with the
-binary exiting immediately via `_EXIT`.
+**Status:** Complete.
 
-Steps:
-1. Add `HU` magic detection to `exec()` dispatch chain
-2. Implement X-format header parser and validator
-3. Implement relocation table processor
-4. Allocate all available pages (up to `USER_PAGES_MAX`) for the
-   new process — Human68k "allocate everything" protocol (§7.3)
-5. Load text+data at offset 0x100, zero BSS, apply relocations
-6. Set up PMB (256 bytes at base) with MMB header, segment
-   addresses, command line, and file handle bitmap (§4.4–4.5)
-7. Set up initial registers: a0=PMB, a1=end+1, a2=cmdline,
-   a3=-1 (no env), a4=base+0x100, USP=stack top (§4.3)
-8. Enter user mode at the entry point (a4)
-9. Install a minimal F-line handler that handles `_EXIT` ($FF00) and
-   `_SETBLOCK` ($FF4A) — nearly every program calls `_SETBLOCK` at
-   startup to release unneeded memory before doing anything else
-10. Implement basic `_MALLOC` ($FF48) with `size == -1` query support
-    and `_MFREE` ($FF49) as no-op
-11. Test: build a trivial Human68k binary that calls `_SETBLOCK`,
-    then `_EXIT(0)`
+- X-format (.x) binary loader with HU magic detection, relocation
+- PMB setup (MMB header, segment addresses, command line, file handles)
+- Initial register setup (a0–a4, USP) and user-mode entry
+- F-line exception handler dispatching `$FFxx` opcodes
+- `_EXIT` ($FF00), `_EXIT2` ($FF4C), `_SETBLOCK` ($FF4A)
+- `_MALLOC` ($FF48) with contiguous allocation + availability query
+- `_MFREE` ($FF49) with tracked multi-block freeing
+- `page_max_contiguous()` for accurate free-space reporting
 
 **Files:**
 - `src/kernel/exec/exec_x68k.c` — X-format loader + PMB setup
-- `src/arch/m68k/fline.S` — F-line exception entry point
-- `src/kernel/subsys/human68k_bridge.c` — bridge (initially just _EXIT)
+- `src/arch/m68k/fline.S` / `src/arch/m68k/trap.S` — exception entry
+- `src/kernel/subsys/human68k_bridge.c` — DOS call bridge
+- `src/kernel/subsys/human68k_bridge.h` — per-process state
 
-### Phase 2 — Console I/O
+### Phase 2 — Console I/O ✅
 
-**Goal:** "Hello World" — a Human68k binary that prints text and exits.
+**Status:** Complete.
 
-Steps:
-1. Implement `_PUTCHAR` ($FF02) → `write(1, &ch, 1)`
-2. Implement `_PRINT` ($FF09) → `write(1, str, len)`
-3. Implement `_GETCHAR` ($FF01) → `read(0, &ch, 1)`
-4. Implement `_GETS` ($FF0A) → line-buffered read
-5. Implement `_COMINP`/`_COMOUT` ($FF03/$FF04)
-6. Test with Human68k "Hello, World" programs
+- `_PUTCHAR` ($FF02), `_COMOUT` ($FF04) — character output
+- `_GETCHAR` ($FF01) — character input with echo
+- `_COMINP` ($FF03) — raw character input (no echo)
+- `_PRINT` ($FF09) — string output
+- `_GETS` ($FF0A) — line-buffered input
+- `_FGETC` ($FF1B), `_FGETS` ($FF1C) — per-handle input
+- `_FPUTC` ($FF1D), `_FPUTS` ($FF1E) — per-handle output
+- `_MOVE` ($FF05) — character output with cursor advance
+- `_INPOUT` ($FF08) — character I/O with input check
+- `_KFLUSH` ($FF0C) — flush keyboard buffer + input subfunc
+- `_CONCTRL` ($FF10) — console control (putc, print, color, Ctrl-C)
 
-### Phase 3 — File I/O
+### Phase 3 — File I/O ✅
 
-**Goal:** Run simple file utilities (cat, copy, etc.).
+**Status:** Complete.
 
-Steps:
-1. Implement file path translation (drive:backslash → PPAP path)
-2. Implement `_OPEN` ($FF3D) / `_CLOSE` ($FF3E)
-3. Implement `_READ` ($FF3F) / `_WRITE` ($FF40) / `_SEEK` ($FF42)
-4. Implement `_CREATE` ($FF39) / `_DELETE` ($FF41)
-5. Implement error code translation
-6. Implement `_CURDIR` ($FF47) / `_CHDIR` ($FF3B)
-7. Test: copy a file using a Human68k utility
+- Path translation: `A:\DIR\FILE` → `/a/DIR/FILE` (drive lowercase, `\`→`/`)
+- Error code translation: PPAP errno → Human68k error codes
+- `_CREATE` ($FF3C), `_OPEN` ($FF3D), `_CLOSE` ($FF3E)
+- `_READ` ($FF3F), `_WRITE` ($FF40), `_SEEK` ($FF42)
+- `_DELETE` ($FF41)
+- `_DUP` ($FF45), `_DUP2` ($FF46) — via `sys_dup`/`sys_dup2`
+- `_CHDIR` ($FF3B), `_CURDIR` ($FF47), `_CURDRV` ($FF19)
+- `_RENAME` ($FF56) — stub (returns -ENOSYS, no `sys_rename` yet)
 
-### Phase 4 — Directory and Metadata
+**Host tests:** `test_h68k_path` — 26 assertions for path translation
+and error code mapping.
 
-**Goal:** Directory listing and file search.
+### Phase 4 — Directory and Metadata ✅
 
-Steps:
-1. Implement `_FILES` ($FF4E) / `_NFILES` ($FF4F)
-2. Implement wildcard pattern matching (`*`, `?`)
-3. Implement `_MKDIR` ($FF39) / `_RMDIR` ($FF3A)
-4. Implement `_CHMOD` ($FF43) / `_FILEDATE` ($FF57)
-5. Implement `_RENAME` ($FF56)
-6. Test: directory listing utilities
+**Status:** Complete.
 
-### Phase 5 — Process Management and Advanced Memory
+- `_MKDIR` ($FF39), `_RMDIR` ($FF3A)
+- `_CHMOD` ($FF43) — query-only (synthesizes attrs from `stat()`)
+- `_FILES` ($FF4E), `_NFILES` ($FF4F) — directory search with
+  case-insensitive wildcard matching (`*`, `?`)
+- `_FILEDATE` ($FF57) — get returns fixed date, set ignored
+- FILBUF structure fill with file attributes, size, name
 
-**Goal:** Programs that launch sub-programs and use advanced memory.
+### Phase 5 — System Utilities and Date/Time ✅
 
-Steps:
-1. Implement `_EXEC` ($FF4B) — mode 0 (load+exec) via `vfork()`+`execve()`
-2. Implement `_WAIT` ($FF4D) → `waitpid()`
-3. Implement `_EXIT2` ($FF4C)
-4. Implement `_GETPDB` ($FF51) — return PDB address
-5. Multi-block `_MALLOC`/`_MFREE` tracking (beyond the P1 minimal impl)
-6. `_MALLOC2` ($FF58) mode selector support
-7. Test: a program that launches another program
+**Status:** Complete.
 
-### Phase 6 — Abstraction Layer + eCPU Port
+- `_VERNUM` ($FF30) — returns Human68k v3.02 (`0x48550302`)
+- `_BREAKCK` ($FF33) — break check stub
+- `_INTVCG` ($FF35) — get interrupt vector stub
+- `_GETDATE` ($FF2A), `_SETDATE` ($FF2B) — fixed date / no-op
+- `_GETTIME` ($FF2C), `_SETTIME` ($FF2D) — fixed time / no-op
+- `_DSKFRE` ($FF36) — disk free space from page allocator
+- `_GETENV` ($FF38) — returns "not found"
+- `_IOCTRL` ($FF44) — minimal device query (console vs file)
+- `_FFLUSH` ($FF24) — no-op (unbuffered I/O)
+
+### Phase 6 — Process Management ✅
+
+**Status:** Complete (basic).
+
+- `_EXEC` ($FF4B) — mode 0 LOADEXEC via `proc_alloc` + `do_execve`
+  + polling `waitpid` (WNOHANG + yield)
+- `_GETPDB` ($FF51) — return PMB address
+- `_SUPER` ($FF20) — logical supervisor mode toggle
+- `_KEEPPR` ($FF31) — TSR stub (just exits)
+- `_ASSIGN` ($FF4D) — drive assignment stub
+- `_ALLCLOSE` ($FF1A) — close all file handles (fd 3+)
+- `_NAMECK` ($FF18) — parse pathname into components
+- DOS call aliasing: $FF80–$FFAF → $FF50–$FF7F
+
+### Phase 7 — IOCS Stubs (TRAP #15) ✅
+
+**Status:** Complete.
+
+- `_B_KEYINP` ($00) — blocking key input from stdin
+- `_B_KEYSNS` ($04) — keyboard check (returns 0)
+- `_SKEY_MOD` ($0E) — shift key status (returns 0)
+- `_B_UP` ($19), `_B_DOWN` ($1A), `_B_RIGHT` ($1B), `_B_LEFT` ($1C)
+  — cursor movement via ANSI escape sequences
+- `_B_PUTC` ($20) — character output via stdout
+- `_B_PRINT` ($21) — string output via stdout
+- `_B_COLOR` ($22) — text color stub
+- `_B_LOCATE` ($23) — cursor position stub
+- `_B_CLRST` ($2A) — clear screen via ANSI `ESC[nJ`
+- `_B_ERA_AL` ($2B) — clear to EOL via ANSI `ESC[0K`
+- `_DATEGET` ($5A) — BCD date (fixed 2026-01-01)
+- `_TIMEGET` ($5B) — BCD time (fixed 00:00:00)
+- `_ONTIME` ($7F) — real uptime from scheduler tick counter (100 Hz)
+
+### Future — Abstraction Layer + eCPU Port ☐
 
 **Goal:** Run Human68k binaries on ARM PPAP via kernel-embedded
 ecpu-m68k.
@@ -1428,17 +1450,6 @@ Steps:
 5. Extend `exec()` to detect HU magic on ARM and enter the eCPU
    interpreter loop instead of native execution
 6. Test: run same Human68k binary on ARM PPAP via emulation
-
-### Phase 7 — IOCS Stubs
-
-**Goal:** Support programs that use basic IOCS calls.
-
-Steps:
-1. Implement IOCS stub for console I/O (`_B_PUTC`/`_B_GETC`)
-2. Implement IOCS stub for keyboard (`_B_KEYSNS`/`_B_KEYINP`)
-3. Implement IOCS stub for date/time (`_DATEGET`/`_TIMEGET`)
-4. Hook TRAP #15 on non-X68000 targets
-5. On X68000 hardware: passthrough to ROM IOCS (no stub needed)
 
 ---
 
