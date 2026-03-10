@@ -883,23 +883,97 @@ $E00000  TVRAM (text)
 
 ### 7.2 PPAP Memory Layout for Human68k Processes
 
-The subsystem provides a simplified memory layout:
+The subsystem provides a simplified memory layout. On the QEMU
+m68k target, all memory is RAM starting at address 0.
+
+Note: addresses increase downward in this diagram (low addresses at top).
 
 ```
-base+0x0000   MMB header (16 bytes) — memory management block (§4.4)
-base+0x0010   PMB fields (240 bytes) — process management block (§4.5)
-base+0x0100   Text segment (loaded from .x file)
-base+0x0100+text     Data segment
-base+0x0100+text+data BSS (zeroed)
-base+...      Heap (grows up via _MALLOC)
-  ...
-top           Stack (grows down)
+          RAM (0x00000000, 16 MB on QEMU virt)
+┌──────────────────────────────────────┐
+│  Vector table            (1 KB)      │  0x00000000  256 vectors × 4 bytes
+│  Kernel .text + .rodata              │  0x00000400  Kernel code
+│  Kernel .data + .bss                 │              Kernel data
+│  Kernel stack (SSP)      (16 KB)     │              Supervisor stack
+├──────────────────────────────────────┤
+│  Page pool               (remainder) │  __page_pool_start (4K-aligned)
+│                                      │
+│  ┌──────────────────────────────┐    │
+│  │  PMB header (256 bytes)     │    │  base (= process page allocation)
+│  │  ┌──────────────────────┐   │    │
+│  │  │  MMB: prev/owner/    │   │    │  0x00–0x0F
+│  │  │       end/next       │   │    │
+│  │  │  env, cmdline, fds   │   │    │  0x10–0x2F
+│  │  │  bss, heap, usp      │   │    │  0x30–0x3F
+│  │  │  directory, filename  │   │    │  0x80–0xDF
+│  │  └──────────────────────┘   │    │
+│  ├──────────────────────────────┤    │  base + 0x100
+│  │  .text  (code)              │    │  a4 = text start
+│  │  .rodata                    │    │
+│  ├──────────────────────────────┤    │  base + 0x100 + text_size
+│  │  .data  (initialized data)  │    │  a5 = data base (PIC register)
+│  │  .bss   (zeroed)            │    │
+│  ├──────────────────────────────┤    │
+│  │  Heap (grows toward high)   │    │  Managed via _SETBLOCK / _MALLOC
+│  │        ...                  │    │
+│  │  (free space)               │    │
+│  │        ...                  │    │
+│  │  User stack (grows toward low)│   │  USP starts at base + total_bytes
+│  └──────────────────────────────┘    │  base + total_bytes (high addr)
+│                                      │
+│  Kernel stack page (SSP, per-proc)   │  Separate page for trap handling
+│                                      │
+│  (remaining free pages)              │
+└──────────────────────────────────────┘
 ```
 
 The first 256 bytes (0x100) are the PMB, which includes the MMB
 as its header. Program code starts at offset 0x100 — matching
-the Human68k convention. The `a0` register points to `base`
-(the MMB/PMB), and `a4` points to `base+0x100` (program start).
+the Human68k convention.
+
+**Key PMB fields populated at load time:**
+
+| Offset | Size | Field | Value |
+|--------|------|-------|-------|
+| 0x00 | 4 | MMB prev block | 0 (first block) |
+| 0x04 | 4 | MMB owner | PMB base address (self) |
+| 0x08 | 4 | MMB block end+1 | total_bytes |
+| 0x0C | 4 | MMB next block | 0 (last block) |
+| 0x10 | 4 | Environment pointer | -1 (none) |
+| 0x20 | 4 | Cmdline address | PMB base + 0x6C |
+| 0x24 | 4 | File handle bitmap | 0x07 (stdin/stdout/stderr open) |
+| 0x30 | 4 | BSS start address | base + 0x100 + text_size + data_size |
+| 0x34 | 4 | Heap start address | base + 0x100 + text_size + data_size + bss_size |
+| 0x38 | 4 | Initial USP | base + total_bytes (top of block) |
+| 0x82 | 65 | Directory path | Current working directory |
+| 0xC4 | 23 | Filename | Program filename |
+
+**Initial register values at program entry:**
+
+| Register | Value |
+|----------|-------|
+| a0 | PMB base address |
+| a1 | Block end (base + total_bytes) |
+| a2 | Cmdline pointer (PMB base + 0x6C, empty NUL string) |
+| a3 | Environment pointer (-1 = none) |
+| a4 | Program text start (base + 0x100) |
+| USP | Top of block (base + total_bytes) |
+
+**Key points:**
+
+- Both text and data are in RAM (no XIP on m68k).
+- The PMB at the base provides Human68k compatibility. Programs
+  receive `a0 = PMB base` and `a1 = block end` at entry.
+- Heap and user stack share the free space between BSS end and block
+  top. The heap grows toward higher addresses; the stack starts at the
+  highest address (`base + total_bytes`) and grows toward lower
+  addresses (push = `--sp`). There is no guard page — overflow is
+  not detected.
+- `_SETBLOCK` ($FF4A) can shrink the block to release pages back to
+  the system. Programs typically call `_SETBLOCK` at startup to
+  return unused memory.
+- The kernel (supervisor) stack is a separate page, used only during
+  trap and exception handling.
 
 On native m68k, `base` is wherever the kernel's page allocator placed
 the memory. The program doesn't know or care about the absolute

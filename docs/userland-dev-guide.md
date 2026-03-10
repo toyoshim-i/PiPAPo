@@ -224,7 +224,186 @@ The kernel builds an argc/argv/auxv stack:
   argc    = 1                        <-- SP at entry to _start
 ```
 
-## 7. Syscall Interface
+## 7. User Process Memory Layout
+
+PPAP uses a flat (no MMU) memory model. Each process has its own set of
+kernel-managed pages for data, heap, and stack, but there is no hardware
+address isolation between processes.
+
+### ARM (RP2040) Layout
+
+On ARM targets, code stays in XIP flash and is never copied to SRAM.
+Data and heap share a contiguous page region in SRAM.
+
+Note: addresses increase downward in this diagram (low addresses at top).
+
+```
+          XIP Flash (0x10000000)
+┌──────────────────────────────────────┐
+│  boot2 + stage1        (4 KB)        │  0x10000000  QSPI init, set VTOR
+├──────────────────────────────────────┤
+│  Kernel .vectors       (256 B)       │  0x10001000  Vector table (VTOR)
+│  Kernel .text + .rodata (80 KB)      │              Kernel code
+├──────────────────────────────────────┤
+│  romfs image           (~1.9 MB)     │  0x10015000  Read-only filesystem
+├──────────────────────────────────────┤
+│  User .text  (execute-in-place)      │              Read + Execute
+│  User .rodata                        │              (never copied to RAM)
+└──────────────────────────────────────┘
+
+          SRAM (0x20000000)
+┌──────────────────────────────────────┐
+│  Kernel .data + .bss     (≤16 KB)    │  0x20000000  RAM_KERNEL (20 KB)
+│  Kernel stack (MSP)      (4 KB)      │              Supervisor stack
+├──────────────────────────────────────┤
+│  Page pool                           │  0x20005000  RAM_PAGES (204 KB)
+│  ┌──────────────────────────────┐    │
+│  │  .got   (Global Offset Table)│    │  r9 = GOT base
+│  │  .data  (initialized data)   │    │  Copied from ELF at exec
+│  │  .bss   (zero-initialized)   │    │  Zeroed at exec
+│  ├──────────────────────────────┤    │
+│  │  brk_base                    │    │  ← initial break (16-byte aligned)
+│  │  Heap (toward higher addr)   │    │  Expanded by musl malloc / sbrk
+│  │        ...                   │    │  New pages allocated on demand
+│  │  brk_current                 │    │  ← current break
+│  └──────────────────────────────┘    │
+│  (up to USER_PAGES_MAX = 64 pages)   │
+│                                      │
+│  ┌──────────────────────────────┐    │
+│  │  argument strings            │    │  high address
+│  │  <alignment padding>         │    │
+│  │  auxv[] = {AT_PAGESZ, ...}   │    │
+│  │  envp[0]=NULL                │    │
+│  │  argv[0], argv[1]=NULL       │    │
+│  │  argc                        │    │  ← SP (PSP) at entry
+│  │  ─────────────────────────── │    │
+│  │  Local variables, call frames│    │  (grows toward lower addr)
+│  │        ...                   │    │
+│  └──────────────────────────────┘    │
+│  Stack page  (4 KB, separate page)   │
+├──────────────────────────────────────┤
+│  I/O buffers             (24 KB)     │  0x20038000  RAM_IOBUF
+├──────────────────────────────────────┤
+│  DMA reserved            (16 KB)     │  0x2003E000  RAM_DMA
+└──────────────────────────────────────┘  0x20042000  End of SRAM (264 KB)
+```
+
+**Key points:**
+
+- Text executes directly from flash (XIP) — zero RAM cost for code.
+- GOT is patched at exec time: entries pointing into text get flash
+  addresses, entries pointing into data get SRAM addresses.
+- Data pages are allocated contiguously so that `brk()` can extend the
+  region by appending pages at the end.
+- The stack is a separate single page (4 KB), not contiguous with data.
+- Stack pointer (PSP) starts at the top of the stack page, below the
+  argc/argv/auxv block built by the kernel.
+
+### m68k (PPAP Native ELF) Layout
+
+On m68k targets running native PPAP ELF binaries (using `trap #0`
+syscalls), text lives in RAM (romfs is memory-mapped, not flash XIP).
+The data/heap and stack layout is similar to ARM but uses separate
+kernel (SSP) and user (USP) stack pages.
+
+Note: addresses increase downward in this diagram (low addresses at top).
+
+```
+          RAM (0x00000000, 16 MB on QEMU virt)
+┌──────────────────────────────────────┐
+│  Vector table            (1 KB)      │  0x00000000  256 vectors × 4 bytes
+│  Kernel .text + .rodata              │  0x00000400  Kernel code
+│  Kernel .data + .bss                 │              Kernel data
+│  Kernel stack (SSP)      (16 KB)     │              Boot supervisor stack
+├──────────────────────────────────────┤
+│  Page pool               (remainder) │  __page_pool_start (4K-aligned)
+│                                      │
+│  User .text  (in romfs, RAM-mapped)  │              Read + Execute
+│  User .rodata                        │              (no XIP — RAM only)
+│                                      │
+│  ┌──────────────────────────────┐    │
+│  │  .got   (Global Offset Table)│    │  a5 = GOT base (PIC register)
+│  │  .data  (initialized data)   │    │  Copied from ELF at exec
+│  │  .bss   (zero-initialized)   │    │  Zeroed at exec
+│  ├──────────────────────────────┤    │
+│  │  brk_base                    │    │  ← initial break (16-byte aligned)
+│  │  Heap (toward higher addr)   │    │  Expanded by musl malloc / sbrk
+│  │        ...                   │    │  New pages allocated on demand
+│  │  brk_current                 │    │  ← current break
+│  └──────────────────────────────┘    │
+│  (up to USER_PAGES_MAX pages)        │
+│                                      │
+│  ┌──────────────────────────────┐    │
+│  │  argument strings            │    │  high address
+│  │  <alignment padding>         │    │
+│  │  auxv[] = {AT_PAGESZ, ...}   │    │
+│  │  envp[0]=NULL                │    │
+│  │  argv[0], argv[1]=NULL       │    │
+│  │  argc                        │    │  ← USP at entry
+│  │  ─────────────────────────── │    │
+│  │  Local variables, call frames│    │  (grows toward lower addr)
+│  │        ...                   │    │
+│  └──────────────────────────────┘    │
+│  User stack page (USP, 4 KB)         │  Separate page for user mode
+│                                      │
+│  Kernel stack page (SSP, per-proc)   │  Separate page for trap handling
+│                                      │
+│  (remaining free pages)              │
+└──────────────────────────────────────┘
+```
+
+**Key points:**
+
+- Unlike ARM, both text and data are in RAM (no flash XIP on m68k).
+- GOT is patched at exec time via `a5` (PIC register), same as ARM's `r9`.
+- The m68k has separate SSP (supervisor) and USP (user) stack pointers.
+  The kernel allocates two stack pages: one for SSP (trap/exception
+  handling) and one for USP (user execution with argc/argv).
+- Data pages and heap work identically to ARM — contiguous allocation,
+  `brk()` expansion, same `USER_PAGES_MAX` limit.
+
+### m68k (Human68k Subsystem) Layout
+
+For Human68k X-format (.x) binaries running under the X68k subsystem,
+the memory layout differs: a single contiguous block with a 256-byte
+PMB header, text, data, BSS, and shared heap/stack space. See
+[subsystem-human68k.md §7.2](subsystem-human68k.md#72-ppap-memory-layout-for-human68k-processes)
+for the full layout diagram, PMB field map, initial register values,
+and details on `_SETBLOCK` / `_MALLOC` heap management.
+
+### Memory Limits
+
+| Resource | Limit | Notes |
+|----------|-------|-------|
+| Data + heap pages | 64 pages (256 KB) | `USER_PAGES_MAX`; m68k targets may override to 512 pages (2 MB) |
+| Stack | 1 page (4 KB) | ARM: user PSP; m68k: kernel SSP (user stack is within the data block) |
+| Page size | 4096 bytes | All architectures |
+| Heap alignment | 16-byte | `brk_base` aligned up to 16 bytes (musl malloc requirement) |
+
+### Heap Management
+
+**ARM (ELF):** The heap is managed via the `brk` syscall.
+
+- `brk(0)` — query current break without changing it
+- `brk(addr)` — set the break to `addr`; the kernel allocates or frees
+  pages as needed. Returns the resulting break (unchanged on failure).
+- musl's `malloc` uses `brk` internally. Bare-metal programs can call
+  `brk` directly or implement their own allocator on top of it.
+
+**m68k (X-format):** Heap is managed via Human68k DOS calls (`_MALLOC`,
+`_MFREE`, `_SETBLOCK`). See
+[subsystem-human68k.md §7.4](subsystem-human68k.md#74-memory-management-calls).
+
+### mmap
+
+Anonymous `mmap` is supported for additional allocations beyond `brk`:
+
+- `MAP_ANONYMOUS | MAP_PRIVATE` — allocates zero-filled pages
+- `MAP_FIXED` — allocates at a specific address
+- Up to 8 mmap regions per process
+- File-backed mmap is not supported
+
+## 8. Syscall Interface
 
 PPAP uses a **unified 16-bit grouped numbering** scheme shared across all
 architectures. The trap mechanism is architecture-specific:
@@ -250,7 +429,7 @@ architectures. The trap mechanism is architecture-specific:
 
 See [syscall.md](syscall.md) for the complete syscall reference.
 
-## 8. Path A: Bare-Metal Development
+## 9. Path A: Bare-Metal Development
 
 ### Directory Structure
 
@@ -287,7 +466,7 @@ then issues `_exit()` with main's return value.
 2. Add `myapp` to the `USER_APPS` list in `cmake/user.cmake`
 3. Build: CMake links `crt0.o + syscall.o + myapp.o → myapp.elf`
 
-## 9. Path B: musl-Based Development
+## 10. Path B: musl-Based Development
 
 ### Prerequisites
 
@@ -316,7 +495,7 @@ linker script that splits `.rodata`:
 
 On m68k, this splitting is not needed because both text and data are in RAM.
 
-## 10. Packaging and Deployment
+## 11. Packaging and Deployment
 
 ### romfs Image
 
@@ -351,7 +530,7 @@ At runtime, these writable filesystems are available:
 | `/tmp` | tmpfs | RAM-backed temporary storage |
 | `/mnt/sd` | vfat | SD card (if present, FAT32) |
 
-## 11. Testing
+## 12. Testing
 
 ### QEMU
 
@@ -379,7 +558,7 @@ The kernel runs integration tests at boot, then launches `/sbin/init`
 
 Connect a serial terminal to the UART (115200 baud, 8N1).
 
-## 12. Porting Third-Party Applications
+## 13. Porting Third-Party Applications
 
 Existing UNIX applications can be ported to PPAP if they fit within the
 per-process memory budget (128 KB data+bss). The recommended pattern:
@@ -395,7 +574,7 @@ per-process memory budget (128 KB data+bss). The recommended pattern:
 
 See [porting.md](porting.md) for the detailed guide.
 
-## 13. Known Limitations
+## 14. Known Limitations
 
 - **No shared libraries**: all linking is static (`libc.a`)
 - **No `fork()`**: only `vfork()` is available (NOMMU model). The child
