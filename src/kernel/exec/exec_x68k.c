@@ -1,8 +1,8 @@
 /*
  * exec_x68k.c — Human68k X-format binary loader
  *
- * Phase 1 Steps 1–2: detection and header validation.
- * Subsequent steps add relocation, PMB setup, and F-line DOS call bridging.
+ * Phase 1 Steps 1–3: detection, header validation, relocation processor.
+ * Subsequent steps add memory allocation, PMB setup, and F-line bridging.
  */
 
 #include "exec_x68k.h"
@@ -47,6 +47,102 @@ int x68k_validate(const x68k_header_t *hdr, uint32_t file_size)
     return 0;
 }
 
+/* ── Relocation processor ──────────────────────────────────────────────────
+ *
+ * X-format relocation table format:
+ *   - First entry: 2-byte absolute displacement from image start
+ *   - Subsequent entries: 2-byte relative displacement from previous fixup
+ *   - If displacement == 0x0001, next 4 bytes are an extended displacement
+ *   - Odd displacement → word (16-bit) relocation
+ *   - Even displacement → long (32-bit) relocation
+ *   - Table ends when reloc_size bytes are consumed
+ *
+ * Each fixup adds `delta` (= load_addr - base_addr) to the value at the
+ * fixup location.
+ */
+
+static uint16_t read_be16(const uint8_t *p)
+{
+    return ((uint16_t)p[0] << 8) | p[1];
+}
+
+static uint32_t read_be32(const uint8_t *p)
+{
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+           ((uint32_t)p[2] << 8) | p[3];
+}
+
+static void write_be16(uint8_t *p, uint16_t v)
+{
+    p[0] = (uint8_t)(v >> 8);
+    p[1] = (uint8_t)v;
+}
+
+static void write_be32(uint8_t *p, uint32_t v)
+{
+    p[0] = (uint8_t)(v >> 24);
+    p[1] = (uint8_t)(v >> 16);
+    p[2] = (uint8_t)(v >> 8);
+    p[3] = (uint8_t)v;
+}
+
+int x68k_apply_relocs(uint8_t *image, uint32_t image_size,
+                      const uint8_t *reloc_table, uint32_t reloc_size,
+                      uint32_t delta)
+{
+    if (reloc_size == 0 || delta == 0)
+        return 0;   /* nothing to do */
+
+    uint32_t pos = 0;       /* position in reloc table */
+    uint32_t fixup = 0;     /* current fixup offset in image */
+    int first = 1;
+
+    while (pos < reloc_size) {
+        uint32_t disp;
+
+        if (pos + 2 > reloc_size)
+            break;
+
+        uint16_t d16 = read_be16(reloc_table + pos);
+        pos += 2;
+
+        if (first) {
+            /* First entry: absolute displacement from image start */
+            fixup = d16;
+            first = 0;
+        } else {
+            if (d16 == 0x0001) {
+                /* Extended displacement: next 4 bytes */
+                if (pos + 4 > reloc_size)
+                    return -(int)ENOEXEC;
+                disp = read_be32(reloc_table + pos);
+                pos += 4;
+                fixup += disp;
+            } else {
+                fixup += d16;
+            }
+        }
+
+        /* Apply fixup */
+        if (fixup & 1) {
+            /* Odd offset → word (16-bit) relocation */
+            uint32_t off = fixup & ~1u;
+            if (off + 2 > image_size)
+                return -(int)ENOEXEC;
+            uint16_t val = read_be16(image + off);
+            write_be16(image + off, (uint16_t)(val + delta));
+        } else {
+            /* Even offset → long (32-bit) relocation */
+            if (fixup + 4 > image_size)
+                return -(int)ENOEXEC;
+            uint32_t val = read_be32(image + fixup);
+            write_be32(image + fixup, val + delta);
+        }
+    }
+
+    return 0;
+}
+
 /* ── Loader stub ───────────────────────────────────────────────────────────── */
 
 int exec_x68k(pcb_t *p, const uint8_t *file, uint32_t size,
@@ -62,6 +158,6 @@ int exec_x68k(pcb_t *p, const uint8_t *file, uint32_t size,
     (void)path;
     (void)argv;
 
-    /* TODO: Phase 1 Steps 3–8 implement the actual loader. */
+    /* TODO: Phase 1 Steps 4–8 implement the actual loader. */
     return -(int)ENOSYS;
 }

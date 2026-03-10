@@ -64,6 +64,19 @@ int x68k_detect(const uint8_t *file, uint32_t size);
 int x68k_validate(const x68k_header_t *hdr, uint32_t file_size);
 
 /*
+ * x68k_apply_relocs — process X-format relocation table.
+ *
+ * Walks the relocation chain and adds `delta` to each fixup location.
+ * `image` points to the loaded text+data in memory (writable copy).
+ * `reloc_table` points to the relocation data from the file.
+ *
+ * Returns 0 on success, negative errno if the table is malformed.
+ */
+int x68k_apply_relocs(uint8_t *image, uint32_t image_size,
+                      const uint8_t *reloc_table, uint32_t reloc_size,
+                      uint32_t delta);
+
+/*
  * exec_x68k — load and set up an X-format binary for execution.
  *
  * Called from do_execve() when x68k_detect() succeeds.
