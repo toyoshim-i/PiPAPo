@@ -382,30 +382,37 @@ function(ppap_generate_romfs target)
         set(_section "    .section .romfs, \"a\", %progbits")
     endif()
 
-    # Build stage_romfs.sh arguments
+    # Overlay arguments and dependencies
     set(_overlay_args "")
     if(ARG_OVERLAY_DIR)
-        set(_overlay_args --overlay-dir ${ARG_OVERLAY_DIR})
+        set(_overlay_args -D "OVERLAY_DIR=${ARG_OVERLAY_DIR}")
     endif()
 
-    # Collect overlay file dependencies
     set(_overlay_deps "")
     if(ARG_OVERLAY_DIR AND EXISTS ${ARG_OVERLAY_DIR})
         file(GLOB_RECURSE _overlay_deps ${ARG_OVERLAY_DIR}/*)
     endif()
 
+    # CMake list separator for -D arguments
+    string(REPLACE ";" "\\;" _user_elfs_escaped "${PPAP_USER_ELFS}")
+    string(REPLACE ";" "\\;" _bb_applets_escaped "${BB_APPLETS}")
+    string(REPLACE ";" "\\;" _bb_shell_escaped "${BB_SHELL_APPLETS}")
+    string(REPLACE ";" "\\;" _bb_sbin_escaped "${BB_SBIN_APPLETS}")
+
     add_custom_command(
         OUTPUT ${_romfs_bin}
-        COMMAND ${PPAP_ROOT}/cmake/stage_romfs.sh
-                ${_romfs_staging} ${PPAP_ROOT}
-                --user-elfs ${PPAP_USER_ELFS}
-                --bb-dir ${PPAP_BB_DIR}
-                --bb-applets ${BB_APPLETS}
-                --bb-shell-applets ${BB_SHELL_APPLETS}
-                --bb-sbin-applets ${BB_SBIN_APPLETS}
-                --rogue ${PPAP_ROGUE_DIR}/rogue
-                --etc-dir ${PPAP_ROOT}/src/etc
+        COMMAND ${CMAKE_COMMAND}
+                -D "STAGING=${_romfs_staging}"
+                -D "PROJECT_ROOT=${PPAP_ROOT}"
+                -D "USER_ELFS=${_user_elfs_escaped}"
+                -D "BB_DIR=${PPAP_BB_DIR}"
+                -D "BB_APPLETS=${_bb_applets_escaped}"
+                -D "BB_SHELL_APPLETS=${_bb_shell_escaped}"
+                -D "BB_SBIN_APPLETS=${_bb_sbin_escaped}"
+                -D "ROGUE=${PPAP_ROGUE_DIR}/rogue"
+                -D "ETC_DIR=${PPAP_ROOT}/src/etc"
                 ${_overlay_args}
+                -P ${PPAP_ROOT}/cmake/stage_romfs.cmake
         COMMAND ${PPAP_SHARED_BUILD}/mkromfs ${_mkromfs_flags}
                 ${_romfs_staging} ${_romfs_bin}
         DEPENDS ${PPAP_SHARED_BUILD}/mkromfs
@@ -415,7 +422,7 @@ function(ppap_generate_romfs target)
                 ${PPAP_ROOT}/src/etc/fstab
                 ${PPAP_ROOT}/src/etc/inittab
                 ${_overlay_deps}
-                ${PPAP_ROOT}/cmake/stage_romfs.sh
+                ${PPAP_ROOT}/cmake/stage_romfs.cmake
         COMMENT "Generating romfs for ${target}"
     )
 
