@@ -17,6 +17,9 @@
 #include "../errno.h"
 #include "../signal/signal.h"
 #include "../klog.h"
+#include "../ecpu/ecpu_z80.h"
+#include "../ecpu/ecpu_m68k.h"
+#include "../subsys/ppap_m68k_bridge.h"
 #include "../../target/target.h"
 #include "common/ptrace.h"
 #include "common/wait.h"
@@ -101,6 +104,130 @@ static void trace_resume_target(pcb_t *target)
     if (target->state == PROC_TRACED_STOP)
         target->state = PROC_RUNNABLE;
     sched_yield();
+}
+
+static void trace_regs_init(struct ppap_ptrace_regs *regs,
+                            uint32_t regset, uint32_t abi, uint32_t words)
+{
+    __builtin_memset(regs, 0, sizeof(*regs));
+    regs->regset = regset;
+    regs->abi = abi;
+    regs->words = words;
+}
+
+static int trace_fill_arm_regs(const pcb_t *target, struct ppap_ptrace_regs *regs)
+{
+    const uint32_t *sp = (const uint32_t *)(uintptr_t)target->sp;
+
+    trace_regs_init(regs, PPAP_TRACE_REGSET_ARM, target->trace_event.abi, 17);
+    regs->regs[0] = sp[8];
+    regs->regs[1] = sp[9];
+    regs->regs[2] = sp[10];
+    regs->regs[3] = sp[11];
+    regs->regs[4] = sp[0];
+    regs->regs[5] = sp[1];
+    regs->regs[6] = sp[2];
+    regs->regs[7] = sp[3];
+    regs->regs[8] = sp[4];
+    regs->regs[9] = sp[5];
+    regs->regs[10] = sp[6];
+    regs->regs[11] = sp[7];
+    regs->regs[12] = sp[12];
+    regs->regs[13] = (uint32_t)(uintptr_t)(sp + 16);
+    regs->regs[14] = sp[13];
+    regs->regs[15] = sp[14];
+    regs->regs[16] = sp[15];
+    return 0;
+}
+
+#if defined(__m68k__)
+static int trace_fill_m68k_frame_regs(const pcb_t *target,
+                                      struct ppap_ptrace_regs *regs)
+{
+    const uint32_t *frame = (const uint32_t *)(uintptr_t)target->sp;
+    const uint8_t *exc = (const uint8_t *)(uintptr_t)target->sp + 60;
+
+    trace_regs_init(regs, PPAP_TRACE_REGSET_M68K, target->trace_event.abi, 20);
+    for (uint32_t i = 0; i < 15; i++)
+        regs->regs[i] = frame[i];
+    regs->regs[15] = target->usp;
+    regs->regs[16] = ((uint32_t)*(const uint16_t *)(const void *)(exc + 2) << 16)
+                   | *(const uint16_t *)(const void *)(exc + 4);
+    regs->regs[17] = *(const uint16_t *)(const void *)exc;
+    regs->regs[18] = target->usp;
+    regs->regs[19] = target->sp;
+    return 0;
+}
+#endif
+
+static int trace_fill_m68k_emu_regs(const pcb_t *target,
+                                    struct ppap_ptrace_regs *regs)
+{
+    const ppap_m68k_exec_state_t *state =
+        (const ppap_m68k_exec_state_t *)target->subsys_data;
+    const m68k_state_t *cpu;
+
+    if (!state)
+        return -EINVAL;
+    cpu = &state->m68k;
+
+    trace_regs_init(regs, PPAP_TRACE_REGSET_M68K, target->trace_event.abi, 20);
+    for (uint32_t i = 0; i < 8; i++) {
+        regs->regs[i] = cpu->d[i];
+        regs->regs[8 + i] = cpu->a[i];
+    }
+    regs->regs[16] = cpu->pc;
+    regs->regs[17] = cpu->sr;
+    regs->regs[18] = cpu->usp;
+    regs->regs[19] = cpu->ssp;
+    return 0;
+}
+
+static int trace_fill_z80_regs(const pcb_t *target, struct ppap_ptrace_regs *regs)
+{
+    const z80_state_t *cpu = (const z80_state_t *)target->subsys_data;
+
+    if (!cpu)
+        return -EINVAL;
+
+    trace_regs_init(regs, PPAP_TRACE_REGSET_Z80, target->trace_event.abi, 18);
+    regs->regs[0] = z80_af(cpu);
+    regs->regs[1] = z80_bc(cpu);
+    regs->regs[2] = z80_de(cpu);
+    regs->regs[3] = z80_hl(cpu);
+    regs->regs[4] = cpu->ix;
+    regs->regs[5] = cpu->iy;
+    regs->regs[6] = cpu->sp;
+    regs->regs[7] = cpu->pc;
+    regs->regs[8] = ((uint16_t)cpu->a2 << 8) | cpu->f2;
+    regs->regs[9] = ((uint16_t)cpu->b2 << 8) | cpu->c2;
+    regs->regs[10] = ((uint16_t)cpu->d2 << 8) | cpu->e2;
+    regs->regs[11] = ((uint16_t)cpu->h2 << 8) | cpu->l2;
+    regs->regs[12] = cpu->iff1;
+    regs->regs[13] = cpu->iff2;
+    regs->regs[14] = cpu->im;
+    regs->regs[15] = cpu->wz;
+    regs->regs[16] = cpu->i;
+    regs->regs[17] = cpu->r;
+    return 0;
+}
+
+static int trace_fill_regs(const pcb_t *target, struct ppap_ptrace_regs *regs)
+{
+    if (target->state != PROC_TRACED_STOP)
+        return -EBUSY;
+
+    if (target->subsys == SUBSYS_CPM)
+        return trace_fill_z80_regs(target, regs);
+
+    if (target->subsys == SUBSYS_PPAP && target->subsys_data)
+        return trace_fill_m68k_emu_regs(target, regs);
+
+#if defined(__m68k__)
+    return trace_fill_m68k_frame_regs(target, regs);
+#else
+    return trace_fill_arm_regs(target, regs);
+#endif
 }
 
 int trace_before_syscall(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
@@ -210,6 +337,10 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
             return -(long)EINVAL;
         *(struct ppap_ptrace_event *)data = target->trace_event;
         return 0;
+    case PTRACE_GETREGS:
+        if (!data)
+            return -(long)EINVAL;
+        return trace_fill_regs(target, (struct ppap_ptrace_regs *)data);
     case PTRACE_SETMODE: {
         uint8_t mode = (uint8_t)(uintptr_t)addr;
         if (mode & (uint8_t)~TRACE_MODE_MASK)

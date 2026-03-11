@@ -13,6 +13,12 @@
 
 #define SIGTRAP  5
 
+#if defined(__m68k__)
+#define EXPECT_REGSET  PPAP_TRACE_REGSET_M68K
+#else
+#define EXPECT_REGSET  PPAP_TRACE_REGSET_ARM
+#endif
+
 int main(void)
 {
     pid_t pid = vfork();
@@ -24,6 +30,7 @@ int main(void)
 
     int status = 0;
     struct ppap_ptrace_event ev;
+    struct ppap_ptrace_regs regs;
 
     UT_ASSERT_EQ(waitpid(pid, &status, WSTOPPED), pid);
     UT_ASSERT(WIFSTOPPED(status), "child should stop after exec");
@@ -31,6 +38,10 @@ int main(void)
     UT_ASSERT_EQ(ptrace(PTRACE_GETEVENT, pid, (void *)0, &ev), 0);
     UT_ASSERT_EQ((int)ev.event, PPAP_TRACE_EVENT_EXEC);
     UT_ASSERT_EQ((int)ev.abi, PPAP_TRACE_ABI_PPAP);
+    UT_ASSERT_EQ(ptrace(PTRACE_GETREGS, pid, (void *)0, &regs), 0);
+    UT_ASSERT_EQ((int)regs.regset, EXPECT_REGSET);
+    UT_ASSERT_EQ((int)regs.abi, PPAP_TRACE_ABI_PPAP);
+    UT_ASSERT(regs.words > 0, "GETREGS should return a non-empty register set");
 
     UT_ASSERT_EQ(ptrace(PTRACE_SETMODE, pid,
                         (void *)(uintptr_t)PPAP_TRACE_MODE_PPAP_SYSCALL,
@@ -42,6 +53,9 @@ int main(void)
     UT_ASSERT_EQ((int)ev.event, PPAP_TRACE_EVENT_SYSCALL_ENTER);
     UT_ASSERT_EQ((int)ev.abi, PPAP_TRACE_ABI_PPAP);
     UT_ASSERT_EQ((int)ev.nr, SYS_WRITE);
+    UT_ASSERT_EQ(ptrace(PTRACE_GETREGS, pid, (void *)0, &regs), 0);
+    UT_ASSERT_EQ((int)regs.regset, EXPECT_REGSET);
+    UT_ASSERT_EQ((int)regs.abi, PPAP_TRACE_ABI_PPAP);
 
     UT_ASSERT_EQ(ptrace(PTRACE_CONT, pid, (void *)0, (void *)0), 0);
     UT_ASSERT_EQ(waitpid(pid, &status, WSTOPPED), pid);
@@ -51,6 +65,9 @@ int main(void)
     UT_ASSERT_EQ((int)ev.abi, PPAP_TRACE_ABI_PPAP);
     UT_ASSERT_EQ((int)ev.nr, SYS_WRITE);
     UT_ASSERT(ev.ret > 0, "write should return positive length");
+    UT_ASSERT_EQ(ptrace(PTRACE_GETREGS, pid, (void *)0, &regs), 0);
+    UT_ASSERT_EQ((int)regs.regset, EXPECT_REGSET);
+    UT_ASSERT_EQ((int)regs.abi, PPAP_TRACE_ABI_PPAP);
 
     UT_ASSERT_EQ(ptrace(PTRACE_SETMODE, pid, (void *)0, (void *)0), 0);
     UT_ASSERT_EQ(ptrace(PTRACE_CONT, pid, (void *)0, (void *)0), 0);
