@@ -205,6 +205,7 @@ User tests are built by `cmake/user.cmake` as custom commands, controlled
 by the `PPAP_TESTS` CMake option. The build system:
 
 - Cross-compiles each `test_*.c` from `tests/user/`
+- Builds Human68k R-format user tests from `tests/user/r68k/` on m68k targets
 - Links with `crt0.o` + `syscall.o` (arch-specific SVC stubs)
 - Installs to romfs `/bin/`
 - Compiler flags: `-fPIC -msingle-pic-base -mpic-register=r9`

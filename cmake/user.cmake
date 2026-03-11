@@ -350,9 +350,9 @@ function(_ppap_build_user_programs)
         endforeach()
     endif()
 
-    # --- R68K test programs (Human68k DOS call tests) ---
+    # --- R68K user tests (Human68k DOS call tests) ---
     if(PPAP_TESTS AND PPAP_ARCH STREQUAL "m68k")
-        set(_r68k_dir ${PPAP_ROOT}/tests/r68k)
+        set(_r68k_dir ${PPAP_ROOT}/tests/user/r68k)
         ppap_r68k_program(test_dos_basic ${_r68k_dir}/test_dos_basic.S)
         ppap_r68k_program(test_dos_mem   ${_r68k_dir}/test_dos_mem.S)
         ppap_r68k_program(test_dos_file  ${_r68k_dir}/test_dos_file.S)
