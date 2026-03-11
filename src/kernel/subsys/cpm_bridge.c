@@ -895,6 +895,76 @@ static int cpm_get_readonly_vector(z80_state_t *cpu, cpm_state_t *cpm)
 }
 
 /*
+ * Get Alloc Vector (BDOS function 27)
+ * Returns HL pointing to allocation bitmap in Z80 memory.
+ * We synthesize a small bitmap at a fixed address (0xFD00) showing
+ * a mostly-free disk.  The bitmap format: 1 bit per block, MSB first.
+ * We report all blocks as allocated (0xFF bytes) since PPAP doesn't
+ * track CP/M disk blocks — this is safe and prevents programs from
+ * thinking they can allocate "free" blocks.
+ */
+#define CPM_ALV_ADDR  0xFD00   /* just below BIOS at 0xFE00 */
+#define CPM_ALV_SIZE  32       /* 256 blocks / 8 = 32 bytes */
+
+static int cpm_get_alloc_vector(z80_state_t *cpu, cpm_state_t *cpm)
+{
+    (void)cpm;
+    /* Fill ALV with 0xFF (all allocated) */
+    for (int i = 0; i < CPM_ALV_SIZE; i++)
+        z80_write8(cpu, CPM_ALV_ADDR + i, 0xFF);
+    z80_set_hl(cpu, CPM_ALV_ADDR);
+    return 0;
+}
+
+/*
+ * Get Disk Parameter Block (BDOS function 31)
+ * Returns HL pointing to a synthesized DPB in Z80 memory.
+ * The DPB describes a standard 8" SSSD floppy (IBM 3740 format):
+ *   SPT=26, BSH=3, BLM=7, EXM=0, DSM=242, DRM=63, AL0=0xC0, AL1=0,
+ *   CKS=16, OFF=2
+ * This is a safe default that works with most CP/M programs.
+ */
+#define CPM_DPB_ADDR  (CPM_ALV_ADDR - 16)  /* 0xFCF0 */
+
+static int cpm_get_dpb(z80_state_t *cpu, cpm_state_t *cpm)
+{
+    (void)cpm;
+    uint16_t a = CPM_DPB_ADDR;
+    z80_write16(cpu, a + 0, 26);     /* SPT: sectors per track */
+    z80_write8(cpu, a + 2, 3);       /* BSH: block shift */
+    z80_write8(cpu, a + 3, 7);       /* BLM: block mask */
+    z80_write8(cpu, a + 4, 0);       /* EXM: extent mask */
+    z80_write16(cpu, a + 5, 242);    /* DSM: max block number */
+    z80_write16(cpu, a + 7, 63);     /* DRM: max directory entry */
+    z80_write8(cpu, a + 9, 0xC0);    /* AL0: alloc bitmap byte 0 */
+    z80_write8(cpu, a + 10, 0x00);   /* AL1: alloc bitmap byte 1 */
+    z80_write16(cpu, a + 11, 16);    /* CKS: directory check size */
+    z80_write16(cpu, a + 13, 2);     /* OFF: reserved tracks */
+    z80_set_hl(cpu, CPM_DPB_ADDR);
+    return 0;
+}
+
+/*
+ * Write Protect Disk (BDOS function 28)
+ * No-op — PPAP doesn't support write-protecting drives.
+ */
+static void cpm_write_protect_disk(z80_state_t *cpu, cpm_state_t *cpm)
+{
+    (void)cpu; (void)cpm;
+}
+
+/*
+ * Set File Attributes (BDOS function 30)
+ * No-op — returns success. CP/M file attributes (R/O, SYS) are
+ * stored in the high bits of the FCB filename bytes.
+ */
+static int cpm_set_file_attributes(z80_state_t *cpu, cpm_state_t *cpm)
+{
+    (void)cpu; (void)cpm;
+    return 0;  /* success */
+}
+
+/*
  * Get/Set User Code (BDOS function 32)
  */
 static int cpm_set_get_user_code(z80_state_t *cpu, cpm_state_t *cpm)
@@ -943,7 +1013,11 @@ static int cpm_bdos_dispatch(z80_state_t *cpu, cpm_state_t *cpm)
     case 24: result = cpm_return_login_vector(cpu, cpm); break;
     case 25: result = cpm_return_current_disk(cpu, cpm); break;
     case 26: cpm_set_dma_address(cpu, cpm); break;
+    case 27: cpm_get_alloc_vector(cpu, cpm); return ECPU_TRAP_HANDLED;
+    case 28: cpm_write_protect_disk(cpu, cpm); break;
     case 29: result = cpm_get_readonly_vector(cpu, cpm); break;
+    case 30: result = cpm_set_file_attributes(cpu, cpm); break;
+    case 31: cpm_get_dpb(cpu, cpm); return ECPU_TRAP_HANDLED;
     case 32: result = cpm_set_get_user_code(cpu, cpm); break;
     case 33: result = cpm_read_random(cpu, cpm, de); break;
     case 34: result = cpm_write_random(cpu, cpm, de); break;

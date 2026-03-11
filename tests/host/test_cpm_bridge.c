@@ -1745,6 +1745,65 @@ static void test_search_via_bdos(void)
     printf("  PASS: search_via_bdos\n");
 }
 
+/* ── Test: BDOS fn 27 — get alloc vector ───────────────────────────────── */
+
+static void test_alloc_vector(void)
+{
+    setup();
+
+    cpu.c = 27;
+    int rc = cpm_trap_handler((ecpu_state_t *)&cpu, ECPU_TRAP_CALL,
+                               CPM_BDOS_ENTRY, &cpm);
+    assert(rc == ECPU_TRAP_HANDLED);
+
+    uint16_t alv = z80_hl(&cpu);
+    assert(alv == 0xFD00);
+    assert(z80_read8(&cpu, alv) == 0xFF);
+    assert(z80_read8(&cpu, alv + 31) == 0xFF);
+
+    printf("  PASS: alloc_vector\n");
+}
+
+/* ── Test: BDOS fn 31 — get DPB ───────────────────────────────────────── */
+
+static void test_dpb(void)
+{
+    setup();
+
+    cpu.c = 31;
+    int rc = cpm_trap_handler((ecpu_state_t *)&cpu, ECPU_TRAP_CALL,
+                               CPM_BDOS_ENTRY, &cpm);
+    assert(rc == ECPU_TRAP_HANDLED);
+
+    uint16_t dpb = z80_hl(&cpu);
+    assert(z80_read16(&cpu, dpb) == 26);     /* SPT */
+    assert(z80_read8(&cpu, dpb + 2) == 3);   /* BSH */
+    assert(z80_read16(&cpu, dpb + 5) == 242); /* DSM */
+    assert(z80_read16(&cpu, dpb + 7) == 63);  /* DRM */
+
+    printf("  PASS: dpb\n");
+}
+
+/* ── Test: BDOS fn 28/30 — write protect + set attributes (no-ops) ───── */
+
+static void test_disk_noops(void)
+{
+    setup();
+
+    cpu.c = 28;
+    int rc = cpm_trap_handler((ecpu_state_t *)&cpu, ECPU_TRAP_CALL,
+                               CPM_BDOS_ENTRY, &cpm);
+    assert(rc == ECPU_TRAP_HANDLED);
+
+    cpu.c = 30;
+    rc = cpm_trap_handler((ecpu_state_t *)&cpu, ECPU_TRAP_CALL,
+                           CPM_BDOS_ENTRY, &cpm);
+    assert(rc == ECPU_TRAP_HANDLED);
+    assert(cpu.a == 0);
+
+    printf("  PASS: disk_noops\n");
+}
+
 /* ── Cleanup helper ────────────────────────────────────────────────────── */
 
 static void cleanup_test_dir(void)
@@ -1809,6 +1868,11 @@ int main(void)
     test_search_first_next();
     test_search_no_match();
     test_search_via_bdos();
+
+    /* Phase 5: Disk management */
+    test_alloc_vector();
+    test_dpb();
+    test_disk_noops();
 
     cleanup_test_dir();
 
