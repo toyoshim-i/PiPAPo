@@ -28,6 +28,9 @@ void subsys_init(void)
     procfs_register_subsys(SUBSYS_PPAP, "ppap");
 #if defined(__m68k__)
     procfs_register_subsys(SUBSYS_HUMAN68K, "human68k");
+#else
+    procfs_register_ecpu("m68k");
 #endif
+    procfs_register_ecpu("z80");
     procfs_register_subsys(SUBSYS_CPM, "cpm");
 }
