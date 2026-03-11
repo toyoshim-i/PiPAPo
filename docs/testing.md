@@ -64,6 +64,9 @@ Macros:
 | `test_kmem.c` | `kmem_pool` object allocator |
 | `test_fd.c` | File descriptor table operations |
 | `test_elf.c` | ELF32 header/segment parser |
+| `test_ecpu_z80.c` | Z80 emulator (85 tests: all instruction groups) |
+| `test_cpm_bridge.c` | CP/M BDOS bridge (42 tests: console, file, disk, integration) |
+| `test_ecpu_m68k.c` | m68k emulator (instruction groups, addressing modes) |
 
 ### Build system
 
@@ -193,6 +196,8 @@ only relocates GOT entries, not arbitrary data pointers.
 | `test_iov.c` | `readv`, `writev` scatter/gather I/O |
 | `test_stat.c` | `stat64`, `fstat64`, `lstat64` |
 | `test_tmpfs.c` | tmpfs create, write, read, unlink |
+| `test_x68k.c` | Human68k subsystem (R-format execution) |
+| `test_cpm.c` | CP/M subsystem (13 tests: BDOS calls, .COM exec, warm boot) |
 
 ### Build system
 
@@ -284,7 +289,10 @@ boot → kernel init → VFS mount → target_post_mount()
                             ├── test_time
                             ├── test_iov
                             ├── test_stat
-                            └── test_tmpfs
+                            ├── test_tmpfs
+                            ├── test_x68k
+                            ├── test_cpm
+                            └── test_h68k_dos (m68k only)
                                    │
                         "ALL TESTS PASSED"
                                    │

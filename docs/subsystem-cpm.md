@@ -1118,6 +1118,35 @@ Steps:
 2. ✅ multi_bdos_program: DMA + user codes + alloc vector
 3. ✅ **Total test count:** 42 tests across all phases
 
+### Phase 7 — Kernel Integration ✅
+
+**Status:** Complete. Committed as "Wire CP/M subsystem into kernel".
+
+**Goal:** connect the CP/M bridge to the kernel exec path and scheduler.
+
+1. ✅ `.COM` loader (`exec_cpm.c`) — detects `.com` extension, loads binary
+   at 0x0100, sets up CP/M memory map, FCB from argv, allocates Z80 state
+2. ✅ `cpm_run_process()` — kernel-mode entry point; scheduler "returns" into
+   the Z80 interpreter loop via `proc_setup_stack`
+3. ✅ Subsystem registration: `SUBSYS_CPM = 2` in `proc.h`, `cpm_subsys_ops`
+   in `subsys.c`, procfs entry "cpm"
+4. ✅ Build system: `exec_cpm.c`, `cpm_bridge.c`, `ecpu_z80.c`, `ecpu_z80_alu.c`
+   added to `KERNEL_SHARED_SOURCES` in `cmake/kernel.cmake`
+5. ✅ `PPAP_KERNEL` compile definition added to `cmake/arm_m.cmake` and
+   `cmake/m68k.cmake` to gate kernel-only code in shared sources
+
+### Phase 8 — Userland Tests ✅
+
+**Status:** Complete. 13 on-target tests using hand-assembled .COM binaries.
+
+**Goal:** validate the full stack (exec → Z80 emulator → BDOS bridge → syscalls)
+from user space.
+
+1. ✅ 7 basic tests: exit, hello, charout, loop, version, halt, bad extension
+2. ✅ 6 BDOS call tests: direct I/O (fn 6), select disk (fn 14/25), user code
+   (fn 32), login vector (fn 24), file I/O (fn 15/16/20/21/22), warm boot
+3. ✅ **Total test count:** 42 host tests + 13 userland tests = 55 tests
+
 ### Future — Real-World Testing
 
 **Goal:** run popular CP/M applications.
@@ -1185,14 +1214,22 @@ on the host (no QEMU needed).
 | 5 (3 tests) | alloc_vector, dpb, disk_noops | ALV, DPB, fn 28/30 |
 | 6 (2 tests) | version_and_disk_program, multi_bdos_program | Multi-BDOS Z80 integration |
 
-### 10.4 Integration Tests
+### 10.4 Userland Tests ✅
+
+On-target tests (`tests/user/test_cpm.c`) with hand-assembled Z80 .COM
+binaries. Each test writes a .COM to `/tmp`, executes via `vfork`+`execve`,
+and captures output through pipes. 13 tests covering BDOS functions
+0/2/6/9/12/14/15/16/20/21/22/24/25/32, warm boot, HALT exit, and `.com`
+extension validation.
+
+### 10.5 Integration Tests
 
 Run on QEMU (m68k or ARM target):
 1. Place `.COM` files in romfs under `/subsys/cpm/`
 2. `exec("/subsys/cpm/HELLO.COM")` from the PPAP shell
 3. Verify output on UART
 
-### 10.5 Reference Software Tests
+### 10.6 Reference Software Tests
 
 After basic functionality is working:
 
@@ -1210,12 +1247,10 @@ After basic functionality is working:
 
 ## 11. Open Questions
 
-1. **Non-blocking console I/O:** BDOS function 6 (E=0xFF) and
-   function 11 require non-blocking stdin reads. PPAP's `sys_read()`
-   is blocking. Options:
-   - Add `O_NONBLOCK` support to PPAP's file descriptor layer
-   - Use a `sys_read_ready()` syscall (check if data available)
-   - Always return "no character ready" (breaks some programs)
+1. ~~**Non-blocking console I/O:**~~ **Resolved.** `cpm_char_ready()`
+   uses `sys_poll()` with `POLLIN` and zero timeout for non-blocking
+   character readiness checking. BDOS function 6 (E=0xFF) and function
+   11 work correctly.
 
 2. **Record-oriented vs stream I/O:** CP/M reads/writes exactly 128
    bytes per record. PPAP's `read()`/`write()` are byte-stream.

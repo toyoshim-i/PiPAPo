@@ -16,25 +16,23 @@
 #ifdef PPAP_KERNEL
 
 #include "kernel/fd/fd.h"
+#include "kernel/syscall/syscall.h"
 #include "common/poll.h"
 
 static void cpm_putchar(uint8_t ch)
 {
-    extern int sys_write(int fd, const void *buf, int count);
-    sys_write(1, &ch, 1);
+    sys_write(1, (const char *)&ch, 1);
 }
 
 static uint8_t cpm_getchar(void)
 {
-    extern int sys_read(int fd, void *buf, int count);
     uint8_t ch = 0;
-    sys_read(0, &ch, 1);
+    sys_read(0, (char *)&ch, 1);
     return ch;
 }
 
 static int cpm_char_ready(void)
 {
-    extern long sys_poll(void *fds, uint32_t nfds, long timeout_ms);
     struct pollfd pfd = { .fd = 0, .events = POLLIN, .revents = 0 };
     sys_poll(&pfd, 1, 0);  /* non-blocking */
     return (pfd.revents & POLLIN) ? 1 : 0;
@@ -42,44 +40,37 @@ static int cpm_char_ready(void)
 
 static int cpm_file_open(const char *path, int flags)
 {
-    extern int sys_open(const char *path, int flags, int mode);
-    return sys_open(path, flags, 0644);
+    return (int)sys_open(path, (long)flags, 0644);
 }
 
 static int cpm_file_close(int fd)
 {
-    extern int sys_close(int fd);
-    return sys_close(fd);
+    return (int)sys_close((long)fd);
 }
 
 static int cpm_file_read(int fd, void *buf, int count)
 {
-    extern int sys_read(int fd, void *buf, int count);
-    return sys_read(fd, buf, count);
+    return (int)sys_read((long)fd, (char *)buf, (size_t)count);
 }
 
 static int cpm_file_write(int fd, const void *buf, int count)
 {
-    extern int sys_write(int fd, const void *buf, int count);
-    return sys_write(fd, buf, count);
+    return (int)sys_write((long)fd, (const char *)buf, (size_t)count);
 }
 
 static int cpm_file_seek(int fd, int offset, int whence)
 {
-    extern int sys_lseek(int fd, int offset, int whence);
-    return sys_lseek(fd, offset, whence);
+    return (int)sys_lseek((long)fd, (long)offset, (long)whence);
 }
 
 static int cpm_file_delete(const char *path)
 {
-    extern int sys_unlink(const char *path);
-    return sys_unlink(path);
+    return (int)sys_unlink(path);
 }
 
 static int cpm_file_rename(const char *oldpath, const char *newpath)
 {
-    extern int sys_rename(const char *oldpath, const char *newpath);
-    return sys_rename(oldpath, newpath);
+    return (int)sys_rename(oldpath, newpath);
 }
 
 /* Directory operations — stub for now (PPAP VFS doesn't have opendir yet) */
@@ -1088,7 +1079,6 @@ int cpm_trap_handler(ecpu_state_t *state, int trap_type,
 #ifdef PPAP_KERNEL
 
 #include "kernel/proc/proc.h"
-#include "kernel/syscall/syscall.h"
 #include "subsys.h"
 
 /*

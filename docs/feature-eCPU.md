@@ -331,7 +331,7 @@ scripts.
 
 ### Phase 4 — Retro CPU emulator cores
 
-1. ecpu-z80 — pair with CP/M personality
+1. ecpu-z80 — pair with CP/M personality ✅ (see `ecpu-z80.md`, `subsystem-cpm.md`)
 2. ecpu-8086 — pair with DOS personality
 3. See `feature-subsystem.md` for per-personality implementation plans
 
@@ -369,10 +369,10 @@ full API translation (BDOS→PPAP, INT 21h→PPAP, etc.).
 
 ## 8. Open Questions
 
-1. **Kernel-space vs user-space emulator**: user-space is simpler and
-   safer, but adds exec overhead. Kernel-space would be faster for
-   syscall-heavy programs but increases kernel complexity. Start with
-   user-space.
+1. ~~**Kernel-space vs user-space emulator**~~ **Resolved:** all eCPU
+   emulators are kernel-embedded. The personality bridge calls
+   `sys_open()`/`sys_read()`/etc. directly — no trap per translated
+   call. See `feature-subsystem.md` §2.3 for rationale.
 
 2. **Signal delivery**: when the host kernel delivers a signal to the
    emulator process, it must translate the signal context to the

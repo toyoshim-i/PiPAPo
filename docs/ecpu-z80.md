@@ -1340,14 +1340,16 @@ with ~1600 lines across 3 files (header + 2 source files):
 - ADD IX,rr
 - DD CB / FD CB double-prefix bit operations on (IX+d)/(IY+d)
 
-### Step 8 — Integration with CP/M Personality
+### Step 8 — Integration with CP/M Personality ✓
 
-**Status: DEFERRED** — development moved to m68k eCPU instead.
+**Status: COMPLETE**
 
-- Wire up CP/M BDOS trap handler (see `subsystem-cpm.md`)
-- Load a .COM binary at 0x0100, set up CP/M memory map
-- Run "Hello World" CP/M program
-- **Test:** HELLO.COM prints a string via BDOS function 9
+- ✅ Wired CP/M BDOS trap handler (`cpm_bridge.c`)
+- ✅ .COM loader at 0x0100 with CP/M memory map (`exec_cpm.c`)
+- ✅ `cpm_run_process()` — kernel entry point for Z80 emulation
+- ✅ Subsystem registered as `SUBSYS_CPM` in `subsys.c`
+- ✅ Build system integration (`cmake/kernel.cmake`)
+- ✅ 13 userland tests with hand-assembled .COM binaries (`tests/user/test_cpm.c`)
 
 ---
 
@@ -1355,8 +1357,10 @@ with ~1600 lines across 3 files (header + 2 source files):
 
 ### 13.1 Unit Test Approach
 
-**Current status: 85 unit tests passing** (`tests/host/test_ecpu_z80.c`),
-covering all instruction groups from Steps 1–7.
+**Current status: 85 host unit tests passing** (`tests/host/test_ecpu_z80.c`),
+covering all instruction groups from Steps 1–7. Additionally, 13 userland
+tests (`tests/user/test_cpm.c`) exercise the Z80 emulator end-to-end via
+hand-assembled .COM binaries running through the CP/M BDOS bridge.
 
 Test the emulator in isolation using hand-assembled Z80 byte
 sequences. Each test loads a short program into emulated memory,
@@ -1408,15 +1412,33 @@ Z80 unit tests run as host-side tests (compiled for the build
 machine, not the target), matching the existing PPAP test pattern
 (`tests/host/`). This enables fast iteration without QEMU.
 
-### 13.4 Integration Tests
+### 13.4 Userland Tests ✓
 
-Once the CP/M personality is connected:
+On-target tests using hand-assembled Z80 .COM binaries that exercise the
+full stack: Z80 emulator → CP/M BDOS bridge → PPAP syscalls. Each test
+writes a .COM binary to `/tmp`, executes via `vfork`+`execve`, and
+captures output through pipes.
+
+| Test | BDOS calls | Validates |
+|---|---|---|
+| exit_zero | fn 0 | Clean exit via system reset |
+| hello | fn 9, 0 | Print string + exit |
+| charout | fn 2, 0 | Character output loop |
+| loop | fn 2, 0 | LD/DEC/JR NZ loop printing digits |
+| version | fn 12, 2, 0 | Version query → CP/M 2.2 |
+| halt_exit | HALT | Exit via HALT instruction |
+| bad_extension | — | Reject non-.com file (ENOEXEC) |
+| direct_io | fn 6 | Direct console I/O output |
+| select_disk | fn 14, 25 | Select disk + get current disk |
+| user_code | fn 32 | Get/set user code |
+| login_vector | fn 24 | Login vector (bit 0 = drive A) |
+| file_io | fn 22, 21, 20, 16, 15 | Create, write, read, close, open |
+| warm_boot | CALL 0x0000 | Warm boot via address 0 |
+
+### 13.5 Real-World Application Tests
 
 | Test binary | BDOS calls | Validates |
 |---|---|---|
-| `HELLO.COM` | fn 9 (print string) | BDOS entry, string output |
-| `ECHO.COM` | fn 1, 2 (console I/O) | Character input/output |
-| `TYPE.COM` | fn 15, 20, 16 (file ops) | FCB file read |
 | `MBASIC.COM` | Various | Real-world CP/M application |
 
 ### 13.5 Reference Test Suites

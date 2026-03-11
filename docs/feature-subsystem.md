@@ -351,12 +351,14 @@ FCB { drive=A, name="HELLO   ", ext="COM" }
 
 ### 4.6 Implementation Phases
 
-1. **Phase 1:** Z80 interpreter core + BDOS 0/1/2/9 (console I/O)
+1. **Phase 1:** Z80 interpreter core + BDOS 0/1/2/9 (console I/O) ✅
    - Test: run a "Hello World" CP/M .COM
-2. **Phase 2:** FCB file operations (BDOS 15-22, 33-36)
+2. **Phase 2:** FCB file operations (BDOS 15-22, 33-36) ✅
    - Test: run MBASIC, load/save files
-3. **Phase 3:** Full BDOS compatibility, user area support
+3. **Phase 3:** Full BDOS compatibility, user area support ✅
    - Test: run Turbo Pascal, WordStar
+4. **Kernel integration + userland tests** ✅
+   - 42 host tests + 13 userland tests (see `subsystem-cpm.md`)
 
 ---
 
@@ -642,12 +644,13 @@ converted to `/`. Case handling follows the foreign OS convention
 4. First eCPU core (ecpu-arm) + PPAP personality
 5. Test: run ARM `hello` ELF on m68k PPAP
 
-**Phase B — CP/M Subsystem**
-1. Z80 interpreter
-2. CP/M memory map setup + .COM loader
-3. BDOS console I/O bridge (functions 0-9)
-4. BDOS file operations (functions 15-36)
-5. Test with MBASIC, Turbo Pascal
+**Phase B — CP/M Subsystem** ✅
+1. ✅ Z80 interpreter (85 host tests, Steps 1–7)
+2. ✅ CP/M memory map setup + .COM loader (`exec_cpm.c`)
+3. ✅ BDOS console I/O bridge (functions 0–12)
+4. ✅ BDOS file operations (functions 15–36)
+5. ✅ Kernel integration + 13 userland tests
+6. Future: test with MBASIC, Turbo Pascal
 
 **Phase C — Human68k Subsystem**
 1. X-format loader

@@ -536,8 +536,84 @@ endfunction()
 # only this file — all targets pick it up.
 # =============================================================================
 
+# =============================================================================
+# Cross-compiled m68k binaries for ARM targets (eCPU emulation)
+# =============================================================================
+
+# ppap_m68k_cross_program(name source)
+#
+# When building for ARM, cross-compiles a standalone m68k ELF binary using
+# the m68k toolchain.  The resulting ELF is added to PPAP_M68K_CROSS_ELFS
+# and included in the romfs.  No-op on native m68k builds.
+function(ppap_m68k_cross_program name source)
+    if(PPAP_ARCH STREQUAL "m68k")
+        return()
+    endif()
+
+    set(_m68k_tc  ${PPAP_ROOT}/tools/m68k-toolchain)
+    set(_m68k_cc  ${_m68k_tc}/bin/m68k-elf-gcc)
+    set(_m68k_ld  ${PPAP_ROOT}/src/user/arch/m68k/user.ld)
+    set(_obj ${PPAP_SHARED_BUILD}/${name}_m68k.o)
+    set(_elf ${PPAP_SHARED_BUILD}/${name}_m68k.elf)
+
+    get_filename_component(_ext ${source} LAST_EXT)
+    if(_ext STREQUAL ".S" OR _ext STREQUAL ".s")
+        add_custom_command(
+            OUTPUT ${_obj}
+            COMMAND ${_m68k_cc} -m68000 -c -o ${_obj} ${source}
+            DEPENDS ${source}
+            COMMENT "Cross-assembling ${name}_m68k.o (m68k for ARM)"
+        )
+    else()
+        add_custom_command(
+            OUTPUT ${_obj}
+            COMMAND ${_m68k_cc} -m68000 -ffreestanding -nostdlib -Os
+                    -c -o ${_obj} ${source}
+            DEPENDS ${source}
+            COMMENT "Cross-compiling ${name}_m68k.o (m68k for ARM)"
+        )
+    endif()
+
+    add_custom_command(
+        OUTPUT ${_elf}
+        COMMAND ${_m68k_cc} -m68000 -nostdlib -T ${_m68k_ld}
+                -Wl,--gc-sections -Wl,--build-id=none
+                -o ${_elf} ${_obj}
+        DEPENDS ${_obj} ${_m68k_ld}
+        COMMENT "Cross-linking ${name}_m68k.elf (m68k for ARM)"
+    )
+
+    set_property(GLOBAL APPEND PROPERTY PPAP_M68K_CROSS_ELFS ${_elf})
+endfunction()
+
+# _ppap_build_m68k_cross_programs()  [internal]
+#
+# Builds m68k user programs for cross-arch emulation on ARM.
+# Appends cross-compiled ELFs to PPAP_USER_ELFS.
+function(_ppap_build_m68k_cross_programs)
+    if(PPAP_ARCH STREQUAL "m68k")
+        return()
+    endif()
+
+    ppap_m68k_cross_program(hello
+        ${PPAP_ROOT}/src/user/arch/m68k/hello.S)
+
+    get_property(_cross_elfs GLOBAL PROPERTY PPAP_M68K_CROSS_ELFS)
+    list(APPEND PPAP_USER_ELFS ${_cross_elfs})
+    set(PPAP_USER_ELFS ${PPAP_USER_ELFS} PARENT_SCOPE)
+endfunction()
+
+# =============================================================================
+# Auto-register all shared builds at include time.
+#
+# After this point, callers only need ppap_generate_romfs() per target.
+# Adding a new userland app or third-party component requires editing
+# only this file — all targets pick it up.
+# =============================================================================
+
 _ppap_add_musl()
 _ppap_add_busybox()
 _ppap_add_rogue()
 _ppap_build_user_programs()
+_ppap_build_m68k_cross_programs()
 _ppap_add_mkromfs()
