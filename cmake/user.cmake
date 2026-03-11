@@ -475,12 +475,28 @@ function(ppap_generate_romfs target)
 
     set(_overlay_deps "")
     if(ARG_OVERLAY_DIR AND EXISTS ${ARG_OVERLAY_DIR})
-        file(GLOB_RECURSE _overlay_deps ${ARG_OVERLAY_DIR}/*)
+        file(GLOB_RECURSE _overlay_glob ${ARG_OVERLAY_DIR}/*)
+        foreach(_path IN LISTS _overlay_glob)
+            if(NOT IS_DIRECTORY "${_path}")
+                list(APPEND _overlay_deps "${_path}")
+            endif()
+        endforeach()
     endif()
     if(PPAP_EXTRA_OVERLAY AND EXISTS ${PPAP_EXTRA_OVERLAY})
-        file(GLOB_RECURSE _extra_overlay_deps ${PPAP_EXTRA_OVERLAY}/*)
-        list(APPEND _overlay_deps ${_extra_overlay_deps})
+        file(GLOB_RECURSE _extra_overlay_glob ${PPAP_EXTRA_OVERLAY}/*)
+        foreach(_path IN LISTS _extra_overlay_glob)
+            if(NOT IS_DIRECTORY "${_path}")
+                list(APPEND _overlay_deps "${_path}")
+            endif()
+        endforeach()
     endif()
+    list(SORT _overlay_deps)
+    set(_overlay_manifest ${CMAKE_BINARY_DIR}/romfs_overlay_${target}.manifest)
+    file(WRITE ${_overlay_manifest} "")
+    foreach(_path IN LISTS _overlay_deps)
+        file(SHA256 "${_path}" _overlay_sha)
+        file(APPEND ${_overlay_manifest} "${_path}|${_overlay_sha}\n")
+    endforeach()
 
     # R68K binaries (Human68k .r programs)
     get_property(_r68k_bins GLOBAL PROPERTY PPAP_R68K_BINS)
@@ -525,7 +541,7 @@ function(ppap_generate_romfs target)
                 ${PPAP_ROGUE_DIR}/rogue
                 ${PPAP_ROOT}/src/etc/fstab
                 ${PPAP_ROOT}/src/etc/inittab
-                ${_overlay_deps}
+                ${_overlay_manifest}
                 ${_r68k_bins}
                 ${PPAP_ROOT}/cmake/stage_romfs.cmake
         COMMENT "Generating romfs for ${target}"

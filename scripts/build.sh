@@ -76,7 +76,7 @@ if [[ $CLEAN -eq 1 && -d "$BUILD_DIR" ]]; then
 fi
 
 # ── Build ────────────────────────────────────────────────────────────────────
-EXTRA_ARGS=()
+EXTRA_ARGS=(-DPPAP_EXTRA_OVERLAY=)
 case "$TARGET" in
     qemu_arm)
         # Bare-metal ARM (no Pico SDK) — needs explicit toolchain file
@@ -99,7 +99,7 @@ if [[ -n "$OVERLAY" ]]; then
         echo "[build] Error: overlay directory '$OVERLAY' not found" >&2
         exit 1
     }
-    EXTRA_ARGS+=(-DPPAP_EXTRA_OVERLAY="$OVERLAY")
+    EXTRA_ARGS[0]="-DPPAP_EXTRA_OVERLAY=$OVERLAY"
 fi
 
 echo "[build] Building $CMAKE_TARGET (PPAP_TESTS=$TESTS)..."
