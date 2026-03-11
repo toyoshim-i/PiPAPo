@@ -581,8 +581,11 @@ static int cpm_bdos_dispatch(ecpu_state_t *cpu, void *ctx) {
 | 24 | Return Login Vector | — | HL=bitmap | Return 0x0001 (drive A only) |
 | 25 | Return Current Disk | — | A=disk (0=A) | Return current drive |
 | 26 | Set DMA Address | DE=addr | — | Update internal DMA pointer |
-| 27 | Get Alloc Vector | — | HL=addr | Return pointer to alloc bitmap |
+| 27 | Get Alloc Vector | — | HL=addr | Synthesized bitmap at 0xFD00 (all allocated) |
+| 28 | Write Protect Disk | — | — | No-op |
 | 29 | Get R/O Vector | — | HL=bitmap | Return 0x0000 (no R/O drives) |
+| 30 | Set File Attributes | DE=FCB | A=0 ok | No-op (returns success) |
+| 31 | Get Disk Parameters | — | HL=addr | Synthesized DPB at 0xFCF0 (IBM 3740) |
 | 32 | Get/Set User Code | E=FF→get, else→set | A=user | Get/set current user area |
 | 33 | Read Random | DE=FCB | A=0 ok, nonzero=err | `sys_lseek()` + `sys_read()` 128 bytes |
 | 34 | Write Random | DE=FCB | A=0 ok, nonzero=err | `sys_lseek()` + `sys_write()` 128 bytes |
@@ -1014,91 +1017,108 @@ can detect ADM-3A sequences and translate them.
 
 ## 9. Implementation Plan
 
-### Phase 1 — Framework + Hello World
+### Phase 1 — Framework + Hello World ✅
+
+**Status:** Complete. Committed as "Add CP/M subsystem Phase 1".
 
 **Goal:** run a CP/M "Hello World" .COM that prints a string and
 exits.
 
 Steps:
-1. Implement .COM loader (`cpm_loader.c`)
+1. ✅ Implement .COM loader (`cpm_loader.c`)
    - Detection by `.com` extension
    - Load binary at 0x0100
    - Zero page setup (JP stubs, BDOS/BIOS addresses)
-   - Command-line tail at 0x0080
-2. Implement minimal BDOS bridge (`cpm_bridge.c`)
-   - Function 0: System Reset → `sys_exit(0)`
-   - Function 2: Console Output → `sys_write(1, &ch, 1)`
+   - Command-line tail at 0x0080, FCB parsing at 0x005C/0x006C
+2. ✅ Implement minimal BDOS bridge (`cpm_bridge.c`)
+   - Function 0: System Reset → exit
+   - Function 2: Console Output
    - Function 9: Print String → write until `$`
-3. Wire up ecpu-z80 trap handler for CALL 0x0005
-4. Register CP/M subsystem in `exec()` detection chain
-5. Build configuration (`ENABLE_SUBSYS_CPM`)
-6. **Test:** `HELLO.COM` prints "Hello, World!" and exits
+3. ✅ Wire up ecpu-z80 trap handler for CALL 0x0005
+4. ✅ **Test:** 11 tests (memory_map, cmdline, fcb_parse, hello_com, etc.)
 
 **Files:**
 - `src/kernel/subsys/cpm_bridge.h` — CP/M state structures
 - `src/kernel/subsys/cpm_bridge.c` — BDOS/BIOS dispatch
 - `src/kernel/subsys/cpm_loader.c` — .COM loader + memory setup
 
-### Phase 2 — Console I/O
+### Phase 2 — Console I/O ✅
+
+**Status:** Complete. Committed as "Add CP/M console I/O (Phase 2)".
 
 **Goal:** interactive console input/output.
 
 Steps:
-1. Function 1: Console Input (read + echo)
-2. Function 6: Direct Console I/O (non-blocking)
-3. Function 10: Read Console Buffer (line editing)
-4. Function 11: Get Console Status
-5. Function 12: Return Version Number (0x0022 = CP/M 2.2)
-6. BIOS console functions (CONST, CONIN, CONOUT)
-7. **Test:** `ECHO.COM` reads and echoes characters
+1. ✅ Function 1: Console Input (read + echo)
+2. ✅ Function 3–5: Reader/Punch/List
+3. ✅ Function 6: Direct Console I/O (non-blocking)
+4. ✅ Function 7–8: Get/Set IOBYTE
+5. ✅ Function 10: Read Console Buffer (line editing)
+6. ✅ Function 11: Get Console Status
+7. ✅ Function 12: Return Version Number (0x0022 = CP/M 2.2)
+8. ✅ BIOS console functions (CONST, CONIN, CONOUT, LIST, PUNCH, READER)
+9. ✅ **Test:** 13 tests (console_input, direct_io, echo_program, etc.)
 
-### Phase 3 — FCB File Operations
+### Phase 3 — FCB File Operations ✅
+
+**Status:** Complete. Committed as "Add CP/M file operations (Phase 3)".
 
 **Goal:** read and write files via FCB interface.
 
 Steps:
-1. FCB-to-path translation (`cpm_fcb_to_path()`)
-2. Function 15: Open File (FCB → `sys_open()`)
-3. Function 16: Close File
-4. Function 20: Read Sequential (128-byte records to DMA)
-5. Function 21: Write Sequential
-6. Function 22: Make File (create)
-7. Function 19: Delete File
-8. Function 23: Rename File
-9. FCB position tracking (extent, current record)
-10. **Test:** `TYPE.COM` displays a file, `SAVE.COM` writes a file
+1. ✅ FCB-to-path translation (`cpm_fcb_to_path()`)
+2. ✅ Function 15: Open File (FCB → file descriptor)
+3. ✅ Function 16: Close File
+4. ✅ Function 20: Read Sequential (128-byte records to DMA)
+5. ✅ Function 21: Write Sequential
+6. ✅ Function 22: Make File (create)
+7. ✅ Function 19: Delete File
+8. ✅ Function 23: Rename File
+9. ✅ Function 33–36, 40: Random read/write, compute file size, set random record
+10. ✅ Function 13/14/24/25/26/29/32: Disk/DMA/user management
+11. ✅ FCB position tracking (extent, current record)
+12. ✅ Platform I/O abstraction (POSIX for host tests, syscalls for kernel)
+13. ✅ **Test:** 9 tests (fcb_to_path, file_ops_real, random_write, etc.)
 
-### Phase 4 — Random Access + Search
+### Phase 4 — Directory Search ✅
 
-**Goal:** random file access and directory operations.
+**Status:** Complete. Committed as "Add CP/M directory search (Phase 4)".
 
-Steps:
-1. Function 33: Read Random
-2. Function 34: Write Random
-3. Function 35: Compute File Size
-4. Function 36: Set Random Record
-5. Function 17: Search First (directory listing)
-6. Function 18: Search Next
-7. DMA buffer directory entry format
-8. Wildcard matching (`?` and `*`)
-9. **Test:** run MBASIC (uses random access for program storage)
-
-### Phase 5 — Disk and User Management
-
-**Goal:** multi-drive and user area support.
+**Goal:** directory listing via wildcard search.
 
 Steps:
-1. Function 13: Reset Disk System
-2. Function 14: Select Disk
-3. Function 24: Return Login Vector
-4. Function 25: Return Current Disk
-5. Function 32: Get/Set User Code
-6. User area path mapping (`/a/user1/`, etc.)
-7. Function 27: Get Alloc Vector (synthesized)
-8. Function 29: Get Read-Only Vector
-9. **Test:** copy files between drives, switch user areas
+1. ✅ Function 17: Search First (directory listing)
+2. ✅ Function 18: Search Next
+3. ✅ DMA buffer directory entry format (32-byte FCB at slot 0)
+4. ✅ Wildcard matching (`?` matches any character)
+5. ✅ Platform directory abstraction (opendir/readdir for host, stubs for kernel)
+6. ✅ **Test:** 4 tests (match_fcb, search_first_next, search_no_match, search_via_bdos)
 
-### Phase 6 — Real-World Testing
+### Phase 5 — Disk and User Management ✅
+
+**Status:** Complete. Committed as "Add CP/M disk management (Phase 5)".
+
+**Goal:** complete the remaining BDOS functions.
+
+Steps:
+1. ✅ Function 27: Get Alloc Vector (synthesized, all-allocated bitmap at 0xFD00)
+2. ✅ Function 28: Write Protect Disk (no-op)
+3. ✅ Function 29: Get Read-Only Vector
+4. ✅ Function 30: Set File Attributes (no-op)
+5. ✅ Function 31: Get Disk Parameter Block (IBM 3740 8" SSSD at 0xFCF0)
+6. ✅ **Test:** 3 tests (alloc_vector, dpb, disk_noops)
+
+### Phase 6 — Integration Testing ✅
+
+**Status:** Complete. Committed as "Add CP/M integration tests (Phase 6)".
+
+**Goal:** validate multi-BDOS sequences via Z80 execution.
+
+1. ✅ version_and_disk_program: version + select disk + DPB access
+2. ✅ multi_bdos_program: DMA + user codes + alloc vector
+3. ✅ **Total test count:** 42 tests across all phases
+
+### Future — Real-World Testing
 
 **Goal:** run popular CP/M applications.
 
@@ -1149,19 +1169,21 @@ msg:    DB      'Hello, World!', 0Dh, 0Ah, '$'
 
 Assemble with: `z80asm -o HELLO.COM hello.asm`
 
-### 10.3 Host Tests
+### 10.3 Host Tests ✅
 
-Unit tests for the bridge logic (FCB parsing, path translation,
-error mapping) run as host-side tests, matching the existing
-pattern (`tests/host/`):
+The host test suite (`tests/host/test_cpm_bridge.c`) contains 42
+tests covering all BDOS functions, the .COM loader, and BIOS
+console dispatch. Tests are built with CMake and run natively
+on the host (no QEMU needed).
 
-| Test | Validates |
-|---|---|
-| `test_cpm_fcb_parse` | FCB field extraction from filename strings |
-| `test_cpm_fcb_to_path` | Drive/name/ext → PPAP path translation |
-| `test_cpm_wildcard` | `?` and `*` pattern matching |
-| `test_cpm_cmdline` | Command-line tail and default FCB parsing |
-| `test_cpm_user_path` | User area → subdirectory mapping |
+| Phase | Tests | Validates |
+|---|---|---|
+| 1 (11 tests) | memory_map, cmdline, fcb_parse, fcb_no_drive, fcb_uppercase, hello_com, console_output, ret_exit, multi_char_output, unknown_bdos, print_via_loop | Loader, zero page, FCB parsing, BDOS fn 0/2/9 |
+| 2 (13 tests) | console_input, direct_io_output/input/no_input/status, console_status, version_number, read_console_buffer, iobyte, reader_punch_list, bios_console, bios_reader, echo_program | Console I/O, BIOS dispatch |
+| 3 (9 tests) | fcb_to_path, set_dma, disk_management, user_code, vectors, file_write_read, file_ops_real, file_write_read_back, random_write | File operations, FCB-to-path, random access |
+| 4 (4 tests) | match_fcb, search_first_next, search_no_match, search_via_bdos | Directory search, wildcard matching |
+| 5 (3 tests) | alloc_vector, dpb, disk_noops | ALV, DPB, fn 28/30 |
+| 6 (2 tests) | version_and_disk_program, multi_bdos_program | Multi-BDOS Z80 integration |
 
 ### 10.4 Integration Tests
 
