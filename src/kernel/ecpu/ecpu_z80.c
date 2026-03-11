@@ -25,7 +25,6 @@ static int ecpu_z80_init(ecpu_state_t *state, uint8_t *memory,
     memset(cpu, 0, sizeof(*cpu));
     cpu->memory = memory;
     cpu->mem_size = mem_size;
-    cpu->slice_counter = Z80_SLICE_SIZE;
     return 0;
 }
 
@@ -42,7 +41,6 @@ static void ecpu_z80_reset(ecpu_state_t *state)
     cpu->mem_size = msz;
     cpu->trap_handler = handler;
     cpu->trap_ctx = ctx;
-    cpu->slice_counter = Z80_SLICE_SIZE;
 }
 
 static void ecpu_z80_set_trap_handler(ecpu_state_t *state,
@@ -1301,17 +1299,6 @@ static int ecpu_z80_run(ecpu_state_t *state)
                 break;
             }
             break;
-        }
-
-        /* Preemption check */
-        if (--cpu->slice_counter <= 0) {
-            cpu->slice_counter = Z80_SLICE_SIZE;
-            /* In kernel context, yield to let other processes run.
-             * For host tests, this is a no-op (sched_yield not linked). */
-#ifdef PPAP_KERNEL
-            extern void sched_yield(void);
-            sched_yield();
-#endif
         }
     }
 }

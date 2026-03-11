@@ -1561,15 +1561,26 @@ static void blocking_io_integration_test(void)
                     (pfd.revents & (short)POLLNVAL) != 0);
     }
 
-    /* 4. Signal delivery — pgid matching via tty_signal_intr.
-     * proc_table[0].pgid = 0 (init), tty_fg_pgrp = 0 (default).
-     * After tty_signal_intr(), sig_pending should have SIGINT bit. */
+    /* 4. Signal delivery — when job control is disabled (fg_pgrp = 0),
+     * Ctrl-C should signal ordinary foreground work, not PID 0/1. */
     {
-        current->sig_pending = 0;
+        pcb_t *p = proc_alloc();
+        int ok = 0;
+        if (p) {
+            if (p->pid <= 1)
+                p->pid = 2;
+            p->state = PROC_RUNNABLE;
+            p->pgid = p->pid;
+            p->sig_pending = 0;
+        }
+
         tty_signal_intr(0);
-        int ok = (current->sig_pending & (1u << SIGINT)) != 0;
-        test_report("tty_signal_intr delivers SIGINT to pgid=0", ok);
-        current->sig_pending = 0;  /* clean up */
+        if (p) {
+            ok = (p->sig_pending & (1u << SIGINT)) != 0;
+            p->sig_pending = 0;
+            proc_free(p);
+        }
+        test_report("tty_signal_intr delivers SIGINT to fg_pgrp=0", ok);
     }
 
     /* 5. Nanosleep re-entry with expired deadline — returns 0 immediately.

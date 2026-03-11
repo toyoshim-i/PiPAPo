@@ -53,9 +53,6 @@
 #define FLAG_S   0x80   /* Bit 7: Sign                                      */
 #define FLAG_35  (FLAG_F3 | FLAG_F5)  /* Mask for undocumented bits         */
 
-/* ── Scheduler slice size ────────────────────────────────────────────────── */
-#define Z80_SLICE_SIZE  1000  /* instructions between sched_yield() calls   */
-
 /* ── Z80 state structure ─────────────────────────────────────────────────── */
 typedef struct z80_state {
     /* Main register set — individual bytes for direct access.
@@ -84,7 +81,6 @@ typedef struct z80_state {
 
     /* Emulator state (not part of real Z80) */
     uint8_t halted;           /* 1 if HALT executed */
-    int32_t slice_counter;    /* instructions until yield */
 
     /* Memory (64 KB flat) */
     uint8_t *memory;

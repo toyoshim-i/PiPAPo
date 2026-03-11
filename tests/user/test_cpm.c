@@ -69,6 +69,22 @@ static int run_com_capture(const char *path, char *buf, int bufsize)
     return total;
 }
 
+static int waitpid_timeout(pid_t pid, int *status, int attempts)
+{
+    int64_t ts[2] = {0, 1000000};   /* 1 ms */
+
+    while (attempts-- > 0) {
+        pid_t rc = waitpid(pid, status, WNOHANG);
+        if (rc == pid)
+            return 1;
+        if (rc < 0)
+            return 0;
+        nanosleep(ts, (void *)0);
+    }
+
+    return 0;
+}
+
 /* ── Test 1: exit_zero.com — BDOS fn 0 (system reset / exit) ──────────── */
 /*
  * Z80 code (loaded at 0x0100):
@@ -628,6 +644,114 @@ static void test_warm_boot(void)
     UT_ASSERT_EQ(buf[0], 'W');
 }
 
+/* ── Test 14: SIGINT should terminate a blocked CP/M console read ──────── */
+/*
+ * Z80 code:
+ *   LD E, 'R'     ; 1E 52      — ready marker
+ *   LD C, 2       ; 0E 02      — BDOS fn 2
+ *   CALL 0x0005   ; CD 05 00
+ *   LD C, 1       ; 0E 01      — BDOS fn 1 (console input, blocking)
+ *   CALL 0x0005   ; CD 05 00
+ */
+static const unsigned char sigint_read_com[] = {
+    0x1E, 0x52,             /* LD E, 'R'     */
+    0x0E, 0x02,             /* LD C, 2       */
+    0xCD, 0x05, 0x00,       /* CALL 0x0005   */
+    0x0E, 0x01,             /* LD C, 1       */
+    0xCD, 0x05, 0x00,       /* CALL 0x0005   */
+};
+
+static void test_sigint_kills_read(void)
+{
+    write_com("/tmp/sigint_read.com", sigint_read_com, sizeof(sigint_read_com));
+
+    int pipefd[2];
+    UT_ASSERT_EQ(pipe(pipefd), 0);
+
+    pid_t pid = vfork();
+    if (pid == 0) {
+        close(pipefd[0]);
+        dup2(pipefd[1], 1);
+        close(pipefd[1]);
+        execve("/tmp/sigint_read.com", (void *)0, (void *)0);
+        _exit(127);
+    }
+
+    close(pipefd[1]);
+
+    char ch = 0;
+    int n = read(pipefd[0], &ch, 1);
+    close(pipefd[0]);
+
+    UT_ASSERT_EQ(n, 1);
+    UT_ASSERT_EQ(ch, 'R');
+    UT_ASSERT_EQ(kill(pid, 2), 0);
+
+    int status = 0;
+    int reaped = waitpid_timeout(pid, &status, 200);
+    if (!reaped) {
+        kill(pid, 9);
+        waitpid(pid, &status, 0);
+    }
+
+    UT_ASSERT(reaped, "SIGINT should terminate looping CP/M process");
+    if (reaped)
+        UT_ASSERT_EQ((status >> 8) & 0xff, 128 + 2);
+}
+
+/*
+ * Z80 code:
+ *   LD E, 'R'     ; 1E 52      — ready marker
+ *   LD C, 2       ; 0E 02      — BDOS fn 2
+ *   CALL 0x0005   ; CD 05 00
+ * loop:
+ *   JR loop       ; 18 FE
+ */
+static const unsigned char sigint_spin_com[] = {
+    0x1E, 0x52,             /* LD E, 'R'     */
+    0x0E, 0x02,             /* LD C, 2       */
+    0xCD, 0x05, 0x00,       /* CALL 0x0005   */
+    0x18, 0xFE,             /* JR loop       */
+};
+
+static void test_sigint_kills_spin(void)
+{
+    write_com("/tmp/sigint_spin.com", sigint_spin_com, sizeof(sigint_spin_com));
+
+    int pipefd[2];
+    UT_ASSERT_EQ(pipe(pipefd), 0);
+
+    pid_t pid = vfork();
+    if (pid == 0) {
+        close(pipefd[0]);
+        dup2(pipefd[1], 1);
+        close(pipefd[1]);
+        execve("/tmp/sigint_spin.com", (void *)0, (void *)0);
+        _exit(127);
+    }
+
+    close(pipefd[1]);
+
+    char ch = 0;
+    int n = read(pipefd[0], &ch, 1);
+    close(pipefd[0]);
+
+    UT_ASSERT_EQ(n, 1);
+    UT_ASSERT_EQ(ch, 'R');
+    UT_ASSERT_EQ(kill(pid, 2), 0);
+
+    int status = 0;
+    int reaped = waitpid_timeout(pid, &status, 200);
+    if (!reaped) {
+        kill(pid, 9);
+        waitpid(pid, &status, 0);
+    }
+
+    UT_ASSERT(reaped, "SIGINT should terminate busy-loop CP/M process");
+    if (reaped)
+        UT_ASSERT_EQ((status >> 8) & 0xff, 128 + 2);
+}
+
 /* ── Main ───────────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -645,6 +769,8 @@ int main(void)
     test_login_vector();
     test_file_io();
     test_warm_boot();
+    test_sigint_kills_read();
+    test_sigint_kills_spin();
 
     UT_SUMMARY("test_cpm");
 }

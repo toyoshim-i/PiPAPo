@@ -59,9 +59,6 @@
 #define EA_TYPE_MEMORY     2
 #define EA_TYPE_IMMEDIATE  3
 
-/* ── Scheduler slice size ───────────────────────────────────────────────── */
-#define M68K_SLICE_SIZE  500
-
 /* ── EA result structure ────────────────────────────────────────────────── */
 typedef struct {
     uint32_t addr;    /* memory address, or register index */
@@ -91,7 +88,6 @@ typedef struct m68k_state {
 
     /* Emulator state */
     uint8_t stopped;          /* 1 if STOP executed */
-    int32_t slice_counter;    /* instructions until yield */
 
     /* Memory */
     uint8_t *memory;

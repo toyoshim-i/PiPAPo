@@ -17,6 +17,7 @@
 #ifdef PPAP_KERNEL
 
 #include "kernel/fd/fd.h"
+#include "kernel/signal/signal.h"
 #include "kernel/syscall/syscall.h"
 #include "common/poll.h"
 
@@ -47,8 +48,16 @@ static void cpm_putchar(uint8_t ch)
 static uint8_t cpm_getchar(void)
 {
     uint8_t ch = 0;
-    sys_read(0, (char *)&ch, 1);
-    return ch;
+    for (;;) {
+        long rc = sys_read(0, (char *)&ch, 1);
+        if (rc > 0)
+            return ch;
+        /* tty_read() blocks by setting PROC_BLOCKED + sched_yield() and
+         * returns 0 when the task is resumed.  Kernel-mode callers do not
+         * get the user-space SVC restart path, so retry until a byte arrives
+         * or a pending signal takes the default action. */
+        signal_check_kernel();
+    }
 }
 
 static int cpm_char_ready(void)

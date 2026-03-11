@@ -26,8 +26,37 @@
 
 /* ── LCD + keyboard TTY backend ─────────────────────────────────────────── */
 
-static int fbcon_getc_wrapper(void)  { return kbd_poll(); }
-static int fbcon_avail_wrapper(void) { return kbd_poll_avail(); }
+static int fbcon_pending_ch = -1;
+
+static int fbcon_getc_wrapper(void)
+{
+    if (fbcon_pending_ch >= 0) {
+        int ch = fbcon_pending_ch;
+        fbcon_pending_ch = -1;
+        return ch;
+    }
+    return kbd_poll();
+}
+
+static int fbcon_avail_wrapper(void)
+{
+    if (fbcon_pending_ch >= 0)
+        return 1;
+
+    while (kbd_poll_avail()) {
+        int ch = kbd_poll();
+        if (ch < 0)
+            continue;
+        /* Match UART behavior: deliver Ctrl-C immediately on tty1 so
+         * compute-bound foreground tasks do not need to be blocked in read(). */
+        if (ch == 0x03 && tty_signal_intr(TTY_DISPLAY))
+            continue;
+        fbcon_pending_ch = ch;
+        return 1;
+    }
+    return 0;
+}
+
 static int fbcon_get_cols(void)      { return fbcon_cols(); }
 static int fbcon_get_rows(void)      { return fbcon_rows(); }
 

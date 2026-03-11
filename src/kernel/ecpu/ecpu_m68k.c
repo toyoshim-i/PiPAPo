@@ -1366,11 +1366,6 @@ static int ecpu_m68k_run(ecpu_state_t *state)
                 break;
             }
         }
-
-        if (--cpu->slice_counter <= 0) {
-            cpu->slice_counter = M68K_SLICE_SIZE;
-            /* sched_yield() — called in kernel context */
-        }
     }
 }
 
@@ -1383,7 +1378,6 @@ static int ecpu_m68k_init(ecpu_state_t *state, uint8_t *memory,
     memset(cpu, 0, sizeof(*cpu));
     cpu->memory = memory;
     cpu->mem_size = mem_size;
-    cpu->slice_counter = M68K_SLICE_SIZE;
     /* Start in supervisor mode */
     cpu->sr = M68K_SR_S | 0x0700;
     return 0;
@@ -1402,7 +1396,6 @@ static void ecpu_m68k_reset(ecpu_state_t *state)
     cpu->mem_size = msz;
     cpu->trap_handler = handler;
     cpu->trap_ctx = ctx;
-    cpu->slice_counter = M68K_SLICE_SIZE;
     cpu->sr = M68K_SR_S | 0x0700;
 }
 

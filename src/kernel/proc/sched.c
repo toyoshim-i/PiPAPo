@@ -17,6 +17,7 @@
 #include "../mm/page.h"    /* PAGE_SIZE */
 #include "../spinlock.h"   /* SPIN_PROC */
 #include "../fd/tty.h"     /* tty_rx_notify */
+#include "../signal/signal.h"
 #include "arch/arch.h"
 #include "arch/cpu.h"
 #include <stddef.h>
@@ -136,6 +137,16 @@ void sched_display_poll(void)
  * from_user: 1 if interrupted from user mode, 0 if from kernel/supervisor. */
 void sched_timer_tick(int from_user)
 {
+    /* CP/M processes run inside a kernel-resident emulator loop, so they
+     * do not naturally return through the normal user-mode signal delivery
+     * path.  Consume pending default/ignored signals at timer-preemption
+     * boundaries on real hardware. */
+    if (current && current->state == PROC_RUNNABLE &&
+        current->subsys == SUBSYS_CPM &&
+        (current->sig_pending & ~current->sig_blocked)) {
+        signal_check_kernel();
+    }
+
     /* Only Core 0 maintains the global tick counter */
     if (core_id() == 0) {
         tick_count++;
@@ -315,4 +326,3 @@ void sched_sleep(uint32_t ticks)
     /* Execution resumes here after sched_tick() marks us RUNNABLE again
      * and the context switch restores our context. */
 }
-

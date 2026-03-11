@@ -48,6 +48,18 @@ void signal_check(uint32_t *regs);
 void signal_check(void);
 #endif
 
+/*
+ * Deliver one pending signal from kernel context for emulator-backed tasks.
+ *
+ * This path supports the dispositions that survive execve():
+ *   - SIG_IGN: discard
+ *   - SIG_DFL: ignore SIGCHLD, terminate on others
+ *
+ * Returns 0 if no signal was pending, 1 if a pending signal was consumed.
+ * If the default action terminates the process, this function does not return.
+ */
+int signal_check_kernel(void);
+
 /* Trampoline in kernel .text (flash XIP) — signal handler returns here
  * via bx lr (ARM) which triggers SVC SYS_SIGRETURN to restore context.
  * On m68k this is a stub (synchronous delivery, no trampoline needed). */

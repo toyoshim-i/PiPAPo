@@ -29,6 +29,48 @@
 #include "../errno.h"
 #include <stddef.h>
 
+static int ctz32(uint32_t x)
+{
+    int n = 0;
+    if (!(x & 0xFFFF)) { n += 16; x >>= 16; }
+    if (!(x & 0xFF))   { n += 8;  x >>= 8;  }
+    if (!(x & 0xF))    { n += 4;  x >>= 4;  }
+    if (!(x & 0x3))    { n += 2;  x >>= 2;  }
+    if (!(x & 0x1))    { n += 1; }
+    return n;
+}
+
+static int signal_default_action(int sig, uint32_t *regs)
+{
+    if (sig == SIGCHLD)
+        return 1;
+
+    {
+        const subsys_ops_t *ops = current->subsys < SUBSYS_MAX
+                                  ? subsys_ops_table[current->subsys] : 0;
+        if (ops && ops->on_signal && ops->on_signal(current, sig, regs))
+            return 1;
+    }
+
+    sys_exit(128 + sig);
+    return 1;
+}
+
+int signal_check_kernel(void)
+{
+    uint32_t deliverable = current->sig_pending & ~current->sig_blocked;
+    if (!deliverable)
+        return 0;
+
+    int sig = ctz32(deliverable);
+    current->sig_pending &= ~(1u << sig);
+
+    if (current->sig_handlers[sig] == SIG_IGN)
+        return 1;
+
+    return signal_default_action(sig, NULL);
+}
+
 /* ── Architecture-specific signal delivery ─────────────────────────────────
  *
  * ARM:  RTE-based — sigreturn_trampoline (naked ASM), signal_setup_frame
@@ -59,22 +101,6 @@
  */
 
 #define SIGFRAME_SIZE  66   /* d0-d7/a0-a6 (60) + SR (2) + PC (4) */
-
-/*
- * Portable count-trailing-zeros — avoids __builtin_ctz which pulls in
- * __ctzsi2 from libgcc.  The kernel can't link libgcc on m68k because
- * it uses GOT-relative addressing (a5) that isn't set up in kernel context.
- */
-static int ctz32(uint32_t x)
-{
-    int n = 0;
-    if (!(x & 0xFFFF)) { n += 16; x >>= 16; }
-    if (!(x & 0xFF))   { n += 8;  x >>= 8;  }
-    if (!(x & 0xF))    { n += 4;  x >>= 4;  }
-    if (!(x & 0x3))    { n += 2;  x >>= 2;  }
-    if (!(x & 0x1))    { n += 1; }
-    return n;
-}
 
 /*
  * Trampoline stub — not used on m68k (synchronous delivery), but kept
@@ -114,18 +140,7 @@ void signal_check(uint32_t *regs)
         return;
 
     if (handler == SIG_DFL) {
-        if (sig == SIGCHLD)
-            return;
-        /* Subsystem signal hook — lets personality layers (e.g. Human68k
-         * _CTRLVC) handle signals before the default termination. */
-        {
-            const subsys_ops_t *ops = current->subsys < SUBSYS_MAX
-                                      ? subsys_ops_table[current->subsys] : 0;
-            if (ops && ops->on_signal &&
-                ops->on_signal(current, sig, regs))
-                return;  /* subsystem handled it */
-        }
-        sys_exit(128 + sig);
+        signal_default_action(sig, regs);
         return;
     }
 
@@ -224,10 +239,7 @@ void signal_check(void)
         return;
 
     if (handler == SIG_DFL) {
-        /* Default action: SIGCHLD is ignored, all others terminate */
-        if (sig == SIGCHLD)
-            return;
-        sys_exit(128 + sig);
+        signal_default_action(sig, NULL);
         return;
     }
 
