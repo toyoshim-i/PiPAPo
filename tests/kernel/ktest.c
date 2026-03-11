@@ -19,9 +19,11 @@
 #include "vfs/vfs.h"
 #include "syscall/syscall.h"
 #include "signal/signal.h"
+#ifdef PPAP_HAS_BLKDEV
 #include "blkdev/blkdev.h"
 #include "blkdev/loopback.h"
 #include "fs/ufs.h"
+#endif
 #include "fs/fstab.h"
 #include "errno.h"
 
@@ -606,6 +608,7 @@ static void signal_integration_test(void)
     uart_puts(" failed ===\n\n");
 }
 
+#ifdef PPAP_HAS_BLKDEV
 /* ── blkdev integration tests ─────────────────────────────────────────────── */
 
 static void blkdev_integration_test(void)
@@ -1011,6 +1014,7 @@ static void loopback_integration_test(void)
 
     /* testloop.bin is ROM-resident (from mkfatimg), no cleanup needed */
 }
+#endif /* PPAP_HAS_BLKDEV */
 
 /* ── tmpfs integration tests ──────────────────────────────────────────────── */
 
@@ -1161,6 +1165,7 @@ static void tmpfs_integration_test(void)
     uart_puts(" failed\n");
 }
 
+#ifdef PPAP_HAS_BLKDEV
 /* ── UFS integration tests ────────────────────────────────────────────────── */
 
 static void ufs_integration_test(void)
@@ -1456,6 +1461,7 @@ static void ufs_integration_test(void)
     uart_print_dec((uint32_t)test_fail);
     uart_puts(" failed\n");
 }
+#endif /* PPAP_HAS_BLKDEV */
 
 /* ── fstab integration tests ──────────────────────────────────────────────── */
 
@@ -1829,6 +1835,7 @@ void ktest_run_all(void)
     signal_integration_test();
     total_pass += test_pass; total_fail += test_fail;
 
+#ifdef PPAP_HAS_BLKDEV
     blkdev_integration_test();
     total_pass += test_pass; total_fail += test_fail;
 
@@ -1837,12 +1844,15 @@ void ktest_run_all(void)
 
     loopback_integration_test();
     total_pass += test_pass; total_fail += test_fail;
+#endif
 
     tmpfs_integration_test();
     total_pass += test_pass; total_fail += test_fail;
 
+#ifdef PPAP_HAS_BLKDEV
     ufs_integration_test();
     total_pass += test_pass; total_fail += test_fail;
+#endif
 
     fstab_integration_test();
     total_pass += test_pass; total_fail += test_fail;
