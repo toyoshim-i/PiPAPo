@@ -10,6 +10,7 @@
  * Step 5: MOVEM, PEA, MOVE to/from SR/CCR, MOVE USP.
  * Step 6: ADDX, SUBX, ABCD, SBCD, NBCD, TAS, CHK.
  * Step 7: Integration tests, edge cases, all Bcc conditions.
+ * Step 8: PPAP cross-arch personality (TRAP #0 → syscall dispatch).
  */
 
 #include <assert.h>
@@ -17,6 +18,7 @@
 #include <string.h>
 #include "kernel/ecpu/ecpu.h"
 #include "kernel/ecpu/ecpu_m68k.h"
+#include "common/syscall_nr.h"
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
@@ -3245,6 +3247,299 @@ static void test_addx_multiprecision(void)
     printf("  PASS: addx_multiprecision\n");
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * Step 8 tests — PPAP cross-arch personality
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Capture state from the PPAP m68k trap handler */
+static uint32_t captured_syscall_nr;
+static uint32_t captured_args[6];
+static int ppap_trap_called;
+
+/*
+ * ppap_test_handler — mock PPAP personality trap handler.
+ *
+ * On TRAP #0 (ECPU_TRAP_SWI param=0): captures d0=syscall#, d1-d5=args,
+ * a0=arg6 for verification.  Returns ECPU_TRAP_EXIT for SYS_EXIT,
+ * ECPU_TRAP_HANDLED otherwise (sets d0 = 42 as mock return value).
+ */
+static int ppap_test_handler(ecpu_state_t *state, int trap_type,
+                              uint32_t param, void *ctx)
+{
+    (void)ctx;
+    m68k_state_t *m = (m68k_state_t *)state;
+
+    if (trap_type == ECPU_TRAP_SWI && param == 0) {
+        ppap_trap_called = 1;
+        captured_syscall_nr = m->d[0];
+        captured_args[0] = m->d[1];
+        captured_args[1] = m->d[2];
+        captured_args[2] = m->d[3];
+        captured_args[3] = m->d[4];
+        captured_args[4] = m->d[5];
+        captured_args[5] = m->a[0];
+
+        if (m->d[0] == SYS_EXIT || m->d[0] == SYS_EXIT_GROUP)
+            return ECPU_TRAP_EXIT;
+
+        /* Mock return value */
+        m->d[0] = 42;
+        return ECPU_TRAP_HANDLED;
+    }
+    if (trap_type == ECPU_TRAP_HALT)
+        return ECPU_TRAP_EXIT;
+    return ECPU_TRAP_UNHANDLED;
+}
+
+/* ── Test: TRAP #0 with SYS_EXIT ────────────────────────────────────────── */
+
+static void test_ppap_trap_exit(void)
+{
+    setup();
+    ppap_trap_called = 0;
+
+    /* MOVEQ #0, D0 → d0 = SYS_EXIT (0x0000) */
+    m68k_write16(&cpu, 0x1000, 0x7000);  /* MOVEQ #0, D0 */
+    /* MOVEQ #5, D1 → d1 = exit status */
+    m68k_write16(&cpu, 0x1002, 0x720A);  /* MOVEQ #10, D1 */
+    /* TRAP #0 */
+    m68k_write16(&cpu, 0x1004, 0x4E40);
+
+    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu,
+                                    ppap_test_handler, NULL);
+    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+
+    assert(ppap_trap_called == 1);
+    assert(captured_syscall_nr == SYS_EXIT);
+    assert(captured_args[0] == 10);  /* d1 = exit status */
+    printf("  PASS: ppap_trap_exit\n");
+}
+
+/* ── Test: TRAP #0 with SYS_WRITE (captures all args) ───────────────────── */
+
+static void test_ppap_trap_write(void)
+{
+    setup();
+    ppap_trap_called = 0;
+
+    uint32_t pc = 0x1000;
+
+    /* Set up registers for sys_write(fd=1, buf=0x2000, count=5):
+     *   d0 = SYS_WRITE (0x0101)
+     *   d1 = fd (1)
+     *   d2 = buf addr (0x2000)
+     *   d3 = count (5)
+     */
+    /* MOVE.L #$0101, D0 → 203C 00000101 */
+    m68k_write16(&cpu, pc, 0x203C); pc += 2;
+    m68k_write32(&cpu, pc, SYS_WRITE); pc += 4;
+    /* MOVEQ #1, D1 */
+    m68k_write16(&cpu, pc, 0x7201); pc += 2;
+    /* MOVE.L #$2000, D2 → 243C 00002000 */
+    m68k_write16(&cpu, pc, 0x243C); pc += 2;
+    m68k_write32(&cpu, pc, 0x2000); pc += 4;
+    /* MOVEQ #5, D3 */
+    m68k_write16(&cpu, pc, 0x7605); pc += 2;
+    /* TRAP #0 */
+    m68k_write16(&cpu, pc, 0x4E40); pc += 2;
+    /* After TRAP #0 returns with HANDLED, check d0 has mock return value */
+    /* TRAP #0 with SYS_EXIT to stop */
+    m68k_write16(&cpu, pc, 0x7000); pc += 2;  /* MOVEQ #0, D0 (=SYS_EXIT) */
+    /* Save return value first: MOVE.L D0, D7 before clearing D0 */
+    /* Actually, after TRAP #0 HANDLED, d0 = 42 (mock). Let's save it. */
+    /* We need to capture d0 before overwriting it with SYS_EXIT.
+     * Use: MOVE.L D0, D7; MOVEQ #0, D0; TRAP #0 */
+
+    /* Rewrite: after first TRAP #0, d0 = 42 (mock return) */
+    pc = 0x1000;
+    m68k_write16(&cpu, pc, 0x203C); pc += 2;
+    m68k_write32(&cpu, pc, SYS_WRITE); pc += 4;
+    m68k_write16(&cpu, pc, 0x7201); pc += 2;     /* MOVEQ #1, D1 */
+    m68k_write16(&cpu, pc, 0x243C); pc += 2;     /* MOVE.L #$2000, D2 */
+    m68k_write32(&cpu, pc, 0x2000); pc += 4;
+    m68k_write16(&cpu, pc, 0x7605); pc += 2;     /* MOVEQ #5, D3 */
+    m68k_write16(&cpu, pc, 0x4E40); pc += 2;     /* TRAP #0 (sys_write) */
+    /* d0 now = 42 (mock return). Save to d7: MOVE.L D0, D7 → 2E00 */
+    m68k_write16(&cpu, pc, 0x2E00); pc += 2;
+    /* SYS_EXIT: MOVEQ #0, D0; TRAP #0 */
+    m68k_write16(&cpu, pc, 0x7000); pc += 2;     /* MOVEQ #0, D0 */
+    m68k_write16(&cpu, pc, 0x4E40); pc += 2;     /* TRAP #0 (sys_exit) */
+
+    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu,
+                                    ppap_test_handler, NULL);
+    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+
+    /* The last trap was SYS_EXIT, but we captured SYS_WRITE args first */
+    assert(ppap_trap_called == 1);
+    /* d7 should have the mock return value from the first TRAP #0 */
+    assert(cpu.d[7] == 42);
+    printf("  PASS: ppap_trap_write\n");
+}
+
+/* ── Test: TRAP #0 with all 6 args ──────────────────────────────────────── */
+
+static int ppap_allargs_called;
+static uint32_t ppap_allargs_nr;
+static uint32_t ppap_allargs[6];
+
+static int ppap_allargs_handler(ecpu_state_t *state, int trap_type,
+                                 uint32_t param, void *ctx)
+{
+    (void)ctx;
+    m68k_state_t *m = (m68k_state_t *)state;
+
+    if (trap_type == ECPU_TRAP_SWI && param == 0) {
+        if (m->d[0] == SYS_EXIT)
+            return ECPU_TRAP_EXIT;
+
+        ppap_allargs_called = 1;
+        ppap_allargs_nr = m->d[0];
+        ppap_allargs[0] = m->d[1];
+        ppap_allargs[1] = m->d[2];
+        ppap_allargs[2] = m->d[3];
+        ppap_allargs[3] = m->d[4];
+        ppap_allargs[4] = m->d[5];
+        ppap_allargs[5] = m->a[0];
+        m->d[0] = 99;
+        return ECPU_TRAP_HANDLED;
+    }
+    if (trap_type == ECPU_TRAP_HALT)
+        return ECPU_TRAP_EXIT;
+    return ECPU_TRAP_UNHANDLED;
+}
+
+static void test_ppap_trap_allargs(void)
+{
+    setup();
+    ppap_allargs_called = 0;
+
+    uint32_t pc = 0x1000;
+    /* Load d0 = 0x0101 (SYS_WRITE), d1-d5 = 11,22,33,44,55, a0 = 66 */
+    m68k_write16(&cpu, pc, 0x203C); pc += 2;
+    m68k_write32(&cpu, pc, 0x0101); pc += 4;     /* MOVE.L #$0101, D0 */
+    m68k_write16(&cpu, pc, 0x223C); pc += 2;
+    m68k_write32(&cpu, pc, 11); pc += 4;          /* MOVE.L #11, D1 */
+    m68k_write16(&cpu, pc, 0x243C); pc += 2;
+    m68k_write32(&cpu, pc, 22); pc += 4;          /* MOVE.L #22, D2 */
+    m68k_write16(&cpu, pc, 0x263C); pc += 2;
+    m68k_write32(&cpu, pc, 33); pc += 4;          /* MOVE.L #33, D3 */
+    m68k_write16(&cpu, pc, 0x283C); pc += 2;
+    m68k_write32(&cpu, pc, 44); pc += 4;          /* MOVE.L #44, D4 */
+    m68k_write16(&cpu, pc, 0x2A3C); pc += 2;
+    m68k_write32(&cpu, pc, 55); pc += 4;          /* MOVE.L #55, D5 */
+    /* LEA $42, A0 → 207C 00000042 */
+    m68k_write16(&cpu, pc, 0x207C); pc += 2;
+    m68k_write32(&cpu, pc, 66); pc += 4;          /* LEA #66, A0 */
+    /* TRAP #0 */
+    m68k_write16(&cpu, pc, 0x4E40); pc += 2;
+    /* Save return in D7 */
+    m68k_write16(&cpu, pc, 0x2E00); pc += 2;      /* MOVE.L D0, D7 */
+    /* SYS_EXIT */
+    m68k_write16(&cpu, pc, 0x7000); pc += 2;
+    m68k_write16(&cpu, pc, 0x4E40); pc += 2;
+
+    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu,
+                                    ppap_allargs_handler, NULL);
+    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+
+    assert(ppap_allargs_called == 1);
+    assert(ppap_allargs_nr == SYS_WRITE);
+    assert(ppap_allargs[0] == 11);   /* d1 */
+    assert(ppap_allargs[1] == 22);   /* d2 */
+    assert(ppap_allargs[2] == 33);   /* d3 */
+    assert(ppap_allargs[3] == 44);   /* d4 */
+    assert(ppap_allargs[4] == 55);   /* d5 */
+    assert(ppap_allargs[5] == 66);   /* a0 */
+    assert(cpu.d[7] == 99);          /* mock return value */
+    printf("  PASS: ppap_trap_allargs\n");
+}
+
+/* ── Test: "Hello" program via TRAP #0 ──────────────────────────────────── */
+
+static int hello_write_fd;
+static uint32_t hello_write_buf;
+static uint32_t hello_write_len;
+
+static int hello_handler(ecpu_state_t *state, int trap_type,
+                          uint32_t param, void *ctx)
+{
+    (void)ctx;
+    m68k_state_t *m = (m68k_state_t *)state;
+
+    if (trap_type == ECPU_TRAP_SWI && param == 0) {
+        if (m->d[0] == SYS_EXIT)
+            return ECPU_TRAP_EXIT;
+        if (m->d[0] == SYS_WRITE) {
+            hello_write_fd  = (int)m->d[1];
+            hello_write_buf = m->d[2];
+            hello_write_len = m->d[3];
+            m->d[0] = m->d[3];  /* return bytes written */
+            return ECPU_TRAP_HANDLED;
+        }
+        return ECPU_TRAP_HANDLED;
+    }
+    if (trap_type == ECPU_TRAP_HALT)
+        return ECPU_TRAP_EXIT;
+    return ECPU_TRAP_UNHANDLED;
+}
+
+static void test_ppap_hello(void)
+{
+    setup();
+    hello_write_fd = -1;
+    hello_write_buf = 0;
+    hello_write_len = 0;
+
+    /* Place "Hello\n" at 0x2000 in emulated memory */
+    m68k_write8(&cpu, 0x2000, 'H');
+    m68k_write8(&cpu, 0x2001, 'e');
+    m68k_write8(&cpu, 0x2002, 'l');
+    m68k_write8(&cpu, 0x2003, 'l');
+    m68k_write8(&cpu, 0x2004, 'o');
+    m68k_write8(&cpu, 0x2005, '\n');
+
+    uint32_t pc = 0x1000;
+
+    /* sys_write(1, 0x2000, 6):
+     *   d0 = SYS_WRITE (0x0101)
+     *   d1 = 1 (stdout)
+     *   d2 = 0x2000 (buf)
+     *   d3 = 6 (len)
+     */
+    m68k_write16(&cpu, pc, 0x203C); pc += 2;
+    m68k_write32(&cpu, pc, SYS_WRITE); pc += 4;
+    m68k_write16(&cpu, pc, 0x7201); pc += 2;      /* MOVEQ #1, D1 */
+    m68k_write16(&cpu, pc, 0x243C); pc += 2;
+    m68k_write32(&cpu, pc, 0x2000); pc += 4;      /* MOVE.L #$2000, D2 */
+    m68k_write16(&cpu, pc, 0x7606); pc += 2;      /* MOVEQ #6, D3 */
+    m68k_write16(&cpu, pc, 0x4E40); pc += 2;      /* TRAP #0 */
+
+    /* sys_exit(0):
+     *   d0 = SYS_EXIT (0x0000)
+     *   d1 = 0 (status)
+     */
+    m68k_write16(&cpu, pc, 0x7000); pc += 2;      /* MOVEQ #0, D0 */
+    m68k_write16(&cpu, pc, 0x7200); pc += 2;      /* MOVEQ #0, D1 */
+    m68k_write16(&cpu, pc, 0x4E40); pc += 2;      /* TRAP #0 */
+
+    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu,
+                                    hello_handler, NULL);
+    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+
+    assert(hello_write_fd == 1);
+    assert(hello_write_buf == 0x2000);
+    assert(hello_write_len == 6);
+
+    /* Verify the string in emulated memory */
+    char buf[7];
+    for (int i = 0; i < 6; i++)
+        buf[i] = (char)m68k_read8(&cpu, hello_write_buf + i);
+    buf[6] = '\0';
+    assert(strcmp(buf, "Hello\n") == 0);
+
+    printf("  PASS: ppap_hello\n");
+}
+
 /* ── Main ───────────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -3397,6 +3692,12 @@ int main(void)
     test_negx_multiprecision();
     test_addx_multiprecision();
 
-    printf("All 133 tests passed.\n");
+    /* Step 8 */
+    test_ppap_trap_exit();
+    test_ppap_trap_write();
+    test_ppap_trap_allargs();
+    test_ppap_hello();
+
+    printf("All 137 tests passed.\n");
     return 0;
 }

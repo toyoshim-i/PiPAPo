@@ -20,6 +20,7 @@
 #include "elf.h"
 #include "exec_x68k.h"
 #include "exec_cpm.h"
+#include "exec_m68k_emu.h"
 #include "kernel/vfs/vfs.h"
 #include "kernel/mm/page.h"
 #include "kernel/signal/signal.h"
@@ -189,6 +190,13 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
 
     err = elf_validate(ehdr);
     if (err < 0) {
+        /* ELF validation failed — might be a cross-arch m68k binary or
+         * a non-ELF format.  Try m68k emulation first (detects EM_68K
+         * big-endian ELF that elf_validate rejects on ARM hosts). */
+        if (m68k_emu_detect(ehdr)) {
+            vnode_put(vn);
+            return exec_m68k_emu(p, file_base, file_size, ehdr, path, argv);
+        }
         /* Not ELF — try Human68k R-format (.r extension, raw binary) */
         if (r68k_detect(path, file_base, file_size)) {
             vnode_put(vn);
