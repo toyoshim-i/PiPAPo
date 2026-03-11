@@ -13,12 +13,14 @@
 #if defined(__m68k__)
 #include "human68k_bridge.h"
 #endif
+#include "cpm_bridge.h"
 
 const subsys_ops_t *subsys_ops_table[SUBSYS_MAX] = {
     [0] = (const subsys_ops_t *)0,  /* SUBSYS_PPAP: default kernel behavior */
 #if defined(__m68k__)
     [1] = &human68k_subsys_ops,     /* SUBSYS_HUMAN68K */
 #endif
+    [2] = &cpm_subsys_ops,          /* SUBSYS_CPM */
 };
 
 void subsys_init(void)
@@ -27,4 +29,5 @@ void subsys_init(void)
 #if defined(__m68k__)
     procfs_register_subsys(SUBSYS_HUMAN68K, "human68k");
 #endif
+    procfs_register_subsys(SUBSYS_CPM, "cpm");
 }

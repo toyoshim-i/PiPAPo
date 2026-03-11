@@ -16,6 +16,7 @@
 #ifdef PPAP_KERNEL
 
 #include "kernel/fd/fd.h"
+#include "common/poll.h"
 
 static void cpm_putchar(uint8_t ch)
 {
@@ -33,8 +34,10 @@ static uint8_t cpm_getchar(void)
 
 static int cpm_char_ready(void)
 {
-    extern int sys_read_ready(int fd);
-    return sys_read_ready(0);
+    extern long sys_poll(void *fds, uint32_t nfds, long timeout_ms);
+    struct pollfd pfd = { .fd = 0, .events = POLLIN, .revents = 0 };
+    sys_poll(&pfd, 1, 0);  /* non-blocking */
+    return (pfd.revents & POLLIN) ? 1 : 0;
 }
 
 static int cpm_file_open(const char *path, int flags)
@@ -1079,3 +1082,42 @@ int cpm_trap_handler(ecpu_state_t *state, int trap_type,
 
     return ECPU_TRAP_UNHANDLED;
 }
+
+/* ── Kernel-only: process entry point and subsystem ops ────────────────── */
+
+#ifdef PPAP_KERNEL
+
+#include "kernel/proc/proc.h"
+#include "kernel/syscall/syscall.h"
+#include "subsys.h"
+
+/*
+ * cpm_run_process — kernel-mode entry point for CP/M .COM processes.
+ *
+ * The scheduler "returns" into this function after proc_setup_stack().
+ * It runs the Z80 emulator loop until BDOS fn 0 (or HALT) causes
+ * ecpu_z80_ops.run() to return, then exits the process.
+ */
+void cpm_run_process(void)
+{
+    pcb_t *p = current;
+
+    /* Recover per-process state from subsys_data (set by exec_cpm) */
+    /* cpm_exec_state_t layout: { z80_state_t z80; cpm_state_t cpm; } */
+    z80_state_t *z80 = (z80_state_t *)p->subsys_data;
+
+    ecpu_z80_ops.run((ecpu_state_t *)z80);
+
+    sys_exit(0);
+    /* not reached */
+}
+
+/* Subsystem ops — CP/M processes don't need special crash/signal handling
+ * since they run inside the Z80 emulator (faults are emulator bugs). */
+const subsys_ops_t cpm_subsys_ops = {
+    .on_crash  = (void *)0,
+    .on_signal = (void *)0,
+    .on_init   = (void *)0,
+};
+
+#endif /* PPAP_KERNEL */

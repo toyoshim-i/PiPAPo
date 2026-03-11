@@ -52,6 +52,7 @@ typedef void (*sighandler_t)(int);
  * vs. crashing non-Human68k processes that hit F-line opcodes. */
 #define SUBSYS_PPAP       0   /* native PPAP ELF binary (default)    */
 #define SUBSYS_HUMAN68K   1   /* Human68k X-format binary             */
+#define SUBSYS_CPM        2   /* CP/M 2.2 .COM binary (Z80 emulated) */
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 

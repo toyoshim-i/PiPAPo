@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include "kernel/ecpu/ecpu.h"
 #include "kernel/ecpu/ecpu_z80.h"
+#include "subsys.h"
 
 /* ── CP/M memory map constants ──────────────────────────────────────────── */
 #define CPM_TPA_BASE       0x0100  /* .COM programs load here              */
@@ -66,5 +67,11 @@ void cpm_fcb_to_path(cpm_state_t *cpm, const uint8_t *fcb,
                      char *path, int path_size);
 
 int cpm_match_fcb(const uint8_t *pattern, const char *filename);
+
+/* Kernel-mode entry point for CP/M processes (called via proc_setup_stack) */
+void cpm_run_process(void);
+
+/* Subsystem ops for CP/M — registered into subsys_ops_table[] */
+extern const subsys_ops_t cpm_subsys_ops;
 
 #endif /* PPAP_SUBSYS_CPM_BRIDGE_H */

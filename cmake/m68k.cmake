@@ -28,6 +28,7 @@ function(ppap_m68k_target_common target)
         ${PPAP_ROOT}/src
         ${PPAP_ROOT}/src/kernel
     )
+    target_compile_definitions(${target} PRIVATE PPAP_KERNEL=1)
     if(PPAP_TESTS)
         target_sources(${target} PRIVATE ${PPAP_ROOT}/tests/kernel/ktest.c)
         target_include_directories(${target} PRIVATE ${PPAP_ROOT}/tests/kernel)

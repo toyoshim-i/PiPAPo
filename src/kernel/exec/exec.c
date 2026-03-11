@@ -19,6 +19,7 @@
 #include "exec.h"
 #include "elf.h"
 #include "exec_x68k.h"
+#include "exec_cpm.h"
 #include "kernel/vfs/vfs.h"
 #include "kernel/mm/page.h"
 #include "kernel/signal/signal.h"
@@ -175,6 +176,12 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
     if (x68k_detect(file_base, file_size)) {
         vnode_put(vn);
         return exec_x68k(p, file_base, file_size, path, argv);
+    }
+
+    /* Try CP/M .COM (detected by extension) */
+    if (cpm_detect(path, file_base, file_size)) {
+        vnode_put(vn);
+        return exec_cpm(p, file_base, file_size, path, argv);
     }
 
     /* ── 2b. Validate the ELF header ───────────────────────────────────── */
