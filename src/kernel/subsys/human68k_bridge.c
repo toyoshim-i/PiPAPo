@@ -23,12 +23,7 @@
 #include <stddef.h>
 #include <string.h>
 
-/* Debug tracing — enable with -DH68K_DEBUG in CMake */
-#ifdef H68K_DEBUG
-#define H68K_TRACE(fmt, ...) klogf("[h68k] " fmt "\n", ##__VA_ARGS__)
-#else
-#define H68K_TRACE(fmt, ...) ((void)0)
-#endif
+#define H68K_TRACE(fmt, ...) PPAP_DEBUG_LOGF("h68k", fmt, ##__VA_ARGS__)
 
 /* Read big-endian values from user stack (native on m68k) */
 static inline uint16_t ustack_u16(uint32_t usp, int offset)
@@ -2024,13 +2019,13 @@ static int h68k_on_crash(struct pcb *p, uint32_t *regs, uint16_t *exc,
         return 0;
 
     if (h->errjvc) {
-        klogf("  _ERRJVC: jumping to %x", h->errjvc);
+        PPAP_DEBUG_LOGF("h68k", "_ERRJVC: jumping to %x", h->errjvc);
         exc[is_group0 ? 5 : 1] = (uint16_t)(h->errjvc >> 16);
         exc[is_group0 ? 6 : 2] = (uint16_t)(h->errjvc & 0xFFFF);
         return 2;  /* return to (redirected) user mode */
     }
 
-    klogf("  _ERRJVC default: _EXIT(-1)");
+    PPAP_DEBUG_LOGF("h68k", "_ERRJVC default: _EXIT(-1)");
     sys_exit(-1);
     return 1;
 }

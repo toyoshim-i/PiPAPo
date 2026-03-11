@@ -25,10 +25,6 @@
 #include "common/ptrace.h"
 #include <stdint.h>
 
-#ifdef SYSCALL_DEBUG
-#include "../../drivers/uart.h"
-#endif
-
 /* SIGCHLD — needed for clone() fast-path detection */
 #define SIGCHLD_NR 17
 
@@ -72,22 +68,6 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
 
     if (trace_before_syscall(frame, nr, a4, a5))
         return;
-
-#ifdef SYSCALL_DEBUG
-    /* Trace interesting syscalls — filter high-frequency I/O to avoid flood */
-    int _sc_trace = (nr != SYS_READ && nr != SYS_WRITE && nr != SYS_WRITEV
-                  && nr != SYS_READV && nr != SYS_IOCTL
-                  && nr != SYS_CLOCK_GETTIME32 && nr != SYS_CLOCK_GETTIME64
-                  && nr != SYS_FSTAT64 && nr != SYS_STAT64
-                  && nr != SYS_OPENAT && nr != SYS_CLOSE && nr != SYS_OPEN
-                  && nr != SYS_FCNTL && nr != SYS_RT_SIGPROCMASK
-                  && nr != SYS_GETPID && nr != SYS_MMAP2
-                  && nr != SYS_SET_TID_ADDRESS && nr != SYS_BRK
-                  && nr != SYS_RT_SIGACTION && nr != SYS_MPROTECT
-                  && nr != SYS_GETUID && nr != SYS_GETEUID
-                  && nr != SYS_GETGID && nr != SYS_GETEGID
-                  && nr != SYS_FUTEX);
-#endif
 
     switch (nr) {
 
@@ -393,28 +373,9 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
         break;
 
     default:
-#ifdef SYSCALL_DEBUG
-        uart_puts("ENOSYS: syscall ");
-        uart_print_dec((uint32_t)nr);
-        uart_putc('\n');
-#endif
         ret = -(long)ENOSYS;
         break;
     }
-
-#ifdef SYSCALL_DEBUG
-    if (_sc_trace || ret == -(long)ENOSYS) {
-        uart_puts("SC ");
-        uart_print_dec(nr);
-        uart_puts("(");
-        uart_print_hex32((uint32_t)a0);
-        uart_puts(",");
-        uart_print_hex32((uint32_t)a1);
-        uart_puts(")=");
-        uart_print_hex32((uint32_t)ret);
-        uart_putc('\n');
-    }
-#endif
 
     trace_after_syscall(frame, nr, a4, a5, ret);
     frame[0] = (uint32_t)ret;   /* write return value into stacked r0 */

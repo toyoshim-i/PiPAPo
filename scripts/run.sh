@@ -15,7 +15,7 @@
 #   --test              Enable PPAP_TESTS, run automated test suite (implies --build)
 #   --clean             Clean build directory before building (implies --build)
 #   --overlay=<dir>     Extra overlay directory copied into romfs (implies --build)
-#   --h68k-debug        Enable Human68k DOS/IOCS call tracing (implies --build)
+#   --h68k-debug        Enable kernel Human68k debug diagnostics (implies --build)
 #   --gdb               (QEMU only) Pause at reset, wait for GDB on :1234
 #   --m68k              Shorthand for TARGET=qemu_m68k (back-compat)
 #

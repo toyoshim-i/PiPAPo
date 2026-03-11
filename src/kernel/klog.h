@@ -29,6 +29,13 @@ void klog(const char *msg);
  */
 void klogf(const char *fmt, ...);
 
+#ifdef PPAP_DEBUG_LOG
+#define PPAP_DEBUG_LOGF(tag, fmt, ...) \
+    klogf("[" tag "] " fmt "\n", ##__VA_ARGS__)
+#else
+#define PPAP_DEBUG_LOGF(tag, fmt, ...) ((void)0)
+#endif
+
 /*
  * Register a mirror output sink (e.g. fbcon for LCD).
  * When set, all klog/klogf output is sent to both UART and the mirror.

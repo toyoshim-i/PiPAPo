@@ -54,4 +54,8 @@ function(ppap_arm_target_common target)
         target_include_directories(${target} PRIVATE ${PPAP_ROOT}/tests/kernel)
         target_compile_definitions(${target} PRIVATE PPAP_TESTS=1)
     endif()
+
+    if(H68K_DEBUG)
+        target_compile_definitions(${target} PRIVATE PPAP_DEBUG_LOG=1)
+    endif()
 endfunction()

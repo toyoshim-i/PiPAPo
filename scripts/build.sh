@@ -10,7 +10,7 @@
 #   --test              Enable PPAP_TESTS (kernel + userland test suite)
 #   --clean             Remove build directory before building (full rebuild)
 #   --overlay=<dir>     Extra overlay directory copied into romfs (highest priority)
-#   --h68k-debug        Enable Human68k DOS/IOCS call tracing
+#   --h68k-debug        Enable kernel Human68k debug diagnostics
 #
 # Examples:
 #   ./scripts/build.sh pico1              # build pico1

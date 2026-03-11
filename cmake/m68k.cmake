@@ -58,6 +58,6 @@ function(ppap_m68k_target_common target)
     
     # Human68k debug support
     if(H68K_DEBUG)
-        target_compile_definitions(${target} PRIVATE H68K_DEBUG=1)
+        target_compile_definitions(${target} PRIVATE PPAP_DEBUG_LOG=1)
     endif()
 endfunction()
