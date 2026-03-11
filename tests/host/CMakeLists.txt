@@ -76,6 +76,15 @@ add_executable(test_ecpu_z80
 target_include_directories(test_ecpu_z80 PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME ecpu_z80 COMMAND test_ecpu_z80)
 
+# ── test_ecpu_m68k ────────────────────────────────────────────────────────
+# m68k eCPU core — pure C interpreter, no hardware dependencies.
+add_executable(test_ecpu_m68k
+    ${SRC}/kernel/ecpu/ecpu_m68k.c
+    test_ecpu_m68k.c
+)
+target_include_directories(test_ecpu_m68k PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME ecpu_m68k COMMAND test_ecpu_m68k)
+
 # ── test_cpm_bridge ──────────────────────────────────────────────────────
 # CP/M subsystem bridge — .COM loader + BDOS dispatch.  Pure C, no stubs.
 add_executable(test_cpm_bridge
