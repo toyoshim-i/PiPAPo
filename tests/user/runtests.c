@@ -38,7 +38,7 @@ int main(void)
      * static pointer arrays because do_execve only relocates GOT entries,
      * not initialized data pointers.  Runtime assignment uses GOT-resolved
      * addresses which are correctly relocated. */
-    const char *tests[22];
+    const char *tests[24];
     tests[0] = "/bin/test_exec";
     tests[1] = "/bin/test_vfork";
     tests[2] = "/bin/test_fault";
@@ -57,12 +57,13 @@ int main(void)
     tests[15] = "/bin/test_stat";
     tests[16] = "/bin/test_tmpfs";
     tests[17] = "/bin/test_x68k";
+    tests[18] = "/bin/test_cpm";
 #if defined(__m68k__)
-    tests[18] = "/bin/test_h68k_dos";
-    tests[19] = (void *)0;
+    tests[19] = "/bin/test_h68k_dos";
+    tests[20] = (void *)0;
 #else
     /* TODO: test_h68k_dos requires m68k R-format binaries in romfs */
-    tests[18] = (void *)0;
+    tests[19] = (void *)0;
 #endif
 
     print("=== PPAP on-target test suite ===\n");
