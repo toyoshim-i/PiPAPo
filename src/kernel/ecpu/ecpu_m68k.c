@@ -490,6 +490,24 @@ static int m68k_group4(m68k_state_t *cpu, uint16_t opcode)
         return 0;
     }
 
+    /* CHK.W: 0100 rrr 110 ea  (bits 8–6 = 110) */
+    if (bits_7_6 == 2 && (bits_11_8 & 1)) {
+        int reg = (opcode >> 9) & 7;
+        ea_result_t ea = m68k_decode_ea(cpu, ea_mode, ea_reg, M68K_SIZE_WORD);
+        int16_t src = (int16_t)m68k_read_ea(cpu, &ea, M68K_SIZE_WORD);
+        int16_t dn = (int16_t)(cpu->d[reg] & 0xFFFF);
+        if (dn < 0) {
+            cpu->sr |= M68K_FLAG_N;
+            int rc = m68k_fire_trap(cpu, ECPU_TRAP_ILLEGAL, 6);
+            if (rc == ECPU_TRAP_EXIT) return -1;
+        } else if (dn > src) {
+            cpu->sr &= ~M68K_FLAG_N;
+            int rc = m68k_fire_trap(cpu, ECPU_TRAP_ILLEGAL, 6);
+            if (rc == ECPU_TRAP_EXIT) return -1;
+        }
+        return 0;
+    }
+
     /* LEA: 0100 rrr 111 ea  (bits 8–6 = 111) */
     if (bits_7_6 == 3 && (bits_11_8 & 1)) {
         int reg = (opcode >> 9) & 7;
@@ -519,12 +537,30 @@ static int m68k_group4(m68k_state_t *cpu, uint16_t opcode)
         return 0;
     }
 
+    /* TAS: 0100 1010 11 ea  (bits 11–8 = 1010, bits_7_6 = 3) */
+    if (bits_11_8 == 0xA && bits_7_6 == 3) {
+        ea_result_t ea = m68k_decode_ea(cpu, ea_mode, ea_reg, M68K_SIZE_BYTE);
+        uint32_t val = m68k_read_ea(cpu, &ea, M68K_SIZE_BYTE);
+        m68k_alu_tst(cpu, val, M68K_SIZE_BYTE);
+        m68k_write_ea(cpu, &ea, M68K_SIZE_BYTE, val | 0x80);
+        return 0;
+    }
+
     /* TST: 0100 1010 ss ea  (bits 11–8 = 1010) */
     if (bits_11_8 == 0xA && bits_7_6 <= 2) {
         uint8_t size = bits_7_6;
         ea_result_t ea = m68k_decode_ea(cpu, ea_mode, ea_reg, size);
         uint32_t val = m68k_read_ea(cpu, &ea, size);
         m68k_alu_tst(cpu, val, size);
+        return 0;
+    }
+
+    /* NBCD: 0100 1000 00 ea  (bits 11–8 = 1000, bits_7_6 = 0) */
+    if (bits_11_8 == 0x8 && bits_7_6 == 0) {
+        ea_result_t ea = m68k_decode_ea(cpu, ea_mode, ea_reg, M68K_SIZE_BYTE);
+        uint32_t val = m68k_read_ea(cpu, &ea, M68K_SIZE_BYTE);
+        uint32_t result = m68k_alu_nbcd(cpu, (uint8_t)val);
+        m68k_write_ea(cpu, &ea, M68K_SIZE_BYTE, result);
         return 0;
     }
 
@@ -893,6 +929,21 @@ static int ecpu_m68k_run(ecpu_state_t *state)
                     uint32_t r8 = (cpu->d[reg8] | src8) & m68k_size_mask(size8);
                     m68k_write_d(cpu, reg8, r8, size8);
                     m68k_set_ccr_move(cpu, r8, size8);
+                } else if (omode8 == 4 && ea_m8 <= 1) {
+                    /* SBCD: 1000 rrr 100 00m rrr */
+                    if (ea_m8 == 0) {
+                        /* SBCD Dy, Dx */
+                        uint8_t r8 = (uint8_t)m68k_alu_sbcd(cpu, (uint8_t)cpu->d[ea_r8], (uint8_t)cpu->d[reg8]);
+                        m68k_write_d(cpu, reg8, r8, M68K_SIZE_BYTE);
+                    } else {
+                        /* SBCD -(Ay), -(Ax) */
+                        cpu->a[ea_r8] -= 1;
+                        cpu->a[reg8] -= 1;
+                        uint8_t src8b = m68k_read8(cpu, cpu->a[ea_r8]);
+                        uint8_t dst8b = m68k_read8(cpu, cpu->a[reg8]);
+                        uint8_t r8 = (uint8_t)m68k_alu_sbcd(cpu, src8b, dst8b);
+                        m68k_write8(cpu, cpu->a[reg8], r8);
+                    }
                 } else if (omode8 >= 4 && omode8 <= 6) {
                     /* OR Dn, <ea> */
                     uint8_t size8 = omode8 & 3;
@@ -925,7 +976,23 @@ static int ecpu_m68k_run(ecpu_state_t *state)
                     /* SUB: omode 0-2 = <ea>,Dn; 4-6 = Dn,<ea> */
                     uint8_t size9 = omode9 & 3;
                     if (size9 > 2) break;
-                    if (omode9 < 3) {
+                    if (omode9 >= 4 && ea_m9 <= 1) {
+                        /* SUBX: 1001 rrr 1 ss 00m rrr */
+                        if (ea_m9 == 0) {
+                            /* SUBX Dy, Dx */
+                            uint32_t r9 = m68k_alu_subx(cpu, cpu->d[ea_r9], cpu->d[reg9], size9);
+                            m68k_write_d(cpu, reg9, r9, size9);
+                        } else {
+                            /* SUBX -(Ay), -(Ax) */
+                            uint32_t nb = m68k_size_bytes(size9);
+                            cpu->a[ea_r9] -= nb;
+                            cpu->a[reg9] -= nb;
+                            uint32_t src9 = m68k_read_sz(cpu, cpu->a[ea_r9], size9);
+                            uint32_t dst9 = m68k_read_sz(cpu, cpu->a[reg9], size9);
+                            uint32_t r9 = m68k_alu_subx(cpu, src9, dst9, size9);
+                            m68k_write_sz(cpu, cpu->a[reg9], r9, size9);
+                        }
+                    } else if (omode9 < 3) {
                         /* SUB <ea>, Dn */
                         ea_result_t ea9 = m68k_decode_ea(cpu, ea_m9, ea_r9, size9);
                         uint32_t src9 = m68k_read_ea(cpu, &ea9, size9);
@@ -1036,6 +1103,21 @@ static int ecpu_m68k_run(ecpu_state_t *state)
                     uint32_t rC = (cpu->d[regC] & srcC) & m68k_size_mask(sizeC);
                     m68k_write_d(cpu, regC, rC, sizeC);
                     m68k_set_ccr_move(cpu, rC, sizeC);
+                } else if (omodeC == 4 && ea_mC <= 1) {
+                    /* ABCD: 1100 rrr 100 00m rrr */
+                    if (ea_mC == 0) {
+                        /* ABCD Dy, Dx */
+                        uint8_t rC = (uint8_t)m68k_alu_abcd(cpu, (uint8_t)cpu->d[ea_rC], (uint8_t)cpu->d[regC]);
+                        m68k_write_d(cpu, regC, rC, M68K_SIZE_BYTE);
+                    } else {
+                        /* ABCD -(Ay), -(Ax) */
+                        cpu->a[ea_rC] -= 1;
+                        cpu->a[regC] -= 1;
+                        uint8_t srcCb = m68k_read8(cpu, cpu->a[ea_rC]);
+                        uint8_t dstCb = m68k_read8(cpu, cpu->a[regC]);
+                        uint8_t rC = (uint8_t)m68k_alu_abcd(cpu, srcCb, dstCb);
+                        m68k_write8(cpu, cpu->a[regC], rC);
+                    }
                 } else if (omodeC >= 4 && omodeC <= 6) {
                     /* AND Dn, <ea> */
                     uint8_t sizeC = omodeC & 3;
@@ -1067,7 +1149,23 @@ static int ecpu_m68k_run(ecpu_state_t *state)
                 } else {
                     uint8_t sizeD = omodeD & 3;
                     if (sizeD > 2) break;
-                    if (omodeD < 3) {
+                    if (omodeD >= 4 && ea_mD <= 1) {
+                        /* ADDX: 1101 rrr 1 ss 00m rrr */
+                        if (ea_mD == 0) {
+                            /* ADDX Dy, Dx */
+                            uint32_t rD = m68k_alu_addx(cpu, cpu->d[ea_rD], cpu->d[regD], sizeD);
+                            m68k_write_d(cpu, regD, rD, sizeD);
+                        } else {
+                            /* ADDX -(Ay), -(Ax) */
+                            uint32_t nb = m68k_size_bytes(sizeD);
+                            cpu->a[ea_rD] -= nb;
+                            cpu->a[regD] -= nb;
+                            uint32_t srcD = m68k_read_sz(cpu, cpu->a[ea_rD], sizeD);
+                            uint32_t dstD = m68k_read_sz(cpu, cpu->a[regD], sizeD);
+                            uint32_t rD = m68k_alu_addx(cpu, srcD, dstD, sizeD);
+                            m68k_write_sz(cpu, cpu->a[regD], rD, sizeD);
+                        }
+                    } else if (omodeD < 3) {
                         /* ADD <ea>, Dn */
                         ea_result_t eaD = m68k_decode_ea(cpu, ea_mD, ea_rD, sizeD);
                         uint32_t srcD = m68k_read_ea(cpu, &eaD, sizeD);

@@ -246,6 +246,13 @@ uint32_t m68k_alu_negx(m68k_state_t *cpu, uint32_t dst, uint8_t size);
 void     m68k_alu_tst(m68k_state_t *cpu, uint32_t val, uint8_t size);
 uint32_t m68k_alu_mulu(m68k_state_t *cpu, uint16_t src, uint16_t dst);
 uint32_t m68k_alu_muls(m68k_state_t *cpu, int16_t src, int16_t dst);
+uint32_t m68k_alu_addx(m68k_state_t *cpu, uint32_t src, uint32_t dst,
+                        uint8_t size);
+uint32_t m68k_alu_subx(m68k_state_t *cpu, uint32_t src, uint32_t dst,
+                        uint8_t size);
+uint32_t m68k_alu_abcd(m68k_state_t *cpu, uint8_t src, uint8_t dst);
+uint32_t m68k_alu_sbcd(m68k_state_t *cpu, uint8_t src, uint8_t dst);
+uint32_t m68k_alu_nbcd(m68k_state_t *cpu, uint8_t dst);
 int      m68k_alu_divu(m68k_state_t *cpu, uint32_t dst, uint16_t src,
                         uint32_t *result);
 int      m68k_alu_divs(m68k_state_t *cpu, int32_t dst, int16_t src,

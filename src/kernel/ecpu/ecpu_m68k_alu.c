@@ -147,6 +147,127 @@ uint32_t m68k_alu_muls(m68k_state_t *cpu, int16_t src, int16_t dst)
     return uresult;
 }
 
+/* ── ADDX (dst + src + X, sticky Z) ────────────────────────────────────── */
+
+uint32_t m68k_alu_addx(m68k_state_t *cpu, uint32_t src, uint32_t dst,
+                        uint8_t size)
+{
+    uint32_t mask = m68k_size_mask(size);
+    uint32_t msb  = m68k_size_msb(size);
+    uint32_t x = (cpu->sr & M68K_FLAG_X) ? 1 : 0;
+    uint64_t res = (uint64_t)(dst & mask) + (uint64_t)(src & mask) + x;
+    uint32_t result = (uint32_t)res & mask;
+
+    uint16_t ccr = 0;
+    if (res & ((uint64_t)mask + 1))            ccr |= M68K_FLAG_C | M68K_FLAG_X;
+    /* Sticky Z: cleared if non-zero, preserved if zero */
+    if (result != 0)
+        ccr &= ~M68K_FLAG_Z;
+    else
+        ccr |= (cpu->sr & M68K_FLAG_Z);
+    if (result & msb)                           ccr |= M68K_FLAG_N;
+    if ((~(src ^ dst) & (src ^ result)) & msb)  ccr |= M68K_FLAG_V;
+    cpu->sr = (cpu->sr & 0xFF00) | ccr;
+
+    return result;
+}
+
+/* ── SUBX (dst - src - X, sticky Z) ───────────────────────────────────── */
+
+uint32_t m68k_alu_subx(m68k_state_t *cpu, uint32_t src, uint32_t dst,
+                        uint8_t size)
+{
+    uint32_t mask = m68k_size_mask(size);
+    uint32_t msb  = m68k_size_msb(size);
+    uint32_t x = (cpu->sr & M68K_FLAG_X) ? 1 : 0;
+    uint32_t s = src & mask;
+    uint32_t d = dst & mask;
+    uint64_t borrow = (uint64_t)s + x;
+    uint32_t result = (d - s - x) & mask;
+
+    uint16_t ccr = 0;
+    if (borrow > d)                             ccr |= M68K_FLAG_C | M68K_FLAG_X;
+    /* Sticky Z */
+    if (result != 0)
+        ccr &= ~M68K_FLAG_Z;
+    else
+        ccr |= (cpu->sr & M68K_FLAG_Z);
+    if (result & msb)                           ccr |= M68K_FLAG_N;
+    if (((src ^ dst) & (dst ^ result)) & msb)   ccr |= M68K_FLAG_V;
+    cpu->sr = (cpu->sr & 0xFF00) | ccr;
+
+    return result;
+}
+
+/* ── ABCD (BCD add with extend) ───────────────────────────────────────── */
+
+uint32_t m68k_alu_abcd(m68k_state_t *cpu, uint8_t src, uint8_t dst)
+{
+    uint32_t x = (cpu->sr & M68K_FLAG_X) ? 1 : 0;
+    uint32_t lo = (dst & 0x0F) + (src & 0x0F) + x;
+    uint32_t hi = (dst & 0xF0) + (src & 0xF0);
+    uint32_t carry = 0;
+
+    if (lo > 9) {
+        lo += 6;
+    }
+    hi += (lo & 0xF0);  /* carry from low nybble */
+    if (hi > 0x90) {
+        hi += 0x60;
+        carry = 1;
+    }
+    uint8_t result = (hi & 0xF0) | (lo & 0x0F);
+
+    uint16_t ccr = 0;
+    if (carry)                    ccr |= M68K_FLAG_C | M68K_FLAG_X;
+    /* Z: cleared if non-zero, unchanged otherwise (sticky) */
+    if (result != 0)
+        ccr &= ~M68K_FLAG_Z;
+    else
+        ccr |= (cpu->sr & M68K_FLAG_Z);
+    cpu->sr = (cpu->sr & 0xFF00) | ccr;
+
+    return result;
+}
+
+/* ── SBCD (BCD subtract with extend) ──────────────────────────────────── */
+
+uint32_t m68k_alu_sbcd(m68k_state_t *cpu, uint8_t src, uint8_t dst)
+{
+    uint32_t x = (cpu->sr & M68K_FLAG_X) ? 1 : 0;
+    int lo = (dst & 0x0F) - (src & 0x0F) - x;
+    int hi = (dst & 0xF0) - (src & 0xF0);
+    uint32_t carry = 0;
+
+    if (lo < 0) {
+        lo += 10;
+        hi -= 0x10;
+    }
+    if (hi < 0) {
+        hi += 0xA0;
+        carry = 1;
+    }
+    uint8_t result = (hi & 0xF0) | (lo & 0x0F);
+
+    uint16_t ccr = 0;
+    if (carry)                    ccr |= M68K_FLAG_C | M68K_FLAG_X;
+    /* Sticky Z */
+    if (result != 0)
+        ccr &= ~M68K_FLAG_Z;
+    else
+        ccr |= (cpu->sr & M68K_FLAG_Z);
+    cpu->sr = (cpu->sr & 0xFF00) | ccr;
+
+    return result;
+}
+
+/* ── NBCD (BCD negate with extend: 0 - dst - X) ──────────────────────── */
+
+uint32_t m68k_alu_nbcd(m68k_state_t *cpu, uint8_t dst)
+{
+    return m68k_alu_sbcd(cpu, dst, 0);
+}
+
 /* ── DIVU (unsigned 32÷16→16q:16r) ─────────────────────────────────────── */
 
 int m68k_alu_divu(m68k_state_t *cpu, uint32_t dst, uint16_t src,

@@ -8,6 +8,7 @@
  * Step 3: Bcc/BRA/BSR, DBcc, Scc, LINK, UNLK.
  * Step 4: AND/OR/EOR/NOT, shifts/rotates, bit ops, EXG.
  * Step 5: MOVEM, PEA, MOVE to/from SR/CCR, MOVE USP.
+ * Step 6: ADDX, SUBX, ABCD, SBCD, NBCD, TAS, CHK.
  */
 
 #include <assert.h>
@@ -2500,6 +2501,307 @@ static void test_movem_prologue(void)
     printf("  PASS: movem_prologue\n");
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * Step 6 tests — ADDX, SUBX, ABCD, SBCD, NBCD, TAS, CHK
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Test: ADDX.L Dy, Dx ────────────────────────────────────────────────── */
+
+static void test_addx_dn(void)
+{
+    setup();
+    cpu.d[0] = 0xFFFFFFFF;
+    cpu.d[1] = 0x00000001;
+    cpu.sr |= M68K_FLAG_X;  /* X=1, so result = FFFFFFFF + 1 + 1 = 1 with carry */
+    /* ADDX.L D1, D0: 1101 000 1 10 00 0 001 = D181 */
+    m68k_write16(&cpu, 0x1000, 0xD181);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+    run_exit();
+    assert(cpu.d[0] == 0x00000001);
+    assert(cpu.sr & M68K_FLAG_C);
+    assert(cpu.sr & M68K_FLAG_X);
+    printf("  PASS: addx_dn\n");
+}
+
+/* ── Test: ADDX sticky Z ────────────────────────────────────────────────── */
+
+static void test_addx_sticky_z(void)
+{
+    setup();
+    cpu.d[0] = 0;
+    cpu.d[1] = 0;
+    cpu.sr |= M68K_FLAG_Z;  /* Z already set */
+    cpu.sr &= ~M68K_FLAG_X; /* X=0 */
+    /* ADDX.L D1, D0 → D181 → 0+0+0=0, Z stays set */
+    m68k_write16(&cpu, 0x1000, 0xD181);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+    run_exit();
+    assert(cpu.d[0] == 0);
+    assert(cpu.sr & M68K_FLAG_Z);  /* Z preserved (sticky) */
+
+    /* Now non-zero result clears Z */
+    setup();
+    cpu.d[0] = 1;
+    cpu.d[1] = 0;
+    cpu.sr |= M68K_FLAG_Z;
+    cpu.sr &= ~M68K_FLAG_X;
+    m68k_write16(&cpu, 0x1000, 0xD181);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+    run_exit();
+    assert(cpu.d[0] == 1);
+    assert(!(cpu.sr & M68K_FLAG_Z));  /* Z cleared */
+    printf("  PASS: addx_sticky_z\n");
+}
+
+/* ── Test: SUBX.L Dy, Dx ────────────────────────────────────────────────── */
+
+static void test_subx_dn(void)
+{
+    setup();
+    cpu.d[0] = 0x00000003;
+    cpu.d[1] = 0x00000001;
+    cpu.sr |= M68K_FLAG_X;  /* X=1, so result = 3 - 1 - 1 = 1 */
+    /* SUBX.L D1, D0: 1001 000 1 10 00 0 001 = 9181 */
+    m68k_write16(&cpu, 0x1000, 0x9181);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+    run_exit();
+    assert(cpu.d[0] == 0x00000001);
+    assert(!(cpu.sr & M68K_FLAG_C));
+    assert(!(cpu.sr & M68K_FLAG_X));
+    printf("  PASS: subx_dn\n");
+}
+
+/* ── Test: SUBX with borrow ─────────────────────────────────────────────── */
+
+static void test_subx_borrow(void)
+{
+    setup();
+    cpu.d[0] = 0x00000000;
+    cpu.d[1] = 0x00000001;
+    cpu.sr |= M68K_FLAG_X;  /* X=1, result = 0 - 1 - 1 = FFFFFFFE, borrow */
+    /* SUBX.L D1, D0: 9181 */
+    m68k_write16(&cpu, 0x1000, 0x9181);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+    run_exit();
+    assert(cpu.d[0] == 0xFFFFFFFE);
+    assert(cpu.sr & M68K_FLAG_C);
+    assert(cpu.sr & M68K_FLAG_X);
+    assert(cpu.sr & M68K_FLAG_N);
+    printf("  PASS: subx_borrow\n");
+}
+
+/* ── Test: ABCD Dy, Dx ──────────────────────────────────────────────────── */
+
+static void test_abcd_dn(void)
+{
+    setup();
+    cpu.d[0] = 0x25;  /* BCD 25 */
+    cpu.d[1] = 0x37;  /* BCD 37 */
+    cpu.sr &= ~M68K_FLAG_X;
+    /* ABCD D1, D0: 1100 000 100 000 001 = C101 */
+    m68k_write16(&cpu, 0x1000, 0xC101);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+    run_exit();
+    assert((cpu.d[0] & 0xFF) == 0x62);  /* 25 + 37 = 62 */
+    assert(!(cpu.sr & M68K_FLAG_C));
+    printf("  PASS: abcd_dn\n");
+}
+
+/* ── Test: ABCD with carry ──────────────────────────────────────────────── */
+
+static void test_abcd_carry(void)
+{
+    setup();
+    cpu.d[0] = 0x85;  /* BCD 85 */
+    cpu.d[1] = 0x27;  /* BCD 27 */
+    cpu.sr &= ~M68K_FLAG_X;
+    /* ABCD D1, D0 → C101 → 85 + 27 = 112 → result 12, carry */
+    m68k_write16(&cpu, 0x1000, 0xC101);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+    run_exit();
+    assert((cpu.d[0] & 0xFF) == 0x12);
+    assert(cpu.sr & M68K_FLAG_C);
+    assert(cpu.sr & M68K_FLAG_X);
+    printf("  PASS: abcd_carry\n");
+}
+
+/* ── Test: SBCD Dy, Dx ──────────────────────────────────────────────────── */
+
+static void test_sbcd_dn(void)
+{
+    setup();
+    cpu.d[0] = 0x62;  /* BCD 62 */
+    cpu.d[1] = 0x37;  /* BCD 37 */
+    cpu.sr &= ~M68K_FLAG_X;
+    /* SBCD D1, D0: 1000 000 100 000 001 = 8101 */
+    m68k_write16(&cpu, 0x1000, 0x8101);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+    run_exit();
+    assert((cpu.d[0] & 0xFF) == 0x25);  /* 62 - 37 = 25 */
+    assert(!(cpu.sr & M68K_FLAG_C));
+    printf("  PASS: sbcd_dn\n");
+}
+
+/* ── Test: SBCD with borrow ─────────────────────────────────────────────── */
+
+static void test_sbcd_borrow(void)
+{
+    setup();
+    cpu.d[0] = 0x10;  /* BCD 10 */
+    cpu.d[1] = 0x25;  /* BCD 25 */
+    cpu.sr &= ~M68K_FLAG_X;
+    /* SBCD D1, D0: 8101 → 10 - 25 = -15 → BCD 85 with borrow */
+    m68k_write16(&cpu, 0x1000, 0x8101);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+    run_exit();
+    assert((cpu.d[0] & 0xFF) == 0x85);
+    assert(cpu.sr & M68K_FLAG_C);
+    assert(cpu.sr & M68K_FLAG_X);
+    printf("  PASS: sbcd_borrow\n");
+}
+
+/* ── Test: NBCD ─────────────────────────────────────────────────────────── */
+
+static void test_nbcd(void)
+{
+    setup();
+    cpu.d[0] = 0x25;  /* BCD 25 */
+    cpu.sr &= ~M68K_FLAG_X;
+    /* NBCD D0: 0100 1000 0000 0000 = 4800 */
+    m68k_write16(&cpu, 0x1000, 0x4800);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+    run_exit();
+    assert((cpu.d[0] & 0xFF) == 0x75);  /* 0 - 25 = 75 with borrow */
+    assert(cpu.sr & M68K_FLAG_C);
+    printf("  PASS: nbcd\n");
+}
+
+/* ── Test: TAS ──────────────────────────────────────────────────────────── */
+
+static void test_tas(void)
+{
+    setup();
+    cpu.d[0] = 0x00;
+    /* TAS D0: 0100 1010 11 000 000 = 4AC0 */
+    m68k_write16(&cpu, 0x1000, 0x4AC0);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+    run_exit();
+    assert((cpu.d[0] & 0xFF) == 0x80);  /* bit 7 set */
+    assert(cpu.sr & M68K_FLAG_Z);       /* tested 0 before setting */
+    assert(!(cpu.sr & M68K_FLAG_N));
+
+    /* TAS on non-zero value */
+    setup();
+    cpu.d[0] = 0x42;
+    m68k_write16(&cpu, 0x1000, 0x4AC0);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+    run_exit();
+    assert((cpu.d[0] & 0xFF) == 0xC2);  /* 0x42 | 0x80 */
+    assert(!(cpu.sr & M68K_FLAG_Z));
+    assert(!(cpu.sr & M68K_FLAG_N));
+    printf("  PASS: tas\n");
+}
+
+/* ── Test: CHK.W (in-range, no trap) ────────────────────────────────────── */
+
+static void test_chk_ok(void)
+{
+    setup();
+    cpu.d[0] = 5;     /* value to check */
+    cpu.d[1] = 10;    /* upper bound */
+    /* CHK.W D1, D0: 0100 000 110 000 001 = 4181 */
+    m68k_write16(&cpu, 0x1000, 0x4181);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+    run_exit();
+    /* No trap fired, execution continues normally */
+    assert(cpu.pc == 0x1004);
+    printf("  PASS: chk_ok\n");
+}
+
+/* ── Test: CHK.W (out-of-range, trap) ───────────────────────────────────── */
+
+static int chk_trap_fired;
+static int chk_handler(ecpu_state_t *state, int trap_type,
+                        uint32_t param, void *ctx)
+{
+    (void)state; (void)ctx;
+    if (trap_type == ECPU_TRAP_ILLEGAL && param == 6) {
+        chk_trap_fired = 1;
+        return ECPU_TRAP_EXIT;
+    }
+    if (trap_type == ECPU_TRAP_SWI)
+        return ECPU_TRAP_EXIT;
+    return ECPU_TRAP_UNHANDLED;
+}
+
+static void test_chk_trap(void)
+{
+    /* D0 > D1 (upper bound) → CHK trap */
+    setup();
+    chk_trap_fired = 0;
+    cpu.d[0] = 15;
+    cpu.d[1] = 10;
+    m68k_write16(&cpu, 0x1000, 0x4181);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu, chk_handler, 0);
+    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+    assert(chk_trap_fired == 1);
+
+    /* D0 < 0 → CHK trap with N flag */
+    setup();
+    chk_trap_fired = 0;
+    cpu.d[0] = 0xFFFF;  /* -1 as word */
+    cpu.d[1] = 10;
+    m68k_write16(&cpu, 0x1000, 0x4181);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu, chk_handler, 0);
+    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+    assert(chk_trap_fired == 1);
+    assert(cpu.sr & M68K_FLAG_N);
+    printf("  PASS: chk_trap\n");
+}
+
+/* ── Test: ADDX/SUBX memory mode -(Ay), -(Ax) ──────────────────────────── */
+
+static void test_addx_mem(void)
+{
+    setup();
+    /* Set up two 4-byte values in memory for ADDX.L -(A1), -(A0) */
+    cpu.a[0] = 0x2004;  /* points past the data */
+    cpu.a[1] = 0x3004;
+    m68k_write32(&cpu, 0x2000, 0x00000005);  /* dst */
+    m68k_write32(&cpu, 0x3000, 0x00000003);  /* src */
+    cpu.sr &= ~M68K_FLAG_X;
+    /* ADDX.L -(A1), -(A0): 1101 000 1 10 00 1 001 = D189 */
+    m68k_write16(&cpu, 0x1000, 0xD189);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+    run_exit();
+    assert(m68k_read32(&cpu, 0x2000) == 0x00000008);
+    assert(cpu.a[0] == 0x2000);
+    assert(cpu.a[1] == 0x3000);
+    printf("  PASS: addx_mem\n");
+}
+
+/* ── Test: ABCD memory mode -(Ay), -(Ax) ────────────────────────────────── */
+
+static void test_abcd_mem(void)
+{
+    setup();
+    cpu.a[0] = 0x2001;  /* past the byte */
+    cpu.a[1] = 0x3001;
+    m68k_write8(&cpu, 0x2000, 0x25);  /* dst BCD */
+    m68k_write8(&cpu, 0x3000, 0x37);  /* src BCD */
+    cpu.sr &= ~M68K_FLAG_X;
+    /* ABCD -(A1), -(A0): 1100 000 100 001 001 = C109 */
+    m68k_write16(&cpu, 0x1000, 0xC109);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+    run_exit();
+    assert(m68k_read8(&cpu, 0x2000) == 0x62);
+    assert(cpu.a[0] == 0x2000);
+    assert(cpu.a[1] == 0x3000);
+    printf("  PASS: abcd_mem\n");
+}
+
 /* ── Main ───────────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -2623,6 +2925,22 @@ int main(void)
     test_move_usp();
     test_movem_prologue();
 
-    printf("All 108 tests passed.\n");
+    /* Step 6 */
+    test_addx_dn();
+    test_addx_sticky_z();
+    test_subx_dn();
+    test_subx_borrow();
+    test_abcd_dn();
+    test_abcd_carry();
+    test_sbcd_dn();
+    test_sbcd_borrow();
+    test_nbcd();
+    test_tas();
+    test_chk_ok();
+    test_chk_trap();
+    test_addx_mem();
+    test_abcd_mem();
+
+    printf("All 122 tests passed.\n");
     return 0;
 }
