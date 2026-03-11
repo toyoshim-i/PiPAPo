@@ -73,6 +73,7 @@ set(KERNEL_SHARED_SOURCES_BASE
 set(KERNEL_SUBSYS_HUMAN68K_SOURCES
     ${_KS_ROOT}/src/kernel/subsys/h68k_util.c
     ${_KS_ROOT}/src/kernel/subsys/human68k_bridge.c
+    ${_KS_ROOT}/src/kernel/subsys/human68k_loader.c
     ${_KS_ROOT}/src/kernel/exec/exec_x68k.c
 )
 
