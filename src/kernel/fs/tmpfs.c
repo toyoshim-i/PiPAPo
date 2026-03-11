@@ -338,6 +338,52 @@ static int tmpfs_unlink(vnode_t *dir, const char *name)
     return -ENOENT;
 }
 
+static int tmpfs_rename(vnode_t *old_dir, const char *old_name,
+                        vnode_t *new_dir, const char *new_name)
+{
+    /* Find the source inode */
+    int src = -1;
+    for (int i = 0; i < TMPFS_INODE_MAX; i++) {
+        if (!inodes[i].active)
+            continue;
+        if (inodes[i].parent_ino != old_dir->ino)
+            continue;
+        if (!str_eq(inodes[i].name, old_name))
+            continue;
+        src = i;
+        break;
+    }
+    if (src < 0)
+        return -ENOENT;
+
+    /* Check if destination already exists */
+    for (int i = 0; i < TMPFS_INODE_MAX; i++) {
+        if (!inodes[i].active)
+            continue;
+        if (inodes[i].parent_ino != new_dir->ino)
+            continue;
+        if (!str_eq(inodes[i].name, new_name))
+            continue;
+
+        /* Cannot overwrite a non-empty directory */
+        if (inodes[i].type == VNODE_DIR) {
+            for (int j = 0; j < TMPFS_INODE_MAX; j++) {
+                if (j == i) continue;
+                if (inodes[j].active && inodes[j].parent_ino == (uint32_t)i)
+                    return -ENOTEMPTY;
+            }
+        }
+        /* Remove the existing target */
+        inode_free(i);
+        break;
+    }
+
+    /* Move: update parent and name */
+    inodes[src].parent_ino = new_dir->ino;
+    str_copy(inodes[src].name, new_name, TMPFS_NAME_MAX + 1);
+    return 0;
+}
+
 static int tmpfs_truncate(vnode_t *vn, uint32_t length)
 {
     tmpfs_inode_t *ti = &inodes[vn->ino];
@@ -395,4 +441,5 @@ const vfs_ops_t tmpfs_ops = {
     .unlink   = tmpfs_unlink,
     .truncate = tmpfs_truncate,
     .statfs   = tmpfs_statfs,
+    .rename   = tmpfs_rename,
 };

@@ -534,6 +534,51 @@ long sys_unlink(const char *path)
     return (long)err;
 }
 
+/* ── sys_rename ────────────────────────────────────────────────────────────── */
+
+long sys_rename(const char *oldpath, const char *newpath)
+{
+    if (!oldpath || !newpath)
+        return -(long)EINVAL;
+
+    vnode_t *old_parent = NULL;
+    char old_name[VFS_NAME_MAX + 1];
+    int err = vfs_lookup_parent(oldpath, &old_parent, old_name,
+                                (int)sizeof(old_name));
+    if (err) return (long)err;
+
+    vnode_t *new_parent = NULL;
+    char new_name[VFS_NAME_MAX + 1];
+    err = vfs_lookup_parent(newpath, &new_parent, new_name,
+                            (int)sizeof(new_name));
+    if (err) {
+        vnode_put(old_parent);
+        return (long)err;
+    }
+
+    /* Both parents must be directories on the same mount */
+    if (old_parent->type != VNODE_DIR || new_parent->type != VNODE_DIR) {
+        err = -(int)ENOTDIR;
+        goto out;
+    }
+    if (!old_parent->mount || old_parent->mount != new_parent->mount ||
+        !old_parent->mount->ops || !old_parent->mount->ops->rename) {
+        err = -(int)ENOSYS;
+        goto out;
+    }
+    if (old_parent->mount->flags & MNT_RDONLY) {
+        err = -(int)EROFS;
+        goto out;
+    }
+
+    err = old_parent->mount->ops->rename(old_parent, old_name,
+                                         new_parent, new_name);
+out:
+    vnode_put(old_parent);
+    vnode_put(new_parent);
+    return (long)err;
+}
+
 /* ══════════════════════════════════════════════════════════════════════════════
  * Phase 6 Step 7: Linux-compatible syscalls (musl libc ABI)
  * ══════════════════════════════════════════════════════════════════════════════ */

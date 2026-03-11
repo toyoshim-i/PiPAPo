@@ -329,7 +329,8 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
         ret = 0;               /* stub — no real permission model */
         break;
     case SYS_RENAME:
-        ret = -(long)ENOSYS;
+        ret = sys_rename((const char *)(uintptr_t)a0,
+                         (const char *)(uintptr_t)a1);
         break;
     case SYS_LCHOWN:
     case SYS_FCHOWN:

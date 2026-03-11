@@ -35,5 +35,8 @@ int main(void)
     UT_PRINT("  h68k: dir\n");
     RUN_R68K("/subsys/human68k/test_dos_dir.r");
 
+    UT_PRINT("  h68k: rename\n");
+    RUN_R68K("/subsys/human68k/test_dos_rename.r");
+
     UT_SUMMARY("test_h68k_dos");
 }

@@ -752,9 +752,6 @@ static int dos_dup2(uint32_t *regs, uint32_t usp)
  * Stack: long old_path_ptr, long new_path_ptr
  * Renames (moves) a file or directory.  Returns 0 on success.
  *
- * Note: PPAP doesn't have sys_rename() yet.  We implement it directly
- * via VFS lookup_parent + FS-level operations.  For now, return -1
- * (unsupported) until sys_rename is added.
  */
 static int dos_rename(uint32_t *regs, uint32_t usp)
 {
@@ -766,8 +763,8 @@ static int dos_rename(uint32_t *regs, uint32_t usp)
     h68k_translate_path(old_src, old_path, sizeof(old_path));
     h68k_translate_path(new_src, new_path, sizeof(new_path));
     H68K_TRACE("_RENAME(%s, %s)", old_path, new_path);
-    /* TODO: implement when sys_rename is available */
-    regs[0] = (uint32_t)h68k_errno(-ENOSYS);
+    long r = sys_rename(old_path, new_path);
+    regs[0] = (uint32_t)h68k_errno((int)r);
     advance_pc(regs);
     return 2;
 }

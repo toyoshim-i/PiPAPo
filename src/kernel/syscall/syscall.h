@@ -128,6 +128,7 @@ long sys_fcntl64(long fd, long cmd, long arg);
 long sys_access(const char *path, long mode);
 long sys_readlink(const char *path, char *buf, long bufsiz);
 long sys_rmdir(const char *path);
+long sys_rename(const char *oldpath, const char *newpath);
 long sys_umask(long mask);
 long sys_mount(const char *source, const char *target,
                const char *fstype, long flags, const void *data);

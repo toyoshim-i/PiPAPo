@@ -121,6 +121,8 @@ struct vfs_ops {
                      vnode_t **result);
     int  (*mkdir)   (vnode_t *dir, const char *name, uint32_t mode);
     int  (*unlink)  (vnode_t *dir, const char *name);
+    int  (*rename)  (vnode_t *old_dir, const char *old_name,
+                     vnode_t *new_dir, const char *new_name);
     int  (*truncate)(vnode_t *vn, uint32_t length);
     int  (*statfs)  (mount_entry_t *mnt, struct kernel_statfs *buf);
 };
