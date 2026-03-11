@@ -63,6 +63,35 @@ typedef struct {
     cpm_state_t  cpm;
 } cpm_exec_state_t;
 
+static void cpm_set_drive_a_root(cpm_state_t *cpm, const char *path)
+{
+    const char *slash = NULL;
+    uint32_t len = 0;
+
+    cpm->drive_a_root[0] = 0;
+    if (!path || !*path)
+        return;
+
+    for (const char *s = path; *s; s++) {
+        if (*s == '/')
+            slash = s;
+    }
+
+    if (!slash)
+        return;
+    if (slash == path) {
+        cpm->drive_a_root[0] = '/';
+        cpm->drive_a_root[1] = 0;
+        return;
+    }
+
+    len = (uint32_t)(slash - path);
+    if (len >= sizeof(cpm->drive_a_root))
+        len = sizeof(cpm->drive_a_root) - 1;
+    memcpy(cpm->drive_a_root, path, len);
+    cpm->drive_a_root[len] = 0;
+}
+
 int exec_cpm(pcb_t *p, const uint8_t *file, uint32_t size,
              const char *path, const char *const *argv)
 {
@@ -122,6 +151,7 @@ int exec_cpm(pcb_t *p, const uint8_t *file, uint32_t size,
 
     /* ── 5. Load .COM binary into Z80 memory ──────────────────────────── */
     cpm_load_com(&state->z80, &state->cpm, file, size, cmdline);
+    cpm_set_drive_a_root(&state->cpm, path);
 
     /* ── 6. Tag as CP/M process ────────────────────────────────────────── */
     p->subsys = SUBSYS_CPM;

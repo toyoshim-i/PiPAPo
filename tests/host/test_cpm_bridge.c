@@ -19,6 +19,7 @@
 #include "kernel/ecpu/ecpu.h"
 #include "kernel/ecpu/ecpu_z80.h"
 #include "kernel/subsys/cpm_bridge.h"
+#include "kernel/subsys/cpm_loader.h"
 
 /* ── Output capture ────────────────────────────────────────────────────── */
 
@@ -983,6 +984,16 @@ static void test_fcb_to_path(void)
     memcpy(&fcb[9], "DAT", 3);
     cpm_fcb_to_path(&st, fcb, path, sizeof(path));
     assert(strcmp(path, "/c/FILE.DAT") == 0);
+
+    /* Explicit A: maps to custom root when configured */
+    strcpy(st.drive_a_root, "/tmp/cpm_root");
+    st.current_drive = 0;
+    memset(fcb, ' ', 36);
+    fcb[0] = 1;
+    memcpy(&fcb[1], "CUSTOM  ", 8);
+    memcpy(&fcb[9], "BIN", 3);
+    cpm_fcb_to_path(&st, fcb, path, sizeof(path));
+    assert(strcmp(path, "/tmp/cpm_root/CUSTOM.BIN") == 0);
 
     printf("  PASS: fcb_to_path\n");
 }

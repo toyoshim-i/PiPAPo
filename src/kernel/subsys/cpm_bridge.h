@@ -11,6 +11,7 @@
 #define PPAP_SUBSYS_CPM_BRIDGE_H
 
 #include <stdint.h>
+#include "config.h"
 #include "kernel/ecpu/ecpu.h"
 #include "kernel/ecpu/ecpu_z80.h"
 #include "subsys.h"
@@ -36,6 +37,7 @@ typedef struct cpm_state {
     uint8_t  current_drive;    /* 0=A, 1=B, ..., 15=P                     */
     uint8_t  current_user;     /* 0–15                                     */
     uint16_t dma_addr;         /* DMA buffer address (default 0x0080)      */
+    char     drive_a_root[VFS_PATH_MAX]; /* host/PPAP path mapped to A:     */
 
     /* FCB-to-fd mapping table */
     struct {

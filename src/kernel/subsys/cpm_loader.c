@@ -157,6 +157,7 @@ void cpm_load_com(z80_state_t *cpu, cpm_state_t *cpm,
     cpm->current_drive = 0;  /* A: */
     cpm->current_user = 0;
     cpm->dma_addr = CPM_DMA_DEFAULT;
+    cpm->drive_a_root[0] = 0;
     memset(cpm->open_files, 0, sizeof(cpm->open_files));
 
     /* Set up memory map */

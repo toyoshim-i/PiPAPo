@@ -198,6 +198,27 @@ static void cpm_trace_after(uint32_t abi, uint32_t nr, z80_state_t *cpu)
 
 /* ── FCB-to-path translation ───────────────────────────────────────────── */
 
+static int cpm_drive_root_path(const cpm_state_t *cpm, uint8_t drive,
+                               char *path, int path_size)
+{
+    if (drive == 0 && cpm->drive_a_root[0]) {
+        int n = 0;
+        while (cpm->drive_a_root[n] && n < path_size - 1) {
+            path[n] = cpm->drive_a_root[n];
+            n++;
+        }
+        path[n] = 0;
+        return n;
+    }
+
+    if (path_size < 3)
+        return 0;
+    path[0] = '/';
+    path[1] = 'a' + drive;
+    path[2] = 0;
+    return 2;
+}
+
 void cpm_fcb_to_path(cpm_state_t *cpm, const uint8_t *fcb,
                      char *path, int path_size)
 {
@@ -205,7 +226,7 @@ void cpm_fcb_to_path(cpm_state_t *cpm, const uint8_t *fcb,
     uint8_t drive = fcb[0];
     if (drive == 0)
         drive = cpm->current_drive + 1;  /* default → current */
-    char drive_char = 'a' + drive - 1;
+    drive--;
 
     /* Extract filename (strip trailing spaces) */
     char name[9], ext[4];
@@ -222,12 +243,12 @@ void cpm_fcb_to_path(cpm_state_t *cpm, const uint8_t *fcb,
     name[nlen] = 0;
     ext[elen] = 0;
 
-    /* Build path: /drive/NAME.EXT */
+    /* Build path: <drive-root>/NAME.EXT */
+    int n = cpm_drive_root_path(cpm, drive, path, path_size);
+    if (n > 0 && path[n - 1] != '/' && n < path_size - 1)
+        path[n++] = '/';
+
     if (elen > 0) {
-        int n = 0;
-        path[n++] = '/';
-        path[n++] = drive_char;
-        path[n++] = '/';
         for (int i = 0; i < nlen && n < path_size - 5; i++)
             path[n++] = name[i];
         path[n++] = '.';
@@ -235,10 +256,6 @@ void cpm_fcb_to_path(cpm_state_t *cpm, const uint8_t *fcb,
             path[n++] = ext[i];
         path[n] = 0;
     } else {
-        int n = 0;
-        path[n++] = '/';
-        path[n++] = drive_char;
-        path[n++] = '/';
         for (int i = 0; i < nlen && n < path_size - 1; i++)
             path[n++] = name[i];
         path[n] = 0;
@@ -320,14 +337,12 @@ int cpm_match_fcb(const uint8_t *pattern, const char *filename)
 }
 
 /*
- * Build a directory path for a drive: "/a", "/b", etc.
+ * Build a directory path for a drive.
  */
-static void cpm_drive_dir_path(uint8_t drive, char *path, int path_size)
+static void cpm_drive_dir_path(const cpm_state_t *cpm, uint8_t drive,
+                               char *path, int path_size)
 {
-    path[0] = '/';
-    path[1] = 'a' + drive;
-    path[2] = 0;
-    (void)path_size;
+    (void)cpm_drive_root_path(cpm, drive, path, path_size);
 }
 
 /*
@@ -379,8 +394,8 @@ static int cpm_search_first(z80_state_t *cpu, cpm_state_t *cpm,
     cpm->search_pattern[11] = 0;
 
     /* Open the directory */
-    char dir_path[8];
-    cpm_drive_dir_path(drive, dir_path, sizeof(dir_path));
+    char dir_path[VFS_PATH_MAX];
+    cpm_drive_dir_path(cpm, drive, dir_path, sizeof(dir_path));
     cpm->search_dir = cpm_dir_open(dir_path);
     if (!cpm->search_dir)
         return 0xFF;
