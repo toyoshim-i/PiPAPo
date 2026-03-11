@@ -75,3 +75,15 @@ add_executable(test_ecpu_z80
 )
 target_include_directories(test_ecpu_z80 PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME ecpu_z80 COMMAND test_ecpu_z80)
+
+# ── test_cpm_bridge ──────────────────────────────────────────────────────
+# CP/M subsystem bridge — .COM loader + BDOS dispatch.  Pure C, no stubs.
+add_executable(test_cpm_bridge
+    ${SRC}/kernel/ecpu/ecpu_z80.c
+    ${SRC}/kernel/ecpu/ecpu_z80_alu.c
+    ${SRC}/kernel/subsys/cpm_bridge.c
+    ${SRC}/kernel/subsys/cpm_loader.c
+    test_cpm_bridge.c
+)
+target_include_directories(test_cpm_bridge PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME cpm_bridge COMMAND test_cpm_bridge)

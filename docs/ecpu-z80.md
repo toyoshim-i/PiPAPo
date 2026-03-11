@@ -460,14 +460,17 @@ struct pcb {
 ```
 src/kernel/ecpu/
 ├── ecpu.h              Common interface (ecpu_core_ops_t, trap types)
-├── ecpu_z80.h          Z80-specific state and register IDs
-├── ecpu_z80.c          Z80 implementation of common interface + main loop
-├── ecpu_z80_cb.c       CB-prefix instructions
-├── ecpu_z80_ed.c       ED-prefix instructions
-├── ecpu_z80_ix.c       DD-prefix instructions (IX-indexed)
-├── ecpu_z80_iy.c       FD-prefix instructions (IY-indexed)
-└── ecpu_z80_alu.c      ALU helpers (add, sub, and, or, xor, cp, daa)
+├── ecpu_z80.h          Z80-specific state, register IDs, inline helpers (~259 lines)
+├── ecpu_z80.c          Common interface impl + main decode + ED/DD/FD prefix decode (~878 lines)
+└── ecpu_z80_alu.c      ALU operations + CB prefix shift/rotate operations (~462 lines)
 ```
+
+The ED, DD, and FD prefix decoders are implemented as static
+functions within `ecpu_z80.c` rather than in separate files. The
+DD and FD decoders share a common `z80_decode_index()` function
+parameterised by which index register to use. CB prefix shift and
+rotate operations are co-located with ALU helpers in
+`ecpu_z80_alu.c`.
 
 Future cores (ecpu_m68k.c, ecpu_8086.c, etc.) will each provide
 their own `ecpu_core_ops_t` implementation in this directory.
@@ -511,14 +514,14 @@ int ecpu_z80_run(z80_state_t *cpu) {
 
 ### 4.2 Code Organization
 
-File layout is described in §3.8. Splitting by prefix group keeps
-each file manageable (~400–600 lines) and allows the compiler to
-optimize each decode table independently.
+All instruction decoding is in two files: `ecpu_z80.c` contains the
+main decode loop plus the ED and DD/FD prefix decoders as static
+functions; `ecpu_z80_alu.c` contains ALU operations and CB prefix
+shift/rotate/bit operations. See §3.8 for the full file listing.
 
-The IX and IY prefix decoders are structurally identical (same
-opcodes, different index register). They can share a common
-`z80_decode_index()` implementation parameterised by which register
-to use, avoiding code duplication:
+The IX and IY prefix decoders share a common `z80_decode_index()`
+implementation parameterised by which register to use, avoiding
+code duplication:
 
 ```c
 static int z80_decode_dd(z80_state_t *cpu) {
@@ -539,10 +542,6 @@ Targets that don't need Z80 emulation pay zero code size.
 if(ENABLE_SUBSYS_CPM)
     target_sources(ppap PRIVATE
         src/kernel/ecpu/ecpu_z80.c
-        src/kernel/ecpu/ecpu_z80_cb.c
-        src/kernel/ecpu/ecpu_z80_ed.c
-        src/kernel/ecpu/ecpu_z80_ix.c
-        src/kernel/ecpu/ecpu_z80_iy.c
         src/kernel/ecpu/ecpu_z80_alu.c
     )
     target_compile_definitions(ppap PRIVATE ENABLE_ECPU_Z80=1)
@@ -1245,33 +1244,27 @@ These optimizations are deferred unless benchmarking shows a need.
 
 ### 11.3 Code Size Budget
 
-Target: ~14 KB binary (increased from 12 KB to accommodate
-undocumented instruction/flag emulation and common interface).
+Actual implementation is more compact than the original estimate,
+with ~1600 lines across 3 files (header + 2 source files):
 
-| Component | Est. lines | Est. binary |
+| File | Contents | Lines |
 |---|---|---|
-| Common interface impl | ~200 | ~0.5 KB |
-| Main decode + helpers | ~900 | ~3.5 KB |
-| CB prefix (bit ops) | ~450 | ~2 KB |
-| ED prefix (extended) | ~500 | ~2.5 KB |
-| DD/FD prefix (indexed) | ~650 | ~2.5 KB |
-| ALU + flag helpers | ~500 | ~2 KB |
-| Parity table | — | ~0.25 KB |
-| API + init + scheduler | ~200 | ~0.75 KB |
-| **Total** | **~3400** | **~14 KB** |
+| `ecpu_z80.h` | State struct, register IDs, inline helpers | ~259 |
+| `ecpu_z80.c` | Common interface (~200) + main decode (~400) + ED decode (~170) + DD/FD decode (~300) | ~878 |
+| `ecpu_z80_alu.c` | ALU ops (~180) + INC/DEC (~25) + ADD HL (~15) + ADC/SBC HL (~35) + ADD IX (~18) + rotates (~40) + DAA/CPL/SCF/CCF (~70) + CB shifts (~65) + BIT (~10) | ~462 |
+| **Total** | | **~1599** |
 
 ---
 
 ## 12. Implementation Plan
 
-### Step 1 — eCPU Common Interface + Core Framework
+### Step 1 — eCPU Common Interface + Core Framework ✓
 
-**Goal:** define the common eCPU interface header and implement the
-Z80 core skeleton that exposes it.
+**Status: COMPLETE**
 
-- Define `ecpu_core_ops_t` in `src/kernel/ecpu/ecpu.h`
-- Define `z80_state_t` and `ecpu_z80_ops` in `ecpu_z80.h/c`
-- Implement `ecpu_z80_init()`, `ecpu_z80_run()`,
+- Defined `ecpu_core_ops_t` in `src/kernel/ecpu/ecpu.h`
+- Defined `z80_state_t` and `ecpu_z80_ops` in `ecpu_z80.h/c`
+- Implemented `ecpu_z80_init()`, `ecpu_z80_run()`,
   `ecpu_z80_set_trap_handler()`, `ecpu_z80_get_reg()`,
   `ecpu_z80_set_reg()`, memory access methods
 - Main decode loop with: NOP, HALT, LD r,r' (register-to-register),
@@ -1280,11 +1273,10 @@ Z80 core skeleton that exposes it.
 - Trap hook fires on CALL and HALT via common trap types
 - Scheduler yield integration (slice counter)
 - PCB integration (`ecpu_ops` / `ecpu_state` fields)
-- **Test:** hand-assembled byte sequence that does LD + CALL + RET
 
-### Step 2 — 8080 Arithmetic + Logic
+### Step 2 — 8080 Arithmetic + Logic ✓
 
-**Goal:** complete the ALU operations needed for 8080 CP/M programs.
+**Status: COMPLETE**
 
 - ADD/ADC/SUB/SBC/AND/OR/XOR/CP (8-bit, register and immediate)
 - INC/DEC (8-bit and 16-bit)
@@ -1292,22 +1284,20 @@ Z80 core skeleton that exposes it.
 - DAA, CPL, SCF, CCF
 - Rotate: RLCA, RRCA, RLA, RRA
 - 16-bit arithmetic: ADD HL,rr
-- **Test:** simple arithmetic test program (add, compare, branch)
 
-### Step 3 — Control Flow + Stack
+### Step 3 — Control Flow + Stack ✓
 
-**Goal:** complete conditional jumps, calls, returns.
+**Status: COMPLETE**
 
 - JP cc,nn / JR cc,e / DJNZ e
 - CALL cc,nn / RET cc
-- RST instructions (with trap hook)
+- RST instructions (trapped via ECPU_TRAP_CALL)
 - PUSH/POP for all register pairs (BC, DE, HL, AF)
 - EX DE,HL / EX AF,AF' / EXX / EX (SP),HL
-- **Test:** program with loops, subroutines, conditional branches
 
-### Step 4 — Memory and I/O
+### Step 4 — Memory and I/O ✓
 
-**Goal:** complete load/store instructions and I/O trapping.
+**Status: COMPLETE**
 
 - LD (nn),A / LD A,(nn) — extended addressing
 - LD (HL),n / LD (BC),A / LD (DE),A and reverses
@@ -1316,19 +1306,17 @@ Z80 core skeleton that exposes it.
 - IN A,(n) / OUT (n),A (trapped to personality)
 - DI / EI (set IFF1/IFF2)
 - IM 0 / IM 1 / IM 2 (set interrupt mode)
-- **Test:** program that uses memory-indirect loads, I/O ports
 
-### Step 5 — CB Prefix (Bit Operations)
+### Step 5 — CB Prefix (Bit Operations) ✓
 
-**Goal:** implement the full CB prefix group.
+**Status: COMPLETE**
 
 - RLC/RRC/RL/RR/SLA/SRA/SRL for all registers
 - BIT n,r / RES n,r / SET n,r for all registers and bit positions
-- **Test:** program using bit manipulation, shift operations
 
-### Step 6 — ED Prefix (Extended Instructions)
+### Step 6 — ED Prefix (Extended Instructions) ✓
 
-**Goal:** implement the ED prefix group.
+**Status: COMPLETE**
 
 - Block transfers: LDI, LDD, LDIR, LDDR
 - Block search: CPI, CPD, CPIR, CPDR
@@ -1338,11 +1326,10 @@ Z80 core skeleton that exposes it.
 - Rotate: RLD, RRD (BCD rotate through accumulator and memory)
 - Register I/O: IN r,(C) / OUT (C),r
 - LD I,A / LD R,A / LD A,I / LD A,R
-- **Test:** program using LDIR (block copy), CPIR (string search)
 
-### Step 7 — DD/FD Prefix (IX/IY Indexed)
+### Step 7 — DD/FD Prefix (IX/IY Indexed) ✓
 
-**Goal:** implement IX and IY indexed addressing.
+**Status: COMPLETE**
 
 - Shared `z80_decode_index()` parameterised by register
 - LD r,(IX+d) / LD (IX+d),r / LD (IX+d),n
@@ -1352,11 +1339,10 @@ Z80 core skeleton that exposes it.
 - PUSH IX / POP IX / EX (SP),IX
 - ADD IX,rr
 - DD CB / FD CB double-prefix bit operations on (IX+d)/(IY+d)
-- **Test:** program using indexed addressing for array access
 
 ### Step 8 — Integration with CP/M Personality
 
-**Goal:** run a real CP/M .COM binary.
+**Status: DEFERRED** — development moved to m68k eCPU instead.
 
 - Wire up CP/M BDOS trap handler (see `subsystem-cpm.md`)
 - Load a .COM binary at 0x0100, set up CP/M memory map
@@ -1368,6 +1354,9 @@ Z80 core skeleton that exposes it.
 ## 13. Testing Strategy
 
 ### 13.1 Unit Test Approach
+
+**Current status: 85 unit tests passing** (`tests/host/test_ecpu_z80.c`),
+covering all instruction groups from Steps 1–7.
 
 Test the emulator in isolation using hand-assembled Z80 byte
 sequences. Each test loads a short program into emulated memory,
