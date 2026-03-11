@@ -6,6 +6,7 @@
  * Step 2: ALU ops, INC/DEC, ADD HL,rr, rotates, DAA, CPL, SCF, CCF.
  * Step 3: JP/JR/CALL/RET cc, DJNZ, RST, PUSH/POP, EX/EXX.
  * Step 4: Memory indirect loads, IN/OUT port trapping.
+ * Step 5: CB prefix — shifts, rotates, BIT/RES/SET.
  *
  * See docs/ecpu-z80.md for the full design.
  */
@@ -473,7 +474,43 @@ static int ecpu_z80_run(ecpu_state_t *state)
                         cpu->pc = nn;
                     }
                     break;
-                case 1: /* CB prefix — Step 5 */
+                case 1: /* CB prefix — bit operations */
+                    {
+                        uint8_t cb = z80_fetch8(cpu);
+                        /* R increments again for CB prefix */
+                        cpu->r = (cpu->r & 0x80) | ((cpu->r + 1) & 0x7F);
+                        uint8_t cb_xx  = cb >> 6;
+                        uint8_t cb_yyy = (cb >> 3) & 7;
+                        uint8_t cb_zzz = cb & 7;
+                        uint8_t val = z80_read_r8(cpu, cb_zzz);
+
+                        switch (cb_xx) {
+                        case 0: /* Shifts/rotates */
+                            switch (cb_yyy) {
+                            case 0: val = z80_rlc(cpu, val); break;
+                            case 1: val = z80_rrc(cpu, val); break;
+                            case 2: val = z80_rl(cpu, val);  break;
+                            case 3: val = z80_rr(cpu, val);  break;
+                            case 4: val = z80_sla(cpu, val); break;
+                            case 5: val = z80_sra(cpu, val); break;
+                            case 6: val = z80_sll(cpu, val); break;
+                            case 7: val = z80_srl(cpu, val); break;
+                            }
+                            z80_write_r8(cpu, cb_zzz, val);
+                            break;
+                        case 1: /* BIT */
+                            z80_bit(cpu, cb_yyy, val);
+                            break;
+                        case 2: /* RES */
+                            z80_write_r8(cpu, cb_zzz,
+                                         val & ~(1 << cb_yyy));
+                            break;
+                        case 3: /* SET */
+                            z80_write_r8(cpu, cb_zzz,
+                                         val | (1 << cb_yyy));
+                            break;
+                        }
+                    }
                     break;
                 case 2: /* OUT (n), A (0xD3) */
                     {

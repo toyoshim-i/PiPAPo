@@ -327,3 +327,81 @@ void z80_ccf(z80_state_t *cpu)
            | (old_c ? 0 : FLAG_C);  /* C = ~old carry */
     /* N = 0 */
 }
+
+/* ── CB prefix shift/rotate operations ───────────────────────────────────
+ * All set S, Z, PV=parity, F3/F5 from result.  H=0, N=0.
+ * Return the result byte; caller writes it back to the register. */
+
+static uint8_t cb_flags(z80_state_t *cpu, uint8_t res, uint8_t carry)
+{
+    cpu->f = (res & (FLAG_S | FLAG_35))
+           | z80_parity_table[res]
+           | ((res == 0) ? FLAG_Z : 0)
+           | carry;
+    return res;
+}
+
+uint8_t z80_rlc(z80_state_t *cpu, uint8_t val)
+{
+    uint8_t carry = (val >> 7) & 1;
+    return cb_flags(cpu, (val << 1) | carry, carry);
+}
+
+uint8_t z80_rrc(z80_state_t *cpu, uint8_t val)
+{
+    uint8_t carry = val & 1;
+    return cb_flags(cpu, (val >> 1) | (carry << 7), carry);
+}
+
+uint8_t z80_rl(z80_state_t *cpu, uint8_t val)
+{
+    uint8_t old_c = cpu->f & FLAG_C;
+    uint8_t carry = (val >> 7) & 1;
+    return cb_flags(cpu, (val << 1) | old_c, carry);
+}
+
+uint8_t z80_rr(z80_state_t *cpu, uint8_t val)
+{
+    uint8_t old_c = cpu->f & FLAG_C;
+    uint8_t carry = val & 1;
+    return cb_flags(cpu, (val >> 1) | (old_c << 7), carry);
+}
+
+uint8_t z80_sla(z80_state_t *cpu, uint8_t val)
+{
+    uint8_t carry = (val >> 7) & 1;
+    return cb_flags(cpu, val << 1, carry);
+}
+
+uint8_t z80_sra(z80_state_t *cpu, uint8_t val)
+{
+    uint8_t carry = val & 1;
+    return cb_flags(cpu, (val >> 1) | (val & 0x80), carry);
+}
+
+uint8_t z80_sll(z80_state_t *cpu, uint8_t val)
+{
+    /* Undocumented: shift left, set bit 0 to 1 */
+    uint8_t carry = (val >> 7) & 1;
+    return cb_flags(cpu, (val << 1) | 1, carry);
+}
+
+uint8_t z80_srl(z80_state_t *cpu, uint8_t val)
+{
+    uint8_t carry = val & 1;
+    return cb_flags(cpu, val >> 1, carry);
+}
+
+/* ── CB prefix BIT operation ─────────────────────────────────────────────
+ * BIT n,r: test bit n of register, set Z if bit is 0.
+ * S is set if n=7 and bit is set.  PV = Z (same as parity of single bit).
+ * F3/F5 from result for register operands, from WZ high byte for (HL). */
+
+void z80_bit(z80_state_t *cpu, uint8_t bit, uint8_t val)
+{
+    uint8_t result = val & (1 << bit);
+    cpu->f = (cpu->f & FLAG_C)
+           | FLAG_H
+           | (result ? (result & FLAG_S) : (FLAG_Z | FLAG_PV))
+           | (val & FLAG_35);
+}

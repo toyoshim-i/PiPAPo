@@ -233,6 +233,17 @@ void z80_cpl(z80_state_t *cpu);
 void z80_scf(z80_state_t *cpu);
 void z80_ccf(z80_state_t *cpu);
 
+/* CB prefix shift/rotate operations — return result byte */
+uint8_t z80_rlc(z80_state_t *cpu, uint8_t val);
+uint8_t z80_rrc(z80_state_t *cpu, uint8_t val);
+uint8_t z80_rl(z80_state_t *cpu, uint8_t val);
+uint8_t z80_rr(z80_state_t *cpu, uint8_t val);
+uint8_t z80_sla(z80_state_t *cpu, uint8_t val);
+uint8_t z80_sra(z80_state_t *cpu, uint8_t val);
+uint8_t z80_sll(z80_state_t *cpu, uint8_t val);  /* undocumented */
+uint8_t z80_srl(z80_state_t *cpu, uint8_t val);
+void z80_bit(z80_state_t *cpu, uint8_t bit, uint8_t val);
+
 /* 16-bit register pair access by 2-bit pp field */
 uint16_t z80_read_rr(z80_state_t *cpu, uint8_t pp);
 void z80_write_rr(z80_state_t *cpu, uint8_t pp, uint16_t val);

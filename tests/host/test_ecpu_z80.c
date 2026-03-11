@@ -1803,6 +1803,357 @@ static void test_memcpy_program(void)
     printf("  PASS: memcpy_program\n");
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * Step 5 tests — CB prefix (shifts, rotates, BIT/RES/SET)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Test: RLC / RRC ─────────────────────────────────────────────────────── */
+
+static void test_cb_rlc_rrc(void)
+{
+    /* RLC B: 0x85 → 0x0B, C=1 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x06; mem[0x101] = 0x85;  /* LD B, 0x85 */
+    mem[0x102] = 0xCB; mem[0x103] = 0x00;  /* RLC B */
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.b == 0x0B);
+    assert(cpu.f & FLAG_C);
+    assert(!(cpu.f & FLAG_Z));
+    assert(z80_parity_table[0x0B] == (cpu.f & FLAG_PV));
+
+    /* RRC C: 0x01 → 0x80, C=1 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x0E; mem[0x101] = 0x01;  /* LD C, 0x01 */
+    mem[0x102] = 0xCB; mem[0x103] = 0x09;  /* RRC C */
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.c == 0x80);
+    assert(cpu.f & FLAG_C);
+    assert(cpu.f & FLAG_S);
+
+    /* RLC: 0x00 → 0x00, C=0, Z=1 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x06; mem[0x101] = 0x00;
+    mem[0x102] = 0xCB; mem[0x103] = 0x00;
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.b == 0x00);
+    assert(cpu.f & FLAG_Z);
+    assert(!(cpu.f & FLAG_C));
+
+    printf("  PASS: cb_rlc_rrc\n");
+}
+
+/* ── Test: RL / RR (through carry) ───────────────────────────────────────── */
+
+static void test_cb_rl_rr(void)
+{
+    /* RL D: 0x80, C=0 → 0x00, C=1, Z=1 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x16; mem[0x101] = 0x80;  /* LD D, 0x80 */
+    mem[0x102] = 0xCB; mem[0x103] = 0x12;  /* RL D */
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.d == 0x00);
+    assert(cpu.f & FLAG_C);
+    assert(cpu.f & FLAG_Z);
+
+    /* RL D: 0x80, C=1 → 0x01, C=1 */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = FLAG_C;
+    mem[0x100] = 0x16; mem[0x101] = 0x80;
+    mem[0x102] = 0xCB; mem[0x103] = 0x12;
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.d == 0x01);
+    assert(cpu.f & FLAG_C);
+
+    /* RR E: 0x01, C=0 → 0x00, C=1, Z=1 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x1E; mem[0x101] = 0x01;  /* LD E, 0x01 */
+    mem[0x102] = 0xCB; mem[0x103] = 0x1B;  /* RR E */
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.e == 0x00);
+    assert(cpu.f & FLAG_C);
+    assert(cpu.f & FLAG_Z);
+
+    /* RR E: 0x01, C=1 → 0x80, C=1 */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = FLAG_C;
+    mem[0x100] = 0x1E; mem[0x101] = 0x01;
+    mem[0x102] = 0xCB; mem[0x103] = 0x1B;
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.e == 0x80);
+    assert(cpu.f & FLAG_C);
+    assert(cpu.f & FLAG_S);
+
+    printf("  PASS: cb_rl_rr\n");
+}
+
+/* ── Test: SLA / SRA / SRL ───────────────────────────────────────────────── */
+
+static void test_cb_shifts(void)
+{
+    /* SLA A: 0x81 → 0x02, C=1 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0x81;
+    mem[0x102] = 0xCB; mem[0x103] = 0x27;  /* SLA A */
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x02);
+    assert(cpu.f & FLAG_C);
+
+    /* SRA A: 0x81 → 0xC0, C=1 (bit 7 preserved) */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0x81;
+    mem[0x102] = 0xCB; mem[0x103] = 0x2F;  /* SRA A */
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0xC0);
+    assert(cpu.f & FLAG_C);
+    assert(cpu.f & FLAG_S);
+
+    /* SRL A: 0x81 → 0x40, C=1 (bit 7 cleared) */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0x81;
+    mem[0x102] = 0xCB; mem[0x103] = 0x3F;  /* SRL A */
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x40);
+    assert(cpu.f & FLAG_C);
+    assert(!(cpu.f & FLAG_S));
+
+    /* SLA: 0x00 → 0x00, Z=1 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0x00;
+    mem[0x102] = 0xCB; mem[0x103] = 0x27;
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x00);
+    assert(cpu.f & FLAG_Z);
+
+    printf("  PASS: cb_shifts\n");
+}
+
+/* ── Test: SLL (undocumented) ────────────────────────────────────────────── */
+
+static void test_cb_sll(void)
+{
+    /* SLL A: 0x80 → 0x01, C=1 (bit 0 set to 1) */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0x80;
+    mem[0x102] = 0xCB; mem[0x103] = 0x37;  /* SLL A (undocumented) */
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x01);
+    assert(cpu.f & FLAG_C);
+
+    /* SLL A: 0x00 → 0x01, C=0 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0x00;
+    mem[0x102] = 0xCB; mem[0x103] = 0x37;
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x01);
+    assert(!(cpu.f & FLAG_C));
+    assert(!(cpu.f & FLAG_Z));
+
+    printf("  PASS: cb_sll\n");
+}
+
+/* ── Test: BIT n, r ──────────────────────────────────────────────────────── */
+
+static void test_cb_bit(void)
+{
+    /* BIT 0, A: A=0x01 → bit 0 set, Z=0 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0x01;
+    mem[0x102] = 0xCB; mem[0x103] = 0x47;  /* BIT 0, A */
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(!(cpu.f & FLAG_Z));
+    assert(cpu.f & FLAG_H);
+    assert(!(cpu.f & FLAG_N));
+
+    /* BIT 1, A: A=0x01 → bit 1 clear, Z=1 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0x01;
+    mem[0x102] = 0xCB; mem[0x103] = 0x4F;  /* BIT 1, A */
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.f & FLAG_Z);
+    assert(cpu.f & FLAG_PV);  /* PV=Z for BIT */
+
+    /* BIT 7, A: A=0x80 → bit 7 set, S=1 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0x80;
+    mem[0x102] = 0xCB; mem[0x103] = 0x7F;  /* BIT 7, A */
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(!(cpu.f & FLAG_Z));
+    assert(cpu.f & FLAG_S);
+
+    /* BIT preserves carry */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = FLAG_C;
+    mem[0x100] = 0x3E; mem[0x101] = 0x00;
+    mem[0x102] = 0xCB; mem[0x103] = 0x47;  /* BIT 0, A */
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.f & FLAG_Z);
+    assert(cpu.f & FLAG_C);
+
+    printf("  PASS: cb_bit\n");
+}
+
+/* ── Test: RES / SET n, r ────────────────────────────────────────────────── */
+
+static void test_cb_res_set(void)
+{
+    /* SET 3, A: 0x00 → 0x08 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0x00;
+    mem[0x102] = 0xCB; mem[0x103] = 0xDF;  /* SET 3, A */
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x08);
+
+    /* SET 7, B: 0x00 → 0x80 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x06; mem[0x101] = 0x00;
+    mem[0x102] = 0xCB; mem[0x103] = 0xF8;  /* SET 7, B */
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.b == 0x80);
+
+    /* RES 3, A: 0xFF → 0xF7 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0xFF;
+    mem[0x102] = 0xCB; mem[0x103] = 0x9F;  /* RES 3, A */
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0xF7);
+
+    /* RES 0, C: 0x01 → 0x00 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x0E; mem[0x101] = 0x01;
+    mem[0x102] = 0xCB; mem[0x103] = 0x81;  /* RES 0, C */
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.c == 0x00);
+
+    printf("  PASS: cb_res_set\n");
+}
+
+/* ── Test: CB ops on (HL) ────────────────────────────────────────────────── */
+
+static void test_cb_hl_indirect(void)
+{
+    /* RLC (HL): mem[0x8000]=0x81 → 0x03, C=1 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x8000] = 0x81;
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x80;  /* LD HL, 0x8000 */
+    mem[pc++] = 0xCB; mem[pc++] = 0x06;  /* RLC (HL) */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(mem[0x8000] == 0x03);
+    assert(cpu.f & FLAG_C);
+
+    /* BIT 7, (HL): mem[0x8000]=0x03 → bit 7 clear, Z=1 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x8000] = 0x03;
+    pc = 0x100;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x80;
+    mem[pc++] = 0xCB; mem[pc++] = 0x7E;  /* BIT 7, (HL) */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.f & FLAG_Z);
+
+    /* SET 7, (HL): mem[0x8000]=0x00 → 0x80 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x8000] = 0x00;
+    pc = 0x100;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x80;
+    mem[pc++] = 0xCB; mem[pc++] = 0xFE;  /* SET 7, (HL) */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(mem[0x8000] == 0x80);
+
+    /* RES 7, (HL): mem[0x8000]=0xFF → 0x7F */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x8000] = 0xFF;
+    pc = 0x100;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x80;
+    mem[pc++] = 0xCB; mem[pc++] = 0xBE;  /* RES 7, (HL) */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(mem[0x8000] == 0x7F);
+
+    printf("  PASS: cb_hl_indirect\n");
+}
+
+/* ── Test: multi-bit shift program ───────────────────────────────────────── */
+
+static void test_cb_shift_program(void)
+{
+    /* Multiply A by 4 using two SLA A instructions */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0x0A;  /* LD A, 10 */
+    mem[0x102] = 0xCB; mem[0x103] = 0x27;  /* SLA A → 20 */
+    mem[0x104] = 0xCB; mem[0x105] = 0x27;  /* SLA A → 40 */
+    mem[0x106] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 40);
+
+    /* Count bits using RLC + ADC: count set bits in 0xA5 (4 bits) */
+    setup();
+    cpu.pc = 0x100;
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x06; mem[pc++] = 0xA5;  /* LD B, 0xA5 */
+    mem[pc++] = 0x0E; mem[pc++] = 0x08;  /* LD C, 8 (counter) */
+    mem[pc++] = 0x3E; mem[pc++] = 0x00;  /* LD A, 0 */
+    /* loop at pc=0x106: */
+    mem[pc++] = 0xCB; mem[pc++] = 0x00;  /* RLC B → bit into carry */
+    mem[pc++] = 0xCE; mem[pc++] = 0x00;  /* ADC A, 0 → add carry to A */
+    mem[pc++] = 0x0D;                      /* DEC C */
+    mem[pc++] = 0x20; mem[pc++] = (uint8_t)-7;  /* JR NZ, back to 0x106 */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 4);  /* 0xA5 = 10100101 = 4 bits set */
+
+    printf("  PASS: cb_shift_program\n");
+}
+
 /* ── Main ────────────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -1870,6 +2221,16 @@ int main(void)
     test_out_in();
     test_io_no_trap();
     test_memcpy_program();
+
+    /* Step 5 tests */
+    test_cb_rlc_rrc();
+    test_cb_rl_rr();
+    test_cb_shifts();
+    test_cb_sll();
+    test_cb_bit();
+    test_cb_res_set();
+    test_cb_hl_indirect();
+    test_cb_shift_program();
 
     printf("All tests passed.\n");
     return 0;
