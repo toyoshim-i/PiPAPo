@@ -80,6 +80,7 @@ add_test(NAME ecpu_z80 COMMAND test_ecpu_z80)
 # m68k eCPU core — pure C interpreter, no hardware dependencies.
 add_executable(test_ecpu_m68k
     ${SRC}/kernel/ecpu/ecpu_m68k.c
+    ${SRC}/kernel/ecpu/ecpu_m68k_alu.c
     test_ecpu_m68k.c
 )
 target_include_directories(test_ecpu_m68k PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})

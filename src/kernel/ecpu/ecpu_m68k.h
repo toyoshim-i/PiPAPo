@@ -233,6 +233,24 @@ static inline void m68k_write_d(m68k_state_t *cpu, int reg,
     }
 }
 
+/* ── ALU operations (ecpu_m68k_alu.c) ───────────────────────────────────── */
+
+uint32_t m68k_alu_add(m68k_state_t *cpu, uint32_t src, uint32_t dst,
+                       uint8_t size);
+uint32_t m68k_alu_sub(m68k_state_t *cpu, uint32_t src, uint32_t dst,
+                       uint8_t size);
+void     m68k_alu_cmp(m68k_state_t *cpu, uint32_t src, uint32_t dst,
+                       uint8_t size);
+uint32_t m68k_alu_neg(m68k_state_t *cpu, uint32_t dst, uint8_t size);
+uint32_t m68k_alu_negx(m68k_state_t *cpu, uint32_t dst, uint8_t size);
+void     m68k_alu_tst(m68k_state_t *cpu, uint32_t val, uint8_t size);
+uint32_t m68k_alu_mulu(m68k_state_t *cpu, uint16_t src, uint16_t dst);
+uint32_t m68k_alu_muls(m68k_state_t *cpu, int16_t src, int16_t dst);
+int      m68k_alu_divu(m68k_state_t *cpu, uint32_t dst, uint16_t src,
+                        uint32_t *result);
+int      m68k_alu_divs(m68k_state_t *cpu, int32_t dst, int16_t src,
+                        uint32_t *result);
+
 /* ── EA decoder + read/write (implemented in ecpu_m68k.c) ───────────────── */
 
 ea_result_t m68k_decode_ea(m68k_state_t *cpu, uint8_t mode,

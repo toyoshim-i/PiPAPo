@@ -4,6 +4,8 @@
  * Implements the eCPU common interface for the m68k core.
  * Step 1: MOVE.B/W/L, MOVEQ, LEA, CLR, NOP, STOP, ILLEGAL,
  *         A-line/F-line traps, EA modes 0–4.
+ * Step 2: ADD/SUB/CMP/NEG/NEGX/TST/EXT/MULU/MULS/DIVU/DIVS,
+ *         ADDI/SUBI/CMPI, ADDQ/SUBQ.
  *
  * See docs/ecpu-m68k.md for the full design.
  */
@@ -176,6 +178,55 @@ void m68k_write_ea(m68k_state_t *cpu, ea_result_t *ea, uint8_t size,
     }
 }
 
+/* ── Group 0 (Immediate + Bit Operations) ───────────────────────────────── */
+
+static void m68k_group0(m68k_state_t *cpu, uint16_t opcode)
+{
+    uint8_t bits_11_8 = (opcode >> 8) & 0xF;
+    uint8_t ea_mode = (opcode >> 3) & 7;
+    uint8_t ea_reg  = opcode & 7;
+    uint8_t size    = (opcode >> 6) & 3;
+
+    /* Immediate operations: ORI=000, ANDI=001, SUBI=010,
+     * ADDI=011, EORI=101, CMPI=110 (bits 11-9, but we check bits 11-8) */
+    switch (bits_11_8 >> 1) {
+        case 0x2: { /* SUBI: 0000 0100 ss ea */
+            if (size > 2) break;
+            uint32_t imm = (size == M68K_SIZE_LONG) ? m68k_fetch32(cpu)
+                         : m68k_fetch16(cpu);
+            if (size == M68K_SIZE_BYTE) imm &= 0xFF;
+            ea_result_t ea = m68k_decode_ea(cpu, ea_mode, ea_reg, size);
+            uint32_t dst = m68k_read_ea(cpu, &ea, size);
+            uint32_t result = m68k_alu_sub(cpu, imm, dst, size);
+            m68k_write_ea(cpu, &ea, size, result);
+            break;
+        }
+        case 0x3: { /* ADDI: 0000 0110 ss ea */
+            if (size > 2) break;
+            uint32_t imm = (size == M68K_SIZE_LONG) ? m68k_fetch32(cpu)
+                         : m68k_fetch16(cpu);
+            if (size == M68K_SIZE_BYTE) imm &= 0xFF;
+            ea_result_t ea = m68k_decode_ea(cpu, ea_mode, ea_reg, size);
+            uint32_t dst = m68k_read_ea(cpu, &ea, size);
+            uint32_t result = m68k_alu_add(cpu, imm, dst, size);
+            m68k_write_ea(cpu, &ea, size, result);
+            break;
+        }
+        case 0x6: { /* CMPI: 0000 1100 ss ea */
+            if (size > 2) break;
+            uint32_t imm = (size == M68K_SIZE_LONG) ? m68k_fetch32(cpu)
+                         : m68k_fetch16(cpu);
+            if (size == M68K_SIZE_BYTE) imm &= 0xFF;
+            ea_result_t ea = m68k_decode_ea(cpu, ea_mode, ea_reg, size);
+            uint32_t dst = m68k_read_ea(cpu, &ea, size);
+            m68k_alu_cmp(cpu, imm, dst, size);
+            break;
+        }
+        default:
+            break;
+    }
+}
+
 /* ── CCR helpers for MOVE ───────────────────────────────────────────────── */
 
 static void m68k_set_ccr_move(m68k_state_t *cpu, uint32_t val, uint8_t size)
@@ -294,6 +345,61 @@ static int m68k_group4(m68k_state_t *cpu, uint16_t opcode)
         return 0;
     }
 
+    /* NEG: 0100 0100 ss ea  (bits 11–8 = 0100) */
+    if (bits_11_8 == 0x4 && bits_7_6 <= 2) {
+        uint8_t size = bits_7_6;
+        ea_result_t ea = m68k_decode_ea(cpu, ea_mode, ea_reg, size);
+        uint32_t dst = m68k_read_ea(cpu, &ea, size);
+        uint32_t result = m68k_alu_neg(cpu, dst, size);
+        m68k_write_ea(cpu, &ea, size, result);
+        return 0;
+    }
+
+    /* NEGX: 0100 0000 ss ea  (bits 11–8 = 0000) */
+    if (bits_11_8 == 0x0 && bits_7_6 <= 2) {
+        uint8_t size = bits_7_6;
+        ea_result_t ea = m68k_decode_ea(cpu, ea_mode, ea_reg, size);
+        uint32_t dst = m68k_read_ea(cpu, &ea, size);
+        uint32_t result = m68k_alu_negx(cpu, dst, size);
+        m68k_write_ea(cpu, &ea, size, result);
+        return 0;
+    }
+
+    /* TST: 0100 1010 ss ea  (bits 11–8 = 1010) */
+    if (bits_11_8 == 0xA && bits_7_6 <= 2) {
+        uint8_t size = bits_7_6;
+        ea_result_t ea = m68k_decode_ea(cpu, ea_mode, ea_reg, size);
+        uint32_t val = m68k_read_ea(cpu, &ea, size);
+        m68k_alu_tst(cpu, val, size);
+        return 0;
+    }
+
+    /* EXT.W: 0100 1000 10 000 Dn  (4880–4887) */
+    if ((opcode & 0xFFF8) == 0x4880) {
+        int reg = opcode & 7;
+        uint16_t val = (uint16_t)(int8_t)(cpu->d[reg] & 0xFF);
+        cpu->d[reg] = (cpu->d[reg] & 0xFFFF0000) | val;
+        m68k_alu_tst(cpu, val, M68K_SIZE_WORD);
+        return 0;
+    }
+
+    /* EXT.L: 0100 1000 11 000 Dn  (48C0–48C7) */
+    if ((opcode & 0xFFF8) == 0x48C0) {
+        int reg = opcode & 7;
+        uint32_t val = (uint32_t)(int16_t)(cpu->d[reg] & 0xFFFF);
+        cpu->d[reg] = val;
+        m68k_alu_tst(cpu, val, M68K_SIZE_LONG);
+        return 0;
+    }
+
+    /* SWAP: 0100 1000 01 000 Dn  (4840–4847) */
+    if ((opcode & 0xFFF8) == 0x4840) {
+        int reg = opcode & 7;
+        cpu->d[reg] = (cpu->d[reg] >> 16) | (cpu->d[reg] << 16);
+        m68k_alu_tst(cpu, cpu->d[reg], M68K_SIZE_LONG);
+        return 0;
+    }
+
     /* CLR: 0100 0010 ss ea  (bits 11–8 = 0010) */
     if (bits_11_8 == 0x2) {
         uint8_t size = bits_7_6;  /* 00=byte, 01=word, 10=long */
@@ -341,7 +447,8 @@ static int ecpu_m68k_run(ecpu_state_t *state)
         uint16_t opcode = m68k_fetch16(cpu);
 
         switch (opcode >> 12) {
-            case 0x0: /* Group 0: immediate/bit ops — future */
+            case 0x0: /* Group 0: immediate/bit ops */
+                m68k_group0(cpu, opcode);
                 break;
 
             case 0x1: /* MOVE.B */
@@ -361,8 +468,36 @@ static int ecpu_m68k_run(ecpu_state_t *state)
                     return 0;
                 break;
 
-            case 0x5: /* Group 5: ADDQ/SUBQ/Scc/DBcc — future */
+            case 0x5: { /* Group 5: ADDQ/SUBQ/Scc/DBcc */
+                uint8_t size5 = (opcode >> 6) & 3;
+                if (size5 == 3) break;  /* Scc/DBcc — future */
+                uint8_t data5 = (opcode >> 9) & 7;
+                if (data5 == 0) data5 = 8;  /* ADDQ/SUBQ: 0 means 8 */
+                uint8_t ea_m5 = (opcode >> 3) & 7;
+                uint8_t ea_r5 = opcode & 7;
+                ea_result_t ea5 = m68k_decode_ea(cpu, ea_m5, ea_r5, size5);
+                if (opcode & 0x0100) {
+                    /* SUBQ */
+                    if (ea5.type == EA_TYPE_ADDR_REG) {
+                        /* SUBQ to An: full 32-bit, no flags */
+                        cpu->a[ea5.addr] -= data5;
+                    } else {
+                        uint32_t dst5 = m68k_read_ea(cpu, &ea5, size5);
+                        uint32_t r5 = m68k_alu_sub(cpu, data5, dst5, size5);
+                        m68k_write_ea(cpu, &ea5, size5, r5);
+                    }
+                } else {
+                    /* ADDQ */
+                    if (ea5.type == EA_TYPE_ADDR_REG) {
+                        cpu->a[ea5.addr] += data5;
+                    } else {
+                        uint32_t dst5 = m68k_read_ea(cpu, &ea5, size5);
+                        uint32_t r5 = m68k_alu_add(cpu, data5, dst5, size5);
+                        m68k_write_ea(cpu, &ea5, size5, r5);
+                    }
+                }
                 break;
+            }
 
             case 0x6: /* Group 6: Bcc/BSR/BRA — future */
                 break;
@@ -371,11 +506,75 @@ static int ecpu_m68k_run(ecpu_state_t *state)
                 m68k_moveq(cpu, opcode);
                 break;
 
-            case 0x8: /* Group 8: OR/DIV/SBCD — future */
+            case 0x8: { /* Group 8: OR/DIV/SBCD */
+                uint8_t omode8 = (opcode >> 6) & 7;
+                uint8_t ea_m8 = (opcode >> 3) & 7;
+                uint8_t ea_r8 = opcode & 7;
+                int reg8 = (opcode >> 9) & 7;
+                if (omode8 == 3) {
+                    /* DIVU: 1000 rrr 011 ea */
+                    ea_result_t ea8 = m68k_decode_ea(cpu, ea_m8, ea_r8, M68K_SIZE_WORD);
+                    uint16_t src8 = (uint16_t)m68k_read_ea(cpu, &ea8, M68K_SIZE_WORD);
+                    uint32_t result8;
+                    if (m68k_alu_divu(cpu, cpu->d[reg8], src8, &result8) < 0) {
+                        /* Divide by zero — fire trap */
+                        int rc = m68k_fire_trap(cpu, ECPU_TRAP_ILLEGAL, 5);
+                        if (rc == ECPU_TRAP_EXIT) return 0;
+                    } else {
+                        cpu->d[reg8] = result8;
+                    }
+                } else if (omode8 == 7) {
+                    /* DIVS: 1000 rrr 111 ea */
+                    ea_result_t ea8 = m68k_decode_ea(cpu, ea_m8, ea_r8, M68K_SIZE_WORD);
+                    int16_t src8 = (int16_t)m68k_read_ea(cpu, &ea8, M68K_SIZE_WORD);
+                    uint32_t result8;
+                    if (m68k_alu_divs(cpu, (int32_t)cpu->d[reg8], src8, &result8) < 0) {
+                        int rc = m68k_fire_trap(cpu, ECPU_TRAP_ILLEGAL, 5);
+                        if (rc == ECPU_TRAP_EXIT) return 0;
+                    } else {
+                        cpu->d[reg8] = result8;
+                    }
+                }
+                /* OR/SBCD — future */
                 break;
+            }
 
-            case 0x9: /* Group 9: SUB — future */
+            case 0x9: { /* Group 9: SUB/SUBA */
+                int reg9 = (opcode >> 9) & 7;
+                uint8_t omode9 = (opcode >> 6) & 7;
+                uint8_t ea_m9 = (opcode >> 3) & 7;
+                uint8_t ea_r9 = opcode & 7;
+
+                if (omode9 == 3) {
+                    /* SUBA.W: src sign-extended to 32, sub from An */
+                    ea_result_t ea9 = m68k_decode_ea(cpu, ea_m9, ea_r9, M68K_SIZE_WORD);
+                    int16_t src9 = (int16_t)m68k_read_ea(cpu, &ea9, M68K_SIZE_WORD);
+                    cpu->a[reg9] -= (int32_t)src9;
+                } else if (omode9 == 7) {
+                    /* SUBA.L */
+                    ea_result_t ea9 = m68k_decode_ea(cpu, ea_m9, ea_r9, M68K_SIZE_LONG);
+                    uint32_t src9 = m68k_read_ea(cpu, &ea9, M68K_SIZE_LONG);
+                    cpu->a[reg9] -= src9;
+                } else {
+                    /* SUB: omode 0-2 = <ea>,Dn; 4-6 = Dn,<ea> */
+                    uint8_t size9 = omode9 & 3;
+                    if (size9 > 2) break;
+                    if (omode9 < 3) {
+                        /* SUB <ea>, Dn */
+                        ea_result_t ea9 = m68k_decode_ea(cpu, ea_m9, ea_r9, size9);
+                        uint32_t src9 = m68k_read_ea(cpu, &ea9, size9);
+                        uint32_t r9 = m68k_alu_sub(cpu, src9, cpu->d[reg9], size9);
+                        m68k_write_d(cpu, reg9, r9, size9);
+                    } else {
+                        /* SUB Dn, <ea> */
+                        ea_result_t ea9 = m68k_decode_ea(cpu, ea_m9, ea_r9, size9);
+                        uint32_t dst9 = m68k_read_ea(cpu, &ea9, size9);
+                        uint32_t r9 = m68k_alu_sub(cpu, cpu->d[reg9] & m68k_size_mask(size9), dst9, size9);
+                        m68k_write_ea(cpu, &ea9, size9, r9);
+                    }
+                }
                 break;
+            }
 
             case 0xA: { /* A-line trap */
                 int rc = m68k_fire_trap(cpu, ECPU_TRAP_ILLEGAL, opcode);
@@ -384,14 +583,97 @@ static int ecpu_m68k_run(ecpu_state_t *state)
                 break;
             }
 
-            case 0xB: /* Group B: CMP/EOR — future */
-                break;
+            case 0xB: { /* Group B: CMP/CMPA/CMPM/EOR */
+                int regB = (opcode >> 9) & 7;
+                uint8_t omodeB = (opcode >> 6) & 7;
+                uint8_t ea_mB = (opcode >> 3) & 7;
+                uint8_t ea_rB = opcode & 7;
 
-            case 0xC: /* Group C: AND/MUL/EXG — future */
+                if (omodeB == 3) {
+                    /* CMPA.W */
+                    ea_result_t eaB = m68k_decode_ea(cpu, ea_mB, ea_rB, M68K_SIZE_WORD);
+                    int32_t srcB = (int16_t)m68k_read_ea(cpu, &eaB, M68K_SIZE_WORD);
+                    m68k_alu_cmp(cpu, (uint32_t)srcB, cpu->a[regB], M68K_SIZE_LONG);
+                } else if (omodeB == 7) {
+                    /* CMPA.L */
+                    ea_result_t eaB = m68k_decode_ea(cpu, ea_mB, ea_rB, M68K_SIZE_LONG);
+                    uint32_t srcB = m68k_read_ea(cpu, &eaB, M68K_SIZE_LONG);
+                    m68k_alu_cmp(cpu, srcB, cpu->a[regB], M68K_SIZE_LONG);
+                } else if (omodeB < 3) {
+                    /* CMP <ea>, Dn */
+                    uint8_t sizeB = omodeB;
+                    ea_result_t eaB = m68k_decode_ea(cpu, ea_mB, ea_rB, sizeB);
+                    uint32_t srcB = m68k_read_ea(cpu, &eaB, sizeB);
+                    m68k_alu_cmp(cpu, srcB, cpu->d[regB], sizeB);
+                } else if (ea_mB == 1) {
+                    /* CMPM (An)+, (An)+ */
+                    uint8_t sizeB = omodeB & 3;
+                    if (sizeB > 2) break;
+                    ea_result_t eaS = m68k_decode_ea(cpu, 3, ea_rB, sizeB);
+                    uint32_t srcB = m68k_read_ea(cpu, &eaS, sizeB);
+                    ea_result_t eaD = m68k_decode_ea(cpu, 3, regB, sizeB);
+                    uint32_t dstB = m68k_read_ea(cpu, &eaD, sizeB);
+                    m68k_alu_cmp(cpu, srcB, dstB, sizeB);
+                }
+                /* EOR — future (step 4) */
                 break;
+            }
 
-            case 0xD: /* Group D: ADD — future */
+            case 0xC: { /* Group C: AND/MUL/ABCD/EXG */
+                uint8_t omodeC = (opcode >> 6) & 7;
+                uint8_t ea_mC = (opcode >> 3) & 7;
+                uint8_t ea_rC = opcode & 7;
+                int regC = (opcode >> 9) & 7;
+                if (omodeC == 3) {
+                    /* MULU: 1100 rrr 011 ea */
+                    ea_result_t eaC = m68k_decode_ea(cpu, ea_mC, ea_rC, M68K_SIZE_WORD);
+                    uint16_t srcC = (uint16_t)m68k_read_ea(cpu, &eaC, M68K_SIZE_WORD);
+                    cpu->d[regC] = m68k_alu_mulu(cpu, srcC, (uint16_t)cpu->d[regC]);
+                } else if (omodeC == 7) {
+                    /* MULS: 1100 rrr 111 ea */
+                    ea_result_t eaC = m68k_decode_ea(cpu, ea_mC, ea_rC, M68K_SIZE_WORD);
+                    int16_t srcC = (int16_t)m68k_read_ea(cpu, &eaC, M68K_SIZE_WORD);
+                    cpu->d[regC] = m68k_alu_muls(cpu, srcC, (int16_t)cpu->d[regC]);
+                }
+                /* AND/ABCD/EXG — future */
                 break;
+            }
+
+            case 0xD: { /* Group D: ADD/ADDA */
+                int regD = (opcode >> 9) & 7;
+                uint8_t omodeD = (opcode >> 6) & 7;
+                uint8_t ea_mD = (opcode >> 3) & 7;
+                uint8_t ea_rD = opcode & 7;
+
+                if (omodeD == 3) {
+                    /* ADDA.W */
+                    ea_result_t eaD = m68k_decode_ea(cpu, ea_mD, ea_rD, M68K_SIZE_WORD);
+                    int16_t srcD = (int16_t)m68k_read_ea(cpu, &eaD, M68K_SIZE_WORD);
+                    cpu->a[regD] += (int32_t)srcD;
+                } else if (omodeD == 7) {
+                    /* ADDA.L */
+                    ea_result_t eaD = m68k_decode_ea(cpu, ea_mD, ea_rD, M68K_SIZE_LONG);
+                    uint32_t srcD = m68k_read_ea(cpu, &eaD, M68K_SIZE_LONG);
+                    cpu->a[regD] += srcD;
+                } else {
+                    uint8_t sizeD = omodeD & 3;
+                    if (sizeD > 2) break;
+                    if (omodeD < 3) {
+                        /* ADD <ea>, Dn */
+                        ea_result_t eaD = m68k_decode_ea(cpu, ea_mD, ea_rD, sizeD);
+                        uint32_t srcD = m68k_read_ea(cpu, &eaD, sizeD);
+                        uint32_t rD = m68k_alu_add(cpu, srcD, cpu->d[regD], sizeD);
+                        m68k_write_d(cpu, regD, rD, sizeD);
+                    } else {
+                        /* ADD Dn, <ea> */
+                        ea_result_t eaD = m68k_decode_ea(cpu, ea_mD, ea_rD, sizeD);
+                        uint32_t dstD = m68k_read_ea(cpu, &eaD, sizeD);
+                        uint32_t rD = m68k_alu_add(cpu, cpu->d[regD] & m68k_size_mask(sizeD), dstD, sizeD);
+                        m68k_write_ea(cpu, &eaD, sizeD, rD);
+                    }
+                }
+                break;
+            }
 
             case 0xE: /* Group E: shifts — future */
                 break;

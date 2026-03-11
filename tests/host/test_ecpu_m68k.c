@@ -3,6 +3,8 @@
  *
  * Tests: MOVE.B/W/L, MOVEQ, LEA, CLR, NOP, STOP, ILLEGAL,
  *        A-line/F-line traps, EA modes 0–4, JSR/RTS, TRAP #n.
+ * Step 2: ADD/SUB/CMP/NEG/TST/EXT/MULU/MULS/DIVU/DIVS,
+ *         ADDI/SUBI/CMPI, ADDQ/SUBQ.
  */
 
 #include <assert.h>
@@ -711,6 +713,590 @@ static void test_clr_ccr(void)
     printf("  PASS: clr_ccr\n");
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * Step 2 tests — Integer arithmetic
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Helper: emit instruction + TRAP #0 exit, run, return */
+static void run_exit(void)
+{
+    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu, exit_handler, 0);
+    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+}
+
+/* ── Test: ADD.L Dn, Dn ─────────────────────────────────────────────────── */
+
+static void test_add_l_dn(void)
+{
+    setup();
+    cpu.d[0] = 100;
+    cpu.d[1] = 200;
+    /* ADD.L D1, D0 → D081  (1101 000 010 000 001) */
+    m68k_write16(&cpu, 0x1000, 0xD081);
+    m68k_write16(&cpu, 0x1002, 0x4E40);  /* TRAP #0 exit */
+
+    run_exit();
+
+    assert(cpu.d[0] == 300);
+    assert(!(cpu.sr & M68K_FLAG_Z));
+    assert(!(cpu.sr & M68K_FLAG_N));
+    assert(!(cpu.sr & M68K_FLAG_V));
+    assert(!(cpu.sr & M68K_FLAG_C));
+    printf("  PASS: add_l_dn\n");
+}
+
+/* ── Test: ADD.L overflow ───────────────────────────────────────────────── */
+
+static void test_add_l_overflow(void)
+{
+    setup();
+    cpu.d[0] = 0x7FFFFFFF;
+    cpu.d[1] = 1;
+    /* ADD.L D1, D0 → D081 */
+    m68k_write16(&cpu, 0x1000, 0xD081);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0x80000000);
+    assert(cpu.sr & M68K_FLAG_N);
+    assert(cpu.sr & M68K_FLAG_V);
+    printf("  PASS: add_l_overflow\n");
+}
+
+/* ── Test: ADD.W carry ──────────────────────────────────────────────────── */
+
+static void test_add_w_carry(void)
+{
+    setup();
+    cpu.d[0] = 0xFFFF;
+    cpu.d[1] = 1;
+    /* ADD.W D1, D0 → D041  (1101 000 001 000 001) */
+    m68k_write16(&cpu, 0x1000, 0xD041);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    /* Word result = 0, with carry */
+    assert((cpu.d[0] & 0xFFFF) == 0);
+    assert(cpu.sr & M68K_FLAG_Z);
+    assert(cpu.sr & M68K_FLAG_C);
+    assert(cpu.sr & M68K_FLAG_X);
+    printf("  PASS: add_w_carry\n");
+}
+
+/* ── Test: ADDI.L #imm, Dn ──────────────────────────────────────────────── */
+
+static void test_addi(void)
+{
+    setup();
+    cpu.d[0] = 10;
+    /* ADDI.L #$1000, D0 → 0680 0000 1000 */
+    m68k_write16(&cpu, 0x1000, 0x0680);
+    m68k_write32(&cpu, 0x1002, 0x00001000);
+    m68k_write16(&cpu, 0x1006, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0x100A);
+    printf("  PASS: addi\n");
+}
+
+/* ── Test: ADDQ.L #n, Dn ───────────────────────────────────────────────── */
+
+static void test_addq(void)
+{
+    setup();
+    cpu.d[0] = 10;
+    /* ADDQ.L #5, D0 → 5A80  (0101 101 0 10 000 000) */
+    m68k_write16(&cpu, 0x1000, 0x5A80);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 15);
+    printf("  PASS: addq\n");
+}
+
+/* ── Test: ADDQ.L #8, An (data=0 means 8) ──────────────────────────────── */
+
+static void test_addq_an(void)
+{
+    setup();
+    cpu.a[0] = 0x1000;
+    /* ADDQ.L #8, A0 → 5088  (0101 000 0 10 001 000) */
+    m68k_write16(&cpu, 0x1000, 0x5088);
+    emit_stop(0x1002);
+
+    run();
+
+    assert(cpu.a[0] == 0x1008);
+    printf("  PASS: addq_an\n");
+}
+
+/* ── Test: SUB.L Dn, Dn ─────────────────────────────────────────────────── */
+
+static void test_sub_l_dn(void)
+{
+    setup();
+    cpu.d[0] = 300;
+    cpu.d[1] = 100;
+    /* SUB.L D1, D0 → 9081  (1001 000 010 000 001) */
+    m68k_write16(&cpu, 0x1000, 0x9081);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 200);
+    assert(!(cpu.sr & M68K_FLAG_N));
+    assert(!(cpu.sr & M68K_FLAG_C));
+    printf("  PASS: sub_l_dn\n");
+}
+
+/* ── Test: SUB.L borrow ─────────────────────────────────────────────────── */
+
+static void test_sub_l_borrow(void)
+{
+    setup();
+    cpu.d[0] = 10;
+    cpu.d[1] = 20;
+    /* SUB.L D1, D0 → 9081 */
+    m68k_write16(&cpu, 0x1000, 0x9081);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == (uint32_t)-10);
+    assert(cpu.sr & M68K_FLAG_N);
+    assert(cpu.sr & M68K_FLAG_C);
+    assert(cpu.sr & M68K_FLAG_X);
+    printf("  PASS: sub_l_borrow\n");
+}
+
+/* ── Test: SUBI.W #imm, Dn ──────────────────────────────────────────────── */
+
+static void test_subi(void)
+{
+    setup();
+    cpu.d[0] = 0x1000;
+    /* SUBI.W #$100, D0 → 0440 0100 */
+    m68k_write16(&cpu, 0x1000, 0x0440);
+    m68k_write16(&cpu, 0x1002, 0x0100);
+    m68k_write16(&cpu, 0x1004, 0x4E40);
+
+    run_exit();
+
+    assert((cpu.d[0] & 0xFFFF) == 0x0F00);
+    printf("  PASS: subi\n");
+}
+
+/* ── Test: SUBQ.L #n, Dn ───────────────────────────────────────────────── */
+
+static void test_subq(void)
+{
+    setup();
+    cpu.d[0] = 15;
+    /* SUBQ.L #5, D0 → 5B80  (0101 101 1 10 000 000) */
+    m68k_write16(&cpu, 0x1000, 0x5B80);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 10);
+    printf("  PASS: subq\n");
+}
+
+/* ── Test: CMP.L Dn, Dn ─────────────────────────────────────────────────── */
+
+static void test_cmp_l(void)
+{
+    setup();
+    cpu.d[0] = 42;
+    cpu.d[1] = 42;
+    /* CMP.L D1, D0 → B081  (1011 000 010 000 001) */
+    m68k_write16(&cpu, 0x1000, 0xB081);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.sr & M68K_FLAG_Z);
+    assert(!(cpu.sr & M68K_FLAG_N));
+    assert(!(cpu.sr & M68K_FLAG_C));
+
+    /* CMP with different values */
+    setup();
+    cpu.d[0] = 10;
+    cpu.d[1] = 20;
+    m68k_write16(&cpu, 0x1000, 0xB081);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(!(cpu.sr & M68K_FLAG_Z));
+    assert(cpu.sr & M68K_FLAG_N);
+    assert(cpu.sr & M68K_FLAG_C);
+    printf("  PASS: cmp_l\n");
+}
+
+/* ── Test: CMPI.L #imm, Dn ──────────────────────────────────────────────── */
+
+static void test_cmpi(void)
+{
+    setup();
+    cpu.d[0] = 0x12345678;
+    /* CMPI.L #$12345678, D0 → 0C80 1234 5678 */
+    m68k_write16(&cpu, 0x1000, 0x0C80);
+    m68k_write32(&cpu, 0x1002, 0x12345678);
+    m68k_write16(&cpu, 0x1006, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.sr & M68K_FLAG_Z);
+    printf("  PASS: cmpi\n");
+}
+
+/* ── Test: NEG.L ─────────────────────────────────────────────────────────── */
+
+static void test_neg(void)
+{
+    setup();
+    cpu.d[0] = 42;
+    /* NEG.L D0 → 4480  (0100 0100 10 000 000) */
+    m68k_write16(&cpu, 0x1000, 0x4480);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == (uint32_t)-42);
+    assert(cpu.sr & M68K_FLAG_N);
+    assert(cpu.sr & M68K_FLAG_C);
+    assert(cpu.sr & M68K_FLAG_X);
+
+    /* NEG 0 → Z set, no carry */
+    setup();
+    cpu.d[0] = 0;
+    m68k_write16(&cpu, 0x1000, 0x4480);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0);
+    assert(cpu.sr & M68K_FLAG_Z);
+    assert(!(cpu.sr & M68K_FLAG_C));
+    printf("  PASS: neg\n");
+}
+
+/* ── Test: TST.L ─────────────────────────────────────────────────────────── */
+
+static void test_tst(void)
+{
+    setup();
+    cpu.d[0] = 0;
+    /* TST.L D0 → 4A80  (0100 1010 10 000 000) */
+    m68k_write16(&cpu, 0x1000, 0x4A80);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.sr & M68K_FLAG_Z);
+    assert(!(cpu.sr & M68K_FLAG_N));
+
+    /* TST negative */
+    setup();
+    cpu.d[0] = 0x80000000;
+    m68k_write16(&cpu, 0x1000, 0x4A80);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(!(cpu.sr & M68K_FLAG_Z));
+    assert(cpu.sr & M68K_FLAG_N);
+    printf("  PASS: tst\n");
+}
+
+/* ── Test: EXT.W and EXT.L ──────────────────────────────────────────────── */
+
+static void test_ext(void)
+{
+    setup();
+    cpu.d[0] = 0x000000FF;  /* byte -1 */
+    /* EXT.W D0 → 4880 */
+    m68k_write16(&cpu, 0x1000, 0x4880);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert((cpu.d[0] & 0xFFFF) == 0xFFFF);
+    assert(cpu.sr & M68K_FLAG_N);
+
+    /* EXT.L D0 */
+    setup();
+    cpu.d[0] = 0x0000FF80;  /* word -128 */
+    /* EXT.L D0 → 48C0 */
+    m68k_write16(&cpu, 0x1000, 0x48C0);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0xFFFFFF80);
+    assert(cpu.sr & M68K_FLAG_N);
+    printf("  PASS: ext\n");
+}
+
+/* ── Test: SWAP ─────────────────────────────────────────────────────────── */
+
+static void test_swap(void)
+{
+    setup();
+    cpu.d[0] = 0x12345678;
+    /* SWAP D0 → 4840 */
+    m68k_write16(&cpu, 0x1000, 0x4840);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0x56781234);
+    printf("  PASS: swap\n");
+}
+
+/* ── Test: MULU ─────────────────────────────────────────────────────────── */
+
+static void test_mulu(void)
+{
+    setup();
+    cpu.d[0] = 100;
+    cpu.d[1] = 200;
+    /* MULU D1, D0 → C0C1  (1100 000 011 000 001) */
+    m68k_write16(&cpu, 0x1000, 0xC0C1);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 20000);
+    assert(!(cpu.sr & M68K_FLAG_Z));
+    assert(!(cpu.sr & M68K_FLAG_N));
+    printf("  PASS: mulu\n");
+}
+
+/* ── Test: MULS ─────────────────────────────────────────────────────────── */
+
+static void test_muls(void)
+{
+    setup();
+    cpu.d[0] = 0xFFFF;  /* -1 as word */
+    cpu.d[1] = 100;
+    /* MULS D1, D0 → C1C1  (1100 000 111 000 001) */
+    m68k_write16(&cpu, 0x1000, 0xC1C1);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == (uint32_t)-100);
+    assert(cpu.sr & M68K_FLAG_N);
+    printf("  PASS: muls\n");
+}
+
+/* ── Test: DIVU ─────────────────────────────────────────────────────────── */
+
+static void test_divu(void)
+{
+    setup();
+    cpu.d[0] = 100;
+    cpu.d[1] = 7;
+    /* DIVU D1, D0 → 80C1  (1000 000 011 000 001) */
+    m68k_write16(&cpu, 0x1000, 0x80C1);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    /* 100/7 = 14 remainder 2 → result = 0x0002000E */
+    assert((cpu.d[0] & 0xFFFF) == 14);
+    assert((cpu.d[0] >> 16) == 2);
+    printf("  PASS: divu\n");
+}
+
+/* ── Test: DIVS ─────────────────────────────────────────────────────────── */
+
+static void test_divs(void)
+{
+    setup();
+    cpu.d[0] = (uint32_t)-100;  /* signed -100 */
+    cpu.d[1] = 7;
+    /* DIVS D1, D0 → 81C1  (1000 000 111 000 001) */
+    m68k_write16(&cpu, 0x1000, 0x81C1);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    /* -100/7 = -14 remainder -2 */
+    int16_t quotient = (int16_t)(cpu.d[0] & 0xFFFF);
+    int16_t remainder = (int16_t)(cpu.d[0] >> 16);
+    assert(quotient == -14);
+    assert(remainder == -2);
+    printf("  PASS: divs\n");
+}
+
+/* ── Test: DIVU divide by zero ──────────────────────────────────────────── */
+
+static int divzero_trapped = 0;
+
+static int divzero_handler(ecpu_state_t *state, int trap_type,
+                            uint32_t param, void *ctx)
+{
+    (void)state; (void)ctx;
+    if (trap_type == ECPU_TRAP_ILLEGAL && param == 5) {
+        divzero_trapped = 1;
+        return ECPU_TRAP_HANDLED;
+    }
+    if (trap_type == ECPU_TRAP_SWI || trap_type == ECPU_TRAP_HALT)
+        return ECPU_TRAP_EXIT;
+    return ECPU_TRAP_UNHANDLED;
+}
+
+static void test_divu_zero(void)
+{
+    setup();
+    divzero_trapped = 0;
+    cpu.d[0] = 100;
+    cpu.d[1] = 0;
+    /* DIVU D1, D0 → 80C1 */
+    m68k_write16(&cpu, 0x1000, 0x80C1);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu, divzero_handler, 0);
+    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+
+    assert(divzero_trapped == 1);
+    printf("  PASS: divu_zero\n");
+}
+
+/* ── Test: ADDA.L ───────────────────────────────────────────────────────── */
+
+static void test_adda(void)
+{
+    setup();
+    cpu.a[0] = 0x1000;
+    cpu.d[0] = 0x100;
+    /* ADDA.L D0, A0 → D1C0  (1101 000 111 000 000) */
+    m68k_write16(&cpu, 0x1000, 0xD1C0);
+    emit_stop(0x1002);
+
+    run();
+
+    assert(cpu.a[0] == 0x1100);
+    printf("  PASS: adda\n");
+}
+
+/* ── Test: SUBA.W (sign-extended) ───────────────────────────────────────── */
+
+static void test_suba_w(void)
+{
+    setup();
+    cpu.a[0] = 0x2000;
+    cpu.d[0] = 0xFFF0;  /* -16 as word */
+    /* SUBA.W D0, A0 → 90C0  (1001 000 011 000 000) */
+    m68k_write16(&cpu, 0x1000, 0x90C0);
+    emit_stop(0x1002);
+
+    run();
+
+    /* SUBA.W sign-extends: 0xFFF0 → 0xFFFFFFF0 → sub -16 = add 16 */
+    assert(cpu.a[0] == 0x2010);
+    printf("  PASS: suba_w\n");
+}
+
+/* ── Test: CMPA.L ───────────────────────────────────────────────────────── */
+
+static void test_cmpa(void)
+{
+    setup();
+    cpu.a[0] = 0x2000;
+    cpu.d[0] = 0x2000;
+    /* CMPA.L D0, A0 → B1C0  (1011 000 111 000 000) */
+    m68k_write16(&cpu, 0x1000, 0xB1C0);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.sr & M68K_FLAG_Z);
+    printf("  PASS: cmpa\n");
+}
+
+/* ── Test: CMPM (An)+, (An)+ ───────────────────────────────────────────── */
+
+static void test_cmpm(void)
+{
+    setup();
+    cpu.a[0] = 0x2000;
+    cpu.a[1] = 0x3000;
+    m68k_write32(&cpu, 0x2000, 0x12345678);
+    m68k_write32(&cpu, 0x3000, 0x12345678);
+    /* CMPM.L (A0)+, (A1)+ → B389  (1011 001 110 001 000) ... wait
+     * CMPM.L (A0)+,(A1)+: reg=A1(001), omode=110, ea_mode=001, ea_reg=A0(000)
+     * 1011 001 110 001 000 = 0xB388 */
+    m68k_write16(&cpu, 0x1000, 0xB388);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.sr & M68K_FLAG_Z);
+    assert(cpu.a[0] == 0x2004);
+    assert(cpu.a[1] == 0x3004);
+    printf("  PASS: cmpm\n");
+}
+
+/* ── Test: ADD/SUB with memory ──────────────────────────────────────────── */
+
+static void test_add_sub_mem(void)
+{
+    setup();
+    cpu.a[0] = 0x2000;
+    m68k_write32(&cpu, 0x2000, 100);
+    cpu.d[0] = 50;
+    /* ADD.L D0, (A0) → D190  (1101 000 110 010 000) */
+    m68k_write16(&cpu, 0x1000, 0xD190);
+    emit_stop(0x1002);
+
+    run();
+
+    assert(m68k_read32(&cpu, 0x2000) == 150);
+    printf("  PASS: add_sub_mem\n");
+}
+
+/* ── Test: Arithmetic program (sum 1..10) ───────────────────────────────── */
+
+static void test_sum_program(void)
+{
+    setup();
+    /*
+     * MOVEQ #0, D0       ; sum = 0
+     * MOVEQ #10, D1      ; counter = 10
+     * loop:
+     *   ADD.L D1, D0     ; sum += counter
+     *   SUBQ.L #1, D1    ; counter--
+     *   ... (need Bcc — skip for now, use unrolled)
+     */
+    /* Unrolled: sum 1+2+3+4+5 = 15 */
+    uint32_t pc = 0x1000;
+    m68k_write16(&cpu, pc, 0x7000); pc += 2;  /* MOVEQ #0, D0 */
+    m68k_write16(&cpu, pc, 0xD07C); pc += 2;  /* ADD.W #1, D0 */
+    m68k_write16(&cpu, pc, 0x0001); pc += 2;
+    m68k_write16(&cpu, pc, 0xD07C); pc += 2;  /* ADD.W #2, D0 */
+    m68k_write16(&cpu, pc, 0x0002); pc += 2;
+    m68k_write16(&cpu, pc, 0xD07C); pc += 2;  /* ADD.W #3, D0 */
+    m68k_write16(&cpu, pc, 0x0003); pc += 2;
+    m68k_write16(&cpu, pc, 0xD07C); pc += 2;  /* ADD.W #4, D0 */
+    m68k_write16(&cpu, pc, 0x0004); pc += 2;
+    m68k_write16(&cpu, pc, 0xD07C); pc += 2;  /* ADD.W #5, D0 */
+    m68k_write16(&cpu, pc, 0x0005); pc += 2;
+    m68k_write16(&cpu, pc, 0x4E40); pc += 2;  /* TRAP #0 */
+
+    run_exit();
+
+    assert((cpu.d[0] & 0xFFFF) == 15);
+    printf("  PASS: sum_program\n");
+}
+
 /* ── Main ───────────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -750,6 +1336,35 @@ int main(void)
     test_move_ccr();
     test_clr_ccr();
 
-    printf("All 32 tests passed.\n");
+    /* Step 2 */
+    test_add_l_dn();
+    test_add_l_overflow();
+    test_add_w_carry();
+    test_addi();
+    test_addq();
+    test_addq_an();
+    test_sub_l_dn();
+    test_sub_l_borrow();
+    test_subi();
+    test_subq();
+    test_cmp_l();
+    test_cmpi();
+    test_neg();
+    test_tst();
+    test_ext();
+    test_swap();
+    test_mulu();
+    test_muls();
+    test_divu();
+    test_divs();
+    test_divu_zero();
+    test_adda();
+    test_suba_w();
+    test_cmpa();
+    test_cmpm();
+    test_add_sub_mem();
+    test_sum_program();
+
+    printf("All 59 tests passed.\n");
     return 0;
 }
