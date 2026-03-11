@@ -696,7 +696,7 @@ indicates which PPAP implementation phase targets each call.
 | `_DUP2` | $FF46 | `sys_dup2(old, new)` | ✅ |
 | `_CURDIR` | $FF47 | `sys_getcwd(buf, size)` | ✅ |
 | `_CURDRV` | $FF19 | Return 0 (drive A:) | ✅ |
-| `_RENAME` | $FF56 | Stub — returns -ENOSYS (no sys_rename) | ⚠️ |
+| `_RENAME` | $FF56 | `sys_rename(old, new)` | ✅ |
 | `_FILEDATE` | $FF57 | Get: fixed date; Set: no-op | ✅ |
 | **Memory** | | | |
 | `_MALLOC` | $FF48 | Contiguous page allocation + availability | ✅ |
@@ -1380,7 +1380,7 @@ int human68k_dos_call(h68k_ctx_t *ctx, uint16_t opcode, uint32_t usp) {
 - `_DELETE` ($FF41)
 - `_DUP` ($FF45), `_DUP2` ($FF46) — via `sys_dup`/`sys_dup2`
 - `_CHDIR` ($FF3B), `_CURDIR` ($FF47), `_CURDRV` ($FF19)
-- `_RENAME` ($FF56) — stub (returns -ENOSYS, no `sys_rename` yet)
+- `_RENAME` ($FF56) — `sys_rename(old, new)`
 
 **Host tests:** `test_h68k_path` — 26 assertions for path translation
 and error code mapping.

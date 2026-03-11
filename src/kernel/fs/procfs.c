@@ -11,8 +11,10 @@
  *   /proc/stat           — aggregate CPU jiffy counters
  *   /proc/uptime         — seconds since boot
  *   /proc/mounts         — mounted filesystems (device path fstype opts 0 0)
+ *   /proc/ecpu           — available eCPU emulator cores
  *   /proc/<pid>/stat     — per-process stat line (Linux 52-field format)
  *   /proc/<pid>/cmdline  — NUL-terminated command name
+ *   /proc/<pid>/subsys   — OS personality subsystem name
  */
 
 #include "procfs.h"
@@ -28,6 +30,7 @@
 #include "../proc/proc.h"
 #include "../proc/sched.h"
 #include "../errno.h"
+#include "../subsys/subsys.h"
 #include "config.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -314,6 +317,65 @@ static int gen_battery(char *buf, int bufsiz)
     return pos;
 }
 
+/* ── /proc/subsys — registered OS personality subsystems ───────────────────── */
+
+/* Names for subsystem tags — slot 0 is always "ppap" (default kernel).
+ * Other slots are filled dynamically via procfs_register_subsys(). */
+static const char *subsys_tag_names[SUBSYS_MAX] = {
+    "ppap", NULL, NULL, NULL,
+};
+
+void procfs_register_subsys(uint8_t tag, const char *name)
+{
+    if (tag < SUBSYS_MAX)
+        subsys_tag_names[tag] = name;
+}
+
+static int gen_subsys(char *buf, int bufsiz)
+{
+    int pos = 0;
+    for (uint32_t i = 0; i < SUBSYS_MAX; i++) {
+        if (!subsys_tag_names[i])
+            continue;
+        pos = fmt_append_u32(buf, pos, bufsiz, i);
+        pos = fmt_append(buf, pos, bufsiz, " ");
+        pos = fmt_append(buf, pos, bufsiz, subsys_tag_names[i]);
+        if (subsys_ops_table[i])
+            pos = fmt_append(buf, pos, bufsiz, " [active]");
+        pos = fmt_append(buf, pos, bufsiz, "\n");
+    }
+    return pos;
+}
+
+/* ── /proc/ecpu — available eCPU emulator cores ────────────────────────────── */
+
+#define ECPU_REG_MAX  4
+static const char *ecpu_registered[ECPU_REG_MAX];
+
+void procfs_register_ecpu(const char *name)
+{
+    for (uint32_t i = 0; i < ECPU_REG_MAX; i++) {
+        if (!ecpu_registered[i]) {
+            ecpu_registered[i] = name;
+            return;
+        }
+    }
+}
+
+static int gen_ecpu(char *buf, int bufsiz)
+{
+    int pos = 0;
+    for (uint32_t i = 0; i < ECPU_REG_MAX; i++) {
+        if (!ecpu_registered[i])
+            continue;
+        pos = fmt_append(buf, pos, bufsiz, ecpu_registered[i]);
+        pos = fmt_append(buf, pos, bufsiz, "\n");
+    }
+    if (pos == 0)
+        pos = fmt_append(buf, pos, bufsiz, "(none)\n");
+    return pos;
+}
+
 /* ── Node table ───────────────────────────────────────────────────────────── */
 
 static const procfs_node_t procfs_nodes[] = {
@@ -323,6 +385,8 @@ static const procfs_node_t procfs_nodes[] = {
     { "uptime",  gen_uptime },
     { "mounts",  gen_mounts },
     { "battery", gen_battery },
+    { "ecpu",    gen_ecpu },
+    { "subsys",  gen_subsys },
 };
 
 #define PROCFS_NODE_COUNT \
@@ -432,6 +496,22 @@ static int gen_pid_cmdline(char *buf, int bufsiz, const pcb_t *p)
     return len;
 }
 
+/* /proc/<pid>/subsys — OS personality name */
+static const char *subsys_name(uint8_t tag)
+{
+    if (tag < SUBSYS_MAX && subsys_tag_names[tag])
+        return subsys_tag_names[tag];
+    return "unknown";
+}
+
+static int gen_pid_subsys(char *buf, int bufsiz, const pcb_t *p)
+{
+    int pos = 0;
+    pos = fmt_append(buf, pos, bufsiz, subsys_name(p->subsys));
+    pos = fmt_append(buf, pos, bufsiz, "\n");
+    return pos;
+}
+
 /* ── Inode numbering scheme ──────────────────────────────────────────────── */
 /*
  * Static nodes:  ino = 1 .. PROCFS_NODE_COUNT
@@ -451,8 +531,9 @@ static int gen_pid_cmdline(char *buf, int bufsiz, const pcb_t *p)
  *   - PID/cmdline:   fs_priv = (void*)(0x80000000 | (slot << 8) | 2)
  */
 #define PRIV_PID_FLAG   0x80000000u
-#define PRIV_PID_STAT   1u
+#define PRIV_PID_STAT    1u
 #define PRIV_PID_CMDLINE 2u
+#define PRIV_PID_SUBSYS  3u
 #define MAKE_PID_PRIV(slot, sub) \
     ((void *)(uintptr_t)(PRIV_PID_FLAG | ((uint32_t)(slot) << 8) | (sub)))
 #define IS_PID_PRIV(priv)  (((uintptr_t)(priv)) & PRIV_PID_FLAG)
@@ -560,6 +641,19 @@ static int procfs_lookup(vnode_t *dir, const char *name, vnode_t **result)
             return 0;
         }
 
+        if (str_eq(name, "subsys")) {
+            vnode_t *vn = vnode_alloc();
+            if (!vn) return -ENOMEM;
+            vn->type    = VNODE_FILE;
+            vn->mode    = S_IFREG | 0444u;
+            vn->ino     = pid_ino + 3;
+            vn->size    = 0;
+            vn->mount   = dir->mount;
+            vn->fs_priv = MAKE_PID_PRIV(slot, PRIV_PID_SUBSYS);
+            *result = vn;
+            return 0;
+        }
+
         return -ENOENT;
     }
 
@@ -590,6 +684,8 @@ static long procfs_read(vnode_t *vn, void *buf, size_t n, uint32_t off)
             total = gen_pid_stat(tmp, (int)sizeof(tmp), p);
         else if (sub == PRIV_PID_CMDLINE)
             total = gen_pid_cmdline(tmp, (int)sizeof(tmp), p);
+        else if (sub == PRIV_PID_SUBSYS)
+            total = gen_pid_subsys(tmp, (int)sizeof(tmp), p);
         else
             return -(long)EIO;
     } else {
@@ -668,6 +764,7 @@ static int procfs_readdir(vnode_t *dir, struct dirent *entries,
         static const struct { const char *name; uint32_t off; } pid_entries[] = {
             { "stat",    1 },
             { "cmdline", 2 },
+            { "subsys",  3 },
         };
         uint32_t nentries = sizeof(pid_entries) / sizeof(pid_entries[0]);
 

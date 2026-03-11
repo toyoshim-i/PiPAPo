@@ -71,4 +71,7 @@ typedef struct subsys_ops {
  * Slot 0 (SUBSYS_PPAP) is NULL (default kernel behavior). */
 extern const subsys_ops_t *subsys_ops_table[SUBSYS_MAX];
 
+/* Register subsystem names with procfs. Call once at boot. */
+void subsys_init(void);
+
 #endif /* PPAP_SUBSYS_SUBSYS_H */

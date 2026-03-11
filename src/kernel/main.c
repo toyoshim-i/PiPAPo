@@ -26,6 +26,7 @@
 #include "smp.h"
 #include "spinlock.h"
 #include "arch/arch.h"
+#include "subsys/subsys.h"
 #include "errno.h"
 
 /* Linker-provided romfs image location in flash */
@@ -48,6 +49,9 @@ void kmain(void)
 
     /* Process table init */
     proc_init();
+
+    /* Register OS personality subsystem names with procfs */
+    subsys_init();
 
     /* VFS layer + file pool for sys_open */
     vfs_init();
