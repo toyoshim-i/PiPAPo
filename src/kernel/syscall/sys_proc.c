@@ -28,6 +28,8 @@
 
 #define TRACE_PHASE_ENTER  0
 #define TRACE_PHASE_EXIT   1
+#define TRACE_MODE_MASK \
+    (PPAP_TRACE_MODE_PPAP_SYSCALL | PPAP_TRACE_MODE_SUBSYS_CALL)
 
 static pcb_t *trace_find_tracee(pid_t tracer_pid, long pid)
 {
@@ -56,13 +58,14 @@ static void trace_wake_tracer(const pcb_t *tracee)
     }
 }
 
-static void trace_fill_event(uint32_t event, uint32_t nr,
+static void trace_fill_event(uint32_t event, uint32_t abi, uint32_t nr,
                              uint32_t a0, uint32_t a1, uint32_t a2,
                              uint32_t a3, uint32_t a4, uint32_t a5,
                              int32_t ret, uint32_t flags)
 {
     current->trace_event.event = event;
     current->trace_event.flags = flags;
+    current->trace_event.abi = abi;
     current->trace_event.nr = nr;
     current->trace_event.args[0] = a0;
     current->trace_event.args[1] = a1;
@@ -83,6 +86,23 @@ static void trace_stop_current(int restart)
     sched_yield();
 }
 
+static void trace_reset_mode_state(pcb_t *p, uint8_t mode)
+{
+    p->trace_mode = mode;
+    if (!(mode & PPAP_TRACE_MODE_PPAP_SYSCALL))
+        p->trace_syscall_phase = TRACE_PHASE_ENTER;
+    if (!(mode & PPAP_TRACE_MODE_SUBSYS_CALL))
+        p->trace_subsys_phase = TRACE_PHASE_ENTER;
+}
+
+static void trace_resume_target(pcb_t *target)
+{
+    target->trace_wait_pending = 0;
+    if (target->state == PROC_TRACED_STOP)
+        target->state = PROC_RUNNABLE;
+    sched_yield();
+}
+
 int trace_before_syscall(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
 {
     if (!(current->trace_mode & PPAP_TRACE_MODE_PPAP_SYSCALL))
@@ -93,7 +113,7 @@ int trace_before_syscall(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
         return 0;
 
     current->trace_syscall_phase = TRACE_PHASE_EXIT;
-    trace_fill_event(PPAP_TRACE_EVENT_SYSCALL_ENTER, nr,
+    trace_fill_event(PPAP_TRACE_EVENT_SYSCALL_ENTER, PPAP_TRACE_ABI_PPAP, nr,
                      frame[0], frame[1], frame[2], frame[3], a4, a5, 0, 0);
     trace_stop_current(1);
     return 1;
@@ -112,9 +132,43 @@ void trace_after_syscall(uint32_t *frame, uint32_t nr,
         return;
 
     current->trace_syscall_phase = TRACE_PHASE_ENTER;
-    trace_fill_event(PPAP_TRACE_EVENT_SYSCALL_EXIT, nr,
+    trace_fill_event(PPAP_TRACE_EVENT_SYSCALL_EXIT, PPAP_TRACE_ABI_PPAP, nr,
                      frame[0], frame[1], frame[2], frame[3], a4, a5,
                      (int32_t)ret, 0);
+    trace_stop_current(0);
+}
+
+int trace_before_subsys(uint32_t abi, uint32_t nr,
+                        uint32_t a0, uint32_t a1, uint32_t a2,
+                        uint32_t a3, uint32_t a4, uint32_t a5)
+{
+    if (!(current->trace_mode & PPAP_TRACE_MODE_SUBSYS_CALL))
+        return 0;
+    if (current->trace_subsys_phase != TRACE_PHASE_ENTER)
+        return 0;
+
+    current->trace_subsys_phase = TRACE_PHASE_EXIT;
+    trace_fill_event(PPAP_TRACE_EVENT_SUBSYS_ENTER, abi, nr,
+                     a0, a1, a2, a3, a4, a5, 0, 0);
+    trace_stop_current(0);
+    return 1;
+}
+
+void trace_after_subsys(uint32_t abi, uint32_t nr,
+                        uint32_t a0, uint32_t a1, uint32_t a2,
+                        uint32_t a3, uint32_t a4, uint32_t a5,
+                        int32_t ret)
+{
+    if (!(current->trace_mode & PPAP_TRACE_MODE_SUBSYS_CALL))
+        return;
+    if (current->trace_subsys_phase != TRACE_PHASE_EXIT)
+        return;
+    if (current->state != PROC_RUNNABLE)
+        return;
+
+    current->trace_subsys_phase = TRACE_PHASE_ENTER;
+    trace_fill_event(PPAP_TRACE_EVENT_SUBSYS_EXIT, abi, nr,
+                     a0, a1, a2, a3, a4, a5, ret, 0);
     trace_stop_current(0);
 }
 
@@ -125,14 +179,14 @@ void trace_exec_stop(void)
 
     current->trace_requested = 0;
     current->trace_syscall_phase = TRACE_PHASE_ENTER;
-    trace_fill_event(PPAP_TRACE_EVENT_EXEC, SYS_EXECVE, 0, 0, 0, 0, 0, 0, 0, 0);
+    current->trace_subsys_phase = TRACE_PHASE_ENTER;
+    trace_fill_event(PPAP_TRACE_EVENT_EXEC, PPAP_TRACE_ABI_PPAP, SYS_EXECVE,
+                     0, 0, 0, 0, 0, 0, 0, 0);
     trace_stop_current(0);
 }
 
 long sys_ptrace(long req, long pid, void *addr, void *data)
 {
-    (void)addr;
-
     if (req == PTRACE_TRACEME) {
         if (current->tracer_pid != 0 || current->trace_requested)
             return -(long)EPERM;
@@ -141,6 +195,7 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
         current->trace_mode = 0;
         current->trace_wait_pending = 0;
         current->trace_syscall_phase = TRACE_PHASE_ENTER;
+        current->trace_subsys_phase = TRACE_PHASE_ENTER;
         __builtin_memset(&current->trace_event, 0, sizeof(current->trace_event));
         return 0;
     }
@@ -155,30 +210,29 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
             return -(long)EINVAL;
         *(struct ppap_ptrace_event *)data = target->trace_event;
         return 0;
+    case PTRACE_SETMODE: {
+        uint8_t mode = (uint8_t)(uintptr_t)addr;
+        if (mode & (uint8_t)~TRACE_MODE_MASK)
+            return -(long)EINVAL;
+        trace_reset_mode_state(target, mode);
+        return 0;
+    }
     case PTRACE_CONT:
-        target->trace_mode &= (uint8_t)~PPAP_TRACE_MODE_PPAP_SYSCALL;
-        target->trace_wait_pending = 0;
-        if (target->state == PROC_TRACED_STOP)
-            target->state = PROC_RUNNABLE;
-        sched_yield();
+        trace_resume_target(target);
         return 0;
     case PTRACE_SYSCALL:
+        if (!(target->trace_mode & PPAP_TRACE_MODE_PPAP_SYSCALL))
+            target->trace_syscall_phase = TRACE_PHASE_ENTER;
         target->trace_mode |= PPAP_TRACE_MODE_PPAP_SYSCALL;
-        target->trace_wait_pending = 0;
-        if (target->state == PROC_TRACED_STOP)
-            target->state = PROC_RUNNABLE;
-        sched_yield();
+        trace_resume_target(target);
         return 0;
     case PTRACE_DETACH:
         target->trace_requested = 0;
-        target->trace_mode = 0;
-        target->trace_wait_pending = 0;
         target->tracer_pid = 0;
-        target->trace_syscall_phase = TRACE_PHASE_ENTER;
+        trace_reset_mode_state(target, 0);
+        target->trace_wait_pending = 0;
         __builtin_memset(&target->trace_event, 0, sizeof(target->trace_event));
-        if (target->state == PROC_TRACED_STOP)
-            target->state = PROC_RUNNABLE;
-        sched_yield();
+        trace_resume_target(target);
         return 0;
     default:
         return -(long)EINVAL;

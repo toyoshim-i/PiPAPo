@@ -9,6 +9,7 @@
  */
 
 #include "cpm_bridge.h"
+#include "common/ptrace.h"
 #include <string.h>
 
 /* ── Platform I/O abstraction ──────────────────────────────────────────── */
@@ -18,6 +19,25 @@
 #include "kernel/fd/fd.h"
 #include "kernel/syscall/syscall.h"
 #include "common/poll.h"
+
+static int cpm_trace_ret(const z80_state_t *cpu)
+{
+    return (int)(((uint32_t)cpu->a << 16) | z80_hl(cpu));
+}
+
+static void cpm_trace_before(uint32_t abi, uint32_t nr, z80_state_t *cpu)
+{
+    (void)trace_before_subsys(abi, nr,
+                              z80_af(cpu), z80_bc(cpu), z80_de(cpu), z80_hl(cpu),
+                              cpu->sp, cpu->pc);
+}
+
+static void cpm_trace_after(uint32_t abi, uint32_t nr, z80_state_t *cpu)
+{
+    trace_after_subsys(abi, nr,
+                       z80_af(cpu), z80_bc(cpu), z80_de(cpu), z80_hl(cpu),
+                       cpu->sp, cpu->pc, cpm_trace_ret(cpu));
+}
 
 static void cpm_putchar(uint8_t ch)
 {
@@ -150,6 +170,20 @@ static const char *cpm_dir_read(void *dir)
 static void cpm_dir_close(void *dir)
 {
     closedir((DIR *)dir);
+}
+
+static void cpm_trace_before(uint32_t abi, uint32_t nr, z80_state_t *cpu)
+{
+    (void)abi;
+    (void)nr;
+    (void)cpu;
+}
+
+static void cpm_trace_after(uint32_t abi, uint32_t nr, z80_state_t *cpu)
+{
+    (void)abi;
+    (void)nr;
+    (void)cpu;
 }
 
 #endif
@@ -978,9 +1012,14 @@ static int cpm_bdos_dispatch(z80_state_t *cpu, cpm_state_t *cpm)
     uint8_t fn = cpu->c;
     uint16_t de = z80_de(cpu);
     int result = 0;
+    int trap_rc = ECPU_TRAP_HANDLED;
+
+    cpm_trace_before(PPAP_TRACE_ABI_CPM_BDOS, fn, cpu);
 
     switch (fn) {
-    case 0:  return ECPU_TRAP_EXIT;
+    case 0:
+        trap_rc = ECPU_TRAP_EXIT;
+        break;
     case 1:  result = cpm_console_input(cpu, cpm); break;
     case 2:  cpm_console_output(cpu, cpm); break;
     case 3:  result = cpm_reader_input(cpu, cpm); break;
@@ -1007,11 +1046,17 @@ static int cpm_bdos_dispatch(z80_state_t *cpu, cpm_state_t *cpm)
     case 24: result = cpm_return_login_vector(cpu, cpm); break;
     case 25: result = cpm_return_current_disk(cpu, cpm); break;
     case 26: cpm_set_dma_address(cpu, cpm); break;
-    case 27: cpm_get_alloc_vector(cpu, cpm); return ECPU_TRAP_HANDLED;
+    case 27:
+        cpm_get_alloc_vector(cpu, cpm);
+        trap_rc = ECPU_TRAP_HANDLED;
+        goto out;
     case 28: cpm_write_protect_disk(cpu, cpm); break;
     case 29: result = cpm_get_readonly_vector(cpu, cpm); break;
     case 30: result = cpm_set_file_attributes(cpu, cpm); break;
-    case 31: cpm_get_dpb(cpu, cpm); return ECPU_TRAP_HANDLED;
+    case 31:
+        cpm_get_dpb(cpu, cpm);
+        trap_rc = ECPU_TRAP_HANDLED;
+        goto out;
     case 32: result = cpm_set_get_user_code(cpu, cpm); break;
     case 33: result = cpm_read_random(cpu, cpm, de); break;
     case 34: result = cpm_write_random(cpu, cpm, de); break;
@@ -1024,7 +1069,10 @@ static int cpm_bdos_dispatch(z80_state_t *cpu, cpm_state_t *cpm)
     cpu->a = result & 0xFF;
     cpu->l = result & 0xFF;
     cpu->h = (result >> 8) & 0xFF;
-    return ECPU_TRAP_HANDLED;
+
+out:
+    cpm_trace_after(PPAP_TRACE_ABI_CPM_BDOS, fn, cpu);
+    return trap_rc;
 }
 
 /* ── BIOS dispatch ─────────────────────────────────────────────────────── */
@@ -1033,19 +1081,53 @@ static int cpm_bios_dispatch(z80_state_t *cpu, cpm_state_t *cpm,
                              int bios_fn)
 {
     (void)cpm;
+    int trap_rc;
+
+    cpm_trace_before(PPAP_TRACE_ABI_CPM_BIOS, (uint32_t)bios_fn, cpu);
 
     switch (bios_fn) {
-    case 0: case 1: return ECPU_TRAP_EXIT;
-    case 2:  cpu->a = cpm_char_ready() ? 0xFF : 0x00; return ECPU_TRAP_HANDLED;
-    case 3:  cpu->a = cpm_getchar(); return ECPU_TRAP_HANDLED;
-    case 4:  cpm_putchar(cpu->c); return ECPU_TRAP_HANDLED;
-    case 5:  cpm_putchar(cpu->c); return ECPU_TRAP_HANDLED;
-    case 6:  return ECPU_TRAP_HANDLED;
-    case 7:  cpu->a = 0x1A; return ECPU_TRAP_HANDLED;
-    case 15: cpu->a = 0xFF; return ECPU_TRAP_HANDLED;
-    case 16: z80_set_hl(cpu, z80_bc(cpu)); return ECPU_TRAP_HANDLED;
-    default: return ECPU_TRAP_HANDLED;
+    case 0:
+    case 1:
+        trap_rc = ECPU_TRAP_EXIT;
+        break;
+    case 2:
+        cpu->a = cpm_char_ready() ? 0xFF : 0x00;
+        trap_rc = ECPU_TRAP_HANDLED;
+        break;
+    case 3:
+        cpu->a = cpm_getchar();
+        trap_rc = ECPU_TRAP_HANDLED;
+        break;
+    case 4:
+        cpm_putchar(cpu->c);
+        trap_rc = ECPU_TRAP_HANDLED;
+        break;
+    case 5:
+        cpm_putchar(cpu->c);
+        trap_rc = ECPU_TRAP_HANDLED;
+        break;
+    case 6:
+        trap_rc = ECPU_TRAP_HANDLED;
+        break;
+    case 7:
+        cpu->a = 0x1A;
+        trap_rc = ECPU_TRAP_HANDLED;
+        break;
+    case 15:
+        cpu->a = 0xFF;
+        trap_rc = ECPU_TRAP_HANDLED;
+        break;
+    case 16:
+        z80_set_hl(cpu, z80_bc(cpu));
+        trap_rc = ECPU_TRAP_HANDLED;
+        break;
+    default:
+        trap_rc = ECPU_TRAP_HANDLED;
+        break;
     }
+
+    cpm_trace_after(PPAP_TRACE_ABI_CPM_BIOS, (uint32_t)bios_fn, cpu);
+    return trap_rc;
 }
 
 /* ── Trap handler ──────────────────────────────────────────────────────── */

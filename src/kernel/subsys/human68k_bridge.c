@@ -1743,6 +1743,11 @@ static int dos_nfiles(uint32_t *regs, uint32_t usp)
 
 /* ── Dispatch ─────────────────────────────────────────────────────────── */
 
+static void trace_h68k_subsys_enter(uint32_t abi, uint32_t func,
+                                    uint32_t *regs);
+static void trace_h68k_subsys_exit(uint32_t abi, uint32_t func,
+                                   uint32_t *regs);
+
 int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
 {
     uint8_t func = opcode & 0xFF;
@@ -1752,10 +1757,13 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
     if (func >= 0x80 && func <= 0xAF)
         func -= 0x30;
 
+    trace_h68k_subsys_enter(PPAP_TRACE_ABI_H68K_DOS, func, regs);
+
     switch (func) {
     case 0x00:  /* _EXIT */
     case 0x4C:  /* _EXIT2 */
-        return dos_exit(usp);
+        ret = dos_exit(usp);
+        break;
 
     case 0x01:  /* _GETCHAR — read with echo */
         ret = dos_getchar(regs);
@@ -1851,7 +1859,8 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
         break;
 
     case 0x31:  /* _KEEPPR */
-        return dos_keeppr(regs, usp);
+        ret = dos_keeppr(regs, usp);
+        break;
 
     case 0x33:  /* _BREAKCK */
         ret = dos_breakck(regs, usp);
@@ -1979,6 +1988,7 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode)
     }
 
     H68K_TRACE("  => d0=%x", regs[0]);
+    trace_h68k_subsys_exit(PPAP_TRACE_ABI_H68K_DOS, func, regs);
     return ret;
 }
 
@@ -2238,59 +2248,98 @@ static int iocs_b_era_al(uint32_t *regs)
     return 2;
 }
 
+static void trace_h68k_subsys_enter(uint32_t abi, uint32_t func,
+                                    uint32_t *regs)
+{
+    (void)trace_before_subsys(abi, func,
+                              regs[0], regs[1], regs[2], regs[3],
+                              regs[8], regs[9]);
+}
+
+static void trace_h68k_subsys_exit(uint32_t abi, uint32_t func,
+                                   uint32_t *regs)
+{
+    trace_after_subsys(abi, func,
+                       regs[0], regs[1], regs[2], regs[3],
+                       regs[8], regs[9], (int32_t)regs[0]);
+}
+
 int human68k_iocs_dispatch(uint32_t *regs)
 {
     uint8_t func = (uint8_t)regs[0];
+    int ret;
+
+    trace_h68k_subsys_enter(PPAP_TRACE_ABI_H68K_IOCS, func, regs);
 
     switch (func) {
     case 0x00:  /* _B_KEYINP */
-        return iocs_b_keyinp(regs);
+        ret = iocs_b_keyinp(regs);
+        break;
 
     case 0x04:  /* _B_KEYSNS */
-        return iocs_b_keysns(regs);
+        ret = iocs_b_keysns(regs);
+        break;
 
     case 0x0E:  /* _SKEY_MOD */
-        return iocs_skey_mod(regs);
+        ret = iocs_skey_mod(regs);
+        break;
 
     case 0x19:  /* _B_UP */
-        return iocs_b_curmov(regs, 'A');
+        ret = iocs_b_curmov(regs, 'A');
+        break;
     case 0x1A:  /* _B_DOWN */
-        return iocs_b_curmov(regs, 'B');
+        ret = iocs_b_curmov(regs, 'B');
+        break;
     case 0x1B:  /* _B_RIGHT */
-        return iocs_b_curmov(regs, 'C');
+        ret = iocs_b_curmov(regs, 'C');
+        break;
     case 0x1C:  /* _B_LEFT */
-        return iocs_b_curmov(regs, 'D');
+        ret = iocs_b_curmov(regs, 'D');
+        break;
 
     case 0x20:  /* _B_PUTC */
-        return iocs_b_putc(regs);
+        ret = iocs_b_putc(regs);
+        break;
 
     case 0x21:  /* _B_PRINT */
-        return iocs_b_print(regs);
+        ret = iocs_b_print(regs);
+        break;
 
     case 0x22:  /* _B_COLOR */
-        return iocs_b_color(regs);
+        ret = iocs_b_color(regs);
+        break;
 
     case 0x23:  /* _B_LOCATE */
-        return iocs_b_locate(regs);
+        ret = iocs_b_locate(regs);
+        break;
 
     case 0x2A:  /* _B_CLRST */
-        return iocs_b_clrst(regs);
+        ret = iocs_b_clrst(regs);
+        break;
 
     case 0x2B:  /* _B_ERA_AL */
-        return iocs_b_era_al(regs);
+        ret = iocs_b_era_al(regs);
+        break;
 
     case 0x5A:  /* _DATEGET */
-        return iocs_dateget(regs);
+        ret = iocs_dateget(regs);
+        break;
 
     case 0x5B:  /* _TIMEGET */
-        return iocs_timeget(regs);
+        ret = iocs_timeget(regs);
+        break;
 
     case 0x7F:  /* _ONTIME */
-        return iocs_ontime(regs);
+        ret = iocs_ontime(regs);
+        break;
 
     default:
         H68K_TRACE("IOCS notimpl: d0=%x", (uint32_t)func);
         regs[0] = (uint32_t)(-1);  /* error return */
-        return 2;
+        ret = 2;
+        break;
     }
+
+    trace_h68k_subsys_exit(PPAP_TRACE_ABI_H68K_IOCS, func, regs);
+    return ret;
 }
