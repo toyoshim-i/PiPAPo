@@ -42,6 +42,11 @@ typedef struct cpm_state {
         int      fd;           /* host/PPAP file descriptor                */
         uint32_t file_pos;     /* current file position in bytes           */
     } open_files[CPM_MAX_OPEN_FILES];
+
+    /* Directory search state (for BDOS fn 17/18) */
+    void    *search_dir;       /* DIR* (host) or opaque dir handle         */
+    uint8_t  search_pattern[12]; /* 8+3 filename pattern from search FCB   */
+    uint8_t  search_drive;     /* drive being searched                     */
 } cpm_state_t;
 
 /* ── Trap handler (personality layer) ───────────────────────────────────── */
@@ -59,5 +64,7 @@ void cpm_load_com(z80_state_t *cpu, cpm_state_t *cpm,
 
 void cpm_fcb_to_path(cpm_state_t *cpm, const uint8_t *fcb,
                      char *path, int path_size);
+
+int cpm_match_fcb(const uint8_t *pattern, const char *filename);
 
 #endif /* PPAP_SUBSYS_CPM_BRIDGE_H */

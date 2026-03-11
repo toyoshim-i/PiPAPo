@@ -15,6 +15,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <dirent.h>
 #include "kernel/ecpu/ecpu.h"
 #include "kernel/ecpu/ecpu_z80.h"
 #include "kernel/subsys/cpm_bridge.h"
@@ -1489,6 +1490,261 @@ static void test_random_write(void)
     printf("  PASS: random_write\n");
 }
 
+/* ── Test: cpm_match_fcb — wildcard matching ───────────────────────────── */
+
+static void test_match_fcb(void)
+{
+    /* Exact match */
+    uint8_t pat1[] = "HELLO   COM";
+    assert(cpm_match_fcb(pat1, "HELLO.COM") == 1);
+    assert(cpm_match_fcb(pat1, "HELLO.TXT") == 0);
+    assert(cpm_match_fcb(pat1, "WORLD.COM") == 0);
+
+    /* Wildcard '?' in name */
+    uint8_t pat2[] = "H?LLO   COM";
+    assert(cpm_match_fcb(pat2, "HELLO.COM") == 1);
+    assert(cpm_match_fcb(pat2, "HALLO.COM") == 1);
+    assert(cpm_match_fcb(pat2, "HXLLO.COM") == 1);
+    assert(cpm_match_fcb(pat2, "HELLO.TXT") == 0);
+
+    /* Wildcard '?' in extension — matches any char including space padding */
+    uint8_t pat3[] = "TEST    ???";
+    assert(cpm_match_fcb(pat3, "TEST.COM") == 1);
+    assert(cpm_match_fcb(pat3, "TEST.TXT") == 1);
+    assert(cpm_match_fcb(pat3, "TEST.A") == 1);   /* 'A  ' matches '???' */
+
+    /* All wildcards (*.*)  — CP/M convention: all '?' */
+    uint8_t pat4[] = "???????????";
+    assert(cpm_match_fcb(pat4, "HELLO.COM") == 1);
+    assert(cpm_match_fcb(pat4, "X.Y") == 1);   /* 'X       ' 'Y  ' matches */
+
+    /* No extension */
+    uint8_t pat5[] = "MAKEFILE   ";
+    assert(cpm_match_fcb(pat5, "MAKEFILE") == 1);
+    assert(cpm_match_fcb(pat5, "MAKEFILE.BAK") == 0);
+
+    /* Lowercase input filename */
+    uint8_t pat6[] = "HELLO   COM";
+    assert(cpm_match_fcb(pat6, "hello.com") == 1);
+
+    /* Skip dot files */
+    assert(cpm_match_fcb(pat4, ".") == 0);
+    assert(cpm_match_fcb(pat4, "..") == 0);
+
+    printf("  PASS: match_fcb\n");
+}
+
+/* ── Test: BDOS fn 17/18 — search first/next ──────────────────────────── */
+
+static void test_search_first_next(void)
+{
+    ensure_test_dir();
+
+    z80_state_t tc;
+    uint8_t tmem[65536];
+    cpm_state_t tcpm;
+
+    memset(tmem, 0, sizeof(tmem));
+    memset(&tcpm, 0, sizeof(tcpm));
+    ecpu_z80_ops.init((ecpu_state_t *)&tc, tmem, sizeof(tmem));
+    tcpm.dma_addr = CPM_DMA_DEFAULT;
+
+    /* Create test files in the search directory */
+    char dir[64];
+    snprintf(dir, sizeof(dir), "%s/a", test_dir);
+    mkdir(dir, 0755);
+
+    char path[128];
+    int fd;
+
+    snprintf(path, sizeof(path), "%s/ALPHA.COM", dir);
+    fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    close(fd);
+
+    snprintf(path, sizeof(path), "%s/BETA.COM", dir);
+    fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    close(fd);
+
+    snprintf(path, sizeof(path), "%s/GAMMA.TXT", dir);
+    fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    close(fd);
+
+    /* But cpm_fcb_to_path generates "/a/..." paths, and we can't make /a/
+     * on the host.  So we'll call the search functions directly via the
+     * trap handler, pointing the drive dir at our test_dir.
+     * Actually, cpm_search_first opens the directory using cpm_drive_dir_path
+     * which generates "/a".  We can't create /a on the host.
+     *
+     * Workaround: we'll test via C-level calls with a symlink.
+     * Actually, simplest: create a symlink /tmp/cpm_test_XXX -> test itself
+     * won't help.
+     *
+     * Better: test the match_fcb function (done above) and test search
+     * by creating a temporary symlink.  Or, just test via direct C calls
+     * by manipulating search_dir manually. */
+
+    /* Set up search state manually (bypass cpm_search_first which uses
+     * cpm_drive_dir_path → "/a" which we can't create on host) */
+    ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&tc,
+                                   cpm_trap_handler, &tcpm);
+
+    tcpm.search_dir = opendir(dir);
+    assert(tcpm.search_dir != NULL);
+    memcpy(tcpm.search_pattern, "????????COM", 11);
+    tcpm.search_pattern[11] = 0;
+
+    /* Collect matches via fn 18 (search next) */
+    int matches = 0;
+    int rc;
+    char found_names[3][9];
+
+    while (1) {
+        tc.c = 18;
+        rc = cpm_trap_handler((ecpu_state_t *)&tc, ECPU_TRAP_CALL,
+                               CPM_BDOS_ENTRY, &tcpm);
+        assert(rc == ECPU_TRAP_HANDLED);
+        if (tc.a == 0xFF)
+            break;
+        assert(tc.a == 0);
+
+        /* Read filename from DMA entry */
+        char name[9];
+        for (int i = 0; i < 8; i++)
+            name[i] = z80_read8(&tc, CPM_DMA_DEFAULT + 1 + i);
+        name[8] = 0;
+
+        int len = 8;
+        while (len > 0 && name[len-1] == ' ') len--;
+        name[len] = 0;
+
+        assert(matches < 3);
+        strcpy(found_names[matches], name);
+        matches++;
+    }
+
+    assert(matches == 2);
+
+    int found_alpha = 0, found_beta = 0;
+    for (int i = 0; i < matches; i++) {
+        if (strcmp(found_names[i], "ALPHA") == 0) found_alpha = 1;
+        if (strcmp(found_names[i], "BETA") == 0) found_beta = 1;
+    }
+    assert(found_alpha);
+    assert(found_beta);
+
+    /* Clean up files */
+    snprintf(path, sizeof(path), "%s/ALPHA.COM", dir);
+    unlink(path);
+    snprintf(path, sizeof(path), "%s/BETA.COM", dir);
+    unlink(path);
+    snprintf(path, sizeof(path), "%s/GAMMA.TXT", dir);
+    unlink(path);
+
+    printf("  PASS: search_first_next\n");
+}
+
+/* ── Test: search with no matches ──────────────────────────────────────── */
+
+static void test_search_no_match(void)
+{
+    ensure_test_dir();
+
+    z80_state_t tc;
+    uint8_t tmem[65536];
+    cpm_state_t tcpm;
+
+    memset(tmem, 0, sizeof(tmem));
+    memset(&tcpm, 0, sizeof(tcpm));
+    ecpu_z80_ops.init((ecpu_state_t *)&tc, tmem, sizeof(tmem));
+    tcpm.dma_addr = CPM_DMA_DEFAULT;
+
+    char dir[64];
+    snprintf(dir, sizeof(dir), "%s/a", test_dir);
+    mkdir(dir, 0755);
+
+    /* Create one file that won't match the pattern */
+    char path[128];
+    snprintf(path, sizeof(path), "%s/ONLY.TXT", dir);
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    close(fd);
+
+    /* Search for *.COM — should find nothing */
+    ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&tc,
+                                   cpm_trap_handler, &tcpm);
+    tcpm.search_dir = opendir(dir);
+    assert(tcpm.search_dir != NULL);
+    memcpy(tcpm.search_pattern, "????????COM", 11);
+
+    tc.c = 18;
+    int rc = cpm_trap_handler((ecpu_state_t *)&tc, ECPU_TRAP_CALL,
+                               CPM_BDOS_ENTRY, &tcpm);
+    assert(rc == ECPU_TRAP_HANDLED);
+    assert(tc.a == 0xFF);
+
+    unlink(path);
+    printf("  PASS: search_no_match\n");
+}
+
+/* ── Test: search via BDOS trap (fn 17) ────────────────────────────────── */
+
+static void test_search_via_bdos(void)
+{
+    ensure_test_dir();
+
+    z80_state_t tc;
+    uint8_t tmem[65536];
+    cpm_state_t tcpm;
+
+    memset(tmem, 0, sizeof(tmem));
+    memset(&tcpm, 0, sizeof(tcpm));
+    ecpu_z80_ops.init((ecpu_state_t *)&tc, tmem, sizeof(tmem));
+    ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&tc,
+                                   cpm_trap_handler, &tcpm);
+    tcpm.dma_addr = CPM_DMA_DEFAULT;
+
+    /* Create test files */
+    char dir[64];
+    snprintf(dir, sizeof(dir), "%s/a", test_dir);
+    mkdir(dir, 0755);
+
+    char path[128];
+    snprintf(path, sizeof(path), "%s/PROG.COM", dir);
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    close(fd);
+
+    /* We can't test via the BDOS trap directly because cpm_search_first
+     * calls cpm_drive_dir_path which generates "/a" (not under test_dir).
+     * Instead, set up the search state manually and call fn 18. */
+
+    tcpm.search_dir = opendir(dir);
+    assert(tcpm.search_dir != NULL);
+    memcpy(tcpm.search_pattern, "????????COM", 11);
+
+    /* Call fn 18 (search next) via trap handler */
+    tc.c = 18;
+    int rc = cpm_trap_handler((ecpu_state_t *)&tc, ECPU_TRAP_CALL,
+                               CPM_BDOS_ENTRY, &tcpm);
+    assert(rc == ECPU_TRAP_HANDLED);
+    assert(tc.a == 0);  /* found */
+
+    /* Verify DMA has the directory entry */
+    uint8_t ext[4];
+    for (int i = 0; i < 3; i++)
+        ext[i] = z80_read8(&tc, CPM_DMA_DEFAULT + 9 + i);
+    ext[3] = 0;
+    assert(memcmp(ext, "COM", 3) == 0);
+
+    /* Search again — should be EOF */
+    tc.c = 18;
+    rc = cpm_trap_handler((ecpu_state_t *)&tc, ECPU_TRAP_CALL,
+                           CPM_BDOS_ENTRY, &tcpm);
+    assert(rc == ECPU_TRAP_HANDLED);
+    assert(tc.a == 0xFF);
+
+    unlink(path);
+    printf("  PASS: search_via_bdos\n");
+}
+
 /* ── Cleanup helper ────────────────────────────────────────────────────── */
 
 static void cleanup_test_dir(void)
@@ -1547,6 +1803,12 @@ int main(void)
     test_file_ops_real();
     test_file_write_read_back();
     test_random_write();
+
+    /* Phase 4: Directory search */
+    test_match_fcb();
+    test_search_first_next();
+    test_search_no_match();
+    test_search_via_bdos();
 
     cleanup_test_dir();
 

@@ -79,11 +79,30 @@ static int cpm_file_rename(const char *oldpath, const char *newpath)
     return sys_rename(oldpath, newpath);
 }
 
+/* Directory operations — stub for now (PPAP VFS doesn't have opendir yet) */
+static void *cpm_dir_open(const char *path)
+{
+    (void)path;
+    return NULL;
+}
+
+static const char *cpm_dir_read(void *dir)
+{
+    (void)dir;
+    return NULL;
+}
+
+static void cpm_dir_close(void *dir)
+{
+    (void)dir;
+}
+
 #else /* Host test hooks — use POSIX */
 
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <dirent.h>
 
 extern void cpm_host_putchar(uint8_t ch);
 extern int  cpm_host_getchar(void);
@@ -119,6 +138,24 @@ static int cpm_file_delete(const char *path) { return unlink(path); }
 static int cpm_file_rename(const char *oldpath, const char *newpath)
 {
     return rename(oldpath, newpath);
+}
+
+static void *cpm_dir_open(const char *path)
+{
+    return opendir(path);
+}
+
+static const char *cpm_dir_read(void *dir)
+{
+    struct dirent *ent = readdir((DIR *)dir);
+    if (!ent)
+        return NULL;
+    return ent->d_name;
+}
+
+static void cpm_dir_close(void *dir)
+{
+    closedir((DIR *)dir);
 }
 
 #endif
@@ -178,6 +215,174 @@ void cpm_fcb_to_path(cpm_state_t *cpm, const uint8_t *fcb,
             path[n++] = name[i];
         path[n] = 0;
     }
+}
+
+/* ── Wildcard matching ─────────────────────────────────────────────────── */
+
+/*
+ * Parse a host filename (e.g. "HELLO.COM") into 8+3 FCB fields.
+ * Returns 0 on success, -1 if the name doesn't fit CP/M conventions.
+ */
+static int cpm_parse_filename(const char *filename, uint8_t *name8, uint8_t *ext3)
+{
+    memset(name8, ' ', 8);
+    memset(ext3, ' ', 3);
+
+    int i = 0, pos = 0;
+
+    /* Skip dot and dotdot */
+    if (filename[0] == '.')
+        return -1;
+
+    /* Copy name part (up to 8 chars, stop at '.' or end) */
+    while (filename[i] && filename[i] != '.' && pos < 8) {
+        name8[pos++] = filename[i++];
+    }
+    if (filename[i] && filename[i] != '.')
+        return -1;  /* name too long */
+
+    /* Skip the dot */
+    if (filename[i] == '.') {
+        i++;
+        pos = 0;
+        while (filename[i] && pos < 3) {
+            ext3[pos++] = filename[i++];
+        }
+        if (filename[i])
+            return -1;  /* extension too long */
+    }
+
+    /* Uppercase the fields */
+    for (int j = 0; j < 8; j++)
+        if (name8[j] >= 'a' && name8[j] <= 'z')
+            name8[j] -= 32;
+    for (int j = 0; j < 3; j++)
+        if (ext3[j] >= 'a' && ext3[j] <= 'z')
+            ext3[j] -= 32;
+
+    return 0;
+}
+
+/*
+ * Match a filename against a CP/M FCB pattern (8+3 fields).
+ * '?' in the pattern matches any character.
+ * Returns 1 if match, 0 if not.
+ */
+int cpm_match_fcb(const uint8_t *pattern, const char *filename)
+{
+    uint8_t name8[8], ext3[3];
+    if (cpm_parse_filename(filename, name8, ext3) < 0)
+        return 0;
+
+    /* Compare name field (8 bytes) */
+    for (int i = 0; i < 8; i++) {
+        uint8_t p = pattern[i] & 0x7F;
+        if (p != '?' && p != name8[i])
+            return 0;
+    }
+
+    /* Compare extension field (3 bytes) */
+    for (int i = 0; i < 3; i++) {
+        uint8_t p = pattern[8 + i] & 0x7F;
+        if (p != '?' && p != ext3[i])
+            return 0;
+    }
+
+    return 1;
+}
+
+/*
+ * Build a directory path for a drive: "/a", "/b", etc.
+ */
+static void cpm_drive_dir_path(uint8_t drive, char *path, int path_size)
+{
+    path[0] = '/';
+    path[1] = 'a' + drive;
+    path[2] = 0;
+    (void)path_size;
+}
+
+/*
+ * Fill a 32-byte DMA directory entry from a filename.
+ * Placed at DMA + (slot * 32), slot is always 0 for simplicity.
+ */
+static void cpm_fill_dir_entry(z80_state_t *cpu, cpm_state_t *cpm,
+                                const char *filename, uint8_t user)
+{
+    uint16_t dma = cpm->dma_addr;
+    uint8_t name8[8], ext3[3];
+
+    cpm_parse_filename(filename, name8, ext3);
+
+    z80_write8(cpu, dma + 0, user);         /* user number */
+    for (int i = 0; i < 8; i++)
+        z80_write8(cpu, dma + 1 + i, name8[i]);
+    for (int i = 0; i < 3; i++)
+        z80_write8(cpu, dma + 9 + i, ext3[i]);
+    /* Extent info + allocation map: zero */
+    for (int i = 12; i < 32; i++)
+        z80_write8(cpu, dma + i, 0);
+}
+
+/* Forward declaration */
+static int cpm_search_next(z80_state_t *cpu, cpm_state_t *cpm);
+
+/*
+ * Search First (BDOS function 17)
+ * Opens directory, finds first matching file.
+ * Returns 0 (slot index in DMA) on match, 0xFF if no match.
+ */
+static int cpm_search_first(z80_state_t *cpu, cpm_state_t *cpm,
+                             uint16_t fcb_addr)
+{
+    /* Close any previous search */
+    if (cpm->search_dir) {
+        cpm_dir_close(cpm->search_dir);
+        cpm->search_dir = NULL;
+    }
+
+    /* Read the pattern from the FCB */
+    uint8_t fcb_drive = z80_read8(cpu, fcb_addr);
+    uint8_t drive = fcb_drive ? (fcb_drive - 1) : cpm->current_drive;
+    cpm->search_drive = drive;
+
+    for (int i = 0; i < 11; i++)
+        cpm->search_pattern[i] = z80_read8(cpu, fcb_addr + 1 + i);
+    cpm->search_pattern[11] = 0;
+
+    /* Open the directory */
+    char dir_path[8];
+    cpm_drive_dir_path(drive, dir_path, sizeof(dir_path));
+    cpm->search_dir = cpm_dir_open(dir_path);
+    if (!cpm->search_dir)
+        return 0xFF;
+
+    /* Find first match via search_next */
+    return cpm_search_next(cpu, cpm);
+}
+
+/*
+ * Search Next (BDOS function 18)
+ * Continues directory search from where Search First left off.
+ * Returns 0 on match (entry at DMA+0), 0xFF if no more matches.
+ */
+static int cpm_search_next(z80_state_t *cpu, cpm_state_t *cpm)
+{
+    if (!cpm->search_dir)
+        return 0xFF;
+
+    const char *name;
+    while ((name = cpm_dir_read(cpm->search_dir)) != NULL) {
+        if (cpm_match_fcb(cpm->search_pattern, name)) {
+            cpm_fill_dir_entry(cpu, cpm, name, cpm->current_user);
+            return 0;  /* entry at DMA slot 0 */
+        }
+    }
+
+    /* No more matches — close directory */
+    cpm_dir_close(cpm->search_dir);
+    cpm->search_dir = NULL;
+    return 0xFF;
 }
 
 /* ── File slot management ──────────────────────────────────────────────── */
@@ -728,6 +933,8 @@ static int cpm_bdos_dispatch(z80_state_t *cpu, cpm_state_t *cpm)
     case 14: cpm_select_disk(cpu, cpm); break;
     case 15: result = cpm_open_file(cpu, cpm, de); break;
     case 16: result = cpm_close_file(cpu, cpm, de); break;
+    case 17: result = cpm_search_first(cpu, cpm, de); break;
+    case 18: result = cpm_search_next(cpu, cpm); break;
     case 19: result = cpm_delete_file(cpu, cpm, de); break;
     case 20: result = cpm_read_sequential(cpu, cpm, de); break;
     case 21: result = cpm_write_sequential(cpu, cpm, de); break;
