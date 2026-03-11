@@ -55,12 +55,6 @@ typedef struct cpm_state {
 int cpm_trap_handler(ecpu_state_t *cpu, int trap_type,
                      uint32_t param, void *ctx);
 
-/* ── Loader ─────────────────────────────────────────────────────────────── */
-
-void cpm_load_com(z80_state_t *cpu, cpm_state_t *cpm,
-                  const uint8_t *binary, uint32_t size,
-                  const char *cmdline);
-
 /* ── FCB utilities (public for testing) ─────────────────────────────────── */
 
 void cpm_fcb_to_path(cpm_state_t *cpm, const uint8_t *fcb,

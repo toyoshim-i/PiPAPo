@@ -92,7 +92,6 @@ add_executable(test_cpm_bridge
     ${SRC}/kernel/ecpu/ecpu_z80.c
     ${SRC}/kernel/ecpu/ecpu_z80_alu.c
     ${SRC}/kernel/subsys/cpm_bridge.c
-    ${SRC}/kernel/subsys/cpm_loader.c
     test_cpm_bridge.c
 )
 target_include_directories(test_cpm_bridge PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
