@@ -9,6 +9,7 @@
  * Step 4: AND/OR/EOR/NOT, shifts/rotates, bit ops, EXG.
  * Step 5: MOVEM, PEA, MOVE to/from SR/CCR, MOVE USP.
  * Step 6: ADDX, SUBX, ABCD, SBCD, NBCD, TAS, CHK.
+ * Step 7: Integration tests, edge cases, all Bcc conditions.
  */
 
 #include <assert.h>
@@ -2802,6 +2803,448 @@ static void test_abcd_mem(void)
     printf("  PASS: abcd_mem\n");
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * Step 7 tests — Integration + edge cases
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Test: BHI/BLS (unsigned higher / lower-or-same) ────────────────────── */
+
+static void test_bhi_bls(void)
+{
+    /* BHI: taken when !C && !Z (unsigned >) */
+    setup();
+    cpu.d[0] = 10;
+    cpu.d[1] = 5;
+    /* CMP.L D1, D0 → B081 (D0 - D1 = 5, no carry, no zero) */
+    m68k_write16(&cpu, 0x1000, 0xB081);
+    /* BHI.S +4 → 6204 (cc=2) */
+    m68k_write16(&cpu, 0x1002, 0x6204);
+    m68k_write16(&cpu, 0x1004, 0x7400);  /* MOVEQ #0, D2 */
+    m68k_write16(&cpu, 0x1006, 0x4E40);
+    m68k_write16(&cpu, 0x1008, 0x7401);  /* MOVEQ #1, D2 */
+    m68k_write16(&cpu, 0x100A, 0x4E40);
+    run_exit();
+    assert(cpu.d[2] == 1);  /* BHI taken */
+
+    /* BLS: taken when C || Z (unsigned <=) */
+    setup();
+    cpu.d[0] = 5;
+    cpu.d[1] = 5;
+    m68k_write16(&cpu, 0x1000, 0xB081);
+    /* BLS.S +4 → 6304 (cc=3) */
+    m68k_write16(&cpu, 0x1002, 0x6304);
+    m68k_write16(&cpu, 0x1004, 0x7400);
+    m68k_write16(&cpu, 0x1006, 0x4E40);
+    m68k_write16(&cpu, 0x1008, 0x7401);
+    m68k_write16(&cpu, 0x100A, 0x4E40);
+    run_exit();
+    assert(cpu.d[2] == 1);  /* BLS taken (equal) */
+
+    /* BLS also taken when lower */
+    setup();
+    cpu.d[0] = 3;
+    cpu.d[1] = 10;
+    m68k_write16(&cpu, 0x1000, 0xB081);
+    m68k_write16(&cpu, 0x1002, 0x6304);
+    m68k_write16(&cpu, 0x1004, 0x7400);
+    m68k_write16(&cpu, 0x1006, 0x4E40);
+    m68k_write16(&cpu, 0x1008, 0x7401);
+    m68k_write16(&cpu, 0x100A, 0x4E40);
+    run_exit();
+    assert(cpu.d[2] == 1);  /* BLS taken (lower) */
+    printf("  PASS: bhi_bls\n");
+}
+
+/* ── Test: BGE/BLT (signed >= / <) ──────────────────────────────────────── */
+
+static void test_bge_blt(void)
+{
+    /* BGE: taken when N==V (signed >=) */
+    setup();
+    cpu.d[0] = 5;
+    cpu.d[1] = 3;
+    m68k_write16(&cpu, 0x1000, 0xB081);  /* CMP.L D1, D0 */
+    /* BGE.S +4 → 6C04 (cc=C) */
+    m68k_write16(&cpu, 0x1002, 0x6C04);
+    m68k_write16(&cpu, 0x1004, 0x7400);
+    m68k_write16(&cpu, 0x1006, 0x4E40);
+    m68k_write16(&cpu, 0x1008, 0x7401);
+    m68k_write16(&cpu, 0x100A, 0x4E40);
+    run_exit();
+    assert(cpu.d[2] == 1);  /* BGE taken */
+
+    /* BLT: taken when N!=V (signed <) */
+    setup();
+    cpu.d[0] = (uint32_t)-10;
+    cpu.d[1] = 5;
+    m68k_write16(&cpu, 0x1000, 0xB081);  /* CMP.L D1, D0 */
+    /* BLT.S +4 → 6D04 (cc=D) */
+    m68k_write16(&cpu, 0x1002, 0x6D04);
+    m68k_write16(&cpu, 0x1004, 0x7400);
+    m68k_write16(&cpu, 0x1006, 0x4E40);
+    m68k_write16(&cpu, 0x1008, 0x7401);
+    m68k_write16(&cpu, 0x100A, 0x4E40);
+    run_exit();
+    assert(cpu.d[2] == 1);  /* BLT taken */
+
+    /* BGE with equal values */
+    setup();
+    cpu.d[0] = (uint32_t)-3;
+    cpu.d[1] = (uint32_t)-3;
+    m68k_write16(&cpu, 0x1000, 0xB081);
+    m68k_write16(&cpu, 0x1002, 0x6C04);  /* BGE.S +4 */
+    m68k_write16(&cpu, 0x1004, 0x7400);
+    m68k_write16(&cpu, 0x1006, 0x4E40);
+    m68k_write16(&cpu, 0x1008, 0x7401);
+    m68k_write16(&cpu, 0x100A, 0x4E40);
+    run_exit();
+    assert(cpu.d[2] == 1);  /* BGE taken (equal) */
+    printf("  PASS: bge_blt\n");
+}
+
+/* ── Test: BVC/BVS (overflow clear/set) ─────────────────────────────────── */
+
+static void test_bvc_bvs(void)
+{
+    /* BVC: taken when V==0 */
+    setup();
+    cpu.d[0] = 10;
+    cpu.d[1] = 5;
+    m68k_write16(&cpu, 0x1000, 0xB081);  /* CMP.L D1, D0 — no overflow */
+    /* BVC.S +4 → 6804 (cc=8) */
+    m68k_write16(&cpu, 0x1002, 0x6804);
+    m68k_write16(&cpu, 0x1004, 0x7400);
+    m68k_write16(&cpu, 0x1006, 0x4E40);
+    m68k_write16(&cpu, 0x1008, 0x7401);
+    m68k_write16(&cpu, 0x100A, 0x4E40);
+    run_exit();
+    assert(cpu.d[2] == 1);  /* BVC taken */
+
+    /* BVS: taken when V==1 — trigger overflow with 0x7FFFFFFF + 1 */
+    setup();
+    cpu.d[0] = 0x7FFFFFFF;
+    cpu.d[1] = 1;
+    /* ADD.L D1, D0 → D081 — positive overflow */
+    m68k_write16(&cpu, 0x1000, 0xD081);
+    /* BVS.S +4 → 6904 (cc=9) */
+    m68k_write16(&cpu, 0x1002, 0x6904);
+    m68k_write16(&cpu, 0x1004, 0x7400);
+    m68k_write16(&cpu, 0x1006, 0x4E40);
+    m68k_write16(&cpu, 0x1008, 0x7401);
+    m68k_write16(&cpu, 0x100A, 0x4E40);
+    run_exit();
+    assert(cpu.d[2] == 1);  /* BVS taken */
+    printf("  PASS: bvc_bvs\n");
+}
+
+/* ── Test: DIVU overflow ────────────────────────────────────────────────── */
+
+static void test_divu_overflow(void)
+{
+    setup();
+    cpu.d[0] = 0x00020000;  /* 131072 */
+    cpu.d[1] = 1;           /* divisor = 1, quotient = 131072 > 0xFFFF */
+    /* DIVU D1, D0 → 80C1 */
+    m68k_write16(&cpu, 0x1000, 0x80C1);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+    run_exit();
+    /* Overflow: V set, D0 unchanged */
+    assert(cpu.sr & M68K_FLAG_V);
+    assert(cpu.d[0] == 0x00020000);  /* unchanged on overflow */
+    printf("  PASS: divu_overflow\n");
+}
+
+/* ── Test: DIVS overflow ────────────────────────────────────────────────── */
+
+static void test_divs_overflow(void)
+{
+    setup();
+    cpu.d[0] = 0x00010000;  /* 65536 */
+    cpu.d[1] = 1;           /* quotient = 65536 > 32767 */
+    /* DIVS D1, D0 → 81C1 */
+    m68k_write16(&cpu, 0x1000, 0x81C1);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+    run_exit();
+    assert(cpu.sr & M68K_FLAG_V);
+    assert(cpu.d[0] == 0x00010000);  /* unchanged */
+
+    /* Negative overflow: -65536 / 1 = -65536 < -32768 */
+    setup();
+    cpu.d[0] = (uint32_t)-65536;
+    cpu.d[1] = 1;
+    m68k_write16(&cpu, 0x1000, 0x81C1);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+    run_exit();
+    assert(cpu.sr & M68K_FLAG_V);
+    printf("  PASS: divs_overflow\n");
+}
+
+/* ── Test: MOVEM empty mask (no registers) ──────────────────────────────── */
+
+static void test_movem_empty(void)
+{
+    setup();
+    uint32_t sp = cpu.a[7];
+    /* MOVEM.L (nothing), -(A7) → 48E7 0000 (mask=0) */
+    m68k_write16(&cpu, 0x1000, 0x48E7);
+    m68k_write16(&cpu, 0x1002, 0x0000);
+    m68k_write16(&cpu, 0x1004, 0x4E40);
+    run_exit();
+    assert(cpu.a[7] == sp);  /* SP unchanged, no regs pushed */
+    printf("  PASS: movem_empty\n");
+}
+
+/* ── Test: MOVEM single register ────────────────────────────────────────── */
+
+static void test_movem_single(void)
+{
+    setup();
+    cpu.d[3] = 0xDEADBEEF;
+    uint32_t sp = cpu.a[7];
+    /* MOVEM.L D3, -(A7) → 48E7 1000 (reversed mask: bit 12 = D3) */
+    m68k_write16(&cpu, 0x1000, 0x48E7);
+    m68k_write16(&cpu, 0x1002, 0x1000);
+    /* MOVEQ #0, D3 → 7600 */
+    m68k_write16(&cpu, 0x1004, 0x7600);
+    /* MOVEM.L (A7)+, D3 → 4CDF 0008 (normal mask: bit 3 = D3) */
+    m68k_write16(&cpu, 0x1006, 0x4CDF);
+    m68k_write16(&cpu, 0x1008, 0x0008);
+    m68k_write16(&cpu, 0x100A, 0x4E40);
+    run_exit();
+    assert(cpu.d[3] == 0xDEADBEEF);
+    assert(cpu.a[7] == sp);
+    printf("  PASS: movem_single\n");
+}
+
+/* ── Test: Bubble sort ──────────────────────────────────────────────────── */
+
+static void test_bubble_sort(void)
+{
+    setup();
+    /* Sort 5 words in memory: [5, 3, 8, 1, 4] → [1, 3, 4, 5, 8] */
+    uint32_t data = 0x2000;
+    m68k_write16(&cpu, data + 0, 5);
+    m68k_write16(&cpu, data + 2, 3);
+    m68k_write16(&cpu, data + 4, 8);
+    m68k_write16(&cpu, data + 6, 1);
+    m68k_write16(&cpu, data + 8, 4);
+
+    /*
+     * Bubble sort (5 words at A0, count in D7):
+     *   outer:  MOVE.L D7, D6         ; D6 = outer counter
+     *           SUBQ.L #1, D6
+     *   oloop:  LEA (A0), A1          ; A1 = start
+     *           MOVE.L D6, D5         ; D5 = inner counter
+     *   iloop:  MOVE.W (A1), D0       ; load arr[i]
+     *           CMP.W 2(A1), D0       ; compare arr[i+1]
+     *           BLE.S noswap          ; if arr[i] <= arr[i+1], skip
+     *           MOVE.W 2(A1), D1      ; swap
+     *           MOVE.W D0, 2(A1)
+     *           MOVE.W D1, (A1)
+     *   noswap: ADDQ.L #2, A1
+     *           DBRA D5, iloop
+     *           DBRA D6, oloop (re-init inner)
+     *           TRAP #0
+     *
+     * But DBRA for outer loop needs to restart inner, so let's use
+     * a simpler structure with Bcc loops.
+     */
+    uint32_t pc = 0x1000;
+    cpu.a[0] = data;
+    cpu.d[7] = 5;  /* count */
+
+    /* LEA (A0), A2: save base → 45D0 (but let's just use A0 directly) */
+    /* outer: MOVE.L D7, D6 */
+    /* D6 = n-2 (outer DBRA count: loops n-1 times) */
+    m68k_write16(&cpu, pc, 0x2C07); pc += 2;  /* MOVE.L D7, D6 */
+    m68k_write16(&cpu, pc, 0x5586); pc += 2;  /* SUBQ.L #2, D6 */
+
+    /* oloop: */
+    uint32_t oloop = pc;
+    /* MOVEA.L A0, A1 → 2248 */
+    m68k_write16(&cpu, pc, 0x2248); pc += 2;
+    /* D5 = n-2 (inner DBRA count: loops n-1 times = n-1 comparisons) */
+    m68k_write16(&cpu, pc, 0x2A07); pc += 2;  /* MOVE.L D7, D5 */
+    m68k_write16(&cpu, pc, 0x5585); pc += 2;  /* SUBQ.L #2, D5 */
+
+    /* iloop: (pc = 0x1008) */
+    uint32_t iloop = pc;
+    /* MOVE.W (A1), D0 → 3011 */
+    m68k_write16(&cpu, pc, 0x3011); pc += 2;
+    /* CMP.W 2(A1), D0 → B069 0002 */
+    m68k_write16(&cpu, pc, 0xB069); pc += 2;
+    m68k_write16(&cpu, pc, 0x0002); pc += 2;
+    /* BLE.S noswap (+10) → 6F0A */
+    m68k_write16(&cpu, pc, 0x6F0A); pc += 2;
+    /* MOVE.W 2(A1), D1 → 3229 0002 */
+    m68k_write16(&cpu, pc, 0x3229); pc += 2;
+    m68k_write16(&cpu, pc, 0x0002); pc += 2;
+    /* MOVE.W D0, 2(A1) → 3340 0002 */
+    m68k_write16(&cpu, pc, 0x3340); pc += 2;
+    m68k_write16(&cpu, pc, 0x0002); pc += 2;
+    /* MOVE.W D1, (A1) → 3281 */
+    m68k_write16(&cpu, pc, 0x3281); pc += 2;
+    /* noswap: */
+    /* ADDQ.L #2, A1 → 5489 */
+    m68k_write16(&cpu, pc, 0x5489); pc += 2;
+    /* DBRA D5, iloop → 51CD xxxx */
+    m68k_write16(&cpu, pc, 0x51CD); pc += 2;
+    int16_t iback = (int16_t)(iloop - pc);
+    m68k_write16(&cpu, pc, (uint16_t)iback); pc += 2;
+    /* DBRA D6, oloop → 51CE xxxx */
+    m68k_write16(&cpu, pc, 0x51CE); pc += 2;
+    int16_t oback = (int16_t)(oloop - pc);
+    m68k_write16(&cpu, pc, (uint16_t)oback); pc += 2;
+    /* TRAP #0 */
+    m68k_write16(&cpu, pc, 0x4E40); pc += 2;
+
+    run_exit();
+
+    assert(m68k_read16(&cpu, data + 0) == 1);
+    assert(m68k_read16(&cpu, data + 2) == 3);
+    assert(m68k_read16(&cpu, data + 4) == 4);
+    assert(m68k_read16(&cpu, data + 6) == 5);
+    assert(m68k_read16(&cpu, data + 8) == 8);
+    printf("  PASS: bubble_sort\n");
+}
+
+/* ── Test: String reverse in-place ──────────────────────────────────────── */
+
+static void test_strrev(void)
+{
+    setup();
+    /* "Hello" at 0x2000 */
+    uint32_t str = 0x2000;
+    m68k_write8(&cpu, str + 0, 'H');
+    m68k_write8(&cpu, str + 1, 'e');
+    m68k_write8(&cpu, str + 2, 'l');
+    m68k_write8(&cpu, str + 3, 'l');
+    m68k_write8(&cpu, str + 4, 'o');
+    m68k_write8(&cpu, str + 5, 0);
+
+    /*
+     * String reverse: A0 = start, A1 = end (last char)
+     *   ; find end: scan for NUL
+     *   MOVEA.L A0, A1
+     * scan: TST.B (A1)+
+     *   BNE.S scan
+     *   SUBQ.L #2, A1        ; back past NUL and to last char
+     * loop: CMPA.L A0, A1
+     *   BLE.S done
+     *   MOVE.B (A0), D0
+     *   MOVE.B (A1), (A0)+
+     *   MOVE.B D0, (A1)
+     *   SUBQ.L #1, A1
+     *   BRA.S loop
+     * done: TRAP #0
+     */
+    uint32_t pc = 0x1000;
+    cpu.a[0] = str;
+
+    /* MOVEA.L A0, A1 → 2248 */
+    m68k_write16(&cpu, pc, 0x2248); pc += 2;
+    /* scan: TST.B (A1)+ → 4A19 */
+    uint32_t scan = pc;
+    m68k_write16(&cpu, pc, 0x4A19); pc += 2;
+    /* BNE.S scan → 66xx */
+    m68k_write16(&cpu, pc, 0x6600 | ((uint8_t)(int8_t)(scan - pc - 2))); pc += 2;
+    /* SUBQ.L #2, A1 → 5589 */
+    m68k_write16(&cpu, pc, 0x5589); pc += 2;
+
+    /* loop: CMPA.L A0, A1 → B3C8 */
+    uint32_t loop = pc;
+    m68k_write16(&cpu, pc, 0xB3C8); pc += 2;
+    /* BLE.S done → 6F0C */
+    uint32_t ble_pc = pc;
+    m68k_write16(&cpu, pc, 0x6F00); pc += 2;  /* placeholder, fix later */
+    /* MOVE.B (A0), D0 → 1010 */
+    m68k_write16(&cpu, pc, 0x1010); pc += 2;
+    /* MOVE.B (A1), (A0)+ → 10D9... wait, (A1) to (A0)+ */
+    /* MOVE.B (A1), (A0)+ → 10D1... no. Let me think:
+     * MOVE.B src, dst. src=(A1)=mode 2 reg 1, dst=(A0)+=mode 3 reg 0
+     * MOVE.B: 0001 dst dst src src src
+     * dst = mode 3, reg 0 → 011 000
+     * src = mode 2, reg 1 → 010 001
+     * = 0001 011 000 010 001 = 1611... wait, let me re-encode.
+     * MOVE.B = 0001 | dst_reg(3) | dst_mode(3) | src_mode(3) | src_reg(3)
+     * dst = (A0)+ → mode=3, reg=0
+     * src = (A1)  → mode=2, reg=1
+     * = 0001 000 011 010 001 = 10D1 */
+    m68k_write16(&cpu, pc, 0x10D1); pc += 2;
+    /* But we already read (A0) into D0 and post-incremented A0.
+     * Actually MOVE.B (A0), D0 doesn't post-increment. (A0) is mode 2.
+     * So after MOVE.B (A1),(A0)+ A0 is incremented.
+     * Now write D0 to (A1): MOVE.B D0, (A1) → 1280 */
+    m68k_write16(&cpu, pc, 0x1280); pc += 2;
+    /* SUBQ.L #1, A1 → 5389 */
+    m68k_write16(&cpu, pc, 0x5389); pc += 2;
+    /* BRA.S loop */
+    m68k_write16(&cpu, pc, 0x6000 | ((uint8_t)(int8_t)(loop - pc - 2))); pc += 2;
+    /* done: TRAP #0 */
+    uint32_t done = pc;
+    m68k_write16(&cpu, pc, 0x4E40); pc += 2;
+
+    /* Fix up the BLE offset */
+    int8_t ble_off = (int8_t)(done - ble_pc - 2);
+    m68k_write16(&cpu, ble_pc, 0x6F00 | (uint8_t)ble_off);
+
+    run_exit();
+
+    assert(m68k_read8(&cpu, str + 0) == 'o');
+    assert(m68k_read8(&cpu, str + 1) == 'l');
+    assert(m68k_read8(&cpu, str + 2) == 'l');
+    assert(m68k_read8(&cpu, str + 3) == 'e');
+    assert(m68k_read8(&cpu, str + 4) == 'H');
+    assert(m68k_read8(&cpu, str + 5) == 0);
+    printf("  PASS: strrev\n");
+}
+
+/* ── Test: NEGX multi-precision (64-bit negate) ─────────────────────────── */
+
+static void test_negx_multiprecision(void)
+{
+    setup();
+    /* Negate 64-bit value 0x0000000100000000 stored in D0:D1 (D0=hi, D1=lo) */
+    cpu.d[0] = 0x00000001;  /* hi */
+    cpu.d[1] = 0x00000000;  /* lo */
+    /* Clear X first */
+    cpu.sr &= ~M68K_FLAG_X;
+    /* NEG.L D1 → 4481 (negate low longword, sets X if non-zero) */
+    m68k_write16(&cpu, 0x1000, 0x4481);
+    /* NEGX.L D0 → 4080 (negate high with extend) */
+    m68k_write16(&cpu, 0x1002, 0x4080);
+    m68k_write16(&cpu, 0x1004, 0x4E40);
+    run_exit();
+    /* -0x100000000 = 0xFFFFFFFF:00000000 */
+    assert(cpu.d[0] == 0xFFFFFFFF);
+    assert(cpu.d[1] == 0x00000000);
+    printf("  PASS: negx_multiprecision\n");
+}
+
+/* ── Test: ADDX multi-precision (64-bit add) ────────────────────────────── */
+
+static void test_addx_multiprecision(void)
+{
+    setup();
+    /* Add 0x00000001:FFFFFFFF + 0x00000000:00000002 = 0x00000002:00000001 */
+    /* First pair: D1:D0 (hi:lo) */
+    cpu.d[0] = 0xFFFFFFFF;  /* lo1 */
+    cpu.d[1] = 0x00000001;  /* hi1 */
+    /* Second pair: D3:D2 */
+    cpu.d[2] = 0x00000002;  /* lo2 */
+    cpu.d[3] = 0x00000000;  /* hi2 */
+    cpu.sr &= ~M68K_FLAG_X;
+    /* ADD.L D2, D0 → D082 (low add, sets X on carry) */
+    m68k_write16(&cpu, 0x1000, 0xD082);
+    /* ADDX.L D3, D1 → D383 (high add with carry) */
+    m68k_write16(&cpu, 0x1002, 0xD383);
+    m68k_write16(&cpu, 0x1004, 0x4E40);
+    run_exit();
+    assert(cpu.d[0] == 0x00000001);  /* FFFFFFFF + 2 = 1 with carry */
+    assert(cpu.d[1] == 0x00000002);  /* 1 + 0 + carry = 2 */
+    printf("  PASS: addx_multiprecision\n");
+}
+
 /* ── Main ───────────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -2941,6 +3384,19 @@ int main(void)
     test_addx_mem();
     test_abcd_mem();
 
-    printf("All 122 tests passed.\n");
+    /* Step 7 */
+    test_bhi_bls();
+    test_bge_blt();
+    test_bvc_bvs();
+    test_divu_overflow();
+    test_divs_overflow();
+    test_movem_empty();
+    test_movem_single();
+    test_bubble_sort();
+    test_strrev();
+    test_negx_multiprecision();
+    test_addx_multiprecision();
+
+    printf("All 133 tests passed.\n");
     return 0;
 }

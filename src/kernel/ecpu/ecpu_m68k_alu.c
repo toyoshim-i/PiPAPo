@@ -285,7 +285,7 @@ int m68k_alu_divu(m68k_state_t *cpu, uint32_t dst, uint16_t src,
         /* N flag is set based on MSB of quotient (68000 behavior) */
         if (quotient & 0x8000)
             cpu->sr |= M68K_FLAG_N;
-        return 0;
+        return 1;  /* overflow (distinct from 0=ok, -1=divzero) */
     }
 
     *result = (remainder << 16) | (quotient & 0xFFFF);
@@ -315,7 +315,7 @@ int m68k_alu_divs(m68k_state_t *cpu, int32_t dst, int16_t src,
         cpu->sr = (cpu->sr & (0xFF00 | M68K_FLAG_X)) | M68K_FLAG_V;
         if (quotient & 0x8000)
             cpu->sr |= M68K_FLAG_N;
-        return 0;
+        return 1;  /* overflow */
     }
 
     *result = ((uint32_t)(uint16_t)remainder << 16) |

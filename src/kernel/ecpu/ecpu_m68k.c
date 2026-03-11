@@ -901,22 +901,25 @@ static int ecpu_m68k_run(ecpu_state_t *state)
                     ea_result_t ea8 = m68k_decode_ea(cpu, ea_m8, ea_r8, M68K_SIZE_WORD);
                     uint16_t src8 = (uint16_t)m68k_read_ea(cpu, &ea8, M68K_SIZE_WORD);
                     uint32_t result8;
-                    if (m68k_alu_divu(cpu, cpu->d[reg8], src8, &result8) < 0) {
+                    int rc8 = m68k_alu_divu(cpu, cpu->d[reg8], src8, &result8);
+                    if (rc8 < 0) {
                         /* Divide by zero — fire trap */
                         int rc = m68k_fire_trap(cpu, ECPU_TRAP_ILLEGAL, 5);
                         if (rc == ECPU_TRAP_EXIT) return 0;
-                    } else {
+                    } else if (rc8 == 0) {
                         cpu->d[reg8] = result8;
                     }
+                    /* rc8 == 1: overflow, register unchanged */
                 } else if (omode8 == 7) {
                     /* DIVS: 1000 rrr 111 ea */
                     ea_result_t ea8 = m68k_decode_ea(cpu, ea_m8, ea_r8, M68K_SIZE_WORD);
                     int16_t src8 = (int16_t)m68k_read_ea(cpu, &ea8, M68K_SIZE_WORD);
                     uint32_t result8;
-                    if (m68k_alu_divs(cpu, (int32_t)cpu->d[reg8], src8, &result8) < 0) {
+                    int rc8 = m68k_alu_divs(cpu, (int32_t)cpu->d[reg8], src8, &result8);
+                    if (rc8 < 0) {
                         int rc = m68k_fire_trap(cpu, ECPU_TRAP_ILLEGAL, 5);
                         if (rc == ECPU_TRAP_EXIT) return 0;
-                    } else {
+                    } else if (rc8 == 0) {
                         cpu->d[reg8] = result8;
                     }
                 }
