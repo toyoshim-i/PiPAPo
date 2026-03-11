@@ -18,9 +18,15 @@
 
 #include "exec.h"
 #include "elf.h"
+#ifdef PPAP_ENABLE_HUMAN68K
 #include "exec_x68k.h"
+#endif
+#ifdef PPAP_ENABLE_CPM
 #include "exec_cpm.h"
+#endif
+#ifdef PPAP_ENABLE_ECPU_M68K
 #include "exec_m68k_emu.h"
+#endif
 #include "kernel/vfs/vfs.h"
 #include "kernel/mm/page.h"
 #include "kernel/signal/signal.h"
@@ -174,16 +180,20 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
     uint32_t file_size = vn->size;
 
     /* Try Human68k X-format ("HU" magic) before ELF */
+#ifdef PPAP_ENABLE_HUMAN68K
     if (x68k_detect(file_base, file_size)) {
         vnode_put(vn);
         return exec_x68k(p, file_base, file_size, path, argv);
     }
+#endif
 
     /* Try CP/M .COM (detected by extension) */
+#ifdef PPAP_ENABLE_CPM
     if (cpm_detect(path, file_base, file_size)) {
         vnode_put(vn);
         return exec_cpm(p, file_base, file_size, path, argv);
     }
+#endif
 
     /* ── 2b. Validate the ELF header ───────────────────────────────────── */
     const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)file_base;
@@ -193,15 +203,19 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
         /* ELF validation failed — might be a cross-arch m68k binary or
          * a non-ELF format.  Try m68k emulation first (detects EM_68K
          * big-endian ELF that elf_validate rejects on ARM hosts). */
+#ifdef PPAP_ENABLE_ECPU_M68K
         if (m68k_emu_detect(ehdr)) {
             vnode_put(vn);
             return exec_m68k_emu(p, file_base, file_size, ehdr, path, argv);
         }
+#endif
         /* Not ELF — try Human68k R-format (.r extension, raw binary) */
+#ifdef PPAP_ENABLE_HUMAN68K
         if (r68k_detect(path, file_base, file_size)) {
             vnode_put(vn);
             return exec_r68k(p, file_base, file_size, path, argv);
         }
+#endif
         vnode_put(vn);
         return err;
     }

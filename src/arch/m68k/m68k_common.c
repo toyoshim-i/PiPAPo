@@ -10,7 +10,9 @@
 #include "../kernel/proc/proc.h"
 #include "../kernel/klog.h"
 #include "../kernel/subsys/subsys.h"
+#ifdef PPAP_ENABLE_HUMAN68K
 #include "../kernel/subsys/human68k_bridge.h"
+#endif
 
 /* Context switch pending flag.
  * Set by arch_yield() (via sched_tick or sched_yield).
@@ -169,6 +171,7 @@ int m68k_fline_dispatch(uint32_t *regs, uint32_t usp)
 {
     pcb_t *p = current;
 
+#ifdef PPAP_ENABLE_HUMAN68K
     if (p && p->subsys == SUBSYS_HUMAN68K) {
         /* Read the faulting PC from the exception frame.
          * PC is at byte offset 62 (60 bytes of regs + 2 bytes SR). */
@@ -183,6 +186,9 @@ int m68k_fline_dispatch(uint32_t *regs, uint32_t usp)
             return rc;  /* 1 = exited, 2 = handled */
         /* rc < 0: unhandled DOS call — fall through to crash */
     }
+#else
+    (void)p;  /* Suppress unused variable warning */
+#endif
 
     /* Non-Human68k process or unhandled: crash with SIGILL */
     return m68k_crash_handler(11, regs);

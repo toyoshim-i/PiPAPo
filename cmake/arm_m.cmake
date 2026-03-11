@@ -9,25 +9,46 @@
 
 include_guard(GLOBAL)
 
-# Kernel source lists (KERNEL_COMMON_SOURCES, KERNEL_BLKDEV_SOURCES, etc.)
-include(${CMAKE_CURRENT_LIST_DIR}/kernel.cmake)
-
 # Shared build directory for userland artifacts (musl, busybox, etc.).
 # All ARM targets share one build to avoid redundant musl/busybox rebuilds.
 set(PPAP_SHARED_BUILD "${PPAP_ROOT}/build/arm_m")
 
 # Userland build config (musl, busybox, romfs pipeline)
+# Must be included before kernel.cmake to define PPAP_ENABLE_* options
 include(${CMAKE_CURRENT_LIST_DIR}/user.cmake)
+
+# Kernel source lists (KERNEL_COMMON_SOURCES, KERNEL_BLKDEV_SOURCES, etc.)
+# Depends on PPAP_ENABLE_* options defined in user.cmake
+include(${CMAKE_CURRENT_LIST_DIR}/kernel.cmake)
 
 # ppap_arm_target_common(target)
 #
 # Adds standard include dirs and PPAP_TESTS support to an ARM target.
+# Also applies subsystem/eCPU build flags.
 function(ppap_arm_target_common target)
     target_include_directories(${target} PRIVATE
         ${PPAP_ROOT}/src
         ${PPAP_ROOT}/src/kernel
     )
+    
+    # Core kernel definitions
     target_compile_definitions(${target} PRIVATE PPAP_KERNEL=1)
+    
+    # Subsystem and eCPU build flags
+    if(PPAP_ENABLE_HUMAN68K)
+        target_compile_definitions(${target} PRIVATE PPAP_ENABLE_HUMAN68K=1)
+    endif()
+    if(PPAP_ENABLE_CPM)
+        target_compile_definitions(${target} PRIVATE PPAP_ENABLE_CPM=1)
+    endif()
+    if(PPAP_ENABLE_ECPU_M68K)
+        target_compile_definitions(${target} PRIVATE PPAP_ENABLE_ECPU_M68K=1)
+    endif()
+    if(PPAP_ENABLE_ECPU_Z80)
+        target_compile_definitions(${target} PRIVATE PPAP_ENABLE_ECPU_Z80=1)
+    endif()
+    
+    # Test suite
     if(PPAP_TESTS)
         target_sources(${target} PRIVATE ${PPAP_ROOT}/tests/kernel/ktest.c)
         target_include_directories(${target} PRIVATE ${PPAP_ROOT}/tests/kernel)
