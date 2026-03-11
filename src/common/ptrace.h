@@ -5,10 +5,23 @@
 
 /* Linux-compatible core requests used by the initial PPAP tracer. */
 #define PTRACE_TRACEME   0
+#define PTRACE_PEEKDATA  2
+#define PTRACE_POKEDATA  5
 #define PTRACE_GETREGS   12
 #define PTRACE_CONT      7
 #define PTRACE_DETACH    17
 #define PTRACE_SYSCALL   24
+
+/*
+ * PPAP PEEKDATA / POKEDATA ABI:
+ *   - addr points into the stopped tracee
+ *   - data points to a tracer-owned 32-bit word
+ *   - PEEKDATA copies a target word into *data
+ *   - POKEDATA copies *data into the target word
+ *
+ * This intentionally differs from Linux's return-value-based PEEKDATA
+ * because PPAP syscalls report errors as negative return values.
+ */
 
 /* PPAP-specific helper requests. */
 #define PTRACE_GETEVENT  0x5000

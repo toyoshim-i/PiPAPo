@@ -212,6 +212,196 @@ static int trace_fill_z80_regs(const pcb_t *target, struct ppap_ptrace_regs *reg
     return 0;
 }
 
+static int trace_native_contains(const pcb_t *target, uint32_t addr)
+{
+#if defined(__m68k__)
+    if (target->user_stack_page) {
+        uint32_t base = (uint32_t)(uintptr_t)target->user_stack_page;
+        if (addr >= base && addr < base + PAGE_SIZE)
+            return 1;
+    }
+#else
+    if (target->stack_page) {
+        uint32_t base = (uint32_t)(uintptr_t)target->stack_page;
+        if (addr >= base && addr < base + PAGE_SIZE)
+            return 1;
+    }
+#endif
+
+    for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
+        if (!target->user_pages[i])
+            continue;
+        uint32_t base = (uint32_t)(uintptr_t)target->user_pages[i];
+        if (addr >= base && addr < base + PAGE_SIZE)
+            return 1;
+    }
+
+    for (uint32_t i = 0; i < MMAP_REGIONS_MAX; i++) {
+        if (!target->mmap_regions[i].addr || !target->mmap_regions[i].pages)
+            continue;
+        uint32_t base = (uint32_t)(uintptr_t)target->mmap_regions[i].addr;
+        uint32_t end = base + target->mmap_regions[i].pages * PAGE_SIZE;
+        if (addr >= base && addr < end)
+            return 1;
+    }
+
+    return 0;
+}
+
+static int trace_native_read32(const pcb_t *target, uint32_t addr, uint32_t *word)
+{
+    const volatile uint8_t *p0;
+    const volatile uint8_t *p1;
+    const volatile uint8_t *p2;
+    const volatile uint8_t *p3;
+
+    if (!word)
+        return -EINVAL;
+    if (addr > UINT32_MAX - 3u)
+        return -EFAULT;
+    if (!trace_native_contains(target, addr) ||
+        !trace_native_contains(target, addr + 1) ||
+        !trace_native_contains(target, addr + 2) ||
+        !trace_native_contains(target, addr + 3))
+        return -EFAULT;
+
+    p0 = (const volatile uint8_t *)(uintptr_t)addr;
+    p1 = (const volatile uint8_t *)(uintptr_t)(addr + 1);
+    p2 = (const volatile uint8_t *)(uintptr_t)(addr + 2);
+    p3 = (const volatile uint8_t *)(uintptr_t)(addr + 3);
+
+#if defined(__m68k__)
+    *word = ((uint32_t)*p0 << 24) | ((uint32_t)*p1 << 16)
+          | ((uint32_t)*p2 << 8) | (uint32_t)*p3;
+#else
+    *word = (uint32_t)*p0 | ((uint32_t)*p1 << 8)
+          | ((uint32_t)*p2 << 16) | ((uint32_t)*p3 << 24);
+#endif
+    return 0;
+}
+
+static int trace_native_write32(const pcb_t *target, uint32_t addr, uint32_t word)
+{
+    volatile uint8_t *p0;
+    volatile uint8_t *p1;
+    volatile uint8_t *p2;
+    volatile uint8_t *p3;
+
+    if (addr > UINT32_MAX - 3u)
+        return -EFAULT;
+    if (!trace_native_contains(target, addr) ||
+        !trace_native_contains(target, addr + 1) ||
+        !trace_native_contains(target, addr + 2) ||
+        !trace_native_contains(target, addr + 3))
+        return -EFAULT;
+
+    p0 = (volatile uint8_t *)(uintptr_t)addr;
+    p1 = (volatile uint8_t *)(uintptr_t)(addr + 1);
+    p2 = (volatile uint8_t *)(uintptr_t)(addr + 2);
+    p3 = (volatile uint8_t *)(uintptr_t)(addr + 3);
+
+#if defined(__m68k__)
+    *p0 = (uint8_t)(word >> 24);
+    *p1 = (uint8_t)(word >> 16);
+    *p2 = (uint8_t)(word >> 8);
+    *p3 = (uint8_t)word;
+#else
+    *p0 = (uint8_t)word;
+    *p1 = (uint8_t)(word >> 8);
+    *p2 = (uint8_t)(word >> 16);
+    *p3 = (uint8_t)(word >> 24);
+#endif
+    return 0;
+}
+
+static int trace_m68k_emu_read32(const pcb_t *target, uint32_t addr, uint32_t *word)
+{
+    const ppap_m68k_exec_state_t *state =
+        (const ppap_m68k_exec_state_t *)target->subsys_data;
+
+    if (!state || !word)
+        return -EINVAL;
+    if (addr > state->m68k.mem_size || state->m68k.mem_size - addr < 4)
+        return -EFAULT;
+
+    *word = m68k_read32((m68k_state_t *)&state->m68k, addr);
+    return 0;
+}
+
+static int trace_m68k_emu_write32(const pcb_t *target, uint32_t addr, uint32_t word)
+{
+    const ppap_m68k_exec_state_t *state =
+        (const ppap_m68k_exec_state_t *)target->subsys_data;
+
+    if (!state)
+        return -EINVAL;
+    if (addr > state->m68k.mem_size || state->m68k.mem_size - addr < 4)
+        return -EFAULT;
+
+    m68k_write32((m68k_state_t *)&state->m68k, addr, word);
+    return 0;
+}
+
+static int trace_z80_read32(const pcb_t *target, uint32_t addr, uint32_t *word)
+{
+    const z80_state_t *cpu = (const z80_state_t *)target->subsys_data;
+
+    if (!cpu || !word)
+        return -EINVAL;
+    if (addr > cpu->mem_size || cpu->mem_size - addr < 4)
+        return -EFAULT;
+
+    *word = (uint32_t)cpu->memory[addr]
+          | ((uint32_t)cpu->memory[addr + 1] << 8)
+          | ((uint32_t)cpu->memory[addr + 2] << 16)
+          | ((uint32_t)cpu->memory[addr + 3] << 24);
+    return 0;
+}
+
+static int trace_z80_write32(const pcb_t *target, uint32_t addr, uint32_t word)
+{
+    z80_state_t *cpu = (z80_state_t *)target->subsys_data;
+
+    if (!cpu)
+        return -EINVAL;
+    if (addr > cpu->mem_size || cpu->mem_size - addr < 4)
+        return -EFAULT;
+
+    cpu->memory[addr] = (uint8_t)word;
+    cpu->memory[addr + 1] = (uint8_t)(word >> 8);
+    cpu->memory[addr + 2] = (uint8_t)(word >> 16);
+    cpu->memory[addr + 3] = (uint8_t)(word >> 24);
+    return 0;
+}
+
+static int trace_read32(const pcb_t *target, uint32_t addr, uint32_t *word)
+{
+    if (target->state != PROC_TRACED_STOP)
+        return -EBUSY;
+
+    if (target->subsys == SUBSYS_CPM)
+        return trace_z80_read32(target, addr, word);
+
+    if (target->subsys == SUBSYS_PPAP && target->subsys_data)
+        return trace_m68k_emu_read32(target, addr, word);
+
+    return trace_native_read32(target, addr, word);
+}
+
+static int trace_write32(const pcb_t *target, uint32_t addr, uint32_t word)
+{
+    if (target->state != PROC_TRACED_STOP)
+        return -EBUSY;
+
+    if (target->subsys == SUBSYS_CPM)
+        return trace_z80_write32(target, addr, word);
+
+    if (target->subsys == SUBSYS_PPAP && target->subsys_data)
+        return trace_m68k_emu_write32(target, addr, word);
+
+    return trace_native_write32(target, addr, word);
+}
+
 static int trace_fill_regs(const pcb_t *target, struct ppap_ptrace_regs *regs)
 {
     if (target->state != PROC_TRACED_STOP)
@@ -337,6 +527,16 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
             return -(long)EINVAL;
         *(struct ppap_ptrace_event *)data = target->trace_event;
         return 0;
+    case PTRACE_PEEKDATA:
+        if (!data)
+            return -(long)EINVAL;
+        return trace_read32(target, (uint32_t)(uintptr_t)addr,
+                            (uint32_t *)data);
+    case PTRACE_POKEDATA:
+        if (!data)
+            return -(long)EINVAL;
+        return trace_write32(target, (uint32_t)(uintptr_t)addr,
+                             *(const uint32_t *)data);
     case PTRACE_GETREGS:
         if (!data)
             return -(long)EINVAL;

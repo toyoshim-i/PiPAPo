@@ -5,7 +5,8 @@
  *   1. PTRACE_TRACEME stops the child after execve()
  *   2. PTRACE_SETMODE enables PPAP syscall tracing
  *   3. PTRACE_CONT preserves the active trace mode
- *   4. PTRACE_SETMODE(0) disables tracing before final continue
+ *   4. PTRACE_PEEKDATA / PTRACE_POKEDATA inspect and modify tracee memory
+ *   5. PTRACE_SETMODE(0) disables tracing before final continue
  */
 
 #include "utest.h"
@@ -24,13 +25,15 @@ int main(void)
     pid_t pid = vfork();
     if (pid == 0) {
         ptrace(PTRACE_TRACEME, 0, (void *)0, (void *)0);
-        execve("/bin/hello", (void *)0, (void *)0);
+        execve("/bin/trace_peek_target", (void *)0, (void *)0);
         _exit(127);
     }
 
     int status = 0;
     struct ppap_ptrace_event ev;
     struct ppap_ptrace_regs regs;
+    uint32_t word = 0;
+    uint32_t patched = 0x55667788u;
 
     UT_ASSERT_EQ(waitpid(pid, &status, WSTOPPED), pid);
     UT_ASSERT(WIFSTOPPED(status), "child should stop after exec");
@@ -53,9 +56,19 @@ int main(void)
     UT_ASSERT_EQ((int)ev.event, PPAP_TRACE_EVENT_SYSCALL_ENTER);
     UT_ASSERT_EQ((int)ev.abi, PPAP_TRACE_ABI_PPAP);
     UT_ASSERT_EQ((int)ev.nr, SYS_WRITE);
+    UT_ASSERT_EQ((int)ev.args[2], 4);
     UT_ASSERT_EQ(ptrace(PTRACE_GETREGS, pid, (void *)0, &regs), 0);
     UT_ASSERT_EQ((int)regs.regset, EXPECT_REGSET);
     UT_ASSERT_EQ((int)regs.abi, PPAP_TRACE_ABI_PPAP);
+    UT_ASSERT_EQ(ptrace(PTRACE_PEEKDATA, pid, (void *)(uintptr_t)ev.args[1],
+                        &word), 0);
+    UT_ASSERT_EQ((int)word, 0x11223344);
+    UT_ASSERT_EQ(ptrace(PTRACE_POKEDATA, pid, (void *)(uintptr_t)ev.args[1],
+                        &patched), 0);
+    word = 0;
+    UT_ASSERT_EQ(ptrace(PTRACE_PEEKDATA, pid, (void *)(uintptr_t)ev.args[1],
+                        &word), 0);
+    UT_ASSERT_EQ((int)word, (int)patched);
 
     UT_ASSERT_EQ(ptrace(PTRACE_CONT, pid, (void *)0, (void *)0), 0);
     UT_ASSERT_EQ(waitpid(pid, &status, WSTOPPED), pid);
