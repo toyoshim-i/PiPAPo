@@ -1804,6 +1804,164 @@ static void test_disk_noops(void)
     printf("  PASS: disk_noops\n");
 }
 
+/* ── Integration test: multi-BDOS program run via Z80 ──────────────────── */
+
+/*
+ * Program that queries version (fn 12), selects disk B (fn 14),
+ * queries current disk (fn 25), gets DPB (fn 31), then outputs
+ * the version low byte, disk number, and SPT low byte.
+ *
+ *   LD C, 12          ; Version number
+ *   CALL 5            ; HL = 0x0022
+ *   LD A, L
+ *   LD (0x8000), A    ; save version low byte
+ *
+ *   LD C, 14          ; Select disk
+ *   LD E, 1           ; drive B
+ *   CALL 5
+ *
+ *   LD C, 25          ; Return current disk
+ *   CALL 5            ; A = 1
+ *   LD (0x8001), A    ; save disk
+ *
+ *   LD C, 31          ; Get DPB
+ *   CALL 5            ; HL → DPB
+ *   LD A, (HL)        ; SPT low byte = 26
+ *   LD (0x8002), A
+ *
+ *   ; Output the three saved bytes
+ *   LD A, (0x8000)
+ *   LD E, A
+ *   LD C, 2
+ *   CALL 5
+ *   LD A, (0x8001)
+ *   LD E, A
+ *   LD C, 2
+ *   CALL 5
+ *   LD A, (0x8002)
+ *   LD E, A
+ *   LD C, 2
+ *   CALL 5
+ *
+ *   LD C, 0           ; Exit
+ *   CALL 5
+ */
+static void test_version_and_disk_program(void)
+{
+    setup();
+
+    static const uint8_t com[] = {
+        /* fn 12: version */
+        0x0E, 12,
+        0xCD, 0x05, 0x00,
+        0x7D,                         /* LD A, L */
+        0x32, 0x00, 0x80,             /* LD (0x8000), A */
+
+        /* fn 14: select disk B */
+        0x0E, 14,
+        0x1E, 1,
+        0xCD, 0x05, 0x00,
+
+        /* fn 25: return current disk */
+        0x0E, 25,
+        0xCD, 0x05, 0x00,
+        0x32, 0x01, 0x80,             /* LD (0x8001), A */
+
+        /* fn 31: get DPB */
+        0x0E, 31,
+        0xCD, 0x05, 0x00,
+        0x7E,                         /* LD A, (HL) — SPT low byte */
+        0x32, 0x02, 0x80,             /* LD (0x8002), A */
+
+        /* output 3 bytes */
+        0x3A, 0x00, 0x80,  0x5F,  0x0E, 0x02,  0xCD, 0x05, 0x00,
+        0x3A, 0x01, 0x80,  0x5F,  0x0E, 0x02,  0xCD, 0x05, 0x00,
+        0x3A, 0x02, 0x80,  0x5F,  0x0E, 0x02,  0xCD, 0x05, 0x00,
+
+        /* exit */
+        0x0E, 0x00,
+        0xCD, 0x05, 0x00,
+    };
+
+    run_com(com, sizeof(com), NULL);
+
+    assert(output_len == 3);
+    assert((uint8_t)output_buf[0] == 0x22);  /* CP/M 2.2 version */
+    assert((uint8_t)output_buf[1] == 1);     /* disk B */
+    assert((uint8_t)output_buf[2] == 26);    /* SPT = 26 */
+
+    printf("  PASS: version_and_disk_program\n");
+}
+
+/*
+ * Program that exercises DMA, alloc vector, and user codes
+ * all in one Z80 program run.
+ *
+ *   LD C, 26          ; Set DMA
+ *   LD DE, 0x0200
+ *   CALL 5
+ *
+ *   LD C, 32          ; Set user 7
+ *   LD E, 7
+ *   CALL 5
+ *
+ *   LD C, 32          ; Get user
+ *   LD E, 0xFF
+ *   CALL 5            ; A = 7
+ *   LD B, A           ; save user
+ *
+ *   LD C, 27          ; Get alloc vector
+ *   CALL 5            ; HL → ALV
+ *   LD A, (HL)        ; should be 0xFF
+ *
+ *   ; Output: user (7), ALV byte (0xFF)
+ *   LD E, B
+ *   LD C, 2
+ *   CALL 5
+ *   LD E, A           ; ALV byte
+ *   LD C, 2
+ *   CALL 5
+ *
+ *   LD C, 0
+ *   CALL 5
+ */
+static void test_multi_bdos_program(void)
+{
+    setup();
+
+    /*
+     *   LD C, 26 / LD DE, 0x0200 / CALL 5     ; set DMA
+     *   LD C, 32 / LD E, 7 / CALL 5           ; set user 7
+     *   LD C, 32 / LD E, 0xFF / CALL 5        ; get user → A=7
+     *   LD B, A                                ; save user in B
+     *   LD C, 27 / CALL 5                      ; get ALV → HL
+     *   LD D, (HL)                             ; save ALV[0] in D
+     *   LD E, B / LD C, 2 / CALL 5            ; output user
+     *   LD E, D / LD C, 2 / CALL 5            ; output ALV byte
+     *   LD C, 0 / CALL 5                       ; exit
+     */
+    static const uint8_t com[] = {
+        0x0E, 26,  0x11, 0x00, 0x02,  0xCD, 0x05, 0x00,   /* set DMA */
+        0x0E, 32,  0x1E, 7,           0xCD, 0x05, 0x00,   /* set user 7 */
+        0x0E, 32,  0x1E, 0xFF,        0xCD, 0x05, 0x00,   /* get user */
+        0x47,                                               /* LD B, A */
+        0x0E, 27,  0xCD, 0x05, 0x00,                       /* get ALV */
+        0x56,                                               /* LD D, (HL) */
+        0x58,  0x0E, 0x02,  0xCD, 0x05, 0x00,             /* out user */
+        0x5A,  0x0E, 0x02,  0xCD, 0x05, 0x00,             /* out ALV */
+        0x0E, 0x00,  0xCD, 0x05, 0x00,                     /* exit */
+    };
+
+    run_com(com, sizeof(com), NULL);
+
+    assert(output_len == 2);
+    assert((uint8_t)output_buf[0] == 7);     /* user 7 */
+    assert((uint8_t)output_buf[1] == 0xFF);  /* ALV all allocated */
+    assert(cpm.dma_addr == 0x0200);
+
+    printf("  PASS: multi_bdos_program\n");
+}
+
 /* ── Cleanup helper ────────────────────────────────────────────────────── */
 
 static void cleanup_test_dir(void)
@@ -1873,6 +2031,10 @@ int main(void)
     test_alloc_vector();
     test_dpb();
     test_disk_noops();
+
+    /* Phase 6: Integration tests */
+    test_version_and_disk_program();
+    test_multi_bdos_program();
 
     cleanup_test_dir();
 
