@@ -6,6 +6,7 @@
  *         A-line/F-line traps, EA modes 0–4.
  * Step 2: ADD/SUB/CMP/NEG/NEGX/TST/EXT/MULU/MULS/DIVU/DIVS,
  *         ADDI/SUBI/CMPI, ADDQ/SUBQ.
+ * Step 3: Bcc/BRA/BSR, DBcc, Scc, LINK, UNLK.
  *
  * See docs/ecpu-m68k.md for the full design.
  */
@@ -275,6 +276,37 @@ static void m68k_moveq(m68k_state_t *cpu, uint16_t opcode)
     m68k_set_ccr_move(cpu, (uint32_t)val, M68K_SIZE_LONG);
 }
 
+/* ── Condition code evaluator ───────────────────────────────────────────── */
+
+static int m68k_test_cc(m68k_state_t *cpu, uint8_t cc)
+{
+    uint16_t sr = cpu->sr;
+    int n = (sr >> 3) & 1;
+    int z = (sr >> 2) & 1;
+    int v = (sr >> 1) & 1;
+    int c = sr & 1;
+
+    switch (cc) {
+        case 0x0: return 1;         /* T  — always true */
+        case 0x1: return 0;         /* F  — always false */
+        case 0x2: return !c && !z;  /* HI — higher (unsigned) */
+        case 0x3: return c || z;    /* LS — lower or same */
+        case 0x4: return !c;        /* CC — carry clear */
+        case 0x5: return c;         /* CS — carry set */
+        case 0x6: return !z;        /* NE — not equal */
+        case 0x7: return z;         /* EQ — equal */
+        case 0x8: return !v;        /* VC — overflow clear */
+        case 0x9: return v;         /* VS — overflow set */
+        case 0xA: return !n;        /* PL — plus */
+        case 0xB: return n;         /* MI — minus */
+        case 0xC: return n == v;    /* GE — greater or equal (signed) */
+        case 0xD: return n != v;    /* LT — less than (signed) */
+        case 0xE: return !z && (n == v);  /* GT — greater than (signed) */
+        case 0xF: return z || (n != v);   /* LE — less or equal (signed) */
+        default:  return 0;
+    }
+}
+
 /* ── Group 4 (Miscellaneous) ────────────────────────────────────────────── */
 
 static int m68k_group4(m68k_state_t *cpu, uint16_t opcode)
@@ -429,6 +461,24 @@ static int m68k_group4(m68k_state_t *cpu, uint16_t opcode)
         return 0;
     }
 
+    /* LINK An, #disp: 4E50–4E57 */
+    if ((opcode & 0xFFF8) == 0x4E50) {
+        int reg = opcode & 7;
+        int16_t disp = (int16_t)m68k_fetch16(cpu);
+        m68k_push32(cpu, cpu->a[reg]);
+        cpu->a[reg] = cpu->a[7];
+        cpu->a[7] += disp;
+        return 0;
+    }
+
+    /* UNLK An: 4E58–4E5F */
+    if ((opcode & 0xFFF8) == 0x4E58) {
+        int reg = opcode & 7;
+        cpu->a[7] = cpu->a[reg];
+        cpu->a[reg] = m68k_pop32(cpu);
+        return 0;
+    }
+
     /* Unimplemented group 4 — treat as NOP for now */
     return 0;
 }
@@ -470,7 +520,30 @@ static int ecpu_m68k_run(ecpu_state_t *state)
 
             case 0x5: { /* Group 5: ADDQ/SUBQ/Scc/DBcc */
                 uint8_t size5 = (opcode >> 6) & 3;
-                if (size5 == 3) break;  /* Scc/DBcc — future */
+                if (size5 == 3) {
+                    /* Scc/DBcc: 0101 cccc 11 ea */
+                    uint8_t cc5 = (opcode >> 8) & 0xF;
+                    uint8_t ea_m5s = (opcode >> 3) & 7;
+                    uint8_t ea_r5s = opcode & 7;
+                    if (ea_m5s == 1) {
+                        /* DBcc Dn, disp: mode=001 reg=Dn */
+                        int16_t disp = (int16_t)m68k_fetch16(cpu);
+                        if (!m68k_test_cc(cpu, cc5)) {
+                            int16_t val = (int16_t)(cpu->d[ea_r5s] & 0xFFFF) - 1;
+                            cpu->d[ea_r5s] = (cpu->d[ea_r5s] & 0xFFFF0000) |
+                                             ((uint16_t)val);
+                            if (val != -1)
+                                cpu->pc = cpu->pc - 2 + disp;
+                        }
+                    } else {
+                        /* Scc <ea> */
+                        ea_result_t ea5s = m68k_decode_ea(cpu, ea_m5s, ea_r5s,
+                                                           M68K_SIZE_BYTE);
+                        uint8_t val = m68k_test_cc(cpu, cc5) ? 0xFF : 0x00;
+                        m68k_write_ea(cpu, &ea5s, M68K_SIZE_BYTE, val);
+                    }
+                    break;
+                }
                 uint8_t data5 = (opcode >> 9) & 7;
                 if (data5 == 0) data5 = 8;  /* ADDQ/SUBQ: 0 means 8 */
                 uint8_t ea_m5 = (opcode >> 3) & 7;
@@ -499,8 +572,29 @@ static int ecpu_m68k_run(ecpu_state_t *state)
                 break;
             }
 
-            case 0x6: /* Group 6: Bcc/BSR/BRA — future */
+            case 0x6: { /* Group 6: Bcc/BSR/BRA */
+                uint8_t cc6 = (opcode >> 8) & 0xF;
+                int8_t disp8 = (int8_t)(opcode & 0xFF);
+                int32_t disp;
+                uint32_t base = cpu->pc;  /* PC after opcode fetch */
+                if (disp8 == 0)
+                    disp = (int16_t)m68k_fetch16(cpu);
+                else
+                    disp = disp8;
+                if (cc6 == 0) {
+                    /* BRA */
+                    cpu->pc = base + disp;
+                } else if (cc6 == 1) {
+                    /* BSR */
+                    m68k_push32(cpu, cpu->pc);
+                    cpu->pc = base + disp;
+                } else {
+                    /* Bcc */
+                    if (m68k_test_cc(cpu, cc6))
+                        cpu->pc = base + disp;
+                }
                 break;
+            }
 
             case 0x7: /* MOVEQ */
                 m68k_moveq(cpu, opcode);

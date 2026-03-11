@@ -5,6 +5,7 @@
  *        A-line/F-line traps, EA modes 0–4, JSR/RTS, TRAP #n.
  * Step 2: ADD/SUB/CMP/NEG/TST/EXT/MULU/MULS/DIVU/DIVS,
  *         ADDI/SUBI/CMPI, ADDQ/SUBQ.
+ * Step 3: Bcc/BRA/BSR, DBcc, Scc, LINK, UNLK.
  */
 
 #include <assert.h>
@@ -1297,6 +1298,415 @@ static void test_sum_program(void)
     printf("  PASS: sum_program\n");
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * Step 3 tests — Branches, jumps, subroutines
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Test: BRA (8-bit displacement) ─────────────────────────────────────── */
+
+static void test_bra(void)
+{
+    setup();
+    /* BRA.S +4 → 6004  (skip 4 bytes forward from PC after opcode) */
+    m68k_write16(&cpu, 0x1000, 0x6004);
+    /* These two words are skipped */
+    m68k_write16(&cpu, 0x1002, 0x4AFC);  /* ILLEGAL (should not execute) */
+    m68k_write16(&cpu, 0x1004, 0x4AFC);  /* ILLEGAL */
+    /* Land here: MOVEQ #$42, D0; TRAP #0 */
+    m68k_write16(&cpu, 0x1006, 0x7042);
+    m68k_write16(&cpu, 0x1008, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0x42);
+    printf("  PASS: bra\n");
+}
+
+/* ── Test: BRA.W (16-bit displacement) ──────────────────────────────────── */
+
+static void test_bra_w(void)
+{
+    setup();
+    /* BRA.W disp16 → 6000 0100 (jump to PC+0x100 = 0x1002+0x100 = 0x1102) */
+    m68k_write16(&cpu, 0x1000, 0x6000);
+    m68k_write16(&cpu, 0x1002, 0x0100);
+    /* Target at 0x1102 */
+    m68k_write16(&cpu, 0x1102, 0x7042);
+    m68k_write16(&cpu, 0x1104, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0x42);
+    printf("  PASS: bra_w\n");
+}
+
+/* ── Test: BSR + RTS ────────────────────────────────────────────────────── */
+
+static void test_bsr(void)
+{
+    setup();
+    /* BSR.S +6 → 6106 (call subroutine at PC+6 = 0x1002+6 = 0x1008) */
+    m68k_write16(&cpu, 0x1000, 0x6106);
+    /* Return here: TRAP #0 */
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+    /* Subroutine at 0x1008: MOVEQ #$55, D0; RTS */
+    m68k_write16(&cpu, 0x1008, 0x7055);
+    m68k_write16(&cpu, 0x100A, 0x4E75);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0x55);
+    assert(cpu.pc == 0x1004);  /* after TRAP #0 */
+    printf("  PASS: bsr\n");
+}
+
+/* ── Test: BEQ (branch if equal / Z set) ───────────────────────────────── */
+
+static void test_beq(void)
+{
+    setup();
+    cpu.d[0] = 42;
+    cpu.d[1] = 42;
+    /* CMP.L D1, D0 → B081 */
+    m68k_write16(&cpu, 0x1000, 0xB081);
+    /* BEQ.S +4 → 6704 */
+    m68k_write16(&cpu, 0x1002, 0x6704);
+    /* Not taken: MOVEQ #0, D2 + TRAP */
+    m68k_write16(&cpu, 0x1004, 0x7400);
+    m68k_write16(&cpu, 0x1006, 0x4E40);
+    /* Taken: MOVEQ #1, D2 + TRAP */
+    m68k_write16(&cpu, 0x1008, 0x7401);
+    m68k_write16(&cpu, 0x100A, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[2] == 1);  /* branch was taken */
+    printf("  PASS: beq\n");
+}
+
+/* ── Test: BNE (branch if not equal) ────────────────────────────────────── */
+
+static void test_bne(void)
+{
+    setup();
+    cpu.d[0] = 10;
+    cpu.d[1] = 20;
+    /* CMP.L D1, D0 → B081 */
+    m68k_write16(&cpu, 0x1000, 0xB081);
+    /* BNE.S +4 → 6604 */
+    m68k_write16(&cpu, 0x1002, 0x6604);
+    /* Not taken path */
+    m68k_write16(&cpu, 0x1004, 0x7400);
+    m68k_write16(&cpu, 0x1006, 0x4E40);
+    /* Taken path */
+    m68k_write16(&cpu, 0x1008, 0x7401);
+    m68k_write16(&cpu, 0x100A, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[2] == 1);
+    printf("  PASS: bne\n");
+}
+
+/* ── Test: BGT/BLE (signed greater than / less or equal) ─────────────── */
+
+static void test_bgt_ble(void)
+{
+    setup();
+    cpu.d[0] = 10;
+    cpu.d[1] = 5;
+    /* CMP.L D1, D0 → B081 (D0 - D1 = 10 - 5 = 5 > 0) */
+    m68k_write16(&cpu, 0x1000, 0xB081);
+    /* BGT.S +4 → 6E04 */
+    m68k_write16(&cpu, 0x1002, 0x6E04);
+    m68k_write16(&cpu, 0x1004, 0x7400);
+    m68k_write16(&cpu, 0x1006, 0x4E40);
+    m68k_write16(&cpu, 0x1008, 0x7401);
+    m68k_write16(&cpu, 0x100A, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[2] == 1);  /* BGT taken */
+
+    /* Now test BLE: D0 == D1 → should take */
+    setup();
+    cpu.d[0] = 5;
+    cpu.d[1] = 5;
+    m68k_write16(&cpu, 0x1000, 0xB081);
+    /* BLE.S +4 → 6F04 */
+    m68k_write16(&cpu, 0x1002, 0x6F04);
+    m68k_write16(&cpu, 0x1004, 0x7400);
+    m68k_write16(&cpu, 0x1006, 0x4E40);
+    m68k_write16(&cpu, 0x1008, 0x7401);
+    m68k_write16(&cpu, 0x100A, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[2] == 1);  /* BLE taken */
+    printf("  PASS: bgt_ble\n");
+}
+
+/* ── Test: BCC/BCS (unsigned carry clear/set) ──────────────────────────── */
+
+static void test_bcc_bcs(void)
+{
+    setup();
+    cpu.d[0] = 0x100;
+    cpu.d[1] = 0x50;
+    /* CMP.L D1, D0 → B081 (0x100 - 0x50, no carry) */
+    m68k_write16(&cpu, 0x1000, 0xB081);
+    /* BCC.S +4 → 6404 (carry clear → take) */
+    m68k_write16(&cpu, 0x1002, 0x6404);
+    m68k_write16(&cpu, 0x1004, 0x7400);
+    m68k_write16(&cpu, 0x1006, 0x4E40);
+    m68k_write16(&cpu, 0x1008, 0x7401);
+    m68k_write16(&cpu, 0x100A, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[2] == 1);  /* BCC taken */
+    printf("  PASS: bcc_bcs\n");
+}
+
+/* ── Test: BMI/BPL (negative/positive) ──────────────────────────────────── */
+
+static void test_bmi_bpl(void)
+{
+    setup();
+    /* TST.L D0 with D0=-1 → N set */
+    cpu.d[0] = 0xFFFFFFFF;
+    m68k_write16(&cpu, 0x1000, 0x4A80);  /* TST.L D0 */
+    /* BMI.S +4 → 6B04 */
+    m68k_write16(&cpu, 0x1002, 0x6B04);
+    m68k_write16(&cpu, 0x1004, 0x7400);
+    m68k_write16(&cpu, 0x1006, 0x4E40);
+    m68k_write16(&cpu, 0x1008, 0x7401);
+    m68k_write16(&cpu, 0x100A, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[2] == 1);  /* BMI taken */
+    printf("  PASS: bmi_bpl\n");
+}
+
+/* ── Test: Scc (SEQ/SNE) ────────────────────────────────────────────────── */
+
+static void test_scc(void)
+{
+    setup();
+    cpu.d[0] = 0;
+    /* TST.L D0 → Z set */
+    m68k_write16(&cpu, 0x1000, 0x4A80);
+    /* SEQ D1 → 57C1  (0101 0111 11 000 001, cc=7=EQ) */
+    m68k_write16(&cpu, 0x1002, 0x57C1);
+    /* SNE D2 → 56C2  (0101 0110 11 000 010, cc=6=NE) */
+    m68k_write16(&cpu, 0x1004, 0x56C2);
+    m68k_write16(&cpu, 0x1006, 0x4E40);
+
+    run_exit();
+
+    assert((cpu.d[1] & 0xFF) == 0xFF);  /* SEQ: Z set → $FF */
+    assert((cpu.d[2] & 0xFF) == 0x00);  /* SNE: Z set → $00 */
+    printf("  PASS: scc\n");
+}
+
+/* ── Test: DBcc (DBRA = DBF loop) ───────────────────────────────────────── */
+
+static void test_dbra(void)
+{
+    setup();
+    /* Loop: D0 = 0, D1 = 4 (loop 5 times: 4,3,2,1,0,-1)
+     * loop: ADDQ.L #1, D0; DBRA D1, loop */
+    cpu.d[0] = 0;
+    cpu.d[1] = 4;
+    uint32_t pc = 0x1000;
+    /* ADDQ.L #1, D0 → 5280 */
+    m68k_write16(&cpu, pc, 0x5280); pc += 2;
+    /* DBF D1, -4 → 51C9 FFFC
+     * cc=1 (F=always false) → always decrement+branch
+     * disp = -4 (FFFC) relative to PC of disp word = 0x1004 → 0x1000 */
+    m68k_write16(&cpu, pc, 0x51C9); pc += 2;
+    m68k_write16(&cpu, pc, 0xFFFC); pc += 2;
+    m68k_write16(&cpu, pc, 0x4E40); /* TRAP #0 exit */
+
+    run_exit();
+
+    assert(cpu.d[0] == 5);     /* incremented 5 times */
+    assert((cpu.d[1] & 0xFFFF) == 0xFFFF);  /* decremented past 0 to -1 */
+    printf("  PASS: dbra\n");
+}
+
+/* ── Test: DBcc with condition true (no loop) ───────────────────────────── */
+
+static void test_dbcc_true(void)
+{
+    setup();
+    cpu.d[0] = 10;
+    cpu.d[1] = 5;
+    /* CMP.L D1, D0 → B081 (sets flags: 10 != 5, NE is true) */
+    m68k_write16(&cpu, 0x1000, 0xB081);
+    /* DBNE D1, -6 → 56C9 FFFA
+     * cc=6 (NE) → condition true → exit loop, don't decrement */
+    m68k_write16(&cpu, 0x1002, 0x56C9);
+    m68k_write16(&cpu, 0x1004, 0xFFFA);
+    m68k_write16(&cpu, 0x1006, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[1] == 5);  /* not decremented */
+    printf("  PASS: dbcc_true\n");
+}
+
+/* ── Test: LINK/UNLK ────────────────────────────────────────────────────── */
+
+static void test_link_unlk(void)
+{
+    setup();
+    cpu.a[6] = 0xAAAAAAAA;
+    uint32_t sp_before = cpu.a[7];
+    /* LINK A6, #-8 → 4E56 FFF8 */
+    m68k_write16(&cpu, 0x1000, 0x4E56);
+    m68k_write16(&cpu, 0x1002, 0xFFF8);
+    /* UNLK A6 → 4E5E */
+    m68k_write16(&cpu, 0x1004, 0x4E5E);
+    m68k_write16(&cpu, 0x1006, 0x4E40);
+
+    run_exit();
+
+    /* After LINK+UNLK, A6 and SP should be restored */
+    assert(cpu.a[6] == 0xAAAAAAAA);
+    assert(cpu.a[7] == sp_before);
+    printf("  PASS: link_unlk\n");
+}
+
+/* ── Test: LINK frame pointer pattern ───────────────────────────────────── */
+
+static void test_link_frame(void)
+{
+    setup();
+    uint32_t sp_before = cpu.a[7];
+    cpu.a[6] = 0x12345678;
+    /* LINK A6, #-16 → 4E56 FFF0 */
+    m68k_write16(&cpu, 0x1000, 0x4E56);
+    m68k_write16(&cpu, 0x1002, 0xFFF0);
+    m68k_write16(&cpu, 0x1004, 0x4E40);
+
+    run_exit();
+
+    /* Old A6 pushed to stack */
+    uint32_t fp = cpu.a[6];
+    assert(fp == sp_before - 4);
+    assert(m68k_read32(&cpu, fp) == 0x12345678);
+    /* SP = FP - 16 */
+    assert(cpu.a[7] == fp - 16);
+    printf("  PASS: link_frame\n");
+}
+
+/* ── Test: Sum 1..10 with a real loop ───────────────────────────────────── */
+
+static void test_sum_loop(void)
+{
+    setup();
+    /*
+     * MOVEQ #0, D0       ; sum = 0
+     * MOVEQ #10, D1      ; counter = 10
+     * loop:
+     *   ADD.L D1, D0     ; sum += counter
+     *   SUBQ.L #1, D1    ; counter--
+     *   BNE.S loop       ; if counter != 0, loop
+     * TRAP #0            ; exit
+     */
+    uint32_t pc = 0x1000;
+    m68k_write16(&cpu, pc, 0x7000); pc += 2;  /* MOVEQ #0, D0 */
+    m68k_write16(&cpu, pc, 0x720A); pc += 2;  /* MOVEQ #10, D1 */
+    /* loop: at 0x1004 */
+    m68k_write16(&cpu, pc, 0xD081); pc += 2;  /* ADD.L D1, D0 */
+    m68k_write16(&cpu, pc, 0x5381); pc += 2;  /* SUBQ.L #1, D1 */
+    /* BNE.S -6 → 66FA (disp = -6, from PC=0x100A to 0x1004) */
+    m68k_write16(&cpu, pc, 0x66FA); pc += 2;
+    m68k_write16(&cpu, pc, 0x4E40);           /* TRAP #0 */
+
+    run_exit();
+
+    assert(cpu.d[0] == 55);  /* 1+2+...+10 = 55 */
+    assert(cpu.d[1] == 0);
+    printf("  PASS: sum_loop\n");
+}
+
+/* ── Test: Fibonacci with BSR ───────────────────────────────────────────── */
+
+static void test_bsr_fib(void)
+{
+    setup();
+    /*
+     * Iterative fib(10) using BSR:
+     * Main:
+     *   MOVEQ #10, D0     ; n = 10
+     *   BSR.S fib
+     *   TRAP #0
+     * fib:
+     *   MOVEQ #0, D1      ; a = 0
+     *   MOVEQ #1, D2      ; b = 1
+     *   SUBQ.L #1, D0     ; n--
+     *   BEQ.S done
+     * loop:
+     *   MOVE.L D2, D3     ; temp = b
+     *   ADD.L D1, D2      ; b = a + b
+     *   MOVE.L D3, D1     ; a = temp
+     *   SUBQ.L #1, D0     ; n--
+     *   BNE.S loop
+     * done:
+     *   MOVE.L D2, D0     ; result = b
+     *   RTS
+     */
+    uint32_t pc = 0x1000;
+    m68k_write16(&cpu, pc, 0x700A); pc += 2;  /* MOVEQ #10, D0 */
+    m68k_write16(&cpu, pc, 0x6104); pc += 2;  /* BSR.S +4 → fib */
+    m68k_write16(&cpu, pc, 0x4E40); pc += 2;  /* TRAP #0 */
+    m68k_write16(&cpu, pc, 0x4E71); pc += 2;  /* NOP (padding) */
+    /* fib: at 0x1008 */
+    m68k_write16(&cpu, pc, 0x7200); pc += 2;  /* MOVEQ #0, D1 (a) */
+    m68k_write16(&cpu, pc, 0x7401); pc += 2;  /* MOVEQ #1, D2 (b) */
+    m68k_write16(&cpu, pc, 0x5380); pc += 2;  /* SUBQ.L #1, D0 */
+    m68k_write16(&cpu, pc, 0x670C); pc += 2;  /* BEQ.S +12 → done */
+    /* loop: at 0x1010 */
+    m68k_write16(&cpu, pc, 0x2602); pc += 2;  /* MOVE.L D2, D3 */
+    m68k_write16(&cpu, pc, 0xD481); pc += 2;  /* ADD.L D1, D2 */
+    m68k_write16(&cpu, pc, 0x2203); pc += 2;  /* MOVE.L D3, D1 */
+    m68k_write16(&cpu, pc, 0x5380); pc += 2;  /* SUBQ.L #1, D0 */
+    m68k_write16(&cpu, pc, 0x66F6); pc += 2;  /* BNE.S -10 → loop */
+    /* done: at 0x101A */
+    m68k_write16(&cpu, pc, 0x2002); pc += 2;  /* MOVE.L D2, D0 */
+    m68k_write16(&cpu, pc, 0x4E75); pc += 2;  /* RTS */
+
+    run_exit();
+
+    assert(cpu.d[0] == 55);  /* fib(10) = 55 */
+    printf("  PASS: bsr_fib\n");
+}
+
+/* ── Test: backward BRA ─────────────────────────────────────────────────── */
+
+static void test_bra_backward(void)
+{
+    setup();
+    /* Jump forward to setup, then backward BRA to exit */
+    /* BRA.S +4 → 6004 (to 0x1006) */
+    m68k_write16(&cpu, 0x1000, 0x6004);
+    /* exit point: TRAP #0 */
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+    m68k_write16(&cpu, 0x1004, 0x4E71);  /* NOP (skipped) */
+    /* At 0x1006: MOVEQ #$77, D0 */
+    m68k_write16(&cpu, 0x1006, 0x7077);
+    /* BRA.S -8 → 60F8 (to 0x1002) */
+    m68k_write16(&cpu, 0x1008, 0x60F8);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0x77);
+    printf("  PASS: bra_backward\n");
+}
+
 /* ── Main ───────────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -1365,6 +1775,24 @@ int main(void)
     test_add_sub_mem();
     test_sum_program();
 
-    printf("All 59 tests passed.\n");
+    /* Step 3 */
+    test_bra();
+    test_bra_w();
+    test_bsr();
+    test_beq();
+    test_bne();
+    test_bgt_ble();
+    test_bcc_bcs();
+    test_bmi_bpl();
+    test_scc();
+    test_dbra();
+    test_dbcc_true();
+    test_link_unlk();
+    test_link_frame();
+    test_sum_loop();
+    test_bsr_fib();
+    test_bra_backward();
+
+    printf("All 75 tests passed.\n");
     return 0;
 }
