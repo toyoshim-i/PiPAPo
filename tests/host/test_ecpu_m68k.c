@@ -7,6 +7,7 @@
  *         ADDI/SUBI/CMPI, ADDQ/SUBQ.
  * Step 3: Bcc/BRA/BSR, DBcc, Scc, LINK, UNLK.
  * Step 4: AND/OR/EOR/NOT, shifts/rotates, bit ops, EXG.
+ * Step 5: MOVEM, PEA, MOVE to/from SR/CCR, MOVE USP.
  */
 
 #include <assert.h>
@@ -2213,6 +2214,292 @@ static void test_bit_program(void)
     printf("  PASS: bit_program\n");
 }
 
+/* ── Step 5: MOVEM, PEA, MOVE to/from SR/CCR, MOVE USP ──────────────────── */
+
+/* ── Test: MOVEM.L reg→mem (pre-decrement) ─────────────────────────────── */
+
+static void test_movem_predec(void)
+{
+    setup();
+    cpu.d[0] = 0x11111111;
+    cpu.d[1] = 0x22222222;
+    cpu.a[0] = 0x33333333;
+    cpu.a[1] = 0x44444444;
+    /* MOVEM.L D0-D1/A0-A1, -(A7)
+     * Opcode: 48E7  (0100 1000 1 1 100 111 = MOVEM.L reg→mem -(A7))
+     * Mask (reversed for -(An)): A7=bit0, A6=bit1, ..., A1=bit6, A0=bit7,
+     *                            D7=bit8, ..., D1=bit14, D0=bit15
+     * D0=bit15, D1=bit14, A0=bit7, A1=bit6 → 0xC0C0 */
+    m68k_write16(&cpu, 0x1000, 0x48E7);
+    m68k_write16(&cpu, 0x1002, 0xC0C0);
+    /* TRAP #0 */
+    m68k_write16(&cpu, 0x1004, 0x4E40);
+
+    run_exit();
+
+    /* Stack should have been decremented by 4 regs × 4 bytes = 16 */
+    assert(cpu.a[7] == 0x10000 - 16);
+    /* Memory layout (low→high): D0, D1, A0, A1 */
+    assert(m68k_read32(&cpu, cpu.a[7])      == 0x11111111);  /* D0 */
+    assert(m68k_read32(&cpu, cpu.a[7] + 4)  == 0x22222222);  /* D1 */
+    assert(m68k_read32(&cpu, cpu.a[7] + 8)  == 0x33333333);  /* A0 */
+    assert(m68k_read32(&cpu, cpu.a[7] + 12) == 0x44444444);  /* A1 */
+    printf("  PASS: movem_predec\n");
+}
+
+/* ── Test: MOVEM.L mem→reg (post-increment) ────────────────────────────── */
+
+static void test_movem_postinc(void)
+{
+    setup();
+    /* Store 4 longs at 0x2000 */
+    m68k_write32(&cpu, 0x2000, 0xAAAAAAAA);
+    m68k_write32(&cpu, 0x2004, 0xBBBBBBBB);
+    m68k_write32(&cpu, 0x2008, 0xCCCCCCCC);
+    m68k_write32(&cpu, 0x200C, 0xDDDDDDDD);
+    cpu.a[0] = 0x2000;
+    /* MOVEM.L (A0)+, D0-D1/A2-A3
+     * Opcode: 4CD8 (0100 1100 1 1 011 000 = MOVEM.L mem→reg (A0)+)
+     * Mask (normal order): D0=bit0, D1=bit1, A2=bit10, A3=bit11
+     * → 0x0C03 */
+    m68k_write16(&cpu, 0x1000, 0x4CD8);
+    m68k_write16(&cpu, 0x1002, 0x0C03);
+    m68k_write16(&cpu, 0x1004, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0xAAAAAAAA);
+    assert(cpu.d[1] == 0xBBBBBBBB);
+    assert(cpu.a[2] == 0xCCCCCCCC);
+    assert(cpu.a[3] == 0xDDDDDDDD);
+    assert(cpu.a[0] == 0x2010);  /* advanced past 4 longs */
+    printf("  PASS: movem_postinc\n");
+}
+
+/* ── Test: MOVEM roundtrip (save + restore) ────────────────────────────── */
+
+static void test_movem_roundtrip(void)
+{
+    setup();
+    cpu.d[2] = 0x12345678;
+    cpu.d[3] = 0x9ABCDEF0;
+    cpu.a[4] = 0xFEDCBA98;
+    /* MOVEM.L D2-D3/A4, -(A7)  → save
+     * Reversed mask: D2=bit13, D3=bit12, A4=bit3 → 0x3008 */
+    m68k_write16(&cpu, 0x1000, 0x48E7);
+    m68k_write16(&cpu, 0x1002, 0x3008);
+    /* Clear registers */
+    /* CLR.L D2: 4282 */
+    m68k_write16(&cpu, 0x1004, 0x4282);
+    /* CLR.L D3: 4283 */
+    m68k_write16(&cpu, 0x1006, 0x4283);
+    /* SUB.L A4,A4 is tricky, use LEA 0.W,A4 instead: 49F8 0000 */
+    m68k_write16(&cpu, 0x1008, 0x49F8);
+    m68k_write16(&cpu, 0x100A, 0x0000);
+    /* MOVEM.L (A7)+, D2-D3/A4  → restore
+     * Normal mask: D2=bit2, D3=bit3, A4=bit12 → 0x100C */
+    m68k_write16(&cpu, 0x100C, 0x4CDF);
+    m68k_write16(&cpu, 0x100E, 0x100C);
+    m68k_write16(&cpu, 0x1010, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[2] == 0x12345678);
+    assert(cpu.d[3] == 0x9ABCDEF0);
+    assert(cpu.a[4] == 0xFEDCBA98);
+    assert(cpu.a[7] == 0x10000);  /* SP restored */
+    printf("  PASS: movem_roundtrip\n");
+}
+
+/* ── Test: MOVEM.W with sign extension ─────────────────────────────────── */
+
+static void test_movem_w(void)
+{
+    setup();
+    /* Store 2 words at 0x2000: 0x0042, 0xFF80 */
+    m68k_write16(&cpu, 0x2000, 0x0042);
+    m68k_write16(&cpu, 0x2002, 0xFF80);
+    cpu.a[0] = 0x2000;
+    /* MOVEM.W (A0)+, D0-D1
+     * Opcode: 4C98 (0100 1100 1 0 011 000 = MOVEM.W mem→reg (A0)+)
+     * Mask: D0=bit0, D1=bit1 → 0x0003 */
+    m68k_write16(&cpu, 0x1000, 0x4C98);
+    m68k_write16(&cpu, 0x1002, 0x0003);
+    m68k_write16(&cpu, 0x1004, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0x00000042);   /* positive, sign-extended */
+    assert(cpu.d[1] == 0xFFFFFF80);   /* negative, sign-extended */
+    assert(cpu.a[0] == 0x2004);       /* advanced by 2 words */
+    printf("  PASS: movem_w\n");
+}
+
+/* ── Test: MOVEM.L to/from displacement ────────────────────────────────── */
+
+static void test_movem_disp(void)
+{
+    setup();
+    cpu.d[0] = 0x11110000;
+    cpu.d[1] = 0x22220000;
+    cpu.a[5] = 0x3000;
+    /* MOVEM.L D0-D1, 8(A5)
+     * Opcode: 48ED (0100 1000 1 1 101 101 = MOVEM.L reg→mem d16(A5))
+     * Mask: D0=bit0, D1=bit1 → 0x0003
+     * Displacement: 0x0008 */
+    m68k_write16(&cpu, 0x1000, 0x48ED);
+    m68k_write16(&cpu, 0x1002, 0x0003);
+    m68k_write16(&cpu, 0x1004, 0x0008);
+    /* Verify by loading back with MOVEM.L 8(A5), D4-D5
+     * Opcode: 4CED (0100 1100 1 1 101 101 = MOVEM.L mem→reg d16(A5))
+     * Mask: D4=bit4, D5=bit5 → 0x0030
+     * Displacement: 0x0008 */
+    m68k_write16(&cpu, 0x1006, 0x4CED);
+    m68k_write16(&cpu, 0x1008, 0x0030);
+    m68k_write16(&cpu, 0x100A, 0x0008);
+    m68k_write16(&cpu, 0x100C, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[4] == 0x11110000);
+    assert(cpu.d[5] == 0x22220000);
+    printf("  PASS: movem_disp\n");
+}
+
+/* ── Test: PEA ──────────────────────────────────────────────────────────── */
+
+static void test_pea(void)
+{
+    setup();
+    cpu.a[2] = 0x5000;
+    /* PEA (A2): 4852 (0100 1000 01 010 010) */
+    m68k_write16(&cpu, 0x1000, 0x4852);
+    /* PEA $1234.W: 4878 1234 */
+    m68k_write16(&cpu, 0x1002, 0x4878);
+    m68k_write16(&cpu, 0x1004, 0x1234);
+    m68k_write16(&cpu, 0x1006, 0x4E40);
+
+    run_exit();
+
+    /* Two pushes: first 0x5000, then 0x1234 (on top) */
+    assert(cpu.a[7] == 0x10000 - 8);
+    assert(m68k_read32(&cpu, cpu.a[7])     == 0x00001234);
+    assert(m68k_read32(&cpu, cpu.a[7] + 4) == 0x00005000);
+    printf("  PASS: pea\n");
+}
+
+/* ── Test: MOVE from SR ─────────────────────────────────────────────────── */
+
+static void test_move_from_sr(void)
+{
+    setup();
+    cpu.sr = 0x2704;  /* S=1, IPM=7, Z=1 */
+    /* MOVE SR, D0: 40C0 (0100 0000 11 000 000) */
+    m68k_write16(&cpu, 0x1000, 0x40C0);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert((cpu.d[0] & 0xFFFF) == 0x2704);
+    printf("  PASS: move_from_sr\n");
+}
+
+/* ── Test: MOVE to CCR ──────────────────────────────────────────────────── */
+
+static void test_move_to_ccr(void)
+{
+    setup();
+    cpu.sr = 0x2700;  /* supervisor, no flags */
+    cpu.d[0] = 0x001F;  /* all CCR flags set */
+    /* MOVE D0, CCR: 44C0 (0100 0100 11 000 000) */
+    m68k_write16(&cpu, 0x1000, 0x44C0);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.sr == 0x271F);  /* system byte unchanged, CCR = 0x1F */
+    printf("  PASS: move_to_ccr\n");
+}
+
+/* ── Test: MOVE to SR ───────────────────────────────────────────────────── */
+
+static void test_move_to_sr(void)
+{
+    setup();
+    cpu.sr = 0x2700;
+    cpu.d[0] = 0x0004;  /* Z flag only, user mode */
+    /* MOVE D0, SR: 46C0 (0100 0110 11 000 000) */
+    m68k_write16(&cpu, 0x1000, 0x46C0);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.sr == 0x0004);  /* entire SR replaced */
+    printf("  PASS: move_to_sr\n");
+}
+
+/* ── Test: MOVE USP ─────────────────────────────────────────────────────── */
+
+static void test_move_usp(void)
+{
+    setup();
+    cpu.a[3] = 0x12345678;
+    /* MOVE A3, USP: 4E63 (0100 1110 0110 0 011) */
+    m68k_write16(&cpu, 0x1000, 0x4E63);
+    /* MOVE USP, A4: 4E6C (0100 1110 0110 1 100) */
+    m68k_write16(&cpu, 0x1002, 0x4E6C);
+    m68k_write16(&cpu, 0x1004, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.usp == 0x12345678);
+    assert(cpu.a[4] == 0x12345678);
+    printf("  PASS: move_usp\n");
+}
+
+/* ── Test: MOVEM function prologue/epilogue pattern ────────────────────── */
+
+static void test_movem_prologue(void)
+{
+    setup();
+    cpu.d[2] = 0xAAAA0000;
+    cpu.d[3] = 0xBBBB0000;
+    cpu.a[2] = 0xCCCC0000;
+    uint32_t sp_orig = cpu.a[7];
+
+    /* Simulate function prologue/epilogue:
+     * LINK A6, #-8        → 4E56 FFF8
+     * MOVEM.L D2-D3/A2, -(A7) → 48E7 3020 (reversed: D2=bit13, D3=bit12, A2=bit5)
+     * ... body (nop) ...
+     * MOVEM.L (A7)+, D2-D3/A2 → 4CDF 040C (normal: D2=bit2, D3=bit3, A2=bit10)
+     * UNLK A6             → 4E5E
+     */
+    uint32_t pc = 0x1000;
+    /* LINK A6, #-8 */
+    m68k_write16(&cpu, pc, 0x4E56); pc += 2;
+    m68k_write16(&cpu, pc, 0xFFF8); pc += 2;  /* #-8 */
+    /* MOVEM.L D2-D3/A2, -(A7) */
+    m68k_write16(&cpu, pc, 0x48E7); pc += 2;
+    m68k_write16(&cpu, pc, 0x3020); pc += 2;
+    /* NOP (body) */
+    m68k_write16(&cpu, pc, 0x4E71); pc += 2;
+    /* MOVEM.L (A7)+, D2-D3/A2 */
+    m68k_write16(&cpu, pc, 0x4CDF); pc += 2;
+    m68k_write16(&cpu, pc, 0x040C); pc += 2;
+    /* UNLK A6 */
+    m68k_write16(&cpu, pc, 0x4E5E); pc += 2;
+    /* TRAP #0 */
+    m68k_write16(&cpu, pc, 0x4E40); pc += 2;
+
+    run_exit();
+
+    assert(cpu.d[2] == 0xAAAA0000);
+    assert(cpu.d[3] == 0xBBBB0000);
+    assert(cpu.a[2] == 0xCCCC0000);
+    assert(cpu.a[7] == sp_orig);  /* SP fully restored */
+    printf("  PASS: movem_prologue\n");
+}
+
 /* ── Main ───────────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -2323,6 +2610,19 @@ int main(void)
     test_btst_mem();
     test_bit_program();
 
-    printf("All 97 tests passed.\n");
+    /* Step 5 */
+    test_movem_predec();
+    test_movem_postinc();
+    test_movem_roundtrip();
+    test_movem_w();
+    test_movem_disp();
+    test_pea();
+    test_move_from_sr();
+    test_move_to_ccr();
+    test_move_to_sr();
+    test_move_usp();
+    test_movem_prologue();
+
+    printf("All 108 tests passed.\n");
     return 0;
 }

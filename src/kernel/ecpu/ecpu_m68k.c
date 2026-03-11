@@ -8,6 +8,7 @@
  *         ADDI/SUBI/CMPI, ADDQ/SUBQ.
  * Step 3: Bcc/BRA/BSR, DBcc, Scc, LINK, UNLK.
  * Step 4: AND/OR/EOR/NOT, shifts/rotates, bit ops, EXG.
+ * Step 5: MOVEM, PEA, MOVE to/from SR/CCR, MOVE USP.
  *
  * See docs/ecpu-m68k.md for the full design.
  */
@@ -545,11 +546,97 @@ static int m68k_group4(m68k_state_t *cpu, uint16_t opcode)
         return 0;
     }
 
+    /* MOVEM register-to-memory: 0100 1000 1s ea  (ea_mode != 0) */
+    if (bits_11_8 == 0x8 && (opcode & 0x0080) && ea_mode != 0) {
+        uint8_t sz = (opcode & 0x0040) ? M68K_SIZE_LONG : M68K_SIZE_WORD;
+        uint16_t mask = m68k_fetch16(cpu);
+        uint32_t nbytes = m68k_size_bytes(sz);
+
+        if (ea_mode == 4) {
+            /* Pre-decrement -(An): reversed mask order A7→D0 */
+            uint32_t addr = cpu->a[ea_reg];
+            for (int i = 0; i < 16; i++) {
+                if (mask & (1 << i)) {
+                    addr -= nbytes;
+                    uint32_t val;
+                    if (i < 8)
+                        val = cpu->a[7 - i];
+                    else
+                        val = cpu->d[15 - i];
+                    m68k_write_sz(cpu, addr, val, sz);
+                }
+            }
+            cpu->a[ea_reg] = addr;
+        } else {
+            /* Other modes: normal order D0→A7 */
+            ea_result_t ea = m68k_decode_ea(cpu, ea_mode, ea_reg, sz);
+            uint32_t addr = ea.addr;
+            for (int i = 0; i < 16; i++) {
+                if (mask & (1 << i)) {
+                    uint32_t val = (i < 8) ? cpu->d[i] : cpu->a[i - 8];
+                    m68k_write_sz(cpu, addr, val, sz);
+                    addr += nbytes;
+                }
+            }
+        }
+        return 0;
+    }
+
+    /* MOVEM memory-to-register: 0100 1100 1s ea */
+    if (bits_11_8 == 0xC && (opcode & 0x0080)) {
+        uint8_t sz = (opcode & 0x0040) ? M68K_SIZE_LONG : M68K_SIZE_WORD;
+        uint16_t mask = m68k_fetch16(cpu);
+        uint32_t nbytes = m68k_size_bytes(sz);
+
+        if (ea_mode == 3) {
+            /* Post-increment (An)+: normal order, update An */
+            uint32_t addr = cpu->a[ea_reg];
+            for (int i = 0; i < 16; i++) {
+                if (mask & (1 << i)) {
+                    uint32_t val = m68k_read_sz(cpu, addr, sz);
+                    if (sz == M68K_SIZE_WORD)
+                        val = (uint32_t)(int16_t)(uint16_t)val;
+                    if (i < 8)
+                        cpu->d[i] = val;
+                    else
+                        cpu->a[i - 8] = val;
+                    addr += nbytes;
+                }
+            }
+            cpu->a[ea_reg] = addr;
+        } else {
+            /* Other modes: use decoded EA address */
+            ea_result_t ea = m68k_decode_ea(cpu, ea_mode, ea_reg, sz);
+            uint32_t addr = ea.addr;
+            for (int i = 0; i < 16; i++) {
+                if (mask & (1 << i)) {
+                    uint32_t val = m68k_read_sz(cpu, addr, sz);
+                    if (sz == M68K_SIZE_WORD)
+                        val = (uint32_t)(int16_t)(uint16_t)val;
+                    if (i < 8)
+                        cpu->d[i] = val;
+                    else
+                        cpu->a[i - 8] = val;
+                    addr += nbytes;
+                }
+            }
+        }
+        return 0;
+    }
+
     /* SWAP: 0100 1000 01 000 Dn  (4840–4847) */
     if ((opcode & 0xFFF8) == 0x4840) {
         int reg = opcode & 7;
         cpu->d[reg] = (cpu->d[reg] >> 16) | (cpu->d[reg] << 16);
         m68k_alu_tst(cpu, cpu->d[reg], M68K_SIZE_LONG);
+        return 0;
+    }
+
+    /* PEA: 0100 1000 01 ea  (4840–487F, ea_mode != 0) */
+    if ((opcode & 0xFFC0) == 0x4840 && ea_mode != 0) {
+        ea_result_t ea = m68k_decode_ea(cpu, ea_mode, ea_reg, M68K_SIZE_LONG);
+        if (ea.type == EA_TYPE_MEMORY)
+            m68k_push32(cpu, ea.addr);
         return 0;
     }
 
@@ -561,6 +648,29 @@ static int m68k_group4(m68k_state_t *cpu, uint16_t opcode)
         uint32_t result = ~dst & m68k_size_mask(size);
         m68k_write_ea(cpu, &ea, size, result);
         m68k_set_ccr_move(cpu, result, size);
+        return 0;
+    }
+
+    /* MOVE from SR: 0100 0000 11 ea  (40C0–40FF) */
+    if (bits_11_8 == 0x0 && bits_7_6 == 3) {
+        ea_result_t ea = m68k_decode_ea(cpu, ea_mode, ea_reg, M68K_SIZE_WORD);
+        m68k_write_ea(cpu, &ea, M68K_SIZE_WORD, cpu->sr);
+        return 0;
+    }
+
+    /* MOVE to CCR: 0100 0100 11 ea  (44C0–44FF) */
+    if (bits_11_8 == 0x4 && bits_7_6 == 3) {
+        ea_result_t ea = m68k_decode_ea(cpu, ea_mode, ea_reg, M68K_SIZE_WORD);
+        uint32_t val = m68k_read_ea(cpu, &ea, M68K_SIZE_WORD);
+        cpu->sr = (cpu->sr & 0xFF00) | (val & 0xFF);
+        return 0;
+    }
+
+    /* MOVE to SR: 0100 0110 11 ea  (46C0–46FF) */
+    if (bits_11_8 == 0x6 && bits_7_6 == 3) {
+        ea_result_t ea = m68k_decode_ea(cpu, ea_mode, ea_reg, M68K_SIZE_WORD);
+        uint32_t val = m68k_read_ea(cpu, &ea, M68K_SIZE_WORD);
+        cpu->sr = (uint16_t)val;
         return 0;
     }
 
@@ -608,6 +718,19 @@ static int m68k_group4(m68k_state_t *cpu, uint16_t opcode)
         int reg = opcode & 7;
         cpu->a[7] = cpu->a[reg];
         cpu->a[reg] = m68k_pop32(cpu);
+        return 0;
+    }
+
+    /* MOVE USP: 4E60–4E6F */
+    if ((opcode & 0xFFF0) == 0x4E60) {
+        int reg = opcode & 7;
+        if (opcode & 0x0008) {
+            /* USP → An */
+            cpu->a[reg] = cpu->usp;
+        } else {
+            /* An → USP */
+            cpu->usp = cpu->a[reg];
+        }
         return 0;
     }
 
