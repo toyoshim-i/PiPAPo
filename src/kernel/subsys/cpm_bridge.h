@@ -28,6 +28,7 @@
 #define CPM_FCB2_ADDR      0x006C  /* default FCB 2                        */
 
 #define CPM_MAX_OPEN_FILES 8       /* max simultaneous open files          */
+#define CPM_RECORD_SIZE    128     /* CP/M record size in bytes            */
 
 /* ── Per-process CP/M state ─────────────────────────────────────────────── */
 typedef struct cpm_state {
@@ -45,29 +46,18 @@ typedef struct cpm_state {
 
 /* ── Trap handler (personality layer) ───────────────────────────────────── */
 
-/*
- * cpm_trap_handler — intercepts CALL instructions to BDOS/BIOS entry points.
- *
- * Register as the Z80 core's trap handler via set_trap_handler().
- * The ctx parameter must point to a cpm_state_t.
- */
 int cpm_trap_handler(ecpu_state_t *cpu, int trap_type,
                      uint32_t param, void *ctx);
 
 /* ── Loader ─────────────────────────────────────────────────────────────── */
 
-/*
- * cpm_load_com — load a .COM binary into Z80 memory and set up the
- *                CP/M memory map (zero page, BIOS stubs, DMA, FCBs).
- *
- * @cpu:      initialized z80_state_t (cast to ecpu_state_t)
- * @cpm:      per-process CP/M state (zeroed by caller)
- * @binary:   pointer to raw .COM file data
- * @size:     size of binary in bytes
- * @cmdline:  command-line tail (NULL for none)
- */
 void cpm_load_com(z80_state_t *cpu, cpm_state_t *cpm,
                   const uint8_t *binary, uint32_t size,
                   const char *cmdline);
+
+/* ── FCB utilities (public for testing) ─────────────────────────────────── */
+
+void cpm_fcb_to_path(cpm_state_t *cpm, const uint8_t *fcb,
+                     char *path, int path_size);
 
 #endif /* PPAP_SUBSYS_CPM_BRIDGE_H */

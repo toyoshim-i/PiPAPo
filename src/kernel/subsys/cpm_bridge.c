@@ -3,9 +3,7 @@
  *
  * Phase 1: BDOS fn 0, 2, 9 (output + exit)
  * Phase 2: BDOS fn 1, 3–8, 10–12 (console I/O) + BIOS console
- *
- * The trap handler intercepts CALL instructions to BDOS (0x0005) and
- * BIOS entry points, translating CP/M API calls to host/PPAP operations.
+ * Phase 3: BDOS fn 13–16, 19–23, 26, 33–36, 40 (file operations)
  *
  * See docs/subsystem-cpm.md §5 for the full design.
  */
@@ -39,135 +37,272 @@ static int cpm_char_ready(void)
     return sys_read_ready(0);
 }
 
-#else /* Host test hooks */
+static int cpm_file_open(const char *path, int flags)
+{
+    extern int sys_open(const char *path, int flags, int mode);
+    return sys_open(path, flags, 0644);
+}
+
+static int cpm_file_close(int fd)
+{
+    extern int sys_close(int fd);
+    return sys_close(fd);
+}
+
+static int cpm_file_read(int fd, void *buf, int count)
+{
+    extern int sys_read(int fd, void *buf, int count);
+    return sys_read(fd, buf, count);
+}
+
+static int cpm_file_write(int fd, const void *buf, int count)
+{
+    extern int sys_write(int fd, const void *buf, int count);
+    return sys_write(fd, buf, count);
+}
+
+static int cpm_file_seek(int fd, int offset, int whence)
+{
+    extern int sys_lseek(int fd, int offset, int whence);
+    return sys_lseek(fd, offset, whence);
+}
+
+static int cpm_file_delete(const char *path)
+{
+    extern int sys_unlink(const char *path);
+    return sys_unlink(path);
+}
+
+static int cpm_file_rename(const char *oldpath, const char *newpath)
+{
+    extern int sys_rename(const char *oldpath, const char *newpath);
+    return sys_rename(oldpath, newpath);
+}
+
+#else /* Host test hooks — use POSIX */
+
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdio.h>
 
 extern void cpm_host_putchar(uint8_t ch);
 extern int  cpm_host_getchar(void);
 extern int  cpm_host_char_ready(void);
 
-static void cpm_putchar(uint8_t ch)
+static void cpm_putchar(uint8_t ch)   { cpm_host_putchar(ch); }
+static uint8_t cpm_getchar(void)      { return (uint8_t)cpm_host_getchar(); }
+static int cpm_char_ready(void)       { return cpm_host_char_ready(); }
+
+static int cpm_file_open(const char *path, int flags)
 {
-    cpm_host_putchar(ch);
+    return open(path, flags, 0644);
 }
 
-static uint8_t cpm_getchar(void)
+static int cpm_file_close(int fd)     { return close(fd); }
+static int cpm_file_read(int fd, void *buf, int count)
 {
-    return (uint8_t)cpm_host_getchar();
+    return (int)read(fd, buf, count);
 }
 
-static int cpm_char_ready(void)
+static int cpm_file_write(int fd, const void *buf, int count)
 {
-    return cpm_host_char_ready();
+    return (int)write(fd, buf, count);
+}
+
+static int cpm_file_seek(int fd, int offset, int whence)
+{
+    return (int)lseek(fd, offset, whence);
+}
+
+static int cpm_file_delete(const char *path) { return unlink(path); }
+
+static int cpm_file_rename(const char *oldpath, const char *newpath)
+{
+    return rename(oldpath, newpath);
 }
 
 #endif
 
+/* ── O_RDONLY / O_RDWR / O_CREAT / O_TRUNC / SEEK_SET / SEEK_END ──────── */
+
+#ifdef PPAP_KERNEL
+/* PPAP defines these in its own headers */
+#else
+#include <fcntl.h>
+#endif
+
+/* ── FCB-to-path translation ───────────────────────────────────────────── */
+
+void cpm_fcb_to_path(cpm_state_t *cpm, const uint8_t *fcb,
+                     char *path, int path_size)
+{
+    /* Determine drive */
+    uint8_t drive = fcb[0];
+    if (drive == 0)
+        drive = cpm->current_drive + 1;  /* default → current */
+    char drive_char = 'a' + drive - 1;
+
+    /* Extract filename (strip trailing spaces) */
+    char name[9], ext[4];
+    int nlen = 8, elen = 3;
+    memcpy(name, &fcb[1], 8); name[8] = 0;
+    memcpy(ext, &fcb[9], 3);  ext[3] = 0;
+
+    /* Strip high bits (CP/M uses bit 7 for attributes) */
+    for (int i = 0; i < 8; i++) name[i] &= 0x7F;
+    for (int i = 0; i < 3; i++) ext[i] &= 0x7F;
+
+    while (nlen > 0 && name[nlen - 1] == ' ') nlen--;
+    while (elen > 0 && ext[elen - 1] == ' ') elen--;
+    name[nlen] = 0;
+    ext[elen] = 0;
+
+    /* Build path: /drive/NAME.EXT */
+    if (elen > 0) {
+        int n = 0;
+        path[n++] = '/';
+        path[n++] = drive_char;
+        path[n++] = '/';
+        for (int i = 0; i < nlen && n < path_size - 5; i++)
+            path[n++] = name[i];
+        path[n++] = '.';
+        for (int i = 0; i < elen && n < path_size - 1; i++)
+            path[n++] = ext[i];
+        path[n] = 0;
+    } else {
+        int n = 0;
+        path[n++] = '/';
+        path[n++] = drive_char;
+        path[n++] = '/';
+        for (int i = 0; i < nlen && n < path_size - 1; i++)
+            path[n++] = name[i];
+        path[n] = 0;
+    }
+}
+
+/* ── File slot management ──────────────────────────────────────────────── */
+
+static int cpm_alloc_file_slot(cpm_state_t *cpm, uint16_t fcb_addr, int fd)
+{
+    for (int i = 0; i < CPM_MAX_OPEN_FILES; i++) {
+        if (cpm->open_files[i].fcb_addr == 0) {
+            cpm->open_files[i].fcb_addr = fcb_addr;
+            cpm->open_files[i].fd = fd;
+            cpm->open_files[i].file_pos = 0;
+            return i;
+        }
+    }
+    return -1;
+}
+
+static int cpm_find_file_slot(cpm_state_t *cpm, uint16_t fcb_addr)
+{
+    for (int i = 0; i < CPM_MAX_OPEN_FILES; i++) {
+        if (cpm->open_files[i].fcb_addr == fcb_addr)
+            return i;
+    }
+    return -1;
+}
+
+static void cpm_free_file_slot(cpm_state_t *cpm, int slot)
+{
+    cpm->open_files[slot].fcb_addr = 0;
+    cpm->open_files[slot].fd = -1;
+    cpm->open_files[slot].file_pos = 0;
+}
+
+/* ── FCB position helpers ──────────────────────────────────────────────── */
+
+/* Read the sequential position from FCB extent/cr fields.
+ * Position = (extent * 128 + current_record) * 128 bytes. */
+static uint32_t cpm_fcb_get_seq_pos(z80_state_t *cpu, uint16_t fcb_addr)
+{
+    uint8_t ex = z80_read8(cpu, fcb_addr + 12);  /* extent low */
+    uint8_t s2 = z80_read8(cpu, fcb_addr + 14);  /* extent high */
+    uint8_t cr = z80_read8(cpu, fcb_addr + 32);  /* current record */
+    uint32_t extent = ((uint32_t)s2 << 5) | (ex & 0x1F);
+    return (extent * 128 + cr) * CPM_RECORD_SIZE;
+}
+
+/* Write back the sequential position to FCB extent/cr fields. */
+static void cpm_fcb_set_seq_pos(z80_state_t *cpu, uint16_t fcb_addr,
+                                uint32_t byte_pos)
+{
+    uint32_t record = byte_pos / CPM_RECORD_SIZE;
+    uint32_t extent = record / 128;
+    uint8_t cr = record % 128;
+
+    z80_write8(cpu, fcb_addr + 12, extent & 0x1F);        /* ex */
+    z80_write8(cpu, fcb_addr + 14, (extent >> 5) & 0x3F); /* s2 */
+    z80_write8(cpu, fcb_addr + 32, cr);                    /* cr */
+}
+
 /* ── BDOS Console I/O functions ────────────────────────────────────────── */
 
-/*
- * Console Input (BDOS function 1)
- * Reads one character, echoes it, returns in A.
- */
 static int cpm_console_input(z80_state_t *cpu, cpm_state_t *cpm)
 {
     (void)cpu; (void)cpm;
     uint8_t ch = cpm_getchar();
-    cpm_putchar(ch);  /* echo */
+    cpm_putchar(ch);
     return ch;
 }
 
-/*
- * Console Output (BDOS function 2)
- * Input:  E = character to print
- */
 static void cpm_console_output(z80_state_t *cpu, cpm_state_t *cpm)
 {
     (void)cpm;
     cpm_putchar(cpu->e);
 }
 
-/*
- * Reader Input (BDOS function 3) — maps to console input
- */
 static int cpm_reader_input(z80_state_t *cpu, cpm_state_t *cpm)
 {
     (void)cpu; (void)cpm;
     return cpm_getchar();
 }
 
-/*
- * Punch Output (BDOS function 4) — maps to console output
- */
 static void cpm_punch_output(z80_state_t *cpu, cpm_state_t *cpm)
 {
     (void)cpm;
     cpm_putchar(cpu->e);
 }
 
-/*
- * List Output (BDOS function 5) — maps to console output
- */
 static void cpm_list_output(z80_state_t *cpu, cpm_state_t *cpm)
 {
     (void)cpm;
     cpm_putchar(cpu->e);
 }
 
-/*
- * Direct Console I/O (BDOS function 6)
- * E=0xFF: input (non-blocking, return char or 0x00)
- * E=0xFE: status check (return 0xFF if ready, 0x00 if not)
- * Otherwise: output E as character
- */
 static int cpm_direct_console_io(z80_state_t *cpu, cpm_state_t *cpm)
 {
     (void)cpm;
     uint8_t e = cpu->e;
-
     if (e == 0xFF) {
-        /* Non-blocking input */
         if (cpm_char_ready())
             return cpm_getchar();
         return 0x00;
     } else if (e == 0xFE) {
-        /* Console status check */
         return cpm_char_ready() ? 0xFF : 0x00;
     } else {
-        /* Output */
         cpm_putchar(e);
         return 0;
     }
 }
 
-/*
- * Get I/O Byte (BDOS function 7)
- * Returns the IOBYTE at address 0x0003.
- */
 static int cpm_get_iobyte(z80_state_t *cpu, cpm_state_t *cpm)
 {
     (void)cpm;
     return z80_read8(cpu, 0x0003);
 }
 
-/*
- * Set I/O Byte (BDOS function 8)
- * Sets the IOBYTE at address 0x0003 to E.
- */
 static void cpm_set_iobyte(z80_state_t *cpu, cpm_state_t *cpm)
 {
     (void)cpm;
     z80_write8(cpu, 0x0003, cpu->e);
 }
 
-/*
- * Print String (BDOS function 9)
- * Input:  DE = address of '$'-terminated string
- */
 static void cpm_print_string(z80_state_t *cpu, cpm_state_t *cpm)
 {
     (void)cpm;
     uint16_t addr = z80_de(cpu);
-
     for (;;) {
         uint8_t ch = z80_read8(cpu, addr);
         if (ch == '$')
@@ -177,13 +312,6 @@ static void cpm_print_string(z80_state_t *cpu, cpm_state_t *cpm)
     }
 }
 
-/*
- * Read Console Buffer (BDOS function 10)
- * DE = address of buffer:
- *   buf[0] = max chars (set by caller)
- *   buf[1] = actual chars read (set by BDOS)
- *   buf[2..] = character data
- */
 static void cpm_read_console_buffer(z80_state_t *cpu, cpm_state_t *cpm)
 {
     (void)cpm;
@@ -199,7 +327,6 @@ static void cpm_read_console_buffer(z80_state_t *cpu, cpm_state_t *cpm)
             break;
         }
         if (ch == 0x08 || ch == 0x7F) {
-            /* Backspace */
             if (n > 0) {
                 n--;
                 cpm_putchar(0x08);
@@ -208,33 +335,371 @@ static void cpm_read_console_buffer(z80_state_t *cpu, cpm_state_t *cpm)
             }
             continue;
         }
-        /* Echo and store */
         cpm_putchar(ch);
         z80_write8(cpu, buf_addr + 2 + n, ch);
         n++;
     }
-
     z80_write8(cpu, buf_addr + 1, (uint8_t)n);
 }
 
-/*
- * Get Console Status (BDOS function 11)
- * Returns 0xFF if character ready, 0x00 if not.
- */
 static int cpm_console_status(z80_state_t *cpu, cpm_state_t *cpm)
 {
     (void)cpu; (void)cpm;
     return cpm_char_ready() ? 0xFF : 0x00;
 }
 
-/*
- * Return Version Number (BDOS function 12)
- * Returns 0x0022 (CP/M 2.2) in HL.
- */
 static int cpm_version_number(z80_state_t *cpu, cpm_state_t *cpm)
 {
     (void)cpu; (void)cpm;
     return 0x0022;
+}
+
+/* ── BDOS Disk/File functions (Phase 3) ────────────────────────────────── */
+
+/*
+ * Reset Disk System (BDOS function 13)
+ */
+static void cpm_reset_disk(z80_state_t *cpu, cpm_state_t *cpm)
+{
+    (void)cpu;
+    cpm->current_drive = 0;
+    cpm->dma_addr = CPM_DMA_DEFAULT;
+}
+
+/*
+ * Select Disk (BDOS function 14)
+ * E = drive number (0=A, 1=B, ...)
+ */
+static void cpm_select_disk(z80_state_t *cpu, cpm_state_t *cpm)
+{
+    (void)cpu;
+    cpm->current_drive = cpu->e & 0x0F;
+}
+
+/*
+ * Open File (BDOS function 15)
+ * DE = FCB address.  Returns A=0 on success, A=0xFF on error.
+ */
+static int cpm_open_file(z80_state_t *cpu, cpm_state_t *cpm,
+                         uint16_t fcb_addr)
+{
+    uint8_t fcb[36];
+    for (int i = 0; i < 36; i++)
+        fcb[i] = z80_read8(cpu, fcb_addr + i);
+
+    char path[128];
+    cpm_fcb_to_path(cpm, fcb, path, sizeof(path));
+
+    int fd = cpm_file_open(path, O_RDWR);
+    if (fd < 0)
+        fd = cpm_file_open(path, O_RDONLY);
+    if (fd < 0)
+        return 0xFF;
+
+    int slot = cpm_alloc_file_slot(cpm, fcb_addr, fd);
+    if (slot < 0) {
+        cpm_file_close(fd);
+        return 0xFF;
+    }
+
+    /* Initialize FCB sequential position fields */
+    z80_write8(cpu, fcb_addr + 12, 0);  /* extent low (ex) */
+    z80_write8(cpu, fcb_addr + 14, 0);  /* extent high (s2) */
+    z80_write8(cpu, fcb_addr + 15, 0);  /* record count (rc) */
+    z80_write8(cpu, fcb_addr + 32, 0);  /* current record (cr) */
+
+    return 0;
+}
+
+/*
+ * Close File (BDOS function 16)
+ */
+static int cpm_close_file(z80_state_t *cpu, cpm_state_t *cpm,
+                          uint16_t fcb_addr)
+{
+    (void)cpu;
+    int slot = cpm_find_file_slot(cpm, fcb_addr);
+    if (slot < 0)
+        return 0xFF;
+
+    cpm_file_close(cpm->open_files[slot].fd);
+    cpm_free_file_slot(cpm, slot);
+    return 0;
+}
+
+/*
+ * Delete File (BDOS function 19)
+ */
+static int cpm_delete_file(z80_state_t *cpu, cpm_state_t *cpm,
+                           uint16_t fcb_addr)
+{
+    uint8_t fcb[36];
+    for (int i = 0; i < 36; i++)
+        fcb[i] = z80_read8(cpu, fcb_addr + i);
+
+    char path[128];
+    cpm_fcb_to_path(cpm, fcb, path, sizeof(path));
+
+    if (cpm_file_delete(path) < 0)
+        return 0xFF;
+    return 0;
+}
+
+/*
+ * Read Sequential (BDOS function 20)
+ * Reads 128 bytes into DMA buffer.  Returns A=0 on success, nonzero on EOF.
+ */
+static int cpm_read_sequential(z80_state_t *cpu, cpm_state_t *cpm,
+                                uint16_t fcb_addr)
+{
+    int slot = cpm_find_file_slot(cpm, fcb_addr);
+    if (slot < 0)
+        return 0x09;
+
+    /* Seek to current position */
+    uint32_t pos = cpm->open_files[slot].file_pos;
+    cpm_file_seek(cpm->open_files[slot].fd, (int)pos, SEEK_SET);
+
+    /* Read 128 bytes */
+    uint8_t buf[CPM_RECORD_SIZE];
+    int n = cpm_file_read(cpm->open_files[slot].fd, buf, CPM_RECORD_SIZE);
+    if (n <= 0)
+        return 0x01;  /* EOF */
+
+    /* Pad with 0x1A if short read */
+    if (n < CPM_RECORD_SIZE)
+        memset(&buf[n], 0x1A, CPM_RECORD_SIZE - n);
+
+    /* Write to DMA buffer in emulated memory */
+    for (int i = 0; i < CPM_RECORD_SIZE; i++)
+        z80_write8(cpu, cpm->dma_addr + i, buf[i]);
+
+    /* Advance position */
+    cpm->open_files[slot].file_pos += CPM_RECORD_SIZE;
+    cpm_fcb_set_seq_pos(cpu, fcb_addr, cpm->open_files[slot].file_pos);
+
+    return 0;
+}
+
+/*
+ * Write Sequential (BDOS function 21)
+ * Writes 128 bytes from DMA buffer.
+ */
+static int cpm_write_sequential(z80_state_t *cpu, cpm_state_t *cpm,
+                                 uint16_t fcb_addr)
+{
+    int slot = cpm_find_file_slot(cpm, fcb_addr);
+    if (slot < 0)
+        return 0x09;
+
+    /* Seek to current position */
+    uint32_t pos = cpm->open_files[slot].file_pos;
+    cpm_file_seek(cpm->open_files[slot].fd, (int)pos, SEEK_SET);
+
+    /* Read 128 bytes from DMA buffer */
+    uint8_t buf[CPM_RECORD_SIZE];
+    for (int i = 0; i < CPM_RECORD_SIZE; i++)
+        buf[i] = z80_read8(cpu, cpm->dma_addr + i);
+
+    int n = cpm_file_write(cpm->open_files[slot].fd, buf, CPM_RECORD_SIZE);
+    if (n < CPM_RECORD_SIZE)
+        return 0x01;  /* disk full */
+
+    /* Advance position */
+    cpm->open_files[slot].file_pos += CPM_RECORD_SIZE;
+    cpm_fcb_set_seq_pos(cpu, fcb_addr, cpm->open_files[slot].file_pos);
+
+    return 0;
+}
+
+/*
+ * Make File (BDOS function 22)
+ * Creates a new file.  Returns A=0 on success, A=0xFF on error.
+ */
+static int cpm_make_file(z80_state_t *cpu, cpm_state_t *cpm,
+                         uint16_t fcb_addr)
+{
+    uint8_t fcb[36];
+    for (int i = 0; i < 36; i++)
+        fcb[i] = z80_read8(cpu, fcb_addr + i);
+
+    char path[128];
+    cpm_fcb_to_path(cpm, fcb, path, sizeof(path));
+
+    int fd = cpm_file_open(path, O_RDWR | O_CREAT | O_TRUNC);
+    if (fd < 0)
+        return 0xFF;
+
+    int slot = cpm_alloc_file_slot(cpm, fcb_addr, fd);
+    if (slot < 0) {
+        cpm_file_close(fd);
+        return 0xFF;
+    }
+
+    z80_write8(cpu, fcb_addr + 12, 0);
+    z80_write8(cpu, fcb_addr + 14, 0);
+    z80_write8(cpu, fcb_addr + 15, 0);
+    z80_write8(cpu, fcb_addr + 32, 0);
+
+    return 0;
+}
+
+/*
+ * Rename File (BDOS function 23)
+ * DE = FCB where bytes 0-15 are the old name and bytes 16-31 are the new name.
+ */
+static int cpm_rename_file(z80_state_t *cpu, cpm_state_t *cpm,
+                           uint16_t fcb_addr)
+{
+    uint8_t old_fcb[16], new_fcb[16];
+    for (int i = 0; i < 16; i++) {
+        old_fcb[i] = z80_read8(cpu, fcb_addr + i);
+        new_fcb[i] = z80_read8(cpu, fcb_addr + 16 + i);
+    }
+
+    char old_path[128], new_path[128];
+    cpm_fcb_to_path(cpm, old_fcb, old_path, sizeof(old_path));
+    cpm_fcb_to_path(cpm, new_fcb, new_path, sizeof(new_path));
+
+    if (cpm_file_rename(old_path, new_path) < 0)
+        return 0xFF;
+    return 0;
+}
+
+/*
+ * Set DMA Address (BDOS function 26)
+ */
+static void cpm_set_dma_address(z80_state_t *cpu, cpm_state_t *cpm)
+{
+    (void)cpu;
+    cpm->dma_addr = z80_de(cpu);
+}
+
+/*
+ * Read Random (BDOS function 33)
+ * Random record number in FCB bytes 33-35 (little-endian).
+ */
+static int cpm_read_random(z80_state_t *cpu, cpm_state_t *cpm,
+                           uint16_t fcb_addr)
+{
+    int slot = cpm_find_file_slot(cpm, fcb_addr);
+    if (slot < 0)
+        return 0x09;
+
+    uint32_t record = z80_read8(cpu, fcb_addr + 33)
+                    | ((uint32_t)z80_read8(cpu, fcb_addr + 34) << 8)
+                    | ((uint32_t)z80_read8(cpu, fcb_addr + 35) << 16);
+
+    uint32_t offset = record * CPM_RECORD_SIZE;
+    cpm->open_files[slot].file_pos = offset;
+
+    /* Update sequential position to match */
+    cpm_fcb_set_seq_pos(cpu, fcb_addr, offset);
+
+    return cpm_read_sequential(cpu, cpm, fcb_addr);
+}
+
+/*
+ * Write Random (BDOS function 34)
+ */
+static int cpm_write_random(z80_state_t *cpu, cpm_state_t *cpm,
+                            uint16_t fcb_addr)
+{
+    int slot = cpm_find_file_slot(cpm, fcb_addr);
+    if (slot < 0)
+        return 0x09;
+
+    uint32_t record = z80_read8(cpu, fcb_addr + 33)
+                    | ((uint32_t)z80_read8(cpu, fcb_addr + 34) << 8)
+                    | ((uint32_t)z80_read8(cpu, fcb_addr + 35) << 16);
+
+    uint32_t offset = record * CPM_RECORD_SIZE;
+    cpm->open_files[slot].file_pos = offset;
+
+    cpm_fcb_set_seq_pos(cpu, fcb_addr, offset);
+
+    return cpm_write_sequential(cpu, cpm, fcb_addr);
+}
+
+/*
+ * Compute File Size (BDOS function 35)
+ * Sets random record field in FCB to file size in records.
+ */
+static int cpm_compute_file_size(z80_state_t *cpu, cpm_state_t *cpm,
+                                  uint16_t fcb_addr)
+{
+    int slot = cpm_find_file_slot(cpm, fcb_addr);
+    if (slot < 0)
+        return 0xFF;
+
+    int end = cpm_file_seek(cpm->open_files[slot].fd, 0, SEEK_END);
+    if (end < 0)
+        return 0xFF;
+
+    uint32_t records = ((uint32_t)end + CPM_RECORD_SIZE - 1) / CPM_RECORD_SIZE;
+    z80_write8(cpu, fcb_addr + 33, records & 0xFF);
+    z80_write8(cpu, fcb_addr + 34, (records >> 8) & 0xFF);
+    z80_write8(cpu, fcb_addr + 35, (records >> 16) & 0xFF);
+
+    return 0;
+}
+
+/*
+ * Set Random Record (BDOS function 36)
+ * Computes random record number from FCB sequential position.
+ */
+static int cpm_set_random_record(z80_state_t *cpu, cpm_state_t *cpm,
+                                  uint16_t fcb_addr)
+{
+    (void)cpm;
+    uint32_t pos = cpm_fcb_get_seq_pos(cpu, fcb_addr);
+    uint32_t record = pos / CPM_RECORD_SIZE;
+
+    z80_write8(cpu, fcb_addr + 33, record & 0xFF);
+    z80_write8(cpu, fcb_addr + 34, (record >> 8) & 0xFF);
+    z80_write8(cpu, fcb_addr + 35, (record >> 16) & 0xFF);
+
+    return 0;
+}
+
+/*
+ * Return Login Vector (BDOS function 24)
+ */
+static int cpm_return_login_vector(z80_state_t *cpu, cpm_state_t *cpm)
+{
+    (void)cpu; (void)cpm;
+    return 0x0001;  /* drive A only */
+}
+
+/*
+ * Return Current Disk (BDOS function 25)
+ */
+static int cpm_return_current_disk(z80_state_t *cpu, cpm_state_t *cpm)
+{
+    (void)cpu;
+    return cpm->current_drive;
+}
+
+/*
+ * Get Read-Only Vector (BDOS function 29)
+ */
+static int cpm_get_readonly_vector(z80_state_t *cpu, cpm_state_t *cpm)
+{
+    (void)cpu; (void)cpm;
+    return 0x0000;  /* no read-only drives */
+}
+
+/*
+ * Get/Set User Code (BDOS function 32)
+ */
+static int cpm_set_get_user_code(z80_state_t *cpu, cpm_state_t *cpm)
+{
+    (void)cpu;
+    uint8_t e = cpu->e;
+    if (e == 0xFF)
+        return cpm->current_user;
+    cpm->current_user = e & 0x0F;
+    return 0;
 }
 
 /* ── BDOS function dispatch ────────────────────────────────────────────── */
@@ -242,67 +707,45 @@ static int cpm_version_number(z80_state_t *cpu, cpm_state_t *cpm)
 static int cpm_bdos_dispatch(z80_state_t *cpu, cpm_state_t *cpm)
 {
     uint8_t fn = cpu->c;
+    uint16_t de = z80_de(cpu);
     int result = 0;
 
     switch (fn) {
-    case 0:  /* System Reset */
-        return ECPU_TRAP_EXIT;
-
-    case 1:  /* Console Input */
-        result = cpm_console_input(cpu, cpm);
-        break;
-
-    case 2:  /* Console Output */
-        cpm_console_output(cpu, cpm);
-        break;
-
-    case 3:  /* Reader Input */
-        result = cpm_reader_input(cpu, cpm);
-        break;
-
-    case 4:  /* Punch Output */
-        cpm_punch_output(cpu, cpm);
-        break;
-
-    case 5:  /* List Output */
-        cpm_list_output(cpu, cpm);
-        break;
-
-    case 6:  /* Direct Console I/O */
-        result = cpm_direct_console_io(cpu, cpm);
-        break;
-
-    case 7:  /* Get I/O Byte */
-        result = cpm_get_iobyte(cpu, cpm);
-        break;
-
-    case 8:  /* Set I/O Byte */
-        cpm_set_iobyte(cpu, cpm);
-        break;
-
-    case 9:  /* Print String */
-        cpm_print_string(cpu, cpm);
-        break;
-
-    case 10: /* Read Console Buffer */
-        cpm_read_console_buffer(cpu, cpm);
-        break;
-
-    case 11: /* Get Console Status */
-        result = cpm_console_status(cpu, cpm);
-        break;
-
-    case 12: /* Return Version Number */
-        result = cpm_version_number(cpu, cpm);
-        break;
-
-    default:
-        /* Unknown function — return 0xFF in A */
-        result = 0xFF;
-        break;
+    case 0:  return ECPU_TRAP_EXIT;
+    case 1:  result = cpm_console_input(cpu, cpm); break;
+    case 2:  cpm_console_output(cpu, cpm); break;
+    case 3:  result = cpm_reader_input(cpu, cpm); break;
+    case 4:  cpm_punch_output(cpu, cpm); break;
+    case 5:  cpm_list_output(cpu, cpm); break;
+    case 6:  result = cpm_direct_console_io(cpu, cpm); break;
+    case 7:  result = cpm_get_iobyte(cpu, cpm); break;
+    case 8:  cpm_set_iobyte(cpu, cpm); break;
+    case 9:  cpm_print_string(cpu, cpm); break;
+    case 10: cpm_read_console_buffer(cpu, cpm); break;
+    case 11: result = cpm_console_status(cpu, cpm); break;
+    case 12: result = cpm_version_number(cpu, cpm); break;
+    case 13: cpm_reset_disk(cpu, cpm); break;
+    case 14: cpm_select_disk(cpu, cpm); break;
+    case 15: result = cpm_open_file(cpu, cpm, de); break;
+    case 16: result = cpm_close_file(cpu, cpm, de); break;
+    case 19: result = cpm_delete_file(cpu, cpm, de); break;
+    case 20: result = cpm_read_sequential(cpu, cpm, de); break;
+    case 21: result = cpm_write_sequential(cpu, cpm, de); break;
+    case 22: result = cpm_make_file(cpu, cpm, de); break;
+    case 23: result = cpm_rename_file(cpu, cpm, de); break;
+    case 24: result = cpm_return_login_vector(cpu, cpm); break;
+    case 25: result = cpm_return_current_disk(cpu, cpm); break;
+    case 26: cpm_set_dma_address(cpu, cpm); break;
+    case 29: result = cpm_get_readonly_vector(cpu, cpm); break;
+    case 32: result = cpm_set_get_user_code(cpu, cpm); break;
+    case 33: result = cpm_read_random(cpu, cpm, de); break;
+    case 34: result = cpm_write_random(cpu, cpm, de); break;
+    case 35: result = cpm_compute_file_size(cpu, cpm, de); break;
+    case 36: result = cpm_set_random_record(cpu, cpm, de); break;
+    case 40: result = cpm_write_random(cpu, cpm, de); break; /* zero fill = same */
+    default: result = 0xFF; break;
     }
 
-    /* Standard BDOS return convention: result in A and L (HL for fn 12) */
     cpu->a = result & 0xFF;
     cpu->l = result & 0xFF;
     cpu->h = (result >> 8) & 0xFF;
@@ -317,44 +760,16 @@ static int cpm_bios_dispatch(z80_state_t *cpu, cpm_state_t *cpm,
     (void)cpm;
 
     switch (bios_fn) {
-    case 0:  /* BOOT — cold boot → exit */
-    case 1:  /* WBOOT — warm boot → exit */
-        return ECPU_TRAP_EXIT;
-
-    case 2:  /* CONST — console status */
-        cpu->a = cpm_char_ready() ? 0xFF : 0x00;
-        return ECPU_TRAP_HANDLED;
-
-    case 3:  /* CONIN — console input */
-        cpu->a = cpm_getchar();
-        return ECPU_TRAP_HANDLED;
-
-    case 4:  /* CONOUT — console output, char in C register */
-        cpm_putchar(cpu->c);
-        return ECPU_TRAP_HANDLED;
-
-    case 5:  /* LIST — list output, char in C register */
-        cpm_putchar(cpu->c);
-        return ECPU_TRAP_HANDLED;
-
-    case 6:  /* PUNCH — no-op */
-        return ECPU_TRAP_HANDLED;
-
-    case 7:  /* READER — return 0x1A (EOF) */
-        cpu->a = 0x1A;
-        return ECPU_TRAP_HANDLED;
-
-    case 15: /* LISTST — list status, always ready */
-        cpu->a = 0xFF;
-        return ECPU_TRAP_HANDLED;
-
-    case 16: /* SECTRAN — sector translate, return BC in HL */
-        z80_set_hl(cpu, z80_bc(cpu));
-        return ECPU_TRAP_HANDLED;
-
-    default:
-        /* Unimplemented BIOS function (disk I/O etc.) — no-op */
-        return ECPU_TRAP_HANDLED;
+    case 0: case 1: return ECPU_TRAP_EXIT;
+    case 2:  cpu->a = cpm_char_ready() ? 0xFF : 0x00; return ECPU_TRAP_HANDLED;
+    case 3:  cpu->a = cpm_getchar(); return ECPU_TRAP_HANDLED;
+    case 4:  cpm_putchar(cpu->c); return ECPU_TRAP_HANDLED;
+    case 5:  cpm_putchar(cpu->c); return ECPU_TRAP_HANDLED;
+    case 6:  return ECPU_TRAP_HANDLED;
+    case 7:  cpu->a = 0x1A; return ECPU_TRAP_HANDLED;
+    case 15: cpu->a = 0xFF; return ECPU_TRAP_HANDLED;
+    case 16: z80_set_hl(cpu, z80_bc(cpu)); return ECPU_TRAP_HANDLED;
+    default: return ECPU_TRAP_HANDLED;
     }
 }
 
@@ -367,15 +782,10 @@ int cpm_trap_handler(ecpu_state_t *state, int trap_type,
     cpm_state_t *cpm = (cpm_state_t *)ctx;
 
     if (trap_type == ECPU_TRAP_CALL) {
-        /* BDOS entry: CALL 0x0005 */
         if (param == CPM_BDOS_ENTRY)
             return cpm_bdos_dispatch(cpu, cpm);
-
-        /* Warm boot: CALL 0x0000 (JP at address 0 points to BIOS+3) */
         if (param == 0x0000)
             return ECPU_TRAP_EXIT;
-
-        /* BIOS jump table: addresses CPM_BIOS_ENTRY to CPM_BIOS_ENTRY+0x33 */
         if (param >= CPM_BIOS_ENTRY &&
             param < CPM_BIOS_ENTRY + CPM_BIOS_SIZE) {
             int bios_fn = (param - CPM_BIOS_ENTRY) / 3;
