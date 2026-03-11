@@ -223,6 +223,44 @@ void z80_add_hl(z80_state_t *cpu, uint16_t val)
     cpu->wz = hl + 1;  /* WZ = old HL + 1 */
 }
 
+/* ── ADC HL,rr / SBC HL,rr (16-bit with flags) ─────────────────────────── */
+
+void z80_adc_hl(z80_state_t *cpu, uint16_t val)
+{
+    uint16_t hl = z80_hl(cpu);
+    uint8_t carry = cpu->f & FLAG_C;
+    uint32_t result = hl + val + carry;
+    uint16_t res16 = result & 0xFFFF;
+
+    cpu->f = ((res16 >> 8) & (FLAG_S | FLAG_35))
+           | ((res16 == 0) ? FLAG_Z : 0)
+           | ((result > 0xFFFF) ? FLAG_C : 0)
+           | ((((hl ^ val ^ res16) >> 8) & 0x10) ? FLAG_H : 0)
+           | (((~(hl ^ val) & (hl ^ res16)) >> 8) & 0x80 ? FLAG_PV : 0);
+    /* N = 0 */
+
+    z80_set_hl(cpu, res16);
+    cpu->wz = hl + 1;
+}
+
+void z80_sbc_hl(z80_state_t *cpu, uint16_t val)
+{
+    uint16_t hl = z80_hl(cpu);
+    uint8_t carry = cpu->f & FLAG_C;
+    uint32_t result = hl - val - carry;
+    uint16_t res16 = result & 0xFFFF;
+
+    cpu->f = ((res16 >> 8) & (FLAG_S | FLAG_35))
+           | FLAG_N
+           | ((res16 == 0) ? FLAG_Z : 0)
+           | ((result > 0xFFFF) ? FLAG_C : 0)
+           | ((((hl ^ val ^ res16) >> 8) & 0x10) ? FLAG_H : 0)
+           | ((((hl ^ val) & (hl ^ res16)) >> 8) & 0x80 ? FLAG_PV : 0);
+
+    z80_set_hl(cpu, res16);
+    cpu->wz = hl + 1;
+}
+
 /* ── Rotate accumulator ─────────────────────────────────────────────────── */
 
 void z80_rlca(z80_state_t *cpu)

@@ -2154,6 +2154,436 @@ static void test_cb_shift_program(void)
     printf("  PASS: cb_shift_program\n");
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * Step 6 tests — ED prefix (block ops, 16-bit arith, NEG, RLD/RRD, etc.)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Test: NEG ───────────────────────────────────────────────────────────── */
+
+static void test_ed_neg(void)
+{
+    /* NEG: A=0x42 → A=0xBE, C=1, N=1 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0x42;  /* LD A, 0x42 */
+    mem[0x102] = 0xED; mem[0x103] = 0x44;  /* NEG */
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0xBE);
+    assert(cpu.f & FLAG_C);
+    assert(cpu.f & FLAG_N);
+
+    /* NEG: A=0x00 → A=0x00, C=0, Z=1 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0x00;
+    mem[0x102] = 0xED; mem[0x103] = 0x44;
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x00);
+    assert(!(cpu.f & FLAG_C));
+    assert(cpu.f & FLAG_Z);
+
+    /* NEG: A=0x80 → A=0x80, PV=1 (overflow) */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0x80;
+    mem[0x102] = 0xED; mem[0x103] = 0x44;
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x80);
+    assert(cpu.f & FLAG_PV);
+
+    printf("  PASS: ed_neg\n");
+}
+
+/* ── Test: ADC HL,rr / SBC HL,rr ────────────────────────────────────────── */
+
+static void test_ed_adc_sbc_hl(void)
+{
+    /* SBC HL, BC: HL=0x1000 - BC=0x0100 - C=0 = 0x0F00 */
+    setup();
+    cpu.pc = 0x100;
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x10;  /* LD HL, 0x1000 */
+    mem[pc++] = 0x01; mem[pc++] = 0x00; mem[pc++] = 0x01;  /* LD BC, 0x0100 */
+    mem[pc++] = 0xED; mem[pc++] = 0x42;  /* SBC HL, BC */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(z80_hl(&cpu) == 0x0F00);
+    assert(cpu.f & FLAG_N);
+    assert(!(cpu.f & FLAG_C));
+    assert(!(cpu.f & FLAG_Z));
+
+    /* SBC with borrow: set carry first */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = FLAG_C;
+    pc = 0x100;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x10;
+    mem[pc++] = 0x01; mem[pc++] = 0x00; mem[pc++] = 0x01;
+    mem[pc++] = 0xED; mem[pc++] = 0x42;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(z80_hl(&cpu) == 0x0EFF);
+
+    /* ADC HL, DE: HL=0x1000 + DE=0x2000 + C=0 = 0x3000 */
+    setup();
+    cpu.pc = 0x100;
+    pc = 0x100;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x10;
+    mem[pc++] = 0x11; mem[pc++] = 0x00; mem[pc++] = 0x20;
+    mem[pc++] = 0xED; mem[pc++] = 0x5A;  /* ADC HL, DE */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(z80_hl(&cpu) == 0x3000);
+    assert(!(cpu.f & FLAG_N));
+
+    /* ADC with carry */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = FLAG_C;
+    pc = 0x100;
+    mem[pc++] = 0x21; mem[pc++] = 0xFF; mem[pc++] = 0xFF;
+    mem[pc++] = 0x11; mem[pc++] = 0x00; mem[pc++] = 0x00;
+    mem[pc++] = 0xED; mem[pc++] = 0x5A;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(z80_hl(&cpu) == 0x0000);
+    assert(cpu.f & FLAG_C);
+    assert(cpu.f & FLAG_Z);
+
+    printf("  PASS: ed_adc_sbc_hl\n");
+}
+
+/* ── Test: ED LD (nn),rr / LD rr,(nn) ───────────────────────────────────── */
+
+static void test_ed_ld_rr_nn(void)
+{
+    /* ED 43 nn nn: LD (nn), BC */
+    setup();
+    cpu.pc = 0x100;
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x01; mem[pc++] = 0x34; mem[pc++] = 0x12;  /* LD BC, 0x1234 */
+    mem[pc++] = 0xED; mem[pc++] = 0x43;  /* LD (0x8000), BC */
+    mem[pc++] = 0x00; mem[pc++] = 0x80;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(mem[0x8000] == 0x34);
+    assert(mem[0x8001] == 0x12);
+
+    /* ED 4B nn nn: LD BC, (nn) */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x8000] = 0x78; mem[0x8001] = 0x56;
+    pc = 0x100;
+    mem[pc++] = 0xED; mem[pc++] = 0x4B;  /* LD BC, (0x8000) */
+    mem[pc++] = 0x00; mem[pc++] = 0x80;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(z80_bc(&cpu) == 0x5678);
+
+    /* ED 73: LD (nn), SP */
+    setup();
+    cpu.pc = 0x100;
+    cpu.sp = 0xABCD;
+    pc = 0x100;
+    mem[pc++] = 0xED; mem[pc++] = 0x73;  /* LD (0x8000), SP */
+    mem[pc++] = 0x00; mem[pc++] = 0x80;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(mem[0x8000] == 0xCD);
+    assert(mem[0x8001] == 0xAB);
+
+    printf("  PASS: ed_ld_rr_nn\n");
+}
+
+/* ── Test: LD I,A / LD R,A / LD A,I / LD A,R ────────────────────────────── */
+
+static void test_ed_ld_i_r(void)
+{
+    /* LD I, A */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0x42;
+    mem[0x102] = 0xED; mem[0x103] = 0x47;  /* LD I, A */
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.i == 0x42);
+
+    /* LD A, I — sets flags, PV=IFF2 */
+    setup();
+    cpu.pc = 0x100;
+    cpu.i = 0x80;
+    cpu.iff2 = 1;
+    cpu.f = FLAG_C;  /* preserve carry */
+    mem[0x100] = 0xED; mem[0x101] = 0x57;  /* LD A, I */
+    mem[0x102] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x80);
+    assert(cpu.f & FLAG_S);
+    assert(cpu.f & FLAG_C);  /* preserved */
+    assert(cpu.f & FLAG_PV); /* IFF2=1 */
+    assert(!(cpu.f & FLAG_Z));
+
+    /* LD R, A and LD A, R */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0x55;
+    mem[0x102] = 0xED; mem[0x103] = 0x4F;  /* LD R, A */
+    mem[0x104] = 0xED; mem[0x105] = 0x5F;  /* LD A, R */
+    mem[0x106] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    /* R was set to 0x55, then incremented by each instruction fetch.
+     * After LD R,A (R=0x55), ED 5F fetches increment R twice more:
+     * R = (0x55+2) & 0x7F | (0x55 & 0x80) = 0x57 | 0x00 = 0x57 */
+    assert(cpu.a == 0x57);
+
+    printf("  PASS: ed_ld_i_r\n");
+}
+
+/* ── Test: IM 0/1/2 ──────────────────────────────────────────────────────── */
+
+static void test_ed_im(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0xED; mem[0x101] = 0x56;  /* IM 1 */
+    mem[0x102] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.im == 1);
+
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0xED; mem[0x101] = 0x5E;  /* IM 2 */
+    mem[0x102] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.im == 2);
+
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0xED; mem[0x101] = 0x46;  /* IM 0 */
+    mem[0x102] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.im == 0);
+
+    printf("  PASS: ed_im\n");
+}
+
+/* ── Test: RLD / RRD ─────────────────────────────────────────────────────── */
+
+static void test_ed_rld_rrd(void)
+{
+    /* RLD: A=0x12, (HL)=0x34 → A=0x13, (HL)=0x42 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x8000] = 0x34;
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0x12;  /* LD A, 0x12 */
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x80;  /* LD HL, 0x8000 */
+    mem[pc++] = 0xED; mem[pc++] = 0x6F;  /* RLD */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x13);
+    assert(mem[0x8000] == 0x42);
+
+    /* RRD: A=0x12, (HL)=0x34 → A=0x14, (HL)=0x23 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x8000] = 0x34;
+    pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0x12;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x80;
+    mem[pc++] = 0xED; mem[pc++] = 0x67;  /* RRD */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x14);
+    assert(mem[0x8000] == 0x23);
+
+    printf("  PASS: ed_rld_rrd\n");
+}
+
+/* ── Test: LDI / LDD ────────────────────────────────────────────────────── */
+
+static void test_ed_ldi_ldd(void)
+{
+    /* LDI: copy one byte from (HL) to (DE), HL++, DE++, BC-- */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x8000] = 0xAA;
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x80;  /* LD HL, 0x8000 */
+    mem[pc++] = 0x11; mem[pc++] = 0x00; mem[pc++] = 0x90;  /* LD DE, 0x9000 */
+    mem[pc++] = 0x01; mem[pc++] = 0x03; mem[pc++] = 0x00;  /* LD BC, 3 */
+    mem[pc++] = 0xED; mem[pc++] = 0xA0;  /* LDI */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(mem[0x9000] == 0xAA);
+    assert(z80_hl(&cpu) == 0x8001);
+    assert(z80_de(&cpu) == 0x9001);
+    assert(z80_bc(&cpu) == 0x0002);
+    assert(cpu.f & FLAG_PV);  /* BC != 0 */
+
+    /* LDD: copy one byte, HL--, DE--, BC-- */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x8003] = 0xBB;
+    pc = 0x100;
+    mem[pc++] = 0x21; mem[pc++] = 0x03; mem[pc++] = 0x80;  /* LD HL, 0x8003 */
+    mem[pc++] = 0x11; mem[pc++] = 0x03; mem[pc++] = 0x90;  /* LD DE, 0x9003 */
+    mem[pc++] = 0x01; mem[pc++] = 0x01; mem[pc++] = 0x00;  /* LD BC, 1 */
+    mem[pc++] = 0xED; mem[pc++] = 0xA8;  /* LDD */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(mem[0x9003] == 0xBB);
+    assert(z80_hl(&cpu) == 0x8002);
+    assert(z80_de(&cpu) == 0x9002);
+    assert(z80_bc(&cpu) == 0x0000);
+    assert(!(cpu.f & FLAG_PV));  /* BC == 0 */
+
+    printf("  PASS: ed_ldi_ldd\n");
+}
+
+/* ── Test: LDIR (block copy) ─────────────────────────────────────────────── */
+
+static void test_ed_ldir(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    /* Source data */
+    mem[0x8000] = 0x11; mem[0x8001] = 0x22;
+    mem[0x8002] = 0x33; mem[0x8003] = 0x44;
+
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x80;  /* LD HL, 0x8000 */
+    mem[pc++] = 0x11; mem[pc++] = 0x00; mem[pc++] = 0x90;  /* LD DE, 0x9000 */
+    mem[pc++] = 0x01; mem[pc++] = 0x04; mem[pc++] = 0x00;  /* LD BC, 4 */
+    mem[pc++] = 0xED; mem[pc++] = 0xB0;  /* LDIR */
+    mem[pc++] = 0x76;
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(mem[0x9000] == 0x11);
+    assert(mem[0x9001] == 0x22);
+    assert(mem[0x9002] == 0x33);
+    assert(mem[0x9003] == 0x44);
+    assert(z80_bc(&cpu) == 0x0000);
+    assert(z80_hl(&cpu) == 0x8004);
+    assert(z80_de(&cpu) == 0x9004);
+    assert(!(cpu.f & FLAG_PV));  /* BC == 0 at end */
+
+    printf("  PASS: ed_ldir\n");
+}
+
+/* ── Test: CPI / CPD ─────────────────────────────────────────────────────── */
+
+static void test_ed_cpi_cpd(void)
+{
+    /* CPI: compare A with (HL), HL++, BC-- */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x8000] = 0x42;
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0x42;  /* LD A, 0x42 */
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x80;
+    mem[pc++] = 0x01; mem[pc++] = 0x02; mem[pc++] = 0x00;  /* LD BC, 2 */
+    mem[pc++] = 0xED; mem[pc++] = 0xA1;  /* CPI */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.f & FLAG_Z);    /* A == (HL) */
+    assert(cpu.f & FLAG_N);
+    assert(z80_hl(&cpu) == 0x8001);
+    assert(z80_bc(&cpu) == 0x0001);
+    assert(cpu.f & FLAG_PV);  /* BC != 0 */
+
+    /* CPI: no match */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x8000] = 0x99;
+    pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0x42;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x80;
+    mem[pc++] = 0x01; mem[pc++] = 0x01; mem[pc++] = 0x00;
+    mem[pc++] = 0xED; mem[pc++] = 0xA1;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(!(cpu.f & FLAG_Z));
+    assert(!(cpu.f & FLAG_PV));  /* BC == 0 */
+
+    printf("  PASS: ed_cpi_cpd\n");
+}
+
+/* ── Test: CPIR (search) ─────────────────────────────────────────────────── */
+
+static void test_ed_cpir(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    /* Search for 0x33 in array */
+    mem[0x8000] = 0x11; mem[0x8001] = 0x22;
+    mem[0x8002] = 0x33; mem[0x8003] = 0x44;
+
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0x33;  /* LD A, 0x33 */
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x80;
+    mem[pc++] = 0x01; mem[pc++] = 0x04; mem[pc++] = 0x00;  /* LD BC, 4 */
+    mem[pc++] = 0xED; mem[pc++] = 0xB1;  /* CPIR */
+    mem[pc++] = 0x76;
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.f & FLAG_Z);             /* found match */
+    assert(z80_hl(&cpu) == 0x8003);     /* HL past the match */
+    assert(z80_bc(&cpu) == 0x0001);     /* BC decremented 3 times */
+
+    /* CPIR: not found */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x8000] = 0x11; mem[0x8001] = 0x22;
+    pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0xFF;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x80;
+    mem[pc++] = 0x01; mem[pc++] = 0x02; mem[pc++] = 0x00;
+    mem[pc++] = 0xED; mem[pc++] = 0xB1;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(!(cpu.f & FLAG_Z));
+    assert(z80_bc(&cpu) == 0x0000);
+
+    printf("  PASS: ed_cpir\n");
+}
+
+/* ── Test: RETN / RETI ───────────────────────────────────────────────────── */
+
+static void test_ed_retn_reti(void)
+{
+    /* RETN: pops PC, copies IFF2 → IFF1 */
+    setup();
+    cpu.pc = 0x200;
+    cpu.sp = 0xFFFE;
+    cpu.iff1 = 0;
+    cpu.iff2 = 1;
+    z80_push16(&cpu, 0x0105);
+    mem[0x200] = 0xED; mem[0x201] = 0x45;  /* RETN */
+    mem[0x105] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.pc == 0x0106);  /* past HALT */
+    assert(cpu.iff1 == 1);     /* copied from IFF2 */
+
+    /* RETI: same behavior */
+    setup();
+    cpu.pc = 0x200;
+    cpu.sp = 0xFFFE;
+    cpu.iff1 = 0;
+    cpu.iff2 = 1;
+    z80_push16(&cpu, 0x0105);
+    mem[0x200] = 0xED; mem[0x201] = 0x4D;  /* RETI */
+    mem[0x105] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.pc == 0x0106);
+    assert(cpu.iff1 == 1);
+
+    printf("  PASS: ed_retn_reti\n");
+}
+
 /* ── Main ────────────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -2231,6 +2661,19 @@ int main(void)
     test_cb_res_set();
     test_cb_hl_indirect();
     test_cb_shift_program();
+
+    /* Step 6 tests */
+    test_ed_neg();
+    test_ed_adc_sbc_hl();
+    test_ed_ld_rr_nn();
+    test_ed_ld_i_r();
+    test_ed_im();
+    test_ed_rld_rrd();
+    test_ed_ldi_ldd();
+    test_ed_ldir();
+    test_ed_cpi_cpd();
+    test_ed_cpir();
+    test_ed_retn_reti();
 
     printf("All tests passed.\n");
     return 0;

@@ -222,6 +222,8 @@ void z80_alu_op(z80_state_t *cpu, uint8_t op, uint8_t val);
 uint8_t z80_inc8(z80_state_t *cpu, uint8_t val);
 uint8_t z80_dec8(z80_state_t *cpu, uint8_t val);
 void z80_add_hl(z80_state_t *cpu, uint16_t val);
+void z80_adc_hl(z80_state_t *cpu, uint16_t val);
+void z80_sbc_hl(z80_state_t *cpu, uint16_t val);
 
 void z80_rlca(z80_state_t *cpu);
 void z80_rrca(z80_state_t *cpu);

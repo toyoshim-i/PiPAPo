@@ -7,6 +7,7 @@
  * Step 3: JP/JR/CALL/RET cc, DJNZ, RST, PUSH/POP, EX/EXX.
  * Step 4: Memory indirect loads, IN/OUT port trapping.
  * Step 5: CB prefix — shifts, rotates, BIT/RES/SET.
+ * Step 6: ED prefix — block ops, 16-bit arith, NEG, I/O, IM, RLD/RRD.
  *
  * See docs/ecpu-z80.md for the full design.
  */
@@ -228,6 +229,227 @@ static void z80_write_qq(z80_state_t *cpu, uint8_t qq, uint16_t val)
         case 2: z80_set_hl(cpu, val); break;
         case 3: z80_set_af(cpu, val); break;
     }
+}
+
+/* ── ED prefix decode ────────────────────────────────────────────────────
+ * Returns 0 normally, or -1 if ECPU_TRAP_EXIT was returned. */
+
+static int z80_decode_ed(z80_state_t *cpu)
+{
+    uint8_t op = z80_fetch8(cpu);
+    cpu->r = (cpu->r & 0x80) | ((cpu->r + 1) & 0x7F);
+
+    uint8_t xx  = op >> 6;
+    uint8_t yyy = (op >> 3) & 7;
+    uint8_t zzz = op & 7;
+
+    if (xx == 1) {
+        switch (zzz) {
+        case 0: /* IN r,(C) / IN F,(C) */
+            {
+                uint16_t addr = z80_bc(cpu);
+                int rc = z80_fire_trap(cpu, ECPU_TRAP_IO_IN, addr);
+                if (rc == ECPU_TRAP_EXIT) return -1;
+                /* After trap, personality may have set a register.
+                 * For IN r,(C), read value from A (trap sets it).
+                 * For IN F,(C) (yyy=6), just set flags, discard. */
+                uint8_t val = (yyy != 6) ? z80_read_r8(cpu, yyy) : 0;
+                if (yyy != 6) {
+                    /* Trap handler should put value in the target reg;
+                     * if unhandled, register keeps its old value */
+                }
+                /* Set flags based on value in register */
+                val = z80_read_r8(cpu, (yyy != 6) ? yyy : 7);
+                cpu->f = (cpu->f & FLAG_C)
+                       | (val & (FLAG_S | FLAG_35))
+                       | ((val == 0) ? FLAG_Z : 0)
+                       | z80_parity_table[val];
+                cpu->wz = addr + 1;
+            }
+            break;
+        case 1: /* OUT (C),r / OUT (C),0 */
+            {
+                uint16_t addr = z80_bc(cpu);
+                int rc = z80_fire_trap(cpu, ECPU_TRAP_IO_OUT, addr);
+                if (rc == ECPU_TRAP_EXIT) return -1;
+                cpu->wz = addr + 1;
+            }
+            break;
+        case 2: /* SBC HL,rr / ADC HL,rr */
+            if (yyy & 1)
+                z80_adc_hl(cpu, z80_read_rr(cpu, yyy >> 1));
+            else
+                z80_sbc_hl(cpu, z80_read_rr(cpu, yyy >> 1));
+            break;
+        case 3: /* LD (nn),rr / LD rr,(nn) */
+            {
+                uint16_t nn = z80_fetch16(cpu);
+                if (yyy & 1)
+                    z80_write_rr(cpu, yyy >> 1, z80_read16(cpu, nn));
+                else
+                    z80_write16(cpu, nn, z80_read_rr(cpu, yyy >> 1));
+                cpu->wz = nn + 1;
+            }
+            break;
+        case 4: /* NEG */
+            {
+                uint8_t old_a = cpu->a;
+                cpu->a = 0;
+                z80_sub_a(cpu, old_a);
+            }
+            break;
+        case 5: /* RETN / RETI */
+            cpu->iff1 = cpu->iff2;
+            cpu->pc = z80_pop16(cpu);
+            cpu->wz = cpu->pc;
+            break;
+        case 6: /* IM n */
+            switch (yyy) {
+            case 0: case 4: cpu->im = 0; break;
+            case 1: case 5: cpu->im = 0; break; /* IM 0/1 */
+            case 2: case 6: cpu->im = 1; break;
+            case 3: case 7: cpu->im = 2; break;
+            }
+            break;
+        case 7: /* LD I,A / LD R,A / LD A,I / LD A,R / RRD / RLD / NOP */
+            switch (yyy) {
+            case 0: /* LD I, A */
+                cpu->i = cpu->a;
+                break;
+            case 1: /* LD R, A */
+                cpu->r = cpu->a;
+                break;
+            case 2: /* LD A, I */
+                cpu->a = cpu->i;
+                cpu->f = (cpu->f & FLAG_C)
+                       | (cpu->a & (FLAG_S | FLAG_35))
+                       | ((cpu->a == 0) ? FLAG_Z : 0)
+                       | (cpu->iff2 ? FLAG_PV : 0);
+                break;
+            case 3: /* LD A, R */
+                cpu->a = cpu->r;
+                cpu->f = (cpu->f & FLAG_C)
+                       | (cpu->a & (FLAG_S | FLAG_35))
+                       | ((cpu->a == 0) ? FLAG_Z : 0)
+                       | (cpu->iff2 ? FLAG_PV : 0);
+                break;
+            case 4: /* RRD */
+                {
+                    uint16_t addr = z80_hl(cpu);
+                    uint8_t m = z80_read8(cpu, addr);
+                    uint8_t lo_a = cpu->a & 0x0F;
+                    cpu->a = (cpu->a & 0xF0) | (m & 0x0F);
+                    m = (lo_a << 4) | (m >> 4);
+                    z80_write8(cpu, addr, m);
+                    cpu->f = (cpu->f & FLAG_C)
+                           | (cpu->a & (FLAG_S | FLAG_35))
+                           | ((cpu->a == 0) ? FLAG_Z : 0)
+                           | z80_parity_table[cpu->a];
+                    cpu->wz = addr + 1;
+                }
+                break;
+            case 5: /* RLD */
+                {
+                    uint16_t addr = z80_hl(cpu);
+                    uint8_t m = z80_read8(cpu, addr);
+                    uint8_t lo_a = cpu->a & 0x0F;
+                    cpu->a = (cpu->a & 0xF0) | (m >> 4);
+                    m = (m << 4) | lo_a;
+                    z80_write8(cpu, addr, m);
+                    cpu->f = (cpu->f & FLAG_C)
+                           | (cpu->a & (FLAG_S | FLAG_35))
+                           | ((cpu->a == 0) ? FLAG_Z : 0)
+                           | z80_parity_table[cpu->a];
+                    cpu->wz = addr + 1;
+                }
+                break;
+            default: /* NOP (ED 77, ED 7F) */
+                break;
+            }
+            break;
+        }
+    } else if (xx == 2 && yyy >= 4) {
+        /* Block instructions: yyy=4..7, zzz=0..3 */
+        switch (zzz) {
+        case 0: /* LDI/LDD/LDIR/LDDR */
+            {
+                uint8_t val = z80_read8(cpu, z80_hl(cpu));
+                z80_write8(cpu, z80_de(cpu), val);
+                int dir = (yyy & 1) ? -1 : 1;
+                z80_set_hl(cpu, z80_hl(cpu) + dir);
+                z80_set_de(cpu, z80_de(cpu) + dir);
+                z80_set_bc(cpu, z80_bc(cpu) - 1);
+                uint8_t n = cpu->a + val;
+                cpu->f = (cpu->f & (FLAG_S | FLAG_Z | FLAG_C))
+                       | ((n & 0x02) ? FLAG_F5 : 0)
+                       | (n & FLAG_F3)
+                       | ((z80_bc(cpu) != 0) ? FLAG_PV : 0);
+                /* Repeat variants */
+                if (yyy >= 6 && z80_bc(cpu) != 0) {
+                    cpu->pc -= 2;  /* re-execute */
+                    cpu->wz = cpu->pc + 1;
+                }
+            }
+            break;
+        case 1: /* CPI/CPD/CPIR/CPDR */
+            {
+                uint8_t val = z80_read8(cpu, z80_hl(cpu));
+                uint8_t res = cpu->a - val;
+                int dir = (yyy & 1) ? -1 : 1;
+                z80_set_hl(cpu, z80_hl(cpu) + dir);
+                z80_set_bc(cpu, z80_bc(cpu) - 1);
+                uint8_t n = res - ((cpu->f & FLAG_H) ? 1 : 0);
+                /* Wait — need to compute H first */
+                uint8_t h = ((cpu->a ^ val ^ res) & 0x10) ? FLAG_H : 0;
+                n = res - (h ? 1 : 0);
+                cpu->f = (cpu->f & FLAG_C)
+                       | (res & FLAG_S)
+                       | ((res == 0) ? FLAG_Z : 0)
+                       | h
+                       | FLAG_N
+                       | ((n & 0x02) ? FLAG_F5 : 0)
+                       | (n & FLAG_F3)
+                       | ((z80_bc(cpu) != 0) ? FLAG_PV : 0);
+                cpu->wz += dir;
+                /* Repeat variants */
+                if (yyy >= 6 && z80_bc(cpu) != 0 && !(cpu->f & FLAG_Z)) {
+                    cpu->pc -= 2;
+                    cpu->wz = cpu->pc + 1;
+                }
+            }
+            break;
+        case 2: /* INI/IND/INIR/INDR */
+            {
+                uint16_t addr = z80_bc(cpu);
+                int rc = z80_fire_trap(cpu, ECPU_TRAP_IO_IN, addr);
+                if (rc == ECPU_TRAP_EXIT) return -1;
+                int dir = (yyy & 1) ? -1 : 1;
+                z80_set_hl(cpu, z80_hl(cpu) + dir);
+                cpu->b = z80_dec8(cpu, cpu->b);
+                if (yyy >= 6 && cpu->b != 0) {
+                    cpu->pc -= 2;
+                }
+            }
+            break;
+        case 3: /* OUTI/OUTD/OTIR/OTDR */
+            {
+                uint8_t val = z80_read8(cpu, z80_hl(cpu));
+                (void)val;
+                uint16_t addr = z80_bc(cpu);
+                int rc = z80_fire_trap(cpu, ECPU_TRAP_IO_OUT, addr);
+                if (rc == ECPU_TRAP_EXIT) return -1;
+                int dir = (yyy & 1) ? -1 : 1;
+                z80_set_hl(cpu, z80_hl(cpu) + dir);
+                cpu->b = z80_dec8(cpu, cpu->b);
+                if (yyy >= 6 && cpu->b != 0) {
+                    cpu->pc -= 2;
+                }
+            }
+            break;
+        }
+    }
+    /* else: ED xx with xx=0 or xx=3 → NOP */
+    return 0;
 }
 
 /* ── Main interpreter loop ───────────────────────────────────────────────── */
@@ -585,8 +807,12 @@ static int ecpu_z80_run(ecpu_state_t *state)
                         z80_push16(cpu, cpu->pc);
                         cpu->pc = nn;
                     }
-                    /* yyy=3: DD prefix, yyy=5: ED prefix,
-                     * yyy=7: FD prefix — Step 5/6/7 */
+                    if (yyy == 5) {
+                        /* ED prefix */
+                        if (z80_decode_ed(cpu) < 0)
+                            return 0;
+                    }
+                    /* yyy=3: DD prefix, yyy=7: FD prefix — Step 7 */
                 } else {
                     /* PUSH qq */
                     z80_push16(cpu, z80_read_qq(cpu, yyy >> 1));
