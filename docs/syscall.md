@@ -724,6 +724,72 @@ Get filesystem statistics.
 
 ---
 
+#### mkdir (0x0204) / rmdir (0x0205) / unlink (0x0206)
+
+```c
+int mkdir(const char *path, mode_t mode);
+int rmdir(const char *path);
+int unlink(const char *path);
+```
+
+Create or remove directories and files.  All route through
+`vfs_lookup_parent` to resolve the parent directory, then call the
+filesystem's `.mkdir`, `.unlink`, or `.unlink` (with empty-directory check
+for rmdir) operation.
+
+**vs POSIX/Linux:**  `mode` is accepted but ignored (no permission model).
+`rmdir` fails with `ENOTEMPTY` if the directory is not empty.
+
+---
+
+#### rename (0x0209)
+
+```c
+int rename(const char *oldpath, const char *newpath);
+```
+
+Rename a file or directory.  Both paths must be on the same mounted
+filesystem.  If `newpath` already exists, it is atomically replaced
+(non-empty directories cannot be replaced — returns `ENOTEMPTY`).
+
+Implemented via `vfs_lookup_parent` for both paths, then delegates to the
+filesystem's `.rename` operation.  Currently supported on tmpfs only.
+
+**vs POSIX/Linux:**  Cross-filesystem rename returns `ENOSYS` (no fallback
+copy+delete).  Same-filesystem semantics match POSIX.
+
+---
+
+#### chdir (0x0207) / getcwd (0x0203)
+
+```c
+int chdir(const char *path);
+char *getcwd(char *buf, size_t size);
+```
+
+Change or query the current working directory.
+
+---
+
+#### readlink (0x0208) / access (0x020E)
+
+```c
+ssize_t readlink(const char *path, char *buf, size_t bufsiz);
+int access(const char *path, int mode);
+```
+
+`readlink` reads a symbolic link target.  `access` checks file
+accessibility — always succeeds for existing files (no permission model).
+
+---
+
+#### chmod (0x020B) / mknod (0x020A) / chown / lchown / fchown
+
+Stubs: `chmod` returns 0 (no permission model), `mknod` returns `EPERM`,
+ownership syscalls return 0 (single-user system).
+
+---
+
 ## Resource Limits
 
 | Resource | Limit | Notes |
