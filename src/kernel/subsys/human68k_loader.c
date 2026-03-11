@@ -9,20 +9,10 @@
  */
 
 #include "human68k_loader.h"
+#include "kernel/endian.h"
 #include <string.h>
 
 /* ── Memory layout utilities ────────────────────────────────────────────── */
-
-/*
- * big-endian utilities for PMB setup (m68k native ordering).
- */
-static void write_be32(uint8_t *p, uint32_t v)
-{
-    p[0] = (uint8_t)(v >> 24);
-    p[1] = (uint8_t)(v >> 16);
-    p[2] = (uint8_t)(v >> 8);
-    p[3] = (uint8_t)v;
-}
 
 /* ── PMB setup ─────────────────────────────────────────────────────────── */
 
@@ -49,21 +39,21 @@ void x68k_setup_pmb(uint8_t *base, uint32_t total_bytes,
     uint32_t heap_u = bss_u;
 
     /* MMB header (0x00–0x0F) */
-    write_be32(base + 0x00, 0);           /* prev = 0 (first) */
-    write_be32(base + 0x04, base_u);      /* owner = self */
-    write_be32(base + 0x08, end_u);       /* block end + 1 */
-    write_be32(base + 0x0C, 0);           /* next = 0 (last) */
+    be32_store(base + 0x00, 0);           /* prev = 0 (first) */
+    be32_store(base + 0x04, base_u);      /* owner = self */
+    be32_store(base + 0x08, end_u);       /* block end + 1 */
+    be32_store(base + 0x0C, 0);           /* next = 0 (last) */
 
     /* PMB fields (0x10–0xFF) */
-    write_be32(base + 0x10, 0xFFFFFFFF);  /* env = -1 (none) */
+    be32_store(base + 0x10, 0xFFFFFFFF);  /* env = -1 (none) */
     /* 0x14: exit handler — filled when F-line bridge is ready */
-    write_be32(base + 0x20, base_u + 0x6C); /* cmdline (empty LASCIIZ) */
+    be32_store(base + 0x20, base_u + 0x6C); /* cmdline (empty LASCIIZ) */
     /* 0x24: file handle bitmap — stdin/stdout/stderr open */
     base[0x24] = 0x07;  /* bits 0,1,2 set = handles 0,1,2 */
     /* 0x30–0x38: segment addresses */
-    write_be32(base + 0x30, bss_u);       /* BSS start */
-    write_be32(base + 0x34, heap_u);      /* heap start */
-    write_be32(base + 0x38, end_u);       /* initial stack (top) */
+    be32_store(base + 0x30, bss_u);       /* BSS start */
+    be32_store(base + 0x34, heap_u);      /* heap start */
+    be32_store(base + 0x38, end_u);       /* initial stack (top) */
 
     /* 0x82: execution file path (directory portion, max 65 chars + NUL) */
     if (path) {

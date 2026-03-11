@@ -523,6 +523,21 @@ function(ppap_generate_romfs target)
         endforeach()
     endif()
 
+    # Shared Human68k X-format fixtures used by userland tests.
+    file(GLOB _x68k_bins
+        ${PPAP_ROOT}/src/target/qemu_m68k/romfs/subsys/human68k/*.x)
+    set(_x68k_copy_cmds "")
+    if(_x68k_bins)
+        list(APPEND _x68k_copy_cmds
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                    ${_romfs_staging}/subsys/human68k)
+        foreach(_xbin IN LISTS _x68k_bins)
+            list(APPEND _x68k_copy_cmds
+                COMMAND ${CMAKE_COMMAND} -E copy ${_xbin}
+                        ${_romfs_staging}/subsys/human68k/)
+        endforeach()
+    endif()
+
     # CMake list separator for -D arguments
     string(REPLACE ";" "\\;" _user_elfs_escaped "${PPAP_USER_ELFS}")
     string(REPLACE ";" "\\;" _bb_applets_escaped "${BB_APPLETS}")
@@ -544,6 +559,7 @@ function(ppap_generate_romfs target)
                 ${_overlay_args}
                 -P ${PPAP_ROOT}/cmake/stage_romfs.cmake
         ${_r68k_copy_cmds}
+        ${_x68k_copy_cmds}
         COMMAND ${PPAP_SHARED_BUILD}/mkromfs ${_mkromfs_flags}
                 ${_romfs_staging} ${_romfs_bin}
         DEPENDS ${PPAP_SHARED_BUILD}/mkromfs
@@ -554,6 +570,7 @@ function(ppap_generate_romfs target)
                 ${PPAP_ROOT}/src/etc/inittab
                 ${_overlay_manifest}
                 ${_r68k_bins}
+                ${_x68k_bins}
                 ${PPAP_ROOT}/cmake/stage_romfs.cmake
         COMMENT "Generating romfs for ${target}"
     )

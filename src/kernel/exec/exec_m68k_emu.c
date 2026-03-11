@@ -16,6 +16,7 @@
 #include "kernel/subsys/ppap_m68k_bridge.h"
 #include "kernel/ecpu/ecpu_m68k.h"
 #include "kernel/signal/signal.h"
+#include "kernel/endian.h"
 #include "kernel/errno.h"
 #include <string.h>
 
@@ -51,21 +52,6 @@ int m68k_emu_detect(const elf32_ehdr_t *ehdr)
     uint16_t machine = ((uint16_t)raw[0] << 8) | raw[1];
     return machine == EM_68K;
 #endif
-}
-
-/* ── Big-endian field readers (ELF header is big-endian for m68k) ──────── */
-
-static uint16_t be16(const void *p)
-{
-    const uint8_t *b = (const uint8_t *)p;
-    return ((uint16_t)b[0] << 8) | b[1];
-}
-
-static uint32_t be32(const void *p)
-{
-    const uint8_t *b = (const uint8_t *)p;
-    return ((uint32_t)b[0] << 24) | ((uint32_t)b[1] << 16) |
-           ((uint32_t)b[2] << 8) | b[3];
 }
 
 /* ── Loader ────────────────────────────────────────────────────────────── */
@@ -109,17 +95,17 @@ int exec_m68k_emu(pcb_t *p, const uint8_t *file_base, uint32_t file_size,
 
     /* ── 4. Load PT_LOAD segments into emulated memory ─────────────────── */
     /* Parse program headers (big-endian) */
-    uint32_t phoff = be32(&ehdr->e_phoff);
-    uint16_t phnum = be16(&ehdr->e_phnum);
-    uint16_t phentsize = be16(&ehdr->e_phentsize);
+    uint32_t phoff = be32_load(&ehdr->e_phoff);
+    uint16_t phnum = be16_load(&ehdr->e_phnum);
+    uint16_t phentsize = be16_load(&ehdr->e_phentsize);
 
     for (uint16_t i = 0; i < phnum; i++) {
         const uint8_t *ph = file_base + phoff + i * phentsize;
-        uint32_t p_type   = be32(ph + 0);
-        uint32_t p_offset = be32(ph + 4);
-        uint32_t p_vaddr  = be32(ph + 8);
-        uint32_t p_filesz = be32(ph + 16);
-        uint32_t p_memsz  = be32(ph + 20);
+        uint32_t p_type   = be32_load(ph + 0);
+        uint32_t p_offset = be32_load(ph + 4);
+        uint32_t p_vaddr  = be32_load(ph + 8);
+        uint32_t p_filesz = be32_load(ph + 16);
+        uint32_t p_memsz  = be32_load(ph + 20);
 
         if (p_type != PT_LOAD)
             continue;
@@ -140,7 +126,7 @@ int exec_m68k_emu(pcb_t *p, const uint8_t *file_base, uint32_t file_size,
     }
 
     /* ── 5. Set entry point ────────────────────────────────────────────── */
-    uint32_t entry = be32(&ehdr->e_entry);
+    uint32_t entry = be32_load(&ehdr->e_entry);
     state->m68k.pc = entry;
 
     /* ── 6. Set up user stack with argc/argv (big-endian) ──────────────── */

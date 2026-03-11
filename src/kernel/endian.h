@@ -17,6 +17,7 @@
 #define PPAP_ENDIAN_H
 
 #include <stdint.h>
+#include <string.h>
 
 /* ── Little-endian accessors ─────────────────────────────────────────────
  *
@@ -57,5 +58,63 @@ static inline uint32_t be32(uint32_t v) { return __builtin_bswap32(v); }
 #else
 #error "Unknown byte order — define be16/be32 for this platform"
 #endif
+
+/* ── Packed / unaligned field helpers ──────────────────────────────────────
+ *
+ * Use these when endian-tagged fields live in packed structs or byte buffers
+ * and may not be naturally aligned.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+static inline uint16_t le16_load(const void *p)
+{
+    uint16_t v;
+    memcpy(&v, p, sizeof(v));
+    return le16(v);
+}
+
+static inline uint32_t le32_load(const void *p)
+{
+    uint32_t v;
+    memcpy(&v, p, sizeof(v));
+    return le32(v);
+}
+
+static inline void le16_store(void *p, uint16_t v)
+{
+    v = le16(v);
+    memcpy(p, &v, sizeof(v));
+}
+
+static inline void le32_store(void *p, uint32_t v)
+{
+    v = le32(v);
+    memcpy(p, &v, sizeof(v));
+}
+
+static inline uint16_t be16_load(const void *p)
+{
+    uint16_t v;
+    memcpy(&v, p, sizeof(v));
+    return be16(v);
+}
+
+static inline uint32_t be32_load(const void *p)
+{
+    uint32_t v;
+    memcpy(&v, p, sizeof(v));
+    return be32(v);
+}
+
+static inline void be16_store(void *p, uint16_t v)
+{
+    v = be16(v);
+    memcpy(p, &v, sizeof(v));
+}
+
+static inline void be32_store(void *p, uint32_t v)
+{
+    v = be32(v);
+    memcpy(p, &v, sizeof(v));
+}
 
 #endif /* PPAP_ENDIAN_H */

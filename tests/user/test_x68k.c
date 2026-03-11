@@ -7,6 +7,7 @@
  *
  * Phase 1 Step 9: F-line DOS call dispatch handles _SETBLOCK and _EXIT.
  * hello.x calls _SETBLOCK to release memory, then _EXIT(0) → exit 0.
+ * hello2.x additionally calls _PRINT before _EXIT(0).
  */
 
 #include "utest.h"
@@ -32,6 +33,20 @@ int main(void)
         pid_t pid = vfork();
         if (pid == 0) {
             execve("/subsys/human68k/hello.x",
+                   (void *)0, (void *)0);
+            _exit(127);
+        }
+        int status = 0;
+        waitpid(pid, &status, 0);
+        int code = (status >> 8) & 0xff;
+        UT_ASSERT_EQ(code, 0);
+    }
+
+    /* 3. execve of hello2.x — calls _PRINT and exits 0 */
+    {
+        pid_t pid = vfork();
+        if (pid == 0) {
+            execve("/subsys/human68k/hello2.x",
                    (void *)0, (void *)0);
             _exit(127);
         }
