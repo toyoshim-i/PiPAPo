@@ -76,9 +76,9 @@ link on the host.
 
 ```bash
 # Manual build
-cmake -S tests -B build/tests -DCMAKE_BUILD_TYPE=Debug
-cmake --build build/tests
-ctest --test-dir build/tests --output-on-failure
+cmake -S tests/host -B build/host -DCMAKE_BUILD_TYPE=Debug
+cmake --build build/host
+ctest --test-dir build/host --output-on-failure
 ```
 
 ### Adding a new host test
