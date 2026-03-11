@@ -83,18 +83,22 @@ set(BB_SBIN_APPLETS mount umount)
 # Arch-specific variables
 # =============================================================================
 
+set(PPAP_M68K_TC        ${PPAP_ROOT}/tools/m68k-toolchain)
+set(PPAP_M68K_CC        ${PPAP_M68K_TC}/bin/m68k-elf-gcc)
+set(PPAP_M68K_OBJCOPY   ${PPAP_M68K_TC}/bin/m68k-elf-objcopy)
+set(PPAP_M68K_R68K_LD   ${PPAP_ROOT}/src/user/arch/m68k/r68k.ld)
+
 if(PPAP_ARCH STREQUAL "m68k")
-    set(PPAP_M68K_TC      ${PPAP_ROOT}/tools/m68k-toolchain)
-    set(PPAP_CC            ${PPAP_M68K_TC}/bin/m68k-elf-gcc)
+    set(PPAP_CC            ${PPAP_M68K_CC})
     set(PPAP_CROSS_PREFIX  ${PPAP_M68K_TC}/bin/m68k-elf-)
     set(PPAP_STRIP         ${PPAP_M68K_TC}/bin/m68k-elf-strip)
-    set(PPAP_OBJCOPY       ${PPAP_M68K_TC}/bin/m68k-elf-objcopy)
+    set(PPAP_OBJCOPY       ${PPAP_M68K_OBJCOPY})
     set(PPAP_SIZE_CMD      ${PPAP_M68K_TC}/bin/m68k-elf-size)
     set(PPAP_ARCH_DIR      ${PPAP_ROOT}/src/user/arch/m68k)
     set(PPAP_TARGET_FLAGS  -m68000)
     set(PPAP_PIC_FLAGS     -msep-data)
     set(PPAP_USER_LD       ${PPAP_ARCH_DIR}/user.ld)
-    set(PPAP_R68K_LD       ${PPAP_ARCH_DIR}/r68k.ld)
+    set(PPAP_R68K_LD       ${PPAP_M68K_R68K_LD})
     set(PPAP_BUSYBOX_LD    ${PPAP_ROOT}/third_party/patches/musl/libc_m68k.ld)
     set(PPAP_MUSL_SYSROOT  ${PPAP_SHARED_BUILD}/musl-sysroot)
     set(PPAP_MUSL_TARGET   m68k-elf)
@@ -255,27 +259,34 @@ endfunction()
 # flat binary (.r).  The binary has no headers and no relocations.
 # Only available on m68k targets.
 function(ppap_r68k_program name source)
-    if(NOT PPAP_ARCH STREQUAL "m68k")
-        return()
-    endif()
-
     set(_obj ${PPAP_SHARED_BUILD}/${name}.o)
     set(_elf ${PPAP_SHARED_BUILD}/${name}_r68k.elf)
     set(_bin ${PPAP_SHARED_BUILD}/${name}.r)
+    set(_cc ${PPAP_CC})
+    set(_objcopy ${PPAP_OBJCOPY})
+    set(_target_flags ${PPAP_TARGET_FLAGS})
+    set(_r68k_ld ${PPAP_R68K_LD})
+
+    if(NOT PPAP_ARCH STREQUAL "m68k")
+        set(_cc ${PPAP_M68K_CC})
+        set(_objcopy ${PPAP_M68K_OBJCOPY})
+        set(_target_flags -m68000)
+        set(_r68k_ld ${PPAP_M68K_R68K_LD})
+    endif()
 
     # Compile
     get_filename_component(_ext ${source} LAST_EXT)
     if(_ext STREQUAL ".S" OR _ext STREQUAL ".s")
         add_custom_command(
             OUTPUT ${_obj}
-            COMMAND ${PPAP_CC} ${PPAP_TARGET_FLAGS} -c -o ${_obj} ${source}
+            COMMAND ${_cc} ${_target_flags} -c -o ${_obj} ${source}
             DEPENDS ${source}
             COMMENT "Assembling ${name}.o (r68k)"
         )
     else()
         add_custom_command(
             OUTPUT ${_obj}
-            COMMAND ${PPAP_CC} ${PPAP_TARGET_FLAGS}
+            COMMAND ${_cc} ${_target_flags}
                     -ffreestanding -nostdlib -Os -Wall -Werror
                     -c -o ${_obj} ${source}
             DEPENDS ${source}
@@ -286,17 +297,17 @@ function(ppap_r68k_program name source)
     # Link (flat binary via r68k.ld, no CRT)
     add_custom_command(
         OUTPUT ${_elf}
-        COMMAND ${PPAP_CC} ${PPAP_TARGET_FLAGS}
-                -nostdlib -T ${PPAP_R68K_LD} -Wl,--build-id=none
+        COMMAND ${_cc} ${_target_flags}
+                -nostdlib -T ${_r68k_ld} -Wl,--build-id=none
                 -o ${_elf} ${_obj}
-        DEPENDS ${_obj} ${PPAP_R68K_LD}
+        DEPENDS ${_obj} ${_r68k_ld}
         COMMENT "Linking ${name} (r68k)"
     )
 
     # objcopy to raw binary
     add_custom_command(
         OUTPUT ${_bin}
-        COMMAND ${PPAP_OBJCOPY} -O binary ${_elf} ${_bin}
+        COMMAND ${_objcopy} -O binary ${_elf} ${_bin}
         DEPENDS ${_elf}
         COMMENT "Generating ${name}.r (r68k flat binary)"
     )
@@ -351,7 +362,7 @@ function(_ppap_build_user_programs)
     endif()
 
     # --- R68K user tests (Human68k DOS call tests) ---
-    if(PPAP_TESTS AND PPAP_ARCH STREQUAL "m68k")
+    if(PPAP_TESTS)
         set(_r68k_dir ${PPAP_ROOT}/tests/user/r68k)
         ppap_r68k_program(test_dos_basic ${_r68k_dir}/test_dos_basic.S)
         ppap_r68k_program(test_dos_mem   ${_r68k_dir}/test_dos_mem.S)

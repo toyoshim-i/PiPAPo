@@ -59,13 +59,8 @@ int main(void)
     tests[17] = "/bin/test_x68k";
     tests[18] = "/bin/test_cpm";
     tests[19] = "/bin/test_trace";
-#if defined(__m68k__)
     tests[20] = "/bin/test_h68k_dos";
     tests[21] = (void *)0;
-#else
-    /* TODO: test_h68k_dos requires m68k R-format binaries in romfs */
-    tests[20] = (void *)0;
-#endif
 
     print("=== PPAP on-target test suite ===\n");
     int total = 0, failed = 0;
