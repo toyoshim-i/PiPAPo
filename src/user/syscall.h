@@ -21,6 +21,8 @@
 #include "common/dirent.h"
 #include "common/poll.h"
 #include "common/iovec.h"
+#include "common/wait.h"
+#include "common/ptrace.h"
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -35,6 +37,7 @@ pid_t getppid(void);
 pid_t vfork(void);
 int   execve(const char *path, char *const argv[], char *const envp[]);
 pid_t waitpid(pid_t pid, int *status, int options);
+long  ptrace(int req, pid_t pid, void *addr, void *data);
 pid_t setsid(void);
 int   setpgid(pid_t pid, pid_t pgid);
 pid_t getpgid(pid_t pid);

@@ -22,6 +22,7 @@
 #include "../proc/proc.h"
 #include "../vfs/vfs.h"
 #include "../errno.h"
+#include "common/ptrace.h"
 #include <stdint.h>
 
 #ifdef SYSCALL_DEBUG
@@ -68,6 +69,9 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
     (void)a3; (void)a4; (void)a5; /* available for 4-6 arg syscalls */
 
     long ret;
+
+    if (trace_before_syscall(frame, nr, a4, a5))
+        return;
 
 #ifdef SYSCALL_DEBUG
     /* Trace interesting syscalls — filter high-frequency I/O to avoid flood */
@@ -170,6 +174,9 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
     /* ── P0: musl boot-critical ─────────────────────────────────────────── */
     case SYS_FORK:             /* musl's vfork() calls fork(2) */
         ret = sys_vfork(frame);
+        break;
+    case SYS_PTRACE:
+        ret = sys_ptrace(a0, a1, (void *)(uintptr_t)a2, (void *)(uintptr_t)a3);
         break;
     case SYS_CLONE:            /* musl's _Fork() uses clone(SIGCHLD, 0) */
         if (a0 == SIGCHLD_NR && a1 == 0)
@@ -409,5 +416,6 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
     }
 #endif
 
+    trace_after_syscall(frame, nr, a4, a5, ret);
     frame[0] = (uint32_t)ret;   /* write return value into stacked r0 */
 }

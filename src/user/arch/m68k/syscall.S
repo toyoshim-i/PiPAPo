@@ -105,6 +105,20 @@ execve:
     movem.l %sp@+, %d2-%d3
     rts
 
+| --- ptrace (SYS_PTRACE = 0x000F) ---------------------------------------------
+| long ptrace(int req, pid_t pid, void *addr, void *data);
+    .globl ptrace
+ptrace:
+    movem.l %d2-%d4, %sp@-
+    move.l  16(%sp), %d1        | req
+    move.l  20(%sp), %d2        | pid
+    move.l  24(%sp), %d3        | addr
+    move.l  28(%sp), %d4        | data
+    moveq   #0x0F, %d0
+    trap    #0
+    movem.l %sp@+, %d2-%d4
+    rts
+
 | --- getpid (SYS_GETPID = 0x0006) ---------------------------------------------
 | int getpid(void);
     .globl getpid

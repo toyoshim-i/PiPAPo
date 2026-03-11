@@ -22,6 +22,7 @@ typedef void (*sighandler_t)(int);
 #define SIGHUP     1
 #define SIGINT     2
 #define SIGQUIT    3
+#define SIGTRAP    5
 #define SIGKILL    9
 #define SIGUSR1   10
 #define SIGUSR2   12

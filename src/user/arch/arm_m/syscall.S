@@ -95,6 +95,17 @@ execve:
     svc  0
     pop  {r7, pc}
 
+@ --- ptrace (SYS_PTRACE = 0x000F) ---------------------------------------------
+@ long ptrace(int req, pid_t pid, void *addr, void *data);
+.section .text.ptrace, "ax", %progbits
+.global ptrace
+.thumb_func
+ptrace:
+    push {r7, lr}
+    movs r7, #0x0F
+    svc  0
+    pop  {r7, pc}
+
 @ --- setsid (SYS_SETSID = 0x000B) ---------------------------------------------
 @ pid_t setsid(void);
 .section .text.setsid, "ax", %progbits

@@ -68,6 +68,11 @@ long sys_uname(void *buf);
 long sys_setpgid(long pid, long pgid);
 long sys_setsid(void);
 long sys_wait4(long pid, long status_ptr, long options, void *rusage);
+long sys_ptrace(long req, long pid, void *addr, void *data);
+int trace_before_syscall(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5);
+void trace_after_syscall(uint32_t *frame, uint32_t nr,
+                         uint32_t a4, uint32_t a5, long ret);
+void trace_exec_stop(void);
 
 /* sys_io.c */
 long sys_read(long fd, char *buf, size_t n);

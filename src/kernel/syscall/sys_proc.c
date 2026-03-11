@@ -15,15 +15,175 @@
 #include "../fd/fd.h"
 #include "../mm/page.h"
 #include "../errno.h"
+#include "../signal/signal.h"
 #include "../klog.h"
 #include "../../target/target.h"
+#include "common/ptrace.h"
+#include "common/wait.h"
 #include <string.h>
 
 /* Wait status encoding (POSIX-compatible) */
 #define W_EXITCODE(ret) (((ret) & 0xff) << 8)
+#define W_STOPCODE(sig) ((((sig) & 0xff) << 8) | 0x7f)
 
-/* waitpid options */
-#define WNOHANG  1
+#define TRACE_PHASE_ENTER  0
+#define TRACE_PHASE_EXIT   1
+
+static pcb_t *trace_find_tracee(pid_t tracer_pid, long pid)
+{
+    if (pid <= 0)
+        return NULL;
+    for (uint32_t i = 1; i < PROC_MAX; i++) {
+        pcb_t *p = &proc_table[i];
+        if (p->state == PROC_FREE || p->pid != (pid_t)pid)
+            continue;
+        if (p->tracer_pid != tracer_pid)
+            continue;
+        return p;
+    }
+    return NULL;
+}
+
+static void trace_wake_tracer(const pcb_t *tracee)
+{
+    for (uint32_t i = 0; i < PROC_MAX; i++) {
+        pcb_t *p = &proc_table[i];
+        if (p->state == PROC_FREE || p->pid != tracee->tracer_pid)
+            continue;
+        if (p->state == PROC_BLOCKED)
+            p->state = PROC_RUNNABLE;
+        break;
+    }
+}
+
+static void trace_fill_event(uint32_t event, uint32_t nr,
+                             uint32_t a0, uint32_t a1, uint32_t a2,
+                             uint32_t a3, uint32_t a4, uint32_t a5,
+                             int32_t ret, uint32_t flags)
+{
+    current->trace_event.event = event;
+    current->trace_event.flags = flags;
+    current->trace_event.nr = nr;
+    current->trace_event.args[0] = a0;
+    current->trace_event.args[1] = a1;
+    current->trace_event.args[2] = a2;
+    current->trace_event.args[3] = a3;
+    current->trace_event.args[4] = a4;
+    current->trace_event.args[5] = a5;
+    current->trace_event.ret = ret;
+}
+
+static void trace_stop_current(int restart)
+{
+    current->trace_wait_pending = 1;
+    current->state = PROC_TRACED_STOP;
+    trace_wake_tracer(current);
+    if (restart)
+        set_svc_restart();
+    sched_yield();
+}
+
+int trace_before_syscall(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
+{
+    if (!(current->trace_mode & PPAP_TRACE_MODE_PPAP_SYSCALL))
+        return 0;
+    if (current->trace_syscall_phase != TRACE_PHASE_ENTER)
+        return 0;
+    if (nr == SYS_PTRACE)
+        return 0;
+
+    current->trace_syscall_phase = TRACE_PHASE_EXIT;
+    trace_fill_event(PPAP_TRACE_EVENT_SYSCALL_ENTER, nr,
+                     frame[0], frame[1], frame[2], frame[3], a4, a5, 0, 0);
+    trace_stop_current(1);
+    return 1;
+}
+
+void trace_after_syscall(uint32_t *frame, uint32_t nr,
+                         uint32_t a4, uint32_t a5, long ret)
+{
+    if (!(current->trace_mode & PPAP_TRACE_MODE_PPAP_SYSCALL))
+        return;
+    if (current->trace_syscall_phase != TRACE_PHASE_EXIT)
+        return;
+    if (current->state != PROC_RUNNABLE)
+        return;
+    if (nr == SYS_PTRACE)
+        return;
+
+    current->trace_syscall_phase = TRACE_PHASE_ENTER;
+    trace_fill_event(PPAP_TRACE_EVENT_SYSCALL_EXIT, nr,
+                     frame[0], frame[1], frame[2], frame[3], a4, a5,
+                     (int32_t)ret, 0);
+    trace_stop_current(0);
+}
+
+void trace_exec_stop(void)
+{
+    if (!current->trace_requested)
+        return;
+
+    current->trace_requested = 0;
+    current->trace_syscall_phase = TRACE_PHASE_ENTER;
+    trace_fill_event(PPAP_TRACE_EVENT_EXEC, SYS_EXECVE, 0, 0, 0, 0, 0, 0, 0, 0);
+    trace_stop_current(0);
+}
+
+long sys_ptrace(long req, long pid, void *addr, void *data)
+{
+    (void)addr;
+
+    if (req == PTRACE_TRACEME) {
+        if (current->tracer_pid != 0 || current->trace_requested)
+            return -(long)EPERM;
+        current->tracer_pid = current->ppid;
+        current->trace_requested = 1;
+        current->trace_mode = 0;
+        current->trace_wait_pending = 0;
+        current->trace_syscall_phase = TRACE_PHASE_ENTER;
+        __builtin_memset(&current->trace_event, 0, sizeof(current->trace_event));
+        return 0;
+    }
+
+    pcb_t *target = trace_find_tracee(current->pid, pid);
+    if (!target)
+        return -(long)ESRCH;
+
+    switch (req) {
+    case PTRACE_GETEVENT:
+        if (!data)
+            return -(long)EINVAL;
+        *(struct ppap_ptrace_event *)data = target->trace_event;
+        return 0;
+    case PTRACE_CONT:
+        target->trace_mode &= (uint8_t)~PPAP_TRACE_MODE_PPAP_SYSCALL;
+        target->trace_wait_pending = 0;
+        if (target->state == PROC_TRACED_STOP)
+            target->state = PROC_RUNNABLE;
+        sched_yield();
+        return 0;
+    case PTRACE_SYSCALL:
+        target->trace_mode |= PPAP_TRACE_MODE_PPAP_SYSCALL;
+        target->trace_wait_pending = 0;
+        if (target->state == PROC_TRACED_STOP)
+            target->state = PROC_RUNNABLE;
+        sched_yield();
+        return 0;
+    case PTRACE_DETACH:
+        target->trace_requested = 0;
+        target->trace_mode = 0;
+        target->trace_wait_pending = 0;
+        target->tracer_pid = 0;
+        target->trace_syscall_phase = TRACE_PHASE_ENTER;
+        __builtin_memset(&target->trace_event, 0, sizeof(target->trace_event));
+        if (target->state == PROC_TRACED_STOP)
+            target->state = PROC_RUNNABLE;
+        sched_yield();
+        return 0;
+    default:
+        return -(long)EINVAL;
+    }
+}
 
 /* ── sys_exit ───────────────────────────────────────────────────────────────── */
 
@@ -311,9 +471,10 @@ long sys_vfork(uint32_t *frame)
 long sys_waitpid(long pid, long status_ptr, long options)
 {
     pcb_t *zombie = NULL;
+    pcb_t *stopped = NULL;
     int has_child = 0;
 
-    /* Scan for matching zombie or living child */
+    /* Scan for matching stopped child, zombie, or living child */
     for (uint32_t i = 1; i < PROC_MAX; i++) {
         pcb_t *p = &proc_table[i];
         if (p->state == PROC_FREE)
@@ -325,10 +486,26 @@ long sys_waitpid(long pid, long status_ptr, long options)
 
         has_child = 1;
 
+        if ((options & WSTOPPED) &&
+            p->state == PROC_TRACED_STOP &&
+            p->trace_wait_pending) {
+            stopped = p;
+            break;
+        }
+
         if (p->state == PROC_ZOMBIE) {
             zombie = p;
             break;
         }
+    }
+
+    if (stopped) {
+        if (status_ptr) {
+            int *sp = (int *)(uintptr_t)status_ptr;
+            *sp = W_STOPCODE(SIGTRAP);
+        }
+        stopped->trace_wait_pending = 0;
+        return (long)stopped->pid;
     }
 
     if (zombie) {
@@ -456,6 +633,8 @@ long sys_execve(const char *path, const char *const *argv)
         current->vfork_parent->state = PROC_RUNNABLE;
         current->vfork_parent = NULL;
     }
+
+    trace_exec_stop();
 
     /* Signal SVC_Handler to do a PendSV-like full context restore from
      * current->sp before exception return.  This ensures r4-r11 (including

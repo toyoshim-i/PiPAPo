@@ -19,6 +19,7 @@
 
 #include <stdint.h>
 #include "config.h"
+#include "common/ptrace.h"
 #include "../spinlock.h"   /* core_id() — needed by #define current */
 
 /* Forward declaration — struct file is defined in fd/file.h (Step 10).
@@ -66,6 +67,7 @@ typedef enum {
     PROC_SLEEPING = 2,   /* blocked until sleep_until SysTick count         */
     PROC_BLOCKED  = 3,   /* blocked on vfork/waitpid                        */
     PROC_ZOMBIE   = 4,   /* exited; slot freed when parent calls waitpid()  */
+    PROC_TRACED_STOP = 5, /* stopped and waiting for tracer resume          */
 } proc_state_t;
 
 typedef struct pcb {
@@ -142,6 +144,14 @@ typedef struct pcb {
 
     /* ── m68k syscall restart (per-process, not global) ─────────── */
     uint8_t      svc_needs_restart;  /* set by blocking syscalls            */
+
+    /* ── Tracing ─────────────────────────────────────────────────── */
+    pid_t        tracer_pid;         /* parent tracer PID, or 0 if none     */
+    uint8_t      trace_requested;    /* set by PTRACE_TRACEME until exec     */
+    uint8_t      trace_mode;         /* PPAP_TRACE_MODE_* bits              */
+    uint8_t      trace_wait_pending; /* waitpid(WSTOPPED) should report stop */
+    uint8_t      trace_syscall_phase;/* 0=enter, 1=exit for SYSCALL mode     */
+    struct ppap_ptrace_event trace_event;
 
     /* ── Subsystem tag ───────────────────────────────────────────── */
     uint8_t      subsys;             /* SUBSYS_PPAP, SUBSYS_HUMAN68K, etc.  */

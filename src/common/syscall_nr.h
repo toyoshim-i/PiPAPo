@@ -25,6 +25,7 @@
 #define SYS_CLONE             0x000C
 #define SYS_SET_TID_ADDRESS   0x000D
 #define SYS_FORK              0x000E
+#define SYS_PTRACE            0x000F
 
 /* Group 0x01: I/O */
 #define SYS_READ              0x0100

@@ -403,6 +403,7 @@ static char state_char(const pcb_t *p)
     case PROC_RUNNABLE:  return 'R';
     case PROC_SLEEPING:  return 'S';
     case PROC_BLOCKED:   return 'S';
+    case PROC_TRACED_STOP: return 'T';
     case PROC_ZOMBIE:    return 'Z';
     default:             return '?';
     }
