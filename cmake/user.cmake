@@ -105,8 +105,8 @@ if(PPAP_ARCH STREQUAL "m68k")
     execute_process(COMMAND ${PPAP_CC} -print-file-name=include
         OUTPUT_VARIABLE PPAP_GCC_INCLUDE OUTPUT_STRIP_TRAILING_WHITESPACE)
     execute_process(COMMAND ${PPAP_CC} -m68000 -print-libgcc-file-name
-        OUTPUT_VARIABLE _libgcc OUTPUT_STRIP_TRAILING_WHITESPACE)
-    get_filename_component(PPAP_GCC_LIBDIR ${_libgcc} DIRECTORY)
+        OUTPUT_VARIABLE PPAP_LIBGCC OUTPUT_STRIP_TRAILING_WHITESPACE)
+    get_filename_component(PPAP_GCC_LIBDIR ${PPAP_LIBGCC} DIRECTORY)
 else()
     set(PPAP_CC            arm-none-eabi-gcc)
     set(PPAP_CROSS_PREFIX  arm-none-eabi-)
@@ -128,8 +128,8 @@ else()
         OUTPUT_VARIABLE PPAP_GCC_INCLUDE OUTPUT_STRIP_TRAILING_WHITESPACE)
     execute_process(COMMAND arm-none-eabi-gcc -mthumb -mcpu=cortex-m0plus
                             -print-libgcc-file-name
-        OUTPUT_VARIABLE _libgcc OUTPUT_STRIP_TRAILING_WHITESPACE)
-    get_filename_component(PPAP_GCC_LIBDIR ${_libgcc} DIRECTORY)
+        OUTPUT_VARIABLE PPAP_LIBGCC OUTPUT_STRIP_TRAILING_WHITESPACE)
+    get_filename_component(PPAP_GCC_LIBDIR ${PPAP_LIBGCC} DIRECTORY)
 endif()
 
 # Derived paths (shared artifacts in PPAP_SHARED_BUILD)
@@ -243,8 +243,8 @@ function(ppap_user_program name source)
     add_custom_command(
         OUTPUT ${_elf}
         COMMAND ${PPAP_CC} ${PPAP_TARGET_FLAGS} ${PPAP_USER_LDFLAGS}
-                -o ${_elf} ${_link_objs}
-        DEPENDS ${_link_objs} ${PPAP_USER_LD}
+                -o ${_elf} ${_link_objs} ${PPAP_LIBGCC}
+        DEPENDS ${_link_objs} ${PPAP_USER_LD} ${PPAP_LIBGCC}
         COMMENT "Linking ${name}.elf (${PPAP_ARCH})"
     )
 endfunction()
@@ -566,6 +566,8 @@ function(ppap_m68k_cross_program name source)
     set(_m68k_tc  ${PPAP_ROOT}/tools/m68k-toolchain)
     set(_m68k_cc  ${_m68k_tc}/bin/m68k-elf-gcc)
     set(_m68k_ld  ${PPAP_ROOT}/src/user/arch/m68k/user.ld)
+    execute_process(COMMAND ${_m68k_cc} -m68000 -print-libgcc-file-name
+        OUTPUT_VARIABLE _m68k_libgcc OUTPUT_STRIP_TRAILING_WHITESPACE)
     set(_obj ${PPAP_SHARED_BUILD}/${name}_m68k.o)
     set(_elf ${PPAP_SHARED_BUILD}/${name}_m68k.elf)
 
@@ -591,8 +593,8 @@ function(ppap_m68k_cross_program name source)
         OUTPUT ${_elf}
         COMMAND ${_m68k_cc} -m68000 -nostdlib -T ${_m68k_ld}
                 -Wl,--gc-sections -Wl,--build-id=none
-                -o ${_elf} ${_obj}
-        DEPENDS ${_obj} ${_m68k_ld}
+                -o ${_elf} ${_obj} ${_m68k_libgcc}
+        DEPENDS ${_obj} ${_m68k_ld} ${_m68k_libgcc}
         COMMENT "Cross-linking ${name}_m68k.elf (m68k for ARM)"
     )
 
