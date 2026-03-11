@@ -7,6 +7,7 @@
  * Step 2: ADD/SUB/CMP/NEG/NEGX/TST/EXT/MULU/MULS/DIVU/DIVS,
  *         ADDI/SUBI/CMPI, ADDQ/SUBQ.
  * Step 3: Bcc/BRA/BSR, DBcc, Scc, LINK, UNLK.
+ * Step 4: AND/OR/EOR/NOT, shifts/rotates, bit ops, EXG.
  *
  * See docs/ecpu-m68k.md for the full design.
  */
@@ -179,18 +180,123 @@ void m68k_write_ea(m68k_state_t *cpu, ea_result_t *ea, uint8_t size,
     }
 }
 
+/* ── CCR helpers for MOVE / logic ops ──────────────────────────────────── */
+
+static void m68k_set_ccr_move(m68k_state_t *cpu, uint32_t val, uint8_t size)
+{
+    uint32_t msb = m68k_size_msb(size);
+    uint32_t mask = m68k_size_mask(size);
+
+    /* Preserve X, clear N/Z/V/C, then set N/Z */
+    uint16_t ccr = cpu->sr & M68K_FLAG_X;
+    if ((val & mask) == 0)  ccr |= M68K_FLAG_Z;
+    if (val & msb)          ccr |= M68K_FLAG_N;
+    /* V and C cleared */
+    cpu->sr = (cpu->sr & 0xFF00) | ccr;
+}
+
+/* ── Bit operation helper ───────────────────────────────────────────────── */
+
+static void m68k_bitop(m68k_state_t *cpu, uint8_t ea_mode, uint8_t ea_reg,
+                        uint8_t op, uint32_t bitnum)
+{
+    /* Register operands: modulo 32 (long), memory: modulo 8 (byte) */
+    if (ea_mode == 0) {
+        /* Data register */
+        bitnum &= 31;
+        uint32_t mask = 1u << bitnum;
+        cpu->sr = (cpu->sr & ~M68K_FLAG_Z) |
+                  ((cpu->d[ea_reg] & mask) ? 0 : M68K_FLAG_Z);
+        switch (op) {
+            case 1: cpu->d[ea_reg] ^= mask; break;  /* BCHG */
+            case 2: cpu->d[ea_reg] &= ~mask; break;  /* BCLR */
+            case 3: cpu->d[ea_reg] |= mask; break;   /* BSET */
+        }
+    } else {
+        /* Memory (byte) */
+        bitnum &= 7;
+        ea_result_t ea = m68k_decode_ea(cpu, ea_mode, ea_reg, M68K_SIZE_BYTE);
+        uint8_t val = (uint8_t)m68k_read_ea(cpu, &ea, M68K_SIZE_BYTE);
+        uint8_t mask = 1u << bitnum;
+        cpu->sr = (cpu->sr & ~M68K_FLAG_Z) |
+                  ((val & mask) ? 0 : M68K_FLAG_Z);
+        switch (op) {
+            case 1: val ^= mask; break;
+            case 2: val &= ~mask; break;
+            case 3: val |= mask; break;
+        }
+        if (op != 0)
+            m68k_write_ea(cpu, &ea, M68K_SIZE_BYTE, val);
+    }
+}
+
 /* ── Group 0 (Immediate + Bit Operations) ───────────────────────────────── */
 
 static void m68k_group0(m68k_state_t *cpu, uint16_t opcode)
 {
-    uint8_t bits_11_8 = (opcode >> 8) & 0xF;
     uint8_t ea_mode = (opcode >> 3) & 7;
     uint8_t ea_reg  = opcode & 7;
+
+    /* Dynamic bit operations: 0000 rrr 1 tt ea (bit 8 set) */
+    if (opcode & 0x0100) {
+        int reg = (opcode >> 9) & 7;
+        uint8_t op = (opcode >> 6) & 3;  /* 0=BTST,1=BCHG,2=BCLR,3=BSET */
+        m68k_bitop(cpu, ea_mode, ea_reg, op, cpu->d[reg]);
+        return;
+    }
+
+    uint8_t bits_11_8 = (opcode >> 8) & 0xF;
     uint8_t size    = (opcode >> 6) & 3;
 
-    /* Immediate operations: ORI=000, ANDI=001, SUBI=010,
-     * ADDI=011, EORI=101, CMPI=110 (bits 11-9, but we check bits 11-8) */
     switch (bits_11_8 >> 1) {
+        case 0x0: { /* ORI: 0000 0000 ss ea */
+            if (size > 2) break;
+            uint16_t imm16 = m68k_fetch16(cpu);
+            /* ORI to CCR: 003C */
+            if (opcode == 0x003C) {
+                cpu->sr |= (imm16 & 0x1F);
+                break;
+            }
+            /* ORI to SR: 007C */
+            if (opcode == 0x007C) {
+                cpu->sr |= imm16;
+                break;
+            }
+            uint32_t imm = (size == M68K_SIZE_LONG)
+                ? ((uint32_t)imm16 << 16) | m68k_fetch16(cpu)
+                : imm16;
+            if (size == M68K_SIZE_BYTE) imm &= 0xFF;
+            ea_result_t ea = m68k_decode_ea(cpu, ea_mode, ea_reg, size);
+            uint32_t dst = m68k_read_ea(cpu, &ea, size);
+            uint32_t result = dst | imm;
+            m68k_write_ea(cpu, &ea, size, result);
+            m68k_set_ccr_move(cpu, result, size);
+            break;
+        }
+        case 0x1: { /* ANDI: 0000 0010 ss ea */
+            if (size > 2) break;
+            uint16_t imm16 = m68k_fetch16(cpu);
+            /* ANDI to CCR: 023C */
+            if (opcode == 0x023C) {
+                cpu->sr = (cpu->sr & 0xFF00) | ((cpu->sr & imm16) & 0xFF);
+                break;
+            }
+            /* ANDI to SR: 027C */
+            if (opcode == 0x027C) {
+                cpu->sr &= imm16;
+                break;
+            }
+            uint32_t imm = (size == M68K_SIZE_LONG)
+                ? ((uint32_t)imm16 << 16) | m68k_fetch16(cpu)
+                : imm16;
+            if (size == M68K_SIZE_BYTE) imm &= 0xFF;
+            ea_result_t ea = m68k_decode_ea(cpu, ea_mode, ea_reg, size);
+            uint32_t dst = m68k_read_ea(cpu, &ea, size);
+            uint32_t result = dst & imm;
+            m68k_write_ea(cpu, &ea, size, result);
+            m68k_set_ccr_move(cpu, result, size);
+            break;
+        }
         case 0x2: { /* SUBI: 0000 0100 ss ea */
             if (size > 2) break;
             uint32_t imm = (size == M68K_SIZE_LONG) ? m68k_fetch32(cpu)
@@ -213,6 +319,36 @@ static void m68k_group0(m68k_state_t *cpu, uint16_t opcode)
             m68k_write_ea(cpu, &ea, size, result);
             break;
         }
+        case 0x4: { /* Static bit ops: 0000 1000 tt ea + #bitnum */
+            uint8_t op = (opcode >> 6) & 3;
+            uint16_t bitnum = m68k_fetch16(cpu);
+            m68k_bitop(cpu, ea_mode, ea_reg, op, bitnum);
+            break;
+        }
+        case 0x5: { /* EORI: 0000 1010 ss ea */
+            if (size > 2) break;
+            uint16_t imm16 = m68k_fetch16(cpu);
+            /* EORI to CCR: 0A3C */
+            if (opcode == 0x0A3C) {
+                cpu->sr ^= (imm16 & 0x1F);
+                break;
+            }
+            /* EORI to SR: 0A7C */
+            if (opcode == 0x0A7C) {
+                cpu->sr ^= imm16;
+                break;
+            }
+            uint32_t imm = (size == M68K_SIZE_LONG)
+                ? ((uint32_t)imm16 << 16) | m68k_fetch16(cpu)
+                : imm16;
+            if (size == M68K_SIZE_BYTE) imm &= 0xFF;
+            ea_result_t ea = m68k_decode_ea(cpu, ea_mode, ea_reg, size);
+            uint32_t dst = m68k_read_ea(cpu, &ea, size);
+            uint32_t result = dst ^ imm;
+            m68k_write_ea(cpu, &ea, size, result);
+            m68k_set_ccr_move(cpu, result, size);
+            break;
+        }
         case 0x6: { /* CMPI: 0000 1100 ss ea */
             if (size > 2) break;
             uint32_t imm = (size == M68K_SIZE_LONG) ? m68k_fetch32(cpu)
@@ -226,21 +362,6 @@ static void m68k_group0(m68k_state_t *cpu, uint16_t opcode)
         default:
             break;
     }
-}
-
-/* ── CCR helpers for MOVE ───────────────────────────────────────────────── */
-
-static void m68k_set_ccr_move(m68k_state_t *cpu, uint32_t val, uint8_t size)
-{
-    uint32_t msb = m68k_size_msb(size);
-    uint32_t mask = m68k_size_mask(size);
-
-    /* Preserve X, clear N/Z/V/C, then set N/Z */
-    uint16_t ccr = cpu->sr & M68K_FLAG_X;
-    if ((val & mask) == 0)  ccr |= M68K_FLAG_Z;
-    if (val & msb)          ccr |= M68K_FLAG_N;
-    /* V and C cleared */
-    cpu->sr = (cpu->sr & 0xFF00) | ccr;
 }
 
 /* ── MOVE.B/W/L ─────────────────────────────────────────────────────────── */
@@ -429,6 +550,17 @@ static int m68k_group4(m68k_state_t *cpu, uint16_t opcode)
         int reg = opcode & 7;
         cpu->d[reg] = (cpu->d[reg] >> 16) | (cpu->d[reg] << 16);
         m68k_alu_tst(cpu, cpu->d[reg], M68K_SIZE_LONG);
+        return 0;
+    }
+
+    /* NOT: 0100 0110 ss ea  (bits 11–8 = 0110) */
+    if (bits_11_8 == 0x6 && bits_7_6 <= 2) {
+        uint8_t size = bits_7_6;
+        ea_result_t ea = m68k_decode_ea(cpu, ea_mode, ea_reg, size);
+        uint32_t dst = m68k_read_ea(cpu, &ea, size);
+        uint32_t result = ~dst & m68k_size_mask(size);
+        m68k_write_ea(cpu, &ea, size, result);
+        m68k_set_ccr_move(cpu, result, size);
         return 0;
     }
 
@@ -629,7 +761,24 @@ static int ecpu_m68k_run(ecpu_state_t *state)
                         cpu->d[reg8] = result8;
                     }
                 }
-                /* OR/SBCD — future */
+                /* OR */
+                if (omode8 < 3) {
+                    /* OR <ea>, Dn */
+                    uint8_t size8 = omode8;
+                    ea_result_t ea8 = m68k_decode_ea(cpu, ea_m8, ea_r8, size8);
+                    uint32_t src8 = m68k_read_ea(cpu, &ea8, size8);
+                    uint32_t r8 = (cpu->d[reg8] | src8) & m68k_size_mask(size8);
+                    m68k_write_d(cpu, reg8, r8, size8);
+                    m68k_set_ccr_move(cpu, r8, size8);
+                } else if (omode8 >= 4 && omode8 <= 6) {
+                    /* OR Dn, <ea> */
+                    uint8_t size8 = omode8 & 3;
+                    ea_result_t ea8 = m68k_decode_ea(cpu, ea_m8, ea_r8, size8);
+                    uint32_t dst8 = m68k_read_ea(cpu, &ea8, size8);
+                    uint32_t r8 = (cpu->d[reg8] | dst8) & m68k_size_mask(size8);
+                    m68k_write_ea(cpu, &ea8, size8, r8);
+                    m68k_set_ccr_move(cpu, r8, size8);
+                }
                 break;
             }
 
@@ -709,7 +858,15 @@ static int ecpu_m68k_run(ecpu_state_t *state)
                     uint32_t dstB = m68k_read_ea(cpu, &eaD, sizeB);
                     m68k_alu_cmp(cpu, srcB, dstB, sizeB);
                 }
-                /* EOR — future (step 4) */
+                else if (omodeB >= 4 && omodeB <= 6) {
+                    /* EOR Dn, <ea> */
+                    uint8_t sizeB = omodeB & 3;
+                    ea_result_t eaB = m68k_decode_ea(cpu, ea_mB, ea_rB, sizeB);
+                    uint32_t dstB = m68k_read_ea(cpu, &eaB, sizeB);
+                    uint32_t rB = (cpu->d[regB] ^ dstB) & m68k_size_mask(sizeB);
+                    m68k_write_ea(cpu, &eaB, sizeB, rB);
+                    m68k_set_ccr_move(cpu, rB, sizeB);
+                }
                 break;
             }
 
@@ -729,7 +886,42 @@ static int ecpu_m68k_run(ecpu_state_t *state)
                     int16_t srcC = (int16_t)m68k_read_ea(cpu, &eaC, M68K_SIZE_WORD);
                     cpu->d[regC] = m68k_alu_muls(cpu, srcC, (int16_t)cpu->d[regC]);
                 }
-                /* AND/ABCD/EXG — future */
+                /* EXG: C140/C148/C188 patterns */
+                if ((opcode & 0xF1F8) == 0xC140) {
+                    /* EXG Dx, Dy */
+                    int ry = opcode & 7;
+                    uint32_t tmp = cpu->d[regC];
+                    cpu->d[regC] = cpu->d[ry];
+                    cpu->d[ry] = tmp;
+                } else if ((opcode & 0xF1F8) == 0xC148) {
+                    /* EXG Ax, Ay */
+                    int ry = opcode & 7;
+                    uint32_t tmp = cpu->a[regC];
+                    cpu->a[regC] = cpu->a[ry];
+                    cpu->a[ry] = tmp;
+                } else if ((opcode & 0xF1F8) == 0xC188) {
+                    /* EXG Dx, Ay */
+                    int ry = opcode & 7;
+                    uint32_t tmp = cpu->d[regC];
+                    cpu->d[regC] = cpu->a[ry];
+                    cpu->a[ry] = tmp;
+                } else if (omodeC < 3) {
+                    /* AND <ea>, Dn */
+                    uint8_t sizeC = omodeC;
+                    ea_result_t eaC = m68k_decode_ea(cpu, ea_mC, ea_rC, sizeC);
+                    uint32_t srcC = m68k_read_ea(cpu, &eaC, sizeC);
+                    uint32_t rC = (cpu->d[regC] & srcC) & m68k_size_mask(sizeC);
+                    m68k_write_d(cpu, regC, rC, sizeC);
+                    m68k_set_ccr_move(cpu, rC, sizeC);
+                } else if (omodeC >= 4 && omodeC <= 6) {
+                    /* AND Dn, <ea> */
+                    uint8_t sizeC = omodeC & 3;
+                    ea_result_t eaC = m68k_decode_ea(cpu, ea_mC, ea_rC, sizeC);
+                    uint32_t dstC = m68k_read_ea(cpu, &eaC, sizeC);
+                    uint32_t rC = (cpu->d[regC] & dstC) & m68k_size_mask(sizeC);
+                    m68k_write_ea(cpu, &eaC, sizeC, rC);
+                    m68k_set_ccr_move(cpu, rC, sizeC);
+                }
                 break;
             }
 
@@ -769,8 +961,179 @@ static int ecpu_m68k_run(ecpu_state_t *state)
                 break;
             }
 
-            case 0xE: /* Group E: shifts — future */
+            case 0xE: { /* Group E: shifts/rotates */
+                uint8_t sizeE = (opcode >> 6) & 3;
+
+                if (sizeE == 3) {
+                    /* Memory shift: 1110 0tt d 11 ea — word, count=1 */
+                    uint8_t ea_mE = (opcode >> 3) & 7;
+                    uint8_t ea_rE = opcode & 7;
+                    uint8_t typeE = (opcode >> 9) & 3;
+                    int leftE = (opcode >> 8) & 1;
+                    ea_result_t eaE = m68k_decode_ea(cpu, ea_mE, ea_rE,
+                                                      M68K_SIZE_WORD);
+                    uint16_t val = (uint16_t)m68k_read_ea(cpu, &eaE,
+                                                           M68K_SIZE_WORD);
+                    uint16_t ccr = cpu->sr & M68K_FLAG_X;
+                    uint16_t result;
+                    int x = (cpu->sr & M68K_FLAG_X) ? 1 : 0;
+
+                    switch (typeE) {
+                        case 0: /* AS */
+                            if (leftE) {
+                                ccr = (val & 0x8000) ? (M68K_FLAG_X | M68K_FLAG_C) : 0;
+                                result = val << 1;
+                                if ((val ^ result) & 0x8000) ccr |= M68K_FLAG_V;
+                            } else {
+                                ccr = (val & 1) ? (M68K_FLAG_X | M68K_FLAG_C) : 0;
+                                result = (uint16_t)((int16_t)val >> 1);
+                            }
+                            break;
+                        case 1: /* LS */
+                            if (leftE) {
+                                ccr = (val & 0x8000) ? (M68K_FLAG_X | M68K_FLAG_C) : 0;
+                                result = val << 1;
+                            } else {
+                                ccr = (val & 1) ? (M68K_FLAG_X | M68K_FLAG_C) : 0;
+                                result = val >> 1;
+                            }
+                            break;
+                        case 2: /* ROX */
+                            if (leftE) {
+                                ccr = (val & 0x8000) ? (M68K_FLAG_X | M68K_FLAG_C) : 0;
+                                result = (val << 1) | x;
+                            } else {
+                                ccr = (val & 1) ? (M68K_FLAG_X | M68K_FLAG_C) : 0;
+                                result = (val >> 1) | (x << 15);
+                            }
+                            break;
+                        default: /* RO */
+                            if (leftE) {
+                                ccr = cpu->sr & M68K_FLAG_X;  /* X unchanged */
+                                if (val & 0x8000) ccr |= M68K_FLAG_C;
+                                result = (val << 1) | (val >> 15);
+                            } else {
+                                ccr = cpu->sr & M68K_FLAG_X;
+                                if (val & 1) ccr |= M68K_FLAG_C;
+                                result = (val >> 1) | (val << 15);
+                            }
+                            break;
+                    }
+                    if (result == 0)     ccr |= M68K_FLAG_Z;
+                    if (result & 0x8000) ccr |= M68K_FLAG_N;
+                    cpu->sr = (cpu->sr & 0xFF00) | ccr;
+                    m68k_write_ea(cpu, &eaE, M68K_SIZE_WORD, result);
+                } else {
+                    /* Register shift: 1110 ccc d ss i tt rrr */
+                    int regE = opcode & 7;
+                    uint8_t typeE = (opcode >> 3) & 3;
+                    int irE = (opcode >> 5) & 1;
+                    int leftE = (opcode >> 8) & 1;
+                    int countE;
+                    if (irE)
+                        countE = cpu->d[(opcode >> 9) & 7] & 63;
+                    else {
+                        countE = (opcode >> 9) & 7;
+                        if (countE == 0) countE = 8;
+                    }
+
+                    uint32_t mask = m68k_size_mask(sizeE);
+                    uint32_t msb = m68k_size_msb(sizeE);
+                    uint32_t val = cpu->d[regE] & mask;
+                    uint32_t result = val;
+                    uint16_t ccr;
+                    int x = (cpu->sr & M68K_FLAG_X) ? 1 : 0;
+                    int bits = m68k_size_bytes(sizeE) * 8;
+
+                    if (countE == 0) {
+                        /* No shift: C=0 (except ROXL/R where C=X), X unchanged */
+                        ccr = cpu->sr & M68K_FLAG_X;
+                        if (typeE == 2)  /* ROX: C = X */
+                            ccr |= x ? M68K_FLAG_C : 0;
+                        /* V=0 for all */
+                    } else {
+                        ccr = 0;
+                        switch (typeE) {
+                            case 0: /* AS */
+                                if (leftE) {
+                                    int v = 0;
+                                    for (int i = 0; i < countE; i++) {
+                                        int out = (result & msb) ? 1 : 0;
+                                        result = (result << 1) & mask;
+                                        if ((result & msb ? 1 : 0) != out) v = 1;
+                                        ccr = out ? (M68K_FLAG_X | M68K_FLAG_C) : 0;
+                                    }
+                                    if (v) ccr |= M68K_FLAG_V;
+                                } else {
+                                    int sign = (val & msb) ? 1 : 0;
+                                    for (int i = 0; i < countE; i++) {
+                                        ccr = (result & 1)
+                                            ? (M68K_FLAG_X | M68K_FLAG_C) : 0;
+                                        result = (result >> 1) |
+                                                 (sign ? msb : 0);
+                                    }
+                                    result &= mask;
+                                }
+                                break;
+                            case 1: /* LS */
+                                if (leftE) {
+                                    for (int i = 0; i < countE; i++) {
+                                        ccr = (result & msb)
+                                            ? (M68K_FLAG_X | M68K_FLAG_C) : 0;
+                                        result = (result << 1) & mask;
+                                    }
+                                } else {
+                                    for (int i = 0; i < countE; i++) {
+                                        ccr = (result & 1)
+                                            ? (M68K_FLAG_X | M68K_FLAG_C) : 0;
+                                        result >>= 1;
+                                    }
+                                }
+                                break;
+                            case 2: /* ROX */
+                                for (int i = 0; i < countE; i++) {
+                                    if (leftE) {
+                                        int out = (result & msb) ? 1 : 0;
+                                        result = ((result << 1) & mask) | x;
+                                        x = out;
+                                    } else {
+                                        int out = result & 1;
+                                        result = (result >> 1) | (x ? msb : 0);
+                                        x = out;
+                                    }
+                                }
+                                ccr = x ? (M68K_FLAG_X | M68K_FLAG_C) : 0;
+                                break;
+                            default: /* RO */
+                                ccr = cpu->sr & M68K_FLAG_X;  /* X unchanged */
+                                for (int i = 0; i < countE; i++) {
+                                    if (leftE) {
+                                        int out = (result & msb) ? 1 : 0;
+                                        result = ((result << 1) & mask) | out;
+                                    } else {
+                                        int out = result & 1;
+                                        result = (result >> 1) |
+                                                 (out ? msb : 0);
+                                    }
+                                }
+                                /* C = last bit rotated */
+                                if (leftE)
+                                    ccr = (cpu->sr & M68K_FLAG_X) |
+                                          ((result & 1) ? M68K_FLAG_C : 0);
+                                else
+                                    ccr = (cpu->sr & M68K_FLAG_X) |
+                                          ((result & msb) ? M68K_FLAG_C : 0);
+                                break;
+                        }
+                    }
+                    if (result == 0)     ccr |= M68K_FLAG_Z;
+                    if (result & msb)    ccr |= M68K_FLAG_N;
+                    cpu->sr = (cpu->sr & 0xFF00) | ccr;
+                    m68k_write_d(cpu, regE, result, sizeE);
+                    (void)bits;
+                }
                 break;
+            }
 
             case 0xF: { /* F-line trap */
                 int rc = m68k_fire_trap(cpu, ECPU_TRAP_ILLEGAL, opcode);

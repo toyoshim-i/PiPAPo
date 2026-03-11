@@ -6,6 +6,7 @@
  * Step 2: ADD/SUB/CMP/NEG/TST/EXT/MULU/MULS/DIVU/DIVS,
  *         ADDI/SUBI/CMPI, ADDQ/SUBQ.
  * Step 3: Bcc/BRA/BSR, DBcc, Scc, LINK, UNLK.
+ * Step 4: AND/OR/EOR/NOT, shifts/rotates, bit ops, EXG.
  */
 
 #include <assert.h>
@@ -1707,6 +1708,511 @@ static void test_bra_backward(void)
     printf("  PASS: bra_backward\n");
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * Step 4 tests — Logic, shifts, bit operations
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Test: AND.L Dn, Dn ─────────────────────────────────────────────────── */
+
+static void test_and_l(void)
+{
+    setup();
+    cpu.d[0] = 0xFF00FF00;
+    cpu.d[1] = 0x12345678;
+    /* AND.L D1, D0 → C081  (1100 000 010 000 001) */
+    m68k_write16(&cpu, 0x1000, 0xC081);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0x12005600);
+    assert(!(cpu.sr & M68K_FLAG_Z));
+    assert(!(cpu.sr & M68K_FLAG_N));
+    printf("  PASS: and_l\n");
+}
+
+/* ── Test: ANDI.L #imm, Dn ──────────────────────────────────────────────── */
+
+static void test_andi(void)
+{
+    setup();
+    cpu.d[0] = 0xFFFF0000;
+    /* ANDI.L #$00FF00FF, D0 → 0280 00FF 00FF */
+    m68k_write16(&cpu, 0x1000, 0x0280);
+    m68k_write32(&cpu, 0x1002, 0x00FF00FF);
+    m68k_write16(&cpu, 0x1006, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0x00FF0000);
+    printf("  PASS: andi\n");
+}
+
+/* ── Test: OR.L Dn, Dn ──────────────────────────────────────────────────── */
+
+static void test_or_l(void)
+{
+    setup();
+    cpu.d[0] = 0xFF000000;
+    cpu.d[1] = 0x000000FF;
+    /* OR.L D1, D0 → 8081  (1000 000 010 000 001) */
+    m68k_write16(&cpu, 0x1000, 0x8081);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0xFF0000FF);
+    assert(cpu.sr & M68K_FLAG_N);
+    printf("  PASS: or_l\n");
+}
+
+/* ── Test: ORI.B #imm, Dn ───────────────────────────────────────────────── */
+
+static void test_ori(void)
+{
+    setup();
+    cpu.d[0] = 0x10;
+    /* ORI.B #$0F, D0 → 0000 000F */
+    m68k_write16(&cpu, 0x1000, 0x0000);
+    m68k_write16(&cpu, 0x1002, 0x000F);
+    m68k_write16(&cpu, 0x1004, 0x4E40);
+
+    run_exit();
+
+    assert((cpu.d[0] & 0xFF) == 0x1F);
+    printf("  PASS: ori\n");
+}
+
+/* ── Test: EOR.L Dn, Dn ─────────────────────────────────────────────────── */
+
+static void test_eor_l(void)
+{
+    setup();
+    cpu.d[0] = 0xAAAAAAAA;
+    cpu.d[1] = 0xFFFFFFFF;
+    /* EOR.L D1, D0 → B381  (1011 001 110 000 000)
+     * Wait: EOR Dn, <ea> → 1011 rrr 1ss ea
+     * D1 to D0: reg=1, size=10(long), ea=000 000
+     * 1011 001 110 000 000 = 0xB380 */
+    m68k_write16(&cpu, 0x1000, 0xB380);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0x55555555);
+    assert(!(cpu.sr & M68K_FLAG_N));
+    assert(!(cpu.sr & M68K_FLAG_Z));
+    printf("  PASS: eor_l\n");
+}
+
+/* ── Test: EORI.W #imm, Dn ──────────────────────────────────────────────── */
+
+static void test_eori(void)
+{
+    setup();
+    cpu.d[0] = 0xFF00;
+    /* EORI.W #$FFFF, D0 → 0A40 FFFF */
+    m68k_write16(&cpu, 0x1000, 0x0A40);
+    m68k_write16(&cpu, 0x1002, 0xFFFF);
+    m68k_write16(&cpu, 0x1004, 0x4E40);
+
+    run_exit();
+
+    assert((cpu.d[0] & 0xFFFF) == 0x00FF);
+    printf("  PASS: eori\n");
+}
+
+/* ── Test: NOT.L ─────────────────────────────────────────────────────────── */
+
+static void test_not(void)
+{
+    setup();
+    cpu.d[0] = 0x00000000;
+    /* NOT.L D0 → 4680  (0100 0110 10 000 000) */
+    m68k_write16(&cpu, 0x1000, 0x4680);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0xFFFFFFFF);
+    assert(cpu.sr & M68K_FLAG_N);
+    assert(!(cpu.sr & M68K_FLAG_Z));
+    printf("  PASS: not\n");
+}
+
+/* ── Test: LSL/LSR register ──────────────────────────────────────────────── */
+
+static void test_lsl_lsr(void)
+{
+    setup();
+    cpu.d[0] = 0x01;
+    /* LSL.L #4, D0 → E988  (1110 100 1 10 0 01 000)
+     * cnt=4, left=1, size=10, i=0, type=01(LS), reg=0 */
+    m68k_write16(&cpu, 0x1000, 0xE988);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0x10);
+    assert(!(cpu.sr & M68K_FLAG_C));
+
+    /* LSR.L #4, D0 */
+    setup();
+    cpu.d[0] = 0x10;
+    /* LSR.L #4, D0 → E888  (1110 100 0 10 0 01 000) */
+    m68k_write16(&cpu, 0x1000, 0xE888);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0x01);
+    printf("  PASS: lsl_lsr\n");
+}
+
+/* ── Test: ASR (arithmetic shift right, preserves sign) ──────────────────── */
+
+static void test_asr(void)
+{
+    setup();
+    cpu.d[0] = 0x80000000;  /* -2147483648 */
+    /* ASR.L #1, D0 → E280  (1110 001 0 10 0 00 000)
+     * cnt=1, right, size=long, i=0, type=00(AS) */
+    m68k_write16(&cpu, 0x1000, 0xE280);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0xC0000000);  /* sign preserved */
+    assert(cpu.sr & M68K_FLAG_N);
+    printf("  PASS: asr\n");
+}
+
+/* ── Test: ASL (arithmetic shift left, V flag on sign change) ────────────── */
+
+static void test_asl(void)
+{
+    setup();
+    cpu.d[0] = 0x40000000;
+    /* ASL.L #1, D0 → E380  (1110 001 1 10 0 00 000) */
+    m68k_write16(&cpu, 0x1000, 0xE380);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0x80000000);
+    assert(cpu.sr & M68K_FLAG_V);  /* sign changed */
+    assert(cpu.sr & M68K_FLAG_N);
+    printf("  PASS: asl\n");
+}
+
+/* ── Test: ROL/ROR ───────────────────────────────────────────────────────── */
+
+static void test_rol_ror(void)
+{
+    setup();
+    cpu.d[0] = 0x80000001;
+    /* ROL.L #1, D0 → E398  (1110 001 1 10 0 11 000) */
+    m68k_write16(&cpu, 0x1000, 0xE398);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0x00000003);  /* MSB rotated to bit 0 */
+
+    /* ROR.L #1, D0 */
+    setup();
+    cpu.d[0] = 0x00000003;
+    /* ROR.L #1, D0 → E298  (1110 001 0 10 0 11 000) */
+    m68k_write16(&cpu, 0x1000, 0xE298);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0x80000001);
+    printf("  PASS: rol_ror\n");
+}
+
+/* ── Test: LSL with register count ───────────────────────────────────────── */
+
+static void test_lsl_reg_count(void)
+{
+    setup();
+    cpu.d[0] = 1;
+    cpu.d[1] = 8;
+    /* LSL.L D1, D0 → E3A8  (1110 001 1 10 1 01 000)
+     * cnt_reg=1, left=1, size=long, i=1, type=01(LS), reg=0 */
+    m68k_write16(&cpu, 0x1000, 0xE3A8);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 256);
+    printf("  PASS: lsl_reg_count\n");
+}
+
+/* ── Test: BTST static (immediate bit number) ───────────────────────────── */
+
+static void test_btst_static(void)
+{
+    setup();
+    cpu.d[0] = 0x00000010;  /* bit 4 set */
+    /* BTST #4, D0 → 0800 0004 */
+    m68k_write16(&cpu, 0x1000, 0x0800);
+    m68k_write16(&cpu, 0x1002, 0x0004);
+    m68k_write16(&cpu, 0x1004, 0x4E40);
+
+    run_exit();
+
+    assert(!(cpu.sr & M68K_FLAG_Z));  /* bit 4 is set → Z clear */
+
+    /* Test bit 5 (not set) */
+    setup();
+    cpu.d[0] = 0x00000010;
+    m68k_write16(&cpu, 0x1000, 0x0800);
+    m68k_write16(&cpu, 0x1002, 0x0005);
+    m68k_write16(&cpu, 0x1004, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.sr & M68K_FLAG_Z);  /* bit 5 is clear → Z set */
+    printf("  PASS: btst_static\n");
+}
+
+/* ── Test: BTST dynamic (Dn bit number) ──────────────────────────────────── */
+
+static void test_btst_dynamic(void)
+{
+    setup();
+    cpu.d[0] = 0x00000080;  /* bit 7 set */
+    cpu.d[1] = 7;
+    /* BTST D1, D0 → 0300  (0000 001 1 00 000 000) */
+    m68k_write16(&cpu, 0x1000, 0x0300);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(!(cpu.sr & M68K_FLAG_Z));
+    printf("  PASS: btst_dynamic\n");
+}
+
+/* ── Test: BSET/BCLR/BCHG ───────────────────────────────────────────────── */
+
+static void test_bset_bclr_bchg(void)
+{
+    setup();
+    cpu.d[0] = 0;
+    /* BSET #3, D0 → 08C0 0003 */
+    m68k_write16(&cpu, 0x1000, 0x08C0);
+    m68k_write16(&cpu, 0x1002, 0x0003);
+    m68k_write16(&cpu, 0x1004, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0x08);
+    assert(cpu.sr & M68K_FLAG_Z);  /* was 0 before set */
+
+    /* BCLR #3, D0 → 0880 0003 */
+    setup();
+    cpu.d[0] = 0x08;
+    m68k_write16(&cpu, 0x1000, 0x0880);
+    m68k_write16(&cpu, 0x1002, 0x0003);
+    m68k_write16(&cpu, 0x1004, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0);
+    assert(!(cpu.sr & M68K_FLAG_Z));  /* was 1 before clear */
+
+    /* BCHG #0, D0 → 0840 0000 */
+    setup();
+    cpu.d[0] = 0;
+    m68k_write16(&cpu, 0x1000, 0x0840);
+    m68k_write16(&cpu, 0x1002, 0x0000);
+    m68k_write16(&cpu, 0x1004, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 1);
+    assert(cpu.sr & M68K_FLAG_Z);  /* was 0 before change */
+    printf("  PASS: bset_bclr_bchg\n");
+}
+
+/* ── Test: EXG ───────────────────────────────────────────────────────────── */
+
+static void test_exg(void)
+{
+    setup();
+    cpu.d[0] = 0xAAAAAAAA;
+    cpu.d[1] = 0xBBBBBBBB;
+    /* EXG D0, D1 → C141  (1100 000 101000 001) */
+    m68k_write16(&cpu, 0x1000, 0xC141);
+    emit_stop(0x1002);
+
+    run();
+
+    assert(cpu.d[0] == 0xBBBBBBBB);
+    assert(cpu.d[1] == 0xAAAAAAAA);
+
+    /* EXG D0, A0 */
+    setup();
+    cpu.d[0] = 0x11111111;
+    cpu.a[0] = 0x22222222;
+    /* EXG D0, A0 → C188  (1100 000 110001 000) */
+    m68k_write16(&cpu, 0x1000, 0xC188);
+    emit_stop(0x1002);
+
+    run();
+
+    assert(cpu.d[0] == 0x22222222);
+    assert(cpu.a[0] == 0x11111111);
+    printf("  PASS: exg\n");
+}
+
+/* ── Test: ANDI/ORI/EORI to CCR ──────────────────────────────────────────── */
+
+static void test_logic_ccr(void)
+{
+    setup();
+    /* Set all CCR flags first via ORI to CCR */
+    /* ORI #$1F, CCR → 003C 001F */
+    m68k_write16(&cpu, 0x1000, 0x003C);
+    m68k_write16(&cpu, 0x1002, 0x001F);
+    /* ANDI #$04, CCR → 023C 0004 (keep only Z) */
+    m68k_write16(&cpu, 0x1004, 0x023C);
+    m68k_write16(&cpu, 0x1006, 0x0004);
+    m68k_write16(&cpu, 0x1008, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.sr & M68K_FLAG_Z);
+    assert(!(cpu.sr & M68K_FLAG_N));
+    assert(!(cpu.sr & M68K_FLAG_C));
+    assert(!(cpu.sr & M68K_FLAG_V));
+    assert(!(cpu.sr & M68K_FLAG_X));
+    printf("  PASS: logic_ccr\n");
+}
+
+/* ── Test: OR/AND to memory ──────────────────────────────────────────────── */
+
+static void test_or_and_mem(void)
+{
+    setup();
+    cpu.a[0] = 0x2000;
+    cpu.d[0] = 0x0F;
+    m68k_write8(&cpu, 0x2000, 0xF0);
+    /* OR.B D0, (A0) → 8110  (1000 000 100 010 000) */
+    m68k_write16(&cpu, 0x1000, 0x8110);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(m68k_read8(&cpu, 0x2000) == 0xFF);
+
+    /* AND.B D0, (A0) — D0 still 0x0F */
+    setup();
+    cpu.a[0] = 0x2000;
+    cpu.d[0] = 0x0F;
+    m68k_write8(&cpu, 0x2000, 0xFF);
+    /* AND.B D0, (A0) → C110  (1100 000 100 010 000) */
+    m68k_write16(&cpu, 0x1000, 0xC110);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(m68k_read8(&cpu, 0x2000) == 0x0F);
+    printf("  PASS: or_and_mem\n");
+}
+
+/* ── Test: LSR carry flag ────────────────────────────────────────────────── */
+
+static void test_lsr_carry(void)
+{
+    setup();
+    cpu.d[0] = 0x03;  /* binary 11 */
+    /* LSR.L #1, D0 → E480  (1110 010 0 10 0 01 000) — wait, cnt=2 */
+    /* LSR.L #1, D0 → E288  (1110 001 0 10 0 01 000) */
+    m68k_write16(&cpu, 0x1000, 0xE288);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0x01);
+    assert(cpu.sr & M68K_FLAG_C);  /* bit 0 was 1, shifted out */
+    assert(cpu.sr & M68K_FLAG_X);
+    printf("  PASS: lsr_carry\n");
+}
+
+/* ── Test: Shift count 0 ────────────────────────────────────────────────── */
+
+static void test_shift_zero(void)
+{
+    setup();
+    cpu.d[0] = 0x12345678;
+    cpu.d[1] = 0;  /* count = 0 */
+    /* LSL.L D1, D0 → E3A8  (1110 001 1 10 1 01 000) — wait, that's D1 cnt */
+    /* Actually I need cnt_reg in bits 11-9. D1 → bits 11-9 = 001 */
+    /* LSL.L D1, D0 → E3A8 (1110 001 1 10 1 01 000) */
+    m68k_write16(&cpu, 0x1000, 0xE3A8);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(cpu.d[0] == 0x12345678);  /* unchanged */
+    assert(!(cpu.sr & M68K_FLAG_C));  /* C cleared on count 0 */
+    printf("  PASS: shift_zero\n");
+}
+
+/* ── Test: BTST on memory (byte) ─────────────────────────────────────────── */
+
+static void test_btst_mem(void)
+{
+    setup();
+    cpu.a[0] = 0x2000;
+    m68k_write8(&cpu, 0x2000, 0x80);  /* bit 7 set */
+    cpu.d[1] = 7;
+    /* BTST D1, (A0) → 0310  (0000 001 1 00 010 000) */
+    m68k_write16(&cpu, 0x1000, 0x0310);
+    m68k_write16(&cpu, 0x1002, 0x4E40);
+
+    run_exit();
+
+    assert(!(cpu.sr & M68K_FLAG_Z));  /* bit 7 set → Z clear */
+    printf("  PASS: btst_mem\n");
+}
+
+/* ── Test: Bit manipulation program ──────────────────────────────────────── */
+
+static void test_bit_program(void)
+{
+    setup();
+    /*
+     * D0 = 0x00
+     * BSET #0, D0      ; D0 = 0x01
+     * BSET #4, D0      ; D0 = 0x11
+     * ORI.B #$80, D0   ; D0 = 0x91
+     * ANDI.B #$F0, D0  ; D0 = 0x90
+     * NOT.B D0         ; D0 = 0x6F
+     * TRAP #0
+     */
+    cpu.d[0] = 0;
+    uint32_t pc = 0x1000;
+    m68k_write16(&cpu, pc, 0x08C0); pc += 2;  /* BSET #0, D0 */
+    m68k_write16(&cpu, pc, 0x0000); pc += 2;
+    m68k_write16(&cpu, pc, 0x08C0); pc += 2;  /* BSET #4, D0 */
+    m68k_write16(&cpu, pc, 0x0004); pc += 2;
+    m68k_write16(&cpu, pc, 0x0000); pc += 2;  /* ORI.B #$80, D0 */
+    m68k_write16(&cpu, pc, 0x0080); pc += 2;
+    m68k_write16(&cpu, pc, 0x0200); pc += 2;  /* ANDI.B #$F0, D0 */
+    m68k_write16(&cpu, pc, 0x00F0); pc += 2;
+    m68k_write16(&cpu, pc, 0x4600); pc += 2;  /* NOT.B D0 */
+    m68k_write16(&cpu, pc, 0x4E40);           /* TRAP #0 */
+
+    run_exit();
+
+    assert((cpu.d[0] & 0xFF) == 0x6F);
+    printf("  PASS: bit_program\n");
+}
+
 /* ── Main ───────────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -1793,6 +2299,30 @@ int main(void)
     test_bsr_fib();
     test_bra_backward();
 
-    printf("All 75 tests passed.\n");
+    /* Step 4 */
+    test_and_l();
+    test_andi();
+    test_or_l();
+    test_ori();
+    test_eor_l();
+    test_eori();
+    test_not();
+    test_lsl_lsr();
+    test_asr();
+    test_asl();
+    test_rol_ror();
+    test_lsl_reg_count();
+    test_btst_static();
+    test_btst_dynamic();
+    test_bset_bclr_bchg();
+    test_exg();
+    test_logic_ccr();
+    test_or_and_mem();
+    test_lsr_carry();
+    test_shift_zero();
+    test_btst_mem();
+    test_bit_program();
+
+    printf("All 97 tests passed.\n");
     return 0;
 }
