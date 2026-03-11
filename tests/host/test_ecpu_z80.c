@@ -2584,6 +2584,402 @@ static void test_ed_retn_reti(void)
     printf("  PASS: ed_retn_reti\n");
 }
 
+/* ── Test: DD LD IX,nn ───────────────────────────────────────────────────── */
+
+static void test_dd_ld_ix_nn(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    uint16_t pc = 0x100;
+    mem[pc++] = 0xDD; mem[pc++] = 0x21; mem[pc++] = 0x34; mem[pc++] = 0x12; /* LD IX,0x1234 */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.ix == 0x1234);
+
+    printf("  PASS: dd_ld_ix_nn\n");
+}
+
+/* ── Test: LD r,(IX+d) / LD (IX+d),r / LD (IX+d),n ─────────────────────── */
+
+static void test_dd_ld_r_ixd(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x8000;
+    mem[0x8005] = 0x42;
+    uint16_t pc = 0x100;
+    /* LD A,(IX+5) = DD 7E 05 */
+    mem[pc++] = 0xDD; mem[pc++] = 0x7E; mem[pc++] = 0x05;
+    /* LD B,(IX-1) = DD 46 FF */
+    mem[0x7FFF] = 0x99;
+    mem[pc++] = 0xDD; mem[pc++] = 0x46; mem[pc++] = 0xFF;
+    /* LD (IX+3),0xAB = DD 36 03 AB */
+    mem[pc++] = 0xDD; mem[pc++] = 0x36; mem[pc++] = 0x03; mem[pc++] = 0xAB;
+    /* LD (IX+0),C = DD 71 00 (set C first) */
+    mem[pc++] = 0x0E; mem[pc++] = 0x77;  /* LD C, 0x77 */
+    mem[pc++] = 0xDD; mem[pc++] = 0x71; mem[pc++] = 0x00;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x42);
+    assert(cpu.b == 0x99);
+    assert(mem[0x8003] == 0xAB);
+    assert(mem[0x8000] == 0x77);
+
+    printf("  PASS: dd_ld_r_ixd\n");
+}
+
+/* ── Test: ALU A,(IX+d) ─────────────────────────────────────────────────── */
+
+static void test_dd_alu_ixd(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x8000;
+    mem[0x8002] = 0x10;
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0x20;  /* LD A, 0x20 */
+    /* ADD A,(IX+2) = DD 86 02 */
+    mem[pc++] = 0xDD; mem[pc++] = 0x86; mem[pc++] = 0x02;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x30);
+
+    /* SUB (IX+d) */
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x8000;
+    mem[0x8001] = 0x05;
+    pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0x20;
+    /* SUB (IX+1) = DD 96 01 */
+    mem[pc++] = 0xDD; mem[pc++] = 0x96; mem[pc++] = 0x01;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x1B);
+
+    /* CP (IX+d) */
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x8000;
+    mem[0x8000] = 0x42;
+    pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0x42;
+    /* CP (IX+0) = DD BE 00 */
+    mem[pc++] = 0xDD; mem[pc++] = 0xBE; mem[pc++] = 0x00;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.f & FLAG_Z);
+
+    printf("  PASS: dd_alu_ixd\n");
+}
+
+/* ── Test: INC/DEC (IX+d) ───────────────────────────────────────────────── */
+
+static void test_dd_inc_dec_ixd(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x8000;
+    mem[0x8003] = 0x0F;
+    uint16_t pc = 0x100;
+    /* INC (IX+3) = DD 34 03 */
+    mem[pc++] = 0xDD; mem[pc++] = 0x34; mem[pc++] = 0x03;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(mem[0x8003] == 0x10);
+    assert(cpu.f & FLAG_H);  /* half carry from 0x0F+1 */
+
+    /* DEC (IX+3) */
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x8000;
+    mem[0x8003] = 0x01;
+    pc = 0x100;
+    /* DEC (IX+3) = DD 35 03 */
+    mem[pc++] = 0xDD; mem[pc++] = 0x35; mem[pc++] = 0x03;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(mem[0x8003] == 0x00);
+    assert(cpu.f & FLAG_Z);
+
+    printf("  PASS: dd_inc_dec_ixd\n");
+}
+
+/* ── Test: PUSH IX / POP IX ─────────────────────────────────────────────── */
+
+static void test_dd_push_pop(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    cpu.sp = 0xFFFE;
+    cpu.ix = 0xABCD;
+    uint16_t pc = 0x100;
+    mem[pc++] = 0xDD; mem[pc++] = 0xE5;  /* PUSH IX */
+    mem[pc++] = 0xDD; mem[pc++] = 0x21;  /* LD IX,0 */
+    mem[pc++] = 0x00; mem[pc++] = 0x00;
+    mem[pc++] = 0xDD; mem[pc++] = 0xE1;  /* POP IX */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.ix == 0xABCD);
+    assert(cpu.sp == 0xFFFE);
+
+    printf("  PASS: dd_push_pop\n");
+}
+
+/* ── Test: EX (SP),IX ───────────────────────────────────────────────────── */
+
+static void test_dd_ex_sp_ix(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    cpu.sp = 0xFFF0;
+    cpu.ix = 0x1234;
+    z80_write16(&cpu, 0xFFF0, 0x5678);
+    uint16_t pc = 0x100;
+    mem[pc++] = 0xDD; mem[pc++] = 0xE3;  /* EX (SP),IX */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.ix == 0x5678);
+    assert(z80_read16(&cpu, 0xFFF0) == 0x1234);
+
+    printf("  PASS: dd_ex_sp_ix\n");
+}
+
+/* ── Test: ADD IX,rr ────────────────────────────────────────────────────── */
+
+static void test_dd_add_ix_rr(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x1000;
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x01; mem[pc++] = 0x00; mem[pc++] = 0x02;  /* LD BC,0x0200 */
+    mem[pc++] = 0xDD; mem[pc++] = 0x09;  /* ADD IX,BC */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.ix == 0x1200);
+    assert(!(cpu.f & FLAG_C));
+    assert(!(cpu.f & FLAG_N));
+
+    /* ADD IX,IX (doubles) */
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x4000;
+    pc = 0x100;
+    mem[pc++] = 0xDD; mem[pc++] = 0x29;  /* ADD IX,IX */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.ix == 0x8000);
+
+    /* ADD IX,SP with carry */
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0xF000;
+    cpu.sp = 0x2000;
+    pc = 0x100;
+    mem[pc++] = 0xDD; mem[pc++] = 0x39;  /* ADD IX,SP */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.ix == 0x1000);
+    assert(cpu.f & FLAG_C);
+
+    printf("  PASS: dd_add_ix_rr\n");
+}
+
+/* ── Test: LD (nn),IX / LD IX,(nn) ──────────────────────────────────────── */
+
+static void test_dd_ld_nn_ix(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0xBEEF;
+    uint16_t pc = 0x100;
+    /* LD (0x9000),IX = DD 22 00 90 */
+    mem[pc++] = 0xDD; mem[pc++] = 0x22; mem[pc++] = 0x00; mem[pc++] = 0x90;
+    /* LD IX,0 to clear, then reload */
+    mem[pc++] = 0xDD; mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x00;
+    /* LD IX,(0x9000) = DD 2A 00 90 */
+    mem[pc++] = 0xDD; mem[pc++] = 0x2A; mem[pc++] = 0x00; mem[pc++] = 0x90;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.ix == 0xBEEF);
+    assert(z80_read16(&cpu, 0x9000) == 0xBEEF);
+
+    printf("  PASS: dd_ld_nn_ix\n");
+}
+
+/* ── Test: DD CB (indexed bit operations) ────────────────────────────────── */
+
+static void test_dd_cb_prefix(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x8000;
+    mem[0x8005] = 0x80;  /* bit 7 set */
+    uint16_t pc = 0x100;
+    /* BIT 7,(IX+5) = DD CB 05 7E */
+    mem[pc++] = 0xDD; mem[pc++] = 0xCB; mem[pc++] = 0x05; mem[pc++] = 0x7E;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(!(cpu.f & FLAG_Z));  /* bit 7 is set */
+
+    /* BIT 0,(IX+5) — should be zero */
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x8000;
+    mem[0x8005] = 0x80;
+    pc = 0x100;
+    mem[pc++] = 0xDD; mem[pc++] = 0xCB; mem[pc++] = 0x05; mem[pc++] = 0x46;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.f & FLAG_Z);
+
+    /* SET 0,(IX+5) = DD CB 05 C6 */
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x8000;
+    mem[0x8005] = 0x00;
+    pc = 0x100;
+    mem[pc++] = 0xDD; mem[pc++] = 0xCB; mem[pc++] = 0x05; mem[pc++] = 0xC6;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(mem[0x8005] == 0x01);
+
+    /* RES 7,(IX+5) = DD CB 05 BE */
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x8000;
+    mem[0x8005] = 0xFF;
+    pc = 0x100;
+    mem[pc++] = 0xDD; mem[pc++] = 0xCB; mem[pc++] = 0x05; mem[pc++] = 0xBE;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(mem[0x8005] == 0x7F);
+
+    /* RLC (IX+2) with store to B (undocumented): DD CB 02 00 */
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x8000;
+    mem[0x8002] = 0x81;  /* 10000001 → RLC → 00000011 */
+    pc = 0x100;
+    mem[pc++] = 0xDD; mem[pc++] = 0xCB; mem[pc++] = 0x02; mem[pc++] = 0x00;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(mem[0x8002] == 0x03);
+    assert(cpu.b == 0x03);  /* undocumented: stored to B */
+
+    printf("  PASS: dd_cb_prefix\n");
+}
+
+/* ── Test: IXH/IXL undocumented half-register ops ────────────────────────── */
+
+static void test_dd_ixhl(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x1234;
+    uint16_t pc = 0x100;
+    /* LD A,IXH = DD 7C */
+    mem[pc++] = 0xDD; mem[pc++] = 0x7C;
+    /* LD B,IXL = DD 45 */
+    mem[pc++] = 0xDD; mem[pc++] = 0x45;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x12);
+    assert(cpu.b == 0x34);
+
+    /* LD IXH,n = DD 26 nn */
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x0000;
+    pc = 0x100;
+    mem[pc++] = 0xDD; mem[pc++] = 0x26; mem[pc++] = 0xAB;  /* LD IXH,0xAB */
+    mem[pc++] = 0xDD; mem[pc++] = 0x2E; mem[pc++] = 0xCD;  /* LD IXL,0xCD */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.ix == 0xABCD);
+
+    /* ADD A,IXH = DD 84 */
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x1000;
+    pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0x05;  /* LD A,5 */
+    mem[pc++] = 0xDD; mem[pc++] = 0x84;  /* ADD A,IXH */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x15);
+
+    /* INC IXH = DD 24 */
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x0FFF;
+    pc = 0x100;
+    mem[pc++] = 0xDD; mem[pc++] = 0x24;  /* INC IXH */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.ix == 0x10FF);
+
+    printf("  PASS: dd_ixhl\n");
+}
+
+/* ── Test: FD prefix (IY) works identically ─────────────────────────────── */
+
+static void test_fd_iy(void)
+{
+    /* LD IY,nn; LD A,(IY+d); PUSH IY; POP IY */
+    setup();
+    cpu.pc = 0x100;
+    cpu.sp = 0xFFFE;
+    mem[0x9003] = 0x55;
+    uint16_t pc = 0x100;
+    mem[pc++] = 0xFD; mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x90; /* LD IY,0x9000 */
+    mem[pc++] = 0xFD; mem[pc++] = 0x7E; mem[pc++] = 0x03;  /* LD A,(IY+3) */
+    mem[pc++] = 0xFD; mem[pc++] = 0xE5;  /* PUSH IY */
+    mem[pc++] = 0xFD; mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x00; /* LD IY,0 */
+    mem[pc++] = 0xFD; mem[pc++] = 0xE1;  /* POP IY */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x55);
+    assert(cpu.iy == 0x9000);
+
+    /* ADD IY,DE */
+    setup();
+    cpu.pc = 0x100;
+    cpu.iy = 0x1000;
+    pc = 0x100;
+    mem[pc++] = 0x11; mem[pc++] = 0x00; mem[pc++] = 0x05;  /* LD DE,0x0500 */
+    mem[pc++] = 0xFD; mem[pc++] = 0x19;  /* ADD IY,DE */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.iy == 0x1500);
+
+    printf("  PASS: fd_iy\n");
+}
+
+/* ── Test: IX array access program ──────────────────────────────────────── */
+
+static void test_ix_array_program(void)
+{
+    /* Sum array[0..3] using IX indexed addressing */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x8000] = 10; mem[0x8001] = 20;
+    mem[0x8002] = 30; mem[0x8003] = 40;
+    uint16_t pc = 0x100;
+    mem[pc++] = 0xDD; mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x80; /* LD IX,0x8000 */
+    mem[pc++] = 0x3E; mem[pc++] = 0x00;  /* LD A,0 */
+    mem[pc++] = 0xDD; mem[pc++] = 0x86; mem[pc++] = 0x00;  /* ADD A,(IX+0) */
+    mem[pc++] = 0xDD; mem[pc++] = 0x86; mem[pc++] = 0x01;  /* ADD A,(IX+1) */
+    mem[pc++] = 0xDD; mem[pc++] = 0x86; mem[pc++] = 0x02;  /* ADD A,(IX+2) */
+    mem[pc++] = 0xDD; mem[pc++] = 0x86; mem[pc++] = 0x03;  /* ADD A,(IX+3) */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 100);
+
+    printf("  PASS: ix_array_program\n");
+}
+
 /* ── Main ────────────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -2674,6 +3070,20 @@ int main(void)
     test_ed_cpi_cpd();
     test_ed_cpir();
     test_ed_retn_reti();
+
+    /* Step 7 tests */
+    test_dd_ld_ix_nn();
+    test_dd_ld_r_ixd();
+    test_dd_alu_ixd();
+    test_dd_inc_dec_ixd();
+    test_dd_push_pop();
+    test_dd_ex_sp_ix();
+    test_dd_add_ix_rr();
+    test_dd_ld_nn_ix();
+    test_dd_cb_prefix();
+    test_dd_ixhl();
+    test_fd_iy();
+    test_ix_array_program();
 
     printf("All tests passed.\n");
     return 0;

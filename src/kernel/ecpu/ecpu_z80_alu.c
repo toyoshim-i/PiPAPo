@@ -366,6 +366,24 @@ void z80_ccf(z80_state_t *cpu)
     /* N = 0 */
 }
 
+/* ── ADD IX/IY,rr (16-bit add targeting index register) ─────────────── */
+
+void z80_add_ix(z80_state_t *cpu, uint16_t *idx, uint16_t val)
+{
+    uint16_t ix = *idx;
+    uint32_t result = ix + val;
+    uint16_t res16 = result & 0xFFFF;
+
+    cpu->f = (cpu->f & (FLAG_S | FLAG_Z | FLAG_PV))  /* preserve S, Z, PV */
+           | ((res16 >> 8) & FLAG_35)                 /* F3, F5 from high byte */
+           | ((result > 0xFFFF) ? FLAG_C : 0)
+           | ((((ix ^ val ^ res16) >> 8) & 0x10) ? FLAG_H : 0);
+    /* N = 0 */
+
+    *idx = res16;
+    cpu->wz = ix + 1;  /* WZ = old IX + 1 */
+}
+
 /* ── CB prefix shift/rotate operations ───────────────────────────────────
  * All set S, Z, PV=parity, F3/F5 from result.  H=0, N=0.
  * Return the result byte; caller writes it back to the register. */

@@ -8,6 +8,7 @@
  * Step 4: Memory indirect loads, IN/OUT port trapping.
  * Step 5: CB prefix — shifts, rotates, BIT/RES/SET.
  * Step 6: ED prefix — block ops, 16-bit arith, NEG, I/O, IM, RLD/RRD.
+ * Step 7: DD/FD prefix — IX/IY indexed addressing.
  *
  * See docs/ecpu-z80.md for the full design.
  */
@@ -452,6 +453,454 @@ static int z80_decode_ed(z80_state_t *cpu)
     return 0;
 }
 
+/* ── DD/FD prefix decode (IX/IY indexed) ─────────────────────────────────
+ * Shared decoder parameterised by index register pointer.
+ * Returns 0 normally, or -1 if ECPU_TRAP_EXIT was returned. */
+
+/* Read 8-bit register, with IXH/IXL replacing H/L (undocumented) */
+static uint8_t z80_read_r8_ix(z80_state_t *cpu, uint8_t code, uint16_t *idx)
+{
+    switch (code) {
+        case 4: return *idx >> 8;        /* IXH */
+        case 5: return *idx & 0xFF;      /* IXL */
+        case 6: return 0; /* caller handles (IX+d) separately */
+        default: return z80_read_r8(cpu, code);
+    }
+}
+
+/* Write 8-bit register, with IXH/IXL replacing H/L (undocumented) */
+static void z80_write_r8_ix(z80_state_t *cpu, uint8_t code, uint16_t *idx,
+                             uint8_t val)
+{
+    switch (code) {
+        case 4: *idx = (*idx & 0x00FF) | ((uint16_t)val << 8); break; /* IXH */
+        case 5: *idx = (*idx & 0xFF00) | val; break;                   /* IXL */
+        case 6: break; /* caller handles (IX+d) separately */
+        default: z80_write_r8(cpu, code, val); break;
+    }
+}
+
+/* Read rr with IX replacing HL (pp field) */
+static uint16_t z80_read_rr_ix(z80_state_t *cpu, uint8_t pp, uint16_t *idx)
+{
+    if (pp == 2) return *idx;
+    return z80_read_rr(cpu, pp);
+}
+
+/* Write rr with IX replacing HL (pp field) */
+static void z80_write_rr_ix(z80_state_t *cpu, uint8_t pp, uint16_t *idx,
+                             uint16_t val)
+{
+    if (pp == 2) { *idx = val; return; }
+    z80_write_rr(cpu, pp, val);
+}
+
+static int z80_decode_index(z80_state_t *cpu, uint16_t *idx)
+{
+    uint8_t op = z80_fetch8(cpu);
+    /* R increments for the prefix byte (already done in main loop);
+     * now increment again for this second fetch. */
+    cpu->r = (cpu->r & 0x80) | ((cpu->r + 1) & 0x7F);
+
+    uint8_t xx  = op >> 6;
+    uint8_t yyy = (op >> 3) & 7;
+    uint8_t zzz = op & 7;
+
+    switch (xx) {
+    case 1:
+        /* LD r,r' with IX+d for code 6 */
+        if (op == 0x76) {
+            /* DD 76 = HALT (not indexed) */
+            cpu->halted = 1;
+            return 0;
+        }
+        if (yyy == 6) {
+            /* LD (IX+d),r — but d was already consumed, need different path */
+            /* Actually for DD prefix, code 6 means (IX+d) */
+            int8_t d = (int8_t)z80_fetch8(cpu);
+            uint16_t addr = *idx + d;
+            z80_write8(cpu, addr, z80_read_r8(cpu, zzz));
+            cpu->wz = addr;
+        } else if (zzz == 6) {
+            /* LD r,(IX+d) */
+            int8_t d = (int8_t)z80_fetch8(cpu);
+            uint16_t addr = *idx + d;
+            z80_write_r8(cpu, yyy, z80_read8(cpu, addr));
+            cpu->wz = addr;
+        } else {
+            /* LD r,r' with IXH/IXL substitution */
+            z80_write_r8_ix(cpu, yyy, idx, z80_read_r8_ix(cpu, zzz, idx));
+        }
+        break;
+
+    case 0:
+        switch (zzz) {
+        case 0:
+            /* Same as unprefixed (NOP, EX AF, DJNZ, JR, JR cc) — no IX effect */
+            if (yyy == 0) {
+                /* NOP */
+            } else if (yyy == 1) {
+                uint8_t t;
+                t = cpu->a; cpu->a = cpu->a2; cpu->a2 = t;
+                t = cpu->f; cpu->f = cpu->f2; cpu->f2 = t;
+            } else if (yyy == 2) {
+                int8_t offset = (int8_t)z80_fetch8(cpu);
+                cpu->b--;
+                if (cpu->b != 0)
+                    cpu->pc += offset;
+            } else if (yyy == 3) {
+                int8_t offset = (int8_t)z80_fetch8(cpu);
+                cpu->pc += offset;
+            } else {
+                int8_t offset = (int8_t)z80_fetch8(cpu);
+                if (z80_condition(cpu, yyy - 4))
+                    cpu->pc += offset;
+            }
+            break;
+        case 1:
+            if (yyy & 1) {
+                /* ADD IX,rr */
+                z80_add_ix(cpu, idx, z80_read_rr_ix(cpu, yyy >> 1, idx));
+            } else {
+                /* LD rr,nn — pp=2 → LD IX,nn */
+                uint16_t nn = z80_fetch16(cpu);
+                z80_write_rr_ix(cpu, yyy >> 1, idx, nn);
+            }
+            break;
+        case 2:
+            /* Memory indirect loads/stores */
+            switch (yyy) {
+            case 0: z80_write8(cpu, z80_bc(cpu), cpu->a);
+                    cpu->wz = (z80_bc(cpu) + 1) & 0xFFFF; break;
+            case 1: cpu->a = z80_read8(cpu, z80_bc(cpu));
+                    cpu->wz = (z80_bc(cpu) + 1) & 0xFFFF; break;
+            case 2: z80_write8(cpu, z80_de(cpu), cpu->a);
+                    cpu->wz = (z80_de(cpu) + 1) & 0xFFFF; break;
+            case 3: cpu->a = z80_read8(cpu, z80_de(cpu));
+                    cpu->wz = (z80_de(cpu) + 1) & 0xFFFF; break;
+            case 4: /* LD (nn),IX */
+                {
+                    uint16_t nn = z80_fetch16(cpu);
+                    z80_write16(cpu, nn, *idx);
+                    cpu->wz = (nn + 1) & 0xFFFF;
+                }
+                break;
+            case 5: /* LD IX,(nn) */
+                {
+                    uint16_t nn = z80_fetch16(cpu);
+                    *idx = z80_read16(cpu, nn);
+                    cpu->wz = (nn + 1) & 0xFFFF;
+                }
+                break;
+            case 6: /* LD (nn),A */
+                {
+                    uint16_t nn = z80_fetch16(cpu);
+                    z80_write8(cpu, nn, cpu->a);
+                    cpu->wz = (nn + 1) & 0xFFFF;
+                }
+                break;
+            case 7: /* LD A,(nn) */
+                {
+                    uint16_t nn = z80_fetch16(cpu);
+                    cpu->a = z80_read8(cpu, nn);
+                    cpu->wz = (nn + 1) & 0xFFFF;
+                }
+                break;
+            }
+            break;
+        case 3:
+            /* INC/DEC rr — pp=2 → INC/DEC IX */
+            {
+                uint8_t pp = yyy >> 1;
+                uint16_t val = z80_read_rr_ix(cpu, pp, idx);
+                if (yyy & 1)
+                    z80_write_rr_ix(cpu, pp, idx, val - 1);
+                else
+                    z80_write_rr_ix(cpu, pp, idx, val + 1);
+            }
+            break;
+        case 4:
+            /* INC r — code 6 → INC (IX+d) */
+            if (yyy == 6) {
+                int8_t d = (int8_t)z80_fetch8(cpu);
+                uint16_t addr = *idx + d;
+                z80_write8(cpu, addr, z80_inc8(cpu, z80_read8(cpu, addr)));
+                cpu->wz = addr;
+            } else {
+                /* INC IXH/IXL for codes 4,5; normal for others */
+                uint8_t val = z80_read_r8_ix(cpu, yyy, idx);
+                z80_write_r8_ix(cpu, yyy, idx, z80_inc8(cpu, val));
+            }
+            break;
+        case 5:
+            /* DEC r — code 6 → DEC (IX+d) */
+            if (yyy == 6) {
+                int8_t d = (int8_t)z80_fetch8(cpu);
+                uint16_t addr = *idx + d;
+                z80_write8(cpu, addr, z80_dec8(cpu, z80_read8(cpu, addr)));
+                cpu->wz = addr;
+            } else {
+                uint8_t val = z80_read_r8_ix(cpu, yyy, idx);
+                z80_write_r8_ix(cpu, yyy, idx, z80_dec8(cpu, val));
+            }
+            break;
+        case 6:
+            /* LD r,n — code 6 → LD (IX+d),n */
+            if (yyy == 6) {
+                int8_t d = (int8_t)z80_fetch8(cpu);
+                uint8_t n = z80_fetch8(cpu);
+                uint16_t addr = *idx + d;
+                z80_write8(cpu, addr, n);
+                cpu->wz = addr;
+            } else {
+                uint8_t n = z80_fetch8(cpu);
+                z80_write_r8_ix(cpu, yyy, idx, n);
+            }
+            break;
+        case 7:
+            /* RLCA..CCF — no IX effect */
+            switch (yyy) {
+            case 0: z80_rlca(cpu); break;
+            case 1: z80_rrca(cpu); break;
+            case 2: z80_rla(cpu);  break;
+            case 3: z80_rra(cpu);  break;
+            case 4: z80_daa(cpu);  break;
+            case 5: z80_cpl(cpu);  break;
+            case 6: z80_scf(cpu);  break;
+            case 7: z80_ccf(cpu);  break;
+            }
+            break;
+        }
+        break;
+
+    case 2:
+        /* ALU A,r — code 6 → ALU A,(IX+d) */
+        if (zzz == 6) {
+            int8_t d = (int8_t)z80_fetch8(cpu);
+            uint16_t addr = *idx + d;
+            z80_alu_op(cpu, yyy, z80_read8(cpu, addr));
+            cpu->wz = addr;
+        } else {
+            z80_alu_op(cpu, yyy, z80_read_r8_ix(cpu, zzz, idx));
+        }
+        break;
+
+    case 3:
+        switch (zzz) {
+        case 0:
+            /* RET cc — no IX effect */
+            if (z80_condition(cpu, yyy)) {
+                cpu->pc = z80_pop16(cpu);
+                cpu->wz = cpu->pc;
+            }
+            break;
+        case 1:
+            if (yyy & 1) {
+                switch (yyy) {
+                case 1: /* RET */
+                    cpu->pc = z80_pop16(cpu);
+                    cpu->wz = cpu->pc;
+                    break;
+                case 3: /* EXX */
+                    {
+                        uint8_t t;
+                        t = cpu->b; cpu->b = cpu->b2; cpu->b2 = t;
+                        t = cpu->c; cpu->c = cpu->c2; cpu->c2 = t;
+                        t = cpu->d; cpu->d = cpu->d2; cpu->d2 = t;
+                        t = cpu->e; cpu->e = cpu->e2; cpu->e2 = t;
+                        t = cpu->h; cpu->h = cpu->h2; cpu->h2 = t;
+                        t = cpu->l; cpu->l = cpu->l2; cpu->l2 = t;
+                    }
+                    break;
+                case 5: /* JP (IX) */
+                    cpu->pc = *idx;
+                    break;
+                case 7: /* LD SP,IX */
+                    cpu->sp = *idx;
+                    break;
+                }
+            } else {
+                /* POP qq — qq=2 → POP IX */
+                if ((yyy >> 1) == 2)
+                    *idx = z80_pop16(cpu);
+                else
+                    z80_write_qq(cpu, yyy >> 1, z80_pop16(cpu));
+            }
+            break;
+        case 2:
+            /* JP cc,nn — no IX effect */
+            {
+                uint16_t nn = z80_fetch16(cpu);
+                cpu->wz = nn;
+                if (z80_condition(cpu, yyy))
+                    cpu->pc = nn;
+            }
+            break;
+        case 3:
+            switch (yyy) {
+            case 0: /* JP nn */
+                {
+                    uint16_t nn = z80_fetch16(cpu);
+                    cpu->wz = nn;
+                    cpu->pc = nn;
+                }
+                break;
+            case 1: /* DD CB d op — indexed bit operations */
+                {
+                    int8_t d = (int8_t)z80_fetch8(cpu);
+                    uint8_t cb = z80_fetch8(cpu);
+                    uint16_t addr = *idx + d;
+                    cpu->wz = addr;
+                    uint8_t cb_xx  = cb >> 6;
+                    uint8_t cb_yyy = (cb >> 3) & 7;
+                    uint8_t cb_zzz = cb & 7;
+                    uint8_t val = z80_read8(cpu, addr);
+                    uint8_t res;
+
+                    switch (cb_xx) {
+                    case 0: /* shifts/rotates */
+                        switch (cb_yyy) {
+                        case 0: res = z80_rlc(cpu, val); break;
+                        case 1: res = z80_rrc(cpu, val); break;
+                        case 2: res = z80_rl(cpu, val);  break;
+                        case 3: res = z80_rr(cpu, val);  break;
+                        case 4: res = z80_sla(cpu, val); break;
+                        case 5: res = z80_sra(cpu, val); break;
+                        case 6: res = z80_sll(cpu, val); break;
+                        default: res = z80_srl(cpu, val); break;
+                        }
+                        z80_write8(cpu, addr, res);
+                        /* Undocumented: also store to register if zzz != 6 */
+                        if (cb_zzz != 6)
+                            z80_write_r8(cpu, cb_zzz, res);
+                        break;
+                    case 1: /* BIT */
+                        z80_bit(cpu, cb_yyy, val);
+                        /* F3/F5 from WZ high byte for (IX+d) */
+                        cpu->f = (cpu->f & ~FLAG_35)
+                               | ((cpu->wz >> 8) & FLAG_35);
+                        break;
+                    case 2: /* RES */
+                        res = val & ~(1 << cb_yyy);
+                        z80_write8(cpu, addr, res);
+                        if (cb_zzz != 6)
+                            z80_write_r8(cpu, cb_zzz, res);
+                        break;
+                    case 3: /* SET */
+                        res = val | (1 << cb_yyy);
+                        z80_write8(cpu, addr, res);
+                        if (cb_zzz != 6)
+                            z80_write_r8(cpu, cb_zzz, res);
+                        break;
+                    }
+                }
+                break;
+            case 2: /* OUT (n),A */
+                {
+                    uint8_t port = z80_fetch8(cpu);
+                    uint16_t addr = ((uint16_t)cpu->a << 8) | port;
+                    cpu->wz = ((uint16_t)cpu->a << 8) | ((port + 1) & 0xFF);
+                    int rc = z80_fire_trap(cpu, ECPU_TRAP_IO_OUT, addr);
+                    if (rc == ECPU_TRAP_EXIT) return -1;
+                }
+                break;
+            case 3: /* IN A,(n) */
+                {
+                    uint8_t port = z80_fetch8(cpu);
+                    uint16_t addr = ((uint16_t)cpu->a << 8) | port;
+                    int rc = z80_fire_trap(cpu, ECPU_TRAP_IO_IN, addr);
+                    if (rc == ECPU_TRAP_EXIT) return -1;
+                    cpu->wz = ((uint16_t)cpu->a << 8) | ((port + 1) & 0xFF);
+                }
+                break;
+            case 4: /* EX (SP),IX */
+                {
+                    uint16_t val = z80_read16(cpu, cpu->sp);
+                    z80_write16(cpu, cpu->sp, *idx);
+                    *idx = val;
+                    cpu->wz = val;
+                }
+                break;
+            case 5: /* EX DE,HL — no IX effect */
+                {
+                    uint16_t de = z80_de(cpu);
+                    z80_set_de(cpu, z80_hl(cpu));
+                    z80_set_hl(cpu, de);
+                }
+                break;
+            case 6: /* DI */
+                cpu->iff1 = 0;
+                cpu->iff2 = 0;
+                break;
+            case 7: /* EI */
+                cpu->iff1 = 1;
+                cpu->iff2 = 1;
+                break;
+            }
+            break;
+        case 4:
+            /* CALL cc,nn — no IX effect */
+            {
+                uint16_t nn = z80_fetch16(cpu);
+                cpu->wz = nn;
+                if (z80_condition(cpu, yyy)) {
+                    z80_push16(cpu, cpu->pc);
+                    cpu->pc = nn;
+                }
+            }
+            break;
+        case 5:
+            if (yyy & 1) {
+                if (yyy == 1) {
+                    /* CALL nn */
+                    uint16_t nn = z80_fetch16(cpu);
+                    cpu->wz = nn;
+                    int rc = z80_fire_trap(cpu, ECPU_TRAP_CALL, nn);
+                    if (rc == ECPU_TRAP_EXIT) return -1;
+                    if (rc == ECPU_TRAP_HANDLED) break;
+                    z80_push16(cpu, cpu->pc);
+                    cpu->pc = nn;
+                }
+                if (yyy == 5) {
+                    /* ED prefix (DD ED = just ED) */
+                    if (z80_decode_ed(cpu) < 0)
+                        return -1;
+                }
+                /* yyy=3: DD DD → treat as another DD prefix (eat prefix) */
+                /* yyy=7: DD FD → switch to FD (handled by re-fetch in main) */
+            } else {
+                /* PUSH qq — qq=2 → PUSH IX */
+                if ((yyy >> 1) == 2)
+                    z80_push16(cpu, *idx);
+                else
+                    z80_push16(cpu, z80_read_qq(cpu, yyy >> 1));
+            }
+            break;
+        case 6:
+            /* ALU A,n — no IX effect */
+            {
+                uint8_t n = z80_fetch8(cpu);
+                z80_alu_op(cpu, yyy, n);
+            }
+            break;
+        case 7:
+            /* RST p — no IX effect */
+            {
+                uint16_t addr = yyy * 8;
+                int rc = z80_fire_trap(cpu, ECPU_TRAP_CALL, addr);
+                if (rc == ECPU_TRAP_EXIT) return -1;
+                if (rc == ECPU_TRAP_HANDLED) break;
+                z80_push16(cpu, cpu->pc);
+                cpu->pc = addr;
+                cpu->wz = addr;
+            }
+            break;
+        }
+        break;
+    }
+    return 0;
+}
+
 /* ── Main interpreter loop ───────────────────────────────────────────────── */
 
 static int ecpu_z80_run(ecpu_state_t *state)
@@ -812,7 +1261,16 @@ static int ecpu_z80_run(ecpu_state_t *state)
                         if (z80_decode_ed(cpu) < 0)
                             return 0;
                     }
-                    /* yyy=3: DD prefix, yyy=7: FD prefix — Step 7 */
+                    if (yyy == 3) {
+                        /* DD prefix — IX indexed */
+                        if (z80_decode_index(cpu, &cpu->ix) < 0)
+                            return 0;
+                    }
+                    if (yyy == 7) {
+                        /* FD prefix — IY indexed */
+                        if (z80_decode_index(cpu, &cpu->iy) < 0)
+                            return 0;
+                    }
                 } else {
                     /* PUSH qq */
                     z80_push16(cpu, z80_read_qq(cpu, yyy >> 1));
