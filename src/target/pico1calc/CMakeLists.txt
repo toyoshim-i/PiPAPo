@@ -46,7 +46,12 @@ add_executable(ppap_pico1calc
 
 ppap_arm_target_common(ppap_pico1calc)
 
-target_compile_definitions(ppap_pico1calc PRIVATE PPAP_HAS_BLKDEV=1)
+target_compile_definitions(ppap_pico1calc PRIVATE
+    PPAP_HAS_BLKDEV=1
+    SRAM_KERNEL_SIZE=24576u
+    PAGE_POOL_BASE=0x20006000u
+    PAGE_COUNT_MAX=50u
+)
 target_link_libraries(ppap_pico1calc pico_base_headers hardware_regs)
 target_sources(ppap_pico1calc PRIVATE $<TARGET_OBJECTS:bs2_default_library>)
 

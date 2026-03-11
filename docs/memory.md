@@ -8,9 +8,12 @@ across the supported targets.
 ### ARM (RP2040 / QEMU mps2-an500)
 
 Memory size is fixed at compile time.  The RP2040 has 264 KB of on-chip SRAM
-at `0x20000000`; no runtime probe is needed.  `PAGE_COUNT_MAX` (default 51)
-determines the page pool size (51 pages x 4 KB = 204 KB).  The remaining SRAM
-is reserved for kernel data, I/O buffers, and DMA.
+at `0x20000000`; no runtime probe is needed.  The exact split is target-specific:
+
+- `pico1` keeps the original 20 KB kernel region and 51-page pool
+- `pico1calc` reserves 24 KB for the kernel and uses a 50-page pool
+
+The remaining SRAM is reserved for kernel data, I/O buffers, and DMA.
 
 ### m68k (QEMU virt / X68000)
 
@@ -38,6 +41,8 @@ The QEMU m68k target sets it to 3072 (12 MB).
 
 264 KB total SRAM at `0x20000000 – 0x20041FFF`:
 
+`pico1`:
+
 ```
 0x20000000  ┌────────────────────────────┐
             │ Kernel region (20 KB)      │  .data, .bss, kernel globals
@@ -53,7 +58,24 @@ The QEMU m68k target sets it to 3072 (12 MB).
 0x20042000  └────────────────────────────┘
 ```
 
-Constants (from `page.h`):
+`pico1calc`:
+
+```
+0x20000000  ┌────────────────────────────┐
+            │ Kernel region (24 KB)      │  .data, .bss, kernel globals
+            │                            │  Kernel stack (4 KB, MSP)
+0x20006000  ├────────────────────────────┤
+            │ Page pool (200 KB)         │  50 pages x 4 KB
+            │ User process data, heap,   │  Managed by page_alloc()
+            │ stacks                     │
+0x20038000  ├────────────────────────────┤
+            │ I/O buffer (24 KB)         │  UART, SD card DMA buffers
+0x2003E000  ├────────────────────────────┤
+            │ DMA / Core 1 (16 KB)       │  Reserved for hardware use
+0x20042000  └────────────────────────────┘
+```
+
+Default constants (from `page.h`, as used by `pico1` and `qemu_arm`):
 
 | Symbol             | Value        | Size    |
 |--------------------|--------------|---------|
@@ -61,6 +83,15 @@ Constants (from `page.h`):
 | `PAGE_POOL_BASE`   | `0x20005000` | 204 KB  |
 | `SRAM_IOBUF_BASE`  | `0x20038000` | 24 KB   |
 | `SRAM_DMA_BASE`    | `0x2003E000` | 16 KB   |
+
+`pico1calc` overrides the SRAM split in its target CMake configuration:
+
+| Symbol             | Value         | Size    |
+|--------------------|---------------|---------|
+| `SRAM_KERNEL_BASE` | `0x20000000`  | 24 KB   |
+| `PAGE_POOL_BASE`   | `0x20006000`  | 200 KB  |
+| `SRAM_IOBUF_BASE`  | `0x20038000`  | 24 KB   |
+| `SRAM_DMA_BASE`    | `0x2003E000`  | 16 KB   |
 
 ### 2.2 m68k (QEMU virt)
 

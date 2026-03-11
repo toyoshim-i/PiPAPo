@@ -80,12 +80,12 @@ Memory layout varies per target. Each target defines its own linker script and m
 
 ### ARM (RP2040) — SRAM (264 KB)
 
-| Region | Address | Size | Purpose |
-|---|---|---|---|
-| Kernel data | `0x20000000` | 20 KB | BSS, MSP stack, globals, `.ramfunc` |
-| Page pool | `0x20005000` | 204 KB | 51 pages x 4 KB, free-stack allocator |
-| I/O buffer | `0x20038000` | 24 KB | SD / filesystem cache |
-| DMA / Reserved | `0x2003E000` | 16 KB | DMA, PIO, Core 1 stack |
+`pico1` and `pico1calc` now use slightly different SRAM splits:
+
+| Target | Kernel data | Page pool | I/O buffer | DMA / Reserved |
+|---|---|---|---|---|
+| `pico1` | `0x20000000`, 20 KB | `0x20005000`, 204 KB (51 pages) | `0x20038000`, 24 KB | `0x2003E000`, 16 KB |
+| `pico1calc` | `0x20000000`, 24 KB | `0x20006000`, 200 KB (50 pages) | `0x20038000`, 24 KB | `0x2003E000`, 16 KB |
 
 Code and read-only data execute directly via XIP from flash — no SRAM copy needed.
 The romfs image follows the kernel in flash and is accessed via memory-mapped reads.
@@ -109,7 +109,9 @@ page_free()   → push back to free stack (with double-free detection)
 The static free-stack array is sized by `PAGE_COUNT_MAX` (compile-time maximum),
 while the runtime `page_count` variable holds the actual number of usable pages:
 
-- **ARM (RP2040):** `page_count = PAGE_COUNT_MAX = 51` (fixed 204 KB SRAM pool).
+- **ARM (RP2040):**
+  - `pico1`: `page_count = PAGE_COUNT_MAX = 51`
+  - `pico1calc`: `page_count = PAGE_COUNT_MAX = 50`
 - **m68k:** `page_count` is set by `m68k_probe_ram()`, which detects installed
   RAM at boot using a two-phase write-pattern-verify probe (1 MB coarse steps,
   then 4 KB fine steps). The probe ceiling is target-configurable via `RAM_END`

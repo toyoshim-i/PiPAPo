@@ -104,14 +104,18 @@ The external flash is partitioned as follows. The boot region size differs per t
 
 ### 2.3 RAM Layout (ARM / RP2040)
 
-The 264 KB of on-chip SRAM is partitioned as follows:
+The 264 KB of on-chip SRAM is partitioned slightly differently by target:
 
-| Region | Address Range | Size | Purpose |
-|---|---|---|---|
-| Kernel Data | 0x20000000 – 0x20004FFF | 20 KB | Kernel BSS, stack, global data |
-| Page Pool | 0x20005000 – 0x20037FFF | 204 KB | User process pages (4 KB × 51 pages) |
-| I/O Buffer | 0x20038000 – 0x2003DFFF | 24 KB | SD card I/O, VFAT/UFS metadata cache |
-| DMA / Reserved | 0x2003E000 – 0x20041FFF | 16 KB | DMA, PIO, Core 1 stack, interrupt stack |
+| Target | Region | Address Range | Size | Purpose |
+|---|---|---|---|---|
+| `pico1` | Kernel Data | 0x20000000 – 0x20004FFF | 20 KB | Kernel BSS, stack, global data |
+| `pico1` | Page Pool | 0x20005000 – 0x20037FFF | 204 KB | User process pages (4 KB × 51 pages) |
+| `pico1` | I/O Buffer | 0x20038000 – 0x2003DFFF | 24 KB | SD card I/O, VFAT/UFS metadata cache |
+| `pico1` | DMA / Reserved | 0x2003E000 – 0x20041FFF | 16 KB | DMA, PIO, Core 1 stack, interrupt stack |
+| `pico1calc` | Kernel Data | 0x20000000 – 0x20005FFF | 24 KB | Kernel BSS, stack, global data |
+| `pico1calc` | Page Pool | 0x20006000 – 0x20037FFF | 200 KB | User process pages (4 KB × 50 pages) |
+| `pico1calc` | I/O Buffer | 0x20038000 – 0x2003DFFF | 24 KB | SD card I/O, VFAT/UFS metadata cache |
+| `pico1calc` | DMA / Reserved | 0x2003E000 – 0x20041FFF | 16 KB | DMA, PIO, Core 1 stack, interrupt stack |
 
 Since the kernel's code (.text) and read-only data (.rodata) are executed via XIP from flash, only the data sections reside in SRAM.
 

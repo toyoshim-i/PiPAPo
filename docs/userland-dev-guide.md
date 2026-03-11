@@ -288,6 +288,14 @@ Note: addresses increase downward in this diagram (low addresses at top).
 └──────────────────────────────────────┘  0x20042000  End of SRAM (264 KB)
 ```
 
+For `pico1calc`, the same model applies but the fixed SRAM split is:
+
+- `RAM_KERNEL`: `0x20000000`–`0x20005FFF` (24 KB)
+- `RAM_PAGES`: `0x20006000`–`0x20037FFF` (200 KB, 50 pages)
+
+This extra 4 KB of kernel SRAM leaves one fewer user page than `pico1`, but
+keeps the I/O and DMA regions unchanged.
+
 **Key points:**
 
 - Text executes directly from flash (XIP) — zero RAM cost for code.

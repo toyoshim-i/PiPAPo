@@ -35,10 +35,16 @@ extern char __page_pool_start;
 #define RAM_END           (PAGE_POOL_BASE + PAGE_POOL_SIZE)
 #endif
 #else
-/* ARM / RP2040: SRAM at 0x20000000, fixed layout matching ppap.ld / qemu.ld */
+/* ARM / RP2040: SRAM layout defaults match pico1 / qemu_arm.
+ * Targets with a different split (for example PicoCalc) override these via
+ * target_compile_definitions(). */
 #define SRAM_KERNEL_BASE  0x20000000u       /* kernel data region start        */
-#define SRAM_KERNEL_SIZE     (20u * 1024u)  /* 20 KB reserved for kernel       */
+#ifndef SRAM_KERNEL_SIZE
+#define SRAM_KERNEL_SIZE     (20u * 1024u)  /* reserved for kernel .data/.bss  */
+#endif
+#ifndef PAGE_POOL_BASE
 #define PAGE_POOL_BASE    0x20005000u       /* first page in the pool          */
+#endif
 #define PAGE_POOL_SIZE    (PAGE_COUNT_MAX * PAGE_SIZE)
 #define SRAM_IOBUF_BASE   (PAGE_POOL_BASE + PAGE_POOL_SIZE)  /* after pool    */
 #define SRAM_IOBUF_SIZE      (24u * 1024u)  /* 24 KB                           */
