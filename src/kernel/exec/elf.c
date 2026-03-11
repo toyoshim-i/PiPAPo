@@ -11,7 +11,14 @@
 
 #include "elf.h"
 #include "kernel/errno.h"
-#include <string.h>     /* memcmp */
+
+static void copy_bytes(void *dst, const void *src, uint32_t len)
+{
+    uint8_t *d = (uint8_t *)dst;
+    const uint8_t *s = (const uint8_t *)src;
+    for (uint32_t i = 0; i < len; i++)
+        d[i] = s[i];
+}
 
 /* ── elf_validate ────────────────────────────────────────────────────────── */
 
@@ -87,7 +94,7 @@ int elf_load_segments(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
             return -(int)ENOEXEC;
 
         if (count < max) {
-            memcpy(&out[count], ph, sizeof(elf32_phdr_t));
+            copy_bytes(&out[count], ph, sizeof(elf32_phdr_t));
         }
         count++;
     }

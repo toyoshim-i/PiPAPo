@@ -29,7 +29,7 @@ build process, and execution environment.
 
 Pure C unit tests compiled with the system gcc/clang. No cross-compiler
 toolchain needed. Good for testing kernel modules that have no hardware
-dependencies (memory allocators, ELF parser, fd bookkeeping).
+dependencies (memory allocators, path helpers, CPU interpreters).
 
 ### Framework: `test_framework.h`
 
@@ -62,17 +62,15 @@ Macros:
 | File | Tests |
 |------|-------|
 | `test_kmem.c` | `kmem_pool` object allocator |
-| `test_fd.c` | File descriptor table operations |
-| `test_elf.c` | ELF32 header/segment parser |
+| `test_h68k_path.c` | Human68k path translation and errno mapping |
 | `test_ecpu_z80.c` | Z80 emulator (85 tests: all instruction groups) |
-| `test_cpm_bridge.c` | CP/M BDOS bridge (42 tests: console, file, disk, integration) |
 | `test_ecpu_m68k.c` | m68k emulator (instruction groups, addressing modes) |
 
 ### Build system
 
-`tests/host/CMakeLists.txt` defines one executable per module. Stubs in
-`tests/host/stubs/` provide UART, TTY, and XIP no-ops so kernel sources
-link on the host.
+`tests/host/CMakeLists.txt` defines one executable per host-safe module.
+Tests that depend on target architecture or kernel-only state now live in
+the on-target user test suite instead of being forced through the host build.
 
 ```bash
 # Manual build
@@ -88,7 +86,6 @@ ctest --test-dir build/host --output-on-failure
    ```cmake
    add_executable(test_foo ${SRC}/kernel/path/foo.c test_foo.c)
    target_include_directories(test_foo PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
-   target_link_libraries(test_foo PRIVATE stubs)   # if needed
    add_test(NAME foo COMMAND test_foo)
    ```
 3. Run `./scripts/test.sh`
@@ -180,6 +177,7 @@ only relocates GOT entries, not arbitrary data pointers.
 | File | Tests |
 |------|-------|
 | `test_exec.c` | ELF loading, XIP, GOT relocation |
+| `test_elf.c` | ELF32 header validation, segment extraction, `.got` lookup |
 | `test_vfork.c` | `vfork` + `execve` + `waitpid` |
 | `test_pipe.c` | Pipe creation, read/write, EOF |
 | `test_brk.c` | Heap growth via `brk()` |
@@ -205,7 +203,7 @@ User tests are built by `cmake/user.cmake` as custom commands, controlled
 by the `PPAP_TESTS` CMake option. The build system:
 
 - Cross-compiles each `test_*.c` from `tests/user/`
-- Builds Human68k R-format user tests from `tests/user/r68k/` on m68k targets
+- Builds Human68k R-format user tests from `tests/user/r68k/` on all targets
 - Links with `crt0.o` + `syscall.o` (arch-specific SVC stubs)
 - Installs to romfs `/bin/`
 - Compiler flags: `-fPIC -msingle-pic-base -mpic-register=r9`

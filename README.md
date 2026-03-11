@@ -84,7 +84,7 @@ PPAP/
     arch/m68k/              m68k: crt0.S, syscall.S, user.ld
   tests/
     kernel/                 On-target kernel integration tests (ktest.c)
-    host/                   Host-native unit tests (test_kmem, test_fd, test_elf)
+    host/                   Host-native unit tests (test_kmem, h68k_path, eCPU cores)
     user/                   User-space test programs (test_exec, test_pipe, etc.)
   tools/
     mkromfs/                Host tool: generate romfs.bin image

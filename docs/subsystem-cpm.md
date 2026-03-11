@@ -1198,23 +1198,7 @@ msg:    DB      'Hello, World!', 0Dh, 0Ah, '$'
 
 Assemble with: `z80asm -o HELLO.COM hello.asm`
 
-### 10.3 Host Tests ✅
-
-The host test suite (`tests/host/test_cpm_bridge.c`) contains 42
-tests covering all BDOS functions, the .COM loader, and BIOS
-console dispatch. Tests are built with CMake and run natively
-on the host (no QEMU needed).
-
-| Phase | Tests | Validates |
-|---|---|---|
-| 1 (11 tests) | memory_map, cmdline, fcb_parse, fcb_no_drive, fcb_uppercase, hello_com, console_output, ret_exit, multi_char_output, unknown_bdos, print_via_loop | Loader, zero page, FCB parsing, BDOS fn 0/2/9 |
-| 2 (13 tests) | console_input, direct_io_output/input/no_input/status, console_status, version_number, read_console_buffer, iobyte, reader_punch_list, bios_console, bios_reader, echo_program | Console I/O, BIOS dispatch |
-| 3 (9 tests) | fcb_to_path, set_dma, disk_management, user_code, vectors, file_write_read, file_ops_real, file_write_read_back, random_write | File operations, FCB-to-path, random access |
-| 4 (4 tests) | match_fcb, search_first_next, search_no_match, search_via_bdos | Directory search, wildcard matching |
-| 5 (3 tests) | alloc_vector, dpb, disk_noops | ALV, DPB, fn 28/30 |
-| 6 (2 tests) | version_and_disk_program, multi_bdos_program | Multi-BDOS Z80 integration |
-
-### 10.4 Userland Tests ✅
+### 10.3 Userland Tests ✅
 
 On-target tests (`tests/user/test_cpm.c`) with hand-assembled Z80 .COM
 binaries. Each test writes a .COM to `/tmp`, executes via `vfork`+`execve`,
@@ -1222,14 +1206,18 @@ and captures output through pipes. 13 tests covering BDOS functions
 0/2/6/9/12/14/15/16/20/21/22/24/25/32, warm boot, HALT exit, and `.com`
 extension validation.
 
-### 10.5 Integration Tests
+This is now the primary regression coverage for the CP/M bridge path. It
+tests the real kernel exec and subsystem dispatch path instead of keeping a
+separate host-only harness in sync with the runtime behavior.
+
+### 10.4 Integration Tests
 
 Run on QEMU (m68k or ARM target):
 1. Place `.COM` files in romfs under `/subsys/cpm/`
 2. `exec("/subsys/cpm/HELLO.COM")` from the PPAP shell
 3. Verify output on UART
 
-### 10.6 Reference Software Tests
+### 10.5 Reference Software Tests
 
 After basic functionality is working:
 
