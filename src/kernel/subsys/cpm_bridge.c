@@ -1204,12 +1204,23 @@ void cpm_run_process(void)
     z80_state_t *z80 = (z80_state_t *)p->subsys_data;
 
     for (;;) {
-        if (p->trace_step_pending) {
+        int do_step_stop = p->trace_step_pending != 0;
+        int run_with_step = do_step_stop ||
+                            (p->tracer_pid != 0 && trace_has_swbp());
+
+        if (run_with_step) {
             p->trace_step_pending = 0;
+
+            if (trace_maybe_stop_at_swbp(PPAP_TRACE_ABI_CPM_BDOS, z80->pc)) {
+                if (p->state == PROC_TRACED_STOP)
+                    sched_yield();
+                continue;
+            }
+
             if (ecpu_z80_ops.step &&
                 ecpu_z80_ops.step((ecpu_state_t *)z80) != 0)
                 break;
-            if (p->tracer_pid != 0 && p->state == PROC_RUNNABLE)
+            if (do_step_stop && p->tracer_pid != 0 && p->state == PROC_RUNNABLE)
                 trace_debug_stop(PPAP_TRACE_ABI_CPM_BDOS, z80->pc,
                                  PPAP_DEBUG_STOP_STEP);
             if (p->state == PROC_TRACED_STOP)

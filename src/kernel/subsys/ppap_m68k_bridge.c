@@ -79,12 +79,23 @@ void ppap_m68k_run_process(void)
     m68k_state_t *m68k = (m68k_state_t *)p->subsys_data;
 
     for (;;) {
-        if (p->trace_step_pending) {
+        int do_step_stop = p->trace_step_pending != 0;
+        int run_with_step = do_step_stop ||
+                            (p->tracer_pid != 0 && trace_has_swbp());
+
+        if (run_with_step) {
             p->trace_step_pending = 0;
+
+            if (trace_maybe_stop_at_swbp(PPAP_TRACE_ABI_PPAP, m68k->pc)) {
+                if (p->state == PROC_TRACED_STOP)
+                    sched_yield();
+                continue;
+            }
+
             if (ecpu_m68k_ops.step &&
                 ecpu_m68k_ops.step((ecpu_state_t *)m68k) != 0)
                 break;
-            if (p->tracer_pid != 0 && p->state == PROC_RUNNABLE)
+            if (do_step_stop && p->tracer_pid != 0 && p->state == PROC_RUNNABLE)
                 trace_debug_stop(PPAP_TRACE_ABI_PPAP, m68k->pc,
                                  PPAP_DEBUG_STOP_STEP);
             if (p->state == PROC_TRACED_STOP)

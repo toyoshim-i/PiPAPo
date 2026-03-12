@@ -29,6 +29,8 @@
 #define PTRACE_GETEVENT  0x5000
 #define PTRACE_SETMODE   0x5001
 #define PTRACE_GETCAPS   0x5002
+#define PTRACE_SETBP     0x5003
+#define PTRACE_CLRBP     0x5004
 
 /* Runtime trace mode bits stored in the PCB. */
 #define PPAP_TRACE_MODE_PPAP_SYSCALL  0x01
@@ -71,6 +73,9 @@
 #define PPAP_DEBUG_STOP_SW_BP           0x0002
 #define PPAP_DEBUG_STOP_HW_BP           0x0004
 
+/* Breakpoint flags for ppap_ptrace_bp.flags. */
+#define PPAP_PTRACE_BP_SW               0x0001
+
 struct ppap_ptrace_event {
     uint32_t event;
     uint32_t flags;
@@ -92,6 +97,12 @@ struct ppap_ptrace_caps {
     uint32_t abi;
     uint32_t caps;
     uint32_t max_bps;
+};
+
+struct ppap_ptrace_bp {
+    int32_t  id;
+    uint32_t addr;
+    uint32_t flags;
 };
 
 #endif /* PPAP_COMMON_PTRACE_H */

@@ -8,7 +8,9 @@
  *   4. PTRACE_GETCAPS reports debugger capabilities
  *   5. PTRACE_SETREGS updates a stopped tracee register
  *   6. PTRACE_PEEKDATA / PTRACE_POKEDATA inspect and modify tracee memory
- *   7. PTRACE_SETMODE(0) disables tracing before final continue
+ *   7. PTRACE_SINGLESTEP stops an eCPU tracee after one guest instruction
+ *   8. PTRACE_SETBP / PTRACE_CLRBP manage software breakpoints on eCPU
+ *   9. PTRACE_SETMODE(0) disables tracing before final continue
  */
 
 #include "utest.h"
@@ -49,6 +51,14 @@ static const uint8_t trace_step_com[] = {
     0xCD, 0x05, 0x00,       /* CALL 0005h */
 };
 
+static const uint8_t trace_swbp_com[] = {
+    0x00,                   /* NOP @ 0100 */
+    0x00,                   /* NOP @ 0101 */
+    0x00,                   /* NOP @ 0102 */
+    0x0E, 0x00,             /* LD C,0 (BDOS exit) */
+    0xCD, 0x05, 0x00,       /* CALL 0005h */
+};
+
 int main(void)
 {
     pid_t pid = vfork();
@@ -63,6 +73,7 @@ int main(void)
     struct ppap_ptrace_regs regs;
     struct ppap_ptrace_regs set_regs;
     struct ppap_ptrace_caps caps;
+    struct ppap_ptrace_bp bp;
     uint32_t word = 0;
     uint32_t patched = 0x55667788u;
     uint32_t scratch_before = 0;
@@ -196,6 +207,49 @@ int main(void)
     UT_ASSERT(WIFEXITED(status), "CP/M child should exit after continue");
     UT_ASSERT_EQ(WEXITSTATUS(status), 0);
     unlink("/tmp/trace_step.com");
+
+    UT_ASSERT_EQ(write_blob("/tmp/trace_swbp.com", trace_swbp_com,
+                            (int)sizeof(trace_swbp_com)), 0);
+
+    pid = vfork();
+    if (pid == 0) {
+        ptrace(PTRACE_TRACEME, 0, (void *)0, (void *)0);
+        execve("/tmp/trace_swbp.com", (void *)0, (void *)0);
+        _exit(127);
+    }
+
+    UT_ASSERT_EQ(waitpid(pid, &status, WSTOPPED), pid);
+    UT_ASSERT(WIFSTOPPED(status), "CP/M swbp child should stop after exec");
+    UT_ASSERT_EQ(ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps), 0);
+    UT_ASSERT((caps.caps & PPAP_PTRACE_CAP_SW_BP) != 0,
+              "CP/M tracee should report SW breakpoint capability");
+    UT_ASSERT(caps.max_bps > 0, "GETCAPS should report non-zero bp budget");
+
+    bp.id = -1;
+    bp.addr = 0x0101;
+    bp.flags = PPAP_PTRACE_BP_SW;
+    UT_ASSERT_EQ(ptrace(PTRACE_SETBP, pid, (void *)0, &bp), 0);
+    UT_ASSERT(bp.id >= 0, "SETBP should return a non-negative breakpoint ID");
+
+    UT_ASSERT_EQ(ptrace(PTRACE_CONT, pid, (void *)0, (void *)0), 0);
+    UT_ASSERT_EQ(waitpid(pid, &status, WSTOPPED), pid);
+    UT_ASSERT(WIFSTOPPED(status), "CP/M swbp child should stop at breakpoint");
+    UT_ASSERT_EQ(ptrace(PTRACE_GETEVENT, pid, (void *)0, &ev), 0);
+    UT_ASSERT_EQ((int)ev.event, PPAP_TRACE_EVENT_DEBUG_STOP);
+    UT_ASSERT((ev.flags & PPAP_DEBUG_STOP_SW_BP) != 0,
+              "debug stop should include SW_BP reason");
+    UT_ASSERT_EQ((int)ev.args[0], 0x0101);
+
+    UT_ASSERT_EQ(ptrace(PTRACE_GETREGS, pid, (void *)0, &regs), 0);
+    UT_ASSERT_EQ((int)regs.regset, PPAP_TRACE_REGSET_Z80);
+    UT_ASSERT_EQ((int)regs.regs[7], 0x0101);
+
+    UT_ASSERT_EQ(ptrace(PTRACE_CLRBP, pid, (void *)0, &bp), 0);
+    UT_ASSERT_EQ(ptrace(PTRACE_CONT, pid, (void *)0, (void *)0), 0);
+    UT_ASSERT_EQ(waitpid(pid, &status, 0), pid);
+    UT_ASSERT(WIFEXITED(status), "CP/M swbp child should exit after continue");
+    UT_ASSERT_EQ(WEXITSTATUS(status), 0);
+    unlink("/tmp/trace_swbp.com");
 
     UT_SUMMARY("test_trace");
 }

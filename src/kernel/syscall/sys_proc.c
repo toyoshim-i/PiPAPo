@@ -607,11 +607,15 @@ static int trace_fill_caps(const pcb_t *target, struct ppap_ptrace_caps *caps)
         c |= PPAP_PTRACE_CAP_SINGLESTEP;
     if (target->subsys == SUBSYS_PPAP && target->subsys_data)
         c |= PPAP_PTRACE_CAP_SINGLESTEP;
+    if (target->subsys == SUBSYS_CPM)
+        c |= PPAP_PTRACE_CAP_SW_BP;
+    if (target->subsys == SUBSYS_PPAP && target->subsys_data)
+        c |= PPAP_PTRACE_CAP_SW_BP;
 
     caps->regset = trace_regset_for(target);
     caps->abi = target->trace_event.abi;
     caps->caps = c;
-    caps->max_bps = 0;
+    caps->max_bps = (c & PPAP_PTRACE_CAP_SW_BP) ? TRACE_SW_BP_MAX : 0;
     return 0;
 }
 
@@ -635,6 +639,99 @@ static int trace_request_single_step(pcb_t *target)
 
     target->trace_step_pending = 1;
     trace_resume_target(target);
+    return 0;
+}
+
+static void trace_clear_swbp(pcb_t *target)
+{
+    target->trace_swbp_skip_once = 0;
+    target->trace_swbp_skip_pc = 0;
+    for (uint32_t i = 0; i < TRACE_SW_BP_MAX; i++) {
+        target->trace_swbp[i].addr = 0;
+        target->trace_swbp[i].used = 0;
+        target->trace_swbp[i].enabled = 0;
+    }
+}
+
+static int trace_supports_swbp(const pcb_t *target)
+{
+    if (target->subsys == SUBSYS_CPM)
+        return target->subsys_data != 0;
+    if (target->subsys == SUBSYS_PPAP && target->subsys_data)
+        return 1;
+    return 0;
+}
+
+int trace_has_swbp(void)
+{
+    for (uint32_t i = 0; i < TRACE_SW_BP_MAX; i++) {
+        if (current->trace_swbp[i].used && current->trace_swbp[i].enabled)
+            return 1;
+    }
+    return 0;
+}
+
+static int trace_set_swbp(pcb_t *target, struct ppap_ptrace_bp *bp)
+{
+    if (!bp)
+        return -EINVAL;
+    if (target->state != PROC_TRACED_STOP)
+        return -EBUSY;
+    if (!trace_supports_swbp(target))
+        return -ENOSYS;
+    if (bp->flags != 0 && bp->flags != PPAP_PTRACE_BP_SW)
+        return -EINVAL;
+
+    for (int32_t i = 0; i < TRACE_SW_BP_MAX; i++) {
+        if (target->trace_swbp[i].used &&
+            target->trace_swbp[i].enabled &&
+            target->trace_swbp[i].addr == bp->addr) {
+            bp->id = i;
+            bp->flags = PPAP_PTRACE_BP_SW;
+            return 0;
+        }
+    }
+
+    for (int32_t i = 0; i < TRACE_SW_BP_MAX; i++) {
+        if (target->trace_swbp[i].used)
+            continue;
+        target->trace_swbp[i].addr = bp->addr;
+        target->trace_swbp[i].used = 1;
+        target->trace_swbp[i].enabled = 1;
+        bp->id = i;
+        bp->flags = PPAP_PTRACE_BP_SW;
+        return 0;
+    }
+
+    return -ENOSPC;
+}
+
+static int trace_clr_swbp(pcb_t *target, struct ppap_ptrace_bp *bp)
+{
+    int32_t id;
+
+    if (!bp)
+        return -EINVAL;
+    if (target->state != PROC_TRACED_STOP)
+        return -EBUSY;
+    if (!trace_supports_swbp(target))
+        return -ENOSYS;
+
+    id = bp->id;
+    if (id < 0 || id >= TRACE_SW_BP_MAX)
+        return -EINVAL;
+    if (!target->trace_swbp[id].used)
+        return -EINVAL;
+
+    if (target->trace_swbp_skip_once &&
+        target->trace_swbp_skip_pc == target->trace_swbp[id].addr) {
+        target->trace_swbp_skip_once = 0;
+        target->trace_swbp_skip_pc = 0;
+    }
+
+    target->trace_swbp[id].addr = 0;
+    target->trace_swbp[id].used = 0;
+    target->trace_swbp[id].enabled = 0;
     return 0;
 }
 
@@ -714,6 +811,34 @@ void trace_debug_stop(uint32_t abi, uint32_t pc, uint32_t flags)
     trace_stop_current(0);
 }
 
+int trace_maybe_stop_at_swbp(uint32_t abi, uint32_t pc)
+{
+    if (!current->tracer_pid)
+        return 0;
+    if (current->state != PROC_RUNNABLE)
+        return 0;
+
+    if (current->trace_swbp_skip_once) {
+        if (current->trace_swbp_skip_pc == pc) {
+            current->trace_swbp_skip_once = 0;
+            return 0;
+        }
+        current->trace_swbp_skip_once = 0;
+    }
+
+    for (uint32_t i = 0; i < TRACE_SW_BP_MAX; i++) {
+        if (!current->trace_swbp[i].used || !current->trace_swbp[i].enabled)
+            continue;
+        if (current->trace_swbp[i].addr != pc)
+            continue;
+        current->trace_swbp_skip_once = 1;
+        current->trace_swbp_skip_pc = pc;
+        trace_debug_stop(abi, pc, PPAP_DEBUG_STOP_SW_BP);
+        return 1;
+    }
+    return 0;
+}
+
 void trace_exec_stop(void)
 {
     if (!current->trace_requested)
@@ -723,6 +848,7 @@ void trace_exec_stop(void)
     current->trace_syscall_phase = TRACE_PHASE_ENTER;
     current->trace_subsys_phase = TRACE_PHASE_ENTER;
     current->trace_step_pending = 0;
+    trace_clear_swbp(current);
     trace_fill_event(PPAP_TRACE_EVENT_EXEC, PPAP_TRACE_ABI_PPAP, SYS_EXECVE,
                      0, 0, 0, 0, 0, 0, 0, 0);
     trace_stop_current(0);
@@ -740,6 +866,7 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
         current->trace_syscall_phase = TRACE_PHASE_ENTER;
         current->trace_subsys_phase = TRACE_PHASE_ENTER;
         current->trace_step_pending = 0;
+        trace_clear_swbp(current);
         __builtin_memset(&current->trace_event, 0, sizeof(current->trace_event));
         return 0;
     }
@@ -771,7 +898,13 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
     case PTRACE_SETREGS:
         if (!data)
             return -(long)EINVAL;
-        return trace_store_regs(target, (const struct ppap_ptrace_regs *)data);
+        {
+            int rc = trace_store_regs(target,
+                                      (const struct ppap_ptrace_regs *)data);
+            if (rc == 0)
+                target->trace_swbp_skip_once = 0;
+            return rc;
+        }
     case PTRACE_GETCAPS:
         if (!data)
             return -(long)EINVAL;
@@ -783,6 +916,14 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
         trace_reset_mode_state(target, mode);
         return 0;
     }
+    case PTRACE_SETBP:
+        if (!data)
+            return -(long)EINVAL;
+        return trace_set_swbp(target, (struct ppap_ptrace_bp *)data);
+    case PTRACE_CLRBP:
+        if (!data)
+            return -(long)EINVAL;
+        return trace_clr_swbp(target, (struct ppap_ptrace_bp *)data);
     case PTRACE_SINGLESTEP:
         return trace_request_single_step(target);
     case PTRACE_CONT:
@@ -802,6 +943,7 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
         trace_reset_mode_state(target, 0);
         target->trace_wait_pending = 0;
         target->trace_step_pending = 0;
+        trace_clear_swbp(target);
         __builtin_memset(&target->trace_event, 0, sizeof(target->trace_event));
         trace_resume_target(target);
         return 0;

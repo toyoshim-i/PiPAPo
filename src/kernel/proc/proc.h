@@ -54,6 +54,7 @@ typedef void (*sighandler_t)(int);
 #define SUBSYS_PPAP       0   /* native PPAP ELF binary (default)    */
 #define SUBSYS_HUMAN68K   1   /* Human68k X-format binary             */
 #define SUBSYS_CPM        2   /* CP/M 2.2 .COM binary (Z80 emulated) */
+#define TRACE_SW_BP_MAX   8   /* max software breakpoints per tracee  */
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
@@ -153,6 +154,13 @@ typedef struct pcb {
     uint8_t      trace_syscall_phase;/* 0=enter, 1=exit for SYSCALL mode     */
     uint8_t      trace_subsys_phase; /* 0=enter, 1=exit for subsystem mode   */
     uint8_t      trace_step_pending; /* pending ptrace single-step resume    */
+    uint8_t      trace_swbp_skip_once; /* skip one re-hit at same PC         */
+    uint32_t     trace_swbp_skip_pc;   /* PC to ignore once after sw-bp stop */
+    struct {
+        uint32_t addr;
+        uint8_t  used;
+        uint8_t  enabled;
+    } trace_swbp[TRACE_SW_BP_MAX];
     struct ppap_ptrace_event trace_event;
 
     /* ── Subsystem tag ───────────────────────────────────────────── */
