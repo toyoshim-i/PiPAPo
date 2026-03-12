@@ -54,13 +54,21 @@ PPAP also includes a minimal interactive debugger (`/bin/pdb`) built on
 # Launch target under debugger
 pdb /bin/hello
 
+# Scripted mode (for automation/tests)
+pdb -c "caps" -c "regs" -c "disas 0x0100 3" /tmp/prog.com
+
 # Typical commands inside pdb:
 #   regs
 #   caps
+#   event
 #   x 0x20000000 4
+#   disas 0x0100 8
+#   set reg pc 0x0100
+#   set mem 0x0100 0x00000000
 #   step
 #   cont
 #   break 0x0101
 #   delete 0
+#   info break
 #   quit
 ```

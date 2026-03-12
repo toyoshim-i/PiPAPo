@@ -86,6 +86,7 @@ static char arg_opt[] = "-c";
 static char arg_caps[] = "caps";
 static char arg_regs[] = "regs";
 static char arg_x[] = "x 0x0100 1";
+static char arg_disas[] = "disas 0x0100 3";
 static char arg_setreg[] = "set reg wz 0x1234";
 static char arg_setmem[] = "set mem 0x0100 0x00000000";
 static char arg_step[] = "step";
@@ -104,7 +105,7 @@ int main(void)
     char out[2048];
     int status = 0;
     int n = 0;
-    char *argv[19];
+    char *argv[21];
 
     argv[0] = arg_prog;
     argv[1] = arg_opt;
@@ -114,17 +115,19 @@ int main(void)
     argv[5] = arg_opt;
     argv[6] = arg_x;
     argv[7] = arg_opt;
-    argv[8] = arg_setreg;
+    argv[8] = arg_disas;
     argv[9] = arg_opt;
-    argv[10] = arg_setmem;
+    argv[10] = arg_setreg;
     argv[11] = arg_opt;
-    argv[12] = arg_step;
+    argv[12] = arg_setmem;
     argv[13] = arg_opt;
-    argv[14] = arg_event;
+    argv[14] = arg_step;
     argv[15] = arg_opt;
-    argv[16] = arg_quit;
-    argv[17] = arg_target;
-    argv[18] = (char *)0;
+    argv[16] = arg_event;
+    argv[17] = arg_opt;
+    argv[18] = arg_quit;
+    argv[19] = arg_target;
+    argv[20] = (char *)0;
 
     UT_ASSERT_EQ(write_blob("/tmp/pdb_smoke.com", pdb_smoke_com,
                             (int)sizeof(pdb_smoke_com)), 0);
@@ -143,6 +146,10 @@ int main(void)
               "output should include single-step debug stop");
     UT_ASSERT(str_contains(out, "0x00000100:"),
               "output should include memory examine result");
+    UT_ASSERT(str_contains(out, "pdb> disas 0x0100 3"),
+              "output should include scripted disassembly command");
+    UT_ASSERT(str_contains(out, "0x00000100: nop"),
+              "output should include Z80 disassembly");
     UT_ASSERT(str_contains(out, "pdb> set reg wz 0x1234"),
               "output should include scripted register write command");
     UT_ASSERT(str_contains(out, "reg wz=0x1234"),

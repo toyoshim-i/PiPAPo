@@ -80,6 +80,14 @@ static void put_hex16(uint32_t v)
         put_chr(hex[(v >> s) & 0xf]);
 }
 
+static void put_hex8(uint32_t v)
+{
+    static const char hex[] = "0123456789abcdef";
+    put_str("0x");
+    put_chr(hex[(v >> 4) & 0xf]);
+    put_chr(hex[v & 0xf]);
+}
+
 static int streq(const char *a, const char *b)
 {
     while (*a && *b && *a == *b) {
@@ -415,6 +423,175 @@ static void print_mem_words(pid_t pid, uint32_t addr, uint32_t count)
     }
 }
 
+static int peek_word(pid_t pid, uint32_t addr, uint32_t *word_out)
+{
+    uint32_t base = addr & ~3u;
+    long rc = ptrace(PTRACE_PEEKDATA, pid, (void *)(uintptr_t)base, word_out);
+    if (rc < 0)
+        return (int)rc;
+    return 0;
+}
+
+static int peek_u8(pid_t pid, uint32_t addr, uint8_t *byte_out)
+{
+    uint32_t word = 0;
+    int rc = peek_word(pid, addr, &word);
+    if (rc < 0)
+        return rc;
+    *byte_out = (uint8_t)((word >> ((addr & 3u) * 8u)) & 0xffu);
+    return 0;
+}
+
+static int peek_u16le(pid_t pid, uint32_t addr, uint16_t *value_out)
+{
+    uint8_t lo = 0;
+    uint8_t hi = 0;
+    int rc = peek_u8(pid, addr, &lo);
+    if (rc < 0)
+        return rc;
+    rc = peek_u8(pid, addr + 1u, &hi);
+    if (rc < 0)
+        return rc;
+    *value_out = (uint16_t)((uint16_t)lo | ((uint16_t)hi << 8));
+    return 0;
+}
+
+static int z80_disas_one(pid_t pid, uint32_t pc, uint32_t *next_pc)
+{
+    uint8_t op = 0;
+    uint8_t imm8 = 0;
+    uint16_t imm16 = 0;
+    uint32_t len = 1;
+    int rc = peek_u8(pid, pc, &op);
+    if (rc < 0)
+        return rc;
+
+    put_hex32(pc);
+    put_str(": ");
+    switch (op) {
+    case 0x00:
+        put_str("nop");
+        len = 1;
+        break;
+    case 0x06:
+        rc = peek_u8(pid, pc + 1u, &imm8);
+        if (rc < 0)
+            return rc;
+        put_str("ld b,#");
+        put_hex8(imm8);
+        len = 2;
+        break;
+    case 0x0e:
+        rc = peek_u8(pid, pc + 1u, &imm8);
+        if (rc < 0)
+            return rc;
+        put_str("ld c,#");
+        put_hex8(imm8);
+        len = 2;
+        break;
+    case 0x16:
+        rc = peek_u8(pid, pc + 1u, &imm8);
+        if (rc < 0)
+            return rc;
+        put_str("ld d,#");
+        put_hex8(imm8);
+        len = 2;
+        break;
+    case 0x1e:
+        rc = peek_u8(pid, pc + 1u, &imm8);
+        if (rc < 0)
+            return rc;
+        put_str("ld e,#");
+        put_hex8(imm8);
+        len = 2;
+        break;
+    case 0x26:
+        rc = peek_u8(pid, pc + 1u, &imm8);
+        if (rc < 0)
+            return rc;
+        put_str("ld h,#");
+        put_hex8(imm8);
+        len = 2;
+        break;
+    case 0x2e:
+        rc = peek_u8(pid, pc + 1u, &imm8);
+        if (rc < 0)
+            return rc;
+        put_str("ld l,#");
+        put_hex8(imm8);
+        len = 2;
+        break;
+    case 0x3e:
+        rc = peek_u8(pid, pc + 1u, &imm8);
+        if (rc < 0)
+            return rc;
+        put_str("ld a,#");
+        put_hex8(imm8);
+        len = 2;
+        break;
+    case 0xc3:
+        rc = peek_u16le(pid, pc + 1u, &imm16);
+        if (rc < 0)
+            return rc;
+        put_str("jp ");
+        put_hex16(imm16);
+        len = 3;
+        break;
+    case 0xc9:
+        put_str("ret");
+        len = 1;
+        break;
+    case 0xcd:
+        rc = peek_u16le(pid, pc + 1u, &imm16);
+        if (rc < 0)
+            return rc;
+        put_str("call ");
+        put_hex16(imm16);
+        len = 3;
+        break;
+    case 0x76:
+        put_str("halt");
+        len = 1;
+        break;
+    default:
+        put_str("db ");
+        put_hex8(op);
+        len = 1;
+        break;
+    }
+
+    put_str(" ;");
+    for (uint32_t i = 0; i < len; i++) {
+        uint8_t b = 0;
+        rc = peek_u8(pid, pc + i, &b);
+        if (rc < 0)
+            return rc;
+        put_chr(' ');
+        put_hex8(b);
+    }
+    put_chr('\n');
+    *next_pc = pc + len;
+    return 0;
+}
+
+static void disas_z80(pid_t pid, uint32_t pc, uint32_t count)
+{
+    if (count == 0)
+        count = 8;
+    if (count > 64)
+        count = 64;
+
+    for (uint32_t i = 0; i < count; i++) {
+        int rc = z80_disas_one(pid, pc, &pc);
+        if (rc < 0) {
+            put_err("pdb: disas failed rc=");
+            put_i32((int32_t)rc);
+            put_chr('\n');
+            return;
+        }
+    }
+}
+
 static int wait_child(pid_t pid, int *stopped, int *exit_code,
                       struct ppap_ptrace_event *ev)
 {
@@ -463,6 +640,7 @@ static void print_help(void)
     put_str("  caps              show trace capabilities\n");
     put_str("  event             show last stop event\n");
     put_str("  x <addr> [count]  read memory words\n");
+    put_str("  disas [a] [n]     disassemble n instructions from addr/pc\n");
     put_str("  step | s          single-step\n");
     put_str("  cont | c          continue\n");
     put_str("  set reg <r> <v>   write register by name or index\n");
@@ -612,6 +790,37 @@ int main(int argc, char *argv[])
                 continue;
             }
             print_mem_words(pid, addr, count);
+            continue;
+        }
+
+        if (streq(tok[0], "disas")) {
+            struct ppap_ptrace_regs regs;
+            uint32_t addr = 0;
+            uint32_t count = 8;
+            uint32_t pc_idx = 0;
+            if (!child_stopped) {
+                put_err("pdb: child is not stopped\n");
+                continue;
+            }
+            if (ptrace(PTRACE_GETREGS, pid, (void *)0, &regs) < 0) {
+                put_err("pdb: GETREGS failed\n");
+                continue;
+            }
+            if (regs.regset != PPAP_TRACE_REGSET_Z80) {
+                put_err("pdb: disas currently supports z80 tracees only\n");
+                continue;
+            }
+            pc_idx = 7; /* Z80 PC */
+            addr = regs.regs[pc_idx];
+            if (ntok >= 2 && !parse_u32(tok[1], &addr)) {
+                put_err("pdb: usage: disas [addr] [count]\n");
+                continue;
+            }
+            if (ntok >= 3 && !parse_u32(tok[2], &count)) {
+                put_err("pdb: invalid count\n");
+                continue;
+            }
+            disas_z80(pid, addr, count);
             continue;
         }
 
