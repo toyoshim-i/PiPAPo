@@ -244,36 +244,123 @@ static void print_caps(const struct ppap_ptrace_caps *caps)
     put_chr('\n');
 }
 
+static uint32_t reg_count(uint32_t regset)
+{
+    switch (regset) {
+    case PPAP_TRACE_REGSET_ARM: return 17;
+    case PPAP_TRACE_REGSET_M68K: return 20;
+    case PPAP_TRACE_REGSET_Z80: return 18;
+    default: return 0;
+    }
+}
+
+static int reg_is16(uint32_t regset)
+{
+    return regset == PPAP_TRACE_REGSET_Z80;
+}
+
+static const char *reg_name(uint32_t regset, uint32_t idx)
+{
+    if (regset == PPAP_TRACE_REGSET_ARM) {
+        switch (idx) {
+        case 0: return "r0";
+        case 1: return "r1";
+        case 2: return "r2";
+        case 3: return "r3";
+        case 4: return "r4";
+        case 5: return "r5";
+        case 6: return "r6";
+        case 7: return "r7";
+        case 8: return "r8";
+        case 9: return "r9";
+        case 10: return "r10";
+        case 11: return "r11";
+        case 12: return "r12";
+        case 13: return "sp";
+        case 14: return "lr";
+        case 15: return "pc";
+        case 16: return "xpsr";
+        default: return (const char *)0;
+        }
+    } else if (regset == PPAP_TRACE_REGSET_M68K) {
+        switch (idx) {
+        case 0: return "d0";
+        case 1: return "d1";
+        case 2: return "d2";
+        case 3: return "d3";
+        case 4: return "d4";
+        case 5: return "d5";
+        case 6: return "d6";
+        case 7: return "d7";
+        case 8: return "a0";
+        case 9: return "a1";
+        case 10: return "a2";
+        case 11: return "a3";
+        case 12: return "a4";
+        case 13: return "a5";
+        case 14: return "a6";
+        case 15: return "a7";
+        case 16: return "pc";
+        case 17: return "sr";
+        case 18: return "usp";
+        case 19: return "ksp";
+        default: return (const char *)0;
+        }
+    } else if (regset == PPAP_TRACE_REGSET_Z80) {
+        switch (idx) {
+        case 0: return "af";
+        case 1: return "bc";
+        case 2: return "de";
+        case 3: return "hl";
+        case 4: return "ix";
+        case 5: return "iy";
+        case 6: return "sp";
+        case 7: return "pc";
+        case 8: return "af2";
+        case 9: return "bc2";
+        case 10: return "de2";
+        case 11: return "hl2";
+        case 12: return "iff1";
+        case 13: return "iff2";
+        case 14: return "im";
+        case 15: return "wz";
+        case 16: return "i";
+        case 17: return "r";
+        default: return (const char *)0;
+        }
+    }
+    return (const char *)0;
+}
+
+static int reg_index_from_token(const struct ppap_ptrace_regs *regs,
+                                const char *tok, uint32_t *idx_out)
+{
+    uint32_t idx = 0;
+    uint32_t count = reg_count(regs->regset);
+
+    if (parse_u32(tok, &idx)) {
+        if (idx >= regs->words)
+            return 0;
+        *idx_out = idx;
+        return 1;
+    }
+
+    if (count > regs->words)
+        count = regs->words;
+    for (idx = 0; idx < count; idx++) {
+        const char *name = reg_name(regs->regset, idx);
+        if (name && streq(tok, name)) {
+            *idx_out = idx;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void print_regs(const struct ppap_ptrace_regs *regs)
 {
-    static const char *arm_names[] = {
-        "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
-        "r8", "r9", "r10", "r11", "r12", "sp", "lr", "pc", "xpsr"
-    };
-    static const char *m68k_names[] = {
-        "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7",
-        "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7",
-        "pc", "sr", "usp", "ksp"
-    };
-    static const char *z80_names[] = {
-        "af", "bc", "de", "hl", "ix", "iy", "sp", "pc",
-        "af2", "bc2", "de2", "hl2", "iff1", "iff2", "im", "wz",
-        "i", "r"
-    };
-
-    const char **names = (const char **)0;
-    uint32_t name_count = 0;
-
-    if (regs->regset == PPAP_TRACE_REGSET_ARM) {
-        names = arm_names;
-        name_count = 17;
-    } else if (regs->regset == PPAP_TRACE_REGSET_M68K) {
-        names = m68k_names;
-        name_count = 20;
-    } else if (regs->regset == PPAP_TRACE_REGSET_Z80) {
-        names = z80_names;
-        name_count = 18;
-    }
+    int is16 = reg_is16(regs->regset);
+    uint32_t count = reg_count(regs->regset);
 
     put_str("regset=");
     put_str(regset_name(regs->regset));
@@ -283,15 +370,20 @@ static void print_regs(const struct ppap_ptrace_regs *regs)
     put_u32(regs->words);
     put_chr('\n');
 
-    for (uint32_t i = 0; i < regs->words && i < PPAP_PTRACE_REGS_MAX; i++) {
-        if (names && i < name_count) {
-            put_str(names[i]);
+    if (count > regs->words)
+        count = regs->words;
+    if (count > PPAP_PTRACE_REGS_MAX)
+        count = PPAP_PTRACE_REGS_MAX;
+    for (uint32_t i = 0; i < count; i++) {
+        const char *name = reg_name(regs->regset, i);
+        if (name) {
+            put_str(name);
         } else {
             put_str("r");
             put_u32(i);
         }
         put_str("=");
-        if (regs->regset == PPAP_TRACE_REGSET_Z80)
+        if (is16)
             put_hex16(regs->regs[i]);
         else
             put_hex32(regs->regs[i]);
@@ -360,7 +452,7 @@ static int wait_child(pid_t pid, int *stopped, int *exit_code,
 
 static void usage(void)
 {
-    put_str("Usage: pdb <program> [args...]\n");
+    put_str("Usage: pdb [-c <cmd> ...] <program> [args...]\n");
 }
 
 static void print_help(void)
@@ -373,6 +465,8 @@ static void print_help(void)
     put_str("  x <addr> [count]  read memory words\n");
     put_str("  step | s          single-step\n");
     put_str("  cont | c          continue\n");
+    put_str("  set reg <r> <v>   write register by name or index\n");
+    put_str("  set mem <a> <v>   write memory word\n");
     put_str("  break <addr>      set software breakpoint\n");
     put_str("  delete <id>       clear breakpoint by id\n");
     put_str("  info break        show local breakpoint table\n");
@@ -564,6 +658,89 @@ int main(int argc, char *argv[])
                 return 1;
             if (wr > 0)
                 return child_exit_code;
+            continue;
+        }
+
+        if (streq(tok[0], "set")) {
+            if (!child_stopped) {
+                put_err("pdb: child is not stopped\n");
+                continue;
+            }
+
+            if (ntok >= 4 && streq(tok[1], "reg")) {
+                struct ppap_ptrace_regs regs;
+                int is16 = 0;
+                uint32_t idx = 0;
+                uint32_t value = 0;
+
+                if (!parse_u32(tok[3], &value)) {
+                    put_err("pdb: invalid register value\n");
+                    continue;
+                }
+                if (ptrace(PTRACE_GETREGS, pid, (void *)0, &regs) < 0) {
+                    put_err("pdb: GETREGS failed\n");
+                    continue;
+                }
+                if (!reg_index_from_token(&regs, tok[2], &idx)) {
+                    put_err("pdb: unknown register\n");
+                    continue;
+                }
+
+                is16 = reg_is16(regs.regset);
+                if (is16)
+                    value &= 0xffffu;
+                regs.regs[idx] = value;
+                if (ptrace(PTRACE_SETREGS, pid, (void *)0, &regs) < 0) {
+                    put_err("pdb: SETREGS failed\n");
+                    continue;
+                }
+
+                put_str("reg ");
+                {
+                    const char *name = reg_name(regs.regset, idx);
+                    if (name) {
+                        put_str(name);
+                    } else {
+                        put_str("r");
+                        put_u32(idx);
+                    }
+                }
+                put_str("=");
+                if (is16)
+                    put_hex16(value);
+                else
+                    put_hex32(value);
+                put_chr('\n');
+                continue;
+            }
+
+            if (ntok >= 4 && streq(tok[1], "mem")) {
+                uint32_t addr = 0;
+                uint32_t value = 0;
+                long rc;
+
+                if (!parse_u32(tok[2], &addr) || !parse_u32(tok[3], &value)) {
+                    put_err("pdb: usage: set mem <addr> <value>\n");
+                    continue;
+                }
+                rc = ptrace(PTRACE_POKEDATA, pid, (void *)(uintptr_t)addr,
+                            &value);
+                if (rc < 0) {
+                    put_err("pdb: POKEDATA failed rc=");
+                    put_i32((int32_t)rc);
+                    put_chr('\n');
+                    continue;
+                }
+                put_str("mem ");
+                put_hex32(addr);
+                put_str("=");
+                put_hex32(value);
+                put_chr('\n');
+                continue;
+            }
+
+            put_err("pdb: usage: set reg <name|index> <value>\n");
+            put_err("pdb:    or: set mem <addr> <value>\n");
             continue;
         }
 
