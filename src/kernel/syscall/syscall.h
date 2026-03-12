@@ -79,6 +79,7 @@ void trace_after_subsys(uint32_t abi, uint32_t nr,
                         uint32_t a0, uint32_t a1, uint32_t a2,
                         uint32_t a3, uint32_t a4, uint32_t a5,
                         int32_t ret);
+void trace_debug_stop(uint32_t abi, uint32_t pc, uint32_t flags);
 void trace_exec_stop(void);
 
 /* sys_io.c */

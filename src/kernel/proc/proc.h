@@ -152,6 +152,7 @@ typedef struct pcb {
     uint8_t      trace_wait_pending; /* waitpid(WSTOPPED) should report stop */
     uint8_t      trace_syscall_phase;/* 0=enter, 1=exit for SYSCALL mode     */
     uint8_t      trace_subsys_phase; /* 0=enter, 1=exit for subsystem mode   */
+    uint8_t      trace_step_pending; /* pending ptrace single-step resume    */
     struct ppap_ptrace_event trace_event;
 
     /* ── Subsystem tag ───────────────────────────────────────────── */

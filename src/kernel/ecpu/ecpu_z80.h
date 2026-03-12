@@ -81,6 +81,8 @@ typedef struct z80_state {
 
     /* Emulator state (not part of real Z80) */
     uint8_t halted;           /* 1 if HALT executed */
+    uint8_t step_budget;      /* >0: run() returns after N instructions */
+    uint8_t step_trap_exit;   /* set when trap handler requests exit */
 
     /* Memory (64 KB flat) */
     uint8_t *memory;

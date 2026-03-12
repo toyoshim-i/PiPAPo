@@ -9,6 +9,7 @@
 #define PTRACE_POKEDATA  5
 #define PTRACE_GETREGS   12
 #define PTRACE_SETREGS   13
+#define PTRACE_SINGLESTEP 9
 #define PTRACE_CONT      7
 #define PTRACE_DETACH    17
 #define PTRACE_SYSCALL   24
@@ -40,6 +41,7 @@
 #define PPAP_TRACE_EVENT_SYSCALL_EXIT   3
 #define PPAP_TRACE_EVENT_SUBSYS_ENTER   4
 #define PPAP_TRACE_EVENT_SUBSYS_EXIT    5
+#define PPAP_TRACE_EVENT_DEBUG_STOP     6
 
 /* Event ABI tags. */
 #define PPAP_TRACE_ABI_PPAP      0
@@ -65,6 +67,9 @@
 
 /* Event flags. */
 #define PPAP_TRACE_FLAG_RESTART         0x01
+#define PPAP_DEBUG_STOP_STEP            0x0001
+#define PPAP_DEBUG_STOP_SW_BP           0x0002
+#define PPAP_DEBUG_STOP_HW_BP           0x0004
 
 struct ppap_ptrace_event {
     uint32_t event;

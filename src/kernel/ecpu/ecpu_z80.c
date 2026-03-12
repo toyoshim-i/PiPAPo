@@ -157,9 +157,13 @@ static void ecpu_z80_write16_op(ecpu_state_t *state, uint32_t addr,
 
 static int z80_fire_trap(z80_state_t *cpu, int trap_type, uint32_t param)
 {
-    if (cpu->trap_handler)
-        return cpu->trap_handler((ecpu_state_t *)cpu, trap_type, param,
-                                 cpu->trap_ctx);
+    if (cpu->trap_handler) {
+        int rc = cpu->trap_handler((ecpu_state_t *)cpu, trap_type, param,
+                                   cpu->trap_ctx);
+        if (rc == ECPU_TRAP_EXIT)
+            cpu->step_trap_exit = 1;
+        return rc;
+    }
     return ECPU_TRAP_UNHANDLED;
 }
 
@@ -904,6 +908,7 @@ static int z80_decode_index(z80_state_t *cpu, uint16_t *idx)
 static int ecpu_z80_run(ecpu_state_t *state)
 {
     z80_state_t *cpu = (z80_state_t *)state;
+    cpu->step_trap_exit = 0;
 
     for (;;) {
         if (cpu->halted) {
@@ -931,7 +936,7 @@ static int ecpu_z80_run(ecpu_state_t *state)
             /* xx=01: LD r, r' — except 0x76 = HALT */
             if (opcode == 0x76) {
                 cpu->halted = 1;
-                continue;  /* loop back to halted check */
+                break;
             }
             z80_write_r8(cpu, yyy, z80_read_r8(cpu, zzz));
             break;
@@ -1300,7 +1305,21 @@ static int ecpu_z80_run(ecpu_state_t *state)
             }
             break;
         }
+
+        if (cpu->step_budget) {
+            cpu->step_budget--;
+            if (!cpu->step_budget)
+                return 0;
+        }
     }
+}
+
+static int ecpu_z80_step(ecpu_state_t *state)
+{
+    z80_state_t *cpu = (z80_state_t *)state;
+    cpu->step_budget = 1;
+    (void)ecpu_z80_run(state);
+    return cpu->step_trap_exit ? 1 : 0;
 }
 
 /* ── Operations table ────────────────────────────────────────────────────── */
@@ -1311,6 +1330,7 @@ const ecpu_core_ops_t ecpu_z80_ops = {
     .init           = ecpu_z80_init,
     .reset          = ecpu_z80_reset,
     .run            = ecpu_z80_run,
+    .step           = ecpu_z80_step,
     .set_trap_handler = ecpu_z80_set_trap_handler,
     .get_reg        = ecpu_z80_get_reg,
     .set_reg        = ecpu_z80_set_reg,

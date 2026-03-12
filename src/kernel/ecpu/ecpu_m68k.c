@@ -20,9 +20,13 @@
 
 static int m68k_fire_trap(m68k_state_t *cpu, int trap_type, uint32_t param)
 {
-    if (cpu->trap_handler)
-        return cpu->trap_handler((ecpu_state_t *)cpu, trap_type, param,
-                                 cpu->trap_ctx);
+    if (cpu->trap_handler) {
+        int rc = cpu->trap_handler((ecpu_state_t *)cpu, trap_type, param,
+                                   cpu->trap_ctx);
+        if (rc == ECPU_TRAP_EXIT)
+            cpu->step_trap_exit = 1;
+        return rc;
+    }
     return ECPU_TRAP_UNHANDLED;
 }
 
@@ -780,6 +784,7 @@ static int ecpu_m68k_run(ecpu_state_t *state)
 {
     m68k_state_t *cpu = (m68k_state_t *)state;
     cpu->stopped = 0;
+    cpu->step_trap_exit = 0;
 
     for (;;) {
         if (cpu->stopped)
@@ -1366,7 +1371,21 @@ static int ecpu_m68k_run(ecpu_state_t *state)
                 break;
             }
         }
+
+        if (cpu->step_budget) {
+            cpu->step_budget--;
+            if (!cpu->step_budget)
+                return 0;
+        }
     }
+}
+
+static int ecpu_m68k_step(ecpu_state_t *state)
+{
+    m68k_state_t *cpu = (m68k_state_t *)state;
+    cpu->step_budget = 1;
+    (void)ecpu_m68k_run(state);
+    return cpu->step_trap_exit ? 1 : 0;
 }
 
 /* ── Common interface implementations ───────────────────────────────────── */
@@ -1480,6 +1499,7 @@ const ecpu_core_ops_t ecpu_m68k_ops = {
     .init           = ecpu_m68k_init,
     .reset          = ecpu_m68k_reset,
     .run            = ecpu_m68k_run,
+    .step           = ecpu_m68k_step,
     .set_trap_handler = ecpu_m68k_set_trap_handler,
     .get_reg        = ecpu_m68k_get_reg,
     .set_reg        = ecpu_m68k_set_reg,

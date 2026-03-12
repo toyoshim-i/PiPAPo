@@ -52,6 +52,7 @@ typedef struct ecpu_core_ops {
     int  (*init)(ecpu_state_t *cpu, uint8_t *memory, uint32_t mem_size);
     void (*reset)(ecpu_state_t *cpu);
     int  (*run)(ecpu_state_t *cpu);  /* enter interpreter loop             */
+    int  (*step)(ecpu_state_t *cpu); /* execute one instruction            */
 
     /* Trap hook registration */
     void (*set_trap_handler)(ecpu_state_t *cpu,

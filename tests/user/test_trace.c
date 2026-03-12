@@ -24,6 +24,31 @@
 #define SCRATCH_REG_IDX  12  /* r12 */
 #endif
 
+static int write_blob(const char *path, const uint8_t *data, int size)
+{
+    int fd;
+    int n;
+
+    unlink(path);
+    fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0755);
+    if (fd < 0)
+        return -1;
+    n = write(fd, data, (size_t)size);
+    close(fd);
+    if (n != size) {
+        unlink(path);
+        return -1;
+    }
+    return 0;
+}
+
+static const uint8_t trace_step_com[] = {
+    0x00,                   /* NOP */
+    0x00,                   /* NOP */
+    0x0E, 0x00,             /* LD C,0 (BDOS exit) */
+    0xCD, 0x05, 0x00,       /* CALL 0005h */
+};
+
 int main(void)
 {
     pid_t pid = vfork();
@@ -41,6 +66,7 @@ int main(void)
     uint32_t word = 0;
     uint32_t patched = 0x55667788u;
     uint32_t scratch_before = 0;
+    uint32_t z80_pc_before = 0;
 
     UT_ASSERT_EQ(waitpid(pid, &status, WSTOPPED), pid);
     UT_ASSERT(WIFSTOPPED(status), "child should stop after exec");
@@ -126,6 +152,50 @@ int main(void)
     UT_ASSERT_EQ(waitpid(pid, &status, 0), pid);
     UT_ASSERT(WIFEXITED(status), "child should exit after continue");
     UT_ASSERT_EQ(WEXITSTATUS(status), 0);
+
+    UT_ASSERT_EQ(write_blob("/tmp/trace_step.com", trace_step_com,
+                            (int)sizeof(trace_step_com)), 0);
+
+    pid = vfork();
+    if (pid == 0) {
+        ptrace(PTRACE_TRACEME, 0, (void *)0, (void *)0);
+        execve("/tmp/trace_step.com", (void *)0, (void *)0);
+        _exit(127);
+    }
+
+    UT_ASSERT_EQ(waitpid(pid, &status, WSTOPPED), pid);
+    UT_ASSERT(WIFSTOPPED(status), "CP/M child should stop after exec");
+    UT_ASSERT_EQ(WSTOPSIG(status), SIGTRAP);
+    UT_ASSERT_EQ(ptrace(PTRACE_GETEVENT, pid, (void *)0, &ev), 0);
+    UT_ASSERT_EQ((int)ev.event, PPAP_TRACE_EVENT_EXEC);
+
+    UT_ASSERT_EQ(ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps), 0);
+    UT_ASSERT_EQ((int)caps.regset, PPAP_TRACE_REGSET_Z80);
+    UT_ASSERT((caps.caps & PPAP_PTRACE_CAP_SINGLESTEP) != 0,
+              "CP/M tracee should report single-step capability");
+
+    UT_ASSERT_EQ(ptrace(PTRACE_GETREGS, pid, (void *)0, &regs), 0);
+    UT_ASSERT_EQ((int)regs.regset, PPAP_TRACE_REGSET_Z80);
+    z80_pc_before = regs.regs[7];
+
+    UT_ASSERT_EQ(ptrace(PTRACE_SINGLESTEP, pid, (void *)0, (void *)0), 0);
+    UT_ASSERT_EQ(waitpid(pid, &status, WSTOPPED), pid);
+    UT_ASSERT(WIFSTOPPED(status), "CP/M child should stop after single-step");
+    UT_ASSERT_EQ(WSTOPSIG(status), SIGTRAP);
+    UT_ASSERT_EQ(ptrace(PTRACE_GETEVENT, pid, (void *)0, &ev), 0);
+    UT_ASSERT_EQ((int)ev.event, PPAP_TRACE_EVENT_DEBUG_STOP);
+    UT_ASSERT((ev.flags & PPAP_DEBUG_STOP_STEP) != 0,
+              "debug stop should include STEP reason");
+    UT_ASSERT_EQ(ptrace(PTRACE_GETREGS, pid, (void *)0, &regs), 0);
+    UT_ASSERT_EQ((int)regs.regset, PPAP_TRACE_REGSET_Z80);
+    UT_ASSERT(regs.regs[7] != z80_pc_before, "single-step should advance PC");
+    UT_ASSERT_EQ((int)ev.args[0], (int)regs.regs[7]);
+
+    UT_ASSERT_EQ(ptrace(PTRACE_CONT, pid, (void *)0, (void *)0), 0);
+    UT_ASSERT_EQ(waitpid(pid, &status, 0), pid);
+    UT_ASSERT(WIFEXITED(status), "CP/M child should exit after continue");
+    UT_ASSERT_EQ(WEXITSTATUS(status), 0);
+    unlink("/tmp/trace_step.com");
 
     UT_SUMMARY("test_trace");
 }

@@ -594,17 +594,47 @@ static int trace_store_regs(pcb_t *target, const struct ppap_ptrace_regs *regs)
 
 static int trace_fill_caps(const pcb_t *target, struct ppap_ptrace_caps *caps)
 {
+    uint32_t c = PPAP_PTRACE_CAP_GETREGS
+               | PPAP_PTRACE_CAP_SETREGS
+               | PPAP_PTRACE_CAP_PEEKPOKE;
+
     if (!caps)
         return -EINVAL;
     if (target->state != PROC_TRACED_STOP)
         return -EBUSY;
 
+    if (target->subsys == SUBSYS_CPM)
+        c |= PPAP_PTRACE_CAP_SINGLESTEP;
+    if (target->subsys == SUBSYS_PPAP && target->subsys_data)
+        c |= PPAP_PTRACE_CAP_SINGLESTEP;
+
     caps->regset = trace_regset_for(target);
     caps->abi = target->trace_event.abi;
-    caps->caps = PPAP_PTRACE_CAP_GETREGS
-               | PPAP_PTRACE_CAP_SETREGS
-               | PPAP_PTRACE_CAP_PEEKPOKE;
+    caps->caps = c;
     caps->max_bps = 0;
+    return 0;
+}
+
+static int trace_supports_single_step(const pcb_t *target)
+{
+    if (target->subsys == SUBSYS_CPM)
+        return target->subsys_data != 0;
+
+    if (target->subsys == SUBSYS_PPAP && target->subsys_data)
+        return 1;
+
+    return 0;
+}
+
+static int trace_request_single_step(pcb_t *target)
+{
+    if (target->state != PROC_TRACED_STOP)
+        return -EBUSY;
+    if (!trace_supports_single_step(target))
+        return -ENOSYS;
+
+    target->trace_step_pending = 1;
+    trace_resume_target(target);
     return 0;
 }
 
@@ -677,6 +707,13 @@ void trace_after_subsys(uint32_t abi, uint32_t nr,
     trace_stop_current(0);
 }
 
+void trace_debug_stop(uint32_t abi, uint32_t pc, uint32_t flags)
+{
+    trace_fill_event(PPAP_TRACE_EVENT_DEBUG_STOP, abi, 0,
+                     pc, 0, 0, 0, 0, 0, 0, flags);
+    trace_stop_current(0);
+}
+
 void trace_exec_stop(void)
 {
     if (!current->trace_requested)
@@ -685,6 +722,7 @@ void trace_exec_stop(void)
     current->trace_requested = 0;
     current->trace_syscall_phase = TRACE_PHASE_ENTER;
     current->trace_subsys_phase = TRACE_PHASE_ENTER;
+    current->trace_step_pending = 0;
     trace_fill_event(PPAP_TRACE_EVENT_EXEC, PPAP_TRACE_ABI_PPAP, SYS_EXECVE,
                      0, 0, 0, 0, 0, 0, 0, 0);
     trace_stop_current(0);
@@ -701,6 +739,7 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
         current->trace_wait_pending = 0;
         current->trace_syscall_phase = TRACE_PHASE_ENTER;
         current->trace_subsys_phase = TRACE_PHASE_ENTER;
+        current->trace_step_pending = 0;
         __builtin_memset(&current->trace_event, 0, sizeof(current->trace_event));
         return 0;
     }
@@ -744,10 +783,14 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
         trace_reset_mode_state(target, mode);
         return 0;
     }
+    case PTRACE_SINGLESTEP:
+        return trace_request_single_step(target);
     case PTRACE_CONT:
+        target->trace_step_pending = 0;
         trace_resume_target(target);
         return 0;
     case PTRACE_SYSCALL:
+        target->trace_step_pending = 0;
         if (!(target->trace_mode & PPAP_TRACE_MODE_PPAP_SYSCALL))
             target->trace_syscall_phase = TRACE_PHASE_ENTER;
         target->trace_mode |= PPAP_TRACE_MODE_PPAP_SYSCALL;
@@ -758,6 +801,7 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
         target->tracer_pid = 0;
         trace_reset_mode_state(target, 0);
         target->trace_wait_pending = 0;
+        target->trace_step_pending = 0;
         __builtin_memset(&target->trace_event, 0, sizeof(target->trace_event));
         trace_resume_target(target);
         return 0;

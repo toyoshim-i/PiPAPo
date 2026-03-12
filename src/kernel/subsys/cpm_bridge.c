@@ -1185,6 +1185,7 @@ int cpm_trap_handler(ecpu_state_t *state, int trap_type,
 #ifdef PPAP_KERNEL
 
 #include "kernel/proc/proc.h"
+#include "kernel/proc/sched.h"
 #include "subsys.h"
 
 /*
@@ -1202,7 +1203,23 @@ void cpm_run_process(void)
     /* cpm_exec_state_t layout: { z80_state_t z80; cpm_state_t cpm; } */
     z80_state_t *z80 = (z80_state_t *)p->subsys_data;
 
-    ecpu_z80_ops.run((ecpu_state_t *)z80);
+    for (;;) {
+        if (p->trace_step_pending) {
+            p->trace_step_pending = 0;
+            if (ecpu_z80_ops.step &&
+                ecpu_z80_ops.step((ecpu_state_t *)z80) != 0)
+                break;
+            if (p->tracer_pid != 0 && p->state == PROC_RUNNABLE)
+                trace_debug_stop(PPAP_TRACE_ABI_CPM_BDOS, z80->pc,
+                                 PPAP_DEBUG_STOP_STEP);
+            if (p->state == PROC_TRACED_STOP)
+                sched_yield();
+            continue;
+        }
+
+        ecpu_z80_ops.run((ecpu_state_t *)z80);
+        break;
+    }
 
     sys_exit(0);
     /* not reached */

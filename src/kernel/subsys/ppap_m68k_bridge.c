@@ -63,6 +63,7 @@ int ppap_m68k_trap_handler(ecpu_state_t *state, int trap_type,
 #ifdef PPAP_KERNEL
 
 #include "kernel/proc/proc.h"
+#include "kernel/proc/sched.h"
 #include "kernel/syscall/syscall.h"
 
 /*
@@ -77,7 +78,23 @@ void ppap_m68k_run_process(void)
     pcb_t *p = current;
     m68k_state_t *m68k = (m68k_state_t *)p->subsys_data;
 
-    ecpu_m68k_ops.run((ecpu_state_t *)m68k);
+    for (;;) {
+        if (p->trace_step_pending) {
+            p->trace_step_pending = 0;
+            if (ecpu_m68k_ops.step &&
+                ecpu_m68k_ops.step((ecpu_state_t *)m68k) != 0)
+                break;
+            if (p->tracer_pid != 0 && p->state == PROC_RUNNABLE)
+                trace_debug_stop(PPAP_TRACE_ABI_PPAP, m68k->pc,
+                                 PPAP_DEBUG_STOP_STEP);
+            if (p->state == PROC_TRACED_STOP)
+                sched_yield();
+            continue;
+        }
+
+        ecpu_m68k_ops.run((ecpu_state_t *)m68k);
+        break;
+    }
 
     /* Exit status is in d1 (first arg to SYS_EXIT) */
     sys_exit((long)m68k->d[1]);

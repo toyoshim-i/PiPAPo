@@ -88,6 +88,8 @@ typedef struct m68k_state {
 
     /* Emulator state */
     uint8_t stopped;          /* 1 if STOP executed */
+    uint8_t step_budget;      /* >0: run() returns after N instructions */
+    uint8_t step_trap_exit;   /* set when trap handler requests exit */
 
     /* Memory */
     uint8_t *memory;
