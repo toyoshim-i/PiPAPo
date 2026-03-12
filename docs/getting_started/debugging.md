@@ -59,6 +59,7 @@ pdb -c "caps" -c "regs" -c "disas 0x0100 3" /tmp/prog.com
 
 # Typical commands inside pdb:
 #   regs
+#   reg pc
 #   caps
 #   event
 #   show abi

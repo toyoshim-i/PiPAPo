@@ -656,6 +656,7 @@ static void print_help(void)
     put_str("commands:\n");
     put_str("  help              show this help\n");
     put_str("  regs              show registers\n");
+    put_str("  reg <name|idx>    show one register\n");
     put_str("  caps              show trace capabilities\n");
     put_str("  event             show last stop event\n");
     put_str("  show abi          show current stop ABI\n");
@@ -780,6 +781,45 @@ int main(int argc, char *argv[])
                 continue;
             }
             print_regs(&regs);
+            continue;
+        }
+
+        if (streq(tok[0], "reg")) {
+            struct ppap_ptrace_regs regs;
+            uint32_t idx = 0;
+            int is16 = 0;
+            if (!child_stopped) {
+                put_err("pdb: child is not stopped\n");
+                continue;
+            }
+            if (ntok < 2) {
+                put_err("pdb: usage: reg <name|index>\n");
+                continue;
+            }
+            if (ptrace(PTRACE_GETREGS, pid, (void *)0, &regs) < 0) {
+                put_err("pdb: GETREGS failed\n");
+                continue;
+            }
+            if (!reg_index_from_token(&regs, tok[1], &idx)) {
+                put_err("pdb: unknown register\n");
+                continue;
+            }
+            is16 = reg_is16(regs.regset);
+            {
+                const char *name = reg_name(regs.regset, idx);
+                if (name) {
+                    put_str(name);
+                } else {
+                    put_str("r");
+                    put_u32(idx);
+                }
+            }
+            put_str("=");
+            if (is16)
+                put_hex16(regs.regs[idx]);
+            else
+                put_hex32(regs.regs[idx]);
+            put_chr('\n');
             continue;
         }
 

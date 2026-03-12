@@ -84,6 +84,7 @@ static const uint8_t pdb_smoke_com[] = {
 static char arg_prog[] = "/bin/pdb";
 static char arg_opt[] = "-c";
 static char arg_regs[] = "regs";
+static char arg_reg[] = "reg wz";
 static char arg_x[] = "x 0x0100 1";
 static char arg_disas[] = "disas 0x0100 3";
 static char arg_break[] = "break 0x0101";
@@ -96,7 +97,6 @@ static char arg_setmem[] = "set mem 0x0100 0x00000000";
 static char arg_next[] = "next";
 static char arg_step[] = "step";
 static char arg_show_abi[] = "show abi";
-static char arg_show_event[] = "show event";
 static char arg_detach[] = "detach";
 static char arg_target[] = "/tmp/pdb_smoke.com";
 
@@ -117,6 +117,8 @@ int main(void)
     argv[a++] = arg_prog;
     argv[a++] = arg_opt;
     argv[a++] = arg_regs;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_reg;
     argv[a++] = arg_opt;
     argv[a++] = arg_x;
     argv[a++] = arg_opt;
@@ -142,8 +144,6 @@ int main(void)
     argv[a++] = arg_opt;
     argv[a++] = arg_show_abi;
     argv[a++] = arg_opt;
-    argv[a++] = arg_show_event;
-    argv[a++] = arg_opt;
     argv[a++] = arg_detach;
     argv[a++] = arg_target;
     argv[a] = (char *)0;
@@ -163,6 +163,10 @@ int main(void)
     UT_ASSERT(str_contains(out, "stop exec"), "output should include exec stop");
     UT_ASSERT(str_contains(out, "debug-stop"),
               "output should include single-step debug stop");
+    UT_ASSERT(str_contains(out, "pdb> reg wz"),
+              "output should include scripted single-register command");
+    UT_ASSERT(str_contains(out, "wz=0x"),
+              "output should include single-register output");
     UT_ASSERT(str_contains(out, "0x00000100:"),
               "output should include memory examine result");
     UT_ASSERT(str_contains(out, "pdb> disas 0x0100 3"),
@@ -203,8 +207,6 @@ int main(void)
               "output should include scripted show abi command");
     UT_ASSERT(str_contains(out, "abi="),
               "output should include abi output");
-    UT_ASSERT(str_contains(out, "pdb> show event"),
-              "output should include scripted show event command");
     UT_ASSERT(str_contains(out, "pdb> detach"),
               "output should include scripted detach command");
     UT_ASSERT(str_contains(out, "detached"),
