@@ -96,7 +96,7 @@ static char arg_setreg[] = "set reg wz 0x1234";
 static char arg_setmem[] = "set mem 0x0100 0x00000000";
 static char arg_next[] = "next";
 static char arg_step[] = "step";
-static char arg_show_abi[] = "show abi";
+static char arg_show_regset[] = "show regset";
 static char arg_detach[] = "detach";
 static char arg_target[] = "/tmp/pdb_smoke.com";
 
@@ -142,7 +142,7 @@ int main(void)
     argv[a++] = arg_opt;
     argv[a++] = arg_step;
     argv[a++] = arg_opt;
-    argv[a++] = arg_show_abi;
+    argv[a++] = arg_show_regset;
     argv[a++] = arg_opt;
     argv[a++] = arg_detach;
     argv[a++] = arg_target;
@@ -203,16 +203,18 @@ int main(void)
               "output should include memory write result");
     UT_ASSERT(str_contains(out, "pdb> next"),
               "output should include scripted next command");
-    UT_ASSERT(str_contains(out, "pdb> show abi"),
-              "output should include scripted show abi command");
-    UT_ASSERT(str_contains(out, "abi="),
-              "output should include abi output");
+    UT_ASSERT(str_contains(out, "pdb> show regset"),
+              "output should include scripted show regset command");
+    UT_ASSERT(str_contains(out, "regset=z80"),
+              "output should include regset output");
     UT_ASSERT(str_contains(out, "pdb> detach"),
               "output should include scripted detach command");
     UT_ASSERT(str_contains(out, "detached"),
               "output should include detach result");
     UT_ASSERT(!str_contains(out, "unknown command"),
               "output should not include unknown command error");
+    UT_ASSERT(!str_contains(out, "usage: show <abi|event|caps|regset>"),
+              "show command should not print usage error");
 
     UT_SUMMARY("test_pdb");
 #endif

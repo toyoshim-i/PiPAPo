@@ -662,6 +662,7 @@ static void print_help(void)
     put_str("  show abi          show current stop ABI\n");
     put_str("  show event        show last stop event\n");
     put_str("  show caps         show trace capabilities\n");
+    put_str("  show regset       show current register set\n");
     put_str("  x <addr> [count]  read memory words\n");
     put_str("  disas [a] [n]     disassemble n instructions from addr/pc\n");
     put_str("  step | s          single-step\n");
@@ -843,7 +844,7 @@ int main(int argc, char *argv[])
 
         if (streq(tok[0], "show")) {
             if (ntok < 2) {
-                put_err("pdb: usage: show <abi|event|caps>\n");
+                put_err("pdb: usage: show <abi|event|caps|regset>\n");
                 continue;
             }
             if (streq(tok[1], "abi")) {
@@ -868,7 +869,22 @@ int main(int argc, char *argv[])
                 print_caps(&caps);
                 continue;
             }
-            put_err("pdb: usage: show <abi|event|caps>\n");
+            if (streq(tok[1], "regset")) {
+                struct ppap_ptrace_regs regs;
+                if (!child_stopped) {
+                    put_err("pdb: child is not stopped\n");
+                    continue;
+                }
+                if (ptrace(PTRACE_GETREGS, pid, (void *)0, &regs) < 0) {
+                    put_err("pdb: GETREGS failed\n");
+                    continue;
+                }
+                put_str("regset=");
+                put_str(regset_name(regs.regset));
+                put_chr('\n');
+                continue;
+            }
+            put_err("pdb: usage: show <abi|event|caps|regset>\n");
             continue;
         }
 
