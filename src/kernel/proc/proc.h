@@ -150,6 +150,7 @@ typedef struct pcb {
     pid_t        tracer_pid;         /* parent tracer PID, or 0 if none     */
     uint8_t      trace_requested;    /* set by PTRACE_TRACEME until exec     */
     uint8_t      trace_mode;         /* PPAP_TRACE_MODE_* bits              */
+    uint8_t      trace_surface;      /* PPAP_TRACE_SURFACE_* selection       */
     uint8_t      trace_wait_pending; /* waitpid(WSTOPPED) should report stop */
     uint8_t      trace_syscall_phase;/* 0=enter, 1=exit for SYSCALL mode     */
     uint8_t      trace_subsys_phase; /* 0=enter, 1=exit for subsystem mode   */

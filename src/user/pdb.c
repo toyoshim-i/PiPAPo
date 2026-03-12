@@ -257,6 +257,31 @@ static const char *surface_name_for_regset(uint32_t regset)
     return "real";
 }
 
+static const char *surface_name_for_value(uint32_t surface)
+{
+    switch (surface) {
+    case PPAP_TRACE_SURFACE_REAL:
+        return "real";
+    case PPAP_TRACE_SURFACE_ECPU:
+        return "ecpu";
+    default:
+        return "unknown";
+    }
+}
+
+static int parse_surface_token(const char *token, uint32_t *surface_out)
+{
+    if (streq(token, "real")) {
+        *surface_out = PPAP_TRACE_SURFACE_REAL;
+        return 1;
+    }
+    if (streq(token, "ecpu")) {
+        *surface_out = PPAP_TRACE_SURFACE_ECPU;
+        return 1;
+    }
+    return 0;
+}
+
 static void print_event(const struct ppap_ptrace_event *ev)
 {
     put_str("stop ");
@@ -775,6 +800,7 @@ static void print_help(void)
     put_str("  show pc           show current program counter\n");
     put_str("  show sp           show current stack pointer\n");
     put_str("  show surface      show current debug surface\n");
+    put_str("  surface <s>       set debug surface (real|ecpu)\n");
     put_str("  where | w         show pc and sp\n");
     put_str("  x <addr> [count]  read memory words\n");
     put_str("  x/<n><fmt> <addr> read memory (<fmt>: x=word, h=half, b=byte)\n");
@@ -1073,20 +1099,56 @@ int main(int argc, char *argv[])
                 continue;
             }
             if (streq(tok[1], "surface")) {
+                uint32_t surface = 0;
                 if (!child_stopped) {
                     put_err("pdb: child is not stopped\n");
                     continue;
                 }
-                if (ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps) < 0) {
-                    put_err("pdb: GETCAPS failed\n");
+                if (ptrace(PTRACE_GETSURFACE, pid, (void *)0, &surface) == 0) {
+                    put_str("surface=");
+                    put_str(surface_name_for_value(surface));
+                    put_chr('\n');
                     continue;
                 }
-                put_str("surface=");
-                put_str(surface_name_for_regset(caps.regset));
-                put_chr('\n');
+                /* Fallback for kernels without PTRACE_GETSURFACE support. */
+                if (ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps) == 0) {
+                    put_str("surface=");
+                    put_str(surface_name_for_regset(caps.regset));
+                    put_chr('\n');
+                    continue;
+                }
+                put_err("pdb: GETSURFACE/GETCAPS failed\n");
                 continue;
             }
             put_err("pdb: usage: show <abi|event|caps|regset|pc|sp|surface>\n");
+            continue;
+        }
+
+        if (streq(tok[0], "surface")) {
+            uint32_t surface = 0;
+            long rc;
+            if (!child_stopped) {
+                put_err("pdb: child is not stopped\n");
+                continue;
+            }
+            if (ntok < 2 || !parse_surface_token(tok[1], &surface)) {
+                put_err("pdb: usage: surface <real|ecpu>\n");
+                continue;
+            }
+            rc = ptrace(PTRACE_SETSURFACE, pid, (void *)(uintptr_t)surface, (void *)0);
+            if (rc < 0) {
+                put_err("pdb: SETSURFACE failed rc=");
+                put_i32((int32_t)rc);
+                put_chr('\n');
+                continue;
+            }
+            if (ptrace(PTRACE_GETSURFACE, pid, (void *)0, &surface) < 0) {
+                put_err("pdb: GETSURFACE failed\n");
+                continue;
+            }
+            put_str("surface=");
+            put_str(surface_name_for_value(surface));
+            put_chr('\n');
             continue;
         }
 

@@ -31,6 +31,8 @@
 #define PTRACE_GETCAPS   0x5002
 #define PTRACE_SETBP     0x5003
 #define PTRACE_CLRBP     0x5004
+#define PTRACE_GETSURFACE 0x5005
+#define PTRACE_SETSURFACE 0x5006
 
 /* Runtime trace mode bits stored in the PCB. */
 #define PPAP_TRACE_MODE_PPAP_SYSCALL  0x01
@@ -58,6 +60,10 @@
 #define PPAP_TRACE_REGSET_M68K  2
 #define PPAP_TRACE_REGSET_Z80   3
 #define PPAP_PTRACE_REGS_MAX    20
+
+/* Active debug surface kind returned by PTRACE_GETSURFACE. */
+#define PPAP_TRACE_SURFACE_REAL  0
+#define PPAP_TRACE_SURFACE_ECPU  1
 
 /* Capability bits returned by PTRACE_GETCAPS. */
 #define PPAP_PTRACE_CAP_GETREGS   (1u << 0)

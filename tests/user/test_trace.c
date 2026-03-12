@@ -10,7 +10,8 @@
  *   6. PTRACE_PEEKDATA / PTRACE_POKEDATA inspect and modify tracee memory
  *   7. PTRACE_SINGLESTEP stops an eCPU tracee after one guest instruction
  *   8. PTRACE_SETBP / PTRACE_CLRBP manage software breakpoints on eCPU
- *   9. PTRACE_SETMODE(0) disables tracing before final continue
+ *   9. PTRACE_SETSURFACE switches ptrace view between real/eCPU surfaces
+ *  10. PTRACE_SETMODE(0) disables tracing before final continue
  */
 
 #include "utest.h"
@@ -74,6 +75,7 @@ int main(void)
     struct ppap_ptrace_regs set_regs;
     struct ppap_ptrace_caps caps;
     struct ppap_ptrace_bp bp;
+    uint32_t surface = 0;
     uint32_t word = 0;
     uint32_t patched = 0x55667788u;
     uint32_t scratch_before = 0;
@@ -99,6 +101,17 @@ int main(void)
               "GETCAPS should include SETREGS capability");
     UT_ASSERT((caps.caps & PPAP_PTRACE_CAP_PEEKPOKE) != 0,
               "GETCAPS should include PEEK/POKE capability");
+    UT_ASSERT_EQ(ptrace(PTRACE_GETSURFACE, pid, (void *)0, &surface), 0);
+    UT_ASSERT_EQ((int)surface, PPAP_TRACE_SURFACE_REAL);
+    UT_ASSERT_EQ(ptrace(PTRACE_SETSURFACE, pid,
+                        (void *)(uintptr_t)PPAP_TRACE_SURFACE_REAL,
+                        (void *)0), 0);
+    UT_ASSERT_EQ(ptrace(PTRACE_GETSURFACE, pid, (void *)0, &surface), 0);
+    UT_ASSERT_EQ((int)surface, PPAP_TRACE_SURFACE_REAL);
+    UT_ASSERT(ptrace(PTRACE_SETSURFACE, pid,
+                     (void *)(uintptr_t)PPAP_TRACE_SURFACE_ECPU,
+                     (void *)0) < 0,
+              "native tracee should reject eCPU surface");
 
     set_regs.regset = regs.regset;
     set_regs.abi = regs.abi;
@@ -184,6 +197,26 @@ int main(void)
     UT_ASSERT_EQ((int)caps.regset, PPAP_TRACE_REGSET_Z80);
     UT_ASSERT((caps.caps & PPAP_PTRACE_CAP_SINGLESTEP) != 0,
               "CP/M tracee should report single-step capability");
+    UT_ASSERT_EQ(ptrace(PTRACE_GETSURFACE, pid, (void *)0, &surface), 0);
+    UT_ASSERT_EQ((int)surface, PPAP_TRACE_SURFACE_ECPU);
+    UT_ASSERT_EQ(ptrace(PTRACE_SETSURFACE, pid,
+                        (void *)(uintptr_t)PPAP_TRACE_SURFACE_REAL,
+                        (void *)0), 0);
+    UT_ASSERT_EQ(ptrace(PTRACE_GETSURFACE, pid, (void *)0, &surface), 0);
+    UT_ASSERT_EQ((int)surface, PPAP_TRACE_SURFACE_REAL);
+    UT_ASSERT_EQ(ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps), 0);
+    UT_ASSERT_EQ((int)caps.regset, EXPECT_REGSET);
+    UT_ASSERT((caps.caps & PPAP_PTRACE_CAP_SINGLESTEP) == 0,
+              "real surface should hide eCPU single-step capability");
+    UT_ASSERT((caps.caps & PPAP_PTRACE_CAP_SW_BP) == 0,
+              "real surface should hide eCPU software breakpoint capability");
+    UT_ASSERT_EQ(ptrace(PTRACE_SETSURFACE, pid,
+                        (void *)(uintptr_t)PPAP_TRACE_SURFACE_ECPU,
+                        (void *)0), 0);
+    UT_ASSERT_EQ(ptrace(PTRACE_GETSURFACE, pid, (void *)0, &surface), 0);
+    UT_ASSERT_EQ((int)surface, PPAP_TRACE_SURFACE_ECPU);
+    UT_ASSERT_EQ(ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps), 0);
+    UT_ASSERT_EQ((int)caps.regset, PPAP_TRACE_REGSET_Z80);
 
     UT_ASSERT_EQ(ptrace(PTRACE_GETREGS, pid, (void *)0, &regs), 0);
     UT_ASSERT_EQ((int)regs.regset, PPAP_TRACE_REGSET_Z80);

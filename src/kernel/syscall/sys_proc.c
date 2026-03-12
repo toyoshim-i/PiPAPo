@@ -34,6 +34,8 @@
 #define TRACE_PHASE_EXIT   1
 #define TRACE_MODE_MASK \
     (PPAP_TRACE_MODE_PPAP_SYSCALL | PPAP_TRACE_MODE_SUBSYS_CALL)
+#define TRACE_SURFACE_MASK_REAL  (1u << PPAP_TRACE_SURFACE_REAL)
+#define TRACE_SURFACE_MASK_ECPU  (1u << PPAP_TRACE_SURFACE_ECPU)
 
 static pcb_t *trace_find_tracee(pid_t tracer_pid, long pid)
 {
@@ -222,13 +224,71 @@ static int trace_fill_z80_regs(const pcb_t *target, struct ppap_ptrace_regs *reg
     return 0;
 }
 
+static uint32_t trace_surface_mask_for(const pcb_t *target)
+{
+    uint32_t mask = TRACE_SURFACE_MASK_REAL;
+
+    if (target->subsys == SUBSYS_CPM)
+        mask |= TRACE_SURFACE_MASK_ECPU;
+    if (target->subsys == SUBSYS_PPAP && target->subsys_data)
+        mask |= TRACE_SURFACE_MASK_ECPU;
+    return mask;
+}
+
+static uint32_t trace_default_surface_for(const pcb_t *target)
+{
+    if (trace_surface_mask_for(target) & TRACE_SURFACE_MASK_ECPU)
+        return PPAP_TRACE_SURFACE_ECPU;
+    return PPAP_TRACE_SURFACE_REAL;
+}
+
+static uint32_t trace_active_surface_for(const pcb_t *target)
+{
+    uint32_t selected = target->trace_surface;
+    uint32_t mask = trace_surface_mask_for(target);
+
+    if (selected == PPAP_TRACE_SURFACE_REAL &&
+        (mask & TRACE_SURFACE_MASK_REAL))
+        return PPAP_TRACE_SURFACE_REAL;
+    if (selected == PPAP_TRACE_SURFACE_ECPU &&
+        (mask & TRACE_SURFACE_MASK_ECPU))
+        return PPAP_TRACE_SURFACE_ECPU;
+    return trace_default_surface_for(target);
+}
+
+static int trace_set_surface(pcb_t *target, uint32_t surface)
+{
+    uint32_t mask = trace_surface_mask_for(target);
+
+    if (target->state != PROC_TRACED_STOP)
+        return -EBUSY;
+    if (surface == PPAP_TRACE_SURFACE_REAL) {
+        if (!(mask & TRACE_SURFACE_MASK_REAL))
+            return -ENOSYS;
+        target->trace_surface = PPAP_TRACE_SURFACE_REAL;
+        target->trace_step_pending = 0;
+        target->trace_swbp_skip_once = 0;
+        return 0;
+    }
+    if (surface == PPAP_TRACE_SURFACE_ECPU) {
+        if (!(mask & TRACE_SURFACE_MASK_ECPU))
+            return -ENOSYS;
+        target->trace_surface = PPAP_TRACE_SURFACE_ECPU;
+        target->trace_step_pending = 0;
+        target->trace_swbp_skip_once = 0;
+        return 0;
+    }
+    return -EINVAL;
+}
+
 static uint32_t trace_regset_for(const pcb_t *target)
 {
-    if (target->subsys == SUBSYS_CPM)
-        return PPAP_TRACE_REGSET_Z80;
-
-    if (target->subsys == SUBSYS_PPAP && target->subsys_data)
-        return PPAP_TRACE_REGSET_M68K;
+    if (trace_active_surface_for(target) == PPAP_TRACE_SURFACE_ECPU) {
+        if (target->subsys == SUBSYS_CPM)
+            return PPAP_TRACE_REGSET_Z80;
+        if (target->subsys == SUBSYS_PPAP && target->subsys_data)
+            return PPAP_TRACE_REGSET_M68K;
+    }
 
 #if defined(__m68k__)
     return PPAP_TRACE_REGSET_M68K;
@@ -531,11 +591,13 @@ static int trace_read32(const pcb_t *target, uint32_t addr, uint32_t *word)
     if (target->state != PROC_TRACED_STOP)
         return -EBUSY;
 
-    if (target->subsys == SUBSYS_CPM)
-        return trace_z80_read32(target, addr, word);
-
-    if (target->subsys == SUBSYS_PPAP && target->subsys_data)
-        return trace_m68k_emu_read32(target, addr, word);
+    if (trace_active_surface_for(target) == PPAP_TRACE_SURFACE_ECPU) {
+        if (target->subsys == SUBSYS_CPM)
+            return trace_z80_read32(target, addr, word);
+        if (target->subsys == SUBSYS_PPAP && target->subsys_data)
+            return trace_m68k_emu_read32(target, addr, word);
+        return -ENOSYS;
+    }
 
     return trace_native_read32(target, addr, word);
 }
@@ -545,11 +607,13 @@ static int trace_write32(const pcb_t *target, uint32_t addr, uint32_t word)
     if (target->state != PROC_TRACED_STOP)
         return -EBUSY;
 
-    if (target->subsys == SUBSYS_CPM)
-        return trace_z80_write32(target, addr, word);
-
-    if (target->subsys == SUBSYS_PPAP && target->subsys_data)
-        return trace_m68k_emu_write32(target, addr, word);
+    if (trace_active_surface_for(target) == PPAP_TRACE_SURFACE_ECPU) {
+        if (target->subsys == SUBSYS_CPM)
+            return trace_z80_write32(target, addr, word);
+        if (target->subsys == SUBSYS_PPAP && target->subsys_data)
+            return trace_m68k_emu_write32(target, addr, word);
+        return -ENOSYS;
+    }
 
     return trace_native_write32(target, addr, word);
 }
@@ -559,11 +623,13 @@ static int trace_fill_regs(const pcb_t *target, struct ppap_ptrace_regs *regs)
     if (target->state != PROC_TRACED_STOP)
         return -EBUSY;
 
-    if (target->subsys == SUBSYS_CPM)
-        return trace_fill_z80_regs(target, regs);
-
-    if (target->subsys == SUBSYS_PPAP && target->subsys_data)
-        return trace_fill_m68k_emu_regs(target, regs);
+    if (trace_active_surface_for(target) == PPAP_TRACE_SURFACE_ECPU) {
+        if (target->subsys == SUBSYS_CPM)
+            return trace_fill_z80_regs(target, regs);
+        if (target->subsys == SUBSYS_PPAP && target->subsys_data)
+            return trace_fill_m68k_emu_regs(target, regs);
+        return -ENOSYS;
+    }
 
 #if defined(__m68k__)
     return trace_fill_m68k_frame_regs(target, regs);
@@ -579,11 +645,13 @@ static int trace_store_regs(pcb_t *target, const struct ppap_ptrace_regs *regs)
     if (target->state != PROC_TRACED_STOP)
         return -EBUSY;
 
-    if (target->subsys == SUBSYS_CPM)
-        return trace_store_z80_regs(target, regs);
-
-    if (target->subsys == SUBSYS_PPAP && target->subsys_data)
-        return trace_store_m68k_emu_regs(target, regs);
+    if (trace_active_surface_for(target) == PPAP_TRACE_SURFACE_ECPU) {
+        if (target->subsys == SUBSYS_CPM)
+            return trace_store_z80_regs(target, regs);
+        if (target->subsys == SUBSYS_PPAP && target->subsys_data)
+            return trace_store_m68k_emu_regs(target, regs);
+        return -ENOSYS;
+    }
 
 #if defined(__m68k__)
     return trace_store_m68k_frame_regs(target, regs);
@@ -597,20 +665,20 @@ static int trace_fill_caps(const pcb_t *target, struct ppap_ptrace_caps *caps)
     uint32_t c = PPAP_PTRACE_CAP_GETREGS
                | PPAP_PTRACE_CAP_SETREGS
                | PPAP_PTRACE_CAP_PEEKPOKE;
+    uint32_t surface;
 
     if (!caps)
         return -EINVAL;
     if (target->state != PROC_TRACED_STOP)
         return -EBUSY;
 
-    if (target->subsys == SUBSYS_CPM)
-        c |= PPAP_PTRACE_CAP_SINGLESTEP;
-    if (target->subsys == SUBSYS_PPAP && target->subsys_data)
-        c |= PPAP_PTRACE_CAP_SINGLESTEP;
-    if (target->subsys == SUBSYS_CPM)
-        c |= PPAP_PTRACE_CAP_SW_BP;
-    if (target->subsys == SUBSYS_PPAP && target->subsys_data)
-        c |= PPAP_PTRACE_CAP_SW_BP;
+    surface = trace_active_surface_for(target);
+    if (surface == PPAP_TRACE_SURFACE_ECPU) {
+        if (target->subsys == SUBSYS_CPM)
+            c |= PPAP_PTRACE_CAP_SINGLESTEP | PPAP_PTRACE_CAP_SW_BP;
+        if (target->subsys == SUBSYS_PPAP && target->subsys_data)
+            c |= PPAP_PTRACE_CAP_SINGLESTEP | PPAP_PTRACE_CAP_SW_BP;
+    }
 
     caps->regset = trace_regset_for(target);
     caps->abi = target->trace_event.abi;
@@ -621,11 +689,12 @@ static int trace_fill_caps(const pcb_t *target, struct ppap_ptrace_caps *caps)
 
 static int trace_supports_single_step(const pcb_t *target)
 {
-    if (target->subsys == SUBSYS_CPM)
-        return target->subsys_data != 0;
-
-    if (target->subsys == SUBSYS_PPAP && target->subsys_data)
-        return 1;
+    if (trace_active_surface_for(target) == PPAP_TRACE_SURFACE_ECPU) {
+        if (target->subsys == SUBSYS_CPM)
+            return target->subsys_data != 0;
+        if (target->subsys == SUBSYS_PPAP && target->subsys_data)
+            return 1;
+    }
 
     return 0;
 }
@@ -655,6 +724,8 @@ static void trace_clear_swbp(pcb_t *target)
 
 static int trace_supports_swbp(const pcb_t *target)
 {
+    if (trace_active_surface_for(target) != PPAP_TRACE_SURFACE_ECPU)
+        return 0;
     if (target->subsys == SUBSYS_CPM)
         return target->subsys_data != 0;
     if (target->subsys == SUBSYS_PPAP && target->subsys_data)
@@ -664,6 +735,8 @@ static int trace_supports_swbp(const pcb_t *target)
 
 int trace_has_swbp(void)
 {
+    if (trace_active_surface_for(current) != PPAP_TRACE_SURFACE_ECPU)
+        return 0;
     for (uint32_t i = 0; i < TRACE_SW_BP_MAX; i++) {
         if (current->trace_swbp[i].used && current->trace_swbp[i].enabled)
             return 1;
@@ -817,6 +890,8 @@ int trace_maybe_stop_at_swbp(uint32_t abi, uint32_t pc)
         return 0;
     if (current->state != PROC_RUNNABLE)
         return 0;
+    if (trace_active_surface_for(current) != PPAP_TRACE_SURFACE_ECPU)
+        return 0;
 
     if (current->trace_swbp_skip_once) {
         if (current->trace_swbp_skip_pc == pc) {
@@ -848,6 +923,7 @@ void trace_exec_stop(void)
     current->trace_syscall_phase = TRACE_PHASE_ENTER;
     current->trace_subsys_phase = TRACE_PHASE_ENTER;
     current->trace_step_pending = 0;
+    current->trace_surface = (uint8_t)trace_default_surface_for(current);
     trace_clear_swbp(current);
     trace_fill_event(PPAP_TRACE_EVENT_EXEC, PPAP_TRACE_ABI_PPAP, SYS_EXECVE,
                      0, 0, 0, 0, 0, 0, 0, 0);
@@ -862,6 +938,7 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
         current->tracer_pid = current->ppid;
         current->trace_requested = 1;
         current->trace_mode = 0;
+        current->trace_surface = PPAP_TRACE_SURFACE_REAL;
         current->trace_wait_pending = 0;
         current->trace_syscall_phase = TRACE_PHASE_ENTER;
         current->trace_subsys_phase = TRACE_PHASE_ENTER;
@@ -909,6 +986,13 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
         if (!data)
             return -(long)EINVAL;
         return trace_fill_caps(target, (struct ppap_ptrace_caps *)data);
+    case PTRACE_GETSURFACE:
+        if (!data)
+            return -(long)EINVAL;
+        *(uint32_t *)data = trace_active_surface_for(target);
+        return 0;
+    case PTRACE_SETSURFACE:
+        return trace_set_surface(target, (uint32_t)(uintptr_t)addr);
     case PTRACE_SETMODE: {
         uint8_t mode = (uint8_t)(uintptr_t)addr;
         if (mode & (uint8_t)~TRACE_MODE_MASK)
@@ -941,6 +1025,7 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
         target->trace_requested = 0;
         target->tracer_pid = 0;
         trace_reset_mode_state(target, 0);
+        target->trace_surface = (uint8_t)trace_default_surface_for(target);
         target->trace_wait_pending = 0;
         target->trace_step_pending = 0;
         trace_clear_swbp(target);
