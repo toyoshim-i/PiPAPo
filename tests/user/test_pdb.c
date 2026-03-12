@@ -89,6 +89,8 @@ static const uint8_t pdb_smoke_com[] = {
 };
 
 static char arg_prog[] = "/bin/pdb";
+static char arg_help[] = "-h";
+static char arg_help_long[] = "--help";
 static char arg_quiet[] = "-q";
 static char arg_opt[] = "-c";
 static char arg_file_opt[] = "-f";
@@ -343,6 +345,32 @@ int main(void)
     UT_ASSERT_EQ(WEXITSTATUS(status2), 1);
     UT_ASSERT(str_contains(out2, "pdb: -c command too long"),
               "pdb -c long command should reject truncated command");
+
+    argv2[0] = arg_prog;
+    argv2[1] = arg_help;
+    argv2[2] = (char *)0;
+    argv2[3] = (char *)0;
+    argv2[4] = (char *)0;
+    n2 = run_capture(argv2, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb -h should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb -h should exit");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out2, "options:"),
+              "pdb -h should print help text");
+    UT_ASSERT(str_contains(out2, "-q"),
+              "pdb -h should include quiet-mode option");
+
+    argv2[0] = arg_prog;
+    argv2[1] = arg_help_long;
+    argv2[2] = (char *)0;
+    argv2[3] = (char *)0;
+    argv2[4] = (char *)0;
+    n2 = run_capture(argv2, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb --help should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb --help should exit");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out2, "commands:"),
+              "pdb --help should print command list");
 
     UT_SUMMARY("test_pdb");
 #endif

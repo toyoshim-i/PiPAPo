@@ -999,6 +999,10 @@ int main(int argc, char *argv[])
     pdb_local_bp_t local_bp[PDB_LOCAL_BP_MAX];
 
     while (argi < argc) {
+        if (streq(argv[argi], "-h") || streq(argv[argi], "--help")) {
+            print_help();
+            return 0;
+        }
         if (streq(argv[argi], "-q")) {
             show_prompt = 0;
             argi++;
