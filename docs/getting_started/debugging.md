@@ -96,5 +96,7 @@ pdb -f /tmp/pdb.script /tmp/prog.com
 `-f` script files are plain text:
 
 - One command per line.
-- `#` at the beginning of a line marks a comment.
+- Leading and trailing spaces/tabs are ignored.
+- Blank lines are ignored.
+- A line whose first non-space character is `#` is treated as a comment.
 - Both LF and CRLF line endings are accepted.
