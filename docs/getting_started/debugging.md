@@ -57,6 +57,9 @@ pdb /bin/hello
 # Scripted mode (for automation/tests)
 pdb -c "caps" -c "regs" -c "disas 0x0100 3" /tmp/prog.com
 
+# Quiet scripted mode (suppress prompt/command echo)
+pdb -q -c "show sp" -c "cont" /tmp/prog.com
+
 # Script file mode
 pdb -f /tmp/pdb.script /tmp/prog.com
 
@@ -101,3 +104,9 @@ pdb -f /tmp/pdb.script /tmp/prog.com
 - A line whose first non-space character is `#` is treated as a comment.
 - Both LF and CRLF line endings are accepted.
 - If a script resolves to zero commands, `pdb` exits with an error.
+
+Scripted-mode notes:
+
+- `-q` suppresses prompt and command-echo output for cleaner automation logs.
+- Whitespace-only `-c` entries are ignored.
+- Overlong `-c` commands and overlong script lines are rejected with an error.
