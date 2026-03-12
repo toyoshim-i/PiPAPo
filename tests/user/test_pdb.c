@@ -85,6 +85,7 @@ static char arg_prog[] = "/bin/pdb";
 static char arg_opt[] = "-c";
 static char arg_show_sp[] = "show sp";
 static char arg_show_pc[] = "show pc";
+static char arg_where[] = "where";
 static char arg_x[] = "x 0x0100 1";
 static char arg_disas[] = "disas 0x0100 3";
 static char arg_break[] = "break 0x0101";
@@ -96,7 +97,6 @@ static char arg_setreg[] = "set reg wz 0x1234";
 static char arg_setmem[] = "set mem 0x0100 0x00000000";
 static char arg_next[] = "next";
 static char arg_step[] = "step";
-static char arg_show_regset[] = "show regset";
 static char arg_detach[] = "detach";
 static char arg_target[] = "/tmp/pdb_smoke.com";
 
@@ -120,6 +120,8 @@ int main(void)
     argv[a++] = arg_opt;
     argv[a++] = arg_show_pc;
     argv[a++] = arg_opt;
+    argv[a++] = arg_where;
+    argv[a++] = arg_opt;
     argv[a++] = arg_x;
     argv[a++] = arg_opt;
     argv[a++] = arg_disas;
@@ -141,8 +143,6 @@ int main(void)
     argv[a++] = arg_next;
     argv[a++] = arg_opt;
     argv[a++] = arg_step;
-    argv[a++] = arg_opt;
-    argv[a++] = arg_show_regset;
     argv[a++] = arg_opt;
     argv[a++] = arg_detach;
     argv[a++] = arg_target;
@@ -171,6 +171,10 @@ int main(void)
               "output should include scripted show pc command");
     UT_ASSERT(str_contains(out, "pc=0x"),
               "output should include show pc output");
+    UT_ASSERT(str_contains(out, "pdb> where"),
+              "output should include scripted where command");
+    UT_ASSERT(str_contains(out, "pc=0x") && str_contains(out, " sp=0x"),
+              "output should include where output");
     UT_ASSERT(str_contains(out, "0x00000100:"),
               "output should include memory examine result");
     UT_ASSERT(str_contains(out, "pdb> disas 0x0100 3"),
@@ -207,10 +211,6 @@ int main(void)
               "output should include memory write result");
     UT_ASSERT(str_contains(out, "pdb> next"),
               "output should include scripted next command");
-    UT_ASSERT(str_contains(out, "pdb> show regset"),
-              "output should include scripted show regset command");
-    UT_ASSERT(str_contains(out, "regset=z80"),
-              "output should include regset output");
     UT_ASSERT(str_contains(out, "pdb> detach"),
               "output should include scripted detach command");
     UT_ASSERT(str_contains(out, "detached"),

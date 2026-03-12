@@ -665,6 +665,7 @@ static void print_help(void)
     put_str("  show regset       show current register set\n");
     put_str("  show pc           show current program counter\n");
     put_str("  show sp           show current stack pointer\n");
+    put_str("  where | w         show pc and sp\n");
     put_str("  x <addr> [count]  read memory words\n");
     put_str("  disas [a] [n]     disassemble n instructions from addr/pc\n");
     put_str("  step | s          single-step\n");
@@ -961,6 +962,53 @@ int main(int argc, char *argv[])
                 continue;
             }
             put_err("pdb: usage: show <abi|event|caps|regset|pc|sp>\n");
+            continue;
+        }
+
+        if (streq(tok[0], "where") || streq(tok[0], "w")) {
+            struct ppap_ptrace_regs regs;
+            uint32_t pc_idx = 0;
+            uint32_t sp_idx = 0;
+            if (!child_stopped) {
+                put_err("pdb: child is not stopped\n");
+                continue;
+            }
+            if (ptrace(PTRACE_GETREGS, pid, (void *)0, &regs) < 0) {
+                put_err("pdb: GETREGS failed\n");
+                continue;
+            }
+            switch (regs.regset) {
+            case PPAP_TRACE_REGSET_ARM:
+                pc_idx = 15;
+                sp_idx = 13;
+                break;
+            case PPAP_TRACE_REGSET_M68K:
+                pc_idx = 16;
+                sp_idx = 15;
+                break;
+            case PPAP_TRACE_REGSET_Z80:
+                pc_idx = 7;
+                sp_idx = 6;
+                break;
+            default:
+                put_err("pdb: unsupported regset for where\n");
+                continue;
+            }
+            if (pc_idx >= regs.words || sp_idx >= regs.words) {
+                put_err("pdb: where index out of range\n");
+                continue;
+            }
+            put_str("pc=");
+            if (regs.regset == PPAP_TRACE_REGSET_Z80)
+                put_hex16(regs.regs[pc_idx]);
+            else
+                put_hex32(regs.regs[pc_idx]);
+            put_str(" sp=");
+            if (regs.regset == PPAP_TRACE_REGSET_Z80)
+                put_hex16(regs.regs[sp_idx]);
+            else
+                put_hex32(regs.regs[sp_idx]);
+            put_chr('\n');
             continue;
         }
 
