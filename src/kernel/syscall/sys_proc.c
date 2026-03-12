@@ -222,6 +222,148 @@ static int trace_fill_z80_regs(const pcb_t *target, struct ppap_ptrace_regs *reg
     return 0;
 }
 
+static uint32_t trace_regset_for(const pcb_t *target)
+{
+    if (target->subsys == SUBSYS_CPM)
+        return PPAP_TRACE_REGSET_Z80;
+
+    if (target->subsys == SUBSYS_PPAP && target->subsys_data)
+        return PPAP_TRACE_REGSET_M68K;
+
+#if defined(__m68k__)
+    return PPAP_TRACE_REGSET_M68K;
+#else
+    return PPAP_TRACE_REGSET_ARM;
+#endif
+}
+
+static int trace_store_arm_regs(pcb_t *target, const struct ppap_ptrace_regs *regs)
+{
+    uint32_t *sp = (uint32_t *)(uintptr_t)target->sp;
+    uint32_t expected_sp;
+
+    if (regs->regset != PPAP_TRACE_REGSET_ARM)
+        return -EINVAL;
+    if (regs->words < 17 || regs->words > PPAP_PTRACE_REGS_MAX)
+        return -EINVAL;
+
+    expected_sp = (uint32_t)(uintptr_t)(sp + 16);
+    if (regs->regs[13] != expected_sp)
+        return -ENOSYS;
+
+    sp[8] = regs->regs[0];
+    sp[9] = regs->regs[1];
+    sp[10] = regs->regs[2];
+    sp[11] = regs->regs[3];
+    sp[0] = regs->regs[4];
+    sp[1] = regs->regs[5];
+    sp[2] = regs->regs[6];
+    sp[3] = regs->regs[7];
+    sp[4] = regs->regs[8];
+    sp[5] = regs->regs[9];
+    sp[6] = regs->regs[10];
+    sp[7] = regs->regs[11];
+    sp[12] = regs->regs[12];
+    sp[13] = regs->regs[14];
+    sp[14] = regs->regs[15];
+    sp[15] = regs->regs[16];
+    return 0;
+}
+
+#if defined(__m68k__)
+static int trace_store_m68k_frame_regs(pcb_t *target,
+                                       const struct ppap_ptrace_regs *regs)
+{
+    uint32_t *frame = (uint32_t *)(uintptr_t)target->sp;
+    uint8_t *exc = (uint8_t *)(uintptr_t)target->sp + 60;
+    uint32_t expected_ksp = target->sp;
+    uint32_t pc;
+    uint16_t sr;
+
+    if (regs->regset != PPAP_TRACE_REGSET_M68K)
+        return -EINVAL;
+    if (regs->words < 20 || regs->words > PPAP_PTRACE_REGS_MAX)
+        return -EINVAL;
+    if (regs->regs[19] != expected_ksp)
+        return -ENOSYS;
+    if (regs->regs[15] != regs->regs[18])
+        return -EINVAL;
+
+    for (uint32_t i = 0; i < 15; i++)
+        frame[i] = regs->regs[i];
+
+    target->usp = regs->regs[18];
+    pc = regs->regs[16];
+    sr = (uint16_t)(regs->regs[17] & 0xFFFFu);
+    *(uint16_t *)(void *)exc = sr;
+    *(uint16_t *)(void *)(exc + 2) = (uint16_t)(pc >> 16);
+    *(uint16_t *)(void *)(exc + 4) = (uint16_t)(pc & 0xFFFFu);
+    return 0;
+}
+#endif
+
+static int trace_store_m68k_emu_regs(pcb_t *target,
+                                     const struct ppap_ptrace_regs *regs)
+{
+    ppap_m68k_exec_state_t *state =
+        (ppap_m68k_exec_state_t *)target->subsys_data;
+    m68k_state_t *cpu;
+
+    if (!state)
+        return -EINVAL;
+    if (regs->regset != PPAP_TRACE_REGSET_M68K)
+        return -EINVAL;
+    if (regs->words < 20 || regs->words > PPAP_PTRACE_REGS_MAX)
+        return -EINVAL;
+
+    cpu = &state->m68k;
+    for (uint32_t i = 0; i < 8; i++) {
+        cpu->d[i] = regs->regs[i];
+        cpu->a[i] = regs->regs[8 + i];
+    }
+    cpu->pc = regs->regs[16];
+    cpu->sr = (uint16_t)(regs->regs[17] & 0xFFFFu);
+    cpu->usp = regs->regs[18];
+    cpu->ssp = regs->regs[19];
+    return 0;
+}
+
+static int trace_store_z80_regs(pcb_t *target, const struct ppap_ptrace_regs *regs)
+{
+    z80_state_t *cpu = (z80_state_t *)target->subsys_data;
+
+    if (!cpu)
+        return -EINVAL;
+    if (regs->regset != PPAP_TRACE_REGSET_Z80)
+        return -EINVAL;
+    if (regs->words < 18 || regs->words > PPAP_PTRACE_REGS_MAX)
+        return -EINVAL;
+
+    z80_set_af(cpu, (uint16_t)(regs->regs[0] & 0xFFFFu));
+    z80_set_bc(cpu, (uint16_t)(regs->regs[1] & 0xFFFFu));
+    z80_set_de(cpu, (uint16_t)(regs->regs[2] & 0xFFFFu));
+    z80_set_hl(cpu, (uint16_t)(regs->regs[3] & 0xFFFFu));
+    cpu->ix = (uint16_t)(regs->regs[4] & 0xFFFFu);
+    cpu->iy = (uint16_t)(regs->regs[5] & 0xFFFFu);
+    cpu->sp = (uint16_t)(regs->regs[6] & 0xFFFFu);
+    cpu->pc = (uint16_t)(regs->regs[7] & 0xFFFFu);
+    cpu->a2 = (uint8_t)(regs->regs[8] >> 8);
+    cpu->f2 = (uint8_t)(regs->regs[8] & 0xFFu);
+    cpu->b2 = (uint8_t)(regs->regs[9] >> 8);
+    cpu->c2 = (uint8_t)(regs->regs[9] & 0xFFu);
+    cpu->d2 = (uint8_t)(regs->regs[10] >> 8);
+    cpu->e2 = (uint8_t)(regs->regs[10] & 0xFFu);
+    cpu->h2 = (uint8_t)(regs->regs[11] >> 8);
+    cpu->l2 = (uint8_t)(regs->regs[11] & 0xFFu);
+    cpu->iff1 = (uint8_t)(regs->regs[12] & 0x1u);
+    cpu->iff2 = (uint8_t)(regs->regs[13] & 0x1u);
+    cpu->im = (uint8_t)(regs->regs[14] & 0x3u);
+    cpu->wz = (uint16_t)(regs->regs[15] & 0xFFFFu);
+    cpu->i = (uint8_t)(regs->regs[16] & 0xFFu);
+    cpu->r = (uint8_t)(regs->regs[17] & 0xFFu);
+    return 0;
+}
+
 static int trace_native_contains(const pcb_t *target, uint32_t addr)
 {
 #if defined(__m68k__)
@@ -430,6 +572,42 @@ static int trace_fill_regs(const pcb_t *target, struct ppap_ptrace_regs *regs)
 #endif
 }
 
+static int trace_store_regs(pcb_t *target, const struct ppap_ptrace_regs *regs)
+{
+    if (!regs)
+        return -EINVAL;
+    if (target->state != PROC_TRACED_STOP)
+        return -EBUSY;
+
+    if (target->subsys == SUBSYS_CPM)
+        return trace_store_z80_regs(target, regs);
+
+    if (target->subsys == SUBSYS_PPAP && target->subsys_data)
+        return trace_store_m68k_emu_regs(target, regs);
+
+#if defined(__m68k__)
+    return trace_store_m68k_frame_regs(target, regs);
+#else
+    return trace_store_arm_regs(target, regs);
+#endif
+}
+
+static int trace_fill_caps(const pcb_t *target, struct ppap_ptrace_caps *caps)
+{
+    if (!caps)
+        return -EINVAL;
+    if (target->state != PROC_TRACED_STOP)
+        return -EBUSY;
+
+    caps->regset = trace_regset_for(target);
+    caps->abi = target->trace_event.abi;
+    caps->caps = PPAP_PTRACE_CAP_GETREGS
+               | PPAP_PTRACE_CAP_SETREGS
+               | PPAP_PTRACE_CAP_PEEKPOKE;
+    caps->max_bps = 0;
+    return 0;
+}
+
 int trace_before_syscall(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
 {
     if (!(current->trace_mode & PPAP_TRACE_MODE_PPAP_SYSCALL))
@@ -551,6 +729,14 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
         if (!data)
             return -(long)EINVAL;
         return trace_fill_regs(target, (struct ppap_ptrace_regs *)data);
+    case PTRACE_SETREGS:
+        if (!data)
+            return -(long)EINVAL;
+        return trace_store_regs(target, (const struct ppap_ptrace_regs *)data);
+    case PTRACE_GETCAPS:
+        if (!data)
+            return -(long)EINVAL;
+        return trace_fill_caps(target, (struct ppap_ptrace_caps *)data);
     case PTRACE_SETMODE: {
         uint8_t mode = (uint8_t)(uintptr_t)addr;
         if (mode & (uint8_t)~TRACE_MODE_MASK)

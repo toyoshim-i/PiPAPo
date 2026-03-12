@@ -8,6 +8,7 @@
 #define PTRACE_PEEKDATA  2
 #define PTRACE_POKEDATA  5
 #define PTRACE_GETREGS   12
+#define PTRACE_SETREGS   13
 #define PTRACE_CONT      7
 #define PTRACE_DETACH    17
 #define PTRACE_SYSCALL   24
@@ -26,6 +27,7 @@
 /* PPAP-specific helper requests. */
 #define PTRACE_GETEVENT  0x5000
 #define PTRACE_SETMODE   0x5001
+#define PTRACE_GETCAPS   0x5002
 
 /* Runtime trace mode bits stored in the PCB. */
 #define PPAP_TRACE_MODE_PPAP_SYSCALL  0x01
@@ -53,6 +55,14 @@
 #define PPAP_TRACE_REGSET_Z80   3
 #define PPAP_PTRACE_REGS_MAX    20
 
+/* Capability bits returned by PTRACE_GETCAPS. */
+#define PPAP_PTRACE_CAP_GETREGS   (1u << 0)
+#define PPAP_PTRACE_CAP_SETREGS   (1u << 1)
+#define PPAP_PTRACE_CAP_PEEKPOKE  (1u << 2)
+#define PPAP_PTRACE_CAP_SINGLESTEP (1u << 3)
+#define PPAP_PTRACE_CAP_SW_BP     (1u << 4)
+#define PPAP_PTRACE_CAP_HW_BP     (1u << 5)
+
 /* Event flags. */
 #define PPAP_TRACE_FLAG_RESTART         0x01
 
@@ -70,6 +80,13 @@ struct ppap_ptrace_regs {
     uint32_t abi;
     uint32_t words;
     uint32_t regs[PPAP_PTRACE_REGS_MAX];
+};
+
+struct ppap_ptrace_caps {
+    uint32_t regset;
+    uint32_t abi;
+    uint32_t caps;
+    uint32_t max_bps;
 };
 
 #endif /* PPAP_COMMON_PTRACE_H */
