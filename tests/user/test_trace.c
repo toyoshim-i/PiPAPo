@@ -12,6 +12,7 @@
  *   8. PTRACE_SETBP / PTRACE_CLRBP manage software breakpoints on eCPU
  *   9. PTRACE_SETSURFACE switches ptrace view between real/eCPU surfaces
  *  10. PTRACE_SETMODE(0) disables tracing before final continue
+ *  11. PTRACE_SINGLESTEP works for m68k eCPU tracees on ARM targets
  */
 
 #include "utest.h"
@@ -44,6 +45,24 @@ static int write_blob(const char *path, const uint8_t *data, int size)
     }
     return 0;
 }
+
+#if !defined(__m68k__)
+static int run_exit_code(const char *path)
+{
+    pid_t pid = vfork();
+    if (pid == 0) {
+        execve(path, (void *)0, (void *)0);
+        _exit(127);
+    }
+    if (pid < 0)
+        return 127;
+
+    int status = 0;
+    if (waitpid(pid, &status, 0) != pid)
+        return 127;
+    return (status >> 8) & 0xff;
+}
+#endif
 
 static const uint8_t trace_step_com[] = {
     0x00,                   /* NOP */
@@ -80,6 +99,9 @@ int main(void)
     uint32_t patched = 0x55667788u;
     uint32_t scratch_before = 0;
     uint32_t z80_pc_before = 0;
+#if !defined(__m68k__)
+    uint32_t m68k_pc_before = 0;
+#endif
 
     UT_ASSERT_EQ(waitpid(pid, &status, WSTOPPED), pid);
     UT_ASSERT(WIFSTOPPED(status), "child should stop after exec");
@@ -252,6 +274,61 @@ int main(void)
     UT_ASSERT(WIFEXITED(status), "CP/M child should exit after continue");
     UT_ASSERT_EQ(WEXITSTATUS(status), 0);
     unlink("/tmp/trace_step.com");
+
+#if !defined(__m68k__)
+    if (run_exit_code("/bin/hello_m68k") == 0) {
+        pid = vfork();
+        if (pid == 0) {
+            ptrace(PTRACE_TRACEME, 0, (void *)0, (void *)0);
+            execve("/bin/hello_m68k", (void *)0, (void *)0);
+            _exit(127);
+        }
+
+        UT_ASSERT_EQ(waitpid(pid, &status, WSTOPPED), pid);
+        UT_ASSERT(WIFSTOPPED(status), "m68k eCPU child should stop after exec");
+        UT_ASSERT_EQ(WSTOPSIG(status), SIGTRAP);
+        UT_ASSERT_EQ(ptrace(PTRACE_GETEVENT, pid, (void *)0, &ev), 0);
+        UT_ASSERT_EQ((int)ev.event, PPAP_TRACE_EVENT_EXEC);
+        UT_ASSERT_EQ((int)ev.abi, PPAP_TRACE_ABI_PPAP);
+
+        UT_ASSERT_EQ(ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps), 0);
+        UT_ASSERT_EQ((int)caps.regset, PPAP_TRACE_REGSET_M68K);
+        UT_ASSERT_EQ((int)caps.surface, PPAP_TRACE_SURFACE_ECPU);
+        UT_ASSERT((caps.surfaces & PPAP_PTRACE_SURFACE_MASK_REAL) != 0,
+                  "m68k eCPU tracee should expose real surface");
+        UT_ASSERT((caps.surfaces & PPAP_PTRACE_SURFACE_MASK_ECPU) != 0,
+                  "m68k eCPU tracee should expose ecpu surface");
+        UT_ASSERT((caps.caps & PPAP_PTRACE_CAP_SINGLESTEP) != 0,
+                  "m68k eCPU tracee should report single-step capability");
+
+        UT_ASSERT_EQ(ptrace(PTRACE_GETREGS, pid, (void *)0, &regs), 0);
+        UT_ASSERT_EQ((int)regs.regset, PPAP_TRACE_REGSET_M68K);
+        m68k_pc_before = regs.regs[16]; /* PC in m68k regset */
+
+        UT_ASSERT_EQ(ptrace(PTRACE_SINGLESTEP, pid, (void *)0, (void *)0), 0);
+        UT_ASSERT_EQ(waitpid(pid, &status, WSTOPPED), pid);
+        UT_ASSERT(WIFSTOPPED(status),
+                  "m68k eCPU child should stop after single-step");
+        UT_ASSERT_EQ(WSTOPSIG(status), SIGTRAP);
+        UT_ASSERT_EQ(ptrace(PTRACE_GETEVENT, pid, (void *)0, &ev), 0);
+        UT_ASSERT_EQ((int)ev.event, PPAP_TRACE_EVENT_DEBUG_STOP);
+        UT_ASSERT((ev.flags & PPAP_DEBUG_STOP_STEP) != 0,
+                  "m68k eCPU debug stop should include STEP reason");
+        UT_ASSERT_EQ(ptrace(PTRACE_GETREGS, pid, (void *)0, &regs), 0);
+        UT_ASSERT_EQ((int)regs.regset, PPAP_TRACE_REGSET_M68K);
+        UT_ASSERT(regs.regs[16] != m68k_pc_before,
+                  "m68k eCPU single-step should advance PC");
+        UT_ASSERT_EQ((int)ev.args[0], (int)regs.regs[16]);
+
+        UT_ASSERT_EQ(ptrace(PTRACE_CONT, pid, (void *)0, (void *)0), 0);
+        UT_ASSERT_EQ(waitpid(pid, &status, 0), pid);
+        UT_ASSERT(WIFEXITED(status),
+                  "m68k eCPU child should exit after continue");
+        UT_ASSERT_EQ(WEXITSTATUS(status), 0);
+    } else {
+        UT_ASSERT(1, "skip m68k eCPU ptrace step: /bin/hello_m68k unavailable");
+    }
+#endif
 
     UT_ASSERT_EQ(write_blob("/tmp/trace_swbp.com", trace_swbp_com,
                             (int)sizeof(trace_swbp_com)), 0);
