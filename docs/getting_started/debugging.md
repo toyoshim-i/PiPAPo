@@ -57,6 +57,9 @@ pdb /bin/hello
 # Scripted mode (for automation/tests)
 pdb -c "caps" -c "regs" -c "disas 0x0100 3" /tmp/prog.com
 
+# Script file mode
+pdb -f /tmp/pdb.script /tmp/prog.com
+
 # Typical commands inside pdb:
 #   regs
 #   reg pc
@@ -89,3 +92,9 @@ pdb -c "caps" -c "regs" -c "disas 0x0100 3" /tmp/prog.com
 #   detach
 #   quit
 ```
+
+`-f` script files are plain text:
+
+- One command per line.
+- `#` at the beginning of a line marks a comment.
+- Both LF and CRLF line endings are accepted.
