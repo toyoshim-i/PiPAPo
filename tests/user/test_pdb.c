@@ -86,7 +86,7 @@ static char arg_opt[] = "-c";
 static char arg_show_sp[] = "show sp";
 static char arg_show_pc[] = "show pc";
 static char arg_where[] = "where";
-static char arg_x[] = "x 0x0100 1";
+static char arg_x[] = "x/1x 0x0100";
 static char arg_disas[] = "disas 0x0100 3";
 static char arg_break[] = "break 0x0101";
 static char arg_disable[] = "disable 0";
@@ -175,6 +175,8 @@ int main(void)
               "output should include scripted where command");
     UT_ASSERT(str_contains(out, "pc=0x") && str_contains(out, " sp=0x"),
               "output should include where output");
+    UT_ASSERT(str_contains(out, "pdb> x/1x 0x0100"),
+              "output should include scripted x/<n>x command");
     UT_ASSERT(str_contains(out, "0x00000100:"),
               "output should include memory examine result");
     UT_ASSERT(str_contains(out, "pdb> disas 0x0100 3"),

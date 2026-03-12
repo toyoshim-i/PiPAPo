@@ -69,6 +69,7 @@ pdb -c "caps" -c "regs" -c "disas 0x0100 3" /tmp/prog.com
 #   show pc
 #   show sp
 #   where
+#   x/4x 0x20000000
 #   x 0x20000000 4
 #   disas 0x0100 8
 #   set reg pc 0x0100

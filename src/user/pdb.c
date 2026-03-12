@@ -183,6 +183,31 @@ static int parse_u32(const char *s, uint32_t *out)
     return 1;
 }
 
+static int parse_x_spec(const char *tok0, uint32_t *count_out)
+{
+    const char *p;
+    uint32_t count = 0;
+    int has_digits = 0;
+
+    if (!tok0 || tok0[0] != 'x' || tok0[1] != '/')
+        return 0;
+
+    p = tok0 + 2;
+    while (*p >= '0' && *p <= '9') {
+        has_digits = 1;
+        count = count * 10u + (uint32_t)(*p - '0');
+        p++;
+    }
+    if (!has_digits)
+        return 0;
+    if (*p == 'x')
+        p++;
+    if (*p != '\0')
+        return 0;
+    *count_out = count;
+    return 1;
+}
+
 static const char *event_name(uint32_t ev)
 {
     switch (ev) {
@@ -667,6 +692,7 @@ static void print_help(void)
     put_str("  show sp           show current stack pointer\n");
     put_str("  where | w         show pc and sp\n");
     put_str("  x <addr> [count]  read memory words\n");
+    put_str("  x/<n>x <addr>     read <n> memory words\n");
     put_str("  disas [a] [n]     disassemble n instructions from addr/pc\n");
     put_str("  step | s          single-step\n");
     put_str("  next | n          step over call (z80), else single-step\n");
@@ -1012,18 +1038,32 @@ int main(int argc, char *argv[])
             continue;
         }
 
-        if (streq(tok[0], "x")) {
+        if (streq(tok[0], "x") || (tok[0][0] == 'x' && tok[0][1] == '/')) {
             uint32_t addr = 0;
             uint32_t count = 4;
             if (!child_stopped) {
                 put_err("pdb: child is not stopped\n");
                 continue;
             }
-            if (ntok < 2 || !parse_u32(tok[1], &addr)) {
-                put_err("pdb: usage: x <addr> [count]\n");
-                continue;
+            if (streq(tok[0], "x")) {
+                if (ntok < 2 || !parse_u32(tok[1], &addr)) {
+                    put_err("pdb: usage: x <addr> [count]\n");
+                    put_err("pdb:    or: x/<n>x <addr>\n");
+                    continue;
+                }
+                if (ntok >= 3 && !parse_u32(tok[2], &count)) {
+                    put_err("pdb: invalid count\n");
+                    continue;
+                }
+            } else {
+                if (!parse_x_spec(tok[0], &count) || ntok < 2 ||
+                    !parse_u32(tok[1], &addr)) {
+                    put_err("pdb: usage: x <addr> [count]\n");
+                    put_err("pdb:    or: x/<n>x <addr>\n");
+                    continue;
+                }
             }
-            if (ntok >= 3 && !parse_u32(tok[2], &count)) {
+            if (count == 0) {
                 put_err("pdb: invalid count\n");
                 continue;
             }
