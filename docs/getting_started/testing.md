@@ -197,6 +197,8 @@ only relocates GOT entries, not arbitrary data pointers.
 | `test_x68k.c` | Human68k subsystem (X-format `.x` execution) |
 | `test_cpm.c` | CP/M subsystem integration (`.COM` exec, BDOS bridge, signals, file I/O) |
 | `test_trace.c` | `ptrace` exec + PPAP syscall trace integration (ARM + m68k) |
+| `test_pdb.c` | `pdb` scripted smoke and command coverage (default suite on m68k) |
+| `test_pdb_arm_disas.c` | ARM-only `pdb disas` smoke (built in `/bin/`, not in default `runtests`) |
 | `test_h68k_dos.c` | Human68k DOS bridge integration via R-format test binaries |
 
 ### Build system
@@ -279,9 +281,10 @@ coverage is not exhaustive yet.
   but not yet complete for directory iteration and random-record compatibility.
 - **`pdb` scripted coverage is architecture-asymmetric.**
   `test_pdb` runs full scripted checks on m68k, including disassembly paths.
-  On ARM, it remains a minimal placeholder to keep the combined on-target
-  suite within the current 60-second timeout budget in `scripts/run.sh`.
-  This leaves ARM-native `pdb disas` behavior less CI-verified than m68k.
+  ARM now has a dedicated binary (`test_pdb_arm_disas`) for disassembly smoke,
+  but it is intentionally not in the default `runtests` list to keep the
+  combined on-target suite within the current 60-second timeout budget in
+  `scripts/run.sh`.
 
 #### Suggested follow-up tests
 
