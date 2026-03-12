@@ -187,16 +187,16 @@ only relocates GOT entries, not arbitrary data pointers.
 | `test_sleep_intr.c` | Process lifecycle, exit codes |
 | `test_orphan.c` | Orphan reparenting to init |
 | `test_fault.c` | CPU fault handlers (illegal insn, div-by-zero) |
-| `test_id.c` | `getpid`, `getppid`, `getuid`, `getgid` |
+| `test_id.c` | `getpid`, `getppid`, `setpgid`, `getpgid`, `setsid` |
 | `test_fs.c` | Filesystem operations (open, read, readdir, stat) |
 | `test_rw.c` | File read/write on writable filesystems |
-| `test_time.c` | `clock_gettime`, `gettimeofday` |
+| `test_time.c` | `nanosleep` behavior and error paths |
 | `test_iov.c` | `readv`, `writev` scatter/gather I/O |
-| `test_stat.c` | `stat64`, `fstat64`, `lstat64` |
+| `test_stat.c` | `stat`, `getdents` on romfs |
 | `test_tmpfs.c` | tmpfs create, write, read, unlink |
 | `test_x68k.c` | Human68k subsystem (X-format `.x` execution) |
 | `test_cpm.c` | CP/M subsystem integration (`.COM` exec, BDOS bridge, signals, file I/O) |
-| `test_trace.c` | `ptrace` syscall/subsystem trace integration (ARM + m68k) |
+| `test_trace.c` | `ptrace` exec + PPAP syscall trace integration (ARM + m68k) |
 | `test_h68k_dos.c` | Human68k DOS bridge integration via R-format test binaries |
 
 ### Build system
@@ -236,6 +236,36 @@ by the `PPAP_TESTS` CMake option. The build system:
 - **Use `vfork` + `execve`, not `fork`.** PPAP has no MMU; `vfork`
   shares the parent's address space. The child must immediately
   `execve` or `_exit` — do not modify parent data or trigger faults.
+
+### Known coverage gaps (as of 2026-03-12)
+
+Current user-space tests are a solid regression baseline, but subsystem
+coverage is not exhaustive yet.
+
+- **`ioctl` wrapper is untested from userland.**
+  `src/user/syscall.h` declares `ioctl()`, but no `tests/user/test_*.c`
+  currently calls it.
+- **`test_m68k_emu.c` is present but not in the default on-target suite.**
+  The source exists in `tests/user/`, but it is not listed in
+  `cmake/user.cmake` `USER_TESTS` or in `tests/user/runtests.c`.
+- **Subsystem ptrace mode is not covered.**
+  `test_trace.c` validates `PPAP_TRACE_MODE_PPAP_SYSCALL`; there is no
+  user test enabling `PPAP_TRACE_MODE_SUBSYS_CALL` to validate Human68k/CP/M
+  subsystem enter/exit trace events.
+- **Human68k DOS bridge is partially covered.**
+  `human68k_dos_dispatch()` implements 56 DOS function IDs; current
+  `tests/user/r68k/test_dos_*.S` coverage is 24 IDs. Missing areas include
+  several console/input calls, wildcard file search (`_FILES`/`_NFILES`),
+  handle duplication (`_DUP`/`_DUP2`), and metadata/update paths
+  (`_FILEDATE`, `_SETDATE`, `_SETTIME`, etc.).
+- **Human68k IOCS dispatch has no dedicated user test binary.**
+  IOCS handlers are implemented, but the current user suite does not have a
+  focused IOCS test equivalent to the DOS R-format set.
+- **CP/M BDOS bridge is partially covered.**
+  `cpm_bdos_dispatch()` implements 38 function IDs; `test_cpm.c` currently
+  targets a core subset (about 16 IDs: 0, 1, 2, 6, 9, 12, 14, 15, 16,
+  20, 21, 22, 24, 25, 26, 32). Uncovered areas include search first/next,
+  random-record variants, and several disk/attribute vector functions.
 
 ## Automated QEMU testing
 
