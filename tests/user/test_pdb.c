@@ -83,7 +83,6 @@ static const uint8_t pdb_smoke_com[] = {
 
 static char arg_prog[] = "/bin/pdb";
 static char arg_opt[] = "-c";
-static char arg_caps[] = "caps";
 static char arg_regs[] = "regs";
 static char arg_x[] = "x 0x0100 1";
 static char arg_disas[] = "disas 0x0100 3";
@@ -96,7 +95,8 @@ static char arg_setreg[] = "set reg wz 0x1234";
 static char arg_setmem[] = "set mem 0x0100 0x00000000";
 static char arg_next[] = "next";
 static char arg_step[] = "step";
-static char arg_event[] = "event";
+static char arg_show_abi[] = "show abi";
+static char arg_show_event[] = "show event";
 static char arg_quit[] = "quit";
 static char arg_target[] = "/tmp/pdb_smoke.com";
 
@@ -115,8 +115,6 @@ int main(void)
     int a = 0;
 
     argv[a++] = arg_prog;
-    argv[a++] = arg_opt;
-    argv[a++] = arg_caps;
     argv[a++] = arg_opt;
     argv[a++] = arg_regs;
     argv[a++] = arg_opt;
@@ -142,7 +140,9 @@ int main(void)
     argv[a++] = arg_opt;
     argv[a++] = arg_step;
     argv[a++] = arg_opt;
-    argv[a++] = arg_event;
+    argv[a++] = arg_show_abi;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_show_event;
     argv[a++] = arg_opt;
     argv[a++] = arg_quit;
     argv[a++] = arg_target;
@@ -199,6 +199,12 @@ int main(void)
               "output should include memory write result");
     UT_ASSERT(str_contains(out, "pdb> next"),
               "output should include scripted next command");
+    UT_ASSERT(str_contains(out, "pdb> show abi"),
+              "output should include scripted show abi command");
+    UT_ASSERT(str_contains(out, "abi="),
+              "output should include abi output");
+    UT_ASSERT(str_contains(out, "pdb> show event"),
+              "output should include scripted show event command");
     UT_ASSERT(str_contains(out, "pdb> quit"),
               "output should include scripted quit command");
     UT_ASSERT(!str_contains(out, "unknown command"),

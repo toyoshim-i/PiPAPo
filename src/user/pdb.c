@@ -658,6 +658,9 @@ static void print_help(void)
     put_str("  regs              show registers\n");
     put_str("  caps              show trace capabilities\n");
     put_str("  event             show last stop event\n");
+    put_str("  show abi          show current stop ABI\n");
+    put_str("  show event        show last stop event\n");
+    put_str("  show caps         show trace capabilities\n");
     put_str("  x <addr> [count]  read memory words\n");
     put_str("  disas [a] [n]     disassemble n instructions from addr/pc\n");
     put_str("  step | s          single-step\n");
@@ -794,6 +797,37 @@ int main(int argc, char *argv[])
 
         if (streq(tok[0], "event")) {
             print_event(&last_ev);
+            continue;
+        }
+
+        if (streq(tok[0], "show")) {
+            if (ntok < 2) {
+                put_err("pdb: usage: show <abi|event|caps>\n");
+                continue;
+            }
+            if (streq(tok[1], "abi")) {
+                put_str("abi=");
+                put_str(abi_name(last_ev.abi));
+                put_chr('\n');
+                continue;
+            }
+            if (streq(tok[1], "event")) {
+                print_event(&last_ev);
+                continue;
+            }
+            if (streq(tok[1], "caps")) {
+                if (!child_stopped) {
+                    put_err("pdb: child is not stopped\n");
+                    continue;
+                }
+                if (ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps) < 0) {
+                    put_err("pdb: GETCAPS failed\n");
+                    continue;
+                }
+                print_caps(&caps);
+                continue;
+            }
+            put_err("pdb: usage: show <abi|event|caps>\n");
             continue;
         }
 
