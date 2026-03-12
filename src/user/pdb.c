@@ -990,7 +990,7 @@ int main(int argc, char *argv[])
     int child_stopped = 0;
     int child_exit_code = 0;
     int done = 0;
-    char line[128];
+    char line[PDB_SCRIPT_LINE_MAX];
     char *tok[8];
     struct ppap_ptrace_event last_ev;
     struct ppap_ptrace_caps caps;
@@ -998,9 +998,29 @@ int main(int argc, char *argv[])
 
     while (argi < argc) {
         if (streq(argv[argi], "-c")) {
+            int non_space = 0;
+            int cmd_len = 0;
+            const char *cmd;
             scripted_mode = 1;
             if (argi + 1 >= argc) {
                 put_err("pdb: -c requires a command string\n");
+                return 1;
+            }
+            cmd = argv[argi + 1];
+            for (cmd_len = 0; cmd[cmd_len]; cmd_len++) {
+                if (!is_script_space(cmd[cmd_len])) {
+                    non_space = 1;
+                    break;
+                }
+            }
+            for (; cmd[cmd_len]; cmd_len++)
+                ;
+            if (!non_space) {
+                argi += 2;
+                continue;
+            }
+            if (cmd_len >= PDB_SCRIPT_LINE_MAX) {
+                put_err("pdb: -c command too long\n");
                 return 1;
             }
             if (script_count >= PDB_SCRIPT_CMD_MAX) {

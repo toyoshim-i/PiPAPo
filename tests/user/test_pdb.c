@@ -52,6 +52,13 @@ static int run_capture(char *const argv[], char *buf, int buf_size, int *status)
 
     pid = vfork();
     if (pid == 0) {
+        int nullfd = open("/dev/null", O_RDONLY, 0);
+        if (nullfd >= 0) {
+            dup2(nullfd, 0);
+            close(nullfd);
+        } else {
+            close(0);
+        }
         close(pipefd[0]);
         dup2(pipefd[1], 1);
         dup2(pipefd[1], 2);
@@ -85,6 +92,8 @@ static char arg_prog[] = "/bin/pdb";
 static char arg_opt[] = "-c";
 static char arg_file_opt[] = "-f";
 static char arg_dev_null[] = "/dev/null";
+static char arg_long_script[] = "/tmp/pdb_long.script";
+static char arg_blank_cmd[] = "   ";
 static char arg_show_sp[] = "show sp";
 static char arg_show_surface[] = "show surface";
 static char arg_surface_real[] = "surface real";
@@ -101,6 +110,12 @@ static char arg_next[] = "next";
 static char arg_step[] = "step";
 static char arg_detach[] = "detach";
 static char arg_target[] = "/tmp/pdb_smoke.com";
+static char out_buf[3072];
+static char out2_buf[512];
+static uint8_t long_script_line_buf[160];
+static char long_cmd_buf[129];
+static char *argv_buf[33];
+static char *argv2_buf[5];
 
 #endif
 
@@ -110,14 +125,16 @@ int main(void)
     UT_ASSERT(1, "pdb smoke is currently enabled on m68k only");
     UT_SUMMARY("test_pdb");
 #else
-    char out[3072];
-    char out2[512];
+    char *out = out_buf;
+    char *out2 = out2_buf;
+    uint8_t *long_script_line = long_script_line_buf;
+    char *long_cmd = long_cmd_buf;
     int status = 0;
     int status2 = 0;
     int n = 0;
     int n2 = 0;
-    char *argv[33];
-    char *argv2[5];
+    char **argv = argv_buf;
+    char **argv2 = argv2_buf;
     int a = 0;
 
     argv[a++] = arg_prog;
@@ -157,7 +174,7 @@ int main(void)
     UT_ASSERT_EQ(write_blob("/tmp/pdb_smoke.com", pdb_smoke_com,
                             (int)sizeof(pdb_smoke_com)), 0);
 
-    n = run_capture(argv, out, sizeof(out), &status);
+    n = run_capture(argv, out, sizeof(out_buf), &status);
     unlink("/tmp/pdb_smoke.com");
 
     UT_ASSERT(n > 0, "pdb should produce output");
@@ -237,7 +254,7 @@ int main(void)
     argv2[2] = (char *)0;
     argv2[3] = (char *)0;
     argv2[4] = (char *)0;
-    n2 = run_capture(argv2, out2, sizeof(out2), &status2);
+    n2 = run_capture(argv2, out2, sizeof(out2_buf), &status2);
     UT_ASSERT(n2 > 0, "pdb -f missing path should produce output");
     UT_ASSERT(WIFEXITED(status2), "pdb -f missing path should exit");
     UT_ASSERT_EQ(WEXITSTATUS(status2), 1);
@@ -249,12 +266,58 @@ int main(void)
     argv2[2] = arg_dev_null;
     argv2[3] = arg_target;
     argv2[4] = (char *)0;
-    n2 = run_capture(argv2, out2, sizeof(out2), &status2);
+    n2 = run_capture(argv2, out2, sizeof(out2_buf), &status2);
     UT_ASSERT(n2 > 0, "pdb -f /dev/null should produce output");
     UT_ASSERT(WIFEXITED(status2), "pdb -f /dev/null should exit");
     UT_ASSERT_EQ(WEXITSTATUS(status2), 1);
     UT_ASSERT(str_contains(out2, "pdb: no scripted commands"),
               "pdb -f /dev/null should reject empty scripted mode");
+
+    for (int i = 0; i < (int)sizeof(long_script_line_buf) - 2; i++)
+        long_script_line[i] = 'x';
+    long_script_line[sizeof(long_script_line_buf) - 2] = '\n';
+    long_script_line[sizeof(long_script_line_buf) - 1] = '\0';
+    UT_ASSERT_EQ(write_blob(arg_long_script, long_script_line,
+                            (int)sizeof(long_script_line_buf) - 1), 0);
+    argv2[0] = arg_prog;
+    argv2[1] = arg_file_opt;
+    argv2[2] = arg_long_script;
+    argv2[3] = arg_target;
+    argv2[4] = (char *)0;
+    n2 = run_capture(argv2, out2, sizeof(out2_buf), &status2);
+    unlink(arg_long_script);
+    UT_ASSERT(n2 > 0, "pdb -f long-line script should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb -f long-line script should exit");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 1);
+    UT_ASSERT(str_contains(out2, "pdb: script line too long in /tmp/pdb_long.script"),
+              "pdb -f long-line script should reject oversized command line");
+
+    argv2[0] = arg_prog;
+    argv2[1] = arg_opt;
+    argv2[2] = arg_blank_cmd;
+    argv2[3] = arg_target;
+    argv2[4] = (char *)0;
+    n2 = run_capture(argv2, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb -c blank should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb -c blank should exit");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 1);
+    UT_ASSERT(str_contains(out2, "pdb: no scripted commands"),
+              "pdb -c blank should reject empty scripted mode");
+
+    for (int i = 0; i < (int)sizeof(long_cmd_buf) - 1; i++)
+        long_cmd[i] = 'x';
+    long_cmd[sizeof(long_cmd_buf) - 1] = '\0';
+    argv2[0] = arg_prog;
+    argv2[1] = arg_opt;
+    argv2[2] = long_cmd;
+    argv2[3] = arg_target;
+    argv2[4] = (char *)0;
+    n2 = run_capture(argv2, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb -c long command should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb -c long command should exit");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 1);
+    UT_ASSERT(str_contains(out2, "pdb: -c command too long"),
+              "pdb -c long command should reject truncated command");
 
     UT_SUMMARY("test_pdb");
 #endif
