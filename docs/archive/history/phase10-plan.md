@@ -214,7 +214,7 @@ Orphan reparenting test, OOM ENOMEM test, signal stack overflow test.
 **Files:**
 - `src/kernel/fs/procfs.c` — bump version to "0.10.0"
 - `src/kernel/syscall/sys_proc.c` — document orphan/zombie lifecycle
-- `docs/procfs.md` — update OomCount entry after Step 17
+- `docs/kernel/procfs.md` — update OomCount entry after Step 17
 
 ---
 

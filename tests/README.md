@@ -1,6 +1,6 @@
 # PPAP Tests
 
-See [docs/testing.md](../docs/testing.md) for the full testing guide:
+See [docs/getting_started/testing.md](../docs/getting_started/testing.md) for the full testing guide:
 how to run tests, how to write new tests, build flags, frameworks,
 and architecture constraints.
 

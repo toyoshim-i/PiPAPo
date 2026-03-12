@@ -10,7 +10,7 @@
  * Step 6: ED prefix — block ops, 16-bit arith, NEG, I/O, IM, RLD/RRD.
  * Step 7: DD/FD prefix — IX/IY indexed addressing.
  *
- * See docs/ecpu-z80.md for the full design.
+ * See docs/ecpu/z80.md for the full design.
  */
 
 #include "ecpu_z80.h"

@@ -1,7 +1,7 @@
 # Subsystems — Binary Loaders and OS Personality Layers
 
 Every foreign binary execution in PPAP is a **subsystem**: an eCPU
-emulator core (`feature-eCPU.md`) paired with a binary loader and an
+emulator core (`docs/ecpu/overview.md`) paired with a binary loader and an
 OS personality layer that gives meaning to the emulated traps/syscalls.
 
 ---
@@ -35,7 +35,7 @@ PPAP binaries cross-architecture. Each subsystem combines three parts:
 +---------------------------+------------------------------+
                             |
 +---------------------------v------------------------------+
-|  eCPU emulator core (feature-eCPU.md)                    |
+|  eCPU emulator core (docs/ecpu/overview.md)                    |
 |  Interprets foreign ISA instructions                     |
 +---------------------------+------------------------------+
                             |
@@ -250,7 +250,7 @@ void ppap_m68k_personality(ecpu_state_t *cpu) {
 No file format translation, no path mapping, no API bridging.
 Pointer translation (guest→host address) is still needed for
 syscalls that take pointer arguments — this is handled by the
-eCPU memory model (see `feature-eCPU.md` §3.3).
+eCPU memory model (see `docs/ecpu/overview.md` §3.3).
 
 ### 3.4 Variants
 
@@ -358,7 +358,7 @@ FCB { drive=A, name="HELLO   ", ext="COM" }
 3. **Phase 3:** Full BDOS compatibility, user area support ✅
    - Test: run Turbo Pascal, WordStar
 4. **Kernel integration + userland tests** ✅
-   - 42 host tests + 13 userland tests (see `subsystem-cpm.md`)
+   - 42 host tests + 13 userland tests (see `docs/subsystems/cpm.md`)
 
 ---
 
@@ -448,7 +448,7 @@ Additional INT handlers needed:
 ### 6.1 Target
 
 Run X68000 Human68k binaries on PPAP-m68k (and via eCPU on other
-architectures). See `target-68000.md` §7 for X68000 hardware details.
+architectures). See `docs/targets/68000.md` §7 for X68000 hardware details.
 
 ### 6.2 Binary Format
 
@@ -484,7 +484,7 @@ The emulator/trap handler intercepts these and translates:
 | `_WRITE` | $FF40 | `write()` |
 | `_SEEK` | $FF42 | `lseek()` |
 
-See `target-68000.md` §7 for X68000 hardware details including IOCS
+See `docs/targets/68000.md` §7 for X68000 hardware details including IOCS
 (TRAP #15) passthrough.
 
 ---
@@ -594,7 +594,7 @@ The subsystem's `exec` function initialises the eCPU, loads the binary,
 and enters the interpreter loop — all in kernel context:
 
 ```c
-/* Common interface — see feature-eCPU.md §3.2 */
+/* Common interface — see docs/ecpu/overview.md §3.2 */
 typedef void (*ecpu_trap_handler_t)(ecpu_state_t *cpu, uint32_t trap_id);
 
 /* Example: CP/M subsystem exec (kernel-side) */

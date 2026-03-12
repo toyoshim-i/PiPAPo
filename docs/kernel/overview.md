@@ -206,7 +206,7 @@ The m68k QEMU target does not currently have memory protection. All code runs in
 
 ## System Call Interface
 
-System calls use a unified numbering scheme across all architectures (see [syscall.md](syscall.md)). The trap mechanism is architecture-specific:
+System calls use a unified numbering scheme across all architectures (see [syscall.md](/docs/kernel/syscall.md)). The trap mechanism is architecture-specific:
 
 **ARM:** `svc 0` instruction. Arguments in r0–r5, syscall number in r7, return value in r0.
 
@@ -240,10 +240,10 @@ The trampoline and signal frame layout are architecture-specific but the kernel-
 
 ## Related Documentation
 
-- [syscall.md](syscall.md) — System call reference
-- [procfs.md](procfs.md) — /proc filesystem
-- [filesystems.md](filesystems.md) — VFS and filesystem drivers
-- [userland-dev-guide.md](userland-dev-guide.md) — User-space development
-- [PicoCalc.md](reference/PicoCalc.md) — PicoCalc hardware reference
-- [PicoCalc-LCD.md](reference/PicoCalc-LCD.md) — LCD display driver
-- [target-68000.md](target-68000.md) — m68k target notes
+- [syscall.md](/docs/kernel/syscall.md) — System call reference
+- [procfs.md](/docs/kernel/procfs.md) — /proc filesystem
+- [filesystems.md](/docs/kernel/filesystems.md) — VFS and filesystem drivers
+- [userland_dev_guide.md](/docs/getting_started/userland_dev_guide.md) — User-space development
+- [PicoCalc.md](/docs/reference/picocalc.md) — PicoCalc hardware reference
+- [PicoCalc-LCD.md](/docs/reference/picocalc_lcd.md) — LCD display driver
+- [targets/68000.md](/docs/targets/68000.md) — m68k target notes

@@ -5,7 +5,7 @@
  * common interface so the kernel and subsystem personality layers can
  * interact with any emulated architecture uniformly.
  *
- * See docs/ecpu-z80.md §3 for the full design rationale.
+ * See docs/ecpu/z80.md §3 for the full design rationale.
  */
 
 #ifndef PPAP_ECPU_ECPU_H

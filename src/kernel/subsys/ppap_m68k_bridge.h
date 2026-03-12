@@ -9,7 +9,7 @@
  *   a0 = argument 6
  *   return value in d0
  *
- * See docs/ecpu-m68k.md §Step 8 for the full design.
+ * See docs/ecpu/m68k.md §Step 8 for the full design.
  */
 
 #ifndef PPAP_SUBSYS_PPAP_M68K_BRIDGE_H

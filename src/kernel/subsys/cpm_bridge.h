@@ -4,7 +4,7 @@
  * Defines the per-process CP/M state (cpm_state_t), memory map addresses,
  * and the public API used by the loader and trap handler.
  *
- * See docs/subsystem-cpm.md for the full design.
+ * See docs/subsystems/cpm.md for the full design.
  */
 
 #ifndef PPAP_SUBSYS_CPM_BRIDGE_H

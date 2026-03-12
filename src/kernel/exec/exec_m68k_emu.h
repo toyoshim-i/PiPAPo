@@ -5,7 +5,7 @@
  * and loads them into an eCPU-m68k emulator instance for execution.
  * The PPAP cross-arch personality handles TRAP #0 → PPAP syscalls.
  *
- * See docs/ecpu-m68k.md §Step 8 for the full design.
+ * See docs/ecpu/m68k.md §Step 8 for the full design.
  */
 
 #ifndef PPAP_EXEC_M68K_EMU_H

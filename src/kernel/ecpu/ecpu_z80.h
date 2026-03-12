@@ -5,7 +5,7 @@
  * core), register ID constants for the common interface, flag constants,
  * and inline helpers for register pair / memory access.
  *
- * See docs/ecpu-z80.md for the full design.
+ * See docs/ecpu/z80.md for the full design.
  */
 
 #ifndef PPAP_ECPU_Z80_H

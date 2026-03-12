@@ -5,7 +5,7 @@
  * binaries. Handles PMB (Process Memory Block) setup, register initialization,
  * and process state configuration.
  *
- * See docs/subsystem-human68k.md for the full design.
+ * See docs/subsystems/human68k.md for the full design.
  */
 
 #include "human68k_loader.h"

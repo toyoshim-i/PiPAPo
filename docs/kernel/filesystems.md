@@ -99,7 +99,7 @@ Static table of device nodes, mounted at `/dev`:
 ## procfs (`src/kernel/fs/procfs.c`)
 
 Virtual filesystem at `/proc` with system and per-process information.
-See [procfs.md](procfs.md) for the complete file list and format.
+See [procfs.md](/docs/kernel/procfs.md) for the complete file list and format.
 
 ## tmpfs (`src/kernel/fs/tmpfs.c`)
 
@@ -136,7 +136,7 @@ Implementations: SD card (SPI), RAM disk (QEMU), loopback.
 
 ## Related Documentation
 
-- [kernel.md](kernel.md) — Kernel internals
-- [procfs.md](procfs.md) — /proc filesystem details
-- [syscall.md](syscall.md) — File I/O system calls
-- [PicoCalc.md](reference/PicoCalc.md) — SD card hardware interface
+- [kernel.md](/docs/kernel/overview.md) — Kernel internals
+- [procfs.md](/docs/kernel/procfs.md) — /proc filesystem details
+- [syscall.md](/docs/kernel/syscall.md) — File I/O system calls
+- [PicoCalc.md](/docs/reference/picocalc.md) — SD card hardware interface

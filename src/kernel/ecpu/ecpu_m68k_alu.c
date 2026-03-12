@@ -4,7 +4,7 @@
  * Step 2: ADD/SUB/CMP/NEG/NEGX/TST/EXT/MULU/MULS/DIVU/DIVS
  *         with full CCR (X/N/Z/V/C) computation.
  *
- * See docs/ecpu-m68k.md §8 for flag computation rules.
+ * See docs/ecpu/m68k.md §8 for flag computation rules.
  */
 
 #include "ecpu_m68k.h"

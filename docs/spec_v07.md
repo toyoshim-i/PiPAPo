@@ -317,7 +317,7 @@ A minimal POSIX subset is implemented to support busybox operation. PPAP uses a 
 - **ARM:** `svc 0` with syscall number in r7, arguments in r0–r5
 - **m68k:** `trap #0` with syscall number in d0, arguments in d1–d5/a0
 
-See [syscall.md](syscall.md) for the complete reference.
+See [syscall.md](/docs/kernel/syscall.md) for the complete reference.
 
 ### 5.1 Process Management
 
@@ -399,7 +399,7 @@ Key porting areas:
 
 Beyond busybox, the platform supports porting existing UNIX applications that fit within memory constraints.
 
-**Rogue 5.4.4** — The classic BSD dungeon crawler, ported with a minimal VT100 curses shim (~800 lines of C). The upstream source is unmodified; PPAP-specific headers are injected via `-isystem`. See `docs/history/port-rogue.md` for details.
+**Rogue 5.4.4** — The classic BSD dungeon crawler, ported with a minimal VT100 curses shim (~800 lines of C). The upstream source is unmodified; PPAP-specific headers are injected via `-isystem`. See `docs/archive/history/port-rogue.md` for details.
 
 The porting pattern — git submodule + patches directory + standalone build script + CMake integration — is designed to be reusable for future application ports across all architectures.
 
@@ -511,7 +511,7 @@ The m68k QEMU target currently uses a UART for console and a RAM-backed block de
 | `ppap_pico1calc` | ClockworkPi PicoCalc | Full feature set: SD, LCD, keyboard, dual-core |
 | `ppap_qemu_m68k` | QEMU virt m68k | UART, RAM block device, automated testing |
 
-Development history is archived in `docs/history/` (phase plans and porting notes).
+Development history is archived in `docs/archive/history/` (phase plans and porting notes).
 
 ---
 
@@ -584,20 +584,20 @@ busybox is developed with the assumption of a Linux kernel, and some applets dep
 
 | Document | Audience | Description |
 |---|---|---|
-| [kernel.md](kernel.md) | Kernel developers | Boot sequence, memory layout, process model, scheduler, signals |
-| [filesystems.md](filesystems.md) | Kernel developers | VFS layer, romfs, VFAT, UFS, loopback, devfs, procfs, tmpfs |
-| [syscall.md](syscall.md) | All developers | Complete system call reference (shared across architectures) |
-| [procfs.md](procfs.md) | All developers | /proc filesystem file formats |
-| [userland-dev-guide.md](userland-dev-guide.md) | User-space developers | Toolchain, compiler flags, linking (ARM and m68k) |
-| [porting.md](porting.md) | Application porters | Third-party porting pattern |
-| [PicoCalc.md](reference/PicoCalc.md) | Hardware developers | PicoCalc pinout, I2C keyboard protocol, SD card, serial debug |
-| [PicoCalc-LCD.md](reference/PicoCalc-LCD.md) | Driver developers | ST7365P LCD driver architecture, SPI protocol, VT100 emulator |
-| [target-68000.md](target-68000.md) | m68k developers | m68k target-specific notes |
-| [target-pizero.md](target-pizero.md) | ARM developers | Pi Zero port plan (draft) |
-| [testing.md](testing.md) | All developers | Test framework, categories, adding tests |
-| [feature-eCPU.md](feature-eCPU.md) | — | CPU emulation layer design (future) |
-| [feature-subsystem.md](feature-subsystem.md) | — | OS personality layers design (future) |
-| [history/](history/) | — | Development phase plans (archived) |
+| [kernel.md](/docs/kernel/overview.md) | Kernel developers | Boot sequence, memory layout, process model, scheduler, signals |
+| [filesystems.md](/docs/kernel/filesystems.md) | Kernel developers | VFS layer, romfs, VFAT, UFS, loopback, devfs, procfs, tmpfs |
+| [syscall.md](/docs/kernel/syscall.md) | All developers | Complete system call reference (shared across architectures) |
+| [procfs.md](/docs/kernel/procfs.md) | All developers | /proc filesystem file formats |
+| [userland_dev_guide.md](/docs/getting_started/userland_dev_guide.md) | User-space developers | Toolchain, compiler flags, linking (ARM and m68k) |
+| [porting.md](/docs/getting_started/porting.md) | Application porters | Third-party porting pattern |
+| [PicoCalc.md](/docs/reference/picocalc.md) | Hardware developers | PicoCalc pinout, I2C keyboard protocol, SD card, serial debug |
+| [PicoCalc-LCD.md](/docs/reference/picocalc_lcd.md) | Driver developers | ST7365P LCD driver architecture, SPI protocol, VT100 emulator |
+| [targets/68000.md](/docs/targets/68000.md) | m68k developers | m68k target-specific notes |
+| [targets/pizero.md](/docs/targets/pizero.md) | ARM developers | Pi Zero port plan (draft) |
+| [testing.md](/docs/getting_started/testing.md) | All developers | Test framework, categories, adding tests |
+| [ecpu/overview.md](/docs/ecpu/overview.md) | — | CPU emulation layer design (future) |
+| [subsystems/overview.md](/docs/subsystems/overview.md) | — | OS personality layers design (future) |
+| [archive/history/](/docs/archive/history/) | — | Development phase plans (archived) |
 
 ---
 

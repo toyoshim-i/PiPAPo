@@ -16,7 +16,7 @@ traps, software interrupts).
 
 eCPU itself is architecture-agnostic about what those intercepted
 instructions *mean*. That interpretation is provided by **subsystem
-personality layers** (see `feature-subsystem.md`), which translate
+personality layers** (see `docs/subsystems/overview.md`), which translate
 the intercepted calls into PPAP syscalls. Every form of foreign binary
 execution in PPAP — including running PPAP binaries cross-architecture
 — is a subsystem built on top of eCPU:
@@ -106,7 +106,7 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
 
 This is the same approach as Linux's `binfmt_misc` — the kernel
 replaces the exec with an exec of the emulator, passing the original
-binary as an argument. See `feature-subsystem.md` for the full
+binary as an argument. See `docs/subsystems/overview.md` for the full
 subsystem detection and dispatch design.
 
 ---
@@ -192,7 +192,7 @@ void cpm_trap(ecpu_state_t *cpu, uint32_t trap_id) {
 }
 ```
 
-See `feature-subsystem.md` for details on each personality layer.
+See `docs/subsystems/overview.md` for details on each personality layer.
 
 ### 3.3 Memory Model
 
@@ -308,7 +308,7 @@ scripts.
 ### Phase 1 — Emulator framework + kernel dispatch
 
 1. Define `ecpu_state_t` common interface and trap hook API
-2. Subsystem detection chain in `exec()` (see `feature-subsystem.md`)
+2. Subsystem detection chain in `exec()` (see `docs/subsystems/overview.md`)
 3. Compile-time table mapping binary formats to emulator paths
 
 ### Phase 2 — First emulator core (ecpu-arm)
@@ -327,9 +327,9 @@ scripts.
 
 ### Phase 4 — Retro CPU emulator cores
 
-1. ecpu-z80 — pair with CP/M personality ✅ (see `ecpu-z80.md`, `subsystem-cpm.md`)
+1. ecpu-z80 — pair with CP/M personality ✅ (see `docs/ecpu/z80.md`, `docs/subsystems/cpm.md`)
 2. ecpu-8086 — pair with DOS personality
-3. See `feature-subsystem.md` for per-personality implementation plans
+3. See `docs/subsystems/overview.md` for per-personality implementation plans
 
 ### Phase 5 — Cross-architecture romfs
 
@@ -348,7 +348,7 @@ syscalls or OS calls — that is the subsystem personality layer's job.
 Every use of eCPU goes through a subsystem:
 
 ```
-eCPU core (this document)     Subsystem personality (feature-subsystem.md)
+eCPU core (this document)     Subsystem personality (docs/subsystems/overview.md)
 ─────────────────────────     ─────────────────────────────────────────────
 ecpu-arm                  ──→ PPAP personality (register ABI remap only)
 ecpu-m68k                 ──→ PPAP personality / Human68k personality
@@ -368,7 +368,7 @@ full API translation (BDOS→PPAP, INT 21h→PPAP, etc.).
 1. ~~**Kernel-space vs user-space emulator**~~ **Resolved:** all eCPU
    emulators are kernel-embedded. The personality bridge calls
    `sys_open()`/`sys_read()`/etc. directly — no trap per translated
-   call. See `feature-subsystem.md` §2.3 for rationale.
+   call. See `docs/subsystems/overview.md` §2.3 for rationale.
 
 2. **Signal delivery**: when the host kernel delivers a signal to the
    emulator process, it must translate the signal context to the

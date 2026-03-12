@@ -5,7 +5,7 @@
  * core), register ID constants for the common interface, flag constants,
  * and inline helpers for memory access (big-endian).
  *
- * See docs/ecpu-m68k.md for the full design.
+ * See docs/ecpu/m68k.md for the full design.
  */
 
 #ifndef PPAP_ECPU_M68K_H

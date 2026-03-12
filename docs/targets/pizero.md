@@ -642,6 +642,6 @@ m68k porting effort.
    The arch split should be `arm_m` (Cortex-M) vs `arm_a` (ARM11/A-class).
 
 7. **Cross-architecture emulation**: Pi Zero ARMv6 binaries can run on
-   other PPAP targets via `ecpu-armv6` (see `feature-eCPU.md` §4.5).
+   other PPAP targets via `ecpu-armv6` (see `docs/ecpu/overview.md` §4.5).
    Conversely, ARM Thumb and m68k binaries can run on Pi Zero PPAP via
    their respective eCPU emulators.

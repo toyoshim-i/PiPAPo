@@ -1,8 +1,13 @@
-# PPAP Selective Subsystem & eCPU Build Flags
+# PPAP Build System
 
-The PPAP kernel now supports selective enabling/disabling of subsystems and emulator cores via CMake build flags. All features are enabled by default for backward compatibility.
+This document describes the PPAP build-system configuration surface for
+subsystems and eCPU cores. Build flags are one key part of that surface.
 
-## Available Flags
+The kernel supports selective enabling/disabling of subsystems and emulator
+cores via CMake options. All features are enabled by default for backward
+compatibility.
+
+## Build Flags
 
 ### Subsystems
 - **`PPAP_ENABLE_HUMAN68K`** (default: `ON`)  

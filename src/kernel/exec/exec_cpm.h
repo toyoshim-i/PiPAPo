@@ -5,7 +5,7 @@
  * instance for execution.  The CP/M BDOS/BIOS bridge handles system
  * calls via the eCPU trap mechanism.
  *
- * See docs/subsystem-cpm.md for the full design.
+ * See docs/subsystems/cpm.md for the full design.
  */
 
 #ifndef PPAP_EXEC_EXEC_CPM_H

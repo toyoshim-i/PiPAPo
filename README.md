@@ -2,7 +2,8 @@
 
 A portable UNIX-like micro OS for bare-metal microcontrollers and retro CPUs.
 
-> Full design specification: [docs/spec-v07.md](docs/spec-v07.md)
+> Documentation index: [docs/README.md](/docs/README.md)  
+> Full design specification: [docs/spec_v07.md](/docs/spec_v07.md)
 
 ---
 
@@ -45,9 +46,9 @@ All targets share the same kernel source, syscall interface, VFS, and process mo
 ## Future Work
 
 - **RP2350 Port** — Cortex-M33, 8-region MPU, PSRAM support, Thumb-2 optimization; `pico2`/`pico2calc` targets
-- **Pi Zero Port** — ARM1176JZF-S with full MMU, SD card boot; see [docs/target-pizero.md](docs/target-pizero.md)
-- **CPU emulation** — user-space interpretive emulators for retro CPUs (Z80, 6502, 6809, 8086), enabling cross-architecture binary execution; see [docs/feature-eCPU.md](docs/feature-eCPU.md)
-- **Subsystem support** — load and run applications from other OSes on top of PPAP via syscall bridge (e.g. CP/M, Human68K, DOS); see [docs/feature-subsystem.md](docs/feature-subsystem.md)
+- **Pi Zero Port** — ARM1176JZF-S with full MMU, SD card boot; see [docs/targets/pizero.md](/docs/targets/pizero.md)
+- **CPU emulation** — user-space interpretive emulators for retro CPUs (Z80, 6502, 6809, 8086), enabling cross-architecture binary execution; see [docs/ecpu/overview.md](/docs/ecpu/overview.md)
+- **Subsystem support** — load and run applications from other OSes on top of PPAP via syscall bridge (e.g. CP/M, Human68K, DOS); see [docs/subsystems/overview.md](/docs/subsystems/overview.md)
 - Audio driver support
 
 ## Repository Layout
@@ -110,17 +111,15 @@ PPAP/
     run.sh                  Flash or run any target
     test.sh                 Run tests (--all for full suite)
   docs/
-    spec-v07.md             Full design specification
-    kernel.md               Kernel internals (boot, memory, scheduler, signals)
-    filesystems.md          VFS layer and filesystem drivers
-    syscall.md              System call reference (shared across architectures)
-    procfs.md               /proc filesystem specification
-    userland-dev-guide.md   User-space development guide
-    porting.md              Third-party application porting guide
-    target-68000.md         m68k target-specific notes
-    target-pizero.md        Pi Zero target notes
+    README.md               Documentation index
+    spec_v07.md             Full design specification
+    getting_started/        Build/run/test/debug guides + dev workflow docs
+    kernel/                 Kernel internals (memory, syscall, procfs, trace, fs)
+    subsystems/             Subsystem framework + Human68k/CP/M docs
+    ecpu/                   eCPU framework + m68k/z80 docs
+    targets/                Target-specific notes
     reference/              Hardware reference documents (PicoCalc, LCD)
-    history/                Development phase plans and porting notes
+    archive/history/        Development phase plans and historical notes
 ```
 
 ## Quick Start
@@ -251,4 +250,4 @@ page pool all reside in RAM.
 | Kernel stack | after BSS | 16 KB | Supervisor stack |
 | Page pool | after stack (4 KB aligned) | runtime-detected | User process pages |
 
-See [docs/target-68000.md](docs/target-68000.md) for architecture-specific details.
+See [docs/targets/68000.md](/docs/targets/68000.md) for architecture-specific details.

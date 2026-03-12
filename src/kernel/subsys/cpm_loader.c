@@ -12,7 +12,7 @@
  *   0x0100: .COM binary loaded here
  *   0xFE00: BIOS jump table (RET stubs — traps intercept the CALL)
  *
- * See docs/subsystem-cpm.md §4 for the full design.
+ * See docs/subsystems/cpm.md §4 for the full design.
  */
 
 #include "cpm_bridge.h"

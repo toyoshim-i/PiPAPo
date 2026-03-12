@@ -2,7 +2,7 @@
  * ecpu_z80_alu.c — Z80 ALU operations with full flag computation
  *
  * All 8 flag bits (including undocumented F3/F5) are computed for every
- * operation. See docs/ecpu-z80.md §8 for the flag computation design.
+ * operation. See docs/ecpu/z80.md §8 for the flag computation design.
  */
 
 #include "ecpu_z80.h"

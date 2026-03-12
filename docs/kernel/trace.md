@@ -574,7 +574,7 @@ without rebuilding the kernel with `#ifdef` logging.
 - add `PTRACE_SETOPTIONS`
 - support `PTRACE_O_TRACESYSGOOD`
 - add `/proc/<pid>/stat` trace-stop reporting
-- document syscall ABI in `docs/syscall.md`
+- document syscall ABI in `docs/kernel/syscall.md`
 
 ### Phase 4: optional buffered mode
 
@@ -597,7 +597,7 @@ without rebuilding the kernel with `#ifdef` logging.
 - `src/kernel/ecpu/ecpu_z80.c`
 - `src/kernel/ecpu/ecpu_z80.h`
 - `src/user/syscall.h`
-- `docs/syscall.md`
+- `docs/kernel/syscall.md`
 - new tests under `tests/user/`
 
 ## Recommendation summary

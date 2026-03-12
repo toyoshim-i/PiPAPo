@@ -6,7 +6,7 @@
  * subsystem setup are coordinated here; the actual binary loading logic
  * is delegated to cpm_loader.c.
  *
- * See docs/subsystem-cpm.md §4 for the full design.
+ * See docs/subsystems/cpm.md §4 for the full design.
  */
 
 #include "exec_cpm.h"

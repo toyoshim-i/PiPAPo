@@ -10,7 +10,7 @@
  * Step 4: AND/OR/EOR/NOT, shifts/rotates, bit ops, EXG.
  * Step 5: MOVEM, PEA, MOVE to/from SR/CCR, MOVE USP.
  *
- * See docs/ecpu-m68k.md for the full design.
+ * See docs/ecpu/m68k.md for the full design.
  */
 
 #include "ecpu_m68k.h"

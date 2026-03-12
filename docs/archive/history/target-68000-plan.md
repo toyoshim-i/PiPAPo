@@ -159,7 +159,7 @@ src/
 
 Note: the ARM Cortex-M (M-profile) directory is `arm_m/`, not `arm/`,
 to distinguish it from the ARM1176 (A-profile) directory `arm_a/` used
-by the Pi Zero port (see `target-pizero.md`).
+by the Pi Zero port (see `docs/targets/pizero.md`).
 
 ### 4.2 Architecture Interface (`arch/*/arch.h`)
 

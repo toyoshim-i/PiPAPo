@@ -6,7 +6,7 @@ This document summarizes the hardware specifications and development information
 
 - **Core Module**: Raspberry Pi Pico (RP2040) or Pico 2 (RP2350).
 - **Display**: 4-inch 320x320 IPS LCD (Color).
-  - Controller: ST7365P (Sitronix, ILI9488-compatible). See [PicoCalc-LCD.md](PicoCalc-LCD.md).
+  - Controller: ST7365P (Sitronix, ILI9488-compatible). See [PicoCalc-LCD.md](/docs/reference/picocalc_lcd.md).
   - Interface: SPI1 (TX-only, no MISO line).
   - SPI Clock: ~33 MHz (133 MHz / 4, CPSDVSR=2, SCR=1).
   - Pixel Format: RGB565 (16-bit, 65K colours).
@@ -123,7 +123,7 @@ It uses MIPI DCS commands plus vendor-specific extensions that require an
 unlock sequence. The actual initialization is an 18-step sequence including
 vendor command unlock, power control, gamma correction, and display inversion.
 
-See [PicoCalc-LCD.md](PicoCalc-LCD.md) for the full initialization sequence,
+See [PicoCalc-LCD.md](/docs/reference/picocalc_lcd.md) for the full initialization sequence,
 SPI transport details, and framebuffer console architecture.
 
 Key differences from a naive MIPI DCS init:

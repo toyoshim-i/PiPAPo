@@ -112,7 +112,7 @@ split into separate binaries:
 ## Rogue 5.4.4
 
 Example port demonstrating the full pattern.
-See `docs/history/port-rogue.md` for the detailed audit.
+See `docs/archive/history/port-rogue.md` for the detailed audit.
 
 ### Curses Shim
 
@@ -156,7 +156,7 @@ On m68k, .text is also in RAM, but the 16 MB QEMU target has ample space.
 
 ## Related Documentation
 
-- [userland-dev-guide.md](userland-dev-guide.md) — User-space programming guide
-- [syscall.md](syscall.md) — System call reference
-- [kernel.md](kernel.md) — Kernel internals (ELF loader, PIE model)
-- [history/port-rogue.md](history/port-rogue.md) — Rogue 5.4.4 porting details
+- [userland_dev_guide.md](/docs/getting_started/userland_dev_guide.md) — User-space programming guide
+- [syscall.md](/docs/kernel/syscall.md) — System call reference
+- [kernel.md](/docs/kernel/overview.md) — Kernel internals (ELF loader, PIE model)
+- [archive/history/port-rogue.md](/docs/archive/history/port-rogue.md) — Rogue 5.4.4 porting details

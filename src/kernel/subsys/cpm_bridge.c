@@ -5,7 +5,7 @@
  * Phase 2: BDOS fn 1, 3–8, 10–12 (console I/O) + BIOS console
  * Phase 3: BDOS fn 13–16, 19–23, 26, 33–36, 40 (file operations)
  *
- * See docs/subsystem-cpm.md §5 for the full design.
+ * See docs/subsystems/cpm.md §5 for the full design.
  */
 
 #include "cpm_bridge.h"

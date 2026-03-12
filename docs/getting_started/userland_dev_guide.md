@@ -375,7 +375,7 @@ Note: addresses increase downward in this diagram (low addresses at top).
 For Human68k X-format (.x) binaries running under the X68k subsystem,
 the memory layout differs: a single contiguous block with a 256-byte
 PMB header, text, data, BSS, and shared heap/stack space. See
-[subsystem-human68k.md §7.2](subsystem-human68k.md#72-ppap-memory-layout-for-human68k-processes)
+[subsystems/human68k.md §7.2](/docs/subsystems/human68k.md#72-ppap-memory-layout-for-human68k-processes)
 for the full layout diagram, PMB field map, initial register values,
 and details on `_SETBLOCK` / `_MALLOC` heap management.
 
@@ -400,7 +400,7 @@ and details on `_SETBLOCK` / `_MALLOC` heap management.
 
 **m68k (X-format):** Heap is managed via Human68k DOS calls (`_MALLOC`,
 `_MFREE`, `_SETBLOCK`). See
-[subsystem-human68k.md §7.4](subsystem-human68k.md#74-memory-management-calls).
+[subsystems/human68k.md §7.4](/docs/subsystems/human68k.md#74-memory-management-calls).
 
 ### mmap
 
@@ -435,7 +435,7 @@ architectures. The trap mechanism is architecture-specific:
 | a0 | Argument 6 |
 | `trap #0` | Trigger the syscall |
 
-See [syscall.md](syscall.md) for the complete syscall reference.
+See [syscall.md](/docs/kernel/syscall.md) for the complete syscall reference.
 
 ## 9. Path A: Bare-Metal Development
 
@@ -580,7 +580,7 @@ per-process memory budget (128 KB data+bss). The recommended pattern:
    dependency chain
 5. **Build for each target architecture** as needed
 
-See [porting.md](porting.md) for the detailed guide.
+See [porting.md](/docs/getting_started/porting.md) for the detailed guide.
 
 ## 14. Known Limitations
 

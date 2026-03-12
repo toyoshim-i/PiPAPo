@@ -29,7 +29,7 @@ ecpu-z80 emulator core.
 Run existing CP/M 2.2 `.COM` programs on PPAP — starting with simple
 utilities and working toward real-world applications (MBASIC, Turbo
 Pascal, WordStar, dBASE II). The subsystem bridges CP/M's BDOS API
-to PPAP syscalls via the ecpu-z80 interpreter (see `ecpu-z80.md`).
+to PPAP syscalls via the ecpu-z80 interpreter (see `docs/ecpu/z80.md`).
 
 ### 1.2 Execution Mode
 
@@ -197,7 +197,7 @@ All components are kernel-embedded. The subsystem combines:
 1. **Binary detection** in `exec()` — recognises `.COM` files
 2. **.COM loader** — loads raw binary at emulated address 0x0100
 3. **Memory map setup** — zero page stubs, FCBs, command line
-4. **ecpu-z80 interpreter** — executes Z80 instructions (see `ecpu-z80.md`)
+4. **ecpu-z80 interpreter** — executes Z80 instructions (see `docs/ecpu/z80.md`)
 5. **BDOS bridge** — intercepts `CALL 0x0005`, translates to PPAP syscalls
 6. **BIOS bridge** — intercepts `CALL 0x0000` (warm boot) and optional BIOS calls
 
@@ -260,7 +260,7 @@ process at a time.)
 │  │  - Zero page setup (JMP stubs, FCBs, cmdline) │  │
 │  │  - Default FCB parsing from argv              │  │
 │  ├───────────────────────────────────────────────┤  │
-│  │  ecpu_z80.c (CPU emulator — see ecpu-z80.md)  │  │
+│  │  ecpu_z80.c (CPU emulator — see docs/ecpu/z80.md)  │  │
 │  │  - Fetch/decode/execute loop                  │  │
 │  │  - Trap hook fires on CALL 0x0005 / CALL 0x0000 │
 │  ├───────────────────────────────────────────────┤  │
@@ -308,7 +308,7 @@ if (path_under("/subsys/cpm/") && extension_is(".com"))
 
 /* Or: any .com file when CP/M is the default .com handler */
 if (extension_is(".com") && file_size <= 0xFE00)
-    → CP/M subsystem (if enabled; see feature-subsystem.md §8.2)
+    → CP/M subsystem (if enabled; see docs/subsystems/overview.md §8.2)
 ```
 
 CP/M `.COM` files have no magic bytes — detection is extension-based.
@@ -470,7 +470,7 @@ The CP/M personality registers a trap handler with ecpu-z80 that
 intercepts `CALL` instructions to specific addresses:
 
 ```c
-/* Uses eCPU common interface trap types (see ecpu-z80.md §3) */
+/* Uses eCPU common interface trap types (see docs/ecpu/z80.md §3) */
 static int cpm_trap_handler(ecpu_state_t *cpu, int trap_type,
                             uint32_t param, void *ctx) {
     if (trap_type == ECPU_TRAP_CALL) {
@@ -491,7 +491,7 @@ static int cpm_trap_handler(ecpu_state_t *cpu, int trap_type,
 ### 5.2 BDOS Function Dispatch
 
 ```c
-/* Uses eCPU common interface for register access (see ecpu-z80.md §3) */
+/* Uses eCPU common interface for register access (see docs/ecpu/z80.md §3) */
 static int cpm_bdos_dispatch(ecpu_state_t *cpu, void *ctx) {
     const ecpu_core_ops_t *ops = current->ecpu_ops;
     uint8_t  fn = ops->get_reg(cpu, Z80_REG_C);
@@ -918,7 +918,7 @@ case-sensitive. The bridge performs case-insensitive lookup:
 3. If not found, scan the directory for a case-insensitive match
 
 This mirrors the approach used by the Human68k subsystem (see
-`subsystem-human68k.md` §8.3).
+`docs/subsystems/human68k.md` §8.3).
 
 ### 7.4 User Area Mapping
 

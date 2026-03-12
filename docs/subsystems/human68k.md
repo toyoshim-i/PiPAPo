@@ -42,7 +42,7 @@ exception handler intercepts `$FFxx` opcodes and translates them to
 PPAP syscalls. No CPU emulation is needed — the binary runs natively.
 
 On non-m68k hosts, the subsystem uses the ecpu-m68k emulator core
-(see `feature-eCPU.md`) paired with the same personality logic, all
+(see `docs/ecpu/overview.md`) paired with the same personality logic, all
 embedded in the kernel.
 
 ### 1.3 Scope
@@ -293,7 +293,7 @@ PPAP kernel syscall (sys_open, sys_read, etc.)
 
 **Why kernel-embedded, not /subsys/?**
 
-The `feature-subsystem.md` general framework places emulators as
+The `docs/subsystems/overview.md` general framework places emulators as
 user-space binaries under `/subsys/`. For the Human68k subsystem,
 kernel-embedded is preferable:
 
@@ -1593,8 +1593,8 @@ These provide real-world validation of DOS call compatibility.
 
 ### Related PPAP Documentation
 
-- [feature-subsystem.md](feature-subsystem.md) — Subsystem framework (general design; Human68k uses kernel-embedded model instead of user-space `/subsys/`)
-- [feature-eCPU.md](feature-eCPU.md) — CPU emulation layer
-- [target-68000.md](target-68000.md) — m68k target reference (§7: X68000 details)
-- [syscall.md](syscall.md) — PPAP system call reference
-- [kernel.md](kernel.md) — Kernel internals
+- [subsystems/overview.md](/docs/subsystems/overview.md) — Subsystem framework (general design; Human68k uses kernel-embedded model instead of user-space `/subsys/`)
+- [ecpu/overview.md](/docs/ecpu/overview.md) — CPU emulation layer
+- [targets/68000.md](/docs/targets/68000.md) — m68k target reference (§7: X68000 details)
+- [syscall.md](/docs/kernel/syscall.md) — PPAP system call reference
+- [kernel.md](/docs/kernel/overview.md) — Kernel internals
