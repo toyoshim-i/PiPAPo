@@ -14,6 +14,7 @@
 #define ESRCH    3   /* No such process                     */
 #define EINTR    4   /* Interrupted system call              */
 #define EIO      5   /* I/O error                           */
+#define E2BIG    7   /* Argument list too long              */
 #define ENOEXEC  8   /* Exec format error                   */
 #define EBADF    9   /* Bad file descriptor                 */
 #define ECHILD  10   /* No child processes                  */

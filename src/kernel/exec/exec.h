@@ -11,6 +11,9 @@
 
 #include "kernel/proc/proc.h"
 
+/* Maximum argv entries accepted by execve (excluding terminating NULL). */
+#define EXEC_ARGV_MAX  32
+
 /*
  * do_execve — Load an ELF binary and set up a process to execute it.
  *

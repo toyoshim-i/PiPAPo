@@ -164,6 +164,19 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
 {
     vnode_t *vn = NULL;
     int err;
+    int exec_argc = 1;
+    int use_default_argv0 = 1;
+
+    if (argv && argv[0]) {
+        int argc = 0;
+        while (argv[argc] != NULL) {
+            argc++;
+            if (argc > EXEC_ARGV_MAX)
+                return -(int)E2BIG;
+        }
+        exec_argc = argc;
+        use_default_argv0 = 0;
+    }
 
     /* ── 1. Look up the binary in the VFS ──────────────────────────────── */
     err = vfs_lookup(path, &vn);
@@ -473,20 +486,11 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
 #endif
         uint32_t sp = stack_top;
 
-        /* Count arguments */
-        int argc = 0;
-        if (argv) {
-            while (argv[argc] != NULL && argc < 32)
-                argc++;
-        }
-        if (argc == 0) {
-            argc = 1;
-            argv = NULL;
-        }
+        int argc = exec_argc;
 
         /* Copy argument strings to top of stack */
-        uint32_t str_addrs[32];
-        if (argv) {
+        uint32_t str_addrs[EXEC_ARGV_MAX];
+        if (!use_default_argv0) {
             for (int i = argc - 1; i >= 0; i--) {
                 uint32_t len = (uint32_t)strlen(argv[i]) + 1;
                 sp -= len;

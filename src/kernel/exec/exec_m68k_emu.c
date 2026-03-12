@@ -60,6 +60,20 @@ int exec_m68k_emu(pcb_t *p, const uint8_t *file_base, uint32_t file_size,
                    const elf32_ehdr_t *ehdr, const char *path,
                    const char *const *argv)
 {
+    int exec_argc = 1;
+    int use_default_argv0 = 1;
+
+    if (argv && argv[0]) {
+        int argc = 0;
+        while (argv[argc] != NULL) {
+            argc++;
+            if (argc > EXEC_ARGV_MAX)
+                return -(int)E2BIG;
+        }
+        exec_argc = argc;
+        use_default_argv0 = 0;
+    }
+
     /* ── 1. Allocate emulated memory + state struct ────────────────────── */
     uint32_t state_pages = (sizeof(ppap_m68k_exec_state_t) + PAGE_SIZE - 1)
                            / PAGE_SIZE;
@@ -133,20 +147,11 @@ int exec_m68k_emu(pcb_t *p, const uint8_t *file_base, uint32_t file_size,
     {
         uint32_t sp = M68K_EMU_STACK_TOP;
 
-        /* Count arguments */
-        int argc = 0;
-        if (argv) {
-            while (argv[argc] != NULL && argc < 32)
-                argc++;
-        }
-        if (argc == 0) {
-            argc = 1;
-            argv = NULL;
-        }
+        int argc = exec_argc;
 
         /* Copy argument strings to stack */
-        uint32_t str_addrs[32];
-        if (argv) {
+        uint32_t str_addrs[EXEC_ARGV_MAX];
+        if (!use_default_argv0) {
             for (int i = argc - 1; i >= 0; i--) {
                 uint32_t len = (uint32_t)strlen(argv[i]) + 1;
                 sp -= len;

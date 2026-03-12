@@ -6,6 +6,7 @@
  */
 
 #include "utest.h"
+#include "kernel/errno.h"
 
 int main(void)
 {
@@ -38,6 +39,28 @@ int main(void)
     /* 4. Verify getpid works from user mode */
     pid_t pid = getpid();
     UT_ASSERT(pid > 0, "getpid should return positive PID");
+
+    /* 5. execve should reject argv overflow with -E2BIG */
+    {
+        enum { ARG_OVERFLOW = 33 };
+        char *argv_many[ARG_OVERFLOW + 1];
+        for (int i = 0; i < ARG_OVERFLOW; i++)
+            argv_many[i] = (char *)"x";
+        argv_many[ARG_OVERFLOW] = (char *)0;
+
+        pid_t cpid = vfork();
+        if (cpid == 0) {
+            int rc = execve("/bin/hello", argv_many, (void *)0);
+            if (rc == -(int)E2BIG)
+                _exit(0);
+            _exit(127);
+        }
+
+        int status = 0;
+        UT_ASSERT_EQ(waitpid(cpid, &status, 0), cpid);
+        UT_ASSERT(WIFEXITED(status), "overflow exec child should exit");
+        UT_ASSERT_EQ(WEXITSTATUS(status), 0);
+    }
 
     UT_SUMMARY("test_exec");
 }
