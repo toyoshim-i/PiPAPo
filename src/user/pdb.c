@@ -2,12 +2,16 @@
 
 #define PDB_LOCAL_BP_MAX  32
 #define PDB_SCRIPT_CMD_MAX  32
+#define PDB_SCRIPT_LINE_MAX  128
+#define PDB_SCRIPT_BUF_MAX  2048
 
 typedef struct {
     uint8_t used;
     uint8_t enabled;
     uint32_t addr;
 } pdb_local_bp_t;
+
+static char pdb_script_storage[PDB_SCRIPT_BUF_MAX];
 
 static void put_str(const char *s)
 {
@@ -140,6 +144,114 @@ static int split_tokens(char *line, char **tok, int max_tok)
     }
 
     return n;
+}
+
+static int append_script_cmd(char **script_cmds, int *script_count,
+                             char *storage, int *storage_used,
+                             const char *cmd)
+{
+    int len = 0;
+
+    if (*script_count >= PDB_SCRIPT_CMD_MAX)
+        return -1;
+    while (cmd[len])
+        len++;
+    if (*storage_used + len + 1 > PDB_SCRIPT_BUF_MAX)
+        return -1;
+
+    for (int i = 0; i < len; i++)
+        storage[*storage_used + i] = cmd[i];
+    storage[*storage_used + len] = '\0';
+    script_cmds[*script_count] = &storage[*storage_used];
+    *storage_used += len + 1;
+    (*script_count)++;
+    return 0;
+}
+
+static int load_script_file(const char *path, char **script_cmds,
+                            int *script_count, char *storage,
+                            int *storage_used)
+{
+    int fd = open(path, O_RDONLY, 0);
+    char line[PDB_SCRIPT_LINE_MAX];
+    int len = 0;
+    int dropping = 0;
+
+    if (fd < 0) {
+        put_err("pdb: cannot open script file: ");
+        put_err(path);
+        put_chr('\n');
+        return -1;
+    }
+
+    for (;;) {
+        char c = 0;
+        int n = read(fd, &c, 1);
+        if (n < 0) {
+            put_err("pdb: failed to read script file: ");
+            put_err(path);
+            put_chr('\n');
+            close(fd);
+            return -1;
+        }
+        if (n == 0)
+            break;
+        if (c == '\r')
+            continue;
+        if (c == '\n') {
+            if (dropping) {
+                put_err("pdb: script line too long in ");
+                put_err(path);
+                put_chr('\n');
+                close(fd);
+                return -1;
+            }
+            if (len > 0 && line[0] != '#') {
+                line[len] = '\0';
+                if (append_script_cmd(script_cmds, script_count,
+                                      storage, storage_used, line) < 0) {
+                    put_err("pdb: script command limit exceeded while reading ");
+                    put_err(path);
+                    put_chr('\n');
+                    close(fd);
+                    return -1;
+                }
+            }
+            len = 0;
+            dropping = 0;
+            continue;
+        }
+        if (dropping)
+            continue;
+        if (len >= PDB_SCRIPT_LINE_MAX - 1) {
+            dropping = 1;
+            continue;
+        }
+        line[len++] = c;
+    }
+
+    if (dropping) {
+        put_err("pdb: script line too long in ");
+        put_err(path);
+        put_chr('\n');
+        close(fd);
+        return -1;
+    }
+
+    if (len > 0 && line[0] != '#') {
+        line[len] = '\0';
+        if (append_script_cmd(script_cmds, script_count,
+                              storage, storage_used, line) < 0) {
+            put_err("pdb: script command limit exceeded while reading ");
+            put_err(path);
+            put_chr('\n');
+            close(fd);
+            return -1;
+        }
+    }
+
+    close(fd);
+    return 0;
 }
 
 static int parse_u32(const char *s, uint32_t *out)
@@ -804,7 +916,7 @@ static int wait_child(pid_t pid, int *stopped, int *exit_code,
 
 static void usage(void)
 {
-    put_str("Usage: pdb [-c <cmd> ...] <program> [args...]\n");
+    put_str("Usage: pdb [-c <cmd> ...] [-f <script> ...] <program> [args...]\n");
 }
 
 static void print_help(void)
@@ -845,6 +957,7 @@ int main(int argc, char *argv[])
 {
     int argi = 1;
     char *script_cmds[PDB_SCRIPT_CMD_MAX];
+    int script_storage_used = 0;
     int script_count = 0;
     int script_index = 0;
     pid_t pid;
@@ -857,19 +970,34 @@ int main(int argc, char *argv[])
     struct ppap_ptrace_caps caps;
     pdb_local_bp_t local_bp[PDB_LOCAL_BP_MAX];
 
-    while (argi < argc && streq(argv[argi], "-c")) {
-        if (argi + 1 >= argc) {
-            put_err("pdb: -c requires a command string\n");
-            return 1;
+    while (argi < argc) {
+        if (streq(argv[argi], "-c")) {
+            if (argi + 1 >= argc) {
+                put_err("pdb: -c requires a command string\n");
+                return 1;
+            }
+            if (script_count >= PDB_SCRIPT_CMD_MAX) {
+                put_err("pdb: too many script commands (max ");
+                put_u32(PDB_SCRIPT_CMD_MAX);
+                put_str(")\n");
+                return 1;
+            }
+            script_cmds[script_count++] = argv[argi + 1];
+            argi += 2;
+            continue;
         }
-        if (script_count >= PDB_SCRIPT_CMD_MAX) {
-            put_err("pdb: too many -c commands (max ");
-            put_u32(PDB_SCRIPT_CMD_MAX);
-            put_str(")\n");
-            return 1;
+        if (streq(argv[argi], "-f")) {
+            if (argi + 1 >= argc) {
+                put_err("pdb: -f requires a script path\n");
+                return 1;
+            }
+            if (load_script_file(argv[argi + 1], script_cmds, &script_count,
+                                 pdb_script_storage, &script_storage_used) < 0)
+                return 1;
+            argi += 2;
+            continue;
         }
-        script_cmds[script_count++] = argv[argi + 1];
-        argi += 2;
+        break;
     }
 
     if (argi >= argc) {
