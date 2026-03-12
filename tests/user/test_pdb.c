@@ -87,6 +87,11 @@ static char arg_caps[] = "caps";
 static char arg_regs[] = "regs";
 static char arg_x[] = "x 0x0100 1";
 static char arg_disas[] = "disas 0x0100 3";
+static char arg_break[] = "break 0x0101";
+static char arg_disable[] = "disable 0";
+static char arg_enable[] = "enable 0";
+static char arg_info_break[] = "info break";
+static char arg_delete[] = "delete 0";
 static char arg_setreg[] = "set reg wz 0x1234";
 static char arg_setmem[] = "set mem 0x0100 0x00000000";
 static char arg_step[] = "step";
@@ -102,32 +107,43 @@ int main(void)
     UT_ASSERT(1, "pdb smoke is currently enabled on m68k only");
     UT_SUMMARY("test_pdb");
 #else
-    char out[2048];
+    char out[3072];
     int status = 0;
     int n = 0;
-    char *argv[21];
+    char *argv[31];
+    int a = 0;
 
-    argv[0] = arg_prog;
-    argv[1] = arg_opt;
-    argv[2] = arg_caps;
-    argv[3] = arg_opt;
-    argv[4] = arg_regs;
-    argv[5] = arg_opt;
-    argv[6] = arg_x;
-    argv[7] = arg_opt;
-    argv[8] = arg_disas;
-    argv[9] = arg_opt;
-    argv[10] = arg_setreg;
-    argv[11] = arg_opt;
-    argv[12] = arg_setmem;
-    argv[13] = arg_opt;
-    argv[14] = arg_step;
-    argv[15] = arg_opt;
-    argv[16] = arg_event;
-    argv[17] = arg_opt;
-    argv[18] = arg_quit;
-    argv[19] = arg_target;
-    argv[20] = (char *)0;
+    argv[a++] = arg_prog;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_caps;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_regs;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_x;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_disas;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_break;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_disable;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_enable;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_info_break;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_delete;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_setreg;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_setmem;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_step;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_event;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_quit;
+    argv[a++] = arg_target;
+    argv[a] = (char *)0;
 
     UT_ASSERT_EQ(write_blob("/tmp/pdb_smoke.com", pdb_smoke_com,
                             (int)sizeof(pdb_smoke_com)), 0);
@@ -150,6 +166,26 @@ int main(void)
               "output should include scripted disassembly command");
     UT_ASSERT(str_contains(out, "0x00000100: nop"),
               "output should include Z80 disassembly");
+    UT_ASSERT(str_contains(out, "pdb> break 0x0101"),
+              "output should include scripted break command");
+    UT_ASSERT(str_contains(out, "bp 0 @ 0x00000101"),
+              "output should include breakpoint creation result");
+    UT_ASSERT(str_contains(out, "pdb> disable 0"),
+              "output should include scripted disable command");
+    UT_ASSERT(str_contains(out, "bp 0 disabled"),
+              "output should include breakpoint disable result");
+    UT_ASSERT(str_contains(out, "pdb> enable 0"),
+              "output should include scripted enable command");
+    UT_ASSERT(str_contains(out, "bp 0 enabled"),
+              "output should include breakpoint enable result");
+    UT_ASSERT(str_contains(out, "pdb> info break"),
+              "output should include scripted info break command");
+    UT_ASSERT(str_contains(out, "bp 0 @ 0x00000101 enabled"),
+              "output should include enabled breakpoint info");
+    UT_ASSERT(str_contains(out, "pdb> delete 0"),
+              "output should include scripted delete command");
+    UT_ASSERT(str_contains(out, "bp 0 cleared"),
+              "output should include breakpoint clear result");
     UT_ASSERT(str_contains(out, "pdb> set reg wz 0x1234"),
               "output should include scripted register write command");
     UT_ASSERT(str_contains(out, "reg wz=0x1234"),

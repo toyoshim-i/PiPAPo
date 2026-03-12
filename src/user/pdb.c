@@ -4,6 +4,7 @@
 
 typedef struct {
     uint8_t used;
+    uint8_t enabled;
     uint32_t addr;
 } pdb_local_bp_t;
 
@@ -646,6 +647,8 @@ static void print_help(void)
     put_str("  set reg <r> <v>   write register by name or index\n");
     put_str("  set mem <a> <v>   write memory word\n");
     put_str("  break <addr>      set software breakpoint\n");
+    put_str("  disable <id>      disable breakpoint by id\n");
+    put_str("  enable <id>       enable breakpoint by id\n");
     put_str("  delete <id>       clear breakpoint by id\n");
     put_str("  info break        show local breakpoint table\n");
     put_str("  quit | q          detach and quit\n");
@@ -684,6 +687,7 @@ int main(int argc, char *argv[])
 
     for (int i = 0; i < PDB_LOCAL_BP_MAX; i++) {
         local_bp[i].used = 0;
+        local_bp[i].enabled = 0;
         local_bp[i].addr = 0;
     }
 
@@ -980,8 +984,111 @@ int main(int argc, char *argv[])
             put_chr('\n');
             if (bp.id >= 0 && bp.id < PDB_LOCAL_BP_MAX) {
                 local_bp[bp.id].used = 1;
+                local_bp[bp.id].enabled = 1;
                 local_bp[bp.id].addr = bp.addr;
             }
+            continue;
+        }
+
+        if (streq(tok[0], "disable")) {
+            struct ppap_ptrace_bp bp;
+            uint32_t id = 0;
+            long rc;
+            if (!child_stopped) {
+                put_err("pdb: child is not stopped\n");
+                continue;
+            }
+            if (ntok < 2 || !parse_u32(tok[1], &id)) {
+                put_err("pdb: usage: disable <id>\n");
+                continue;
+            }
+            if (id >= PDB_LOCAL_BP_MAX || !local_bp[id].used) {
+                put_err("pdb: unknown breakpoint id\n");
+                continue;
+            }
+            if (!local_bp[id].enabled) {
+                put_str("bp ");
+                put_u32(id);
+                put_str(" already disabled\n");
+                continue;
+            }
+            bp.id = (int32_t)id;
+            bp.addr = 0;
+            bp.flags = 0;
+            rc = ptrace(PTRACE_CLRBP, pid, (void *)0, &bp);
+            if (rc < 0) {
+                put_err("pdb: CLRBP failed rc=");
+                put_i32((int32_t)rc);
+                put_chr('\n');
+                continue;
+            }
+            local_bp[id].enabled = 0;
+            put_str("bp ");
+            put_u32(id);
+            put_str(" disabled\n");
+            continue;
+        }
+
+        if (streq(tok[0], "enable")) {
+            struct ppap_ptrace_bp bp;
+            uint32_t id = 0;
+            long rc;
+            if (!child_stopped) {
+                put_err("pdb: child is not stopped\n");
+                continue;
+            }
+            if (ntok < 2 || !parse_u32(tok[1], &id)) {
+                put_err("pdb: usage: enable <id>\n");
+                continue;
+            }
+            if (id >= PDB_LOCAL_BP_MAX || !local_bp[id].used) {
+                put_err("pdb: unknown breakpoint id\n");
+                continue;
+            }
+            if (local_bp[id].enabled) {
+                put_str("bp ");
+                put_u32(id);
+                put_str(" already enabled\n");
+                continue;
+            }
+
+            bp.id = -1;
+            bp.addr = local_bp[id].addr;
+            bp.flags = PPAP_PTRACE_BP_SW;
+            rc = ptrace(PTRACE_SETBP, pid, (void *)0, &bp);
+            if (rc < 0) {
+                put_err("pdb: SETBP failed rc=");
+                put_i32((int32_t)rc);
+                put_chr('\n');
+                continue;
+            }
+            if (bp.id != (int32_t)id) {
+                if (bp.id < 0 || bp.id >= PDB_LOCAL_BP_MAX || local_bp[bp.id].used) {
+                    struct ppap_ptrace_bp rollback;
+                    rollback.id = bp.id;
+                    rollback.addr = 0;
+                    rollback.flags = 0;
+                    (void)ptrace(PTRACE_CLRBP, pid, (void *)0, &rollback);
+                    put_err("pdb: enable remap failed\n");
+                    continue;
+                }
+                local_bp[bp.id].used = local_bp[id].used;
+                local_bp[bp.id].enabled = 1;
+                local_bp[bp.id].addr = local_bp[id].addr;
+                local_bp[id].used = 0;
+                local_bp[id].enabled = 0;
+                local_bp[id].addr = 0;
+                put_str("bp ");
+                put_u32(id);
+                put_str(" enabled as ");
+                put_i32(bp.id);
+                put_chr('\n');
+                continue;
+            }
+            local_bp[id].enabled = 1;
+            put_str("bp ");
+            put_u32(id);
+            put_str(" enabled\n");
             continue;
         }
 
@@ -997,21 +1104,28 @@ int main(int argc, char *argv[])
                 put_err("pdb: usage: delete <id>\n");
                 continue;
             }
-            bp.id = (int32_t)id;
-            bp.addr = 0;
-            bp.flags = 0;
-            rc = ptrace(PTRACE_CLRBP, pid, (void *)0, &bp);
-            if (rc < 0) {
-                put_err("pdb: CLRBP failed rc=");
-                put_i32((int32_t)rc);
-                put_chr('\n');
+            if (id >= PDB_LOCAL_BP_MAX || !local_bp[id].used) {
+                put_err("pdb: unknown breakpoint id\n");
                 continue;
+            }
+            if (local_bp[id].enabled) {
+                bp.id = (int32_t)id;
+                bp.addr = 0;
+                bp.flags = 0;
+                rc = ptrace(PTRACE_CLRBP, pid, (void *)0, &bp);
+                if (rc < 0) {
+                    put_err("pdb: CLRBP failed rc=");
+                    put_i32((int32_t)rc);
+                    put_chr('\n');
+                    continue;
+                }
             }
             put_str("bp ");
             put_u32(id);
             put_str(" cleared\n");
             if (id < PDB_LOCAL_BP_MAX) {
                 local_bp[id].used = 0;
+                local_bp[id].enabled = 0;
                 local_bp[id].addr = 0;
             }
             continue;
@@ -1025,6 +1139,11 @@ int main(int argc, char *argv[])
                 put_u32((uint32_t)i);
                 put_str(" @ ");
                 put_hex32(local_bp[i].addr);
+                put_str(" ");
+                if (local_bp[i].enabled)
+                    put_str("enabled");
+                else
+                    put_str("disabled");
                 put_chr('\n');
             }
             continue;

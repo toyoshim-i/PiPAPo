@@ -68,6 +68,8 @@ pdb -c "caps" -c "regs" -c "disas 0x0100 3" /tmp/prog.com
 #   step
 #   cont
 #   break 0x0101
+#   disable 0
+#   enable 0
 #   delete 0
 #   info break
 #   quit
