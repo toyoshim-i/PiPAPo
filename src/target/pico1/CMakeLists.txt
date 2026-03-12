@@ -25,6 +25,7 @@ set(CMAKE_CXX_STANDARD 17)
 pico_sdk_init()
 
 option(PPAP_TESTS "Enable test suite" OFF)
+option(PPAP_TESTS_EXTENDED "Use extended test init runner" OFF)
 
 include(${PPAP_ROOT}/cmake/arm_m.cmake)
 

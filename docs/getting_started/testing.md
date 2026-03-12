@@ -21,6 +21,9 @@ build process, and execution environment.
 # On-target tests (m68k, requires qemu-system-m68k)
 ./scripts/run.sh --test qemu_m68k
 
+# Extended on-target tests (ARM lane with extra user tests)
+./scripts/run.sh --test-extended qemu_arm
+
 # Everything at once (host + build all targets + QEMU tests)
 ./scripts/test.sh --all
 ```
@@ -123,7 +126,9 @@ static void my_integration_test(void)
 2. CMake adds `ktest.c` to the kernel build and defines `PPAP_TESTS=1`
 3. After VFS mount, `target_post_mount()` calls `ktest_run_all()`
 4. All test suites run, printing `TEST: name ... PASS/FAIL` to UART
-5. After kernel tests, `target_init_path()` returns `/bin/runtests`
+5. After kernel tests, `target_init_path()` returns:
+   - `/bin/runtests` in normal test builds
+   - `/bin/runtests_ext` in extended test builds
    (instead of `/sbin/init`), launching the user-space test runner
 
 ### Adding a kernel test suite
@@ -310,6 +315,16 @@ and greps output for the exact marker `ALL TESTS PASSED`.
 ./scripts/run.sh --test qemu_m68k    # m68k
 ```
 
+### `run.sh --test-extended`
+
+Builds with `PPAP_TESTS=ON` and `PPAP_TESTS_EXTENDED=ON`, runs under QEMU
+with a larger timeout budget, and executes `/bin/runtests_ext` as PID 1.
+
+```bash
+./scripts/run.sh --test-extended qemu_arm
+./scripts/run.sh --test-extended qemu_m68k
+```
+
 ### `test.sh --all`
 
 Full CI pipeline:
@@ -363,11 +378,17 @@ boot → kernel init → VFS mount → target_post_mount()
                    run.sh --test checks exit
 ```
 
+Extended lane (`--test-extended`) uses the same flow except
+`target_init_path()` resolves to `/bin/runtests_ext`.
+
 ## Build flags reference
 
 | Flag | Where | Effect |
 |------|-------|--------|
 | `--test` | `./scripts/build.sh` | Sets `PPAP_TESTS=ON` in CMake |
+| `--test-extended` | `./scripts/build.sh` | Sets `PPAP_TESTS=ON` and `PPAP_TESTS_EXTENDED=ON` |
 | `PPAP_TESTS=ON` | CMake option | Compiles `ktest.c` into kernel; defines `PPAP_TESTS=1` C macro; enables user test builds |
+| `PPAP_TESTS_EXTENDED=ON` | CMake option | Defines `PPAP_TESTS_EXTENDED=1`; selects `/bin/runtests_ext` as init path |
 | `PPAP_TESTS=1` | C preprocessor | Guards `ktest_run_all()` call in `target_post_mount()`; selects `/bin/runtests` as init path |
+| `PPAP_TESTS_EXTENDED=1` | C preprocessor | Selects `/bin/runtests_ext` as init path |
 | `PPAP_TESTS=ON` | `cmake/user.cmake` | Builds test binaries and installs to romfs |

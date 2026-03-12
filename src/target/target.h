@@ -70,8 +70,11 @@ void target_post_mount(void);
  *
  * Default build (PPAP_TESTS off): "/sbin/init" (busybox ash shell).
  * Test build  (PPAP_TESTS on):   "/bin/runtests" (automated test runner).
+ * Extended test build
+ * (PPAP_TESTS_EXTENDED on):      "/bin/runtests_ext" (extended test runner).
  *
- * Each target implements this with #ifdef PPAP_TESTS in its own .c file.
+ * Each target implements this with #ifdef PPAP_TESTS and
+ * #ifdef PPAP_TESTS_EXTENDED in its own .c file.
  */
 const char *target_init_path(void);
 

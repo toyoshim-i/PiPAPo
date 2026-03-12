@@ -13,6 +13,7 @@
 #   --build             Build before running
 #   --no-build          Skip build, use existing binary (default)
 #   --test              Enable PPAP_TESTS, run automated test suite (implies --build)
+#   --test-extended     Enable PPAP_TESTS_EXTENDED, run extended test suite (implies --build)
 #   --clean             Clean build directory before building (implies --build)
 #   --overlay=<dir>     Extra overlay directory copied into romfs (implies --build)
 #   --h68k-debug        Enable kernel Human68k debug diagnostics (implies --build)
@@ -25,6 +26,7 @@
 #   ./scripts/run.sh --build qemu_m68k      # build & run m68k
 #   ./scripts/run.sh --test                 # build ARM with tests, run & check
 #   ./scripts/run.sh --test qemu_m68k       # build m68k with tests, run & check
+#   ./scripts/run.sh --test-extended        # build ARM with extended tests, run & check
 #   ./scripts/run.sh --gdb                  # run existing ARM binary under GDB
 #   ./scripts/run.sh pico1calc              # flash pre-built pico1calc via OpenOCD
 #   ./scripts/run.sh --build pico1calc      # build & flash pico1calc
@@ -44,6 +46,7 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TARGET=""
 DO_BUILD=0
 DO_TEST=0
+DO_TEST_EXTENDED=0
 DO_CLEAN=0
 DO_GDB=0
 DO_H68K_DEBUG=0
@@ -55,6 +58,7 @@ for arg in "$@"; do
         --no-build) DO_BUILD=0 ;;
         --build)    DO_BUILD=1 ;;
         --test)     DO_TEST=1; DO_BUILD=1 ;;
+        --test-extended) DO_TEST=1; DO_TEST_EXTENDED=1; DO_BUILD=1 ;;
         --clean)    DO_CLEAN=1; DO_BUILD=1 ;;
         --overlay=*)OVERLAY="${arg#--overlay=}"; DO_BUILD=1 ;;
         --h68k-debug) DO_H68K_DEBUG=1; DO_BUILD=1 ;;
@@ -83,7 +87,11 @@ ELF="$BUILD_DIR/${CMAKE_TARGET}.elf"
 if [[ $DO_BUILD -eq 1 ]]; then
     BUILD_ARGS=()
     if [[ $DO_CLEAN -eq 1 ]]; then BUILD_ARGS+=(--clean); fi
-    if [[ $DO_TEST -eq 1 ]]; then BUILD_ARGS+=(--test); fi
+    if [[ $DO_TEST_EXTENDED -eq 1 ]]; then
+        BUILD_ARGS+=(--test-extended)
+    elif [[ $DO_TEST -eq 1 ]]; then
+        BUILD_ARGS+=(--test)
+    fi
     if [[ -n "$OVERLAY" ]]; then BUILD_ARGS+=("--overlay=$OVERLAY"); fi
     if [[ $DO_H68K_DEBUG -eq 1 ]]; then BUILD_ARGS+=(--h68k-debug); fi
     "$SCRIPT_DIR/build.sh" "${BUILD_ARGS[@]}" "$TARGET"
@@ -150,6 +158,9 @@ fi
 
 # ── Test mode: run with timeout and check output ───────────────────────────
 if [[ $DO_TEST -eq 1 ]]; then
+    if [[ $DO_TEST_EXTENDED -eq 1 ]]; then
+        TIMEOUT=90
+    fi
     echo "[test] Running on-target tests (timeout ${TIMEOUT}s)..."
     OUTPUT=$(timeout "$TIMEOUT" "$QEMU_BIN" \
         "${QEMU_ARGS[@]}" \

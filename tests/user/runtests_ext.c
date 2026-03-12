@@ -1,0 +1,111 @@
+/*
+ * runtests_ext.c — Extended on-target test runner for PPAP
+ *
+ * Same as runtests.c plus extended-lane tests that may exceed the
+ * default 60-second suite budget.
+ */
+
+#include "syscall.h"
+
+static void print(const char *s)
+{
+    int len = 0;
+    while (s[len]) len++;
+    write(1, s, len);
+}
+
+static void print_int(int v)
+{
+    if (v == 0) { write(1, "0", 1); return; }
+    static const int powers[] = {1000000000,100000000,10000000,1000000,
+                                 100000,10000,1000,100,10,1};
+    int started = 0;
+    int p;
+    for (p = 0; p < 10; p++) {
+        int d = 0;
+        while (v >= powers[p]) { v -= powers[p]; d++; }
+        if (d || started) {
+            char c = '0' + d;
+            write(1, &c, 1);
+            started = 1;
+        }
+    }
+}
+
+int main(void)
+{
+    const char *tests[27];
+    int t = 0;
+    tests[t++] = "/bin/test_exec";
+    tests[t++] = "/bin/test_elf";
+    tests[t++] = "/bin/test_vfork";
+    tests[t++] = "/bin/test_fault";
+    tests[t++] = "/bin/test_pipe";
+    tests[t++] = "/bin/test_brk";
+    tests[t++] = "/bin/test_fd";
+    tests[t++] = "/bin/test_signal";
+    tests[t++] = "/bin/test_poll";
+    tests[t++] = "/bin/test_sleep_intr";
+    tests[t++] = "/bin/test_orphan";
+    tests[t++] = "/bin/test_id";
+    tests[t++] = "/bin/test_fs";
+    tests[t++] = "/bin/test_rw";
+    tests[t++] = "/bin/test_time";
+    tests[t++] = "/bin/test_iov";
+    tests[t++] = "/bin/test_stat";
+    tests[t++] = "/bin/test_tmpfs";
+    tests[t++] = "/bin/test_x68k";
+    tests[t++] = "/bin/test_cpm";
+    tests[t++] = "/bin/test_trace";
+    tests[t++] = "/bin/test_pdb";
+    tests[t++] = "/bin/test_pdb_arm_disas";
+    tests[t++] = "/bin/test_h68k_dos";
+    tests[t] = (void *)0;
+
+    print("=== PPAP extended on-target test suite ===\n");
+    int total = 0, failed = 0;
+
+    int i;
+    for (i = 0; tests[i]; i++) {
+        print("RUN   ");
+        print(tests[i]);
+        print("\n");
+
+        pid_t pid = vfork();
+        if (pid == 0) {
+            execve(tests[i], (void *)0, (void *)0);
+            _exit(127);
+        }
+
+        int status = 0;
+        waitpid(pid, &status, 0);
+        int code = (status >> 8) & 0xff;
+
+        total++;
+        if (code != 0) {
+            failed++;
+            print("FAIL  ");
+            print(tests[i]);
+            print(" (exit ");
+            print_int(code);
+            print(")\n");
+        } else {
+            print("PASS  ");
+            print(tests[i]);
+            print("\n");
+        }
+    }
+
+    print("\n=== Results: ");
+    print_int(total);
+    print(" tests, ");
+    print_int(failed);
+    print(" failed ===\n");
+
+    if (failed == 0)
+        print("ALL TESTS PASSED\n");
+    else
+        print("SOME TESTS FAILED\n");
+
+    return failed;
+}

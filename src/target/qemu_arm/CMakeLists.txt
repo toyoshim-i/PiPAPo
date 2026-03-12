@@ -12,6 +12,7 @@ project(ppap_qemu_arm C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 
 option(PPAP_TESTS "Enable test suite" OFF)
+option(PPAP_TESTS_EXTENDED "Use extended test init runner" OFF)
 
 include(${PPAP_ROOT}/cmake/arm_m.cmake)
 

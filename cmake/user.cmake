@@ -65,7 +65,7 @@ set(USER_TESTS
     test_id test_fs test_rw test_time test_iov test_stat test_tmpfs
     test_x68k test_h68k_dos test_cpm test_trace test_pdb
     test_pdb_arm_disas trace_peek_target
-    runtests
+    runtests runtests_ext
 )
 
 # --- Busybox applet lists ---

@@ -55,6 +55,9 @@ function(ppap_m68k_target_common target)
         target_include_directories(${target} PRIVATE ${PPAP_ROOT}/tests/kernel)
         target_compile_definitions(${target} PRIVATE PPAP_TESTS=1)
     endif()
+    if(PPAP_TESTS_EXTENDED)
+        target_compile_definitions(${target} PRIVATE PPAP_TESTS_EXTENDED=1)
+    endif()
     
     # Human68k debug support
     if(H68K_DEBUG)
