@@ -54,12 +54,17 @@ static void cpm_setup_bios_table(z80_state_t *cpu)
 {
     uint8_t *mem = cpu->memory;
 
-    /* Write 17 BIOS entries, each is a RET (trap intercepts the CALL) */
+    /* Write 17 BIOS jump entries.
+     *
+     * CP/M programs (including MBASIC) read the BIOS jump table bytes and
+     * use the encoded target addresses. Keep the table in canonical
+     * "JP target" form even though CALLs are intercepted by the trap hook.
+     */
     for (int i = 0; i < 17; i++) {
         uint16_t addr = CPM_BIOS_ENTRY + i * 3;
-        mem[addr]     = 0xC9;  /* RET */
-        mem[addr + 1] = 0x00;
-        mem[addr + 2] = 0x00;
+        mem[addr]     = 0xC3;        /* JP target */
+        mem[addr + 1] = addr & 0xFF; /* low byte of target */
+        mem[addr + 2] = addr >> 8;   /* high byte of target */
     }
 }
 

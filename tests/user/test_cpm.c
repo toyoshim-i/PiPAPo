@@ -236,6 +236,122 @@ static void test_version(void)
     UT_ASSERT_EQ(buf[0], '2');   /* CP/M version 2.2 → major = 2 */
 }
 
+/* ── Test 5b: version register contract (A/HL and C unchanged) ───────── */
+/*
+ * Z80 code:
+ *   LD C, 12      ; 0E 0C      — BDOS fn 12
+ *   CALL 0x0005   ; CD 05 00   — expect A=L=0x22, H=0x00
+ *   LD D, A       ; 57          — save A
+ *   LD A, C       ; 79          — C should still be 12
+ *   CP 0x0C       ; FE 0C
+ *   JR NZ, fail   ; 20 20
+ *   LD A, L       ; 7D
+ *   CP D          ; BA          — L == original A
+ *   JR NZ, fail   ; 20 1C
+ *   LD A, H       ; 7C
+ *   OR A          ; B7          — H == 0
+ *   JR NZ, fail   ; 20 18
+ *   LD A, D       ; 7A
+ *   CP 0x22       ; FE 22       — version = 2.2
+ *   JR NZ, fail   ; 20 13
+ *   ; print "OK"
+ *   LD E, 'O'     ; 1E 4F
+ *   LD C, 2       ; 0E 02
+ *   CALL 0x0005   ; CD 05 00
+ *   LD E, 'K'     ; 1E 4B
+ *   LD C, 2       ; 0E 02
+ *   CALL 0x0005   ; CD 05 00
+ *   LD C, 0       ; 0E 00
+ *   CALL 0x0005   ; CD 05 00
+ * fail:
+ *   LD E, '!'     ; 1E 21
+ *   LD C, 2       ; 0E 02
+ *   CALL 0x0005   ; CD 05 00
+ *   LD C, 0       ; 0E 00
+ *   CALL 0x0005   ; CD 05 00
+ */
+static const unsigned char version_regs_com[] = {
+    0x0E, 0x0C,             /* LD C, 12      */
+    0xCD, 0x05, 0x00,       /* CALL 0x0005   */
+    0x57,                   /* LD D, A       */
+    0x79,                   /* LD A, C       */
+    0xFE, 0x0C,             /* CP 0x0C       */
+    0x20, 0x20,             /* JR NZ, fail   */
+    0x7D,                   /* LD A, L       */
+    0xBA,                   /* CP D          */
+    0x20, 0x1C,             /* JR NZ, fail   */
+    0x7C,                   /* LD A, H       */
+    0xB7,                   /* OR A          */
+    0x20, 0x18,             /* JR NZ, fail   */
+    0x7A,                   /* LD A, D       */
+    0xFE, 0x22,             /* CP 0x22       */
+    0x20, 0x13,             /* JR NZ, fail   */
+    0x1E, 0x4F,             /* LD E, 'O'     */
+    0x0E, 0x02,             /* LD C, 2       */
+    0xCD, 0x05, 0x00,       /* CALL 0x0005   */
+    0x1E, 0x4B,             /* LD E, 'K'     */
+    0x0E, 0x02,             /* LD C, 2       */
+    0xCD, 0x05, 0x00,       /* CALL 0x0005   */
+    0x0E, 0x00,             /* LD C, 0       */
+    0xCD, 0x05, 0x00,       /* CALL 0x0005   */
+    0x1E, 0x21,             /* LD E, '!'     */
+    0x0E, 0x02,             /* LD C, 2       */
+    0xCD, 0x05, 0x00,       /* CALL 0x0005   */
+    0x0E, 0x00,             /* LD C, 0       */
+    0xCD, 0x05, 0x00,       /* CALL 0x0005   */
+};
+
+static void test_version_registers(void)
+{
+    WRITE_COM("/tmp/version_regs.com", version_regs_com);
+    char buf[64];
+    int n = run_com_capture("/tmp/version_regs.com", buf, sizeof(buf));
+    UT_ASSERT_EQ(n, 2);
+    UT_ASSERT(buf[0] == 'O' && buf[1] == 'K',
+              "fn12 returns A/L/H as CP/M 2.2 and keeps C");
+}
+
+/* ── Test 5c: BIOS jump table bytes are non-zero vectors ──────────────── */
+/*
+ * MBASIC reads BIOS vector bytes from ((0001)+4) during startup.
+ * This test verifies those bytes are non-zero.
+ */
+static const unsigned char biosvec_com[] = {
+    0x2A, 0x01, 0x00,       /* LD HL, (0x0001) */
+    0x01, 0x04, 0x00,       /* LD BC, 0x0004   */
+    0x09,                   /* ADD HL, BC      */
+    0x7E,                   /* LD A, (HL)      */
+    0xB7,                   /* OR A            */
+    0x28, 0x18,             /* JR Z, fail      */
+    0x23,                   /* INC HL          */
+    0x7E,                   /* LD A, (HL)      */
+    0xB7,                   /* OR A            */
+    0x28, 0x13,             /* JR Z, fail      */
+    0x1E, 0x4F,             /* LD E, 'O'       */
+    0x0E, 0x02,             /* LD C, 2         */
+    0xCD, 0x05, 0x00,       /* CALL 0x0005     */
+    0x1E, 0x4B,             /* LD E, 'K'       */
+    0x0E, 0x02,             /* LD C, 2         */
+    0xCD, 0x05, 0x00,       /* CALL 0x0005     */
+    0x0E, 0x00,             /* LD C, 0         */
+    0xCD, 0x05, 0x00,       /* CALL 0x0005     */
+    0x1E, 0x21,             /* LD E, '!'       */
+    0x0E, 0x02,             /* LD C, 2         */
+    0xCD, 0x05, 0x00,       /* CALL 0x0005     */
+    0x0E, 0x00,             /* LD C, 0         */
+    0xCD, 0x05, 0x00,       /* CALL 0x0005     */
+};
+
+static void test_bios_vectors(void)
+{
+    WRITE_COM("/tmp/biosvec.com", biosvec_com);
+    char buf[64];
+    int n = run_com_capture("/tmp/biosvec.com", buf, sizeof(buf));
+    UT_ASSERT_EQ(n, 2);
+    UT_ASSERT(buf[0] == 'O' && buf[1] == 'K',
+              "BIOS jump table exposes non-zero vector bytes");
+}
+
 /* ── Test 6: halt.com — HALT instruction triggers clean exit ──────────── */
 /*
  * Z80 code:
@@ -775,6 +891,8 @@ int main(void)
     test_charout();
     test_loop();
     test_version();
+    test_version_registers();
+    test_bios_vectors();
     test_halt_exit();
     test_bad_extension();
     test_direct_io();
