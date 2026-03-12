@@ -639,6 +639,8 @@ static void print_regs(const struct ppap_ptrace_regs *regs)
 
 static int peek_u8(pid_t pid, uint32_t addr, uint8_t *byte_out);
 static int peek_u16le(pid_t pid, uint32_t addr, uint16_t *value_out);
+static int peek_u16be(pid_t pid, uint32_t addr, uint16_t *value_out);
+static int peek_u32be(pid_t pid, uint32_t addr, uint32_t *value_out);
 
 static void print_mem_words(pid_t pid, uint32_t addr, uint32_t count)
 {
@@ -742,6 +744,34 @@ static int peek_u16le(pid_t pid, uint32_t addr, uint16_t *value_out)
     if (rc < 0)
         return rc;
     *value_out = (uint16_t)((uint16_t)lo | ((uint16_t)hi << 8));
+    return 0;
+}
+
+static int peek_u16be(pid_t pid, uint32_t addr, uint16_t *value_out)
+{
+    uint8_t hi = 0;
+    uint8_t lo = 0;
+    int rc = peek_u8(pid, addr, &hi);
+    if (rc < 0)
+        return rc;
+    rc = peek_u8(pid, addr + 1u, &lo);
+    if (rc < 0)
+        return rc;
+    *value_out = (uint16_t)(((uint16_t)hi << 8) | (uint16_t)lo);
+    return 0;
+}
+
+static int peek_u32be(pid_t pid, uint32_t addr, uint32_t *value_out)
+{
+    uint16_t hi = 0;
+    uint16_t lo = 0;
+    int rc = peek_u16be(pid, addr, &hi);
+    if (rc < 0)
+        return rc;
+    rc = peek_u16be(pid, addr + 2u, &lo);
+    if (rc < 0)
+        return rc;
+    *value_out = ((uint32_t)hi << 16) | (uint32_t)lo;
     return 0;
 }
 
@@ -872,6 +902,134 @@ static void disas_z80(pid_t pid, uint32_t pc, uint32_t count)
 
     for (uint32_t i = 0; i < count; i++) {
         int rc = z80_disas_one(pid, pc, &pc);
+        if (rc < 0) {
+            put_err("pdb: disas failed rc=");
+            put_i32((int32_t)rc);
+            put_chr('\n');
+            return;
+        }
+    }
+}
+
+static const char *m68k_cc_name(uint16_t cc)
+{
+    switch (cc & 0x0f) {
+    case 0x0: return "bra";
+    case 0x1: return "bsr";
+    case 0x2: return "bhi";
+    case 0x3: return "bls";
+    case 0x4: return "bcc";
+    case 0x5: return "bcs";
+    case 0x6: return "bne";
+    case 0x7: return "beq";
+    case 0x8: return "bvc";
+    case 0x9: return "bvs";
+    case 0xa: return "bpl";
+    case 0xb: return "bmi";
+    case 0xc: return "bge";
+    case 0xd: return "blt";
+    case 0xe: return "bgt";
+    default: return "ble";
+    }
+}
+
+static int m68k_disas_one(pid_t pid, uint32_t pc, uint32_t *next_pc)
+{
+    uint16_t op = 0;
+    uint16_t imm16 = 0;
+    uint32_t imm32 = 0;
+    uint32_t len = 2;
+    int rc = peek_u16be(pid, pc, &op);
+    if (rc < 0)
+        return rc;
+
+    put_hex32(pc);
+    put_str(": ");
+
+    if (op == 0x4e71) {
+        put_str("nop");
+        len = 2;
+    } else if (op == 0x4e75) {
+        put_str("rts");
+        len = 2;
+    } else if (op == 0x4e73) {
+        put_str("rte");
+        len = 2;
+    } else if (op == 0x4e72) {
+        rc = peek_u16be(pid, pc + 2u, &imm16);
+        if (rc < 0)
+            return rc;
+        put_str("stop #");
+        put_hex16(imm16);
+        len = 4;
+    } else if ((op & 0xfff0u) == 0x4e40u) {
+        put_str("trap #");
+        put_u32((uint32_t)(op & 0x000fu));
+        len = 2;
+    } else if (op == 0x4eb9u || op == 0x4ef9u) {
+        rc = peek_u32be(pid, pc + 2u, &imm32);
+        if (rc < 0)
+            return rc;
+        if (op == 0x4eb9u)
+            put_str("jsr ");
+        else
+            put_str("jmp ");
+        put_hex32(imm32);
+        len = 6;
+    } else if ((op & 0xf100u) == 0x7000u) {
+        int32_t imm8 = (int32_t)(int8_t)(op & 0x00ffu);
+        uint32_t reg = (uint32_t)((op >> 9) & 0x7u);
+        put_str("moveq #");
+        put_i32(imm8);
+        put_str(",d");
+        put_u32(reg);
+        len = 2;
+    } else if ((op & 0xf000u) == 0x6000u) {
+        uint32_t target = 0;
+        int32_t disp = 0;
+        put_str(m68k_cc_name((uint16_t)((op >> 8) & 0x0fu)));
+        put_chr(' ');
+        disp = (int8_t)(op & 0x00ffu);
+        if ((op & 0x00ffu) == 0x00u) {
+            rc = peek_u16be(pid, pc + 2u, &imm16);
+            if (rc < 0)
+                return rc;
+            disp = (int16_t)imm16;
+            len = 4;
+        } else {
+            len = 2;
+        }
+        target = pc + len + (uint32_t)disp;
+        put_hex32(target);
+    } else {
+        put_str("dc.w ");
+        put_hex16(op);
+        len = 2;
+    }
+
+    put_str(" ;");
+    for (uint32_t i = 0; i < len; i++) {
+        uint8_t b = 0;
+        rc = peek_u8(pid, pc + i, &b);
+        if (rc < 0)
+            return rc;
+        put_chr(' ');
+        put_hex8(b);
+    }
+    put_chr('\n');
+    *next_pc = pc + len;
+    return 0;
+}
+
+static void disas_m68k(pid_t pid, uint32_t pc, uint32_t count)
+{
+    if (count == 0)
+        count = 8;
+    if (count > 64)
+        count = 64;
+
+    for (uint32_t i = 0; i < count; i++) {
+        int rc = m68k_disas_one(pid, pc, &pc);
         if (rc < 0) {
             put_err("pdb: disas failed rc=");
             put_i32((int32_t)rc);
@@ -1475,11 +1633,14 @@ int main(int argc, char *argv[])
                 put_err("pdb: GETREGS failed\n");
                 continue;
             }
-            if (regs.regset != PPAP_TRACE_REGSET_Z80) {
-                put_err("pdb: disas currently supports z80 tracees only\n");
+            if (regs.regset == PPAP_TRACE_REGSET_Z80) {
+                pc_idx = 7; /* Z80 PC */
+            } else if (regs.regset == PPAP_TRACE_REGSET_M68K) {
+                pc_idx = 16; /* m68k PC */
+            } else {
+                put_err("pdb: disas currently supports z80 and m68k tracees only\n");
                 continue;
             }
-            pc_idx = 7; /* Z80 PC */
             addr = regs.regs[pc_idx];
             if (ntok >= 2 && !parse_u32(tok[1], &addr)) {
                 put_err("pdb: usage: disas [addr] [count]\n");
@@ -1489,7 +1650,10 @@ int main(int argc, char *argv[])
                 put_err("pdb: invalid count\n");
                 continue;
             }
-            disas_z80(pid, addr, count);
+            if (regs.regset == PPAP_TRACE_REGSET_Z80)
+                disas_z80(pid, addr, count);
+            else
+                disas_m68k(pid, addr, count);
             continue;
         }
 
