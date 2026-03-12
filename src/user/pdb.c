@@ -248,6 +248,15 @@ static const char *regset_name(uint32_t regset)
     }
 }
 
+static const char *surface_name_for_regset(uint32_t regset)
+{
+    if (regset == PPAP_TRACE_REGSET_Z80)
+        return "ecpu";
+    if (regset == PPAP_TRACE_REGSET_NONE)
+        return "unknown";
+    return "real";
+}
+
 static void print_event(const struct ppap_ptrace_event *ev)
 {
     put_str("stop ");
@@ -765,6 +774,7 @@ static void print_help(void)
     put_str("  show regset       show current register set\n");
     put_str("  show pc           show current program counter\n");
     put_str("  show sp           show current stack pointer\n");
+    put_str("  show surface      show current debug surface\n");
     put_str("  where | w         show pc and sp\n");
     put_str("  x <addr> [count]  read memory words\n");
     put_str("  x/<n><fmt> <addr> read memory (<fmt>: x=word, h=half, b=byte)\n");
@@ -948,7 +958,7 @@ int main(int argc, char *argv[])
 
         if (streq(tok[0], "show")) {
             if (ntok < 2) {
-                put_err("pdb: usage: show <abi|event|caps|regset|pc|sp>\n");
+                put_err("pdb: usage: show <abi|event|caps|regset|pc|sp|surface>\n");
                 continue;
             }
             if (streq(tok[1], "abi")) {
@@ -1062,7 +1072,21 @@ int main(int argc, char *argv[])
                 put_chr('\n');
                 continue;
             }
-            put_err("pdb: usage: show <abi|event|caps|regset|pc|sp>\n");
+            if (streq(tok[1], "surface")) {
+                if (!child_stopped) {
+                    put_err("pdb: child is not stopped\n");
+                    continue;
+                }
+                if (ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps) < 0) {
+                    put_err("pdb: GETCAPS failed\n");
+                    continue;
+                }
+                put_str("surface=");
+                put_str(surface_name_for_regset(caps.regset));
+                put_chr('\n');
+                continue;
+            }
+            put_err("pdb: usage: show <abi|event|caps|regset|pc|sp|surface>\n");
             continue;
         }
 

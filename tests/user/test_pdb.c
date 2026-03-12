@@ -84,7 +84,7 @@ static const uint8_t pdb_smoke_com[] = {
 static char arg_prog[] = "/bin/pdb";
 static char arg_opt[] = "-c";
 static char arg_show_sp[] = "show sp";
-static char arg_show_pc[] = "show pc";
+static char arg_show_surface[] = "show surface";
 static char arg_where[] = "where";
 static char arg_x[] = "x/2h 0x0100";
 static char arg_disas[] = "disas 0x0100 3";
@@ -118,7 +118,7 @@ int main(void)
     argv[a++] = arg_opt;
     argv[a++] = arg_show_sp;
     argv[a++] = arg_opt;
-    argv[a++] = arg_show_pc;
+    argv[a++] = arg_show_surface;
     argv[a++] = arg_opt;
     argv[a++] = arg_where;
     argv[a++] = arg_opt;
@@ -169,10 +169,10 @@ int main(void)
               "output should include scripted show sp command");
     UT_ASSERT(str_contains(out, "sp=0x"),
               "output should include show sp output");
-    UT_ASSERT(str_contains(out, "pdb> show pc"),
-              "output should include scripted show pc command");
-    UT_ASSERT(str_contains(out, "pc=0x"),
-              "output should include show pc output");
+    UT_ASSERT(str_contains(out, "pdb> show surface"),
+              "output should include scripted show surface command");
+    UT_ASSERT(str_contains(out, "surface=ecpu"),
+              "output should include show surface output");
     UT_ASSERT(str_contains(out, "pdb> where"),
               "output should include scripted where command");
     UT_ASSERT(str_contains(out, "pc=0x") && str_contains(out, " sp=0x"),
@@ -223,7 +223,7 @@ int main(void)
               "output should include detach result");
     UT_ASSERT(!str_contains(out, "unknown command"),
               "output should not include unknown command error");
-    UT_ASSERT(!str_contains(out, "usage: show <abi|event|caps|regset|pc|sp>"),
+    UT_ASSERT(!str_contains(out, "usage: show <abi|event|caps|regset|pc|sp|surface>"),
               "show command should not print usage error");
 
     UT_SUMMARY("test_pdb");
