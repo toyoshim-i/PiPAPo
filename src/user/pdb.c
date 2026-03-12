@@ -663,6 +663,7 @@ static void print_help(void)
     put_str("  show event        show last stop event\n");
     put_str("  show caps         show trace capabilities\n");
     put_str("  show regset       show current register set\n");
+    put_str("  show pc           show current program counter\n");
     put_str("  x <addr> [count]  read memory words\n");
     put_str("  disas [a] [n]     disassemble n instructions from addr/pc\n");
     put_str("  step | s          single-step\n");
@@ -844,7 +845,7 @@ int main(int argc, char *argv[])
 
         if (streq(tok[0], "show")) {
             if (ntok < 2) {
-                put_err("pdb: usage: show <abi|event|caps|regset>\n");
+                put_err("pdb: usage: show <abi|event|caps|regset|pc>\n");
                 continue;
             }
             if (streq(tok[1], "abi")) {
@@ -884,7 +885,44 @@ int main(int argc, char *argv[])
                 put_chr('\n');
                 continue;
             }
-            put_err("pdb: usage: show <abi|event|caps|regset>\n");
+            if (streq(tok[1], "pc")) {
+                struct ppap_ptrace_regs regs;
+                uint32_t pc_idx = 0;
+                if (!child_stopped) {
+                    put_err("pdb: child is not stopped\n");
+                    continue;
+                }
+                if (ptrace(PTRACE_GETREGS, pid, (void *)0, &regs) < 0) {
+                    put_err("pdb: GETREGS failed\n");
+                    continue;
+                }
+                switch (regs.regset) {
+                case PPAP_TRACE_REGSET_ARM:
+                    pc_idx = 15;
+                    break;
+                case PPAP_TRACE_REGSET_M68K:
+                    pc_idx = 16;
+                    break;
+                case PPAP_TRACE_REGSET_Z80:
+                    pc_idx = 7;
+                    break;
+                default:
+                    put_err("pdb: unsupported regset for show pc\n");
+                    continue;
+                }
+                if (pc_idx >= regs.words) {
+                    put_err("pdb: pc index out of range\n");
+                    continue;
+                }
+                put_str("pc=");
+                if (regs.regset == PPAP_TRACE_REGSET_Z80)
+                    put_hex16(regs.regs[pc_idx]);
+                else
+                    put_hex32(regs.regs[pc_idx]);
+                put_chr('\n');
+                continue;
+            }
+            put_err("pdb: usage: show <abi|event|caps|regset|pc>\n");
             continue;
         }
 

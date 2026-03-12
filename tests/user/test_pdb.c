@@ -84,7 +84,7 @@ static const uint8_t pdb_smoke_com[] = {
 static char arg_prog[] = "/bin/pdb";
 static char arg_opt[] = "-c";
 static char arg_regs[] = "regs";
-static char arg_reg[] = "reg wz";
+static char arg_show_pc[] = "show pc";
 static char arg_x[] = "x 0x0100 1";
 static char arg_disas[] = "disas 0x0100 3";
 static char arg_break[] = "break 0x0101";
@@ -118,7 +118,7 @@ int main(void)
     argv[a++] = arg_opt;
     argv[a++] = arg_regs;
     argv[a++] = arg_opt;
-    argv[a++] = arg_reg;
+    argv[a++] = arg_show_pc;
     argv[a++] = arg_opt;
     argv[a++] = arg_x;
     argv[a++] = arg_opt;
@@ -163,10 +163,10 @@ int main(void)
     UT_ASSERT(str_contains(out, "stop exec"), "output should include exec stop");
     UT_ASSERT(str_contains(out, "debug-stop"),
               "output should include single-step debug stop");
-    UT_ASSERT(str_contains(out, "pdb> reg wz"),
-              "output should include scripted single-register command");
-    UT_ASSERT(str_contains(out, "wz=0x"),
-              "output should include single-register output");
+    UT_ASSERT(str_contains(out, "pdb> show pc"),
+              "output should include scripted show pc command");
+    UT_ASSERT(str_contains(out, "pc=0x"),
+              "output should include show pc output");
     UT_ASSERT(str_contains(out, "0x00000100:"),
               "output should include memory examine result");
     UT_ASSERT(str_contains(out, "pdb> disas 0x0100 3"),
@@ -213,7 +213,7 @@ int main(void)
               "output should include detach result");
     UT_ASSERT(!str_contains(out, "unknown command"),
               "output should not include unknown command error");
-    UT_ASSERT(!str_contains(out, "usage: show <abi|event|caps|regset>"),
+    UT_ASSERT(!str_contains(out, "usage: show <abi|event|caps|regset|pc>"),
               "show command should not print usage error");
 
     UT_SUMMARY("test_pdb");
