@@ -899,45 +899,42 @@ int main(int argc, char *argv[])
                 put_err("pdb: GETREGS failed\n");
                 continue;
             }
-            if (regs.regset != PPAP_TRACE_REGSET_Z80) {
-                put_err("pdb: next currently supports z80 tracees only\n");
-                continue;
-            }
-
-            pc = regs.regs[7];  /* Z80 PC */
-            rc = (long)peek_u8(pid, pc, &op);
-            if (rc < 0) {
-                put_err("pdb: next opcode read failed rc=");
-                put_i32((int32_t)rc);
-                put_chr('\n');
-                continue;
-            }
-
-            if (z80_is_call_opcode(op)) {
-                next_pc = pc + 3u;
-                use_temp_bp = 1;
-                for (int i = 0; i < PDB_LOCAL_BP_MAX; i++) {
-                    if (!local_bp[i].used || !local_bp[i].enabled)
-                        continue;
-                    if (local_bp[i].addr == next_pc) {
-                        has_enabled_bp = 1;
-                        break;
-                    }
+            if (regs.regset == PPAP_TRACE_REGSET_Z80) {
+                pc = regs.regs[7];  /* Z80 PC */
+                rc = (long)peek_u8(pid, pc, &op);
+                if (rc < 0) {
+                    put_err("pdb: next opcode read failed rc=");
+                    put_i32((int32_t)rc);
+                    put_chr('\n');
+                    continue;
                 }
 
-                if (!has_enabled_bp) {
-                    struct ppap_ptrace_bp bp;
-                    bp.id = -1;
-                    bp.addr = next_pc;
-                    bp.flags = PPAP_PTRACE_BP_SW;
-                    rc = ptrace(PTRACE_SETBP, pid, (void *)0, &bp);
-                    if (rc < 0) {
-                        put_err("pdb: NEXT SETBP failed rc=");
-                        put_i32((int32_t)rc);
-                        put_chr('\n');
-                        continue;
+                if (z80_is_call_opcode(op)) {
+                    next_pc = pc + 3u;
+                    use_temp_bp = 1;
+                    for (int i = 0; i < PDB_LOCAL_BP_MAX; i++) {
+                        if (!local_bp[i].used || !local_bp[i].enabled)
+                            continue;
+                        if (local_bp[i].addr == next_pc) {
+                            has_enabled_bp = 1;
+                            break;
+                        }
                     }
-                    temp_bp_id = bp.id;
+
+                    if (!has_enabled_bp) {
+                        struct ppap_ptrace_bp bp;
+                        bp.id = -1;
+                        bp.addr = next_pc;
+                        bp.flags = PPAP_PTRACE_BP_SW;
+                        rc = ptrace(PTRACE_SETBP, pid, (void *)0, &bp);
+                        if (rc < 0) {
+                            put_err("pdb: NEXT SETBP failed rc=");
+                            put_i32((int32_t)rc);
+                            put_chr('\n');
+                            continue;
+                        }
+                        temp_bp_id = bp.id;
+                    }
                 }
             }
 
