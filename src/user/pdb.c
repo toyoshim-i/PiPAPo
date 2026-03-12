@@ -1,6 +1,7 @@
 #include "syscall.h"
 
 #define PDB_LOCAL_BP_MAX  32
+#define PDB_SCRIPT_CMD_MAX  32
 
 typedef struct {
     uint8_t used;
@@ -282,6 +283,23 @@ static int parse_surface_token(const char *token, uint32_t *surface_out)
     return 0;
 }
 
+static void print_surface_mask(uint32_t surfaces)
+{
+    int has = 0;
+    if (surfaces & PPAP_PTRACE_SURFACE_MASK_REAL) {
+        put_str("real");
+        has = 1;
+    }
+    if (surfaces & PPAP_PTRACE_SURFACE_MASK_ECPU) {
+        if (has)
+            put_chr('|');
+        put_str("ecpu");
+        has = 1;
+    }
+    if (!has)
+        put_str("none");
+}
+
 static void print_event(const struct ppap_ptrace_event *ev)
 {
     put_str("stop ");
@@ -329,6 +347,10 @@ static void print_caps(const struct ppap_ptrace_caps *caps)
     put_str(regset_name(caps->regset));
     put_str(" abi=");
     put_str(abi_name(caps->abi));
+    put_str(" surface=");
+    put_str(surface_name_for_value(caps->surface));
+    put_str(" surfaces=");
+    print_surface_mask(caps->surfaces);
     put_str(" caps=");
     put_hex32(caps->caps);
     put_str(" max_bps=");
@@ -822,7 +844,7 @@ static void print_help(void)
 int main(int argc, char *argv[])
 {
     int argi = 1;
-    char *script_cmds[16];
+    char *script_cmds[PDB_SCRIPT_CMD_MAX];
     int script_count = 0;
     int script_index = 0;
     pid_t pid;
@@ -840,8 +862,13 @@ int main(int argc, char *argv[])
             put_err("pdb: -c requires a command string\n");
             return 1;
         }
-        if (script_count < 16)
-            script_cmds[script_count++] = argv[argi + 1];
+        if (script_count >= PDB_SCRIPT_CMD_MAX) {
+            put_err("pdb: too many -c commands (max ");
+            put_u32(PDB_SCRIPT_CMD_MAX);
+            put_str(")\n");
+            return 1;
+        }
+        script_cmds[script_count++] = argv[argi + 1];
         argi += 2;
     }
 

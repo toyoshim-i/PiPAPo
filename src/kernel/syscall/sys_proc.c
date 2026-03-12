@@ -34,8 +34,6 @@
 #define TRACE_PHASE_EXIT   1
 #define TRACE_MODE_MASK \
     (PPAP_TRACE_MODE_PPAP_SYSCALL | PPAP_TRACE_MODE_SUBSYS_CALL)
-#define TRACE_SURFACE_MASK_REAL  (1u << PPAP_TRACE_SURFACE_REAL)
-#define TRACE_SURFACE_MASK_ECPU  (1u << PPAP_TRACE_SURFACE_ECPU)
 
 static pcb_t *trace_find_tracee(pid_t tracer_pid, long pid)
 {
@@ -226,18 +224,18 @@ static int trace_fill_z80_regs(const pcb_t *target, struct ppap_ptrace_regs *reg
 
 static uint32_t trace_surface_mask_for(const pcb_t *target)
 {
-    uint32_t mask = TRACE_SURFACE_MASK_REAL;
+    uint32_t mask = PPAP_PTRACE_SURFACE_MASK_REAL;
 
     if (target->subsys == SUBSYS_CPM)
-        mask |= TRACE_SURFACE_MASK_ECPU;
+        mask |= PPAP_PTRACE_SURFACE_MASK_ECPU;
     if (target->subsys == SUBSYS_PPAP && target->subsys_data)
-        mask |= TRACE_SURFACE_MASK_ECPU;
+        mask |= PPAP_PTRACE_SURFACE_MASK_ECPU;
     return mask;
 }
 
 static uint32_t trace_default_surface_for(const pcb_t *target)
 {
-    if (trace_surface_mask_for(target) & TRACE_SURFACE_MASK_ECPU)
+    if (trace_surface_mask_for(target) & PPAP_PTRACE_SURFACE_MASK_ECPU)
         return PPAP_TRACE_SURFACE_ECPU;
     return PPAP_TRACE_SURFACE_REAL;
 }
@@ -248,10 +246,10 @@ static uint32_t trace_active_surface_for(const pcb_t *target)
     uint32_t mask = trace_surface_mask_for(target);
 
     if (selected == PPAP_TRACE_SURFACE_REAL &&
-        (mask & TRACE_SURFACE_MASK_REAL))
+        (mask & PPAP_PTRACE_SURFACE_MASK_REAL))
         return PPAP_TRACE_SURFACE_REAL;
     if (selected == PPAP_TRACE_SURFACE_ECPU &&
-        (mask & TRACE_SURFACE_MASK_ECPU))
+        (mask & PPAP_PTRACE_SURFACE_MASK_ECPU))
         return PPAP_TRACE_SURFACE_ECPU;
     return trace_default_surface_for(target);
 }
@@ -263,7 +261,7 @@ static int trace_set_surface(pcb_t *target, uint32_t surface)
     if (target->state != PROC_TRACED_STOP)
         return -EBUSY;
     if (surface == PPAP_TRACE_SURFACE_REAL) {
-        if (!(mask & TRACE_SURFACE_MASK_REAL))
+        if (!(mask & PPAP_PTRACE_SURFACE_MASK_REAL))
             return -ENOSYS;
         target->trace_surface = PPAP_TRACE_SURFACE_REAL;
         target->trace_step_pending = 0;
@@ -271,7 +269,7 @@ static int trace_set_surface(pcb_t *target, uint32_t surface)
         return 0;
     }
     if (surface == PPAP_TRACE_SURFACE_ECPU) {
-        if (!(mask & TRACE_SURFACE_MASK_ECPU))
+        if (!(mask & PPAP_PTRACE_SURFACE_MASK_ECPU))
             return -ENOSYS;
         target->trace_surface = PPAP_TRACE_SURFACE_ECPU;
         target->trace_step_pending = 0;
@@ -666,6 +664,7 @@ static int trace_fill_caps(const pcb_t *target, struct ppap_ptrace_caps *caps)
                | PPAP_PTRACE_CAP_SETREGS
                | PPAP_PTRACE_CAP_PEEKPOKE;
     uint32_t surface;
+    uint32_t surfaces;
 
     if (!caps)
         return -EINVAL;
@@ -673,6 +672,7 @@ static int trace_fill_caps(const pcb_t *target, struct ppap_ptrace_caps *caps)
         return -EBUSY;
 
     surface = trace_active_surface_for(target);
+    surfaces = trace_surface_mask_for(target);
     if (surface == PPAP_TRACE_SURFACE_ECPU) {
         if (target->subsys == SUBSYS_CPM)
             c |= PPAP_PTRACE_CAP_SINGLESTEP | PPAP_PTRACE_CAP_SW_BP;
@@ -682,6 +682,8 @@ static int trace_fill_caps(const pcb_t *target, struct ppap_ptrace_caps *caps)
 
     caps->regset = trace_regset_for(target);
     caps->abi = target->trace_event.abi;
+    caps->surface = surface;
+    caps->surfaces = surfaces;
     caps->caps = c;
     caps->max_bps = (c & PPAP_PTRACE_CAP_SW_BP) ? TRACE_SW_BP_MAX : 0;
     return 0;

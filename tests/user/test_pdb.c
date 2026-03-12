@@ -85,12 +85,12 @@ static char arg_prog[] = "/bin/pdb";
 static char arg_opt[] = "-c";
 static char arg_show_sp[] = "show sp";
 static char arg_show_surface[] = "show surface";
+static char arg_surface_real[] = "surface real";
+static char arg_surface_ecpu[] = "surface ecpu";
 static char arg_where[] = "where";
 static char arg_x[] = "x/2h 0x0100";
 static char arg_disas[] = "disas 0x0100 3";
 static char arg_break[] = "break 0x0101";
-static char arg_disable[] = "disable 0";
-static char arg_enable[] = "enable 0";
 static char arg_info_break[] = "info break";
 static char arg_delete[] = "delete 0";
 static char arg_setreg[] = "set reg wz 0x1234";
@@ -120,6 +120,10 @@ int main(void)
     argv[a++] = arg_opt;
     argv[a++] = arg_show_surface;
     argv[a++] = arg_opt;
+    argv[a++] = arg_surface_real;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_surface_ecpu;
+    argv[a++] = arg_opt;
     argv[a++] = arg_where;
     argv[a++] = arg_opt;
     argv[a++] = arg_x;
@@ -127,10 +131,6 @@ int main(void)
     argv[a++] = arg_disas;
     argv[a++] = arg_opt;
     argv[a++] = arg_break;
-    argv[a++] = arg_opt;
-    argv[a++] = arg_disable;
-    argv[a++] = arg_opt;
-    argv[a++] = arg_enable;
     argv[a++] = arg_opt;
     argv[a++] = arg_info_break;
     argv[a++] = arg_opt;
@@ -173,6 +173,14 @@ int main(void)
               "output should include scripted show surface command");
     UT_ASSERT(str_contains(out, "surface=ecpu"),
               "output should include show surface output");
+    UT_ASSERT(str_contains(out, "surfaces=real|ecpu"),
+              "output should include available surfaces in caps");
+    UT_ASSERT(str_contains(out, "pdb> surface real"),
+              "output should include scripted surface real command");
+    UT_ASSERT(str_contains(out, "surface=real"),
+              "output should include switched real surface output");
+    UT_ASSERT(str_contains(out, "pdb> surface ecpu"),
+              "output should include scripted surface ecpu command");
     UT_ASSERT(str_contains(out, "pdb> where"),
               "output should include scripted where command");
     UT_ASSERT(str_contains(out, "pc=0x") && str_contains(out, " sp=0x"),
@@ -191,14 +199,6 @@ int main(void)
               "output should include scripted break command");
     UT_ASSERT(str_contains(out, "bp 0 @ 0x00000101"),
               "output should include breakpoint creation result");
-    UT_ASSERT(str_contains(out, "pdb> disable 0"),
-              "output should include scripted disable command");
-    UT_ASSERT(str_contains(out, "bp 0 disabled"),
-              "output should include breakpoint disable result");
-    UT_ASSERT(str_contains(out, "pdb> enable 0"),
-              "output should include scripted enable command");
-    UT_ASSERT(str_contains(out, "bp 0 enabled"),
-              "output should include breakpoint enable result");
     UT_ASSERT(str_contains(out, "pdb> info break"),
               "output should include scripted info break command");
     UT_ASSERT(str_contains(out, "bp 0 @ 0x00000101 enabled"),

@@ -64,6 +64,8 @@
 /* Active debug surface kind returned by PTRACE_GETSURFACE. */
 #define PPAP_TRACE_SURFACE_REAL  0
 #define PPAP_TRACE_SURFACE_ECPU  1
+#define PPAP_PTRACE_SURFACE_MASK_REAL  (1u << PPAP_TRACE_SURFACE_REAL)
+#define PPAP_PTRACE_SURFACE_MASK_ECPU  (1u << PPAP_TRACE_SURFACE_ECPU)
 
 /* Capability bits returned by PTRACE_GETCAPS. */
 #define PPAP_PTRACE_CAP_GETREGS   (1u << 0)
@@ -101,6 +103,8 @@ struct ppap_ptrace_regs {
 struct ppap_ptrace_caps {
     uint32_t regset;
     uint32_t abi;
+    uint32_t surface;
+    uint32_t surfaces;
     uint32_t caps;
     uint32_t max_bps;
 };

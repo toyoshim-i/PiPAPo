@@ -95,6 +95,11 @@ int main(void)
     UT_ASSERT_EQ(ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps), 0);
     UT_ASSERT_EQ((int)caps.regset, EXPECT_REGSET);
     UT_ASSERT_EQ((int)caps.abi, PPAP_TRACE_ABI_PPAP);
+    UT_ASSERT_EQ((int)caps.surface, PPAP_TRACE_SURFACE_REAL);
+    UT_ASSERT((caps.surfaces & PPAP_PTRACE_SURFACE_MASK_REAL) != 0,
+              "native tracee should expose real surface");
+    UT_ASSERT((caps.surfaces & PPAP_PTRACE_SURFACE_MASK_ECPU) == 0,
+              "native tracee should not expose ecpu surface");
     UT_ASSERT((caps.caps & PPAP_PTRACE_CAP_GETREGS) != 0,
               "GETCAPS should include GETREGS capability");
     UT_ASSERT((caps.caps & PPAP_PTRACE_CAP_SETREGS) != 0,
@@ -195,6 +200,11 @@ int main(void)
 
     UT_ASSERT_EQ(ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps), 0);
     UT_ASSERT_EQ((int)caps.regset, PPAP_TRACE_REGSET_Z80);
+    UT_ASSERT_EQ((int)caps.surface, PPAP_TRACE_SURFACE_ECPU);
+    UT_ASSERT((caps.surfaces & PPAP_PTRACE_SURFACE_MASK_REAL) != 0,
+              "CP/M tracee should expose real surface");
+    UT_ASSERT((caps.surfaces & PPAP_PTRACE_SURFACE_MASK_ECPU) != 0,
+              "CP/M tracee should expose ecpu surface");
     UT_ASSERT((caps.caps & PPAP_PTRACE_CAP_SINGLESTEP) != 0,
               "CP/M tracee should report single-step capability");
     UT_ASSERT_EQ(ptrace(PTRACE_GETSURFACE, pid, (void *)0, &surface), 0);
@@ -206,6 +216,7 @@ int main(void)
     UT_ASSERT_EQ((int)surface, PPAP_TRACE_SURFACE_REAL);
     UT_ASSERT_EQ(ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps), 0);
     UT_ASSERT_EQ((int)caps.regset, EXPECT_REGSET);
+    UT_ASSERT_EQ((int)caps.surface, PPAP_TRACE_SURFACE_REAL);
     UT_ASSERT((caps.caps & PPAP_PTRACE_CAP_SINGLESTEP) == 0,
               "real surface should hide eCPU single-step capability");
     UT_ASSERT((caps.caps & PPAP_PTRACE_CAP_SW_BP) == 0,
@@ -217,6 +228,7 @@ int main(void)
     UT_ASSERT_EQ((int)surface, PPAP_TRACE_SURFACE_ECPU);
     UT_ASSERT_EQ(ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps), 0);
     UT_ASSERT_EQ((int)caps.regset, PPAP_TRACE_REGSET_Z80);
+    UT_ASSERT_EQ((int)caps.surface, PPAP_TRACE_SURFACE_ECPU);
 
     UT_ASSERT_EQ(ptrace(PTRACE_GETREGS, pid, (void *)0, &regs), 0);
     UT_ASSERT_EQ((int)regs.regset, PPAP_TRACE_REGSET_Z80);
