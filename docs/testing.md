@@ -245,27 +245,50 @@ coverage is not exhaustive yet.
 - **`ioctl` wrapper is untested from userland.**
   `src/user/syscall.h` declares `ioctl()`, but no `tests/user/test_*.c`
   currently calls it.
+  This leaves tty/device control behavior mostly validated only indirectly
+  (through higher-level programs), not with explicit syscall assertions.
 - **`test_m68k_emu.c` is present but not in the default on-target suite.**
   The source exists in `tests/user/`, but it is not listed in
   `cmake/user.cmake` `USER_TESTS` or in `tests/user/runtests.c`.
+  As a result, regressions in m68k-eCPU user process execution can be missed
+  unless the test is run manually.
 - **Subsystem ptrace mode is not covered.**
   `test_trace.c` validates `PPAP_TRACE_MODE_PPAP_SYSCALL`; there is no
   user test enabling `PPAP_TRACE_MODE_SUBSYS_CALL` to validate Human68k/CP/M
   subsystem enter/exit trace events.
+  In practice, this means ABI-tagged subsystem events (`H68K_DOS`, `H68K_IOCS`,
+  `CPM_BDOS`, `CPM_BIOS`) are implemented but not CI-verified end-to-end.
 - **Human68k DOS bridge is partially covered.**
   `human68k_dos_dispatch()` implements 56 DOS function IDs; current
   `tests/user/r68k/test_dos_*.S` coverage is 24 IDs. Missing areas include
   several console/input calls, wildcard file search (`_FILES`/`_NFILES`),
   handle duplication (`_DUP`/`_DUP2`), and metadata/update paths
   (`_FILEDATE`, `_SETDATE`, `_SETTIME`, etc.).
+  Current R-format tests are strongest on basic process/memory/file/dir flows,
+  but weaker on "DOS utility" behaviors and less common compatibility APIs.
 - **Human68k IOCS dispatch has no dedicated user test binary.**
   IOCS handlers are implemented, but the current user suite does not have a
   focused IOCS test equivalent to the DOS R-format set.
+  This is a notable blind spot for console and system-service compatibility.
 - **CP/M BDOS bridge is partially covered.**
   `cpm_bdos_dispatch()` implements 38 function IDs; `test_cpm.c` currently
   targets a core subset (about 16 IDs: 0, 1, 2, 6, 9, 12, 14, 15, 16,
   20, 21, 22, 24, 25, 26, 32). Uncovered areas include search first/next,
   random-record variants, and several disk/attribute vector functions.
+  CP/M test coverage is therefore good for bootstrapping and basic file I/O,
+  but not yet complete for directory iteration and random-record compatibility.
+
+#### Suggested follow-up tests
+
+1. Add `tests/user/test_ioctl.c` with basic tty/device `ioctl` happy/error
+   paths and include it in `USER_TESTS` and `runtests`.
+2. Enable `tests/user/test_m68k_emu.c` in the default suite.
+3. Extend `tests/user/test_trace.c` to exercise `PPAP_TRACE_MODE_SUBSYS_CALL`
+   against one Human68k and one CP/M child.
+4. Add one new Human68k R-format test focused on currently uncovered DOS calls
+   (for example `_FILES`/`_NFILES` plus `_FILEDATE`).
+5. Add one CP/M `.COM` test focused on uncovered BDOS functions (for example
+   search first/next and at least one random-record operation).
 
 ## Automated QEMU testing
 
