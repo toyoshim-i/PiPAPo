@@ -981,6 +981,7 @@ static void print_help(void)
 int main(int argc, char *argv[])
 {
     int argi = 1;
+    int scripted_mode = 0;
     char *script_cmds[PDB_SCRIPT_CMD_MAX];
     int script_storage_used = 0;
     int script_count = 0;
@@ -997,6 +998,7 @@ int main(int argc, char *argv[])
 
     while (argi < argc) {
         if (streq(argv[argi], "-c")) {
+            scripted_mode = 1;
             if (argi + 1 >= argc) {
                 put_err("pdb: -c requires a command string\n");
                 return 1;
@@ -1012,6 +1014,7 @@ int main(int argc, char *argv[])
             continue;
         }
         if (streq(argv[argi], "-f")) {
+            scripted_mode = 1;
             if (argi + 1 >= argc) {
                 put_err("pdb: -f requires a script path\n");
                 return 1;
@@ -1027,6 +1030,10 @@ int main(int argc, char *argv[])
 
     if (argi >= argc) {
         usage();
+        return 1;
+    }
+    if (scripted_mode && script_count == 0) {
+        put_err("pdb: no scripted commands\n");
         return 1;
     }
 

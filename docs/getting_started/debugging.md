@@ -100,3 +100,4 @@ pdb -f /tmp/pdb.script /tmp/prog.com
 - Blank lines are ignored.
 - A line whose first non-space character is `#` is treated as a comment.
 - Both LF and CRLF line endings are accepted.
+- If a script resolves to zero commands, `pdb` exits with an error.
