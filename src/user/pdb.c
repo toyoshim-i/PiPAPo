@@ -168,6 +168,32 @@ static int append_script_cmd(char **script_cmds, int *script_count,
     return 0;
 }
 
+static int is_script_space(char c)
+{
+    return c == ' ' || c == '\t';
+}
+
+static int append_script_line(char **script_cmds, int *script_count,
+                              char *storage, int *storage_used,
+                              char *line, int len)
+{
+    int start = 0;
+    int end = len;
+
+    while (start < len && is_script_space(line[start]))
+        start++;
+    while (end > start && is_script_space(line[end - 1]))
+        end--;
+    if (end <= start)
+        return 0; /* blank line */
+    if (line[start] == '#')
+        return 0; /* comment line */
+
+    line[end] = '\0';
+    return append_script_cmd(script_cmds, script_count,
+                             storage, storage_used, &line[start]);
+}
+
 static int load_script_file(const char *path, char **script_cmds,
                             int *script_count, char *storage,
                             int *storage_used)
@@ -206,16 +232,13 @@ static int load_script_file(const char *path, char **script_cmds,
                 close(fd);
                 return -1;
             }
-            if (len > 0 && line[0] != '#') {
-                line[len] = '\0';
-                if (append_script_cmd(script_cmds, script_count,
-                                      storage, storage_used, line) < 0) {
-                    put_err("pdb: script command limit exceeded while reading ");
-                    put_err(path);
-                    put_chr('\n');
-                    close(fd);
-                    return -1;
-                }
+            if (append_script_line(script_cmds, script_count,
+                                   storage, storage_used, line, len) < 0) {
+                put_err("pdb: script command limit exceeded while reading ");
+                put_err(path);
+                put_chr('\n');
+                close(fd);
+                return -1;
             }
             len = 0;
             dropping = 0;
@@ -238,16 +261,13 @@ static int load_script_file(const char *path, char **script_cmds,
         return -1;
     }
 
-    if (len > 0 && line[0] != '#') {
-        line[len] = '\0';
-        if (append_script_cmd(script_cmds, script_count,
-                              storage, storage_used, line) < 0) {
-            put_err("pdb: script command limit exceeded while reading ");
-            put_err(path);
-            put_chr('\n');
-            close(fd);
-            return -1;
-        }
+    if (append_script_line(script_cmds, script_count,
+                           storage, storage_used, line, len) < 0) {
+        put_err("pdb: script command limit exceeded while reading ");
+        put_err(path);
+        put_chr('\n');
+        close(fd);
+        return -1;
     }
 
     close(fd);
