@@ -66,6 +66,7 @@ pdb -c "caps" -c "regs" -c "disas 0x0100 3" /tmp/prog.com
 #   set reg pc 0x0100
 #   set mem 0x0100 0x00000000
 #   step
+#   next
 #   cont
 #   break 0x0101
 #   disable 0

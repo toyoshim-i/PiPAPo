@@ -94,6 +94,7 @@ static char arg_info_break[] = "info break";
 static char arg_delete[] = "delete 0";
 static char arg_setreg[] = "set reg wz 0x1234";
 static char arg_setmem[] = "set mem 0x0100 0x00000000";
+static char arg_next[] = "next";
 static char arg_step[] = "step";
 static char arg_event[] = "event";
 static char arg_quit[] = "quit";
@@ -110,7 +111,7 @@ int main(void)
     char out[3072];
     int status = 0;
     int n = 0;
-    char *argv[31];
+    char *argv[33];
     int a = 0;
 
     argv[a++] = arg_prog;
@@ -136,6 +137,8 @@ int main(void)
     argv[a++] = arg_setreg;
     argv[a++] = arg_opt;
     argv[a++] = arg_setmem;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_next;
     argv[a++] = arg_opt;
     argv[a++] = arg_step;
     argv[a++] = arg_opt;
@@ -194,8 +197,12 @@ int main(void)
               "output should include scripted memory write command");
     UT_ASSERT(str_contains(out, "mem 0x00000100=0x00000000"),
               "output should include memory write result");
+    UT_ASSERT(str_contains(out, "pdb> next"),
+              "output should include scripted next command");
     UT_ASSERT(str_contains(out, "pdb> quit"),
               "output should include scripted quit command");
+    UT_ASSERT(!str_contains(out, "unknown command"),
+              "output should not include unknown command error");
 
     UT_SUMMARY("test_pdb");
 #endif

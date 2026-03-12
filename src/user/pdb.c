@@ -593,6 +593,24 @@ static void disas_z80(pid_t pid, uint32_t pc, uint32_t count)
     }
 }
 
+static int z80_is_call_opcode(uint8_t op)
+{
+    switch (op) {
+    case 0xc4:
+    case 0xcc:
+    case 0xcd:
+    case 0xd4:
+    case 0xdc:
+    case 0xe4:
+    case 0xec:
+    case 0xf4:
+    case 0xfc:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 static int wait_child(pid_t pid, int *stopped, int *exit_code,
                       struct ppap_ptrace_event *ev)
 {
@@ -643,6 +661,7 @@ static void print_help(void)
     put_str("  x <addr> [count]  read memory words\n");
     put_str("  disas [a] [n]     disassemble n instructions from addr/pc\n");
     put_str("  step | s          single-step\n");
+    put_str("  next | n          step over call (z80), else single-step\n");
     put_str("  cont | c          continue\n");
     put_str("  set reg <r> <v>   write register by name or index\n");
     put_str("  set mem <a> <v>   write memory word\n");
@@ -825,6 +844,113 @@ int main(int argc, char *argv[])
                 continue;
             }
             disas_z80(pid, addr, count);
+            continue;
+        }
+
+        if (streq(tok[0], "next") || streq(tok[0], "n")) {
+            struct ppap_ptrace_regs regs;
+            uint8_t op = 0;
+            uint32_t pc = 0;
+            uint32_t next_pc = 0;
+            int use_temp_bp = 0;
+            int has_enabled_bp = 0;
+            int temp_bp_id = -1;
+            long rc;
+            int wr;
+            if (!child_stopped) {
+                put_err("pdb: child is not stopped\n");
+                continue;
+            }
+            if (ptrace(PTRACE_GETREGS, pid, (void *)0, &regs) < 0) {
+                put_err("pdb: GETREGS failed\n");
+                continue;
+            }
+            if (regs.regset != PPAP_TRACE_REGSET_Z80) {
+                put_err("pdb: next currently supports z80 tracees only\n");
+                continue;
+            }
+
+            pc = regs.regs[7];  /* Z80 PC */
+            rc = (long)peek_u8(pid, pc, &op);
+            if (rc < 0) {
+                put_err("pdb: next opcode read failed rc=");
+                put_i32((int32_t)rc);
+                put_chr('\n');
+                continue;
+            }
+
+            if (z80_is_call_opcode(op)) {
+                next_pc = pc + 3u;
+                use_temp_bp = 1;
+                for (int i = 0; i < PDB_LOCAL_BP_MAX; i++) {
+                    if (!local_bp[i].used || !local_bp[i].enabled)
+                        continue;
+                    if (local_bp[i].addr == next_pc) {
+                        has_enabled_bp = 1;
+                        break;
+                    }
+                }
+
+                if (!has_enabled_bp) {
+                    struct ppap_ptrace_bp bp;
+                    bp.id = -1;
+                    bp.addr = next_pc;
+                    bp.flags = PPAP_PTRACE_BP_SW;
+                    rc = ptrace(PTRACE_SETBP, pid, (void *)0, &bp);
+                    if (rc < 0) {
+                        put_err("pdb: NEXT SETBP failed rc=");
+                        put_i32((int32_t)rc);
+                        put_chr('\n');
+                        continue;
+                    }
+                    temp_bp_id = bp.id;
+                }
+            }
+
+            if (use_temp_bp) {
+                rc = ptrace(PTRACE_CONT, pid, (void *)0, (void *)0);
+                if (rc < 0) {
+                    put_err("pdb: CONT failed rc=");
+                    put_i32((int32_t)rc);
+                    put_chr('\n');
+                    if (temp_bp_id >= 0) {
+                        struct ppap_ptrace_bp bp;
+                        bp.id = temp_bp_id;
+                        bp.addr = 0;
+                        bp.flags = 0;
+                        (void)ptrace(PTRACE_CLRBP, pid, (void *)0, &bp);
+                    }
+                    continue;
+                }
+                child_stopped = 0;
+                wr = wait_child(pid, &child_stopped, &child_exit_code, &last_ev);
+                if (child_stopped && temp_bp_id >= 0) {
+                    struct ppap_ptrace_bp bp;
+                    bp.id = temp_bp_id;
+                    bp.addr = 0;
+                    bp.flags = 0;
+                    (void)ptrace(PTRACE_CLRBP, pid, (void *)0, &bp);
+                }
+                if (wr < 0)
+                    return 1;
+                if (wr > 0)
+                    return child_exit_code;
+                continue;
+            }
+
+            rc = ptrace(PTRACE_SINGLESTEP, pid, (void *)0, (void *)0);
+            if (rc < 0) {
+                put_err("pdb: SINGLESTEP failed rc=");
+                put_i32((int32_t)rc);
+                put_chr('\n');
+                continue;
+            }
+            child_stopped = 0;
+            wr = wait_child(pid, &child_stopped, &child_exit_code, &last_ev);
+            if (wr < 0)
+                return 1;
+            if (wr > 0)
+                return child_exit_code;
             continue;
         }
 
