@@ -92,6 +92,7 @@ pdb -f /tmp/pdb.script /tmp/prog.com
 #   set mem 0x0100 0x00000000
 #   step
 #   next
+#   run
 #   cont
 #   break 0x0101
 #   disable 0

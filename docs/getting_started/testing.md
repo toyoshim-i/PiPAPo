@@ -26,6 +26,9 @@ build process, and execution environment.
 
 # Everything at once (host + build all targets + QEMU tests)
 ./scripts/test.sh --all
+
+# Everything + extended QEMU lanes
+./scripts/test.sh --all --extended
 ```
 
 ## Host unit tests
@@ -332,6 +335,9 @@ Full CI pipeline:
 2. Build all production targets (ARM and m68k, `PPAP_TESTS=OFF`)
 3. Print binary sizes
 4. QEMU on-target tests (ARM and m68k, `PPAP_TESTS=ON`)
+
+`./scripts/test.sh --all --extended` (or `--all-extended`) replaces step 4
+with extended QEMU lanes (`run.sh --test-extended`).
 
 ### Test execution flow
 

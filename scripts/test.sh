@@ -7,11 +7,15 @@
 # Options:
 #   --verbose   Show all test output, not just failures (host unit tests)
 #   --all       Run everything: host unit tests, build all targets, QEMU tests
+#   --extended  With --all, run extended QEMU test lanes
+#   --all-extended  Same as --all --extended
 #
 # Examples:
 #   ./scripts/test.sh            # host unit tests only
 #   ./scripts/test.sh --verbose  # host unit tests with verbose output
 #   ./scripts/test.sh --all      # host + build all targets + QEMU tests
+#   ./scripts/test.sh --all --extended  # same, but runs extended QEMU lanes
+#   ./scripts/test.sh --all-extended    # shorthand for --all --extended
 
 set -euo pipefail
 
@@ -21,14 +25,22 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # ── Parse arguments ────────────────────────────────────────────────────────
 DO_ALL=0
 VERBOSE=0
+USE_EXTENDED=0
 
 for arg in "$@"; do
     case "$arg" in
-        --all)     DO_ALL=1 ;;
-        --verbose) VERBOSE=1 ;;
+        --all)          DO_ALL=1 ;;
+        --extended)     USE_EXTENDED=1 ;;
+        --all-extended) DO_ALL=1; USE_EXTENDED=1 ;;
+        --verbose)      VERBOSE=1 ;;
         -*)        echo "Unknown option: $arg" >&2; exit 1 ;;
     esac
 done
+
+if [[ $USE_EXTENDED -eq 1 && $DO_ALL -eq 0 ]]; then
+    echo "--extended requires --all (or use --all-extended)" >&2
+    exit 1
+fi
 
 # ── Host unit tests ────────────────────────────────────────────────────────
 BUILD_DIR="$PROJECT_DIR/build/host"
@@ -76,12 +88,22 @@ echo "=== m68k binary size (production) ==="
 
 # ── QEMU on-target tests ──────────────────────────────────────────────────
 echo ""
-echo "=== QEMU automated test (ARM) ==="
-"$SCRIPT_DIR/run.sh" --test qemu_arm
+if [[ $USE_EXTENDED -eq 1 ]]; then
+    echo "=== QEMU automated test (ARM, extended) ==="
+    "$SCRIPT_DIR/run.sh" --test-extended qemu_arm
+else
+    echo "=== QEMU automated test (ARM) ==="
+    "$SCRIPT_DIR/run.sh" --test qemu_arm
+fi
 
 echo ""
-echo "=== QEMU automated test (m68k) ==="
-"$SCRIPT_DIR/run.sh" --test qemu_m68k
+if [[ $USE_EXTENDED -eq 1 ]]; then
+    echo "=== QEMU automated test (m68k, extended) ==="
+    "$SCRIPT_DIR/run.sh" --test-extended qemu_m68k
+else
+    echo "=== QEMU automated test (m68k) ==="
+    "$SCRIPT_DIR/run.sh" --test qemu_m68k
+fi
 
 echo ""
 echo "=== All tests passed ==="

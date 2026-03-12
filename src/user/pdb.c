@@ -1219,7 +1219,7 @@ static void print_help(void)
     put_str("  disas [a] [n]     disassemble n instructions from addr/pc\n");
     put_str("  step | s          single-step\n");
     put_str("  next | n          step over call (z80), else single-step\n");
-    put_str("  cont | c          continue\n");
+    put_str("  run | cont | c    continue\n");
     put_str("  set reg <r> <v>   write register by name or index\n");
     put_str("  set mem <a> <v>   write memory word\n");
     put_str("  break <addr>      set software breakpoint\n");
@@ -1882,7 +1882,7 @@ int main(int argc, char *argv[])
             continue;
         }
 
-        if (streq(tok[0], "cont") || streq(tok[0], "c")) {
+        if (streq(tok[0], "run") || streq(tok[0], "cont") || streq(tok[0], "c")) {
             long rc;
             int wr;
             if (!child_stopped) {

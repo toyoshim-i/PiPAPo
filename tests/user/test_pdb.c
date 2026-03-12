@@ -114,6 +114,7 @@ static char arg_setmem[] = "set mem 0x0100 0x00000000";
 static char arg_next[] = "next";
 static char arg_step[] = "step";
 static char arg_cont[] = "cont";
+static char arg_run[] = "run";
 static char arg_detach[] = "detach";
 static char arg_target[] = "/tmp/pdb_smoke.com";
 static char arg_native_target[] = "/bin/hello";
@@ -210,7 +211,7 @@ int main(void)
     argv3[2] = arg_opt;
     argv3[3] = arg_show_sp;
     argv3[4] = arg_opt;
-    argv3[5] = arg_cont;
+    argv3[5] = arg_run;
     argv3[6] = arg_target;
     argv3[7] = (char *)0;
     argv3[8] = (char *)0;
@@ -384,7 +385,6 @@ int main(void)
               "pdb -h should print help text");
     UT_ASSERT(str_contains(out2, "-q"),
               "pdb -h should include quiet-mode option");
-
     argv2[0] = arg_prog;
     argv2[1] = arg_help_long;
     argv2[2] = (char *)0;
