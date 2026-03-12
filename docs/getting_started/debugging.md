@@ -44,3 +44,23 @@ Notes:
   [`../kernel/trace.md`](../kernel/trace.md).
 - For the next debugger implementation phase (single-step/breakpoints/caps),
   see [`../proposals/debugger_ptrace.md`](../proposals/debugger_ptrace.md).
+
+## Userland debugger (`pdb`)
+
+PPAP also includes a minimal interactive debugger (`/bin/pdb`) built on
+`ptrace`.
+
+```sh
+# Launch target under debugger
+pdb /bin/hello
+
+# Typical commands inside pdb:
+#   regs
+#   caps
+#   x 0x20000000 4
+#   step
+#   cont
+#   break 0x0101
+#   delete 0
+#   quit
+```
