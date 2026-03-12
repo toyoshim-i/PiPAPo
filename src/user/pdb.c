@@ -183,11 +183,12 @@ static int parse_u32(const char *s, uint32_t *out)
     return 1;
 }
 
-static int parse_x_spec(const char *tok0, uint32_t *count_out)
+static int parse_x_spec(const char *tok0, uint32_t *count_out, char *fmt_out)
 {
     const char *p;
     uint32_t count = 0;
     int has_digits = 0;
+    char fmt = 'x';
 
     if (!tok0 || tok0[0] != 'x' || tok0[1] != '/')
         return 0;
@@ -200,11 +201,14 @@ static int parse_x_spec(const char *tok0, uint32_t *count_out)
     }
     if (!has_digits)
         return 0;
-    if (*p == 'x')
+    if (*p == 'x' || *p == 'b') {
+        fmt = *p;
         p++;
+    }
     if (*p != '\0')
         return 0;
     *count_out = count;
+    *fmt_out = fmt;
     return 1;
 }
 
@@ -425,6 +429,8 @@ static void print_regs(const struct ppap_ptrace_regs *regs)
     }
 }
 
+static int peek_u8(pid_t pid, uint32_t addr, uint8_t *byte_out);
+
 static void print_mem_words(pid_t pid, uint32_t addr, uint32_t count)
 {
     if (count == 0)
@@ -446,6 +452,30 @@ static void print_mem_words(pid_t pid, uint32_t addr, uint32_t count)
         put_hex32(word);
         put_chr('\n');
         addr += 4;
+    }
+}
+
+static void print_mem_bytes(pid_t pid, uint32_t addr, uint32_t count)
+{
+    if (count == 0)
+        count = 1;
+    if (count > 256)
+        count = 256;
+
+    for (uint32_t i = 0; i < count; i++) {
+        uint8_t b = 0;
+        int rc = peek_u8(pid, addr, &b);
+        if (rc < 0) {
+            put_err("pdb: PEEKDATA failed rc=");
+            put_i32((int32_t)rc);
+            put_chr('\n');
+            return;
+        }
+        put_hex32(addr);
+        put_str(": ");
+        put_hex8((uint32_t)b);
+        put_chr('\n');
+        addr += 1u;
     }
 }
 
@@ -692,7 +722,7 @@ static void print_help(void)
     put_str("  show sp           show current stack pointer\n");
     put_str("  where | w         show pc and sp\n");
     put_str("  x <addr> [count]  read memory words\n");
-    put_str("  x/<n>x <addr>     read <n> memory words\n");
+    put_str("  x/<n><fmt> <addr> read memory (<fmt>: x=word, b=byte)\n");
     put_str("  disas [a] [n]     disassemble n instructions from addr/pc\n");
     put_str("  step | s          single-step\n");
     put_str("  next | n          step over call (z80), else single-step\n");
@@ -1048,7 +1078,7 @@ int main(int argc, char *argv[])
             if (streq(tok[0], "x")) {
                 if (ntok < 2 || !parse_u32(tok[1], &addr)) {
                     put_err("pdb: usage: x <addr> [count]\n");
-                    put_err("pdb:    or: x/<n>x <addr>\n");
+                    put_err("pdb:    or: x/<n><fmt> <addr> (fmt: x|b)\n");
                     continue;
                 }
                 if (ntok >= 3 && !parse_u32(tok[2], &count)) {
@@ -1056,15 +1086,22 @@ int main(int argc, char *argv[])
                     continue;
                 }
             } else {
-                if (!parse_x_spec(tok[0], &count) || ntok < 2 ||
+                char fmt = 'x';
+                if (!parse_x_spec(tok[0], &count, &fmt) || ntok < 2 ||
                     !parse_u32(tok[1], &addr)) {
                     put_err("pdb: usage: x <addr> [count]\n");
-                    put_err("pdb:    or: x/<n>x <addr>\n");
+                    put_err("pdb:    or: x/<n><fmt> <addr> (fmt: x|b)\n");
                     continue;
                 }
-            }
-            if (count == 0) {
-                put_err("pdb: invalid count\n");
+                if (count == 0) {
+                    put_err("pdb: invalid count\n");
+                    continue;
+                }
+                if (fmt == 'b') {
+                    print_mem_bytes(pid, addr, count);
+                } else {
+                    print_mem_words(pid, addr, count);
+                }
                 continue;
             }
             print_mem_words(pid, addr, count);
