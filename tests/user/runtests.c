@@ -38,7 +38,7 @@ int main(void)
      * static pointer arrays because do_execve only relocates GOT entries,
      * not initialized data pointers.  Runtime assignment uses GOT-resolved
      * addresses which are correctly relocated. */
-    const char *tests[25];
+    const char *tests[26];
     int t = 0;
     tests[t++] = "/bin/test_exec";
     tests[t++] = "/bin/test_elf";
@@ -61,6 +61,7 @@ int main(void)
     tests[t++] = "/bin/test_x68k";
     tests[t++] = "/bin/test_cpm";
     tests[t++] = "/bin/test_trace";
+    tests[t++] = "/bin/test_pdb";
     tests[t++] = "/bin/test_h68k_dos";
     tests[t] = (void *)0;
 

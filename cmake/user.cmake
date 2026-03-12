@@ -63,7 +63,7 @@ set(USER_TESTS
     test_exec test_elf test_vfork test_fault test_pipe test_brk
     test_fd test_signal test_poll test_sleep_intr test_orphan
     test_id test_fs test_rw test_time test_iov test_stat test_tmpfs
-    test_x68k test_h68k_dos test_cpm test_trace trace_peek_target
+    test_x68k test_h68k_dos test_cpm test_trace test_pdb trace_peek_target
     runtests
 )
 

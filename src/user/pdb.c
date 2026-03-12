@@ -381,6 +381,10 @@ static void print_help(void)
 
 int main(int argc, char *argv[])
 {
+    int argi = 1;
+    char *script_cmds[16];
+    int script_count = 0;
+    int script_index = 0;
     pid_t pid;
     int child_stopped = 0;
     int child_exit_code = 0;
@@ -391,7 +395,17 @@ int main(int argc, char *argv[])
     struct ppap_ptrace_caps caps;
     pdb_local_bp_t local_bp[PDB_LOCAL_BP_MAX];
 
-    if (argc < 2) {
+    while (argi < argc && streq(argv[argi], "-c")) {
+        if (argi + 1 >= argc) {
+            put_err("pdb: -c requires a command string\n");
+            return 1;
+        }
+        if (script_count < 16)
+            script_cmds[script_count++] = argv[argi + 1];
+        argi += 2;
+    }
+
+    if (argi >= argc) {
         usage();
         return 1;
     }
@@ -404,7 +418,7 @@ int main(int argc, char *argv[])
     pid = vfork();
     if (pid == 0) {
         ptrace(PTRACE_TRACEME, 0, (void *)0, (void *)0);
-        execve(argv[1], &argv[1], (void *)0);
+        execve(argv[argi], &argv[argi], (void *)0);
         _exit(127);
     }
     if (pid < 0) {
@@ -426,10 +440,25 @@ int main(int argc, char *argv[])
     }
 
     while (!done) {
-        put_str("pdb> ");
-        if (readline(line, sizeof(line)) < 0) {
+        if (script_index < script_count) {
+            int i = 0;
+            const char *src = script_cmds[script_index++];
+            while (src[i] && i < (int)sizeof(line) - 1) {
+                line[i] = src[i];
+                i++;
+            }
+            line[i] = '\0';
+            put_str("pdb> ");
+            put_str(line);
             put_chr('\n');
-            break;
+        } else {
+            if (script_count > 0)
+                break;
+            put_str("pdb> ");
+            if (readline(line, sizeof(line)) < 0) {
+                put_chr('\n');
+                break;
+            }
         }
 
         int ntok = split_tokens(line, tok, 8);
