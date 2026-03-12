@@ -34,6 +34,9 @@ This index is the entry point for project documentation.
   - [`kernel/trace.md`](kernel/trace.md)
   - [`kernel/filesystems.md`](kernel/filesystems.md)
 
+- Proposals
+  - [`proposals/debugger_ptrace.md`](proposals/debugger_ptrace.md)
+
 - Subsystems
   - [`subsystems/overview.md`](subsystems/overview.md)
   - [`subsystems/human68k.md`](subsystems/human68k.md)

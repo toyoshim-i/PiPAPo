@@ -42,3 +42,5 @@ Notes:
   and that subsystem support is enabled in the build.
 - For trace architecture and event model details, see
   [`../kernel/trace.md`](../kernel/trace.md).
+- For the next debugger implementation phase (single-step/breakpoints/caps),
+  see [`../proposals/debugger_ptrace.md`](../proposals/debugger_ptrace.md).
