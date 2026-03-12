@@ -60,9 +60,7 @@ int main(void)
     tests[t++] = "/bin/test_tmpfs";
     tests[t++] = "/bin/test_x68k";
     tests[t++] = "/bin/test_cpm";
-#if !defined(__m68k__)
     tests[t++] = "/bin/test_trace";
-#endif
     tests[t++] = "/bin/test_h68k_dos";
     tests[t] = (void *)0;
 

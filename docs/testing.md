@@ -196,7 +196,7 @@ only relocates GOT entries, not arbitrary data pointers.
 | `test_tmpfs.c` | tmpfs create, write, read, unlink |
 | `test_x68k.c` | Human68k subsystem (X-format `.x` execution) |
 | `test_cpm.c` | CP/M subsystem integration (`.COM` exec, BDOS bridge, signals, file I/O) |
-| `test_trace.c` | `ptrace` syscall/subsystem trace integration (non-m68k targets) |
+| `test_trace.c` | `ptrace` syscall/subsystem trace integration (ARM + m68k) |
 | `test_h68k_dos.c` | Human68k DOS bridge integration via R-format test binaries |
 
 ### Build system
@@ -294,7 +294,7 @@ boot → kernel init → VFS mount → target_post_mount()
                             ├── test_tmpfs
                             ├── test_x68k
                             ├── test_cpm
-                            ├── test_trace (non-m68k only)
+                            ├── test_trace (all targets)
                             └── test_h68k_dos (all targets)
                                    │
                         "ALL TESTS PASSED"

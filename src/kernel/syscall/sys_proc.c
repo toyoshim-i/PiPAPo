@@ -21,6 +21,7 @@
 #include "../ecpu/ecpu_m68k.h"
 #include "../subsys/ppap_m68k_bridge.h"
 #include "../../target/target.h"
+#include "arch/arch.h"
 #include "common/ptrace.h"
 #include "common/wait.h"
 #include <string.h>
@@ -84,6 +85,15 @@ static void trace_stop_current(int restart)
     current->trace_wait_pending = 1;
     current->state = PROC_TRACED_STOP;
     trace_wake_tracer(current);
+#if defined(__m68k__)
+    /* Avoid nested TRAP #1 switching from inside syscall/exception paths
+     * for non-restart trace stops (exec stop, syscall-exit, subsys stops).
+     * Defer the switch to the trap return path instead. */
+    if (!restart) {
+        arch_yield();
+        return;
+    }
+#endif
     if (restart)
         set_svc_restart();
     sched_yield();
