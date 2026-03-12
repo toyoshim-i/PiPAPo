@@ -9,6 +9,7 @@
 #define PTRACE_POKEDATA  5
 #define PTRACE_GETREGS   12
 #define PTRACE_SETREGS   13
+#define PTRACE_ATTACH    16
 #define PTRACE_SINGLESTEP 9
 #define PTRACE_CONT      7
 #define PTRACE_DETACH    17

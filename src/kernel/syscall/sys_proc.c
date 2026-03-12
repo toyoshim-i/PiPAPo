@@ -35,6 +35,8 @@
 #define TRACE_MODE_MASK \
     (PPAP_TRACE_MODE_PPAP_SYSCALL | PPAP_TRACE_MODE_SUBSYS_CALL)
 
+static void trace_clear_swbp(pcb_t *target);
+
 static pcb_t *trace_find_tracee(pid_t tracer_pid, long pid)
 {
     if (pid <= 0)
@@ -44,6 +46,19 @@ static pcb_t *trace_find_tracee(pid_t tracer_pid, long pid)
         if (p->state == PROC_FREE || p->pid != (pid_t)pid)
             continue;
         if (p->tracer_pid != tracer_pid)
+            continue;
+        return p;
+    }
+    return NULL;
+}
+
+static pcb_t *trace_find_process(long pid)
+{
+    if (pid <= 0)
+        return NULL;
+    for (uint32_t i = 1; i < PROC_MAX; i++) {
+        pcb_t *p = &proc_table[i];
+        if (p->state == PROC_FREE || p->pid != (pid_t)pid)
             continue;
         return p;
     }
@@ -950,6 +965,30 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
         return 0;
     }
 
+    if (req == PTRACE_ATTACH) {
+        pcb_t *target = trace_find_process(pid);
+        if (!target || target->state == PROC_ZOMBIE)
+            return -(long)ESRCH;
+        if (target == current)
+            return -(long)EPERM;
+        if (target->tracer_pid != 0 || target->trace_requested)
+            return -(long)EPERM;
+
+        target->tracer_pid = current->pid;
+        target->trace_requested = 0;
+        trace_reset_mode_state(target, 0);
+        target->trace_surface = (uint8_t)trace_default_surface_for(target);
+        target->trace_wait_pending = 1;
+        target->trace_step_pending = 0;
+        trace_clear_swbp(target);
+        __builtin_memset(&target->trace_event, 0, sizeof(target->trace_event));
+        target->trace_event.event = PPAP_TRACE_EVENT_DEBUG_STOP;
+        target->trace_event.abi = PPAP_TRACE_ABI_PPAP;
+        target->state = PROC_TRACED_STOP;
+        trace_wake_tracer(target);
+        return 0;
+    }
+
     pcb_t *target = trace_find_tracee(current->pid, pid);
     if (!target)
         return -(long)ESRCH;
@@ -1129,6 +1168,15 @@ long sys_exit(long status)
             proc_table[i].state == PROC_BLOCKED) {
             proc_table[i].state = PROC_RUNNABLE;
             break;
+        }
+    }
+    if (current->tracer_pid != 0 && current->tracer_pid != current->ppid) {
+        for (uint32_t i = 0; i < PROC_MAX; i++) {
+            if (proc_table[i].pid == current->tracer_pid &&
+                proc_table[i].state == PROC_BLOCKED) {
+                proc_table[i].state = PROC_RUNNABLE;
+                break;
+            }
         }
     }
 
@@ -1326,19 +1374,25 @@ long sys_waitpid(long pid, long status_ptr, long options)
 {
     pcb_t *zombie = NULL;
     pcb_t *stopped = NULL;
-    int has_child = 0;
+    int has_match = 0;
+    int zombie_is_child = 0;
 
-    /* Scan for matching stopped child, zombie, or living child */
+    /* Scan for matching child or traced process. */
     for (uint32_t i = 1; i < PROC_MAX; i++) {
         pcb_t *p = &proc_table[i];
+        int is_child;
+        int is_tracee;
+
         if (p->state == PROC_FREE)
             continue;
-        if (p->ppid != current->pid)
+        is_child = (p->ppid == current->pid);
+        is_tracee = (p->tracer_pid == current->pid);
+        if (!is_child && !is_tracee)
             continue;
         if (pid > 0 && p->pid != (pid_t)pid)
             continue;
 
-        has_child = 1;
+        has_match = 1;
 
         if ((options & WSTOPPED) &&
             p->state == PROC_TRACED_STOP &&
@@ -1349,6 +1403,7 @@ long sys_waitpid(long pid, long status_ptr, long options)
 
         if (p->state == PROC_ZOMBIE) {
             zombie = p;
+            zombie_is_child = is_child;
             break;
         }
     }
@@ -1363,7 +1418,6 @@ long sys_waitpid(long pid, long status_ptr, long options)
     }
 
     if (zombie) {
-        /* Reap the zombie */
         pid_t cpid = zombie->pid;
 
         if (status_ptr) {
@@ -1371,6 +1425,20 @@ long sys_waitpid(long pid, long status_ptr, long options)
             *sp = W_EXITCODE(zombie->exit_status);
         }
 
+        if (!zombie_is_child) {
+            /* Non-child tracees report exit but are reaped by their parent. */
+            zombie->tracer_pid = 0;
+            zombie->trace_requested = 0;
+            trace_reset_mode_state(zombie, 0);
+            zombie->trace_surface = (uint8_t)trace_default_surface_for(zombie);
+            zombie->trace_wait_pending = 0;
+            zombie->trace_step_pending = 0;
+            trace_clear_swbp(zombie);
+            __builtin_memset(&zombie->trace_event, 0, sizeof(zombie->trace_event));
+            return (long)cpid;
+        }
+
+        /* Reap the zombie child. */
         /* Free zombie's stack page */
         if (zombie->stack_page) {
             page_free(zombie->stack_page);
@@ -1381,7 +1449,7 @@ long sys_waitpid(long pid, long status_ptr, long options)
         return (long)cpid;
     }
 
-    if (!has_child)
+    if (!has_match)
         return -(long)ECHILD;
 
     if (options & WNOHANG)

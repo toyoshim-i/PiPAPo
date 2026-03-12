@@ -41,6 +41,37 @@ static int str_contains(const char *hay, const char *needle)
     return 0;
 }
 
+static void u32_to_dec(uint32_t value, char *buf, int buf_size)
+{
+    char tmp[16];
+    int n = 0;
+
+    if (buf_size <= 0)
+        return;
+
+    if (value == 0) {
+        if (buf_size > 1) {
+            buf[0] = '0';
+            buf[1] = '\0';
+        } else {
+            buf[0] = '\0';
+        }
+        return;
+    }
+
+    while (value > 0 && n < (int)sizeof(tmp)) {
+        tmp[n++] = (char)('0' + (value % 10u));
+        value /= 10u;
+    }
+    if (n + 1 > buf_size) {
+        buf[0] = '\0';
+        return;
+    }
+    for (int i = 0; i < n; i++)
+        buf[i] = tmp[n - 1 - i];
+    buf[n] = '\0';
+}
+
 static int run_capture(char *const argv[], char *buf, int buf_size, int *status)
 {
     int pipefd[2];
@@ -94,9 +125,11 @@ static char arg_help_long[] = "--help";
 static char arg_quiet[] = "-q";
 static char arg_opt[] = "-c";
 static char arg_file_opt[] = "-f";
+static char arg_attach_opt[] = "--attach";
 static char arg_dev_null[] = "/dev/null";
 static char arg_long_script[] = "/tmp/pdb_long.script";
 static char arg_blank_cmd[] = "   ";
+static char arg_show_event[] = "show event";
 static char arg_show_regset[] = "show regset";
 static char arg_show_sp[] = "show sp";
 static char arg_show_surface[] = "show surface";
@@ -118,10 +151,13 @@ static char arg_run[] = "run";
 static char arg_detach[] = "detach";
 static char arg_target[] = "/tmp/pdb_smoke.com";
 static char arg_native_target[] = "/bin/hello";
+static char arg_sleep[] = "/bin/sleep";
+static char arg_sleep_1[] = "1";
 static char out_buf[3072];
 static char out2_buf[512];
 static uint8_t long_script_line_buf[160];
 static char long_cmd_buf[129];
+static char attach_pid_buf[16];
 static char *argv_buf[33];
 static char *argv2_buf[5];
 static char *argv3_buf[9];
@@ -140,8 +176,12 @@ int main(void)
     char *long_cmd = long_cmd_buf;
     int status = 0;
     int status2 = 0;
+    int attach_status = 0;
     int n = 0;
     int n2 = 0;
+    pid_t attach_target = -1;
+    char *sleep_argv[3];
+    char *attach_pid_str = attach_pid_buf;
     char *argv4[10];
     char **argv = argv_buf;
     char **argv2 = argv2_buf;
@@ -223,6 +263,40 @@ int main(void)
               "pdb -q should still run scripted commands");
     UT_ASSERT(!str_contains(out2, "pdb> "),
               "pdb -q should suppress command prompt/echo output");
+
+    sleep_argv[0] = arg_sleep;
+    sleep_argv[1] = arg_sleep_1;
+    sleep_argv[2] = (char *)0;
+    attach_target = vfork();
+    if (attach_target == 0) {
+        execve(arg_sleep, sleep_argv, (void *)0);
+        _exit(127);
+    }
+    UT_ASSERT(attach_target > 0, "attach target process should launch");
+    u32_to_dec((uint32_t)attach_target, attach_pid_str,
+               (int)sizeof(attach_pid_buf));
+    argv4[0] = arg_prog;
+    argv4[1] = arg_quiet;
+    argv4[2] = arg_opt;
+    argv4[3] = arg_show_event;
+    argv4[4] = arg_opt;
+    argv4[5] = arg_detach;
+    argv4[6] = arg_attach_opt;
+    argv4[7] = attach_pid_str;
+    argv4[8] = (char *)0;
+    argv4[9] = (char *)0;
+    n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb --attach should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb --attach should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out2, "stop debug-stop"),
+              "pdb --attach should report initial debug stop");
+    UT_ASSERT(str_contains(out2, "detached"),
+              "pdb --attach should detach cleanly");
+    UT_ASSERT_EQ(waitpid(attach_target, &attach_status, 0), attach_target);
+    UT_ASSERT(WIFEXITED(attach_status),
+              "attached target should exit after detach");
+    UT_ASSERT_EQ(WEXITSTATUS(attach_status), 0);
 
     UT_ASSERT_EQ(write_blob("/tmp/pdb_smoke.com", pdb_smoke_com,
                             (int)sizeof(pdb_smoke_com)), 0);

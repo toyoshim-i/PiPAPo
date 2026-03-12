@@ -1189,6 +1189,7 @@ static int wait_child(pid_t pid, int *stopped, int *exit_code,
 static void usage(void)
 {
     put_str("Usage: pdb [-q] [-c <cmd> ...] [-f <script> ...] <program> [args...]\n");
+    put_str("       pdb [-q] [-c <cmd> ...] [-f <script> ...] --attach <pid>\n");
 }
 
 static void print_help(void)
@@ -1197,6 +1198,7 @@ static void print_help(void)
     put_str("  -q                suppress prompt/command echo output\n");
     put_str("  -c <cmd>          queue startup command (repeatable)\n");
     put_str("  -f <script>       load startup commands from file (repeatable)\n");
+    put_str("  --attach <pid>    attach to a running process instead of exec\n");
     put_str("                    script format: one command per line, '#' comment\n");
     put_str("\n");
     put_str("commands:\n");
@@ -1236,10 +1238,12 @@ int main(int argc, char *argv[])
     int argi = 1;
     int show_prompt = 1;
     int scripted_mode = 0;
+    int attach_mode = 0;
     char *script_cmds[PDB_SCRIPT_CMD_MAX];
     int script_storage_used = 0;
     int script_count = 0;
     int script_index = 0;
+    pid_t attach_pid = 0;
     pid_t pid;
     int child_stopped = 0;
     int child_exit_code = 0;
@@ -1308,11 +1312,31 @@ int main(int argc, char *argv[])
             argi += 2;
             continue;
         }
+        if (streq(argv[argi], "--attach")) {
+            uint32_t parsed_pid = 0;
+            if (argi + 1 >= argc) {
+                put_err("pdb: --attach requires a pid\n");
+                return 1;
+            }
+            if (!parse_u32(argv[argi + 1], &parsed_pid) ||
+                parsed_pid > 0x7fffffffu) {
+                put_err("pdb: --attach requires a valid positive pid\n");
+                return 1;
+            }
+            attach_mode = 1;
+            attach_pid = (pid_t)parsed_pid;
+            argi += 2;
+            continue;
+        }
         break;
     }
 
-    if (argi >= argc) {
+    if (!attach_mode && argi >= argc) {
         usage();
+        return 1;
+    }
+    if (attach_mode && argi < argc) {
+        put_err("pdb: --attach does not take a program path\n");
         return 1;
     }
     if (scripted_mode && script_count == 0) {
@@ -1326,15 +1350,27 @@ int main(int argc, char *argv[])
         local_bp[i].addr = 0;
     }
 
-    pid = vfork();
-    if (pid == 0) {
-        ptrace(PTRACE_TRACEME, 0, (void *)0, (void *)0);
-        execve(argv[argi], &argv[argi], (void *)0);
-        _exit(127);
-    }
-    if (pid < 0) {
-        put_err("pdb: vfork failed\n");
-        return 1;
+    if (attach_mode) {
+        long rc;
+        pid = attach_pid;
+        rc = ptrace(PTRACE_ATTACH, pid, (void *)0, (void *)0);
+        if (rc < 0) {
+            put_err("pdb: ATTACH failed rc=");
+            put_i32((int32_t)rc);
+            put_chr('\n');
+            return 1;
+        }
+    } else {
+        pid = vfork();
+        if (pid == 0) {
+            ptrace(PTRACE_TRACEME, 0, (void *)0, (void *)0);
+            execve(argv[argi], &argv[argi], (void *)0);
+            _exit(127);
+        }
+        if (pid < 0) {
+            put_err("pdb: vfork failed\n");
+            return 1;
+        }
     }
 
     {

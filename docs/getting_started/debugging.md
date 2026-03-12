@@ -60,6 +60,9 @@ PPAP also includes a minimal interactive debugger (`/bin/pdb`) built on
 # Launch target under debugger
 pdb /bin/hello
 
+# Attach to an already running process
+pdb --attach 42
+
 # Scripted mode (for automation/tests)
 pdb -c "caps" -c "regs" -c "disas 0x0100 3" /tmp/prog.com
 
