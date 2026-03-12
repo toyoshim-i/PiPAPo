@@ -97,7 +97,7 @@ static char arg_next[] = "next";
 static char arg_step[] = "step";
 static char arg_show_abi[] = "show abi";
 static char arg_show_event[] = "show event";
-static char arg_quit[] = "quit";
+static char arg_detach[] = "detach";
 static char arg_target[] = "/tmp/pdb_smoke.com";
 
 #endif
@@ -144,7 +144,7 @@ int main(void)
     argv[a++] = arg_opt;
     argv[a++] = arg_show_event;
     argv[a++] = arg_opt;
-    argv[a++] = arg_quit;
+    argv[a++] = arg_detach;
     argv[a++] = arg_target;
     argv[a] = (char *)0;
 
@@ -205,8 +205,10 @@ int main(void)
               "output should include abi output");
     UT_ASSERT(str_contains(out, "pdb> show event"),
               "output should include scripted show event command");
-    UT_ASSERT(str_contains(out, "pdb> quit"),
-              "output should include scripted quit command");
+    UT_ASSERT(str_contains(out, "pdb> detach"),
+              "output should include scripted detach command");
+    UT_ASSERT(str_contains(out, "detached"),
+              "output should include detach result");
     UT_ASSERT(!str_contains(out, "unknown command"),
               "output should not include unknown command error");
 

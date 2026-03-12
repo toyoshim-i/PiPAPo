@@ -673,6 +673,7 @@ static void print_help(void)
     put_str("  enable <id>       enable breakpoint by id\n");
     put_str("  delete <id>       clear breakpoint by id\n");
     put_str("  info break        show local breakpoint table\n");
+    put_str("  detach            detach and quit\n");
     put_str("  quit | q          detach and quit\n");
 }
 
@@ -1303,6 +1304,25 @@ int main(int argc, char *argv[])
                     put_str("disabled");
                 put_chr('\n');
             }
+            continue;
+        }
+
+        if (streq(tok[0], "detach")) {
+            long rc;
+            if (!child_stopped) {
+                put_err("pdb: child is not stopped\n");
+                continue;
+            }
+            rc = ptrace(PTRACE_DETACH, pid, (void *)0, (void *)0);
+            if (rc < 0) {
+                put_err("pdb: DETACH failed rc=");
+                put_i32((int32_t)rc);
+                put_chr('\n');
+                continue;
+            }
+            child_stopped = 0;
+            put_str("detached\n");
+            done = 1;
             continue;
         }
 
