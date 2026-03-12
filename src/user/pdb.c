@@ -921,6 +921,11 @@ static void usage(void)
 
 static void print_help(void)
 {
+    put_str("options:\n");
+    put_str("  -c <cmd>          queue startup command (repeatable)\n");
+    put_str("  -f <script>       load startup commands from file (repeatable)\n");
+    put_str("                    script format: one command per line, '#' comment\n");
+    put_str("\n");
     put_str("commands:\n");
     put_str("  help              show this help\n");
     put_str("  regs              show registers\n");
