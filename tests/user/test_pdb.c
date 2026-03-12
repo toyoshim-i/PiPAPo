@@ -83,6 +83,7 @@ static const uint8_t pdb_smoke_com[] = {
 
 static char arg_prog[] = "/bin/pdb";
 static char arg_opt[] = "-c";
+static char arg_file_opt[] = "-f";
 static char arg_show_sp[] = "show sp";
 static char arg_show_surface[] = "show surface";
 static char arg_surface_real[] = "surface real";
@@ -109,9 +110,13 @@ int main(void)
     UT_SUMMARY("test_pdb");
 #else
     char out[3072];
+    char out2[512];
     int status = 0;
+    int status2 = 0;
     int n = 0;
+    int n2 = 0;
     char *argv[33];
+    char *argv2[3];
     int a = 0;
 
     argv[a++] = arg_prog;
@@ -225,6 +230,16 @@ int main(void)
               "output should not include unknown command error");
     UT_ASSERT(!str_contains(out, "usage: show <abi|event|caps|regset|pc|sp|surface>"),
               "show command should not print usage error");
+
+    argv2[0] = arg_prog;
+    argv2[1] = arg_file_opt;
+    argv2[2] = (char *)0;
+    n2 = run_capture(argv2, out2, sizeof(out2), &status2);
+    UT_ASSERT(n2 > 0, "pdb -f missing path should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb -f missing path should exit");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 1);
+    UT_ASSERT(str_contains(out2, "pdb: -f requires a script path"),
+              "pdb -f missing path should report usage error");
 
     UT_SUMMARY("test_pdb");
 #endif
