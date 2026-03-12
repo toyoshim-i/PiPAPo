@@ -89,6 +89,7 @@ static const uint8_t pdb_smoke_com[] = {
 };
 
 static char arg_prog[] = "/bin/pdb";
+static char arg_quiet[] = "-q";
 static char arg_opt[] = "-c";
 static char arg_file_opt[] = "-f";
 static char arg_dev_null[] = "/dev/null";
@@ -108,6 +109,7 @@ static char arg_setreg[] = "set reg wz 0x1234";
 static char arg_setmem[] = "set mem 0x0100 0x00000000";
 static char arg_next[] = "next";
 static char arg_step[] = "step";
+static char arg_cont[] = "cont";
 static char arg_detach[] = "detach";
 static char arg_target[] = "/tmp/pdb_smoke.com";
 static char out_buf[3072];
@@ -116,6 +118,7 @@ static uint8_t long_script_line_buf[160];
 static char long_cmd_buf[129];
 static char *argv_buf[33];
 static char *argv2_buf[5];
+static char *argv3_buf[9];
 
 #endif
 
@@ -135,6 +138,7 @@ int main(void)
     int n2 = 0;
     char **argv = argv_buf;
     char **argv2 = argv2_buf;
+    char **argv3 = argv3_buf;
     int a = 0;
 
     argv[a++] = arg_prog;
@@ -174,8 +178,27 @@ int main(void)
     UT_ASSERT_EQ(write_blob("/tmp/pdb_smoke.com", pdb_smoke_com,
                             (int)sizeof(pdb_smoke_com)), 0);
 
+    argv3[0] = arg_prog;
+    argv3[1] = arg_quiet;
+    argv3[2] = arg_opt;
+    argv3[3] = arg_show_sp;
+    argv3[4] = arg_opt;
+    argv3[5] = arg_cont;
+    argv3[6] = arg_target;
+    argv3[7] = (char *)0;
+    argv3[8] = (char *)0;
+    n2 = run_capture(argv3, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb -q should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb -q should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out2, "sp=0x"),
+              "pdb -q should still run scripted commands");
+    UT_ASSERT(!str_contains(out2, "pdb> "),
+              "pdb -q should suppress command prompt/echo output");
+
+    UT_ASSERT_EQ(write_blob("/tmp/pdb_smoke.com", pdb_smoke_com,
+                            (int)sizeof(pdb_smoke_com)), 0);
     n = run_capture(argv, out, sizeof(out_buf), &status);
-    unlink("/tmp/pdb_smoke.com");
 
     UT_ASSERT(n > 0, "pdb should produce output");
     UT_ASSERT(WIFEXITED(status), "pdb should exit normally");
@@ -248,6 +271,8 @@ int main(void)
               "output should not include unknown command error");
     UT_ASSERT(!str_contains(out, "usage: show <abi|event|caps|regset|pc|sp|surface>"),
               "show command should not print usage error");
+
+    unlink("/tmp/pdb_smoke.com");
 
     argv2[0] = arg_prog;
     argv2[1] = arg_file_opt;

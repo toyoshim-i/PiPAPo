@@ -936,12 +936,13 @@ static int wait_child(pid_t pid, int *stopped, int *exit_code,
 
 static void usage(void)
 {
-    put_str("Usage: pdb [-c <cmd> ...] [-f <script> ...] <program> [args...]\n");
+    put_str("Usage: pdb [-q] [-c <cmd> ...] [-f <script> ...] <program> [args...]\n");
 }
 
 static void print_help(void)
 {
     put_str("options:\n");
+    put_str("  -q                suppress prompt/command echo output\n");
     put_str("  -c <cmd>          queue startup command (repeatable)\n");
     put_str("  -f <script>       load startup commands from file (repeatable)\n");
     put_str("                    script format: one command per line, '#' comment\n");
@@ -981,6 +982,7 @@ static void print_help(void)
 int main(int argc, char *argv[])
 {
     int argi = 1;
+    int show_prompt = 1;
     int scripted_mode = 0;
     char *script_cmds[PDB_SCRIPT_CMD_MAX];
     int script_storage_used = 0;
@@ -997,6 +999,11 @@ int main(int argc, char *argv[])
     pdb_local_bp_t local_bp[PDB_LOCAL_BP_MAX];
 
     while (argi < argc) {
+        if (streq(argv[argi], "-q")) {
+            show_prompt = 0;
+            argi++;
+            continue;
+        }
         if (streq(argv[argi], "-c")) {
             int non_space = 0;
             int cmd_len = 0;
@@ -1096,13 +1103,16 @@ int main(int argc, char *argv[])
                 i++;
             }
             line[i] = '\0';
-            put_str("pdb> ");
-            put_str(line);
-            put_chr('\n');
+            if (show_prompt) {
+                put_str("pdb> ");
+                put_str(line);
+                put_chr('\n');
+            }
         } else {
             if (script_count > 0)
                 break;
-            put_str("pdb> ");
+            if (show_prompt)
+                put_str("pdb> ");
             if (readline(line, sizeof(line)) < 0) {
                 put_chr('\n');
                 break;
