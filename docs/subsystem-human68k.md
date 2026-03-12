@@ -26,7 +26,7 @@ Human68k DOS calls to PPAP's native syscall interface.
 
 ### 1.1 Primary Goal
 
-Run existing Human68k command-line programs (.x executables) on PPAP,
+Run existing Human68k command-line programs (`.x` and `.r` executables) on PPAP,
 starting with simple utilities and working toward more complex
 applications.
 
@@ -35,7 +35,7 @@ applications.
 | Host Architecture | Execution Method | Personality Layer |
 |---|---|---|
 | **m68k (native)** | Direct execution — no CPU emulation | F-line exception handler in kernel |
-| **ARM / other (future)** | ecpu-m68k interpreter (kernel-embedded) | Kernel-side personality bridge |
+| **ARM / other** | ecpu-m68k interpreter (kernel-embedded) | Kernel-side personality bridge |
 
 On m68k hosts, the subsystem is a thin kernel-side shim: the F-line
 exception handler intercepts `$FFxx` opcodes and translates them to
@@ -47,15 +47,15 @@ embedded in the kernel.
 
 ### 1.3 Scope
 
-**In scope (initial):**
+**In scope (current):**
 - X-format (.x) binary loader
+- R-format (.r) raw binary loader
 - Human68k DOS call bridge (file I/O, console I/O, process management)
 - Basic IOCS passthrough on X68000 hardware (TRAP #15)
 - File path translation (Human68k drive:path → PPAP /path)
+- eCPU-based execution on non-m68k architectures
 
 **In scope (later):**
-- eCPU-based execution on non-m68k architectures
-- R-format (.r) relocatable loader (device drivers, TSRs)
 - Extended DOS calls (memory management, directory operations)
 
 **Out of scope:**
@@ -92,6 +92,7 @@ Key characteristics:
 - DOS call interface via F-line exceptions (`dc.w $FFxx`)
 - IOCS (firmware I/O) via `TRAP #15`
 - X-format executable files (.x)
+- R-format executable files (.r)
 - Drive-letter file paths (`A:\DIR\FILE.EXT`)
 - 8.3 filenames (v1–v2), 18.3 filenames (v3), unlimited with
   community TwentyOne.sys driver — see §8.2
@@ -670,7 +671,7 @@ indicates which PPAP implementation phase targets each call.
 | `_SETDATE` | $FF2B | No-op, return 0 | ✅ |
 | `_GETTIME` | $FF2C | Fixed time (00:00:00) | ✅ |
 | `_SETTIME` | $FF2D | No-op, return 0 | ✅ |
-| `_VERNUM` | $FF30 | Return 0x48550302 (HU + v3.02) | ✅ |
+| `_VERNUM` | $FF30 | Return 0x36380302 ("68" + v3.02) | ✅ |
 | `_KEEPPR` | $FF31 | TSR — just exits | ✅ |
 | `_BREAKCK` | $FF33 | Return 1 (break check on) | ✅ |
 | `_INTVCG` | $FF35 | Get interrupt vector — stub | ✅ |
@@ -1400,7 +1401,7 @@ and error code mapping.
 
 **Status:** Complete.
 
-- `_VERNUM` ($FF30) — returns Human68k v3.02 (`0x48550302`)
+- `_VERNUM` ($FF30) — returns Human68k v3.02 (`0x36380302`)
 - `_BREAKCK` ($FF33) — break check stub
 - `_INTVCG` ($FF35) — get interrupt vector stub
 - `_GETDATE` ($FF2A), `_SETDATE` ($FF2B) — fixed date / no-op

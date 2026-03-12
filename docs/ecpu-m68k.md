@@ -3,7 +3,7 @@
 Interpretive Motorola 68000 emulator for PPAP, providing the CPU
 execution engine for cross-architecture execution of PPAP m68k ELF
 binaries on ARM hosts. Also serves as the foundation for the
-Human68k subsystem personality on non-m68k hosts (future).
+Human68k subsystem personality on non-m68k hosts.
 
 ---
 
@@ -37,7 +37,7 @@ execution). The emulator handles pure CPU emulation; OS-level
 semantics are provided by the PPAP cross-arch personality layer
 (TRAP #0 register ABI remapping). The same core also serves as the
 foundation for Human68k .X execution (see `subsystem-human68k.md`)
-on non-m68k hosts as a future extension.
+on non-m68k hosts.
 
 ### 1.2 Design Priorities
 
@@ -84,7 +84,7 @@ The m68k emulator is used by two personality types:
 1. **PPAP cross-arch personality** (primary target) — intercepts
    TRAP #0 and remaps d0-d5/a0 register ABI to native ARM syscall
    ABI. This enables running PPAP m68k ELF binaries on ARM PPAP.
-2. **Human68k personality** (future) — intercepts F-line exceptions
+2. **Human68k personality** — intercepts F-line exceptions
    ($FFxx opcodes) and TRAP #15 (IOCS), translating them to PPAP
    syscalls
 

@@ -194,8 +194,10 @@ only relocates GOT entries, not arbitrary data pointers.
 | `test_iov.c` | `readv`, `writev` scatter/gather I/O |
 | `test_stat.c` | `stat64`, `fstat64`, `lstat64` |
 | `test_tmpfs.c` | tmpfs create, write, read, unlink |
-| `test_x68k.c` | Human68k subsystem (R-format execution) |
-| `test_cpm.c` | CP/M subsystem (13 tests: BDOS calls, .COM exec, warm boot) |
+| `test_x68k.c` | Human68k subsystem (X-format `.x` execution) |
+| `test_cpm.c` | CP/M subsystem integration (`.COM` exec, BDOS bridge, signals, file I/O) |
+| `test_trace.c` | `ptrace` syscall/subsystem trace integration (non-m68k targets) |
+| `test_h68k_dos.c` | Human68k DOS bridge integration via R-format test binaries |
 
 ### Build system
 
@@ -239,8 +241,8 @@ by the `PPAP_TESTS` CMake option. The build system:
 
 ### `run.sh --test`
 
-Builds with `PPAP_TESTS=ON`, runs under QEMU with a 30-second timeout,
-and greps output for `ALL.*TESTS PASSED`.
+Builds with `PPAP_TESTS=ON`, runs under QEMU with a 60-second timeout,
+and greps output for the exact marker `ALL TESTS PASSED`.
 
 ```bash
 ./scripts/run.sh --test              # ARM (default)
@@ -273,6 +275,7 @@ boot → kernel init → VFS mount → target_post_mount()
                                    │
                           runtests (PID 1)
                             ├── test_exec
+                            ├── test_elf
                             ├── test_vfork
                             ├── test_fault
                             ├── test_pipe
@@ -291,7 +294,8 @@ boot → kernel init → VFS mount → target_post_mount()
                             ├── test_tmpfs
                             ├── test_x68k
                             ├── test_cpm
-                            └── test_h68k_dos (m68k only)
+                            ├── test_trace (non-m68k only)
+                            └── test_h68k_dos (all targets)
                                    │
                         "ALL TESTS PASSED"
                                    │

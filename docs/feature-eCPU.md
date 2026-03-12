@@ -27,7 +27,7 @@ execution in PPAP — including running PPAP binaries cross-architecture
 | m68k ELF on ARM PPAP | ecpu-m68k | PPAP (register ABI mapping) |
 | CP/M .COM on any PPAP | ecpu-z80 | CP/M BDOS bridge |
 | DOS .COM on any PPAP | ecpu-8086 | DOS INT 21h bridge |
-| Human68k .X on ARM PPAP | ecpu-m68k | Human68k F-line bridge |
+| Human68k .X/.R on ARM PPAP | ecpu-m68k | Human68k DOS/F-line bridge |
 
 The PPAP cross-architecture personality is the simplest — it only
 remaps registers since PPAP uses the same syscall numbers on all
@@ -44,7 +44,7 @@ or system-mode layers that give meaning to the emulated instructions.
 ```
 +----------------------------------------------------------+
 |  Foreign binary                                          |
-|  (PPAP ELF, CP/M .COM, DOS .EXE, Human68k .X, etc.)     |
+|  (PPAP ELF, CP/M .COM, DOS .EXE, Human68k .X/.R, etc.)  |
 +----------------------------+-----------------------------+
                              |
 +----------------------------v-----------------------------+
@@ -67,27 +67,24 @@ or system-mode layers that give meaning to the emulated instructions.
 
 ### 2.1 Execution Model
 
-Each eCPU emulator + subsystem personality runs as a **regular
-user-space PPAP process**. The combined binary lives in romfs at
-`/subsys/` (e.g., `/subsys/ppap-arm`, `/subsys/cpm`, `/subsys/dos`).
-This is a top-level directory — subsystems are a first-class PPAP
-feature, not a library tucked away under `/usr/lib`.
+In current PPAP, eCPU-backed subsystem execution is **kernel-embedded**:
+the loader (`exec_*`) allocates emulated memory/state, initializes the
+CPU core, and runs it as the process image (no separate userland
+emulator binary).
 
-The emulator process:
+Execution flow:
 
-1. Receives the foreign binary path as argv[1]
-2. The subsystem personality loads the binary into emulated memory
-   (ELF loader, .COM loader, X-format loader, etc.)
-3. Initializes emulated CPU state (registers, flags, PC)
-4. Enters the fetch-decode-execute loop
-5. On trap/syscall instruction: fires the personality callback
-6. The personality translates to PPAP syscall ABI and executes natively
-7. Writes return value back to emulated registers
+1. `execve()` detects a foreign format and selects a subsystem loader
+2. Loader initializes emulated memory, registers, and trap callback
+3. Process enters the emulator run loop
+4. On trap/syscall instruction: emulator fires the personality callback
+5. Personality translates to PPAP syscall ABI and executes natively
+6. Return value is written back to emulated registers
 
 ### 2.2 Kernel Integration
 
 The kernel's `exec()` path dispatches to the appropriate subsystem
-emulator when it encounters a foreign binary:
+loader when it encounters a foreign binary:
 
 ```c
 int do_execve(pcb_t *p, const char *path, const char *const *argv) {
@@ -97,12 +94,11 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
     if (is_elf(file) && elf_validate(ehdr) == 0)
         return exec_elf_native(p, file, argv);
 
-    /* Try registered subsystems (including PPAP cross-arch) */
-    const subsystem_t *ss = subsystem_detect(file, file_size, path);
-    if (ss) {
-        const char *new_argv[] = { ss->emulator_path, path, ... };
-        return do_execve(p, ss->emulator_path, new_argv);
-    }
+    /* Try registered subsystems / emulated formats */
+    if (is_human68k_x(file, size)) return exec_x68k(...);
+    if (is_human68k_r(path, file, size)) return exec_r68k(...);
+    if (is_cpm(path, file, size)) return exec_cpm(...);
+    if (is_m68k_elf(file, size)) return exec_m68k_emu(...);
 
     return -ENOEXEC;
 }
