@@ -13,13 +13,21 @@
 
 static int write_com(const char *path, const unsigned char *code, int size)
 {
+    unlink(path);
     int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0755);
     if (fd < 0)
         return -1;
-    write(fd, code, size);
+    int n = write(fd, code, size);
     close(fd);
+    if (n != size) {
+        unlink(path);
+        return -1;
+    }
     return 0;
 }
+
+#define WRITE_COM(path, code) \
+    UT_ASSERT_EQ(write_com((path), (code), (int)sizeof(code)), 0)
 
 /* ── Helper: exec a .COM and return exit code ──────────────────────────── */
 
@@ -32,6 +40,7 @@ static int run_com(const char *path)
     }
     int status = 0;
     waitpid(pid, &status, 0);
+    unlink(path);
     return (status >> 8) & 0xff;
 }
 
@@ -66,6 +75,7 @@ static int run_com_capture(const char *path, char *buf, int bufsize)
 
     int status = 0;
     waitpid(pid, &status, 0);
+    unlink(path);
     return total;
 }
 
@@ -98,7 +108,7 @@ static const unsigned char exit_zero_com[] = {
 
 static void test_exit_zero(void)
 {
-    write_com("/tmp/exit0.com", exit_zero_com, sizeof(exit_zero_com));
+    WRITE_COM("/tmp/exit0.com", exit_zero_com);
     int code = run_com("/tmp/exit0.com");
     UT_ASSERT_EQ(code, 0);
 }
@@ -124,7 +134,7 @@ static const unsigned char hello_com[] = {
 
 static void test_hello(void)
 {
-    write_com("/tmp/hello.com", hello_com, sizeof(hello_com));
+    WRITE_COM("/tmp/hello.com", hello_com);
     char buf[64];
     int n = run_com_capture("/tmp/hello.com", buf, sizeof(buf));
     UT_ASSERT(n >= 2, "hello.com produced output");
@@ -150,7 +160,7 @@ static const unsigned char charout_com[] = {
 
 static void test_charout(void)
 {
-    write_com("/tmp/charout.com", charout_com, sizeof(charout_com));
+    WRITE_COM("/tmp/charout.com", charout_com);
     char buf[64];
     int n = run_com_capture("/tmp/charout.com", buf, sizeof(buf));
     UT_ASSERT_EQ(n, 1);
@@ -183,7 +193,7 @@ static const unsigned char loop_com[] = {
 
 static void test_loop(void)
 {
-    write_com("/tmp/loop.com", loop_com, sizeof(loop_com));
+    WRITE_COM("/tmp/loop.com", loop_com);
     char buf[64];
     int n = run_com_capture("/tmp/loop.com", buf, sizeof(buf));
     UT_ASSERT_EQ(n, 2);
@@ -219,7 +229,7 @@ static const unsigned char version_com[] = {
 
 static void test_version(void)
 {
-    write_com("/tmp/version.com", version_com, sizeof(version_com));
+    WRITE_COM("/tmp/version.com", version_com);
     char buf[64];
     int n = run_com_capture("/tmp/version.com", buf, sizeof(buf));
     UT_ASSERT_EQ(n, 1);
@@ -237,7 +247,7 @@ static const unsigned char halt_com[] = {
 
 static void test_halt_exit(void)
 {
-    write_com("/tmp/halt.com", halt_com, sizeof(halt_com));
+    WRITE_COM("/tmp/halt.com", halt_com);
     int code = run_com("/tmp/halt.com");
     UT_ASSERT_EQ(code, 0);
 }
@@ -247,7 +257,7 @@ static void test_halt_exit(void)
 static void test_bad_extension(void)
 {
     /* Write same code but with .bin extension — should not be detected */
-    write_com("/tmp/test.bin", exit_zero_com, sizeof(exit_zero_com));
+    WRITE_COM("/tmp/test.bin", exit_zero_com);
     pid_t pid = vfork();
     if (pid == 0) {
         execve("/tmp/test.bin", (void *)0, (void *)0);
@@ -256,6 +266,7 @@ static void test_bad_extension(void)
     int status = 0;
     waitpid(pid, &status, 0);
     int code = (status >> 8) & 0xff;
+    unlink("/tmp/test.bin");
     UT_ASSERT_EQ(code, 127);   /* should fail — not a .COM file */
 }
 
@@ -284,7 +295,7 @@ static const unsigned char directio_com[] = {
 
 static void test_direct_io(void)
 {
-    write_com("/tmp/directio.com", directio_com, sizeof(directio_com));
+    WRITE_COM("/tmp/directio.com", directio_com);
     char buf[64];
     int n = run_com_capture("/tmp/directio.com", buf, sizeof(buf));
     UT_ASSERT_EQ(n, 2);
@@ -322,7 +333,7 @@ static const unsigned char seldisk_com[] = {
 
 static void test_select_disk(void)
 {
-    write_com("/tmp/seldisk.com", seldisk_com, sizeof(seldisk_com));
+    WRITE_COM("/tmp/seldisk.com", seldisk_com);
     char buf[64];
     int n = run_com_capture("/tmp/seldisk.com", buf, sizeof(buf));
     UT_ASSERT_EQ(n, 1);
@@ -362,7 +373,7 @@ static const unsigned char usercode_com[] = {
 
 static void test_user_code(void)
 {
-    write_com("/tmp/usercode.com", usercode_com, sizeof(usercode_com));
+    WRITE_COM("/tmp/usercode.com", usercode_com);
     char buf[64];
     int n = run_com_capture("/tmp/usercode.com", buf, sizeof(buf));
     UT_ASSERT_EQ(n, 1);
@@ -396,7 +407,7 @@ static const unsigned char loginvec_com[] = {
 
 static void test_login_vector(void)
 {
-    write_com("/tmp/loginvec.com", loginvec_com, sizeof(loginvec_com));
+    WRITE_COM("/tmp/loginvec.com", loginvec_com);
     char buf[64];
     int n = run_com_capture("/tmp/loginvec.com", buf, sizeof(buf));
     UT_ASSERT_EQ(n, 1);
@@ -575,7 +586,7 @@ static void test_file_io(void)
      * exec_cpm passes argv to cpm_load_com which parses it into FCB1.
      * We'll use execve with argv containing the filename. */
 
-    write_com("/tmp/fileio.com", code, sizeof(code));
+    WRITE_COM("/tmp/fileio.com", code);
 
     /* Build argv: program name + filename argument for FCB parsing */
     /* execve argv: [path, "TEST.DAT", NULL] */
@@ -611,6 +622,7 @@ static void test_file_io(void)
 
     int status = 0;
     waitpid(pid, &status, 0);
+    unlink("/tmp/fileio.com");
 
     UT_ASSERT_EQ(total, 2);
     UT_ASSERT(buf[0] == 'O' && buf[1] == 'K', "file I/O roundtrip OK");
@@ -637,7 +649,7 @@ static const unsigned char warmboot_com[] = {
 
 static void test_warm_boot(void)
 {
-    write_com("/tmp/warmboot.com", warmboot_com, sizeof(warmboot_com));
+    WRITE_COM("/tmp/warmboot.com", warmboot_com);
     char buf[64];
     int n = run_com_capture("/tmp/warmboot.com", buf, sizeof(buf));
     UT_ASSERT_EQ(n, 1);
@@ -663,7 +675,7 @@ static const unsigned char sigint_read_com[] = {
 
 static void test_sigint_kills_read(void)
 {
-    write_com("/tmp/sigint_read.com", sigint_read_com, sizeof(sigint_read_com));
+    WRITE_COM("/tmp/sigint_read.com", sigint_read_com);
 
     int pipefd[2];
     UT_ASSERT_EQ(pipe(pipefd), 0);
@@ -693,6 +705,7 @@ static void test_sigint_kills_read(void)
         kill(pid, 9);
         waitpid(pid, &status, 0);
     }
+    unlink("/tmp/sigint_read.com");
 
     UT_ASSERT(reaped, "SIGINT should terminate looping CP/M process");
     if (reaped)
@@ -716,7 +729,7 @@ static const unsigned char sigint_spin_com[] = {
 
 static void test_sigint_kills_spin(void)
 {
-    write_com("/tmp/sigint_spin.com", sigint_spin_com, sizeof(sigint_spin_com));
+    WRITE_COM("/tmp/sigint_spin.com", sigint_spin_com);
 
     int pipefd[2];
     UT_ASSERT_EQ(pipe(pipefd), 0);
@@ -746,6 +759,7 @@ static void test_sigint_kills_spin(void)
         kill(pid, 9);
         waitpid(pid, &status, 0);
     }
+    unlink("/tmp/sigint_spin.com");
 
     UT_ASSERT(reaped, "SIGINT should terminate busy-loop CP/M process");
     if (reaped)

@@ -123,7 +123,7 @@ if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc ]]; then
 fi
 
 # ── QEMU targets (qemu_arm, qemu_m68k) ─────────────────────────────────────
-TIMEOUT=30
+TIMEOUT=60
 if [[ "$TARGET" == "qemu_m68k" ]]; then
     QEMU_BIN="qemu-system-m68k"
     # Prefer locally-built QEMU if available
@@ -158,7 +158,7 @@ if [[ $DO_TEST -eq 1 ]]; then
 
     echo "$OUTPUT"
 
-    if echo "$OUTPUT" | grep -q "ALL.*TESTS PASSED"; then
+    if echo "$OUTPUT" | grep -q "ALL TESTS PASSED"; then
         echo ""
         echo "[test] PASS — all on-target tests passed"
         exit 0

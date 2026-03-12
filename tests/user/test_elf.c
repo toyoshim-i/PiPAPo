@@ -62,7 +62,7 @@ static void init_load_phdr(elf32_phdr_t *ph)
 {
     mem_zero(ph, sizeof(*ph));
     ph->p_type = PT_LOAD;
-    ph->p_offset = 0x1000;
+    ph->p_offset = 0x0;
     ph->p_vaddr = 0;
     ph->p_paddr = 0;
     ph->p_filesz = 0x44;

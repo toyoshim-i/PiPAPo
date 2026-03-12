@@ -170,7 +170,85 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
     if (err < 0)
         return err;
 
-    if (vn->type != VNODE_FILE || vn->xip_addr == NULL) {
+    if (vn->type != VNODE_FILE) {
+        vnode_put(vn);
+        return -(int)ENOEXEC;
+    }
+
+    /* Non-XIP files (tmpfs/vfat/etc.) can still be executed by loaders
+     * that fully copy the binary image (.com, .x, .r, emulated m68k ELF).
+     * Native ELF/XIP still requires vn->xip_addr and follows below. */
+    if (vn->xip_addr == NULL) {
+        uint32_t file_size = vn->size;
+        if (file_size == 0) {
+            vnode_put(vn);
+            return -(int)ENOEXEC;
+        }
+
+        uint32_t file_pages = (file_size + PAGE_SIZE - 1u) / PAGE_SIZE;
+        uint8_t *file_buf = alloc_contiguous(file_pages);
+        if (!file_buf) {
+            vnode_put(vn);
+            return -(int)ENOMEM;
+        }
+
+        if (!vn->mount || !vn->mount->ops || !vn->mount->ops->read) {
+            for (uint32_t i = 0; i < file_pages; i++)
+                page_free(file_buf + i * PAGE_SIZE);
+            vnode_put(vn);
+            return -(int)ENOEXEC;
+        }
+
+        long nread = vn->mount->ops->read(vn, file_buf, file_size, 0);
+        if (nread < 0 || (uint32_t)nread != file_size) {
+            for (uint32_t i = 0; i < file_pages; i++)
+                page_free(file_buf + i * PAGE_SIZE);
+            vnode_put(vn);
+            return (nread < 0) ? (int)nread : -(int)ENOEXEC;
+        }
+
+#ifdef PPAP_ENABLE_HUMAN68K
+        if (x68k_detect(file_buf, file_size)) {
+            int rc = exec_x68k(p, file_buf, file_size, path, argv);
+            for (uint32_t i = 0; i < file_pages; i++)
+                page_free(file_buf + i * PAGE_SIZE);
+            vnode_put(vn);
+            return rc;
+        }
+        if (r68k_detect(path, file_buf, file_size)) {
+            int rc = exec_r68k(p, file_buf, file_size, path, argv);
+            for (uint32_t i = 0; i < file_pages; i++)
+                page_free(file_buf + i * PAGE_SIZE);
+            vnode_put(vn);
+            return rc;
+        }
+#endif
+
+#ifdef PPAP_ENABLE_CPM
+        if (cpm_detect(path, file_buf, file_size)) {
+            int rc = exec_cpm(p, file_buf, file_size, path, argv);
+            for (uint32_t i = 0; i < file_pages; i++)
+                page_free(file_buf + i * PAGE_SIZE);
+            vnode_put(vn);
+            return rc;
+        }
+#endif
+
+#ifdef PPAP_ENABLE_ECPU_M68K
+        {
+            const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)file_buf;
+            if (m68k_emu_detect(ehdr)) {
+                int rc = exec_m68k_emu(p, file_buf, file_size, ehdr, path, argv);
+                for (uint32_t i = 0; i < file_pages; i++)
+                    page_free(file_buf + i * PAGE_SIZE);
+                vnode_put(vn);
+                return rc;
+            }
+        }
+#endif
+
+        for (uint32_t i = 0; i < file_pages; i++)
+            page_free(file_buf + i * PAGE_SIZE);
         vnode_put(vn);
         return -(int)ENOEXEC;
     }

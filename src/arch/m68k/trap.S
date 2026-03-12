@@ -77,6 +77,29 @@ m68k_trap0_handler:
     tst.l   exec_pending
     bne.s   .Lexec_restore
 
+    | If a syscall requested scheduling (sched_yield), switch now
+    | before returning to user mode.
+    tst.l   m68k_switch_pending
+    beq.s   .Lret_current
+    clr.l   m68k_switch_pending
+
+    | Save current SP/USP into PCB
+    move.l  current_core,%a0
+    move.l  %sp,%a0@(PCB_SP_OFFSET)
+    move.l  %usp,%a1
+    move.l  %a1,%a0@(PCB_USP_OFFSET)
+
+    | Pick next runnable process and switch current_core
+    jsr     sched_next
+    move.l  %d0,current_core
+
+    | Load next SP/USP
+    move.l  %d0,%a0
+    move.l  %a0@(PCB_SP_OFFSET),%sp
+    move.l  %a0@(PCB_USP_OFFSET),%a1
+    move.l  %a1,%usp
+
+.Lret_current:
     | Return value is already in regs[0] (d0 slot on stack),
     | written by m68k_syscall_entry.
 
@@ -103,6 +126,25 @@ m68k_trap0_handler:
     move.l  %a0@(PCB_USP_OFFSET),%a1
     move.l  %a1,%usp
 
+    | execve can request an immediate stop/yield (e.g. ptrace exec-stop).
+    tst.l   m68k_switch_pending
+    beq.s   .Lexec_return
+    clr.l   m68k_switch_pending
+
+    move.l  current_core,%a0
+    move.l  %sp,%a0@(PCB_SP_OFFSET)
+    move.l  %usp,%a1
+    move.l  %a1,%a0@(PCB_USP_OFFSET)
+
+    jsr     sched_next
+    move.l  %d0,current_core
+
+    move.l  %d0,%a0
+    move.l  %a0@(PCB_SP_OFFSET),%sp
+    move.l  %a0@(PCB_USP_OFFSET),%a1
+    move.l  %a1,%usp
+
+.Lexec_return:
     | Restore all registers from the new frame and return
     movem.l %sp@+,%d0-%d7/%a0-%a6
     rte

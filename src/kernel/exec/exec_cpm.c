@@ -18,6 +18,9 @@
 #include "kernel/ecpu/ecpu_z80.h"
 #include "kernel/signal/signal.h"
 #include "kernel/errno.h"
+#if defined(__m68k__)
+#include "arch/cpu.h"
+#endif
 #include <string.h>
 
 /* Z80 address space: 64KB = 16 × 4KB pages */
@@ -63,6 +66,9 @@ typedef struct {
     cpm_state_t  cpm;
 } cpm_exec_state_t;
 
+_Static_assert(sizeof(cpm_exec_state_t) <= PAGE_SIZE,
+               "cpm_exec_state_t must fit in one page");
+
 static void cpm_set_drive_a_root(cpm_state_t *cpm, const char *path)
 {
     const char *slash = NULL;
@@ -97,28 +103,35 @@ int exec_cpm(pcb_t *p, const uint8_t *file, uint32_t size,
 {
     (void)argv;
 
-    /* ── 1. Allocate Z80 memory (64KB) + state page ────────────────────── */
-    uint32_t total_pages = Z80_MEM_PAGES + 1;  /* +1 for state structs */
-    uint8_t *mem_base = alloc_contiguous(total_pages);
+    /* ── 1. Allocate Z80 memory (64KB contiguous) + separate state page ── */
+    uint8_t *mem_base = alloc_contiguous(Z80_MEM_PAGES);
     if (!mem_base)
         return -(int)ENOMEM;
 
     /* Z80 memory is the first 16 pages */
     uint8_t *z80_mem = mem_base;
 
-    /* State structs live in the extra page */
-    cpm_exec_state_t *state =
-        (cpm_exec_state_t *)(mem_base + Z80_MEM_PAGES * PAGE_SIZE);
+    uint8_t *state_page = page_alloc();
+    if (!state_page) {
+        for (uint32_t i = 0; i < Z80_MEM_PAGES; i++)
+            page_free(mem_base + i * PAGE_SIZE);
+        return -(int)ENOMEM;
+    }
+
+    cpm_exec_state_t *state = (cpm_exec_state_t *)state_page;
 
     /* Store pages in user_pages[] for cleanup on exit */
-    for (uint32_t i = 0; i < total_pages && i < USER_PAGES_MAX; i++)
+    for (uint32_t i = 0; i < Z80_MEM_PAGES && i < USER_PAGES_MAX; i++)
         p->user_pages[i] = mem_base + i * PAGE_SIZE;
+    if (Z80_MEM_PAGES < USER_PAGES_MAX)
+        p->user_pages[Z80_MEM_PAGES] = state_page;
 
     /* ── 2. Allocate stack page ────────────────────────────────────────── */
     void *stack = page_alloc();
     if (!stack) {
-        for (uint32_t i = 0; i < total_pages; i++)
+        for (uint32_t i = 0; i < Z80_MEM_PAGES; i++)
             page_free(mem_base + i * PAGE_SIZE);
+        page_free(state_page);
         return -(int)ENOMEM;
     }
     p->stack_page = stack;
@@ -200,6 +213,17 @@ int exec_cpm(pcb_t *p, const uint8_t *file, uint32_t size,
      * "return" into our entry function.
      */
     proc_setup_stack(p, cpm_run_process, 0);
+
+#if defined(__m68k__)
+    /* CP/M runs the Z80 emulator in kernel context on m68k.
+     * Force the initial RTE frame to supervisor mode so low-level
+     * helpers that touch SR (irq save/restore) do not trap. */
+    {
+        uint8_t *exc = (uint8_t *)(uintptr_t)p->sp + 15u * sizeof(uint32_t);
+        *(uint16_t *)(void *)exc = SR_SUPV_IRQ;
+        p->usp = (uint32_t)(uintptr_t)p->stack_page + PAGE_SIZE;
+    }
+#endif
 
     return 0;
 }
