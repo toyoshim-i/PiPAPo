@@ -97,12 +97,14 @@ static char arg_file_opt[] = "-f";
 static char arg_dev_null[] = "/dev/null";
 static char arg_long_script[] = "/tmp/pdb_long.script";
 static char arg_blank_cmd[] = "   ";
+static char arg_show_regset[] = "show regset";
 static char arg_show_sp[] = "show sp";
 static char arg_show_surface[] = "show surface";
 static char arg_surface_real[] = "surface real";
 static char arg_surface_ecpu[] = "surface ecpu";
 static char arg_where[] = "where";
 static char arg_x[] = "x/2h 0x0100";
+static char arg_disas_pc[] = "disas";
 static char arg_disas[] = "disas 0x0100 3";
 static char arg_break[] = "break 0x0101";
 static char arg_info_break[] = "info break";
@@ -114,6 +116,7 @@ static char arg_step[] = "step";
 static char arg_cont[] = "cont";
 static char arg_detach[] = "detach";
 static char arg_target[] = "/tmp/pdb_smoke.com";
+static char arg_native_target[] = "/bin/hello";
 static char out_buf[3072];
 static char out2_buf[512];
 static uint8_t long_script_line_buf[160];
@@ -138,10 +141,32 @@ int main(void)
     int status2 = 0;
     int n = 0;
     int n2 = 0;
+    char *argv4[10];
     char **argv = argv_buf;
     char **argv2 = argv2_buf;
     char **argv3 = argv3_buf;
     int a = 0;
+
+    argv4[0] = arg_prog;
+    argv4[1] = arg_quiet;
+    argv4[2] = arg_opt;
+    argv4[3] = arg_show_regset;
+    argv4[4] = arg_opt;
+    argv4[5] = arg_disas_pc;
+    argv4[6] = arg_opt;
+    argv4[7] = arg_cont;
+    argv4[8] = arg_native_target;
+    argv4[9] = (char *)0;
+    n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb disas-m68k smoke should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb disas-m68k smoke should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out2, "regset=m68k"),
+              "output should include m68k regset");
+    UT_ASSERT(str_contains(out2, "0x"),
+              "output should include disassembly address output");
+    UT_ASSERT(!str_contains(out2, "disas currently supports"),
+              "disas should be supported for m68k regset");
 
     argv[a++] = arg_prog;
     argv[a++] = arg_opt;
