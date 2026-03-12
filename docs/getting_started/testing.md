@@ -237,7 +237,7 @@ by the `PPAP_TESTS` CMake option. The build system:
   shares the parent's address space. The child must immediately
   `execve` or `_exit` — do not modify parent data or trigger faults.
 
-### Known coverage gaps (as of 2026-03-12)
+### Known coverage gaps (as of 2026-03-13)
 
 Current user-space tests are a solid regression baseline, but subsystem
 coverage is not exhaustive yet.
@@ -277,6 +277,11 @@ coverage is not exhaustive yet.
   random-record variants, and several disk/attribute vector functions.
   CP/M test coverage is therefore good for bootstrapping and basic file I/O,
   but not yet complete for directory iteration and random-record compatibility.
+- **`pdb` scripted coverage is architecture-asymmetric.**
+  `test_pdb` runs full scripted checks on m68k, including disassembly paths.
+  On ARM, it remains a minimal placeholder to keep the combined on-target
+  suite within the current 60-second timeout budget in `scripts/run.sh`.
+  This leaves ARM-native `pdb disas` behavior less CI-verified than m68k.
 
 #### Suggested follow-up tests
 

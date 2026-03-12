@@ -50,6 +50,12 @@ Notes:
 PPAP also includes a minimal interactive debugger (`/bin/pdb`) built on
 `ptrace`.
 
+`disas` currently supports:
+
+- ARM real-surface tracees (Thumb subset decoder with raw halfword fallback)
+- Z80 eCPU tracees
+- m68k tracees (native or eCPU surface)
+
 ```sh
 # Launch target under debugger
 pdb /bin/hello
