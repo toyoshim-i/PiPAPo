@@ -1039,6 +1039,100 @@ static void disas_m68k(pid_t pid, uint32_t pc, uint32_t count)
     }
 }
 
+static int thumb_disas_one(pid_t pid, uint32_t pc, uint32_t *next_pc)
+{
+    uint16_t op = 0;
+    uint32_t fetch_pc = pc & ~1u;
+    uint32_t len = 2;
+    int rc = peek_u16le(pid, fetch_pc, &op);
+    if (rc < 0)
+        return rc;
+
+    put_hex32(fetch_pc);
+    put_str(": ");
+
+    if (op == 0xbf00u) {
+        put_str("nop");
+        len = 2;
+    } else if (op == 0x4770u) {
+        put_str("bx lr");
+        len = 2;
+    } else if ((op & 0xf800u) == 0x2000u) {
+        uint32_t rd = (op >> 8) & 0x7u;
+        uint32_t imm8 = op & 0xffu;
+        put_str("movs r");
+        put_u32(rd);
+        put_str(",#");
+        put_u32(imm8);
+        len = 2;
+    } else if ((op & 0xf800u) == 0x3000u) {
+        uint32_t rd = (op >> 8) & 0x7u;
+        uint32_t imm8 = op & 0xffu;
+        put_str("adds r");
+        put_u32(rd);
+        put_str(",#");
+        put_u32(imm8);
+        len = 2;
+    } else if ((op & 0xf800u) == 0x3800u) {
+        uint32_t rd = (op >> 8) & 0x7u;
+        uint32_t imm8 = op & 0xffu;
+        put_str("subs r");
+        put_u32(rd);
+        put_str(",#");
+        put_u32(imm8);
+        len = 2;
+    } else if ((op & 0xf800u) == 0xe000u) {
+        int32_t disp = (int32_t)(op & 0x07ffu);
+        uint32_t target = 0;
+        if (disp & 0x0400u)
+            disp |= ~0x07ff;
+        disp <<= 1;
+        target = fetch_pc + 4u + (uint32_t)disp;
+        put_str("b ");
+        put_hex32(target);
+        len = 2;
+    } else if ((op & 0xff00u) == 0xdf00u) {
+        put_str("svc #");
+        put_u32((uint32_t)(op & 0x00ffu));
+        len = 2;
+    } else {
+        put_str("hword ");
+        put_hex16(op);
+        len = 2;
+    }
+
+    put_str(" ;");
+    for (uint32_t i = 0; i < len; i++) {
+        uint8_t b = 0;
+        rc = peek_u8(pid, fetch_pc + i, &b);
+        if (rc < 0)
+            return rc;
+        put_chr(' ');
+        put_hex8(b);
+    }
+    put_chr('\n');
+    *next_pc = fetch_pc + len;
+    return 0;
+}
+
+static void disas_thumb(pid_t pid, uint32_t pc, uint32_t count)
+{
+    if (count == 0)
+        count = 8;
+    if (count > 64)
+        count = 64;
+
+    for (uint32_t i = 0; i < count; i++) {
+        int rc = thumb_disas_one(pid, pc, &pc);
+        if (rc < 0) {
+            put_err("pdb: disas failed rc=");
+            put_i32((int32_t)rc);
+            put_chr('\n');
+            return;
+        }
+    }
+}
+
 static int z80_is_call_opcode(uint8_t op)
 {
     switch (op) {
@@ -1637,8 +1731,10 @@ int main(int argc, char *argv[])
                 pc_idx = 7; /* Z80 PC */
             } else if (regs.regset == PPAP_TRACE_REGSET_M68K) {
                 pc_idx = 16; /* m68k PC */
+            } else if (regs.regset == PPAP_TRACE_REGSET_ARM) {
+                pc_idx = 15; /* ARM PC */
             } else {
-                put_err("pdb: disas currently supports z80 and m68k tracees only\n");
+                put_err("pdb: disas currently supports arm, z80, and m68k tracees only\n");
                 continue;
             }
             addr = regs.regs[pc_idx];
@@ -1652,8 +1748,10 @@ int main(int argc, char *argv[])
             }
             if (regs.regset == PPAP_TRACE_REGSET_Z80)
                 disas_z80(pid, addr, count);
-            else
+            else if (regs.regset == PPAP_TRACE_REGSET_M68K)
                 disas_m68k(pid, addr, count);
+            else
+                disas_thumb(pid, addr, count);
             continue;
         }
 
