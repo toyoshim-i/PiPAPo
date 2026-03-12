@@ -256,10 +256,30 @@ static void print_event(const struct ppap_ptrace_event *ev)
     put_str(abi_name(ev->abi));
 
     if (ev->event == PPAP_TRACE_EVENT_DEBUG_STOP) {
+        int has_reason = 0;
         put_str(" pc=");
         put_hex32(ev->args[0]);
         put_str(" flags=");
         put_hex32(ev->flags);
+        put_str(" reason=");
+        if (ev->flags & PPAP_DEBUG_STOP_STEP) {
+            put_str("step");
+            has_reason = 1;
+        }
+        if (ev->flags & PPAP_DEBUG_STOP_SW_BP) {
+            if (has_reason)
+                put_chr('|');
+            put_str("sw-bp");
+            has_reason = 1;
+        }
+        if (ev->flags & PPAP_DEBUG_STOP_HW_BP) {
+            if (has_reason)
+                put_chr('|');
+            put_str("hw-bp");
+            has_reason = 1;
+        }
+        if (!has_reason)
+            put_str("unknown");
     } else {
         put_str(" nr=");
         put_u32(ev->nr);

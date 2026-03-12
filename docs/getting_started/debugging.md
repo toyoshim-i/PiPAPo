@@ -74,6 +74,7 @@ pdb -c "caps" -c "regs" -c "disas 0x0100 3" /tmp/prog.com
 #   x/16b 0x20000000
 #   x 0x20000000 4
 #   disas 0x0100 8
+#   event          # includes decoded debug-stop reason (step/sw-bp/hw-bp)
 #   set reg pc 0x0100
 #   set mem 0x0100 0x00000000
 #   step

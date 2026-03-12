@@ -163,6 +163,8 @@ int main(void)
     UT_ASSERT(str_contains(out, "stop exec"), "output should include exec stop");
     UT_ASSERT(str_contains(out, "debug-stop"),
               "output should include single-step debug stop");
+    UT_ASSERT(str_contains(out, "reason=step"),
+              "output should include decoded debug-stop reason");
     UT_ASSERT(str_contains(out, "pdb> show sp"),
               "output should include scripted show sp command");
     UT_ASSERT(str_contains(out, "sp=0x"),
