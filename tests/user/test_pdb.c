@@ -4,6 +4,67 @@
 
 #include "utest.h"
 
+#if !defined(__m68k__)
+
+static int str_contains_basic(const char *hay, const char *needle)
+{
+    int i = 0;
+    int j = 0;
+
+    if (!needle[0])
+        return 1;
+
+    for (i = 0; hay[i]; i++) {
+        for (j = 0; needle[j] && hay[i + j] == needle[j]; j++)
+            ;
+        if (!needle[j])
+            return 1;
+    }
+    return 0;
+}
+
+static int run_capture_basic(char *const argv[], char *buf, int buf_size, int *status)
+{
+    int pipefd[2];
+    int total = 0;
+    pid_t pid;
+
+    if (pipe(pipefd) < 0)
+        return -1;
+
+    pid = vfork();
+    if (pid == 0) {
+        int nullfd = open("/dev/null", O_RDONLY, 0);
+        if (nullfd >= 0) {
+            dup2(nullfd, 0);
+            close(nullfd);
+        } else {
+            close(0);
+        }
+        close(pipefd[0]);
+        dup2(pipefd[1], 1);
+        dup2(pipefd[1], 2);
+        close(pipefd[1]);
+        execve(argv[0], argv, (void *)0);
+        _exit(127);
+    }
+
+    close(pipefd[1]);
+    while (total < buf_size - 1) {
+        int n = read(pipefd[0], buf + total, (size_t)(buf_size - 1 - total));
+        if (n <= 0)
+            break;
+        total += n;
+    }
+    buf[total] = '\0';
+    close(pipefd[0]);
+
+    waitpid(pid, status, 0);
+    return total;
+}
+
+#endif
+
 #if defined(__m68k__)
 
 static int write_blob(const char *path, const uint8_t *data, int size)
@@ -231,7 +292,73 @@ static char *argv3_buf[19];
 int main(void)
 {
 #if !defined(__m68k__)
-    UT_ASSERT(1, "pdb smoke is currently enabled on m68k only");
+    char out[1024];
+    int status = 0;
+    int n = 0;
+    char *argv[8];
+    int a = 0;
+
+    a = 0;
+    argv[a++] = "/bin/pdb";
+    argv[a++] = "-h";
+    argv[a++] = (char *)0;
+    n = run_capture_basic(argv, out, sizeof(out), &status);
+    UT_ASSERT(n > 0, "pdb -h should produce output");
+    UT_ASSERT(WIFEXITED(status), "pdb -h should exit");
+    UT_ASSERT_EQ(WEXITSTATUS(status), 0);
+    UT_ASSERT(str_contains_basic(out, "options:"),
+              "pdb -h should print help text");
+
+    a = 0;
+    argv[a++] = "/bin/pdb";
+    argv[a++] = "--attach";
+    argv[a++] = (char *)0;
+    n = run_capture_basic(argv, out, sizeof(out), &status);
+    UT_ASSERT(n > 0, "pdb --attach missing pid should produce output");
+    UT_ASSERT(WIFEXITED(status), "pdb --attach missing pid should exit");
+    UT_ASSERT_EQ(WEXITSTATUS(status), 1);
+    UT_ASSERT(str_contains_basic(out, "pdb: --attach requires a pid"),
+              "pdb --attach missing pid should report usage error");
+
+    a = 0;
+    argv[a++] = "/bin/pdb";
+    argv[a++] = "--attach";
+    argv[a++] = "0";
+    argv[a++] = (char *)0;
+    n = run_capture_basic(argv, out, sizeof(out), &status);
+    UT_ASSERT(n > 0, "pdb --attach 0 should produce output");
+    UT_ASSERT(WIFEXITED(status), "pdb --attach 0 should exit");
+    UT_ASSERT_EQ(WEXITSTATUS(status), 1);
+    UT_ASSERT(str_contains_basic(out, "pdb: --attach requires a valid positive pid"),
+              "pdb --attach 0 should report validation error");
+
+    a = 0;
+    argv[a++] = "/bin/pdb";
+    argv[a++] = "-f";
+    argv[a++] = (char *)0;
+    n = run_capture_basic(argv, out, sizeof(out), &status);
+    UT_ASSERT(n > 0, "pdb -f missing path should produce output");
+    UT_ASSERT(WIFEXITED(status), "pdb -f missing path should exit");
+    UT_ASSERT_EQ(WEXITSTATUS(status), 1);
+    UT_ASSERT(str_contains_basic(out, "pdb: -f requires a script path"),
+              "pdb -f missing path should report usage error");
+
+    a = 0;
+    argv[a++] = "/bin/pdb";
+    argv[a++] = "-q";
+    argv[a++] = "-c";
+    argv[a++] = "show regset";
+    argv[a++] = "-c";
+    argv[a++] = "q";
+    argv[a++] = "/bin/hello";
+    argv[a++] = (char *)0;
+    n = run_capture_basic(argv, out, sizeof(out), &status);
+    UT_ASSERT(n > 0, "pdb scripted launch should produce output");
+    UT_ASSERT(WIFEXITED(status), "pdb scripted launch should exit");
+    UT_ASSERT_EQ(WEXITSTATUS(status), 0);
+    UT_ASSERT(str_contains_basic(out, "regset=arm"),
+              "pdb scripted launch should report arm regset");
+
     UT_SUMMARY("test_pdb");
 #else
     char *out = out_buf;
