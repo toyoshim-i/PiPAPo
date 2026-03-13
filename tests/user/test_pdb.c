@@ -132,6 +132,7 @@ static char arg_dev_null[] = "/dev/null";
 static char arg_long_script[] = "/tmp/pdb_long.script";
 static char arg_blank_cmd[] = "   ";
 static char arg_show_event[] = "show event";
+static char arg_show_caps[] = "show caps";
 static char arg_show_regset[] = "show regset";
 static char arg_show_sp[] = "show sp";
 static char arg_reg_wz[] = "reg wz";
@@ -164,7 +165,7 @@ static char long_cmd_buf[129];
 static char attach_pid_buf[16];
 static char *argv_buf[33];
 static char *argv2_buf[5];
-static char *argv3_buf[9];
+static char *argv3_buf[11];
 
 #endif
 
@@ -255,16 +256,20 @@ int main(void)
     argv3[2] = arg_opt;
     argv3[3] = arg_show_sp;
     argv3[4] = arg_opt;
-    argv3[5] = arg_run;
-    argv3[6] = arg_target;
-    argv3[7] = (char *)0;
-    argv3[8] = (char *)0;
+    argv3[5] = arg_show_caps;
+    argv3[6] = arg_opt;
+    argv3[7] = arg_run;
+    argv3[8] = arg_target;
+    argv3[9] = (char *)0;
+    argv3[10] = (char *)0;
     n2 = run_capture(argv3, out2, sizeof(out2_buf), &status2);
     UT_ASSERT(n2 > 0, "pdb -q should produce output");
     UT_ASSERT(WIFEXITED(status2), "pdb -q should exit normally");
     UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
     UT_ASSERT(str_contains(out2, "sp=0x"),
               "pdb -q should still run scripted commands");
+    UT_ASSERT(str_contains(out2, "caps="),
+              "pdb -q should include show caps output");
     UT_ASSERT(!str_contains(out2, "pdb> "),
               "pdb -q should suppress command prompt/echo output");
 
