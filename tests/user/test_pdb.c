@@ -262,6 +262,7 @@ static char arg_x[] = "x/2h 0x0100";
 static char arg_disas_pc[] = "disas";
 static char arg_disas[] = "disas 0x0100 3";
 static char arg_break[] = "b 0x0101";
+static char arg_break_missing_addr[] = "break";
 static char arg_break_long[] = "break 0x0101";
 static char arg_info_break[] = "info break";
 static char arg_disable[] = "disable 0";
@@ -287,7 +288,7 @@ static char arg_native_target[] = "/bin/hello";
 static char arg_sleep[] = "/bin/sleep";
 static char arg_sleep_1[] = "1";
 static char out_buf[3072];
-static char out2_buf[512];
+static char out2_buf[1024];
 static uint8_t long_script_line_buf[160];
 static char long_cmd_buf[129];
 static char attach_pid_buf[16];
@@ -771,6 +772,31 @@ int main(void)
               "pdb long continue alias should allow child to exit");
     UT_ASSERT(!str_contains(out, "pdb: unknown command"),
               "pdb long aliases should not trigger unknown-command errors");
+
+    argv3[0] = arg_prog;
+    argv3[1] = arg_quiet;
+    argv3[2] = arg_opt;
+    argv3[3] = arg_disable;
+    argv3[4] = arg_opt;
+    argv3[5] = arg_enable;
+    argv3[6] = arg_opt;
+    argv3[7] = arg_delete_long;
+    argv3[8] = arg_opt;
+    argv3[9] = arg_break_missing_addr;
+    argv3[10] = arg_opt;
+    argv3[11] = arg_continue;
+    argv3[12] = arg_target;
+    argv3[13] = (char *)0;
+    n2 = run_capture(argv3, out, sizeof(out_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb breakpoint error-path smoke should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb breakpoint error-path smoke should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_count(out, "pdb: unknown breakpoint id") >= 3,
+              "pdb breakpoint error-path smoke should report unknown id for disable/enable/delete");
+    UT_ASSERT(str_contains(out, "pdb: usage: break <addr>"),
+              "pdb breakpoint error-path smoke should report break usage");
+    UT_ASSERT(str_contains(out, "child exited 0"),
+              "pdb breakpoint error-path smoke should allow target to exit");
 
     unlink("/tmp/pdb_smoke.com");
 
