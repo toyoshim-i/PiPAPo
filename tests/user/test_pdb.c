@@ -159,6 +159,14 @@ static const uint8_t pdb_smoke_com[] = {
     0x0E, 0x00,             /* LD C,0 */
     0xCD, 0x05, 0x00,       /* CALL 0005h */
 };
+static const uint8_t pdb_trim_script[] = {
+    '#', ' ', 'c', 'o', 'm', 'm', 'e', 'n', 't', '\n',
+    ' ', ' ', '#', ' ', 'l', 'e', 'a', 'd', 'i', 'n', 'g', '\n',
+    '\n',
+    ' ', ' ', 's', 'h', 'o', 'w', ' ', 'r', 'e', 'g', 's', 'e', 't', ' ', ' ', '\n',
+    ' ', 's', 'h', 'o', 'w', ' ', 'c', 'a', 'p', 's', '\n',
+    ' ', 'q', ' ', '\n',
+};
 
 static char arg_prog[] = "/bin/pdb";
 static char arg_help[] = "-h";
@@ -173,6 +181,7 @@ static char arg_dev_null[] = "/dev/null";
 static char arg_long_script[] = "/tmp/pdb_long.script";
 static char arg_missing_script[] = "/tmp/pdb_missing.script";
 static char arg_many_script[] = "/tmp/pdb_many.script";
+static char arg_trim_script[] = "/tmp/pdb_trim.script";
 static char arg_blank_cmd[] = "   ";
 static char arg_event_short[] = "event";
 static char arg_show_event[] = "show event";
@@ -582,6 +591,28 @@ int main(void)
     UT_ASSERT_EQ(WEXITSTATUS(status2), 1);
     UT_ASSERT(str_contains(out2, "pdb: no scripted commands"),
               "pdb -f /dev/null should reject empty scripted mode");
+
+    UT_ASSERT_EQ(write_blob(arg_target, pdb_smoke_com,
+                            (int)sizeof(pdb_smoke_com)), 0);
+    UT_ASSERT_EQ(write_blob(arg_trim_script, pdb_trim_script,
+                            (int)sizeof(pdb_trim_script)), 0);
+    argv4[0] = arg_prog;
+    argv4[1] = arg_quiet;
+    argv4[2] = arg_file_opt;
+    argv4[3] = arg_trim_script;
+    argv4[4] = arg_target;
+    argv4[5] = (char *)0;
+    n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
+    unlink(arg_trim_script);
+    UT_ASSERT(n2 > 0, "pdb -f trimmed/comment script should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb -f trimmed/comment script should exit");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out2, "regset=z80"),
+              "pdb -f should execute trimmed show regset line");
+    UT_ASSERT(str_contains(out2, "caps="),
+              "pdb -f should execute trimmed show caps line");
+    UT_ASSERT(!str_contains(out2, "pdb: no scripted commands"),
+              "pdb -f should not treat trimmed script as empty");
 
     for (int i = 0; i < (int)sizeof(long_script_line_buf) - 2; i++)
         long_script_line[i] = 'x';
