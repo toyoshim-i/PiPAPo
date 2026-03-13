@@ -172,7 +172,7 @@ static char arg_setreg[] = "set reg wz 0x1234";
 static char arg_setmem[] = "set mem 0x0100 0x00000000";
 static char arg_next[] = "n";
 static char arg_step[] = "s";
-static char arg_continue[] = "continue";
+static char arg_continue[] = "cont";
 static char arg_c_short[] = "c";
 static char arg_run[] = "run";
 static char arg_detach[] = "detach";
@@ -360,11 +360,11 @@ int main(void)
     argv4[8] = (char *)0;
     argv4[9] = (char *)0;
     n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
-    UT_ASSERT(n2 > 0, "pdb --attach continue should produce output");
-    UT_ASSERT(WIFEXITED(status2), "pdb --attach continue should exit normally");
+    UT_ASSERT(n2 > 0, "pdb --attach cont should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb --attach cont should exit normally");
     UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
     UT_ASSERT(str_contains(out2, "child exited 0"),
-              "pdb --attach continue should report child exit");
+              "pdb --attach cont should report child exit");
     UT_ASSERT_EQ(waitpid(attach_target, &attach_status, 0), attach_target);
     UT_ASSERT(WIFEXITED(attach_status),
               "attach+cont target should still be reapable by parent");
