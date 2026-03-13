@@ -175,7 +175,7 @@ static char arg_step[] = "s";
 static char arg_continue[] = "cont";
 static char arg_c_short[] = "c";
 static char arg_run[] = "run";
-static char arg_detach[] = "detach";
+static char arg_detach[] = "q";
 static char arg_target[] = "/tmp/pdb_smoke.com";
 static char arg_native_target[] = "/bin/hello";
 static char arg_sleep[] = "/bin/sleep";
@@ -439,8 +439,8 @@ int main(void)
               "output should include scripted next alias");
     UT_ASSERT(str_contains(out, "pdb> s"),
               "output should include scripted step alias");
-    UT_ASSERT(str_contains(out, "pdb> detach"),
-              "output should include scripted detach command");
+    UT_ASSERT(str_contains(out, "pdb> q"),
+              "output should include scripted quit alias");
     UT_ASSERT(str_contains(out, "detached"),
               "output should include detach result");
     UT_ASSERT(!str_contains(out, "unknown command"),

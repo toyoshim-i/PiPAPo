@@ -2238,8 +2238,17 @@ int main(int argc, char *argv[])
         }
 
         if (streq(tok[0], "quit") || streq(tok[0], "q")) {
-            if (child_stopped)
-                (void)ptrace(PTRACE_DETACH, pid, (void *)0, (void *)0);
+            if (child_stopped) {
+                long rc = ptrace(PTRACE_DETACH, pid, (void *)0, (void *)0);
+                if (rc < 0) {
+                    put_err("pdb: DETACH failed rc=");
+                    put_i32((int32_t)rc);
+                    put_chr('\n');
+                    continue;
+                }
+                child_stopped = 0;
+                put_str("detached\n");
+            }
             done = 1;
             continue;
         }
