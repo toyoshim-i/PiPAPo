@@ -262,8 +262,12 @@ static char arg_surface_ecpu[] = "surface ecpu";
 static char arg_surface_invalid[] = "surface nope";
 static char arg_x[] = "x/2h 0x0100";
 static char arg_x_missing_addr[] = "x";
+static char arg_x_invalid_count_plain[] = "x 0x0100 nope";
+static char arg_x_spec_invalid_fmt[] = "x/2z 0x0100";
+static char arg_x_spec_zero_count[] = "x/0x 0x0100";
 static char arg_disas_pc[] = "disas";
 static char arg_disas[] = "disas 0x0100 3";
+static char arg_disas_invalid_addr[] = "disas nope";
 static char arg_disas_invalid_count[] = "disas 0x0100 xyz";
 static char arg_break[] = "b 0x0101";
 static char arg_break_missing_addr[] = "break";
@@ -311,14 +315,14 @@ static char long_cmd_buf[129];
 static char attach_pid_buf[16];
 static char *argv_buf[33];
 static char *argv2_buf[5];
-static char *argv3_buf[25];
+static char *argv3_buf[33];
 
 #endif
 
 int main(void)
 {
 #if !defined(__m68k__)
-    char out[1024];
+    char out[2048];
     int status = 0;
     int n = 0;
     char *argv[8];
@@ -334,6 +338,8 @@ int main(void)
     UT_ASSERT_EQ(WEXITSTATUS(status), 0);
     UT_ASSERT(str_contains_basic(out, "options:"),
               "pdb -h should print help text");
+    UT_ASSERT(str_contains_basic(out, "info break|b"),
+              "pdb -h should include info break alias help");
 
     a = 0;
     argv[a++] = "/bin/pdb";
@@ -836,16 +842,24 @@ int main(void)
     argv3[6] = arg_opt;
     argv3[7] = arg_x_missing_addr;
     argv3[8] = arg_opt;
-    argv3[9] = arg_disas_invalid_count;
+    argv3[9] = arg_x_invalid_count_plain;
     argv3[10] = arg_opt;
-    argv3[11] = arg_setreg_missing_value;
+    argv3[11] = arg_x_spec_invalid_fmt;
     argv3[12] = arg_opt;
-    argv3[13] = arg_setmem_missing_value;
+    argv3[13] = arg_x_spec_zero_count;
     argv3[14] = arg_opt;
-    argv3[15] = arg_continue;
-    argv3[16] = arg_target;
-    argv3[17] = (char *)0;
-    argv3[18] = (char *)0;
+    argv3[15] = arg_disas_invalid_addr;
+    argv3[16] = arg_opt;
+    argv3[17] = arg_disas_invalid_count;
+    argv3[18] = arg_opt;
+    argv3[19] = arg_setreg_missing_value;
+    argv3[20] = arg_opt;
+    argv3[21] = arg_setmem_missing_value;
+    argv3[22] = arg_opt;
+    argv3[23] = arg_continue;
+    argv3[24] = arg_target;
+    argv3[25] = (char *)0;
+    argv3[26] = (char *)0;
     n2 = run_capture(argv3, out, sizeof(out_buf), &status2);
     UT_ASSERT(n2 > 0, "pdb usage-diagnostics smoke should produce output");
     UT_ASSERT(WIFEXITED(status2), "pdb usage-diagnostics smoke should exit normally");
@@ -857,7 +871,9 @@ int main(void)
     UT_ASSERT(str_contains(out, "pdb: usage: x <addr> [count]"),
               "pdb usage-diagnostics smoke should report x usage");
     UT_ASSERT(str_contains(out, "pdb: invalid count"),
-              "pdb usage-diagnostics smoke should report disas invalid count");
+              "pdb usage-diagnostics smoke should report invalid count");
+    UT_ASSERT(str_contains(out, "pdb: usage: disas [addr] [count]"),
+              "pdb usage-diagnostics smoke should report disas usage");
     UT_ASSERT(str_contains(out, "pdb: usage: set reg <name|index> <value>"),
               "pdb usage-diagnostics smoke should report set reg usage");
     UT_ASSERT(str_contains(out, "pdb:    or: set mem <addr> <value>"),
