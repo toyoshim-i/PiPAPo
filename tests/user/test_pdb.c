@@ -402,6 +402,18 @@ int main(void)
               "pdb --attach 0 should report validation error");
 
     argv2[0] = arg_prog;
+    argv2[1] = arg_attach_opt;
+    argv2[2] = arg_sleep_1;
+    argv2[3] = arg_target;
+    argv2[4] = (char *)0;
+    n2 = run_capture(argv2, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb --attach with program path should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb --attach with program path should exit");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 1);
+    UT_ASSERT(str_contains(out2, "pdb: --attach does not take a program path"),
+              "pdb --attach with program path should reject mixed launch mode");
+
+    argv2[0] = arg_prog;
     argv2[1] = arg_file_opt;
     argv2[2] = (char *)0;
     argv2[3] = (char *)0;
