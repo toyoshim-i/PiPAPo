@@ -262,10 +262,12 @@ static char arg_x[] = "x/2h 0x0100";
 static char arg_disas_pc[] = "disas";
 static char arg_disas[] = "disas 0x0100 3";
 static char arg_break[] = "b 0x0101";
+static char arg_break_long[] = "break 0x0101";
 static char arg_info_break[] = "info break";
 static char arg_disable[] = "disable 0";
 static char arg_enable[] = "enable 0";
 static char arg_delete[] = "d 0";
+static char arg_delete_long[] = "delete 0";
 static char arg_setreg[] = "set reg wz 0x1234";
 static char arg_setmem[] = "set mem 0x0100 0x00000000";
 static char arg_next[] = "n";
@@ -719,6 +721,27 @@ int main(void)
               "output should include disable command result");
     UT_ASSERT(str_contains(out2, "bp 0 @ 0x00000101 disabled"),
               "output should include disabled info break table output");
+
+    argv4[0] = arg_prog;
+    argv4[1] = arg_quiet;
+    argv4[2] = arg_opt;
+    argv4[3] = arg_break_long;
+    argv4[4] = arg_opt;
+    argv4[5] = arg_delete_long;
+    argv4[6] = arg_opt;
+    argv4[7] = arg_continue;
+    argv4[8] = arg_target;
+    argv4[9] = (char *)0;
+    n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb long break/delete alias smoke should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb long break/delete alias smoke should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out2, "bp 0 @ 0x00000101"),
+              "pdb long break alias should create a breakpoint");
+    UT_ASSERT(str_contains(out2, "bp 0 cleared"),
+              "pdb long delete alias should clear a breakpoint");
+    UT_ASSERT(str_contains(out2, "child exited 0"),
+              "pdb long break/delete smoke should allow child to exit");
 
     unlink("/tmp/pdb_smoke.com");
 
