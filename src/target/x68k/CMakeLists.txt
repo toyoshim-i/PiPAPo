@@ -1,0 +1,86 @@
+# CMakeLists.txt — X68000 target (standalone build)
+#
+# Build:
+#   cmake -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain_m68k.cmake \
+#         -S src/target/x68k -B build/x68k
+#   cmake --build build/x68k
+#
+# NOTE (Phase X-1):
+#   This build includes an embedded romfs for initial bring-up.
+#   The romfs is removed in Phase X-3 when the kernel mounts the UFS
+#   boot floppy instead.  A full romfs (with busybox) requires at least
+#   4 MB of expanded X68000 RAM.
+#
+# NOTE: There is no QEMU/emulator run target for x68k.  The resulting
+#   ppap_x68k.elf must be converted to a boot floppy image via
+#   scripts/mkx68kboot.sh (Phase X-3) and run on real hardware or a
+#   compatible X68000 emulator (XM6 TypeG, etc.).
+
+cmake_minimum_required(VERSION 3.13)
+
+project(ppap_x68k C ASM)
+set(CMAKE_C_STANDARD 11)
+
+set(PPAP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
+
+option(PPAP_TESTS "Enable test suite" OFF)
+option(PPAP_TESTS_EXTENDED "Use extended test init runner" OFF)
+
+include(${PPAP_ROOT}/cmake/m68k.cmake)
+
+set(CMAKE_EXECUTABLE_SUFFIX .elf)
+
+add_executable(ppap_x68k
+    ${ARCH_M68K_SOURCES}
+    ${KERNEL_SHARED_SOURCES}
+    ${CMAKE_CURRENT_SOURCE_DIR}/target_x68k.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/drivers/uart_x68k.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/drivers/timer_x68k.c
+)
+
+ppap_m68k_target_common(ppap_x68k)
+
+target_compile_definitions(ppap_x68k PRIVATE
+    PPAP_X68K=1
+    PPAP_M68K=1
+    # PAGE_COUNT_MAX: supports up to 12 MB expanded X68000 RAM.
+    # mm_init() uses m68k_probe_ram() to detect actual physical RAM at runtime.
+    PAGE_COUNT_MAX=3072u
+    USER_PAGES_MAX=512u
+    # RAM_END: X68000 VRAM starts at 0xC00000; stop probing before that.
+    # This caps the page pool to main RAM (1–12 MB depending on expansion).
+    RAM_END=0xC00000u
+)
+
+target_compile_options(ppap_x68k PRIVATE
+    -m68000
+    -Wall -Wextra -Wno-unused-parameter
+    -Os -g
+    -ffreestanding -fno-builtin
+)
+
+target_link_options(ppap_x68k PRIVATE
+    -T ${CMAKE_CURRENT_SOURCE_DIR}/x68k.ld
+    -nostartfiles -nostdlib -nodefaultlibs
+    -Wl,--gc-sections
+    -Wl,--build-id=none
+)
+
+# Integer math helpers (__mulsi3, __udivsi3, __umodsi3) are provided by
+# src/arch/m68k/math.S — do not link libgcc (same as qemu_m68k).
+
+# =============================================================================
+# Romfs (Phase X-1 temporary — removed in Phase X-3)
+#
+# Shares the same m68k userland artifacts as qemu_m68k (build/m68k/).
+# No overlay: uses the standard src/etc/fstab and src/etc/inittab.
+# =============================================================================
+
+ppap_generate_romfs(ppap_x68k BIG_ENDIAN)
+
+# Generate binary and size report
+add_custom_command(TARGET ppap_x68k POST_BUILD
+    COMMAND ${CMAKE_OBJCOPY} -O binary ppap_x68k.elf ppap_x68k.bin
+    COMMAND ${CMAKE_SIZE} ppap_x68k.elf
+    COMMENT "Generating ppap_x68k.bin"
+)

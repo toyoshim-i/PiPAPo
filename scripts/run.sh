@@ -8,6 +8,7 @@
 #   pico1, pico1calc   — Flash to RP2040 via OpenOCD
 #   qemu_arm (default) — Run under QEMU ARM
 #   qemu_m68k          — Run under QEMU m68k
+#   x68k               — Build only (real-hardware target, no emulator integration)
 #
 # Options:
 #   --build             Build before running
@@ -75,11 +76,11 @@ for arg in "$@"; do
         --overlay=*)OVERLAY="${arg#--overlay=}"; DO_BUILD=1 ;;
         --h68k-debug) DO_H68K_DEBUG=1; DO_BUILD=1 ;;
         --gdb)      DO_GDB=1 ;;
-        pico1|pico1calc|qemu_arm|qemu_m68k) TARGET="$arg" ;;
+        pico1|pico1calc|qemu_arm|qemu_m68k|x68k) TARGET="$arg" ;;
         -*)         echo "Unknown option: $arg" >&2; exit 1 ;;
         *)
             echo "Unknown target: $arg" >&2
-            echo "Valid targets: pico1, pico1calc, qemu_arm, qemu_m68k" >&2
+            echo "Valid targets: pico1, pico1calc, qemu_arm, qemu_m68k, x68k" >&2
             exit 1
             ;;
     esac
@@ -138,6 +139,14 @@ if [[ ! -f "$ELF" ]]; then
     echo "[run] Error: $ELF not found."
     echo "      Run: ./scripts/build.sh $TARGET"
     exit 1
+fi
+
+# ── X68000 target — build only (no emulator integration in Phase X-1) ───────
+if [[ "$TARGET" == "x68k" ]]; then
+    echo "[run] x68k is a real-hardware target."
+    echo "      ELF: $ELF"
+    echo "      See docs/proposals/x68k_port.md for boot floppy creation (Phase X-3)."
+    exit 0
 fi
 
 # ── Flash targets (pico1, pico1calc) ────────────────────────────────────────

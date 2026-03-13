@@ -4,7 +4,7 @@
 # Usage:
 #   ./scripts/build.sh [OPTIONS] TARGET
 #
-# TARGET is one of: pico1, pico1calc, qemu_arm, qemu_m68k
+# TARGET is one of: pico1, pico1calc, qemu_arm, qemu_m68k, x68k
 #
 # Options:
 #   --test              Enable PPAP_TESTS (kernel + userland test suite)
@@ -20,6 +20,7 @@
 #   ./scripts/build.sh --test-extended qemu_arm  # build qemu_arm with extended tests
 #   ./scripts/build.sh --clean qemu_m68k  # clean rebuild m68k
 #   ./scripts/build.sh qemu_m68k          # build m68k QEMU target
+#   ./scripts/build.sh x68k               # build X68000 target (Phase X-1)
 #   ./scripts/build.sh --overlay=~/my_x68k qemu_m68k  # add custom files to romfs
 
 set -euo pipefail
@@ -63,9 +64,13 @@ case "$TARGET" in
         SOURCE_DIR="$PROJECT_DIR/src/target/qemu_m68k"
         BUILD_DIR="$PROJECT_DIR/build/qemu_m68k"
         ;;
+    x68k)
+        SOURCE_DIR="$PROJECT_DIR/src/target/x68k"
+        BUILD_DIR="$PROJECT_DIR/build/x68k"
+        ;;
     *)
         echo "[build] Error: unknown target '$TARGET'"
-        echo "        Valid targets: pico1, pico1calc, qemu_arm, qemu_m68k"
+        echo "        Valid targets: pico1, pico1calc, qemu_arm, qemu_m68k, x68k"
         exit 1
         ;;
 esac
@@ -86,7 +91,7 @@ case "$TARGET" in
         # Bare-metal ARM (no Pico SDK) — needs explicit toolchain file
         EXTRA_ARGS+=(-DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/cmake/toolchain_arm_m.cmake")
         ;;
-    qemu_m68k)
+    qemu_m68k|x68k)
         # Ensure custom m68k-elf toolchain is available
         M68K_TC="$PROJECT_DIR/tools/m68k-toolchain/bin/m68k-elf-gcc"
         if [[ ! -x "$M68K_TC" ]]; then
