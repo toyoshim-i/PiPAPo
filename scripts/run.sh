@@ -14,6 +14,8 @@
 #   --no-build          Skip build, use existing binary (default)
 #   --test              Enable PPAP_TESTS, run automated test suite (implies --build)
 #   --test-extended     Enable PPAP_TESTS_EXTENDED, run extended test suite (implies --build)
+#   --filter=<pattern>  Only run tests whose path contains <pattern> (implies --build)
+#   --flaky             Also run tests marked FLAKY (implies --build)
 #   --clean             Clean build directory before building (implies --build)
 #   --overlay=<dir>     Extra overlay directory copied into romfs (implies --build)
 #   --h68k-debug        Enable kernel Human68k debug diagnostics (implies --build)
@@ -27,6 +29,8 @@
 #   ./scripts/run.sh --test                 # build ARM with tests, run & check
 #   ./scripts/run.sh --test qemu_m68k       # build m68k with tests, run & check
 #   ./scripts/run.sh --test-extended        # build ARM with extended tests, run & check
+#   ./scripts/run.sh --test --filter=pipe   # run only tests matching "pipe"
+#   ./scripts/run.sh --test --flaky         # also run flaky tests
 #   ./scripts/run.sh --gdb                  # run existing ARM binary under GDB
 #   ./scripts/run.sh pico1calc              # flash pre-built pico1calc via OpenOCD
 #   ./scripts/run.sh --build pico1calc      # build & flash pico1calc
@@ -51,6 +55,8 @@ DO_CLEAN=0
 DO_GDB=0
 DO_H68K_DEBUG=0
 OVERLAY=""
+FILTER=""
+RUN_FLAKY=0
 
 for arg in "$@"; do
     case "$arg" in
@@ -59,6 +65,8 @@ for arg in "$@"; do
         --build)    DO_BUILD=1 ;;
         --test)     DO_TEST=1; DO_BUILD=1 ;;
         --test-extended) DO_TEST=1; DO_TEST_EXTENDED=1; DO_BUILD=1 ;;
+        --filter=*) FILTER="${arg#--filter=}"; DO_BUILD=1 ;;
+        --flaky)    RUN_FLAKY=1; DO_BUILD=1 ;;
         --clean)    DO_CLEAN=1; DO_BUILD=1 ;;
         --overlay=*)OVERLAY="${arg#--overlay=}"; DO_BUILD=1 ;;
         --h68k-debug) DO_H68K_DEBUG=1; DO_BUILD=1 ;;
@@ -83,6 +91,25 @@ BUILD_DIR="$PROJECT_DIR/build/$TARGET"
 CMAKE_TARGET="ppap_${TARGET}"
 ELF="$BUILD_DIR/${CMAKE_TARGET}.elf"
 
+# ── Merge filter/flaky into an overlay dir ──────────────────────────────────
+TEMP_OVERLAY=""
+if [[ -n "$FILTER" || $RUN_FLAKY -eq 1 ]]; then
+    TEMP_OVERLAY=$(mktemp -d)
+    # Copy any user-supplied overlay first so filter/flaky take precedence
+    if [[ -n "$OVERLAY" ]]; then
+        OVERLAY_ABS="$(cd "$OVERLAY" && pwd)"
+        cp -r "$OVERLAY_ABS/." "$TEMP_OVERLAY/"
+    fi
+    mkdir -p "$TEMP_OVERLAY/etc"
+    if [[ -n "$FILTER" ]]; then
+        printf '%s' "$FILTER" > "$TEMP_OVERLAY/etc/test_filter"
+    fi
+    if [[ $RUN_FLAKY -eq 1 ]]; then
+        touch "$TEMP_OVERLAY/etc/test_run_flaky"
+    fi
+    OVERLAY="$TEMP_OVERLAY"
+fi
+
 # ── Build ───────────────────────────────────────────────────────────────────
 if [[ $DO_BUILD -eq 1 ]]; then
     BUILD_ARGS=()
@@ -95,6 +122,8 @@ if [[ $DO_BUILD -eq 1 ]]; then
     if [[ -n "$OVERLAY" ]]; then BUILD_ARGS+=("--overlay=$OVERLAY"); fi
     if [[ $DO_H68K_DEBUG -eq 1 ]]; then BUILD_ARGS+=(--h68k-debug); fi
     "$SCRIPT_DIR/build.sh" "${BUILD_ARGS[@]}" "$TARGET"
+    # Clean up temp overlay after build (romfs already baked in)
+    if [[ -n "$TEMP_OVERLAY" ]]; then rm -rf "$TEMP_OVERLAY"; fi
 fi
 
 # ── Pre-flight: ELF must exist ──────────────────────────────────────────────

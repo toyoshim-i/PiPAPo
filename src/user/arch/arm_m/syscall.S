@@ -397,3 +397,14 @@ nanosleep:
     ldr  r7, =0x0500    @ SYS_NANOSLEEP
     svc  0
     pop  {r7, pc}
+
+@ --- clock_gettime (SYS_CLOCK_GETTIME32 = 0x0501) ----------------------------
+@ int clock_gettime(int clk_id, void *tp);
+.section .text.clock_gettime, "ax", %progbits
+.global clock_gettime
+.thumb_func
+clock_gettime:
+    push {r7, lr}
+    ldr  r7, =0x0501    @ SYS_CLOCK_GETTIME32
+    svc  0
+    pop  {r7, pc}

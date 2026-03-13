@@ -380,6 +380,18 @@ nanosleep:
     move.l  %sp@+, %d2
     rts
 
+| --- clock_gettime (SYS_CLOCK_GETTIME32 = 0x0501) -----------------------------
+| int clock_gettime(int clk_id, void *tp);
+    .globl clock_gettime
+clock_gettime:
+    move.l  %d2, %sp@-
+    move.l  8(%sp), %d1         | clk_id
+    move.l  12(%sp), %d2        | tp
+    move.l  #0x0501, %d0
+    trap    #0
+    move.l  %sp@+, %d2
+    rts
+
 | --- vfork (SYS_VFORK = 0x0002) -----------------------------------------------
 | pid_t vfork(void);
     .globl vfork

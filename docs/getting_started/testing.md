@@ -24,6 +24,12 @@ build process, and execution environment.
 # Extended on-target tests (ARM lane with extra user tests)
 ./scripts/run.sh --test-extended qemu_arm
 
+# Run only tests matching a substring
+./scripts/run.sh --test --filter=pipe
+
+# Also run tests marked FLAKY
+./scripts/run.sh --test --flaky
+
 # Everything at once (host + build all targets + QEMU tests)
 ./scripts/test.sh --all
 
@@ -173,12 +179,42 @@ divide and no libgcc dependency.
 ### Test runner: `runtests.c`
 
 Sequentially `vfork` + `execve` each test binary, collect exit status.
-Prints `RUN`, then `PASS` or `FAIL` per test. Final summary: counts +
+Every log line is prefixed with `[T+S.CC]` (elapsed seconds and
+centiseconds since the runner started, 10 ms resolution). `PASS`/`FAIL`
+lines also include per-test elapsed time. Final summary: counts +
 `ALL TESTS PASSED` or `SOME TESTS FAILED`.
 
 The test list is initialised at runtime (not as a static array) because
 PIC binaries cannot have initialised pointer arrays — the ELF loader
 only relocates GOT entries, not arbitrary data pointers.
+
+**Per-test flags**
+
+Each entry in the test list carries a flag:
+
+| Flag | Meaning |
+|------|---------|
+| `TEST_ENABLED` | Run normally |
+| `TEST_DISABLED` | Always skip (e.g. platform-specific tests) |
+| `TEST_FLAKY` | Skip by default; run when `/etc/test_run_flaky` exists |
+
+Platform-specific tests (`test_x68k`, `test_h68k_dos`) are `TEST_DISABLED`
+on ARM and `TEST_ENABLED` on m68k via `#if defined(__m68k__)`.
+
+**Runtime filter**
+
+If the file `/etc/test_filter` exists in the romfs, only tests whose path
+contains the filter string (substring match) are run.  All others are
+silently skipped (not counted in totals).
+
+**Flaky opt-in**
+
+If the file `/etc/test_run_flaky` exists in the romfs, `TEST_FLAKY` tests
+run instead of being skipped.
+
+Both files are created automatically by `scripts/run.sh` via a temporary
+overlay directory baked into romfs at build time (see
+[`--filter` and `--flaky`](#filter-and-flaky) below).
 
 ### Files
 
@@ -232,7 +268,12 @@ by the `PPAP_TESTS` CMake option. The build system:
    }
    ```
 2. Add `test_foo` to the `USER_TESTS` list in `cmake/user.cmake`
-3. Add `"/bin/test_foo"` to the test list in `tests/user/runtests.c`
+3. Add an entry to the test list in `tests/user/runtests.c`:
+   ```c
+   tests[t++] = (test_entry_t){ "/bin/test_foo", TEST_ENABLED };
+   ```
+   Use `TEST_DISABLED` for platform-specific tests or `TEST_FLAKY` for
+   tests that are known to be unreliable and should be skipped in CI.
 4. Build with `--test` and run
 
 ### Constraints for user-space test code
@@ -328,6 +369,26 @@ with a larger timeout budget, and executes `/bin/runtests_ext` as PID 1.
 ./scripts/run.sh --test-extended qemu_m68k
 ```
 
+### `--filter` and `--flaky`
+
+These flags write config files into a temporary overlay directory that
+is merged into romfs at build time, then cleaned up.
+
+```bash
+# Run only tests whose path contains "pipe"
+./scripts/run.sh --test --filter=pipe
+
+# Also run tests marked TEST_FLAKY
+./scripts/run.sh --test --flaky
+
+# Combine: filter + flaky
+./scripts/run.sh --test --filter=pdb --flaky
+```
+
+`--filter` writes `/etc/test_filter` (the substring to match).
+`--flaky` writes `/etc/test_run_flaky` (existence is the signal; content
+is ignored).  Both imply `--build`.
+
 ### `test.sh --all`
 
 Full CI pipeline:
@@ -356,8 +417,8 @@ boot → kernel init → VFS mount → target_post_mount()
                      target_init_path() = "/bin/runtests"
                                    │
                           runtests (PID 1)
-                            ├── test_exec
-                            ├── test_elf
+                            ├── [T+0.00] test_exec
+                            ├── [T+0.3x] test_elf
                             ├── test_vfork
                             ├── test_fault
                             ├── test_pipe
@@ -374,10 +435,11 @@ boot → kernel init → VFS mount → target_post_mount()
                             ├── test_iov
                             ├── test_stat
                             ├── test_tmpfs
-                            ├── test_x68k
+                            ├── test_x68k   (ENABLED on m68k, DISABLED on ARM)
+                            ├── test_h68k_dos (ENABLED on m68k, DISABLED on ARM)
                             ├── test_cpm
-                            ├── test_trace (all targets)
-                            └── test_h68k_dos (all targets)
+                            ├── test_trace
+                            └── test_pdb
                                    │
                         "ALL TESTS PASSED"
                                    │
@@ -391,8 +453,10 @@ Extended lane (`--test-extended`) uses the same flow except
 
 | Flag | Where | Effect |
 |------|-------|--------|
-| `--test` | `./scripts/build.sh` | Sets `PPAP_TESTS=ON` in CMake |
-| `--test-extended` | `./scripts/build.sh` | Sets `PPAP_TESTS=ON` and `PPAP_TESTS_EXTENDED=ON` |
+| `--test` | `./scripts/run.sh` / `build.sh` | Sets `PPAP_TESTS=ON` in CMake |
+| `--test-extended` | `./scripts/run.sh` / `build.sh` | Sets `PPAP_TESTS=ON` and `PPAP_TESTS_EXTENDED=ON` |
+| `--filter=<pattern>` | `./scripts/run.sh` | Writes `/etc/test_filter` into romfs overlay; implies `--build` |
+| `--flaky` | `./scripts/run.sh` | Writes `/etc/test_run_flaky` into romfs overlay; implies `--build` |
 | `PPAP_TESTS=ON` | CMake option | Compiles `ktest.c` into kernel; defines `PPAP_TESTS=1` C macro; enables user test builds |
 | `PPAP_TESTS_EXTENDED=ON` | CMake option | Defines `PPAP_TESTS_EXTENDED=1`; selects `/bin/runtests_ext` as init path |
 | `PPAP_TESTS=1` | C preprocessor | Guards `ktest_run_all()` call in `target_post_mount()`; selects `/bin/runtests` as init path |

@@ -83,6 +83,12 @@ int sigaction(int sig, void *handler, void *old_handler);
 
 int nanosleep(const void *req, void *rem);
 
+/* ── Time ──────────────────────────────────────────────────────────── */
+
+/* clock_gettime maps to SYS_CLOCK_GETTIME32 (0x0501).
+ * tp must point to struct { long tv_sec; long tv_nsec; }. */
+int clock_gettime(int clk_id, void *tp);
+
 /* ── Poll ──────────────────────────────────────────────────────────── */
 
 int ppoll(struct pollfd *fds, int nfds, void *timeout,
