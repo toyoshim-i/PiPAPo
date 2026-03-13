@@ -197,6 +197,7 @@ Each entry in the test list carries a flag:
 | `TEST_ENABLED` | Run normally |
 | `TEST_DISABLED` | Always skip (e.g. platform-specific tests) |
 | `TEST_FLAKY` | Skip by default; run when `/etc/test_run_flaky` exists |
+| `TEST_SLOW` | Skip by default; run when `/etc/test_run_slow` exists |
 
 Platform-specific tests (`test_x68k`, `test_h68k_dos`) are `TEST_DISABLED`
 on ARM and `TEST_ENABLED` on m68k via `#if defined(__m68k__)`.
@@ -207,14 +208,17 @@ If the file `/etc/test_filter` exists in the romfs, only tests whose path
 contains the filter string (substring match) are run.  All others are
 silently skipped (not counted in totals).
 
-**Flaky opt-in**
+**Flaky/slow opt-in**
 
 If the file `/etc/test_run_flaky` exists in the romfs, `TEST_FLAKY` tests
 run instead of being skipped.
 
+If the file `/etc/test_run_slow` exists in the romfs, `TEST_SLOW` tests
+run instead of being skipped.
+
 Both files are created automatically by `scripts/run.sh` via a temporary
 overlay directory baked into romfs at build time (see
-[`--filter` and `--flaky`](#filter-and-flaky) below).
+[`--filter`, `--flaky`, and `--slow`](#filter-flaky-and-slow) below).
 
 ### Files
 
@@ -241,7 +245,7 @@ overlay directory baked into romfs at build time (see
 | `test_x68k.c` | Human68k subsystem (X-format `.x` execution) |
 | `test_cpm.c` | CP/M subsystem integration (`.COM` exec, BDOS bridge, signals, file I/O) |
 | `test_trace.c` | `ptrace` exec + PPAP syscall trace integration (ARM + m68k) |
-| `test_pdb.c` | `pdb` scripted smoke and command coverage (default suite on m68k) |
+| `test_pdb.c` | `pdb` scripted smoke and command coverage (`TEST_SLOW` on m68k; use `--slow`) |
 | `test_pdb_arm_disas.c` | ARM-only `pdb disas` smoke (built in `/bin/`, not in default `runtests`) |
 | `test_h68k_dos.c` | Human68k DOS bridge integration via R-format test binaries |
 
@@ -329,11 +333,10 @@ coverage is not exhaustive yet.
   CP/M test coverage is therefore good for bootstrapping and basic file I/O,
   but not yet complete for directory iteration and random-record compatibility.
 - **`pdb` scripted coverage is architecture-asymmetric.**
-  `test_pdb` runs full scripted checks on m68k, including disassembly paths.
+  `test_pdb` runs full scripted checks on m68k, including disassembly paths,
+  but is marked `TEST_SLOW` and skipped unless `--slow` is used.
   ARM now has a dedicated binary (`test_pdb_arm_disas`) for disassembly smoke,
-  but it is intentionally not in the default `runtests` list to keep the
-  combined on-target suite within the current 60-second timeout budget in
-  `scripts/run.sh`.
+  but it is intentionally not in the default `runtests` list.
 
 #### Suggested follow-up tests
 
@@ -351,8 +354,11 @@ coverage is not exhaustive yet.
 
 ### `run.sh --test`
 
-Builds with `PPAP_TESTS=ON`, runs under QEMU with a 60-second timeout,
-and greps output for the exact marker `ALL TESTS PASSED`.
+Builds with `PPAP_TESTS=ON`, runs under QEMU, and greps output for the
+exact marker `ALL TESTS PASSED`.
+
+- ARM default timeout: 60 seconds
+- m68k default timeout: 90 seconds
 
 ```bash
 ./scripts/run.sh --test              # ARM (default)
@@ -364,12 +370,15 @@ and greps output for the exact marker `ALL TESTS PASSED`.
 Builds with `PPAP_TESTS=ON` and `PPAP_TESTS_EXTENDED=ON`, runs under QEMU
 with a larger timeout budget, and executes `/bin/runtests_ext` as PID 1.
 
+- ARM extended timeout: 90 seconds
+- m68k extended timeout: 120 seconds
+
 ```bash
 ./scripts/run.sh --test-extended qemu_arm
 ./scripts/run.sh --test-extended qemu_m68k
 ```
 
-### `--filter` and `--flaky`
+### `--filter`, `--flaky`, and `--slow`
 
 These flags write config files into a temporary overlay directory that
 is merged into romfs at build time, then cleaned up.
@@ -381,13 +390,21 @@ is merged into romfs at build time, then cleaned up.
 # Also run tests marked TEST_FLAKY
 ./scripts/run.sh --test --flaky
 
+# Also run tests marked TEST_SLOW
+./scripts/run.sh --test --slow
+
 # Combine: filter + flaky
 ./scripts/run.sh --test --filter=pdb --flaky
+
+# Combine: filter + flaky + slow
+./scripts/run.sh --test --filter=pdb --flaky --slow
 ```
 
 `--filter` writes `/etc/test_filter` (the substring to match).
 `--flaky` writes `/etc/test_run_flaky` (existence is the signal; content
-is ignored).  Both imply `--build`.
+is ignored).
+`--slow` writes `/etc/test_run_slow` (existence is the signal; content
+is ignored).  All imply `--build`.
 
 ### `test.sh --all`
 
@@ -439,7 +456,7 @@ boot → kernel init → VFS mount → target_post_mount()
                             ├── test_h68k_dos (ENABLED on m68k, DISABLED on ARM)
                             ├── test_cpm
                             ├── test_trace
-                            └── test_pdb
+                            └── test_pdb    (SLOW on m68k; run with --slow)
                                    │
                         "ALL TESTS PASSED"
                                    │
@@ -457,6 +474,7 @@ Extended lane (`--test-extended`) uses the same flow except
 | `--test-extended` | `./scripts/run.sh` / `build.sh` | Sets `PPAP_TESTS=ON` and `PPAP_TESTS_EXTENDED=ON` |
 | `--filter=<pattern>` | `./scripts/run.sh` | Writes `/etc/test_filter` into romfs overlay; implies `--build` |
 | `--flaky` | `./scripts/run.sh` | Writes `/etc/test_run_flaky` into romfs overlay; implies `--build` |
+| `--slow` | `./scripts/run.sh` | Writes `/etc/test_run_slow` into romfs overlay; implies `--build` |
 | `PPAP_TESTS=ON` | CMake option | Compiles `ktest.c` into kernel; defines `PPAP_TESTS=1` C macro; enables user test builds |
 | `PPAP_TESTS_EXTENDED=ON` | CMake option | Defines `PPAP_TESTS_EXTENDED=1`; selects `/bin/runtests_ext` as init path |
 | `PPAP_TESTS=1` | C preprocessor | Guards `ktest_run_all()` call in `target_post_mount()`; selects `/bin/runtests` as init path |

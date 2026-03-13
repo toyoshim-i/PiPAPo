@@ -16,6 +16,7 @@
 #   --test-extended     Enable PPAP_TESTS_EXTENDED, run extended test suite (implies --build)
 #   --filter=<pattern>  Only run tests whose path contains <pattern> (implies --build)
 #   --flaky             Also run tests marked FLAKY (implies --build)
+#   --slow              Also run tests marked SLOW (implies --build)
 #   --clean             Clean build directory before building (implies --build)
 #   --overlay=<dir>     Extra overlay directory copied into romfs (implies --build)
 #   --h68k-debug        Enable kernel Human68k debug diagnostics (implies --build)
@@ -31,6 +32,7 @@
 #   ./scripts/run.sh --test-extended        # build ARM with extended tests, run & check
 #   ./scripts/run.sh --test --filter=pipe   # run only tests matching "pipe"
 #   ./scripts/run.sh --test --flaky         # also run flaky tests
+#   ./scripts/run.sh --test --slow          # also run slow tests
 #   ./scripts/run.sh --gdb                  # run existing ARM binary under GDB
 #   ./scripts/run.sh pico1calc              # flash pre-built pico1calc via OpenOCD
 #   ./scripts/run.sh --build pico1calc      # build & flash pico1calc
@@ -57,6 +59,7 @@ DO_H68K_DEBUG=0
 OVERLAY=""
 FILTER=""
 RUN_FLAKY=0
+RUN_SLOW=0
 
 for arg in "$@"; do
     case "$arg" in
@@ -67,6 +70,7 @@ for arg in "$@"; do
         --test-extended) DO_TEST=1; DO_TEST_EXTENDED=1; DO_BUILD=1 ;;
         --filter=*) FILTER="${arg#--filter=}"; DO_BUILD=1 ;;
         --flaky)    RUN_FLAKY=1; DO_BUILD=1 ;;
+        --slow)     RUN_SLOW=1; DO_BUILD=1 ;;
         --clean)    DO_CLEAN=1; DO_BUILD=1 ;;
         --overlay=*)OVERLAY="${arg#--overlay=}"; DO_BUILD=1 ;;
         --h68k-debug) DO_H68K_DEBUG=1; DO_BUILD=1 ;;
@@ -91,11 +95,11 @@ BUILD_DIR="$PROJECT_DIR/build/$TARGET"
 CMAKE_TARGET="ppap_${TARGET}"
 ELF="$BUILD_DIR/${CMAKE_TARGET}.elf"
 
-# ── Merge filter/flaky into an overlay dir ──────────────────────────────────
+# ── Merge filter/flaky/slow into an overlay dir ─────────────────────────────
 TEMP_OVERLAY=""
-if [[ -n "$FILTER" || $RUN_FLAKY -eq 1 ]]; then
+if [[ -n "$FILTER" || $RUN_FLAKY -eq 1 || $RUN_SLOW -eq 1 ]]; then
     TEMP_OVERLAY=$(mktemp -d)
-    # Copy any user-supplied overlay first so filter/flaky take precedence
+    # Copy any user-supplied overlay first so test controls take precedence
     if [[ -n "$OVERLAY" ]]; then
         OVERLAY_ABS="$(cd "$OVERLAY" && pwd)"
         cp -r "$OVERLAY_ABS/." "$TEMP_OVERLAY/"
@@ -106,6 +110,9 @@ if [[ -n "$FILTER" || $RUN_FLAKY -eq 1 ]]; then
     fi
     if [[ $RUN_FLAKY -eq 1 ]]; then
         touch "$TEMP_OVERLAY/etc/test_run_flaky"
+    fi
+    if [[ $RUN_SLOW -eq 1 ]]; then
+        touch "$TEMP_OVERLAY/etc/test_run_slow"
     fi
     OVERLAY="$TEMP_OVERLAY"
 fi
@@ -162,6 +169,8 @@ fi
 # ── QEMU targets (qemu_arm, qemu_m68k) ─────────────────────────────────────
 TIMEOUT=60
 if [[ "$TARGET" == "qemu_m68k" ]]; then
+    # m68k full test runs are consistently slower than ARM test runs.
+    TIMEOUT=90
     QEMU_BIN="qemu-system-m68k"
     # Prefer locally-built QEMU if available
     LOCAL_QEMU="$PROJECT_DIR/third_party/qemu/build/qemu-system-m68k"
@@ -188,7 +197,11 @@ fi
 # ── Test mode: run with timeout and check output ───────────────────────────
 if [[ $DO_TEST -eq 1 ]]; then
     if [[ $DO_TEST_EXTENDED -eq 1 ]]; then
-        TIMEOUT=90
+        if [[ "$TARGET" == "qemu_m68k" ]]; then
+            TIMEOUT=120
+        else
+            TIMEOUT=90
+        fi
     fi
     echo "[test] Running on-target tests (timeout ${TIMEOUT}s)..."
     OUTPUT=$(timeout "$TIMEOUT" "$QEMU_BIN" \

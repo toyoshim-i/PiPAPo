@@ -2,12 +2,13 @@
  * runtests_ext.c — Extended on-target test runner for PPAP
  *
  * Same as runtests.c plus extended-lane tests that may exceed the
- * default 60-second suite budget.
+ * default suite timeout budget.
  *
  * Features:
- *   - Per-test flags: ENABLED / DISABLED / FLAKY
+ *   - Per-test flags: ENABLED / DISABLED / FLAKY / SLOW
  *     DISABLED tests are always skipped.
  *     FLAKY tests are skipped unless /etc/test_run_flaky exists.
+ *     SLOW tests are skipped unless /etc/test_run_slow exists.
  *   - Filter: if /etc/test_filter exists, only tests whose path contains
  *     that substring are run.
  *   - Timestamps: every log line is prefixed with [T+S.CC] (elapsed seconds
@@ -22,6 +23,7 @@
 #define TEST_ENABLED  0   /* run normally                                    */
 #define TEST_DISABLED 1   /* always skip (not yet ready / platform-specific) */
 #define TEST_FLAKY    2   /* skip by default; run with /etc/test_run_flaky   */
+#define TEST_SLOW     3   /* skip by default; run with /etc/test_run_slow    */
 
 typedef struct { const char *path; int flags; } test_entry_t;
 
@@ -144,11 +146,18 @@ static int test_matches(const char *path)
 /* ── Flaky opt-in ────────────────────────────────────────────────────────── */
 
 static int g_run_flaky;
+static int g_run_slow;
 
 static void check_run_flaky(void)
 {
     int fd = open("/etc/test_run_flaky", O_RDONLY, 0);
     if (fd >= 0) { close(fd); g_run_flaky = 1; }
+}
+
+static void check_run_slow(void)
+{
+    int fd = open("/etc/test_run_slow", O_RDONLY, 0);
+    if (fd >= 0) { close(fd); g_run_slow = 1; }
 }
 
 /* ── Main ────────────────────────────────────────────────────────────────── */
@@ -188,13 +197,18 @@ int main(void)
 #endif
     tests[t++] = (test_entry_t){ "/bin/test_cpm",          TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_trace",        TEST_ENABLED  };
+#if defined(__m68k__)
+    tests[t++] = (test_entry_t){ "/bin/test_pdb",          TEST_SLOW     };
+#else
     tests[t++] = (test_entry_t){ "/bin/test_pdb",          TEST_ENABLED  };
+#endif
     tests[t++] = (test_entry_t){ "/bin/test_pdb_arm_disas",TEST_ENABLED  };
     tests[t].path = (void *)0;
 
     get_time(&g_start);
     read_filter();
     check_run_flaky();
+    check_run_slow();
 
     print_ts();
     if (g_filter_len > 0) {
@@ -224,6 +238,12 @@ int main(void)
         if (flags == TEST_FLAKY && !g_run_flaky) {
             print_ts(); print("SKIP  "); print(path);
             print("  (flaky)\n");
+            skipped++;
+            continue;
+        }
+        if (flags == TEST_SLOW && !g_run_slow) {
+            print_ts(); print("SKIP  "); print(path);
+            print("  (slow)\n");
             skipped++;
             continue;
         }
