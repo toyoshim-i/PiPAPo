@@ -204,6 +204,11 @@ int main(void)
     UT_ASSERT(WIFEXITED(status), "child should exit after continue");
     UT_ASSERT_EQ(WEXITSTATUS(status), 0);
 
+    UT_ASSERT(ptrace(PTRACE_ATTACH, 0, (void *)0, (void *)0) < 0,
+              "PTRACE_ATTACH should reject pid 0");
+    UT_ASSERT(ptrace(PTRACE_ATTACH, getpid(), (void *)0, (void *)0) < 0,
+              "PTRACE_ATTACH should reject self-attach");
+
     {
         char *sleep_argv[3];
 
@@ -219,6 +224,8 @@ int main(void)
 
         UT_ASSERT(pid > 0, "attach target should launch");
         UT_ASSERT_EQ(ptrace(PTRACE_ATTACH, pid, (void *)0, (void *)0), 0);
+        UT_ASSERT(ptrace(PTRACE_ATTACH, pid, (void *)0, (void *)0) < 0,
+                  "PTRACE_ATTACH should reject already-traced target");
         UT_ASSERT_EQ(waitpid(pid, &status, WSTOPPED), pid);
         UT_ASSERT(WIFSTOPPED(status), "attached target should stop");
         UT_ASSERT_EQ(WSTOPSIG(status), SIGTRAP);
