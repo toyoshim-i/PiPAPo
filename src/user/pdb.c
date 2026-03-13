@@ -2202,9 +2202,11 @@ int main(int argc, char *argv[])
 
         if (streq(tok[0], "info")) {
             if (ntok >= 2 && streq(tok[1], "break")) {
+                int found = 0;
                 for (int i = 0; i < PDB_LOCAL_BP_MAX; i++) {
                     if (!local_bp[i].used)
                         continue;
+                    found = 1;
                     put_str("bp ");
                     put_u32((uint32_t)i);
                     put_str(" @ ");
@@ -2216,6 +2218,8 @@ int main(int argc, char *argv[])
                         put_str("disabled");
                     put_chr('\n');
                 }
+                if (!found)
+                    put_str("no breakpoints\n");
                 continue;
             }
             put_err("pdb: usage: info break\n");
