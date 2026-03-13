@@ -134,6 +134,7 @@ static char arg_blank_cmd[] = "   ";
 static char arg_show_event[] = "show event";
 static char arg_show_regset[] = "show regset";
 static char arg_show_sp[] = "show sp";
+static char arg_reg_wz[] = "reg wz";
 static char arg_show_surface[] = "show surface";
 static char arg_surface_real[] = "surface real";
 static char arg_surface_ecpu[] = "surface ecpu";
@@ -213,7 +214,7 @@ int main(void)
 
     argv[a++] = arg_prog;
     argv[a++] = arg_opt;
-    argv[a++] = arg_show_sp;
+    argv[a++] = arg_reg_wz;
     argv[a++] = arg_opt;
     argv[a++] = arg_show_surface;
     argv[a++] = arg_opt;
@@ -344,10 +345,10 @@ int main(void)
               "output should include single-step debug stop");
     UT_ASSERT(str_contains(out, "reason=step"),
               "output should include decoded debug-stop reason");
-    UT_ASSERT(str_contains(out, "pdb> show sp"),
-              "output should include scripted show sp command");
-    UT_ASSERT(str_contains(out, "sp=0x"),
-              "output should include show sp output");
+    UT_ASSERT(str_contains(out, "pdb> reg wz"),
+              "output should include scripted reg command");
+    UT_ASSERT(str_contains(out, "wz=0x"),
+              "output should include single-register read output");
     UT_ASSERT(str_contains(out, "pdb> show surface"),
               "output should include scripted show surface command");
     UT_ASSERT(str_contains(out, "surface=ecpu"),
