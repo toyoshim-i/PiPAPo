@@ -150,6 +150,7 @@ static char arg_setmem[] = "set mem 0x0100 0x00000000";
 static char arg_next[] = "next";
 static char arg_step[] = "step";
 static char arg_cont[] = "cont";
+static char arg_continue[] = "continue";
 static char arg_run[] = "run";
 static char arg_detach[] = "detach";
 static char arg_target[] = "/tmp/pdb_smoke.com";
@@ -312,7 +313,7 @@ int main(void)
     argv4[0] = arg_prog;
     argv4[1] = arg_quiet;
     argv4[2] = arg_opt;
-    argv4[3] = arg_cont;
+    argv4[3] = arg_continue;
     argv4[4] = arg_attach_opt;
     argv4[5] = attach_pid_str;
     argv4[6] = (char *)0;
@@ -320,11 +321,11 @@ int main(void)
     argv4[8] = (char *)0;
     argv4[9] = (char *)0;
     n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
-    UT_ASSERT(n2 > 0, "pdb --attach cont should produce output");
-    UT_ASSERT(WIFEXITED(status2), "pdb --attach cont should exit normally");
+    UT_ASSERT(n2 > 0, "pdb --attach continue should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb --attach continue should exit normally");
     UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
     UT_ASSERT(str_contains(out2, "child exited 0"),
-              "pdb --attach cont should report child exit");
+              "pdb --attach continue should report child exit");
     UT_ASSERT_EQ(waitpid(attach_target, &attach_status, 0), attach_target);
     UT_ASSERT(WIFEXITED(attach_status),
               "attach+cont target should still be reapable by parent");
