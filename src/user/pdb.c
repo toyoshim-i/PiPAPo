@@ -2053,6 +2053,16 @@ int main(int argc, char *argv[])
                 put_err("pdb: usage: break <addr>\n");
                 continue;
             }
+            if (ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps) == 0) {
+                if ((caps.caps & PPAP_PTRACE_CAP_SW_BP) == 0u) {
+                    if (caps.caps & PPAP_PTRACE_CAP_HW_BP) {
+                        put_err("pdb: hardware breakpoints are not yet exposed in pdb\n");
+                    } else {
+                        put_err("pdb: break not supported on this target/mapping\n");
+                    }
+                    continue;
+                }
+            }
             bp.id = -1;
             bp.flags = PPAP_PTRACE_BP_SW;
             rc = ptrace(PTRACE_SETBP, pid, (void *)0, &bp);

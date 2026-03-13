@@ -121,5 +121,7 @@ Scripted-mode notes:
 
 - `-q` suppresses prompt and command-echo output for cleaner automation logs.
 - `--batch` also suppresses automatic initial stop/target and child-exit lines.
+- `break` support is mapping-dependent; on unsupported targets `pdb` prints
+  `break not supported on this target/mapping`.
 - Whitespace-only `-c` entries are ignored.
 - Overlong `-c` commands and overlong script lines are rejected with an error.

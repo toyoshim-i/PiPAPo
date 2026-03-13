@@ -415,6 +415,22 @@ int main(void)
     UT_ASSERT(!str_contains_basic(out, "pdb> "),
               "pdb --batch should suppress command prompt/echo output");
 
+    a = 0;
+    argv[a++] = "/bin/pdb";
+    argv[a++] = "-q";
+    argv[a++] = "-c";
+    argv[a++] = "break 0x0100";
+    argv[a++] = "-c";
+    argv[a++] = "q";
+    argv[a++] = "/bin/hello";
+    argv[a++] = (char *)0;
+    n = run_capture_basic(argv, out, sizeof(out), &status);
+    UT_ASSERT(n > 0, "pdb native break capability smoke should produce output");
+    UT_ASSERT(WIFEXITED(status), "pdb native break capability smoke should exit");
+    UT_ASSERT_EQ(WEXITSTATUS(status), 0);
+    UT_ASSERT(str_contains_basic(out, "pdb: break not supported on this target/mapping"),
+              "pdb should report mapping-dependent breakpoint capability");
+
     UT_SUMMARY("test_pdb");
 #else
     char *out = out_buf;
