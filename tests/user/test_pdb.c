@@ -24,6 +24,29 @@ static int write_blob(const char *path, const uint8_t *data, int size)
     return 0;
 }
 
+static int write_repeat_line(const char *path, const char *line, int repeat)
+{
+    int fd;
+    int len = 0;
+
+    unlink(path);
+    while (line[len])
+        len++;
+    fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0)
+        return -1;
+    for (int i = 0; i < repeat; i++) {
+        int n = write(fd, line, (size_t)len);
+        if (n != len) {
+            close(fd);
+            unlink(path);
+            return -1;
+        }
+    }
+    close(fd);
+    return 0;
+}
+
 static int str_contains(const char *hay, const char *needle)
 {
     int i = 0;
@@ -148,6 +171,8 @@ static char arg_zero[] = "0";
 static char arg_big_pid[] = "2147483647";
 static char arg_dev_null[] = "/dev/null";
 static char arg_long_script[] = "/tmp/pdb_long.script";
+static char arg_missing_script[] = "/tmp/pdb_missing.script";
+static char arg_many_script[] = "/tmp/pdb_many.script";
 static char arg_blank_cmd[] = "   ";
 static char arg_event_short[] = "event";
 static char arg_show_event[] = "show event";
@@ -506,6 +531,33 @@ int main(void)
     UT_ASSERT_EQ(WEXITSTATUS(status2), 1);
     UT_ASSERT(str_contains(out2, "pdb: ATTACH failed rc="),
               "pdb --attach missing target should report attach failure");
+
+    argv2[0] = arg_prog;
+    argv2[1] = arg_file_opt;
+    unlink(arg_missing_script);
+    argv2[2] = arg_missing_script;
+    argv2[3] = arg_target;
+    argv2[4] = (char *)0;
+    n2 = run_capture(argv2, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb -f missing file should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb -f missing file should exit");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 1);
+    UT_ASSERT(str_contains(out2, "pdb: cannot open script file: /tmp/pdb_missing.script"),
+              "pdb -f missing file should report open failure");
+
+    UT_ASSERT_EQ(write_repeat_line(arg_many_script, "help\n", 33), 0);
+    argv2[0] = arg_prog;
+    argv2[1] = arg_file_opt;
+    argv2[2] = arg_many_script;
+    argv2[3] = arg_target;
+    argv2[4] = (char *)0;
+    n2 = run_capture(argv2, out2, sizeof(out2_buf), &status2);
+    unlink(arg_many_script);
+    UT_ASSERT(n2 > 0, "pdb -f over-limit script should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb -f over-limit script should exit");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 1);
+    UT_ASSERT(str_contains(out2, "pdb: script command limit exceeded while reading /tmp/pdb_many.script"),
+              "pdb -f over-limit script should report command limit");
 
     argv2[0] = arg_prog;
     argv2[1] = arg_file_opt;
