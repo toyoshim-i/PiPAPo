@@ -150,6 +150,7 @@ static char arg_dev_null[] = "/dev/null";
 static char arg_long_script[] = "/tmp/pdb_long.script";
 static char arg_blank_cmd[] = "   ";
 static char arg_event_short[] = "event";
+static char arg_caps_short[] = "caps";
 static char arg_show_caps[] = "show caps";
 static char arg_show_pc[] = "show pc";
 static char arg_show_regset[] = "show regset";
@@ -185,7 +186,7 @@ static char long_cmd_buf[129];
 static char attach_pid_buf[16];
 static char *argv_buf[33];
 static char *argv2_buf[5];
-static char *argv3_buf[15];
+static char *argv3_buf[17];
 
 #endif
 
@@ -278,22 +279,24 @@ int main(void)
     argv3[4] = arg_opt;
     argv3[5] = arg_show_caps;
     argv3[6] = arg_opt;
-    argv3[7] = arg_show_pc;
+    argv3[7] = arg_caps_short;
     argv3[8] = arg_opt;
-    argv3[9] = arg_where_short;
+    argv3[9] = arg_show_pc;
     argv3[10] = arg_opt;
-    argv3[11] = arg_run;
-    argv3[12] = arg_target;
-    argv3[13] = (char *)0;
-    argv3[14] = (char *)0;
+    argv3[11] = arg_where_short;
+    argv3[12] = arg_opt;
+    argv3[13] = arg_run;
+    argv3[14] = arg_target;
+    argv3[15] = (char *)0;
+    argv3[16] = (char *)0;
     n2 = run_capture(argv3, out2, sizeof(out2_buf), &status2);
     UT_ASSERT(n2 > 0, "pdb -q should produce output");
     UT_ASSERT(WIFEXITED(status2), "pdb -q should exit normally");
     UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
     UT_ASSERT(str_contains(out2, "sp=0x"),
               "pdb -q should still run scripted commands");
-    UT_ASSERT(str_contains(out2, "caps="),
-              "pdb -q should include show caps output");
+    UT_ASSERT(str_count(out2, "caps=") >= 2,
+              "pdb -q should include show caps and caps outputs");
     UT_ASSERT(str_count(out2, "pc=0x") >= 2,
               "pdb -q should include show pc and where outputs");
     UT_ASSERT(str_contains(out2, "pc=0x") && str_contains(out2, " sp=0x"),
