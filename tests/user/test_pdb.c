@@ -280,6 +280,12 @@ static char arg_setreg[] = "set reg wz 0x1234";
 static char arg_setmem[] = "set mem 0x0100 0x00000000";
 static char arg_setreg_missing_value[] = "set reg wz";
 static char arg_setmem_missing_value[] = "set mem 0x0100";
+static char arg_setreg_invalid_value[] = "set reg wz xyz";
+static char arg_setmem_invalid_value[] = "set mem 0x0100 xyz";
+static char arg_break_invalid_addr[] = "break xyz";
+static char arg_disable_invalid_id[] = "disable xyz";
+static char arg_enable_invalid_id[] = "enable xyz";
+static char arg_delete_invalid_id[] = "delete xyz";
 static char arg_next[] = "n";
 static char arg_next_long[] = "next";
 static char arg_step[] = "s";
@@ -899,6 +905,44 @@ int main(void)
               "pdb info break alias/usage smoke should reject extra args");
     UT_ASSERT(str_contains(out2, "child exited 0"),
               "pdb info break alias/usage smoke should allow target to exit");
+
+    argv3[0] = arg_prog;
+    argv3[1] = arg_quiet;
+    argv3[2] = arg_opt;
+    argv3[3] = arg_setreg_invalid_value;
+    argv3[4] = arg_opt;
+    argv3[5] = arg_setmem_invalid_value;
+    argv3[6] = arg_opt;
+    argv3[7] = arg_break_invalid_addr;
+    argv3[8] = arg_opt;
+    argv3[9] = arg_disable_invalid_id;
+    argv3[10] = arg_opt;
+    argv3[11] = arg_enable_invalid_id;
+    argv3[12] = arg_opt;
+    argv3[13] = arg_delete_invalid_id;
+    argv3[14] = arg_opt;
+    argv3[15] = arg_continue;
+    argv3[16] = arg_target;
+    argv3[17] = (char *)0;
+    argv3[18] = (char *)0;
+    n2 = run_capture(argv3, out, sizeof(out_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb invalid-number diagnostics smoke should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb invalid-number diagnostics smoke should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out, "pdb: invalid register value"),
+              "pdb invalid-number diagnostics smoke should report set reg value parse failure");
+    UT_ASSERT(str_contains(out, "pdb: usage: set mem <addr> <value>"),
+              "pdb invalid-number diagnostics smoke should report set mem value parse failure");
+    UT_ASSERT(str_contains(out, "pdb: usage: break <addr>"),
+              "pdb invalid-number diagnostics smoke should report break address parse failure");
+    UT_ASSERT(str_contains(out, "pdb: usage: disable <id>"),
+              "pdb invalid-number diagnostics smoke should report disable id parse failure");
+    UT_ASSERT(str_contains(out, "pdb: usage: enable <id>"),
+              "pdb invalid-number diagnostics smoke should report enable id parse failure");
+    UT_ASSERT(str_contains(out, "pdb: usage: delete <id>"),
+              "pdb invalid-number diagnostics smoke should report delete id parse failure");
+    UT_ASSERT(str_contains(out, "child exited 0"),
+              "pdb invalid-number diagnostics smoke should allow target to exit");
 
     unlink("/tmp/pdb_smoke.com");
 
