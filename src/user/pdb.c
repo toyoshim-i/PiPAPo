@@ -2200,21 +2200,25 @@ int main(int argc, char *argv[])
             continue;
         }
 
-        if (streq(tok[0], "info") && ntok >= 2 && streq(tok[1], "break")) {
-            for (int i = 0; i < PDB_LOCAL_BP_MAX; i++) {
-                if (!local_bp[i].used)
-                    continue;
-                put_str("bp ");
-                put_u32((uint32_t)i);
-                put_str(" @ ");
-                put_hex32(local_bp[i].addr);
-                put_str(" ");
-                if (local_bp[i].enabled)
-                    put_str("enabled");
-                else
-                    put_str("disabled");
-                put_chr('\n');
+        if (streq(tok[0], "info")) {
+            if (ntok >= 2 && streq(tok[1], "break")) {
+                for (int i = 0; i < PDB_LOCAL_BP_MAX; i++) {
+                    if (!local_bp[i].used)
+                        continue;
+                    put_str("bp ");
+                    put_u32((uint32_t)i);
+                    put_str(" @ ");
+                    put_hex32(local_bp[i].addr);
+                    put_str(" ");
+                    if (local_bp[i].enabled)
+                        put_str("enabled");
+                    else
+                        put_str("disabled");
+                    put_chr('\n');
+                }
+                continue;
             }
+            put_err("pdb: usage: info break\n");
             continue;
         }
 
