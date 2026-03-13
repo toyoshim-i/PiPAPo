@@ -41,6 +41,24 @@ static int str_contains(const char *hay, const char *needle)
     return 0;
 }
 
+static int str_count(const char *hay, const char *needle)
+{
+    int i = 0;
+    int j = 0;
+    int count = 0;
+
+    if (!needle[0])
+        return 0;
+
+    for (i = 0; hay[i]; i++) {
+        for (j = 0; needle[j] && hay[i + j] == needle[j]; j++)
+            ;
+        if (!needle[j])
+            count++;
+    }
+    return count;
+}
+
 static void u32_to_dec(uint32_t value, char *buf, int buf_size)
 {
     char tmp[16];
@@ -133,6 +151,7 @@ static char arg_long_script[] = "/tmp/pdb_long.script";
 static char arg_blank_cmd[] = "   ";
 static char arg_show_event[] = "show event";
 static char arg_show_caps[] = "show caps";
+static char arg_show_pc[] = "show pc";
 static char arg_show_regset[] = "show regset";
 static char arg_show_sp[] = "show sp";
 static char arg_where_short[] = "w";
@@ -166,7 +185,7 @@ static char long_cmd_buf[129];
 static char attach_pid_buf[16];
 static char *argv_buf[33];
 static char *argv2_buf[5];
-static char *argv3_buf[13];
+static char *argv3_buf[15];
 
 #endif
 
@@ -259,12 +278,14 @@ int main(void)
     argv3[4] = arg_opt;
     argv3[5] = arg_show_caps;
     argv3[6] = arg_opt;
-    argv3[7] = arg_where_short;
+    argv3[7] = arg_show_pc;
     argv3[8] = arg_opt;
-    argv3[9] = arg_run;
-    argv3[10] = arg_target;
-    argv3[11] = (char *)0;
-    argv3[12] = (char *)0;
+    argv3[9] = arg_where_short;
+    argv3[10] = arg_opt;
+    argv3[11] = arg_run;
+    argv3[12] = arg_target;
+    argv3[13] = (char *)0;
+    argv3[14] = (char *)0;
     n2 = run_capture(argv3, out2, sizeof(out2_buf), &status2);
     UT_ASSERT(n2 > 0, "pdb -q should produce output");
     UT_ASSERT(WIFEXITED(status2), "pdb -q should exit normally");
@@ -273,6 +294,8 @@ int main(void)
               "pdb -q should still run scripted commands");
     UT_ASSERT(str_contains(out2, "caps="),
               "pdb -q should include show caps output");
+    UT_ASSERT(str_count(out2, "pc=0x") >= 2,
+              "pdb -q should include show pc and where outputs");
     UT_ASSERT(str_contains(out2, "pc=0x") && str_contains(out2, " sp=0x"),
               "pdb -q should include where output");
     UT_ASSERT(!str_contains(out2, "pdb> "),
