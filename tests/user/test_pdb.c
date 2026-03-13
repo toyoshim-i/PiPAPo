@@ -149,7 +149,7 @@ static char arg_big_pid[] = "2147483647";
 static char arg_dev_null[] = "/dev/null";
 static char arg_long_script[] = "/tmp/pdb_long.script";
 static char arg_blank_cmd[] = "   ";
-static char arg_show_event[] = "show event";
+static char arg_event_short[] = "event";
 static char arg_show_caps[] = "show caps";
 static char arg_show_pc[] = "show pc";
 static char arg_show_regset[] = "show regset";
@@ -315,7 +315,7 @@ int main(void)
     argv4[0] = arg_prog;
     argv4[1] = arg_quiet;
     argv4[2] = arg_opt;
-    argv4[3] = arg_show_event;
+    argv4[3] = arg_event_short;
     argv4[4] = arg_opt;
     argv4[5] = arg_detach;
     argv4[6] = arg_attach_opt;
