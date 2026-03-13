@@ -273,6 +273,8 @@ static char arg_step[] = "s";
 static char arg_continue[] = "cont";
 static char arg_c_short[] = "c";
 static char arg_run[] = "run";
+static char arg_unknown_cmd[] = "no_such_cmd";
+static char arg_detach[] = "detach";
 static char arg_quit_short[] = "q";
 static char arg_quit_long[] = "quit";
 static char arg_target[] = "/tmp/pdb_smoke.com";
@@ -539,6 +541,67 @@ int main(void)
     UT_ASSERT_EQ(waitpid(attach_target, &attach_status, 0), attach_target);
     UT_ASSERT(WIFEXITED(attach_status),
               "attach+cont target should still be reapable by parent");
+    UT_ASSERT_EQ(WEXITSTATUS(attach_status), 0);
+
+    attach_target = vfork();
+    if (attach_target == 0) {
+        execve(arg_sleep, sleep_argv, (void *)0);
+        _exit(127);
+    }
+    UT_ASSERT(attach_target > 0, "attach+detach target process should launch");
+    u32_to_dec((uint32_t)attach_target, attach_pid_str,
+               (int)sizeof(attach_pid_buf));
+    argv4[0] = arg_prog;
+    argv4[1] = arg_quiet;
+    argv4[2] = arg_opt;
+    argv4[3] = arg_detach;
+    argv4[4] = arg_attach_opt;
+    argv4[5] = attach_pid_str;
+    argv4[6] = (char *)0;
+    argv4[7] = (char *)0;
+    argv4[8] = (char *)0;
+    argv4[9] = (char *)0;
+    n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb --attach detach should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb --attach detach should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out2, "detached"),
+              "pdb --attach detach should report detach result");
+    UT_ASSERT_EQ(waitpid(attach_target, &attach_status, 0), attach_target);
+    UT_ASSERT(WIFEXITED(attach_status),
+              "attach+detach target should still be reapable by parent");
+    UT_ASSERT_EQ(WEXITSTATUS(attach_status), 0);
+
+    attach_target = vfork();
+    if (attach_target == 0) {
+        execve(arg_sleep, sleep_argv, (void *)0);
+        _exit(127);
+    }
+    UT_ASSERT(attach_target > 0, "attach+unknown target process should launch");
+    u32_to_dec((uint32_t)attach_target, attach_pid_str,
+               (int)sizeof(attach_pid_buf));
+    argv4[0] = arg_prog;
+    argv4[1] = arg_quiet;
+    argv4[2] = arg_opt;
+    argv4[3] = arg_unknown_cmd;
+    argv4[4] = arg_opt;
+    argv4[5] = arg_detach;
+    argv4[6] = arg_attach_opt;
+    argv4[7] = attach_pid_str;
+    argv4[8] = (char *)0;
+    argv4[9] = (char *)0;
+    argv4[10] = (char *)0;
+    n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb --attach unknown-command smoke should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb --attach unknown-command smoke should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out2, "pdb: unknown command"),
+              "pdb --attach unknown-command smoke should report command error");
+    UT_ASSERT(str_contains(out2, "detached"),
+              "pdb --attach unknown-command smoke should still detach cleanly");
+    UT_ASSERT_EQ(waitpid(attach_target, &attach_status, 0), attach_target);
+    UT_ASSERT(WIFEXITED(attach_status),
+              "attach+unknown target should still be reapable by parent");
     UT_ASSERT_EQ(WEXITSTATUS(attach_status), 0);
 
     UT_ASSERT_EQ(write_blob("/tmp/pdb_smoke.com", pdb_smoke_com,
