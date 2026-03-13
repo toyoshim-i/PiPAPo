@@ -1319,6 +1319,7 @@ int main(int argc, char *argv[])
                 return 1;
             }
             if (!parse_u32(argv[argi + 1], &parsed_pid) ||
+                parsed_pid == 0 ||
                 parsed_pid > 0x7fffffffu) {
                 put_err("pdb: --attach requires a valid positive pid\n");
                 return 1;
