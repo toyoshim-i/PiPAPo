@@ -262,6 +262,7 @@ static char arg_x[] = "x/2h 0x0100";
 static char arg_disas_pc[] = "disas";
 static char arg_disas[] = "disas 0x0100 3";
 static char arg_break[] = "b 0x0101";
+static char arg_info_break[] = "info break";
 static char arg_disable[] = "disable 0";
 static char arg_enable[] = "enable 0";
 static char arg_delete[] = "d 0";
@@ -617,6 +618,23 @@ int main(void)
               "output should not include unknown command error");
     UT_ASSERT(!str_contains(out, "usage: show <abi|event|caps|regset|pc|sp|surface>"),
               "show command should not print usage error");
+
+    argv4[0] = arg_prog;
+    argv4[1] = arg_quiet;
+    argv4[2] = arg_opt;
+    argv4[3] = arg_break;
+    argv4[4] = arg_opt;
+    argv4[5] = arg_info_break;
+    argv4[6] = arg_opt;
+    argv4[7] = arg_quit_short;
+    argv4[8] = arg_target;
+    argv4[9] = (char *)0;
+    n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb info break smoke should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb info break smoke should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out2, "bp 0 @ 0x00000101 enabled"),
+              "output should include info break table output");
 
     unlink("/tmp/pdb_smoke.com");
 
