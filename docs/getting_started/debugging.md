@@ -100,7 +100,7 @@ pdb -f /tmp/pdb.script /tmp/prog.com
 #   disable 0
 #   enable 0
 #   delete / d 0
-#   info break
+#   info break / b
 #   detach
 #   quit / q
 ```

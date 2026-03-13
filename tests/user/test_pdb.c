@@ -1145,12 +1145,14 @@ int main(void)
     argv2[2] = (char *)0;
     argv2[3] = (char *)0;
     argv2[4] = (char *)0;
-    n2 = run_capture(argv2, out2, sizeof(out2_buf), &status2);
+    n2 = run_capture(argv2, out, sizeof(out_buf), &status2);
     UT_ASSERT(n2 > 0, "pdb --help should produce output");
     UT_ASSERT(WIFEXITED(status2), "pdb --help should exit");
     UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
-    UT_ASSERT(str_contains(out2, "commands:"),
+    UT_ASSERT(str_contains(out, "commands:"),
               "pdb --help should print command list");
+    UT_ASSERT(str_contains(out, "info break|b"),
+              "pdb --help should include info break alias help");
 
     UT_SUMMARY("test_pdb");
 #endif
