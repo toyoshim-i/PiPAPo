@@ -238,6 +238,36 @@ int main(void)
         UT_ASSERT_EQ(WEXITSTATUS(status), 0);
     }
 
+    {
+        char *sleep_argv[3];
+        pid_t waited;
+
+        sleep_argv[0] = (char *)"/bin/sleep";
+        sleep_argv[1] = (char *)"1";
+        sleep_argv[2] = (char *)0;
+
+        pid = vfork();
+        if (pid == 0) {
+            execve("/bin/sleep", sleep_argv, (void *)0);
+            _exit(127);
+        }
+
+        UT_ASSERT(pid > 0, "attach+cont target should launch");
+        UT_ASSERT_EQ(ptrace(PTRACE_ATTACH, pid, (void *)0, (void *)0), 0);
+        UT_ASSERT_EQ(waitpid(pid, &status, WSTOPPED), pid);
+        UT_ASSERT(WIFSTOPPED(status), "attach+cont target should stop");
+        UT_ASSERT_EQ(WSTOPSIG(status), SIGTRAP);
+
+        UT_ASSERT_EQ(ptrace(PTRACE_CONT, pid, (void *)0, (void *)0), 0);
+        UT_ASSERT_EQ(waitpid(pid, &status, 0), pid);
+        UT_ASSERT(WIFEXITED(status), "attach+cont target should exit");
+        UT_ASSERT_EQ(WEXITSTATUS(status), 0);
+
+        waited = waitpid(pid, &status, WNOHANG);
+        UT_ASSERT(waited < 0,
+                  "re-wait on exited attach+cont target should fail");
+    }
+
     UT_ASSERT_EQ(write_blob("/tmp/trace_step.com", trace_step_com,
                             (int)sizeof(trace_step_com)), 0);
 
