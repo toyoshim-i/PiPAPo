@@ -167,7 +167,7 @@ static char arg_disas[] = "disas 0x0100 3";
 static char arg_break[] = "break 0x0101";
 static char arg_disable[] = "disable 0";
 static char arg_enable[] = "enable 0";
-static char arg_delete[] = "delete 0";
+static char arg_delete[] = "d 0";
 static char arg_setreg[] = "set reg wz 0x1234";
 static char arg_setmem[] = "set mem 0x0100 0x00000000";
 static char arg_next[] = "next";
@@ -423,8 +423,8 @@ int main(void)
               "output should include scripted enable command");
     UT_ASSERT(str_contains(out, "bp 0 enabled"),
               "output should include breakpoint enable result");
-    UT_ASSERT(str_contains(out, "pdb> delete 0"),
-              "output should include scripted delete command");
+    UT_ASSERT(str_contains(out, "pdb> d 0"),
+              "output should include scripted delete alias");
     UT_ASSERT(str_contains(out, "bp 0 cleared"),
               "output should include breakpoint clear result");
     UT_ASSERT(str_contains(out, "pdb> set reg wz 0x1234"),
