@@ -164,7 +164,7 @@ static char arg_surface_ecpu[] = "surface ecpu";
 static char arg_x[] = "x/2h 0x0100";
 static char arg_disas_pc[] = "disas";
 static char arg_disas[] = "disas 0x0100 3";
-static char arg_break[] = "break 0x0101";
+static char arg_break[] = "b 0x0101";
 static char arg_disable[] = "disable 0";
 static char arg_enable[] = "enable 0";
 static char arg_delete[] = "d 0";
@@ -411,8 +411,8 @@ int main(void)
               "output should include scripted disassembly command");
     UT_ASSERT(str_contains(out, "0x00000100: nop"),
               "output should include Z80 disassembly");
-    UT_ASSERT(str_contains(out, "pdb> break 0x0101"),
-              "output should include scripted break command");
+    UT_ASSERT(str_contains(out, "pdb> b 0x0101"),
+              "output should include scripted break alias");
     UT_ASSERT(str_contains(out, "bp 0 @ 0x00000101"),
               "output should include breakpoint creation result");
     UT_ASSERT(str_contains(out, "pdb> disable 0"),
