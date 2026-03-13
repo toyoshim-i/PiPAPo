@@ -218,15 +218,13 @@ Primary goals:
 
 ### Target launch model
 
-Initial mode (same safety model as current tracer):
+Implemented launch modes:
 
 - `pdb <program> [args...]`
 - child runs `PTRACE_TRACEME`, then `execve`
 - parent debugger waits for initial stop and enters REPL
-
-Optional later mode:
-
-- `pdb --attach <pid>` (only after explicit attach semantics are implemented)
+- `pdb --attach <pid>`
+- parent debugger issues `PTRACE_ATTACH` and waits for initial stop
 
 ### Surface model: `real` vs `ecpu`
 
@@ -346,6 +344,7 @@ Recommended file layout:
 Phase A:
 
 - attach-on-exec flow
+- attach-by-pid flow (`--attach`)
 - `regs`, `x`, `cont`, `step`, `quit`
 - `surface` command and caps display
 
