@@ -157,6 +157,7 @@ static char arg_show_pc[] = "show pc";
 static char arg_show_regset[] = "show regset";
 static char arg_show_sp[] = "show sp";
 static char arg_where_short[] = "w";
+static char arg_help_short_cmd[] = "?";
 static char arg_reg_wz[] = "reg wz";
 static char arg_show_surface[] = "show surface";
 static char arg_surface_real[] = "surface real";
@@ -222,9 +223,11 @@ int main(void)
     argv4[4] = arg_opt;
     argv4[5] = arg_disas_pc;
     argv4[6] = arg_opt;
-    argv4[7] = arg_c_short;
-    argv4[8] = arg_native_target;
-    argv4[9] = (char *)0;
+    argv4[7] = arg_help_short_cmd;
+    argv4[8] = arg_opt;
+    argv4[9] = arg_c_short;
+    argv4[10] = arg_native_target;
+    argv4[11] = (char *)0;
     n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
     UT_ASSERT(n2 > 0, "pdb disas-m68k smoke should produce output");
     UT_ASSERT(WIFEXITED(status2), "pdb disas-m68k smoke should exit normally");
@@ -233,6 +236,8 @@ int main(void)
               "output should include m68k regset");
     UT_ASSERT(str_contains(out2, "0x"),
               "output should include disassembly address output");
+    UT_ASSERT(str_contains(out2, "commands:"),
+              "output should include help alias output");
     UT_ASSERT(!str_contains(out2, "disas currently supports"),
               "disas should be supported for m68k regset");
 
