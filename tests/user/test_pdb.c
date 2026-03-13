@@ -397,7 +397,7 @@ int main(void)
     pid_t attach_target = -1;
     char *sleep_argv[3];
     char *attach_pid_str = attach_pid_buf;
-    char *argv4[12];
+    char *argv4[20];
     char **argv = argv_buf;
     char **argv2 = argv2_buf;
     char **argv3 = argv3_buf;
@@ -727,19 +727,31 @@ int main(void)
     argv4[4] = arg_opt;
     argv4[5] = arg_disable;
     argv4[6] = arg_opt;
-    argv4[7] = arg_info_break;
+    argv4[7] = arg_disable;
     argv4[8] = arg_opt;
-    argv4[9] = arg_quit_short;
-    argv4[10] = arg_target;
-    argv4[11] = (char *)0;
+    argv4[9] = arg_info_break;
+    argv4[10] = arg_opt;
+    argv4[11] = arg_enable;
+    argv4[12] = arg_opt;
+    argv4[13] = arg_enable;
+    argv4[14] = arg_opt;
+    argv4[15] = arg_quit_short;
+    argv4[16] = arg_target;
+    argv4[17] = (char *)0;
     n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
     UT_ASSERT(n2 > 0, "pdb info break disabled smoke should produce output");
     UT_ASSERT(WIFEXITED(status2), "pdb info break disabled smoke should exit normally");
     UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
     UT_ASSERT(str_contains(out2, "bp 0 disabled"),
               "output should include disable command result");
+    UT_ASSERT(str_contains(out2, "bp 0 already disabled"),
+              "output should include already-disabled command result");
     UT_ASSERT(str_contains(out2, "bp 0 @ 0x00000101 disabled"),
               "output should include disabled info break table output");
+    UT_ASSERT(str_contains(out2, "bp 0 enabled"),
+              "output should include enable command result");
+    UT_ASSERT(str_contains(out2, "bp 0 already enabled"),
+              "output should include already-enabled command result");
 
     argv4[0] = arg_prog;
     argv4[1] = arg_quiet;
