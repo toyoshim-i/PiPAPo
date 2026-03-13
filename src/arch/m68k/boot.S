@@ -159,6 +159,10 @@ Reset_Handler:
     .section .text, "ax"
     .align 2
 
+| PCB field offsets — must match struct pcb_t in proc.h
+    .equ PCB_SP_OFFSET,  44          | byte offset of sp  field in pcb_t
+    .equ PCB_USP_OFFSET, 48          | byte offset of usp field in pcb_t
+
 | =============================================================================
 | Fault handlers
 |
@@ -286,7 +290,22 @@ m68k_fline_handler:
     lea.l   %sp@(66),%sp            | discard regs + group-1 frame (60+6)
     jmp     m68k_schedule_next
 .Lfline_return:
-    | DOS call handled — restore registers and return to user mode
+    | Check for a pending context switch (e.g. ptrace subsys trace stop set
+    | by arch_yield() inside trace_before_subsys).  Mirror the logic in trap.S.
+    tst.l   m68k_switch_pending
+    beq.s   .Lfline_rte
+    clr.l   m68k_switch_pending
+    move.l  current_core,%a0
+    move.l  %sp,%a0@(PCB_SP_OFFSET)  | save current kernel SP
+    move.l  %usp,%a1
+    move.l  %a1,%a0@(PCB_USP_OFFSET) | save user SP
+    jsr     sched_next
+    move.l  %d0,current_core
+    move.l  %d0,%a0
+    move.l  %a0@(PCB_SP_OFFSET),%sp  | restore kernel SP
+    move.l  %a0@(PCB_USP_OFFSET),%a1
+    move.l  %a1,%usp                  | restore user SP
+.Lfline_rte:
     movem.l %sp@+,%d0-%d7/%a0-%a6   | restore all regs (60 bytes)
     rte                              | return (SR+PC on stack)
 .Lfline_halt:
@@ -303,7 +322,21 @@ m68k_trap15_handler:
     move.l  %d0,%sp@-               | arg1: register frame pointer
     jsr     human68k_iocs_dispatch
     addq.l  #4,%sp                  | clean up 1 arg
-    | Always returns 2 — restore registers and return to user mode
+    | Check for a pending context switch (same reason as .Lfline_return above)
+    tst.l   m68k_switch_pending
+    beq.s   .Ltrap15_rte
+    clr.l   m68k_switch_pending
+    move.l  current_core,%a0
+    move.l  %sp,%a0@(PCB_SP_OFFSET)  | save current kernel SP
+    move.l  %usp,%a1
+    move.l  %a1,%a0@(PCB_USP_OFFSET) | save user SP
+    jsr     sched_next
+    move.l  %d0,current_core
+    move.l  %d0,%a0
+    move.l  %a0@(PCB_SP_OFFSET),%sp  | restore kernel SP
+    move.l  %a0@(PCB_USP_OFFSET),%a1
+    move.l  %a1,%usp                  | restore user SP
+.Ltrap15_rte:
     movem.l %sp@+,%d0-%d7/%a0-%a6   | restore all regs (60 bytes)
     rte                              | return (SR+PC on stack)
 
