@@ -636,6 +636,27 @@ int main(void)
     UT_ASSERT(str_contains(out2, "bp 0 @ 0x00000101 enabled"),
               "output should include info break table output");
 
+    argv4[0] = arg_prog;
+    argv4[1] = arg_quiet;
+    argv4[2] = arg_opt;
+    argv4[3] = arg_break;
+    argv4[4] = arg_opt;
+    argv4[5] = arg_disable;
+    argv4[6] = arg_opt;
+    argv4[7] = arg_info_break;
+    argv4[8] = arg_opt;
+    argv4[9] = arg_quit_short;
+    argv4[10] = arg_target;
+    argv4[11] = (char *)0;
+    n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb info break disabled smoke should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb info break disabled smoke should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out2, "bp 0 disabled"),
+              "output should include disable command result");
+    UT_ASSERT(str_contains(out2, "bp 0 @ 0x00000101 disabled"),
+              "output should include disabled info break table output");
+
     unlink("/tmp/pdb_smoke.com");
 
     argv2[0] = arg_prog;
