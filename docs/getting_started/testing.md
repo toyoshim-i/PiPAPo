@@ -359,6 +359,7 @@ exact marker `ALL TESTS PASSED`.
 
 - ARM default timeout: 60 seconds
 - m68k default timeout: 90 seconds
+- m68k with `--slow`: 150 seconds
 
 ```bash
 ./scripts/run.sh --test              # ARM (default)
@@ -371,7 +372,8 @@ Builds with `PPAP_TESTS=ON` and `PPAP_TESTS_EXTENDED=ON`, runs under QEMU
 with a larger timeout budget, and executes `/bin/runtests_ext` as PID 1.
 
 - ARM extended timeout: 90 seconds
-- m68k extended timeout: 120 seconds
+- m68k extended timeout: 150 seconds
+- m68k extended with `--slow`: 180 seconds
 
 ```bash
 ./scripts/run.sh --test-extended qemu_arm
@@ -405,6 +407,9 @@ is merged into romfs at build time, then cleaned up.
 is ignored).
 `--slow` writes `/etc/test_run_slow` (existence is the signal; content
 is ignored).  All imply `--build`.
+
+On m68k lanes, enabling `--slow` increases `run.sh` timeout so slow tests
+such as `test_pdb` do not fail due to harness timeout alone.
 
 ### `test.sh --all`
 

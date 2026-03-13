@@ -207,10 +207,16 @@ fi
 if [[ $DO_TEST -eq 1 ]]; then
     if [[ $DO_TEST_EXTENDED -eq 1 ]]; then
         if [[ "$TARGET" == "qemu_m68k" ]]; then
-            TIMEOUT=120
+            TIMEOUT=150
         else
             TIMEOUT=90
         fi
+    fi
+    if [[ "$TARGET" == "qemu_m68k" && $RUN_SLOW -eq 1 && $TIMEOUT -lt 150 ]]; then
+        TIMEOUT=150
+    fi
+    if [[ "$TARGET" == "qemu_m68k" && $RUN_SLOW -eq 1 && $DO_TEST_EXTENDED -eq 1 ]]; then
+        TIMEOUT=180
     fi
     echo "[test] Running on-target tests (timeout ${TIMEOUT}s)..."
     OUTPUT=$(timeout "$TIMEOUT" "$QEMU_BIN" \

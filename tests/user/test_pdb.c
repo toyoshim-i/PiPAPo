@@ -338,6 +338,8 @@ int main(void)
     UT_ASSERT_EQ(WEXITSTATUS(status), 0);
     UT_ASSERT(str_contains_basic(out, "options:"),
               "pdb -h should print help text");
+    UT_ASSERT(str_contains_basic(out, "--batch"),
+              "pdb -h should include batch-mode option");
     UT_ASSERT(str_contains_basic(out, "info break|b"),
               "pdb -h should include info break alias help");
 
@@ -390,6 +392,28 @@ int main(void)
     UT_ASSERT_EQ(WEXITSTATUS(status), 0);
     UT_ASSERT(str_contains_basic(out, "regset=arm"),
               "pdb scripted launch should report arm regset");
+
+    a = 0;
+    argv[a++] = "/bin/pdb";
+    argv[a++] = "--batch";
+    argv[a++] = "-c";
+    argv[a++] = "show regset";
+    argv[a++] = "-c";
+    argv[a++] = "q";
+    argv[a++] = "/bin/hello";
+    argv[a++] = (char *)0;
+    n = run_capture_basic(argv, out, sizeof(out), &status);
+    UT_ASSERT(n > 0, "pdb --batch scripted launch should produce output");
+    UT_ASSERT(WIFEXITED(status), "pdb --batch scripted launch should exit");
+    UT_ASSERT_EQ(WEXITSTATUS(status), 0);
+    UT_ASSERT(str_contains_basic(out, "regset=arm"),
+              "pdb --batch scripted launch should keep command output");
+    UT_ASSERT(!str_contains_basic(out, "target "),
+              "pdb --batch should suppress target banner");
+    UT_ASSERT(!str_contains_basic(out, "stop "),
+              "pdb --batch should suppress automatic stop output");
+    UT_ASSERT(!str_contains_basic(out, "pdb> "),
+              "pdb --batch should suppress command prompt/echo output");
 
     UT_SUMMARY("test_pdb");
 #else
@@ -1162,6 +1186,8 @@ int main(void)
               "pdb -h should print help text");
     UT_ASSERT(str_contains(out2, "-q"),
               "pdb -h should include quiet-mode option");
+    UT_ASSERT(str_contains(out2, "--batch"),
+              "pdb -h should include batch-mode option");
     UT_ASSERT(str_contains(out2, "--attach"),
               "pdb -h should include attach option");
     argv2[0] = arg_prog;

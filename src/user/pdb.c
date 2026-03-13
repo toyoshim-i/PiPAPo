@@ -1152,7 +1152,7 @@ static int z80_is_call_opcode(uint8_t op)
 }
 
 static int wait_child(pid_t pid, int *stopped, int *exit_code,
-                      struct ppap_ptrace_event *ev)
+                      struct ppap_ptrace_event *ev, int report_event)
 {
     int status = 0;
     pid_t rc = waitpid(pid, &status, WSTOPPED);
@@ -1165,9 +1165,11 @@ static int wait_child(pid_t pid, int *stopped, int *exit_code,
     if (WIFEXITED(status)) {
         *stopped = 0;
         *exit_code = WEXITSTATUS(status);
-        put_str("child exited ");
-        put_u32((uint32_t)*exit_code);
-        put_chr('\n');
+        if (report_event) {
+            put_str("child exited ");
+            put_u32((uint32_t)*exit_code);
+            put_chr('\n');
+        }
         return 1;
     }
 
@@ -1182,20 +1184,22 @@ static int wait_child(pid_t pid, int *stopped, int *exit_code,
         put_err("pdb: GETEVENT failed\n");
         return -1;
     }
-    print_event(ev);
+    if (report_event)
+        print_event(ev);
     return 0;
 }
 
 static void usage(void)
 {
-    put_str("Usage: pdb [-q] [-c <cmd> ...] [-f <script> ...] <program> [args...]\n");
-    put_str("       pdb [-q] [-c <cmd> ...] [-f <script> ...] --attach <pid>\n");
+    put_str("Usage: pdb [-q] [--batch] [-c <cmd> ...] [-f <script> ...] <program> [args...]\n");
+    put_str("       pdb [-q] [--batch] [-c <cmd> ...] [-f <script> ...] --attach <pid>\n");
 }
 
 static void print_help(void)
 {
     put_str("options:\n");
     put_str("  -q                suppress prompt/command echo output\n");
+    put_str("  --batch           suppress automatic stop/target output\n");
     put_str("  -c <cmd>          queue startup command (repeatable)\n");
     put_str("  -f <script>       load startup commands from file (repeatable)\n");
     put_str("  --attach <pid>    attach to a running process instead of exec\n");
@@ -1237,6 +1241,7 @@ int main(int argc, char *argv[])
 {
     int argi = 1;
     int show_prompt = 1;
+    int batch_mode = 0;
     int scripted_mode = 0;
     int attach_mode = 0;
     char *script_cmds[PDB_SCRIPT_CMD_MAX];
@@ -1260,6 +1265,12 @@ int main(int argc, char *argv[])
             return 0;
         }
         if (streq(argv[argi], "-q")) {
+            show_prompt = 0;
+            argi++;
+            continue;
+        }
+        if (streq(argv[argi], "--batch")) {
+            batch_mode = 1;
             show_prompt = 0;
             argi++;
             continue;
@@ -1375,14 +1386,15 @@ int main(int argc, char *argv[])
     }
 
     {
-        int wr = wait_child(pid, &child_stopped, &child_exit_code, &last_ev);
+        int wr = wait_child(pid, &child_stopped, &child_exit_code, &last_ev,
+                            !batch_mode);
         if (wr < 0)
             return 1;
         if (wr > 0)
             return child_exit_code;
     }
 
-    if (ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps) == 0) {
+    if (!batch_mode && ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps) == 0) {
         put_str("target ");
         print_caps(&caps);
     }
@@ -1865,7 +1877,8 @@ int main(int argc, char *argv[])
                     continue;
                 }
                 child_stopped = 0;
-                wr = wait_child(pid, &child_stopped, &child_exit_code, &last_ev);
+                wr = wait_child(pid, &child_stopped, &child_exit_code, &last_ev,
+                                !batch_mode);
                 if (child_stopped && temp_bp_id >= 0) {
                     struct ppap_ptrace_bp bp;
                     bp.id = temp_bp_id;
@@ -1888,7 +1901,8 @@ int main(int argc, char *argv[])
                 continue;
             }
             child_stopped = 0;
-            wr = wait_child(pid, &child_stopped, &child_exit_code, &last_ev);
+            wr = wait_child(pid, &child_stopped, &child_exit_code, &last_ev,
+                            !batch_mode);
             if (wr < 0)
                 return 1;
             if (wr > 0)
@@ -1911,7 +1925,8 @@ int main(int argc, char *argv[])
                 continue;
             }
             child_stopped = 0;
-            wr = wait_child(pid, &child_stopped, &child_exit_code, &last_ev);
+            wr = wait_child(pid, &child_stopped, &child_exit_code, &last_ev,
+                            !batch_mode);
             if (wr < 0)
                 return 1;
             if (wr > 0)
@@ -1935,7 +1950,8 @@ int main(int argc, char *argv[])
                 continue;
             }
             child_stopped = 0;
-            wr = wait_child(pid, &child_stopped, &child_exit_code, &last_ev);
+            wr = wait_child(pid, &child_stopped, &child_exit_code, &last_ev,
+                            !batch_mode);
             if (wr < 0)
                 return 1;
             if (wr > 0)

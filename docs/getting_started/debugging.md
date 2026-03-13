@@ -69,6 +69,9 @@ pdb -c "caps" -c "regs" -c "disas 0x0100 3" /tmp/prog.com
 # Quiet scripted mode (suppress prompt/command echo)
 pdb -q -c "show sp" -c "cont" /tmp/prog.com
 
+# Batch scripted mode (suppress prompt/echo and automatic stop/target lines)
+pdb --batch -c "show event" -c "show caps" -c "cont" /tmp/prog.com
+
 # Script file mode
 pdb -f /tmp/pdb.script /tmp/prog.com
 
@@ -117,5 +120,6 @@ pdb -f /tmp/pdb.script /tmp/prog.com
 Scripted-mode notes:
 
 - `-q` suppresses prompt and command-echo output for cleaner automation logs.
+- `--batch` also suppresses automatic initial stop/target and child-exit lines.
 - Whitespace-only `-c` entries are ignored.
 - Overlong `-c` commands and overlong script lines are rejected with an error.
