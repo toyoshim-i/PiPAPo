@@ -170,7 +170,7 @@ static char arg_enable[] = "enable 0";
 static char arg_delete[] = "d 0";
 static char arg_setreg[] = "set reg wz 0x1234";
 static char arg_setmem[] = "set mem 0x0100 0x00000000";
-static char arg_next[] = "next";
+static char arg_next[] = "n";
 static char arg_step[] = "step";
 static char arg_continue[] = "continue";
 static char arg_c_short[] = "c";
@@ -435,8 +435,8 @@ int main(void)
               "output should include scripted memory write command");
     UT_ASSERT(str_contains(out, "mem 0x00000100=0x00000000"),
               "output should include memory write result");
-    UT_ASSERT(str_contains(out, "pdb> next"),
-              "output should include scripted next command");
+    UT_ASSERT(str_contains(out, "pdb> n"),
+              "output should include scripted next alias");
     UT_ASSERT(str_contains(out, "pdb> detach"),
               "output should include scripted detach command");
     UT_ASSERT(str_contains(out, "detached"),
