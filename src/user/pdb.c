@@ -1228,7 +1228,7 @@ static void print_help(void)
     put_str("  disable <id>      disable breakpoint by id\n");
     put_str("  enable <id>       enable breakpoint by id\n");
     put_str("  delete | d <id>   clear breakpoint by id\n");
-    put_str("  info break        show local breakpoint table\n");
+    put_str("  info break|b      show local breakpoint table\n");
     put_str("  detach            detach and quit\n");
     put_str("  quit | q          detach and quit\n");
 }
@@ -2201,7 +2201,7 @@ int main(int argc, char *argv[])
         }
 
         if (streq(tok[0], "info")) {
-            if (ntok >= 2 && streq(tok[1], "break")) {
+            if (ntok == 2 && (streq(tok[1], "break") || streq(tok[1], "b"))) {
                 int found = 0;
                 for (int i = 0; i < PDB_LOCAL_BP_MAX; i++) {
                     if (!local_bp[i].used)

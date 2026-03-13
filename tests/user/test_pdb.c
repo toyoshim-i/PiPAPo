@@ -269,6 +269,8 @@ static char arg_break[] = "b 0x0101";
 static char arg_break_missing_addr[] = "break";
 static char arg_break_long[] = "break 0x0101";
 static char arg_info_break[] = "info break";
+static char arg_info_break_extra[] = "info break extra";
+static char arg_info_break_short[] = "info b";
 static char arg_info_only[] = "info";
 static char arg_disable[] = "disable 0";
 static char arg_enable[] = "enable 0";
@@ -876,6 +878,27 @@ int main(void)
               "pdb info break empty-table smoke should report empty table");
     UT_ASSERT(str_contains(out2, "child exited 0"),
               "pdb info break empty-table smoke should allow target to exit");
+
+    argv4[0] = arg_prog;
+    argv4[1] = arg_quiet;
+    argv4[2] = arg_opt;
+    argv4[3] = arg_info_break_short;
+    argv4[4] = arg_opt;
+    argv4[5] = arg_info_break_extra;
+    argv4[6] = arg_opt;
+    argv4[7] = arg_continue;
+    argv4[8] = arg_target;
+    argv4[9] = (char *)0;
+    n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb info break alias/usage smoke should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb info break alias/usage smoke should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out2, "no breakpoints"),
+              "pdb info break alias/usage smoke should accept short info b form");
+    UT_ASSERT(str_contains(out2, "pdb: usage: info break"),
+              "pdb info break alias/usage smoke should reject extra args");
+    UT_ASSERT(str_contains(out2, "child exited 0"),
+              "pdb info break alias/usage smoke should allow target to exit");
 
     unlink("/tmp/pdb_smoke.com");
 
