@@ -300,6 +300,35 @@ int main(void)
               "attached target should exit after detach");
     UT_ASSERT_EQ(WEXITSTATUS(attach_status), 0);
 
+    attach_target = vfork();
+    if (attach_target == 0) {
+        execve(arg_sleep, sleep_argv, (void *)0);
+        _exit(127);
+    }
+    UT_ASSERT(attach_target > 0, "attach+cont target process should launch");
+    u32_to_dec((uint32_t)attach_target, attach_pid_str,
+               (int)sizeof(attach_pid_buf));
+    argv4[0] = arg_prog;
+    argv4[1] = arg_quiet;
+    argv4[2] = arg_opt;
+    argv4[3] = arg_cont;
+    argv4[4] = arg_attach_opt;
+    argv4[5] = attach_pid_str;
+    argv4[6] = (char *)0;
+    argv4[7] = (char *)0;
+    argv4[8] = (char *)0;
+    argv4[9] = (char *)0;
+    n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb --attach cont should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb --attach cont should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out2, "child exited 0"),
+              "pdb --attach cont should report child exit");
+    UT_ASSERT_EQ(waitpid(attach_target, &attach_status, 0), attach_target);
+    UT_ASSERT(WIFEXITED(attach_status),
+              "attach+cont target should still be reapable by parent");
+    UT_ASSERT_EQ(WEXITSTATUS(attach_status), 0);
+
     UT_ASSERT_EQ(write_blob("/tmp/pdb_smoke.com", pdb_smoke_com,
                             (int)sizeof(pdb_smoke_com)), 0);
     n = run_capture(argv, out, sizeof(out_buf), &status);
