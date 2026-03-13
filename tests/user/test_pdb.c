@@ -157,6 +157,7 @@ static char arg_show_pc[] = "show pc";
 static char arg_show_regset[] = "show regset";
 static char arg_show_sp[] = "show sp";
 static char arg_where_short[] = "w";
+static char arg_where_long[] = "where";
 static char arg_help_short_cmd[] = "?";
 static char arg_reg_wz[] = "reg wz";
 static char arg_show_surface[] = "show surface";
@@ -189,7 +190,7 @@ static char long_cmd_buf[129];
 static char attach_pid_buf[16];
 static char *argv_buf[33];
 static char *argv2_buf[5];
-static char *argv3_buf[17];
+static char *argv3_buf[19];
 
 #endif
 
@@ -292,10 +293,12 @@ int main(void)
     argv3[10] = arg_opt;
     argv3[11] = arg_where_short;
     argv3[12] = arg_opt;
-    argv3[13] = arg_run;
-    argv3[14] = arg_target;
-    argv3[15] = (char *)0;
-    argv3[16] = (char *)0;
+    argv3[13] = arg_where_long;
+    argv3[14] = arg_opt;
+    argv3[15] = arg_run;
+    argv3[16] = arg_target;
+    argv3[17] = (char *)0;
+    argv3[18] = (char *)0;
     n2 = run_capture(argv3, out2, sizeof(out2_buf), &status2);
     UT_ASSERT(n2 > 0, "pdb -q should produce output");
     UT_ASSERT(WIFEXITED(status2), "pdb -q should exit normally");
@@ -304,8 +307,8 @@ int main(void)
               "pdb -q should still run scripted commands");
     UT_ASSERT(str_count(out2, "caps=") >= 2,
               "pdb -q should include show caps and caps outputs");
-    UT_ASSERT(str_count(out2, "pc=0x") >= 2,
-              "pdb -q should include show pc and where outputs");
+    UT_ASSERT(str_count(out2, "pc=0x") >= 3,
+              "pdb -q should include show pc, w, and where outputs");
     UT_ASSERT(str_contains(out2, "pc=0x") && str_contains(out2, " sp=0x"),
               "pdb -q should include where output");
     UT_ASSERT(!str_contains(out2, "pdb> "),
