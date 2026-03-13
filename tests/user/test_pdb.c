@@ -246,6 +246,7 @@ static char arg_trim_script[] = "/tmp/pdb_trim.script";
 static char arg_blank_cmd[] = "   ";
 static char arg_event_short[] = "event";
 static char arg_show_event[] = "show event";
+static char arg_show_only[] = "show";
 static char arg_caps_short[] = "caps";
 static char arg_show_caps[] = "show caps";
 static char arg_show_pc[] = "show pc";
@@ -258,9 +259,12 @@ static char arg_reg_wz[] = "reg wz";
 static char arg_show_surface[] = "show surface";
 static char arg_surface_real[] = "surface real";
 static char arg_surface_ecpu[] = "surface ecpu";
+static char arg_surface_invalid[] = "surface nope";
 static char arg_x[] = "x/2h 0x0100";
+static char arg_x_missing_addr[] = "x";
 static char arg_disas_pc[] = "disas";
 static char arg_disas[] = "disas 0x0100 3";
+static char arg_disas_invalid_count[] = "disas 0x0100 xyz";
 static char arg_break[] = "b 0x0101";
 static char arg_break_missing_addr[] = "break";
 static char arg_break_long[] = "break 0x0101";
@@ -271,6 +275,8 @@ static char arg_delete[] = "d 0";
 static char arg_delete_long[] = "delete 0";
 static char arg_setreg[] = "set reg wz 0x1234";
 static char arg_setmem[] = "set mem 0x0100 0x00000000";
+static char arg_setreg_missing_value[] = "set reg wz";
+static char arg_setmem_missing_value[] = "set mem 0x0100";
 static char arg_next[] = "n";
 static char arg_next_long[] = "next";
 static char arg_step[] = "s";
@@ -797,6 +803,44 @@ int main(void)
               "pdb breakpoint error-path smoke should report break usage");
     UT_ASSERT(str_contains(out, "child exited 0"),
               "pdb breakpoint error-path smoke should allow target to exit");
+
+    argv3[0] = arg_prog;
+    argv3[1] = arg_quiet;
+    argv3[2] = arg_opt;
+    argv3[3] = arg_show_only;
+    argv3[4] = arg_opt;
+    argv3[5] = arg_surface_invalid;
+    argv3[6] = arg_opt;
+    argv3[7] = arg_x_missing_addr;
+    argv3[8] = arg_opt;
+    argv3[9] = arg_disas_invalid_count;
+    argv3[10] = arg_opt;
+    argv3[11] = arg_setreg_missing_value;
+    argv3[12] = arg_opt;
+    argv3[13] = arg_setmem_missing_value;
+    argv3[14] = arg_opt;
+    argv3[15] = arg_continue;
+    argv3[16] = arg_target;
+    argv3[17] = (char *)0;
+    argv3[18] = (char *)0;
+    n2 = run_capture(argv3, out, sizeof(out_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb usage-diagnostics smoke should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb usage-diagnostics smoke should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out, "pdb: usage: show <abi|event|caps|regset|pc|sp|surface>"),
+              "pdb usage-diagnostics smoke should report show usage");
+    UT_ASSERT(str_contains(out, "pdb: usage: surface <real|ecpu>"),
+              "pdb usage-diagnostics smoke should report surface usage");
+    UT_ASSERT(str_contains(out, "pdb: usage: x <addr> [count]"),
+              "pdb usage-diagnostics smoke should report x usage");
+    UT_ASSERT(str_contains(out, "pdb: invalid count"),
+              "pdb usage-diagnostics smoke should report disas invalid count");
+    UT_ASSERT(str_contains(out, "pdb: usage: set reg <name|index> <value>"),
+              "pdb usage-diagnostics smoke should report set reg usage");
+    UT_ASSERT(str_contains(out, "pdb:    or: set mem <addr> <value>"),
+              "pdb usage-diagnostics smoke should report set mem usage");
+    UT_ASSERT(str_contains(out, "child exited 0"),
+              "pdb usage-diagnostics smoke should allow target to exit");
 
     unlink("/tmp/pdb_smoke.com");
 
