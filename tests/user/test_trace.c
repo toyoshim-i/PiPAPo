@@ -204,6 +204,33 @@ int main(void)
     UT_ASSERT(WIFEXITED(status), "child should exit after continue");
     UT_ASSERT_EQ(WEXITSTATUS(status), 0);
 
+    {
+        char *sleep_argv[3];
+
+        sleep_argv[0] = (char *)"/bin/sleep";
+        sleep_argv[1] = (char *)"1";
+        sleep_argv[2] = (char *)0;
+
+        pid = vfork();
+        if (pid == 0) {
+            execve("/bin/sleep", sleep_argv, (void *)0);
+            _exit(127);
+        }
+
+        UT_ASSERT(pid > 0, "attach target should launch");
+        UT_ASSERT_EQ(ptrace(PTRACE_ATTACH, pid, (void *)0, (void *)0), 0);
+        UT_ASSERT_EQ(waitpid(pid, &status, WSTOPPED), pid);
+        UT_ASSERT(WIFSTOPPED(status), "attached target should stop");
+        UT_ASSERT_EQ(WSTOPSIG(status), SIGTRAP);
+        UT_ASSERT_EQ(ptrace(PTRACE_GETEVENT, pid, (void *)0, &ev), 0);
+        UT_ASSERT_EQ((int)ev.event, PPAP_TRACE_EVENT_DEBUG_STOP);
+
+        UT_ASSERT_EQ(ptrace(PTRACE_DETACH, pid, (void *)0, (void *)0), 0);
+        UT_ASSERT_EQ(waitpid(pid, &status, 0), pid);
+        UT_ASSERT(WIFEXITED(status), "detached target should exit");
+        UT_ASSERT_EQ(WEXITSTATUS(status), 0);
+    }
+
     UT_ASSERT_EQ(write_blob("/tmp/trace_step.com", trace_step_com,
                             (int)sizeof(trace_step_com)), 0);
 
