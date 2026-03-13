@@ -93,17 +93,16 @@ pdb -f /tmp/pdb.script /tmp/prog.com
 #   event          # includes decoded debug-stop reason (step/sw-bp/hw-bp)
 #   set reg pc 0x0100
 #   set mem 0x0100 0x00000000
-#   step
-#   next
-#   run
-#   cont
-#   break 0x0101
+#   step / s
+#   next / n
+#   run / cont / continue / c
+#   break / b 0x0101
 #   disable 0
 #   enable 0
-#   delete 0
+#   delete / d 0
 #   info break
 #   detach
-#   quit
+#   quit / q
 ```
 
 `-f` script files are plain text:

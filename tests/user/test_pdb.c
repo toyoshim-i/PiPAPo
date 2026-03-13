@@ -271,8 +271,11 @@ static char arg_delete_long[] = "delete 0";
 static char arg_setreg[] = "set reg wz 0x1234";
 static char arg_setmem[] = "set mem 0x0100 0x00000000";
 static char arg_next[] = "n";
+static char arg_next_long[] = "next";
 static char arg_step[] = "s";
+static char arg_step_long[] = "step";
 static char arg_continue[] = "cont";
+static char arg_continue_long[] = "continue";
 static char arg_c_short[] = "c";
 static char arg_run[] = "run";
 static char arg_unknown_cmd[] = "no_such_cmd";
@@ -742,6 +745,32 @@ int main(void)
               "pdb long delete alias should clear a breakpoint");
     UT_ASSERT(str_contains(out2, "child exited 0"),
               "pdb long break/delete smoke should allow child to exit");
+
+    argv4[0] = arg_prog;
+    argv4[1] = arg_opt;
+    argv4[2] = arg_next_long;
+    argv4[3] = arg_opt;
+    argv4[4] = arg_step_long;
+    argv4[5] = arg_opt;
+    argv4[6] = arg_continue_long;
+    argv4[7] = arg_target;
+    argv4[8] = (char *)0;
+    n = run_capture(argv4, out, sizeof(out_buf), &status);
+    UT_ASSERT(n > 0, "pdb long next/step/continue alias smoke should produce output");
+    UT_ASSERT(WIFEXITED(status), "pdb long next/step/continue alias smoke should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status), 0);
+    UT_ASSERT(str_contains(out, "pdb> next"),
+              "pdb long next alias should be accepted");
+    UT_ASSERT(str_contains(out, "pdb> step"),
+              "pdb long step alias should be accepted");
+    UT_ASSERT(str_contains(out, "pdb> continue"),
+              "pdb long continue alias should be accepted");
+    UT_ASSERT(str_contains(out, "reason=step"),
+              "pdb long next/step smoke should produce step-stop reason");
+    UT_ASSERT(str_contains(out, "child exited 0"),
+              "pdb long continue alias should allow child to exit");
+    UT_ASSERT(!str_contains(out, "pdb: unknown command"),
+              "pdb long aliases should not trigger unknown-command errors");
 
     unlink("/tmp/pdb_smoke.com");
 

@@ -1224,10 +1224,10 @@ static void print_help(void)
     put_str("  run | cont | continue | c    continue\n");
     put_str("  set reg <r> <v>   write register by name or index\n");
     put_str("  set mem <a> <v>   write memory word\n");
-    put_str("  break <addr>      set software breakpoint\n");
+    put_str("  break | b <addr>  set software breakpoint\n");
     put_str("  disable <id>      disable breakpoint by id\n");
     put_str("  enable <id>       enable breakpoint by id\n");
-    put_str("  delete <id>       clear breakpoint by id\n");
+    put_str("  delete | d <id>   clear breakpoint by id\n");
     put_str("  info break        show local breakpoint table\n");
     put_str("  detach            detach and quit\n");
     put_str("  quit | q          detach and quit\n");
