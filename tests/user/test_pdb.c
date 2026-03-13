@@ -176,7 +176,8 @@ static char arg_step[] = "s";
 static char arg_continue[] = "cont";
 static char arg_c_short[] = "c";
 static char arg_run[] = "run";
-static char arg_detach[] = "q";
+static char arg_quit_short[] = "q";
+static char arg_quit_long[] = "quit";
 static char arg_target[] = "/tmp/pdb_smoke.com";
 static char arg_native_target[] = "/bin/hello";
 static char arg_sleep[] = "/bin/sleep";
@@ -271,7 +272,7 @@ int main(void)
     argv[a++] = arg_opt;
     argv[a++] = arg_step;
     argv[a++] = arg_opt;
-    argv[a++] = arg_detach;
+    argv[a++] = arg_quit_short;
     argv[a++] = arg_target;
     argv[a] = (char *)0;
 
@@ -328,7 +329,7 @@ int main(void)
     argv4[4] = arg_opt;
     argv4[5] = arg_show_event;
     argv4[6] = arg_opt;
-    argv4[7] = arg_detach;
+    argv4[7] = arg_quit_long;
     argv4[8] = arg_attach_opt;
     argv4[9] = attach_pid_str;
     argv4[10] = (char *)0;
