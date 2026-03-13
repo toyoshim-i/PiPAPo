@@ -509,6 +509,8 @@ int main(void)
               "pdb -h should print help text");
     UT_ASSERT(str_contains(out2, "-q"),
               "pdb -h should include quiet-mode option");
+    UT_ASSERT(str_contains(out2, "--attach"),
+              "pdb -h should include attach option");
     argv2[0] = arg_prog;
     argv2[1] = arg_help_long;
     argv2[2] = (char *)0;
