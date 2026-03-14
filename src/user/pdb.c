@@ -1561,7 +1561,7 @@ int main(int argc, char *argv[])
         if (streq(tok[0], "show") || streq(tok[0], "pc") || streq(tok[0], "sp")) {
             const char *show_item = 0;
             if (streq(tok[0], "show")) {
-                if (ntok < 2) {
+                if (ntok != 2) {
                     put_err("pdb: usage: show <abi|event|caps|regset|pc|sp|surface>\n");
                     continue;
                 }
