@@ -300,19 +300,24 @@ static char arg_help_invalid[] = "help nope";
 static char arg_regs_invalid[] = "regs nope";
 static char arg_reg_wz[] = "reg wz";
 static char arg_reg_wz_index[] = "reg 15";
+static char arg_reg_extra[] = "reg wz extra";
 static char arg_show_surface[] = "show surface";
 static char arg_surface_real[] = "surface real";
 static char arg_surface_ecpu[] = "surface ecpu";
 static char arg_surface_invalid[] = "surface nope";
+static char arg_surface_extra[] = "surface real nope";
 static char arg_x[] = "x/2h 0x0100";
 static char arg_x_missing_addr[] = "x";
 static char arg_x_invalid_count_plain[] = "x 0x0100 nope";
+static char arg_x_extra_count[] = "x 0x0100 1 2";
 static char arg_x_spec_invalid_fmt[] = "x/2z 0x0100";
 static char arg_x_spec_zero_count[] = "x/0x 0x0100";
+static char arg_x_spec_extra[] = "x/1x 0x0100 1";
 static char arg_disas_pc[] = "disas";
 static char arg_disas[] = "disas 0x0100 3";
 static char arg_disas_invalid_addr[] = "disas nope";
 static char arg_disas_invalid_count[] = "disas 0x0100 xyz";
+static char arg_disas_extra[] = "disas 0x0100 1 2";
 static char arg_break[] = "b 0x0101";
 static char arg_break_missing_addr[] = "break";
 static char arg_break_long[] = "break 0x0101";
@@ -1175,6 +1180,37 @@ int main(void)
               "pdb usage-diagnostics smoke should report set mem usage");
     UT_ASSERT(str_contains(out, "child exited 0"),
               "pdb usage-diagnostics smoke should allow target to exit");
+
+    argv4[0] = arg_prog;
+    argv4[1] = arg_quiet;
+    argv4[2] = arg_opt;
+    argv4[3] = arg_reg_extra;
+    argv4[4] = arg_opt;
+    argv4[5] = arg_surface_extra;
+    argv4[6] = arg_opt;
+    argv4[7] = arg_x_extra_count;
+    argv4[8] = arg_opt;
+    argv4[9] = arg_x_spec_extra;
+    argv4[10] = arg_opt;
+    argv4[11] = arg_disas_extra;
+    argv4[12] = arg_opt;
+    argv4[13] = arg_continue;
+    argv4[14] = arg_target;
+    argv4[15] = (char *)0;
+    n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb inspect-command usage smoke should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb inspect-command usage smoke should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out2, "pdb: usage: reg <name|index>"),
+              "pdb inspect-command usage smoke should report reg usage");
+    UT_ASSERT(str_contains(out2, "pdb: usage: surface <real|ecpu>"),
+              "pdb inspect-command usage smoke should report surface usage");
+    UT_ASSERT(str_contains(out2, "pdb: usage: x <addr> [count]"),
+              "pdb inspect-command usage smoke should report x usage");
+    UT_ASSERT(str_contains(out2, "pdb: usage: disas [addr] [count]"),
+              "pdb inspect-command usage smoke should report disas usage");
+    UT_ASSERT(str_contains(out2, "child exited 0"),
+              "pdb inspect-command usage smoke should allow target to exit");
 
     argv3[0] = arg_prog;
     argv3[1] = arg_quiet;

@@ -1517,7 +1517,7 @@ int main(int argc, char *argv[])
                 put_err("pdb: child is not stopped\n");
                 continue;
             }
-            if (ntok < 2) {
+            if (ntok != 2) {
                 put_err("pdb: usage: reg <name|index>\n");
                 continue;
             }
@@ -1741,7 +1741,7 @@ int main(int argc, char *argv[])
                 put_err("pdb: child is not stopped\n");
                 continue;
             }
-            if (ntok < 2 || !parse_surface_token(tok[1], &surface)) {
+            if (ntok != 2 || !parse_surface_token(tok[1], &surface)) {
                 put_err("pdb: usage: surface <real|ecpu>\n");
                 continue;
             }
@@ -1821,18 +1821,18 @@ int main(int argc, char *argv[])
                 continue;
             }
             if (streq(tok[0], "x")) {
-                if (ntok < 2 || !parse_u32(tok[1], &addr)) {
+                if (ntok < 2 || ntok > 3 || !parse_u32(tok[1], &addr)) {
                     put_err("pdb: usage: x <addr> [count]\n");
                     put_err("pdb:    or: x/<n><fmt> <addr> (fmt: x|h|b)\n");
                     continue;
                 }
-                if (ntok >= 3 && !parse_u32(tok[2], &count)) {
+                if (ntok == 3 && !parse_u32(tok[2], &count)) {
                     put_err("pdb: invalid count\n");
                     continue;
                 }
             } else {
                 char fmt = 'x';
-                if (!parse_x_spec(tok[0], &count, &fmt) || ntok < 2 ||
+                if (!parse_x_spec(tok[0], &count, &fmt) || ntok != 2 ||
                     !parse_u32(tok[1], &addr)) {
                     put_err("pdb: usage: x <addr> [count]\n");
                     put_err("pdb:    or: x/<n><fmt> <addr> (fmt: x|h|b)\n");
@@ -1879,6 +1879,10 @@ int main(int argc, char *argv[])
                 continue;
             }
             addr = regs.regs[pc_idx];
+            if (ntok > 3) {
+                put_err("pdb: usage: disas [addr] [count]\n");
+                continue;
+            }
             if (ntok >= 2 && !parse_u32(tok[1], &addr)) {
                 put_err("pdb: usage: disas [addr] [count]\n");
                 continue;
