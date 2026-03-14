@@ -345,6 +345,23 @@ static int parse_x_spec(const char *tok0, uint32_t *count_out, char *fmt_out)
     return 1;
 }
 
+static int parse_mem_width(const char *tok, uint32_t *width_out)
+{
+    if (!tok || !*tok || streq(tok, "w") || streq(tok, "word") || streq(tok, "4")) {
+        *width_out = 4u;
+        return 1;
+    }
+    if (streq(tok, "h") || streq(tok, "half") || streq(tok, "2")) {
+        *width_out = 2u;
+        return 1;
+    }
+    if (streq(tok, "b") || streq(tok, "byte") || streq(tok, "1")) {
+        *width_out = 1u;
+        return 1;
+    }
+    return 0;
+}
+
 static const char *event_name(uint32_t ev)
 {
     switch (ev) {
@@ -1262,7 +1279,7 @@ static void print_help(void)
     put_str("  next | n          step over call (z80), else single-step\n");
     put_str("  run | cont | continue | c    continue\n");
     put_str("  set reg <r> <v>   write register by name or index\n");
-    put_str("  set mem <a> <v>   write memory word\n");
+    put_str("  set mem <a> <v> [size]   write memory (size: b|h|w)\n");
     put_str("  break | b <addr>  set software breakpoint\n");
     put_str("  disable <id>      disable breakpoint by id\n");
     put_str("  enable <id>       enable breakpoint by id\n");
@@ -2050,14 +2067,44 @@ int main(int argc, char *argv[])
             if (ntok >= 4 && streq(tok[1], "mem")) {
                 uint32_t addr = 0;
                 uint32_t value = 0;
+                uint32_t width = 4u;
                 long rc;
 
-                if (!parse_u32(tok[2], &addr) || !parse_u32(tok[3], &value)) {
-                    put_err("pdb: usage: set mem <addr> <value>\n");
+                if (!parse_u32(tok[2], &addr) || !parse_u32(tok[3], &value) ||
+                    (ntok >= 5 && !parse_mem_width(tok[4], &width))) {
+                    put_err("pdb: usage: set mem <addr> <value> [size]\n");
+                    put_err("pdb:        size: b|h|w (or 1|2|4)\n");
                     continue;
                 }
-                rc = ptrace(PTRACE_POKEDATA, pid, (void *)(uintptr_t)addr,
-                            &value);
+                if (width == 4u) {
+                    rc = ptrace(PTRACE_POKEDATA, pid, (void *)(uintptr_t)addr, &value);
+                } else {
+                    uint32_t base = addr & ~3u;
+                    uint32_t old_word = 0;
+                    uint32_t new_word = 0;
+                    uint32_t shift = (addr & 3u) * 8u;
+                    uint32_t mask = (width == 1u) ? 0xffu : 0xffffu;
+
+                    if (width == 2u && (addr & 1u)) {
+                        put_err("pdb: set mem halfword requires even address\n");
+                        continue;
+                    }
+                    if (width == 2u && (addr & 3u) == 3u) {
+                        put_err("pdb: set mem halfword must not cross word boundary\n");
+                        continue;
+                    }
+
+                    rc = ptrace(PTRACE_PEEKDATA, pid, (void *)(uintptr_t)base, &old_word);
+                    if (rc < 0) {
+                        put_err("pdb: PEEKDATA failed rc=");
+                        put_i32((int32_t)rc);
+                        put_chr('\n');
+                        continue;
+                    }
+                    value &= mask;
+                    new_word = (old_word & ~(mask << shift)) | (value << shift);
+                    rc = ptrace(PTRACE_POKEDATA, pid, (void *)(uintptr_t)base, &new_word);
+                }
                 if (rc < 0) {
                     put_err("pdb: POKEDATA failed rc=");
                     put_i32((int32_t)rc);
@@ -2067,13 +2114,18 @@ int main(int argc, char *argv[])
                 put_str("mem ");
                 put_hex32(addr);
                 put_str("=");
-                put_hex32(value);
+                if (width == 1u)
+                    put_hex8(value);
+                else if (width == 2u)
+                    put_hex16(value);
+                else
+                    put_hex32(value);
                 put_chr('\n');
                 continue;
             }
 
             put_err("pdb: usage: set reg <name|index> <value>\n");
-            put_err("pdb:    or: set mem <addr> <value>\n");
+            put_err("pdb:    or: set mem <addr> <value> [size]\n");
             continue;
         }
 

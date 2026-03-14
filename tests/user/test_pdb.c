@@ -282,12 +282,15 @@ static char arg_delete[] = "d 0";
 static char arg_delete_long[] = "delete 0";
 static char arg_setreg[] = "set reg wz 0x1234";
 static char arg_setmem[] = "set mem 0x0100 0x00000000";
+static char arg_setmem_byte[] = "set mem 0x0101 0x34 b";
+static char arg_setmem_half[] = "set mem 0x0102 0x5678 h";
 static char arg_setreg_missing_value[] = "set reg wz";
 static char arg_setmem_missing_value[] = "set mem 0x0100";
 static char arg_setreg_invalid_value[] = "set reg wz xyz";
 static char arg_reg_unknown[] = "reg no_such_reg";
 static char arg_setreg_unknown[] = "set reg no_such_reg 0x1234";
 static char arg_setmem_invalid_value[] = "set mem 0x0100 xyz";
+static char arg_setmem_invalid_size[] = "set mem 0x0100 0x12 q";
 static char arg_break_invalid_addr[] = "break xyz";
 static char arg_disable_invalid_id[] = "disable xyz";
 static char arg_enable_invalid_id[] = "enable xyz";
@@ -313,7 +316,7 @@ static char out2_buf[1024];
 static uint8_t long_script_line_buf[160];
 static char long_cmd_buf[129];
 static char attach_pid_buf[16];
-static char *argv_buf[33];
+static char *argv_buf[40];
 static char *argv2_buf[5];
 static char *argv3_buf[33];
 
@@ -756,6 +759,27 @@ int main(void)
     argv4[0] = arg_prog;
     argv4[1] = arg_quiet;
     argv4[2] = arg_opt;
+    argv4[3] = arg_setmem_byte;
+    argv4[4] = arg_opt;
+    argv4[5] = arg_setmem_half;
+    argv4[6] = arg_opt;
+    argv4[7] = arg_continue;
+    argv4[8] = arg_target;
+    argv4[9] = (char *)0;
+    n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb set mem width smoke should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb set mem width smoke should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out2, "mem 0x00000101=0x34"),
+              "pdb set mem width smoke should report byte write result");
+    UT_ASSERT(str_contains(out2, "mem 0x00000102=0x5678"),
+              "pdb set mem width smoke should report halfword write result");
+    UT_ASSERT(str_contains(out2, "child exited 0"),
+              "pdb set mem width smoke should allow target to exit");
+
+    argv4[0] = arg_prog;
+    argv4[1] = arg_quiet;
+    argv4[2] = arg_opt;
     argv4[3] = arg_break;
     argv4[4] = arg_opt;
     argv4[5] = arg_info_break;
@@ -918,7 +942,7 @@ int main(void)
               "pdb usage-diagnostics smoke should report disas usage");
     UT_ASSERT(str_contains(out, "pdb: usage: set reg <name|index> <value>"),
               "pdb usage-diagnostics smoke should report set reg usage");
-    UT_ASSERT(str_contains(out, "pdb:    or: set mem <addr> <value>"),
+    UT_ASSERT(str_contains(out, "pdb:    or: set mem <addr> <value> [size]"),
               "pdb usage-diagnostics smoke should report set mem usage");
     UT_ASSERT(str_contains(out, "child exited 0"),
               "pdb usage-diagnostics smoke should allow target to exit");
@@ -989,18 +1013,20 @@ int main(void)
     argv3[8] = arg_opt;
     argv3[9] = arg_setmem_invalid_value;
     argv3[10] = arg_opt;
-    argv3[11] = arg_break_invalid_addr;
+    argv3[11] = arg_setmem_invalid_size;
     argv3[12] = arg_opt;
-    argv3[13] = arg_disable_invalid_id;
+    argv3[13] = arg_break_invalid_addr;
     argv3[14] = arg_opt;
-    argv3[15] = arg_enable_invalid_id;
+    argv3[15] = arg_disable_invalid_id;
     argv3[16] = arg_opt;
-    argv3[17] = arg_delete_invalid_id;
+    argv3[17] = arg_enable_invalid_id;
     argv3[18] = arg_opt;
-    argv3[19] = arg_continue;
-    argv3[20] = arg_target;
-    argv3[21] = (char *)0;
-    argv3[22] = (char *)0;
+    argv3[19] = arg_delete_invalid_id;
+    argv3[20] = arg_opt;
+    argv3[21] = arg_continue;
+    argv3[22] = arg_target;
+    argv3[23] = (char *)0;
+    argv3[24] = (char *)0;
     n2 = run_capture(argv3, out, sizeof(out_buf), &status2);
     UT_ASSERT(n2 > 0, "pdb invalid-number diagnostics smoke should produce output");
     UT_ASSERT(WIFEXITED(status2), "pdb invalid-number diagnostics smoke should exit normally");
@@ -1009,8 +1035,10 @@ int main(void)
               "pdb invalid-number diagnostics smoke should report set reg value parse failure");
     UT_ASSERT(str_count(out, "pdb: unknown register") >= 2,
               "pdb invalid-number diagnostics smoke should report unknown register for reg/set reg");
-    UT_ASSERT(str_contains(out, "pdb: usage: set mem <addr> <value>"),
+    UT_ASSERT(str_contains(out, "pdb: usage: set mem <addr> <value> [size]"),
               "pdb invalid-number diagnostics smoke should report set mem value parse failure");
+    UT_ASSERT(str_contains(out, "pdb:        size: b|h|w (or 1|2|4)"),
+              "pdb invalid-number diagnostics smoke should report set mem size usage");
     UT_ASSERT(str_contains(out, "pdb: usage: break <addr>"),
               "pdb invalid-number diagnostics smoke should report break address parse failure");
     UT_ASSERT(str_contains(out, "pdb: usage: disable <id>"),
