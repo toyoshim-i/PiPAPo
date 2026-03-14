@@ -16,8 +16,8 @@
  *   Stage2 copies .vectors to 0x000000, restores TRAP #15 to IPL IOCS,
  *   then jumps to Reset_Handler at 0x006400.
  *
- * NOTE (Phase X-1):
- *   - Cooperative scheduling only (no preemptive timer yet)
+ * NOTE (Phase X-2):
+ *   - Preemptive scheduling via MFP Timer-C at 100 Hz
  *   - Embedded romfs for initial bring-up (removed in Phase X-3)
  *   - Requires at least 4 MB expanded X68000 RAM for full romfs
  */
@@ -90,7 +90,7 @@ void target_early_init(void)
     uart_init_console();
     klog("PiPAPo booting... [x68k]\n");
     klog("Console: X68000 IOCS (TVRAM)\n");
-    klog("Phase X-1: cooperative scheduling, embedded romfs\n");
+    klog("Phase X-2: preemptive scheduling (MFP Timer-C), embedded romfs\n");
 }
 
 /* Benign IRQ handler — silences unhandled hardware IRQs with a bare rte */
@@ -98,7 +98,7 @@ extern void m68k_irq_ignore(void);
 
 void target_late_init(void)
 {
-    /* Initialize the MFP Timer-C (no-op in Phase X-1) */
+    /* Initialize MFP Timer-C at 100 Hz for preemptive scheduling */
     timer_init();
 
     /* Install a benign rte handler for X68000 hardware autovectors (levels
@@ -179,7 +179,7 @@ const char *target_name(void)
 
 uint32_t target_caps(void)
 {
-    return 0;  /* Phase X-1: no SD, no SPI, no Core 1 */
+    return 0;  /* Phase X-2: no SD, no SPI, no Core 1 */
 }
 
 /* Yield-test process — runs on its own stack, yields back to thread 0 */

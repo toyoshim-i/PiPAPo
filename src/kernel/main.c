@@ -132,12 +132,6 @@ void kmain(void)
     /* Idle thread — wake on every interrupt, flush LCD if needed, sleep. */
     for (;;) {
         sched_display_poll();
-#if defined(__m68k__)
-        /* Cooperative scheduling: no preemptive timer yet on m68k targets.
-         * Yield explicitly so runnable processes get CPU time.  arch_wfi()
-         * (stop) follows to save power between interrupt wakeups. */
-        sched_yield();
-#endif
         arch_wfi();
     }
 }
