@@ -296,6 +296,7 @@ static char arg_where_short[] = "w";
 static char arg_where_long[] = "where";
 static char arg_where_invalid[] = "where nope";
 static char arg_help_short_cmd[] = "?";
+static char arg_help_short_invalid[] = "? nope";
 static char arg_help_invalid[] = "help nope";
 static char arg_regs_invalid[] = "regs nope";
 static char arg_reg_wz[] = "reg wz";
@@ -319,6 +320,7 @@ static char arg_disas_invalid_addr[] = "disas nope";
 static char arg_disas_invalid_count[] = "disas 0x0100 xyz";
 static char arg_disas_extra[] = "disas 0x0100 1 2";
 static char arg_break[] = "b 0x0101";
+static char arg_break_short_extra[] = "b 0x0101 extra";
 static char arg_break_missing_addr[] = "break";
 static char arg_break_extra[] = "break 0x0101 extra";
 static char arg_break_long[] = "break 0x0101";
@@ -329,6 +331,7 @@ static char arg_info_only[] = "info";
 static char arg_disable[] = "disable 0";
 static char arg_enable[] = "enable 0";
 static char arg_delete[] = "d 0";
+static char arg_delete_short_extra[] = "d 0 extra";
 static char arg_delete_long[] = "delete 0";
 static char arg_setreg[] = "set reg wz 0x1234";
 static char arg_setreg_index[] = "set reg 15 0x2222";
@@ -360,20 +363,24 @@ static char arg_disable_extra[] = "disable 0 extra";
 static char arg_enable_extra[] = "enable 0 extra";
 static char arg_delete_extra[] = "delete 0 extra";
 static char arg_next[] = "n";
+static char arg_next_short_invalid[] = "n nope";
 static char arg_next_long[] = "next";
 static char arg_next_invalid[] = "next nope";
 static char arg_step[] = "s";
+static char arg_step_short_invalid[] = "s nope";
 static char arg_step_long[] = "step";
 static char arg_step_invalid[] = "step nope";
 static char arg_continue[] = "cont";
 static char arg_continue_long[] = "continue";
 static char arg_continue_invalid[] = "cont nope";
 static char arg_c_short[] = "c";
+static char arg_c_short_invalid[] = "c nope";
 static char arg_run[] = "run";
 static char arg_unknown_cmd[] = "no_such_cmd";
 static char arg_detach[] = "detach";
 static char arg_detach_invalid[] = "detach nope";
 static char arg_quit_short[] = "q";
+static char arg_quit_short_invalid[] = "q nope";
 static char arg_quit_long[] = "quit";
 static char arg_quit_invalid[] = "quit nope";
 static char arg_target[] = "/tmp/pdb_smoke.com";
@@ -1300,6 +1307,56 @@ int main(void)
               "pdb control-command usage smoke should report quit usage");
     UT_ASSERT(str_contains(out, "child exited 0"),
               "pdb control-command usage smoke should allow target to exit");
+
+    argv3[0] = arg_prog;
+    argv3[1] = arg_quiet;
+    argv3[2] = arg_opt;
+    argv3[3] = arg_help_short_invalid;
+    argv3[4] = arg_opt;
+    argv3[5] = arg_where_short;
+    argv3[6] = arg_opt;
+    argv3[7] = arg_where_short_invalid;
+    argv3[8] = arg_opt;
+    argv3[9] = arg_next_short_invalid;
+    argv3[10] = arg_opt;
+    argv3[11] = arg_step_short_invalid;
+    argv3[12] = arg_opt;
+    argv3[13] = arg_c_short_invalid;
+    argv3[14] = arg_opt;
+    argv3[15] = arg_break_short_extra;
+    argv3[16] = arg_opt;
+    argv3[17] = arg_delete_short_extra;
+    argv3[18] = arg_opt;
+    argv3[19] = arg_quit_short_invalid;
+    argv3[20] = arg_opt;
+    argv3[21] = arg_continue;
+    argv3[22] = arg_target;
+    argv3[23] = (char *)0;
+    argv3[24] = (char *)0;
+    n2 = run_capture(argv3, out, sizeof(out_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb alias-arity smoke should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb alias-arity smoke should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out, "pc="),
+              "pdb alias-arity smoke should execute valid where alias");
+    UT_ASSERT(str_contains(out, "pdb: usage: help"),
+              "pdb alias-arity smoke should report help usage for '?'");
+    UT_ASSERT(str_contains(out, "pdb: usage: where"),
+              "pdb alias-arity smoke should report where usage for bad alias args");
+    UT_ASSERT(str_contains(out, "pdb: usage: next"),
+              "pdb alias-arity smoke should report next usage for bad alias args");
+    UT_ASSERT(str_contains(out, "pdb: usage: step"),
+              "pdb alias-arity smoke should report step usage for bad alias args");
+    UT_ASSERT(str_contains(out, "pdb: usage: cont"),
+              "pdb alias-arity smoke should report cont usage for bad alias args");
+    UT_ASSERT(str_contains(out, "pdb: usage: break <addr>"),
+              "pdb alias-arity smoke should report break usage for bad alias args");
+    UT_ASSERT(str_contains(out, "pdb: usage: delete <id>"),
+              "pdb alias-arity smoke should report delete usage for bad alias args");
+    UT_ASSERT(str_contains(out, "pdb: usage: quit"),
+              "pdb alias-arity smoke should report quit usage for bad alias args");
+    UT_ASSERT(str_contains(out, "child exited 0"),
+              "pdb alias-arity smoke should allow target to exit");
 
     argv4[0] = arg_prog;
     argv4[1] = arg_quiet;
