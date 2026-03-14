@@ -90,14 +90,17 @@ pdb -f /tmp/pdb.script /tmp/prog.com
 #   sp
 #   show surface
 #   where
+#   bt
 #   x/4x 0x20000000
 #   x/8h 0x20000000
 #   x/16b 0x20000000
 #   x 0x20000000 4
+#   mem 0x20000000 16 1
 #   disas 0x0100 8
 #   event          # includes decoded debug-stop reason (step/sw-bp/hw-bp)
 #   set reg pc 0x0100
 #   set mem 0x0100 0x00000000
+#   restore mem 0x0100 0xde 0xad 0xbe 0xef
 #   set mem 0x0101 0x34 1
 #   set mem 0x0102 0x5678 2
 #   set mem 0x0100 0x89abcdef w

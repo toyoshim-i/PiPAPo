@@ -693,6 +693,8 @@ static int peek_u8(pid_t pid, uint32_t addr, uint8_t *byte_out);
 static int peek_u16le(pid_t pid, uint32_t addr, uint16_t *value_out);
 static int peek_u16be(pid_t pid, uint32_t addr, uint16_t *value_out);
 static int peek_u32be(pid_t pid, uint32_t addr, uint32_t *value_out);
+static int peek_u32le(pid_t pid, uint32_t addr, uint32_t *value_out);
+static int poke_u8(pid_t pid, uint32_t addr, uint8_t byte_value);
 
 static void print_mem_words(pid_t pid, uint32_t addr, uint32_t count)
 {
@@ -824,6 +826,36 @@ static int peek_u32be(pid_t pid, uint32_t addr, uint32_t *value_out)
     if (rc < 0)
         return rc;
     *value_out = ((uint32_t)hi << 16) | (uint32_t)lo;
+    return 0;
+}
+
+static int peek_u32le(pid_t pid, uint32_t addr, uint32_t *value_out)
+{
+    uint16_t lo = 0;
+    uint16_t hi = 0;
+    int rc = peek_u16le(pid, addr, &lo);
+    if (rc < 0)
+        return rc;
+    rc = peek_u16le(pid, addr + 2u, &hi);
+    if (rc < 0)
+        return rc;
+    *value_out = ((uint32_t)hi << 16) | (uint32_t)lo;
+    return 0;
+}
+
+static int poke_u8(pid_t pid, uint32_t addr, uint8_t byte_value)
+{
+    uint32_t base = addr & ~3u;
+    uint32_t old_word = 0;
+    uint32_t new_word = 0;
+    uint32_t shift = (addr & 3u) * 8u;
+    long rc = ptrace(PTRACE_PEEKDATA, pid, (void *)(uintptr_t)base, &old_word);
+    if (rc < 0)
+        return (int)rc;
+    new_word = (old_word & ~(0xffu << shift)) | ((uint32_t)byte_value << shift);
+    rc = ptrace(PTRACE_POKEDATA, pid, (void *)(uintptr_t)base, &new_word);
+    if (rc < 0)
+        return (int)rc;
     return 0;
 }
 
@@ -1203,6 +1235,139 @@ static int z80_is_call_opcode(uint8_t op)
     }
 }
 
+static void print_bt_frame_u32(uint32_t frame, uint32_t pc, uint32_t sp, uint32_t fp)
+{
+    put_chr('#');
+    put_u32(frame);
+    put_str(" pc=");
+    put_hex32(pc);
+    put_str(" sp=");
+    put_hex32(sp);
+    put_str(" fp=");
+    put_hex32(fp);
+    put_chr('\n');
+}
+
+static void print_bt_frame_u16(uint32_t frame, uint32_t pc, uint32_t sp)
+{
+    put_chr('#');
+    put_u32(frame);
+    put_str(" pc=");
+    put_hex16(pc);
+    put_str(" sp=");
+    put_hex16(sp);
+    put_chr('\n');
+}
+
+static void print_backtrace(pid_t pid, const struct ppap_ptrace_regs *regs, uint32_t count)
+{
+    if (count == 0)
+        count = 1;
+    if (count > 32)
+        count = 32;
+
+    if (regs->regset == PPAP_TRACE_REGSET_Z80) {
+        if (regs->words <= 7) {
+            put_err("pdb: z80 regset too small for bt\n");
+            return;
+        }
+        print_bt_frame_u16(0, regs->regs[7], regs->regs[6]);
+        put_str("bt: z80 frame unwinding is not supported\n");
+        return;
+    }
+
+    if (regs->regset == PPAP_TRACE_REGSET_M68K) {
+        uint32_t frame = 0;
+        uint32_t pc = 0;
+        uint32_t sp = 0;
+        uint32_t fp = 0;
+        if (regs->words <= 16) {
+            put_err("pdb: m68k regset too small for bt\n");
+            return;
+        }
+        pc = regs->regs[16];
+        sp = regs->regs[15];
+        fp = regs->regs[14];
+        print_bt_frame_u32(frame, pc, sp, fp);
+        while ((frame + 1u) < count && fp != 0u) {
+            uint32_t next_fp = 0;
+            uint32_t ret_pc = 0;
+            int rc = peek_u32be(pid, fp, &next_fp);
+            if (rc < 0) {
+                put_err("pdb: bt read failed rc=");
+                put_i32((int32_t)rc);
+                put_chr('\n');
+                return;
+            }
+            rc = peek_u32be(pid, fp + 4u, &ret_pc);
+            if (rc < 0) {
+                put_err("pdb: bt read failed rc=");
+                put_i32((int32_t)rc);
+                put_chr('\n');
+                return;
+            }
+            if (next_fp <= fp || (next_fp & 1u))
+                break;
+            frame++;
+            pc = ret_pc;
+            sp = fp + 8u;
+            fp = next_fp;
+            print_bt_frame_u32(frame, pc, sp, fp);
+        }
+        return;
+    }
+
+    if (regs->regset == PPAP_TRACE_REGSET_ARM) {
+        uint32_t frame = 0;
+        uint32_t pc = 0;
+        uint32_t sp = 0;
+        uint32_t fp = 0;
+        if (regs->words <= 15) {
+            put_err("pdb: arm regset too small for bt\n");
+            return;
+        }
+        pc = regs->regs[15];
+        sp = regs->regs[13];
+        if (regs->words > 7 && regs->regs[7] != 0u)
+            fp = regs->regs[7];
+        else if (regs->words > 11)
+            fp = regs->regs[11];
+        print_bt_frame_u32(frame, pc, sp, fp);
+        if (fp == 0u) {
+            put_str("bt: frame pointer unavailable\n");
+            return;
+        }
+        while ((frame + 1u) < count && fp != 0u) {
+            uint32_t next_fp = 0;
+            uint32_t ret_pc = 0;
+            int rc = peek_u32le(pid, fp, &next_fp);
+            if (rc < 0) {
+                put_err("pdb: bt read failed rc=");
+                put_i32((int32_t)rc);
+                put_chr('\n');
+                return;
+            }
+            rc = peek_u32le(pid, fp + 4u, &ret_pc);
+            if (rc < 0) {
+                put_err("pdb: bt read failed rc=");
+                put_i32((int32_t)rc);
+                put_chr('\n');
+                return;
+            }
+            if (next_fp <= fp || (next_fp & 3u))
+                break;
+            frame++;
+            pc = ret_pc;
+            sp = fp + 8u;
+            fp = next_fp;
+            print_bt_frame_u32(frame, pc, sp, fp);
+        }
+        return;
+    }
+
+    put_err("pdb: bt unsupported regset\n");
+}
+
 static int wait_child(pid_t pid, int *stopped, int *exit_code,
                       struct ppap_ptrace_event *ev, int report_event)
 {
@@ -1274,14 +1439,17 @@ static void print_help(void)
     put_str("  show surface      show current debug surface\n");
     put_str("  surface <s>       set debug surface (real|ecpu)\n");
     put_str("  where | w         show pc and sp\n");
+    put_str("  bt [count]        show a simple frame-pointer backtrace\n");
     put_str("  x <addr> [count]  read memory words\n");
     put_str("  x/<n><fmt> <addr> read memory (<fmt>: x=word, h=half, b=byte)\n");
+    put_str("  mem <a> [n] [sz]  read memory with size b|h|w|1|2|4\n");
     put_str("  disas [a] [n]     disassemble n instructions from addr/pc\n");
     put_str("  step | s          single-step\n");
     put_str("  next | n          step over call (z80), else single-step\n");
     put_str("  run | cont | continue | c    continue\n");
     put_str("  set reg <r> <v>   write register by name or index\n");
     put_str("  set mem <a> <v> [size]   write memory (size: b|h|w|1|2|4)\n");
+    put_str("  restore mem <a> <bytes...>  write byte sequence\n");
     put_str("  break | b <addr>  set software breakpoint\n");
     put_str("  disable <id>      disable breakpoint by id\n");
     put_str("  enable <id>       enable breakpoint by id\n");
@@ -1813,6 +1981,64 @@ int main(int argc, char *argv[])
             continue;
         }
 
+        if (streq(tok[0], "bt")) {
+            struct ppap_ptrace_regs regs;
+            uint32_t count = 8;
+            if (!child_stopped) {
+                put_err("pdb: child is not stopped\n");
+                continue;
+            }
+            if (ntok > 2) {
+                put_err("pdb: usage: bt [count]\n");
+                continue;
+            }
+            if (ntok == 2 && !parse_u32(tok[1], &count)) {
+                put_err("pdb: usage: bt [count]\n");
+                continue;
+            }
+            if (ptrace(PTRACE_GETREGS, pid, (void *)0, &regs) < 0) {
+                put_err("pdb: GETREGS failed\n");
+                continue;
+            }
+            print_backtrace(pid, &regs, count);
+            continue;
+        }
+
+        if (streq(tok[0], "mem")) {
+            uint32_t addr = 0;
+            uint32_t count = 4;
+            uint32_t width = 4;
+            if (!child_stopped) {
+                put_err("pdb: child is not stopped\n");
+                continue;
+            }
+            if (ntok < 2 || ntok > 4 || !parse_u32(tok[1], &addr)) {
+                put_err("pdb: usage: mem <addr> [count] [size]\n");
+                put_err("pdb:        size: b|h|w (or 1|2|4)\n");
+                continue;
+            }
+            if (ntok >= 3 && !parse_u32(tok[2], &count)) {
+                put_err("pdb: invalid count\n");
+                continue;
+            }
+            if (ntok == 4 && !parse_mem_width(tok[3], &width)) {
+                put_err("pdb: usage: mem <addr> [count] [size]\n");
+                put_err("pdb:        size: b|h|w (or 1|2|4)\n");
+                continue;
+            }
+            if (count == 0) {
+                put_err("pdb: invalid count\n");
+                continue;
+            }
+            if (width == 1u)
+                print_mem_bytes(pid, addr, count);
+            else if (width == 2u)
+                print_mem_halfwords(pid, addr, count);
+            else
+                print_mem_words(pid, addr, count);
+            continue;
+        }
+
         if (streq(tok[0], "x") || (tok[0][0] == 'x' && tok[0][1] == '/')) {
             uint32_t addr = 0;
             uint32_t count = 4;
@@ -2187,6 +2413,50 @@ int main(int argc, char *argv[])
 
             put_err("pdb: usage: set reg <name|index> <value>\n");
             put_err("pdb:    or: set mem <addr> <value> [size]\n");
+            continue;
+        }
+
+        if (streq(tok[0], "restore")) {
+            uint32_t addr = 0;
+            uint32_t restored = 0;
+            uint8_t bytes[8];
+            if (!child_stopped) {
+                put_err("pdb: child is not stopped\n");
+                continue;
+            }
+            if (ntok < 4 || !streq(tok[1], "mem") || !parse_u32(tok[2], &addr)) {
+                put_err("pdb: usage: restore mem <addr> <byte...>\n");
+                continue;
+            }
+            for (int i = 3; i < ntok; i++) {
+                uint32_t v = 0;
+                if (!parse_u32(tok[i], &v) || v > 0xffu) {
+                    put_err("pdb: usage: restore mem <addr> <byte...>\n");
+                    restored = 0;
+                    break;
+                }
+                bytes[restored] = (uint8_t)v;
+                restored++;
+            }
+            if (restored == 0)
+                continue;
+            for (uint32_t i = 0; i < restored; i++) {
+                int rc = poke_u8(pid, addr + i, bytes[i]);
+                if (rc < 0) {
+                    put_err("pdb: POKEDATA failed rc=");
+                    put_i32((int32_t)rc);
+                    put_chr('\n');
+                    restored = 0;
+                    break;
+                }
+            }
+            if (restored == 0)
+                continue;
+            put_str("mem ");
+            put_hex32(addr);
+            put_str(" restored ");
+            put_u32(restored);
+            put_str(" bytes\n");
             continue;
         }
 

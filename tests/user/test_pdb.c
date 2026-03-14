@@ -293,8 +293,12 @@ static char arg_sp_short[] = "sp";
 static char arg_pc_invalid[] = "pc nope";
 static char arg_sp_invalid[] = "sp nope";
 static char arg_where_short[] = "w";
+static char arg_where_short_invalid[] = "w nope";
 static char arg_where_long[] = "where";
 static char arg_where_invalid[] = "where nope";
+static char arg_bt[] = "bt";
+static char arg_bt_depth[] = "bt 2";
+static char arg_bt_invalid[] = "bt nope";
 static char arg_help_short_cmd[] = "?";
 static char arg_help_short_invalid[] = "? nope";
 static char arg_help_invalid[] = "help nope";
@@ -314,6 +318,10 @@ static char arg_x_extra_count[] = "x 0x0100 1 2";
 static char arg_x_spec_invalid_fmt[] = "x/2z 0x0100";
 static char arg_x_spec_zero_count[] = "x/0x 0x0100";
 static char arg_x_spec_extra[] = "x/1x 0x0100 1";
+static char arg_mem_words[] = "mem 0x0100 1";
+static char arg_mem_bytes[] = "mem 0x0101 2 1";
+static char arg_mem_missing_addr[] = "mem";
+static char arg_mem_invalid_count[] = "mem 0x0100 nope";
 static char arg_disas_pc[] = "disas";
 static char arg_disas[] = "disas 0x0100 3";
 static char arg_disas_invalid_addr[] = "disas nope";
@@ -338,6 +346,9 @@ static char arg_setreg_index[] = "set reg 15 0x2222";
 static char arg_setreg_extra[] = "set reg wz 0x1234 extra";
 static char arg_setmem[] = "set mem 0x0100 0x00000000";
 static char arg_setmem_extra[] = "set mem 0x0100 0x12 b extra";
+static char arg_restore_mem[] = "restore mem 0x0101 0xaa 0xbb";
+static char arg_restore_mem_bad_byte[] = "restore mem 0x0101 0x123";
+static char arg_restore_mem_missing_bytes[] = "restore mem 0x0101";
 static char arg_setmem_byte[] = "set mem 0x0101 0x34 1";
 static char arg_setmem_half[] = "set mem 0x0102 0x5678 2";
 static char arg_setmem_word_num[] = "set mem 0x0200 0x89abcdef w";
@@ -392,9 +403,9 @@ static char out2_buf[1024];
 static uint8_t long_script_line_buf[160];
 static char long_cmd_buf[129];
 static char attach_pid_buf[16];
-static char *argv_buf[40];
+static char *argv_buf[64];
 static char *argv2_buf[5];
-static char *argv3_buf[41];
+static char *argv3_buf[48];
 
 #endif
 
@@ -542,7 +553,7 @@ int main(void)
     pid_t attach_target = -1;
     char *sleep_argv[3];
     char *attach_pid_str = attach_pid_buf;
-    char *argv4[20];
+    char *argv4[24];
     char **argv = argv_buf;
     char **argv2 = argv2_buf;
     char **argv3 = argv3_buf;
@@ -604,6 +615,16 @@ int main(void)
     argv[a++] = arg_reg_wz_index;
     argv[a++] = arg_opt;
     argv[a++] = arg_setmem;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_restore_mem;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_mem_bytes;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_mem_words;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_bt;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_bt_depth;
     argv[a++] = arg_opt;
     argv[a++] = arg_next;
     argv[a++] = arg_opt;
@@ -964,6 +985,20 @@ int main(void)
               "output should include scripted memory write command");
     UT_ASSERT(str_contains(out, "mem 0x00000100=0x00000000"),
               "output should include memory write result");
+    UT_ASSERT(str_contains(out, "pdb> restore mem 0x0101 0xaa 0xbb"),
+              "output should include scripted restore mem command");
+    UT_ASSERT(str_contains(out, "mem 0x00000101 restored 2 bytes"),
+              "output should include restore mem result");
+    UT_ASSERT(str_contains(out, "pdb> mem 0x0101 2 1"),
+              "output should include scripted mem command");
+    UT_ASSERT(str_contains(out, "0x00000101: 0xaa"),
+              "output should include restored first byte value");
+    UT_ASSERT(str_contains(out, "0x00000102: 0xbb"),
+              "output should include restored second byte value");
+    UT_ASSERT(str_contains(out, "pdb> bt"),
+              "output should include scripted bt command");
+    UT_ASSERT(str_contains(out, "bt: z80 frame unwinding is not supported"),
+              "output should include z80 bt note");
     UT_ASSERT(str_contains(out, "pdb> n"),
               "output should include scripted next alias");
     UT_ASSERT(str_contains(out, "pdb> s"),
@@ -1151,24 +1186,30 @@ int main(void)
     argv3[12] = arg_opt;
     argv3[13] = arg_x_missing_addr;
     argv3[14] = arg_opt;
-    argv3[15] = arg_x_invalid_count_plain;
+    argv3[15] = arg_mem_missing_addr;
     argv3[16] = arg_opt;
-    argv3[17] = arg_x_spec_invalid_fmt;
+    argv3[17] = arg_x_invalid_count_plain;
     argv3[18] = arg_opt;
-    argv3[19] = arg_x_spec_zero_count;
+    argv3[19] = arg_x_spec_invalid_fmt;
     argv3[20] = arg_opt;
-    argv3[21] = arg_disas_invalid_addr;
+    argv3[21] = arg_x_spec_zero_count;
     argv3[22] = arg_opt;
-    argv3[23] = arg_disas_invalid_count;
+    argv3[23] = arg_disas_invalid_addr;
     argv3[24] = arg_opt;
-    argv3[25] = arg_setreg_missing_value;
+    argv3[25] = arg_disas_invalid_count;
     argv3[26] = arg_opt;
-    argv3[27] = arg_setmem_missing_value;
+    argv3[27] = arg_bt_invalid;
     argv3[28] = arg_opt;
-    argv3[29] = arg_continue;
-    argv3[30] = arg_target;
-    argv3[31] = (char *)0;
-    argv3[32] = (char *)0;
+    argv3[29] = arg_setreg_missing_value;
+    argv3[30] = arg_opt;
+    argv3[31] = arg_setmem_missing_value;
+    argv3[32] = arg_opt;
+    argv3[33] = arg_restore_mem_missing_bytes;
+    argv3[34] = arg_opt;
+    argv3[35] = arg_continue;
+    argv3[36] = arg_target;
+    argv3[37] = (char *)0;
+    argv3[38] = (char *)0;
     n2 = run_capture(argv3, out, sizeof(out_buf), &status2);
     UT_ASSERT(n2 > 0, "pdb usage-diagnostics smoke should produce output");
     UT_ASSERT(WIFEXITED(status2), "pdb usage-diagnostics smoke should exit normally");
@@ -1183,14 +1224,20 @@ int main(void)
               "pdb usage-diagnostics smoke should report surface usage");
     UT_ASSERT(str_contains(out, "pdb: usage: x <addr> [count]"),
               "pdb usage-diagnostics smoke should report x usage");
+    UT_ASSERT(str_contains(out, "pdb: usage: mem <addr> [count] [size]"),
+              "pdb usage-diagnostics smoke should report mem usage");
     UT_ASSERT(str_contains(out, "pdb: invalid count"),
               "pdb usage-diagnostics smoke should report invalid count");
     UT_ASSERT(str_contains(out, "pdb: usage: disas [addr] [count]"),
               "pdb usage-diagnostics smoke should report disas usage");
+    UT_ASSERT(str_contains(out, "pdb: usage: bt [count]"),
+              "pdb usage-diagnostics smoke should report bt usage");
     UT_ASSERT(str_contains(out, "pdb: usage: set reg <name|index> <value>"),
               "pdb usage-diagnostics smoke should report set reg usage");
     UT_ASSERT(str_contains(out, "pdb:    or: set mem <addr> <value> [size]"),
               "pdb usage-diagnostics smoke should report set mem usage");
+    UT_ASSERT(str_contains(out, "pdb: usage: restore mem <addr> <byte...>"),
+              "pdb usage-diagnostics smoke should report restore mem usage");
     UT_ASSERT(str_contains(out, "child exited 0"),
               "pdb usage-diagnostics smoke should allow target to exit");
 
@@ -1434,22 +1481,26 @@ int main(void)
     argv3[18] = arg_opt;
     argv3[19] = arg_setmem_half_cross;
     argv3[20] = arg_opt;
-    argv3[21] = arg_break_invalid_addr;
+    argv3[21] = arg_mem_invalid_count;
     argv3[22] = arg_opt;
-    argv3[23] = arg_disable_invalid_id;
+    argv3[23] = arg_restore_mem_bad_byte;
     argv3[24] = arg_opt;
-    argv3[25] = arg_enable_invalid_id;
+    argv3[25] = arg_break_invalid_addr;
     argv3[26] = arg_opt;
-    argv3[27] = arg_delete_invalid_id;
+    argv3[27] = arg_disable_invalid_id;
     argv3[28] = arg_opt;
-    argv3[29] = arg_pc_invalid;
+    argv3[29] = arg_enable_invalid_id;
     argv3[30] = arg_opt;
-    argv3[31] = arg_sp_invalid;
+    argv3[31] = arg_delete_invalid_id;
     argv3[32] = arg_opt;
-    argv3[33] = arg_continue;
-    argv3[34] = arg_target;
-    argv3[35] = (char *)0;
-    argv3[36] = (char *)0;
+    argv3[33] = arg_pc_invalid;
+    argv3[34] = arg_opt;
+    argv3[35] = arg_sp_invalid;
+    argv3[36] = arg_opt;
+    argv3[37] = arg_continue;
+    argv3[38] = arg_target;
+    argv3[39] = (char *)0;
+    argv3[40] = (char *)0;
     n2 = run_capture(argv3, out, sizeof(out_buf), &status2);
     UT_ASSERT(n2 > 0, "pdb invalid-number diagnostics smoke should produce output");
     UT_ASSERT(WIFEXITED(status2), "pdb invalid-number diagnostics smoke should exit normally");
@@ -1468,6 +1519,10 @@ int main(void)
               "pdb invalid-number diagnostics smoke should report halfword cross-word rejection");
     UT_ASSERT(str_contains(out, "pdb: set mem value out of range for size"),
               "pdb invalid-number diagnostics smoke should report size-range rejection");
+    UT_ASSERT(str_count(out, "pdb: invalid count") >= 1,
+              "pdb invalid-number diagnostics smoke should report mem count parse failure");
+    UT_ASSERT(str_contains(out, "pdb: usage: restore mem <addr> <byte...>"),
+              "pdb invalid-number diagnostics smoke should report restore mem byte parse failure");
     UT_ASSERT(str_contains(out, "pdb: usage: break <addr>"),
               "pdb invalid-number diagnostics smoke should report break address parse failure");
     UT_ASSERT(str_contains(out, "pdb: usage: disable <id>"),
