@@ -9,6 +9,7 @@ typedef struct {
     uint8_t used;
     uint8_t enabled;
     uint32_t addr;
+    uint32_t flags;
 } pdb_local_bp_t;
 
 static char pdb_script_storage[PDB_SCRIPT_BUF_MAX];
@@ -92,6 +93,15 @@ static void put_hex8(uint32_t v)
     put_str("0x");
     put_chr(hex[(v >> 4) & 0xf]);
     put_chr(hex[v & 0xf]);
+}
+
+static uint32_t select_bp_flag_from_caps(uint32_t caps_bits)
+{
+    if (caps_bits & PPAP_PTRACE_CAP_SW_BP)
+        return PPAP_PTRACE_BP_SW;
+    if (caps_bits & PPAP_PTRACE_CAP_HW_BP)
+        return PPAP_PTRACE_BP_HW;
+    return 0;
 }
 
 static int streq(const char *a, const char *b)
@@ -1582,6 +1592,7 @@ int main(int argc, char *argv[])
         local_bp[i].used = 0;
         local_bp[i].enabled = 0;
         local_bp[i].addr = 0;
+        local_bp[i].flags = 0;
     }
 
     if (attach_mode) {
@@ -2131,6 +2142,7 @@ int main(int argc, char *argv[])
             uint8_t op = 0;
             uint32_t pc = 0;
             uint32_t next_pc = 0;
+            uint32_t next_bp_flag = PPAP_PTRACE_BP_SW;
             int use_temp_bp = 0;
             int has_enabled_bp = 0;
             int temp_bp_id = -1;
@@ -2147,6 +2159,14 @@ int main(int argc, char *argv[])
             if (ptrace(PTRACE_GETREGS, pid, (void *)0, &regs) < 0) {
                 put_err("pdb: GETREGS failed\n");
                 continue;
+            }
+            if (ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps) == 0) {
+                uint32_t cap_flag = select_bp_flag_from_caps(caps.caps);
+                if (cap_flag == 0) {
+                    put_err("pdb: break not supported on this target/mapping\n");
+                    continue;
+                }
+                next_bp_flag = cap_flag;
             }
             if (regs.regset == PPAP_TRACE_REGSET_Z80) {
                 pc = regs.regs[7];  /* Z80 PC */
@@ -2174,7 +2194,7 @@ int main(int argc, char *argv[])
                         struct ppap_ptrace_bp bp;
                         bp.id = -1;
                         bp.addr = next_pc;
-                        bp.flags = PPAP_PTRACE_BP_SW;
+                        bp.flags = next_bp_flag;
                         rc = ptrace(PTRACE_SETBP, pid, (void *)0, &bp);
                         if (rc < 0) {
                             put_err("pdb: NEXT SETBP failed rc=");
@@ -2471,18 +2491,16 @@ int main(int argc, char *argv[])
                 put_err("pdb: usage: break <addr>\n");
                 continue;
             }
+            bp.flags = PPAP_PTRACE_BP_SW;
             if (ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps) == 0) {
-                if ((caps.caps & PPAP_PTRACE_CAP_SW_BP) == 0u) {
-                    if (caps.caps & PPAP_PTRACE_CAP_HW_BP) {
-                        put_err("pdb: hardware breakpoints are not yet exposed in pdb\n");
-                    } else {
-                        put_err("pdb: break not supported on this target/mapping\n");
-                    }
+                uint32_t cap_flag = select_bp_flag_from_caps(caps.caps);
+                if (cap_flag == 0) {
+                    put_err("pdb: break not supported on this target/mapping\n");
                     continue;
                 }
+                bp.flags = cap_flag;
             }
             bp.id = -1;
-            bp.flags = PPAP_PTRACE_BP_SW;
             rc = ptrace(PTRACE_SETBP, pid, (void *)0, &bp);
             if (rc < 0) {
                 put_err("pdb: SETBP failed rc=");
@@ -2499,6 +2517,7 @@ int main(int argc, char *argv[])
                 local_bp[bp.id].used = 1;
                 local_bp[bp.id].enabled = 1;
                 local_bp[bp.id].addr = bp.addr;
+                local_bp[bp.id].flags = bp.flags;
             }
             continue;
         }
@@ -2567,7 +2586,18 @@ int main(int argc, char *argv[])
 
             bp.id = -1;
             bp.addr = local_bp[id].addr;
-            bp.flags = PPAP_PTRACE_BP_SW;
+            bp.flags = local_bp[id].flags;
+            if (bp.flags == 0) {
+                bp.flags = PPAP_PTRACE_BP_SW;
+                if (ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps) == 0) {
+                    uint32_t cap_flag = select_bp_flag_from_caps(caps.caps);
+                    if (cap_flag == 0) {
+                        put_err("pdb: break not supported on this target/mapping\n");
+                        continue;
+                    }
+                    bp.flags = cap_flag;
+                }
+            }
             rc = ptrace(PTRACE_SETBP, pid, (void *)0, &bp);
             if (rc < 0) {
                 put_err("pdb: SETBP failed rc=");
@@ -2588,9 +2618,11 @@ int main(int argc, char *argv[])
                 local_bp[bp.id].used = local_bp[id].used;
                 local_bp[bp.id].enabled = 1;
                 local_bp[bp.id].addr = local_bp[id].addr;
+                local_bp[bp.id].flags = bp.flags;
                 local_bp[id].used = 0;
                 local_bp[id].enabled = 0;
                 local_bp[id].addr = 0;
+                local_bp[id].flags = 0;
                 put_str("bp ");
                 put_u32(id);
                 put_str(" enabled as ");
@@ -2599,6 +2631,7 @@ int main(int argc, char *argv[])
                 continue;
             }
             local_bp[id].enabled = 1;
+            local_bp[id].flags = bp.flags;
             put_str("bp ");
             put_u32(id);
             put_str(" enabled\n");
@@ -2640,6 +2673,7 @@ int main(int argc, char *argv[])
                 local_bp[id].used = 0;
                 local_bp[id].enabled = 0;
                 local_bp[id].addr = 0;
+                local_bp[id].flags = 0;
             }
             continue;
         }

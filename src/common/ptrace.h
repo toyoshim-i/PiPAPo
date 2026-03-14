@@ -84,6 +84,7 @@
 
 /* Breakpoint flags for ppap_ptrace_bp.flags. */
 #define PPAP_PTRACE_BP_SW               0x0001
+#define PPAP_PTRACE_BP_HW               0x0002
 
 struct ppap_ptrace_event {
     uint32_t event;
