@@ -132,7 +132,8 @@ Scripted-mode notes:
 - Most `pdb` commands require an exact argument count; trailing tokens are
   rejected with a `usage:` diagnostic.
 - `caps`/`show caps` prints both hex capability bits and decoded names.
-- `break` support is mapping-dependent; on unsupported targets `pdb` prints
+- `break` picks software breakpoints when available, otherwise falls back to
+  hardware breakpoints if exposed by caps; unsupported targets print
   `break not supported on this target/mapping`.
 - `surface ecpu` on native-only targets fails with `SETSURFACE failed rc=...`
   and includes a support hint.

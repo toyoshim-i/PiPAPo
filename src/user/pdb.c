@@ -104,6 +104,15 @@ static uint32_t select_bp_flag_from_caps(uint32_t caps_bits)
     return 0;
 }
 
+static const char *bp_flag_name(uint32_t flags)
+{
+    if (flags & PPAP_PTRACE_BP_SW)
+        return "sw";
+    if (flags & PPAP_PTRACE_BP_HW)
+        return "hw";
+    return "unknown";
+}
+
 static int streq(const char *a, const char *b)
 {
     while (*a && *b && *a == *b) {
@@ -1460,7 +1469,7 @@ static void print_help(void)
     put_str("  set reg <r> <v>   write register by name or index\n");
     put_str("  set mem <a> <v> [size]   write memory (size: b|h|w|1|2|4)\n");
     put_str("  restore mem <a> <bytes...>  write byte sequence\n");
-    put_str("  break | b <addr>  set software breakpoint\n");
+    put_str("  break | b <addr>  set breakpoint (sw/hw from caps)\n");
     put_str("  disable <id>      disable breakpoint by id\n");
     put_str("  enable <id>       enable breakpoint by id\n");
     put_str("  delete | d <id>   clear breakpoint by id\n");
@@ -2694,6 +2703,8 @@ int main(int argc, char *argv[])
                         put_str("enabled");
                     else
                         put_str("disabled");
+                    put_str(" ");
+                    put_str(bp_flag_name(local_bp[i].flags));
                     put_chr('\n');
                 }
                 if (!found)

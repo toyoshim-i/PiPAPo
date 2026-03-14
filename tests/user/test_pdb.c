@@ -1063,7 +1063,7 @@ int main(void)
     UT_ASSERT(n2 > 0, "pdb info break smoke should produce output");
     UT_ASSERT(WIFEXITED(status2), "pdb info break smoke should exit normally");
     UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
-    UT_ASSERT(str_contains(out2, "bp 0 @ 0x00000101 enabled"),
+    UT_ASSERT(str_contains(out2, "bp 0 @ 0x00000101 enabled sw"),
               "output should include info break table output");
 
     argv4[0] = arg_prog;
@@ -1092,7 +1092,7 @@ int main(void)
               "output should include disable command result");
     UT_ASSERT(str_contains(out2, "bp 0 already disabled"),
               "output should include already-disabled command result");
-    UT_ASSERT(str_contains(out2, "bp 0 @ 0x00000101 disabled"),
+    UT_ASSERT(str_contains(out2, "bp 0 @ 0x00000101 disabled sw"),
               "output should include disabled info break table output");
     UT_ASSERT(str_contains(out2, "bp 0 enabled"),
               "output should include enable command result");
