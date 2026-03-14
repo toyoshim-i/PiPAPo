@@ -16,10 +16,10 @@
  *   Stage2 copies .vectors to 0x000000, restores TRAP #15 to IPL IOCS,
  *   then jumps to Reset_Handler at 0x006400.
  *
- * NOTE (Phase X-2):
+ * NOTE (Phase X-3):
  *   - Preemptive scheduling via MFP Timer-C at 100 Hz
- *   - Embedded romfs for initial bring-up (removed in Phase X-3)
- *   - Requires at least 4 MB expanded X68000 RAM for full romfs
+ *   - Rootfs is a UFS image (boot/rootfs.ufs) loaded into RAM by stage2
+ *   - Kernel mounts it via flatblk ("ram0") as the initial root filesystem
  */
 
 #include "../target.h"
@@ -31,8 +31,21 @@
 #include "klog.h"
 #include "arch/arch.h"
 #include "errno.h"
+#ifdef PPAP_HAS_BLKDEV
+#include "blkdev/blkdev.h"
+#include "blkdev/flatblk.h"
+#include "vfs/vfs.h"
+#include "fs/ufs.h"
+#endif
 #include <stdint.h>
 #include <stddef.h>
+
+/* ── Stage2 handoff record (written by stage2.c, read by target_mount_rootfs) */
+
+#define STAGE2_MAGIC_ADDR  ((volatile uint32_t *)0x002FF4u)
+#define STAGE2_ROOTFS_ADDR ((volatile uint32_t *)0x002FF8u)
+#define STAGE2_ROOTFS_SIZE ((volatile uint32_t *)0x002FFCu)
+#define STAGE2_RAMD_MAGIC  0x52414D44u  /* 'RAMD' */
 
 /* ── Timer driver ────────────────────────────────────────────────────── */
 
@@ -154,6 +167,27 @@ void target_late_init(void)
     sched_set_input_poll(uart_rx_avail, TTY_DISPLAY);
 }
 
+int target_mount_rootfs(void)
+{
+#ifdef PPAP_HAS_BLKDEV
+    if (*STAGE2_MAGIC_ADDR != STAGE2_RAMD_MAGIC) {
+        klog("x68k: no stage2 ramdisk handoff\n");
+        return -1;
+    }
+    uint32_t addr = *STAGE2_ROOTFS_ADDR;
+    uint32_t size = *STAGE2_ROOTFS_SIZE;
+    klogf("x68k: ramdisk at 0x%lx, %lu bytes\n",
+          (unsigned long)addr, (unsigned long)size);
+    flatblk_init("ram0", (const void *)(uintptr_t)addr, size);
+    blkdev_t *bd = blkdev_find("ram0");
+    if (!bd)
+        return -1;
+    return vfs_mount("/", &ufs_ops, MNT_RDONLY, bd);
+#else
+    return -1;
+#endif
+}
+
 void target_post_mount(void)
 {
     /* User-space init (/sbin/init) is launched by main.c via do_execve() */
@@ -179,7 +213,7 @@ const char *target_name(void)
 
 uint32_t target_caps(void)
 {
-    return 0;  /* Phase X-2: no SD, no SPI, no Core 1 */
+    return 0;  /* Phase X-3: no SD, no SPI, no Core 1 */
 }
 
 /* Yield-test process — runs on its own stack, yields back to thread 0 */

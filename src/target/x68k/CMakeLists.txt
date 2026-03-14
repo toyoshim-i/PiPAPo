@@ -5,16 +5,14 @@
 #         -S src/target/x68k -B build/x68k
 #   cmake --build build/x68k
 #
-# NOTE (Phase X-1):
-#   This build includes an embedded romfs for initial bring-up.
-#   The romfs is removed in Phase X-3 when the kernel mounts the UFS
-#   boot floppy instead.  A full romfs (with busybox) requires at least
-#   4 MB of expanded X68000 RAM.
+# NOTE (Phase X-3):
+#   Embedded romfs removed.  The kernel root filesystem is a UFS image
+#   (boot/rootfs.ufs) loaded into RAM by stage2 and exposed as "ram0"
+#   via flatblk.  ppap_generate_romfs() still stages userland so that
+#   mkx68kimg.sh can package it into rootfs.ufs.
 #
-# NOTE: There is no QEMU/emulator run target for x68k.  The resulting
-#   ppap_x68k.elf must be converted to a boot floppy image via
-#   scripts/mkx68kboot.sh (Phase X-3) and run on real hardware or a
-#   compatible X68000 emulator (XM6 TypeG, etc.).
+# NOTE: There is no QEMU/emulator run target for x68k.  Use
+#   scripts/run.sh --build x68k  to produce ppap_x68k.xdf.
 
 cmake_minimum_required(VERSION 3.13)
 
@@ -33,6 +31,8 @@ set(CMAKE_EXECUTABLE_SUFFIX .elf)
 add_executable(ppap_x68k
     ${ARCH_M68K_SOURCES}
     ${KERNEL_SHARED_SOURCES}
+    ${KERNEL_BLKDEV_SOURCES}
+    ${PPAP_ROOT}/src/kernel/blkdev/flatblk.c
     ${CMAKE_CURRENT_SOURCE_DIR}/target_x68k.c
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/uart_x68k.c
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/timer_x68k.c
@@ -43,6 +43,7 @@ ppap_m68k_target_common(ppap_x68k)
 target_compile_definitions(ppap_x68k PRIVATE
     PPAP_X68K=1
     PPAP_M68K=1
+    PPAP_HAS_BLKDEV=1
     # PAGE_COUNT_MAX: supports up to 12 MB expanded X68000 RAM.
     # mm_init() uses m68k_probe_ram() to detect actual physical RAM at runtime.
     PAGE_COUNT_MAX=3072u
@@ -70,10 +71,12 @@ target_link_options(ppap_x68k PRIVATE
 # src/arch/m68k/math.S — do not link libgcc (same as qemu_m68k).
 
 # =============================================================================
-# Romfs (Phase X-1 temporary — removed in Phase X-3)
+# Romfs staging (Phase X-3)
 #
-# Shares the same m68k userland artifacts as qemu_m68k (build/m68k/).
-# No overlay: uses the standard src/etc/fstab and src/etc/inittab.
+# ppap_generate_romfs() stages the m68k userland to
+# build/x68k/romfs_ppap_x68k/ so that mkx68kimg.sh can package it into
+# the inner rootfs.ufs.  The generated .romfs section is discarded by the
+# linker (x68k.ld: /DISCARD/ *(.romfs)) so the kernel binary stays lean.
 # =============================================================================
 
 ppap_generate_romfs(ppap_x68k BIG_ENDIAN)

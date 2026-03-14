@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mkx68kimg.sh — Create a bootable X68000 2HD floppy image for PPAP
+# mkx68kimg.sh — Create a bootable X68000 2HD floppy image for PPAP (Phase X-3)
 #
 # Usage:
 #   ./scripts/mkx68kimg.sh [KERNEL_BIN [OUTPUT_XDF]]
@@ -8,21 +8,20 @@
 #   KERNEL_BIN = build/x68k/ppap_x68k.bin
 #   OUTPUT_XDF = build/x68k/ppap_x68k.xdf
 #
-# Creates a raw 2HD .XDF floppy image (1,261,568 bytes):
-#   offset 0         (1024 B):  boot sector — IPL signature + loader code
-#   offset 1024      (N×1024 B): raw kernel binary (ppap_x68k.bin)
-#   offset 1024+N×1024 …:        zero padding to full floppy size
+# Floppy layout (2HD: 77 tracks × 2 heads × 8 sectors × 1024 B = 1,261,568 B):
+#   Sector 0        (1024 B): stage1   — IPL boot sector
+#   Sectors 1–3    (3072 B): stage2   — UFS kernel + rootfs loader
+#   Sectors 4+    (rest)   : outer UFS — boot/kernel + boot/rootfs.ufs
 #
-# The boot sector:
-#   1. Saves IPL IOCS vector (TRAP #15 at 0x0000BC)
-#   2. Reads kernel from sectors 1..N to 0x006000 via IOCS _B_READ
-#   3. Copies kernel .vectors (1024 B) to 0x000000, then restores TRAP #15
-#   4. Jumps to Reset_Handler at 0x006400
+# The outer UFS contains:
+#   boot/kernel      — the kernel binary (ppap_x68k.bin)
+#   boot/rootfs.ufs  — inner UFS rootfs (userland from romfs staging dir)
 #
-# Usage with emulators:
-#   px68k:    px68k -fd0 build/x68k/ppap_x68k.xdf
-#   XEiJ:     FD0 → build/x68k/ppap_x68k.xdf
-#   XM6 TypeG: FD0 → build/x68k/ppap_x68k.xdf
+# Prerequisites:
+#   - build/x68k/ppap_x68k.bin       (kernel, built by cmake)
+#   - build/x68k/romfs_ppap_x68k/    (userland staging, built by cmake)
+#   - tools/m68k-toolchain/bin/m68k-elf-gcc
+#   - build/qemu_arm/mkufs or build/m68k/mkufs (any built ARM/m68k target)
 
 set -euo pipefail
 
@@ -34,20 +33,42 @@ OUTPUT_XDF="${2:-$PROJECT_DIR/build/x68k/ppap_x68k.xdf}"
 
 M68K_GCC="$PROJECT_DIR/tools/m68k-toolchain/bin/m68k-elf-gcc"
 M68K_OBJCOPY="$PROJECT_DIR/tools/m68k-toolchain/bin/m68k-elf-objcopy"
-BOOTLDR_S="$PROJECT_DIR/src/target/x68k/boot/bootldr.S"
-BOOTLDR_LD="$PROJECT_DIR/src/target/x68k/boot/bootldr.ld"
+# mkufs may be built by any ARM target (qemu_arm) or m68k build (host tools)
+MKUFS="${MKUFS:-}"
+for _d in "$PROJECT_DIR/build/m68k" "$PROJECT_DIR/build/qemu_arm" "$PROJECT_DIR/build/host"; do
+    if [[ -x "$_d/mkufs" ]]; then MKUFS="$_d/mkufs"; break; fi
+done
+
+STAGE1_S="$PROJECT_DIR/src/target/x68k/boot/stage1.S"
+STAGE1_LD="$PROJECT_DIR/src/target/x68k/boot/bootldr.ld"   # VMA=0x002000, LMA=0
+STAGE2_HEAD_S="$PROJECT_DIR/src/target/x68k/boot/stage2_head.S"
+STAGE2_C="$PROJECT_DIR/src/target/x68k/boot/stage2.c"
+STAGE2_LD="$PROJECT_DIR/src/target/x68k/boot/stage2.ld"
+
+ROMFS_STAGING="$PROJECT_DIR/build/x68k/romfs_ppap_x68k"
 
 # ── Verify prerequisites ──────────────────────────────────────────────────────
 
 if [[ ! -f "$KERNEL_BIN" ]]; then
     echo "[mkx68kimg] Error: kernel binary not found: $KERNEL_BIN"
-    echo "            Build first: ./scripts/build.sh x68k"
+    echo "            Build first: ./scripts/run.sh --build x68k"
     exit 1
 fi
 
 if [[ ! -x "$M68K_GCC" ]]; then
     echo "[mkx68kimg] Error: m68k-elf-gcc not found: $M68K_GCC"
-    echo "            Build toolchain: ./third_party/build_gcc_m68k.sh"
+    exit 1
+fi
+
+if [[ ! -x "$MKUFS" ]]; then
+    echo "[mkx68kimg] Error: mkufs not found: $MKUFS"
+    echo "            Build m68k tools first: ./scripts/run.sh --build qemu_m68k"
+    exit 1
+fi
+
+if [[ ! -d "$ROMFS_STAGING" ]]; then
+    echo "[mkx68kimg] Error: romfs staging dir not found: $ROMFS_STAGING"
+    echo "            Build x68k kernel first (cmake generates it during ppap_generate_romfs)"
     exit 1
 fi
 
@@ -60,66 +81,119 @@ FLOPPY_SECTOR_SIZE=1024
 FLOPPY_TOTAL_SECTORS=$(( FLOPPY_TRACKS * FLOPPY_HEADS * FLOPPY_SECTORS_PER_TRACK ))
 FLOPPY_SIZE=$(( FLOPPY_TOTAL_SECTORS * FLOPPY_SECTOR_SIZE ))
 
-# ── Calculate kernel sector count ─────────────────────────────────────────────
+STAGE1_MAX=1024
+STAGE2_OFFSET=1024     # byte offset of sector 1
+STAGE2_MAX=3072        # 3 sectors × 1024 B
+UFS_OFFSET=4096        # byte offset of sector 4
+
+# ── Working directory ─────────────────────────────────────────────────────────
+
+TMPROOT=$(mktemp -d)
+trap "rm -rf '$TMPROOT'" EXIT
+TMPDIR="$TMPROOT/work"
+mkdir -p "$TMPDIR"
+
+# ── Build stage1.bin ──────────────────────────────────────────────────────────
+
+echo "[mkx68kimg] Building stage1..."
+$M68K_GCC -m68000 -nostdlib -ffreestanding \
+    -T "$STAGE1_LD" \
+    -Wl,--build-id=none \
+    -o "$TMPDIR/stage1.elf" \
+    "$STAGE1_S"
+$M68K_OBJCOPY -O binary -j .text "$TMPDIR/stage1.elf" "$TMPDIR/stage1.bin"
+
+STAGE1_SIZE=$(stat -c%s "$TMPDIR/stage1.bin")
+echo "[mkx68kimg] Stage1:   $STAGE1_SIZE / $STAGE1_MAX bytes"
+if [[ $STAGE1_SIZE -gt $STAGE1_MAX ]]; then
+    echo "[mkx68kimg] Error: stage1 too large"
+    exit 1
+fi
+
+# ── Build stage2.bin ──────────────────────────────────────────────────────────
+
+echo "[mkx68kimg] Building stage2..."
+$M68K_GCC -m68000 -nostdlib -ffreestanding -Os \
+    -T "$STAGE2_LD" \
+    -Wl,--build-id=none \
+    -o "$TMPDIR/stage2.elf" \
+    "$STAGE2_HEAD_S" "$STAGE2_C"
+$M68K_OBJCOPY -O binary -j .text -j .rodata "$TMPDIR/stage2.elf" "$TMPDIR/stage2.bin"
+
+STAGE2_SIZE=$(stat -c%s "$TMPDIR/stage2.bin")
+echo "[mkx68kimg] Stage2:   $STAGE2_SIZE / $STAGE2_MAX bytes"
+if [[ $STAGE2_SIZE -gt $STAGE2_MAX ]]; then
+    echo "[mkx68kimg] Error: stage2 too large ($STAGE2_SIZE > $STAGE2_MAX bytes)"
+    echo "            Consider increasing stage2 to 6 sectors (6144 bytes)"
+    exit 1
+fi
+
+# ── Build inner rootfs UFS ────────────────────────────────────────────────────
+
+echo "[mkx68kimg] Building inner rootfs.ufs from $ROMFS_STAGING..."
+# Compute inner UFS size: staging content + 15% overhead + 32 KB metadata,
+# rounded up to 4 KB (UFS block size).  Keep it as small as possible so the
+# whole image fits on a 2HD floppy (1261568 bytes).
+STAGING_KB=$(du -sk "$ROMFS_STAGING" | awk '{print $1}')
+INNER_SIZE_KB=$(( (STAGING_KB * 115 / 100 + 32 + 3) / 4 * 4 ))
+# Count inodes needed: one per filesystem entry (file, dir, symlink) + 25% margin
+STAGING_INODES=$(find "$ROMFS_STAGING" | wc -l)
+INNER_INODES=$(( STAGING_INODES * 5 / 4 + 16 ))
+"$MKUFS" -s "${INNER_SIZE_KB}K" -i "$INNER_INODES" -p "$ROMFS_STAGING" "$TMPDIR/rootfs.ufs"
+INNER_SIZE=$(stat -c%s "$TMPDIR/rootfs.ufs")
+echo "[mkx68kimg] Rootfs:   $INNER_SIZE bytes (${INNER_SIZE_KB} KB allocated)"
+
+# ── Build outer UFS (boot/kernel + boot/rootfs.ufs) ───────────────────────────
+
+echo "[mkx68kimg] Building outer UFS..."
+mkdir -p "$TMPDIR/outer/boot"
+cp "$KERNEL_BIN"          "$TMPDIR/outer/boot/kernel"
+cp "$TMPDIR/rootfs.ufs"   "$TMPDIR/outer/boot/rootfs.ufs"
 
 KERNEL_SIZE=$(stat -c%s "$KERNEL_BIN")
-KERNEL_SECTORS=$(( (KERNEL_SIZE + FLOPPY_SECTOR_SIZE - 1) / FLOPPY_SECTOR_SIZE ))
-TOTAL_SECTORS=$(( KERNEL_SECTORS + 1 ))  # +1 for boot sector
+OUTER_DATA=$(( KERNEL_SIZE + INNER_SIZE ))
+# Outer UFS metadata: super + bmap + imap + 1 inode block = 4 blocks = 16 KB,
+# plus 2 indirect blocks + 2 dir blocks + 8 KB margin = 32 KB overhead.
+# Keep total image ≤ FLOPPY_SIZE - UFS_OFFSET = 1257472 B.
+OUTER_SIZE_KB=$(( (OUTER_DATA / 1024) + 32 + 4 ))
+OUTER_SIZE_KB=$(( ((OUTER_SIZE_KB + 3) / 4) * 4 ))  # align to 4 KB
+# Outer UFS only contains 4 inodes (root, boot, kernel, rootfs.ufs)
+"$MKUFS" -s "${OUTER_SIZE_KB}K" -i 16 -p "$TMPDIR/outer" "$TMPDIR/outer.ufs"
+OUTER_SIZE=$(stat -c%s "$TMPDIR/outer.ufs")
+echo "[mkx68kimg] Outer UFS: $OUTER_SIZE bytes (${OUTER_SIZE_KB} KB allocated)"
 
-echo "[mkx68kimg] Kernel:  $KERNEL_BIN"
-echo "[mkx68kimg]          $KERNEL_SIZE bytes = $KERNEL_SECTORS sectors × 1024 B"
-echo "[mkx68kimg] Floppy:  $TOTAL_SECTORS / $FLOPPY_TOTAL_SECTORS sectors used"
+# ── Verify floppy capacity ────────────────────────────────────────────────────
 
-if [[ $TOTAL_SECTORS -gt $FLOPPY_TOTAL_SECTORS ]]; then
-    echo "[mkx68kimg] Error: kernel too large for 2HD floppy"
-    echo "            Max kernel size: $(( (FLOPPY_TOTAL_SECTORS - 1) * FLOPPY_SECTOR_SIZE )) bytes"
+TOTAL_BYTES=$(( UFS_OFFSET + OUTER_SIZE ))
+if [[ $TOTAL_BYTES -gt $FLOPPY_SIZE ]]; then
+    echo "[mkx68kimg] Error: image ($TOTAL_BYTES B) exceeds 2HD floppy ($FLOPPY_SIZE B)"
+    echo "            Reduce kernel or rootfs size"
     exit 1
 fi
+USED_SECTORS=$(( (TOTAL_BYTES + FLOPPY_SECTOR_SIZE - 1) / FLOPPY_SECTOR_SIZE ))
+echo "[mkx68kimg] Floppy:   $USED_SECTORS / $FLOPPY_TOTAL_SECTORS sectors used"
 
-# ── Assemble boot sector ──────────────────────────────────────────────────────
-
-TMPDIR=$(mktemp -d)
-trap "rm -rf '$TMPDIR'" EXIT
-
-# Patch KERNEL_SECTORS placeholder in boot loader source
-sed "s/KERNEL_SECTORS/${KERNEL_SECTORS}/" "$BOOTLDR_S" > "$TMPDIR/bootldr.S"
-
-# Compile: assemble with m68000 target
-$M68K_GCC -m68000 -nostdlib -ffreestanding \
-    -T "$BOOTLDR_LD" \
-    -Wl,--build-id=none \
-    -o "$TMPDIR/bootldr.elf" \
-    "$TMPDIR/bootldr.S"
-
-# Extract raw binary (.text section only; LMA=0 → file offset=0)
-$M68K_OBJCOPY -O binary -j .text "$TMPDIR/bootldr.elf" "$TMPDIR/bootldr.bin"
-
-BOOT_SIZE=$(stat -c%s "$TMPDIR/bootldr.bin")
-echo "[mkx68kimg] Boot sector: $BOOT_SIZE bytes (limit $FLOPPY_SECTOR_SIZE)"
-
-if [[ $BOOT_SIZE -gt $FLOPPY_SECTOR_SIZE ]]; then
-    echo "[mkx68kimg] Error: boot sector too large ($BOOT_SIZE > $FLOPPY_SECTOR_SIZE bytes)"
-    exit 1
-fi
-
-# ── Create floppy image ───────────────────────────────────────────────────────
+# ── Assemble floppy image ─────────────────────────────────────────────────────
 
 mkdir -p "$(dirname "$OUTPUT_XDF")"
 
-# Zero-fill the entire floppy image
+# Zero-fill the entire floppy
 dd if=/dev/zero of="$OUTPUT_XDF" bs="$FLOPPY_SECTOR_SIZE" count="$FLOPPY_TOTAL_SECTORS" \
     status=none
 
-# Write boot sector at offset 0 (sector 0); zero-padded to full sector
-dd if="$TMPDIR/bootldr.bin" of="$OUTPUT_XDF" bs=1 conv=notrunc status=none
+# Write stage1 at sector 0 (byte offset 0), zero-padded to 1024 B
+dd if="$TMPDIR/stage1.bin" of="$OUTPUT_XDF" bs=1 conv=notrunc status=none
 
-# Write kernel binary starting at offset 1024 (logical sector 1)
-dd if="$KERNEL_BIN" of="$OUTPUT_XDF" bs=1 seek="$FLOPPY_SECTOR_SIZE" \
+# Write stage2 at sector 1 (byte offset 1024), zero-padded to 3072 B
+dd if="$TMPDIR/stage2.bin" of="$OUTPUT_XDF" bs=1 seek="$STAGE2_OFFSET" \
+    conv=notrunc status=none
+
+# Write outer UFS at sector 4 (byte offset 4096)
+dd if="$TMPDIR/outer.ufs" of="$OUTPUT_XDF" bs=1 seek="$UFS_OFFSET" \
     conv=notrunc status=none
 
 echo "[mkx68kimg] Created: $OUTPUT_XDF"
 echo ""
 echo "[mkx68kimg] To run with an emulator:"
-echo "   px68k:     px68k -fd0 $OUTPUT_XDF"
 echo "   XEiJ:      set FD0 to $OUTPUT_XDF"
 echo "   XM6 TypeG: set FD0 to $OUTPUT_XDF"

@@ -6,9 +6,10 @@
  * image from a host directory tree.
  *
  * Usage:
- *   mkufs [-s SIZE] [-v] [-p DIR] <output_file>
+ *   mkufs [-s SIZE] [-i INODES] [-v] [-p DIR] <output_file>
  *
  *   -s SIZE   Image size (e.g., 64K, 1M, 64M).  Default: 64K.
+ *   -i INODES Override inode count (default: block_count/4, min 64).
  *   -p DIR    Populate from host directory tree.
  *   -v        Verbose: print layout summary.
  *
@@ -363,6 +364,7 @@ static uint32_t parse_size(const char *s)
 int main(int argc, char *argv[])
 {
     uint32_t size = 64 * 1024;  /* default 64K */
+    uint32_t inode_override = 0; /* 0 = use default formula */
     int verbose = 0;
     const char *populate_dir_path = NULL;
     const char *output = NULL;
@@ -370,6 +372,8 @@ int main(int argc, char *argv[])
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-s") == 0 && i + 1 < argc) {
             size = parse_size(argv[++i]);
+        } else if (strcmp(argv[i], "-i") == 0 && i + 1 < argc) {
+            inode_override = (uint32_t)strtoul(argv[++i], NULL, 0);
         } else if (strcmp(argv[i], "-v") == 0) {
             verbose = 1;
         } else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
@@ -377,14 +381,14 @@ int main(int argc, char *argv[])
         } else if (argv[i][0] != '-') {
             output = argv[i];
         } else {
-            fprintf(stderr, "Usage: %s [-s SIZE] [-v] [-p DIR] <output>\n",
+            fprintf(stderr, "Usage: %s [-s SIZE] [-i INODES] [-v] [-p DIR] <output>\n",
                     argv[0]);
             return 1;
         }
     }
 
     if (!output) {
-        fprintf(stderr, "Usage: %s [-s SIZE] [-v] [-p DIR] <output>\n",
+        fprintf(stderr, "Usage: %s [-s SIZE] [-i INODES] [-v] [-p DIR] <output>\n",
                 argv[0]);
         return 1;
     }
@@ -404,9 +408,13 @@ int main(int argc, char *argv[])
 
     /* Compute layout */
     block_count = img_size / UFS_BLOCK_SIZE;
-    /* 1 inode per 4 blocks (16 KB), minimum 64 */
-    inode_count = block_count / 4;
-    if (inode_count < 64) inode_count = 64;
+    /* 1 inode per 4 blocks (16 KB), minimum 64; overridable with -i */
+    if (inode_override > 0) {
+        inode_count = inode_override;
+    } else {
+        inode_count = block_count / 4;
+        if (inode_count < 64) inode_count = 64;
+    }
     if (inode_count > UFS_BLOCK_SIZE * 8) inode_count = UFS_BLOCK_SIZE * 8;
 
     inode_blocks = (inode_count + UFS_INODES_PER_BLOCK - 1) / UFS_INODES_PER_BLOCK;

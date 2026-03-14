@@ -94,4 +94,16 @@ const char *target_name(void);
  */
 uint32_t target_caps(void);
 
+/*
+ * target_mount_rootfs() — mount the root filesystem (optional hook).
+ *
+ * Called from kmain() when no embedded romfs is present (__romfs_start ==
+ * __romfs_end).  The target registers its rootfs block device and mounts it
+ * at "/".
+ *
+ * Returns 0 on success, negative on failure.
+ * Default weak implementation returns -1 (no target-specific rootfs).
+ */
+int target_mount_rootfs(void);
+
 #endif /* PPAP_TARGET_H */

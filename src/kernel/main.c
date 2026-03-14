@@ -66,11 +66,19 @@ void kmain(void)
     /* Target-specific late init: SD/ramblk, IRQ UART, MPU, Core 1 */
     target_late_init();
 
-    /* Bootstrap: mount romfs at / (needed to read /etc/fstab) */
-    if (vfs_mount("/", &romfs_ops, MNT_RDONLY, __romfs_start) == 0)
-        klog("VFS: romfs mounted at /\n");
-    else
-        klog("VFS: romfs mount FAILED\n");
+    /* Bootstrap: mount root filesystem (needed to read /etc/fstab).
+     * If an embedded romfs is present use it; otherwise delegate to the
+     * target (e.g. x68k mounts a UFS ramdisk loaded by stage2). */
+    if (__romfs_start != __romfs_end) {
+        if (vfs_mount("/", &romfs_ops, MNT_RDONLY, __romfs_start) == 0)
+            klog("VFS: romfs mounted at /\n");
+        else
+            klog("VFS: romfs mount FAILED\n");
+    } else if (target_mount_rootfs() == 0) {
+        klog("VFS: rootfs mounted\n");
+    } else {
+        klog("VFS: rootfs mount FAILED\n");
+    }
 
     /* Parse /etc/fstab and mount all entries */
     {

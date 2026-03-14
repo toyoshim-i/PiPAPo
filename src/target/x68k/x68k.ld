@@ -13,16 +13,15 @@
  *   0x000000 – 0x0003FF   1 KB  Active vector table (copied from .vectors by stage2)
  *   0x000400 – 0x005FFF  22.75 KB  Freed boot memory → page pool after boot
  *   0x006000 – 0x0063FF   1 KB  Kernel .vectors in binary (reused as stack headroom)
- *   0x006400 – ...       ...   Kernel .text, .rodata, .romfs, .data, .bss
+ *   0x006400 – ...       ...   Kernel .text, .rodata, .data, .bss
  *   ...       – 0xBFFFFF  ...   Page pool (user process pages)
  *
  * Supervisor stack: grows downward from __stack_top = 0x006400 into the
  * freed boot memory region (0x000400–0x005FFF = 22.75 KB).
  * No .stack section in the binary — the stack lives in free RAM.
  *
- * NOTE (Phase X-1): An embedded romfs is included for initial bring-up.
- * It will be removed in Phase X-3 when the UFS boot floppy is mounted instead.
- * A full romfs (with busybox) requires at least 4 MB expanded X68000 RAM.
+ * NOTE (Phase X-3): Embedded romfs removed.  The root filesystem is a UFS
+ * image (boot/rootfs.ufs) loaded into RAM by stage2 and mounted via flatblk.
  */
 
 MEMORY {
@@ -31,8 +30,14 @@ MEMORY {
 
 SECTIONS {
 
-    /* Discard build-id and other notes that would shift .vectors */
-    /DISCARD/ : { *(.note*) }
+    /* Discard build-id, notes, and embedded romfs (Phase X-3+: rootfs is
+     * a separate UFS image loaded into RAM by stage2, not linked in) */
+    /DISCARD/ : { *(.note*) *(.romfs) }
+
+    /* Phase X-3: romfs symbols kept for main.c compatibility; both zero so
+     * the __romfs_start != __romfs_end guard evaluates false. */
+    __romfs_start = 0;
+    __romfs_end   = 0;
 
     /* ------------------------------------------------------------------
      * Vector table — 1 KB at 0x006000 in the kernel binary.
@@ -62,17 +67,6 @@ SECTIONS {
     .rodata : {
         *(.rodata*)
         . = ALIGN(4);
-    } > RAM
-
-    /* ------------------------------------------------------------------
-     * Temporary embedded romfs (Phase X-1 only).
-     * Removed in Phase X-3 when the kernel mounts the UFS boot floppy.
-     * ------------------------------------------------------------------ */
-    .romfs : {
-        __romfs_start = .;
-        KEEP(*(.romfs))
-        . = ALIGN(4);
-        __romfs_end = .;
     } > RAM
 
     /* ------------------------------------------------------------------

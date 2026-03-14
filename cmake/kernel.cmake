@@ -38,6 +38,7 @@ set(ARCH_M68K_SOURCES
 # ── Kernel sources shared across ALL architectures ──────────────────────────
 
 set(KERNEL_SHARED_SOURCES_BASE
+    ${_KS_ROOT}/src/target/target_default.c
     ${_KS_ROOT}/src/kernel/main.c
     ${_KS_ROOT}/src/kernel/klog.c
     ${_KS_ROOT}/src/kernel/mm/page.c
