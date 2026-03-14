@@ -10,6 +10,7 @@
  *
  *   -s SIZE   Image size (e.g., 64K, 1M, 64M).  Default: 64K.
  *   -i INODES Override inode count (default: block_count/4, min 64).
+ *   -B        Write all multi-byte fields in big-endian (for M68K targets).
  *   -p DIR    Populate from host directory tree.
  *   -v        Verbose: print layout summary.
  *
@@ -74,6 +75,23 @@ typedef struct {
 #define S_IFDIR_ 0040000u
 #define S_IFREG_ 0100000u
 #define S_IFLNK_ 0120000u
+
+/* ── Endian helpers ──────────────────────────────────────────────────── */
+
+static int be_mode;  /* -B: write multi-byte fields big-endian (for M68K) */
+
+static uint32_t w32(uint32_t v)
+{
+    if (!be_mode) return v;
+    return ((v & 0xFFu) << 24) | (((v >> 8) & 0xFFu) << 16) |
+           (((v >> 16) & 0xFFu) << 8) | ((v >> 24) & 0xFFu);
+}
+
+static uint16_t w16(uint16_t v)
+{
+    if (!be_mode) return v;
+    return (uint16_t)(((v & 0xFFu) << 8) | ((v >> 8) & 0xFFu));
+}
 
 /* ── Image buffer ────────────────────────────────────────────────────── */
 
@@ -147,7 +165,18 @@ static void write_inode(uint32_t ino, const ufs_inode_t *inode)
 {
     uint32_t blk = 3 + ino / UFS_INODES_PER_BLOCK;
     uint32_t off = (ino % UFS_INODES_PER_BLOCK) * UFS_INODE_SIZE;
-    memcpy(block_ptr(blk) + off, inode, sizeof(ufs_inode_t));
+    ufs_inode_t tmp;
+    tmp.i_mode     = w16(inode->i_mode);
+    tmp.i_nlink    = w16(inode->i_nlink);
+    tmp.i_uid      = w16(inode->i_uid);
+    tmp.i_gid      = w16(inode->i_gid);
+    tmp.i_size     = w32(inode->i_size);
+    tmp.i_mtime    = w32(inode->i_mtime);
+    tmp.i_ctime    = w32(inode->i_ctime);
+    for (int k = 0; k < UFS_DIRECT_BLOCKS; k++)
+        tmp.i_direct[k] = w32(inode->i_direct[k]);
+    tmp.i_indirect = w32(inode->i_indirect);
+    memcpy(block_ptr(blk) + off, &tmp, sizeof(ufs_inode_t));
 }
 
 /* ── Directory entry helpers ─────────────────────────────────────────── */
@@ -163,7 +192,7 @@ static void add_dirent(ufs_inode_t *dir_inode, uint32_t dir_ino,
         ufs_dirent_t *entries = (ufs_dirent_t *)block_ptr(pblk);
         for (uint32_t i = 0; i < UFS_DIRENTS_PER_BLOCK; i++) {
             if (entries[i].d_ino == 0) {
-                entries[i].d_ino = file_ino;
+                entries[i].d_ino = w32(file_ino);
                 strncpy(entries[i].d_name, name, UFS_NAME_MAX);
                 entries[i].d_name[UFS_NAME_MAX] = '\0';
                 return;
@@ -183,7 +212,7 @@ static void add_dirent(ufs_inode_t *dir_inode, uint32_t dir_ino,
     dir_inode->i_size = (nblocks + 1) * UFS_BLOCK_SIZE;
 
     ufs_dirent_t *entries = (ufs_dirent_t *)block_ptr(new_blk);
-    entries[0].d_ino = file_ino;
+    entries[0].d_ino = w32(file_ino);
     strncpy(entries[0].d_name, name, UFS_NAME_MAX);
     entries[0].d_name[UFS_NAME_MAX] = '\0';
 
@@ -218,7 +247,7 @@ static void write_file_data(ufs_inode_t *inode, const void *data,
                 memset(block_ptr(inode->i_indirect), 0, UFS_BLOCK_SIZE);
             }
             uint32_t *ind = (uint32_t *)block_ptr(inode->i_indirect);
-            ind[i - UFS_DIRECT_BLOCKS] = blk;
+            ind[i - UFS_DIRECT_BLOCKS] = w32(blk);
         }
     }
     inode->i_size = size;
@@ -286,9 +315,9 @@ static void populate_entry(const char *host_path, const char *name,
         inode.i_size = UFS_BLOCK_SIZE;
 
         ufs_dirent_t *entries = (ufs_dirent_t *)block_ptr(dir_blk);
-        entries[0].d_ino = ino;
+        entries[0].d_ino = w32(ino);
         strcpy(entries[0].d_name, ".");
-        entries[1].d_ino = parent_ino;
+        entries[1].d_ino = w32(parent_ino);
         strcpy(entries[1].d_name, "..");
 
         write_inode(ino, &inode);
@@ -374,6 +403,8 @@ int main(int argc, char *argv[])
             size = parse_size(argv[++i]);
         } else if (strcmp(argv[i], "-i") == 0 && i + 1 < argc) {
             inode_override = (uint32_t)strtoul(argv[++i], NULL, 0);
+        } else if (strcmp(argv[i], "-B") == 0) {
+            be_mode = 1;
         } else if (strcmp(argv[i], "-v") == 0) {
             verbose = 1;
         } else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
@@ -381,14 +412,14 @@ int main(int argc, char *argv[])
         } else if (argv[i][0] != '-') {
             output = argv[i];
         } else {
-            fprintf(stderr, "Usage: %s [-s SIZE] [-i INODES] [-v] [-p DIR] <output>\n",
+            fprintf(stderr, "Usage: %s [-s SIZE] [-i INODES] [-B] [-v] [-p DIR] <output>\n",
                     argv[0]);
             return 1;
         }
     }
 
     if (!output) {
-        fprintf(stderr, "Usage: %s [-s SIZE] [-i INODES] [-v] [-p DIR] <output>\n",
+        fprintf(stderr, "Usage: %s [-s SIZE] [-i INODES] [-B] [-v] [-p DIR] <output>\n",
                 argv[0]);
         return 1;
     }
@@ -456,9 +487,9 @@ int main(int argc, char *argv[])
     root_inode.i_size = UFS_BLOCK_SIZE;
 
     ufs_dirent_t *root_entries = (ufs_dirent_t *)block_ptr(root_blk);
-    root_entries[0].d_ino = root_ino;
+    root_entries[0].d_ino = w32(root_ino);
     strcpy(root_entries[0].d_name, ".");
-    root_entries[1].d_ino = root_ino;
+    root_entries[1].d_ino = w32(root_ino);
     strcpy(root_entries[1].d_name, "..");
 
     write_inode(root_ino, &root_inode);
@@ -470,17 +501,17 @@ int main(int argc, char *argv[])
 
     /* Write superblock */
     ufs_super_t *sb = (ufs_super_t *)block_ptr(0);
-    sb->s_magic = UFS_MAGIC;
-    sb->s_block_size = UFS_BLOCK_SIZE;
-    sb->s_block_count = block_count;
-    sb->s_inode_count = inode_count;
-    sb->s_free_blocks = free_blocks_count;
-    sb->s_free_inodes = free_inodes_count;
-    sb->s_bmap_block = 1;
-    sb->s_imap_block = 2;
-    sb->s_itable_block = 3;
-    sb->s_data_block = data_start;
-    sb->s_inode_blocks = inode_blocks;
+    sb->s_magic        = w32(UFS_MAGIC);
+    sb->s_block_size   = w32(UFS_BLOCK_SIZE);
+    sb->s_block_count  = w32(block_count);
+    sb->s_inode_count  = w32(inode_count);
+    sb->s_free_blocks  = w32(free_blocks_count);
+    sb->s_free_inodes  = w32(free_inodes_count);
+    sb->s_bmap_block   = w32(1);
+    sb->s_imap_block   = w32(2);
+    sb->s_itable_block = w32(3);
+    sb->s_data_block   = w32(data_start);
+    sb->s_inode_blocks = w32(inode_blocks);
 
     /* Write output file */
     FILE *fp = fopen(output, "wb");

@@ -139,7 +139,7 @@ INNER_SIZE_KB=$(( (STAGING_KB * 115 / 100 + 32 + 3) / 4 * 4 ))
 # Count inodes needed: one per filesystem entry (file, dir, symlink) + 25% margin
 STAGING_INODES=$(find "$ROMFS_STAGING" | wc -l)
 INNER_INODES=$(( STAGING_INODES * 5 / 4 + 16 ))
-"$MKUFS" -s "${INNER_SIZE_KB}K" -i "$INNER_INODES" -p "$ROMFS_STAGING" "$TMPDIR/rootfs.ufs"
+"$MKUFS" -s "${INNER_SIZE_KB}K" -i "$INNER_INODES" -B -p "$ROMFS_STAGING" "$TMPDIR/rootfs.ufs"
 INNER_SIZE=$(stat -c%s "$TMPDIR/rootfs.ufs")
 echo "[mkx68kimg] Rootfs:   $INNER_SIZE bytes (${INNER_SIZE_KB} KB allocated)"
 
@@ -158,7 +158,7 @@ OUTER_DATA=$(( KERNEL_SIZE + INNER_SIZE ))
 OUTER_SIZE_KB=$(( (OUTER_DATA / 1024) + 32 + 4 ))
 OUTER_SIZE_KB=$(( ((OUTER_SIZE_KB + 3) / 4) * 4 ))  # align to 4 KB
 # Outer UFS only contains 4 inodes (root, boot, kernel, rootfs.ufs)
-"$MKUFS" -s "${OUTER_SIZE_KB}K" -i 16 -p "$TMPDIR/outer" "$TMPDIR/outer.ufs"
+"$MKUFS" -s "${OUTER_SIZE_KB}K" -i 16 -B -p "$TMPDIR/outer" "$TMPDIR/outer.ufs"
 OUTER_SIZE=$(stat -c%s "$TMPDIR/outer.ufs")
 echo "[mkx68kimg] Outer UFS: $OUTER_SIZE bytes (${OUTER_SIZE_KB} KB allocated)"
 

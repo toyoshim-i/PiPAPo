@@ -100,6 +100,14 @@ void m68k_syscall_entry(uint32_t *regs)
 
 void target_early_init(void)
 {
+    /* Diagnostic: "Po" — kernel reached (TRAP #15 = IPL IOCS, restored by stage2) */
+    {
+        register uint32_t d0 asm("d0") = 0x20u;
+        register uint32_t d1 asm("d1") = 'P';
+        asm volatile("trap #15" : "+r"(d0) : "r"(d1) : "a0", "a1", "memory");
+        d0 = 0x20u; d1 = (uint32_t)'o';
+        asm volatile("trap #15" : "+r"(d0) : "r"(d1) : "a0", "a1", "memory");
+    }
     uart_init_console();
     klog("PiPAPo booting... [x68k]\n");
     klog("Console: X68000 IOCS (TVRAM)\n");

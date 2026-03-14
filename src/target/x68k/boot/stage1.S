@@ -55,6 +55,14 @@ boot_start:
     | Keep in d5 during the loop (preserved by _B_READ).
     move.l  0x0000BC,%d5
 
+    | Diagnostic: print "Pi" to TVRAM via IOCS _B_PUTC (function 0x20)
+    move.l  #0x20,%d0
+    move.l  #'P',%d1
+    trap    #15
+    move.l  #0x20,%d0
+    move.l  #'i',%d1
+    trap    #15
+
     | ── Read 3 sectors (LBA 1–3) to 0x003000 ───────────────────────────────
     | X68000 2HD geometry: 16 sectors/cylinder (2 heads × 8 sectors)
     |   cylinder     = lsec / 16

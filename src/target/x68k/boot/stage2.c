@@ -224,6 +224,15 @@ static void __attribute__((noreturn)) stage2_final(void)
     __builtin_unreachable();
 }
 
+/* ── Diagnostic helper: IOCS _B_PUTC via TRAP #15 ────────────────────────── */
+
+static inline void iocs_putc(char c)
+{
+    register uint32_t d0 asm("d0") = 0x20u;
+    register uint32_t d1 asm("d1") = (uint32_t)(uint8_t)c;
+    asm volatile("trap #15" : "+r"(d0) : "r"(d1) : "a0", "a1", "memory");
+}
+
 /* ── Stage 2 main ─────────────────────────────────────────────────────────── */
 
 void stage2_main(void)
@@ -231,6 +240,9 @@ void stage2_main(void)
     uint32_t itable_block;
     ufs_inode_t inode;
     uint32_t boot_ino, kernel_ino, rootfs_ino;
+
+    /* Diagnostic: "PA" — stage2 reached */
+    iocs_putc('P'); iocs_putc('A');
 
     /* ── Read UFS superblock (block 0) ──────────────────────────────────── */
     read_ufs_block(0u, BUF);
