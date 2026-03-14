@@ -652,6 +652,37 @@ static int validate_startup_options(int argc, int argi,
     return 1;
 }
 
+static int read_next_command_line(char *line, int line_size,
+                                  char **script_cmds, int script_count,
+                                  int *script_index, int show_prompt)
+{
+    if (*script_index < script_count) {
+        int i = 0;
+        const char *src = script_cmds[(*script_index)++];
+        while (src[i] && i < line_size - 1) {
+            line[i] = src[i];
+            i++;
+        }
+        line[i] = '\0';
+        if (show_prompt) {
+            put_str("pdb> ");
+            put_str(line);
+            put_chr('\n');
+        }
+        return 1;
+    }
+
+    if (script_count > 0)
+        return 0;
+    if (show_prompt)
+        put_str("pdb> ");
+    if (readline(line, line_size) < 0) {
+        put_chr('\n');
+        return 0;
+    }
+    return 1;
+}
+
 int main(int argc, char *argv[])
 {
     int argi = 1;
@@ -704,29 +735,9 @@ int main(int argc, char *argv[])
     }
 
     while (!done) {
-        if (script_index < script_count) {
-            int i = 0;
-            const char *src = script_cmds[script_index++];
-            while (src[i] && i < (int)sizeof(line) - 1) {
-                line[i] = src[i];
-                i++;
-            }
-            line[i] = '\0';
-            if (show_prompt) {
-                put_str("pdb> ");
-                put_str(line);
-                put_chr('\n');
-            }
-        } else {
-            if (script_count > 0)
-                break;
-            if (show_prompt)
-                put_str("pdb> ");
-            if (readline(line, sizeof(line)) < 0) {
-                put_chr('\n');
-                break;
-            }
-        }
+        if (!read_next_command_line(line, sizeof(line), script_cmds,
+                                    script_count, &script_index, show_prompt))
+            break;
 
         int ntok = split_tokens(line, tok, 8);
         if (ntok <= 0)
