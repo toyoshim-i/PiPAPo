@@ -8,11 +8,12 @@
  *   4. PTRACE_GETCAPS reports debugger capabilities
  *   5. PTRACE_SETREGS updates a stopped tracee register
  *   6. PTRACE_PEEKDATA / PTRACE_POKEDATA inspect and modify tracee memory
- *   7. PTRACE_SINGLESTEP stops an eCPU tracee after one guest instruction
+ *   7. PTRACE_SINGLESTEP stops a tracee after one instruction
  *   8. PTRACE_SETBP / PTRACE_CLRBP manage software breakpoints on eCPU
  *   9. PTRACE_SETSURFACE switches ptrace view between real/eCPU surfaces
  *  10. PTRACE_SETMODE(0) disables tracing before final continue
  *  11. PTRACE_SINGLESTEP works for m68k eCPU tracees on ARM targets
+ *  12. PTRACE_SINGLESTEP works for native m68k real-surface tracees
  */
 
 #include "utest.h"
@@ -101,6 +102,8 @@ int main(void)
     uint32_t z80_pc_before = 0;
 #if !defined(__m68k__)
     uint32_t m68k_pc_before = 0;
+#else
+    uint32_t native_pc_before = 0;
 #endif
 
     UT_ASSERT_EQ(waitpid(pid, &status, WSTOPPED), pid);
@@ -139,6 +142,24 @@ int main(void)
                      (void *)(uintptr_t)PPAP_TRACE_SURFACE_ECPU,
                      (void *)0) < 0,
               "native tracee should reject eCPU surface");
+
+#if defined(__m68k__)
+    native_pc_before = regs.regs[16];
+    UT_ASSERT_EQ(ptrace(PTRACE_SINGLESTEP, pid, (void *)0, (void *)0), 0);
+    UT_ASSERT_EQ(waitpid(pid, &status, WSTOPPED), pid);
+    UT_ASSERT(WIFSTOPPED(status), "native m68k child should stop after single-step");
+    UT_ASSERT_EQ(WSTOPSIG(status), SIGTRAP);
+    UT_ASSERT_EQ(ptrace(PTRACE_GETEVENT, pid, (void *)0, &ev), 0);
+    UT_ASSERT_EQ((int)ev.event, PPAP_TRACE_EVENT_DEBUG_STOP);
+    UT_ASSERT((ev.flags & PPAP_DEBUG_STOP_STEP) != 0,
+              "native m68k debug stop should include STEP reason");
+    UT_ASSERT_EQ((int)ev.abi, PPAP_TRACE_ABI_PPAP);
+    UT_ASSERT_EQ(ptrace(PTRACE_GETREGS, pid, (void *)0, &regs), 0);
+    UT_ASSERT_EQ((int)regs.regset, PPAP_TRACE_REGSET_M68K);
+    UT_ASSERT(regs.regs[16] != native_pc_before,
+              "native m68k single-step should advance PC");
+    UT_ASSERT_EQ((int)ev.args[0], (int)regs.regs[16]);
+#endif
 
     set_regs.regset = regs.regset;
     set_regs.abi = regs.abi;
@@ -303,8 +324,13 @@ int main(void)
     UT_ASSERT_EQ(ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps), 0);
     UT_ASSERT_EQ((int)caps.regset, EXPECT_REGSET);
     UT_ASSERT_EQ((int)caps.surface, PPAP_TRACE_SURFACE_REAL);
+#if defined(__m68k__)
+    UT_ASSERT((caps.caps & PPAP_PTRACE_CAP_SINGLESTEP) != 0,
+              "real surface should expose native single-step on m68k");
+#else
     UT_ASSERT((caps.caps & PPAP_PTRACE_CAP_SINGLESTEP) == 0,
               "real surface should hide eCPU single-step capability");
+#endif
     UT_ASSERT((caps.caps & PPAP_PTRACE_CAP_SW_BP) == 0,
               "real surface should hide eCPU software breakpoint capability");
     UT_ASSERT_EQ(ptrace(PTRACE_SETSURFACE, pid,

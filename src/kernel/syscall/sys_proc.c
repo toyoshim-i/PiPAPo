@@ -36,6 +36,7 @@
     (PPAP_TRACE_MODE_PPAP_SYSCALL | PPAP_TRACE_MODE_SUBSYS_CALL)
 
 static void trace_clear_swbp(pcb_t *target);
+static void trace_m68k_set_trace_bit(pcb_t *target, int enable);
 
 static pcb_t *trace_find_tracee(pid_t tracer_pid, long pid)
 {
@@ -280,6 +281,7 @@ static int trace_set_surface(pcb_t *target, uint32_t surface)
             return -ENOSYS;
         target->trace_surface = PPAP_TRACE_SURFACE_REAL;
         target->trace_step_pending = 0;
+        trace_m68k_set_trace_bit(target, 0);
         target->trace_swbp_skip_once = 0;
         return 0;
     }
@@ -288,6 +290,7 @@ static int trace_set_surface(pcb_t *target, uint32_t surface)
             return -ENOSYS;
         target->trace_surface = PPAP_TRACE_SURFACE_ECPU;
         target->trace_step_pending = 0;
+        trace_m68k_set_trace_bit(target, 0);
         target->trace_swbp_skip_once = 0;
         return 0;
     }
@@ -694,6 +697,10 @@ static int trace_fill_caps(const pcb_t *target, struct ppap_ptrace_caps *caps)
         if (target->subsys == SUBSYS_PPAP && target->subsys_data)
             c |= PPAP_PTRACE_CAP_SINGLESTEP | PPAP_PTRACE_CAP_SW_BP;
     }
+#if defined(__m68k__)
+    if (surface == PPAP_TRACE_SURFACE_REAL)
+        c |= PPAP_PTRACE_CAP_SINGLESTEP;
+#endif
 
     caps->regset = trace_regset_for(target);
     caps->abi = target->trace_event.abi;
@@ -704,6 +711,32 @@ static int trace_fill_caps(const pcb_t *target, struct ppap_ptrace_caps *caps)
     return 0;
 }
 
+#if defined(__m68k__)
+#define M68K_SR_TRACE_BIT 0x8000u
+
+static void trace_m68k_set_trace_bit(pcb_t *target, int enable)
+{
+    uint8_t *exc;
+    uint16_t sr;
+
+    if (!target)
+        return;
+    exc = (uint8_t *)(uintptr_t)target->sp + 60;
+    sr = *(uint16_t *)(void *)exc;
+    if (enable)
+        sr |= M68K_SR_TRACE_BIT;
+    else
+        sr &= (uint16_t)~M68K_SR_TRACE_BIT;
+    *(uint16_t *)(void *)exc = sr;
+}
+#else
+static void trace_m68k_set_trace_bit(pcb_t *target, int enable)
+{
+    (void)target;
+    (void)enable;
+}
+#endif
+
 static int trace_supports_single_step(const pcb_t *target)
 {
     if (trace_active_surface_for(target) == PPAP_TRACE_SURFACE_ECPU) {
@@ -712,6 +745,10 @@ static int trace_supports_single_step(const pcb_t *target)
         if (target->subsys == SUBSYS_PPAP && target->subsys_data)
             return 1;
     }
+#if defined(__m68k__)
+    if (trace_active_surface_for(target) == PPAP_TRACE_SURFACE_REAL)
+        return 1;
+#endif
 
     return 0;
 }
@@ -724,9 +761,36 @@ static int trace_request_single_step(pcb_t *target)
         return -ENOSYS;
 
     target->trace_step_pending = 1;
+    if (trace_active_surface_for(target) == PPAP_TRACE_SURFACE_REAL)
+        trace_m68k_set_trace_bit(target, 1);
     trace_resume_target(target);
     return 0;
 }
+
+#if defined(__m68k__)
+int trace_m68k_trace_exception(uint32_t *regs)
+{
+    uint16_t *exc = (uint16_t *)((uint8_t *)regs + 60);
+    uint16_t sr = exc[0];
+    uint32_t pc = ((uint32_t)exc[1] << 16) | exc[2];
+
+    /* Always clear T-bit so the handler is one-shot unless re-armed. */
+    exc[0] = (uint16_t)(sr & (uint16_t)~M68K_SR_TRACE_BIT);
+
+    if (!current->tracer_pid)
+        return 0;
+    if (current->state != PROC_RUNNABLE)
+        return 0;
+    if (trace_active_surface_for(current) != PPAP_TRACE_SURFACE_REAL)
+        return 0;
+    if (!current->trace_step_pending)
+        return 0;
+
+    current->trace_step_pending = 0;
+    trace_debug_stop(PPAP_TRACE_ABI_PPAP, pc, PPAP_DEBUG_STOP_STEP);
+    return 1;
+}
+#endif
 
 static void trace_clear_swbp(pcb_t *target)
 {
@@ -1053,10 +1117,12 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
         return trace_request_single_step(target);
     case PTRACE_CONT:
         target->trace_step_pending = 0;
+        trace_m68k_set_trace_bit(target, 0);
         trace_resume_target(target);
         return 0;
     case PTRACE_SYSCALL:
         target->trace_step_pending = 0;
+        trace_m68k_set_trace_bit(target, 0);
         if (!(target->trace_mode & PPAP_TRACE_MODE_PPAP_SYSCALL))
             target->trace_syscall_phase = TRACE_PHASE_ENTER;
         target->trace_mode |= PPAP_TRACE_MODE_PPAP_SYSCALL;
@@ -1069,6 +1135,7 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
         target->trace_surface = (uint8_t)trace_default_surface_for(target);
         target->trace_wait_pending = 0;
         target->trace_step_pending = 0;
+        trace_m68k_set_trace_bit(target, 0);
         trace_clear_swbp(target);
         __builtin_memset(&target->trace_event, 0, sizeof(target->trace_event));
         trace_resume_target(target);

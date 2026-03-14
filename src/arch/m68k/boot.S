@@ -47,7 +47,7 @@ _vectors:
 
     | --- Exception vectors 8-11 ---
     .long m68k_priv_handler        | 8:  Privilege Violation (group 1, 6-byte frame)
-    .long Default_Handler          | 9:  Trace
+    .long m68k_trace_handler       | 9:  Trace
     .long Default_Handler          | 10: A-line emulator
     .long m68k_fline_handler       | 11: F-line emulator (Human68k DOS calls)
 

@@ -73,6 +73,50 @@ m68k_trap1_handler:
     | Return from exception — pops SR + PC (SR restores user/supv mode)
     rte
 
+| -----------------------------------------------------------------------------
+| m68k_trace_handler — Trace exception (vector 9)
+|
+| Used for native single-step on m68k real-surface tracees.
+| Saves full context, lets C trace code decide whether to stop the tracee,
+| then performs a pending context switch if requested.
+| -----------------------------------------------------------------------------
+    .globl m68k_trace_handler
+m68k_trace_handler:
+    | Save ALL registers
+    movem.l %d0-%d7/%a0-%a6,%sp@-
+
+    | C helper: trace_m68k_trace_exception(regs)
+    move.l  %sp,%d0
+    move.l  %d0,%sp@-
+    jsr     trace_m68k_trace_exception
+    addq.l  #4,%sp
+
+    | If tracing requested a stop, sched_yield() set m68k_switch_pending.
+    tst.l   m68k_switch_pending
+    beq.s   .Ltrace_no_switch
+    clr.l   m68k_switch_pending
+
+    | Store SP (SSP) and USP into current PCB
+    move.l  current_core,%a0
+    move.l  %sp,%a0@(PCB_SP_OFFSET)
+    move.l  %usp,%a1
+    move.l  %a1,%a0@(PCB_USP_OFFSET)
+
+    | Pick next process and switch current_core
+    jsr     sched_next
+    move.l  %d0,current_core
+
+    | Restore incoming context
+    move.l  %d0,%a0
+    move.l  %a0@(PCB_SP_OFFSET),%sp
+    move.l  %a0@(PCB_USP_OFFSET),%a1
+    move.l  %a1,%usp
+
+.Ltrace_no_switch:
+    | Restore all registers and return from exception
+    movem.l %sp@+,%d0-%d7/%a0-%a6
+    rte
+
 
 | -----------------------------------------------------------------------------
 | m68k_timer_isr — Goldfish RTC timer interrupt (autovector level 6)
