@@ -58,6 +58,11 @@ endif()
 set(USER_APPS hello getty init trace pdb ttyctl)
 # Install destinations: init -> sbin, ttyctl -> usr/bin, others -> bin
 
+# Optional per-app extra sources (for multi-file user programs).
+set(PPAP_USER_EXTRA_SOURCES_pdb
+    ${PPAP_ROOT}/src/user/pdb_util.c
+)
+
 # Test programs (sources in tests/user/)
 set(USER_TESTS
     test_exec test_elf test_vfork test_fault test_pipe test_brk
@@ -216,33 +221,46 @@ PPAP_ARCH_LABEL=\"${PPAP_ARCH_LABEL}\"
 function(ppap_user_program name source)
     cmake_parse_arguments(ARG "NO_CRT" "" "EXTRA_CFLAGS" ${ARGN})
 
-    set(_obj ${PPAP_SHARED_BUILD}/${name}.o)
     set(_elf ${PPAP_SHARED_BUILD}/${name}.elf)
+    set(_objs "")
+    set(_sources ${source})
+    set(_extra_var "PPAP_USER_EXTRA_SOURCES_${name}")
 
-    # Compile: assembly or C
-    get_filename_component(_ext ${source} LAST_EXT)
-    if(_ext STREQUAL ".S" OR _ext STREQUAL ".s")
-        add_custom_command(
-            OUTPUT ${_obj}
-            COMMAND ${PPAP_CC} ${PPAP_USER_ASFLAGS} -c -o ${_obj} ${source}
-            DEPENDS ${source}
-            COMMENT "Assembling ${name}.o (${PPAP_ARCH})"
-        )
-    else()
-        set(_cflags ${PPAP_USER_CFLAGS} ${ARG_EXTRA_CFLAGS})
-        add_custom_command(
-            OUTPUT ${_obj}
-            COMMAND ${PPAP_CC} ${_cflags} -c -o ${_obj} ${source}
-            DEPENDS ${source} ${PPAP_ROOT}/src/user/syscall.h
-            COMMENT "Compiling ${name}.o (${PPAP_ARCH})"
-        )
+    if(DEFINED ${_extra_var})
+        list(APPEND _sources ${${_extra_var}})
     endif()
+
+    foreach(_src ${_sources})
+        get_filename_component(_src_base ${_src} NAME_WE)
+        set(_obj ${PPAP_SHARED_BUILD}/${name}_${_src_base}.o)
+
+        # Compile: assembly or C
+        get_filename_component(_ext ${_src} LAST_EXT)
+        if(_ext STREQUAL ".S" OR _ext STREQUAL ".s")
+            add_custom_command(
+                OUTPUT ${_obj}
+                COMMAND ${PPAP_CC} ${PPAP_USER_ASFLAGS} -c -o ${_obj} ${_src}
+                DEPENDS ${_src}
+                COMMENT "Assembling ${name}_${_src_base}.o (${PPAP_ARCH})"
+            )
+        else()
+            set(_cflags ${PPAP_USER_CFLAGS} ${ARG_EXTRA_CFLAGS})
+            add_custom_command(
+                OUTPUT ${_obj}
+                COMMAND ${PPAP_CC} ${_cflags} -c -o ${_obj} ${_src}
+                DEPENDS ${_src} ${PPAP_ROOT}/src/user/syscall.h
+                COMMENT "Compiling ${name}_${_src_base}.o (${PPAP_ARCH})"
+            )
+        endif()
+
+        list(APPEND _objs ${_obj})
+    endforeach()
 
     # Link
     if(ARG_NO_CRT)
-        set(_link_objs ${_obj})
+        set(_link_objs ${_objs})
     else()
-        set(_link_objs ${PPAP_CRT_OBJS} ${_obj})
+        set(_link_objs ${PPAP_CRT_OBJS} ${_objs})
     endif()
 
     add_custom_command(
