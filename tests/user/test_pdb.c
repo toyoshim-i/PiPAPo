@@ -397,7 +397,7 @@ int main(void)
     argv[a++] = "/bin/pdb";
     argv[a++] = "--batch";
     argv[a++] = "-c";
-    argv[a++] = "show regset";
+    argv[a++] = "show caps";
     argv[a++] = "-c";
     argv[a++] = "q";
     argv[a++] = "/bin/hello";
@@ -406,8 +406,10 @@ int main(void)
     UT_ASSERT(n > 0, "pdb --batch scripted launch should produce output");
     UT_ASSERT(WIFEXITED(status), "pdb --batch scripted launch should exit");
     UT_ASSERT_EQ(WEXITSTATUS(status), 0);
-    UT_ASSERT(str_contains_basic(out, "regset=arm"),
+    UT_ASSERT(str_contains_basic(out, "caps="),
               "pdb --batch scripted launch should keep command output");
+    UT_ASSERT(str_contains_basic(out, "[getregs"),
+              "pdb --batch scripted launch should include decoded capability names");
     UT_ASSERT(!str_contains_basic(out, "target "),
               "pdb --batch should suppress target banner");
     UT_ASSERT(!str_contains_basic(out, "stop "),

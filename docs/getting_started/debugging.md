@@ -121,6 +121,7 @@ Scripted-mode notes:
 
 - `-q` suppresses prompt and command-echo output for cleaner automation logs.
 - `--batch` also suppresses automatic initial stop/target and child-exit lines.
+- `caps`/`show caps` prints both hex capability bits and decoded names.
 - `break` support is mapping-dependent; on unsupported targets `pdb` prints
   `break not supported on this target/mapping`.
 - Whitespace-only `-c` entries are ignored.

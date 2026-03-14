@@ -432,6 +432,38 @@ static void print_surface_mask(uint32_t surfaces)
         put_str("none");
 }
 
+static void print_caps_bits(uint32_t caps_bits)
+{
+    int has = 0;
+
+    if (caps_bits & PPAP_PTRACE_CAP_GETREGS) {
+        put_str("getregs");
+        has = 1;
+    }
+    if (caps_bits & PPAP_PTRACE_CAP_SETREGS) {
+        put_str(has ? "|setregs" : "setregs");
+        has = 1;
+    }
+    if (caps_bits & PPAP_PTRACE_CAP_PEEKPOKE) {
+        put_str(has ? "|peekpoke" : "peekpoke");
+        has = 1;
+    }
+    if (caps_bits & PPAP_PTRACE_CAP_SINGLESTEP) {
+        put_str(has ? "|step" : "step");
+        has = 1;
+    }
+    if (caps_bits & PPAP_PTRACE_CAP_SW_BP) {
+        put_str(has ? "|sw-bp" : "sw-bp");
+        has = 1;
+    }
+    if (caps_bits & PPAP_PTRACE_CAP_HW_BP) {
+        put_str(has ? "|hw-bp" : "hw-bp");
+        has = 1;
+    }
+    if (!has)
+        put_str("none");
+}
+
 static void print_event(const struct ppap_ptrace_event *ev)
 {
     put_str("stop ");
@@ -485,6 +517,9 @@ static void print_caps(const struct ppap_ptrace_caps *caps)
     print_surface_mask(caps->surfaces);
     put_str(" caps=");
     put_hex32(caps->caps);
+    put_str(" [");
+    print_caps_bits(caps->caps);
+    put_chr(']');
     put_str(" max_bps=");
     put_u32(caps->max_bps);
     put_chr('\n');
