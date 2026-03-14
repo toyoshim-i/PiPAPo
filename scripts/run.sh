@@ -210,6 +210,15 @@ if [[ $DO_TEST -eq 1 ]]; then
             TIMEOUT=90
         fi
     fi
+    # Filtered runs still execute kernel tests first, so ARM often needs extra
+    # wall-clock headroom to finish selected user tests without false timeouts.
+    if [[ -n "$FILTER" && "$TARGET" == "qemu_arm" ]]; then
+        if [[ $DO_TEST_EXTENDED -eq 1 && $TIMEOUT -lt 120 ]]; then
+            TIMEOUT=120
+        elif [[ $TIMEOUT -lt 90 ]]; then
+            TIMEOUT=90
+        fi
+    fi
     if [[ "$TARGET" == "qemu_m68k" && $RUN_SLOW -eq 1 && $TIMEOUT -lt 150 ]]; then
         TIMEOUT=150
     fi

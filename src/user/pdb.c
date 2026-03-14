@@ -1279,7 +1279,7 @@ static void print_help(void)
     put_str("  next | n          step over call (z80), else single-step\n");
     put_str("  run | cont | continue | c    continue\n");
     put_str("  set reg <r> <v>   write register by name or index\n");
-    put_str("  set mem <a> <v> [size]   write memory (size: b|h|w)\n");
+    put_str("  set mem <a> <v> [size]   write memory (size: b|h|w|1|2|4)\n");
     put_str("  break | b <addr>  set software breakpoint\n");
     put_str("  disable <id>      disable breakpoint by id\n");
     put_str("  enable <id>       enable breakpoint by id\n");

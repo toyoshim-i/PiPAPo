@@ -97,7 +97,8 @@ pdb -f /tmp/pdb.script /tmp/prog.com
 #   set reg pc 0x0100
 #   set mem 0x0100 0x00000000
 #   set mem 0x0101 0x34 b
-#   set mem 0x0102 0x5678 h
+#   set mem 0x0102 0x5678 2
+#   set mem 0x0100 0x89abcdef 4
 #   step / s
 #   next / n
 #   run / cont / continue / c
@@ -128,5 +129,6 @@ Scripted-mode notes:
   `break not supported on this target/mapping`.
 - `set mem ... h` requires an even address and must stay within one 32-bit word.
 - `set mem` rejects values that do not fit the selected width (`b`/`h`).
+- `set mem` size accepts `b|h|w` or numeric aliases `1|2|4`.
 - Whitespace-only `-c` entries are ignored.
 - Overlong `-c` commands and overlong script lines are rejected with an error.

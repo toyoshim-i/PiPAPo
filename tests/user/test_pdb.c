@@ -283,9 +283,11 @@ static char arg_delete_long[] = "delete 0";
 static char arg_setreg[] = "set reg wz 0x1234";
 static char arg_setmem[] = "set mem 0x0100 0x00000000";
 static char arg_setmem_byte[] = "set mem 0x0101 0x34 b";
-static char arg_setmem_half[] = "set mem 0x0102 0x5678 h";
+static char arg_setmem_half[] = "set mem 0x0102 0x5678 2";
+static char arg_setmem_word_num[] = "set mem 0x0200 0x89abcdef 4";
 static char arg_x_byte_after_setmem[] = "x/1b 0x0101";
 static char arg_x_half_after_setmem[] = "x/1h 0x0102";
+static char arg_x_word_after_setmem[] = "x/1x 0x0200";
 static char arg_setreg_missing_value[] = "set reg wz";
 static char arg_setmem_missing_value[] = "set mem 0x0100";
 static char arg_setreg_invalid_value[] = "set reg wz xyz";
@@ -773,9 +775,13 @@ int main(void)
     argv4[8] = arg_opt;
     argv4[9] = arg_x_half_after_setmem;
     argv4[10] = arg_opt;
-    argv4[11] = arg_continue;
-    argv4[12] = arg_target;
-    argv4[13] = (char *)0;
+    argv4[11] = arg_setmem_word_num;
+    argv4[12] = arg_opt;
+    argv4[13] = arg_x_word_after_setmem;
+    argv4[14] = arg_opt;
+    argv4[15] = arg_continue;
+    argv4[16] = arg_target;
+    argv4[17] = (char *)0;
     n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
     UT_ASSERT(n2 > 0, "pdb set mem width smoke should produce output");
     UT_ASSERT(WIFEXITED(status2), "pdb set mem width smoke should exit normally");
@@ -784,10 +790,14 @@ int main(void)
               "pdb set mem width smoke should report byte write result");
     UT_ASSERT(str_contains(out2, "mem 0x00000102=0x5678"),
               "pdb set mem width smoke should report halfword write result");
+    UT_ASSERT(str_contains(out2, "mem 0x00000200=0x89abcdef"),
+              "pdb set mem width smoke should report word write result");
     UT_ASSERT(str_contains(out2, "0x00000101: 0x34"),
               "pdb set mem width smoke should verify byte memory content");
     UT_ASSERT(str_contains(out2, "0x00000102: 0x5678"),
               "pdb set mem width smoke should verify halfword memory content");
+    UT_ASSERT(str_contains(out2, "0x00000200: 0x89abcdef"),
+              "pdb set mem width smoke should verify word memory content");
     UT_ASSERT(str_contains(out2, "child exited 0"),
               "pdb set mem width smoke should allow target to exit");
 
