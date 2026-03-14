@@ -279,9 +279,11 @@ static char arg_order_b_script[] = "/tmp/pdb_order_b.script";
 static char arg_blank_cmd[] = "   ";
 static char arg_event_short[] = "event";
 static char arg_show_event[] = "show event";
+static char arg_event_invalid[] = "event nope";
 static char arg_show_only[] = "show";
 static char arg_show_pc_extra[] = "show pc extra";
 static char arg_caps_short[] = "caps";
+static char arg_caps_invalid[] = "caps nope";
 static char arg_show_caps[] = "show caps";
 static char arg_show_pc[] = "show pc";
 static char arg_show_regset[] = "show regset";
@@ -1115,34 +1117,42 @@ int main(void)
     argv3[4] = arg_opt;
     argv3[5] = arg_show_pc_extra;
     argv3[6] = arg_opt;
-    argv3[7] = arg_surface_invalid;
+    argv3[7] = arg_event_invalid;
     argv3[8] = arg_opt;
-    argv3[9] = arg_x_missing_addr;
+    argv3[9] = arg_caps_invalid;
     argv3[10] = arg_opt;
-    argv3[11] = arg_x_invalid_count_plain;
+    argv3[11] = arg_surface_invalid;
     argv3[12] = arg_opt;
-    argv3[13] = arg_x_spec_invalid_fmt;
+    argv3[13] = arg_x_missing_addr;
     argv3[14] = arg_opt;
-    argv3[15] = arg_x_spec_zero_count;
+    argv3[15] = arg_x_invalid_count_plain;
     argv3[16] = arg_opt;
-    argv3[17] = arg_disas_invalid_addr;
+    argv3[17] = arg_x_spec_invalid_fmt;
     argv3[18] = arg_opt;
-    argv3[19] = arg_disas_invalid_count;
+    argv3[19] = arg_x_spec_zero_count;
     argv3[20] = arg_opt;
-    argv3[21] = arg_setreg_missing_value;
+    argv3[21] = arg_disas_invalid_addr;
     argv3[22] = arg_opt;
-    argv3[23] = arg_setmem_missing_value;
+    argv3[23] = arg_disas_invalid_count;
     argv3[24] = arg_opt;
-    argv3[25] = arg_continue;
-    argv3[26] = arg_target;
-    argv3[27] = (char *)0;
-    argv3[28] = (char *)0;
+    argv3[25] = arg_setreg_missing_value;
+    argv3[26] = arg_opt;
+    argv3[27] = arg_setmem_missing_value;
+    argv3[28] = arg_opt;
+    argv3[29] = arg_continue;
+    argv3[30] = arg_target;
+    argv3[31] = (char *)0;
+    argv3[32] = (char *)0;
     n2 = run_capture(argv3, out, sizeof(out_buf), &status2);
     UT_ASSERT(n2 > 0, "pdb usage-diagnostics smoke should produce output");
     UT_ASSERT(WIFEXITED(status2), "pdb usage-diagnostics smoke should exit normally");
     UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
     UT_ASSERT(str_contains(out, "pdb: usage: show <abi|event|caps|regset|pc|sp|surface>"),
               "pdb usage-diagnostics smoke should report show usage");
+    UT_ASSERT(str_contains(out, "pdb: usage: event"),
+              "pdb usage-diagnostics smoke should report event usage");
+    UT_ASSERT(str_contains(out, "pdb: usage: caps"),
+              "pdb usage-diagnostics smoke should report caps usage");
     UT_ASSERT(str_contains(out, "pdb: usage: surface <real|ecpu>"),
               "pdb usage-diagnostics smoke should report surface usage");
     UT_ASSERT(str_contains(out, "pdb: usage: x <addr> [count]"),

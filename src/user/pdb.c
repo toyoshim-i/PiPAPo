@@ -1541,6 +1541,10 @@ int main(int argc, char *argv[])
         }
 
         if (streq(tok[0], "caps")) {
+            if (ntok != 1) {
+                put_err("pdb: usage: caps\n");
+                continue;
+            }
             if (!child_stopped) {
                 put_err("pdb: child is not stopped\n");
                 continue;
@@ -1554,6 +1558,10 @@ int main(int argc, char *argv[])
         }
 
         if (streq(tok[0], "event")) {
+            if (ntok != 1) {
+                put_err("pdb: usage: event\n");
+                continue;
+            }
             print_event(&last_ev);
             continue;
         }
