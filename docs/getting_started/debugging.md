@@ -126,6 +126,8 @@ Scripted-mode notes:
 
 - `-q` suppresses prompt and command-echo output for cleaner automation logs.
 - `--batch` also suppresses automatic initial stop/target and child-exit lines.
+- Most `pdb` commands require an exact argument count; trailing tokens are
+  rejected with a `usage:` diagnostic.
 - `caps`/`show caps` prints both hex capability bits and decoded names.
 - `break` support is mapping-dependent; on unsupported targets `pdb` prints
   `break not supported on this target/mapping`.
@@ -136,3 +138,9 @@ Scripted-mode notes:
 - `set mem` size accepts `b|h|w` or numeric aliases `1|2|4`.
 - Whitespace-only `-c` entries are ignored.
 - Overlong `-c` commands and overlong script lines are rejected with an error.
+
+For quick `pdb` regression checks:
+
+```sh
+./scripts/run.sh --test --filter=pdb qemu_arm
+```
