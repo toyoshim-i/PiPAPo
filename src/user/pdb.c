@@ -435,6 +435,48 @@ static int get_caps_if_stopped(pid_t pid, int child_stopped,
     return 1;
 }
 
+static void init_local_bp_table(pdb_local_bp_t *local_bp)
+{
+    for (int i = 0; i < PDB_LOCAL_BP_MAX; i++) {
+        local_bp[i].used = 0;
+        local_bp[i].enabled = 0;
+        local_bp[i].addr = 0;
+        local_bp[i].flags = 0;
+    }
+}
+
+static int start_tracee(char *argv[], int argi, int attach_mode, pid_t attach_pid,
+                        pid_t *pid_out)
+{
+    pid_t pid = 0;
+
+    if (attach_mode) {
+        long rc;
+        pid = attach_pid;
+        rc = ptrace(PTRACE_ATTACH, pid, (void *)0, (void *)0);
+        if (rc < 0) {
+            put_err("pdb: ATTACH failed rc=");
+            put_i32((int32_t)rc);
+            put_chr('\n');
+            return 0;
+        }
+    } else {
+        pid = vfork();
+        if (pid == 0) {
+            ptrace(PTRACE_TRACEME, 0, (void *)0, (void *)0);
+            execve(argv[argi], &argv[argi], (void *)0);
+            _exit(127);
+        }
+        if (pid < 0) {
+            put_err("pdb: vfork failed\n");
+            return 0;
+        }
+    }
+
+    *pid_out = pid;
+    return 1;
+}
+
 static void usage(void)
 {
     put_str("Usage: pdb [-q] [--batch] [-c <cmd> ...] [-f <script> ...] <program> [args...]\n");
@@ -608,35 +650,10 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    for (int i = 0; i < PDB_LOCAL_BP_MAX; i++) {
-        local_bp[i].used = 0;
-        local_bp[i].enabled = 0;
-        local_bp[i].addr = 0;
-        local_bp[i].flags = 0;
-    }
+    init_local_bp_table(local_bp);
 
-    if (attach_mode) {
-        long rc;
-        pid = attach_pid;
-        rc = ptrace(PTRACE_ATTACH, pid, (void *)0, (void *)0);
-        if (rc < 0) {
-            put_err("pdb: ATTACH failed rc=");
-            put_i32((int32_t)rc);
-            put_chr('\n');
-            return 1;
-        }
-    } else {
-        pid = vfork();
-        if (pid == 0) {
-            ptrace(PTRACE_TRACEME, 0, (void *)0, (void *)0);
-            execve(argv[argi], &argv[argi], (void *)0);
-            _exit(127);
-        }
-        if (pid < 0) {
-            put_err("pdb: vfork failed\n");
-            return 1;
-        }
-    }
+    if (!start_tracee(argv, argi, attach_mode, attach_pid, &pid))
+        return 1;
 
     {
         int wr = wait_child(pid, &child_stopped, &child_exit_code, &last_ev,
