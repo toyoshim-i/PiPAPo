@@ -188,9 +188,12 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
         return -(int)ENOEXEC;
     }
 
-    /* Non-XIP files (tmpfs/vfat/etc.) can still be executed by loaders
-     * that fully copy the binary image (.com, .x, .r, emulated m68k ELF).
-     * Native ELF/XIP still requires vn->xip_addr and follows below. */
+    /* Non-XIP files (UFS/tmpfs/etc.) can still be executed by format-specific
+     * loaders (.com, .x, .r, emulated m68k ELF) or as native ELF.
+     * For native ELF from a non-XIP FS, we run the binary in-place from the
+     * load buffer (all in RAM, same as romfs XIP). */
+    const uint8_t *elf_buf = NULL;  /* set to non-NULL for ELF-from-buffer */
+
     if (vn->xip_addr == NULL) {
         uint32_t file_size = vn->size;
         if (file_size == 0) {
@@ -260,14 +263,23 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
         }
 #endif
 
-        for (uint32_t i = 0; i < file_pages; i++)
-            page_free(file_buf + i * PAGE_SIZE);
-        vnode_put(vn);
-        return -(int)ENOEXEC;
+        /* Native ELF (m68k or ARM) loaded from a non-XIP filesystem.
+         * Run in-place from the load buffer — all RAM, same as romfs XIP.
+         * The buffer pages are NOT freed here; text runs from them. */
+        if (elf_validate((const elf32_ehdr_t *)file_buf) == 0) {
+            elf_buf = file_buf;
+            /* file_buf intentionally kept alive — text lives in these pages */
+        } else {
+            for (uint32_t i = 0; i < file_pages; i++)
+                page_free(file_buf + i * PAGE_SIZE);
+            vnode_put(vn);
+            return -(int)ENOEXEC;
+        }
     }
 
     /* ── 2. Detect binary format ─────────────────────────────────────── */
-    const uint8_t *file_base = (const uint8_t *)vn->xip_addr;
+    const uint8_t *file_base = (elf_buf != NULL)
+        ? elf_buf : (const uint8_t *)vn->xip_addr;
     uint32_t file_size = vn->size;
 
     /* Try Human68k X-format ("HU" magic) before ELF */

@@ -102,6 +102,20 @@ void klogf(const char *fmt, ...)
             case 'x':
                 klog_print_hex32(va_arg(ap, uint32_t));
                 break;
+            case 'l':
+                fmt++;
+                if (*fmt == 'u') {
+                    klog_print_dec((uint32_t)va_arg(ap, unsigned long));
+                } else if (*fmt == 'x') {
+                    klog_print_hex32((uint32_t)va_arg(ap, unsigned long));
+                } else if (*fmt == '\0') {
+                    goto done;
+                } else {
+                    klog_putc('%');
+                    klog_putc('l');
+                    klog_putc(*fmt);
+                }
+                break;
             case '%':
                 klog_putc('%');
                 break;
