@@ -127,5 +127,6 @@ Scripted-mode notes:
 - `break` support is mapping-dependent; on unsupported targets `pdb` prints
   `break not supported on this target/mapping`.
 - `set mem ... h` requires an even address and must stay within one 32-bit word.
+- `set mem` rejects values that do not fit the selected width (`b`/`h`).
 - Whitespace-only `-c` entries are ignored.
 - Overlong `-c` commands and overlong script lines are rejected with an error.

@@ -293,6 +293,8 @@ static char arg_reg_unknown[] = "reg no_such_reg";
 static char arg_setreg_unknown[] = "set reg no_such_reg 0x1234";
 static char arg_setmem_invalid_value[] = "set mem 0x0100 xyz";
 static char arg_setmem_invalid_size[] = "set mem 0x0100 0x12 q";
+static char arg_setmem_byte_overflow[] = "set mem 0x0101 0x123 b";
+static char arg_setmem_half_overflow[] = "set mem 0x0102 0x12345 h";
 static char arg_setmem_half_odd[] = "set mem 0x0101 0x1234 h";
 static char arg_setmem_half_cross[] = "set mem 0x0103 0x5678 h";
 static char arg_break_invalid_addr[] = "break xyz";
@@ -1027,22 +1029,26 @@ int main(void)
     argv3[10] = arg_opt;
     argv3[11] = arg_setmem_invalid_size;
     argv3[12] = arg_opt;
-    argv3[13] = arg_setmem_half_odd;
+    argv3[13] = arg_setmem_byte_overflow;
     argv3[14] = arg_opt;
-    argv3[15] = arg_setmem_half_cross;
+    argv3[15] = arg_setmem_half_overflow;
     argv3[16] = arg_opt;
-    argv3[17] = arg_break_invalid_addr;
+    argv3[17] = arg_setmem_half_odd;
     argv3[18] = arg_opt;
-    argv3[19] = arg_disable_invalid_id;
+    argv3[19] = arg_setmem_half_cross;
     argv3[20] = arg_opt;
-    argv3[21] = arg_enable_invalid_id;
+    argv3[21] = arg_break_invalid_addr;
     argv3[22] = arg_opt;
-    argv3[23] = arg_delete_invalid_id;
+    argv3[23] = arg_disable_invalid_id;
     argv3[24] = arg_opt;
-    argv3[25] = arg_continue;
-    argv3[26] = arg_target;
-    argv3[27] = (char *)0;
-    argv3[28] = (char *)0;
+    argv3[25] = arg_enable_invalid_id;
+    argv3[26] = arg_opt;
+    argv3[27] = arg_delete_invalid_id;
+    argv3[28] = arg_opt;
+    argv3[29] = arg_continue;
+    argv3[30] = arg_target;
+    argv3[31] = (char *)0;
+    argv3[32] = (char *)0;
     n2 = run_capture(argv3, out, sizeof(out_buf), &status2);
     UT_ASSERT(n2 > 0, "pdb invalid-number diagnostics smoke should produce output");
     UT_ASSERT(WIFEXITED(status2), "pdb invalid-number diagnostics smoke should exit normally");
@@ -1059,6 +1065,8 @@ int main(void)
               "pdb invalid-number diagnostics smoke should report halfword odd-address rejection");
     UT_ASSERT(str_contains(out, "pdb: set mem halfword must not cross word boundary"),
               "pdb invalid-number diagnostics smoke should report halfword cross-word rejection");
+    UT_ASSERT(str_contains(out, "pdb: set mem value out of range for size"),
+              "pdb invalid-number diagnostics smoke should report size-range rejection");
     UT_ASSERT(str_contains(out, "pdb: usage: break <addr>"),
               "pdb invalid-number diagnostics smoke should report break address parse failure");
     UT_ASSERT(str_contains(out, "pdb: usage: disable <id>"),

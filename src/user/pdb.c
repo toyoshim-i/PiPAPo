@@ -2093,6 +2093,11 @@ int main(int argc, char *argv[])
                         put_err("pdb: set mem halfword requires even address\n");
                         continue;
                     }
+                    if ((width == 1u && value > 0xffu) ||
+                        (width == 2u && value > 0xffffu)) {
+                        put_err("pdb: set mem value out of range for size\n");
+                        continue;
+                    }
 
                     rc = ptrace(PTRACE_PEEKDATA, pid, (void *)(uintptr_t)base, &old_word);
                     if (rc < 0) {
