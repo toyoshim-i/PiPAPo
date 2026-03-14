@@ -126,5 +126,6 @@ Scripted-mode notes:
 - `caps`/`show caps` prints both hex capability bits and decoded names.
 - `break` support is mapping-dependent; on unsupported targets `pdb` prints
   `break not supported on this target/mapping`.
+- `set mem ... h` requires an even address and must stay within one 32-bit word.
 - Whitespace-only `-c` entries are ignored.
 - Overlong `-c` commands and overlong script lines are rejected with an error.

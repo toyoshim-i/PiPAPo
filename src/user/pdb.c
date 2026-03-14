@@ -2085,12 +2085,12 @@ int main(int argc, char *argv[])
                     uint32_t shift = (addr & 3u) * 8u;
                     uint32_t mask = (width == 1u) ? 0xffu : 0xffffu;
 
-                    if (width == 2u && (addr & 1u)) {
-                        put_err("pdb: set mem halfword requires even address\n");
-                        continue;
-                    }
                     if (width == 2u && (addr & 3u) == 3u) {
                         put_err("pdb: set mem halfword must not cross word boundary\n");
+                        continue;
+                    }
+                    if (width == 2u && (addr & 1u)) {
+                        put_err("pdb: set mem halfword requires even address\n");
                         continue;
                     }
 
