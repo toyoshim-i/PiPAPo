@@ -49,10 +49,23 @@
 #define ROOTFS_BASE  0x030000u  /* conservative fallback: 192 KB */
 #endif
 
-/* Scratch buffer: 4096 bytes above IOCS work area ($000400–$0007FF).
- * IOCS uses $000400–$0007FF for its own work area (puni/programmers.txt),
- * so BUF must start at $000800 or higher to avoid corrupting it. */
-#define BUF               ((uint8_t *)0x000800u)
+/* Scratch buffer: one UFS block (4096 bytes) at the first free address
+ * above stage2 code.
+ *
+ * X68000 system work area layout (ALL must be avoided):
+ *   $000000-$0003FF  CPU exception vectors
+ *   $000400-$0007FF  IOCS work area (cursor, screen config, font data …)
+ *   $000800-$000FFF  OPM (YM2151) driver work area
+ *   $001000-$001FFF  FDC / SCSI / DMA driver work area
+ *
+ * $000800 was wrong — it is INSIDE the OPM work area.  Writing 4 KB of
+ * UFS data there overwrites both the OPM and FDC driver work areas; when
+ * the OPM interrupt fires the corrupted handler executes garbage code that
+ * can write to CRTC registers, causing the display to break.
+ *
+ * $003C00 is the first byte after the 3 KB stage2 code area
+ * ($003000-$003BFF) and is well above all system work areas. */
+#define BUF               ((uint8_t *)0x003C00u)
 
 /* ── X68000 2HD floppy geometry ─────────────────────────────────────────────── */
 
