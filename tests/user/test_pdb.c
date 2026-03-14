@@ -143,6 +143,23 @@ static int str_count(const char *hay, const char *needle)
     return count;
 }
 
+static int str_index(const char *hay, const char *needle)
+{
+    int i = 0;
+    int j = 0;
+
+    if (!needle[0])
+        return 0;
+
+    for (i = 0; hay[i]; i++) {
+        for (j = 0; needle[j] && hay[i + j] == needle[j]; j++)
+            ;
+        if (!needle[j])
+            return i;
+    }
+    return -1;
+}
+
 static void u32_to_dec(uint32_t value, char *buf, int buf_size)
 {
     char tmp[16];
@@ -228,6 +245,18 @@ static const uint8_t pdb_trim_script[] = {
     ' ', 's', 'h', 'o', 'w', ' ', 'c', 'a', 'p', 's', '\n',
     ' ', 'q', ' ', '\n',
 };
+static const uint8_t pdb_crlf_script[] = {
+    '#', ' ', 'c', 'r', 'l', 'f', ' ', 'c', 'o', 'm', 'm', 'e', 'n', 't', '\r', '\n',
+    ' ', ' ', 's', 'h', 'o', 'w', ' ', 'r', 'e', 'g', 's', 'e', 't', ' ', '\r', '\n',
+    's', 'h', 'o', 'w', ' ', 'c', 'a', 'p', 's', '\r', '\n',
+    'q', '\r', '\n',
+};
+static const uint8_t pdb_order_a_script[] = {
+    's', 'h', 'o', 'w', ' ', 'r', 'e', 'g', 's', 'e', 't', '\n',
+};
+static const uint8_t pdb_order_b_script[] = {
+    's', 'h', 'o', 'w', ' ', 'c', 'a', 'p', 's', '\n',
+};
 
 static char arg_prog[] = "/bin/pdb";
 static char arg_help[] = "-h";
@@ -243,6 +272,9 @@ static char arg_long_script[] = "/tmp/pdb_long.script";
 static char arg_missing_script[] = "/tmp/pdb_missing.script";
 static char arg_many_script[] = "/tmp/pdb_many.script";
 static char arg_trim_script[] = "/tmp/pdb_trim.script";
+static char arg_crlf_script[] = "/tmp/pdb_crlf.script";
+static char arg_order_a_script[] = "/tmp/pdb_order_a.script";
+static char arg_order_b_script[] = "/tmp/pdb_order_b.script";
 static char arg_blank_cmd[] = "   ";
 static char arg_event_short[] = "event";
 static char arg_show_event[] = "show event";
@@ -1265,6 +1297,58 @@ int main(void)
               "pdb -f should execute trimmed show caps line");
     UT_ASSERT(!str_contains(out2, "pdb: no scripted commands"),
               "pdb -f should not treat trimmed script as empty");
+
+    UT_ASSERT_EQ(write_blob(arg_crlf_script, pdb_crlf_script,
+                            (int)sizeof(pdb_crlf_script)), 0);
+    argv4[0] = arg_prog;
+    argv4[1] = arg_quiet;
+    argv4[2] = arg_file_opt;
+    argv4[3] = arg_crlf_script;
+    argv4[4] = arg_target;
+    argv4[5] = (char *)0;
+    n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
+    unlink(arg_crlf_script);
+    UT_ASSERT(n2 > 0, "pdb -f CRLF script should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb -f CRLF script should exit");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out2, "regset=z80"),
+              "pdb -f should execute show regset from CRLF script");
+    UT_ASSERT(str_contains(out2, "caps="),
+              "pdb -f should execute show caps from CRLF script");
+    UT_ASSERT(!str_contains(out2, "pdb: no scripted commands"),
+              "pdb -f should not treat CRLF script as empty");
+
+    UT_ASSERT_EQ(write_blob(arg_order_a_script, pdb_order_a_script,
+                            (int)sizeof(pdb_order_a_script)), 0);
+    UT_ASSERT_EQ(write_blob(arg_order_b_script, pdb_order_b_script,
+                            (int)sizeof(pdb_order_b_script)), 0);
+    argv3[0] = arg_prog;
+    argv3[1] = arg_quiet;
+    argv3[2] = arg_file_opt;
+    argv3[3] = arg_order_a_script;
+    argv3[4] = arg_opt;
+    argv3[5] = arg_show_sp;
+    argv3[6] = arg_file_opt;
+    argv3[7] = arg_order_b_script;
+    argv3[8] = arg_opt;
+    argv3[9] = arg_quit_short;
+    argv3[10] = arg_target;
+    argv3[11] = (char *)0;
+    n2 = run_capture(argv3, out2, sizeof(out2_buf), &status2);
+    unlink(arg_order_a_script);
+    unlink(arg_order_b_script);
+    UT_ASSERT(n2 > 0, "pdb mixed -f/-c order smoke should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb mixed -f/-c order smoke should exit");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    {
+        int idx_regset = str_index(out2, "regset=z80");
+        int idx_sp = str_index(out2, "sp=0x");
+        int idx_caps = str_index(out2, "caps=");
+        UT_ASSERT(idx_regset >= 0 && idx_sp >= 0 && idx_caps >= 0,
+                  "pdb mixed -f/-c order smoke should emit all scripted outputs");
+        UT_ASSERT(idx_regset < idx_sp && idx_sp < idx_caps,
+                  "pdb mixed -f/-c order smoke should preserve argument order");
+    }
 
     for (int i = 0; i < (int)sizeof(long_script_line_buf) - 2; i++)
         long_script_line[i] = 'x';
