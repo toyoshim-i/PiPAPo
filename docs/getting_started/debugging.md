@@ -96,9 +96,9 @@ pdb -f /tmp/pdb.script /tmp/prog.com
 #   event          # includes decoded debug-stop reason (step/sw-bp/hw-bp)
 #   set reg pc 0x0100
 #   set mem 0x0100 0x00000000
-#   set mem 0x0101 0x34 b
+#   set mem 0x0101 0x34 1
 #   set mem 0x0102 0x5678 2
-#   set mem 0x0100 0x89abcdef 4
+#   set mem 0x0100 0x89abcdef w
 #   step / s
 #   next / n
 #   run / cont / continue / c
