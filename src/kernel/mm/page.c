@@ -87,7 +87,7 @@ void mm_init(void)
     }
 
     /* ── Boot-time memory map ─────────────────────────────────────────────── */
-    klog("MM: SRAM memory map\n");
+    klog("MM: memory map\n");
     klogf("MM:   kernel  %x-%x  %u KB reserved\n",
           SRAM_KERNEL_BASE, SRAM_KERNEL_BASE + SRAM_KERNEL_SIZE - 1u,
           SRAM_KERNEL_SIZE / 1024u);

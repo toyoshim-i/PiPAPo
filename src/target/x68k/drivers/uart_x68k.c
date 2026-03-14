@@ -22,6 +22,20 @@
 /* ── IOCS helper macros ──────────────────────────────────────────────────── */
 
 /*
+ * iocs_b_clr_st — clear TVRAM text screen and home cursor via _B_CLR_ST (IOCS 0x22)
+ *
+ * d0 = 0x22 (function code)
+ * Clears the scroll window (text screen) and moves the cursor to the top-left.
+ */
+static inline void iocs_b_clr_st(void)
+{
+    register int32_t d0 asm("d0") = 0x22;
+    asm volatile("trap #15"
+                 : "+r"(d0)
+                 : : "d1", "d2", "a0", "a1", "memory");
+}
+
+/*
  * iocs_set232c — initialize RS-232C via _SET232C (IOCS 0x32)
  *
  * d0 = 0x32 (function code)
@@ -111,8 +125,11 @@ static inline int iocs_b_keysns(void)
 
 void uart_init_console(void)
 {
-    /* IOCS console is initialized by the IPL ROM before stage1 runs.
-     * _SET232C (0x32) intentionally not called here: it blocks waiting
+    /* Clear TVRAM text screen and home cursor so IPL ROM residual content
+     * (which may include SJIS multi-byte characters) does not corrupt the
+     * display when the kernel starts writing at the current cursor position. */
+    iocs_b_clr_st();
+    /* _SET232C (0x32) intentionally not called here: it blocks waiting
      * for CTS on X68000 hardware/XEiJ, hanging the kernel before any output. */
 }
 
@@ -159,7 +176,13 @@ int uart_getc(void)
 {
     if (!iocs_b_keysns())
         return -1;
-    return iocs_b_getc();
+    int c = iocs_b_getc();
+    /* Discard non-ASCII codes (function keys, cursor keys, Japanese kana input).
+     * Sending values > 0x7F directly to _B_PUTC would be interpreted as SJIS
+     * lead bytes, corrupting subsequent TVRAM output. */
+    if (c > 0x7F)
+        return -1;
+    return c;
 }
 
 int uart_rx_avail(void)
