@@ -52,6 +52,10 @@
 /* Defined in drivers/timer_x68k.c */
 extern void timer_init(void);
 
+/* Benign IRQ handler — silences unhandled hardware IRQs with a bare rte.
+ * Defined in arch/m68k/irq.S (or similar). */
+extern void m68k_irq_ignore(void);
+
 /* ── TRAP #0 syscall dispatch ────────────────────────────────────────── *
  *
  * Called from m68k_trap0_handler (trap.S) with a pointer to the saved
@@ -100,6 +104,34 @@ void m68k_syscall_entry(uint32_t *regs)
 
 void target_early_init(void)
 {
+    /* Patch hardware interrupt vectors BEFORE the first IOCS call.
+     *
+     * Stage2 copies the kernel's .vectors to 0x000000 before jumping here,
+     * so autovectors 25-30 (OPM, MFP, FDC, VSYNC, DMA …) and MFP vectored
+     * interrupts 64-79 all point to Default_Handler (stop #0x2700) at this
+     * point.  Some IOCS functions (e.g. _B_CLR_ST) temporarily lower the CPU
+     * interrupt priority level to allow VSYNC-sync; if an interrupt fires
+     * before the vectors are overridden the CPU would halt inside the IOCS.
+     *
+     * NOTE: timer_init() is called later in target_late_init() and installs
+     * m68k_timer_isr at vt[69].  It must come AFTER this loop; the loop
+     * filling vt[64-79] with m68k_irq_ignore runs here so that call is safe.
+     */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+    volatile uint32_t *vt = (volatile uint32_t *)0x0;
+    uint32_t ignore = (uint32_t)(uintptr_t)m68k_irq_ignore;
+    vt[25] = ignore;  /* Level 1: OPM (YM2151) */
+    vt[26] = ignore;  /* Level 2: MFP autovector (fallback) */
+    vt[27] = ignore;  /* Level 3: reserved */
+    vt[28] = ignore;  /* Level 4: SCC / VSYNC */
+    vt[29] = ignore;  /* Level 5: FDC */
+    vt[30] = ignore;  /* Level 6: DMA */
+    /* Level 7 (NMI, vector 31): keep Default_Handler */
+    for (uint32_t v = 64u; v < 80u; v++)
+        vt[v] = ignore;
+#pragma GCC diagnostic pop
+
     /* Diagnostic: "Po" — kernel reached (TRAP #15 = IPL IOCS, restored by stage2) */
     {
         register uint32_t d0 asm("d0") = 0x20u;
@@ -114,41 +146,13 @@ void target_early_init(void)
     klog("Phase X-2: preemptive scheduling (MFP Timer-C), embedded romfs\n");
 }
 
-/* Benign IRQ handler — silences unhandled hardware IRQs with a bare rte */
-extern void m68k_irq_ignore(void);
-
 void target_late_init(void)
 {
-    /* Install a benign rttake e handler for X68000 hardware autovectors (levels
-     * 1–6).  Without this, VSYNC/OPM/FDC/DMA interrupts would hit
-     * Default_Handler which halts the CPU with stop #0x2700. */
-    /* Vector table lives at physical address 0x000000 on 68000.
-     * The compiler warns about NULL dereference; suppress it — this is
-     * intentional hardware vector table access, not a bug. */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Warray-bounds"
-    volatile uint32_t *vt = (volatile uint32_t *)0x0;
-    uint32_t ignore = (uint32_t)(uintptr_t)m68k_irq_ignore;
-    vt[25] = ignore;  /* Level 1: OPM (YM2151) */
-    vt[26] = ignore;  /* Level 2: MFP autovector (fallback) */
-    vt[27] = ignore;  /* Level 3: reserved */
-    vt[28] = ignore;  /* Level 4: SCC / VSYNC */
-    vt[29] = ignore;  /* Level 5: FDC */
-    vt[30] = ignore;  /* Level 6: DMA */
-    /* Level 7 (NMI, vector 31): keep Default_Handler */
-
-    /* MFP (MC68901) uses VECTORED interrupts with VR base set by the IPL
-     * BIOS to 0x40 (vector 64).  Sources occupy vectors 64–79.
-     * Pre-fill with m68k_irq_ignore so no stale Default_Handler fires
-     * after arch_irq_enable(). */
-    for (uint32_t v = 64u; v < 80u; v++)
-        vt[v] = ignore;
-#pragma GCC diagnostic pop
-
-    /* Initialize MFP Timer-C at 100 Hz for preemptive scheduling.
-     * Must be called AFTER the loop above: timer_init() installs
-     * m68k_timer_isr at vector 69 (TC_VECTOR = MFP VR_base+5 = 0x45),
-     * which the loop would otherwise overwrite with m68k_irq_ignore. */
+    /* Vector patching (autovectors 25-30, MFP vectors 64-79 → m68k_irq_ignore)
+     * was done in target_early_init() before the first IOCS call.
+     * Here we only need to start the MFP Timer-C for preemptive scheduling.
+     * timer_init() installs m68k_timer_isr at vector 69 (MFP VR_base+5 = 0x45);
+     * vt[64-79] were already filled with m68k_irq_ignore so this is safe. */
     timer_init();
 
     /* Set up dual-TTY: TTY_DISPLAY = TVRAM (primary), TTY_SERIAL = RS-232C */
