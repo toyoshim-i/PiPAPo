@@ -388,6 +388,10 @@ int main(void)
               "pdb -h should print help text");
     UT_ASSERT(str_contains_basic(out, "--batch"),
               "pdb -h should include batch-mode option");
+    UT_ASSERT(str_contains_basic(out, "pc                show current program counter"),
+              "pdb -h should include pc shorthand help");
+    UT_ASSERT(str_contains_basic(out, "sp                show current stack pointer"),
+              "pdb -h should include sp shorthand help");
     UT_ASSERT(str_contains_basic(out, "info break|b"),
               "pdb -h should include info break alias help");
 
@@ -1438,6 +1442,10 @@ int main(void)
               "pdb -h should include batch-mode option");
     UT_ASSERT(str_contains(out2, "--attach"),
               "pdb -h should include attach option");
+    UT_ASSERT(str_contains(out2, "pc                show current program counter"),
+              "pdb -h should include pc shorthand help");
+    UT_ASSERT(str_contains(out2, "sp                show current stack pointer"),
+              "pdb -h should include sp shorthand help");
     argv2[0] = arg_prog;
     argv2[1] = arg_help_long;
     argv2[2] = (char *)0;
