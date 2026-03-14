@@ -65,4 +65,13 @@ void tty_set_fg_pgrp(int idx, int pgid);
 /* Return non-zero if TTY instance idx has an I/O backend registered. */
 int tty_backend_ready(int idx);
 
+/* Set the console TTY instance used by fd_stdio_init().
+ * Call from target_late_init() before the first process is spawned.
+ * Default: TTY_SERIAL (0).  pico1calc and x68k use TTY_DISPLAY (1). */
+void tty_set_console(int idx);
+
+/* Return an opaque pointer to the console TTY device (as set by tty_set_console).
+ * Used by fd_stdio_init() to point stdin/stdout/stderr at the primary console. */
+void *tty_get_console_dev(void);
+
 #endif /* PPAP_FD_TTY_H */

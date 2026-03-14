@@ -70,7 +70,7 @@ void proc_init(void)
         core_id_reg = (volatile uint32_t *)0xD0000000u;
 
     /* ── Print boot diagnostic ─────────────────────────────────────────── */
-    klogf("PROC: process table  slots=%u  (pid 0 = kernel, pids 1–%u available)\n",
+    klogf("PROC: process table  slots=%u  (pid 0 = kernel, pids 1-%u available)\n",
           (uint32_t)PROC_MAX, (uint32_t)(PROC_MAX - 1u));
 
 #ifdef PPAP_TESTS

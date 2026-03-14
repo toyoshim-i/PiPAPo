@@ -13,10 +13,13 @@
 
 void fd_stdio_init(pcb_t *p)
 {
-    /* Point static tty files at the default console (UART / ttyS0) */
-    tty_stdin.priv  = tty_get_dev(TTY_SERIAL);
-    tty_stdout.priv = tty_get_dev(TTY_SERIAL);
-    tty_stderr.priv = tty_get_dev(TTY_SERIAL);
+    /* Point static tty files at the target's primary console TTY.
+     * Targets with a display (x68k, pico1calc) call tty_set_console()
+     * in target_late_init() to redirect to TTY_DISPLAY. */
+    void *console = tty_get_console_dev();
+    tty_stdin.priv  = console;
+    tty_stdout.priv = console;
+    tty_stderr.priv = console;
     p->fd_table[0] = &tty_stdin;    /* stdin  — read from console  */
     p->fd_table[1] = &tty_stdout;   /* stdout — write to console   */
     p->fd_table[2] = &tty_stderr;   /* stderr — write to console   */

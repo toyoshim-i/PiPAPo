@@ -127,8 +127,31 @@ void target_late_init(void)
         vt[v] = ignore;
 #pragma GCC diagnostic pop
 
+    /* Set up dual-TTY: TTY_DISPLAY = TVRAM (primary), TTY_SERIAL = RS-232C */
+    extern void uart_serial_putc(char c);
+    static const tty_backend_t tvram_be = {
+        .putc     = uart_putc,
+        .flush    = NULL,
+        .getc     = uart_getc,
+        .rx_avail = uart_rx_avail,
+        .get_cols = NULL,
+        .get_rows = NULL,
+    };
+    static const tty_backend_t serial_be = {
+        .putc     = uart_serial_putc,
+        .flush    = NULL,
+        .getc     = NULL,
+        .rx_avail = NULL,
+        .get_cols = NULL,
+        .get_rows = NULL,
+    };
+    tty_set_backend(TTY_DISPLAY, &tvram_be);
+    tty_set_backend(TTY_SERIAL,  &serial_be);
+    tty_set_console(TTY_DISPLAY);
+    klog_set_mirror(uart_serial_putc, NULL);
+
     /* Register keyboard polling so blocked TTY reads get woken up */
-    sched_set_input_poll(uart_rx_avail, TTY_SERIAL);
+    sched_set_input_poll(uart_rx_avail, TTY_DISPLAY);
 }
 
 void target_post_mount(void)

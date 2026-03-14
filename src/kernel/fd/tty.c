@@ -146,6 +146,9 @@ static tty_dev_t tty_devs[TTY_MAX] = {
     },
 };
 
+/* Primary console TTY index — changed by tty_set_console() before first fork */
+static int console_tty_idx = TTY_SERIAL;
+
 /* ── tty ioctl numbers ─────────────────────────────────────────────────────── */
 
 #define TCGETS      0x5401u
@@ -186,6 +189,17 @@ int tty_backend_ready(int idx)
     if ((unsigned)idx >= TTY_MAX)
         return 0;
     return tty_devs[idx].out != NULL;
+}
+
+void tty_set_console(int idx)
+{
+    if ((unsigned)idx < TTY_MAX)
+        console_tty_idx = idx;
+}
+
+void *tty_get_console_dev(void)
+{
+    return tty_get_dev(console_tty_idx);
 }
 
 /* ── Output helper (putc + optional flush) ────────────────────────────────── */

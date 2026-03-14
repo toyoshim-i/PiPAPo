@@ -119,20 +119,24 @@ void uart_init_console(void)
 void uart_putc(char c)
 {
     iocs_b_putc(c);
-    iocs_out232c(c);
 }
 
 void uart_puts(const char *s)
 {
     while (*s) {
-        if (*s == '\n') {
+        if (*s == '\n')
             iocs_b_putc('\r');
-            iocs_out232c('\r');
-        }
         iocs_b_putc(*s);
-        iocs_out232c(*s);
         s++;
     }
+}
+
+/* Output one character to RS-232C serial only (for klog mirror and TTY_SERIAL). */
+void uart_serial_putc(char c)
+{
+    if (c == '\n')
+        iocs_out232c('\r');
+    iocs_out232c(c);
 }
 
 void uart_flush(void)

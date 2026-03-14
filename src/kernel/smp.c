@@ -205,7 +205,7 @@ void core1_launch(void (*entry)(void))
      * SCB.CPUID is in the System Control Space and is always accessible.
      */
     if ((SCB_CPUID & CPUID_PARTNO_MASK) != CPUID_PARTNO_M0P) {
-        klog("SMP: not Cortex-M0+ — skipping Core 1 launch (QEMU)\n");
+        klog("SMP: not Cortex-M0+: skipping Core 1 launch (QEMU)\n");
         return;
     }
 

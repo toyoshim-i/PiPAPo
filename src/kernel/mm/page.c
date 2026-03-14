@@ -88,7 +88,7 @@ void mm_init(void)
 
     /* ── Boot-time memory map ─────────────────────────────────────────────── */
     klog("MM: SRAM memory map\n");
-    klogf("MM:   kernel  %x–%x  %u KB reserved\n",
+    klogf("MM:   kernel  %x-%x  %u KB reserved\n",
           SRAM_KERNEL_BASE, SRAM_KERNEL_BASE + SRAM_KERNEL_SIZE - 1u,
           SRAM_KERNEL_SIZE / 1024u);
     if (stack_top > bss_end)
@@ -99,14 +99,14 @@ void mm_init(void)
 
     uint32_t actual_base = (free_top > 0)
         ? (uint32_t)(uintptr_t)free_stack[0] : PAGE_POOL_BASE;
-    klogf("MM:   pages   %x–%x %u KB (%u × 4 KB, all free)\n",
+    klogf("MM:   pages   %x-%x %u KB (%u x 4 KB, all free)\n",
           actual_base, PAGE_POOL_BASE + page_count * PAGE_SIZE - 1u,
           free_top * PAGE_SIZE / 1024u, free_top);
 #if !defined(__m68k__)
-    klogf("MM:   io_buf  %x–%x  %u KB\n",
+    klogf("MM:   io_buf  %x-%x  %u KB\n",
           SRAM_IOBUF_BASE, SRAM_IOBUF_BASE + SRAM_IOBUF_SIZE - 1u,
           SRAM_IOBUF_SIZE / 1024u);
-    klogf("MM:   dma     %x–%x  %u KB\n",
+    klogf("MM:   dma     %x-%x  %u KB\n",
           SRAM_DMA_BASE, SRAM_DMA_BASE + SRAM_DMA_SIZE - 1u,
           SRAM_DMA_SIZE / 1024u);
 #endif
@@ -147,7 +147,7 @@ void *page_alloc(void)
     }
     spin_unlock_irqrestore(SPIN_PAGE, saved);
     if (!p)
-        klog("MM: OOM — page_alloc failed\n");
+        klog("MM: OOM: page_alloc failed\n");
     return p;
 }
 

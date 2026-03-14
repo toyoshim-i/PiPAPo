@@ -104,7 +104,7 @@ static void mpu_set_region(uint32_t region, uint32_t base, uint32_t rasr)
 void mpu_init(void)
 {
     if (MPU_TYPE == 0u) {
-        klog("MPU: not present — skipping (QEMU)\n");
+        klog("MPU: not present: skipping (QEMU)\n");
         return;
     }
 
