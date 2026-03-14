@@ -93,10 +93,39 @@ void target_early_init(void)
     klog("Phase X-1: cooperative scheduling, embedded romfs\n");
 }
 
+/* Benign IRQ handler — silences unhandled hardware IRQs with a bare rte */
+extern void m68k_irq_ignore(void);
+
 void target_late_init(void)
 {
     /* Initialize the MFP Timer-C (no-op in Phase X-1) */
     timer_init();
+
+    /* Install a benign rte handler for X68000 hardware autovectors (levels
+     * 1–6).  Without this, VSYNC/OPM/FDC/DMA interrupts would hit
+     * Default_Handler which halts the CPU with stop #0x2700. */
+    /* Vector table lives at physical address 0x000000 on 68000.
+     * The compiler warns about NULL dereference; suppress it — this is
+     * intentional hardware vector table access, not a bug. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+    volatile uint32_t *vt = (volatile uint32_t *)0x0;
+    uint32_t ignore = (uint32_t)(uintptr_t)m68k_irq_ignore;
+    vt[25] = ignore;  /* Level 1: OPM (YM2151) */
+    vt[26] = ignore;  /* Level 2: MFP autovector (fallback) */
+    vt[27] = ignore;  /* Level 3: reserved */
+    vt[28] = ignore;  /* Level 4: SCC / VSYNC */
+    vt[29] = ignore;  /* Level 5: FDC */
+    vt[30] = ignore;  /* Level 6: DMA */
+    /* Level 7 (NMI, vector 31): keep Default_Handler */
+
+    /* MFP (MC68901) uses VECTORED interrupts with VR base set by the IPL
+     * BIOS to 0x40 (vector 64).  Sources occupy vectors 64–79.
+     * Patch them all to m68k_irq_ignore so MFP timer / keyboard IRQs
+     * that fire after arch_irq_enable() don't hit Default_Handler. */
+    for (uint32_t v = 64u; v < 80u; v++)
+        vt[v] = ignore;
+#pragma GCC diagnostic pop
 
     /* Register keyboard polling so blocked TTY reads get woken up */
     sched_set_input_poll(uart_rx_avail, TTY_SERIAL);

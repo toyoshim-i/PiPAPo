@@ -64,6 +64,8 @@ void mm_init(void)
         uint32_t probe_end = RAM_END;
         uint32_t max_bytes = probe_end - PAGE_POOL_BASE;
         uint32_t ram_bytes = m68k_probe_ram(PAGE_POOL_BASE, max_bytes);
+        if (ram_bytes > max_bytes)
+            ram_bytes = max_bytes;
         page_count = ram_bytes / PAGE_SIZE;
         if (page_count > PAGE_COUNT_MAX)
             page_count = PAGE_COUNT_MAX;

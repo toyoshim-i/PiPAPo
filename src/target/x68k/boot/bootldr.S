@@ -2,89 +2,221 @@
 | bootldr.S — PPAP X68000 single-stage boot loader (1 sector = 1024 bytes)
 | =============================================================================
 |
-| The X68000 IPL ROM reads the first 1024-byte sector from the boot floppy
-| into memory at 0x002000 and jumps there if the first byte is 0x60 (BRA.S).
+| Debug version — output characters via IOCS _B_PUTC (0x20):
+|   "1"    = boot_start reached, interrupts masked (IPM=7)
+|   "2"    = starting _B_READ (function 0x46, CHS loop)
+|   "3"    = all kernel sectors read without error
+|   "K"    = kernel verified at 0x006000 (first word = 0x00006400 = __stack_top)
+|   "X"    = kernel NOT present despite no read errors (wrong function code?)
+|   "4"    = vector table copied to 0x000000
+|   "5"    = TRAP #15 restored to IPL handler — jumping to 0x006400
+|   "Exx"  = _B_READ error; xx = error code in hex (e.g. "E70" = 0x70)
 |
-| This loader:
-|   1. Saves IPL IOCS vector (TRAP #15, entry 47 at 0x0000BC)
-|   2. Reads the raw kernel binary (sectors 1..N) from floppy to 0x006000
-|      using IOCS _B_READ (function code 0x04)
-|   3. Copies kernel .vectors (first 1024 bytes at 0x006000) to 0x000000,
-|      replacing IPL vectors with PPAP kernel handlers
-|   4. Restores TRAP #15 at 0x0000BC to saved IPL IOCS handler, so the
-|      kernel can continue using IOCS calls (uart_x68k.c)
-|   5. Jumps to Reset_Handler at 0x006400
+| After "5": kernel Reset_Handler prints "6" then "7" then "PiPAPo booting..."
 |
-| Floppy layout (X68000 2HD: 77 tracks × 2 heads × 8 sectors × 1024 B):
-|   Sector 0 (1024 B): This boot loader
-|   Sector 1–N (N×1024 B): Raw kernel binary (ppap_x68k.bin)
-|   Sector N+1 onward: Unused (zeros)
+| Interrupt strategy:
+|   - During floppy reads: interrupts ENABLED — _B_READ waits for FDC interrupt;
+|     masking (IPM=7) causes it to hang.  IPL ROM vectors at 0x000000 are valid.
+|   - Before/during vector copy: IPM=7 — prevents hardware interrupts from hitting
+|     the partially-installed kernel vector table before kernel init.
 |
-| IOCS _B_READ parameters (d0=0x04):
-|   d1.l = drive number (0 = FDD0 / drive A)
-|   d2.l = first logical sector (0-based; 0 = boot sector, 1 = sector after it)
-|   d3.l = number of sectors to read
-|   a1.l = destination buffer address
-|   Returns d0.l = 0 on success, error code on failure
+| IOCS _B_READ (function 0x46) — CHS addressing:
+|   d0.l = 0x46
+|   d1.w = (PDA << 8) | mode   (.hb = high byte of the word = bits 15-8)
+|          PDA  0x90–0x93 = 2HD FDD 0–3  (use 0x90 for FDD0)
+|          mode bit6=MFM, bit5=retry, bit4=seek  (use 0x70)
+|   d2.l = (sector_length << 24) | (cylinder << 16) | (head << 8) | sector
+|          sector_length 3 = 1024 B; sector is 1-based (1–8)
+|   d3.l = byte count  (sectors × 1024)
+|   a1.l = buffer
+|   Returns d0: FDC status (ST0|ST1|ST2); 0 = success
 | =============================================================================
 
     .text
     .align 2
 
-    | --- IPL boot signature: first byte MUST be 0x60 (BRA.S) ---
+    | --- IPL boot signature: BRA.S past the 34-byte DPB ---
     bra.s   boot_start
-    .ascii  "PPAP-BOOT "        | 10-byte volume label (offsets 2–11)
 
-    | --- Boot code ---
+    | --- Disk Parameter Block (offsets 2–35, 34 bytes) ---
+    .ascii  "PPAP    "              | offsets  2– 9: OEM name (8 bytes)
+    .byte   0x00, 0x04              | offsets 10–11: bytes_per_sector = 1024 (LE)
+    .byte   0x02                    | offset  12:    sectors_per_cluster = 2
+    .byte   0x01, 0x00              | offsets 13–14: reserved_sectors = 1 (LE)
+    .byte   0x02                    | offset  15:    num_fats = 2
+    .byte   0x40, 0x00              | offsets 16–17: root_dir_entries = 64 (LE)
+    .byte   0xD0, 0x04              | offsets 18–19: total_sectors = 1232 (LE)
+    .byte   0xFE                    | offset  20:    media_descriptor (2HD)
+    .byte   0x06, 0x00              | offsets 21–22: sectors_per_fat = 6 (LE)
+    .byte   0x08, 0x00              | offsets 23–24: sectors_per_track = 8 (LE)
+    .byte   0x02, 0x00              | offsets 25–26: num_heads = 2 (LE)
+    .byte   0x00, 0x00, 0x00, 0x00  | offsets 27–30: hidden_sectors = 0
+    .byte   0x00, 0x00, 0x00, 0x00, 0x00  | offsets 31–35: padding
+
 boot_start:
-    | Set temporary stack; grows downward from 0x002000 into free low RAM.
-    | The area 0x000400–0x001FFF is free at this point.
+    | Set temporary stack (grows downward from 0x002000 into free low RAM).
+    | Do NOT mask interrupts here — _B_READ waits for an FDC interrupt;
+    | with IPM=7 it would hang.  The IPL ROM's vectors at 0x000000 are still
+    | valid, so hardware interrupts are safe until we overwrite the table.
     lea.l   0x002000,%sp
 
-    | Save the IPL IOCS handler address before we overwrite the vector table.
-    | TRAP #15 = vector 47 → offset 47 × 4 = 0xBC in vector table at 0x000000.
-    move.l  0x0000BC,%a2
-
-    | Load kernel binary from floppy sectors 1..N into 0x006000.
-    | KERNEL_SECTORS is the literal value filled in by mkx68kimg.sh via sed.
-    move.l  #0x04,%d0           | _B_READ function code
-    clr.l   %d1                 | drive 0 (FDD0 = drive A)
-    move.l  #1,%d2              | start at logical sector 1 (skip boot sector 0)
-    move.l  #KERNEL_SECTORS,%d3 | number of sectors (patched by mkx68kimg.sh)
-    lea.l   0x006000,%a1        | load destination
+    | Print CR+LF+'1' — boot_start reached, interrupts masked.
+    move.l  #0x20,%d0
+    move.l  #0x0D,%d1
     trap    #15
-    tst.l   %d0
+    move.l  #0x20,%d0
+    move.l  #0x0A,%d1
+    trap    #15
+    move.l  #0x20,%d0
+    move.l  #'1',%d1
+    trap    #15
+
+    | Save IPL IOCS vector: TRAP #15 = vector 47 → address 47×4 = 0x0000BC.
+    | Keep in a5 throughout (a5 is preserved by _B_READ per IOCS convention).
+    move.l  0x0000BC,%a5
+
+    | Print '2' — about to start CHS read loop.
+    move.l  #0x20,%d0
+    move.l  #'2',%d1
+    trap    #15
+
+    | ── CHS read loop — 1 sector at a time (matches Human68k boot approach) ──
+    | X68000 2HD geometry: 16 sectors/cylinder (2 heads × 8 sectors)
+    |   cylinder     = lsec / 16
+    |   head         = (lsec % 16) >> 3   (bit 3 of within_cyl)
+    |   sector       = (lsec % 16) & 7 + 1  (1-based, 1..8)
+    |
+    | Loop registers (preserved across _B_READ: d4–d7, a2–a7):
+    |   D5.w  = remaining sectors
+    |   D6.l  = current logical sector (starts at 1)
+    |   A3.l  = current buffer pointer  (starts at 0x006000)
+    |   A5.l  = saved IPL IOCS vector   (for error recovery)
+    | ────────────────────────────────────────────────────────────────────────
+    move.w  #KERNEL_SECTORS,%d5     | remaining (literal patched by mkx68kimg.sh)
+    clr.l   %d6
+    move.w  #1,%d6                  | start at logical sector 1 (skip boot sector)
+    lea.l   0x006000,%a3            | kernel load destination
+
+read_loop:
+    | LBA → CHS for current sector (D6)
+    move.l  %d6,%d0
+    divu.w  #16,%d0                 | d0.w = cylinder; upper(d0) = within_cyl (0..15)
+    move.w  %d0,%d7                 | d7.w = cylinder (d7 preserved by IOCS)
+
+    swap    %d0                     | d0.w = within_cyl (0..15)
+    move.w  %d0,%d4
+    and.w   #7,%d4
+    addq.w  #1,%d4                  | d4.w = sector (1-based, 1..8)
+    lsr.w   #3,%d0                  | d0.w = head (0 or 1)
+
+    | Build d2.l = (sector_length << 24) | (cylinder << 16) | (head << 8) | sector
+    move.l  #0x03000000,%d2         | sector_length = 3 (1024 B)
+    clr.l   %d1
+    move.b  %d7,%d1
+    lsl.l   #8,%d1
+    lsl.l   #8,%d1                  | d1 = cylinder << 16
+    or.l    %d1,%d2
+    clr.l   %d1                     | clear leftover cylinder bits before head
+    move.b  %d0,%d1
+    lsl.l   #8,%d1                  | d1 = head << 8
+    or.l    %d1,%d2
+    or.b    %d4,%d2                 | d2 |= sector
+
+    | call _B_READ (0x46): read exactly 1 sector (1024 bytes)
+    move.l  %a3,%a1                 | buffer
+    move.l  #1024,%d3               | byte count = 1 sector
+    move.w  #0x9070,%d1             | PDA=0x90 (2HD FDD0) in bits 15-8, mode=0x70 in bits 7-0
+    move.l  #0x46,%d0
+    trap    #15
+    btst    #30,%d0                 | IC bit 6 set = abnormal termination / invalid
     bne.s   read_error
 
-    | Copy kernel .vectors (first 1024 bytes of kernel at 0x006000) to 0x000000.
-    | This installs PPAP kernel exception/interrupt handlers in the CPU table.
+    | advance to next sector
+    addq.w  #1,%d6                  | lsec++
+    subq.w  #1,%d5                  | remaining--
+    adda.l  #1024,%a3               | buffer += 1024
+    tst.w   %d5
+    bne.s   read_loop
+
+    | ── Read loop complete ───────────────────────────────────────────────────
+    | Print '3' — all KERNEL_SECTORS read without error.
+    move.l  #0x20,%d0
+    move.l  #'3',%d1
+    trap    #15
+
+    | Kernel presence check: first longword at 0x006000 should be
+    | 0x00006400 (= __stack_top = Initial SSP in the .vectors section).
+    cmp.l   #0x00006400,0x006000
+    beq.s   .kernel_ok
+    | Kernel not present — wrong read (function code? drive? sector numbering?)
+    move.l  #0x20,%d0
+    move.l  #'X',%d1
+    trap    #15
+    bra.w   .halted
+.kernel_ok:
+    | Print 'K' — kernel verified at 0x006000.
+    move.l  #0x20,%d0
+    move.l  #'K',%d1
+    trap    #15
+
+    | ── Mask all interrupts before overwriting the vector table ─────────────
+    | From this point the IPL ROM's handlers are gone; mask until the kernel
+    | initialises its own handlers.
+    or.w    #0x0700,%sr
+
+    | ── Copy kernel .vectors (1024 bytes: 0x006000 → 0x000000) ─────────────
     lea.l   0x006000,%a0
     movea.l #0,%a1
-    move.w  #(256-1),%d0        | 256 longwords = 1024 bytes
+    move.w  #(256-1),%d0
 copy_loop:
     move.l  (%a0)+,(%a1)+
     dbra    %d0,copy_loop
 
-    | Restore TRAP #15 (vector 47) to the saved IPL IOCS handler so the
-    | kernel can call IOCS functions (_B_PUTC, _B_GETC, etc.) via trap #15.
-    move.l  %a2,0x0000BC
+    | Print '4' — vector table installed.  Restore 0x0000BC first.
+    move.l  %a5,0x0000BC
+    move.l  #0x20,%d0
+    move.l  #'4',%d1
+    trap    #15
 
-    | Jump to Reset_Handler; it will re-set SP = __stack_top = 0x006400,
-    | copy .data, zero .bss, and call kmain().
+    | Restore TRAP #15 to IPL IOCS handler for kernel uart_x68k.c to use.
+    move.l  %a5,0x0000BC
+
+    | Print '5' — about to jump to kernel.
+    move.l  #0x20,%d0
+    move.l  #'5',%d1
+    trap    #15
+
+    | Jump to kernel Reset_Handler at 0x006400.
     jmp     0x006400
 
+    | ── _B_READ error handler ────────────────────────────────────────────────
+    | FDC status: d0.l = (ST0<<24)|(ST1<<16)|(ST2<<8)|cylinder
+    | Print "Exxxxxxxx" — all 8 hex digits MSB first.
 read_error:
-    | Display "ERR" on TVRAM console via IOCS _B_PUTC (0x20) and halt.
+    move.l  %d0,%d7                 | save error code (d7 preserved by IOCS)
+    move.l  %a5,0x0000BC            | restore valid IOCS vector before printing
+
     move.l  #0x20,%d0
-    move.l  #69,%d1             | 'E'
-    trap    #15
-    move.l  #0x20,%d0
-    move.l  #82,%d1             | 'R'
-    trap    #15
-    move.l  #0x20,%d0
-    move.l  #82,%d1             | 'R'
+    move.l  #'E',%d1
     trap    #15
 
-.halt:
+    | Loop: print 8 nibbles from bit 28 down to bit 0
+    move.l  #28,%d5                 | shift count (reuse d5; we're done with loop)
+.hex_loop:
+    move.l  %d7,%d0
+    lsr.l   %d5,%d0
+    and.l   #0x0F,%d0
+    add.l   #'0',%d0
+    cmp.l   #'9'+1,%d0
+    blo.s   .nibble_ok
+    addq.l  #7,%d0
+.nibble_ok:
+    move.l  %d0,%d1
+    move.l  #0x20,%d0
+    trap    #15
+    subq.l  #4,%d5
+    bge.s   .hex_loop
+
+.halted:
     stop    #0x2700
-    bra.s   .halt
+    bra.s   .halted

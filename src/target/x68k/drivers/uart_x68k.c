@@ -9,18 +9,38 @@
  *   _B_PUTC   (d0=0x20, d1.b=char)  Output one character to TVRAM console
  *   _B_GETC   (d0=0x21)             Input one character (blocking)
  *   _B_KEYSNS (d0=0x1C)             Keyboard sense (non-blocking)
+ *   _OUT232C  (d0=0x35, d1.b=char)  Output one character to RS-232C serial
  *
- * TX output goes to the TVRAM text console (visible on the X68000 display).
+ * TX output goes to both the TVRAM text console and the RS-232C serial port.
+ * In XEiJ, the RS-232C serial port output appears on stdio (the terminal).
  * RX input comes from the keyboard controller.
- *
- * Phase X-2 note: RS-232 serial support (_INP/_OUT IOCS calls) can be
- * added later for remote login without display attached.
  */
 
 #include "drivers/uart.h"
 #include <stdint.h>
 
 /* ── IOCS helper macros ──────────────────────────────────────────────────── */
+
+/*
+ * iocs_set232c — initialize RS-232C via _SET232C (IOCS 0x32)
+ *
+ * d0 = 0x32 (function code)
+ * d1 = baud rate (bits 3-0): 7 = 9600 bps
+ * d2 = character format: bits 1-0 = word length (3=8bit),
+ *                        bits 3-2 = parity (0=none),
+ *                        bits 5-4 = stop bits (0=1 stop)
+ * → d1=0x07, d2=0x03 for 9600 8N1
+ */
+static inline void iocs_set232c(void)
+{
+    register int32_t d0 asm("d0") = 0x32;
+    register int32_t d1 asm("d1") = 0x07;   /* 9600 baud */
+    register int32_t d2 asm("d2") = 0x03;   /* 8N1 */
+    asm volatile("trap #15"
+                 : "+r"(d0)
+                 : "r"(d1), "r"(d2)
+                 : "a0", "a1", "memory");
+}
 
 /*
  * iocs_b_putc — output one character via _B_PUTC (IOCS 0x20)
@@ -32,6 +52,24 @@
 static inline void iocs_b_putc(char c)
 {
     register int32_t d0 asm("d0") = 0x20;
+    register int32_t d1 asm("d1") = (unsigned char)c;
+    asm volatile("trap #15"
+                 : "+r"(d0)
+                 : "r"(d1)
+                 : "d2", "a0", "a1", "memory");
+}
+
+/*
+ * iocs_out232c — output one character via _OUT232C (IOCS 0x35)
+ *
+ * d0 = 0x35 (function code)
+ * d1 = character (low byte)
+ * Clobbers: d0, d2, a0, a1 (per X68000 IOCS calling convention)
+ * In XEiJ, RS-232C serial output appears on stdio.
+ */
+static inline void iocs_out232c(char c)
+{
+    register int32_t d0 asm("d0") = 0x35;
     register int32_t d1 asm("d1") = (unsigned char)c;
     asm volatile("trap #15"
                  : "+r"(d0)
@@ -74,20 +112,26 @@ static inline int iocs_b_keysns(void)
 void uart_init_console(void)
 {
     /* IOCS console is initialized by the IPL ROM before stage1 runs.
-     * No further initialization is needed. */
+     * _SET232C (0x32) intentionally not called here: it blocks waiting
+     * for CTS on X68000 hardware/XEiJ, hanging the kernel before any output. */
 }
 
 void uart_putc(char c)
 {
     iocs_b_putc(c);
+    iocs_out232c(c);
 }
 
 void uart_puts(const char *s)
 {
     while (*s) {
-        if (*s == '\n')
+        if (*s == '\n') {
             iocs_b_putc('\r');
-        iocs_b_putc(*s++);
+            iocs_out232c('\r');
+        }
+        iocs_b_putc(*s);
+        iocs_out232c(*s);
+        s++;
     }
 }
 

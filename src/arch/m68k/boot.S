@@ -108,6 +108,15 @@ Reset_Handler:
     | -----------------------------------------------------------------
     lea.l    __stack_top,%sp
 
+    | Debug marker '6': Reset_Handler reached, stack OK, IOCS accessible.
+    | TRAP #15 → 0x0000BC = IPL IOCS handler (restored by boot sector).
+    | Remove this block once X68000 bring-up is confirmed.
+#ifdef PPAP_X68K
+    move.l  #0x20,%d0
+    move.l  #'6',%d1
+    trap    #15
+#endif
+
     | -----------------------------------------------------------------
     | Copy .data: load region → RAM
     |   a0 = source (load address)
@@ -137,6 +146,14 @@ Reset_Handler:
 .Lzero_check:
     cmp.l    %a1,%a0
     blo.s    .Lzero_loop
+
+    | Debug marker '7': .data copy and .bss zero done, entering kmain.
+    | Remove this block once X68000 bring-up is confirmed.
+#ifdef PPAP_X68K
+    move.l  #0x20,%d0
+    move.l  #'7',%d1
+    trap    #15
+#endif
 
     | -----------------------------------------------------------------
     | Enter kernel — kmain() must never return
@@ -357,6 +374,13 @@ m68k_schedule_next:
     move.l  %a1,%usp
     | Restore all registers (d0-d7/a0-a6) and return via RTE
     movem.l %sp@+,%d0-%d7/%a0-%a6
+    rte
+
+| --- Benign IRQ handler: acknowledge and return ---
+| Used by x68k target to silence hardware IRQs (VSYNC, OPM, FDC, DMA)
+| that have no kernel handler yet.  Simply returns from the exception.
+    .global m68k_irq_ignore
+m68k_irq_ignore:
     rte
 
     .global Default_Handler
