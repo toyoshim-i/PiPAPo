@@ -1469,7 +1469,8 @@ static void print_help(void)
     put_str("  set reg <r> <v>   write register by name or index\n");
     put_str("  set mem <a> <v> [size]   write memory (size: b|h|w|1|2|4)\n");
     put_str("  restore mem <a> <bytes...>  write byte sequence\n");
-    put_str("  break | b <addr>  set breakpoint (sw/hw from caps)\n");
+    put_str("  break | b <addr>  set breakpoint (auto sw/hw from caps)\n");
+    put_str("  break | b <sw|hw> <addr>  force breakpoint type\n");
     put_str("  disable <id>      disable breakpoint by id\n");
     put_str("  enable <id>       enable breakpoint by id\n");
     put_str("  delete | d <id>   clear breakpoint by id\n");
@@ -2491,23 +2492,54 @@ int main(int argc, char *argv[])
 
         if (streq(tok[0], "break") || streq(tok[0], "b")) {
             struct ppap_ptrace_bp bp;
+            uint32_t requested_flag = 0;
             long rc;
             if (!child_stopped) {
                 put_err("pdb: child is not stopped\n");
                 continue;
             }
-            if (ntok != 2 || !parse_u32(tok[1], &bp.addr)) {
+            if (ntok == 2) {
+                if (!parse_u32(tok[1], &bp.addr)) {
+                    put_err("pdb: usage: break <addr>\n");
+                    continue;
+                }
+            } else if (ntok == 3) {
+                if (streq(tok[1], "sw")) {
+                    requested_flag = PPAP_PTRACE_BP_SW;
+                } else if (streq(tok[1], "hw")) {
+                    requested_flag = PPAP_PTRACE_BP_HW;
+                } else {
+                    put_err("pdb: usage: break <addr>\n");
+                    continue;
+                }
+                if (!parse_u32(tok[2], &bp.addr)) {
+                    put_err("pdb: usage: break <addr>\n");
+                    continue;
+                }
+            } else {
                 put_err("pdb: usage: break <addr>\n");
                 continue;
             }
-            bp.flags = PPAP_PTRACE_BP_SW;
+            bp.flags = requested_flag ? requested_flag : PPAP_PTRACE_BP_SW;
             if (ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps) == 0) {
-                uint32_t cap_flag = select_bp_flag_from_caps(caps.caps);
-                if (cap_flag == 0) {
-                    put_err("pdb: break not supported on this target/mapping\n");
+                if (requested_flag == PPAP_PTRACE_BP_SW &&
+                    (caps.caps & PPAP_PTRACE_CAP_SW_BP) == 0u) {
+                    put_err("pdb: sw break not supported on this target/mapping\n");
                     continue;
                 }
-                bp.flags = cap_flag;
+                if (requested_flag == PPAP_PTRACE_BP_HW &&
+                    (caps.caps & PPAP_PTRACE_CAP_HW_BP) == 0u) {
+                    put_err("pdb: hw break not supported on this target/mapping\n");
+                    continue;
+                }
+                if (!requested_flag) {
+                    uint32_t cap_flag = select_bp_flag_from_caps(caps.caps);
+                    if (cap_flag == 0) {
+                        put_err("pdb: break not supported on this target/mapping\n");
+                        continue;
+                    }
+                    bp.flags = cap_flag;
+                }
             }
             bp.id = -1;
             rc = ptrace(PTRACE_SETBP, pid, (void *)0, &bp);

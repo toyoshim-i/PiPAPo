@@ -328,6 +328,8 @@ static char arg_disas_invalid_addr[] = "disas nope";
 static char arg_disas_invalid_count[] = "disas 0x0100 xyz";
 static char arg_disas_extra[] = "disas 0x0100 1 2";
 static char arg_break[] = "b 0x0101";
+static char arg_break_sw[] = "break sw 0x0101";
+static char arg_break_hw[] = "break hw 0x0101";
 static char arg_break_short_extra[] = "b 0x0101 extra";
 static char arg_break_missing_addr[] = "break";
 static char arg_break_extra[] = "break 0x0101 extra";
@@ -1065,6 +1067,38 @@ int main(void)
     UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
     UT_ASSERT(str_contains(out2, "bp 0 @ 0x00000101 enabled sw"),
               "output should include info break table output");
+
+    argv4[0] = arg_prog;
+    argv4[1] = arg_quiet;
+    argv4[2] = arg_opt;
+    argv4[3] = arg_break_sw;
+    argv4[4] = arg_opt;
+    argv4[5] = arg_info_break;
+    argv4[6] = arg_opt;
+    argv4[7] = arg_quit_short;
+    argv4[8] = arg_target;
+    argv4[9] = (char *)0;
+    n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb forced sw break smoke should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb forced sw break smoke should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out2, "bp 0 @ 0x00000101 enabled sw"),
+              "forced sw break should stay visible as sw in info break");
+
+    argv4[0] = arg_prog;
+    argv4[1] = arg_quiet;
+    argv4[2] = arg_opt;
+    argv4[3] = arg_break_hw;
+    argv4[4] = arg_opt;
+    argv4[5] = arg_quit_short;
+    argv4[6] = arg_target;
+    argv4[7] = (char *)0;
+    n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb forced hw break smoke should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb forced hw break smoke should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out2, "pdb: hw break not supported on this target/mapping"),
+              "forced hw break smoke should report unsupported hw break on this lane");
 
     argv4[0] = arg_prog;
     argv4[1] = arg_quiet;

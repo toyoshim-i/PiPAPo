@@ -108,6 +108,8 @@ pdb -f /tmp/pdb.script /tmp/prog.com
 #   next / n
 #   run / cont / continue / c
 #   break / b 0x0101
+#   break / b sw 0x0101
+#   break / b hw 0x0101
 #   disable 0
 #   enable 0
 #   delete / d 0
@@ -135,6 +137,8 @@ Scripted-mode notes:
 - `break` picks software breakpoints when available, otherwise falls back to
   hardware breakpoints if exposed by caps; unsupported targets print
   `break not supported on this target/mapping`.
+- `break sw <addr>` and `break hw <addr>` force a specific breakpoint type
+  and fail fast when that type is not available on the current mapping.
 - `surface ecpu` on native-only targets fails with `SETSURFACE failed rc=...`
   and includes a support hint.
 - `set mem ... h` requires an even address and must stay within one 32-bit word.
