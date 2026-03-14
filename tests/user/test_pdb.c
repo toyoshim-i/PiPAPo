@@ -320,6 +320,7 @@ static char arg_disas_invalid_count[] = "disas 0x0100 xyz";
 static char arg_disas_extra[] = "disas 0x0100 1 2";
 static char arg_break[] = "b 0x0101";
 static char arg_break_missing_addr[] = "break";
+static char arg_break_extra[] = "break 0x0101 extra";
 static char arg_break_long[] = "break 0x0101";
 static char arg_info_break[] = "info break";
 static char arg_info_break_extra[] = "info break extra";
@@ -331,7 +332,9 @@ static char arg_delete[] = "d 0";
 static char arg_delete_long[] = "delete 0";
 static char arg_setreg[] = "set reg wz 0x1234";
 static char arg_setreg_index[] = "set reg 15 0x2222";
+static char arg_setreg_extra[] = "set reg wz 0x1234 extra";
 static char arg_setmem[] = "set mem 0x0100 0x00000000";
+static char arg_setmem_extra[] = "set mem 0x0100 0x12 b extra";
 static char arg_setmem_byte[] = "set mem 0x0101 0x34 1";
 static char arg_setmem_half[] = "set mem 0x0102 0x5678 2";
 static char arg_setmem_word_num[] = "set mem 0x0200 0x89abcdef w";
@@ -353,6 +356,9 @@ static char arg_break_invalid_addr[] = "break xyz";
 static char arg_disable_invalid_id[] = "disable xyz";
 static char arg_enable_invalid_id[] = "enable xyz";
 static char arg_delete_invalid_id[] = "delete xyz";
+static char arg_disable_extra[] = "disable 0 extra";
+static char arg_enable_extra[] = "enable 0 extra";
+static char arg_delete_extra[] = "delete 0 extra";
 static char arg_next[] = "n";
 static char arg_next_long[] = "next";
 static char arg_next_invalid[] = "next nope";
@@ -1211,6 +1217,43 @@ int main(void)
               "pdb inspect-command usage smoke should report disas usage");
     UT_ASSERT(str_contains(out2, "child exited 0"),
               "pdb inspect-command usage smoke should allow target to exit");
+
+    argv4[0] = arg_prog;
+    argv4[1] = arg_quiet;
+    argv4[2] = arg_opt;
+    argv4[3] = arg_setreg_extra;
+    argv4[4] = arg_opt;
+    argv4[5] = arg_setmem_extra;
+    argv4[6] = arg_opt;
+    argv4[7] = arg_break_extra;
+    argv4[8] = arg_opt;
+    argv4[9] = arg_disable_extra;
+    argv4[10] = arg_opt;
+    argv4[11] = arg_enable_extra;
+    argv4[12] = arg_opt;
+    argv4[13] = arg_delete_extra;
+    argv4[14] = arg_opt;
+    argv4[15] = arg_continue;
+    argv4[16] = arg_target;
+    argv4[17] = (char *)0;
+    n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb mutation-command usage smoke should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb mutation-command usage smoke should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out2, "pdb: usage: set reg <name|index> <value>"),
+              "pdb mutation-command usage smoke should report set reg usage");
+    UT_ASSERT(str_contains(out2, "pdb:    or: set mem <addr> <value> [size]"),
+              "pdb mutation-command usage smoke should report set mem usage");
+    UT_ASSERT(str_contains(out2, "pdb: usage: break <addr>"),
+              "pdb mutation-command usage smoke should report break usage");
+    UT_ASSERT(str_contains(out2, "pdb: usage: disable <id>"),
+              "pdb mutation-command usage smoke should report disable usage");
+    UT_ASSERT(str_contains(out2, "pdb: usage: enable <id>"),
+              "pdb mutation-command usage smoke should report enable usage");
+    UT_ASSERT(str_contains(out2, "pdb: usage: delete <id>"),
+              "pdb mutation-command usage smoke should report delete usage");
+    UT_ASSERT(str_contains(out2, "child exited 0"),
+              "pdb mutation-command usage smoke should allow target to exit");
 
     argv3[0] = arg_prog;
     argv3[1] = arg_quiet;

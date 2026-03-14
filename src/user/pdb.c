@@ -2073,7 +2073,7 @@ int main(int argc, char *argv[])
                 continue;
             }
 
-            if (ntok >= 4 && streq(tok[1], "reg")) {
+            if (ntok == 4 && streq(tok[1], "reg")) {
                 struct ppap_ptrace_regs regs;
                 int is16 = 0;
                 uint32_t idx = 0;
@@ -2120,14 +2120,14 @@ int main(int argc, char *argv[])
                 continue;
             }
 
-            if (ntok >= 4 && streq(tok[1], "mem")) {
+            if ((ntok == 4 || ntok == 5) && streq(tok[1], "mem")) {
                 uint32_t addr = 0;
                 uint32_t value = 0;
                 uint32_t width = 4u;
                 long rc;
 
                 if (!parse_u32(tok[2], &addr) || !parse_u32(tok[3], &value) ||
-                    (ntok >= 5 && !parse_mem_width(tok[4], &width))) {
+                    (ntok == 5 && !parse_mem_width(tok[4], &width))) {
                     put_err("pdb: usage: set mem <addr> <value> [size]\n");
                     put_err("pdb:        size: b|h|w (or 1|2|4)\n");
                     continue;
@@ -2197,7 +2197,7 @@ int main(int argc, char *argv[])
                 put_err("pdb: child is not stopped\n");
                 continue;
             }
-            if (ntok < 2 || !parse_u32(tok[1], &bp.addr)) {
+            if (ntok != 2 || !parse_u32(tok[1], &bp.addr)) {
                 put_err("pdb: usage: break <addr>\n");
                 continue;
             }
@@ -2241,7 +2241,7 @@ int main(int argc, char *argv[])
                 put_err("pdb: child is not stopped\n");
                 continue;
             }
-            if (ntok < 2 || !parse_u32(tok[1], &id)) {
+            if (ntok != 2 || !parse_u32(tok[1], &id)) {
                 put_err("pdb: usage: disable <id>\n");
                 continue;
             }
@@ -2280,7 +2280,7 @@ int main(int argc, char *argv[])
                 put_err("pdb: child is not stopped\n");
                 continue;
             }
-            if (ntok < 2 || !parse_u32(tok[1], &id)) {
+            if (ntok != 2 || !parse_u32(tok[1], &id)) {
                 put_err("pdb: usage: enable <id>\n");
                 continue;
             }
@@ -2343,7 +2343,7 @@ int main(int argc, char *argv[])
                 put_err("pdb: child is not stopped\n");
                 continue;
             }
-            if (ntok < 2 || !parse_u32(tok[1], &id)) {
+            if (ntok != 2 || !parse_u32(tok[1], &id)) {
                 put_err("pdb: usage: delete <id>\n");
                 continue;
             }
