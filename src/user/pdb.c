@@ -1483,12 +1483,20 @@ int main(int argc, char *argv[])
             continue;
 
         if (streq(tok[0], "help") || streq(tok[0], "?")) {
+            if (ntok != 1) {
+                put_err("pdb: usage: help\n");
+                continue;
+            }
             print_help();
             continue;
         }
 
         if (streq(tok[0], "regs")) {
             struct ppap_ptrace_regs regs;
+            if (ntok != 1) {
+                put_err("pdb: usage: regs\n");
+                continue;
+            }
             if (!child_stopped) {
                 put_err("pdb: child is not stopped\n");
                 continue;
@@ -1758,6 +1766,10 @@ int main(int argc, char *argv[])
             struct ppap_ptrace_regs regs;
             uint32_t pc_idx = 0;
             uint32_t sp_idx = 0;
+            if (ntok != 1) {
+                put_err("pdb: usage: where\n");
+                continue;
+            }
             if (!child_stopped) {
                 put_err("pdb: child is not stopped\n");
                 continue;
@@ -1894,6 +1906,10 @@ int main(int argc, char *argv[])
             int temp_bp_id = -1;
             long rc;
             int wr;
+            if (ntok != 1) {
+                put_err("pdb: usage: next\n");
+                continue;
+            }
             if (!child_stopped) {
                 put_err("pdb: child is not stopped\n");
                 continue;
@@ -1993,6 +2009,10 @@ int main(int argc, char *argv[])
         if (streq(tok[0], "step") || streq(tok[0], "s")) {
             long rc;
             int wr;
+            if (ntok != 1) {
+                put_err("pdb: usage: step\n");
+                continue;
+            }
             if (!child_stopped) {
                 put_err("pdb: child is not stopped\n");
                 continue;
@@ -2018,6 +2038,10 @@ int main(int argc, char *argv[])
             streq(tok[0], "continue") || streq(tok[0], "c")) {
             long rc;
             int wr;
+            if (ntok != 1) {
+                put_err("pdb: usage: cont\n");
+                continue;
+            }
             if (!child_stopped) {
                 put_err("pdb: child is not stopped\n");
                 continue;
@@ -2374,6 +2398,10 @@ int main(int argc, char *argv[])
 
         if (streq(tok[0], "detach")) {
             long rc;
+            if (ntok != 1) {
+                put_err("pdb: usage: detach\n");
+                continue;
+            }
             if (!child_stopped) {
                 put_err("pdb: child is not stopped\n");
                 continue;
@@ -2392,6 +2420,10 @@ int main(int argc, char *argv[])
         }
 
         if (streq(tok[0], "quit") || streq(tok[0], "q")) {
+            if (ntok != 1) {
+                put_err("pdb: usage: quit\n");
+                continue;
+            }
             if (child_stopped) {
                 long rc = ptrace(PTRACE_DETACH, pid, (void *)0, (void *)0);
                 if (rc < 0) {

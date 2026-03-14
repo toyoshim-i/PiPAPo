@@ -294,7 +294,10 @@ static char arg_pc_invalid[] = "pc nope";
 static char arg_sp_invalid[] = "sp nope";
 static char arg_where_short[] = "w";
 static char arg_where_long[] = "where";
+static char arg_where_invalid[] = "where nope";
 static char arg_help_short_cmd[] = "?";
+static char arg_help_invalid[] = "help nope";
+static char arg_regs_invalid[] = "regs nope";
 static char arg_reg_wz[] = "reg wz";
 static char arg_reg_wz_index[] = "reg 15";
 static char arg_show_surface[] = "show surface";
@@ -347,16 +350,21 @@ static char arg_enable_invalid_id[] = "enable xyz";
 static char arg_delete_invalid_id[] = "delete xyz";
 static char arg_next[] = "n";
 static char arg_next_long[] = "next";
+static char arg_next_invalid[] = "next nope";
 static char arg_step[] = "s";
 static char arg_step_long[] = "step";
+static char arg_step_invalid[] = "step nope";
 static char arg_continue[] = "cont";
 static char arg_continue_long[] = "continue";
+static char arg_continue_invalid[] = "cont nope";
 static char arg_c_short[] = "c";
 static char arg_run[] = "run";
 static char arg_unknown_cmd[] = "no_such_cmd";
 static char arg_detach[] = "detach";
+static char arg_detach_invalid[] = "detach nope";
 static char arg_quit_short[] = "q";
 static char arg_quit_long[] = "quit";
+static char arg_quit_invalid[] = "quit nope";
 static char arg_target[] = "/tmp/pdb_smoke.com";
 static char arg_native_target[] = "/bin/hello";
 static char arg_sleep[] = "/bin/sleep";
@@ -1167,6 +1175,52 @@ int main(void)
               "pdb usage-diagnostics smoke should report set mem usage");
     UT_ASSERT(str_contains(out, "child exited 0"),
               "pdb usage-diagnostics smoke should allow target to exit");
+
+    argv3[0] = arg_prog;
+    argv3[1] = arg_quiet;
+    argv3[2] = arg_opt;
+    argv3[3] = arg_help_invalid;
+    argv3[4] = arg_opt;
+    argv3[5] = arg_regs_invalid;
+    argv3[6] = arg_opt;
+    argv3[7] = arg_where_invalid;
+    argv3[8] = arg_opt;
+    argv3[9] = arg_next_invalid;
+    argv3[10] = arg_opt;
+    argv3[11] = arg_step_invalid;
+    argv3[12] = arg_opt;
+    argv3[13] = arg_continue_invalid;
+    argv3[14] = arg_opt;
+    argv3[15] = arg_detach_invalid;
+    argv3[16] = arg_opt;
+    argv3[17] = arg_quit_invalid;
+    argv3[18] = arg_opt;
+    argv3[19] = arg_continue;
+    argv3[20] = arg_target;
+    argv3[21] = (char *)0;
+    argv3[22] = (char *)0;
+    n2 = run_capture(argv3, out, sizeof(out_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb control-command usage smoke should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb control-command usage smoke should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out, "pdb: usage: help"),
+              "pdb control-command usage smoke should report help usage");
+    UT_ASSERT(str_contains(out, "pdb: usage: regs"),
+              "pdb control-command usage smoke should report regs usage");
+    UT_ASSERT(str_contains(out, "pdb: usage: where"),
+              "pdb control-command usage smoke should report where usage");
+    UT_ASSERT(str_contains(out, "pdb: usage: next"),
+              "pdb control-command usage smoke should report next usage");
+    UT_ASSERT(str_contains(out, "pdb: usage: step"),
+              "pdb control-command usage smoke should report step usage");
+    UT_ASSERT(str_contains(out, "pdb: usage: cont"),
+              "pdb control-command usage smoke should report cont usage");
+    UT_ASSERT(str_contains(out, "pdb: usage: detach"),
+              "pdb control-command usage smoke should report detach usage");
+    UT_ASSERT(str_contains(out, "pdb: usage: quit"),
+              "pdb control-command usage smoke should report quit usage");
+    UT_ASSERT(str_contains(out, "child exited 0"),
+              "pdb control-command usage smoke should allow target to exit");
 
     argv4[0] = arg_prog;
     argv4[1] = arg_quiet;
