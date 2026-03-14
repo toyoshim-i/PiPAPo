@@ -1071,6 +1071,27 @@ int main(void)
     argv4[0] = arg_prog;
     argv4[1] = arg_quiet;
     argv4[2] = arg_opt;
+    argv4[3] = arg_break;
+    argv4[4] = arg_opt;
+    argv4[5] = arg_continue;
+    argv4[6] = arg_opt;
+    argv4[7] = arg_event_short;
+    argv4[8] = arg_opt;
+    argv4[9] = arg_quit_short;
+    argv4[10] = arg_target;
+    argv4[11] = (char *)0;
+    n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb sw break-stop reason smoke should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb sw break-stop reason smoke should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_contains(out2, "bp 0 @ 0x00000101"),
+              "break-stop reason smoke should create a breakpoint");
+    UT_ASSERT(str_contains(out2, "reason=sw-bp"),
+              "break-stop reason smoke should report sw-bp stop reason");
+
+    argv4[0] = arg_prog;
+    argv4[1] = arg_quiet;
+    argv4[2] = arg_opt;
     argv4[3] = arg_break_sw;
     argv4[4] = arg_opt;
     argv4[5] = arg_info_break;
