@@ -1269,6 +1269,8 @@ static void print_help(void)
     put_str("  show regset       show current register set\n");
     put_str("  show pc           show current program counter\n");
     put_str("  show sp           show current stack pointer\n");
+    put_str("  pc                show current program counter\n");
+    put_str("  sp                show current stack pointer\n");
     put_str("  show surface      show current debug surface\n");
     put_str("  surface <s>       set debug surface (real|ecpu)\n");
     put_str("  where | w         show pc and sp\n");
@@ -1556,22 +1558,35 @@ int main(int argc, char *argv[])
             continue;
         }
 
-        if (streq(tok[0], "show")) {
-            if (ntok < 2) {
-                put_err("pdb: usage: show <abi|event|caps|regset|pc|sp|surface>\n");
-                continue;
+        if (streq(tok[0], "show") || streq(tok[0], "pc") || streq(tok[0], "sp")) {
+            const char *show_item = 0;
+            if (streq(tok[0], "show")) {
+                if (ntok < 2) {
+                    put_err("pdb: usage: show <abi|event|caps|regset|pc|sp|surface>\n");
+                    continue;
+                }
+                show_item = tok[1];
+            } else {
+                if (ntok != 1) {
+                    if (streq(tok[0], "pc"))
+                        put_err("pdb: usage: pc\n");
+                    else
+                        put_err("pdb: usage: sp\n");
+                    continue;
+                }
+                show_item = tok[0];
             }
-            if (streq(tok[1], "abi")) {
+            if (streq(show_item, "abi")) {
                 put_str("abi=");
                 put_str(abi_name(last_ev.abi));
                 put_chr('\n');
                 continue;
             }
-            if (streq(tok[1], "event")) {
+            if (streq(show_item, "event")) {
                 print_event(&last_ev);
                 continue;
             }
-            if (streq(tok[1], "caps")) {
+            if (streq(show_item, "caps")) {
                 if (!child_stopped) {
                     put_err("pdb: child is not stopped\n");
                     continue;
@@ -1583,7 +1598,7 @@ int main(int argc, char *argv[])
                 print_caps(&caps);
                 continue;
             }
-            if (streq(tok[1], "regset")) {
+            if (streq(show_item, "regset")) {
                 struct ppap_ptrace_regs regs;
                 if (!child_stopped) {
                     put_err("pdb: child is not stopped\n");
@@ -1598,7 +1613,7 @@ int main(int argc, char *argv[])
                 put_chr('\n');
                 continue;
             }
-            if (streq(tok[1], "pc")) {
+            if (streq(show_item, "pc")) {
                 struct ppap_ptrace_regs regs;
                 uint32_t pc_idx = 0;
                 if (!child_stopped) {
@@ -1635,7 +1650,7 @@ int main(int argc, char *argv[])
                 put_chr('\n');
                 continue;
             }
-            if (streq(tok[1], "sp")) {
+            if (streq(show_item, "sp")) {
                 struct ppap_ptrace_regs regs;
                 uint32_t sp_idx = 0;
                 if (!child_stopped) {
@@ -1672,7 +1687,7 @@ int main(int argc, char *argv[])
                 put_chr('\n');
                 continue;
             }
-            if (streq(tok[1], "surface")) {
+            if (streq(show_item, "surface")) {
                 uint32_t surface = 0;
                 if (!child_stopped) {
                     put_err("pdb: child is not stopped\n");
@@ -1694,7 +1709,12 @@ int main(int argc, char *argv[])
                 put_err("pdb: GETSURFACE/GETCAPS failed\n");
                 continue;
             }
-            put_err("pdb: usage: show <abi|event|caps|regset|pc|sp|surface>\n");
+            if (streq(tok[0], "show"))
+                put_err("pdb: usage: show <abi|event|caps|regset|pc|sp|surface>\n");
+            else if (streq(tok[0], "pc"))
+                put_err("pdb: usage: pc\n");
+            else
+                put_err("pdb: usage: sp\n");
             continue;
         }
 

@@ -252,6 +252,10 @@ static char arg_show_caps[] = "show caps";
 static char arg_show_pc[] = "show pc";
 static char arg_show_regset[] = "show regset";
 static char arg_show_sp[] = "show sp";
+static char arg_pc_short[] = "pc";
+static char arg_sp_short[] = "sp";
+static char arg_pc_invalid[] = "pc nope";
+static char arg_sp_invalid[] = "sp nope";
 static char arg_where_short[] = "w";
 static char arg_where_long[] = "where";
 static char arg_help_short_cmd[] = "?";
@@ -326,7 +330,7 @@ static char long_cmd_buf[129];
 static char attach_pid_buf[16];
 static char *argv_buf[40];
 static char *argv2_buf[5];
-static char *argv3_buf[33];
+static char *argv3_buf[41];
 
 #endif
 
@@ -541,20 +545,24 @@ int main(void)
     argv3[12] = arg_opt;
     argv3[13] = arg_where_long;
     argv3[14] = arg_opt;
-    argv3[15] = arg_run;
-    argv3[16] = arg_target;
-    argv3[17] = (char *)0;
-    argv3[18] = (char *)0;
+    argv3[15] = arg_sp_short;
+    argv3[16] = arg_opt;
+    argv3[17] = arg_pc_short;
+    argv3[18] = arg_opt;
+    argv3[19] = arg_run;
+    argv3[20] = arg_target;
+    argv3[21] = (char *)0;
+    argv3[22] = (char *)0;
     n2 = run_capture(argv3, out2, sizeof(out2_buf), &status2);
     UT_ASSERT(n2 > 0, "pdb -q should produce output");
     UT_ASSERT(WIFEXITED(status2), "pdb -q should exit normally");
     UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
-    UT_ASSERT(str_contains(out2, "sp=0x"),
-              "pdb -q should still run scripted commands");
+    UT_ASSERT(str_count(out2, "sp=0x") >= 4,
+              "pdb -q should include show sp, sp, w, and where outputs");
     UT_ASSERT(str_count(out2, "caps=") >= 2,
               "pdb -q should include show caps and caps outputs");
-    UT_ASSERT(str_count(out2, "pc=0x") >= 3,
-              "pdb -q should include show pc, w, and where outputs");
+    UT_ASSERT(str_count(out2, "pc=0x") >= 4,
+              "pdb -q should include show pc, pc, w, and where outputs");
     UT_ASSERT(str_contains(out2, "pc=0x") && str_contains(out2, " sp=0x"),
               "pdb -q should include where output");
     UT_ASSERT(!str_contains(out2, "pdb> "),
@@ -1094,10 +1102,14 @@ int main(void)
     argv3[26] = arg_opt;
     argv3[27] = arg_delete_invalid_id;
     argv3[28] = arg_opt;
-    argv3[29] = arg_continue;
-    argv3[30] = arg_target;
-    argv3[31] = (char *)0;
-    argv3[32] = (char *)0;
+    argv3[29] = arg_pc_invalid;
+    argv3[30] = arg_opt;
+    argv3[31] = arg_sp_invalid;
+    argv3[32] = arg_opt;
+    argv3[33] = arg_continue;
+    argv3[34] = arg_target;
+    argv3[35] = (char *)0;
+    argv3[36] = (char *)0;
     n2 = run_capture(argv3, out, sizeof(out_buf), &status2);
     UT_ASSERT(n2 > 0, "pdb invalid-number diagnostics smoke should produce output");
     UT_ASSERT(WIFEXITED(status2), "pdb invalid-number diagnostics smoke should exit normally");
@@ -1124,6 +1136,10 @@ int main(void)
               "pdb invalid-number diagnostics smoke should report enable id parse failure");
     UT_ASSERT(str_contains(out, "pdb: usage: delete <id>"),
               "pdb invalid-number diagnostics smoke should report delete id parse failure");
+    UT_ASSERT(str_contains(out, "pdb: usage: pc"),
+              "pdb invalid-number diagnostics smoke should report pc usage");
+    UT_ASSERT(str_contains(out, "pdb: usage: sp"),
+              "pdb invalid-number diagnostics smoke should report sp usage");
     UT_ASSERT(str_contains(out, "child exited 0"),
               "pdb invalid-number diagnostics smoke should allow target to exit");
 

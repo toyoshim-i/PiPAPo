@@ -86,6 +86,8 @@ pdb -f /tmp/pdb.script /tmp/prog.com
 #   show regset
 #   show pc
 #   show sp
+#   pc
+#   sp
 #   show surface
 #   where
 #   x/4x 0x20000000
