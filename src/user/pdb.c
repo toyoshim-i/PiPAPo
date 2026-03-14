@@ -270,6 +270,40 @@ static const char *reg_name(uint32_t regset, uint32_t idx)
     return (const char *)0;
 }
 
+static int regset_pc_sp_indices(uint32_t regset, uint32_t *pc_idx, uint32_t *sp_idx)
+{
+    switch (regset) {
+    case PPAP_TRACE_REGSET_ARM:
+        *pc_idx = 15u;
+        *sp_idx = 13u;
+        return 1;
+    case PPAP_TRACE_REGSET_M68K:
+        *pc_idx = 16u;
+        *sp_idx = 15u;
+        return 1;
+    case PPAP_TRACE_REGSET_Z80:
+        *pc_idx = 7u;
+        *sp_idx = 6u;
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static int regset_pc_index(uint32_t regset, uint32_t *pc_idx)
+{
+    uint32_t sp_idx = 0;
+    return regset_pc_sp_indices(regset, pc_idx, &sp_idx);
+}
+
+static void print_reg_value(uint32_t regset, uint32_t value)
+{
+    if (reg_is16(regset))
+        put_hex16(value);
+    else
+        put_hex32(value);
+}
+
 static int reg_index_from_token(const struct ppap_ptrace_regs *regs,
                                 const char *tok, uint32_t *idx_out)
 {
@@ -1442,42 +1476,6 @@ int main(int argc, char *argv[])
             if (streq(show_item, "pc")) {
                 struct ppap_ptrace_regs regs;
                 uint32_t pc_idx = 0;
-                if (!child_stopped) {
-                    put_err("pdb: child is not stopped\n");
-                    continue;
-                }
-                if (ptrace(PTRACE_GETREGS, pid, (void *)0, &regs) < 0) {
-                    put_err("pdb: GETREGS failed\n");
-                    continue;
-                }
-                switch (regs.regset) {
-                case PPAP_TRACE_REGSET_ARM:
-                    pc_idx = 15;
-                    break;
-                case PPAP_TRACE_REGSET_M68K:
-                    pc_idx = 16;
-                    break;
-                case PPAP_TRACE_REGSET_Z80:
-                    pc_idx = 7;
-                    break;
-                default:
-                    put_err("pdb: unsupported regset for show pc\n");
-                    continue;
-                }
-                if (pc_idx >= regs.words) {
-                    put_err("pdb: pc index out of range\n");
-                    continue;
-                }
-                put_str("pc=");
-                if (regs.regset == PPAP_TRACE_REGSET_Z80)
-                    put_hex16(regs.regs[pc_idx]);
-                else
-                    put_hex32(regs.regs[pc_idx]);
-                put_chr('\n');
-                continue;
-            }
-            if (streq(show_item, "sp")) {
-                struct ppap_ptrace_regs regs;
                 uint32_t sp_idx = 0;
                 if (!child_stopped) {
                     put_err("pdb: child is not stopped\n");
@@ -1487,17 +1485,32 @@ int main(int argc, char *argv[])
                     put_err("pdb: GETREGS failed\n");
                     continue;
                 }
-                switch (regs.regset) {
-                case PPAP_TRACE_REGSET_ARM:
-                    sp_idx = 13;
-                    break;
-                case PPAP_TRACE_REGSET_M68K:
-                    sp_idx = 15;
-                    break;
-                case PPAP_TRACE_REGSET_Z80:
-                    sp_idx = 6;
-                    break;
-                default:
+                if (!regset_pc_sp_indices(regs.regset, &pc_idx, &sp_idx)) {
+                    put_err("pdb: unsupported regset for show pc\n");
+                    continue;
+                }
+                if (pc_idx >= regs.words) {
+                    put_err("pdb: pc index out of range\n");
+                    continue;
+                }
+                put_str("pc=");
+                print_reg_value(regs.regset, regs.regs[pc_idx]);
+                put_chr('\n');
+                continue;
+            }
+            if (streq(show_item, "sp")) {
+                struct ppap_ptrace_regs regs;
+                uint32_t pc_idx = 0;
+                uint32_t sp_idx = 0;
+                if (!child_stopped) {
+                    put_err("pdb: child is not stopped\n");
+                    continue;
+                }
+                if (ptrace(PTRACE_GETREGS, pid, (void *)0, &regs) < 0) {
+                    put_err("pdb: GETREGS failed\n");
+                    continue;
+                }
+                if (!regset_pc_sp_indices(regs.regset, &pc_idx, &sp_idx)) {
                     put_err("pdb: unsupported regset for show sp\n");
                     continue;
                 }
@@ -1506,10 +1519,7 @@ int main(int argc, char *argv[])
                     continue;
                 }
                 put_str("sp=");
-                if (regs.regset == PPAP_TRACE_REGSET_Z80)
-                    put_hex16(regs.regs[sp_idx]);
-                else
-                    put_hex32(regs.regs[sp_idx]);
+                print_reg_value(regs.regset, regs.regs[sp_idx]);
                 put_chr('\n');
                 continue;
             }
@@ -1588,20 +1598,7 @@ int main(int argc, char *argv[])
                 put_err("pdb: GETREGS failed\n");
                 continue;
             }
-            switch (regs.regset) {
-            case PPAP_TRACE_REGSET_ARM:
-                pc_idx = 15;
-                sp_idx = 13;
-                break;
-            case PPAP_TRACE_REGSET_M68K:
-                pc_idx = 16;
-                sp_idx = 15;
-                break;
-            case PPAP_TRACE_REGSET_Z80:
-                pc_idx = 7;
-                sp_idx = 6;
-                break;
-            default:
+            if (!regset_pc_sp_indices(regs.regset, &pc_idx, &sp_idx)) {
                 put_err("pdb: unsupported regset for where\n");
                 continue;
             }
@@ -1610,15 +1607,9 @@ int main(int argc, char *argv[])
                 continue;
             }
             put_str("pc=");
-            if (regs.regset == PPAP_TRACE_REGSET_Z80)
-                put_hex16(regs.regs[pc_idx]);
-            else
-                put_hex32(regs.regs[pc_idx]);
+            print_reg_value(regs.regset, regs.regs[pc_idx]);
             put_str(" sp=");
-            if (regs.regset == PPAP_TRACE_REGSET_Z80)
-                put_hex16(regs.regs[sp_idx]);
-            else
-                put_hex32(regs.regs[sp_idx]);
+            print_reg_value(regs.regset, regs.regs[sp_idx]);
             put_chr('\n');
             continue;
         }
@@ -1736,13 +1727,7 @@ int main(int argc, char *argv[])
                 put_err("pdb: GETREGS failed\n");
                 continue;
             }
-            if (regs.regset == PPAP_TRACE_REGSET_Z80) {
-                pc_idx = 7; /* Z80 PC */
-            } else if (regs.regset == PPAP_TRACE_REGSET_M68K) {
-                pc_idx = 16; /* m68k PC */
-            } else if (regs.regset == PPAP_TRACE_REGSET_ARM) {
-                pc_idx = 15; /* ARM PC */
-            } else {
+            if (!regset_pc_index(regs.regset, &pc_idx)) {
                 put_err("pdb: disas currently supports arm, z80, and m68k tracees only\n");
                 continue;
             }
