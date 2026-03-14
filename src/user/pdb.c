@@ -1713,7 +1713,7 @@ int main(int argc, char *argv[])
             if (rc < 0) {
                 put_err("pdb: SETSURFACE failed rc=");
                 put_i32((int32_t)rc);
-                put_chr('\n');
+                put_err(" (target may not support requested surface)\n");
                 continue;
             }
             if (ptrace(PTRACE_GETSURFACE, pid, (void *)0, &surface) < 0) {

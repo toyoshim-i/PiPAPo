@@ -601,6 +601,45 @@ int main(void)
         execve(arg_sleep, sleep_argv, (void *)0);
         _exit(127);
     }
+    UT_ASSERT(attach_target > 0, "attach+surface target process should launch");
+    u32_to_dec((uint32_t)attach_target, attach_pid_str,
+               (int)sizeof(attach_pid_buf));
+    argv4[0] = arg_prog;
+    argv4[1] = arg_quiet;
+    argv4[2] = arg_opt;
+    argv4[3] = arg_show_surface;
+    argv4[4] = arg_opt;
+    argv4[5] = arg_surface_ecpu;
+    argv4[6] = arg_opt;
+    argv4[7] = arg_show_surface;
+    argv4[8] = arg_opt;
+    argv4[9] = arg_detach;
+    argv4[10] = arg_attach_opt;
+    argv4[11] = attach_pid_str;
+    argv4[12] = (char *)0;
+    argv4[13] = (char *)0;
+    n2 = run_capture(argv4, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb --attach surface smoke should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb --attach surface smoke should exit normally");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
+    UT_ASSERT(str_count(out2, "surface=real") >= 2,
+              "pdb --attach surface smoke should keep real surface");
+    UT_ASSERT(str_contains(out2, "pdb: SETSURFACE failed rc="),
+              "pdb --attach surface smoke should report unsupported ecpu surface");
+    UT_ASSERT(str_contains(out2, "target may not support requested surface"),
+              "pdb --attach surface smoke should provide actionable surface failure hint");
+    UT_ASSERT(str_contains(out2, "detached"),
+              "pdb --attach surface smoke should detach cleanly");
+    UT_ASSERT_EQ(waitpid(attach_target, &attach_status, 0), attach_target);
+    UT_ASSERT(WIFEXITED(attach_status),
+              "attach+surface target should still be reapable by parent");
+    UT_ASSERT_EQ(WEXITSTATUS(attach_status), 0);
+
+    attach_target = vfork();
+    if (attach_target == 0) {
+        execve(arg_sleep, sleep_argv, (void *)0);
+        _exit(127);
+    }
     UT_ASSERT(attach_target > 0, "attach+cont target process should launch");
     u32_to_dec((uint32_t)attach_target, attach_pid_str,
                (int)sizeof(attach_pid_buf));

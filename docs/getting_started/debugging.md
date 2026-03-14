@@ -127,6 +127,8 @@ Scripted-mode notes:
 - `caps`/`show caps` prints both hex capability bits and decoded names.
 - `break` support is mapping-dependent; on unsupported targets `pdb` prints
   `break not supported on this target/mapping`.
+- `surface ecpu` on native-only targets fails with `SETSURFACE failed rc=...`
+  and includes a support hint.
 - `set mem ... h` requires an even address and must stay within one 32-bit word.
 - `set mem` rejects values that do not fit the selected width (`b`/`h`).
 - `set mem` size accepts `b|h|w` or numeric aliases `1|2|4`.
