@@ -266,6 +266,7 @@ static char arg_opt[] = "-c";
 static char arg_file_opt[] = "-f";
 static char arg_attach_opt[] = "--attach";
 static char arg_zero[] = "0";
+static char arg_bad_pid[] = "abc";
 static char arg_big_pid[] = "2147483647";
 static char arg_dev_null[] = "/dev/null";
 static char arg_long_script[] = "/tmp/pdb_long.script";
@@ -412,6 +413,18 @@ int main(void)
     UT_ASSERT_EQ(WEXITSTATUS(status), 1);
     UT_ASSERT(str_contains_basic(out, "pdb: --attach requires a valid positive pid"),
               "pdb --attach 0 should report validation error");
+
+    a = 0;
+    argv[a++] = "/bin/pdb";
+    argv[a++] = "--attach";
+    argv[a++] = "abc";
+    argv[a++] = (char *)0;
+    n = run_capture_basic(argv, out, sizeof(out), &status);
+    UT_ASSERT(n > 0, "pdb --attach non-numeric pid should produce output");
+    UT_ASSERT(WIFEXITED(status), "pdb --attach non-numeric pid should exit");
+    UT_ASSERT_EQ(WEXITSTATUS(status), 1);
+    UT_ASSERT(str_contains_basic(out, "pdb: --attach requires a valid positive pid"),
+              "pdb --attach non-numeric pid should report validation error");
 
     a = 0;
     argv[a++] = "/bin/pdb";
@@ -1200,6 +1213,18 @@ int main(void)
     UT_ASSERT_EQ(WEXITSTATUS(status2), 1);
     UT_ASSERT(str_contains(out2, "pdb: --attach requires a valid positive pid"),
               "pdb --attach 0 should report validation error");
+
+    argv2[0] = arg_prog;
+    argv2[1] = arg_attach_opt;
+    argv2[2] = arg_bad_pid;
+    argv2[3] = (char *)0;
+    argv2[4] = (char *)0;
+    n2 = run_capture(argv2, out2, sizeof(out2_buf), &status2);
+    UT_ASSERT(n2 > 0, "pdb --attach non-numeric pid should produce output");
+    UT_ASSERT(WIFEXITED(status2), "pdb --attach non-numeric pid should exit");
+    UT_ASSERT_EQ(WEXITSTATUS(status2), 1);
+    UT_ASSERT(str_contains(out2, "pdb: --attach requires a valid positive pid"),
+              "pdb --attach non-numeric pid should report validation error");
 
     argv2[0] = arg_prog;
     argv2[1] = arg_attach_opt;
