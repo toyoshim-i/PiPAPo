@@ -112,8 +112,24 @@ fi
 
 # ── Build stage2.bin ──────────────────────────────────────────────────────────
 
+# Read __page_pool_start from the kernel ELF — stage2 loads rootfs there so
+# it lands above the kernel BSS region (which Reset_Handler zeros on boot).
+KERNEL_ELF="$PROJECT_DIR/build/x68k/ppap_x68k.elf"
+if [[ ! -f "$KERNEL_ELF" ]]; then
+    echo "[mkx68kimg] Error: kernel ELF not found: $KERNEL_ELF"
+    exit 1
+fi
+POOL_BASE_HEX=$(${M68K_OBJCOPY%objcopy}nm "$KERNEL_ELF" \
+    | awk '/[ \t]__page_pool_start$/{print "0x"$1"u"; exit}')
+if [[ -z "$POOL_BASE_HEX" ]]; then
+    echo "[mkx68kimg] Error: __page_pool_start symbol not found in $KERNEL_ELF"
+    exit 1
+fi
+echo "[mkx68kimg] Rootfs load base: $POOL_BASE_HEX (= __page_pool_start)"
+
 echo "[mkx68kimg] Building stage2..."
 $M68K_GCC -m68000 -nostdlib -ffreestanding -Os \
+    -DROOTFS_BASE="${POOL_BASE_HEX}" \
     -T "$STAGE2_LD" \
     -Wl,--build-id=none \
     -o "$TMPDIR/stage2.elf" \

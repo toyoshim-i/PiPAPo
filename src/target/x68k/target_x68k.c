@@ -119,10 +119,7 @@ extern void m68k_irq_ignore(void);
 
 void target_late_init(void)
 {
-    /* Initialize MFP Timer-C at 100 Hz for preemptive scheduling */
-    timer_init();
-
-    /* Install a benign rte handler for X68000 hardware autovectors (levels
+    /* Install a benign rttake e handler for X68000 hardware autovectors (levels
      * 1–6).  Without this, VSYNC/OPM/FDC/DMA interrupts would hit
      * Default_Handler which halts the CPU with stop #0x2700. */
     /* Vector table lives at physical address 0x000000 on 68000.
@@ -142,11 +139,17 @@ void target_late_init(void)
 
     /* MFP (MC68901) uses VECTORED interrupts with VR base set by the IPL
      * BIOS to 0x40 (vector 64).  Sources occupy vectors 64–79.
-     * Patch them all to m68k_irq_ignore so MFP timer / keyboard IRQs
-     * that fire after arch_irq_enable() don't hit Default_Handler. */
+     * Pre-fill with m68k_irq_ignore so no stale Default_Handler fires
+     * after arch_irq_enable(). */
     for (uint32_t v = 64u; v < 80u; v++)
         vt[v] = ignore;
 #pragma GCC diagnostic pop
+
+    /* Initialize MFP Timer-C at 100 Hz for preemptive scheduling.
+     * Must be called AFTER the loop above: timer_init() installs
+     * m68k_timer_isr at vector 69 (TC_VECTOR = MFP VR_base+5 = 0x45),
+     * which the loop would otherwise overwrite with m68k_irq_ignore. */
+    timer_init();
 
     /* Set up dual-TTY: TTY_DISPLAY = TVRAM (primary), TTY_SERIAL = RS-232C */
     extern void uart_serial_putc(char c);
@@ -186,6 +189,17 @@ int target_mount_rootfs(void)
     uint32_t size = *STAGE2_ROOTFS_SIZE;
     klogf("x68k: ramdisk at 0x%lx, %lu bytes\n",
           (unsigned long)addr, (unsigned long)size);
+
+    /* Reserve all page-pool pages that fall inside the rootfs region so the
+     * allocator never hands them out and overwrites the live UFS image.
+     * page_alloc_at() is a no-op for addresses outside the pool bounds, so
+     * it is safe to call even for the sub-pool portion of the rootfs. */
+    {
+        uint32_t rfs_end = (addr + size + PAGE_SIZE - 1u) & ~(PAGE_SIZE - 1u);
+        for (uint32_t p = addr & ~(PAGE_SIZE - 1u); p < rfs_end; p += PAGE_SIZE)
+            page_alloc_at((void *)(uintptr_t)p);
+    }
+
     flatblk_init("ram0", (const void *)(uintptr_t)addr, size);
     blkdev_t *bd = blkdev_find("ram0");
     if (!bd)

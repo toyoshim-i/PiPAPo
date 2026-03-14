@@ -3,12 +3,16 @@
  *
  * Runs at 0x003000 after stage1.  Reads the UFS filesystem stored on the
  * floppy from sector 4 onward, loads:
- *   boot/kernel    → 0x006000                (kernel binary)
- *   boot/rootfs.ufs → immediately after kernel (inner rootfs UFS image)
+ *   boot/kernel    → 0x006000      (kernel binary)
+ *   boot/rootfs.ufs → ROOTFS_BASE  (inner rootfs UFS image)
+ *
+ * ROOTFS_BASE is passed by mkx68kimg.sh via -DROOTFS_BASE=0x...u.  It is set
+ * to the kernel's __page_pool_start so rootfs lands above the kernel BSS
+ * region (which Reset_Handler zeros at boot before the rootfs can be read).
  *
  * On completion, writes a handoff record at 0x002FF4–0x002FFC:
  *   0x002FF4  RAMD magic (0x52414D44)
- *   0x002FF8  rootfs RAM address
+ *   0x002FF8  rootfs RAM address  (= ROOTFS_BASE)
  *   0x002FFC  rootfs size in bytes
  *
  * Then copies the kernel's vector table (1 KB at 0x006000) to 0x000000,
@@ -19,8 +23,8 @@
  *   UFS block N = floppy logical sectors 4 + N*4 … 4 + N*4 + 3
  *
  * UFS inode layout (64 bytes each, 64 per block):
- *   Inode N in inode table block: (N-1) / 64 + s_itable_block
- *   Offset in block:             ((N-1) % 64) * 64
+ *   Inode N in inode table block: N / 64 + s_itable_block
+ *   Offset in block:             (N % 64) * 64
  */
 
 #include <stdint.h>
@@ -36,8 +40,19 @@
 #define KERNEL_LOAD_ADDR  0x006000u
 #define KERNEL_RESET_HANDLER 0x006400u
 
-/* Scratch buffer: 4096 bytes in freed boot memory (below stack, above vectors) */
-#define BUF               ((uint8_t *)0x000400u)
+/* ROOTFS_BASE: address where stage2 loads boot/rootfs.ufs.
+ * Must be >= __page_pool_start (kernel BSS end rounded to 4 KB) so that
+ * Reset_Handler's BSS-zeroing loop does not overwrite the rootfs image.
+ * mkx68kimg.sh reads __page_pool_start from the kernel ELF and defines this
+ * macro via -DROOTFS_BASE=0x...u; the fallback below is for direct builds. */
+#ifndef ROOTFS_BASE
+#define ROOTFS_BASE  0x030000u  /* conservative fallback: 192 KB */
+#endif
+
+/* Scratch buffer: 4096 bytes above IOCS work area ($000400–$0007FF).
+ * IOCS uses $000400–$0007FF for its own work area (puni/programmers.txt),
+ * so BUF must start at $000800 or higher to avoid corrupting it. */
+#define BUF               ((uint8_t *)0x000800u)
 
 /* ── X68000 2HD floppy geometry ─────────────────────────────────────────────── */
 
@@ -155,7 +170,7 @@ static uint32_t find_in_dir(const uint8_t *dirblock, const char *name)
 
 static void copy_inode(const uint8_t *itable_block, uint32_t ino, ufs_inode_t *out)
 {
-    uint32_t idx = (ino - 1u) % UFS_INODES_PER_BLOCK;
+    uint32_t idx = ino % UFS_INODES_PER_BLOCK;  /* mkufs: blk=3+ino/64, off=(ino%64)*64 */
     const uint8_t *src = itable_block + idx * UFS_INODE_SIZE;
     uint8_t *dst = (uint8_t *)out;
     for (uint32_t i = 0; i < UFS_INODE_SIZE; i++)
@@ -241,14 +256,15 @@ void stage2_main(void)
     ufs_inode_t inode;
     uint32_t boot_ino, kernel_ino, rootfs_ino;
 
-    /* Diagnostic: "PA" — stage2 reached */
-    iocs_putc('P'); iocs_putc('A');
-
-    /* ── Read UFS superblock (block 0) ──────────────────────────────────── */
+    /* ── Read UFS superblock (block 0) — NO iocs_putc before first _B_READ ── */
     read_ufs_block(0u, BUF);
+    /* Diagnostic: "PA" printed AFTER the first floppy read so that iocs_putc
+     * does not corrupt the IOCS work area ($400-$7FF) before _B_READ runs */
+    iocs_putc('P'); iocs_putc('A');
     const ufs_super_t *sb = (const ufs_super_t *)BUF;
     if (sb->s_magic != UFS_MAGIC)
         goto halt;
+    iocs_putc('1');  /* superblock magic OK */
     itable_block = sb->s_itable_block;
 
     /* ── Read inode table block (contains root inode at index 0) ─────────── */
@@ -258,14 +274,16 @@ void stage2_main(void)
     /* ── Walk root directory to find "boot" ──────────────────────────────── */
     if (inode.i_direct[0] == 0u)
         goto halt;
+    iocs_putc('2');  /* root inode has data block */
     read_ufs_block(inode.i_direct[0], BUF);
     boot_ino = find_in_dir(BUF, "boot");
     if (boot_ino == 0u)
         goto halt;
+    iocs_putc('3');  /* found "boot" directory */
 
     /* ── Load boot directory inode ───────────────────────────────────────── */
     {
-        uint32_t blk = itable_block + (boot_ino - 1u) / UFS_INODES_PER_BLOCK;
+        uint32_t blk = itable_block + boot_ino / UFS_INODES_PER_BLOCK;
         read_ufs_block(blk, BUF);
         copy_inode(BUF, boot_ino, &inode);
     }
@@ -273,30 +291,38 @@ void stage2_main(void)
     /* ── Walk boot/ directory to find "kernel" and "rootfs.ufs" ─────────── */
     if (inode.i_direct[0] == 0u)
         goto halt;
+    iocs_putc('4');  /* boot inode has data block */
     read_ufs_block(inode.i_direct[0], BUF);
     kernel_ino = find_in_dir(BUF, "kernel");
     rootfs_ino = find_in_dir(BUF, "rootfs.ufs");
     if (kernel_ino == 0u || rootfs_ino == 0u)
         goto halt;
+    iocs_putc('5');  /* found kernel and rootfs.ufs */
 
     /* ── Load kernel to 0x006000 ─────────────────────────────────────────── */
     {
-        uint32_t blk = itable_block + (kernel_ino - 1u) / UFS_INODES_PER_BLOCK;
+        uint32_t blk = itable_block + kernel_ino / UFS_INODES_PER_BLOCK;
         read_ufs_block(blk, BUF);
         copy_inode(BUF, kernel_ino, &inode);
     }
     uint32_t kernel_size = load_file(&inode, (uint8_t *)KERNEL_LOAD_ADDR);
+    (void)kernel_size;
+    iocs_putc('6');  /* kernel loaded */
 
-    /* Align rootfs start to 4096-byte boundary after kernel */
-    uint32_t rootfs_addr = (KERNEL_LOAD_ADDR + kernel_size + 4095u) & ~4095u;
+    /* Load rootfs at the kernel page pool base (passed via -DROOTFS_BASE by
+     * mkx68kimg.sh from __page_pool_start in the kernel ELF).  This ensures
+     * rootfs lands above the kernel BSS region, which Reset_Handler zeros
+     * before the kernel can read the rootfs. */
+    uint32_t rootfs_addr = ROOTFS_BASE;
 
     /* ── Load rootfs.ufs after kernel ────────────────────────────────────── */
     {
-        uint32_t blk = itable_block + (rootfs_ino - 1u) / UFS_INODES_PER_BLOCK;
+        uint32_t blk = itable_block + rootfs_ino / UFS_INODES_PER_BLOCK;
         read_ufs_block(blk, BUF);
         copy_inode(BUF, rootfs_ino, &inode);
     }
     uint32_t rootfs_size = load_file(&inode, (uint8_t *)rootfs_addr);
+    iocs_putc('!');  /* rootfs loaded — about to jump to kernel */
 
     /* ── Write handoff record for kernel ─────────────────────────────────── */
     *STAGE2_MAGIC    = STAGE2_RAMD_MAGIC;
