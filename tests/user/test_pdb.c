@@ -293,6 +293,7 @@ static char arg_where_short[] = "w";
 static char arg_where_long[] = "where";
 static char arg_help_short_cmd[] = "?";
 static char arg_reg_wz[] = "reg wz";
+static char arg_reg_wz_index[] = "reg 15";
 static char arg_show_surface[] = "show surface";
 static char arg_surface_real[] = "surface real";
 static char arg_surface_ecpu[] = "surface ecpu";
@@ -318,6 +319,7 @@ static char arg_enable[] = "enable 0";
 static char arg_delete[] = "d 0";
 static char arg_delete_long[] = "delete 0";
 static char arg_setreg[] = "set reg wz 0x1234";
+static char arg_setreg_index[] = "set reg 15 0x2222";
 static char arg_setmem[] = "set mem 0x0100 0x00000000";
 static char arg_setmem_byte[] = "set mem 0x0101 0x34 1";
 static char arg_setmem_half[] = "set mem 0x0102 0x5678 2";
@@ -565,6 +567,12 @@ int main(void)
     argv[a++] = arg_delete;
     argv[a++] = arg_opt;
     argv[a++] = arg_setreg;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_reg_wz_index;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_setreg_index;
+    argv[a++] = arg_opt;
+    argv[a++] = arg_reg_wz_index;
     argv[a++] = arg_opt;
     argv[a++] = arg_setmem;
     argv[a++] = arg_opt;
@@ -843,6 +851,12 @@ int main(void)
               "output should include scripted register write command");
     UT_ASSERT(str_contains(out, "reg wz=0x1234"),
               "output should include register write result");
+    UT_ASSERT(str_contains(out, "pdb> reg 15"),
+              "output should include numeric register read command");
+    UT_ASSERT(str_contains(out, "pdb> set reg 15 0x2222"),
+              "output should include numeric register write command");
+    UT_ASSERT(str_contains(out, "reg wz=0x2222"),
+              "output should include numeric-index register write result");
     UT_ASSERT(str_contains(out, "pdb> set mem 0x0100 0x00000000"),
               "output should include scripted memory write command");
     UT_ASSERT(str_contains(out, "mem 0x00000100=0x00000000"),
