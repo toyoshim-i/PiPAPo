@@ -141,11 +141,9 @@ if [[ ! -f "$ELF" ]]; then
     exit 1
 fi
 
-# ── X68000 target — build only (no emulator integration in Phase X-1) ───────
+# ── X68000 target — build floppy image (no emulator integration in Phase X-1) ─
 if [[ "$TARGET" == "x68k" ]]; then
-    echo "[run] x68k is a real-hardware target."
-    echo "      ELF: $ELF"
-    echo "      See docs/proposals/x68k_port.md for boot floppy creation (Phase X-3)."
+    "$SCRIPT_DIR/mkx68kimg.sh"
     exit 0
 fi
 

@@ -2,18 +2,6 @@
 | bootldr.S — PPAP X68000 single-stage boot loader (1 sector = 1024 bytes)
 | =============================================================================
 |
-| Debug version — output characters via IOCS _B_PUTC (0x20):
-|   "1"    = boot_start reached, interrupts masked (IPM=7)
-|   "2"    = starting _B_READ (function 0x46, CHS loop)
-|   "3"    = all kernel sectors read without error
-|   "K"    = kernel verified at 0x006000 (first word = 0x00006400 = __stack_top)
-|   "X"    = kernel NOT present despite no read errors (wrong function code?)
-|   "4"    = vector table copied to 0x000000
-|   "5"    = TRAP #15 restored to IPL handler — jumping to 0x006400
-|   "Exx"  = _B_READ error; xx = error code in hex (e.g. "E70" = 0x70)
-|
-| After "5": kernel Reset_Handler prints "6" then "7" then "PiPAPo booting..."
-|
 | Interrupt strategy:
 |   - During floppy reads: interrupts ENABLED — _B_READ waits for FDC interrupt;
 |     masking (IPM=7) causes it to hang.  IPL ROM vectors at 0x000000 are valid.
@@ -60,25 +48,9 @@ boot_start:
     | valid, so hardware interrupts are safe until we overwrite the table.
     lea.l   0x002000,%sp
 
-    | Print CR+LF+'1' — boot_start reached, interrupts masked.
-    move.l  #0x20,%d0
-    move.l  #0x0D,%d1
-    trap    #15
-    move.l  #0x20,%d0
-    move.l  #0x0A,%d1
-    trap    #15
-    move.l  #0x20,%d0
-    move.l  #'1',%d1
-    trap    #15
-
     | Save IPL IOCS vector: TRAP #15 = vector 47 → address 47×4 = 0x0000BC.
     | Keep in a5 throughout (a5 is preserved by _B_READ per IOCS convention).
     move.l  0x0000BC,%a5
-
-    | Print '2' — about to start CHS read loop.
-    move.l  #0x20,%d0
-    move.l  #'2',%d1
-    trap    #15
 
     | ── CHS read loop — 1 sector at a time (matches Human68k boot approach) ──
     | X68000 2HD geometry: 16 sectors/cylinder (2 heads × 8 sectors)
@@ -139,26 +111,13 @@ read_loop:
     bne.s   read_loop
 
     | ── Read loop complete ───────────────────────────────────────────────────
-    | Print '3' — all KERNEL_SECTORS read without error.
-    move.l  #0x20,%d0
-    move.l  #'3',%d1
-    trap    #15
-
     | Kernel presence check: first longword at 0x006000 should be
     | 0x00006400 (= __stack_top = Initial SSP in the .vectors section).
     cmp.l   #0x00006400,0x006000
     beq.s   .kernel_ok
     | Kernel not present — wrong read (function code? drive? sector numbering?)
-    move.l  #0x20,%d0
-    move.l  #'X',%d1
-    trap    #15
     bra.w   .halted
 .kernel_ok:
-    | Print 'K' — kernel verified at 0x006000.
-    move.l  #0x20,%d0
-    move.l  #'K',%d1
-    trap    #15
-
     | ── Mask all interrupts before overwriting the vector table ─────────────
     | From this point the IPL ROM's handlers are gone; mask until the kernel
     | initialises its own handlers.
@@ -172,19 +131,8 @@ copy_loop:
     move.l  (%a0)+,(%a1)+
     dbra    %d0,copy_loop
 
-    | Print '4' — vector table installed.  Restore 0x0000BC first.
-    move.l  %a5,0x0000BC
-    move.l  #0x20,%d0
-    move.l  #'4',%d1
-    trap    #15
-
     | Restore TRAP #15 to IPL IOCS handler for kernel uart_x68k.c to use.
     move.l  %a5,0x0000BC
-
-    | Print '5' — about to jump to kernel.
-    move.l  #0x20,%d0
-    move.l  #'5',%d1
-    trap    #15
 
     | Jump to kernel Reset_Handler at 0x006400.
     jmp     0x006400

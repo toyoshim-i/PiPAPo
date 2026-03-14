@@ -108,15 +108,6 @@ Reset_Handler:
     | -----------------------------------------------------------------
     lea.l    __stack_top,%sp
 
-    | Debug marker '6': Reset_Handler reached, stack OK, IOCS accessible.
-    | TRAP #15 → 0x0000BC = IPL IOCS handler (restored by boot sector).
-    | Remove this block once X68000 bring-up is confirmed.
-#ifdef PPAP_X68K
-    move.l  #0x20,%d0
-    move.l  #'6',%d1
-    trap    #15
-#endif
-
     | -----------------------------------------------------------------
     | Copy .data: load region → RAM
     |   a0 = source (load address)
@@ -146,14 +137,6 @@ Reset_Handler:
 .Lzero_check:
     cmp.l    %a1,%a0
     blo.s    .Lzero_loop
-
-    | Debug marker '7': .data copy and .bss zero done, entering kmain.
-    | Remove this block once X68000 bring-up is confirmed.
-#ifdef PPAP_X68K
-    move.l  #0x20,%d0
-    move.l  #'7',%d1
-    trap    #15
-#endif
 
     | -----------------------------------------------------------------
     | Enter kernel — kmain() must never return
