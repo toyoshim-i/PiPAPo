@@ -1080,6 +1080,38 @@ static int wait_child(pid_t pid, int *stopped, int *exit_code,
     return 0;
 }
 
+static int ensure_child_stopped(int child_stopped)
+{
+    if (child_stopped)
+        return 1;
+    put_err("pdb: child is not stopped\n");
+    return 0;
+}
+
+static int get_regs_if_stopped(pid_t pid, int child_stopped,
+                               struct ppap_ptrace_regs *regs)
+{
+    if (!ensure_child_stopped(child_stopped))
+        return 0;
+    if (ptrace(PTRACE_GETREGS, pid, (void *)0, regs) < 0) {
+        put_err("pdb: GETREGS failed\n");
+        return 0;
+    }
+    return 1;
+}
+
+static int get_caps_if_stopped(pid_t pid, int child_stopped,
+                               struct ppap_ptrace_caps *caps)
+{
+    if (!ensure_child_stopped(child_stopped))
+        return 0;
+    if (ptrace(PTRACE_GETCAPS, pid, (void *)0, caps) < 0) {
+        put_err("pdb: GETCAPS failed\n");
+        return 0;
+    }
+    return 1;
+}
+
 static void usage(void)
 {
     put_str("Usage: pdb [-q] [--batch] [-c <cmd> ...] [-f <script> ...] <program> [args...]\n");
@@ -1341,14 +1373,8 @@ int main(int argc, char *argv[])
                 put_err("pdb: usage: regs\n");
                 continue;
             }
-            if (!child_stopped) {
-                put_err("pdb: child is not stopped\n");
+            if (!get_regs_if_stopped(pid, child_stopped, &regs))
                 continue;
-            }
-            if (ptrace(PTRACE_GETREGS, pid, (void *)0, &regs) < 0) {
-                put_err("pdb: GETREGS failed\n");
-                continue;
-            }
             print_regs(&regs);
             continue;
         }
@@ -1357,18 +1383,12 @@ int main(int argc, char *argv[])
             struct ppap_ptrace_regs regs;
             uint32_t idx = 0;
             int is16 = 0;
-            if (!child_stopped) {
-                put_err("pdb: child is not stopped\n");
-                continue;
-            }
             if (ntok != 2) {
                 put_err("pdb: usage: reg <name|index>\n");
                 continue;
             }
-            if (ptrace(PTRACE_GETREGS, pid, (void *)0, &regs) < 0) {
-                put_err("pdb: GETREGS failed\n");
+            if (!get_regs_if_stopped(pid, child_stopped, &regs))
                 continue;
-            }
             if (!reg_index_from_token(&regs, tok[1], &idx)) {
                 put_err("pdb: unknown register\n");
                 continue;
@@ -1397,14 +1417,8 @@ int main(int argc, char *argv[])
                 put_err("pdb: usage: caps\n");
                 continue;
             }
-            if (!child_stopped) {
-                put_err("pdb: child is not stopped\n");
+            if (!get_caps_if_stopped(pid, child_stopped, &caps))
                 continue;
-            }
-            if (ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps) < 0) {
-                put_err("pdb: GETCAPS failed\n");
-                continue;
-            }
             print_caps(&caps);
             continue;
         }
@@ -1447,27 +1461,15 @@ int main(int argc, char *argv[])
                 continue;
             }
             if (streq(show_item, "caps")) {
-                if (!child_stopped) {
-                    put_err("pdb: child is not stopped\n");
+                if (!get_caps_if_stopped(pid, child_stopped, &caps))
                     continue;
-                }
-                if (ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps) < 0) {
-                    put_err("pdb: GETCAPS failed\n");
-                    continue;
-                }
                 print_caps(&caps);
                 continue;
             }
             if (streq(show_item, "regset")) {
                 struct ppap_ptrace_regs regs;
-                if (!child_stopped) {
-                    put_err("pdb: child is not stopped\n");
+                if (!get_regs_if_stopped(pid, child_stopped, &regs))
                     continue;
-                }
-                if (ptrace(PTRACE_GETREGS, pid, (void *)0, &regs) < 0) {
-                    put_err("pdb: GETREGS failed\n");
-                    continue;
-                }
                 put_str("regset=");
                 put_str(regset_name(regs.regset));
                 put_chr('\n');
@@ -1477,14 +1479,8 @@ int main(int argc, char *argv[])
                 struct ppap_ptrace_regs regs;
                 uint32_t pc_idx = 0;
                 uint32_t sp_idx = 0;
-                if (!child_stopped) {
-                    put_err("pdb: child is not stopped\n");
+                if (!get_regs_if_stopped(pid, child_stopped, &regs))
                     continue;
-                }
-                if (ptrace(PTRACE_GETREGS, pid, (void *)0, &regs) < 0) {
-                    put_err("pdb: GETREGS failed\n");
-                    continue;
-                }
                 if (!regset_pc_sp_indices(regs.regset, &pc_idx, &sp_idx)) {
                     put_err("pdb: unsupported regset for show pc\n");
                     continue;
@@ -1502,14 +1498,8 @@ int main(int argc, char *argv[])
                 struct ppap_ptrace_regs regs;
                 uint32_t pc_idx = 0;
                 uint32_t sp_idx = 0;
-                if (!child_stopped) {
-                    put_err("pdb: child is not stopped\n");
+                if (!get_regs_if_stopped(pid, child_stopped, &regs))
                     continue;
-                }
-                if (ptrace(PTRACE_GETREGS, pid, (void *)0, &regs) < 0) {
-                    put_err("pdb: GETREGS failed\n");
-                    continue;
-                }
                 if (!regset_pc_sp_indices(regs.regset, &pc_idx, &sp_idx)) {
                     put_err("pdb: unsupported regset for show sp\n");
                     continue;
@@ -1590,14 +1580,8 @@ int main(int argc, char *argv[])
                 put_err("pdb: usage: where\n");
                 continue;
             }
-            if (!child_stopped) {
-                put_err("pdb: child is not stopped\n");
+            if (!get_regs_if_stopped(pid, child_stopped, &regs))
                 continue;
-            }
-            if (ptrace(PTRACE_GETREGS, pid, (void *)0, &regs) < 0) {
-                put_err("pdb: GETREGS failed\n");
-                continue;
-            }
             if (!regset_pc_sp_indices(regs.regset, &pc_idx, &sp_idx)) {
                 put_err("pdb: unsupported regset for where\n");
                 continue;
@@ -1617,10 +1601,6 @@ int main(int argc, char *argv[])
         if (streq(tok[0], "bt")) {
             struct ppap_ptrace_regs regs;
             uint32_t count = 8;
-            if (!child_stopped) {
-                put_err("pdb: child is not stopped\n");
-                continue;
-            }
             if (ntok > 2) {
                 put_err("pdb: usage: bt [count]\n");
                 continue;
@@ -1629,10 +1609,8 @@ int main(int argc, char *argv[])
                 put_err("pdb: usage: bt [count]\n");
                 continue;
             }
-            if (ptrace(PTRACE_GETREGS, pid, (void *)0, &regs) < 0) {
-                put_err("pdb: GETREGS failed\n");
+            if (!get_regs_if_stopped(pid, child_stopped, &regs))
                 continue;
-            }
             print_backtrace(pid, &regs, count);
             continue;
         }
@@ -1719,14 +1697,8 @@ int main(int argc, char *argv[])
             uint32_t addr = 0;
             uint32_t count = 8;
             uint32_t pc_idx = 0;
-            if (!child_stopped) {
-                put_err("pdb: child is not stopped\n");
+            if (!get_regs_if_stopped(pid, child_stopped, &regs))
                 continue;
-            }
-            if (ptrace(PTRACE_GETREGS, pid, (void *)0, &regs) < 0) {
-                put_err("pdb: GETREGS failed\n");
-                continue;
-            }
             if (!regset_pc_index(regs.regset, &pc_idx)) {
                 put_err("pdb: disas currently supports arm, z80, and m68k tracees only\n");
                 continue;
@@ -1768,14 +1740,8 @@ int main(int argc, char *argv[])
                 put_err("pdb: usage: next\n");
                 continue;
             }
-            if (!child_stopped) {
-                put_err("pdb: child is not stopped\n");
+            if (!get_regs_if_stopped(pid, child_stopped, &regs))
                 continue;
-            }
-            if (ptrace(PTRACE_GETREGS, pid, (void *)0, &regs) < 0) {
-                put_err("pdb: GETREGS failed\n");
-                continue;
-            }
             if (ptrace(PTRACE_GETCAPS, pid, (void *)0, &caps) == 0) {
                 uint32_t cap_flag = select_bp_flag_from_caps(caps.caps);
                 if (cap_flag == 0) {
