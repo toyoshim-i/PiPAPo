@@ -531,6 +531,127 @@ static void print_help(void)
     put_str("  quit | q          detach and quit\n");
 }
 
+static int parse_startup_options(int argc, char *argv[],
+                                 int *argi, int *show_prompt, int *batch_mode,
+                                 int *scripted_mode, int *attach_mode,
+                                 pid_t *attach_pid, char **script_cmds,
+                                 int *script_count, char *script_storage,
+                                 int *script_storage_used, int *exit_code)
+{
+    while (*argi < argc) {
+        if (streq(argv[*argi], "-h") || streq(argv[*argi], "--help")) {
+            print_help();
+            *exit_code = 0;
+            return 0;
+        }
+        if (streq(argv[*argi], "-q")) {
+            *show_prompt = 0;
+            (*argi)++;
+            continue;
+        }
+        if (streq(argv[*argi], "--batch")) {
+            *batch_mode = 1;
+            *show_prompt = 0;
+            (*argi)++;
+            continue;
+        }
+        if (streq(argv[*argi], "-c")) {
+            int non_space = 0;
+            int cmd_len = 0;
+            const char *cmd;
+            *scripted_mode = 1;
+            if (*argi + 1 >= argc) {
+                put_err("pdb: -c requires a command string\n");
+                *exit_code = 1;
+                return 0;
+            }
+            cmd = argv[*argi + 1];
+            for (cmd_len = 0; cmd[cmd_len]; cmd_len++) {
+                if (!is_script_space(cmd[cmd_len])) {
+                    non_space = 1;
+                    break;
+                }
+            }
+            for (; cmd[cmd_len]; cmd_len++)
+                ;
+            if (!non_space) {
+                *argi += 2;
+                continue;
+            }
+            if (cmd_len >= PDB_SCRIPT_LINE_MAX) {
+                put_err("pdb: -c command too long\n");
+                *exit_code = 1;
+                return 0;
+            }
+            if (*script_count >= PDB_SCRIPT_CMD_MAX) {
+                put_err("pdb: too many script commands (max ");
+                put_u32(PDB_SCRIPT_CMD_MAX);
+                put_str(")\n");
+                *exit_code = 1;
+                return 0;
+            }
+            script_cmds[(*script_count)++] = argv[*argi + 1];
+            *argi += 2;
+            continue;
+        }
+        if (streq(argv[*argi], "-f")) {
+            *scripted_mode = 1;
+            if (*argi + 1 >= argc) {
+                put_err("pdb: -f requires a script path\n");
+                *exit_code = 1;
+                return 0;
+            }
+            if (load_script_file(argv[*argi + 1], script_cmds, script_count,
+                                 script_storage, script_storage_used) < 0) {
+                *exit_code = 1;
+                return 0;
+            }
+            *argi += 2;
+            continue;
+        }
+        if (streq(argv[*argi], "--attach")) {
+            uint32_t parsed_pid = 0;
+            if (*argi + 1 >= argc) {
+                put_err("pdb: --attach requires a pid\n");
+                *exit_code = 1;
+                return 0;
+            }
+            if (!parse_u32(argv[*argi + 1], &parsed_pid) ||
+                parsed_pid == 0 ||
+                parsed_pid > 0x7fffffffu) {
+                put_err("pdb: --attach requires a valid positive pid\n");
+                *exit_code = 1;
+                return 0;
+            }
+            *attach_mode = 1;
+            *attach_pid = (pid_t)parsed_pid;
+            *argi += 2;
+            continue;
+        }
+        break;
+    }
+    return 1;
+}
+
+static int validate_startup_options(int argc, int argi,
+                                    int attach_mode, int scripted_mode,
+                                    int script_count)
+{
+    if (!attach_mode && argi >= argc) {
+        usage();
+        return 0;
+    }
+    if (attach_mode && argi < argc) {
+        put_err("pdb: --attach does not take a program path\n");
+        return 0;
+    }
+    if (scripted_mode && script_count == 0) {
+        put_err("pdb: no scripted commands\n");
+        return 0;
+    }
+    return 1;
+}
+
 int main(int argc, char *argv[])
 {
     int argi = 1;
@@ -547,108 +668,21 @@ int main(int argc, char *argv[])
     int child_stopped = 0;
     int child_exit_code = 0;
     int done = 0;
+    int exit_code = 1;
     char line[PDB_SCRIPT_LINE_MAX];
     char *tok[8];
     struct ppap_ptrace_event last_ev;
     struct ppap_ptrace_caps caps;
     pdb_local_bp_t local_bp[PDB_LOCAL_BP_MAX];
 
-    while (argi < argc) {
-        if (streq(argv[argi], "-h") || streq(argv[argi], "--help")) {
-            print_help();
-            return 0;
-        }
-        if (streq(argv[argi], "-q")) {
-            show_prompt = 0;
-            argi++;
-            continue;
-        }
-        if (streq(argv[argi], "--batch")) {
-            batch_mode = 1;
-            show_prompt = 0;
-            argi++;
-            continue;
-        }
-        if (streq(argv[argi], "-c")) {
-            int non_space = 0;
-            int cmd_len = 0;
-            const char *cmd;
-            scripted_mode = 1;
-            if (argi + 1 >= argc) {
-                put_err("pdb: -c requires a command string\n");
-                return 1;
-            }
-            cmd = argv[argi + 1];
-            for (cmd_len = 0; cmd[cmd_len]; cmd_len++) {
-                if (!is_script_space(cmd[cmd_len])) {
-                    non_space = 1;
-                    break;
-                }
-            }
-            for (; cmd[cmd_len]; cmd_len++)
-                ;
-            if (!non_space) {
-                argi += 2;
-                continue;
-            }
-            if (cmd_len >= PDB_SCRIPT_LINE_MAX) {
-                put_err("pdb: -c command too long\n");
-                return 1;
-            }
-            if (script_count >= PDB_SCRIPT_CMD_MAX) {
-                put_err("pdb: too many script commands (max ");
-                put_u32(PDB_SCRIPT_CMD_MAX);
-                put_str(")\n");
-                return 1;
-            }
-            script_cmds[script_count++] = argv[argi + 1];
-            argi += 2;
-            continue;
-        }
-        if (streq(argv[argi], "-f")) {
-            scripted_mode = 1;
-            if (argi + 1 >= argc) {
-                put_err("pdb: -f requires a script path\n");
-                return 1;
-            }
-            if (load_script_file(argv[argi + 1], script_cmds, &script_count,
-                                 pdb_script_storage, &script_storage_used) < 0)
-                return 1;
-            argi += 2;
-            continue;
-        }
-        if (streq(argv[argi], "--attach")) {
-            uint32_t parsed_pid = 0;
-            if (argi + 1 >= argc) {
-                put_err("pdb: --attach requires a pid\n");
-                return 1;
-            }
-            if (!parse_u32(argv[argi + 1], &parsed_pid) ||
-                parsed_pid == 0 ||
-                parsed_pid > 0x7fffffffu) {
-                put_err("pdb: --attach requires a valid positive pid\n");
-                return 1;
-            }
-            attach_mode = 1;
-            attach_pid = (pid_t)parsed_pid;
-            argi += 2;
-            continue;
-        }
-        break;
-    }
+    if (!parse_startup_options(argc, argv, &argi, &show_prompt, &batch_mode,
+                               &scripted_mode, &attach_mode, &attach_pid,
+                               script_cmds, &script_count, pdb_script_storage,
+                               &script_storage_used, &exit_code))
+        return exit_code;
 
-    if (!attach_mode && argi >= argc) {
-        usage();
+    if (!validate_startup_options(argc, argi, attach_mode, scripted_mode, script_count))
         return 1;
-    }
-    if (attach_mode && argi < argc) {
-        put_err("pdb: --attach does not take a program path\n");
-        return 1;
-    }
-    if (scripted_mode && script_count == 0) {
-        put_err("pdb: no scripted commands\n");
-        return 1;
-    }
 
     init_local_bp_table(local_bp);
 
