@@ -61,6 +61,7 @@ set(USER_APPS hello getty init trace pdb ttyctl)
 # Optional per-app extra sources (for multi-file user programs).
 set(PPAP_USER_EXTRA_SOURCES_pdb
     ${PPAP_ROOT}/src/user/pdb_util.c
+    ${PPAP_ROOT}/src/user/pdb_trace_util.c
 )
 
 # Test programs (sources in tests/user/)
