@@ -689,6 +689,7 @@ static int trace_fill_caps(const pcb_t *target, struct ppap_ptrace_caps *caps)
                | PPAP_PTRACE_CAP_PEEKPOKE;
     uint32_t surface;
     uint32_t surfaces;
+    uint32_t hwbp_slots = 0;
 
     if (!caps)
         return -EINVAL;
@@ -705,8 +706,19 @@ static int trace_fill_caps(const pcb_t *target, struct ppap_ptrace_caps *caps)
     }
 #if defined(__m68k__)
     if (surface == PPAP_TRACE_SURFACE_REAL)
-        c |= PPAP_PTRACE_CAP_SINGLESTEP | PPAP_PTRACE_CAP_HW_BP;
+        c |= PPAP_PTRACE_CAP_SINGLESTEP;
 #endif
+    if (surface == PPAP_TRACE_SURFACE_REAL) {
+#if defined(__m68k__)
+        hwbp_slots = TRACE_HW_BP_MAX;
+#elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
+        hwbp_slots = target_debug_hwbp_slots();
+        if (hwbp_slots > TRACE_HW_BP_MAX)
+            hwbp_slots = TRACE_HW_BP_MAX;
+#endif
+        if (hwbp_slots > 0)
+            c |= PPAP_PTRACE_CAP_HW_BP;
+    }
 
     caps->regset = trace_regset_for(target);
     caps->abi = target->trace_event.abi;
@@ -717,7 +729,7 @@ static int trace_fill_caps(const pcb_t *target, struct ppap_ptrace_caps *caps)
     if (c & PPAP_PTRACE_CAP_SW_BP)
         caps->max_bps += TRACE_SW_BP_MAX;
     if (c & PPAP_PTRACE_CAP_HW_BP)
-        caps->max_bps += TRACE_HW_BP_MAX;
+        caps->max_bps += hwbp_slots;
     return 0;
 }
 
@@ -866,6 +878,11 @@ static int trace_supports_hwbp(const pcb_t *target)
 #if defined(__m68k__)
     if (trace_active_surface_for(target) == PPAP_TRACE_SURFACE_REAL)
         return 1;
+#elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
+    if (trace_active_surface_for(target) == PPAP_TRACE_SURFACE_REAL) {
+        uint32_t slots = target_debug_hwbp_slots();
+        return slots > 0;
+    }
 #else
     (void)target;
 #endif

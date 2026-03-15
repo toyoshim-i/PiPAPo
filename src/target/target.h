@@ -106,4 +106,16 @@ uint32_t target_caps(void);
  */
 int target_mount_rootfs(void);
 
+/*
+ * Optional native debugger HW-breakpoint hooks.
+ *
+ * These are used by ptrace for native real-surface breakpoints on targets
+ * that expose hardware breakpoint comparators to software.
+ *
+ * Default weak implementations return "unsupported" in target_default.c.
+ */
+uint32_t target_debug_hwbp_slots(void);
+int target_debug_hwbp_set(uint32_t slot, uint32_t addr);
+int target_debug_hwbp_clear(uint32_t slot);
+
 #endif /* PPAP_TARGET_H */
