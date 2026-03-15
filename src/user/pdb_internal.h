@@ -17,6 +17,7 @@ typedef struct {
 
 typedef struct {
     pid_t pid;
+    int attach_mode;
     int *child_stopped;
     int *child_exit_code;
     int batch_mode;

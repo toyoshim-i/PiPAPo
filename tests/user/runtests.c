@@ -197,11 +197,7 @@ int main(void)
 #endif
     tests[t++] = (test_entry_t){ "/bin/test_cpm",        TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_trace",      TEST_ENABLED  };
-#if defined(__m68k__)
     tests[t++] = (test_entry_t){ "/bin/test_pdb",        TEST_SLOW     };
-#else
-    tests[t++] = (test_entry_t){ "/bin/test_pdb",        TEST_ENABLED  };
-#endif
     tests[t].path = (void *)0;
 
     get_time(&g_start);

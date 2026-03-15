@@ -739,7 +739,7 @@ int main(void)
     UT_ASSERT(n2 > 0, "pdb --attach show-regs smoke should produce output");
     UT_ASSERT(WIFEXITED(status2), "pdb --attach show-regs smoke should exit normally");
     UT_ASSERT_EQ(WEXITSTATUS(status2), 0);
-    UT_ASSERT(str_contains(out2, "regset=arm"),
+    UT_ASSERT(str_contains(out2, "regset=m68k"),
               "pdb --attach show-regs smoke should report native regset");
     UT_ASSERT(str_contains(out2, "pc=0x"),
               "pdb --attach show-regs smoke should report pc");

@@ -263,8 +263,10 @@ int handle_run_control_commands(pdb_dispatch_ctx_t *ctx, char **tok, int ntok)
 int handle_session_commands(pdb_dispatch_ctx_t *ctx, char **tok, int ntok)
 {
     pid_t pid = ctx->pid;
+    int attach_mode = ctx->attach_mode;
     int *child_stopped = ctx->child_stopped;
     int *done = ctx->done;
+    pdb_local_bp_t *local_bp = ctx->local_bp;
 
     if (streq(tok[0], "detach")) {
         long rc;
@@ -276,6 +278,18 @@ int handle_session_commands(pdb_dispatch_ctx_t *ctx, char **tok, int ntok)
             put_err("pdb: child is not stopped\n");
             return 1;
         }
+        if (local_bp) {
+            for (int i = 0; i < PDB_LOCAL_BP_MAX; i++) {
+                struct ppap_ptrace_bp bp;
+                if (!local_bp[i].used || !local_bp[i].enabled)
+                    continue;
+                bp.id = i;
+                bp.addr = 0;
+                bp.flags = 0;
+                if (ptrace(PTRACE_CLRBP, pid, (void *)0, &bp) == 0)
+                    local_bp[i].enabled = 0;
+            }
+        }
         rc = ptrace(PTRACE_DETACH, pid, (void *)0, (void *)0);
         if (rc < 0) {
             put_err("pdb: DETACH failed rc=");
@@ -285,6 +299,8 @@ int handle_session_commands(pdb_dispatch_ctx_t *ctx, char **tok, int ntok)
         }
         *child_stopped = 0;
         put_str("detached\n");
+        if (!attach_mode)
+            (void)kill(pid, 9);
         *done = 1;
         return 1;
     }
@@ -295,6 +311,18 @@ int handle_session_commands(pdb_dispatch_ctx_t *ctx, char **tok, int ntok)
             return 1;
         }
         if (*child_stopped) {
+            if (local_bp) {
+                for (int i = 0; i < PDB_LOCAL_BP_MAX; i++) {
+                    struct ppap_ptrace_bp bp;
+                    if (!local_bp[i].used || !local_bp[i].enabled)
+                        continue;
+                    bp.id = i;
+                    bp.addr = 0;
+                    bp.flags = 0;
+                    if (ptrace(PTRACE_CLRBP, pid, (void *)0, &bp) == 0)
+                        local_bp[i].enabled = 0;
+                }
+            }
             long rc = ptrace(PTRACE_DETACH, pid, (void *)0, (void *)0);
             if (rc < 0) {
                 put_err("pdb: DETACH failed rc=");
@@ -305,6 +333,8 @@ int handle_session_commands(pdb_dispatch_ctx_t *ctx, char **tok, int ntok)
             *child_stopped = 0;
             put_str("detached\n");
         }
+        if (!attach_mode)
+            (void)kill(pid, 9);
         *done = 1;
         return 1;
     }

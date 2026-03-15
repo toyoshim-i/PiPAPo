@@ -85,6 +85,7 @@ int main(int argc, char *argv[])
     }
 
     ctx.pid = pid;
+    ctx.attach_mode = attach_mode;
     ctx.child_stopped = &child_stopped;
     ctx.child_exit_code = &child_exit_code;
     ctx.batch_mode = batch_mode;
