@@ -106,7 +106,7 @@ PPAP/
     build_rogue.sh          Build script: Rogue with minimal curses shim
   src/etc/                  Root filesystem config templates (fstab, passwd, …)
   scripts/
-    setup-toolchain.sh      One-shot toolchain install
+    setup_toolchain.sh      One-shot toolchain install
     build.sh                Build any target (pico1, pico1calc, qemu_arm, qemu_m68k)
     run.sh                  Flash or run any target
     test.sh                 Run tests (--all for full suite)
@@ -127,7 +127,7 @@ PPAP/
 ### 1. Install the toolchain
 
 ```sh
-./scripts/setup-toolchain.sh
+./scripts/setup_toolchain.sh
 ```
 
 Installs apt packages (`arm-none-eabi-gcc`, `cmake`, `ninja`, `openocd`, `gdb-multiarch`, `qemu-system-arm`) and initializes git submodules (Pico SDK, musl, busybox, etc.). For m68k targets, see also `scripts/build-m68k-toolchain.sh`.

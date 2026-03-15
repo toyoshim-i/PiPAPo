@@ -60,6 +60,8 @@ APT_PACKAGES=(
   python3                 # Required by Pico SDK scripts
   qemu-system-arm         # QEMU mps2-an500 smoke tests (scripts/run.sh)
   qemu-system-misc        # QEMU m68k (virt) for 68000 target
+  default-jre             # Java runtime for XEiJ (X68000 emulator)
+  unzip                   # Needed to extract XEiJ archive
 )
 
 # Check which packages are already installed
@@ -103,8 +105,12 @@ fi
 
 info "=== Step 2: Initializing git submodules ==="
 
-# Initialize all submodules (pico-sdk, musl, busybox, rogue, qemu)
-git -C "${PPAP_ROOT}" submodule update --init --recursive --quiet
+# Initialize top-level submodules only (non-recursive).
+# QEMU has broken transitive submodule deps (Zeex/subhook repo is gone)
+# and its build script handles its own submodules anyway.
+git -C "${PPAP_ROOT}" submodule update --init --quiet
+# Pico SDK is the only submodule that needs recursive init
+git -C "${PPAP_ROOT}/third_party/pico-sdk" submodule update --init --recursive --quiet
 success "All git submodules initialized."
 
 # Verify Pico SDK submodule
@@ -122,6 +128,35 @@ fi
 # which builds QEMU 9.1.x from the third_party/qemu submodule.
 
 QEMU_M68K="${PPAP_ROOT}/third_party/qemu/build/qemu-system-m68k"
+
+# --- Step 3b: XEiJ (X68000 Emulator in Java) --------------------------------
+#
+# Downloads XEiJ from the official site into build/downloads and extracts
+# it to tools/xeij.  Requires a Java runtime (default-jre).
+
+info "=== Step 3b: Installing XEiJ ==="
+
+XEIJ_VER="0260308"
+XEIJ_ZIP="XEiJ_${XEIJ_VER}.zip"
+XEIJ_URL="https://stdkmd.net/xeij/${XEIJ_ZIP}"
+DL_DIR="${PPAP_ROOT}/build/downloads"
+XEIJ_DIR="${PPAP_ROOT}/tools/xeij"
+
+if [[ -f "${XEIJ_DIR}/XEiJ.jar" ]]; then
+  success "XEiJ already installed at ${XEIJ_DIR}"
+else
+  mkdir -p "${DL_DIR}" "${XEIJ_DIR}"
+  if [[ -f "${DL_DIR}/${XEIJ_ZIP}" ]]; then
+    info "XEiJ archive already downloaded."
+  else
+    info "Downloading XEiJ ${XEIJ_VER}..."
+    wget -q --show-progress -O "${DL_DIR}/${XEIJ_ZIP}.tmp" "${XEIJ_URL}"
+    mv "${DL_DIR}/${XEIJ_ZIP}.tmp" "${DL_DIR}/${XEIJ_ZIP}"
+  fi
+  info "Extracting XEiJ to ${XEIJ_DIR}..."
+  unzip -qo "${DL_DIR}/${XEIJ_ZIP}" -d "${XEIJ_DIR}"
+  success "XEiJ installed to ${XEIJ_DIR}"
+fi
 
 # --- Step 4: Verification ----------------------------------------------------
 
@@ -201,6 +236,24 @@ fi
 verify_version "qemu-system-arm" \
   "qemu-system-arm --version" \
   "QEMU emulator"
+
+# XEiJ
+if [[ -f "${XEIJ_DIR}/XEiJ.jar" ]]; then
+  success "XEiJ: installed at ${XEIJ_DIR}/XEiJ.jar"
+else
+  warn "XEiJ: not found at ${XEIJ_DIR}/XEiJ.jar"
+  FAIL=1
+fi
+
+# Java
+if command -v java &>/dev/null; then
+  verify_version "java" \
+    "java -version" \
+    "version"
+else
+  warn "java: not found (required for XEiJ)"
+  FAIL=1
+fi
 
 # qemu-system-m68k (prefer local build, fall back to system)
 if [[ -x "${QEMU_M68K}" ]]; then

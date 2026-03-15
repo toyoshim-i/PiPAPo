@@ -3,7 +3,7 @@
 ## 1. Install toolchains and dependencies
 
 ```sh
-./scripts/setup-toolchain.sh
+./scripts/setup_toolchain.sh
 ```
 
 ## 2. Build

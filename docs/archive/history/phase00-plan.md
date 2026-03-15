@@ -36,7 +36,7 @@ minicom
 ```
 
 Pico SDK cloned to `~/pico-sdk`; `PICO_SDK_PATH` set in `~/.bashrc` and `~/.zshrc`.
-Reproducible setup script: `scripts/setup-toolchain.sh`.
+Reproducible setup script: `scripts/setup_toolchain.sh`.
 
 ### ✓ Step 2 — Project Skeleton and CMake Build
 
@@ -51,7 +51,7 @@ PPAP/
     kernel/main.c           # kmain() entry point
     drivers/uart.c / uart.h # Bare-metal UART0 driver
   ldscripts/ppap.ld         # Custom linker script
-  scripts/setup-toolchain.sh
+  scripts/setup_toolchain.sh
 ```
 
 Build produces `ppap.elf`, `ppap.bin`, `ppap.uf2`.

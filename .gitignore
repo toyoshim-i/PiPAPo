@@ -10,5 +10,6 @@ build/
 
 tools/mkromfs/mkromfs
 tools/m68k-toolchain/
+tools/xeij/
 
 overlay/
