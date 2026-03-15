@@ -14,6 +14,7 @@
  *  10. PTRACE_SETMODE(0) disables tracing before final continue
  *  11. PTRACE_SINGLESTEP works for m68k eCPU tracees on ARM targets
  *  12. PTRACE_SINGLESTEP works for native m68k real-surface tracees
+ *  13. ARM native HW breakpoint stop path works when target advertises it
  */
 
 #include "utest.h"
@@ -150,6 +151,35 @@ int main(void)
                      (void *)(uintptr_t)PPAP_TRACE_SURFACE_ECPU,
                      (void *)0) < 0,
               "native tracee should reject eCPU surface");
+
+#if !defined(__m68k__)
+    if ((caps.caps & PPAP_PTRACE_CAP_HW_BP) != 0 &&
+        regs.regset == PPAP_TRACE_REGSET_ARM) {
+        uint32_t arm_hwbp_pc = regs.regs[15] & ~1u;
+
+        bp.id = -1;
+        bp.addr = arm_hwbp_pc;
+        bp.flags = PPAP_PTRACE_BP_HW;
+        UT_ASSERT_EQ(ptrace(PTRACE_SETBP, pid, (void *)0, &bp), 0);
+        UT_ASSERT(bp.id >= 0, "ARM native HW SETBP should return breakpoint ID");
+        UT_ASSERT_EQ((int)bp.flags, PPAP_PTRACE_BP_HW);
+
+        UT_ASSERT_EQ(ptrace(PTRACE_CONT, pid, (void *)0, (void *)0), 0);
+        UT_ASSERT_EQ(waitpid(pid, &status, WSTOPPED), pid);
+        UT_ASSERT(WIFSTOPPED(status),
+                  "ARM native child should stop at hardware breakpoint");
+        UT_ASSERT_EQ(WSTOPSIG(status), SIGTRAP);
+        UT_ASSERT_EQ(ptrace(PTRACE_GETEVENT, pid, (void *)0, &ev), 0);
+        UT_ASSERT_EQ((int)ev.event, PPAP_TRACE_EVENT_DEBUG_STOP);
+        UT_ASSERT((ev.flags & PPAP_DEBUG_STOP_HW_BP) != 0,
+                  "ARM native debug stop should include HW_BP reason");
+        UT_ASSERT_EQ((int)ev.args[0], (int)arm_hwbp_pc);
+
+        UT_ASSERT_EQ(ptrace(PTRACE_CLRBP, pid, (void *)0, &bp), 0);
+        UT_ASSERT_EQ(ptrace(PTRACE_GETREGS, pid, (void *)0, &regs), 0);
+        UT_ASSERT_EQ((int)regs.regset, EXPECT_REGSET);
+    }
+#endif
 
 #if defined(__m68k__)
     native_pc_before = regs.regs[16];
