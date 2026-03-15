@@ -14,6 +14,18 @@ typedef struct {
     uint32_t flags;
 } pdb_local_bp_t;
 
+typedef struct {
+    pid_t pid;
+    int *child_stopped;
+    int *child_exit_code;
+    int batch_mode;
+    int *done;
+    int *main_exit_code;
+    struct ppap_ptrace_event *last_ev;
+    struct ppap_ptrace_caps *caps;
+    pdb_local_bp_t *local_bp;
+} pdb_dispatch_ctx_t;
+
 static char pdb_script_storage[PDB_SCRIPT_BUF_MAX];
 
 static const char *event_name(uint32_t ev)
@@ -683,86 +695,17 @@ static int read_next_command_line(char *line, int line_size,
     return 1;
 }
 
-static int handle_inspect_commands(pid_t pid, int child_stopped,
-                                   char **tok, int ntok,
-                                   struct ppap_ptrace_event *last_ev,
-                                   struct ppap_ptrace_caps *caps)
+static int handle_show_commands(pdb_dispatch_ctx_t *ctx, char **tok, int ntok)
 {
-    if (streq(tok[0], "help") || streq(tok[0], "?")) {
-        if (ntok != 1) {
-            put_err("pdb: usage: help\n");
-            return 1;
-        }
-        print_help();
-        return 1;
-    }
+    pid_t pid = ctx->pid;
+    int child_stopped = *ctx->child_stopped;
+    struct ppap_ptrace_event *last_ev = ctx->last_ev;
+    struct ppap_ptrace_caps *caps = ctx->caps;
 
-    if (streq(tok[0], "regs")) {
-        struct ppap_ptrace_regs regs;
-        if (ntok != 1) {
-            put_err("pdb: usage: regs\n");
-            return 1;
-        }
-        if (!get_regs_if_stopped(pid, child_stopped, &regs))
-            return 1;
-        print_regs(&regs);
-        return 1;
-    }
+    if (!streq(tok[0], "show") && !streq(tok[0], "pc") && !streq(tok[0], "sp"))
+        return 0;
 
-    if (streq(tok[0], "reg")) {
-        struct ppap_ptrace_regs regs;
-        uint32_t idx = 0;
-        int is16 = 0;
-        if (ntok != 2) {
-            put_err("pdb: usage: reg <name|index>\n");
-            return 1;
-        }
-        if (!get_regs_if_stopped(pid, child_stopped, &regs))
-            return 1;
-        if (!reg_index_from_token(&regs, tok[1], &idx)) {
-            put_err("pdb: unknown register\n");
-            return 1;
-        }
-        is16 = reg_is16(regs.regset);
-        {
-            const char *name = reg_name(regs.regset, idx);
-            if (name) {
-                put_str(name);
-            } else {
-                put_str("r");
-                put_u32(idx);
-            }
-        }
-        put_str("=");
-        if (is16)
-            put_hex16(regs.regs[idx]);
-        else
-            put_hex32(regs.regs[idx]);
-        put_chr('\n');
-        return 1;
-    }
-
-    if (streq(tok[0], "caps")) {
-        if (ntok != 1) {
-            put_err("pdb: usage: caps\n");
-            return 1;
-        }
-        if (!get_caps_if_stopped(pid, child_stopped, caps))
-            return 1;
-        print_caps(caps);
-        return 1;
-    }
-
-    if (streq(tok[0], "event")) {
-        if (ntok != 1) {
-            put_err("pdb: usage: event\n");
-            return 1;
-        }
-        print_event(last_ev);
-        return 1;
-    }
-
-    if (streq(tok[0], "show") || streq(tok[0], "pc") || streq(tok[0], "sp")) {
+    {
         const char *show_item = 0;
         if (streq(tok[0], "show")) {
             if (ntok != 2) {
@@ -873,77 +816,12 @@ static int handle_inspect_commands(pid_t pid, int child_stopped,
             put_err("pdb: usage: sp\n");
         return 1;
     }
+}
 
-    if (streq(tok[0], "surface")) {
-        uint32_t surface = 0;
-        long rc;
-        if (!child_stopped) {
-            put_err("pdb: child is not stopped\n");
-            return 1;
-        }
-        if (ntok != 2 || !parse_surface_token(tok[1], &surface)) {
-            put_err("pdb: usage: surface <real|ecpu>\n");
-            return 1;
-        }
-        rc = ptrace(PTRACE_SETSURFACE, pid, (void *)(uintptr_t)surface, (void *)0);
-        if (rc < 0) {
-            put_err("pdb: SETSURFACE failed rc=");
-            put_i32((int32_t)rc);
-            put_err(" (target may not support requested surface)\n");
-            return 1;
-        }
-        if (ptrace(PTRACE_GETSURFACE, pid, (void *)0, &surface) < 0) {
-            put_err("pdb: GETSURFACE failed\n");
-            return 1;
-        }
-        put_str("surface=");
-        put_str(surface_name_for_value(surface));
-        put_chr('\n');
-        return 1;
-    }
-
-    if (streq(tok[0], "where") || streq(tok[0], "w")) {
-        struct ppap_ptrace_regs regs;
-        uint32_t pc_idx = 0;
-        uint32_t sp_idx = 0;
-        if (ntok != 1) {
-            put_err("pdb: usage: where\n");
-            return 1;
-        }
-        if (!get_regs_if_stopped(pid, child_stopped, &regs))
-            return 1;
-        if (!regset_pc_sp_indices(regs.regset, &pc_idx, &sp_idx)) {
-            put_err("pdb: unsupported regset for where\n");
-            return 1;
-        }
-        if (pc_idx >= regs.words || sp_idx >= regs.words) {
-            put_err("pdb: where index out of range\n");
-            return 1;
-        }
-        put_str("pc=");
-        print_reg_value(regs.regset, regs.regs[pc_idx]);
-        put_str(" sp=");
-        print_reg_value(regs.regset, regs.regs[sp_idx]);
-        put_chr('\n');
-        return 1;
-    }
-
-    if (streq(tok[0], "bt")) {
-        struct ppap_ptrace_regs regs;
-        uint32_t count = 8;
-        if (ntok > 2) {
-            put_err("pdb: usage: bt [count]\n");
-            return 1;
-        }
-        if (ntok == 2 && !parse_u32(tok[1], &count)) {
-            put_err("pdb: usage: bt [count]\n");
-            return 1;
-        }
-        if (!get_regs_if_stopped(pid, child_stopped, &regs))
-            return 1;
-        print_backtrace(pid, &regs, count);
-        return 1;
-    }
+static int handle_memory_view_commands(pdb_dispatch_ctx_t *ctx, char **tok, int ntok)
+{
+    pid_t pid = ctx->pid;
+    int child_stopped = *ctx->child_stopped;
 
     if (streq(tok[0], "mem")) {
         uint32_t addr = 0;
@@ -1022,7 +900,18 @@ static int handle_inspect_commands(pid_t pid, int child_stopped,
         return 1;
     }
 
-    if (streq(tok[0], "disas")) {
+    return 0;
+}
+
+static int handle_disassemble_command(pdb_dispatch_ctx_t *ctx, char **tok, int ntok)
+{
+    pid_t pid = ctx->pid;
+    int child_stopped = *ctx->child_stopped;
+
+    if (!streq(tok[0], "disas"))
+        return 0;
+
+    {
         struct ppap_ptrace_regs regs;
         uint32_t addr = 0;
         uint32_t count = 8;
@@ -1054,16 +943,183 @@ static int handle_inspect_commands(pid_t pid, int child_stopped,
             disas_thumb(pid, addr, count);
         return 1;
     }
+}
+
+static int handle_inspect_commands(pdb_dispatch_ctx_t *ctx, char **tok, int ntok)
+{
+    pid_t pid = ctx->pid;
+    int child_stopped = *ctx->child_stopped;
+    struct ppap_ptrace_event *last_ev = ctx->last_ev;
+    struct ppap_ptrace_caps *caps = ctx->caps;
+
+    if (streq(tok[0], "help") || streq(tok[0], "?")) {
+        if (ntok != 1) {
+            put_err("pdb: usage: help\n");
+            return 1;
+        }
+        print_help();
+        return 1;
+    }
+
+    if (streq(tok[0], "regs")) {
+        struct ppap_ptrace_regs regs;
+        if (ntok != 1) {
+            put_err("pdb: usage: regs\n");
+            return 1;
+        }
+        if (!get_regs_if_stopped(pid, child_stopped, &regs))
+            return 1;
+        print_regs(&regs);
+        return 1;
+    }
+
+    if (streq(tok[0], "reg")) {
+        struct ppap_ptrace_regs regs;
+        uint32_t idx = 0;
+        int is16 = 0;
+        if (ntok != 2) {
+            put_err("pdb: usage: reg <name|index>\n");
+            return 1;
+        }
+        if (!get_regs_if_stopped(pid, child_stopped, &regs))
+            return 1;
+        if (!reg_index_from_token(&regs, tok[1], &idx)) {
+            put_err("pdb: unknown register\n");
+            return 1;
+        }
+        is16 = reg_is16(regs.regset);
+        {
+            const char *name = reg_name(regs.regset, idx);
+            if (name) {
+                put_str(name);
+            } else {
+                put_str("r");
+                put_u32(idx);
+            }
+        }
+        put_str("=");
+        if (is16)
+            put_hex16(regs.regs[idx]);
+        else
+            put_hex32(regs.regs[idx]);
+        put_chr('\n');
+        return 1;
+    }
+
+    if (streq(tok[0], "caps")) {
+        if (ntok != 1) {
+            put_err("pdb: usage: caps\n");
+            return 1;
+        }
+        if (!get_caps_if_stopped(pid, child_stopped, caps))
+            return 1;
+        print_caps(caps);
+        return 1;
+    }
+
+    if (streq(tok[0], "event")) {
+        if (ntok != 1) {
+            put_err("pdb: usage: event\n");
+            return 1;
+        }
+        print_event(last_ev);
+        return 1;
+    }
+
+    if (handle_show_commands(ctx, tok, ntok))
+        return 1;
+    
+
+    if (streq(tok[0], "surface")) {
+        uint32_t surface = 0;
+        long rc;
+        if (!child_stopped) {
+            put_err("pdb: child is not stopped\n");
+            return 1;
+        }
+        if (ntok != 2 || !parse_surface_token(tok[1], &surface)) {
+            put_err("pdb: usage: surface <real|ecpu>\n");
+            return 1;
+        }
+        rc = ptrace(PTRACE_SETSURFACE, pid, (void *)(uintptr_t)surface, (void *)0);
+        if (rc < 0) {
+            put_err("pdb: SETSURFACE failed rc=");
+            put_i32((int32_t)rc);
+            put_err(" (target may not support requested surface)\n");
+            return 1;
+        }
+        if (ptrace(PTRACE_GETSURFACE, pid, (void *)0, &surface) < 0) {
+            put_err("pdb: GETSURFACE failed\n");
+            return 1;
+        }
+        put_str("surface=");
+        put_str(surface_name_for_value(surface));
+        put_chr('\n');
+        return 1;
+    }
+
+    if (streq(tok[0], "where") || streq(tok[0], "w")) {
+        struct ppap_ptrace_regs regs;
+        uint32_t pc_idx = 0;
+        uint32_t sp_idx = 0;
+        if (ntok != 1) {
+            put_err("pdb: usage: where\n");
+            return 1;
+        }
+        if (!get_regs_if_stopped(pid, child_stopped, &regs))
+            return 1;
+        if (!regset_pc_sp_indices(regs.regset, &pc_idx, &sp_idx)) {
+            put_err("pdb: unsupported regset for where\n");
+            return 1;
+        }
+        if (pc_idx >= regs.words || sp_idx >= regs.words) {
+            put_err("pdb: where index out of range\n");
+            return 1;
+        }
+        put_str("pc=");
+        print_reg_value(regs.regset, regs.regs[pc_idx]);
+        put_str(" sp=");
+        print_reg_value(regs.regset, regs.regs[sp_idx]);
+        put_chr('\n');
+        return 1;
+    }
+
+    if (streq(tok[0], "bt")) {
+        struct ppap_ptrace_regs regs;
+        uint32_t count = 8;
+        if (ntok > 2) {
+            put_err("pdb: usage: bt [count]\n");
+            return 1;
+        }
+        if (ntok == 2 && !parse_u32(tok[1], &count)) {
+            put_err("pdb: usage: bt [count]\n");
+            return 1;
+        }
+        if (!get_regs_if_stopped(pid, child_stopped, &regs))
+            return 1;
+        print_backtrace(pid, &regs, count);
+        return 1;
+    }
+
+    if (handle_memory_view_commands(ctx, tok, ntok))
+        return 1;
+
+    if (handle_disassemble_command(ctx, tok, ntok))
+        return 1;
 
     return 0;
 }
 
 /* Returns 1 when command completed, 2 when caller should return main_exit_code. */
-static int resume_and_wait(pid_t pid, int request, const char *request_name,
-                           int *child_stopped, int *child_exit_code,
-                           struct ppap_ptrace_event *last_ev, int batch_mode,
-                           int *main_exit_code)
+static int resume_and_wait(pdb_dispatch_ctx_t *ctx, int request,
+                           const char *request_name)
 {
+    pid_t pid = ctx->pid;
+    int *child_stopped = ctx->child_stopped;
+    int *child_exit_code = ctx->child_exit_code;
+    struct ppap_ptrace_event *last_ev = ctx->last_ev;
+    int batch_mode = ctx->batch_mode;
+    int *main_exit_code = ctx->main_exit_code;
     long rc = ptrace(request, pid, (void *)0, (void *)0);
     int wr;
     if (rc < 0) {
@@ -1088,14 +1144,14 @@ static int resume_and_wait(pid_t pid, int request, const char *request_name,
 }
 
 /* Returns: 0=not handled, 1=handled, 2=caller should return main_exit_code. */
-static int handle_run_control_commands(pid_t pid, int *child_stopped,
-                                       int *child_exit_code, char **tok,
-                                       int ntok,
-                                       struct ppap_ptrace_event *last_ev,
-                                       struct ppap_ptrace_caps *caps,
-                                       pdb_local_bp_t *local_bp,
-                                       int batch_mode, int *main_exit_code)
+static int handle_run_control_commands(pdb_dispatch_ctx_t *ctx,
+                                       char **tok, int ntok)
 {
+    pid_t pid = ctx->pid;
+    int *child_stopped = ctx->child_stopped;
+    struct ppap_ptrace_caps *caps = ctx->caps;
+    pdb_local_bp_t *local_bp = ctx->local_bp;
+
     if (streq(tok[0], "next") || streq(tok[0], "n")) {
         struct ppap_ptrace_regs regs;
         uint8_t op = 0;
@@ -1160,9 +1216,7 @@ static int handle_run_control_commands(pid_t pid, int *child_stopped,
         }
 
         if (use_temp_bp) {
-            int rr = resume_and_wait(pid, PTRACE_CONT, "CONT", child_stopped,
-                                     child_exit_code, last_ev, batch_mode,
-                                     main_exit_code);
+            int rr = resume_and_wait(ctx, PTRACE_CONT, "CONT");
             if (*child_stopped && temp_bp_id >= 0) {
                 struct ppap_ptrace_bp bp;
                 bp.id = temp_bp_id;
@@ -1172,9 +1226,7 @@ static int handle_run_control_commands(pid_t pid, int *child_stopped,
             }
             return rr;
         }
-        return resume_and_wait(pid, PTRACE_SINGLESTEP, "SINGLESTEP",
-                               child_stopped, child_exit_code, last_ev,
-                               batch_mode, main_exit_code);
+        return resume_and_wait(ctx, PTRACE_SINGLESTEP, "SINGLESTEP");
     }
 
     if (streq(tok[0], "step") || streq(tok[0], "s")) {
@@ -1186,9 +1238,7 @@ static int handle_run_control_commands(pid_t pid, int *child_stopped,
             put_err("pdb: child is not stopped\n");
             return 1;
         }
-        return resume_and_wait(pid, PTRACE_SINGLESTEP, "SINGLESTEP",
-                               child_stopped, child_exit_code, last_ev,
-                               batch_mode, main_exit_code);
+        return resume_and_wait(ctx, PTRACE_SINGLESTEP, "SINGLESTEP");
     }
 
     if (streq(tok[0], "run") || streq(tok[0], "cont") ||
@@ -1201,17 +1251,17 @@ static int handle_run_control_commands(pid_t pid, int *child_stopped,
             put_err("pdb: child is not stopped\n");
             return 1;
         }
-        return resume_and_wait(pid, PTRACE_CONT, "CONT", child_stopped,
-                               child_exit_code, last_ev, batch_mode,
-                               main_exit_code);
+        return resume_and_wait(ctx, PTRACE_CONT, "CONT");
     }
 
     return 0;
 }
 
-static int handle_write_commands(pid_t pid, int child_stopped,
-                                 char **tok, int ntok)
+static int handle_write_commands(pdb_dispatch_ctx_t *ctx, char **tok, int ntok)
 {
+    pid_t pid = ctx->pid;
+    int child_stopped = *ctx->child_stopped;
+
     if (streq(tok[0], "set")) {
         if (!child_stopped) {
             put_err("pdb: child is not stopped\n");
@@ -1382,11 +1432,14 @@ static int handle_write_commands(pid_t pid, int child_stopped,
     return 0;
 }
 
-static int handle_breakpoint_commands(pid_t pid, int child_stopped,
-                                      char **tok, int ntok,
-                                      struct ppap_ptrace_caps *caps,
-                                      pdb_local_bp_t *local_bp)
+static int handle_breakpoint_commands(pdb_dispatch_ctx_t *ctx,
+                                      char **tok, int ntok)
 {
+    pid_t pid = ctx->pid;
+    int child_stopped = *ctx->child_stopped;
+    struct ppap_ptrace_caps *caps = ctx->caps;
+    pdb_local_bp_t *local_bp = ctx->local_bp;
+
     if (streq(tok[0], "break") || streq(tok[0], "b")) {
         struct ppap_ptrace_bp bp;
         uint32_t requested_flag = 0;
@@ -1647,9 +1700,13 @@ static int handle_breakpoint_commands(pid_t pid, int child_stopped,
     return 0;
 }
 
-static int handle_session_commands(pid_t pid, int *child_stopped,
-                                   char **tok, int ntok, int *done)
+static int handle_session_commands(pdb_dispatch_ctx_t *ctx,
+                                   char **tok, int ntok)
 {
+    pid_t pid = ctx->pid;
+    int *child_stopped = ctx->child_stopped;
+    int *done = ctx->done;
+
     if (streq(tok[0], "detach")) {
         long rc;
         if (ntok != 1) {
@@ -1697,33 +1754,26 @@ static int handle_session_commands(pid_t pid, int *child_stopped,
 }
 
 /* Returns 1 when caller should return with main_exit_code. */
-static int dispatch_command(pid_t pid, int *child_stopped,
-                            int *child_exit_code, int batch_mode,
-                            int *done, int *main_exit_code, char **tok,
-                            int ntok, struct ppap_ptrace_event *last_ev,
-                            struct ppap_ptrace_caps *caps,
-                            pdb_local_bp_t *local_bp)
+static int dispatch_command(pdb_dispatch_ctx_t *ctx, char **tok, int ntok)
 {
     int run_cmd;
 
-    if (handle_inspect_commands(pid, *child_stopped, tok, ntok, last_ev, caps))
+    if (handle_inspect_commands(ctx, tok, ntok))
         return 0;
 
-    run_cmd = handle_run_control_commands(pid, child_stopped, child_exit_code,
-                                          tok, ntok, last_ev, caps, local_bp,
-                                          batch_mode, main_exit_code);
+    run_cmd = handle_run_control_commands(ctx, tok, ntok);
     if (run_cmd == 2)
         return 1;
     if (run_cmd == 1)
         return 0;
 
-    if (handle_write_commands(pid, *child_stopped, tok, ntok))
+    if (handle_write_commands(ctx, tok, ntok))
         return 0;
 
-    if (handle_breakpoint_commands(pid, *child_stopped, tok, ntok, caps, local_bp))
+    if (handle_breakpoint_commands(ctx, tok, ntok))
         return 0;
 
-    if (handle_session_commands(pid, child_stopped, tok, ntok, done))
+    if (handle_session_commands(ctx, tok, ntok))
         return 0;
 
     put_err("pdb: unknown command\n");
@@ -1752,6 +1802,7 @@ int main(int argc, char *argv[])
     struct ppap_ptrace_event last_ev;
     struct ppap_ptrace_caps caps;
     pdb_local_bp_t local_bp[PDB_LOCAL_BP_MAX];
+    pdb_dispatch_ctx_t ctx;
 
     if (!parse_startup_options(argc, argv, &argi, &show_prompt, &batch_mode,
                                &scripted_mode, &attach_mode, &attach_pid,
@@ -1781,6 +1832,16 @@ int main(int argc, char *argv[])
         print_caps(&caps);
     }
 
+    ctx.pid = pid;
+    ctx.child_stopped = &child_stopped;
+    ctx.child_exit_code = &child_exit_code;
+    ctx.batch_mode = batch_mode;
+    ctx.done = &done;
+    ctx.main_exit_code = &exit_code;
+    ctx.last_ev = &last_ev;
+    ctx.caps = &caps;
+    ctx.local_bp = local_bp;
+
     while (!done) {
         if (!read_next_command_line(line, sizeof(line), script_cmds,
                                     script_count, &script_index, show_prompt))
@@ -1790,11 +1851,8 @@ int main(int argc, char *argv[])
         if (ntok <= 0)
             continue;
 
-        if (dispatch_command(pid, &child_stopped, &child_exit_code, batch_mode,
-                             &done, &exit_code, tok, ntok, &last_ev, &caps,
-                             local_bp)) {
+        if (dispatch_command(&ctx, tok, ntok))
             return exit_code;
-        }
     }
 
     return 0;
