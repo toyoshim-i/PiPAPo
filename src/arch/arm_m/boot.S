@@ -195,7 +195,15 @@ HardFault_Handler:
     movs r0, #4
     mov  r1, lr
     tst  r0, r1
-    beq  Default_Handler        @ MSP fault (kernel) → halt
+    bne  .Luser_fault
+    @ ── Kernel-mode HardFault ───────────────────────────────────────
+    @ Dump MSP exception frame to UART before halting.
+    @ MSP points at {r0,r1,r2,r3,r12,lr,pc,xpsr} stacked by HW.
+    mrs  r0, msp                @ r0 = MSP frame pointer
+    bl   kernel_hardfault_dump  @ C handler prints to UART
+    b    Default_Handler        @ halt after dump
+
+.Luser_fault:
 
     @ ── User-mode fault ──────────────────────────────────────────────
     mrs  r0, psp                @ r0 = pointer to stacked {r0..xpsr}
