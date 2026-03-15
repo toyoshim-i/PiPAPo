@@ -130,7 +130,7 @@ PPAP/
 ./scripts/setup_toolchain.sh
 ```
 
-Installs apt packages (`arm-none-eabi-gcc`, `cmake`, `ninja`, `openocd`, `gdb-multiarch`, `qemu-system-arm`) and initializes git submodules (Pico SDK, musl, busybox, etc.). For m68k targets, see also `scripts/build-m68k-toolchain.sh`.
+Installs apt packages (`arm-none-eabi-gcc`, `cmake`, `ninja`, `openocd`, `gdb-multiarch`, `qemu-system-arm`, `openjdk-25-jre`), downloads XEiJ (X68000 emulator), and initializes git submodules (Pico SDK, musl, busybox, etc.). For m68k targets, see also `scripts/build-m68k-toolchain.sh`.
 
 ### 2. Build
 

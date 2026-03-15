@@ -8,7 +8,7 @@
 #   pico1, pico1calc   — Flash to RP2040 via OpenOCD
 #   qemu_arm (default) — Run under QEMU ARM
 #   qemu_m68k          — Run under QEMU m68k
-#   x68k               — Build only (real-hardware target, no emulator integration)
+#   x68k               — Build floppy image and launch XEiJ emulator
 #
 # Options:
 #   --build             Build before running
@@ -141,9 +141,53 @@ if [[ ! -f "$ELF" ]]; then
     exit 1
 fi
 
-# ── X68000 target — build floppy image (no emulator integration in Phase X-1) ─
+# ── X68000 target — build floppy image and launch XEiJ ───────────────────────
 if [[ "$TARGET" == "x68k" ]]; then
     "$SCRIPT_DIR/mkx68kimg.sh"
+    XDF="$PROJECT_DIR/build/x68k/ppap_x68k.xdf"
+    XEIJ_DIR="$PROJECT_DIR/tools/xeij"
+    XEIJ_JAR="$XEIJ_DIR/XEiJ.jar"
+    if [[ ! -f "$XEIJ_JAR" ]]; then
+        echo "[run] Error: XEiJ not found at $XEIJ_JAR"
+        echo "      Install with: ./scripts/setup_toolchain.sh"
+        exit 1
+    fi
+    # XEiJ requires Java 25+; prefer /usr/lib/jvm/java-25-openjdk-* over default
+    JAVA_BIN="java"
+    for jvm in /usr/lib/jvm/java-25-openjdk-*/bin/java; do
+        if [[ -x "$jvm" ]]; then JAVA_BIN="$jvm"; break; fi
+    done
+    if ! "$JAVA_BIN" -version &>/dev/null 2>&1; then
+        echo "[run] Error: java not found"
+        echo "      Install with: sudo apt install openjdk-25-jre-headless"
+        exit 1
+    fi
+    # Route AUX serial to TCP so we can read it from stdout
+    XEIJ_TCP_PORT=54321
+    # "TCP/IP ⇔ AUX" URL-encoded
+    XEIJ_RS232C="TCP%2FIP+%E2%87%94+AUX"
+
+    echo "[run] Launching XEiJ with $XDF (serial on TCP port $XEIJ_TCP_PORT) ..."
+    "$JAVA_BIN" -jar "$XEIJ_JAR" \
+        -fd0="$XDF" -boot=fd0 -memory=2 -model=Hybrid -mpu=68000 \
+        -rs232cconnection="$XEIJ_RS232C" \
+        -tcpipport="$XEIJ_TCP_PORT" &
+    XEIJ_PID=$!
+
+    # Wait for XEiJ TCP server to become ready, then stream serial to stdout
+    echo "[run] Waiting for XEiJ serial on port $XEIJ_TCP_PORT ..."
+    for i in $(seq 1 30); do
+        if nc -z localhost "$XEIJ_TCP_PORT" 2>/dev/null; then
+            break
+        fi
+        sleep 0.5
+    done
+    if ! nc -z localhost "$XEIJ_TCP_PORT" 2>/dev/null; then
+        echo "[run] Warning: TCP port $XEIJ_TCP_PORT not ready after 15s"
+    fi
+    # Stream serial output; when XEiJ exits, nc will EOF
+    nc localhost "$XEIJ_TCP_PORT" || true
+    wait "$XEIJ_PID" 2>/dev/null || true
     exit 0
 fi
 

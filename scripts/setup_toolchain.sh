@@ -60,7 +60,7 @@ APT_PACKAGES=(
   python3                 # Required by Pico SDK scripts
   qemu-system-arm         # QEMU mps2-an500 smoke tests (scripts/run.sh)
   qemu-system-misc        # QEMU m68k (virt) for 68000 target
-  default-jre             # Java runtime for XEiJ (X68000 emulator)
+  openjdk-25-jre          # Java 25 runtime for XEiJ (X68000 emulator, needs GUI)
   unzip                   # Needed to extract XEiJ archive
 )
 
@@ -154,8 +154,26 @@ else
     mv "${DL_DIR}/${XEIJ_ZIP}.tmp" "${DL_DIR}/${XEIJ_ZIP}"
   fi
   info "Extracting XEiJ to ${XEIJ_DIR}..."
-  unzip -qo "${DL_DIR}/${XEIJ_ZIP}" -d "${XEIJ_DIR}"
-  success "XEiJ installed to ${XEIJ_DIR}"
+  XEIJ_TMP=$(mktemp -d)
+  unzip -qo "${DL_DIR}/${XEIJ_ZIP}" -d "${XEIJ_TMP}"
+  # The zip may contain a top-level directory (e.g. XEiJ/); flatten into XEIJ_DIR
+  if [[ -f "${XEIJ_TMP}/XEiJ.jar" ]]; then
+    cp -a "${XEIJ_TMP}/." "${XEIJ_DIR}/"
+  elif [[ -d "${XEIJ_TMP}/XEiJ" ]]; then
+    cp -a "${XEIJ_TMP}/XEiJ/." "${XEIJ_DIR}/"
+  else
+    # Unknown layout — move whatever was extracted
+    cp -a "${XEIJ_TMP}"/*/ "${XEIJ_DIR}/" 2>/dev/null || \
+    cp -a "${XEIJ_TMP}/." "${XEIJ_DIR}/"
+  fi
+  rm -rf "${XEIJ_TMP}"
+  if [[ ! -f "${XEIJ_DIR}/XEiJ.jar" ]]; then
+    warn "XEiJ.jar not found after extraction — check zip contents"
+    info "Zip contents:"
+    unzip -l "${DL_DIR}/${XEIJ_ZIP}" | head -20
+  else
+    success "XEiJ installed to ${XEIJ_DIR}"
+  fi
 fi
 
 # --- Step 4: Verification ----------------------------------------------------

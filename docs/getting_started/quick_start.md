@@ -12,15 +12,17 @@
 ./scripts/build.sh pico1calc
 ./scripts/build.sh --test qemu_arm
 ./scripts/build.sh qemu_m68k
+./scripts/build.sh x68k
 ```
 
 ## 3. Run / flash
 
 ```sh
-./scripts/run.sh
-./scripts/run.sh --build qemu_m68k
-./scripts/run.sh --test
-./scripts/run.sh pico1calc
+./scripts/run.sh                        # run qemu_arm
+./scripts/run.sh --build qemu_m68k      # build + run qemu_m68k
+./scripts/run.sh --test                 # build with tests + run
+./scripts/run.sh pico1calc              # flash pre-built pico1calc
+./scripts/run.sh x68k                   # build floppy image + launch XEiJ
 ```
 
 See [`build_and_run.md`](build_and_run.md) for full command variants.

@@ -6,6 +6,7 @@
 ./scripts/build.sh pico1calc
 ./scripts/build.sh --test qemu_arm
 ./scripts/build.sh qemu_m68k
+./scripts/build.sh x68k
 ```
 
 ## Run / flash targets
@@ -18,6 +19,8 @@
 ./scripts/run.sh --test qemu_m68k
 ./scripts/run.sh pico1calc              # flash pre-built pico1calc
 ./scripts/run.sh --build pico1calc      # build + flash pico1calc
+./scripts/run.sh x68k                   # build floppy image + launch XEiJ
+./scripts/run.sh --build x68k           # build kernel + floppy image + launch XEiJ
 ```
 
 ## Direct CMake usage
