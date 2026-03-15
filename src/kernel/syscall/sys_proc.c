@@ -40,7 +40,7 @@ static void trace_clear_hwbp(pcb_t *target);
 static int trace_has_hwbp_for(const pcb_t *target);
 static void trace_m68k_update_trace_bit(pcb_t *target);
 static void trace_m68k_set_trace_bit(pcb_t *target, int enable);
-#if defined(__m68k__)
+#if defined(__m68k__) || defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
 static int trace_hwbp_hit(const pcb_t *target, uint32_t pc);
 #endif
 
@@ -889,6 +889,47 @@ static int trace_supports_hwbp(const pcb_t *target)
     return 0;
 }
 
+#if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
+#define ARM_SCB_HFSR_ADDR  (0xE000ED2Cu)
+#define ARM_SCB_DFSR_ADDR  (0xE000ED30u)
+#define ARM_SCB_HFSR_DEBUGEVT  (1u << 31)
+#define ARM_SCB_DFSR_BKPT      (1u << 1)
+
+static uint32_t trace_arm_hwbp_slots(void)
+{
+    uint32_t slots = target_debug_hwbp_slots();
+    if (slots > TRACE_HW_BP_MAX)
+        slots = TRACE_HW_BP_MAX;
+    return slots;
+}
+
+static void trace_arm_hwbp_sync_target(const pcb_t *target)
+{
+    uint32_t slots = trace_arm_hwbp_slots();
+
+    for (uint32_t i = 0; i < slots; i++) {
+        int use_slot = 0;
+        uint32_t addr = 0;
+
+        if (target &&
+            target->tracer_pid &&
+            trace_active_surface_for(target) == PPAP_TRACE_SURFACE_REAL &&
+            target->trace_hwbp[i].used &&
+            target->trace_hwbp[i].enabled) {
+            use_slot = 1;
+            addr = target->trace_hwbp[i].addr;
+        }
+
+        if (use_slot) {
+            if (target_debug_hwbp_set(i, addr) < 0)
+                target_debug_hwbp_clear(i);
+        } else {
+            target_debug_hwbp_clear(i);
+        }
+    }
+}
+#endif
+
 static int trace_has_hwbp_for(const pcb_t *target)
 {
     if (!trace_supports_hwbp(target))
@@ -900,7 +941,7 @@ static int trace_has_hwbp_for(const pcb_t *target)
     return 0;
 }
 
-#if defined(__m68k__)
+#if defined(__m68k__) || defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
 static int trace_hwbp_hit(const pcb_t *target, uint32_t pc)
 {
     if (!trace_supports_hwbp(target))
@@ -1179,6 +1220,58 @@ int trace_maybe_stop_at_swbp(uint32_t abi, uint32_t pc)
         return 1;
     }
     return 0;
+}
+
+void trace_arm_hwbp_on_switch(const pcb_t *next)
+{
+#if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
+    trace_arm_hwbp_sync_target(next);
+#else
+    (void)next;
+#endif
+}
+
+int trace_arm_hardfault_debug_stop(uint32_t *psp_frame)
+{
+#if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
+    volatile uint32_t *const hfsr = (volatile uint32_t *)ARM_SCB_HFSR_ADDR;
+    volatile uint32_t *const dfsr = (volatile uint32_t *)ARM_SCB_DFSR_ADDR;
+    uint32_t hfsr_bits;
+    uint32_t dfsr_bits;
+    uint32_t pc;
+
+    if (!psp_frame)
+        return 0;
+    if (!current || !current->tracer_pid)
+        return 0;
+    if (current->state != PROC_RUNNABLE)
+        return 0;
+    if (trace_active_surface_for(current) != PPAP_TRACE_SURFACE_REAL)
+        return 0;
+    if (!trace_has_hwbp_for(current))
+        return 0;
+
+    hfsr_bits = *hfsr;
+    dfsr_bits = *dfsr;
+    if ((hfsr_bits & ARM_SCB_HFSR_DEBUGEVT) == 0 &&
+        (dfsr_bits & ARM_SCB_DFSR_BKPT) == 0)
+        return 0;
+
+    pc = psp_frame[6] & ~1u;
+    if (!trace_hwbp_hit(current, pc))
+        return 0;
+
+    if (hfsr_bits & ARM_SCB_HFSR_DEBUGEVT)
+        *hfsr = ARM_SCB_HFSR_DEBUGEVT;
+    if (dfsr_bits)
+        *dfsr = dfsr_bits;
+
+    trace_debug_stop(PPAP_TRACE_ABI_PPAP, pc, PPAP_DEBUG_STOP_HW_BP);
+    return 1;
+#else
+    (void)psp_frame;
+    return 0;
+#endif
 }
 
 void trace_exec_stop(void)

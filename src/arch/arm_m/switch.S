@@ -91,6 +91,12 @@ PendSV_Handler:
     bl   mpu_switch           @ mpu_switch(next) — reprograms MPU region 2
     pop  {r0, r1}             @ r0 = next pcb_t* restored, r1 discarded
 
+    @ ── Program target HW breakpoints for incoming tracee (if any) ─────
+    @ r0 = next pcb_t*  (argument for trace_arm_hwbp_on_switch)
+    push {r0, r1}             @ preserve next pointer and stack alignment
+    bl   trace_arm_hwbp_on_switch
+    pop  {r0, r1}             @ restore next pointer
+
     pop  {r2, r3}             @ r2 = &current_core[core_id], r3 = EXC_RETURN
 
     @ Update current_core[core_id] and restore EXC_RETURN.

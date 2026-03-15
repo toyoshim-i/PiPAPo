@@ -211,3 +211,58 @@ uint32_t target_caps(void)
         caps |= TARGET_CAP_DISPLAY | TARGET_CAP_KBD;
     return caps;
 }
+
+/* ── ARM FPB hardware breakpoints (native ptrace backend) ───────────────── */
+
+#define ARM_DEMCR_ADDR  (0xE000EDFCu)
+#define ARM_FPB_BASE    (0xE0002000u)
+#define ARM_FPB_CTRL    (*(volatile uint32_t *)(ARM_FPB_BASE + 0x00u))
+#define ARM_FPB_COMP(i) (*(volatile uint32_t *)(ARM_FPB_BASE + 0x08u + ((i) * 4u)))
+#define ARM_DEMCR       (*(volatile uint32_t *)ARM_DEMCR_ADDR)
+
+#define ARM_DEMCR_TRCENA     (1u << 24)
+#define ARM_FPB_CTRL_ENABLE  (1u << 0)
+
+static uint32_t arm_fpb_code_slots(void)
+{
+    uint32_t ctrl = ARM_FPB_CTRL;
+    uint32_t n = ((ctrl >> 4) & 0xFu) | (((ctrl >> 12) & 0x7u) << 4);
+
+    if (n > 4u)
+        n = 4u;
+    return n;
+}
+
+uint32_t target_debug_hwbp_slots(void)
+{
+    return arm_fpb_code_slots();
+}
+
+int target_debug_hwbp_set(uint32_t slot, uint32_t addr)
+{
+    uint32_t slots = arm_fpb_code_slots();
+    uint32_t replace;
+    uint32_t comp;
+
+    if (slot >= slots)
+        return -1;
+
+    ARM_DEMCR |= ARM_DEMCR_TRCENA;
+    ARM_FPB_CTRL |= ARM_FPB_CTRL_ENABLE;
+
+    replace = (addr & 0x2u) ? 2u : 1u;
+    comp = (addr & 0x1FFFFFFCu) | (replace << 30) | 1u;
+    ARM_FPB_COMP(slot) = comp;
+    return 0;
+}
+
+int target_debug_hwbp_clear(uint32_t slot)
+{
+    uint32_t slots = arm_fpb_code_slots();
+
+    if (slot >= slots)
+        return -1;
+
+    ARM_FPB_COMP(slot) = 0;
+    return 0;
+}

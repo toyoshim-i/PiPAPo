@@ -12,9 +12,7 @@
 #include <stdint.h>
 #include "../kernel/proc/proc.h"
 #include "../kernel/klog.h"
-
-/* Forward declarations */
-long sys_exit(long status);
+#include "../kernel/syscall/syscall.h"
 
 /* POSIX signal numbers */
 #define SIGILL  4
@@ -64,6 +62,9 @@ static int classify_fault(uint32_t pc)
  */
 void arm_crash_handler(uint32_t *psp_frame, uint32_t *callee_regs)
 {
+    if (trace_arm_hardfault_debug_stop(psp_frame))
+        return;
+
     uint32_t pc   = psp_frame[6];
     uint32_t xpsr = psp_frame[7];
 

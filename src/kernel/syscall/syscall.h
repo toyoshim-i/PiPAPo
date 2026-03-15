@@ -17,6 +17,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
+typedef struct pcb pcb_t;
+
 /* ── Syscall numbers (shared with user space) ────────────────────────────── */
 
 #include "common/syscall_nr.h"
@@ -83,6 +85,8 @@ void trace_debug_stop(uint32_t abi, uint32_t pc, uint32_t flags);
 int trace_has_swbp(void);
 int trace_maybe_stop_at_swbp(uint32_t abi, uint32_t pc);
 void trace_exec_stop(void);
+void trace_arm_hwbp_on_switch(const pcb_t *next);
+int trace_arm_hardfault_debug_stop(uint32_t *psp_frame);
 
 /* sys_io.c */
 long sys_read(long fd, char *buf, size_t n);
