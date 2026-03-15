@@ -241,6 +241,7 @@ The trampoline and signal frame layout are architecture-specific but the kernel-
 ## Related Documentation
 
 - [syscall.md](/docs/kernel/syscall.md) — System call reference
+- [trace.md](/docs/kernel/trace.md) — Trace and debug subsystem (ptrace API, /bin/trace, /bin/pdb)
 - [procfs.md](/docs/kernel/procfs.md) — /proc filesystem
 - [filesystems.md](/docs/kernel/filesystems.md) — VFS and filesystem drivers
 - [userland_dev_guide.md](/docs/getting_started/userland_dev_guide.md) — User-space development
