@@ -36,7 +36,13 @@
     (PPAP_TRACE_MODE_PPAP_SYSCALL | PPAP_TRACE_MODE_SUBSYS_CALL)
 
 static void trace_clear_swbp(pcb_t *target);
+static void trace_clear_hwbp(pcb_t *target);
+static int trace_has_hwbp_for(const pcb_t *target);
+static void trace_m68k_update_trace_bit(pcb_t *target);
 static void trace_m68k_set_trace_bit(pcb_t *target, int enable);
+#if defined(__m68k__)
+static int trace_hwbp_hit(const pcb_t *target, uint32_t pc);
+#endif
 
 static pcb_t *trace_find_tracee(pid_t tracer_pid, long pid)
 {
@@ -699,7 +705,7 @@ static int trace_fill_caps(const pcb_t *target, struct ppap_ptrace_caps *caps)
     }
 #if defined(__m68k__)
     if (surface == PPAP_TRACE_SURFACE_REAL)
-        c |= PPAP_PTRACE_CAP_SINGLESTEP;
+        c |= PPAP_PTRACE_CAP_SINGLESTEP | PPAP_PTRACE_CAP_HW_BP;
 #endif
 
     caps->regset = trace_regset_for(target);
@@ -707,7 +713,11 @@ static int trace_fill_caps(const pcb_t *target, struct ppap_ptrace_caps *caps)
     caps->surface = surface;
     caps->surfaces = surfaces;
     caps->caps = c;
-    caps->max_bps = (c & PPAP_PTRACE_CAP_SW_BP) ? TRACE_SW_BP_MAX : 0;
+    caps->max_bps = 0;
+    if (c & PPAP_PTRACE_CAP_SW_BP)
+        caps->max_bps += TRACE_SW_BP_MAX;
+    if (c & PPAP_PTRACE_CAP_HW_BP)
+        caps->max_bps += TRACE_HW_BP_MAX;
     return 0;
 }
 
@@ -737,6 +747,22 @@ static void trace_m68k_set_trace_bit(pcb_t *target, int enable)
 }
 #endif
 
+static void trace_m68k_update_trace_bit(pcb_t *target)
+{
+#if defined(__m68k__)
+    if (trace_active_surface_for(target) != PPAP_TRACE_SURFACE_REAL) {
+        trace_m68k_set_trace_bit(target, 0);
+        return;
+    }
+    if (target->trace_step_pending || trace_has_hwbp_for(target))
+        trace_m68k_set_trace_bit(target, 1);
+    else
+        trace_m68k_set_trace_bit(target, 0);
+#else
+    (void)target;
+#endif
+}
+
 static int trace_supports_single_step(const pcb_t *target)
 {
     if (trace_active_surface_for(target) == PPAP_TRACE_SURFACE_ECPU) {
@@ -761,8 +787,7 @@ static int trace_request_single_step(pcb_t *target)
         return -ENOSYS;
 
     target->trace_step_pending = 1;
-    if (trace_active_surface_for(target) == PPAP_TRACE_SURFACE_REAL)
-        trace_m68k_set_trace_bit(target, 1);
+    trace_m68k_update_trace_bit(target);
     trace_resume_target(target);
     return 0;
 }
@@ -783,12 +808,19 @@ int trace_m68k_trace_exception(uint32_t *regs)
         return 0;
     if (trace_active_surface_for(current) != PPAP_TRACE_SURFACE_REAL)
         return 0;
-    if (!current->trace_step_pending)
+    if (current->trace_step_pending) {
+        current->trace_step_pending = 0;
+        trace_debug_stop(PPAP_TRACE_ABI_PPAP, pc, PPAP_DEBUG_STOP_STEP);
+        return 1;
+    }
+    if (!trace_has_hwbp_for(current))
         return 0;
-
-    current->trace_step_pending = 0;
-    trace_debug_stop(PPAP_TRACE_ABI_PPAP, pc, PPAP_DEBUG_STOP_STEP);
-    return 1;
+    if (trace_hwbp_hit(current, pc)) {
+        trace_debug_stop(PPAP_TRACE_ABI_PPAP, pc, PPAP_DEBUG_STOP_HW_BP);
+        return 1;
+    }
+    trace_m68k_set_trace_bit(current, 1);
+    return 0;
 }
 #endif
 
@@ -803,6 +835,21 @@ static void trace_clear_swbp(pcb_t *target)
     }
 }
 
+static void trace_clear_hwbp(pcb_t *target)
+{
+    for (uint32_t i = 0; i < TRACE_HW_BP_MAX; i++) {
+        target->trace_hwbp[i].addr = 0;
+        target->trace_hwbp[i].used = 0;
+        target->trace_hwbp[i].enabled = 0;
+    }
+}
+
+static void trace_clear_breakpoints(pcb_t *target)
+{
+    trace_clear_swbp(target);
+    trace_clear_hwbp(target);
+}
+
 static int trace_supports_swbp(const pcb_t *target)
 {
     if (trace_active_surface_for(target) != PPAP_TRACE_SURFACE_ECPU)
@@ -813,6 +860,43 @@ static int trace_supports_swbp(const pcb_t *target)
         return 1;
     return 0;
 }
+
+static int trace_supports_hwbp(const pcb_t *target)
+{
+#if defined(__m68k__)
+    if (trace_active_surface_for(target) == PPAP_TRACE_SURFACE_REAL)
+        return 1;
+#else
+    (void)target;
+#endif
+    return 0;
+}
+
+static int trace_has_hwbp_for(const pcb_t *target)
+{
+    if (!trace_supports_hwbp(target))
+        return 0;
+    for (uint32_t i = 0; i < TRACE_HW_BP_MAX; i++) {
+        if (target->trace_hwbp[i].used && target->trace_hwbp[i].enabled)
+            return 1;
+    }
+    return 0;
+}
+
+#if defined(__m68k__)
+static int trace_hwbp_hit(const pcb_t *target, uint32_t pc)
+{
+    if (!trace_supports_hwbp(target))
+        return 0;
+    for (uint32_t i = 0; i < TRACE_HW_BP_MAX; i++) {
+        if (!target->trace_hwbp[i].used || !target->trace_hwbp[i].enabled)
+            continue;
+        if (target->trace_hwbp[i].addr == pc)
+            return 1;
+    }
+    return 0;
+}
+#endif
 
 int trace_has_swbp(void)
 {
@@ -860,6 +944,41 @@ static int trace_set_swbp(pcb_t *target, struct ppap_ptrace_bp *bp)
     return -ENOSPC;
 }
 
+static int trace_set_hwbp(pcb_t *target, struct ppap_ptrace_bp *bp)
+{
+    if (!bp)
+        return -EINVAL;
+    if (target->state != PROC_TRACED_STOP)
+        return -EBUSY;
+    if (!trace_supports_hwbp(target))
+        return -ENOSYS;
+    if (bp->flags != 0 && bp->flags != PPAP_PTRACE_BP_HW)
+        return -EINVAL;
+
+    for (int32_t i = 0; i < TRACE_HW_BP_MAX; i++) {
+        if (target->trace_hwbp[i].used &&
+            target->trace_hwbp[i].enabled &&
+            target->trace_hwbp[i].addr == bp->addr) {
+            bp->id = TRACE_SW_BP_MAX + i;
+            bp->flags = PPAP_PTRACE_BP_HW;
+            return 0;
+        }
+    }
+
+    for (int32_t i = 0; i < TRACE_HW_BP_MAX; i++) {
+        if (target->trace_hwbp[i].used)
+            continue;
+        target->trace_hwbp[i].addr = bp->addr;
+        target->trace_hwbp[i].used = 1;
+        target->trace_hwbp[i].enabled = 1;
+        bp->id = TRACE_SW_BP_MAX + i;
+        bp->flags = PPAP_PTRACE_BP_HW;
+        return 0;
+    }
+
+    return -ENOSPC;
+}
+
 static int trace_clr_swbp(pcb_t *target, struct ppap_ptrace_bp *bp)
 {
     int32_t id;
@@ -887,6 +1006,56 @@ static int trace_clr_swbp(pcb_t *target, struct ppap_ptrace_bp *bp)
     target->trace_swbp[id].used = 0;
     target->trace_swbp[id].enabled = 0;
     return 0;
+}
+
+static int trace_clr_hwbp(pcb_t *target, struct ppap_ptrace_bp *bp)
+{
+    int32_t id;
+
+    if (!bp)
+        return -EINVAL;
+    if (target->state != PROC_TRACED_STOP)
+        return -EBUSY;
+    if (!trace_supports_hwbp(target))
+        return -ENOSYS;
+
+    id = bp->id - TRACE_SW_BP_MAX;
+    if (id < 0 || id >= TRACE_HW_BP_MAX)
+        return -EINVAL;
+    if (!target->trace_hwbp[id].used)
+        return -EINVAL;
+
+    target->trace_hwbp[id].addr = 0;
+    target->trace_hwbp[id].used = 0;
+    target->trace_hwbp[id].enabled = 0;
+    return 0;
+}
+
+static int trace_set_bp(pcb_t *target, struct ppap_ptrace_bp *bp)
+{
+    if (!bp)
+        return -EINVAL;
+    if (bp->flags == 0) {
+        if (trace_supports_swbp(target))
+            return trace_set_swbp(target, bp);
+        if (trace_supports_hwbp(target))
+            return trace_set_hwbp(target, bp);
+        return -ENOSYS;
+    }
+    if (bp->flags == PPAP_PTRACE_BP_SW)
+        return trace_set_swbp(target, bp);
+    if (bp->flags == PPAP_PTRACE_BP_HW)
+        return trace_set_hwbp(target, bp);
+    return -EINVAL;
+}
+
+static int trace_clr_bp(pcb_t *target, struct ppap_ptrace_bp *bp)
+{
+    if (!bp)
+        return -EINVAL;
+    if (bp->id >= TRACE_SW_BP_MAX)
+        return trace_clr_hwbp(target, bp);
+    return trace_clr_swbp(target, bp);
 }
 
 int trace_before_syscall(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5)
@@ -1005,7 +1174,7 @@ void trace_exec_stop(void)
     current->trace_subsys_phase = TRACE_PHASE_ENTER;
     current->trace_step_pending = 0;
     current->trace_surface = (uint8_t)trace_default_surface_for(current);
-    trace_clear_swbp(current);
+    trace_clear_breakpoints(current);
     trace_fill_event(PPAP_TRACE_EVENT_EXEC, PPAP_TRACE_ABI_PPAP, SYS_EXECVE,
                      0, 0, 0, 0, 0, 0, 0, 0);
     trace_stop_current(0);
@@ -1024,7 +1193,7 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
         current->trace_syscall_phase = TRACE_PHASE_ENTER;
         current->trace_subsys_phase = TRACE_PHASE_ENTER;
         current->trace_step_pending = 0;
-        trace_clear_swbp(current);
+        trace_clear_breakpoints(current);
         __builtin_memset(&current->trace_event, 0, sizeof(current->trace_event));
         return 0;
     }
@@ -1044,7 +1213,7 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
         target->trace_surface = (uint8_t)trace_default_surface_for(target);
         target->trace_wait_pending = 1;
         target->trace_step_pending = 0;
-        trace_clear_swbp(target);
+        trace_clear_breakpoints(target);
         __builtin_memset(&target->trace_event, 0, sizeof(target->trace_event));
         target->trace_event.event = PPAP_TRACE_EVENT_DEBUG_STOP;
         target->trace_event.abi = PPAP_TRACE_ABI_PPAP;
@@ -1108,21 +1277,21 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
     case PTRACE_SETBP:
         if (!data)
             return -(long)EINVAL;
-        return trace_set_swbp(target, (struct ppap_ptrace_bp *)data);
+        return trace_set_bp(target, (struct ppap_ptrace_bp *)data);
     case PTRACE_CLRBP:
         if (!data)
             return -(long)EINVAL;
-        return trace_clr_swbp(target, (struct ppap_ptrace_bp *)data);
+        return trace_clr_bp(target, (struct ppap_ptrace_bp *)data);
     case PTRACE_SINGLESTEP:
         return trace_request_single_step(target);
     case PTRACE_CONT:
         target->trace_step_pending = 0;
-        trace_m68k_set_trace_bit(target, 0);
+        trace_m68k_update_trace_bit(target);
         trace_resume_target(target);
         return 0;
     case PTRACE_SYSCALL:
         target->trace_step_pending = 0;
-        trace_m68k_set_trace_bit(target, 0);
+        trace_m68k_update_trace_bit(target);
         if (!(target->trace_mode & PPAP_TRACE_MODE_PPAP_SYSCALL))
             target->trace_syscall_phase = TRACE_PHASE_ENTER;
         target->trace_mode |= PPAP_TRACE_MODE_PPAP_SYSCALL;
@@ -1136,7 +1305,7 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
         target->trace_wait_pending = 0;
         target->trace_step_pending = 0;
         trace_m68k_set_trace_bit(target, 0);
-        trace_clear_swbp(target);
+        trace_clear_breakpoints(target);
         __builtin_memset(&target->trace_event, 0, sizeof(target->trace_event));
         trace_resume_target(target);
         return 0;
@@ -1500,7 +1669,7 @@ long sys_waitpid(long pid, long status_ptr, long options)
             zombie->trace_surface = (uint8_t)trace_default_surface_for(zombie);
             zombie->trace_wait_pending = 0;
             zombie->trace_step_pending = 0;
-            trace_clear_swbp(zombie);
+            trace_clear_breakpoints(zombie);
             __builtin_memset(&zombie->trace_event, 0, sizeof(zombie->trace_event));
             return (long)cpid;
         }

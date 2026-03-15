@@ -131,6 +131,14 @@ int main(void)
               "GETCAPS should include SETREGS capability");
     UT_ASSERT((caps.caps & PPAP_PTRACE_CAP_PEEKPOKE) != 0,
               "GETCAPS should include PEEK/POKE capability");
+#if defined(__m68k__)
+    UT_ASSERT((caps.caps & PPAP_PTRACE_CAP_HW_BP) != 0,
+              "native m68k tracee should report HW breakpoint capability");
+    UT_ASSERT(caps.max_bps > 0, "native m68k tracee should report bp budget");
+#else
+    UT_ASSERT((caps.caps & PPAP_PTRACE_CAP_HW_BP) == 0,
+              "native ARM tracee should hide HW breakpoint capability");
+#endif
     UT_ASSERT_EQ(ptrace(PTRACE_GETSURFACE, pid, (void *)0, &surface), 0);
     UT_ASSERT_EQ((int)surface, PPAP_TRACE_SURFACE_REAL);
     UT_ASSERT_EQ(ptrace(PTRACE_SETSURFACE, pid,
@@ -159,6 +167,13 @@ int main(void)
     UT_ASSERT(regs.regs[16] != native_pc_before,
               "native m68k single-step should advance PC");
     UT_ASSERT_EQ((int)ev.args[0], (int)regs.regs[16]);
+    bp.id = -1;
+    bp.addr = regs.regs[16];
+    bp.flags = PPAP_PTRACE_BP_HW;
+    UT_ASSERT_EQ(ptrace(PTRACE_SETBP, pid, (void *)0, &bp), 0);
+    UT_ASSERT(bp.id >= 0, "native m68k HW SETBP should return breakpoint ID");
+    UT_ASSERT_EQ((int)bp.flags, PPAP_PTRACE_BP_HW);
+    UT_ASSERT_EQ(ptrace(PTRACE_CLRBP, pid, (void *)0, &bp), 0);
 #endif
 
     set_regs.regset = regs.regset;

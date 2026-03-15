@@ -55,6 +55,7 @@ typedef void (*sighandler_t)(int);
 #define SUBSYS_HUMAN68K   1   /* Human68k X-format binary             */
 #define SUBSYS_CPM        2   /* CP/M 2.2 .COM binary (Z80 emulated) */
 #define TRACE_SW_BP_MAX   8   /* max software breakpoints per tracee  */
+#define TRACE_HW_BP_MAX   4   /* max native hardware breakpoints       */
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
@@ -162,6 +163,11 @@ typedef struct pcb {
         uint8_t  used;
         uint8_t  enabled;
     } trace_swbp[TRACE_SW_BP_MAX];
+    struct {
+        uint32_t addr;
+        uint8_t  used;
+        uint8_t  enabled;
+    } trace_hwbp[TRACE_HW_BP_MAX];
     struct ppap_ptrace_event trace_event;
 
     /* ── Subsystem tag ───────────────────────────────────────────── */
