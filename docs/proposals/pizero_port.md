@@ -9,7 +9,41 @@ Initial target is QEMU (`raspi0` / `versatilepb`), then real Pi Zero hardware.
 
 ---
 
-## 1. Architecture Comparison
+## 1. Goals and Scope
+
+### 1.1 Primary Goal
+
+Produce a bootable PPAP system on the Raspberry Pi Zero that:
+
+- Boots from an SD card FAT32 partition via the GPU bootloader chain.
+- Provides a console on PL011 UART (same IP as RP2040), mirrored to
+  HDMI framebuffer when available.
+- Runs with full virtual memory: per-process page tables, real `fork()`
+  with COW, demand paging, and proper `mmap()`.
+- Passes the PPAP test suite (`runtests`) on QEMU `raspi0`.
+- Runs on real Pi Zero hardware.
+
+### 1.2 Extended Goals
+
+- HDMI framebuffer console via GPU mailbox.
+- USB keyboard input via DWC2 OTG controller.
+- EMMC/SD driver (SDHCI) for fast block I/O.
+- File page cache (dramatically faster I/O with 512 MB RAM).
+- Dynamic linking (full `mmap` + GOT/PLT).
+- Wi-Fi networking on Pi Zero W (via CYW43439 + USB).
+- Multi-user support with MMU-enforced process isolation.
+
+### 1.3 Out of Scope
+
+- VideoCore IV GPU programming (3D, video decode).
+- Camera interface (CSI).
+- DSI display interface.
+- Pi Zero 2 W (BCM2710, Cortex-A53, ARMv8-A — separate port).
+- 64-bit mode (ARM1176 is 32-bit only).
+
+---
+
+## 2. Architecture Comparison
 
 | Aspect | Cortex-M0+ (RP2040) | ARM1176JZF-S (Pi Zero) |
 |--------|---------------------|------------------------|
@@ -37,7 +71,7 @@ Initial target is QEMU (`raspi0` / `versatilepb`), then real Pi Zero hardware.
 
 ---
 
-## 2. What the MMU Changes
+## 3. What the MMU Changes
 
 This is the defining feature of the Pi Zero port. The MMU enables capabilities
 that were impossible on the RP2040:
@@ -105,7 +139,7 @@ RP2040 port.
 
 ---
 
-## 3. ARM1176 MMU Architecture
+## 4. ARM1176 MMU Architecture
 
 ### 3.1 Page Table Format (ARMv6)
 
@@ -166,7 +200,7 @@ Simplest approach: use 2 domains:
 
 ---
 
-## 4. ARM-Specific Code Changes
+## 5. ARM-Specific Code Changes
 
 ### 4.1 Same Architecture Family, Different Profile
 
@@ -297,7 +331,7 @@ void data_abort_handler(uint32_t fault_addr, uint32_t fsr, uint32_t pc) {
 
 ---
 
-## 5. Boot Sequence
+## 6. Boot Sequence
 
 ### 5.1 GPU Bootloader (Broadcom, closed-source)
 
@@ -349,7 +383,7 @@ SD Card (FAT32)
 
 ---
 
-## 6. BCM2835 Hardware
+## 7. BCM2835 Hardware
 
 ### 6.1 Peripheral Base Address
 
@@ -409,7 +443,7 @@ This is much faster than SPI-mode SD (used on PicoCalc):
 
 ---
 
-## 7. Memory Architecture (512 MB)
+## 8. Memory Architecture (512 MB)
 
 ### 7.1 Physical Memory Map
 
@@ -449,7 +483,7 @@ Total per process: ~32 KB. With 64 processes: ~2 MB. Easily fits.
 
 ---
 
-## 8. Kernel Subsystem Impact
+## 9. Kernel Subsystem Impact
 
 ### 8.1 What Changes Significantly
 
@@ -496,7 +530,7 @@ Total per process: ~32 KB. With 64 processes: ~2 MB. Easily fits.
 
 ---
 
-## 9. Build Targets
+## 10. Build Targets
 
 | Target | Board | Description |
 |---|---|---|
@@ -529,7 +563,115 @@ ARM mode for exception handlers (ARM1176 enters exceptions in ARM mode).
 
 ---
 
-## 10. Implementation Plan
+## 11. New Files and Directory Layout
+
+```
+src/arch/arm_a/
+  boot.S              — Exception vector table (branch instructions at 0x0)
+  start.S             — Mode stack setup, early MMU init, jump to kmain
+  switch.S            — Context switch: save/restore r4-r14, update TTBR0+ASID
+  trap.S              — SWI handler (syscall entry/return)
+  abort.S             — Data abort handler (page fault entry)
+  cpu.h               — CP15 register access, TLB flush, cache ops
+  mmu.c               — Page table create/destroy/map/unmap, ASID management
+
+src/target/pizero/
+  CMakeLists.txt      — Build rules (512 MB RAM, arm1176, kernel at 0x8000)
+  pizero.ld           — Linker script (kernel virtual base at 0xC0000000)
+  target_pizero.c     — Target hooks: early_init (PL011), late_init (SD, timer)
+  drivers/
+    uart_pl011.c      — PL011 UART driver (adapted from RP2040 uart.c)
+    timer_bcm.c       — BCM2835 System Timer (100 Hz tick via compare channel)
+    irq_bcm.c         — BCM2835 interrupt controller driver
+    emmc_bcm.c        — EMMC/SD card driver (SDHCI-compatible)
+    mailbox_bcm.c     — GPU mailbox driver (clock config, framebuffer)
+    fb_bcm.c          — HDMI framebuffer console (via mailbox)
+```
+
+Changes to existing files:
+
+| File | Change |
+|------|--------|
+| `src/arch/arch.h` | Add `arm_a` architecture detection |
+| `src/kernel/proc/proc.h` | Extend PCB with page table pointer (TTBR0), ASID |
+| `src/kernel/proc/sched.c` | Add TTBR0 + ASID update to context switch path |
+| `src/kernel/mm/page.c` | Bitmap allocator for ~114,000 pages (replaces free-stack) |
+| `src/kernel/mm/vm.c` | New: virtual memory manager (map/unmap/fault/COW) |
+| `src/kernel/syscall/sys_proc.c` | Real `fork()` with COW page table duplication |
+| `src/kernel/syscall/sys_mem.c` | Full `mmap()` / `munmap()` / `brk()` |
+| `scripts/build.sh` | Add `pizero` and `qemu_a6` targets |
+| `scripts/run.sh` | Add `qemu_a6` target (`qemu-system-arm -M raspi0`) |
+
+---
+
+## 12. Build Configuration
+
+```cmake
+# src/target/pizero/CMakeLists.txt
+project(ppap_pizero C ASM)
+
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mcpu=arm1176jzf-s -marm -mfpu=vfp -mfloat-abi=hard")
+set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -mcpu=arm1176jzf-s -marm")
+
+set(PPAP_KERNEL_VIRT_BASE  0xC0000000)
+set(PPAP_KERNEL_PHYS_BASE  0x00008000)
+set(PPAP_RAM_SIZE          0x20000000)  # 512 MB
+set(PPAP_GPU_MEM           0x04000000)  # 64 MB reserved for GPU
+set(PPAP_PAGE_COUNT_MAX    114688)      # (512MB - 64MB) / 4KB
+
+# Toolchain: arm-none-eabi-gcc (same as RP2040, different -mcpu)
+set(CMAKE_C_COMPILER arm-none-eabi-gcc)
+set(CMAKE_ASM_COMPILER arm-none-eabi-gcc)
+set(CMAKE_OBJCOPY arm-none-eabi-objcopy)
+```
+
+QEMU test target:
+
+```cmake
+# src/target/qemu_a6/CMakeLists.txt
+# Same as pizero but:
+#   - Uses versatilepb machine for initial bringup (standard PL011 + PL190 VIC)
+#   - Switches to raspi0 machine for BCM2835 peripheral testing
+set(PPAP_QEMU_MACHINE "raspi0")
+set(PPAP_QEMU_FLAGS "-serial stdio -dtb bcm2835-rpi-zero.dtb")
+```
+
+---
+
+## 13. Testing
+
+### 13.1 QEMU Test Infrastructure
+
+```sh
+# Run tests on QEMU raspi0
+./scripts/run.sh --test qemu_a6
+```
+
+The test runner boots PPAP on QEMU `raspi0`, runs `runtests`, and
+captures output from the PL011 serial port.  Same pattern as `qemu_arm`
+and `qemu_m68k`.
+
+### 13.2 Test Categories
+
+| Category | Tests | Notes |
+|----------|-------|-------|
+| Core (exec, vfork, pipe, signal) | Same as ARM/m68k | Should pass unchanged |
+| Fork (COW) | **New**: `test_fork` | Verify COW page fault, parent/child isolation |
+| mmap | **New**: `test_mmap` | Anonymous + file-backed mappings |
+| Page fault | **New**: `test_pagefault` | Verify SIGSEGV on invalid access |
+| Memory isolation | **New**: `test_isolation` | Process A cannot read process B's memory |
+| Large memory | **New**: `test_largemem` | Allocate >1 MB per process |
+| Trace / pdb | Same as ARM/m68k | Verify ptrace works with MMU |
+
+### 13.3 Expected Results
+
+- All existing tests pass (exec, vfork, pipe, signal, trace, pdb).
+- New VM tests verify COW, demand paging, and memory isolation.
+- `test_pdb` works with the new architecture (ARM register set unchanged).
+
+---
+
+## 14. Implementation Plan
 
 ### Phase A — Architecture Abstraction
 
@@ -581,7 +723,7 @@ m68k porting effort.
 
 ---
 
-## 11. Comparison: Micro OS vs Modern OS
+## 15. Comparison: Micro OS vs Modern OS
 
 | Feature | RP2040 (micro OS) | Pi Zero (modern OS) |
 |---|---|---|
@@ -600,7 +742,7 @@ m68k porting effort.
 
 ---
 
-## 12. Risk Assessment
+## 16. Risk Assessment
 
 | Risk | Impact | Mitigation |
 |---|---|---|
@@ -613,7 +755,7 @@ m68k porting effort.
 
 ---
 
-## 13. Open Questions
+## 17. Open Questions
 
 1. **QEMU machine**: `raspi0` vs `versatilepb -cpu arm1176`? The former is
    more realistic but has BCM2835-specific peripherals; the latter has
@@ -645,3 +787,30 @@ m68k porting effort.
    other PPAP targets via `ecpu-armv6` (see `docs/ecpu/overview.md` §4.5).
    Conversely, ARM Thumb and m68k binaries can run on Pi Zero PPAP via
    their respective eCPU emulators.
+
+---
+
+## 18. Dependency Graph
+
+```
+A (arch abstraction — split arm_m / arm_a)
+  └─→ B (QEMU bringup — boot, UART, exceptions)
+        └─→ C (MMU — page tables, TLB, fault handler)
+              └─→ D (process model — fork COW, exec, mmap)
+                    └─→ E (user space — musl, busybox, shell)
+                          └─→ F (Pi Zero hardware — SD, HDMI, USB)
+```
+
+Phases A and B can proceed in parallel with ongoing RP2040/X68000 work.
+Phase C (MMU) is the critical milestone — everything after it builds on
+virtual memory.
+
+---
+
+## 19. Related Documentation
+
+- [docs/kernel/overview.md](../kernel/overview.md) — PPAP kernel architecture
+- [docs/kernel/trace.md](../kernel/trace.md) — Trace and debug subsystem
+- [docs/kernel/syscall.md](../kernel/syscall.md) — System call reference
+- [docs/proposals/pico2_port.md](pico2_port.md) — Pico 2 port (RP2350, same ARM family, no MMU)
+- [docs/proposals/x68k_port.md](x68k_port.md) — X68000 port (m68k, analogous porting effort)

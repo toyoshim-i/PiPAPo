@@ -632,7 +632,86 @@ without needing a serial terminal.
 
 ---
 
-## 9. Risks and Open Questions
+## 9. Build Configuration
+
+```cmake
+# src/target/x68k/CMakeLists.txt
+project(ppap_x68k C ASM)
+
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -m68000 -nostdlib -ffreestanding")
+set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -m68000")
+
+set(PPAP_RAM_END           0xC00000)    # Stop probe at GVRAM boundary
+set(PPAP_KERNEL_LINK_ADDR  0x006000)    # Below: vector table + boot area
+set(PPAP_ENABLE_ROMFS      OFF)         # No embedded romfs (UFS floppy)
+set(PPAP_ENABLE_ECPU       OFF)         # No eCPU (native m68k execution)
+set(PPAP_ENABLE_CPM        OFF)         # CP/M optional (secondary disk)
+
+# Toolchain: m68k-elf-gcc (same as qemu_m68k target)
+set(CMAKE_C_COMPILER m68k-elf-gcc)
+set(CMAKE_ASM_COMPILER m68k-elf-gcc)
+set(CMAKE_OBJCOPY m68k-elf-objcopy)
+```
+
+Floppy image build:
+
+```sh
+# Build pipeline (invoked by scripts/build.sh x68k):
+#   1. Build kernel → build/x68k/ppap_x68k.bin
+#   2. Build stage1 + stage2 → build/x68k/stage1.bin, stage2.bin
+#   3. Build userland → build/x68k/romfs/ (test binaries, init, sh)
+#   4. mkufs → build/x68k/ppap_x68k.ufs
+#   5. mkx68kimg → build/x68k/ppap_x68k.xdf (bootable floppy image)
+```
+
+---
+
+## 10. Testing
+
+### 10.1 Emulator Test Infrastructure
+
+```sh
+# Build and run tests on XEiJ emulator
+./scripts/run.sh --test x68k
+```
+
+XEiJ is launched with the `.XDF` floppy image mounted as drive A.  The
+kernel boots, mounts the UFS floppy as root, and runs `runtests`.  Serial
+output is captured from XEiJ's RS-232C emulation.
+
+The `scripts/run_xeij_tcp.sh` script provides serial-over-TCP for
+automated test capture.
+
+### 10.2 Test Categories
+
+| Category | Tests | Notes |
+|----------|-------|-------|
+| Core (exec, vfork, pipe, signal) | Same as qemu_m68k | Should pass unchanged |
+| Human68k (.x/.r execution) | `test_x68k`, `test_h68k_dos` | Native m68k, no eCPU |
+| Trace / pdb | `test_trace`, `test_pdb` | Verify ptrace on native m68k |
+| Timer | `test_time`, `test_sleep_intr` | MFP Timer-C at 100 Hz |
+| UFS filesystem | `test_fs`, `test_tmpfs` | UFS root mount from floppy |
+
+### 10.3 Expected Results
+
+- All tests that pass on `qemu_m68k` should also pass on `x68k`.
+- `test_x68k` and `test_h68k_dos` are the key X68000-specific tests.
+- `test_cpm` is skipped (CP/M disabled in initial build).
+- Total: 19 tests expected to pass (same as qemu_m68k).
+
+### 10.4 Real Hardware Testing
+
+On physical X68000 hardware, tests are run via RS-232C serial:
+
+```sh
+# Connect minicom/TeraTerm at 9600 bps to the X68000 RS-232C port
+# Boot from floppy, observe test output on serial terminal
+minicom -D /dev/ttyUSB0 -b 9600
+```
+
+---
+
+## 11. Risks and Open Questions
 
 ### 9.1 Stage2 Budget (3 KB)
 
@@ -716,7 +795,7 @@ this correctly; if not, add it as a prerequisite.
 
 ---
 
-## 10. Dependency Graph
+## 12. Dependency Graph
 
 ```
 X-1 (console + kernel build)
@@ -733,7 +812,7 @@ and the `blkdev` partition-offset support (§9.6).
 
 ---
 
-## 11. Related Documentation
+## 13. Related Documentation
 
 - [docs/targets/68000.md](../targets/68000.md) — m68k architecture reference and hardware overview
 - [docs/subsystems/human68k.md](../subsystems/human68k.md) — Human68k subsystem design
