@@ -79,7 +79,7 @@ target_link_options(ppap_x68k PRIVATE
 # linker (x68k.ld: /DISCARD/ *(.romfs)) so the kernel binary stays lean.
 # =============================================================================
 
-ppap_generate_romfs(ppap_x68k BIG_ENDIAN)
+ppap_generate_romfs(ppap_x68k BIG_ENDIAN EXCLUDE_APPS hello trace pdb)
 
 # Generate binary and size report
 add_custom_command(TARGET ppap_x68k POST_BUILD

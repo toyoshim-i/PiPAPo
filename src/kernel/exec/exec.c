@@ -31,6 +31,8 @@
 #include "kernel/mm/page.h"
 #include "kernel/signal/signal.h"
 #include "kernel/errno.h"
+#include "kernel/klog.h"
+#include "arch/arch.h"
 #include <string.h>
 
 /* Maximum PT_LOAD segments we handle */
@@ -490,6 +492,9 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
      *   argc
      *              ← user_sp
      */
+#if defined(__m68k__)
+    uint32_t m68k_user_sp = 0;
+#endif
     {
 #if defined(__m68k__)
         uint32_t stack_top = (uint32_t)(uintptr_t)user_stack + PAGE_SIZE;
@@ -545,25 +550,52 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
         sp -= 4; *(uint32_t *)(uintptr_t)sp = (uint32_t)argc;
 
         /* ── 9. Set up the exception frame ─────────────────────────────── */
-        proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, sp);
 #if defined(__m68k__)
-        /* m68k: argc/argv built on user_stack page; set USP there.
-         * proc_setup_stack ignores sp on m68k (builds frame on stack_page). */
-        p->usp = sp;
+        /* m68k: defer proc_setup_stack to the IRQ-disabled critical section
+         * below, which also sets exec_pending atomically to prevent the
+         * timer ISR from overwriting current->sp between setup and restore. */
+        m68k_user_sp = sp;
+#else
+        proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, sp);
 #endif
     }
 
-    /* Patch GOT base register in the software frame */
+    /* Patch GOT base register in the software frame.
+     *
+     * m68k: The MFP timer ISR (IPL 2) can preempt TRAP #0 handling (IPL 0
+     * in supervisor mode) and overwrite current->sp with the kernel SSP,
+     * corrupting the exec restore path in trap.S (.Lexec_restore).
+     *
+     * Fix: disable IRQs for the critical section covering proc_setup_stack,
+     * the GOT patch, and exec_pending=1.  The timer ISR in switch.S checks
+     * exec_pending and skips the sp-save when it is set, so once IRQs are
+     * re-enabled current->sp is safe until .Lexec_restore runs. */
+#if defined(__m68k__)
+    {
+        extern volatile int exec_pending[2];
+        uint32_t irq_save = arch_irq_save();
+        proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, m68k_user_sp);
+        p->usp = m68k_user_sp;
+        if (got_sram_addr) {
+            uint32_t *sw = (uint32_t *)(uintptr_t)p->sp;
+            sw[13] = got_sram_addr;
+        }
+        p->got_base = got_sram_addr;
+        /* Only set exec_pending when replacing the current process (via
+         * sys_execve through TRAP #0).  For initial exec from kmain the
+         * scheduler starts the new process directly via sched_start(), so
+         * exec_pending must not be set (no .Lexec_restore path is taken). */
+        if (p == current)
+            exec_pending[0] = 1;
+        arch_irq_restore(irq_save);
+    }
+#else
     if (got_sram_addr) {
         uint32_t *sw = (uint32_t *)(uintptr_t)p->sp;
-#if defined(__m68k__)
-        sw[13] = got_sram_addr;
-#else
         sw[5] = got_sram_addr;
-#endif
     }
-
     p->got_base = got_sram_addr;
+#endif
 
     /* ── 10. Set process comm from executable basename ────────────────── */
     {

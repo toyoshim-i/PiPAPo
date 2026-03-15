@@ -476,7 +476,7 @@ endfunction()
 # BIG_ENDIAN passes -b to mkromfs (for m68k).
 # OVERLAY_DIR specifies a directory whose contents overlay src/etc/.
 function(ppap_generate_romfs target)
-    cmake_parse_arguments(ARG "BIG_ENDIAN" "OVERLAY_DIR" "" ${ARGN})
+    cmake_parse_arguments(ARG "BIG_ENDIAN" "OVERLAY_DIR" "EXCLUDE_APPS" ${ARGN})
 
     set(_romfs_staging ${CMAKE_BINARY_DIR}/romfs_${target})
     set(_romfs_bin     ${CMAKE_BINARY_DIR}/romfs_${target}.bin)
@@ -563,6 +563,11 @@ function(ppap_generate_romfs target)
     string(REPLACE ";" "\\;" _bb_applets_escaped "${BB_APPLETS}")
     string(REPLACE ";" "\\;" _bb_shell_escaped "${BB_SHELL_APPLETS}")
     string(REPLACE ";" "\\;" _bb_sbin_escaped "${BB_SBIN_APPLETS}")
+    set(_exclude_args "")
+    if(ARG_EXCLUDE_APPS)
+        string(REPLACE ";" ":" _exclude_colon "${ARG_EXCLUDE_APPS}")
+        set(_exclude_args -D "EXCLUDE_APPS=${_exclude_colon}")
+    endif()
 
     add_custom_command(
         OUTPUT ${_romfs_bin}
@@ -577,6 +582,7 @@ function(ppap_generate_romfs target)
                 -D "ROGUE=${PPAP_ROGUE_DIR}/rogue"
                 -D "ETC_DIR=${PPAP_ROOT}/src/etc"
                 ${_overlay_args}
+                ${_exclude_args}
                 -P ${PPAP_ROOT}/cmake/stage_romfs.cmake
         ${_r68k_copy_cmds}
         ${_x68k_copy_cmds}

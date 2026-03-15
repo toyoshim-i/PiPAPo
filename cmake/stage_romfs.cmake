@@ -32,8 +32,16 @@ file(MAKE_DIRECTORY
 )
 
 # --- Install user programs ---
+# EXCLUDE_APPS uses ":" as separator (avoids cmake list-separator conflicts)
+if(DEFINED EXCLUDE_APPS)
+    string(REPLACE ":" ";" EXCLUDE_APPS "${EXCLUDE_APPS}")
+endif()
 foreach(elf IN LISTS USER_ELFS)
     get_filename_component(name "${elf}" NAME_WE)
+    list(FIND EXCLUDE_APPS "${name}" _excl_idx)
+    if(NOT _excl_idx EQUAL -1)
+        continue()
+    endif()
     if(name STREQUAL "init")
         file(COPY "${elf}" DESTINATION "${STAGING}/sbin")
         file(RENAME "${STAGING}/sbin/${name}.elf" "${STAGING}/sbin/${name}")

@@ -47,6 +47,14 @@
 #define STAGE2_ROOTFS_SIZE ((volatile uint32_t *)0x002FFCu)
 #define STAGE2_RAMD_MAGIC  0x52414D44u  /* 'RAMD' */
 
+/* Saved copies read in target_early_init() before any IOCS call.
+ * The IOCS _B_CLR_ST (screen clear) reuses the 0x002000-0x003FFF region
+ * (the stage1/stage2 load area) as a temporary work buffer, corrupting
+ * the stage2 handoff at 0x002FF4-0x002FFC.  We capture the values first. */
+static uint32_t s_ramdisk_magic;
+static uint32_t s_ramdisk_addr;
+static uint32_t s_ramdisk_size;
+
 /* ── Timer driver ────────────────────────────────────────────────────── */
 
 /* Defined in drivers/timer_x68k.c */
@@ -104,6 +112,14 @@ void m68k_syscall_entry(uint32_t *regs)
 
 void target_early_init(void)
 {
+    /* Capture stage2 handoff BEFORE any IOCS call.
+     * The IOCS _B_CLR_ST reuses the 0x002000-0x003FFF area (stage1/stage2
+     * load region) as a temporary work buffer, overwriting 0x002FF4-0x002FFC.
+     * Saving here ensures target_mount_rootfs() gets the correct values. */
+    s_ramdisk_magic = *STAGE2_MAGIC_ADDR;
+    s_ramdisk_addr  = *STAGE2_ROOTFS_ADDR;
+    s_ramdisk_size  = *STAGE2_ROOTFS_SIZE;
+
     /* Patch hardware interrupt vectors BEFORE the first IOCS call.
      *
      * Stage2 copies the kernel's .vectors to 0x000000 before jumping here,
@@ -185,12 +201,14 @@ void target_late_init(void)
 int target_mount_rootfs(void)
 {
 #ifdef PPAP_HAS_BLKDEV
-    if (*STAGE2_MAGIC_ADDR != STAGE2_RAMD_MAGIC) {
+    /* Use values captured in target_early_init() before IOCS could corrupt
+     * the stage2 handoff area at 0x002FF4-0x002FFC. */
+    if (s_ramdisk_magic != STAGE2_RAMD_MAGIC) {
         klog("x68k: no stage2 ramdisk handoff\n");
         return -1;
     }
-    uint32_t addr = *STAGE2_ROOTFS_ADDR;
-    uint32_t size = *STAGE2_ROOTFS_SIZE;
+    uint32_t addr = s_ramdisk_addr;
+    uint32_t size = s_ramdisk_size;
     klogf("x68k: ramdisk at 0x%lx, %lu bytes\n",
           (unsigned long)addr, (unsigned long)size);
 
