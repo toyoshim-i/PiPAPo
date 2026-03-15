@@ -31,29 +31,14 @@
 #include "klog.h"
 #include "arch/arch.h"
 #include "errno.h"
+#include "vfs/vfs.h"
 #ifdef PPAP_HAS_BLKDEV
 #include "blkdev/blkdev.h"
 #include "blkdev/flatblk.h"
-#include "vfs/vfs.h"
 #include "fs/ufs.h"
 #endif
 #include <stdint.h>
 #include <stddef.h>
-
-/* ── Stage2 handoff record (written by stage2.c, read by target_mount_rootfs) */
-
-#define STAGE2_MAGIC_ADDR  ((volatile uint32_t *)0x002FF4u)
-#define STAGE2_ROOTFS_ADDR ((volatile uint32_t *)0x002FF8u)
-#define STAGE2_ROOTFS_SIZE ((volatile uint32_t *)0x002FFCu)
-#define STAGE2_RAMD_MAGIC  0x52414D44u  /* 'RAMD' */
-
-/* Saved copies read in target_early_init() before any IOCS call.
- * The IOCS _B_CLR_ST (screen clear) reuses the 0x002000-0x003FFF region
- * (the stage1/stage2 load area) as a temporary work buffer, corrupting
- * the stage2 handoff at 0x002FF4-0x002FFC.  We capture the values first. */
-static uint32_t s_ramdisk_magic;
-static uint32_t s_ramdisk_addr;
-static uint32_t s_ramdisk_size;
 
 /* ── Timer driver ────────────────────────────────────────────────────── */
 
@@ -112,14 +97,6 @@ void m68k_syscall_entry(uint32_t *regs)
 
 void target_early_init(void)
 {
-    /* Capture stage2 handoff BEFORE any IOCS call.
-     * The IOCS _B_CLR_ST reuses the 0x002000-0x003FFF area (stage1/stage2
-     * load region) as a temporary work buffer, overwriting 0x002FF4-0x002FFC.
-     * Saving here ensures target_mount_rootfs() gets the correct values. */
-    s_ramdisk_magic = *STAGE2_MAGIC_ADDR;
-    s_ramdisk_addr  = *STAGE2_ROOTFS_ADDR;
-    s_ramdisk_size  = *STAGE2_ROOTFS_SIZE;
-
     /* Patch hardware interrupt vectors BEFORE the first IOCS call.
      *
      * Stage2 copies the kernel's .vectors to 0x000000 before jumping here,
@@ -144,11 +121,14 @@ void target_early_init(void)
     vt[29] = ignore;  /* Level 5: FDC */
     vt[30] = ignore;  /* Level 6: DMA */
     /* Level 7 (NMI, vector 31): keep Default_Handler */
-    for (uint32_t v = 64u; v < 80u; v++)
+    for (uint32_t v = 64u; v < 80u; v++) {
+        if (v == 74u) continue;  /* preserve IPL keyboard handler (MFP USART RX) */
         vt[v] = ignore;
+    }
 #pragma GCC diagnostic pop
 
-    /* Diagnostic: "Po" — kernel reached (TRAP #15 = IPL IOCS, restored by stage2) */
+    /* Diagnostic: "Po" — kernel reached (TRAP #15 = IPL IOCS, restored by stage2).
+     * Together with stage2's "PiPA" this completes the "PiPAPo" banner. */
     {
         register uint32_t d0 asm("d0") = 0x20u;
         register uint32_t d1 asm("d1") = 'P';
@@ -157,7 +137,7 @@ void target_early_init(void)
         asm volatile("trap #15" : "+r"(d0) : "r"(d1) : "a0", "a1", "memory");
     }
     uart_init_console();
-    klog("PiPAPo booting... [x68k]\n");
+    klog(" booting... [x68k]\n");
     klog("Console: X68000 IOCS (TVRAM)\n");
     klog("Phase X-2: preemptive scheduling (MFP Timer-C), embedded romfs\n");
 }
@@ -194,23 +174,48 @@ void target_late_init(void)
     tty_set_console(TTY_DISPLAY);
     klog_set_mirror(uart_serial_putc, NULL);
 
-    /* Register keyboard polling so blocked TTY reads get woken up */
-    sched_set_input_poll(uart_rx_avail, TTY_DISPLAY);
+    /* Register keyboard polling — uses direct MFP register access, NOT
+     * IOCS _B_KEYSNS.  IOCS _B_PUTC internally lowers IPL for VSYNC sync,
+     * allowing the timer ISR to fire mid-call.  If the ISR calls another
+     * IOCS function, the non-reentrant IOCS dispatch corrupts internal
+     * pointers → address error crash at ROM 0x00FF775E.
+     * uart_rx_avail_hw() reads the MFP USART RSR directly, avoiding IOCS. */
+    extern int uart_rx_avail_hw(void);
+    sched_set_input_poll(uart_rx_avail_hw, TTY_DISPLAY);
 }
 
 int target_mount_rootfs(void)
 {
 #ifdef PPAP_HAS_BLKDEV
-    /* Use values captured in target_early_init() before IOCS could corrupt
-     * the stage2 handoff area at 0x002FF4-0x002FFC. */
-    if (s_ramdisk_magic != STAGE2_RAMD_MAGIC) {
-        klog("x68k: no stage2 ramdisk handoff\n");
+    /* Derive rootfs address and size directly instead of relying on the
+     * stage2 handoff at 0x002FF4-0x002FFC.  The IPL IOCS _B_READ handler
+     * corrupts the 0x002000-0x003FFF region during floppy I/O, making the
+     * handoff record unreliable.
+     *
+     * The rootfs address is always __page_pool_start (stage2 loads it there
+     * via ROOTFS_BASE, matching the kernel's linker-provided symbol).
+     * The rootfs size is derived from its own UFS superblock (block_count
+     * × block_size), which stage2 loaded correctly to RAM. */
+    extern char __page_pool_start;
+    uint32_t addr = (uint32_t)(uintptr_t)&__page_pool_start;
+
+    /* Validate rootfs: check UFS magic at the rootfs address */
+    const uint32_t *sb = (const uint32_t *)(uintptr_t)addr;
+    if (sb[0] != 0x55465331u) {   /* UFS_MAGIC */
+        klogf("x68k: no UFS magic at 0x%lx (got 0x%lx)\n",
+              (unsigned long)addr, (unsigned long)sb[0]);
         return -1;
     }
-    uint32_t addr = s_ramdisk_addr;
-    uint32_t size = s_ramdisk_size;
-    klogf("x68k: ramdisk at 0x%lx, %lu bytes\n",
-          (unsigned long)addr, (unsigned long)size);
+    uint32_t block_size  = sb[1];  /* s_block_size */
+    uint32_t block_count = sb[2];  /* s_block_count */
+    /* Compute size via shift: block_size is always a power of 2 for UFS.
+     * Avoids potential 16-bit truncation in 68000 multiply codegen. */
+    uint32_t bs_shift = 0;
+    for (uint32_t bs = block_size; bs > 1u; bs >>= 1)
+        bs_shift++;
+    uint32_t size = block_count << bs_shift;
+    klogf("x68k: ramdisk at %x, %lu bytes (%lu blocks x %lu)\n",
+          addr, size, block_count, block_size);
 
     /* Reserve all page-pool pages that fall inside the rootfs region so the
      * allocator never hands them out and overwrites the live UFS image.
@@ -234,7 +239,7 @@ int target_mount_rootfs(void)
 
 void target_post_mount(void)
 {
-    /* User-space init (/sbin/init) is launched by main.c via do_execve() */
+    /* Nothing target-specific needed after rootfs mount */
 }
 
 const char *target_init_path(void)

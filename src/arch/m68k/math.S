@@ -72,17 +72,7 @@ __udivsi3_internal:
     tst.l   %d1
     beq.w   .Ldiv_zero          /* division by zero → return 0 */
 
-    /* Check if divisor fits in 16 bits and numerator high word < divisor
-       → use single divu */
-    cmp.l   #0xFFFF, %d1
-    bhi.w   .Llong_div          /* divisor > 16 bits, need long division */
-    swap    %d0
-    clr.w   %d0
-    swap    %d0                 /* d0.hi = 0, d0.lo = original hi word... */
-    /* Actually, let's just do long division always for simplicity */
-
-.Llong_div:
-    /* Shift-and-subtract: 32 iterations */
+    /* Shift-and-subtract long division: 32 iterations */
     clr.l   %d2                 /* d2 = remainder = 0 */
     moveq   #31, %d3            /* d3 = bit counter */
 .Lloop:

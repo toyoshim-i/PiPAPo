@@ -64,8 +64,16 @@ static void spawn(struct entry *e)
 {
     pid_t pid = vfork();
     if (pid == 0) {
-        /* child — exec the command */
-        char *envp[] = { (char *)0 };
+        /* child — exec with minimal default environment.
+         * TERM=dumb prevents shell line-editing from sending escape
+         * sequences (ESC[6n etc.) before /etc/profile is sourced.
+         * /etc/profile overrides TERM to vt100 on capable targets. */
+        static char env_path[] = "PATH=/bin:/sbin";
+        static char env_term[] = "TERM=dumb";
+        char *envp[3];
+        envp[0] = env_path;
+        envp[1] = env_term;
+        envp[2] = (char *)0;
         execve(e->argv[0], e->argv, envp);
         _exit(127);
     }

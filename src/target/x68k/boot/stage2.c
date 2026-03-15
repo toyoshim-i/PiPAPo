@@ -194,24 +194,35 @@ static void copy_inode(const uint8_t *itable_block, uint32_t ino, ufs_inode_t *o
 
 static uint32_t load_file(const ufs_inode_t *inode, uint8_t *dest)
 {
-    uint32_t remaining = inode->i_size;
+    /* Save all inode fields locally BEFORE any floppy reads.
+     * The IOCS _B_READ handler uses the supervisor stack heavily (FDC wait
+     * loop + interrupt handling) and can corrupt the caller's inode struct
+     * if it lives on the same stack.  Copying the fields we need into locals
+     * avoids the re-read-from-corrupted-memory problem. */
+    uint32_t file_size  = inode->i_size;
+    uint32_t remaining  = file_size;
+    uint32_t indirect   = inode->i_indirect;
+    uint32_t direct[UFS_DIRECT_BLOCKS];
+    for (uint32_t j = 0; j < UFS_DIRECT_BLOCKS; j++)
+        direct[j] = inode->i_direct[j];
+
     uint32_t off = 0u;
 
     /* Direct blocks */
     for (uint32_t i = 0; i < UFS_DIRECT_BLOCKS && remaining > 0u; i++) {
-        if (inode->i_direct[i] == 0u)
+        if (direct[i] == 0u)
             break;
-        read_ufs_block(inode->i_direct[i], dest + off);
+        read_ufs_block(direct[i], dest + off);
         uint32_t chunk = remaining < UFS_BLOCK_SIZE ? remaining : UFS_BLOCK_SIZE;
         off += chunk;
         remaining -= chunk;
     }
 
     /* Single indirect block (needed for files > 40 KB) */
-    if (remaining > 0u && inode->i_indirect != 0u) {
+    if (remaining > 0u && indirect != 0u) {
         /* Read indirect block pointer list into BUF (reuse it — we are
          * done with directory/superblock data at this point) */
-        read_ufs_block(inode->i_indirect, BUF);
+        read_ufs_block(indirect, BUF);
         const uint32_t *ptrs = (const uint32_t *)BUF;
         uint32_t nptrs = UFS_BLOCK_SIZE / sizeof(uint32_t);
         for (uint32_t i = 0; i < nptrs && remaining > 0u; i++) {
@@ -224,7 +235,7 @@ static uint32_t load_file(const ufs_inode_t *inode, uint8_t *dest)
         }
     }
 
-    return inode->i_size;
+    return file_size;
 }
 
 /* ── Vector copy and kernel launch ───────────────────────────────────────── */
@@ -240,11 +251,17 @@ static void __attribute__((noreturn)) stage2_final(void)
 #pragma GCC diagnostic ignored "-Warray-bounds"
     volatile uint32_t *src = (volatile uint32_t *)KERNEL_LOAD_ADDR;
     volatile uint32_t *dst = (volatile uint32_t *)0x0u;
+
+    /* Save IPL ROM handlers BEFORE the copy overwrites them */
+    uint32_t iocs_handler = *STAGE2_IOCS_SAVE;
+    uint32_t kbd_handler  = dst[74];  /* MFP USART RX = keyboard input */
+
     for (uint32_t i = 0u; i < 256u; i++)
         dst[i] = src[i];
 
-    /* Restore TRAP #15 (vector 47) to IPL IOCS handler */
-    dst[47] = *STAGE2_IOCS_SAVE;
+    /* Restore IPL ROM handlers for IOCS and keyboard */
+    dst[47] = iocs_handler;  /* TRAP #15: IOCS dispatch */
+    dst[74] = kbd_handler;   /* MFP ch.10: USART RX buffer full (keyboard) */
 #pragma GCC diagnostic pop
 
     /* Jump to kernel Reset_Handler */
@@ -261,6 +278,7 @@ static inline void iocs_putc(char c)
     asm volatile("trap #15" : "+r"(d0) : "r"(d1) : "a0", "a1", "memory");
 }
 
+
 /* ── Stage 2 main ─────────────────────────────────────────────────────────── */
 
 void stage2_main(void)
@@ -272,12 +290,14 @@ void stage2_main(void)
     /* ── Read UFS superblock (block 0) — NO iocs_putc before first _B_READ ── */
     read_ufs_block(0u, BUF);
     /* Diagnostic: "PA" printed AFTER the first floppy read so that iocs_putc
-     * does not corrupt the IOCS work area ($400-$7FF) before _B_READ runs */
+     * does not corrupt the IOCS work area ($400-$7FF) before _B_READ runs.
+     * Together with stage1's "Pi" and the kernel's "Po" + " booting..." this
+     * spells out the full "PiPAPo booting..." banner across the boot chain. */
     iocs_putc('P'); iocs_putc('A');
+
     const ufs_super_t *sb = (const ufs_super_t *)BUF;
     if (sb->s_magic != UFS_MAGIC)
         goto halt;
-    iocs_putc('1');  /* superblock magic OK */
     itable_block = sb->s_itable_block;
 
     /* ── Read inode table block (contains root inode at index 0) ─────────── */
@@ -287,12 +307,10 @@ void stage2_main(void)
     /* ── Walk root directory to find "boot" ──────────────────────────────── */
     if (inode.i_direct[0] == 0u)
         goto halt;
-    iocs_putc('2');  /* root inode has data block */
     read_ufs_block(inode.i_direct[0], BUF);
     boot_ino = find_in_dir(BUF, "boot");
     if (boot_ino == 0u)
         goto halt;
-    iocs_putc('3');  /* found "boot" directory */
 
     /* ── Load boot directory inode ───────────────────────────────────────── */
     {
@@ -304,13 +322,11 @@ void stage2_main(void)
     /* ── Walk boot/ directory to find "kernel" and "rootfs.ufs" ─────────── */
     if (inode.i_direct[0] == 0u)
         goto halt;
-    iocs_putc('4');  /* boot inode has data block */
     read_ufs_block(inode.i_direct[0], BUF);
     kernel_ino = find_in_dir(BUF, "kernel");
     rootfs_ino = find_in_dir(BUF, "rootfs.ufs");
     if (kernel_ino == 0u || rootfs_ino == 0u)
         goto halt;
-    iocs_putc('5');  /* found kernel and rootfs.ufs */
 
     /* ── Load kernel to 0x006000 ─────────────────────────────────────────── */
     {
@@ -320,7 +336,6 @@ void stage2_main(void)
     }
     uint32_t kernel_size = load_file(&inode, (uint8_t *)KERNEL_LOAD_ADDR);
     (void)kernel_size;
-    iocs_putc('6');  /* kernel loaded */
 
     /* Load rootfs at the kernel page pool base (passed via -DROOTFS_BASE by
      * mkx68kimg.sh from __page_pool_start in the kernel ELF).  This ensures
@@ -334,13 +349,14 @@ void stage2_main(void)
         read_ufs_block(blk, BUF);
         copy_inode(BUF, rootfs_ino, &inode);
     }
-    uint32_t rootfs_size = load_file(&inode, (uint8_t *)rootfs_addr);
-    iocs_putc('!');  /* rootfs loaded — about to jump to kernel */
 
-    /* ── Write handoff record for kernel ─────────────────────────────────── */
+    load_file(&inode, (uint8_t *)rootfs_addr);
+
+    /* Write handoff record (informational — the kernel derives rootfs
+     * address and size from the UFS superblock at __page_pool_start). */
     *STAGE2_MAGIC    = STAGE2_RAMD_MAGIC;
     *STAGE2_RFS_ADDR = rootfs_addr;
-    *STAGE2_RFS_SIZE = rootfs_size;
+    *STAGE2_RFS_SIZE = inode.i_size;
 
     /* ── Patch vectors and jump to kernel ────────────────────────────────── */
     stage2_final();

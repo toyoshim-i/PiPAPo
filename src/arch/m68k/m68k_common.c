@@ -85,8 +85,20 @@ static int fault_signal(int fault_type)
  * Returns: 1 = process killed, caller should reschedule
  *          0 = kernel fault, caller should halt
  */
+/* Defined in uart_x68k.c — inhibit TVRAM output to prevent double fault */
+#ifdef PPAP_X68K
+extern int uart_tvram_inhibit;
+#endif
+
 int m68k_crash_handler(int fault_type, uint32_t *regs)
 {
+#ifdef PPAP_X68K
+    /* Prevent klogf from calling IOCS _B_PUTC, which could double-fault
+     * if the crash occurred inside IOCS itself.  Output goes only to the
+     * serial mirror (_OUT232C). */
+    uart_tvram_inhibit = 1;
+#endif
+
     uint16_t *exc = (uint16_t *)((uint8_t *)regs + 60);
     uint32_t pc, fault_addr = 0;
     uint16_t sr;

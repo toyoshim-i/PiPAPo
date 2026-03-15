@@ -38,8 +38,8 @@ _vectors:
     .long Reset_Handler            | 1: Initial PC (reset entry point)
 
     | --- Exception vectors 2-7 ---
-    .long m68k_fault_handler       | 2:  Bus Error      (group 0, 14-byte frame)
-    .long m68k_fault_handler       | 3:  Address Error   (group 0, 14-byte frame)
+    .long m68k_bus_handler          | 2:  Bus Error      (group 0, 14-byte frame)
+    .long m68k_addr_handler         | 3:  Address Error   (group 0, 14-byte frame)
     .long m68k_illegal_handler     | 4:  Illegal Instruction (group 1, 6-byte frame)
     .long m68k_zerodiv_handler     | 5:  Zero Divide     (group 1, 6-byte frame)
     .long m68k_chk_handler         | 6:  CHK             (group 1, 6-byte frame)
@@ -182,18 +182,29 @@ Reset_Handler:
 | C handler kills it and we reschedule.  If it's the kernel (pid 0), we halt.
 | =============================================================================
 
-| --- Bus Error / Address Error (group 0 — 14-byte exception frame) ---
-    .global m68k_fault_handler
-m68k_fault_handler:
+| --- Bus Error (group 0 — 14-byte exception frame) ---
+    .global m68k_bus_handler
+m68k_bus_handler:
     movem.l %d0-%d7/%a0-%a6,%sp@-   | save all regs (60 bytes)
     move.l  %sp,%sp@-               | arg2: register frame
-    pea.l   2                        | arg1: fault_type = FAULT_BUS
+    pea.l   2                        | arg1: fault_type = FAULT_BUS (vector 2)
     jsr     m68k_crash_handler
     addq.l  #8,%sp
-    | If crash_handler returns, it killed the process — reschedule
     tst.l   %d0
     beq.s   .Lfault_halt
-    | Discard saved regs + group-0 exception frame (60+14=74 bytes)
+    lea.l   %sp@(74),%sp             | discard regs + group-0 frame (60+14)
+    jmp     m68k_schedule_next
+
+| --- Address Error (group 0 — 14-byte exception frame) ---
+    .global m68k_addr_handler
+m68k_addr_handler:
+    movem.l %d0-%d7/%a0-%a6,%sp@-
+    move.l  %sp,%sp@-               | arg2: register frame
+    pea.l   3                        | arg1: fault_type = FAULT_ADDR (vector 3)
+    jsr     m68k_crash_handler
+    addq.l  #8,%sp
+    tst.l   %d0
+    beq.s   .Lfault_halt
     lea.l   %sp@(74),%sp
     jmp     m68k_schedule_next
 

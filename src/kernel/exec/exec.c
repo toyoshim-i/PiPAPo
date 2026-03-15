@@ -31,7 +31,6 @@
 #include "kernel/mm/page.h"
 #include "kernel/signal/signal.h"
 #include "kernel/errno.h"
-#include "kernel/klog.h"
 #include "arch/arch.h"
 #include <string.h>
 
@@ -435,7 +434,6 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
                     got_info.addr - data_seg->p_vaddr;
                 got_sram_addr =
                     (uint32_t)(uintptr_t)sram_page + got_offset_in_data;
-
                 uint32_t *got =
                     (uint32_t *)(sram_page + got_offset_in_data);
                 uint32_t n_entries = got_info.size / 4;

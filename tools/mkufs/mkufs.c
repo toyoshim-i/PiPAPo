@@ -345,8 +345,15 @@ static void populate_entry(const char *host_path, const char *name,
         inode.i_size = (uint32_t)len;
 
         if ((uint32_t)len <= UFS_DIRECT_BLOCKS * sizeof(uint32_t)) {
-            /* Fast symlink: store inline in i_direct */
+            /* Fast symlink: store inline in i_direct.
+             * write_inode() byte-swaps each i_direct[k] via w32() for -B
+             * mode, but symlink data is raw bytes, not block pointers.
+             * Pre-swap so w32(w32(x)) = x cancels both swaps. */
             memcpy(inode.i_direct, target, len);
+            if (be_mode) {
+                for (int k = 0; k < UFS_DIRECT_BLOCKS; k++)
+                    inode.i_direct[k] = w32(inode.i_direct[k]);
+            }
         } else {
             /* Regular symlink: store in data block */
             write_file_data(&inode, target, (uint32_t)len);
