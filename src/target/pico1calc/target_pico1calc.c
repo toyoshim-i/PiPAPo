@@ -43,10 +43,16 @@ static int fbcon_avail_wrapper(void)
     if (fbcon_pending_ch >= 0)
         return 1;
 
-    while (kbd_poll_avail()) {
+    /* Drain up to 8 key events per poll cycle.  The loop MUST be bounded
+     * because this runs inside the SysTick ISR (highest priority on Core 0).
+     * An unbounded loop would hang Core 0 if kbd_poll() keeps returning -1
+     * due to an I2C FIFO read error while kbd_poll_avail() still reports
+     * data available — the FIFO count never decrements, so the loop would
+     * spin forever, blocking UART IRQ and all context switches. */
+    for (int tries = 0; tries < 8 && kbd_poll_avail(); tries++) {
         int ch = kbd_poll();
         if (ch < 0)
-            continue;
+            break;   /* I2C error — stop polling this cycle */
         /* Match UART behavior: deliver Ctrl-C immediately on tty1 so
          * compute-bound foreground tasks do not need to be blocked in read(). */
         if (ch == 0x03 && tty_signal_intr(TTY_DISPLAY))
