@@ -26,41 +26,66 @@
 
 /* ── LCD + keyboard TTY backend ─────────────────────────────────────────── */
 
-static int fbcon_pending_ch = -1;
+/* Small ring buffer for keyboard characters.
+ *
+ * kbd_poll() (I2C + escape sequence state) is only ever called from the
+ * idle loop on Core 0 (via fbcon_avail_wrapper).  Process-context reads
+ * (fbcon_getc_wrapper) consume from this ring buffer only — they MUST NOT
+ * call kbd_poll() directly because kbd.c's internal state (seq_buf, seq_pos)
+ * is not thread-safe and the two callers can run on different cores. */
+#define KBD_RING_SIZE 16u   /* power of 2 for mask wrap */
+static volatile char  kbd_ring[KBD_RING_SIZE];
+static volatile uint8_t kbd_ring_head;  /* written by idle loop (Core 0) */
+static volatile uint8_t kbd_ring_tail;  /* read by process (any core)    */
+
+static inline int kbd_ring_empty(void)
+{
+    return kbd_ring_head == kbd_ring_tail;
+}
+
+static inline void kbd_ring_put(char c)
+{
+    uint8_t next = (kbd_ring_head + 1u) & (KBD_RING_SIZE - 1u);
+    if (next == kbd_ring_tail)
+        return;   /* full — drop character */
+    kbd_ring[kbd_ring_head] = c;
+    kbd_ring_head = next;
+}
+
+static inline int kbd_ring_get(void)
+{
+    if (kbd_ring_empty())
+        return -1;
+    int c = (unsigned char)kbd_ring[kbd_ring_tail];
+    kbd_ring_tail = (kbd_ring_tail + 1u) & (KBD_RING_SIZE - 1u);
+    return c;
+}
 
 static int fbcon_getc_wrapper(void)
 {
-    if (fbcon_pending_ch >= 0) {
-        int ch = fbcon_pending_ch;
-        fbcon_pending_ch = -1;
-        return ch;
-    }
-    return kbd_poll();
+    return kbd_ring_get();
 }
 
 static int fbcon_avail_wrapper(void)
 {
-    if (fbcon_pending_ch >= 0)
+    if (!kbd_ring_empty())
         return 1;
 
-    /* Drain up to 8 key events per poll cycle.  The loop MUST be bounded
-     * because this runs inside the SysTick ISR (highest priority on Core 0).
-     * An unbounded loop would hang Core 0 if kbd_poll() keeps returning -1
-     * due to an I2C FIFO read error while kbd_poll_avail() still reports
-     * data available — the FIFO count never decrements, so the loop would
-     * spin forever, blocking UART IRQ and all context switches. */
+    /* Drain up to 8 key events per poll cycle.  The loop MUST be bounded:
+     * this runs in the idle loop on Core 0.  An unbounded loop would hang
+     * if kbd_poll() keeps returning -1 due to an I2C FIFO read error while
+     * kbd_poll_avail() still reports data available. */
     for (int tries = 0; tries < 8 && kbd_poll_avail(); tries++) {
         int ch = kbd_poll();
         if (ch < 0)
             break;   /* I2C error — stop polling this cycle */
-        /* Match UART behavior: deliver Ctrl-C immediately on tty1 so
-         * compute-bound foreground tasks do not need to be blocked in read(). */
+        /* Deliver Ctrl-C immediately on tty1 so compute-bound foreground
+         * tasks do not need to be blocked in read(). */
         if (ch == 0x03 && tty_signal_intr(TTY_DISPLAY))
             continue;
-        fbcon_pending_ch = ch;
-        return 1;
+        kbd_ring_put((char)ch);
     }
-    return 0;
+    return !kbd_ring_empty();
 }
 
 static int fbcon_get_cols(void)      { return fbcon_cols(); }

@@ -60,4 +60,12 @@ int uart_getc(void);
  * Non-blocking, does not consume data.  Used by tty_poll(). */
 int uart_rx_avail(void);
 
+/* Direct polling debug output — bypasses TX ring buffer.
+ * Safe to call when the ring/ISR path may be stuck. */
+void uart_debug_putc(char c);
+void uart_debug_puts(const char *s);
+void uart_debug_hex32(uint32_t v);
+void uart_debug_dec(uint32_t v);
+void uart_debug_dump(void);
+
 #endif /* PPAP_UART_H */

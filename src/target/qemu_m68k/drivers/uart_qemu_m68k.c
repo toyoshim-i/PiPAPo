@@ -101,3 +101,10 @@ void uart_print_dec(uint32_t v)
     while (v > 0u) { buf[i++] = (char)('0' + (v % 10u)); v /= 10u; }
     while (--i >= 0) uart_putc(buf[i]);
 }
+
+/* Debug output — on QEMU these just forward to the polling UART */
+void uart_debug_putc(char c) { uart_putc(c); }
+void uart_debug_puts(const char *s) { uart_puts(s); }
+void uart_debug_hex32(uint32_t v) { uart_print_hex32(v); }
+void uart_debug_dec(uint32_t v) { uart_print_dec(v); }
+void uart_debug_dump(void) { uart_debug_puts("[UART] (QEMU m68k — no ring buffer)\n"); }

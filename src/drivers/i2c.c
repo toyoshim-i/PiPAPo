@@ -16,6 +16,7 @@
 #include "i2c.h"
 #include "../target/pico1calc/pico1calc.h"
 #include "../target/rp2040.h"
+#include "../kernel/spinlock.h"
 #include "config.h"
 #include <stdint.h>
 
@@ -206,6 +207,7 @@ int i2c_read_reg(uint8_t addr, uint8_t reg, uint8_t *buf, size_t len)
     if (len == 0)
         return 0;
 
+    uint32_t saved = spin_lock_irqsave(SPIN_I2C);
     i2c_clear_abort();
     i2c_set_tar(addr);
 
@@ -235,15 +237,18 @@ int i2c_read_reg(uint8_t addr, uint8_t reg, uint8_t *buf, size_t len)
     }
 
     i2c_wait_idle();
+    spin_unlock_irqrestore(SPIN_I2C, saved);
     return 0;
 
 fail:
     i2c_clear_abort();
+    spin_unlock_irqrestore(SPIN_I2C, saved);
     return -1;
 }
 
 int i2c_write_reg(uint8_t addr, uint8_t reg, const uint8_t *buf, size_t len)
 {
+    uint32_t saved = spin_lock_irqsave(SPIN_I2C);
     i2c_clear_abort();
     i2c_set_tar(addr);
 
@@ -268,9 +273,11 @@ int i2c_write_reg(uint8_t addr, uint8_t reg, const uint8_t *buf, size_t len)
     if (i2c_wait_idle() < 0)
         goto fail;
 
+    spin_unlock_irqrestore(SPIN_I2C, saved);
     return 0;
 
 fail:
     i2c_clear_abort();
+    spin_unlock_irqrestore(SPIN_I2C, saved);
     return -1;
 }

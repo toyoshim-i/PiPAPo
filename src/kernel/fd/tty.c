@@ -202,6 +202,13 @@ void *tty_get_console_dev(void)
     return tty_get_dev(console_tty_idx);
 }
 
+int32_t tty_get_fg_pgrp(int idx)
+{
+    if ((unsigned)idx >= TTY_MAX)
+        return 0;
+    return tty_devs[idx].fg_pgrp;
+}
+
 /* ── Output helper (putc + optional flush) ────────────────────────────────── */
 
 static inline void dev_echo_flush(tty_dev_t *t)

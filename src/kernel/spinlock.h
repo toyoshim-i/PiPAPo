@@ -39,6 +39,7 @@ enum {
     SPIN_FS     = 3,   /* sector_buf (vfat.c), ufs_buf (ufs.c) */
     SPIN_UART   = 4,   /* UART TX serialisation (klog) */
     SPIN_TXRING = 5,   /* UART TX ring buffer + IMSC (dual-core) */
+    SPIN_I2C    = 6,   /* I2C1 controller (kbd, battery, backlight) */
 };
 
 static inline int spin_have_hw(void)

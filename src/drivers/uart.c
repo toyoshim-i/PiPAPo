@@ -413,3 +413,58 @@ void uart_print_dec(uint32_t v)
     while (v > 0u) { buf[i++] = (char)('0' + (v % 10u)); v /= 10u; }
     while (--i >= 0) uart_putc(buf[i]);
 }
+
+/* ==========================================================================
+ * Debug output — direct polling, bypasses TX ring buffer entirely.
+ *
+ * Safe to call even when the ring buffer / ISR path is stuck.
+ * Caller is responsible for serialization (no spinlock taken here).
+ * ========================================================================== */
+
+void uart_debug_putc(char c)
+{
+    while (UART0_FR & UART_FR_TXFF)
+        ;
+    UART0_DR = (uint32_t)(unsigned char)c;
+}
+
+void uart_debug_puts(const char *s)
+{
+    while (*s) {
+        if (*s == '\n')
+            uart_debug_putc('\r');
+        uart_debug_putc(*s++);
+    }
+}
+
+void uart_debug_hex32(uint32_t v)
+{
+    uart_debug_puts("0x");
+    for (int i = 7; i >= 0; i--) {
+        unsigned nibble = (v >> (i * 4)) & 0xFu;
+        uart_debug_putc(nibble < 10u ? (char)('0' + nibble)
+                                     : (char)('a' + nibble - 10u));
+    }
+}
+
+void uart_debug_dec(uint32_t v)
+{
+    char buf[10];
+    int  i = 0;
+    if (v == 0u) { uart_debug_putc('0'); return; }
+    while (v > 0u) { buf[i++] = (char)('0' + (v % 10u)); v /= 10u; }
+    while (--i >= 0) uart_debug_putc(buf[i]);
+}
+
+void uart_debug_dump(void)
+{
+    uart_debug_puts("[UART] tx_head=");
+    uart_debug_dec(tx_head);
+    uart_debug_puts(" tx_tail=");
+    uart_debug_dec(tx_tail);
+    uart_debug_puts(" FR=");
+    uart_debug_hex32(UART0_FR);
+    uart_debug_puts(" IMSC=");
+    uart_debug_hex32(UART0_IMSC);
+    uart_debug_puts("\n");
+}
