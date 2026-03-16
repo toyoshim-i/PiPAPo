@@ -252,16 +252,32 @@ static void __attribute__((noreturn)) stage2_final(void)
     volatile uint32_t *src = (volatile uint32_t *)KERNEL_LOAD_ADDR;
     volatile uint32_t *dst = (volatile uint32_t *)0x0u;
 
-    /* Save IPL ROM handlers BEFORE the copy overwrites them */
-    uint32_t iocs_handler = *STAGE2_IOCS_SAVE;
-    uint32_t kbd_handler  = dst[74];  /* MFP USART RX = keyboard input */
+    /* Save IPL ROM handlers BEFORE the copy overwrites them.
+     * IOCS functions depend on many hardware interrupt handlers in the
+     * IPL ROM — autovectors for VSYNC/SCC, MFP vectored interrupts for
+     * keyboard/timers/serial, and the TRAP #15 dispatch.  We save all
+     * vectors that IOCS may use and restore them after the kernel vector
+     * copy. */
+    uint32_t iocs_handler  = *STAGE2_IOCS_SAVE;
+    uint32_t saved_auto[8];  /* autovectors 24-31 (spurious + levels 1-7) */
+    uint32_t saved_mfp[16]; /* MFP vectored interrupts 64-79 */
+    for (uint32_t i = 0; i < 8u; i++)
+        saved_auto[i] = dst[24u + i];
+    for (uint32_t i = 0; i < 16u; i++)
+        saved_mfp[i] = dst[64u + i];
 
     for (uint32_t i = 0u; i < 256u; i++)
         dst[i] = src[i];
 
-    /* Restore IPL ROM handlers for IOCS and keyboard */
-    dst[47] = iocs_handler;  /* TRAP #15: IOCS dispatch */
-    dst[74] = kbd_handler;   /* MFP ch.10: USART RX buffer full (keyboard) */
+    /* Restore IPL ROM handlers for IOCS:
+     *   - TRAP #15: IOCS dispatch
+     *   - Autovectors 24-31: VSYNC (28), SCC (29), etc.
+     *   - MFP vectors 64-79: keyboard (74), timers, serial, etc. */
+    dst[47] = iocs_handler;
+    for (uint32_t i = 0; i < 8u; i++)
+        dst[24u + i] = saved_auto[i];
+    for (uint32_t i = 0; i < 16u; i++)
+        dst[64u + i] = saved_mfp[i];
 #pragma GCC diagnostic pop
 
     /* Jump to kernel Reset_Handler */

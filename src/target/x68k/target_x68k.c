@@ -114,17 +114,32 @@ void target_early_init(void)
 #pragma GCC diagnostic ignored "-Warray-bounds"
     volatile uint32_t *vt = (volatile uint32_t *)0x0;
     uint32_t ignore = (uint32_t)(uintptr_t)m68k_irq_ignore;
-    vt[25] = ignore;  /* Level 1: OPM (YM2151) */
-    vt[26] = ignore;  /* Level 2: MFP autovector (fallback) */
-    vt[27] = ignore;  /* Level 3: reserved */
-    vt[28] = ignore;  /* Level 4: SCC / VSYNC */
-    vt[29] = ignore;  /* Level 5: FDC */
-    vt[30] = ignore;  /* Level 6: DMA */
-    /* Level 7 (NMI, vector 31): keep Default_Handler */
-    for (uint32_t v = 64u; v < 80u; v++) {
-        if (v == 74u) continue;  /* preserve IPL keyboard handler (MFP USART RX) */
+
+    /* Stage2 preserved ALL IPL ROM autovectors (24-31) and MFP vectors
+     * (64-79) so that IOCS functions work correctly.  Here we only need
+     * to replace remaining Default_Handler entries (vectors 10-23, 34-46,
+     * 80-255) with m68k_irq_ignore to prevent CPU halts on unexpected
+     * interrupts.
+     *
+     * Vectors already correctly set:
+     *   0-9:   SSP, Reset, Bus/Address error, etc. (kernel handlers)
+     *   24-31: Autovectors (IPL ROM — VSYNC, SCC, etc.)
+     *   32:    TRAP #0 — syscall
+     *   33:    TRAP #1 — yield
+     *   47:    TRAP #15 — IOCS dispatch (IPL ROM)
+     *   64-79: MFP vectored interrupts (IPL ROM — keyboard, timers)
+     *
+     * timer_init() overwrites vector 69 (Timer-C) with m68k_timer_isr
+     * for preemptive scheduling.
+     */
+    for (uint32_t v = 10u; v < 24u; v++)
         vt[v] = ignore;
-    }
+    for (uint32_t v = 34u; v < 47u; v++)   /* TRAP #2-#14 */
+        vt[v] = ignore;
+    for (uint32_t v = 48u; v < 64u; v++)   /* TRAP #16+ and reserved */
+        vt[v] = ignore;
+    for (uint32_t v = 80u; v < 256u; v++)  /* extended vectors */
+        vt[v] = ignore;
 #pragma GCC diagnostic pop
 
     /* Diagnostic: "Po" — kernel reached (TRAP #15 = IPL IOCS, restored by stage2).
@@ -144,15 +159,15 @@ void target_early_init(void)
 
 void target_late_init(void)
 {
-    /* Vector patching (autovectors 25-30, MFP vectors 64-79 → m68k_irq_ignore)
-     * was done in target_early_init() before the first IOCS call.
-     * Here we only need to start the MFP Timer-C for preemptive scheduling.
-     * timer_init() installs m68k_timer_isr at vector 69 (MFP VR_base+5 = 0x45);
-     * vt[64-79] were already filled with m68k_irq_ignore so this is safe. */
+    /* Vector patching was done in target_early_init() before the first IOCS
+     * call.  Here we start MFP Timer-C for preemptive scheduling.
+     * timer_init() overwrites vector 69 with m68k_timer_isr. */
     timer_init();
 
     /* Set up dual-TTY: TTY_DISPLAY = TVRAM (primary), TTY_SERIAL = RS-232C */
     extern void uart_serial_putc(char c);
+    extern int  uart_serial_getc(void);
+    extern int  uart_serial_rx_avail(void);
     static const tty_backend_t tvram_be = {
         .putc     = uart_putc,
         .flush    = NULL,
@@ -164,8 +179,8 @@ void target_late_init(void)
     static const tty_backend_t serial_be = {
         .putc     = uart_serial_putc,
         .flush    = NULL,
-        .getc     = NULL,
-        .rx_avail = NULL,
+        .getc     = uart_serial_getc,
+        .rx_avail = uart_serial_rx_avail,
         .get_cols = NULL,
         .get_rows = NULL,
     };
@@ -174,14 +189,16 @@ void target_late_init(void)
     tty_set_console(TTY_DISPLAY);
     klog_set_mirror(uart_serial_putc, NULL);
 
-    /* Register keyboard polling — uses direct MFP register access, NOT
-     * IOCS _B_KEYSNS.  IOCS _B_PUTC internally lowers IPL for VSYNC sync,
-     * allowing the timer ISR to fire mid-call.  If the ISR calls another
-     * IOCS function, the non-reentrant IOCS dispatch corrupts internal
-     * pointers → address error crash at ROM 0x00FF775E.
-     * uart_rx_avail_hw() reads the MFP USART RSR directly, avoiding IOCS. */
+    /* Register input polls for both consoles.
+     * Both use direct hardware register reads — NO IOCS TRAP #15 calls —
+     * because IOCS functions hang when called from the idle thread context.
+     *
+     * TVRAM: uart_rx_avail_hw() checks IOCS key buffer byte count at $0812
+     * Serial: uart_serial_rx_avail_hw() checks SCC channel B RR0 bit 0 */
     extern int uart_rx_avail_hw(void);
+    extern int uart_serial_rx_avail_hw(void);
     sched_set_input_poll(uart_rx_avail_hw, TTY_DISPLAY);
+    sched_set_input_poll2(uart_serial_rx_avail_hw, TTY_SERIAL);
 }
 
 int target_mount_rootfs(void)

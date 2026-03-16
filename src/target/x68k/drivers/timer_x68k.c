@@ -43,7 +43,7 @@
 /* Timer-C count register value: 4 MHz / 200 / 200 = 100 Hz */
 #define TC_COUNT   200u
 
-/* Timer-C interrupt vector: VR(0x40) + source(5) = 0x45 = 69 */
+/* Timer-C interrupt vector: VR(0x40) + source(5) = 0x45 = vector 69 */
 #define TC_VECTOR  69u
 
 /* m68k_timer_isr defined in src/arch/m68k/switch.S */
@@ -65,7 +65,7 @@ void timer_init(void)
     /* 4. Enable Timer-C interrupt source */
     MFP_IERB = MFP_IERB | (uint8_t)TC_BIT;
 
-    /* 5. Install ISR at vector 0x45 (69) in the kernel vector table */
+    /* 5. Install ISR at vector 0x45 (69) in the CPU vector table */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
     volatile uint32_t *vt = (volatile uint32_t *)0x0;
