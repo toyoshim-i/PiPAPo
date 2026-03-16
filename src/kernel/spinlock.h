@@ -33,11 +33,12 @@
 #endif
 
 enum {
-    SPIN_PAGE = 0,   /* free_stack, free_top (page allocator) */
-    SPIN_PROC = 1,   /* proc_table, next_pid, running_on_core */
-    SPIN_VFS  = 2,   /* mount table, vnode pool */
-    SPIN_FS   = 3,   /* sector_buf (vfat.c), ufs_buf (ufs.c) */
-    SPIN_UART = 4,   /* UART TX serialisation (klog) */
+    SPIN_PAGE   = 0,   /* free_stack, free_top (page allocator) */
+    SPIN_PROC   = 1,   /* proc_table, next_pid, running_on_core */
+    SPIN_VFS    = 2,   /* mount table, vnode pool */
+    SPIN_FS     = 3,   /* sector_buf (vfat.c), ufs_buf (ufs.c) */
+    SPIN_UART   = 4,   /* UART TX serialisation (klog) */
+    SPIN_TXRING = 5,   /* UART TX ring buffer + IMSC (dual-core) */
 };
 
 static inline int spin_have_hw(void)

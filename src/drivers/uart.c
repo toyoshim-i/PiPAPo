@@ -17,6 +17,7 @@
 #include "../target/rp2040.h"
 #include "../arch/arm_m/cpu.h"
 #include "kernel/fd/tty.h"      /* tty_rx_notify, tty_signal_intr */
+#include "kernel/spinlock.h"    /* SPIN_TXRING */
 #include <stdint.h>
 #include <stddef.h>
 
@@ -221,37 +222,45 @@ void uart_putc(char c)
 
     /* IRQ mode: write into TX ring buffer, arm TX interrupt.
      *
-     * Critical section with interrupt-safe spin:
-     *   We disable interrupts to protect the shared ring pointers, but
-     *   re-enable them while waiting if the ring is full so the UART0 IRQ
-     *   handler can drain it.
+     * SPIN_TXRING serialises ring pointer updates and UART0_IMSC
+     * read-modify-write across cores.  Without this lock, Core 1's
+     * "IMSC |= TXIM" can be clobbered by Core 0's ISR doing
+     * "IMSC &= ~TXIM" — the non-atomic read-modify-write race leaves
+     * TXIM cleared with data still in the ring, permanently stalling TX.
      *
-     *   Special case: if the caller already disabled IRQs (e.g. klog holds
-     *   SPIN_UART), restoring PRIMASK would leave IRQs off and the UART IRQ
-     *   handler could never drain the ring — deadlock.  Detect this via the
-     *   saved PRIMASK bit 0 and poll-drain the ring into the TX FIFO instead. */
-    uint32_t primask;
+     * spin_lock_irqsave also disables local IRQs, preventing the ISR
+     * on Core 0 from deadlocking against the thread-mode lock holder.
+     *
+     * Special case: if the caller already had IRQs disabled (e.g. klog
+     * holds SPIN_UART), the saved PRIMASK bit 0 is 1.  When the ring is
+     * full, we cannot rely on the UART0 ISR (Core 0 IRQs are masked),
+     * so we poll-drain the ring into the TX FIFO directly. */
     for (;;) {
-        __asm__ volatile("mrs %0, primask\n cpsid i" : "=r"(primask));
-        if ((uint8_t)(tx_head + 1u) != tx_tail)
-            break;  /* ring has space; remain in critical section */
-        if (primask & 1u) {
-            /* IRQs already disabled — manually drain ring → TX FIFO */
+        uint32_t saved = spin_lock_irqsave(SPIN_TXRING);
+
+        if ((uint8_t)(tx_head + 1u) != tx_tail) {
+            /* Ring has space — write and arm TX interrupt */
+            tx_buf[tx_head] = c;
+            tx_head++;
+            UART0_IMSC |= UART_IMSC_TXIM;
+            spin_unlock_irqrestore(SPIN_TXRING, saved);
+            return;
+        }
+
+        /* Ring full — must drain before we can write */
+        if (saved & 1u) {
+            /* Caller had IRQs disabled — manually drain ring → TX FIFO.
+             * This handles Core 1 (no UART0_IRQ) and Core 0 with IRQs
+             * masked (e.g. inside klog's SPIN_UART critical section). */
             while (tx_head != tx_tail && !(UART0_FR & UART_FR_TXFF)) {
                 UART0_DR = (uint32_t)(unsigned char)tx_buf[tx_tail];
                 tx_tail++;
             }
-            /* Loop back; HW shift register will free FIFO slots. */
-        } else {
-            /* Re-enable interrupts so UART0_IRQ_Handler can drain */
-            __asm__ volatile("msr primask, %0" :: "r"(primask));
         }
+        spin_unlock_irqrestore(SPIN_TXRING, saved);
+        /* If caller had IRQs enabled, the restore re-enables them so
+         * UART0_IRQ_Handler on Core 0 can drain the ring.  Loop back. */
     }
-
-    tx_buf[tx_head] = c;
-    tx_head++;
-    UART0_IMSC |= UART_IMSC_TXIM;   /* arm TX interrupt to drain ring */
-    __asm__ volatile("msr primask, %0" :: "r"(primask));
 }
 
 void uart_puts(const char *s)
@@ -305,13 +314,17 @@ void uart_reinit_133mhz(void)
  */
 void UART0_IRQ_Handler(void)
 {
-    /* TX: drain ring → TX FIFO */
+    /* TX: drain ring → TX FIFO.
+     * SPIN_TXRING serialises with uart_putc on Core 1 to prevent the
+     * IMSC read-modify-write race (see uart_putc comment). */
+    uint32_t tx_saved = spin_lock_irqsave(SPIN_TXRING);
     while (tx_head != tx_tail && !(UART0_FR & UART_FR_TXFF)) {
         UART0_DR = (uint32_t)(unsigned char)tx_buf[tx_tail];
         tx_tail++;
     }
     if (tx_head == tx_tail)
         UART0_IMSC &= ~UART_IMSC_TXIM;  /* ring empty — stop TX interrupts */
+    spin_unlock_irqrestore(SPIN_TXRING, tx_saved);
 
     /* RX: drain RX FIFO → ring */
     int got_rx = 0;

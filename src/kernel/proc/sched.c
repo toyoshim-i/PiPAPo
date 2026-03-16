@@ -102,10 +102,14 @@ void sched_tick(void)
 
 /* ── Periodic polling callbacks (shared across architectures) ──────────────── */
 
-/* Optional input-available callback, registered by target via sched_set_input_poll().
+/* Optional input-available callbacks, registered by target via sched_set_input_poll().
  * Returns non-zero if input is available (e.g. keyboard FIFO has data). */
 static int (*input_poll_fn)(void);
 static int  input_poll_tty_idx;
+
+/* Optional second input poll (e.g. serial TTY on dual-console targets). */
+static int (*input_poll_fn2)(void);
+static int  input_poll_tty_idx2;
 
 /* Keyboard polling counter and deferred flag.
  * SysTick increments the counter; when it reaches the threshold it sets
@@ -119,6 +123,12 @@ void sched_set_input_poll(int (*fn)(void), int tty_idx)
 {
     input_poll_fn = fn;
     input_poll_tty_idx = tty_idx;
+}
+
+void sched_set_input_poll2(int (*fn)(void), int tty_idx)
+{
+    input_poll_fn2 = fn;
+    input_poll_tty_idx2 = tty_idx;
 }
 
 /* Optional display flush callback, registered by target via sched_set_display_poll(). */
@@ -137,6 +147,8 @@ void sched_display_poll(void)
         input_poll_due = 0;
         if (input_poll_fn())
             tty_rx_notify(input_poll_tty_idx);
+        if (input_poll_fn2 && input_poll_fn2())
+            tty_rx_notify(input_poll_tty_idx2);
     }
     if (display_poll_fn)
         display_poll_fn();

@@ -88,6 +88,10 @@ void sched_sleep(uint32_t ticks);
  */
 void sched_set_input_poll(int (*fn)(void), int tty_idx);
 
+/* Register a second input-available callback for a secondary TTY.
+ * Same semantics as sched_set_input_poll but for a second device. */
+void sched_set_input_poll2(int (*fn)(void), int tty_idx);
+
 /*
  * Register a display flush callback, polled every 20 ms from SysTick.
  * Used by PicoCalc to defer LCD flush (fbcon_poll_flush) out of critical sections.
