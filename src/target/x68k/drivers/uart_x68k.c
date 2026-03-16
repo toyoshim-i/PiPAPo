@@ -31,32 +31,18 @@
 #include "drivers/uart.h"
 #include <stdint.h>
 
-/* ── IRQ guard: raise IPL around IOCS calls ────────────────────────────── *
- *
- * IOCS functions are NOT reentrant — they share work areas in low RAM.
- * We must prevent the scheduler (MFP Timer-C, IPL level 2) from preempting
- * mid-call.  However, IOCS itself depends on hardware interrupts:
- *   - VSYNC (level 4): _B_PUTC waits for VSYNC during scroll
- *   - SCC (level 5): serial RX buffering for _ISNS232C/_INP232C
- *   - Keyboard (level 6 via MFP): USART RX for _B_KEYSNS/_B_GETC
- *
- * Solution: raise IPL to 3 — blocks the timer (level 2) but allows all
- * hardware interrupts that IOCS depends on (levels 4-7).
- */
+/* ── IRQ guard: raise IPL to 7 around every IOCS call ──────────────────── */
 
-static inline uint16_t iocs_ipl_save(void)
+static inline uint16_t ipl7_save(void)
 {
     uint16_t sr;
     asm volatile("move.w %%sr,%0\n\t"
-                 "move.w %0,%%d0\n\t"
-                 "andi.w #0xF8FF,%%d0\n\t"
-                 "ori.w  #0x0300,%%d0\n\t"
-                 "move.w %%d0,%%sr"
-                 : "=d"(sr) : : "d0", "memory");
+                 "ori.w #0x0700,%%sr"
+                 : "=d"(sr) : : "memory");
     return sr;
 }
 
-static inline void iocs_ipl_restore(uint16_t sr)
+static inline void ipl7_restore(uint16_t sr)
 {
     asm volatile("move.w %0,%%sr" : : "d"(sr) : "memory");
 }
@@ -334,20 +320,19 @@ void uart_init_console(void)
     cur_x = cur_y = 0;
 }
 
-
 void uart_putc(char c)
 {
     if (uart_tvram_inhibit)
         return;
-    uint16_t sr = iocs_ipl_save();
+    uint16_t sr = ipl7_save();
     if (!vt_feed(c))
         iocs_b_putc(c);
-    iocs_ipl_restore(sr);
+    ipl7_restore(sr);
 }
 
 void uart_puts(const char *s)
 {
-    uint16_t sr = iocs_ipl_save();
+    uint16_t sr = ipl7_save();
     while (*s) {
         if (!vt_feed(*s)) {
             if (*s == '\n')
@@ -356,16 +341,72 @@ void uart_puts(const char *s)
         }
         s++;
     }
-    iocs_ipl_restore(sr);
+    ipl7_restore(sr);
 }
 
 void uart_serial_putc(char c)
 {
-    uint16_t sr = iocs_ipl_save();
+    uint16_t sr = ipl7_save();
     if (c == '\n')
         iocs_out232c('\r');
     iocs_out232c(c);
-    iocs_ipl_restore(sr);
+    ipl7_restore(sr);
+}
+
+void uart_flush(void)
+{
+    /* IOCS _B_PUTC is synchronous — no TX buffer to flush */
+}
+
+void uart_reinit_133mhz(void)
+{
+    /* Not applicable — X68000 clock is fixed; IOCS needs no reinit */
+}
+
+void uart_init_irq(void)
+{
+    /* Phase X-2: enable MFP UART RX interrupt for non-blocking input.
+     * For now, polling via _B_KEYSNS is used. */
+}
+
+int uart_getc(void)
+{
+    uint16_t sr = ipl7_save();
+    int avail = iocs_b_keysns();
+    if (!avail) {
+        ipl7_restore(sr);
+        return -1;
+    }
+    int c = iocs_b_getc();
+    ipl7_restore(sr);
+    if (c > 0x7F)
+        return -1;
+    return c;
+}
+
+int uart_rx_avail(void)
+{
+    uint16_t sr = ipl7_save();
+    int r = iocs_b_keysns() ? 1 : 0;
+    ipl7_restore(sr);
+    return r;
+}
+
+/*
+ * uart_rx_avail_hw — non-IOCS keyboard availability check
+ *
+ * Reads the MFP USART RSR (Receiver Status Register) directly to detect
+ * if a keyboard scan code is pending.  Used by the timer-ISR input poll
+ * instead of uart_rx_avail() to avoid reentering IOCS (which is not
+ * reentrant — _B_PUTC lowers IPL internally for VSYNC sync).
+ *
+ * MFP USART RSR is at 0xE88001 + 21*2 = 0xE8802B (byte-wide, odd address).
+ * Bit 7 (BF = Buffer Full) is set when a received byte is waiting.
+ */
+int uart_rx_avail_hw(void)
+{
+    volatile uint8_t *rsr = (volatile uint8_t *)(0xE88001u + 21u * 2u);
+    return (*rsr & 0x80u) ? 1 : 0;
 }
 
 /* ── RS-232C serial input via IOCS ───────────────────────────────────────── */
@@ -390,14 +431,14 @@ static inline int iocs_inp232c(void)
 
 int uart_serial_getc(void)
 {
-    uint16_t sr = iocs_ipl_save();
+    uint16_t sr = ipl7_save();
     int avail = iocs_isns232c();
     if (!avail) {
-        iocs_ipl_restore(sr);
+        ipl7_restore(sr);
         return -1;
     }
     int c = iocs_inp232c();
-    iocs_ipl_restore(sr);
+    ipl7_restore(sr);
     if (c > 0x7F)
         return -1;
     return c;
@@ -405,98 +446,16 @@ int uart_serial_getc(void)
 
 int uart_serial_rx_avail(void)
 {
-    uint16_t sr = iocs_ipl_save();
+    uint16_t sr = ipl7_save();
     int r = iocs_isns232c() ? 1 : 0;
-    iocs_ipl_restore(sr);
+    ipl7_restore(sr);
     return r;
-}
-
-void uart_flush(void)
-{
-    /* IOCS _B_PUTC is synchronous — no TX buffer to flush */
-}
-
-void uart_reinit_133mhz(void)
-{
-    /* Not applicable — X68000 clock is fixed; IOCS needs no reinit */
-}
-
-void uart_init_irq(void)
-{
-    /* Phase X-2: enable MFP UART RX interrupt for non-blocking input.
-     * For now, polling via _B_KEYSNS is used. */
-}
-
-int uart_getc(void)
-{
-    uint16_t sr = iocs_ipl_save();
-    int avail = iocs_b_keysns();
-    if (!avail) {
-        iocs_ipl_restore(sr);
-        return -1;
-    }
-    int c = iocs_b_getc();
-    iocs_ipl_restore(sr);
-    if (c > 0x7F)
-        return -1;
-    return c;
-}
-
-int uart_rx_avail(void)
-{
-    uint16_t sr = iocs_ipl_save();
-    int r = iocs_b_keysns() ? 1 : 0;
-    iocs_ipl_restore(sr);
-    return r;
-}
-
-/*
- * uart_rx_avail_hw — non-IOCS keyboard availability check
- *
- * Checks the IOCS key input buffer directly in memory, avoiding any
- * IOCS TRAP #15 call.  This is safe to call from any context (ISR,
- * idle loop, thread) because it only reads a single word.
- *
- * X68000 IOCS keyboard buffer work area (system area, ROM v1.00):
- *   $0800    16 bytes  BITSNS key press-down state (groups 0-F)
- *   $0810.b  LED illumination status
- *   $0811.b  Shift key press state
- *   $0812.w  Key buffer data byte count (0 = empty)
- *   $0814.l  Key buffer write pointer
- *   $0818.l  Key buffer read pointer
- *   $081C    64 words  Key buffer ring storage
- *
- * _B_KEYSNS returns non-zero when the byte count at $0812 is non-zero.
- * We replicate that check with a plain memory read.
- *
- * Fallback: also checks MFP USART RSR bit 7 (Buffer Full) at 0xE8802B
- * in case a raw scan code is pending before the keyboard ISR runs.
- */
-int uart_rx_avail_hw(void)
-{
-    /* Check IOCS key buffer byte count */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Warray-bounds"
-    volatile uint16_t *key_count = (volatile uint16_t *)0x0812u;
-    if (*key_count != 0)
-        return 1;
-#pragma GCC diagnostic pop
-
-    /* Fallback: MFP USART RSR bit 7 (raw scan code pending) */
-    volatile uint8_t *rsr = (volatile uint8_t *)(0xE88001u + 21u * 2u);
-    return (*rsr & 0x80u) ? 1 : 0;
 }
 
 /*
  * uart_serial_rx_avail_hw — non-IOCS RS-232C RX availability check
  *
  * Reads SCC (Z8530) channel B RR0 directly.  Bit 0 = Rx Char Available.
- * X68000 SCC register map (byte-wide at odd addresses):
- *   $E98001  Channel B command (RR0 on read)
- *   $E98003  Channel B data
- *   $E98005  Channel A command
- *   $E98007  Channel A data
- *
  * Safe to call from any context (no IOCS TRAP #15).
  */
 int uart_serial_rx_avail_hw(void)

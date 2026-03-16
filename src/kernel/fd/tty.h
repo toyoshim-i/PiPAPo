@@ -74,8 +74,4 @@ void tty_set_console(int idx);
  * Used by fd_stdio_init() to point stdin/stdout/stderr at the primary console. */
 void *tty_get_console_dev(void);
 
-/* Return the foreground process group ID for TTY instance idx.
- * Returns 0 if idx is out of range or no foreground group is set. */
-int32_t tty_get_fg_pgrp(int idx);
-
 #endif /* PPAP_FD_TTY_H */
