@@ -250,11 +250,24 @@ void uart_putc(char c)
          * Always drain regardless of caller's PRIMASK state.  Core 1 has
          * no UART0_IRQ so it can NEVER rely on the ISR to make room;
          * even on Core 0, draining here avoids a useless spin. */
+        int drained = 0;
         while (tx_head != tx_tail && !(UART0_FR & UART_FR_TXFF)) {
             UART0_DR = (uint32_t)(unsigned char)tx_buf[tx_tail];
             tx_tail++;
+            drained = 1;
         }
         spin_unlock_irqrestore(SPIN_TXRING, saved);
+
+        if (!drained) {
+            /* TX FIFO was completely full — nothing could be moved.
+             * Poll the read-only flag register WITHOUT holding the
+             * spinlock so Core 0's ISR can acquire SPIN_TXRING freely
+             * and drain the ring.  Tight-spinning on the lock starves
+             * the ISR: it wins the lock race but the FIFO is still
+             * full, so it can't drain either — a livelock. */
+            while (UART0_FR & UART_FR_TXFF)
+                ;
+        }
     }
 }
 
