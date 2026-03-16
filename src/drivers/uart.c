@@ -322,17 +322,24 @@ void uart_reinit_133mhz(void)
  */
 void UART0_IRQ_Handler(void)
 {
-    /* TX: drain ring → TX FIFO.
-     * SPIN_TXRING serialises with uart_putc on Core 1 to prevent the
-     * IMSC read-modify-write race (see uart_putc comment). */
-    uint32_t tx_saved = spin_lock_irqsave(SPIN_TXRING);
-    while (tx_head != tx_tail && !(UART0_FR & UART_FR_TXFF)) {
-        UART0_DR = (uint32_t)(unsigned char)tx_buf[tx_tail];
-        tx_tail++;
+    /* TX: drain ring → TX FIFO, only when TX interrupt is armed.
+     * Reading IMSC outside the lock is a benign race: if uart_putc on
+     * Core 1 arms TXIM between our read and the RX path below, we
+     * skip one drain cycle — the level-triggered interrupt re-fires
+     * immediately after we return and we catch it on the next entry.
+     * The benefit: on RX-only interrupts (no TX data pending) we avoid
+     * acquiring SPIN_TXRING entirely, eliminating lock contention with
+     * Core 1's uart_putc during heavy output. */
+    if (UART0_IMSC & UART_IMSC_TXIM) {
+        uint32_t tx_saved = spin_lock_irqsave(SPIN_TXRING);
+        while (tx_head != tx_tail && !(UART0_FR & UART_FR_TXFF)) {
+            UART0_DR = (uint32_t)(unsigned char)tx_buf[tx_tail];
+            tx_tail++;
+        }
+        if (tx_head == tx_tail)
+            UART0_IMSC &= ~UART_IMSC_TXIM;  /* ring empty — stop TX IRQs */
+        spin_unlock_irqrestore(SPIN_TXRING, tx_saved);
     }
-    if (tx_head == tx_tail)
-        UART0_IMSC &= ~UART_IMSC_TXIM;  /* ring empty — stop TX interrupts */
-    spin_unlock_irqrestore(SPIN_TXRING, tx_saved);
 
     /* RX: drain RX FIFO → ring */
     int got_rx = 0;
