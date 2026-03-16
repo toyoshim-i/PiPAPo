@@ -231,10 +231,9 @@ void uart_putc(char c)
      * spin_lock_irqsave also disables local IRQs, preventing the ISR
      * on Core 0 from deadlocking against the thread-mode lock holder.
      *
-     * Special case: if the caller already had IRQs disabled (e.g. klog
-     * holds SPIN_UART), the saved PRIMASK bit 0 is 1.  When the ring is
-     * full, we cannot rely on the UART0 ISR (Core 0 IRQs are masked),
-     * so we poll-drain the ring into the TX FIFO directly. */
+     * When the ring is full, we always poll-drain directly into the TX
+     * FIFO.  Core 1 has no UART0_IRQ, so it cannot rely on the ISR;
+     * draining unconditionally avoids starvation on either core. */
     for (;;) {
         uint32_t saved = spin_lock_irqsave(SPIN_TXRING);
 
@@ -247,19 +246,15 @@ void uart_putc(char c)
             return;
         }
 
-        /* Ring full — must drain before we can write */
-        if (saved & 1u) {
-            /* Caller had IRQs disabled — manually drain ring → TX FIFO.
-             * This handles Core 1 (no UART0_IRQ) and Core 0 with IRQs
-             * masked (e.g. inside klog's SPIN_UART critical section). */
-            while (tx_head != tx_tail && !(UART0_FR & UART_FR_TXFF)) {
-                UART0_DR = (uint32_t)(unsigned char)tx_buf[tx_tail];
-                tx_tail++;
-            }
+        /* Ring full — manually drain ring → TX FIFO.
+         * Always drain regardless of caller's PRIMASK state.  Core 1 has
+         * no UART0_IRQ so it can NEVER rely on the ISR to make room;
+         * even on Core 0, draining here avoids a useless spin. */
+        while (tx_head != tx_tail && !(UART0_FR & UART_FR_TXFF)) {
+            UART0_DR = (uint32_t)(unsigned char)tx_buf[tx_tail];
+            tx_tail++;
         }
         spin_unlock_irqrestore(SPIN_TXRING, saved);
-        /* If caller had IRQs enabled, the restore re-enables them so
-         * UART0_IRQ_Handler on Core 0 can drain the ring.  Loop back. */
     }
 }
 
