@@ -80,7 +80,15 @@ static void cmd_backlight(const char *val)
         puts_fd(2, "ttyctl: /dev/backlight: open failed\n");
         return;
     }
-    puts_fd(fd, val);
+    unsigned len = 0;
+    const char *p = val;
+    while (*p++) len++;
+    ssize_t ret = write(fd, val, len);
+    if (ret < 0) {
+        puts_fd(2, "ttyctl: backlight write failed (err=");
+        put_u32(2, (unsigned)(-(int)ret));
+        puts_fd(2, ")\n");
+    }
     close(fd);
 }
 
@@ -96,6 +104,13 @@ static void cmd_battery(void)
     close(fd);
     if (n > 0)
         write(1, buf, (unsigned)n);
+    else if (n < 0) {
+        puts_fd(2, "ttyctl: battery read failed (err=");
+        put_u32(2, (unsigned)(-(int)n));
+        puts_fd(2, ")\n");
+    } else {
+        puts_fd(2, "ttyctl: battery: no data\n");
+    }
 }
 
 static void cmd_poweroff(void)
@@ -106,8 +121,13 @@ static void cmd_poweroff(void)
         puts_fd(2, "ttyctl: /dev/power: open failed\n");
         return;
     }
-    write(fd, "off", 3);
+    ssize_t ret = write(fd, "off", 3);
     close(fd);
+    if (ret < 0) {
+        puts_fd(2, "ttyctl: power write failed (err=");
+        put_u32(2, (unsigned)(-(int)ret));
+        puts_fd(2, ")\n");
+    }
 }
 
 static void usage(void)

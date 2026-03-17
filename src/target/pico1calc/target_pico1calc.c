@@ -98,6 +98,7 @@ static int fbcon_get_rows(void)      { return fbcon_rows(); }
 #define REG_ID_BKL       0x05
 #define REG_ID_BAT       0x0B
 #define REG_ID_OFF       0x0E
+#define REG_WRITE_MASK   0x80   /* STM32 FW uses bit 7 to flag register writes */
 
 static int bl_i2c_get(uint8_t *val)
 {
@@ -106,20 +107,30 @@ static int bl_i2c_get(uint8_t *val)
 
 static int bl_i2c_set(uint8_t val)
 {
-    return i2c_write_reg(PICO_STM32_ADDR, REG_ID_BKL, &val, 1);
+    return i2c_write_reg(PICO_STM32_ADDR, REG_ID_BKL | REG_WRITE_MASK, &val, 1);
 }
 
 /* ── Battery and power (STM32 I2C registers 0x0B, 0x0E) ──────────────── */
 
 static int bat_i2c_read(uint8_t *buf, int len)
 {
-    return i2c_read_reg(PICO_STM32_ADDR, REG_ID_BAT, buf, (size_t)len);
+    /* STM32 returns 2 bytes: [reg_echo, percentage].
+     * Percentage bits 0-6 = 0-100%, bit 7 = charging flag.
+     * Extract into buf[0] = percentage byte. */
+    uint8_t raw[2];
+    int rc = i2c_read_reg(PICO_STM32_ADDR, REG_ID_BAT, raw, 2);
+    if (rc < 0)
+        return rc;
+    buf[0] = raw[1];   /* percentage (bit 7 = charging) */
+    if (len > 1)
+        buf[1] = 0;
+    return 0;
 }
 
 static int power_i2c_off(void)
 {
     uint8_t val = 1;
-    return i2c_write_reg(PICO_STM32_ADDR, REG_ID_OFF, &val, 1);
+    return i2c_write_reg(PICO_STM32_ADDR, REG_ID_OFF | REG_WRITE_MASK, &val, 1);
 }
 
 /* ── TTY backend ──────────────────────────────────────────────────────── */
