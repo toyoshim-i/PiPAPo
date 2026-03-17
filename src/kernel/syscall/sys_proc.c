@@ -20,6 +20,7 @@
 #include "../ecpu/ecpu_z80.h"
 #include "../ecpu/ecpu_m68k.h"
 #include "../subsys/ppap_m68k_bridge.h"
+#include "../subsys/subsys.h"
 #include "../../target/target.h"
 #include "arch/arch.h"
 #include "common/ptrace.h"
@@ -1450,6 +1451,14 @@ long sys_ptrace(long req, long pid, void *addr, void *data)
 long sys_exit(long status)
 {
     current->exit_status = (int)status;
+
+    /* Let the subsystem clean up while fds are still open
+     * (e.g. restore terminal state). */
+    if (current->subsys < SUBSYS_MAX) {
+        const subsys_ops_t *ops = subsys_ops_table[current->subsys];
+        if (ops && ops->on_exit)
+            ops->on_exit(current);
+    }
 
     /* Close all open fds */
     fd_close_all(current);

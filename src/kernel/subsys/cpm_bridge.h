@@ -50,6 +50,11 @@ typedef struct cpm_state {
     void    *search_dir;       /* DIR* (host) or opaque dir handle         */
     uint8_t  search_pattern[12]; /* 8+3 filename pattern from search FCB   */
     uint8_t  search_drive;     /* drive being searched                     */
+
+    /* Saved terminal state (restored on exit) */
+    uint32_t saved_termios[5]; /* iflag, oflag, cflag, lflag + c_line/cc   */
+    uint8_t  saved_termios_cc[19];
+    uint8_t  termios_saved;    /* 1 if saved_termios is valid              */
 } cpm_state_t;
 
 /* ── Trap handler (personality layer) ───────────────────────────────────── */

@@ -1202,6 +1202,27 @@ void cpm_run_process(void)
     /* Recover per-process state from subsys_data (set by exec_cpm) */
     /* cpm_exec_state_t layout: { z80_state_t z80; cpm_state_t cpm; } */
     z80_state_t *z80 = (z80_state_t *)p->subsys_data;
+    cpm_state_t *cpm = (cpm_state_t *)((char *)p->subsys_data
+                                        + sizeof(z80_state_t));
+
+    /* Switch TTY to raw mode: CP/M apps do their own echo and line
+     * editing, so we need characters delivered one-at-a-time without
+     * kernel echo or CR→LF translation.  Save original state for
+     * restoration on exit (via cpm_on_exit). */
+    {
+        struct { uint32_t iflag, oflag, cflag, lflag; uint8_t line; uint8_t cc[19]; } t;
+        sys_ioctl(0, 0x5401/*TCGETS*/, (long)&t);
+        cpm->saved_termios[0] = t.iflag;
+        cpm->saved_termios[1] = t.oflag;
+        cpm->saved_termios[2] = t.cflag;
+        cpm->saved_termios[3] = t.lflag;
+        cpm->saved_termios[4] = t.line;
+        __builtin_memcpy(cpm->saved_termios_cc, t.cc, 19);
+        cpm->termios_saved = 1;
+        t.lflag &= ~0x000Au;   /* clear ICANON (0x02) | ECHO (0x08) */
+        t.iflag &= ~0x0100u;   /* clear ICRNL */
+        sys_ioctl(0, 0x5402/*TCSETS*/, (long)&t);
+    }
 
     for (;;) {
         int do_step_stop = p->trace_step_pending != 0;
@@ -1236,12 +1257,40 @@ void cpm_run_process(void)
     /* not reached */
 }
 
+/*
+ * cpm_on_exit — restore terminal state before the process's fds are closed.
+ *
+ * Called from sys_exit() via the subsys on_exit hook.  This covers both
+ * normal exit (BDOS fn 0) and signal-killed paths (SIGINT, SIGKILL, etc.).
+ */
+static void cpm_on_exit(struct pcb *p)
+{
+    if (!p->subsys_data)
+        return;
+
+    cpm_state_t *cpm = (cpm_state_t *)((char *)p->subsys_data
+                                        + sizeof(z80_state_t));
+    if (!cpm->termios_saved)
+        return;
+
+    struct { uint32_t iflag, oflag, cflag, lflag; uint8_t line; uint8_t cc[19]; } t;
+    t.iflag = cpm->saved_termios[0];
+    t.oflag = cpm->saved_termios[1];
+    t.cflag = cpm->saved_termios[2];
+    t.lflag = cpm->saved_termios[3];
+    t.line  = (uint8_t)cpm->saved_termios[4];
+    __builtin_memcpy(t.cc, cpm->saved_termios_cc, 19);
+    sys_ioctl(0, 0x5402/*TCSETS*/, (long)&t);
+    cpm->termios_saved = 0;
+}
+
 /* Subsystem ops — CP/M processes don't need special crash/signal handling
  * since they run inside the Z80 emulator (faults are emulator bugs). */
 const subsys_ops_t cpm_subsys_ops = {
     .on_crash  = (void *)0,
     .on_signal = (void *)0,
     .on_init   = (void *)0,
+    .on_exit   = cpm_on_exit,
 };
 
 #endif /* PPAP_KERNEL */

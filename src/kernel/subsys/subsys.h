@@ -62,6 +62,16 @@ typedef struct subsys_ops {
      * @p:     newly exec'd process
      */
     void (*on_init)(struct pcb *p);
+
+    /*
+     * on_exit — called during sys_exit before fds are closed.
+     *
+     * Use this to restore terminal state or release subsystem resources
+     * that depend on open file descriptors.
+     *
+     * @p:     exiting process
+     */
+    void (*on_exit)(struct pcb *p);
 } subsys_ops_t;
 
 /* Maximum number of subsystem types (index into subsys_ops_table[]) */
