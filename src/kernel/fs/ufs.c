@@ -24,7 +24,7 @@
 #include "../vfs/vfs.h"
 #include "../blkdev/blkdev.h"
 #include "../spinlock.h"   /* SPIN_FS */
-#include "drivers/uart.h"
+#include "klog.h"
 #include "../errno.h"
 #include <stddef.h>
 
@@ -267,10 +267,8 @@ static int ufs_zero_block(ufs_priv_t *priv, uint32_t block)
 
 static void alloc_check(const char *name, int ok, int *pass, int *fail)
 {
-    uart_puts("TEST: ");
-    uart_puts(name);
-    if (ok) { uart_puts(" ... PASS\n"); (*pass)++; }
-    else    { uart_puts(" ... FAIL\n"); (*fail)++; }
+    if (ok) { klogf("TEST: %s ... PASS\n", name); (*pass)++; }
+    else    { klogf("TEST: %s ... FAIL\n", name); (*fail)++; }
 }
 
 void ufs_alloc_selftest(int *out_pass, int *out_fail)
@@ -1142,7 +1140,7 @@ static int ufs_unlink(vnode_t *dir, const char *name)
     ufs_priv_t *priv = (ufs_priv_t *)dir->fs_priv;
 
     /* Remove directory entry and get the child inode number */
-    uint32_t child_ino;
+    uint32_t child_ino = 0;
     int rc = ufs_dir_remove_entry(priv, dir, name, &child_ino);
     if (rc < 0) return rc;
 

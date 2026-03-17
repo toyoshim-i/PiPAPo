@@ -30,6 +30,7 @@
 
 #include "drivers/uart.h"
 #include <stdint.h>
+#include <stddef.h>
 
 /* ── IRQ guard: raise IPL to 7 around every IOCS call ──────────────────── */
 
@@ -314,59 +315,33 @@ static int vt_feed(char c)
 
 /* ── Public API ─────────────────────────────────────────────────────────── */
 
-void uart_init_console(void)
+void uart_init(void)
 {
     iocs_b_clr_st();
     cur_x = cur_y = 0;
 }
 
-void uart_putc(char c)
+int uart_putc(char c, void (*notify)(void))
 {
+    (void)notify;   /* IOCS is synchronous — putc never fails */
     if (uart_tvram_inhibit)
-        return;
+        return 1;
     uint16_t sr = ipl7_save();
     if (!vt_feed(c))
         iocs_b_putc(c);
     ipl7_restore(sr);
+    return 1;
 }
 
-void uart_puts(const char *s)
+int uart_serial_putc(char c, void (*notify)(void))
 {
-    uint16_t sr = ipl7_save();
-    while (*s) {
-        if (!vt_feed(*s)) {
-            if (*s == '\n')
-                iocs_b_putc('\r');
-            iocs_b_putc(*s);
-        }
-        s++;
-    }
-    ipl7_restore(sr);
-}
-
-void uart_serial_putc(char c)
-{
+    (void)notify;
     uint16_t sr = ipl7_save();
     if (c == '\n')
         iocs_out232c('\r');
     iocs_out232c(c);
     ipl7_restore(sr);
-}
-
-void uart_flush(void)
-{
-    /* IOCS _B_PUTC is synchronous — no TX buffer to flush */
-}
-
-void uart_reinit_133mhz(void)
-{
-    /* Not applicable — X68000 clock is fixed; IOCS needs no reinit */
-}
-
-void uart_init_irq(void)
-{
-    /* Phase X-2: enable MFP UART RX interrupt for non-blocking input.
-     * For now, polling via _B_KEYSNS is used. */
+    return 1;
 }
 
 int uart_getc(void)
@@ -464,49 +439,4 @@ int uart_serial_rx_avail_hw(void)
     return (*scc_rr0 & 0x01u) ? 1 : 0;
 }
 
-void uart_print_hex32(uint32_t v)
-{
-    uart_puts("0x");
-    for (int i = 7; i >= 0; i--) {
-        unsigned nibble = (v >> (i * 4)) & 0xFu;
-        uart_putc(nibble < 10u ? (char)('0' + nibble) : (char)('a' + nibble - 10u));
-    }
-}
 
-void uart_print_dec(uint32_t v)
-{
-    char buf[10];
-    int  i = 0;
-    if (v == 0u) { uart_putc('0'); return; }
-    while (v > 0u) { buf[i++] = (char)('0' + (v % 10u)); v /= 10u; }
-    while (--i >= 0) uart_putc(buf[i]);
-}
-
-/* Debug output — on X68000 use serial port (RS-232C via IOCS) */
-void uart_debug_putc(char c) { uart_serial_putc(c); }
-void uart_debug_puts(const char *s)
-{
-    while (*s) {
-        if (*s == '\n')
-            uart_serial_putc('\r');
-        uart_serial_putc(*s++);
-    }
-}
-void uart_debug_hex32(uint32_t v)
-{
-    uart_debug_puts("0x");
-    for (int i = 7; i >= 0; i--) {
-        unsigned nibble = (v >> (i * 4)) & 0xFu;
-        uart_debug_putc(nibble < 10u ? (char)('0' + nibble)
-                                     : (char)('a' + nibble - 10u));
-    }
-}
-void uart_debug_dec(uint32_t v)
-{
-    char buf[10];
-    int  i = 0;
-    if (v == 0u) { uart_debug_putc('0'); return; }
-    while (v > 0u) { buf[i++] = (char)('0' + (v % 10u)); v /= 10u; }
-    while (--i >= 0) uart_debug_putc(buf[i]);
-}
-void uart_debug_dump(void) { uart_debug_puts("[UART] (X68000 — IOCS serial)\n"); }

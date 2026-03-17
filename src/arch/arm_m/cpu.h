@@ -63,6 +63,9 @@
 /* ── NVIC — Nested Vectored Interrupt Controller ─────────────────────────── */
 
 #define NVIC_ISER  REG(0xE000E100u)  /* Interrupt Set-Enable Register     */
+#define NVIC_ICER  REG(0xE000E180u)  /* Interrupt Clear-Enable Register   */
+#define NVIC_ISPR  REG(0xE000E200u)  /* Interrupt Set-Pending Register    */
+#define NVIC_ICPR  REG(0xE000E280u)  /* Interrupt Clear-Pending Register  */
 
 /* ── Exception return values ─────────────────────────────────────────────── */
 

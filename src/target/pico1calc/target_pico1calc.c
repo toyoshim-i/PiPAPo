@@ -8,6 +8,7 @@
 #include "../target.h"
 #include "pico1calc.h"
 #include "drivers/uart.h"
+#include "drivers/arch/arm_m/uart_rp2040.h"
 #include "drivers/clock.h"
 #include "drivers/spi.h"
 #include "drivers/sd.h"
@@ -138,14 +139,13 @@ static const tty_backend_t fbcon_backend = {
 
 void target_early_init(void)
 {
-    uart_init_console();
+    uart_init();
     klog("PiPAPo booting... [pico1calc]\n");
     klog("UART: 115200 bps @ 12 MHz XOSC\n");
-    uart_flush();
     klog("PLL: configuring...\n");
-    uart_flush();
-    clock_init_pll();
-    uart_reinit_133mhz();
+    uart_tx_drain();           /* drain at 12 MHz; also disables UART0 NVIC */
+    clock_init_pll();          /* switch clk_sys to 133 MHz                 */
+    uart_reinit_133mhz();     /* set 133 MHz divisors                      */
     klog("System clock: 133 MHz\n");
     spi_init(400000);
     klog("SPI0: initialised at 400 kHz\n");
@@ -202,9 +202,7 @@ void target_late_init(void)
     klog("SD: disabled (SPI0 hang under investigation)\n");
 #endif
 
-    uart_flush();
-    uart_init_irq();
-    klog("UART: switched to interrupt-driven mode\n");
+    while (uart_getc() >= 0) ;   /* drain boot noise from RX ring */
     mpu_init();
     /* core1_launch moved to kmain — must run after init gets PID 1 */
 }

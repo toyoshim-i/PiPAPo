@@ -32,9 +32,12 @@ extern struct file tty_stderr;
 /* File operations table — shared by all TTY instances */
 extern const struct file_ops tty_fops;
 
-/* I/O backend descriptor — all fields required */
+/* I/O backend descriptor — all fields required unless noted */
 typedef struct {
-    void (*putc)(char c);       /* write one character                */
+    /* Enqueue one byte.  Returns 1 on success, 0 if full.
+     * If 0 and notify != NULL, the backend registers notify atomically
+     * and calls it (from ISR) when space becomes available. */
+    int  (*putc)(char c, void (*notify)(void));
     void (*flush)(void);        /* flush output (NULL if not needed)  */
     int  (*getc)(void);         /* read one character (-1 if none)    */
     int  (*rx_avail)(void);     /* non-zero if input available        */

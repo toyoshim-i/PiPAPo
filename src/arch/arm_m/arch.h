@@ -43,6 +43,23 @@ static inline void arch_irq_disable(void)
     __asm__ volatile ("cpsid i");
 }
 
+/* ── Preemption control ──────────────────────────────────────────────────── *
+ *
+ * Disable/enable the preemption timer only (SysTick TICKINT).
+ * Other interrupts (UART, etc.) remain active.  Used by klog to hold
+ * the UART spinlock without blocking ISR-driven TX ring drain.
+ */
+
+static inline void arch_preempt_disable(void)
+{
+    SYST_CSR &= ~SYST_CSR_TICKINT;
+}
+
+static inline void arch_preempt_enable(void)
+{
+    SYST_CSR |= SYST_CSR_TICKINT;
+}
+
 /* ── Context switch trigger ───────────────────────────────────────────────── */
 
 /* Pend PendSV exception — triggers a context switch at the next opportunity. */

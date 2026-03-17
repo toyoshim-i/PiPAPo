@@ -19,8 +19,10 @@
 /* Initialise console in 40×20 mode, clear screen. */
 void fbcon_init(void);
 
-/* Write one character (handles \n, \r, \b, \t, scroll). */
-void fbcon_putc(char c);
+/* Write one character (handles \n, \r, \b, \t, scroll).
+ * Always succeeds (returns 1); notify is ignored.
+ * Signature matches tty_backend_t.putc for direct use as a backend. */
+int fbcon_putc(char c, void (*notify)(void));
 
 /* Write a null-terminated string. */
 void fbcon_puts(const char *s);

@@ -64,6 +64,22 @@ static inline void arch_irq_disable(void)
     );
 }
 
+/* ── Preemption control ──────────────────────────────────────────────────
+ *
+ * On single-core 68k, disabling all IRQs is sufficient and safe —
+ * putc is synchronous (never blocks), so no deadlock risk.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+static inline void arch_preempt_disable(void)
+{
+    arch_irq_disable();
+}
+
+static inline void arch_preempt_enable(void)
+{
+    arch_irq_enable();
+}
+
 /* ── Context switch trigger ───────────────────────────────────────────────
  *
  * On 68k there is no PendSV equivalent.  We set a flag that the

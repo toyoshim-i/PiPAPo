@@ -22,8 +22,7 @@
  * data written to DATA appears on the QEMU serial output immediately.
  * The init steps are included for correctness on real mps2 hardware.
  *
- * uart_flush() and uart_reinit_133mhz() are no-ops: QEMU has no clock
- * switch and the CMSDK UART has no busy flag.
+ * No clock switch or baud rate reconfiguration is needed on QEMU.
  */
 
 #include "drivers/uart.h"
@@ -65,10 +64,9 @@
 #define UART_BAUDDIV_115200  217u
 
 /* ==========================================================================
- * RX ring buffer — used after uart_init_irq()
+ * RX ring buffer
  * ========================================================================== */
 
-static int              irq_mode;              /* 0 = polling, 1 = IRQ     */
 static char             rx_buf[UART_RX_SIZE];
 static volatile uint8_t rx_head, rx_tail;
 
@@ -76,49 +74,21 @@ static volatile uint8_t rx_head, rx_tail;
  * Public API
  * ========================================================================== */
 
-void uart_init_console(void)
+void uart_init(void)
 {
     UART_BAUDDIV = UART_BAUDDIV_115200;
-    UART_CTRL    = UART_CTRL_TX_EN | UART_CTRL_RX_EN;
-}
-
-void uart_putc(char c)
-{
-    /* QEMU CMSDK UART: TXFULL is always 0 in the emulator, so no polling
-     * needed.  Skipping the busy-wait avoids potential deadlocks when
-     * called from SVC handler context (e.g., user-space sys_write). */
-    UART_DATA = (uint32_t)(unsigned char)c;
-}
-
-void uart_puts(const char *s)
-{
-    while (*s) {
-        if (*s == '\n')
-            uart_putc('\r');
-        uart_putc(*s++);
-    }
-}
-
-void uart_flush(void)
-{
-    /* CMSDK UART has no shift-register busy flag; TX is synchronous in QEMU */
-}
-
-void uart_reinit_133mhz(void)
-{
-    /* No clock change in QEMU — baud rate stays at 25 MHz / 217 */
-}
-
-void uart_init_irq(void)
-{
-    /* Enable RX interrupt in CMSDK UART CTRL register.
-     * TX is already effectively non-blocking (TXFULL never set in QEMU). */
-    UART_CTRL = UART_CTRL_TX_EN | UART_CTRL_RX_EN | UART_CTRL_RX_INT_EN;
+    UART_CTRL    = UART_CTRL_TX_EN | UART_CTRL_RX_EN | UART_CTRL_RX_INT_EN;
 
     /* Enable UART0 RX IRQ in NVIC (IRQ 0 on mps2-an500) */
     NVIC_ISER = UART0RX_IRQ_BIT;
+}
 
-    irq_mode = 1;
+int uart_putc(char c, void (*notify)(void))
+{
+    (void)notify;   /* polling — putc never fails, no callback needed */
+    /* QEMU CMSDK UART: TXFULL is always 0 in the emulator — always succeeds */
+    UART_DATA = (uint32_t)(unsigned char)c;
+    return 1;
 }
 
 /* UART0 RX interrupt handler — CMSDK UART0 RX is IRQ 0 on mps2-an500.
@@ -148,41 +118,16 @@ void UART0RX_IRQ_Handler(void)
 
 int uart_getc(void)
 {
-    if (irq_mode) {
-        /* IRQ mode: read from ring buffer filled by UART0RX_IRQ_Handler */
-        if (rx_head == rx_tail)
-            return -1;
-        int c = (unsigned char)rx_buf[rx_tail & (UART_RX_SIZE - 1u)];
-        rx_tail++;
-        return c;
-    }
-    /* Polling mode (before uart_init_irq) */
-    if (UART_STATE & UART_STATE_RXFULL)
-        return (int)(unsigned char)UART_DATA;
-    return -1;
+    if (rx_head == rx_tail)
+        return -1;
+    int c = (unsigned char)rx_buf[rx_tail & (UART_RX_SIZE - 1u)];
+    rx_tail++;
+    return c;
 }
 
 int uart_rx_avail(void)
 {
-    if (irq_mode)
-        return rx_head != rx_tail;
-    return (UART_STATE & UART_STATE_RXFULL) ? 1 : 0;
+    return rx_head != rx_tail;
 }
 
-void uart_print_hex32(uint32_t v)
-{
-    uart_puts("0x");
-    for (int i = 7; i >= 0; i--) {
-        unsigned nibble = (v >> (i * 4)) & 0xFu;
-        uart_putc(nibble < 10u ? (char)('0' + nibble) : (char)('a' + nibble - 10u));
-    }
-}
 
-void uart_print_dec(uint32_t v)
-{
-    char buf[10];
-    int  i = 0;
-    if (v == 0u) { uart_putc('0'); return; }
-    while (v > 0u) { buf[i++] = (char)('0' + (v % 10u)); v /= 10u; }
-    while (--i >= 0) uart_putc(buf[i]);
-}

@@ -22,7 +22,7 @@ extern const uint8_t __fatimg_end[];
 
 void target_early_init(void)
 {
-    uart_init_console();
+    uart_init();
     klog("PiPAPo booting... [qemu_arm]\n");
     klog("UART: CMSDK UART0 @ 0x40004000\n");
     klog("Clock: emulated (no PLL)\n");
@@ -55,8 +55,6 @@ void target_late_init(void)
             klog("BLKDEV: page_alloc failed\n");
         }
     }
-    /* Enable UART RX interrupts so tty_rx_notify() wakes blocked readers */
-    uart_init_irq();
     /* No MPU, no Core 1 on QEMU */
 }
 

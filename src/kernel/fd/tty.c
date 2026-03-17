@@ -92,12 +92,15 @@ struct winsize {
 
 typedef struct {
     /* I/O backend callbacks */
-    void (*out)(char c);
+    int  (*out)(char c, void (*notify)(void));  /* 1=ok, 0=full */
     void (*out_flush)(void);
     int  (*in)(void);
     int  (*in_avail)(void);
     int  (*win_cols)(void);
     int  (*win_rows)(void);
+
+    /* TX-ready callback for this TTY — passed to out() on blocking */
+    void (*tx_wakeup)(void);
 
     /* Line discipline state */
     char line_buf[LINE_BUF_SIZE];
@@ -112,17 +115,24 @@ typedef struct {
 
     /* Session leader PID that owns this TTY (set by TIOCSCTTY) */
     pid_t session;
+
+    /* TX write progress — tracks partial writes across sleep/wake cycles.
+     * When SVC restart replays the original syscall args, we resume from
+     * tx_user_pos instead of re-sending already-enqueued bytes. */
+    const char *tx_user_buf;   /* current write source (NULL = no active write) */
+    size_t      tx_user_pos;   /* bytes already enqueued */
+    size_t      tx_user_len;   /* total write length */
 } tty_dev_t;
 
 static tty_dev_t tty_devs[TTY_MAX] = {
     [TTY_SERIAL] = {
-        .out       = uart_putc,
-        .out_flush = NULL,
-        .in        = uart_getc,
-        .in_avail  = uart_rx_avail,
-        .win_cols  = NULL,
-        .win_rows  = NULL,
-        .termios   = {
+        .out        = uart_putc,
+        .out_flush  = NULL,
+        .in         = uart_getc,
+        .in_avail   = uart_rx_avail,
+        .win_cols   = NULL,
+        .win_rows   = NULL,
+        .termios    = {
             .c_iflag = ICRNL | IXON,
             .c_oflag = OPOST | ONLCR,
             .c_cflag = CFLAG_DEFAULT,
@@ -164,6 +174,11 @@ static int console_tty_idx = TTY_SERIAL;
 
 /* ── Backend setup ─────────────────────────────────────────────────────────── */
 
+/* TX-ready callbacks — one per TTY, called from the backend ISR */
+static void tx_ready_0(void) { sched_wakeup(&tty_devs[0].tx_user_buf); }
+static void tx_ready_1(void) { sched_wakeup(&tty_devs[1].tx_user_buf); }
+static void (*const tx_ready_fn[TTY_MAX])(void) = { tx_ready_0, tx_ready_1 };
+
 void tty_set_backend(int idx, const tty_backend_t *be)
 {
     if ((unsigned)idx >= TTY_MAX)
@@ -175,6 +190,7 @@ void tty_set_backend(int idx, const tty_backend_t *be)
     t->in_avail  = be->rx_avail;
     t->win_cols  = be->get_cols;
     t->win_rows  = be->get_rows;
+    t->tx_wakeup = tx_ready_fn[idx];
 }
 
 void *tty_get_dev(int idx)
@@ -199,10 +215,20 @@ void tty_set_console(int idx)
 
 void *tty_get_console_dev(void)
 {
+    /* Initialize tx_wakeup for the statically-initialized TTY_SERIAL. */
+    tty_devs[TTY_SERIAL].tx_wakeup = tx_ready_0;
     return tty_get_dev(console_tty_idx);
 }
 
-/* ── Output helper (putc + optional flush) ────────────────────────────────── */
+/* ── Output helpers (echo + flush) ─────────────────────────────────────────── */
+
+/* Echo one character — retries if the backend is full.
+ * Echo is single-character so busy-spin is acceptable. */
+static inline void dev_echo(tty_dev_t *t, char c)
+{
+    while (!t->out(c, NULL))
+        ;
+}
 
 static inline void dev_echo_flush(tty_dev_t *t)
 {
@@ -246,7 +272,14 @@ static void dev_send_signal(tty_dev_t *t, int sig)
         sched_yield();
 }
 
-/* ── tty_write ─────────────────────────────────────────────────────────────── */
+/* ── tty_write ─────────────────────────────────────────────────────────────── *
+ *
+ * Calls t->out(c, notify) per character.  If the backend returns 0 (full),
+ * the TX-ready callback is registered atomically inside that same putc call.
+ * We save progress and sleep (PROC_BLOCKED); the ISR fires the callback
+ * which wakes us.  SVC restart replays the original syscall args; we resume
+ * from tx_user_pos to avoid re-sending bytes already enqueued.
+ */
 
 static long tty_write(struct file *f, const char *buf, size_t n)
 {
@@ -257,14 +290,50 @@ static long tty_write(struct file *f, const char *buf, size_t n)
         return (long)n;   /* no backend — silently discard */
 
     int opost = (t->termios.c_oflag & OPOST) != 0;
+    int onlcr = opost && (t->termios.c_oflag & ONLCR);
 
-    for (size_t i = 0u; i < n; i++) {
-        if (opost && buf[i] == '\n' && (t->termios.c_oflag & ONLCR))
-            t->out('\r');    /* NL → CR+NL when OPOST|ONLCR set */
-        t->out(buf[i]);
+    /* Resume tracking: if SVC restart replayed with the same args,
+     * pick up where we left off.  Otherwise start fresh. */
+    size_t pos;
+    if (t->tx_user_buf == buf && t->tx_user_len == n)
+        pos = t->tx_user_pos;
+    else
+        pos = 0;
+
+    while (pos < n) {
+        /* OPOST: expand \n → \r\n */
+        if (onlcr && buf[pos] == '\n') {
+            if (!t->out('\r', t->tx_wakeup))
+                goto block;
+        }
+        if (!t->out(buf[pos], t->tx_wakeup))
+            goto block;
+        pos++;
     }
+
+    /* All data written — clear resume state */
+    t->tx_user_buf = NULL;
     dev_echo_flush(t);
     return (long)n;
+
+block:
+    /* Backend full — callback already registered atomically by putc.
+     * Save progress and sleep. */
+    t->tx_user_buf = buf;
+    t->tx_user_pos = pos;
+    t->tx_user_len = n;
+
+    /* Check for pending signal before blocking */
+    if (current->sig_pending & ~current->sig_blocked) {
+        t->tx_user_buf = NULL;
+        return pos > 0 ? (long)pos : -(long)EINTR;
+    }
+
+    current->wait_channel = &t->tx_user_buf;
+    current->state = PROC_BLOCKED;
+    set_svc_restart();
+    sched_yield();
+    return 0;   /* ignored — SVC restores original args */
 }
 
 /* ── tty_read: canonical (cooked) mode ─────────────────────────────────────── */
@@ -296,10 +365,10 @@ static long tty_read_canon(tty_dev_t *t, char *buf, size_t n)
                 dev_send_signal(t, SIGINT);
                 /* Discard line buffer, echo ^C */
                 if (t->termios.c_lflag & ECHO) {
-                    t->out('^');
-                    t->out('C');
-                    t->out('\r');
-                    t->out('\n');
+                    dev_echo(t, '^');
+                    dev_echo(t, 'C');
+                    dev_echo(t, '\r');
+                    dev_echo(t, '\n');
                     dev_echo_flush(t);
                 }
                 t->line_pos = 0;
@@ -312,9 +381,9 @@ static long tty_read_canon(tty_dev_t *t, char *buf, size_t n)
             if (t->line_pos > 0) {
                 t->line_pos--;
                 if (t->termios.c_lflag & ECHO) {
-                    t->out('\b');
-                    t->out(' ');
-                    t->out('\b');
+                    dev_echo(t, '\b');
+                    dev_echo(t, ' ');
+                    dev_echo(t, '\b');
                     dev_echo_flush(t);
                 }
             }
@@ -326,9 +395,9 @@ static long tty_read_canon(tty_dev_t *t, char *buf, size_t n)
             while (t->line_pos > 0) {
                 t->line_pos--;
                 if (t->termios.c_lflag & ECHO) {
-                    t->out('\b');
-                    t->out(' ');
-                    t->out('\b');
+                    dev_echo(t, '\b');
+                    dev_echo(t, ' ');
+                    dev_echo(t, '\b');
                 }
             }
             dev_echo_flush(t);
@@ -348,8 +417,8 @@ static long tty_read_canon(tty_dev_t *t, char *buf, size_t n)
             if (t->line_pos < LINE_BUF_SIZE)
                 t->line_buf[t->line_pos++] = (char)c;
             if (t->termios.c_lflag & ECHO) {
-                t->out('\r');
-                t->out('\n');
+                dev_echo(t, '\r');
+                dev_echo(t, '\n');
                 dev_echo_flush(t);
             }
             t->line_ready = 1;
@@ -360,12 +429,12 @@ static long tty_read_canon(tty_dev_t *t, char *buf, size_t n)
         if (t->line_pos < LINE_BUF_SIZE) {
             t->line_buf[t->line_pos++] = (char)c;
             if (t->termios.c_lflag & ECHO) {
-                t->out((char)c);
+                dev_echo(t, (char)c);
                 dev_echo_flush(t);
             }
         } else {
             /* Line buffer full — ring bell to notify user */
-            t->out('\a');
+            dev_echo(t, '\a');
             dev_echo_flush(t);
         }
     }
@@ -422,8 +491,8 @@ static long tty_read_raw(tty_dev_t *t, char *buf, size_t n)
     if (t->termios.c_lflag & ECHO) {
         if (c == '\n' && (t->termios.c_oflag & OPOST) &&
             (t->termios.c_oflag & ONLCR))
-            t->out('\r');
-        t->out((char)c);
+            dev_echo(t, '\r');
+        dev_echo(t, (char)c);
         dev_echo_flush(t);
     }
 
@@ -557,10 +626,10 @@ int tty_signal_intr(int idx)
     /* Echo ^C + newline (like Linux n_tty when ECHO/ECHOCTL are set) */
     if (t->termios.c_lflag & ECHO) {
         if (t->out) {
-            t->out('^');
-            t->out('C');
-            t->out('\r');
-            t->out('\n');
+            dev_echo(t, '^');
+            dev_echo(t, 'C');
+            dev_echo(t, '\r');
+            dev_echo(t, '\n');
         }
         dev_echo_flush(t);
     }

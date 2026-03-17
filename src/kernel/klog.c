@@ -1,8 +1,10 @@
 /*
  * klog.c — Atomic kernel logging (SMP-safe)
  *
- * klog() and klogf() acquire SPIN_UART for the entire output sequence,
- * ensuring no interleaving from the other core.
+ * klog() and klogf() disable preemption and acquire SPIN_UART for the
+ * entire output sequence, ensuring no interleaving from the other core.
+ * Only the preemption timer is disabled — the UART ISR remains active
+ * so it can drain the TX ring while klog spins on a full ring.
  *
  * An optional mirror sink (e.g. fbcon for LCD) can be registered via
  * klog_set_mirror().  When set, output goes to both UART and the mirror.
@@ -17,35 +19,56 @@
 #include "klog.h"
 #include "spinlock.h"
 #include "drivers/uart.h"
+#include "arch/arch.h"
 #include <stdarg.h>
 
 /* ── Mirror output sink ──────────────────────────────────────────────────── */
 
-static void (*mirror_putc)(char c);
+static int (*mirror_putc)(char c, void (*notify)(void));
 static void (*mirror_flush)(void);
 
-void klog_set_mirror(void (*putc)(char c), void (*flush)(void))
+void klog_set_mirror(int (*putc)(char c, void (*notify)(void)),
+                     void (*flush)(void))
 {
     mirror_putc  = putc;
     mirror_flush = flush;
+}
+
+/* ── Lock helpers ────────────────────────────────────────────────────────── *
+ *
+ * Disable preemption (SysTick TICKINT on ARM, all IRQs on m68k) then
+ * acquire the SIO hardware spinlock.  The UART ISR stays active on ARM
+ * so it can drain the TX ring asynchronously.
+ */
+
+static inline void klog_lock(void)
+{
+    arch_preempt_disable();
+    spin_lock(SPIN_UART);
+}
+
+static inline void klog_unlock(void)
+{
+    spin_unlock(SPIN_UART);
+    arch_preempt_enable();
 }
 
 /* ── Internal helpers (UART + mirror) ────────────────────────────────────── */
 
 static void klog_putc(char c)
 {
-    uart_putc(c);
+    while (!uart_putc(c, NULL))
+        ;   /* ISR drains the ring — spin until space available */
     if (mirror_putc)
-        mirror_putc(c);
+        mirror_putc(c, NULL);
 }
 
 static void klog_puts_raw(const char *s)
 {
-    /* uart_puts() handles \n → \r\n internally */
-    uart_puts(s);
-    if (mirror_putc) {
-        while (*s)
-            mirror_putc(*s++);
+    while (*s) {
+        if (*s == '\n')
+            klog_putc('\r');
+        klog_putc(*s++);
     }
 }
 
@@ -73,18 +96,16 @@ static void klog_print_dec(uint32_t v)
 
 void klog(const char *msg)
 {
-    uint32_t s = spin_lock_irqsave(SPIN_UART);
+    klog_lock();
     klog_puts_raw(msg);
-    spin_unlock_irqrestore(SPIN_UART, s);
-    /* Flush mirror (LCD) outside the critical section — SPI transfer is slow
-     * and holding SPIN_UART with IRQs off would starve the UART RX FIFO. */
+    klog_unlock();
     if (mirror_flush)
         mirror_flush();
 }
 
 void klogf(const char *fmt, ...)
 {
-    uint32_t saved = spin_lock_irqsave(SPIN_UART);
+    klog_lock();
 
     va_list ap;
     va_start(ap, fmt);
@@ -135,7 +156,7 @@ void klogf(const char *fmt, ...)
     }
 done:
     va_end(ap);
-    spin_unlock_irqrestore(SPIN_UART, saved);
+    klog_unlock();
     if (mirror_flush)
         mirror_flush();
 }

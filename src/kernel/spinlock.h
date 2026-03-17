@@ -104,4 +104,26 @@ static inline void spin_unlock_irqrestore(uint32_t lock_num, uint32_t saved)
     arch_irq_restore(saved);
 }
 
+/* Bare lock/unlock — no IRQ state change.
+ * Use when the caller manages interrupt masking separately
+ * (e.g. klog disables only the preemption timer). */
+static inline void spin_lock(uint32_t lock_num)
+{
+    if (spin_have_hw()) {
+        volatile uint32_t *lock =
+            (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
+        while (!*lock)
+            ;
+    }
+}
+
+static inline void spin_unlock(uint32_t lock_num)
+{
+    if (spin_have_hw()) {
+        volatile uint32_t *lock =
+            (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
+        *lock = 0u;
+    }
+}
+
 #endif /* PPAP_SPINLOCK_H */

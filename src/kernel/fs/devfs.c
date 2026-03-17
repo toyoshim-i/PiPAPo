@@ -77,7 +77,7 @@ static long devtty_write(const void *buf, size_t n, uint32_t off)
     (void)off;
     const uint8_t *p = (const uint8_t *)buf;
     for (size_t i = 0; i < n; i++)
-        uart_putc((char)p[i]);
+        uart_putc((char)p[i], NULL);
     return (long)n;
 }
 

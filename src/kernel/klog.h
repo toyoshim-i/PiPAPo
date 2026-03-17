@@ -41,6 +41,7 @@ void klogf(const char *fmt, ...);
  * When set, all klog/klogf output is sent to both UART and the mirror.
  * UART always remains the primary debug channel.
  */
-void klog_set_mirror(void (*putc)(char c), void (*flush)(void));
+void klog_set_mirror(int (*putc)(char c, void (*notify)(void)),
+                     void (*flush)(void));
 
 #endif /* PPAP_KLOG_H */

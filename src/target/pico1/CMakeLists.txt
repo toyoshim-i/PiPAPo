@@ -33,7 +33,7 @@ add_executable(ppap_pico1
     ${KERNEL_COMMON_SOURCES}
     ${PPAP_ROOT}/src/boot/stage1.S
     ${CMAKE_CURRENT_SOURCE_DIR}/target_pico1.c
-    ${PPAP_ROOT}/src/drivers/uart.c
+    ${PPAP_ROOT}/src/drivers/arch/arm_m/uart_rp2040.c
     ${PPAP_ROOT}/src/drivers/clock.c
 )
 

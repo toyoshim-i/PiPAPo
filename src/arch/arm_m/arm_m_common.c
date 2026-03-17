@@ -13,7 +13,6 @@
 #include "../kernel/proc/proc.h"
 #include "../kernel/klog.h"
 #include "../kernel/syscall/syscall.h"
-#include "../drivers/uart.h"
 
 /* POSIX signal numbers */
 #define SIGILL  4
@@ -52,21 +51,11 @@ static int classify_fault(uint32_t pc)
 
 /*
  * kernel_hardfault_dump — called from HardFault_Handler when fault is on MSP.
- * Prints faulting PC and LR to UART (bypasses klog to avoid spinlock issues).
  */
 void kernel_hardfault_dump(uint32_t *msp_frame)
 {
-    extern void uart_puts(const char *s);
-    extern void uart_print_hex32(uint32_t v);
     extern uint32_t core_id(void);
-
-    uart_puts("\r\nKHF PC=");
-    uart_print_hex32(msp_frame[6]);
-    uart_puts(" LR=");
-    uart_print_hex32(msp_frame[5]);
-    uart_puts(" C");
-    uart_putc((char)('0' + core_id()));
-    uart_puts("\r\n");
+    klogf("\nKHF PC=%x LR=%x C%u", msp_frame[6], msp_frame[5], core_id());
 }
 
 /*
@@ -116,11 +105,9 @@ void arm_crash_handler(uint32_t *psp_frame, uint32_t *callee_regs)
     klogf("  r8=%x r9=%x r10=%x r11=%x",
           callee_regs[0], callee_regs[1], callee_regs[2], callee_regs[3]);
 
-    /* Kernel fault: process 0 is the idle thread running on PSP.
-     * Flush UART so the full crash report is visible before halting. */
+    /* Kernel fault: process 0 is the idle thread running on PSP. */
     if (!p || p->pid == 0) {
         klogf("  Kernel fault — halting.\n");
-        uart_flush();
         while (1) __asm volatile("" ::: "memory");
     }
 

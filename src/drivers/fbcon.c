@@ -395,8 +395,9 @@ void fbcon_init(void)
     fbcon_flush();   /* render the initial blank screen now */
 }
 
-void fbcon_putc(char c)
+int fbcon_putc(char c, void (*notify)(void))
 {
+    (void)notify;
     uint8_t ch = (uint8_t)c;
 
     switch (vt_state) {
@@ -467,12 +468,14 @@ void fbcon_putc(char c)
         }
         break;
     }
+    flush_pending = 1;
+    return 1;
 }
 
 void fbcon_puts(const char *s)
 {
     while (*s)
-        fbcon_putc(*s++);
+        fbcon_putc(*s++, NULL);
 }
 
 void fbcon_flush(void)

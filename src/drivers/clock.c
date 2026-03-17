@@ -3,7 +3,7 @@
  *
  * Switches the system clock from 12 MHz XOSC to 133 MHz via PLL_SYS.
  * Prerequisites: XOSC must be running and clk_ref must already be on XOSC
- * (uart_init_console() handles this).
+ * (uart_init() handles this).
  *
  * PLL_SYS target: 133 MHz
  *   Reference:   XOSC = 12 MHz, REFDIV = 1 → ref = 12 MHz
@@ -106,4 +106,11 @@ void clock_init_pll(void)
     t = PLL_TIMEOUT;
     while (!(CLK_SYS_SELECTED & (1u << CLK_SYS_SRC_AUX)) && --t)
         ;
+
+    /* Step 9: Reconfigure clk_peri for the new clock speed.
+     * clk_peri has no glitchless mux — must disable before the source
+     * frequency changes, then re-enable.  AUXSRC=0 selects clk_sys
+     * which is now 133 MHz. */
+    CLK_PERI_CTRL = 0;              /* disable */
+    CLK_PERI_CTRL = CLK_PERI_ENABLE; /* re-enable on clk_sys = 133 MHz */
 }

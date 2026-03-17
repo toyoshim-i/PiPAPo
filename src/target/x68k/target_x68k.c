@@ -151,11 +151,13 @@ void target_early_init(void)
         d0 = 0x20u; d1 = (uint32_t)'o';
         asm volatile("trap #15" : "+r"(d0) : "r"(d1) : "a0", "a1", "memory");
     }
-    uart_init_console();
+    uart_init();
     klog(" booting... [x68k]\n");
     klog("Console: X68000 IOCS (TVRAM)\n");
     klog("Phase X-2: preemptive scheduling (MFP Timer-C), embedded romfs\n");
 }
+
+extern int uart_serial_putc(char c, void (*notify)(void));
 
 void target_late_init(void)
 {
@@ -165,12 +167,10 @@ void target_late_init(void)
     timer_init();
 
     /* Set up dual-TTY: TTY_DISPLAY = TVRAM (primary), TTY_SERIAL = RS-232C */
-    extern void uart_serial_putc(char c);
     extern int  uart_serial_getc(void);
     extern int  uart_serial_rx_avail(void);
     static const tty_backend_t tvram_be = {
         .putc     = uart_putc,
-        .flush    = NULL,
         .getc     = uart_getc,
         .rx_avail = uart_rx_avail,
         .get_cols = NULL,
@@ -178,7 +178,6 @@ void target_late_init(void)
     };
     static const tty_backend_t serial_be = {
         .putc     = uart_serial_putc,
-        .flush    = NULL,
         .getc     = uart_serial_getc,
         .rx_avail = uart_serial_rx_avail,
         .get_cols = NULL,

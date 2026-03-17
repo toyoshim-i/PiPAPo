@@ -62,7 +62,7 @@ _vectors:
     .rept 18
     .word Default_Handler
     .endr
-    .word UART0_IRQ_Handler     @ IRQ20 = UART0 on RP2040 (uart.c — uart_init_irq arms it)
+    .word UART0_IRQ_Handler     @ IRQ20 = UART0 on RP2040 (uart.c — uart_init arms it)
     @ IRQ21-IRQ25
     .rept 5
     .word Default_Handler

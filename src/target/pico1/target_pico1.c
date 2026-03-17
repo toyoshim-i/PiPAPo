@@ -8,6 +8,7 @@
 #include "../target.h"
 #include "pico1.h"
 #include "drivers/uart.h"
+#include "drivers/arch/arm_m/uart_rp2040.h"
 #include "drivers/clock.h"
 #include "klog.h"
 #include "mm/mpu.h"
@@ -18,12 +19,12 @@
 
 void target_early_init(void)
 {
-    uart_init_console();
+    uart_init();
     klog("PiPAPo booting... [pico1]\n");
     klog("UART: 115200 bps @ 12 MHz XOSC\n");
-    uart_flush();
-    clock_init_pll();
-    uart_reinit_133mhz();
+    uart_tx_drain();           /* drain at 12 MHz; also disables UART0 NVIC */
+    clock_init_pll();          /* switch clk_sys to 133 MHz                 */
+    uart_reinit_133mhz();     /* set 133 MHz divisors; re-enables NVIC     */
     klog("System clock: 133 MHz\n");
     /* No SPI init — pico1 has no SD card slot */
 }
@@ -31,9 +32,7 @@ void target_early_init(void)
 void target_late_init(void)
 {
     /* No SD card to initialize */
-    uart_flush();
-    uart_init_irq();
-    klog("UART: switched to interrupt-driven mode\n");
+    while (uart_getc() >= 0) ;   /* drain boot noise from RX ring */
     mpu_init();
     /* core1_launch moved to kmain — must run after init gets PID 1 */
 }
