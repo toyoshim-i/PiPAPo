@@ -92,30 +92,30 @@ The design is split into two layers:
 2. **Userland TTY write** — a Unix-style blocking write that enqueues to
    a per-TTY output buffer and sleeps when the buffer is full.
 
-Both layers share a **common stream interface** for the underlying
-output devices (UART, fbcon).
+Both layers share a **common TTY backend interface** for the underlying
+output devices (`tty_uart`, `tty_fbcon`).
 
-### 3.1. Common Stream Interface
+### 3.1. Common TTY Backend Interface
 
-Each output backend (UART, fbcon) exposes a uniform interface:
+Each output backend exposes a uniform interface:
 
 ```c
 /* Try to enqueue data into the backend's internal buffer.
  * Returns the number of bytes actually accepted (0..n).
  * Never blocks — returns immediately even if no space. */
-size_t stream_write(const void *buf, size_t n);
+size_t tty_xx_write(const void *buf, size_t n);
 
 /* Consume/drain: move data from the internal buffer toward the
  * hardware (e.g. ring → UART FIFO).  Called to make room when
  * the buffer is full.  Returns the number of bytes drained. */
-size_t stream_drain(void);
+size_t tty_xx_drain(void);
 ```
 
-For **UART**:
-- `stream_write()` copies bytes into the UART TX ring buffer. Returns
-  the number of bytes accepted (may be less than `n` if the ring is
-  full).
-- `stream_drain()` moves bytes from the ring into the UART HW FIFO.
+For **tty_uart**:
+- `tty_uart_write()` copies bytes into the UART TX ring buffer.
+  Returns the number of bytes accepted (may be less than `n` if the
+  ring is full).
+- `tty_uart_drain()` moves bytes from the ring into the UART HW FIFO.
   Returns how many bytes were moved.
 - Both functions must be called inside a critical section
   (`SPIN_TXRING`) because they modify the ring's head/tail indices.
@@ -124,16 +124,16 @@ For **UART**:
   lock-owning thread is interrupted by an ISR that also tries to
   acquire the same lock).
 
-For **fbcon**:
-- `stream_write()` calls `fbcon_putc()` for each byte and always
+For **tty_fbcon**:
+- `tty_fbcon_write()` calls `fbcon_putc()` for each byte and always
   accepts all data (the cell grid is the buffer, and it never fills up).
-- `stream_drain()` is a no-op (returns 0) — fbcon does not have a
+- `tty_fbcon_drain()` is a no-op (returns 0) — fbcon does not have a
   hardware output queue.
 
 ### 3.2. Reliable klog
 
 `klog` / `klogf` must guarantee that every character of the message is
-enqueued into the underlying stream's buffer before returning.  This is
+enqueued into the backend's buffer before returning.  This is
 critical for kernel diagnostics — a crash immediately after a klog call
 must not lose the message.
 
@@ -144,8 +144,8 @@ klog(message):
     saved = spin_lock_irqsave(SPIN_UART)
 
     for each character c in message:
-        while stream_write(&c, 1) == 0:
-            stream_drain()          ← make room, then retry
+        while tty_uart_write(&c, 1) == 0:
+            tty_uart_drain()        ← make room, then retry
         mirror_putc(c)              ← also send to fbcon if registered
 
     spin_unlock_irqrestore(SPIN_UART, saved)
@@ -156,8 +156,8 @@ Key properties:
 
 - The entire message is emitted inside a **single critical section**.
   No other thread or ISR can interleave output or preempt the caller.
-- If the stream's buffer is full, klog calls `stream_drain()` to push
-  data toward the hardware, then retries.  This loop runs with
+- If the backend's buffer is full, klog calls `tty_uart_drain()` to
+  push data toward the hardware, then retries.  This loop runs with
   interrupts disabled, so the drain must be a non-blocking poll
   (move ring → FIFO whenever the FIFO has room).
 - klog does **not** need to wait for the hardware to finish
@@ -171,7 +171,7 @@ Key properties:
 This replaces the current `uart_putc`-per-character approach inside
 klog.  The current klog already holds `SPIN_UART` for the entire call,
 so the change is replacing per-character `uart_putc()` calls with
-`stream_write()` + `stream_drain()` retry loop.
+`tty_uart_write()` + `tty_uart_drain()` retry loop.
 
 ### 3.3. Userland TTY Write — Blocking I/O
 
@@ -182,12 +182,12 @@ This follows the standard Unix I/O model:
 tty_write(buf, n):
     written = 0
     while written < n:
-        accepted = stream_write(buf + written, n - written)
+        accepted = tty_xx_write(buf + written, n - written)
         written += accepted
 
         if written < n:
-            kick backend drain (arm TXIM for UART)
-            sleep until stream signals "room available"
+            kick backend drain (arm TXIM for tty_uart)
+            sleep until backend signals "room available"
             ← process is marked PROC_BLOCKED
             ← woken by ISR/drain when buffer has space
             ← process is marked PROC_RUNNABLE, retries
@@ -197,7 +197,7 @@ tty_write(buf, n):
 
 Key properties:
 
-- `stream_write()` returns the number of bytes accepted immediately.
+- `tty_xx_write()` returns the number of bytes accepted immediately.
   It does **not** block.
 - If not all data was accepted (buffer full), the caller sleeps.  The
   backend raises an event when it has drained enough data to make room.
@@ -205,12 +205,12 @@ Key properties:
   scheduled timeslice the process retries the remaining data.
 - This is the standard Unix blocking I/O pattern: write what you can,
   sleep when full, retry on wakeup.
-- The `stream_write()` call from process context also uses a critical
+- The `tty_xx_write()` call from process context also uses a critical
   section (`SPIN_TXRING`) to safely modify the ring indices, just like
   the klog path.
 
-For tty1 (fbcon), `stream_write()` always accepts all data, so the
-process never sleeps.
+For tty1 (tty_fbcon), `tty_fbcon_write()` always accepts all data, so
+the process never sleeps.
 
 ### 3.4. UART Ring Buffer Concurrency
 
@@ -289,37 +289,37 @@ void UART0_IRQ_Handler(void)
 
 `fbcon_putc` writes to a cell grid in SRAM.  It never blocks and never
 needs flow control.  tty1 continues using the direct-call path through
-the stream interface (which always accepts all data).
+`tty_fbcon_write()` (which always accepts all data).
 
 ---
 
 ## 4. Implementation Steps
 
-### Step 1: Define the stream interface
+### Step 1: Define the TTY backend interface
 
-- Add a `stream_ops` structure (or extend `tty_backend_t`) with
+- Add a `tty_ops` structure (or extend `tty_backend_t`) with
   `write(buf, n) → accepted` and `drain() → drained` callbacks.
-- Implement UART stream ops:
-  - `uart_stream_write()`: copy bytes into UART TX ring under
+- Implement tty_uart ops:
+  - `tty_uart_write()`: copy bytes into UART TX ring under
     `SPIN_TXRING`, return count accepted.
-  - `uart_stream_drain()`: move bytes from ring to HW FIFO under
+  - `tty_uart_drain()`: move bytes from ring to HW FIFO under
     `SPIN_TXRING`, return count drained.
-- Implement fbcon stream ops:
-  - `fbcon_stream_write()`: call `fbcon_putc()` per character, always
+- Implement tty_fbcon ops:
+  - `tty_fbcon_write()`: call `fbcon_putc()` per character, always
     return n.
-  - `fbcon_stream_drain()`: no-op, return 0.
+  - `tty_fbcon_drain()`: no-op, return 0.
 - The UART TX ring stays in uart.c (not moved to tty_dev_t) — it is
-  internal to the UART stream implementation.
+  internal to the tty_uart implementation.
 
 ### Step 2: Make klog reliable
 
 - Replace the per-character `uart_putc()` calls inside `klog()` and
-  `klogf()` with the stream interface.
+  `klogf()` with the tty_uart interface.
 - Inside the existing `SPIN_UART` critical section, use
-  `stream_write()` + `stream_drain()` retry loop to guarantee all
+  `tty_uart_write()` + `tty_uart_drain()` retry loop to guarantee all
   characters are enqueued before returning.
-- `klog_putc()` becomes: try `stream_write(&c, 1)`; if 0, call
-  `stream_drain()` and retry.
+- `klog_putc()` becomes: try `tty_uart_write(&c, 1)`; if 0, call
+  `tty_uart_drain()` and retry.
 - The mirror (fbcon) path remains the same: `mirror_putc(c)` inside
   the critical section, `mirror_flush()` outside.
 - Verify: a klog message followed by an immediate crash must not lose
@@ -327,18 +327,18 @@ the stream interface (which always accepts all data).
 
 ### Step 3: Implement blocking tty_write
 
-- For TTY instances backed by UART (ttyS0):
-  - Call `stream_write(buf, n)` to enqueue as much as possible.
+- For TTY instances backed by tty_uart (ttyS0):
+  - Call `tty_uart_write(buf, n)` to enqueue as much as possible.
   - If not all data accepted, arm TXIM and sleep (`PROC_BLOCKED`) on
     a wait channel (e.g. `&t->tx_buf` or a dedicated `tx_waitq`).
   - Track write progress in `tty_dev_t` (`tx_user_buf`, `tx_user_pos`,
     `tx_user_len`) for SVC restart resume.
   - On wakeup, retry remaining data.
-- For TTY instances backed by fbcon (tty1):
-  - Keep the current direct-call path — `stream_write()` always
+- For TTY instances backed by tty_fbcon (tty1):
+  - Keep the current direct-call path — `tty_fbcon_write()` always
     accepts all data, so the process never sleeps.
 - OPOST expansion (\n → \r\n) happens in tty_write before calling
-  `stream_write()`.
+  `tty_xx_write()`.
 
 ### Step 4: UART ISR drain + wakeup
 
@@ -349,7 +349,7 @@ the stream interface (which always accepts all data).
   from ISR context.
 - Remove uart.c's internal `uart_putc` busy-spin-on-ring-full path for
   the tty_write code path.  `uart_putc` itself remains for klog (which
-  uses the stream interface now) and echo.
+  uses the tty_uart interface now) and echo.
 
 ### Step 5: Wire up and test
 
@@ -361,15 +361,15 @@ the stream interface (which always accepts all data).
 - Verify echo (tty_read_canon → putc) still works for single
   characters.
 - Run qemu_arm and qemu_m68k test suites (they use polling UART,
-  should be unaffected — stream_write for polling mode can fall back
+  should be unaffected — tty_uart_write for polling mode can fall back
   to direct HW register writes).
 
 ---
 
 ## 5. Considerations
 
-**QEMU and m68k**: These targets use polling UART drivers.  The stream
-interface for polling mode implements `stream_write()` as direct writes
+**QEMU and m68k**: These targets use polling UART drivers.  The
+tty_uart interface for polling mode implements `tty_uart_write()` as direct writes
 to the HW FIFO (spin until FIFO has room, write byte), same as current
 `uart_putc` polling mode.  No ring buffer, no ISR, no sleep.
 
@@ -391,13 +391,13 @@ What *is* Core-0-specific (and stays that way):
 - Input polling (`input_poll_due`) is deferred to Core 0's idle loop.
 
 **klog vs tty_write lock ordering**: klog holds `SPIN_UART` and
-internally acquires `SPIN_TXRING` (via `stream_write` / `stream_drain`).
+internally acquires `SPIN_TXRING` (via `tty_uart_write` / `tty_uart_drain`).
 tty_write only acquires `SPIN_TXRING`.  The ISR acquires `SPIN_TXRING`.
 Lock ordering is: `SPIN_UART` → `SPIN_TXRING` (never reversed).  This
 prevents deadlock.
 
 **Echo path**: `tty_read_canon` calls `t->out(c)` for echo.  This goes
-through `uart_putc` (busy-spin), not the blocking stream.  This is fine
+through `uart_putc` (busy-spin), not the blocking tty_uart path.  This is fine
 — echo is single characters, not bulk output.
 
 **Signal handling**: If the writer is blocked on TX and receives SIGINT,
