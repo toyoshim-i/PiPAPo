@@ -45,8 +45,9 @@ static void adm_emit(const char *s)
         adm_raw_out((uint8_t)*s++);
 }
 
-/* Emit a decimal number (1–3 digits, no leading zeros) */
-static void adm_emit_num(int n)
+/* Emit a decimal number (1–3 digits, no leading zeros).
+ * Use unsigned to avoid __divsi3/__modsi3 on m68k (no libgcc). */
+static void adm_emit_num(unsigned n)
 {
     if (n >= 100) adm_raw_out((uint8_t)('0' + n / 100));
     if (n >= 10)  adm_raw_out((uint8_t)('0' + (n / 10) % 10));
