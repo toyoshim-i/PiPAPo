@@ -16,7 +16,7 @@
  *               | romfs image           |     Populated by mkromfs (Phase 2+)
  *               +-----------------------+
  *
- * SRAM layout: identical to pico1calc (264 KB total).
+ * SRAM layout: identical to pico1calc (264 KB total, 24KB kernel).
  */
 
 MEMORY {
@@ -26,9 +26,9 @@ MEMORY {
     FLASH_KERNEL (rx)  : ORIGIN = 0x10001000, LENGTH = 128K
     FLASH_ROMFS  (r)   : ORIGIN = 0x10021000, LENGTH = 2M - 0x21000
 
-    /* On-chip SRAM — 264KB total */
-    RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 20K
-    RAM_PAGES    (rwx) : ORIGIN = 0x20005000, LENGTH = 204K
+    /* On-chip SRAM — 264KB total (same layout as pico1calc) */
+    RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 24K
+    RAM_PAGES    (rwx) : ORIGIN = 0x20006000, LENGTH = 200K
     RAM_IOBUF    (rw)  : ORIGIN = 0x20038000, LENGTH = 24K
     RAM_DMA      (rw)  : ORIGIN = 0x2003E000, LENGTH = 16K
 }
@@ -112,7 +112,7 @@ SECTIONS {
     } > RAM_KERNEL
 
     ASSERT((__stack_top <= ORIGIN(RAM_KERNEL) + LENGTH(RAM_KERNEL)),
-           "ERROR: Kernel data + bss + stack overflow RAM_KERNEL (20KB)")
+           "ERROR: Kernel data + bss + stack overflow RAM_KERNEL (24KB)")
 
     .page_pool (NOLOAD) : {
         __page_pool_start = .;
