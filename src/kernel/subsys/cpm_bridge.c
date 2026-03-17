@@ -12,6 +12,115 @@
 #include "common/ptrace.h"
 #include <string.h>
 
+/* ── ADM-3A → VT100 escape sequence translator ────────────────────────── */
+/*
+ * CP/M programs commonly emit ADM-3A (Lear Siegler) escape sequences.
+ * Our fbcon implements VT100/ANSI CSI.  This translator sits in the
+ * console output path and converts ADM-3A sequences to VT100 on the fly.
+ *
+ * Supported ADM-3A sequences:
+ *   ESC =  row col   → ESC [ row ; col H   (cursor address, +32 encoding)
+ *   ESC *             → ESC [ 2 J           (clear screen)
+ *   ESC +             → ESC [ J             (clear to end of screen)
+ *   ESC T             → ESC [ K             (clear to end of line)
+ *   ESC E             → ESC [ K             (clear to end of line, alias)
+ *   ESC )             → (ignored)           (start alternate keypad)
+ *   0x1A (Ctrl-Z)     → ESC [ 2 J ESC [ H  (clear screen + home)
+ *   0x0B (Ctrl-K)     → ESC [ A             (cursor up)
+ *   0x0C (Ctrl-L)     → ESC [ C             (cursor right)
+ *   0x1E (Ctrl-^)     → ESC [ H             (cursor home)
+ *
+ * Characters without special meaning pass through unchanged.
+ */
+
+enum { ADM_NORMAL, ADM_ESC, ADM_ROW, ADM_COL };
+static int adm_state;
+static uint8_t adm_row;
+
+static void (*adm_raw_out)(uint8_t ch);
+
+static void adm_emit(const char *s)
+{
+    while (*s)
+        adm_raw_out((uint8_t)*s++);
+}
+
+/* Emit a decimal number (1–3 digits, no leading zeros) */
+static void adm_emit_num(int n)
+{
+    if (n >= 100) adm_raw_out((uint8_t)('0' + n / 100));
+    if (n >= 10)  adm_raw_out((uint8_t)('0' + (n / 10) % 10));
+    adm_raw_out((uint8_t)('0' + n % 10));
+}
+
+static void adm_putchar(uint8_t ch)
+{
+    switch (adm_state) {
+    case ADM_NORMAL:
+        if (ch == 0x1B) {
+            adm_state = ADM_ESC;
+        } else if (ch == 0x1A) {
+            /* Ctrl-Z: clear screen + home */
+            adm_emit("\033[2J\033[H");
+        } else if (ch == 0x0B) {
+            /* Ctrl-K: cursor up */
+            adm_emit("\033[A");
+        } else if (ch == 0x0C) {
+            /* Ctrl-L: cursor right */
+            adm_emit("\033[C");
+        } else if (ch == 0x1E) {
+            /* Ctrl-^: cursor home */
+            adm_emit("\033[H");
+        } else {
+            adm_raw_out(ch);
+        }
+        break;
+
+    case ADM_ESC:
+        if (ch == '=') {
+            adm_state = ADM_ROW;
+        } else if (ch == '*') {
+            adm_emit("\033[2J");
+            adm_state = ADM_NORMAL;
+        } else if (ch == '+') {
+            adm_emit("\033[J");
+            adm_state = ADM_NORMAL;
+        } else if (ch == 'T' || ch == 'E') {
+            adm_emit("\033[K");
+            adm_state = ADM_NORMAL;
+        } else if (ch == ')') {
+            /* Alternate keypad mode — ignore */
+            adm_state = ADM_NORMAL;
+        } else if (ch == '[') {
+            /* Already a VT100 CSI — pass through as-is */
+            adm_raw_out(0x1B);
+            adm_raw_out('[');
+            adm_state = ADM_NORMAL;
+        } else {
+            /* Unknown ESC sequence — pass through unchanged */
+            adm_raw_out(0x1B);
+            adm_raw_out(ch);
+            adm_state = ADM_NORMAL;
+        }
+        break;
+
+    case ADM_ROW:
+        adm_row = ch;
+        adm_state = ADM_COL;
+        break;
+
+    case ADM_COL:
+        /* ADM-3A: row and col are encoded as value + 0x20 (space) */
+        adm_emit("\033[");
+        adm_emit_num((adm_row - 0x20) + 1);  /* 1-based */
+        adm_raw_out(';');
+        adm_emit_num((ch - 0x20) + 1);       /* 1-based */
+        adm_raw_out('H');
+        adm_state = ADM_NORMAL;
+        break;
+    }
+}
+
 /* ── Platform I/O abstraction ──────────────────────────────────────────── */
 
 #ifdef PPAP_KERNEL
@@ -40,9 +149,15 @@ static void cpm_trace_after(uint32_t abi, uint32_t nr, z80_state_t *cpu)
                        cpu->sp, cpu->pc, cpm_trace_ret(cpu));
 }
 
-static void cpm_putchar(uint8_t ch)
+static void cpm_raw_putchar(uint8_t ch)
 {
     sys_write(1, (const char *)&ch, 1);
+}
+
+static void cpm_putchar(uint8_t ch)
+{
+    adm_raw_out = cpm_raw_putchar;
+    adm_putchar(ch);
 }
 
 static uint8_t cpm_getchar(void)
@@ -131,7 +246,7 @@ extern void cpm_host_putchar(uint8_t ch);
 extern int  cpm_host_getchar(void);
 extern int  cpm_host_char_ready(void);
 
-static void cpm_putchar(uint8_t ch)   { cpm_host_putchar(ch); }
+static void cpm_putchar(uint8_t ch)   { adm_raw_out = cpm_host_putchar; adm_putchar(ch); }
 static uint8_t cpm_getchar(void)      { return (uint8_t)cpm_host_getchar(); }
 static int cpm_char_ready(void)       { return cpm_host_char_ready(); }
 
