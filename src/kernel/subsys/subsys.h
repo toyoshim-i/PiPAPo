@@ -75,7 +75,7 @@ typedef struct subsys_ops {
 } subsys_ops_t;
 
 /* Maximum number of subsystem types (index into subsys_ops_table[]) */
-#define SUBSYS_MAX  4
+#define SUBSYS_MAX  5
 
 /* Global ops table — indexed by pcb_t::subsys tag.
  * Slot 0 (SUBSYS_PPAP) is NULL (default kernel behavior). */

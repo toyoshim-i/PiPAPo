@@ -54,6 +54,7 @@
 #define PPAP_TRACE_ABI_H68K_IOCS 2
 #define PPAP_TRACE_ABI_CPM_BDOS  3
 #define PPAP_TRACE_ABI_CPM_BIOS  4
+#define PPAP_TRACE_ABI_SOS       5
 
 /* Register set kinds returned by PTRACE_GETREGS. */
 #define PPAP_TRACE_REGSET_NONE  0

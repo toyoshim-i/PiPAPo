@@ -24,6 +24,9 @@
 #ifdef PPAP_ENABLE_CPM
 #include "exec_cpm.h"
 #endif
+#ifdef PPAP_ENABLE_SOS
+#include "exec_sos.h"
+#endif
 #ifdef PPAP_ENABLE_ECPU_M68K
 #include "exec_m68k_emu.h"
 #endif
@@ -251,6 +254,16 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
         }
 #endif
 
+#ifdef PPAP_ENABLE_SOS
+        if (sos_detect(path, file_buf, file_size)) {
+            int rc = exec_sos(p, file_buf, file_size, path, argv);
+            for (uint32_t i = 0; i < file_pages; i++)
+                page_free(file_buf + i * PAGE_SIZE);
+            vnode_put(vn);
+            return rc;
+        }
+#endif
+
 #ifdef PPAP_ENABLE_ECPU_M68K
         {
             const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)file_buf;
@@ -296,6 +309,14 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
     if (cpm_detect(path, file_base, file_size)) {
         vnode_put(vn);
         return exec_cpm(p, file_base, file_size, path, argv);
+    }
+#endif
+
+    /* Try S-OS SWORD (detected by _SOS magic) */
+#ifdef PPAP_ENABLE_SOS
+    if (sos_detect(path, file_base, file_size)) {
+        vnode_put(vn);
+        return exec_sos(p, file_base, file_size, path, argv);
     }
 #endif
 

@@ -84,6 +84,11 @@ set(KERNEL_SUBSYS_CPM_SOURCES
     ${_KS_ROOT}/src/kernel/exec/exec_cpm.c
 )
 
+set(KERNEL_SUBSYS_SOS_SOURCES
+    ${_KS_ROOT}/src/kernel/subsys/sos_bridge.c
+    ${_KS_ROOT}/src/kernel/exec/exec_sos.c
+)
+
 set(KERNEL_ECPU_Z80_SOURCES
     ${_KS_ROOT}/src/kernel/ecpu/ecpu_z80.c
     ${_KS_ROOT}/src/kernel/ecpu/ecpu_z80_alu.c
@@ -106,6 +111,10 @@ endif()
 
 if(PPAP_ENABLE_CPM)
     list(APPEND KERNEL_SHARED_SOURCES ${KERNEL_SUBSYS_CPM_SOURCES})
+endif()
+
+if(PPAP_ENABLE_SOS)
+    list(APPEND KERNEL_SHARED_SOURCES ${KERNEL_SUBSYS_SOS_SOURCES})
 endif()
 
 if(PPAP_ENABLE_ECPU_Z80)

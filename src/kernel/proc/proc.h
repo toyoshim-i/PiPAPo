@@ -54,6 +54,7 @@ typedef void (*sighandler_t)(int);
 #define SUBSYS_PPAP       0   /* native PPAP ELF binary (default)    */
 #define SUBSYS_HUMAN68K   1   /* Human68k X-format binary             */
 #define SUBSYS_CPM        2   /* CP/M 2.2 .COM binary (Z80 emulated) */
+#define SUBSYS_SOS        3   /* S-OS SWORD binary (Z80 emulated)    */
 #define TRACE_SW_BP_MAX   8   /* max software breakpoints per tracee  */
 #define TRACE_HW_BP_MAX   4   /* max native hardware breakpoints       */
 

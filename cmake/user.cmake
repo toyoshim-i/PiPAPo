@@ -40,9 +40,10 @@ else()
 endif()
 
 # --- Subsystem and eCPU build options ---
-# Human68k, CP/M, and Z80 are always enabled
+# Human68k, CP/M, S-OS, and Z80 are always enabled
 set(PPAP_ENABLE_HUMAN68K ON)
 set(PPAP_ENABLE_CPM ON)
+set(PPAP_ENABLE_SOS ON)
 set(PPAP_ENABLE_ECPU_Z80 ON)
 
 # m68k eCPU is only enabled on ARM targets (not on native m68k)
