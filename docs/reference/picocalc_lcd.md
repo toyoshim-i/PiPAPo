@@ -37,7 +37,7 @@ The driver is split into three layers:
 
 ```
 +--------------------------------------------+
-|  fbcon.c  —  Text console (VT100/ANSI)     |  40x20 or 80x40 chars
+|  fbcon.c  —  Text console (VT100/ANSI)     |  40x20 / 80x40 / 40x40 chars
 +--------------------------------------------+
 |  lcd.c    —  Controller init + primitives   |  fill_rect
 +--------------------------------------------+
@@ -106,10 +106,11 @@ Character-cell text console rendered to the LCD via scanline streaming.
 
 **Display modes:**
 
-| Mode    | Columns | Rows | Font  | Char size |
-|---------|---------|------|-------|-----------|
-| Normal  | 40      | 20   | 8x16  | 8px wide, 16px tall |
-| Compact | 80      | 40   | 4x8   | 4px wide, 8px tall  |
+| Mode    | Columns | Rows | Font  | Char size | Select |
+|---------|---------|------|-------|-----------|--------|
+| Normal  | 40      | 20   | 8x16  | 8px wide, 16px tall | ESC[?80l or ESC[?40l |
+| Compact | 80      | 40   | 4x8   | 4px wide, 8px tall  | ESC[?80h |
+| Square  | 40      | 40   | 8x8   | 8px wide, 8px tall  | ESC[?40h |
 
 **Rendering strategy:** A full 320x320 RGB565 framebuffer would require
 204,800 bytes — far too large for the RP2040's 264 KB SRAM. Instead, the
@@ -162,7 +163,8 @@ palette is mapped to RGB565:
 | ESC [ n K         | EL      | Erase line (0=right, 1=left, 2=all)|
 | ESC [ params m    | SGR     | Set graphic rendition (colours)    |
 | ESC [ t ; b r     | DECSTBM | Set scroll region (top; bottom)    |
-| ESC [ ? 80 h/l    | Private | Switch to 80-col / 40-col mode     |
+| ESC [ ? 80 h/l    | Private | Switch to 80-col (h) / 40-col (l) mode |
+| ESC [ ? 40 h/l    | Private | Switch to square 40×40 (h) / normal (l) mode |
 | ESC c             | RIS     | Full terminal reset                |
 
 SGR parameters: 0=reset, 1=bold, 22=normal, 30-37=fg, 39=default fg,
@@ -259,7 +261,7 @@ by the RP2040 directly.
 | `src/drivers/spi_lcd.c` / `.h`         | SPI1 transport layer               |
 | `src/drivers/lcd.c` / `.h`             | Controller init + fill_rect        |
 | `src/drivers/fbcon.c` / `.h`           | Text console + VT100 parser        |
-| `src/drivers/font.h`                   | Font data (8x16 + 4x8 bitmaps)    |
+| `src/drivers/font.h`                   | Font data (8x16, 4x8, 8x8 bitmaps) |
 | `src/target/pico1calc/pico1calc.h`     | Pin definitions                    |
 | `src/target/pico1calc/target_pico1calc.c` | Board init (LCD + backlight)    |
 

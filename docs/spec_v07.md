@@ -491,13 +491,13 @@ The m68k QEMU target currently uses a UART for console and a RAM-backed block de
 - **musl libc:** ported to ARM and m68k with PPAP's unified syscall interface
 - **busybox:** statically linked multicall binary with interactive hush shell
 - **Rogue 5.4.4:** classic dungeon crawler with minimal VT100 curses shim
-- **User programs:** hello, init, getty, ttyctl (terminal management utility)
+- **User programs:** hello, init, getty (with auto-login support), ttyctl (terminal mode/backlight/battery/poweroff)
 - **PIE/PIC binaries:** position-independent ELFs with architecture-specific relocation
 
 ### 9.4 Display and Input (PicoCalc)
 
 - **SPI LCD:** ST7365P 320×320 display via SPI1 at ~33 MHz
-- **Framebuffer console:** dual-mode text rendering (40×20 with 8×16 font, 80×40 with 4×8 font)
+- **Framebuffer console:** triple-mode text rendering (40×20 with 8×16 font, 80×40 with 4×8 font, 40×40 with 8×8 IchigoJam font)
 - **VT100/ANSI emulator:** cursor movement, scroll regions, 16-color attributes, erase/insert/delete
 - **I2C keyboard:** STM32 co-processor on I2C1, polled input with keymap translation
 - **Multi-TTY:** /dev/ttyS0 (serial) + /dev/tty1 (LCD+keyboard), getty login on each

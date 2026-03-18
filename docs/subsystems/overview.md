@@ -54,6 +54,7 @@ complexity of the personality layer:
 |---|---|---|
 | PPAP cross-arch | Trivial — register remap only | Same syscall numbers, different register ABI |
 | CP/M | Simple — ~40 BDOS functions | BDOS calls → open/read/write/exit |
+| S-OS SWORD | Simple — ~60 monitor functions | CALL 5 monitor entries → PPAP syscalls |
 | DOS | Moderate — INT 21h + BIOS stubs | INT 21h + INT 10h/16h → PPAP syscalls |
 | Human68k | Moderate — F-line + IOCS | F-line exceptions → PPAP syscalls |
 | Win32 | Complex — DLL function stubs | Win32 API → PPAP syscalls (stretch) |
@@ -164,6 +165,8 @@ are stored under `/subsys/<name>/` in romfs:
 │   └── ...
 ├── cpm/             # CP/M .COM files
 │   ├── MBASIC.COM
+│   └── ...
+├── sos/             # S-OS SWORD .obj files
 │   └── ...
 ├── dos/             # DOS .COM and .EXE files
 │   ├── EDIT.COM
@@ -359,6 +362,62 @@ FCB { drive=A, name="HELLO   ", ext="COM" }
    - Test: run Turbo Pascal, WordStar
 4. **Kernel integration + userland tests** ✅
    - 42 host tests + 13 userland tests (see `docs/subsystems/cpm.md`)
+
+---
+
+## 4A. S-OS SWORD Subsystem
+
+### 4A.1 Target
+
+Run S-OS SWORD programs — a Japanese hobbyist OS from the 1980s that ran
+on Sharp MZ-series, X1, and other Z80 machines. S-OS provided a unified
+API (monitor calls) across different hardware, making programs portable
+between machines.
+
+### 4A.2 Binary Format
+
+S-OS `.obj` binary format:
+- 18-byte ASCII header: `_SOS` magic, file mode, load address, exec address
+- Raw Z80 code follows the header
+- Detection: `_SOS` magic at offset 0 + valid hex fields
+
+### 4A.3 CPU Emulator: ecpu-z80
+
+Same Z80 interpreter as CP/M (shared core). S-OS programs use a
+subset of Z80 instructions.
+
+### 4A.4 OS Personality: S-OS Monitor Bridge
+
+S-OS programs invoke monitor calls via `JP` to fixed addresses in
+the monitor entry table (mapped at 0x0000–0x00FF). The emulator
+intercepts execution at these entry points and translates:
+
+| Monitor fn | Name | PPAP translation |
+|---|---|---|
+| 03 | #GETL | Line input via `read(0, buf, len)` |
+| 06 | #1CHR | `read(0, &ch, 1)` (single char) |
+| 09 | #MSG | `write(1, str, len)` (print string) |
+| 0C | #MSX | `write(1, str, len)` (alternate) |
+| 15 | #LOPEN | `open()` file for loading |
+| 18 | #LREAD | `read()` file data |
+| 1B | #SOPEN | `open()` file for saving |
+| 1E | #SWRITE | `write()` file data |
+| 21 | #FCLOSE | `close()` file |
+| 24 | #FSAME | File attribute query |
+| 27 | #DEVNM | Device name query |
+| 56 | #WIDCH | Screen mode (no-op, preserves user's mode) |
+| 59 | #SCRN | Read screen character at position |
+
+The bridge also provides an in-memory screen buffer for #SCRN
+support and warns on exit if unsupported APIs were called.
+
+### 4A.5 Implementation Status
+
+Fully implemented and tested:
+- Z80 interpreter (shared with CP/M)
+- S-OS binary loader (`exec_sos.c`)
+- Monitor bridge with console I/O, file operations, screen APIs
+- `/subsys/sos/` directory in PATH for transparent execution
 
 ---
 
@@ -582,7 +641,7 @@ personalities:
 |---|---|
 | ecpu-arm | PPAP cross-arch (ARM ELF on m68k) |
 | ecpu-m68k | PPAP cross-arch (m68k ELF on ARM), Human68k |
-| ecpu-z80 | CP/M |
+| ecpu-z80 | CP/M, S-OS SWORD |
 | ecpu-8086 | DOS |
 | ecpu-armv6 | PPAP cross-arch (ARMv6 ELF on other hosts) |
 | ecpu-x86 | Windows PE (stretch) |
@@ -627,13 +686,14 @@ converted to `/`. Case handling follows the foreign OS convention
 
 ## 10. Implementation Priority
 
-| Priority | Subsystem | Rationale |
-|---|---|---|
-| 1 | PPAP cross-arch | Simplest personality. Proves the eCPU+subsystem framework. |
-| 2 | CP/M (Z80) | Simplest foreign OS. Small CPU + small API. |
-| 3 | Human68k (m68k) | Natural fit for X68000 target. Shares ecpu-m68k. |
-| 4 | DOS (8086) | Larger software library. More complex emulator. |
-| 5 | Windows PE (x86) | Stretch goal. Very complex. Low priority. |
+| Priority | Subsystem | Status | Rationale |
+|---|---|---|---|
+| 1 | PPAP cross-arch | — | Simplest personality. Proves the eCPU+subsystem framework. |
+| 2 | CP/M (Z80) | Done | Simplest foreign OS. Small CPU + small API. |
+| 3 | S-OS SWORD (Z80) | Done | Shares ecpu-z80 with CP/M. Japanese retro software. |
+| 4 | Human68k (m68k) | — | Natural fit for X68000 target. Shares ecpu-m68k. |
+| 5 | DOS (8086) | — | Larger software library. More complex emulator. |
+| 6 | Windows PE (x86) | — | Stretch goal. Very complex. Low priority. |
 
 ### 10.1 Overall Implementation Plan
 
@@ -651,6 +711,12 @@ converted to `/`. Case handling follows the foreign OS convention
 4. ✅ BDOS file operations (functions 15–36)
 5. ✅ Kernel integration + 13 userland tests
 6. Future: test with MBASIC, Turbo Pascal
+
+**Phase B2 — S-OS SWORD Subsystem** ✅
+1. ✅ S-OS binary loader (18-byte `_SOS` header format)
+2. ✅ Monitor bridge (console I/O, file operations, screen APIs)
+3. ✅ Screen buffer for #SCRN + unsupported API warnings
+4. ✅ Integration with `/subsys/sos/` directory
 
 **Phase C — Human68k Subsystem**
 1. X-format loader

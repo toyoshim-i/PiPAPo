@@ -7,8 +7,9 @@ The X68000 port provides dual-TTY console support:
 - **tty1** (TTY_DISPLAY) — TVRAM text screen + keyboard, the primary console
 - **ttyS0** (TTY_SERIAL) — RS-232C serial port via Z8530 SCC
 
-Init spawns `/bin/sh` on tty1 and `/bin/getty ttyS0` on ttyS0
-(see `src/target/x68k/romfs/etc/inittab`).
+Init spawns `/bin/sh` on tty1 (auto-login, no prompt) and
+`/bin/getty ttyS0` on ttyS0 (with login prompt). See
+`src/target/x68k/romfs/etc/inittab`.
 
 ## Layering
 

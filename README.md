@@ -14,7 +14,7 @@ A portable UNIX-like micro OS for bare-metal microcontrollers and retro CPUs.
 - Run **Rogue 5.4.4** (classic dungeon crawler) via a minimal VT100 curses shim
 - Root file system on flash/ROM as **romfs**; SD card as **VFAT (FAT32)** with **UFS** loopback images
 - Multiple target architectures and boards from a shared kernel codebase
-- **PicoCalc standalone**: embedded LCD console (40×20 / 80×40), I2C keyboard — no host PC required
+- **PicoCalc standalone**: embedded LCD console (40×20 / 80×40 / 40×40), I2C keyboard — no host PC required
 
 ## Supported Targets
 
@@ -33,7 +33,7 @@ All targets share the same kernel source, syscall interface, VFS, and process mo
 - **File systems** — romfs, VFAT (SD card), UFS (loopback images), devfs, procfs, tmpfs
 - **User space** — musl libc, busybox (hush shell + 100+ applets), Rogue 5.4.4
 - **Multi-architecture** — ARM (Thumb-1) and m68k from the same source tree
-- **PicoCalc display** — SPI LCD framebuffer console (40×20 / 80×40), VT100/ANSI color emulator
+- **PicoCalc display** — SPI LCD framebuffer console (40×20 / 80×40 / 40×40), VT100/ANSI color emulator
 - **PicoCalc keyboard** — I2C STM32 co-processor, full keymap with function keys
 - **Multi-TTY** — serial console + LCD console with getty login on each
 - **PIE/PIC binaries** — position-independent ELFs; on ARM targets, code runs from flash via XIP
@@ -48,7 +48,7 @@ All targets share the same kernel source, syscall interface, VFS, and process mo
 - **RP2350 Port** — Cortex-M33, 8-region MPU, PSRAM support, Thumb-2 optimization; `pico2`/`pico2calc` targets
 - **Pi Zero Port** — ARM1176JZF-S with full MMU, SD card boot; see [docs/targets/pizero.md](/docs/targets/pizero.md)
 - **CPU emulation** — user-space interpretive emulators for retro CPUs (Z80, 6502, 6809, 8086), enabling cross-architecture binary execution; see [docs/ecpu/overview.md](/docs/ecpu/overview.md)
-- **Subsystem support** — load and run applications from other OSes on top of PPAP via syscall bridge (e.g. CP/M, Human68K, DOS); see [docs/subsystems/overview.md](/docs/subsystems/overview.md)
+- **Subsystem support** — load and run applications from other OSes on top of PPAP via syscall bridge (e.g. DOS, Human68K); see [docs/subsystems/overview.md](/docs/subsystems/overview.md). CP/M and S-OS SWORD subsystems are already implemented.
 - Audio driver support
 
 ## Repository Layout
@@ -91,6 +91,8 @@ PPAP/
     mkromfs/                Host tool: generate romfs.bin image
     mkufs/                  Host tool: generate UFS filesystem image
     mkfatimg/               Host tool: generate FAT32 test image
+    bdf2c.py                Convert BDF font to C array
+    json2c.py               Convert IchigoJam JSON font to C array
     uf2sanitize.py          Post-process UF2 for PicoCalc bootloader
   third_party/
     pico-sdk/               git submodule — Raspberry Pi Pico SDK (ARM targets)

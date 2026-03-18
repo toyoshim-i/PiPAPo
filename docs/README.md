@@ -41,6 +41,7 @@ This index is the entry point for project documentation.
   - [`subsystems/overview.md`](subsystems/overview.md)
   - [`subsystems/human68k.md`](subsystems/human68k.md)
   - [`subsystems/cpm.md`](subsystems/cpm.md)
+  - [`subsystems/sos.md`](subsystems/sos.md) (S-OS SWORD)
 
 - eCPU
   - [`ecpu/overview.md`](ecpu/overview.md)
@@ -57,3 +58,4 @@ This index is the entry point for project documentation.
 
 - Archive
   - [`archive/history/`](archive/history/)
+  - [`archive/sos_subsystem_proposal.md`](archive/sos_subsystem_proposal.md)
