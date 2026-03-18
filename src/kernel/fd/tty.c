@@ -62,7 +62,7 @@
 
 /* ── Default terminal size ────────────────────────────────────────────────── */
 
-#define TTY_DEFAULT_ROWS  24
+#define TTY_DEFAULT_ROWS  25
 #define TTY_DEFAULT_COLS  80
 
 /* ── c_cc array size ──────────────────────────────────────────────────────── */

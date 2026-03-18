@@ -275,16 +275,12 @@ static int sos_fn_print(z80_state_t *cpu, sos_state_t *sos)
     return ECPU_TRAP_HANDLED;
 }
 
-/* fn 4: #PRINTS — print NUL-terminated string at DE */
+/* fn 4: #PRINTS — print a space character */
 static int sos_fn_prints(z80_state_t *cpu, sos_state_t *sos)
 {
-    uint16_t addr = z80_de(cpu);
-    while (addr < cpu->mem_size && cpu->memory[addr] != '\0') {
-        uint8_t ch = cpu->memory[addr];
-        sos_raw_putchar(ch);
-        sos_screen_putc(sos, ch);
-        addr++;
-    }
+    (void)cpu;
+    sos_raw_putchar(' ');
+    sos_screen_putc(sos, ' ');
     return ECPU_TRAP_HANDLED;
 }
 
@@ -333,25 +329,31 @@ static int sos_fn_msx(z80_state_t *cpu, sos_state_t *sos)
     return ECPU_TRAP_HANDLED;
 }
 
-/* fn 9: #MPRNT — print string at DE, terminated by 00h */
+/* fn 9: #MPRINT — print inline string after CALL, terminated by 00h.
+ * Pops the return address (which points to the inline string data),
+ * prints until NUL, then pushes the address past the NUL as the new
+ * return address so execution continues after the string. */
 static int sos_fn_mprint(z80_state_t *cpu, sos_state_t *sos)
 {
-    uint16_t addr = z80_de(cpu);
+    uint16_t addr = z80_pop16(cpu);
     while (addr < cpu->mem_size && cpu->memory[addr] != '\0') {
         uint8_t ch = cpu->memory[addr];
         sos_raw_putchar(ch);
         sos_screen_putc(sos, ch);
         addr++;
     }
+    if (addr < cpu->mem_size)
+        addr++;  /* skip past NUL terminator */
+    z80_push16(cpu, addr);
     return ECPU_TRAP_HANDLED;
 }
 
-/* fn 10: #TAB — move cursor to column in A (ANSI escape) */
+/* fn 10: #TAB — move cursor to column in B (ANSI escape) */
 static int sos_fn_tab(z80_state_t *cpu, sos_state_t *sos)
 {
-    sos->cursor_x = cpu->a;
+    sos->cursor_x = cpu->b;
     char buf[16];
-    unsigned col = cpu->a + 1;  /* ANSI is 1-based */
+    unsigned col = cpu->b + 1;  /* ANSI is 1-based */
     int len = 0;
     buf[len++] = '\033';
     buf[len++] = '[';
@@ -429,6 +431,7 @@ static int sos_fn_getky(z80_state_t *cpu, sos_state_t *sos)
     } else {
         cpu->a = 0;
     }
+    cpu->f &= ~FLAG_C;
     return ECPU_TRAP_HANDLED;
 }
 
@@ -780,11 +783,11 @@ static int sos_fn_csr(z80_state_t *cpu, sos_state_t *sos)
     return ECPU_TRAP_HANDLED;
 }
 
-/* fn 49: #SCRN — read character at cursor position, returns A */
+/* fn 49: #SCRN — read character at position (H=Y, L=X), returns A */
 static int sos_fn_scrn(z80_state_t *cpu, sos_state_t *sos)
 {
-    int x = sos->cursor_x;
-    int y = sos->cursor_y;
+    int x = cpu->l;
+    int y = cpu->h;
     if (x < sos->screen_width && y < sos->screen_height)
         cpu->a = sos->screen_buf[y * sos->screen_width + x];
     else
@@ -795,6 +798,10 @@ static int sos_fn_scrn(z80_state_t *cpu, sos_state_t *sos)
 /* fn 50: #LOC — set cursor to (L=X, H=Y) via ANSI escape */
 static int sos_fn_loc(z80_state_t *cpu, sos_state_t *sos)
 {
+    if (cpu->l >= sos->screen_width || cpu->h >= sos->screen_height) {
+        cpu->f |= FLAG_C;
+        return ECPU_TRAP_HANDLED;
+    }
     sos->cursor_x = cpu->l;
     sos->cursor_y = cpu->h;
     uint8_t row = cpu->h + 1;  /* ANSI is 1-based */
@@ -812,6 +819,7 @@ static int sos_fn_loc(z80_state_t *cpu, sos_state_t *sos)
     buf[len++] = '0' + col % 10;
     buf[len++] = 'H';
     sos_putstr(buf, len);
+    cpu->f &= ~FLAG_C;
     return ECPU_TRAP_HANDLED;
 }
 
@@ -910,6 +918,7 @@ static int sos_dispatch(uint32_t fn, z80_state_t *cpu, sos_state_t *sos)
     case SOS_FN_CSR:    rc = sos_fn_csr(cpu, sos);     break;
     case SOS_FN_SCRN:   rc = sos_fn_scrn(cpu, sos);    break;
     case SOS_FN_LOC:    rc = sos_fn_loc(cpu, sos);     break;
+    case SOS_FN_FLGET:  rc = sos_fn_inkey(cpu, sos);   break;
     case SOS_FN_WIDCH:  rc = sos_fn_widch(cpu, sos);   break;
     case SOS_FN_BOOT:   rc = sos_fn_cold(cpu, sos);    break;
     default:
@@ -1012,6 +1021,12 @@ void sos_run_process(void)
         t.lflag &= ~0x000Au;   /* clear ICANON | ECHO */
         t.iflag &= ~0x0100u;   /* clear ICRNL */
         sys_ioctl(0, 0x5402/*TCSETS*/, (long)&t);
+    }
+
+    /* Clear screen before running the S-OS program */
+    {
+        static const char cls[] = "\033[2J\033[H";
+        sys_write(1, cls, sizeof(cls) - 1);
     }
 
     for (;;) {
