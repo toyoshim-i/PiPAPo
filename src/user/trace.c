@@ -90,7 +90,7 @@ static const char *abi_name(uint32_t abi)
     case PPAP_TRACE_ABI_CPM_BDOS: return "cpm-bdos";
     case PPAP_TRACE_ABI_CPM_BIOS: return "cpm-bios";
     case PPAP_TRACE_ABI_SOS: return "sos";
-    default: return "abi";
+    default: return "unknown";
     }
 }
 

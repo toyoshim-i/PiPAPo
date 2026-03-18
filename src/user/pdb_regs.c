@@ -23,7 +23,8 @@ const char *abi_name(uint32_t abi)
     case PPAP_TRACE_ABI_H68K_IOCS: return "h68k-iocs";
     case PPAP_TRACE_ABI_CPM_BDOS: return "cpm-bdos";
     case PPAP_TRACE_ABI_CPM_BIOS: return "cpm-bios";
-    default: return "abi";
+    case PPAP_TRACE_ABI_SOS: return "sos";
+    default: return "unknown";
     }
 }
 
