@@ -116,6 +116,12 @@ static void sos_setup_memory(z80_state_t *cpu, sos_state_t *sos)
 
     /* Initialize file_fd */
     sos->file_fd = -1;
+
+    /* Initialize screen state */
+    sos->screen_width  = 80;
+    sos->screen_height = 25;
+    sos->cursor_x = 0;
+    sos->cursor_y = 0;
 }
 
 /* ── Drive root mapping ───────────────────────────────────────────────── */

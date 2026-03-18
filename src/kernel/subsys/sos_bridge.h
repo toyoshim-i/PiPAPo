@@ -140,6 +140,12 @@ typedef struct sos_state {
     uint8_t  default_session;  /* Default session                           */
     int      file_fd;          /* Open file descriptor for #WOPEN/#ROPEN   */
 
+    /* Screen state */
+    uint8_t  cursor_x;         /* Current cursor column (0-based)           */
+    uint8_t  cursor_y;         /* Current cursor row (0-based)              */
+    uint8_t  screen_width;     /* 40 or 80                                  */
+    uint8_t  screen_height;    /* typically 25                               */
+
     /* Saved terminal state (restored on exit) */
     uint32_t saved_termios[5];
     uint8_t  saved_termios_cc[19];

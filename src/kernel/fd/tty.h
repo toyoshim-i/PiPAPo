@@ -43,6 +43,7 @@ typedef struct {
     int  (*rx_avail)(void);     /* non-zero if input available        */
     int  (*get_cols)(void);     /* terminal width  (NULL → default)   */
     int  (*get_rows)(void);     /* terminal height (NULL → default)   */
+    void (*set_winsize)(int cols, int rows);  /* resize (NULL → fixed) */
 } tty_backend_t;
 
 /* Set the I/O backend for TTY instance idx.

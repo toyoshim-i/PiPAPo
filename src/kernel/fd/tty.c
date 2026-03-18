@@ -98,6 +98,7 @@ typedef struct {
     int  (*in_avail)(void);
     int  (*win_cols)(void);
     int  (*win_rows)(void);
+    void (*set_winsize)(int cols, int rows);
 
     /* TX-ready callback for this TTY — passed to out() on blocking */
     void (*tx_wakeup)(void);
@@ -188,9 +189,10 @@ void tty_set_backend(int idx, const tty_backend_t *be)
     t->out_flush = be->flush;
     t->in        = be->getc;
     t->in_avail  = be->rx_avail;
-    t->win_cols  = be->get_cols;
-    t->win_rows  = be->get_rows;
-    t->tx_wakeup = tx_ready_fn[idx];
+    t->win_cols    = be->get_cols;
+    t->win_rows    = be->get_rows;
+    t->set_winsize = be->set_winsize;
+    t->tx_wakeup   = tx_ready_fn[idx];
 }
 
 void *tty_get_dev(int idx)
@@ -559,8 +561,12 @@ static int tty_ioctl(struct file *f, uint32_t cmd, void *arg)
         ws->ws_ypixel = 0;
         return 0;
     }
-    case TIOCSWINSZ:
-        return 0;   /* ignore — fixed-size terminal */
+    case TIOCSWINSZ: {
+        const struct winsize *ws = (const struct winsize *)arg;
+        if (t->set_winsize)
+            t->set_winsize(ws->ws_col, ws->ws_row);
+        return 0;
+    }
     case TIOCGPGRP: {
         int32_t *pg = (int32_t *)arg;
         *pg = t->fg_pgrp;

@@ -91,6 +91,11 @@ static int fbcon_avail_wrapper(void)
 
 static int fbcon_get_cols(void)      { return fbcon_cols(); }
 static int fbcon_get_rows(void)      { return fbcon_rows(); }
+static void fbcon_set_winsize(int c, int r)
+{
+    (void)r;
+    fbcon_set_mode(c > 40 ? FBCON_MODE_COMPACT : FBCON_MODE_NORMAL);
+}
 
 /* ── LCD backlight (STM32 I2C register 0x05) ──────────────────────────── */
 
@@ -140,8 +145,9 @@ static const tty_backend_t fbcon_backend = {
     .flush    = fbcon_flush_deferred,
     .getc     = fbcon_getc_wrapper,
     .rx_avail = fbcon_avail_wrapper,
-    .get_cols = fbcon_get_cols,
-    .get_rows = fbcon_get_rows,
+    .get_cols    = fbcon_get_cols,
+    .get_rows    = fbcon_get_rows,
+    .set_winsize = fbcon_set_winsize,
 };
 
 #ifdef PPAP_TESTS

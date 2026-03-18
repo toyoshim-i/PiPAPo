@@ -218,8 +218,17 @@ static int sos_fn_ver(z80_state_t *cpu, sos_state_t *sos)
 /* fn 3: #PRINT — print character in A */
 static int sos_fn_print(z80_state_t *cpu, sos_state_t *sos)
 {
-    (void)sos;
-    sos_raw_putchar(cpu->a);
+    uint8_t ch = cpu->a;
+    sos_raw_putchar(ch);
+
+    /* Track cursor position */
+    if (ch == '\r')
+        sos->cursor_x = 0;
+    else if (ch == '\n')
+        sos->cursor_y++;
+    else if (ch >= 0x20)
+        sos->cursor_x++;
+
     return ECPU_TRAP_HANDLED;
 }
 
@@ -238,16 +247,19 @@ static int sos_fn_prints(z80_state_t *cpu, sos_state_t *sos)
 /* fn 5: #LTNL — line feed (LF) */
 static int sos_fn_ltnl(z80_state_t *cpu, sos_state_t *sos)
 {
-    (void)cpu; (void)sos;
+    (void)cpu;
     sos_raw_putchar('\n');
+    sos->cursor_y++;
     return ECPU_TRAP_HANDLED;
 }
 
 /* fn 6: #NL — newline (CR + LF) */
 static int sos_fn_nl(z80_state_t *cpu, sos_state_t *sos)
 {
-    (void)cpu; (void)sos;
+    (void)cpu;
     sos_putstr("\r\n", 2);
+    sos->cursor_x = 0;
+    sos->cursor_y++;
     return ECPU_TRAP_HANDLED;
 }
 
@@ -290,7 +302,7 @@ static int sos_fn_mprint(z80_state_t *cpu, sos_state_t *sos)
 /* fn 10: #TAB — move cursor to column in A (ANSI escape) */
 static int sos_fn_tab(z80_state_t *cpu, sos_state_t *sos)
 {
-    (void)sos;
+    sos->cursor_x = cpu->a;
     char buf[16];
     unsigned col = cpu->a + 1;  /* ANSI is 1-based */
     int len = 0;
@@ -714,17 +726,25 @@ static int sos_fn_kill(z80_state_t *cpu, sos_state_t *sos)
 /* fn 48: #CSR — get cursor position, returns L=X, H=Y */
 static int sos_fn_csr(z80_state_t *cpu, sos_state_t *sos)
 {
+    cpu->l = sos->cursor_x;
+    cpu->h = sos->cursor_y;
+    return ECPU_TRAP_HANDLED;
+}
+
+/* fn 49: #SCRN — read character at cursor position, returns A */
+static int sos_fn_scrn(z80_state_t *cpu, sos_state_t *sos)
+{
     (void)sos;
-    /* We don't track cursor precisely; return (0,0) */
-    cpu->l = 0;
-    cpu->h = 0;
+    /* No screen buffer — return space */
+    cpu->a = ' ';
     return ECPU_TRAP_HANDLED;
 }
 
 /* fn 50: #LOC — set cursor to (L=X, H=Y) via ANSI escape */
 static int sos_fn_loc(z80_state_t *cpu, sos_state_t *sos)
 {
-    (void)sos;
+    sos->cursor_x = cpu->l;
+    sos->cursor_y = cpu->h;
     uint8_t row = cpu->h + 1;  /* ANSI is 1-based */
     uint8_t col = cpu->l + 1;
     char buf[16];
@@ -740,6 +760,38 @@ static int sos_fn_loc(z80_state_t *cpu, sos_state_t *sos)
     buf[len++] = '0' + col % 10;
     buf[len++] = 'H';
     sos_putstr(buf, len);
+    return ECPU_TRAP_HANDLED;
+}
+
+/* fn 56: #WIDCH — set screen width: A ≤ 40 → 40-col, A > 40 → 80-col */
+static int sos_fn_widch(z80_state_t *cpu, sos_state_t *sos)
+{
+    uint8_t width = (cpu->a <= 40) ? 40 : 80;
+    sos->screen_width = width;
+
+    /* Update the S-OS work area so programs can read it */
+    cpu->memory[SOS_WIDTH] = width;
+
+    /* Tell the TTY backend to resize (fbcon switches font, ttyS ignores) */
+    struct { uint16_t row, col, xpix, ypix; } ws;
+    sys_ioctl(1, 0x5413/*TIOCGWINSZ*/, (long)&ws);
+    uint16_t rows = ws.row ? ws.row : 25;
+    ws.col = width;
+    ws.row = rows;
+    sys_ioctl(1, 0x5414/*TIOCSWINSZ*/, (long)&ws);
+
+    /* Re-read actual size after backend resize */
+    sys_ioctl(1, 0x5413/*TIOCGWINSZ*/, (long)&ws);
+    sos->screen_width  = (uint8_t)ws.col;
+    sos->screen_height = (uint8_t)ws.row;
+    cpu->memory[SOS_WIDTH] = (uint8_t)ws.col;
+    cpu->memory[SOS_MXLIN] = (uint8_t)ws.row;
+
+    /* Clear screen on mode change (matches real hardware behaviour) */
+    sos_putstr("\033[2J\033[H", 7);
+    sos->cursor_x = 0;
+    sos->cursor_y = 0;
+
     return ECPU_TRAP_HANDLED;
 }
 
@@ -803,7 +855,9 @@ static int sos_dispatch(uint32_t fn, z80_state_t *cpu, sos_state_t *sos)
     case SOS_FN_NAME:   rc = sos_fn_name(cpu, sos);    break;
     case SOS_FN_KILL:   rc = sos_fn_kill(cpu, sos);    break;
     case SOS_FN_CSR:    rc = sos_fn_csr(cpu, sos);     break;
+    case SOS_FN_SCRN:   rc = sos_fn_scrn(cpu, sos);    break;
     case SOS_FN_LOC:    rc = sos_fn_loc(cpu, sos);     break;
+    case SOS_FN_WIDCH:  rc = sos_fn_widch(cpu, sos);   break;
     case SOS_FN_BOOT:   rc = sos_fn_cold(cpu, sos);    break;
     default:
         rc = sos_fn_stub(cpu, sos);
