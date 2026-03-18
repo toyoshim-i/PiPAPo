@@ -85,8 +85,8 @@ Z80 eCPU address space (64 KB)
 │  │ 1FFEh: Cold start      │      │
 │  └───────────────────────┘      │
 ├──────────────────────────────────┤
-│  Monitor entry table (JP instr)  │ 0x0000 – 0x00FF
-│  Monitor subroutine bodies       │ 0x1F80 – 0x1FFD
+│  Monitor entry table (RST stubs) │ 0x0000 – 0x00FF
+│  Monitor subroutine entries      │ 0x1F80 – 0x1FFD
 │  Extended API entries            │ 0x2000 – 0x2036
 └──────────────────────────────────┘
 ```
@@ -129,14 +129,14 @@ exec_sos.c
   │ Parses 18-byte header (load addr, exec addr, mode)
   │ Allocates 64 KB Z80 memory
   │ Sets up S-OS work area (1F80h–1FFFh)
-  │ Installs monitor entry table (JP hooks)
+  │ Installs monitor entries (RST 0 stubs at 0x1F80–0x1FFD)
   │ Loads payload at header's load address
   ▼
 sos_run_process()
   │
   │ ecpu_z80_ops.run(cpu)  ──→  emulator loop
   │                                  │
-  │                                  │ JP to monitor entry → trapped
+  │                                  │ CALL/RST to entry → ECPU_TRAP_CALL
   │                                  ▼
   │                            sos_bridge.c
   │                                  │ Dispatches by function number
@@ -154,8 +154,8 @@ Kernel: process exits, parent wakes up
 
 | Aspect | CP/M | S-OS |
 |--------|------|------|
-| API entry | `CALL 0005h` (BDOS) | `JP` to monitor table (0x1F80–0x1FFD) |
-| Function dispatch | C register | Function number from entry address |
+| API entry | `CALL 0005h` (BDOS) | `CALL`/`JP` to monitor table (0x1F80–0x1FFD) |
+| Function dispatch | C register | Function number derived from entry address |
 | File model | FCB (8.3 names, 128B records) | Session + filename (atomic open-do-close) |
 | Memory map | TPA 0100h–FE00h | User area variable, work area 1F80h–1FFFh |
 | Binary format | .COM (headerless, load at 0100h) | .obj (`_SOS` header, load/exec addr in header) |
@@ -165,9 +165,22 @@ Kernel: process exits, parent wakes up
 
 ## 5. Monitor API Bridge
 
-S-OS programs call monitor functions via `JP` to entry points in the
-monitor table (addresses 0x1F80–0x1FFD, counting downward by 3 from
-0x1FFD). The emulator intercepts execution at these addresses.
+S-OS programs call monitor functions via `CALL` or `JP` to entry points
+in the monitor table (addresses 0x1F80–0x1FFD, counting downward by 3
+from 0x1FFD).
+
+**Trap mechanism:** The ecpu-z80 emulator fires `ECPU_TRAP_CALL` on
+**every** `CALL` and `RST` instruction, passing the target address.
+The trap handler checks whether the address falls in a monitor range
+(0x1F80–0x1FFD or 0x2000–0x2036). If it does, the call is handled
+and the emulator skips the actual subroutine call. If not, the handler
+returns `ECPU_TRAP_UNHANDLED` and the emulator proceeds normally.
+
+For programs that use `JP` (which does **not** trigger the trap),
+each monitor entry contains an `RST 0` stub. When the CPU jumps
+there, it executes `RST 0`, which does fire the trap. The bridge
+then computes the function number from the RST instruction's
+address (`cpu->pc - 1`).
 
 ### Console Output
 

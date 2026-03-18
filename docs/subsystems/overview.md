@@ -54,7 +54,7 @@ complexity of the personality layer:
 |---|---|---|
 | PPAP cross-arch | Trivial — register remap only | Same syscall numbers, different register ABI |
 | CP/M | Simple — ~40 BDOS functions | BDOS calls → open/read/write/exit |
-| S-OS SWORD | Simple — ~60 monitor functions | CALL 5 monitor entries → PPAP syscalls |
+| S-OS SWORD | Simple — ~40 monitor functions | CALL/JP to monitor entries → PPAP syscalls |
 | DOS | Moderate — INT 21h + BIOS stubs | INT 21h + INT 10h/16h → PPAP syscalls |
 | Human68k | Moderate — F-line + IOCS | F-line exceptions → PPAP syscalls |
 | Win32 | Complex — DLL function stubs | Win32 API → PPAP syscalls (stretch) |
@@ -388,9 +388,10 @@ subset of Z80 instructions.
 
 ### 4A.4 OS Personality: S-OS Monitor Bridge
 
-S-OS programs invoke monitor calls via `JP` to fixed addresses in
-the monitor entry table (mapped at 0x0000–0x00FF). The emulator
-intercepts execution at these entry points and translates:
+S-OS programs invoke monitor calls via `CALL` or `JP` to fixed
+addresses in the monitor entry table (0x1F80–0x1FFD). `CALL` is
+trapped directly by ecpu-z80; `JP` hits an `RST 0` stub at each
+entry, which triggers the trap indirectly. The bridge translates:
 
 | Monitor fn | Name | PPAP translation |
 |---|---|---|
