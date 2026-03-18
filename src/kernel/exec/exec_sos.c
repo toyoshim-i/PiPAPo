@@ -122,6 +122,7 @@ static void sos_setup_memory(z80_state_t *cpu, sos_state_t *sos)
     sos->screen_height = 25;
     sos->cursor_x = 0;
     sos->cursor_y = 0;
+    __builtin_memset(sos->screen_buf, ' ', sizeof(sos->screen_buf));
 }
 
 /* ── Drive root mapping ───────────────────────────────────────────────── */

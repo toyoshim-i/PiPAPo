@@ -100,6 +100,57 @@ static void sos_putstr(const char *s, int len)
     sys_write(1, s, (size_t)len);
 }
 
+/* ── Screen buffer helpers ───────────────────────────────────────────── */
+
+static void sos_screen_scroll_up(sos_state_t *sos)
+{
+    int w = sos->screen_width;
+    int h = sos->screen_height;
+    for (int y = 1; y < h; y++)
+        __builtin_memcpy(&sos->screen_buf[(y - 1) * w],
+                         &sos->screen_buf[y * w], (size_t)w);
+    __builtin_memset(&sos->screen_buf[(h - 1) * w], ' ', (size_t)w);
+}
+
+static void sos_screen_putc(sos_state_t *sos, uint8_t ch)
+{
+    int w = sos->screen_width;
+    int h = sos->screen_height;
+
+    if (ch == '\r') {
+        sos->cursor_x = 0;
+        return;
+    }
+    if (ch == '\n') {
+        sos->cursor_y++;
+        if (sos->cursor_y >= h) {
+            sos_screen_scroll_up(sos);
+            sos->cursor_y = h - 1;
+        }
+        return;
+    }
+    if (ch < 0x20)
+        return;  /* non-printable control chars don't go into buffer */
+
+    if (sos->cursor_x < w && sos->cursor_y < h)
+        sos->screen_buf[sos->cursor_y * w + sos->cursor_x] = ch;
+    sos->cursor_x++;
+    if (sos->cursor_x >= w) {
+        sos->cursor_x = 0;
+        sos->cursor_y++;
+        if (sos->cursor_y >= h) {
+            sos_screen_scroll_up(sos);
+            sos->cursor_y = h - 1;
+        }
+    }
+}
+
+static void sos_screen_clear(sos_state_t *sos)
+{
+    __builtin_memset(sos->screen_buf, ' ',
+                     (size_t)(sos->screen_width * sos->screen_height));
+}
+
 static uint8_t sos_getchar(void)
 {
     uint8_t ch = 0;
@@ -210,7 +261,7 @@ static int sos_fn_hot(z80_state_t *cpu, sos_state_t *sos)
 static int sos_fn_ver(z80_state_t *cpu, sos_state_t *sos)
 {
     (void)sos;
-    cpu->h = 0xFF;  /* machine ID: PPAP emulation */
+    cpu->h = 0x66;  /* machine ID */
     cpu->l = 0x20;  /* version: SWORD 2.0 */
     return ECPU_TRAP_HANDLED;
 }
@@ -220,25 +271,18 @@ static int sos_fn_print(z80_state_t *cpu, sos_state_t *sos)
 {
     uint8_t ch = cpu->a;
     sos_raw_putchar(ch);
-
-    /* Track cursor position */
-    if (ch == '\r')
-        sos->cursor_x = 0;
-    else if (ch == '\n')
-        sos->cursor_y++;
-    else if (ch >= 0x20)
-        sos->cursor_x++;
-
+    sos_screen_putc(sos, ch);
     return ECPU_TRAP_HANDLED;
 }
 
 /* fn 4: #PRINTS — print NUL-terminated string at DE */
 static int sos_fn_prints(z80_state_t *cpu, sos_state_t *sos)
 {
-    (void)sos;
     uint16_t addr = z80_de(cpu);
     while (addr < cpu->mem_size && cpu->memory[addr] != '\0') {
-        sos_raw_putchar(cpu->memory[addr]);
+        uint8_t ch = cpu->memory[addr];
+        sos_raw_putchar(ch);
+        sos_screen_putc(sos, ch);
         addr++;
     }
     return ECPU_TRAP_HANDLED;
@@ -249,7 +293,7 @@ static int sos_fn_ltnl(z80_state_t *cpu, sos_state_t *sos)
 {
     (void)cpu;
     sos_raw_putchar('\n');
-    sos->cursor_y++;
+    sos_screen_putc(sos, '\n');
     return ECPU_TRAP_HANDLED;
 }
 
@@ -258,18 +302,19 @@ static int sos_fn_nl(z80_state_t *cpu, sos_state_t *sos)
 {
     (void)cpu;
     sos_putstr("\r\n", 2);
-    sos->cursor_x = 0;
-    sos->cursor_y++;
+    sos_screen_putc(sos, '\r');
+    sos_screen_putc(sos, '\n');
     return ECPU_TRAP_HANDLED;
 }
 
 /* fn 7: #MSG — print string at DE, terminated by 0Dh (CR) */
 static int sos_fn_msg(z80_state_t *cpu, sos_state_t *sos)
 {
-    (void)sos;
     uint16_t addr = z80_de(cpu);
     while (addr < cpu->mem_size && cpu->memory[addr] != 0x0D) {
-        sos_raw_putchar(cpu->memory[addr]);
+        uint8_t ch = cpu->memory[addr];
+        sos_raw_putchar(ch);
+        sos_screen_putc(sos, ch);
         addr++;
     }
     return ECPU_TRAP_HANDLED;
@@ -278,10 +323,11 @@ static int sos_fn_msg(z80_state_t *cpu, sos_state_t *sos)
 /* fn 8: #MSX — print string at DE, terminated by 00h */
 static int sos_fn_msx(z80_state_t *cpu, sos_state_t *sos)
 {
-    (void)sos;
     uint16_t addr = z80_de(cpu);
     while (addr < cpu->mem_size && cpu->memory[addr] != '\0') {
-        sos_raw_putchar(cpu->memory[addr]);
+        uint8_t ch = cpu->memory[addr];
+        sos_raw_putchar(ch);
+        sos_screen_putc(sos, ch);
         addr++;
     }
     return ECPU_TRAP_HANDLED;
@@ -290,10 +336,11 @@ static int sos_fn_msx(z80_state_t *cpu, sos_state_t *sos)
 /* fn 9: #MPRNT — print string at DE, terminated by 00h */
 static int sos_fn_mprint(z80_state_t *cpu, sos_state_t *sos)
 {
-    (void)sos;
     uint16_t addr = z80_de(cpu);
     while (addr < cpu->mem_size && cpu->memory[addr] != '\0') {
-        sos_raw_putchar(cpu->memory[addr]);
+        uint8_t ch = cpu->memory[addr];
+        sos_raw_putchar(ch);
+        sos_screen_putc(sos, ch);
         addr++;
     }
     return ECPU_TRAP_HANDLED;
@@ -319,8 +366,8 @@ static int sos_fn_tab(z80_state_t *cpu, sos_state_t *sos)
 /* fn 11: #LPRINT — line printer print (stub, redirect to stdout) */
 static int sos_fn_lprint(z80_state_t *cpu, sos_state_t *sos)
 {
-    (void)sos;
     sos_raw_putchar(cpu->a);
+    sos_screen_putc(sos, cpu->a);
     return ECPU_TRAP_HANDLED;
 }
 
@@ -426,19 +473,19 @@ static int sos_fn_bell(z80_state_t *cpu, sos_state_t *sos)
 /* fn 20: #PRTHX — print A as 2-digit hex */
 static int sos_fn_prthx(z80_state_t *cpu, sos_state_t *sos)
 {
-    (void)sos;
     static const char hex[] = "0123456789ABCDEF";
     char buf[2];
     buf[0] = hex[(cpu->a >> 4) & 0x0F];
     buf[1] = hex[cpu->a & 0x0F];
     sos_putstr(buf, 2);
+    sos_screen_putc(sos, (uint8_t)buf[0]);
+    sos_screen_putc(sos, (uint8_t)buf[1]);
     return ECPU_TRAP_HANDLED;
 }
 
 /* fn 21: #PRTHL — print HL as 4-digit hex */
 static int sos_fn_prthl(z80_state_t *cpu, sos_state_t *sos)
 {
-    (void)sos;
     static const char hex[] = "0123456789ABCDEF";
     uint16_t hl = z80_hl(cpu);
     char buf[4];
@@ -447,6 +494,8 @@ static int sos_fn_prthl(z80_state_t *cpu, sos_state_t *sos)
     buf[2] = hex[(hl >> 4)  & 0x0F];
     buf[3] = hex[hl & 0x0F];
     sos_putstr(buf, 4);
+    for (int i = 0; i < 4; i++)
+        sos_screen_putc(sos, (uint8_t)buf[i]);
     return ECPU_TRAP_HANDLED;
 }
 
@@ -734,9 +783,12 @@ static int sos_fn_csr(z80_state_t *cpu, sos_state_t *sos)
 /* fn 49: #SCRN — read character at cursor position, returns A */
 static int sos_fn_scrn(z80_state_t *cpu, sos_state_t *sos)
 {
-    (void)sos;
-    /* No screen buffer — return space */
-    cpu->a = ' ';
+    int x = sos->cursor_x;
+    int y = sos->cursor_y;
+    if (x < sos->screen_width && y < sos->screen_height)
+        cpu->a = sos->screen_buf[y * sos->screen_width + x];
+    else
+        cpu->a = ' ';
     return ECPU_TRAP_HANDLED;
 }
 
@@ -791,6 +843,7 @@ static int sos_fn_widch(z80_state_t *cpu, sos_state_t *sos)
     sos_putstr("\033[2J\033[H", 7);
     sos->cursor_x = 0;
     sos->cursor_y = 0;
+    sos_screen_clear(sos);
 
     return ECPU_TRAP_HANDLED;
 }
@@ -860,6 +913,10 @@ static int sos_dispatch(uint32_t fn, z80_state_t *cpu, sos_state_t *sos)
     case SOS_FN_WIDCH:  rc = sos_fn_widch(cpu, sos);   break;
     case SOS_FN_BOOT:   rc = sos_fn_cold(cpu, sos);    break;
     default:
+        if (fn < 32)
+            sos->unsupported_lo |= (1u << fn);
+        else if (fn < 59)
+            sos->unsupported_hi |= (1u << (fn - 32));
         rc = sos_fn_stub(cpu, sos);
         break;
     }
@@ -989,6 +1046,67 @@ void sos_run_process(void)
     sys_exit(0);
 }
 
+static const char *sos_fn_name_table[] = {
+    "#COLD", "#HOT", "#VER", "#PRINT", "#PRINTS", "#LTNL", "#NL",
+    "#MSG", "#MSX", "#MPRINT", "#TAB", "#LPRINT", "#LPTON", "#LPTOF",
+    "#GETL", "#GETKY", "#BRKEY", "#INKEY", "#PAUSE", "#BELL",
+    "#PRTHX", "#PRTHL", "#ASC", "#HEX", "#2HEX", "#HLHEX",
+    "#WOPEN", "#WRD", "#FCB", "#RDD", "#FILE", "#FSAME", "#FPRNT",
+    "#POKE", "#POKEA", "#PEEK", "#PEEKA", "#MON",
+    0, 0,  /* 38, 39 — gap */
+    "#DRDSB", "#DWTSB", "#DIR", "#ROPEN", "#SET", "#RESET",
+    "#NAME", "#KILL", "#CSR", "#SCRN", "#LOC", "#FLGET",
+    "#RDVSW", "#SDVSW", "#INP", "#OUT", "#WIDCH", "#ERROR", "#BOOT",
+};
+
+static void sos_print_fn(int i)
+{
+    const char *name = (i < (int)(sizeof(sos_fn_name_table) /
+                        sizeof(sos_fn_name_table[0])))
+                       ? sos_fn_name_table[i] : 0;
+    if (name) {
+        int len = 0;
+        while (name[len]) len++;
+        sys_write(2, name, (size_t)len);
+    } else {
+        char buf[4];
+        int pos = 0;
+        int v = i;
+        buf[pos++] = '#';
+        int tens = 0;
+        while (v >= 10) { tens++; v -= 10; }
+        if (tens)
+            buf[pos++] = '0' + (char)tens;
+        buf[pos++] = '0' + (char)v;
+        sys_write(2, buf, (size_t)pos);
+    }
+}
+
+static void sos_print_unsupported(sos_state_t *sos)
+{
+    uint32_t lo = sos->unsupported_lo;
+    uint32_t hi = sos->unsupported_hi;
+    if (!lo && !hi)
+        return;
+
+    sys_write(2, "\nsos: unsupported API calls:", 27);
+    for (int i = 0; i < 32 && lo; i++) {
+        if (lo & (1u << i)) {
+            sys_write(2, " ", 1);
+            sos_print_fn(i);
+            lo &= ~(1u << i);
+        }
+    }
+    for (int i = 0; i < 27 && hi; i++) {
+        if (hi & (1u << i)) {
+            sys_write(2, " ", 1);
+            sos_print_fn(i + 32);
+            hi &= ~(1u << i);
+        }
+    }
+    sys_write(2, "\n", 1);
+}
+
 static void sos_on_exit(struct pcb *p)
 {
     if (!p->subsys_data)
@@ -996,6 +1114,9 @@ static void sos_on_exit(struct pcb *p)
 
     sos_state_t *sos = (sos_state_t *)((char *)p->subsys_data
                                         + sizeof(z80_state_t));
+
+    sos_print_unsupported(sos);
+
     if (!sos->termios_saved)
         return;
 

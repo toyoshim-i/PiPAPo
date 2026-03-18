@@ -134,6 +134,10 @@
 #define SOS_FN_BOOT      58    /* 0x2036  #BOOT   — reboot (exit)          */
 #define SOS_FN_MAX       59
 
+/* ── Screen buffer limits ─────────────────────────────────────────────── */
+#define SOS_SCREEN_MAX_COLS 80
+#define SOS_SCREEN_MAX_ROWS 40
+
 /* ── Per-process S-OS state ────────────────────────────────────────────── */
 typedef struct sos_state {
     uint8_t  current_session;  /* Current file session/drive (0=A, 1=B...)  */
@@ -146,10 +150,18 @@ typedef struct sos_state {
     uint8_t  screen_width;     /* 40 or 80                                  */
     uint8_t  screen_height;    /* typically 25                               */
 
+    /* Unsupported API tracking — bit N set = function N was called.
+     * Split into two 32-bit words to avoid 64-bit shifts on m68k. */
+    uint32_t unsupported_lo;  /* functions 0–31 */
+    uint32_t unsupported_hi;  /* functions 32–58 */
+
     /* Saved terminal state (restored on exit) */
     uint32_t saved_termios[5];
     uint8_t  saved_termios_cc[19];
     uint8_t  termios_saved;
+
+    /* Screen character buffer for #SCRN */
+    uint8_t  screen_buf[SOS_SCREEN_MAX_COLS * SOS_SCREEN_MAX_ROWS];
 } sos_state_t;
 
 /* ── Parsed _SOS header ────────────────────────────────────────────────── */
