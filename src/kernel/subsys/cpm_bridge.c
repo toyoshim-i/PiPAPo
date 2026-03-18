@@ -33,7 +33,7 @@
  * Characters without special meaning pass through unchanged.
  */
 
-enum { ADM_NORMAL, ADM_ESC, ADM_ROW, ADM_COL };
+enum { ADM_NORMAL, ADM_ESC, ADM_ROW, ADM_COL, ADM_ATTR_ON, ADM_ATTR_OFF, ADM_ATTR_SET };
 static int adm_state;
 static uint8_t adm_row;
 
@@ -72,9 +72,14 @@ static void adm_putchar(uint8_t ch)
         } else if (ch == 0x1E) {
             /* Ctrl-^: cursor home */
             adm_emit("\033[H");
-        } else {
+        } else if (ch >= 0x20 || ch == '\r' || ch == '\n' ||
+                   ch == '\t' || ch == '\b' || ch == '\a') {
             adm_raw_out(ch);
         }
+        /* Other control chars (0x01–0x06, 0x0E–0x19, 0x1D, 0x1F)
+         * are silently dropped — these are typically WordStar
+         * attribute toggles (^A bold, ^B bold, ^S underline, etc.)
+         * that have no VT100 equivalent. */
         break;
 
     case ADM_ESC:
@@ -92,15 +97,29 @@ static void adm_putchar(uint8_t ch)
         } else if (ch == ')') {
             /* Alternate keypad mode — ignore */
             adm_state = ADM_NORMAL;
+        } else if (ch == 'G') {
+            /* Kaypro ESC G <n> — set attribute (bitmask):
+             *   0=normal, 1=underline, 2=blink, 4=bold/half, 8=reverse */
+            adm_state = ADM_ATTR_SET;
+        } else if (ch == 'B') {
+            /* Kaypro ESC B <n> — start attribute n */
+            adm_state = ADM_ATTR_ON;
+        } else if (ch == 'C') {
+            /* Kaypro ESC C <n> — end attribute n */
+            adm_state = ADM_ATTR_OFF;
         } else if (ch == '[') {
             /* Already a VT100 CSI — pass through as-is */
             adm_raw_out(0x1B);
             adm_raw_out('[');
             adm_state = ADM_NORMAL;
-        } else {
-            /* Unknown ESC sequence — pass through unchanged */
+        } else if (ch >= 0x20) {
+            /* Unknown ESC sequence with printable char — pass through */
             adm_raw_out(0x1B);
             adm_raw_out(ch);
+            adm_state = ADM_NORMAL;
+        } else {
+            /* ESC + control char (e.g. ESC ^A for WordStar attributes)
+             * — silently drop both bytes */
             adm_state = ADM_NORMAL;
         }
         break;
@@ -117,6 +136,44 @@ static void adm_putchar(uint8_t ch)
         adm_raw_out(';');
         adm_emit_num((ch - 0x20) + 1);       /* 1-based */
         adm_raw_out('H');
+        adm_state = ADM_NORMAL;
+        break;
+
+    case ADM_ATTR_SET:
+        /* ESC G <n>: Kaypro set-attribute (bitmask).
+         * Map to VT100 SGR: reset first, then enable bits. */
+        adm_emit("\033[0");
+        if (ch & 0x01) adm_emit(";4");   /* underline */
+        if (ch & 0x02) adm_emit(";5");   /* blink */
+        if (ch & 0x04) adm_emit(";1");   /* bold */
+        if (ch & 0x08) adm_emit(";7");   /* reverse */
+        adm_raw_out('m');
+        adm_state = ADM_NORMAL;
+        break;
+
+    case ADM_ATTR_ON:
+        /* ESC B <n>: start individual attribute */
+        switch (ch) {
+        case '0': adm_emit("\033[2m");  break;  /* dim */
+        case '1': adm_emit("\033[4m");  break;  /* underline */
+        case '2': adm_emit("\033[5m");  break;  /* blink */
+        case '3': adm_emit("\033[4m");  break;  /* underline (alias) */
+        case '4': adm_emit("\033[1m");  break;  /* bold */
+        default:  break;
+        }
+        adm_state = ADM_NORMAL;
+        break;
+
+    case ADM_ATTR_OFF:
+        /* ESC C <n>: end individual attribute */
+        switch (ch) {
+        case '0': adm_emit("\033[22m"); break;  /* dim off */
+        case '1': adm_emit("\033[24m"); break;  /* underline off */
+        case '2': adm_emit("\033[25m"); break;  /* blink off */
+        case '3': adm_emit("\033[24m"); break;  /* underline off */
+        case '4': adm_emit("\033[22m"); break;  /* bold off */
+        default:  break;
+        }
         adm_state = ADM_NORMAL;
         break;
     }
