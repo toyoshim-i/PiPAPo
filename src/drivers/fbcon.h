@@ -1,9 +1,10 @@
 /*
  * fbcon.h — Framebuffer text console for PicoCalc LCD
  *
- * Character-cell text console with two display modes:
+ * Character-cell text console with three display modes:
  *   Mode 0: 40×20  (8×16 font, normal)
  *   Mode 1: 80×40  (4×8  font, compact / Rogue)
+ *   Mode 2: 40×40  (8×8  font, square)
  *
  * Renders text to the 320×320 LCD via the SPI1 transport layer.
  */
@@ -15,6 +16,7 @@
 
 #define FBCON_MODE_NORMAL  0   /* 40×20, 8×16 font */
 #define FBCON_MODE_COMPACT 1   /* 80×40, 4×8  font */
+#define FBCON_MODE_SQUARE  2   /* 40×40, 8×8  font */
 
 /* Initialise console in 40×20 mode, clear screen. */
 void fbcon_init(void);

@@ -92,6 +92,17 @@ add_custom_command(
 )
 
 add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/generated/font8x8.c
+    COMMAND ${Python3_EXECUTABLE} ${PPAP_ROOT}/tools/json2c.py
+            --input ${PPAP_ROOT}/third_party/fonts/ichigojam-font.json
+            --output ${CMAKE_BINARY_DIR}/generated/font8x8.c
+            --name font8x8
+    DEPENDS ${PPAP_ROOT}/third_party/fonts/ichigojam-font.json
+            ${PPAP_ROOT}/tools/json2c.py
+    COMMENT "Generating font8x8.c from IchigoJam font"
+)
+
+add_custom_command(
     OUTPUT ${CMAKE_BINARY_DIR}/generated/font4x8.c
     COMMAND ${Python3_EXECUTABLE} ${PPAP_ROOT}/tools/bdf2c.py
             --input ${PPAP_ROOT}/third_party/fonts/4x6.bdf
@@ -104,17 +115,20 @@ add_custom_command(
 
 add_custom_target(generate_fonts
     DEPENDS ${CMAKE_BINARY_DIR}/generated/font8x16.c
+            ${CMAKE_BINARY_DIR}/generated/font8x8.c
             ${CMAKE_BINARY_DIR}/generated/font4x8.c
 )
 add_dependencies(ppap_pico1calc generate_fonts)
 
 set_source_files_properties(
     ${CMAKE_BINARY_DIR}/generated/font8x16.c
+    ${CMAKE_BINARY_DIR}/generated/font8x8.c
     ${CMAKE_BINARY_DIR}/generated/font4x8.c
     PROPERTIES GENERATED TRUE
 )
 target_sources(ppap_pico1calc PRIVATE
     ${CMAKE_BINARY_DIR}/generated/font8x16.c
+    ${CMAKE_BINARY_DIR}/generated/font8x8.c
     ${CMAKE_BINARY_DIR}/generated/font4x8.c
 )
 

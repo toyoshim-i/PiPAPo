@@ -3,8 +3,9 @@
  *
  * Usage:
  *   ttyctl reset          Reset terminal to defaults (40×20, clear)
- *   ttyctl 80             Switch to 80-column mode (4×8 font)
- *   ttyctl 40             Switch to 40-column mode (8×16 font)
+ *   ttyctl 80             Switch to 80-column mode (4×8 font, 80×40)
+ *   ttyctl 40             Switch to 40-column mode (8×16 font, 40×20)
+ *   ttyctl sq             Switch to square mode (8×8 font, 40×40)
  *   ttyctl cols           Print current column count
  *   ttyctl backlight N    Set LCD backlight brightness (0–255)
  *   ttyctl battery        Print battery voltage and percentage
@@ -135,8 +136,9 @@ static void usage(void)
     static const char msg[] =
         "Usage: ttyctl <command>\n"
         "  reset        Reset terminal\n"
-        "  80           80-column mode\n"
-        "  40           40-column mode\n"
+        "  80           80-column mode (80x40)\n"
+        "  40           40-column mode (40x20)\n"
+        "  sq           Square mode (40x40)\n"
         "  cols         Print column count\n"
         "  backlight N  Set brightness 0-255\n"
         "  battery      Show battery info\n"
@@ -158,6 +160,7 @@ int main(int argc, char *argv[])
     if (streq(cmd, "reset"))          cmd_reset();
     else if (streq(cmd, "80"))        write(1, "\033[?80h", 6);
     else if (streq(cmd, "40"))        write(1, "\033[?80l", 6);
+    else if (streq(cmd, "sq"))        write(1, "\033[?40h", 6);
     else if (streq(cmd, "cols"))      cmd_cols();
     else if (streq(cmd, "backlight")) {
         if (argc < 3) {

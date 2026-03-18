@@ -93,8 +93,12 @@ static int fbcon_get_cols(void)      { return fbcon_cols(); }
 static int fbcon_get_rows(void)      { return fbcon_rows(); }
 static void fbcon_set_winsize(int c, int r)
 {
-    (void)r;
-    fbcon_set_mode(c > 40 ? FBCON_MODE_COMPACT : FBCON_MODE_NORMAL);
+    if (c > 40)
+        fbcon_set_mode(FBCON_MODE_COMPACT);
+    else if (r > 20)
+        fbcon_set_mode(FBCON_MODE_SQUARE);
+    else
+        fbcon_set_mode(FBCON_MODE_NORMAL);
 }
 
 /* ── LCD backlight (STM32 I2C register 0x05) ──────────────────────────── */

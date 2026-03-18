@@ -328,6 +328,9 @@ static void csi_private_mode(int final)
     if (mode == 80) {
         /* Private mode 80: 80/40-col switch */
         fbcon_set_mode(set ? FBCON_MODE_COMPACT : FBCON_MODE_NORMAL);
+    } else if (mode == 40) {
+        /* Private mode 40: 40×40 square mode */
+        fbcon_set_mode(set ? FBCON_MODE_SQUARE : FBCON_MODE_NORMAL);
     }
     /* ESC [ ? 25 h/l — cursor show/hide: accepted but no-op for now */
 }
@@ -583,6 +586,13 @@ void fbcon_set_mode(int mode)
         font_h = 8;
         font_stride = 8;
         font_data = &font4x8[0][0];
+    } else if (mode == FBCON_MODE_SQUARE) {
+        cols = 40;
+        rows = 40;
+        font_w = 8;
+        font_h = 8;
+        font_stride = 8;
+        font_data = &font8x8[0][0];
     } else {
         cols = 40;
         rows = 20;
