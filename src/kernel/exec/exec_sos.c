@@ -68,30 +68,54 @@ static void sos_setup_memory(z80_state_t *cpu, sos_state_t *sos)
     mem[0x0001] = SOS_COLD_ENTRY & 0xFF;
     mem[0x0002] = SOS_COLD_ENTRY >> 8;
 
-    /* RST 18h at 0x0018: JP to handler — trap intercepts the CALL */
+    /* RST 18h at 0x0018: JP to self — trap intercepts before execution */
     mem[SOS_RST18_ADDR]     = 0xC3;  /* JP */
-    mem[SOS_RST18_ADDR + 1] = SOS_ENTRY & 0xFF;
-    mem[SOS_RST18_ADDR + 2] = SOS_ENTRY >> 8;
+    mem[SOS_RST18_ADDR + 1] = SOS_RST18_ADDR & 0xFF;
+    mem[SOS_RST18_ADDR + 2] = SOS_RST18_ADDR >> 8;
 
-    /* API entry at 1FFBh: JP to handler (alternate entry) */
-    mem[SOS_ENTRY]     = 0xC3;  /* JP */
-    mem[SOS_ENTRY + 1] = SOS_ENTRY & 0xFF;
-    mem[SOS_ENTRY + 2] = SOS_ENTRY >> 8;
+    /*
+     * Populate monitor jump table (0x1F80–0x1FFD) and extended API
+     * (0x2000–0x2036) with executable stubs: { RST 0; RET; NOP }.
+     *
+     * Programs may reach these entries via JP (not just CALL), so the
+     * entries must contain real code.  RST 0 fires ECPU_TRAP_CALL(0x0000);
+     * the trap handler identifies the function from cpu->pc (which points
+     * just past the RST byte, i.e. inside the 3-byte entry).  On return
+     * from the trap, the RET instruction pops the original caller's
+     * return address.
+     */
+    for (uint16_t addr = SOS_MON_BASE; addr <= SOS_MON_TOP; addr += 3) {
+        mem[addr]     = 0xC7;  /* RST 0 */
+        mem[addr + 1] = 0xC9;  /* RET */
+        mem[addr + 2] = 0x00;  /* NOP (padding) */
+    }
+    for (uint16_t addr = SOS_EXT_BASE; addr <= SOS_EXT_TOP; addr += 3) {
+        mem[addr]     = 0xC7;  /* RST 0 */
+        mem[addr + 1] = 0xC9;  /* RET */
+        mem[addr + 2] = 0x00;  /* NOP (padding) */
+    }
 
-    /* Cold start at 1FFEh: JP to 0x0000 */
-    mem[SOS_COLD_ENTRY]     = 0xC3;
-    mem[SOS_COLD_ENTRY + 1] = 0x00;
-    mem[SOS_COLD_ENTRY + 2] = 0x00;
+    /* Initialize work area (0x1F5B–0x1F7F) */
+    mem[SOS_MXLIN]  = 25;             /* screen height */
+    mem[SOS_WIDTH]  = 80;             /* screen width */
+    mem[SOS_DSK]    = sos->current_session;  /* current device */
+    mem[SOS_DVSW]   = 0;              /* device: FDD */
+    mem[SOS_LPSW]   = 0;              /* printer off */
 
-    /* Initialize work area defaults */
-    mem[SOS_SESSION]  = sos->current_session;
-    mem[SOS_DSESSION] = sos->default_session;
+    /* User startup address → #HOT */
+    mem[SOS_USR]     = 0xFA;  /* 0x1FFA = #HOT */
+    mem[SOS_USR + 1] = 0x1F;
 
-    /* Default screen size: 80 columns × 24 lines */
-    mem[SOS_MAXCOL]     = 80;
-    mem[SOS_MAXCOL + 1] = 0;
-    mem[SOS_MAXLIN]     = 24;
-    mem[SOS_MAXLIN + 1] = 0;
+    /* Stack pointer */
+    mem[SOS_STKAD]     = SOS_STACK_TOP & 0xFF;
+    mem[SOS_STKAD + 1] = SOS_STACK_TOP >> 8;
+
+    /* User RAM limit */
+    mem[SOS_MEMAX]     = 0x00;
+    mem[SOS_MEMAX + 1] = 0xD0;  /* D000h */
+
+    /* Initialize file_fd */
+    sos->file_fd = -1;
 }
 
 /* ── Drive root mapping ───────────────────────────────────────────────── */
@@ -182,11 +206,11 @@ int exec_sos(pcb_t *p, const uint8_t *file, uint32_t size,
     /* Push return address 0x0000 so RET triggers cold start (exit) */
     z80_push16(&state->z80, 0x0000);
 
-    /* Set DTADR/EDADR/EXADR in work area */
+    /* Set DTADR/SIZE/EXADR in work area */
     z80_mem[SOS_DTADR]     = hdr.load_addr & 0xFF;
     z80_mem[SOS_DTADR + 1] = hdr.load_addr >> 8;
-    z80_mem[SOS_EDADR]     = (hdr.load_addr + payload_size - 1) & 0xFF;
-    z80_mem[SOS_EDADR + 1] = (hdr.load_addr + payload_size - 1) >> 8;
+    z80_mem[SOS_SIZE]      = payload_size & 0xFF;
+    z80_mem[SOS_SIZE + 1]  = (payload_size >> 8) & 0xFF;
     z80_mem[SOS_EXADR]     = hdr.exec_addr & 0xFF;
     z80_mem[SOS_EXADR + 1] = hdr.exec_addr >> 8;
 

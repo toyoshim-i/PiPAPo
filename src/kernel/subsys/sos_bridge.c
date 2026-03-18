@@ -1,14 +1,12 @@
 /*
  * sos_bridge.c — S-OS "SWORD" API bridge (personality layer)
  *
- * Intercepts RST 18h and CALL 1FFBh/1FFEh from Z80-emulated S-OS programs
- * and translates S-OS system calls into PPAP syscalls.
+ * Intercepts CALL to S-OS monitor subroutine entry points (0x1F80–0x1FFD)
+ * and extended API (0x2000–0x2036) from Z80-emulated S-OS programs, and
+ * translates them into PPAP syscalls.
  *
- * Phase S-1: Console output (#COLD, #HOT, #VER, #PRINT, #MSG, #MSX,
- *            #TAB, #CR, #LF, #BELL, #PRTHX, #PRTHL)
- * Phase S-2: Console input (#GETL, #GETKY, #BRKEY, #INKEY, #PAUSE)
- * Phase S-3: File operations (#FILE, #FSAVE, #FLOAD, #FVRFY, #FKILL, #FREN)
- * Phase S-4: Numeric conversion (#ASC1B, #HEX1B, #HEX2B) + stubs
+ * The monitor jump table counts downward from 0x1FFD:
+ *   address = 0x1FFD − fn_index × 3
  *
  * See docs/proposals/sos_subsystem.md for the design.
  */
@@ -150,7 +148,7 @@ static int sos_file_rename(const char *oldpath, const char *newpath)
     return (int)sys_rename(oldpath, newpath);
 }
 
-/* ── Helper: read 16-bit LE from Z80 memory ───────────────────────────── */
+/* ── Helper: read/write 16-bit LE from Z80 memory ────────────────────── */
 
 static uint16_t z80_rd16(z80_state_t *cpu, uint16_t addr)
 {
@@ -168,7 +166,6 @@ static void z80_wr16(z80_state_t *cpu, uint16_t addr, uint16_t val)
 static void sos_resolve_path(z80_state_t *cpu, sos_state_t *sos,
                              char *path, int path_size)
 {
-    /* Read filename from FNAM work area (up to 16 chars) */
     char fnam[17];
     int i;
     for (i = 0; i < 16; i++) {
@@ -179,46 +176,46 @@ static void sos_resolve_path(z80_state_t *cpu, sos_state_t *sos,
     }
     fnam[i] = '\0';
 
-    uint8_t session = cpu->memory[SOS_SESSION];
+    uint8_t session = cpu->memory[SOS_DSK];
     if (session > 25)
         session = sos->current_session;
 
-    /* Map session to /a/ /b/ etc. */
     char drive = 'a' + session;
     int pos = 0;
-
     path[pos++] = '/';
     path[pos++] = drive;
     path[pos++] = '/';
-
     for (int j = 0; fnam[j] && pos < path_size - 1; j++)
         path[pos++] = fnam[j];
     path[pos] = '\0';
 }
 
-/* ── S-OS API functions ────────────────────────────────────────────────── */
+/* ── S-OS API function handlers ──────────────────────────────────────── */
 
-/* Console output functions */
-
+/* fn 0: #COLD — cold start (exit) */
 static int sos_fn_cold(z80_state_t *cpu, sos_state_t *sos)
 {
     (void)cpu; (void)sos;
     return ECPU_TRAP_EXIT;
 }
 
+/* fn 1: #HOT — warm start (exit) */
 static int sos_fn_hot(z80_state_t *cpu, sos_state_t *sos)
 {
     (void)cpu; (void)sos;
     return ECPU_TRAP_EXIT;
 }
 
+/* fn 2: #VER — return machine ID in H, version in L */
 static int sos_fn_ver(z80_state_t *cpu, sos_state_t *sos)
 {
-    (void)cpu; (void)sos;
-    sos_putstr("S-OS SWORD on PPAP\r\n", 20);
+    (void)sos;
+    cpu->h = 0xFF;  /* machine ID: PPAP emulation */
+    cpu->l = 0x20;  /* version: SWORD 2.0 */
     return ECPU_TRAP_HANDLED;
 }
 
+/* fn 3: #PRINT — print character in A */
 static int sos_fn_print(z80_state_t *cpu, sos_state_t *sos)
 {
     (void)sos;
@@ -226,7 +223,8 @@ static int sos_fn_print(z80_state_t *cpu, sos_state_t *sos)
     return ECPU_TRAP_HANDLED;
 }
 
-static int sos_fn_msg(z80_state_t *cpu, sos_state_t *sos)
+/* fn 4: #PRINTS — print NUL-terminated string at DE */
+static int sos_fn_prints(z80_state_t *cpu, sos_state_t *sos)
 {
     (void)sos;
     uint16_t addr = z80_de(cpu);
@@ -237,18 +235,62 @@ static int sos_fn_msg(z80_state_t *cpu, sos_state_t *sos)
     return ECPU_TRAP_HANDLED;
 }
 
-static int sos_fn_msx(z80_state_t *cpu, sos_state_t *sos)
+/* fn 5: #LTNL — line feed (LF) */
+static int sos_fn_ltnl(z80_state_t *cpu, sos_state_t *sos)
 {
-    /* Printer output — redirect to stdout */
-    (void)sos;
-    sos_raw_putchar(cpu->a);
+    (void)cpu; (void)sos;
+    sos_raw_putchar('\n');
     return ECPU_TRAP_HANDLED;
 }
 
+/* fn 6: #NL — newline (CR + LF) */
+static int sos_fn_nl(z80_state_t *cpu, sos_state_t *sos)
+{
+    (void)cpu; (void)sos;
+    sos_putstr("\r\n", 2);
+    return ECPU_TRAP_HANDLED;
+}
+
+/* fn 7: #MSG — print string at DE, terminated by 0Dh (CR) */
+static int sos_fn_msg(z80_state_t *cpu, sos_state_t *sos)
+{
+    (void)sos;
+    uint16_t addr = z80_de(cpu);
+    while (addr < cpu->mem_size && cpu->memory[addr] != 0x0D) {
+        sos_raw_putchar(cpu->memory[addr]);
+        addr++;
+    }
+    return ECPU_TRAP_HANDLED;
+}
+
+/* fn 8: #MSX — print string at DE, terminated by 00h */
+static int sos_fn_msx(z80_state_t *cpu, sos_state_t *sos)
+{
+    (void)sos;
+    uint16_t addr = z80_de(cpu);
+    while (addr < cpu->mem_size && cpu->memory[addr] != '\0') {
+        sos_raw_putchar(cpu->memory[addr]);
+        addr++;
+    }
+    return ECPU_TRAP_HANDLED;
+}
+
+/* fn 9: #MPRNT — print string at DE, terminated by 00h */
+static int sos_fn_mprint(z80_state_t *cpu, sos_state_t *sos)
+{
+    (void)sos;
+    uint16_t addr = z80_de(cpu);
+    while (addr < cpu->mem_size && cpu->memory[addr] != '\0') {
+        sos_raw_putchar(cpu->memory[addr]);
+        addr++;
+    }
+    return ECPU_TRAP_HANDLED;
+}
+
+/* fn 10: #TAB — move cursor to column in A (ANSI escape) */
 static int sos_fn_tab(z80_state_t *cpu, sos_state_t *sos)
 {
     (void)sos;
-    /* Move cursor to column specified in A (ANSI escape) */
     char buf[16];
     unsigned col = cpu->a + 1;  /* ANSI is 1-based */
     int len = 0;
@@ -262,54 +304,29 @@ static int sos_fn_tab(z80_state_t *cpu, sos_state_t *sos)
     return ECPU_TRAP_HANDLED;
 }
 
-static int sos_fn_cr(z80_state_t *cpu, sos_state_t *sos)
-{
-    (void)cpu; (void)sos;
-    sos_raw_putchar('\r');
-    return ECPU_TRAP_HANDLED;
-}
-
-static int sos_fn_lf(z80_state_t *cpu, sos_state_t *sos)
-{
-    (void)cpu; (void)sos;
-    sos_raw_putchar('\n');
-    return ECPU_TRAP_HANDLED;
-}
-
-static int sos_fn_bell(z80_state_t *cpu, sos_state_t *sos)
-{
-    (void)cpu; (void)sos;
-    sos_raw_putchar('\a');
-    return ECPU_TRAP_HANDLED;
-}
-
-static int sos_fn_prthx(z80_state_t *cpu, sos_state_t *sos)
+/* fn 11: #LPRINT — line printer print (stub, redirect to stdout) */
+static int sos_fn_lprint(z80_state_t *cpu, sos_state_t *sos)
 {
     (void)sos;
-    static const char hex[] = "0123456789ABCDEF";
-    char buf[2];
-    buf[0] = hex[(cpu->a >> 4) & 0x0F];
-    buf[1] = hex[cpu->a & 0x0F];
-    sos_putstr(buf, 2);
+    sos_raw_putchar(cpu->a);
     return ECPU_TRAP_HANDLED;
 }
 
-static int sos_fn_prthl(z80_state_t *cpu, sos_state_t *sos)
+/* fn 12: #LPTON — line printer on (stub) */
+static int sos_fn_lpton(z80_state_t *cpu, sos_state_t *sos)
 {
-    (void)sos;
-    static const char hex[] = "0123456789ABCDEF";
-    uint16_t hl = z80_hl(cpu);
-    char buf[4];
-    buf[0] = hex[(hl >> 12) & 0x0F];
-    buf[1] = hex[(hl >> 8)  & 0x0F];
-    buf[2] = hex[(hl >> 4)  & 0x0F];
-    buf[3] = hex[hl & 0x0F];
-    sos_putstr(buf, 4);
+    (void)cpu; (void)sos;
     return ECPU_TRAP_HANDLED;
 }
 
-/* Console input functions */
+/* fn 13: #LPTOF — line printer off (stub) */
+static int sos_fn_lptof(z80_state_t *cpu, sos_state_t *sos)
+{
+    (void)cpu; (void)sos;
+    return ECPU_TRAP_HANDLED;
+}
 
+/* fn 14: #GETL — line input: DE=buffer, B=max length */
 static int sos_fn_getl(z80_state_t *cpu, sos_state_t *sos)
 {
     (void)sos;
@@ -344,27 +361,8 @@ static int sos_fn_getl(z80_state_t *cpu, sos_state_t *sos)
     return ECPU_TRAP_HANDLED;
 }
 
+/* fn 15: #GETKY — scan keyboard (non-blocking), A=key or 0 */
 static int sos_fn_getky(z80_state_t *cpu, sos_state_t *sos)
-{
-    (void)sos;
-    cpu->a = sos_getchar();
-    cpu->f &= ~FLAG_C;
-    return ECPU_TRAP_HANDLED;
-}
-
-static int sos_fn_brkey(z80_state_t *cpu, sos_state_t *sos)
-{
-    (void)sos;
-    /* Check if break (Ctrl-C) is pending — approximate with char_ready */
-    if (sos_char_ready()) {
-        cpu->f |= FLAG_C;  /* carry = break detected */
-    } else {
-        cpu->f &= ~FLAG_C;
-    }
-    return ECPU_TRAP_HANDLED;
-}
-
-static int sos_fn_inkey(z80_state_t *cpu, sos_state_t *sos)
 {
     (void)sos;
     if (sos_char_ready()) {
@@ -372,35 +370,85 @@ static int sos_fn_inkey(z80_state_t *cpu, sos_state_t *sos)
     } else {
         cpu->a = 0;
     }
-    cpu->f &= ~FLAG_C;
     return ECPU_TRAP_HANDLED;
 }
 
-static int sos_fn_pause(z80_state_t *cpu, sos_state_t *sos)
+/* fn 16: #BRKEY — check break key (Z flag set if break) */
+static int sos_fn_brkey(z80_state_t *cpu, sos_state_t *sos)
 {
     (void)sos;
-    (void)sos_getchar();  /* wait for any key, discard */
-    cpu->f &= ~FLAG_C;
-    return ECPU_TRAP_HANDLED;
-}
-
-/* Numeric conversion functions */
-
-static int sos_fn_asc1b(z80_state_t *cpu, sos_state_t *sos)
-{
-    (void)sos;
-    /* ASCII digit char in A → binary value in A */
-    uint8_t ch = cpu->a;
-    if (ch >= '0' && ch <= '9') {
-        cpu->a = ch - '0';
-        cpu->f &= ~FLAG_C;
+    /* Z flag set = break detected */
+    if (sos_char_ready()) {
+        cpu->f |= FLAG_Z;   /* Z set: break pending */
     } else {
-        cpu->f |= FLAG_C;
+        cpu->f &= ~FLAG_Z;  /* Z clear: no break */
     }
     return ECPU_TRAP_HANDLED;
 }
 
-static int sos_fn_hex1b(z80_state_t *cpu, sos_state_t *sos)
+/* fn 17: #INKEY — blocking key input, A=key */
+static int sos_fn_inkey(z80_state_t *cpu, sos_state_t *sos)
+{
+    (void)sos;
+    cpu->a = sos_getchar();
+    return ECPU_TRAP_HANDLED;
+}
+
+/* fn 18: #PAUSE — wait for any key */
+static int sos_fn_pause(z80_state_t *cpu, sos_state_t *sos)
+{
+    (void)sos;
+    (void)sos_getchar();
+    cpu->f &= ~FLAG_C;
+    return ECPU_TRAP_HANDLED;
+}
+
+/* fn 19: #BELL — sound bell */
+static int sos_fn_bell(z80_state_t *cpu, sos_state_t *sos)
+{
+    (void)cpu; (void)sos;
+    sos_raw_putchar('\a');
+    return ECPU_TRAP_HANDLED;
+}
+
+/* fn 20: #PRTHX — print A as 2-digit hex */
+static int sos_fn_prthx(z80_state_t *cpu, sos_state_t *sos)
+{
+    (void)sos;
+    static const char hex[] = "0123456789ABCDEF";
+    char buf[2];
+    buf[0] = hex[(cpu->a >> 4) & 0x0F];
+    buf[1] = hex[cpu->a & 0x0F];
+    sos_putstr(buf, 2);
+    return ECPU_TRAP_HANDLED;
+}
+
+/* fn 21: #PRTHL — print HL as 4-digit hex */
+static int sos_fn_prthl(z80_state_t *cpu, sos_state_t *sos)
+{
+    (void)sos;
+    static const char hex[] = "0123456789ABCDEF";
+    uint16_t hl = z80_hl(cpu);
+    char buf[4];
+    buf[0] = hex[(hl >> 12) & 0x0F];
+    buf[1] = hex[(hl >> 8)  & 0x0F];
+    buf[2] = hex[(hl >> 4)  & 0x0F];
+    buf[3] = hex[hl & 0x0F];
+    sos_putstr(buf, 4);
+    return ECPU_TRAP_HANDLED;
+}
+
+/* fn 22: #ASC — convert 4-bit value (low nibble of A) to ASCII '0'-'F' */
+static int sos_fn_asc(z80_state_t *cpu, sos_state_t *sos)
+{
+    (void)sos;
+    static const char hex[] = "0123456789ABCDEF";
+    cpu->a = (uint8_t)hex[cpu->a & 0x0F];
+    return ECPU_TRAP_HANDLED;
+}
+
+/* fn 23: #HEX — convert ASCII hex char in A to 4-bit value */
+static int sos_fn_hex(z80_state_t *cpu, sos_state_t *sos)
 {
     (void)sos;
     int val = hex_digit(cpu->a);
@@ -413,10 +461,10 @@ static int sos_fn_hex1b(z80_state_t *cpu, sos_state_t *sos)
     return ECPU_TRAP_HANDLED;
 }
 
-static int sos_fn_hex2b(z80_state_t *cpu, sos_state_t *sos)
+/* fn 24: #2HEX — 2 hex chars at (HL) to byte in A */
+static int sos_fn_2hex(z80_state_t *cpu, sos_state_t *sos)
 {
     (void)sos;
-    /* HL points to 2 hex chars in memory */
     uint16_t addr = z80_hl(cpu);
     int val = hex2byte(&cpu->memory[addr]);
     if (val >= 0) {
@@ -428,193 +476,197 @@ static int sos_fn_hex2b(z80_state_t *cpu, sos_state_t *sos)
     return ECPU_TRAP_HANDLED;
 }
 
-/* I/O port stubs */
-
-static int sos_fn_flget(z80_state_t *cpu, sos_state_t *sos)
+/* fn 25: #HLHEX — 4 hex chars at (DE) to 16-bit value in HL */
+static int sos_fn_hlhex(z80_state_t *cpu, sos_state_t *sos)
 {
     (void)sos;
-    cpu->f |= FLAG_C;  /* error: no tape */
+    uint16_t de = z80_de(cpu);
+    int b1 = hex2byte(&cpu->memory[de]);
+    int b0 = hex2byte(&cpu->memory[de + 2]);
+    if (b1 >= 0 && b0 >= 0) {
+        uint16_t val = (uint16_t)((b1 << 8) | b0);
+        cpu->h = (val >> 8) & 0xFF;
+        cpu->l = val & 0xFF;
+        cpu->f &= ~FLAG_C;
+    } else {
+        cpu->f |= FLAG_C;
+    }
     return ECPU_TRAP_HANDLED;
 }
 
-static int sos_fn_rdvsw(z80_state_t *cpu, sos_state_t *sos)
+/* fn 26-29: #WOPEN, #WRD, #FCB, #RDD — file I/O (stubs) */
+static int sos_fn_wopen(z80_state_t *cpu, sos_state_t *sos)
 {
-    (void)sos;
-    cpu->a = 0;
-    cpu->f &= ~FLAG_C;
+    char path[64];
+    sos_resolve_path(cpu, sos, path, sizeof(path));
+    int fd = sos_file_open(path, O_WRONLY | O_CREAT | O_TRUNC);
+    if (fd < 0) {
+        cpu->f |= FLAG_C;
+    } else {
+        sos->file_fd = fd;
+        cpu->f &= ~FLAG_C;
+    }
     return ECPU_TRAP_HANDLED;
 }
 
-static int sos_fn_sdvsw(z80_state_t *cpu, sos_state_t *sos)
+static int sos_fn_wrd(z80_state_t *cpu, sos_state_t *sos)
 {
-    (void)cpu; (void)sos;
+    if (sos->file_fd < 0) {
+        cpu->f |= FLAG_C;
+        return ECPU_TRAP_HANDLED;
+    }
+    uint16_t dtadr = z80_rd16(cpu, SOS_DTADR);
+    uint16_t fsize = z80_rd16(cpu, SOS_SIZE);
+    if (fsize == 0) {
+        cpu->f |= FLAG_C;
+        return ECPU_TRAP_HANDLED;
+    }
+    uint32_t len = fsize;
+    int written = sos_file_write(sos->file_fd, &cpu->memory[dtadr], (int)len);
+    sos_file_close(sos->file_fd);
+    sos->file_fd = -1;
+    if (written < 0 || (uint32_t)written != len)
+        cpu->f |= FLAG_C;
+    else
+        cpu->f &= ~FLAG_C;
     return ECPU_TRAP_HANDLED;
 }
 
-static int sos_fn_inp(z80_state_t *cpu, sos_state_t *sos)
+static int sos_fn_rdd(z80_state_t *cpu, sos_state_t *sos)
 {
-    (void)sos;
-    cpu->a = 0;
+    if (sos->file_fd < 0) {
+        cpu->f |= FLAG_C;
+        return ECPU_TRAP_HANDLED;
+    }
+    uint16_t dtadr = z80_rd16(cpu, SOS_DTADR);
+    uint32_t max_len = cpu->mem_size - dtadr;
+    int nread = sos_file_read(sos->file_fd, &cpu->memory[dtadr], (int)max_len);
+    sos_file_close(sos->file_fd);
+    sos->file_fd = -1;
+    if (nread < 0) {
+        cpu->f |= FLAG_C;
+    } else {
+        z80_wr16(cpu, SOS_SIZE, (uint16_t)nread);
+        cpu->f &= ~FLAG_C;
+    }
     return ECPU_TRAP_HANDLED;
 }
 
-static int sos_fn_out(z80_state_t *cpu, sos_state_t *sos)
+static int sos_fn_fcb(z80_state_t *cpu, sos_state_t *sos)
 {
-    (void)cpu; (void)sos;
-    return ECPU_TRAP_HANDLED;
-}
-
-static int sos_fn_widch(z80_state_t *cpu, sos_state_t *sos)
-{
-    (void)sos;
-    /* Store screen width in work area */
-    z80_wr16(cpu, SOS_MAXCOL, (uint16_t)cpu->a);
-    cpu->f &= ~FLAG_C;
-    return ECPU_TRAP_HANDLED;
-}
-
-/* File operations */
-
-static int sos_fn_file(z80_state_t *cpu, sos_state_t *sos)
-{
-    /* Directory listing — stub: return with carry set (not implemented) */
     (void)cpu; (void)sos;
     cpu->f |= FLAG_C;
     return ECPU_TRAP_HANDLED;
 }
 
-static int sos_fn_fsave(z80_state_t *cpu, sos_state_t *sos)
+/* fn 30: #FILE — directory listing (stub) */
+static int sos_fn_file(z80_state_t *cpu, sos_state_t *sos)
 {
-    char path[64];
-    sos_resolve_path(cpu, sos, path, sizeof(path));
-
-    uint16_t dtadr = z80_rd16(cpu, SOS_DTADR);
-    uint16_t edadr = z80_rd16(cpu, SOS_EDADR);
-
-    if (edadr < dtadr || dtadr >= cpu->mem_size) {
-        cpu->f |= FLAG_C;
-        return ECPU_TRAP_HANDLED;
-    }
-
-    uint32_t len = (uint32_t)(edadr - dtadr + 1);
-    if (dtadr + len > cpu->mem_size)
-        len = cpu->mem_size - dtadr;
-
-    int fd = sos_file_open(path, O_WRONLY | O_CREAT | O_TRUNC);
-    if (fd < 0) {
-        cpu->f |= FLAG_C;
-        return ECPU_TRAP_HANDLED;
-    }
-
-    int written = sos_file_write(fd, &cpu->memory[dtadr], (int)len);
-    sos_file_close(fd);
-
-    if (written < 0 || (uint32_t)written != len) {
-        cpu->f |= FLAG_C;
-    } else {
-        cpu->f &= ~FLAG_C;
-    }
+    (void)cpu; (void)sos;
+    cpu->f |= FLAG_C;
     return ECPU_TRAP_HANDLED;
 }
 
-static int sos_fn_fload(z80_state_t *cpu, sos_state_t *sos)
+/* fn 31: #FSAME — filename compare (stub) */
+static int sos_fn_fsame(z80_state_t *cpu, sos_state_t *sos)
+{
+    (void)cpu; (void)sos;
+    cpu->f |= FLAG_C;
+    return ECPU_TRAP_HANDLED;
+}
+
+/* fn 32: #FPRNT — file info print (stub) */
+static int sos_fn_fprnt(z80_state_t *cpu, sos_state_t *sos)
+{
+    (void)cpu; (void)sos;
+    cpu->f |= FLAG_C;
+    return ECPU_TRAP_HANDLED;
+}
+
+/* fn 33: #POKE — store A at memory[HL] */
+static int sos_fn_poke(z80_state_t *cpu, sos_state_t *sos)
+{
+    (void)sos;
+    uint16_t addr = z80_hl(cpu);
+    cpu->memory[addr] = cpu->a;
+    cpu->f &= ~FLAG_C;
+    return ECPU_TRAP_HANDLED;
+}
+
+/* fn 34: #POKE@ — block store: HL=dest addr, DE=src buf, BC=count */
+static int sos_fn_pokea(z80_state_t *cpu, sos_state_t *sos)
+{
+    (void)sos;
+    uint16_t dest = z80_hl(cpu);
+    uint16_t src  = z80_de(cpu);
+    uint16_t count = z80_bc(cpu);
+    for (uint16_t i = 0; i < count && (uint32_t)(dest + i) < cpu->mem_size; i++)
+        cpu->memory[dest + i] = cpu->memory[src + i];
+    cpu->f &= ~FLAG_C;
+    return ECPU_TRAP_HANDLED;
+}
+
+/* fn 35: #PEEK — read memory[HL] into A */
+static int sos_fn_peek(z80_state_t *cpu, sos_state_t *sos)
+{
+    (void)sos;
+    uint16_t addr = z80_hl(cpu);
+    cpu->a = cpu->memory[addr];
+    cpu->f &= ~FLAG_C;
+    return ECPU_TRAP_HANDLED;
+}
+
+/* fn 36: #PEEK@ — block read: HL=src addr, DE=dest buf, BC=count */
+static int sos_fn_peeka(z80_state_t *cpu, sos_state_t *sos)
+{
+    (void)sos;
+    uint16_t src  = z80_hl(cpu);
+    uint16_t dest = z80_de(cpu);
+    uint16_t count = z80_bc(cpu);
+    for (uint16_t i = 0; i < count && (uint32_t)(src + i) < cpu->mem_size; i++)
+        cpu->memory[dest + i] = cpu->memory[src + i];
+    cpu->f &= ~FLAG_C;
+    return ECPU_TRAP_HANDLED;
+}
+
+/* fn 37: #MON — enter monitor (exit) */
+static int sos_fn_mon(z80_state_t *cpu, sos_state_t *sos)
+{
+    (void)cpu; (void)sos;
+    return ECPU_TRAP_EXIT;
+}
+
+/* Extended API stubs */
+
+/* fn 42: #DIR — directory listing */
+static int sos_fn_dir(z80_state_t *cpu, sos_state_t *sos)
+{
+    (void)cpu; (void)sos;
+    cpu->f |= FLAG_C;
+    return ECPU_TRAP_HANDLED;
+}
+
+/* fn 43: #ROPEN — file read open */
+static int sos_fn_ropen(z80_state_t *cpu, sos_state_t *sos)
 {
     char path[64];
     sos_resolve_path(cpu, sos, path, sizeof(path));
-
-    uint16_t dtadr = z80_rd16(cpu, SOS_DTADR);
-
-    if (dtadr >= cpu->mem_size) {
-        cpu->f |= FLAG_C;
-        return ECPU_TRAP_HANDLED;
-    }
-
     int fd = sos_file_open(path, O_RDONLY);
     if (fd < 0) {
         cpu->f |= FLAG_C;
-        return ECPU_TRAP_HANDLED;
-    }
-
-    uint32_t max_len = cpu->mem_size - dtadr;
-    int nread = sos_file_read(fd, &cpu->memory[dtadr], (int)max_len);
-    sos_file_close(fd);
-
-    if (nread < 0) {
-        cpu->f |= FLAG_C;
     } else {
-        /* Update EDADR to reflect actual end of loaded data */
-        z80_wr16(cpu, SOS_EDADR, (uint16_t)(dtadr + nread - 1));
+        sos->file_fd = fd;
         cpu->f &= ~FLAG_C;
     }
     return ECPU_TRAP_HANDLED;
 }
 
-static int sos_fn_fvrfy(z80_state_t *cpu, sos_state_t *sos)
+/* fn 46: #NAME — rename file */
+static int sos_fn_name(z80_state_t *cpu, sos_state_t *sos)
 {
-    char path[64];
-    sos_resolve_path(cpu, sos, path, sizeof(path));
-
-    uint16_t dtadr = z80_rd16(cpu, SOS_DTADR);
-    uint16_t edadr = z80_rd16(cpu, SOS_EDADR);
-
-    if (edadr < dtadr || dtadr >= cpu->mem_size) {
-        cpu->f |= FLAG_C;
-        return ECPU_TRAP_HANDLED;
-    }
-
-    int fd = sos_file_open(path, O_RDONLY);
-    if (fd < 0) {
-        cpu->f |= FLAG_C;
-        return ECPU_TRAP_HANDLED;
-    }
-
-    uint32_t len = (uint32_t)(edadr - dtadr + 1);
-    uint8_t buf[128];
-    uint32_t offset = 0;
-    int match = 1;
-
-    while (offset < len) {
-        int chunk = (int)(len - offset);
-        if (chunk > (int)sizeof(buf)) chunk = (int)sizeof(buf);
-        int nread = sos_file_read(fd, buf, chunk);
-        if (nread <= 0) {
-            match = 0;
-            break;
-        }
-        if (memcmp(&cpu->memory[dtadr + offset], buf, (size_t)nread) != 0) {
-            match = 0;
-            break;
-        }
-        offset += (uint32_t)nread;
-    }
-    sos_file_close(fd);
-
-    if (match)
-        cpu->f &= ~FLAG_C;
-    else
-        cpu->f |= FLAG_C;
-    return ECPU_TRAP_HANDLED;
-}
-
-static int sos_fn_fkill(z80_state_t *cpu, sos_state_t *sos)
-{
-    char path[64];
-    sos_resolve_path(cpu, sos, path, sizeof(path));
-
-    if (sos_file_delete(path) < 0)
-        cpu->f |= FLAG_C;
-    else
-        cpu->f &= ~FLAG_C;
-    return ECPU_TRAP_HANDLED;
-}
-
-static int sos_fn_fren(z80_state_t *cpu, sos_state_t *sos)
-{
-    /* Old name in FNAM work area, new name pointed by DE */
     char oldpath[64];
     sos_resolve_path(cpu, sos, oldpath, sizeof(oldpath));
 
-    /* Read new filename from DE */
     uint16_t de = z80_de(cpu);
     char newname[17];
     int i;
@@ -626,9 +678,8 @@ static int sos_fn_fren(z80_state_t *cpu, sos_state_t *sos)
     }
     newname[i] = '\0';
 
-    /* Build new path with same session prefix */
     char newpath[64];
-    uint8_t session = cpu->memory[SOS_SESSION];
+    uint8_t session = cpu->memory[SOS_DSK];
     if (session > 25)
         session = sos->current_session;
     char drive = 'a' + session;
@@ -647,51 +698,115 @@ static int sos_fn_fren(z80_state_t *cpu, sos_state_t *sos)
     return ECPU_TRAP_HANDLED;
 }
 
+/* fn 47: #KILL — delete file */
+static int sos_fn_kill(z80_state_t *cpu, sos_state_t *sos)
+{
+    char path[64];
+    sos_resolve_path(cpu, sos, path, sizeof(path));
+
+    if (sos_file_delete(path) < 0)
+        cpu->f |= FLAG_C;
+    else
+        cpu->f &= ~FLAG_C;
+    return ECPU_TRAP_HANDLED;
+}
+
+/* fn 48: #CSR — get cursor position, returns L=X, H=Y */
+static int sos_fn_csr(z80_state_t *cpu, sos_state_t *sos)
+{
+    (void)sos;
+    /* We don't track cursor precisely; return (0,0) */
+    cpu->l = 0;
+    cpu->h = 0;
+    return ECPU_TRAP_HANDLED;
+}
+
+/* fn 50: #LOC — set cursor to (L=X, H=Y) via ANSI escape */
+static int sos_fn_loc(z80_state_t *cpu, sos_state_t *sos)
+{
+    (void)sos;
+    uint8_t row = cpu->h + 1;  /* ANSI is 1-based */
+    uint8_t col = cpu->l + 1;
+    char buf[16];
+    int len = 0;
+    buf[len++] = '\033';
+    buf[len++] = '[';
+    if (row >= 100) buf[len++] = '0' + row / 100;
+    if (row >= 10) buf[len++] = '0' + (row / 10) % 10;
+    buf[len++] = '0' + row % 10;
+    buf[len++] = ';';
+    if (col >= 100) buf[len++] = '0' + col / 100;
+    if (col >= 10) buf[len++] = '0' + (col / 10) % 10;
+    buf[len++] = '0' + col % 10;
+    buf[len++] = 'H';
+    sos_putstr(buf, len);
+    return ECPU_TRAP_HANDLED;
+}
+
+/* Generic no-op stub for unimplemented functions */
+static int sos_fn_stub(z80_state_t *cpu, sos_state_t *sos)
+{
+    (void)sos;
+    cpu->f |= FLAG_C;
+    return ECPU_TRAP_HANDLED;
+}
+
 /* ── S-OS API dispatch ─────────────────────────────────────────────────── */
 
-static int sos_dispatch(z80_state_t *cpu, sos_state_t *sos)
+static int sos_dispatch(uint32_t fn, z80_state_t *cpu, sos_state_t *sos)
 {
-    uint8_t fn = cpu->a;
-
     sos_trace_before(PPAP_TRACE_ABI_SOS, fn, cpu);
 
     int rc;
     switch (fn) {
-    case SOS_FN_COLD:   rc = sos_fn_cold(cpu, sos);   break;
-    case SOS_FN_HOT:    rc = sos_fn_hot(cpu, sos);    break;
-    case SOS_FN_VER:    rc = sos_fn_ver(cpu, sos);    break;
-    case SOS_FN_PRINT:  rc = sos_fn_print(cpu, sos);  break;
-    case SOS_FN_MSG:    rc = sos_fn_msg(cpu, sos);    break;
-    case SOS_FN_MSX:    rc = sos_fn_msx(cpu, sos);    break;
-    case SOS_FN_TAB:    rc = sos_fn_tab(cpu, sos);    break;
-    case SOS_FN_CR:     rc = sos_fn_cr(cpu, sos);     break;
-    case SOS_FN_LF:     rc = sos_fn_lf(cpu, sos);     break;
-    case SOS_FN_GETL:   rc = sos_fn_getl(cpu, sos);   break;
-    case SOS_FN_GETKY:  rc = sos_fn_getky(cpu, sos);  break;
-    case SOS_FN_BRKEY:  rc = sos_fn_brkey(cpu, sos);  break;
-    case SOS_FN_INKEY:  rc = sos_fn_inkey(cpu, sos);  break;
-    case SOS_FN_PAUSE:  rc = sos_fn_pause(cpu, sos);  break;
-    case SOS_FN_BELL:   rc = sos_fn_bell(cpu, sos);   break;
-    case SOS_FN_PRTHX:  rc = sos_fn_prthx(cpu, sos);  break;
-    case SOS_FN_PRTHL:  rc = sos_fn_prthl(cpu, sos);  break;
-    case SOS_FN_ASC1B:  rc = sos_fn_asc1b(cpu, sos);  break;
-    case SOS_FN_HEX1B:  rc = sos_fn_hex1b(cpu, sos);  break;
-    case SOS_FN_HEX2B:  rc = sos_fn_hex2b(cpu, sos);  break;
-    case SOS_FN_FLGET:  rc = sos_fn_flget(cpu, sos);  break;
-    case SOS_FN_RDVSW:  rc = sos_fn_rdvsw(cpu, sos);  break;
-    case SOS_FN_SDVSW:  rc = sos_fn_sdvsw(cpu, sos);  break;
-    case SOS_FN_INP:    rc = sos_fn_inp(cpu, sos);    break;
-    case SOS_FN_OUT:    rc = sos_fn_out(cpu, sos);    break;
-    case SOS_FN_WIDCH:  rc = sos_fn_widch(cpu, sos);  break;
-    case SOS_FN_FILE:   rc = sos_fn_file(cpu, sos);   break;
-    case SOS_FN_FSAVE:  rc = sos_fn_fsave(cpu, sos);  break;
-    case SOS_FN_FLOAD:  rc = sos_fn_fload(cpu, sos);  break;
-    case SOS_FN_FVRFY:  rc = sos_fn_fvrfy(cpu, sos);  break;
-    case SOS_FN_FKILL:  rc = sos_fn_fkill(cpu, sos);  break;
-    case SOS_FN_FREN:   rc = sos_fn_fren(cpu, sos);   break;
+    case SOS_FN_COLD:   rc = sos_fn_cold(cpu, sos);    break;
+    case SOS_FN_HOT:    rc = sos_fn_hot(cpu, sos);     break;
+    case SOS_FN_VER:    rc = sos_fn_ver(cpu, sos);     break;
+    case SOS_FN_PRINT:  rc = sos_fn_print(cpu, sos);   break;
+    case SOS_FN_PRINTS: rc = sos_fn_prints(cpu, sos);  break;
+    case SOS_FN_LTNL:   rc = sos_fn_ltnl(cpu, sos);   break;
+    case SOS_FN_NL:     rc = sos_fn_nl(cpu, sos);      break;
+    case SOS_FN_MSG:    rc = sos_fn_msg(cpu, sos);     break;
+    case SOS_FN_MSX:    rc = sos_fn_msx(cpu, sos);     break;
+    case SOS_FN_MPRINT: rc = sos_fn_mprint(cpu, sos);  break;
+    case SOS_FN_TAB:    rc = sos_fn_tab(cpu, sos);     break;
+    case SOS_FN_LPRINT: rc = sos_fn_lprint(cpu, sos);  break;
+    case SOS_FN_LPTON:  rc = sos_fn_lpton(cpu, sos);   break;
+    case SOS_FN_LPTOF:  rc = sos_fn_lptof(cpu, sos);   break;
+    case SOS_FN_GETL:   rc = sos_fn_getl(cpu, sos);    break;
+    case SOS_FN_GETKY:  rc = sos_fn_getky(cpu, sos);   break;
+    case SOS_FN_BRKEY:  rc = sos_fn_brkey(cpu, sos);   break;
+    case SOS_FN_INKEY:  rc = sos_fn_inkey(cpu, sos);   break;
+    case SOS_FN_PAUSE:  rc = sos_fn_pause(cpu, sos);   break;
+    case SOS_FN_BELL:   rc = sos_fn_bell(cpu, sos);    break;
+    case SOS_FN_PRTHX:  rc = sos_fn_prthx(cpu, sos);   break;
+    case SOS_FN_PRTHL:  rc = sos_fn_prthl(cpu, sos);   break;
+    case SOS_FN_ASC:    rc = sos_fn_asc(cpu, sos);     break;
+    case SOS_FN_HEX:    rc = sos_fn_hex(cpu, sos);     break;
+    case SOS_FN_2HEX:   rc = sos_fn_2hex(cpu, sos);    break;
+    case SOS_FN_HLHEX:  rc = sos_fn_hlhex(cpu, sos);   break;
+    case SOS_FN_WOPEN:  rc = sos_fn_wopen(cpu, sos);   break;
+    case SOS_FN_WRD:    rc = sos_fn_wrd(cpu, sos);     break;
+    case SOS_FN_FCB:    rc = sos_fn_fcb(cpu, sos);     break;
+    case SOS_FN_RDD:    rc = sos_fn_rdd(cpu, sos);     break;
+    case SOS_FN_FILE:   rc = sos_fn_file(cpu, sos);    break;
+    case SOS_FN_FSAME:  rc = sos_fn_fsame(cpu, sos);   break;
+    case SOS_FN_FPRNT:  rc = sos_fn_fprnt(cpu, sos);   break;
+    case SOS_FN_POKE:   rc = sos_fn_poke(cpu, sos);    break;
+    case SOS_FN_POKEA:  rc = sos_fn_pokea(cpu, sos);   break;
+    case SOS_FN_PEEK:   rc = sos_fn_peek(cpu, sos);    break;
+    case SOS_FN_PEEKA:  rc = sos_fn_peeka(cpu, sos);   break;
+    case SOS_FN_MON:    rc = sos_fn_mon(cpu, sos);     break;
+    /* Extended API */
+    case SOS_FN_DIR:    rc = sos_fn_dir(cpu, sos);     break;
+    case SOS_FN_ROPEN:  rc = sos_fn_ropen(cpu, sos);   break;
+    case SOS_FN_NAME:   rc = sos_fn_name(cpu, sos);    break;
+    case SOS_FN_KILL:   rc = sos_fn_kill(cpu, sos);    break;
+    case SOS_FN_CSR:    rc = sos_fn_csr(cpu, sos);     break;
+    case SOS_FN_LOC:    rc = sos_fn_loc(cpu, sos);     break;
+    case SOS_FN_BOOT:   rc = sos_fn_cold(cpu, sos);    break;
     default:
-        cpu->f |= FLAG_C;
-        rc = ECPU_TRAP_HANDLED;
+        rc = sos_fn_stub(cpu, sos);
         break;
     }
 
@@ -708,12 +823,47 @@ int sos_trap_handler(ecpu_state_t *state, int trap_type,
     sos_state_t *sos = (sos_state_t *)ctx;
 
     if (trap_type == ECPU_TRAP_CALL) {
-        /* RST 18h is trapped as CALL to 0x0018, or CALL to SOS_ENTRY */
-        if (param == SOS_RST18_ADDR || param == SOS_ENTRY)
-            return sos_dispatch(cpu, sos);
-        /* Return to 0x0000 = cold start = exit */
-        if (param == 0x0000 || param == SOS_COLD_ENTRY)
+        /* RST 18h: A register has the function index */
+        if (param == SOS_RST18_ADDR)
+            return sos_dispatch(cpu->a, cpu, sos);
+
+        /* Direct CALL to monitor subroutine (0x1F80–0x1FFD) */
+        if (param >= SOS_MON_BASE && param <= SOS_MON_TOP) {
+            uint32_t off = SOS_MON_TOP - param;
+            if (off % 3 == 0)
+                return sos_dispatch(off / 3, cpu, sos);
+            /* Misaligned — fall through to unhandled */
+        }
+
+        /* Extended API (0x2000–0x2036) */
+        if (param >= SOS_EXT_BASE && param <= SOS_EXT_TOP) {
+            uint32_t off = param - SOS_EXT_BASE;
+            if (off % 3 == 0)
+                return sos_dispatch(40 + off / 3, cpu, sos);
+        }
+
+        /*
+         * RST 0 from within a monitor/extended entry stub.
+         * Programs may JP (not CALL) to an entry, so we populate
+         * entries with { RST 0; RET }.  When RST 0 fires, cpu->pc
+         * points just past the RST byte — i.e. inside the 3-byte entry.
+         * We compute the entry address as (cpu->pc - 1).
+         */
+        if (param == 0x0000) {
+            uint16_t rst_addr = cpu->pc - 1;
+            if (rst_addr >= SOS_MON_BASE && rst_addr <= SOS_MON_TOP) {
+                uint32_t off = SOS_MON_TOP - rst_addr;
+                if (off % 3 == 0)
+                    return sos_dispatch(off / 3, cpu, sos);
+            }
+            if (rst_addr >= SOS_EXT_BASE && rst_addr <= SOS_EXT_TOP) {
+                uint32_t off = rst_addr - SOS_EXT_BASE;
+                if (off % 3 == 0)
+                    return sos_dispatch(40 + off / 3, cpu, sos);
+            }
+            /* Not from a monitor entry — cold start (exit) */
             return ECPU_TRAP_EXIT;
+        }
     }
 
     if (trap_type == ECPU_TRAP_HALT)
