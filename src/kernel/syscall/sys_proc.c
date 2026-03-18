@@ -251,6 +251,8 @@ static uint32_t trace_surface_mask_for(const pcb_t *target)
 
     if (target->subsys == SUBSYS_CPM)
         mask |= PPAP_PTRACE_SURFACE_MASK_ECPU;
+    if (target->subsys == SUBSYS_SOS)
+        mask |= PPAP_PTRACE_SURFACE_MASK_ECPU;
     if (target->subsys == SUBSYS_PPAP && target->subsys_data)
         mask |= PPAP_PTRACE_SURFACE_MASK_ECPU;
     return mask;

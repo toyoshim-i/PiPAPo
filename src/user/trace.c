@@ -89,6 +89,7 @@ static const char *abi_name(uint32_t abi)
     case PPAP_TRACE_ABI_H68K_IOCS: return "h68k-iocs";
     case PPAP_TRACE_ABI_CPM_BDOS: return "cpm-bdos";
     case PPAP_TRACE_ABI_CPM_BIOS: return "cpm-bios";
+    case PPAP_TRACE_ABI_SOS: return "sos";
     default: return "abi";
     }
 }
@@ -283,6 +284,70 @@ static const char *cpm_bios_name(uint32_t nr)
     }
 }
 
+static const char *sos_name(uint32_t nr)
+{
+    switch (nr) {
+    case 0: return "#COLD";
+    case 1: return "#HOT";
+    case 2: return "#VER";
+    case 3: return "#PRINT";
+    case 4: return "#PRINTS";
+    case 5: return "#LTNL";
+    case 6: return "#NL";
+    case 7: return "#MSG";
+    case 8: return "#MSX";
+    case 9: return "#MPRINT";
+    case 10: return "#TAB";
+    case 11: return "#LPRINT";
+    case 12: return "#LPTON";
+    case 13: return "#LPTOF";
+    case 14: return "#GETL";
+    case 15: return "#GETKY";
+    case 16: return "#BRKEY";
+    case 17: return "#INKEY";
+    case 18: return "#PAUSE";
+    case 19: return "#BELL";
+    case 20: return "#PRTHX";
+    case 21: return "#PRTHL";
+    case 22: return "#ASC";
+    case 23: return "#HEX";
+    case 24: return "#2HEX";
+    case 25: return "#HLHEX";
+    case 26: return "#WOPEN";
+    case 27: return "#WRD";
+    case 28: return "#FCB";
+    case 29: return "#RDD";
+    case 30: return "#FILE";
+    case 31: return "#FSAME";
+    case 32: return "#FPRNT";
+    case 33: return "#POKE";
+    case 34: return "#POKEA";
+    case 35: return "#PEEK";
+    case 36: return "#PEEKA";
+    case 37: return "#MON";
+    case 40: return "#DRDSB";
+    case 41: return "#DWTSB";
+    case 42: return "#DIR";
+    case 43: return "#ROPEN";
+    case 44: return "#SET";
+    case 45: return "#RESET";
+    case 46: return "#NAME";
+    case 47: return "#KILL";
+    case 48: return "#CSR";
+    case 49: return "#SCRN";
+    case 50: return "#LOC";
+    case 51: return "#FLGET";
+    case 52: return "#RDVSW";
+    case 53: return "#SDVSW";
+    case 54: return "#INP";
+    case 55: return "#OUT";
+    case 56: return "#WIDCH";
+    case 57: return "#ERROR";
+    case 58: return "#BOOT";
+    default: return (const char *)0;
+    }
+}
+
 static const char *subsys_name(uint32_t abi, uint32_t nr)
 {
     switch (abi) {
@@ -290,6 +355,7 @@ static const char *subsys_name(uint32_t abi, uint32_t nr)
     case PPAP_TRACE_ABI_H68K_IOCS: return h68k_iocs_name(nr);
     case PPAP_TRACE_ABI_CPM_BDOS: return cpm_bdos_name(nr);
     case PPAP_TRACE_ABI_CPM_BIOS: return cpm_bios_name(nr);
+    case PPAP_TRACE_ABI_SOS: return sos_name(nr);
     default: return (const char *)0;
     }
 }
@@ -314,6 +380,7 @@ static void print_subsys_args(const struct ppap_ptrace_event *ev)
         break;
     case PPAP_TRACE_ABI_CPM_BDOS:
     case PPAP_TRACE_ABI_CPM_BIOS:
+    case PPAP_TRACE_ABI_SOS:
         put_str(" af=");
         put_hex16(ev->args[0]);
         put_str(" bc=");
