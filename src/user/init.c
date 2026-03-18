@@ -68,7 +68,7 @@ static void spawn(struct entry *e)
          * TERM=dumb prevents shell line-editing from sending escape
          * sequences (ESC[6n etc.) before /etc/profile is sourced.
          * /etc/profile overrides TERM to vt100 on capable targets. */
-        static char env_path[] = "PATH=/bin:/sbin:/usr/bin:/subsys/cpm:/subsys/human68k";
+        static char env_path[] = "PATH=/bin:/sbin:/usr/bin:/subsys/cpm:/subsys/human68k:/subsys/sos";
         static char env_term[] = "TERM=dumb";
         char *envp[3];
         envp[0] = env_path;

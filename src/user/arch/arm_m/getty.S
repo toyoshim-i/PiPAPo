@@ -4,15 +4,14 @@
 @ Combined getty + login for a single-user embedded system.
 @ Called from inittab:
 @   ttyS0::respawn:/bin/getty ttyS0
-@   tty1::respawn:/bin/getty tty1
+@   tty1::respawn:/bin/getty -l tty1    (-l = auto-login, skip prompt)
 @
 @ Flow:
 @   1. setsid()         — become session leader
 @   2. open /dev/<tty>  — as stdin, dup to stdout/stderr
 @   3. TIOCSCTTY        — acquire controlling terminal
-@   4. Print "Press Enter to activate this console."
-@   5. Wait for Enter
-@   6. execve /bin/sh
+@   4. Unless -l: print prompt and wait for Enter
+@   5. execve /bin/sh
 @
 @ No .data/.got/.bss → kernel allocates only 1 page (stack).
 @
@@ -48,11 +47,28 @@
 .global _start
 .thumb_func
 _start:
-    @ r4 = argv[1] (tty name), or default "ttyS0"
-    ldr  r0, [sp]          @ argc
+    @ r4 = tty name, r6 = auto_login flag (0 or 1)
+    movs r6, #0             @ auto_login = 0
+    ldr  r0, [sp]           @ argc
     cmp  r0, #2
     blt  .Luse_default
-    ldr  r4, [sp, #8]      @ argv[1] — kernel copies argv strings to stack
+
+    ldr  r4, [sp, #8]       @ argv[1]
+    @ Check if argv[1] == "-l"
+    ldrb r1, [r4]
+    cmp  r1, #'-'
+    bne  .Lgot_tty
+    ldrb r1, [r4, #1]
+    cmp  r1, #'l'
+    bne  .Lgot_tty
+    ldrb r1, [r4, #2]
+    cmp  r1, #0
+    bne  .Lgot_tty
+    @ argv[1] is "-l": set auto_login, use argv[2] as tty
+    movs r6, #1
+    cmp  r0, #3
+    blt  .Luse_default
+    ldr  r4, [sp, #12]      @ argv[2]
     b    .Lgot_tty
 .Luse_default:
     adr  r4, str_default_tty
@@ -143,7 +159,10 @@ _start:
     ldr  r7, .Lsys_ioctl
     svc  0
 
-    @ 4. Write prompt
+    @ 4. Prompt (skipped with -l)
+    cmp  r6, #0
+    bne  .Ldo_exec
+
     movs r0, #1               @ fd = stdout
     adr  r1, str_prompt        @ PC-relative address
     movs r2, #str_prompt_len
@@ -177,6 +196,7 @@ _start:
     ldr  r7, .Lsys_write
     svc  0
 
+.Ldo_exec:
     @ 6. execve("/bin/sh", {"-sh", NULL}, {NULL})
     @    Build argv and envp on the stack:
     @      [sp+0]  = argv[0] = &str_dash_sh

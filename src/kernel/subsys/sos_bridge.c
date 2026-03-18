@@ -823,36 +823,11 @@ static int sos_fn_loc(z80_state_t *cpu, sos_state_t *sos)
     return ECPU_TRAP_HANDLED;
 }
 
-/* fn 56: #WIDCH — set screen width: A ≤ 40 → 40-col, A > 40 → 80-col */
+/* fn 56: #WIDCH — ignored; keep the user's current screen mode */
 static int sos_fn_widch(z80_state_t *cpu, sos_state_t *sos)
 {
-    uint8_t width = (cpu->a <= 40) ? 40 : 80;
-    sos->screen_width = width;
-
-    /* Update the S-OS work area so programs can read it */
-    cpu->memory[SOS_WIDTH] = width;
-
-    /* Tell the TTY backend to resize (fbcon switches font, ttyS ignores) */
-    struct { uint16_t row, col, xpix, ypix; } ws;
-    sys_ioctl(1, 0x5413/*TIOCGWINSZ*/, (long)&ws);
-    uint16_t rows = ws.row ? ws.row : 25;
-    ws.col = width;
-    ws.row = rows;
-    sys_ioctl(1, 0x5414/*TIOCSWINSZ*/, (long)&ws);
-
-    /* Re-read actual size after backend resize */
-    sys_ioctl(1, 0x5413/*TIOCGWINSZ*/, (long)&ws);
-    sos->screen_width  = (uint8_t)ws.col;
-    sos->screen_height = (uint8_t)ws.row;
-    cpu->memory[SOS_WIDTH] = (uint8_t)ws.col;
-    cpu->memory[SOS_MXLIN] = (uint8_t)ws.row;
-
-    /* Clear screen on mode change (matches real hardware behaviour) */
-    sos_putstr("\033[2J\033[H", 7);
-    sos->cursor_x = 0;
-    sos->cursor_y = 0;
-    sos_screen_clear(sos);
-
+    (void)cpu;
+    (void)sos;
     return ECPU_TRAP_HANDLED;
 }
 
