@@ -19,7 +19,7 @@
 typedef struct ecpu_state ecpu_state_t;
 
 /* ── Trap types (common across all cores) ────────────────────────────────── */
-#define ECPU_TRAP_CALL     0   /* Subroutine call to hooked address        */
+#define ECPU_TRAP_RST      0   /* RST instruction (Z80 restart vector)     */
 #define ECPU_TRAP_SWI      1   /* Software interrupt / trap instruction    */
 #define ECPU_TRAP_HALT     2   /* CPU halt instruction                     */
 #define ECPU_TRAP_IO_IN    3   /* I/O port read                            */

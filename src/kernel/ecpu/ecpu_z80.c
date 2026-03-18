@@ -846,9 +846,6 @@ static int z80_decode_index(z80_state_t *cpu, uint16_t *idx)
                 uint16_t nn = z80_fetch16(cpu);
                 cpu->wz = nn;
                 if (z80_condition(cpu, yyy)) {
-                    int rc = z80_fire_trap(cpu, ECPU_TRAP_CALL, nn);
-                    if (rc == ECPU_TRAP_EXIT) return -1;
-                    if (rc == ECPU_TRAP_HANDLED) break;
                     z80_push16(cpu, cpu->pc);
                     cpu->pc = nn;
                 }
@@ -860,9 +857,6 @@ static int z80_decode_index(z80_state_t *cpu, uint16_t *idx)
                     /* CALL nn */
                     uint16_t nn = z80_fetch16(cpu);
                     cpu->wz = nn;
-                    int rc = z80_fire_trap(cpu, ECPU_TRAP_CALL, nn);
-                    if (rc == ECPU_TRAP_EXIT) return -1;
-                    if (rc == ECPU_TRAP_HANDLED) break;
                     z80_push16(cpu, cpu->pc);
                     cpu->pc = nn;
                 }
@@ -892,7 +886,7 @@ static int z80_decode_index(z80_state_t *cpu, uint16_t *idx)
             /* RST p — no IX effect */
             {
                 uint16_t addr = yyy * 8;
-                int rc = z80_fire_trap(cpu, ECPU_TRAP_CALL, addr);
+                int rc = z80_fire_trap(cpu, ECPU_TRAP_RST, addr);
                 if (rc == ECPU_TRAP_EXIT) return -1;
                 if (rc == ECPU_TRAP_HANDLED) break;
                 z80_push16(cpu, cpu->pc);
@@ -1241,9 +1235,6 @@ static int ecpu_z80_run(ecpu_state_t *state)
                     uint16_t nn = z80_fetch16(cpu);
                     cpu->wz = nn;
                     if (z80_condition(cpu, yyy)) {
-                        int rc = z80_fire_trap(cpu, ECPU_TRAP_CALL, nn);
-                        if (rc == ECPU_TRAP_EXIT) return -1;
-                        if (rc == ECPU_TRAP_HANDLED) break;
                         z80_push16(cpu, cpu->pc);
                         cpu->pc = nn;
                     }
@@ -1257,11 +1248,6 @@ static int ecpu_z80_run(ecpu_state_t *state)
                         /* CALL nn (0xCD) */
                         uint16_t nn = z80_fetch16(cpu);
                         cpu->wz = nn;
-                        int rc = z80_fire_trap(cpu, ECPU_TRAP_CALL, nn);
-                        if (rc == ECPU_TRAP_EXIT)
-                            return 0;
-                        if (rc == ECPU_TRAP_HANDLED)
-                            break;
                         z80_push16(cpu, cpu->pc);
                         cpu->pc = nn;
                     }
@@ -1298,7 +1284,7 @@ static int ecpu_z80_run(ecpu_state_t *state)
                 /* RST p — restart to address p*8 */
                 {
                     uint16_t addr = yyy * 8;
-                    int rc = z80_fire_trap(cpu, ECPU_TRAP_CALL, addr);
+                    int rc = z80_fire_trap(cpu, ECPU_TRAP_RST, addr);
                     if (rc == ECPU_TRAP_EXIT)
                         return 0;
                     if (rc == ECPU_TRAP_HANDLED)

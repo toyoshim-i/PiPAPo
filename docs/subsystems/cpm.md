@@ -473,13 +473,11 @@ intercepts `CALL` instructions to specific addresses:
 /* Uses eCPU common interface trap types (see docs/ecpu/z80.md §3) */
 static int cpm_trap_handler(ecpu_state_t *cpu, int trap_type,
                             uint32_t param, void *ctx) {
-    if (trap_type == ECPU_TRAP_CALL) {
-        if (param == CPM_BDOS_ENTRY || param == 0x0005) {
-            return cpm_bdos_dispatch(cpu, ctx);
-        }
-        if (param == CPM_BIOS_ENTRY || param == 0x0000) {
-            return cpm_warm_boot(cpu, ctx);
-        }
+    if (trap_type == ECPU_TRAP_RST && param == 0x0000) {
+        /* RST 0 from internal stub area — compute slot from address */
+        int slot = (cpu->pc - 1 - CPM_STUB_BASE) / 2;
+        if (slot == 0) return cpm_bdos_dispatch(cpu, ctx);
+        return cpm_bios_dispatch(cpu, ctx, slot - 1);
     }
     if (trap_type == ECPU_TRAP_HALT) {
         return ECPU_TRAP_EXIT;  /* HALT = exit */

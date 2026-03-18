@@ -77,17 +77,17 @@ Z80 eCPU address space (64 KB)
 │  User program area               │ load addr – end
 │  (load address from header)      │ (typically 8000h+)
 ├──────────────────────────────────┤
-│  S-OS Work Area                  │ 0x1F80 – 0x1FFF
-│  ┌───────────────────────┐      │
-│  │ 1F80h: FNAM (filename) │      │
-│  │ 1F90h: FTYPE, DTADR   │      │
-│  │ 1FFBh: Entry (JP xxxx) │      │
-│  │ 1FFEh: Cold start      │      │
-│  └───────────────────────┘      │
+│  Extended API JP table           │ 0x2000 – 0x2036
 ├──────────────────────────────────┤
-│  Monitor entry table (RST stubs) │ 0x0000 – 0x00FF
-│  Monitor subroutine entries      │ 0x1F80 – 0x1FFD
-│  Extended API entries            │ 0x2000 – 0x2036
+│  Monitor JP table                │ 0x1F80 – 0x1FFD
+├──────────────────────────────────┤
+│  S-OS Work Area                  │ 0x1F40 – 0x1F7F
+├──────────────────────────────────┤
+│  Stack (grows down from 0800h)   │
+├──────────────────────────────────┤
+│  RST stub area (RST 0; RET ×59) │ 0x0100 – 0x0175
+├──────────────────────────────────┤
+│  RST vectors (00h, 18h)          │ 0x0000 – 0x001A
 └──────────────────────────────────┘
 ```
 
@@ -128,18 +128,21 @@ Kernel: exec detects "_SOS" magic at offset 0
 exec_sos.c
   │ Parses 18-byte header (load addr, exec addr, mode)
   │ Allocates 64 KB Z80 memory
-  │ Sets up S-OS work area (1F80h–1FFFh)
-  │ Installs monitor entries (RST 0 stubs at 0x1F80–0x1FFD)
+  │ Sets up S-OS work area (1F40h–1F7Fh)
+  │ Installs monitor JP table (0x1F80–0x1FFD → stub area)
+  │ Installs RST stub area at 0x0100 (RST 0 + RET per fn)
   │ Loads payload at header's load address
   ▼
 sos_run_process()
   │
   │ ecpu_z80_ops.run(cpu)  ──→  emulator loop
   │                                  │
-  │                                  │ CALL/RST to entry → ECPU_TRAP_CALL
+  │                                  │ CALL/JP to monitor entry
+  │                                  │   → JP to stub area
+  │                                  │   → RST 0 → ECPU_TRAP_RST
   │                                  ▼
   │                            sos_bridge.c
-  │                                  │ Dispatches by function number
+  │                                  │ Computes fn from RST address
   │                                  │ Translates to PPAP syscalls
   │                                  │ Returns result in registers/flags
   │                                  ▼
@@ -169,18 +172,23 @@ S-OS programs call monitor functions via `CALL` or `JP` to entry points
 in the monitor table (addresses 0x1F80–0x1FFD, counting downward by 3
 from 0x1FFD).
 
-**Trap mechanism:** The ecpu-z80 emulator fires `ECPU_TRAP_CALL` on
-**every** `CALL` and `RST` instruction, passing the target address.
-The trap handler checks whether the address falls in a monitor range
-(0x1F80–0x1FFD or 0x2000–0x2036). If it does, the call is handled
-and the emulator skips the actual subroutine call. If not, the handler
-returns `ECPU_TRAP_UNHANDLED` and the emulator proceeds normally.
+**Trap mechanism:** Each monitor entry contains a `JP` instruction that
+redirects to an internal RST stub area at 0x0100.  Each stub is two
+bytes: `RST 0; RET`.  When `RST 0` executes, the ecpu-z80 emulator
+fires `ECPU_TRAP_RST` with param 0x0000.  The trap handler computes
+the function index from the RST instruction's address:
 
-For programs that use `JP` (which does **not** trigger the trap),
-each monitor entry contains an `RST 0` stub. When the CPU jumps
-there, it executes `RST 0`, which does fire the trap. The bridge
-then computes the function number from the RST instruction's
-address (`cpu->pc - 1`).
+```
+fn = (cpu->pc - 1 - 0x0100) / 2
+```
+
+This design means only `RST` instructions trigger the trap — regular
+`CALL` instructions in user code pass through without overhead.  Both
+`CALL` and `JP` to a monitor entry work identically: the CPU executes
+the `JP` at the entry, reaches the stub, and `RST 0` fires the trap.
+
+Programs may also use `RST 18h` with the function number in the A
+register (an alternative calling convention).
 
 ### Console Output
 

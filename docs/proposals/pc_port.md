@@ -452,7 +452,7 @@ Kernel: cpm_bridge.c
 User: CP/M program continues in 8080 mode
 ```
 
-This is functionally identical to the software Z80's `ECPU_TRAP_CALL`
+This is functionally identical to the software Z80's `ECPU_TRAP_RST`
 mechanism, but the "emulator loop" is the V30 hardware itself.
 
 ### 6.3 I/O Port Handling

@@ -1,14 +1,11 @@
 /*
  * sos_bridge.c — S-OS "SWORD" API bridge (personality layer)
  *
- * Intercepts CALL to S-OS monitor subroutine entry points (0x1F80–0x1FFD)
- * and extended API (0x2000–0x2036) from Z80-emulated S-OS programs, and
- * translates them into PPAP syscalls.
- *
- * The monitor jump table counts downward from 0x1FFD:
- *   address = 0x1FFD − fn_index × 3
- *
- * See docs/proposals/sos_subsystem.md for the design.
+ * Translates S-OS monitor calls from Z80-emulated programs into PPAP
+ * syscalls.  Monitor entries (0x1F80–0x1FFD) and extended API
+ * (0x2000–0x2036) contain JP instructions that redirect to an internal
+ * RST stub area.  Only RST 0 and RST 18h fire traps — regular CALL
+ * instructions pass through unhandled.
  */
 
 #include "sos_bridge.h"
@@ -917,46 +914,27 @@ int sos_trap_handler(ecpu_state_t *state, int trap_type,
     z80_state_t *cpu = (z80_state_t *)state;
     sos_state_t *sos = (sos_state_t *)ctx;
 
-    if (trap_type == ECPU_TRAP_CALL) {
+    if (trap_type == ECPU_TRAP_RST) {
         /* RST 18h: A register has the function index */
         if (param == SOS_RST18_ADDR)
             return sos_dispatch(cpu->a, cpu, sos);
 
-        /* Direct CALL to monitor subroutine (0x1F80–0x1FFD) */
-        if (param >= SOS_MON_BASE && param <= SOS_MON_TOP) {
-            uint32_t off = SOS_MON_TOP - param;
-            if (off % 3 == 0)
-                return sos_dispatch(off / 3, cpu, sos);
-            /* Misaligned — fall through to unhandled */
-        }
-
-        /* Extended API (0x2000–0x2036) */
-        if (param >= SOS_EXT_BASE && param <= SOS_EXT_TOP) {
-            uint32_t off = param - SOS_EXT_BASE;
-            if (off % 3 == 0)
-                return sos_dispatch(40 + off / 3, cpu, sos);
-        }
-
         /*
-         * RST 0 from within a monitor/extended entry stub.
-         * Programs may JP (not CALL) to an entry, so we populate
-         * entries with { RST 0; RET }.  When RST 0 fires, cpu->pc
-         * points just past the RST byte — i.e. inside the 3-byte entry.
-         * We compute the entry address as (cpu->pc - 1).
+         * RST 0 from the internal stub area at SOS_STUB_BASE.
+         * Monitor entries (0x1F80–0x1FFD) and extended API (0x2000–0x2036)
+         * contain JP instructions that redirect to stubs at
+         * SOS_STUB_BASE + fn * 2.  Each stub is { RST 0; RET }.
+         * When RST 0 fires, cpu->pc points past the RST byte, so:
+         *   fn = (cpu->pc - 1 - SOS_STUB_BASE) / 2
          */
         if (param == 0x0000) {
             uint16_t rst_addr = cpu->pc - 1;
-            if (rst_addr >= SOS_MON_BASE && rst_addr <= SOS_MON_TOP) {
-                uint32_t off = SOS_MON_TOP - rst_addr;
-                if (off % 3 == 0)
-                    return sos_dispatch(off / 3, cpu, sos);
+            if (rst_addr >= SOS_STUB_BASE &&
+                rst_addr < SOS_STUB_BASE + SOS_FN_MAX * 2) {
+                uint32_t fn = (rst_addr - SOS_STUB_BASE) / 2;
+                return sos_dispatch(fn, cpu, sos);
             }
-            if (rst_addr >= SOS_EXT_BASE && rst_addr <= SOS_EXT_TOP) {
-                uint32_t off = rst_addr - SOS_EXT_BASE;
-                if (off % 3 == 0)
-                    return sos_dispatch(40 + off / 3, cpu, sos);
-            }
-            /* Not from a monitor entry — cold start (exit) */
+            /* RST 0 not from stub area — cold start (exit) */
             return ECPU_TRAP_EXIT;
         }
     }

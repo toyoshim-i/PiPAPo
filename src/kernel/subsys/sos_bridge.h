@@ -25,6 +25,7 @@
 
 /* ── S-OS memory map constants ─────────────────────────────────────────── */
 #define SOS_RST18_ADDR    0x0018   /* RST 18h vector address               */
+#define SOS_STUB_BASE     0x0100   /* Internal RST stub area (fn×2 bytes)  */
 #define SOS_STACK_TOP     0x0800   /* Stack grows downward from here       */
 
 /* Work area (0x1F40–0x1F7F) — matches the SWORD specification */

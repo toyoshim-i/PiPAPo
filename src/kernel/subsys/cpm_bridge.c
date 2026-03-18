@@ -1278,15 +1278,24 @@ int cpm_trap_handler(ecpu_state_t *state, int trap_type,
     z80_state_t *cpu = (z80_state_t *)state;
     cpm_state_t *cpm = (cpm_state_t *)ctx;
 
-    if (trap_type == ECPU_TRAP_CALL) {
-        if (param == CPM_BDOS_ENTRY)
-            return cpm_bdos_dispatch(cpu, cpm);
-        if (param == 0x0000)
+    if (trap_type == ECPU_TRAP_RST) {
+        /*
+         * RST 0 from the stub area at CPM_STUB_BASE.
+         * Slot 0 = BDOS, slots 1–17 = BIOS functions.
+         * cpu->pc points past the RST byte, so:
+         *   slot = (cpu->pc - 1 - CPM_STUB_BASE) / 2
+         */
+        if (param == 0x0000) {
+            uint16_t rst_addr = cpu->pc - 1;
+            if (rst_addr >= CPM_STUB_BASE &&
+                rst_addr < CPM_STUB_BASE + (1 + CPM_BIOS_FN_COUNT) * 2) {
+                int slot = (rst_addr - CPM_STUB_BASE) / 2;
+                if (slot == 0)
+                    return cpm_bdos_dispatch(cpu, cpm);
+                return cpm_bios_dispatch(cpu, cpm, slot - 1);
+            }
+            /* RST 0 not from stub area — exit */
             return ECPU_TRAP_EXIT;
-        if (param >= CPM_BIOS_ENTRY &&
-            param < CPM_BIOS_ENTRY + CPM_BIOS_SIZE) {
-            int bios_fn = (param - CPM_BIOS_ENTRY) / 3;
-            return cpm_bios_dispatch(cpu, cpm, bios_fn);
         }
     }
 

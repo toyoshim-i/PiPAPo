@@ -221,7 +221,7 @@ static void test_call_ret(void)
     printf("  PASS: call_ret\n");
 }
 
-/* ── Test: CALL trap handler intercepts ──────────────────────────────────── */
+/* ── Test: RST-based trap via CALL → JP → RST stub ─────────────────────── */
 
 static int trap_call_count;
 static uint32_t trap_last_addr;
@@ -229,15 +229,16 @@ static uint32_t trap_last_addr;
 static int test_trap_handler(ecpu_state_t *state, int trap_type,
                              uint32_t param, void *ctx)
 {
-    (void)state;
     (void)ctx;
-    if (trap_type == ECPU_TRAP_CALL && param == 0x0005) {
-        trap_call_count++;
-        trap_last_addr = param;
-        /* Simulate BDOS: just set A = 0xFF and return handled */
+    /* Handle RST 0 from stub at 0x0050 (simulated BDOS stub) */
+    if (trap_type == ECPU_TRAP_RST && param == 0x0000) {
         z80_state_t *cpu = (z80_state_t *)state;
-        cpu->a = 0xFF;
-        return ECPU_TRAP_HANDLED;
+        if (cpu->pc - 1 == 0x0050) {
+            trap_call_count++;
+            trap_last_addr = 0x0050;
+            cpu->a = 0xFF;
+            return ECPU_TRAP_HANDLED;
+        }
     }
     return ECPU_TRAP_UNHANDLED;
 }
@@ -253,6 +254,13 @@ static void test_call_trap(void)
     ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&cpu, test_trap_handler,
                                   NULL);
 
+    /* Set up stub: 0x0005 = JP 0x0050;  0x0050 = RST 0; RET */
+    mem[0x05] = 0xC3;  /* JP 0x0050 */
+    mem[0x06] = 0x50;
+    mem[0x07] = 0x00;
+    mem[0x50] = 0xC7;  /* RST 0 */
+    mem[0x51] = 0xC9;  /* RET */
+
     /* LD A, 0x42; CALL 0x0005; HALT */
     mem[0x100] = 0x3E;  /* LD A, 0x42 */
     mem[0x101] = 0x42;
@@ -264,25 +272,21 @@ static void test_call_trap(void)
     ecpu_z80_ops.run((ecpu_state_t *)&cpu);
 
     assert(trap_call_count == 1);
-    assert(trap_last_addr == 0x0005);
+    assert(trap_last_addr == 0x0050);
     assert(cpu.a == 0xFF);  /* trap handler set this */
-    assert(cpu.sp == 0xFFFE);  /* CALL was intercepted, no push */
+    assert(cpu.sp == 0xFFFE);  /* CALL pushed, RET popped */
     printf("  PASS: call_trap\n");
 }
 
-/* ── Test: CALL to non-hooked address goes through ───────────────────────── */
+/* ── Test: CALL executes normally (no trap on CALL) ──────────────────────── */
 
 static void test_call_unhooked(void)
 {
     setup();
     cpu.pc = 0x0100;
     cpu.sp = 0xFFFE;
-    trap_call_count = 0;
 
-    ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&cpu, test_trap_handler,
-                                  NULL);
-
-    /* CALL 0x0200 (not 0x0005, so trap returns UNHANDLED) */
+    /* CALL 0x0200: CPU pushes PC, jumps, subroutine returns */
     mem[0x100] = 0xCD;  /* CALL 0x0200 */
     mem[0x101] = 0x00;
     mem[0x102] = 0x02;
@@ -299,7 +303,7 @@ static void test_call_unhooked(void)
     printf("  PASS: call_unhooked\n");
 }
 
-/* ── Test: CALL trap EXIT ────────────────────────────────────────────────── */
+/* ── Test: RST trap EXIT ─────────────────────────────────────────────────── */
 
 static int exit_trap_handler(ecpu_state_t *state, int trap_type,
                              uint32_t param, void *ctx)
@@ -307,7 +311,7 @@ static int exit_trap_handler(ecpu_state_t *state, int trap_type,
     (void)state;
     (void)param;
     (void)ctx;
-    if (trap_type == ECPU_TRAP_CALL)
+    if (trap_type == ECPU_TRAP_RST)
         return ECPU_TRAP_EXIT;
     return ECPU_TRAP_UNHANDLED;
 }
@@ -321,13 +325,11 @@ static void test_call_trap_exit(void)
     ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&cpu, exit_trap_handler,
                                   NULL);
 
-    mem[0x100] = 0xCD;  /* CALL 0x0000 */
-    mem[0x101] = 0x00;
-    mem[0x102] = 0x00;
+    mem[0x100] = 0xC7;  /* RST 0 — fires trap, returns EXIT */
     /* Should never reach here */
-    mem[0x103] = 0x3E;
-    mem[0x104] = 0xAA;
-    mem[0x105] = 0x76;
+    mem[0x101] = 0x3E;
+    mem[0x102] = 0xAA;
+    mem[0x103] = 0x76;
 
     ecpu_z80_ops.run((ecpu_state_t *)&cpu);
 
@@ -1423,7 +1425,7 @@ static int rst_trap_handler(ecpu_state_t *state, int trap_type,
                             uint32_t param, void *ctx)
 {
     (void)state; (void)ctx;
-    if (trap_type == ECPU_TRAP_CALL) {
+    if (trap_type == ECPU_TRAP_RST) {
         rst_trap_count++;
         rst_trap_addr = param;
         return ECPU_TRAP_HANDLED;

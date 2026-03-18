@@ -4,8 +4,6 @@
  * Detects _SOS magic header and orchestrates loading of S-OS binaries
  * into a Z80 emulator instance.  Memory allocation, Z80 initialization,
  * and subsystem setup are coordinated here.
- *
- * See docs/proposals/sos_subsystem.md §5 for the format.
  */
 
 #include "exec_sos.h"
@@ -74,25 +72,39 @@ static void sos_setup_memory(z80_state_t *cpu, sos_state_t *sos)
     mem[SOS_RST18_ADDR + 2] = SOS_RST18_ADDR >> 8;
 
     /*
-     * Populate monitor jump table (0x1F80–0x1FFD) and extended API
-     * (0x2000–0x2036) with executable stubs: { RST 0; RET; NOP }.
-     *
-     * Programs may reach these entries via JP (not just CALL), so the
-     * entries must contain real code.  RST 0 fires ECPU_TRAP_CALL(0x0000);
-     * the trap handler identifies the function from cpu->pc (which points
-     * just past the RST byte, i.e. inside the 3-byte entry).  On return
-     * from the trap, the RET instruction pops the original caller's
-     * return address.
+     * Internal RST stub area at SOS_STUB_BASE (0x0100).
+     * Each function has a 2-byte stub: { RST 0; RET }.
+     * RST 0 fires the trap; the handler computes the function index
+     * from cpu->pc (= SOS_STUB_BASE + fn * 2 + 1).
      */
-    for (uint16_t addr = SOS_MON_BASE; addr <= SOS_MON_TOP; addr += 3) {
-        mem[addr]     = 0xC7;  /* RST 0 */
-        mem[addr + 1] = 0xC9;  /* RET */
-        mem[addr + 2] = 0x00;  /* NOP (padding) */
+    for (int fn = 0; fn < SOS_FN_MAX; fn++) {
+        uint16_t stub = SOS_STUB_BASE + fn * 2;
+        mem[stub]     = 0xC7;  /* RST 0 */
+        mem[stub + 1] = 0xC9;  /* RET */
     }
-    for (uint16_t addr = SOS_EXT_BASE; addr <= SOS_EXT_TOP; addr += 3) {
-        mem[addr]     = 0xC7;  /* RST 0 */
-        mem[addr + 1] = 0xC9;  /* RET */
-        mem[addr + 2] = 0x00;  /* NOP (padding) */
+
+    /*
+     * Monitor jump table (0x1F80–0x1FFD): JP to internal stub area.
+     * Entries count downward: addr = 0x1FFD − fn × 3.
+     */
+    for (int fn = 0; fn <= 37; fn++) {
+        uint16_t addr = SOS_MON_TOP - fn * 3;
+        uint16_t stub = SOS_STUB_BASE + fn * 2;
+        mem[addr]     = 0xC3;  /* JP */
+        mem[addr + 1] = stub & 0xFF;
+        mem[addr + 2] = stub >> 8;
+    }
+
+    /*
+     * Extended API (0x2000–0x2036): JP to internal stub area.
+     * Entries count upward: addr = 0x2000 + (fn − 40) × 3.
+     */
+    for (int fn = 40; fn < SOS_FN_MAX; fn++) {
+        uint16_t addr = SOS_EXT_BASE + (fn - 40) * 3;
+        uint16_t stub = SOS_STUB_BASE + fn * 2;
+        mem[addr]     = 0xC3;  /* JP */
+        mem[addr + 1] = stub & 0xFF;
+        mem[addr + 2] = stub >> 8;
     }
 
     /* Initialize work area (0x1F5B–0x1F7F) */
@@ -195,7 +207,7 @@ int exec_sos(pcb_t *p, const uint8_t *file, uint32_t size,
     memset(state, 0, sizeof(*state));
     ecpu_z80_ops.init((ecpu_state_t *)&state->z80, z80_mem, 65536);
 
-    /* Set up trap handler for RST 18h / CALL interception */
+    /* Set up trap handler — only RST 0 and RST 18h are intercepted */
     ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&state->z80,
                                    sos_trap_handler, &state->sos);
 

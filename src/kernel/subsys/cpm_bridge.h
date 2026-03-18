@@ -21,9 +21,11 @@
 #define CPM_TPA_END        0xFE00  /* end of Transient Program Area        */
 #define CPM_MAX_COM_SIZE   (CPM_TPA_END - CPM_TPA_BASE)
 
-#define CPM_BDOS_ENTRY     0x0005  /* CALL 5 → BDOS dispatcher             */
+#define CPM_BDOS_ENTRY     0x0005  /* CALL 5 → JP to BDOS RST stub         */
 #define CPM_BIOS_ENTRY     0xFE00  /* BIOS jump table base                 */
 #define CPM_BIOS_SIZE      (17 * 3)  /* 17 functions × 3 bytes (JP addr)  */
+#define CPM_STUB_BASE      0xFDC0  /* Internal RST stub area               */
+#define CPM_BIOS_FN_COUNT  17      /* Number of BIOS functions              */
 
 #define CPM_DMA_DEFAULT    0x0080  /* default DMA buffer address           */
 #define CPM_FCB1_ADDR      0x005C  /* default FCB 1                        */
