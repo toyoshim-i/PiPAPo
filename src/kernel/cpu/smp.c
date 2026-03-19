@@ -24,7 +24,7 @@
  *   Cortex-M3 returns 0xC23.  Only proceed with SIO if we're on M0+.
  */
 
-#include "smp.h"
+#include "cpu/smp.h"
 
 /* ── m68k: single-core stubs ─────────────────────────────────────────── */
 #if defined(__m68k__)

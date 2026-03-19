@@ -45,7 +45,7 @@ set(KERNEL_SHARED_SOURCES_BASE
     ${_KS_ROOT}/src/kernel/mm/kmem.c
     ${_KS_ROOT}/src/kernel/proc/proc.c
     ${_KS_ROOT}/src/kernel/proc/sched.c
-    ${_KS_ROOT}/src/kernel/smp.c
+    ${_KS_ROOT}/src/kernel/cpu/smp.c
     ${_KS_ROOT}/src/kernel/syscall/syscall.c
     ${_KS_ROOT}/src/kernel/syscall/sys_proc.c
     ${_KS_ROOT}/src/kernel/syscall/sys_io.c

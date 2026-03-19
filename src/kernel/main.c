@@ -23,7 +23,7 @@
 #include "blkdev/loopback.h"
 #endif
 #include "exec/exec.h"
-#include "smp.h"
+#include "cpu/smp.h"
 #include "spinlock.h"
 #include "arch/arch.h"
 #include "subsys/subsys.h"
