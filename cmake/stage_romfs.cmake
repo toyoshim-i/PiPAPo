@@ -54,6 +54,9 @@ foreach(elf IN LISTS USER_ELFS)
     endif()
 endforeach()
 
+# --- /bin/sh → push ---
+file(CREATE_LINK "push" "${STAGING}/bin/sh" SYMBOLIC)
+
 # --- Install busybox (if available) ---
 if(BB_DIR AND EXISTS "${BB_DIR}/busybox")
     file(COPY "${BB_DIR}/busybox" DESTINATION "${STAGING}/bin")

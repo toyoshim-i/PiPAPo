@@ -91,7 +91,7 @@ set(BB_APPLETS
     printf ps rm rmdir sed sleep sort tail top uname vi wc
 )
 # Shell applets — link to busybox.sh (dedicated shell binary)
-set(BB_SHELL_APPLETS sh hush)
+set(BB_SHELL_APPLETS hush)
 # Sbin applets — link to full busybox via ../bin/busybox
 set(BB_SBIN_APPLETS mount umount)
 
