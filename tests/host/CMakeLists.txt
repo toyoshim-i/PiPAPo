@@ -54,3 +54,28 @@ add_executable(test_ecpu_m68k
 )
 target_include_directories(test_ecpu_m68k PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME ecpu_m68k COMMAND test_ecpu_m68k)
+
+# ── test_zexdoc ──────────────────────────────────────────────────────────
+# ZEXDOC — Z80 instruction exerciser (documented flags).
+# Runs the ZEXDOC .COM binary inside a minimal CP/M stub on the host.
+set(ZEXDOC_COM ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/zexall/zexdoc.com)
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/zexdoc_com.h
+    COMMAND ${CMAKE_COMMAND}
+        -DCOM_FILE=${ZEXDOC_COM}
+        -DOUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/zexdoc_com.h
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/generate_comhex.cmake
+    DEPENDS ${ZEXDOC_COM}
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/generate_comhex.cmake
+    COMMENT "Generating zexdoc_com.h from zexdoc.com"
+)
+add_executable(test_zexdoc
+    ${SRC}/kernel/ecpu/ecpu_z80.c
+    ${SRC}/kernel/ecpu/ecpu_z80_alu.c
+    test_zexdoc.c
+    ${CMAKE_CURRENT_BINARY_DIR}/zexdoc_com.h
+)
+target_include_directories(test_zexdoc PRIVATE
+    ${SRC} ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+add_test(NAME zexdoc COMMAND test_zexdoc)
+set_tests_properties(zexdoc PROPERTIES TIMEOUT 300)

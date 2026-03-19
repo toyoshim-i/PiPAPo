@@ -74,6 +74,13 @@ if(ROGUE AND EXISTS "${ROGUE}")
     file(COPY "${ROGUE}" DESTINATION "${STAGING}/bin")
 endif()
 
+# --- Install ZEXDOC for CP/M subsystem testing ---
+if(EXISTS "${PROJECT_ROOT}/third_party/zexall/zexdoc.com")
+    file(MAKE_DIRECTORY "${STAGING}/lib")
+    file(COPY "${PROJECT_ROOT}/third_party/zexall/zexdoc.com"
+         DESTINATION "${STAGING}/lib")
+endif()
+
 # --- Install shared ABI headers ---
 file(GLOB _headers "${PROJECT_ROOT}/src/common/*.h")
 foreach(h IN LISTS _headers)
