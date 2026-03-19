@@ -977,39 +977,130 @@ no more matches.
 CP/M programs assume various terminal types:
 - **ADM-3A** — most common on early CP/M systems (WordStar default)
 - **VT52** — common on later systems
+- **Kaypro** — ADM-3A superset with attribute escape sequences
 - **VT100** — some later programs
 - **Raw** — programs that only use printable characters + CR/LF
 
 ### 8.2 PPAP Terminal Strategy
 
-PPAP's UART presents a raw serial terminal. The host terminal
-emulator (minicom, PuTTY, etc.) typically speaks VT100/ANSI.
+PPAP's framebuffer console (`fbcon`) implements VT100/ANSI CSI
+escape sequences natively. A translator in the CP/M console
+output path (`cpm_bridge.c`) converts ADM-3A, VT52, and Kaypro
+sequences to VT100 before they reach fbcon.
 
-**Approach:** translate CP/M terminal codes to VT100/ANSI where
-possible, pass through where not:
+**Architecture:**
 
-| CP/M convention | VT100/ANSI equivalent |
+```
+CP/M program → ADM-3A/VT52/Kaypro → translator → VT100 → fbcon (LCD)
+                                                        → UART (serial)
+```
+
+### 8.3 ADM-3A Translation
+
+ADM-3A control characters and escape sequences are always
+translated:
+
+| ADM-3A | VT100 equivalent | Description |
+|---|---|---|
+| `^Z` (0x1A) | `ESC[2J ESC[H` | Clear screen + cursor home |
+| `^K` (0x0B) | `ESC[A` | Cursor up |
+| `^L` (0x0C) | `ESC[C` | Cursor right |
+| `^^` (0x1E) | `ESC[H` | Cursor home |
+| `ESC = row col` | `ESC[row;colH` | Cursor address (+0x20 encoding) |
+| `ESC *` | `ESC[2J` | Clear screen |
+| `ESC +` | `ESC[J` | Clear to end of screen |
+| `ESC T` / `ESC E` | `ESC[K` | Clear to end of line |
+
+WordStar control characters (`^A`, `^B`, `^S`, etc.) are silently
+dropped — they are attribute toggles with no VT100 equivalent.
+
+### 8.4 VT52 Translation
+
+VT52 escape sequences are translated to their VT100 equivalents:
+
+| VT52 | VT100 equivalent | Description |
+|---|---|---|
+| `ESC A` | `ESC[A` | Cursor up |
+| `ESC B` | `ESC[B` | Cursor down |
+| `ESC C` | `ESC[C` | Cursor right |
+| `ESC D` | `ESC[D` | Cursor left |
+| `ESC H` | `ESC[H` | Cursor home |
+| `ESC I` | `ESC M` | Reverse line feed |
+| `ESC J` | `ESC[J` | Erase to end of screen |
+| `ESC K` | `ESC[K` | Erase to end of line |
+| `ESC Y row col` | `ESC[row;colH` | Cursor address (+0x20 encoding) |
+
+### 8.5 Kaypro Attribute Translation
+
+Kaypro systems extend ADM-3A with attribute escape sequences:
+
+| Kaypro | VT100 equivalent | Description |
+|---|---|---|
+| `ESC G <n>` | `ESC[0;...m` | Set attributes (bitmask) |
+| `ESC B <n>` | `ESC[Nm` | Start attribute |
+| `ESC C <n>` | `ESC[Nm` | End attribute |
+
+**ESC G bitmask:** bit 0 = underline (SGR 4), bit 1 = blink (SGR 5),
+bit 2 = bold (SGR 1), bit 3 = reverse video (SGR 7).
+
+**ESC B/C parameter:** `'0'` = dim, `'1'` = underline, `'2'` = blink,
+`'3'` = underline (alias), `'4'` = bold.
+
+### 8.6 VT52 / Kaypro Dialect Auto-Detection
+
+`ESC B` and `ESC C` are ambiguous — VT52 uses them for cursor
+down/right (standalone, no parameter byte), while Kaypro uses
+them for attribute on/off (followed by a digit parameter).
+
+The translator auto-detects the dialect by observing which
+escape sequences the program emits:
+
+| Sequence observed | Latches dialect |
 |---|---|
-| `^H` (0x08) — backspace | `^H` (same) |
-| `^J` (0x0A) — line feed | `^J` (same) |
-| `^M` (0x0D) — carriage return | `^M` (same) |
-| `^Z` (0x1A) — clear screen (ADM-3A) | `ESC[2J ESC[H` |
-| `ESC = row col` (ADM-3A cursor) | `ESC[row;colH` |
-| `^G` (0x07) — bell | `^G` (same) |
+| `ESC A`, `ESC D`, `ESC H`, `ESC I`, `ESC J`, `ESC K`, `ESC Y` | **VT52** |
+| `ESC G` | **Kaypro** |
 
-ADM-3A cursor addressing uses `ESC = row+32 col+32` (add 32 to
-make printable ASCII). The bridge can optionally translate this to
-ANSI `ESC[row;colH` if ADM-3A translation is enabled.
+Once latched, `ESC B` / `ESC C` follow the detected dialect:
 
-### 8.3 Implementation
+- **VT52 or unknown** (default) → cursor down / cursor right
+- **Kaypro** → attribute on / attribute off (consume next byte)
 
-Terminal translation is optional and low priority. Most CP/M
-programs that need cursor addressing (WordStar, dBASE) have
-configuration options for terminal type. Users can configure
-the program to match their terminal emulator directly.
+The default is VT52, since it is far more common in CP/M
+software. Kaypro programs typically emit `ESC G` early (e.g. to
+reset attributes at startup), which latches Kaypro mode before
+any ambiguous `ESC B` / `ESC C` appears.
 
-If needed, a simple state machine in the console output path
-can detect ADM-3A sequences and translate them.
+ADM-3A sequences (`ESC =`, `ESC *`, `ESC +`, `ESC T`, `ESC E`,
+and control characters) are unambiguous and always handled
+regardless of dialect.
+
+### 8.7 VT100 Pass-Through
+
+If a CP/M program emits native VT100 CSI sequences (`ESC [`),
+the translator passes them through unchanged to fbcon.
+
+### 8.8 fbcon VT100 Support
+
+The fbcon driver (`src/drivers/fbcon.c`) implements the following
+VT100/ANSI CSI sequences used by the translator:
+
+| Sequence | Description |
+|---|---|
+| `ESC[nA` / `ESC[nB` / `ESC[nC` / `ESC[nD` | Cursor movement |
+| `ESC[row;colH` / `ESC[row;colf` | Cursor position |
+| `ESC[nJ` (0/1/2) | Erase display |
+| `ESC[nK` (0/1/2) | Erase line |
+| `ESC[nL` | Insert lines |
+| `ESC[nM` | Delete lines |
+| `ESC[n;...m` | SGR (colors, bold, reverse video) |
+| `ESC[top;botr` | Set scroll region |
+| `ESC M` | Reverse index (scroll down at top) |
+| `ESC 7` / `ESC 8` | Save / restore cursor + attributes |
+| `ESC c` | Full reset |
+
+SGR supports: reset (0), bold (1), reverse video (7),
+bold off (22), reverse off (27), foreground 30-37/39/90-97,
+background 40-47/49/100-107.
 
 ---
 

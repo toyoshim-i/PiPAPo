@@ -61,6 +61,12 @@ static int font_stride;          /* bytes per glyph = font_h */
 static const uint8_t *font_data; /* pointer to font8x16 or font4x8 */
 static uint8_t cur_attr;         /* fg [3:0], bg [7:4] */
 static int bold;                 /* bold flag (maps fg to bright variant) */
+static int reverse;              /* reverse video flag (swap fg/bg) */
+
+/* Save/restore cursor (ESC 7 / ESC 8) */
+static int saved_x, saved_y;
+static uint8_t saved_attr;
+static int saved_bold, saved_reverse;
 static volatile int flush_pending; /* set by fbcon_flush_deferred() */
 static volatile int flushing;      /* reentrant/concurrent guard */
 
@@ -160,15 +166,19 @@ static inline void clamp_cursor(void)
     if (cursor_y >= rows) cursor_y = rows - 1;
 }
 
-/* Compute the effective attribute byte from cur_attr + bold */
+/* Compute the effective attribute byte from cur_attr + bold + reverse */
 static inline uint8_t effective_attr(void)
 {
+    uint8_t a = cur_attr;
     if (bold) {
-        int fg = cur_attr & 0x0F;
+        int fg = a & 0x0F;
         if (fg < 8) fg += 8;
-        return (uint8_t)((cur_attr & 0xF0) | fg);
+        a = (uint8_t)((a & 0xF0) | fg);
     }
-    return cur_attr;
+    if (reverse) {
+        a = (uint8_t)(((a & 0x0F) << 4) | ((a >> 4) & 0x0F));
+    }
+    return a;
 }
 
 /* ---------- CSI dispatch helpers ---------- */
@@ -280,6 +290,7 @@ static void csi_sgr(void)
     if (vt_nparams == 0) {
         cur_attr = 0x07;
         bold = 0;
+        reverse = 0;
         return;
     }
     for (int i = 0; i < vt_nparams; i++) {
@@ -287,10 +298,15 @@ static void csi_sgr(void)
         if (p == 0) {
             cur_attr = 0x07;
             bold = 0;
+            reverse = 0;
         } else if (p == 1) {
             bold = 1;
+        } else if (p == 7) {
+            reverse = 1;
         } else if (p == 22) {
             bold = 0;
+        } else if (p == 27) {
+            reverse = 0;
         } else if (p >= 30 && p <= 37) {
             cur_attr = (uint8_t)((cur_attr & 0xF0) | (p - 30));
         } else if (p == 39) {
@@ -319,6 +335,52 @@ static void csi_set_scroll_region(void)
     }
     cursor_x = 0;
     cursor_y = 0;
+}
+
+static void csi_insert_lines(void)
+{
+    int n = param(0, 1);
+    if (cursor_y < scroll_top || cursor_y > scroll_bot)
+        return;
+    int avail = scroll_bot - cursor_y + 1;
+    if (n > avail) n = avail;
+    uint8_t a = effective_attr();
+    /* Shift lines down by n within scroll region */
+    for (int r = scroll_bot; r >= cursor_y + n; r--) {
+        memcpy(cell_char[r], cell_char[r - n], (size_t)cols);
+        memcpy(cell_attr[r], cell_attr[r - n], (size_t)cols);
+        dirty[r] = 1;
+    }
+    /* Clear the inserted lines */
+    for (int r = cursor_y; r < cursor_y + n; r++) {
+        memset(cell_char[r], ' ', (size_t)cols);
+        memset(cell_attr[r], a, (size_t)cols);
+        dirty[r] = 1;
+    }
+    cursor_x = 0;
+}
+
+static void csi_delete_lines(void)
+{
+    int n = param(0, 1);
+    if (cursor_y < scroll_top || cursor_y > scroll_bot)
+        return;
+    int avail = scroll_bot - cursor_y + 1;
+    if (n > avail) n = avail;
+    uint8_t a = effective_attr();
+    /* Shift lines up by n within scroll region */
+    for (int r = cursor_y; r <= scroll_bot - n; r++) {
+        memcpy(cell_char[r], cell_char[r + n], (size_t)cols);
+        memcpy(cell_attr[r], cell_attr[r + n], (size_t)cols);
+        dirty[r] = 1;
+    }
+    /* Clear the vacated lines at bottom */
+    for (int r = scroll_bot - n + 1; r <= scroll_bot; r++) {
+        memset(cell_char[r], ' ', (size_t)cols);
+        memset(cell_attr[r], a, (size_t)cols);
+        dirty[r] = 1;
+    }
+    cursor_x = 0;
 }
 
 static void csi_private_mode(int final)
@@ -350,6 +412,8 @@ static void csi_dispatch(int final)
     case 'f': csi_cursor_position(); break;
     case 'J': csi_erase_display(); break;
     case 'K': csi_erase_line(); break;
+    case 'L': csi_insert_lines(); break;
+    case 'M': csi_delete_lines(); break;
     case 'm': csi_sgr(); break;
     case 'r': csi_set_scroll_region(); break;
     default:
@@ -436,10 +500,36 @@ int fbcon_putc(char c, void (*notify)(void))
             /* RIS — full reset */
             vt_state = ST_NORMAL;
             bold = 0;
+            reverse = 0;
             cur_attr = 0x07;
             scroll_top = 0;
             scroll_bot = rows - 1;
             fbcon_clear();
+        } else if (ch == 'M') {
+            /* RI — Reverse Index: move cursor up; scroll down at top */
+            vt_state = ST_NORMAL;
+            if (cursor_y == scroll_top) {
+                scroll_down_region();
+            } else if (cursor_y > 0) {
+                cursor_y--;
+            }
+        } else if (ch == '7') {
+            /* DECSC — Save cursor position + attributes */
+            vt_state = ST_NORMAL;
+            saved_x = cursor_x;
+            saved_y = cursor_y;
+            saved_attr = cur_attr;
+            saved_bold = bold;
+            saved_reverse = reverse;
+        } else if (ch == '8') {
+            /* DECRC — Restore cursor position + attributes */
+            vt_state = ST_NORMAL;
+            cursor_x = saved_x;
+            cursor_y = saved_y;
+            cur_attr = saved_attr;
+            bold = saved_bold;
+            reverse = saved_reverse;
+            clamp_cursor();
         } else {
             /* Unknown ESC sequence — discard and return to normal */
             vt_state = ST_NORMAL;
@@ -603,6 +693,7 @@ void fbcon_set_mode(int mode)
     }
     cur_attr = 0x07;  /* white on black */
     bold = 0;
+    reverse = 0;
     vt_state = ST_NORMAL;
     scroll_top = 0;
     scroll_bot = rows - 1;

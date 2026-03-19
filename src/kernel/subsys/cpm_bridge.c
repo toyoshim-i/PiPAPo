@@ -30,12 +30,40 @@
  *   0x0C (Ctrl-L)     → ESC [ C             (cursor right)
  *   0x1E (Ctrl-^)     → ESC [ H             (cursor home)
  *
+ * Supported VT52 sequences:
+ *   ESC A             → ESC [ A             (cursor up)
+ *   ESC B             → ESC [ B             (cursor down)
+ *   ESC C             → ESC [ C             (cursor right)
+ *   ESC D             → ESC [ D             (cursor left)
+ *   ESC H             → ESC [ H             (cursor home)
+ *   ESC I             → ESC M               (reverse line feed)
+ *   ESC J             → ESC [ J             (erase to end of screen)
+ *   ESC K             → ESC [ K             (erase to end of line)
+ *   ESC Y  row col    → ESC [ row ; col H   (cursor address, +32 encoding)
+ *
+ * Kaypro attribute sequences:
+ *   ESC G <n>         → SGR attribute set (bitmask)
+ *   ESC B <n>         → SGR attribute on  (Kaypro only)
+ *   ESC C <n>         → SGR attribute off (Kaypro only)
+ *
+ * ESC B and ESC C are ambiguous: VT52 uses them for cursor down/right
+ * (no parameter), Kaypro uses them for attribute on/off (followed by a
+ * digit).  We auto-detect the dialect from other sequences:
+ *   - VT52-only sequences (ESC A/D/H/I/J/K/Y) → latch VT52 mode
+ *   - Kaypro-only sequences (ESC G)            → latch Kaypro mode
+ * ESC B/C then follow the latched dialect.  Default is VT52.
+ *
  * Characters without special meaning pass through unchanged.
  */
 
-enum { ADM_NORMAL, ADM_ESC, ADM_ROW, ADM_COL, ADM_ATTR_ON, ADM_ATTR_OFF, ADM_ATTR_SET };
+enum { ADM_NORMAL, ADM_ESC, ADM_ROW, ADM_COL,
+       ADM_ATTR_SET, ADM_ATTR_ON, ADM_ATTR_OFF };
 static int adm_state;
 static uint8_t adm_row;
+
+/* Auto-detect VT52 vs Kaypro for ambiguous ESC B / ESC C */
+enum { DIALECT_UNKNOWN, DIALECT_VT52, DIALECT_KAYPRO };
+static int adm_dialect;
 
 static void (*adm_raw_out)(uint8_t ch);
 
@@ -84,6 +112,11 @@ static void adm_putchar(uint8_t ch)
 
     case ADM_ESC:
         if (ch == '=') {
+            /* ADM-3A ESC = row col */
+            adm_state = ADM_ROW;
+        } else if (ch == 'Y') {
+            /* VT52 ESC Y row col */
+            adm_dialect = DIALECT_VT52;
             adm_state = ADM_ROW;
         } else if (ch == '*') {
             adm_emit("\033[2J");
@@ -94,19 +127,60 @@ static void adm_putchar(uint8_t ch)
         } else if (ch == 'T' || ch == 'E') {
             adm_emit("\033[K");
             adm_state = ADM_NORMAL;
+        } else if (ch == 'A') {
+            /* VT52: cursor up */
+            adm_dialect = DIALECT_VT52;
+            adm_emit("\033[A");
+            adm_state = ADM_NORMAL;
+        } else if (ch == 'B') {
+            /* VT52: cursor down  OR  Kaypro: attribute on */
+            if (adm_dialect == DIALECT_KAYPRO) {
+                adm_state = ADM_ATTR_ON;
+            } else {
+                adm_emit("\033[B");
+                adm_state = ADM_NORMAL;
+            }
+        } else if (ch == 'C') {
+            /* VT52: cursor right  OR  Kaypro: attribute off */
+            if (adm_dialect == DIALECT_KAYPRO) {
+                adm_state = ADM_ATTR_OFF;
+            } else {
+                adm_emit("\033[C");
+                adm_state = ADM_NORMAL;
+            }
+        } else if (ch == 'D') {
+            /* VT52: cursor left */
+            adm_dialect = DIALECT_VT52;
+            adm_emit("\033[D");
+            adm_state = ADM_NORMAL;
+        } else if (ch == 'H') {
+            /* VT52: cursor home */
+            adm_dialect = DIALECT_VT52;
+            adm_emit("\033[H");
+            adm_state = ADM_NORMAL;
+        } else if (ch == 'I') {
+            /* VT52: reverse line feed → VT100 reverse index */
+            adm_dialect = DIALECT_VT52;
+            adm_emit("\033M");
+            adm_state = ADM_NORMAL;
+        } else if (ch == 'J') {
+            /* VT52: erase to end of screen */
+            adm_dialect = DIALECT_VT52;
+            adm_emit("\033[J");
+            adm_state = ADM_NORMAL;
+        } else if (ch == 'K') {
+            /* VT52: erase to end of line */
+            adm_dialect = DIALECT_VT52;
+            adm_emit("\033[K");
+            adm_state = ADM_NORMAL;
         } else if (ch == ')') {
             /* Alternate keypad mode — ignore */
             adm_state = ADM_NORMAL;
         } else if (ch == 'G') {
             /* Kaypro ESC G <n> — set attribute (bitmask):
              *   0=normal, 1=underline, 2=blink, 4=bold/half, 8=reverse */
+            adm_dialect = DIALECT_KAYPRO;
             adm_state = ADM_ATTR_SET;
-        } else if (ch == 'B') {
-            /* Kaypro ESC B <n> — start attribute n */
-            adm_state = ADM_ATTR_ON;
-        } else if (ch == 'C') {
-            /* Kaypro ESC C <n> — end attribute n */
-            adm_state = ADM_ATTR_OFF;
         } else if (ch == '[') {
             /* Already a VT100 CSI — pass through as-is */
             adm_raw_out(0x1B);
@@ -152,7 +226,7 @@ static void adm_putchar(uint8_t ch)
         break;
 
     case ADM_ATTR_ON:
-        /* ESC B <n>: start individual attribute */
+        /* Kaypro ESC B <n>: start individual attribute */
         switch (ch) {
         case '0': adm_emit("\033[2m");  break;  /* dim */
         case '1': adm_emit("\033[4m");  break;  /* underline */
@@ -165,7 +239,7 @@ static void adm_putchar(uint8_t ch)
         break;
 
     case ADM_ATTR_OFF:
-        /* ESC C <n>: end individual attribute */
+        /* Kaypro ESC C <n>: end individual attribute */
         switch (ch) {
         case '0': adm_emit("\033[22m"); break;  /* dim off */
         case '1': adm_emit("\033[24m"); break;  /* underline off */
