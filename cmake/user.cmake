@@ -69,6 +69,9 @@ set(PPAP_USER_EXTRA_SOURCES_pdb
     ${PPAP_ROOT}/src/user/pdb_inspect.c
     ${PPAP_ROOT}/src/user/pdb_break.c
 )
+set(PPAP_USER_EXTRA_SOURCES_push
+    ${PPAP_ROOT}/src/user/push_line.c
+)
 
 # Test programs (sources in tests/user/)
 set(USER_TESTS

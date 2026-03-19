@@ -1,14 +1,16 @@
 /*
- * push.c — PiPAPo μShell (Phase 1+2)
+ * push.c — PiPAPo μShell (Phase 1+2+3)
  *
  * Minimal shell for PiPAPo.  No libc dependency, static memory only.
  * Phase 1: quoting, $expansion, builtins, [[ ]], redirects, pipes,
  *          &&/||/; chaining, 4-tier PATH search, local/global env vars.
  * Phase 2: if/elif/else/fi, while/do/done, break/continue,
  *          $(...) command substitution, positional parameters.
+ * Phase 3: interactive line editing, history, tab completion, PS1 prompt.
  */
 
 #include "syscall.h"
+#include "push.h"
 
 /* ── Configuration ───────────────────────────────────────────────────── */
 
@@ -803,7 +805,7 @@ static int is_builtin(const char *cmd)
            streq(cmd, "export") || streq(cmd, "unset") || streq(cmd, "set") ||
            streq(cmd, "env") || streq(cmd, ".") || streq(cmd, "source") ||
            streq(cmd, "break") || streq(cmd, "continue") ||
-           streq(cmd, "shift");
+           streq(cmd, "shift") || streq(cmd, "history");
 }
 
 /* Execute builtin.  Always returns 1 (handled).  Sets *status. */
@@ -952,6 +954,12 @@ static void run_builtin(char **argv, int argc, int *status)
         for (int i = 1; i + n < POS_PARAM_MAX && i <= pos_param_count - n; i++)
             pos_params[i] = pos_params[i + n];
         pos_param_count -= n;
+        *status = 0;
+        return;
+    }
+
+    if (streq(cmd, "history")) {
+        push_history_list(1);
         *status = 0;
         return;
     }
@@ -1627,8 +1635,13 @@ int main(int argc, char *argv[])
         return run_file(argv[1]);
     }
 
-    /* Interactive mode (minimal — Phase 3 adds line editing) */
+    /* Interactive mode with line editing (Phase 3) */
     {
+        /* Source /etc/profile if it exists */
+        struct stat st;
+        if (stat("/etc/profile", &st) == 0)
+            run_file("/etc/profile");
+
         struct line_src ls;
         ls.fd = 0;
         ls.lines = 0;
@@ -1636,11 +1649,23 @@ int main(int argc, char *argv[])
         ls.pos = 0;
         ls.first = 0;
 
+        /* Detect TERM — use raw readline only if TERM != "dumb" */
+        const char *term = env_get("TERM");
+        int use_readline = term && !streq(term, "dumb");
+
         char line[PUSH_LINE_MAX];
         for (;;) {
-            puts_fd(2, "$ ");
-            if (read_line(0, line, sizeof(line)) < 0)
-                break;
+            int n;
+            if (use_readline) {
+                /* PS1-based prompt via push_readline */
+                const char *ps1 = env_get("PS1");
+                n = push_readline(ps1, line, sizeof(line));
+            } else {
+                /* Dumb terminal fallback */
+                puts_fd(2, "$ ");
+                n = read_line(0, line, sizeof(line));
+            }
+            if (n < 0) break;
             if (line[0] == '\0') continue;
 
             const char *trimmed = skip_ws(line);
