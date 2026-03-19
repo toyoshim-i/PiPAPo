@@ -92,7 +92,7 @@ set(KERNEL_SUBSYS_CPM_SOURCES
 
 set(KERNEL_SUBSYS_SOS_SOURCES
     ${_KS_ROOT}/src/kernel/subsys/sos_bridge.c
-    ${_KS_ROOT}/src/kernel/exec/exec_sos.c
+    ${_KS_ROOT}/src/kernel/exec/sos_loader.c
 )
 
 set(KERNEL_ECPU_Z80_SOURCES
@@ -103,7 +103,7 @@ set(KERNEL_ECPU_Z80_SOURCES
 set(KERNEL_ECPU_M68K_SOURCES
     ${_KS_ROOT}/src/kernel/cpu/ecpu_m68k.c
     ${_KS_ROOT}/src/kernel/cpu/ecpu_m68k_alu.c
-    ${_KS_ROOT}/src/kernel/exec/exec_m68k_emu.c
+    ${_KS_ROOT}/src/kernel/exec/m68k_emu_loader.c
     ${_KS_ROOT}/src/kernel/subsys/ppap_m68k_bridge.c
 )
 

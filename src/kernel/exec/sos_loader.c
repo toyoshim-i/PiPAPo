@@ -1,18 +1,17 @@
 /*
- * exec_sos.c — S-OS "SWORD" .obj binary loader
+ * sos_loader.c — S-OS "SWORD" .obj binary loader
  *
- * Detects _SOS magic header and orchestrates loading of S-OS binaries
- * into a Z80 emulator instance.  Memory allocation, Z80 initialization,
- * and subsystem setup are coordinated here.
+ * Detects _SOS magic header and loads S-OS binaries into a Z80
+ * emulator instance for execution.  Memory allocation, Z80
+ * initialization, and subsystem setup are coordinated here.
  */
 
-#include "exec_sos.h"
+#include "loader.h"
 #include "exec.h"
 #include "kernel/mm/page.h"
 #include "kernel/subsys/subsys.h"
 #include "kernel/subsys/sos_bridge.h"
 #include "kernel/cpu/ecpu_z80.h"
-#include "kernel/signal/signal.h"
 #include "kernel/errno.h"
 #if defined(__m68k__)
 #include "arch/cpu.h"
@@ -24,22 +23,23 @@
 
 /* ── Detection ─────────────────────────────────────────────────────────── */
 
-int sos_detect(const char *path, const uint8_t *file, uint32_t size)
+static int sos_detect(const uint8_t *file_buf, uint32_t file_size,
+                      const char *path)
 {
     (void)path;
 
     /* Must have at least the 18-byte _SOS header */
-    if (size < SOS_HEADER_SIZE)
+    if (file_size < SOS_HEADER_SIZE)
         return 0;
 
     /* Check _SOS magic */
-    if (memcmp(file, SOS_MAGIC, SOS_MAGIC_LEN) != 0)
+    if (memcmp(file_buf, SOS_MAGIC, SOS_MAGIC_LEN) != 0)
         return 0;
 
     /* Validate header structure: spaces at +4, +7, +12 and LF at +17 */
-    if (file[4] != ' ' || file[7] != ' ' || file[12] != ' ')
+    if (file_buf[4] != ' ' || file_buf[7] != ' ' || file_buf[12] != ' ')
         return 0;
-    if (file[17] != 0x0A)
+    if (file_buf[17] != 0x0A)
         return 0;
 
     return 1;
@@ -137,26 +137,19 @@ static void sos_setup_memory(z80_state_t *cpu, sos_state_t *sos)
     __builtin_memset(sos->screen_buf, ' ', sizeof(sos->screen_buf));
 }
 
-/* ── Drive root mapping ───────────────────────────────────────────────── */
-
-static void sos_set_session_root(sos_state_t *sos, const char *path)
-{
-    (void)sos;
-    (void)path;
-    /* S-OS uses session-based path mapping (/a/, /b/) — no per-binary
-     * root override needed (unlike CP/M's drive A: root). */
-}
-
 /* ── Loader ───────────────────────────────────────────────────────────── */
 
-int exec_sos(pcb_t *p, const uint8_t *file, uint32_t size,
-             const char *path, const char *const *argv)
+static int sos_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
+                    const cpu_ops_t *cpu_ops, void *cpu_state,
+                    const char *const *argv)
 {
+    (void)cpu_ops;
+    (void)cpu_state;
     (void)argv;
 
     /* ── 1. Parse _SOS header ──────────────────────────────────────────── */
     sos_header_t hdr;
-    if (sos_parse_header(file, size, &hdr) < 0)
+    if (sos_parse_header(file_buf, file_size, &hdr) < 0)
         return -(int)ENOEXEC;
 
     /* Only binary mode is executable */
@@ -164,8 +157,8 @@ int exec_sos(pcb_t *p, const uint8_t *file, uint32_t size,
         return -(int)ENOEXEC;
 
     /* Payload is everything after the 18-byte header */
-    const uint8_t *payload = file + SOS_HEADER_SIZE;
-    uint32_t payload_size = size - SOS_HEADER_SIZE;
+    const uint8_t *payload = file_buf + SOS_HEADER_SIZE;
+    uint32_t payload_size = file_size - SOS_HEADER_SIZE;
 
     /* Validate load address */
     if (hdr.load_addr + payload_size > 65536)
@@ -233,8 +226,6 @@ int exec_sos(pcb_t *p, const uint8_t *file, uint32_t size,
     z80_mem[SOS_EXADR]     = hdr.exec_addr & 0xFF;
     z80_mem[SOS_EXADR + 1] = hdr.exec_addr >> 8;
 
-    sos_set_session_root(&state->sos, path);
-
     /* ── 7. Tag as S-OS process ────────────────────────────────────────── */
     p->subsys = SUBSYS_SOS;
     p->subsys_data = state;
@@ -245,34 +236,7 @@ int exec_sos(pcb_t *p, const uint8_t *file, uint32_t size,
             ops->on_init(p);
     }
 
-    /* ── 8. Set process comm from executable basename ──────────────────── */
-    {
-        const char *base = path;
-        for (const char *s = path; *s; s++) {
-            if (*s == '/')
-                base = s + 1;
-        }
-        size_t clen = strlen(base);
-        if (clen > 15) clen = 15;
-        memcpy(p->comm, base, clen);
-        p->comm[clen] = '\0';
-    }
-
-    /* ── 9. Set working directory ──────────────────────────────────────── */
-    if (current)
-        memcpy(p->cwd, current->cwd, sizeof(p->cwd));
-    else
-        strcpy(p->cwd, "/");
-
-    /* ── 10. Reset signal state ────────────────────────────────────────── */
-    for (int i = 0; i < NSIG; i++) {
-        if (p->sig_handlers[i] != SIG_IGN)
-            p->sig_handlers[i] = SIG_DFL;
-    }
-    p->sig_pending = 0;
-    p->sig_blocked = 0;
-
-    /* ── 11. Set up kernel-mode entry point ─────────────────────────────── */
+    /* ── 8. Set up kernel-mode entry point ─────────────────────────────── */
     proc_setup_stack(p, sos_run_process, 0);
 
 #if defined(__m68k__)
@@ -285,3 +249,13 @@ int exec_sos(pcb_t *p, const uint8_t *file, uint32_t size,
 
     return 0;
 }
+
+/* ── Loader registration ───────────────────────────────────────────────── */
+
+const loader_t sos_loader = {
+    .name = "sos",
+    .detect = sos_detect,
+    .load = sos_load,
+    .required_arch_id = CPU_ARCH_Z80,
+    .xip = 0,
+};

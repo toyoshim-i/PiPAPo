@@ -1,38 +1,20 @@
 /*
- * exec.c — ELF binary loader for PPAP
+ * exec.c — do_execve coordinator for PPAP
  *
- * ARM: Execute-In-Place (XIP)
- *   - .text + .rodata stay in flash (execute in place)
- *   - .got + .data + .bss are copied to contiguous SRAM page(s)
- *   - GOT entries are relocated to point to actual text/SRAM addresses
- *   - GOT base register: r9 (set by kernel, compiler doesn't recalculate)
- *
- * m68k: Execute-In-Place (XIP) from romfs
- *   - .text stays in romfs (execute in place — romfs is in RAM)
- *   - .got + .data + .bss are copied to contiguous SRAM page(s)
- *   - With -msep-data, a5 holds the GOT base (set by kernel), so text
- *     and data locations are fully independent (no PC-relative GOT lookup)
- *   - Text relocations are rejected at load time (binaries must be
- *     compiled with -msep-data -fPIC)
+ * Reads the executable file from the VFS, iterates the loader registry
+ * to find a matching binary format, and delegates loading to the
+ * matched loader.  Post-load, sets process metadata (comm, cwd,
+ * signals) and manages the file buffer lifecycle.
  */
 
 #include "exec.h"
-#include "elf.h"
-#ifdef PPAP_ENABLE_SOS
-#include "exec_sos.h"
-#endif
-#ifdef PPAP_ENABLE_ECPU_M68K
-#include "exec_m68k_emu.h"
-#endif
+#include "loader.h"
 #include "kernel/vfs/vfs.h"
 #include "kernel/mm/page.h"
 #include "kernel/signal/signal.h"
 #include "kernel/errno.h"
 #include "arch/arch.h"
 #include <string.h>
-
-/* Maximum PT_LOAD segments we handle */
-#define MAX_LOAD_SEGS  4
 
 /* ── Contiguous page allocation helper ─────────────────────────────────── */
 
@@ -41,11 +23,7 @@ uint8_t *alloc_contiguous(uint32_t n_pages)
     return page_alloc_contiguous(n_pages);
 }
 
-
-
 /* ── do_execve ─────────────────────────────────────────────────────────── */
-
-#include "loader.h"
 
 int do_execve(pcb_t *p, const char *path, const char *const *argv) {
     vnode_t *vn = NULL;
@@ -65,12 +43,13 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
         return -(int)ENOEXEC;
     }
 
-    const uint8_t *elf_buf = NULL;
+    /* ── 2. Read the file into memory (or use XIP address) ─────────────── */
     uint8_t *file_buf = NULL;
     uint32_t file_pages = 0;
+    const uint8_t *file_base;
+    uint32_t file_size = vn->size;
 
     if (vn->xip_addr == NULL) {
-        uint32_t file_size = vn->size;
         if (file_size == 0) {
             vnode_put(vn);
             return -(int)ENOEXEC;
@@ -96,47 +75,12 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
             return (nread < 0) ? (int)nread : -(int)ENOEXEC;
         }
 
-#ifdef PPAP_ENABLE_SOS
-        if (sos_detect(path, file_buf, file_size)) {
-            int rc = exec_sos(p, file_buf, file_size, path, argv);
-            for (uint32_t i = 0; i < file_pages; i++) page_free(file_buf + i * PAGE_SIZE);
-            vnode_put(vn);
-            return rc;
-        }
-#endif
-
-#ifdef PPAP_ENABLE_ECPU_M68K
-        {
-            const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)file_buf;
-            if (m68k_emu_detect(ehdr)) {
-                int rc = exec_m68k_emu(p, file_buf, file_size, ehdr, path, argv);
-                for (uint32_t i = 0; i < file_pages; i++) page_free(file_buf + i * PAGE_SIZE);
-                vnode_put(vn);
-                return rc;
-            }
-        }
-#endif
-        elf_buf = file_buf; 
+        file_base = file_buf;
+    } else {
+        file_base = (const uint8_t *)vn->xip_addr;
     }
 
-    const uint8_t *file_base = (elf_buf != NULL) ? elf_buf : (const uint8_t *)vn->xip_addr;
-    uint32_t file_size = vn->size;
-
-#ifdef PPAP_ENABLE_SOS
-    if (sos_detect(path, file_base, file_size)) {
-        vnode_put(vn);
-        return exec_sos(p, file_base, file_size, path, argv);
-    }
-#endif
-
-#ifdef PPAP_ENABLE_ECPU_M68K
-    const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)file_base;
-    if (m68k_emu_detect(ehdr)) {
-        vnode_put(vn);
-        return exec_m68k_emu(p, file_base, file_size, ehdr, path, argv);
-    }
-#endif
-
+    /* ── 3. Iterate loader registry ────────────────────────────────────── */
     extern const loader_t* loader_registry[];
     const loader_t *matched_loader = NULL;
     int rc = -(int)ENOEXEC;
@@ -169,11 +113,12 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
         return rc;
     }
 
-    /* Free file buffer if the loader doesn't need it for XIP */
+    /* ── 4. Free file buffer if the loader doesn't need it for XIP ───── */
     if (file_buf && !matched_loader->xip) {
         for (uint32_t i = 0; i < file_pages; i++) page_free(file_buf + i * PAGE_SIZE);
     }
 
+    /* ── 5. Set process metadata ───────────────────────────────────────── */
     {
         const char *base = path;
         for (const char *s = path; *s; s++) {

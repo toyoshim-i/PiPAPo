@@ -124,25 +124,14 @@ Loader implementations (registered in `src/kernel/exec/loader.c`):
 
 The `do_execve` function in `src/kernel/exec/exec.c` will be refactored to orchestrate the loading process.
 
-**Current `do_execve` logic** (after Phase 3.1):
+**Final `do_execve` logic** (Phase 3 complete — all loaders migrated):
 1.  **File Loading:** Look up and read the executable file from the VFS (with XIP support).
-2.  **Legacy detection chain:** For subsystem formats not yet migrated (Human68k, SOS, m68k-emu), the old hardcoded `exec_*()` calls are tried first. These will be removed as Phase 3 continues.
-3.  **Loader registry:** Iterate through `loader_registry[]` (defined in `src/kernel/exec/loader.c`). Call `loader->detect()` on each one.
-4.  **On successful detection:**
-    a. Select CPU ops via `cpu_ops_for_arch()` based on `required_arch_id` (native or emulated).
-    b. Call `loader->load()`, passing the file buffer, PCB, and CPU ops. Each loader manages its own CPU state allocation internally.
-5.  **Post-load cleanup:** Free the file buffer if the loader's `xip` flag is false (non-XIP loaders copy data, so the buffer is no longer needed). Set `p->comm`, `p->cwd`, reset signal handlers.
-6.  **Final Cleanup:** If no loader was found, or if any step failed, release all allocated resources and return an error.
-
-**Target `do_execve` logic** (after Phase 3 — all loaders migrated):
-1.  **File Loading:** Read the executable file from the VFS.
 2.  **Loader Detection:** Iterate through `loader_registry[]`. Call `loader->detect()`.
 3.  **On successful detection:**
-    a. Get the `required_arch_id` from the loader.
-    b. **Select CPU ops:** Use `cpu_ops_for_arch()` to choose the appropriate `cpu_ops_t`.
-    c. **Call loader:** `loader->load()` populates memory and sets initial CPU state.
-    d. **Finalize PCB:** Set `p->cpu_ops`, `p->cpu_state`.
-4.  **Final Cleanup:** Release resources on failure.
+    a. Select CPU ops via `cpu_ops_for_arch()` based on `required_arch_id` (native or emulated).
+    b. Call `loader->load()`, passing the file buffer, PCB, and CPU ops. Each loader manages its own CPU state allocation internally.
+4.  **Post-load cleanup:** Free the file buffer if the loader's `xip` flag is false (non-XIP loaders copy data, so the buffer is no longer needed). Set `p->comm`, `p->cwd`, reset signal handlers.
+5.  **Final Cleanup:** If no loader was found, or if any step failed, release all allocated resources and return an error.
 
 ---
 
@@ -182,7 +171,17 @@ The `do_execve` function in `src/kernel/exec/exec.c` will be refactored to orche
     -   Registered `x_loader` and `r_loader` in `src/kernel/exec/loader.c`.
     -   Removed hardcoded Human68k detection from `do_execve` coordinator.
     -   Removed `exec_x68k.c` and `exec_x68k.h`.
-3.  **Other subsystems (SOS, etc.)** will be migrated in a similar fashion.
+3.  **SOS:** **Status: Completed.**
+    -   Created `src/kernel/exec/sos_loader.c` implementing `loader_t`.
+    -   Moved detection + loading logic from `exec_sos.c` into `sos_loader.c`.
+    -   Registered `sos_loader` in `src/kernel/exec/loader.c`.
+    -   Removed `exec_sos.c` and `exec_sos.h`.
+4.  **m68k emulator:** **Status: Completed.**
+    -   Created `src/kernel/exec/m68k_emu_loader.c` implementing `loader_t`.
+    -   Moved m68k ELF detection + loading logic from `exec_m68k_emu.c` into `m68k_emu_loader.c`.
+    -   Registered `m68k_emu_loader` in `src/kernel/exec/loader.c`.
+    -   Removed `exec_m68k_emu.c` and `exec_m68k_emu.h`.
+5.  **Coordinator cleanup:** Removed all legacy detection chains from `do_execve`. The coordinator now uses only the loader registry — no hardcoded format detection remains.
 
 ---
 
@@ -209,5 +208,5 @@ The `do_execve` function in `src/kernel/exec/exec.c` will be refactored to orche
 -   `src/kernel/exec/x_loader.c` — Human68k X-format loader
 -   `src/kernel/exec/r_loader.c` — Human68k R-format loader
 -   `src/kernel/exec/h68k_emu.c` — Shared Human68k m68k emulator code (ARM host)
--   `src/kernel/exec/exec_sos.c` — S-OS exec (legacy, Phase 3 target)
--   `src/kernel/exec/exec_m68k_emu.c` — m68k emulator exec (legacy, Phase 3 target)
+-   `src/kernel/exec/sos_loader.c` — S-OS "SWORD" .obj format loader
+-   `src/kernel/exec/m68k_emu_loader.c` — m68k ELF cross-arch emulator loader

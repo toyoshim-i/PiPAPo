@@ -1,21 +1,18 @@
 /*
- * exec_m68k_emu.c — m68k ELF binary loader for cross-arch emulation
+ * m68k_emu_loader.c — m68k ELF binary loader for cross-arch emulation
  *
  * Detects m68k ELF binaries on non-m68k hosts, allocates emulated
  * memory, loads PT_LOAD segments, and sets up the eCPU-m68k state
  * for execution via the PPAP cross-arch personality.
- *
- * Pattern follows exec_cpm.c: allocate memory → init eCPU →
- * set trap handler → tag process → call on_init.
  */
 
-#include "exec_m68k_emu.h"
+#include "loader.h"
 #include "exec.h"
+#include "elf.h"
 #include "kernel/mm/page.h"
 #include "kernel/subsys/subsys.h"
 #include "kernel/subsys/ppap_m68k_bridge.h"
 #include "kernel/cpu/ecpu_m68k.h"
-#include "kernel/signal/signal.h"
 #include "kernel/endian.h"
 #include "kernel/errno.h"
 #include <string.h>
@@ -29,14 +26,23 @@
 
 /* ── Detection ─────────────────────────────────────────────────────────── */
 
-int m68k_emu_detect(const elf32_ehdr_t *ehdr)
+static int m68k_emu_detect(const uint8_t *file_buf, uint32_t file_size,
+                           const char *path)
 {
+    (void)path;
+
 #if defined(__m68k__)
     /* Native m68k — no emulation needed */
-    (void)ehdr;
+    (void)file_buf;
+    (void)file_size;
     return 0;
 #else
-    /* Check for m68k ELF on non-m68k host */
+    if (file_size < sizeof(elf32_ehdr_t))
+        return 0;
+
+    const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)file_buf;
+
+    /* Check for valid ELF */
     if (ehdr->e_ident[EI_MAG0] != ELFMAG0 ||
         ehdr->e_ident[EI_MAG1] != ELFMAG1 ||
         ehdr->e_ident[EI_MAG2] != ELFMAG2 ||
@@ -56,23 +62,25 @@ int m68k_emu_detect(const elf32_ehdr_t *ehdr)
 
 /* ── Loader ────────────────────────────────────────────────────────────── */
 
-int exec_m68k_emu(pcb_t *p, const uint8_t *file_base, uint32_t file_size,
-                   const elf32_ehdr_t *ehdr, const char *path,
-                   const char *const *argv)
+static int m68k_emu_load(pcb_t *p, const uint8_t *file_buf,
+                         uint32_t file_size, const cpu_ops_t *cpu_ops,
+                         void *cpu_state, const char *const *argv)
 {
-    int exec_argc = 1;
-    int use_default_argv0 = 1;
+    (void)cpu_ops;
+    (void)cpu_state;
 
-    if (argv && argv[0]) {
-        int argc = 0;
+    const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)file_buf;
+
+    int argc = 0;
+    if (argv) {
         while (argv[argc] != NULL) {
             argc++;
             if (argc > EXEC_ARGV_MAX)
                 return -(int)E2BIG;
         }
-        exec_argc = argc;
-        use_default_argv0 = 0;
     }
+    if (argc == 0)
+        argc = 1;
 
     /* ── 1. Allocate emulated memory + state struct ────────────────────── */
     uint32_t state_pages = (sizeof(ppap_m68k_exec_state_t) + PAGE_SIZE - 1)
@@ -108,13 +116,12 @@ int exec_m68k_emu(pcb_t *p, const uint8_t *file_base, uint32_t file_size,
                                     ppap_m68k_trap_handler, NULL);
 
     /* ── 4. Load PT_LOAD segments into emulated memory ─────────────────── */
-    /* Parse program headers (big-endian) */
     uint32_t phoff = be32_load(&ehdr->e_phoff);
     uint16_t phnum = be16_load(&ehdr->e_phnum);
     uint16_t phentsize = be16_load(&ehdr->e_phentsize);
 
     for (uint16_t i = 0; i < phnum; i++) {
-        const uint8_t *ph = file_base + phoff + i * phentsize;
+        const uint8_t *ph = file_buf + phoff + i * phentsize;
         uint32_t p_type   = be32_load(ph + 0);
         uint32_t p_offset = be32_load(ph + 4);
         uint32_t p_vaddr  = be32_load(ph + 8);
@@ -132,7 +139,7 @@ int exec_m68k_emu(pcb_t *p, const uint8_t *file_base, uint32_t file_size,
 
         /* Copy file data — already big-endian, m68k memory is big-endian */
         if (p_filesz > 0)
-            memcpy(emu_mem + p_vaddr, file_base + p_offset, p_filesz);
+            memcpy(emu_mem + p_vaddr, file_buf + p_offset, p_filesz);
 
         /* Zero BSS */
         if (p_memsz > p_filesz)
@@ -147,11 +154,9 @@ int exec_m68k_emu(pcb_t *p, const uint8_t *file_base, uint32_t file_size,
     {
         uint32_t sp = M68K_EMU_STACK_TOP;
 
-        int argc = exec_argc;
-
         /* Copy argument strings to stack */
         uint32_t str_addrs[EXEC_ARGV_MAX];
-        if (!use_default_argv0) {
+        if (argv && argv[0]) {
             for (int i = argc - 1; i >= 0; i--) {
                 uint32_t len = (uint32_t)strlen(argv[i]) + 1;
                 sp -= len;
@@ -159,6 +164,8 @@ int exec_m68k_emu(pcb_t *p, const uint8_t *file_base, uint32_t file_size,
                 str_addrs[i] = sp;
             }
         } else {
+            /* Default: use path as argv[0] */
+            const char *path = "";
             uint32_t len = (uint32_t)strlen(path) + 1;
             sp -= len;
             memcpy(emu_mem + sp, path, len);
@@ -196,35 +203,18 @@ int exec_m68k_emu(pcb_t *p, const uint8_t *file_base, uint32_t file_size,
     p->subsys = SUBSYS_PPAP;
     p->subsys_data = state;
 
-    /* ── 9. Set process comm from executable basename ──────────────────── */
-    {
-        const char *base = path;
-        for (const char *s = path; *s; s++) {
-            if (*s == '/')
-                base = s + 1;
-        }
-        size_t clen = strlen(base);
-        if (clen > 15) clen = 15;
-        memcpy(p->comm, base, clen);
-        p->comm[clen] = '\0';
-    }
-
-    /* ── 10. Set working directory ─────────────────────────────────────── */
-    if (current)
-        memcpy(p->cwd, current->cwd, sizeof(p->cwd));
-    else
-        strcpy(p->cwd, "/");
-
-    /* ── 11. Reset signal state ────────────────────────────────────────── */
-    for (int i = 0; i < NSIG; i++) {
-        if (p->sig_handlers[i] != SIG_IGN)
-            p->sig_handlers[i] = SIG_DFL;
-    }
-    p->sig_pending = 0;
-    p->sig_blocked = 0;
-
-    /* ── 12. Set kernel-mode entry point ───────────────────────────────── */
+    /* ── 9. Set kernel-mode entry point ────────────────────────────────── */
     proc_setup_stack(p, ppap_m68k_run_process, 0);
 
     return 0;
 }
+
+/* ── Loader registration ───────────────────────────────────────────────── */
+
+const loader_t m68k_emu_loader = {
+    .name = "m68k_emu",
+    .detect = m68k_emu_detect,
+    .load = m68k_emu_load,
+    .required_arch_id = CPU_ARCH_M68K,
+    .xip = 0,
+};
