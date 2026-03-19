@@ -827,14 +827,14 @@ static void run_builtin(char **argv, int argc, int *status)
             if (!dir) { err_msg("cd", "OLDPWD not set"); *status = 1; return; }
         }
         char old[PATH_BUF];
-        if (getcwd(old, sizeof(old)) == 0)
+        if (getcwd(old, sizeof(old)) > 0)
             env_set("OLDPWD", old, -1);
         if (chdir(dir) < 0) {
             err_msg("cd", dir);
             *status = 1;
         } else {
             char cwd[PATH_BUF];
-            if (getcwd(cwd, sizeof(cwd)) == 0)
+            if (getcwd(cwd, sizeof(cwd)) > 0)
                 env_set("PWD", cwd, -1);
             *status = 0;
         }
@@ -843,7 +843,7 @@ static void run_builtin(char **argv, int argc, int *status)
 
     if (streq(cmd, "pwd")) {
         char cwd[PATH_BUF];
-        if (getcwd(cwd, sizeof(cwd)) == 0) {
+        if (getcwd(cwd, sizeof(cwd)) > 0) {
             puts_fd(1, cwd);
             write(1, "\n", 1);
             *status = 0;
@@ -1338,8 +1338,19 @@ static const char *skip_ws(const char *s)
  *
  * Handles nesting: inner if/while blocks are collected as-is.
  */
-static char compound_pool[SCRIPT_BUF_MAX];
-static int  compound_pool_used;
+static char *compound_pool;       /* lazily allocated via brk() */
+static int   compound_pool_used;
+
+static int ensure_compound_pool(void)
+{
+    if (compound_pool) return 0;
+    void *cur = brk(0);
+    if (!cur) return -1;
+    void *nxt = brk((char *)cur + SCRIPT_BUF_MAX);
+    if (nxt == cur) return -1;  /* brk unchanged = failure */
+    compound_pool = (char *)cur;
+    return 0;
+}
 
 /*
  * collect_body: read lines from ls until a terminator keyword is found.
@@ -1353,6 +1364,13 @@ static int collect_body(struct line_src *ls,
                         char *found_term, int found_size,
                         char *found_line, int found_line_size)
 {
+    if (ensure_compound_pool() < 0) {
+        err_msg("compound", "out of memory");
+        found_term[0] = '\0';
+        if (found_line) found_line[0] = '\0';
+        return 0;
+    }
+
     int n = 0;
     int nest_if = 0, nest_while = 0;
     char linebuf[PUSH_LINE_MAX];
@@ -1622,7 +1640,7 @@ int main(int argc, char *argv[])
 
     /* Initialize PWD */
     char cwd[PATH_BUF];
-    if (getcwd(cwd, sizeof(cwd)) == 0)
+    if (getcwd(cwd, sizeof(cwd)) > 0)
         env_set("PWD", cwd, 1);
 
     /* Script mode: push script.sh [args...] */

@@ -96,7 +96,10 @@ static void term_raw(void)
 {
     struct termios t;
     ioctl(0, TCGETS, &t);
-    orig_termios = t;
+    
+    unsigned char *dst = (unsigned char *)&orig_termios;
+    unsigned char *src = (unsigned char *)&t;
+    for (unsigned int i = 0; i < sizeof(struct termios); i++) dst[i] = src[i];
 
     /* Raw mode: no ICANON, no ECHO, keep ISIG for Ctrl-C,
      * keep OPOST|ONLCR for output \n → \r\n */
@@ -159,23 +162,69 @@ static void refresh_line(const char *prompt, const char *buf, int len,
     cursor_to(prompt_len, pos);
 }
 
-/* ── History ─────────────────────────────────────────────────────────── */
+/* ── History (packed circular buffer) ─────────────────────────────────
+ *
+ * Instead of PUSH_HISTORY_MAX × PUSH_LINE_MAX (8 KB), we store all
+ * history strings end-to-end in a 1 KB char pool.  An offset ring
+ * tracks where each entry starts.  When the pool is full, the oldest
+ * entries are evicted.
+ */
 
-static char hist_ring[PUSH_HISTORY_MAX][PUSH_LINE_MAX];
+static char hist_pool[PUSH_HIST_POOL];
+static unsigned short hist_off[PUSH_HISTORY_MAX]; /* offset into hist_pool */
+static unsigned short hist_len[PUSH_HISTORY_MAX]; /* length including NUL  */
 static int  hist_count;    /* total entries stored */
 static int  hist_head;     /* next write slot (ring index) */
+static int  hist_pool_used;
 
 void push_history_add(const char *line)
 {
     if (!line[0]) return;
 
+    int need = pl_strlen(line) + 1;
+    if (need > PUSH_HIST_POOL) return;  /* line too long for pool */
+
     /* Suppress duplicate consecutive entries */
     if (hist_count > 0) {
         int prev = (hist_head + PUSH_HISTORY_MAX - 1) % PUSH_HISTORY_MAX;
-        if (pl_streq(hist_ring[prev], line)) return;
+        if (pl_streq(hist_pool + hist_off[prev], line)) return;
     }
 
-    pl_strcpy(hist_ring[hist_head], line, PUSH_LINE_MAX);
+    /* Evict oldest entries until enough space is available */
+    while (hist_count > 0 && hist_pool_used + need > PUSH_HIST_POOL) {
+        int oldest = (hist_head + PUSH_HISTORY_MAX - hist_count) % PUSH_HISTORY_MAX;
+        hist_pool_used -= hist_len[oldest];
+        hist_count--;
+    }
+
+    /* Compact pool: shift all live entries to the front */
+    if (hist_count > 0 && hist_pool_used + need > PUSH_HIST_POOL) {
+        /* Should not happen after eviction, but guard anyway */
+        return;
+    }
+
+    /* If pool is fragmented (entries don't start at 0), compact */
+    if (hist_count > 0) {
+        int oldest = (hist_head + PUSH_HISTORY_MAX - hist_count) % PUSH_HISTORY_MAX;
+        int start = hist_off[oldest];
+        if (start > 0) {
+            /* Move all live data to front of pool */
+            for (int i = 0; i < hist_pool_used; i++)
+                hist_pool[i] = hist_pool[start + i];
+            for (int i = 0; i < hist_count; i++) {
+                int slot = (oldest + i) % PUSH_HISTORY_MAX;
+                hist_off[slot] -= start;
+            }
+        }
+    } else {
+        hist_pool_used = 0;
+    }
+
+    /* Append new entry */
+    hist_off[hist_head] = hist_pool_used;
+    hist_len[hist_head] = need;
+    pl_strcpy(hist_pool + hist_pool_used, line, need);
+    hist_pool_used += need;
     hist_head = (hist_head + 1) % PUSH_HISTORY_MAX;
     if (hist_count < PUSH_HISTORY_MAX) hist_count++;
 }
@@ -185,7 +234,7 @@ static const char *hist_get(int idx)
     /* idx 0 = most recent, idx (hist_count-1) = oldest */
     if (idx < 0 || idx >= hist_count) return 0;
     int slot = (hist_head + PUSH_HISTORY_MAX - 1 - idx) % PUSH_HISTORY_MAX;
-    return hist_ring[slot];
+    return hist_pool + hist_off[slot];
 }
 
 void push_history_list(int fd)
@@ -401,16 +450,8 @@ static int do_complete(char *buf, int len, int pos, int *pos_out,
  * Supported: \w (cwd), \u (user), \h (hostname), \$ (# or $)
  * Returns rendered length (for cursor positioning).
  */
-static int render_prompt(char *out, int out_size)
+static int render_prompt(const char *ps1, char *out, int out_size)
 {
-    /* Try to get PS1 from environment — need access to push.c's env.
-     * Since push_line.c is linked with push.c, we call env_get via
-     * the extern declaration below. For now, use a default. */
-    const char *ps1 = 0;
-
-    /* We can't directly call push.c's static env_get.
-     * push.c will set the prompt string and pass it to push_readline.
-     * For now, use a simple default. */
     if (!ps1) ps1 = "push$ ";
 
     int i = 0;
@@ -422,7 +463,7 @@ static int render_prompt(char *out, int out_size)
             case 'w': {
                 /* Current directory */
                 char cwd[PATH_BUF];
-                if (getcwd(cwd, sizeof(cwd)) == 0) {
+                if (getcwd(cwd, sizeof(cwd)) > 0) {
                     for (int j = 0; cwd[j] && i < out_size - 1; j++)
                         out[i++] = cwd[j];
                 }
@@ -486,12 +527,7 @@ int push_readline(const char *prompt, char *buf, int size)
     char prompt_buf[128];
     int prompt_len;
 
-    if (prompt) {
-        pl_strcpy(prompt_buf, prompt, sizeof(prompt_buf));
-        prompt_len = pl_strlen(prompt_buf);
-    } else {
-        prompt_len = render_prompt(prompt_buf, sizeof(prompt_buf));
-    }
+    prompt_len = render_prompt(prompt, prompt_buf, sizeof(prompt_buf));
 
     /* Install SIGINT handler */
     sigint_received = 0;
