@@ -1388,10 +1388,6 @@ static void* ecpu_m68k_create_state() {
     return (m68k_state_t *)page_alloc();
 }
 
-static void ecpu_m68k_destroy_state(void* state) {
-    page_free(state);
-}
-
 static int ecpu_m68k_init(cpu_state_t *state, uint8_t *memory,
                            uint32_t mem_size)
 {
@@ -1495,7 +1491,6 @@ const cpu_ops_t ecpu_m68k_ops = {
     .name           = "m68k",
     .arch_id        = CPU_ARCH_M68K,
     .create_state   = ecpu_m68k_create_state,
-    .destroy_state  = ecpu_m68k_destroy_state,
     .init           = (void*)ecpu_m68k_init,
     .run            = (void*)ecpu_m68k_run,
     .set_trap_handler = (void*)ecpu_m68k_set_trap_handler,

@@ -60,9 +60,6 @@ typedef struct cpu_ops {
     // For native CPUs, this might be minimal. For eCPUs, this allocates the emulator state.
     void* (*create_state)(void);
 
-    // Free the CPU state structure.
-    void (*destroy_state)(void* state);
-
     // Initialize the CPU for a new process. `memory` is a pointer to the process's address space.
     int (*init)(void* state, uint8_t* memory, uint32_t mem_size);
 

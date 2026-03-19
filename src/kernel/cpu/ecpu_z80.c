@@ -27,12 +27,6 @@ static void *ecpu_z80_create_state(void)
     return s;
 }
 
-static void ecpu_z80_destroy_state(void *state)
-{
-    if (state)
-        page_free(state);
-}
-
 static int ecpu_z80_init(cpu_state_t *state, uint8_t *memory,
                          uint32_t mem_size)
 {
@@ -1333,7 +1327,6 @@ const cpu_ops_t ecpu_z80_ops = {
     .name             = "z80",
     .arch_id          = CPU_ARCH_Z80,
     .create_state     = ecpu_z80_create_state,
-    .destroy_state    = ecpu_z80_destroy_state,
     .init             = (void *)ecpu_z80_init,
     .run              = (void *)ecpu_z80_run,
     .set_trap_handler = (void *)ecpu_z80_set_trap_handler,

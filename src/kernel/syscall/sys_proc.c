@@ -149,6 +149,7 @@ static void trace_regs_init(struct ppap_ptrace_regs *regs,
     regs->words = words;
 }
 
+#if !defined(__m68k__)
 static int trace_fill_arm_regs(const pcb_t *target, struct ppap_ptrace_regs *regs)
 {
     const uint32_t *sp = (const uint32_t *)(uintptr_t)target->sp;
@@ -173,6 +174,7 @@ static int trace_fill_arm_regs(const pcb_t *target, struct ppap_ptrace_regs *reg
     regs->regs[16] = sp[15];
     return 0;
 }
+#endif
 
 #if defined(__m68k__)
 static int trace_fill_m68k_frame_regs(const pcb_t *target,
@@ -319,6 +321,7 @@ static uint32_t trace_regset_for(const pcb_t *target)
 #endif
 }
 
+#if !defined(__m68k__)
 static int trace_store_arm_regs(pcb_t *target, const struct ppap_ptrace_regs *regs)
 {
     uint32_t *sp = (uint32_t *)(uintptr_t)target->sp;
@@ -351,6 +354,7 @@ static int trace_store_arm_regs(pcb_t *target, const struct ppap_ptrace_regs *re
     sp[15] = regs->regs[16];
     return 0;
 }
+#endif
 
 #if defined(__m68k__)
 static int trace_store_m68k_frame_regs(pcb_t *target,
@@ -1465,7 +1469,7 @@ long sys_exit(long status)
     /* Free user pages only if we own them (vfork_parent == NULL means
      * either this isn't a vfork child, or execve already replaced them) */
     if (!current->vfork_parent) {
-        for (int i = 0; i < USER_PAGES_MAX; i++) {
+        for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
             if (current->user_pages[i]) {
                 page_free(current->user_pages[i]);
                 current->user_pages[i] = NULL;
@@ -1490,7 +1494,7 @@ long sys_exit(long status)
     } else {
         /* vfork child exiting without exec: free child-owned pages only
          * (e.g. the user stack copy allocated by sys_vfork). */
-        for (int i = 0; i < USER_PAGES_MAX; i++) {
+        for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
             if (current->user_pages[i] &&
                 current->user_pages[i] !=
                     current->vfork_parent->user_pages[i]) {
@@ -1506,13 +1510,6 @@ long sys_exit(long status)
             current->user_stack_page = NULL;
         }
 #endif
-    }
-
-    /* Free cpu_state allocated by elf_loader */
-    if (current->cpu_ops && current->cpu_state) {
-        current->cpu_ops->destroy_state(current->cpu_state);
-        current->cpu_state = NULL;
-        current->cpu_ops = NULL;
     }
 
     /* Unblock vfork parent if we are a vfork child */
@@ -1601,7 +1598,7 @@ long sys_vfork(uint32_t *frame)
     child->stack_page = stack;
 
     /* 3. Share parent's user_pages with child */
-    for (int i = 0; i < USER_PAGES_MAX; i++)
+    for (uint32_t i = 0; i < USER_PAGES_MAX; i++)
         child->user_pages[i] = current->user_pages[i];
 
     /* 4. Build child's stack: copy the parent's entire stack page.
@@ -1805,12 +1802,6 @@ long sys_waitpid(long pid, long status_ptr, long options)
             page_free(zombie->stack_page);
             zombie->stack_page = NULL;
         }
-        /* Free cpu_state allocated by elf_loader */
-        if (zombie->cpu_ops && zombie->cpu_state) {
-            zombie->cpu_ops->destroy_state(zombie->cpu_state);
-            zombie->cpu_state = NULL;
-            zombie->cpu_ops = NULL;
-        }
 
         proc_free(zombie);
         return (long)cpid;
@@ -1846,7 +1837,7 @@ long sys_execve(const char *path, const char *const *argv)
     void *old_stack = current->stack_page;
     void *old_user[USER_PAGES_MAX];
     int owns_pages = (current->vfork_parent == NULL);
-    for (int i = 0; i < USER_PAGES_MAX; i++)
+    for (uint32_t i = 0; i < USER_PAGES_MAX; i++)
         old_user[i] = current->user_pages[i];
 #if defined(__m68k__)
     void *old_user_stack = current->user_stack_page;
@@ -1854,31 +1845,24 @@ long sys_execve(const char *path, const char *const *argv)
 
     /* Clear pages so do_execve allocates fresh ones */
     current->stack_page = NULL;
-    for (int i = 0; i < USER_PAGES_MAX; i++)
+    for (uint32_t i = 0; i < USER_PAGES_MAX; i++)
         current->user_pages[i] = NULL;
 #if defined(__m68k__)
     current->user_stack_page = NULL;
 #endif
 
     /* Save old cpu_state so we can free it after successful exec */
-    const struct cpu_ops *old_cpu_ops = current->cpu_ops;
-    void *old_cpu_state = current->cpu_state;
-    current->cpu_ops = NULL;
-    current->cpu_state = NULL;
-
     /* Load the new binary.  argv points into the old stack/data pages
      * which are still valid (detached from current but not yet freed). */
     int err = do_execve(current, path, argv);
     if (err < 0) {
         /* Restore old pages on failure — fds are untouched (POSIX) */
         current->stack_page = old_stack;
-        for (int i = 0; i < USER_PAGES_MAX; i++)
+        for (uint32_t i = 0; i < USER_PAGES_MAX; i++)
             current->user_pages[i] = old_user[i];
 #if defined(__m68k__)
         current->user_stack_page = old_user_stack;
 #endif
-        current->cpu_ops = old_cpu_ops;
-        current->cpu_state = old_cpu_state;
         return (long)err;
     }
 
@@ -1902,7 +1886,7 @@ long sys_execve(const char *path, const char *const *argv)
 
     /* Free old user pages only if we owned them */
     if (owns_pages) {
-        for (int i = 0; i < USER_PAGES_MAX; i++) {
+        for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
             if (old_user[i])
                 page_free(old_user[i]);
         }
@@ -1913,7 +1897,7 @@ long sys_execve(const char *path, const char *const *argv)
     } else if (current->vfork_parent) {
         /* vfork child: free pages that were allocated specifically for
          * the child (e.g. user stack copy), not the shared parent pages. */
-        for (int i = 0; i < USER_PAGES_MAX; i++) {
+        for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
             if (old_user[i] &&
                 old_user[i] != current->vfork_parent->user_pages[i])
                 page_free(old_user[i]);
@@ -1924,10 +1908,6 @@ long sys_execve(const char *path, const char *const *argv)
             page_free(old_user_stack);
 #endif
     }
-
-    /* Free old cpu_state (allocated by previous elf_loader exec) */
-    if (old_cpu_ops && old_cpu_state)
-        old_cpu_ops->destroy_state(old_cpu_state);
 
     /* Unblock vfork parent — we have our own pages now */
     if (current->vfork_parent) {

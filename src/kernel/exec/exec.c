@@ -56,8 +56,6 @@ uint8_t *alloc_contiguous(uint32_t n_pages)
 int do_execve(pcb_t *p, const char *path, const char *const *argv) {
     vnode_t *vn = NULL;
     int err;
-    int exec_argc = 1;
-    int use_default_argv0 = 1;
 
     const char* default_argv[2] = {path, NULL};
     if (!argv || !argv[0]) {
@@ -200,13 +198,8 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
             cpu_ops->init(cpu_state, (uint8_t*)0, 0xFFFFFFFF);
 
             rc = loader_registry[i]->load(p, file_base, file_size, cpu_ops, cpu_state, argv);
-            if (rc == 0) {
-                p->cpu_ops = cpu_ops;
-                p->cpu_state = cpu_state;
+            if (rc == 0)
                 loaded = 1;
-            } else {
-                cpu_ops->destroy_state(cpu_state);
-            }
             break;
         }
     }

@@ -175,10 +175,6 @@ typedef struct pcb {
     uint8_t      subsys;             /* SUBSYS_PPAP, SUBSYS_HUMAN68K, etc.  */
     void        *subsys_data;        /* opaque per-process subsystem state  */
 
-    /* ── CPU Execution Context ───────────────────────────────────── */
-    const struct cpu_ops *cpu_ops;
-    void                 *cpu_state;
-
     /* ── Thread-local storage (TLS) ──────────────────────────── */
     uint32_t     tp_value;           /* set/get_thread_area value           */
 

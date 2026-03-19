@@ -22,18 +22,17 @@ typedef struct native_cpu_state {
 
 /* ── Lifecycle ─────────────────────────────────────────────────────────── */
 
+/*
+ * Native CPU state is only used transiently during ELF loading (GOT/reloc
+ * fixup via read32/write32 passthrough to physical memory).  A single
+ * static instance avoids wasting a 4 KB page per native process.
+ */
+static native_cpu_state_t native_state;
+
 static void *native_create_state(void)
 {
-    native_cpu_state_t *s = (native_cpu_state_t *)page_alloc();
-    if (s)
-        memset(s, 0, sizeof(*s));
-    return s;
-}
-
-static void native_destroy_state(void *state)
-{
-    if (state)
-        page_free(state);
+    memset(&native_state, 0, sizeof(native_state));
+    return &native_state;
 }
 
 static int native_init(void *state, uint8_t *memory, uint32_t mem_size)
@@ -196,7 +195,6 @@ const cpu_ops_t native_cpu_ops = {
     .arch_id          = CPU_ARCH_ARM,
 #endif
     .create_state     = native_create_state,
-    .destroy_state    = native_destroy_state,
     .init             = native_init,
     .run              = native_run,
     .set_trap_handler = native_set_trap_handler,
