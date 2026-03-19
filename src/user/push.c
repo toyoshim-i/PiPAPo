@@ -1,11 +1,11 @@
 /*
- * push.c — PiPAPo μShell (Phase 1: Core Interpreter)
+ * push.c — PiPAPo μShell (Phase 1+2)
  *
  * Minimal shell for PiPAPo.  No libc dependency, static memory only.
- * Features: quoting, $expansion, builtins, [[ ]], redirects, pipes,
- * &&/||/; chaining, 4-tier PATH search, local/global env vars.
- *
- * Phase 1 deliverable: script execution via #!/bin/push
+ * Phase 1: quoting, $expansion, builtins, [[ ]], redirects, pipes,
+ *          &&/||/; chaining, 4-tier PATH search, local/global env vars.
+ * Phase 2: if/elif/else/fi, while/do/done, break/continue,
+ *          $(...) command substitution, positional parameters.
  */
 
 #include "syscall.h"
@@ -21,6 +21,9 @@
 #define PIPE_MAX         4
 #define PATH_BUF         128
 #define REDIR_MAX        4
+#define CAPTURE_BUF      256  /* $(...) output capture buffer          */
+#define POS_PARAM_MAX    10   /* $0..$9                                */
+#define SCRIPT_BUF_MAX   2048 /* max script size for compound stmts    */
 
 #define W_OK 2
 #define X_OK 1
@@ -28,12 +31,24 @@
 /* ── Forward declarations ────────────────────────────────────────────── */
 
 static int run_file(const char *path);
+static int execute_line(const char *line);
+struct line_src;
+static int exec_from_source(struct line_src *ls);
+static int exec_lines(const char **lines, int nlines);
 
 /* ── Global state ────────────────────────────────────────────────────── */
 
 static int last_status;
 static int shell_pid;
 static const char *shell_name;
+
+/* Positional parameters ($1..$9, $0 = shell_name) */
+static const char *pos_params[POS_PARAM_MAX]; /* $0..$9 */
+static int pos_param_count;                    /* argc - 1 (num of $1..$9) */
+
+/* Loop control */
+static int break_pending;     /* >0: break N levels */
+static int continue_pending;  /* >0: continue N levels */
 
 /* Environment pool: stores "KEY=VALUE\0" strings contiguously */
 static char env_pool[ENV_POOL_SIZE];
@@ -254,6 +269,10 @@ static void env_init(char **envp)
     }
 }
 
+/* ── Forward declaration for command substitution ────────────────────── */
+
+static void expand_cmd_subst(const char **pp, char **outp, char *end);
+
 /* ── Variable expansion helper ───────────────────────────────────────── */
 
 static void expand_var(const char **pp, char **outp, char *end)
@@ -270,6 +289,12 @@ static void expand_var(const char **pp, char **outp, char *end)
         int_to_str(shell_pid, tmp, sizeof(tmp));
         for (int i = 0; tmp[i] && *outp < end; i++) *(*outp)++ = tmp[i];
         p++;
+    } else if (*p == '(') {
+        /* $(...) command substitution */
+        const char *sub = *pp + 1;  /* points at '(' */
+        expand_cmd_subst(&sub, outp, end);
+        *pp = sub;
+        return;
     } else if (*p == '{') {
         p++;
         const char *start = p;
@@ -291,10 +316,27 @@ static void expand_var(const char **pp, char **outp, char *end)
         const char *val = env_get(key);
         if (val)
             for (int i = 0; val[i] && *outp < end; i++) *(*outp)++ = val[i];
-    } else if (*p == '0') {
-        if (shell_name)
-            for (int i = 0; shell_name[i] && *outp < end; i++)
-                *(*outp)++ = shell_name[i];
+    } else if (*p >= '0' && *p <= '9') {
+        int idx = *p - '0';
+        const char *val = (idx == 0) ? shell_name :
+                          (idx <= pos_param_count) ? pos_params[idx] : 0;
+        if (val)
+            for (int i = 0; val[i] && *outp < end; i++)
+                *(*outp)++ = val[i];
+        p++;
+    } else if (*p == '#') {
+        char tmp[12];
+        int_to_str(pos_param_count, tmp, sizeof(tmp));
+        for (int i = 0; tmp[i] && *outp < end; i++) *(*outp)++ = tmp[i];
+        p++;
+    } else if (*p == '@') {
+        for (int k = 1; k <= pos_param_count; k++) {
+            if (k > 1 && *outp < end) *(*outp)++ = ' ';
+            const char *val = pos_params[k];
+            if (val)
+                for (int i = 0; val[i] && *outp < end; i++)
+                    *(*outp)++ = val[i];
+        }
         p++;
     } else {
         /* Unknown — emit literal '$' */
@@ -302,6 +344,81 @@ static void expand_var(const char **pp, char **outp, char *end)
     }
 
     *pp = p;
+}
+
+/* ── Command substitution $(...) ──────────────────────────────────────── */
+
+/*
+ * Capture output of a command into out buffer.
+ * The input 'p' points to the '(' after '$'.
+ * Advances *pp past the closing ')'.
+ * Single-level only — nested $() is not supported.
+ */
+static void expand_cmd_subst(const char **pp, char **outp, char *end)
+{
+    const char *p = *pp + 1;  /* skip '(' */
+
+    /* Extract command string up to matching ')' */
+    int depth = 1;
+    const char *cmd_start = p;
+    while (*p && depth > 0) {
+        if (*p == '(') depth++;
+        else if (*p == ')') depth--;
+        if (depth > 0) p++;
+    }
+    /* p now points at closing ')' or NUL */
+    int cmd_len = (int)(p - cmd_start);
+    if (*p == ')') p++;
+    *pp = p;
+
+    if (cmd_len <= 0 || cmd_len >= PUSH_LINE_MAX) return;
+
+    char cmd_buf[PUSH_LINE_MAX];
+    my_strncpy(cmd_buf, cmd_start, cmd_len, sizeof(cmd_buf));
+
+    /* pipe + vfork + exec the command, capture stdout */
+    int pfd[2];
+    if (pipe(pfd) < 0) return;
+
+    pid_t pid = vfork();
+    if (pid == 0) {
+        /* child: redirect stdout to pipe write end */
+        close(pfd[0]);
+        dup2(pfd[1], 1);
+        close(pfd[1]);
+        /* Re-exec ourselves with -c to evaluate the command.
+         * But we don't have -c support yet, so use an alternate approach:
+         * write the command to a temp pipe and exec push reading from stdin.
+         * Simpler: just call execute_line directly in the child.
+         * vfork shares address space so we CAN call execute_line,
+         * but it modifies globals. Since the child will _exit after,
+         * and the parent is suspended, this is safe. */
+        execute_line(cmd_buf);
+        _exit(last_status);
+    }
+
+    close(pfd[1]);
+
+    /* Parent: read child's stdout into output buffer */
+    char cap[CAPTURE_BUF];
+    int cap_len = 0;
+    while (cap_len < CAPTURE_BUF - 1) {
+        int n = read(pfd[0], cap + cap_len, CAPTURE_BUF - 1 - cap_len);
+        if (n <= 0) break;
+        cap_len += n;
+    }
+    close(pfd[0]);
+
+    int wstatus;
+    if (pid > 0) waitpid(pid, &wstatus, 0);
+
+    /* Strip trailing newlines */
+    while (cap_len > 0 && (cap[cap_len - 1] == '\n' || cap[cap_len - 1] == '\r'))
+        cap_len--;
+
+    /* Emit captured output */
+    for (int i = 0; i < cap_len && *outp < end; i++)
+        *(*outp)++ = cap[i];
 }
 
 /* ── Tokenizer ───────────────────────────────────────────────────────── */
@@ -684,7 +801,9 @@ static int is_builtin(const char *cmd)
     return streq(cmd, "exit") || streq(cmd, "true") || streq(cmd, "false") ||
            streq(cmd, "cd")   || streq(cmd, "pwd")  || streq(cmd, "echo") ||
            streq(cmd, "export") || streq(cmd, "unset") || streq(cmd, "set") ||
-           streq(cmd, "env") || streq(cmd, ".") || streq(cmd, "source");
+           streq(cmd, "env") || streq(cmd, ".") || streq(cmd, "source") ||
+           streq(cmd, "break") || streq(cmd, "continue") ||
+           streq(cmd, "shift");
 }
 
 /* Execute builtin.  Always returns 1 (handled).  Sets *status. */
@@ -809,6 +928,31 @@ static void run_builtin(char **argv, int argc, int *status)
             return;
         }
         *status = run_file(argv[1]);
+        return;
+    }
+
+    if (streq(cmd, "break")) {
+        break_pending = argc > 1 ? my_atoi(argv[1]) : 1;
+        if (break_pending < 1) break_pending = 1;
+        *status = 0;
+        return;
+    }
+
+    if (streq(cmd, "continue")) {
+        continue_pending = argc > 1 ? my_atoi(argv[1]) : 1;
+        if (continue_pending < 1) continue_pending = 1;
+        *status = 0;
+        return;
+    }
+
+    if (streq(cmd, "shift")) {
+        int n = argc > 1 ? my_atoi(argv[1]) : 1;
+        if (n < 1) n = 1;
+        if (n > pos_param_count) n = pos_param_count;
+        for (int i = 1; i + n < POS_PARAM_MAX && i <= pos_param_count - n; i++)
+            pos_params[i] = pos_params[i + n];
+        pos_param_count -= n;
+        *status = 0;
         return;
     }
 
@@ -1130,6 +1274,303 @@ static int read_line(int fd, char *buf, int len)
     return i;
 }
 
+/* ── Script line array ───────────────────────────────────────────────── */
+
+/*
+ * For compound statements (if/while), we need to look ahead and collect
+ * multiple lines.  A "line source" abstracts reading from a file or from
+ * a pre-collected line array (for nested compounds).
+ */
+struct line_src {
+    int fd;              /* file descriptor (-1 if using lines[]) */
+    const char **lines;  /* pre-collected line array (NULL if fd) */
+    int nlines;          /* number of lines in array */
+    int pos;             /* current position in lines[] */
+    int first;           /* first-line flag (for shebang skip) */
+};
+
+static int ls_next(struct line_src *ls, char *buf, int len)
+{
+    if (ls->lines) {
+        if (ls->pos >= ls->nlines) return -1;
+        my_strcpy(buf, ls->lines[ls->pos++], len);
+        return my_strlen(buf);
+    }
+    return read_line(ls->fd, buf, len);
+}
+
+/* Check if a token matches a keyword (first word on a line) */
+static int is_keyword(const char *line, const char *kw)
+{
+    while (*line == ' ' || *line == '\t') line++;
+    int len = my_strlen(kw);
+    int i = 0;
+    while (i < len && line[i] == kw[i]) i++;
+    if (i != len) return 0;
+    /* Must be followed by space, tab, NUL, or ';' */
+    return line[i] == '\0' || line[i] == ' ' || line[i] == '\t' ||
+           line[i] == ';'  || line[i] == '#';
+}
+
+/* Check if line starts with keyword (ignoring leading whitespace) */
+static const char *skip_ws(const char *s)
+{
+    while (*s == ' ' || *s == '\t') s++;
+    return s;
+}
+
+/*
+ * Collect lines for a compound statement body.
+ * Reads lines from ls until a terminator keyword is found.
+ * Returns collected lines in out_lines[] (pointers into line_pool).
+ * The terminator line is NOT consumed — caller checks it.
+ *
+ * For if:  terminators are "elif", "else", "fi"
+ * For while: terminator is "done"
+ *
+ * Handles nesting: inner if/while blocks are collected as-is.
+ */
+static char compound_pool[SCRIPT_BUF_MAX];
+static int  compound_pool_used;
+
+/*
+ * collect_body: read lines from ls until a terminator keyword is found.
+ * found_term receives the keyword name (e.g., "fi", "elif", "else", "done").
+ * found_line receives the FULL terminator line (for elif condition extraction).
+ * Returns number of body lines collected.
+ */
+static int collect_body(struct line_src *ls,
+                        const char **out_lines, int max_lines,
+                        const char **term_kws, int n_term,
+                        char *found_term, int found_size,
+                        char *found_line, int found_line_size)
+{
+    int n = 0;
+    int nest_if = 0, nest_while = 0;
+    char linebuf[PUSH_LINE_MAX];
+
+    while (ls_next(ls, linebuf, sizeof(linebuf)) >= 0) {
+        const char *trimmed = skip_ws(linebuf);
+
+        /* Track nesting of inner if/while blocks */
+        if (is_keyword(trimmed, "if")) nest_if++;
+        if (is_keyword(trimmed, "while")) nest_while++;
+
+        if (is_keyword(trimmed, "fi") && nest_if > 0) { nest_if--; goto store; }
+        if (is_keyword(trimmed, "done") && nest_while > 0) { nest_while--; goto store; }
+
+        /* Check for terminator at nesting level 0 */
+        if (nest_if == 0 && nest_while == 0) {
+            for (int i = 0; i < n_term; i++) {
+                if (is_keyword(trimmed, term_kws[i])) {
+                    my_strcpy(found_term, term_kws[i], found_size);
+                    if (found_line)
+                        my_strcpy(found_line, linebuf, found_line_size);
+                    return n;
+                }
+            }
+        }
+
+    store:
+        /* Store line in pool */
+        {
+            int len = my_strlen(linebuf) + 1;
+            if (compound_pool_used + len > SCRIPT_BUF_MAX || n >= max_lines) {
+                err_msg("compound", "too large");
+                return n;
+            }
+            char *dst = compound_pool + compound_pool_used;
+            my_strcpy(dst, linebuf, len);
+            out_lines[n++] = dst;
+            compound_pool_used += len;
+        }
+    }
+
+    /* EOF without terminator */
+    found_term[0] = '\0';
+    if (found_line) found_line[0] = '\0';
+    return n;
+}
+
+/*
+ * Extract condition from an "if COND; then" or "elif COND; then" line.
+ * skip_len is the keyword length to skip (2 for "if", 4 for "elif").
+ * Strips trailing "; then" or "; do".
+ */
+static void extract_condition(const char *line, int skip_len,
+                              char *cond_buf, int cond_size,
+                              const char *trail)
+{
+    const char *p = skip_ws(line) + skip_len;
+    while (*p == ' ' || *p == '\t') p++;
+    my_strcpy(cond_buf, p, cond_size);
+
+    int clen = my_strlen(cond_buf);
+    int tlen = my_strlen(trail);
+    if (clen >= tlen) {
+        char *t = cond_buf + clen - tlen;
+        if (streq(t, trail)) {
+            *t = '\0';
+            clen -= tlen;
+            while (clen > 0 && (cond_buf[clen-1] == ' ' ||
+                   cond_buf[clen-1] == ';' || cond_buf[clen-1] == '\t'))
+                cond_buf[--clen] = '\0';
+        }
+    }
+}
+
+/*
+ * Execute an if/elif/else/fi block.
+ * 'if_line' is the full "if COND; then" line.
+ * Reads subsequent lines from ls for body, elif, else, fi.
+ */
+static int exec_if(const char *if_line, struct line_src *ls)
+{
+    int save_pool = compound_pool_used;
+    int done = 0;
+    int status = 0;
+
+    /* Evaluate initial "if" condition */
+    char cond_buf[PUSH_LINE_MAX];
+    extract_condition(if_line, 2, cond_buf, sizeof(cond_buf), "then");
+    status = execute_line(cond_buf);
+    last_status = status;
+
+    const char *if_terms[] = { "elif", "else", "fi" };
+    const char *body_lines[128];
+    char term[16], term_line[PUSH_LINE_MAX];
+
+    int nbody = collect_body(ls, body_lines, 128, if_terms, 3,
+                             term, sizeof(term), term_line, sizeof(term_line));
+
+    if (status == 0 && !done) {
+        exec_lines(body_lines, nbody);
+        done = 1;
+    }
+
+    /* Handle elif chain */
+    while (streq(term, "elif")) {
+        compound_pool_used = save_pool;
+
+        /* Extract elif condition from the saved terminator line */
+        extract_condition(term_line, 4, cond_buf, sizeof(cond_buf), "then");
+        if (!done) {
+            status = execute_line(cond_buf);
+            last_status = status;
+        }
+
+        nbody = collect_body(ls, body_lines, 128, if_terms, 3,
+                             term, sizeof(term), term_line, sizeof(term_line));
+
+        if (!done && status == 0) {
+            exec_lines(body_lines, nbody);
+            done = 1;
+        }
+    }
+
+    /* Handle else */
+    if (streq(term, "else")) {
+        compound_pool_used = save_pool;
+        const char *fi_terms[] = { "fi" };
+        nbody = collect_body(ls, body_lines, 128, fi_terms, 1,
+                             term, sizeof(term), term_line, sizeof(term_line));
+        if (!done) {
+            exec_lines(body_lines, nbody);
+        }
+    }
+
+    compound_pool_used = save_pool;
+    return last_status;
+}
+
+/*
+ * Execute a while/do/done block.
+ * 'while_line' is the full "while COND; do" line.
+ */
+static int exec_while(const char *while_line, struct line_src *ls)
+{
+    int save_pool = compound_pool_used;
+    int status = 0;
+
+    char cond_buf[PUSH_LINE_MAX];
+    extract_condition(while_line, 5, cond_buf, sizeof(cond_buf), "do");
+
+    const char *done_terms[] = { "done" };
+    const char *body_lines[128];
+    char term[16], term_line[PUSH_LINE_MAX];
+
+    int nbody = collect_body(ls, body_lines, 128, done_terms, 1,
+                             term, sizeof(term), term_line, sizeof(term_line));
+
+    while (1) {
+        status = execute_line(cond_buf);
+        last_status = status;
+        if (status != 0) break;
+
+        exec_lines(body_lines, nbody);
+
+        if (break_pending > 0) {
+            break_pending--;
+            break;
+        }
+        if (continue_pending > 0) {
+            continue_pending--;
+        }
+    }
+
+    compound_pool_used = save_pool;
+    return last_status;
+}
+
+/* Execute a block of collected lines (for if-body, while-body, etc.) */
+static int exec_lines(const char **lines, int nlines)
+{
+    struct line_src ls;
+    ls.fd = -1;
+    ls.lines = lines;
+    ls.nlines = nlines;
+    ls.pos = 0;
+    ls.first = 0;
+
+    return exec_from_source(&ls);
+}
+
+/* ── Compound statement execution from line source ───────────────────── */
+
+static int exec_from_source(struct line_src *ls)
+{
+    int status = 0;
+    char line[PUSH_LINE_MAX];
+
+    while (ls_next(ls, line, sizeof(line)) >= 0) {
+        if (ls->first && line[0] == '#' && line[1] == '!') {
+            ls->first = 0;
+            continue;
+        }
+        ls->first = 0;
+        if (line[0] == '\0') continue;
+
+        const char *trimmed = skip_ws(line);
+        if (trimmed[0] == '#') continue;
+
+        if (is_keyword(trimmed, "if")) {
+            status = exec_if(line, ls);
+            continue;
+        }
+
+        if (is_keyword(trimmed, "while")) {
+            status = exec_while(line, ls);
+            continue;
+        }
+
+        /* Regular line */
+        status = execute_line(line);
+
+        if (break_pending > 0 || continue_pending > 0) return status;
+    }
+    return status;
+}
+
 static int run_file(const char *path)
 {
     int fd, close_fd = 0;
@@ -1145,18 +1586,14 @@ static int run_file(const char *path)
         close_fd = 1;
     }
 
-    char line[PUSH_LINE_MAX];
-    int status = 0;
-    int first = 1;
+    struct line_src ls;
+    ls.fd = fd;
+    ls.lines = 0;
+    ls.nlines = 0;
+    ls.pos = 0;
+    ls.first = 1;
 
-    while (read_line(fd, line, sizeof(line)) >= 0) {
-        /* Skip shebang on first line */
-        if (first && line[0] == '#' && line[1] == '!')
-            { first = 0; continue; }
-        first = 0;
-        if (line[0] == '\0') continue;
-        status = execute_line(line);
-    }
+    int status = exec_from_source(&ls);
 
     if (close_fd) close(fd);
     return status;
@@ -1183,17 +1620,44 @@ int main(int argc, char *argv[])
     /* Script mode: push script.sh [args...] */
     if (argc > 1) {
         shell_name = argv[1];
+        pos_params[0] = argv[1];
+        pos_param_count = 0;
+        for (int i = 2; i < argc && pos_param_count < POS_PARAM_MAX - 1; i++)
+            pos_params[++pos_param_count] = argv[i];
         return run_file(argv[1]);
     }
 
     /* Interactive mode (minimal — Phase 3 adds line editing) */
-    char line[PUSH_LINE_MAX];
-    for (;;) {
-        puts_fd(2, "$ ");
-        if (read_line(0, line, sizeof(line)) < 0)
-            break;
-        if (line[0] == '\0') continue;
-        execute_line(line);
+    {
+        struct line_src ls;
+        ls.fd = 0;
+        ls.lines = 0;
+        ls.nlines = 0;
+        ls.pos = 0;
+        ls.first = 0;
+
+        char line[PUSH_LINE_MAX];
+        for (;;) {
+            puts_fd(2, "$ ");
+            if (read_line(0, line, sizeof(line)) < 0)
+                break;
+            if (line[0] == '\0') continue;
+
+            const char *trimmed = skip_ws(line);
+            if (trimmed[0] == '#') continue;
+
+            /* Handle compound statements in interactive mode */
+            if (is_keyword(trimmed, "if")) {
+                exec_if(line, &ls);
+                continue;
+            }
+            if (is_keyword(trimmed, "while")) {
+                exec_while(line, &ls);
+                continue;
+            }
+
+            execute_line(line);
+        }
     }
     write(2, "\n", 1);
     return last_status;
