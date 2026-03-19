@@ -79,7 +79,9 @@ set(KERNEL_SUBSYS_HUMAN68K_SOURCES
     ${_KS_ROOT}/src/kernel/subsys/h68k_util.c
     ${_KS_ROOT}/src/kernel/subsys/human68k_bridge.c
     ${_KS_ROOT}/src/kernel/subsys/human68k_loader.c
-    ${_KS_ROOT}/src/kernel/exec/exec_x68k.c
+    ${_KS_ROOT}/src/kernel/exec/x_loader.c
+    ${_KS_ROOT}/src/kernel/exec/r_loader.c
+    ${_KS_ROOT}/src/kernel/exec/h68k_emu.c
 )
 
 set(KERNEL_SUBSYS_CPM_SOURCES

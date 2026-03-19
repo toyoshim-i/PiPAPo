@@ -7,11 +7,19 @@
 #ifdef PPAP_ENABLE_CPM
 #include "com_loader.h"
 #endif
+#ifdef PPAP_ENABLE_HUMAN68K
+#include "x_loader.h"
+#include "r_loader.h"
+#endif
 #include <stddef.h>
 
 const loader_t* loader_registry[] = {
 #ifdef PPAP_ENABLE_CPM
     &com_loader,
+#endif
+#ifdef PPAP_ENABLE_HUMAN68K
+    &x_loader,
+    &r_loader,
 #endif
     &elf_loader,
     NULL

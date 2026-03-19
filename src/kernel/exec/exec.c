@@ -18,9 +18,6 @@
 
 #include "exec.h"
 #include "elf.h"
-#ifdef PPAP_ENABLE_HUMAN68K
-#include "exec_x68k.h"
-#endif
 #ifdef PPAP_ENABLE_SOS
 #include "exec_sos.h"
 #endif
@@ -99,21 +96,6 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
             return (nread < 0) ? (int)nread : -(int)ENOEXEC;
         }
 
-#ifdef PPAP_ENABLE_HUMAN68K
-        if (x68k_detect(file_buf, file_size)) {
-            int rc = exec_x68k(p, file_buf, file_size, path, argv);
-            for (uint32_t i = 0; i < file_pages; i++) page_free(file_buf + i * PAGE_SIZE);
-            vnode_put(vn);
-            return rc;
-        }
-        if (r68k_detect(path, file_buf, file_size)) {
-            int rc = exec_r68k(p, file_buf, file_size, path, argv);
-            for (uint32_t i = 0; i < file_pages; i++) page_free(file_buf + i * PAGE_SIZE);
-            vnode_put(vn);
-            return rc;
-        }
-#endif
-
 #ifdef PPAP_ENABLE_SOS
         if (sos_detect(path, file_buf, file_size)) {
             int rc = exec_sos(p, file_buf, file_size, path, argv);
@@ -140,13 +122,6 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
     const uint8_t *file_base = (elf_buf != NULL) ? elf_buf : (const uint8_t *)vn->xip_addr;
     uint32_t file_size = vn->size;
 
-#ifdef PPAP_ENABLE_HUMAN68K
-    if (x68k_detect(file_base, file_size)) {
-        vnode_put(vn);
-        return exec_x68k(p, file_base, file_size, path, argv);
-    }
-#endif
-
 #ifdef PPAP_ENABLE_SOS
     if (sos_detect(path, file_base, file_size)) {
         vnode_put(vn);
@@ -159,12 +134,6 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
     if (m68k_emu_detect(ehdr)) {
         vnode_put(vn);
         return exec_m68k_emu(p, file_base, file_size, ehdr, path, argv);
-    }
-#endif
-#ifdef PPAP_ENABLE_HUMAN68K
-    if (r68k_detect(path, file_base, file_size)) {
-        vnode_put(vn);
-        return exec_r68k(p, file_base, file_size, path, argv);
     }
 #endif
 

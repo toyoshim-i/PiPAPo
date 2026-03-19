@@ -175,10 +175,13 @@ The `do_execve` function in `src/kernel/exec/exec.c` will be refactored to orche
     -   Updated `do_execve` coordinator to select CPU ops via `cpu_ops_for_arch()` based on `required_arch_id`.
     -   Added `xip` flag to `loader_t` so the coordinator knows whether to free the file buffer after loading.
     -   Removed `exec_cpm.c` and `exec_cpm.h`.
-2.  **Human68k:**
-    -   Create `src/kernel/exec/x_loader.c` and `src/kernel/exec/r_loader.c`.
-    -   Move the logic from `human68k_loader.c` and `exec_x68k.c` into these new loaders.
-    -   `exec_x68k.c` will be removed.
+2.  **Human68k:** **Status: Completed.**
+    -   Created `src/kernel/exec/x_loader.c` (X-format) and `src/kernel/exec/r_loader.c` (R-format) implementing `loader_t`.
+    -   Extracted shared ARM emulator code (trap handler, helpers) into `src/kernel/exec/h68k_emu.c` / `h68k_emu.h`.
+    -   Both loaders have dual paths: emulated (ARM host via `ecpu_m68k_ops`) and native (m68k host via `human68k_loader.c` helpers).
+    -   Registered `x_loader` and `r_loader` in `src/kernel/exec/loader.c`.
+    -   Removed hardcoded Human68k detection from `do_execve` coordinator.
+    -   Removed `exec_x68k.c` and `exec_x68k.h`.
 3.  **Other subsystems (SOS, etc.)** will be migrated in a similar fashion.
 
 ---
@@ -203,6 +206,8 @@ The `do_execve` function in `src/kernel/exec/exec.c` will be refactored to orche
 -   `src/kernel/exec/elf_loader.c` — ELF format loader
 -   `src/kernel/exec/exec.c` — `do_execve` coordinator
 -   `src/kernel/exec/com_loader.c` — CP/M .COM format loader
--   `src/kernel/exec/exec_x68k.c` — Human68k exec (legacy, Phase 3 target)
+-   `src/kernel/exec/x_loader.c` — Human68k X-format loader
+-   `src/kernel/exec/r_loader.c` — Human68k R-format loader
+-   `src/kernel/exec/h68k_emu.c` — Shared Human68k m68k emulator code (ARM host)
 -   `src/kernel/exec/exec_sos.c` — S-OS exec (legacy, Phase 3 target)
 -   `src/kernel/exec/exec_m68k_emu.c` — m68k emulator exec (legacy, Phase 3 target)
