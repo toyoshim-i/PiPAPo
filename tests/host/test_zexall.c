@@ -69,6 +69,10 @@ static int bdos_trap_handler(cpu_state_t *state, int trap_type,
                 return CPU_TRAP_HANDLED;
             }
         }
+        /* BIOS warm boot (WBOOT = function 1, stub index 2) → exit */
+        if (rst_addr == CPM_STUB_BASE + 2 * 2)
+            return CPU_TRAP_EXIT;
+        /* Other BIOS calls — just return handled */
         if (rst_addr > CPM_STUB_BASE &&
             rst_addr < CPM_STUB_BASE + (1 + CPM_BIOS_FN_COUNT) * 2)
             return CPU_TRAP_HANDLED;
