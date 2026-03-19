@@ -1,16 +1,21 @@
 /*
  * test_zexall.c — Run ZEXALL (Z80 instruction exerciser) on host
  *
- * Same as test_zexdoc.c but uses ZEXALL which also verifies undocumented
- * F3/F5 flag behaviour with stricter CRC checks.
+ * Loads the ZEXALL .COM binary (path via ZEXALL_COM_PATH define) into a
+ * minimal CP/M 2.2 environment and runs it through the Z80 emulator.
+ * ZEXALL verifies all flags including undocumented F3/F5 behaviour.
  */
 
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "kernel/cpu/cpu.h"
 #include "kernel/cpu/ecpu_z80.h"
-#include "zexall_com.h"
+
+#ifndef ZEXALL_COM_PATH
+#error "ZEXALL_COM_PATH must be defined at compile time"
+#endif
 
 /* ── Stubs for page allocator (not linked in host tests) ────────────────── */
 void *page_alloc(void) { return NULL; }
@@ -111,7 +116,6 @@ static void setup_cpm_memory(uint8_t *mem)
         mem[addr + 2] = stub >> 8;
     }
 
-    memcpy(&mem[CPM_TPA_BASE], zexall_com, zexall_com_len);
 }
 
 /* ── Main ───────────────────────────────────────────────────────────────── */
@@ -124,7 +128,19 @@ int main(void)
     printf("=== ZEXALL: Z80 instruction exerciser (all flags incl. F3/F5) ===\n");
     fflush(stdout);
 
+    /* Load .COM binary from file */
+    FILE *f = fopen(ZEXALL_COM_PATH, "rb");
+    assert(f && "failed to open ZEXALL .COM file");
+    fseek(f, 0, SEEK_END);
+    long com_size = ftell(f);
+    assert(com_size > 0 && com_size <= 65536 - CPM_TPA_BASE);
+    rewind(f);
+
     memset(mem, 0, sizeof(mem));
+    size_t n = fread(&mem[CPM_TPA_BASE], 1, (size_t)com_size, f);
+    fclose(f);
+    assert((long)n == com_size);
+
     memset(&cpu, 0, sizeof(cpu));
     ecpu_z80_ops.init((cpu_state_t *)&cpu, mem, sizeof(mem));
     setup_cpm_memory(mem);
