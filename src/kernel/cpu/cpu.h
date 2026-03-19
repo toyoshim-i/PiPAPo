@@ -37,14 +37,13 @@ typedef struct cpu_state cpu_state_t;
 #define CPU_ARCH_ARM      4
 #define CPU_ARCH_ARMV6    5
 
-/* Host architecture — set by compiler target */
+/* Host architecture — set by compiler target.
+ * Host-only test builds define PPAP_HOST_TEST to skip this check. */
 #if defined(__m68k__)
 #define HOST_ARCH_ID      CPU_ARCH_M68K
 #elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
 #define HOST_ARCH_ID      CPU_ARCH_ARM
-#elif defined(__x86_64__) || defined(__i386__)
-#define HOST_ARCH_ID      0   /* host tests only — not a real target */
-#else
+#elif !defined(PPAP_HOST_TEST)
 #error "Unsupported host architecture"
 #endif
 

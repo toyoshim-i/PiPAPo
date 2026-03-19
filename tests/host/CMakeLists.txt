@@ -8,6 +8,7 @@ set(CMAKE_C_EXTENSIONS OFF)
 
 # Treat warnings as errors so test code stays clean
 add_compile_options(-Wall -Wextra -Werror)
+add_compile_definitions(PPAP_HOST_TEST)
 
 enable_testing()
 
