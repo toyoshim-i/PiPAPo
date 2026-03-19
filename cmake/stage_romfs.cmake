@@ -74,10 +74,15 @@ if(ROGUE AND EXISTS "${ROGUE}")
     file(COPY "${ROGUE}" DESTINATION "${STAGING}/bin")
 endif()
 
-# --- Install ZEXDOC for CP/M subsystem testing ---
+# --- Install ZEXDOC/ZEXALL for CP/M subsystem testing ---
 if(EXISTS "${PROJECT_ROOT}/third_party/zexall/zexdoc.com")
     file(MAKE_DIRECTORY "${STAGING}/lib")
     file(COPY "${PROJECT_ROOT}/third_party/zexall/zexdoc.com"
+         DESTINATION "${STAGING}/lib")
+endif()
+if(EXISTS "${PROJECT_ROOT}/third_party/zexall/zexall.com")
+    file(MAKE_DIRECTORY "${STAGING}/lib")
+    file(COPY "${PROJECT_ROOT}/third_party/zexall/zexall.com"
          DESTINATION "${STAGING}/lib")
 endif()
 

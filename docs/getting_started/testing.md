@@ -346,19 +346,17 @@ coverage is not exhaustive yet.
   (INI/IND/INIR/INDR/OUTI/OUTD/OTIR/OTDR), reverse block operations
   (LDDR, CPDR), and flag boundary values (overflow, carry, half-carry,
   zero, sign, parity, F3/F5) across all major instruction categories.
-  Additionally, **ZEXDOC** (Frank Cringle's Z80 instruction exerciser,
-  67 documented-flag instruction groups) is integrated via the
-  `third_party/zexall` git submodule:
-  - **Host test** (`tests/host/test_zexdoc.c`): runs ZEXDOC natively through
-    the Z80 emulator with a minimal BDOS stub. Labelled `manual` — excluded
-    from the default `ctest` run; invoke with `ctest -L manual`.
-  - **On-target test** (`tests/user/test_zexdoc.c`): runs `zexdoc.com`
-    through the full CP/M subsystem via `execve`. Marked `TEST_SLOW`;
-    run with `--slow` flag.
-  Remaining gap:
-  - **ZEXALL (undocumented F3/F5 flags).** ZEXDOC only tests documented
-    flags. ZEXALL uses stricter CRCs that also verify undocumented F3/F5
-    behaviour. Can be added as a follow-up once ZEXDOC passes cleanly.
+  Additionally, **ZEXDOC** and **ZEXALL** (Frank Cringle's Z80 instruction
+  exercisers, 67 instruction groups each) are integrated via the
+  `third_party/zexall` git submodule. ZEXDOC tests documented flags only;
+  ZEXALL also verifies undocumented F3/F5 flag behaviour with stricter CRCs.
+  - **Host tests** (`tests/host/test_zexdoc.c`, `test_zexall.c`): run
+    natively through the Z80 emulator with a minimal BDOS stub. Labelled
+    `manual` — excluded from the default `ctest` run; invoke with
+    `ctest -L manual`.
+  - **On-target tests** (`tests/user/test_zexdoc.c`, `test_zexall.c`): run
+    `.com` files through the full CP/M subsystem via `execve`. Marked
+    `TEST_SLOW`; run with `--slow` flag.
 
 #### Suggested follow-up tests
 
@@ -371,8 +369,8 @@ coverage is not exhaustive yet.
    (for example `_FILES`/`_NFILES` plus `_FILEDATE`).
 5. Add one CP/M `.COM` test focused on uncovered BDOS functions (for example
    search first/next and at least one random-record operation).
-6. Add ZEXALL (undocumented-flag variant) as a follow-up to the existing
-   ZEXDOC integration, once ZEXDOC passes all 67 groups cleanly.
+6. Add CPUTEST (another Z80 exerciser) for additional coverage beyond
+   ZEXDOC/ZEXALL.
 
 ## Automated QEMU testing
 

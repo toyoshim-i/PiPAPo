@@ -79,3 +79,27 @@ target_include_directories(test_zexdoc PRIVATE
     ${SRC} ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 add_test(NAME zexdoc COMMAND test_zexdoc)
 set_tests_properties(zexdoc PROPERTIES TIMEOUT 7200 LABELS "manual")
+
+# ── test_zexall ──────────────────────────────────────────────────────────
+# ZEXALL — Z80 instruction exerciser (all flags including undocumented F3/F5).
+set(ZEXALL_COM ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/zexall/zexall.com)
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/zexall_com.h
+    COMMAND ${CMAKE_COMMAND}
+        -DCOM_FILE=${ZEXALL_COM}
+        -DOUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/zexall_com.h
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/generate_comhex.cmake
+    DEPENDS ${ZEXALL_COM}
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/generate_comhex.cmake
+    COMMENT "Generating zexall_com.h from zexall.com"
+)
+add_executable(test_zexall
+    ${SRC}/kernel/ecpu/ecpu_z80.c
+    ${SRC}/kernel/ecpu/ecpu_z80_alu.c
+    test_zexall.c
+    ${CMAKE_CURRENT_BINARY_DIR}/zexall_com.h
+)
+target_include_directories(test_zexall PRIVATE
+    ${SRC} ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+add_test(NAME zexall COMMAND test_zexall)
+set_tests_properties(zexall PROPERTIES TIMEOUT 7200 LABELS "manual")
