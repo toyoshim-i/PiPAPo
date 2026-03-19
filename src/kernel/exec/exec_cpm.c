@@ -105,8 +105,9 @@ int exec_cpm(pcb_t *p, const uint8_t *file, uint32_t size,
 
     /* ── 1. Allocate Z80 memory (64KB contiguous) + separate state page ── */
     uint8_t *mem_base = alloc_contiguous(Z80_MEM_PAGES);
-    if (!mem_base)
+    if (!mem_base) {
         return -(int)ENOMEM;
+    }
 
     /* Z80 memory is the first 16 pages */
     uint8_t *z80_mem = mem_base;

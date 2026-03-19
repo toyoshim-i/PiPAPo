@@ -1477,6 +1477,18 @@ static void ecpu_m68k_write16(cpu_state_t *state, uint32_t addr, uint16_t val)
     m68k_write16((m68k_state_t *)state, addr, val);
 }
 
+static uint32_t ecpu_m68k_read32(cpu_state_t *state, uint32_t addr)
+{
+    return ((uint32_t)m68k_read16((m68k_state_t *)state, addr) << 16) |
+           m68k_read16((m68k_state_t *)state, addr + 2);
+}
+
+static void ecpu_m68k_write32(cpu_state_t *state, uint32_t addr, uint32_t val)
+{
+    m68k_write16((m68k_state_t *)state, addr, val >> 16);
+    m68k_write16((m68k_state_t *)state, addr + 2, val & 0xFFFF);
+}
+
 /* ── Core ops table ─────────────────────────────────────────────────────── */
 
 const cpu_ops_t ecpu_m68k_ops = {
@@ -1494,4 +1506,6 @@ const cpu_ops_t ecpu_m68k_ops = {
     .write8         = (void*)ecpu_m68k_write8,
     .read16         = (void*)ecpu_m68k_read16,
     .write16        = (void*)ecpu_m68k_write16,
+    .read32         = (void*)ecpu_m68k_read32,
+    .write32        = (void*)ecpu_m68k_write32,
 };

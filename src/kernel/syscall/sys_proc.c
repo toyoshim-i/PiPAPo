@@ -1508,6 +1508,13 @@ long sys_exit(long status)
 #endif
     }
 
+    /* Free cpu_state allocated by elf_loader */
+    if (current->cpu_ops && current->cpu_state) {
+        current->cpu_ops->destroy_state(current->cpu_state);
+        current->cpu_state = NULL;
+        current->cpu_ops = NULL;
+    }
+
     /* Unblock vfork parent if we are a vfork child */
     if (current->vfork_parent) {
         current->vfork_parent->state = PROC_RUNNABLE;
@@ -1798,6 +1805,12 @@ long sys_waitpid(long pid, long status_ptr, long options)
             page_free(zombie->stack_page);
             zombie->stack_page = NULL;
         }
+        /* Free cpu_state allocated by elf_loader */
+        if (zombie->cpu_ops && zombie->cpu_state) {
+            zombie->cpu_ops->destroy_state(zombie->cpu_state);
+            zombie->cpu_state = NULL;
+            zombie->cpu_ops = NULL;
+        }
 
         proc_free(zombie);
         return (long)cpid;
@@ -1847,6 +1860,12 @@ long sys_execve(const char *path, const char *const *argv)
     current->user_stack_page = NULL;
 #endif
 
+    /* Save old cpu_state so we can free it after successful exec */
+    const struct cpu_ops *old_cpu_ops = current->cpu_ops;
+    void *old_cpu_state = current->cpu_state;
+    current->cpu_ops = NULL;
+    current->cpu_state = NULL;
+
     /* Load the new binary.  argv points into the old stack/data pages
      * which are still valid (detached from current but not yet freed). */
     int err = do_execve(current, path, argv);
@@ -1858,6 +1877,8 @@ long sys_execve(const char *path, const char *const *argv)
 #if defined(__m68k__)
         current->user_stack_page = old_user_stack;
 #endif
+        current->cpu_ops = old_cpu_ops;
+        current->cpu_state = old_cpu_state;
         return (long)err;
     }
 
@@ -1903,6 +1924,10 @@ long sys_execve(const char *path, const char *const *argv)
             page_free(old_user_stack);
 #endif
     }
+
+    /* Free old cpu_state (allocated by previous elf_loader exec) */
+    if (old_cpu_ops && old_cpu_state)
+        old_cpu_ops->destroy_state(old_cpu_state);
 
     /* Unblock vfork parent — we have our own pages now */
     if (current->vfork_parent) {

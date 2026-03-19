@@ -89,7 +89,7 @@ static void *native_translate_ptr(void *state, uint32_t guest_addr,
                                    uint32_t size)
 {
     native_cpu_state_t *s = (native_cpu_state_t *)state;
-    if (!s->memory || guest_addr + size > s->mem_size)
+    if (guest_addr + size > s->mem_size)
         return NULL;
     return s->memory + guest_addr;
 }
@@ -97,7 +97,7 @@ static void *native_translate_ptr(void *state, uint32_t guest_addr,
 static uint8_t native_read8(void *state, uint32_t addr)
 {
     native_cpu_state_t *s = (native_cpu_state_t *)state;
-    if (!s->memory || addr >= s->mem_size)
+    if (addr >= s->mem_size)
         return 0;
     return s->memory[addr];
 }
@@ -105,7 +105,7 @@ static uint8_t native_read8(void *state, uint32_t addr)
 static void native_write8(void *state, uint32_t addr, uint8_t val)
 {
     native_cpu_state_t *s = (native_cpu_state_t *)state;
-    if (!s->memory || addr >= s->mem_size)
+    if (addr >= s->mem_size)
         return;
     s->memory[addr] = val;
 }
@@ -118,7 +118,7 @@ static void native_write8(void *state, uint32_t addr, uint8_t val)
 static uint16_t native_read16(void *state, uint32_t addr)
 {
     native_cpu_state_t *s = (native_cpu_state_t *)state;
-    if (!s->memory || addr + 1 >= s->mem_size)
+    if (addr + 1 >= s->mem_size)
         return 0;
 #if defined(__m68k__)
     /* Big-endian */
@@ -132,7 +132,7 @@ static uint16_t native_read16(void *state, uint32_t addr)
 static void native_write16(void *state, uint32_t addr, uint16_t val)
 {
     native_cpu_state_t *s = (native_cpu_state_t *)state;
-    if (!s->memory || addr + 1 >= s->mem_size)
+    if (addr + 1 >= s->mem_size)
         return;
 #if defined(__m68k__)
     /* Big-endian */
@@ -142,6 +142,46 @@ static void native_write16(void *state, uint32_t addr, uint16_t val)
     /* Little-endian (ARM) */
     s->memory[addr]     = val & 0xFF;
     s->memory[addr + 1] = (val >> 8) & 0xFF;
+#endif
+}
+
+static uint32_t native_read32(void *state, uint32_t addr)
+{
+    native_cpu_state_t *s = (native_cpu_state_t *)state;
+    if (addr + 3 >= s->mem_size)
+        return 0;
+#if defined(__m68k__)
+    /* Big-endian */
+    return ((uint32_t)s->memory[addr] << 24) |
+           ((uint32_t)s->memory[addr + 1] << 16) |
+           ((uint32_t)s->memory[addr + 2] << 8) |
+           s->memory[addr + 3];
+#else
+    /* Little-endian (ARM) */
+    return s->memory[addr] |
+           ((uint32_t)s->memory[addr + 1] << 8) |
+           ((uint32_t)s->memory[addr + 2] << 16) |
+           ((uint32_t)s->memory[addr + 3] << 24);
+#endif
+}
+
+static void native_write32(void *state, uint32_t addr, uint32_t val)
+{
+    native_cpu_state_t *s = (native_cpu_state_t *)state;
+    if (addr + 3 >= s->mem_size)
+        return;
+#if defined(__m68k__)
+    /* Big-endian */
+    s->memory[addr]     = (val >> 24) & 0xFF;
+    s->memory[addr + 1] = (val >> 16) & 0xFF;
+    s->memory[addr + 2] = (val >> 8) & 0xFF;
+    s->memory[addr + 3] = val & 0xFF;
+#else
+    /* Little-endian (ARM) */
+    s->memory[addr]     = val & 0xFF;
+    s->memory[addr + 1] = (val >> 8) & 0xFF;
+    s->memory[addr + 2] = (val >> 16) & 0xFF;
+    s->memory[addr + 3] = (val >> 24) & 0xFF;
 #endif
 }
 
@@ -167,4 +207,6 @@ const cpu_ops_t native_cpu_ops = {
     .write8           = native_write8,
     .read16           = native_read16,
     .write16          = native_write16,
+    .read32           = native_read32,
+    .write32          = native_write32,
 };

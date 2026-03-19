@@ -84,6 +84,8 @@ typedef struct cpu_ops {
     void (*write8)(void* state, uint32_t addr, uint8_t val);
     uint16_t (*read16)(void* state, uint32_t addr);
     void (*write16)(void* state, uint32_t addr, uint16_t val);
+    uint32_t (*read32)(void* state, uint32_t addr);
+    void (*write32)(void* state, uint32_t addr, uint32_t val);
 
 } cpu_ops_t;
 

@@ -47,156 +47,35 @@ uint8_t *alloc_contiguous(uint32_t n_pages)
     return page_alloc_contiguous(n_pages);
 }
 
-/* ── Relocation helper: apply .rel.dyn / .rela.dyn ─────────────────────── */
 
-static void apply_relocations(const elf32_ehdr_t *ehdr,
-                              const uint8_t *file_base,
-                              uint32_t file_size,
-                              const elf32_phdr_t *text_seg,
-                              const elf32_phdr_t *data_seg,
-                              uint8_t *text_ram,
-                              uint8_t *sram_page,
-                              uint32_t text_base,
-                              uint32_t got_sram_addr,
-                              const elf_got_info_t *got_info)
-{
-    elf_rel_info_t rel_info;
-    if (elf_find_rel(ehdr, file_base, &rel_info, file_size) != 0)
-        return;
-
-    const uint8_t *rel_base = file_base + rel_info.offset;
-    uint32_t entry_size = rel_info.has_addend
-        ? sizeof(elf32_rela_t) : sizeof(elf32_rel_t);
-    uint32_t n_rel = rel_info.size / entry_size;
-
-    /* Find .dynsym for JMP_SLOT resolution */
-    elf_dynsym_info_t dynsym_info = {0, 0};
-    const elf32_sym_t *dynsym = NULL;
-    if (elf_find_dynsym(ehdr, file_base, &dynsym_info, file_size) == 0)
-        dynsym = (const elf32_sym_t *)(file_base + dynsym_info.offset);
-
-    for (uint32_t i = 0; i < n_rel; i++) {
-        uint32_t r_offset, r_info;
-        int32_t  r_addend = 0;
-
-        if (rel_info.has_addend) {
-            const elf32_rela_t *rela =
-                (const elf32_rela_t *)(rel_base + i * entry_size);
-            r_offset = rela->r_offset;
-            r_info   = rela->r_info;
-            r_addend = rela->r_addend;
-        } else {
-            const elf32_rel_t *rel =
-                (const elf32_rel_t *)(rel_base + i * entry_size);
-            r_offset = rel->r_offset;
-            r_info   = rel->r_info;
-        }
-
-        uint32_t rtype = ELF32_R_TYPE(r_info);
-
-        /* ── Handle JMP_SLOT: resolve PLT GOT entry ─────────── */
-#if defined(__m68k__)
-        if (rtype == R_68K_JMP_SLOT) {
-#else
-        if (rtype == R_ARM_JMP_SLOT) {
-#endif
-            if (!dynsym)
-                continue;
-            uint32_t sym_idx = ELF32_R_SYM(r_info);
-            if (sym_idx >= dynsym_info.count)
-                continue;
-            uint32_t off = r_offset;
-            if (off < data_seg->p_vaddr ||
-                off >= data_seg->p_vaddr + data_seg->p_memsz)
-                continue;
-            uint32_t off_in_sram = off - data_seg->p_vaddr;
-            uint32_t *word = (uint32_t *)(sram_page + off_in_sram);
-            uint32_t sym_val = dynsym[sym_idx].st_value
-                              + (uint32_t)r_addend;
-            if (sym_val < data_seg->p_vaddr)
-                *word = sym_val + text_base;
-            else
-                *word = sym_val - data_seg->p_vaddr +
-                        (uint32_t)(uintptr_t)sram_page;
-            continue;
-        }
-
-        /* ── Handle RELATIVE ────────────────────────────────── */
-#if defined(__m68k__)
-        if (rtype != R_68K_RELATIVE)
-#else
-        if (rtype != R_ARM_RELATIVE)
-#endif
-            continue;
-
-        uint32_t off = r_offset;
-
-        (void)text_seg;
-        (void)text_ram;
-
-        /* Only patch words in the data segment (SRAM) */
-        if (off < data_seg->p_vaddr ||
-            off >= data_seg->p_vaddr + data_seg->p_memsz)
-            continue;
-
-        /* Skip words already handled by GOT relocation */
-        if (got_sram_addr != 0 && got_info &&
-            off >= got_info->addr &&
-            off < got_info->addr + got_info->size)
-            continue;
-
-        uint32_t off_in_sram = off - data_seg->p_vaddr;
-        uint32_t *word = (uint32_t *)(sram_page + off_in_sram);
-
-        uint32_t val = rel_info.has_addend
-            ? (uint32_t)r_addend : *word;
-
-        if (val == 0)
-            continue;
-
-        if (val < data_seg->p_vaddr)
-            *word = val + text_base;
-        else
-            *word = val - data_seg->p_vaddr +
-                    (uint32_t)(uintptr_t)sram_page;
-    }
-}
 
 /* ── do_execve ─────────────────────────────────────────────────────────── */
 
-int do_execve(pcb_t *p, const char *path, const char *const *argv)
-{
+#include "loader.h"
+
+int do_execve(pcb_t *p, const char *path, const char *const *argv) {
     vnode_t *vn = NULL;
     int err;
     int exec_argc = 1;
     int use_default_argv0 = 1;
 
-    if (argv && argv[0]) {
-        int argc = 0;
-        while (argv[argc] != NULL) {
-            argc++;
-            if (argc > EXEC_ARGV_MAX)
-                return -(int)E2BIG;
-        }
-        exec_argc = argc;
-        use_default_argv0 = 0;
+    const char* default_argv[2] = {path, NULL};
+    if (!argv || !argv[0]) {
+        argv = default_argv;
     }
 
     /* ── 1. Look up the binary in the VFS ──────────────────────────────── */
     err = vfs_lookup(path, &vn);
-    if (err < 0)
-        return err;
+    if (err < 0) return err;
 
     if (vn->type != VNODE_FILE) {
         vnode_put(vn);
         return -(int)ENOEXEC;
     }
 
-    /* Non-XIP files (UFS/tmpfs/etc.) can still be executed by format-specific
-     * loaders (.com, .x, .r, emulated m68k ELF) or as native ELF.
-     * For native ELF from a non-XIP FS, we run the binary in-place from the
-     * load buffer (all in RAM, same as romfs XIP). */
-    const uint8_t *elf_buf = NULL;  /* set to non-NULL for ELF-from-buffer */
+    const uint8_t *elf_buf = NULL;
+    uint8_t *file_buf = NULL;
+    uint32_t file_pages = 0;
 
     if (vn->xip_addr == NULL) {
         uint32_t file_size = vn->size;
@@ -205,24 +84,22 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
             return -(int)ENOEXEC;
         }
 
-        uint32_t file_pages = (file_size + PAGE_SIZE - 1u) / PAGE_SIZE;
-        uint8_t *file_buf = alloc_contiguous(file_pages);
+        file_pages = (file_size + PAGE_SIZE - 1u) / PAGE_SIZE;
+        file_buf = alloc_contiguous(file_pages);
         if (!file_buf) {
             vnode_put(vn);
             return -(int)ENOMEM;
         }
 
         if (!vn->mount || !vn->mount->ops || !vn->mount->ops->read) {
-            for (uint32_t i = 0; i < file_pages; i++)
-                page_free(file_buf + i * PAGE_SIZE);
+            for (uint32_t i = 0; i < file_pages; i++) page_free(file_buf + i * PAGE_SIZE);
             vnode_put(vn);
             return -(int)ENOEXEC;
         }
 
         long nread = vn->mount->ops->read(vn, file_buf, file_size, 0);
         if (nread < 0 || (uint32_t)nread != file_size) {
-            for (uint32_t i = 0; i < file_pages; i++)
-                page_free(file_buf + i * PAGE_SIZE);
+            for (uint32_t i = 0; i < file_pages; i++) page_free(file_buf + i * PAGE_SIZE);
             vnode_put(vn);
             return (nread < 0) ? (int)nread : -(int)ENOEXEC;
         }
@@ -230,15 +107,13 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
 #ifdef PPAP_ENABLE_HUMAN68K
         if (x68k_detect(file_buf, file_size)) {
             int rc = exec_x68k(p, file_buf, file_size, path, argv);
-            for (uint32_t i = 0; i < file_pages; i++)
-                page_free(file_buf + i * PAGE_SIZE);
+            for (uint32_t i = 0; i < file_pages; i++) page_free(file_buf + i * PAGE_SIZE);
             vnode_put(vn);
             return rc;
         }
         if (r68k_detect(path, file_buf, file_size)) {
             int rc = exec_r68k(p, file_buf, file_size, path, argv);
-            for (uint32_t i = 0; i < file_pages; i++)
-                page_free(file_buf + i * PAGE_SIZE);
+            for (uint32_t i = 0; i < file_pages; i++) page_free(file_buf + i * PAGE_SIZE);
             vnode_put(vn);
             return rc;
         }
@@ -247,8 +122,7 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
 #ifdef PPAP_ENABLE_CPM
         if (cpm_detect(path, file_buf, file_size)) {
             int rc = exec_cpm(p, file_buf, file_size, path, argv);
-            for (uint32_t i = 0; i < file_pages; i++)
-                page_free(file_buf + i * PAGE_SIZE);
+            for (uint32_t i = 0; i < file_pages; i++) page_free(file_buf + i * PAGE_SIZE);
             vnode_put(vn);
             return rc;
         }
@@ -257,8 +131,7 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
 #ifdef PPAP_ENABLE_SOS
         if (sos_detect(path, file_buf, file_size)) {
             int rc = exec_sos(p, file_buf, file_size, path, argv);
-            for (uint32_t i = 0; i < file_pages; i++)
-                page_free(file_buf + i * PAGE_SIZE);
+            for (uint32_t i = 0; i < file_pages; i++) page_free(file_buf + i * PAGE_SIZE);
             vnode_put(vn);
             return rc;
         }
@@ -269,34 +142,18 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
             const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)file_buf;
             if (m68k_emu_detect(ehdr)) {
                 int rc = exec_m68k_emu(p, file_buf, file_size, ehdr, path, argv);
-                for (uint32_t i = 0; i < file_pages; i++)
-                    page_free(file_buf + i * PAGE_SIZE);
+                for (uint32_t i = 0; i < file_pages; i++) page_free(file_buf + i * PAGE_SIZE);
                 vnode_put(vn);
                 return rc;
             }
         }
 #endif
-
-        /* Native ELF (m68k or ARM) loaded from a non-XIP filesystem.
-         * Run in-place from the load buffer — all RAM, same as romfs XIP.
-         * The buffer pages are NOT freed here; text runs from them. */
-        if (elf_validate((const elf32_ehdr_t *)file_buf) == 0) {
-            elf_buf = file_buf;
-            /* file_buf intentionally kept alive — text lives in these pages */
-        } else {
-            for (uint32_t i = 0; i < file_pages; i++)
-                page_free(file_buf + i * PAGE_SIZE);
-            vnode_put(vn);
-            return -(int)ENOEXEC;
-        }
+        elf_buf = file_buf; 
     }
 
-    /* ── 2. Detect binary format ─────────────────────────────────────── */
-    const uint8_t *file_base = (elf_buf != NULL)
-        ? elf_buf : (const uint8_t *)vn->xip_addr;
+    const uint8_t *file_base = (elf_buf != NULL) ? elf_buf : (const uint8_t *)vn->xip_addr;
     uint32_t file_size = vn->size;
 
-    /* Try Human68k X-format ("HU" magic) before ELF */
 #ifdef PPAP_ENABLE_HUMAN68K
     if (x68k_detect(file_base, file_size)) {
         vnode_put(vn);
@@ -304,7 +161,6 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
     }
 #endif
 
-    /* Try CP/M .COM (detected by extension) */
 #ifdef PPAP_ENABLE_CPM
     if (cpm_detect(path, file_base, file_size)) {
         vnode_put(vn);
@@ -312,7 +168,6 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
     }
 #endif
 
-    /* Try S-OS SWORD (detected by _SOS magic) */
 #ifdef PPAP_ENABLE_SOS
     if (sos_detect(path, file_base, file_size)) {
         vnode_put(vn);
@@ -320,303 +175,50 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
     }
 #endif
 
-    /* ── 2b. Validate the ELF header ───────────────────────────────────── */
-    const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)file_base;
-
-    err = elf_validate(ehdr);
-    if (err < 0) {
-        /* ELF validation failed — might be a cross-arch m68k binary or
-         * a non-ELF format.  Try m68k emulation first (detects EM_68K
-         * big-endian ELF that elf_validate rejects on ARM hosts). */
 #ifdef PPAP_ENABLE_ECPU_M68K
-        if (m68k_emu_detect(ehdr)) {
-            vnode_put(vn);
-            return exec_m68k_emu(p, file_base, file_size, ehdr, path, argv);
-        }
+    const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)file_base;
+    if (m68k_emu_detect(ehdr)) {
+        vnode_put(vn);
+        return exec_m68k_emu(p, file_base, file_size, ehdr, path, argv);
+    }
 #endif
-        /* Not ELF — try Human68k R-format (.r extension, raw binary) */
 #ifdef PPAP_ENABLE_HUMAN68K
-        if (r68k_detect(path, file_base, file_size)) {
-            vnode_put(vn);
-            return exec_r68k(p, file_base, file_size, path, argv);
-        }
-#endif
+    if (r68k_detect(path, file_base, file_size)) {
         vnode_put(vn);
-        return err;
-    }
-
-    /* ── 3. Extract PT_LOAD segments ───────────────────────────────────── */
-    elf32_phdr_t segs[MAX_LOAD_SEGS];
-    int nseg = elf_load_segments(ehdr, file_base, segs, MAX_LOAD_SEGS,
-                                 file_size);
-    if (nseg <= 0) {
-        vnode_put(vn);
-        return -(int)ENOEXEC;
-    }
-
-    /* ── 4. Identify text and data segments ────────────────────────────── */
-    const elf32_phdr_t *text_seg = NULL;
-    const elf32_phdr_t *data_seg = NULL;
-
-    for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
-        if (segs[i].p_flags & PF_X)
-            text_seg = &segs[i];
-        else if (segs[i].p_flags & PF_W)
-            data_seg = &segs[i];
-    }
-
-    if (!text_seg) {
-        vnode_put(vn);
-        return -(int)ENOEXEC;
-    }
-
-    uint32_t e_entry = elf_entry(ehdr);
-    uint32_t entry;
-    uint32_t text_base;    /* runtime base of text segment */
-    uint8_t *sram_page = NULL;
-    uint32_t got_sram_addr = 0;
-    elf_got_info_t got_info = {0, 0, 0};
-
-    /* ── Pre-allocate stack page before data pages ─────────────────────
-     *
-     * page_alloc() returns the most-recently-freed page (LIFO).  After a
-     * process exits, its brk pages are near the top of the free stack.
-     * If we allocated data pages first (via alloc_contiguous scanning
-     * from the bottom), page_alloc() for the stack would pop a recently
-     * freed brk page — often the page right after the data block.  That
-     * blocks brk expansion → OOM.
-     *
-     * Pre-allocating the stack drains that dangerous LIFO entry before
-     * alloc_contiguous runs.
-     */
-    void *stack = page_alloc();
-    if (!stack) {
-        vnode_put(vn);
-        return -(int)ENOMEM;
-    }
-    p->stack_page = stack;
-
-#if defined(__m68k__)
-    /* m68k user mode: stack_page = kernel stack (SSP).
-     * Allocate a separate page for the user stack (USP). */
-    void *user_stack = page_alloc();
-    if (!user_stack) {
-        page_free(stack);
-        p->stack_page = NULL;
-        vnode_put(vn);
-        return -(int)ENOMEM;
+        return exec_r68k(p, file_base, file_size, path, argv);
     }
 #endif
 
-    /* ── XIP: text stays in romfs/flash, data goes to SRAM ─────────── */
-    {
-        uint32_t xip_text_base =
-            (uint32_t)(uintptr_t)file_base + text_seg->p_offset;
-        text_base = xip_text_base;
+    extern const loader_t* loader_registry[];
+    int loaded = 0;
+    int rc = -(int)ENOEXEC;
 
-#if defined(__m68k__)
-        entry = xip_text_base + e_entry - text_seg->p_vaddr;
-#else
-        entry = xip_text_base + (e_entry & ~1u) - text_seg->p_vaddr;
-        entry |= (e_entry & 1u);   /* restore Thumb bit */
-#endif
+    for (int i = 0; loader_registry[i] != NULL; i++) {
+        if (loader_registry[i]->detect(file_base, file_size, path)) {
+            const cpu_ops_t *cpu_ops = &native_cpu_ops;
+            void *cpu_state = cpu_ops->create_state();
+            cpu_ops->init(cpu_state, (uint8_t*)0, 0xFFFFFFFF);
 
-        if (data_seg && data_seg->p_memsz > 0) {
-            uint32_t data_pages =
-                (data_seg->p_memsz + PAGE_SIZE - 1) / PAGE_SIZE;
-            if (data_pages > USER_PAGES_MAX) {
-                page_free(stack);
-                p->stack_page = NULL;
-                vnode_put(vn);
-                return -(int)ENOMEM;
+            rc = loader_registry[i]->load(p, file_base, file_size, cpu_ops, cpu_state, argv);
+            if (rc == 0) {
+                p->cpu_ops = cpu_ops;
+                p->cpu_state = cpu_state;
+                loaded = 1;
+            } else {
+                cpu_ops->destroy_state(cpu_state);
             }
-
-            sram_page = alloc_contiguous(data_pages);
-            if (!sram_page) {
-                page_free(stack);
-                p->stack_page = NULL;
-                vnode_put(vn);
-                return -(int)ENOMEM;
-            }
-
-            /* Copy initialised data */
-            if (data_seg->p_filesz > 0)
-                memcpy(sram_page, file_base + data_seg->p_offset,
-                       data_seg->p_filesz);
-
-            /* Zero BSS */
-            if (data_seg->p_memsz > data_seg->p_filesz)
-                memset(sram_page + data_seg->p_filesz, 0,
-                       data_seg->p_memsz - data_seg->p_filesz);
-
-            /* GOT relocation */
-            if (elf_find_got(ehdr, file_base, &got_info, file_size) == 0) {
-                uint32_t got_offset_in_data =
-                    got_info.addr - data_seg->p_vaddr;
-                got_sram_addr =
-                    (uint32_t)(uintptr_t)sram_page + got_offset_in_data;
-                uint32_t *got =
-                    (uint32_t *)(sram_page + got_offset_in_data);
-                uint32_t n_entries = got_info.size / 4;
-
-                for (uint32_t i = 0; i < n_entries; i++) {
-                    uint32_t val = got[i];
-                    if (val == 0)
-                        continue;
-                    if (val < data_seg->p_vaddr)
-                        got[i] = val + xip_text_base;
-                    else
-                        got[i] = val - data_seg->p_vaddr +
-                                 (uint32_t)(uintptr_t)sram_page;
-                }
-            }
-
-            /* Apply relocations (data segment only — no text relocs) */
-            apply_relocations(ehdr, file_base, file_size,
-                              NULL, data_seg, NULL,
-                              sram_page, xip_text_base,
-                              got_sram_addr, &got_info);
-
-            /* Store data pages in user_pages[] */
-            for (uint32_t i = 0; i < data_pages; i++)
-                p->user_pages[i] = sram_page + i * PAGE_SIZE;
-#if defined(__m68k__)
-            /* Track user stack page separately — user_pages[] indices above
-             * data_pages are used by sys_brk for heap expansion, so storing
-             * the user stack there would get overwritten on first brk. */
-            p->user_stack_page = user_stack;
-#endif
-
-            /* Set program break — align to 16 bytes for musl malloc */
-            uint32_t data_end = (uint32_t)(uintptr_t)sram_page
-                                + data_seg->p_memsz;
-            data_end = (data_end + 15u) & ~15u;
-            p->brk_base    = data_end;
-            p->brk_current = data_end;
+            break;
         }
     }
 
-    /* ── 8a. Build argc/argv/envp/auxv at top of stack ─────────────────
-     *
-     * musl's _start reads:  argc = [SP], argv = SP+4, ...
-     *
-     * Layout (high → low):
-     *   argv string data (each NUL-terminated)
-     *   <alignment padding>
-     *   auxv[1] = {AT_NULL, 0}
-     *   auxv[0] = {AT_PAGESZ, PAGE_SIZE}
-     *   envp[0] = NULL
-     *   argv[argc] = NULL
-     *   argv[argc-1..0] = pointers to string data
-     *   argc
-     *              ← user_sp
-     */
-#if defined(__m68k__)
-    uint32_t m68k_user_sp = 0;
-#endif
-    {
-#if defined(__m68k__)
-        uint32_t stack_top = (uint32_t)(uintptr_t)user_stack + PAGE_SIZE;
-#else
-        uint32_t stack_top = (uint32_t)(uintptr_t)stack + PAGE_SIZE;
-#endif
-        uint32_t sp = stack_top;
-
-        int argc = exec_argc;
-
-        /* Copy argument strings to top of stack */
-        uint32_t str_addrs[EXEC_ARGV_MAX];
-        if (!use_default_argv0) {
-            for (int i = argc - 1; i >= 0; i--) {
-                uint32_t len = (uint32_t)strlen(argv[i]) + 1;
-                sp -= len;
-                memcpy((void *)(uintptr_t)sp, argv[i], len);
-                str_addrs[i] = sp;
-            }
-        } else {
-            uint32_t len = (uint32_t)strlen(path) + 1;
-            sp -= len;
-            memcpy((void *)(uintptr_t)sp, path, len);
-            str_addrs[0] = sp;
+    if (!loaded) {
+        if (file_buf) {
+            for (uint32_t i = 0; i < file_pages; i++) page_free(file_buf + i * PAGE_SIZE);
         }
-
-        /* Align stack */
-#if defined(__m68k__)
-        sp &= ~3u;
-#else
-        sp &= ~7u;
-        if ((argc + 7) & 1)
-            sp -= 4;
-#endif
-
-        /* auxv[1]: AT_NULL */
-        sp -= 4; *(uint32_t *)(uintptr_t)sp = 0;
-        sp -= 4; *(uint32_t *)(uintptr_t)sp = 0;
-        /* auxv[0]: AT_PAGESZ */
-        sp -= 4; *(uint32_t *)(uintptr_t)sp = PAGE_SIZE;
-        sp -= 4; *(uint32_t *)(uintptr_t)sp = 6;
-
-        /* envp[0] = NULL */
-        sp -= 4; *(uint32_t *)(uintptr_t)sp = 0;
-
-        /* argv array + NULL terminator */
-        sp -= 4; *(uint32_t *)(uintptr_t)sp = 0;
-        for (int i = argc - 1; i >= 0; i--) {
-            sp -= 4; *(uint32_t *)(uintptr_t)sp = str_addrs[i];
-        }
-
-        /* argc */
-        sp -= 4; *(uint32_t *)(uintptr_t)sp = (uint32_t)argc;
-
-        /* ── 9. Set up the exception frame ─────────────────────────────── */
-#if defined(__m68k__)
-        /* m68k: defer proc_setup_stack to the IRQ-disabled critical section
-         * below, which also sets exec_pending atomically to prevent the
-         * timer ISR from overwriting current->sp between setup and restore. */
-        m68k_user_sp = sp;
-#else
-        proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, sp);
-#endif
+        vnode_put(vn);
+        return rc;
     }
 
-    /* Patch GOT base register in the software frame.
-     *
-     * m68k: The MFP timer ISR (IPL 2) can preempt TRAP #0 handling (IPL 0
-     * in supervisor mode) and overwrite current->sp with the kernel SSP,
-     * corrupting the exec restore path in trap.S (.Lexec_restore).
-     *
-     * Fix: disable IRQs for the critical section covering proc_setup_stack,
-     * the GOT patch, and exec_pending=1.  The timer ISR in switch.S checks
-     * exec_pending and skips the sp-save when it is set, so once IRQs are
-     * re-enabled current->sp is safe until .Lexec_restore runs. */
-#if defined(__m68k__)
-    {
-        extern volatile int exec_pending[2];
-        uint32_t irq_save = arch_irq_save();
-        proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, m68k_user_sp);
-        p->usp = m68k_user_sp;
-        if (got_sram_addr) {
-            uint32_t *sw = (uint32_t *)(uintptr_t)p->sp;
-            sw[13] = got_sram_addr;
-        }
-        p->got_base = got_sram_addr;
-        /* Only set exec_pending when replacing the current process (via
-         * sys_execve through TRAP #0).  For initial exec from kmain the
-         * scheduler starts the new process directly via sched_start(), so
-         * exec_pending must not be set (no .Lexec_restore path is taken). */
-        if (p == current)
-            exec_pending[0] = 1;
-        arch_irq_restore(irq_save);
-    }
-#else
-    if (got_sram_addr) {
-        uint32_t *sw = (uint32_t *)(uintptr_t)p->sp;
-        sw[5] = got_sram_addr;
-    }
-    p->got_base = got_sram_addr;
-#endif
-
-    /* ── 10. Set process comm from executable basename ────────────────── */
     {
         const char *base = path;
         for (const char *s = path; *s; s++) {
@@ -629,13 +231,11 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
         p->comm[clen] = '\0';
     }
 
-    /* ── 11. Set working directory ─────────────────────────────────────── */
     if (current)
         memcpy(p->cwd, current->cwd, sizeof(p->cwd));
     else
         strcpy(p->cwd, "/");
 
-    /* ── 13. Reset signal state (POSIX exec semantics) ────────────────── */
     for (int i = 0; i < NSIG; i++) {
         if (p->sig_handlers[i] != SIG_IGN)
             p->sig_handlers[i] = SIG_DFL;
@@ -643,8 +243,6 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv)
     p->sig_pending = 0;
     p->sig_blocked = 0;
 
-    /* ── 14. Release the vnode ─────────────────────────────────────────── */
     vnode_put(vn);
-
     return 0;
 }

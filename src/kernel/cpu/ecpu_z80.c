@@ -153,6 +153,21 @@ static void ecpu_z80_write16_op(cpu_state_t *state, uint32_t addr,
     z80_write16(cpu, (uint16_t)addr, val);
 }
 
+static uint32_t ecpu_z80_read32_op(cpu_state_t *state, uint32_t addr)
+{
+    z80_state_t *cpu = (z80_state_t *)state;
+    return (uint32_t)z80_read16(cpu, (uint16_t)addr) |
+           ((uint32_t)z80_read16(cpu, (uint16_t)(addr + 2)) << 16);
+}
+
+static void ecpu_z80_write32_op(cpu_state_t *state, uint32_t addr,
+                                uint32_t val)
+{
+    z80_state_t *cpu = (z80_state_t *)state;
+    z80_write16(cpu, (uint16_t)addr, val & 0xFFFF);
+    z80_write16(cpu, (uint16_t)(addr + 2), val >> 16);
+}
+
 /* ── Helper: fire trap handler ───────────────────────────────────────────── */
 
 static int z80_fire_trap(z80_state_t *cpu, int trap_type, uint32_t param)
@@ -1329,4 +1344,6 @@ const cpu_ops_t ecpu_z80_ops = {
     .write8           = (void *)ecpu_z80_write8_op,
     .read16           = (void *)ecpu_z80_read16_op,
     .write16          = (void *)ecpu_z80_write16_op,
+    .read32           = (void *)ecpu_z80_read32_op,
+    .write32          = (void *)ecpu_z80_write32_op,
 };
