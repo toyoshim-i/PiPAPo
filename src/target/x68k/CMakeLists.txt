@@ -55,7 +55,6 @@ target_compile_definitions(ppap_x68k PRIVATE
 
 target_compile_options(ppap_x68k PRIVATE
     -m68000
-    -Wall -Wextra -Wno-unused-parameter
     -Os -g
     -ffreestanding -fno-builtin
 )

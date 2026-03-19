@@ -110,6 +110,7 @@ static const struct file_ops vfs_file_ops = {
     vfs_file_write,
     vfs_file_close,
     NULL,   /* ioctl — regular files don't support ioctl */
+    NULL,   /* poll */
 };
 
 /* ── sys_open ──────────────────────────────────────────────────────────────── */
@@ -632,18 +633,16 @@ struct linux_stat64 {
 };
 #endif
 
-/* Helper: write a big-endian uint32 at a byte offset */
-static void put_be32(uint8_t *base, int off, uint32_t v)
-{
-    base[off]   = (uint8_t)(v >> 24);
-    base[off+1] = (uint8_t)(v >> 16);
-    base[off+2] = (uint8_t)(v >> 8);
-    base[off+3] = (uint8_t)v;
-}
-
 static void fill_stat64(const struct stat *src, void *buf)
 {
 #if defined(__m68k__)
+    /* Helper: write a big-endian uint32 at a byte offset */
+    #define PUT_BE32(base, off, v) do {         \
+        (base)[(off)]   = (uint8_t)((v) >> 24); \
+        (base)[(off)+1] = (uint8_t)((v) >> 16); \
+        (base)[(off)+2] = (uint8_t)((v) >> 8);  \
+        (base)[(off)+3] = (uint8_t)(v);          \
+    } while (0)
     /*
      * m68k musl struct stat (140 bytes).
      * Offsets verified by compiling against musl sysroot with offsetof().
@@ -652,20 +651,21 @@ static void fill_stat64(const struct stat *src, void *buf)
     memset(d, 0, 140);
 
     /* __st_ino_truncated at +10 (2-byte __st_dev_padding at +8, then long) */
-    put_be32(d, 10, (uint32_t)src->st_ino);
+    PUT_BE32(d, 10, (uint32_t)src->st_ino);
     /* st_mode at +14 */
-    put_be32(d, 14, src->st_mode);
+    PUT_BE32(d, 14, src->st_mode);
     /* st_nlink at +18 */
-    put_be32(d, 18, src->st_nlink);
+    PUT_BE32(d, 18, src->st_nlink);
     /* st_uid at +22 = 0, st_gid at +26 = 0 — already zeroed */
     /* st_size at +40 (off_t is 8 bytes; write low 4 bytes at +44) */
-    put_be32(d, 44, (uint32_t)src->st_size);
+    PUT_BE32(d, 44, (uint32_t)src->st_size);
     /* st_blksize at +48 */
-    put_be32(d, 48, 4096);
+    PUT_BE32(d, 48, 4096);
     /* st_blocks at +52 (blkcnt_t is 8 bytes; write low 4 bytes at +56) */
-    put_be32(d, 56, ((uint32_t)src->st_size + 511u) / 512u);
+    PUT_BE32(d, 56, ((uint32_t)src->st_size + 511u) / 512u);
     /* st_ino at +84 (ino_t is 8 bytes; write low 4 bytes at +88) */
-    put_be32(d, 88, (uint32_t)src->st_ino);
+    PUT_BE32(d, 88, (uint32_t)src->st_ino);
+    #undef PUT_BE32
 #else
     struct linux_stat64 *dst = (struct linux_stat64 *)buf;
     memset(dst, 0, sizeof(*dst));

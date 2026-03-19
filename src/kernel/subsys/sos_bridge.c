@@ -142,12 +142,6 @@ static void sos_screen_putc(sos_state_t *sos, uint8_t ch)
     }
 }
 
-static void sos_screen_clear(sos_state_t *sos)
-{
-    __builtin_memset(sos->screen_buf, ' ',
-                     (size_t)(sos->screen_width * sos->screen_height));
-}
-
 static uint8_t sos_getchar(void)
 {
     uint8_t ch = 0;

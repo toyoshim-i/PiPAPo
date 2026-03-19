@@ -609,11 +609,11 @@ static long vfat_write(vnode_t *vn, const void *buf, size_t n, uint32_t off)
             /* Read-modify-write if partial sector */
             if (start != 0 || avail != 512) {
                 int rc = read_sector(sb, sec_base + s, sector_buf);
-                if (rc < 0) return (long)((total > 0) ? total : rc);
+                if (rc < 0) return (long)(total > 0 ? (int)total : rc);
             }
             __builtin_memcpy(&sector_buf[start], src + total, avail);
             int rc = write_sector(sb, sec_base + s, sector_buf);
-            if (rc < 0) return (long)((total > 0) ? total : rc);
+            if (rc < 0) return (long)(total > 0 ? (int)total : rc);
             total += avail;
         }
 

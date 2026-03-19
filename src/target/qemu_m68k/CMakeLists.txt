@@ -38,7 +38,6 @@ target_compile_definitions(ppap_qemu_m68k PRIVATE
 
 target_compile_options(ppap_qemu_m68k PRIVATE
     -m68000
-    -Wall -Wextra -Wno-unused-parameter
     -Os -g
     -ffreestanding -fno-builtin
 )

@@ -659,6 +659,6 @@ const struct file_ops tty_fops = {
     tty_read, tty_write, tty_close, tty_ioctl, tty_poll
 };
 
-struct file tty_stdin  = { &tty_fops, NULL, O_RDONLY, 1u };
-struct file tty_stdout = { &tty_fops, NULL, O_WRONLY, 1u };
-struct file tty_stderr = { &tty_fops, NULL, O_WRONLY, 1u };
+struct file tty_stdin  = { &tty_fops, NULL, O_RDONLY, 1u, NULL, 0 };
+struct file tty_stdout = { &tty_fops, NULL, O_WRONLY, 1u, NULL, 0 };
+struct file tty_stderr = { &tty_fops, NULL, O_WRONLY, 1u, NULL, 0 };

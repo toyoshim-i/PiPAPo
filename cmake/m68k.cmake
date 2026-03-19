@@ -32,6 +32,9 @@ function(ppap_m68k_target_common target)
         ${PPAP_ROOT}/src/kernel
     )
     
+    # Warnings: treat as errors for project code (third-party is built externally)
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Werror -Wno-unused-parameter)
+
     # Core kernel definitions
     target_compile_definitions(${target} PRIVATE PPAP_KERNEL=1)
     

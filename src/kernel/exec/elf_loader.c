@@ -129,7 +129,6 @@ static int elf_load(pcb_t* p, const uint8_t* file_buf, uint32_t file_size,
 
     uint32_t e_entry = elf_entry(ehdr);
     uint32_t entry;
-    uint32_t text_base;
     uint8_t *sram_page = NULL;
     uint32_t got_sram_addr = 0;
     elf_got_info_t got_info = {0, 0, 0};
@@ -149,7 +148,6 @@ static int elf_load(pcb_t* p, const uint8_t* file_buf, uint32_t file_size,
     }
 
     uint32_t xip_text_base = (uint32_t)(uintptr_t)file_buf + text_seg->p_offset;
-    text_base = xip_text_base;
 
     if (cpu_ops->arch_id == CPU_ARCH_M68K) {
         entry = xip_text_base + e_entry - text_seg->p_vaddr;

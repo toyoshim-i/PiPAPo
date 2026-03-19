@@ -106,11 +106,15 @@ int signal_check_kernel(void)
  * Trampoline stub — not used on m68k (synchronous delivery), but kept
  * so the linker doesn't complain about the extern declaration in signal.h.
  */
-__attribute__((naked, used, section(".text.sigreturn_trampoline")))
-void sigreturn_trampoline(void)
-{
-    __asm volatile("rts\n");
-}
+__attribute__((used, section(".text.sigreturn_trampoline")))
+void __asm_sigreturn_trampoline(void);
+__asm(
+    ".section .text.sigreturn_trampoline,\"ax\",@progbits\n"
+    ".globl sigreturn_trampoline\n"
+    "sigreturn_trampoline:\n"
+    "    rts\n"
+    ".previous\n"
+);
 
 /*
  * m68k_call_signal_handler — assembly thunk to call a PIC signal handler.

@@ -409,7 +409,7 @@ static uint32_t proc_vsz(const pcb_t *p)
     /* Stack page */
     if (p->stack_page) pages++;
     /* User data pages */
-    for (int i = 0; i < USER_PAGES_MAX; i++) {
+    for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
         if (p->user_pages[i]) pages++;
     }
     /* mmap pages */

@@ -73,7 +73,7 @@ void kmain(void)
     /* Bootstrap: mount root filesystem (needed to read /etc/fstab).
      * If an embedded romfs is present use it; otherwise delegate to the
      * target (e.g. x68k mounts a UFS ramdisk loaded by stage2). */
-    if (__romfs_start != __romfs_end) {
+    if (&__romfs_start[0] != &__romfs_end[0]) {
         if (vfs_mount("/", &romfs_ops, MNT_RDONLY, __romfs_start) == 0)
             klog("VFS: romfs mounted at /\n");
         else
