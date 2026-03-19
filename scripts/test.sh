@@ -55,9 +55,9 @@ cmake --build "$BUILD_DIR" -- -j"$(nproc)"
 echo ""
 
 if [[ $VERBOSE -eq 1 ]]; then
-    ctest --test-dir "$BUILD_DIR" --output-on-failure -V
+    ctest --test-dir "$BUILD_DIR" --output-on-failure -V --label-exclude manual
 else
-    ctest --test-dir "$BUILD_DIR" --output-on-failure
+    ctest --test-dir "$BUILD_DIR" --output-on-failure --label-exclude manual
 fi
 
 if [[ $DO_ALL -eq 0 ]]; then

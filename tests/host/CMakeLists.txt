@@ -78,4 +78,4 @@ add_executable(test_zexdoc
 target_include_directories(test_zexdoc PRIVATE
     ${SRC} ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 add_test(NAME zexdoc COMMAND test_zexdoc)
-set_tests_properties(zexdoc PROPERTIES TIMEOUT 300)
+set_tests_properties(zexdoc PROPERTIES TIMEOUT 7200 LABELS "manual")

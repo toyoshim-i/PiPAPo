@@ -350,7 +350,8 @@ coverage is not exhaustive yet.
   67 documented-flag instruction groups) is integrated via the
   `third_party/zexall` git submodule:
   - **Host test** (`tests/host/test_zexdoc.c`): runs ZEXDOC natively through
-    the Z80 emulator with a minimal BDOS stub — fast enough for CI.
+    the Z80 emulator with a minimal BDOS stub. Labelled `manual` — excluded
+    from the default `ctest` run; invoke with `ctest -L manual`.
   - **On-target test** (`tests/user/test_zexdoc.c`): runs `zexdoc.com`
     through the full CP/M subsystem via `execve`. Marked `TEST_SLOW`;
     run with `--slow` flag.
