@@ -3,6 +3,8 @@
 This document describes how to build, link, and deploy user-space
 applications for the PiPAPo (PPAP) operating system.
 
+See also: [push shell](push.md) — the default `/bin/sh` and its scripting capabilities.
+
 ## 1. Platform Overview
 
 PPAP runs on multiple architectures. Key characteristics shared by all targets:

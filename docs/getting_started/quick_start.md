@@ -39,3 +39,8 @@ See [`testing.md`](testing.md) for test architecture and coverage notes.
 ## 5. Debug
 
 For hardware debug (OpenOCD + GDB), see [`debugging.md`](debugging.md).
+
+## 6. Shell
+
+PiPAPo uses **push** (PiPAPo μShell) as the default `/bin/sh`.
+See [`push.md`](push.md) for usage, builtins, and scripting.

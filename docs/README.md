@@ -22,6 +22,7 @@ This index is the entry point for project documentation.
   - [`getting_started/testing.md`](getting_started/testing.md)
   - [`getting_started/debugging.md`](getting_started/debugging.md)
   - [`getting_started/build_system.md`](getting_started/build_system.md)
+  - [`getting_started/push.md`](getting_started/push.md)
   - [`getting_started/userland_dev_guide.md`](getting_started/userland_dev_guide.md)
   - [`getting_started/porting.md`](getting_started/porting.md)
   - [`getting_started/commit_description.md`](getting_started/commit_description.md)
