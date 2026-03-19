@@ -158,7 +158,7 @@ static void vfs_integration_test(void)
         int ok = 0;
         if (fd >= 0) {
             struct dirent entries[8];
-            long n = sys_getdents(fd, entries, 8);
+            long n = sys_getdents(fd, entries, sizeof(entries));
             if (n >= 2) {
                 int found_etc = 0, found_bin = 0;
                 for (long i = 0; i < n; i++) {
@@ -180,7 +180,7 @@ static void vfs_integration_test(void)
         int ok = 0;
         if (fd >= 0) {
             struct dirent entries[8];
-            long n = sys_getdents(fd, entries, 8);
+            long n = sys_getdents(fd, entries, sizeof(entries));
             if (n >= 4) {
                 int found_null = 0, found_zero = 0;
                 for (long i = 0; i < n; i++) {
@@ -680,7 +680,7 @@ static void vfat_integration_test(void)
         int ok = 0;
         if (fd >= 0) {
             struct dirent entries[8];
-            long n = sys_getdents(fd, entries, 8);
+            long n = sys_getdents(fd, entries, sizeof(entries));
             if (n >= 3) {
                 int found_hello = 0, found_data = 0, found_subdir = 0;
                 for (long i = 0; i < n; i++) {
@@ -1004,7 +1004,7 @@ static void tmpfs_integration_test(void)
         long fd = sys_open("/tmp", O_RDONLY, 0);
         int ok = 0;
         if (fd >= 0) {
-            long n = sys_getdents(fd, entries, 8);
+            long n = sys_getdents(fd, entries, sizeof(entries));
             /* Should have at least "sub" directory */
             ok = (n >= 1);
             sys_close(fd);
@@ -1109,7 +1109,7 @@ static void ufs_integration_test(void)
         int ok = 0;
         if (fd >= 0) {
             struct dirent entries[8];
-            long n = sys_getdents(fd, entries, 8);
+            long n = sys_getdents(fd, entries, sizeof(entries));
             for (long i = 0; i < n; i++) {
                 if (__builtin_strcmp(entries[i].d_name, "hello.txt") == 0)
                     ok = 1;
@@ -1238,7 +1238,7 @@ static void ufs_integration_test(void)
         int ok = 0;
         if (fd >= 0) {
             struct dirent entries[8];
-            long n = sys_getdents(fd, entries, 8);
+            long n = sys_getdents(fd, entries, sizeof(entries));
             for (long i = 0; i < n; i++) {
                 if (__builtin_strcmp(entries[i].d_name, "newfile.txt") == 0)
                     ok = 1;
@@ -1288,7 +1288,7 @@ static void ufs_integration_test(void)
         int ok = 0;
         if (fd >= 0) {
             struct dirent entries[8];
-            long n = sys_getdents(fd, entries, 8);
+            long n = sys_getdents(fd, entries, sizeof(entries));
             for (long i = 0; i < n; i++) {
                 if (__builtin_strcmp(entries[i].d_name, "testdir") == 0)
                     ok = 1;

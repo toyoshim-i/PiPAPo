@@ -348,10 +348,16 @@ long sys_getdents(long fd, struct dirent *buf, size_t count)
     if (f->offset == GETDENTS_EOF)
         return 0;
 
+    /* Convert byte count to entry count — user passes sizeof(struct dirent)
+     * per entry, but readdir expects a max entry count. */
+    size_t max_entries = count / sizeof(struct dirent);
+    if (max_entries == 0)
+        return -(long)EINVAL;
+
     /* Use the file offset as the readdir cookie */
     uint32_t cookie = f->offset;
     int n = f->vnode->mount->ops->readdir(
-        f->vnode, buf, count, &cookie);
+        f->vnode, buf, max_entries, &cookie);
     if (n > 0)
         f->offset = (cookie == 0) ? GETDENTS_EOF : cookie;
     else if (n == 0)

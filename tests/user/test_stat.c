@@ -32,7 +32,7 @@ int main(void)
     UT_ASSERT(fd >= 0, "open / for getdents");
     if (fd >= 0) {
         struct dirent entries[8];
-        int n = getdents(fd, entries, 8);
+        int n = getdents(fd, entries, sizeof(entries));
         UT_ASSERT(n > 0, "getdents / returns entries");
 
         /* Look for "bin" in entries */
@@ -56,7 +56,7 @@ int main(void)
     UT_ASSERT(fd >= 0, "open /bin for getdents");
     if (fd >= 0) {
         struct dirent entries[32];
-        int n = getdents(fd, entries, 32);
+        int n = getdents(fd, entries, sizeof(entries));
         UT_ASSERT(n > 0, "getdents /bin returns entries");
 
         int found_self = 0;
