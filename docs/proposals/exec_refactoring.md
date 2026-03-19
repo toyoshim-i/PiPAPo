@@ -106,6 +106,11 @@ typedef struct loader {
     // The required CPU architecture for this loader.
     int required_arch_id;
 
+    // If true, the loader executes code directly from the file buffer (XIP).
+    // The coordinator keeps the buffer alive after a successful load.
+    // If false, the coordinator frees the file buffer after loading.
+    int xip;
+
 } loader_t;
 ```
 
@@ -119,14 +124,14 @@ Loader implementations (registered in `src/kernel/exec/loader.c`):
 
 The `do_execve` function in `src/kernel/exec/exec.c` will be refactored to orchestrate the loading process.
 
-**Current `do_execve` logic** (after Phase 2):
+**Current `do_execve` logic** (after Phase 3.1):
 1.  **File Loading:** Look up and read the executable file from the VFS (with XIP support).
-2.  **Legacy detection chain:** For subsystem formats not yet migrated (Human68k, CP/M, SOS, m68k-emu), the old hardcoded `exec_*()` calls are tried first. These will be removed in Phase 3.
+2.  **Legacy detection chain:** For subsystem formats not yet migrated (Human68k, SOS, m68k-emu), the old hardcoded `exec_*()` calls are tried first. These will be removed as Phase 3 continues.
 3.  **Loader registry:** Iterate through `loader_registry[]` (defined in `src/kernel/exec/loader.c`). Call `loader->detect()` on each one.
 4.  **On successful detection:**
-    a. Create a `native_cpu_ops` state via `cpu_ops->create_state()`.
-    b. Call `loader->load()`, passing the file buffer, PCB, CPU ops, and CPU state. The loader populates memory and sets initial register values (PC, SP) via the `cpu_ops` interface.
-5.  **Post-load setup:** Set `p->comm`, `p->cwd`, reset signal handlers.
+    a. Select CPU ops via `cpu_ops_for_arch()` based on `required_arch_id` (native or emulated).
+    b. Call `loader->load()`, passing the file buffer, PCB, and CPU ops. Each loader manages its own CPU state allocation internally.
+5.  **Post-load cleanup:** Free the file buffer if the loader's `xip` flag is false (non-XIP loaders copy data, so the buffer is no longer needed). Set `p->comm`, `p->cwd`, reset signal handlers.
 6.  **Final Cleanup:** If no loader was found, or if any step failed, release all allocated resources and return an error.
 
 **Target `do_execve` logic** (after Phase 3 — all loaders migrated):
@@ -163,11 +168,13 @@ The `do_execve` function in `src/kernel/exec/exec.c` will be refactored to orche
 
 ### Phase 3: Migrate Subsystem Loaders
 
-1.  **CP/M:**
-    -   Create `src/kernel/exec/com_loader.c`.
-    -   Move the logic from `cpm_loader.c` and `exec_cpm.c` into the new `com_loader.c`.
-    -   The loader will use `cpu_ops` to write to the Z80 memory and set the initial PC and SP.
-    -   `exec_cpm.c` will be removed.
+1.  **CP/M:** **Status: Completed.**
+    -   Created `src/kernel/exec/com_loader.c` implementing `loader_t`.
+    -   Moved detection + loading logic from `exec_cpm.c` into `com_loader.c`.
+    -   Registered `com_loader` in `src/kernel/exec/loader.c`.
+    -   Updated `do_execve` coordinator to select CPU ops via `cpu_ops_for_arch()` based on `required_arch_id`.
+    -   Added `xip` flag to `loader_t` so the coordinator knows whether to free the file buffer after loading.
+    -   Removed `exec_cpm.c` and `exec_cpm.h`.
 2.  **Human68k:**
     -   Create `src/kernel/exec/x_loader.c` and `src/kernel/exec/r_loader.c`.
     -   Move the logic from `human68k_loader.c` and `exec_x68k.c` into these new loaders.
@@ -195,7 +202,7 @@ The `do_execve` function in `src/kernel/exec/exec.c` will be refactored to orche
 -   `src/kernel/exec/loader.c` — Loader registry (`loader_registry[]`)
 -   `src/kernel/exec/elf_loader.c` — ELF format loader
 -   `src/kernel/exec/exec.c` — `do_execve` coordinator
--   `src/kernel/exec/exec_cpm.c` — CP/M exec (legacy, Phase 3 target)
+-   `src/kernel/exec/com_loader.c` — CP/M .COM format loader
 -   `src/kernel/exec/exec_x68k.c` — Human68k exec (legacy, Phase 3 target)
 -   `src/kernel/exec/exec_sos.c` — S-OS exec (legacy, Phase 3 target)
 -   `src/kernel/exec/exec_m68k_emu.c` — m68k emulator exec (legacy, Phase 3 target)

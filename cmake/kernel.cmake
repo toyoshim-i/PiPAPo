@@ -85,7 +85,7 @@ set(KERNEL_SUBSYS_HUMAN68K_SOURCES
 set(KERNEL_SUBSYS_CPM_SOURCES
     ${_KS_ROOT}/src/kernel/subsys/cpm_bridge.c
     ${_KS_ROOT}/src/kernel/subsys/cpm_loader.c
-    ${_KS_ROOT}/src/kernel/exec/exec_cpm.c
+    ${_KS_ROOT}/src/kernel/exec/com_loader.c
 )
 
 set(KERNEL_SUBSYS_SOS_SOURCES

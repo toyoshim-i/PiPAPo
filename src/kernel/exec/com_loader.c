@@ -1,22 +1,21 @@
 /*
- * exec_cpm.c — CP/M .COM binary loader
+ * com_loader.c — CP/M .COM binary format loader
  *
- * Detects .COM files by extension and orchestrates loading of .COM binaries
- * into a Z80 emulator instance. Memory allocation, Z80 initialization, and
+ * Detects .COM files by extension and loads them into a Z80 emulator
+ * instance for execution.  Memory allocation, Z80 initialization, and
  * subsystem setup are coordinated here; the actual binary loading logic
  * is delegated to cpm_loader.c.
  *
  * See docs/subsystems/cpm.md §4 for the full design.
  */
 
-#include "exec_cpm.h"
+#include "com_loader.h"
 #include "exec.h"
 #include "kernel/mm/page.h"
 #include "kernel/subsys/subsys.h"
 #include "kernel/subsys/cpm_bridge.h"
 #include "kernel/subsys/cpm_loader.h"
 #include "kernel/cpu/ecpu_z80.h"
-#include "kernel/signal/signal.h"
 #include "kernel/errno.h"
 #if defined(__m68k__)
 #include "arch/cpu.h"
@@ -28,11 +27,12 @@
 
 /* ── Detection ─────────────────────────────────────────────────────────── */
 
-int cpm_detect(const char *path, const uint8_t *file, uint32_t size)
+static int com_detect(const uint8_t *file_buf, uint32_t file_size,
+                      const char *path)
 {
-    (void)file;
+    (void)file_buf;
 
-    if (size > CPM_MAX_COM_SIZE || size == 0)
+    if (file_size > CPM_MAX_COM_SIZE || file_size == 0)
         return 0;
 
     /* Check for .COM or .com extension */
@@ -41,7 +41,7 @@ int cpm_detect(const char *path, const uint8_t *file, uint32_t size)
         return 0;
 
     const char *ext = path + len - 4;
-    if ((ext[0] == '.' || ext[0] == '.') &&
+    if ((ext[0] == '.') &&
         (ext[1] == 'C' || ext[1] == 'c') &&
         (ext[2] == 'O' || ext[2] == 'o') &&
         (ext[3] == 'M' || ext[3] == 'm'))
@@ -50,16 +50,11 @@ int cpm_detect(const char *path, const uint8_t *file, uint32_t size)
     return 0;
 }
 
-/* ── Loader ────────────────────────────────────────────────────────────── */
-
-/* ── Execution setup ───────────────────────────────────────────────────── */
+/* ── Helpers ───────────────────────────────────────────────────────────── */
 
 /*
  * Per-process CP/M execution state -- stored in subsys_data.
- * Allocated from the Z80 memory pages (placed after the 64KB).
- *
- * Actually, we allocate one extra page for z80_state_t + cpm_state_t
- * since they don't fit in the Z80 address space.
+ * Allocated from a separate page since it doesn't fit in Z80 address space.
  */
 typedef struct {
     z80_state_t  z80;
@@ -98,18 +93,20 @@ static void cpm_set_drive_a_root(cpm_state_t *cpm, const char *path)
     cpm->drive_a_root[len] = 0;
 }
 
-int exec_cpm(pcb_t *p, const uint8_t *file, uint32_t size,
-             const char *path, const char *const *argv)
+/* ── Loader ────────────────────────────────────────────────────────────── */
+
+static int com_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
+                    const cpu_ops_t *cpu_ops, void *cpu_state,
+                    const char *const *argv)
 {
-    (void)argv;
+    (void)cpu_ops;
+    (void)cpu_state;
 
     /* ── 1. Allocate Z80 memory (64KB contiguous) + separate state page ── */
     uint8_t *mem_base = alloc_contiguous(Z80_MEM_PAGES);
-    if (!mem_base) {
+    if (!mem_base)
         return -(int)ENOMEM;
-    }
 
-    /* Z80 memory is the first 16 pages */
     uint8_t *z80_mem = mem_base;
 
     uint8_t *state_page = page_alloc();
@@ -149,7 +146,6 @@ int exec_cpm(pcb_t *p, const uint8_t *file, uint32_t size,
     char cmdline[128];
     cmdline[0] = '\0';
     if (argv && argv[0]) {
-        /* Skip argv[0] (program name), concatenate the rest */
         int pos = 0;
         for (int i = 1; argv[i] && pos < 126; i++) {
             if (i > 1 && pos < 126)
@@ -164,7 +160,9 @@ int exec_cpm(pcb_t *p, const uint8_t *file, uint32_t size,
     }
 
     /* ── 5. Load .COM binary into Z80 memory ──────────────────────────── */
-    cpm_load_com(&state->z80, &state->cpm, file, size, cmdline);
+    /* Extract path from argv[0] for drive_a_root */
+    const char *path = (argv && argv[0]) ? argv[0] : "";
+    cpm_load_com(&state->z80, &state->cpm, file_buf, file_size, cmdline);
     cpm_set_drive_a_root(&state->cpm, path);
 
     /* ── 6. Tag as CP/M process ────────────────────────────────────────── */
@@ -177,41 +175,11 @@ int exec_cpm(pcb_t *p, const uint8_t *file, uint32_t size,
             ops->on_init(p);
     }
 
-    /* ── 7. Set process comm from executable basename ──────────────────── */
-    {
-        const char *base = path;
-        for (const char *s = path; *s; s++) {
-            if (*s == '/')
-                base = s + 1;
-        }
-        size_t clen = strlen(base);
-        if (clen > 15) clen = 15;
-        memcpy(p->comm, base, clen);
-        p->comm[clen] = '\0';
-    }
-
-    /* ── 8. Set working directory ──────────────────────────────────────── */
-    if (current)
-        memcpy(p->cwd, current->cwd, sizeof(p->cwd));
-    else
-        strcpy(p->cwd, "/");
-
-    /* ── 9. Reset signal state ─────────────────────────────────────────── */
-    for (int i = 0; i < NSIG; i++) {
-        if (p->sig_handlers[i] != SIG_IGN)
-            p->sig_handlers[i] = SIG_DFL;
-    }
-    p->sig_pending = 0;
-    p->sig_blocked = 0;
-
-    /* ── 10. Set up kernel-mode entry point ─────────────────────────────
+    /* ── 7. Set up kernel-mode entry point ─────────────────────────────
      *
-     * Unlike ELF/X68k which run in user mode, CP/M .COM programs run
-     * via the Z80 emulator in kernel mode.  The process entry point is
-     * cpm_run_process(), which calls ecpu_z80_ops.run() in a loop.
-     *
-     * proc_setup_stack() sets the stack frame so the scheduler will
-     * "return" into our entry function.
+     * Unlike ELF which runs in user mode, CP/M .COM programs run via
+     * the Z80 emulator in kernel mode.  proc_setup_stack() sets the
+     * stack frame so the scheduler will "return" into cpm_run_process.
      */
     proc_setup_stack(p, cpm_run_process, 0);
 
@@ -228,3 +196,13 @@ int exec_cpm(pcb_t *p, const uint8_t *file, uint32_t size,
 
     return 0;
 }
+
+/* ── Loader registration ───────────────────────────────────────────────── */
+
+const loader_t com_loader = {
+    .name = "com",
+    .detect = com_detect,
+    .load = com_load,
+    .required_arch_id = CPU_ARCH_Z80,
+    .xip = 0,
+};

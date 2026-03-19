@@ -4,10 +4,15 @@
 
 #include "loader.h"
 #include "elf_loader.h"
+#ifdef PPAP_ENABLE_CPM
+#include "com_loader.h"
+#endif
 #include <stddef.h>
 
-// This will hold pointers to all available loader implementations.
 const loader_t* loader_registry[] = {
+#ifdef PPAP_ENABLE_CPM
+    &com_loader,
+#endif
     &elf_loader,
     NULL
 };

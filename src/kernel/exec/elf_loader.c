@@ -110,6 +110,16 @@ static int elf_detect(const uint8_t* file_buf, uint32_t file_size, const char* p
 static int elf_load(pcb_t* p, const uint8_t* file_buf, uint32_t file_size,
                     const cpu_ops_t* cpu_ops, void* cpu_state,
                     const char* const* argv) {
+    /* Create CPU state if not provided by coordinator */
+    int own_state = 0;
+    if (!cpu_state) {
+        cpu_state = cpu_ops->create_state();
+        if (!cpu_state) return -(int)ENOMEM;
+        cpu_ops->init(cpu_state, (uint8_t*)0, 0xFFFFFFFF);
+        own_state = 1;
+    }
+    (void)own_state;
+
     const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)file_buf;
     elf32_phdr_t segs[MAX_LOAD_SEGS];
     int nseg = elf_load_segments(ehdr, file_buf, segs, MAX_LOAD_SEGS, file_size);
@@ -284,4 +294,5 @@ const loader_t elf_loader = {
     .detect = elf_detect,
     .load = elf_load,
     .required_arch_id = 0,
+    .xip = 1,
 };

@@ -28,6 +28,11 @@ typedef struct loader {
     // The required CPU architecture for this loader.
     int required_arch_id;
 
+    // If true, the loader executes code directly from the file buffer (XIP).
+    // The coordinator must keep the buffer alive after a successful load.
+    // If false, the coordinator frees the file buffer after loading.
+    int xip;
+
 } loader_t;
 
 #endif /* PPAP_KERNEL_LOADER_H */

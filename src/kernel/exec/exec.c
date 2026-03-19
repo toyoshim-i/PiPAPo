@@ -21,9 +21,6 @@
 #ifdef PPAP_ENABLE_HUMAN68K
 #include "exec_x68k.h"
 #endif
-#ifdef PPAP_ENABLE_CPM
-#include "exec_cpm.h"
-#endif
 #ifdef PPAP_ENABLE_SOS
 #include "exec_sos.h"
 #endif
@@ -117,15 +114,6 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
         }
 #endif
 
-#ifdef PPAP_ENABLE_CPM
-        if (cpm_detect(path, file_buf, file_size)) {
-            int rc = exec_cpm(p, file_buf, file_size, path, argv);
-            for (uint32_t i = 0; i < file_pages; i++) page_free(file_buf + i * PAGE_SIZE);
-            vnode_put(vn);
-            return rc;
-        }
-#endif
-
 #ifdef PPAP_ENABLE_SOS
         if (sos_detect(path, file_buf, file_size)) {
             int rc = exec_sos(p, file_buf, file_size, path, argv);
@@ -159,13 +147,6 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
     }
 #endif
 
-#ifdef PPAP_ENABLE_CPM
-    if (cpm_detect(path, file_base, file_size)) {
-        vnode_put(vn);
-        return exec_cpm(p, file_base, file_size, path, argv);
-    }
-#endif
-
 #ifdef PPAP_ENABLE_SOS
     if (sos_detect(path, file_base, file_size)) {
         vnode_put(vn);
@@ -188,28 +169,40 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
 #endif
 
     extern const loader_t* loader_registry[];
-    int loaded = 0;
+    const loader_t *matched_loader = NULL;
     int rc = -(int)ENOEXEC;
 
     for (int i = 0; loader_registry[i] != NULL; i++) {
         if (loader_registry[i]->detect(file_base, file_size, path)) {
-            const cpu_ops_t *cpu_ops = &native_cpu_ops;
-            void *cpu_state = cpu_ops->create_state();
-            cpu_ops->init(cpu_state, (uint8_t*)0, 0xFFFFFFFF);
+            int arch = loader_registry[i]->required_arch_id;
+            const cpu_ops_t *cpu_ops;
+            if (arch == 0 || arch == HOST_ARCH_ID)
+                cpu_ops = &native_cpu_ops;
+            else
+                cpu_ops = cpu_ops_for_arch(arch);
+            if (!cpu_ops) {
+                rc = -(int)ENOEXEC;
+                break;
+            }
 
-            rc = loader_registry[i]->load(p, file_base, file_size, cpu_ops, cpu_state, argv);
+            rc = loader_registry[i]->load(p, file_base, file_size, cpu_ops, NULL, argv);
             if (rc == 0)
-                loaded = 1;
+                matched_loader = loader_registry[i];
             break;
         }
     }
 
-    if (!loaded) {
+    if (!matched_loader) {
         if (file_buf) {
             for (uint32_t i = 0; i < file_pages; i++) page_free(file_buf + i * PAGE_SIZE);
         }
         vnode_put(vn);
         return rc;
+    }
+
+    /* Free file buffer if the loader doesn't need it for XIP */
+    if (file_buf && !matched_loader->xip) {
+        for (uint32_t i = 0; i < file_pages; i++) page_free(file_buf + i * PAGE_SIZE);
     }
 
     {
