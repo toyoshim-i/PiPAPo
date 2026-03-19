@@ -390,6 +390,18 @@ static void test_r_register(void)
 
     /* 4 instructions fetched (3 NOP + HALT), R increments low 7 bits */
     assert((cpu.r & 0x7F) == 4);
+
+    /* R bit-7 preservation: set R=0x80, run 3 NOPs + HALT */
+    setup();
+    cpu.r = 0x80;
+    mem[0] = 0x00;  /* NOP */
+    mem[1] = 0x00;  /* NOP */
+    mem[2] = 0x00;  /* NOP */
+    mem[3] = 0x76;  /* HALT */
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    /* low 7 bits: (0x80 + 4) & 0x7F = 0x04; bit 7: 0x80 */
+    assert(cpu.r == 0x84);
+
     printf("  PASS: r_register\n");
 }
 
@@ -535,6 +547,24 @@ static void test_sub(void)
     assert(cpu.a == 0x7F);
     assert(cpu.f & FLAG_PV);
 
+    /* SUB half-carry set: 0x10 - 0x09 = 0x07, H=1 */
+    setup();
+    mem[0] = 0x3E; mem[1] = 0x10;
+    mem[2] = 0xD6; mem[3] = 0x09;
+    mem[4] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x07);
+    assert(cpu.f & FLAG_H);
+
+    /* SUB half-carry clear: 0x19 - 0x01 = 0x18, H=0 */
+    setup();
+    mem[0] = 0x3E; mem[1] = 0x19;
+    mem[2] = 0xD6; mem[3] = 0x01;
+    mem[4] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x18);
+    assert(!(cpu.f & FLAG_H));
+
     printf("  PASS: sub\n");
 }
 
@@ -561,6 +591,70 @@ static void test_adc_sbc(void)
     mem[8] = 0x76;
     ecpu_z80_ops.run((ecpu_state_t *)&cpu);
     assert(cpu.a == 0x40);
+
+    /* ADC overflow: 0x7F + 0x00 + C(1) = 0x80, PV=1, S=1 */
+    setup();
+    cpu.f = FLAG_C;
+    mem[0] = 0x3E; mem[1] = 0x7F;  /* LD A, 0x7F */
+    mem[2] = 0xCE; mem[3] = 0x00;  /* ADC A, 0x00 */
+    mem[4] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x80);
+    assert(cpu.f & FLAG_PV);
+    assert(cpu.f & FLAG_S);
+    assert(!(cpu.f & FLAG_C));
+
+    /* ADC half-carry: 0x0F + 0x00 + C(1) = 0x10, H=1 */
+    setup();
+    cpu.f = FLAG_C;
+    mem[0] = 0x3E; mem[1] = 0x0F;
+    mem[2] = 0xCE; mem[3] = 0x00;
+    mem[4] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x10);
+    assert(cpu.f & FLAG_H);
+
+    /* ADC carry+zero: 0xFF + 0x00 + C(1) = 0x00, Z=1, C=1, H=1 */
+    setup();
+    cpu.f = FLAG_C;
+    mem[0] = 0x3E; mem[1] = 0xFF;
+    mem[2] = 0xCE; mem[3] = 0x00;
+    mem[4] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x00);
+    assert(cpu.f & FLAG_Z);
+    assert(cpu.f & FLAG_C);
+    assert(cpu.f & FLAG_H);
+
+    /* SBC overflow: 0x80 - 0x01 - C(0) = 0x7F, PV=1 */
+    setup();
+    mem[0] = 0x3E; mem[1] = 0x80;
+    mem[2] = 0xDE; mem[3] = 0x01;  /* SBC A, 0x01 (C=0) */
+    mem[4] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x7F);
+    assert(cpu.f & FLAG_PV);
+
+    /* SBC zero: 0x01 - 0x00 - C(1) = 0x00, Z=1 */
+    setup();
+    cpu.f = FLAG_C;
+    mem[0] = 0x3E; mem[1] = 0x01;
+    mem[2] = 0xDE; mem[3] = 0x00;
+    mem[4] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x00);
+    assert(cpu.f & FLAG_Z);
+
+    /* SBC carry: 0x00 - 0x01 - C(0) = 0xFF, C=1, S=1, H=1 */
+    setup();
+    mem[0] = 0x3E; mem[1] = 0x00;
+    mem[2] = 0xDE; mem[3] = 0x01;
+    mem[4] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0xFF);
+    assert(cpu.f & FLAG_C);
+    assert(cpu.f & FLAG_S);
+    assert(cpu.f & FLAG_H);
 
     printf("  PASS: adc_sbc\n");
 }
@@ -600,6 +694,27 @@ static void test_logic(void)
     assert(cpu.a == 0x00);
     assert(cpu.f & FLAG_Z);
     assert(cpu.f & FLAG_PV);
+
+    /* AND producing zero: 0xF0 & 0x0F = 0x00, Z=1, PV=1, H=1 */
+    setup();
+    mem[0] = 0x3E; mem[1] = 0xF0;
+    mem[2] = 0xE6; mem[3] = 0x0F;  /* AND 0x0F */
+    mem[4] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x00);
+    assert(cpu.f & FLAG_Z);
+    assert(cpu.f & FLAG_PV);  /* even parity of 0 */
+    assert(cpu.f & FLAG_H);
+
+    /* XOR odd parity: 0x01 ^ 0x00 = 0x01, PV=0 */
+    setup();
+    mem[0] = 0x3E; mem[1] = 0x01;
+    mem[2] = 0xEE; mem[3] = 0x00;  /* XOR 0x00 */
+    mem[4] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x01);
+    assert(!(cpu.f & FLAG_PV));  /* odd parity */
+    assert(!(cpu.f & FLAG_Z));
 
     printf("  PASS: logic\n");
 }
@@ -799,6 +914,26 @@ static void test_add_hl(void)
     assert(cpu.f & FLAG_Z);
     assert(cpu.f & FLAG_PV);
 
+    /* ADD HL half-carry: 0x0FFF + 0x0001 = 0x1000, H=1 */
+    setup();
+    mem[0] = 0x21; mem[1] = 0xFF; mem[2] = 0x0F;  /* LD HL, 0x0FFF */
+    mem[3] = 0x01; mem[4] = 0x01; mem[5] = 0x00;  /* LD BC, 0x0001 */
+    mem[6] = 0x09;
+    mem[7] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(z80_hl(&cpu) == 0x1000);
+    assert(cpu.f & FLAG_H);
+
+    /* ADD HL no half-carry: 0x1000 + 0x0100 = 0x1100, H=0 */
+    setup();
+    mem[0] = 0x21; mem[1] = 0x00; mem[2] = 0x10;
+    mem[3] = 0x01; mem[4] = 0x00; mem[5] = 0x01;
+    mem[6] = 0x09;
+    mem[7] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(z80_hl(&cpu) == 0x1100);
+    assert(!(cpu.f & FLAG_H));
+
     printf("  PASS: add_hl\n");
 }
 
@@ -910,6 +1045,27 @@ static void test_daa(void)
     ecpu_z80_ops.run((ecpu_state_t *)&cpu);
     assert(cpu.a == 0x27);
 
+    /* BCD 0x90 + 0x90: ADD → 0x20 C=1, DAA → 0x80, C=1 */
+    setup();
+    mem[0] = 0x3E; mem[1] = 0x90;
+    mem[2] = 0xC6; mem[3] = 0x90;  /* ADD A, 0x90 → 0x20, C=1 */
+    mem[4] = 0x27;                  /* DAA */
+    mem[5] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x80);
+    assert(cpu.f & FLAG_C);
+
+    /* DAA after SUB with borrow: 0x00 - 0x01 → 0xFF, C=1 H=1 N=1
+     * DAA: correction=0x66 (both nibbles), A=0xFF-0x66=0x99, C=1 */
+    setup();
+    mem[0] = 0x3E; mem[1] = 0x00;
+    mem[2] = 0xD6; mem[3] = 0x01;  /* SUB 0x01 → 0xFF, C=1, H=1, N=1 */
+    mem[4] = 0x27;                  /* DAA → 0x99 */
+    mem[5] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x99);
+    assert(cpu.f & FLAG_C);
+
     printf("  PASS: daa\n");
 }
 
@@ -960,6 +1116,39 @@ static void test_scf_ccf(void)
     ecpu_z80_ops.run((ecpu_state_t *)&cpu);
     assert(cpu.f & FLAG_C);
     assert(!(cpu.f & FLAG_H));
+
+    /* SCF F3/F5: A=0x28, F=0 → F3/F5 from (A|F)&0x28 = 0x28 */
+    setup();
+    cpu.f = 0;
+    mem[0] = 0x3E; mem[1] = 0x28;  /* LD A, 0x28 */
+    mem[2] = 0x37;  /* SCF */
+    mem[3] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.f & FLAG_C);
+    assert(cpu.f & FLAG_F3);
+    assert(cpu.f & FLAG_F5);
+
+    /* SCF F3 from F: A=0x00, F=FLAG_Z|FLAG_F3 → (0x00|0x48)&0x28 = 0x08 */
+    setup();
+    cpu.f = FLAG_Z | FLAG_F3;
+    mem[0] = 0x37;  /* SCF */
+    mem[1] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.f & FLAG_C);
+    assert(cpu.f & FLAG_F3);
+    assert(!(cpu.f & FLAG_F5));
+
+    /* CCF F3/F5: A=0x20, F=FLAG_C → (0x20|0x01)&0x28 = 0x20 → F5=1, F3=0 */
+    setup();
+    cpu.f = FLAG_C;
+    mem[0] = 0x3E; mem[1] = 0x20;  /* LD A, 0x20 */
+    mem[2] = 0x3F;  /* CCF */
+    mem[3] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(!(cpu.f & FLAG_C));  /* complemented */
+    assert(cpu.f & FLAG_H);    /* old C → H */
+    assert(cpu.f & FLAG_F5);
+    assert(!(cpu.f & FLAG_F3));
 
     printf("  PASS: scf_ccf\n");
 }
@@ -1087,6 +1276,66 @@ static void test_jp_cc(void)
     mem[0x105] = 0x76;
     ecpu_z80_ops.run((ecpu_state_t *)&cpu);
     assert(cpu.a == 0xEE);
+
+    /* JP PO taken (E2): PV=0 → jump */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = 0;  /* PV=0 */
+    mem[0x100] = 0xE2; mem[0x101] = 0x00; mem[0x102] = 0x02;  /* JP PO, 0x200 */
+    mem[0x200] = 0x3E; mem[0x201] = 0x11;
+    mem[0x202] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x11);
+
+    /* JP PO not taken: PV=1 → falls through */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = FLAG_PV;
+    mem[0x100] = 0xE2; mem[0x101] = 0x00; mem[0x102] = 0x02;
+    mem[0x103] = 0x3E; mem[0x104] = 0x22;
+    mem[0x105] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x22);
+
+    /* JP PE taken (EA): PV=1 → jump */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = FLAG_PV;
+    mem[0x100] = 0xEA; mem[0x101] = 0x00; mem[0x102] = 0x02;
+    mem[0x200] = 0x3E; mem[0x201] = 0x33;
+    mem[0x202] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x33);
+
+    /* JP P taken (F2): S=0 → jump */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = 0;  /* S=0 */
+    mem[0x100] = 0xF2; mem[0x101] = 0x00; mem[0x102] = 0x02;
+    mem[0x200] = 0x3E; mem[0x201] = 0x44;
+    mem[0x202] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x44);
+
+    /* JP M taken (FA): S=1 → jump */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = FLAG_S;
+    mem[0x100] = 0xFA; mem[0x101] = 0x00; mem[0x102] = 0x02;
+    mem[0x200] = 0x3E; mem[0x201] = 0x55;
+    mem[0x202] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x55);
+
+    /* JP M not taken: S=0 → falls through */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = 0;
+    mem[0x100] = 0xFA; mem[0x101] = 0x00; mem[0x102] = 0x02;
+    mem[0x103] = 0x3E; mem[0x104] = 0x66;
+    mem[0x105] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x66);
 
     printf("  PASS: jp_cc\n");
 }
@@ -1377,6 +1626,18 @@ static void test_ret_cc(void)
     ecpu_z80_ops.run((ecpu_state_t *)&cpu);
     assert(cpu.a == 0xCC);
 
+    /* RET PO taken (E0): PV=0 → returns */
+    setup();
+    cpu.pc = 0x200;
+    cpu.sp = 0xFFFE;
+    cpu.f = 0;  /* PV=0 */
+    z80_push16(&cpu, 0x0105);
+    mem[0x200] = 0xE0;  /* RET PO */
+    mem[0x105] = 0x3E; mem[0x106] = 0xDD;
+    mem[0x107] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0xDD);
+
     printf("  PASS: ret_cc\n");
 }
 
@@ -1412,6 +1673,20 @@ static void test_call_cc(void)
     ecpu_z80_ops.run((ecpu_state_t *)&cpu);
     assert(cpu.a == 0x22);
     assert(cpu.sp == 0xFFFE);
+
+    /* CALL PE taken (EC): PV=1 → calls subroutine */
+    setup();
+    cpu.pc = 0x100;
+    cpu.sp = 0xFFFE;
+    cpu.f = FLAG_PV;
+    mem[0x100] = 0xEC;  /* CALL PE, 0x200 */
+    mem[0x101] = 0x00;
+    mem[0x102] = 0x02;
+    mem[0x200] = 0x3E; mem[0x201] = 0x33;
+    mem[0x202] = 0xC9;  /* RET */
+    mem[0x103] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x33);
 
     printf("  PASS: call_cc\n");
 }
@@ -1948,6 +2223,28 @@ static void test_cb_shifts(void)
     assert(cpu.a == 0x00);
     assert(cpu.f & FLAG_Z);
 
+    /* SRA positive: 0x40 → 0x20, C=0, S=0 (bit 7 stays 0) */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0x40;
+    mem[0x102] = 0xCB; mem[0x103] = 0x2F;  /* SRA A */
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x20);
+    assert(!(cpu.f & FLAG_C));
+    assert(!(cpu.f & FLAG_S));
+
+    /* SRA 0x01 → 0x00, C=1, Z=1 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0x01;
+    mem[0x102] = 0xCB; mem[0x103] = 0x2F;  /* SRA A */
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x00);
+    assert(cpu.f & FLAG_C);
+    assert(cpu.f & FLAG_Z);
+
     printf("  PASS: cb_shifts\n");
 }
 
@@ -2024,6 +2321,41 @@ static void test_cb_bit(void)
     ecpu_z80_ops.run((ecpu_state_t *)&cpu);
     assert(cpu.f & FLAG_Z);
     assert(cpu.f & FLAG_C);
+
+    /* BIT F3/F5 set: A=0x28 (bits 3,5 set), BIT 0,A → Z=0, F3=1, F5=1 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0x29;  /* LD A, 0x29 (bit0=1, bit3=1, bit5=1) */
+    mem[0x102] = 0xCB; mem[0x103] = 0x47;  /* BIT 0, A */
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(!(cpu.f & FLAG_Z));
+    assert(cpu.f & FLAG_F3);
+    assert(cpu.f & FLAG_F5);
+
+    /* BIT F3/F5 clear: A=0x01, BIT 0,A → F3=0, F5=0 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0x01;
+    mem[0x102] = 0xCB; mem[0x103] = 0x47;
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(!(cpu.f & FLAG_Z));
+    assert(!(cpu.f & FLAG_F3));
+    assert(!(cpu.f & FLAG_F5));
+
+    /* BIT (HL) F3/F5: (HL)=0x29, BIT 0,(HL) → F3=1, F5=1 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x8000] = 0x29;
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x80;  /* LD HL, 0x8000 */
+    mem[pc++] = 0xCB; mem[pc++] = 0x46;  /* BIT 0, (HL) */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(!(cpu.f & FLAG_Z));
+    assert(cpu.f & FLAG_F3);
+    assert(cpu.f & FLAG_F5);
 
     printf("  PASS: cb_bit\n");
 }
@@ -2196,6 +2528,26 @@ static void test_ed_neg(void)
     assert(cpu.a == 0x80);
     assert(cpu.f & FLAG_PV);
 
+    /* NEG H=1: A=0x01 → 0xFF, half-carry from low nibble */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0x01;
+    mem[0x102] = 0xED; mem[0x103] = 0x44;
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0xFF);
+    assert(cpu.f & FLAG_H);
+
+    /* NEG H=0: A=0x10 → 0xF0, no half-carry */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x100] = 0x3E; mem[0x101] = 0x10;
+    mem[0x102] = 0xED; mem[0x103] = 0x44;
+    mem[0x104] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0xF0);
+    assert(!(cpu.f & FLAG_H));
+
     printf("  PASS: ed_neg\n");
 }
 
@@ -2254,6 +2606,55 @@ static void test_ed_adc_sbc_hl(void)
     assert(z80_hl(&cpu) == 0x0000);
     assert(cpu.f & FLAG_C);
     assert(cpu.f & FLAG_Z);
+
+    /* ADC HL overflow: 0x7FFF + 0x0001 = 0x8000, PV=1, S=1 */
+    setup();
+    cpu.pc = 0x100;
+    pc = 0x100;
+    mem[pc++] = 0x21; mem[pc++] = 0xFF; mem[pc++] = 0x7F;  /* LD HL, 0x7FFF */
+    mem[pc++] = 0x01; mem[pc++] = 0x01; mem[pc++] = 0x00;  /* LD BC, 0x0001 */
+    mem[pc++] = 0xED; mem[pc++] = 0x4A;  /* ADC HL, BC */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(z80_hl(&cpu) == 0x8000);
+    assert(cpu.f & FLAG_PV);
+    assert(cpu.f & FLAG_S);
+
+    /* ADC HL half-carry: 0x0FFF + 0x0001 = 0x1000, H=1 */
+    setup();
+    cpu.pc = 0x100;
+    pc = 0x100;
+    mem[pc++] = 0x21; mem[pc++] = 0xFF; mem[pc++] = 0x0F;
+    mem[pc++] = 0x01; mem[pc++] = 0x01; mem[pc++] = 0x00;
+    mem[pc++] = 0xED; mem[pc++] = 0x4A;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(z80_hl(&cpu) == 0x1000);
+    assert(cpu.f & FLAG_H);
+
+    /* SBC HL overflow: 0x8000 - 0x0001 = 0x7FFF, PV=1 */
+    setup();
+    cpu.pc = 0x100;
+    pc = 0x100;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x80;  /* LD HL, 0x8000 */
+    mem[pc++] = 0x01; mem[pc++] = 0x01; mem[pc++] = 0x00;  /* LD BC, 0x0001 */
+    mem[pc++] = 0xED; mem[pc++] = 0x42;  /* SBC HL, BC */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(z80_hl(&cpu) == 0x7FFF);
+    assert(cpu.f & FLAG_PV);
+
+    /* SBC HL half-carry: 0x1000 - 0x0001 = 0x0FFF, H=1 */
+    setup();
+    cpu.pc = 0x100;
+    pc = 0x100;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x10;
+    mem[pc++] = 0x01; mem[pc++] = 0x01; mem[pc++] = 0x00;
+    mem[pc++] = 0xED; mem[pc++] = 0x42;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(z80_hl(&cpu) == 0x0FFF);
+    assert(cpu.f & FLAG_H);
 
     printf("  PASS: ed_adc_sbc_hl\n");
 }
@@ -2341,6 +2742,43 @@ static void test_ed_ld_i_r(void)
      * R = (0x55+2) & 0x7F | (0x55 & 0x80) = 0x57 | 0x00 = 0x57 */
     assert(cpu.a == 0x57);
 
+    /* LD A,I with I=0, IFF2=0: Z=1, PV=0, carry preserved */
+    setup();
+    cpu.pc = 0x100;
+    cpu.i = 0x00;
+    cpu.iff2 = 0;
+    cpu.f = FLAG_C;
+    mem[0x100] = 0xED; mem[0x101] = 0x57;  /* LD A, I */
+    mem[0x102] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x00);
+    assert(cpu.f & FLAG_Z);
+    assert(!(cpu.f & FLAG_PV));  /* IFF2=0 */
+    assert(cpu.f & FLAG_C);     /* preserved */
+
+    /* LD A,I with I=0x28: F3=1, F5=1 */
+    setup();
+    cpu.pc = 0x100;
+    cpu.i = 0x28;
+    cpu.iff2 = 1;
+    mem[0x100] = 0xED; mem[0x101] = 0x57;
+    mem[0x102] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x28);
+    assert(cpu.f & FLAG_F3);
+    assert(cpu.f & FLAG_F5);
+    assert(cpu.f & FLAG_PV);  /* IFF2=1 */
+
+    /* LD A,R with IFF2=1: PV=1 */
+    setup();
+    cpu.pc = 0x100;
+    cpu.r = 0x40;
+    cpu.iff2 = 1;
+    mem[0x100] = 0xED; mem[0x101] = 0x5F;  /* LD A, R */
+    mem[0x102] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.f & FLAG_PV);
+
     printf("  PASS: ed_ld_i_r\n");
 }
 
@@ -2401,6 +2839,60 @@ static void test_ed_rld_rrd(void)
     ecpu_z80_ops.run((ecpu_state_t *)&cpu);
     assert(cpu.a == 0x14);
     assert(mem[0x8000] == 0x23);
+
+    /* RLD zero result: A=0x00, (HL)=0x00 → A=0x00, Z=1, PV=1 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x8000] = 0x00;
+    pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0x00;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x80;
+    mem[pc++] = 0xED; mem[pc++] = 0x6F;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x00);
+    assert(cpu.f & FLAG_Z);
+    assert(cpu.f & FLAG_PV);  /* parity of 0 = even */
+
+    /* RLD sign: A=0x90, (HL)=0x80 → A=0x98, S=1 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x8000] = 0x80;
+    pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0x90;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x80;
+    mem[pc++] = 0xED; mem[pc++] = 0x6F;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x98);
+    assert(cpu.f & FLAG_S);
+
+    /* RLD preserves carry */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = FLAG_C;
+    mem[0x8000] = 0x12;
+    pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0x34;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x80;
+    mem[pc++] = 0xED; mem[pc++] = 0x6F;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.f & FLAG_C);
+
+    /* RRD zero result: A=0x00, (HL)=0x00 → A=0x00, Z=1, PV=1 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x8000] = 0x00;
+    pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0x00;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x80;
+    mem[pc++] = 0xED; mem[pc++] = 0x67;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x00);
+    assert(cpu.f & FLAG_Z);
+    assert(cpu.f & FLAG_PV);
 
     printf("  PASS: ed_rld_rrd\n");
 }
@@ -2586,6 +3078,327 @@ static void test_ed_retn_reti(void)
     printf("  PASS: ed_retn_reti\n");
 }
 
+/* ── Test: IN r,(C) — ED register I/O ────────────────────────────────────── */
+
+static void test_ed_in_r_c(void)
+{
+    /* IN A,(C): BC=0x0310, io_in_data=0x42 → A=0x42, flags from result */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = FLAG_C;  /* carry should be preserved */
+    io_in_count = 0;
+    io_in_data = 0x42;
+    ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&cpu, io_trap_handler, NULL);
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x01; mem[pc++] = 0x10; mem[pc++] = 0x03;  /* LD BC, 0x0310 */
+    mem[pc++] = 0xED; mem[pc++] = 0x78;  /* IN A,(C) */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x42);
+    assert(io_in_count == 1);
+    assert(io_in_addr == 0x0310);
+    assert(!(cpu.f & FLAG_Z));
+    assert(!(cpu.f & FLAG_S));
+    assert(!(cpu.f & FLAG_N));
+    assert(cpu.f & FLAG_C);  /* preserved */
+    assert(cpu.wz == 0x0311);
+
+    /* IN A,(C): zero → Z=1, PV=1 (even parity of 0) */
+    setup();
+    cpu.pc = 0x100;
+    io_in_count = 0;
+    io_in_data = 0x00;
+    ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&cpu, io_trap_handler, NULL);
+    pc = 0x100;
+    mem[pc++] = 0x01; mem[pc++] = 0x10; mem[pc++] = 0x03;
+    mem[pc++] = 0xED; mem[pc++] = 0x78;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x00);
+    assert(cpu.f & FLAG_Z);
+    assert(cpu.f & FLAG_PV);
+
+    /* IN A,(C): 0x80 → S=1 */
+    setup();
+    cpu.pc = 0x100;
+    io_in_count = 0;
+    io_in_data = 0x80;
+    ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&cpu, io_trap_handler, NULL);
+    pc = 0x100;
+    mem[pc++] = 0x01; mem[pc++] = 0x10; mem[pc++] = 0x03;
+    mem[pc++] = 0xED; mem[pc++] = 0x78;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x80);
+    assert(cpu.f & FLAG_S);
+
+    /* IN F,(C) (ED 70): flags-only, handler writes A as side-effect */
+    setup();
+    cpu.pc = 0x100;
+    cpu.f = FLAG_C;
+    io_in_count = 0;
+    io_in_data = 0x28;  /* bits 3,5 set */
+    ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&cpu, io_trap_handler, NULL);
+    pc = 0x100;
+    mem[pc++] = 0x01; mem[pc++] = 0x10; mem[pc++] = 0x03;
+    mem[pc++] = 0xED; mem[pc++] = 0x70;  /* IN F,(C) */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(io_in_count == 1);
+    assert(cpu.f & FLAG_F3);
+    assert(cpu.f & FLAG_F5);
+    assert(cpu.f & FLAG_C);  /* preserved */
+
+    printf("  PASS: ed_in_r_c\n");
+}
+
+/* ── Test: OUT (C),r — ED register output ────────────────────────────────── */
+
+static void test_ed_out_c_r(void)
+{
+    /* OUT (C),A (ED 79): A=0x42, BC=0x0310 */
+    setup();
+    cpu.pc = 0x100;
+    io_out_count = 0;
+    ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&cpu, io_trap_handler, NULL);
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0x42;  /* LD A, 0x42 */
+    mem[pc++] = 0x01; mem[pc++] = 0x10; mem[pc++] = 0x03;  /* LD BC, 0x0310 */
+    mem[pc++] = 0xED; mem[pc++] = 0x79;  /* OUT (C),A */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(io_out_count == 1);
+    assert(io_out_addr == 0x0310);
+    assert(cpu.wz == 0x0311);
+
+    /* OUT (C),0 (ED 71): undocumented — outputs 0 */
+    setup();
+    cpu.pc = 0x100;
+    io_out_count = 0;
+    ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&cpu, io_trap_handler, NULL);
+    pc = 0x100;
+    mem[pc++] = 0x01; mem[pc++] = 0x10; mem[pc++] = 0x03;  /* LD BC, 0x0310 */
+    mem[pc++] = 0xED; mem[pc++] = 0x71;  /* OUT (C),0 */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(io_out_count == 1);
+    assert(io_out_addr == 0x0310);
+
+    printf("  PASS: ed_out_c_r\n");
+}
+
+/* ── Test: Block I/O — INI/IND/INIR/INDR/OUTI/OUTD/OTIR/OTDR ───────────── */
+
+static void test_ed_block_io(void)
+{
+    /* INI (ED A2): B=3, C=0x10, HL=0x9000 → B=2, HL=0x9001 */
+    setup();
+    cpu.pc = 0x100;
+    io_in_count = 0;
+    ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&cpu, io_trap_handler, NULL);
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x06; mem[pc++] = 0x03;  /* LD B, 3 */
+    mem[pc++] = 0x0E; mem[pc++] = 0x10;  /* LD C, 0x10 */
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x90;  /* LD HL, 0x9000 */
+    mem[pc++] = 0xED; mem[pc++] = 0xA2;  /* INI */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.b == 2);
+    assert(z80_hl(&cpu) == 0x9001);
+    assert(io_in_count == 1);
+
+    /* IND (ED AA): B=3, C=0x10, HL=0x9003 → B=2, HL=0x9002 */
+    setup();
+    cpu.pc = 0x100;
+    io_in_count = 0;
+    ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&cpu, io_trap_handler, NULL);
+    pc = 0x100;
+    mem[pc++] = 0x06; mem[pc++] = 0x03;
+    mem[pc++] = 0x0E; mem[pc++] = 0x10;
+    mem[pc++] = 0x21; mem[pc++] = 0x03; mem[pc++] = 0x90;
+    mem[pc++] = 0xED; mem[pc++] = 0xAA;  /* IND */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.b == 2);
+    assert(z80_hl(&cpu) == 0x9002);
+    assert(io_in_count == 1);
+
+    /* INIR (ED B2): B=3 → repeats until B=0 */
+    setup();
+    cpu.pc = 0x100;
+    io_in_count = 0;
+    ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&cpu, io_trap_handler, NULL);
+    pc = 0x100;
+    mem[pc++] = 0x06; mem[pc++] = 0x03;
+    mem[pc++] = 0x0E; mem[pc++] = 0x10;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x90;
+    mem[pc++] = 0xED; mem[pc++] = 0xB2;  /* INIR */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.b == 0);
+    assert(z80_hl(&cpu) == 0x9003);
+    assert(io_in_count == 3);
+    assert(cpu.f & FLAG_Z);  /* B=0 from dec8 */
+
+    /* INDR (ED BA): B=2 → repeats until B=0 */
+    setup();
+    cpu.pc = 0x100;
+    io_in_count = 0;
+    ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&cpu, io_trap_handler, NULL);
+    pc = 0x100;
+    mem[pc++] = 0x06; mem[pc++] = 0x02;
+    mem[pc++] = 0x0E; mem[pc++] = 0x10;
+    mem[pc++] = 0x21; mem[pc++] = 0x02; mem[pc++] = 0x90;
+    mem[pc++] = 0xED; mem[pc++] = 0xBA;  /* INDR */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.b == 0);
+    assert(z80_hl(&cpu) == 0x9000);
+    assert(io_in_count == 2);
+
+    /* OUTI (ED A3): B=3, C=0x10, HL=0x8000 → B=2, HL=0x8001 */
+    setup();
+    cpu.pc = 0x100;
+    io_out_count = 0;
+    ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&cpu, io_trap_handler, NULL);
+    mem[0x8000] = 0xAA;
+    pc = 0x100;
+    mem[pc++] = 0x06; mem[pc++] = 0x03;
+    mem[pc++] = 0x0E; mem[pc++] = 0x10;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x80;
+    mem[pc++] = 0xED; mem[pc++] = 0xA3;  /* OUTI */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.b == 2);
+    assert(z80_hl(&cpu) == 0x8001);
+    assert(io_out_count == 1);
+
+    /* OUTD (ED AB): B=3, C=0x10, HL=0x8003 → B=2, HL=0x8002 */
+    setup();
+    cpu.pc = 0x100;
+    io_out_count = 0;
+    ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&cpu, io_trap_handler, NULL);
+    mem[0x8003] = 0xBB;
+    pc = 0x100;
+    mem[pc++] = 0x06; mem[pc++] = 0x03;
+    mem[pc++] = 0x0E; mem[pc++] = 0x10;
+    mem[pc++] = 0x21; mem[pc++] = 0x03; mem[pc++] = 0x80;
+    mem[pc++] = 0xED; mem[pc++] = 0xAB;  /* OUTD */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.b == 2);
+    assert(z80_hl(&cpu) == 0x8002);
+    assert(io_out_count == 1);
+
+    /* OTIR (ED B3): B=3 → repeats until B=0 */
+    setup();
+    cpu.pc = 0x100;
+    io_out_count = 0;
+    ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&cpu, io_trap_handler, NULL);
+    mem[0x8000] = 0x11; mem[0x8001] = 0x22; mem[0x8002] = 0x33;
+    pc = 0x100;
+    mem[pc++] = 0x06; mem[pc++] = 0x03;
+    mem[pc++] = 0x0E; mem[pc++] = 0x10;
+    mem[pc++] = 0x21; mem[pc++] = 0x00; mem[pc++] = 0x80;
+    mem[pc++] = 0xED; mem[pc++] = 0xB3;  /* OTIR */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.b == 0);
+    assert(z80_hl(&cpu) == 0x8003);
+    assert(io_out_count == 3);
+
+    /* OTDR (ED BB): B=3, HL=0x8003 → repeats backward until B=0 */
+    setup();
+    cpu.pc = 0x100;
+    io_out_count = 0;
+    ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&cpu, io_trap_handler, NULL);
+    mem[0x8001] = 0x44; mem[0x8002] = 0x55; mem[0x8003] = 0x66;
+    pc = 0x100;
+    mem[pc++] = 0x06; mem[pc++] = 0x03;
+    mem[pc++] = 0x0E; mem[pc++] = 0x10;
+    mem[pc++] = 0x21; mem[pc++] = 0x03; mem[pc++] = 0x80;
+    mem[pc++] = 0xED; mem[pc++] = 0xBB;  /* OTDR */
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.b == 0);
+    assert(z80_hl(&cpu) == 0x8000);
+    assert(io_out_count == 3);
+
+    printf("  PASS: ed_block_io\n");
+}
+
+/* ── Test: LDDR (reverse block copy with repeat) ─────────────────────────── */
+
+static void test_ed_lddr(void)
+{
+    setup();
+    cpu.pc = 0x100;
+    /* Source data at 0x8000..0x8003 */
+    mem[0x8000] = 0x11; mem[0x8001] = 0x22;
+    mem[0x8002] = 0x33; mem[0x8003] = 0x44;
+
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x21; mem[pc++] = 0x03; mem[pc++] = 0x80;  /* LD HL, 0x8003 */
+    mem[pc++] = 0x11; mem[pc++] = 0x03; mem[pc++] = 0x90;  /* LD DE, 0x9003 */
+    mem[pc++] = 0x01; mem[pc++] = 0x04; mem[pc++] = 0x00;  /* LD BC, 4 */
+    mem[pc++] = 0xED; mem[pc++] = 0xB8;  /* LDDR */
+    mem[pc++] = 0x76;
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(mem[0x9000] == 0x11);
+    assert(mem[0x9001] == 0x22);
+    assert(mem[0x9002] == 0x33);
+    assert(mem[0x9003] == 0x44);
+    assert(z80_bc(&cpu) == 0x0000);
+    assert(z80_hl(&cpu) == 0x7FFF);
+    assert(z80_de(&cpu) == 0x8FFF);
+    assert(!(cpu.f & FLAG_PV));  /* BC == 0 at end */
+
+    printf("  PASS: ed_lddr\n");
+}
+
+/* ── Test: CPDR (reverse block search with repeat) ───────────────────────── */
+
+static void test_ed_cpdr(void)
+{
+    /* CPDR found: search backward for 0x33 */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x8000] = 0x11; mem[0x8001] = 0x22;
+    mem[0x8002] = 0x33; mem[0x8003] = 0x44;
+
+    uint16_t pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0x33;  /* LD A, 0x33 */
+    mem[pc++] = 0x21; mem[pc++] = 0x03; mem[pc++] = 0x80;  /* LD HL, 0x8003 */
+    mem[pc++] = 0x01; mem[pc++] = 0x04; mem[pc++] = 0x00;  /* LD BC, 4 */
+    mem[pc++] = 0xED; mem[pc++] = 0xB9;  /* CPDR */
+    mem[pc++] = 0x76;
+
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.f & FLAG_Z);             /* found match */
+    assert(z80_hl(&cpu) == 0x8001);     /* HL past the match (backward) */
+    assert(z80_bc(&cpu) == 0x0002);     /* BC decremented 2 times */
+    assert(cpu.f & FLAG_PV);            /* BC != 0 */
+
+    /* CPDR not found */
+    setup();
+    cpu.pc = 0x100;
+    mem[0x8000] = 0x11; mem[0x8001] = 0x22;
+    mem[0x8002] = 0x33; mem[0x8003] = 0x44;
+    pc = 0x100;
+    mem[pc++] = 0x3E; mem[pc++] = 0xFF;
+    mem[pc++] = 0x21; mem[pc++] = 0x03; mem[pc++] = 0x80;
+    mem[pc++] = 0x01; mem[pc++] = 0x04; mem[pc++] = 0x00;
+    mem[pc++] = 0xED; mem[pc++] = 0xB9;
+    mem[pc++] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(!(cpu.f & FLAG_Z));
+    assert(z80_bc(&cpu) == 0x0000);
+    assert(!(cpu.f & FLAG_PV));
+
+    printf("  PASS: ed_cpdr\n");
+}
+
 /* ── Test: DD LD IX,nn ───────────────────────────────────────────────────── */
 
 static void test_dd_ld_ix_nn(void)
@@ -2626,6 +3439,16 @@ static void test_dd_ld_r_ixd(void)
     assert(cpu.b == 0x99);
     assert(mem[0x8003] == 0xAB);
     assert(mem[0x8000] == 0x77);
+
+    /* d=-128 (0x80): IX=0x8080, data at 0x8000 → A reads from 0x8000 */
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x8080;
+    mem[0x8000] = 0xBE;
+    mem[0x100] = 0xDD; mem[0x101] = 0x7E; mem[0x102] = 0x80;  /* LD A,(IX-128) */
+    mem[0x103] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0xBE);
 
     printf("  PASS: dd_ld_r_ixd\n");
 }
@@ -2672,6 +3495,44 @@ static void test_dd_alu_ixd(void)
     ecpu_z80_ops.run((ecpu_state_t *)&cpu);
     assert(cpu.f & FLAG_Z);
 
+    /* ADD overflow: A=0x7F + (IX+1)=0x01 → 0x80, PV=1, S=1 */
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x8000;
+    mem[0x8001] = 0x01;
+    mem[0x100] = 0x3E; mem[0x101] = 0x7F;  /* LD A, 0x7F */
+    mem[0x102] = 0xDD; mem[0x103] = 0x86; mem[0x104] = 0x01;  /* ADD A,(IX+1) */
+    mem[0x105] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x80);
+    assert(cpu.f & FLAG_PV);
+    assert(cpu.f & FLAG_S);
+
+    /* ADD carry+zero: A=0xFF + (IX+1)=0x01 → 0x00, C=1, Z=1 */
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x8000;
+    mem[0x8001] = 0x01;
+    mem[0x100] = 0x3E; mem[0x101] = 0xFF;  /* LD A, 0xFF */
+    mem[0x102] = 0xDD; mem[0x103] = 0x86; mem[0x104] = 0x01;  /* ADD A,(IX+1) */
+    mem[0x105] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x00);
+    assert(cpu.f & FLAG_C);
+    assert(cpu.f & FLAG_Z);
+
+    /* SUB half-carry: A=0x10 - (IX+1)=0x09 → 0x07, H=1 */
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x8000;
+    mem[0x8001] = 0x09;
+    mem[0x100] = 0x3E; mem[0x101] = 0x10;  /* LD A, 0x10 */
+    mem[0x102] = 0xDD; mem[0x103] = 0x96; mem[0x104] = 0x01;  /* SUB (IX+1) */
+    mem[0x105] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(cpu.a == 0x07);
+    assert(cpu.f & FLAG_H);
+
     printf("  PASS: dd_alu_ixd\n");
 }
 
@@ -2703,6 +3564,29 @@ static void test_dd_inc_dec_ixd(void)
     ecpu_z80_ops.run((ecpu_state_t *)&cpu);
     assert(mem[0x8003] == 0x00);
     assert(cpu.f & FLAG_Z);
+
+    /* INC overflow: (IX+2)=0x7F → 0x80, PV=1, S=1 */
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x8000;
+    mem[0x8002] = 0x7F;
+    mem[0x100] = 0xDD; mem[0x101] = 0x34; mem[0x102] = 0x02;  /* INC (IX+2) */
+    mem[0x103] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(mem[0x8002] == 0x80);
+    assert(cpu.f & FLAG_PV);
+    assert(cpu.f & FLAG_S);
+
+    /* DEC overflow: (IX+2)=0x80 → 0x7F, PV=1 */
+    setup();
+    cpu.pc = 0x100;
+    cpu.ix = 0x8000;
+    mem[0x8002] = 0x80;
+    mem[0x100] = 0xDD; mem[0x101] = 0x35; mem[0x102] = 0x02;  /* DEC (IX+2) */
+    mem[0x103] = 0x76;
+    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    assert(mem[0x8002] == 0x7F);
+    assert(cpu.f & FLAG_PV);
 
     printf("  PASS: dd_inc_dec_ixd\n");
 }
@@ -3072,6 +3956,11 @@ int main(void)
     test_ed_cpi_cpd();
     test_ed_cpir();
     test_ed_retn_reti();
+    test_ed_in_r_c();
+    test_ed_out_c_r();
+    test_ed_block_io();
+    test_ed_lddr();
+    test_ed_cpdr();
 
     /* Step 7 tests */
     test_dd_ld_ix_nn();

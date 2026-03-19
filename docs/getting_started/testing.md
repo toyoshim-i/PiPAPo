@@ -338,6 +338,21 @@ coverage is not exhaustive yet.
   ARM now has a dedicated binary (`test_pdb_arm_disas`) for disassembly smoke,
   but it is intentionally not in the default `runtests` list.
 
+- **Z80 emulator (ecpu-z80) unit tests cover all instruction groups with
+  good edge-case and boundary-value coverage (as of 2026-03-19).**
+  The ~150 host sub-tests in `test_ecpu_z80.c` verify every opcode prefix
+  (main/CB/ED/DD/FD), undocumented instructions (SLL, IXH/IXL, DD CB
+  store-to-register, IN F,(C), OUT (C),0), block I/O
+  (INI/IND/INIR/INDR/OUTI/OUTD/OTIR/OTDR), reverse block operations
+  (LDDR, CPDR), and flag boundary values (overflow, carry, half-carry,
+  zero, sign, parity, F3/F5) across all major instruction categories.
+  Remaining gap:
+  - **ZEXALL / ZEXDOC / CPUTEST integration.**
+    The design spec (§13.5) targets passing ZEXALL as the benchmark for
+    correctness. No automated runner for these reference test suites
+    exists yet. Running ZEXALL under the CP/M subsystem would be the
+    most effective single addition for comprehensive Z80 verification.
+
 #### Suggested follow-up tests
 
 1. Add `tests/user/test_ioctl.c` with basic tty/device `ioctl` happy/error
@@ -349,6 +364,8 @@ coverage is not exhaustive yet.
    (for example `_FILES`/`_NFILES` plus `_FILEDATE`).
 5. Add one CP/M `.COM` test focused on uncovered BDOS functions (for example
    search first/next and at least one random-record operation).
+6. Set up automated ZEXALL (or at minimum ZEXDOC) run under the CP/M
+   subsystem as a slow/extended test.
 
 ## Automated QEMU testing
 
