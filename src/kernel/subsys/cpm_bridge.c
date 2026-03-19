@@ -1283,13 +1283,13 @@ static int cpm_bdos_dispatch(z80_state_t *cpu, cpm_state_t *cpm)
     uint8_t fn = cpu->c;
     uint16_t de = z80_de(cpu);
     int result = 0;
-    int trap_rc = ECPU_TRAP_HANDLED;
+    int trap_rc = CPU_TRAP_HANDLED;
 
     cpm_trace_before(PPAP_TRACE_ABI_CPM_BDOS, fn, cpu);
 
     switch (fn) {
     case 0:
-        trap_rc = ECPU_TRAP_EXIT;
+        trap_rc = CPU_TRAP_EXIT;
         break;
     case 1:  result = cpm_console_input(cpu, cpm); break;
     case 2:  cpm_console_output(cpu, cpm); break;
@@ -1319,14 +1319,14 @@ static int cpm_bdos_dispatch(z80_state_t *cpu, cpm_state_t *cpm)
     case 26: cpm_set_dma_address(cpu, cpm); break;
     case 27:
         cpm_get_alloc_vector(cpu, cpm);
-        trap_rc = ECPU_TRAP_HANDLED;
+        trap_rc = CPU_TRAP_HANDLED;
         goto out;
     case 28: cpm_write_protect_disk(cpu, cpm); break;
     case 29: result = cpm_get_readonly_vector(cpu, cpm); break;
     case 30: result = cpm_set_file_attributes(cpu, cpm); break;
     case 31:
         cpm_get_dpb(cpu, cpm);
-        trap_rc = ECPU_TRAP_HANDLED;
+        trap_rc = CPU_TRAP_HANDLED;
         goto out;
     case 32: result = cpm_set_get_user_code(cpu, cpm); break;
     case 33: result = cpm_read_random(cpu, cpm, de); break;
@@ -1359,41 +1359,41 @@ static int cpm_bios_dispatch(z80_state_t *cpu, cpm_state_t *cpm,
     switch (bios_fn) {
     case 0:
     case 1:
-        trap_rc = ECPU_TRAP_EXIT;
+        trap_rc = CPU_TRAP_EXIT;
         break;
     case 2:
         cpu->a = cpm_char_ready() ? 0xFF : 0x00;
-        trap_rc = ECPU_TRAP_HANDLED;
+        trap_rc = CPU_TRAP_HANDLED;
         break;
     case 3:
         cpu->a = cpm_getchar();
-        trap_rc = ECPU_TRAP_HANDLED;
+        trap_rc = CPU_TRAP_HANDLED;
         break;
     case 4:
         cpm_putchar(cpu->c);
-        trap_rc = ECPU_TRAP_HANDLED;
+        trap_rc = CPU_TRAP_HANDLED;
         break;
     case 5:
         cpm_putchar(cpu->c);
-        trap_rc = ECPU_TRAP_HANDLED;
+        trap_rc = CPU_TRAP_HANDLED;
         break;
     case 6:
-        trap_rc = ECPU_TRAP_HANDLED;
+        trap_rc = CPU_TRAP_HANDLED;
         break;
     case 7:
         cpu->a = 0x1A;
-        trap_rc = ECPU_TRAP_HANDLED;
+        trap_rc = CPU_TRAP_HANDLED;
         break;
     case 15:
         cpu->a = 0xFF;
-        trap_rc = ECPU_TRAP_HANDLED;
+        trap_rc = CPU_TRAP_HANDLED;
         break;
     case 16:
         z80_set_hl(cpu, z80_bc(cpu));
-        trap_rc = ECPU_TRAP_HANDLED;
+        trap_rc = CPU_TRAP_HANDLED;
         break;
     default:
-        trap_rc = ECPU_TRAP_HANDLED;
+        trap_rc = CPU_TRAP_HANDLED;
         break;
     }
 
@@ -1403,13 +1403,13 @@ static int cpm_bios_dispatch(z80_state_t *cpu, cpm_state_t *cpm,
 
 /* ── Trap handler ──────────────────────────────────────────────────────── */
 
-int cpm_trap_handler(ecpu_state_t *state, int trap_type,
+int cpm_trap_handler(cpu_state_t *state, int trap_type,
                      uint32_t param, void *ctx)
 {
     z80_state_t *cpu = (z80_state_t *)state;
     cpm_state_t *cpm = (cpm_state_t *)ctx;
 
-    if (trap_type == ECPU_TRAP_RST) {
+    if (trap_type == CPU_TRAP_RST) {
         /*
          * RST 0 from the stub area at CPM_STUB_BASE.
          * Slot 0 = BDOS, slots 1–17 = BIOS functions.
@@ -1426,14 +1426,14 @@ int cpm_trap_handler(ecpu_state_t *state, int trap_type,
                 return cpm_bios_dispatch(cpu, cpm, slot - 1);
             }
             /* RST 0 not from stub area — exit */
-            return ECPU_TRAP_EXIT;
+            return CPU_TRAP_EXIT;
         }
     }
 
-    if (trap_type == ECPU_TRAP_HALT)
-        return ECPU_TRAP_EXIT;
+    if (trap_type == CPU_TRAP_HALT)
+        return CPU_TRAP_EXIT;
 
-    return ECPU_TRAP_UNHANDLED;
+    return CPU_TRAP_UNHANDLED;
 }
 
 /* ── Kernel-only: process entry point and subsystem ops ────────────────── */
@@ -1494,8 +1494,9 @@ void cpm_run_process(void)
                 continue;
             }
 
-            if (ecpu_z80_ops.step &&
-                ecpu_z80_ops.step((ecpu_state_t *)z80) != 0)
+            z80->step_budget = 1;
+            ecpu_z80_ops.run((cpu_state_t *)z80);
+            if (z80->step_trap_exit)
                 break;
             if (do_step_stop && p->tracer_pid != 0 && p->state == PROC_RUNNABLE)
                 trace_debug_stop(PPAP_TRACE_ABI_CPM_BDOS, z80->pc,
@@ -1505,7 +1506,7 @@ void cpm_run_process(void)
             continue;
         }
 
-        ecpu_z80_ops.run((ecpu_state_t *)z80);
+        ecpu_z80_ops.run((cpu_state_t *)z80);
         break;
     }
 

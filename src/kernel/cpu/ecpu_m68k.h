@@ -1,7 +1,7 @@
 /*
  * ecpu_m68k.h — Motorola 68000 emulator core state and register IDs
  *
- * Defines m68k_state_t (the concrete type behind ecpu_state_t for the m68k
+ * Defines m68k_state_t (the concrete type behind cpu_state_t for the m68k
  * core), register ID constants for the common interface, flag constants,
  * and inline helpers for memory access (big-endian).
  *
@@ -12,9 +12,9 @@
 #define PPAP_ECPU_M68K_H
 
 #include <stdint.h>
-#include "ecpu.h"
+#include "kernel/cpu/cpu.h"
 
-/* ── m68k register IDs (for ecpu_core_ops_t get_reg/set_reg) ────────────── */
+/* ── m68k register IDs (for cpu_ops_t get_reg/set_reg) ────────────── */
 #define M68K_REG_D0    0
 #define M68K_REG_D1    1
 #define M68K_REG_D2    2
@@ -96,7 +96,7 @@ typedef struct m68k_state {
     uint32_t mem_size;
 
     /* Trap hook */
-    ecpu_trap_handler_t trap_handler;
+    cpu_trap_handler_t trap_handler;
     void *trap_ctx;
 } m68k_state_t;
 
@@ -266,6 +266,6 @@ void m68k_write_ea(m68k_state_t *cpu, ea_result_t *ea, uint8_t size,
 
 /* ── Public API ─────────────────────────────────────────────────────────── */
 
-extern const ecpu_core_ops_t ecpu_m68k_ops;
+extern const cpu_ops_t ecpu_m68k_ops;
 
 #endif /* PPAP_ECPU_M68K_H */

@@ -16,19 +16,19 @@
 
 /* ── Trap handler ──────────────────────────────────────────────────────── */
 
-int ppap_m68k_trap_handler(ecpu_state_t *state, int trap_type,
+int ppap_m68k_trap_handler(cpu_state_t *state, int trap_type,
                             uint32_t param, void *ctx)
 {
     (void)ctx;
     m68k_state_t *cpu = (m68k_state_t *)state;
 
-    if (trap_type == ECPU_TRAP_SWI && param == 0) {
+    if (trap_type == CPU_TRAP_SWI && param == 0) {
         /* TRAP #0 = PPAP syscall */
         uint32_t nr = cpu->d[0];
 
         /* Fast path: exit */
         if (nr == SYS_EXIT || nr == SYS_EXIT_GROUP)
-            return ECPU_TRAP_EXIT;
+            return CPU_TRAP_EXIT;
 
 #ifdef PPAP_KERNEL
         /* Build argument frame for syscall_dispatch.
@@ -49,13 +49,13 @@ int ppap_m68k_trap_handler(ecpu_state_t *state, int trap_type,
         /* Return value is in frame[0] */
         cpu->d[0] = frame[0];
 #endif
-        return ECPU_TRAP_HANDLED;
+        return CPU_TRAP_HANDLED;
     }
 
-    if (trap_type == ECPU_TRAP_HALT)
-        return ECPU_TRAP_EXIT;
+    if (trap_type == CPU_TRAP_HALT)
+        return CPU_TRAP_EXIT;
 
-    return ECPU_TRAP_UNHANDLED;
+    return CPU_TRAP_UNHANDLED;
 }
 
 /* ── Kernel-only: process entry point and subsystem ops ────────────────── */
@@ -70,7 +70,7 @@ int ppap_m68k_trap_handler(ecpu_state_t *state, int trap_type,
  * ppap_m68k_run_process — kernel-mode entry for emulated m68k processes.
  *
  * The scheduler "returns" into this function after proc_setup_stack().
- * It runs the m68k emulator loop until SYS_EXIT causes ECPU_TRAP_EXIT,
+ * It runs the m68k emulator loop until SYS_EXIT causes CPU_TRAP_EXIT,
  * then exits the process with d1 as the exit status.
  */
 void ppap_m68k_run_process(void)
@@ -92,8 +92,10 @@ void ppap_m68k_run_process(void)
                 continue;
             }
 
-            if (ecpu_m68k_ops.step &&
-                ecpu_m68k_ops.step((ecpu_state_t *)m68k) != 0)
+            /* Single-step: set budget=1 and call run() */
+            m68k->step_budget = 1;
+            ecpu_m68k_ops.run((cpu_state_t *)m68k);
+            if (m68k->step_trap_exit)
                 break;
             if (do_step_stop && p->tracer_pid != 0 && p->state == PROC_RUNNABLE)
                 trace_debug_stop(PPAP_TRACE_ABI_PPAP, m68k->pc,
@@ -103,7 +105,7 @@ void ppap_m68k_run_process(void)
             continue;
         }
 
-        ecpu_m68k_ops.run((ecpu_state_t *)m68k);
+        ecpu_m68k_ops.run((cpu_state_t *)m68k);
         break;
     }
 

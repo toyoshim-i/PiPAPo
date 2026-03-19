@@ -11,7 +11,7 @@
 #include "kernel/mm/page.h"
 #include "kernel/subsys/subsys.h"
 #include "kernel/subsys/sos_bridge.h"
-#include "kernel/ecpu/ecpu_z80.h"
+#include "kernel/cpu/ecpu_z80.h"
 #include "kernel/signal/signal.h"
 #include "kernel/errno.h"
 #if defined(__m68k__)
@@ -205,10 +205,10 @@ int exec_sos(pcb_t *p, const uint8_t *file, uint32_t size,
 
     /* ── 4. Initialize Z80 emulator ────────────────────────────────────── */
     memset(state, 0, sizeof(*state));
-    ecpu_z80_ops.init((ecpu_state_t *)&state->z80, z80_mem, 65536);
+    ecpu_z80_ops.init((cpu_state_t *)&state->z80, z80_mem, 65536);
 
     /* Set up trap handler — only RST 0 and RST 18h are intercepted */
-    ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&state->z80,
+    ecpu_z80_ops.set_trap_handler((cpu_state_t *)&state->z80,
                                    sos_trap_handler, &state->sos);
 
     /* ── 5. Zero memory and set up S-OS memory map ─────────────────────── */

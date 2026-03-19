@@ -14,7 +14,7 @@
 #include "kernel/mm/page.h"
 #include "kernel/subsys/subsys.h"
 #include "kernel/subsys/ppap_m68k_bridge.h"
-#include "kernel/ecpu/ecpu_m68k.h"
+#include "kernel/cpu/ecpu_m68k.h"
 #include "kernel/signal/signal.h"
 #include "kernel/endian.h"
 #include "kernel/errno.h"
@@ -101,10 +101,10 @@ int exec_m68k_emu(pcb_t *p, const uint8_t *file_base, uint32_t file_size,
 
     /* ── 3. Initialize m68k emulator ───────────────────────────────────── */
     memset(state, 0, sizeof(*state));
-    ecpu_m68k_ops.init((ecpu_state_t *)&state->m68k, emu_mem, M68K_EMU_MEM_SIZE);
+    ecpu_m68k_ops.init((cpu_state_t *)&state->m68k, emu_mem, M68K_EMU_MEM_SIZE);
 
     /* Set trap handler for PPAP syscall interception */
-    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&state->m68k,
+    ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&state->m68k,
                                     ppap_m68k_trap_handler, NULL);
 
     /* ── 4. Load PT_LOAD segments into emulated memory ─────────────────── */

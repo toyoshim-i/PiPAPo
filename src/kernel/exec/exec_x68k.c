@@ -18,7 +18,7 @@
 #include <string.h>
 #if !defined(__m68k__)
 #include "kernel/subsys/h68k_util.h"
-#include "kernel/ecpu/ecpu_m68k.h"
+#include "kernel/cpu/ecpu_m68k.h"
 #include "kernel/syscall/syscall.h"
 #include "common/fcntl.h"
 #endif
@@ -163,13 +163,13 @@ static uint32_t h68k_emu_malloc_avail(const h68k_emu_exec_state_t *st)
     return end - st->heap_next - H68K_MMB_HEADER_SIZE;
 }
 
-static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
+static int h68k_emu_trap_handler(cpu_state_t *state, int trap_type,
                                  uint32_t param, void *ctx)
 {
     m68k_state_t *cpu = (m68k_state_t *)state;
     h68k_emu_exec_state_t *st = (h68k_emu_exec_state_t *)ctx;
 
-    if (trap_type == ECPU_TRAP_ILLEGAL) {
+    if (trap_type == CPU_TRAP_ILLEGAL) {
         uint16_t opcode = (uint16_t)param;
         if ((opcode & 0xFF00u) == 0xFF00u) {
             uint8_t func = (uint8_t)(opcode & 0xFFu);
@@ -181,7 +181,7 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
             case 0x4C: { /* _EXIT2 */
                 uint16_t code = h68k_emu_ustack_u16(cpu, 0);
                 st->exit_code = (int16_t)code;
-                return ECPU_TRAP_EXIT;
+                return CPU_TRAP_EXIT;
             }
 
             case 0x4A: { /* _SETBLOCK */
@@ -190,7 +190,7 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                 uint32_t expected = cpu->a[0] + H68K_MMB_HEADER_SIZE;
                 if (block_addr != expected) {
                     cpu->d[0] = (uint32_t)(int32_t)-7;
-                    return ECPU_TRAP_HANDLED;
+                    return CPU_TRAP_HANDLED;
                 }
                 uint32_t total_new = H68K_MMB_HEADER_SIZE + new_size;
                 if (total_new > cpu->mem_size) {
@@ -198,7 +198,7 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                                    ? ((cpu->mem_size - H68K_MMB_HEADER_SIZE) &
                                       0x00FFFFFFu) : 0;
                     cpu->d[0] = 0x81000000u | avail;
-                    return ECPU_TRAP_HANDLED;
+                    return CPU_TRAP_HANDLED;
                 }
                 st->block_end = total_new;
                 if (st->heap_next > st->block_end)
@@ -207,14 +207,14 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                 m68k_write32(cpu, cpu->a[0] + 0x38u, st->block_end);
                 cpu->a[1] = st->block_end;
                 cpu->d[0] = 0;
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x48: { /* _MALLOC */
                 uint32_t req = h68k_emu_ustack_u32(cpu, 0);
                 if (req >= 0x01000000u) {
                     cpu->d[0] = h68k_emu_malloc_avail(st);
-                    return ECPU_TRAP_HANDLED;
+                    return CPU_TRAP_HANDLED;
                 }
 
                 uint32_t slot = H68K_EMU_MALLOC_MAX;
@@ -226,7 +226,7 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                 }
                 if (slot == H68K_EMU_MALLOC_MAX) {
                     cpu->d[0] = 0x82000000u;
-                    return ECPU_TRAP_HANDLED;
+                    return CPU_TRAP_HANDLED;
                 }
 
                 uint32_t total = H68K_MMB_HEADER_SIZE + req;
@@ -234,7 +234,7 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                 if (base + total > st->block_end) {
                     cpu->d[0] = 0x81000000u |
                                 (h68k_emu_malloc_avail(st) & 0x00FFFFFFu);
-                    return ECPU_TRAP_HANDLED;
+                    return CPU_TRAP_HANDLED;
                 }
 
                 st->mallocs[slot].base = base;
@@ -247,7 +247,7 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                 m68k_write32(cpu, base + 0x0Cu, 0);
 
                 cpu->d[0] = base + H68K_MMB_HEADER_SIZE;
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x49: { /* _MFREE */
@@ -258,18 +258,18 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                         st->mallocs[i].base = 0;
                         st->mallocs[i].nbytes = 0;
                         cpu->d[0] = 0;
-                        return ECPU_TRAP_HANDLED;
+                        return CPU_TRAP_HANDLED;
                     }
                 }
                 cpu->d[0] = (uint32_t)(int32_t)-7;
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x01: { /* _GETCHAR (echo) */
                 uint8_t ch = h68k_emu_getc();
                 h68k_emu_putc(ch);
                 cpu->d[0] = (uint32_t)ch;
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x02: /* _PUTCHAR */
@@ -277,20 +277,20 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                 uint8_t ch = (uint8_t)h68k_emu_ustack_u16(cpu, 0);
                 h68k_emu_putc(ch);
                 cpu->d[0] = (uint32_t)ch;
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x03: { /* _COMINP (raw read) */
                 uint8_t ch = h68k_emu_getc();
                 cpu->d[0] = (uint32_t)ch;
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x05: { /* _MOVE */
                 uint8_t ch = (uint8_t)h68k_emu_ustack_u16(cpu, 0);
                 h68k_emu_putc(ch);
                 cpu->d[0] = 0;
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x08: { /* _INPOUT */
@@ -301,13 +301,13 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                     h68k_emu_putc((uint8_t)code);
                     cpu->d[0] = (uint32_t)code;
                 }
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x09: { /* _PRINT */
                 uint32_t str_addr = h68k_emu_ustack_u32(cpu, 0);
                 cpu->d[0] = (uint32_t)h68k_emu_print(cpu, str_addr);
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x0C: { /* _KFLUSH */
@@ -330,7 +330,7 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                     cpu->d[0] = 0;
                     break;
                 }
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x10: { /* _CONCTRL */
@@ -353,48 +353,48 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                     cpu->d[0] = 0;
                     break;
                 }
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x19: /* _CURDRV */
                 cpu->d[0] = 0;
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
 
             case 0x1A: /* _ALLCLOSE */
                 for (int fd = 3; fd < 16; fd++)
                     sys_close(fd);
                 cpu->d[0] = 0;
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
 
             case 0x20: { /* _SUPER */
                 uint32_t ssp = h68k_emu_ustack_u32(cpu, 0);
                 cpu->d[0] = (ssp == 0) ? cpu->a[7] : 0;
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x24: /* _FFLUSH */
                 cpu->d[0] = 0;
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
 
             case 0x30: /* _VERNUM */
                 cpu->d[0] = 0x36380302u;
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
 
             case 0x2A: /* _GETDATE (2026-01-01 Thu) */
                 cpu->d[0] = 0x00045C21u;
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
 
             case 0x2C: /* _GETTIME */
                 cpu->d[0] = 0;
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
 
             case 0x33: /* _BREAKCK */
                 cpu->d[0] = 1;
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
 
             case 0x35: /* _INTVCG */
                 cpu->d[0] = 0;
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
 
             case 0x39: { /* _MKDIR */
                 char path[128];
@@ -402,10 +402,10 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                                               path, sizeof(path));
                 if (err < 0) {
                     cpu->d[0] = (uint32_t)h68k_errno(err);
-                    return ECPU_TRAP_HANDLED;
+                    return CPU_TRAP_HANDLED;
                 }
                 cpu->d[0] = (uint32_t)h68k_errno(sys_mkdir(path, 0755));
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x3A: { /* _RMDIR */
@@ -414,10 +414,10 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                                               path, sizeof(path));
                 if (err < 0) {
                     cpu->d[0] = (uint32_t)h68k_errno(err);
-                    return ECPU_TRAP_HANDLED;
+                    return CPU_TRAP_HANDLED;
                 }
                 cpu->d[0] = (uint32_t)h68k_errno(sys_rmdir(path));
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x3B: { /* _CHDIR */
@@ -426,10 +426,10 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                                               path, sizeof(path));
                 if (err < 0) {
                     cpu->d[0] = (uint32_t)h68k_errno(err);
-                    return ECPU_TRAP_HANDLED;
+                    return CPU_TRAP_HANDLED;
                 }
                 cpu->d[0] = (uint32_t)h68k_errno(sys_chdir(path));
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x3C: { /* _CREATE */
@@ -438,11 +438,11 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                                               path, sizeof(path));
                 if (err < 0) {
                     cpu->d[0] = (uint32_t)h68k_errno(err);
-                    return ECPU_TRAP_HANDLED;
+                    return CPU_TRAP_HANDLED;
                 }
                 cpu->d[0] = (uint32_t)h68k_errno(
                     sys_open(path, O_CREAT | O_TRUNC | O_WRONLY, 0644));
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x3D: { /* _OPEN */
@@ -451,7 +451,7 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                                               path, sizeof(path));
                 if (err < 0) {
                     cpu->d[0] = (uint32_t)h68k_errno(err);
-                    return ECPU_TRAP_HANDLED;
+                    return CPU_TRAP_HANDLED;
                 }
                 int flags;
                 switch (h68k_emu_ustack_u16(cpu, 4) & 0x0Fu) {
@@ -460,13 +460,13 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                 default: flags = O_RDWR; break;
                 }
                 cpu->d[0] = (uint32_t)h68k_errno(sys_open(path, flags, 0644));
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x3E: { /* _CLOSE */
                 int fd = (int)(int16_t)h68k_emu_ustack_u16(cpu, 0);
                 cpu->d[0] = (uint32_t)h68k_errno(sys_close(fd));
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x3F: { /* _READ */
@@ -475,7 +475,7 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                 uint32_t len = h68k_emu_ustack_u32(cpu, 6);
                 cpu->d[0] = (uint32_t)h68k_errno(
                     h68k_emu_read_fd_to_guest(cpu, fd, buf, len));
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x40: { /* _WRITE */
@@ -484,7 +484,7 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                 uint32_t len = h68k_emu_ustack_u32(cpu, 6);
                 cpu->d[0] = (uint32_t)h68k_errno(
                     h68k_emu_write_guest_to_fd(cpu, fd, buf, len));
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x41: { /* _DELETE */
@@ -493,10 +493,10 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                                               path, sizeof(path));
                 if (err < 0) {
                     cpu->d[0] = (uint32_t)h68k_errno(err);
-                    return ECPU_TRAP_HANDLED;
+                    return CPU_TRAP_HANDLED;
                 }
                 cpu->d[0] = (uint32_t)h68k_errno(sys_unlink(path));
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x42: { /* _SEEK */
@@ -504,7 +504,7 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                 int32_t off = (int32_t)h68k_emu_ustack_u32(cpu, 2);
                 uint16_t whence = h68k_emu_ustack_u16(cpu, 6);
                 cpu->d[0] = (uint32_t)h68k_errno(sys_lseek(fd, off, whence));
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x44: { /* _IOCTRL */
@@ -514,7 +514,7 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                     cpu->d[0] = 0x80C1u;
                 else
                     cpu->d[0] = 0;
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x47: { /* _CURDIR */
@@ -523,7 +523,7 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                 long r = sys_getcwd(cwd, sizeof(cwd));
                 if (r < 0) {
                     cpu->d[0] = (uint32_t)h68k_errno(r);
-                    return ECPU_TRAP_HANDLED;
+                    return CPU_TRAP_HANDLED;
                 }
                 const char *p = cwd;
                 if (*p == '/')
@@ -536,12 +536,12 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                 }
                 m68k_write8(cpu, buf + i, 0);
                 cpu->d[0] = 0;
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             case 0x51: /* _GETPDB */
                 cpu->d[0] = cpu->a[0] ? cpu->a[0] : (cpu->a[0] + H68K_MMB_HEADER_SIZE);
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
 
             case 0x56: { /* _RENAME */
                 char old_path[128], new_path[128];
@@ -549,33 +549,33 @@ static int h68k_emu_trap_handler(ecpu_state_t *state, int trap_type,
                                               old_path, sizeof(old_path));
                 if (err < 0) {
                     cpu->d[0] = (uint32_t)h68k_errno(err);
-                    return ECPU_TRAP_HANDLED;
+                    return CPU_TRAP_HANDLED;
                 }
                 err = h68k_emu_guest_path(cpu, h68k_emu_ustack_u32(cpu, 4),
                                           new_path, sizeof(new_path));
                 if (err < 0) {
                     cpu->d[0] = (uint32_t)h68k_errno(err);
-                    return ECPU_TRAP_HANDLED;
+                    return CPU_TRAP_HANDLED;
                 }
                 cpu->d[0] = (uint32_t)h68k_errno(sys_rename(old_path, new_path));
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
 
             default:
                 cpu->d[0] = (uint32_t)h68k_errno(-(int32_t)ENOSYS);
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
         }
         st->exit_code = 132;
-        return ECPU_TRAP_EXIT;
+        return CPU_TRAP_EXIT;
     }
 
-    if (trap_type == ECPU_TRAP_HALT) {
+    if (trap_type == CPU_TRAP_HALT) {
         st->exit_code = 0;
-        return ECPU_TRAP_EXIT;
+        return CPU_TRAP_EXIT;
     }
 
-    return ECPU_TRAP_UNHANDLED;
+    return CPU_TRAP_UNHANDLED;
 }
 
 static void h68k_emu_run_process(void)
@@ -583,7 +583,7 @@ static void h68k_emu_run_process(void)
     pcb_t *p = current;
     h68k_emu_exec_state_t *st = (h68k_emu_exec_state_t *)p->subsys_data;
     st->exit_code = 0;
-    ecpu_m68k_ops.run((ecpu_state_t *)&st->m68k);
+    ecpu_m68k_ops.run((cpu_state_t *)&st->m68k);
     sys_exit((long)st->exit_code);
 }
 #endif
@@ -773,8 +773,8 @@ int exec_x68k(pcb_t *p, const uint8_t *file, uint32_t size,
     emu_mem = mem_base;
     st = (h68k_emu_exec_state_t *)(mem_base + emu_mem_pages * PAGE_SIZE);
     memset(st, 0, sizeof(*st));
-    ecpu_m68k_ops.init((ecpu_state_t *)&st->m68k, emu_mem, emu_mem_size);
-    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&st->m68k,
+    ecpu_m68k_ops.init((cpu_state_t *)&st->m68k, emu_mem, emu_mem_size);
+    ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&st->m68k,
                                    h68k_emu_trap_handler, st);
 
     /* PMB + text/data/bss at guest addresses 0x0000.. */
@@ -1105,8 +1105,8 @@ int exec_r68k(pcb_t *p, const uint8_t *file, uint32_t size,
         p->user_pages[i] = mem_base + i * PAGE_SIZE;
 
     memset(st, 0, sizeof(*st));
-    ecpu_m68k_ops.init((ecpu_state_t *)&st->m68k, emu_mem, emu_mem_size);
-    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&st->m68k,
+    ecpu_m68k_ops.init((cpu_state_t *)&st->m68k, emu_mem, emu_mem_size);
+    ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&st->m68k,
                                    h68k_emu_trap_handler, st);
 
     memset(emu_mem, 0, emu_mem_size);

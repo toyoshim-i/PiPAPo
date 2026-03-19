@@ -8,9 +8,13 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-#include "kernel/ecpu/ecpu.h"
-#include "kernel/ecpu/ecpu_z80.h"
+#include "kernel/cpu/cpu.h"
+#include "kernel/cpu/ecpu_z80.h"
 #include "zexall_com.h"
+
+/* ── Stubs for page allocator (not linked in host tests) ────────────────── */
+void *page_alloc(void) { return NULL; }
+void  page_free(void *p) { (void)p; }
 
 /* ── CP/M memory map constants ──────────────────────────────────────────── */
 #define CPM_TPA_BASE    0x0100
@@ -34,22 +38,22 @@ static void emit_char(char ch)
 
 /* ── BDOS trap handler ──────────────────────────────────────────────────── */
 
-static int bdos_trap_handler(ecpu_state_t *state, int trap_type,
+static int bdos_trap_handler(cpu_state_t *state, int trap_type,
                              uint32_t param, void *ctx)
 {
     (void)ctx;
     z80_state_t *cpu = (z80_state_t *)state;
 
-    if (trap_type == ECPU_TRAP_RST && param == 0x0000) {
+    if (trap_type == CPU_TRAP_RST && param == 0x0000) {
         uint16_t rst_addr = cpu->pc - 1;
         if (rst_addr == CPM_STUB_BASE) {
             uint8_t fn = cpu->c;
             switch (fn) {
             case 0:
-                return ECPU_TRAP_EXIT;
+                return CPU_TRAP_EXIT;
             case 2:
                 emit_char(cpu->e);
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             case 9: {
                 uint16_t addr = z80_de(cpu);
                 for (;;) {
@@ -59,21 +63,21 @@ static int bdos_trap_handler(ecpu_state_t *state, int trap_type,
                     emit_char(ch);
                     addr++;
                 }
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
             default:
-                return ECPU_TRAP_HANDLED;
+                return CPU_TRAP_HANDLED;
             }
         }
         if (rst_addr > CPM_STUB_BASE &&
             rst_addr < CPM_STUB_BASE + (1 + CPM_BIOS_FN_COUNT) * 2)
-            return ECPU_TRAP_HANDLED;
+            return CPU_TRAP_HANDLED;
     }
 
-    if (trap_type == ECPU_TRAP_HALT)
-        return ECPU_TRAP_EXIT;
+    if (trap_type == CPU_TRAP_HALT)
+        return CPU_TRAP_EXIT;
 
-    return ECPU_TRAP_UNHANDLED;
+    return CPU_TRAP_UNHANDLED;
 }
 
 /* ── CP/M memory setup ──────────────────────────────────────────────────── */
@@ -118,18 +122,18 @@ int main(void)
 
     memset(mem, 0, sizeof(mem));
     memset(&cpu, 0, sizeof(cpu));
-    ecpu_z80_ops.init((ecpu_state_t *)&cpu, mem, sizeof(mem));
+    ecpu_z80_ops.init((cpu_state_t *)&cpu, mem, sizeof(mem));
     setup_cpm_memory(mem);
 
     cpu.pc = CPM_TPA_BASE;
     cpu.sp = CPM_STUB_BASE;
 
-    ecpu_z80_ops.set_trap_handler((ecpu_state_t *)&cpu,
+    ecpu_z80_ops.set_trap_handler((cpu_state_t *)&cpu,
                                   bdos_trap_handler, NULL);
 
     output_len = 0;
     output[0] = '\0';
-    ecpu_z80_ops.run((ecpu_state_t *)&cpu);
+    ecpu_z80_ops.run((cpu_state_t *)&cpu);
     output[output_len] = '\0';
 
     if (output_len > 0 && output[output_len - 1] != '\n')

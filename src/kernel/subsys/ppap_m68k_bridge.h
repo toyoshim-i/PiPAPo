@@ -15,8 +15,8 @@
 #ifndef PPAP_SUBSYS_PPAP_M68K_BRIDGE_H
 #define PPAP_SUBSYS_PPAP_M68K_BRIDGE_H
 
-#include "kernel/ecpu/ecpu.h"
-#include "kernel/ecpu/ecpu_m68k.h"
+#include "kernel/cpu/cpu.h"
+#include "kernel/cpu/ecpu_m68k.h"
 #include "subsys.h"
 
 /* ── Per-process eCPU-m68k execution state ─────────────────────────────── */
@@ -30,15 +30,15 @@ typedef struct {
 /*
  * ppap_m68k_trap_handler — intercept TRAP #0 for PPAP syscalls.
  *
- * On ECPU_TRAP_SWI with param == 0:
+ * On CPU_TRAP_SWI with param == 0:
  *   Reads d0 = syscall number, d1–d5 = args, a0 = arg6.
- *   For SYS_EXIT/SYS_EXIT_GROUP: returns ECPU_TRAP_EXIT.
+ *   For SYS_EXIT/SYS_EXIT_GROUP: returns CPU_TRAP_EXIT.
  *   Otherwise: dispatches to syscall_dispatch() and writes result to d0.
  *
- * On ECPU_TRAP_HALT: returns ECPU_TRAP_EXIT.
- * All others: ECPU_TRAP_UNHANDLED.
+ * On CPU_TRAP_HALT: returns CPU_TRAP_EXIT.
+ * All others: CPU_TRAP_UNHANDLED.
  */
-int ppap_m68k_trap_handler(ecpu_state_t *cpu, int trap_type,
+int ppap_m68k_trap_handler(cpu_state_t *cpu, int trap_type,
                             uint32_t param, void *ctx);
 
 #ifdef PPAP_KERNEL

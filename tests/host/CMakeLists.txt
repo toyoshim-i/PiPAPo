@@ -38,8 +38,8 @@ add_test(NAME h68k_path COMMAND test_h68k_path)
 # ── test_ecpu_z80 ─────────────────────────────────────────────────────────
 # Z80 eCPU core — pure C interpreter, no hardware dependencies.
 add_executable(test_ecpu_z80
-    ${SRC}/kernel/ecpu/ecpu_z80.c
-    ${SRC}/kernel/ecpu/ecpu_z80_alu.c
+    ${SRC}/kernel/cpu/ecpu_z80.c
+    ${SRC}/kernel/cpu/ecpu_z80_alu.c
     test_ecpu_z80.c
 )
 target_include_directories(test_ecpu_z80 PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
@@ -48,8 +48,8 @@ add_test(NAME ecpu_z80 COMMAND test_ecpu_z80)
 # ── test_ecpu_m68k ────────────────────────────────────────────────────────
 # m68k eCPU core — pure C interpreter, no hardware dependencies.
 add_executable(test_ecpu_m68k
-    ${SRC}/kernel/ecpu/ecpu_m68k.c
-    ${SRC}/kernel/ecpu/ecpu_m68k_alu.c
+    ${SRC}/kernel/cpu/ecpu_m68k.c
+    ${SRC}/kernel/cpu/ecpu_m68k_alu.c
     test_ecpu_m68k.c
 )
 target_include_directories(test_ecpu_m68k PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
@@ -70,8 +70,8 @@ add_custom_command(
     COMMENT "Generating zexdoc_com.h from zexdoc.com"
 )
 add_executable(test_zexdoc
-    ${SRC}/kernel/ecpu/ecpu_z80.c
-    ${SRC}/kernel/ecpu/ecpu_z80_alu.c
+    ${SRC}/kernel/cpu/ecpu_z80.c
+    ${SRC}/kernel/cpu/ecpu_z80_alu.c
     test_zexdoc.c
     ${CMAKE_CURRENT_BINARY_DIR}/zexdoc_com.h
 )
@@ -94,8 +94,8 @@ add_custom_command(
     COMMENT "Generating zexall_com.h from zexall.com"
 )
 add_executable(test_zexall
-    ${SRC}/kernel/ecpu/ecpu_z80.c
-    ${SRC}/kernel/ecpu/ecpu_z80_alu.c
+    ${SRC}/kernel/cpu/ecpu_z80.c
+    ${SRC}/kernel/cpu/ecpu_z80_alu.c
     test_zexall.c
     ${CMAKE_CURRENT_BINARY_DIR}/zexall_com.h
 )

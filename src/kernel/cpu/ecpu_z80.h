@@ -12,7 +12,7 @@
 #define PPAP_ECPU_Z80_H
 
 #include <stdint.h>
-#include "ecpu.h"
+#include "kernel/cpu/cpu.h"
 
 /* ── Z80 register IDs (for ecpu_core_ops_t get_reg/set_reg) ─────────────── */
 #define Z80_REG_A    0
@@ -89,7 +89,7 @@ typedef struct z80_state {
     uint32_t mem_size;        /* always 65536 for Z80 */
 
     /* Trap hook — via eCPU common interface */
-    ecpu_trap_handler_t trap_handler;
+    cpu_trap_handler_t trap_handler;
     void *trap_ctx;           /* opaque context for personality */
 } z80_state_t;
 
@@ -252,6 +252,6 @@ void z80_write_rr(z80_state_t *cpu, uint8_t pp, uint16_t val);
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
 /* The Z80 core's ops table — registered for use by subsystems/kernel */
-extern const ecpu_core_ops_t ecpu_z80_ops;
+extern const cpu_ops_t ecpu_z80_ops;
 
 #endif /* PPAP_ECPU_Z80_H */

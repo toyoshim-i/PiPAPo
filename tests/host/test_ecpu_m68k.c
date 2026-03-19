@@ -16,9 +16,13 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-#include "kernel/ecpu/ecpu.h"
-#include "kernel/ecpu/ecpu_m68k.h"
+#include "kernel/cpu/cpu.h"
+#include "kernel/cpu/ecpu_m68k.h"
 #include "common/syscall_nr.h"
+
+/* ── Stubs for page allocator (not linked in host tests) ────────────────── */
+void *page_alloc(void) { return NULL; }
+void  page_free(void *p) { (void)p; }
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
@@ -30,20 +34,20 @@ static uint8_t mem[MEM_SIZE];
 static void setup(void)
 {
     memset(mem, 0, sizeof(mem));
-    ecpu_m68k_ops.init((ecpu_state_t *)&cpu, mem, sizeof(mem));
+    ecpu_m68k_ops.init((cpu_state_t *)&cpu, mem, sizeof(mem));
     cpu.pc = 0x1000;
     /* Set up SP */
     cpu.a[7] = 0x10000;
 }
 
 /* Trap handler that returns EXIT on HALT to stop the loop */
-static int halt_handler(ecpu_state_t *state, int trap_type,
+static int halt_handler(cpu_state_t *state, int trap_type,
                          uint32_t param, void *ctx)
 {
     (void)state; (void)param; (void)ctx;
-    if (trap_type == ECPU_TRAP_HALT)
-        return ECPU_TRAP_EXIT;
-    return ECPU_TRAP_UNHANDLED;
+    if (trap_type == CPU_TRAP_HALT)
+        return CPU_TRAP_EXIT;
+    return CPU_TRAP_UNHANDLED;
 }
 
 /* Write a STOP #$2700 instruction at addr (terminates execution) */
@@ -55,8 +59,8 @@ static void emit_stop(uint32_t addr)
 
 static void run(void)
 {
-    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu, halt_handler, 0);
-    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+    ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&cpu, halt_handler, 0);
+    ecpu_m68k_ops.run((cpu_state_t *)&cpu);
 }
 
 /* ── Test: NOP + STOP ───────────────────────────────────────────────────── */
@@ -360,17 +364,17 @@ static void test_lea_abs(void)
 
 static int trap_n_seen = -1;
 
-static int trap_n_handler(ecpu_state_t *state, int trap_type,
+static int trap_n_handler(cpu_state_t *state, int trap_type,
                            uint32_t param, void *ctx)
 {
     (void)state; (void)ctx;
-    if (trap_type == ECPU_TRAP_SWI) {
+    if (trap_type == CPU_TRAP_SWI) {
         trap_n_seen = (int)param;
-        return ECPU_TRAP_HANDLED;
+        return CPU_TRAP_HANDLED;
     }
-    if (trap_type == ECPU_TRAP_HALT)
-        return ECPU_TRAP_EXIT;
-    return ECPU_TRAP_UNHANDLED;
+    if (trap_type == CPU_TRAP_HALT)
+        return CPU_TRAP_EXIT;
+    return CPU_TRAP_UNHANDLED;
 }
 
 static void test_trap_n(void)
@@ -381,8 +385,8 @@ static void test_trap_n(void)
     m68k_write16(&cpu, 0x1000, 0x4E40);
     emit_stop(0x1002);
 
-    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu, trap_n_handler, 0);
-    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+    ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&cpu, trap_n_handler, 0);
+    ecpu_m68k_ops.run((cpu_state_t *)&cpu);
 
     assert(trap_n_seen == 0);
     printf("  PASS: trap_n\n");
@@ -398,8 +402,8 @@ static void test_trap_15(void)
     m68k_write16(&cpu, 0x1000, 0x4E4F);
     emit_stop(0x1002);
 
-    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu, trap_n_handler, 0);
-    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+    ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&cpu, trap_n_handler, 0);
+    ecpu_m68k_ops.run((cpu_state_t *)&cpu);
 
     assert(trap_n_seen == 15);
     printf("  PASS: trap_15\n");
@@ -409,17 +413,17 @@ static void test_trap_15(void)
 
 static uint32_t fline_opcode_seen = 0;
 
-static int fline_handler(ecpu_state_t *state, int trap_type,
+static int fline_handler(cpu_state_t *state, int trap_type,
                           uint32_t param, void *ctx)
 {
     (void)state; (void)ctx;
-    if (trap_type == ECPU_TRAP_ILLEGAL) {
+    if (trap_type == CPU_TRAP_ILLEGAL) {
         fline_opcode_seen = param;
-        return ECPU_TRAP_HANDLED;
+        return CPU_TRAP_HANDLED;
     }
-    if (trap_type == ECPU_TRAP_HALT)
-        return ECPU_TRAP_EXIT;
-    return ECPU_TRAP_UNHANDLED;
+    if (trap_type == CPU_TRAP_HALT)
+        return CPU_TRAP_EXIT;
+    return CPU_TRAP_UNHANDLED;
 }
 
 static void test_fline(void)
@@ -430,8 +434,8 @@ static void test_fline(void)
     m68k_write16(&cpu, 0x1000, 0xFF05);
     emit_stop(0x1002);
 
-    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu, fline_handler, 0);
-    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+    ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&cpu, fline_handler, 0);
+    ecpu_m68k_ops.run((cpu_state_t *)&cpu);
 
     assert(fline_opcode_seen == 0xFF05);
     printf("  PASS: fline\n");
@@ -447,8 +451,8 @@ static void test_aline(void)
     m68k_write16(&cpu, 0x1000, 0xA000);
     emit_stop(0x1002);
 
-    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu, fline_handler, 0);
-    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+    ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&cpu, fline_handler, 0);
+    ecpu_m68k_ops.run((cpu_state_t *)&cpu);
 
     assert(fline_opcode_seen == 0xA000);
     printf("  PASS: aline\n");
@@ -508,14 +512,14 @@ static void test_postinc_predec_roundtrip(void)
 static void test_get_set_reg(void)
 {
     setup();
-    ecpu_m68k_ops.set_reg((ecpu_state_t *)&cpu, M68K_REG_D3, 0x12345678);
-    assert(ecpu_m68k_ops.get_reg((ecpu_state_t *)&cpu, M68K_REG_D3) == 0x12345678);
+    ecpu_m68k_ops.set_reg((cpu_state_t *)&cpu, M68K_REG_D3, 0x12345678);
+    assert(ecpu_m68k_ops.get_reg((cpu_state_t *)&cpu, M68K_REG_D3) == 0x12345678);
 
-    ecpu_m68k_ops.set_reg((ecpu_state_t *)&cpu, M68K_REG_A5, 0xABCD0000);
-    assert(ecpu_m68k_ops.get_reg((ecpu_state_t *)&cpu, M68K_REG_A5) == 0xABCD0000);
+    ecpu_m68k_ops.set_reg((cpu_state_t *)&cpu, M68K_REG_A5, 0xABCD0000);
+    assert(ecpu_m68k_ops.get_reg((cpu_state_t *)&cpu, M68K_REG_A5) == 0xABCD0000);
 
-    ecpu_m68k_ops.set_reg((ecpu_state_t *)&cpu, M68K_REG_PC, 0x4000);
-    assert(ecpu_m68k_ops.get_reg((ecpu_state_t *)&cpu, M68K_REG_PC) == 0x4000);
+    ecpu_m68k_ops.set_reg((cpu_state_t *)&cpu, M68K_REG_PC, 0x4000);
+    assert(ecpu_m68k_ops.get_reg((cpu_state_t *)&cpu, M68K_REG_PC) == 0x4000);
 
     printf("  PASS: get_set_reg\n");
 }
@@ -625,7 +629,7 @@ static void test_init_reset(void)
     cpu.d[0] = 0x12345678;
     cpu.a[3] = 0xAABBCCDD;
 
-    ecpu_m68k_ops.reset((ecpu_state_t *)&cpu);
+    ecpu_m68k_ops.init((cpu_state_t *)&cpu, mem, MEM_SIZE);
 
     assert(cpu.d[0] == 0);
     assert(cpu.a[3] == 0);
@@ -658,13 +662,13 @@ static void test_move_l_push(void)
 
 /* ── Test: CCR after MOVE (use TRAP to exit without clobbering SR) ───────── */
 
-static int exit_handler(ecpu_state_t *state, int trap_type,
+static int exit_handler(cpu_state_t *state, int trap_type,
                          uint32_t param, void *ctx)
 {
     (void)state; (void)param; (void)ctx;
-    if (trap_type == ECPU_TRAP_SWI || trap_type == ECPU_TRAP_HALT)
-        return ECPU_TRAP_EXIT;
-    return ECPU_TRAP_UNHANDLED;
+    if (trap_type == CPU_TRAP_SWI || trap_type == CPU_TRAP_HALT)
+        return CPU_TRAP_EXIT;
+    return CPU_TRAP_UNHANDLED;
 }
 
 static void test_move_ccr(void)
@@ -675,8 +679,8 @@ static void test_move_ccr(void)
     /* TRAP #0 to exit without clobbering SR */
     m68k_write16(&cpu, 0x1002, 0x4E40);
 
-    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu, exit_handler, 0);
-    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+    ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&cpu, exit_handler, 0);
+    ecpu_m68k_ops.run((cpu_state_t *)&cpu);
 
     assert(cpu.d[0] == 0);
     assert(cpu.sr & M68K_FLAG_Z);
@@ -689,8 +693,8 @@ static void test_move_ccr(void)
     m68k_write16(&cpu, 0x1000, 0x70FF);
     m68k_write16(&cpu, 0x1002, 0x4E40);
 
-    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu, exit_handler, 0);
-    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+    ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&cpu, exit_handler, 0);
+    ecpu_m68k_ops.run((cpu_state_t *)&cpu);
 
     assert(cpu.d[0] == 0xFFFFFFFF);
     assert(!(cpu.sr & M68K_FLAG_Z));
@@ -709,8 +713,8 @@ static void test_clr_ccr(void)
     m68k_write16(&cpu, 0x1000, 0x4280);
     m68k_write16(&cpu, 0x1002, 0x4E40);  /* TRAP #0 exit */
 
-    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu, exit_handler, 0);
-    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+    ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&cpu, exit_handler, 0);
+    ecpu_m68k_ops.run((cpu_state_t *)&cpu);
 
     assert(cpu.d[0] == 0);
     assert(cpu.sr & M68K_FLAG_Z);
@@ -727,8 +731,8 @@ static void test_clr_ccr(void)
 /* Helper: emit instruction + TRAP #0 exit, run, return */
 static void run_exit(void)
 {
-    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu, exit_handler, 0);
-    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+    ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&cpu, exit_handler, 0);
+    ecpu_m68k_ops.run((cpu_state_t *)&cpu);
 }
 
 /* ── Test: ADD.L Dn, Dn ─────────────────────────────────────────────────── */
@@ -1147,17 +1151,17 @@ static void test_divs(void)
 
 static int divzero_trapped = 0;
 
-static int divzero_handler(ecpu_state_t *state, int trap_type,
+static int divzero_handler(cpu_state_t *state, int trap_type,
                             uint32_t param, void *ctx)
 {
     (void)state; (void)ctx;
-    if (trap_type == ECPU_TRAP_ILLEGAL && param == 5) {
+    if (trap_type == CPU_TRAP_ILLEGAL && param == 5) {
         divzero_trapped = 1;
-        return ECPU_TRAP_HANDLED;
+        return CPU_TRAP_HANDLED;
     }
-    if (trap_type == ECPU_TRAP_SWI || trap_type == ECPU_TRAP_HALT)
-        return ECPU_TRAP_EXIT;
-    return ECPU_TRAP_UNHANDLED;
+    if (trap_type == CPU_TRAP_SWI || trap_type == CPU_TRAP_HALT)
+        return CPU_TRAP_EXIT;
+    return CPU_TRAP_UNHANDLED;
 }
 
 static void test_divu_zero(void)
@@ -1170,8 +1174,8 @@ static void test_divu_zero(void)
     m68k_write16(&cpu, 0x1000, 0x80C1);
     m68k_write16(&cpu, 0x1002, 0x4E40);
 
-    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu, divzero_handler, 0);
-    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+    ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&cpu, divzero_handler, 0);
+    ecpu_m68k_ops.run((cpu_state_t *)&cpu);
 
     assert(divzero_trapped == 1);
     printf("  PASS: divu_zero\n");
@@ -2724,17 +2728,17 @@ static void test_chk_ok(void)
 /* ── Test: CHK.W (out-of-range, trap) ───────────────────────────────────── */
 
 static int chk_trap_fired;
-static int chk_handler(ecpu_state_t *state, int trap_type,
+static int chk_handler(cpu_state_t *state, int trap_type,
                         uint32_t param, void *ctx)
 {
     (void)state; (void)ctx;
-    if (trap_type == ECPU_TRAP_ILLEGAL && param == 6) {
+    if (trap_type == CPU_TRAP_ILLEGAL && param == 6) {
         chk_trap_fired = 1;
-        return ECPU_TRAP_EXIT;
+        return CPU_TRAP_EXIT;
     }
-    if (trap_type == ECPU_TRAP_SWI)
-        return ECPU_TRAP_EXIT;
-    return ECPU_TRAP_UNHANDLED;
+    if (trap_type == CPU_TRAP_SWI)
+        return CPU_TRAP_EXIT;
+    return CPU_TRAP_UNHANDLED;
 }
 
 static void test_chk_trap(void)
@@ -2746,8 +2750,8 @@ static void test_chk_trap(void)
     cpu.d[1] = 10;
     m68k_write16(&cpu, 0x1000, 0x4181);
     m68k_write16(&cpu, 0x1002, 0x4E40);
-    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu, chk_handler, 0);
-    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+    ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&cpu, chk_handler, 0);
+    ecpu_m68k_ops.run((cpu_state_t *)&cpu);
     assert(chk_trap_fired == 1);
 
     /* D0 < 0 → CHK trap with N flag */
@@ -2757,8 +2761,8 @@ static void test_chk_trap(void)
     cpu.d[1] = 10;
     m68k_write16(&cpu, 0x1000, 0x4181);
     m68k_write16(&cpu, 0x1002, 0x4E40);
-    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu, chk_handler, 0);
-    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+    ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&cpu, chk_handler, 0);
+    ecpu_m68k_ops.run((cpu_state_t *)&cpu);
     assert(chk_trap_fired == 1);
     assert(cpu.sr & M68K_FLAG_N);
     printf("  PASS: chk_trap\n");
@@ -3259,17 +3263,17 @@ static int ppap_trap_called;
 /*
  * ppap_test_handler — mock PPAP personality trap handler.
  *
- * On TRAP #0 (ECPU_TRAP_SWI param=0): captures d0=syscall#, d1-d5=args,
- * a0=arg6 for verification.  Returns ECPU_TRAP_EXIT for SYS_EXIT,
- * ECPU_TRAP_HANDLED otherwise (sets d0 = 42 as mock return value).
+ * On TRAP #0 (CPU_TRAP_SWI param=0): captures d0=syscall#, d1-d5=args,
+ * a0=arg6 for verification.  Returns CPU_TRAP_EXIT for SYS_EXIT,
+ * CPU_TRAP_HANDLED otherwise (sets d0 = 42 as mock return value).
  */
-static int ppap_test_handler(ecpu_state_t *state, int trap_type,
+static int ppap_test_handler(cpu_state_t *state, int trap_type,
                               uint32_t param, void *ctx)
 {
     (void)ctx;
     m68k_state_t *m = (m68k_state_t *)state;
 
-    if (trap_type == ECPU_TRAP_SWI && param == 0) {
+    if (trap_type == CPU_TRAP_SWI && param == 0) {
         ppap_trap_called = 1;
         captured_syscall_nr = m->d[0];
         captured_args[0] = m->d[1];
@@ -3280,15 +3284,15 @@ static int ppap_test_handler(ecpu_state_t *state, int trap_type,
         captured_args[5] = m->a[0];
 
         if (m->d[0] == SYS_EXIT || m->d[0] == SYS_EXIT_GROUP)
-            return ECPU_TRAP_EXIT;
+            return CPU_TRAP_EXIT;
 
         /* Mock return value */
         m->d[0] = 42;
-        return ECPU_TRAP_HANDLED;
+        return CPU_TRAP_HANDLED;
     }
-    if (trap_type == ECPU_TRAP_HALT)
-        return ECPU_TRAP_EXIT;
-    return ECPU_TRAP_UNHANDLED;
+    if (trap_type == CPU_TRAP_HALT)
+        return CPU_TRAP_EXIT;
+    return CPU_TRAP_UNHANDLED;
 }
 
 /* ── Test: TRAP #0 with SYS_EXIT ────────────────────────────────────────── */
@@ -3305,9 +3309,9 @@ static void test_ppap_trap_exit(void)
     /* TRAP #0 */
     m68k_write16(&cpu, 0x1004, 0x4E40);
 
-    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu,
+    ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&cpu,
                                     ppap_test_handler, NULL);
-    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+    ecpu_m68k_ops.run((cpu_state_t *)&cpu);
 
     assert(ppap_trap_called == 1);
     assert(captured_syscall_nr == SYS_EXIT);
@@ -3365,9 +3369,9 @@ static void test_ppap_trap_write(void)
     m68k_write16(&cpu, pc, 0x7000); pc += 2;     /* MOVEQ #0, D0 */
     m68k_write16(&cpu, pc, 0x4E40); pc += 2;     /* TRAP #0 (sys_exit) */
 
-    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu,
+    ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&cpu,
                                     ppap_test_handler, NULL);
-    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+    ecpu_m68k_ops.run((cpu_state_t *)&cpu);
 
     /* The last trap was SYS_EXIT, but we captured SYS_WRITE args first */
     assert(ppap_trap_called == 1);
@@ -3382,15 +3386,15 @@ static int ppap_allargs_called;
 static uint32_t ppap_allargs_nr;
 static uint32_t ppap_allargs[6];
 
-static int ppap_allargs_handler(ecpu_state_t *state, int trap_type,
+static int ppap_allargs_handler(cpu_state_t *state, int trap_type,
                                  uint32_t param, void *ctx)
 {
     (void)ctx;
     m68k_state_t *m = (m68k_state_t *)state;
 
-    if (trap_type == ECPU_TRAP_SWI && param == 0) {
+    if (trap_type == CPU_TRAP_SWI && param == 0) {
         if (m->d[0] == SYS_EXIT)
-            return ECPU_TRAP_EXIT;
+            return CPU_TRAP_EXIT;
 
         ppap_allargs_called = 1;
         ppap_allargs_nr = m->d[0];
@@ -3401,11 +3405,11 @@ static int ppap_allargs_handler(ecpu_state_t *state, int trap_type,
         ppap_allargs[4] = m->d[5];
         ppap_allargs[5] = m->a[0];
         m->d[0] = 99;
-        return ECPU_TRAP_HANDLED;
+        return CPU_TRAP_HANDLED;
     }
-    if (trap_type == ECPU_TRAP_HALT)
-        return ECPU_TRAP_EXIT;
-    return ECPU_TRAP_UNHANDLED;
+    if (trap_type == CPU_TRAP_HALT)
+        return CPU_TRAP_EXIT;
+    return CPU_TRAP_UNHANDLED;
 }
 
 static void test_ppap_trap_allargs(void)
@@ -3438,9 +3442,9 @@ static void test_ppap_trap_allargs(void)
     m68k_write16(&cpu, pc, 0x7000); pc += 2;
     m68k_write16(&cpu, pc, 0x4E40); pc += 2;
 
-    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu,
+    ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&cpu,
                                     ppap_allargs_handler, NULL);
-    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+    ecpu_m68k_ops.run((cpu_state_t *)&cpu);
 
     assert(ppap_allargs_called == 1);
     assert(ppap_allargs_nr == SYS_WRITE);
@@ -3460,27 +3464,27 @@ static int hello_write_fd;
 static uint32_t hello_write_buf;
 static uint32_t hello_write_len;
 
-static int hello_handler(ecpu_state_t *state, int trap_type,
+static int hello_handler(cpu_state_t *state, int trap_type,
                           uint32_t param, void *ctx)
 {
     (void)ctx;
     m68k_state_t *m = (m68k_state_t *)state;
 
-    if (trap_type == ECPU_TRAP_SWI && param == 0) {
+    if (trap_type == CPU_TRAP_SWI && param == 0) {
         if (m->d[0] == SYS_EXIT)
-            return ECPU_TRAP_EXIT;
+            return CPU_TRAP_EXIT;
         if (m->d[0] == SYS_WRITE) {
             hello_write_fd  = (int)m->d[1];
             hello_write_buf = m->d[2];
             hello_write_len = m->d[3];
             m->d[0] = m->d[3];  /* return bytes written */
-            return ECPU_TRAP_HANDLED;
+            return CPU_TRAP_HANDLED;
         }
-        return ECPU_TRAP_HANDLED;
+        return CPU_TRAP_HANDLED;
     }
-    if (trap_type == ECPU_TRAP_HALT)
-        return ECPU_TRAP_EXIT;
-    return ECPU_TRAP_UNHANDLED;
+    if (trap_type == CPU_TRAP_HALT)
+        return CPU_TRAP_EXIT;
+    return CPU_TRAP_UNHANDLED;
 }
 
 static void test_ppap_hello(void)
@@ -3522,9 +3526,9 @@ static void test_ppap_hello(void)
     m68k_write16(&cpu, pc, 0x7200); pc += 2;      /* MOVEQ #0, D1 */
     m68k_write16(&cpu, pc, 0x4E40); pc += 2;      /* TRAP #0 */
 
-    ecpu_m68k_ops.set_trap_handler((ecpu_state_t *)&cpu,
+    ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&cpu,
                                     hello_handler, NULL);
-    ecpu_m68k_ops.run((ecpu_state_t *)&cpu);
+    ecpu_m68k_ops.run((cpu_state_t *)&cpu);
 
     assert(hello_write_fd == 1);
     assert(hello_write_buf == 0x2000);

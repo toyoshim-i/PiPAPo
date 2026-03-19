@@ -64,6 +64,8 @@ set(KERNEL_SHARED_SOURCES_BASE
     ${_KS_ROOT}/src/kernel/fs/procfs.c
     ${_KS_ROOT}/src/kernel/fs/tmpfs.c
     ${_KS_ROOT}/src/kernel/fs/fstab.c
+    ${_KS_ROOT}/src/kernel/cpu/cpu.c
+    ${_KS_ROOT}/src/kernel/cpu/cpu_native.c
     ${_KS_ROOT}/src/kernel/exec/elf.c
     ${_KS_ROOT}/src/kernel/exec/exec.c
     ${_KS_ROOT}/src/kernel/subsys/subsys.c
@@ -90,13 +92,13 @@ set(KERNEL_SUBSYS_SOS_SOURCES
 )
 
 set(KERNEL_ECPU_Z80_SOURCES
-    ${_KS_ROOT}/src/kernel/ecpu/ecpu_z80.c
-    ${_KS_ROOT}/src/kernel/ecpu/ecpu_z80_alu.c
+    ${_KS_ROOT}/src/kernel/cpu/ecpu_z80.c
+    ${_KS_ROOT}/src/kernel/cpu/ecpu_z80_alu.c
 )
 
 set(KERNEL_ECPU_M68K_SOURCES
-    ${_KS_ROOT}/src/kernel/ecpu/ecpu_m68k.c
-    ${_KS_ROOT}/src/kernel/ecpu/ecpu_m68k_alu.c
+    ${_KS_ROOT}/src/kernel/cpu/ecpu_m68k.c
+    ${_KS_ROOT}/src/kernel/cpu/ecpu_m68k_alu.c
     ${_KS_ROOT}/src/kernel/exec/exec_m68k_emu.c
     ${_KS_ROOT}/src/kernel/subsys/ppap_m68k_bridge.c
 )

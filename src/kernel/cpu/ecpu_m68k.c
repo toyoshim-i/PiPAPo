@@ -13,7 +13,9 @@
  * See docs/ecpu/m68k.md for the full design.
  */
 
-#include "ecpu_m68k.h"
+#include "kernel/cpu/ecpu_m68k.h"
+#include "kernel/cpu/cpu.h"
+#include "kernel/mm/page.h"
 #include <string.h>  /* memset */
 
 /* ── Trap fire helper ───────────────────────────────────────────────────── */
@@ -21,13 +23,13 @@
 static int m68k_fire_trap(m68k_state_t *cpu, int trap_type, uint32_t param)
 {
     if (cpu->trap_handler) {
-        int rc = cpu->trap_handler((ecpu_state_t *)cpu, trap_type, param,
+        int rc = cpu->trap_handler((cpu_state_t *)cpu, trap_type, param,
                                    cpu->trap_ctx);
-        if (rc == ECPU_TRAP_EXIT)
+        if (rc == CPU_TRAP_EXIT)
             cpu->step_trap_exit = 1;
         return rc;
     }
-    return ECPU_TRAP_UNHANDLED;
+    return CPU_TRAP_UNHANDLED;
 }
 
 /* ── Effective Address decoder ──────────────────────────────────────────── */
@@ -451,16 +453,16 @@ static int m68k_group4(m68k_state_t *cpu, uint16_t opcode)
         uint16_t imm = m68k_fetch16(cpu);
         cpu->sr = imm;
         cpu->stopped = 1;
-        int rc = m68k_fire_trap(cpu, ECPU_TRAP_HALT, imm);
-        if (rc == ECPU_TRAP_EXIT)
+        int rc = m68k_fire_trap(cpu, CPU_TRAP_HALT, imm);
+        if (rc == CPU_TRAP_EXIT)
             return -1;
         return 0;
     }
 
     /* ILLEGAL: 4AFC */
     if (opcode == 0x4AFC) {
-        int rc = m68k_fire_trap(cpu, ECPU_TRAP_ILLEGAL, opcode);
-        if (rc == ECPU_TRAP_EXIT)
+        int rc = m68k_fire_trap(cpu, CPU_TRAP_ILLEGAL, opcode);
+        if (rc == CPU_TRAP_EXIT)
             return -1;
         return 0;
     }
@@ -481,10 +483,10 @@ static int m68k_group4(m68k_state_t *cpu, uint16_t opcode)
     /* TRAP #n: 4E40–4E4F */
     if ((opcode & 0xFFF0) == 0x4E40) {
         int n = opcode & 0x0F;
-        int rc = m68k_fire_trap(cpu, ECPU_TRAP_SWI, n);
-        if (rc == ECPU_TRAP_EXIT)
+        int rc = m68k_fire_trap(cpu, CPU_TRAP_SWI, n);
+        if (rc == CPU_TRAP_EXIT)
             return -1;
-        if (rc == ECPU_TRAP_HANDLED)
+        if (rc == CPU_TRAP_HANDLED)
             return 0;
         /* Unhandled: push SR+PC, load vector */
         m68k_push32(cpu, cpu->pc);
@@ -502,12 +504,12 @@ static int m68k_group4(m68k_state_t *cpu, uint16_t opcode)
         int16_t dn = (int16_t)(cpu->d[reg] & 0xFFFF);
         if (dn < 0) {
             cpu->sr |= M68K_FLAG_N;
-            int rc = m68k_fire_trap(cpu, ECPU_TRAP_ILLEGAL, 6);
-            if (rc == ECPU_TRAP_EXIT) return -1;
+            int rc = m68k_fire_trap(cpu, CPU_TRAP_ILLEGAL, 6);
+            if (rc == CPU_TRAP_EXIT) return -1;
         } else if (dn > src) {
             cpu->sr &= ~M68K_FLAG_N;
-            int rc = m68k_fire_trap(cpu, ECPU_TRAP_ILLEGAL, 6);
-            if (rc == ECPU_TRAP_EXIT) return -1;
+            int rc = m68k_fire_trap(cpu, CPU_TRAP_ILLEGAL, 6);
+            if (rc == CPU_TRAP_EXIT) return -1;
         }
         return 0;
     }
@@ -780,7 +782,7 @@ static int m68k_group4(m68k_state_t *cpu, uint16_t opcode)
 
 /* ── Main decode loop ───────────────────────────────────────────────────── */
 
-static int ecpu_m68k_run(ecpu_state_t *state)
+static int ecpu_m68k_run(cpu_state_t *state)
 {
     m68k_state_t *cpu = (m68k_state_t *)state;
     cpu->stopped = 0;
@@ -909,8 +911,8 @@ static int ecpu_m68k_run(ecpu_state_t *state)
                     int rc8 = m68k_alu_divu(cpu, cpu->d[reg8], src8, &result8);
                     if (rc8 < 0) {
                         /* Divide by zero — fire trap */
-                        int rc = m68k_fire_trap(cpu, ECPU_TRAP_ILLEGAL, 5);
-                        if (rc == ECPU_TRAP_EXIT) return 0;
+                        int rc = m68k_fire_trap(cpu, CPU_TRAP_ILLEGAL, 5);
+                        if (rc == CPU_TRAP_EXIT) return 0;
                     } else if (rc8 == 0) {
                         cpu->d[reg8] = result8;
                     }
@@ -922,8 +924,8 @@ static int ecpu_m68k_run(ecpu_state_t *state)
                     uint32_t result8;
                     int rc8 = m68k_alu_divs(cpu, (int32_t)cpu->d[reg8], src8, &result8);
                     if (rc8 < 0) {
-                        int rc = m68k_fire_trap(cpu, ECPU_TRAP_ILLEGAL, 5);
-                        if (rc == ECPU_TRAP_EXIT) return 0;
+                        int rc = m68k_fire_trap(cpu, CPU_TRAP_ILLEGAL, 5);
+                        if (rc == CPU_TRAP_EXIT) return 0;
                     } else if (rc8 == 0) {
                         cpu->d[reg8] = result8;
                     }
@@ -1018,8 +1020,8 @@ static int ecpu_m68k_run(ecpu_state_t *state)
             }
 
             case 0xA: { /* A-line trap */
-                int rc = m68k_fire_trap(cpu, ECPU_TRAP_ILLEGAL, opcode);
-                if (rc == ECPU_TRAP_EXIT)
+                int rc = m68k_fire_trap(cpu, CPU_TRAP_ILLEGAL, opcode);
+                if (rc == CPU_TRAP_EXIT)
                     return 0;
                 break;
             }
@@ -1365,8 +1367,8 @@ static int ecpu_m68k_run(ecpu_state_t *state)
             }
 
             case 0xF: { /* F-line trap */
-                int rc = m68k_fire_trap(cpu, ECPU_TRAP_ILLEGAL, opcode);
-                if (rc == ECPU_TRAP_EXIT)
+                int rc = m68k_fire_trap(cpu, CPU_TRAP_ILLEGAL, opcode);
+                if (rc == CPU_TRAP_EXIT)
                     return 0;
                 break;
             }
@@ -1380,17 +1382,17 @@ static int ecpu_m68k_run(ecpu_state_t *state)
     }
 }
 
-static int ecpu_m68k_step(ecpu_state_t *state)
-{
-    m68k_state_t *cpu = (m68k_state_t *)state;
-    cpu->step_budget = 1;
-    (void)ecpu_m68k_run(state);
-    return cpu->step_trap_exit ? 1 : 0;
-}
-
 /* ── Common interface implementations ───────────────────────────────────── */
 
-static int ecpu_m68k_init(ecpu_state_t *state, uint8_t *memory,
+static void* ecpu_m68k_create_state() {
+    return (m68k_state_t *)page_alloc();
+}
+
+static void ecpu_m68k_destroy_state(void* state) {
+    page_free(state);
+}
+
+static int ecpu_m68k_init(cpu_state_t *state, uint8_t *memory,
                            uint32_t mem_size)
 {
     m68k_state_t *cpu = (m68k_state_t *)state;
@@ -1402,31 +1404,15 @@ static int ecpu_m68k_init(ecpu_state_t *state, uint8_t *memory,
     return 0;
 }
 
-static void ecpu_m68k_reset(ecpu_state_t *state)
-{
-    m68k_state_t *cpu = (m68k_state_t *)state;
-    ecpu_trap_handler_t handler = cpu->trap_handler;
-    void *ctx = cpu->trap_ctx;
-    uint8_t *mem = cpu->memory;
-    uint32_t msz = cpu->mem_size;
-
-    memset(cpu, 0, sizeof(*cpu));
-    cpu->memory = mem;
-    cpu->mem_size = msz;
-    cpu->trap_handler = handler;
-    cpu->trap_ctx = ctx;
-    cpu->sr = M68K_SR_S | 0x0700;
-}
-
-static void ecpu_m68k_set_trap_handler(ecpu_state_t *state,
-                                        ecpu_trap_handler_t handler, void *ctx)
+static void ecpu_m68k_set_trap_handler(cpu_state_t *state,
+                                        cpu_trap_handler_t handler, void *ctx)
 {
     m68k_state_t *cpu = (m68k_state_t *)state;
     cpu->trap_handler = handler;
     cpu->trap_ctx = ctx;
 }
 
-static uint32_t ecpu_m68k_get_reg(ecpu_state_t *state, int reg_id)
+static uint32_t ecpu_m68k_get_reg(cpu_state_t *state, int reg_id)
 {
     m68k_state_t *cpu = (m68k_state_t *)state;
     if (reg_id >= M68K_REG_D0 && reg_id <= M68K_REG_D7)
@@ -1442,7 +1428,7 @@ static uint32_t ecpu_m68k_get_reg(ecpu_state_t *state, int reg_id)
     }
 }
 
-static void ecpu_m68k_set_reg(ecpu_state_t *state, int reg_id, uint32_t val)
+static void ecpu_m68k_set_reg(cpu_state_t *state, int reg_id, uint32_t val)
 {
     m68k_state_t *cpu = (m68k_state_t *)state;
     if (reg_id >= M68K_REG_D0 && reg_id <= M68K_REG_D7) {
@@ -1461,7 +1447,7 @@ static void ecpu_m68k_set_reg(ecpu_state_t *state, int reg_id, uint32_t val)
     }
 }
 
-static void *ecpu_m68k_translate_ptr(ecpu_state_t *state, uint32_t guest_addr,
+static void *ecpu_m68k_translate_ptr(cpu_state_t *state, uint32_t guest_addr,
                                       uint32_t size)
 {
     m68k_state_t *cpu = (m68k_state_t *)state;
@@ -1471,42 +1457,41 @@ static void *ecpu_m68k_translate_ptr(ecpu_state_t *state, uint32_t guest_addr,
     return cpu->memory + guest_addr;
 }
 
-static uint8_t ecpu_m68k_read8(ecpu_state_t *state, uint32_t addr)
+static uint8_t ecpu_m68k_read8(cpu_state_t *state, uint32_t addr)
 {
     return m68k_read8((m68k_state_t *)state, addr);
 }
 
-static void ecpu_m68k_write8(ecpu_state_t *state, uint32_t addr, uint8_t val)
+static void ecpu_m68k_write8(cpu_state_t *state, uint32_t addr, uint8_t val)
 {
     m68k_write8((m68k_state_t *)state, addr, val);
 }
 
-static uint16_t ecpu_m68k_read16(ecpu_state_t *state, uint32_t addr)
+static uint16_t ecpu_m68k_read16(cpu_state_t *state, uint32_t addr)
 {
     return m68k_read16((m68k_state_t *)state, addr);
 }
 
-static void ecpu_m68k_write16(ecpu_state_t *state, uint32_t addr, uint16_t val)
+static void ecpu_m68k_write16(cpu_state_t *state, uint32_t addr, uint16_t val)
 {
     m68k_write16((m68k_state_t *)state, addr, val);
 }
 
 /* ── Core ops table ─────────────────────────────────────────────────────── */
 
-const ecpu_core_ops_t ecpu_m68k_ops = {
+const cpu_ops_t ecpu_m68k_ops = {
     .name           = "m68k",
-    .arch_id        = ECPU_ARCH_M68K,
-    .init           = ecpu_m68k_init,
-    .reset          = ecpu_m68k_reset,
-    .run            = ecpu_m68k_run,
-    .step           = ecpu_m68k_step,
-    .set_trap_handler = ecpu_m68k_set_trap_handler,
-    .get_reg        = ecpu_m68k_get_reg,
-    .set_reg        = ecpu_m68k_set_reg,
-    .translate_ptr  = ecpu_m68k_translate_ptr,
-    .read8          = ecpu_m68k_read8,
-    .write8         = ecpu_m68k_write8,
-    .read16         = ecpu_m68k_read16,
-    .write16        = ecpu_m68k_write16,
-    .state_size     = sizeof(m68k_state_t),
+    .arch_id        = CPU_ARCH_M68K,
+    .create_state   = ecpu_m68k_create_state,
+    .destroy_state  = ecpu_m68k_destroy_state,
+    .init           = (void*)ecpu_m68k_init,
+    .run            = (void*)ecpu_m68k_run,
+    .set_trap_handler = (void*)ecpu_m68k_set_trap_handler,
+    .get_reg        = (void*)ecpu_m68k_get_reg,
+    .set_reg        = (void*)ecpu_m68k_set_reg,
+    .translate_ptr  = (void*)ecpu_m68k_translate_ptr,
+    .read8          = (void*)ecpu_m68k_read8,
+    .write8         = (void*)ecpu_m68k_write8,
+    .read16         = (void*)ecpu_m68k_read16,
+    .write16        = (void*)ecpu_m68k_write16,
 };

@@ -12,8 +12,8 @@
 
 #include <stdint.h>
 #include "config.h"
-#include "kernel/ecpu/ecpu.h"
-#include "kernel/ecpu/ecpu_z80.h"
+#include "kernel/cpu/cpu.h"
+#include "kernel/cpu/ecpu_z80.h"
 #include "subsys.h"
 
 /* ── S-OS _SOS header format ───────────────────────────────────────────── */
@@ -177,7 +177,7 @@ int sos_parse_header(const uint8_t *file, uint32_t size, sos_header_t *hdr);
 
 /* ── Trap handler (personality layer) ──────────────────────────────────── */
 
-int sos_trap_handler(ecpu_state_t *cpu, int trap_type,
+int sos_trap_handler(cpu_state_t *cpu, int trap_type,
                      uint32_t param, void *ctx);
 
 /* Kernel-mode entry point for S-OS processes */

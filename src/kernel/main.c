@@ -27,6 +27,7 @@
 #include "spinlock.h"
 #include "arch/arch.h"
 #include "subsys/subsys.h"
+#include "cpu/cpu.h"
 #include "errno.h"
 
 /* Linker-provided romfs image location in flash */
@@ -52,6 +53,9 @@ void kmain(void)
 
     /* Register OS personality subsystem names with procfs */
     subsys_init();
+
+    /* Log native + emulated CPU support */
+    cpu_init();
 
     /* VFS layer + file pool for sys_open */
     vfs_init();

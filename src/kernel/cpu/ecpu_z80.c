@@ -13,12 +13,27 @@
  * See docs/ecpu/z80.md for the full design.
  */
 
-#include "ecpu_z80.h"
+#include "kernel/cpu/ecpu_z80.h"
+#include "kernel/mm/page.h"
 #include <string.h>  /* memset */
 
-/* ── Common interface implementations ────────────────────────────────────── */
+/* ── Lifecycle ───────────────────────────────────────────────────────────── */
 
-static int ecpu_z80_init(ecpu_state_t *state, uint8_t *memory,
+static void *ecpu_z80_create_state(void)
+{
+    z80_state_t *s = (z80_state_t *)page_alloc();
+    if (s)
+        memset(s, 0, sizeof(*s));
+    return s;
+}
+
+static void ecpu_z80_destroy_state(void *state)
+{
+    if (state)
+        page_free(state);
+}
+
+static int ecpu_z80_init(cpu_state_t *state, uint8_t *memory,
                          uint32_t mem_size)
 {
     z80_state_t *cpu = (z80_state_t *)state;
@@ -28,30 +43,15 @@ static int ecpu_z80_init(ecpu_state_t *state, uint8_t *memory,
     return 0;
 }
 
-static void ecpu_z80_reset(ecpu_state_t *state)
-{
-    z80_state_t *cpu = (z80_state_t *)state;
-    ecpu_trap_handler_t handler = cpu->trap_handler;
-    void *ctx = cpu->trap_ctx;
-    uint8_t *mem = cpu->memory;
-    uint32_t msz = cpu->mem_size;
-
-    memset(cpu, 0, sizeof(*cpu));
-    cpu->memory = mem;
-    cpu->mem_size = msz;
-    cpu->trap_handler = handler;
-    cpu->trap_ctx = ctx;
-}
-
-static void ecpu_z80_set_trap_handler(ecpu_state_t *state,
-                                      ecpu_trap_handler_t handler, void *ctx)
+static void ecpu_z80_set_trap_handler(cpu_state_t *state,
+                                      cpu_trap_handler_t handler, void *ctx)
 {
     z80_state_t *cpu = (z80_state_t *)state;
     cpu->trap_handler = handler;
     cpu->trap_ctx = ctx;
 }
 
-static uint32_t ecpu_z80_get_reg(ecpu_state_t *state, int reg_id)
+static uint32_t ecpu_z80_get_reg(cpu_state_t *state, int reg_id)
 {
     z80_state_t *cpu = (z80_state_t *)state;
     switch (reg_id) {
@@ -85,7 +85,7 @@ static uint32_t ecpu_z80_get_reg(ecpu_state_t *state, int reg_id)
     }
 }
 
-static void ecpu_z80_set_reg(ecpu_state_t *state, int reg_id, uint32_t val)
+static void ecpu_z80_set_reg(cpu_state_t *state, int reg_id, uint32_t val)
 {
     z80_state_t *cpu = (z80_state_t *)state;
     switch (reg_id) {
@@ -118,7 +118,7 @@ static void ecpu_z80_set_reg(ecpu_state_t *state, int reg_id, uint32_t val)
     }
 }
 
-static void *ecpu_z80_translate_ptr(ecpu_state_t *state, uint32_t guest_addr,
+static void *ecpu_z80_translate_ptr(cpu_state_t *state, uint32_t guest_addr,
                                     uint32_t size)
 {
     z80_state_t *cpu = (z80_state_t *)state;
@@ -127,26 +127,26 @@ static void *ecpu_z80_translate_ptr(ecpu_state_t *state, uint32_t guest_addr,
     return cpu->memory + guest_addr;
 }
 
-static uint8_t ecpu_z80_read8_op(ecpu_state_t *state, uint32_t addr)
+static uint8_t ecpu_z80_read8_op(cpu_state_t *state, uint32_t addr)
 {
     z80_state_t *cpu = (z80_state_t *)state;
     return cpu->memory[(uint16_t)addr];
 }
 
-static void ecpu_z80_write8_op(ecpu_state_t *state, uint32_t addr,
+static void ecpu_z80_write8_op(cpu_state_t *state, uint32_t addr,
                                uint8_t val)
 {
     z80_state_t *cpu = (z80_state_t *)state;
     cpu->memory[(uint16_t)addr] = val;
 }
 
-static uint16_t ecpu_z80_read16_op(ecpu_state_t *state, uint32_t addr)
+static uint16_t ecpu_z80_read16_op(cpu_state_t *state, uint32_t addr)
 {
     z80_state_t *cpu = (z80_state_t *)state;
     return z80_read16(cpu, (uint16_t)addr);
 }
 
-static void ecpu_z80_write16_op(ecpu_state_t *state, uint32_t addr,
+static void ecpu_z80_write16_op(cpu_state_t *state, uint32_t addr,
                                 uint16_t val)
 {
     z80_state_t *cpu = (z80_state_t *)state;
@@ -158,13 +158,13 @@ static void ecpu_z80_write16_op(ecpu_state_t *state, uint32_t addr,
 static int z80_fire_trap(z80_state_t *cpu, int trap_type, uint32_t param)
 {
     if (cpu->trap_handler) {
-        int rc = cpu->trap_handler((ecpu_state_t *)cpu, trap_type, param,
+        int rc = cpu->trap_handler((cpu_state_t *)cpu, trap_type, param,
                                    cpu->trap_ctx);
-        if (rc == ECPU_TRAP_EXIT)
+        if (rc == CPU_TRAP_EXIT)
             cpu->step_trap_exit = 1;
         return rc;
     }
-    return ECPU_TRAP_UNHANDLED;
+    return CPU_TRAP_UNHANDLED;
 }
 
 /* ── 16-bit register pair read/write by 2-bit code (pp field) ────────────── */
@@ -235,7 +235,7 @@ static void z80_write_qq(z80_state_t *cpu, uint8_t qq, uint16_t val)
 }
 
 /* ── ED prefix decode ────────────────────────────────────────────────────
- * Returns 0 normally, or -1 if ECPU_TRAP_EXIT was returned. */
+ * Returns 0 normally, or -1 if CPU_TRAP_EXIT was returned. */
 
 static int z80_decode_ed(z80_state_t *cpu)
 {
@@ -251,8 +251,8 @@ static int z80_decode_ed(z80_state_t *cpu)
         case 0: /* IN r,(C) / IN F,(C) */
             {
                 uint16_t addr = z80_bc(cpu);
-                int rc = z80_fire_trap(cpu, ECPU_TRAP_IO_IN, addr);
-                if (rc == ECPU_TRAP_EXIT) return -1;
+                int rc = z80_fire_trap(cpu, CPU_TRAP_IO_IN, addr);
+                if (rc == CPU_TRAP_EXIT) return -1;
                 /* After trap, personality may have set a register.
                  * For IN r,(C), read value from A (trap sets it).
                  * For IN F,(C) (yyy=6), just set flags, discard. */
@@ -273,8 +273,8 @@ static int z80_decode_ed(z80_state_t *cpu)
         case 1: /* OUT (C),r / OUT (C),0 */
             {
                 uint16_t addr = z80_bc(cpu);
-                int rc = z80_fire_trap(cpu, ECPU_TRAP_IO_OUT, addr);
-                if (rc == ECPU_TRAP_EXIT) return -1;
+                int rc = z80_fire_trap(cpu, CPU_TRAP_IO_OUT, addr);
+                if (rc == CPU_TRAP_EXIT) return -1;
                 cpu->wz = addr + 1;
             }
             break;
@@ -424,8 +424,8 @@ static int z80_decode_ed(z80_state_t *cpu)
         case 2: /* INI/IND/INIR/INDR */
             {
                 uint16_t addr = z80_bc(cpu);
-                int rc = z80_fire_trap(cpu, ECPU_TRAP_IO_IN, addr);
-                if (rc == ECPU_TRAP_EXIT) return -1;
+                int rc = z80_fire_trap(cpu, CPU_TRAP_IO_IN, addr);
+                if (rc == CPU_TRAP_EXIT) return -1;
                 int dir = (yyy & 1) ? -1 : 1;
                 z80_set_hl(cpu, z80_hl(cpu) + dir);
                 cpu->b = z80_dec8(cpu, cpu->b);
@@ -439,8 +439,8 @@ static int z80_decode_ed(z80_state_t *cpu)
                 uint8_t val = z80_read8(cpu, z80_hl(cpu));
                 (void)val;
                 uint16_t addr = z80_bc(cpu);
-                int rc = z80_fire_trap(cpu, ECPU_TRAP_IO_OUT, addr);
-                if (rc == ECPU_TRAP_EXIT) return -1;
+                int rc = z80_fire_trap(cpu, CPU_TRAP_IO_OUT, addr);
+                if (rc == CPU_TRAP_EXIT) return -1;
                 int dir = (yyy & 1) ? -1 : 1;
                 z80_set_hl(cpu, z80_hl(cpu) + dir);
                 cpu->b = z80_dec8(cpu, cpu->b);
@@ -457,7 +457,7 @@ static int z80_decode_ed(z80_state_t *cpu)
 
 /* ── DD/FD prefix decode (IX/IY indexed) ─────────────────────────────────
  * Shared decoder parameterised by index register pointer.
- * Returns 0 normally, or -1 if ECPU_TRAP_EXIT was returned. */
+ * Returns 0 normally, or -1 if CPU_TRAP_EXIT was returned. */
 
 /* Read 8-bit register, with IXH/IXL replacing H/L (undocumented) */
 static uint8_t z80_read_r8_ix(z80_state_t *cpu, uint8_t code, uint16_t *idx)
@@ -802,16 +802,16 @@ static int z80_decode_index(z80_state_t *cpu, uint16_t *idx)
                     uint8_t port = z80_fetch8(cpu);
                     uint16_t addr = ((uint16_t)cpu->a << 8) | port;
                     cpu->wz = ((uint16_t)cpu->a << 8) | ((port + 1) & 0xFF);
-                    int rc = z80_fire_trap(cpu, ECPU_TRAP_IO_OUT, addr);
-                    if (rc == ECPU_TRAP_EXIT) return -1;
+                    int rc = z80_fire_trap(cpu, CPU_TRAP_IO_OUT, addr);
+                    if (rc == CPU_TRAP_EXIT) return -1;
                 }
                 break;
             case 3: /* IN A,(n) */
                 {
                     uint8_t port = z80_fetch8(cpu);
                     uint16_t addr = ((uint16_t)cpu->a << 8) | port;
-                    int rc = z80_fire_trap(cpu, ECPU_TRAP_IO_IN, addr);
-                    if (rc == ECPU_TRAP_EXIT) return -1;
+                    int rc = z80_fire_trap(cpu, CPU_TRAP_IO_IN, addr);
+                    if (rc == CPU_TRAP_EXIT) return -1;
                     cpu->wz = ((uint16_t)cpu->a << 8) | ((port + 1) & 0xFF);
                 }
                 break;
@@ -886,9 +886,9 @@ static int z80_decode_index(z80_state_t *cpu, uint16_t *idx)
             /* RST p — no IX effect */
             {
                 uint16_t addr = yyy * 8;
-                int rc = z80_fire_trap(cpu, ECPU_TRAP_RST, addr);
-                if (rc == ECPU_TRAP_EXIT) return -1;
-                if (rc == ECPU_TRAP_HANDLED) break;
+                int rc = z80_fire_trap(cpu, CPU_TRAP_RST, addr);
+                if (rc == CPU_TRAP_EXIT) return -1;
+                if (rc == CPU_TRAP_HANDLED) break;
                 z80_push16(cpu, cpu->pc);
                 cpu->pc = addr;
                 cpu->wz = addr;
@@ -902,7 +902,7 @@ static int z80_decode_index(z80_state_t *cpu, uint16_t *idx)
 
 /* ── Main interpreter loop ───────────────────────────────────────────────── */
 
-static int ecpu_z80_run(ecpu_state_t *state)
+static int ecpu_z80_run(cpu_state_t *state)
 {
     z80_state_t *cpu = (z80_state_t *)state;
     cpu->step_trap_exit = 0;
@@ -910,8 +910,8 @@ static int ecpu_z80_run(ecpu_state_t *state)
     for (;;) {
         if (cpu->halted) {
             /* Fire HALT trap — personality may restart or exit */
-            int rc = z80_fire_trap(cpu, ECPU_TRAP_HALT, 0);
-            if (rc == ECPU_TRAP_EXIT)
+            int rc = z80_fire_trap(cpu, CPU_TRAP_HALT, 0);
+            if (rc == CPU_TRAP_EXIT)
                 return 0;
             if (!cpu->halted)
                 continue;  /* trap handler cleared halted */
@@ -1171,6 +1171,12 @@ static int ecpu_z80_run(ecpu_state_t *state)
                             break;
                         case 1: /* BIT */
                             z80_bit(cpu, cb_yyy, val);
+                            /* Undoc: BIT n,(HL) — F3/F5 come from current
+                             * MEMPTR high byte, not from the value read.
+                             * MEMPTR itself is not modified by this insn. */
+                            if (cb_zzz == 6)
+                                cpu->f = (cpu->f & ~FLAG_35)
+                                       | ((cpu->wz >> 8) & FLAG_35);
                             break;
                         case 2: /* RES */
                             z80_write_r8(cpu, cb_zzz,
@@ -1188,8 +1194,8 @@ static int ecpu_z80_run(ecpu_state_t *state)
                         uint8_t port = z80_fetch8(cpu);
                         uint16_t addr = ((uint16_t)cpu->a << 8) | port;
                         cpu->wz = ((uint16_t)cpu->a << 8) | ((port + 1) & 0xFF);
-                        int rc = z80_fire_trap(cpu, ECPU_TRAP_IO_OUT, addr);
-                        if (rc == ECPU_TRAP_EXIT)
+                        int rc = z80_fire_trap(cpu, CPU_TRAP_IO_OUT, addr);
+                        if (rc == CPU_TRAP_EXIT)
                             return 0;
                     }
                     break;
@@ -1197,8 +1203,8 @@ static int ecpu_z80_run(ecpu_state_t *state)
                     {
                         uint8_t port = z80_fetch8(cpu);
                         uint16_t addr = ((uint16_t)cpu->a << 8) | port;
-                        int rc = z80_fire_trap(cpu, ECPU_TRAP_IO_IN, addr);
-                        if (rc == ECPU_TRAP_EXIT)
+                        int rc = z80_fire_trap(cpu, CPU_TRAP_IO_IN, addr);
+                        if (rc == CPU_TRAP_EXIT)
                             return 0;
                         cpu->wz = ((uint16_t)cpu->a << 8) | ((port + 1) & 0xFF);
                     }
@@ -1284,10 +1290,10 @@ static int ecpu_z80_run(ecpu_state_t *state)
                 /* RST p — restart to address p*8 */
                 {
                     uint16_t addr = yyy * 8;
-                    int rc = z80_fire_trap(cpu, ECPU_TRAP_RST, addr);
-                    if (rc == ECPU_TRAP_EXIT)
+                    int rc = z80_fire_trap(cpu, CPU_TRAP_RST, addr);
+                    if (rc == CPU_TRAP_EXIT)
                         return 0;
-                    if (rc == ECPU_TRAP_HANDLED)
+                    if (rc == CPU_TRAP_HANDLED)
                         break;
                     z80_push16(cpu, cpu->pc);
                     cpu->pc = addr;
@@ -1306,30 +1312,21 @@ static int ecpu_z80_run(ecpu_state_t *state)
     }
 }
 
-static int ecpu_z80_step(ecpu_state_t *state)
-{
-    z80_state_t *cpu = (z80_state_t *)state;
-    cpu->step_budget = 1;
-    (void)ecpu_z80_run(state);
-    return cpu->step_trap_exit ? 1 : 0;
-}
-
 /* ── Operations table ────────────────────────────────────────────────────── */
 
-const ecpu_core_ops_t ecpu_z80_ops = {
-    .name           = "z80",
-    .arch_id        = ECPU_ARCH_Z80,
-    .init           = ecpu_z80_init,
-    .reset          = ecpu_z80_reset,
-    .run            = ecpu_z80_run,
-    .step           = ecpu_z80_step,
-    .set_trap_handler = ecpu_z80_set_trap_handler,
-    .get_reg        = ecpu_z80_get_reg,
-    .set_reg        = ecpu_z80_set_reg,
-    .translate_ptr  = ecpu_z80_translate_ptr,
-    .read8          = ecpu_z80_read8_op,
-    .write8         = ecpu_z80_write8_op,
-    .read16         = ecpu_z80_read16_op,
-    .write16        = ecpu_z80_write16_op,
-    .state_size     = sizeof(z80_state_t),
+const cpu_ops_t ecpu_z80_ops = {
+    .name             = "z80",
+    .arch_id          = CPU_ARCH_Z80,
+    .create_state     = ecpu_z80_create_state,
+    .destroy_state    = ecpu_z80_destroy_state,
+    .init             = (void *)ecpu_z80_init,
+    .run              = (void *)ecpu_z80_run,
+    .set_trap_handler = (void *)ecpu_z80_set_trap_handler,
+    .get_reg          = (void *)ecpu_z80_get_reg,
+    .set_reg          = (void *)ecpu_z80_set_reg,
+    .translate_ptr    = (void *)ecpu_z80_translate_ptr,
+    .read8            = (void *)ecpu_z80_read8_op,
+    .write8           = (void *)ecpu_z80_write8_op,
+    .read16           = (void *)ecpu_z80_read16_op,
+    .write16          = (void *)ecpu_z80_write16_op,
 };
