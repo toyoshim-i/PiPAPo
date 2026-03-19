@@ -56,7 +56,7 @@ endif()
 # --- User-space program lists ---
 
 # Application programs (sources in src/user/)
-set(USER_APPS hello getty init trace pdb ttyctl)
+set(USER_APPS hello getty init trace pdb ttyctl push)
 # Install destinations: init -> sbin, ttyctl -> usr/bin, others -> bin
 
 # Optional per-app extra sources (for multi-file user programs).
