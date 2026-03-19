@@ -292,7 +292,7 @@ by the `PPAP_TESTS` CMake option. The build system:
   shares the parent's address space. The child must immediately
   `execve` or `_exit` — do not modify parent data or trigger faults.
 
-### Known coverage gaps (as of 2026-03-13)
+### Known coverage gaps (as of 2026-03-19)
 
 Current user-space tests are a solid regression baseline, but subsystem
 coverage is not exhaustive yet.
