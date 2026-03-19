@@ -42,4 +42,17 @@ void push_history_add(const char *line);
  */
 void push_history_list(int fd);
 
+/*
+ * push_env_get() — look up a shell variable by name.
+ * Returns the value string (after '='), or NULL if not set.
+ * Used by push_line.c for PATH-based command completion.
+ */
+const char *push_env_get(const char *key);
+
+/*
+ * push_is_builtin() — check if cmd is a shell builtin.
+ * Used by push_line.c for command completion.
+ */
+int push_is_builtin(const char *cmd);
+
 #endif /* PPAP_USER_PUSH_H */

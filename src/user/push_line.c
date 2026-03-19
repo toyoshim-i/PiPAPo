@@ -286,19 +286,21 @@ static void comp_split(const char *word, int wlen,
 }
 
 /*
- * Check if name starts with prefix (case-sensitive).
+ * Check if name starts with prefix (case-insensitive).
  */
+static int to_lower(int c) { return (c >= 'A' && c <= 'Z') ? c + 32 : c; }
+
 static int starts_with(const char *name, const char *prefix)
 {
     while (*prefix) {
-        if (*name != *prefix) return 0;
+        if (to_lower(*name) != to_lower(*prefix)) return 0;
         name++; prefix++;
     }
     return 1;
 }
 
 /*
- * Find common prefix length among all matches.
+ * Find common prefix length among two strings.
  */
 static int common_prefix_len(const char *a, const char *b)
 {
@@ -306,6 +308,259 @@ static int common_prefix_len(const char *a, const char *b)
     while (a[i] && b[i] && a[i] == b[i]) i++;
     return i;
 }
+
+/*
+ * Check if word at buf[wstart..wstart+wlen) is in command position.
+ * True if everything before wstart is whitespace.
+ */
+static int is_cmd_position(const char *buf, int wstart)
+{
+    for (int i = 0; i < wstart; i++)
+        if (buf[i] != ' ' && buf[i] != '\t')
+            return 0;
+    return 1;
+}
+
+/*
+ * Check if word contains a slash (explicit path — skip PATH search).
+ */
+static int has_slash(const char *word, int wlen)
+{
+    for (int i = 0; i < wlen; i++)
+        if (word[i] == '/') return 1;
+    return 0;
+}
+
+/* ── Builtin name table for command completion ────────────────────────── */
+
+/*
+ * Packed string table avoids an array of pointers that would need
+ * PIC relocation (the pointer array lives in .data.rel.ro and the
+ * GOT fixup may not relocate its entries correctly for XIP binaries).
+ * Names are separated by '\0'; an empty string marks the end.
+ */
+static const char builtin_name_table[] =
+    "break\0cd\0continue\0echo\0env\0exit\0export\0"
+    "false\0history\0pwd\0set\0shift\0source\0true\0"
+    "unset\0";
+
+/* Iterate: for (p = builtin_name_table; *p; p += pl_strlen(p) + 1) */
+
+/*
+ * Record a match for completion.  Updates first_match, common, and count.
+ * Returns 1 if this is a duplicate of first_match (skip).
+ */
+static void comp_record(const char *name, char *first_match, char *common,
+                        int *match_count)
+{
+    if (*match_count == 0) {
+        pl_strcpy(first_match, name, PPAP_NAME_MAX + 1);
+        pl_strcpy(common, name, PPAP_NAME_MAX + 1);
+    } else {
+        int cpl = common_prefix_len(common, name);
+        common[cpl] = '\0';
+    }
+    (*match_count)++;
+}
+
+/*
+ * Insert text into buf at pos, shifting the tail.
+ * Returns new line length, updates *pos_out.
+ */
+static int comp_insert(char *buf, int len, int pos, int *pos_out,
+                       const char *text, int tlen, char suffix,
+                       const char *prompt, int prompt_len)
+{
+    int total = tlen + 1;  /* text + suffix char */
+    if (len + total >= PUSH_LINE_MAX) {
+        *pos_out = pos;
+        return len;
+    }
+    for (int i = len; i >= pos; i--)
+        buf[i + total] = buf[i];
+    for (int i = 0; i < tlen; i++)
+        buf[pos + i] = text[i];
+    buf[pos + tlen] = suffix;
+    len += total;
+    *pos_out = pos + total;
+    buf[len] = '\0';
+    refresh_line(prompt, buf, len, *pos_out, prompt_len);
+    return len;
+}
+
+/* ── Command completion (search PATH + builtins) ─────────────────────── */
+
+/*
+ * Scan PATH directories and builtins for commands matching prefix.
+ * Populates first_match, common, match_count.
+ */
+static void cmd_scan(const char *prefix, int plen,
+                     char *first_match, char *common, int *match_count)
+{
+    /* 1. Builtins */
+    for (const char *bn = builtin_name_table; *bn; bn += pl_strlen(bn) + 1) {
+        if (starts_with(bn, prefix))
+            comp_record(bn, first_match, common, match_count);
+    }
+
+    /* 2. PATH directories */
+    const char *path = push_env_get("PATH");
+    if (!path) path = "/bin:/sbin";
+
+    const char *p = path;
+    while (*p) {
+        const char *sep = p;
+        while (*sep && *sep != ':') sep++;
+
+        char dir[PATH_BUF];
+        int dlen = (int)(sep - p);
+        if (dlen == 0) {
+            dir[0] = '.'; dir[1] = '\0';
+        } else {
+            pl_strncpy(dir, p, dlen, sizeof(dir));
+        }
+
+        int dfd = open(dir, O_RDONLY, 0);
+        if (dfd >= 0) {
+            struct dirent de;
+            while (getdents(dfd, &de, sizeof(de)) > 0) {
+                if (de.d_type == DT_DIR) continue;  /* skip directories */
+
+                if (!starts_with(de.d_name, prefix)) continue;
+                /* Deduplicate: skip if same name as first_match */
+                if (*match_count > 0 && pl_streq(de.d_name, first_match))
+                    continue;
+                comp_record(de.d_name, first_match, common, match_count);
+            }
+            close(dfd);
+        }
+
+        p = *sep ? sep + 1 : sep;
+    }
+}
+
+/*
+ * List all command matches (second Tab).
+ */
+static void cmd_list(const char *prefix, int plen)
+{
+    int col = 0;
+    int cols = term_cols();
+
+    /* Builtins */
+    for (const char *bn = builtin_name_table; *bn; bn += pl_strlen(bn) + 1) {
+        if (!starts_with(bn, prefix)) continue;
+        int nlen = pl_strlen(bn);
+        if (col + nlen + 2 > cols && col > 0) {
+            write(1, "\r\n", 2);
+            col = 0;
+        }
+        pl_puts(1, bn);
+        int pad = 16 - (nlen % 16);
+        if (pad < 16) {
+            for (int j = 0; j < pad; j++) write(1, " ", 1);
+            col += nlen + pad;
+        } else {
+            col += nlen;
+        }
+    }
+
+    /* PATH directories */
+    const char *path = push_env_get("PATH");
+    if (!path) path = "/bin:/sbin";
+
+    const char *p = path;
+    while (*p) {
+        const char *sep = p;
+        while (*sep && *sep != ':') sep++;
+
+        char dir[PATH_BUF];
+        int dlen = (int)(sep - p);
+        if (dlen == 0) {
+            dir[0] = '.'; dir[1] = '\0';
+        } else {
+            pl_strncpy(dir, p, dlen, sizeof(dir));
+        }
+
+        int dfd = open(dir, O_RDONLY, 0);
+        if (dfd >= 0) {
+            struct dirent de;
+            while (getdents(dfd, &de, sizeof(de)) > 0) {
+                if (de.d_type == DT_DIR) continue;
+
+                if (!starts_with(de.d_name, prefix)) continue;
+                int nlen = pl_strlen(de.d_name);
+                if (col + nlen + 2 > cols && col > 0) {
+                    write(1, "\r\n", 2);
+                    col = 0;
+                }
+                pl_puts(1, de.d_name);
+                int pad = 16 - (nlen % 16);
+                if (pad < 16) {
+                    for (int j = 0; j < pad; j++) write(1, " ", 1);
+                    col += nlen + pad;
+                } else {
+                    col += nlen;
+                }
+            }
+            close(dfd);
+        }
+
+        p = *sep ? sep + 1 : sep;
+    }
+}
+
+/* ── File completion (existing behavior) ─────────────────────────────── */
+
+static void file_scan(const char *dir, const char *prefix, int plen,
+                      char *first_match, char *common, int *match_count,
+                      int *first_is_dir)
+{
+    int dfd = open(dir, O_RDONLY, 0);
+    if (dfd < 0) return;
+
+    struct dirent de;
+    while (getdents(dfd, &de, sizeof(de)) > 0) {
+        if (de.d_name[0] == '.' && !prefix[0]) continue;
+        if (plen > 0 && !starts_with(de.d_name, prefix)) continue;
+
+        if (*match_count == 0)
+            *first_is_dir = (de.d_type == DT_DIR);
+        comp_record(de.d_name, first_match, common, match_count);
+    }
+    close(dfd);
+}
+
+static void file_list(const char *dir, const char *prefix, int plen)
+{
+    int dfd = open(dir, O_RDONLY, 0);
+    if (dfd < 0) return;
+
+    int col = 0;
+    int cols = term_cols();
+    struct dirent de;
+    while (getdents(dfd, &de, sizeof(de)) > 0) {
+        if (de.d_name[0] == '.' && !prefix[0]) continue;
+        if (plen > 0 && !starts_with(de.d_name, prefix)) continue;
+        int nlen = pl_strlen(de.d_name);
+        if (col + nlen + 2 > cols && col > 0) {
+            write(1, "\r\n", 2);
+            col = 0;
+        }
+        pl_puts(1, de.d_name);
+        if (de.d_type == DT_DIR) { write(1, "/", 1); nlen++; }
+        int pad = 16 - (nlen % 16);
+        if (pad < 16) {
+            for (int j = 0; j < pad; j++) write(1, " ", 1);
+            col += nlen + pad;
+        } else {
+            col += nlen;
+        }
+    }
+    close(dfd);
+}
+
+/* ── Main completion dispatcher ──────────────────────────────────────── */
 
 /*
  * Perform tab completion on buf at position pos.
@@ -318,38 +573,73 @@ static int do_complete(char *buf, int len, int pos, int *pos_out,
     int wstart = comp_word_start(buf, pos);
     int wlen = pos - wstart;
 
+    char first_match[PPAP_NAME_MAX + 1];
+    char common[PPAP_NAME_MAX + 1];
+    int match_count = 0;
+
+    /* Command-position completion: first word, no slash → search PATH */
+    int cmd_mode = is_cmd_position(buf, wstart) && !has_slash(buf + wstart, wlen);
+
+    if (cmd_mode) {
+        char prefix[PPAP_NAME_MAX + 1];
+        pl_strncpy(prefix, buf + wstart, wlen, sizeof(prefix));
+        int plen = pl_strlen(prefix);
+
+        cmd_scan(prefix, plen, first_match, common, &match_count);
+
+        if (match_count == 0) {
+            *pos_out = pos;
+            return len;
+        }
+
+        if (match_count == 1) {
+            /* Single match — insert remainder + space */
+            return comp_insert(buf, len, pos, pos_out,
+                               first_match + plen, pl_strlen(first_match) - plen,
+                               ' ', prompt, prompt_len);
+        }
+
+        /* Multiple matches — insert common prefix */
+        int common_len = pl_strlen(common);
+        int extra = common_len - plen;
+        if (extra > 0) {
+            /* Insert common part (no suffix char) */
+            if (len + extra >= PUSH_LINE_MAX) {
+                *pos_out = pos;
+                return len;
+            }
+            for (int i = len; i >= pos; i--)
+                buf[i + extra] = buf[i];
+            for (int i = 0; i < extra; i++)
+                buf[pos + i] = common[plen + i];
+            len += extra;
+            *pos_out = pos + extra;
+            buf[len] = '\0';
+            refresh_line(prompt, buf, len, *pos_out, prompt_len);
+            return len;
+        }
+
+        if (second_tab) {
+            write(1, "\r\n", 2);
+            cmd_list(prefix, plen);
+            write(1, "\r\n", 2);
+            refresh_line(prompt, buf, len, pos, prompt_len);
+        }
+
+        *pos_out = pos;
+        return len;
+    }
+
+    /* File completion (argument position or explicit path) */
     char dir[PATH_BUF];
     char prefix[PPAP_NAME_MAX + 1];
     comp_split(buf + wstart, wlen, dir, sizeof(dir),
                prefix, sizeof(prefix));
     int plen = pl_strlen(prefix);
-
-    /* Scan directory for matches */
-    int dfd = open(dir, O_RDONLY, 0);
-    if (dfd < 0) { *pos_out = pos; return len; }
-
-    char first_match[PPAP_NAME_MAX + 1];
-    char common[PPAP_NAME_MAX + 1];
-    int match_count = 0;
     int first_is_dir = 0;
-    struct dirent de;
 
-    while (getdents(dfd, &de, sizeof(de)) > 0) {
-        if (de.d_name[0] == '.' && !prefix[0]) continue;  /* skip dotfiles */
-        if (plen > 0 && !starts_with(de.d_name, prefix)) continue;
-
-        if (match_count == 0) {
-            pl_strcpy(first_match, de.d_name, sizeof(first_match));
-            pl_strcpy(common, de.d_name, sizeof(common));
-            first_is_dir = (de.d_type == DT_DIR);
-        } else {
-            /* Shrink common prefix */
-            int cpl = common_prefix_len(common, de.d_name);
-            common[cpl] = '\0';
-        }
-        match_count++;
-    }
-    close(dfd);
+    file_scan(dir, prefix, plen, first_match, common, &match_count,
+              &first_is_dir);
 
     if (match_count == 0) {
         *pos_out = pos;
@@ -357,39 +647,16 @@ static int do_complete(char *buf, int len, int pos, int *pos_out,
     }
 
     if (match_count == 1) {
-        /* Single match — insert it */
-        const char *insert = first_match + plen;
-        int ilen = pl_strlen(insert);
-        int suffix = (first_is_dir) ? 1 : 1;  /* '/' or ' ' */
-
-        /* Check space */
-        if (len + ilen + suffix >= PUSH_LINE_MAX) {
-            *pos_out = pos;
-            return len;
-        }
-
-        /* Shift tail right */
-        for (int i = len; i >= pos; i--)
-            buf[i + ilen + suffix] = buf[i];
-
-        /* Insert match suffix */
-        for (int i = 0; i < ilen; i++)
-            buf[pos + i] = insert[i];
-        buf[pos + ilen] = first_is_dir ? '/' : ' ';
-
-        len += ilen + suffix;
-        *pos_out = pos + ilen + suffix;
-        buf[len] = '\0';
-        refresh_line(prompt, buf, len, *pos_out, prompt_len);
-        return len;
+        return comp_insert(buf, len, pos, pos_out,
+                           first_match + plen, pl_strlen(first_match) - plen,
+                           first_is_dir ? '/' : ' ',
+                           prompt, prompt_len);
     }
 
-    /* Multiple matches */
+    /* Multiple matches — insert common prefix */
     int common_len = pl_strlen(common);
     int extra = common_len - plen;
-
     if (extra > 0) {
-        /* Insert common prefix */
         if (len + extra >= PUSH_LINE_MAX) {
             *pos_out = pos;
             return len;
@@ -406,36 +673,9 @@ static int do_complete(char *buf, int len, int pos, int *pos_out,
     }
 
     if (second_tab) {
-        /* List all matches */
         write(1, "\r\n", 2);
-
-        /* Re-scan directory to list */
-        dfd = open(dir, O_RDONLY, 0);
-        if (dfd >= 0) {
-            int col = 0;
-            int cols = term_cols();
-            while (getdents(dfd, &de, sizeof(de)) > 0) {
-                if (de.d_name[0] == '.' && !prefix[0]) continue;
-                if (plen > 0 && !starts_with(de.d_name, prefix)) continue;
-                int nlen = pl_strlen(de.d_name);
-                if (col + nlen + 2 > cols && col > 0) {
-                    write(1, "\r\n", 2);
-                    col = 0;
-                }
-                pl_puts(1, de.d_name);
-                if (de.d_type == DT_DIR) { write(1, "/", 1); nlen++; }
-                /* Pad to 16-char columns */
-                int pad = 16 - (nlen % 16);
-                if (pad < 16) {
-                    for (int i = 0; i < pad; i++) write(1, " ", 1);
-                    col += nlen + pad;
-                } else {
-                    col += nlen;
-                }
-            }
-            close(dfd);
-            write(1, "\r\n", 2);
-        }
+        file_list(dir, prefix, plen);
+        write(1, "\r\n", 2);
         refresh_line(prompt, buf, len, pos, prompt_len);
     }
 

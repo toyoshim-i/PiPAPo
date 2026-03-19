@@ -550,7 +550,10 @@ static void build_path(char *dst, int size, const char *dir, const char *name)
     dst[i] = '\0';
 }
 
-static int search_path(const char *name, char *result, int rsize)
+#define SKIP_MAX 4
+
+static int search_path_skip(const char *name, char *result, int rsize,
+                            char skip[][PATH_BUF], int nskip)
 {
     if (my_strchr(name, '/')) {
         my_strcpy(result, name, rsize);
@@ -559,6 +562,9 @@ static int search_path(const char *name, char *result, int rsize)
 
     const char *path = env_get("PATH");
     if (!path) path = "/bin:/sbin";
+
+    int best_score = 5;
+    char best_path[PATH_BUF];
 
     while (*path) {
         const char *sep = path;
@@ -572,9 +578,6 @@ static int search_path(const char *name, char *result, int rsize)
             my_strncpy(dir, path, dlen, sizeof(dir));
         }
 
-        int best_score = 5;
-        char best_name[PPAP_NAME_MAX + 1];
-
         int dfd = open(dir, O_RDONLY, 0);
         if (dfd >= 0) {
             struct dirent de;
@@ -582,22 +585,36 @@ static int search_path(const char *name, char *result, int rsize)
                 if (de.d_type == DT_DIR) continue;
                 int score = match_score(name, de.d_name);
                 if (score < best_score) {
+                    char cand[PATH_BUF];
+                    build_path(cand, sizeof(cand), dir, de.d_name);
+                    /* Check skip list */
+                    int skipped = 0;
+                    for (int j = 0; j < nskip; j++) {
+                        if (streq(cand, skip[j])) { skipped = 1; break; }
+                    }
+                    if (skipped) continue;
                     best_score = score;
-                    my_strcpy(best_name, de.d_name, sizeof(best_name));
-                    if (score == 1) break;
+                    my_strcpy(best_path, cand, sizeof(best_path));
+                    if (score == 1) { close(dfd); goto found; }
                 }
             }
             close(dfd);
         }
 
-        if (best_score < 5) {
-            build_path(result, rsize, dir, best_name);
-            return 0;
-        }
-
         path = *sep ? sep + 1 : sep;
     }
-    return -1;
+
+    if (best_score >= 5)
+        return -1;
+
+found:
+    my_strcpy(result, best_path, rsize);
+    return 0;
+}
+
+static int search_path(const char *name, char *result, int rsize)
+{
+    return search_path_skip(name, result, rsize, NULL, 0);
 }
 
 /* ── [[ ]] builtin test evaluator ────────────────────────────────────── */
@@ -807,6 +824,11 @@ static int is_builtin(const char *cmd)
            streq(cmd, "break") || streq(cmd, "continue") ||
            streq(cmd, "shift") || streq(cmd, "history");
 }
+
+/* ── Public wrappers for push_line.c ──────────────────────────────────── */
+
+const char *push_env_get(const char *key)  { return env_get(key); }
+int push_is_builtin(const char *cmd)       { return is_builtin(cmd); }
 
 /* Execute builtin.  Always returns 1 (handled).  Sets *status. */
 static void run_builtin(char **argv, int argc, int *status)
@@ -1059,8 +1081,11 @@ static int exec_simple(char **argv, int argc)
         return status;
     }
 
-    /* External command — resolve via PATH */
+    /* External command — resolve via PATH, retry on ENOEXEC */
     char resolved[PATH_BUF];
+    static char tried[SKIP_MAX][PATH_BUF];
+    int ntried = 0;
+
     if (search_path(argv[0], resolved, sizeof(resolved)) < 0) {
         err_msg(argv[0], "not found");
         return 127;
@@ -1069,20 +1094,32 @@ static int exec_simple(char **argv, int argc)
     char *envp[ENV_MAX + 1];
     build_envp(envp, ENV_MAX + 1);
 
-    pid_t pid = vfork();
-    if (pid == 0) {
-        apply_redirects(redirs, nredirs);
-        execve(resolved, argv, envp);
-        _exit(127);
-    }
-    if (pid < 0) {
-        err_msg(argv[0], "fork failed");
-        return 1;
-    }
+    for (;;) {
+        pid_t pid = vfork();
+        if (pid == 0) {
+            apply_redirects(redirs, nredirs);
+            execve(resolved, argv, envp);
+            _exit(127);
+        }
+        if (pid < 0) {
+            err_msg(argv[0], "fork failed");
+            return 1;
+        }
 
-    int wstatus;
-    waitpid(pid, &wstatus, 0);
-    return WIFEXITED(wstatus) ? WEXITSTATUS(wstatus) : 128 + WTERMSIG(wstatus);
+        int wstatus;
+        waitpid(pid, &wstatus, 0);
+        int st = WIFEXITED(wstatus) ? WEXITSTATUS(wstatus) : 128 + WTERMSIG(wstatus);
+
+        /* If child exited 127 (execve failed), try next PATH candidate */
+        if (st == 127 && ntried < SKIP_MAX) {
+            my_strcpy(tried[ntried], resolved, PATH_BUF);
+            ntried++;
+            if (search_path_skip(argv[0], resolved, sizeof(resolved),
+                                 tried, ntried) == 0)
+                continue;
+        }
+        return st;
+    }
 }
 
 /* ── Pipeline execution ──────────────────────────────────────────────── */

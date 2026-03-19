@@ -72,8 +72,8 @@ static void apply_relocations(const elf32_ehdr_t *ehdr,
             continue;
         }
 
-        if ((cpu_ops->arch_id == CPU_ARCH_M68K && rtype != R_68K_RELATIVE) &&
-            (cpu_ops->arch_id == CPU_ARCH_ARM && rtype != R_ARM_RELATIVE) &&
+        if ((cpu_ops->arch_id == CPU_ARCH_M68K && rtype != R_68K_RELATIVE) ||
+            (cpu_ops->arch_id == CPU_ARCH_ARM && rtype != R_ARM_RELATIVE) ||
             (cpu_ops->arch_id == CPU_ARCH_ARMV6 && rtype != R_ARM_RELATIVE))
             continue;
 
