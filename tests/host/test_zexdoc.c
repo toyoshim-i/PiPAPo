@@ -28,6 +28,9 @@ static void emit_char(char ch)
 {
     if (output_len < OUTPUT_SIZE - 1)
         output[output_len++] = ch;
+    putchar(ch);
+    if (ch == '\n')
+        fflush(stdout);
 }
 
 /* ── BDOS trap handler ──────────────────────────────────────────────────── */
@@ -142,8 +145,6 @@ int main(void)
     ecpu_z80_ops.run((ecpu_state_t *)&cpu);
     output[output_len] = '\0';
 
-    /* Print captured output */
-    printf("%s", output);
     if (output_len > 0 && output[output_len - 1] != '\n')
         printf("\n");
 
