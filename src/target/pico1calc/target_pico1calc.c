@@ -7,8 +7,9 @@
 
 #include "../target.h"
 #include "pico1calc.h"
+#include "config.h"
 #include "drivers/uart.h"
-#include "drivers/arch/arm_m/uart_rp2040.h"
+#include "drivers/arch/arm_m/uart_rpico.h"
 #include "drivers/clock.h"
 #include "drivers/spi.h"
 #include "drivers/i2c.h"
@@ -165,9 +166,9 @@ void target_early_init(void)
     klog("UART: 115200 bps @ 12 MHz XOSC\n");
     klog("PLL: configuring...\n");
     uart_tx_drain();           /* drain at 12 MHz; also disables UART0 NVIC */
-    clock_init_pll();          /* switch clk_sys to 133 MHz                 */
-    uart_reinit_133mhz();     /* set 133 MHz divisors                      */
-    klog("System clock: 133 MHz\n");
+    clock_init_pll();          /* switch clk_sys to PLL (PPAP_SYS_HZ)      */
+    uart_reinit_pll();         /* set PLL-speed baud divisors               */
+    klogf("System clock: %u MHz\n", PPAP_SYS_HZ / 1000000u);
     spi_init(400000);
     klog("SPI0: initialised at 400 kHz\n");
     /* Probe I2C first to detect PicoCalc carrier board (STM32 keyboard

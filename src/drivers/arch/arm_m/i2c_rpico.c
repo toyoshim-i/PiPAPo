@@ -1,5 +1,5 @@
 /*
- * i2c.c — I2C1 master driver for RP2040 (Synopsys DesignWare DW_apb_i2c)
+ * i2c_rpico.c — I2C1 master driver for RP2040/RP2350 (Synopsys DesignWare DW_apb_i2c)
  *
  * Drives the I2C1 controller in master mode to communicate with the STM32
  * keyboard controller on the PicoCalc board.  Pin assignments are defined
@@ -15,7 +15,7 @@
 
 #include "drivers/i2c.h"
 #include "target/pico1calc/pico1calc.h"
-#include "target/rp2040.h"
+#include "target/rpico.h"
 #include "kernel/spinlock.h"
 #include "config.h"
 #include <stdint.h>

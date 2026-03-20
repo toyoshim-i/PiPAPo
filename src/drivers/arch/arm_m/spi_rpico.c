@@ -1,5 +1,5 @@
 /*
- * spi.c — SPI0 driver for RP2040 PL022 (ARM PrimeCell SSP)
+ * spi_rpico.c — SPI0 driver for RP2040/RP2350 PL022 (ARM PrimeCell SSP)
  *
  * Drives the SPI0 controller to communicate with the SD card on the
  * PicoCalc board.  Pin assignments are defined in src/target/pico1calc/pico1calc.h.
@@ -13,7 +13,7 @@
 
 #include "drivers/spi.h"
 #include "target/pico1calc/pico1calc.h"
-#include "target/rp2040.h"
+#include "target/rpico.h"
 #include "config.h"
 #include <stdint.h>
 

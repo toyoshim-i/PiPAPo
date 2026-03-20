@@ -45,7 +45,11 @@
 .equ PROC_RUNNABLE,     1
 
 .syntax unified
+#if __ARM_ARCH >= 8
+.cpu cortex-m33
+#else
 .cpu cortex-m0plus
+#endif
 .thumb
 
 .section .text.svc_handler, "ax", %progbits

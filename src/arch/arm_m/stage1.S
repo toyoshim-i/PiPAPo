@@ -37,7 +37,11 @@
 .equ SCB_VTOR,    0xE000ED08     @ Vector Table Offset Register (PPB + 0xED08)
 
 .syntax unified
+#if __ARM_ARCH >= 8
+.cpu cortex-m33
+#else
 .cpu cortex-m0plus
+#endif
 .thumb
 
 @ =============================================================================

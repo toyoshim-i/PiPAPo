@@ -1,5 +1,5 @@
 /*
- * uart_rp2040.c — Bare-metal UART0 driver for RP2040
+ * uart_rpico.c — Bare-metal UART0 driver for RP2040/RP2350
  *
  * Initializes UART0 (PL011) at 115200 8N1 on GPIO 0 (TX) / GPIO 1 (RX).
  * All register access is direct (volatile pointers); no Pico SDK runtime
@@ -15,7 +15,7 @@
 
 #include "drivers/uart.h"
 #include "config.h"
-#include "target/rp2040.h"
+#include "target/rpico.h"
 #include "arch/arm_m/cpu.h"
 #include "kernel/fd/tty.h"      /* tty_rx_notify, tty_signal_intr */
 #include "kernel/spinlock.h"    /* SPIN_TXRING */
@@ -93,14 +93,22 @@ static volatile uint8_t tx_head, tx_tail;
 static volatile uint8_t rx_head, rx_tail;
 
 /*
- * Baud rate divisors:
- *   @ 12 MHz XOSC:  IBRD=6,  FBRD=33
- *   @ 133 MHz PLL:  IBRD=72, FBRD=11
+ * Baud rate divisors for PL011:
+ *   BAUDDIV = clk / (16 * baud)
+ *   IBRD = integer part, FBRD = round(frac * 64)
+ *
+ *   @ 12 MHz XOSC:       IBRD=6,  FBRD=33
+ *   @ PPAP_SYS_HZ (PLL): computed from config.h
  */
+#define UART_BAUD      115200u
 #define UART_IBRD_115200_12MHZ    6u
 #define UART_FBRD_115200_12MHZ   33u
-#define UART_IBRD_115200_133MHZ  72u
-#define UART_FBRD_115200_133MHZ  11u
+
+/* PLL baud divisors — computed from PPAP_SYS_HZ (config.h) */
+#define UART_BAUDDIV_PLL     (PPAP_SYS_HZ / (16u * UART_BAUD))
+#define UART_BAUDFRAC_PLL    ((PPAP_SYS_HZ % (16u * UART_BAUD)) * 4u / UART_BAUD)
+#define UART_IBRD_PLL        UART_BAUDDIV_PLL
+#define UART_FBRD_PLL        UART_BAUDFRAC_PLL
 
 /* ==========================================================================
  * Local helpers
@@ -238,9 +246,9 @@ void uart_tx_drain(void)
     UART0_IMSC &= ~UART_IMSC_TXIM;
 }
 
-void uart_reinit_133mhz(void)
+void uart_reinit_pll(void)
 {
-    /* Minimal baud rate switch for 115200 @ 133 MHz.
+    /* Minimal baud rate switch for 115200 @ PPAP_SYS_HZ.
      * Prerequisite: uart_tx_drain() then clock_init_pll().
      *
      * Only the baud divisors are changed.  All other UART0 state (IMSC,
@@ -248,8 +256,8 @@ void uart_reinit_133mhz(void)
     /* Disable UART before touching baud rate registers (PL011 requirement) */
     UART0_CR = 0;
 
-    UART0_IBRD = UART_IBRD_115200_133MHZ;
-    UART0_FBRD = UART_FBRD_115200_133MHZ;
+    UART0_IBRD = UART_IBRD_PLL;
+    UART0_FBRD = UART_FBRD_PLL;
     UART0_LCR_H = UART_LCR_8N1_FIFO;  /* latch IBRD/FBRD (PL011 req) */
 
     /* Re-enable UART, TX and RX */

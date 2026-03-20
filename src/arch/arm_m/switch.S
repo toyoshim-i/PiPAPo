@@ -38,7 +38,11 @@
 .equ PCB_SP_OFFSET, 32      @ offsetof(pcb_t, sp) — see proc.h
 
 .syntax unified
+#if __ARM_ARCH >= 8
+.cpu cortex-m33
+#else
 .cpu cortex-m0plus
+#endif
 .thumb
 
 .section .text.pendsv, "ax", %progbits

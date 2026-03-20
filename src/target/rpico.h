@@ -1,16 +1,17 @@
 /*
- * rp2040.h — RP2040 peripheral register definitions
+ * rpico.h — RP2040/RP2350 peripheral register definitions
  *
  * Shared header for hardware register addresses and bit definitions that
- * are used across multiple driver files (uart.c, clock.c, spi.c).
+ * are used across multiple driver files (uart, clock, spi, i2c).
+ * These registers are at the same addresses on both RP2040 and RP2350.
  *
  * Peripheral-specific registers that are only used in a single driver
  * (e.g., UART0 registers in uart.c, SPI0 in spi.c) remain local to that
  * file to avoid an overly large header.
  */
 
-#ifndef PPAP_HW_RP2040_H
-#define PPAP_HW_RP2040_H
+#ifndef PPAP_HW_RPICO_H
+#define PPAP_HW_RPICO_H
 
 #include <stdint.h>
 
@@ -65,4 +66,4 @@
 /* clk_peri CTRL: AUXSRC[7:5]=0 (=clk_sys), ENABLE bit 11 */
 #define CLK_PERI_ENABLE   (1u << 11)
 
-#endif /* PPAP_HW_RP2040_H */
+#endif /* PPAP_HW_RPICO_H */

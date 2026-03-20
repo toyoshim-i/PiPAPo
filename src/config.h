@@ -21,7 +21,9 @@
  *               SYSTICK_RELOAD.  One tick = one unit of ticks_remaining.
  *               Default: 100 Hz → 10 ms time slices.
  * ────────────────────────────────────────────────────────────────────────── */
+#ifndef PPAP_SYS_HZ
 #define PPAP_SYS_HZ    133000000u   /* CPU frequency after PLL init (Hz)   */
+#endif
 #define PPAP_TICK_HZ         100u   /* SysTick ticks per second            */
 
 /* ── Scheduler ─────────────────────────────────────────────────────────────

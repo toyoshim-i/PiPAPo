@@ -10,9 +10,9 @@ principles, making this the most natural next hardware target for PPAP.
 
 | Feature | RP2040 (Pico 1) | RP2350 (Pico 2) |
 |---------|-----------------|-----------------|
-| CPU cores | 2× Cortex-M0+ (ARMv6-M) | 2× Cortex-M33 (ARMv8-M) **or** 2× Hazard3 (RISC-V) |
+| CPU cores | 2x Cortex-M0+ (ARMv6-M) | 2x Cortex-M33 (ARMv8-M) **or** 2x Hazard3 (RISC-V) |
 | Clock | 133 MHz | 150 MHz (up to ~300 MHz overclocked) |
-| SRAM | 264 KB | **520 KB** (10 banks × 48 KB + 2 × 16 KB) |
+| SRAM | 264 KB | **520 KB** (10 banks x 48 KB + 2 x 16 KB) |
 | Flash | External QSPI (XIP) | External QSPI (XIP), up to 16 MB |
 | PSRAM | Not supported | Optional external QSPI PSRAM (XIP, up to 16 MB) |
 | ISA | Thumb-1 only | Thumb-1 + **Thumb-2** (32-bit instructions) |
@@ -20,11 +20,11 @@ principles, making this the most natural next hardware target for PPAP.
 | DSP | None | **DSP extensions** (SIMD, saturating arithmetic) |
 | MPU | 8 regions (ARMv6-M MPU) | **8 regions (ARMv8-M MPU)** + SAU |
 | TrustZone | No | **Yes** (Secure/Non-Secure worlds) |
-| Boot | ROM → boot2 → kernel | ROM → boot2 → kernel (compatible) |
-| PIO | 2× PIO, 4 SM each | 3× PIO, 4 SM each |
-| Peripherals | 2× SPI, 2× I2C, 2× UART | 2× SPI, 2× I2C, 2× UART (compatible) |
+| Boot | ROM -> boot2 -> kernel | ROM -> boot2 -> kernel (compatible) |
+| PIO | 2x PIO, 4 SM each | 3x PIO, 4 SM each |
+| Peripherals | 2x SPI, 2x I2C, 2x UART | 2x SPI, 2x I2C, 2x UART (compatible) |
 | DMA | 12 channels | 16 channels |
-| USB | 1× USB 1.1 | 1× USB 1.1 (compatible) |
+| USB | 1x USB 1.1 | 1x USB 1.1 (compatible) |
 | Package | QFN-56 | QFN-60 (mostly pin-compatible) |
 | ADC | 4 channels, 12-bit | 4 channels, 12-bit (compatible) |
 | Spinlocks | 32 hardware spinlocks | 32 hardware spinlocks (compatible) |
@@ -34,12 +34,12 @@ principles, making this the most natural next hardware target for PPAP.
 The RP2350 is an **evolutionary upgrade**, not a revolutionary change.
 The peripheral set is nearly identical.  The biggest differences are:
 
-1. **More SRAM** (520 KB vs 264 KB) — ~130 pages vs ~51 pages
-2. **Thumb-2 ISA** — 32-bit Thumb instructions, smaller code
-3. **Hardware FPU** — single-precision float at near-zero cost
-4. **ARMv8-M MPU** — slightly different register interface from ARMv6-M
-5. **TrustZone** — optional Secure/Non-Secure partitioning
-6. **RISC-V option** — the Hazard3 cores are selectable at boot
+1. **More SRAM** (520 KB vs 264 KB) -- ~130 pages vs ~51 pages
+2. **Thumb-2 ISA** -- 32-bit Thumb instructions, smaller code
+3. **Hardware FPU** -- single-precision float at near-zero cost
+4. **ARMv8-M MPU** -- different register interface from ARMv6-M
+5. **TrustZone** -- optional Secure/Non-Secure partitioning
+6. **RISC-V option** -- the Hazard3 cores are selectable at boot
 
 ---
 
@@ -52,7 +52,7 @@ Produce a bootable PPAP system on the Raspberry Pi Pico 2 that:
 - Boots from QSPI flash (XIP) using the existing stage1 boot mechanism.
 - Runs dual-core preemptive scheduling (same as pico1).
 - Passes the full PPAP test suite (`runtests`).
-- Takes advantage of the larger SRAM (520 KB → ~130 user pages).
+- Takes advantage of the larger SRAM (520 KB -> ~130 user pages).
 - Produces smaller code via Thumb-2 encoding.
 
 ### 2.2 Extended Goals
@@ -65,7 +65,7 @@ Produce a bootable PPAP system on the Raspberry Pi Pico 2 that:
 
 ### 2.3 Out of Scope
 
-- Wi-Fi/Bluetooth (Pico 2 W uses CYW43439, same as Pico W — complex
+- Wi-Fi/Bluetooth (Pico 2 W uses CYW43439, same as Pico W -- complex
   driver, not needed for initial port).
 - USB host mode.
 - DMA-driven file I/O.
@@ -79,7 +79,40 @@ Produce a bootable PPAP system on the Raspberry Pi Pico 2 that:
 The Cortex-M33 is source-compatible with Cortex-M0+ for most code, but
 the assembly-level differences matter for PPAP's arch layer.
 
-#### Exception Entry/Return
+#### 3.1.1 Assembly Files: `.cpu` Directive and ISA Workarounds
+
+All four assembly files under `src/arch/arm_m/` currently specify:
+
+```asm
+.cpu cortex-m0plus
+```
+
+On Cortex-M33, these must change to `.cpu cortex-m33`.  Rather than
+duplicating files, we use a preprocessor define set by the build system:
+
+```asm
+#if defined(__ARM_ARCH) && __ARM_ARCH >= 8
+.cpu cortex-m33
+#else
+.cpu cortex-m0plus
+#endif
+```
+
+The actual code impact in each file:
+
+| File | M0+ Limitation | M33 Opportunity | Change Required |
+|------|---------------|-----------------|-----------------|
+| `boot.S` | `.cpu` directive only | Same Reset_Handler logic works | `.cpu` directive only |
+| `stage1.S` | `.cpu` directive only | Same VTOR-redirect logic | `.cpu` directive only |
+| `switch.S` | r8-r11 via r4-r7 temps | Direct `stmdb`/`ldmia` on r4-r11 | `.cpu` directive + optional cleanup |
+| `trap.S` | r8-r11 via r4-r7 temps | Same, but current code works fine | `.cpu` directive only |
+
+**Key insight**: All M0+ assembly is a valid subset of M33 -- the port
+works by changing only the `.cpu` directive.  The M0+ workarounds
+(mov r4,r8; stmia r4-r7 pattern) execute correctly on M33, just slightly
+less efficiently.  Optimization can be done later.
+
+#### 3.1.2 Exception Entry/Return
 
 Cortex-M33 extends the exception frame with optional FPU context:
 
@@ -91,10 +124,15 @@ Cortex-M33 extends the exception frame with optional FPU context:
 | PendSV | Yes | Yes (identical mechanism) |
 | SysTick | Yes | Yes (identical) |
 
-**Impact**: `switch.S` and `trap.S` need minor changes for FPU frame
-handling.  The basic PendSV context switch mechanism is identical.
+**For the initial port (no FPU)**: The exception frame is identical.
+EXC_RETURN bit 4 defaults to 1 (no FPU frame) when FPU is disabled,
+so `switch.S` and `trap.S` work unchanged.
 
-#### Instruction Set
+**When FPU is enabled (Phase Pi2-4)**: Lazy stacking means the hardware
+only extends the frame when s0-s15 are actually dirty.  The PendSV
+handler needs no code change -- the CPU handles it via FPCCR.LSPEN.
+
+#### 3.1.3 Instruction Set
 
 Thumb-2 adds 32-bit instructions to the Thumb ISA:
 
@@ -108,12 +146,13 @@ Thumb-2 adds 32-bit instructions to the Thumb ISA:
 | `clz` (count leading zeros) | No | Yes | Useful for bitmap allocator |
 | `mla/mls` (multiply-accumulate) | No | Yes | DSP |
 | `ldrex/strex` (exclusive access) | No | Yes | Better atomics |
+| `stmdb/ldmia` with high regs | No | Yes | Simpler context switch |
 
 **Impact**: Recompile with `-mcpu=cortex-m33 -mthumb` produces smaller,
-faster code with no source changes.  The only arch-level asm that needs
-updating is `switch.S`, `trap.S`, and `boot.S`.
+faster code with no C source changes.  Assembly files need only the
+`.cpu` directive change (see 3.1.1).
 
-#### MPU (Memory Protection Unit)
+#### 3.1.4 MPU (Memory Protection Unit)
 
 The ARMv8-M MPU has a different register interface from ARMv6-M:
 
@@ -123,27 +162,36 @@ The ARMv8-M MPU has a different register interface from ARMv6-M:
 | Size granularity | Power-of-2 (32 B minimum) | **Any multiple of 32 B** |
 | Size encoding | RASR.SIZE field (log2) | Base + Limit addresses |
 | Sub-region disable | 8 sub-regions per region | Not needed (arbitrary size) |
-| Registers | RBAR + RASR per region | RBAR + RLAR per region |
-| Execute Never | RASR.XN bit | RLAR.XN bit |
+| Registers | RNR + RBAR + RASR | RNR + RBAR + RLAR |
+| Attributes | Inline in RASR (AP, XN, C, B) | Inline in RBAR (SH, AP, XN) + MAIR index in RLAR |
+| Execute Never | RASR.XN bit 28 | RBAR.XN bit 0 |
 | PRIVDEFENA | Yes | Yes (same concept) |
 
-The ARMv8-M MPU is **simpler to use** because region sizes don't need to
-be powers of 2.  This is a strict improvement for PPAP — the current MPU
-setup code in `mpu.c` can be simplified.
+The ARMv8-M MPU is **simpler to use** for PPAP because region sizes don't
+need to be powers of 2.  However, the register encoding is completely
+different, requiring `#if` guards in `mpu.c`.
 
+Current `mpu.c` code (ARMv6-M):
 ```c
-/* RP2040 (ARMv6-M): region must be power-of-2 aligned */
-MPU->RBAR = base | (region << 0) | (1 << 4);  /* VALID + REGION */
-MPU->RASR = (size_log2 << 1) | attrs | 1;      /* SIZE + ATTRS + ENABLE */
-
-/* RP2350 (ARMv8-M): base and limit are arbitrary (32-byte granularity) */
-MPU->RNR  = region;
-MPU->RBAR = base | (sh << 3) | (ap << 1) | xn;
-MPU->RLAR = (limit & ~0x1F) | attrs_idx << 1 | 1;  /* LIMIT + ATTR + ENABLE */
+/* Region setup: RASR encodes size as log2, attributes inline */
+MPU_RNR  = region;
+MPU_RBAR = base;
+MPU_RASR = RASR_XN | RASR_AP(AP_RW_PRIV) | RASR_C | RASR_B |
+           RASR_SIZE(13u) | RASR_ENABLE;   /* 16 KB */
 ```
 
-**Impact**: Rewrite `mpu.c` (small file, ~80 lines).  The new MPU is
-easier to configure correctly.
+New ARMv8-M code:
+```c
+/* Region setup: RBAR encodes AP/SH/XN, RLAR encodes limit + MAIR index */
+MPU_RNR  = region;
+MPU_RBAR = base | (AP_RW_PRIV << 1) | XN;
+MPU_RLAR = ((base + size - 1) & ~0x1Fu) | (attr_idx << 1) | ENABLE;
+/* Must also program MAIR0/MAIR1 for memory type attributes */
+```
+
+**Key difference**: ARMv8-M MPU uses MAIR (Memory Attribute Indirection
+Register) -- attributes are defined in MAIR0/MAIR1 and referenced by
+index from RLAR.  The current RASR-inline approach won't work.
 
 ### 3.2 Memory Layout
 
@@ -159,10 +207,15 @@ With 520 KB SRAM, the memory split improves significantly:
 | DMA / Reserved | 0x2007C000 | 16 KB | DMA buffers, scratch |
 
 Compared to pico1 (51 pages) and pico1calc (50 pages), **116 pages is a
-2.3× improvement**.  This allows more processes, larger programs, and more
+2.3x improvement**.  This allows more processes, larger programs, and more
 filesystem buffers.
 
-#### pico2 with PSRAM
+**Note**: The pico2 bare target has no SD card or display, so I/O buffer
+and DMA regions can be reclaimed for the page pool in a future revision
+(giving ~124 pages).  The initial port keeps the same layout as pico1
+for structural consistency.
+
+#### pico2 with PSRAM (extended goal)
 
 If external QSPI PSRAM is connected (Pico 2 supports up to 16 MB):
 
@@ -172,23 +225,29 @@ If external QSPI PSRAM is connected (Pico 2 supports up to 16 MB):
 | SRAM (fast pool) | 0x2000A000 | 480 KB (~120 pages) | Hot user pages |
 | PSRAM (XIP) | 0x11000000 | 16 MB (~4096 pages) | Cold user pages, file cache |
 
-With PSRAM, the page pool grows to **~4200 pages** — comparable to a small
-desktop system.  PSRAM is accessed via XIP (execute-in-place), so it can
-hold both code and data, though at higher latency than SRAM.
-
 ### 3.3 Boot Sequence
 
 The RP2350 boot sequence is compatible with RP2040:
 
-1. **Boot ROM** — selects ARM or RISC-V cores, loads boot2 from flash
-2. **boot2** (256 B) — configures QSPI flash timing, sets VTOR
-3. **stage1** (`src/boot/stage1.S`) — sets VTOR to kernel vector table
-4. **Kernel** — `Reset_Handler` → `kmain()`
+1. **Boot ROM** -- selects ARM or RISC-V cores, loads boot2 from flash
+2. **boot2** (256 B) -- configures QSPI flash timing, sets VTOR
+3. **stage1** (`src/arch/arm_m/stage1.S`) -- sets VTOR to kernel vector table
+4. **Kernel** -- `Reset_Handler` -> `kmain()`
 
-The Pico SDK handles boot2.  PPAP's stage1 needs minor updates:
-- VTOR address may differ if flash layout changes
-- RP2350 boot ROM has additional security features (signed boot) that
-  can be ignored for development
+**SDK 2.2.0**: We already have Pico SDK 2.2.0 in `third_party/pico-sdk/`,
+which supports both RP2040 and RP2350.  The SDK provides RP2350 boot2
+variants under `src/rp2350/boot_stage2/` and selects the correct one via
+`PICO_PLATFORM=rp2350-arm-s`.  No SDK upgrade needed.
+
+**stage1.S**: The existing code is position-independent and reads
+`__kernel_vtor` from the linker script.  It works unchanged on RP2350
+as long as the linker script defines the correct `__kernel_vtor` address.
+Only the `.cpu` directive needs updating (see 3.1.1).
+
+**boot2 linkage**: The pico1 CMakeLists.txt currently links
+`$<TARGET_OBJECTS:bs2_default_library>`.  The SDK automatically builds
+the correct boot2 for the selected `PICO_PLATFORM`, so this line works
+unchanged for RP2350.
 
 ### 3.4 Peripheral Compatibility
 
@@ -197,24 +256,58 @@ Most RP2350 peripherals are register-compatible with RP2040:
 | Peripheral | Compatible? | Notes |
 |-----------|------------|-------|
 | UART (PL011) | **Yes** | Same registers |
-| SPI | **Yes** | Same registers |
-| I2C | **Yes** | Same registers |
+| SPI (PL022) | **Yes** | Same registers |
+| I2C (DW APB) | **Yes** | Same registers |
 | GPIO / IO_BANK0 | **Yes** | Same registers (more pins on QFN-60) |
 | PIO | **Yes** | Third PIO block added |
 | ADC | **Yes** | Same registers |
 | Timer | **Yes** | Same registers |
 | SysTick | **Yes** | Standard Cortex-M |
-| SIO (spinlocks) | **Yes** | Same 32 spinlocks |
+| SIO (spinlocks) | **Yes** | Same 32 spinlocks, same SIO_CPUID |
 | DMA | Mostly | 16 channels (was 12), same programming model |
 | USB | **Yes** | Same USB 1.1 controller |
 | XIP / QSPI | Extended | PSRAM support added |
-| Clocks / PLL | Similar | Different clock tree, same concepts |
+| Clocks / PLL | **Different** | Different PLL structure (see 3.4.1) |
 | Watchdog | **Yes** | Same registers |
 | RESETS | **Yes** | Same registers |
 
-**Impact**: Most drivers (`uart.c`, `clock.c`, SPI, I2C) work unchanged.
-Only `clock.c` may need PLL frequency adjustments for the different
-default crystal and target clock.
+**Impact**: Drivers `uart_rp2040.c`, `spi_rp2040.c`, `i2c_rp2040.c`,
+`spi_lcd_rp2040.c` work unchanged.  Only `clock_rp2040.c` needs changes.
+
+#### 3.4.1 Clock Configuration (PLL Differences)
+
+The RP2350 PLL has the same register layout as RP2040 (CS, PWR, FBDIV_INT,
+PRIM at the same offsets from PLL_SYS base 0x40028000), but the target
+frequency and divider values differ:
+
+| Parameter | RP2040 | RP2350 |
+|-----------|--------|--------|
+| XOSC | 12 MHz | 12 MHz (same on Pico 2 board) |
+| Target clk_sys | 133 MHz | 150 MHz |
+| VCO | 1596 MHz (FBDIV=133) | 1500 MHz (FBDIV=125) |
+| POSTDIV1 x POSTDIV2 | 6 x 2 = 12 | 5 x 2 = 10 |
+| Result | 1596/12 = 133 MHz | 1500/10 = 150 MHz |
+
+**Approach**: Parameterize `clock_rp2040.c` with target-provided defines
+(`PPAP_PLL_FBDIV`, `PPAP_PLL_PD1`, `PPAP_PLL_PD2`), or create a separate
+`clock_rp2350.c` with the RP2350 values.  The former is cleaner since the
+register interface is identical.
+
+**SysTick reload**: Currently hardcoded as `(133000000u/100u-1u)` in
+`cpu.h`.  Must become `(PPAP_SYS_CLK_HZ/100u-1u)` where each target
+defines `PPAP_SYS_CLK_HZ`.  For RP2350: `(150000000u/100u-1u) = 1499999`.
+
+**UART baud divisor**: `uart_reinit_133mhz()` recalculates baud divisors
+for 133 MHz.  Needs to use `PPAP_SYS_CLK_HZ` instead.
+
+### 3.5 Shared Header Updates
+
+| Header | Change | Reason |
+|--------|--------|--------|
+| `cpu.h` | Guard name change: `PPAP_HW_CORTEX_M0PLUS_H` -> `PPAP_HW_CPU_H` | Applies to both M0+ and M33 |
+| `cpu.h` | `SYSTICK_RELOAD` parameterized on `PPAP_SYS_CLK_HZ` | 133 MHz vs 150 MHz |
+| `cpu.h` | Add CPACR, FPCCR, FPU registers (gated on `__ARM_ARCH >= 8`) | FPU support (Phase Pi2-4) |
+| `rp2040.h` | No change needed | RP2350 peripherals at same addresses |
 
 ---
 
@@ -227,18 +320,18 @@ Everything above the arch layer is unchanged:
 | Kernel (C code) | Unchanged |
 | VFS, all filesystems | Unchanged |
 | Process model, scheduler | Unchanged |
-| Syscall dispatch | Unchanged |
+| Syscall dispatch (C) | Unchanged |
 | Signal delivery | Unchanged |
 | Pipe, FD, TTY | Unchanged |
 | Trace / ptrace | Unchanged |
 | All user-space programs | Recompile only (Thumb-2 automatic) |
-| romfs / UFS images | Binary compatible |
+| romfs / UFS images | Binary compatible (ARM ELF, re-linked for M33) |
 | SPI SD card driver | Unchanged |
 | Dual-core support | Unchanged (same SIO spinlock mechanism) |
 
 ---
 
-## 5. New Opportunities
+## 5. New Opportunities (Extended Goals)
 
 ### 5.1 Hardware FPU
 
@@ -248,152 +341,339 @@ The Cortex-M33 has a single-precision VFPv5 FPU.  This enables:
 - User-space programs compiled with `-mfloat-abi=hard -mfpu=fpv5-sp-d16`
 - Lazy FPU context save on context switch (CONTROL.FPCA + EXC_RETURN bit 4)
 
-**Implementation**: Enable FPU in `SystemInit`, configure lazy stacking
-via FPCCR.  The PendSV handler already handles FPU context via EXC_RETURN
-bit 4 on ARMv8-M — just needs to be aware of the extended frame size.
+**Implementation**: Enable FPU in `target_early_init()` via CPACR,
+configure lazy stacking via FPCCR.  With lazy stacking enabled, the
+hardware automatically saves/restores s0-s15 only when a process has
+touched the FPU.  No changes to `switch.S` or `trap.S` needed.
 
 ### 5.2 TrustZone (ARMv8-M Security Extension)
 
-TrustZone partitions the system into Secure and Non-Secure worlds:
-
-| World | Access | PPAP use |
-|-------|--------|----------|
-| Secure | Full hardware access | Kernel |
-| Non-Secure | Restricted by SAU/IDAU | User processes |
-
-This is more powerful than the MPU alone:
-
-- **Secure** code cannot be read or executed by Non-Secure code
-- Transitions via `SG` (Secure Gateway) instructions at defined entry points
-- The SAU (Security Attribution Unit) defines memory region security
-- Non-Secure code faults immediately on any Secure memory access
-
-**Potential PPAP use**: Run the kernel in Secure world, user processes in
-Non-Secure world.  Syscalls use the `SG` instruction.  This provides
-hardware-enforced kernel isolation — a user process cannot corrupt the
-kernel even with an MPU misconfiguration.
-
+TrustZone partitions the system into Secure and Non-Secure worlds.
 This is an extended goal.  The initial port runs everything in the
-Secure world (same as RP2040 ignoring TrustZone).
+Secure world (identical to RP2040 ignoring TrustZone).
 
 ### 5.3 PSRAM as Extended Page Pool
 
-With 16 MB PSRAM:
-
-- Page allocator maintains two zones: SRAM (fast) and PSRAM (slow)
-- Hot pages (current process stacks, kernel data) in SRAM
-- Cold pages (inactive process code, file cache) in PSRAM
-- Page migration between zones when a process is scheduled/descheduled
-
-The XIP controller handles PSRAM transparently — code and data in PSRAM
-are accessed via normal memory reads at the PSRAM address range.  No
-special caching code needed; the XIP cache handles it.
+With 16 MB PSRAM, the page pool grows to ~4200 pages.  This is an
+extended goal requiring XIP controller configuration and zone-based
+page allocation.
 
 ### 5.4 RISC-V (Hazard3)
 
-The RP2350 can boot in RISC-V mode using the dual Hazard3 cores
-(RV32IMAC — integer, multiply, atomic, compressed).  This would be a
-**completely new architecture** for PPAP:
-
-- New `src/arch/rv32/` directory (boot.S, switch.S, trap.S)
-- New `ecall` syscall convention
-- RISC-V compressed instructions (analogous to Thumb)
-- RISC-V PMP (Physical Memory Protection) instead of ARM MPU
-
-This is a significant effort and is deferred to a future proposal.  The
-initial pico2 port targets ARM (Cortex-M33) only.
+The RP2350 can boot in RISC-V mode (RV32IMAC).  This is a completely
+new architecture -- comparable effort to the original m68k port.
+Deferred to a separate proposal.
 
 ---
 
-## 6. New Files
+## 6. Files to Create and Modify
+
+### New files
 
 ```
 src/target/pico2/
-  CMakeLists.txt        — Build rules (uses Pico SDK with RP2350)
-  pico2.ld              — Linker script (520 KB SRAM layout)
-  target_pico2.c        — Target hooks (early_init, late_init)
-  romfs/                — Romfs overlay (same structure as pico1)
+  CMakeLists.txt        -- Build rules (PICO_PLATFORM=rp2350-arm-s)
+  pico2.ld              -- Linker script (520 KB SRAM layout)
+  pico2.h               -- Pin definitions, clock constants
+  target_pico2.c        -- Target hooks (early_init, late_init)
+  romfs/                -- Romfs overlay (same structure as pico1)
 ```
 
-Existing files that need modification:
+### Existing files to modify
 
-| File | Change |
+| File | Change | Phase |
+|------|--------|-------|
+| `src/arch/arm_m/boot.S` | `.cpu` directive: M0+ or M33 via `#if __ARM_ARCH` | Pi2-1 |
+| `src/arch/arm_m/stage1.S` | `.cpu` directive (same pattern) | Pi2-1 |
+| `src/arch/arm_m/switch.S` | `.cpu` directive (same pattern) | Pi2-1 |
+| `src/arch/arm_m/trap.S` | `.cpu` directive (same pattern) | Pi2-1 |
+| `src/arch/arm_m/cpu.h` | Parameterize `SYSTICK_RELOAD` on `PPAP_SYS_CLK_HZ` | Pi2-1 |
+| `src/drivers/arch/arm_m/clock_rp2040.c` | Parameterize PLL dividers on target defines | Pi2-1 |
+| `src/drivers/arch/arm_m/uart_rp2040.c` | Parameterize baud divisor on `PPAP_SYS_CLK_HZ` | Pi2-1 |
+| `src/kernel/mm/mpu.c` | Add `#if __ARM_ARCH >= 8` path for ARMv8-M MPU + MAIR | Pi2-2 |
+| `scripts/run.sh` | Add `pico2` target | Pi2-1 |
+
+### Files that need NO changes
+
+| File | Reason |
 |------|--------|
-| `src/arch/arm_m/mpu.c` | Add `#if` for ARMv8-M MPU register interface |
-| `src/arch/arm_m/switch.S` | Add FPU lazy stacking awareness |
-| `src/boot/stage1.S` | Verify VTOR address for RP2350 flash layout |
-| `cmake/arm_m.cmake` | Add `-mcpu=cortex-m33` variant |
-| `scripts/build.sh` | Add `pico2` target |
-| `scripts/run.sh` | Add `pico2` target (OpenOCD + picoprobe) |
-
-### Target-specific configuration
-
-```cmake
-# src/target/pico2/CMakeLists.txt
-set(PICO_PLATFORM rp2350-arm-s)   # RP2350, ARM, Secure world
-set(PPAP_PAGE_COUNT_MAX 116)       # 464 KB / 4 KB
-set(PPAP_KERNEL_DATA_SIZE 24576)   # 24 KB
-set(PPAP_IO_BUFFER_SIZE  16384)    # 16 KB
-```
+| `src/target/rp2040.h` | RP2350 peripheral addresses are the same |
+| `src/drivers/arch/arm_m/spi_rp2040.c` | Register-compatible |
+| `src/drivers/arch/arm_m/i2c_rp2040.c` | Register-compatible |
+| `src/drivers/spi_sd.c` | No hardware dependency |
+| All kernel C code | Architecture-independent |
+| `cmake/arm_m.cmake` | No change needed -- Pico SDK sets compiler flags |
 
 ---
 
-## 7. Implementation Phases
+## 7. Implementation Phases (Detailed)
 
 ### Phase Pi2-1: Target Skeleton and Boot
 
-**Goal**: "PiPAPo booting... [pico2]" on UART.
+**Goal**: "PiPAPo booting... [pico2]" on UART at 115200 bps.
 
-1. Create `src/target/pico2/` by copying `pico1/` as a starting point.
-2. Update `CMakeLists.txt` for RP2350 (`PICO_PLATFORM=rp2350-arm-s`).
-3. Update linker script for 520 KB SRAM layout.
-4. Update compiler flags: `-mcpu=cortex-m33 -mfpu=fpv5-sp-d16 -mfloat-abi=hard`.
-5. Build and flash via picoprobe or UF2.
+**Prerequisites**: Raspberry Pi Pico 2 board, picoprobe or SWD debugger.
 
-**Verification**: Kernel banner on UART at 115200 bps.
+#### Step 1a: Parameterize clock-dependent code
+
+Before creating the new target, refactor shared code so the same sources
+work for both 133 MHz (RP2040) and 150 MHz (RP2350):
+
+1. **`cpu.h`**: Replace hardcoded `SYSTICK_RELOAD`:
+   ```c
+   /* Before: */
+   #define SYSTICK_RELOAD  (133000000u/100u - 1u)
+   /* After: */
+   #ifndef PPAP_SYS_CLK_HZ
+   #define PPAP_SYS_CLK_HZ 133000000u   /* default: RP2040 */
+   #endif
+   #define SYSTICK_RELOAD  (PPAP_SYS_CLK_HZ/100u - 1u)
+   ```
+
+2. **`clock_rp2040.c`**: Parameterize PLL dividers:
+   ```c
+   #ifndef PPAP_PLL_FBDIV
+   #define PPAP_PLL_FBDIV  133   /* RP2040: 12 * 133 = 1596 MHz VCO */
+   #define PPAP_PLL_PD1    6
+   #define PPAP_PLL_PD2    2     /* 1596 / 12 = 133 MHz */
+   #endif
+   ```
+
+3. **`uart_rp2040.c`**: Replace `uart_reinit_133mhz()` with
+   `uart_reinit(uint32_t sys_clk_hz)`, or use `PPAP_SYS_CLK_HZ`.
+
+4. **Assembly files**: Add conditional `.cpu` directive to all four
+   `.S` files under `src/arch/arm_m/`.
+
+5. **Verify**: Rebuild and test `pico1` and `qemu_arm` to confirm
+   no regressions from parameterization.
+
+**Deliverables**: All pico1/qemu_arm tests still pass.
+
+#### Step 1b: Create pico2 target directory
+
+1. `mkdir -p src/target/pico2/romfs`
+
+2. **`pico2.h`** -- target constants:
+   ```c
+   #define PPAP_SYS_CLK_HZ    150000000u
+   #define PPAP_PLL_FBDIV      125
+   #define PPAP_PLL_PD1        5
+   #define PPAP_PLL_PD2        2
+   /* GPIO pins: same as Pico 1 (UART0 TX=0, RX=1) */
+   #define UART_TX_PIN  0
+   #define UART_RX_PIN  1
+   ```
+
+3. **`target_pico2.c`** -- copy from `target_pico1.c`, update:
+   - `#include "pico2.h"` instead of `pico1.h`
+   - `target_name()` returns `"pico2"`
+   - `target_early_init()`: same UART + PLL init sequence
+
+4. **`pico2.ld`** -- copy from `pico1.ld` (not pico1calc), update:
+   ```
+   RAM_KERNEL  (rwx) : ORIGIN = 0x20000000, LENGTH = 24K
+   RAM_PAGES   (rwx) : ORIGIN = 0x20006000, LENGTH = 464K
+   RAM_IOBUF   (rw)  : ORIGIN = 0x20078000, LENGTH = 16K
+   RAM_DMA     (rw)  : ORIGIN = 0x2007C000, LENGTH = 16K
+   ```
+   (FLASH regions stay the same -- XIP base is 0x10000000 on both chips.)
+
+5. **`CMakeLists.txt`** -- based on `pico1/CMakeLists.txt`:
+   ```cmake
+   set(PICO_PLATFORM rp2350-arm-s)
+   set(PICO_BOARD pico2)
+   # ... (must be set BEFORE pico_sdk_init())
+
+   target_compile_definitions(ppap_pico2 PRIVATE
+       PPAP_SYS_CLK_HZ=150000000u
+       PPAP_PLL_FBDIV=125
+       PPAP_PLL_PD1=5
+       PPAP_PLL_PD2=2
+       PAGE_POOL_BASE=0x20006000u
+       PAGE_COUNT_MAX=116u
+   )
+   ```
+
+6. **`scripts/run.sh`**: Add `pico2` case (build + OpenOCD flash).
+
+**Deliverables**: `./scripts/run.sh --build pico2` produces a `.uf2`
+and `.elf`.  Flashing to Pico 2 prints kernel banner on UART.
+
+#### Step 1c: Smoke test
+
+1. Flash via picoprobe: `openocd -f interface/cmsis-dap.cfg -f target/rp2350.cfg`
+2. Or drag-and-drop `.uf2` via BOOTSEL button.
+3. Connect UART (115200 8N1, GPIO 0/1).
+4. Verify: `PiPAPo booting...` followed by `System clock: 150 MHz`.
+
+**Potential issues**:
+- Boot2 may need a different flash chip config -- check if
+  `bs2_default_library` works on Pico 2's W25Q128JVS flash.
+  (The SDK's `compile_time_choice.S` auto-detects, so this should work.)
+- UART timing: if 150 MHz baud divisor is off, garbage on UART.
+  Debug with SWD + `gdb-multiarch` first.
+
+---
 
 ### Phase Pi2-2: MPU Update
 
 **Goal**: Memory protection works with ARMv8-M MPU.
 
-1. Add ARMv8-M MPU configuration to `mpu.c` (conditional on `__ARM_ARCH >= 8`).
-2. Configure regions: kernel RW, flash RO+XN, user RW, peripherals.
-3. Verify user process faults on kernel memory access.
+#### Step 2a: Understand the ARMv8-M MPU register model
 
-**Verification**: MPU violation triggers HardFault (not silent corruption).
+The key difference is the MAIR (Memory Attribute Indirection Register):
 
-### Phase Pi2-3: Dual-Core and Integration Tests
+```
+ARMv6-M: attributes encoded directly in RASR (AP, C, B, XN bits)
+ARMv8-M: attributes defined in MAIR0/MAIR1, referenced by 3-bit index in RLAR
+```
 
-**Goal**: Full test suite passes on Pico 2.
+MAIR encoding for PPAP's 3 memory types:
 
-1. Verify dual-core boot (same SIO spinlock mechanism as RP2040).
-2. Verify SysTick on both cores.
-3. Run `runtests`.
-4. Compare test results with pico1 (should be identical + faster).
+| Index | Type | MAIR byte | Encoding |
+|-------|------|-----------|----------|
+| 0 | Normal, outer+inner write-back | 0xFF | Outer WB/WA, Inner WB/WA |
+| 1 | Device-nGnRnE | 0x00 | Device memory (peripherals) |
+| 2 | Normal, outer+inner write-through | 0xAA | Outer WT/WA, Inner WT/WA |
 
-**Verification**: "ALL TESTS PASSED" on UART, both cores active.
+#### Step 2b: Implement ARMv8-M MPU path in `mpu.c`
 
-### Phase Pi2-4: FPU Support
+Add `#if __ARM_ARCH >= 8` block:
+
+```c
+#if __ARM_ARCH >= 8
+/* ARMv8-M MPU registers */
+#define MPU_MAIR0   (*(volatile uint32_t *)0xE000EDC0u)
+#define MPU_MAIR1   (*(volatile uint32_t *)0xE000EDC4u)
+#define MPU_RLAR    (*(volatile uint32_t *)0xE000EDA0u)  /* replaces RASR */
+
+/* RBAR: base[31:5] | SH[4:3] | AP[2:1] | XN[0] */
+/* RLAR: limit[31:5] | (reserved)[4:3] | AttrIdx[3:1] | EN[0] */
+#endif
+```
+
+Region map (same 4-region layout, different encoding):
+
+| Region | Base | Limit | AP | XN | MAIR idx |
+|--------|------|-------|----|----|----------|
+| 0: Kernel data | 0x20000000 | 0x20005FFF | Priv RW (01) | Yes | 0 (WB) |
+| 1: Flash XIP | 0x10000000 | 0x10FFFFFF | Priv+User RO (11) | No | 2 (WT) |
+| 2: Process stack | per-process | +4KB | Priv+User RW (01)* | Yes | 0 (WB) |
+| 3: Peripherals | 0x40000000 | 0x5FFFFFFF | Priv RW (01) | Yes | 1 (Device) |
+
+*Note: ARMv8-M AP encoding differs: 00=Priv RW, 01=RW all, 10=Priv RO, 11=RO all.
+
+#### Step 2c: Test
+
+1. Build with MPU enabled.
+2. Run a user process that attempts to read 0x20000000 (kernel memory).
+3. Verify HardFault is triggered (not silent access).
+4. Run runtests to confirm no false MPU faults.
+
+**Deliverables**: MPU regions active, violation triggers HardFault.
+
+---
+
+### Phase Pi2-3: Full Test Suite
+
+**Goal**: All tests pass on Pico 2.
+
+#### Step 3a: Verify dual-core
+
+- SIO_CPUID at 0xD0000000 works identically on RP2350.
+- `core_id_reg` indirect pointer mechanism in `switch.S` and `trap.S`
+  works unchanged.
+- Core 1 launch via SIO FIFO is the same.
+
+#### Step 3b: Run runtests
+
+1. Build with `PPAP_TESTS=ON`:
+   ```
+   cmake -S src/target/pico2 -B build/pico2 -DPPAP_TESTS=ON
+   ```
+2. Flash and observe UART output.
+3. Expected: 17 tests pass (same as pico1 ARM subset -- h68k_dos and
+   x68k tests are m68k-only).
+
+#### Step 3c: Performance comparison
+
+Compare with pico1 output (if available):
+- Kernel text size (should be ~25% smaller due to Thumb-2)
+- Boot time (should be similar or faster due to 150 MHz)
+
+**Deliverables**: "ALL TESTS PASSED" on UART.
+
+---
+
+### Phase Pi2-4: FPU Support (Extended)
 
 **Goal**: User-space programs can use hardware float.
 
-1. Enable FPU in `SystemInit` (CPACR register).
-2. Configure lazy stacking (FPCCR.ASPEN = 1, FPCCR.LSPEN = 1).
-3. Verify context switch preserves FPU state correctly.
-4. Add a float test (`test_float`) that verifies hardware FP results.
+#### Step 4a: Enable FPU
 
-**Verification**: `test_float` passes; FPU context preserved across
-context switches and syscalls.
+In `target_early_init()` or a new `fpu_init()`:
+
+```c
+/* Enable CP10 and CP11 (FPU) in CPACR */
+#define CPACR  (*(volatile uint32_t *)0xE000ED88u)
+CPACR |= (0xF << 20);  /* Full access to CP10, CP11 */
+__asm volatile("dsb; isb");
+
+/* Enable lazy stacking (default on reset, but be explicit) */
+#define FPCCR  (*(volatile uint32_t *)0xE000EF34u)
+FPCCR |= (1u << 31) | (1u << 30);  /* ASPEN + LSPEN */
+```
+
+#### Step 4b: Compiler flags
+
+Add to pico2 CMakeLists.txt:
+```cmake
+target_compile_options(ppap_pico2 PRIVATE
+    -mfloat-abi=hard -mfpu=fpv5-sp-d16
+)
+```
+
+This applies to kernel code.  User-space (musl, busybox) also needs
+recompilation with hard-float for the ARM build.
+
+#### Step 4c: Context switch verification
+
+With lazy stacking:
+- EXC_RETURN bit 4 = 0 when FPU was used (extended frame on stack)
+- EXC_RETURN bit 4 = 1 when FPU was NOT used (standard 8-word frame)
+- The CPU handles this transparently -- `switch.S` only saves/restores
+  r4-r11 (callee-saved integer regs), and the hardware handles s0-s15.
+- **s16-s31** (callee-saved float regs) are NOT automatically saved.
+  If user code uses them, `switch.S` must save them manually.
+  - Option A: Always save s16-s31 in PendSV (32 bytes extra per switch)
+  - Option B: Check CONTROL.FPCA and only save if FPU was used
+  - Option C: For initial port, compile with `-mfpu=fpv5-sp-d16` but
+    don't use s16-s31-heavy code; verify correctness with test
+
+#### Step 4d: Float test
+
+Add `test_float` that:
+1. Forks a child process
+2. Both parent and child compute known float results in a loop
+3. Verify results are correct after multiple context switches
+
+**Deliverables**: `test_float` passes; hardware FP works.
+
+---
 
 ### Phase Pi2-5: PicoCalc 2 (if applicable)
 
 **Goal**: PPAP runs on PicoCalc hardware with RP2350.
 
 1. Create `src/target/pico2calc/` (LCD + keyboard drivers from pico1calc).
-2. Update SPI/I2C pin assignments for PicoCalc 2 board.
+2. Update SPI/I2C pin assignments for PicoCalc 2 board (if different).
 3. Verify LCD display and keyboard input.
+4. Include SD card, block device, VFS support.
 
-**Verification**: Interactive shell on PicoCalc 2 hardware.
+**Deliverables**: Interactive shell on PicoCalc 2 hardware.
+
+---
 
 ### Phase Pi2-6: PSRAM Support (Extended)
 
@@ -404,23 +684,25 @@ context switches and syscalls.
 3. Implement zone preference: SRAM for hot pages, PSRAM for cold pages.
 4. Test with many concurrent processes to exercise PSRAM pages.
 
-**Verification**: `runtests` passes with >100 pages allocated from PSRAM.
+**Deliverables**: `runtests` passes with >100 pages allocated from PSRAM.
+
+---
 
 ### Phase Pi2-7: TrustZone (Extended)
 
 **Goal**: Kernel runs in Secure world, user processes in Non-Secure.
 
-1. Configure SAU: kernel memory → Secure, user memory → Non-Secure.
+1. Configure SAU: kernel memory -> Secure, user memory -> Non-Secure.
 2. Syscall entry via `SG` (Secure Gateway) instruction.
 3. Non-Secure process faults on kernel memory access.
 4. Verify all tests still pass with TrustZone partitioning.
 
-**Verification**: User process attempting kernel memory read triggers
+**Deliverables**: User process attempting kernel memory read triggers
 SecureFault, not silent access.
 
 ---
 
-## 8. Code Size Comparison
+## 8. Code Size Comparison (Expected)
 
 Thumb-2 produces significantly smaller code than Thumb-1 for the same
 C source.  Expected savings:
@@ -440,73 +722,97 @@ The savings come from:
 
 ---
 
-## 9. Risks and Open Questions
+## 9. Risks and Mitigations
 
-### 9.1 Pico SDK Version
+### 9.1 Pico SDK Compatibility (RESOLVED)
 
-The Pico 2 requires Pico SDK 2.0+, which supports both RP2040 and RP2350.
-PPAP currently uses Pico SDK 1.x.  Upgrading the SDK may introduce build
-changes.
+~~The Pico 2 requires Pico SDK 2.0+.  PPAP currently uses Pico SDK 1.x.~~
 
-**Mitigation**: The SDK upgrade is a one-time step.  Pico SDK 2.0 is
-backward-compatible with RP2040 projects.
+**Resolved**: We already have Pico SDK 2.2.0 in `third_party/pico-sdk/`.
+The existing pico1 and pico1calc targets already build against SDK 2.x.
+No SDK upgrade needed.
 
-### 9.2 Flash Layout
+### 9.2 Flash Boot2
 
-The RP2350 boot ROM may use a different flash layout (boot2 size,
-alignment).  The stage1 VTOR address may need adjustment.
+The RP2350 boot ROM and boot2 have a different internal structure from
+RP2040, but the SDK abstracts this.  The `bs2_default_library` CMake
+target produces the correct boot2 for the selected `PICO_PLATFORM`.
 
-**Mitigation**: Check the RP2350 datasheet for boot ROM behavior.  The
-Pico SDK handles boot2 generation automatically.
+**Risk**: The Pico 2's flash chip may need a different boot2 variant.
+The SDK's `compile_time_choice.S` auto-probes the flash chip, so this
+should work out of the box.
 
-### 9.3 PSRAM Latency
+**Mitigation**: If boot2 fails, the Pico 2 won't boot at all -- easy to
+diagnose.  Fall back to a known-working boot2 from the SDK examples.
 
-PSRAM access is significantly slower than SRAM (~5–10× for random access).
-If the page allocator naively assigns PSRAM pages to active processes,
-performance degrades.
+### 9.3 Clock PLL Configuration
 
-**Mitigation**: Zone-based allocation with SRAM preference for hot pages.
-Only spill to PSRAM when SRAM is exhausted.
+The RP2350 PLL uses the same register interface but different target
+values.  A wrong VCO frequency (outside 400-1600 MHz range) will fail
+to lock.
 
-### 9.4 TrustZone Complexity
+**Mitigation**: VCO = 12 * 125 = 1500 MHz, well within range.  The SDK
+examples use these same values.
+
+### 9.4 Assembly Compatibility
+
+M0+ Thumb-1 assembly is a subset of M33 Thumb-2, so existing assembly
+works without changes (beyond `.cpu` directive).  However, the assembler
+may emit warnings about suboptimal instruction sequences.
+
+**Mitigation**: Phase Pi2-1 changes only the `.cpu` directive.  Assembly
+optimization (using `stmdb`/`ldmia` with high registers) is deferred.
+
+### 9.5 PSRAM Latency
+
+PSRAM access is significantly slower than SRAM (~5-10x for random access).
+
+**Mitigation**: Zone-based allocation with SRAM preference.  Deferred to
+Phase Pi2-6.
+
+### 9.6 TrustZone Complexity
 
 TrustZone adds complexity to the syscall path and exception handling.
-The Secure/Non-Secure transition has overhead (~20 cycles per `SG`).
 
-**Mitigation**: TrustZone is an extended goal.  The initial port runs
-everything in Secure world, identical to the RP2040 port.
-
-### 9.5 RISC-V Support
-
-The Hazard3 RISC-V cores are a completely different architecture.  Adding
-RISC-V support requires a new `src/arch/rv32/` directory with boot, trap,
-and context switch code — comparable effort to the original m68k port.
-
-**Mitigation**: RISC-V is explicitly out of scope for this proposal.
-A separate `docs/proposals/riscv-port.md` should be created when ready.
+**Mitigation**: Deferred to Phase Pi2-7.  Initial port runs entirely
+in Secure world.
 
 ---
 
 ## 10. Dependency Graph
 
 ```
-Pi2-1 (boot + UART)
-  └─→ Pi2-2 (ARMv8-M MPU)
-        └─→ Pi2-3 (dual-core + tests)
-              ├─→ Pi2-4 (FPU)
-              ├─→ Pi2-5 (PicoCalc 2)
-              └─→ Pi2-6 (PSRAM)
-                    └─→ Pi2-7 (TrustZone)
+Pi2-1a (parameterize shared code)
+  |
+  v
+Pi2-1b (create pico2 target)
+  |
+  v
+Pi2-1c (smoke test on hardware)
+  |
+  v
+Pi2-2 (ARMv8-M MPU)
+  |
+  v
+Pi2-3 (full test suite)
+  |
+  +---> Pi2-4 (FPU)
+  |
+  +---> Pi2-5 (PicoCalc 2)
+  |
+  +---> Pi2-6 (PSRAM)
+          |
+          v
+        Pi2-7 (TrustZone)
 ```
 
-Pi2-1 through Pi2-3 are the core port.  Everything else is independent
-extensions.  The core port should be quick (~1–2 steps) because the
-RP2350 is so similar to the RP2040.
+Pi2-1 through Pi2-3 are the core port.  Everything after Pi2-3 is an
+independent extension.
 
 ---
 
 ## 11. Related Documentation
 
-- [docs/kernel/overview.md](../kernel/overview.md) — PPAP kernel architecture
-- [docs/reference/picocalc.md](../reference/picocalc.md) — PicoCalc hardware reference
-- [docs/proposals/pizero_port.md](pizero_port.md) — Pi Zero port (ARM1176, MMU — different scope)
+- [docs/kernel/overview.md](../kernel/overview.md) -- PPAP kernel architecture
+- [docs/reference/picocalc.md](../reference/picocalc.md) -- PicoCalc hardware reference
+- [docs/proposals/pizero_port.md](pizero_port.md) -- Pi Zero port (ARM1176, MMU -- different scope)

@@ -1,14 +1,15 @@
 /*
- * cortex_m0plus.h — ARM Cortex-M0+ system register definitions
+ * cpu.h — ARM Cortex-M system register definitions
  *
  * Shared header for Private Peripheral Bus (PPB) registers used across
  * multiple kernel files (sched.c, xip.c, uart.c).
+ * Works for both Cortex-M0+ (ARMv6-M) and Cortex-M33 (ARMv8-M).
  *
  * MPU registers remain local to mpu.c (single consumer).
  */
 
-#ifndef PPAP_HW_CORTEX_M0PLUS_H
-#define PPAP_HW_CORTEX_M0PLUS_H
+#ifndef PPAP_HW_CPU_H
+#define PPAP_HW_CPU_H
 
 #include <stdint.h>
 
@@ -18,10 +19,9 @@
 #define REG(addr)  (*(volatile uint32_t *)(uintptr_t)(addr))
 #endif
 
-/* ── SysTick — ARM Cortex-M0+ system timer (§B3.3) ──────────────────────
+/* ── SysTick — ARM Cortex-M system timer (§B3.3) ───────────────────────
  *
  * 24-bit down-counter clocked from the processor clock.
- * At 133 MHz, 0xFFFFFF ticks ≈ 126 ms.
  * ────────────────────────────────────────────────────────────────────────── */
 
 #define SYST_CSR  REG(0xE000E010u)  /* Control and Status Register       */
@@ -75,4 +75,4 @@
 
 #define XPSR_THUMB_BIT  0x01000000u  /* Thumb state bit (T=1, required)   */
 
-#endif /* PPAP_HW_CORTEX_M0PLUS_H */
+#endif /* PPAP_HW_CPU_H */

@@ -1,20 +1,19 @@
 /*
- * clock.c — PLL_SYS configuration for RP2040
+ * clock.c — PLL_SYS configuration for RP2040/RP2350
  *
- * Switches the system clock from 12 MHz XOSC to 133 MHz via PLL_SYS.
+ * Switches the system clock from 12 MHz XOSC to the target frequency via
+ * PLL_SYS.  PLL divider values are overridable per target via -D flags:
+ *   PPAP_PLL_FBDIV, PPAP_PLL_PD1, PPAP_PLL_PD2
+ *
+ * Defaults (RP2040): FBDIV=133, PD1=6, PD2=2 → 133 MHz
+ * RP2350 example:    FBDIV=125, PD1=5, PD2=2 → 150 MHz
+ *
  * Prerequisites: XOSC must be running and clk_ref must already be on XOSC
  * (uart_init() handles this).
- *
- * PLL_SYS target: 133 MHz
- *   Reference:   XOSC = 12 MHz, REFDIV = 1 → ref = 12 MHz
- *   VCO:         FBDIV_INT = 133 → VCO = 12 × 133 = 1596 MHz
- *   Post-divide: POSTDIV1 = 6, POSTDIV2 = 2 → output = 1596 / 12 = 133 MHz
- *
- * VCO frequency (1596 MHz) is within the RP2040's allowed range (400–1600 MHz).
  */
 
 #include "drivers/clock.h"
-#include "target/rp2040.h"
+#include "target/rpico.h"
 #include <stdint.h>
 
 /* ==========================================================================
@@ -39,15 +38,32 @@
 #define PLL_PWR_VCOPD      (1u << 5)
 
 /*
- * PLL configuration for 133 MHz output:
+ * PLL configuration — overridable per target via -D flags in CMakeLists.txt.
+ *
+ * Defaults (RP2040, 133 MHz):
  *   ref = XOSC / REFDIV = 12 MHz / 1 = 12 MHz
  *   VCO = ref × FBDIV   = 12 × 133 = 1596 MHz
  *   out = VCO / (POSTDIV1 × POSTDIV2) = 1596 / (6 × 2) = 133 MHz
+ *
+ * RP2350 override example (150 MHz):
+ *   -DPPAP_PLL_FBDIV=125 -DPPAP_PLL_PD1=5 -DPPAP_PLL_PD2=2
+ *   VCO = 12 × 125 = 1500 MHz, out = 1500 / (5 × 2) = 150 MHz
  */
 #define PLL_REFDIV           1u
-#define PLL_FBDIV            133u
-#define PLL_POSTDIV1         6u
-#define PLL_POSTDIV2         2u
+
+#ifndef PPAP_PLL_FBDIV
+#define PPAP_PLL_FBDIV       133u
+#endif
+#ifndef PPAP_PLL_PD1
+#define PPAP_PLL_PD1         6u
+#endif
+#ifndef PPAP_PLL_PD2
+#define PPAP_PLL_PD2         2u
+#endif
+
+#define PLL_FBDIV            PPAP_PLL_FBDIV
+#define PLL_POSTDIV1         PPAP_PLL_PD1
+#define PLL_POSTDIV2         PPAP_PLL_PD2
 #define PLL_PRIM_VALUE       ((PLL_POSTDIV1 << 16) | (PLL_POSTDIV2 << 12))
 
 /* CLK_SYS_CTRL AUXSRC field [7:5] */
