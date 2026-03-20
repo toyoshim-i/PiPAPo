@@ -882,6 +882,82 @@ static void test_sigint_kills_spin(void)
         UT_ASSERT_EQ((status >> 8) & 0xff, 128 + 2);
 }
 
+/* ── Test 15: drive A root set from argv[0] directory ─────────────────── */
+/*
+ * Verifies that when a .COM is executed with a full path in argv[0],
+ * the CP/M drive A root is set to the directory containing the binary —
+ * NOT the default fallback "/a".  This is critical for applications like
+ * ZORK that load data files from their own directory.
+ *
+ * Strategy: reuse the same create-write-read .COM from test_file_io, but
+ * place it in /tmp and exec with argv[0] = "/tmp/drvtest.com".  The .COM
+ * creates/writes/reads TEST.DAT on drive A.  If drive_a_root is correctly
+ * set to "/tmp", the file operations succeed and the .COM prints "OK".
+ * If drive_a_root falls back to "/a" (default), the create fails because
+ * "/a" does not exist, and the .COM prints "!".
+ *
+ * This uses only one tmpfs data page (the .COM file itself) — the .COM
+ * creates TEST.DAT via BDOS which also goes to tmpfs (/tmp).
+ */
+static void test_drive_a_from_argv0(void)
+{
+    /* Reuse fileio_com which does: create file → write "OK" → close →
+     * reopen → read → print first 2 bytes → exit.
+     * We need to patch JP Z addresses as in test_file_io. */
+    unsigned char code[sizeof(fileio_com)];
+    int i;
+    for (i = 0; i < (int)sizeof(fileio_com); i++)
+        code[i] = fileio_com[i];
+
+    int err_offset = (int)sizeof(fileio_com) - 12;
+    int err_addr = 0x0100 + err_offset;
+    code[19] = err_addr & 0xFF;
+    code[20] = (err_addr >> 8) & 0xFF;
+    code[69] = err_addr & 0xFF;
+    code[70] = (err_addr >> 8) & 0xFF;
+
+    WRITE_COM("/tmp/drvtest.com", code);
+
+    /* argv[0] = full path → drive_a_root should become "/tmp".
+     * argv[1] = "TEST.DAT" → parsed into FCB1 for file operations. */
+    char *argv[3];
+    argv[0] = "/tmp/drvtest.com";
+    argv[1] = "TEST.DAT";
+    argv[2] = (void *)0;
+
+    int pipefd[2];
+    pipe(pipefd);
+
+    pid_t pid = vfork();
+    if (pid == 0) {
+        close(pipefd[0]);
+        dup2(pipefd[1], 1);
+        close(pipefd[1]);
+        execve("/tmp/drvtest.com", argv, (void *)0);
+        _exit(127);
+    }
+
+    close(pipefd[1]);
+    char buf[64];
+    int total = 0;
+    while (total < 63) {
+        int n = read(pipefd[0], buf + total, 63 - total);
+        if (n <= 0) break;
+        total += n;
+    }
+    buf[total] = '\0';
+    close(pipefd[0]);
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+    unlink("/tmp/drvtest.com");
+    unlink("/tmp/TEST.DAT");
+
+    UT_ASSERT_EQ(total, 2);
+    UT_ASSERT(buf[0] == 'O' && buf[1] == 'K',
+              "drive A root derived from argv[0] directory");
+}
+
 /* ── Main ───────────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -903,6 +979,7 @@ int main(void)
     test_warm_boot();
     test_sigint_kills_read();
     test_sigint_kills_spin();
+    test_drive_a_from_argv0();
 
     UT_SUMMARY("test_cpm");
 }
