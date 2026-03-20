@@ -113,6 +113,22 @@ When a command contains no `/`, push searches `$PATH` with 4-tier priority:
 | 4        | Case-insensitive basename         | `Hello.X`, `HELLO.COM`           |
 
 This allows typing `hello` to find `HELLO.COM` (CP/M) or `HELLO.X` (Human68k).
+If the best match fails to execute (child exits 127), push automatically
+retries with the next-best candidate from PATH (up to 4 retries).
+
+#### PATHEXT — Restricting Extension Matching
+
+When `$PATHEXT` is set, tiers 3 and 4 only match files whose extension
+is listed in `$PATHEXT`. The format follows the Windows convention:
+semicolon-separated, dot-prefixed, case-insensitive.
+
+```sh
+export PATHEXT=.COM;.OBJ;.X;.R
+```
+
+With this setting, `hello` matches `hello.com` or `HELLO.X` but **not**
+`hello.txt` or `hello.dat`. If `$PATHEXT` is unset, all extensions are
+accepted (original behavior).
 
 ### Command Chaining
 
@@ -184,7 +200,17 @@ VT100/ANSI line editor in raw terminal mode:
 | Ctrl-C         | Discard line (SIGINT)              |
 | Up / Ctrl-P    | Previous history entry             |
 | Down / Ctrl-N  | Next history entry                 |
-| Tab            | Filename completion                |
+| Tab            | Context-aware completion           |
+
+Tab completion is context-aware:
+
+- **Command position** (first word): searches builtins and `$PATH`
+  directories for matching executables. Case-insensitive.
+- **Argument position**: completes filenames in the current or specified
+  directory.
+- Single match inserts the completion with a trailing space (or `/` for
+  directories). Multiple matches insert the longest common prefix;
+  pressing Tab again lists all candidates.
 
 ### Prompt
 

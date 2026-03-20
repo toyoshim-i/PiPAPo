@@ -55,4 +55,11 @@ const char *push_env_get(const char *key);
  */
 int push_is_builtin(const char *cmd);
 
+/*
+ * ext_allowed() — check if extension is in PATHEXT.
+ * ext is the extension without dot (e.g. "COM").
+ * pathext is the PATHEXT value (e.g. ".COM;.OBJ;.X;.R"), or NULL (allow all).
+ */
+int ext_allowed(const char *ext, const char *pathext);
+
 #endif /* PPAP_USER_PUSH_H */

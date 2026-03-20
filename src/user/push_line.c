@@ -388,6 +388,22 @@ static int comp_insert(char *buf, int len, int pos, int *pos_out,
     return len;
 }
 
+/*
+ * Check if a filename's extension is allowed by PATHEXT.
+ * Files without an extension always pass.
+ */
+static int cmd_ext_ok(const char *name)
+{
+    const char *pathext = push_env_get("PATHEXT");
+    if (!pathext) return 1;
+    /* Find last dot */
+    const char *dot = 0;
+    for (const char *p = name; *p; p++)
+        if (*p == '.') dot = p;
+    if (!dot) return 1;  /* no extension → always ok */
+    return ext_allowed(dot + 1, pathext);
+}
+
 /* ── Command completion (search PATH + builtins) ─────────────────────── */
 
 /*
@@ -425,6 +441,7 @@ static void cmd_scan(const char *prefix, int plen,
             struct dirent de;
             while (getdents(dfd, &de, sizeof(de)) > 0) {
                 if (de.d_type == DT_DIR) continue;  /* skip directories */
+                if (!cmd_ext_ok(de.d_name)) continue;
 
                 if (!starts_with(de.d_name, prefix)) continue;
                 /* Deduplicate: skip if same name as first_match */
@@ -487,6 +504,7 @@ static void cmd_list(const char *prefix, int plen)
             struct dirent de;
             while (getdents(dfd, &de, sizeof(de)) > 0) {
                 if (de.d_type == DT_DIR) continue;
+                if (!cmd_ext_ok(de.d_name)) continue;
 
                 if (!starts_with(de.d_name, prefix)) continue;
                 int nlen = pl_strlen(de.d_name);

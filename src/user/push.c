@@ -527,12 +527,43 @@ static int tokenize(const char *input, char *buf, int buf_size,
  *   4 = case-insensitive basename match
  *   5 = no match
  */
+/*
+ * Check if extension ext (without dot) is listed in PATHEXT.
+ * PATHEXT uses Windows format: ".COM;.OBJ;.X;.R" (semicolon-separated,
+ * dot-prefixed, case-insensitive).  Returns 1 if ext is allowed.
+ */
+int ext_allowed(const char *ext, const char *pathext)
+{
+    if (!pathext) return 1;  /* unset → allow all */
+    while (*pathext) {
+        if (*pathext == '.') pathext++;  /* skip leading dot */
+        const char *sep = pathext;
+        while (*sep && *sep != ';') sep++;
+        int elen = (int)(sep - pathext);
+        int xlen = my_strlen(ext);
+        if (elen == xlen) {
+            int match = 1;
+            for (int i = 0; i < elen; i++) {
+                char a = pathext[i], b = ext[i];
+                if (a >= 'A' && a <= 'Z') a += 32;
+                if (b >= 'A' && b <= 'Z') b += 32;
+                if (a != b) { match = 0; break; }
+            }
+            if (match) return 1;
+        }
+        pathext = *sep ? sep + 1 : sep;
+    }
+    return 0;
+}
+
 static int match_score(const char *want, const char *have)
 {
     if (streq(want, have)) return 1;
     if (strcaseeq(want, have)) return 2;
     const char *dot = my_strrchr(have, '.');
     if (dot) {
+        const char *pathext = env_get("PATHEXT");
+        if (!ext_allowed(dot + 1, pathext)) return 5;
         char base[PPAP_NAME_MAX + 1];
         my_strncpy(base, have, (int)(dot - have), sizeof(base));
         if (streq(want, base)) return 3;
