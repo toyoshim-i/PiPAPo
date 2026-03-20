@@ -6,6 +6,7 @@
 #
 # TARGET is one of:
 #   pico1, pico1calc   — Flash to RP2040 via OpenOCD
+#   pico2              — Flash to RP2350 via OpenOCD
 #   qemu_arm (default) — Run under QEMU ARM
 #   qemu_m68k          — Run under QEMU m68k
 #   x68k               — Build floppy image and launch XEiJ emulator
@@ -76,11 +77,11 @@ for arg in "$@"; do
         --overlay=*)OVERLAY="${arg#--overlay=}"; DO_BUILD=1 ;;
         --h68k-debug) DO_H68K_DEBUG=1; DO_BUILD=1 ;;
         --gdb)      DO_GDB=1 ;;
-        pico1|pico1calc|qemu_arm|qemu_m68k|x68k) TARGET="$arg" ;;
+        pico1|pico1calc|pico2|qemu_arm|qemu_m68k|x68k) TARGET="$arg" ;;
         -*)         echo "Unknown option: $arg" >&2; exit 1 ;;
         *)
             echo "Unknown target: $arg" >&2
-            echo "Valid targets: pico1, pico1calc, qemu_arm, qemu_m68k, x68k" >&2
+            echo "Valid targets: pico1, pico1calc, pico2, qemu_arm, qemu_m68k, x68k" >&2
             exit 1
             ;;
     esac
@@ -192,7 +193,7 @@ if [[ "$TARGET" == "x68k" ]]; then
 fi
 
 # ── Flash targets (pico1, pico1calc) ────────────────────────────────────────
-if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc ]]; then
+if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 ]]; then
     CFG="$SCRIPT_DIR/debug/openocd.cfg"
 
     if ! command -v openocd &>/dev/null; then
