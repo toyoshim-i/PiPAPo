@@ -13,3 +13,5 @@ tools/m68k-toolchain/
 tools/xeij/
 
 overlay/
+docs/private/
+__pycache__/
