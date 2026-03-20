@@ -19,7 +19,7 @@
 #define TOKEN_MAX        64
 #define ARGV_MAX         32
 #define ENV_MAX          64
-#define ENV_POOL_SIZE    2048
+#define ENV_POOL_SIZE    1536
 #define PIPE_MAX         4
 #define PATH_BUF         128
 #define REDIR_MAX        4
@@ -1095,12 +1095,18 @@ static int exec_simple(char **argv, int argc)
     build_envp(envp, ENV_MAX + 1);
 
     for (;;) {
+        /* Set argv[0] to the resolved path so loaders (e.g. CP/M)
+         * can derive the application directory from it. */
+        char *saved_argv0 = argv[0];
+        argv[0] = resolved;
+
         pid_t pid = vfork();
         if (pid == 0) {
             apply_redirects(redirs, nredirs);
             execve(resolved, argv, envp);
             _exit(127);
         }
+        argv[0] = saved_argv0;
         if (pid < 0) {
             err_msg(argv[0], "fork failed");
             return 1;
