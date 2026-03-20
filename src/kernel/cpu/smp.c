@@ -1,7 +1,7 @@
 /*
- * smp.c — Core 1 startup and SIO FIFO IPC (RP2040)
+ * smp.c — Core 1 startup and SIO FIFO IPC (RP2040/RP2350)
  *
- * RP2040 SIO inter-core FIFO (base 0xD0000000, §2.3.1.7):
+ * RP2040/RP2350 SIO inter-core FIFO (base 0xD0000000, §2.3.1.7):
  *   SIO_FIFO_ST  @ 0xD0000050
  *     bit 0  VLD  — this core's RX FIFO has at least one word
  *     bit 1  RDY  — this core's TX FIFO has at least one free slot
@@ -56,11 +56,19 @@ uint32_t sio_fifo_pop(void) { return 0; }
 #define SIO_FIFO_VLD  (1u << 0)   /* RX FIFO has data      */
 #define SIO_FIFO_RDY  (1u << 1)   /* TX FIFO has free slot */
 
-/* PSM (Power-on State Machine) — force Core 1 off/on (§2.12) */
+/* PSM (Power-on State Machine) — force Core 1 off/on (§2.12)
+ * Base address and proc1 bit differ between RP2040 and RP2350. */
+#ifdef PICO_RP2350
+#define PSM_FRCE_OFF      (*(volatile uint32_t *)0x40018004u)
+#define PSM_FRCE_OFF_SET  (*(volatile uint32_t *)0x4001A004u)  /* atomic SET alias */
+#define PSM_FRCE_OFF_CLR  (*(volatile uint32_t *)0x4001B004u)  /* atomic CLR alias */
+#define PSM_PROC1         (1u << 24)   /* bit 24 = proc1 on RP2350 */
+#else
 #define PSM_FRCE_OFF      (*(volatile uint32_t *)0x40010004u)
 #define PSM_FRCE_OFF_SET  (*(volatile uint32_t *)0x40012004u)  /* atomic SET alias */
 #define PSM_FRCE_OFF_CLR  (*(volatile uint32_t *)0x40013004u)  /* atomic CLR alias */
-#define PSM_PROC1         (1u << 16)   /* bit 16 = proc1 (Core 1 processor) */
+#define PSM_PROC1         (1u << 16)   /* bit 16 = proc1 on RP2040 */
+#endif
 
 /* SCB.VTOR — vector table base currently used by Core 0 */
 #define SCB_VTOR      (*(volatile uint32_t *)0xE000ED08u)
@@ -68,7 +76,8 @@ uint32_t sio_fifo_pop(void) { return 0; }
 /* SCB.CPUID — processor identification (always accessible, never faults) */
 #define SCB_CPUID     (*(volatile uint32_t *)0xE000ED00u)
 #define CPUID_PARTNO_MASK  0x0000FFF0u   /* bits [15:4] = Part Number */
-#define CPUID_PARTNO_M0P   0x0000C600u   /* Cortex-M0+ part number   */
+#define CPUID_PARTNO_M0P   0x0000C600u   /* Cortex-M0+ (RP2040)      */
+#define CPUID_PARTNO_M33   0x0000D210u   /* Cortex-M33 (RP2350)      */
 
 /* ── sio_fifo_push ───────────────────────────────────────────────────────── */
 
@@ -108,6 +117,15 @@ void core1_sched_entry(void)
 {
     /* Disable interrupts until everything is configured */
     arch_irq_disable();
+
+    /* 0. Enable FPU on Core 1 (Cortex-M33 only) — each core has its own CPACR */
+#if __ARM_ARCH >= 8
+    {
+        volatile uint32_t *cpacr = (volatile uint32_t *)0xE000ED88u;
+        *cpacr |= (0xFu << 20);  /* CP10+CP11 = full access */
+        __asm__ volatile("dsb\nisb" ::: "memory");
+    }
+#endif
 
     /* 1. Program Core 1's MPU (regions 0, 1, 3) */
     mpu_init();
@@ -199,13 +217,19 @@ static void core1_reset(void)
 void core1_launch(void (*entry)(void))
 {
     /*
-     * QEMU self-stub: check CPUID to verify we're on Cortex-M0+ (RP2040).
+     * QEMU self-stub: check CPUID to verify we're on RP2040/RP2350 hardware.
      * On QEMU mps2-an500 (Cortex-M3), the SIO region at 0xD0000000 is
      * unmapped — any read from it triggers a BusFault → HardFault.
      * SCB.CPUID is in the System Control Space and is always accessible.
      */
-    if ((SCB_CPUID & CPUID_PARTNO_MASK) != CPUID_PARTNO_M0P) {
-        klog("SMP: not Cortex-M0+: skipping Core 1 launch (QEMU)\n");
+    uint32_t partno = SCB_CPUID & CPUID_PARTNO_MASK;
+    if (partno == CPUID_PARTNO_M33) {
+        /* TODO: RP2350 SMP needs PSM/handshake debugging — skip for now */
+        klog("SMP: Cortex-M33 detected, Core 1 launch deferred\n");
+        return;
+    }
+    if (partno != CPUID_PARTNO_M0P) {
+        klog("SMP: unknown CPU (QEMU?): skipping Core 1 launch\n");
         return;
     }
 

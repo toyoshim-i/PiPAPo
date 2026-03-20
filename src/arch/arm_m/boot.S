@@ -157,6 +157,19 @@ Reset_Handler:
     blo  .Lzero_loop
 
     @ -----------------------------------------------------------------
+    @ Enable FPU on Cortex-M33 (ARMv8-M) — CP10+CP11 full access
+    @ Without this, any compiler-generated VFP instruction HardFaults.
+    @ -----------------------------------------------------------------
+#if __ARM_ARCH >= 8
+    ldr  r0, =0xE000ED88       @ CPACR
+    ldr  r1, [r0]
+    orr  r1, r1, #(0xF << 20)  @ CP10+CP11 = full access
+    str  r1, [r0]
+    dsb
+    isb
+#endif
+
+    @ -----------------------------------------------------------------
     @ Enter kernel — kmain() must never return
     @ -----------------------------------------------------------------
     bl   kmain
