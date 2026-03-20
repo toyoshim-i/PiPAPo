@@ -53,6 +53,9 @@ typedef struct cpm_state {
     uint8_t  search_pattern[12]; /* 8+3 filename pattern from search FCB   */
     uint8_t  search_drive;     /* drive being searched                     */
 
+    /* Terminal escape sequence converter state */
+    uint8_t  term_dialect;     /* 0=passthrough, 1=vt52, 2=kaypro         */
+
     /* Saved terminal state (restored on exit) */
     uint32_t saved_termios[5]; /* iflag, oflag, cflag, lflag + c_line/cc   */
     uint8_t  saved_termios_cc[19];

@@ -15,6 +15,7 @@
  *   /proc/<pid>/stat     — per-process stat line (Linux 52-field format)
  *   /proc/<pid>/cmdline  — NUL-terminated command name
  *   /proc/<pid>/subsys   — OS personality subsystem name
+ *   /proc/<pid>/termconv — terminal conversion mode (subsystem-specific)
  */
 
 #include "procfs.h"
@@ -512,6 +513,8 @@ static int gen_pid_subsys(char *buf, int bufsiz, const pcb_t *p)
  * PID dirs:      ino = 0x1000 + pid * 16
  * PID/stat:      ino = 0x1000 + pid * 16 + 1
  * PID/cmdline:   ino = 0x1000 + pid * 16 + 2
+ * PID/subsys:    ino = 0x1000 + pid * 16 + 3
+ * PID/termconv:  ino = 0x1000 + pid * 16 + 4
  */
 #define PID_INO_BASE    0x1000u
 #define PID_INO_STRIDE  16u
@@ -523,11 +526,14 @@ static int gen_pid_subsys(char *buf, int bufsiz, const pcb_t *p)
  *   - Static nodes:  fs_priv = &procfs_nodes[i]
  *   - PID/stat:      fs_priv = (void*)(0x80000000 | (slot << 8) | 1)
  *   - PID/cmdline:   fs_priv = (void*)(0x80000000 | (slot << 8) | 2)
+ *   - PID/subsys:    fs_priv = (void*)(0x80000000 | (slot << 8) | 3)
+ *   - PID/termconv:  fs_priv = (void*)(0x80000000 | (slot << 8) | 4)
  */
 #define PRIV_PID_FLAG   0x80000000u
 #define PRIV_PID_STAT    1u
 #define PRIV_PID_CMDLINE 2u
-#define PRIV_PID_SUBSYS  3u
+#define PRIV_PID_SUBSYS   3u
+#define PRIV_PID_TERMCONV 4u
 #define MAKE_PID_PRIV(slot, sub) \
     ((void *)(uintptr_t)(PRIV_PID_FLAG | ((uint32_t)(slot) << 8) | (sub)))
 #define IS_PID_PRIV(priv)  (((uintptr_t)(priv)) & PRIV_PID_FLAG)
@@ -648,6 +654,24 @@ static int procfs_lookup(vnode_t *dir, const char *name, vnode_t **result)
             return 0;
         }
 
+        if (str_eq(name, "termconv")) {
+            /* Only visible if the subsystem provides on_proc_read */
+            uint8_t tag = proc_table[slot].subsys;
+            if (tag < SUBSYS_MAX && subsys_ops_table[tag] &&
+                subsys_ops_table[tag]->on_proc_read) {
+                vnode_t *vn = vnode_alloc();
+                if (!vn) return -ENOMEM;
+                vn->type    = VNODE_FILE;
+                vn->mode    = S_IFREG | 0444u;
+                vn->ino     = pid_ino + 4;
+                vn->size    = 0;
+                vn->mount   = dir->mount;
+                vn->fs_priv = MAKE_PID_PRIV(slot, PRIV_PID_TERMCONV);
+                *result = vn;
+                return 0;
+            }
+        }
+
         return -ENOENT;
     }
 
@@ -680,7 +704,15 @@ static long procfs_read(vnode_t *vn, void *buf, size_t n, uint32_t off)
             total = gen_pid_cmdline(tmp, (int)sizeof(tmp), p);
         else if (sub == PRIV_PID_SUBSYS)
             total = gen_pid_subsys(tmp, (int)sizeof(tmp), p);
-        else
+        else if (sub == PRIV_PID_TERMCONV) {
+            uint8_t tag = p->subsys;
+            if (tag < SUBSYS_MAX && subsys_ops_table[tag] &&
+                subsys_ops_table[tag]->on_proc_read)
+                total = subsys_ops_table[tag]->on_proc_read(
+                    (pcb_t *)p, "termconv", tmp, (int)sizeof(tmp));
+            else
+                total = 0;
+        } else
             return -(long)EIO;
     } else {
         /* Static node */
@@ -755,14 +787,24 @@ static int procfs_readdir(vnode_t *dir, struct dirent *entries,
         int count = 0;
         uint32_t pid_ino = dir->ino;
 
-        static const struct { const char *name; uint32_t off; } pid_entries[] = {
-            { "stat",    1 },
-            { "cmdline", 2 },
-            { "subsys",  3 },
+        static const struct { const char *name; uint32_t off; uint8_t needs_proc_read; } pid_entries[] = {
+            { "stat",     1, 0 },
+            { "cmdline",  2, 0 },
+            { "subsys",   3, 0 },
+            { "termconv", 4, 1 },
         };
         uint32_t nentries = sizeof(pid_entries) / sizeof(pid_entries[0]);
 
+        uint32_t slot = (uint32_t)(uintptr_t)dir->fs_priv;
+        uint8_t tag = (slot < PROC_MAX) ? proc_table[slot].subsys : 0;
+        int has_proc_read = (tag < SUBSYS_MAX && subsys_ops_table[tag] &&
+                             subsys_ops_table[tag]->on_proc_read);
+
         while (idx < nentries && (size_t)count < max_entries) {
+            if (pid_entries[idx].needs_proc_read && !has_proc_read) {
+                idx++;
+                continue;
+            }
             entries[count].d_ino  = pid_ino + pid_entries[idx].off;
             entries[count].d_type = DT_REG;
             uint32_t nlen = str_len(pid_entries[idx].name);

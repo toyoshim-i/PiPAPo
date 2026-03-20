@@ -72,6 +72,20 @@ typedef struct subsys_ops {
      * @p:     exiting process
      */
     void (*on_exit)(struct pcb *p);
+
+    /*
+     * on_proc_read — generate content for /proc/<pid>/termconv.
+     *
+     * @p:     target process
+     * @name:  filename being read (e.g. "termconv")
+     * @buf:   output buffer
+     * @bufsiz: buffer size
+     *
+     * Returns: number of bytes written, or 0 if the file is not provided
+     *          by this subsystem.
+     */
+    int (*on_proc_read)(struct pcb *p, const char *name,
+                        char *buf, int bufsiz);
 } subsys_ops_t;
 
 /* Maximum number of subsystem types (index into subsys_ops_table[]) */

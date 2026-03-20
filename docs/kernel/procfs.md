@@ -179,6 +179,47 @@ Note: this is a simplified form; full Linux cmdline would contain the entire
 
 ---
 
+### `/proc/<pid>/subsys`
+
+OS personality subsystem name.
+
+```
+cpm
+```
+
+Possible values: `ppap`, `cpm`, `human68k`, `sos`, or `unknown`.
+
+Source: `pcb->subsys` tag, mapped to a name via `subsys_tag_names[]` registered
+by each subsystem at boot.
+
+---
+
+### `/proc/<pid>/termconv`
+
+Terminal escape sequence conversion mode. Only present for subsystems that
+provide an `on_proc_read` callback (currently CP/M only).
+
+```
+passthrough
+```
+
+Possible values for CP/M processes:
+
+| Value         | Description                                        |
+|---------------|----------------------------------------------------|
+| `passthrough` | No terminal dialect detected yet (default)         |
+| `vt52`        | VT52 escape sequences auto-detected                |
+| `kaypro`      | Kaypro attribute escape sequences auto-detected    |
+
+The CP/M terminal translator converts legacy escape sequences (ADM-3A, VT52,
+Kaypro) to VT100/ANSI CSI sequences for the framebuffer console. The dialect
+is auto-detected from the escape sequences emitted by the running program.
+
+Source: `cpm_state_t.term_dialect` in `subsys/cpm_bridge.c`, exposed via the
+`subsys_ops_t.on_proc_read` callback.
+
+---
+
 ## Internals
 
 ### Inode numbering
@@ -189,11 +230,21 @@ Note: this is a simplified form; full Linux cmdline would contain the entire
 | 0x1000 + pid*16 | PID directory |
 | 0x1000 + pid*16 + 1 | PID/stat |
 | 0x1000 + pid*16 + 2 | PID/cmdline |
+| 0x1000 + pid*16 + 3 | PID/subsys |
+| 0x1000 + pid*16 + 4 | PID/termconv (conditional) |
 
 ### VNode encoding
 
 Per-PID file vnodes encode the process slot and sub-file index in `fs_priv`:
-`(void*)(0x80000000 | (slot << 8) | sub_index)` where sub_index 1 = stat, 2 = cmdline.
+`(void*)(0x80000000 | (slot << 8) | sub_index)` where sub_index 1 = stat,
+2 = cmdline, 3 = subsys, 4 = termconv.
+
+### Conditional per-PID entries
+
+Some per-PID entries are only visible when the process's subsystem provides
+the corresponding callback. `termconv` requires `subsys_ops_t.on_proc_read`
+to be non-NULL. For processes without this callback (e.g., native PPAP
+binaries), the file does not appear in directory listings or lookups.
 
 ---
 

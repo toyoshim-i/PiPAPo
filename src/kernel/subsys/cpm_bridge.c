@@ -62,10 +62,21 @@ static int adm_state;
 static uint8_t adm_row;
 
 /* Auto-detect VT52 vs Kaypro for ambiguous ESC B / ESC C */
-enum { DIALECT_UNKNOWN, DIALECT_VT52, DIALECT_KAYPRO };
-static int adm_dialect;
+enum { TERM_PASSTHROUGH, TERM_VT52, TERM_KAYPRO };
+static int term_type;
+
+/* Per-process terminal type mirror — updated alongside term_type so that
+ * procfs can read it from the cpm_state_t without touching global state. */
+static cpm_state_t *adm_cpm_ctx;
 
 static void (*adm_raw_out)(uint8_t ch);
+
+static void adm_set_term_type(int dialect)
+{
+    term_type = dialect;
+    if (adm_cpm_ctx)
+        adm_cpm_ctx->term_dialect = (uint8_t)dialect;
+}
 
 static void adm_emit(const char *s)
 {
@@ -116,7 +127,7 @@ static void adm_putchar(uint8_t ch)
             adm_state = ADM_ROW;
         } else if (ch == 'Y') {
             /* VT52 ESC Y row col */
-            adm_dialect = DIALECT_VT52;
+            adm_set_term_type(TERM_VT52);
             adm_state = ADM_ROW;
         } else if (ch == '*') {
             adm_emit("\033[2J");
@@ -129,12 +140,12 @@ static void adm_putchar(uint8_t ch)
             adm_state = ADM_NORMAL;
         } else if (ch == 'A') {
             /* VT52: cursor up */
-            adm_dialect = DIALECT_VT52;
+            adm_set_term_type(TERM_VT52);
             adm_emit("\033[A");
             adm_state = ADM_NORMAL;
         } else if (ch == 'B') {
             /* VT52: cursor down  OR  Kaypro: attribute on */
-            if (adm_dialect == DIALECT_KAYPRO) {
+            if (term_type == TERM_KAYPRO) {
                 adm_state = ADM_ATTR_ON;
             } else {
                 adm_emit("\033[B");
@@ -142,7 +153,7 @@ static void adm_putchar(uint8_t ch)
             }
         } else if (ch == 'C') {
             /* VT52: cursor right  OR  Kaypro: attribute off */
-            if (adm_dialect == DIALECT_KAYPRO) {
+            if (term_type == TERM_KAYPRO) {
                 adm_state = ADM_ATTR_OFF;
             } else {
                 adm_emit("\033[C");
@@ -150,27 +161,27 @@ static void adm_putchar(uint8_t ch)
             }
         } else if (ch == 'D') {
             /* VT52: cursor left */
-            adm_dialect = DIALECT_VT52;
+            adm_set_term_type(TERM_VT52);
             adm_emit("\033[D");
             adm_state = ADM_NORMAL;
         } else if (ch == 'H') {
             /* VT52: cursor home */
-            adm_dialect = DIALECT_VT52;
+            adm_set_term_type(TERM_VT52);
             adm_emit("\033[H");
             adm_state = ADM_NORMAL;
         } else if (ch == 'I') {
             /* VT52: reverse line feed → VT100 reverse index */
-            adm_dialect = DIALECT_VT52;
+            adm_set_term_type(TERM_VT52);
             adm_emit("\033M");
             adm_state = ADM_NORMAL;
         } else if (ch == 'J') {
             /* VT52: erase to end of screen */
-            adm_dialect = DIALECT_VT52;
+            adm_set_term_type(TERM_VT52);
             adm_emit("\033[J");
             adm_state = ADM_NORMAL;
         } else if (ch == 'K') {
             /* VT52: erase to end of line */
-            adm_dialect = DIALECT_VT52;
+            adm_set_term_type(TERM_VT52);
             adm_emit("\033[K");
             adm_state = ADM_NORMAL;
         } else if (ch == ')') {
@@ -179,7 +190,7 @@ static void adm_putchar(uint8_t ch)
         } else if (ch == 'G') {
             /* Kaypro ESC G <n> — set attribute (bitmask):
              *   0=normal, 1=underline, 2=blink, 4=bold/half, 8=reverse */
-            adm_dialect = DIALECT_KAYPRO;
+            adm_set_term_type(TERM_KAYPRO);
             adm_state = ADM_ATTR_SET;
         } else if (ch == '[') {
             /* Already a VT100 CSI — pass through as-is */
@@ -1461,6 +1472,10 @@ void cpm_run_process(void)
     cpm_state_t *cpm = (cpm_state_t *)((char *)p->subsys_data
                                         + sizeof(z80_state_t));
 
+    /* Set per-process context so the terminal translator can mirror
+     * the auto-detected dialect into cpm_state_t for /proc visibility. */
+    adm_cpm_ctx = cpm;
+
     /* Switch TTY to raw mode: CP/M apps do their own echo and line
      * editing, so we need characters delivered one-at-a-time without
      * kernel echo or CR→LF translation.  Save original state for
@@ -1541,13 +1556,40 @@ static void cpm_on_exit(struct pcb *p)
     cpm->termios_saved = 0;
 }
 
+static int cpm_proc_read(struct pcb *p, const char *name,
+                         char *buf, int bufsiz)
+{
+    if (name[0] != 't' || name[1] != 'e' || name[2] != 'r' ||
+        name[3] != 'm' || name[4] != 'c' || name[5] != 'o' ||
+        name[6] != 'n' || name[7] != 'v' || name[8] != '\0')
+        return 0;
+
+    if (!p->subsys_data)
+        return 0;
+
+    cpm_state_t *cpm = (cpm_state_t *)((char *)p->subsys_data
+                                        + sizeof(z80_state_t));
+    const char *s;
+    switch (cpm->term_dialect) {
+    case TERM_VT52:        s = "vt52\n";        break;
+    case TERM_KAYPRO:      s = "kaypro\n";      break;
+    default:               s = "passthrough\n";  break;
+    }
+    int len = 0;
+    while (s[len] && len < bufsiz - 1)
+        buf[len] = s[len], len++;
+    buf[len] = '\0';
+    return len;
+}
+
 /* Subsystem ops — CP/M processes don't need special crash/signal handling
  * since they run inside the Z80 emulator (faults are emulator bugs). */
 const subsys_ops_t cpm_subsys_ops = {
-    .on_crash  = (void *)0,
-    .on_signal = (void *)0,
-    .on_init   = (void *)0,
-    .on_exit   = cpm_on_exit,
+    .on_crash     = (void *)0,
+    .on_signal    = (void *)0,
+    .on_init      = (void *)0,
+    .on_exit      = cpm_on_exit,
+    .on_proc_read = cpm_proc_read,
 };
 
 #endif /* PPAP_KERNEL */
