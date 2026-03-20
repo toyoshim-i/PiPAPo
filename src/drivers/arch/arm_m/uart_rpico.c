@@ -33,6 +33,18 @@
 #define XOSC_STATUS_STABLE (1u << 31)
 
 /* ==========================================================================
+ * PADS_BANK0 — GPIO pad electrical configuration
+ *
+ * RP2350 pads default to ISO=1 (isolated) and IE=0 (input disabled).
+ * We must clear ISO and set IE for UART GPIO pins.
+ * ========================================================================== */
+
+#define PAD_GPIO(n)     REG(PADS_BANK0_BASE + 4u + (n) * 4u)
+#define PAD_IE          (1u << 6)   /* input enable  */
+#define PAD_OD          (1u << 7)   /* output disable */
+#define PAD_ISO         (1u << 8)   /* pad isolation (RP2350 only) */
+
+/* ==========================================================================
  * IO_BANK0 — GPIO pin function select
  * ========================================================================== */
 
@@ -74,7 +86,23 @@
 #define UART_ICR_RXIC   (1u << 4)
 #define UART_ICR_RTIC   (1u << 6)
 
-#define UART0_IRQ_BIT   (1u << 20u)
+/*
+ * UART0 IRQ number: 20 on RP2040, 33 on RP2350.
+ * IRQ 33 lives in NVIC register bank 1 (ISER1/ICER1/ICPR1).
+ * The SDK header defines UART0_IRQ as an enum in C (not a #define),
+ * so we use PICO_RP2350 to select at compile time.
+ */
+#ifdef PICO_RP2350
+#define UART0_NVIC_ISER  NVIC_ISER1
+#define UART0_NVIC_ICER  NVIC_ICER1
+#define UART0_NVIC_ICPR  NVIC_ICPR1
+#define UART0_IRQ_BIT    (1u << (33u - 32u))   /* UART0_IRQ=33 on RP2350 */
+#else
+#define UART0_NVIC_ISER  NVIC_ISER
+#define UART0_NVIC_ICER  NVIC_ICER
+#define UART0_NVIC_ICPR  NVIC_ICPR
+#define UART0_IRQ_BIT    (1u << 20u)            /* UART0_IRQ=20 on RP2040 */
+#endif
 
 /* ==========================================================================
  * TX/RX ring buffers
@@ -152,8 +180,8 @@ void uart_init(void)
     clock_switch_to_xosc();
 
     /* Disable UART0 IRQ in NVIC — the UF2 bootloader may leave it enabled */
-    NVIC_ICER = UART0_IRQ_BIT;
-    NVIC_ICPR = UART0_IRQ_BIT;
+    UART0_NVIC_ICER = UART0_IRQ_BIT;
+    UART0_NVIC_ICPR = UART0_IRQ_BIT;
 
     /* Hard-reset UART0 to clear all internal state */
     RESETS_RESET_SET = RESET_UART0;
@@ -174,11 +202,17 @@ void uart_init(void)
     GPIO0_CTRL = GPIO_FUNC_UART;
     GPIO1_CTRL = GPIO_FUNC_UART;
 
+    /* Configure pads: clear OD (enable output), set IE (enable input),
+     * clear ISO (de-isolate — required on RP2350 where ISO defaults to 1).
+     * On RP2040 ISO doesn't exist (bit 8 is reserved/zero), so this is safe. */
+    PAD_GPIO(0) = PAD_IE | (2u << 4);  /* IE=1, DRIVE=4mA, OD=0, ISO=0 */
+    PAD_GPIO(1) = PAD_IE | (2u << 4);  /* IE=1, DRIVE=4mA, OD=0, ISO=0 */
+
     /* Enable RX + RX-timeout interrupts.  TX interrupt (TXIM) is armed
      * on demand by uart_putc() when data enters the ring. */
     UART0_IMSC = UART_IMSC_RXIM | UART_IMSC_RTIM;
-    NVIC_ICPR = UART0_IRQ_BIT;
-    NVIC_ISER = UART0_IRQ_BIT;
+    UART0_NVIC_ICPR = UART0_IRQ_BIT;
+    UART0_NVIC_ISER = UART0_IRQ_BIT;
 }
 
 /* TX-ready callback — registered atomically by uart_putc() on failure */

@@ -59,7 +59,7 @@ _vectors:
     .word PendSV_Handler        @ 14: PendSV  (switch.S — context switch)
     .word SysTick_Handler       @ 15: SysTick (sched.c — tick + PendSV trigger)
 
-    @ --- External interrupts: IRQ0-IRQ25 ---
+    @ --- External interrupts: IRQ0-IRQ25 (RP2040) / IRQ0-IRQ51 (RP2350) ---
     .word UART0RX_IRQ_Handler   @ IRQ0  — UART0 RX on mps2-an500 (uart_qemu.c)
     .word Default_Handler       @ IRQ1  — UART0 TX on mps2-an500 (unused)
     @ IRQ2-IRQ19
@@ -71,6 +71,18 @@ _vectors:
     .rept 5
     .word Default_Handler
     .endr
+#if __ARM_ARCH >= 8
+    @ --- Additional IRQs for RP2350 (Cortex-M33): IRQ26-IRQ51 ---
+    @ IRQ26-IRQ32
+    .rept 7
+    .word Default_Handler
+    .endr
+    .word UART0_IRQ_Handler     @ IRQ33 = UART0 on RP2350
+    @ IRQ34-IRQ51
+    .rept 18
+    .word Default_Handler
+    .endr
+#endif
 
 
 @ =============================================================================
