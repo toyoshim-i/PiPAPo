@@ -200,7 +200,11 @@ int main(void)
     tests[t++] = (test_entry_t){ "/bin/test_zexdoc",     TEST_SLOW     };
     tests[t++] = (test_entry_t){ "/bin/test_zexall",     TEST_SLOW     };
     tests[t++] = (test_entry_t){ "/bin/test_trace",      TEST_ENABLED  };
+#if defined(__m68k__)
+    tests[t++] = (test_entry_t){ "/bin/test_pdb",        TEST_DISABLED };
+#else
     tests[t++] = (test_entry_t){ "/bin/test_pdb",        TEST_SLOW     };
+#endif
     tests[t].path = (void *)0;
 
     get_time(&g_start);
