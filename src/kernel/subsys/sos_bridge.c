@@ -205,6 +205,27 @@ static void z80_wr16(z80_state_t *cpu, uint16_t addr, uint16_t val)
 
 /* ── Helper: resolve S-OS filename to PPAP path ──────────────────────── */
 
+static int sos_drive_root_path(const sos_state_t *sos, uint8_t drive,
+                               char *path, int path_size)
+{
+    if (drive == 0 && sos->drive_a_root[0]) {
+        int n = 0;
+        while (sos->drive_a_root[n] && n < path_size - 1) {
+            path[n] = sos->drive_a_root[n];
+            n++;
+        }
+        path[n] = 0;
+        return n;
+    }
+
+    if (path_size < 3)
+        return 0;
+    path[0] = '/';
+    path[1] = 'a' + drive;
+    path[2] = 0;
+    return 2;
+}
+
 static void sos_resolve_path(z80_state_t *cpu, sos_state_t *sos,
                              char *path, int path_size)
 {
@@ -222,11 +243,9 @@ static void sos_resolve_path(z80_state_t *cpu, sos_state_t *sos,
     if (session > 25)
         session = sos->current_session;
 
-    char drive = 'a' + session;
-    int pos = 0;
-    path[pos++] = '/';
-    path[pos++] = drive;
-    path[pos++] = '/';
+    int pos = sos_drive_root_path(sos, session, path, path_size);
+    if (pos < path_size - 1)
+        path[pos++] = '/';
     for (int j = 0; fnam[j] && pos < path_size - 1; j++)
         path[pos++] = fnam[j];
     path[pos] = '\0';

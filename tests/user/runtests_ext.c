@@ -168,7 +168,7 @@ int main(void)
      * static pointer arrays because do_execve only relocates GOT entries,
      * not initialized data pointers.  Runtime assignment uses GOT-resolved
      * addresses which are correctly relocated. */
-    test_entry_t tests[30];
+    test_entry_t tests[31];
     int t = 0;
     tests[t++] = (test_entry_t){ "/bin/test_exec",         TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_elf",          TEST_ENABLED  };
@@ -196,6 +196,7 @@ int main(void)
     tests[t++] = (test_entry_t){ "/bin/test_h68k_dos",     TEST_DISABLED }; /* m68k only */
 #endif
     tests[t++] = (test_entry_t){ "/bin/test_cpm",          TEST_ENABLED  };
+    tests[t++] = (test_entry_t){ "/bin/test_sos",          TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_zexdoc",       TEST_SLOW     };
     tests[t++] = (test_entry_t){ "/bin/test_zexall",       TEST_SLOW     };
     tests[t++] = (test_entry_t){ "/bin/test_trace",        TEST_ENABLED  };

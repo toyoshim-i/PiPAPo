@@ -161,6 +161,9 @@ typedef struct sos_state {
     uint8_t  saved_termios_cc[19];
     uint8_t  termios_saved;
 
+    /* Drive A root path — derived from argv[0] directory */
+    char     drive_a_root[VFS_PATH_MAX];
+
     /* Screen character buffer for #SCRN */
     uint8_t  screen_buf[SOS_SCREEN_MAX_COLS * SOS_SCREEN_MAX_ROWS];
 } sos_state_t;

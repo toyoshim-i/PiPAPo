@@ -137,6 +137,37 @@ static void sos_setup_memory(z80_state_t *cpu, sos_state_t *sos)
     __builtin_memset(sos->screen_buf, ' ', sizeof(sos->screen_buf));
 }
 
+/* ── Drive A root from argv[0] ─────────────────────────────────────────── */
+
+static void sos_set_drive_a_root(sos_state_t *sos, const char *path)
+{
+    const char *slash = NULL;
+    uint32_t len = 0;
+
+    sos->drive_a_root[0] = 0;
+    if (!path || !*path)
+        return;
+
+    for (const char *s = path; *s; s++) {
+        if (*s == '/')
+            slash = s;
+    }
+
+    if (!slash)
+        return;
+    if (slash == path) {
+        sos->drive_a_root[0] = '/';
+        sos->drive_a_root[1] = 0;
+        return;
+    }
+
+    len = (uint32_t)(slash - path);
+    if (len >= sizeof(sos->drive_a_root))
+        len = sizeof(sos->drive_a_root) - 1;
+    memcpy(sos->drive_a_root, path, len);
+    sos->drive_a_root[len] = 0;
+}
+
 /* ── Loader ───────────────────────────────────────────────────────────── */
 
 static int sos_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
@@ -145,7 +176,6 @@ static int sos_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 {
     (void)cpu_ops;
     (void)cpu_state;
-    (void)argv;
 
     /* ── 1. Parse _SOS header ──────────────────────────────────────────── */
     sos_header_t hdr;
@@ -204,7 +234,13 @@ static int sos_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     ecpu_z80_ops.set_trap_handler((cpu_state_t *)&state->z80,
                                    sos_trap_handler, &state->sos);
 
-    /* ── 5. Zero memory and set up S-OS memory map ─────────────────────── */
+    /* ── 5. Set drive A root from argv[0] ─────────────────────────────── */
+    {
+        const char *path = (argv && argv[0]) ? argv[0] : "";
+        sos_set_drive_a_root(&state->sos, path);
+    }
+
+    /* ── 6. Zero memory and set up S-OS memory map ─────────────────────── */
     memset(z80_mem, 0, 65536);
     sos_setup_memory(&state->z80, &state->sos);
 
