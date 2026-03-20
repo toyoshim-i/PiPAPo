@@ -17,7 +17,7 @@
  * PicoCalc repository.
  */
 
-#include "lcd.h"
+#include "lcd_panel.h"
 #include "spi_lcd.h"
 #include "klog.h"
 

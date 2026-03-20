@@ -11,7 +11,7 @@
  * combinations on our side.
  */
 
-#include "kbd.h"
+#include "i2c_kbd.h"
 #include "i2c.h"
 #include "../kernel/klog.h"
 #include <stdint.h>

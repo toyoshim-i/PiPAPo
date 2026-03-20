@@ -35,13 +35,13 @@ add_executable(ppap_pico1calc
     ${PPAP_ROOT}/src/arch/arm_m/stage1.S
     ${CMAKE_CURRENT_SOURCE_DIR}/target_pico1calc.c
     ${PPAP_ROOT}/src/drivers/arch/arm_m/uart_rp2040.c
-    ${PPAP_ROOT}/src/drivers/clock.c
-    ${PPAP_ROOT}/src/drivers/spi.c
-    ${PPAP_ROOT}/src/drivers/sd.c
-    ${PPAP_ROOT}/src/drivers/i2c.c
-    ${PPAP_ROOT}/src/drivers/spi_lcd.c
-    ${PPAP_ROOT}/src/drivers/lcd.c
-    ${PPAP_ROOT}/src/drivers/kbd.c
+    ${PPAP_ROOT}/src/drivers/arch/arm_m/clock_rp2040.c
+    ${PPAP_ROOT}/src/drivers/arch/arm_m/spi_rp2040.c
+    ${PPAP_ROOT}/src/drivers/arch/arm_m/i2c_rp2040.c
+    ${PPAP_ROOT}/src/drivers/arch/arm_m/spi_lcd_rp2040.c
+    ${PPAP_ROOT}/src/drivers/spi_sd.c
+    ${PPAP_ROOT}/src/drivers/lcd_panel.c
+    ${PPAP_ROOT}/src/drivers/i2c_kbd.c
     ${PPAP_ROOT}/src/drivers/fbcon.c
 )
 

@@ -13,8 +13,8 @@
  * VCO frequency (1596 MHz) is within the RP2040's allowed range (400–1600 MHz).
  */
 
-#include "clock.h"
-#include "../target/rp2040.h"
+#include "drivers/clock.h"
+#include "target/rp2040.h"
 #include <stdint.h>
 
 /* ==========================================================================

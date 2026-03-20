@@ -13,10 +13,10 @@
  *   HCNT = LCNT = 6650 (equal duty cycle)
  */
 
-#include "i2c.h"
-#include "../target/pico1calc/pico1calc.h"
-#include "../target/rp2040.h"
-#include "../kernel/spinlock.h"
+#include "drivers/i2c.h"
+#include "target/pico1calc/pico1calc.h"
+#include "target/rp2040.h"
+#include "kernel/spinlock.h"
 #include "config.h"
 #include <stdint.h>
 

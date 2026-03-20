@@ -12,9 +12,9 @@
  * Pin assignments come from src/target/pico1calc/pico1calc.h.
  */
 
-#include "spi_lcd.h"
-#include "../target/pico1calc/pico1calc.h"
-#include "../target/rp2040.h"
+#include "drivers/spi_lcd.h"
+#include "target/pico1calc/pico1calc.h"
+#include "target/rp2040.h"
 #include "config.h"
 #include <stdint.h>
 

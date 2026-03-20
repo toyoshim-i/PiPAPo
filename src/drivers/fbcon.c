@@ -15,7 +15,7 @@
 #include "drivers/fbcon.h"
 #include "drivers/font.h"
 #include "drivers/spi_lcd.h"
-#include "drivers/lcd.h"
+#include "drivers/lcd_panel.h"
 #include <stdint.h>
 #include <string.h>
 

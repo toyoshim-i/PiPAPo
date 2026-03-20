@@ -13,7 +13,7 @@
  *   - RP2040 Datasheet §4.4 (PL022 SPI)
  */
 
-#include "sd.h"
+#include "spi_sd.h"
 #include "spi.h"
 #include "../kernel/blkdev/blkdev.h"
 #include "../kernel/errno.h"

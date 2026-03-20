@@ -11,9 +11,9 @@
  * where CPSDVSR is even (2–254) and SCR is 0–255.
  */
 
-#include "spi.h"
-#include "../target/pico1calc/pico1calc.h"
-#include "../target/rp2040.h"
+#include "drivers/spi.h"
+#include "target/pico1calc/pico1calc.h"
+#include "target/rp2040.h"
 #include "config.h"
 #include <stdint.h>
 
