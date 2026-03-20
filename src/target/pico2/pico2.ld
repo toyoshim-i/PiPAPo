@@ -4,14 +4,19 @@
  * Flash layout (XIP base = 0x10000000):
  *
  *   0x10000000  +-----------------------+  <- FLASH_BOOT  (4 KB)
- *               | SDK boot2 (256 B)     |     QSPI init, enables XIP
- *               | stage1 extension      |     Sets VTOR, jumps to kernel
+ *               | stage1 header         |     Fake vector table (SP + entry)
+ *               | picobin IMAGE_DEF     |     RP2350 boot ROM metadata
+ *               | stage1 code           |     Sets VTOR, jumps to kernel
  *   0x10001000  +-----------------------+  <- FLASH_KERNEL (160 KB)
  *               | Kernel .text/.rodata  |     Vector table at 0x10001000,
  *               | (vector table first)  |     then kernel code + data
  *   0x10029000  +-----------------------+  <- FLASH_ROMFS  (~3.8 MB remainder)
  *               | romfs image           |     Populated by mkromfs (Phase 2+)
  *               +-----------------------+
+ *
+ * Note: RP2350 ROM handles QSPI/XIP setup natively — no boot2 needed.
+ * The ROM scans the first 4 KB for a PICOBIN IMAGE_DEF block, then uses
+ * the ENTRY_POINT item or vector table at offset 0 to enter the image.
  *
  * SRAM layout (520 KB total on RP2350):
  *   24 KB kernel, 464 KB pages (116 pages), 16 KB iobuf, 16 KB DMA
@@ -42,12 +47,13 @@ __kernel_vtor = ORIGIN(FLASH_KERNEL);
 
 SECTIONS {
 
-    .boot2 : {
-        KEEP(*(.boot2))
-    } > FLASH_BOOT
-
     .stage1 : {
         KEEP(*(.stage1))
+        . = ALIGN(4);
+    } > FLASH_BOOT
+
+    .embedded_block : {
+        KEEP(*(.embedded_block))
         . = ALIGN(4);
     } > FLASH_BOOT
 
@@ -136,5 +142,6 @@ SECTIONS {
     /DISCARD/ : {
         *(.ARM.exidx*)
         *(.ARM.extab*)
+        *(.boot2)
     }
 }

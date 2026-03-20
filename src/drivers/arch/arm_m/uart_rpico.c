@@ -23,33 +23,33 @@
 #include <stddef.h>
 
 /* ==========================================================================
- * XOSC — Crystal oscillator (base 0x40024000)
+ * XOSC — Crystal oscillator
  * ========================================================================== */
 
-#define XOSC_CTRL    REG(0x40024000u)
-#define XOSC_STATUS  REG(0x40024004u)
+#define XOSC_CTRL    REG(XOSC_BASE + 0x00u)
+#define XOSC_STATUS  REG(XOSC_BASE + 0x04u)
 
 #define XOSC_CTRL_START   ((0xFABu << 12) | 0xAA0u)
 #define XOSC_STATUS_STABLE (1u << 31)
 
 /* ==========================================================================
- * IO_BANK0 — GPIO pin function select (base 0x40014000)
+ * IO_BANK0 — GPIO pin function select
  * ========================================================================== */
 
-#define GPIO0_CTRL  REG(0x40014004u)   /* GPIO 0 → UART0 TX */
-#define GPIO1_CTRL  REG(0x4001400Cu)   /* GPIO 1 → UART0 RX */
+#define GPIO0_CTRL  REG(IO_BANK0_BASE + 0x04u)   /* GPIO 0 → UART0 TX */
+#define GPIO1_CTRL  REG(IO_BANK0_BASE + 0x0Cu)   /* GPIO 1 → UART0 RX */
 #define GPIO_FUNC_UART  2u
 
 /* ==========================================================================
- * UART0 — PL011 compatible (base 0x40034000)
+ * UART0 — PL011 compatible
  * ========================================================================== */
 
-#define UART0_DR     REG(0x40034000u)
-#define UART0_FR     REG(0x40034018u)
-#define UART0_IBRD   REG(0x40034024u)
-#define UART0_FBRD   REG(0x40034028u)
-#define UART0_LCR_H  REG(0x4003402Cu)
-#define UART0_CR     REG(0x40034030u)
+#define UART0_DR     REG(UART0_BASE + 0x00u)
+#define UART0_FR     REG(UART0_BASE + 0x18u)
+#define UART0_IBRD   REG(UART0_BASE + 0x24u)
+#define UART0_FBRD   REG(UART0_BASE + 0x28u)
+#define UART0_LCR_H  REG(UART0_BASE + 0x2Cu)
+#define UART0_CR     REG(UART0_BASE + 0x30u)
 
 #define UART_FR_TXFF     (1u << 5)
 #define UART_FR_RXFE     (1u << 4)
@@ -62,10 +62,10 @@
  * UART0 interrupt registers
  * ========================================================================== */
 
-#define UART0_IMSC   REG(0x40034038u)
-#define UART0_RIS    REG(0x4003403Cu)   /* Raw Interrupt Status              */
-#define UART0_MIS    REG(0x40034040u)   /* Masked Interrupt Status           */
-#define UART0_ICR    REG(0x40034044u)
+#define UART0_IMSC   REG(UART0_BASE + 0x38u)
+#define UART0_RIS    REG(UART0_BASE + 0x3Cu)   /* Raw Interrupt Status       */
+#define UART0_MIS    REG(UART0_BASE + 0x40u)   /* Masked Interrupt Status    */
+#define UART0_ICR    REG(UART0_BASE + 0x44u)
 
 #define UART_IMSC_RXIM  (1u << 4)
 #define UART_IMSC_TXIM  (1u << 5)

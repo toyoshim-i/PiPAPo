@@ -21,7 +21,9 @@
 #include <stdint.h>
 #include "arch/arch.h"
 
+#ifndef SIO_BASE
 #define SIO_BASE            0xD0000000u
+#endif
 #define SIO_CPUID           (*(volatile uint32_t *)(SIO_BASE + 0x000u))
 #define SIO_SPINLOCK_BASE   (SIO_BASE + 0x100u)
 
@@ -29,7 +31,8 @@
 #if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
 #define SCB_CPUID_REG       (*(volatile uint32_t *)0xE000ED00u)
 #define CPUID_PARTNO_MASK   0x0000FFF0u
-#define CPUID_PARTNO_M0P    0x0000C600u
+#define CPUID_PARTNO_M0P    0x0000C600u   /* Cortex-M0+ (RP2040)  */
+#define CPUID_PARTNO_M33    0x0000D210u   /* Cortex-M33 (RP2350)  */
 #endif
 
 enum {
@@ -47,7 +50,8 @@ static inline int spin_have_hw(void)
 #if defined(__m68k__)
     return 0;   /* no hardware spinlocks on 68k */
 #else
-    return (SCB_CPUID_REG & CPUID_PARTNO_MASK) == CPUID_PARTNO_M0P;
+    uint32_t partno = SCB_CPUID_REG & CPUID_PARTNO_MASK;
+    return partno == CPUID_PARTNO_M0P || partno == CPUID_PARTNO_M33;
 #endif
 }
 

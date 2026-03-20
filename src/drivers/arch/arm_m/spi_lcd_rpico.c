@@ -18,9 +18,7 @@
 #include "config.h"
 #include <stdint.h>
 
-/* ── SPI1 (PL022) — base 0x40040000 ─────────────────────────────────────── */
-
-#define SPI1_BASE   0x40040000u
+/* ── SPI1 (PL022) ───────────────────────────────────────────────────────── */
 
 #define SPI1_CR0    REG(SPI1_BASE + 0x00u)  /* Control Register 0          */
 #define SPI1_CR1    REG(SPI1_BASE + 0x04u)  /* Control Register 1          */
@@ -44,22 +42,19 @@
 #define SR_RNE         (1u << 2)      /* RX FIFO not empty           */
 #define SR_BSY         (1u << 4)      /* SSP busy                    */
 
-/* ── GPIO — IO_BANK0 0x40014000 ──────────────────────────────────────────── */
+/* ── GPIO — IO_BANK0 ────────────────────────────────────────────────────── */
 
-#define IO_BANK0_BASE   0x40014000u
 #define GPIO_CTRL(n)    REG(IO_BANK0_BASE + (n) * 8u + 4u)
 
-/* ── GPIO — PADS_BANK0 0x4001C000 ────────────────────────────────────────── */
+/* ── GPIO — PADS_BANK0 ──────────────────────────────────────────────────── */
 
-#define PADS_BANK0_BASE 0x4001C000u
 #define PAD_GPIO(n)     REG(PADS_BANK0_BASE + 4u + (n) * 4u)
 
 #define PAD_SPI_OUT     (0x50u)   /* IE=1, DRIVE=4mA               */
 #define PAD_GPIO_OUT    (0x50u)   /* IE=1, DRIVE=4mA               */
 
-/* ── SIO — GPIO manual output 0xD0000000 ─────────────────────────────────── */
+/* ── SIO — GPIO manual output ────────────────────────────────────────────── */
 
-#define SIO_BASE           0xD0000000u
 #define SIO_GPIO_OUT_SET   REG(SIO_BASE + 0x014u)
 #define SIO_GPIO_OUT_CLR   REG(SIO_BASE + 0x018u)
 #define SIO_GPIO_OE_SET    REG(SIO_BASE + 0x024u)

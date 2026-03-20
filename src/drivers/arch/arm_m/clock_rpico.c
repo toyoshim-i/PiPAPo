@@ -17,7 +17,7 @@
 #include <stdint.h>
 
 /* ==========================================================================
- * PLL_SYS — base 0x40028000
+ * PLL_SYS
  *
  * CS       +0x00  [5:0]  REFDIV, [31] LOCK (read-only)
  * PWR      +0x04  [0]    PD, [2] DSMPD, [3] POSTDIVPD, [5] VCOPD
@@ -25,10 +25,10 @@
  * PRIM     +0x0C  [18:16] POSTDIV1, [14:12] POSTDIV2
  * ========================================================================== */
 
-#define PLL_SYS_CS         REG(0x40028000u)
-#define PLL_SYS_PWR        REG(0x40028004u)
-#define PLL_SYS_FBDIV_INT  REG(0x40028008u)
-#define PLL_SYS_PRIM       REG(0x4002800Cu)
+#define PLL_SYS_CS         REG(PLL_SYS_BASE + 0x00u)
+#define PLL_SYS_PWR        REG(PLL_SYS_BASE + 0x04u)
+#define PLL_SYS_FBDIV_INT  REG(PLL_SYS_BASE + 0x08u)
+#define PLL_SYS_PRIM       REG(PLL_SYS_BASE + 0x0Cu)
 
 #define PLL_CS_LOCK        (1u << 31)
 

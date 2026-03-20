@@ -16,3 +16,6 @@
 [submodule "third_party/zexall"]
 	path = third_party/zexall
 	url = https://github.com/agn453/ZEXALL.git
+[submodule "third_party/openocd"]
+	path = third_party/openocd
+	url = https://github.com/raspberrypi/openocd.git

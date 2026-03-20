@@ -20,9 +20,7 @@
 #include "config.h"
 #include <stdint.h>
 
-/* ── I2C1 (DW_apb_i2c) — base 0x40048000 ────────────────────────────────── */
-
-#define I2C1_BASE  0x40048000u
+/* ── I2C1 (DW_apb_i2c) ──────────────────────────────────────────────────── */
 
 #define IC_CON              REG(I2C1_BASE + 0x00u)
 #define IC_TAR              REG(I2C1_BASE + 0x04u)
@@ -60,14 +58,12 @@
 /* IC_RAW_INTR_STAT fields */
 #define RAW_INTR_TX_ABRT    (1u << 6)   /* TX abort                         */
 
-/* ── GPIO — IO_BANK0 0x40014000 ──────────────────────────────────────────── */
+/* ── GPIO — IO_BANK0 ────────────────────────────────────────────────────── */
 
-#define IO_BANK0_BASE   0x40014000u
 #define GPIO_CTRL(n)    REG(IO_BANK0_BASE + (n) * 8u + 4u)
 
-/* ── GPIO — PADS_BANK0 0x4001C000 ────────────────────────────────────────── */
+/* ── GPIO — PADS_BANK0 ──────────────────────────────────────────────────── */
 
-#define PADS_BANK0_BASE 0x4001C000u
 #define PAD_GPIO(n)     REG(PADS_BANK0_BASE + 4u + (n) * 4u)
 
 /* IE=1, PUE=1, DRIVE=4mA — same as PAD_SPI_IN.

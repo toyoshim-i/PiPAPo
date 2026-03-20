@@ -36,6 +36,7 @@ include(${PPAP_ROOT}/cmake/arm_m.cmake)
 add_executable(ppap_pico2
     ${KERNEL_COMMON_SOURCES}
     ${PPAP_ROOT}/src/arch/arm_m/stage1.S
+    ${CMAKE_CURRENT_SOURCE_DIR}/picobin_block.S
     ${CMAKE_CURRENT_SOURCE_DIR}/target_pico2.c
     ${PPAP_ROOT}/src/drivers/arch/arm_m/uart_rpico.c
     ${PPAP_ROOT}/src/drivers/arch/arm_m/clock_rpico.c
@@ -53,7 +54,7 @@ target_compile_definitions(ppap_pico2 PRIVATE
 )
 
 target_link_libraries(ppap_pico2 pico_base_headers hardware_regs)
-target_sources(ppap_pico2 PRIVATE $<TARGET_OBJECTS:bs2_default_library>)
+# No boot2 needed — RP2350 ROM handles QSPI/XIP setup natively
 
 target_link_options(ppap_pico2 PRIVATE
     -T ${CMAKE_CURRENT_SOURCE_DIR}/pico2.ld

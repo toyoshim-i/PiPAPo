@@ -192,14 +192,30 @@ if [[ "$TARGET" == "x68k" ]]; then
     exit 0
 fi
 
-# ── Flash targets (pico1, pico1calc) ────────────────────────────────────────
+# ── Flash targets (pico1, pico1calc, pico2) ─────────────────────────────────
 if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 ]]; then
-    CFG="$SCRIPT_DIR/debug/openocd.cfg"
 
-    if ! command -v openocd &>/dev/null; then
-        echo "[run] Error: openocd not found in PATH."
-        echo "      Install with: sudo apt install openocd"
-        exit 1
+    # pico2 (RP2350) needs the Raspberry Pi OpenOCD fork; pico1/pico1calc use system openocd
+    if [[ "$TARGET" == pico2 ]]; then
+        OPENOCD_BIN="$PROJECT_DIR/tools/openocd-rp/bin/openocd"
+        OPENOCD_SCRIPTS="$PROJECT_DIR/tools/openocd-rp/share/openocd/scripts"
+        if [[ ! -x "$OPENOCD_BIN" ]]; then
+            echo "[run] Error: Raspberry Pi OpenOCD not found at $OPENOCD_BIN"
+            echo "      Build with: ./third_party/build_openocd_rp.sh"
+            exit 1
+        fi
+        OPENOCD_ARGS=(-s "$OPENOCD_SCRIPTS"
+                      -f interface/cmsis-dap.cfg
+                      -f target/rp2350.cfg
+                      -c "adapter speed 5000")
+    else
+        OPENOCD_BIN="openocd"
+        if ! command -v openocd &>/dev/null; then
+            echo "[run] Error: openocd not found in PATH."
+            echo "      Install with: sudo apt install openocd"
+            exit 1
+        fi
+        OPENOCD_ARGS=(-f "$SCRIPT_DIR/debug/openocd.cfg")
     fi
 
     # Stop any running OpenOCD (holds the adapter exclusively)
@@ -210,8 +226,8 @@ if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 ]]; the
     fi
 
     echo "[run] Flashing $ELF ..."
-    openocd \
-        -f "$CFG" \
+    "$OPENOCD_BIN" \
+        "${OPENOCD_ARGS[@]}" \
         -c "program \"$ELF\" verify reset exit"
 
     echo "[run] Done."

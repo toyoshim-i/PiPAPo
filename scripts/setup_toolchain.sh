@@ -52,7 +52,7 @@ APT_PACKAGES=(
   binutils-arm-none-eabi  # Assembler, linker, objcopy, objdump
   # m68k-elf toolchain is built from source: ./third_party/build_gcc_m68k.sh
   gdb-multiarch           # GDB with ARM and m68k support
-  openocd                 # SWD/JTAG on-chip debugger (v0.12+)
+  openocd                 # SWD/JTAG on-chip debugger (v0.12+, RP2040 only)
   minicom                 # Serial console
   cmake                   # Build system (>= 3.13 required by Pico SDK)
   ninja-build             # Fast build backend for CMake
@@ -62,6 +62,14 @@ APT_PACKAGES=(
   qemu-system-misc        # QEMU m68k (virt) for 68000 target
   openjdk-25-jre          # Java 25 runtime for XEiJ (X68000 emulator, needs GUI)
   unzip                   # Needed to extract XEiJ archive
+  # Build deps for Raspberry Pi OpenOCD fork (RP2350 support)
+  automake                # autotools for OpenOCD build
+  autoconf                # autotools for OpenOCD build
+  texinfo                 # makeinfo for OpenOCD docs
+  libtool                 # libtoolize for OpenOCD build
+  libftdi-dev             # FTDI support for OpenOCD
+  libusb-1.0-0-dev        # USB support for OpenOCD
+  pkg-config              # Build dependency resolution
 )
 
 # Check which packages are already installed
@@ -111,6 +119,10 @@ info "=== Step 2: Initializing git submodules ==="
 git -C "${PPAP_ROOT}" submodule update --init --quiet
 # Pico SDK is the only submodule that needs recursive init
 git -C "${PPAP_ROOT}/third_party/pico-sdk" submodule update --init --recursive --quiet
+# OpenOCD RPi fork needs its own submodules (jimtcl, libjaylink)
+if [[ -d "${PPAP_ROOT}/third_party/openocd" ]]; then
+  git -C "${PPAP_ROOT}/third_party/openocd" submodule update --init --depth 1 --quiet
+fi
 success "All git submodules initialized."
 
 # Verify Pico SDK submodule
@@ -119,6 +131,22 @@ if [[ -f "${PICO_SDK_DIR}/pico_sdk_init.cmake" ]]; then
   success "Pico SDK present at ${PICO_SDK_DIR}"
 else
   warn "Pico SDK submodule not found — run: git submodule update --init --recursive"
+fi
+
+# --- Step 2b: Raspberry Pi OpenOCD (RP2350 support) -------------------------
+#
+# The system openocd (apt) is 0.12.0 which only supports RP2040.
+# The Raspberry Pi fork (third_party/openocd, sdk-2.2.0) adds RP2350 support.
+# Build it locally to tools/openocd-rp/.
+
+info "=== Step 2b: Building Raspberry Pi OpenOCD ==="
+
+OPENOCD_RP_BIN="${PPAP_ROOT}/tools/openocd-rp/bin/openocd"
+if [[ -x "${OPENOCD_RP_BIN}" ]]; then
+  success "Raspberry Pi OpenOCD already built: ${OPENOCD_RP_BIN}"
+else
+  info "Building Raspberry Pi OpenOCD (this takes a few minutes)..."
+  "${PPAP_ROOT}/third_party/build_openocd_rp.sh"
 fi
 
 # --- Step 3: QEMU m68k check ------------------------------------------------
@@ -224,10 +252,20 @@ else
   FAIL=1
 fi
 
-# OpenOCD
-verify_version "openocd" \
+# OpenOCD (system — RP2040 only)
+verify_version "openocd (system)" \
   "openocd --version" \
   "Open On-Chip Debugger"
+
+# OpenOCD (Raspberry Pi fork — RP2350 support)
+if [[ -x "${PPAP_ROOT}/tools/openocd-rp/bin/openocd" ]]; then
+  verify_version "openocd (rp2350)" \
+    "${PPAP_ROOT}/tools/openocd-rp/bin/openocd --version" \
+    "Open On-Chip Debugger"
+else
+  warn "openocd-rp: not found (run ./third_party/build_openocd_rp.sh for RP2350 support)"
+  FAIL=1
+fi
 
 # cmake
 verify_version "cmake" \
