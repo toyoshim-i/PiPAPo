@@ -39,6 +39,7 @@ set(ARCH_M68K_SOURCES
 
 set(ARCH_RISCV_SOURCES
     ${_KS_ROOT}/src/arch/riscv/boot.S
+    ${_KS_ROOT}/src/arch/riscv/trap.S
     ${_KS_ROOT}/src/arch/riscv/riscv_common.c
 )
 

@@ -1,39 +1,18 @@
 # =============================================================================
-# boot.S — RISC-V Reset Handler and Trap Vector Table
+# boot.S — RISC-V Reset Handler
 # =============================================================================
 #
 # Provides:
-#   .vectors section  → placed at FLASH_KERNEL start by the linker script
 #   _start            → copies .data, zeros .bss, calls kmain()
 #   Default_Handler   → infinite loop for unhandled traps
 #
 # The RP2350 boot ROM selects RISC-V cores via the PICOBIN block, then
 # stage1.S redirects mtvec to __kernel_entry and jumps here.
 #
-# RISC-V trap model (direct mode):
-#   All traps (interrupts + exceptions) go to the address in mtvec.
-#   The trap handler reads mcause to determine the cause and dispatches.
-#
-# Unlike ARM Cortex-M, RISC-V does NOT auto-push registers on trap entry.
-# The trap handler must save/restore all registers in software.
+# The trap vector (_trap_vector) and dispatch logic are in trap.S.
 # =============================================================================
 
 .option norelax   # Prevent linker relaxation of gp-relative accesses
-
-# =============================================================================
-# .vectors section — trap entry point (referenced by mtvec)
-#
-# In direct mode (mtvec[1:0] = 00), all traps jump to the base address.
-# This stub just jumps to Default_Handler for now.  Phase RV-1c will
-# replace it with a full trap dispatcher.
-# =============================================================================
-
-.section .vectors, "ax"
-.align 2
-.global _trap_vector
-_trap_vector:
-    j    Default_Handler
-
 
 # =============================================================================
 # _start — kernel entry point

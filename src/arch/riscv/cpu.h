@@ -119,14 +119,29 @@
 
 /* ── RP2350 timer (SIO-mapped) ─────────────────────────────────────────── *
  *
- * The Hazard3 RISC-V timer is mapped through the RP2350 SIO block.
- * mtime and mtimecmp are accessible via memory-mapped registers.
+ * The Hazard3 RISC-V timer is mapped through the RP2350 SIO block at
+ * base 0xD0000000.  mtime is shared between both cores; mtimecmp is
+ * per-core (each core sees its own comparator at the same address).
  *
- * On RP2350, the RISC-V timer base is at SIO + 0x100 for each core.
- * The Pico SDK provides the addresses via hardware/regs/sio.h.
- * We define them here for reference; actual addresses come from the SDK
- * or the target header.
+ * Timer interrupt (MTIP) asserts when mtime >= mtimecmp (unsigned 64-bit).
+ * Writing mtimecmp clears the interrupt (no explicit acknowledge needed).
+ *
+ * Safe 64-bit mtimecmp write sequence (avoids spurious interrupts):
+ *   1. Write 0xFFFFFFFF to mtimecmp_lo  (prevents match during update)
+ *   2. Write new value to mtimecmph     (upper 32 bits)
+ *   3. Write new value to mtimecmp_lo   (lower 32 bits)
  */
+
+#define SIO_BASE            0xD0000000u
+#define SIO_MTIME_CTRL      REG(SIO_BASE + 0x1A4u)
+#define SIO_MTIME           REG(SIO_BASE + 0x1B0u)  /* lower 32 bits */
+#define SIO_MTIMEH          REG(SIO_BASE + 0x1B4u)  /* upper 32 bits */
+#define SIO_MTIMECMP        REG(SIO_BASE + 0x1B8u)  /* lower 32 bits (per-core) */
+#define SIO_MTIMECMPH       REG(SIO_BASE + 0x1BCu)  /* upper 32 bits (per-core) */
+
+/* mtime_ctrl bits */
+#define MTIME_CTRL_EN       (1u << 0)   /* Timer enable                    */
+#define MTIME_CTRL_FULLSPEED (1u << 1)  /* Run at full system clock        */
 
 /* Timer tick interval for 10ms slices (set by target via PPAP_SYS_HZ) */
 #ifndef PPAP_SYS_HZ

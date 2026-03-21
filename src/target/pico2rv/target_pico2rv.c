@@ -29,11 +29,15 @@ void target_early_init(void)
     /* No SPI init — pico2rv has no SD card slot */
 }
 
+/* Timer init — defined in riscv_common.c */
+extern void riscv_timer_init(void);
+
 void target_late_init(void)
 {
     /* No SD card to initialize */
     while (uart_getc() >= 0) ;   /* drain boot noise from RX ring */
-    /* MPU/PMP init deferred to Phase RV-3 */
+    riscv_timer_init();            /* start 10ms tick timer         */
+    /* PMP init deferred to Phase RV-3 */
 }
 
 void target_post_mount(void)
