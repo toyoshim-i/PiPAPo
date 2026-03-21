@@ -42,6 +42,7 @@
 
 .equ PCB_SP_OFFSET,    32      @ offsetof(pcb_t, sp) — see proc.h
 .equ PCB_STATE_OFFSET, 44      @ offsetof(pcb_t, state) — r4..r11(32)+sp(4)+pid(4)+ppid(4)
+.equ PCB_NS_XOR_OFF,   48      @ offsetof(pcb_t, ns_addr_xor) — see proc.h
 .equ PROC_RUNNABLE,     1
 
 .syntax unified
@@ -163,15 +164,21 @@ SVC_Handler:
     movs  r1, #0
     str   r1, [r0]                    @ exec_pending[core_id] = 0
 
-    @ Load current->sp (points at the new SW frame built by do_execve)
+    @ Load current PCB
     ldr   r0, =current_core
     adds  r0, r0, r6
     ldr   r0, [r0]                    @ r0 = current PCB
-    ldr   r0, [r0, #PCB_SP_OFFSET]   @ r0 = current->sp (SW frame base)
 
 #if __ARM_ARCH >= 8
-    @ ARMv8-M: SW frame is {r4-r11, EXC_RETURN} (9 words).
+    @ ARMv8-M: check if the new process is Non-Secure.
+    ldr   r1, [r0, #PCB_NS_XOR_OFF] @ r1 = current->ns_addr_xor
+    cmp   r1, #0
+    bne   .Lexec_restore_ns
+
+    @ ── Secure exec restore ──────────────────────────────────────────
+    @ SW frame is {r4-r11, EXC_RETURN} (9 words).
     @ New process hasn't used FPU, so no s16-s31 to restore.
+    ldr   r0, [r0, #PCB_SP_OFFSET]  @ r0 = current->sp (SW frame base)
     ldmia r0!, {r4-r11, lr}  @ restore r4-r11 + EXC_RETURN from SW frame
 
     @ Set PSP to the new HW exception frame
@@ -181,8 +188,26 @@ SVC_Handler:
     @ Use lr (EXC_RETURN from new process) instead of the stacked one.
     add   sp, sp, #24         @ skip all 6 stacked words
     bx    lr                  @ EXC_RETURN from new process → exception return
+
+.Lexec_restore_ns:
+    @ ── Non-Secure exec restore ──────────────────────────────────────
+    @ SW frame is {EXC_RETURN} (1 word), then HW integrity + exc frame.
+    ldr   r0, [r0, #PCB_SP_OFFSET]  @ r0 = current->sp (NS alias)
+    ldmia r0!, {lr}           @ pop EXC_RETURN
+    msr   psp_ns, r0          @ PSP_NS = integrity + exc frame base
+
+    @ Set PSP_S to per-core Secure stack for gateway SVC frame.
+    ldr   r0, =secure_psp_top
+    adds  r0, r0, r6          @ r6 = core_byte_offset
+    ldr   r0, [r0]
+    msr   psp, r0
+
+    @ Return — skip saved {r3,r4,r5,r6,r7,lr} on MSP.
+    add   sp, sp, #24
+    bx    lr                  @ NS EXC_RETURN → CPU pops integrity + exc frame
 #else
     @ ARMv6-M: SW frame is {r4-r11} (8 words).
+    ldr   r0, [r0, #PCB_SP_OFFSET]   @ r0 = current->sp (SW frame base)
     @ Restore r4-r11 from the SW frame (same code as PendSV_Handler)
     ldmia r0!, {r4-r7}       @ restore r4-r7; r0 advances to r8 area
     push  {r4-r7}             @ preserve real r4-r7 on MSP

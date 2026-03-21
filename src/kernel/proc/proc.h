@@ -1,8 +1,9 @@
 /*
  * proc.h — Process Control Block (PCB) definition and process table
  *
- * The PCB holds all per-process state: saved CPU registers, identity (pid/ppid),
- * memory (stack page, user pages), file descriptors, and scheduling fields.
+ * The PCB holds all per-process state: saved CPU registers, identity
+ * (pid/ppid), memory (stack page, user pages), file descriptors, and scheduling
+ * fields.
  *
  * Layout (fits in 256 B):
  *   [0..35]   saved callee registers r4–r11 + sp  (must match switch.S offsets)
@@ -18,9 +19,10 @@
 #define PPAP_KERNEL_PROC_PROC_H
 
 #include <stdint.h>
-#include "config.h"
+
+#include "../spinlock.h" /* core_id() — needed by #define current */
 #include "common/ptrace.h"
-#include "../spinlock.h"   /* core_id() — needed by #define current */
+#include "config.h"
 
 /* Forward declaration — struct file is defined in fd/file.h (Step 10).
  * We only store pointers here so the incomplete type is sufficient. */
@@ -40,9 +42,9 @@ typedef void (*sighandler_t)(int);
  * m68k:         d2..d7,a2..a6 (11×4=44) → sp at offset 44
  */
 #if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
-#define PCB_SP_OFFSET  32u
+#define PCB_SP_OFFSET 32u
 #elif defined(__m68k__)
-#define PCB_SP_OFFSET  44u
+#define PCB_SP_OFFSET 44u
 #define PCB_USP_OFFSET 48u
 #else
 #error "Unsupported architecture — define PCB_SP_OFFSET"
@@ -51,145 +53,154 @@ typedef void (*sighandler_t)(int);
 /* Subsystem tags — identifies which OS personality a process uses.
  * The F-line handler checks this to dispatch Human68k DOS calls
  * vs. crashing non-Human68k processes that hit F-line opcodes. */
-#define SUBSYS_PPAP       0   /* native PPAP ELF binary (default)    */
-#define SUBSYS_HUMAN68K   1   /* Human68k X-format binary             */
-#define SUBSYS_CPM        2   /* CP/M 2.2 .COM binary (Z80 emulated) */
-#define SUBSYS_SOS        3   /* S-OS SWORD binary (Z80 emulated)    */
-#define TRACE_SW_BP_MAX   8   /* max software breakpoints per tracee  */
-#define TRACE_HW_BP_MAX   4   /* max native hardware breakpoints       */
+#define SUBSYS_PPAP 0     /* native PPAP ELF binary (default)    */
+#define SUBSYS_HUMAN68K 1 /* Human68k X-format binary             */
+#define SUBSYS_CPM 2      /* CP/M 2.2 .COM binary (Z80 emulated) */
+#define SUBSYS_SOS 3      /* S-OS SWORD binary (Z80 emulated)    */
+#define TRACE_SW_BP_MAX 8 /* max software breakpoints per tracee  */
+#define TRACE_HW_BP_MAX 4 /* max native hardware breakpoints       */
 
-/* ── Types ─────────────────────────────────────────────────────────────────── */
+/* ── Types ───────────────────────────────────────────────────────────────────
+ */
 
 /* pid_t: POSIX process ID type.  Not provided by arm-none-eabi without
  * POSIX headers, so we define it here for bare-metal use. */
 typedef int32_t pid_t;
 
 typedef enum {
-    PROC_FREE     = 0,   /* slot is not in use                              */
-    PROC_RUNNABLE = 1,   /* ready to run, or currently executing            */
-    PROC_SLEEPING = 2,   /* blocked until sleep_until SysTick count         */
-    PROC_BLOCKED  = 3,   /* blocked on vfork/waitpid                        */
-    PROC_ZOMBIE   = 4,   /* exited; slot freed when parent calls waitpid()  */
-    PROC_TRACED_STOP = 5, /* stopped and waiting for tracer resume          */
+  PROC_FREE = 0,        /* slot is not in use                              */
+  PROC_RUNNABLE = 1,    /* ready to run, or currently executing            */
+  PROC_SLEEPING = 2,    /* blocked until sleep_until SysTick count         */
+  PROC_BLOCKED = 3,     /* blocked on vfork/waitpid                        */
+  PROC_ZOMBIE = 4,      /* exited; slot freed when parent calls waitpid()  */
+  PROC_TRACED_STOP = 5, /* stopped and waiting for tracer resume          */
 } proc_state_t;
 
 typedef struct pcb {
-    /*
-     * Saved CPU context — architecture-dependent.
-     * IMPORTANT: the byte offsets MUST match the #defines used in switch.S
-     * (PCB_SP_OFFSET).  Do not reorder these fields.
-     *
-     * ARM Cortex-M: callee-saved r4–r11 + saved PSP.
-     *   r0–r3, r12, lr, pc, xpsr are saved by hardware on exception entry.
-     * m68k (future): callee-saved d2–d7/a2–a6 + saved SP.
-     */
+  /*
+   * Saved CPU context — architecture-dependent.
+   * IMPORTANT: the byte offsets MUST match the #defines used in switch.S
+   * (PCB_SP_OFFSET).  Do not reorder these fields.
+   *
+   * ARM Cortex-M: callee-saved r4–r11 + saved PSP.
+   *   r0–r3, r12, lr, pc, xpsr are saved by hardware on exception entry.
+   * m68k (future): callee-saved d2–d7/a2–a6 + saved SP.
+   */
 #if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
-    uint32_t r4, r5, r6, r7;       /* callee-saved low registers  (offsets 0–15)  */
-    uint32_t r8, r9, r10, r11;     /* callee-saved high registers (offsets 16–31) */
-    uint32_t sp;                    /* saved PSP                   (offset 32)     */
+  uint32_t r4, r5, r6, r7;   /* callee-saved low registers  (offsets 0–15)  */
+  uint32_t r8, r9, r10, r11; /* callee-saved high registers (offsets 16–31) */
+  uint32_t sp;               /* saved PSP                   (offset 32)     */
 #elif defined(__m68k__)
-    uint32_t d2, d3, d4, d5, d6, d7;  /* callee-saved data regs  (offsets 0–23)   */
-    uint32_t a2, a3, a4, a5, a6;      /* callee-saved addr regs  (offsets 24–43)  */
-    uint32_t sp;                       /* saved SSP               (offset 44)      */
-    uint32_t usp;                      /* saved USP               (offset 48)      */
+  uint32_t d2, d3, d4, d5, d6, d7; /* callee-saved data regs  (offsets 0–23) */
+  uint32_t a2, a3, a4, a5, a6; /* callee-saved addr regs  (offsets 24–43)  */
+  uint32_t sp;                 /* saved SSP               (offset 44)      */
+  uint32_t usp;                /* saved USP               (offset 48)      */
 #else
-    #error "Unsupported architecture — define PCB register save area"
+#error "Unsupported architecture — define PCB register save area"
 #endif
 
-    /* ── Identity ───────────────────────────────────────────────────────── */
-    pid_t        pid;
-    pid_t        ppid;
-    proc_state_t state;
+  /* ── Identity ───────────────────────────────────────────────────────── */
+  pid_t pid;
+  pid_t ppid;
+  proc_state_t state;
 
-    /* ── Memory ─────────────────────────────────────────────────────────── */
-    void    *stack_page;        /* 4 KB page from page_alloc(): process stack */
-    void    *user_pages[USER_PAGES_MAX]; /* user data pages (exec data segment) */
+  /* ── TrustZone (ARMv8-M only) ───────────────────────────────────────
+   * ns_addr_xor: 0 for Secure processes, RP2350_NS_BIT (0x10000000) for
+   * Non-Secure processes.  XOR'd with SRAM/flash addresses to produce
+   * the NS alias that user-space sees.  Also checked by PendSV/SVC to
+   * select the NS save/restore path. */
+  uint32_t ns_addr_xor;
+
+  /* ── Memory ─────────────────────────────────────────────────────────── */
+  void *stack_page; /* 4 KB page from page_alloc(): process stack */
+  void *user_pages[USER_PAGES_MAX]; /* user data pages (exec data segment) */
 #if defined(__m68k__)
-    void    *user_stack_page;   /* m68k: separate user stack page (USP target) */
+  void *user_stack_page; /* m68k: separate user stack page (USP target) */
 #endif
 
-    /* ── File descriptors ───────────────────────────────────────────────── */
-    struct file *fd_table[FD_MAX];
-    char         cwd[64];       /* current working directory (Phase 2+)       */
+  /* ── File descriptors ───────────────────────────────────────────────── */
+  struct file *fd_table[FD_MAX];
+  char cwd[64]; /* current working directory (Phase 2+)       */
 
-    /* ── Scheduling ─────────────────────────────────────────────────────── */
-    uint32_t ticks_remaining;   /* SysTick ticks left in current time-slice   */
-    uint32_t sleep_until;       /* wake when SysTick count reaches this value */
-    int8_t   running_on_core;   /* -1 = not running, 0/1 = core ID           */
-    uint8_t  is_idle;           /* 1 = idle thread (ticks count as idle)      */
+  /* ── Scheduling ─────────────────────────────────────────────────────── */
+  uint32_t ticks_remaining; /* SysTick ticks left in current time-slice   */
+  uint32_t sleep_until;     /* wake when SysTick count reaches this value */
+  int8_t running_on_core;   /* -1 = not running, 0/1 = core ID           */
+  uint8_t is_idle;          /* 1 = idle thread (ticks count as idle)      */
 
-    /* ── vfork / waitpid ──────────────────────────────────────────────── */
-    struct pcb *vfork_parent;   /* non-NULL while child shares parent's space */
-    int         exit_status;    /* set by _exit(), read by waitpid()          */
-    uint32_t    got_base;       /* r9 value (GOT SRAM address) for PIC       */
-    void       *wait_channel;   /* sleep/wakeup target (e.g. pipe_t*)        */
+  /* ── vfork / waitpid ──────────────────────────────────────────────── */
+  struct pcb *vfork_parent; /* non-NULL while child shares parent's space */
+  int exit_status;          /* set by _exit(), read by waitpid()          */
+  uint32_t got_base;        /* r9 value (GOT SRAM address) for PIC       */
+  void *wait_channel;       /* sleep/wakeup target (e.g. pipe_t*)        */
 
-    /* ── Heap (brk) ──────────────────────────────────────────────────── */
-    uint32_t    brk_base;      /* initial break = end of .data+.bss         */
-    uint32_t    brk_current;   /* current break (grows upward)              */
+  /* ── Heap (brk) ──────────────────────────────────────────────────── */
+  uint32_t brk_base;    /* initial break = end of .data+.bss         */
+  uint32_t brk_current; /* current break (grows upward)              */
 
-    /* ── Signals ─────────────────────────────────────────────────────── */
-    sighandler_t sig_handlers[NSIG]; /* SIG_DFL(0) or SIG_IGN(1) or func */
-    uint32_t     sig_pending;        /* bitmask of pending signals        */
-    uint32_t     sig_blocked;        /* bitmask of blocked signals        */
+  /* ── Signals ─────────────────────────────────────────────────────── */
+  sighandler_t sig_handlers[NSIG]; /* SIG_DFL(0) or SIG_IGN(1) or func */
+  uint32_t sig_pending;            /* bitmask of pending signals        */
+  uint32_t sig_blocked;            /* bitmask of blocked signals        */
 
-    /* ── Process identity / accounting (Phase 6 Step 14) ─────── */
-    char         comm[16];           /* command name (basename of exe)    */
-    uint32_t     utime;              /* user-mode ticks consumed          */
-    uint32_t     stime;              /* kernel-mode ticks consumed        */
-    uint32_t     start_time;         /* boot tick when process created    */
+  /* ── Process identity / accounting (Phase 6 Step 14) ─────── */
+  char comm[16];       /* command name (basename of exe)    */
+  uint32_t utime;      /* user-mode ticks consumed          */
+  uint32_t stime;      /* kernel-mode ticks consumed        */
+  uint32_t start_time; /* boot tick when process created    */
 
-    /* ── Process group / session (Phase 6 Step 7) ────────────────── */
-    pid_t        pgid;              /* process group ID                  */
-    pid_t        sid;               /* session ID                        */
-    uint32_t     umask_val;         /* file creation mask (default 022)  */
-    int         *clear_child_tid;   /* set_tid_address pointer           */
+  /* ── Process group / session (Phase 6 Step 7) ────────────────── */
+  pid_t pgid;           /* process group ID                  */
+  pid_t sid;            /* session ID                        */
+  uint32_t umask_val;   /* file creation mask (default 022)  */
+  int *clear_child_tid; /* set_tid_address pointer           */
 
-    /* ── m68k syscall restart (per-process, not global) ─────────── */
-    uint8_t      svc_needs_restart;  /* set by blocking syscalls            */
+  /* ── m68k syscall restart (per-process, not global) ─────────── */
+  uint8_t svc_needs_restart; /* set by blocking syscalls            */
 
-    /* ── Tracing ─────────────────────────────────────────────────── */
-    pid_t        tracer_pid;         /* parent tracer PID, or 0 if none     */
-    uint8_t      trace_requested;    /* set by PTRACE_TRACEME until exec     */
-    uint8_t      trace_mode;         /* PPAP_TRACE_MODE_* bits              */
-    uint8_t      trace_surface;      /* PPAP_TRACE_SURFACE_* selection       */
-    uint8_t      trace_wait_pending; /* waitpid(WSTOPPED) should report stop */
-    uint8_t      trace_syscall_phase;/* 0=enter, 1=exit for SYSCALL mode     */
-    uint8_t      trace_subsys_phase; /* 0=enter, 1=exit for subsystem mode   */
-    uint8_t      trace_step_pending; /* pending ptrace single-step resume    */
-    uint8_t      trace_swbp_skip_once; /* skip one re-hit at same PC         */
-    uint32_t     trace_swbp_skip_pc;   /* PC to ignore once after sw-bp stop */
-    struct {
-        uint32_t addr;
-        uint8_t  used;
-        uint8_t  enabled;
-    } trace_swbp[TRACE_SW_BP_MAX];
-    struct {
-        uint32_t addr;
-        uint8_t  used;
-        uint8_t  enabled;
-    } trace_hwbp[TRACE_HW_BP_MAX];
-    struct ppap_ptrace_event trace_event;
+  /* ── Tracing ─────────────────────────────────────────────────── */
+  pid_t tracer_pid;             /* parent tracer PID, or 0 if none     */
+  uint8_t trace_requested;      /* set by PTRACE_TRACEME until exec     */
+  uint8_t trace_mode;           /* PPAP_TRACE_MODE_* bits              */
+  uint8_t trace_surface;        /* PPAP_TRACE_SURFACE_* selection       */
+  uint8_t trace_wait_pending;   /* waitpid(WSTOPPED) should report stop */
+  uint8_t trace_syscall_phase;  /* 0=enter, 1=exit for SYSCALL mode     */
+  uint8_t trace_subsys_phase;   /* 0=enter, 1=exit for subsystem mode   */
+  uint8_t trace_step_pending;   /* pending ptrace single-step resume    */
+  uint8_t trace_swbp_skip_once; /* skip one re-hit at same PC         */
+  uint32_t trace_swbp_skip_pc;  /* PC to ignore once after sw-bp stop */
+  struct {
+    uint32_t addr;
+    uint8_t used;
+    uint8_t enabled;
+  } trace_swbp[TRACE_SW_BP_MAX];
+  struct {
+    uint32_t addr;
+    uint8_t used;
+    uint8_t enabled;
+  } trace_hwbp[TRACE_HW_BP_MAX];
+  struct ppap_ptrace_event trace_event;
 
-    /* ── Subsystem tag ───────────────────────────────────────────── */
-    uint8_t      subsys;             /* SUBSYS_PPAP, SUBSYS_HUMAN68K, etc.  */
-    void        *subsys_data;        /* opaque per-process subsystem state  */
+  /* ── Subsystem tag ───────────────────────────────────────────── */
+  uint8_t subsys;    /* SUBSYS_PPAP, SUBSYS_HUMAN68K, etc.  */
+  void *subsys_data; /* opaque per-process subsystem state  */
 
-    /* ── Thread-local storage (TLS) ──────────────────────────── */
-    uint32_t     tp_value;           /* set/get_thread_area value           */
+  /* ── Thread-local storage (TLS) ──────────────────────────── */
+  uint32_t tp_value; /* set/get_thread_area value           */
 
-    /* ── mmap regions (Phase 6 Step 7) ───────────────────────────── */
-    struct {
-        void    *addr;              /* base address of mapped region     */
-        uint32_t pages;             /* number of pages in this region    */
-    } mmap_regions[MMAP_REGIONS_MAX]; /* max concurrent mmap regions     */
+  /* ── mmap regions (Phase 6 Step 7) ───────────────────────────── */
+  struct {
+    void *addr;                     /* base address of mapped region     */
+    uint32_t pages;                 /* number of pages in this region    */
+  } mmap_regions[MMAP_REGIONS_MAX]; /* max concurrent mmap regions     */
 } pcb_t;
 
-/* ── Globals ────────────────────────────────────────────────────────────────── */
+/* ── Globals ──────────────────────────────────────────────────────────────────
+ */
 
 /* Flat process table: proc_table[0] is the initial kernel thread (pid 0).
  * All entries live in BSS and are zero-initialised by startup.S. */
-extern pcb_t  proc_table[PROC_MAX];
+extern pcb_t proc_table[PROC_MAX];
 
 /* Per-core current process pointer.  Indexed by core_id() (0 or 1).
  * Assembly (switch.S, svc.S) uses core_id_reg indirection to index this. */
@@ -197,7 +208,8 @@ extern pcb_t *current_core[2];
 
 /* `current` — pointer to the PCB of the process executing on this core.
  * Expands to current_core[core_id()]: single MMIO read on RP2040, zero on QEMU.
- * Works as both lvalue and rvalue: `current->pid` and `current = p` both work. */
+ * Works as both lvalue and rvalue: `current->pid` and `current = p` both work.
+ */
 #define current (current_core[core_id()])
 
 /* Indirect pointer to core-ID register, used by assembly (switch.S, svc.S).
@@ -205,7 +217,8 @@ extern pcb_t *current_core[2];
  * Assembly dereferences twice: &core_id_reg → pointer → core_id value. */
 extern volatile uint32_t *core_id_reg;
 
-/* ── API ────────────────────────────────────────────────────────────────────── */
+/* ── API ──────────────────────────────────────────────────────────────────────
+ */
 
 /*
  * Initialise the process table.

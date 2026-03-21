@@ -44,6 +44,7 @@
 @ =============================================================================
 
 .equ PCB_SP_OFFSET, 32      @ offsetof(pcb_t, sp) — see proc.h
+.equ PCB_NS_XOR_OFF, 48     @ offsetof(pcb_t, ns_addr_xor) — see proc.h
 
 .syntax unified
 #if __ARM_ARCH >= 8
@@ -62,10 +63,15 @@ PendSV_Handler:
 
 #if __ARM_ARCH >= 8
     @ ══════════════════════════════════════════════════════════════════════
-    @ ARMv8-M (Cortex-M33) path — Thumb-2 + FPU lazy stacking
+    @ ARMv8-M (Cortex-M33) path — Thumb-2 + FPU lazy stacking + TrustZone
     @ ══════════════════════════════════════════════════════════════════════
 
     @ ── Save outgoing context ──────────────────────────────────────────
+    @ Check if outgoing process is Non-Secure (EXC_RETURN bit 6 = 0).
+    tst  lr, #0x40            @ test S bit (bit 6)
+    beq  .Lsave_ns
+
+    @ ── Secure process save ──────────────────────────────────────────
     mrs  r0, psp              @ r0 = outgoing PSP
 
     @ If the outgoing process used FPU (EXC_RETURN bit 4 = 0),
@@ -77,7 +83,16 @@ PendSV_Handler:
     @ Save r4-r11 and EXC_RETURN (lr).  On M33, stmdb can use any
     @ register in the list — no need for the M0+ r4-r7 dance.
     stmdb r0!, {r4-r11, lr}
+    b    .Lsave_done
 
+.Lsave_ns:
+    @ ── Non-Secure process save ──────────────────────────────────────
+    @ DCRS=0: hardware already pushed r4-r11 + IntegritySignature +
+    @ exception frame onto PSP_NS.  We only need to save EXC_RETURN.
+    mrs  r0, psp_ns
+    stmdb r0!, {lr}           @ push EXC_RETURN below HW frames
+
+.Lsave_done:
     @ ── Compute &current_core[core_id] ─────────────────────────────────
     ldr  r1, =core_id_reg
     ldr  r1, [r1]             @ r1 = pointer to core-ID source
@@ -91,9 +106,9 @@ PendSV_Handler:
     str  r0, [r3, #PCB_SP_OFFSET]  @ current->sp = r0
 
     @ ── Call C scheduler to select next process ────────────────────────
-    @ Preserve &current_core[core_id] (r2) across C calls.
+    @ Preserve &current_core[core_id] (r2) and core_byte_offset (r1).
     @ EXC_RETURN is saved on the process stack, not MSP.
-    push {r2, r3}             @ r3 = padding for 8-byte alignment
+    push {r1, r2}             @ r1 = core_byte_offset, r2 = &current_core
     bl   sched_next           @ r0 = next pcb_t*
 
     @ ── Update MPU region 2 for incoming process stack ─────────────────
@@ -106,12 +121,18 @@ PendSV_Handler:
     bl   trace_arm_hwbp_on_switch
     pop  {r0, r1}
 
-    pop  {r2, r3}             @ r2 = &current_core[core_id]
+    pop  {r1, r2}             @ r1 = core_byte_offset, r2 = &current_core
 
     @ Update current_core[core_id].
     str  r0, [r2]             @ current_core[core_id] = next PCB
 
     @ ── Restore incoming context ───────────────────────────────────────
+    @ Check if incoming process is Non-Secure.
+    ldr  r3, [r0, #PCB_NS_XOR_OFF] @ r3 = next->ns_addr_xor
+    cmp  r3, #0
+    bne  .Lrestore_ns
+
+    @ ── Secure process restore ───────────────────────────────────────
     ldr  r0, [r0, #PCB_SP_OFFSET]  @ r0 = next->sp
 
     ldmia r0!, {r4-r11, lr}  @ restore r4-r11 + EXC_RETURN
@@ -124,6 +145,21 @@ PendSV_Handler:
 
     msr  psp, r0              @ PSP = base of incoming exception frame
     bx   lr                   @ EXC_RETURN: CPU pops exc frame, resumes thread
+
+.Lrestore_ns:
+    @ ── Non-Secure process restore ───────────────────────────────────
+    @ Stack layout: {EXC_RETURN, [HW integrity frame], [HW exc frame]}
+    ldr  r0, [r0, #PCB_SP_OFFSET]  @ r0 = next->sp (NS alias addr)
+    ldmia r0!, {lr}           @ pop EXC_RETURN
+    msr  psp_ns, r0           @ restore PSP_NS
+
+    @ Set PSP_S to per-core Secure stack for gateway SVC frame.
+    ldr  r0, =secure_psp_top
+    adds r0, r0, r1           @ r1 = core_byte_offset
+    ldr  r0, [r0]
+    msr  psp, r0
+
+    bx   lr                   @ EXC_RETURN (NS): CPU pops integrity + exc frame
 
 #else
     @ ══════════════════════════════════════════════════════════════════════

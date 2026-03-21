@@ -11,25 +11,36 @@
  */
 
 #include "proc.h"
-#include "sched.h"        /* sched_get_ticks — for start_time */
-#include "../mm/page.h"   /* PAGE_SIZE — for proc_setup_stack */
-#include "../spinlock.h"  /* SPIN_PROC */
+
+#include <stddef.h> /* NULL, offsetof */
+
 #include "../klog.h"
+#include "../mm/page.h"  /* PAGE_SIZE — for proc_setup_stack */
+#include "../spinlock.h" /* SPIN_PROC */
 #include "arch/ioregs.h"
-#include <stddef.h>   /* NULL, offsetof */
+#include "sched.h" /* sched_get_ticks — for start_time */
 
 /* Default file creation mask (octal 022 → owner rw, group/other r) */
-#define DEFAULT_UMASK  022
+#define DEFAULT_UMASK 022
 
 /* Verify PCB_SP_OFFSET matches the actual struct layout at compile time.
  * If this fires, update PCB_SP_OFFSET in proc.h to match offsetof(pcb_t,sp). */
-_Static_assert(offsetof(pcb_t, sp) == PCB_SP_OFFSET,
-               "PCB_SP_OFFSET does not match offsetof(pcb_t, sp) — update proc.h");
+_Static_assert(
+    offsetof(pcb_t, sp) == PCB_SP_OFFSET,
+    "PCB_SP_OFFSET does not match offsetof(pcb_t, sp) — update proc.h");
+
+/* ns_addr_xor offset used by switch.S and trap.S (PCB_NS_XOR_OFF = 48).
+ * Only checked on ARM — m68k has a different PCB layout. */
+#if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
+_Static_assert(
+    offsetof(pcb_t, ns_addr_xor) == 48,
+    "PCB ns_addr_xor offset mismatch — update PCB_NS_XOR_OFF in asm");
+#endif
 
 /* ── Globals ─────────────────────────────────────────────────────────────── */
 
-pcb_t  proc_table[PROC_MAX];
-pcb_t *current_core[2] = { NULL, NULL };
+pcb_t proc_table[PROC_MAX];
+pcb_t *current_core[2] = {NULL, NULL};
 
 /* Indirect core-ID register pointer for assembly (switch.S, svc.S).
  * Points to SIO_CPUID on RP2040, or core_id_zero on QEMU.
@@ -43,164 +54,191 @@ static pid_t next_pid = 1;
 
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
-void proc_init(void)
-{
-    /* Zero all slots and mark them free */
-    for (uint32_t i = 0u; i < PROC_MAX; i++) {
-        __builtin_memset(&proc_table[i], 0, sizeof(pcb_t));
-        proc_table[i].state = PROC_FREE;
-    }
+void proc_init(void) {
+  /* Zero all slots and mark them free */
+  for (uint32_t i = 0u; i < PROC_MAX; i++) {
+    __builtin_memset(&proc_table[i], 0, sizeof(pcb_t));
+    proc_table[i].state = PROC_FREE;
+  }
 
-    /* Pre-initialise slot 0 as the initial kernel thread.
-     * stack_page is NULL: this thread runs on the initial kernel stack
-     * set up by startup.S; no page_alloc() needed. */
-    proc_table[0].pid             = 0;
-    proc_table[0].ppid            = 0;
-    proc_table[0].state           = PROC_RUNNABLE;
-    proc_table[0].ticks_remaining = PROC_DEFAULT_TICKS;
-    proc_table[0].is_idle         = 1;
-    /* comm is set to "init" once do_execve() runs; "kernel" for now */
-    __builtin_memcpy(proc_table[0].comm, "kernel", 7);
+  /* Pre-initialise slot 0 as the initial kernel thread.
+   * stack_page is NULL: this thread runs on the initial kernel stack
+   * set up by startup.S; no page_alloc() needed. */
+  proc_table[0].pid = 0;
+  proc_table[0].ppid = 0;
+  proc_table[0].state = PROC_RUNNABLE;
+  proc_table[0].ticks_remaining = PROC_DEFAULT_TICKS;
+  proc_table[0].is_idle = 1;
+  /* comm is set to "init" once do_execve() runs; "kernel" for now */
+  __builtin_memcpy(proc_table[0].comm, "kernel", 7);
 
-    current_core[0] = &proc_table[0];
+  current_core[0] = &proc_table[0];
 
-    /* Point assembly's core_id_reg at the SIO_CPUID register on RP2040.
-     * On QEMU (no SIO), it stays pointing at core_id_zero → always 0. */
-    if (spin_have_hw())
-        core_id_reg = (volatile uint32_t *)0xD0000000u;
+  /* Point assembly's core_id_reg at the SIO_CPUID register on RP2040.
+   * On QEMU (no SIO), it stays pointing at core_id_zero → always 0. */
+  if (spin_have_hw()) core_id_reg = (volatile uint32_t *)0xD0000000u;
 
-    /* ── Print boot diagnostic ─────────────────────────────────────────── */
-    klogf("PROC: process table  slots=%u  (pid 0 = kernel, pids 1-%u available)\n",
-          (uint32_t)PROC_MAX, (uint32_t)(PROC_MAX - 1u));
+  /* ── Print boot diagnostic ─────────────────────────────────────────── */
+  klogf(
+      "PROC: process table  slots=%u  (pid 0 = kernel, pids 1-%u available)\n",
+      (uint32_t)PROC_MAX, (uint32_t)(PROC_MAX - 1u));
 
 #ifdef PPAP_TESTS
-    /* ── Self-test ─────────────────────────────────────────────────────── */
-    /* Allocate a slot, verify it looks sane, then free it. */
-    pcb_t *p = proc_alloc();
+  /* ── Self-test ─────────────────────────────────────────────────────── */
+  /* Allocate a slot, verify it looks sane, then free it. */
+  pcb_t *p = proc_alloc();
 
-    uint32_t ok = (p != NULL)
-               && (p->pid   == 1)
-               && (p->state == PROC_FREE)   /* still FREE — caller sets state */
-               && (current  == &proc_table[0])
-               && (current->state == PROC_RUNNABLE);
+  uint32_t ok = (p != NULL) && (p->pid == 1) &&
+                (p->state == PROC_FREE) /* still FREE — caller sets state */
+                && (current == &proc_table[0]) &&
+                (current->state == PROC_RUNNABLE);
 
-    if (p)
-        proc_free(p);
+  if (p) proc_free(p);
 
-    /* Reset PID counter so the first real process gets PID 1.
-     * busybox init requires PID == 1. */
-    next_pid = 1;
+  /* Reset PID counter so the first real process gets PID 1.
+   * busybox init requires PID == 1. */
+  next_pid = 1;
 
-    klogf("PROC: self-test %s\n", ok ? "PASSED" : "FAILED");
+  klogf("PROC: self-test %s\n", ok ? "PASSED" : "FAILED");
 #endif
 }
 
-pcb_t *proc_alloc(void)
-{
-    uint32_t saved = spin_lock_irqsave(SPIN_PROC);
-    pcb_t *result = NULL;
+pcb_t *proc_alloc(void) {
+  uint32_t saved = spin_lock_irqsave(SPIN_PROC);
+  pcb_t *result = NULL;
 
-    /* Scan slots 1..PROC_MAX-1; slot 0 belongs to the kernel thread */
-    for (uint32_t i = 1u; i < PROC_MAX; i++) {
-        if (proc_table[i].state == PROC_FREE) {
-            __builtin_memset(&proc_table[i], 0, sizeof(pcb_t));
-            proc_table[i].pid = next_pid++;
-            /* pgid and sid are left at 0 (from memset).
-             * sys_vfork copies them from the parent (like real fork).
-             * Only setsid/setpgid should change them explicitly. */
-            proc_table[i].umask_val = DEFAULT_UMASK;
-            proc_table[i].running_on_core = -1;
-            proc_table[i].start_time = sched_get_ticks();
-            /* state left as PROC_FREE — caller sets it to PROC_RUNNABLE
-             * only after filling in stack_page and setting up the stack frame */
-            result = &proc_table[i];
-            break;
-        }
+  /* Scan slots 1..PROC_MAX-1; slot 0 belongs to the kernel thread */
+  for (uint32_t i = 1u; i < PROC_MAX; i++) {
+    if (proc_table[i].state == PROC_FREE) {
+      __builtin_memset(&proc_table[i], 0, sizeof(pcb_t));
+      proc_table[i].pid = next_pid++;
+      /* pgid and sid are left at 0 (from memset).
+       * sys_vfork copies them from the parent (like real fork).
+       * Only setsid/setpgid should change them explicitly. */
+      proc_table[i].umask_val = DEFAULT_UMASK;
+      proc_table[i].running_on_core = -1;
+      proc_table[i].start_time = sched_get_ticks();
+      /* state left as PROC_FREE — caller sets it to PROC_RUNNABLE
+       * only after filling in stack_page and setting up the stack frame */
+      result = &proc_table[i];
+      break;
     }
+  }
 
-    spin_unlock_irqrestore(SPIN_PROC, saved);
-    return result;
+  spin_unlock_irqrestore(SPIN_PROC, saved);
+  return result;
 }
 
-void proc_free(pcb_t *p)
-{
-    if (!p)
-        return;
-    uint32_t saved = spin_lock_irqsave(SPIN_PROC);
-    p->state = PROC_FREE;
-    spin_unlock_irqrestore(SPIN_PROC, saved);
+void proc_free(pcb_t *p) {
+  if (!p) return;
+  uint32_t saved = spin_lock_irqsave(SPIN_PROC);
+  p->state = PROC_FREE;
+  spin_unlock_irqrestore(SPIN_PROC, saved);
 }
 
-void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp)
-{
-    uint32_t *sp;
-    if (user_sp)
-        sp = (uint32_t *)(uintptr_t)user_sp;
-    else
-        sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
+void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp) {
+  uint32_t *sp;
+  if (user_sp)
+    sp = (uint32_t *)(uintptr_t)user_sp;
+  else
+    sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
 
 #if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
-    /*
-     * ARM Cortex-M: two layers on the stack (high → low):
-     *  1. Hardware exception frame (8 words): popped by EXC_RETURN.
-     *  2. Software callee-saved frame: loaded by PendSV.
-     *     - ARMv6-M: 8 words (r4–r11)
-     *     - ARMv8-M: 9 words (r4–r11, EXC_RETURN) — EXC_RETURN encodes
-     *       FPU frame type in bit 4 and is saved/restored per-process.
-     */
-    *--sp = XPSR_THUMB_BIT;              /* xpsr: Thumb bit (T=1)       */
-    *--sp = (uint32_t)entry & ~1u;        /* pc: entry point (bit0 clear)*/
-    *--sp = EXC_RETURN_THREAD_PSP;        /* lr: EXC_RETURN thread/PSP   */
-    *--sp = 0u;                           /* r12                         */
-    *--sp = 0u;                           /* r3                          */
-    *--sp = 0u;                           /* r2                          */
-    *--sp = 0u;                           /* r1                          */
-    *--sp = 0u;                           /* r0                          */
-    /* Software callee-saved frame (high → low) */
+  /*
+   * ARM Cortex-M: two layers on the stack (high → low):
+   *  1. Hardware exception frame (8 words): popped by EXC_RETURN.
+   *  2. Software callee-saved frame: loaded by PendSV.
+   *     - ARMv6-M: 8 words (r4–r11)
+   *     - ARMv8-M: 9 words (r4–r11, EXC_RETURN) — EXC_RETURN encodes
+   *       FPU frame type in bit 4 and is saved/restored per-process.
+   */
+  *--sp = XPSR_THUMB_BIT;        /* xpsr: Thumb bit (T=1)       */
+  *--sp = (uint32_t)entry & ~1u; /* pc: entry point (bit0 clear)*/
+  *--sp = EXC_RETURN_THREAD_PSP; /* lr: EXC_RETURN thread/PSP   */
+  *--sp = 0u;                    /* r12                         */
+  *--sp = 0u;                    /* r3                          */
+  *--sp = 0u;                    /* r2                          */
+  *--sp = 0u;                    /* r1                          */
+  *--sp = 0u;                    /* r0                          */
+  /* Software callee-saved frame (high → low) */
 #if __ARM_ARCH >= 8
-    /* EXC_RETURN: Thread mode, PSP, no FPU frame (bit 4 = 1).
-     * New processes haven't used FPU yet, so no s16-s31 on stack. */
-    *--sp = EXC_RETURN_THREAD_PSP;        /* EXC_RETURN (bit 4 = 1)     */
+  if (p->ns_addr_xor) {
+    /* ── Non-Secure initial frame ──────────────────────────────────
+     *
+     * Build the additional state context (integrity frame) that the
+     * CPU expects to pop when DCRS=0 (EXC_RETURN bit 5 = 0).
+     * Layout (high → low on NS PSP):
+     *   [exception frame]  r0,r1,r2,r3,r12,lr,pc,xpsr  (already above)
+     *   IntegritySignature (0xFEFA125B for PSP)
+     *   r11,r10,r9,r8,r7,r6,r5,r4
+     *   [our SW frame]     EXC_RETURN
+     *
+     * The frames are written via the Secure alias (0x20xxxxxx), but
+     * pcb->sp is stored as the NS alias (XOR'd) since PendSV will
+     * set PSP_NS to this value.
+     */
+    *--sp = NS_INTEGRITY_SIG_PSP; /* IntegritySignature (PSP) */
+    *--sp = 0u;           /* r11 */
+    *--sp = 0u;           /* r10 */
+    *--sp = 0u;           /* r9  */
+    *--sp = 0u;           /* r8  */
+    *--sp = 0u;           /* r7  */
+    *--sp = 0u;           /* r6  */
+    *--sp = 0u;           /* r5  */
+    *--sp = 0u;           /* r4  */
+    /* Our 1-word SW frame: EXC_RETURN with DCRS=0, S=0 */
+    *--sp = EXC_RETURN_NS_THREAD_PSP;
+
+    /* Store as NS alias address */
+    p->sp = (uint32_t)(uintptr_t)sp ^ p->ns_addr_xor;
+    p->ticks_remaining = PROC_DEFAULT_TICKS;
+    return;
+  }
+
+  /* ── Secure initial frame ────────────────────────────────────── */
+  /* EXC_RETURN: Thread mode, PSP, no FPU frame (bit 4 = 1).
+   * New processes haven't used FPU yet, so no s16-s31 on stack. */
+  *--sp = EXC_RETURN_THREAD_PSP; /* EXC_RETURN (bit 4 = 1)     */
 #endif
-    *--sp = 0u;   /* r11 */
-    *--sp = 0u;   /* r10 */
-    *--sp = 0u;   /* r9  */
-    *--sp = 0u;   /* r8  */
-    *--sp = 0u;   /* r7  */
-    *--sp = 0u;   /* r6  */
-    *--sp = 0u;   /* r5  */
-    *--sp = 0u;   /* r4  */   /* ← pcb_t.sp points here */
+  *--sp = 0u;           /* r11 */
+  *--sp = 0u;           /* r10 */
+  *--sp = 0u;           /* r9  */
+  *--sp = 0u;           /* r8  */
+  *--sp = 0u;           /* r7  */
+  *--sp = 0u;           /* r6  */
+  *--sp = 0u;           /* r5  */
+  *--sp = 0u; /* r4  */ /* ← pcb_t.sp points here */
 
 #elif defined(__m68k__)
-    /*
-     * M68K: exception frame built on kernel stack (stack_page / SSP).
-     * SR = user mode so RTE switches to user mode + USP.
-     * The caller must set p->usp to the desired user stack pointer.
-     */
-    /* Always build on kernel stack — ignore user_sp for m68k */
-    sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
-    *--sp = (uint32_t)entry;              /* PC: entry point (4 bytes)   */
-    sp = (uint32_t *)((uint8_t *)sp - 2); /* back up 2 bytes for SR      */
-    *(uint16_t *)sp = SR_USER;            /* SR: user mode, IPL=0        */
-    /* Software register frame (a6..a0, d7..d0, high → low).
-     * Must match movem.l %d0-%d7/%a0-%a6 register order. */
-    *--sp = 0u;   /* a6 */
-    *--sp = 0u;   /* a5 */
-    *--sp = 0u;   /* a4 */
-    *--sp = 0u;   /* a3 */
-    *--sp = 0u;   /* a2 */
-    *--sp = 0u;   /* a1 */
-    *--sp = 0u;   /* a0 */
-    *--sp = 0u;   /* d7 */
-    *--sp = 0u;   /* d6 */
-    *--sp = 0u;   /* d5 */
-    *--sp = 0u;   /* d4 */
-    *--sp = 0u;   /* d3 */
-    *--sp = 0u;   /* d2 */
-    *--sp = 0u;   /* d1 */
-    *--sp = 0u;   /* d0 */   /* ← pcb_t.sp points here */
+  /*
+   * M68K: exception frame built on kernel stack (stack_page / SSP).
+   * SR = user mode so RTE switches to user mode + USP.
+   * The caller must set p->usp to the desired user stack pointer.
+   */
+  /* Always build on kernel stack — ignore user_sp for m68k */
+  sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
+  *--sp = (uint32_t)entry;              /* PC: entry point (4 bytes)   */
+  sp = (uint32_t *)((uint8_t *)sp - 2); /* back up 2 bytes for SR      */
+  *(uint16_t *)sp = SR_USER;            /* SR: user mode, IPL=0        */
+  /* Software register frame (a6..a0, d7..d0, high → low).
+   * Must match movem.l %d0-%d7/%a0-%a6 register order. */
+  *--sp = 0u;          /* a6 */
+  *--sp = 0u;          /* a5 */
+  *--sp = 0u;          /* a4 */
+  *--sp = 0u;          /* a3 */
+  *--sp = 0u;          /* a2 */
+  *--sp = 0u;          /* a1 */
+  *--sp = 0u;          /* a0 */
+  *--sp = 0u;          /* d7 */
+  *--sp = 0u;          /* d6 */
+  *--sp = 0u;          /* d5 */
+  *--sp = 0u;          /* d4 */
+  *--sp = 0u;          /* d3 */
+  *--sp = 0u;          /* d2 */
+  *--sp = 0u;          /* d1 */
+  *--sp = 0u; /* d0 */ /* ← pcb_t.sp points here */
 #endif
 
-    p->sp = (uint32_t)(uintptr_t)sp;
-    p->ticks_remaining = PROC_DEFAULT_TICKS;
+  p->sp = (uint32_t)(uintptr_t)sp;
+  p->ticks_remaining = PROC_DEFAULT_TICKS;
 }

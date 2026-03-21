@@ -13,25 +13,19 @@
  * Overridden by targets that load a rootfs from an external source
  * (e.g. x68k loads a UFS image from RAM placed there by stage2).
  */
-__attribute__((weak)) int target_mount_rootfs(void)
-{
-    return -1;
+__attribute__((weak)) int target_mount_rootfs(void) { return -1; }
+
+__attribute__((weak)) uint32_t target_debug_hwbp_slots(void) { return 0; }
+
+__attribute__((weak)) int target_debug_hwbp_set(uint32_t slot, uint32_t addr) {
+  (void)slot;
+  (void)addr;
+  return -1;
 }
 
-__attribute__((weak)) uint32_t target_debug_hwbp_slots(void)
-{
-    return 0;
+__attribute__((weak)) int target_debug_hwbp_clear(uint32_t slot) {
+  (void)slot;
+  return -1;
 }
 
-__attribute__((weak)) int target_debug_hwbp_set(uint32_t slot, uint32_t addr)
-{
-    (void)slot;
-    (void)addr;
-    return -1;
-}
-
-__attribute__((weak)) int target_debug_hwbp_clear(uint32_t slot)
-{
-    (void)slot;
-    return -1;
-}
+__attribute__((weak)) uint32_t target_ns_addr_xor(void) { return 0; }

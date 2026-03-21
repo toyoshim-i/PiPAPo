@@ -19,12 +19,12 @@
 #include <stdint.h>
 
 /* Target capability flags — returned by target_caps() */
-#define TARGET_CAP_SD       (1u << 0)   /* Has SD card slot            */
-#define TARGET_CAP_SPI      (1u << 1)   /* Has SPI bus for peripherals */
-#define TARGET_CAP_CORE1    (1u << 2)   /* Dual-core (Core 1 usable)   */
-#define TARGET_CAP_REALUART (1u << 3)   /* PL011 UART (not CMSDK)      */
-#define TARGET_CAP_DISPLAY  (1u << 4)   /* LCD display (fbcon)         */
-#define TARGET_CAP_KBD      (1u << 5)   /* Keyboard controller         */
+#define TARGET_CAP_SD (1u << 0)       /* Has SD card slot            */
+#define TARGET_CAP_SPI (1u << 1)      /* Has SPI bus for peripherals */
+#define TARGET_CAP_CORE1 (1u << 2)    /* Dual-core (Core 1 usable)   */
+#define TARGET_CAP_REALUART (1u << 3) /* PL011 UART (not CMSDK)      */
+#define TARGET_CAP_DISPLAY (1u << 4)  /* LCD display (fbcon)         */
+#define TARGET_CAP_KBD (1u << 5)      /* Keyboard controller         */
 
 /*
  * target_early_init() — called first in kmain(), before mm_init().
@@ -117,5 +117,17 @@ int target_mount_rootfs(void);
 uint32_t target_debug_hwbp_slots(void);
 int target_debug_hwbp_set(uint32_t slot, uint32_t addr);
 int target_debug_hwbp_clear(uint32_t slot);
+
+/*
+ * target_ns_addr_xor() — TrustZone NS address alias XOR value.
+ *
+ * Returns 0 on targets without TrustZone (all addresses are Secure).
+ * Returns RP2350_NS_BIT (0x10000000) on pico2, so that XOR'ing any
+ * Secure SRAM/flash address produces the Non-Secure alias visible to
+ * user-space processes.
+ *
+ * Default weak implementation returns 0 (target_default.c).
+ */
+uint32_t target_ns_addr_xor(void);
 
 #endif /* PPAP_TARGET_TARGET_H */
