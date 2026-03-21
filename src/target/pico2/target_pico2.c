@@ -13,11 +13,15 @@
 #include "drivers/clock.h"
 #include "klog.h"
 #include "mm/mpu.h"
-#include "arch/arm_m/cpu.h"
+#include "arch/arm_m/ioregs.h"
 
 #ifdef PPAP_TESTS
 #include "ktest.h"
 #endif
+
+/* Linker-provided symbols for NSC veneer region (pico2.ld) */
+extern char __nsc_veneer_start[];
+extern char __nsc_veneer_end[];
 
 /* ── SAU / TrustZone initialisation ───────────────────────────────────────
  *
@@ -47,12 +51,20 @@ static void sau_init(void)
      * land in our existing handlers regardless of caller's security state. */
     SCB_AIRCR = AIRCR_VECTKEY | (SCB_AIRCR & ~AIRCR_BFHFNMINS);
 
-    /* Enable SAU with ALLNS=0.  No regions defined — IDAU provides NS
-     * attribution for 0x00/0x30/0x50 alias addresses. */
+    /* Region 0: NSC veneer — syscall gateway callable from Non-Secure.
+     * __nsc_veneer_start / __nsc_veneer_end are defined by pico2.ld.
+     * RBAR = base address (32-byte aligned).
+     * RLAR = limit | ENABLE | NSC. */
+    SAU_RNR  = 0;
+    SAU_RBAR = (uint32_t)&__nsc_veneer_start;
+    SAU_RLAR = (uint32_t)&__nsc_veneer_end | SAU_RLAR_ENABLE | SAU_RLAR_NSC;
+
+    /* Enable SAU with ALLNS=0.  Addresses not in any SAU region default
+     * to Secure; IDAU provides NS for 0x00/0x30/0x50 alias addresses. */
     SAU_CTRL = SAU_CTRL_ENABLE;
 
-    klogf("SAU: enabled (%u regions avail, 0 configured, IDAU-based S/NS)\n",
-          nregions);
+    klogf("SAU: enabled (%u regions, 1 configured: NSC @ 0x%08x)\n",
+          nregions, (unsigned)&__nsc_veneer_start);
 }
 
 void target_early_init(void)

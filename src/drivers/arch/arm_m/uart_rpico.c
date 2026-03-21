@@ -16,7 +16,7 @@
 #include "drivers/uart.h"
 #include "config.h"
 #include "target/rpico.h"
-#include "arch/arm_m/cpu.h"
+#include "arch/arm_m/ioregs.h"
 #include "kernel/fd/tty.h"      /* tty_rx_notify, tty_signal_intr */
 #include "kernel/spinlock.h"    /* SPIN_TXRING */
 #include <stdint.h>

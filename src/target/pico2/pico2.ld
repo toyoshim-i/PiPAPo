@@ -73,6 +73,17 @@ SECTIONS {
         . = ALIGN(4);
     } > FLASH_KERNEL
 
+    /* NSC veneer — Non-Secure Callable syscall gateway for TrustZone.
+     * Must be 32-byte aligned for SAU region configuration.
+     * NS user processes call nsc_syscall_gateway via BLX. */
+    . = ALIGN(32);
+    __nsc_veneer_start = .;
+    .nsc_veneer : {
+        KEEP(*(.nsc_veneer))
+        . = ALIGN(32);
+    } > FLASH_KERNEL
+    __nsc_veneer_end = . - 1;   /* SAU RLAR uses inclusive end address */
+
     __flash_kernel_end = .;
 
     .romfs : {

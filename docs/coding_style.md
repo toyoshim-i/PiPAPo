@@ -86,10 +86,25 @@ When adding a new arch-specific feature:
 
 ## C Style
 
-- C11 (GNU extensions allowed for inline asm).
-- 4-space indentation, no tabs in `.c`/`.h` files.
-- Opening brace on the same line for functions and control flow.
-- `snake_case` for functions, variables, types.
-- `UPPER_CASE` for macros and constants.
-- Typedef structs as `<name>_t` (e.g., `pcb_t`, `vfs_ops_t`).
-- Keep lines under 80 columns where practical; hard limit at 100.
+This project follows the
+[Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html)
+with the following project-specific adjustments for embedded C:
+
+- **Language**: C11 (GNU extensions allowed for inline asm).
+- **Indentation**: 2-space indentation, no tabs in `.c`/`.h` files.
+- **Braces**: Opening brace on the same line for functions and control flow.
+- **Naming**:
+  - `snake_case` for functions, variables, and types (not `CamelCase` as in
+    Google C++ style, since this is a C project).
+  - `UPPER_CASE` for macros and constants.
+  - Typedef structs as `<name>_t` (e.g., `pcb_t`, `vfs_ops_t`).
+- **Line length**: 80 columns, strict.
+- **Comments**: Use `/* */` for block comments and `//` for single-line
+  comments. Follow Google style for comment placement and formatting.
+- **Header include order** (following Google style):
+  1. Corresponding header (e.g., `foo.c` includes `foo.h` first).
+  2. C standard library headers (`<stdint.h>`, `<string.h>`, ...).
+  3. Project headers (`"arch/arch.h"`, `"kernel/klog.h"`, ...).
+
+Where the Google C++ Style Guide and this document conflict, this document
+takes precedence.
