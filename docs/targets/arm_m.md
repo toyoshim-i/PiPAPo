@@ -659,6 +659,27 @@ openocd (RP fork)     — flash/debug for Pico 2 (RP2350 support)
 
 ---
 
+## 17. Future Work
+
+- **PicoCalc 2 target** (`pico2calc`) — RP2350-based PicoCalc with LCD, keyboard,
+  and SD card. Requires new SPI/I2C/LCD drivers for RP2350 pin assignments (if
+  they differ from the RP2040 PicoCalc). Blocked on hardware availability.
+- **PSRAM support** — RP2350 supports external QSPI PSRAM (up to 16 MB) mapped
+  via XIP at `0x11000000`. Would provide ~4000 additional pages for a dramatically
+  larger process/file cache capacity. Requires XIP controller configuration and
+  zone-based page allocation (SRAM pages for hot data, PSRAM for cold).
+- **TrustZone partitioning** — Run kernel in Secure world, user processes in
+  Non-Secure. Syscall entry via `SG` instruction. Would provide hardware-enforced
+  kernel/user isolation beyond MPU regions.
+- **RISC-V (Hazard3)** — RP2350 can boot dual Hazard3 RV32IMAC cores instead of
+  ARM. A completely new architecture port, comparable in scope to the m68k port.
+- **FPB v2 breakpoints** — Cortex-M33 FPB v2 supports up to 8 hardware
+  breakpoints (vs 4 on M0+). Currently disabled (`FPB_CTRL = 0`) because it
+  interferes with debugger-controlled breakpoints; could be used for userland
+  debugging via ptrace.
+
+---
+
 ## Related Documentation
 
 - [68000.md](/docs/targets/68000.md) — m68k target reference

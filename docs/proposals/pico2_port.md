@@ -12,9 +12,9 @@ principles, making this the most natural next hardware target for PPAP.
 | Pi2-2 | ARMv8-M MPU | **Complete** |
 | Pi2-3 | Full test suite + SMP | **Complete** — 25 tests pass (extended suite) |
 | Pi2-4 | Hardware FPU | **Complete** — softfp ABI, signal delivery, lazy stacking |
-| Pi2-5 | PicoCalc 2 | Deferred — waiting for pico2calc target |
-| Pi2-6 | PSRAM | Not started |
-| Pi2-7 | TrustZone | Not started |
+| Pi2-5 | PicoCalc 2 | Out of scope — see [arm_m.md](../targets/arm_m.md) §17 |
+| Pi2-6 | PSRAM | Out of scope — see [arm_m.md](../targets/arm_m.md) §17 |
+| Pi2-7 | TrustZone | Out of scope — see [arm_m.md](../targets/arm_m.md) §17 |
 
 ### Implementation Notes (vs. original plan)
 
@@ -87,18 +87,19 @@ Produce a bootable PPAP system on the Raspberry Pi Pico 2 that:
 - Takes advantage of the larger SRAM (520 KB -> ~130 user pages).
 - Produces smaller code via Thumb-2 encoding.
 
-### 2.2 Extended Goals
+### 2.2 Completed Extended Goal
 
-- PSRAM support for dramatically larger page pool (~4000+ pages from 16 MB).
-- Hardware FPU enabled for user-space programs.
-- TrustZone partitioning (kernel in Secure world, user in Non-Secure).
-- RISC-V core support (Hazard3, a completely new architecture for PPAP).
-- PicoCalc 2 hardware target (if/when it ships with RP2350).
+- Hardware FPU enabled for user-space programs (softfp ABI).
 
 ### 2.3 Out of Scope
 
-- Wi-Fi/Bluetooth (Pico 2 W uses CYW43439, same as Pico W -- complex
-  driver, not needed for initial port).
+The following are documented as future work in [arm_m.md](../targets/arm_m.md) §17:
+
+- PSRAM support (16 MB external QSPI PSRAM as extended page pool).
+- PicoCalc 2 hardware target (blocked on hardware availability).
+- TrustZone partitioning (kernel in Secure, user in Non-Secure).
+- RISC-V core support (Hazard3, separate architecture port).
+- Wi-Fi/Bluetooth (Pico 2 W uses CYW43439 -- complex driver).
 - USB host mode.
 - DMA-driven file I/O.
 
