@@ -11,7 +11,11 @@ include_guard(GLOBAL)
 
 # Shared build directory for userland artifacts (musl, busybox, etc.).
 # All ARM targets share one build to avoid redundant musl/busybox rebuilds.
-set(PPAP_SHARED_BUILD "${PPAP_ROOT}/build/arm_m")
+if(PPAP_ARM_HARDFLOAT)
+    set(PPAP_SHARED_BUILD "${PPAP_ROOT}/build/arm_m33")
+else()
+    set(PPAP_SHARED_BUILD "${PPAP_ROOT}/build/arm_m")
+endif()
 
 # Userland build config (musl, busybox, romfs pipeline)
 # Must be included before kernel.cmake to define PPAP_ENABLE_* options
