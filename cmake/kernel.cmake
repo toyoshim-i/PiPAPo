@@ -22,6 +22,7 @@ set(ARCH_ARM_M_SOURCES
     ${_KS_ROOT}/src/arch/arm_m/switch.S
     ${_KS_ROOT}/src/arch/arm_m/trap.S
     ${_KS_ROOT}/src/arch/arm_m/arm_m_common.c
+    ${_KS_ROOT}/src/arch/arm_m/smp.c
 )
 
 set(ARCH_M68K_SOURCES
@@ -33,6 +34,7 @@ set(ARCH_M68K_SOURCES
     ${_KS_ROOT}/src/arch/m68k/trap.S
     ${_KS_ROOT}/src/arch/m68k/math.S
     ${_KS_ROOT}/src/arch/m68k/signal_m68k.S
+    ${_KS_ROOT}/src/arch/m68k/smp.c
 )
 
 # ── Kernel sources shared across ALL architectures ──────────────────────────
@@ -45,7 +47,6 @@ set(KERNEL_SHARED_SOURCES_BASE
     ${_KS_ROOT}/src/kernel/mm/kmem.c
     ${_KS_ROOT}/src/kernel/proc/proc.c
     ${_KS_ROOT}/src/kernel/proc/sched.c
-    ${_KS_ROOT}/src/kernel/cpu/smp.c
     ${_KS_ROOT}/src/kernel/syscall/syscall.c
     ${_KS_ROOT}/src/kernel/syscall/sys_proc.c
     ${_KS_ROOT}/src/kernel/syscall/sys_io.c
