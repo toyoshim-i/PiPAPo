@@ -79,58 +79,9 @@
 #define NVIC_ICPR1 \
   REG(0xE000E284u) /* Interrupt Clear-Pending Register (IRQ 32-63)*/
 
-/* ── SAU — Security Attribution Unit (ARMv8-M only) ─────────────────────
- *
- * Partitions memory into Secure, Non-Secure, and Non-Secure Callable (NSC)
- * regions.  Works alongside the IDAU (Implementation Defined Attribution
- * Unit) which provides the chip-level default security map.
- *
- * On RP2350: IDAU marks 0x10xxxxxx/0x20xxxxxx as Secure,
- * 0x00xxxxxx/0x30xxxxxx as Non-Secure aliases for the same physical memory.
- * ────────────────────────────────────────────────────────────────────────── */
-#if __ARM_ARCH >= 8
-
-#define SAU_CTRL REG(0xE000EDD0u) /* SAU Control Register              */
-#define SAU_TYPE REG(0xE000EDD4u) /* SAU Type (number of regions)      */
-#define SAU_RNR REG(0xE000EDD8u)  /* Region Number Register            */
-#define SAU_RBAR REG(0xE000EDDCu) /* Region Base Address Register      */
-#define SAU_RLAR REG(0xE000EDE0u) /* Region Limit Address Register     */
-
-/* SAU_CTRL bits */
-#define SAU_CTRL_ENABLE (1u << 0) /* enable SAU                          */
-#define SAU_CTRL_ALLNS (1u << 1)  /* default: 1=all NS, 0=all Secure    */
-
-/* SAU_RLAR bits */
-#define SAU_RLAR_ENABLE (1u << 0) /* region enable                       */
-#define SAU_RLAR_NSC (1u << 1)    /* 1=Non-Secure Callable, 0=Non-Secure */
-
-/* NSACR — Non-Secure Access Control Register */
-#define NSACR REG(0xE000ED8Cu)
-
-/* SCB_AIRCR — Application Interrupt and Reset Control Register */
-#define SCB_AIRCR REG(0xE000ED0Cu)
-#define AIRCR_VECTKEY (0x05FAu << 16)
-#define AIRCR_BFHFNMINS (1u << 13) /* BusFault/HardFault/NMI Non-Secure */
-
-#endif /* __ARM_ARCH >= 8 */
-
 /* ── Exception return values ─────────────────────────────────────────────── */
 
 #define EXC_RETURN_THREAD_PSP 0xFFFFFFFDu /* return to Thread mode, PSP  */
-
-#if __ARM_ARCH >= 8
-/* ARMv8-M Non-Secure EXC_RETURN: Thread mode, PSP_NS, no FPU, DCRS=0.
- * DCRS=0 (bit 5) means the additional state context (r4-r11 +
- * IntegritySignature) is present on PSP_NS and will be popped by
- * hardware on exception return.  Used for NS process initial exec
- * and all subsequent context switches. */
-#define EXC_RETURN_NS_THREAD_PSP 0xFFFFFF9Du  /* DCRS=0: HW pops r4-r11+IntSig */
-#define EXC_RETURN_NS_THREAD_PSP_NODCRS 0xFFFFFFBDu /* DCRS=1: no additional ctx */
-
-/* NS integrity signature pushed by hardware on NS→S exception entry.
- * Value depends on SPSEL: 0xFEFA125A (MSP) or 0xFEFA125B (PSP). */
-#define NS_INTEGRITY_SIG_PSP 0xFEFA125Bu
-#endif
 
 /* ── Initial xPSR ────────────────────────────────────────────────────────── */
 

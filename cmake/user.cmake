@@ -164,22 +164,14 @@ set(PPAP_MUSL_LIBC  ${PPAP_MUSL_SYSROOT}/lib/libc.a)
 set(PPAP_BB_DIR     ${PPAP_SHARED_BUILD}/busybox)
 set(PPAP_ROGUE_DIR  ${PPAP_SHARED_BUILD}/rogue)
 
-# NS user processes on pico2 (ARMv8-M TrustZone) use BLX to the NSC gateway
-# instead of SVC for syscalls.  Define __PPAP_NS_SYSCALL__ so musl's
-# syscall_arch.h emits BLX instead of SVC 0.
-set(PPAP_MUSL_NS_FLAGS "")
-if(PPAP_ARM_HARDFLOAT)
-    set(PPAP_MUSL_NS_FLAGS "-D__PPAP_NS_SYSCALL__")
-endif()
-
 # --- User program compile/link flags (cmake lists) ---
 set(PPAP_USER_CFLAGS
     ${PPAP_TARGET_FLAGS}
     -ffreestanding -nostdlib -Os -g -Wall
-    ${PPAP_PIC_FLAGS} ${PPAP_MUSL_NS_FLAGS}
+    ${PPAP_PIC_FLAGS}
     -I${PPAP_ARCH_DIR} -I${PPAP_ROOT}/src/user -I${PPAP_ROOT}/src)
 
-set(PPAP_USER_ASFLAGS ${PPAP_TARGET_FLAGS} ${PPAP_MUSL_NS_FLAGS})
+set(PPAP_USER_ASFLAGS ${PPAP_TARGET_FLAGS})
 
 set(PPAP_USER_LDFLAGS
     -nostdlib -T ${PPAP_USER_LD} -Wl,--gc-sections -Wl,--build-id=none)
@@ -188,9 +180,9 @@ set(PPAP_USER_LDFLAGS
 string(JOIN " " PPAP_TARGET_FLAGS_STR ${PPAP_TARGET_FLAGS})
 string(JOIN " " PPAP_PIC_FLAGS_STR    ${PPAP_PIC_FLAGS})
 set(PPAP_MUSL_CFLAGS_STR
-    "${PPAP_TARGET_FLAGS_STR} -Os -g ${PPAP_PIC_FLAGS_STR} ${PPAP_MUSL_NS_FLAGS} -ffunction-sections -fdata-sections")
+    "${PPAP_TARGET_FLAGS_STR} -Os -g ${PPAP_PIC_FLAGS_STR} -ffunction-sections -fdata-sections")
 set(PPAP_APP_CFLAGS_STR
-    "${PPAP_TARGET_FLAGS_STR} -Os -nostdinc -isystem ${PPAP_MUSL_SYSROOT}/include -isystem ${PPAP_GCC_INCLUDE} ${PPAP_PIC_FLAGS_STR} ${PPAP_MUSL_NS_FLAGS} -ffunction-sections -fdata-sections -pie")
+    "${PPAP_TARGET_FLAGS_STR} -Os -nostdinc -isystem ${PPAP_MUSL_SYSROOT}/include -isystem ${PPAP_GCC_INCLUDE} ${PPAP_PIC_FLAGS_STR} -ffunction-sections -fdata-sections -pie")
 
 # =============================================================================
 # Generate specs file (used by busybox/rogue linking)

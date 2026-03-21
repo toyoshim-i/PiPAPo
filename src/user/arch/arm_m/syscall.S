@@ -7,9 +7,7 @@
 @   r0–r3 = arguments
 @   r0  = return value (negative errno on error)
 @
-@ On ARMv6-M (Cortex-M0+): svc 0 triggers the SVC exception directly.
-@ On ARMv8-M NS (Cortex-M33): BLX to the NSC gateway at 0x10028001 which
-@ does SG → SVC 0 → BXNS LR (NS code cannot use SVC directly).
+@ svc 0 triggers the SVC exception directly.
 @
 @ Each stub: push {r7,lr} → load r7 with syscall number → SYSCALL → pop {r7,pc}
 @ r7 is callee-saved in ARM AAPCS, so we must preserve it across the call.
@@ -19,20 +17,10 @@
 @ =============================================================================
 
 .syntax unified
-#ifdef __PPAP_NS_SYSCALL__
-.cpu cortex-m33
-@ SYSCALL: BLX to NSC gateway.  Uses r12 (caller-saved) as scratch.
-.macro DO_SYSCALL
-    movw r12, #0x8001
-    movt r12, #0x1002
-    blx  r12
-.endm
-#else
 .cpu cortex-m0plus
 .macro DO_SYSCALL
     svc  0
 .endm
-#endif
 .thumb
 
 @ --- _exit (SYS_EXIT = 0x0000) ------------------------------------------------

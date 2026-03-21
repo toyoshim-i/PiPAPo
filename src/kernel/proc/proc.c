@@ -29,17 +29,6 @@ _Static_assert(
     offsetof(pcb_t, sp) == PCB_SP_OFFSET,
     "PCB_SP_OFFSET does not match offsetof(pcb_t, sp) — update proc.h");
 
-/* ns_addr_xor offset used by switch.S and trap.S (PCB_NS_XOR_OFF = 48).
- * Only checked on ARM — m68k has a different PCB layout. */
-#if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
-_Static_assert(
-    offsetof(pcb_t, ns_addr_xor) == 48,
-    "PCB ns_addr_xor offset mismatch — update PCB_NS_XOR_OFF in asm");
-_Static_assert(
-    offsetof(pcb_t, psp_ns_saved) == 52,
-    "PCB psp_ns_saved offset mismatch — update PCB_PSP_NS_OFF in asm");
-#endif
-
 /* ── Globals ─────────────────────────────────────────────────────────────── */
 
 pcb_t proc_table[PROC_MAX];
@@ -165,38 +154,6 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp) {
   *--sp = 0u;                    /* r0                          */
   /* Software callee-saved frame (high → low) */
 #if __ARM_ARCH >= 8
-  if (p->ns_addr_xor) {
-    /* ── Non-Secure initial frame ──────────────────────────────────
-     *
-     * Build the additional state context (integrity frame) that the
-     * CPU expects to pop when DCRS=0 (EXC_RETURN bit 5 = 0).
-     * Layout (high → low on NS PSP):
-     *   [exception frame]  r0,r1,r2,r3,r12,lr,pc,xpsr  (already above)
-     *   IntegritySignature (0xFEFA125B for PSP)
-     *   r11,r10,r9,r8,r7,r6,r5,r4
-     *   [our SW frame]     EXC_RETURN
-     */
-    *--sp = NS_INTEGRITY_SIG_PSP; /* IntegritySignature (PSP) */
-    *--sp = 0u;           /* r11 */
-    *--sp = 0u;           /* r10 */
-    *--sp = 0u;           /* r9  */
-    *--sp = 0u;           /* r8  */
-    *--sp = 0u;           /* r7  */
-    *--sp = 0u;           /* r6  */
-    *--sp = 0u;           /* r5  */
-    *--sp = 0u;           /* r4  */
-    /* Our 1-word SW frame: EXC_RETURN with DCRS=0, S=0 */
-    *--sp = EXC_RETURN_NS_THREAD_PSP;
-
-    /* On RP2350, page_alloc returns 0x20xxxxxx which is already the NS
-     * SRAM alias (0x30xxxxxx is the Secure alias).  Store directly —
-     * no XOR needed for SRAM addresses. */
-    p->sp = (uint32_t)(uintptr_t)sp;
-    p->ticks_remaining = PROC_DEFAULT_TICKS;
-    return;
-  }
-
-  /* ── Secure initial frame ────────────────────────────────────── */
   /* EXC_RETURN: Thread mode, PSP, no FPU frame (bit 4 = 1).
    * New processes haven't used FPU yet, so no s16-s31 on stack. */
   *--sp = EXC_RETURN_THREAD_PSP; /* EXC_RETURN (bit 4 = 1)     */

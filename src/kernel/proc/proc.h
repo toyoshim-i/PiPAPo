@@ -113,20 +113,6 @@ typedef struct pcb {
   pid_t ppid;
   proc_state_t state;
 
-  /* ── TrustZone (ARMv8-M only) ───────────────────────────────────────
-   * ns_addr_xor: 0 for Secure processes, RP2350_NS_BIT (0x10000000) for
-   * Non-Secure processes.  XOR'd with SRAM/flash addresses to produce
-   * the NS alias that user-space sees.  Also checked by PendSV/SVC to
-   * select the NS save/restore path. */
-  uint32_t ns_addr_xor;
-
-  /* psp_ns_saved: saved PSP_NS value for NS processes.  When an NS
-   * process blocks in a syscall (via NSC gateway), PendSV saves the
-   * Secure context on PSP_S.  PSP_NS (pointing to the NS user stack)
-   * must be saved separately so it can be restored when the process
-   * resumes — another NS process may run on the same core in between. */
-  uint32_t psp_ns_saved;
-
   /* ── Memory ─────────────────────────────────────────────────────────── */
   void *stack_page; /* 4 KB page from page_alloc(): process stack */
   void *user_pages[USER_PAGES_MAX]; /* user data pages (exec data segment) */

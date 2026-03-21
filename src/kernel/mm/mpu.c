@@ -23,7 +23,6 @@
 #include "../klog.h"
 #include "../proc/proc.h"
 #include "arch/arch.h"
-#include "target/target.h"
 
 /* ── MPU register addresses (common to ARMv6-M and ARMv8-M) ─────────────── */
 
@@ -35,19 +34,6 @@
 /* MPU_CTRL bits */
 #define MPU_CTRL_ENABLE (1u << 0)     /* enable the MPU */
 #define MPU_CTRL_PRIVDEFENA (1u << 2) /* privileged code uses default map */
-
-#if __ARM_ARCH >= 8
-/* ── Non-Secure MPU registers (accessible from Secure state) ─────────────
- * On ARMv8-M, the NS MPU PPB registers are at the NS alias of the Secure
- * PPB (0xE002xxxx vs 0xE000xxxx).  Secure code programs them to allow NS
- * user processes to access their memory (NS flash, NS SRAM). */
-#define MPU_NS_TYPE (*(volatile uint32_t *)0xE002ED90u)
-#define MPU_NS_CTRL (*(volatile uint32_t *)0xE002ED94u)
-#define MPU_NS_RNR (*(volatile uint32_t *)0xE002ED98u)
-#define MPU_NS_RBAR (*(volatile uint32_t *)0xE002ED9Cu)
-#define MPU_NS_RLAR (*(volatile uint32_t *)0xE002EDA0u)
-#define MPU_NS_MAIR0 (*(volatile uint32_t *)0xE002EDC0u)
-#endif
 
 #if __ARM_ARCH >= 8
 /* ══════════════════════════════════════════════════════════════════════════
@@ -253,44 +239,6 @@ void mpu_init(void) {
    *                         background map — kernel still sees all SRAM
    */
   MPU_CTRL = MPU_CTRL_PRIVDEFENA | MPU_CTRL_ENABLE;
-
-#if __ARM_ARCH >= 8
-  /* ── Non-Secure MPU ──────────────────────────────────────────────────────
-   * NS user processes execute at NS alias addresses (0x00xxxxxx flash,
-   * 0x30xxxxxx SRAM).  The NS MPU must grant them access.  Also, Secure
-   * kernel code accessing NS addresses (e.g., reading user buffers in
-   * syscalls) goes through the NS MPU, so PRIVDEFENA is needed too.
-   *
-   * NS MPU regions mirror the Secure MPU layout but use NS addresses:
-   *   0: NS flash (0x00000000, 16 MB) — RO all, executable
-   *   1: NS SRAM  (0x20000000, 512 KB) — RW all, XN
-   *      (NS SRAM alias is 0x30xxxxxx via IDAU, but the MPU region base
-   *       uses the physical address 0x20000000; IDAU handles the aliasing.)
-   */
-  if (target_ns_addr_xor()) {
-    MPU_NS_CTRL = 0u;
-    MPU_NS_MAIR0 = MAIR0_VALUE;
-
-    /* Region 0: NS flash XIP (0x10000000, 16 MB) — RO all, executable, WT
-     * On RP2350, the XIP NS window at 0x00xxxxxx is not configured.
-     * User processes execute from 0x10xxxxxx, which SAU marks as NS. */
-    MPU_NS_RNR = 0u;
-    MPU_NS_RBAR = 0x10000000u | RBAR_SH(SH_NONE) | RBAR_AP(AP8_RO_ALL);
-    MPU_NS_RLAR = RLAR_LIMIT(0x10000000u, 16u * 1024u * 1024u) |
-                  RLAR_ATTR(MAIR_IDX_WT) | RLAR_EN;
-
-    /* Region 1: NS SRAM (0x20000000, 512 KB) — RW all, XN, WB
-     * On RP2350, 0x20xxxxxx is the NS SRAM alias (0x30xxxxxx is Secure). */
-    MPU_NS_RNR = 1u;
-    MPU_NS_RBAR = 0x20000000u | RBAR_SH(SH_NONE) | RBAR_AP(AP8_RW_ALL) |
-                  RBAR_XN;
-    MPU_NS_RLAR = RLAR_LIMIT(0x20000000u, 512u * 1024u) |
-                  RLAR_ATTR(MAIR_IDX_WB) | RLAR_EN;
-
-    MPU_NS_CTRL = MPU_CTRL_PRIVDEFENA | MPU_CTRL_ENABLE;
-    klogf("NS-MPU: CTRL=%x MAIR0=%x\n", MPU_NS_CTRL, MPU_NS_MAIR0);
-  }
-#endif
 
   /* Data and instruction synchronisation barriers required after enabling
    * the MPU to ensure subsequent memory accesses use the new configuration */

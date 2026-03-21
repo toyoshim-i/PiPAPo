@@ -24,7 +24,6 @@
 #include "../spinlock.h" /* SPIN_PROC */
 #include "arch/arch.h"
 #include "arch/ioregs.h"
-#include "../klog.h"
 
 /* ── Tick counter ─────────────────────────────────────────────────────────────
  */
@@ -62,13 +61,6 @@ pcb_t *sched_next(void) {
   if (result != current) {
     current->running_on_core = -1;
     result->running_on_core = (int8_t)core_id();
-
-    /* DEBUG: log first NS process switch */
-    static int ns_dbg = 0;
-    if (!ns_dbg && result->ns_addr_xor) {
-      ns_dbg = 1;
-      klogf("NS:%x\n", result->sp);
-    }
   }
 
   spin_unlock_irqrestore(SPIN_PROC, saved);

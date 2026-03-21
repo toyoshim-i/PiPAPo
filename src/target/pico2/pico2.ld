@@ -26,8 +26,7 @@ MEMORY {
     /* External QSPI Flash — XIP mapped at 0x10000000
      * 4 MB total */
     FLASH_BOOT   (rx)  : ORIGIN = 0x10000000, LENGTH = 4K
-    FLASH_KERNEL (rx)  : ORIGIN = 0x10001000, LENGTH = 156K
-    FLASH_NSC    (rx)  : ORIGIN = 0x10028000, LENGTH = 4K
+    FLASH_KERNEL (rx)  : ORIGIN = 0x10001000, LENGTH = 160K
     FLASH_ROMFS  (r)   : ORIGIN = 0x10029000, LENGTH = 4M - 0x29000
 
     /* On-chip SRAM — 520KB total */
@@ -75,18 +74,6 @@ SECTIONS {
     } > FLASH_KERNEL
 
     __flash_kernel_end = .;
-
-    /* NSC veneer — Non-Secure Callable syscall gateway for TrustZone.
-     * Fixed at 0x10028000 so musl can hardcode the address at compile time.
-     * NS user processes call nsc_syscall_gateway via BLX to this address.
-     * Must be 32-byte aligned for SAU region configuration. */
-    __nsc_veneer_start = ORIGIN(FLASH_NSC);
-    .nsc_veneer : {
-        . = ALIGN(32);
-        KEEP(*(.nsc_veneer))
-        . = ALIGN(32);
-    } > FLASH_NSC
-    __nsc_veneer_end = . - 1;   /* SAU RLAR uses inclusive end address */
 
     .romfs : {
         __romfs_start = .;

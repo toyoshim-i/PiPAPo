@@ -50,7 +50,7 @@ _vectors:
     .word Default_Handler       @ 4:  MemManage
     .word Default_Handler       @ 5:  BusFault
     .word Default_Handler       @ 6:  UsageFault
-    .word SecureFault_Handler   @ 7:  SecureFault (ARMv8-M only)
+    .word Default_Handler       @ 7:  Reserved (ARMv8-M)
 #else
     .word 0                     @ 4:  Reserved (ARMv6-M)
     .word 0                     @ 5:  Reserved
@@ -251,22 +251,7 @@ HardFault_Handler:
 .Luser_fault:
 
     @ ── User-mode fault ──────────────────────────────────────────────
-#if __ARM_ARCH >= 8
-    @ Check EXC_RETURN bit 6 (S): 0 = NS fault, 1 = Secure fault.
-    @ NS faults have the exception frame on PSP_NS, not PSP_S.
-    @ With DCRS=0, HW pushed {r4-r11, IntegritySig} (9 words = 36 bytes)
-    @ before the standard exception frame {r0..xpsr}.
-    tst  lr, #0x40
-    bne  .Luser_fault_secure
-    mrs  r0, psp_ns             @ r0 = NS stack (r4-r11, IntegSig, exc frame)
-    adds r0, r0, #36            @ skip integrity frame → point at {r0..xpsr}
-    b    .Luser_fault_frame
-.Luser_fault_secure:
-#endif
     mrs  r0, psp                @ r0 = pointer to stacked {r0..xpsr}
-#if __ARM_ARCH >= 8
-.Luser_fault_frame:
-#endif
 
     @ Save callee-saved registers on MSP for crash report.
     @ 6 + 4 = 10 words = 40 bytes (8-byte aligned for C calls).
@@ -292,23 +277,6 @@ HardFault_Handler:
     mov  r10, r6
     mov  r11, r7
     pop  {r3, r4, r5, r6, r7, pc}  @ pc = EXC_RETURN → PendSV tail-chains
-
-@ =============================================================================
-@ SecureFault_Handler (ARMv8-M only)
-@
-@ Triggered when Non-Secure code attempts unauthorized Secure access.
-@ For now (TZ-1: everything runs Secure), this should never fire.
-@ Logs the fault and halts — same structure as kernel HardFault path.
-@ =============================================================================
-#if __ARM_ARCH >= 8
-.align 2
-.thumb_func
-.global SecureFault_Handler
-SecureFault_Handler:
-    mrs  r0, msp
-    bl   kernel_hardfault_dump     @ reuse existing crash dump
-    b    Default_Handler
-#endif
 
 @ Weak aliases: real handlers are provided by the driver for each build target.
 @ - UART0_IRQ_Handler:   uart.c (hardware RP2040, IRQ 20)

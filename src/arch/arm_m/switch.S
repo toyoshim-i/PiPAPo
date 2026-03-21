@@ -44,8 +44,6 @@
 @ =============================================================================
 
 .equ PCB_SP_OFFSET, 32      @ offsetof(pcb_t, sp) — see proc.h
-.equ PCB_NS_XOR_OFF, 48     @ offsetof(pcb_t, ns_addr_xor) — see proc.h
-.equ PCB_PSP_NS_OFF, 52     @ offsetof(pcb_t, psp_ns_saved) — see proc.h
 
 .syntax unified
 #if __ARM_ARCH >= 8
@@ -64,15 +62,10 @@ PendSV_Handler:
 
 #if __ARM_ARCH >= 8
     @ ══════════════════════════════════════════════════════════════════════
-    @ ARMv8-M (Cortex-M33) path — Thumb-2 + FPU lazy stacking + TrustZone
+    @ ARMv8-M (Cortex-M33) path — Thumb-2 + FPU lazy stacking
     @ ══════════════════════════════════════════════════════════════════════
 
     @ ── Save outgoing context ──────────────────────────────────────────
-    @ Check if outgoing process is Non-Secure (EXC_RETURN bit 6 = 0).
-    tst  lr, #0x40            @ test S bit (bit 6)
-    beq  .Lsave_ns
-
-    @ ── Secure process save ──────────────────────────────────────────
     mrs  r0, psp              @ r0 = outgoing PSP
 
     @ If the outgoing process used FPU (EXC_RETURN bit 4 = 0),
@@ -84,18 +77,6 @@ PendSV_Handler:
     @ Save r4-r11 and EXC_RETURN (lr).  On M33, stmdb can use any
     @ register in the list — no need for the M0+ r4-r7 dance.
     stmdb r0!, {r4-r11, lr}
-    b    .Lsave_done
-
-.Lsave_ns:
-    @ ── Non-Secure process save ──────────────────────────────────────
-    @ DCRS=0: hardware already pushed r4-r11 + IntegritySignature +
-    @ exception frame onto PSP_NS.  We only need to save EXC_RETURN.
-    @ On RP2350, PSP_NS is 0x20xxxxxx (already the NS SRAM alias).
-    @ Secure code can access 0x20xxxxxx directly (NS MPU PRIVDEFENA).
-    mrs  r0, psp_ns
-    stmdb r0!, {lr}           @ push EXC_RETURN below HW frames
-
-.Lsave_done:
     @ ── Compute &current_core[core_id] ─────────────────────────────────
     ldr  r1, =core_id_reg
     ldr  r1, [r1]             @ r1 = pointer to core-ID source
@@ -107,16 +88,6 @@ PendSV_Handler:
     @ ── Write saved PSP into the outgoing PCB ──────────────────────────
     ldr  r3, [r2]             @ r3 = current PCB pointer
     str  r0, [r3, #PCB_SP_OFFSET]  @ current->sp = r0
-
-    @ ── Save PSP_NS for NS processes ─────────────────────────────────
-    @ When an NS process blocks in a syscall (via NSC gateway),
-    @ PendSV saves the Secure context (PSP_S).  PSP_NS must be
-    @ saved separately so another NS process can run on this core.
-    ldr  r4, [r3, #PCB_NS_XOR_OFF]
-    cbz  r4, .Lskip_psp_ns_save
-    mrs  r4, psp_ns
-    str  r4, [r3, #PCB_PSP_NS_OFF] @ current->psp_ns_saved = PSP_NS
-.Lskip_psp_ns_save:
 
     @ ── Call C scheduler to select next process ────────────────────────
     @ Preserve &current_core[core_id] (r2) and core_byte_offset (r1).
@@ -140,30 +111,6 @@ PendSV_Handler:
     str  r0, [r2]             @ current_core[core_id] = next PCB
 
     @ ── Restore incoming context ───────────────────────────────────────
-    @ Check if incoming process is Non-Secure.
-    ldr  r3, [r0, #PCB_NS_XOR_OFF] @ r3 = next->ns_addr_xor
-    cbz  r3, .Lrestore_secure
-
-    @ NS process — the saved context may be:
-    @   (a) NS context (preempted while running NS code): first stacked
-    @       word is NS EXC_RETURN (bit 6 = 0).
-    @   (b) Secure context (blocked in syscall via NSC gateway): first
-    @       stacked word is Secure EXC_RETURN (bit 6 = 1).
-    @ Read the first word from pcb->sp to decide which restore path.
-    ldr  r4, [r0, #PCB_SP_OFFSET]  @ r4 = pcb->sp (0x20xxxxxx)
-    ldr  r4, [r4]                   @ r4 = saved EXC_RETURN
-    tst  r4, #0x40                  @ test S bit (bit 6)
-    beq  .Lrestore_ns               @ bit clear → NS EXC_RETURN → NS context
-
-    @ ── NS process in Secure syscall: restore PSP_NS + Secure context ─
-    @ PSP_NS was saved separately since another NS process may have
-    @ run on this core and changed it.
-    ldr  r3, [r0, #PCB_PSP_NS_OFF] @ r3 = saved PSP_NS
-    msr  psp_ns, r3
-    @ Fall through to Secure restore
-
-.Lrestore_secure:
-    @ ── Secure process restore ───────────────────────────────────────
     ldr  r0, [r0, #PCB_SP_OFFSET]  @ r0 = next->sp
 
     ldmia r0!, {r4-r11, lr}  @ restore r4-r11 + EXC_RETURN
@@ -176,28 +123,6 @@ PendSV_Handler:
 
     msr  psp, r0              @ PSP = base of incoming exception frame
     bx   lr                   @ EXC_RETURN: CPU pops exc frame, resumes thread
-
-.Lrestore_ns:
-    @ ── Non-Secure process restore (preempted from NS code) ──────────
-    @ Stack layout: {EXC_RETURN, [HW integrity frame], [HW exc frame]}
-    @ On RP2350, pcb->sp is 0x20xxxxxx (NS SRAM alias, accessible from
-    @ Secure code via NS MPU PRIVDEFENA).  No XOR needed.
-    ldr  r0, [r0, #PCB_SP_OFFSET]  @ r0 = next->sp (0x20xxxxxx)
-    ldmia r0!, {lr}           @ pop EXC_RETURN
-    msr  psp_ns, r0           @ restore PSP_NS (0x20xxxxxx = NS alias)
-
-    @ Set PSP_S to per-core Secure stack for gateway SVC frame.
-    ldr  r0, =secure_psp_top
-    adds r0, r0, r1           @ r1 = core_byte_offset
-    ldr  r0, [r0]
-    msr  psp, r0
-
-    @ DEBUG: dump NS return state before bx lr
-    push {lr}
-    bl   debug_ns_return
-    pop  {lr}
-
-    bx   lr                   @ EXC_RETURN (NS): CPU pops integrity + exc frame
 
 #else
     @ ══════════════════════════════════════════════════════════════════════

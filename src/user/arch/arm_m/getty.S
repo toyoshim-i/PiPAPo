@@ -24,19 +24,10 @@
 @ =============================================================================
 
 .syntax unified
-#ifdef __PPAP_NS_SYSCALL__
-.cpu cortex-m33
-.macro DO_SYSCALL
-    movw r12, #0x8001
-    movt r12, #0x1002
-    blx  r12
-.endm
-#else
 .cpu cortex-m0plus
 .macro DO_SYSCALL
     svc  0
 .endm
-#endif
 .thumb
 
 @ ── PPAP syscall numbers ───────────────────────────────────────────────────────
