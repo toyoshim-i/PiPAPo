@@ -192,8 +192,7 @@ void core1_sched_entry(void)
  *   1. Assert PSM_FRCE_OFF.PROC1 → power off Core 1
  *   2. Wait until the bit reads back 1 (Core 1 is off)
  *   3. Deassert PSM_FRCE_OFF.PROC1 → Core 1 restarts in boot ROM
- *   4. Wait until the bit reads back 0 (Core 1 is alive)
- *   5. Drain the SIO RX FIFO to discard any stale data
+ *   4. Wait for Core 1's boot ROM to push 0 (confirms it is ready)
  */
 static void core1_reset(void)
 {
@@ -204,12 +203,12 @@ static void core1_reset(void)
 
     /* Let Core 1 restart — it will re-enter the boot ROM */
     PSM_FRCE_OFF_CLR = PSM_PROC1;
-    while (PSM_FRCE_OFF & PSM_PROC1)
-        ;
 
-    /* Drain any stale words from the SIO RX FIFO */
-    while (SIO_FIFO_ST & SIO_FIFO_VLD)
-        (void)SIO_FIFO_RD;
+    /* Wait for Core 1's boot ROM to signal readiness by pushing 0.
+     * The SDK does multicore_fifo_pop_blocking() here — same idea. */
+    while (!(SIO_FIFO_ST & SIO_FIFO_VLD))
+        arch_wfe();
+    (void)SIO_FIFO_RD;  /* consume the 0 */
 }
 
 /* ── core1_launch ────────────────────────────────────────────────────────── */
@@ -223,12 +222,7 @@ void core1_launch(void (*entry)(void))
      * SCB.CPUID is in the System Control Space and is always accessible.
      */
     uint32_t partno = SCB_CPUID & CPUID_PARTNO_MASK;
-    if (partno == CPUID_PARTNO_M33) {
-        /* TODO: RP2350 SMP needs PSM/handshake debugging — skip for now */
-        klog("SMP: Cortex-M33 detected, Core 1 launch deferred\n");
-        return;
-    }
-    if (partno != CPUID_PARTNO_M0P) {
+    if (partno != CPUID_PARTNO_M0P && partno != CPUID_PARTNO_M33) {
         klog("SMP: unknown CPU (QEMU?): skipping Core 1 launch\n");
         return;
     }
@@ -249,49 +243,40 @@ void core1_launch(void (*entry)(void))
     uint32_t pc   = (uint32_t)(uintptr_t)entry;
 
     /*
-     * RP2040 boot handshake (§2.8.2) — 6-word sequence:
-     *   [0]  0        → drain + sync: clear Core 0's RX FIFO, SEV Core 1
+     * RP2040/RP2350 boot handshake (§2.8.2) — 6-word sequence:
+     *   [0]  0        → drain + sync
      *   [1]  0        → drain + sync (second flush)
      *   [2]  1        → "I am about to send the boot params" marker
      *   [3]  vtor     → vector table base address
      *   [4]  sp       → Core 1 initial stack pointer
      *   [5]  pc       → Core 1 entry address (Thumb bit set by function ptr)
      *
-     * For each zero word: drain this core's RX FIFO, wake Core 1 with SEV,
-     * write 0 to the TX FIFO.  No echo expected.
-     *
-     * For each non-zero word: write the word, SEV, then wait for Core 1 to
-     * echo the exact value back before advancing to the next word.  The inner
-     * loop discards any stale bytes until the expected echo arrives.
+     * For each word (including zeros): send, then wait for Core 1 to echo
+     * back the exact value.  If the echo doesn't match, restart the entire
+     * sequence from word 0.  This matches pico-sdk multicore_launch_core1_raw.
      */
     const uint32_t seq[6] = { 0u, 0u, 1u, vtor, sp, pc };
 
-    for (int i = 0; i < 6; i++) {
+    int i = 0;
+    while (i < 6) {
         uint32_t word = seq[i];
 
         if (word == 0u) {
             /* Drain Core 0's RX FIFO to remove any stale response words */
             while (SIO_FIFO_ST & SIO_FIFO_VLD)
                 (void)SIO_FIFO_RD;
-            /* Wake Core 1 so it re-polls the FIFO */
             arch_sev();
         }
 
         /* Wait for TX FIFO to have space, then send the word */
-        while (!(SIO_FIFO_ST & SIO_FIFO_RDY))
-            ;
-        SIO_FIFO_WR = word;
-        arch_sev();
+        sio_fifo_push(word);
 
-        /* For non-zero words, wait for Core 1's echo acknowledgement */
-        if (word != 0u) {
-            uint32_t resp;
-            do {
-                while (!(SIO_FIFO_ST & SIO_FIFO_VLD))
-                    arch_wfe();
-                resp = SIO_FIFO_RD;
-            } while (resp != word);
-        }
+        /* Wait for Core 1's echo — must match to advance */
+        uint32_t resp = sio_fifo_pop();
+        if (resp == word)
+            i++;
+        else
+            i = 0;   /* mismatch → restart handshake */
     }
 
     klog("SMP: Core 1 launched\n");
