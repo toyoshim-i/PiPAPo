@@ -20,9 +20,8 @@ int readline(char *buf, int size);
 int split_tokens(char *line, char **tok, int max_tok);
 int is_script_space(char c);
 
-int load_script_file(const char *path, char **script_cmds,
-                     int *script_count, char *storage,
-                     int *storage_used);
+int load_script_file(const char *path, char **script_cmds, int *script_count,
+                     char *storage, int *storage_used);
 
 int parse_u32(const char *s, uint32_t *out);
 int parse_x_spec(const char *tok0, uint32_t *count_out, char *fmt_out);

@@ -12,9 +12,10 @@
  * (uart_init() handles this).
  */
 
+#include <stdint.h>
+
 #include "drivers/clock.h"
 #include "target/rpico.h"
-#include <stdint.h>
 
 /* ==========================================================================
  * PLL_SYS
@@ -25,17 +26,17 @@
  * PRIM     +0x0C  [18:16] POSTDIV1, [14:12] POSTDIV2
  * ========================================================================== */
 
-#define PLL_SYS_CS         REG(PLL_SYS_BASE + 0x00u)
-#define PLL_SYS_PWR        REG(PLL_SYS_BASE + 0x04u)
-#define PLL_SYS_FBDIV_INT  REG(PLL_SYS_BASE + 0x08u)
-#define PLL_SYS_PRIM       REG(PLL_SYS_BASE + 0x0Cu)
+#define PLL_SYS_CS REG(PLL_SYS_BASE + 0x00u)
+#define PLL_SYS_PWR REG(PLL_SYS_BASE + 0x04u)
+#define PLL_SYS_FBDIV_INT REG(PLL_SYS_BASE + 0x08u)
+#define PLL_SYS_PRIM REG(PLL_SYS_BASE + 0x0Cu)
 
-#define PLL_CS_LOCK        (1u << 31)
+#define PLL_CS_LOCK (1u << 31)
 
-#define PLL_PWR_PD         (1u << 0)
-#define PLL_PWR_DSMPD      (1u << 2)
-#define PLL_PWR_POSTDIVPD  (1u << 3)
-#define PLL_PWR_VCOPD      (1u << 5)
+#define PLL_PWR_PD (1u << 0)
+#define PLL_PWR_DSMPD (1u << 2)
+#define PLL_PWR_POSTDIVPD (1u << 3)
+#define PLL_PWR_VCOPD (1u << 5)
 
 /*
  * PLL configuration — overridable per target via -D flags in CMakeLists.txt.
@@ -49,84 +50,83 @@
  *   -DPPAP_PLL_FBDIV=125 -DPPAP_PLL_PD1=5 -DPPAP_PLL_PD2=2
  *   VCO = 12 × 125 = 1500 MHz, out = 1500 / (5 × 2) = 150 MHz
  */
-#define PLL_REFDIV           1u
+#define PLL_REFDIV 1u
 
 #ifndef PPAP_PLL_FBDIV
-#define PPAP_PLL_FBDIV       133u
+#define PPAP_PLL_FBDIV 133u
 #endif
 #ifndef PPAP_PLL_PD1
-#define PPAP_PLL_PD1         6u
+#define PPAP_PLL_PD1 6u
 #endif
 #ifndef PPAP_PLL_PD2
-#define PPAP_PLL_PD2         2u
+#define PPAP_PLL_PD2 2u
 #endif
 
-#define PLL_FBDIV            PPAP_PLL_FBDIV
-#define PLL_POSTDIV1         PPAP_PLL_PD1
-#define PLL_POSTDIV2         PPAP_PLL_PD2
-#define PLL_PRIM_VALUE       ((PLL_POSTDIV1 << 16) | (PLL_POSTDIV2 << 12))
+#define PLL_FBDIV PPAP_PLL_FBDIV
+#define PLL_POSTDIV1 PPAP_PLL_PD1
+#define PLL_POSTDIV2 PPAP_PLL_PD2
+#define PLL_PRIM_VALUE ((PLL_POSTDIV1 << 16) | (PLL_POSTDIV2 << 12))
 
 /* CLK_SYS_CTRL AUXSRC field [7:5] */
-#define CLK_SYS_AUXSRC_PLL  0u      /* AUXSRC = 0 → PLL_SYS */
-#define CLK_SYS_SRC_AUX     1u      /* SRC = 1 → AUX mux    */
+#define CLK_SYS_AUXSRC_PLL 0u /* AUXSRC = 0 → PLL_SYS */
+#define CLK_SYS_SRC_AUX 1u    /* SRC = 1 → AUX mux    */
 
 /* ==========================================================================
  * Public API
  * ========================================================================== */
 
 /* ~500 ms timeout at 12 MHz (pre-PLL boot clock) */
-#define PLL_TIMEOUT  6000000u
+#define PLL_TIMEOUT 6000000u
 
-void clock_init_pll(void)
-{
-    uint32_t t;
+void clock_init_pll(void) {
+  uint32_t t;
 
-    /* Step 1: Move clk_sys to clk_ref (SRC = 0) for a safe glitchless
-     * transition — clk_sys must not be on the AUX mux while we reconfigure
-     * PLL_SYS. */
-    CLK_SYS_CTRL = CLK_SYS_CTRL & ~1u;
-    t = PLL_TIMEOUT;
-    while (!(CLK_SYS_SELECTED & 1u) && --t)   /* wait for clk_ref active */
-        ;
+  /* Step 1: Move clk_sys to clk_ref (SRC = 0) for a safe glitchless
+   * transition — clk_sys must not be on the AUX mux while we reconfigure
+   * PLL_SYS. */
+  CLK_SYS_CTRL = CLK_SYS_CTRL & ~1u;
+  t = PLL_TIMEOUT;
+  while (!(CLK_SYS_SELECTED & 1u) && --t) /* wait for clk_ref active */
+    ;
 
-    /* Step 2: Reset PLL_SYS, then release it so registers are at defaults. */
-    RESETS_RESET_SET = RESET_PLL_SYS;
-    RESETS_RESET_CLR = RESET_PLL_SYS;
-    t = PLL_TIMEOUT;
-    while (!(RESETS_RESET_DONE & RESET_PLL_SYS) && --t)
-        ;
+  /* Step 2: Reset PLL_SYS, then release it so registers are at defaults. */
+  RESETS_RESET_SET = RESET_PLL_SYS;
+  RESETS_RESET_CLR = RESET_PLL_SYS;
+  t = PLL_TIMEOUT;
+  while (!(RESETS_RESET_DONE & RESET_PLL_SYS) && --t)
+    ;
 
-    /* Step 3: Program reference divisor and feedback divisor.
-     * Must be written before powering up the VCO. */
-    PLL_SYS_CS = PLL_REFDIV;          /* REFDIV = 1 → reference = 12 MHz */
-    PLL_SYS_FBDIV_INT = PLL_FBDIV;    /* VCO = 12 × 133 = 1596 MHz       */
+  /* Step 3: Program reference divisor and feedback divisor.
+   * Must be written before powering up the VCO. */
+  PLL_SYS_CS = PLL_REFDIV;       /* REFDIV = 1 → reference = 12 MHz */
+  PLL_SYS_FBDIV_INT = PLL_FBDIV; /* VCO = 12 × 133 = 1596 MHz       */
 
-    /* Step 4: Power up the VCO and the main PLL (clear PD and VCOPD).
-     * DSMPD and POSTDIVPD remain set until the VCO has locked. */
-    PLL_SYS_PWR &= ~(PLL_PWR_PD | PLL_PWR_VCOPD);
+  /* Step 4: Power up the VCO and the main PLL (clear PD and VCOPD).
+   * DSMPD and POSTDIVPD remain set until the VCO has locked. */
+  PLL_SYS_PWR &= ~(PLL_PWR_PD | PLL_PWR_VCOPD);
 
-    /* Step 5: Wait for the VCO to lock. */
-    t = PLL_TIMEOUT;
-    while (!(PLL_SYS_CS & PLL_CS_LOCK) && --t)
-        ;
+  /* Step 5: Wait for the VCO to lock. */
+  t = PLL_TIMEOUT;
+  while (!(PLL_SYS_CS & PLL_CS_LOCK) && --t)
+    ;
 
-    /* Step 6: Program the post-dividers: POSTDIV1=6, POSTDIV2=2 → 133 MHz. */
-    PLL_SYS_PRIM = PLL_PRIM_VALUE;
+  /* Step 6: Program the post-dividers: POSTDIV1=6, POSTDIV2=2 → 133 MHz. */
+  PLL_SYS_PRIM = PLL_PRIM_VALUE;
 
-    /* Step 7: Power up the post-dividers. */
-    PLL_SYS_PWR &= ~PLL_PWR_POSTDIVPD;
+  /* Step 7: Power up the post-dividers. */
+  PLL_SYS_PWR &= ~PLL_PWR_POSTDIVPD;
 
-    /* Step 8: Point clk_sys AUX mux at PLL_SYS (AUXSRC = 0) and switch
-     * clk_sys from clk_ref to the AUX mux (SRC = 1). */
-    CLK_SYS_CTRL = (CLK_SYS_AUXSRC_PLL << 5) | CLK_SYS_SRC_AUX;
-    t = PLL_TIMEOUT;
-    while (!(CLK_SYS_SELECTED & (1u << CLK_SYS_SRC_AUX)) && --t)
-        ;
+  /* Step 8: Point clk_sys AUX mux at PLL_SYS (AUXSRC = 0) and switch
+   * clk_sys from clk_ref to the AUX mux (SRC = 1). */
+  CLK_SYS_CTRL = (CLK_SYS_AUXSRC_PLL << 5) | CLK_SYS_SRC_AUX;
+  t = PLL_TIMEOUT;
+  while (!(CLK_SYS_SELECTED & (1u << CLK_SYS_SRC_AUX)) && --t)
+    ;
 
-    /* Step 9: Reconfigure clk_peri for the new clock speed.
-     * clk_peri has no glitchless mux — must disable before the source
-     * frequency changes, then re-enable.  AUXSRC=0 selects clk_sys
-     * which is now 133 MHz. */
-    CLK_PERI_CTRL = 0;              /* disable */
-    CLK_PERI_CTRL = CLK_PERI_ENABLE; /* re-enable on clk_sys = 133 MHz */
+  /* Step 9: Reconfigure clk_peri for the new clock speed.
+   * clk_peri has no glitchless mux — must disable before the source
+   * frequency changes, then re-enable.  AUXSRC=0 selects clk_sys
+   * which is now 133 MHz. */
+  CLK_PERI_CTRL = 0;               /* disable */
+  CLK_PERI_CTRL = CLK_PERI_ENABLE; /* re-enable on clk_sys = 133 MHz */
 }

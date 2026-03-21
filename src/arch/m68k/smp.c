@@ -9,6 +9,6 @@
 #include "cpu/smp.h"
 
 void core1_launch(void (*entry)(void)) { (void)entry; }
-void core1_sched_entry(void) { }
+void core1_sched_entry(void) {}
 void sio_fifo_push(uint32_t value) { (void)value; }
 uint32_t sio_fifo_pop(void) { return 0; }

@@ -24,71 +24,79 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
 #include "config.h"
 
-/* ── Forward declarations ─────────────────────────────────────────────────── */
+/* ── Forward declarations ───────────────────────────────────────────────────
+ */
 
-typedef struct vnode     vnode_t;
-typedef struct vfs_ops   vfs_ops_t;
+typedef struct vnode vnode_t;
+typedef struct vfs_ops vfs_ops_t;
 typedef struct mount_entry mount_entry_t;
 
-/* ── Shared ABI types (common/) ────────────────────────────────────────────── */
+/* ── Shared ABI types (common/) ──────────────────────────────────────────────
+ */
 
-#include "common/stat.h"
 #include "common/dirent.h"
+#include "common/stat.h"
 
 /* Verify that PPAP_NAME_MAX matches VFS_NAME_MAX */
-_Static_assert(PPAP_NAME_MAX == VFS_NAME_MAX,
-               "PPAP_NAME_MAX (common/dirent.h) must match VFS_NAME_MAX (config.h)");
+_Static_assert(
+    PPAP_NAME_MAX == VFS_NAME_MAX,
+    "PPAP_NAME_MAX (common/dirent.h) must match VFS_NAME_MAX (config.h)");
 
-/* ── Mount flags ──────────────────────────────────────────────────────────── */
+/* ── Mount flags ────────────────────────────────────────────────────────────
+ */
 
-#define MNT_RDONLY  0x01u   /* read-only mount (romfs, procfs)             */
+#define MNT_RDONLY 0x01u /* read-only mount (romfs, procfs)             */
 
 /* Linux mount flags used by busybox mount(2) — only MS_RDONLY is honoured */
-#define MS_RDONLY   1u
+#define MS_RDONLY 1u
 
-/* ── struct kernel_statfs — filesystem statistics ─────────────────────────── */
+/* ── struct kernel_statfs — filesystem statistics ───────────────────────────
+ */
 /*
  * Matches the Linux ARM statfs64 layout that musl expects from
  * SYS_statfs64 / SYS_fstatfs64.  64-bit fields for block/inode counts.
  */
 struct kernel_statfs {
-    uint32_t f_type;       /* filesystem magic number                       */
-    uint32_t f_bsize;      /* optimal transfer block size                   */
-    uint64_t f_blocks;     /* total data blocks in filesystem               */
-    uint64_t f_bfree;      /* free blocks in filesystem                     */
-    uint64_t f_bavail;     /* free blocks available to non-root             */
-    uint64_t f_files;      /* total file nodes in filesystem                */
-    uint64_t f_ffree;      /* free file nodes in filesystem                 */
-    uint32_t f_fsid[2];    /* filesystem ID                                 */
-    uint32_t f_namelen;    /* maximum filename length                       */
-    uint32_t f_frsize;     /* fragment size (same as f_bsize for us)        */
-    uint32_t f_flags;      /* mount flags (ST_RDONLY, etc.)                 */
-    uint32_t f_spare[4];   /* padding to match Linux layout                 */
+  uint32_t f_type;     /* filesystem magic number                       */
+  uint32_t f_bsize;    /* optimal transfer block size                   */
+  uint64_t f_blocks;   /* total data blocks in filesystem               */
+  uint64_t f_bfree;    /* free blocks in filesystem                     */
+  uint64_t f_bavail;   /* free blocks available to non-root             */
+  uint64_t f_files;    /* total file nodes in filesystem                */
+  uint64_t f_ffree;    /* free file nodes in filesystem                 */
+  uint32_t f_fsid[2];  /* filesystem ID                                 */
+  uint32_t f_namelen;  /* maximum filename length                       */
+  uint32_t f_frsize;   /* fragment size (same as f_bsize for us)        */
+  uint32_t f_flags;    /* mount flags (ST_RDONLY, etc.)                 */
+  uint32_t f_spare[4]; /* padding to match Linux layout                 */
 };
 
-/* ── vnode — in-memory file/directory node ─────────────────────────────────── */
+/* ── vnode — in-memory file/directory node ───────────────────────────────────
+ */
 
 typedef enum {
-    VNODE_FILE,     /* regular file                                       */
-    VNODE_DIR,      /* directory                                          */
-    VNODE_SYMLINK,  /* symbolic link                                      */
-    VNODE_DEV,      /* device file (character special)                    */
+  VNODE_FILE,    /* regular file                                       */
+  VNODE_DIR,     /* directory                                          */
+  VNODE_SYMLINK, /* symbolic link                                      */
+  VNODE_DEV,     /* device file (character special)                    */
 } vnode_type_t;
 
 struct vnode {
-    vnode_type_t   type;      /* file type                                 */
-    uint32_t       size;      /* file size in bytes                        */
-    uint32_t       mode;      /* permissions (0755 / 0644)                 */
-    uint32_t       ino;       /* FS-specific inode number / offset         */
-    uint32_t       refcnt;    /* open reference count (0 = free)           */
-    void          *fs_priv;   /* FS-specific data pointer                  */
-    mount_entry_t *mount;     /* owning mount entry                        */
-    const void    *xip_addr;  /* XIP flash address for direct exec (or NULL) */
+  vnode_type_t type;    /* file type                                 */
+  uint32_t size;        /* file size in bytes                        */
+  uint32_t mode;        /* permissions (0755 / 0644)                 */
+  uint32_t ino;         /* FS-specific inode number / offset         */
+  uint32_t refcnt;      /* open reference count (0 = free)           */
+  void *fs_priv;        /* FS-specific data pointer                  */
+  mount_entry_t *mount; /* owning mount entry                        */
+  const void *xip_addr; /* XIP flash address for direct exec (or NULL) */
 };
 
-/* ── vfs_ops — per-FS driver operation table ──────────────────────────────── */
+/* ── vfs_ops — per-FS driver operation table ────────────────────────────────
+ */
 /*
  * Each filesystem driver (romfs, devfs, procfs, …) provides a static
  * vfs_ops_t.  Functions that a particular FS does not support should be
@@ -109,38 +117,40 @@ struct vnode {
  */
 
 struct vfs_ops {
-    int  (*mount)   (mount_entry_t *mnt, const void *dev_data);
-    int  (*lookup)  (vnode_t *dir, const char *name, vnode_t **result);
-    long (*read)    (vnode_t *vn, void *buf, size_t n, uint32_t off);
-    long (*write)   (vnode_t *vn, const void *buf, size_t n, uint32_t off);
-    int  (*readdir) (vnode_t *dir, struct dirent *entries, size_t max_entries,
-                     uint32_t *cookie);
-    int  (*stat)    (vnode_t *vn, struct stat *st);
-    long (*readlink)(vnode_t *vn, char *buf, size_t bufsiz);
-    int  (*create)  (vnode_t *dir, const char *name, uint32_t mode,
-                     vnode_t **result);
-    int  (*mkdir)   (vnode_t *dir, const char *name, uint32_t mode);
-    int  (*unlink)  (vnode_t *dir, const char *name);
-    int  (*rename)  (vnode_t *old_dir, const char *old_name,
-                     vnode_t *new_dir, const char *new_name);
-    int  (*truncate)(vnode_t *vn, uint32_t length);
-    int  (*statfs)  (mount_entry_t *mnt, struct kernel_statfs *buf);
+  int (*mount)(mount_entry_t *mnt, const void *dev_data);
+  int (*lookup)(vnode_t *dir, const char *name, vnode_t **result);
+  long (*read)(vnode_t *vn, void *buf, size_t n, uint32_t off);
+  long (*write)(vnode_t *vn, const void *buf, size_t n, uint32_t off);
+  int (*readdir)(vnode_t *dir, struct dirent *entries, size_t max_entries,
+                 uint32_t *cookie);
+  int (*stat)(vnode_t *vn, struct stat *st);
+  long (*readlink)(vnode_t *vn, char *buf, size_t bufsiz);
+  int (*create)(vnode_t *dir, const char *name, uint32_t mode,
+                vnode_t **result);
+  int (*mkdir)(vnode_t *dir, const char *name, uint32_t mode);
+  int (*unlink)(vnode_t *dir, const char *name);
+  int (*rename)(vnode_t *old_dir, const char *old_name, vnode_t *new_dir,
+                const char *new_name);
+  int (*truncate)(vnode_t *vn, uint32_t length);
+  int (*statfs)(mount_entry_t *mnt, struct kernel_statfs *buf);
 };
 
-/* ── mount_entry — one entry in the kernel mount table ────────────────────── */
+/* ── mount_entry — one entry in the kernel mount table ──────────────────────
+ */
 
 struct mount_entry {
-    char             path[VFS_PATH_MAX]; /* mount point (e.g., "/", "/dev")  */
-    uint8_t          path_len;           /* strlen(path) — cached            */
-    uint8_t          flags;              /* MNT_RDONLY, etc.                  */
-    uint8_t          active;             /* 1 = in use, 0 = free slot        */
-    uint8_t          _pad;
-    const vfs_ops_t *ops;                /* FS driver operations             */
-    vnode_t         *root;               /* root vnode of this mount         */
-    void            *sb_priv;            /* superblock / FS-private data     */
+  char path[VFS_PATH_MAX]; /* mount point (e.g., "/", "/dev")  */
+  uint8_t path_len;        /* strlen(path) — cached            */
+  uint8_t flags;           /* MNT_RDONLY, etc.                  */
+  uint8_t active;          /* 1 = in use, 0 = free slot        */
+  uint8_t _pad;
+  const vfs_ops_t *ops; /* FS driver operations             */
+  vnode_t *root;        /* root vnode of this mount         */
+  void *sb_priv;        /* superblock / FS-private data     */
 };
 
-/* ── VFS API ──────────────────────────────────────────────────────────────── */
+/* ── VFS API ────────────────────────────────────────────────────────────────
+ */
 
 /*
  * Initialise the VFS layer: zero the mount table, initialise the vnode pool.
@@ -208,7 +218,7 @@ void vnode_put(vnode_t *vn);
 int vfs_lookup(const char *path, vnode_t **result);
 
 /* Lookup flags for vfs_lookup_flags() */
-#define VFS_LOOKUP_NOFOLLOW  0x01  /* don't follow final symlink */
+#define VFS_LOOKUP_NOFOLLOW 0x01 /* don't follow final symlink */
 
 /*
  * Like vfs_lookup() but with flags.  VFS_LOOKUP_NOFOLLOW stops symlink
@@ -225,8 +235,8 @@ int vfs_lookup_flags(const char *path, vnode_t **result, int flags);
  *   name_out = final component (NUL-terminated, points into `namebuf`)
  * Returns 0, or negative errno.
  */
-int vfs_lookup_parent(const char *path, vnode_t **parent,
-                      char *namebuf, int namebuf_size);
+int vfs_lookup_parent(const char *path, vnode_t **parent, char *namebuf,
+                      int namebuf_size);
 
 /*
  * Normalize an absolute path: resolve "." and ".." lexically, collapse

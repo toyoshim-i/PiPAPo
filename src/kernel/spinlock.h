@@ -19,48 +19,47 @@
 #define PPAP_KERNEL_SPINLOCK_H
 
 #include <stdint.h>
+
 #include "arch/arch.h"
 
 #ifndef SIO_BASE
-#define SIO_BASE            0xD0000000u
+#define SIO_BASE 0xD0000000u
 #endif
-#define SIO_CPUID           (*(volatile uint32_t *)(SIO_BASE + 0x000u))
-#define SIO_SPINLOCK_BASE   (SIO_BASE + 0x100u)
+#define SIO_CPUID (*(volatile uint32_t *)(SIO_BASE + 0x000u))
+#define SIO_SPINLOCK_BASE (SIO_BASE + 0x100u)
 
 /* SCB.CPUID — always accessible on any Cortex-M */
 #if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
-#define SCB_CPUID_REG       (*(volatile uint32_t *)0xE000ED00u)
-#define CPUID_PARTNO_MASK   0x0000FFF0u
-#define CPUID_PARTNO_M0P    0x0000C600u   /* Cortex-M0+ (RP2040)  */
-#define CPUID_PARTNO_M33    0x0000D210u   /* Cortex-M33 (RP2350)  */
+#define SCB_CPUID_REG (*(volatile uint32_t *)0xE000ED00u)
+#define CPUID_PARTNO_MASK 0x0000FFF0u
+#define CPUID_PARTNO_M0P 0x0000C600u /* Cortex-M0+ (RP2040)  */
+#define CPUID_PARTNO_M33 0x0000D210u /* Cortex-M33 (RP2350)  */
 #endif
 
 enum {
-    SPIN_PAGE   = 0,   /* free_stack, free_top (page allocator) */
-    SPIN_PROC   = 1,   /* proc_table, next_pid, running_on_core */
-    SPIN_VFS    = 2,   /* mount table, vnode pool */
-    SPIN_FS     = 3,   /* sector_buf (vfat.c), ufs_buf (ufs.c) */
-    SPIN_UART   = 4,   /* UART TX serialisation (klog) */
-    SPIN_TXRING = 5,   /* UART TX ring buffer + IMSC (dual-core) */
-    SPIN_I2C    = 6,   /* I2C1 controller (kbd, battery, backlight) */
+  SPIN_PAGE = 0,   /* free_stack, free_top (page allocator) */
+  SPIN_PROC = 1,   /* proc_table, next_pid, running_on_core */
+  SPIN_VFS = 2,    /* mount table, vnode pool */
+  SPIN_FS = 3,     /* sector_buf (vfat.c), ufs_buf (ufs.c) */
+  SPIN_UART = 4,   /* UART TX serialisation (klog) */
+  SPIN_TXRING = 5, /* UART TX ring buffer + IMSC (dual-core) */
+  SPIN_I2C = 6,    /* I2C1 controller (kbd, battery, backlight) */
 };
 
-static inline int spin_have_hw(void)
-{
+static inline int spin_have_hw(void) {
 #if defined(__m68k__)
-    return 0;   /* no hardware spinlocks on 68k */
+  return 0; /* no hardware spinlocks on 68k */
 #else
-    uint32_t partno = SCB_CPUID_REG & CPUID_PARTNO_MASK;
-    return partno == CPUID_PARTNO_M0P || partno == CPUID_PARTNO_M33;
+  uint32_t partno = SCB_CPUID_REG & CPUID_PARTNO_MASK;
+  return partno == CPUID_PARTNO_M0P || partno == CPUID_PARTNO_M33;
 #endif
 }
 
-static inline uint32_t core_id(void)
-{
+static inline uint32_t core_id(void) {
 #if defined(__m68k__) || defined(PPAP_QEMU)
-    return 0;   /* single core: m68k or QEMU ARM */
+  return 0; /* single core: m68k or QEMU ARM */
 #else
-    return SIO_CPUID;   /* RP2040: single MMIO read, ~1 cycle */
+  return SIO_CPUID; /* RP2040: single MMIO read, ~1 cycle */
 #endif
 }
 
@@ -75,59 +74,52 @@ static inline uint32_t core_id(void)
  *
  * The pico-sdk does the same in runtime_init → spin_locks_reset().
  */
-static inline void spin_locks_reset(void)
-{
-    if (!spin_have_hw())
-        return;
-    for (uint32_t i = 0; i < 32u; i++) {
-        volatile uint32_t *lock =
-            (volatile uint32_t *)(SIO_SPINLOCK_BASE + i * 4u);
-        *lock = 0u;   /* write any value to release */
-    }
+static inline void spin_locks_reset(void) {
+  if (!spin_have_hw()) return;
+  for (uint32_t i = 0; i < 32u; i++) {
+    volatile uint32_t *lock = (volatile uint32_t *)(SIO_SPINLOCK_BASE + i * 4u);
+    *lock = 0u; /* write any value to release */
+  }
 }
 
-static inline uint32_t spin_lock_irqsave(uint32_t lock_num)
-{
-    uint32_t saved = arch_irq_save();
-    if (spin_have_hw()) {
-        volatile uint32_t *lock =
-            (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
-        while (!*lock)
-            ;
-    }
-    return saved;
+static inline uint32_t spin_lock_irqsave(uint32_t lock_num) {
+  uint32_t saved = arch_irq_save();
+  if (spin_have_hw()) {
+    volatile uint32_t *lock =
+        (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
+    while (!*lock)
+      ;
+  }
+  return saved;
 }
 
-static inline void spin_unlock_irqrestore(uint32_t lock_num, uint32_t saved)
-{
-    if (spin_have_hw()) {
-        volatile uint32_t *lock =
-            (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
-        *lock = 0u;
-    }
-    arch_irq_restore(saved);
+static inline void spin_unlock_irqrestore(uint32_t lock_num, uint32_t saved) {
+  if (spin_have_hw()) {
+    volatile uint32_t *lock =
+        (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
+    *lock = 0u;
+  }
+  arch_irq_restore(saved);
 }
 
 /* Bare lock/unlock — no IRQ state change.
  * Use when the caller manages interrupt masking separately
  * (e.g. klog disables only the preemption timer). */
-static inline void spin_lock(uint32_t lock_num)
-{
-    if (spin_have_hw()) {
-        volatile uint32_t *lock =
-            (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
-        while (!*lock)
-            ;
-    }
+static inline void spin_lock(uint32_t lock_num) {
+  if (spin_have_hw()) {
+    volatile uint32_t *lock =
+        (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
+    while (!*lock)
+      ;
+  }
 }
 
-static inline void spin_unlock(uint32_t lock_num)
-{
-    if (spin_have_hw()) {
-        volatile uint32_t *lock =
-            (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
-        *lock = 0u;
-    }
+static inline void spin_unlock(uint32_t lock_num) {
+  if (spin_have_hw()) {
+    volatile uint32_t *lock =
+        (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
+    *lock = 0u;
+  }
 }
 
 #endif /* PPAP_KERNEL_SPINLOCK_H */

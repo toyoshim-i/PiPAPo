@@ -29,7 +29,7 @@
  * QEMU (mps2-an500): SysTick counter runs but TICKINT is never asserted,
  * so preemptive scheduling on QEMU uses cooperative sched_yield() instead.
  */
-#define SYSTICK_RELOAD  (PPAP_SYS_HZ / PPAP_TICK_HZ - 1u)
+#define SYSTICK_RELOAD (PPAP_SYS_HZ / PPAP_TICK_HZ - 1u)
 
 /*
  * Pick the next RUNNABLE process in round-robin order starting after
@@ -94,7 +94,8 @@ void sched_set_input_poll2(int (*fn)(void), int tty_idx);
 
 /*
  * Register a display flush callback, polled every 20 ms from SysTick.
- * Used by PicoCalc to defer LCD flush (fbcon_poll_flush) out of critical sections.
+ * Used by PicoCalc to defer LCD flush (fbcon_poll_flush) out of critical
+ * sections.
  */
 void sched_set_display_poll(void (*fn)(void));
 

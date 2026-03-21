@@ -14,9 +14,9 @@
 
 #include <stdint.h>
 
-#define FBCON_MODE_NORMAL  0   /* 40×20, 8×16 font */
-#define FBCON_MODE_COMPACT 1   /* 80×40, 4×8  font */
-#define FBCON_MODE_SQUARE  2   /* 40×40, 8×8  font */
+#define FBCON_MODE_NORMAL 0  /* 40×20, 8×16 font */
+#define FBCON_MODE_COMPACT 1 /* 80×40, 4×8  font */
+#define FBCON_MODE_SQUARE 2  /* 40×40, 8×8  font */
 
 /* Initialise console in 40×20 mode, clear screen. */
 void fbcon_init(void);
@@ -36,7 +36,8 @@ void fbcon_flush(void);
  * The actual flush happens on the next fbcon_poll_flush() call from SysTick. */
 void fbcon_flush_deferred(void);
 
-/* Poll: flush LCD if deferred flush is pending.  Called from SysTick (~20 ms). */
+/* Poll: flush LCD if deferred flush is pending.  Called from SysTick (~20 ms).
+ */
 void fbcon_poll_flush(void);
 
 /* Clear the entire screen. */

@@ -25,8 +25,8 @@
  *   image_size  — size of loaded image (text + data + bss)
  *   path        — full path to executable (for path field at 0x82/0xC4)
  */
-void x68k_setup_pmb(uint8_t *base, uint32_t total_bytes,
-                    uint32_t image_size, const char *path);
+void x68k_setup_pmb(uint8_t *base, uint32_t total_bytes, uint32_t image_size,
+                    const char *path);
 
 /*
  * x68k_setup_registers — patch initial CPU registers in stack frame.

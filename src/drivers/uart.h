@@ -11,14 +11,16 @@
 #ifndef PPAP_DRIVERS_UART_H
 #define PPAP_DRIVERS_UART_H
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
-/* ── Init / lifecycle ──────────────────────────────────────────────────────── */
+/* ── Init / lifecycle ────────────────────────────────────────────────────────
+ */
 
 void uart_init(void);
 
-/* ── Write ─────────────────────────────────────────────────────────────────── */
+/* ── Write ───────────────────────────────────────────────────────────────────
+ */
 
 /* Enqueue one byte into the TX ring buffer.
  * Returns 1 on success, 0 if ring is full.
@@ -26,7 +28,8 @@ void uart_init(void);
  * be called from the UART ISR when ring space becomes available. */
 int uart_putc(char c, void (*notify)(void));
 
-/* ── Read ──────────────────────────────────────────────────────────────────── */
+/* ── Read ────────────────────────────────────────────────────────────────────
+ */
 
 int uart_getc(void);
 int uart_rx_avail(void);

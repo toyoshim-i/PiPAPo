@@ -21,9 +21,9 @@
 #include "file.h"
 
 /* TTY instance indices */
-#define TTY_MAX     2
-#define TTY_SERIAL  0   /* /dev/ttyS0 — UART */
-#define TTY_DISPLAY 1   /* /dev/tty1  — fbcon+kbd */
+#define TTY_MAX 2
+#define TTY_SERIAL 0  /* /dev/ttyS0 — UART */
+#define TTY_DISPLAY 1 /* /dev/tty1  — fbcon+kbd */
 
 extern struct file tty_stdin;
 extern struct file tty_stdout;
@@ -34,16 +34,16 @@ extern const struct file_ops tty_fops;
 
 /* I/O backend descriptor — all fields required unless noted */
 typedef struct {
-    /* Enqueue one byte.  Returns 1 on success, 0 if full.
-     * If 0 and notify != NULL, the backend registers notify atomically
-     * and calls it (from ISR) when space becomes available. */
-    int  (*putc)(char c, void (*notify)(void));
-    void (*flush)(void);        /* flush output (NULL if not needed)  */
-    int  (*getc)(void);         /* read one character (-1 if none)    */
-    int  (*rx_avail)(void);     /* non-zero if input available        */
-    int  (*get_cols)(void);     /* terminal width  (NULL → default)   */
-    int  (*get_rows)(void);     /* terminal height (NULL → default)   */
-    void (*set_winsize)(int cols, int rows);  /* resize (NULL → fixed) */
+  /* Enqueue one byte.  Returns 1 on success, 0 if full.
+   * If 0 and notify != NULL, the backend registers notify atomically
+   * and calls it (from ISR) when space becomes available. */
+  int (*putc)(char c, void (*notify)(void));
+  void (*flush)(void);   /* flush output (NULL if not needed)  */
+  int (*getc)(void);     /* read one character (-1 if none)    */
+  int (*rx_avail)(void); /* non-zero if input available        */
+  int (*get_cols)(void); /* terminal width  (NULL → default)   */
+  int (*get_rows)(void); /* terminal height (NULL → default)   */
+  void (*set_winsize)(int cols, int rows); /* resize (NULL → fixed) */
 } tty_backend_t;
 
 /* Set the I/O backend for TTY instance idx.
@@ -74,8 +74,9 @@ int tty_backend_ready(int idx);
  * Default: TTY_SERIAL (0).  pico1calc and x68k use TTY_DISPLAY (1). */
 void tty_set_console(int idx);
 
-/* Return an opaque pointer to the console TTY device (as set by tty_set_console).
- * Used by fd_stdio_init() to point stdin/stdout/stderr at the primary console. */
+/* Return an opaque pointer to the console TTY device (as set by
+ * tty_set_console). Used by fd_stdio_init() to point stdin/stdout/stderr at the
+ * primary console. */
 void *tty_get_console_dev(void);
 
 #endif /* PPAP_KERNEL_FD_TTY_H */

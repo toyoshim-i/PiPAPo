@@ -20,7 +20,7 @@
 void xip_verify(void);
 
 /* Exposed so tests can call them directly if needed. */
-int      xip_add(int a, int b);
+int xip_add(int a, int b);
 uint32_t xip_bench(uint32_t n);
 uint32_t sram_bench(uint32_t n);
 

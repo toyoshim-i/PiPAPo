@@ -16,8 +16,8 @@
 #ifndef PPAP_DRIVERS_SPI_H
 #define PPAP_DRIVERS_SPI_H
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 /* Initialise SPI0 at the specified baud rate.
  * Configures GPIO pins, resets the peripheral, and enables the controller.

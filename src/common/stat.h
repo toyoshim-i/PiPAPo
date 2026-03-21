@@ -12,23 +12,23 @@
 #include <stdint.h>
 
 /* File type mask and values (POSIX-compatible) */
-#define S_IFMT   0170000   /* type-of-file mask                        */
-#define S_IFDIR  0040000   /* directory                                 */
-#define S_IFCHR  0020000   /* character special (device)                */
-#define S_IFREG  0100000   /* regular file                              */
-#define S_IFLNK  0120000   /* symbolic link                             */
+#define S_IFMT 0170000  /* type-of-file mask                        */
+#define S_IFDIR 0040000 /* directory                                 */
+#define S_IFCHR 0020000 /* character special (device)                */
+#define S_IFREG 0100000 /* regular file                              */
+#define S_IFLNK 0120000 /* symbolic link                             */
 
-#define S_ISDIR(m)  (((m) & S_IFMT) == S_IFDIR)
-#define S_ISREG(m)  (((m) & S_IFMT) == S_IFREG)
-#define S_ISLNK(m)  (((m) & S_IFMT) == S_IFLNK)
-#define S_ISCHR(m)  (((m) & S_IFMT) == S_IFCHR)
+#define S_ISDIR(m) (((m)&S_IFMT) == S_IFDIR)
+#define S_ISREG(m) (((m)&S_IFMT) == S_IFREG)
+#define S_ISLNK(m) (((m)&S_IFMT) == S_IFLNK)
+#define S_ISCHR(m) (((m)&S_IFMT) == S_IFCHR)
 
 /* PPAP-native stat structure */
 struct stat {
-    uint32_t st_ino;     /* inode number (FS-specific)                */
-    uint32_t st_mode;    /* file type + permissions (S_IF* | 0755)    */
-    uint32_t st_nlink;   /* number of hard links (always 1 for romfs) */
-    uint32_t st_size;    /* file size in bytes                        */
+  uint32_t st_ino;   /* inode number (FS-specific)                */
+  uint32_t st_mode;  /* file type + permissions (S_IF* | 0755)    */
+  uint32_t st_nlink; /* number of hard links (always 1 for romfs) */
+  uint32_t st_size;  /* file size in bytes                        */
 };
 
 #endif /* PPAP_COMMON_STAT_H */

@@ -7,8 +7,9 @@
  */
 
 #include <stdint.h>
-#include "../kernel/proc/proc.h"
+
 #include "../kernel/klog.h"
+#include "../kernel/proc/proc.h"
 #include "../kernel/subsys/subsys.h"
 #ifdef PPAP_ENABLE_HUMAN68K
 #include "../kernel/subsys/human68k_bridge.h"
@@ -38,37 +39,53 @@ long sys_exit(long status);
 long sys_kill(long pid, long sig);
 
 /* POSIX signal numbers */
-#define SIGILL  4
-#define SIGBUS  7
-#define SIGFPE  8
+#define SIGILL 4
+#define SIGBUS 7
+#define SIGFPE 8
 #define SIGSEGV 11
 #define SIGABRT 6
 
 /* Fault type → description and POSIX signal */
-static const char *fault_name(int fault_type)
-{
-    switch (fault_type) {
-    case 2:  return "SIGBUS (bus error)";
-    case 3:  return "SIGBUS (address error)";
-    case 4:  return "SIGILL (illegal instruction)";
-    case 5:  return "SIGFPE (divide by zero)";
-    case 6:  return "SIGFPE (CHK)";
-    case 7:  return "SIGFPE (TRAPV)";
-    case 8:  return "SIGSEGV (privilege violation)";
-    case 11: return "SIGILL (F-line)";
-    default: return "SIG??? (unknown)";
-    }
+static const char *fault_name(int fault_type) {
+  switch (fault_type) {
+    case 2:
+      return "SIGBUS (bus error)";
+    case 3:
+      return "SIGBUS (address error)";
+    case 4:
+      return "SIGILL (illegal instruction)";
+    case 5:
+      return "SIGFPE (divide by zero)";
+    case 6:
+      return "SIGFPE (CHK)";
+    case 7:
+      return "SIGFPE (TRAPV)";
+    case 8:
+      return "SIGSEGV (privilege violation)";
+    case 11:
+      return "SIGILL (F-line)";
+    default:
+      return "SIG??? (unknown)";
+  }
 }
 
-static int fault_signal(int fault_type)
-{
-    switch (fault_type) {
-    case 2: case 3:  return SIGBUS;
-    case 4: case 11: return SIGILL;
-    case 5: case 6: case 7: return SIGFPE;
-    case 8:          return SIGSEGV;
-    default:         return SIGABRT;
-    }
+static int fault_signal(int fault_type) {
+  switch (fault_type) {
+    case 2:
+    case 3:
+      return SIGBUS;
+    case 4:
+    case 11:
+      return SIGILL;
+    case 5:
+    case 6:
+    case 7:
+      return SIGFPE;
+    case 8:
+      return SIGSEGV;
+    default:
+      return SIGABRT;
+  }
 }
 
 /*
@@ -90,81 +107,73 @@ static int fault_signal(int fault_type)
 extern int uart_tvram_inhibit;
 #endif
 
-int m68k_crash_handler(int fault_type, uint32_t *regs)
-{
+int m68k_crash_handler(int fault_type, uint32_t *regs) {
 #ifdef PPAP_X68K
-    /* Prevent klogf from calling IOCS _B_PUTC, which could double-fault
-     * if the crash occurred inside IOCS itself.  Output goes only to the
-     * serial mirror (_OUT232C). */
-    uart_tvram_inhibit = 1;
+  /* Prevent klogf from calling IOCS _B_PUTC, which could double-fault
+   * if the crash occurred inside IOCS itself.  Output goes only to the
+   * serial mirror (_OUT232C). */
+  uart_tvram_inhibit = 1;
 #endif
 
-    uint16_t *exc = (uint16_t *)((uint8_t *)regs + 60);
-    uint32_t pc, fault_addr = 0;
-    uint16_t sr;
-    int is_group0 = (fault_type == 2 || fault_type == 3);
+  uint16_t *exc = (uint16_t *)((uint8_t *)regs + 60);
+  uint32_t pc, fault_addr = 0;
+  uint16_t sr;
+  int is_group0 = (fault_type == 2 || fault_type == 3);
 
-    if (is_group0) {
-        fault_addr = ((uint32_t)exc[1] << 16) | exc[2];
-        sr = exc[4];
-        pc = ((uint32_t)exc[5] << 16) | exc[6];
-    } else {
-        sr = exc[0];
-        pc = ((uint32_t)exc[1] << 16) | exc[2];
+  if (is_group0) {
+    fault_addr = ((uint32_t)exc[1] << 16) | exc[2];
+    sr = exc[4];
+    pc = ((uint32_t)exc[5] << 16) | exc[6];
+  } else {
+    sr = exc[0];
+    pc = ((uint32_t)exc[1] << 16) | exc[2];
+  }
+
+  pcb_t *p = current;
+  int sig = fault_signal(fault_type);
+
+  /* Print crash report (klogf supports: %s %u %x %% only) */
+  klogf("\n*** %s ***", fault_name(fault_type));
+  if (p) klogf("  Process %u (%s)", (uint32_t)p->pid, p->comm);
+  klogf("  PC=%x  SR=%x", pc, (uint32_t)sr);
+  if (is_group0) klogf("  Fault addr=%x  FC=%x", fault_addr, (uint32_t)exc[0]);
+  klogf("  d0=%x d1=%x d2=%x d3=%x", regs[0], regs[1], regs[2], regs[3]);
+  klogf("  d4=%x d5=%x d6=%x d7=%x", regs[4], regs[5], regs[6], regs[7]);
+  klogf("  a0=%x a1=%x a2=%x a3=%x", regs[8], regs[9], regs[10], regs[11]);
+  klogf("  a4=%x a5=%x a6=%x", regs[12], regs[13], regs[14]);
+
+  /* Kernel fault → unrecoverable */
+  if (!p || p->pid == 0) {
+    klogf("  Kernel fault — halting.");
+    return 0;
+  }
+
+  /* Subsystem crash hook — lets personality layers (e.g. Human68k _ERRJVC)
+   * handle faults before the default POSIX signal path. */
+  {
+    const subsys_ops_t *ops =
+        p->subsys < SUBSYS_MAX ? subsys_ops_table[p->subsys] : 0;
+    if (ops && ops->on_crash) {
+      int rc = ops->on_crash(p, regs, exc, is_group0);
+      if (rc) return rc;
     }
+  }
 
-    pcb_t *p = current;
-    int sig = fault_signal(fault_type);
+  /* Check if the process has a signal handler installed.
+   * If so, post the signal and let signal_check() deliver it
+   * synchronously on the next syscall return. */
+  sighandler_t handler = p->sig_handlers[sig];
+  if (handler != (sighandler_t)0 /* SIG_DFL */ &&
+      handler != (sighandler_t)1 /* SIG_IGN */) {
+    klogf("  Signal %u posted (handler at %x)", (uint32_t)sig,
+          (uint32_t)(uintptr_t)handler);
+    p->sig_pending |= (1u << sig);
+    return 1; /* resume — signal_check will deliver the handler */
+  }
 
-    /* Print crash report (klogf supports: %s %u %x %% only) */
-    klogf("\n*** %s ***", fault_name(fault_type));
-    if (p)
-        klogf("  Process %u (%s)", (uint32_t)p->pid, p->comm);
-    klogf("  PC=%x  SR=%x", pc, (uint32_t)sr);
-    if (is_group0)
-        klogf("  Fault addr=%x  FC=%x", fault_addr, (uint32_t)exc[0]);
-    klogf("  d0=%x d1=%x d2=%x d3=%x",
-          regs[0], regs[1], regs[2], regs[3]);
-    klogf("  d4=%x d5=%x d6=%x d7=%x",
-          regs[4], regs[5], regs[6], regs[7]);
-    klogf("  a0=%x a1=%x a2=%x a3=%x",
-          regs[8], regs[9], regs[10], regs[11]);
-    klogf("  a4=%x a5=%x a6=%x",
-          regs[12], regs[13], regs[14]);
-
-    /* Kernel fault → unrecoverable */
-    if (!p || p->pid == 0) {
-        klogf("  Kernel fault — halting.");
-        return 0;
-    }
-
-    /* Subsystem crash hook — lets personality layers (e.g. Human68k _ERRJVC)
-     * handle faults before the default POSIX signal path. */
-    {
-        const subsys_ops_t *ops = p->subsys < SUBSYS_MAX
-                                  ? subsys_ops_table[p->subsys] : 0;
-        if (ops && ops->on_crash) {
-            int rc = ops->on_crash(p, regs, exc, is_group0);
-            if (rc)
-                return rc;
-        }
-    }
-
-    /* Check if the process has a signal handler installed.
-     * If so, post the signal and let signal_check() deliver it
-     * synchronously on the next syscall return. */
-    sighandler_t handler = p->sig_handlers[sig];
-    if (handler != (sighandler_t)0 /* SIG_DFL */ &&
-        handler != (sighandler_t)1 /* SIG_IGN */) {
-        klogf("  Signal %u posted (handler at %x)",
-              (uint32_t)sig, (uint32_t)(uintptr_t)handler);
-        p->sig_pending |= (1u << sig);
-        return 1;  /* resume — signal_check will deliver the handler */
-    }
-
-    klogf("  Killed (exit status %u)", (uint32_t)(128 + sig));
-    sys_exit(128 + sig);
-    return 1;
+  klogf("  Killed (exit status %u)", (uint32_t)(128 + sig));
+  sys_exit(128 + sig);
+  return 1;
 }
 
 /*
@@ -179,29 +188,27 @@ int m68k_crash_handler(int fault_type, uint32_t *regs)
  *          1 = process killed (schedule next)
  *          2 = DOS call handled (restore regs, rte)
  */
-int m68k_fline_dispatch(uint32_t *regs, uint32_t usp)
-{
-    pcb_t *p = current;
+int m68k_fline_dispatch(uint32_t *regs, uint32_t usp) {
+  pcb_t *p = current;
 
 #ifdef PPAP_ENABLE_HUMAN68K
-    if (p && p->subsys == SUBSYS_HUMAN68K) {
-        /* Read the faulting PC from the exception frame.
-         * PC is at byte offset 62 (60 bytes of regs + 2 bytes SR). */
-        uint8_t *frame = (uint8_t *)regs;
-        uint32_t pc = *(uint32_t *)(frame + 62);
-        uint16_t opcode = *(volatile uint16_t *)(uintptr_t)pc;
+  if (p && p->subsys == SUBSYS_HUMAN68K) {
+    /* Read the faulting PC from the exception frame.
+     * PC is at byte offset 62 (60 bytes of regs + 2 bytes SR). */
+    uint8_t *frame = (uint8_t *)regs;
+    uint32_t pc = *(uint32_t *)(frame + 62);
+    uint16_t opcode = *(volatile uint16_t *)(uintptr_t)pc;
 
-        /* User code runs in user mode — USP has the DOS call arguments
-         * that were pushed before the F-line instruction. */
-        int rc = human68k_dos_dispatch(regs, usp, opcode);
-        if (rc > 0)
-            return rc;  /* 1 = exited, 2 = handled */
-        /* rc < 0: unhandled DOS call — fall through to crash */
-    }
+    /* User code runs in user mode — USP has the DOS call arguments
+     * that were pushed before the F-line instruction. */
+    int rc = human68k_dos_dispatch(regs, usp, opcode);
+    if (rc > 0) return rc; /* 1 = exited, 2 = handled */
+    /* rc < 0: unhandled DOS call — fall through to crash */
+  }
 #else
-    (void)p;  /* Suppress unused variable warning */
+  (void)p; /* Suppress unused variable warning */
 #endif
 
-    /* Non-Human68k process or unhandled: crash with SIGILL */
-    return m68k_crash_handler(11, regs);
+  /* Non-Human68k process or unhandled: crash with SIGILL */
+  return m68k_crash_handler(11, regs);
 }

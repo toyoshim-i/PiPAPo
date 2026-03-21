@@ -31,7 +31,7 @@ void klogf(const char *fmt, ...);
 
 #ifdef PPAP_DEBUG_LOG
 #define PPAP_DEBUG_LOGF(tag, fmt, ...) \
-    klogf("[" tag "] " fmt "\n", ##__VA_ARGS__)
+  klogf("[" tag "] " fmt "\n", ##__VA_ARGS__)
 #else
 #define PPAP_DEBUG_LOGF(tag, fmt, ...) ((void)0)
 #endif

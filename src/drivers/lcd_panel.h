@@ -10,8 +10,8 @@
 
 #include <stdint.h>
 
-#define LCD_WIDTH   320
-#define LCD_HEIGHT  320
+#define LCD_WIDTH 320
+#define LCD_HEIGHT 320
 
 /* Initialize the LCD controller (reset + init sequence + black fill). */
 void lcd_init(void);

@@ -14,260 +14,241 @@
  */
 
 #include "vfs.h"
-#include "../mm/kmem.h"
-#include "../spinlock.h"   /* SPIN_VFS */
-#include "../klog.h"
-#include "../errno.h"
+
 #include <stddef.h>
 
-/* ── Static storage ───────────────────────────────────────────────────────── */
+#include "../errno.h"
+#include "../klog.h"
+#include "../mm/kmem.h"
+#include "../spinlock.h" /* SPIN_VFS */
+
+/* ── Static storage ─────────────────────────────────────────────────────────
+ */
 
 /* Mount table — up to VFS_MOUNT_MAX entries.  Zero-initialised by BSS. */
 mount_entry_t vfs_mount_table[VFS_MOUNT_MAX];
 
 /* Vnode pool — VFS_VNODE_MAX objects managed by kmem. */
-static vnode_t        vnode_storage[VFS_VNODE_MAX];
-static kmem_pool_t    vnode_pool;
+static vnode_t vnode_storage[VFS_VNODE_MAX];
+static kmem_pool_t vnode_pool;
 
 /* Number of active mounts (for diagnostics). */
 static uint32_t mount_count;
 
-/* ── vfs_init ─────────────────────────────────────────────────────────────── */
+/* ── vfs_init ───────────────────────────────────────────────────────────────
+ */
 
-void vfs_init(void)
-{
-    /* Zero the mount table (BSS guarantees this, but be explicit) */
-    for (int i = 0; i < VFS_MOUNT_MAX; i++)
-        vfs_mount_table[i].active = 0;
-    mount_count = 0;
+void vfs_init(void) {
+  /* Zero the mount table (BSS guarantees this, but be explicit) */
+  for (int i = 0; i < VFS_MOUNT_MAX; i++) vfs_mount_table[i].active = 0;
+  mount_count = 0;
 
-    /* Initialise the vnode slab pool */
-    kmem_pool_init(&vnode_pool, vnode_storage, sizeof(vnode_t), VFS_VNODE_MAX);
+  /* Initialise the vnode slab pool */
+  kmem_pool_init(&vnode_pool, vnode_storage, sizeof(vnode_t), VFS_VNODE_MAX);
 
-    klogf("VFS: initialised (%u vnodes, %u mount slots)\n",
-          (uint32_t)VFS_VNODE_MAX, (uint32_t)VFS_MOUNT_MAX);
+  klogf("VFS: initialised (%u vnodes, %u mount slots)\n",
+        (uint32_t)VFS_VNODE_MAX, (uint32_t)VFS_MOUNT_MAX);
 }
 
-/* ── vnode_alloc / vnode_ref / vnode_put ───────────────────────────────────── */
+/* ── vnode_alloc / vnode_ref / vnode_put ─────────────────────────────────────
+ */
 
-vnode_t *vnode_alloc(void)
-{
-    uint32_t saved = spin_lock_irqsave(SPIN_VFS);
-    vnode_t *vn = kmem_alloc(&vnode_pool);
-    if (!vn) {
-        spin_unlock_irqrestore(SPIN_VFS, saved);
-        return NULL;
-    }
-    /* Zero the vnode and set initial refcnt */
-    vn->type     = VNODE_FILE;
-    vn->size     = 0;
-    vn->mode     = 0;
-    vn->ino      = 0;
-    vn->refcnt   = 1;
-    vn->fs_priv  = NULL;
-    vn->mount    = NULL;
-    vn->xip_addr = NULL;
+vnode_t *vnode_alloc(void) {
+  uint32_t saved = spin_lock_irqsave(SPIN_VFS);
+  vnode_t *vn = kmem_alloc(&vnode_pool);
+  if (!vn) {
     spin_unlock_irqrestore(SPIN_VFS, saved);
-    return vn;
+    return NULL;
+  }
+  /* Zero the vnode and set initial refcnt */
+  vn->type = VNODE_FILE;
+  vn->size = 0;
+  vn->mode = 0;
+  vn->ino = 0;
+  vn->refcnt = 1;
+  vn->fs_priv = NULL;
+  vn->mount = NULL;
+  vn->xip_addr = NULL;
+  spin_unlock_irqrestore(SPIN_VFS, saved);
+  return vn;
 }
 
-void vnode_ref(vnode_t *vn)
-{
-    if (!vn)
-        return;
-    uint32_t saved = spin_lock_irqsave(SPIN_VFS);
-    vn->refcnt++;
-    spin_unlock_irqrestore(SPIN_VFS, saved);
+void vnode_ref(vnode_t *vn) {
+  if (!vn) return;
+  uint32_t saved = spin_lock_irqsave(SPIN_VFS);
+  vn->refcnt++;
+  spin_unlock_irqrestore(SPIN_VFS, saved);
 }
 
-void vnode_put(vnode_t *vn)
-{
-    if (!vn)
-        return;
-    uint32_t saved = spin_lock_irqsave(SPIN_VFS);
-    if (vn->refcnt > 0)
-        vn->refcnt--;
-    if (vn->refcnt == 0)
-        kmem_free(&vnode_pool, vn);
-    spin_unlock_irqrestore(SPIN_VFS, saved);
+void vnode_put(vnode_t *vn) {
+  if (!vn) return;
+  uint32_t saved = spin_lock_irqsave(SPIN_VFS);
+  if (vn->refcnt > 0) vn->refcnt--;
+  if (vn->refcnt == 0) kmem_free(&vnode_pool, vn);
+  spin_unlock_irqrestore(SPIN_VFS, saved);
 }
 
-uint32_t vnode_free_count(void)
-{
-    return kmem_free_count(&vnode_pool);
-}
+uint32_t vnode_free_count(void) { return kmem_free_count(&vnode_pool); }
 
-/* ── vfs_mount ────────────────────────────────────────────────────────────── */
+/* ── vfs_mount ──────────────────────────────────────────────────────────────
+ */
 
 int vfs_mount(const char *path, const vfs_ops_t *ops, uint8_t flags,
-              const void *dev_data)
-{
-    if (!path || !ops)
-        return -EINVAL;
+              const void *dev_data) {
+  if (!path || !ops) return -EINVAL;
 
-    uint32_t saved = spin_lock_irqsave(SPIN_VFS);
+  uint32_t saved = spin_lock_irqsave(SPIN_VFS);
 
-    /* Find a free slot */
-    mount_entry_t *mnt = NULL;
-    for (int i = 0; i < VFS_MOUNT_MAX; i++) {
-        if (!vfs_mount_table[i].active) {
-            mnt = &vfs_mount_table[i];
-            break;
-        }
+  /* Find a free slot */
+  mount_entry_t *mnt = NULL;
+  for (int i = 0; i < VFS_MOUNT_MAX; i++) {
+    if (!vfs_mount_table[i].active) {
+      mnt = &vfs_mount_table[i];
+      break;
     }
-    if (!mnt) {
-        spin_unlock_irqrestore(SPIN_VFS, saved);
-        return -ENOMEM;
-    }
-
-    /* Copy the mount point path */
-    size_t plen = __builtin_strlen(path);
-    if (plen >= VFS_PATH_MAX) {
-        spin_unlock_irqrestore(SPIN_VFS, saved);
-        return -ENAMETOOLONG;
-    }
-
-    /* Strip trailing '/' except for the root mount */
-    while (plen > 1 && path[plen - 1] == '/')
-        plen--;
-
-    __builtin_memcpy(mnt->path, path, plen);
-    mnt->path[plen] = '\0';
-    mnt->path_len = (uint8_t)plen;
-    mnt->flags    = flags;
-    mnt->ops      = ops;
-    mnt->root     = NULL;
-    mnt->sb_priv  = NULL;
-
-    /* Release SPIN_VFS before calling the FS mount callback.
-     * The callback may call vnode_alloc() which also acquires SPIN_VFS —
-     * RP2040 hardware spinlocks are NOT re-entrant (same-core re-acquire
-     * returns 0 → infinite spin).  The slot is safe: it's not yet active,
-     * so no other code path will find or modify it. */
+  }
+  if (!mnt) {
     spin_unlock_irqrestore(SPIN_VFS, saved);
+    return -ENOMEM;
+  }
 
-    /* Let the FS driver initialise */
-    int err = 0;
-    if (ops->mount)
-        err = ops->mount(mnt, dev_data);
-    if (err) {
-        uint32_t s2 = spin_lock_irqsave(SPIN_VFS);
-        mnt->active = 0;
-        spin_unlock_irqrestore(SPIN_VFS, s2);
-        return err;
-    }
-
-    saved = spin_lock_irqsave(SPIN_VFS);
-    mnt->active = 1;
-    mount_count++;
+  /* Copy the mount point path */
+  size_t plen = __builtin_strlen(path);
+  if (plen >= VFS_PATH_MAX) {
     spin_unlock_irqrestore(SPIN_VFS, saved);
+    return -ENAMETOOLONG;
+  }
 
-    return 0;
+  /* Strip trailing '/' except for the root mount */
+  while (plen > 1 && path[plen - 1] == '/') plen--;
+
+  __builtin_memcpy(mnt->path, path, plen);
+  mnt->path[plen] = '\0';
+  mnt->path_len = (uint8_t)plen;
+  mnt->flags = flags;
+  mnt->ops = ops;
+  mnt->root = NULL;
+  mnt->sb_priv = NULL;
+
+  /* Release SPIN_VFS before calling the FS mount callback.
+   * The callback may call vnode_alloc() which also acquires SPIN_VFS —
+   * RP2040 hardware spinlocks are NOT re-entrant (same-core re-acquire
+   * returns 0 → infinite spin).  The slot is safe: it's not yet active,
+   * so no other code path will find or modify it. */
+  spin_unlock_irqrestore(SPIN_VFS, saved);
+
+  /* Let the FS driver initialise */
+  int err = 0;
+  if (ops->mount) err = ops->mount(mnt, dev_data);
+  if (err) {
+    uint32_t s2 = spin_lock_irqsave(SPIN_VFS);
+    mnt->active = 0;
+    spin_unlock_irqrestore(SPIN_VFS, s2);
+    return err;
+  }
+
+  saved = spin_lock_irqsave(SPIN_VFS);
+  mnt->active = 1;
+  mount_count++;
+  spin_unlock_irqrestore(SPIN_VFS, saved);
+
+  return 0;
 }
 
 /* ── vfs_umount ──────────────────────────────────────────────────────────── */
 
-int vfs_umount(const char *path)
-{
-    if (!path)
-        return -EINVAL;
+int vfs_umount(const char *path) {
+  if (!path) return -EINVAL;
 
-    /* Cannot unmount root */
-    if (path[0] == '/' && path[1] == '\0')
-        return -EINVAL;
+  /* Cannot unmount root */
+  if (path[0] == '/' && path[1] == '\0') return -EINVAL;
 
-    uint32_t saved = spin_lock_irqsave(SPIN_VFS);
+  uint32_t saved = spin_lock_irqsave(SPIN_VFS);
 
-    /* Find the mount entry matching path exactly */
-    mount_entry_t *mnt = NULL;
-    for (int i = 0; i < VFS_MOUNT_MAX; i++) {
-        mount_entry_t *m = &vfs_mount_table[i];
-        if (!m->active)
-            continue;
-        if (__builtin_strcmp(m->path, path) == 0) {
-            mnt = m;
-            break;
-        }
+  /* Find the mount entry matching path exactly */
+  mount_entry_t *mnt = NULL;
+  for (int i = 0; i < VFS_MOUNT_MAX; i++) {
+    mount_entry_t *m = &vfs_mount_table[i];
+    if (!m->active) continue;
+    if (__builtin_strcmp(m->path, path) == 0) {
+      mnt = m;
+      break;
     }
-    if (!mnt) {
-        spin_unlock_irqrestore(SPIN_VFS, saved);
-        return -ENOENT;
-    }
-
-    /* Check no vnodes still reference this mount (scan vnode pool) */
-    for (int i = 0; i < VFS_VNODE_MAX; i++) {
-        if (vnode_storage[i].refcnt > 0 &&
-            vnode_storage[i].mount == mnt &&
-            &vnode_storage[i] != mnt->root) {
-            spin_unlock_irqrestore(SPIN_VFS, saved);
-            return -EBUSY;
-        }
-    }
-
-    /* Release root vnode and deactivate.
-     * Note: vnode_put() also acquires SPIN_VFS, but we already hold it.
-     * Use kmem_free() directly to avoid recursive lock. */
-    if (mnt->root) {
-        if (mnt->root->refcnt > 0)
-            mnt->root->refcnt--;
-        if (mnt->root->refcnt == 0)
-            kmem_free(&vnode_pool, mnt->root);
-    }
-    mnt->root   = NULL;
-    mnt->active = 0;
-    mount_count--;
-
+  }
+  if (!mnt) {
     spin_unlock_irqrestore(SPIN_VFS, saved);
+    return -ENOENT;
+  }
 
-    klogf("VFS: unmounted %s\n", path);
+  /* Check no vnodes still reference this mount (scan vnode pool) */
+  for (int i = 0; i < VFS_VNODE_MAX; i++) {
+    if (vnode_storage[i].refcnt > 0 && vnode_storage[i].mount == mnt &&
+        &vnode_storage[i] != mnt->root) {
+      spin_unlock_irqrestore(SPIN_VFS, saved);
+      return -EBUSY;
+    }
+  }
 
-    return 0;
+  /* Release root vnode and deactivate.
+   * Note: vnode_put() also acquires SPIN_VFS, but we already hold it.
+   * Use kmem_free() directly to avoid recursive lock. */
+  if (mnt->root) {
+    if (mnt->root->refcnt > 0) mnt->root->refcnt--;
+    if (mnt->root->refcnt == 0) kmem_free(&vnode_pool, mnt->root);
+  }
+  mnt->root = NULL;
+  mnt->active = 0;
+  mount_count--;
+
+  spin_unlock_irqrestore(SPIN_VFS, saved);
+
+  klogf("VFS: unmounted %s\n", path);
+
+  return 0;
 }
 
-/* ── vfs_find_mount ───────────────────────────────────────────────────────── */
+/* ── vfs_find_mount ─────────────────────────────────────────────────────────
+ */
 
-mount_entry_t *vfs_find_mount(const char *path, const char **remainder)
-{
-    mount_entry_t *best = NULL;
-    uint8_t best_len = 0;
+mount_entry_t *vfs_find_mount(const char *path, const char **remainder) {
+  mount_entry_t *best = NULL;
+  uint8_t best_len = 0;
 
-    for (int i = 0; i < VFS_MOUNT_MAX; i++) {
-        mount_entry_t *m = &vfs_mount_table[i];
-        if (!m->active)
-            continue;
+  for (int i = 0; i < VFS_MOUNT_MAX; i++) {
+    mount_entry_t *m = &vfs_mount_table[i];
+    if (!m->active) continue;
 
-        uint8_t mlen = m->path_len;
+    uint8_t mlen = m->path_len;
 
-        /* Root mount "/" matches everything */
-        if (mlen == 1 && m->path[0] == '/') {
-            if (!best || mlen > best_len) {
-                best = m;
-                best_len = mlen;
-            }
-            continue;
-        }
-
-        /* Check if the mount path is a prefix of the lookup path.
-         * The character after the prefix must be '/' or '\0' to avoid
-         * matching "/dev" against "/device". */
-        if (__builtin_strncmp(path, m->path, mlen) == 0) {
-            char next = path[mlen];
-            if (next == '/' || next == '\0') {
-                if (mlen > best_len) {
-                    best = m;
-                    best_len = mlen;
-                }
-            }
-        }
+    /* Root mount "/" matches everything */
+    if (mlen == 1 && m->path[0] == '/') {
+      if (!best || mlen > best_len) {
+        best = m;
+        best_len = mlen;
+      }
+      continue;
     }
 
-    if (best && remainder) {
-        const char *r = path + best_len;
-        /* Skip leading '/' in the remainder */
-        while (*r == '/')
-            r++;
-        *remainder = r;
+    /* Check if the mount path is a prefix of the lookup path.
+     * The character after the prefix must be '/' or '\0' to avoid
+     * matching "/dev" against "/device". */
+    if (__builtin_strncmp(path, m->path, mlen) == 0) {
+      char next = path[mlen];
+      if (next == '/' || next == '\0') {
+        if (mlen > best_len) {
+          best = m;
+          best_len = mlen;
+        }
+      }
     }
+  }
 
-    return best;
+  if (best && remainder) {
+    const char *r = path + best_len;
+    /* Skip leading '/' in the remainder */
+    while (*r == '/') r++;
+    *remainder = r;
+  }
+
+  return best;
 }

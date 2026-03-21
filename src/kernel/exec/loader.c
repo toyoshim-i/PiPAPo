@@ -3,13 +3,14 @@
  */
 
 #include "loader.h"
+
 #include "elf_loader.h"
 #ifdef PPAP_ENABLE_CPM
 #include "com_loader.h"
 #endif
 #ifdef PPAP_ENABLE_HUMAN68K
-#include "x_loader.h"
 #include "r_loader.h"
+#include "x_loader.h"
 #endif
 #ifdef PPAP_ENABLE_SOS
 #include "sos_loader.h"
@@ -24,8 +25,7 @@ const loader_t* loader_registry[] = {
     &com_loader,
 #endif
 #ifdef PPAP_ENABLE_HUMAN68K
-    &x_loader,
-    &r_loader,
+    &x_loader,        &r_loader,
 #endif
 #ifdef PPAP_ENABLE_SOS
     &sos_loader,
@@ -33,6 +33,4 @@ const loader_t* loader_registry[] = {
 #ifdef PPAP_ENABLE_ECPU_M68K
     &m68k_emu_loader,
 #endif
-    &elf_loader,
-    NULL
-};
+    &elf_loader,      NULL};

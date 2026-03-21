@@ -9,8 +9,10 @@
  */
 
 #include "human68k_loader.h"
-#include "kernel/endian.h"
+
 #include <string.h>
+
+#include "kernel/endian.h"
 
 /* ── Memory layout utilities ────────────────────────────────────────────── */
 
@@ -28,53 +30,50 @@
  *   image_size  — size of loaded image (text + data + bss)
  *   path        — full path to executable (for copying to path field)
  */
-void x68k_setup_pmb(uint8_t *base, uint32_t total_bytes,
-                    uint32_t image_size, const char *path)
-{
-    /* PMB offset: image starts at base+0x100 */
-    uint32_t base_u = (uint32_t)(uintptr_t)base;
-    uint32_t end_u  = base_u + total_bytes;
-    uint32_t text_u = (uint32_t)(uintptr_t)(base + 0x100);
-    uint32_t bss_u  = text_u + image_size;
-    uint32_t heap_u = bss_u;
+void x68k_setup_pmb(uint8_t *base, uint32_t total_bytes, uint32_t image_size,
+                    const char *path) {
+  /* PMB offset: image starts at base+0x100 */
+  uint32_t base_u = (uint32_t)(uintptr_t)base;
+  uint32_t end_u = base_u + total_bytes;
+  uint32_t text_u = (uint32_t)(uintptr_t)(base + 0x100);
+  uint32_t bss_u = text_u + image_size;
+  uint32_t heap_u = bss_u;
 
-    /* MMB header (0x00–0x0F) */
-    be32_store(base + 0x00, 0);           /* prev = 0 (first) */
-    be32_store(base + 0x04, base_u);      /* owner = self */
-    be32_store(base + 0x08, end_u);       /* block end + 1 */
-    be32_store(base + 0x0C, 0);           /* next = 0 (last) */
+  /* MMB header (0x00–0x0F) */
+  be32_store(base + 0x00, 0);      /* prev = 0 (first) */
+  be32_store(base + 0x04, base_u); /* owner = self */
+  be32_store(base + 0x08, end_u);  /* block end + 1 */
+  be32_store(base + 0x0C, 0);      /* next = 0 (last) */
 
-    /* PMB fields (0x10–0xFF) */
-    be32_store(base + 0x10, 0xFFFFFFFF);  /* env = -1 (none) */
-    /* 0x14: exit handler — filled when F-line bridge is ready */
-    be32_store(base + 0x20, base_u + 0x6C); /* cmdline (empty LASCIIZ) */
-    /* 0x24: file handle bitmap — stdin/stdout/stderr open */
-    base[0x24] = 0x07;  /* bits 0,1,2 set = handles 0,1,2 */
-    /* 0x30–0x38: segment addresses */
-    be32_store(base + 0x30, bss_u);       /* BSS start */
-    be32_store(base + 0x34, heap_u);      /* heap start */
-    be32_store(base + 0x38, end_u);       /* initial stack (top) */
+  /* PMB fields (0x10–0xFF) */
+  be32_store(base + 0x10, 0xFFFFFFFF); /* env = -1 (none) */
+  /* 0x14: exit handler — filled when F-line bridge is ready */
+  be32_store(base + 0x20, base_u + 0x6C); /* cmdline (empty LASCIIZ) */
+  /* 0x24: file handle bitmap — stdin/stdout/stderr open */
+  base[0x24] = 0x07; /* bits 0,1,2 set = handles 0,1,2 */
+  /* 0x30–0x38: segment addresses */
+  be32_store(base + 0x30, bss_u);  /* BSS start */
+  be32_store(base + 0x34, heap_u); /* heap start */
+  be32_store(base + 0x38, end_u);  /* initial stack (top) */
 
-    /* 0x82: execution file path (directory portion, max 65 chars + NUL) */
-    if (path) {
-        const char *last_slash = path;
-        for (const char *s = path; *s; s++) {
-            if (*s == '/')
-                last_slash = s;
-        }
-        size_t dir_len = (size_t)(last_slash - path);
-        if (dir_len > 65) dir_len = 65;
-        if (dir_len > 0)
-            memcpy(base + 0x82, path, dir_len);
-        base[0x82 + dir_len] = '\0';
-
-        /* 0xC4: execution file name (max 23 chars + NUL) */
-        const char *bname = last_slash + 1;
-        size_t name_len = strlen(bname);
-        if (name_len > 23) name_len = 23;
-        memcpy(base + 0xC4, bname, name_len);
-        base[0xC4 + name_len] = '\0';
+  /* 0x82: execution file path (directory portion, max 65 chars + NUL) */
+  if (path) {
+    const char *last_slash = path;
+    for (const char *s = path; *s; s++) {
+      if (*s == '/') last_slash = s;
     }
+    size_t dir_len = (size_t)(last_slash - path);
+    if (dir_len > 65) dir_len = 65;
+    if (dir_len > 0) memcpy(base + 0x82, path, dir_len);
+    base[0x82 + dir_len] = '\0';
+
+    /* 0xC4: execution file name (max 23 chars + NUL) */
+    const char *bname = last_slash + 1;
+    size_t name_len = strlen(bname);
+    if (name_len > 23) name_len = 23;
+    memcpy(base + 0xC4, bname, name_len);
+    base[0xC4 + name_len] = '\0';
+  }
 }
 
 /* ── Register patching ─────────────────────────────────────────────────── */
@@ -94,15 +93,14 @@ void x68k_setup_pmb(uint8_t *base, uint32_t total_bytes,
  *   entry_ptr   — entry point address (text base or image start)
  */
 void x68k_setup_registers(uint32_t sp, uint32_t pmb_base, uint32_t block_end,
-                          uint32_t cmdline_ptr, uint32_t entry_ptr)
-{
-    /* Software frame (low → high from sp):
-     *   [0..7]  d0–d7    [8..14] a0–a6    then SR(2)+PC(4)
-     */
-    uint32_t *sw = (uint32_t *)(uintptr_t)sp;
-    sw[8]  = pmb_base;          /* a0 = PMB */
-    sw[9]  = block_end;         /* a1 = end + 1 */
-    sw[10] = cmdline_ptr;       /* a2 = cmdline */
-    sw[11] = 0xFFFFFFFF;        /* a3 = env (-1) */
-    sw[12] = entry_ptr;         /* a4 = entry point (text base or image start) */
+                          uint32_t cmdline_ptr, uint32_t entry_ptr) {
+  /* Software frame (low → high from sp):
+   *   [0..7]  d0–d7    [8..14] a0–a6    then SR(2)+PC(4)
+   */
+  uint32_t *sw = (uint32_t *)(uintptr_t)sp;
+  sw[8] = pmb_base;     /* a0 = PMB */
+  sw[9] = block_end;    /* a1 = end + 1 */
+  sw[10] = cmdline_ptr; /* a2 = cmdline */
+  sw[11] = 0xFFFFFFFF;  /* a3 = env (-1) */
+  sw[12] = entry_ptr;   /* a4 = entry point (text base or image start) */
 }

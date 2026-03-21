@@ -13,15 +13,15 @@
 /* ── Register access helper ─────────────────────────────────────────────── */
 
 #ifndef REG
-#define REG(addr)  (*(volatile uint32_t *)(uintptr_t)(addr))
+#define REG(addr) (*(volatile uint32_t *)(uintptr_t)(addr))
 #endif
 
 #ifndef REG16
-#define REG16(addr)  (*(volatile uint16_t *)(uintptr_t)(addr))
+#define REG16(addr) (*(volatile uint16_t *)(uintptr_t)(addr))
 #endif
 
 #ifndef REG8
-#define REG8(addr)  (*(volatile uint8_t *)(uintptr_t)(addr))
+#define REG8(addr) (*(volatile uint8_t *)(uintptr_t)(addr))
 #endif
 
 /* ── Status Register (SR) ───────────────────────────────────────────────── *
@@ -41,20 +41,20 @@
  *   0: C (Carry)
  * ────────────────────────────────────────────────────────────────────────── */
 
-#define SR_SUPERVISOR   (1u << 13)   /* S bit: supervisor mode           */
-#define SR_IPL_MASK     0x0700u      /* interrupt priority level mask     */
-#define SR_IPL_SHIFT    8u
-#define SR_IPL_7        0x0700u      /* all interrupts masked (NMI only)  */
-#define SR_TRACE        (1u << 15)   /* T1: trace mode                   */
+#define SR_SUPERVISOR (1u << 13) /* S bit: supervisor mode           */
+#define SR_IPL_MASK 0x0700u      /* interrupt priority level mask     */
+#define SR_IPL_SHIFT 8u
+#define SR_IPL_7 0x0700u    /* all interrupts masked (NMI only)  */
+#define SR_TRACE (1u << 15) /* T1: trace mode                   */
 
 /* Supervisor mode with all interrupts masked */
-#define SR_SUPV_NOIRQ   (SR_SUPERVISOR | SR_IPL_7)    /* 0x2700 */
+#define SR_SUPV_NOIRQ (SR_SUPERVISOR | SR_IPL_7) /* 0x2700 */
 
 /* Supervisor mode with interrupts enabled */
-#define SR_SUPV_IRQ     SR_SUPERVISOR                  /* 0x2000 */
+#define SR_SUPV_IRQ SR_SUPERVISOR /* 0x2000 */
 
 /* User mode with interrupts enabled */
-#define SR_USER         0x0000u
+#define SR_USER 0x0000u
 
 /* ── Exception frame (68000) ────────────────────────────────────────────── *
  *
@@ -72,17 +72,17 @@
 
 /* 68000 exception frame (pushed by hardware) */
 typedef struct {
-    uint16_t sr;            /* saved status register */
-    uint32_t pc;            /* saved program counter */
+  uint16_t sr; /* saved status register */
+  uint32_t pc; /* saved program counter */
 } __attribute__((packed)) m68k_exc_frame_t;
 
 /* ── TRAP instruction numbers ───────────────────────────────────────────── */
 
-#define TRAP_SYSCALL    0   /* TRAP #0: PPAP syscall (matches Linux m68k) */
-#define TRAP_YIELD      1   /* TRAP #1: cooperative yield                 */
+#define TRAP_SYSCALL 0 /* TRAP #0: PPAP syscall (matches Linux m68k) */
+#define TRAP_YIELD 1   /* TRAP #1: cooperative yield                 */
 
 /* Exception vector numbers */
-#define VEC_TRAP0       32  /* TRAP #0 vector number                      */
-#define VEC_TRAP1       33  /* TRAP #1 vector number                      */
+#define VEC_TRAP0 32 /* TRAP #0 vector number                      */
+#define VEC_TRAP1 33 /* TRAP #1 vector number                      */
 
 #endif /* PPAP_ARCH_M68K_IOREGS_H */

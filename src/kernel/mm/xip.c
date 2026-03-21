@@ -25,12 +25,14 @@
  */
 
 #include "xip.h"
-#include "../klog.h"
-#include "arch/ioregs.h"
+
 #include <stdint.h>
 
+#include "../klog.h"
+#include "arch/ioregs.h"
+
 /* Alias: xip.c uses CLKSOURCE name without _CPU suffix for brevity */
-#define SYST_CSR_CLKSOURCE_CPU  SYST_CSR_CLKSOURCE
+#define SYST_CSR_CLKSOURCE_CPU SYST_CSR_CLKSOURCE
 
 /* ==========================================================================
  * XIP functions
@@ -40,31 +42,27 @@
  * xip_add — placed in .text.xip_test so its address (printed by xip_verify)
  * is visibly in the XIP flash window (0x10001xxx on real hardware).
  */
-__attribute__((section(".text.xip_test"), noinline))
-int xip_add(int a, int b)
-{
-    return a + b;
+__attribute__((section(".text.xip_test"), noinline)) int xip_add(int a, int b) {
+  return a + b;
 }
 
 /*
  * xip_bench — runs from XIP flash; measures a tight summation loop with
  * SysTick.  Returns elapsed processor-clock cycles.
  */
-__attribute__((section(".text.xip_test"), noinline))
-uint32_t xip_bench(uint32_t n)
-{
-    SYST_RVR = SYST_MAX;   /* set reload to max */
-    SYST_CVR = 0;          /* writing any value clears CVR and the COUNTFLAG */
-    SYST_CSR = SYST_CSR_CLKSOURCE_CPU | SYST_CSR_ENABLE;
+__attribute__((section(".text.xip_test"), noinline)) uint32_t xip_bench(
+    uint32_t n) {
+  SYST_RVR = SYST_MAX; /* set reload to max */
+  SYST_CVR = 0;        /* writing any value clears CVR and the COUNTFLAG */
+  SYST_CSR = SYST_CSR_CLKSOURCE_CPU | SYST_CSR_ENABLE;
 
-    volatile uint32_t sum = 0;
-    for (uint32_t i = 0; i < n; i++)
-        sum += i;
-    (void)sum;
+  volatile uint32_t sum = 0;
+  for (uint32_t i = 0; i < n; i++) sum += i;
+  (void)sum;
 
-    uint32_t elapsed = (SYST_MAX - SYST_CVR) & SYST_MAX;
-    SYST_CSR = 0;          /* stop SysTick */
-    return elapsed;
+  uint32_t elapsed = (SYST_MAX - SYST_CVR) & SYST_MAX;
+  SYST_CSR = 0; /* stop SysTick */
+  return elapsed;
 }
 
 /*
@@ -80,37 +78,34 @@ uint32_t xip_bench(uint32_t n)
  *   4. PC-relative literals (absolute register addresses) remain valid
  *      because both instructions and literals shift by the same offset.
  */
-__attribute__((section(".ramfunc.sram_bench"), noinline))
-uint32_t sram_bench(uint32_t n)
-{
-    SYST_RVR = SYST_MAX;
-    SYST_CVR = 0;
-    SYST_CSR = SYST_CSR_CLKSOURCE_CPU | SYST_CSR_ENABLE;
+__attribute__((section(".ramfunc.sram_bench"), noinline)) uint32_t sram_bench(
+    uint32_t n) {
+  SYST_RVR = SYST_MAX;
+  SYST_CVR = 0;
+  SYST_CSR = SYST_CSR_CLKSOURCE_CPU | SYST_CSR_ENABLE;
 
-    volatile uint32_t sum = 0;
-    for (uint32_t i = 0; i < n; i++)
-        sum += i;
-    (void)sum;
+  volatile uint32_t sum = 0;
+  for (uint32_t i = 0; i < n; i++) sum += i;
+  (void)sum;
 
-    uint32_t elapsed = (SYST_MAX - SYST_CVR) & SYST_MAX;
-    SYST_CSR = 0;
-    return elapsed;
+  uint32_t elapsed = (SYST_MAX - SYST_CVR) & SYST_MAX;
+  SYST_CSR = 0;
+  return elapsed;
 }
 
 /* ==========================================================================
  * xip_verify — called from mm_init()
  * ========================================================================== */
 
-void xip_verify(void)
-{
-    klogf("XIP: xip_add @ %x\n", (uint32_t)(uintptr_t)xip_add);
+void xip_verify(void) {
+  klogf("XIP: xip_add @ %x\n", (uint32_t)(uintptr_t)xip_add);
 
-    int result = xip_add(3, 4);
-    klogf("XIP: xip_add(3,4) = %u %s\n",
-          (uint32_t)result, result == 7 ? "OK" : "FAIL");
+  int result = xip_add(3, 4);
+  klogf("XIP: xip_add(3,4) = %u %s\n", (uint32_t)result,
+        result == 7 ? "OK" : "FAIL");
 
-    uint32_t flash_cyc = xip_bench(10000);
-    uint32_t sram_cyc  = sram_bench(10000);
-    klogf("XIP: flash bench(10000) = %x cycles\n", flash_cyc);
-    klogf("XIP: sram  bench(10000) = %x cycles\n", sram_cyc);
+  uint32_t flash_cyc = xip_bench(10000);
+  uint32_t sram_cyc = sram_bench(10000);
+  klogf("XIP: flash bench(10000) = %x cycles\n", flash_cyc);
+  klogf("XIP: sram  bench(10000) = %x cycles\n", sram_cyc);
 }

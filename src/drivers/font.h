@@ -15,8 +15,8 @@
 
 #include <stdint.h>
 
-extern const uint8_t font8x16[256][16];  /* 4 KB in .rodata (flash) */
-extern const uint8_t font8x8[256][8];    /* 2 KB in .rodata (flash) */
-extern const uint8_t font4x8[256][8];    /* 2 KB in .rodata (flash) */
+extern const uint8_t font8x16[256][16]; /* 4 KB in .rodata (flash) */
+extern const uint8_t font8x8[256][8];   /* 2 KB in .rodata (flash) */
+extern const uint8_t font4x8[256][8];   /* 2 KB in .rodata (flash) */
 
 #endif /* PPAP_DRIVERS_FONT_H */

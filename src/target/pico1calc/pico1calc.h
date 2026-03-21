@@ -18,31 +18,33 @@
 #ifndef PPAP_TARGET_PICO1CALC_PICO1CALC_H
 #define PPAP_TARGET_PICO1CALC_PICO1CALC_H
 
-/* ── SPI0 / SD card pins ──────────────────────────────────────────────────── */
+/* ── SPI0 / SD card pins ────────────────────────────────────────────────────
+ */
 
-#define PICOCALC_SPI0_RX     16   /* MISO — GP16, FUNCSEL 1 */
-#define PICOCALC_SPI0_CS     17   /* CS   — GP17, manual GPIO */
-#define PICOCALC_SPI0_SCK    18   /* SCK  — GP18, FUNCSEL 1 */
-#define PICOCALC_SPI0_TX     19   /* MOSI — GP19, FUNCSEL 1 */
-#define PICOCALC_SD_CD       22   /* Card detect — GP22, active low */
+#define PICOCALC_SPI0_RX 16  /* MISO — GP16, FUNCSEL 1 */
+#define PICOCALC_SPI0_CS 17  /* CS   — GP17, manual GPIO */
+#define PICOCALC_SPI0_SCK 18 /* SCK  — GP18, FUNCSEL 1 */
+#define PICOCALC_SPI0_TX 19  /* MOSI — GP19, FUNCSEL 1 */
+#define PICOCALC_SD_CD 22    /* Card detect — GP22, active low */
 
 /* ── SPI1 / LCD display ──────────────────────────────────────────────────── */
 
-#define PICOCALC_SPI1_SCK    10   /* SCK  — GP10, FUNCSEL 1 */
-#define PICOCALC_SPI1_TX     11   /* MOSI — GP11, FUNCSEL 1 */
-#define PICOCALC_LCD_CS      13   /* CS   — GP13, manual GPIO */
-#define PICOCALC_LCD_DC      14   /* DC   — GP14, manual GPIO */
-#define PICOCALC_LCD_RST     15   /* RST  — GP15, manual GPIO */
+#define PICOCALC_SPI1_SCK 10 /* SCK  — GP10, FUNCSEL 1 */
+#define PICOCALC_SPI1_TX 11  /* MOSI — GP11, FUNCSEL 1 */
+#define PICOCALC_LCD_CS 13   /* CS   — GP13, manual GPIO */
+#define PICOCALC_LCD_DC 14   /* DC   — GP14, manual GPIO */
+#define PICOCALC_LCD_RST 15  /* RST  — GP15, manual GPIO */
 
 /* ── I2C1 / Keyboard (STM32 co-processor) ────────────────────────────────── */
 
-#define PICOCALC_I2C1_SDA     6   /* SDA — GP6, FUNCSEL 3 */
-#define PICOCALC_I2C1_SCL     7   /* SCL — GP7, FUNCSEL 3 */
+#define PICOCALC_I2C1_SDA 6 /* SDA — GP6, FUNCSEL 3 */
+#define PICOCALC_I2C1_SCL 7 /* SCL — GP7, FUNCSEL 3 */
 
-/* ── GPIO function select values ──────────────────────────────────────────── */
+/* ── GPIO function select values ────────────────────────────────────────────
+ */
 
-#define GPIO_FUNC_SPI        1   /* SPI function (FUNCSEL = 1) */
-#define GPIO_FUNC_I2C        3   /* I2C function (FUNCSEL = 3) */
-#define GPIO_FUNC_SIO        5   /* SIO — manual GPIO (FUNCSEL = 5) */
+#define GPIO_FUNC_SPI 1 /* SPI function (FUNCSEL = 1) */
+#define GPIO_FUNC_I2C 3 /* I2C function (FUNCSEL = 3) */
+#define GPIO_FUNC_SIO 5 /* SIO — manual GPIO (FUNCSEL = 5) */
 
 #endif /* PPAP_TARGET_PICO1CALC_PICO1CALC_H */

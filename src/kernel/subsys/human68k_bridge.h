@@ -9,27 +9,28 @@
 #define PPAP_KERNEL_SUBSYS_HUMAN68K_BRIDGE_H
 
 #include <stdint.h>
+
 #include "subsys.h"
 
 /*
  * Per-process Human68k state (stored in pcb_t::subsys_data).
  * Contains DOS vectors, dynamic memory allocations, etc.
  */
-#define H68K_MALLOC_MAX  8   /* max dynamic _MALLOC blocks per process */
+#define H68K_MALLOC_MAX 8 /* max dynamic _MALLOC blocks per process */
 
 typedef struct {
-    uint32_t exitvc;    /* _EXITVC ($FFF0): exit handler       */
-    uint32_t ctrlvc;    /* _CTRLVC ($FFF1): Ctrl+C handler     */
-    uint32_t errjvc;    /* _ERRJVC ($FFF2): error abort handler*/
+  uint32_t exitvc; /* _EXITVC ($FFF0): exit handler       */
+  uint32_t ctrlvc; /* _CTRLVC ($FFF1): Ctrl+C handler     */
+  uint32_t errjvc; /* _ERRJVC ($FFF2): error abort handler*/
 
-    /* Dynamic allocations from _MALLOC (tracked for _MFREE) */
-    struct {
-        uint8_t *base;      /* raw page base (NULL = free slot) */
-        uint32_t n_pages;   /* number of pages in this block    */
-    } mallocs[H68K_MALLOC_MAX];
+  /* Dynamic allocations from _MALLOC (tracked for _MFREE) */
+  struct {
+    uint8_t *base;    /* raw page base (NULL = free slot) */
+    uint32_t n_pages; /* number of pages in this block    */
+  } mallocs[H68K_MALLOC_MAX];
 
-    /* _FILES/_NFILES: directory path for the current search */
-    char files_dir[128];
+  /* _FILES/_NFILES: directory path for the current search */
+  char files_dir[128];
 } h68k_proc_t;
 
 /* Subsystem ops for Human68k — registered into subsys_ops_table[] */

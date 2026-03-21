@@ -14,209 +14,203 @@
  * wakes the other end so it can detect EOF / EPIPE.
  */
 
-#include "file.h"
-#include "fd.h"
-#include "../proc/proc.h"
-#include "../proc/sched.h"
-#include "../syscall/syscall.h"
-#include "../errno.h"
 #include <stdint.h>
 #include <string.h>
 
-/* ── Pipe configuration ───────────────────────────────────────────────────── */
+#include "../errno.h"
+#include "../proc/proc.h"
+#include "../proc/sched.h"
+#include "../syscall/syscall.h"
+#include "fd.h"
+#include "file.h"
 
-#define PIPE_BUF_SIZE  512u   /* power of 2 for cheap modulo via & mask */
-#define PIPE_MASK      (PIPE_BUF_SIZE - 1u)
-#define PIPE_MAX         4    /* max concurrent pipes                   */
+/* ── Pipe configuration ─────────────────────────────────────────────────────
+ */
 
-/* ── Pipe structure ───────────────────────────────────────────────────────── */
+#define PIPE_BUF_SIZE 512u /* power of 2 for cheap modulo via & mask */
+#define PIPE_MASK (PIPE_BUF_SIZE - 1u)
+#define PIPE_MAX 4 /* max concurrent pipes                   */
+
+/* ── Pipe structure ─────────────────────────────────────────────────────────
+ */
 
 typedef struct {
-    uint8_t   buf[PIPE_BUF_SIZE];
-    uint16_t  head;       /* write position (producer advances) */
-    uint16_t  tail;       /* read position  (consumer advances) */
-    uint8_t   readers;    /* number of open read ends  */
-    uint8_t   writers;    /* number of open write ends */
-    uint8_t   in_use;     /* 1 = allocated, 0 = free   */
+  uint8_t buf[PIPE_BUF_SIZE];
+  uint16_t head;   /* write position (producer advances) */
+  uint16_t tail;   /* read position  (consumer advances) */
+  uint8_t readers; /* number of open read ends  */
+  uint8_t writers; /* number of open write ends */
+  uint8_t in_use;  /* 1 = allocated, 0 = free   */
 } pipe_t;
 
-static pipe_t pipe_pool[PIPE_MAX];   /* ~2 KB in BSS */
+static pipe_t pipe_pool[PIPE_MAX]; /* ~2 KB in BSS */
 
-/* ── Pool helpers ─────────────────────────────────────────────────────────── */
+/* ── Pool helpers ───────────────────────────────────────────────────────────
+ */
 
-static pipe_t *pipe_alloc(void)
-{
-    for (int i = 0; i < PIPE_MAX; i++) {
-        if (!pipe_pool[i].in_use) {
-            pipe_t *p = &pipe_pool[i];
-            memset(p, 0, sizeof(*p));
-            p->in_use  = 1;
-            p->readers = 1;
-            p->writers = 1;
-            return p;
-        }
+static pipe_t *pipe_alloc(void) {
+  for (int i = 0; i < PIPE_MAX; i++) {
+    if (!pipe_pool[i].in_use) {
+      pipe_t *p = &pipe_pool[i];
+      memset(p, 0, sizeof(*p));
+      p->in_use = 1;
+      p->readers = 1;
+      p->writers = 1;
+      return p;
     }
-    return NULL;
+  }
+  return NULL;
 }
 
-static void pipe_free(pipe_t *p)
-{
-    p->in_use = 0;
+static void pipe_free(pipe_t *p) { p->in_use = 0; }
+
+static uint16_t pipe_used(pipe_t *p) {
+  return (uint16_t)((p->head - p->tail) & PIPE_MASK);
 }
 
-static uint16_t pipe_used(pipe_t *p)
-{
-    return (uint16_t)((p->head - p->tail) & PIPE_MASK);
+static uint16_t pipe_space(pipe_t *p) {
+  /* Keep 1-byte gap to distinguish full from empty */
+  return (uint16_t)(PIPE_BUF_SIZE - 1u - pipe_used(p));
 }
 
-static uint16_t pipe_space(pipe_t *p)
-{
-    /* Keep 1-byte gap to distinguish full from empty */
-    return (uint16_t)(PIPE_BUF_SIZE - 1u - pipe_used(p));
-}
+/* ── File operations ────────────────────────────────────────────────────────
+ */
 
-/* ── File operations ──────────────────────────────────────────────────────── */
+static long pipe_read(struct file *f, char *buf, size_t n) {
+  pipe_t *p = f->priv;
+  uint16_t avail = pipe_used(p);
 
-static long pipe_read(struct file *f, char *buf, size_t n)
-{
-    pipe_t *p = f->priv;
-    uint16_t avail = pipe_used(p);
-
-    if (avail > 0) {
-        /* Copy min(avail, n) bytes from ring buffer */
-        size_t count = (n < avail) ? n : avail;
-        for (size_t i = 0; i < count; i++) {
-            buf[i] = (char)p->buf[p->tail];
-            p->tail = (uint16_t)((p->tail + 1u) & PIPE_MASK);
-        }
-        /* Wake any blocked writers — we freed space */
-        sched_wakeup(p);
-        return (long)count;
+  if (avail > 0) {
+    /* Copy min(avail, n) bytes from ring buffer */
+    size_t count = (n < avail) ? n : avail;
+    for (size_t i = 0; i < count; i++) {
+      buf[i] = (char)p->buf[p->tail];
+      p->tail = (uint16_t)((p->tail + 1u) & PIPE_MASK);
     }
-
-    /* Buffer empty */
-    if (p->writers == 0)
-        return 0;   /* EOF — no writers left */
-
-    /* Block: wait for data */
-    current->wait_channel = p;
-    current->state = PROC_BLOCKED;
-    set_svc_restart();
-    sched_yield();
-    return 0;   /* ignored — SVC_Handler restores original frame[0] */
-}
-
-static long pipe_write(struct file *f, const char *buf, size_t n)
-{
-    pipe_t *p = f->priv;
-
-    if (p->readers == 0)
-        return -(long)EPIPE;   /* broken pipe — no readers */
-
-    uint16_t space = pipe_space(p);
-
-    if (space > 0) {
-        /* Copy min(space, n) bytes into ring buffer */
-        size_t count = (n < space) ? n : space;
-        for (size_t i = 0; i < count; i++) {
-            p->buf[p->head] = (uint8_t)buf[i];
-            p->head = (uint16_t)((p->head + 1u) & PIPE_MASK);
-        }
-        /* Wake any blocked readers — we added data */
-        sched_wakeup(p);
-        return (long)count;
-    }
-
-    /* Buffer full — block: wait for space */
-    current->wait_channel = p;
-    current->state = PROC_BLOCKED;
-    set_svc_restart();
-    sched_yield();
-    return 0;   /* ignored — SVC_Handler restores original frame[0] */
-}
-
-static int pipe_close(struct file *f)
-{
-    pipe_t *p = f->priv;
-
-    if (f->flags == O_RDONLY)
-        p->readers--;
-    else
-        p->writers--;
-
-    /* Wake the other end so it can detect EOF / EPIPE */
+    /* Wake any blocked writers — we freed space */
     sched_wakeup(p);
+    return (long)count;
+  }
 
-    if (p->readers == 0 && p->writers == 0)
-        pipe_free(p);
+  /* Buffer empty */
+  if (p->writers == 0) return 0; /* EOF — no writers left */
 
-    /* Note: file_free is called by fd_free when refcnt reaches 0.
-     * Do NOT call file_free here — that would be a double-free. */
-    return 0;
+  /* Block: wait for data */
+  current->wait_channel = p;
+  current->state = PROC_BLOCKED;
+  set_svc_restart();
+  sched_yield();
+  return 0; /* ignored — SVC_Handler restores original frame[0] */
 }
 
-/* ── File ops vtables ─────────────────────────────────────────────────────── */
+static long pipe_write(struct file *f, const char *buf, size_t n) {
+  pipe_t *p = f->priv;
 
-static const struct file_ops pipe_read_ops  = { pipe_read,  NULL,       pipe_close, NULL, NULL };
-static const struct file_ops pipe_write_ops = { NULL,       pipe_write, pipe_close, NULL, NULL };
+  if (p->readers == 0) return -(long)EPIPE; /* broken pipe — no readers */
 
-/* ── sys_pipe ─────────────────────────────────────────────────────────────── */
+  uint16_t space = pipe_space(p);
 
-long sys_pipe(int *fds)
-{
-    if (!fds)
-        return -(long)EINVAL;
-
-    /* Allocate pipe */
-    pipe_t *p = pipe_alloc();
-    if (!p)
-        return -(long)ENOMEM;
-
-    /* Allocate read-end file */
-    struct file *rf = file_alloc();
-    if (!rf) {
-        pipe_free(p);
-        return -(long)ENOMEM;
+  if (space > 0) {
+    /* Copy min(space, n) bytes into ring buffer */
+    size_t count = (n < space) ? n : space;
+    for (size_t i = 0; i < count; i++) {
+      p->buf[p->head] = (uint8_t)buf[i];
+      p->head = (uint16_t)((p->head + 1u) & PIPE_MASK);
     }
-    rf->ops    = &pipe_read_ops;
-    rf->priv   = p;
-    rf->flags  = O_RDONLY;
-    rf->refcnt = 0;
-    rf->vnode  = NULL;
-    rf->offset = 0;
+    /* Wake any blocked readers — we added data */
+    sched_wakeup(p);
+    return (long)count;
+  }
 
-    /* Allocate write-end file */
-    struct file *wf = file_alloc();
-    if (!wf) {
-        file_free(rf);
-        pipe_free(p);
-        return -(long)ENOMEM;
-    }
-    wf->ops    = &pipe_write_ops;
-    wf->priv   = p;
-    wf->flags  = O_WRONLY;
-    wf->refcnt = 0;
-    wf->vnode  = NULL;
-    wf->offset = 0;
+  /* Buffer full — block: wait for space */
+  current->wait_channel = p;
+  current->state = PROC_BLOCKED;
+  set_svc_restart();
+  sched_yield();
+  return 0; /* ignored — SVC_Handler restores original frame[0] */
+}
 
-    /* Allocate fds */
-    int rfd = fd_alloc(current, rf);
-    if (rfd < 0) {
-        file_free(wf);
-        file_free(rf);
-        pipe_free(p);
-        return (long)rfd;
-    }
+static int pipe_close(struct file *f) {
+  pipe_t *p = f->priv;
 
-    int wfd = fd_alloc(current, wf);
-    if (wfd < 0) {
-        fd_free(current, rfd);
-        file_free(wf);
-        pipe_free(p);
-        return (long)wfd;
-    }
+  if (f->flags == O_RDONLY)
+    p->readers--;
+  else
+    p->writers--;
 
-    fds[0] = rfd;
-    fds[1] = wfd;
-    return 0;
+  /* Wake the other end so it can detect EOF / EPIPE */
+  sched_wakeup(p);
+
+  if (p->readers == 0 && p->writers == 0) pipe_free(p);
+
+  /* Note: file_free is called by fd_free when refcnt reaches 0.
+   * Do NOT call file_free here — that would be a double-free. */
+  return 0;
+}
+
+/* ── File ops vtables ───────────────────────────────────────────────────────
+ */
+
+static const struct file_ops pipe_read_ops = {pipe_read, NULL, pipe_close, NULL,
+                                              NULL};
+static const struct file_ops pipe_write_ops = {NULL, pipe_write, pipe_close,
+                                               NULL, NULL};
+
+/* ── sys_pipe ───────────────────────────────────────────────────────────────
+ */
+
+long sys_pipe(int *fds) {
+  if (!fds) return -(long)EINVAL;
+
+  /* Allocate pipe */
+  pipe_t *p = pipe_alloc();
+  if (!p) return -(long)ENOMEM;
+
+  /* Allocate read-end file */
+  struct file *rf = file_alloc();
+  if (!rf) {
+    pipe_free(p);
+    return -(long)ENOMEM;
+  }
+  rf->ops = &pipe_read_ops;
+  rf->priv = p;
+  rf->flags = O_RDONLY;
+  rf->refcnt = 0;
+  rf->vnode = NULL;
+  rf->offset = 0;
+
+  /* Allocate write-end file */
+  struct file *wf = file_alloc();
+  if (!wf) {
+    file_free(rf);
+    pipe_free(p);
+    return -(long)ENOMEM;
+  }
+  wf->ops = &pipe_write_ops;
+  wf->priv = p;
+  wf->flags = O_WRONLY;
+  wf->refcnt = 0;
+  wf->vnode = NULL;
+  wf->offset = 0;
+
+  /* Allocate fds */
+  int rfd = fd_alloc(current, rf);
+  if (rfd < 0) {
+    file_free(wf);
+    file_free(rf);
+    pipe_free(p);
+    return (long)rfd;
+  }
+
+  int wfd = fd_alloc(current, wf);
+  if (wfd < 0) {
+    fd_free(current, rfd);
+    file_free(wf);
+    pipe_free(p);
+    return (long)wfd;
+  }
+
+  fds[0] = rfd;
+  fds[1] = wfd;
+  return 0;
 }

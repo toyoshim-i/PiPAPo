@@ -18,27 +18,19 @@
  * We save the full SR and restore it to get back the original IPL.
  * ────────────────────────────────────────────────────────────────────────── */
 
-static inline uint32_t arch_irq_save(void)
-{
-    uint16_t saved;
-    __asm__ volatile (
-        "move.w  %%sr,%0\n"
-        "or.w    #0x0700,%%sr\n"
-        : "=d"(saved)
-        :
-        : "cc"
-    );
-    return (uint32_t)saved;
+static inline uint32_t arch_irq_save(void) {
+  uint16_t saved;
+  __asm__ volatile(
+      "move.w  %%sr,%0\n"
+      "or.w    #0x0700,%%sr\n"
+      : "=d"(saved)
+      :
+      : "cc");
+  return (uint32_t)saved;
 }
 
-static inline void arch_irq_restore(uint32_t saved)
-{
-    __asm__ volatile (
-        "move.w  %0,%%sr\n"
-        :
-        : "d"((uint16_t)saved)
-        : "cc"
-    );
+static inline void arch_irq_restore(uint32_t saved) {
+  __asm__ volatile("move.w  %0,%%sr\n" : : "d"((uint16_t)saved) : "cc");
 }
 
 /* ── Interrupt enable / disable ───────────────────────────────────────────
@@ -48,20 +40,16 @@ static inline void arch_irq_restore(uint32_t saved)
  * Both preserve the S bit (stay in supervisor mode).
  * ────────────────────────────────────────────────────────────────────────── */
 
-static inline void arch_irq_enable(void)
-{
-    __asm__ volatile (
-        "and.w   #0xF8FF,%%sr\n"   /* clear IPL bits → IPL=0 */
-        ::: "cc"
-    );
+static inline void arch_irq_enable(void) {
+  __asm__ volatile("and.w   #0xF8FF,%%sr\n" /* clear IPL bits → IPL=0 */
+                   ::
+                       : "cc");
 }
 
-static inline void arch_irq_disable(void)
-{
-    __asm__ volatile (
-        "or.w    #0x0700,%%sr\n"   /* set IPL=7 → mask all */
-        ::: "cc"
-    );
+static inline void arch_irq_disable(void) {
+  __asm__ volatile("or.w    #0x0700,%%sr\n" /* set IPL=7 → mask all */
+                   ::
+                       : "cc");
 }
 
 /* ── Preemption control ──────────────────────────────────────────────────
@@ -70,15 +58,9 @@ static inline void arch_irq_disable(void)
  * putc is synchronous (never blocks), so no deadlock risk.
  * ────────────────────────────────────────────────────────────────────────── */
 
-static inline void arch_preempt_disable(void)
-{
-    arch_irq_disable();
-}
+static inline void arch_preempt_disable(void) { arch_irq_disable(); }
 
-static inline void arch_preempt_enable(void)
-{
-    arch_irq_enable();
-}
+static inline void arch_preempt_enable(void) { arch_irq_enable(); }
 
 /* ── Context switch trigger ───────────────────────────────────────────────
  *
@@ -91,10 +73,7 @@ static inline void arch_preempt_enable(void)
  * Checked by timer ISR and syscall exit path. */
 extern volatile uint32_t m68k_switch_pending;
 
-static inline void arch_yield(void)
-{
-    m68k_switch_pending = 1;
-}
+static inline void arch_yield(void) { m68k_switch_pending = 1; }
 
 /* ── CPU hints ────────────────────────────────────────────────────────────
  *
@@ -102,14 +81,14 @@ static inline void arch_yield(void)
  * It loads a new SR value simultaneously (must keep supervisor mode).
  * ────────────────────────────────────────────────────────────────────────── */
 
-static inline void arch_wfi(void)
-{
-    __asm__ volatile ("stop #0x2000");  /* supervisor, IPL=0, wait for IRQ */
+static inline void arch_wfi(void) {
+  __asm__ volatile("stop #0x2000"); /* supervisor, IPL=0, wait for IRQ */
 }
 
 /* WFE/SEV: not applicable on single-core 68k — stub as WFI/nop */
 static inline void arch_wfe(void) { arch_wfi(); }
-static inline void arch_sev(void) { /* no-op on single-core */ }
+static inline void arch_sev(void) { /* no-op on single-core */
+}
 
 /* ── Memory barriers ──────────────────────────────────────────────────────
  *
@@ -117,9 +96,6 @@ static inline void arch_sev(void) { /* no-op on single-core */ }
  * These are no-ops on 68k but provided for API compatibility.
  * ────────────────────────────────────────────────────────────────────────── */
 
-static inline void arch_dsb_isb(void)
-{
-    __asm__ volatile ("nop" ::: "memory");
-}
+static inline void arch_dsb_isb(void) { __asm__ volatile("nop" ::: "memory"); }
 
 #endif /* PPAP_ARCH_M68K_ARCH_H */

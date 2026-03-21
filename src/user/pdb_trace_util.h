@@ -19,6 +19,7 @@ void disas_m68k(pid_t pid, uint32_t pc, uint32_t count);
 void disas_thumb(pid_t pid, uint32_t pc, uint32_t count);
 
 int z80_is_call_opcode(uint8_t op);
-void print_backtrace(pid_t pid, const struct ppap_ptrace_regs *regs, uint32_t count);
+void print_backtrace(pid_t pid, const struct ppap_ptrace_regs *regs,
+                     uint32_t count);
 
 #endif /* PPAP_USER_PDB_TRACE_UTIL_H */

@@ -108,3 +108,18 @@ with the following project-specific adjustments for embedded C:
 
 Where the Google C++ Style Guide and this document conflict, this document
 takes precedence.
+
+## Formatting with clang-format
+
+The repository includes a `.clang-format` file based on Google style.
+Run it on all source files:
+
+```sh
+find src -name '*.c' -o -name '*.h' | grep -v third_party | xargs clang-format -i
+```
+
+Or via npx if clang-format is not installed system-wide:
+
+```sh
+find src -name '*.c' -o -name '*.h' | grep -v third_party | xargs npx clang-format -i
+```

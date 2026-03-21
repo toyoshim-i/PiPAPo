@@ -16,167 +16,167 @@
 
 /* ── ELF identification indices ──────────────────────────────────────────── */
 
-#define EI_NIDENT   16
-#define EI_MAG0      0
-#define EI_MAG1      1
-#define EI_MAG2      2
-#define EI_MAG3      3
-#define EI_CLASS     4
-#define EI_DATA      5
+#define EI_NIDENT 16
+#define EI_MAG0 0
+#define EI_MAG1 1
+#define EI_MAG2 2
+#define EI_MAG3 3
+#define EI_CLASS 4
+#define EI_DATA 5
 
 /* ── ELF magic ───────────────────────────────────────────────────────────── */
 
-#define ELFMAG0     0x7f
-#define ELFMAG1     'E'
-#define ELFMAG2     'L'
-#define ELFMAG3     'F'
+#define ELFMAG0 0x7f
+#define ELFMAG1 'E'
+#define ELFMAG2 'L'
+#define ELFMAG3 'F'
 
 /* ── ELF class ───────────────────────────────────────────────────────────── */
 
-#define ELFCLASS32  1
+#define ELFCLASS32 1
 
 /* ── ELF data encoding ───────────────────────────────────────────────────── */
 
-#define ELFDATA2LSB 1       /* little-endian */
-#define ELFDATA2MSB 2       /* big-endian    */
+#define ELFDATA2LSB 1 /* little-endian */
+#define ELFDATA2MSB 2 /* big-endian    */
 
 /* ── ELF type ────────────────────────────────────────────────────────────── */
 
-#define ET_EXEC     2       /* static executable */
-#define ET_DYN      3       /* PIC / shared object */
+#define ET_EXEC 2 /* static executable */
+#define ET_DYN 3  /* PIC / shared object */
 
 /* ── ELF machine ─────────────────────────────────────────────────────────── */
 
-#define EM_ARM      40
-#define EM_68K       4
+#define EM_ARM 40
+#define EM_68K 4
 
 /* ── ARM ELF flags ───────────────────────────────────────────────────────── */
 
-#define EF_ARM_EABI_VER5        0x05000000u
-#define EF_ARM_ABI_FLOAT_SOFT   0x00000200u
-#define EF_ARM_EABI_VER_MASK    0xFF000000u
+#define EF_ARM_EABI_VER5 0x05000000u
+#define EF_ARM_ABI_FLOAT_SOFT 0x00000200u
+#define EF_ARM_EABI_VER_MASK 0xFF000000u
 
 /* ── Program header types ────────────────────────────────────────────────── */
 
-#define PT_LOAD     1
-#define PT_DYNAMIC  2
+#define PT_LOAD 1
+#define PT_DYNAMIC 2
 
 /* ── Relocation types ───────────────────────────────────────────────────── */
 
-#define R_ARM_RELATIVE  23      /* Adjust by load base (PIE relocation) */
-#define R_ARM_JMP_SLOT  22      /* ARM PLT GOT slot                      */
-#define R_68K_RELATIVE  22      /* m68k PIE base relocation              */
-#define R_68K_JMP_SLOT  21      /* m68k PLT GOT slot                     */
+#define R_ARM_RELATIVE 23 /* Adjust by load base (PIE relocation) */
+#define R_ARM_JMP_SLOT 22 /* ARM PLT GOT slot                      */
+#define R_68K_RELATIVE 22 /* m68k PIE base relocation              */
+#define R_68K_JMP_SLOT 21 /* m68k PLT GOT slot                     */
 
 /* ── Section types ──────────────────────────────────────────────────────── */
 
-#define SHT_REL     9           /* Relocation entries (without addend) */
-#define SHT_RELA    4           /* Relocation entries (with addend)    */
-#define SHT_DYNSYM  11          /* Dynamic symbol table                */
+#define SHT_REL 9     /* Relocation entries (without addend) */
+#define SHT_RELA 4    /* Relocation entries (with addend)    */
+#define SHT_DYNSYM 11 /* Dynamic symbol table                */
 
 /* ── ELF32 relocation entry (8 bytes, no addend) ───────────────────────── */
 
 typedef struct {
-    uint32_t r_offset;          /* address of the word to relocate */
-    uint32_t r_info;            /* type + symbol index */
+  uint32_t r_offset; /* address of the word to relocate */
+  uint32_t r_info;   /* type + symbol index */
 } elf32_rel_t;
 
 /* ── ELF32 relocation entry with addend (12 bytes) ─────────────────────── */
 
 typedef struct {
-    uint32_t r_offset;          /* address of the word to relocate */
-    uint32_t r_info;            /* type + symbol index */
-    int32_t  r_addend;          /* explicit addend */
+  uint32_t r_offset; /* address of the word to relocate */
+  uint32_t r_info;   /* type + symbol index */
+  int32_t r_addend;  /* explicit addend */
 } elf32_rela_t;
 
-#define ELF32_R_TYPE(i)  ((i) & 0xffu)
-#define ELF32_R_SYM(i)   ((i) >> 8)
+#define ELF32_R_TYPE(i) ((i)&0xffu)
+#define ELF32_R_SYM(i) ((i) >> 8)
 
 /* ── ELF32 symbol table entry (16 bytes) ────────────────────────────────── */
 
 typedef struct {
-    uint32_t st_name;
-    uint32_t st_value;
-    uint32_t st_size;
-    uint8_t  st_info;
-    uint8_t  st_other;
-    uint16_t st_shndx;
+  uint32_t st_name;
+  uint32_t st_value;
+  uint32_t st_size;
+  uint8_t st_info;
+  uint8_t st_other;
+  uint16_t st_shndx;
 } elf32_sym_t;
 
 /* ── Program header flags ────────────────────────────────────────────────── */
 
-#define PF_X        0x1
-#define PF_W        0x2
-#define PF_R        0x4
+#define PF_X 0x1
+#define PF_W 0x2
+#define PF_R 0x4
 
 /* ── ELF32 header (52 bytes) ─────────────────────────────────────────────── */
 
 typedef struct {
-    uint8_t  e_ident[EI_NIDENT];
-    uint16_t e_type;
-    uint16_t e_machine;
-    uint32_t e_version;
-    uint32_t e_entry;           /* entry point virtual address */
-    uint32_t e_phoff;           /* program header table file offset */
-    uint32_t e_shoff;
-    uint32_t e_flags;
-    uint16_t e_ehsize;
-    uint16_t e_phentsize;
-    uint16_t e_phnum;           /* number of program headers */
-    uint16_t e_shentsize;
-    uint16_t e_shnum;
-    uint16_t e_shstrndx;
+  uint8_t e_ident[EI_NIDENT];
+  uint16_t e_type;
+  uint16_t e_machine;
+  uint32_t e_version;
+  uint32_t e_entry; /* entry point virtual address */
+  uint32_t e_phoff; /* program header table file offset */
+  uint32_t e_shoff;
+  uint32_t e_flags;
+  uint16_t e_ehsize;
+  uint16_t e_phentsize;
+  uint16_t e_phnum; /* number of program headers */
+  uint16_t e_shentsize;
+  uint16_t e_shnum;
+  uint16_t e_shstrndx;
 } elf32_ehdr_t;
 
 /* ── ELF32 program header (32 bytes) ─────────────────────────────────────── */
 
 typedef struct {
-    uint32_t p_type;
-    uint32_t p_offset;          /* offset in file */
-    uint32_t p_vaddr;           /* virtual address */
-    uint32_t p_paddr;           /* physical address (unused) */
-    uint32_t p_filesz;          /* size in file */
-    uint32_t p_memsz;           /* size in memory (>= filesz; excess is BSS) */
-    uint32_t p_flags;           /* PF_R | PF_W | PF_X */
-    uint32_t p_align;
+  uint32_t p_type;
+  uint32_t p_offset; /* offset in file */
+  uint32_t p_vaddr;  /* virtual address */
+  uint32_t p_paddr;  /* physical address (unused) */
+  uint32_t p_filesz; /* size in file */
+  uint32_t p_memsz;  /* size in memory (>= filesz; excess is BSS) */
+  uint32_t p_flags;  /* PF_R | PF_W | PF_X */
+  uint32_t p_align;
 } elf32_phdr_t;
 
 /* ── ELF32 section header (40 bytes) ────────────────────────────────────── */
 
 typedef struct {
-    uint32_t sh_name;           /* index into section name string table */
-    uint32_t sh_type;
-    uint32_t sh_flags;
-    uint32_t sh_addr;           /* virtual address in linked image */
-    uint32_t sh_offset;         /* file offset */
-    uint32_t sh_size;           /* section size in bytes */
-    uint32_t sh_link;
-    uint32_t sh_info;
-    uint32_t sh_addralign;
-    uint32_t sh_entsize;
+  uint32_t sh_name; /* index into section name string table */
+  uint32_t sh_type;
+  uint32_t sh_flags;
+  uint32_t sh_addr;   /* virtual address in linked image */
+  uint32_t sh_offset; /* file offset */
+  uint32_t sh_size;   /* section size in bytes */
+  uint32_t sh_link;
+  uint32_t sh_info;
+  uint32_t sh_addralign;
+  uint32_t sh_entsize;
 } elf32_shdr_t;
 
 /* ── GOT location descriptor ────────────────────────────────────────────── */
 
 typedef struct {
-    uint32_t offset;    /* file offset of .got section */
-    uint32_t addr;      /* link address (virtual address) of .got */
-    uint32_t size;      /* size in bytes */
+  uint32_t offset; /* file offset of .got section */
+  uint32_t addr;   /* link address (virtual address) of .got */
+  uint32_t size;   /* size in bytes */
 } elf_got_info_t;
 
 /* ── Dynamic symbol table descriptor ───────────────────────────────────── */
 
 typedef struct {
-    uint32_t offset;    /* file offset of .dynsym section */
-    uint32_t count;     /* number of entries */
+  uint32_t offset; /* file offset of .dynsym section */
+  uint32_t count;  /* number of entries */
 } elf_dynsym_info_t;
 
 /* ── Relocation table descriptor ───────────────────────────────────────── */
 
 typedef struct {
-    uint32_t offset;    /* file offset of .rel.dyn/.rela.dyn section */
-    uint32_t size;      /* size in bytes */
-    uint8_t  has_addend; /* 1 if .rela.dyn (SHT_RELA), 0 if .rel.dyn (SHT_REL) */
+  uint32_t offset;    /* file offset of .rel.dyn/.rela.dyn section */
+  uint32_t size;      /* size in bytes */
+  uint8_t has_addend; /* 1 if .rela.dyn (SHT_RELA), 0 if .rel.dyn (SHT_REL) */
 } elf_rel_info_t;
 
 /* ── Parser API ──────────────────────────────────────────────────────────── */

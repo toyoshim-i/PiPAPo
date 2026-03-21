@@ -16,26 +16,26 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
 #include "config.h"
 
 /* ── Block device struct ─────────────────────────────────────────────────── */
 
 typedef struct blkdev {
-    const char *name;           /* device name: "mmcblk0", "loop0", … */
-    uint32_t    sector_count;   /* total sectors on device */
-    void       *priv;           /* driver-private state */
+  const char *name;      /* device name: "mmcblk0", "loop0", … */
+  uint32_t sector_count; /* total sectors on device */
+  void *priv;            /* driver-private state */
 
-    /* Read `count` sectors starting at `sector` into `buf`.
-     * buf must be at least count × BLKDEV_SECTOR_SIZE bytes.
-     * Returns 0 on success, negative errno on failure. */
-    int (*read)(struct blkdev *dev, void *buf,
-                uint32_t sector, uint32_t count);
+  /* Read `count` sectors starting at `sector` into `buf`.
+   * buf must be at least count × BLKDEV_SECTOR_SIZE bytes.
+   * Returns 0 on success, negative errno on failure. */
+  int (*read)(struct blkdev *dev, void *buf, uint32_t sector, uint32_t count);
 
-    /* Write `count` sectors starting at `sector` from `buf`.
-     * buf must be at least count × BLKDEV_SECTOR_SIZE bytes.
-     * Returns 0 on success, negative errno on failure. */
-    int (*write)(struct blkdev *dev, const void *buf,
-                 uint32_t sector, uint32_t count);
+  /* Write `count` sectors starting at `sector` from `buf`.
+   * buf must be at least count × BLKDEV_SECTOR_SIZE bytes.
+   * Returns 0 on success, negative errno on failure. */
+  int (*write)(struct blkdev *dev, const void *buf, uint32_t sector,
+               uint32_t count);
 } blkdev_t;
 
 /* ── API ─────────────────────────────────────────────────────────────────── */

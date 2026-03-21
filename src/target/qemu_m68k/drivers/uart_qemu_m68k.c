@@ -15,51 +15,43 @@
  * For Phase B we only need TX (uart_putc).
  */
 
-#include "drivers/uart.h"
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
+
+#include "drivers/uart.h"
 
 /* ── Goldfish TTY registers ─────────────────────────────────────────────── */
 
-#define GOLDFISH_TTY_BASE    0xFF008000u
+#define GOLDFISH_TTY_BASE 0xFF008000u
 
-#define TTY_PUT_CHAR     (*(volatile uint32_t *)(GOLDFISH_TTY_BASE + 0x00u))
-#define TTY_BYTES_READY  (*(volatile uint32_t *)(GOLDFISH_TTY_BASE + 0x04u))
-#define TTY_CMD          (*(volatile uint32_t *)(GOLDFISH_TTY_BASE + 0x08u))
-#define TTY_DATA_PTR     (*(volatile uint32_t *)(GOLDFISH_TTY_BASE + 0x10u))
-#define TTY_DATA_LEN     (*(volatile uint32_t *)(GOLDFISH_TTY_BASE + 0x14u))
+#define TTY_PUT_CHAR (*(volatile uint32_t *)(GOLDFISH_TTY_BASE + 0x00u))
+#define TTY_BYTES_READY (*(volatile uint32_t *)(GOLDFISH_TTY_BASE + 0x04u))
+#define TTY_CMD (*(volatile uint32_t *)(GOLDFISH_TTY_BASE + 0x08u))
+#define TTY_DATA_PTR (*(volatile uint32_t *)(GOLDFISH_TTY_BASE + 0x10u))
+#define TTY_DATA_LEN (*(volatile uint32_t *)(GOLDFISH_TTY_BASE + 0x14u))
 
-#define TTY_CMD_READ_BUFFER   3u
+#define TTY_CMD_READ_BUFFER 3u
 
 /* ── Public API ─────────────────────────────────────────────────────────── */
 
-void uart_init(void)
-{
-    /* Goldfish TTY requires no initialization — ready immediately */
+void uart_init(void) {
+  /* Goldfish TTY requires no initialization — ready immediately */
 }
 
-int uart_putc(char c, void (*notify)(void))
-{
-    (void)notify;   /* polling — putc never fails */
-    TTY_PUT_CHAR = (uint32_t)(unsigned char)c;
-    return 1;
+int uart_putc(char c, void (*notify)(void)) {
+  (void)notify; /* polling — putc never fails */
+  TTY_PUT_CHAR = (uint32_t)(unsigned char)c;
+  return 1;
 }
 
-int uart_getc(void)
-{
-    if (TTY_BYTES_READY == 0)
-        return -1;
-    /* Read a single byte via the buffer interface */
-    static char rx_byte;
-    TTY_DATA_PTR = (uint32_t)(uintptr_t)&rx_byte;
-    TTY_DATA_LEN = 1;
-    TTY_CMD = TTY_CMD_READ_BUFFER;
-    return (int)(unsigned char)rx_byte;
+int uart_getc(void) {
+  if (TTY_BYTES_READY == 0) return -1;
+  /* Read a single byte via the buffer interface */
+  static char rx_byte;
+  TTY_DATA_PTR = (uint32_t)(uintptr_t)&rx_byte;
+  TTY_DATA_LEN = 1;
+  TTY_CMD = TTY_CMD_READ_BUFFER;
+  return (int)(unsigned char)rx_byte;
 }
 
-int uart_rx_avail(void)
-{
-    return (TTY_BYTES_READY > 0) ? 1 : 0;
-}
-
-
+int uart_rx_avail(void) { return (TTY_BYTES_READY > 0) ? 1 : 0; }

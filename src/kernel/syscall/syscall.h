@@ -14,8 +14,8 @@
 #ifndef PPAP_KERNEL_SYSCALL_SYSCALL_H
 #define PPAP_KERNEL_SYSCALL_SYSCALL_H
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 typedef struct pcb pcb_t;
 
@@ -23,7 +23,8 @@ typedef struct pcb pcb_t;
 
 #include "common/syscall_nr.h"
 
-/* ── Dispatch ──────────────────────────────────────────────────────────────── */
+/* ── Dispatch ────────────────────────────────────────────────────────────────
+ */
 
 /*
  * Called from the arch-specific trap handler with:
@@ -48,17 +49,19 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5);
  *   SVC_Handler detects this, restores frame[0] from svc_saved_a0[N], and
  *   adjusts the stacked PC back by 2 bytes (size of "svc 0").  When the
  *   process is rescheduled, the SVC re-executes with original arguments. */
-extern volatile int      exec_pending[2];
-extern volatile int      svc_restart[2];
+extern volatile int exec_pending[2];
+extern volatile int svc_restart[2];
 extern volatile uint32_t svc_saved_a0[2];
-extern volatile uint32_t svc_exc_return[2];  /* EXC_RETURN saved by SVC_Handler (M33) */
+extern volatile uint32_t
+    svc_exc_return[2]; /* EXC_RETURN saved by SVC_Handler (M33) */
 
 /* Helper: mark current syscall for restart after blocking yield.
  * Sets both the global svc_restart (for ARM trap.S) and the per-process
  * flag (for m68k, where globals leak between nested TRAP #0 handlers). */
 void set_svc_restart(void);
 
-/* ── Syscall implementations ───────────────────────────────────────────────── */
+/* ── Syscall implementations ─────────────────────────────────────────────────
+ */
 
 /* sys_proc.c */
 long sys_exit(long status);
@@ -72,15 +75,14 @@ long sys_setpgid(long pid, long pgid);
 long sys_setsid(void);
 long sys_wait4(long pid, long status_ptr, long options, void *rusage);
 long sys_ptrace(long req, long pid, void *addr, void *data);
-int trace_before_syscall(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5);
-void trace_after_syscall(uint32_t *frame, uint32_t nr,
-                         uint32_t a4, uint32_t a5, long ret);
-int trace_before_subsys(uint32_t abi, uint32_t nr,
-                        uint32_t a0, uint32_t a1, uint32_t a2,
-                        uint32_t a3, uint32_t a4, uint32_t a5);
-void trace_after_subsys(uint32_t abi, uint32_t nr,
-                        uint32_t a0, uint32_t a1, uint32_t a2,
-                        uint32_t a3, uint32_t a4, uint32_t a5,
+int trace_before_syscall(uint32_t *frame, uint32_t nr, uint32_t a4,
+                         uint32_t a5);
+void trace_after_syscall(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5,
+                         long ret);
+int trace_before_subsys(uint32_t abi, uint32_t nr, uint32_t a0, uint32_t a1,
+                        uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5);
+void trace_after_subsys(uint32_t abi, uint32_t nr, uint32_t a0, uint32_t a1,
+                        uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5,
                         int32_t ret);
 void trace_debug_stop(uint32_t abi, uint32_t pc, uint32_t flags);
 int trace_has_swbp(void);
@@ -109,8 +111,8 @@ long sys_pipe(int *fds);
 
 /* sys_mem.c */
 long sys_brk(long addr);
-long sys_mmap2(uint32_t addr, uint32_t len, uint32_t prot,
-               uint32_t flags, uint32_t fd, uint32_t pgoff);
+long sys_mmap2(uint32_t addr, uint32_t len, uint32_t prot, uint32_t flags,
+               uint32_t fd, uint32_t pgoff);
 long sys_munmap(uint32_t addr, uint32_t len);
 
 /* sys_fs.c — dup/dup2 */
@@ -150,8 +152,8 @@ long sys_readlink(const char *path, char *buf, long bufsiz);
 long sys_rmdir(const char *path);
 long sys_rename(const char *oldpath, const char *newpath);
 long sys_umask(long mask);
-long sys_mount(const char *source, const char *target,
-               const char *fstype, long flags, const void *data);
+long sys_mount(const char *source, const char *target, const char *fstype,
+               long flags, const void *data);
 long sys_umount2(const char *target, long flags);
 long sys_statfs64(const char *path, long sz, void *buf);
 long sys_fstatfs64(long fd, long sz, void *buf);

@@ -7,8 +7,9 @@
  */
 
 #include "subsys.h"
+
 #include "../fs/procfs.h"
-#include "../proc/proc.h"    /* SUBSYS_xxx defines */
+#include "../proc/proc.h" /* SUBSYS_xxx defines */
 
 /* Forward declarations — conditionally compiled based on CMake flags */
 #ifdef PPAP_ENABLE_HUMAN68K
@@ -25,34 +26,33 @@
 
 /* Build the ops table with enabled subsystems */
 const subsys_ops_t *subsys_ops_table[SUBSYS_MAX] = {
-    [0] = (const subsys_ops_t *)0,  /* SUBSYS_PPAP: default kernel behavior */
+    [0] = (const subsys_ops_t *)0, /* SUBSYS_PPAP: default kernel behavior */
 #ifdef PPAP_ENABLE_HUMAN68K
-    [1] = &human68k_subsys_ops,     /* SUBSYS_HUMAN68K */
+    [1] = &human68k_subsys_ops, /* SUBSYS_HUMAN68K */
 #endif
 #ifdef PPAP_ENABLE_CPM
-    [2] = &cpm_subsys_ops,          /* SUBSYS_CPM */
+    [2] = &cpm_subsys_ops, /* SUBSYS_CPM */
 #endif
 #ifdef PPAP_ENABLE_SOS
-    [3] = &sos_subsys_ops,          /* SUBSYS_SOS */
+    [3] = &sos_subsys_ops, /* SUBSYS_SOS */
 #endif
 };
 
-void subsys_init(void)
-{
-    procfs_register_subsys(SUBSYS_PPAP, "ppap");
+void subsys_init(void) {
+  procfs_register_subsys(SUBSYS_PPAP, "ppap");
 #ifdef PPAP_ENABLE_HUMAN68K
-    procfs_register_subsys(SUBSYS_HUMAN68K, "human68k");
+  procfs_register_subsys(SUBSYS_HUMAN68K, "human68k");
 #endif
 #ifdef PPAP_ENABLE_ECPU_M68K
-    procfs_register_ecpu("m68k");
+  procfs_register_ecpu("m68k");
 #endif
 #ifdef PPAP_ENABLE_ECPU_Z80
-    procfs_register_ecpu("z80");
+  procfs_register_ecpu("z80");
 #endif
 #ifdef PPAP_ENABLE_CPM
-    procfs_register_subsys(SUBSYS_CPM, "cpm");
+  procfs_register_subsys(SUBSYS_CPM, "cpm");
 #endif
 #ifdef PPAP_ENABLE_SOS
-    procfs_register_subsys(SUBSYS_SOS, "sos");
+  procfs_register_subsys(SUBSYS_SOS, "sos");
 #endif
 }

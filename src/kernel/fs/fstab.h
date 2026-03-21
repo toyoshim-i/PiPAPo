@@ -12,11 +12,11 @@
 #define FSTAB_MAX_ENTRIES 8
 
 typedef struct {
-    char     device[64];       /* device path or blkdev name */
-    char     mountpoint[64];   /* mount point path */
-    char     fstype[16];       /* "vfat", "ufs", "tmpfs", etc. */
-    uint8_t  flags;            /* MNT_RDONLY etc. */
-    uint8_t  loop;             /* 1 if "loop" option present */
+  char device[64];     /* device path or blkdev name */
+  char mountpoint[64]; /* mount point path */
+  char fstype[16];     /* "vfat", "ufs", "tmpfs", etc. */
+  uint8_t flags;       /* MNT_RDONLY etc. */
+  uint8_t loop;        /* 1 if "loop" option present */
 } fstab_entry_t;
 
 /* Parse /etc/fstab into an array of entries.

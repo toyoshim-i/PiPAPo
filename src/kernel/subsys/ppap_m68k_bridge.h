@@ -22,7 +22,7 @@
 /* ── Per-process eCPU-m68k execution state ─────────────────────────────── */
 
 typedef struct {
-    m68k_state_t  m68k;
+  m68k_state_t m68k;
 } ppap_m68k_exec_state_t;
 
 /* ── Trap handler (personality layer) ──────────────────────────────────── */
@@ -38,8 +38,8 @@ typedef struct {
  * On CPU_TRAP_HALT: returns CPU_TRAP_EXIT.
  * All others: CPU_TRAP_UNHANDLED.
  */
-int ppap_m68k_trap_handler(cpu_state_t *cpu, int trap_type,
-                            uint32_t param, void *ctx);
+int ppap_m68k_trap_handler(cpu_state_t *cpu, int trap_type, uint32_t param,
+                           void *ctx);
 
 #ifdef PPAP_KERNEL
 

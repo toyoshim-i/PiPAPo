@@ -39,11 +39,11 @@ struct vnode;
  *   close: 0 on success, negative errno on error
  */
 struct file_ops {
-    long (*read) (struct file *f, char *buf,       size_t n);
-    long (*write)(struct file *f, const char *buf, size_t n);
-    int  (*close)(struct file *f);
-    int  (*ioctl)(struct file *f, uint32_t cmd, void *arg);
-    int  (*poll) (struct file *f);   /* returns POLLIN/POLLOUT bitmask */
+  long (*read)(struct file *f, char *buf, size_t n);
+  long (*write)(struct file *f, const char *buf, size_t n);
+  int (*close)(struct file *f);
+  int (*ioctl)(struct file *f, uint32_t cmd, void *arg);
+  int (*poll)(struct file *f); /* returns POLLIN/POLLOUT bitmask */
 };
 
 #include "common/poll.h"
@@ -55,20 +55,20 @@ struct file_ops {
  * refcnt tracks sharing across dup() / fork() — not used in Phase 1.
  */
 struct file {
-    const struct file_ops *ops;   /* driver vtable                     */
-    void                  *priv;  /* driver-private state (NULL = none) */
-    uint32_t               flags; /* O_RDONLY / O_WRONLY / O_RDWR       */
-    uint32_t               refcnt;/* reference count (dup/fork sharing) */
-    struct vnode          *vnode;  /* backing vnode (NULL for tty files) */
-    uint32_t               offset;/* current file position              */
+  const struct file_ops *ops; /* driver vtable                     */
+  void *priv;                 /* driver-private state (NULL = none) */
+  uint32_t flags;             /* O_RDONLY / O_WRONLY / O_RDWR       */
+  uint32_t refcnt;            /* reference count (dup/fork sharing) */
+  struct vnode *vnode;        /* backing vnode (NULL for tty files) */
+  uint32_t offset;            /* current file position              */
 };
 
 /*
  * Allocate / free a struct file from the kernel file pool.
  * file_pool_init() must be called from kmain() before any allocations.
  */
-void         file_pool_init(void);
+void file_pool_init(void);
 struct file *file_alloc(void);
-void         file_free(struct file *f);
+void file_free(struct file *f);
 
 #endif /* PPAP_KERNEL_FD_FILE_H */

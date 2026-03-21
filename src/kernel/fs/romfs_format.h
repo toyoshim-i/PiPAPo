@@ -21,24 +21,27 @@
 
 #include <stdint.h>
 
-/* ── Superblock ────────────────────────────────────────────────────────────── */
+/* ── Superblock ──────────────────────────────────────────────────────────────
+ */
 
-#define ROMFS_MAGIC  0x50504653u   /* "PPFS" in native endian */
+#define ROMFS_MAGIC 0x50504653u /* "PPFS" in native endian */
 
 typedef struct {
-    uint32_t magic;       /* ROMFS_MAGIC                                  */
-    uint32_t size;        /* total image size in bytes                    */
-    uint32_t file_count;  /* total number of entries (files+dirs+symlinks)*/
-    uint32_t root_off;    /* offset from image start to root dir entry   */
+  uint32_t magic;      /* ROMFS_MAGIC                                  */
+  uint32_t size;       /* total image size in bytes                    */
+  uint32_t file_count; /* total number of entries (files+dirs+symlinks)*/
+  uint32_t root_off;   /* offset from image start to root dir entry   */
 } romfs_super_t;
 
-/* ── Entry types ───────────────────────────────────────────────────────────── */
+/* ── Entry types ─────────────────────────────────────────────────────────────
+ */
 
-#define ROMFS_TYPE_FILE    0u
-#define ROMFS_TYPE_DIR     1u
+#define ROMFS_TYPE_FILE 0u
+#define ROMFS_TYPE_DIR 1u
 #define ROMFS_TYPE_SYMLINK 2u
 
-/* ── Directory / file / symlink entry ──────────────────────────────────────── */
+/* ── Directory / file / symlink entry ────────────────────────────────────────
+ */
 /*
  * Variable-length on flash:
  *   [romfs_entry_t header]  — 20 bytes (5 × uint32_t)
@@ -52,30 +55,30 @@ typedef struct {
  *   ROMFS_ALIGN4(x)       — round x up to next 4-byte boundary
  *   ROMFS_NAME_OFF        — byte offset of name[] from entry start
  *   ROMFS_DATA_OFF(e)     — byte offset of data[] from entry start
- *   ROMFS_ENTRY_SIZE(e)   — total on-flash size of this entry (header+name+data)
+ *   ROMFS_ENTRY_SIZE(e)   — total on-flash size of this entry
+ * (header+name+data)
  */
 typedef struct {
-    uint32_t next_off;    /* offset to next sibling (0 = last entry)      */
-    uint32_t type;        /* ROMFS_TYPE_FILE / DIR / SYMLINK              */
-    uint32_t size;        /* file: content length; symlink: target length;
-                             dir: 0                                       */
-    uint32_t child_off;   /* DIR: offset to first child; FILE/SYMLINK: 0  */
-    uint32_t name_len;    /* length of name (excluding NUL, before pad)   */
+  uint32_t next_off;  /* offset to next sibling (0 = last entry)      */
+  uint32_t type;      /* ROMFS_TYPE_FILE / DIR / SYMLINK              */
+  uint32_t size;      /* file: content length; symlink: target length;
+                         dir: 0                                       */
+  uint32_t child_off; /* DIR: offset to first child; FILE/SYMLINK: 0  */
+  uint32_t name_len;  /* length of name (excluding NUL, before pad)   */
 } romfs_entry_t;
 
-/* ── Alignment and layout helpers ──────────────────────────────────────────── */
+/* ── Alignment and layout helpers ────────────────────────────────────────────
+ */
 
-#define ROMFS_ALIGN4(x)      (((x) + 3u) & ~3u)
+#define ROMFS_ALIGN4(x) (((x) + 3u) & ~3u)
 
 /* Byte offset of the name field (immediately after the fixed header) */
-#define ROMFS_NAME_OFF       ((uint32_t)sizeof(romfs_entry_t))
+#define ROMFS_NAME_OFF ((uint32_t)sizeof(romfs_entry_t))
 
 /* Byte offset of the data field (after header + padded name) */
-#define ROMFS_DATA_OFF(e) \
-    (ROMFS_NAME_OFF + ROMFS_ALIGN4((e)->name_len + 1u))
+#define ROMFS_DATA_OFF(e) (ROMFS_NAME_OFF + ROMFS_ALIGN4((e)->name_len + 1u))
 
 /* Total on-flash size of an entry (header + padded name + padded data) */
-#define ROMFS_ENTRY_SIZE(e) \
-    (ROMFS_DATA_OFF(e) + ROMFS_ALIGN4((e)->size))
+#define ROMFS_ENTRY_SIZE(e) (ROMFS_DATA_OFF(e) + ROMFS_ALIGN4((e)->size))
 
 #endif /* PPAP_KERNEL_FS_ROMFS_FORMAT_H */

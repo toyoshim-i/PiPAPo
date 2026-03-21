@@ -16,7 +16,7 @@
 
 #include <stdint.h>
 
-#define LOOP_MAX  3   /* /dev/loop0, loop1, loop2 */
+#define LOOP_MAX 3 /* /dev/loop0, loop1, loop2 */
 
 /*
  * Initialise the loopback subsystem.  Call once from kmain() after

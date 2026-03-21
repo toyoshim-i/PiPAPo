@@ -14,12 +14,12 @@
 #ifndef PPAP_TARGET_RPICO_H
 #define PPAP_TARGET_RPICO_H
 
-#include <stdint.h>
 #include <hardware/regs/addressmap.h>
+#include <stdint.h>
 
 /* ── Register access helper ─────────────────────────────────────────────── */
 
-#define REG(addr)  (*(volatile uint32_t *)(uintptr_t)(addr))
+#define REG(addr) (*(volatile uint32_t *)(uintptr_t)(addr))
 
 /* ── RESETS peripheral ───────────────────────────────────────────────────
  *
@@ -30,20 +30,24 @@
  *   +0x3000  CLR  (write 1 to clear bits → release peripheral from reset)
  * ────────────────────────────────────────────────────────────────────────── */
 
-#define RESETS_RESET       REG(RESETS_BASE + 0x00u)  /* reset control                */
-#define RESETS_RESET_DONE  REG(RESETS_BASE + 0x08u)  /* 1 = peripheral out of reset  */
-#define RESETS_RESET_SET   REG(RESETS_BASE + 0x2000u)/* SET alias: write 1 → assert  */
-#define RESETS_RESET_CLR   REG(RESETS_BASE + 0x3000u)/* CLR alias: write 1 → release */
+#define RESETS_RESET REG(RESETS_BASE + 0x00u) /* reset control */
+#define RESETS_RESET_DONE \
+  REG(RESETS_BASE + 0x08u) /* 1 = peripheral out of reset  */
+#define RESETS_RESET_SET \
+  REG(RESETS_BASE + 0x2000u) /* SET alias: write 1 → assert  */
+#define RESETS_RESET_CLR \
+  REG(RESETS_BASE + 0x3000u) /* CLR alias: write 1 → release */
 
-/* Reset bit positions — from SDK's hardware/regs/resets.h (differ RP2040 vs RP2350) */
+/* Reset bit positions — from SDK's hardware/regs/resets.h (differ RP2040 vs
+ * RP2350) */
 #include <hardware/regs/resets.h>
-#define RESET_I2C1         RESETS_RESET_I2C1_BITS
-#define RESET_IO_BANK0     RESETS_RESET_IO_BANK0_BITS
-#define RESET_PADS_BANK0   RESETS_RESET_PADS_BANK0_BITS
-#define RESET_PLL_SYS      RESETS_RESET_PLL_SYS_BITS
-#define RESET_SPI0         RESETS_RESET_SPI0_BITS
-#define RESET_SPI1         RESETS_RESET_SPI1_BITS
-#define RESET_UART0        RESETS_RESET_UART0_BITS
+#define RESET_I2C1 RESETS_RESET_I2C1_BITS
+#define RESET_IO_BANK0 RESETS_RESET_IO_BANK0_BITS
+#define RESET_PADS_BANK0 RESETS_RESET_PADS_BANK0_BITS
+#define RESET_PLL_SYS RESETS_RESET_PLL_SYS_BITS
+#define RESET_SPI0 RESETS_RESET_SPI0_BITS
+#define RESET_SPI1 RESETS_RESET_SPI1_BITS
+#define RESET_UART0 RESETS_RESET_UART0_BITS
 
 /* ── CLOCKS peripheral ───────────────────────────────────────────────────
  *
@@ -53,20 +57,21 @@
  *   clk_peri offset 0x48  — peripheral clock (UART, SPI, I2C, …)
  * ────────────────────────────────────────────────────────────────────────── */
 
-#define CLK_REF_CTRL      REG(CLOCKS_BASE + 0x30u)
-#define CLK_REF_SELECTED  REG(CLOCKS_BASE + 0x38u)  /* one-hot: bit N = source N active */
-#define CLK_SYS_CTRL      REG(CLOCKS_BASE + 0x3Cu)
-#define CLK_SYS_SELECTED  REG(CLOCKS_BASE + 0x44u)
-#define CLK_PERI_CTRL     REG(CLOCKS_BASE + 0x48u)
+#define CLK_REF_CTRL REG(CLOCKS_BASE + 0x30u)
+#define CLK_REF_SELECTED \
+  REG(CLOCKS_BASE + 0x38u) /* one-hot: bit N = source N active */
+#define CLK_SYS_CTRL REG(CLOCKS_BASE + 0x3Cu)
+#define CLK_SYS_SELECTED REG(CLOCKS_BASE + 0x44u)
+#define CLK_PERI_CTRL REG(CLOCKS_BASE + 0x48u)
 
 /* clk_ref SRC field [1:0]: 0=ROSC, 1=AUX, 2=XOSC */
-#define CLK_REF_SRC_ROSC  0u
-#define CLK_REF_SRC_XOSC  2u
+#define CLK_REF_SRC_ROSC 0u
+#define CLK_REF_SRC_XOSC 2u
 
 /* clk_sys SRC bit [0]: 0=clk_ref (glitchless), 1=AUX */
-#define CLK_SYS_SRC_REF   0u
+#define CLK_SYS_SRC_REF 0u
 
 /* clk_peri CTRL: AUXSRC[7:5]=0 (=clk_sys), ENABLE bit 11 */
-#define CLK_PERI_ENABLE   (1u << 11)
+#define CLK_PERI_ENABLE (1u << 11)
 
 #endif /* PPAP_TARGET_RPICO_H */

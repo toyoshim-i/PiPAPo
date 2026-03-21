@@ -14,8 +14,8 @@
 #ifndef PPAP_DRIVERS_I2C_H
 #define PPAP_DRIVERS_I2C_H
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 /* Initialise I2C1 at 10 kHz (standard mode, master).
  * Configures GPIO pins GP6 (SDA) and GP7 (SCL), resets the peripheral,

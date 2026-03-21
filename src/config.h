@@ -22,9 +22,9 @@
  *               Default: 100 Hz → 10 ms time slices.
  * ────────────────────────────────────────────────────────────────────────── */
 #ifndef PPAP_SYS_HZ
-#define PPAP_SYS_HZ    133000000u   /* CPU frequency after PLL init (Hz)   */
+#define PPAP_SYS_HZ 133000000u /* CPU frequency after PLL init (Hz)   */
 #endif
-#define PPAP_TICK_HZ         100u   /* SysTick ticks per second            */
+#define PPAP_TICK_HZ 100u /* SysTick ticks per second            */
 
 /* ── Scheduler ─────────────────────────────────────────────────────────────
  * PROC_MAX           Maximum concurrent processes.  Each PCB lives in the
@@ -35,10 +35,10 @@
  * PROC_DEFAULT_TICKS Time-slice length in SysTick ticks for new processes.
  *                    With PPAP_TICK_HZ=100: 10 ticks = 100 ms.
  * ────────────────────────────────────────────────────────────────────────── */
-#define PROC_MAX              8     /* maximum concurrent processes         */
-#define FD_MAX               16     /* file descriptors per process         */
-#define PROC_DEFAULT_TICKS   10     /* time-slice length in SysTick ticks   */
-#define FILE_MAX             32     /* max concurrent open struct file objs */
+#define PROC_MAX 8            /* maximum concurrent processes         */
+#define FD_MAX 16             /* file descriptors per process         */
+#define PROC_DEFAULT_TICKS 10 /* time-slice length in SysTick ticks   */
+#define FILE_MAX 32           /* max concurrent open struct file objs */
 
 /* ── UART ring buffers ─────────────────────────────────────────────────────
  * Sizes must be powers of two.
@@ -50,8 +50,8 @@
  * UART_RX_SIZE  RX ring capacity.  Bytes are dropped on overflow.
  *               Must be ≤ 256 (uint8_t count comparison).
  * ────────────────────────────────────────────────────────────────────────── */
-#define UART_TX_SIZE        256u    /* TX ring buffer size (bytes)          */
-#define UART_RX_SIZE         64u    /* RX ring buffer size (bytes)          */
+#define UART_TX_SIZE 256u /* TX ring buffer size (bytes)          */
+#define UART_RX_SIZE 64u  /* RX ring buffer size (bytes)          */
 
 /* ── Page allocator ────────────────────────────────────────────────────────
  * PAGE_SIZE   Bytes per physical page.  Must match the SRAM layout in
@@ -63,10 +63,10 @@
  *                 at boot and stored in the runtime variable `page_count`
  *                 (see page.h).
  * ────────────────────────────────────────────────────────────────────────── */
-#define PAGE_SIZE          4096u    /* bytes per page                       */
+#define PAGE_SIZE 4096u /* bytes per page                       */
 
 #ifndef PAGE_COUNT_MAX
-#define PAGE_COUNT_MAX       51u    /* RP2040 default: 204 KB pool          */
+#define PAGE_COUNT_MAX 51u /* RP2040 default: 204 KB pool          */
 #endif
 
 /* ── VFS (Virtual File System) ────────────────────────────────────────────
@@ -83,11 +83,11 @@
  *
  * VFS_SYMLOOP_MAX   Maximum symlink resolution depth before returning ELOOP.
  * ────────────────────────────────────────────────────────────────────────── */
-#define VFS_MOUNT_MAX        8     /* maximum concurrent mounts             */
-#define VFS_VNODE_MAX       64     /* maximum concurrent vnodes             */
-#define VFS_NAME_MAX        63     /* max filename component (LFN support)  */
-#define VFS_PATH_MAX       128     /* max absolute path length              */
-#define VFS_SYMLOOP_MAX      4     /* max symlink resolution depth          */
+#define VFS_MOUNT_MAX 8   /* maximum concurrent mounts             */
+#define VFS_VNODE_MAX 64  /* maximum concurrent vnodes             */
+#define VFS_NAME_MAX 63   /* max filename component (LFN support)  */
+#define VFS_PATH_MAX 128  /* max absolute path length              */
+#define VFS_SYMLOOP_MAX 4 /* max symlink resolution depth          */
 
 /* ── Block device layer ───────────────────────────────────────────────────
  * BLKDEV_MAX          Maximum registered block devices (mmcblk0, loop0, …).
@@ -95,15 +95,15 @@
  * BLKDEV_SECTOR_SIZE  Bytes per sector.  All blkdev I/O is in these units.
  *                     512 is the universal standard for SD / eMMC / ATA.
  * ────────────────────────────────────────────────────────────────────────── */
-#define BLKDEV_MAX            4     /* maximum registered block devices      */
-#define BLKDEV_SECTOR_SIZE  512u    /* bytes per sector                      */
+#define BLKDEV_MAX 4            /* maximum registered block devices      */
+#define BLKDEV_SECTOR_SIZE 512u /* bytes per sector                      */
 
 /* ── mmap regions ─────────────────────────────────────────────────────────
  * MMAP_REGIONS_MAX  Maximum concurrent anonymous mmap regions per process.
  *                   musl's malloc uses mmap for large allocations; busybox
  *                   applets need 5–6 concurrent regions.
  * ────────────────────────────────────────────────────────────────────────── */
-#define MMAP_REGIONS_MAX      8     /* max concurrent mmap regions per proc  */
+#define MMAP_REGIONS_MAX 8 /* max concurrent mmap regions per proc  */
 
 /* ── ELF loader (exec) ───────────────────────────────────────────────────
  * USER_PAGES_MAX  Maximum data-segment pages per process.  Must match
@@ -113,7 +113,7 @@
  *                 (2 MB) since they have ample RAM.
  * ────────────────────────────────────────────────────────────────────────── */
 #ifndef USER_PAGES_MAX
-#define USER_PAGES_MAX       64     /* max data-segment pages per process    */
+#define USER_PAGES_MAX 64 /* max data-segment pages per process    */
 #endif
 
 /* ── tmpfs (RAM-backed temporary filesystem) ─────────────────────────────
@@ -127,8 +127,8 @@
  *                   write time (returns -ENOSPC when exceeded).  Data is
  *                   allocated in PAGE_SIZE chunks via page_alloc().
  * ────────────────────────────────────────────────────────────────────────── */
-#define TMPFS_INODE_MAX     16     /* maximum files + directories in tmpfs   */
-#define TMPFS_NAME_MAX      31     /* max filename in tmpfs (31 chars + NUL) */
-#define TMPFS_DATA_MAX    8192u    /* max total file data (8 KB = 2 pages)   */
+#define TMPFS_INODE_MAX 16   /* maximum files + directories in tmpfs   */
+#define TMPFS_NAME_MAX 31    /* max filename in tmpfs (31 chars + NUL) */
+#define TMPFS_DATA_MAX 8192u /* max total file data (8 KB = 2 pages)   */
 
 #endif /* PPAP_CONFIG_H */

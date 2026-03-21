@@ -29,8 +29,7 @@
  *   size     — size of binary (will be clamped to TPA size)
  *   cmdline  — command-line arguments (parsed into FCBs and DMA buffer)
  */
-void cpm_load_com(z80_state_t *cpu, cpm_state_t *cpm,
-                  const uint8_t *binary, uint32_t size,
-                  const char *cmdline);
+void cpm_load_com(z80_state_t *cpu, cpm_state_t *cpm, const uint8_t *binary,
+                  uint32_t size, const char *cmdline);
 
 #endif /* PPAP_KERNEL_SUBSYS_CPM_LOADER_H */

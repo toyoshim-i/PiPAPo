@@ -13,9 +13,11 @@
 #define PPAP_KERNEL_MM_PAGE_H
 
 #include <stdint.h>
+
 #include "config.h"
 
-/* ── Memory map constants (must match the target linker script) ─────────────── */
+/* ── Memory map constants (must match the target linker script) ───────────────
+ */
 /* PAGE_SIZE and PAGE_COUNT_MAX are defined in config.h */
 
 #if defined(__m68k__)
@@ -26,33 +28,34 @@
  * this value are never probed (e.g. X68000 VRAM starts at 0xC00000).
  * Targets override via -DRAM_END=... in CMake; default = PAGE_POOL_BASE
  * + PAGE_COUNT_MAX * PAGE_SIZE (set after PAGE_POOL_BASE is known). */
-#define SRAM_KERNEL_BASE  0x00000000u
-#define SRAM_KERNEL_SIZE     (20u * 1024u)
+#define SRAM_KERNEL_BASE 0x00000000u
+#define SRAM_KERNEL_SIZE (20u * 1024u)
 extern char __page_pool_start;
-#define PAGE_POOL_BASE    ((uint32_t)(uintptr_t)&__page_pool_start)
-#define PAGE_POOL_SIZE    (PAGE_COUNT_MAX * PAGE_SIZE)
+#define PAGE_POOL_BASE ((uint32_t)(uintptr_t)&__page_pool_start)
+#define PAGE_POOL_SIZE (PAGE_COUNT_MAX * PAGE_SIZE)
 #ifndef RAM_END
-#define RAM_END           (PAGE_POOL_BASE + PAGE_POOL_SIZE)
+#define RAM_END (PAGE_POOL_BASE + PAGE_POOL_SIZE)
 #endif
 #else
 /* ARM / RP2040: SRAM layout defaults match pico1 / qemu_arm.
  * Targets with a different split (for example PicoCalc) override these via
  * target_compile_definitions(). */
-#define SRAM_KERNEL_BASE  0x20000000u       /* kernel data region start        */
+#define SRAM_KERNEL_BASE 0x20000000u /* kernel data region start        */
 #ifndef SRAM_KERNEL_SIZE
-#define SRAM_KERNEL_SIZE     (20u * 1024u)  /* reserved for kernel .data/.bss  */
+#define SRAM_KERNEL_SIZE (20u * 1024u) /* reserved for kernel .data/.bss  */
 #endif
 #ifndef PAGE_POOL_BASE
-#define PAGE_POOL_BASE    0x20005000u       /* first page in the pool          */
+#define PAGE_POOL_BASE 0x20005000u /* first page in the pool          */
 #endif
-#define PAGE_POOL_SIZE    (PAGE_COUNT_MAX * PAGE_SIZE)
-#define SRAM_IOBUF_BASE   (PAGE_POOL_BASE + PAGE_POOL_SIZE)  /* after pool    */
-#define SRAM_IOBUF_SIZE      (24u * 1024u)  /* 24 KB                           */
-#define SRAM_DMA_BASE     (SRAM_IOBUF_BASE + SRAM_IOBUF_SIZE)
-#define SRAM_DMA_SIZE        (16u * 1024u)  /* 16 KB                           */
+#define PAGE_POOL_SIZE (PAGE_COUNT_MAX * PAGE_SIZE)
+#define SRAM_IOBUF_BASE (PAGE_POOL_BASE + PAGE_POOL_SIZE) /* after pool    */
+#define SRAM_IOBUF_SIZE (24u * 1024u) /* 24 KB                           */
+#define SRAM_DMA_BASE (SRAM_IOBUF_BASE + SRAM_IOBUF_SIZE)
+#define SRAM_DMA_SIZE (16u * 1024u) /* 16 KB                           */
 #endif
 
-/* ── API ───────────────────────────────────────────────────────────────────── */
+/* ── API ─────────────────────────────────────────────────────────────────────
+ */
 
 /* Initialise the page pool and print the boot-time memory map.
  * Must be called once from kmain(), after UART is ready. */
