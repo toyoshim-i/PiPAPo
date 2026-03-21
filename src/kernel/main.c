@@ -134,9 +134,11 @@ void kmain(void) {
   /* Launch Core 1 after init has PID 1 — core1_sched_entry() calls
    * proc_alloc() which would steal PID 1 if called earlier.
    * Self-stubs on QEMU (no SIO). */
-  core1_launch(core1_sched_entry);
+  /* DEBUG: temporarily skip Core 1 launch for TZ NS debugging */
+  /* core1_launch(core1_sched_entry); */
 
-  klog("SCHED: starting scheduler\n");
+  /* DEBUG: skip Core 1 for TZ NS debugging — test single-core first */
+  klog("SCHED: starting scheduler [TZ-dbg-1core]\n");
   sched_start();
 
   /* Idle thread — wake on every interrupt, flush LCD if needed, sleep. */

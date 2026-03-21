@@ -43,6 +43,7 @@
 .equ PCB_SP_OFFSET,    32      @ offsetof(pcb_t, sp) — see proc.h
 .equ PCB_STATE_OFFSET, 44      @ offsetof(pcb_t, state) — r4..r11(32)+sp(4)+pid(4)+ppid(4)
 .equ PCB_NS_XOR_OFF,   48      @ offsetof(pcb_t, ns_addr_xor) — see proc.h
+.equ PCB_PSP_NS_OFF,   52      @ offsetof(pcb_t, psp_ns_saved) — see proc.h
 .equ PROC_RUNNABLE,     1
 
 .syntax unified
@@ -192,8 +193,12 @@ SVC_Handler:
 .Lexec_restore_ns:
     @ ── Non-Secure exec restore ──────────────────────────────────────
     @ SW frame is {EXC_RETURN} (1 word), then HW integrity + exc frame.
+    @ pcb->sp is NS alias (0x30xxxxxx); XOR to Secure for ldmia, back
+    @ to NS for msr psp_ns.
     ldr   r0, [r0, #PCB_SP_OFFSET]  @ r0 = current->sp (NS alias)
+    eor   r0, r0, #0x10000000 @ NS → Secure alias
     ldmia r0!, {lr}           @ pop EXC_RETURN
+    eor   r0, r0, #0x10000000 @ Secure → NS alias
     msr   psp_ns, r0          @ PSP_NS = integrity + exc frame base
 
     @ Set PSP_S to per-core Secure stack for gateway SVC frame.

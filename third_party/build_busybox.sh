@@ -72,7 +72,13 @@ if [[ -z "${PPAP_CC:-}" ]]; then
     fi
 fi
 
-BB_OUT="$PROJECT_ROOT/build/${PPAP_ARCH/#arm/arm_m}/busybox"
+# Derive BB_OUT from PPAP_MUSL_SYSROOT (which reflects the correct shared
+# build dir: arm_m vs arm_m33 vs m68k).  Fallback to arch-based path.
+if [[ -n "${PPAP_MUSL_SYSROOT:-}" ]]; then
+    BB_OUT="$(dirname "$PPAP_MUSL_SYSROOT")/busybox"
+else
+    BB_OUT="$PROJECT_ROOT/build/${PPAP_ARCH/#arm/arm_m}/busybox"
+fi
 
 # Variant definitions: output_name:fragment_file
 VARIANTS=(

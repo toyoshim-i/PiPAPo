@@ -28,4 +28,6 @@ __attribute__((weak)) int target_debug_hwbp_clear(uint32_t slot) {
   return -1;
 }
 
+__attribute__((weak)) void target_core1_init(void) {}
+
 __attribute__((weak)) uint32_t target_ns_addr_xor(void) { return 0; }

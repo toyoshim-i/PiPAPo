@@ -92,9 +92,9 @@
 
 #define SAU_CTRL REG(0xE000EDD0u) /* SAU Control Register              */
 #define SAU_TYPE REG(0xE000EDD4u) /* SAU Type (number of regions)      */
-#define SAU_RNR REG(0xE000EDDCu)  /* Region Number Register            */
-#define SAU_RBAR REG(0xE000EDE0u) /* Region Base Address Register      */
-#define SAU_RLAR REG(0xE000EDE4u) /* Region Limit Address Register     */
+#define SAU_RNR REG(0xE000EDD8u)  /* Region Number Register            */
+#define SAU_RBAR REG(0xE000EDDCu) /* Region Base Address Register      */
+#define SAU_RLAR REG(0xE000EDE0u) /* Region Limit Address Register     */
 
 /* SAU_CTRL bits */
 #define SAU_CTRL_ENABLE (1u << 0) /* enable SAU                          */
@@ -124,7 +124,8 @@
  * IntegritySignature) is present on PSP_NS and will be popped by
  * hardware on exception return.  Used for NS process initial exec
  * and all subsequent context switches. */
-#define EXC_RETURN_NS_THREAD_PSP 0xFFFFFF9Du
+#define EXC_RETURN_NS_THREAD_PSP 0xFFFFFF9Du  /* DCRS=0: HW pops r4-r11+IntSig */
+#define EXC_RETURN_NS_THREAD_PSP_NODCRS 0xFFFFFFBDu /* DCRS=1: no additional ctx */
 
 /* NS integrity signature pushed by hardware on NS→S exception entry.
  * Value depends on SPSEL: 0xFEFA125A (MSP) or 0xFEFA125B (PSP). */

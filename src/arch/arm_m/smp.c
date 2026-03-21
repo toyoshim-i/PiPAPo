@@ -37,6 +37,7 @@
 #include "mm/page.h"
 #include "proc/proc.h"  /* pcb_t, proc_alloc, current_core */
 #include "proc/sched.h" /* SYSTICK_RELOAD */
+#include "target/target.h" /* target_core1_init */
 
 /* ── SIO register file ───────────────────────────────────────────────────── */
 
@@ -123,8 +124,10 @@ void core1_sched_entry(void) {
   }
 #endif
 
-  /* 1. Program Core 1's MPU (regions 0, 1, 3) */
+  /* 1. Program Core 1's MPU and SAU (per-core on Cortex-M33).
+   * SAU regions must match Core 0 for NS process context switches. */
   mpu_init();
+  target_core1_init();
 
   /* 2. Set exception priorities — same as sched_start() on Core 0.
    * SHPR2/SHPR3 are per-core (Private Peripheral Bus). */

@@ -51,10 +51,89 @@ static int classify_fault(uint32_t pc) {
 
 /*
  * kernel_hardfault_dump — called from HardFault_Handler when fault is on MSP.
+ *
+ * msp_frame points to the hardware-saved exception frame on MSP:
+ *   {r0, r1, r2, r3, r12, lr, pc, xpsr}
  */
+/*
+ * Polling UART output for crash context — klogf deadlocks in HardFault
+ * because the UART ISR is masked (HardFault has highest priority).
+ * These helpers write directly to the UART TX FIFO, waiting for space.
+ */
+static volatile uint32_t *const crash_uart_dr = (volatile uint32_t *)0x40034000u;
+static volatile uint32_t *const crash_uart_fr = (volatile uint32_t *)0x40034018u;
+
+static void crash_putc(char c) {
+  while (*crash_uart_fr & (1u << 5)) ; /* wait while TX FIFO full */
+  *crash_uart_dr = (uint32_t)c;
+}
+
+static void crash_puts(const char *s) {
+  while (*s) {
+    if (*s == '\n') crash_putc('\r');
+    crash_putc(*s++);
+  }
+}
+
+static void crash_hex32(uint32_t v) {
+  crash_putc('0'); crash_putc('x');
+  for (int i = 7; i >= 0; i--) {
+    unsigned n = (v >> (i * 4)) & 0xFu;
+    crash_putc(n < 10 ? (char)('0' + n) : (char)('a' + n - 10));
+  }
+}
+
+static void crash_dec(uint32_t v) {
+  char buf[10]; int i = 0;
+  if (v == 0) { crash_putc('0'); return; }
+  while (v) { buf[i++] = (char)('0' + v % 10); v /= 10; }
+  while (--i >= 0) crash_putc(buf[i]);
+}
+
 void kernel_hardfault_dump(uint32_t *msp_frame) {
   extern uint32_t core_id(void);
-  klogf("\nKHF PC=%x LR=%x C%u", msp_frame[6], msp_frame[5], core_id());
+  uint32_t pc = msp_frame[6];
+  uint32_t lr = msp_frame[5];
+
+  crash_puts("\n*** KERNEL HARDFAULT ***  Core ");
+  crash_dec(core_id());
+  crash_puts("\n  PC="); crash_hex32(pc);
+  crash_puts("  LR="); crash_hex32(lr);
+  crash_puts("  xPSR="); crash_hex32(msp_frame[7]);
+  crash_puts("\n  r0="); crash_hex32(msp_frame[0]);
+  crash_puts(" r1="); crash_hex32(msp_frame[1]);
+  crash_puts(" r2="); crash_hex32(msp_frame[2]);
+  crash_puts(" r3="); crash_hex32(msp_frame[3]);
+  crash_puts("\n  r12="); crash_hex32(msp_frame[4]);
+
+#if __ARM_ARCH >= 8
+  /* ARMv8-M has CFSR/HFSR/MMFAR/BFAR/SFSR/SFAR for detailed diagnosis */
+  uint32_t cfsr = *(volatile uint32_t *)0xE000ED28u;
+  uint32_t hfsr = *(volatile uint32_t *)0xE000ED2Cu;
+  crash_puts("\n  CFSR="); crash_hex32(cfsr);
+  crash_puts(" HFSR="); crash_hex32(hfsr);
+  if (cfsr & 0x80u) {
+    crash_puts("\n  MMFAR=");
+    crash_hex32(*(volatile uint32_t *)0xE000ED34u);
+  }
+  if (cfsr & 0x8000u) {
+    crash_puts("\n  BFAR=");
+    crash_hex32(*(volatile uint32_t *)0xE000ED38u);
+  }
+  uint32_t sfsr = *(volatile uint32_t *)0xE000EDE4u;
+  if (sfsr) {
+    crash_puts("\n  SFSR="); crash_hex32(sfsr);
+    crash_puts(" SFAR=");
+    crash_hex32(*(volatile uint32_t *)0xE000EDE8u);
+  }
+#endif
+
+  pcb_t *p = current;
+  if (p) {
+    crash_puts("\n  current: pid="); crash_dec((uint32_t)p->pid);
+    crash_puts(" ("); crash_puts(p->comm); crash_putc(')');
+  }
+  crash_puts("\n  Halting.\n");
 }
 
 /*
@@ -68,6 +147,42 @@ void kernel_hardfault_dump(uint32_t *msp_frame) {
  * Prints a crash report and kills the faulting user process.
  * sys_exit() marks the process as ZOMBIE and pends PendSV for rescheduling.
  */
+#if __ARM_ARCH >= 8
+/* DEBUG: called from PendSV .Lrestore_ns just before bx lr */
+__attribute__((used)) void debug_ns_return(void) {
+  uint32_t psp_ns, psp_s, psplim_ns, lr_val;
+  __asm__ volatile("mrs %0, psp_ns" : "=r"(psp_ns));
+  __asm__ volatile("mrs %0, psp" : "=r"(psp_s));
+  __asm__ volatile("mrs %0, psplim_ns" : "=r"(psplim_ns));
+  __asm__ volatile("mov %0, lr" : "=r"(lr_val));
+
+  crash_puts("NS-RET: PSP_NS=");
+  crash_hex32(psp_ns);
+  crash_puts(" PSP_S=");
+  crash_hex32(psp_s);
+  crash_puts(" PSPLIM_NS=");
+  crash_hex32(psplim_ns);
+  crash_puts(" LR=");
+  crash_hex32(lr_val);
+
+  /* Dump first 18 words from PSP_NS (full DCRS=0 frame):
+   * [0..7]  r4-r11
+   * [8]     IntegritySignature
+   * [9..12] r0-r3
+   * [13]    r12
+   * [14]    lr
+   * [15]    pc
+   * [16]    xpsr */
+  volatile uint32_t *stk = (volatile uint32_t *)(uintptr_t)psp_ns;
+  crash_puts("\nSTK:");
+  for (int i = 0; i < 17; i++) {
+    crash_putc(' ');
+    crash_hex32(stk[i]);
+  }
+  crash_putc('\n');
+}
+#endif
+
 void arm_crash_handler(uint32_t *psp_frame, uint32_t *callee_regs) {
   if (trace_arm_hardfault_debug_stop(psp_frame)) return;
 
@@ -104,6 +219,29 @@ void arm_crash_handler(uint32_t *psp_frame, uint32_t *callee_regs) {
   klogf("  r0=%x r1=%x r2=%x r3=%x", psp_frame[0], psp_frame[1], psp_frame[2],
         psp_frame[3]);
   klogf("  r12=%x lr=%x", psp_frame[4], psp_frame[5]);
+
+#if __ARM_ARCH >= 8
+  /* ARMv8-M fault status registers for detailed diagnosis.
+   * NS faults route to Secure HardFault (BFHFNMINS=0).
+   * Secure CFSR is empty; fault info is in NS CFSR at 0xE002ED28. */
+  {
+    uint32_t cfsr_s = *(volatile uint32_t *)0xE000ED28u;
+    uint32_t hfsr   = *(volatile uint32_t *)0xE000ED2Cu;
+    uint32_t sfsr   = *(volatile uint32_t *)0xE000EDE4u;
+    uint32_t cfsr_ns = *(volatile uint32_t *)0xE002ED28u; /* NS SCB alias */
+    klogf("  CFSR_S=%x CFSR_NS=%x HFSR=%x SFSR=%x", cfsr_s, cfsr_ns, hfsr, sfsr);
+    if (cfsr_ns & 0x80u) /* NS MMFAR valid */
+      klogf("  NS_MMFAR=%x", *(volatile uint32_t *)0xE002ED34u);
+    if (cfsr_ns & 0x8000u) /* NS BFAR valid */
+      klogf("  NS_BFAR=%x", *(volatile uint32_t *)0xE002ED38u);
+    if (cfsr_s & 0x80u)
+      klogf("  S_MMFAR=%x", *(volatile uint32_t *)0xE000ED34u);
+    if (cfsr_s & 0x8000u)
+      klogf("  S_BFAR=%x", *(volatile uint32_t *)0xE000ED38u);
+    if (sfsr)
+      klogf("  SFAR=%x", *(volatile uint32_t *)0xE000EDE8u);
+  }
+#endif
 
   /* Print callee-saved registers: layout on MSP is {r8,r9,r10,r11,r4,r5,r6,r7}
    */

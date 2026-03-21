@@ -133,9 +133,15 @@ _trap_entry:
     bltz    t0, .Linterrupt     # mcause < 0 means bit 31 set = interrupt
 
     # ── Exception path ───────────────────────────────────────────────────
-    # For now, all exceptions go to Default_Handler (halt).
+    # Disable interrupts before calling handler to avoid nested traps.
+    csrc    mstatus, 0x8            # clear MIE
+    # Call C handler with (mcause, mepc, mtval) for diagnostics.
     # Phase RV-4 will add ecall dispatch for syscalls.
-    j       Default_Handler
+    mv      a0, t0                  # mcause (already in t0)
+    csrr    a1, mepc                # mepc
+    csrr    a2, mtval               # mtval (faulting address/instruction)
+    call    riscv_exception_handler
+    j       Default_Handler         # fallback if handler returns
 
 .Linterrupt:
     # ── Interrupt path ───────────────────────────────────────────────────

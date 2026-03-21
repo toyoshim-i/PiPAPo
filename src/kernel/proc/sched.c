@@ -24,6 +24,7 @@
 #include "../spinlock.h" /* SPIN_PROC */
 #include "arch/arch.h"
 #include "arch/ioregs.h"
+#include "../klog.h"
 
 /* ── Tick counter ─────────────────────────────────────────────────────────────
  */
@@ -61,6 +62,13 @@ pcb_t *sched_next(void) {
   if (result != current) {
     current->running_on_core = -1;
     result->running_on_core = (int8_t)core_id();
+
+    /* DEBUG: log first NS process switch */
+    static int ns_dbg = 0;
+    if (!ns_dbg && result->ns_addr_xor) {
+      ns_dbg = 1;
+      klogf("NS:%x\n", result->sp);
+    }
   }
 
   spin_unlock_irqrestore(SPIN_PROC, saved);
@@ -241,23 +249,6 @@ void sched_start(void) {
 
   /*
    * Switch Thread mode from MSP to PSP using Thread 0's dedicated stack.
-   *
-   * IMPORTANT: proc_table[0].stack_page MUST be allocated before calling
-   * sched_start().  We set PSP to the TOP of that 4 KB page so that Thread
-   * mode has a stack region completely separate from the MSP exception stack.
-   *
-   * Why not "mrs r0, msp; msr psp, r0"?
-   *   Copying MSP → PSP makes both stacks share the same memory.  When
-   *   PendSV_Handler runs (on MSP) and does "push {r2, lr}", it writes into
-   *   the region just below the current MSP, which is exactly where Thread 0's
-   *   exception frame was pushed by hardware — corrupting the saved PC/XPSR.
-   *
-   * By pointing PSP at a fresh page we ensure:
-   *   • Thread 0 PSP stack lives entirely in [stack_page, stack_page+4KB)
-   *   • MSP exception stack lives in the kernel .stack region
-   *   • No overlap, no corruption
-   *
-   * ISB ensures the subsequent instructions see the new CONTROL setting.
    */
   uint32_t psp_top = (uint32_t)(uintptr_t)proc_table[0].stack_page + PAGE_SIZE;
   __asm__ volatile(

@@ -201,18 +201,41 @@ ARMv8-M separates memory type attributes into MAIR0/MAIR1, referenced by a
 | 1 | Device-nGnRnE | 0x00 | Device memory (peripherals) |
 | 2 | Normal, outer+inner write-through | 0xAA | Outer WT/WA, Inner WT/WA |
 
-### Region Map
+### Region Map (Current — 4 static regions)
 
 | Region | Base | Limit/Size | AP | XN | MAIR idx | Purpose |
 |--------|------|------------|----|----|----------|---------|
-| 0 | 0x20000000 | 24 KB | Priv RW | Yes | 0 (WB) | Kernel data |
+| 0 | 0x20000000 | 16 KB | Priv RW | Yes | 0 (WB) | Kernel data |
 | 1 | 0x10000000 | 16 MB | Priv+User RO | No | 2 (WT) | Flash XIP |
 | 2 | per-process | 4 KB | Priv+User RW | Yes | 0 (WB) | Process stack |
 | 3 | 0x40000000 | 512 MB | Priv RW | Yes | 1 (Device) | Peripherals |
+| 4–7 | — | — | — | — | — | **Unused (available)** |
 
 Region 2 is reprogrammed on every context switch by `mpu_switch()` (called from
 PendSV_Handler). The implementation uses `#if __ARM_ARCH >= 8` to select the
 correct register encoding in `mpu.c`.
+
+### Per-Process Data Protection (Current Limitation)
+
+Regions 0–3 protect kernel memory, flash, the process stack, and peripherals.
+However, **user data pages (`user_pages[]`), heap (brk), and mmap regions are
+not covered by any MPU region**. With `PRIVDEFENA` set, privileged (kernel) code
+can access all SRAM, but unprivileged user-mode access depends on the target:
+
+- **RP2350 (ARMv8-M + TrustZone)**: User processes run in Non-Secure mode.
+  The NS MPU Region 1 grants all of NS SRAM (0x20000000, 512 KB) as RW to all
+  modes, so user code can access its data — but there is **no per-process
+  isolation**. Process A can read/write Process B's data pages if it knows the
+  address.
+
+- **RP2040 (ARMv6-M)**: With only 4 regions used and `PRIVDEFENA`, user-mode
+  access to SRAM addresses outside the 4 defined regions faults. In practice,
+  RP2040 user processes currently work because the M0+ default memory map allows
+  access when no region matches at that address with `PRIVDEFENA` enabled.
+
+Regions 4–7 are available for per-process data protection. See
+`docs/proposals/m33_mpu_full_protection.md` for a plan to use these regions to
+cover `user_pages[]`, heap, and mmap areas on a per-process basis.
 
 ---
 

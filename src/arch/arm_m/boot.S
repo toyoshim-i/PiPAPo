@@ -251,7 +251,22 @@ HardFault_Handler:
 .Luser_fault:
 
     @ ── User-mode fault ──────────────────────────────────────────────
+#if __ARM_ARCH >= 8
+    @ Check EXC_RETURN bit 6 (S): 0 = NS fault, 1 = Secure fault.
+    @ NS faults have the exception frame on PSP_NS, not PSP_S.
+    @ With DCRS=0, HW pushed {r4-r11, IntegritySig} (9 words = 36 bytes)
+    @ before the standard exception frame {r0..xpsr}.
+    tst  lr, #0x40
+    bne  .Luser_fault_secure
+    mrs  r0, psp_ns             @ r0 = NS stack (r4-r11, IntegSig, exc frame)
+    adds r0, r0, #36            @ skip integrity frame → point at {r0..xpsr}
+    b    .Luser_fault_frame
+.Luser_fault_secure:
+#endif
     mrs  r0, psp                @ r0 = pointer to stacked {r0..xpsr}
+#if __ARM_ARCH >= 8
+.Luser_fault_frame:
+#endif
 
     @ Save callee-saved registers on MSP for crash report.
     @ 6 + 4 = 10 words = 40 bytes (8-byte aligned for C calls).

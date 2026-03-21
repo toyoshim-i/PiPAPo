@@ -9,6 +9,7 @@
 
 #include <stdint.h>
 #include "cpu.h"
+#include "klog.h"
 
 /* Context switch pending flag.
  * Set by arch_yield() (via sched_tick or sched_yield).
@@ -22,6 +23,32 @@ volatile uint32_t riscv_tick_count = 0;
 
 /* core_id() is provided as static inline in spinlock.h (via proc.h).
  * Phase RV-6 (dual-core) will use SIO_CPUID for real core detection. */
+
+/* ── Exception handler ────────────────────────────────────────────────────── */
+
+/*
+ * riscv_exception_handler — called from trap.S on synchronous exceptions.
+ * Prints fault info over UART (if UART is up) and halts.
+ */
+/*
+ * Breadcrumb at fixed SRAM address for OpenOCD inspection.
+ * 0x20005F00: 0xDEADBEEF (magic), mcause, mepc, mtval
+ */
+#define CRASH_LOG ((volatile uint32_t *)0x20005F00u)
+
+void riscv_exception_handler(uint32_t mcause, uint32_t mepc, uint32_t mtval)
+{
+    /* Disable all interrupts to prevent further traps */
+    csr_clear(mstatus, MSTATUS_MIE);
+    csr_clear(mie, MIE_MTIE);
+
+    CRASH_LOG[0] = 0xDEADBEEFu;
+    CRASH_LOG[1] = mcause;
+    CRASH_LOG[2] = mepc;
+    CRASH_LOG[3] = mtval;
+
+    for (;;) __asm__ volatile("wfi"); /* halt with IRQs off */
+}
 
 /* ── Timer ────────────────────────────────────────────────────────────────── */
 

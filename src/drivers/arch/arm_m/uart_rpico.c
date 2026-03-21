@@ -92,8 +92,17 @@
  * IRQ 33 lives in NVIC register bank 1 (ISER1/ICER1/ICPR1).
  * The SDK header defines UART0_IRQ as an enum in C (not a #define),
  * so we use PICO_RP2350 to select at compile time.
+ *
+ * RISC-V has no NVIC — the ARM PPB region (0xE000Exxx) is inaccessible
+ * and writes cause a store access fault.  NVIC ops become no-ops.
  */
-#ifdef PICO_RP2350
+#if defined(__riscv)
+static volatile uint32_t _nvic_sink;   /* write sink for RISC-V */
+#define UART0_NVIC_ISER _nvic_sink
+#define UART0_NVIC_ICER _nvic_sink
+#define UART0_NVIC_ICPR _nvic_sink
+#define UART0_IRQ_BIT   0u
+#elif defined(PICO_RP2350)
 #define UART0_NVIC_ISER NVIC_ISER1
 #define UART0_NVIC_ICER NVIC_ICER1
 #define UART0_NVIC_ICPR NVIC_ICPR1

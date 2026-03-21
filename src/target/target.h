@@ -119,6 +119,17 @@ int target_debug_hwbp_set(uint32_t slot, uint32_t addr);
 int target_debug_hwbp_clear(uint32_t slot);
 
 /*
+ * target_core1_init() — per-core hardware init for Core 1.
+ *
+ * Called from core1_sched_entry() after mpu_init().  Targets with per-core
+ * hardware (e.g. SAU on Cortex-M33, NSACR, FPU coprocessor access) should
+ * replicate the Core 0 setup here.
+ *
+ * Default weak implementation is a no-op (target_default.c).
+ */
+void target_core1_init(void);
+
+/*
  * target_ns_addr_xor() — TrustZone NS address alias XOR value.
  *
  * Returns 0 on targets without TrustZone (all addresses are Secure).

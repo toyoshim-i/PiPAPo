@@ -120,6 +120,13 @@ typedef struct pcb {
    * select the NS save/restore path. */
   uint32_t ns_addr_xor;
 
+  /* psp_ns_saved: saved PSP_NS value for NS processes.  When an NS
+   * process blocks in a syscall (via NSC gateway), PendSV saves the
+   * Secure context on PSP_S.  PSP_NS (pointing to the NS user stack)
+   * must be saved separately so it can be restored when the process
+   * resumes — another NS process may run on the same core in between. */
+  uint32_t psp_ns_saved;
+
   /* ── Memory ─────────────────────────────────────────────────────────── */
   void *stack_page; /* 4 KB page from page_alloc(): process stack */
   void *user_pages[USER_PAGES_MAX]; /* user data pages (exec data segment) */

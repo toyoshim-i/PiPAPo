@@ -226,12 +226,35 @@ if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 || "$TA
     fi
 
     echo "[run] Flashing $ELF ..."
-    "$OPENOCD_BIN" \
+    if "$OPENOCD_BIN" \
         "${OPENOCD_ARGS[@]}" \
-        -c "program \"$ELF\" verify reset exit"
+        -c "program \"$ELF\" verify reset exit" 2>&1; then
+        echo "[run] Done."
+        exit 0
+    fi
 
-    echo "[run] Done."
-    exit 0
+    # RP2350: if primary config failed, the chip may be in the other arch mode.
+    # Try the alternate config (ARM↔RISC-V) before giving up.
+    if [[ "$TARGET" == pico2 || "$TARGET" == pico2rv ]]; then
+        if [[ "$TARGET" == pico2 ]]; then
+            ALT_CFG="target/rp2350-riscv.cfg"
+            echo "[run] ARM target failed — retrying via RISC-V debug port..."
+        else
+            ALT_CFG="target/rp2350.cfg"
+            echo "[run] RISC-V target failed — retrying via ARM debug port..."
+        fi
+        if "$OPENOCD_BIN" -s "$OPENOCD_SCRIPTS" \
+            -f interface/cmsis-dap.cfg -f "$ALT_CFG" \
+            -c "adapter speed 5000" \
+            -c "program \"$ELF\" verify reset exit" 2>&1; then
+            echo "[run] Done (flashed via alternate debug port)."
+            exit 0
+        fi
+        echo "[run] Error: both ARM and RISC-V debug ports failed."
+        echo "      Try: hold BOOTSEL, power cycle, then copy the UF2:"
+        echo "        cp ${ELF%.elf}.uf2 /media/\$USER/RP2350/"
+    fi
+    exit 1
 fi
 
 # ── QEMU targets (qemu_arm, qemu_m68k) ─────────────────────────────────────

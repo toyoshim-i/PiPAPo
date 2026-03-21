@@ -9,11 +9,11 @@
 #ifndef PPAP_TARGET_PICO2_PICO2_H
 #define PPAP_TARGET_PICO2_PICO2_H
 
-#define PICO2_UART0_TX      0    /* GP0 */
-#define PICO2_UART0_RX      1    /* GP1 */
+#define PICO2_UART0_TX 0 /* GP0 */
+#define PICO2_UART0_RX 1 /* GP1 */
 
 /* On-board LED (active high) — useful for debug heartbeat */
-#define PICO2_LED            25   /* GP25 */
+#define PICO2_LED 25 /* GP25 */
 
 /* ── RP2350 TrustZone address aliases ─────────────────────────────────────
  *
@@ -28,8 +28,8 @@
  * physical memory.  Kernel code always uses the Secure alias; NS user
  * processes will use the Non-Secure alias.
  * ────────────────────────────────────────────────────────────────────────── */
-#define RP2350_NS_BIT         0x10000000u
-#define RP2350_ADDR_S_TO_NS(a)  ((uint32_t)(a) ^ RP2350_NS_BIT)
-#define RP2350_ADDR_NS_TO_S(a)  ((uint32_t)(a) ^ RP2350_NS_BIT)
+#define RP2350_NS_BIT 0x10000000u
+#define RP2350_ADDR_S_TO_NS(a) ((uint32_t)(a) ^ RP2350_NS_BIT)
+#define RP2350_ADDR_NS_TO_S(a) ((uint32_t)(a) ^ RP2350_NS_BIT)
 
 #endif /* PPAP_TARGET_PICO2_PICO2_H */

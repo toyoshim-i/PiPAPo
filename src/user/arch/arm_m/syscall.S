@@ -6,9 +6,12 @@
 @   r7  = syscall number
 @   r0–r3 = arguments
 @   r0  = return value (negative errno on error)
-@   svc 0 triggers the SVC exception
 @
-@ Each stub: push {r7,lr} → load r7 with syscall number → svc 0 → pop {r7,pc}
+@ On ARMv6-M (Cortex-M0+): svc 0 triggers the SVC exception directly.
+@ On ARMv8-M NS (Cortex-M33): BLX to the NSC gateway at 0x10028001 which
+@ does SG → SVC 0 → BXNS LR (NS code cannot use SVC directly).
+@
+@ Each stub: push {r7,lr} → load r7 with syscall number → SYSCALL → pop {r7,pc}
 @ r7 is callee-saved in ARM AAPCS, so we must preserve it across the call.
 @
 @ PPAP syscall numbers: 16-bit, high byte = group, low byte = index.
@@ -16,7 +19,20 @@
 @ =============================================================================
 
 .syntax unified
+#ifdef __PPAP_NS_SYSCALL__
+.cpu cortex-m33
+@ SYSCALL: BLX to NSC gateway.  Uses r12 (caller-saved) as scratch.
+.macro DO_SYSCALL
+    movw r12, #0x8001
+    movt r12, #0x1002
+    blx  r12
+.endm
+#else
 .cpu cortex-m0plus
+.macro DO_SYSCALL
+    svc  0
+.endm
+#endif
 .thumb
 
 @ --- _exit (SYS_EXIT = 0x0000) ------------------------------------------------
@@ -26,7 +42,7 @@
 .thumb_func
 _exit:
     movs r7, #0         @ SYS_EXIT
-    svc  0
+    DO_SYSCALL
     b    .               @ should never return
 
 @ --- read (SYS_READ = 0x0100) -------------------------------------------------
@@ -37,7 +53,7 @@ _exit:
 read:
     push {r7, lr}
     ldr  r7, =0x0100    @ SYS_READ
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- write (SYS_WRITE = 0x0101) -----------------------------------------------
@@ -48,7 +64,7 @@ read:
 write:
     push {r7, lr}
     ldr  r7, =0x0101    @ SYS_WRITE
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- open (SYS_OPEN = 0x0102) -------------------------------------------------
@@ -59,7 +75,7 @@ write:
 open:
     push {r7, lr}
     ldr  r7, =0x0102    @ SYS_OPEN
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- close (SYS_CLOSE = 0x0103) -----------------------------------------------
@@ -70,7 +86,7 @@ open:
 close:
     push {r7, lr}
     ldr  r7, =0x0103    @ SYS_CLOSE
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- waitpid (SYS_WAITPID = 0x0004) -------------------------------------------
@@ -81,7 +97,7 @@ close:
 waitpid:
     push {r7, lr}
     movs r7, #4          @ SYS_WAITPID
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- execve (SYS_EXECVE = 0x0003) ---------------------------------------------
@@ -92,7 +108,7 @@ waitpid:
 execve:
     push {r7, lr}
     movs r7, #3          @ SYS_EXECVE
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- ptrace (SYS_PTRACE = 0x000F) ---------------------------------------------
@@ -103,7 +119,7 @@ execve:
 ptrace:
     push {r7, lr}
     movs r7, #0x0F
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- setsid (SYS_SETSID = 0x000B) ---------------------------------------------
@@ -114,7 +130,7 @@ ptrace:
 setsid:
     push {r7, lr}
     movs r7, #0x0B       @ SYS_SETSID
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- ioctl (SYS_IOCTL = 0x0107) -----------------------------------------------
@@ -125,7 +141,7 @@ setsid:
 ioctl:
     push {r7, lr}
     ldr  r7, =0x0107    @ SYS_IOCTL
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- getpid (SYS_GETPID = 0x0006) ---------------------------------------------
@@ -136,7 +152,7 @@ ioctl:
 getpid:
     push {r7, lr}
     movs r7, #6          @ SYS_GETPID
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- brk (SYS_BRK = 0x0400) ---------------------------------------------------
@@ -147,7 +163,7 @@ getpid:
 brk:
     push {r7, lr}
     ldr  r7, =0x0400    @ SYS_BRK
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- dup (SYS_DUP = 0x0104) ---------------------------------------------------
@@ -158,7 +174,7 @@ brk:
 dup:
     push {r7, lr}
     ldr  r7, =0x0104    @ SYS_DUP
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- pipe (SYS_PIPE = 0x0106) -------------------------------------------------
@@ -169,7 +185,7 @@ dup:
 pipe:
     push {r7, lr}
     ldr  r7, =0x0106    @ SYS_PIPE
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- dup2 (SYS_DUP2 = 0x0105) -------------------------------------------------
@@ -180,7 +196,7 @@ pipe:
 dup2:
     push {r7, lr}
     ldr  r7, =0x0105    @ SYS_DUP2
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- kill (SYS_KILL = 0x0600) -------------------------------------------------
@@ -191,7 +207,7 @@ dup2:
 kill:
     push {r7, lr}
     ldr  r7, =0x0600    @ SYS_KILL
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- sigaction (SYS_SIGACTION = 0x0601) ----------------------------------------
@@ -202,7 +218,7 @@ kill:
 sigaction:
     push {r7, lr}
     ldr  r7, =0x0601    @ SYS_SIGACTION
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- vfork (SYS_VFORK = 0x0002) -----------------------------------------------
@@ -213,7 +229,7 @@ sigaction:
 vfork:
     push {r7, lr}
     movs r7, #2          @ SYS_VFORK
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- ppoll (SYS_PPOLL = 0x0701) -----------------------------------------------
@@ -226,7 +242,7 @@ ppoll:
     push {r4, r7, lr}
     ldr  r4, [sp, #12]    @ 5th arg from stack (above saved r4,r7,lr)
     ldr  r7, =0x0701      @ SYS_PPOLL
-    svc  0
+    DO_SYSCALL
     pop  {r4, r7, pc}
 
     .ltorg                 @ literal pool
@@ -239,7 +255,7 @@ ppoll:
 getppid:
     push {r7, lr}
     movs r7, #8          @ SYS_GETPPID
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- setpgid (SYS_SETPGID = 0x0009) -------------------------------------------
@@ -250,7 +266,7 @@ getppid:
 setpgid:
     push {r7, lr}
     movs r7, #9          @ SYS_SETPGID
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- getpgid (SYS_GETPGID = 0x000A) -------------------------------------------
@@ -261,7 +277,7 @@ setpgid:
 getpgid:
     push {r7, lr}
     movs r7, #0x0A       @ SYS_GETPGID
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- lseek (SYS_LSEEK = 0x010B) -----------------------------------------------
@@ -272,7 +288,7 @@ getpgid:
 lseek:
     push {r7, lr}
     ldr  r7, =0x010B    @ SYS_LSEEK
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- getcwd (SYS_GETCWD = 0x0203) ---------------------------------------------
@@ -283,7 +299,7 @@ lseek:
 getcwd:
     push {r7, lr}
     ldr  r7, =0x0203    @ SYS_GETCWD
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- chdir (SYS_CHDIR = 0x0207) -----------------------------------------------
@@ -294,7 +310,7 @@ getcwd:
 chdir:
     push {r7, lr}
     ldr  r7, =0x0207    @ SYS_CHDIR
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- access (SYS_ACCESS = 0x0202) ---------------------------------------------
@@ -305,7 +321,7 @@ chdir:
 access:
     push {r7, lr}
     ldr  r7, =0x0202    @ SYS_ACCESS
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- writev (SYS_WRITEV = 0x010A) ---------------------------------------------
@@ -316,7 +332,7 @@ access:
 writev:
     push {r7, lr}
     ldr  r7, =0x010A    @ SYS_WRITEV
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- readv (SYS_READV = 0x0109) -----------------------------------------------
@@ -327,7 +343,7 @@ writev:
 readv:
     push {r7, lr}
     ldr  r7, =0x0109    @ SYS_READV
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- stat (SYS_STAT = 0x0200) -------------------------------------------------
@@ -338,7 +354,7 @@ readv:
 stat:
     push {r7, lr}
     ldr  r7, =0x0200    @ SYS_STAT
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- getdents (SYS_GETDENTS = 0x0300) -----------------------------------------
@@ -349,7 +365,7 @@ stat:
 getdents:
     push {r7, lr}
     ldr  r7, =0x0300    @ SYS_GETDENTS
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- mkdir (SYS_MKDIR = 0x0204) -----------------------------------------------
@@ -360,7 +376,7 @@ getdents:
 mkdir:
     push {r7, lr}
     ldr  r7, =0x0204    @ SYS_MKDIR
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- unlink (SYS_UNLINK = 0x0206) ---------------------------------------------
@@ -371,7 +387,7 @@ mkdir:
 unlink:
     push {r7, lr}
     ldr  r7, =0x0206    @ SYS_UNLINK
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- rmdir (SYS_RMDIR = 0x0205) -----------------------------------------------
@@ -382,7 +398,7 @@ unlink:
 rmdir:
     push {r7, lr}
     ldr  r7, =0x0205    @ SYS_RMDIR
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
     .ltorg                 @ literal pool for new stubs
@@ -395,7 +411,7 @@ rmdir:
 nanosleep:
     push {r7, lr}
     ldr  r7, =0x0500    @ SYS_NANOSLEEP
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}
 
 @ --- clock_gettime (SYS_CLOCK_GETTIME32 = 0x0501) ----------------------------
@@ -406,5 +422,5 @@ nanosleep:
 clock_gettime:
     push {r7, lr}
     ldr  r7, =0x0501    @ SYS_CLOCK_GETTIME32
-    svc  0
+    DO_SYSCALL
     pop  {r7, pc}

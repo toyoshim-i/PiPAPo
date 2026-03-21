@@ -65,13 +65,11 @@ static void apply_relocations(const elf32_ehdr_t *ehdr,
 
       uint32_t sym_val = dynsym[sym_idx].st_value + (uint32_t)r_addend;
       if (sym_val < data_seg->p_vaddr) {
-        cpu_ops->write32(cpu_state, word_addr,
-                         (sym_val + text_base) ^ ns_xor);
+        cpu_ops->write32(cpu_state, word_addr, sym_val + text_base);
       } else {
         cpu_ops->write32(
             cpu_state, word_addr,
-            (sym_val - data_seg->p_vaddr + (uint32_t)(uintptr_t)sram_page) ^
-                ns_xor);
+            sym_val - data_seg->p_vaddr + (uint32_t)(uintptr_t)sram_page);
       }
       continue;
     }
@@ -98,12 +96,11 @@ static void apply_relocations(const elf32_ehdr_t *ehdr,
     if (val == 0) continue;
 
     if (val < data_seg->p_vaddr) {
-      cpu_ops->write32(cpu_state, word_addr, (val + text_base) ^ ns_xor);
+      cpu_ops->write32(cpu_state, word_addr, val + text_base);
     } else {
       cpu_ops->write32(
           cpu_state, word_addr,
-          (val - data_seg->p_vaddr + (uint32_t)(uintptr_t)sram_page) ^
-              ns_xor);
+          val - data_seg->p_vaddr + (uint32_t)(uintptr_t)sram_page);
     }
   }
 }
@@ -176,8 +173,8 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   } else {
     entry = xip_text_base + (e_entry & ~1u) - text_seg->p_vaddr;
     entry |= (e_entry & 1u);
-    /* NS processes execute from the Non-Secure flash alias */
-    entry ^= ns_xor;
+    /* On RP2350, NS processes execute from the same flash addresses
+     * (0x10xxxxxx) as the kernel — SAU marks flash as NS.  No XOR. */
   }
 
   if (data_seg && data_seg->p_memsz > 0) {
@@ -214,13 +211,11 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
         uint32_t val = cpu_ops->read32(cpu_state, word_addr);
         if (val == 0) continue;
         if (val < data_seg->p_vaddr)
-          cpu_ops->write32(cpu_state, word_addr,
-                           (val + xip_text_base) ^ ns_xor);
+          cpu_ops->write32(cpu_state, word_addr, val + xip_text_base);
         else
           cpu_ops->write32(
               cpu_state, word_addr,
-              (val - data_seg->p_vaddr + (uint32_t)(uintptr_t)sram_page) ^
-                  ns_xor);
+              val - data_seg->p_vaddr + (uint32_t)(uintptr_t)sram_page);
       }
     }
 
@@ -284,8 +279,8 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   *(uint32_t *)(uintptr_t)sp = 0;
   for (int i = argc - 1; i >= 0; i--) {
     sp -= 4;
-    /* NS processes see stack at NS alias; pointers must match */
-    *(uint32_t *)(uintptr_t)sp = str_addrs[i] ^ ns_xor;
+    /* On RP2350, stack is at 0x20xxxxxx which is already NS alias */
+    *(uint32_t *)(uintptr_t)sp = str_addrs[i];
   }
   sp -= 4;
   *(uint32_t *)(uintptr_t)sp = (uint32_t)argc;
@@ -308,16 +303,16 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   } else {
     proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, argv_sp);
     if (got_sram_addr) {
-      /* Access frame via Secure alias (XOR back for NS processes) */
-      uint32_t *sw = (uint32_t *)(uintptr_t)(p->sp ^ ns_xor);
+      /* pcb->sp is at 0x20xxxxxx (directly accessible, no XOR needed) */
+      uint32_t *sw = (uint32_t *)(uintptr_t)p->sp;
       /* NS SW frame: {EXC_RETURN, r4..r11, IntegritySig, ...}
        *   → r9 at sw[6] (1 + 5 words from EXC_RETURN)
        * Secure SW frame: {r4..r11, EXC_RETURN}
        *   → r9 at sw[5] */
       uint32_t r9_off = ns_xor ? 6u : 5u;
-      sw[r9_off] = got_sram_addr ^ ns_xor;
+      sw[r9_off] = got_sram_addr;  /* SRAM addr, already NS alias */
     }
-    p->got_base = got_sram_addr ^ ns_xor;
+    p->got_base = got_sram_addr;  /* SRAM addr, already NS alias */
   }
 
   return 0;

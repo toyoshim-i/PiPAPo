@@ -30,6 +30,7 @@ pico_sdk_init()
 
 option(PPAP_TESTS "Enable test suite" OFF)
 option(PPAP_TESTS_EXTENDED "Use extended test init runner" OFF)
+option(PPAP_SEMIHOST "Use ARM semihosting for serial I/O" OFF)
 
 # User-space binaries use hardware FPU with softfp ABI (compatible with
 # soft-float musl/busybox — float args still passed in integer regs).
@@ -43,9 +44,19 @@ add_executable(ppap_pico2
     ${CMAKE_CURRENT_SOURCE_DIR}/picobin_block.S
     ${CMAKE_CURRENT_SOURCE_DIR}/nsc_veneer.S
     ${CMAKE_CURRENT_SOURCE_DIR}/target_pico2.c
-    ${PPAP_ROOT}/src/drivers/arch/arm_m/uart_rpico.c
     ${PPAP_ROOT}/src/drivers/arch/arm_m/clock_rpico.c
 )
+
+if(PPAP_SEMIHOST)
+    target_sources(ppap_pico2 PRIVATE
+        ${PPAP_ROOT}/src/drivers/arch/arm_m/semihost.c
+    )
+    target_compile_definitions(ppap_pico2 PRIVATE PPAP_SEMIHOST=1)
+else()
+    target_sources(ppap_pico2 PRIVATE
+        ${PPAP_ROOT}/src/drivers/arch/arm_m/uart_rpico.c
+    )
+endif()
 
 ppap_arm_target_common(ppap_pico2)
 

@@ -12,6 +12,7 @@
 #include "drivers/arch/arm_m/uart_rpico.h"
 #include "drivers/clock.h"
 #include "klog.h"
+#include <hardware/regs/addressmap.h> /* UART0_BASE */
 
 #ifdef PPAP_TESTS
 #include "ktest.h"
@@ -20,11 +21,11 @@
 void target_early_init(void)
 {
     uart_init();
-    klog("PiPAPo booting... [pico2rv]\n");
-    klog("UART: 115200 bps @ 12 MHz XOSC\n");
-    uart_tx_drain();           /* drain at 12 MHz; also disables UART0 NVIC */
+    /* Skip uart_tx_drain() — nothing in ring, and BUSY may be stuck on
+     * RP2350 RISC-V.  Just switch clock and reprogram baud directly. */
     clock_init_pll();          /* switch clk_sys to PLL (PPAP_SYS_HZ)      */
     uart_reinit_pll();         /* set PLL-speed baud divisors               */
+    klog("PiPAPo booting... [pico2rv]\n");
     klogf("System clock: %u MHz\n", PPAP_SYS_HZ / 1000000u);
     /* No SPI init — pico2rv has no SD card slot */
 }

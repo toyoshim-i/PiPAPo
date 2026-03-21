@@ -23,6 +23,10 @@
 extern char __nsc_veneer_start[];
 extern char __nsc_veneer_end[];
 
+/* Linker-provided romfs bounds — user binaries live here */
+extern const uint8_t __romfs_start[];
+extern const uint8_t __romfs_end[];
+
 /* ── SAU / TrustZone initialisation ───────────────────────────────────────
  *
  * RP2350 boots in Secure world (picobin IMAGE_TYPE = 0x1021).  The IDAU
@@ -58,12 +62,47 @@ static void sau_init(void) {
   SAU_RBAR = (uint32_t)&__nsc_veneer_start;
   SAU_RLAR = (uint32_t)&__nsc_veneer_end | SAU_RLAR_ENABLE | SAU_RLAR_NSC;
 
+  /* Region 1: NS SRAM — 0x20000000..0x2007FFFF (512 KB).
+   * On RP2350, 0x20xxxxxx is the Non-Secure SRAM alias and
+   * 0x30xxxxxx is the Secure alias.  Without this SAU region,
+   * ALLNS=0 defaults 0x20xxxxxx to Secure; NS user processes
+   * couldn't access their own stack/data.  Marking this range NS
+   * in SAU lets NS code access SRAM at the NS alias.
+   * Secure kernel code accessing 0x20xxxxxx goes through the
+   * NS MPU (PRIVDEFENA allows privileged access). */
+  SAU_RNR = 1;
+  SAU_RBAR = 0x20000000u;
+  SAU_RLAR = 0x2007FFE0u | SAU_RLAR_ENABLE; /* NS (not NSC) */
+
+  /* Region 2: NS Flash — romfs area only.
+   * Only the user-binary region (romfs) is marked NS so NS processes
+   * can execute from it.  Kernel code stays Secure (no SAU region).
+   * SAU base/limit must be 32-byte aligned. */
+  {
+    uint32_t romfs_base = (uint32_t)(uintptr_t)__romfs_start & ~0x1Fu;
+    uint32_t romfs_limit = ((uint32_t)(uintptr_t)__romfs_end + 0x1Fu) & ~0x1Fu;
+    SAU_RNR = 2;
+    SAU_RBAR = romfs_base;
+    SAU_RLAR = romfs_limit | SAU_RLAR_ENABLE; /* NS (not NSC) */
+    klogf("SAU: R2 NS flash %x-%x\n", romfs_base, romfs_limit);
+  }
+
   /* Enable SAU with ALLNS=0.  Addresses not in any SAU region default
    * to Secure; IDAU provides NS for 0x00/0x30/0x50 alias addresses. */
   SAU_CTRL = SAU_CTRL_ENABLE;
+  __asm__ volatile("dsb; isb");
 
-  klogf("SAU: enabled (%u regions, 1 configured: NSC @ 0x%08x)\n", nregions,
-        (unsigned)&__nsc_veneer_start);
+  klogf("SAU: enabled (%u regions, 3 configured: NSC + NS SRAM + NS flash)\n",
+        nregions);
+
+  /* DEBUG: Verify SAU region 1 (NS SRAM at 0x20xxxxxx) with TT */
+  {
+    uint32_t test_addr = 0x20040000u;
+    uint32_t tt_result, tta_result;
+    __asm__ volatile("tt  %0, %1" : "=r"(tt_result) : "r"(test_addr));
+    __asm__ volatile("tta %0, %1" : "=r"(tta_result) : "r"(test_addr));
+    klogf("SAU-DBG: TT(0x20040000)=%x TTA=%x\n", tt_result, tta_result);
+  }
 }
 
 /* ── Per-core Secure PSP stacks ──────────────────────────────────────────
@@ -78,10 +117,14 @@ uint32_t secure_psp_top[2];
 void target_early_init(void) {
   uart_init();
   klog("PiPAPo booting... [pico2]\n");
+#ifdef PPAP_SEMIHOST
+  clock_init_pll(); /* still need PLL for SysTick */
+#else
   klog("UART: 115200 bps @ 12 MHz XOSC\n");
   uart_tx_drain();   /* drain at 12 MHz; also disables UART0 NVIC */
   clock_init_pll();  /* switch clk_sys to PLL (PPAP_SYS_HZ)      */
   uart_reinit_pll(); /* set PLL-speed baud divisors               */
+#endif
   klogf("System clock: %u MHz\n", PPAP_SYS_HZ / 1000000u);
   /* No SPI init — pico2 has no SD card slot */
 }
@@ -126,6 +169,8 @@ uint32_t target_caps(void) {
 }
 
 uint32_t target_ns_addr_xor(void) { return RP2350_NS_BIT; }
+
+void target_core1_init(void) { sau_init(); }
 
 /* ── ARM FPB hardware breakpoints (native ptrace backend) ───────────────── *
  *

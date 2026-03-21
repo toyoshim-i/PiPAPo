@@ -67,7 +67,12 @@ if [[ -z "${PPAP_CC:-}" ]]; then
     fi
 fi
 
-ROGUE_OUT="$PROJECT_ROOT/build/${PPAP_ARCH/#arm/arm_m}/rogue"
+# Derive ROGUE_OUT from PPAP_MUSL_SYSROOT (correct shared build dir).
+if [[ -n "${PPAP_MUSL_SYSROOT:-}" ]]; then
+    ROGUE_OUT="$(dirname "$PPAP_MUSL_SYSROOT")/rogue"
+else
+    ROGUE_OUT="$PROJECT_ROOT/build/${PPAP_ARCH/#arm/arm_m}/rogue"
+fi
 
 # Build CFLAGS
 CFLAGS="$PPAP_TARGET_FLAGS -Os"

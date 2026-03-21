@@ -35,6 +35,9 @@ _Static_assert(
 _Static_assert(
     offsetof(pcb_t, ns_addr_xor) == 48,
     "PCB ns_addr_xor offset mismatch — update PCB_NS_XOR_OFF in asm");
+_Static_assert(
+    offsetof(pcb_t, psp_ns_saved) == 52,
+    "PCB psp_ns_saved offset mismatch — update PCB_PSP_NS_OFF in asm");
 #endif
 
 /* ── Globals ─────────────────────────────────────────────────────────────── */
@@ -172,10 +175,6 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp) {
      *   IntegritySignature (0xFEFA125B for PSP)
      *   r11,r10,r9,r8,r7,r6,r5,r4
      *   [our SW frame]     EXC_RETURN
-     *
-     * The frames are written via the Secure alias (0x20xxxxxx), but
-     * pcb->sp is stored as the NS alias (XOR'd) since PendSV will
-     * set PSP_NS to this value.
      */
     *--sp = NS_INTEGRITY_SIG_PSP; /* IntegritySignature (PSP) */
     *--sp = 0u;           /* r11 */
@@ -189,8 +188,10 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp) {
     /* Our 1-word SW frame: EXC_RETURN with DCRS=0, S=0 */
     *--sp = EXC_RETURN_NS_THREAD_PSP;
 
-    /* Store as NS alias address */
-    p->sp = (uint32_t)(uintptr_t)sp ^ p->ns_addr_xor;
+    /* On RP2350, page_alloc returns 0x20xxxxxx which is already the NS
+     * SRAM alias (0x30xxxxxx is the Secure alias).  Store directly —
+     * no XOR needed for SRAM addresses. */
+    p->sp = (uint32_t)(uintptr_t)sp;
     p->ticks_remaining = PROC_DEFAULT_TICKS;
     return;
   }

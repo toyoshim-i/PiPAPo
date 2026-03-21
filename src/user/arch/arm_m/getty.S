@@ -24,7 +24,19 @@
 @ =============================================================================
 
 .syntax unified
+#ifdef __PPAP_NS_SYSCALL__
+.cpu cortex-m33
+.macro DO_SYSCALL
+    movw r12, #0x8001
+    movt r12, #0x1002
+    blx  r12
+.endm
+#else
 .cpu cortex-m0plus
+.macro DO_SYSCALL
+    svc  0
+.endm
+#endif
 .thumb
 
 @ ── PPAP syscall numbers ───────────────────────────────────────────────────────
@@ -76,7 +88,7 @@ _start:
 
     @ 1. setsid()
     movs r7, #SYS_SETSID
-    svc  0
+    DO_SYSCALL
 
     @ 2. Build "/dev/<tty>" on the stack
     @    Reserve 32 bytes on stack for path buffer
@@ -92,18 +104,18 @@ _start:
     @ close(0), close(1), close(2)
     ldr  r7, .Lsys_close
     movs r0, #0
-    svc  0
+    DO_SYSCALL
     movs r0, #1
-    svc  0
+    DO_SYSCALL
     movs r0, #2
-    svc  0
+    DO_SYSCALL
 
     @ fd = open(path, O_RDWR, 0)
     mov  r0, sp
     movs r1, #O_RDWR
     movs r2, #0
     ldr  r7, .Lsys_open
-    svc  0
+    DO_SYSCALL
 
     @ If open failed, try argv[1] as-is (might be a full path)
     cmp  r0, #0
@@ -112,14 +124,14 @@ _start:
     movs r1, #O_RDWR
     movs r2, #0
     ldr  r7, .Lsys_open
-    svc  0
+    DO_SYSCALL
     cmp  r0, #0
     bge  .Lopen_ok
 
     @ Both opens failed — exit
     movs r0, #1
     movs r7, #SYS_EXIT
-    svc  0
+    DO_SYSCALL
 
 .Lopen_ok:
     @ r5 = fd
@@ -134,30 +146,30 @@ _start:
     mov  r0, r5
     movs r1, #0
     ldr  r7, .Lsys_dup2
-    svc  0
+    DO_SYSCALL
     mov  r0, r5
     ldr  r7, .Lsys_close
-    svc  0
+    DO_SYSCALL
 .Lfd_is_zero:
 
     @ dup2(0, 1)
     movs r0, #0
     movs r1, #1
     ldr  r7, .Lsys_dup2
-    svc  0
+    DO_SYSCALL
 
     @ dup2(0, 2)
     movs r0, #0
     movs r1, #2
     ldr  r7, .Lsys_dup2
-    svc  0
+    DO_SYSCALL
 
     @ 3. ioctl(0, TIOCSCTTY, 1)
     movs r0, #0
     ldr  r1, .Ltiocsctty     @ constant value, not an address — literal pool OK
     movs r2, #1
     ldr  r7, .Lsys_ioctl
-    svc  0
+    DO_SYSCALL
 
     @ 4. Prompt (skipped with -l)
     cmp  r6, #0
@@ -167,7 +179,7 @@ _start:
     adr  r1, str_prompt        @ PC-relative address
     movs r2, #str_prompt_len
     ldr  r7, .Lsys_write
-    svc  0
+    DO_SYSCALL
 
     @ 5. Wait for Enter
 .Lread_loop:
@@ -176,7 +188,7 @@ _start:
     mov  r1, sp               @ buf on stack
     movs r2, #1               @ count = 1
     ldr  r7, .Lsys_read
-    svc  0
+    DO_SYSCALL
     cmp  r0, #0
     ble  .Lexit_fail           @ read error or EOF
     mov  r0, sp
@@ -194,7 +206,7 @@ _start:
     adr  r1, str_nl
     movs r2, #1
     ldr  r7, .Lsys_write
-    svc  0
+    DO_SYSCALL
 
 .Ldo_exec:
     @ 6. execve("/bin/sh", {"-sh", NULL}, {NULL})
@@ -213,19 +225,19 @@ _start:
     mov  r2, sp
     adds r2, #8                @ envp
     movs r7, #SYS_EXECVE
-    svc  0
+    DO_SYSCALL
 
     @ execve failed — write error and exit
     movs r0, #2               @ fd = stderr
     adr  r1, str_exec_fail
     movs r2, #str_exec_fail_len
     ldr  r7, .Lsys_write
-    svc  0
+    DO_SYSCALL
 
 .Lexit_fail:
     movs r0, #1
     movs r7, #SYS_EXIT
-    svc  0
+    DO_SYSCALL
 .Lhang:
     b    .Lhang
 
