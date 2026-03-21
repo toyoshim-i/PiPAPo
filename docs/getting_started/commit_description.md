@@ -28,20 +28,36 @@ Co-Authored-By: <Agent name> (<model name>) [<optional valid email>]
 
 ## 2) Subject line convention in PPAP
 
-Recent history often uses optional scope prefixes. Examples:
+Use a scope prefix that clearly identifies the area of the change. Prefer
+specific, descriptive scopes over generic category words like `feat:` or
+`fix:`. The scope should tell the reader *what part of the system* changed
+at a glance.
 
-- `build: ...`
-- `docs: ...`
-- `exec: ...`
-- `test: ...`
-- `trace: ...`
-- `signal: ...`
-- `subsys: ...`
-- `target: ...`
-- `debug: ...`
+Examples from recent history:
 
-If multiple areas are touched equally, choose the dominant behavior change
-or use an unscoped subject.
+- `semihost: add ARM semihosting serial backend`
+- `pico2: enable SMP Core 1 launch on RP2350`
+- `signal: correct signal delivery for FPU-active processes`
+- `exec: support PIE relocation for m68k ELF binaries`
+- `romfs: fix directory traversal past end of image`
+- `build: add PPAP_ENABLE_CPM build flag`
+- `docs: update arm_m.md with RP2350 MPU details`
+- `test: add pipe stress test for large writes`
+- `trace: decode debug-stop reason in event output`
+- `subsys: register CP/M bridge at boot`
+- `pdb: add hardware breakpoint support`
+- `vfat: handle long filename entries`
+- `mpu: configure 8-region ARMv8-M MPU for RP2350`
+- `lcd: fix framebuffer scroll glitch on PicoCalc`
+
+General guidelines:
+
+- Pick the scope from the feature, subsystem, driver, or target name —
+  not from the type of change (avoid `feat:`, `fix:`, `refactor:` as
+  the sole scope).
+- If multiple areas are touched equally, choose the dominant behavior
+  change or use the most specific applicable scope.
+- An unscoped subject is acceptable when no single scope fits.
 
 ## 3) What to include in the body
 
