@@ -13,16 +13,24 @@ set(CMAKE_C_STANDARD 11)
 
 option(PPAP_TESTS "Enable test suite" OFF)
 option(PPAP_TESTS_EXTENDED "Use extended test init runner" OFF)
+option(PPAP_SEMIHOST "Use ARM semihosting for serial I/O" OFF)
 
 include(${PPAP_ROOT}/cmake/arm_m.cmake)
 
 set(CMAKE_EXECUTABLE_SUFFIX .elf)
 
+# Select UART driver: semihosting (bkpt 0xAB) or CMSDK UART hardware
+if(PPAP_SEMIHOST)
+    set(UART_DRIVER ${PPAP_ROOT}/src/drivers/arch/arm_m/semihost.c)
+else()
+    set(UART_DRIVER ${CMAKE_CURRENT_SOURCE_DIR}/drivers/uart_qemu.c)
+endif()
+
 add_executable(ppap_qemu_arm
     ${KERNEL_COMMON_SOURCES}
     ${KERNEL_BLKDEV_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/target_qemu_arm.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/drivers/uart_qemu.c
+    ${UART_DRIVER}
     ${PPAP_ROOT}/src/kernel/blkdev/ramblk.c
 )
 

@@ -249,6 +249,10 @@ if [[ "$TARGET" == "qemu_m68k" ]]; then
 else
     QEMU_BIN="qemu-system-arm"
     QEMU_ARGS=(-M mps2-an500 -serial mon:stdio)
+    # Add -semihosting when the build uses the semihost UART driver
+    if grep -q "PPAP_SEMIHOST:BOOL=ON" "$BUILD_DIR/CMakeCache.txt" 2>/dev/null; then
+        QEMU_ARGS+=(-semihosting)
+    fi
 fi
 
 if ! command -v "$QEMU_BIN" &>/dev/null && [[ ! -x "$QEMU_BIN" ]]; then

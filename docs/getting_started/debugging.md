@@ -19,6 +19,28 @@ gdb-multiarch -x scripts/debug/pico1calc-attach.gdb build/pico1calc/ppap_pico1ca
 - For test-mode debugging, use `./scripts/run.sh --test <target>` and inspect
   the UART output for per-test PASS/FAIL summaries.
 
+## Semihosting
+
+ARM semihosting routes serial output through the debugger instead of a
+hardware UART. Build with `-DPPAP_SEMIHOST=ON` to enable.
+
+**QEMU:** `run.sh` auto-detects the semihosting build and adds `-semihosting`
+to the QEMU command line. No manual flags needed.
+
+**OpenOCD (hardware targets):** Enable semihosting in the OpenOCD session:
+
+```
+arm semihosting enable
+arm semihosting_fileio enable
+```
+
+Kernel output (klog) and user-space serial I/O appear in the OpenOCD console,
+eliminating the need for a separate USB-serial adapter. Useful for one-cable
+debug setups.
+
+Note: Without a semihosting-aware debugger attached, `bkpt 0xAB` triggers a
+HardFault. Only use semihosting builds when running under QEMU or OpenOCD.
+
 ## Strace-style tracing (`trace`)
 
 PPAP includes a user-space tracer (`/bin/trace`) that works like a lightweight

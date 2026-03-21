@@ -16,6 +16,10 @@ compatibility.
 - **`PPAP_ENABLE_CPM`** (default: `ON`)  
   Enables the CP/M subsystem and Z80 emulator. When disabled, CP/M binary execution and Z80 I/O emulation are removed (note: Z80 eCPU is separately controlled below).
 
+### I/O Options
+- **`PPAP_SEMIHOST`** (default: `OFF`)
+  Replaces the hardware UART driver with an ARM semihosting backend (`bkpt 0xAB`). Serial I/O goes through the debugger (QEMU with `-semihosting`, or OpenOCD with `arm semihosting enable`) instead of a physical/emulated UART. Useful for one-cable debug setups and new target bringup. ARM targets only.
+
 ### Emulator Cores (eCPU)
 - **`PPAP_ENABLE_ECPU_M68K`** (default: `ON`)  
   Enables the m68k processor emulator. Used on ARM targets to execute cross-compiled m68k ELF binaries. When disabled, m68k binary emulation is unavailable on non-m68k platforms.
@@ -44,6 +48,14 @@ cmake -S src/target/qemu_arm -B build/qemu_arm \
   -DPPAP_ENABLE_CPM=OFF \
   -DPPAP_ENABLE_ECPU_M68K=OFF \
   -DPPAP_ENABLE_ECPU_Z80=OFF
+cmake --build build/qemu_arm
+```
+
+### Build with ARM semihosting (QEMU or OpenOCD debug output)
+```bash
+cmake -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain_arm_m.cmake \
+  -S src/target/qemu_arm -B build/qemu_arm \
+  -DPPAP_SEMIHOST=ON
 cmake --build build/qemu_arm
 ```
 

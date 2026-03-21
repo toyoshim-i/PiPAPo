@@ -71,4 +71,9 @@ function(ppap_arm_target_common target)
     if(H68K_DEBUG)
         target_compile_definitions(${target} PRIVATE PPAP_DEBUG_LOG=1)
     endif()
+
+    # Semihosting: replace hardware UART with bkpt 0xAB I/O
+    if(PPAP_SEMIHOST)
+        target_compile_definitions(${target} PRIVATE PPAP_SEMIHOST=1)
+    endif()
 endfunction()

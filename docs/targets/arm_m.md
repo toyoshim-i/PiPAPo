@@ -471,6 +471,53 @@ QEMU ARM uses a RAM-backed block device from an embedded FAT32 image:
 2. `fatimg_data.S` embeds the image via `.incbin` into the `.fatimg` section
 3. Kernel mounts it as the block device at boot
 
+### Semihosting
+
+When built with `-DPPAP_SEMIHOST=ON`, the CMSDK UART driver is replaced by an
+ARM semihosting backend (`src/drivers/arch/arm_m/semihost.c`). Serial I/O goes
+through `bkpt 0xAB` instead of the emulated UART peripheral.
+
+ARM semihosting uses a trap instruction to request I/O from the attached
+debugger. On Cortex-M (Thumb), this is `bkpt 0xAB` with `r0` = operation
+number and `r1` = argument pointer:
+
+| Operation | Number | Arguments | Description |
+|-----------|--------|-----------|-------------|
+| SYS_WRITEC | 0x03 | `r1` → char | Write one character |
+| SYS_READC | 0x07 | (none) | Read one character |
+| SYS_WRITE | 0x05 | `r1` → `{fd, buf, len}` | Write buffer to file handle |
+
+Input behavior differs across hosts:
+
+| Host | SYS_READC behavior |
+|------|--------------------|
+| QEMU | Returns immediately; −1 if no input available |
+| OpenOCD | Blocks until a character is available |
+| J-Link | Blocks (with timeout) |
+
+**Warning:** Without a semihosting-aware debugger attached, `bkpt 0xAB`
+triggers a HardFault. Only use semihosting builds when running under QEMU
+(with `-semihosting`) or OpenOCD (with `arm semihosting enable`).
+
+```sh
+# Build with semihosting
+cmake -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain_arm_m.cmake \
+      -DPPAP_SEMIHOST=ON -DPPAP_TESTS=ON \
+      -S src/target/qemu_arm -B build/qemu_arm
+```
+
+`run.sh` auto-detects the semihosting build (via `CMakeCache.txt`) and adds
+`-semihosting` to the QEMU command line. The CMSDK UART is not used in this
+mode.
+
+This is also useful on hardware targets (Pico 1/2) via OpenOCD for one-cable
+debug setups without a USB-serial adapter:
+
+```
+arm semihosting enable
+arm semihosting_fileio enable
+```
+
 ### Target Files
 
 ```
@@ -479,7 +526,10 @@ src/target/qemu_arm/
   qemu.ld             — linker script (ROM + RAM, no flash)
   CMakeLists.txt       — target build rules
   drivers/
-    uart_qemu.c        — CMSDK UART0 driver
+    uart_qemu.c        — CMSDK UART0 driver (default)
+
+src/drivers/arch/arm_m/
+  semihost.c           — ARM semihosting driver (PPAP_SEMIHOST=ON)
 ```
 
 ---

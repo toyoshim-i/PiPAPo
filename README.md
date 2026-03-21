@@ -158,6 +158,11 @@ cmake --build build/pico1calc
 cmake -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain_m68k.cmake \
       -S src/target/qemu_m68k -B build/qemu_m68k
 cmake --build build/qemu_m68k
+
+# ARM semihosting (serial I/O via debugger instead of UART)
+cmake -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain_arm_m.cmake \
+      -DPPAP_SEMIHOST=ON \
+      -S src/target/qemu_arm -B build/qemu_arm
 ```
 
 ### 3. Run / Flash
