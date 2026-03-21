@@ -133,7 +133,14 @@ else()
     set(PPAP_STRIP         arm-none-eabi-strip)
     set(PPAP_SIZE_CMD      arm-none-eabi-size)
     set(PPAP_ARCH_DIR      ${PPAP_ROOT}/src/user/arch/arm_m)
-    set(PPAP_TARGET_FLAGS  -mthumb -mcpu=cortex-m0plus -march=armv6s-m -mfloat-abi=soft)
+    if(PPAP_ARM_HARDFLOAT)
+        # Cortex-M33 with hardware FPU (softfp ABI — compatible with soft-float musl)
+        set(PPAP_TARGET_FLAGS  -mthumb -mcpu=cortex-m33 -mfloat-abi=softfp -mfpu=fpv5-sp-d16)
+        set(PPAP_ARCH_LABEL    "armv8m-thumb (Cortex-M33, FPU)")
+    else()
+        set(PPAP_TARGET_FLAGS  -mthumb -mcpu=cortex-m0plus -march=armv6s-m -mfloat-abi=soft)
+        set(PPAP_ARCH_LABEL    "armv6m-thumb (Cortex-M0+)")
+    endif()
     set(PPAP_PIC_FLAGS     -fPIC -msingle-pic-base -mpic-register=r9
                            -mno-pic-data-is-text-relative)
     set(PPAP_USER_LD       ${PPAP_ARCH_DIR}/user.ld)
@@ -142,11 +149,11 @@ else()
     set(PPAP_MUSL_TARGET   arm-none-eabi)
     set(PPAP_SPECS_FILE    ${PPAP_SHARED_BUILD}/musl-arm.specs)
     set(PPAP_BB_ARCH       arm)
-    set(PPAP_ARCH_LABEL    "armv6m-thumb (Cortex-M0+)")
 
     execute_process(COMMAND arm-none-eabi-gcc -print-file-name=include
         OUTPUT_VARIABLE PPAP_GCC_INCLUDE OUTPUT_STRIP_TRAILING_WHITESPACE)
-    execute_process(COMMAND arm-none-eabi-gcc -mthumb -mcpu=cortex-m0plus
+    # libgcc must match the target float ABI
+    execute_process(COMMAND arm-none-eabi-gcc ${PPAP_TARGET_FLAGS}
                             -print-libgcc-file-name
         OUTPUT_VARIABLE PPAP_LIBGCC OUTPUT_STRIP_TRAILING_WHITESPACE)
     get_filename_component(PPAP_GCC_LIBDIR ${PPAP_LIBGCC} DIRECTORY)

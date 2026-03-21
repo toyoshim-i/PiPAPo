@@ -31,6 +31,10 @@ pico_sdk_init()
 option(PPAP_TESTS "Enable test suite" OFF)
 option(PPAP_TESTS_EXTENDED "Use extended test init runner" OFF)
 
+# User-space binaries use hardware FPU with softfp ABI (compatible with
+# soft-float musl/busybox — float args still passed in integer regs).
+set(PPAP_ARM_HARDFLOAT ON)
+
 include(${PPAP_ROOT}/cmake/arm_m.cmake)
 
 add_executable(ppap_pico2
