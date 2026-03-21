@@ -6,12 +6,12 @@
  * dev_data to vfs_mount().
  */
 
-#ifndef PPAP_FS_ROMFS_H
-#define PPAP_FS_ROMFS_H
+#ifndef PPAP_KERNEL_FS_ROMFS_H
+#define PPAP_KERNEL_FS_ROMFS_H
 
 #include "../vfs/vfs.h"
 
 /* FS operations table — pass to vfs_mount() as the ops parameter */
 extern const vfs_ops_t romfs_ops;
 
-#endif /* PPAP_FS_ROMFS_H */
+#endif /* PPAP_KERNEL_FS_ROMFS_H */

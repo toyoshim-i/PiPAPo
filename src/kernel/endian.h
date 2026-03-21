@@ -13,8 +13,8 @@
  * GCC defines __BYTE_ORDER__ on both ARM and m68k cross-compilers.
  */
 
-#ifndef PPAP_ENDIAN_H
-#define PPAP_ENDIAN_H
+#ifndef PPAP_KERNEL_ENDIAN_H
+#define PPAP_KERNEL_ENDIAN_H
 
 #include <stdint.h>
 #include <string.h>
@@ -117,4 +117,4 @@ static inline void be32_store(void *p, uint32_t v)
     memcpy(p, &v, sizeof(v));
 }
 
-#endif /* PPAP_ENDIAN_H */
+#endif /* PPAP_KERNEL_ENDIAN_H */

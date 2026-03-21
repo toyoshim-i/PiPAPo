@@ -5,8 +5,8 @@
  * Separated so host tests can compile them directly.
  */
 
-#ifndef PPAP_H68K_UTIL_H
-#define PPAP_H68K_UTIL_H
+#ifndef PPAP_KERNEL_SUBSYS_H68K_UTIL_H
+#define PPAP_KERNEL_SUBSYS_H68K_UTIL_H
 
 #include <stdint.h>
 
@@ -18,4 +18,4 @@ int h68k_translate_path(const char *src, char *dst, int dstsize);
  * Non-negative values pass through unchanged. */
 int32_t h68k_errno(long ppap_err);
 
-#endif /* PPAP_H68K_UTIL_H */
+#endif /* PPAP_KERNEL_SUBSYS_H68K_UTIL_H */

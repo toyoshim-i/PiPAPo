@@ -11,8 +11,8 @@
  *     klogf("INIT: pid=%u loaded\n", init->pid);
  */
 
-#ifndef PPAP_KLOG_H
-#define PPAP_KLOG_H
+#ifndef PPAP_KERNEL_KLOG_H
+#define PPAP_KERNEL_KLOG_H
 
 #include <stdint.h>
 
@@ -44,4 +44,4 @@ void klogf(const char *fmt, ...);
 void klog_set_mirror(int (*putc)(char c, void (*notify)(void)),
                      void (*flush)(void));
 
-#endif /* PPAP_KLOG_H */
+#endif /* PPAP_KERNEL_KLOG_H */

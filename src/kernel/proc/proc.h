@@ -14,8 +14,8 @@
  * proc_table[] array in kernel BSS — no dynamic allocation needed for Phase 1.
  */
 
-#ifndef PPAP_PROC_PROC_H
-#define PPAP_PROC_PROC_H
+#ifndef PPAP_KERNEL_PROC_PROC_H
+#define PPAP_KERNEL_PROC_PROC_H
 
 #include <stdint.h>
 #include "config.h"
@@ -251,4 +251,4 @@ void proc_free(pcb_t *p);
  */
 void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp);
 
-#endif /* PPAP_PROC_PROC_H */
+#endif /* PPAP_KERNEL_PROC_PROC_H */

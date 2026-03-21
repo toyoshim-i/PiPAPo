@@ -6,8 +6,8 @@
  * to PROC_RUNNABLE after a successful return.
  */
 
-#ifndef PPAP_EXEC_EXEC_H
-#define PPAP_EXEC_EXEC_H
+#ifndef PPAP_KERNEL_EXEC_EXEC_H
+#define PPAP_KERNEL_EXEC_EXEC_H
 
 #include "kernel/proc/proc.h"
 
@@ -36,4 +36,4 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv);
  */
 uint8_t *alloc_contiguous(uint32_t n_pages);
 
-#endif /* PPAP_EXEC_EXEC_H */
+#endif /* PPAP_KERNEL_EXEC_EXEC_H */

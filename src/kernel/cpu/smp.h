@@ -16,8 +16,8 @@
  * command word back to Core 0 as a placeholder for Phase 4 SD I/O.
  */
 
-#ifndef PPAP_KERNEL_SMP_H
-#define PPAP_KERNEL_SMP_H
+#ifndef PPAP_KERNEL_CPU_SMP_H
+#define PPAP_KERNEL_CPU_SMP_H
 
 #include <stdint.h>
 
@@ -50,4 +50,4 @@ uint32_t sio_fifo_pop(void);
  */
 void core1_sched_entry(void);
 
-#endif /* PPAP_KERNEL_SMP_H */
+#endif /* PPAP_KERNEL_CPU_SMP_H */

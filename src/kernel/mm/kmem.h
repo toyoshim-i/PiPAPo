@@ -19,8 +19,8 @@
  *   kmem_free(&pcb_pool, p);
  */
 
-#ifndef PPAP_MM_KMEM_H
-#define PPAP_MM_KMEM_H
+#ifndef PPAP_KERNEL_MM_KMEM_H
+#define PPAP_KERNEL_MM_KMEM_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -48,4 +48,4 @@ void kmem_free(kmem_pool_t *pool, void *obj);
 /* Number of objects currently available for allocation. */
 uint32_t kmem_free_count(const kmem_pool_t *pool);
 
-#endif /* PPAP_MM_KMEM_H */
+#endif /* PPAP_KERNEL_MM_KMEM_H */

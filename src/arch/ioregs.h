@@ -5,8 +5,8 @@
  * Shared kernel code includes this instead of a specific architecture.
  */
 
-#ifndef PPAP_ARCH_DISPATCH_IOREGS_H
-#define PPAP_ARCH_DISPATCH_IOREGS_H
+#ifndef PPAP_ARCH_IOREGS_H
+#define PPAP_ARCH_IOREGS_H
 
 #if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
 #include "arm_m/ioregs.h"
@@ -16,4 +16,4 @@
 #error "Unsupported architecture"
 #endif
 
-#endif /* PPAP_ARCH_DISPATCH_IOREGS_H */
+#endif /* PPAP_ARCH_IOREGS_H */

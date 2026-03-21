@@ -11,8 +11,8 @@
  *   - Subsystem code (human68k_bridge.c) implements the hooks
  */
 
-#ifndef PPAP_SUBSYS_SUBSYS_H
-#define PPAP_SUBSYS_SUBSYS_H
+#ifndef PPAP_KERNEL_SUBSYS_SUBSYS_H
+#define PPAP_KERNEL_SUBSYS_SUBSYS_H
 
 #include <stdint.h>
 
@@ -98,4 +98,4 @@ extern const subsys_ops_t *subsys_ops_table[SUBSYS_MAX];
 /* Register subsystem names with procfs. Call once at boot. */
 void subsys_init(void);
 
-#endif /* PPAP_SUBSYS_SUBSYS_H */
+#endif /* PPAP_KERNEL_SUBSYS_SUBSYS_H */

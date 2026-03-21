@@ -15,8 +15,8 @@
  * from file_pool with priv = tty_get_dev(idx).
  */
 
-#ifndef PPAP_FD_TTY_H
-#define PPAP_FD_TTY_H
+#ifndef PPAP_KERNEL_FD_TTY_H
+#define PPAP_KERNEL_FD_TTY_H
 
 #include "file.h"
 
@@ -78,4 +78,4 @@ void tty_set_console(int idx);
  * Used by fd_stdio_init() to point stdin/stdout/stderr at the primary console. */
 void *tty_get_console_dev(void);
 
-#endif /* PPAP_FD_TTY_H */
+#endif /* PPAP_KERNEL_FD_TTY_H */

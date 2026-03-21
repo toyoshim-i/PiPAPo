@@ -6,8 +6,8 @@
  * static table; there is no on-disk backing.
  */
 
-#ifndef PPAP_FS_DEVFS_H
-#define PPAP_FS_DEVFS_H
+#ifndef PPAP_KERNEL_FS_DEVFS_H
+#define PPAP_KERNEL_FS_DEVFS_H
 
 #include "../vfs/vfs.h"
 
@@ -25,4 +25,4 @@ void devfs_set_backlight(int (*get)(uint8_t *val), int (*set)(uint8_t val));
  * /dev/power write returns ENODEV if not registered. */
 void devfs_set_power(int (*off_fn)(void));
 
-#endif /* PPAP_FS_DEVFS_H */
+#endif /* PPAP_KERNEL_FS_DEVFS_H */

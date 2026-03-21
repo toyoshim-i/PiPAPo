@@ -6,8 +6,8 @@
  * No SPI peripherals used by PPAP.
  */
 
-#ifndef PPAP_TARGET_PICO2_H
-#define PPAP_TARGET_PICO2_H
+#ifndef PPAP_TARGET_PICO2_PICO2_H
+#define PPAP_TARGET_PICO2_PICO2_H
 
 #define PICO2_UART0_TX      0    /* GP0 */
 #define PICO2_UART0_RX      1    /* GP1 */
@@ -32,4 +32,4 @@
 #define RP2350_ADDR_S_TO_NS(a)  ((uint32_t)(a) ^ RP2350_NS_BIT)
 #define RP2350_ADDR_NS_TO_S(a)  ((uint32_t)(a) ^ RP2350_NS_BIT)
 
-#endif /* PPAP_TARGET_PICO2_H */
+#endif /* PPAP_TARGET_PICO2_PICO2_H */

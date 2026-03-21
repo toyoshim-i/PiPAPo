@@ -11,8 +11,8 @@
  * Each group has 256 slots for future expansion.
  */
 
-#ifndef PPAP_SYSCALL_H
-#define PPAP_SYSCALL_H
+#ifndef PPAP_KERNEL_SYSCALL_SYSCALL_H
+#define PPAP_KERNEL_SYSCALL_SYSCALL_H
 
 #include <stdint.h>
 #include <stddef.h>
@@ -163,4 +163,4 @@ long sys_ppoll(void *fds, uint32_t nfds, const void *timeout,
 long sys_ppoll_time64(void *fds, uint32_t nfds, const void *timeout,
                       const void *sigmask, uint32_t sigsetsize);
 
-#endif /* PPAP_SYSCALL_H */
+#endif /* PPAP_KERNEL_SYSCALL_SYSCALL_H */

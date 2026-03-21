@@ -5,8 +5,8 @@
  * them to ASCII / VT100 escape sequences for terminal input.
  */
 
-#ifndef PPAP_DRIVERS_KBD_H
-#define PPAP_DRIVERS_KBD_H
+#ifndef PPAP_DRIVERS_I2C_KBD_H
+#define PPAP_DRIVERS_I2C_KBD_H
 
 /* Initialise keyboard: verify STM32 presence, drain stale FIFO. */
 void kbd_init(void);
@@ -23,4 +23,4 @@ int kbd_poll(void);
  * bytes or FIFO entries from the STM32).  Does not consume any data. */
 int kbd_poll_avail(void);
 
-#endif /* PPAP_DRIVERS_KBD_H */
+#endif /* PPAP_DRIVERS_I2C_KBD_H */

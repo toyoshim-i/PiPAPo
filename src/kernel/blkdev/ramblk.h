@@ -7,8 +7,8 @@
  * Call ramblk_init() once from kmain() after blkdev_init().
  */
 
-#ifndef PPAP_BLKDEV_RAMBLK_H
-#define PPAP_BLKDEV_RAMBLK_H
+#ifndef PPAP_KERNEL_BLKDEV_RAMBLK_H
+#define PPAP_KERNEL_BLKDEV_RAMBLK_H
 
 #include <stdint.h>
 
@@ -24,4 +24,4 @@
  */
 int ramblk_init(const void *base, uint32_t size_bytes);
 
-#endif /* PPAP_BLKDEV_RAMBLK_H */
+#endif /* PPAP_KERNEL_BLKDEV_RAMBLK_H */

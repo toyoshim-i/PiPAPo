@@ -5,8 +5,8 @@
  * when running Human68k binaries on non-m68k hosts via the m68k emulator.
  */
 
-#ifndef PPAP_EXEC_H68K_EMU_H
-#define PPAP_EXEC_H68K_EMU_H
+#ifndef PPAP_KERNEL_EXEC_H68K_EMU_H
+#define PPAP_KERNEL_EXEC_H68K_EMU_H
 
 #if !defined(__m68k__)
 
@@ -60,4 +60,4 @@ int h68k_emu_trap_handler(cpu_state_t *state, int trap_type,
 void h68k_emu_run_process(void);
 
 #endif /* !defined(__m68k__) */
-#endif /* PPAP_EXEC_H68K_EMU_H */
+#endif /* PPAP_KERNEL_EXEC_H68K_EMU_H */

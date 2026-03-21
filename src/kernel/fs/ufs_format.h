@@ -20,8 +20,8 @@
  *   Direct + single indirect:           ~4 MB (10 + 1024 blocks)
  */
 
-#ifndef PPAP_FS_UFS_FORMAT_H
-#define PPAP_FS_UFS_FORMAT_H
+#ifndef PPAP_KERNEL_FS_UFS_FORMAT_H
+#define PPAP_KERNEL_FS_UFS_FORMAT_H
 
 #include <stdint.h>
 
@@ -94,4 +94,4 @@ _Static_assert(sizeof(ufs_dirent_t) == UFS_DIRENT_SIZE,
  * block. */
 #define UFS_FAST_SYMLINK_MAX  (UFS_DIRECT_BLOCKS * sizeof(uint32_t))  /* 40 */
 
-#endif /* PPAP_FS_UFS_FORMAT_H */
+#endif /* PPAP_KERNEL_FS_UFS_FORMAT_H */

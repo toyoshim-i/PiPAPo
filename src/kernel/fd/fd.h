@@ -11,8 +11,8 @@
  * these are for internal kernel use (process creation, dup, pipe).
  */
 
-#ifndef PPAP_FD_FD_H
-#define PPAP_FD_FD_H
+#ifndef PPAP_KERNEL_FD_FD_H
+#define PPAP_KERNEL_FD_FD_H
 
 #include "../proc/proc.h"
 #include "file.h"
@@ -56,4 +56,4 @@ void fd_inherit(pcb_t *child, const pcb_t *parent);
  */
 void fd_close_all(pcb_t *p);
 
-#endif /* PPAP_FD_FD_H */
+#endif /* PPAP_KERNEL_FD_FD_H */

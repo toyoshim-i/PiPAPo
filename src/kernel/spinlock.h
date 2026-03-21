@@ -15,8 +15,8 @@
  * IRQ disable alone (sufficient for single-core).
  */
 
-#ifndef PPAP_SPINLOCK_H
-#define PPAP_SPINLOCK_H
+#ifndef PPAP_KERNEL_SPINLOCK_H
+#define PPAP_KERNEL_SPINLOCK_H
 
 #include <stdint.h>
 #include "arch/arch.h"
@@ -130,4 +130,4 @@ static inline void spin_unlock(uint32_t lock_num)
     }
 }
 
-#endif /* PPAP_SPINLOCK_H */
+#endif /* PPAP_KERNEL_SPINLOCK_H */

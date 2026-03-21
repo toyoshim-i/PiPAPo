@@ -5,8 +5,8 @@
  * Called from m68k_fline_dispatch() when current->subsys == SUBSYS_HUMAN68K.
  */
 
-#ifndef PPAP_SUBSYS_HUMAN68K_BRIDGE_H
-#define PPAP_SUBSYS_HUMAN68K_BRIDGE_H
+#ifndef PPAP_KERNEL_SUBSYS_HUMAN68K_BRIDGE_H
+#define PPAP_KERNEL_SUBSYS_HUMAN68K_BRIDGE_H
 
 #include <stdint.h>
 #include "subsys.h"
@@ -61,4 +61,4 @@ int human68k_dos_dispatch(uint32_t *regs, uint32_t usp, uint16_t opcode);
  */
 int human68k_iocs_dispatch(uint32_t *regs);
 
-#endif /* PPAP_SUBSYS_HUMAN68K_BRIDGE_H */
+#endif /* PPAP_KERNEL_SUBSYS_HUMAN68K_BRIDGE_H */

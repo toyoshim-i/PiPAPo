@@ -10,8 +10,8 @@
  * the system falls back to romfs only.
  */
 
-#ifndef PPAP_DRIVERS_SD_H
-#define PPAP_DRIVERS_SD_H
+#ifndef PPAP_DRIVERS_SPI_SD_H
+#define PPAP_DRIVERS_SPI_SD_H
 
 #include <stdint.h>
 
@@ -33,4 +33,4 @@
  */
 int sd_init(void);
 
-#endif /* PPAP_DRIVERS_SD_H */
+#endif /* PPAP_DRIVERS_SPI_SD_H */

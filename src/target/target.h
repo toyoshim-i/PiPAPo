@@ -13,8 +13,8 @@
  * only from their own target_*.c files.
  */
 
-#ifndef PPAP_TARGET_H
-#define PPAP_TARGET_H
+#ifndef PPAP_TARGET_TARGET_H
+#define PPAP_TARGET_TARGET_H
 
 #include <stdint.h>
 
@@ -118,4 +118,4 @@ uint32_t target_debug_hwbp_slots(void);
 int target_debug_hwbp_set(uint32_t slot, uint32_t addr);
 int target_debug_hwbp_clear(uint32_t slot);
 
-#endif /* PPAP_TARGET_H */
+#endif /* PPAP_TARGET_TARGET_H */

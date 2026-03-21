@@ -8,8 +8,8 @@
  *   while (uart_getc() >= 0) ;
  */
 
-#ifndef PPAP_UART_H
-#define PPAP_UART_H
+#ifndef PPAP_DRIVERS_UART_H
+#define PPAP_DRIVERS_UART_H
 
 #include <stdint.h>
 #include <stddef.h>
@@ -31,4 +31,4 @@ int uart_putc(char c, void (*notify)(void));
 int uart_getc(void);
 int uart_rx_avail(void);
 
-#endif /* PPAP_UART_H */
+#endif /* PPAP_DRIVERS_UART_H */

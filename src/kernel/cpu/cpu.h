@@ -6,8 +6,8 @@
  * uniformly.
  */
 
-#ifndef PPAP_KERNEL_CPU_H
-#define PPAP_KERNEL_CPU_H
+#ifndef PPAP_KERNEL_CPU_CPU_H
+#define PPAP_KERNEL_CPU_CPU_H
 
 #include <stdint.h>
 
@@ -104,4 +104,4 @@ extern const cpu_ops_t native_cpu_ops;
  *   ecpu_m68k_ops in kernel/cpu/ecpu_m68k.h
  */
 
-#endif /* PPAP_KERNEL_CPU_H */
+#endif /* PPAP_KERNEL_CPU_CPU_H */

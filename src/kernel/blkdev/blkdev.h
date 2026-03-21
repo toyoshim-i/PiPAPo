@@ -11,8 +11,8 @@
  * registered by name ("mmcblk0", "loop0", …) and looked up by name.
  */
 
-#ifndef PPAP_BLKDEV_BLKDEV_H
-#define PPAP_BLKDEV_BLKDEV_H
+#ifndef PPAP_KERNEL_BLKDEV_BLKDEV_H
+#define PPAP_KERNEL_BLKDEV_BLKDEV_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -53,4 +53,4 @@ int blkdev_register(const blkdev_t *dev);
  * Returns a pointer to the internal slot, or NULL if not found. */
 blkdev_t *blkdev_find(const char *name);
 
-#endif /* PPAP_BLKDEV_BLKDEV_H */
+#endif /* PPAP_KERNEL_BLKDEV_BLKDEV_H */

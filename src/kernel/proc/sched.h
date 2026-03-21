@@ -18,8 +18,8 @@
  * sched_next() returns current and the running process keeps its slice.
  */
 
-#ifndef PPAP_PROC_SCHED_H
-#define PPAP_PROC_SCHED_H
+#ifndef PPAP_KERNEL_PROC_SCHED_H
+#define PPAP_KERNEL_PROC_SCHED_H
 
 #include "proc.h"
 
@@ -127,4 +127,4 @@ extern uint32_t cpu_user_ticks[2];
 extern uint32_t cpu_system_ticks[2];
 extern uint32_t cpu_idle_ticks[2];
 
-#endif /* PPAP_PROC_SCHED_H */
+#endif /* PPAP_KERNEL_PROC_SCHED_H */

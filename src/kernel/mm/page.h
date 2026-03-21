@@ -9,8 +9,8 @@
  * feasible on the RP2040's 4-region MPU — see phase01-plan.md §Step 1.
  */
 
-#ifndef PPAP_MM_PAGE_H
-#define PPAP_MM_PAGE_H
+#ifndef PPAP_KERNEL_MM_PAGE_H
+#define PPAP_KERNEL_MM_PAGE_H
 
 #include <stdint.h>
 #include "config.h"
@@ -91,4 +91,4 @@ extern uint32_t page_count;
 /* OOM event counter (incremented each time page_alloc returns NULL). */
 extern uint32_t oom_count;
 
-#endif /* PPAP_MM_PAGE_H */
+#endif /* PPAP_KERNEL_MM_PAGE_H */

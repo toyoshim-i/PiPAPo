@@ -9,8 +9,8 @@
  * loaded via XIP from flash with GOT relocation into SRAM.
  */
 
-#ifndef PPAP_EXEC_ELF_H
-#define PPAP_EXEC_ELF_H
+#ifndef PPAP_KERNEL_EXEC_ELF_H
+#define PPAP_KERNEL_EXEC_ELF_H
 
 #include <stdint.h>
 
@@ -242,4 +242,4 @@ int elf_find_rel(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
 int elf_find_dynsym(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
                     elf_dynsym_info_t *out, uint32_t file_size);
 
-#endif /* PPAP_EXEC_ELF_H */
+#endif /* PPAP_KERNEL_EXEC_ELF_H */

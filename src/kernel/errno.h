@@ -4,9 +4,9 @@
  * Thin wrapper around the shared common/errno.h.
  */
 
-#ifndef PPAP_ERRNO_H
-#define PPAP_ERRNO_H
+#ifndef PPAP_KERNEL_ERRNO_H
+#define PPAP_KERNEL_ERRNO_H
 
 #include "common/errno.h"
 
-#endif /* PPAP_ERRNO_H */
+#endif /* PPAP_KERNEL_ERRNO_H */

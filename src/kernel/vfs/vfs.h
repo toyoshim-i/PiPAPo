@@ -19,8 +19,8 @@
  * are never removed in Phase 2 (romfs, devfs, procfs are permanent).
  */
 
-#ifndef PPAP_VFS_VFS_H
-#define PPAP_VFS_VFS_H
+#ifndef PPAP_KERNEL_VFS_VFS_H
+#define PPAP_KERNEL_VFS_VFS_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -255,4 +255,4 @@ uint32_t vnode_free_count(void);
  */
 extern mount_entry_t vfs_mount_table[VFS_MOUNT_MAX];
 
-#endif /* PPAP_VFS_VFS_H */
+#endif /* PPAP_KERNEL_VFS_VFS_H */

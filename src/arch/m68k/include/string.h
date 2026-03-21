@@ -6,8 +6,8 @@
  * available in the freestanding m68k cross-compilation environment.
  */
 
-#ifndef PPAP_M68K_STRING_H
-#define PPAP_M68K_STRING_H
+#ifndef PPAP_ARCH_M68K_INCLUDE_STRING_H
+#define PPAP_ARCH_M68K_INCLUDE_STRING_H
 
 #include <stddef.h>
 
@@ -21,4 +21,4 @@ int    strncmp(const char *a, const char *b, size_t n);
 char  *strcpy(char *dest, const char *src);
 char  *strncpy(char *dest, const char *src, size_t n);
 
-#endif /* PPAP_M68K_STRING_H */
+#endif /* PPAP_ARCH_M68K_INCLUDE_STRING_H */

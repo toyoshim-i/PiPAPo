@@ -7,8 +7,8 @@
  * See docs/proposals/sos_subsystem.md for the design.
  */
 
-#ifndef PPAP_SUBSYS_SOS_BRIDGE_H
-#define PPAP_SUBSYS_SOS_BRIDGE_H
+#ifndef PPAP_KERNEL_SUBSYS_SOS_BRIDGE_H
+#define PPAP_KERNEL_SUBSYS_SOS_BRIDGE_H
 
 #include <stdint.h>
 #include "config.h"
@@ -189,4 +189,4 @@ void sos_run_process(void);
 /* Subsystem ops — registered into subsys_ops_table[] */
 extern const subsys_ops_t sos_subsys_ops;
 
-#endif /* PPAP_SUBSYS_SOS_BRIDGE_H */
+#endif /* PPAP_KERNEL_SUBSYS_SOS_BRIDGE_H */

@@ -7,8 +7,8 @@
  * user mode.
  */
 
-#ifndef PPAP_SIGNAL_H
-#define PPAP_SIGNAL_H
+#ifndef PPAP_KERNEL_SIGNAL_SIGNAL_H
+#define PPAP_KERNEL_SIGNAL_SIGNAL_H
 
 #include <stdint.h>
 
@@ -65,4 +65,4 @@ int signal_check_kernel(void);
  * On m68k this is a stub (synchronous delivery, no trampoline needed). */
 extern void sigreturn_trampoline(void);
 
-#endif /* PPAP_SIGNAL_H */
+#endif /* PPAP_KERNEL_SIGNAL_SIGNAL_H */

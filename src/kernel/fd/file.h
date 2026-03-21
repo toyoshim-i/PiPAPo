@@ -14,8 +14,8 @@
  * shell pipeline that redirects stdout to a pipe while stdin stays on tty.
  */
 
-#ifndef PPAP_FD_FILE_H
-#define PPAP_FD_FILE_H
+#ifndef PPAP_KERNEL_FD_FILE_H
+#define PPAP_KERNEL_FD_FILE_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -71,4 +71,4 @@ void         file_pool_init(void);
 struct file *file_alloc(void);
 void         file_free(struct file *f);
 
-#endif /* PPAP_FD_FILE_H */
+#endif /* PPAP_KERNEL_FD_FILE_H */

@@ -8,8 +8,8 @@
  * RAM by stage2 as a block device mountable by the kernel UFS driver.
  */
 
-#ifndef PPAP_BLKDEV_FLATBLK_H
-#define PPAP_BLKDEV_FLATBLK_H
+#ifndef PPAP_KERNEL_BLKDEV_FLATBLK_H
+#define PPAP_KERNEL_BLKDEV_FLATBLK_H
 
 #include <stdint.h>
 
@@ -24,4 +24,4 @@
  */
 int flatblk_init(const char *name, const void *base, uint32_t size_bytes);
 
-#endif /* PPAP_BLKDEV_FLATBLK_H */
+#endif /* PPAP_KERNEL_BLKDEV_FLATBLK_H */

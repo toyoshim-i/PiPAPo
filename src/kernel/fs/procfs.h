@@ -6,8 +6,8 @@
  * on each read.
  */
 
-#ifndef PPAP_FS_PROCFS_H
-#define PPAP_FS_PROCFS_H
+#ifndef PPAP_KERNEL_FS_PROCFS_H
+#define PPAP_KERNEL_FS_PROCFS_H
 
 #include "../vfs/vfs.h"
 
@@ -28,4 +28,4 @@ void procfs_register_ecpu(const char *name);
  * @tag: SUBSYS_xxx index, @name: human-readable name string (static). */
 void procfs_register_subsys(uint8_t tag, const char *name);
 
-#endif /* PPAP_FS_PROCFS_H */
+#endif /* PPAP_KERNEL_FS_PROCFS_H */

@@ -11,8 +11,8 @@
  *   4. uart_reinit_pll() — set PLL-speed baud divisors
  */
 
-#ifndef PPAP_UART_RPICO_H
-#define PPAP_UART_RPICO_H
+#ifndef PPAP_DRIVERS_ARCH_ARM_M_UART_RPICO_H
+#define PPAP_DRIVERS_ARCH_ARM_M_UART_RPICO_H
 
 /* Drain the TX ring buffer into the HW FIFO and wait for the shift
  * register to go idle.  Call before clock_init_pll() so all pending
@@ -23,4 +23,4 @@ void uart_tx_drain(void);
  * Call after clock_init_pll() has switched clk_sys to PLL_SYS. */
 void uart_reinit_pll(void);
 
-#endif /* PPAP_UART_RPICO_H */
+#endif /* PPAP_DRIVERS_ARCH_ARM_M_UART_RPICO_H */

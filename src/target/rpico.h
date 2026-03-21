@@ -11,8 +11,8 @@
  * file to avoid an overly large header.
  */
 
-#ifndef PPAP_HW_RPICO_H
-#define PPAP_HW_RPICO_H
+#ifndef PPAP_TARGET_RPICO_H
+#define PPAP_TARGET_RPICO_H
 
 #include <stdint.h>
 #include <hardware/regs/addressmap.h>
@@ -69,4 +69,4 @@
 /* clk_peri CTRL: AUXSRC[7:5]=0 (=clk_sys), ENABLE bit 11 */
 #define CLK_PERI_ENABLE   (1u << 11)
 
-#endif /* PPAP_HW_RPICO_H */
+#endif /* PPAP_TARGET_RPICO_H */

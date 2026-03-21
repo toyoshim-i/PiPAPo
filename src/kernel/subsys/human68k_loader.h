@@ -5,8 +5,8 @@
  * R-format (.r) binaries.
  */
 
-#ifndef PPAP_SUBSYS_HUMAN68K_LOADER_H
-#define PPAP_SUBSYS_HUMAN68K_LOADER_H
+#ifndef PPAP_KERNEL_SUBSYS_HUMAN68K_LOADER_H
+#define PPAP_KERNEL_SUBSYS_HUMAN68K_LOADER_H
 
 #include <stdint.h>
 
@@ -49,4 +49,4 @@ void x68k_setup_pmb(uint8_t *base, uint32_t total_bytes,
 void x68k_setup_registers(uint32_t sp, uint32_t pmb_base, uint32_t block_end,
                           uint32_t cmdline_ptr, uint32_t entry_ptr);
 
-#endif /* PPAP_SUBSYS_HUMAN68K_LOADER_H */
+#endif /* PPAP_KERNEL_SUBSYS_HUMAN68K_LOADER_H */

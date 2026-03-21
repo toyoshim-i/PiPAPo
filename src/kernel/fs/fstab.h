@@ -4,8 +4,8 @@
  * Reads /etc/fstab from romfs and mounts filesystems in order.
  */
 
-#ifndef PPAP_FS_FSTAB_H
-#define PPAP_FS_FSTAB_H
+#ifndef PPAP_KERNEL_FS_FSTAB_H
+#define PPAP_KERNEL_FS_FSTAB_H
 
 #include <stdint.h>
 
@@ -27,4 +27,4 @@ int fstab_parse(fstab_entry_t *entries, int max_entries);
  * Returns 0 always (best-effort). */
 int fstab_mount_all(const fstab_entry_t *entries, int count);
 
-#endif /* PPAP_FS_FSTAB_H */
+#endif /* PPAP_KERNEL_FS_FSTAB_H */
