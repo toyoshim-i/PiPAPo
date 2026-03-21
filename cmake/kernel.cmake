@@ -37,6 +37,11 @@ set(ARCH_M68K_SOURCES
     ${_KS_ROOT}/src/arch/m68k/smp.c
 )
 
+set(ARCH_RISCV_SOURCES
+    ${_KS_ROOT}/src/arch/riscv/boot.S
+    ${_KS_ROOT}/src/arch/riscv/riscv_common.c
+)
+
 # ── Kernel sources shared across ALL architectures ──────────────────────────
 
 set(KERNEL_SHARED_SOURCES_BASE
@@ -145,6 +150,13 @@ set(KERNEL_ARM_ONLY_SOURCES
 set(KERNEL_COMMON_SOURCES
     ${ARCH_ARM_M_SOURCES}
     ${KERNEL_ARM_ONLY_SOURCES}
+    ${KERNEL_SHARED_SOURCES}
+)
+
+# ── Convenience: complete kernel sources for RISC-V targets ──────────────────
+
+set(KERNEL_RISCV_COMMON_SOURCES
+    ${ARCH_RISCV_SOURCES}
     ${KERNEL_SHARED_SOURCES}
 )
 

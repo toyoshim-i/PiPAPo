@@ -77,11 +77,11 @@ for arg in "$@"; do
         --overlay=*)OVERLAY="${arg#--overlay=}"; DO_BUILD=1 ;;
         --h68k-debug) DO_H68K_DEBUG=1; DO_BUILD=1 ;;
         --gdb)      DO_GDB=1 ;;
-        pico1|pico1calc|pico2|qemu_arm|qemu_m68k|x68k) TARGET="$arg" ;;
+        pico1|pico1calc|pico2|pico2rv|qemu_arm|qemu_m68k|x68k) TARGET="$arg" ;;
         -*)         echo "Unknown option: $arg" >&2; exit 1 ;;
         *)
             echo "Unknown target: $arg" >&2
-            echo "Valid targets: pico1, pico1calc, pico2, qemu_arm, qemu_m68k, x68k" >&2
+            echo "Valid targets: pico1, pico1calc, pico2, pico2rv, qemu_arm, qemu_m68k, x68k" >&2
             exit 1
             ;;
     esac
@@ -192,11 +192,11 @@ if [[ "$TARGET" == "x68k" ]]; then
     exit 0
 fi
 
-# ── Flash targets (pico1, pico1calc, pico2) ─────────────────────────────────
-if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 ]]; then
+# ── Flash targets (pico1, pico1calc, pico2, pico2rv) ────────────────────────
+if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 || "$TARGET" == pico2rv ]]; then
 
-    # pico2 (RP2350) needs the Raspberry Pi OpenOCD fork; pico1/pico1calc use system openocd
-    if [[ "$TARGET" == pico2 ]]; then
+    # pico2/pico2rv (RP2350) needs the Raspberry Pi OpenOCD fork; pico1/pico1calc use system openocd
+    if [[ "$TARGET" == pico2 || "$TARGET" == pico2rv ]]; then
         OPENOCD_BIN="$PROJECT_DIR/tools/openocd-rp/bin/openocd"
         OPENOCD_SCRIPTS="$PROJECT_DIR/tools/openocd-rp/share/openocd/scripts"
         if [[ ! -x "$OPENOCD_BIN" ]]; then
