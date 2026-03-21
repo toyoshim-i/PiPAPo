@@ -26,6 +26,47 @@ PicoCalc (RP2040 + LCD/keyboard/SD), and Pico 2 (RP2350, Cortex-M33).
 | Division | Software (libgcc) | Hardware (`udiv`/`sdiv`) | Hardware |
 | Multi-core | Dual-core (SIO FIFO) | Single-core | Dual-core (SIO FIFO) |
 
+### RP2040 vs RP2350 Chip Comparison
+
+| Feature | RP2040 (Pico 1) | RP2350 (Pico 2) |
+|---------|-----------------|-----------------|
+| CPU cores | 2x Cortex-M0+ (ARMv6-M) | 2x Cortex-M33 (ARMv8-M) **or** 2x Hazard3 (RISC-V) |
+| Clock | 133 MHz | 150 MHz (up to ~300 MHz overclocked) |
+| SRAM | 264 KB | **520 KB** (10 banks x 48 KB + 2 x 16 KB) |
+| Flash | External QSPI (XIP) | External QSPI (XIP), up to 16 MB |
+| PSRAM | Not supported | Optional external QSPI PSRAM (XIP, up to 16 MB) |
+| ISA | Thumb-1 only | Thumb-1 + **Thumb-2** (32-bit instructions) |
+| FPU | None | **Single-precision FPU** (FPv5-SP-D16) |
+| DSP | None | **DSP extensions** (SIMD, saturating arithmetic) |
+| MPU | 8 regions (ARMv6-M MPU) | **8 regions (ARMv8-M MPU)** + SAU |
+| TrustZone | No | **Yes** (Secure/Non-Secure worlds; unused by PPAP) |
+| Boot | ROM → boot2 → kernel | ROM → PICOBIN → kernel (no boot2 needed) |
+| PIO | 2x PIO, 4 SM each | 3x PIO, 4 SM each |
+| Peripherals | 2x SPI, 2x I2C, 2x UART | 2x SPI, 2x I2C, 2x UART (register-compatible) |
+| DMA | 12 channels | 16 channels |
+| Spinlocks | 32 hardware spinlocks | 32 hardware spinlocks (compatible) |
+
+### Thumb-2 Instructions (M33/M3 vs M0+)
+
+Thumb-2 adds 32-bit instructions that produce smaller, faster code from the same
+C source. The compiler uses these automatically when targeting M33:
+
+| Instruction | M0+ | M33 | Impact |
+|-------------|-----|-----|--------|
+| `cbz`/`cbnz` (compare-branch) | No | Yes | Eliminates `cmp` + `b` pairs |
+| `it` (if-then) | No | Yes | Conditional execution without branches |
+| `movw`/`movt` (32-bit immediate) | No | Yes | Eliminates literal pool loads |
+| `sdiv`/`udiv` | No | Yes | Hardware divide (~200 bytes libgcc saved each) |
+| `tbb`/`tbh` (table branch) | No | Yes | Efficient switch statements |
+| `clz` (count leading zeros) | No | Yes | Useful for bitmap allocator |
+| `mla`/`mls` (multiply-accumulate) | No | Yes | DSP operations |
+| `ldrex`/`strex` (exclusive access) | No | Yes | Better atomics |
+| `stmdb`/`ldmia` with high regs | No | Yes | Simpler context switch (no r4-r7 dance) |
+
+M0+ Thumb-1 assembly is a valid subset of M33, so all existing code runs
+correctly — just less efficiently. The assembly files use `#if __ARM_ARCH >= 8`
+to select optimized M33 paths where it matters (e.g., `switch.S`).
+
 ---
 
 ## 2. Syscall ABI
@@ -130,7 +171,52 @@ PendSV runs at the lowest exception priority, triggered by SysTick via
 
 ---
 
-## 4. Boot Sequence
+## 4. Memory Protection Unit (MPU)
+
+PPAP uses a 4-region MPU layout on all ARM targets. The ARMv6-M and ARMv8-M MPU
+have the same region count but completely different register interfaces.
+
+### ARMv6-M vs ARMv8-M MPU Registers
+
+| Aspect | ARMv6-M MPU (RP2040) | ARMv8-M MPU (RP2350) |
+|--------|---------------------|---------------------|
+| Regions | 8 | 8 |
+| Size granularity | Power-of-2 (32 B minimum) | **Any multiple of 32 B** |
+| Size encoding | RASR.SIZE field (log2) | Base + Limit addresses |
+| Sub-region disable | 8 sub-regions per region | Not needed (arbitrary size) |
+| Registers | RNR + RBAR + RASR | RNR + RBAR + RLAR |
+| Attributes | Inline in RASR (AP, XN, C, B) | RBAR (SH, AP, XN) + MAIR index in RLAR |
+| Execute Never | RASR.XN bit 28 | RBAR.XN bit 0 |
+| AP encoding | 0=no access, 1=priv RW, 2=priv RW+user RO, 3=full RW | 0=priv RW, 1=full RW, 2=priv RO, 3=full RO |
+| PRIVDEFENA | Yes | Yes (same concept) |
+
+### ARMv8-M MAIR (Memory Attribute Indirection Register)
+
+ARMv8-M separates memory type attributes into MAIR0/MAIR1, referenced by a
+3-bit index from RLAR. PPAP defines 3 attribute indices:
+
+| Index | Type | MAIR byte | Encoding |
+|-------|------|-----------|----------|
+| 0 | Normal, outer+inner write-back | 0xFF | Outer WB/WA, Inner WB/WA |
+| 1 | Device-nGnRnE | 0x00 | Device memory (peripherals) |
+| 2 | Normal, outer+inner write-through | 0xAA | Outer WT/WA, Inner WT/WA |
+
+### Region Map
+
+| Region | Base | Limit/Size | AP | XN | MAIR idx | Purpose |
+|--------|------|------------|----|----|----------|---------|
+| 0 | 0x20000000 | 24 KB | Priv RW | Yes | 0 (WB) | Kernel data |
+| 1 | 0x10000000 | 16 MB | Priv+User RO | No | 2 (WT) | Flash XIP |
+| 2 | per-process | 4 KB | Priv+User RW | Yes | 0 (WB) | Process stack |
+| 3 | 0x40000000 | 512 MB | Priv RW | Yes | 1 (Device) | Peripherals |
+
+Region 2 is reprogrammed on every context switch by `mpu_switch()` (called from
+PendSV_Handler). The implementation uses `#if __ARM_ARCH >= 8` to select the
+correct register encoding in `mpu.c`.
+
+---
+
+## 5. Boot Sequence
 
 ### Pico 1 (RP2040, 2 MB flash)
 
@@ -174,7 +260,7 @@ header are reserved for this (filled with `0xFF` = erased state).
 
 ---
 
-## 5. Pico 1 Target (`pico1`)
+## 6. Pico 1 Target (`pico1`)
 
 ### Hardware
 
@@ -215,7 +301,7 @@ src/target/pico1/
 
 ---
 
-## 6. PicoCalc Target (`pico1calc`)
+## 7. PicoCalc Target (`pico1calc`)
 
 ### Hardware
 
@@ -266,7 +352,7 @@ src/drivers/arch/arm_m/
 
 ---
 
-## 7. Pico 2 Target (`pico2`)
+## 8. Pico 2 Target (`pico2`)
 
 ### Hardware
 
@@ -330,7 +416,7 @@ src/target/pico2/
 
 ---
 
-## 8. QEMU Target (`qemu_arm`)
+## 9. QEMU Target (`qemu_arm`)
 
 ### Machine and CPU
 
@@ -398,7 +484,7 @@ src/target/qemu_arm/
 
 ---
 
-## 9. Shared Architecture Files
+## 10. Shared Architecture Files
 
 ```
 src/arch/arm_m/
@@ -413,7 +499,7 @@ src/arch/arm_m/
 
 ---
 
-## 10. User-Space Details
+## 11. User-Space Details
 
 ### Compiler Flags
 
@@ -439,7 +525,48 @@ Code executes in place (XIP) from flash on hardware targets. Only writable
 
 ---
 
-## 11. Key Register Addresses
+## 12. RP2350 Peripheral Compatibility
+
+Most RP2350 peripherals are register-compatible with RP2040. The same driver
+source code works on both chips unless noted:
+
+| Peripheral | Compatible? | Notes |
+|-----------|------------|-------|
+| UART (PL011) | **Yes** | Same registers, same base address |
+| SPI (PL022) | **Yes** | Same registers |
+| I2C (DW APB) | **Yes** | Same registers |
+| GPIO / IO_BANK0 | **Yes** | Same registers (more pins on QFN-60) |
+| PIO | **Yes** | Third PIO block added on RP2350 |
+| ADC | **Yes** | Same registers |
+| Timer | **Yes** | Same registers |
+| SysTick | **Yes** | Standard Cortex-M (built-in) |
+| SIO (spinlocks) | **Yes** | Same 32 spinlocks, same SIO_CPUID |
+| DMA | Mostly | 16 channels (was 12), same programming model |
+| USB | **Yes** | Same USB 1.1 controller |
+| Watchdog | **Yes** | Same registers |
+| RESETS | **Yes** | Same registers |
+| XIP / QSPI | Extended | PSRAM support added on RP2350 |
+| Clocks / PLL | **Different** | Same register layout, different divider values (see below) |
+
+### PLL Differences
+
+The PLL register interface is identical (CS, PWR, FBDIV_INT, PRIM at the same
+offsets from `PLL_SYS` base `0x40028000`), but the target frequency differs:
+
+| Parameter | RP2040 | RP2350 |
+|-----------|--------|--------|
+| XOSC | 12 MHz | 12 MHz |
+| Target clk_sys | 133 MHz | 150 MHz |
+| VCO | 1596 MHz (FBDIV=133) | 1500 MHz (FBDIV=125) |
+| POSTDIV1 x POSTDIV2 | 6 x 2 = 12 | 5 x 2 = 10 |
+| Result | 1596/12 = 133 MHz | 1500/10 = 150 MHz |
+
+The driver (`clock_rpico.c`) is parameterized with `PPAP_PLL_FBDIV`,
+`PPAP_PLL_PD1`, `PPAP_PLL_PD2` defines set per-target in CMakeLists.txt.
+
+---
+
+## 13. Key Register Addresses
 
 ### RP2040 / RP2350 Peripherals
 
@@ -470,7 +597,7 @@ previous peripheral (silent corruption).
 
 ---
 
-## 12. Timer and Scheduling
+## 14. Timer and Scheduling
 
 | Target | Clock | SysTick Reload | Time Slice |
 |--------|-------|----------------|------------|
@@ -482,7 +609,7 @@ Formula: `SYSTICK_RELOAD = (SYS_HZ / 100) - 1`
 
 ---
 
-## 13. Build and Run
+## 15. Build and Run
 
 ```sh
 # Build
@@ -516,7 +643,7 @@ openocd (RP fork)     — flash/debug for Pico 2 (RP2350 support)
 
 ---
 
-## 14. Key Differences from m68k
+## 16. Key Differences from m68k
 
 | Aspect | ARM Cortex-M | m68k (QEMU / X68000) |
 |--------|-------------|----------------------|
