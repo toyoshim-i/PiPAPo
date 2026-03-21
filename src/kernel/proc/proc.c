@@ -143,7 +143,10 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp)
     /*
      * ARM Cortex-M: two layers on the stack (high → low):
      *  1. Hardware exception frame (8 words): popped by EXC_RETURN.
-     *  2. Software callee-saved frame (8 words, r4–r11): loaded by PendSV.
+     *  2. Software callee-saved frame: loaded by PendSV.
+     *     - ARMv6-M: 8 words (r4–r11)
+     *     - ARMv8-M: 9 words (r4–r11, EXC_RETURN) — EXC_RETURN encodes
+     *       FPU frame type in bit 4 and is saved/restored per-process.
      */
     *--sp = XPSR_THUMB_BIT;              /* xpsr: Thumb bit (T=1)       */
     *--sp = (uint32_t)entry & ~1u;        /* pc: entry point (bit0 clear)*/
@@ -153,7 +156,12 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp)
     *--sp = 0u;                           /* r2                          */
     *--sp = 0u;                           /* r1                          */
     *--sp = 0u;                           /* r0                          */
-    /* Software callee-saved frame (r11..r4, high → low) */
+    /* Software callee-saved frame (high → low) */
+#if __ARM_ARCH >= 8
+    /* EXC_RETURN: Thread mode, PSP, no FPU frame (bit 4 = 1).
+     * New processes haven't used FPU yet, so no s16-s31 on stack. */
+    *--sp = EXC_RETURN_THREAD_PSP;        /* EXC_RETURN (bit 4 = 1)     */
+#endif
     *--sp = 0u;   /* r11 */
     *--sp = 0u;   /* r10 */
     *--sp = 0u;   /* r9  */

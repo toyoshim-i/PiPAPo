@@ -188,6 +188,7 @@ int main(void)
     tests[t++] = (test_entry_t){ "/bin/test_iov",        TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_stat",       TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_tmpfs",      TEST_ENABLED  };
+    tests[t++] = (test_entry_t){ "/bin/test_float",      TEST_ENABLED  };
 #if defined(__m68k__)
     tests[t++] = (test_entry_t){ "/bin/test_x68k",       TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_h68k_dos",   TEST_ENABLED  };

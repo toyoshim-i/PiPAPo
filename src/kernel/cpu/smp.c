@@ -124,6 +124,10 @@ void core1_sched_entry(void)
         volatile uint32_t *cpacr = (volatile uint32_t *)0xE000ED88u;
         *cpacr |= (0xFu << 20);  /* CP10+CP11 = full access */
         __asm__ volatile("dsb\nisb" ::: "memory");
+
+        /* Enable lazy stacking — same as boot.S for Core 0 */
+        volatile uint32_t *fpccr = (volatile uint32_t *)0xE000EF34u;
+        *fpccr |= (3u << 30);  /* ASPEN + LSPEN */
     }
 #endif
 

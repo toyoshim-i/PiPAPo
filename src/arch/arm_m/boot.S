@@ -167,6 +167,15 @@ Reset_Handler:
     str  r1, [r0]
     dsb
     isb
+
+    @ Enable FPU lazy stacking — hardware saves s0-s15 on exception
+    @ entry only when the handler actually touches FP registers.
+    @ ASPEN (bit 31): automatic state preservation enable
+    @ LSPEN (bit 30): lazy state preservation enable
+    ldr  r0, =0xE000EF34       @ FPCCR
+    ldr  r1, [r0]
+    orr  r1, r1, #(3 << 30)    @ ASPEN + LSPEN
+    str  r1, [r0]
 #endif
 
     @ -----------------------------------------------------------------

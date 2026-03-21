@@ -153,6 +153,20 @@ SVC_Handler:
     ldr   r0, [r0]                    @ r0 = current PCB
     ldr   r0, [r0, #PCB_SP_OFFSET]   @ r0 = current->sp (SW frame base)
 
+#if __ARM_ARCH >= 8
+    @ ARMv8-M: SW frame is {r4-r11, EXC_RETURN} (9 words).
+    @ New process hasn't used FPU, so no s16-s31 to restore.
+    ldmia r0!, {r4-r11, lr}  @ restore r4-r11 + EXC_RETURN from SW frame
+
+    @ Set PSP to the new HW exception frame
+    msr   psp, r0             @ PSP = SW frame + 36 = HW frame base
+
+    @ Return from exception — skip saved {r3,r4,r5,r6,r7,lr} on MSP.
+    @ Use lr (EXC_RETURN from new process) instead of the stacked one.
+    add   sp, sp, #24         @ skip all 6 stacked words
+    bx    lr                  @ EXC_RETURN from new process → exception return
+#else
+    @ ARMv6-M: SW frame is {r4-r11} (8 words).
     @ Restore r4-r11 from the SW frame (same code as PendSV_Handler)
     ldmia r0!, {r4-r7}       @ restore r4-r7; r0 advances to r8 area
     push  {r4-r7}             @ preserve real r4-r7 on MSP
@@ -170,6 +184,7 @@ SVC_Handler:
     @ just loaded the correct r4-r11 from the new process image.  Only pop lr→pc.
     add   sp, sp, #20         @ skip stacked r3, r4, r5, r6, r7
     pop   {pc}                @ pc = EXC_RETURN → exception return
+#endif
 
     @ Literal pool
     .ltorg
