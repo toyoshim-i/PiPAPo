@@ -16,8 +16,8 @@ PicoCalc (RP2040 + LCD/keyboard/SD), and Pico 2 (RP2350, Cortex-M33).
 | Registers | r0-r12, SP, LR, PC, xPSR | Same | Same + s0-s31 (FPU) |
 | Callee-saved | r4-r11 | r4-r11 | r4-r11, s16-s31 |
 | Stack pointer | MSP/PSP (dual) | MSP/PSP | MSP/PSP |
-| Privilege | Handler/Thread mode | Same | Same + TrustZone (unused) |
-| Syscall | `svc 0` | `svc 0` | `svc 0` |
+| Privilege | Handler/Thread mode | Same | Same + TrustZone S/NS |
+| Syscall | `svc 0` | `svc 0` | NSC gateway → `svc 0` |
 | Timer | SysTick | SysTick | SysTick |
 | Context switch | PendSV (deferred) | PendSV | PendSV |
 | MPU | 4-region MPU | Optional | 8-region MPU |
@@ -39,7 +39,7 @@ PicoCalc (RP2040 + LCD/keyboard/SD), and Pico 2 (RP2350, Cortex-M33).
 | FPU | None | **Single-precision FPU** (FPv5-SP-D16) |
 | DSP | None | **DSP extensions** (SIMD, saturating arithmetic) |
 | MPU | 8 regions (ARMv6-M MPU) | **8 regions (ARMv8-M MPU)** + SAU |
-| TrustZone | No | **Yes** (Secure/Non-Secure worlds; unused by PPAP) |
+| TrustZone | No | **Yes** (kernel Secure, user Non-Secure) |
 | Boot | ROM → boot2 → kernel | ROM → PICOBIN → kernel (no boot2 needed) |
 | PIO | 2x PIO, 4 SM each | 3x PIO, 4 SM each |
 | Peripherals | 2x SPI, 2x I2C, 2x UART | 2x SPI, 2x I2C, 2x UART (register-compatible) |
@@ -404,13 +404,93 @@ first 4 KB for a PICOBIN block.
 - Core 1 entry: `core1_sched_entry()` — sets up MPU, SysTick, PSP, idle loop
 - Boot handshake via SIO FIFO (same 6-word sequence as RP2040)
 
+### TrustZone (ARMv8-M Security Extension)
+
+The pico2 target uses TrustZone to run the kernel in the Secure world and native
+ARM user processes in the Non-Secure world, providing hardware-enforced isolation.
+
+#### Address Space Partitioning
+
+RP2350's IDAU (Implementation-Defined Attribution Unit) uses address bit 28 to
+determine security state. XORing an address with `0x10000000` toggles the alias:
+
+| Alias | Flash | SRAM | Security |
+|-------|-------|------|----------|
+| Secure | `0x10xxxxxx` | `0x20xxxxxx` | Kernel |
+| Non-Secure | `0x00xxxxxx` | `0x30xxxxxx` | User processes |
+
+The `ns_addr_xor` field in `pcb_t` is `0x10000000` for native ARM processes and
+`0` for emulated (m68k/z80) processes that stay in the Secure world.
+
+#### SAU Configuration
+
+SAU is enabled with `ALLNS=0` (default-Secure). The IDAU provides NS access for
+`0x00`/`0x30` alias addresses without needing SAU regions. One SAU region is
+configured for the NSC (Non-Secure Callable) veneer:
+
+- **Region 0**: NSC gateway at `0x10028000` (4 KB) — `SG` + `SVC 0` + `BXNS LR`
+
+Additional SAU configuration:
+- `NSACR`: CP10+CP11 (FPU) accessible from NS world
+- `AIRCR`: BusFault/HardFault/NMI routed to Secure world
+
+#### Syscall Path (NS → Secure)
+
+NS user processes cannot use `SVC 0` directly (it would trap as an NS SVC, not
+routed to the Secure kernel). Instead, musl libc calls the NSC gateway:
+
+```
+NS user code:  movw r12, #0x8001       @ thumb addr 0x10028001
+               movt r12, #0x1002
+               blx  r12                @ call NSC gateway
+
+NSC veneer:    SG                      @ Secure Gateway instruction
+               SVC  0                  @ traps into Secure SVC handler
+               BXNS LR                 @ return to Non-Secure caller
+```
+
+The `syscall_arch.h` overlay for musl selects the NSC path when `__ARM_ARCH >= 8`
+and the direct `SVC 0` path for ARMv6-M.
+
+#### NS Address Translation
+
+Addresses are XOR'd at system boundaries so the kernel stores Secure addresses
+internally while userspace sees NS aliases:
+
+- **ELF loader**: entry point, GOT entries, relocations, argv pointers, r9 (GOT
+  base) all XOR'd with `ns_addr_xor`
+- **sys_brk/sys_mmap2/sys_munmap**: XOR at syscall entry/exit boundary
+- **brk_base/brk_current**: stored as Secure addresses; converted on return
+
+#### NS Context Switch
+
+PendSV detects NS processes via EXC_RETURN bit 6 (`S` bit):
+
+- **NS save**: `mrs r0, psp_ns` to read NS process stack; save includes
+  EXC_RETURN as first word of SW frame
+- **NS restore**: `msr psp_ns, r0`; set `PSP_S` from per-core Secure PSP stack
+  (required for the NSC gateway's SVC exception frame)
+
+NS SW frame layout: `{EXC_RETURN, r4-r11, IntegritySig, r0-r3, r12, lr, pc, xpsr}`
+— 18 words total (vs 17 for Secure: `{r4-r11, EXC_RETURN, hw_frame}`).
+
+EXC_RETURN for NS processes: `0xFFFFFF9D` (S=0, DCRS=0, FType=1, Mode=1, SPSEL=1).
+NS Integrity Signature (PSP variant): `0xFEFA125B`.
+
+#### Per-Core Secure PSP Stacks
+
+Each core has a 512-byte Secure PSP stack (`secure_psp_stack[core][512]`).
+When an NS process calls the NSC gateway, the resulting SVC exception pushes
+its frame onto PSP_S. The Secure PSP is set during NS restore in PendSV.
+
 ### Target Files
 
 ```
 src/target/pico2/
-  target_pico2.c     — target hooks (dual-core M33, no SD)
+  target_pico2.c     — target hooks (SAU, dual-core M33, no SD)
+  nsc_veneer.S       — NSC syscall gateway (SG → SVC 0 → BXNS LR)
   picobin_block.S    — RP2350 PICOBIN metadata (ARM Secure image)
-  pico2.ld           — linker script (4 MB flash, 520 KB SRAM)
+  pico2.ld           — linker script (4 MB flash, 520 KB SRAM, NSC region)
   CMakeLists.txt     — target build rules
 ```
 
@@ -718,9 +798,6 @@ openocd (RP fork)     — flash/debug for Pico 2 (RP2350 support)
   via XIP at `0x11000000`. Would provide ~4000 additional pages for a dramatically
   larger process/file cache capacity. Requires XIP controller configuration and
   zone-based page allocation (SRAM pages for hot data, PSRAM for cold).
-- **TrustZone partitioning** — Run kernel in Secure world, user processes in
-  Non-Secure. Syscall entry via `SG` instruction. Would provide hardware-enforced
-  kernel/user isolation beyond MPU regions.
 - **RISC-V (Hazard3)** — RP2350 can boot dual Hazard3 RV32IMAC cores instead of
   ARM. A completely new architecture port, comparable in scope to the m68k port.
 - **FPB v2 breakpoints** — Cortex-M33 FPB v2 supports up to 8 hardware

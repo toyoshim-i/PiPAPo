@@ -1,8 +1,12 @@
-# Raspberry Pi Pico 2 Target Port Plan
+# Raspberry Pi Pico 2 Target Port (Archived)
 
 Porting PPAP to the Raspberry Pi Pico 2 (RP2350, dual Cortex-M33).
 The RP2350 is the successor to the RP2040 and shares many design
 principles, making this the most natural next hardware target for PPAP.
+
+> **This plan is archived.** All core phases (Pi2-1 through Pi2-4) and
+> TrustZone (Pi2-7) are complete. The live reference is
+> [docs/targets/arm_m.md](../targets/arm_m.md).
 
 ## Status
 
@@ -12,9 +16,9 @@ principles, making this the most natural next hardware target for PPAP.
 | Pi2-2 | ARMv8-M MPU | **Complete** |
 | Pi2-3 | Full test suite + SMP | **Complete** — 25 tests pass (extended suite) |
 | Pi2-4 | Hardware FPU | **Complete** — softfp ABI, signal delivery, lazy stacking |
-| Pi2-5 | PicoCalc 2 | Out of scope — see [arm_m.md](../targets/arm_m.md) §17 |
-| Pi2-6 | PSRAM | Out of scope — see [arm_m.md](../targets/arm_m.md) §17 |
-| Pi2-7 | TrustZone | Out of scope — see [arm_m.md](../targets/arm_m.md) §17 |
+| Pi2-5 | PicoCalc 2 | Future — blocked on hardware |
+| Pi2-6 | PSRAM | Future — see [arm_m.md](../targets/arm_m.md) §17 |
+| Pi2-7 | TrustZone | **Complete** — kernel Secure, user NS, NSC gateway |
 
 ### Implementation Notes (vs. original plan)
 
@@ -35,6 +39,11 @@ principles, making this the most natural next hardware target for PPAP.
 - **test_pdb zombie fix**: pdb's quit/detach handlers now `waitpid()` after
   `kill()` to reap tracee children, preventing process table exhaustion in
   full suite runs.
+- **TrustZone**: Originally "out of scope" — implemented in steps TZ-1 through
+  TZ-2c-ii.  The IDAU address-alias approach (XOR bit 28) turned out simpler
+  than anticipated; the main complexity was in the NS context switch frame
+  layout (DCRS=0 → hardware pushes r4-r11 + IntegritySig) and the NSC
+  gateway for musl syscalls (NS cannot use SVC directly).
 
 ---
 
@@ -51,7 +60,7 @@ principles, making this the most natural next hardware target for PPAP.
 | FPU | None | **Single-precision FPU** (hardware float) |
 | DSP | None | **DSP extensions** (SIMD, saturating arithmetic) |
 | MPU | 8 regions (ARMv6-M MPU) | **8 regions (ARMv8-M MPU)** + SAU |
-| TrustZone | No | **Yes** (Secure/Non-Secure worlds) |
+| TrustZone | No | **Yes** (kernel Secure, user Non-Secure) |
 | Boot | ROM -> boot2 -> kernel | ROM -> boot2 -> kernel (compatible) |
 | PIO | 2x PIO, 4 SM each | 3x PIO, 4 SM each |
 | Peripherals | 2x SPI, 2x I2C, 2x UART | 2x SPI, 2x I2C, 2x UART (compatible) |
@@ -87,17 +96,17 @@ Produce a bootable PPAP system on the Raspberry Pi Pico 2 that:
 - Takes advantage of the larger SRAM (520 KB -> ~130 user pages).
 - Produces smaller code via Thumb-2 encoding.
 
-### 2.2 Completed Extended Goal
+### 2.2 Completed Extended Goals
 
 - Hardware FPU enabled for user-space programs (softfp ABI).
+- TrustZone: kernel in Secure world, native ARM user processes in Non-Secure.
 
-### 2.3 Out of Scope
+### 2.3 Future / Out of Scope
 
 The following are documented as future work in [arm_m.md](../targets/arm_m.md) §17:
 
 - PSRAM support (16 MB external QSPI PSRAM as extended page pool).
 - PicoCalc 2 hardware target (blocked on hardware availability).
-- TrustZone partitioning (kernel in Secure, user in Non-Secure).
 - RISC-V core support (Hazard3, separate architecture port).
 - Wi-Fi/Bluetooth (Pico 2 W uses CYW43439 -- complex driver).
 - USB host mode.
@@ -379,11 +388,13 @@ configure lazy stacking via FPCCR.  With lazy stacking enabled, the
 hardware automatically saves/restores s0-s15 only when a process has
 touched the FPU.  No changes to `switch.S` or `trap.S` needed.
 
-### 5.2 TrustZone (ARMv8-M Security Extension)
+### 5.2 TrustZone (ARMv8-M Security Extension) ✓
 
 TrustZone partitions the system into Secure and Non-Secure worlds.
-This is an extended goal.  The initial port runs everything in the
-Secure world (identical to RP2040 ignoring TrustZone).
+Implemented in TZ-1 through TZ-2c-ii: kernel runs in Secure, native ARM
+user processes run in Non-Secure via IDAU address aliasing (XOR bit 28).
+Syscalls go through an NSC gateway (`SG` → `SVC 0` → `BXNS LR`) at
+`0x10028000`.  See [arm_m.md](../targets/arm_m.md) §8 for details.
 
 ### 5.3 PSRAM as Extended Page Pool
 
@@ -718,17 +729,32 @@ Two tests added:
 
 ---
 
-### Phase Pi2-7: TrustZone (Extended)
+### Phase Pi2-7: TrustZone ✓
 
 **Goal**: Kernel runs in Secure world, user processes in Non-Secure.
 
-1. Configure SAU: kernel memory -> Secure, user memory -> Non-Secure.
-2. Syscall entry via `SG` (Secure Gateway) instruction.
-3. Non-Secure process faults on kernel memory access.
-4. Verify all tests still pass with TrustZone partitioning.
+**Status**: Complete.  Implemented in 5 sub-steps:
 
-**Deliverables**: User process attempting kernel memory read triggers
-SecureFault, not silent access.
+| Step | Description | Commit |
+|------|-------------|--------|
+| TZ-1 | SAU register defines, fault handlers | b67a42e |
+| TZ-2a | SAU enable (ALLNS=0), IDAU NS aliases | d141923 |
+| TZ-2b | NSC syscall gateway veneer at 0x10028000 | 1d6147f |
+| TZ-2c-i | NS PendSV/SVC paths, per-core Secure PSP, pcb_t.ns_addr_xor | 2160cb0 |
+| TZ-2c-ii | ELF loader NS fixup, musl NSC syscall, sys_mem XOR | a3cc2a1 |
+
+Key design decisions:
+- **IDAU-based partitioning**: No SAU regions needed for S/NS split — address
+  bit 28 determines security state.  One SAU region for the NSC veneer.
+- **ns_addr_xor in pcb_t**: Single field (0 or 0x10000000) drives all address
+  translation.  Emulated processes (m68k, z80) stay Secure (xor=0).
+- **DCRS=0**: Hardware pushes callee-saved regs + IntegritySig on NS→S
+  transition, making the NS SW frame 18 words (vs 17 for Secure).
+- **musl NSC gateway**: `__ARM_ARCH >= 8` path in `syscall_arch.h` uses
+  `movw/movt + blx` to call the NSC veneer instead of `svc 0`.
+
+**Deliverables**: Native ARM user processes execute in Non-Secure world.
+All tests pass with TrustZone partitioning active.
 
 ---
 
@@ -800,40 +826,41 @@ PSRAM access is significantly slower than SRAM (~5-10x for random access).
 **Mitigation**: Zone-based allocation with SRAM preference.  Deferred to
 Phase Pi2-6.
 
-### 9.6 TrustZone Complexity
+### 9.6 TrustZone Complexity (RESOLVED)
 
-TrustZone adds complexity to the syscall path and exception handling.
+~~TrustZone adds complexity to the syscall path and exception handling.~~
 
-**Mitigation**: Deferred to Phase Pi2-7.  Initial port runs entirely
-in Secure world.
+**Resolved**: Implemented in Phase Pi2-7.  The IDAU address-alias approach
+kept the complexity manageable — most changes are XOR operations at system
+boundaries.  The NS context switch frame (DCRS=0, IntegritySig) and NSC
+gateway were the main non-trivial additions.
 
 ---
 
 ## 10. Dependency Graph
 
 ```
-Pi2-1a (parameterize shared code)
+Pi2-1a (parameterize shared code)       ✓
   |
   v
-Pi2-1b (create pico2 target)
+Pi2-1b (create pico2 target)           ✓
   |
   v
-Pi2-1c (smoke test on hardware)
+Pi2-1c (smoke test on hardware)        ✓
   |
   v
-Pi2-2 (ARMv8-M MPU)
+Pi2-2 (ARMv8-M MPU)                    ✓
   |
   v
-Pi2-3 (full test suite)
+Pi2-3 (full test suite)                ✓
   |
-  +---> Pi2-4 (FPU)
+  +---> Pi2-4 (FPU)                    ✓
   |
-  +---> Pi2-5 (PicoCalc 2)
+  +---> Pi2-7 (TrustZone)             ✓
   |
-  +---> Pi2-6 (PSRAM)
-          |
-          v
-        Pi2-7 (TrustZone)
+  +---> Pi2-5 (PicoCalc 2)            future
+  |
+  +---> Pi2-6 (PSRAM)                 future
 ```
 
 Pi2-1 through Pi2-3 are the core port.  Everything after Pi2-3 is an
