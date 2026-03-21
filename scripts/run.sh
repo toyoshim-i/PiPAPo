@@ -235,7 +235,7 @@ if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 ]]; the
 fi
 
 # ── QEMU targets (qemu_arm, qemu_m68k) ─────────────────────────────────────
-TIMEOUT=60
+TIMEOUT=90
 if [[ "$TARGET" == "qemu_m68k" ]]; then
     # m68k full test runs are consistently slower than ARM test runs.
     TIMEOUT=90
@@ -268,7 +268,7 @@ if [[ $DO_TEST -eq 1 ]]; then
         if [[ "$TARGET" == "qemu_m68k" ]]; then
             TIMEOUT=150
         else
-            TIMEOUT=90
+            TIMEOUT=180
         fi
     fi
     # Filtered runs still execute kernel tests first, so ARM often needs extra

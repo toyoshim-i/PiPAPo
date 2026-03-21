@@ -109,5 +109,14 @@ int main(int argc, char *argv[])
         }
     }
 
+    /* Cleanup: if the tracee is still alive (e.g., scripted commands exhausted
+     * without explicit quit), detach and reap it to avoid zombie leaks. */
+    if (!attach_mode) {
+        if (child_stopped)
+            (void)ptrace(PTRACE_DETACH, pid, (void *)0, (void *)0);
+        (void)kill(pid, 9);
+        (void)waitpid(pid, (void *)0, 0);
+    }
+
     return 0;
 }

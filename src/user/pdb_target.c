@@ -299,8 +299,10 @@ int handle_session_commands(pdb_dispatch_ctx_t *ctx, char **tok, int ntok)
         }
         *child_stopped = 0;
         put_str("detached\n");
-        if (!attach_mode)
+        if (!attach_mode) {
             (void)kill(pid, 9);
+            (void)waitpid(pid, (void *)0, 0);
+        }
         *done = 1;
         return 1;
     }
@@ -333,8 +335,10 @@ int handle_session_commands(pdb_dispatch_ctx_t *ctx, char **tok, int ntok)
             *child_stopped = 0;
             put_str("detached\n");
         }
-        if (!attach_mode)
+        if (!attach_mode) {
             (void)kill(pid, 9);
+            (void)waitpid(pid, (void *)0, 0);
+        }
         *done = 1;
         return 1;
     }

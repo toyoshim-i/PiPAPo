@@ -4,6 +4,38 @@ Porting PPAP to the Raspberry Pi Pico 2 (RP2350, dual Cortex-M33).
 The RP2350 is the successor to the RP2040 and shares many design
 principles, making this the most natural next hardware target for PPAP.
 
+## Status
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| Pi2-1 | Target skeleton and boot | **Complete** |
+| Pi2-2 | ARMv8-M MPU | **Complete** |
+| Pi2-3 | Full test suite + SMP | **Complete** — 25 tests pass (extended suite) |
+| Pi2-4 | Hardware FPU | **Complete** — softfp ABI, signal delivery, lazy stacking |
+| Pi2-5 | PicoCalc 2 | Deferred — waiting for pico2calc target |
+| Pi2-6 | PSRAM | Not started |
+| Pi2-7 | TrustZone | Not started |
+
+### Implementation Notes (vs. original plan)
+
+- **User-space float ABI**: Uses `-mfloat-abi=softfp` (not `-mfloat-abi=hard`)
+  so user binaries stay compatible with soft-float musl libc.  Hardware VFP
+  instructions are still generated; only the calling convention stays soft.
+- **Signal delivery with FPU**: Required per-core `svc_exc_return[]` tracking
+  in `trap.S` to correctly handle extended (FPU) exception frames through
+  signal setup and sigreturn.  Not anticipated in the original plan.
+- **Separate shared build directories**: `build/arm_m` (M0+ soft-float) and
+  `build/arm_m33` (M33 softfp) prevent hard-float binaries from clobbering
+  soft-float ones when building multiple ARM targets.
+- **FPB hardware breakpoints**: Disabled on M33 via `FPB_CTRL = 0` in
+  `target_early_init()` — the FPB defaults to enabled on M33 and interferes
+  with debugger-controlled breakpoints.
+- **cmake/arm_m.cmake**: Required changes (contradicts §6 "no change needed"):
+  `PPAP_ARM_HARDFLOAT` flag and conditional shared build directory.
+- **test_pdb zombie fix**: pdb's quit/detach handlers now `waitpid()` after
+  `kill()` to reap tracee children, preventing process table exhaustion in
+  full suite runs.
+
 ---
 
 ## 1. RP2350 vs RP2040
@@ -321,7 +353,7 @@ Everything above the arch layer is unchanged:
 | VFS, all filesystems | Unchanged |
 | Process model, scheduler | Unchanged |
 | Syscall dispatch (C) | Unchanged |
-| Signal delivery | Unchanged |
+| Signal delivery | Changed — EXC_RETURN tracking for FPU frames |
 | Pipe, FD, TTY | Unchanged |
 | Trace / ptrace | Unchanged |
 | All user-space programs | Recompile only (Thumb-2 automatic) |
@@ -402,13 +434,13 @@ src/target/pico2/
 | `src/drivers/arch/arm_m/i2c_rp2040.c` | Register-compatible |
 | `src/drivers/spi_sd.c` | No hardware dependency |
 | All kernel C code | Architecture-independent |
-| `cmake/arm_m.cmake` | No change needed -- Pico SDK sets compiler flags |
+| `cmake/arm_m.cmake` | Changed — `PPAP_ARM_HARDFLOAT` + split shared build dirs |
 
 ---
 
 ## 7. Implementation Phases (Detailed)
 
-### Phase Pi2-1: Target Skeleton and Boot
+### Phase Pi2-1: Target Skeleton and Boot ✓
 
 **Goal**: "PiPAPo booting... [pico2]" on UART at 115200 bps.
 
@@ -516,7 +548,7 @@ and `.elf`.  Flashing to Pico 2 prints kernel banner on UART.
 
 ---
 
-### Phase Pi2-2: MPU Update
+### Phase Pi2-2: MPU Update ✓
 
 **Goal**: Memory protection works with ARMv8-M MPU.
 
@@ -575,7 +607,7 @@ Region map (same 4-region layout, different encoding):
 
 ---
 
-### Phase Pi2-3: Full Test Suite
+### Phase Pi2-3: Full Test Suite ✓
 
 **Goal**: All tests pass on Pico 2.
 
@@ -606,59 +638,56 @@ Compare with pico1 output (if available):
 
 ---
 
-### Phase Pi2-4: FPU Support (Extended)
+### Phase Pi2-4: FPU Support ✓
 
 **Goal**: User-space programs can use hardware float.
 
-#### Step 4a: Enable FPU
+**Status**: Complete.
 
-In `target_early_init()` or a new `fpu_init()`:
+#### Step 4a: Enable FPU ✓
+
+FPU enabled in `target_early_init()` via CPACR and FPCCR:
 
 ```c
 /* Enable CP10 and CP11 (FPU) in CPACR */
-#define CPACR  (*(volatile uint32_t *)0xE000ED88u)
 CPACR |= (0xF << 20);  /* Full access to CP10, CP11 */
-__asm volatile("dsb; isb");
-
-/* Enable lazy stacking (default on reset, but be explicit) */
-#define FPCCR  (*(volatile uint32_t *)0xE000EF34u)
+/* Enable lazy stacking */
 FPCCR |= (1u << 31) | (1u << 30);  /* ASPEN + LSPEN */
 ```
 
-#### Step 4b: Compiler flags
+#### Step 4b: Compiler flags ✓
 
-Add to pico2 CMakeLists.txt:
+User-space uses **softfp ABI** (not hard-float as originally planned):
 ```cmake
-target_compile_options(ppap_pico2 PRIVATE
-    -mfloat-abi=hard -mfpu=fpv5-sp-d16
-)
+set(PPAP_ARM_HARDFLOAT ON)  # in pico2/CMakeLists.txt
+# cmake/user.cmake selects: -mfloat-abi=softfp -mfpu=fpv5-sp-d16
 ```
 
-This applies to kernel code.  User-space (musl, busybox) also needs
-recompilation with hard-float for the ARM build.
+Softfp generates hardware VFP instructions but passes float args in
+integer registers — compatible with soft-float musl libc without
+rebuilding musl.  Kernel compiles with hard-float.
 
-#### Step 4c: Context switch verification
+#### Step 4c: Context switch ✓
 
-With lazy stacking:
-- EXC_RETURN bit 4 = 0 when FPU was used (extended frame on stack)
-- EXC_RETURN bit 4 = 1 when FPU was NOT used (standard 8-word frame)
-- The CPU handles this transparently -- `switch.S` only saves/restores
-  r4-r11 (callee-saved integer regs), and the hardware handles s0-s15.
-- **s16-s31** (callee-saved float regs) are NOT automatically saved.
-  If user code uses them, `switch.S` must save them manually.
-  - Option A: Always save s16-s31 in PendSV (32 bytes extra per switch)
-  - Option B: Check CONTROL.FPCA and only save if FPU was used
-  - Option C: For initial port, compile with `-mfpu=fpv5-sp-d16` but
-    don't use s16-s31-heavy code; verify correctness with test
+Lazy stacking handles s0-s15 transparently.  s16-s31 are callee-saved
+and preserved across function calls, so `switch.S` needs no FPU code.
 
-#### Step 4d: Float test
+**Key discovery**: Signal delivery required EXC_RETURN tracking.  When
+FPU is active, the SVC exception frame is extended (26 words vs 8).
+`signal_setup_frame` must account for this:
 
-Add `test_float` that:
-1. Forks a child process
-2. Both parent and child compute known float results in a loop
-3. Verify results are correct after multiple context switches
+- `svc_exc_return[core_id]` saved by `trap.S` on SVC entry
+- `signal_setup_frame` saves original EXC_RETURN, forces basic frame
+- `sys_sigreturn` restores original EXC_RETURN
 
-**Deliverables**: `test_float` passes; hardware FP works.
+#### Step 4d: Float tests ✓
+
+Two tests added:
+- `test_float`: basic hardware float arithmetic (3 assertions)
+- `test_signal_float`: float registers survive signal delivery where
+  the handler itself uses FPU (8 assertions)
+
+**Deliverables**: Both tests pass on Pico 2 and QEMU ARM.
 
 ---
 
