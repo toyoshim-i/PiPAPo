@@ -51,6 +51,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5);
 extern volatile int      exec_pending[2];
 extern volatile int      svc_restart[2];
 extern volatile uint32_t svc_saved_a0[2];
+extern volatile uint32_t svc_exc_return[2];  /* EXC_RETURN saved by SVC_Handler (M33) */
 
 /* Helper: mark current syscall for restart after blocking yield.
  * Sets both the global svc_restart (for ARM trap.S) and the per-process

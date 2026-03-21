@@ -34,6 +34,7 @@
 volatile int      exec_pending[2] = {0, 0};
 volatile int      svc_restart[2]  = {0, 0};
 volatile uint32_t svc_saved_a0[2] = {0, 0};
+volatile uint32_t svc_exc_return[2] = {0, 0};
 
 void set_svc_restart(void)
 {

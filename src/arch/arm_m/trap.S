@@ -70,6 +70,14 @@ SVC_Handler:
     ldr   r6, [r6]             @ r6 = core_id (0 or 1)
     lsls  r6, r6, #2           @ r6 = byte offset (0 or 4)
 
+    @ --- Save EXC_RETURN for signal frame fixup (M33 FPU) ---
+#if __ARM_ARCH >= 8
+    ldr   r0, [sp, #20]       @ r0 = EXC_RETURN from pushed lr
+    ldr   r1, =svc_exc_return
+    adds  r1, r1, r6
+    str   r0, [r1]             @ svc_exc_return[core_id] = EXC_RETURN
+#endif
+
     @ --- Save original frame[0] for potential syscall restart ---
     mrs   r0, psp              @ r0 = frame pointer on PSP
     ldr   r2, [r0]             @ r2 = original frame[0] (a0)
@@ -135,6 +143,14 @@ SVC_Handler:
 
 .Lnormal_return:
     @ --- Normal return from exception ---
+#if __ARM_ARCH >= 8
+    @ Restore potentially-modified EXC_RETURN (signal delivery may have
+    @ changed it to force a basic frame, sigreturn restores the original).
+    ldr   r0, =svc_exc_return
+    adds  r0, r0, r6
+    ldr   r0, [r0]
+    str   r0, [sp, #20]       @ update stacked lr (= EXC_RETURN)
+#endif
     pop   {r3, r4, r5, r6, r7, pc}
     @ Restore callee-saved r4, r5, r6, r7 (r3 is padding).
     @ pc = EXC_RETURN → exception return to Thread mode.

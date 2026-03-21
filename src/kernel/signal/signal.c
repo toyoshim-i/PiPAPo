@@ -185,26 +185,33 @@ void sigreturn_trampoline(void)
 /*
  * Build a signal delivery frame on the user stack.
  *
- * Before:
- *   [PSP + 0..28]   original HW exception frame
- *   [PSP + 32]      original user SP
+ * ARMv6-M (no FPU):
+ *   [PSP - 32]  new 8-word HW frame (signal handler)
+ *   [PSP]       original 8-word HW frame (sigframe)
+ *   PSP set to PSP - 32.
  *
- * After:
- *   [PSP - 32 + 0..28]  new HW frame (r0=sig, pc=handler, lr=trampoline)
- *   [PSP + 0..28]       original HW frame = sigframe (untouched)
- *   [PSP + 32]          original user SP
+ * ARMv8-M (Cortex-M33, FPU):
+ *   [PSP - 40]  new 8-word basic HW frame (signal handler)
+ *   [PSP - 8]   saved EXC_RETURN (4 bytes) + padding (4 bytes)
+ *   [PSP]       original HW frame (8 or 26 words depending on FPU)
+ *   PSP set to PSP - 40.
+ *   svc_exc_return forced to basic frame (bit 4 = 1).
  *
- * PSP is set to PSP - 32.  On exception return the CPU pops the new frame
- * and runs the handler.  The handler's SP = PSP - 32 + 32 = old PSP,
- * where the sigframe sits.
+ * On exception return the CPU pops the new frame and runs the handler.
+ * sys_sigreturn reverses this: skips the sigreturn SVC frame, reads the
+ * saved EXC_RETURN, and restores PSP to the original HW frame.
  */
 static int signal_setup_frame(int sig, sighandler_t handler)
 {
     uint32_t psp;
     __asm volatile("mrs %0, psp" : "=r"(psp));
 
-    /* New HW frame goes 32 bytes below current PSP */
+#if __ARM_ARCH >= 8
+    /* 8-word basic frame + 2-word saved EXC_RETURN slot = 40 bytes */
+    uint32_t new_psp = psp - 40;
+#else
     uint32_t new_psp = psp - 32;
+#endif
 
     /* Bounds check: don't write below the stack page */
     uint32_t stack_base = (uint32_t)(uintptr_t)current->stack_page;
@@ -221,6 +228,18 @@ static int signal_setup_frame(int sig, sighandler_t handler)
     frame[5] = (uint32_t)(uintptr_t)sigreturn_trampoline;     /* lr (Thumb bit set)  */
     frame[6] = (uint32_t)(uintptr_t)handler & ~1u;            /* pc (bit0 clear)     */
     frame[7] = 0x01000000u;                                    /* xpsr (Thumb bit)    */
+
+#if __ARM_ARCH >= 8
+    /* Save original EXC_RETURN between signal frame and original HW frame.
+     * sys_sigreturn reads this to restore the correct frame type. */
+    uint32_t cid = core_id();
+    frame[8] = svc_exc_return[cid];   /* saved EXC_RETURN */
+    frame[9] = 0;                      /* padding          */
+
+    /* Force SVC_Handler to return with basic frame (bit 4 = 1).
+     * The signal handler starts without FPU context. */
+    svc_exc_return[cid] = svc_exc_return[cid] | 0x10u;
+#endif
 
     __asm volatile("msr psp, %0" :: "r"(new_psp));
     return 0;
@@ -327,16 +346,40 @@ long sys_rt_sigreturn(void) { return -(long)ENOSYS; }
 /*
  * Restore context after a signal handler returns via sigreturn_trampoline.
  *
- * At this point PSP points to the trampoline's HW exception frame.
- * The sigframe (original context) is at PSP + 32.  Advancing PSP by 32
- * makes the CPU pop the sigframe on exception return, restoring the
- * original user context (r0-r3, r12, lr, pc, xpsr).
+ * ARMv6-M: PSP points to the sigreturn SVC's 8-word HW frame.
+ *   Skip 32 bytes → original HW frame.
+ *
+ * ARMv8-M (M33, FPU): PSP points to the sigreturn SVC's HW frame,
+ *   which may be basic (32 bytes) or extended (104 bytes) depending on
+ *   whether the signal handler used FPU.  After skipping that frame,
+ *   we read the saved EXC_RETURN (8 bytes), then PSP = original frame.
+ *   We also restore svc_exc_return so SVC_Handler returns with the
+ *   correct EXC_RETURN for the original frame type.
  */
 long sys_sigreturn(void)
 {
     uint32_t psp;
     __asm volatile("mrs %0, psp" : "=r"(psp));
+
+#if __ARM_ARCH >= 8
+    uint32_t cid = core_id();
+    uint32_t exc_ret = svc_exc_return[cid];
+
+    /* Skip the sigreturn SVC's HW frame (basic or extended) */
+    uint32_t frame_size = (exc_ret & 0x10u) ? 32u : 104u;
+    psp += frame_size;
+
+    /* Read saved EXC_RETURN and skip the 8-byte save slot */
+    uint32_t *saved = (uint32_t *)psp;
+    uint32_t orig_exc = saved[0];
+    psp += 8;
+
+    /* Restore original EXC_RETURN so SVC_Handler returns correctly */
+    svc_exc_return[cid] = orig_exc;
+#else
     psp += 32;
+#endif
+
     __asm volatile("msr psp, %0" :: "r"(psp));
     return 0;  /* value ignored — sigframe[0] has original r0 */
 }
