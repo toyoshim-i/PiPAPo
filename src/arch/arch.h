@@ -12,6 +12,8 @@
 #include "arm_m/arch.h"
 #elif defined(__m68k__)
 #include "m68k/arch.h"
+#elif defined(__riscv)
+#include "riscv/arch.h"
 #else
 #error "Unsupported architecture"
 #endif

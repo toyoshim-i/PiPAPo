@@ -36,6 +36,7 @@ typedef struct cpu_state cpu_state_t;
 #define CPU_ARCH_8086 3
 #define CPU_ARCH_ARM 4
 #define CPU_ARCH_ARMV6 5
+#define CPU_ARCH_RISCV 6
 
 /* Host architecture — set by compiler target.
  * Host-only test builds define PPAP_HOST_TEST to skip this check. */
@@ -43,6 +44,8 @@ typedef struct cpu_state cpu_state_t;
 #define HOST_ARCH_ID CPU_ARCH_M68K
 #elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
 #define HOST_ARCH_ID CPU_ARCH_ARM
+#elif defined(__riscv)
+#define HOST_ARCH_ID CPU_ARCH_RISCV
 #elif !defined(PPAP_HOST_TEST)
 #error "Unsupported host architecture"
 #endif
