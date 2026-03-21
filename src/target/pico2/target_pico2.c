@@ -13,10 +13,38 @@
 #include "drivers/clock.h"
 #include "klog.h"
 #include "mm/mpu.h"
+#include "arch/arm_m/cpu.h"
 
 #ifdef PPAP_TESTS
 #include "ktest.h"
 #endif
+
+/* ── SAU / TrustZone initialisation (TZ-1: Secure-only) ──────────────────
+ *
+ * RP2350 boots in Secure world (picobin IMAGE_TYPE = 0x1021).  The IDAU
+ * maps 0x10/0x20 prefixes as Secure, 0x00/0x30 as Non-Secure aliases.
+ * With SAU disabled and ALLNS=0, everything defaults to Secure, which is
+ * exactly what we want for TZ-1 (all code runs Secure).
+ *
+ * We explicitly set this state, grant Non-Secure access to the FPU
+ * (NSACR CP10/CP11 — needed later for TZ-2 NS user processes), and
+ * route BusFault/HardFault/NMI to Secure so they always land in our
+ * existing handlers.
+ */
+static void sau_init(void)
+{
+    /* SAU disabled, ALLNS=0 → all memory Secure (matches reset default) */
+    SAU_CTRL = 0;
+
+    /* Allow Non-Secure access to CP10+CP11 (FPU) — harmless now,
+     * required when TZ-2 introduces NS user processes. */
+    NSACR |= (1u << 10) | (1u << 11);
+
+    /* Route BusFault / HardFault / NMI to Secure world */
+    SCB_AIRCR = AIRCR_VECTKEY | (SCB_AIRCR & ~AIRCR_BFHFNMINS);
+
+    klog("SAU: disabled (all Secure)\n");
+}
 
 void target_early_init(void)
 {
@@ -35,6 +63,7 @@ void target_late_init(void)
     /* No SD card to initialize */
     while (uart_getc() >= 0) ;   /* drain boot noise from RX ring */
     mpu_init();
+    sau_init();
     /* core1_launch moved to kmain — must run after init gets PID 1 */
 }
 

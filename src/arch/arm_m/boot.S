@@ -46,10 +46,17 @@ _vectors:
     .word Reset_Handler         @ 1:  Reset
     .word Default_Handler       @ 2:  NMI
     .word HardFault_Handler     @ 3:  HardFault
-    .word 0                     @ 4:  Reserved
+#if __ARM_ARCH >= 8
+    .word Default_Handler       @ 4:  MemManage
+    .word Default_Handler       @ 5:  BusFault
+    .word Default_Handler       @ 6:  UsageFault
+    .word SecureFault_Handler   @ 7:  SecureFault (ARMv8-M only)
+#else
+    .word 0                     @ 4:  Reserved (ARMv6-M)
     .word 0                     @ 5:  Reserved
     .word 0                     @ 6:  Reserved
     .word 0                     @ 7:  Reserved
+#endif
     .word 0                     @ 8:  Reserved
     .word 0                     @ 9:  Reserved
     .word 0                     @ 10: Reserved
@@ -270,6 +277,23 @@ HardFault_Handler:
     mov  r10, r6
     mov  r11, r7
     pop  {r3, r4, r5, r6, r7, pc}  @ pc = EXC_RETURN → PendSV tail-chains
+
+@ =============================================================================
+@ SecureFault_Handler (ARMv8-M only)
+@
+@ Triggered when Non-Secure code attempts unauthorized Secure access.
+@ For now (TZ-1: everything runs Secure), this should never fire.
+@ Logs the fault and halts — same structure as kernel HardFault path.
+@ =============================================================================
+#if __ARM_ARCH >= 8
+.align 2
+.thumb_func
+.global SecureFault_Handler
+SecureFault_Handler:
+    mrs  r0, msp
+    bl   kernel_hardfault_dump     @ reuse existing crash dump
+    b    Default_Handler
+#endif
 
 @ Weak aliases: real handlers are provided by the driver for each build target.
 @ - UART0_IRQ_Handler:   uart.c (hardware RP2040, IRQ 20)
