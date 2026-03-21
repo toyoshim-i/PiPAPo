@@ -19,31 +19,40 @@
 #include "ktest.h"
 #endif
 
-/* ── SAU / TrustZone initialisation (TZ-1: Secure-only) ──────────────────
+/* ── SAU / TrustZone initialisation ───────────────────────────────────────
  *
  * RP2350 boots in Secure world (picobin IMAGE_TYPE = 0x1021).  The IDAU
  * maps 0x10/0x20 prefixes as Secure, 0x00/0x30 as Non-Secure aliases.
- * With SAU disabled and ALLNS=0, everything defaults to Secure, which is
- * exactly what we want for TZ-1 (all code runs Secure).
  *
- * We explicitly set this state, grant Non-Secure access to the FPU
- * (NSACR CP10/CP11 — needed later for TZ-2 NS user processes), and
- * route BusFault/HardFault/NMI to Secure so they always land in our
- * existing handlers.
+ * TZ-2a strategy: enable SAU with ALLNS=0 and no regions.  This makes
+ * SAU default everything to Secure; the IDAU then provides NS access for
+ * the 0x00/0x30 alias addresses.  Result:
+ *
+ *   - Kernel at 0x10xxxxxx / 0x20xxxxxx → Secure (both SAU and IDAU agree)
+ *   - User pages via 0x30xxxxxx alias   → NS     (IDAU overrides SAU)
+ *
+ * No SAU regions are needed for basic S/NS partitioning — the IDAU
+ * address aliases handle it.  SAU regions will be added in TZ-2b for
+ * the NSC syscall gateway.
  */
 static void sau_init(void)
 {
-    /* SAU disabled, ALLNS=0 → all memory Secure (matches reset default) */
-    SAU_CTRL = 0;
+    uint32_t nregions = SAU_TYPE & 0xFFu;
 
-    /* Allow Non-Secure access to CP10+CP11 (FPU) — harmless now,
-     * required when TZ-2 introduces NS user processes. */
+    /* Allow Non-Secure access to CP10+CP11 (FPU) — required for NS
+     * user processes that use floating-point instructions. */
     NSACR |= (1u << 10) | (1u << 11);
 
-    /* Route BusFault / HardFault / NMI to Secure world */
+    /* Route BusFault / HardFault / NMI to Secure world so they always
+     * land in our existing handlers regardless of caller's security state. */
     SCB_AIRCR = AIRCR_VECTKEY | (SCB_AIRCR & ~AIRCR_BFHFNMINS);
 
-    klog("SAU: disabled (all Secure)\n");
+    /* Enable SAU with ALLNS=0.  No regions defined — IDAU provides NS
+     * attribution for 0x00/0x30/0x50 alias addresses. */
+    SAU_CTRL = SAU_CTRL_ENABLE;
+
+    klogf("SAU: enabled (%u regions avail, 0 configured, IDAU-based S/NS)\n",
+          nregions);
 }
 
 void target_early_init(void)
