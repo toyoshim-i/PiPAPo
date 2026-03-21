@@ -24,14 +24,19 @@ long sys_brk(long addr) {
    *
    * Linux semantics: brk ALWAYS returns the current program break.
    * On failure, it returns the unchanged break (never a negative errno).
-   * musl relies on this to detect brk failure and fall back to mmap. */
-  if (addr == 0) return (long)current->brk_current;
+   * musl relies on this to detect brk failure and fall back to mmap.
+   *
+   * TrustZone: NS processes pass/receive NS alias addresses.  Internally
+   * brk_base/brk_current are Secure addresses; we XOR at the boundary. */
+  uint32_t ns_xor = current->ns_addr_xor;
+  if (addr == 0) return (long)(current->brk_current ^ ns_xor);
 
-  uint32_t new_brk = (uint32_t)addr;
+  /* Convert NS address to Secure for internal comparison/arithmetic */
+  uint32_t new_brk = (uint32_t)addr ^ ns_xor;
 
   /* Cannot shrink below initial break */
   if (new_brk < current->brk_base)
-    return (long)current->brk_current; /* unchanged = failure */
+    return (long)(current->brk_current ^ ns_xor); /* unchanged = failure */
 
   /* Calculate old and new page counts from user_pages[0] base.
    * user_pages[0..N-1] hold the data segment (allocated by do_execve).
@@ -45,7 +50,7 @@ long sys_brk(long addr) {
   uint32_t new_pages = (new_top - page0_base + PAGE_SIZE - 1) / PAGE_SIZE;
 
   if (new_pages > USER_PAGES_MAX)
-    return (long)current->brk_current; /* unchanged = failure */
+    return (long)(current->brk_current ^ ns_xor); /* unchanged = failure */
 
   /* Expand: allocate contiguous pages after existing ones */
   for (uint32_t i = old_pages; i < new_pages; i++) {
@@ -57,7 +62,7 @@ long sys_brk(long addr) {
         page_free(current->user_pages[j]);
         current->user_pages[j] = NULL;
       }
-      return (long)current->brk_current; /* unchanged = failure */
+      return (long)(current->brk_current ^ ns_xor); /* unchanged = failure */
     }
     memset(pg, 0, PAGE_SIZE);
     current->user_pages[i] = pg;
@@ -72,7 +77,7 @@ long sys_brk(long addr) {
   }
 
   current->brk_current = new_brk;
-  return (long)new_brk;
+  return (long)(new_brk ^ ns_xor);
 }
 
 /* ── sys_mmap2 ────────────────────────────────────────────────────────────────
@@ -99,6 +104,10 @@ long sys_mmap2(uint32_t addr, uint32_t len, uint32_t prot, uint32_t flags,
   if ((int)fd != -1) return -(long)EINVAL;
 
   if (len == 0) return -(long)EINVAL;
+
+  /* TrustZone: NS processes pass NS addresses; convert to Secure */
+  uint32_t ns_xor = current->ns_addr_xor;
+  addr ^= ns_xor;
 
   uint32_t num_pages = (len + PAGE_SIZE - 1) / PAGE_SIZE;
 
@@ -127,7 +136,7 @@ long sys_mmap2(uint32_t addr, uint32_t len, uint32_t prot, uint32_t flags,
     }
     current->mmap_regions[slot].addr = base;
     current->mmap_regions[slot].pages = num_pages;
-    return (long)(uintptr_t)base;
+    return (long)((uintptr_t)base ^ ns_xor);
   }
 
   /* Non-fixed: allocate from pool. Try contiguous first, fall back to
@@ -138,7 +147,7 @@ long sys_mmap2(uint32_t addr, uint32_t len, uint32_t prot, uint32_t flags,
     memset(pg, 0, PAGE_SIZE);
     current->mmap_regions[slot].addr = pg;
     current->mmap_regions[slot].pages = 1;
-    return (long)(uintptr_t)pg;
+    return (long)((uintptr_t)pg ^ ns_xor);
   }
 
   /* Multi-page: scan for contiguous block */
@@ -162,7 +171,7 @@ long sys_mmap2(uint32_t addr, uint32_t len, uint32_t prot, uint32_t flags,
         memset((void *)(uintptr_t)(base + i * PAGE_SIZE), 0, PAGE_SIZE);
       current->mmap_regions[slot].addr = result;
       current->mmap_regions[slot].pages = num_pages;
-      return (long)(uintptr_t)result;
+      return (long)((uintptr_t)result ^ ns_xor);
     }
   }
 
@@ -174,6 +183,9 @@ long sys_mmap2(uint32_t addr, uint32_t len, uint32_t prot, uint32_t flags,
 
 long sys_munmap(uint32_t addr, uint32_t len) {
   if (addr == 0 || len == 0) return -(long)EINVAL;
+
+  /* TrustZone: NS processes pass NS addresses; convert to Secure */
+  addr ^= current->ns_addr_xor;
 
   /* Find the matching mmap region */
   for (int i = 0; i < MMAP_REGIONS_MAX; i++) {

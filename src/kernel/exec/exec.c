@@ -17,6 +17,7 @@
 #include "kernel/signal/signal.h"
 #include "kernel/vfs/vfs.h"
 #include "loader.h"
+#include "target/target.h"
 
 /* ── Contiguous page allocation helper ─────────────────────────────────── */
 
@@ -92,10 +93,14 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
     if (loader_registry[i]->detect(file_base, file_size, path)) {
       int arch = loader_registry[i]->required_arch_id;
       const cpu_ops_t *cpu_ops;
-      if (arch == 0 || arch == HOST_ARCH_ID)
+      if (arch == 0 || arch == HOST_ARCH_ID) {
         cpu_ops = &native_cpu_ops;
-      else
+        /* Native ARM processes on TZ targets run in Non-Secure world */
+        p->ns_addr_xor = target_ns_addr_xor();
+      } else {
         cpu_ops = cpu_ops_for_arch(arch);
+        p->ns_addr_xor = 0; /* Emulated processes stay in Secure */
+      }
       if (!cpu_ops) {
         rc = -(int)ENOEXEC;
         break;

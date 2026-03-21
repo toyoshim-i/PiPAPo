@@ -18,7 +18,8 @@ static void apply_relocations(const elf32_ehdr_t *ehdr,
                               const elf32_phdr_t *data_seg, uint8_t *sram_page,
                               uint32_t text_base, uint32_t got_sram_addr,
                               const elf_got_info_t *got_info,
-                              const cpu_ops_t *cpu_ops, void *cpu_state) {
+                              const cpu_ops_t *cpu_ops, void *cpu_state,
+                              uint32_t ns_xor) {
   elf_rel_info_t rel_info;
   if (elf_find_rel(ehdr, file_base, &rel_info, file_size) != 0) return;
 
@@ -64,11 +65,13 @@ static void apply_relocations(const elf32_ehdr_t *ehdr,
 
       uint32_t sym_val = dynsym[sym_idx].st_value + (uint32_t)r_addend;
       if (sym_val < data_seg->p_vaddr) {
-        cpu_ops->write32(cpu_state, word_addr, sym_val + text_base);
+        cpu_ops->write32(cpu_state, word_addr,
+                         (sym_val + text_base) ^ ns_xor);
       } else {
         cpu_ops->write32(
             cpu_state, word_addr,
-            sym_val - data_seg->p_vaddr + (uint32_t)(uintptr_t)sram_page);
+            (sym_val - data_seg->p_vaddr + (uint32_t)(uintptr_t)sram_page) ^
+                ns_xor);
       }
       continue;
     }
@@ -95,11 +98,12 @@ static void apply_relocations(const elf32_ehdr_t *ehdr,
     if (val == 0) continue;
 
     if (val < data_seg->p_vaddr) {
-      cpu_ops->write32(cpu_state, word_addr, val + text_base);
+      cpu_ops->write32(cpu_state, word_addr, (val + text_base) ^ ns_xor);
     } else {
       cpu_ops->write32(
           cpu_state, word_addr,
-          val - data_seg->p_vaddr + (uint32_t)(uintptr_t)sram_page);
+          (val - data_seg->p_vaddr + (uint32_t)(uintptr_t)sram_page) ^
+              ns_xor);
     }
   }
 }
@@ -149,6 +153,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   uint8_t *sram_page = NULL;
   uint32_t got_sram_addr = 0;
   elf_got_info_t got_info = {0, 0, 0};
+  uint32_t ns_xor = p->ns_addr_xor;
 
   void *stack = page_alloc();
   if (!stack) return -(int)ENOMEM;
@@ -171,6 +176,8 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   } else {
     entry = xip_text_base + (e_entry & ~1u) - text_seg->p_vaddr;
     entry |= (e_entry & 1u);
+    /* NS processes execute from the Non-Secure flash alias */
+    entry ^= ns_xor;
   }
 
   if (data_seg && data_seg->p_memsz > 0) {
@@ -207,17 +214,19 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
         uint32_t val = cpu_ops->read32(cpu_state, word_addr);
         if (val == 0) continue;
         if (val < data_seg->p_vaddr)
-          cpu_ops->write32(cpu_state, word_addr, val + xip_text_base);
+          cpu_ops->write32(cpu_state, word_addr,
+                           (val + xip_text_base) ^ ns_xor);
         else
           cpu_ops->write32(
               cpu_state, word_addr,
-              val - data_seg->p_vaddr + (uint32_t)(uintptr_t)sram_page);
+              (val - data_seg->p_vaddr + (uint32_t)(uintptr_t)sram_page) ^
+                  ns_xor);
       }
     }
 
     apply_relocations(ehdr, file_buf, file_size, text_seg, data_seg, sram_page,
                       xip_text_base, got_sram_addr, &got_info, cpu_ops,
-                      cpu_state);
+                      cpu_state, ns_xor);
 
     for (uint32_t i = 0; i < data_pages; i++)
       p->user_pages[i] = sram_page + i * PAGE_SIZE;
@@ -275,7 +284,8 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   *(uint32_t *)(uintptr_t)sp = 0;
   for (int i = argc - 1; i >= 0; i--) {
     sp -= 4;
-    *(uint32_t *)(uintptr_t)sp = str_addrs[i];
+    /* NS processes see stack at NS alias; pointers must match */
+    *(uint32_t *)(uintptr_t)sp = str_addrs[i] ^ ns_xor;
   }
   sp -= 4;
   *(uint32_t *)(uintptr_t)sp = (uint32_t)argc;
@@ -298,10 +308,16 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   } else {
     proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, argv_sp);
     if (got_sram_addr) {
-      uint32_t *sw = (uint32_t *)(uintptr_t)p->sp;
-      sw[5] = got_sram_addr;
+      /* Access frame via Secure alias (XOR back for NS processes) */
+      uint32_t *sw = (uint32_t *)(uintptr_t)(p->sp ^ ns_xor);
+      /* NS SW frame: {EXC_RETURN, r4..r11, IntegritySig, ...}
+       *   → r9 at sw[6] (1 + 5 words from EXC_RETURN)
+       * Secure SW frame: {r4..r11, EXC_RETURN}
+       *   → r9 at sw[5] */
+      uint32_t r9_off = ns_xor ? 6u : 5u;
+      sw[r9_off] = got_sram_addr ^ ns_xor;
     }
-    p->got_base = got_sram_addr;
+    p->got_base = got_sram_addr ^ ns_xor;
   }
 
   return 0;

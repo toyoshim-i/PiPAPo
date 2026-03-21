@@ -1,8 +1,11 @@
-/* PiPAPo — musl syscall arch for ARMv6-M (Cortex-M0+)
+/* PiPAPo — musl syscall arch for ARM (Cortex-M0+ / Cortex-M33)
  *
  * Identical to upstream musl ARM except:
  *   - VDSO defines removed (PPAP has no Linux VDSO)
  *   - SYSCALL_IPC_BROKEN_MODE removed (not applicable)
+ *   - ARMv8-M (Cortex-M33): NS user processes call the Secure kernel
+ *     via BLX to the NSC gateway at fixed address 0x10028000, instead
+ *     of SVC 0 (which would be an NS SVC, not routed to the Secure kernel).
  */
 
 #define __SYSCALL_LL_E(x) \
@@ -10,9 +13,25 @@
 ((union { long long ll; long l[2]; }){ .ll = x }).l[1]
 #define __SYSCALL_LL_O(x) 0, __SYSCALL_LL_E((x))
 
-#ifdef __thumb__
+#if __ARM_ARCH >= 8
 
-/* Avoid use of r7 in asm constraints when producing thumb code,
+/* ARMv8-M (Cortex-M33): Non-Secure process calls NSC syscall gateway.
+ * The gateway at 0x10028000 (thumb) does: SG + SVC 0 + BXNS LR.
+ * NS code is permitted to BLX to NSC regions using the Secure address. */
+#define __ASM____R7__
+#define __asm_syscall(...) do { \
+	__asm__ __volatile__ ( \
+		"mov %1,r7 ; mov r7,%2 ; " \
+		"movw r12, #0x8001 ; movt r12, #0x1002 ; blx r12 ; " \
+		"mov r7,%1" \
+	: "=r"(r0), "=&r"((int){0}) : __VA_ARGS__ : "r12", "memory"); \
+	return r0; \
+	} while (0)
+
+#elif defined(__thumb__)
+
+/* ARMv6-M (Cortex-M0+): direct SVC 0 to Secure kernel.
+ * Avoid use of r7 in asm constraints when producing thumb code,
  * since it's reserved as frame pointer and might not be supported. */
 #define __ASM____R7__
 #define __asm_syscall(...) do { \
@@ -31,7 +50,6 @@
 	} while (0)
 #endif
 
-/* Cortex-M0+ is always thumb1 — no thumb2 immediate optimization */
 #define R7_OPERAND "r"(r7)
 
 static inline long __syscall0(long n)
