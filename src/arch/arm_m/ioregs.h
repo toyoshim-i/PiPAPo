@@ -1,5 +1,5 @@
 /*
- * cpu.h — ARM Cortex-M system register definitions
+ * ioregs.h — ARM Cortex-M I/O register definitions
  *
  * Shared header for Private Peripheral Bus (PPB) registers used across
  * multiple kernel files (sched.c, xip.c, uart.c).
@@ -8,8 +8,8 @@
  * MPU registers remain local to mpu.c (single consumer).
  */
 
-#ifndef PPAP_HW_CPU_H
-#define PPAP_HW_CPU_H
+#ifndef PPAP_ARCH_ARM_M_IOREGS_H
+#define PPAP_ARCH_ARM_M_IOREGS_H
 
 #include <stdint.h>
 
@@ -115,4 +115,4 @@
 
 #define XPSR_THUMB_BIT  0x01000000u  /* Thumb state bit (T=1, required)   */
 
-#endif /* PPAP_HW_CPU_H */
+#endif /* PPAP_ARCH_ARM_M_IOREGS_H */

@@ -33,7 +33,7 @@
 #include "../drivers/uart.h"
 #include "klog.h"
 #include "arch/arch.h"
-#include "arch/cpu.h"
+#include "arch/ioregs.h"
 #include "config.h"
 #include <stdint.h>
 

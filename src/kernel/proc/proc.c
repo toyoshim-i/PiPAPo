@@ -15,7 +15,7 @@
 #include "../mm/page.h"   /* PAGE_SIZE — for proc_setup_stack */
 #include "../spinlock.h"  /* SPIN_PROC */
 #include "../klog.h"
-#include "arch/cpu.h"
+#include "arch/ioregs.h"
 #include <stddef.h>   /* NULL, offsetof */
 
 /* Default file creation mask (octal 022 → owner rw, group/other r) */

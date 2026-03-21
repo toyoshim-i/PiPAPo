@@ -19,7 +19,7 @@
 #include "../fd/tty.h"     /* tty_rx_notify */
 #include "../signal/signal.h"
 #include "arch/arch.h"
-#include "arch/cpu.h"
+#include "arch/ioregs.h"
 #include <stddef.h>
 #include <stdint.h>
 

@@ -18,7 +18,7 @@
 #include "kernel/cpu/ecpu_z80.h"
 #include "kernel/errno.h"
 #if defined(__m68k__)
-#include "arch/cpu.h"
+#include "arch/ioregs.h"
 #endif
 #include <string.h>
 

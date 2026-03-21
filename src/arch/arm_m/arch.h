@@ -12,7 +12,7 @@
 #define PPAP_ARCH_ARM_M_ARCH_H
 
 #include <stdint.h>
-#include "cpu.h"   /* SCB_ICSR, PENDSVSET */
+#include "ioregs.h"   /* SCB_ICSR, PENDSVSET */
 
 /* ── Interrupt save / restore ─────────────────────────────────────────────── */
 
