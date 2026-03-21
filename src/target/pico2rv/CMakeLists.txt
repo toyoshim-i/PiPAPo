@@ -12,6 +12,11 @@ set(PPAP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 set(PICO_PLATFORM rp2350-riscv)
 set(PICO_BOARD pico2)
 
+# Prebuilt RISC-V toolchain from raspberrypi/pico-sdk-tools
+if(NOT DEFINED PICO_TOOLCHAIN_PATH AND NOT DEFINED ENV{PICO_TOOLCHAIN_PATH})
+    set(PICO_TOOLCHAIN_PATH "${PPAP_ROOT}/tools/riscv-toolchain")
+endif()
+
 # Pico SDK must be set up before project()
 if(NOT DEFINED PICO_SDK_PATH)
     if(DEFINED ENV{PICO_SDK_PATH})

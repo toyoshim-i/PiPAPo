@@ -291,7 +291,19 @@ void sched_start(void) {
   arch_irq_enable();
 }
 
-#endif /* __ARM_ARCH / __m68k__ */
+#elif defined(__riscv)
+
+/* ── Scheduler startup (RISC-V) ────────────────────────────────────────────
+ */
+
+void sched_start(void) {
+  /* RISC-V: no PSP/MSP split, no PendSV priorities.
+   * Timer ISR setup is done by target_late_init() → riscv_timer_init().
+   * Just enable interrupts to start the scheduler. */
+  arch_irq_enable();
+}
+
+#endif /* __ARM_ARCH / __m68k__ / __riscv */
 
 /* ── Cooperative yield ───────────────────────────────────────────────────────
  */

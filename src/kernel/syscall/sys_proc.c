@@ -822,7 +822,7 @@ static void trace_arm_hwbp_sync_target(const pcb_t *target) {
 }
 #endif
 
-static int trace_has_hwbp_for(const pcb_t *target) {
+static int __attribute__((unused)) trace_has_hwbp_for(const pcb_t *target) {
   if (!trace_supports_hwbp(target)) return 0;
   for (uint32_t i = 0; i < TRACE_HW_BP_MAX; i++) {
     if (target->trace_hwbp[i].used && target->trace_hwbp[i].enabled) return 1;

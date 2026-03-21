@@ -170,7 +170,7 @@ void signal_check(uint32_t *regs) {
   current->sig_blocked = old_blocked;
 }
 
-#else /* ARM */
+#elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
 
 /*
  * Placed in kernel .text (flash XIP).  User-mode code can execute flash.
@@ -276,7 +276,18 @@ void signal_check(void) {
   }
 }
 
-#endif /* __m68k__ */
+#elif defined(__riscv)
+
+/* RISC-V signal delivery — Phase RV-4 will implement. */
+
+void signal_setup_frame(int sig) {
+  /* Stub: deliver default action (terminate) for now. */
+  if (current->sig_handlers[sig] == (sighandler_t)0 /* SIG_DFL */) {
+    sys_exit(128 + sig);
+  }
+}
+
+#endif /* __m68k__ / ARM / __riscv */
 
 /* ── sys_kill ───────────────────────────────────────────────────────────────
  */
@@ -339,7 +350,7 @@ long sys_sigaction(long sig, long handler, long old_ptr) {
 long sys_sigreturn(void) { return -(long)ENOSYS; }
 long sys_rt_sigreturn(void) { return -(long)ENOSYS; }
 
-#else /* ARM */
+#elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
 
 /*
  * Restore context after a signal handler returns via sigreturn_trampoline.
@@ -383,7 +394,13 @@ long sys_sigreturn(void) {
 
 long sys_rt_sigreturn(void) { return sys_sigreturn(); /* same mechanism */ }
 
-#endif /* __m68k__ */
+#elif defined(__riscv)
+
+/* RISC-V sigreturn — Phase RV-4 will implement. */
+long sys_sigreturn(void) { return -(long)ENOSYS; }
+long sys_rt_sigreturn(void) { return -(long)ENOSYS; }
+
+#endif /* __m68k__ / ARM / __riscv */
 
 /* ── sys_rt_sigaction ────────────────────────────────────────────────────── */
 /*

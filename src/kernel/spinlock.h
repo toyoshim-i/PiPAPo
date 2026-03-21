@@ -49,6 +49,8 @@ enum {
 static inline int spin_have_hw(void) {
 #if defined(__m68k__)
   return 0; /* no hardware spinlocks on 68k */
+#elif defined(__riscv)
+  return 1; /* RP2350 SIO spinlocks work from RISC-V cores too */
 #else
   uint32_t partno = SCB_CPUID_REG & CPUID_PARTNO_MASK;
   return partno == CPUID_PARTNO_M0P || partno == CPUID_PARTNO_M33;
@@ -58,6 +60,8 @@ static inline int spin_have_hw(void) {
 static inline uint32_t core_id(void) {
 #if defined(__m68k__) || defined(PPAP_QEMU)
   return 0; /* single core: m68k or QEMU ARM */
+#elif defined(__riscv)
+  return 0; /* single-core initial RISC-V port (Phase RV-6 will use SIO_CPUID) */
 #else
   return SIO_CPUID; /* RP2040: single MMIO read, ~1 cycle */
 #endif

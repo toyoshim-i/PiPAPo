@@ -12,6 +12,8 @@
 #include "arm_m/ioregs.h"
 #elif defined(__m68k__)
 #include "m68k/ioregs.h"
+#elif defined(__riscv)
+#include "riscv/ioregs.h"
 #else
 #error "Unsupported architecture"
 #endif

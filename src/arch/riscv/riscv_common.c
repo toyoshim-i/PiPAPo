@@ -20,13 +20,8 @@ volatile uint32_t riscv_switch_pending = 0;
  * Used by the scheduler for time-slice accounting. */
 volatile uint32_t riscv_tick_count = 0;
 
-/* Core ID — single-core initial port.
- * On RP2350, SIO_CPUID at 0xD0000000 works for both ARM and RISC-V cores.
- * Phase RV-6 (dual-core) will use the real SIO_CPUID register. */
-uint32_t core_id(void)
-{
-    return 0;
-}
+/* core_id() is provided as static inline in spinlock.h (via proc.h).
+ * Phase RV-6 (dual-core) will use SIO_CPUID for real core detection. */
 
 /* ── Timer ────────────────────────────────────────────────────────────────── */
 

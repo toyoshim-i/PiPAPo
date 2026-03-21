@@ -56,7 +56,7 @@ fi
 
 # ── Determine source and build directories ──────────────────────────────────
 case "$TARGET" in
-    qemu_arm|pico1|pico1calc|pico2)
+    qemu_arm|pico1|pico1calc|pico2|pico2rv)
         SOURCE_DIR="$PROJECT_DIR/src/target/$TARGET"
         BUILD_DIR="$PROJECT_DIR/build/$TARGET"
         ;;
@@ -70,7 +70,7 @@ case "$TARGET" in
         ;;
     *)
         echo "[build] Error: unknown target '$TARGET'"
-        echo "        Valid targets: pico1, pico1calc, pico2, qemu_arm, qemu_m68k, x68k"
+        echo "        Valid targets: pico1, pico1calc, pico2, pico2rv, qemu_arm, qemu_m68k, x68k"
         exit 1
         ;;
 esac

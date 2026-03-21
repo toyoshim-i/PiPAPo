@@ -26,6 +26,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PPAP_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+DL_DIR="${PPAP_ROOT}/build/downloads"
 
 # --- Helpers -----------------------------------------------------------------
 
@@ -51,6 +52,7 @@ APT_PACKAGES=(
   gcc-arm-none-eabi       # ARM cross-compiler (armv6m/Thumb)
   binutils-arm-none-eabi  # Assembler, linker, objcopy, objdump
   # m68k-elf toolchain is built from source: ./third_party/build_gcc_m68k.sh
+  # RISC-V toolchain: prebuilt from raspberrypi/pico-sdk-tools (Step 1c)
   gdb-multiarch           # GDB with ARM and m68k support
   openocd                 # SWD/JTAG on-chip debugger (v0.12+, RP2040 only)
   minicom                 # Serial console
@@ -107,6 +109,38 @@ elif command -v gdb-multiarch &>/dev/null; then
 else
   warn "Neither arm-none-eabi-gdb nor gdb-multiarch found — GDB unavailable"
   FAIL=1
+fi
+
+# --- Step 1c: RISC-V toolchain (prebuilt from raspberrypi/pico-sdk-tools) ----
+#
+# The Pico SDK expects riscv32-unknown-elf-gcc with newlib (nosys.specs).
+# The official prebuilt toolchain from raspberrypi/pico-sdk-tools provides
+# everything needed.  Installed to tools/riscv-toolchain/ within the project.
+
+info "=== Step 1c: RISC-V toolchain ==="
+
+RISCV_TC_DIR="${PPAP_ROOT}/tools/riscv-toolchain"
+RISCV_TC_VER="v2.2.0-3"
+RISCV_TC_TAR="riscv-toolchain-15-x86_64-lin.tar.gz"
+RISCV_TC_URL="https://github.com/raspberrypi/pico-sdk-tools/releases/download/${RISCV_TC_VER}/${RISCV_TC_TAR}"
+
+if [[ -x "${RISCV_TC_DIR}/bin/riscv32-unknown-elf-gcc" ]]; then
+  success "RISC-V toolchain already installed at ${RISCV_TC_DIR}"
+else
+  mkdir -p "${DL_DIR}"
+  if [[ ! -f "${DL_DIR}/${RISCV_TC_TAR}" ]]; then
+    info "Downloading RISC-V toolchain (${RISCV_TC_VER})..."
+    wget -q --show-progress -O "${DL_DIR}/${RISCV_TC_TAR}.tmp" "${RISCV_TC_URL}"
+    mv "${DL_DIR}/${RISCV_TC_TAR}.tmp" "${DL_DIR}/${RISCV_TC_TAR}"
+  fi
+  info "Extracting RISC-V toolchain to ${RISCV_TC_DIR}..."
+  mkdir -p "${RISCV_TC_DIR}"
+  tar -xf "${DL_DIR}/${RISCV_TC_TAR}" -C "${RISCV_TC_DIR}"
+  if [[ -x "${RISCV_TC_DIR}/bin/riscv32-unknown-elf-gcc" ]]; then
+    success "RISC-V toolchain installed to ${RISCV_TC_DIR}"
+  else
+    warn "RISC-V toolchain extraction failed — check archive contents"
+  fi
 fi
 
 # --- Step 2: Git submodules --------------------------------------------------
@@ -167,7 +201,6 @@ info "=== Step 3b: Installing XEiJ ==="
 XEIJ_VER="0260308"
 XEIJ_ZIP="XEiJ_${XEIJ_VER}.zip"
 XEIJ_URL="https://stdkmd.net/xeij/${XEIJ_ZIP}"
-DL_DIR="${PPAP_ROOT}/build/downloads"
 XEIJ_DIR="${PPAP_ROOT}/tools/xeij"
 
 if [[ -f "${XEIJ_DIR}/XEiJ.jar" ]]; then
@@ -249,6 +282,29 @@ if [[ -x "$M68K_GCC" ]]; then
     "m68k-elf-gcc"
 else
   warn "m68k-elf-gcc not found. Run: ./third_party/build_gcc_m68k.sh"
+  FAIL=1
+fi
+
+# riscv32-unknown-elf-gcc (prebuilt from pico-sdk-tools)
+RISCV_GCC="${PPAP_ROOT}/tools/riscv-toolchain/bin/riscv32-unknown-elf-gcc"
+if [[ -x "$RISCV_GCC" ]]; then
+  verify_version "riscv32-unknown-elf-gcc" \
+    "$RISCV_GCC --version" \
+    "riscv32-unknown-elf-gcc"
+  # Check it produces valid rv32 output
+  echo 'int main(void){return 0;}' > /tmp/ppap_rv_check.c
+  if "$RISCV_GCC" -march=rv32imac -mabi=ilp32 -nostdlib \
+       -o /tmp/ppap_rv_check.elf /tmp/ppap_rv_check.c 2>/dev/null; then
+    ARCH="${PPAP_ROOT}/tools/riscv-toolchain/bin/riscv32-unknown-elf-readelf"
+    ARCH_OUT=$("$ARCH" -h /tmp/ppap_rv_check.elf | grep Machine)
+    success "riscv32-unknown-elf-gcc produces valid ELF: ${ARCH_OUT}"
+  else
+    warn "riscv32-unknown-elf-gcc failed to compile a minimal rv32 test"
+    FAIL=1
+  fi
+  rm -f /tmp/ppap_rv_check.c /tmp/ppap_rv_check.elf
+else
+  warn "riscv32-unknown-elf-gcc not found. Run setup_toolchain.sh to install."
   FAIL=1
 fi
 
