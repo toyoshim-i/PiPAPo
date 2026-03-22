@@ -81,6 +81,10 @@
 void clock_init_pll(void) {
   uint32_t t;
 
+  /* The SDK clears resus before clock reconfiguration so a previous session's
+   * clock fault recovery doesn't interfere with our manual tree switch. */
+  CLK_SYS_RESUS_CTRL = 0;
+
   /* Step 1: Move clk_sys to clk_ref (SRC = 0) for a safe glitchless
    * transition — clk_sys must not be on the AUX mux while we reconfigure
    * PLL_SYS. */
@@ -126,7 +130,13 @@ void clock_init_pll(void) {
   /* Step 9: Reconfigure clk_peri for the new clock speed.
    * clk_peri has no glitchless mux — must disable before the source
    * frequency changes, then re-enable.  AUXSRC=0 selects clk_sys
-   * which is now 133 MHz. */
+   * which is now at PLL speed.
+   *
+   * The SDK requires a delay of ≥3 target clock cycles after disable
+   * for ENABLE propagation.  At high ROSC speeds (up to 96 MHz on
+   * RP2350 A3+) the back-to-back writes execute too quickly, causing
+   * a clock glitch that corrupts the UART shift register state. */
   CLK_PERI_CTRL = 0;               /* disable */
-  CLK_PERI_CTRL = CLK_PERI_ENABLE; /* re-enable on clk_sys = 133 MHz */
+  for (volatile int i = 0; i < 64; i++) ; /* wait for ENABLE propagation */
+  CLK_PERI_CTRL = CLK_PERI_ENABLE; /* re-enable on clk_sys = PLL speed */
 }

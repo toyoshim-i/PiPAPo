@@ -9,20 +9,101 @@
 #include "pico2rv.h"
 #include "config.h"
 #include "drivers/uart.h"
-#include "drivers/arch/arm_m/uart_rpico.h"
+#include "drivers/arch/riscv/uart_rp2350.h"
 #include "drivers/clock.h"
 #include "klog.h"
-#include <hardware/regs/addressmap.h> /* UART0_BASE */
+#include "target/rpico.h"
 
 #ifdef PPAP_TESTS
 #include "ktest.h"
 #endif
 
+/* ── RP2350 bootrom state reset ─────────────────────────────────────────── *
+ *
+ * The Pico SDK calls rom_bootrom_state_reset() as the very first thing in
+ * runtime_init.  It resets global hardware state (interrupt controllers,
+ * permissions, etc.) left over from the boot ROM or a previous crash.
+ * Without this, RISC-V registers (Hazard3 external IRQ arrays, etc.) can
+ * contain stale values that cause unpredictable behavior.
+ *
+ * ROM function lookup for RISC-V:
+ *   1. Read the rom_table_lookup function pointer from ROM address 0x7DFA
+ *   2. Call it with code='SR' and flag=RT_FLAG_FUNC_RISCV to get state_reset
+ *   3. Call state_reset(GLOBAL_STATE | CURRENT_CORE)
+ */
+static void bootrom_state_reset(void)
+{
+    typedef void *(*rom_table_lookup_fn)(uint32_t code, uint32_t mask);
+    typedef void (*rom_state_reset_fn)(uint32_t flags);
+
+    /* RP2350 RISC-V bootrom stores the table lookup entry at 0x7DFA. */
+    rom_table_lookup_fn lookup =
+        (rom_table_lookup_fn)(uintptr_t)*(uint16_t *)0x7DFAu;
+    rom_state_reset_fn reset_fn =
+        (rom_state_reset_fn)lookup('S' | ('R' << 8), 0x0001u);
+
+    /* GLOBAL_STATE only — CURRENT_CORE (0x01) appears to reset Hazard3
+     * CPU config (possibly disabling C extension → illegal insn crashes).
+     * CURRENT_CORE is auto-called by bootrom during normal boot anyway. */
+    reset_fn(0x04u); /* BOOTROM_STATE_RESET_GLOBAL_STATE */
+}
+
+/* Clear Hazard3 external IRQ force arrays (MEIFA) — stale forced interrupts
+ * from a previous crash could fire once mstatus.MIE is enabled.
+ * Equivalent to SDK's runtime_init_per_core_h3_irq_registers, but without
+ * enabling global interrupts (we defer that to riscv_timer_init). */
+static void h3_clear_irq_force(void)
+{
+    /* MEIFA CSR 0xBE2: writing index N clears force array word N */
+    for (int i = 3; i >= 0; i--)
+        __asm__ volatile ("csrw 0xBE2, %0" : : "r"(i));
+    /* Clear mie — no interrupts until riscv_timer_init */
+    __asm__ volatile ("csrw mie, zero");
+    /* Clear mscratch — used by exception handler for nesting detection */
+    __asm__ volatile ("csrw mscratch, zero");
+}
+
 void target_early_init(void)
 {
+    bootrom_state_reset();   /* restore global bootrom state, incl. perms */
+    h3_clear_irq_force();   /* clear stale Hazard3 IRQ force bits    */
+
+    /* Release all SIO hardware spinlocks — a previous crash may have left
+     * one held.  spin_lock_irqsave() in uart_putc would deadlock otherwise. */
+    for (int i = 0; i < 32; i++)
+        *(volatile uint32_t *)(0xD0000100u + i * 4u) = 0;
+
+    /* ── SDK-style early resets ──────────────────────────────────────────
+     * Reset ALL peripherals to a known state, except:
+     *   - IO_QSPI, PADS_QSPI (fatal if running from flash)
+     *   - PLL_SYS, PLL_USB   (fatal if clock muxing hasn't been reset)
+     *   - USBCTRL, SYSCFG    (disturbs USB-to-SWD on core 1)
+     * Then unreset peripherals clocked only by clk_sys/clk_ref.
+     * UART0/SPI stay in reset until their drivers init them. */
+#define KEEP_MASK (RESETS_RESET_IO_QSPI_BITS | RESETS_RESET_PADS_QSPI_BITS | \
+                   RESETS_RESET_PLL_SYS_BITS | RESETS_RESET_PLL_USB_BITS | \
+                   RESETS_RESET_SYSCFG_BITS | RESETS_RESET_USBCTRL_BITS)
+    {
+        uint32_t assert_mask = ~KEEP_MASK & 0x1FFFFFFFu;
+
+        /* Assert reset on everything except KEEP_MASK */
+        RESETS_RESET_SET = assert_mask;
+
+        /* Release all asserted resets */
+        RESETS_RESET_CLR = assert_mask;
+
+        /* Only wait for peripherals we need before clock init:
+         * IO_BANK0, PADS_BANK0.  Other peripherals (UART, DMA,
+         * etc.) will be waited on by their respective drivers. */
+#define NEED_MASK (RESETS_RESET_IO_BANK0_BITS | RESETS_RESET_PADS_BANK0_BITS)
+        while ((RESETS_RESET_DONE & NEED_MASK) != NEED_MASK)
+            ;
+    }
+
     uart_init();
-    /* Skip uart_tx_drain() — nothing in ring, and BUSY may be stuck on
-     * RP2350 RISC-V.  Just switch clock and reprogram baud directly. */
+    /* No bytes have been emitted yet, so there is nothing to drain here.
+     * On Hazard3, UART_FR.BUSY can remain set spuriously and hang boot if we
+     * spin on uart_tx_drain() before the first write. */
     clock_init_pll();          /* switch clk_sys to PLL (PPAP_SYS_HZ)      */
     uart_reinit_pll();         /* set PLL-speed baud divisors               */
     klog("PiPAPo booting... [pico2rv]\n");

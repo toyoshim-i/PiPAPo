@@ -48,6 +48,9 @@ MEMORY {
 
 /* Linker symbol used by stage1.S to set mtvec */
 __kernel_entry = ORIGIN(FLASH_KERNEL);
+/* Boot ROM enters stage1 with the PICOBIN-provided SP.  Keep that at the
+ * top of SRAM, matching the Pico SDK's RISC-V startup convention. */
+__bootrom_stack_top = ORIGIN(RAM_DMA) + LENGTH(RAM_DMA);
 
 SECTIONS {
 

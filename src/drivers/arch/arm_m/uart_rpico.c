@@ -29,9 +29,15 @@
 
 #define XOSC_CTRL REG(XOSC_BASE + 0x00u)
 #define XOSC_STATUS REG(XOSC_BASE + 0x04u)
+#define XOSC_STARTUP REG(XOSC_BASE + 0x0Cu)
 
-#define XOSC_CTRL_START ((0xFABu << 12) | 0xAA0u)
+#define XOSC_CTRL_FREQ_1_15MHZ 0xAA0u
+#define XOSC_CTRL_ENABLE (0xFABu << 12)
 #define XOSC_STATUS_STABLE (1u << 31)
+
+/* Match the Pico SDK default: ceil(XOSC_KHz / 256) * 6.
+ * For a 12 MHz crystal this is 47 * 6 = 282 cycles of 256*xtal_period. */
+#define XOSC_STARTUP_DELAY_12MHZ 282u
 
 /* ==========================================================================
  * PADS_BANK0 — GPIO pad electrical configuration
@@ -168,7 +174,9 @@ static void clock_switch_to_xosc(void) {
   while (!(CLK_REF_SELECTED & (1u << CLK_REF_SRC_ROSC)))
     ;
 
-  XOSC_CTRL = XOSC_CTRL_START;
+  XOSC_CTRL = XOSC_CTRL_FREQ_1_15MHZ;
+  XOSC_STARTUP = XOSC_STARTUP_DELAY_12MHZ;
+  XOSC_CTRL = XOSC_CTRL_ENABLE | XOSC_CTRL_FREQ_1_15MHZ;
   while (!(XOSC_STATUS & XOSC_STATUS_STABLE))
     ;
 
@@ -176,6 +184,7 @@ static void clock_switch_to_xosc(void) {
   while (!(CLK_REF_SELECTED & (1u << CLK_REF_SRC_XOSC)))
     ;
 
+  CLK_PERI_DIV  = 0x10000u;       /* RP2350: reset divider to 1:1 (no-op on RP2040) */
   CLK_PERI_CTRL = CLK_PERI_ENABLE;
 }
 

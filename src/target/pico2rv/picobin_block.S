@@ -5,9 +5,11 @@
 # to determine image type, CPU, security world, and entry point.  Without this
 # block the ROM will not boot our image.
 #
-# This block declares: RISC-V Secure executable, RP2350 chip.  An explicit
-# ENTRY_POINT item directs the ROM to stage1_entry, which sets mtvec to the
-# kernel trap vector and jumps to the kernel _start.
+# This block declares: RISC-V executable for RP2350.  Match the Pico SDK's
+# RISC-V IMAGE_TYPE encoding here: leave the security field unspecified rather
+# than forcing Secure mode.  An explicit ENTRY_POINT item directs the ROM to
+# stage1_entry, which sets mtvec to the kernel trap vector and jumps to the
+# kernel _start.
 #
 # The block is placed in section .embedded_block, which the linker script puts
 # inside FLASH_BOOT (first 4 KB).
@@ -20,8 +22,9 @@
 .equ PICOBIN_BLOCK_ITEM_1BS_ENTRY_POINT, 0x44
 .equ PICOBIN_BLOCK_ITEM_2BS_LAST,       0xff     # 0x80 | 0x7f
 
-# IMAGE_TYPE value for: EXE (1<<0) | Security=S (2<<4) | CPU=RISCV (1<<8) | Chip=RP2350 (1<<12)
-.equ IMAGE_TYPE_VALUE,              0x1121
+# IMAGE_TYPE value for: EXE (1<<0) | CPU=RISCV (1<<8) | Chip=RP2350 (1<<12)
+# This matches the SDK's embedded_start_block.inc.S for __riscv.
+.equ IMAGE_TYPE_VALUE,              0x1101
 
 .section .embedded_block, "a"
 .p2align 2
@@ -29,10 +32,10 @@
 __embedded_block:
     .word PICOBIN_BLOCK_MARKER_START
 
-    # IMAGE_TYPE item: declares RISC-V Secure EXE on RP2350
+    # IMAGE_TYPE item: declares RISC-V EXE on RP2350 (SDK-compatible)
     .byte PICOBIN_BLOCK_ITEM_1BS_IMAGE_TYPE
     .byte 0x01                          # item size: 1 word
-    .hword IMAGE_TYPE_VALUE             # 0x1121
+    .hword IMAGE_TYPE_VALUE             # 0x1101
 
     # ENTRY_POINT item: explicit entry so the ROM doesn't rely on vector table
     # position relative to the IMAGE_DEF block.  Points to stage1_entry which
@@ -42,7 +45,7 @@ __embedded_block:
     .byte 0                             # pad
     .byte 0                             # pad
     .word stage1_entry                  # entry point
-    .word __stack_top                   # initial stack pointer
+    .word __bootrom_stack_top           # initial stack pointer for ROM handoff
 
     # LAST item: terminates the block, with self-referencing loop offset
     .byte PICOBIN_BLOCK_ITEM_2BS_LAST

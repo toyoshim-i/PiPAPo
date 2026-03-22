@@ -169,9 +169,14 @@ const cpu_ops_t native_cpu_ops = {
 #if defined(__m68k__)
     .name = "native-m68k",
     .arch_id = CPU_ARCH_M68K,
+#elif defined(__riscv)
+    .name = "native-riscv",
+    .arch_id = CPU_ARCH_RISCV,
 #elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
     .name = "native-arm_m",
     .arch_id = CPU_ARCH_ARM,
+#else
+#error "Unknown architecture — add native_cpu_ops entry"
 #endif
     .create_state = native_create_state,
     .init = native_init,
