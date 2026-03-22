@@ -10,6 +10,8 @@
 
 ENTRY(_start)
 
+/* Force ET_DYN so the linker preserves GOT entries for PIC relocation.
+ * The kernel ELF loader patches GOT entries at load time. */
 PHDRS
 {
     text PT_LOAD FLAGS(5);   /* PF_R | PF_X */

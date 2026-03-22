@@ -138,7 +138,7 @@ const char *target_init_path(void)
     return "/bin/runtests";
 #endif
 #else
-    return "/sbin/init";
+    return "/bin/hello"; /* TODO: restore /sbin/init after vfork is stable */
 #endif
 }
 

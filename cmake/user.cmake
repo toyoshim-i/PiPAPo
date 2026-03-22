@@ -150,7 +150,7 @@ elseif(PPAP_ARCH STREQUAL "riscv")
     set(PPAP_SIZE_CMD      ${PPAP_RISCV_TC}/bin/riscv32-unknown-elf-size)
     set(PPAP_ARCH_DIR      ${PPAP_ROOT}/src/user/arch/riscv)
     set(PPAP_TARGET_FLAGS  -march=rv32imac_zicsr -mabi=ilp32)
-    set(PPAP_PIC_FLAGS     -fPIC)
+    set(PPAP_PIC_FLAGS     -fPIC -mcmodel=medany)
     set(PPAP_USER_LD       ${PPAP_ARCH_DIR}/user.ld)
     set(PPAP_MUSL_SYSROOT  ${PPAP_SHARED_BUILD}/musl-sysroot)
     set(PPAP_MUSL_TARGET   riscv32-unknown-elf)
@@ -211,7 +211,8 @@ set(PPAP_USER_CFLAGS
 set(PPAP_USER_ASFLAGS ${PPAP_TARGET_FLAGS})
 
 set(PPAP_USER_LDFLAGS
-    -nostdlib -T ${PPAP_USER_LD} -Wl,--gc-sections -Wl,--build-id=none)
+    -nostdlib -T ${PPAP_USER_LD} -Wl,--gc-sections -Wl,--build-id=none
+    $<$<STREQUAL:${PPAP_ARCH},riscv>:-Wl$<COMMA>--no-relax>)
 
 # --- String versions for shell config ---
 string(JOIN " " PPAP_TARGET_FLAGS_STR ${PPAP_TARGET_FLAGS})
