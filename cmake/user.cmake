@@ -142,6 +142,10 @@ if(PPAP_ARCH STREQUAL "m68k")
         OUTPUT_VARIABLE PPAP_LIBGCC OUTPUT_STRIP_TRAILING_WHITESPACE)
     get_filename_component(PPAP_GCC_LIBDIR ${PPAP_LIBGCC} DIRECTORY)
 elseif(PPAP_ARCH STREQUAL "riscv")
+    # Use bare-metal toolchain for RISC-V user-space.  The Linux toolchain
+    # has a hard-float libgcc mismatch and its linker segfaults on large
+    # PIE binaries.  Since we load text+data contiguously in SRAM anyway
+    # (RISC-V auipc limitation), PIE/GOT is not needed.
     set(PPAP_RISCV_TC      ${PPAP_ROOT}/tools/riscv-toolchain)
     set(PPAP_CC            ${PPAP_RISCV_TC}/bin/riscv32-unknown-elf-gcc)
     set(PPAP_CROSS_PREFIX  ${PPAP_RISCV_TC}/bin/riscv32-unknown-elf-)
@@ -152,6 +156,7 @@ elseif(PPAP_ARCH STREQUAL "riscv")
     set(PPAP_TARGET_FLAGS  -march=rv32imac_zicsr -mabi=ilp32)
     set(PPAP_PIC_FLAGS     -fPIC -mcmodel=medany)
     set(PPAP_USER_LD       ${PPAP_ARCH_DIR}/user.ld)
+    set(PPAP_BUSYBOX_LD    ${PPAP_ROOT}/third_party/patches/musl/libc_riscv.ld)
     set(PPAP_MUSL_SYSROOT  ${PPAP_SHARED_BUILD}/musl-sysroot)
     set(PPAP_MUSL_TARGET   riscv32-unknown-elf)
     set(PPAP_SPECS_FILE    ${PPAP_SHARED_BUILD}/musl-riscv.specs)
@@ -219,8 +224,15 @@ string(JOIN " " PPAP_TARGET_FLAGS_STR ${PPAP_TARGET_FLAGS})
 string(JOIN " " PPAP_PIC_FLAGS_STR    ${PPAP_PIC_FLAGS})
 set(PPAP_MUSL_CFLAGS_STR
     "${PPAP_TARGET_FLAGS_STR} -Os -g ${PPAP_PIC_FLAGS_STR} -ffunction-sections -fdata-sections")
+# RISC-V bare-metal linker doesn't support -pie.  --emit-relocs is passed
+# via EXTRA_LDFLAGS in build_busybox.sh instead (linker flag, not CFLAGS).
+if(PPAP_ARCH STREQUAL "riscv")
+    set(_PIE_FLAG "")
+else()
+    set(_PIE_FLAG "-pie")
+endif()
 set(PPAP_APP_CFLAGS_STR
-    "${PPAP_TARGET_FLAGS_STR} -Os -nostdinc -isystem ${PPAP_MUSL_SYSROOT}/include -isystem ${PPAP_GCC_INCLUDE} ${PPAP_PIC_FLAGS_STR} -ffunction-sections -fdata-sections -pie")
+    "${PPAP_TARGET_FLAGS_STR} -Os -nostdinc -isystem ${PPAP_MUSL_SYSROOT}/include -isystem ${PPAP_GCC_INCLUDE} ${PPAP_PIC_FLAGS_STR} -ffunction-sections -fdata-sections ${_PIE_FLAG}")
 
 # =============================================================================
 # Generate specs file (used by busybox/rogue linking)

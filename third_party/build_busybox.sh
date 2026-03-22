@@ -197,7 +197,13 @@ for variant in "${VARIANTS[@]}"; do
     # Inject CFLAGS into .config
     sed -i 's|^CONFIG_SYSROOT=.*|CONFIG_SYSROOT=""|' .config
     sed -i 's|^CONFIG_EXTRA_CFLAGS=.*|CONFIG_EXTRA_CFLAGS="'"$PPAP_APP_CFLAGS -specs=$PPAP_SPECS_FILE -T $PPAP_BUSYBOX_LD"'"|' .config
-    sed -i 's|^CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS="-L'"$PPAP_MUSL_SYSROOT"'/lib"|' .config
+    # RISC-V: --emit-relocs preserves relocation entries so the kernel's
+    # ELF loader can apply address fixups for function pointer tables.
+    EXTRA_LD="-L${PPAP_MUSL_SYSROOT}/lib"
+    if [[ "${PPAP_BB_ARCH:-}" == "riscv32" ]]; then
+        EXTRA_LD="$EXTRA_LD -Wl,--emit-relocs"
+    fi
+    sed -i 's|^CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS="'"$EXTRA_LD"'"|' .config
     sed -i 's|^CONFIG_EXTRA_LDLIBS=.*|CONFIG_EXTRA_LDLIBS=""|' .config
 
     # Resolve dependencies
@@ -213,8 +219,14 @@ for variant in "${VARIANTS[@]}"; do
         SKIP_STRIP=y \
         -j"$(nproc)" 2>&1
 
-    # Strip debug info and copy to output
-    $PPAP_STRIP -s -o "$BB_OUT/$name" busybox
+    # Strip debug info and copy to output.
+    # RISC-V with --emit-relocs: keep relocation sections (strip only debug).
+    # Other arches: full strip (-s).
+    if [[ "${PPAP_BB_ARCH:-}" == "riscv32" ]]; then
+        $PPAP_STRIP --strip-debug -o "$BB_OUT/$name" busybox
+    else
+        $PPAP_STRIP -s -o "$BB_OUT/$name" busybox
+    fi
     echo "busybox [$name]: installed to $BB_OUT/$name"
 done
 

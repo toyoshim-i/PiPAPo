@@ -12,7 +12,7 @@
 #include "kernel/mm/page.h"
 #include "kernel/proc/proc.h"
 
-#if !defined(__riscv)
+#if !defined(__riscv) && !defined(__xtensa__)
 static void apply_relocations(const elf32_ehdr_t *ehdr,
                               const uint8_t *file_base, uint32_t file_size,
                               const elf32_phdr_t *text_seg,
@@ -105,7 +105,7 @@ static void apply_relocations(const elf32_ehdr_t *ehdr,
     }
   }
 }
-#endif /* !__riscv */
+#endif /* !__riscv && !__xtensa__ */
 
 static int elf_detect(const uint8_t *file_buf, uint32_t file_size,
                       const char *path) {
@@ -151,7 +151,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   uint32_t entry;
   uint8_t *sram_page = NULL;
   uint32_t got_sram_addr = 0;
-#if !defined(__riscv)
+#if !defined(__riscv) && !defined(__xtensa__)
   elf_got_info_t got_info = {0, 0, 0};
 #endif
   void *stack = page_alloc();
@@ -168,11 +168,11 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     }
   }
 
-#if !defined(__riscv)
+#if !defined(__riscv) && !defined(__xtensa__)
   uint32_t xip_text_base = (uint32_t)(uintptr_t)file_buf + text_seg->p_offset;
 #endif
 
-#if defined(__riscv)
+#if defined(__riscv) || defined(__xtensa__)
   /* RISC-V PIC uses auipc (PC-relative) for ALL address references,
    * including writable globals.  This only works when text and data are
    * at their link-time relative offsets.  With XIP (text in flash, data
@@ -213,11 +213,124 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
       memcpy(sram_page + data_seg->p_vaddr,
              file_buf + data_seg->p_offset, data_seg->p_filesz);
 
-    /* Entry point is in the SRAM copy */
+    /* Entry point is in the SRAM copy.
+     * RISC-V can execute from DRAM directly.
+     * Xtensa must execute from IRAM (instruction bus). */
     entry = (uint32_t)(uintptr_t)(sram_page + e_entry);
+#if defined(__xtensa__)
+    entry += XTENSA_DRAM_TO_IRAM;
+
+    /* Invalidate I-cache so the CPU fetches the freshly-written code
+     * instead of stale cache lines.  Writing via the DRAM bus does NOT
+     * automatically update the I-cache on ESP32-S3. */
+    {
+      extern void Cache_Invalidate_ICache_All(void);
+      Cache_Invalidate_ICache_All();
+    }
+
+    /* Debug: verify code was copied and IRAM execution works */
+    {
+      extern void klogf(const char *, ...);
+      uint32_t dram = entry - XTENSA_DRAM_TO_IRAM;
+      klogf("[elf] sram=%x entry(IRAM)=%x\n",
+            (uint32_t)(uintptr_t)sram_page, entry);
+      klogf("[elf] code @DRAM: %x %x %x %x\n",
+            *(uint32_t *)(uintptr_t)dram,
+            *(uint32_t *)(uintptr_t)(dram + 4),
+            *(uint32_t *)(uintptr_t)(dram + 8),
+            *(uint32_t *)(uintptr_t)(dram + 12));
+
+      /* Test: write a "ret" (call0 return = jx a0) to a scratch area
+       * in the same SRAM page, convert to IRAM, and call it.
+       * ret encoding: 0x000080 (3 bytes: 80 00 00) */
+      uint32_t *test_dram = (uint32_t *)(uintptr_t)(dram +
+                             total_image_pages * PAGE_SIZE - 16);
+      *test_dram = 0x00000080u; /* ret instruction */
+      extern void Cache_Invalidate_ICache_All(void);
+      Cache_Invalidate_ICache_All();
+      uint32_t test_iram = (uint32_t)(uintptr_t)test_dram +
+                            XTENSA_DRAM_TO_IRAM;
+      klogf("[elf] test: DRAM=%x IRAM=%x val=%x\n",
+            (uint32_t)(uintptr_t)test_dram, test_iram, *test_dram);
+      void (*test_fn)(void) = (void (*)(void))(uintptr_t)test_iram;
+      test_fn();
+      klogf("[elf] IRAM exec OK!\n");
+    }
+#endif
 
     for (uint32_t i = 0; i < total_image_pages; i++)
       p->user_pages[i] = sram_page + i * PAGE_SIZE;
+
+    /* Apply R_RISCV_32 relocations from --emit-relocs sections.
+     * These fix up absolute addresses in data (function pointer tables
+     * like applet_main[]) by adding the SRAM load base.
+     *
+     * Scan all SHT_RELA sections in the ELF.  For each R_RISCV_32 entry
+     * whose target falls within the loaded image, add the load base. */
+    uint32_t load_base = (uint32_t)(uintptr_t)sram_page;
+    uint32_t riscv32_reloc_count = 0;
+
+    if (ehdr->e_shoff && ehdr->e_shnum && ehdr->e_shentsize >= 40) {
+      for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
+        const uint8_t *sh =
+            file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
+        uint32_t sh_type = *(const uint32_t *)(sh + 4);
+        if (sh_type != 4 /* SHT_RELA */) continue;
+
+        uint32_t sh_offset = *(const uint32_t *)(sh + 16);
+        uint32_t sh_size   = *(const uint32_t *)(sh + 20);
+        uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
+        if (sh_entsize < 12) continue; /* RELA entry = 12 bytes */
+
+        uint32_t n_entries = sh_size / sh_entsize;
+        for (uint32_t ri = 0; ri < n_entries; ri++) {
+          const uint8_t *rela = file_buf + sh_offset + ri * sh_entsize;
+          uint32_t r_offset = *(const uint32_t *)(rela + 0);
+          uint32_t r_info   = *(const uint32_t *)(rela + 4);
+          uint8_t  r_type   = (uint8_t)(r_info & 0xFF);
+
+          /* R_RISCV_32 = 1: absolute 32-bit address */
+          if (r_type != 1) continue;
+
+          /* Symbol value + addend gives the link-time address.
+           * Add load_base to get the runtime SRAM address. */
+          if (r_offset < image_end) {
+            uint32_t *target = (uint32_t *)(sram_page + r_offset);
+            *target += load_base;
+            riscv32_reloc_count++;
+          }
+        }
+      }
+    }
+    /* Also relocate GOT entries.  --emit-relocs doesn't produce R_RISCV_32
+     * for GOT slots (the linker resolves them directly).  Scan section
+     * headers for .got (SHT_PROGBITS, SHF_WRITE, SHF_ALLOC) and add
+     * load_base to every non-zero, non-0xFFFFFFFF entry. */
+    for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
+      const uint8_t *sh =
+          file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
+      uint32_t sh_type  = *(const uint32_t *)(sh + 4);
+      uint32_t sh_flags = *(const uint32_t *)(sh + 8);
+      uint32_t sh_addr  = *(const uint32_t *)(sh + 12);
+      uint32_t sh_size  = *(const uint32_t *)(sh + 20);
+      uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
+
+      /* .got: PROGBITS, WRITE+ALLOC, entsize=4 */
+      if (sh_type != 1 /* SHT_PROGBITS */) continue;
+      if (!(sh_flags & 3 /* SHF_WRITE|SHF_ALLOC */)) continue;
+      if (sh_entsize != 4) continue;
+      if (sh_addr < image_end && sh_size > 0) {
+        uint32_t n_got = sh_size / 4;
+        uint32_t *got = (uint32_t *)(sram_page + sh_addr);
+        for (uint32_t gi = 0; gi < n_got; gi++) {
+          if (got[gi] != 0 && got[gi] != 0xFFFFFFFFu &&
+              got[gi] < image_end) {
+            got[gi] += load_base;
+            riscv32_reloc_count++;
+          }
+        }
+      }
+    }
   }
 #else
   if (cpu_ops->arch_id == CPU_ARCH_M68K) {
@@ -287,7 +400,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     p->brk_base = data_end;
     p->brk_current = data_end;
   }
-#endif /* !__riscv */
+#endif /* !__riscv && !__xtensa__ */
 
   uint32_t argv_sp = 0;
   uint32_t stack_top = (cpu_ops->arch_id == CPU_ARCH_M68K)
