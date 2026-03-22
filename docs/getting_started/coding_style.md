@@ -70,19 +70,29 @@ Key distinction:
 - `arch/ioregs.h` -- memory-mapped I/O register definitions (SysTick, SCB, NVIC, SR, ...)
 - `kernel/cpu/cpu.h` -- emulated CPU (eCPU) abstraction layer and vtable
 
-## Architecture-Specific Code
+## Architecture- and Target-Specific Code
 
-Architecture-specific implementations live under `src/arch/<arch>/`, not in
-kernel directories behind `#ifdef`.  Shared kernel code calls through the
-dispatch headers (`arch/arch.h`, `arch/ioregs.h`) or the common API
-(`cpu/smp.h`).
+**Avoid `#ifdef` for arch/target conditionals.**  Do not scatter
+`#ifdef __arm__` / `#ifdef __m68k__` or target-specific `#ifdef` guards
+through shared kernel or driver code.  Instead, introduce an abstraction
+(a common header declaring the interface) and provide per-arch or per-target
+implementations in their own directories.
 
-When adding a new arch-specific feature:
-1. Add the implementation in `src/arch/<arch>/`.
-2. If it needs a shared API, add a header under `src/kernel/` and
-   arch-specific `.c` files under each `src/arch/<arch>/`.
-3. Wire both implementations into `ARCH_ARM_M_SOURCES` / `ARCH_M68K_SOURCES`
-   in `cmake/kernel.cmake`.
+Architecture-specific implementations live under `src/arch/<arch>/`, and
+target-specific implementations live under `src/target/<target>/`.  Shared
+kernel code calls through dispatch headers (`arch/arch.h`, `arch/ioregs.h`)
+or common APIs (`cpu/smp.h`) — never through preprocessor conditionals on
+the architecture or target.
+
+When adding a new arch- or target-specific feature:
+1. Define a common interface (function prototype or struct) in a shared
+   header under `src/kernel/`, `src/arch/`, or `src/drivers/`.
+2. Add the implementation in `src/arch/<arch>/` or `src/target/<target>/`.
+3. Wire each implementation into the appropriate source list in
+   `cmake/kernel.cmake` (e.g., `ARCH_ARM_M_SOURCES`,
+   `ARCH_M68K_SOURCES`, or the target's source list).
+4. If you find existing `#ifdef` conditionals that can be replaced by this
+   pattern, prefer refactoring them out.
 
 ## C Style
 

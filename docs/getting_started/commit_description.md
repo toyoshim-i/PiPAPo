@@ -131,6 +131,9 @@ If multiple co-authors exist, include all of them, one per line.
 2. Does the body explain why this change exists?
 3. Does the body include how the change was verified (or why not)?
 4. Did affected tests pass (or is there a clear reason they were not run)?
-5. Are affected documents updated?
-6. Are `Co-Authored-By:` trailers present when applicable?
-7. Is this commit scoped tightly enough to review easily?
+5. Does the code follow the project style guide (`docs/getting_started/coding_style.md`)?
+   In particular, check that no new `#ifdef` conditionals on arch or target
+   have been introduced — prefer per-arch/per-target implementations instead.
+6. Are affected documents updated?
+7. Are `Co-Authored-By:` trailers present when applicable?
+8. Is this commit scoped tightly enough to review easily?
