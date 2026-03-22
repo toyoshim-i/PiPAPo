@@ -12,6 +12,7 @@
 #include "kernel/mm/page.h"
 #include "kernel/proc/proc.h"
 
+#if !defined(__riscv)
 static void apply_relocations(const elf32_ehdr_t *ehdr,
                               const uint8_t *file_base, uint32_t file_size,
                               const elf32_phdr_t *text_seg,
@@ -75,7 +76,8 @@ static void apply_relocations(const elf32_ehdr_t *ehdr,
 
     if ((cpu_ops->arch_id == CPU_ARCH_M68K && rtype != R_68K_RELATIVE) ||
         (cpu_ops->arch_id == CPU_ARCH_ARM && rtype != R_ARM_RELATIVE) ||
-        (cpu_ops->arch_id == CPU_ARCH_ARMV6 && rtype != R_ARM_RELATIVE))
+        (cpu_ops->arch_id == CPU_ARCH_ARMV6 && rtype != R_ARM_RELATIVE) ||
+        (cpu_ops->arch_id == CPU_ARCH_XTENSA && rtype != R_XTENSA_RELATIVE))
       continue;
 
     uint32_t off = r_offset;
@@ -103,6 +105,7 @@ static void apply_relocations(const elf32_ehdr_t *ehdr,
     }
   }
 }
+#endif /* !__riscv */
 
 static int elf_detect(const uint8_t *file_buf, uint32_t file_size,
                       const char *path) {
@@ -148,7 +151,9 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   uint32_t entry;
   uint8_t *sram_page = NULL;
   uint32_t got_sram_addr = 0;
+#if !defined(__riscv)
   elf_got_info_t got_info = {0, 0, 0};
+#endif
   void *stack = page_alloc();
   if (!stack) return -(int)ENOMEM;
   p->stack_page = stack;
@@ -163,8 +168,58 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     }
   }
 
+#if !defined(__riscv)
   uint32_t xip_text_base = (uint32_t)(uintptr_t)file_buf + text_seg->p_offset;
+#endif
 
+#if defined(__riscv)
+  /* RISC-V PIC uses auipc (PC-relative) for ALL address references,
+   * including writable globals.  This only works when text and data are
+   * at their link-time relative offsets.  With XIP (text in flash, data
+   * in SRAM), they'd be at completely different addresses.
+   *
+   * Fix: allocate contiguous SRAM for the entire image (text + data),
+   * copy both segments there, and execute from SRAM.  This trades RAM
+   * for correctness — no GOT patching needed. */
+  {
+    uint32_t image_end = text_seg->p_vaddr + text_seg->p_memsz;
+    if (data_seg && data_seg->p_vaddr + data_seg->p_memsz > image_end)
+      image_end = data_seg->p_vaddr + data_seg->p_memsz;
+    uint32_t total_image_pages = (image_end + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    if (total_image_pages > USER_PAGES_MAX) {
+      page_free(stack);
+      p->stack_page = NULL;
+      return -(int)ENOMEM;
+    }
+
+    sram_page = page_alloc_contiguous(total_image_pages);
+    if (!sram_page) {
+      page_free(stack);
+      p->stack_page = NULL;
+      return -(int)ENOMEM;
+    }
+
+    /* Zero entire region first (covers BSS and alignment gaps) */
+    memset(sram_page, 0, total_image_pages * PAGE_SIZE);
+
+    /* Copy text segment */
+    if (text_seg->p_filesz > 0)
+      memcpy(sram_page + text_seg->p_vaddr,
+             file_buf + text_seg->p_offset, text_seg->p_filesz);
+
+    /* Copy data segment (initialized portion) */
+    if (data_seg && data_seg->p_filesz > 0)
+      memcpy(sram_page + data_seg->p_vaddr,
+             file_buf + data_seg->p_offset, data_seg->p_filesz);
+
+    /* Entry point is in the SRAM copy */
+    entry = (uint32_t)(uintptr_t)(sram_page + e_entry);
+
+    for (uint32_t i = 0; i < total_image_pages; i++)
+      p->user_pages[i] = sram_page + i * PAGE_SIZE;
+  }
+#else
   if (cpu_ops->arch_id == CPU_ARCH_M68K) {
     entry = xip_text_base + e_entry - text_seg->p_vaddr;
   } else {
@@ -232,6 +287,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     p->brk_base = data_end;
     p->brk_current = data_end;
   }
+#endif /* !__riscv */
 
   uint32_t argv_sp = 0;
   uint32_t stack_top = (cpu_ops->arch_id == CPU_ARCH_M68K)
@@ -296,7 +352,9 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     arch_irq_restore(irq_save);
   } else {
     proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, argv_sp);
-    if (got_sram_addr) {
+    if (got_sram_addr && cpu_ops->arch_id != CPU_ARCH_XTENSA) {
+      /* ARM/RISC-V: patch dedicated PIC register (r9/gp) in initial frame.
+       * Xtensa: GOT accessed via L32R (PC-relative literals), no register. */
       uint32_t *sw = (uint32_t *)(uintptr_t)p->sp;
       sw[5] = got_sram_addr;
     }
