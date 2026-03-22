@@ -830,13 +830,40 @@ RISC-V requires software to save/restore all registers on every trap
 (`movem.l %d0-%d7/%a0-%a6`), so we have a proven pattern.  The Hazard3
 `Xh3irq` extension may provide faster dispatch for selected interrupts.
 
-### 11.3 Toolchain Availability
+### 11.3 Toolchain Setup
 
-RISC-V toolchain (`riscv32-unknown-elf-gcc`) is less commonly
-pre-installed than ARM toolchains.
+Two RISC-V toolchains are required:
 
-**Mitigation**: Add to `scripts/setup-toolchain.sh`.  Ubuntu/Debian
-provide `gcc-riscv64-unknown-elf` which supports `-march=rv32imac`.
+| Toolchain | Purpose | Location |
+|-----------|---------|----------|
+| `riscv32-unknown-elf-gcc` | Kernel (bare-metal, newlib) | `tools/riscv-toolchain/` |
+| `riscv32-unknown-linux-gnu-gcc` | User-space (Linux, glibc, `-pie` support) | `tools/riscv-linux-toolchain/` |
+
+Both are installed by `scripts/setup_toolchain.sh`:
+
+- **Bare-metal**: Prebuilt from [raspberrypi/pico-sdk-tools](https://github.com/raspberrypi/pico-sdk-tools/releases)
+  (GCC 15.1, rv32imac, newlib).  Used by Pico SDK for kernel builds.
+- **Linux**: Prebuilt from [riscv-collab/riscv-gnu-toolchain](https://github.com/riscv-collab/riscv-gnu-toolchain/releases)
+  nightly `riscv32-glibc` variant (GCC 15.2, rv32imac, glibc).
+  Supports `-pie` for PIE/GOT generation needed by user-space PIC binaries.
+
+#### PIC / XIP Limitation
+
+RISC-V `-fPIC` generates `auipc` (PC-relative) for **all** symbol
+references, including writable static variables.  Unlike ARM's
+`-msingle-pic-base -mpic-register=r9` (GOT-indirect for all data),
+RISC-V has no way to force GOT indirection for local/static symbols.
+
+**Consequence**: User-space text+data must be loaded contiguously in
+SRAM (no XIP text separation like ARM).  The ELF loader copies both
+segments to SRAM pages so PC-relative offsets remain correct.  RAM
+cost is acceptable for small programs (push=6 pages, hello=1 page)
+but limits the maximum binary size to available SRAM.
+
+The `-pie` flag (Linux toolchain only) generates GOT entries for
+*global* symbols, which could enable partial XIP in the future if
+all writable variables are made non-static.  For now, the SRAM
+approach is simpler and works with any variable visibility.
 
 ### 11.4 PICOBIN CPU Selection
 

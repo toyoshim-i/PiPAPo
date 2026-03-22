@@ -115,35 +115,75 @@ else
   FAIL=1
 fi
 
-# --- Step 1c: RISC-V toolchain (prebuilt from raspberrypi/pico-sdk-tools) ----
+# --- Step 1c: RISC-V toolchains -----------------------------------------------
 #
-# The Pico SDK expects riscv32-unknown-elf-gcc with newlib (nosys.specs).
-# The official prebuilt toolchain from raspberrypi/pico-sdk-tools provides
-# everything needed.  Installed to tools/riscv-toolchain/ within the project.
+# Two RISC-V toolchains are used:
+#
+# 1. riscv32-unknown-elf (bare-metal, newlib)
+#    - From raspberrypi/pico-sdk-tools
+#    - Used for kernel build (via Pico SDK)
+#    - Installed to tools/riscv-toolchain/
+#
+# 2. riscv32-unknown-linux-gnu (Linux, glibc)
+#    - From riscv-collab/riscv-gnu-toolchain nightly
+#    - Used for user-space PIC binaries (supports -pie for GOT generation)
+#    - Installed to tools/riscv-linux-toolchain/
+#    - Note: RISC-V PIC uses PC-relative (auipc) for static variables,
+#      so user text+data must be loaded contiguously in SRAM (no XIP text
+#      separation like ARM's r9+GOT model).  The Linux toolchain is still
+#      needed for building busybox/musl with -pie support.
 
-info "=== Step 1c: RISC-V toolchain ==="
+info "=== Step 1c: RISC-V toolchains ==="
 
+# --- 1c.1: Bare-metal toolchain (kernel) ---
 RISCV_TC_DIR="${PPAP_ROOT}/tools/riscv-toolchain"
 RISCV_TC_VER="v2.2.0-3"
 RISCV_TC_TAR="riscv-toolchain-15-x86_64-lin.tar.gz"
 RISCV_TC_URL="https://github.com/raspberrypi/pico-sdk-tools/releases/download/${RISCV_TC_VER}/${RISCV_TC_TAR}"
 
 if [[ -x "${RISCV_TC_DIR}/bin/riscv32-unknown-elf-gcc" ]]; then
-  success "RISC-V toolchain already installed at ${RISCV_TC_DIR}"
+  success "RISC-V bare-metal toolchain already installed at ${RISCV_TC_DIR}"
 else
   mkdir -p "${DL_DIR}"
   if [[ ! -f "${DL_DIR}/${RISCV_TC_TAR}" ]]; then
-    info "Downloading RISC-V toolchain (${RISCV_TC_VER})..."
+    info "Downloading RISC-V bare-metal toolchain (${RISCV_TC_VER})..."
     wget -q --show-progress -O "${DL_DIR}/${RISCV_TC_TAR}.tmp" "${RISCV_TC_URL}"
     mv "${DL_DIR}/${RISCV_TC_TAR}.tmp" "${DL_DIR}/${RISCV_TC_TAR}"
   fi
-  info "Extracting RISC-V toolchain to ${RISCV_TC_DIR}..."
+  info "Extracting RISC-V bare-metal toolchain to ${RISCV_TC_DIR}..."
   mkdir -p "${RISCV_TC_DIR}"
   tar -xf "${DL_DIR}/${RISCV_TC_TAR}" -C "${RISCV_TC_DIR}"
   if [[ -x "${RISCV_TC_DIR}/bin/riscv32-unknown-elf-gcc" ]]; then
-    success "RISC-V toolchain installed to ${RISCV_TC_DIR}"
+    success "RISC-V bare-metal toolchain installed to ${RISCV_TC_DIR}"
   else
-    warn "RISC-V toolchain extraction failed — check archive contents"
+    warn "RISC-V bare-metal toolchain extraction failed"
+  fi
+fi
+
+# --- 1c.2: Linux toolchain (user-space) ---
+RISCV_LINUX_DIR="${PPAP_ROOT}/tools/riscv-linux-toolchain"
+RISCV_LINUX_TAR="riscv32-glibc-ubuntu-24.04-gcc.tar.xz"
+RISCV_LINUX_URL="https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2026.03.13/${RISCV_LINUX_TAR}"
+
+if [[ -x "${RISCV_LINUX_DIR}/bin/riscv32-unknown-linux-gnu-gcc" ]]; then
+  success "RISC-V Linux toolchain already installed at ${RISCV_LINUX_DIR}"
+else
+  mkdir -p "${DL_DIR}"
+  if [[ ! -f "${DL_DIR}/${RISCV_LINUX_TAR}" ]]; then
+    info "Downloading RISC-V Linux toolchain..."
+    wget -q --show-progress -O "${DL_DIR}/${RISCV_LINUX_TAR}.tmp" "${RISCV_LINUX_URL}"
+    mv "${DL_DIR}/${RISCV_LINUX_TAR}.tmp" "${DL_DIR}/${RISCV_LINUX_TAR}"
+  fi
+  info "Extracting RISC-V Linux toolchain to ${RISCV_LINUX_DIR}..."
+  # Archive extracts to riscv/ — move to riscv-linux-toolchain/
+  tar -xf "${DL_DIR}/${RISCV_LINUX_TAR}" -C "${PPAP_ROOT}/tools"
+  if [[ -d "${PPAP_ROOT}/tools/riscv" && ! -d "${RISCV_LINUX_DIR}" ]]; then
+    mv "${PPAP_ROOT}/tools/riscv" "${RISCV_LINUX_DIR}"
+  fi
+  if [[ -x "${RISCV_LINUX_DIR}/bin/riscv32-unknown-linux-gnu-gcc" ]]; then
+    success "RISC-V Linux toolchain installed to ${RISCV_LINUX_DIR}"
+  else
+    warn "RISC-V Linux toolchain extraction failed"
   fi
 fi
 
@@ -382,13 +422,12 @@ else
   FAIL=1
 fi
 
-# riscv32-unknown-elf-gcc (prebuilt from pico-sdk-tools)
+# riscv32-unknown-elf-gcc (bare-metal, kernel)
 RISCV_GCC="${PPAP_ROOT}/tools/riscv-toolchain/bin/riscv32-unknown-elf-gcc"
 if [[ -x "$RISCV_GCC" ]]; then
   verify_version "riscv32-unknown-elf-gcc" \
     "$RISCV_GCC --version" \
     "riscv32-unknown-elf-gcc"
-  # Check it produces valid rv32 output
   echo 'int main(void){return 0;}' > /tmp/ppap_rv_check.c
   if "$RISCV_GCC" -march=rv32imac -mabi=ilp32 -nostdlib \
        -o /tmp/ppap_rv_check.elf /tmp/ppap_rv_check.c 2>/dev/null; then
@@ -402,6 +441,27 @@ if [[ -x "$RISCV_GCC" ]]; then
   rm -f /tmp/ppap_rv_check.c /tmp/ppap_rv_check.elf
 else
   warn "riscv32-unknown-elf-gcc not found. Run setup_toolchain.sh to install."
+  FAIL=1
+fi
+
+# riscv32-unknown-linux-gnu-gcc (Linux, user-space)
+RISCV_LINUX_GCC="${PPAP_ROOT}/tools/riscv-linux-toolchain/bin/riscv32-unknown-linux-gnu-gcc"
+if [[ -x "$RISCV_LINUX_GCC" ]]; then
+  verify_version "riscv32-unknown-linux-gnu-gcc" \
+    "$RISCV_LINUX_GCC --version" \
+    "riscv32-unknown-linux-gnu-gcc"
+  # Verify -pie support (critical for RISC-V user-space PIC)
+  echo 'void _start(void){}' > /tmp/ppap_rv_pie_check.c
+  if "$RISCV_LINUX_GCC" -march=rv32imac -mabi=ilp32 -fPIC -nostdlib -pie \
+       -o /tmp/ppap_rv_pie_check.elf /tmp/ppap_rv_pie_check.c 2>/dev/null; then
+    success "riscv32-unknown-linux-gnu-gcc supports -pie"
+  else
+    warn "riscv32-unknown-linux-gnu-gcc -pie test failed"
+    FAIL=1
+  fi
+  rm -f /tmp/ppap_rv_pie_check.c /tmp/ppap_rv_pie_check.elf
+else
+  warn "riscv32-unknown-linux-gnu-gcc not found. Run setup_toolchain.sh to install."
   FAIL=1
 fi
 
