@@ -157,10 +157,31 @@ _trap_entry:
 
 .Ltimer_irq:
     # ── Timer interrupt handler ──────────────────────────────────────────
-    # Call C handler: riscv_timer_handler()
-    # It resets mtimecmp to clear the interrupt.
+    # Call C handler: riscv_timer_handler(from_user)
+    # a0 = from_user: 1 if interrupted code was U-mode, 0 if M-mode.
+    # Check saved mstatus.MPP (bits 12:11): 0b00 = U-mode, 0b11 = M-mode.
+    lw      a0, TF_MSTATUS(sp)
+    srli    a0, a0, 11
+    andi    a0, a0, 3           # a0 = MPP field
+    seqz    a0, a0              # a0 = 1 if MPP==0 (U-mode), 0 otherwise
     call    riscv_timer_handler
-    # Fall through to trap return
+
+    # ── Check if a context switch was requested ─────────────────────────
+    # sched_timer_tick → sched_tick → arch_yield sets riscv_switch_pending.
+    # If set, perform the switch now (same pattern as m68k port).
+    la      t0, riscv_switch_pending
+    lw      t1, 0(t0)
+    beqz    t1, .Ltrap_return   # no switch needed
+    sw      zero, 0(t0)         # clear the flag
+
+    # Call the context switch: riscv_context_switch(old_sp_ptr, new_sp)
+    # sched_next() returns the next pcb_t to run; we save current SP into
+    # the current pcb and load the new SP.
+    # For now, the full trap frame is already on the stack; just swap SP
+    # through the pcb_t.sp field via a C helper.
+    mv      a0, sp              # pass current SP (top of trap frame)
+    call    riscv_do_switch     # returns new SP in a0
+    mv      sp, a0              # switch to new process's stack
 
 .Ltrap_return:
     # ── Restore full register set ────────────────────────────────────────

@@ -5,11 +5,14 @@
  *   - Context switch pending flag (checked by timer ISR)
  *   - Core ID accessor (single-core for now)
  *   - RP2350 RISC-V timer init and interrupt handler
+ *   - Context switch helper (riscv_do_switch)
  */
 
 #include <stdint.h>
 #include "cpu.h"
 #include "klog.h"
+#include "proc/proc.h"
+#include "proc/sched.h"
 
 /* Context switch pending flag.
  * Set by arch_yield() (via sched_tick or sched_yield).
@@ -107,13 +110,20 @@ void riscv_timer_init(void)
     csr_set(mstatus, MSTATUS_MIE);
 }
 
+/* Forward declaration — sched_timer_tick() is in kernel/proc/sched.c. */
+extern void sched_timer_tick(int from_user);
+
 /*
  * riscv_timer_handler — called from trap.S on timer interrupt (mcause = 7).
  *
- * Resets mtimecmp for the next tick and increments the tick counter.
+ * Resets mtimecmp for the next tick, increments the tick counter, and
+ * calls sched_timer_tick() to drive time-slice accounting and preemption.
  * Writing mtimecmp automatically clears MTIP (no explicit acknowledge).
+ *
+ * The from_user flag is passed by trap.S: 1 if the interrupted code was
+ * in U-mode, 0 if in M-mode.  (For now, everything runs in M-mode.)
  */
-void riscv_timer_handler(void)
+void riscv_timer_handler(int from_user)
 {
     /* Set next deadline relative to current mtimecmp (not mtime) to
      * avoid drift.  If we've fallen behind, the next interrupt fires
@@ -124,4 +134,36 @@ void riscv_timer_handler(void)
     mtimecmp_write(next);
 
     riscv_tick_count++;
+
+    /* Drive scheduler time-slice accounting and preemption.
+     * sched_timer_tick → sched_tick → arch_yield → riscv_switch_pending=1.
+     * trap.S checks riscv_switch_pending on the return path. */
+    sched_timer_tick(from_user);
+}
+
+/* ── Context switch ──────────────────────────────────────────────────────── */
+
+/*
+ * riscv_do_switch — called from trap.S when riscv_switch_pending is set.
+ *
+ * Saves the current trap-frame SP into the current pcb, calls sched_next()
+ * to pick the next process, and returns the new process's saved SP.
+ * trap.S then restores registers from the new SP's trap frame and mrets
+ * into the new process.
+ *
+ * This follows the same pattern as the m68k port: the entire register set
+ * is already saved in the trap frame by _trap_entry; we just swap the SP
+ * pointer through the pcb.
+ */
+uint32_t riscv_do_switch(uint32_t current_sp)
+{
+    /* Save current SP (pointing to the trap frame) into the current pcb */
+    if (current)
+        current->sp = current_sp;
+
+    /* Pick the next runnable process */
+    pcb_t *next = sched_next();
+    current_core[core_id()] = next;
+
+    return next->sp;
 }

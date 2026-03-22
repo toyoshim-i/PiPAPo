@@ -195,6 +195,66 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp) {
   *--sp = 0u;          /* d2 */
   *--sp = 0u;          /* d1 */
   *--sp = 0u; /* d0 */ /* ← pcb_t.sp points here */
+
+#elif defined(__riscv)
+  /*
+   * RISC-V: build a trap frame matching trap.S layout (128 bytes).
+   * When the scheduler switches to this process, trap.S restores all
+   * registers from this frame and executes mret, which jumps to mepc.
+   *
+   * Trap frame layout (SP+0 → SP+124, low → high):
+   *   x1(ra), x3(gp), x4(tp), x5-x7(t0-t2), x8-x9(s0-s1),
+   *   x10-x17(a0-a7), x18-x27(s2-s11), x28-x31(t3-t6),
+   *   mepc, mstatus
+   *
+   * mstatus.MIE must be set so interrupts are enabled after mret.
+   * mstatus.MPIE is set by hardware on trap entry; we set it here so
+   * mret re-enables interrupts.  MPP=M-mode (0b11 << 11).
+   */
+  sp -= 32; /* 32 words = 128 bytes = TRAP_FRAME_SIZE */
+  /* Zero all general-purpose registers in the frame */
+  for (int i = 0; i < 30; i++)
+    sp[i] = 0u;
+  /* Set gp (x3) at frame offset 1 */
+  extern char __global_pointer$[];
+  sp[1] = (uint32_t)(uintptr_t)__global_pointer$;
+  /* mepc: entry point — mret will jump here */
+  sp[30] = (uint32_t)(uintptr_t)entry;
+  /* mstatus: MPP=M-mode, MPIE=1 (mret sets MIE from MPIE) */
+  sp[31] = (3u << 11) | (1u << 7); /* MPP=M, MPIE=1 */
+
+#elif defined(__xtensa__)
+  /*
+   * Xtensa windowed ABI: build a solicited frame matching switch.S.
+   *
+   * When xtensa_do_yield() switches to this process it:
+   *   1. Loads PS and return PC from the solicited frame
+   *   2. Executes RETW which triggers a window underflow
+   *   3. Underflow handler reads the base save area below the frame
+   *
+   * Stack layout (high → low, 16-byte aligned):
+   *   [top-16..top-4]   base save area (a0-a3 for retw underflow)
+   *   [top-32..top-20]  solicited frame: exit, PC, PS, pad
+   *
+   * The entry point is encoded in the return PC slot.  For the first
+   * switch into this process, RETW returns to the entry function.
+   * We encode a0 with CALLINC=1 (bits 31:30 = 01) so RETW knows
+   * the window increment was 4 (from a CALL4).
+   */
+  /* Align SP to 16 bytes (Xtensa ABI requirement) */
+  sp = (uint32_t *)((uintptr_t)sp & ~0xFu);
+  /* Base save area (16 bytes): retw underflow reads caller's a0-a3 */
+  *--sp = 0u;                       /* a3 */
+  *--sp = 0u;                       /* a2 */
+  *--sp = 0u;                       /* a1 (unused for first entry) */
+  *--sp = 0u;                       /* a0 (unused for first entry) */
+  /* Solicited frame (16 bytes) — must match switch.S layout */
+  *--sp = 0u;                       /* padding */
+  *--sp = (1u << 18);               /* PS: WOE=1, INTLEVEL=0 */
+  /* Return PC: encode with CALLINC=1 (bits 31:30 = 01) so RETW
+   * decrements WindowBase by 1 (matching a CALL4 entry). */
+  *--sp = ((uint32_t)entry & 0x3FFFFFFFu) | (1u << 30);  /* PC */
+  *--sp = 0u;                       /* exit marker = 0 (solicited) */
 #endif
 
   p->sp = (uint32_t)(uintptr_t)sp;

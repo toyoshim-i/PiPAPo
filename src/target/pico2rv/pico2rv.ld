@@ -77,6 +77,7 @@ SECTIONS {
 
     .rodata : {
         *(.rodata*)
+        *(.srodata*)     /* RISC-V small read-only data (gp-relative) */
         . = ALIGN(4);
     } > FLASH_KERNEL
 
@@ -92,6 +93,7 @@ SECTIONS {
     .data : {
         __data_start = .;
         *(.data*)
+        *(.sdata*)       /* RISC-V small initialized data (gp-relative) */
         . = ALIGN(4);
         __data_end = .;
     } > RAM_KERNEL AT> FLASH_KERNEL
@@ -114,6 +116,7 @@ SECTIONS {
     .bss (NOLOAD) : {
         __bss_start = .;
         *(.bss*)
+        *(.sbss*)        /* RISC-V small uninitialized data (gp-relative) */
         *(COMMON)
         . = ALIGN(4);
         __bss_end = .;
