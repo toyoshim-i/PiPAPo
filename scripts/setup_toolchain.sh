@@ -7,6 +7,9 @@
 #
 # What this script does:
 #   1. Installs required apt packages (ARM cross-toolchain, OpenOCD, etc.)
+#   1b. Creates arm-none-eabi-gdb symlink (Ubuntu dropped the package)
+#   1c. Installs RISC-V toolchain (prebuilt from pico-sdk-tools)
+#   1d. Installs ESP-IDF and Xtensa toolchain (for CardComputer / ESP32-S3)
 #   2. Initializes git submodules (Pico SDK, musl, busybox, etc.)
 #   3. Verifies the installation
 #
@@ -53,6 +56,7 @@ APT_PACKAGES=(
   binutils-arm-none-eabi  # Assembler, linker, objcopy, objdump
   # m68k-elf toolchain is built from source: ./third_party/build_gcc_m68k.sh
   # RISC-V toolchain: prebuilt from raspberrypi/pico-sdk-tools (Step 1c)
+  # Xtensa toolchain: installed via ESP-IDF install.sh (Step 1d)
   gdb-multiarch           # GDB with ARM and m68k support
   openocd                 # SWD/JTAG on-chip debugger (v0.12+, RP2040 only)
   minicom                 # Serial console
@@ -143,6 +147,70 @@ else
   fi
 fi
 
+# --- Step 1d: Xtensa toolchain (CardComputer / ESP32-S3) --------------------
+#
+# The CardComputer target uses the ESP32-S3 (Xtensa LX7).  ESP-IDF (source)
+# lives in third_party/esp-idf as a git submodule (initialized in Step 2).
+# The Xtensa cross-toolchain and ESP-IDF Python venv are installed into
+# tools/xtensa-toolchain/ (matching tools/m68k-toolchain/, tools/riscv-toolchain/).
+#
+# Convention:
+#   third_party/  = source repos (git submodules)
+#   tools/        = built/downloaded artifacts (toolchains, host utilities)
+
+info "=== Step 1d: Xtensa toolchain ==="
+
+ESP_IDF_DIR="${PPAP_ROOT}/third_party/esp-idf"
+XTENSA_TC_DIR="${PPAP_ROOT}/tools/xtensa-toolchain"
+
+# apt dependencies for ESP-IDF install.sh
+ESP_IDF_APT_DEPS=(
+  python3-venv            # ESP-IDF install.sh creates a virtualenv
+  python3-pip             # pip for ESP-IDF Python dependencies
+  libffi-dev              # Required by some ESP-IDF Python packages
+  dfu-util                # USB DFU flashing (ESP32-S3 native USB)
+)
+
+ESP_IDF_MISSING=()
+for pkg in "${ESP_IDF_APT_DEPS[@]}"; do
+  if dpkg -s "$pkg" &>/dev/null; then
+    success "apt: $pkg already installed"
+  else
+    ESP_IDF_MISSING+=("$pkg")
+  fi
+done
+
+if [[ ${#ESP_IDF_MISSING[@]} -gt 0 ]]; then
+  info "Installing ESP-IDF apt dependencies: ${ESP_IDF_MISSING[*]}"
+  sudo apt-get install -y "${ESP_IDF_MISSING[@]}"
+fi
+
+# ESP-IDF source is a git submodule — checked in Step 2.
+# Here we only install the toolchain, which requires the submodule to exist.
+# If Step 2 hasn't run yet (first-time setup), we defer silently.
+XTENSA_GCC_PATTERN="${XTENSA_TC_DIR}/tools/xtensa-esp-elf/*/xtensa-esp-elf/bin/xtensa-esp-elf-gcc"
+XTENSA_GCC=$(compgen -G "${XTENSA_GCC_PATTERN}" | head -1 || true)
+
+if [[ -n "${XTENSA_GCC}" && -x "${XTENSA_GCC}" ]]; then
+  success "Xtensa toolchain already installed: ${XTENSA_GCC}"
+elif [[ ! -f "${ESP_IDF_DIR}/install.sh" ]]; then
+  info "ESP-IDF submodule not yet initialized — Xtensa toolchain will be installed after Step 2"
+else
+  # IDF_TOOLS_PATH controls where ESP-IDF downloads toolchains and creates
+  # its Python venv.  Default is ~/.espressif; we redirect to tools/ to
+  # keep everything project-local and match other toolchains.
+  info "Running ESP-IDF install.sh for esp32s3 (into ${XTENSA_TC_DIR})..."
+  mkdir -p "${XTENSA_TC_DIR}"
+  IDF_TOOLS_PATH="${XTENSA_TC_DIR}" "${ESP_IDF_DIR}/install.sh" esp32s3
+  # Re-detect after install
+  XTENSA_GCC=$(compgen -G "${XTENSA_GCC_PATTERN}" | head -1 || true)
+  if [[ -n "${XTENSA_GCC}" && -x "${XTENSA_GCC}" ]]; then
+    success "Xtensa toolchain installed: ${XTENSA_GCC}"
+  else
+    warn "Xtensa toolchain not found after install — check ${XTENSA_TC_DIR}/"
+  fi
+fi
+
 # --- Step 2: Git submodules --------------------------------------------------
 
 info "=== Step 2: Initializing git submodules ==="
@@ -151,8 +219,12 @@ info "=== Step 2: Initializing git submodules ==="
 # QEMU has broken transitive submodule deps (Zeex/subhook repo is gone)
 # and its build script handles its own submodules anyway.
 git -C "${PPAP_ROOT}" submodule update --init --quiet
-# Pico SDK is the only submodule that needs recursive init
+# Pico SDK and ESP-IDF need recursive init for their internal submodules
 git -C "${PPAP_ROOT}/third_party/pico-sdk" submodule update --init --recursive --quiet
+if [[ -d "${PPAP_ROOT}/third_party/esp-idf" ]]; then
+  info "Initializing ESP-IDF submodules (this may take a moment)..."
+  git -C "${PPAP_ROOT}/third_party/esp-idf" submodule update --init --recursive --depth 1 --quiet
+fi
 # OpenOCD RPi fork needs its own submodules (jimtcl, libjaylink)
 if [[ -d "${PPAP_ROOT}/third_party/openocd" ]]; then
   git -C "${PPAP_ROOT}/third_party/openocd" submodule update --init --depth 1 --quiet
@@ -165,6 +237,31 @@ if [[ -f "${PICO_SDK_DIR}/pico_sdk_init.cmake" ]]; then
   success "Pico SDK present at ${PICO_SDK_DIR}"
 else
   warn "Pico SDK submodule not found — run: git submodule update --init --recursive"
+fi
+
+# Verify ESP-IDF submodule
+if [[ -f "${ESP_IDF_DIR}/export.sh" ]]; then
+  success "ESP-IDF present at ${ESP_IDF_DIR}"
+else
+  warn "ESP-IDF submodule not found — run: git submodule update --init --recursive"
+fi
+
+# --- Step 2a: Deferred Xtensa toolchain install ------------------------------
+#
+# If Step 1d was deferred because the ESP-IDF submodule wasn't yet initialized,
+# run the toolchain install now that the submodule is available.
+
+XTENSA_GCC=$(compgen -G "${XTENSA_GCC_PATTERN}" | head -1 || true)
+if [[ -z "${XTENSA_GCC}" || ! -x "${XTENSA_GCC}" ]] && [[ -f "${ESP_IDF_DIR}/install.sh" ]]; then
+  info "Running deferred ESP-IDF install.sh for esp32s3 (into ${XTENSA_TC_DIR})..."
+  mkdir -p "${XTENSA_TC_DIR}"
+  IDF_TOOLS_PATH="${XTENSA_TC_DIR}" "${ESP_IDF_DIR}/install.sh" esp32s3
+  XTENSA_GCC=$(compgen -G "${XTENSA_GCC_PATTERN}" | head -1 || true)
+  if [[ -n "${XTENSA_GCC}" && -x "${XTENSA_GCC}" ]]; then
+    success "Xtensa toolchain installed: ${XTENSA_GCC}"
+  else
+    warn "Xtensa toolchain not found after install — check ${XTENSA_TC_DIR}/"
+  fi
 fi
 
 # --- Step 2b: Raspberry Pi OpenOCD (RP2350 support) -------------------------
@@ -379,6 +476,51 @@ elif command -v qemu-system-m68k &>/dev/null; then
 else
   warn "qemu-system-m68k: not found (install qemu-system-misc or run ./third_party/build_qemu_system_m68k.sh)"
   FAIL=1
+fi
+
+# Xtensa toolchain (xtensa-esp-elf-gcc in tools/xtensa-toolchain/)
+XTENSA_GCC_PATTERN="${PPAP_ROOT}/tools/xtensa-toolchain/tools/xtensa-esp-elf/*/xtensa-esp-elf/bin/xtensa-esp-elf-gcc"
+XTENSA_GCC=$(compgen -G "${XTENSA_GCC_PATTERN}" | head -1 || true)
+if [[ -n "${XTENSA_GCC}" && -x "${XTENSA_GCC}" ]]; then
+  verify_version "xtensa-esp-elf-gcc" \
+    "${XTENSA_GCC} --version" \
+    "xtensa-esp.*-elf-gcc"
+  # Check it produces valid Xtensa output with Call0 ABI
+  echo 'int main(void){return 0;}' > /tmp/ppap_xtensa_check.c
+  if "${XTENSA_GCC}" -mcpu=esp32s3 -mabi=call0 -nostdlib \
+       -o /tmp/ppap_xtensa_check.elf /tmp/ppap_xtensa_check.c 2>/dev/null; then
+    XTENSA_READELF="${XTENSA_GCC%gcc}readelf"
+    ARCH_OUT=$("${XTENSA_READELF}" -h /tmp/ppap_xtensa_check.elf | grep Machine)
+    success "xtensa-esp-elf-gcc produces valid ELF (Call0): ${ARCH_OUT}"
+  else
+    warn "xtensa-esp-elf-gcc failed to compile a minimal Call0 ABI test"
+    FAIL=1
+  fi
+  rm -f /tmp/ppap_xtensa_check.c /tmp/ppap_xtensa_check.elf
+else
+  warn "xtensa-esp-elf-gcc: not found at tools/xtensa-toolchain/"
+  FAIL=1
+fi
+
+# ESP-IDF (source, git submodule)
+if [[ -f "${PPAP_ROOT}/third_party/esp-idf/export.sh" ]]; then
+  success "ESP-IDF: present at ${PPAP_ROOT}/third_party/esp-idf"
+else
+  warn "ESP-IDF: not found at ${PPAP_ROOT}/third_party/esp-idf"
+  FAIL=1
+fi
+
+# esptool.py (installed by ESP-IDF into tools/xtensa-toolchain/ venv)
+XTENSA_TC_DIR="${PPAP_ROOT}/tools/xtensa-toolchain"
+if [[ -f "${PPAP_ROOT}/third_party/esp-idf/export.sh" ]]; then
+  # Source export.sh with IDF_TOOLS_PATH pointing to our local dir
+  ESPTOOL_CHECK=$(bash -c "export IDF_TOOLS_PATH='${XTENSA_TC_DIR}'; source '${PPAP_ROOT}/third_party/esp-idf/export.sh' >/dev/null 2>&1 && command -v esptool.py" 2>/dev/null || true)
+  if [[ -n "${ESPTOOL_CHECK}" ]]; then
+    success "esptool.py: available (via ESP-IDF venv in tools/xtensa-toolchain/)"
+  else
+    warn "esptool.py: not found in ESP-IDF environment"
+    FAIL=1
+  fi
 fi
 
 # --- Summary -----------------------------------------------------------------

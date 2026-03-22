@@ -1,4 +1,5 @@
 .claude/
+.vscode/
 build/
 *.o
 *.elf
@@ -12,6 +13,8 @@ tools/mkromfs/mkromfs
 tools/m68k-toolchain/
 tools/xeij/
 tools/riscv-toolchain/
+tools/xtensa-toolchain/
+tools/openocd-rp/
 
 overlay/
 docs/private/
