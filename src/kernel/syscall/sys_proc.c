@@ -1262,6 +1262,12 @@ long sys_exit(long status) {
   if (!current->vfork_parent) {
     for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
       if (current->user_pages[i]) {
+        /* If the stack page is within the user_pages (RISC-V contiguous
+         * text+data allocation can include the stack address if it was
+         * reused from the page pool), clear it to prevent double-free
+         * when waitpid later frees the zombie's stack_page. */
+        if (current->user_pages[i] == current->stack_page)
+          current->stack_page = NULL;
         page_free(current->user_pages[i]);
         current->user_pages[i] = NULL;
       }

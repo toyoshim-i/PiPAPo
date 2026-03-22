@@ -55,10 +55,13 @@ APT_PACKAGES=(
   gcc-arm-none-eabi       # ARM cross-compiler (armv6m/Thumb)
   binutils-arm-none-eabi  # Assembler, linker, objcopy, objdump
   # m68k-elf toolchain is built from source: ./third_party/build_gcc_m68k.sh
-  # RISC-V toolchain: prebuilt from raspberrypi/pico-sdk-tools (Step 1c)
+  # RISC-V bare-metal: prebuilt from raspberrypi/pico-sdk-tools (Step 1c.1)
+  # RISC-V Linux: built from source in Step 1c.2 (needs gawk, bison, etc.)
   # Xtensa toolchain: installed via ESP-IDF install.sh (Step 1d)
   gdb-multiarch           # GDB with ARM and m68k support
   openocd                 # SWD/JTAG on-chip debugger (v0.12+, RP2040 only)
+  gawk                    # Required by riscv-gnu-toolchain build (Step 1c.2)
+  bison flex texinfo      # GCC build prerequisites
   minicom                 # Serial console
   cmake                   # Build system (>= 3.13 required by Pico SDK)
   ninja-build             # Fast build backend for CMake
@@ -160,31 +163,44 @@ else
   fi
 fi
 
-# --- 1c.2: Linux toolchain (user-space) ---
+# --- 1c.2: Linux toolchain (user-space, built from source) ---
+#
+# Built from riscv-collab/riscv-gnu-toolchain with soft-float (ilp32) ABI.
+# Prebuilt nightly releases use hard-float (ilp32d), whose libgcc contains
+# non-PIC objects that cause linker segfaults when building PIE binaries.
+# Building from source with --with-abi=ilp32 produces a PIC soft-float
+# libgcc that works correctly with -pie.
+#
+# Build time: ~30-60 minutes (parallel make).
 RISCV_LINUX_DIR="${PPAP_ROOT}/tools/riscv-linux-toolchain"
-RISCV_LINUX_TAR="riscv32-glibc-ubuntu-24.04-gcc.tar.xz"
-RISCV_LINUX_URL="https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2026.03.13/${RISCV_LINUX_TAR}"
+RISCV_GNU_TC_REPO="https://github.com/riscv-collab/riscv-gnu-toolchain.git"
 
 if [[ -x "${RISCV_LINUX_DIR}/bin/riscv32-unknown-linux-gnu-gcc" ]]; then
   success "RISC-V Linux toolchain already installed at ${RISCV_LINUX_DIR}"
 else
-  mkdir -p "${DL_DIR}"
-  if [[ ! -f "${DL_DIR}/${RISCV_LINUX_TAR}" ]]; then
-    info "Downloading RISC-V Linux toolchain..."
-    wget -q --show-progress -O "${DL_DIR}/${RISCV_LINUX_TAR}.tmp" "${RISCV_LINUX_URL}"
-    mv "${DL_DIR}/${RISCV_LINUX_TAR}.tmp" "${DL_DIR}/${RISCV_LINUX_TAR}"
+  info "Building RISC-V Linux toolchain from source (this takes ~30-60 min)..."
+  info "  Target: riscv32-unknown-linux-gnu, arch=rv32imac, abi=ilp32"
+
+  RISCV_TC_BUILD="${PPAP_ROOT}/tools/riscv-gnu-toolchain-build"
+  if [[ ! -d "${RISCV_TC_BUILD}/.git" ]]; then
+    info "Cloning riscv-gnu-toolchain..."
+    git clone --depth 1 "${RISCV_GNU_TC_REPO}" "${RISCV_TC_BUILD}"
   fi
-  info "Extracting RISC-V Linux toolchain to ${RISCV_LINUX_DIR}..."
-  # Archive extracts to riscv/ — move to riscv-linux-toolchain/
-  tar -xf "${DL_DIR}/${RISCV_LINUX_TAR}" -C "${PPAP_ROOT}/tools"
-  if [[ -d "${PPAP_ROOT}/tools/riscv" && ! -d "${RISCV_LINUX_DIR}" ]]; then
-    mv "${PPAP_ROOT}/tools/riscv" "${RISCV_LINUX_DIR}"
-  fi
+
+  cd "${RISCV_TC_BUILD}"
+  ./configure --prefix="${RISCV_LINUX_DIR}" \
+              --with-arch=rv32imac --with-abi=ilp32
+  make linux -j"$(nproc)" 2>&1 | tail -5
+
   if [[ -x "${RISCV_LINUX_DIR}/bin/riscv32-unknown-linux-gnu-gcc" ]]; then
-    success "RISC-V Linux toolchain installed to ${RISCV_LINUX_DIR}"
+    success "RISC-V Linux toolchain built and installed to ${RISCV_LINUX_DIR}"
+    # Optionally clean up build dir to save ~2 GB
+    # rm -rf "${RISCV_TC_BUILD}"
   else
-    warn "RISC-V Linux toolchain extraction failed"
+    warn "RISC-V Linux toolchain build failed"
+    warn "Check ${RISCV_TC_BUILD} for build logs"
   fi
+  cd "${PPAP_ROOT}"
 fi
 
 # --- Step 1d: Xtensa toolchain (xtensa_cc / ESP32-S3) -----------------------

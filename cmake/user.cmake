@@ -142,29 +142,47 @@ if(PPAP_ARCH STREQUAL "m68k")
         OUTPUT_VARIABLE PPAP_LIBGCC OUTPUT_STRIP_TRAILING_WHITESPACE)
     get_filename_component(PPAP_GCC_LIBDIR ${PPAP_LIBGCC} DIRECTORY)
 elseif(PPAP_ARCH STREQUAL "riscv")
-    # Use bare-metal toolchain for RISC-V user-space.  The Linux toolchain
-    # has a hard-float libgcc mismatch and its linker segfaults on large
-    # PIE binaries.  Since we load text+data contiguously in SRAM anyway
-    # (RISC-V auipc limitation), PIE/GOT is not needed.
-    set(PPAP_RISCV_TC      ${PPAP_ROOT}/tools/riscv-toolchain)
-    set(PPAP_CC            ${PPAP_RISCV_TC}/bin/riscv32-unknown-elf-gcc)
-    set(PPAP_CROSS_PREFIX  ${PPAP_RISCV_TC}/bin/riscv32-unknown-elf-)
-    set(PPAP_STRIP         ${PPAP_RISCV_TC}/bin/riscv32-unknown-elf-strip)
-    set(PPAP_OBJCOPY       ${PPAP_RISCV_TC}/bin/riscv32-unknown-elf-objcopy)
-    set(PPAP_SIZE_CMD      ${PPAP_RISCV_TC}/bin/riscv32-unknown-elf-size)
+    # Prefer the Linux toolchain (built from source with --with-abi=ilp32)
+    # for -pie support (proper GOT-based PIC + soft-float PIC libgcc).
+    # Fall back to bare-metal toolchain if Linux toolchain is not built yet.
+    set(PPAP_RISCV_LINUX_TC ${PPAP_ROOT}/tools/riscv-linux-toolchain)
+    set(PPAP_RISCV_ELF_TC   ${PPAP_ROOT}/tools/riscv-toolchain)
+    if(EXISTS ${PPAP_RISCV_LINUX_TC}/bin/riscv32-unknown-linux-gnu-gcc)
+        set(PPAP_RISCV_TC      ${PPAP_RISCV_LINUX_TC})
+        set(PPAP_CC            ${PPAP_RISCV_TC}/bin/riscv32-unknown-linux-gnu-gcc)
+        set(PPAP_CROSS_PREFIX  ${PPAP_RISCV_TC}/bin/riscv32-unknown-linux-gnu-)
+        set(PPAP_STRIP         ${PPAP_RISCV_TC}/bin/riscv32-unknown-linux-gnu-strip)
+        set(PPAP_OBJCOPY       ${PPAP_RISCV_TC}/bin/riscv32-unknown-linux-gnu-objcopy)
+        set(PPAP_SIZE_CMD      ${PPAP_RISCV_TC}/bin/riscv32-unknown-linux-gnu-size)
+        set(PPAP_MUSL_TARGET   riscv32-unknown-linux-gnu)
+        set(PPAP_RISCV_PIE     ON)
+        message(STATUS "RISC-V: using Linux toolchain (PIE enabled)")
+    else()
+        set(PPAP_RISCV_TC      ${PPAP_RISCV_ELF_TC})
+        set(PPAP_CC            ${PPAP_RISCV_TC}/bin/riscv32-unknown-elf-gcc)
+        set(PPAP_CROSS_PREFIX  ${PPAP_RISCV_TC}/bin/riscv32-unknown-elf-)
+        set(PPAP_STRIP         ${PPAP_RISCV_TC}/bin/riscv32-unknown-elf-strip)
+        set(PPAP_OBJCOPY       ${PPAP_RISCV_TC}/bin/riscv32-unknown-elf-objcopy)
+        set(PPAP_SIZE_CMD      ${PPAP_RISCV_TC}/bin/riscv32-unknown-elf-size)
+        set(PPAP_MUSL_TARGET   riscv32-unknown-elf)
+        set(PPAP_RISCV_PIE     OFF)
+        message(STATUS "RISC-V: using bare-metal toolchain (no PIE, SRAM text+data)")
+    endif()
     set(PPAP_ARCH_DIR      ${PPAP_ROOT}/src/user/arch/riscv)
     set(PPAP_TARGET_FLAGS  -march=rv32imac_zicsr -mabi=ilp32)
     set(PPAP_PIC_FLAGS     -fPIC -mcmodel=medany)
     set(PPAP_USER_LD       ${PPAP_ARCH_DIR}/user.ld)
     set(PPAP_BUSYBOX_LD    ${PPAP_ROOT}/third_party/patches/musl/libc_riscv.ld)
     set(PPAP_MUSL_SYSROOT  ${PPAP_SHARED_BUILD}/musl-sysroot)
-    set(PPAP_MUSL_TARGET   riscv32-unknown-elf)
+    # PPAP_MUSL_TARGET set above based on which toolchain is available
     set(PPAP_SPECS_FILE    ${PPAP_SHARED_BUILD}/musl-riscv.specs)
     set(PPAP_BB_ARCH       riscv32)
     set(PPAP_ARCH_LABEL    "rv32imac (Hazard3)")
 
     execute_process(COMMAND ${PPAP_CC} -print-file-name=include
         OUTPUT_VARIABLE PPAP_GCC_INCLUDE OUTPUT_STRIP_TRAILING_WHITESPACE)
+    # When using the Linux toolchain, its libgcc is soft-float + PIC (built
+    # from source with --with-abi=ilp32).  When using bare-metal, use its own.
     execute_process(COMMAND ${PPAP_CC} ${PPAP_TARGET_FLAGS}
                             -print-libgcc-file-name
         OUTPUT_VARIABLE PPAP_LIBGCC OUTPUT_STRIP_TRAILING_WHITESPACE)
@@ -224,9 +242,9 @@ string(JOIN " " PPAP_TARGET_FLAGS_STR ${PPAP_TARGET_FLAGS})
 string(JOIN " " PPAP_PIC_FLAGS_STR    ${PPAP_PIC_FLAGS})
 set(PPAP_MUSL_CFLAGS_STR
     "${PPAP_TARGET_FLAGS_STR} -Os -g ${PPAP_PIC_FLAGS_STR} -ffunction-sections -fdata-sections")
-# RISC-V bare-metal linker doesn't support -pie.  --emit-relocs is passed
-# via EXTRA_LDFLAGS in build_busybox.sh instead (linker flag, not CFLAGS).
-if(PPAP_ARCH STREQUAL "riscv")
+# RISC-V: -pie only when Linux toolchain is available (soft-float PIC libgcc).
+# Bare-metal linker doesn't support -pie; uses --emit-relocs instead.
+if(PPAP_ARCH STREQUAL "riscv" AND NOT PPAP_RISCV_PIE)
     set(_PIE_FLAG "")
 else()
     set(_PIE_FLAG "-pie")
