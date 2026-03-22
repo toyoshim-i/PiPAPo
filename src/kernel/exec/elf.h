@@ -50,6 +50,7 @@
 #define EM_ARM 40
 #define EM_68K 4
 #define EM_XTENSA 94
+#define EM_RISCV 243
 
 /* ── ARM ELF flags ───────────────────────────────────────────────────────── */
 

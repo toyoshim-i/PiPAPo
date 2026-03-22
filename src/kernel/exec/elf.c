@@ -37,6 +37,9 @@ int elf_validate(const elf32_ehdr_t *ehdr) {
 #elif defined(__xtensa__)
   if (ehdr->e_ident[EI_DATA] != ELFDATA2LSB) return -(int)ENOEXEC;
   if (ehdr->e_machine != EM_XTENSA) return -(int)ENOEXEC;
+#elif defined(__riscv)
+  if (ehdr->e_ident[EI_DATA] != ELFDATA2LSB) return -(int)ENOEXEC;
+  if (ehdr->e_machine != EM_RISCV) return -(int)ENOEXEC;
 #else
   if (ehdr->e_ident[EI_DATA] != ELFDATA2LSB) return -(int)ENOEXEC;
   if (ehdr->e_machine != EM_ARM) return -(int)ENOEXEC;

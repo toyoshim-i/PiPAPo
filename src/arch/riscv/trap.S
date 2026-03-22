@@ -133,15 +133,53 @@ _trap_entry:
     bltz    t0, .Linterrupt     # mcause < 0 means bit 31 set = interrupt
 
     # ── Exception path ───────────────────────────────────────────────────
-    # Disable interrupts before calling handler to avoid nested traps.
+    # Check for ecall (syscall): mcause=8 (U-mode) or mcause=11 (M-mode)
+    li      t1, 8                   # EXC_ECALL_U
+    beq     t0, t1, .Lecall
+    li      t1, 11                  # EXC_ECALL_M
+    beq     t0, t1, .Lecall
+
+    # Not an ecall — fatal exception.
     csrc    mstatus, 0x8            # clear MIE
-    # Call C handler with (mcause, mepc, mtval) for diagnostics.
-    # Phase RV-4 will add ecall dispatch for syscalls.
-    mv      a0, t0                  # mcause (already in t0)
+    mv      a0, t0                  # mcause
     csrr    a1, mepc                # mepc
-    csrr    a2, mtval               # mtval (faulting address/instruction)
+    csrr    a2, mtval               # mtval
     call    riscv_exception_handler
-    j       Default_Handler         # fallback if handler returns
+    j       Default_Handler
+
+.Lecall:
+    # ── Syscall via ecall ───────────────────────────────────────────────
+    # RISC-V syscall convention: a7 = syscall number, a0-a5 = arguments.
+    # mepc points to the ecall instruction; advance it by 4 so mret
+    # returns to the instruction AFTER ecall.
+    lw      t0, TF_MEPC(sp)
+    addi    t0, t0, 4
+    sw      t0, TF_MEPC(sp)
+
+    # Re-enable interrupts during syscall processing (same as ARM SVC)
+    csrs    mstatus, 0x8            # set MIE
+
+    # Call syscall_dispatch(frame, nr, a4, a5)
+    #   frame = &trap_frame[8] = sp+32 (points to saved a0 in trap frame)
+    #   nr    = saved a7 (trap frame offset 60 = x17)
+    #   a4    = saved a4 (trap frame offset 48 = x14)
+    #   a5    = saved a5 (trap frame offset 52 = x15)
+    addi    a0, sp, 32              # frame → saved a0..a3
+    lw      a1, 60(sp)              # nr = saved a7 (x17)
+    lw      a2, 48(sp)              # a4 = saved x14 (a4)
+    lw      a3, 52(sp)              # a5 = saved x15 (a5)
+    call    syscall_dispatch
+
+    # syscall_dispatch writes return value into frame[0] = saved a0.
+    # Check riscv_switch_pending (syscalls like exit/yield may request it)
+    la      t0, riscv_switch_pending
+    lw      t1, 0(t0)
+    beqz    t1, .Ltrap_return
+    sw      zero, 0(t0)
+    mv      a0, sp
+    call    riscv_do_switch
+    mv      sp, a0
+    j       .Ltrap_return
 
 .Linterrupt:
     # ── Interrupt path ───────────────────────────────────────────────────

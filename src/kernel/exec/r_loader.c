@@ -60,8 +60,8 @@ static int r_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
   if (file_size == 0) return -(int)ENOEXEC;
 
-#if !defined(__m68k__)
-  /* ── Emulated path (ARM host) ──────────────────────────────────────── */
+#if !defined(__m68k__) && defined(PPAP_ENABLE_ECPU_M68K)
+  /* ── Emulated path (requires m68k eCPU) ─────────────────────────────── */
 
   uint32_t min_pages = (X68K_PMB_SIZE + file_size + PAGE_SIZE - 1u) / PAGE_SIZE;
   if (min_pages > H68K_EMU_MEM_PAGES_MAX) return -(int)ENOMEM;

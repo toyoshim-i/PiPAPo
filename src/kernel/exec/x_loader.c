@@ -165,8 +165,8 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   uint32_t base_addr = be32_load(&hdr->base_addr);
   uint32_t image_size = text_size + data_size + bss_size;
 
-#if !defined(__m68k__)
-  /* ── Emulated path (ARM host) ──────────────────────────────────────── */
+#if !defined(__m68k__) && defined(PPAP_ENABLE_ECPU_M68K)
+  /* ── Emulated path (requires m68k eCPU) ─────────────────────────────── */
 
   uint32_t min_pages =
       (X68K_PMB_SIZE + image_size + PAGE_SIZE - 1u) / PAGE_SIZE;
