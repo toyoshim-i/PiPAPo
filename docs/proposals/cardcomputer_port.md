@@ -32,7 +32,7 @@ by Espressif):
 
 ### 1.2 Xtensa LX7 vs Other PPAP Architectures
 
-| Aspect | Cortex-M0+ (pico1) | Cortex-M33 (pico2) | Hazard3 RV32 (pico2rv) | Xtensa LX7 (cardcomputer) |
+| Aspect | Cortex-M0+ (pico1) | Cortex-M33 (pico2) | Hazard3 RV32 (pico2rv) | Xtensa LX7 (xtensa_cc) |
 |--------|--------------------|--------------------|----------------------|--------------------------|
 | ISA | Thumb (ARMv6-M) | Thumb-2 (ARMv8-M) | RV32IMAC | Xtensa LX7 |
 | GPRs | 16 | 16 | 32 (x0=zero) | 64 (16 visible, windowed) |
@@ -132,7 +132,7 @@ comparable to the RP2350's 520 KB.
 
 1. **New Xtensa architecture layer** (`src/arch/xtensa/`) — boot, context
    switch, trap/syscall, interrupt handling, all using Call0 ABI.
-2. **CardComputer target** (`src/target/cardcomputer/`) — ESP32-S3 clock,
+2. **CardComputer target** (`src/target/xtensa_cc/`) — ESP32-S3 clock,
    GPIO, UART, SPI, and SD card initialization.
 3. **Display support** — ST7789V2 framebuffer console (`/dev/tty1`) using
    the existing `TARGET_CAP_DISPLAY` + `tty_backend_t` infrastructure.
@@ -309,14 +309,14 @@ MPU/PMP:
 
 ---
 
-## 5. Target Layer: `src/target/cardcomputer/`
+## 5. Target Layer: `src/target/xtensa_cc/`
 
 ### 5.1 File Inventory
 
 | File | Purpose |
 |------|---------|
-| `cardcomputer.h` | Pin definitions, clock frequencies, display parameters |
-| `target_cardcomputer.c` | target_early_init/late_init, UART, SPI, display, keyboard |
+| `xtensa_cc.h` | Pin definitions, clock frequencies, display parameters |
+| `target_xtensa_cc.c` | target_early_init/late_init, UART, SPI, display, keyboard |
 | `st7789.c` | ST7789V2 SPI display driver (framebuffer → SPI DMA) |
 | `keyboard.c` | GPIO matrix scanner, keymap, key-repeat logic |
 | `CMakeLists.txt` | Build configuration |
@@ -406,7 +406,7 @@ PPAP currently uses two cross-toolchain families:
 | ARM (pico1, pico2, qemu_arm) | `arm-none-eabi-gcc` | `arm-none-eabi-gcc` + musl | Ubuntu package / Pico SDK |
 | RISC-V (pico2rv) | `riscv32-unknown-elf-gcc` | same + musl | Official RISC-V toolchain |
 | m68k (x68k, qemu_m68k) | `m68k-elf-gcc` | `m68k-elf-gcc` + musl | `third_party/build_gcc_m68k.sh` |
-| **Xtensa (cardcomputer)** | `xtensa-esp-elf-gcc` | same + musl | **ESP-IDF toolchain** |
+| **Xtensa (xtensa_cc)** | `xtensa-esp-elf-gcc` | same + musl | **ESP-IDF toolchain** |
 
 #### 6.1.1 Directory Convention
 
@@ -509,7 +509,7 @@ custom patches are needed — but it must be configured for Call0 ABI.
 The same `PPAP_SHARED_BUILD` pattern applies:
 ```
 build/xtensa/          # shared userland artifacts
-build/cardcomputer/    # target-specific kernel build
+build/xtensa_cc/       # target-specific kernel build
 ```
 
 #### 6.1.4 Flashing Tool
@@ -518,13 +518,13 @@ ESP32-S3 uses `esptool.py` for flashing over USB (native USB or UART):
 
 ```sh
 esptool.py --chip esp32s3 --port /dev/ttyACM0 \
-    write_flash 0x0 build/cardcomputer/ppap_cardcomputer.bin
+    write_flash 0x0 build/xtensa_cc/ppap_xtensa_cc.bin
 ```
 
 When using ESP-IDF (Option A), `idf.py flash` wraps this with correct
 partition table offsets and bootloader bundling.
 
-For the PPAP build system, `scripts/run.sh --build cardcomputer` would:
+For the PPAP build system, `scripts/run.sh --build xtensa_cc` would:
 1. Build via CMake (or `idf.py build`)
 2. Flash via `esptool.py`
 3. Open `minicom` / `screen` on USB serial for console
@@ -538,7 +538,7 @@ For the PPAP build system, `scripts/run.sh --build cardcomputer` would:
   ```
 - **GDB**: `xtensa-esp-elf-gdb` (shipped with the toolchain).
   ```sh
-  xtensa-esp-elf-gdb build/cardcomputer/ppap_cardcomputer.elf \
+  xtensa-esp-elf-gdb build/xtensa_cc/ppap_xtensa_cc.elf \
       -ex "target remote :3333"
   ```
 - **Gotcha**: Xtensa GDB requires the matching `xtensa-config.c`
@@ -552,7 +552,7 @@ New files for the build system:
 cmake/toolchain_xtensa.cmake          # cross-toolchain (see 6.1.2)
 cmake/xtensa.cmake                    # common Xtensa setup (like riscv.cmake)
 src/arch/xtensa/CMakeLists.txt        # arch sources
-src/target/cardcomputer/CMakeLists.txt # target sources
+src/target/xtensa_cc/CMakeLists.txt    # target sources
 third_party/build_musl_xtensa.sh      # musl cross-build script
 ```
 
@@ -595,7 +595,7 @@ make -j$(nproc)
 Run:
 ```sh
 qemu-system-xtensa -M esp32s3 -nographic \
-    -drive file=build/cardcomputer/flash_image.bin,if=mtd,format=raw
+    -drive file=build/xtensa_cc/flash_image.bin,if=mtd,format=raw
 ```
 
 QEMU ESP32-S3 support is experimental — peripheral coverage is
@@ -615,7 +615,7 @@ for display/keyboard integration.
 |------|-------------|
 | CC-1a | Create `src/arch/xtensa/` with `arch.h`, `cpu.h` (Call0 ABI) |
 | CC-1b | Implement `boot.S` — `_start`, stack setup, call `kernel_main` |
-| CC-1c | Create `src/target/cardcomputer/` — `target_early_init()` with UART |
+| CC-1c | Create `src/target/xtensa_cc/` — `target_early_init()` with UART |
 | CC-1d | First boot: "PiPAPo booting..." on USB serial |
 
 ### Phase CC-2: Interrupts and Timer

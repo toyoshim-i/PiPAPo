@@ -14,6 +14,8 @@
 #include "m68k/ioregs.h"
 #elif defined(__riscv)
 #include "riscv/ioregs.h"
+#elif defined(__xtensa__)
+#include "xtensa/ioregs.h"
 #else
 #error "Unsupported architecture"
 #endif

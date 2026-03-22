@@ -34,6 +34,9 @@ int elf_validate(const elf32_ehdr_t *ehdr) {
 #if defined(__m68k__)
   if (ehdr->e_ident[EI_DATA] != ELFDATA2MSB) return -(int)ENOEXEC;
   if (ehdr->e_machine != EM_68K) return -(int)ENOEXEC;
+#elif defined(__xtensa__)
+  if (ehdr->e_ident[EI_DATA] != ELFDATA2LSB) return -(int)ENOEXEC;
+  if (ehdr->e_machine != EM_XTENSA) return -(int)ENOEXEC;
 #else
   if (ehdr->e_ident[EI_DATA] != ELFDATA2LSB) return -(int)ENOEXEC;
   if (ehdr->e_machine != EM_ARM) return -(int)ENOEXEC;
@@ -42,7 +45,7 @@ int elf_validate(const elf32_ehdr_t *ehdr) {
   /* Type: ET_EXEC (static) or ET_DYN (PIC) */
   if (ehdr->e_type != ET_EXEC && ehdr->e_type != ET_DYN) return -(int)ENOEXEC;
 
-#if !defined(__m68k__)
+#if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
   /* ARM EABI version 5 */
   if ((ehdr->e_flags & EF_ARM_EABI_VER_MASK) != EF_ARM_EABI_VER5)
     return -(int)ENOEXEC;

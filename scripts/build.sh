@@ -68,9 +68,13 @@ case "$TARGET" in
         SOURCE_DIR="$PROJECT_DIR/src/target/x68k"
         BUILD_DIR="$PROJECT_DIR/build/x68k"
         ;;
+    xtensa_cc)
+        SOURCE_DIR="$PROJECT_DIR/src/target/xtensa_cc"
+        BUILD_DIR="$PROJECT_DIR/build/xtensa_cc"
+        ;;
     *)
         echo "[build] Error: unknown target '$TARGET'"
-        echo "        Valid targets: pico1, pico1calc, pico2, pico2rv, qemu_arm, qemu_m68k, x68k"
+        echo "        Valid targets: pico1, pico1calc, pico2, pico2rv, qemu_arm, qemu_m68k, x68k, xtensa_cc"
         exit 1
         ;;
 esac
@@ -101,6 +105,35 @@ case "$TARGET" in
         EXTRA_ARGS+=(-DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/cmake/toolchain_m68k.cmake")
         ;;
 esac
+
+# ── ESP-IDF build (xtensa_cc) ────────────────────────────────────────────────
+if [[ "$TARGET" == "xtensa_cc" ]]; then
+    XTENSA_TC_DIR="$PROJECT_DIR/tools/xtensa-toolchain"
+    ESP_IDF_DIR="$PROJECT_DIR/third_party/esp-idf"
+    if [[ ! -f "$ESP_IDF_DIR/export.sh" ]]; then
+        echo "[build] Error: ESP-IDF not found. Run: ./scripts/setup_toolchain.sh"
+        exit 1
+    fi
+    # Source ESP-IDF environment with project-local toolchain
+    export IDF_TOOLS_PATH="$XTENSA_TC_DIR"
+    # shellcheck disable=SC1091
+    source "$ESP_IDF_DIR/export.sh" >/dev/null 2>&1
+    if [[ $CLEAN -eq 1 && -d "$BUILD_DIR" ]]; then
+        echo "[build] Cleaning $BUILD_DIR..."
+        rm -rf "$BUILD_DIR"
+    fi
+    cd "$SOURCE_DIR"
+    # set-target only needed on first build (creates CMakeCache with target config).
+    # Skip it on incremental builds to avoid full ESP-IDF reconfigure.
+    if [[ ! -f "$BUILD_DIR/CMakeCache.txt" ]]; then
+        echo "[build] Configuring xtensa_cc for esp32s3..."
+        idf.py -B "$BUILD_DIR" set-target esp32s3
+    fi
+    echo "[build] Building xtensa_cc via idf.py..."
+    idf.py -B "$BUILD_DIR" build
+    echo "[build] Built xtensa_cc"
+    exit 0
+fi
 
 if [[ -n "$OVERLAY" ]]; then
     # Resolve to absolute path

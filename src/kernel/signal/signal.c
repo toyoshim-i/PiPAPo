@@ -287,7 +287,18 @@ void signal_setup_frame(int sig) {
   }
 }
 
-#endif /* __m68k__ / ARM / __riscv */
+#elif defined(__xtensa__)
+
+/* Xtensa signal delivery — CC-3 will implement. */
+
+void signal_setup_frame(int sig) {
+  /* Stub: deliver default action (terminate) for now. */
+  if (current->sig_handlers[sig] == (sighandler_t)0 /* SIG_DFL */) {
+    sys_exit(128 + sig);
+  }
+}
+
+#endif /* __m68k__ / ARM / __riscv / __xtensa__ */
 
 /* ── sys_kill ───────────────────────────────────────────────────────────────
  */
@@ -400,7 +411,13 @@ long sys_rt_sigreturn(void) { return sys_sigreturn(); /* same mechanism */ }
 long sys_sigreturn(void) { return -(long)ENOSYS; }
 long sys_rt_sigreturn(void) { return -(long)ENOSYS; }
 
-#endif /* __m68k__ / ARM / __riscv */
+#elif defined(__xtensa__)
+
+/* Xtensa sigreturn — CC-3 will implement. */
+long sys_sigreturn(void) { return -(long)ENOSYS; }
+long sys_rt_sigreturn(void) { return -(long)ENOSYS; }
+
+#endif /* __m68k__ / ARM / __riscv / __xtensa__ */
 
 /* ── sys_rt_sigaction ────────────────────────────────────────────────────── */
 /*

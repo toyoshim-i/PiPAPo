@@ -286,11 +286,32 @@ void sched_start(void) {
   arch_irq_enable();
 }
 
-#endif /* __ARM_ARCH / __m68k__ / __riscv */
+#elif defined(__xtensa__)
+
+/* ── Scheduler startup (Xtensa) ────────────────────────────────────────────
+ */
+
+void sched_start(void) {
+  /* Xtensa: no PSP/MSP split, no PendSV priorities.
+   * Timer ISR setup will be done in CC-2.
+   *
+   * Ensure INTENABLE=0 so no ESP-IDF leftover interrupts fire.
+   * CC-2 will selectively enable the timer interrupt here. */
+  __asm__ volatile("wsr %0, intenable; rsync" :: "r"(0));
+  arch_irq_enable();
+}
+
+#endif /* __ARM_ARCH / __m68k__ / __riscv / __xtensa__ */
 
 /* ── Cooperative yield ───────────────────────────────────────────────────────
  */
 
+/* On Xtensa, ESP-IDF's pthread library also defines sched_yield().
+ * Mark ours weak so the linker resolves the conflict.  CC-2 will
+ * replace this with a proper Xtensa context-switch path. */
+#if defined(__xtensa__)
+__attribute__((weak))
+#endif
 void sched_yield(void) {
 #if defined(__m68k__)
   /* TRAP #1 enters m68k_trap1_handler which does the context switch

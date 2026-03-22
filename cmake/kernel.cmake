@@ -44,6 +44,13 @@ set(ARCH_RISCV_SOURCES
     ${_KS_ROOT}/src/arch/riscv/smp.c
 )
 
+set(ARCH_XTENSA_SOURCES
+    ${_KS_ROOT}/src/arch/xtensa/boot.S
+    ${_KS_ROOT}/src/arch/xtensa/trap.S
+    ${_KS_ROOT}/src/arch/xtensa/xtensa_common.c
+    ${_KS_ROOT}/src/arch/xtensa/smp.c
+)
+
 # ── Kernel sources shared across ALL architectures ──────────────────────────
 
 set(KERNEL_SHARED_SOURCES_BASE
@@ -159,6 +166,13 @@ set(KERNEL_COMMON_SOURCES
 
 set(KERNEL_RISCV_COMMON_SOURCES
     ${ARCH_RISCV_SOURCES}
+    ${KERNEL_SHARED_SOURCES}
+)
+
+# ── Convenience: complete kernel sources for Xtensa targets ──────────────────
+
+set(KERNEL_XTENSA_COMMON_SOURCES
+    ${ARCH_XTENSA_SOURCES}
     ${KERNEL_SHARED_SOURCES}
 )
 

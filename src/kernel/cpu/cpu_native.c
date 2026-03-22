@@ -172,6 +172,9 @@ const cpu_ops_t native_cpu_ops = {
 #elif defined(__riscv)
     .name = "native-riscv",
     .arch_id = CPU_ARCH_RISCV,
+#elif defined(__xtensa__)
+    .name = "native-xtensa",
+    .arch_id = CPU_ARCH_XTENSA,
 #elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
     .name = "native-arm_m",
     .arch_id = CPU_ARCH_ARM,

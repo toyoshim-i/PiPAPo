@@ -77,11 +77,11 @@ for arg in "$@"; do
         --overlay=*)OVERLAY="${arg#--overlay=}"; DO_BUILD=1 ;;
         --h68k-debug) DO_H68K_DEBUG=1; DO_BUILD=1 ;;
         --gdb)      DO_GDB=1 ;;
-        pico1|pico1calc|pico2|pico2rv|qemu_arm|qemu_m68k|x68k) TARGET="$arg" ;;
+        pico1|pico1calc|pico2|pico2rv|qemu_arm|qemu_m68k|x68k|xtensa_cc) TARGET="$arg" ;;
         -*)         echo "Unknown option: $arg" >&2; exit 1 ;;
         *)
             echo "Unknown target: $arg" >&2
-            echo "Valid targets: pico1, pico1calc, pico2, pico2rv, qemu_arm, qemu_m68k, x68k" >&2
+            echo "Valid targets: pico1, pico1calc, pico2, pico2rv, qemu_arm, qemu_m68k, x68k, xtensa_cc" >&2
             exit 1
             ;;
     esac
@@ -133,6 +133,23 @@ if [[ $DO_BUILD -eq 1 ]]; then
     "$SCRIPT_DIR/build.sh" "${BUILD_ARGS[@]}" "$TARGET"
     # Clean up temp overlay after build (romfs already baked in)
     if [[ -n "$TEMP_OVERLAY" ]]; then rm -rf "$TEMP_OVERLAY"; fi
+fi
+
+# ── ESP-IDF target (xtensa_cc) — uses idf.py, not ELF directly ─────────────
+if [[ "$TARGET" == "xtensa_cc" ]]; then
+    XTENSA_TC_DIR="$PROJECT_DIR/tools/xtensa-toolchain"
+    ESP_IDF_DIR="$PROJECT_DIR/third_party/esp-idf"
+    if [[ ! -f "$ESP_IDF_DIR/export.sh" ]]; then
+        echo "[run] Error: ESP-IDF not found. Run: ./scripts/setup_toolchain.sh"
+        exit 1
+    fi
+    export IDF_TOOLS_PATH="$XTENSA_TC_DIR"
+    # shellcheck disable=SC1091
+    source "$ESP_IDF_DIR/export.sh" >/dev/null 2>&1
+    echo "[run] Flashing and monitoring xtensa_cc..."
+    cd "$PROJECT_DIR/src/target/xtensa_cc"
+    idf.py -B "$PROJECT_DIR/build/xtensa_cc" -p "${PPAP_PORT:-/dev/ttyACM0}" flash monitor
+    exit 0
 fi
 
 # ── Pre-flight: ELF must exist ──────────────────────────────────────────────

@@ -41,6 +41,7 @@ typedef void (*sighandler_t)(int);
  * ARM Cortex-M: r4..r11 (8×4=32) → sp at offset 32
  * m68k:         d2..d7,a2..a6 (11×4=44) → sp at offset 44
  * RISC-V:       s0..s11 (12×4=48) → sp at offset 48
+ * Xtensa Call0: a12..a15 (4×4=16) → sp at offset 16
  */
 #if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
 #define PCB_SP_OFFSET 32u
@@ -49,6 +50,8 @@ typedef void (*sighandler_t)(int);
 #define PCB_USP_OFFSET 48u
 #elif defined(__riscv)
 #define PCB_SP_OFFSET 48u
+#elif defined(__xtensa__)
+#define PCB_SP_OFFSET 16u
 #else
 #error "Unsupported architecture — define PCB_SP_OFFSET"
 #endif
@@ -104,6 +107,9 @@ typedef struct pcb {
   uint32_t s6, s7, s8, s9;    /* callee-saved (offsets 24–39)             */
   uint32_t s10, s11;           /* callee-saved (offsets 40–47)             */
   uint32_t sp;                 /* saved stack pointer     (offset 48)      */
+#elif defined(__xtensa__)
+  uint32_t a12, a13, a14, a15; /* callee-saved (Call0 ABI, offsets 0–15)  */
+  uint32_t sp;                 /* saved stack pointer     (offset 16)      */
 #else
 #error "Unsupported architecture — define PCB register save area"
 #endif

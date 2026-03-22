@@ -35,6 +35,8 @@ file(MAKE_DIRECTORY "${PPAP_SHARED_BUILD}")
 # --- Detect architecture from cmake toolchain ---
 if(CMAKE_SYSTEM_PROCESSOR STREQUAL "m68k")
     set(PPAP_ARCH m68k)
+elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "xtensa")
+    set(PPAP_ARCH xtensa)
 else()
     set(PPAP_ARCH arm)
 endif()

@@ -14,6 +14,8 @@
 #include "m68k/arch.h"
 #elif defined(__riscv)
 #include "riscv/arch.h"
+#elif defined(__xtensa__)
+#include "xtensa/arch.h"
 #else
 #error "Unsupported architecture"
 #endif

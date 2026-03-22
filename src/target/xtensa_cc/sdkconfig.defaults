@@ -1,0 +1,13 @@
+# PPAP sdkconfig overrides for xtensa-cc target
+#
+# PPAP replaces FreeRTOS with its own scheduler, so ESP-IDF's
+# watchdog timers (which expect FreeRTOS tick callbacks) must be disabled.
+
+# Disable interrupt watchdog (fires when ISRs block too long)
+CONFIG_ESP_INT_WDT=n
+
+# Disable task watchdog (fires when FreeRTOS tasks don't yield)
+CONFIG_ESP_TASK_WDT_EN=n
+
+# Flash size: CardComputer has 8 MB flash
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y

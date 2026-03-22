@@ -9,7 +9,7 @@
 #   1. Installs required apt packages (ARM cross-toolchain, OpenOCD, etc.)
 #   1b. Creates arm-none-eabi-gdb symlink (Ubuntu dropped the package)
 #   1c. Installs RISC-V toolchain (prebuilt from pico-sdk-tools)
-#   1d. Installs ESP-IDF and Xtensa toolchain (for CardComputer / ESP32-S3)
+#   1d. Installs ESP-IDF and Xtensa toolchain (for xtensa_cc / ESP32-S3)
 #   2. Initializes git submodules (Pico SDK, musl, busybox, etc.)
 #   3. Verifies the installation
 #
@@ -147,9 +147,9 @@ else
   fi
 fi
 
-# --- Step 1d: Xtensa toolchain (CardComputer / ESP32-S3) --------------------
+# --- Step 1d: Xtensa toolchain (xtensa_cc / ESP32-S3) -----------------------
 #
-# The CardComputer target uses the ESP32-S3 (Xtensa LX7).  ESP-IDF (source)
+# The xtensa_cc target uses the ESP32-S3 (Xtensa LX7).  ESP-IDF (source)
 # lives in third_party/esp-idf as a git submodule (initialized in Step 2).
 # The Xtensa cross-toolchain and ESP-IDF Python venv are installed into
 # tools/xtensa-toolchain/ (matching tools/m68k-toolchain/, tools/riscv-toolchain/).
