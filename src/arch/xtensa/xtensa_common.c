@@ -170,18 +170,29 @@ void xtensa_trap_init(void)
 
 /* ── Initial stack frame for new processes ──────────────────────────────── */
 
+/* Build a "new-process" frame for switch.S (exit marker = 1).
+ *
+ * Layout (16 bytes, 16-byte aligned):
+ *   [SP+0 ] = 1       (exit marker — triggers direct-jump path in switch.S)
+ *   [SP+4 ] = entry   (entry address, NOT windowed-encoded)
+ *   [SP+8 ] = PS      (WOE=1, INTLEVEL=0)
+ *   [SP+12] = user_sp (stack pointer passed to user code in a1)
+ *
+ * switch.S detects exit != 0, loads entry/PS/user_sp, and does jx (not retw).
+ * This avoids the base-save-area overlap that would corrupt a1 with the PC.
+ *
+ * The 'sp' parameter points to the argc/argv area on the user stack.
+ * We build the frame below it and store the original sp as user_sp.
+ */
 uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void))
 {
+    uint32_t user_sp = (uint32_t)(uintptr_t)sp;
     sp = (uint32_t *)((uintptr_t)sp & ~0xFu);  /* 16-byte align */
-    /* Base save area (16 bytes): retw underflow reads caller's a0-a3 */
-    *--sp = 0u;  /* a3 */
-    *--sp = 0u;  /* a2 */
-    *--sp = 0u;  /* a1 */
-    *--sp = 0u;  /* a0 */
-    /* Solicited frame (16 bytes) — must match switch.S layout */
-    *--sp = 0u;                                             /* padding */
-    *--sp = (1u << 18);                                     /* PS: WOE=1 */
-    *--sp = ((uint32_t)entry & 0x3FFFFFFFu) | (1u << 30);  /* PC */
-    *--sp = 0u;                                             /* exit = 0 */
+    user_sp = (uint32_t)(uintptr_t)sp;          /* use aligned value */
+
+    *--sp = user_sp;                            /* [SP+12] user SP */
+    *--sp = (1u << 18);                         /* [SP+8]  PS: WOE=1 */
+    *--sp = (uint32_t)(uintptr_t)entry;         /* [SP+4]  entry addr */
+    *--sp = 1u;                                 /* [SP+0]  exit = 1 (new proc) */
     return sp;
 }

@@ -10,16 +10,18 @@
 #   5. Restore PS and return PC from the new process's solicited frame
 #   6. RETW — rotates window back, underflow reloads from new stack
 #
-# Solicited frame layout (32 bytes on stack, 16-byte aligned):
+# Solicited frame layout (16 bytes, 16-byte aligned):
 #
-#   [SP+0 ]  exit marker  (0 = solicited frame)
+#   [SP+0 ]  exit marker  (0 = solicited frame, 1 = new-process frame)
 #   [SP+4 ]  return PC    (a0, encoded with window rotation info)
 #   [SP+8 ]  saved PS
-#   [SP+12]  (padding)
+#   [SP+12]  user SP      (new-process frame only)
 #
-# The ENTRY instruction also writes the base save area (caller's a0-a3)
-# at [SP - 16..SP - 4], which RETW's underflow handler reads to restore
-# the caller's window.
+# New-process frame (exit marker = 1):
+#   Built by arch_build_initial_frame() for exec'd processes.
+#   [SP+4] = entry address (NOT encoded), [SP+12] = user stack pointer.
+#   Restored via direct jump (jx) instead of retw, avoiding the
+#   base-save-area overlap that would corrupt the user SP.
 #
 # PCB layout: sp is at offset 0 in pcb_t (PCB_SP_OFFSET = 0).
 # =============================================================================
@@ -27,6 +29,7 @@
     .equ SOL_EXIT,   0
     .equ SOL_PC,     4
     .equ SOL_PS,     8
+    .equ SOL_SP,     12
     .equ SOL_FRMSZ,  32    # must be multiple of 16 for alignment
 
     .text
@@ -81,11 +84,30 @@ xtensa_do_yield:
     call4   xtensa_do_switch
     mov     a1, a6                    # a1 = new process's saved SP
 
-    # ── Restore from new process's solicited frame ──────────────────────
+    # ── Check exit marker: solicited (0) vs new-process (1) ───────────
+    l32i    a3, a1, SOL_EXIT
+    bnez    a3, .Lnew_process
+
+    # ── Solicited restore: normal windowed return ─────────────────────
     l32i    a3, a1, SOL_PS
     wsr     a3, ps                    # restore PS (re-enables interrupts)
     rsync
     l32i    a0, a1, SOL_PC            # restore return PC
 
     retw                              # return to new process's caller
+
+.Lnew_process:
+    # ── New-process restore: direct jump to entry point ───────────────
+    # Frame: [4]=entry, [8]=PS, [12]=user_sp
+    # This path is used for freshly exec'd processes whose initial frame
+    # was built by arch_build_initial_frame().  We set all registers
+    # directly and jump, avoiding retw (which would read the base save
+    # area and corrupt a1 with the entry address).
+    l32i    a2, a1, SOL_PC            # a2 = entry address
+    l32i    a3, a1, SOL_PS            # a3 = PS
+    l32i    a1, a1, SOL_SP            # a1 = user SP (load LAST — clobbers sp)
+    wsr     a3, ps
+    rsync
+    jx      a2                        # jump to _start
+
     .size   xtensa_do_yield, . - xtensa_do_yield

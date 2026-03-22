@@ -122,6 +122,57 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
         echo "[build] Cleaning $BUILD_DIR..."
         rm -rf "$BUILD_DIR"
     fi
+    # ── Build user-space binaries and romfs ─────────────────────────────────
+    # ESP-IDF owns the kernel build.  User binaries are built separately
+    # with xtensa-esp-elf-gcc (provided by the ESP-IDF environment), then
+    # packed into romfs.bin which the kernel component embeds via .incbin.
+
+    XTENSA_CC=xtensa-esp-elf-gcc
+    XTENSA_STRIP=xtensa-esp-elf-strip
+    # ESP32-S3 dynconfig (selects little-endian LX7 instruction encoding).
+    # The .so lives under the versioned xtensa-esp-elf subtree.
+    XTENSA_LIB_DIR="$(find "$XTENSA_TC_DIR/tools/xtensa-esp-elf" -name "xtensa_esp32s3.so" -printf '%h' -quit 2>/dev/null)"
+    if [[ -z "$XTENSA_LIB_DIR" ]]; then
+        echo "[build] Error: xtensa_esp32s3.so not found in toolchain"
+        exit 1
+    fi
+    export LD_LIBRARY_PATH="$XTENSA_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    XTENSA_DYNCONFIG="-mdynconfig=xtensa_esp32s3.so"
+    MKROMFS="$PROJECT_DIR/tools/mkromfs/mkromfs"
+    ROMFS_STAGING="$BUILD_DIR/romfs_staging"
+    ROMFS_BIN="$BUILD_DIR/romfs.bin"
+    USER_ARCH_DIR="$PROJECT_DIR/src/user/arch/xtensa"
+
+    # Build mkromfs host tool if needed
+    if [[ ! -x "$MKROMFS" ]]; then
+        echo "[build] Building mkromfs host tool..."
+        cc -O2 -I"$PROJECT_DIR/src/kernel/fs" \
+            -o "$MKROMFS" "$PROJECT_DIR/tools/mkromfs/mkromfs.c"
+    fi
+
+    # Build user binaries (call0 ABI, PIC, no libc)
+    mkdir -p "$BUILD_DIR/user"
+    echo "[build] Compiling user binaries (xtensa call0)..."
+    $XTENSA_CC $XTENSA_DYNCONFIG -mabi=call0 -mlongcalls \
+        -ffreestanding -nostdlib -Os -fPIC \
+        -I"$PROJECT_DIR/src/user" -I"$PROJECT_DIR/src" \
+        -T "$USER_ARCH_DIR/user.ld" \
+        "$USER_ARCH_DIR/crt0.S" "$USER_ARCH_DIR/syscall.S" \
+        "$PROJECT_DIR/src/user/hello.c" \
+        -o "$BUILD_DIR/user/hello.elf"
+    $XTENSA_STRIP "$BUILD_DIR/user/hello.elf"
+
+    # Stage romfs directory
+    rm -rf "$ROMFS_STAGING"
+    mkdir -p "$ROMFS_STAGING"/{bin,sbin,etc,dev,proc,tmp}
+    cp "$BUILD_DIR/user/hello.elf" "$ROMFS_STAGING/sbin/init"
+
+    # Generate romfs.bin
+    echo "[build] Generating romfs.bin..."
+    "$MKROMFS" "$ROMFS_STAGING" "$ROMFS_BIN"
+    echo "[build] romfs.bin: $(wc -c < "$ROMFS_BIN") bytes"
+
+    # ── ESP-IDF kernel build ─────────────────────────────────────────────────
     cd "$SOURCE_DIR"
     # set-target only needed on first build (creates CMakeCache with target config).
     # Skip it on incremental builds to avoid full ESP-IDF reconfigure.

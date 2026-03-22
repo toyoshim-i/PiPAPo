@@ -65,10 +65,11 @@
 
 /* ── Relocation types ───────────────────────────────────────────────────── */
 
-#define R_ARM_RELATIVE 23 /* Adjust by load base (PIE relocation) */
-#define R_ARM_JMP_SLOT 22 /* ARM PLT GOT slot                      */
-#define R_68K_RELATIVE 22 /* m68k PIE base relocation              */
-#define R_68K_JMP_SLOT 21 /* m68k PLT GOT slot                     */
+#define R_ARM_RELATIVE 23     /* Adjust by load base (PIE relocation) */
+#define R_ARM_JMP_SLOT 22     /* ARM PLT GOT slot                      */
+#define R_68K_RELATIVE 22     /* m68k PIE base relocation              */
+#define R_68K_JMP_SLOT 21     /* m68k PLT GOT slot                     */
+#define R_XTENSA_RELATIVE 7   /* Xtensa PIE base relocation            */
 
 /* ── Section types ──────────────────────────────────────────────────────── */
 

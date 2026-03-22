@@ -126,7 +126,7 @@ const char *target_init_path(void)
     return "/bin/runtests";
 #endif
 #else
-    return NULL;  /* no init process yet */
+    return "/sbin/init";
 #endif
 }
 
