@@ -212,3 +212,18 @@ int m68k_fline_dispatch(uint32_t *regs, uint32_t usp) {
   /* Non-Human68k process or unhandled: crash with SIGILL */
   return m68k_crash_handler(11, regs);
 }
+
+/* ── Initial stack frame for new processes ──────────────────────────────── */
+
+#include "ioregs.h" /* SR_USER */
+
+uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void)) {
+  *--sp = (uint32_t)entry;              /* PC (4 bytes)            */
+  sp = (uint32_t *)((uint8_t *)sp - 2); /* back up 2 bytes for SR */
+  *(uint16_t *)sp = SR_USER;            /* SR: user mode, IPL=0   */
+  /* Software register frame (a6..a0, d7..d0, high → low).
+   * Must match movem.l %d0-%d7/%a0-%a6 register order. */
+  for (int i = 0; i < 15; i++)
+    *--sp = 0u;
+  return sp;  /* pcb_t.sp points to d0 */
+}

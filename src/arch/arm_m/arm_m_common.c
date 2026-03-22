@@ -185,3 +185,32 @@ void arm_crash_handler(uint32_t *psp_frame, uint32_t *callee_regs) {
   extern void Default_Handler(void);
   psp_frame[6] = (uint32_t)Default_Handler | 1u; /* Thumb bit */
 }
+
+/* ── Initial stack frame for new processes ──────────────────────────────── */
+
+#include "ioregs.h"
+
+uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void)) {
+  /* Hardware exception frame (8 words, popped by EXC_RETURN) */
+  *--sp = XPSR_THUMB_BIT;        /* xpsr: Thumb bit (T=1)       */
+  *--sp = (uint32_t)entry & ~1u; /* pc: entry point (bit0 clear) */
+  *--sp = EXC_RETURN_THREAD_PSP; /* lr: EXC_RETURN thread/PSP   */
+  *--sp = 0u;                    /* r12                         */
+  *--sp = 0u;                    /* r3                          */
+  *--sp = 0u;                    /* r2                          */
+  *--sp = 0u;                    /* r1                          */
+  *--sp = 0u;                    /* r0                          */
+  /* Software callee-saved frame (loaded by PendSV) */
+#if __ARM_ARCH >= 8
+  *--sp = EXC_RETURN_THREAD_PSP; /* EXC_RETURN (no FPU frame)   */
+#endif
+  *--sp = 0u;  /* r11 */
+  *--sp = 0u;  /* r10 */
+  *--sp = 0u;  /* r9  */
+  *--sp = 0u;  /* r8  */
+  *--sp = 0u;  /* r7  */
+  *--sp = 0u;  /* r6  */
+  *--sp = 0u;  /* r5  */
+  *--sp = 0u;  /* r4 — pcb_t.sp points here */
+  return sp;
+}

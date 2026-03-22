@@ -17,6 +17,7 @@
 #include "../klog.h"
 #include "../mm/page.h"  /* PAGE_SIZE — for proc_setup_stack */
 #include "../spinlock.h" /* SPIN_PROC */
+#include "arch/arch.h"   /* arch_build_initial_frame */
 #include "arch/ioregs.h"
 #include "sched.h" /* sched_get_ticks — for start_time */
 
@@ -24,7 +25,7 @@
 #define DEFAULT_UMASK 022
 
 /* Verify PCB_SP_OFFSET matches the actual struct layout at compile time.
- * If this fires, update PCB_SP_OFFSET in proc.h to match offsetof(pcb_t,sp). */
+ * If this fires, update PCB_SP_OFFSET in proc.h. */
 _Static_assert(
     offsetof(pcb_t, sp) == PCB_SP_OFFSET,
     "PCB_SP_OFFSET does not match offsetof(pcb_t, sp) — update proc.h");
@@ -61,34 +62,32 @@ void proc_init(void) {
   proc_table[0].state = PROC_RUNNABLE;
   proc_table[0].ticks_remaining = PROC_DEFAULT_TICKS;
   proc_table[0].is_idle = 1;
-  /* comm is set to "init" once do_execve() runs; "kernel" for now */
   __builtin_memcpy(proc_table[0].comm, "kernel", 7);
 
   current_core[0] = &proc_table[0];
 
   /* Point assembly's core_id_reg at the SIO_CPUID register on RP2040.
    * On QEMU (no SIO), it stays pointing at core_id_zero → always 0. */
-  if (spin_have_hw()) core_id_reg = (volatile uint32_t *)0xD0000000u;
+  if (spin_have_hw())
+    core_id_reg = (volatile uint32_t *)0xD0000000u;
 
-  /* ── Print boot diagnostic ─────────────────────────────────────────── */
   klogf(
-      "PROC: process table  slots=%u  (pid 0 = kernel, pids 1-%u available)\n",
+      "PROC: process table  slots=%u"
+      "  (pid 0 = kernel, pids 1-%u available)\n",
       (uint32_t)PROC_MAX, (uint32_t)(PROC_MAX - 1u));
 
 #ifdef PPAP_TESTS
-  /* ── Self-test ─────────────────────────────────────────────────────── */
-  /* Allocate a slot, verify it looks sane, then free it. */
+  /* Self-test: allocate a slot, verify it looks sane, then free it. */
   pcb_t *p = proc_alloc();
 
   uint32_t ok = (p != NULL) && (p->pid == 1) &&
-                (p->state == PROC_FREE) /* still FREE — caller sets state */
-                && (current == &proc_table[0]) &&
+                (p->state == PROC_FREE) &&
+                (current == &proc_table[0]) &&
                 (current->state == PROC_RUNNABLE);
 
   if (p) proc_free(p);
 
-  /* Reset PID counter so the first real process gets PID 1.
-   * busybox init requires PID == 1. */
+  /* Reset PID counter so the first real process gets PID 1. */
   next_pid = 1;
 
   klogf("PROC: self-test %s\n", ok ? "PASSED" : "FAILED");
@@ -104,14 +103,9 @@ pcb_t *proc_alloc(void) {
     if (proc_table[i].state == PROC_FREE) {
       __builtin_memset(&proc_table[i], 0, sizeof(pcb_t));
       proc_table[i].pid = next_pid++;
-      /* pgid and sid are left at 0 (from memset).
-       * sys_vfork copies them from the parent (like real fork).
-       * Only setsid/setpgid should change them explicitly. */
       proc_table[i].umask_val = DEFAULT_UMASK;
       proc_table[i].running_on_core = -1;
       proc_table[i].start_time = sched_get_ticks();
-      /* state left as PROC_FREE — caller sets it to PROC_RUNNABLE
-       * only after filling in stack_page and setting up the stack frame */
       result = &proc_table[i];
       break;
     }
@@ -135,128 +129,12 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp) {
   else
     sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
 
-#if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
-  /*
-   * ARM Cortex-M: two layers on the stack (high → low):
-   *  1. Hardware exception frame (8 words): popped by EXC_RETURN.
-   *  2. Software callee-saved frame: loaded by PendSV.
-   *     - ARMv6-M: 8 words (r4–r11)
-   *     - ARMv8-M: 9 words (r4–r11, EXC_RETURN) — EXC_RETURN encodes
-   *       FPU frame type in bit 4 and is saved/restored per-process.
-   */
-  *--sp = XPSR_THUMB_BIT;        /* xpsr: Thumb bit (T=1)       */
-  *--sp = (uint32_t)entry & ~1u; /* pc: entry point (bit0 clear)*/
-  *--sp = EXC_RETURN_THREAD_PSP; /* lr: EXC_RETURN thread/PSP   */
-  *--sp = 0u;                    /* r12                         */
-  *--sp = 0u;                    /* r3                          */
-  *--sp = 0u;                    /* r2                          */
-  *--sp = 0u;                    /* r1                          */
-  *--sp = 0u;                    /* r0                          */
-  /* Software callee-saved frame (high → low) */
-#if __ARM_ARCH >= 8
-  /* EXC_RETURN: Thread mode, PSP, no FPU frame (bit 4 = 1).
-   * New processes haven't used FPU yet, so no s16-s31 on stack. */
-  *--sp = EXC_RETURN_THREAD_PSP; /* EXC_RETURN (bit 4 = 1)     */
-#endif
-  *--sp = 0u;           /* r11 */
-  *--sp = 0u;           /* r10 */
-  *--sp = 0u;           /* r9  */
-  *--sp = 0u;           /* r8  */
-  *--sp = 0u;           /* r7  */
-  *--sp = 0u;           /* r6  */
-  *--sp = 0u;           /* r5  */
-  *--sp = 0u; /* r4  */ /* ← pcb_t.sp points here */
-
-#elif defined(__m68k__)
-  /*
-   * M68K: exception frame built on kernel stack (stack_page / SSP).
-   * SR = user mode so RTE switches to user mode + USP.
-   * The caller must set p->usp to the desired user stack pointer.
-   */
-  /* Always build on kernel stack — ignore user_sp for m68k */
+#if defined(__m68k__)
+  /* m68k always uses kernel stack, ignoring user_sp */
   sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
-  *--sp = (uint32_t)entry;              /* PC: entry point (4 bytes)   */
-  sp = (uint32_t *)((uint8_t *)sp - 2); /* back up 2 bytes for SR      */
-  *(uint16_t *)sp = SR_USER;            /* SR: user mode, IPL=0        */
-  /* Software register frame (a6..a0, d7..d0, high → low).
-   * Must match movem.l %d0-%d7/%a0-%a6 register order. */
-  *--sp = 0u;          /* a6 */
-  *--sp = 0u;          /* a5 */
-  *--sp = 0u;          /* a4 */
-  *--sp = 0u;          /* a3 */
-  *--sp = 0u;          /* a2 */
-  *--sp = 0u;          /* a1 */
-  *--sp = 0u;          /* a0 */
-  *--sp = 0u;          /* d7 */
-  *--sp = 0u;          /* d6 */
-  *--sp = 0u;          /* d5 */
-  *--sp = 0u;          /* d4 */
-  *--sp = 0u;          /* d3 */
-  *--sp = 0u;          /* d2 */
-  *--sp = 0u;          /* d1 */
-  *--sp = 0u; /* d0 */ /* ← pcb_t.sp points here */
-
-#elif defined(__riscv)
-  /*
-   * RISC-V: build a trap frame matching trap.S layout (128 bytes).
-   * When the scheduler switches to this process, trap.S restores all
-   * registers from this frame and executes mret, which jumps to mepc.
-   *
-   * Trap frame layout (SP+0 → SP+124, low → high):
-   *   x1(ra), x3(gp), x4(tp), x5-x7(t0-t2), x8-x9(s0-s1),
-   *   x10-x17(a0-a7), x18-x27(s2-s11), x28-x31(t3-t6),
-   *   mepc, mstatus
-   *
-   * mstatus.MIE must be set so interrupts are enabled after mret.
-   * mstatus.MPIE is set by hardware on trap entry; we set it here so
-   * mret re-enables interrupts.  MPP=M-mode (0b11 << 11).
-   */
-  sp -= 32; /* 32 words = 128 bytes = TRAP_FRAME_SIZE */
-  /* Zero all general-purpose registers in the frame */
-  for (int i = 0; i < 30; i++)
-    sp[i] = 0u;
-  /* Set gp (x3) at frame offset 1 */
-  extern char __global_pointer$[];
-  sp[1] = (uint32_t)(uintptr_t)__global_pointer$;
-  /* mepc: entry point — mret will jump here */
-  sp[30] = (uint32_t)(uintptr_t)entry;
-  /* mstatus: MPP=M-mode, MPIE=1 (mret sets MIE from MPIE) */
-  sp[31] = (3u << 11) | (1u << 7); /* MPP=M, MPIE=1 */
-
-#elif defined(__xtensa__)
-  /*
-   * Xtensa windowed ABI: build a solicited frame matching switch.S.
-   *
-   * When xtensa_do_yield() switches to this process it:
-   *   1. Loads PS and return PC from the solicited frame
-   *   2. Executes RETW which triggers a window underflow
-   *   3. Underflow handler reads the base save area below the frame
-   *
-   * Stack layout (high → low, 16-byte aligned):
-   *   [top-16..top-4]   base save area (a0-a3 for retw underflow)
-   *   [top-32..top-20]  solicited frame: exit, PC, PS, pad
-   *
-   * The entry point is encoded in the return PC slot.  For the first
-   * switch into this process, RETW returns to the entry function.
-   * We encode a0 with CALLINC=1 (bits 31:30 = 01) so RETW knows
-   * the window increment was 4 (from a CALL4).
-   */
-  /* Align SP to 16 bytes (Xtensa ABI requirement) */
-  sp = (uint32_t *)((uintptr_t)sp & ~0xFu);
-  /* Base save area (16 bytes): retw underflow reads caller's a0-a3 */
-  *--sp = 0u;                       /* a3 */
-  *--sp = 0u;                       /* a2 */
-  *--sp = 0u;                       /* a1 (unused for first entry) */
-  *--sp = 0u;                       /* a0 (unused for first entry) */
-  /* Solicited frame (16 bytes) — must match switch.S layout */
-  *--sp = 0u;                       /* padding */
-  *--sp = (1u << 18);               /* PS: WOE=1, INTLEVEL=0 */
-  /* Return PC: encode with CALLINC=1 (bits 31:30 = 01) so RETW
-   * decrements WindowBase by 1 (matching a CALL4 entry). */
-  *--sp = ((uint32_t)entry & 0x3FFFFFFFu) | (1u << 30);  /* PC */
-  *--sp = 0u;                       /* exit marker = 0 (solicited) */
 #endif
 
+  sp = arch_build_initial_frame(sp, entry);
   p->sp = (uint32_t)(uintptr_t)sp;
   p->ticks_remaining = PROC_DEFAULT_TICKS;
 }

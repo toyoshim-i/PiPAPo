@@ -1447,7 +1447,19 @@ long sys_vfork(uint32_t *frame) {
       child->usp = current->usp;
     }
   }
-#else
+#elif defined(__riscv)
+  /* RISC-V: The ecall trap frame (32 words) is already on the child's
+   * stack (copied from parent).  child_frame points to saved a0 in the
+   * trap frame (sp + 32).  The trap frame base is child_frame - 8.
+   *
+   * Set child's a0 = 0 (vfork return value for child). */
+  child_frame[0] = 0;
+
+  /* child->sp must point to the base of the trap frame (not child_frame).
+   * child_frame = trap_base + 32, so trap_base = child_frame - 8. */
+  child->sp = (uint32_t)(uintptr_t)(child_frame - 8);
+
+#elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
   /* ARM: Set child's r0 = 0 (child sees vfork return 0) */
   child_frame[0] = 0;
 
@@ -1469,6 +1481,16 @@ long sys_vfork(uint32_t *frame) {
 #endif
 
   child->sp = (uint32_t)(uintptr_t)sw;
+
+#elif defined(__xtensa__)
+  /* Xtensa: child returns 0 in a0 (frame[0]).
+   * The solicited frame was already copied from the parent's stack.
+   * child->sp points to the base of the solicited frame. */
+  child_frame[0] = 0;
+  child->sp = (uint32_t)(uintptr_t)child_frame;
+
+#else
+#error "sys_vfork: unsupported architecture — add child frame setup"
 #endif
   child->ticks_remaining = PROC_DEFAULT_TICKS;
 

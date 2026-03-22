@@ -167,3 +167,20 @@ uint32_t riscv_do_switch(uint32_t current_sp)
 
     return next->sp;
 }
+
+/* ── Initial stack frame for new processes ──────────────────────────────── */
+
+uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void))
+{
+    sp -= 32;  /* 32 words = 128 bytes = TRAP_FRAME_SIZE */
+    for (int i = 0; i < 30; i++)
+        sp[i] = 0u;
+    /* gp (x3) at frame offset 1 */
+    extern char __global_pointer$[];
+    sp[1] = (uint32_t)(uintptr_t)__global_pointer$;
+    /* mepc: entry point — mret jumps here */
+    sp[30] = (uint32_t)(uintptr_t)entry;
+    /* mstatus: MPP=M-mode, MPIE=1 (mret sets MIE from MPIE) */
+    sp[31] = (3u << 11) | (1u << 7);
+    return sp;
+}
