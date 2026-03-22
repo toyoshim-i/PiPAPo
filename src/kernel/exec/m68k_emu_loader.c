@@ -18,12 +18,13 @@
 #include "kernel/subsys/subsys.h"
 #include "loader.h"
 
-/* Emulated memory: 1MB = 256 × 4KB pages */
-#define M68K_EMU_MEM_SIZE (1 << 20)
-#define M68K_EMU_MEM_PAGES (M68K_EMU_MEM_SIZE / PAGE_SIZE)
-
-/* Default stack top in emulated address space */
-#define M68K_EMU_STACK_TOP 0x00080000u
+/* Preferred emulated memory size — the loader will try this first,
+ * then fall back to whatever contiguous pages are available (minimum
+ * 64 KB = 16 pages).  Busybox needs ~250 KB for typical applets. */
+#ifndef M68K_EMU_MEM_PREFERRED
+#define M68K_EMU_MEM_PREFERRED (1 << 20) /* 1 MB default */
+#endif
+#define M68K_EMU_MEM_MIN (64u * 1024u) /* 64 KB absolute minimum */
 
 /* ── Detection ─────────────────────────────────────────────────────────── */
 
@@ -77,13 +78,28 @@ static int m68k_emu_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   /* ── 1. Allocate emulated memory + state struct ────────────────────── */
   uint32_t state_pages =
       (sizeof(ppap_m68k_exec_state_t) + PAGE_SIZE - 1) / PAGE_SIZE;
-  uint32_t total_pages = M68K_EMU_MEM_PAGES + state_pages;
-  uint8_t *mem_base = alloc_contiguous(total_pages);
+
+  /* Try preferred size first, then halve until we fit or hit minimum.
+   * Reserve a few pages (4) for the process stack and kernel overhead. */
+  uint32_t emu_mem_pages = M68K_EMU_MEM_PREFERRED / PAGE_SIZE;
+  uint32_t min_emu_pages = M68K_EMU_MEM_MIN / PAGE_SIZE;
+  uint8_t *mem_base = NULL;
+  uint32_t total_pages;
+
+  while (emu_mem_pages >= min_emu_pages) {
+    total_pages = emu_mem_pages + state_pages;
+    if (total_pages + 4 <= page_free_count()) {
+      mem_base = alloc_contiguous(total_pages);
+      if (mem_base) break;
+    }
+    emu_mem_pages /= 2;
+  }
   if (!mem_base) return -(int)ENOMEM;
 
+  uint32_t emu_mem_size = emu_mem_pages * PAGE_SIZE;
   uint8_t *emu_mem = mem_base;
   ppap_m68k_exec_state_t *state =
-      (ppap_m68k_exec_state_t *)(mem_base + M68K_EMU_MEM_PAGES * PAGE_SIZE);
+      (ppap_m68k_exec_state_t *)(mem_base + emu_mem_pages * PAGE_SIZE);
 
   /* Store pages for cleanup on exit */
   for (uint32_t i = 0; i < total_pages && i < USER_PAGES_MAX; i++)
@@ -100,7 +116,7 @@ static int m68k_emu_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
   /* ── 3. Initialize m68k emulator ───────────────────────────────────── */
   memset(state, 0, sizeof(*state));
-  ecpu_m68k_ops.init((cpu_state_t *)&state->m68k, emu_mem, M68K_EMU_MEM_SIZE);
+  ecpu_m68k_ops.init((cpu_state_t *)&state->m68k, emu_mem, emu_mem_size);
 
   /* Set trap handler for PPAP syscall interception */
   ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&state->m68k,
@@ -122,7 +138,7 @@ static int m68k_emu_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     if (p_type != PT_LOAD) continue;
 
     /* Bounds check */
-    if (p_vaddr + p_memsz > M68K_EMU_MEM_SIZE) continue;
+    if (p_vaddr + p_memsz > emu_mem_size) continue;
     if (p_offset + p_filesz > file_size) continue;
 
     /* Copy file data — already big-endian, m68k memory is big-endian */
@@ -139,7 +155,7 @@ static int m68k_emu_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
   /* ── 6. Set up user stack with argc/argv (big-endian) ──────────────── */
   {
-    uint32_t sp = M68K_EMU_STACK_TOP;
+    uint32_t sp = emu_mem_size;
 
     /* Copy argument strings to stack */
     uint32_t str_addrs[EXEC_ARGV_MAX];
