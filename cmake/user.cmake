@@ -59,12 +59,12 @@ elseif(PPAP_ARCH STREQUAL "m68k")
     set(PPAP_ENABLE_ECPU_Z80 ON)
     set(PPAP_ENABLE_ECPU_M68K OFF)
 else()
-    # RISC-V / Xtensa: no m68k eCPU → disable subsystems that require it
-    set(PPAP_ENABLE_HUMAN68K OFF)
-    set(PPAP_ENABLE_CPM OFF)
-    set(PPAP_ENABLE_SOS OFF)
-    set(PPAP_ENABLE_ECPU_Z80 OFF)
-    set(PPAP_ENABLE_ECPU_M68K OFF)
+    # RISC-V / Xtensa: all eCPUs are pure C — enable everything.
+    set(PPAP_ENABLE_HUMAN68K ON)
+    set(PPAP_ENABLE_CPM ON)
+    set(PPAP_ENABLE_SOS ON)
+    set(PPAP_ENABLE_ECPU_Z80 ON)
+    set(PPAP_ENABLE_ECPU_M68K ON)
 endif()
 
 # --- User-space program lists ---
