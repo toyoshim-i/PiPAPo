@@ -78,6 +78,21 @@
 /* ~500 ms timeout at 12 MHz (pre-PLL boot clock) */
 #define PLL_TIMEOUT 6000000u
 
+/*
+ * clock_init_pll must run from SRAM on RP2350 RISC-V.
+ *
+ * On RP2350, bootrom_state_reset(GLOBAL_STATE) resets default resource
+ * permissions for all bus masters.  This can invalidate the XIP cache's
+ * ability to refill from flash.  Initially-cached instructions continue
+ * to execute, but once we reach a cache-line boundary deep in this
+ * function (the PLL VCO lock polling loop), the refill fails with an
+ * instruction access fault (mcause=1).
+ *
+ * Placing this function in .ramfunc eliminates all flash dependency
+ * during the clock transition.  boot.S copies .ramfunc from flash to
+ * SRAM before calling kmain().
+ */
+__attribute__((section(".ramfunc.clock_init_pll")))
 void clock_init_pll(void) {
   uint32_t t;
 
@@ -139,4 +154,9 @@ void clock_init_pll(void) {
   CLK_PERI_CTRL = 0;               /* disable */
   for (volatile int i = 0; i < 64; i++) ; /* wait for ENABLE propagation */
   CLK_PERI_CTRL = CLK_PERI_ENABLE; /* re-enable on clk_sys = PLL speed */
+
+  /* No XIP cache flush needed: the QMI clock divider automatically
+   * scales with clk_sys, so flash reads work correctly at PLL speed.
+   * The .ramfunc placement of this function avoids any XIP dependency
+   * during the clock transition itself. */
 }
