@@ -47,7 +47,10 @@ void riscv_exception_handler(uint32_t mcause, uint32_t mepc, uint32_t mtval)
     CRASH_LOG[2] = mepc;
     CRASH_LOG[3] = mtval;
 
-    for (;;) __asm__ volatile("wfi"); /* halt with IRQs off */
+    /* Spin with NOP instead of WFI — WFI may gate the Hazard3 core clock,
+     * making the debug module unresponsive.  A NOP loop keeps the core
+     * running so OpenOCD can always halt and inspect crash state. */
+    for (;;) __asm__ volatile("nop");
 }
 
 /* ── Timer ────────────────────────────────────────────────────────────────── */

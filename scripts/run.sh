@@ -204,9 +204,17 @@ if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 || "$TA
             echo "      Build with: ./third_party/build_openocd_rp.sh"
             exit 1
         fi
+        # Use architecture-appropriate OpenOCD config:
+        #   pico2   → rp2350.cfg (ARM Cortex-M33 debug targets)
+        #   pico2rv → rp2350-riscv.cfg (Hazard3 RISC-V debug targets)
+        if [[ "$TARGET" == pico2rv ]]; then
+            OPENOCD_TARGET_CFG="target/rp2350-riscv.cfg"
+        else
+            OPENOCD_TARGET_CFG="target/rp2350.cfg"
+        fi
         OPENOCD_ARGS=(-s "$OPENOCD_SCRIPTS"
                       -f interface/cmsis-dap.cfg
-                      -f target/rp2350.cfg
+                      -f "$OPENOCD_TARGET_CFG"
                       -c "adapter speed 5000")
     else
         OPENOCD_BIN="openocd"
@@ -242,6 +250,7 @@ if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 || "$TA
         else
             ALT_CFG="target/rp2350.cfg"
             echo "[run] RISC-V target failed — retrying via ARM debug port..."
+            echo "      (chip may still be in ARM mode from a previous flash)"
         fi
         if "$OPENOCD_BIN" -s "$OPENOCD_SCRIPTS" \
             -f interface/cmsis-dap.cfg -f "$ALT_CFG" \

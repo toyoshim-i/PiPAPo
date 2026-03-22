@@ -50,6 +50,17 @@ _start:
     # ── 4. Disable interrupts ────────────────────────────────────────────
     csrc    mstatus, 0x8           # clear MIE (bit 3)
 
+    # ── 4b. Disable watchdog ─────────────────────────────────────────────
+    # The RP2350 boot ROM may leave the watchdog armed (especially after
+    # BOOTSEL USB reboot).  If the firmware crashes before reaching
+    # bootrom_state_reset() in target_early_init(), a live watchdog would
+    # reset-loop the chip, making it appear unresponsive to debuggers.
+    # WATCHDOG_CTRL is at 0x400D8000; bit 30 = ENABLE.
+    # Write to the atomic CLR alias (base + 0x3000) to clear ENABLE.
+    li      t0, 0x400DB000         # WATCHDOG_CTRL CLR alias
+    li      t1, (1 << 30)          # ENABLE bit
+    sw      t1, 0(t0)
+
     # ── 5. Copy .data: flash (LMA) → SRAM (VMA) ─────────────────────────
     #   a0 = destination start  (__data_start)
     #   a1 = destination end    (__data_end)
@@ -92,9 +103,9 @@ _start:
     # ── 7. Enter kernel ─────────────────────────────────────────────────
     call    kmain
 
-    # Halt if kmain() returns unexpectedly
+    # Halt if kmain() returns unexpectedly (NOP loop for debuggability)
 .Lhalt:
-    wfi
+    nop
     j       .Lhalt
 
 
@@ -102,12 +113,14 @@ _start:
 # Default_Handler
 #
 # Catches all unhandled traps.
-# Halts in a tight loop — attach a debugger to inspect mepc/mcause.
+# Spins in a tight NOP loop — attach a debugger to inspect mepc/mcause.
+# Using NOP instead of WFI ensures the Hazard3 debug module can always
+# halt the core (WFI may gate the core clock on some implementations).
 # =============================================================================
 
 .section .text, "ax"
 .align 2
 .global Default_Handler
 Default_Handler:
-    wfi
+    nop
     j       Default_Handler
