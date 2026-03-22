@@ -191,7 +191,8 @@ void page_free(void *page) {
   for (uint32_t i = 0u; i < free_top; i++) {
     if (free_stack[i] == page) {
       spin_unlock_irqrestore(SPIN_PAGE, saved);
-      klogf("MM: double-free detected @ %x\n", addr);
+      klogf("MM: double-free @ %x (ra=%x)\n", addr,
+            (uint32_t)(uintptr_t)__builtin_return_address(0));
       return;
     }
   }

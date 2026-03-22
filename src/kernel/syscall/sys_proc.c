@@ -1268,7 +1268,7 @@ long sys_exit(long status) {
          * when waitpid later frees the zombie's stack_page. */
         if (current->user_pages[i] == current->stack_page)
           current->stack_page = NULL;
-        page_free(current->user_pages[i]);
+        user_page_free(current->user_pages[i]);
         current->user_pages[i] = NULL;
       }
     }
@@ -1294,7 +1294,7 @@ long sys_exit(long status) {
     for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
       if (current->user_pages[i] &&
           current->user_pages[i] != current->vfork_parent->user_pages[i]) {
-        page_free(current->user_pages[i]);
+        user_page_free(current->user_pages[i]);
         current->user_pages[i] = NULL;
       }
     }
@@ -1701,7 +1701,7 @@ long sys_execve(const char *path, const char *const *argv) {
   /* Free old user pages only if we owned them */
   if (owns_pages) {
     for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
-      if (old_user[i]) page_free(old_user[i]);
+      if (old_user[i]) user_page_free(old_user[i]);
     }
 #if defined(__m68k__)
     if (old_user_stack) page_free(old_user_stack);
@@ -1711,7 +1711,7 @@ long sys_execve(const char *path, const char *const *argv) {
      * the child (e.g. user stack copy), not the shared parent pages. */
     for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
       if (old_user[i] && old_user[i] != current->vfork_parent->user_pages[i])
-        page_free(old_user[i]);
+        user_page_free(old_user[i]);
     }
 #if defined(__m68k__)
     if (old_user_stack &&

@@ -172,7 +172,54 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   uint32_t xip_text_base = (uint32_t)(uintptr_t)file_buf + text_seg->p_offset;
 #endif
 
-#if defined(__riscv) || defined(__xtensa__)
+#if defined(__xtensa__)
+  /* ESP32-S3: SRAM1 is split — the DRAM page pool has NO instruction
+   * bus access.  Allocate from IRAM via ESP-IDF's MALLOC_CAP_EXEC.
+   * The returned pointer is an IRAM address (0x4037xxxx-0x403Dxxxx)
+   * that's executable AND data-accessible (data bus can reach IRAM). */
+  {
+    uint32_t image_end = text_seg->p_vaddr + text_seg->p_memsz;
+    if (data_seg && data_seg->p_vaddr + data_seg->p_memsz > image_end)
+      image_end = data_seg->p_vaddr + data_seg->p_memsz;
+    uint32_t image_size = (image_end + 15u) & ~15u;
+
+    extern void *heap_caps_malloc(unsigned int size, uint32_t caps);
+    /* MALLOC_CAP_EXEC = (1<<4) on ESP32-S3 */
+    sram_page = (uint8_t *)heap_caps_malloc(image_size, (1u << 4));
+    if (!sram_page) {
+      page_free(stack);
+      p->stack_page = NULL;
+      return -(int)ENOMEM;
+    }
+
+    memset(sram_page, 0, image_size);
+
+    if (text_seg->p_filesz > 0)
+      memcpy(sram_page + text_seg->p_vaddr,
+             file_buf + text_seg->p_offset, text_seg->p_filesz);
+
+    if (data_seg && data_seg->p_filesz > 0)
+      memcpy(sram_page + data_seg->p_vaddr,
+             file_buf + data_seg->p_offset, data_seg->p_filesz);
+
+    /* IRAM address is directly usable as entry point */
+    entry = (uint32_t)(uintptr_t)(sram_page + e_entry);
+
+    {
+      extern void klogf(const char *, ...);
+      klogf("[elf] IRAM alloc=%x entry=%x size=%x\n",
+            (uint32_t)(uintptr_t)sram_page, entry, image_size);
+      klogf("[elf] code: %x %x %x %x\n",
+            *(uint32_t *)(uintptr_t)(sram_page + e_entry),
+            *(uint32_t *)(uintptr_t)(sram_page + e_entry + 4),
+            *(uint32_t *)(uintptr_t)(sram_page + e_entry + 8),
+            *(uint32_t *)(uintptr_t)(sram_page + e_entry + 12));
+    }
+
+    /* Track pages for cleanup (store IRAM pointer, not page pool) */
+    p->user_pages[0] = sram_page;
+  }
+#elif defined(__riscv)
   /* RISC-V PIC uses auipc (PC-relative) for ALL address references,
    * including writable globals.  This only works when text and data are
    * at their link-time relative offsets.  With XIP (text in flash, data
@@ -185,13 +232,15 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     uint32_t image_end = text_seg->p_vaddr + text_seg->p_memsz;
     if (data_seg && data_seg->p_vaddr + data_seg->p_memsz > image_end)
       image_end = data_seg->p_vaddr + data_seg->p_memsz;
-    uint32_t total_image_pages = (image_end + PAGE_SIZE - 1) / PAGE_SIZE;
+    uint32_t image_pages = (image_end + PAGE_SIZE - 1) / PAGE_SIZE;
 
-    if (total_image_pages > USER_PAGES_MAX) {
-      page_free(stack);
-      p->stack_page = NULL;
-      return -(int)ENOMEM;
-    }
+    /* Allocate extra pages for heap (brk).  sys_brk uses page_alloc_at
+     * which needs physically contiguous pages after the image.  Without
+     * these, busybox's malloc (via musl brk) fails with OOM. */
+    uint32_t heap_pages = 4;
+    uint32_t total_image_pages = image_pages + heap_pages;
+    if (total_image_pages > USER_PAGES_MAX)
+      total_image_pages = USER_PAGES_MAX;
 
     sram_page = page_alloc_contiguous(total_image_pages);
     if (!sram_page) {
@@ -213,50 +262,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
       memcpy(sram_page + data_seg->p_vaddr,
              file_buf + data_seg->p_offset, data_seg->p_filesz);
 
-    /* Entry point is in the SRAM copy.
-     * RISC-V can execute from DRAM directly.
-     * Xtensa must execute from IRAM (instruction bus). */
     entry = (uint32_t)(uintptr_t)(sram_page + e_entry);
-#if defined(__xtensa__)
-    entry += XTENSA_DRAM_TO_IRAM;
-
-    /* Invalidate I-cache so the CPU fetches the freshly-written code
-     * instead of stale cache lines.  Writing via the DRAM bus does NOT
-     * automatically update the I-cache on ESP32-S3. */
-    {
-      extern void Cache_Invalidate_ICache_All(void);
-      Cache_Invalidate_ICache_All();
-    }
-
-    /* Debug: verify code was copied and IRAM execution works */
-    {
-      extern void klogf(const char *, ...);
-      uint32_t dram = entry - XTENSA_DRAM_TO_IRAM;
-      klogf("[elf] sram=%x entry(IRAM)=%x\n",
-            (uint32_t)(uintptr_t)sram_page, entry);
-      klogf("[elf] code @DRAM: %x %x %x %x\n",
-            *(uint32_t *)(uintptr_t)dram,
-            *(uint32_t *)(uintptr_t)(dram + 4),
-            *(uint32_t *)(uintptr_t)(dram + 8),
-            *(uint32_t *)(uintptr_t)(dram + 12));
-
-      /* Test: write a "ret" (call0 return = jx a0) to a scratch area
-       * in the same SRAM page, convert to IRAM, and call it.
-       * ret encoding: 0x000080 (3 bytes: 80 00 00) */
-      uint32_t *test_dram = (uint32_t *)(uintptr_t)(dram +
-                             total_image_pages * PAGE_SIZE - 16);
-      *test_dram = 0x00000080u; /* ret instruction */
-      extern void Cache_Invalidate_ICache_All(void);
-      Cache_Invalidate_ICache_All();
-      uint32_t test_iram = (uint32_t)(uintptr_t)test_dram +
-                            XTENSA_DRAM_TO_IRAM;
-      klogf("[elf] test: DRAM=%x IRAM=%x val=%x\n",
-            (uint32_t)(uintptr_t)test_dram, test_iram, *test_dram);
-      void (*test_fn)(void) = (void (*)(void))(uintptr_t)test_iram;
-      test_fn();
-      klogf("[elf] IRAM exec OK!\n");
-    }
-#endif
 
     for (uint32_t i = 0; i < total_image_pages; i++)
       p->user_pages[i] = sram_page + i * PAGE_SIZE;
@@ -330,6 +336,22 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
           }
         }
       }
+    }
+
+    /* Set brk base/current for heap allocation (busybox needs this).
+     * brk starts after the end of the loaded image in SRAM. */
+    if (data_seg) {
+      uint32_t data_end =
+          (uint32_t)(uintptr_t)sram_page + data_seg->p_vaddr + data_seg->p_memsz;
+      data_end = (data_end + 15u) & ~15u;
+      p->brk_base = data_end;
+      p->brk_current = data_end;
+    } else {
+      uint32_t text_end =
+          (uint32_t)(uintptr_t)sram_page + text_seg->p_vaddr + text_seg->p_memsz;
+      text_end = (text_end + 15u) & ~15u;
+      p->brk_base = text_end;
+      p->brk_current = text_end;
     }
   }
 #else
