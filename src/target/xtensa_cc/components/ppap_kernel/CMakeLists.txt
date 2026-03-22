@@ -9,6 +9,7 @@ set(PPAP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../../..)
 set(ARCH_SOURCES
     ${PPAP_ROOT}/src/arch/xtensa/boot.S
     ${PPAP_ROOT}/src/arch/xtensa/trap.S
+    ${PPAP_ROOT}/src/arch/xtensa/switch.S
     ${PPAP_ROOT}/src/arch/xtensa/xtensa_common.c
     ${PPAP_ROOT}/src/arch/xtensa/smp.c
     ${PPAP_ROOT}/src/drivers/arch/xtensa/uart_esp32s3.c

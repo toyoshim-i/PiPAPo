@@ -36,6 +36,18 @@ extern char __page_pool_start;
 #ifndef RAM_END
 #define RAM_END (PAGE_POOL_BASE + PAGE_POOL_SIZE)
 #endif
+#elif defined(__xtensa__)
+/* Xtensa / ESP32-S3: ESP-IDF manages the linker script.
+ * PAGE_POOL_BASE and PAGE_COUNT_MAX are defined via CMake -D flags.
+ * No IOBUF/DMA regions — ESP-IDF manages DMA buffers. */
+#define SRAM_KERNEL_BASE 0x3FC90000u /* ESP32-S3 DRAM region start      */
+#define SRAM_KERNEL_SIZE (32u * 1024u)
+#define PAGE_POOL_SIZE (PAGE_COUNT_MAX * PAGE_SIZE)
+/* Stub IOBUF/DMA to zero-size regions at end of page pool */
+#define SRAM_IOBUF_BASE (PAGE_POOL_BASE + PAGE_POOL_SIZE)
+#define SRAM_IOBUF_SIZE 0u
+#define SRAM_DMA_BASE   SRAM_IOBUF_BASE
+#define SRAM_DMA_SIZE   0u
 #else
 /* ARM / RP2040: SRAM layout defaults match pico1 / qemu_arm.
  * Targets with a different split (for example PicoCalc) override these via

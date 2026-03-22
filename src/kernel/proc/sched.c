@@ -293,11 +293,13 @@ void sched_start(void) {
 
 void sched_start(void) {
   /* Xtensa: no PSP/MSP split, no PendSV priorities.
-   * Timer ISR setup will be done in CC-2.
+   * Timer ISR setup is done by target_late_init() → xtensa_timer_init(),
+   * which runs BEFORE sched_start().  xtensa_timer_init() already set
+   * INTENABLE to include only the CCOMPARE0 bit (bit 6).
    *
-   * Ensure INTENABLE=0 so no ESP-IDF leftover interrupts fire.
-   * CC-2 will selectively enable the timer interrupt here. */
-  __asm__ volatile("wsr %0, intenable; rsync" :: "r"(0));
+   * Clear pending interrupts but preserve INTENABLE — timer init has
+   * already configured it correctly. */
+  __asm__ volatile("wsr %0, intclear; rsync" :: "r"(0xFFFFFFFFu));
   arch_irq_enable();
 }
 
@@ -307,8 +309,7 @@ void sched_start(void) {
  */
 
 /* On Xtensa, ESP-IDF's pthread library also defines sched_yield().
- * Mark ours weak so the linker resolves the conflict.  CC-2 will
- * replace this with a proper Xtensa context-switch path. */
+ * Mark ours weak so the linker resolves the conflict. */
 #if defined(__xtensa__)
 __attribute__((weak))
 #endif
@@ -318,6 +319,13 @@ void sched_yield(void) {
    * immediately.  arch_yield() only sets a flag — insufficient from
    * thread context where no timer ISR is pending to check it. */
   __asm__ volatile("trap #1");
+#elif defined(__xtensa__)
+  /* Xtensa has no PendSV.  Call the cooperative switch directly.
+   * xtensa_do_yield() spills all windows, saves/restores SP via
+   * the solicited-frame pattern, and returns to the new process. */
+  xtensa_switch_pending = 0;
+  extern void xtensa_do_yield(void);
+  xtensa_do_yield();
 #else
   arch_yield(); /* pend PendSV; fires at next instruction boundary */
 #endif

@@ -4,8 +4,8 @@
  * Provides the same API as src/arch/arm_m/arch.h, src/arch/m68k/arch.h,
  * and src/arch/riscv/arch.h but with Xtensa implementations.
  *
- * All code assumes Call0 ABI (-mabi=call0): no register windowing,
- * a0 = return address, a1 = stack pointer, a2-a15 = args/temps.
+ * Windowed ABI: ESP-IDF requires windowed register ABI.
+ * Context switch uses solicited-frame pattern with window spill.
  */
 
 #ifndef PPAP_ARCH_XTENSA_ARCH_H
@@ -58,7 +58,13 @@ static inline void arch_irq_disable(void)
  * Toggle the timer interrupt (CCOMPARE0) in the INTENABLE register so
  * that only the preemption timer is affected, leaving other interrupts
  * active.  Matches the ARM arch_preempt_disable/enable semantics.
+ *
+ * xtensa_timer_ready is set by xtensa_timer_init().  Before that,
+ * arch_preempt_enable() is a no-op to avoid enabling a stale CCOMPARE0
+ * interrupt that has no registered handler yet.
  * ────────────────────────────────────────────────────────────────────────── */
+
+extern volatile uint32_t xtensa_timer_ready;
 
 static inline void arch_preempt_disable(void)
 {
@@ -72,6 +78,7 @@ static inline void arch_preempt_disable(void)
 
 static inline void arch_preempt_enable(void)
 {
+    if (!xtensa_timer_ready) return;  /* timer not initialized yet */
     uint32_t intenable;
     __asm__ volatile ("rsr %0, intenable" : "=a"(intenable));
     intenable |= XTENSA_TIMER0_INTMASK;

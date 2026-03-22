@@ -19,6 +19,11 @@
  * Same pattern as riscv_switch_pending / m68k_switch_pending. */
 volatile uint32_t xtensa_switch_pending = 0;
 
+/* Timer ready flag — set by xtensa_timer_init().
+ * arch_preempt_enable() checks this to avoid enabling the timer interrupt
+ * before the ISR is registered. */
+volatile uint32_t xtensa_timer_ready = 0;
+
 /* Tick counter — incremented by timer ISR. */
 volatile uint32_t xtensa_tick_count = 0;
 
@@ -57,6 +62,8 @@ void xtensa_timer_init(void)
      * interrupts from firing. */
     __asm__ volatile("wsr %0, intenable" :: "a"(XTENSA_TIMER0_INTMASK));
     __asm__ volatile("rsync");
+
+    xtensa_timer_ready = 1;
 }
 
 /* ── Context switch helper ───────────────────────────────────────────────── */

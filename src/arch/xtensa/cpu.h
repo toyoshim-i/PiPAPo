@@ -4,7 +4,8 @@
  * Defines special register (SR) numbers, bit fields, and access macros
  * for the Xtensa LX7 cores in the ESP32-S3.
  *
- * All code assumes Call0 ABI (-mabi=call0): no register windowing.
+ * Windowed ABI: ESP-IDF requires windowed register ABI.
+ * Context switch uses solicited-frame pattern with window spill.
  */
 
 #ifndef PPAP_ARCH_XTENSA_CPU_H
@@ -47,8 +48,9 @@
  * Bit  [4]    EXCM      Exception mode (1=in exception handler)
  * Bit  [5]    UM        User mode (1=user, 0=kernel)
  * Bits [7:6]  RING      Ring level (Call0 ABI: always 0)
- * Bit  [16]   CALLINC   Call increment (windowed ABI only, unused in Call0)
- * Bits [19:18] OWB      Old window base (windowed ABI only)
+ * Bits [17:16] CALLINC   Call increment (windowed ABI)
+ * Bit  [18]    WOE       Window Overflow Enable
+ * Bits [11:8]  OWB       Old Window Base (windowed ABI)
  */
 
 #define PS_INTLEVEL_MASK    0x0Fu
@@ -57,6 +59,14 @@
 #define PS_UM               (1u << 5)
 #define PS_RING_MASK        (3u << 6)
 #define PS_RING_SHIFT       6
+#define PS_OWB_SHIFT        8
+#define PS_OWB_MASK         (0xFu << PS_OWB_SHIFT)
+#define PS_CALLINC_SHIFT    16
+#define PS_CALLINC_MASK     (3u << PS_CALLINC_SHIFT)
+#define PS_WOE              (1u << 18)
+
+/* EXCM level for ESP32-S3 (max level at which EXCM exceptions can occur) */
+#define XCHAL_EXCM_LEVEL    3u
 
 /* ── EXCCAUSE — Exception Cause Register (SR 232) ───────────────────────── */
 

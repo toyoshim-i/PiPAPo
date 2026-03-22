@@ -18,9 +18,16 @@
 #include "xtensa_cc.h"
 #include "klog.h"
 
+/* ESP-IDF: IRAM_ATTR for ISR placed in IRAM */
+#include "esp_attr.h"
+
 /* ESP32-S3 SYSTIMER registers — used to disable FreeRTOS tick alarms
  * before PPAP takes over.  Base: 0x6001F000 (TRM §11.5). */
 #define SYSTIMER_BASE           0x6001F000u
+#define SYSTIMER_CONF_REG       (*(volatile uint32_t *)(SYSTIMER_BASE + 0x000u))
+#define SYSTIMER_TARGET0_CONF   (*(volatile uint32_t *)(SYSTIMER_BASE + 0x030u))
+#define SYSTIMER_TARGET1_CONF   (*(volatile uint32_t *)(SYSTIMER_BASE + 0x034u))
+#define SYSTIMER_TARGET2_CONF   (*(volatile uint32_t *)(SYSTIMER_BASE + 0x038u))
 #define SYSTIMER_INT_ENA_REG    (*(volatile uint32_t *)(SYSTIMER_BASE + 0x068u))
 #define SYSTIMER_INT_CLR_REG    (*(volatile uint32_t *)(SYSTIMER_BASE + 0x06Cu))
 
@@ -46,22 +53,44 @@ void app_main(void)
 
 /* ── Target interface implementation ────────────────────────────────────── */
 
+/* No-op ISR for stray FreeRTOS interrupts (SYSTIMER on CPU interrupt 12).
+ * Must be in IRAM since it runs from interrupt context. */
+static void IRAM_ATTR systimer_noop_isr(void *arg) { (void)arg; }
+
 void target_early_init(void)
 {
+    /* FIRST: patch the Xtensa interrupt dispatch table directly to replace
+     * the default "xt_unhandled_interrupt" handler for CPU interrupt 12
+     * (FreeRTOS's SYSTIMER tick) with our no-op.
+     *
+     * _xt_interrupt_table is an array of {handler, arg} pairs (8 bytes each).
+     * The level-1 ISR dispatcher reads this table and calls the handler.
+     * By writing directly, we bypass any API issues. */
+    extern void *_xt_interrupt_table[];
+    _xt_interrupt_table[12 * 2 + 0] = (void *)systimer_noop_isr;
+    _xt_interrupt_table[12 * 2 + 1] = (void *)0;
+
     /* ESP-IDF has already initialized:
      *   - System clock (240 MHz PLL)
      *   - UART0 console (115200 8N1 via USB CDC or UART pins)
      *   - Flash cache (XIP)
      *   - GPIO subsystem
      *
-     * Disable ESP-IDF's SYSTIMER alarms and silence all pending
-     * interrupts.  FreeRTOS sets up timer tick + other interrupt sources;
-     * without clearing them, they fire as "Unhandled interrupt N". */
-    SYSTIMER_INT_ENA_REG = 0;          /* disable all 3 alarm interrupts */
-    SYSTIMER_INT_CLR_REG = 0x7u;       /* clear any pending alarm flags  */
+     * Aggressively shut down FreeRTOS's SYSTIMER tick.
+     * FreeRTOS configures SYSTIMER target comparators and maps them to
+     * CPU interrupt 12 via the interrupt matrix.  The interrupt is
+     * level-triggered — it keeps firing until the hardware source is
+     * fully stopped.  FreeRTOS also saves/restores INTENABLE during
+     * context switches, so simply writing INTENABLE=0 is insufficient. */
+    SYSTIMER_TARGET0_CONF &= ~(1u << 30);  /* stop TARGET0 period mode  */
+    SYSTIMER_TARGET1_CONF &= ~(1u << 30);  /* stop TARGET1 period mode  */
+    SYSTIMER_TARGET2_CONF &= ~(1u << 30);  /* stop TARGET2 period mode  */
+    SYSTIMER_CONF_REG &= ~((1u << 29) | (1u << 30)); /* stop counters   */
+    SYSTIMER_INT_ENA_REG = 0;              /* disable alarm interrupts   */
+    SYSTIMER_INT_CLR_REG = 0x7u;           /* clear pending alarm flags  */
 
-    /* Disable all interrupts at the Xtensa core level.
-     * INTENABLE controls which interrupts the CPU will take. */
+    /* Disable all CPU interrupts and clear pending bits */
+    __asm__ volatile("wsr %0, intclear; rsync" :: "r"(0xFFFFFFFFu));
     __asm__ volatile("wsr %0, intenable; rsync" :: "r"(0));
 
     klog("PiPAPo booting... [xtensa_cc]\n");
@@ -70,9 +99,10 @@ void target_early_init(void)
 
 void target_late_init(void)
 {
-    /* CC-1: no SD, no display, no keyboard, no timer yet.
-     * CC-2 will add timer init here.
+    /* CC-2: start CCOMPARE0 timer for scheduler tick.
      * CC-4/CC-5/CC-6 will add display, keyboard, SD. */
+    extern void xtensa_timer_init(void);
+    xtensa_timer_init();
 }
 
 void target_post_mount(void)
