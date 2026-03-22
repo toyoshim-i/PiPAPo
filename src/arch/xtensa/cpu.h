@@ -66,7 +66,9 @@
 #define PS_WOE              (1u << 18)
 
 /* EXCM level for ESP32-S3 (max level at which EXCM exceptions can occur) */
+#ifndef XCHAL_EXCM_LEVEL
 #define XCHAL_EXCM_LEVEL    3u
+#endif
 
 /* ── EXCCAUSE — Exception Cause Register (SR 232) ───────────────────────── */
 

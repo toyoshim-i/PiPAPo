@@ -99,10 +99,13 @@ void target_early_init(void)
 
 void target_late_init(void)
 {
-    /* CC-2: start CCOMPARE0 timer for scheduler tick.
-     * CC-4/CC-5/CC-6 will add display, keyboard, SD. */
+    /* CC-2: start CCOMPARE0 timer for scheduler tick. */
     extern void xtensa_timer_init(void);
     xtensa_timer_init();
+
+    /* CC-3: install syscall + exception handlers. */
+    extern void xtensa_trap_init(void);
+    xtensa_trap_init();
 }
 
 void target_post_mount(void)

@@ -142,6 +142,17 @@ void kmain(void) {
   /* Idle thread — wake on every interrupt, flush LCD if needed, sleep. */
   for (;;) {
     sched_display_poll();
+#if defined(__xtensa__)
+    /* Semi-preemptive: timer ISR sets the flag, idle loop performs switch.
+     * True preemptive switching (in interrupt return path) deferred to CC-4. */
+    {
+      extern volatile uint32_t xtensa_switch_pending;
+      if (xtensa_switch_pending) {
+        xtensa_switch_pending = 0;
+        sched_yield();
+      }
+    }
+#endif
     arch_wfi();
   }
 }
