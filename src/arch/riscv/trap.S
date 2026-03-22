@@ -171,7 +171,39 @@ _trap_entry:
     call    syscall_dispatch
 
     # syscall_dispatch writes return value into frame[0] = saved a0.
-    # Check riscv_switch_pending (syscalls like exit/yield may request it)
+
+    # ── Check exec_pending (execve replaces the process image) ──────
+    # After execve, the trap frame on the stack is stale — proc_setup_stack
+    # already built a fresh frame at p->sp.  Reload SP from current->sp.
+    la      t0, exec_pending
+    lw      t1, 0(t0)
+    beqz    t1, .Lno_exec
+    sw      zero, 0(t0)
+    la      t0, current_core
+    lw      t0, 0(t0)              # t0 = current (pcb_t *)
+    lw      sp, 48(t0)             # sp = current->sp (PCB_SP_OFFSET=48)
+    j       .Ltrap_return
+.Lno_exec:
+
+    # ── Check svc_restart (blocking syscall needs re-execution) ─────
+    # If svc_restart is set, rewind mepc by 4 (back to ecall) and
+    # restore the original a0 from svc_saved_a0, so the syscall
+    # re-executes with original arguments when the process resumes.
+    la      t0, svc_restart
+    lw      t1, 0(t0)
+    beqz    t1, .Lno_restart
+    sw      zero, 0(t0)
+    # Rewind mepc by 4 (ecall is 4 bytes)
+    lw      t1, TF_MEPC(sp)
+    addi    t1, t1, -4
+    sw      t1, TF_MEPC(sp)
+    # Restore original a0
+    la      t0, svc_saved_a0
+    lw      t1, 0(t0)
+    sw      t1, 32(sp)             # frame[0] = saved a0 at sp+32
+.Lno_restart:
+
+    # ── Check riscv_switch_pending ──────────────────────────────────
     la      t0, riscv_switch_pending
     lw      t1, 0(t0)
     beqz    t1, .Ltrap_return

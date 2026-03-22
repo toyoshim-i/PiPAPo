@@ -114,12 +114,21 @@ void target_early_init(void)
 /* Timer init — defined in riscv_common.c */
 extern void riscv_timer_init(void);
 
+/* UART RX availability check — declared in uart_rp2350.c */
+extern int uart_rx_avail(void);
+
 void target_late_init(void)
 {
     /* No SD card to initialize */
     while (uart_getc() >= 0) ;   /* drain boot noise from RX ring */
     riscv_timer_init();            /* start 10ms tick timer         */
-    /* PMP init deferred to Phase RV-3 */
+
+    /* Register UART RX polling for the serial TTY.
+     * RISC-V UART is polled (no RX interrupt), so the idle loop's
+     * sched_display_poll() checks uart_rx_avail() every 20ms and
+     * wakes blocked tty readers when data arrives. */
+    extern void sched_set_input_poll(int (*fn)(void), int tty_idx);
+    sched_set_input_poll(uart_rx_avail, 0 /* TTY_SERIAL */);
 }
 
 void target_post_mount(void)
@@ -138,7 +147,7 @@ const char *target_init_path(void)
     return "/bin/runtests";
 #endif
 #else
-    return "/bin/hello"; /* TODO: restore /sbin/init after vfork is stable */
+    return "/sbin/init";
 #endif
 }
 
