@@ -185,23 +185,46 @@ else
   info "Building RISC-V Linux toolchain from source (this takes ~30-60 min)..."
   info "  Target: riscv32-unknown-linux-gnu, arch=rv32imac, abi=ilp32"
 
-  RISCV_TC_BUILD="${PPAP_ROOT}/tools/riscv-gnu-toolchain-build"
+  RISCV_TC_BUILD="${PPAP_ROOT}/build/host/riscv-gnu-toolchain"
+  mkdir -p "$(dirname "${RISCV_TC_BUILD}")"
   if [[ ! -d "${RISCV_TC_BUILD}/.git" ]]; then
-    info "Cloning riscv-gnu-toolchain..."
-    git clone --depth 1 "${RISCV_GNU_TC_REPO}" "${RISCV_TC_BUILD}"
+    info "Cloning riscv-gnu-toolchain (no submodules)..."
+    git clone --depth 1 --no-recurse-submodules \
+      "${RISCV_GNU_TC_REPO}" "${RISCV_TC_BUILD}"
   fi
+
+  # Only init the submodules required for 'make linux' (skip llvm, spike, etc.)
+  REQUIRED_SUBMODULES="binutils gcc gdb glibc linux-headers"
+  info "Initializing required submodules: ${REQUIRED_SUBMODULES}"
+  (
+    cd "${RISCV_TC_BUILD}"
+    for mod in ${REQUIRED_SUBMODULES}; do
+      if [[ ! -d "${mod}/.git" ]]; then
+        for attempt in 1 2 3; do
+          info "  ${mod} (attempt ${attempt}/3)..."
+          if git submodule update --init --depth 1 "${mod}"; then
+            break
+          fi
+          if [[ ${attempt} -lt 3 ]]; then
+            warn "  ${mod} failed, retrying in 10s..."
+            sleep 10
+          else
+            warn "  ${mod} failed after 3 attempts"
+          fi
+        done
+      fi
+    done
+  )
 
   (
     cd "${RISCV_TC_BUILD}"
     ./configure --prefix="${RISCV_LINUX_DIR}" \
                 --with-arch=rv32imac --with-abi=ilp32
     make linux -j"$(nproc)" 2>&1 | tail -5
-  ) || true  # TODO: remove || true once sourceware.org 502 flakiness is resolved
+  )
 
   if [[ -x "${RISCV_LINUX_DIR}/bin/riscv32-unknown-linux-gnu-gcc" ]]; then
     success "RISC-V Linux toolchain built and installed to ${RISCV_LINUX_DIR}"
-    # Optionally clean up build dir to save ~2 GB
-    # rm -rf "${RISCV_TC_BUILD}"
   else
     warn "RISC-V Linux toolchain build failed"
     warn "Check ${RISCV_TC_BUILD} for build logs"
