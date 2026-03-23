@@ -25,9 +25,14 @@ SECTIONS
 
     /* ── Read-only executable segment ──────────────────────────── */
     .text : {
-        *(.text.crt0)       /* crt0.S _start entry — must be first */
-        *(.literal*)        /* Xtensa L32R constant pools */
-        *(.text*)
+        /* L32R literal pools MUST precede the code that references them.
+         * L32R uses a negative PC-relative offset (up to -256KB), so
+         * literals placed after code are unreachable → linker generates
+         * bad offsets → user code loads garbage addresses. */
+        *(.literal.text.crt0)   /* crt0.S literals */
+        *(.text.crt0)           /* crt0.S _start entry */
+        *(.literal*)            /* all other literal pools */
+        *(.text*)               /* all other code */
     } :text
 
     .rodata : {
