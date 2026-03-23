@@ -69,7 +69,9 @@ docker_image_exists() {
 
 docker_run() {
     local image="$1"; shift
-    docker run --rm -it \
+    local tty_flag=""
+    if [[ -t 0 ]]; then tty_flag="-it"; fi
+    docker run --rm $tty_flag \
         -u "$(id -u):$(id -g)" \
         -v "$PROJECT_DIR:/ppap" \
         -w /ppap \
@@ -162,37 +164,9 @@ if [[ $DO_BUILD -eq 1 ]]; then
     if [[ -n "$TEMP_OVERLAY" ]]; then rm -rf "$TEMP_OVERLAY"; fi
 fi
 
-# ── IBM PC target (ibmpc) — runs flat binary in QEMU i386 real mode ────────
+# ── IBM PC target (ibmpc) — override ELF to floppy image ───────────────────
 if [[ "$TARGET" == "ibmpc" ]]; then
-    IMG="$PROJECT_DIR/build/ibmpc/ppap_ibmpc.img"
-    if [[ ! -f "$IMG" ]]; then
-        echo "[run] Error: $IMG not found."
-        echo "      Run: ./scripts/build.sh ibmpc"
-        exit 1
-    fi
-    QEMU_ARGS=(
-        -machine pc
-        -cpu 486
-        -m 1M
-        -nographic
-        -serial mon:stdio
-        -fda "$IMG"
-    )
-    if [[ $DO_GDB -eq 1 ]]; then
-        QEMU_ARGS+=(-s -S)
-    fi
-    echo "[run] Launching QEMU i386 (real mode)..."
-    DOCKER_IMAGE="$(target_docker_image ibmpc)"
-    if ! command -v qemu-system-i386 &>/dev/null && \
-       [[ -n "$DOCKER_IMAGE" ]] && docker_image_exists "$DOCKER_IMAGE"; then
-        exec docker run --rm -it \
-            -u "$(id -u):$(id -g)" \
-            -v "$PROJECT_DIR:/ppap" -w /ppap \
-            "$DOCKER_IMAGE" \
-            qemu-system-i386 "${QEMU_ARGS[@]/#"$PROJECT_DIR"//ppap}"
-    else
-        exec qemu-system-i386 "${QEMU_ARGS[@]}"
-    fi
+    ELF="$PROJECT_DIR/build/ibmpc/ppap_ibmpc.img"
 fi
 
 # ── ESP-IDF target (xtensa_cc) — uses idf.py, not ELF directly ─────────────
@@ -358,6 +332,11 @@ if [[ "$TARGET" == "qemu_m68k" ]]; then
 elif [[ "$TARGET" == "qemu_rv32" ]]; then
     QEMU_BIN="qemu-system-riscv32"
     QEMU_ARGS=(-M virt -bios none -serial mon:stdio)
+elif [[ "$TARGET" == "ibmpc" ]]; then
+    QEMU_BIN="qemu-system-i386"
+    QEMU_ARGS=(-machine pc -cpu 486 -m 1M -display none -serial mon:stdio
+               -drive "file=$ELF,format=raw,if=floppy")
+    ELF=""  # already passed via -drive, clear so run_qemu doesn't add -kernel
 else
     QEMU_BIN="qemu-system-arm"
     QEMU_ARGS=(-M mps2-an500 -serial mon:stdio)
@@ -367,33 +346,35 @@ else
     fi
 fi
 
-# Check if QEMU is available on host or via Docker
-USE_DOCKER_QEMU=0
-if ! command -v "$QEMU_BIN" &>/dev/null && [[ ! -x "$QEMU_BIN" ]]; then
-    DOCKER_IMAGE="$(target_docker_image "$TARGET")"
-    if [[ -n "$DOCKER_IMAGE" ]] && docker_image_exists "$DOCKER_IMAGE"; then
-        echo "[run] $QEMU_BIN not found on host — using Docker image $DOCKER_IMAGE"
-        USE_DOCKER_QEMU=1
-    else
-        echo "[run] Error: $QEMU_BIN not found."
-        if [[ "$TARGET" == "qemu_m68k" ]]; then
-            echo "      Install with: sudo apt install qemu-system-misc"
-            echo "      Or build from source: ./third_party/build_qemu_system_m68k.sh"
-        else
-            echo "      Install with: sudo apt install qemu-system-arm"
-        fi
-        echo "      Or build Docker image: ./scripts/setup_docker.sh $TARGET"
-        exit 1
-    fi
+# Resolve Docker image for QEMU execution
+DOCKER_IMAGE="$(target_docker_image "$TARGET")"
+if [[ -n "$DOCKER_IMAGE" ]] && docker_image_exists "$DOCKER_IMAGE"; then
+    echo "[run] Using Docker image $DOCKER_IMAGE"
+elif command -v "$QEMU_BIN" &>/dev/null || [[ -x "$QEMU_BIN" ]]; then
+    DOCKER_IMAGE=""  # fall back to host (no Docker image available)
+else
+    echo "[run] Error: $QEMU_BIN not found and no Docker image available."
+    echo "      Run: ./scripts/setup_docker.sh $TARGET"
+    exit 1
 fi
 
-# Helper: run QEMU either on host or in Docker
+# Helper: run QEMU — always prefer Docker when image exists
 run_qemu() {
-    if [[ $USE_DOCKER_QEMU -eq 1 ]]; then
-        local d_elf="/ppap/${ELF#"$PROJECT_DIR/"}"
-        docker_run "$DOCKER_IMAGE" "$QEMU_BIN" "$@" -kernel "$d_elf"
+    local kernel_args=()
+    if [[ -n "$ELF" ]]; then
+        kernel_args=(-kernel "$ELF")
+    fi
+    if [[ -n "$DOCKER_IMAGE" ]]; then
+        if [[ -n "$ELF" ]]; then
+            kernel_args=(-kernel "/ppap/${ELF#"$PROJECT_DIR/"}")
+        fi
+        local remapped=()
+        for a in "$@"; do
+            remapped+=("${a//"$PROJECT_DIR"/"/ppap"}")
+        done
+        docker_run "$DOCKER_IMAGE" "$QEMU_BIN" "${remapped[@]}" "${kernel_args[@]}"
     else
-        "$QEMU_BIN" "$@" -kernel "$ELF"
+        "$QEMU_BIN" "$@" "${kernel_args[@]}"
     fi
 }
 
@@ -448,7 +429,7 @@ if [[ $DO_GDB -eq 1 ]]; then
 fi
 
 # ── Run interactively ──────────────────────────────────────────────────────
-echo "[run] Running $ELF ..."
+echo "[run] Running ${ELF:-$TARGET} ..."
 run_qemu \
     "${QEMU_ARGS[@]}" \
     -nographic \
