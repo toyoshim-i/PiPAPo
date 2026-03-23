@@ -11,3 +11,7 @@ CONFIG_ESP_TASK_WDT_EN=n
 
 # Flash size: CardComputer has 8 MB flash
 CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+
+# Disable memory protection so IRAM can be used as executable heap.
+# PPAP allocates user-process code in IRAM via heap_caps_malloc(MALLOC_CAP_EXEC).
+CONFIG_ESP_SYSTEM_MEMPROT_FEATURE=n

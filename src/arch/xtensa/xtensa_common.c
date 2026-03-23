@@ -45,9 +45,6 @@ static void xtensa_timer_isr(void *arg)
     __asm__ volatile("wsr %0, ccompare0" :: "a"(cmp + XTENSA_TICK_INTERVAL));
     __asm__ volatile("esync");
     xtensa_tick_count++;
-    if (xtensa_tick_count <= 3)
-        klogf("[timer] tick %u pending=%u\n", xtensa_tick_count,
-              xtensa_switch_pending);
     sched_timer_tick(0); /* from_user=0 (no user/kernel split yet) */
 }
 
@@ -84,10 +81,6 @@ uint32_t xtensa_do_switch(uint32_t current_sp)
     if (current)
         current->sp = current_sp;
     pcb_t *next = sched_next();
-    klogf("[switch] pid %u→%u sp=%x exit=%x entry=%x\n",
-          current ? current->pid : 99, next->pid,
-          next->sp, *(uint32_t *)(uintptr_t)next->sp,
-          *(uint32_t *)(uintptr_t)(next->sp + 4));
     current_core[core_id()] = next;
     return next->sp;
 }
@@ -198,7 +191,11 @@ uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void))
     user_sp = (uint32_t)(uintptr_t)sp;          /* use aligned value */
 
     *--sp = user_sp;                            /* [SP+12] user SP */
-    *--sp = (1u << 18);                         /* [SP+8]  PS: WOE=1 */
+    /* PS for user process: WOE=0 (call0 ABI, no window operations),
+     * UM=1 (user mode — routes exceptions through UserExceptionVector
+     *       where our SYSCALL/fault handlers are registered),
+     * INTLEVEL=0 (interrupts enabled for preemption). */
+    *--sp = (1u << 5);                          /* [SP+8]  PS: UM=1 */
     *--sp = (uint32_t)(uintptr_t)entry;         /* [SP+4]  entry addr */
     *--sp = 1u;                                 /* [SP+0]  exit = 1 (new proc) */
     return sp;

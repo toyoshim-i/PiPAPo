@@ -13,7 +13,6 @@
 
 #include "arch/arch.h"
 #include "kernel/errno.h"
-#include "kernel/klog.h"
 #include "kernel/mm/page.h"
 #include "kernel/signal/signal.h"
 #include "kernel/vfs/vfs.h"
@@ -91,10 +90,6 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
 
   for (int i = 0; loader_registry[i] != NULL; i++) {
     int det = loader_registry[i]->detect(file_base, file_size, path);
-#if defined(__xtensa__)
-    klogf("[exec] loader[%u]='%s' detect=%u\n", (uint32_t)i,
-          loader_registry[i]->name, (uint32_t)det);
-#endif
     if (det) {
       int arch = loader_registry[i]->required_arch_id;
       const cpu_ops_t *cpu_ops;
@@ -110,9 +105,6 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
 
       rc = loader_registry[i]->load(p, file_base, file_size, cpu_ops, NULL,
                                     argv);
-#if defined(__xtensa__)
-      klogf("[exec] load rc=%u\n", (uint32_t)(-(int)rc));
-#endif
       if (rc == 0) matched_loader = loader_registry[i];
       break;
     }

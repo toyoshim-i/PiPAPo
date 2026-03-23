@@ -120,13 +120,6 @@ static int elf_detect(const uint8_t *file_buf, uint32_t file_size,
 static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
                     const cpu_ops_t *cpu_ops, void *cpu_state,
                     const char *const *argv) {
-#if defined(__xtensa__)
-  {
-    extern void klogf(const char *, ...);
-    klogf("[elf] elf_load: buf=%x size=%u\n",
-          (uint32_t)(uintptr_t)file_buf, file_size);
-  }
-#endif
   /* Create CPU state if not provided by coordinator */
   int own_state = 0;
   if (!cpu_state) {
@@ -184,8 +177,8 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     uint32_t image_size = (image_end + 15u) & ~15u;
 
     extern void *heap_caps_malloc(unsigned int size, uint32_t caps);
-    /* MALLOC_CAP_EXEC = (1<<4) on ESP32-S3 */
-    sram_page = (uint8_t *)heap_caps_malloc(image_size, (1u << 4));
+    /* MALLOC_CAP_EXEC = (1<<0) */
+    sram_page = (uint8_t *)heap_caps_malloc(image_size, (1u << 0));
     if (!sram_page) return -(int)ENOMEM;
 
     /* Allocate kernel stack page for this process */
@@ -197,29 +190,43 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     }
     p->stack_page = stack;
 
-    memset(sram_page, 0, image_size);
+    /* IRAM only supports 32-bit aligned access — byte-level memcpy/memset
+     * from ROM will cause LoadStoreError.  Use word-at-a-time operations. */
+    {
+      uint32_t *dst32 = (uint32_t *)(uintptr_t)sram_page;
+      for (uint32_t w = 0; w < image_size / 4; w++)
+        dst32[w] = 0;
+    }
 
-    if (text_seg->p_filesz > 0)
-      memcpy(sram_page + text_seg->p_vaddr,
-             file_buf + text_seg->p_offset, text_seg->p_filesz);
+    if (text_seg->p_filesz > 0) {
+      const uint8_t *src = file_buf + text_seg->p_offset;
+      volatile uint32_t *dst = (volatile uint32_t *)(uintptr_t)(sram_page + text_seg->p_vaddr);
+      uint32_t words = (text_seg->p_filesz + 3) / 4;
+      for (uint32_t w = 0; w < words; w++) {
+        /* Read source byte-by-byte (DROM supports byte access) */
+        uint32_t val = src[w * 4];
+        if (w * 4 + 1 < text_seg->p_filesz) val |= (uint32_t)src[w * 4 + 1] << 8;
+        if (w * 4 + 2 < text_seg->p_filesz) val |= (uint32_t)src[w * 4 + 2] << 16;
+        if (w * 4 + 3 < text_seg->p_filesz) val |= (uint32_t)src[w * 4 + 3] << 24;
+        dst[w] = val;
+      }
+    }
 
-    if (data_seg && data_seg->p_filesz > 0)
-      memcpy(sram_page + data_seg->p_vaddr,
-             file_buf + data_seg->p_offset, data_seg->p_filesz);
+    if (data_seg && data_seg->p_filesz > 0) {
+      const uint8_t *src = file_buf + data_seg->p_offset;
+      volatile uint32_t *dst = (volatile uint32_t *)(uintptr_t)(sram_page + data_seg->p_vaddr);
+      uint32_t words = (data_seg->p_filesz + 3) / 4;
+      for (uint32_t w = 0; w < words; w++) {
+        uint32_t val = src[w * 4];
+        if (w * 4 + 1 < data_seg->p_filesz) val |= (uint32_t)src[w * 4 + 1] << 8;
+        if (w * 4 + 2 < data_seg->p_filesz) val |= (uint32_t)src[w * 4 + 2] << 16;
+        if (w * 4 + 3 < data_seg->p_filesz) val |= (uint32_t)src[w * 4 + 3] << 24;
+        dst[w] = val;
+      }
+    }
 
     /* IRAM address is directly usable as entry point */
     entry = (uint32_t)(uintptr_t)(sram_page + e_entry);
-
-    {
-      extern void klogf(const char *, ...);
-      klogf("[elf] IRAM alloc=%x entry=%x size=%x\n",
-            (uint32_t)(uintptr_t)sram_page, entry, image_size);
-      klogf("[elf] code: %x %x %x %x\n",
-            *(uint32_t *)(uintptr_t)(sram_page + e_entry),
-            *(uint32_t *)(uintptr_t)(sram_page + e_entry + 4),
-            *(uint32_t *)(uintptr_t)(sram_page + e_entry + 8),
-            *(uint32_t *)(uintptr_t)(sram_page + e_entry + 12));
-    }
 
     /* Track pages for cleanup (store IRAM pointer, not page pool) */
     p->user_pages[0] = sram_page;

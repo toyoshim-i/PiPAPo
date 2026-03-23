@@ -115,24 +115,9 @@ void kmain(void) {
       init->sid = init->pid;
       fd_stdio_init(init);
 
-#if defined(__xtensa__)
-      /* Debug: test VFS lookup before exec */
-      {
-        vnode_t *dbg_vn = NULL;
-        int dbg_err = vfs_lookup("/sbin", &dbg_vn);
-        klogf("DBG: lookup /sbin err=%u type=%u\n", (uint32_t)dbg_err,
-              dbg_vn ? dbg_vn->type : 99);
-        if (dbg_vn) vnode_put(dbg_vn);
-        dbg_err = vfs_lookup("/sbin/init", &dbg_vn);
-        klogf("DBG: lookup /sbin/init err=%u size=%u\n", (uint32_t)dbg_err,
-              dbg_vn ? dbg_vn->size : 0);
-        if (dbg_vn) vnode_put(dbg_vn);
-      }
-#endif
       int exec_err = do_execve(init, init_path, NULL);
       if (exec_err < 0) {
-        klogf("INIT: %s failed (err=%u), trying /bin/sh\n", init_path,
-              (uint32_t)(-(int)exec_err));
+        klogf("INIT: %s failed, trying /bin/sh\n", init_path);
         exec_err = do_execve(init, "/bin/sh", NULL);
       }
       if (exec_err == 0) {
@@ -164,9 +149,7 @@ void kmain(void) {
       extern volatile uint32_t xtensa_switch_pending;
       if (xtensa_switch_pending) {
         xtensa_switch_pending = 0;
-        klog("[idle] switching to PID 1\n");
         sched_yield();
-        klog("[idle] returned from yield\n");
       }
     }
 #endif
