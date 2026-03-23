@@ -94,8 +94,12 @@ set(USER_TESTS
     test_id test_fs test_rw test_time test_iov test_stat test_tmpfs
     test_float test_signal_float test_x68k test_h68k_dos test_cpm test_sos test_zexdoc test_zexall test_trace test_pdb
     test_pdb_arm_disas trace_peek_target
+    test_musl
     runtests runtests_ext
 )
+
+# Musl-linked test programs (sources in tests/user/, linked against musl libc)
+set(USER_MUSL_TESTS test_musl_child)
 
 # --- Busybox applet lists ---
 
@@ -357,6 +361,55 @@ function(ppap_user_program name source)
     )
 endfunction()
 
+# ppap_musl_test_program(name source)
+#
+# Creates custom commands to compile and link a user-space ELF against musl
+# libc (using the specs file and busybox linker script).  Used for test
+# binaries that need to exercise musl code paths (e.g. double-free on exit).
+function(ppap_musl_test_program name source)
+    set(_elf ${PPAP_SHARED_BUILD}/${name}.elf)
+    set(_obj ${PPAP_SHARED_BUILD}/${name}.o)
+
+    # Compile with musl headers (same flags as busybox/rogue apps)
+    set(_musl_cflags
+        ${PPAP_TARGET_FLAGS} -Os -nostdinc
+        -isystem ${PPAP_MUSL_SYSROOT}/include
+        -isystem ${PPAP_GCC_INCLUDE}
+        ${PPAP_PIC_FLAGS}
+        -ffunction-sections -fdata-sections)
+    if(_PIE_FLAG)
+        list(APPEND _musl_cflags ${_PIE_FLAG})
+    endif()
+    add_custom_command(
+        OUTPUT ${_obj}
+        COMMAND ${PPAP_CC} ${_musl_cflags}
+                -c -o ${_obj} ${source}
+        DEPENDS ${source} ${PPAP_MUSL_LIBC}
+        COMMENT "Compiling ${name}.o (musl, ${PPAP_ARCH})"
+    )
+
+    # Link with musl's crt + libc via specs file
+    set(_musl_ldflags
+        -specs=${PPAP_SPECS_FILE}
+        -T ${PPAP_BUSYBOX_LD}
+        -Wl,--gc-sections -Wl,--build-id=none
+        $<$<STREQUAL:${PPAP_ARCH},riscv>:-Wl$<COMMA>--no-relax>)
+    if(_PIE_FLAG)
+        list(APPEND _musl_ldflags ${_PIE_FLAG})
+    endif()
+    if(PPAP_ARCH STREQUAL "riscv" AND NOT PPAP_RISCV_PIE)
+        list(APPEND _musl_ldflags -Wl,--emit-relocs)
+    endif()
+    add_custom_command(
+        OUTPUT ${_elf}
+        COMMAND ${PPAP_CC} ${PPAP_TARGET_FLAGS} ${_musl_ldflags}
+                -o ${_elf} ${_obj}
+        COMMAND ${PPAP_STRIP} ${_elf}
+        DEPENDS ${_obj} ${PPAP_SPECS_FILE} ${PPAP_BUSYBOX_LD} ${PPAP_MUSL_LIBC}
+        COMMENT "Linking ${name}.elf (musl, ${PPAP_ARCH})"
+    )
+endfunction()
+
 # ppap_r68k_program(name source)
 #
 # Creates custom commands to compile, link, and objcopy a Human68k R-format
@@ -461,6 +514,14 @@ function(_ppap_build_user_programs)
         foreach(tst ${USER_TESTS})
             ppap_user_program(${tst} ${_tests_dir}/${tst}.c
                 EXTRA_CFLAGS -I${_tests_dir})
+            list(APPEND _all_elfs ${PPAP_SHARED_BUILD}/${tst}.elf)
+        endforeach()
+    endif()
+
+    # --- Musl-linked test programs ---
+    if(PPAP_TESTS)
+        foreach(tst ${USER_MUSL_TESTS})
+            ppap_musl_test_program(${tst} ${_tests_dir}/${tst}.c)
             list(APPEND _all_elfs ${PPAP_SHARED_BUILD}/${tst}.elf)
         endforeach()
     endif()

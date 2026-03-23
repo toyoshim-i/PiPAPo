@@ -251,6 +251,8 @@ overlay directory baked into romfs at build time (see
 | `test_pdb.c` | `pdb` scripted smoke and command coverage (`TEST_SLOW` on m68k; use `--slow`) |
 | `test_pdb_arm_disas.c` | ARM-only `pdb disas` smoke (built in `/bin/`, not in default `runtests`) |
 | `test_h68k_dos.c` | Human68k DOS bridge integration via R-format test binaries |
+| `test_musl.c` | musl libc integration (harness); runs musl-linked child via vfork+execve |
+| `test_musl_child.c` | musl-linked child binary exercising libc exit, stdio, malloc, strings |
 
 ### Build system
 
@@ -283,9 +285,34 @@ by the `PPAP_TESTS` CMake option. The build system:
    tests that are known to be unreliable and should be skipped in CI.
 4. Build with `--test` and run
 
+### Musl-linked tests
+
+Some bugs only manifest with musl-linked binaries (e.g. double-free on
+process exit caused by musl's `_Exit()` calling `SYS_exit_group` then
+`SYS_exit` in a loop).  To cover these, the test suite includes a
+**split harness + child** pattern:
+
+- **`test_musl.c`** — bare-metal harness (uses `utest.h`, linked with
+  `crt0.o + syscall.o` like all other tests).  It `vfork+execve`s
+  `test_musl_child` with different `argv[1]` values and checks exit codes.
+- **`test_musl_child.c`** — linked against musl libc (via
+  `ppap_musl_test_program()` in `cmake/user.cmake`).  Uses standard
+  `<stdio.h>`, `<stdlib.h>`, `<string.h>`.  Dispatches on `argv[1]`:
+  `exit`, `printf`, `malloc`, `string`.
+
+To add a new musl sub-test, add a function in `test_musl_child.c` and
+a `run_subtest()` call in `test_musl.c`.
+
+To add a new musl-linked test binary:
+1. Create `tests/user/test_foo_child.c` with `#include <stdio.h>` etc.
+2. Add `test_foo_child` to `USER_MUSL_TESTS` in `cmake/user.cmake`
+3. The build system uses `ppap_musl_test_program()` which compiles with
+   musl headers and links with musl's `crt1.o + libc.a` via the specs file
+
 ### Constraints for user-space test code
 
-- **No libc.** Only `syscall.h` wrappers are available.
+- **No libc.** Only `syscall.h` wrappers are available (except for
+  musl-linked tests in `USER_MUSL_TESTS`).
 - **No division on m68k.** GCC emits `__divsi3` calls; use
   subtraction loops (see `ut_print_int` in `utest.h`).
 - **No static pointer arrays.** PIC relocation only fixes GOT entries.
