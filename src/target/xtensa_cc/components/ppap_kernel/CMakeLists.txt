@@ -87,5 +87,10 @@ file(WRITE "${ROMFS_ASM}"
 )
 target_sources(${COMPONENT_LIB} PRIVATE "${ROMFS_ASM}")
 
+# Ensure ninja rebuilds romfs_data.S.obj when romfs.bin changes
+# (.incbin dependencies are not tracked automatically)
+set_source_files_properties("${ROMFS_ASM}" PROPERTIES
+    OBJECT_DEPENDS "${ROMFS_BIN}")
+
 # Warnings (do not add -Werror: ESP-IDF headers trigger warnings we can't fix)
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wno-unused-parameter)

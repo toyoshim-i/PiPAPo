@@ -66,7 +66,7 @@ long sys_brk(long addr) {
   /* Shrink: free excess pages */
   for (uint32_t i = new_pages; i < old_pages; i++) {
     if (current->user_pages[i]) {
-      page_free(current->user_pages[i]);
+      user_page_free(current->user_pages[i]);
       current->user_pages[i] = NULL;
     }
   }

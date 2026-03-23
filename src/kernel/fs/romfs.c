@@ -23,6 +23,7 @@
 #include <stddef.h>
 
 #include "../errno.h"
+#include "../klog.h"
 #include "../vfs/vfs.h"
 #include "config.h"
 #include "romfs_format.h"
@@ -109,10 +110,19 @@ static int romfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
   const romfs_entry_t *dir_e = get_entry(base, dir->ino);
 
   uint32_t child_off = dir_e->child_off;
+#if defined(__xtensa__)
+  klogf("romfs_lookup: dir_ino=%x child_off=%x name='%s' base=%x\n",
+        dir->ino, child_off, name, (uint32_t)(uintptr_t)base);
+#endif
   uint32_t iter = 0;
   while (child_off && iter++ < 1024) {
     const romfs_entry_t *child = get_entry(base, child_off);
     const char *child_name = get_name(child);
+
+#if defined(__xtensa__)
+    klogf("  child@%x type=%u name='%s' nlen=%u\n",
+          child_off, child->type, child_name, child->name_len);
+#endif
 
     /* Compare names (NUL-terminated) */
     const char *a = child_name;

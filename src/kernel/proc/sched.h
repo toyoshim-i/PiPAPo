@@ -70,7 +70,12 @@ void sched_timer_tick(int from_user);
  * switches context.  Safe to call from Thread mode at any time.
  * Used by QEMU smoke tests where SysTick IRQ delivery is not available.
  */
+#if defined(__xtensa__)
+void ppap_sched_yield(void);
+#define sched_yield ppap_sched_yield
+#else
 void sched_yield(void);
+#endif
 
 /*
  * Put the current process to sleep for `ticks` SysTick ticks.

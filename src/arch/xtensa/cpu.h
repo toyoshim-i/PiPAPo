@@ -128,6 +128,28 @@
  * Timer tick interval for 10 ms slices.
  */
 
+/* ── ESP32-S3 memory map constants ─────────────────────────────────────── *
+ *
+ * Flash is accessible through two virtual address regions:
+ *   DROM: 0x3C000000 (data reads via data cache)
+ *   IROM: 0x42000000 (instruction fetches via instruction cache)
+ *
+ * The same flash content is at both addresses; XIP binaries stored in
+ * romfs (which lives in .rodata → DROM) must have their entry point
+ * shifted to IROM for the instruction bus to fetch them.
+ */
+#define XTENSA_DROM_BASE         0x3C000000u
+#define XTENSA_IROM_BASE         0x42000000u
+#define XTENSA_DROM_TO_IROM      (XTENSA_IROM_BASE - XTENSA_DROM_BASE)
+
+/* Internal SRAM dual-mapping (ESP32-S3 SRAM1):
+ *   DRAM: 0x3FC88000  (data bus — page_alloc returns these addresses)
+ *   IRAM: 0x40380000  (instruction bus — CPU fetches from here)
+ * Linear forward mapping: IRAM_addr = DRAM_addr + 0x6F8000 */
+#define XTENSA_DRAM_BASE         0x3FC88000u
+#define XTENSA_IRAM_BASE         0x40380000u
+#define XTENSA_DRAM_TO_IRAM      (XTENSA_IRAM_BASE - XTENSA_DRAM_BASE)
+
 #ifndef PPAP_SYS_HZ
 #define PPAP_SYS_HZ 240000000u
 #endif

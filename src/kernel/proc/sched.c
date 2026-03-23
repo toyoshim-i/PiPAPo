@@ -308,28 +308,30 @@ void sched_start(void) {
 /* ── Cooperative yield ───────────────────────────────────────────────────────
  */
 
-/* On Xtensa, ESP-IDF's pthread library also defines sched_yield().
- * Mark ours weak so the linker resolves the conflict. */
+/* On Xtensa, ESP-IDF's pthread library defines a non-weak sched_yield()
+ * that conflicts with ours.  We use ppap_sched_yield() as the real
+ * implementation and alias sched_yield to it via the header/macro. */
 #if defined(__xtensa__)
-__attribute__((weak))
-#endif
-void sched_yield(void) {
-#if defined(__m68k__)
-  /* TRAP #1 enters m68k_trap1_handler which does the context switch
-   * immediately.  arch_yield() only sets a flag — insufficient from
-   * thread context where no timer ISR is pending to check it. */
-  __asm__ volatile("trap #1");
-#elif defined(__xtensa__)
+void ppap_sched_yield(void) {
   /* Xtensa has no PendSV.  Call the cooperative switch directly.
    * xtensa_do_yield() spills all windows, saves/restores SP via
    * the solicited-frame pattern, and returns to the new process. */
   xtensa_switch_pending = 0;
   extern void xtensa_do_yield(void);
   xtensa_do_yield();
+}
+#else
+void sched_yield(void) {
+#if defined(__m68k__)
+  /* TRAP #1 enters m68k_trap1_handler which does the context switch
+   * immediately.  arch_yield() only sets a flag — insufficient from
+   * thread context where no timer ISR is pending to check it. */
+  __asm__ volatile("trap #1");
 #else
   arch_yield(); /* pend PendSV; fires at next instruction boundary */
 #endif
 }
+#endif
 
 /* ── Channel-based wakeup ────────────────────────────────────────────────────
  */

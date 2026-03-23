@@ -122,11 +122,6 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
         echo "[build] Cleaning $BUILD_DIR..."
         rm -rf "$BUILD_DIR"
     fi
-    # ── Build user-space binaries and romfs ─────────────────────────────────
-    # ESP-IDF owns the kernel build.  User binaries are built separately
-    # with xtensa-esp-elf-gcc (provided by the ESP-IDF environment), then
-    # packed into romfs.bin which the kernel component embeds via .incbin.
-
     XTENSA_CC=xtensa-esp-elf-gcc
     XTENSA_STRIP=xtensa-esp-elf-strip
     # ESP32-S3 dynconfig (selects little-endian LX7 instruction encoding).
@@ -139,8 +134,6 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     export LD_LIBRARY_PATH="$XTENSA_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     XTENSA_DYNCONFIG="-mdynconfig=xtensa_esp32s3.so"
     MKROMFS="$PROJECT_DIR/tools/mkromfs/mkromfs"
-    ROMFS_STAGING="$BUILD_DIR/romfs_staging"
-    ROMFS_BIN="$BUILD_DIR/romfs.bin"
     USER_ARCH_DIR="$PROJECT_DIR/src/user/arch/xtensa"
 
     # Build mkromfs host tool if needed
@@ -149,6 +142,19 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
         cc -O2 -I"$PROJECT_DIR/src/kernel/fs" \
             -o "$MKROMFS" "$PROJECT_DIR/tools/mkromfs/mkromfs.c"
     fi
+
+    # ── ESP-IDF configure (before romfs, since set-target does fullclean) ────
+    cd "$SOURCE_DIR"
+    if [[ ! -f "$BUILD_DIR/CMakeCache.txt" ]]; then
+        echo "[build] Configuring xtensa_cc for esp32s3..."
+        idf.py -B "$BUILD_DIR" set-target esp32s3
+    fi
+
+    # ── Build user-space binaries and romfs ──────────────────────────────────
+    # Must come after set-target (which may fullclean BUILD_DIR) but before
+    # idf.py build (which embeds romfs.bin via .incbin).
+    ROMFS_STAGING="$BUILD_DIR/romfs_staging"
+    ROMFS_BIN="$BUILD_DIR/romfs.bin"
 
     # Build user binaries (call0 ABI, PIC, no libc)
     mkdir -p "$BUILD_DIR/user"
@@ -173,13 +179,6 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     echo "[build] romfs.bin: $(wc -c < "$ROMFS_BIN") bytes"
 
     # ── ESP-IDF kernel build ─────────────────────────────────────────────────
-    cd "$SOURCE_DIR"
-    # set-target only needed on first build (creates CMakeCache with target config).
-    # Skip it on incremental builds to avoid full ESP-IDF reconfigure.
-    if [[ ! -f "$BUILD_DIR/CMakeCache.txt" ]]; then
-        echo "[build] Configuring xtensa_cc for esp32s3..."
-        idf.py -B "$BUILD_DIR" set-target esp32s3
-    fi
     echo "[build] Building xtensa_cc via idf.py..."
     idf.py -B "$BUILD_DIR" build
     echo "[build] Built xtensa_cc"
