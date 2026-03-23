@@ -1,18 +1,22 @@
 /*
  * user.ld — Linker script for PPAP user-space ELF binaries (Xtensa)
  *
- * Same two-segment layout as ARM and RISC-V versions:
- *   text (R+X): .text + .rodata — loaded from romfs
- *   data (RW):  .got + .data + .bss — copied to an SRAM page by the kernel
+ * Two-segment layout:
+ *   text (R+X): .text only — loaded into IRAM (word-access only)
+ *   data (RW):  .rodata + .got + .data + .bss — loaded into DRAM (byte-accessible)
  *
- * Xtensa-specific: includes .literal sections (used for L32R instruction
- * constant pools).
+ * ESP32-S3 IRAM only supports 32-bit word-aligned access.  String constants
+ * and other read-only data MUST be in the data segment (DRAM) so that user
+ * code can do byte loads (l8ui, l16ui).
+ *
+ * Xtensa-specific: L32R literal pools are in the text segment (IRAM).
+ * They contain 32-bit pointers loaded via word-aligned reads — fine for IRAM.
+ * Those pointers may reference DRAM addresses (for .rodata); the ELF loader
+ * applies split relocations (text→IRAM base, data→DRAM base).
  */
 
 ENTRY(_start)
 
-/* Force ET_DYN so the linker preserves GOT entries for PIC relocation.
- * The kernel ELF loader patches GOT entries at load time. */
 PHDRS
 {
     text PT_LOAD FLAGS(5);   /* PF_R | PF_X */
@@ -23,7 +27,7 @@ SECTIONS
 {
     . = 0;
 
-    /* ── Read-only executable segment ──────────────────────────── */
+    /* ── Executable segment (IRAM — word-access only) ──────────── */
     .text : {
         /* L32R literal pools MUST precede the code that references them.
          * L32R uses a negative PC-relative offset (up to -256KB), so
@@ -35,12 +39,12 @@ SECTIONS
         *(.text*)               /* all other code */
     } :text
 
+    /* ── Data segment (DRAM — byte-accessible) ─────────────────── */
+    . = ALIGN(4);
+
     .rodata : {
         *(.rodata*)
-    } :text
-
-    /* ── Read-write segment (copied to SRAM by kernel) ─────────── */
-    . = ALIGN(4);
+    } :data
 
     .got : {
         *(.got*)

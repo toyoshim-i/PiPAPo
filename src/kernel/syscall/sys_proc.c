@@ -1498,11 +1498,30 @@ long sys_vfork(uint32_t *frame) {
   child->sp = (uint32_t)(uintptr_t)sw;
 
 #elif defined(__xtensa__)
-  /* Xtensa: child returns 0 in a0 (frame[0]).
-   * The solicited frame was already copied from the parent's stack.
-   * child->sp points to the base of the solicited frame. */
-  child_frame[0] = 0;
-  child->sp = (uint32_t)(uintptr_t)child_frame;
+  /* Xtensa: Build a new-process frame for the child.
+   *
+   * XtExcFrame layout: exit, pc, ps, a0, a1, a2, ...
+   * 'frame' points to a2, so frame[-4] = pc, frame[-1] = a1.
+   *
+   * The child resumes at the instruction after SYSCALL (pc already +3)
+   * with a2 = 0 (switch.S .Lnew_process clears a2 before jx). */
+  {
+    uint32_t child_pc = frame[-4];      /* pc (already advanced +3) */
+    uint32_t child_user_sp = frame[-1]; /* a1 = user SP at syscall */
+    uint32_t child_a0 = frame[-2];      /* a0 = return addr to caller */
+
+    /* Build new-process frame at top of child's kernel stack page.
+     * a0 is needed because vfork child starts at `ret` (jx a0) — the
+     * instruction after SYSCALL in the vfork stub. */
+    uint32_t *sp = (uint32_t *)((uint8_t *)stack + PAGE_SIZE);
+    sp = (uint32_t *)((uintptr_t)sp & ~0xFu);
+    *--sp = child_a0;                   /* [SP+16] a0 = return addr */
+    *--sp = child_user_sp;              /* [SP+12] user SP */
+    *--sp = (1u << 5);                  /* [SP+8]  PS: UM=1 */
+    *--sp = child_pc;                   /* [SP+4]  entry */
+    *--sp = 1u;                         /* [SP+0]  exit = 1 */
+    child->sp = (uint32_t)(uintptr_t)sp;
+  }
 
 #else
 #error "sys_vfork: unsupported architecture — add child frame setup"

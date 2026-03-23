@@ -166,44 +166,77 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 #endif
 
 #if defined(__xtensa__)
-  /* ESP32-S3: SRAM1 is split — the DRAM page pool has NO instruction
-   * bus access.  Allocate from IRAM via ESP-IDF's MALLOC_CAP_EXEC.
-   * The returned pointer is an IRAM address (0x4037xxxx-0x403Dxxxx)
-   * that's executable AND data-accessible (data bus can reach IRAM). */
+  /* ESP32-S3 split memory:
+   *   IRAM (0x4037xxxx): executable, word-access only (no byte load/store)
+   *   DRAM (0x3FC9xxxx): byte-accessible, NOT executable
+   *
+   * Text segment → IRAM (via heap_caps_malloc EXEC)
+   * Data segment (rodata + GOT + .data + .bss) → DRAM (via page_alloc)
+   *
+   * Relocations are split: link-time addresses in the text range get the
+   * IRAM base, addresses in the data range get the DRAM base. */
   {
-    uint32_t image_end = text_seg->p_vaddr + text_seg->p_memsz;
-    if (data_seg && data_seg->p_vaddr + data_seg->p_memsz > image_end)
-      image_end = data_seg->p_vaddr + data_seg->p_memsz;
-    uint32_t image_size = (image_end + 15u) & ~15u;
+    uint32_t text_end_va = text_seg->p_vaddr + text_seg->p_memsz;
+    uint32_t text_size = (text_end_va + 15u) & ~15u;
+    uint32_t data_va = data_seg ? data_seg->p_vaddr : text_end_va;
+    uint32_t data_memsz = data_seg ? data_seg->p_memsz : 0;
+    uint32_t data_size = (data_memsz + 15u) & ~15u;
 
     extern void *heap_caps_malloc(unsigned int size, uint32_t caps);
-    /* MALLOC_CAP_EXEC = (1<<0) */
-    sram_page = (uint8_t *)heap_caps_malloc(image_size, (1u << 0));
+    extern void heap_caps_free(void *ptr);
+
+    /* Allocate IRAM for text (executable, word-access only) */
+    sram_page = (uint8_t *)heap_caps_malloc(text_size, (1u << 0));
     if (!sram_page) return -(int)ENOMEM;
 
-    /* Allocate kernel stack page for this process */
+    /* Allocate DRAM for data (byte-accessible, needed for .rodata strings) */
+    uint8_t *dram_page = NULL;
+    uint32_t data_pages = 0;
+    if (data_size > 0) {
+      data_pages = (data_size + PAGE_SIZE - 1) / PAGE_SIZE;
+      if (data_pages == 1) {
+        dram_page = (uint8_t *)page_alloc();
+      } else {
+        dram_page = page_alloc_contiguous(data_pages);
+      }
+      if (!dram_page) {
+        heap_caps_free(sram_page);
+        return -(int)ENOMEM;
+      }
+    }
+
+    /* Allocate kernel stack page */
     stack = page_alloc();
     if (!stack) {
-      extern void heap_caps_free(void *ptr);
+      if (dram_page) {
+        for (uint32_t i = 0; i < data_pages; i++)
+          page_free(dram_page + i * PAGE_SIZE);
+      }
       heap_caps_free(sram_page);
       return -(int)ENOMEM;
     }
     p->stack_page = stack;
 
-    /* IRAM only supports 32-bit aligned access — byte-level memcpy/memset
-     * from ROM will cause LoadStoreError.  Use word-at-a-time operations. */
+    /* Zero IRAM (word-at-a-time — byte memset crashes on IRAM) */
     {
       uint32_t *dst32 = (uint32_t *)(uintptr_t)sram_page;
-      for (uint32_t w = 0; w < image_size / 4; w++)
+      for (uint32_t w = 0; w < text_size / 4; w++)
         dst32[w] = 0;
     }
 
+    /* Zero DRAM (byte access OK) */
+    if (dram_page) {
+      uint8_t *d = dram_page;
+      for (uint32_t i = 0; i < data_size; i++)
+        d[i] = 0;
+    }
+
+    /* Copy text segment to IRAM (word-at-a-time) */
     if (text_seg->p_filesz > 0) {
       const uint8_t *src = file_buf + text_seg->p_offset;
       volatile uint32_t *dst = (volatile uint32_t *)(uintptr_t)(sram_page + text_seg->p_vaddr);
       uint32_t words = (text_seg->p_filesz + 3) / 4;
       for (uint32_t w = 0; w < words; w++) {
-        /* Read source byte-by-byte (DROM supports byte access) */
         uint32_t val = src[w * 4];
         if (w * 4 + 1 < text_seg->p_filesz) val |= (uint32_t)src[w * 4 + 1] << 8;
         if (w * 4 + 2 < text_seg->p_filesz) val |= (uint32_t)src[w * 4 + 2] << 16;
@@ -212,119 +245,126 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
       }
     }
 
-    if (data_seg && data_seg->p_filesz > 0) {
+    /* Copy data segment to DRAM (byte access OK) */
+    if (dram_page && data_seg && data_seg->p_filesz > 0) {
       const uint8_t *src = file_buf + data_seg->p_offset;
-      volatile uint32_t *dst = (volatile uint32_t *)(uintptr_t)(sram_page + data_seg->p_vaddr);
-      uint32_t words = (data_seg->p_filesz + 3) / 4;
-      for (uint32_t w = 0; w < words; w++) {
-        uint32_t val = src[w * 4];
-        if (w * 4 + 1 < data_seg->p_filesz) val |= (uint32_t)src[w * 4 + 1] << 8;
-        if (w * 4 + 2 < data_seg->p_filesz) val |= (uint32_t)src[w * 4 + 2] << 16;
-        if (w * 4 + 3 < data_seg->p_filesz) val |= (uint32_t)src[w * 4 + 3] << 24;
-        dst[w] = val;
-      }
+      uint8_t *dst = dram_page;
+      for (uint32_t i = 0; i < data_seg->p_filesz; i++)
+        dst[i] = src[i];
     }
 
-    /* IRAM address is directly usable as entry point */
-    entry = (uint32_t)(uintptr_t)(sram_page + e_entry);
+    uint32_t iram_base = (uint32_t)(uintptr_t)sram_page;
+    uint32_t dram_base = dram_page ? (uint32_t)(uintptr_t)dram_page : 0;
 
-    /* Apply relocations from --emit-relocs sections.
-     * L32R literal pool values are absolute addresses at link-time base (0x0).
-     * Add load_base so they point to the actual IRAM location.
+    /* Entry point is in IRAM */
+    entry = iram_base + e_entry;
+
+    /* Apply split relocations from --emit-relocs sections.
+     *
+     * Link-time layout: text at vaddr [0, text_end_va), data at [data_va, ...).
+     * Runtime: text at iram_base, data at dram_base.
+     *
+     * For each R_XTENSA_32/PLT relocation, the patched word contains a
+     * link-time address V.  Convert to runtime:
+     *   V < data_va  → iram_base + V  (text/code reference)
+     *   V >= data_va → dram_base + (V - data_va) (data/rodata reference)
      *
      * IMPORTANT: only process RELA sections whose target section (sh_info)
      * has SHF_ALLOC set.  Metadata sections like .xt.prop and .xt.lit have
-     * their own RELA sections with r_offset values that are section-internal
-     * — NOT image offsets.  Processing those would corrupt code/data. */
-    {
-      uint32_t load_base = (uint32_t)(uintptr_t)sram_page;
+     * their own RELA sections with section-internal offsets. */
+    uint32_t image_end = data_va + data_memsz;
+    if (ehdr->e_shoff && ehdr->e_shnum && ehdr->e_shentsize >= 40) {
+      for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
+        const uint8_t *sh =
+            file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
+        uint32_t sh_type = *(const uint32_t *)(sh + 4);
+        if (sh_type != 4 /* SHT_RELA */) continue;
 
-      if (ehdr->e_shoff && ehdr->e_shnum && ehdr->e_shentsize >= 40) {
-        for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
-          const uint8_t *sh =
-              file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
-          uint32_t sh_type = *(const uint32_t *)(sh + 4);
-          if (sh_type != 4 /* SHT_RELA */) continue;
+        uint32_t sh_info_idx = *(const uint32_t *)(sh + 28);
+        if (sh_info_idx >= ehdr->e_shnum) continue;
+        const uint8_t *target_sh =
+            file_buf + ehdr->e_shoff + sh_info_idx * ehdr->e_shentsize;
+        uint32_t target_flags = *(const uint32_t *)(target_sh + 8);
+        if (!(target_flags & 2 /* SHF_ALLOC */)) continue;
 
-          /* sh_info = index of section these relocations apply to.
-           * Only process if the target section is allocated (loaded). */
-          uint32_t sh_info_idx = *(const uint32_t *)(sh + 28);
-          if (sh_info_idx >= ehdr->e_shnum) continue;
-          const uint8_t *target_sh =
-              file_buf + ehdr->e_shoff + sh_info_idx * ehdr->e_shentsize;
-          uint32_t target_flags = *(const uint32_t *)(target_sh + 8);
-          if (!(target_flags & 2 /* SHF_ALLOC */)) continue;
+        uint32_t sh_offset  = *(const uint32_t *)(sh + 16);
+        uint32_t sh_size    = *(const uint32_t *)(sh + 20);
+        uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
+        if (sh_entsize < 12) continue;
 
-          uint32_t sh_offset = *(const uint32_t *)(sh + 16);
-          uint32_t sh_size   = *(const uint32_t *)(sh + 20);
-          uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
-          if (sh_entsize < 12) continue;
+        uint32_t n_entries = sh_size / sh_entsize;
+        for (uint32_t ri = 0; ri < n_entries; ri++) {
+          const uint8_t *rela = file_buf + sh_offset + ri * sh_entsize;
+          uint32_t r_offset = *(const uint32_t *)(rela + 0);
+          uint32_t r_info   = *(const uint32_t *)(rela + 4);
+          uint8_t  r_type   = (uint8_t)(r_info & 0xFF);
 
-          uint32_t n_entries = sh_size / sh_entsize;
-          for (uint32_t ri = 0; ri < n_entries; ri++) {
-            const uint8_t *rela = file_buf + sh_offset + ri * sh_entsize;
-            uint32_t r_offset = *(const uint32_t *)(rela + 0);
-            uint32_t r_info   = *(const uint32_t *)(rela + 4);
-            uint8_t  r_type   = (uint8_t)(r_info & 0xFF);
+          if (r_type != 1 && r_type != 6) continue;
 
-            /* R_XTENSA_32 (1): absolute 32-bit data (literal pool, init data)
-             * R_XTENSA_PLT (6): PLT-resolved function address (literal pool)
-             * Both need load_base added to convert link-time → runtime addr. */
-            if (r_type != 1 && r_type != 6) continue;
+          /* Determine which memory region the relocation target is in */
+          volatile uint32_t *target;
+          if (r_offset < text_end_va)
+            target = (volatile uint32_t *)(sram_page + r_offset);
+          else if (dram_page && r_offset >= data_va)
+            target = (volatile uint32_t *)(dram_page + (r_offset - data_va));
+          else
+            continue;
 
-            if (r_offset < image_end) {
-              volatile uint32_t *target =
-                  (volatile uint32_t *)(sram_page + r_offset);
-              *target += load_base;
-            }
-          }
+          /* Read link-time value and apply split base */
+          uint32_t val = *target;
+          if (val < data_va)
+            *target = val + iram_base;           /* text reference → IRAM */
+          else
+            *target = dram_base + (val - data_va); /* data reference → DRAM */
         }
       }
+    }
 
-      /* Also relocate GOT entries (if present).  With call0 ABI and -fPIC,
-       * complex binaries may have a .got section. */
-      if (ehdr->e_shoff && ehdr->e_shnum && ehdr->e_shentsize >= 40) {
-        for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
-          const uint8_t *sh =
-              file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
-          uint32_t sh_type  = *(const uint32_t *)(sh + 4);
-          uint32_t sh_flags = *(const uint32_t *)(sh + 8);
-          uint32_t sh_addr  = *(const uint32_t *)(sh + 12);
-          uint32_t sh_size  = *(const uint32_t *)(sh + 20);
-          uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
+    /* Relocate GOT entries (in DRAM) with split bases */
+    if (dram_page && ehdr->e_shoff && ehdr->e_shnum && ehdr->e_shentsize >= 40) {
+      for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
+        const uint8_t *sh =
+            file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
+        uint32_t sh_type    = *(const uint32_t *)(sh + 4);
+        uint32_t sh_flags   = *(const uint32_t *)(sh + 8);
+        uint32_t sh_addr    = *(const uint32_t *)(sh + 12);
+        uint32_t sh_size    = *(const uint32_t *)(sh + 20);
+        uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
 
-          /* .got: PROGBITS, WRITE+ALLOC, entsize=4 */
-          if (sh_type != 1 /* SHT_PROGBITS */) continue;
-          if (!(sh_flags & 3 /* SHF_WRITE|SHF_ALLOC */)) continue;
-          if (sh_entsize != 4) continue;
-          if (sh_addr < image_end && sh_size > 0) {
-            uint32_t n_got = sh_size / 4;
-            volatile uint32_t *got =
-                (volatile uint32_t *)(sram_page + sh_addr);
-            for (uint32_t gi = 0; gi < n_got; gi++) {
-              if (got[gi] != 0 && got[gi] != 0xFFFFFFFFu &&
-                  got[gi] < image_end) {
-                got[gi] += load_base;
-              }
-            }
+        if (sh_type != 1 /* SHT_PROGBITS */) continue;
+        if (!(sh_flags & 3 /* SHF_WRITE|SHF_ALLOC */)) continue;
+        if (sh_entsize != 4) continue;
+        if (sh_addr >= data_va && sh_size > 0) {
+          uint32_t n_got = sh_size / 4;
+          uint32_t *got = (uint32_t *)(dram_page + (sh_addr - data_va));
+          for (uint32_t gi = 0; gi < n_got; gi++) {
+            uint32_t val = got[gi];
+            if (val == 0 || val == 0xFFFFFFFFu) continue;
+            if (val < data_va)
+              got[gi] = val + iram_base;
+            else if (val < image_end)
+              got[gi] = dram_base + (val - data_va);
           }
         }
       }
     }
 
-    /* Track pages for cleanup (store IRAM pointer, not page pool) */
+    /* Track IRAM allocation for cleanup (user_page_free detects IRAM range) */
     p->user_pages[0] = sram_page;
+    /* Track each DRAM page individually for cleanup via page_free */
+    if (dram_page) {
+      for (uint32_t i = 0; i < data_pages && (i + 1) < USER_PAGES_MAX; i++)
+        p->user_pages[1 + i] = dram_page + i * PAGE_SIZE;
+    }
 
-    /* Set brk base/current for heap allocation */
-    if (data_seg) {
-      uint32_t data_end =
-          (uint32_t)(uintptr_t)sram_page + data_seg->p_vaddr + data_seg->p_memsz;
+    /* Set brk base/current after DRAM data for heap growth */
+    if (dram_page) {
+      uint32_t data_end = dram_base + data_memsz;
       data_end = (data_end + 15u) & ~15u;
       p->brk_base = data_end;
       p->brk_current = data_end;
     } else {
-      uint32_t text_end =
-          (uint32_t)(uintptr_t)sram_page + text_seg->p_vaddr + text_seg->p_memsz;
+      uint32_t text_end = iram_base + text_end_va;
       text_end = (text_end + 15u) & ~15u;
       p->brk_base = text_end;
       p->brk_current = text_end;

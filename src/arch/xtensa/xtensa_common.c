@@ -102,10 +102,16 @@ static void xtensa_syscall_handler(XtExcFrame *frame)
     syscall_dispatch((uint32_t *)&frame->a2, (uint32_t)frame->a7,
                      (uint32_t)frame->a4, (uint32_t)frame->a5);
 
-    /* exec_pending: execve built a new trap frame at current->sp.
-     * TODO (CC-4): reload SP from PCB when user processes exist. */
+    /* exec_pending: execve built a new-process frame at current->sp.
+     * Reload the frame's PC/PS/SP so rfe jumps to the new program. */
     if (exec_pending[0]) {
         exec_pending[0] = 0;
+        uint32_t *nf = (uint32_t *)(uintptr_t)current->sp;
+        /* new-process frame: [0]=exit=1, [1]=entry, [2]=PS, [3]=user_sp */
+        frame->pc = nf[1];
+        frame->ps = nf[2];
+        frame->a1 = nf[3];
+        frame->a2 = 0;
     }
 
     /* svc_restart: blocking syscall needs re-execution */
@@ -115,11 +121,30 @@ static void xtensa_syscall_handler(XtExcFrame *frame)
         frame->a2 = svc_saved_a0[0];
     }
 
-    /* Context switch: timer may have fired during syscall */
+    /* Context switch: timer may have fired during syscall.
+     * For vfork: parent is BLOCKED, child is RUNNABLE.  We need to
+     * switch to the child NOW (no PendSV on Xtensa).
+     * Load the next process's context into the exception frame. */
     if (xtensa_switch_pending) {
         xtensa_switch_pending = 0;
-        /* Cooperative switch — will be picked up by idle loop.
-         * True preemptive switch deferred to CC-4. */
+        pcb_t *next = sched_next();
+        if (next != current) {
+            if (current)
+                current->sp = (uint32_t)(uintptr_t)frame;
+            current_core[core_id()] = next;
+
+            uint32_t *nf = (uint32_t *)(uintptr_t)next->sp;
+            if (nf[0] == 1) {
+                /* New-process frame → load into XtExcFrame for rfe.
+                 * nf layout: [0]=exit, [1]=PC, [2]=PS, [3]=SP, [4]=a0 */
+                frame->pc = nf[1];
+                frame->ps = nf[2];
+                frame->a1 = nf[3];
+                frame->a0 = nf[4];  /* return addr (needed by vfork child) */
+                frame->a2 = 0;      /* vfork child return = 0 */
+            }
+            /* else: solicited frame — deferred to cooperative switch */
+        }
     }
 }
 
@@ -172,13 +197,14 @@ void xtensa_trap_init(void)
 
 /* Build a "new-process" frame for switch.S (exit marker = 1).
  *
- * Layout (16 bytes, 16-byte aligned):
+ * Layout (20 bytes, 16-byte aligned):
  *   [SP+0 ] = 1       (exit marker — triggers direct-jump path in switch.S)
  *   [SP+4 ] = entry   (entry address, NOT windowed-encoded)
- *   [SP+8 ] = PS      (WOE=1, INTLEVEL=0)
+ *   [SP+8 ] = PS      (UM=1, WOE=0, INTLEVEL=0)
  *   [SP+12] = user_sp (stack pointer passed to user code in a1)
+ *   [SP+16] = a0      (return address; needed by vfork child, 0 for exec)
  *
- * switch.S detects exit != 0, loads entry/PS/user_sp, and does jx (not retw).
+ * switch.S detects exit != 0, loads entry/PS/user_sp/a0, and does jx.
  * This avoids the base-save-area overlap that would corrupt a1 with the PC.
  *
  * The 'sp' parameter points to the argc/argv area on the user stack.
@@ -190,6 +216,7 @@ uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void))
     sp = (uint32_t *)((uintptr_t)sp & ~0xFu);  /* 16-byte align */
     user_sp = (uint32_t)(uintptr_t)sp;          /* use aligned value */
 
+    *--sp = 0;                                   /* [SP+16] a0 = 0 (unused by _start) */
     *--sp = user_sp;                            /* [SP+12] user SP */
     /* PS for user process: WOE=0 (call0 ABI, no window operations),
      * UM=1 (user mode — routes exceptions through UserExceptionVector

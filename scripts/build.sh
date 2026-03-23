@@ -159,18 +159,45 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     # Build user binaries (call0 ABI, PIC, no libc)
     mkdir -p "$BUILD_DIR/user"
     echo "[build] Compiling user binaries (xtensa call0)..."
-    $XTENSA_CC $XTENSA_DYNCONFIG -mabi=call0 -mlongcalls \
+    USER_DIR="$PROJECT_DIR/src/user"
+    XTENSA_USER_FLAGS="$XTENSA_DYNCONFIG -mabi=call0 -mlongcalls \
         -ffreestanding -nostdlib -Os -fPIC -Wl,--emit-relocs \
-        -I"$PROJECT_DIR/src/user" -I"$PROJECT_DIR/src" \
-        -T "$USER_ARCH_DIR/user.ld" \
-        "$USER_ARCH_DIR/crt0.S" "$USER_ARCH_DIR/syscall.S" \
-        "$PROJECT_DIR/src/user/hello.c" \
+        -I$USER_DIR -I$PROJECT_DIR/src -T $USER_ARCH_DIR/user.ld \
+        $USER_ARCH_DIR/crt0.S $USER_ARCH_DIR/syscall.S"
+
+    # shellcheck disable=SC2086
+    $XTENSA_CC $XTENSA_USER_FLAGS "$USER_DIR/hello.c" \
         -o "$BUILD_DIR/user/hello.elf"
+    # shellcheck disable=SC2086
+    $XTENSA_CC $XTENSA_USER_FLAGS "$USER_DIR/init.c" \
+        -o "$BUILD_DIR/user/init.elf"
+    # shellcheck disable=SC2086
+    $XTENSA_CC $XTENSA_USER_FLAGS "$USER_DIR/getty.c" \
+        -o "$BUILD_DIR/user/getty.elf"
+    # shellcheck disable=SC2086
+    $XTENSA_CC $XTENSA_USER_FLAGS "$USER_DIR/push.c" "$USER_DIR/push_line.c" \
+        -o "$BUILD_DIR/user/push.elf"
+
+    # Strip debug symbols (keep relocation info)
+    for f in "$BUILD_DIR"/user/*.elf; do
+        $XTENSA_STRIP --strip-debug "$f"
+    done
 
     # Stage romfs directory
     rm -rf "$ROMFS_STAGING"
     mkdir -p "$ROMFS_STAGING"/{bin,sbin,etc,dev,proc,tmp}
-    cp "$BUILD_DIR/user/hello.elf" "$ROMFS_STAGING/sbin/init"
+    cp "$BUILD_DIR/user/init.elf"  "$ROMFS_STAGING/sbin/init"
+    cp "$BUILD_DIR/user/hello.elf" "$ROMFS_STAGING/bin/hello"
+    cp "$BUILD_DIR/user/getty.elf" "$ROMFS_STAGING/bin/getty"
+    cp "$BUILD_DIR/user/push.elf"  "$ROMFS_STAGING/bin/push"
+    ln -sf push "$ROMFS_STAGING/bin/sh"
+
+    # Install /etc files (base + target overlay)
+    cp "$PROJECT_DIR/src/etc/"* "$ROMFS_STAGING/etc/" 2>/dev/null || true
+    OVERLAY_DIR="$PROJECT_DIR/src/target/xtensa_cc/romfs"
+    if [[ -d "$OVERLAY_DIR" ]]; then
+        cp -r "$OVERLAY_DIR"/* "$ROMFS_STAGING/" 2>/dev/null || true
+    fi
 
     # Generate romfs.bin
     echo "[build] Generating romfs.bin..."

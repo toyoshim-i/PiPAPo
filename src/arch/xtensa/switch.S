@@ -19,7 +19,9 @@
 #
 # New-process frame (exit marker = 1):
 #   Built by arch_build_initial_frame() for exec'd processes.
-#   [SP+4] = entry address (NOT encoded), [SP+12] = user stack pointer.
+#   [SP+4] = entry address (NOT encoded), [SP+12] = user stack pointer,
+#   [SP+16] = a0 (return address — needed by vfork child which starts
+#   at the `ret` after SYSCALL and needs a0 to jump back to caller).
 #   Restored via direct jump (jx) instead of retw, avoiding the
 #   base-save-area overlap that would corrupt the user SP.
 #
@@ -30,6 +32,7 @@
     .equ SOL_PC,     4
     .equ SOL_PS,     8
     .equ SOL_SP,     12
+    .equ SOL_A0,     16    # saved a0 (new-process frames only; vfork return addr)
     .equ SOL_FRMSZ,  32    # must be multiple of 16 for alignment
 
     .text
@@ -98,16 +101,19 @@ xtensa_do_yield:
 
 .Lnew_process:
     # ── New-process restore: direct jump to entry point ───────────────
-    # Frame: [4]=entry, [8]=PS, [12]=user_sp
+    # Frame: [4]=entry, [8]=PS, [12]=user_sp, [16]=a0
     # This path is used for freshly exec'd processes whose initial frame
-    # was built by arch_build_initial_frame().  We set all registers
-    # directly and jump, avoiding retw (which would read the base save
-    # area and corrupt a1 with the entry address).
-    l32i    a2, a1, SOL_PC            # a2 = entry address
-    l32i    a3, a1, SOL_PS            # a3 = PS
+    # was built by arch_build_initial_frame().  Also used by vfork child
+    # (entry = instruction after syscall, a2 = 0 = vfork return value).
+    # We set all registers directly and jump, avoiding retw (which would
+    # read the base save area and corrupt a1 with the entry address).
+    l32i    a3, a1, SOL_PC            # a3 = entry address
+    l32i    a4, a1, SOL_PS            # a4 = PS
+    l32i    a0, a1, SOL_A0            # a0 = return addr (vfork needs this)
     l32i    a1, a1, SOL_SP            # a1 = user SP (load LAST — clobbers sp)
-    wsr     a3, ps
+    wsr     a4, ps
     rsync
-    jx      a2                        # jump to _start
+    movi    a2, 0                     # a2 = 0 (vfork return; harmless for exec)
+    jx      a3                        # jump to entry
 
     .size   xtensa_do_yield, . - xtensa_do_yield
