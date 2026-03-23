@@ -133,7 +133,7 @@ void mm_init(void) {
   klogf("MM: kmem self-test %s\n", ok ? "PASSED" : "FAILED");
 #endif
 
-#if defined(PPAP_TESTS) && !defined(__m68k__)
+#if defined(PPAP_TESTS) && (defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__))
   /* ── XIP verification and benchmark (ARM only) ───────────────────────── */
   xip_verify();
 #endif

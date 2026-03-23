@@ -17,7 +17,10 @@ int main(void)
     uint32_t pc;
 #if defined(__m68k__)
     __asm__ volatile("lea %%pc@(0), %0" : "=a"(pc));
-    /* m68k: code is loaded into RAM pages */
+    UT_ASSERT(pc > 0, "PC should be valid");
+#elif defined(__riscv)
+    __asm__ volatile("auipc %0, 0" : "=r"(pc));
+    /* RISC-V: code loaded into SRAM (text+data contiguous) */
     UT_ASSERT(pc > 0, "PC should be valid");
 #else
     __asm__ volatile("mov %0, pc" : "=r"(pc));
@@ -29,6 +32,9 @@ int main(void)
     uint32_t sp;
 #if defined(__m68k__)
     __asm__ volatile("move.l %%sp, %0" : "=d"(sp));
+    UT_ASSERT(sp > 0, "SP should be valid");
+#elif defined(__riscv)
+    __asm__ volatile("mv %0, sp" : "=r"(sp));
     UT_ASSERT(sp > 0, "SP should be valid");
 #else
     __asm__ volatile("mov %0, sp" : "=r"(sp));
