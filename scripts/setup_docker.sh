@@ -58,12 +58,11 @@ fi
 # Multiple targets can share one image family.
 target_to_family() {
   case "$1" in
-    ibmpc)                          echo "ia16" ;;
+    qemu_arm|pico1|pico1calc|pico2) echo "arm" ;;
     qemu_m68k|x68k)                 echo "m68k" ;;
-    # TODO: add other families as they are dockerized
-    # qemu_arm|pico1|pico1calc|pico2) echo "arm" ;;
-    # qemu_rv32|pico2rv)              echo "riscv" ;;
-    # xtensa_cc)                      echo "xtensa" ;;
+    qemu_rv32|pico2rv)              echo "riscv" ;;
+    xtensa_cc)                      echo "xtensa" ;;
+    ibmpc)                          echo "ia16" ;;
     *)                              echo "$1" ;;  # assume family name
   esac
 }
@@ -74,13 +73,20 @@ if [[ $# -eq 0 ]]; then
   echo "Usage: $0 <target|family> [...]"
   echo "       $0 all"
   echo ""
-  echo "Targets/families:"
-  echo "  ia16          IBM PC (i16) — ia16-elf-gcc, NASM, QEMU i386"
+  echo "Families:"
+  echo "  arm           ARM Cortex-M — arm-none-eabi-gcc, Pico SDK, QEMU ARM, OpenOCD"
   echo "  m68k          Motorola 68k — m68k-elf-gcc, QEMU m68k, XEiJ"
-  echo "  ibmpc         Alias for ia16"
-  echo "  qemu_m68k     Alias for m68k"
-  echo "  x68k          Alias for m68k"
+  echo "  riscv         RISC-V — riscv32 bare-metal + linux toolchains, Pico SDK, QEMU"
+  echo "  xtensa        Xtensa/ESP32-S3 — ESP-IDF v5.4, Xtensa toolchain"
+  echo "  ia16          IBM PC (i16) — ia16-elf-gcc, NASM, QEMU i386"
   echo "  all           Build all available images"
+  echo ""
+  echo "Target aliases:"
+  echo "  qemu_arm, pico1, pico1calc, pico2  → arm"
+  echo "  qemu_m68k, x68k                    → m68k"
+  echo "  qemu_rv32, pico2rv                 → riscv"
+  echo "  xtensa_cc                          → xtensa"
+  echo "  ibmpc                              → ia16"
   exit 0
 fi
 
