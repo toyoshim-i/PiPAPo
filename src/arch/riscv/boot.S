@@ -50,16 +50,14 @@ _start:
     # ── 4. Disable interrupts ────────────────────────────────────────────
     csrc    mstatus, 0x8           # clear MIE (bit 3)
 
-    # ── 4b. Disable watchdog ─────────────────────────────────────────────
+#ifndef PPAP_QEMU
+    # ── 4b. Disable watchdog (RP2350 only) ─────────────────────────────
     # The RP2350 boot ROM may leave the watchdog armed (especially after
-    # BOOTSEL USB reboot).  If the firmware crashes before reaching
-    # bootrom_state_reset() in target_early_init(), a live watchdog would
-    # reset-loop the chip, making it appear unresponsive to debuggers.
-    # WATCHDOG_CTRL is at 0x400D8000; bit 30 = ENABLE.
-    # Write to the atomic CLR alias (base + 0x3000) to clear ENABLE.
+    # BOOTSEL USB reboot).  QEMU virt has no watchdog at this address.
     li      t0, 0x400DB000         # WATCHDOG_CTRL CLR alias
     li      t1, (1 << 30)          # ENABLE bit
     sw      t1, 0(t0)
+#endif
 
     # ── 5. Copy .data: flash (LMA) → SRAM (VMA) ─────────────────────────
     #   a0 = destination start  (__data_start)

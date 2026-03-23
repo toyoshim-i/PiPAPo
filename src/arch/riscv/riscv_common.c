@@ -96,8 +96,11 @@ static void mtimecmp_write(uint64_t val)
  */
 void riscv_timer_init(void)
 {
-    /* Enable timer at full system clock speed */
+#ifndef PPAP_QEMU
+    /* Enable timer at full system clock speed (RP2350 SIO-specific) */
     SIO_MTIME_CTRL = MTIME_CTRL_EN | MTIME_CTRL_FULLSPEED;
+#endif
+    /* QEMU CLINT timer runs automatically — no ctrl register needed */
 
     /* Set first deadline */
     uint64_t now = mtime_read();

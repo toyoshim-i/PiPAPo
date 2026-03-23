@@ -117,14 +117,13 @@
 #define PMP_A_NAPOT    (3u << 3)   /* Naturally aligned power-of-two      */
 #define PMP_L          (1u << 7)   /* Lock (also enforced in M-mode)      */
 
-/* ── RP2350 timer (SIO-mapped) ─────────────────────────────────────────── *
- *
- * The Hazard3 RISC-V timer is mapped through the RP2350 SIO block at
- * base 0xD0000000.  mtime is shared between both cores; mtimecmp is
- * per-core (each core sees its own comparator at the same address).
+/* ── RISC-V Machine Timer ──────────────────────────────────────────────── *
  *
  * Timer interrupt (MTIP) asserts when mtime >= mtimecmp (unsigned 64-bit).
  * Writing mtimecmp clears the interrupt (no explicit acknowledge needed).
+ *
+ * RP2350 (Hazard3): SIO-mapped at 0xD0000000 + offsets.
+ * QEMU virt:        CLINT-mapped at 0x02000000 + offsets.
  *
  * Safe 64-bit mtimecmp write sequence (avoids spurious interrupts):
  *   1. Write 0xFFFFFFFF to mtimecmp_lo  (prevents match during update)
@@ -132,16 +131,29 @@
  *   3. Write new value to mtimecmp_lo   (lower 32 bits)
  */
 
+#ifdef PPAP_QEMU
+/* QEMU virt: CLINT at 0x02000000 */
+#define CLINT_BASE          0x02000000u
+#define SIO_MTIME           REG(CLINT_BASE + 0xBFF8u) /* mtime lower 32 */
+#define SIO_MTIMEH          REG(CLINT_BASE + 0xBFFCu) /* mtime upper 32 */
+#define SIO_MTIMECMP        REG(CLINT_BASE + 0x4000u) /* mtimecmp lower (hart 0) */
+#define SIO_MTIMECMPH       REG(CLINT_BASE + 0x4004u) /* mtimecmp upper (hart 0) */
+/* No mtime_ctrl — QEMU CLINT timer runs at fixed frequency */
+#define SIO_MTIME_CTRL      (*(volatile uint32_t *)0) /* dummy, unused */
+#define MTIME_CTRL_EN       0
+#define MTIME_CTRL_FULLSPEED 0
+#else
+/* RP2350 (Hazard3): SIO-mapped timer */
 #define SIO_BASE            0xD0000000u
 #define SIO_MTIME_CTRL      REG(SIO_BASE + 0x1A4u)
 #define SIO_MTIME           REG(SIO_BASE + 0x1B0u)  /* lower 32 bits */
 #define SIO_MTIMEH          REG(SIO_BASE + 0x1B4u)  /* upper 32 bits */
 #define SIO_MTIMECMP        REG(SIO_BASE + 0x1B8u)  /* lower 32 bits (per-core) */
 #define SIO_MTIMECMPH       REG(SIO_BASE + 0x1BCu)  /* upper 32 bits (per-core) */
-
 /* mtime_ctrl bits */
 #define MTIME_CTRL_EN       (1u << 0)   /* Timer enable                    */
 #define MTIME_CTRL_FULLSPEED (1u << 1)  /* Run at full system clock        */
+#endif
 
 /* Timer tick interval for 10ms slices (set by target via PPAP_SYS_HZ) */
 #ifndef PPAP_SYS_HZ

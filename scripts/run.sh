@@ -77,11 +77,11 @@ for arg in "$@"; do
         --overlay=*)OVERLAY="${arg#--overlay=}"; DO_BUILD=1 ;;
         --h68k-debug) DO_H68K_DEBUG=1; DO_BUILD=1 ;;
         --gdb)      DO_GDB=1 ;;
-        pico1|pico1calc|pico2|pico2rv|qemu_arm|qemu_m68k|x68k|xtensa_cc) TARGET="$arg" ;;
+        pico1|pico1calc|pico2|pico2rv|qemu_arm|qemu_rv32|qemu_m68k|x68k|xtensa_cc) TARGET="$arg" ;;
         -*)         echo "Unknown option: $arg" >&2; exit 1 ;;
         *)
             echo "Unknown target: $arg" >&2
-            echo "Valid targets: pico1, pico1calc, pico2, pico2rv, qemu_arm, qemu_m68k, x68k, xtensa_cc" >&2
+            echo "Valid targets: pico1, pico1calc, pico2, pico2rv, qemu_arm, qemu_rv32, qemu_m68k, x68k, xtensa_cc" >&2
             exit 1
             ;;
     esac
@@ -283,7 +283,7 @@ if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 || "$TA
     exit 1
 fi
 
-# ── QEMU targets (qemu_arm, qemu_m68k) ─────────────────────────────────────
+# ── QEMU targets (qemu_arm, qemu_rv32, qemu_m68k) ──────────────────────────
 TIMEOUT=90
 if [[ "$TARGET" == "qemu_m68k" ]]; then
     # m68k full test runs are consistently slower than ARM test runs.
@@ -295,6 +295,9 @@ if [[ "$TARGET" == "qemu_m68k" ]]; then
         QEMU_BIN="$LOCAL_QEMU"
     fi
     QEMU_ARGS=(-machine virt -cpu m68000)
+elif [[ "$TARGET" == "qemu_rv32" ]]; then
+    QEMU_BIN="qemu-system-riscv32"
+    QEMU_ARGS=(-M virt -bios none -serial mon:stdio)
 else
     QEMU_BIN="qemu-system-arm"
     QEMU_ARGS=(-M mps2-an500 -serial mon:stdio)
