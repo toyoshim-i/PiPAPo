@@ -51,8 +51,10 @@ static inline int spin_have_hw(void) {
   return 0; /* no hardware spinlocks on 68k */
 #elif defined(__xtensa__)
   return 0; /* no SIO spinlocks on ESP32-S3 — IRQ disable is sufficient */
-#elif defined(__riscv)
+#elif defined(__riscv) && !defined(PPAP_QEMU)
   return 1; /* RP2350 SIO spinlocks work from RISC-V cores too */
+#elif defined(__riscv) && defined(PPAP_QEMU)
+  return 0; /* QEMU virt has no SIO spinlocks */
 #else
   uint32_t partno = SCB_CPUID_REG & CPUID_PARTNO_MASK;
   return partno == CPUID_PARTNO_M0P || partno == CPUID_PARTNO_M33;

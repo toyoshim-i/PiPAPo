@@ -51,7 +51,7 @@ int uart_putc(char c, void (*notify)(void)) {
   while (!(UART_LSR & LSR_THRE))
     ;
   UART_THR = (uint8_t)c;
-  return 0;
+  return 1; /* success — klog loops while return is 0 */
 }
 
 int uart_getc(void) {
