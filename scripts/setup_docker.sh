@@ -5,11 +5,12 @@
 # Builds Docker images for per-target toolchains.
 #
 # Usage:
-#   ./scripts/setup_docker.sh [target...]
+#   ./scripts/setup_docker.sh [--no-cache] <target|family> [...]
 #
 # Examples:
-#   ./scripts/setup_docker.sh ia16       # Build only the ia16 image
-#   ./scripts/setup_docker.sh            # Build all available images
+#   ./scripts/setup_docker.sh ia16              # Build only the ia16 image
+#   ./scripts/setup_docker.sh all               # Build all available images
+#   ./scripts/setup_docker.sh --no-cache m68k   # Rebuild from scratch
 #
 # Each image contains the cross-compiler, emulator, and build tools for
 # its target family.  The project root is bind-mounted at /ppap when
@@ -32,8 +33,11 @@ error()   { echo "[ERROR] $*" >&2; exit 1; }
 # --- Usage (before any install steps) ----------------------------------------
 
 if [[ $# -eq 0 ]]; then
-  echo "Usage: $0 <target|family> [...]"
+  echo "Usage: $0 [--no-cache] <target|family> [...]"
   echo "       $0 all"
+  echo ""
+  echo "Options:"
+  echo "  --no-cache    Rebuild images from scratch (ignore Docker cache)"
   echo ""
   echo "Families:"
   echo "  arm           ARM Cortex-M — arm-none-eabi-gcc, Pico SDK, QEMU ARM, OpenOCD"
@@ -85,21 +89,26 @@ target_to_family() {
     qemu_rv32|pico2rv)              echo "riscv" ;;
     xtensa_cc)                      echo "xtensa" ;;
     ibmpc)                          echo "ia16" ;;
-    *)                              echo "$1" ;;  # assume family name
+    arm|m68k|riscv|xtensa|ia16)      echo "$1" ;;  # direct family name
+    *)                              error "Unknown target or family: $1" ;;
   esac
 }
 
 # --- Parse arguments ---------------------------------------------------------
 
 FAMILIES=()
+NO_CACHE=""
 for arg in "$@"; do
-  if [[ "$arg" == "all" ]]; then
-    for dir in "${PPAP_ROOT}"/docker/*/; do
-      [[ -f "${dir}Dockerfile" ]] && FAMILIES+=("$(basename "$dir")")
-    done
-  else
-    FAMILIES+=("$(target_to_family "$arg")")
-  fi
+  case "$arg" in
+    --no-cache) NO_CACHE="--no-cache" ;;
+    all)
+      for dir in "${PPAP_ROOT}"/docker/*/; do
+        [[ -f "${dir}Dockerfile" ]] && FAMILIES+=("$(basename "$dir")")
+      done
+      ;;
+    -*)  error "Unknown option: $arg" ;;
+    *)   FAMILIES+=("$(target_to_family "$arg")") ;;
+  esac
 done
 
 # Deduplicate
@@ -126,7 +135,7 @@ for family in "${FAMILIES[@]}"; do
 
   IMAGE="ppap/${family}"
   info "Building ${IMAGE} from docker/${family}/..."
-  if docker buildx build --load -t "${IMAGE}" "${PPAP_ROOT}/docker/${family}/"; then
+  if docker buildx build --load $NO_CACHE -t "${IMAGE}" "${PPAP_ROOT}/docker/${family}/"; then
     success "${IMAGE} built successfully"
   else
     echo "[WARN]  ${IMAGE} build failed"
