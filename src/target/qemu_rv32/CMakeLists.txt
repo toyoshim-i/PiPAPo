@@ -28,9 +28,12 @@ set(CMAKE_C_STANDARD 11)
 option(PPAP_TESTS "Enable test suite" OFF)
 option(PPAP_TESTS_EXTENDED "Use extended test init runner" OFF)
 
-# RISC-V flags (rv32imac, no float, no relaxation for kernel)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=rv32imac_zicsr -mabi=ilp32 -mcmodel=medany")
-set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -march=rv32imac_zicsr -mabi=ilp32")
+# RISC-V flags (rv32imac, no float).
+# Explicitly disable Zcb (compressed byte/halfword load/store) — the Pico SDK
+# toolchain enables it by default (Hazard3 supports it), but QEMU 8.x doesn't.
+set(PPAP_RV32_MARCH "rv32imac_zicsr_zifencei")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=${PPAP_RV32_MARCH} -mabi=ilp32 -mcmodel=medany -mno-strict-align")
+set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -march=${PPAP_RV32_MARCH} -mabi=ilp32")
 
 # Shared build directory for userland artifacts
 set(PPAP_SHARED_BUILD "${PPAP_ROOT}/build/riscv")
@@ -43,6 +46,7 @@ add_executable(ppap_qemu_rv32
     ${KERNEL_RISCV_COMMON_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/target_qemu_rv32.c
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/uart_ns16550.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/string.c
 )
 
 # Common includes, warnings, definitions
@@ -56,8 +60,8 @@ target_compile_definitions(ppap_qemu_rv32 PRIVATE
     PPAP_KERNEL=1
     PPAP_QEMU=1
     PPAP_SYS_HZ=10000000u
-    PAGE_POOL_BASE=0x80804000u
-    PAGE_COUNT_MAX=112u
+    PAGE_POOL_BASE=0x80809000u
+    PAGE_COUNT_MAX=107u
 )
 
 # Subsystem/eCPU definitions
