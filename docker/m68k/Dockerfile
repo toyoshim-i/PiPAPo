@@ -60,11 +60,17 @@ ENV PPAP_M68K_TOOLCHAIN=/opt/ppap/m68k-elf
 
 # -- GCC 14.2.0 (C only, m68000) --------------------------------------------
 
+COPY patches/gcc/ /tmp/gcc-patches/
+
 RUN wget -q -O /tmp/gcc.tar.xz \
       "https://ftp.gnu.org/gnu/gcc/gcc-14.2.0/gcc-14.2.0.tar.xz" && \
     tar xf /tmp/gcc.tar.xz -C /opt/ppap/src && \
     rm /tmp/gcc.tar.xz && \
-    cd /opt/ppap/src/gcc-14.2.0 && ./contrib/download_prerequisites && \
+    cd /opt/ppap/src/gcc-14.2.0 && \
+    for p in /tmp/gcc-patches/*.patch; do \
+      [ -f "$p" ] && patch -p1 < "$p"; \
+    done && \
+    ./contrib/download_prerequisites && \
     mkdir /opt/ppap/build/gcc && cd /opt/ppap/build/gcc && \
     /opt/ppap/src/gcc-14.2.0/configure \
       --target=m68k-elf \
