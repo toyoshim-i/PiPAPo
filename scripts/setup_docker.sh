@@ -48,8 +48,8 @@ fi
 if ! docker info &>/dev/null 2>&1; then
   info "Adding $(whoami) to the docker group..."
   sudo usermod -aG docker "$(whoami)"
-  info "Group membership updated. You may need to log out and back in,"
-  info "or run: newgrp docker"
+  info "Activating docker group in current shell..."
+  exec sg docker "$0 $*"
 fi
 
 # --- Resolve targets to image families ---------------------------------------
