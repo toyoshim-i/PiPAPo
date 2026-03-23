@@ -18,12 +18,17 @@ A portable UNIX-like micro OS for bare-metal microcontrollers and retro CPUs.
 
 ## Supported Targets
 
-| Target | Board / Emulator | Architecture | CPU | RAM |
-|---|---|---|---|---|
-| `qemu_arm` | QEMU mps2-an500 | ARM Cortex-M0+ | ARMv6-M (Thumb-1) | 4 MB |
-| `pico1` | Raspberry Pi Pico | ARM Cortex-M0+ | Dual-core @ 133 MHz | 264 KB |
-| `pico1calc` | ClockworkPi PicoCalc | ARM Cortex-M0+ | Dual-core @ 133 MHz | 264 KB |
-| `qemu_m68k` | QEMU virt m68k | Motorola 68000 | m68000 | Up to 16 MB (auto-detected) |
+| Target | Board / Emulator | Architecture | CPU | RAM | Status |
+|---|---|---|---|---|---|
+| `qemu_arm` | QEMU mps2-an500 | ARM Cortex-M3 | ARMv7-M | 4 MB | 23/23 tests |
+| `pico1` | Raspberry Pi Pico | ARM Cortex-M0+ | Dual-core @ 133 MHz | 264 KB | Stable |
+| `pico1calc` | ClockworkPi PicoCalc | ARM Cortex-M0+ | Dual-core @ 133 MHz | 264 KB | Stable |
+| `pico2` | Raspberry Pi Pico 2 | ARM Cortex-M33 | Dual-core @ 150 MHz | 520 KB | Stable |
+| `pico2rv` | Raspberry Pi Pico 2 | RISC-V Hazard3 | RV32IMAC @ 150 MHz | 520 KB | Functional |
+| `qemu_rv32` | QEMU virt rv32 | RISC-V | RV32IMAC | 512 KB | 17/22 tests |
+| `qemu_m68k` | QEMU virt m68k | Motorola 68000 | m68000 | Up to 16 MB | 19/19 tests |
+| `x68k` | XEiJ emulator | Motorola 68000 | m68000 @ 10 MHz | 2+ MB | Stable |
+| `xtensa_cc` | M5Stack CardComputer | Xtensa LX7 | ESP32-S3 @ 240 MHz | 512 KB | WIP |
 
 All targets share the same kernel source, syscall interface, VFS, and process model. Only drivers, boot sequences, linker scripts, and architecture-specific code (context switch, syscall trap) differ per target.
 
@@ -32,7 +37,9 @@ All targets share the same kernel source, syscall interface, VFS, and process mo
 - **Kernel** — preemptive scheduler, vfork/exec, signals, pipes, memory protection
 - **File systems** — romfs, VFAT (SD card), UFS (loopback images), devfs, procfs, tmpfs
 - **User space** — musl libc, busybox (hush shell + 100+ applets), Rogue 5.4.4
-- **Multi-architecture** — ARM (Thumb-1) and m68k from the same source tree
+- **4 architectures** — ARM Cortex-M, RISC-V (RV32IMAC), Motorola 68000, Xtensa LX7
+- **eCPU emulators** — Z80 and m68k software interpreters enable cross-architecture binary execution (CP/M .COM, Human68k .X/.R, S-OS .OBJ)
+- **Subsystems** — Human68k, CP/M, S-OS SWORD — run retro OS binaries via syscall bridge
 - **PicoCalc display** — SPI LCD framebuffer console (40×20 / 80×40 / 40×40), VT100/ANSI color emulator
 - **PicoCalc keyboard** — I2C STM32 co-processor, full keymap with function keys
 - **Multi-TTY** — serial console + LCD console with getty login on each
@@ -42,13 +49,14 @@ All targets share the same kernel source, syscall interface, VFS, and process mo
 
 - **LCD TTY unstable** — the framebuffer console occasionally hangs or glitches during heavy scrolling
 - **SD card disabled** — SD/VFAT support is tentatively disabled in the current build
+- **RISC-V no XIP text** — user binaries loaded entirely to SRAM (auipc PC-relative limitation); see [docs/targets/rv32.md](/docs/targets/rv32.md)
+- **Xtensa port WIP** — CardComputer (ESP32-S3) target boots but user-space context switch incomplete
 
 ## Future Work
 
-- **RP2350 Port** — Cortex-M33, 8-region MPU, PSRAM support, Thumb-2 optimization; `pico2`/`pico2calc` targets
 - **Pi Zero Port** — ARM1176JZF-S with full MMU, SD card boot; see [docs/targets/pizero.md](/docs/targets/pizero.md)
-- **CPU emulation** — user-space interpretive emulators for retro CPUs (Z80, 6502, 6809, 8086), enabling cross-architecture binary execution; see [docs/ecpu/overview.md](/docs/ecpu/overview.md)
-- **Subsystem support** — load and run applications from other OSes on top of PPAP via syscall bridge (e.g. DOS, Human68K); see [docs/subsystems/overview.md](/docs/subsystems/overview.md). CP/M and S-OS SWORD subsystems are already implemented.
+- **RISC-V PIC toolchain** — build riscv32-unknown-linux-gnu with soft-float for -pie support (XIP text + SRAM data separation)
+- **PicoCalc 2** — RP2350 + PicoCalc hardware, dual architecture (ARM/RISC-V)
 - Audio driver support
 
 ## Repository Layout
@@ -140,6 +148,8 @@ Installs apt packages (`arm-none-eabi-gcc`, `cmake`, `ninja`, `openocd`, `gdb-mu
 ./scripts/build.sh pico1calc           # build a single target
 ./scripts/build.sh --test qemu_arm     # build with tests enabled
 ./scripts/build.sh qemu_m68k           # build m68k QEMU target
+./scripts/build.sh pico2rv             # build RISC-V Pico 2 target
+./scripts/build.sh qemu_rv32           # build RISC-V QEMU target
 ```
 
 Or invoke CMake directly (each target is a standalone project):
@@ -194,7 +204,8 @@ Press **Ctrl-A X** to quit QEMU.
 
 ```sh
 ./scripts/test.sh            # host unit tests only
-./scripts/test.sh --all      # host + build all targets + QEMU tests (ARM & m68k)
+./scripts/test.sh --all      # host + build all targets + QEMU tests (ARM, m68k, rv32)
+./scripts/run.sh --test qemu_rv32    # RISC-V QEMU tests only
 ```
 
 ### 5. Debug with GDB (ARM hardware)

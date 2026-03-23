@@ -50,8 +50,10 @@ This index is the entry point for project documentation.
   - [`ecpu/z80.md`](ecpu/z80.md)
 
 - Targets
-  - [`targets/68000.md`](targets/68000.md)
-  - [`targets/pizero.md`](targets/pizero.md)
+  - [`targets/arm_m.md`](targets/arm_m.md) — ARM Cortex-M (qemu_arm, pico1, pico1calc, pico2)
+  - [`targets/rv32.md`](targets/rv32.md) — RISC-V RV32IMAC (qemu_rv32, pico2rv)
+  - [`targets/68000.md`](targets/68000.md) — Motorola 68000 (qemu_m68k, x68k)
+  - [`targets/pizero.md`](targets/pizero.md) — Pi Zero (future)
 
 - Reference
   - [`reference/picocalc.md`](reference/picocalc.md)
@@ -59,4 +61,6 @@ This index is the entry point for project documentation.
 
 - Archive
   - [`archive/history/`](archive/history/)
+  - [`archive/pico2rv_port_proposal.md`](archive/pico2rv_port_proposal.md) — Original RISC-V port proposal
+  - [`archive/pico2_port.md`](archive/pico2_port.md) — RP2350 ARM port proposal
   - [`archive/sos_subsystem_proposal.md`](archive/sos_subsystem_proposal.md)
