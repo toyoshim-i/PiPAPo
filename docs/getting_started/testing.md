@@ -21,6 +21,9 @@ build process, and execution environment.
 # On-target tests (m68k, requires qemu-system-m68k)
 ./scripts/run.sh --test qemu_m68k
 
+# On-target tests (RISC-V, requires qemu-system-riscv32)
+./scripts/run.sh --test qemu_rv32
+
 # Extended on-target tests (ARM lane with extra user tests)
 ./scripts/run.sh --test-extended qemu_arm
 
@@ -292,7 +295,7 @@ by the `PPAP_TESTS` CMake option. The build system:
   shares the parent's address space. The child must immediately
   `execve` or `_exit` — do not modify parent data or trigger faults.
 
-### Known coverage gaps (as of 2026-03-20)
+### Known coverage gaps (as of 2026-03-23)
 
 Current user-space tests are a solid regression baseline, but subsystem
 coverage is not exhaustive yet.
@@ -332,6 +335,11 @@ coverage is not exhaustive yet.
   random-record variants, and several disk/attribute vector functions.
   CP/M test coverage is therefore good for bootstrapping and basic file I/O,
   but not yet complete for directory iteration and random-record compatibility.
+- **`qemu_rv32`: 17/22 pass.**
+  Failures: `test_elf` (arch-specific checks), `test_signal` (signal frame
+  not implemented), `test_sleep_intr` (sleep+signal), `test_orphan` (process
+  lifecycle), `test_time` (`clock_gettime` not wired).
+  `test_float` times out (no FPU, soft-float too slow).
 - **`pdb` scripted coverage is architecture-asymmetric.**
   `test_pdb` has 170/367 failures on m68k and is marked `TEST_DISABLED` there.
   On ARM it is `TEST_SLOW` (base runner) / `TEST_ENABLED` (extended runner).
@@ -359,11 +367,13 @@ Builds with `PPAP_TESTS=ON`, runs under QEMU, and greps output for the
 exact marker `ALL TESTS PASSED`.
 
 - ARM default timeout: 60 seconds
+- RISC-V default timeout: 60 seconds
 - m68k default timeout: 90 seconds
 - m68k with `--slow`: 150 seconds
 
 ```bash
 ./scripts/run.sh --test              # ARM (default)
+./scripts/run.sh --test qemu_rv32    # RISC-V
 ./scripts/run.sh --test qemu_m68k    # m68k
 ```
 
