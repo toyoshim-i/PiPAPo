@@ -393,9 +393,11 @@ if [[ $DO_TEST -eq 1 ]]; then
         TIMEOUT=180
     fi
     echo "[test] Running on-target tests (timeout ${TIMEOUT}s)..."
+    TEST_DISPLAY=(-nographic)
+    if [[ "$TARGET" == "ibmpc" ]]; then TEST_DISPLAY=(); fi
     OUTPUT=$(timeout "$TIMEOUT" run_qemu \
         "${QEMU_ARGS[@]}" \
-        -nographic 2>&1 || true)
+        "${TEST_DISPLAY[@]+"${TEST_DISPLAY[@]}"}" 2>&1 || true)
 
     echo "$OUTPUT"
 
@@ -420,7 +422,12 @@ fi
 
 # ── Run interactively ──────────────────────────────────────────────────────
 echo "[run] Running ${ELF:-$TARGET} ..."
+# ibmpc already specifies -display none; other targets use -nographic
+DISPLAY_ARGS=(-nographic)
+if [[ "$TARGET" == "ibmpc" ]]; then
+    DISPLAY_ARGS=()
+fi
 run_qemu \
     "${QEMU_ARGS[@]}" \
-    -nographic \
+    "${DISPLAY_ARGS[@]+"${DISPLAY_ARGS[@]}"}" \
     "${GDB_ARGS[@]+"${GDB_ARGS[@]}"}"
