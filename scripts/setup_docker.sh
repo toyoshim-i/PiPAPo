@@ -59,9 +59,9 @@ fi
 target_to_family() {
   case "$1" in
     ibmpc)                          echo "ia16" ;;
+    qemu_m68k|x68k)                 echo "m68k" ;;
     # TODO: add other families as they are dockerized
     # qemu_arm|pico1|pico1calc|pico2) echo "arm" ;;
-    # qemu_m68k|x68k)                 echo "m68k" ;;
     # qemu_rv32|pico2rv)              echo "riscv" ;;
     # xtensa_cc)                      echo "xtensa" ;;
     *)                              echo "$1" ;;  # assume family name
