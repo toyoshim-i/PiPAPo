@@ -165,7 +165,7 @@ esac
 # ── ESP-IDF build (xtensa_cc) ────────────────────────────────────────────────
 if [[ "$TARGET" == "xtensa_cc" ]]; then
     XTENSA_TC_DIR="$PROJECT_DIR/tools/xtensa-toolchain"
-    ESP_IDF_DIR="$PROJECT_DIR/third_party/esp-idf"
+    ESP_IDF_DIR="${IDF_PATH:-$PROJECT_DIR/third_party/esp-idf}"
     if [[ ! -f "$ESP_IDF_DIR/export.sh" ]]; then
         # Not on host — run the entire xtensa build inside Docker
         DOCKER_IMAGE="$(target_docker_image xtensa_cc)"
