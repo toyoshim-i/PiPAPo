@@ -56,6 +56,7 @@ RUN mkdir -p /opt/ppap/src /opt/ppap/build /opt/ppap/m68k-elf && \
     rm -rf /opt/ppap/build/binutils /opt/ppap/src/binutils-2.43
 
 ENV PATH="/opt/ppap/m68k-elf/bin:${PATH}"
+ENV PPAP_M68K_TOOLCHAIN=/opt/ppap/m68k-elf
 
 # -- GCC 14.2.0 (C only, m68000) --------------------------------------------
 

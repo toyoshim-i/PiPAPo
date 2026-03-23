@@ -59,6 +59,7 @@ RUN mkdir -p /opt/ppap/riscv-linux && \
     rm /tmp/riscv-linux-tc.tar.xz
 
 ENV PATH="/opt/ppap/riscv-linux/bin:${PATH}"
+ENV PPAP_RISCV_LINUX_TOOLCHAIN=/opt/ppap/riscv-linux
 
 # -- Pico SDK 2.2.0 ---------------------------------------------------------
 

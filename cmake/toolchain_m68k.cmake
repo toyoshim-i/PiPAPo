@@ -11,8 +11,13 @@
 set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_PROCESSOR m68k)
 
-# Custom m68k-elf toolchain (built by third_party/build_gcc_m68k.sh)
-set(PPAP_M68K_TOOLCHAIN ${CMAKE_CURRENT_LIST_DIR}/../tools/m68k-toolchain)
+# m68k-elf toolchain — uses PPAP_M68K_TOOLCHAIN env var if set (Docker),
+# otherwise falls back to the local tools/ directory.
+if(DEFINED ENV{PPAP_M68K_TOOLCHAIN})
+    set(PPAP_M68K_TOOLCHAIN $ENV{PPAP_M68K_TOOLCHAIN})
+else()
+    set(PPAP_M68K_TOOLCHAIN ${CMAKE_CURRENT_LIST_DIR}/../tools/m68k-toolchain)
+endif()
 
 # Cross-compiler
 set(CMAKE_C_COMPILER   ${PPAP_M68K_TOOLCHAIN}/bin/m68k-elf-gcc)

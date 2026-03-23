@@ -118,7 +118,11 @@ set(BB_SBIN_APPLETS mount umount)
 # Arch-specific variables
 # =============================================================================
 
-set(PPAP_M68K_TC        ${PPAP_ROOT}/tools/m68k-toolchain)
+if(DEFINED ENV{PPAP_M68K_TOOLCHAIN})
+    set(PPAP_M68K_TC    $ENV{PPAP_M68K_TOOLCHAIN})
+else()
+    set(PPAP_M68K_TC    ${PPAP_ROOT}/tools/m68k-toolchain)
+endif()
 set(PPAP_M68K_CC        ${PPAP_M68K_TC}/bin/m68k-elf-gcc)
 set(PPAP_M68K_OBJCOPY   ${PPAP_M68K_TC}/bin/m68k-elf-objcopy)
 set(PPAP_M68K_R68K_LD   ${PPAP_ROOT}/src/user/arch/m68k/r68k.ld)
@@ -150,8 +154,16 @@ elseif(PPAP_ARCH STREQUAL "riscv")
     # Prefer the Linux toolchain (built from source with --with-abi=ilp32)
     # for -pie support (proper GOT-based PIC + soft-float PIC libgcc).
     # Fall back to bare-metal toolchain if Linux toolchain is not built yet.
-    set(PPAP_RISCV_LINUX_TC ${PPAP_ROOT}/tools/riscv-linux-toolchain)
-    set(PPAP_RISCV_ELF_TC   ${PPAP_ROOT}/tools/riscv-toolchain)
+    if(DEFINED ENV{PPAP_RISCV_LINUX_TOOLCHAIN})
+        set(PPAP_RISCV_LINUX_TC $ENV{PPAP_RISCV_LINUX_TOOLCHAIN})
+    else()
+        set(PPAP_RISCV_LINUX_TC ${PPAP_ROOT}/tools/riscv-linux-toolchain)
+    endif()
+    if(DEFINED ENV{PICO_TOOLCHAIN_PATH})
+        set(PPAP_RISCV_ELF_TC $ENV{PICO_TOOLCHAIN_PATH})
+    else()
+        set(PPAP_RISCV_ELF_TC ${PPAP_ROOT}/tools/riscv-toolchain)
+    endif()
     if(EXISTS ${PPAP_RISCV_LINUX_TC}/bin/riscv32-unknown-linux-gnu-gcc)
         set(PPAP_RISCV_TC      ${PPAP_RISCV_LINUX_TC})
         set(PPAP_CC            ${PPAP_RISCV_TC}/bin/riscv32-unknown-linux-gnu-gcc)
@@ -778,8 +790,26 @@ function(ppap_m68k_cross_program name source)
         return()
     endif()
 
-    set(_m68k_tc  ${PPAP_ROOT}/tools/m68k-toolchain)
+    # If the ELF was pre-built (e.g. by build.sh using a Docker container),
+    # use it directly instead of invoking m68k-elf-gcc.
+    set(_prebuilt ${PPAP_ROOT}/build/shared_m68k/${name}_m68k.elf)
+    if(EXISTS ${_prebuilt})
+        set_property(GLOBAL APPEND PROPERTY PPAP_M68K_CROSS_ELFS ${_prebuilt})
+        return()
+    endif()
+
+    if(DEFINED ENV{PPAP_M68K_TOOLCHAIN})
+        set(_m68k_tc  $ENV{PPAP_M68K_TOOLCHAIN})
+    else()
+        set(_m68k_tc  ${PPAP_ROOT}/tools/m68k-toolchain)
+    endif()
     set(_m68k_cc  ${_m68k_tc}/bin/m68k-elf-gcc)
+    if(NOT EXISTS ${_m68k_cc})
+        message(FATAL_ERROR
+            "m68k-elf-gcc not found at ${_m68k_cc} and no pre-built "
+            "${name}_m68k.elf in build/shared_m68k/. "
+            "Run: ./scripts/build.sh to pre-build cross binaries via Docker.")
+    endif()
     set(_m68k_ld  ${PPAP_ROOT}/src/user/arch/m68k/user.ld)
     execute_process(COMMAND ${_m68k_cc} -m68000 -print-libgcc-file-name
         OUTPUT_VARIABLE _m68k_libgcc OUTPUT_STRIP_TRAILING_WHITESPACE)

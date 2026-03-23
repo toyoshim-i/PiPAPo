@@ -122,6 +122,34 @@ if [[ $CLEAN -eq 1 && -d "$BUILD_DIR" ]]; then
     rm -rf "$BUILD_DIR"
 fi
 
+# ── Pre-build cross-arch binaries if needed ─────────────────────────────────
+# ARM targets include m68k test binaries for the m68k emulator.  When building
+# inside Docker, the ARM container doesn't have m68k-elf-gcc, so we pre-build
+# the cross ELFs in the m68k container first.
+M68K_CROSS_IMAGE="$(target_docker_image qemu_m68k)"
+case "$TARGET" in
+    qemu_arm|pico1|pico1calc|pico2|qemu_rv32|pico2rv)
+        if ! command -v m68k-elf-gcc &>/dev/null && \
+           [[ -n "$M68K_CROSS_IMAGE" ]] && docker_image_exists "$M68K_CROSS_IMAGE"; then
+            SHARED_BUILD="$PROJECT_DIR/build/shared_m68k"
+            echo "[build] Pre-building m68k cross binaries in $M68K_CROSS_IMAGE..."
+            docker_run "$M68K_CROSS_IMAGE" bash -c "
+                mkdir -p /ppap/build/shared_m68k && \
+                M68K_CC=m68k-elf-gcc && \
+                M68K_LD=/ppap/src/user/arch/m68k/user.ld && \
+                M68K_LIBGCC=\$(\$M68K_CC -m68000 -print-libgcc-file-name) && \
+                \$M68K_CC -m68000 -c -o /ppap/build/shared_m68k/hello_m68k.o \
+                    /ppap/src/user/arch/m68k/hello.S && \
+                \$M68K_CC -m68000 -nostdlib -T \$M68K_LD \
+                    -Wl,--gc-sections -Wl,--build-id=none \
+                    -o /ppap/build/shared_m68k/hello_m68k.elf \
+                    /ppap/build/shared_m68k/hello_m68k.o \$M68K_LIBGCC
+            "
+            echo "[build] m68k cross binaries ready"
+        fi
+        ;;
+esac
+
 # ── Build ────────────────────────────────────────────────────────────────────
 EXTRA_ARGS=(-DPPAP_EXTRA_OVERLAY=)
 case "$TARGET" in
@@ -139,6 +167,20 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     XTENSA_TC_DIR="$PROJECT_DIR/tools/xtensa-toolchain"
     ESP_IDF_DIR="$PROJECT_DIR/third_party/esp-idf"
     if [[ ! -f "$ESP_IDF_DIR/export.sh" ]]; then
+        # Not on host — run the entire xtensa build inside Docker
+        DOCKER_IMAGE="$(target_docker_image xtensa_cc)"
+        if [[ -n "$DOCKER_IMAGE" ]] && docker_image_exists "$DOCKER_IMAGE"; then
+            echo "[build] Building xtensa_cc via Docker ($DOCKER_IMAGE)..."
+            BUILD_ARGS=()
+            if [[ $CLEAN -eq 1 ]]; then BUILD_ARGS+=(--clean); fi
+            if [[ "$TESTS" == "ON" ]]; then BUILD_ARGS+=(--test); fi
+            docker_run "$DOCKER_IMAGE" bash -c "
+                export IDF_TOOLS_PATH=/opt/ppap/xtensa-tools && \
+                source /opt/ppap/src/esp-idf/export.sh >/dev/null 2>&1 && \
+                /ppap/scripts/build.sh ${BUILD_ARGS[*]+"${BUILD_ARGS[*]}"} xtensa_cc
+            "
+            exit $?
+        fi
         echo "[build] Error: ESP-IDF not found. Run: ./scripts/setup_docker.sh xtensa"
         exit 1
     fi
