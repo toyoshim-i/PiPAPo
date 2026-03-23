@@ -32,8 +32,8 @@ is the M5Stack CardComputer (`xtensa_cc`, ESP32-S3 dual-core LX7).
 
 - **Compiler:** `xtensa-esp32s3-elf-gcc` (ESP-IDF toolchain)
 - **ABI:** Windowed (ESP-IDF default; kernel is an ESP-IDF component)
-- **Setup:** `IDF_TOOLS_PATH=tools/xtensa-toolchain third_party/esp-idf/install.sh esp32s3`
-- **Activation:** `source third_party/esp-idf/export.sh`
+- **Setup:** `./scripts/setup_docker.sh xtensa`
+- **Activation:** Automatic inside `ppap/xtensa` Docker container
 
 The Xtensa toolchain is **chip-specific** — unlike ARM/RISC-V where one
 toolchain covers many chips, each Xtensa configuration (ESP32, ESP32-S2,

@@ -51,7 +51,7 @@ Produce a bootable PPAP system on the Sharp X68000 that:
 | X-format / R-format binary loader | `src/kernel/exec/exec_x68k.c` | 100% |
 | UFS filesystem driver | `src/kernel/fs/ufs.c` | 100% |
 | VFS, tmpfs, procfs, devfs | `src/kernel/fs/`, `src/kernel/vfs/` | 100% |
-| m68k user-space toolchain | `tools/m68k-toolchain/` | 100% |
+| m68k user-space toolchain | `ppap/m68k` Docker image | 100% |
 
 ---
 
