@@ -1307,6 +1307,12 @@ long sys_exit(long status) {
         current->user_pages[i] = NULL;
       }
     }
+    /* Clear stack_page if it's the parent's — waitpid frees stack_page,
+     * and freeing the parent's stack would corrupt its kernel stack.
+     * This can happen when execve fails in a vfork child: sys_execve
+     * restores the parent's stack_page into the child's pcb. */
+    if (current->stack_page == current->vfork_parent->stack_page)
+      current->stack_page = NULL;
 #if defined(__m68k__)
     /* Free child's user stack copy if different from parent's */
     if (current->user_stack_page &&
