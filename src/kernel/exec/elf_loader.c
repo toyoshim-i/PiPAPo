@@ -231,7 +231,11 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     /* Apply relocations from --emit-relocs sections.
      * L32R literal pool values are absolute addresses at link-time base (0x0).
      * Add load_base so they point to the actual IRAM location.
-     * Same approach as the RISC-V path's R_RISCV_32 handling. */
+     *
+     * IMPORTANT: only process RELA sections whose target section (sh_info)
+     * has SHF_ALLOC set.  Metadata sections like .xt.prop and .xt.lit have
+     * their own RELA sections with r_offset values that are section-internal
+     * — NOT image offsets.  Processing those would corrupt code/data. */
     {
       uint32_t load_base = (uint32_t)(uintptr_t)sram_page;
 
@@ -241,6 +245,15 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
               file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
           uint32_t sh_type = *(const uint32_t *)(sh + 4);
           if (sh_type != 4 /* SHT_RELA */) continue;
+
+          /* sh_info = index of section these relocations apply to.
+           * Only process if the target section is allocated (loaded). */
+          uint32_t sh_info_idx = *(const uint32_t *)(sh + 28);
+          if (sh_info_idx >= ehdr->e_shnum) continue;
+          const uint8_t *target_sh =
+              file_buf + ehdr->e_shoff + sh_info_idx * ehdr->e_shentsize;
+          uint32_t target_flags = *(const uint32_t *)(target_sh + 8);
+          if (!(target_flags & 2 /* SHF_ALLOC */)) continue;
 
           uint32_t sh_offset = *(const uint32_t *)(sh + 16);
           uint32_t sh_size   = *(const uint32_t *)(sh + 20);
@@ -254,9 +267,10 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
             uint32_t r_info   = *(const uint32_t *)(rela + 4);
             uint8_t  r_type   = (uint8_t)(r_info & 0xFF);
 
-            /* R_XTENSA_32 = 1: absolute 32-bit address (literal pool values,
-             * initialized data pointers).  Add load_base to relocate. */
-            if (r_type != 1) continue;
+            /* R_XTENSA_32 (1): absolute 32-bit data (literal pool, init data)
+             * R_XTENSA_PLT (6): PLT-resolved function address (literal pool)
+             * Both need load_base added to convert link-time → runtime addr. */
+            if (r_type != 1 && r_type != 6) continue;
 
             if (r_offset < image_end) {
               volatile uint32_t *target =
