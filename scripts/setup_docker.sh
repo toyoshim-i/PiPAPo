@@ -143,6 +143,64 @@ for family in "${FAMILIES[@]}"; do
   fi
 done
 
+# --- Host-side tools (not in Docker) -----------------------------------------
+
+DL_DIR="${PPAP_ROOT}/build/downloads"
+
+# XEiJ (X68000 Emulator in Java) — GUI emulator, runs on host
+for family in "${FAMILIES[@]}"; do
+  if [[ "$family" == "m68k" ]]; then
+    info "=== Installing XEiJ (X68000 emulator) ==="
+
+    XEIJ_VER="0260308"
+    XEIJ_ZIP="XEiJ_${XEIJ_VER}.zip"
+    XEIJ_URL="https://stdkmd.net/xeij/${XEIJ_ZIP}"
+    XEIJ_DIR="${PPAP_ROOT}/tools/xeij"
+
+    if [[ -f "${XEIJ_DIR}/XEiJ.jar" ]]; then
+      success "XEiJ already installed at ${XEIJ_DIR}"
+    else
+      mkdir -p "${DL_DIR}" "${XEIJ_DIR}"
+      if [[ -f "${DL_DIR}/${XEIJ_ZIP}" ]]; then
+        info "XEiJ archive already downloaded."
+      else
+        info "Downloading XEiJ ${XEIJ_VER}..."
+        wget -q --show-progress -O "${DL_DIR}/${XEIJ_ZIP}.tmp" "${XEIJ_URL}"
+        mv "${DL_DIR}/${XEIJ_ZIP}.tmp" "${DL_DIR}/${XEIJ_ZIP}"
+      fi
+      info "Extracting XEiJ to ${XEIJ_DIR}..."
+      XEIJ_TMP=$(mktemp -d)
+      unzip -qo "${DL_DIR}/${XEIJ_ZIP}" -d "${XEIJ_TMP}"
+      # The zip may contain a top-level directory; flatten into XEIJ_DIR
+      if [[ -f "${XEIJ_TMP}/XEiJ.jar" ]]; then
+        cp -a "${XEIJ_TMP}/." "${XEIJ_DIR}/"
+      elif [[ -d "${XEIJ_TMP}/XEiJ" ]]; then
+        cp -a "${XEIJ_TMP}/XEiJ/." "${XEIJ_DIR}/"
+      else
+        cp -a "${XEIJ_TMP}/." "${XEIJ_DIR}/"
+      fi
+      rm -rf "${XEIJ_TMP}"
+      if [[ -f "${XEIJ_DIR}/XEiJ.jar" ]]; then
+        success "XEiJ installed to ${XEIJ_DIR}"
+      else
+        echo "[WARN]  XEiJ.jar not found after extraction — check zip contents"
+        FAIL=1
+      fi
+    fi
+
+    # Ensure Java is available (XEiJ requires Java 25+)
+    if ! command -v java &>/dev/null; then
+      info "Java not found. Installing openjdk-25-jre-headless..."
+      sudo apt-get update -qq
+      sudo apt-get install -y openjdk-25-jre-headless || {
+        echo "[WARN]  Failed to install Java 25 — XEiJ requires Java 25+"
+        FAIL=1
+      }
+    fi
+    break
+  fi
+done
+
 # --- Summary -----------------------------------------------------------------
 
 echo ""

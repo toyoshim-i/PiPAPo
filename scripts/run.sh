@@ -212,7 +212,8 @@ fi
 
 # ── X68000 target — build floppy image and launch XEiJ ───────────────────────
 if [[ "$TARGET" == "x68k" ]]; then
-    "$SCRIPT_DIR/mkx68kimg.sh"
+    DOCKER_IMAGE="$(target_docker_image x68k)"
+    docker_run "$DOCKER_IMAGE" /ppap/scripts/mkx68kimg.sh
     XDF="$PROJECT_DIR/build/x68k/ppap_x68k.xdf"
     XEIJ_DIR="$PROJECT_DIR/tools/xeij"
     XEIJ_JAR="$XEIJ_DIR/XEiJ.jar"

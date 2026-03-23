@@ -20,7 +20,7 @@
 # Prerequisites:
 #   - build/x68k/ppap_x68k.bin       (kernel, built by cmake)
 #   - build/x68k/romfs_ppap_x68k/    (userland staging, built by cmake)
-#   - tools/m68k-toolchain/bin/m68k-elf-gcc
+#   - m68k-elf-gcc (on PATH, or set M68K_GCC/M68K_OBJCOPY/M68K_NM)
 #   - build/qemu_arm/mkufs or build/m68k/mkufs (any built ARM/m68k target)
 
 set -euo pipefail
@@ -31,8 +31,9 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 KERNEL_BIN="${1:-$PROJECT_DIR/build/x68k/ppap_x68k.bin}"
 OUTPUT_XDF="${2:-$PROJECT_DIR/build/x68k/ppap_x68k.xdf}"
 
-M68K_GCC="$PROJECT_DIR/tools/m68k-toolchain/bin/m68k-elf-gcc"
-M68K_OBJCOPY="$PROJECT_DIR/tools/m68k-toolchain/bin/m68k-elf-objcopy"
+M68K_GCC="${M68K_GCC:-m68k-elf-gcc}"
+M68K_OBJCOPY="${M68K_OBJCOPY:-m68k-elf-objcopy}"
+M68K_NM="${M68K_NM:-m68k-elf-nm}"
 # mkufs may be built by any ARM target (qemu_arm) or m68k build (host tools)
 MKUFS="${MKUFS:-}"
 for _d in "$PROJECT_DIR/build/m68k" "$PROJECT_DIR/build/qemu_arm" "$PROJECT_DIR/build/host"; do
@@ -55,12 +56,12 @@ if [[ ! -f "$KERNEL_BIN" ]]; then
     exit 1
 fi
 
-if [[ ! -x "$M68K_GCC" ]]; then
+if ! command -v "$M68K_GCC" &>/dev/null; then
     echo "[mkx68kimg] Error: m68k-elf-gcc not found: $M68K_GCC"
     exit 1
 fi
 
-if [[ ! -x "$MKUFS" ]]; then
+if [[ -z "$MKUFS" || ! -x "$MKUFS" ]]; then
     echo "[mkx68kimg] Error: mkufs not found: $MKUFS"
     echo "            Build m68k tools first: ./scripts/run.sh --build qemu_m68k"
     exit 1
@@ -119,7 +120,7 @@ if [[ ! -f "$KERNEL_ELF" ]]; then
     echo "[mkx68kimg] Error: kernel ELF not found: $KERNEL_ELF"
     exit 1
 fi
-POOL_BASE_HEX=$(${M68K_OBJCOPY%objcopy}nm "$KERNEL_ELF" \
+POOL_BASE_HEX=$($M68K_NM "$KERNEL_ELF" \
     | awk '/[ \t]__page_pool_start$/{print "0x"$1"u"; exit}')
 if [[ -z "$POOL_BASE_HEX" ]]; then
     echo "[mkx68kimg] Error: __page_pool_start symbol not found in $KERNEL_ELF"

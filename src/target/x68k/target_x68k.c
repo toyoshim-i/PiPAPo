@@ -209,8 +209,7 @@ int target_mount_rootfs(void) {
    * via ROOTFS_BASE, matching the kernel's linker-provided symbol).
    * The rootfs size is derived from its own UFS superblock (block_count
    * × block_size), which stage2 loaded correctly to RAM. */
-  extern char __page_pool_start;
-  uint32_t addr = (uint32_t)(uintptr_t)&__page_pool_start;
+  uint32_t addr = (uint32_t)(uintptr_t)__page_pool_start;
 
   /* Validate rootfs: check UFS magic at the rootfs address */
   const uint32_t *sb = (const uint32_t *)(uintptr_t)addr;

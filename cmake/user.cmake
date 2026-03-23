@@ -70,7 +70,11 @@ endif()
 # --- User-space program lists ---
 
 # Application programs (sources in src/user/)
-set(USER_APPS hello getty init trace pdb ttyctl push)
+set(USER_APPS hello getty init trace pdb push)
+# ttyctl is pico1calc-only (LCD terminal control)
+if(CMAKE_PROJECT_NAME STREQUAL "ppap_pico1calc")
+    list(APPEND USER_APPS ttyctl)
+endif()
 # Install destinations: init -> sbin, ttyctl -> usr/bin, others -> bin
 
 # Optional per-app extra sources (for multi-file user programs).
@@ -164,7 +168,33 @@ elseif(PPAP_ARCH STREQUAL "riscv")
     else()
         set(PPAP_RISCV_ELF_TC ${PPAP_ROOT}/tools/riscv-toolchain)
     endif()
+    # Check if the Linux toolchain's libgcc is usable (soft-float + PIC).
+    # Prebuilt riscv-collab packages default to rv32gc (double-float),
+    # which can't link with our ilp32 musl.  When hard-float is detected,
+    # fall back to bare-metal for everything.
+    set(_use_linux_tc OFF)
     if(EXISTS ${PPAP_RISCV_LINUX_TC}/bin/riscv32-unknown-linux-gnu-gcc)
+        execute_process(
+            COMMAND ${PPAP_RISCV_LINUX_TC}/bin/riscv32-unknown-linux-gnu-gcc
+                    -march=rv32imac_zicsr -mabi=ilp32 -print-libgcc-file-name
+            OUTPUT_VARIABLE _linux_libgcc OUTPUT_STRIP_TRAILING_WHITESPACE)
+        # Check float ABI via readelf (need bare-metal readelf since
+        # the archive may not exist on the host)
+        set(_readelf "readelf")
+        if(EXISTS ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-readelf)
+            set(_readelf ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-readelf)
+        endif()
+        execute_process(COMMAND ${_readelf} -h ${_linux_libgcc}
+            OUTPUT_VARIABLE _libgcc_hdr ERROR_QUIET)
+        if(NOT _libgcc_hdr MATCHES "double-float")
+            set(_use_linux_tc ON)
+        else()
+            message(STATUS
+                "RISC-V: Linux libgcc is hard-float — "
+                "falling back to bare-metal toolchain")
+        endif()
+    endif()
+    if(_use_linux_tc)
         set(PPAP_RISCV_TC      ${PPAP_RISCV_LINUX_TC})
         set(PPAP_CC            ${PPAP_RISCV_TC}/bin/riscv32-unknown-linux-gnu-gcc)
         set(PPAP_CROSS_PREFIX  ${PPAP_RISCV_TC}/bin/riscv32-unknown-linux-gnu-)
@@ -191,36 +221,15 @@ elseif(PPAP_ARCH STREQUAL "riscv")
     set(PPAP_USER_LD       ${PPAP_ARCH_DIR}/user.ld)
     set(PPAP_BUSYBOX_LD    ${PPAP_ROOT}/third_party/patches/musl/libc_riscv.ld)
     set(PPAP_MUSL_SYSROOT  ${PPAP_SHARED_BUILD}/musl-sysroot)
-    # PPAP_MUSL_TARGET set above based on which toolchain is available
     set(PPAP_SPECS_FILE    ${PPAP_SHARED_BUILD}/musl-riscv.specs)
     set(PPAP_BB_ARCH       riscv32)
     set(PPAP_ARCH_LABEL    "rv32imac (Hazard3)")
 
     execute_process(COMMAND ${PPAP_CC} -print-file-name=include
         OUTPUT_VARIABLE PPAP_GCC_INCLUDE OUTPUT_STRIP_TRAILING_WHITESPACE)
-    # Resolve libgcc.  The Linux toolchain's libgcc may be hard-float
-    # (prebuilt riscv-collab packages default to rv32gc / double-float).
-    # Detect this and fall back to the bare-metal toolchain's soft-float
-    # libgcc, which is always ilp32.
     execute_process(COMMAND ${PPAP_CC} ${PPAP_TARGET_FLAGS}
                             -print-libgcc-file-name
         OUTPUT_VARIABLE PPAP_LIBGCC OUTPUT_STRIP_TRAILING_WHITESPACE)
-    if(PPAP_RISCV_PIE AND EXISTS ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-gcc)
-        execute_process(
-            COMMAND ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-readelf
-                    -h ${PPAP_LIBGCC}
-            OUTPUT_VARIABLE _libgcc_hdr ERROR_QUIET)
-        if(_libgcc_hdr MATCHES "double-float")
-            execute_process(
-                COMMAND ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-gcc
-                        ${PPAP_TARGET_FLAGS} -print-libgcc-file-name
-                OUTPUT_VARIABLE PPAP_LIBGCC
-                OUTPUT_STRIP_TRAILING_WHITESPACE)
-            message(STATUS
-                "RISC-V: Linux libgcc is hard-float, "
-                "using bare-metal libgcc: ${PPAP_LIBGCC}")
-        endif()
-    endif()
     get_filename_component(PPAP_GCC_LIBDIR ${PPAP_LIBGCC} DIRECTORY)
 else()
     set(PPAP_CC            arm-none-eabi-gcc)
@@ -651,7 +660,16 @@ endfunction()
 # BIG_ENDIAN passes -b to mkromfs (for m68k).
 # OVERLAY_DIR specifies a directory whose contents overlay src/etc/.
 function(ppap_generate_romfs target)
-    cmake_parse_arguments(ARG "BIG_ENDIAN" "OVERLAY_DIR" "EXCLUDE_APPS" ${ARGN})
+    cmake_parse_arguments(ARG "BIG_ENDIAN;NO_ROGUE" "OVERLAY_DIR" "EXCLUDE_APPS" ${ARGN})
+
+    # Rogue binary (optional — skip with NO_ROGUE for size-constrained targets)
+    if(ARG_NO_ROGUE)
+        set(_rogue_path "")
+        set(_rogue_dep "")
+    else()
+        set(_rogue_path "${PPAP_ROGUE_DIR}/rogue")
+        set(_rogue_dep  "${PPAP_ROGUE_DIR}/rogue")
+    endif()
 
     set(_romfs_staging ${CMAKE_BINARY_DIR}/romfs_${target})
     set(_romfs_bin     ${CMAKE_BINARY_DIR}/romfs_${target}.bin)
@@ -754,7 +772,7 @@ function(ppap_generate_romfs target)
                 -D "BB_APPLETS=${_bb_applets_escaped}"
                 -D "BB_SHELL_APPLETS=${_bb_shell_escaped}"
                 -D "BB_SBIN_APPLETS=${_bb_sbin_escaped}"
-                -D "ROGUE=${PPAP_ROGUE_DIR}/rogue"
+                -D "ROGUE=${_rogue_path}"
                 -D "ETC_DIR=${PPAP_ROOT}/src/etc"
                 ${_overlay_args}
                 ${_exclude_args}
@@ -766,7 +784,7 @@ function(ppap_generate_romfs target)
         DEPENDS ${PPAP_SHARED_BUILD}/mkromfs
                 ${PPAP_USER_ELFS}
                 ${PPAP_BB_DIR}/busybox
-                ${PPAP_ROGUE_DIR}/rogue
+                ${_rogue_dep}
                 ${PPAP_ROOT}/src/etc/fstab
                 ${PPAP_ROOT}/src/etc/inittab
                 ${_overlay_manifest}

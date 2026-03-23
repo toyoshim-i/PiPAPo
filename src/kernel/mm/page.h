@@ -30,8 +30,8 @@
  * + PAGE_COUNT_MAX * PAGE_SIZE (set after PAGE_POOL_BASE is known). */
 #define SRAM_KERNEL_BASE 0x00000000u
 #define SRAM_KERNEL_SIZE (20u * 1024u)
-extern char __page_pool_start;
-#define PAGE_POOL_BASE ((uint32_t)(uintptr_t)&__page_pool_start)
+extern char __page_pool_start[];
+#define PAGE_POOL_BASE ((uint32_t)(uintptr_t)__page_pool_start)
 #define PAGE_POOL_SIZE (PAGE_COUNT_MAX * PAGE_SIZE)
 #ifndef RAM_END
 #define RAM_END (PAGE_POOL_BASE + PAGE_POOL_SIZE)
@@ -100,6 +100,11 @@ static inline void user_page_free(void *page) {
 #endif
   page_free(page);
 }
+
+/* Return the runtime page pool base address.  On Xtensa this is
+ * dynamically allocated from ESP-IDF's heap; on other targets it
+ * equals the compile-time PAGE_POOL_BASE. */
+uint32_t page_pool_base(void);
 
 /* Return the number of pages currently on the free stack. */
 uint32_t page_free_count(void);
