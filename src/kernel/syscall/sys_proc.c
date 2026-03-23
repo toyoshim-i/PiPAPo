@@ -1245,6 +1245,15 @@ long sys_ptrace(long req, long pid, void *addr, void *data) {
  * again because sched_next() only picks PROC_RUNNABLE processes.
  */
 long sys_exit(long status) {
+  /* Guard against double-exit.  musl's _Exit() calls SYS_exit_group
+   * then SYS_exit in a loop.  On RISC-V, the second call can reach
+   * here if the context switch after the first exit doesn't happen
+   * before the ecall return path re-executes. */
+  if (current->state == PROC_ZOMBIE) {
+    sched_yield();
+    return 0; /* unreachable — zombie won't be scheduled */
+  }
+
   current->exit_status = (int)status;
 
   /* Let the subsystem clean up while fds are still open

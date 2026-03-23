@@ -120,6 +120,13 @@ static int elf_detect(const uint8_t *file_buf, uint32_t file_size,
 static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
                     const cpu_ops_t *cpu_ops, void *cpu_state,
                     const char *const *argv) {
+#if defined(__xtensa__)
+  {
+    extern void klogf(const char *, ...);
+    klogf("[elf] elf_load: buf=%x size=%u\n",
+          (uint32_t)(uintptr_t)file_buf, file_size);
+  }
+#endif
   /* Create CPU state if not provided by coordinator */
   int own_state = 0;
   if (!cpu_state) {
@@ -154,19 +161,12 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 #if !defined(__riscv) && !defined(__xtensa__)
   elf_got_info_t got_info = {0, 0, 0};
 #endif
-  void *stack = page_alloc();
-  if (!stack) return -(int)ENOMEM;
-  p->stack_page = stack;
 
+  /* On RISC-V/Xtensa, the contiguous SRAM block must be allocated BEFORE
+   * the stack page.  Otherwise the stack could land right after the
+   * contiguous block, blocking sys_brk's page_alloc_at for heap growth. */
+  void *stack = NULL;
   void *user_stack = NULL;
-  if (cpu_ops->arch_id == CPU_ARCH_M68K) {
-    user_stack = page_alloc();
-    if (!user_stack) {
-      page_free(stack);
-      p->stack_page = NULL;
-      return -(int)ENOMEM;
-    }
-  }
 
 #if !defined(__riscv) && !defined(__xtensa__)
   uint32_t xip_text_base = (uint32_t)(uintptr_t)file_buf + text_seg->p_offset;
@@ -186,11 +186,16 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     extern void *heap_caps_malloc(unsigned int size, uint32_t caps);
     /* MALLOC_CAP_EXEC = (1<<4) on ESP32-S3 */
     sram_page = (uint8_t *)heap_caps_malloc(image_size, (1u << 4));
-    if (!sram_page) {
-      page_free(stack);
-      p->stack_page = NULL;
+    if (!sram_page) return -(int)ENOMEM;
+
+    /* Allocate kernel stack page for this process */
+    stack = page_alloc();
+    if (!stack) {
+      extern void heap_caps_free(void *ptr);
+      heap_caps_free(sram_page);
       return -(int)ENOMEM;
     }
+    p->stack_page = stack;
 
     memset(sram_page, 0, image_size);
 
@@ -218,6 +223,21 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
     /* Track pages for cleanup (store IRAM pointer, not page pool) */
     p->user_pages[0] = sram_page;
+
+    /* Set brk base/current for heap allocation */
+    if (data_seg) {
+      uint32_t data_end =
+          (uint32_t)(uintptr_t)sram_page + data_seg->p_vaddr + data_seg->p_memsz;
+      data_end = (data_end + 15u) & ~15u;
+      p->brk_base = data_end;
+      p->brk_current = data_end;
+    } else {
+      uint32_t text_end =
+          (uint32_t)(uintptr_t)sram_page + text_seg->p_vaddr + text_seg->p_memsz;
+      text_end = (text_end + 15u) & ~15u;
+      p->brk_base = text_end;
+      p->brk_current = text_end;
+    }
   }
 #elif defined(__riscv)
   /* RISC-V PIC uses auipc (PC-relative) for ALL address references,
@@ -232,22 +252,21 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     uint32_t image_end = text_seg->p_vaddr + text_seg->p_memsz;
     if (data_seg && data_seg->p_vaddr + data_seg->p_memsz > image_end)
       image_end = data_seg->p_vaddr + data_seg->p_memsz;
-    uint32_t image_pages = (image_end + PAGE_SIZE - 1) / PAGE_SIZE;
-
-    /* Allocate extra pages for heap (brk).  sys_brk uses page_alloc_at
-     * which needs physically contiguous pages after the image.  Without
-     * these, busybox's malloc (via musl brk) fails with OOM. */
-    uint32_t heap_pages = 4;
-    uint32_t total_image_pages = image_pages + heap_pages;
-    if (total_image_pages > USER_PAGES_MAX)
-      total_image_pages = USER_PAGES_MAX;
+    uint32_t total_image_pages = (image_end + PAGE_SIZE - 1) / PAGE_SIZE;
 
     sram_page = page_alloc_contiguous(total_image_pages);
-    if (!sram_page) {
-      page_free(stack);
-      p->stack_page = NULL;
+    if (!sram_page) return -(int)ENOMEM;
+
+    /* Allocate stack AFTER the contiguous block so it doesn't land
+     * right next to it — that would block sys_brk's page_alloc_at
+     * for heap growth into the adjacent free pages. */
+    stack = page_alloc();
+    if (!stack) {
+      for (uint32_t i = 0; i < total_image_pages; i++)
+        page_free(sram_page + i * PAGE_SIZE);
       return -(int)ENOMEM;
     }
+    p->stack_page = stack;
 
     /* Zero entire region first (covers BSS and alignment gaps) */
     memset(sram_page, 0, total_image_pages * PAGE_SIZE);
@@ -355,6 +374,21 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     }
   }
 #else
+  /* ARM/m68k: allocate stack before data pages (no brk adjacency issue
+   * because ARM uses GOT-based PIC, not PC-relative data access). */
+  stack = page_alloc();
+  if (!stack) return -(int)ENOMEM;
+  p->stack_page = stack;
+
+  if (cpu_ops->arch_id == CPU_ARCH_M68K) {
+    user_stack = page_alloc();
+    if (!user_stack) {
+      page_free(stack);
+      p->stack_page = NULL;
+      return -(int)ENOMEM;
+    }
+  }
+
   if (cpu_ops->arch_id == CPU_ARCH_M68K) {
     entry = xip_text_base + e_entry - text_seg->p_vaddr;
   } else {
