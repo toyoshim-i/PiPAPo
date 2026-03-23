@@ -29,14 +29,14 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    gcc-arm-none-eabi binutils-arm-none-eabi \
+    gcc-arm-none-eabi binutils-arm-none-eabi libnewlib-arm-none-eabi \
     gdb-multiarch \
     openocd \
     qemu-system-arm \
     cmake ninja-build \
     git python3 ca-certificates \
     automake autoconf texinfo libtool \
-    libftdi-dev libusb-1.0-0-dev pkg-config \
+    libftdi-dev libusb-1.0-0-dev libjim-dev libhidapi-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # -- arm-none-eabi-gdb symlink -----------------------------------------------

@@ -4,7 +4,7 @@
 #
 # Contains:
 #   - riscv32-unknown-elf-gcc (prebuilt from pico-sdk-tools v2.2.0-3)
-#   - riscv32-unknown-linux-gnu-gcc (built from source, rv32imac ilp32)
+#   - riscv32-unknown-linux-gnu-gcc (prebuilt from riscv-collab 2026.03.13)
 #   - Pico SDK 2.2.0
 #   - OpenOCD RPi fork sdk-2.2.0 (RP2350 support)
 #   - QEMU RISC-V (apt, qemu-system-misc)
@@ -32,9 +32,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     qemu-system-misc \
     cmake ninja-build \
     git python3 ca-certificates wget \
-    gawk bison flex texinfo \
-    automake autoconf libtool \
-    libftdi-dev libusb-1.0-0-dev pkg-config \
+    automake autoconf libtool texinfo \
+    libftdi-dev libusb-1.0-0-dev libjim-dev libhidapi-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # -- RISC-V bare-metal toolchain (kernel) ------------------------------------
@@ -47,19 +46,17 @@ RUN mkdir -p /opt/ppap/riscv-elf && \
     rm /tmp/riscv-tc.tar.gz
 
 ENV PATH="/opt/ppap/riscv-elf/bin:${PATH}"
+ENV PICO_TOOLCHAIN_PATH=/opt/ppap/riscv-elf
 
 # -- RISC-V Linux toolchain (user-space PIE binaries) -----------------------
-# Built from source with --with-abi=ilp32 for PIC-safe soft-float libgcc.
+# Prebuilt from riscv-collab/riscv-gnu-toolchain 2026.03.13.
+# Default arch is rv32gc but we pass -march=rv32imac -mabi=ilp32 at build time.
 
-RUN git clone --depth 1 \
-      https://github.com/riscv-collab/riscv-gnu-toolchain.git \
-      /opt/ppap/src/riscv-gnu-toolchain && \
-    mkdir -p /opt/ppap/riscv-linux && \
-    cd /opt/ppap/src/riscv-gnu-toolchain && \
-    ./configure --prefix=/opt/ppap/riscv-linux \
-      --with-arch=rv32imac --with-abi=ilp32 && \
-    make linux -j$(nproc) && \
-    rm -rf /opt/ppap/src/riscv-gnu-toolchain
+RUN mkdir -p /opt/ppap/riscv-linux && \
+    wget -q -O /tmp/riscv-linux-tc.tar.xz \
+      "https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2026.03.13/riscv32-glibc-ubuntu-24.04-gcc.tar.xz" && \
+    tar xf /tmp/riscv-linux-tc.tar.xz -C /opt/ppap/riscv-linux --strip-components=1 && \
+    rm /tmp/riscv-linux-tc.tar.xz
 
 ENV PATH="/opt/ppap/riscv-linux/bin:${PATH}"
 
