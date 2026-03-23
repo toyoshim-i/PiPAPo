@@ -60,7 +60,7 @@ This index is the entry point for project documentation.
   - [`reference/picocalc_lcd.md`](reference/picocalc_lcd.md)
 
 - Archive
-  - [`archive/history/`](archive/history/)
-  - [`archive/pico2rv_port.md`](archive/pico2rv_port.md) — Original RISC-V port proposal
-  - [`archive/pico2_port.md`](archive/pico2_port.md) — RP2350 ARM port proposal
-  - [`archive/sos_subsystem_proposal.md`](archive/sos_subsystem_proposal.md)
+  - [`archive/history/`](archive/history/) — Phase plans, development notes
+  - [`archive/ports/`](archive/ports/) — Completed port proposals (pico2, pico2rv)
+  - [`archive/subsystems/`](archive/subsystems/) — Completed subsystem proposals (CP/M, S-OS)
+  - [`archive/kernel/`](archive/kernel/) — Completed kernel refactoring docs
