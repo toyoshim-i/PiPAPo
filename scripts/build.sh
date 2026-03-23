@@ -160,13 +160,12 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     mkdir -p "$BUILD_DIR/user"
     echo "[build] Compiling user binaries (xtensa call0)..."
     $XTENSA_CC $XTENSA_DYNCONFIG -mabi=call0 -mlongcalls \
-        -ffreestanding -nostdlib -Os -fPIC \
+        -ffreestanding -nostdlib -Os -fPIC -Wl,--emit-relocs \
         -I"$PROJECT_DIR/src/user" -I"$PROJECT_DIR/src" \
         -T "$USER_ARCH_DIR/user.ld" \
         "$USER_ARCH_DIR/crt0.S" "$USER_ARCH_DIR/syscall.S" \
         "$PROJECT_DIR/src/user/hello.c" \
         -o "$BUILD_DIR/user/hello.elf"
-    $XTENSA_STRIP "$BUILD_DIR/user/hello.elf"
 
     # Stage romfs directory
     rm -rf "$ROMFS_STAGING"

@@ -228,6 +228,76 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     /* IRAM address is directly usable as entry point */
     entry = (uint32_t)(uintptr_t)(sram_page + e_entry);
 
+    /* Apply relocations from --emit-relocs sections.
+     * L32R literal pool values are absolute addresses at link-time base (0x0).
+     * Add load_base so they point to the actual IRAM location.
+     * Same approach as the RISC-V path's R_RISCV_32 handling. */
+    {
+      uint32_t load_base = (uint32_t)(uintptr_t)sram_page;
+
+      if (ehdr->e_shoff && ehdr->e_shnum && ehdr->e_shentsize >= 40) {
+        for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
+          const uint8_t *sh =
+              file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
+          uint32_t sh_type = *(const uint32_t *)(sh + 4);
+          if (sh_type != 4 /* SHT_RELA */) continue;
+
+          uint32_t sh_offset = *(const uint32_t *)(sh + 16);
+          uint32_t sh_size   = *(const uint32_t *)(sh + 20);
+          uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
+          if (sh_entsize < 12) continue;
+
+          uint32_t n_entries = sh_size / sh_entsize;
+          for (uint32_t ri = 0; ri < n_entries; ri++) {
+            const uint8_t *rela = file_buf + sh_offset + ri * sh_entsize;
+            uint32_t r_offset = *(const uint32_t *)(rela + 0);
+            uint32_t r_info   = *(const uint32_t *)(rela + 4);
+            uint8_t  r_type   = (uint8_t)(r_info & 0xFF);
+
+            /* R_XTENSA_32 = 1: absolute 32-bit address (literal pool values,
+             * initialized data pointers).  Add load_base to relocate. */
+            if (r_type != 1) continue;
+
+            if (r_offset < image_end) {
+              volatile uint32_t *target =
+                  (volatile uint32_t *)(sram_page + r_offset);
+              *target += load_base;
+            }
+          }
+        }
+      }
+
+      /* Also relocate GOT entries (if present).  With call0 ABI and -fPIC,
+       * complex binaries may have a .got section. */
+      if (ehdr->e_shoff && ehdr->e_shnum && ehdr->e_shentsize >= 40) {
+        for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
+          const uint8_t *sh =
+              file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
+          uint32_t sh_type  = *(const uint32_t *)(sh + 4);
+          uint32_t sh_flags = *(const uint32_t *)(sh + 8);
+          uint32_t sh_addr  = *(const uint32_t *)(sh + 12);
+          uint32_t sh_size  = *(const uint32_t *)(sh + 20);
+          uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
+
+          /* .got: PROGBITS, WRITE+ALLOC, entsize=4 */
+          if (sh_type != 1 /* SHT_PROGBITS */) continue;
+          if (!(sh_flags & 3 /* SHF_WRITE|SHF_ALLOC */)) continue;
+          if (sh_entsize != 4) continue;
+          if (sh_addr < image_end && sh_size > 0) {
+            uint32_t n_got = sh_size / 4;
+            volatile uint32_t *got =
+                (volatile uint32_t *)(sram_page + sh_addr);
+            for (uint32_t gi = 0; gi < n_got; gi++) {
+              if (got[gi] != 0 && got[gi] != 0xFFFFFFFFu &&
+                  got[gi] < image_end) {
+                got[gi] += load_base;
+              }
+            }
+          }
+        }
+      }
+    }
+
     /* Track pages for cleanup (store IRAM pointer, not page pool) */
     p->user_pages[0] = sram_page;
 
