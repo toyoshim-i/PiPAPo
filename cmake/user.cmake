@@ -198,11 +198,29 @@ elseif(PPAP_ARCH STREQUAL "riscv")
 
     execute_process(COMMAND ${PPAP_CC} -print-file-name=include
         OUTPUT_VARIABLE PPAP_GCC_INCLUDE OUTPUT_STRIP_TRAILING_WHITESPACE)
-    # When using the Linux toolchain, its libgcc is soft-float + PIC (built
-    # from source with --with-abi=ilp32).  When using bare-metal, use its own.
+    # Resolve libgcc.  The Linux toolchain's libgcc may be hard-float
+    # (prebuilt riscv-collab packages default to rv32gc / double-float).
+    # Detect this and fall back to the bare-metal toolchain's soft-float
+    # libgcc, which is always ilp32.
     execute_process(COMMAND ${PPAP_CC} ${PPAP_TARGET_FLAGS}
                             -print-libgcc-file-name
         OUTPUT_VARIABLE PPAP_LIBGCC OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(PPAP_RISCV_PIE AND EXISTS ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-gcc)
+        execute_process(
+            COMMAND ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-readelf
+                    -h ${PPAP_LIBGCC}
+            OUTPUT_VARIABLE _libgcc_hdr ERROR_QUIET)
+        if(_libgcc_hdr MATCHES "double-float")
+            execute_process(
+                COMMAND ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-gcc
+                        ${PPAP_TARGET_FLAGS} -print-libgcc-file-name
+                OUTPUT_VARIABLE PPAP_LIBGCC
+                OUTPUT_STRIP_TRAILING_WHITESPACE)
+            message(STATUS
+                "RISC-V: Linux libgcc is hard-float, "
+                "using bare-metal libgcc: ${PPAP_LIBGCC}")
+        endif()
+    endif()
     get_filename_component(PPAP_GCC_LIBDIR ${PPAP_LIBGCC} DIRECTORY)
 else()
     set(PPAP_CC            arm-none-eabi-gcc)
