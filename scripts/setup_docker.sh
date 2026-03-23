@@ -29,6 +29,29 @@ info()    { echo "[INFO]  $*"; }
 success() { echo "[OK]    $*"; }
 error()   { echo "[ERROR] $*" >&2; exit 1; }
 
+# --- Usage (before any install steps) ----------------------------------------
+
+if [[ $# -eq 0 ]]; then
+  echo "Usage: $0 <target|family> [...]"
+  echo "       $0 all"
+  echo ""
+  echo "Families:"
+  echo "  arm           ARM Cortex-M — arm-none-eabi-gcc, Pico SDK, QEMU ARM, OpenOCD"
+  echo "  m68k          Motorola 68k — m68k-elf-gcc, QEMU m68k, XEiJ"
+  echo "  riscv         RISC-V — riscv32 bare-metal + linux toolchains, Pico SDK, QEMU"
+  echo "  xtensa        Xtensa/ESP32-S3 — ESP-IDF v5.4, Xtensa toolchain"
+  echo "  ia16          IBM PC (i16) — ia16-elf-gcc, NASM, QEMU i386"
+  echo "  all           Build all available images"
+  echo ""
+  echo "Target aliases:"
+  echo "  qemu_arm, pico1, pico1calc, pico2  → arm"
+  echo "  qemu_m68k, x68k                    → m68k"
+  echo "  qemu_rv32, pico2rv                 → riscv"
+  echo "  xtensa_cc                          → xtensa"
+  echo "  ibmpc                              → ia16"
+  exit 0
+fi
+
 # --- Step 0: Ensure Docker is installed --------------------------------------
 
 if ! command -v docker &>/dev/null; then
@@ -67,27 +90,6 @@ target_to_family() {
 }
 
 # --- Parse arguments ---------------------------------------------------------
-
-if [[ $# -eq 0 ]]; then
-  echo "Usage: $0 <target|family> [...]"
-  echo "       $0 all"
-  echo ""
-  echo "Families:"
-  echo "  arm           ARM Cortex-M — arm-none-eabi-gcc, Pico SDK, QEMU ARM, OpenOCD"
-  echo "  m68k          Motorola 68k — m68k-elf-gcc, QEMU m68k, XEiJ"
-  echo "  riscv         RISC-V — riscv32 bare-metal + linux toolchains, Pico SDK, QEMU"
-  echo "  xtensa        Xtensa/ESP32-S3 — ESP-IDF v5.4, Xtensa toolchain"
-  echo "  ia16          IBM PC (i16) — ia16-elf-gcc, NASM, QEMU i386"
-  echo "  all           Build all available images"
-  echo ""
-  echo "Target aliases:"
-  echo "  qemu_arm, pico1, pico1calc, pico2  → arm"
-  echo "  qemu_m68k, x68k                    → m68k"
-  echo "  qemu_rv32, pico2rv                 → riscv"
-  echo "  xtensa_cc                          → xtensa"
-  echo "  ibmpc                              → ia16"
-  exit 0
-fi
 
 FAMILIES=()
 for arg in "$@"; do
