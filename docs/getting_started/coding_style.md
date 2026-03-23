@@ -119,6 +119,25 @@ with the following project-specific adjustments for embedded C:
 Where the Google C++ Style Guide and this document conflict, this document
 takes precedence.
 
+## Compile-Time Flags for Work in Progress
+
+When working on changes — even in the current worktree — always guard your
+work-in-progress code behind a compile-time flag (e.g.,
+`#if defined(ENABLE_MY_FEATURE)`).  This ensures that your uncommitted or
+partially complete changes do not affect other agents or developers who may
+be building and testing in parallel on the same workspace.
+
+- Define a descriptive flag for your feature or change (e.g.,
+  `ENABLE_XTENSA_PORT`, `ENABLE_NEW_SCHEDULER`).
+- Keep the flag disabled by default; only enable it in your own build
+  configuration (e.g., via `-D` in `cmake/user.cmake` or a target-specific
+  CMake file).
+- Remove the flag and make the code unconditional once the feature is
+  complete, reviewed, and merged.
+
+This practice prevents build breakage and test interference when multiple
+agents work on the same tree concurrently.
+
 ## Formatting with clang-format
 
 The repository includes a `.clang-format` file based on Google style.
