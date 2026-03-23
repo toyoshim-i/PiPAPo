@@ -34,9 +34,9 @@ error()   { echo "[ERROR] $*" >&2; exit 1; }
 if command -v docker &>/dev/null; then
   success "Docker already installed: $(docker --version)"
 else
-  info "Docker not found. Installing docker.io..."
+  info "Docker not found. Installing docker.io + buildx..."
   sudo apt-get update -qq
-  sudo apt-get install -y docker.io
+  sudo apt-get install -y docker.io docker-buildx
   if command -v docker &>/dev/null; then
     success "Docker installed: $(docker --version)"
   else
@@ -125,7 +125,7 @@ for family in "${FAMILIES[@]}"; do
 
   IMAGE="ppap/${family}"
   info "Building ${IMAGE} from docker/${family}/..."
-  if docker build -t "${IMAGE}" "${PPAP_ROOT}/docker/${family}/"; then
+  if docker buildx build --load -t "${IMAGE}" "${PPAP_ROOT}/docker/${family}/"; then
     success "${IMAGE} built successfully"
   else
     echo "[WARN]  ${IMAGE} build failed"
