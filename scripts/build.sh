@@ -164,25 +164,26 @@ esac
 
 # ── ESP-IDF build (xtensa_cc) ────────────────────────────────────────────────
 if [[ "$TARGET" == "xtensa_cc" ]]; then
-    XTENSA_TC_DIR="$PROJECT_DIR/tools/xtensa-toolchain"
-    ESP_IDF_DIR="${IDF_PATH:-$PROJECT_DIR/third_party/esp-idf}"
+    ESP_IDF_DIR="${IDF_PATH:-/opt/ppap/src/esp-idf}"
+    XTENSA_TC_DIR="${IDF_TOOLS_PATH:-/opt/ppap/xtensa-tools}"
     if [[ ! -f "$ESP_IDF_DIR/export.sh" ]]; then
-        # Not on host — run the entire xtensa build inside Docker
+        # Running on host — re-exec inside Docker
         DOCKER_IMAGE="$(target_docker_image xtensa_cc)"
-        if [[ -n "$DOCKER_IMAGE" ]] && docker_image_exists "$DOCKER_IMAGE"; then
-            echo "[build] Building xtensa_cc via Docker ($DOCKER_IMAGE)..."
-            BUILD_ARGS=()
-            if [[ $CLEAN -eq 1 ]]; then BUILD_ARGS+=(--clean); fi
-            if [[ "$TESTS" == "ON" ]]; then BUILD_ARGS+=(--test); fi
-            docker_run "$DOCKER_IMAGE" bash -c "
-                export IDF_TOOLS_PATH=/opt/ppap/xtensa-tools && \
-                source /opt/ppap/src/esp-idf/export.sh >/dev/null 2>&1 && \
-                /ppap/scripts/build.sh ${BUILD_ARGS[*]+"${BUILD_ARGS[*]}"} xtensa_cc
-            "
-            exit $?
+        if [[ -z "$DOCKER_IMAGE" ]] || ! docker_image_exists "$DOCKER_IMAGE"; then
+            echo "[build] Error: Docker image for xtensa_cc not found."
+            echo "        Run: ./scripts/setup_docker.sh xtensa"
+            exit 1
         fi
-        echo "[build] Error: ESP-IDF not found. Run: ./scripts/setup_docker.sh xtensa"
-        exit 1
+        echo "[build] Building xtensa_cc via Docker ($DOCKER_IMAGE)..."
+        BUILD_ARGS=()
+        if [[ $CLEAN -eq 1 ]]; then BUILD_ARGS+=(--clean); fi
+        if [[ "$TESTS" == "ON" ]]; then BUILD_ARGS+=(--test); fi
+        docker_run "$DOCKER_IMAGE" bash -c "
+            export IDF_TOOLS_PATH=/opt/ppap/xtensa-tools && \
+            source /opt/ppap/src/esp-idf/export.sh >/dev/null 2>&1 && \
+            /ppap/scripts/build.sh ${BUILD_ARGS[*]+"${BUILD_ARGS[*]}"} xtensa_cc
+        "
+        exit $?
     fi
     # Source ESP-IDF environment with project-local toolchain
     export IDF_TOOLS_PATH="$XTENSA_TC_DIR"
@@ -294,31 +295,27 @@ echo "[build] Building $CMAKE_TARGET (PPAP_TESTS=$TESTS, PPAP_TESTS_EXTENDED=$TE
 
 # Convert host-absolute paths to container-relative for Docker builds
 DOCKER_IMAGE="$(target_docker_image "$TARGET")"
-if [[ -n "$DOCKER_IMAGE" ]] && docker_image_exists "$DOCKER_IMAGE"; then
-    echo "[build] Using Docker image $DOCKER_IMAGE"
-    # Paths inside container: /ppap is the project root
-    D_SOURCE="/ppap/${SOURCE_DIR#"$PROJECT_DIR/"}"
-    D_BUILD="/ppap/${BUILD_DIR#"$PROJECT_DIR/"}"
-    D_EXTRA_ARGS=()
-    for arg in "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"; do
-        D_EXTRA_ARGS+=("${arg//"$PROJECT_DIR"/"/ppap"}")
-    done
-    docker_run "$DOCKER_IMAGE" bash -c "
-        cmake ${D_EXTRA_ARGS[*]+"${D_EXTRA_ARGS[*]}"} \
-              -DPPAP_TESTS=$TESTS \
-              -DPPAP_TESTS_EXTENDED=$TESTS_EXTENDED \
-              -DH68K_DEBUG=$H68K_DEBUG \
-              -S '$D_SOURCE' -B '$D_BUILD' >/dev/null 2>&1 && \
-        cmake --build '$D_BUILD' -- -j\$(nproc)
-    "
-else
-    cmake "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}" \
-          -DPPAP_TESTS="$TESTS" \
-          -DPPAP_TESTS_EXTENDED="$TESTS_EXTENDED" \
-          -DH68K_DEBUG="$H68K_DEBUG" \
-          -S "$SOURCE_DIR" -B "$BUILD_DIR" >/dev/null 2>&1
-    cmake --build "$BUILD_DIR" -- -j"$(nproc)"
+if [[ -z "$DOCKER_IMAGE" ]] || ! docker_image_exists "$DOCKER_IMAGE"; then
+    echo "[build] Error: Docker image $DOCKER_IMAGE not found."
+    echo "        Run: ./scripts/setup_docker.sh $TARGET"
+    exit 1
 fi
+
+echo "[build] Using Docker image $DOCKER_IMAGE"
+D_SOURCE="/ppap/${SOURCE_DIR#"$PROJECT_DIR/"}"
+D_BUILD="/ppap/${BUILD_DIR#"$PROJECT_DIR/"}"
+D_EXTRA_ARGS=()
+for arg in "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"; do
+    D_EXTRA_ARGS+=("${arg//"$PROJECT_DIR"/"/ppap"}")
+done
+docker_run "$DOCKER_IMAGE" bash -c "
+    cmake ${D_EXTRA_ARGS[*]+"${D_EXTRA_ARGS[*]}"} \
+          -DPPAP_TESTS=$TESTS \
+          -DPPAP_TESTS_EXTENDED=$TESTS_EXTENDED \
+          -DH68K_DEBUG=$H68K_DEBUG \
+          -S '$D_SOURCE' -B '$D_BUILD' >/dev/null 2>&1 && \
+    cmake --build '$D_BUILD' -- -j\$(nproc)
+"
 
 if [[ ! -f "$ELF" ]]; then
     echo "[build] Error: $ELF not found after build."

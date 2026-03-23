@@ -346,36 +346,26 @@ else
     fi
 fi
 
-# Resolve Docker image for QEMU execution
+# Resolve Docker image — required for all targets
 DOCKER_IMAGE="$(target_docker_image "$TARGET")"
-if [[ -n "$DOCKER_IMAGE" ]] && docker_image_exists "$DOCKER_IMAGE"; then
-    echo "[run] Using Docker image $DOCKER_IMAGE"
-elif command -v "$QEMU_BIN" &>/dev/null || [[ -x "$QEMU_BIN" ]]; then
-    DOCKER_IMAGE=""  # fall back to host (no Docker image available)
-else
-    echo "[run] Error: $QEMU_BIN not found and no Docker image available."
+if [[ -z "$DOCKER_IMAGE" ]] || ! docker_image_exists "$DOCKER_IMAGE"; then
+    echo "[run] Error: Docker image for $TARGET not found."
     echo "      Run: ./scripts/setup_docker.sh $TARGET"
     exit 1
 fi
+echo "[run] Using Docker image $DOCKER_IMAGE"
 
-# Helper: run QEMU — always prefer Docker when image exists
+# Helper: run QEMU inside Docker
 run_qemu() {
     local kernel_args=()
     if [[ -n "$ELF" ]]; then
-        kernel_args=(-kernel "$ELF")
+        kernel_args=(-kernel "/ppap/${ELF#"$PROJECT_DIR/"}")
     fi
-    if [[ -n "$DOCKER_IMAGE" ]]; then
-        if [[ -n "$ELF" ]]; then
-            kernel_args=(-kernel "/ppap/${ELF#"$PROJECT_DIR/"}")
-        fi
-        local remapped=()
-        for a in "$@"; do
-            remapped+=("${a//"$PROJECT_DIR"/"/ppap"}")
-        done
-        docker_run "$DOCKER_IMAGE" "$QEMU_BIN" "${remapped[@]}" "${kernel_args[@]}"
-    else
-        "$QEMU_BIN" "$@" "${kernel_args[@]}"
-    fi
+    local remapped=()
+    for a in "$@"; do
+        remapped+=("${a//"$PROJECT_DIR"/"/ppap"}")
+    done
+    docker_run "$DOCKER_IMAGE" "$QEMU_BIN" "${remapped[@]}" "${kernel_args[@]}"
 }
 
 # ── Test mode: run with timeout and check output ───────────────────────────
