@@ -1,15 +1,8 @@
 /*
  * boot.S -- i8086 real-mode boot entry point
  *
- * For P-1 (QEMU testing), this is loaded via a minimal boot sector or
- * QEMU -kernel.  The entry point sets up segment registers and stack,
- * zeroes BSS, and jumps to kmain().
- *
- * Memory layout (small model, CS = DS = SS):
- *   0x0000 - .text (code)
- *   .text end - .data (initialized data)
- *   .data end - .bss (uninitialized, zeroed here)
- *   .bss end  - stack top (grows downward)
+ * BIOS loads this boot sector to 0x0000:0x7C00 and jumps here.
+ * Sets up segment registers, stack, zeroes BSS, calls kmain().
  *
  * Assembled with ia16-elf-gcc (GAS syntax, AT&T).
  */
@@ -21,13 +14,13 @@
 _start:
   cli
 
-  /* Set up segments: DS = ES = SS = CS (small model) */
-  movw  %cs, %ax
+  /* Set up segments: DS = ES = SS = 0 (flat real-mode addressing) */
+  xorw  %ax, %ax
   movw  %ax, %ds
   movw  %ax, %es
   movw  %ax, %ss
 
-  /* Stack at top of segment (just below 64 KB boundary) */
+  /* Stack grows down from 0x7C00 (below our code) */
   movw  $__stack_top, %sp
 
   /* Zero BSS */

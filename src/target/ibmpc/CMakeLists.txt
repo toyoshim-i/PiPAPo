@@ -100,6 +100,12 @@ set_target_properties(ppap_ibmpc PROPERTIES
 add_custom_command(TARGET ppap_ibmpc POST_BUILD
   COMMAND ${CMAKE_OBJCOPY} -O binary
     $<TARGET_FILE:ppap_ibmpc>
-    ${CMAKE_CURRENT_BINARY_DIR}/ppap_ibmpc.img
-  COMMENT "Creating flat binary ppap_ibmpc.img"
+    ${CMAKE_CURRENT_BINARY_DIR}/ppap_ibmpc.bin
+  # Pad to 1.44 MB floppy image with binary at sector 0
+  COMMAND dd if=/dev/zero of=${CMAKE_CURRENT_BINARY_DIR}/ppap_ibmpc.img
+    bs=512 count=2880 2>/dev/null
+  COMMAND dd if=${CMAKE_CURRENT_BINARY_DIR}/ppap_ibmpc.bin
+    of=${CMAKE_CURRENT_BINARY_DIR}/ppap_ibmpc.img
+    conv=notrunc 2>/dev/null
+  COMMENT "Creating 1.44 MB floppy image ppap_ibmpc.img"
 )

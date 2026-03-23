@@ -175,14 +175,24 @@ if [[ "$TARGET" == "ibmpc" ]]; then
         -cpu 486
         -m 1M
         -nographic
-        -serial stdio
-        -kernel "$IMG"
+        -serial mon:stdio
+        -fda "$IMG"
     )
     if [[ $DO_GDB -eq 1 ]]; then
         QEMU_ARGS+=(-s -S)
     fi
     echo "[run] Launching QEMU i386 (real mode)..."
-    exec qemu-system-i386 "${QEMU_ARGS[@]}"
+    DOCKER_IMAGE="$(target_docker_image ibmpc)"
+    if ! command -v qemu-system-i386 &>/dev/null && \
+       [[ -n "$DOCKER_IMAGE" ]] && docker_image_exists "$DOCKER_IMAGE"; then
+        exec docker run --rm -it \
+            -u "$(id -u):$(id -g)" \
+            -v "$PROJECT_DIR:/ppap" -w /ppap \
+            "$DOCKER_IMAGE" \
+            qemu-system-i386 "${QEMU_ARGS[@]/#"$PROJECT_DIR"//ppap}"
+    else
+        exec qemu-system-i386 "${QEMU_ARGS[@]}"
+    fi
 fi
 
 # ── ESP-IDF target (xtensa_cc) — uses idf.py, not ELF directly ─────────────
