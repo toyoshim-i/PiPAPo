@@ -1,25 +1,34 @@
-.claude/
-.vscode/
+# Build artifacts
+*.bin
+*.elf
+*.map
+*.o
+*.uf2
 build/
+
+# Editor / tool state
+.claude/
+.gdb-index
+.gdb_history
+.vscode/
+__pycache__/
+
+# Private docs
+docs/private/
+
+# Local overlays
+overlay/
+
+# ESP-IDF managed components
 src/target/xtensa_cc/managed_components/
 src/target/xtensa_cc/sdkconfig
 src/target/xtensa_cc/sdkconfig.old
-*.o
-*.elf
-*.bin
-*.uf2
-*.map
-.gdb_history
-.gdb-index
 
-tools/mkromfs/mkromfs
+# Local toolchains & tools
 tools/m68k-toolchain/
-tools/xeij/
-tools/riscv-toolchain/
-tools/riscv-linux-toolchain/
-tools/xtensa-toolchain/
+tools/mkromfs/mkromfs
 tools/openocd-rp/
-
-overlay/
-docs/private/
-__pycache__/
+tools/riscv-linux-toolchain/
+tools/riscv-toolchain/
+tools/xeij/
+tools/xtensa-toolchain/

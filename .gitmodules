@@ -19,6 +19,7 @@
 [submodule "third_party/openocd"]
 	path = third_party/openocd
 	url = https://github.com/raspberrypi/openocd.git
+	ignore = dirty
 [submodule "third_party/esp-idf"]
 	path = third_party/esp-idf
 	url = https://github.com/espressif/esp-idf.git
