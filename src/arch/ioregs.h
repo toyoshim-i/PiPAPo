@@ -16,6 +16,8 @@
 #include "riscv/ioregs.h"
 #elif defined(__xtensa__)
 #include "xtensa/ioregs.h"
+#elif defined(__IA16__)
+#include "i16/ioregs.h"
 #else
 #error "Unsupported architecture"
 #endif

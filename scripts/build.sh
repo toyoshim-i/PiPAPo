@@ -72,9 +72,13 @@ case "$TARGET" in
         SOURCE_DIR="$PROJECT_DIR/src/target/xtensa_cc"
         BUILD_DIR="$PROJECT_DIR/build/xtensa_cc"
         ;;
+    ibmpc)
+        SOURCE_DIR="$PROJECT_DIR/src/target/ibmpc"
+        BUILD_DIR="$PROJECT_DIR/build/ibmpc"
+        ;;
     *)
         echo "[build] Error: unknown target '$TARGET'"
-        echo "        Valid targets: pico1, pico1calc, pico2, pico2rv, qemu_arm, qemu_rv32, qemu_m68k, x68k, xtensa_cc"
+        echo "        Valid targets: pico1, pico1calc, pico2, pico2rv, qemu_arm, qemu_rv32, qemu_m68k, x68k, xtensa_cc, ibmpc"
         exit 1
         ;;
 esac

@@ -77,11 +77,11 @@ for arg in "$@"; do
         --overlay=*)OVERLAY="${arg#--overlay=}"; DO_BUILD=1 ;;
         --h68k-debug) DO_H68K_DEBUG=1; DO_BUILD=1 ;;
         --gdb)      DO_GDB=1 ;;
-        pico1|pico1calc|pico2|pico2rv|qemu_arm|qemu_rv32|qemu_m68k|x68k|xtensa_cc) TARGET="$arg" ;;
+        pico1|pico1calc|pico2|pico2rv|qemu_arm|qemu_rv32|qemu_m68k|x68k|xtensa_cc|ibmpc) TARGET="$arg" ;;
         -*)         echo "Unknown option: $arg" >&2; exit 1 ;;
         *)
             echo "Unknown target: $arg" >&2
-            echo "Valid targets: pico1, pico1calc, pico2, pico2rv, qemu_arm, qemu_rv32, qemu_m68k, x68k, xtensa_cc" >&2
+            echo "Valid targets: pico1, pico1calc, pico2, pico2rv, qemu_arm, qemu_rv32, qemu_m68k, x68k, xtensa_cc, ibmpc" >&2
             exit 1
             ;;
     esac
@@ -133,6 +133,29 @@ if [[ $DO_BUILD -eq 1 ]]; then
     "$SCRIPT_DIR/build.sh" "${BUILD_ARGS[@]}" "$TARGET"
     # Clean up temp overlay after build (romfs already baked in)
     if [[ -n "$TEMP_OVERLAY" ]]; then rm -rf "$TEMP_OVERLAY"; fi
+fi
+
+# ── IBM PC target (ibmpc) — runs flat binary in QEMU i386 real mode ────────
+if [[ "$TARGET" == "ibmpc" ]]; then
+    IMG="$PROJECT_DIR/build/ibmpc/ppap_ibmpc.img"
+    if [[ ! -f "$IMG" ]]; then
+        echo "[run] Error: $IMG not found."
+        echo "      Run: ./scripts/build.sh ibmpc"
+        exit 1
+    fi
+    QEMU_ARGS=(
+        -machine pc
+        -cpu 486
+        -m 1M
+        -nographic
+        -serial stdio
+        -kernel "$IMG"
+    )
+    if [[ $DO_GDB -eq 1 ]]; then
+        QEMU_ARGS+=(-s -S)
+    fi
+    echo "[run] Launching QEMU i386 (real mode)..."
+    exec qemu-system-i386 "${QEMU_ARGS[@]}"
 fi
 
 # ── ESP-IDF target (xtensa_cc) — uses idf.py, not ELF directly ─────────────
