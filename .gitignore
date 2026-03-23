@@ -24,13 +24,5 @@ src/target/xtensa_cc/managed_components/
 src/target/xtensa_cc/sdkconfig
 src/target/xtensa_cc/sdkconfig.old
 
-# Local toolchains & tools
-tools/m68k-toolchain/
+# Build outputs in tools/
 tools/mkromfs/mkromfs
-tools/openocd-rp/
-tools/riscv-linux-toolchain/
-tools/riscv-toolchain/
-tools/xeij/
-tools/xtensa-toolchain/
-tools/ia16-toolchain/
-tools/86box/
