@@ -10,6 +10,7 @@
 #   1b. Creates arm-none-eabi-gdb symlink (Ubuntu dropped the package)
 #   1c. Installs RISC-V toolchain (prebuilt from pico-sdk-tools)
 #   1d. Installs ESP-IDF and Xtensa toolchain (for xtensa_cc / ESP32-S3)
+#   1e. Installs ia16-elf-gcc (16-bit x86 cross-compiler for ibmpc target)
 #   2. Initializes git submodules (Pico SDK, musl, busybox, etc.)
 #   3. Verifies the installation
 #
@@ -58,6 +59,7 @@ APT_PACKAGES=(
   # RISC-V bare-metal: prebuilt from raspberrypi/pico-sdk-tools (Step 1c.1)
   # RISC-V Linux: built from source in Step 1c.2 (needs gawk, bison, etc.)
   # Xtensa toolchain: installed via ESP-IDF install.sh (Step 1d)
+  # ia16-elf-gcc: prebuilt .debs extracted locally (Step 1e)
   gdb-multiarch           # GDB with ARM and m68k support
   openocd                 # SWD/JTAG on-chip debugger (v0.12+, RP2040 only)
   gawk                    # Required by riscv-gnu-toolchain build (Step 1c.2)
@@ -71,6 +73,8 @@ APT_PACKAGES=(
   qemu-system-misc        # QEMU m68k (virt) for 68000 target
   openjdk-25-jre          # Java 25 runtime for XEiJ (X68000 emulator, needs GUI)
   unzip                   # Needed to extract XEiJ archive
+  nasm                    # Assembler for 8086/x86 arch layer (ibmpc target)
+  qemu-system-x86         # QEMU i386 for ibmpc target smoke tests
   # Build deps for Raspberry Pi OpenOCD fork (RP2350 support)
   automake                # autotools for OpenOCD build
   autoconf                # autotools for OpenOCD build
@@ -187,10 +191,12 @@ else
     git clone --depth 1 "${RISCV_GNU_TC_REPO}" "${RISCV_TC_BUILD}"
   fi
 
-  cd "${RISCV_TC_BUILD}"
-  ./configure --prefix="${RISCV_LINUX_DIR}" \
-              --with-arch=rv32imac --with-abi=ilp32
-  make linux -j"$(nproc)" 2>&1 | tail -5
+  (
+    cd "${RISCV_TC_BUILD}"
+    ./configure --prefix="${RISCV_LINUX_DIR}" \
+                --with-arch=rv32imac --with-abi=ilp32
+    make linux -j"$(nproc)" 2>&1 | tail -5
+  ) || true  # TODO: remove || true once sourceware.org 502 flakiness is resolved
 
   if [[ -x "${RISCV_LINUX_DIR}/bin/riscv32-unknown-linux-gnu-gcc" ]]; then
     success "RISC-V Linux toolchain built and installed to ${RISCV_LINUX_DIR}"
@@ -200,7 +206,6 @@ else
     warn "RISC-V Linux toolchain build failed"
     warn "Check ${RISCV_TC_BUILD} for build logs"
   fi
-  cd "${PPAP_ROOT}"
 fi
 
 # --- Step 1d: Xtensa toolchain (xtensa_cc / ESP32-S3) -----------------------
@@ -264,6 +269,51 @@ else
     success "Xtensa toolchain installed: ${XTENSA_GCC}"
   else
     warn "Xtensa toolchain not found after install — check ${XTENSA_TC_DIR}/"
+  fi
+fi
+
+# --- Step 1e: ia16-elf-gcc (IBM PC / 8086 real-mode target) ------------------
+#
+# The ibmpc target uses ia16-elf-gcc (GCC port for 16-bit x86 real mode).
+# Prebuilt .deb packages are downloaded from the Launchpad PPA pool and
+# extracted locally (no sudo, no PPA configuration required).
+# NASM is installed via apt (Step 1) for assembly files in src/arch/i8086/.
+
+info "=== Step 1e: ia16-elf-gcc (16-bit x86) ==="
+
+IA16_TC_DIR="${PPAP_ROOT}/tools/ia16-toolchain"
+IA16_GCC="${IA16_TC_DIR}/usr/bin/ia16-elf-gcc"
+IA16_PPA_BASE="https://ppa.launchpadcontent.net/tkchia/build-ia16/ubuntu/pool/main"
+
+# .deb packages to download and extract
+# TODO: consider building from source instead of extracting prebuilt .debs
+#   https://gitlab.com/tkchia/build-ia16
+#   https://codeberg.org/tkchia/build-ia16
+# TODO: track upstream versions; update when new builds appear on the PPA
+IA16_DEBS=(
+  "b/binutils-ia16-elf/binutils-ia16-elf_2.39-20230531.20-ppa240320145~noble_amd64.deb"
+  "g/gcc-ia16-elf/gcc-ia16-elf_6.3.0-20240218.17.2-ppa250921015~noble_amd64.deb"
+  "g/gcc-stubs-ia16-elf/libgcc1-ia16-elf_6.3.0-20240218.17.2-ppa250921015~noble_amd64.deb"
+  "libn/libnewlib-ia16-elf/libnewlib-ia16-elf_2.4.0-20260316.15-stage1gcc6.3.0-20240218.17.2-binutils2.39-20230531.20-ppa260316154~noble_amd64.deb"
+)
+
+if [[ -x "${IA16_GCC}" ]]; then
+  success "ia16-elf-gcc already installed at ${IA16_TC_DIR}"
+else
+  mkdir -p "${DL_DIR}" "${IA16_TC_DIR}"
+  for deb_path in "${IA16_DEBS[@]}"; do
+    deb_file=$(basename "${deb_path}")
+    if [[ ! -f "${DL_DIR}/${deb_file}" ]]; then
+      info "Downloading ${deb_file}..."
+      wget -q --show-progress -O "${DL_DIR}/${deb_file}.tmp" "${IA16_PPA_BASE}/${deb_path}"
+      mv "${DL_DIR}/${deb_file}.tmp" "${DL_DIR}/${deb_file}"
+    fi
+    dpkg-deb -x "${DL_DIR}/${deb_file}" "${IA16_TC_DIR}"
+  done
+  if [[ -x "${IA16_GCC}" ]]; then
+    success "ia16-elf-gcc installed to ${IA16_TC_DIR}"
+  else
+    warn "ia16-elf-gcc extraction failed — check ${IA16_TC_DIR}"
   fi
 fi
 
@@ -388,6 +438,55 @@ else
   else
     success "XEiJ installed to ${XEIJ_DIR}"
   fi
+fi
+
+# --- Step 3c: 86Box (IBM PC/XT emulator) -------------------------------------
+#
+# 86Box is a cycle-accurate IBM PC/XT emulator that supports NEC V30 CPU
+# selection and serial port passthrough.  Used for ibmpc target development.
+# Downloaded as an AppImage from GitHub releases; ROMs from the 86Box/roms repo.
+
+info "=== Step 3c: Installing 86Box ==="
+
+EBOX_VER="v5.3"
+EBOX_BUILD="b8200"
+EBOX_DIR="${PPAP_ROOT}/tools/86box"
+EBOX_APPIMAGE="${EBOX_DIR}/86Box.AppImage"
+EBOX_ROMS_DIR="${EBOX_DIR}/roms"
+
+if [[ -x "${EBOX_APPIMAGE}" ]]; then
+  success "86Box already installed at ${EBOX_APPIMAGE}"
+else
+  mkdir -p "${DL_DIR}" "${EBOX_DIR}"
+
+  # Download AppImage
+  EBOX_APPIMAGE_FILE="86Box-Linux-x86_64-${EBOX_BUILD}.AppImage"
+  EBOX_APPIMAGE_URL="https://github.com/86Box/86Box/releases/download/${EBOX_VER}/${EBOX_APPIMAGE_FILE}"
+  if [[ ! -f "${DL_DIR}/${EBOX_APPIMAGE_FILE}" ]]; then
+    info "Downloading 86Box ${EBOX_VER} AppImage..."
+    wget -q --show-progress -O "${DL_DIR}/${EBOX_APPIMAGE_FILE}.tmp" "${EBOX_APPIMAGE_URL}"
+    mv "${DL_DIR}/${EBOX_APPIMAGE_FILE}.tmp" "${DL_DIR}/${EBOX_APPIMAGE_FILE}"
+  fi
+  cp "${DL_DIR}/${EBOX_APPIMAGE_FILE}" "${EBOX_APPIMAGE}"
+  chmod +x "${EBOX_APPIMAGE}"
+  success "86Box AppImage installed to ${EBOX_APPIMAGE}"
+fi
+
+# Download ROMs (required for 86Box to boot any machine)
+if [[ -d "${EBOX_ROMS_DIR}" && -n "$(ls -A "${EBOX_ROMS_DIR}" 2>/dev/null)" ]]; then
+  success "86Box ROMs already present at ${EBOX_ROMS_DIR}"
+else
+  EBOX_ROMS_TAR="86box-roms-${EBOX_VER}.tar.gz"
+  EBOX_ROMS_URL="https://github.com/86Box/roms/archive/refs/tags/${EBOX_VER}.tar.gz"
+  if [[ ! -f "${DL_DIR}/${EBOX_ROMS_TAR}" ]]; then
+    info "Downloading 86Box ROMs ${EBOX_VER}..."
+    wget -q --show-progress -O "${DL_DIR}/${EBOX_ROMS_TAR}.tmp" "${EBOX_ROMS_URL}"
+    mv "${DL_DIR}/${EBOX_ROMS_TAR}.tmp" "${DL_DIR}/${EBOX_ROMS_TAR}"
+  fi
+  mkdir -p "${EBOX_ROMS_DIR}"
+  info "Extracting 86Box ROMs to ${EBOX_ROMS_DIR}..."
+  tar -xzf "${DL_DIR}/${EBOX_ROMS_TAR}" --strip-components=1 -C "${EBOX_ROMS_DIR}"
+  success "86Box ROMs installed to ${EBOX_ROMS_DIR}"
 fi
 
 # --- Step 4: Verification ----------------------------------------------------
@@ -597,6 +696,68 @@ if [[ -f "${PPAP_ROOT}/third_party/esp-idf/export.sh" ]]; then
     warn "esptool.py: not found in ESP-IDF environment"
     FAIL=1
   fi
+fi
+
+# ia16-elf-gcc (16-bit x86, ibmpc target)
+IA16_TC_DIR="${PPAP_ROOT}/tools/ia16-toolchain"
+IA16_GCC="${IA16_TC_DIR}/usr/bin/ia16-elf-gcc"
+# binutils needs its private libbfd/libopcodes
+IA16_LD_PATH="${IA16_TC_DIR}/usr/x86_64-linux-gnu/ia16-elf/lib"
+if [[ -x "${IA16_GCC}" ]]; then
+  verify_version "ia16-elf-gcc" \
+    "${IA16_GCC} --version" \
+    "ia16-elf-gcc"
+  # Check it produces valid 8086 output
+  echo 'void _start(void){}' > /tmp/ppap_ia16_check.c
+  if "${IA16_GCC}" -B"${IA16_TC_DIR}/usr/bin/" -march=i8086 -nostdlib \
+       -o /tmp/ppap_ia16_check.elf /tmp/ppap_ia16_check.c 2>/dev/null; then
+    IA16_READELF="${IA16_TC_DIR}/usr/bin/ia16-elf-readelf"
+    ARCH_OUT=$(LD_LIBRARY_PATH="${IA16_LD_PATH}" "${IA16_READELF}" -h /tmp/ppap_ia16_check.elf | grep Machine)
+    success "ia16-elf-gcc produces valid ELF: ${ARCH_OUT}"
+  else
+    warn "ia16-elf-gcc failed to compile a minimal 8086 test"
+    FAIL=1
+  fi
+  rm -f /tmp/ppap_ia16_check.c /tmp/ppap_ia16_check.elf
+else
+  warn "ia16-elf-gcc: not found at ${IA16_TC_DIR}. Run setup_toolchain.sh to install."
+  FAIL=1
+fi
+
+# NASM
+if command -v nasm &>/dev/null; then
+  verify_version "nasm" \
+    "nasm --version" \
+    "NASM version"
+else
+  warn "nasm: not found"
+  FAIL=1
+fi
+
+# qemu-system-i386 (ibmpc target)
+if command -v qemu-system-i386 &>/dev/null; then
+  verify_version "qemu-system-i386" \
+    "qemu-system-i386 --version" \
+    "QEMU emulator"
+else
+  warn "qemu-system-i386: not found (install qemu-system-x86)"
+  FAIL=1
+fi
+
+# 86Box (ibmpc target, cycle-accurate PC/XT emulator)
+if [[ -x "${PPAP_ROOT}/tools/86box/86Box.AppImage" ]]; then
+  success "86Box: installed at ${PPAP_ROOT}/tools/86box/86Box.AppImage"
+else
+  warn "86Box: not found at tools/86box/"
+  FAIL=1
+fi
+
+# 86Box ROMs
+if [[ -d "${PPAP_ROOT}/tools/86box/roms" && -n "$(ls -A "${PPAP_ROOT}/tools/86box/roms" 2>/dev/null)" ]]; then
+  success "86Box ROMs: present at ${PPAP_ROOT}/tools/86box/roms/"
+else
+  warn "86Box ROMs: not found at tools/86box/roms/"
+  FAIL=1
 fi
 
 # --- Summary -----------------------------------------------------------------

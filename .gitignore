@@ -32,3 +32,5 @@ tools/riscv-linux-toolchain/
 tools/riscv-toolchain/
 tools/xeij/
 tools/xtensa-toolchain/
+tools/ia16-toolchain/
+tools/86box/

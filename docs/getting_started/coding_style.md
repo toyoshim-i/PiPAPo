@@ -119,6 +119,27 @@ with the following project-specific adjustments for embedded C:
 Where the Google C++ Style Guide and this document conflict, this document
 takes precedence.
 
+## TODO Comments
+
+Mark incomplete or temporary code with `TODO` comments so it can be found
+and resolved later.  Format:
+
+```c
+// TODO: brief description of what needs to be done
+```
+
+```sh
+# TODO: brief description of what needs to be done
+```
+
+Use `TODO` for:
+- Workarounds that should be removed once an upstream issue is fixed.
+- Missing features or error handling that will be added in a later step.
+- Known limitations that are acceptable now but should be revisited.
+
+Do **not** include author names or dates — `git blame` provides that
+information.  Keep the description short and actionable.
+
 ## Compile-Time Flags for Work in Progress
 
 When working on changes — even in the current worktree — always guard your
