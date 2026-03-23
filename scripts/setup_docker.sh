@@ -71,17 +71,29 @@ target_to_family() {
 # --- Parse arguments ---------------------------------------------------------
 
 if [[ $# -eq 0 ]]; then
-  # Default: build all available images
-  FAMILIES=()
-  for dir in "${PPAP_ROOT}"/docker/*/; do
-    [[ -f "${dir}Dockerfile" ]] && FAMILIES+=("$(basename "$dir")")
-  done
-else
-  FAMILIES=()
-  for arg in "$@"; do
-    FAMILIES+=("$(target_to_family "$arg")")
-  done
+  echo "Usage: $0 <target|family> [...]"
+  echo "       $0 all"
+  echo ""
+  echo "Targets/families:"
+  echo "  ia16          IBM PC (i16) — ia16-elf-gcc, NASM, QEMU i386"
+  echo "  m68k          Motorola 68k — m68k-elf-gcc, QEMU m68k, XEiJ"
+  echo "  ibmpc         Alias for ia16"
+  echo "  qemu_m68k     Alias for m68k"
+  echo "  x68k          Alias for m68k"
+  echo "  all           Build all available images"
+  exit 0
 fi
+
+FAMILIES=()
+for arg in "$@"; do
+  if [[ "$arg" == "all" ]]; then
+    for dir in "${PPAP_ROOT}"/docker/*/; do
+      [[ -f "${dir}Dockerfile" ]] && FAMILIES+=("$(basename "$dir")")
+    done
+  else
+    FAMILIES+=("$(target_to_family "$arg")")
+  fi
+done
 
 # Deduplicate
 FAMILIES=($(printf '%s\n' "${FAMILIES[@]}" | sort -u))
