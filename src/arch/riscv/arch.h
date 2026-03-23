@@ -98,4 +98,8 @@ static inline void arch_dsb_isb(void)
     __asm__ volatile ("fence.i" ::: "memory");
 }
 
+/* ── User-space byte read ──────────────────────────────────────────────────
+ * RISC-V SRAM supports byte access — plain dereference is fine. */
+static inline uint8_t read_user_byte(const uint8_t *ptr) { return *ptr; }
+
 #endif /* PPAP_ARCH_RISCV_ARCH_H */

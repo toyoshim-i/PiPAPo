@@ -32,6 +32,7 @@
 #include "../proc/sched.h"      /* sched_wakeup, sched_yield */
 #include "../signal/signal.h"   /* SIGINT */
 #include "../syscall/syscall.h" /* svc_restart */
+#include "arch/arch.h"          /* read_user_byte */
 #include "drivers/uart.h"
 #include "file.h"
 
@@ -301,11 +302,13 @@ static long tty_write(struct file *f, const char *buf, size_t n) {
     pos = 0;
 
   while (pos < n) {
+    /* read_user_byte: safe for IRAM buffers on Xtensa (word-aligned) */
+    char c = (char)read_user_byte((const uint8_t *)&buf[pos]);
     /* OPOST: expand \n → \r\n */
-    if (onlcr && buf[pos] == '\n') {
+    if (onlcr && c == '\n') {
       if (!t->out('\r', t->tx_wakeup)) goto block;
     }
-    if (!t->out(buf[pos], t->tx_wakeup)) goto block;
+    if (!t->out(c, t->tx_wakeup)) goto block;
     pos++;
   }
 

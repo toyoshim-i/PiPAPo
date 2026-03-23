@@ -76,4 +76,8 @@ static inline void arch_dsb_isb(void) {
   __asm__ volatile("dsb\n isb" ::: "memory");
 }
 
+/* ── User-space byte read ──────────────────────────────────────────────────
+ * ARM SRAM supports byte access — plain dereference is fine. */
+static inline uint8_t read_user_byte(const uint8_t *ptr) { return *ptr; }
+
 #endif /* PPAP_ARCH_ARM_M_ARCH_H */

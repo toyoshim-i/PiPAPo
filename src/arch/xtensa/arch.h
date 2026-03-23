@@ -122,4 +122,19 @@ static inline void arch_dsb_isb(void)
     __asm__ volatile ("isync" ::: "memory");  /* instruction sync */
 }
 
+/* ── User-space byte read ────────────────────────────────────────────────
+ *
+ * IRAM only supports 32-bit aligned access.  Byte-level load/store to
+ * IRAM addresses causes LoadStoreError (EXCCAUSE=3).  Since user-space
+ * code and rodata live in IRAM, the kernel must use word-aligned reads
+ * when accessing user buffers (e.g. sys_write buffer, path strings).
+ * ────────────────────────────────────────────────────────────────────────── */
+
+static inline uint8_t read_user_byte(const uint8_t *ptr)
+{
+    uint32_t addr = (uint32_t)(uintptr_t)ptr;
+    uint32_t word = *(volatile uint32_t *)(uintptr_t)(addr & ~3u);
+    return (uint8_t)(word >> ((addr & 3u) * 8));
+}
+
 #endif /* PPAP_ARCH_XTENSA_ARCH_H */

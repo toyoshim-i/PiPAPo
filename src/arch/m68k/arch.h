@@ -98,4 +98,8 @@ static inline void arch_sev(void) { /* no-op on single-core */
 
 static inline void arch_dsb_isb(void) { __asm__ volatile("nop" ::: "memory"); }
 
+/* ── User-space byte read ──────────────────────────────────────────────────
+ * m68k SRAM supports byte access — plain dereference is fine. */
+static inline uint8_t read_user_byte(const uint8_t *ptr) { return *ptr; }
+
 #endif /* PPAP_ARCH_M68K_ARCH_H */
