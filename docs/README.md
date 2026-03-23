@@ -58,6 +58,7 @@ This index is the entry point for project documentation.
 - Notes
   - [`notes/zombie.md`](notes/zombie.md) — Process lifecycle: zombies, orphans, reaping
   - [`notes/x68k_bootstrap.md`](notes/x68k_bootstrap.md) — X68000 two-stage floppy boot
+  - [`notes/x68k_tty_architecture.md`](notes/x68k_tty_architecture.md) — X68000 TTY/display architecture
 
 - Reference
   - [`reference/picocalc.md`](reference/picocalc.md)
