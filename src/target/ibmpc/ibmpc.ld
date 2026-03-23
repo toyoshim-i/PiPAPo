@@ -1,18 +1,14 @@
 /*
  * ibmpc.ld -- Linker script for IBM PC target (i8086 real mode)
  *
- * P-1 boot sector: BIOS loads sector 0 to 0x7C00.
- * Code + data must fit in 510 bytes (512 - 2 byte signature).
- * For later phases, stage1 will chain-load a larger stage2 + kernel.
+ * Two-part layout within a single binary:
+ *   Sector 0 (0x7C00-0x7DFF): boot.S — loads remaining sectors, jumps to kmain
+ *   Sector 1+ (0x7E00-...):   kernel code, data, BSS, stack
  *
- * Memory layout:
- *   0x7C00  .text.entry  (boot entry point)
- *   ...     .text        (code)
- *   ...     .rodata      (read-only data)
- *   ...     .data        (initialized data)
- *   0x7DFE  boot signature (0x55AA)
- *   0x7E00  .bss         (after boot sector)
- *   ...     stack at 0x7C00 (grows downward from entry point)
+ * BIOS loads sector 0 to 0x0000:0x7C00.  boot.S uses INT 13h to read
+ * the remaining sectors into 0x7E00+, then calls kmain().
+ *
+ * All segments = 0 (flat real-mode addressing with 16-bit near pointers).
  */
 
 OUTPUT_FORMAT("elf32-i386")
@@ -21,10 +17,24 @@ ENTRY(_start)
 
 SECTIONS
 {
+  /* ---- Boot sector (sector 0, 512 bytes at 0x7C00) ---- */
   . = 0x7C00;
 
-  .text : {
+  .boot : {
     *(.text.entry)
+  }
+
+  /* Boot signature at byte 510 */
+  . = 0x7C00 + 510;
+  .bootsig : {
+    SHORT(0xAA55)
+  }
+
+  /* ---- Kernel (sector 1+, loaded at 0x7E00 by boot.S) ---- */
+  . = 0x7E00;
+  __kernel_start = .;
+
+  .text : {
     *(.text .text.*)
   }
 
@@ -36,11 +46,7 @@ SECTIONS
     *(.data .data.*)
   }
 
-  /* Boot signature at offset 510 from start of sector */
-  . = 0x7C00 + 510;
-  .bootsig : {
-    SHORT(0xAA55)
-  }
+  __kernel_end = .;
 
   .bss (NOLOAD) : {
     __bss_start = .;
@@ -49,8 +55,14 @@ SECTIONS
     __bss_end = .;
   }
 
-  /* Stack grows down from 0x7C00 */
-  __stack_top = 0x7C00;
+  /* Stack: 2 KB after BSS */
+  . = ALIGN(2);
+  __stack_bottom = .;
+  . += 2048;
+  __stack_top = .;
+
+  /* Number of extra sectors to load (kernel size / 512, rounded up) */
+  __kernel_sectors = (__kernel_end - 0x7E00 + 511) / 512;
 
   /DISCARD/ : {
     *(.comment)

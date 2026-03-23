@@ -1,9 +1,9 @@
 # =============================================================================
-# IBM PC target (i16, 8086 real mode) -- Phase P-1
+# IBM PC target (i16, 8086 real mode) -- Phase P-2
 # =============================================================================
 #
-# Minimal build: boot.S → kmain() → print banner → halt.
-# Does NOT link the full kernel yet (P-2+).
+# Standalone scheduler with PIT timer and preemptive context switching.
+# Does NOT link the full kernel yet (P-3).
 #
 # Toolchain: ia16-elf-gcc (16-bit x86 cross-compiler)
 # Output: flat binary ppap_ibmpc.img suitable for QEMU -kernel or floppy boot
@@ -59,6 +59,7 @@ set(COMMON_FLAGS
 
 set(ARCH_I16_SOURCES
   ${PPAP_ROOT}/src/arch/i16/boot.S
+  ${PPAP_ROOT}/src/arch/i16/switch.S
   ${PPAP_ROOT}/src/arch/i16/i16_common.c
   ${PPAP_ROOT}/src/arch/i16/smp.c
 )
@@ -67,6 +68,7 @@ set(TARGET_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/target_ibmpc.c
   ${CMAKE_CURRENT_SOURCE_DIR}/drivers/uart_com.c
   ${CMAKE_CURRENT_SOURCE_DIR}/drivers/bios_con.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/drivers/timer_pit.c
 )
 
 # -- Build target -----------------------------------------------------------
