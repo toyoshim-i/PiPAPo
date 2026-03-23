@@ -193,7 +193,8 @@ uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void))
     *--sp = user_sp;                            /* [SP+12] user SP */
     /* PS for user process: WOE=0 (call0 ABI, no window operations),
      * UM=1 (user mode — routes exceptions through UserExceptionVector
-     *       where our SYSCALL/fault handlers are registered),
+     *       which properly dispatches SYSCALL, interrupts, etc.
+     *       KernelExceptionVector panics on ALL exceptions.),
      * INTLEVEL=0 (interrupts enabled for preemption). */
     *--sp = (1u << 5);                          /* [SP+8]  PS: UM=1 */
     *--sp = (uint32_t)(uintptr_t)entry;         /* [SP+4]  entry addr */
