@@ -28,7 +28,7 @@ A portable UNIX-like micro OS for bare-metal microcontrollers and retro CPUs.
 | `qemu_rv32` | QEMU virt rv32 | RISC-V | RV32IMAC | 512 KB | 17/22 tests |
 | `qemu_m68k` | QEMU virt m68k | Motorola 68000 | m68000 | Up to 16 MB | 19/19 tests |
 | `x68k` | XEiJ emulator | Motorola 68000 | m68000 @ 10 MHz | 2+ MB | Stable |
-| `xtensa_cc` | M5Stack CardComputer | Xtensa LX7 | ESP32-S3 @ 240 MHz | 512 KB | WIP |
+| `xtensa_cc` | M5Stack CardComputer | Xtensa LX7 | ESP32-S3 @ 240 MHz | 512 KB | Boots, user-space WIP |
 
 All targets share the same kernel source, syscall interface, VFS, and process model. Only drivers, boot sequences, linker scripts, and architecture-specific code (context switch, syscall trap) differ per target.
 
@@ -50,12 +50,13 @@ All targets share the same kernel source, syscall interface, VFS, and process mo
 - **LCD TTY unstable** — the framebuffer console occasionally hangs or glitches during heavy scrolling
 - **SD card disabled** — SD/VFAT support is tentatively disabled in the current build
 - **RISC-V no XIP text** — user binaries loaded entirely to SRAM (auipc PC-relative limitation); see [docs/targets/rv32.md](/docs/targets/rv32.md)
-- **Xtensa port WIP** — CardComputer (ESP32-S3) target boots but user-space context switch incomplete
+- **Xtensa port WIP** — CardComputer (ESP32-S3) boots, romfs mounts, PID 1 loads; user-space write() output not yet visible; see [docs/targets/xtensa.md](/docs/targets/xtensa.md)
 
 ## Future Work
 
 - **Pi Zero Port** — ARM1176JZF-S with full MMU, SD card boot; see [docs/targets/pizero.md](/docs/targets/pizero.md)
 - **RISC-V PIC toolchain** — build riscv32-unknown-linux-gnu with soft-float for -pie support (XIP text + SRAM data separation)
+- **CardComputer standalone** — ST7789V2 display + keyboard for self-contained terminal; see [docs/proposals/cardcomputer_port.md](/docs/proposals/cardcomputer_port.md)
 - **PicoCalc 2** — RP2350 + PicoCalc hardware, dual architecture (ARM/RISC-V)
 - Audio driver support
 
@@ -91,6 +92,7 @@ PPAP/
   src/user/                 User-space programs + per-arch build rules
     arch/arm_m/             ARM: crt0.S, syscall.S, user.ld
     arch/m68k/              m68k: crt0.S, syscall.S, user.ld
+    arch/xtensa/            Xtensa: crt0.S, syscall.S, user.ld
   tests/
     kernel/                 On-target kernel integration tests (ktest.c)
     host/                   Host-native unit tests (test_kmem, h68k_path, eCPU cores)
@@ -114,6 +116,7 @@ PPAP/
     build_musl.sh           Build script: musl libc.a (ARM and m68k)
     build_busybox.sh        Build script: static busybox binary
     build_rogue.sh          Build script: Rogue with minimal curses shim
+    esp-idf/                git submodule — ESP-IDF v5.x (Xtensa targets)
   src/etc/                  Root filesystem config templates (fstab, passwd, …)
   scripts/
     setup_toolchain.sh      One-shot toolchain install
@@ -150,6 +153,7 @@ Installs apt packages (`arm-none-eabi-gcc`, `cmake`, `ninja`, `openocd`, `gdb-mu
 ./scripts/build.sh qemu_m68k           # build m68k QEMU target
 ./scripts/build.sh pico2rv             # build RISC-V Pico 2 target
 ./scripts/build.sh qemu_rv32           # build RISC-V QEMU target
+./scripts/build.sh xtensa_cc           # build Xtensa CardComputer target
 ```
 
 Or invoke CMake directly (each target is a standalone project):
@@ -269,3 +273,25 @@ page pool all reside in RAM.
 | Page pool | after stack (4 KB aligned) | runtime-detected | User process pages |
 
 See [docs/targets/68000.md](/docs/targets/68000.md) for architecture-specific details.
+
+### Xtensa (ESP32-S3) — CardComputer
+
+The Xtensa target uses **ESP-IDF as a HAL layer** — the PPAP kernel is built
+as an ESP-IDF component, and ESP-IDF handles flash boot, cache, clock PLL, and
+peripheral initialization. PPAP takes over after `app_main()`.
+
+Key differences from other targets:
+
+- **IRAM/DRAM split**: ESP32-S3 SRAM is split between instruction bus (IRAM,
+  execute + word-access only) and data bus (DRAM, byte-access). User code
+  must be loaded into IRAM.
+- **Literal pool relocation**: Xtensa PIC uses L32R (PC-relative literal load).
+  The ELF loader patches `R_XTENSA_32` and `R_XTENSA_PLT` relocations at
+  load time via `--emit-relocs`.
+- **Kernel ABI**: Windowed (ESP-IDF default). **User ABI**: Call0 (flat
+  register file, `-mabi=call0`).
+- **No QEMU**: hardware-only testing (ESP32-S3 QEMU support is experimental).
+
+See [docs/targets/xtensa.md](/docs/targets/xtensa.md) for full architecture details and
+[docs/proposals/cardcomputer_port.md](/docs/proposals/cardcomputer_port.md) for device-specific plans
+(display, keyboard, SD card).

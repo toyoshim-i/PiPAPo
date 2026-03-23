@@ -36,6 +36,7 @@ This index is the entry point for project documentation.
   - [`kernel/filesystems.md`](kernel/filesystems.md)
 
 - Proposals
+  - [`proposals/cardcomputer_port.md`](proposals/cardcomputer_port.md) — CardComputer device support (display, keyboard, SD)
   - [`proposals/debugger_ptrace.md`](proposals/debugger_ptrace.md)
 
 - Subsystems
@@ -53,6 +54,7 @@ This index is the entry point for project documentation.
   - [`targets/arm_m.md`](targets/arm_m.md) — ARM Cortex-M (qemu_arm, pico1, pico1calc, pico2)
   - [`targets/rv32.md`](targets/rv32.md) — RISC-V RV32IMAC (qemu_rv32, pico2rv)
   - [`targets/68000.md`](targets/68000.md) — Motorola 68000 (qemu_m68k, x68k)
+  - [`targets/xtensa.md`](targets/xtensa.md) — Xtensa LX7 (xtensa_cc / M5Stack CardComputer)
   - [`targets/pizero.md`](targets/pizero.md) — Pi Zero (future)
 
 - Notes
