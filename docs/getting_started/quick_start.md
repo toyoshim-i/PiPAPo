@@ -3,7 +3,8 @@
 ## 1. Install toolchains and dependencies
 
 ```sh
-./scripts/setup_toolchain.sh
+./scripts/setup_docker.sh all        # build all Docker toolchain images
+./scripts/setup_docker.sh arm        # or just one target family
 ```
 
 ## 2. Build

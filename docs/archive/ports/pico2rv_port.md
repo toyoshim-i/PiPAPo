@@ -843,7 +843,7 @@ Two RISC-V toolchains are required:
 | `riscv32-unknown-elf-gcc` | Kernel (bare-metal, newlib) | `tools/riscv-toolchain/` |
 | `riscv32-unknown-linux-gnu-gcc` | User-space (Linux, glibc, `-pie` support) | `tools/riscv-linux-toolchain/` |
 
-Both are installed by `scripts/setup_toolchain.sh`:
+Both are included in the `ppap/riscv` Docker image (`scripts/setup_docker.sh riscv`):
 
 - **Bare-metal**: Prebuilt from [raspberrypi/pico-sdk-tools](https://github.com/raspberrypi/pico-sdk-tools/releases)
   (GCC 15.1, rv32imac, newlib).  Used by Pico SDK for kernel builds.

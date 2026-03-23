@@ -36,7 +36,7 @@ minicom
 ```
 
 Pico SDK cloned to `~/pico-sdk`; `PICO_SDK_PATH` set in `~/.bashrc` and `~/.zshrc`.
-Reproducible setup script: `scripts/setup_toolchain.sh`.
+Reproducible setup script: `scripts/setup_docker.sh`.
 
 ### ✓ Step 2 — Project Skeleton and CMake Build
 

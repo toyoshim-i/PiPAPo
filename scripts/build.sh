@@ -130,12 +130,6 @@ case "$TARGET" in
         EXTRA_ARGS+=(-DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/cmake/toolchain_arm_m.cmake")
         ;;
     qemu_m68k|x68k)
-        # Ensure custom m68k-elf toolchain is available
-        M68K_TC="$PROJECT_DIR/tools/m68k-toolchain/bin/m68k-elf-gcc"
-        if [[ ! -x "$M68K_TC" ]]; then
-            echo "[build] m68k-elf-gcc not found. Building toolchain..."
-            "$PROJECT_DIR/third_party/build_gcc_m68k.sh"
-        fi
         EXTRA_ARGS+=(-DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/cmake/toolchain_m68k.cmake")
         ;;
 esac
@@ -145,7 +139,7 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     XTENSA_TC_DIR="$PROJECT_DIR/tools/xtensa-toolchain"
     ESP_IDF_DIR="$PROJECT_DIR/third_party/esp-idf"
     if [[ ! -f "$ESP_IDF_DIR/export.sh" ]]; then
-        echo "[build] Error: ESP-IDF not found. Run: ./scripts/setup_toolchain.sh"
+        echo "[build] Error: ESP-IDF not found. Run: ./scripts/setup_docker.sh xtensa"
         exit 1
     fi
     # Source ESP-IDF environment with project-local toolchain

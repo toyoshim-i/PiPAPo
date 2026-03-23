@@ -122,7 +122,7 @@ PPAP/
     esp-idf/                git submodule — ESP-IDF v5.x (Xtensa targets)
   src/etc/                  Root filesystem config templates (fstab, passwd, …)
   scripts/
-    setup_toolchain.sh      One-shot toolchain install
+    setup_docker.sh         Build Docker toolchain images per target
     build.sh                Build any target (pico1, pico1calc, qemu_arm, qemu_m68k)
     run.sh                  Flash or run any target
     test.sh                 Run tests (--all for full suite)
@@ -143,10 +143,11 @@ PPAP/
 ### 1. Install the toolchain
 
 ```sh
-./scripts/setup_toolchain.sh
+./scripts/setup_docker.sh arm        # build only the ARM image
+./scripts/setup_docker.sh all        # build all target images
 ```
 
-Installs apt packages (`arm-none-eabi-gcc`, `cmake`, `ninja`, `openocd`, `gdb-multiarch`, `qemu-system-arm`, `openjdk-25-jre`), downloads XEiJ (X68000 emulator), and initializes git submodules (Pico SDK, musl, busybox, etc.). For m68k targets, see also `scripts/build-m68k-toolchain.sh`.
+Builds Docker images containing the cross-compiler, emulator, and build tools for each target family. Requires Docker. See `docker/*/Dockerfile` for image contents.
 
 ### 2. Build
 

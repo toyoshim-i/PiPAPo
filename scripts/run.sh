@@ -190,7 +190,7 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     XTENSA_TC_DIR="$PROJECT_DIR/tools/xtensa-toolchain"
     ESP_IDF_DIR="$PROJECT_DIR/third_party/esp-idf"
     if [[ ! -f "$ESP_IDF_DIR/export.sh" ]]; then
-        echo "[run] Error: ESP-IDF not found. Run: ./scripts/setup_toolchain.sh"
+        echo "[run] Error: ESP-IDF not found. Run: ./scripts/setup_docker.sh xtensa"
         exit 1
     fi
     export IDF_TOOLS_PATH="$XTENSA_TC_DIR"
@@ -217,7 +217,7 @@ if [[ "$TARGET" == "x68k" ]]; then
     XEIJ_JAR="$XEIJ_DIR/XEiJ.jar"
     if [[ ! -f "$XEIJ_JAR" ]]; then
         echo "[run] Error: XEiJ not found at $XEIJ_JAR"
-        echo "      Install with: ./scripts/setup_toolchain.sh"
+        echo "      Install with: ./scripts/setup_docker.sh m68k"
         exit 1
     fi
     # XEiJ requires Java 25+; prefer /usr/lib/jvm/java-25-openjdk-* over default
