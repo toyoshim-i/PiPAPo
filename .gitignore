@@ -2,6 +2,8 @@
 .vscode/
 build/
 src/target/xtensa_cc/managed_components/
+src/target/xtensa_cc/sdkconfig
+src/target/xtensa_cc/sdkconfig.old
 *.o
 *.elf
 *.bin
