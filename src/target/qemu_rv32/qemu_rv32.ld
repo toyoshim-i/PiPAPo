@@ -13,7 +13,7 @@ ENTRY(_start)
 
 MEMORY {
     ROM    (rx)  : ORIGIN = 0x80000000, LENGTH = 8M
-    RAM    (rwx) : ORIGIN = 0x80800000, LENGTH = 512K
+    RAM    (rwx) : ORIGIN = 0x80800000, LENGTH = 1M
 }
 
 /* Trap vector at start of ROM */

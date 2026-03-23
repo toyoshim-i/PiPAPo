@@ -64,7 +64,7 @@ target_compile_definitions(ppap_qemu_rv32 PRIVATE
     PPAP_HAS_BLKDEV=1
     PPAP_SYS_HZ=10000000u
     PAGE_POOL_BASE=0x80809000u
-    PAGE_COUNT_MAX=107u
+    PAGE_COUNT_MAX=243u
 )
 
 # Subsystem/eCPU definitions
@@ -104,7 +104,8 @@ target_link_options(ppap_qemu_rv32 PRIVATE
 set_target_properties(ppap_qemu_rv32 PROPERTIES SUFFIX ".elf")
 
 # Romfs (exclude musl-linked tests — they go into UFS image below)
-ppap_generate_romfs(ppap_qemu_rv32 EXCLUDE_APPS test_musl_child)
+ppap_generate_romfs(ppap_qemu_rv32
+    EXCLUDE_APPS test_musl_child test_musl_fileio test_musl_dir test_musl_fmt)
 
 # ── UFS test image (musl-linked binaries too large for romfs) ──────────────
 # Build mkufs host tool
@@ -126,16 +127,21 @@ foreach(tst ${USER_MUSL_TESTS})
     list(APPEND _musl_elf_deps ${PPAP_SHARED_BUILD}/${tst}.elf)
 endforeach()
 
+# Build rename+strip commands for each musl test binary
+set(_ufs_rename_strip_cmds "")
+foreach(tst ${USER_MUSL_TESTS})
+    list(APPEND _ufs_rename_strip_cmds
+        COMMAND ${CMAKE_COMMAND} -E rename
+                ${_ufs_staging}/bin/${tst}.elf ${_ufs_staging}/bin/${tst}
+        COMMAND ${CMAKE_STRIP} --strip-unneeded ${_ufs_staging}/bin/${tst})
+endforeach()
+
 add_custom_command(
     OUTPUT ${_ufs_img}
     COMMAND ${CMAKE_COMMAND} -E rm -rf ${_ufs_staging}
     COMMAND ${CMAKE_COMMAND} -E make_directory ${_ufs_staging}/bin
     COMMAND ${CMAKE_COMMAND} -E copy ${_musl_elf_deps} ${_ufs_staging}/bin/
-    # Rename .elf → plain name, strip unneeded symbols (keep relocations)
-    COMMAND ${CMAKE_COMMAND} -E rename
-            ${_ufs_staging}/bin/test_musl_child.elf
-            ${_ufs_staging}/bin/test_musl_child
-    COMMAND ${CMAKE_STRIP} --strip-unneeded ${_ufs_staging}/bin/test_musl_child
+    ${_ufs_rename_strip_cmds}
     COMMAND ${CMAKE_BINARY_DIR}/mkufs -s 2M
             -p ${_ufs_staging} ${_ufs_img}
     DEPENDS ${CMAKE_BINARY_DIR}/mkufs ${_musl_elf_deps}

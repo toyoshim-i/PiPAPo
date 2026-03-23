@@ -99,7 +99,8 @@ set(USER_TESTS
 )
 
 # Musl-linked test programs (sources in tests/user/, linked against musl libc)
-set(USER_MUSL_TESTS test_musl_child)
+set(USER_MUSL_TESTS
+    test_musl_child test_musl_fileio test_musl_dir test_musl_fmt)
 
 # --- Busybox applet lists ---
 
