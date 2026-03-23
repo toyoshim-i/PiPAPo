@@ -86,6 +86,7 @@ DO_TEST=0
 DO_TEST_EXTENDED=0
 DO_CLEAN=0
 DO_GDB=0
+DO_HOST=0
 DO_H68K_DEBUG=0
 OVERLAY=""
 FILTER=""
@@ -106,6 +107,7 @@ for arg in "$@"; do
         --overlay=*)OVERLAY="${arg#--overlay=}"; DO_BUILD=1 ;;
         --h68k-debug) DO_H68K_DEBUG=1; DO_BUILD=1 ;;
         --gdb)      DO_GDB=1 ;;
+        --host)     DO_HOST=1 ;;
         pico1|pico1calc|pico2|pico2rv|qemu_arm|qemu_rv32|qemu_m68k|x68k|xtensa_cc|ibmpc) TARGET="$arg" ;;
         -*)         echo "Unknown option: $arg" >&2; exit 1 ;;
         *)
@@ -116,9 +118,24 @@ for arg in "$@"; do
     esac
 done
 
-# Default target
 if [[ -z "$TARGET" ]]; then
-    TARGET="qemu_arm"
+    echo "Usage: $0 [options] <target>"
+    echo ""
+    echo "Targets:"
+    echo "  qemu_arm qemu_m68k qemu_rv32 ibmpc  (emulator)"
+    echo "  pico1 pico1calc pico2 pico2rv        (flash to hardware)"
+    echo "  x68k xtensa_cc                       (emulator / flash)"
+    echo ""
+    echo "Options:"
+    echo "  --build         Build before running"
+    echo "  --test          Build with tests and run"
+    echo "  --test-extended Build with extended tests and run"
+    echo "  --clean         Clean build directory first"
+    echo "  --gdb           Start QEMU with GDB server on :1234"
+    echo "  --host          Run QEMU on host instead of Docker"
+    echo "  --filter=NAME   Run only matching tests"
+    echo "  --overlay=DIR   Use overlay directory for romfs"
+    exit 0
 fi
 
 # ── Resolve ELF path ───────────────────────────────────────────────────────
@@ -334,8 +351,15 @@ elif [[ "$TARGET" == "qemu_rv32" ]]; then
     QEMU_ARGS=(-M virt -bios none -serial mon:stdio)
 elif [[ "$TARGET" == "ibmpc" ]]; then
     QEMU_BIN="qemu-system-i386"
-    QEMU_ARGS=(-machine pc -cpu 486 -m 1M -display none -serial mon:stdio
-               -drive "file=$ELF,format=raw,if=floppy")
+    if [[ $DO_HOST -eq 1 ]]; then
+        # --host: open graphical VGA window + serial on stdio
+        QEMU_ARGS=(-machine pc -cpu 486 -m 1M -serial mon:stdio
+                   -drive "file=$ELF,format=raw,if=floppy")
+    else
+        # Docker: serial only (no display)
+        QEMU_ARGS=(-machine pc -cpu 486 -m 1M -display none -serial mon:stdio
+                   -drive "file=$ELF,format=raw,if=floppy")
+    fi
     ELF=""  # already passed via -drive, clear so run_qemu doesn't add -kernel
 else
     QEMU_BIN="qemu-system-arm"
@@ -346,26 +370,42 @@ else
     fi
 fi
 
-# Resolve Docker image — required for all targets
-DOCKER_IMAGE="$(target_docker_image "$TARGET")"
-if [[ -z "$DOCKER_IMAGE" ]] || ! docker_image_exists "$DOCKER_IMAGE"; then
-    echo "[run] Error: Docker image for $TARGET not found."
-    echo "      Run: ./scripts/setup_docker.sh $TARGET"
-    exit 1
+# Resolve Docker image — required unless --host is set
+DOCKER_IMAGE=""
+if [[ $DO_HOST -eq 1 ]]; then
+    if ! command -v "$QEMU_BIN" &>/dev/null; then
+        echo "[run] Error: --host specified but $QEMU_BIN not found on host."
+        exit 1
+    fi
+    echo "[run] Using host $QEMU_BIN (--host)"
+else
+    DOCKER_IMAGE="$(target_docker_image "$TARGET")"
+    if [[ -z "$DOCKER_IMAGE" ]] || ! docker_image_exists "$DOCKER_IMAGE"; then
+        echo "[run] Error: Docker image for $TARGET not found."
+        echo "      Run: ./scripts/setup_docker.sh $TARGET"
+        exit 1
+    fi
+    echo "[run] Using Docker image $DOCKER_IMAGE"
 fi
-echo "[run] Using Docker image $DOCKER_IMAGE"
 
-# Helper: run QEMU inside Docker
+# Helper: run QEMU inside Docker or on host (--host)
 run_qemu() {
     local kernel_args=()
-    if [[ -n "$ELF" ]]; then
-        kernel_args=(-kernel "/ppap/${ELF#"$PROJECT_DIR/"}")
+    if [[ -n "$DOCKER_IMAGE" ]]; then
+        if [[ -n "$ELF" ]]; then
+            kernel_args=(-kernel "/ppap/${ELF#"$PROJECT_DIR/"}")
+        fi
+        local remapped=()
+        for a in "$@"; do
+            remapped+=("${a//"$PROJECT_DIR"/"/ppap"}")
+        done
+        docker_run "$DOCKER_IMAGE" "$QEMU_BIN" "${remapped[@]}" "${kernel_args[@]}"
+    else
+        if [[ -n "$ELF" ]]; then
+            kernel_args=(-kernel "$ELF")
+        fi
+        "$QEMU_BIN" "$@" "${kernel_args[@]}"
     fi
-    local remapped=()
-    for a in "$@"; do
-        remapped+=("${a//"$PROJECT_DIR"/"/ppap"}")
-    done
-    docker_run "$DOCKER_IMAGE" "$QEMU_BIN" "${remapped[@]}" "${kernel_args[@]}"
 }
 
 # ── Test mode: run with timeout and check output ───────────────────────────
