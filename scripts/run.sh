@@ -50,6 +50,33 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# ── Docker helpers ──────────────────────────────────────────────────────────
+
+target_docker_image() {
+    case "$1" in
+        qemu_arm|pico1|pico1calc|pico2) echo "ppap/arm" ;;
+        qemu_m68k|x68k)                 echo "ppap/m68k" ;;
+        qemu_rv32|pico2rv)              echo "ppap/riscv" ;;
+        xtensa_cc)                      echo "ppap/xtensa" ;;
+        ibmpc)                          echo "ppap/ia16" ;;
+        *)                              echo "" ;;
+    esac
+}
+
+docker_image_exists() {
+    docker image inspect "$1" &>/dev/null 2>&1
+}
+
+docker_run() {
+    local image="$1"; shift
+    docker run --rm -it \
+        -u "$(id -u):$(id -g)" \
+        -v "$PROJECT_DIR:/ppap" \
+        -w /ppap \
+        "$image" \
+        "$@"
+}
+
 # ── Parse flags ─────────────────────────────────────────────────────────────
 TARGET=""
 DO_BUILD=0
@@ -330,16 +357,35 @@ else
     fi
 fi
 
+# Check if QEMU is available on host or via Docker
+USE_DOCKER_QEMU=0
 if ! command -v "$QEMU_BIN" &>/dev/null && [[ ! -x "$QEMU_BIN" ]]; then
-    echo "[run] Error: $QEMU_BIN not found."
-    if [[ "$TARGET" == "qemu_m68k" ]]; then
-        echo "      Install with: sudo apt install qemu-system-misc"
-        echo "      Or build from source: ./third_party/build_qemu_system_m68k.sh"
+    DOCKER_IMAGE="$(target_docker_image "$TARGET")"
+    if [[ -n "$DOCKER_IMAGE" ]] && docker_image_exists "$DOCKER_IMAGE"; then
+        echo "[run] $QEMU_BIN not found on host — using Docker image $DOCKER_IMAGE"
+        USE_DOCKER_QEMU=1
     else
-        echo "      Install with: sudo apt install qemu-system-arm"
+        echo "[run] Error: $QEMU_BIN not found."
+        if [[ "$TARGET" == "qemu_m68k" ]]; then
+            echo "      Install with: sudo apt install qemu-system-misc"
+            echo "      Or build from source: ./third_party/build_qemu_system_m68k.sh"
+        else
+            echo "      Install with: sudo apt install qemu-system-arm"
+        fi
+        echo "      Or build Docker image: ./scripts/setup_docker.sh $TARGET"
+        exit 1
     fi
-    exit 1
 fi
+
+# Helper: run QEMU either on host or in Docker
+run_qemu() {
+    if [[ $USE_DOCKER_QEMU -eq 1 ]]; then
+        local d_elf="/ppap/${ELF#"$PROJECT_DIR/"}"
+        docker_run "$DOCKER_IMAGE" "$QEMU_BIN" "$@" -kernel "$d_elf"
+    else
+        "$QEMU_BIN" "$@" -kernel "$ELF"
+    fi
+}
 
 # ── Test mode: run with timeout and check output ───────────────────────────
 if [[ $DO_TEST -eq 1 ]]; then
@@ -366,10 +412,9 @@ if [[ $DO_TEST -eq 1 ]]; then
         TIMEOUT=180
     fi
     echo "[test] Running on-target tests (timeout ${TIMEOUT}s)..."
-    OUTPUT=$(timeout "$TIMEOUT" "$QEMU_BIN" \
+    OUTPUT=$(timeout "$TIMEOUT" run_qemu \
         "${QEMU_ARGS[@]}" \
-        -nographic \
-        -kernel "$ELF" 2>&1 || true)
+        -nographic 2>&1 || true)
 
     echo "$OUTPUT"
 
@@ -394,8 +439,7 @@ fi
 
 # ── Run interactively ──────────────────────────────────────────────────────
 echo "[run] Running $ELF ..."
-"$QEMU_BIN" \
+run_qemu \
     "${QEMU_ARGS[@]}" \
     -nographic \
-    -kernel "$ELF" \
     "${GDB_ARGS[@]+"${GDB_ARGS[@]}"}"

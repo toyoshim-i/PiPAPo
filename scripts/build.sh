@@ -28,6 +28,36 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# ── Docker helpers ──────────────────────────────────────────────────────────
+
+# Map target → Docker image family
+target_docker_image() {
+    case "$1" in
+        qemu_arm|pico1|pico1calc|pico2) echo "ppap/arm" ;;
+        qemu_m68k|x68k)                 echo "ppap/m68k" ;;
+        qemu_rv32|pico2rv)              echo "ppap/riscv" ;;
+        xtensa_cc)                      echo "ppap/xtensa" ;;
+        ibmpc)                          echo "ppap/ia16" ;;
+        *)                              echo "" ;;
+    esac
+}
+
+# Check if a Docker image exists locally
+docker_image_exists() {
+    docker image inspect "$1" &>/dev/null 2>&1
+}
+
+# Run a command inside the target's Docker container
+docker_run() {
+    local image="$1"; shift
+    docker run --rm \
+        -u "$(id -u):$(id -g)" \
+        -v "$PROJECT_DIR:/ppap" \
+        -w /ppap \
+        "$image" \
+        "$@"
+}
+
 # ── Parse arguments ──────────────────────────────────────────────────────────
 TESTS=OFF
 TESTS_EXTENDED=OFF
@@ -225,12 +255,34 @@ if [[ -n "$OVERLAY" ]]; then
 fi
 
 echo "[build] Building $CMAKE_TARGET (PPAP_TESTS=$TESTS, PPAP_TESTS_EXTENDED=$TESTS_EXTENDED)..."
-cmake "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}" \
-      -DPPAP_TESTS="$TESTS" \
-      -DPPAP_TESTS_EXTENDED="$TESTS_EXTENDED" \
-      -DH68K_DEBUG="$H68K_DEBUG" \
-      -S "$SOURCE_DIR" -B "$BUILD_DIR" >/dev/null 2>&1
-cmake --build "$BUILD_DIR" -- -j"$(nproc)"
+
+# Convert host-absolute paths to container-relative for Docker builds
+DOCKER_IMAGE="$(target_docker_image "$TARGET")"
+if [[ -n "$DOCKER_IMAGE" ]] && docker_image_exists "$DOCKER_IMAGE"; then
+    echo "[build] Using Docker image $DOCKER_IMAGE"
+    # Paths inside container: /ppap is the project root
+    D_SOURCE="/ppap/${SOURCE_DIR#"$PROJECT_DIR/"}"
+    D_BUILD="/ppap/${BUILD_DIR#"$PROJECT_DIR/"}"
+    D_EXTRA_ARGS=()
+    for arg in "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"; do
+        D_EXTRA_ARGS+=("${arg//"$PROJECT_DIR"/"/ppap"}")
+    done
+    docker_run "$DOCKER_IMAGE" bash -c "
+        cmake ${D_EXTRA_ARGS[*]+"${D_EXTRA_ARGS[*]}"} \
+              -DPPAP_TESTS=$TESTS \
+              -DPPAP_TESTS_EXTENDED=$TESTS_EXTENDED \
+              -DH68K_DEBUG=$H68K_DEBUG \
+              -S '$D_SOURCE' -B '$D_BUILD' >/dev/null 2>&1 && \
+        cmake --build '$D_BUILD' -- -j\$(nproc)
+    "
+else
+    cmake "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}" \
+          -DPPAP_TESTS="$TESTS" \
+          -DPPAP_TESTS_EXTENDED="$TESTS_EXTENDED" \
+          -DH68K_DEBUG="$H68K_DEBUG" \
+          -S "$SOURCE_DIR" -B "$BUILD_DIR" >/dev/null 2>&1
+    cmake --build "$BUILD_DIR" -- -j"$(nproc)"
+fi
 
 if [[ ! -f "$ELF" ]]; then
     echo "[build] Error: $ELF not found after build."
