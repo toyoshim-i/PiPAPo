@@ -31,32 +31,25 @@ error()   { echo "[ERROR] $*" >&2; exit 1; }
 
 # --- Step 0: Ensure Docker is installed --------------------------------------
 
-if command -v docker &>/dev/null; then
-  success "Docker already installed: $(docker --version)"
-else
+if ! command -v docker &>/dev/null; then
   info "Docker not found. Installing docker.io + buildx..."
   sudo apt-get update -qq
   sudo apt-get install -y docker.io docker-buildx
-  if command -v docker &>/dev/null; then
-    success "Docker installed: $(docker --version)"
-  else
-    error "Docker installation failed."
-  fi
+  command -v docker &>/dev/null || error "Docker installation failed."
+  success "Docker installed: $(docker --version)"
 fi
 
 # Ensure the current user can run Docker without sudo
 if ! docker info &>/dev/null 2>&1; then
-  if id -nG | grep -qw docker; then
-    # Already in docker group but daemon not accessible — may need sg
-    info "Activating docker group in current shell..."
-    exec sg docker "$0 $*"
-  else
+  id -nG | grep -qw docker || {
     info "Adding $(whoami) to the docker group..."
     sudo usermod -aG docker "$(whoami)"
-    info "Activating docker group in current shell..."
-    exec sg docker "$0 $*"
-  fi
+  }
+  info "Activating docker group in current shell..."
+  exec sg docker "$0 $*"
 fi
+
+success "Docker ready: $(docker --version)"
 
 # --- Resolve targets to image families ---------------------------------------
 
