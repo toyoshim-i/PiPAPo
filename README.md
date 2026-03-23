@@ -47,16 +47,19 @@ All targets share the same kernel source, syscall interface, VFS, and process mo
 
 ## Known Issues
 
-- **LCD TTY unstable** — the framebuffer console occasionally hangs or glitches during heavy scrolling
 - **SD card disabled** — SD/VFAT support is tentatively disabled in the current build
 - **RISC-V no XIP text** — user binaries loaded entirely to SRAM (auipc PC-relative limitation); see [docs/targets/rv32.md](/docs/targets/rv32.md)
 - **Xtensa port WIP** — CardComputer (ESP32-S3) boots, romfs mounts, PID 1 loads; user-space write() output not yet visible; see [docs/targets/xtensa.md](/docs/targets/xtensa.md)
 
 ## Future Work
 
-- **Pi Zero Port** — ARM1176JZF-S with full MMU, SD card boot; see [docs/targets/pizero.md](/docs/targets/pizero.md)
+- **Pi Zero Port** — ARM1176JZF-S with full MMU, SD card boot; see [docs/proposals/pizero_port.md](/docs/proposals/pizero_port.md)
+- **IBM PC Port** — NEC V30 with hardware 8080 mode for CP/M compatibility; see [docs/proposals/pc_port.md](/docs/proposals/pc_port.md)
+- **MS-DOS Subsystem** — INT 21h translation layer for running DOS .COM/.EXE binaries; see [docs/proposals/msdos_subsystem.md](/docs/proposals/msdos_subsystem.md)
+- **i8086 eCPU** — software 8086 emulator for cross-architecture DOS binary execution; see [docs/proposals/i8086_ecpu.md](/docs/proposals/i8086_ecpu.md)
+- **GDB RSP Stub** — in-kernel GDB stub for source-level debugging over UART without a debug probe; see [docs/proposals/gdb_rsp_stub.md](/docs/proposals/gdb_rsp_stub.md)
+- **M33 MPU Full Protection** — per-process data protection using remaining MPU regions; see [docs/proposals/m33_mpu_full_protection.md](/docs/proposals/m33_mpu_full_protection.md)
 - **RISC-V PIC toolchain** — build riscv32-unknown-linux-gnu with soft-float for -pie support (XIP text + SRAM data separation)
-- **CardComputer standalone** — ST7789V2 display + keyboard for self-contained terminal; see [docs/proposals/cardcomputer_port.md](/docs/proposals/cardcomputer_port.md)
 - **PicoCalc 2** — RP2350 + PicoCalc hardware, dual architecture (ARM/RISC-V)
 - Audio driver support
 
@@ -206,92 +209,20 @@ Press **Ctrl-A X** to quit QEMU.
 
 ### 4. Test
 
+See [docs/getting_started/testing.md](/docs/getting_started/testing.md) for the full test guide.
+
 ```sh
 ./scripts/test.sh            # host unit tests only
 ./scripts/test.sh --all      # host + build all targets + QEMU tests (ARM, m68k, rv32)
-./scripts/run.sh --test qemu_rv32    # RISC-V QEMU tests only
 ```
 
-### 5. Debug with GDB (ARM hardware)
+### 5. Debug
 
-```sh
-# Terminal 1 — start OpenOCD
-openocd -f scripts/debug/openocd.cfg
-
-# Terminal 2 — flash and debug PicoCalc
-gdb-multiarch -x scripts/debug/pico1calc.gdb build/pico1calc/ppap_pico1calc.elf
-
-# Or attach to already-running firmware
-gdb-multiarch -x scripts/debug/pico1calc-attach.gdb build/pico1calc/ppap_pico1calc.elf
-```
+See [docs/getting_started/debugging.md](/docs/getting_started/debugging.md) for GDB setup, OpenOCD, and target-specific instructions.
 
 ## Architecture-Specific Notes
 
-### ARM (RP2040) — Flash Memory Layout
-
-**pico1** (Official Raspberry Pi Pico — 2 MB flash):
-
-| Region | Address | Size | Contents |
-|---|---|---|---|
-| `FLASH_BOOT` | `0x10000000` | 4 KB | SDK boot2 (256 B) + `stage1.S` (VTOR redirect) |
-| `FLASH_KERNEL` | `0x10001000` | 80 KB | Vector table + `.text` + `.rodata` |
-| `FLASH_ROMFS` | `0x10015000` | ~1.9 MB | romfs image |
-
-**pico1calc** (ClockworkPi PicoCalc — 16 MB flash):
-
-| Region | Address | Size | Contents |
-|---|---|---|---|
-| `FLASH_BOOT` | `0x10000000` | 16 KB | SDK boot2 (256 B) + `stage1.S` (reserved by UF2 bootloader) |
-| `FLASH_KERNEL` | `0x10004000` | 96 KB | Vector table + `.text` + `.rodata` |
-| `FLASH_ROMFS` | `0x1001C000` | ~16 MB | romfs image |
-
-The PicoCalc uses a third-party UF2 bootloader ([pelrun/uf2loader](https://github.com/pelrun/uf2loader))
-that reserves the first 16 KB of flash. The build system automatically sanitizes the
-UF2 output to exclude this region (`tools/uf2sanitize.py`).
-
-### ARM (RP2040) — SRAM Layout
-
-| Region | Address | Size | Purpose |
-|---|---|---|---|
-| Kernel data | `0x20000000` | 20 KB | BSS, stack, globals, `.ramfunc` copy |
-| Page pool | `0x20005000` | 204 KB | User process pages  |
-| I/O buffer | `0x20038000` | 24 KB | SD / FS cache  |
-| DMA / Reserved | `0x2003E000` | 16 KB | DMA, PIO, Core 1 stack |
-
-### m68k (QEMU virt)
-
-The m68k target runs on QEMU's `virt` machine with a pure 68000 CPU. Available
-RAM is auto-detected at boot via a two-phase probe (1 MB coarse + 4 KB fine
-steps), supporting up to 16 MB (`PAGE_COUNT_MAX=4096`). The kernel, romfs, and
-page pool all reside in RAM.
-
-| Region | Address | Size | Purpose |
-|---|---|---|---|
-| Vector table | `0x00000000` | 1 KB | 68000 exception vectors |
-| Kernel | `0x00000400` | ~variable | `.text` + `.rodata` + `.data` + `.bss` |
-| Kernel stack | after BSS | 16 KB | Supervisor stack |
-| Page pool | after stack (4 KB aligned) | runtime-detected | User process pages |
-
-See [docs/targets/68000.md](/docs/targets/68000.md) for architecture-specific details.
-
-### Xtensa (ESP32-S3) — CardComputer
-
-The Xtensa target uses **ESP-IDF as a HAL layer** — the PPAP kernel is built
-as an ESP-IDF component, and ESP-IDF handles flash boot, cache, clock PLL, and
-peripheral initialization. PPAP takes over after `app_main()`.
-
-Key differences from other targets:
-
-- **IRAM/DRAM split**: ESP32-S3 SRAM is split between instruction bus (IRAM,
-  execute + word-access only) and data bus (DRAM, byte-access). User code
-  must be loaded into IRAM.
-- **Literal pool relocation**: Xtensa PIC uses L32R (PC-relative literal load).
-  The ELF loader patches `R_XTENSA_32` and `R_XTENSA_PLT` relocations at
-  load time via `--emit-relocs`.
-- **Kernel ABI**: Windowed (ESP-IDF default). **User ABI**: Call0 (flat
-  register file, `-mabi=call0`).
-- **No QEMU**: hardware-only testing (ESP32-S3 QEMU support is experimental).
-
-See [docs/targets/xtensa.md](/docs/targets/xtensa.md) for full architecture details and
-[docs/proposals/cardcomputer_port.md](/docs/proposals/cardcomputer_port.md) for device-specific plans
-(display, keyboard, SD card).
+- **ARM Cortex-M** — [docs/targets/arm_m.md](/docs/targets/arm_m.md) — flash/SRAM layouts, RP2040/RP2350 details, PicoCalc UF2 bootloader
+- **Motorola 68000** — [docs/targets/68000.md](/docs/targets/68000.md) — QEMU virt memory map, X68000 floppy boot
+- **RISC-V** — [docs/targets/rv32.md](/docs/targets/rv32.md) — RV32IMAC specifics, XIP limitations, known test failures
+- **Xtensa** — [docs/targets/xtensa.md](/docs/targets/xtensa.md) — ESP-IDF integration, IRAM/DRAM split, call0 ABI
