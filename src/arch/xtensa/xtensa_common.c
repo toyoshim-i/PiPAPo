@@ -150,17 +150,42 @@ static void xtensa_syscall_handler(XtExcFrame *frame)
 
 /* ── Fault handler ───────────────────────────────────────────────────────── */
 
+static const char *exccause_name(uint32_t cause)
+{
+    static const char *names[] = {
+        [0]  = "IllegalInsn",   [1]  = "Syscall",
+        [2]  = "InsnFetchErr",  [3]  = "LoadStoreErr",
+        [4]  = "Level1Int",     [5]  = "Alloca",
+        [6]  = "IntDivZero",    [8]  = "Privileged",
+        [9]  = "LoadAlign",     [12] = "InsnPIF_Data",
+        [13] = "InsnPIF_Addr",  [14] = "LoadPIF_Data",
+        [15] = "LoadPIF_Addr",  [16] = "StorePIF_Data",
+        [17] = "StorePIF_Addr", [20] = "InsnTLBMiss",
+        [24] = "LoadTLBMiss",   [28] = "StoreTLBMiss",
+        [29] = "CoprocessorN",
+    };
+    if (cause < sizeof(names) / sizeof(names[0]) && names[cause])
+        return names[cause];
+    return "Unknown";
+}
+
 /* Called for all unhandled exceptions (illegal insn, load/store error, etc.).
  * Prints crash info for debugging, kills user processes, halts on kernel
  * faults. */
 static void xtensa_fault_handler(XtExcFrame *frame)
 {
-    klogf("EXCEPTION: cause=%u pc=%x vaddr=%x\n",
-          (uint32_t)frame->exccause, (uint32_t)frame->pc,
-          (uint32_t)frame->excvaddr);
-    klogf("  a0=%x a2=%x a3=%x a7=%x\n",
-          (uint32_t)frame->a0, (uint32_t)frame->a2,
-          (uint32_t)frame->a3, (uint32_t)frame->a7);
+    uint32_t cause = (uint32_t)frame->exccause;
+    klogf("EXCEPTION: %s (cause=%u) pc=%x vaddr=%x\n",
+          exccause_name(cause), cause,
+          (uint32_t)frame->pc, (uint32_t)frame->excvaddr);
+    klogf("  a0=%x a1=%x a2=%x a3=%x a4=%x a5=%x\n",
+          (uint32_t)frame->a0, (uint32_t)frame->a1,
+          (uint32_t)frame->a2, (uint32_t)frame->a3,
+          (uint32_t)frame->a4, (uint32_t)frame->a5);
+    klogf("  a6=%x a7=%x a8=%x a9=%x a10=%x a11=%x\n",
+          (uint32_t)frame->a6, (uint32_t)frame->a7,
+          (uint32_t)frame->a8, (uint32_t)frame->a9,
+          (uint32_t)frame->a10, (uint32_t)frame->a11);
 
     if (current && !current->is_idle) {
         klogf("  pid=%u comm=%s — killed\n", current->pid, current->comm);
@@ -174,6 +199,42 @@ static void xtensa_fault_handler(XtExcFrame *frame)
     klog("PANIC: kernel exception — halting\n");
     for (;;)
         __asm__ volatile ("waiti 15");
+}
+
+/* ── ESP-IDF abort/assert override ──────────────────────────────────────── */
+
+/* Override ESP-IDF's abort() and __assert_func() so kernel-level panics
+ * (heap corruption, assertion failures, etc.) go through our handler
+ * with a clear message instead of triggering an IllegalInstruction via
+ * ESP-IDF's panic_abort(). */
+
+/* Linked via -Wl,--wrap=abort and -Wl,--wrap=__assert_func
+ * (set in CMakeLists.txt).  The __wrap_ prefix replaces the original. */
+
+void __wrap_abort(void)
+{
+    klog("ABORT called");
+    if (current && !current->is_idle) {
+        klogf(" (pid=%u comm=%s)\n", current->pid, current->comm);
+        current->state = PROC_ZOMBIE;
+        current->exit_status = 128 + 6; /* SIGABRT */
+        arch_yield();
+        /* Try to let scheduler run — if we return, hang. */
+    } else {
+        klog(" — kernel abort, halting\n");
+    }
+    for (;;)
+        __asm__ volatile ("waiti 15");
+}
+
+void __wrap___assert_func(const char *file, int line, const char *func,
+                          const char *expr)
+{
+    klogf("ASSERT FAILED: %s:%d", file ? file : "?", line);
+    if (func) klogf(" (%s)", func);
+    if (expr) klogf(": %s", expr);
+    klog("\n");
+    __wrap_abort();
 }
 
 /* ── Trap initialization ─────────────────────────────────────────────────── */

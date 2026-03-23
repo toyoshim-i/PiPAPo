@@ -94,3 +94,10 @@ set_source_files_properties("${ROMFS_ASM}" PROPERTIES
 
 # Warnings (do not add -Werror: ESP-IDF headers trigger warnings we can't fix)
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wno-unused-parameter)
+
+# Override ESP-IDF's abort() and __assert_func() with PPAP handlers
+# so kernel panics go through our fault handler with clear messages.
+target_link_libraries(${COMPONENT_LIB} INTERFACE
+    "-Wl,--wrap=abort"
+    "-Wl,--wrap=__assert_func"
+)
