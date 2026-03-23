@@ -46,10 +46,16 @@ fi
 
 # Ensure the current user can run Docker without sudo
 if ! docker info &>/dev/null 2>&1; then
-  info "Adding $(whoami) to the docker group..."
-  sudo usermod -aG docker "$(whoami)"
-  info "Activating docker group in current shell..."
-  exec sg docker "$0 $*"
+  if id -nG | grep -qw docker; then
+    # Already in docker group but daemon not accessible — may need sg
+    info "Activating docker group in current shell..."
+    exec sg docker "$0 $*"
+  else
+    info "Adding $(whoami) to the docker group..."
+    sudo usermod -aG docker "$(whoami)"
+    info "Activating docker group in current shell..."
+    exec sg docker "$0 $*"
+  fi
 fi
 
 # --- Resolve targets to image families ---------------------------------------
