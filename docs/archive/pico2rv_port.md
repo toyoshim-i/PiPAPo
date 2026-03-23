@@ -1,7 +1,6 @@
-> **This proposal has been implemented and archived.** See
-> [docs/archive/pico2rv_port_proposal.md](../archive/pico2rv_port_proposal.md)
-> for the original proposal, and [docs/targets/rv32.md](../targets/rv32.md)
-> for the current architecture reference.
+> **Archived proposal.** The RISC-V port is now implemented. See
+> [docs/targets/rv32.md](../targets/rv32.md) for the current architecture
+> reference.
 
 # Raspberry Pi Pico 2 RISC-V Target Port Plan
 

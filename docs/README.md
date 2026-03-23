@@ -61,6 +61,6 @@ This index is the entry point for project documentation.
 
 - Archive
   - [`archive/history/`](archive/history/)
-  - [`archive/pico2rv_port_proposal.md`](archive/pico2rv_port_proposal.md) — Original RISC-V port proposal
+  - [`archive/pico2rv_port.md`](archive/pico2rv_port.md) — Original RISC-V port proposal
   - [`archive/pico2_port.md`](archive/pico2_port.md) — RP2350 ARM port proposal
   - [`archive/sos_subsystem_proposal.md`](archive/sos_subsystem_proposal.md)
