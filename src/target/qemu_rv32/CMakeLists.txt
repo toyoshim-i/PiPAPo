@@ -44,6 +44,8 @@ include(${PPAP_ROOT}/cmake/riscv.cmake)
 
 add_executable(ppap_qemu_rv32
     ${KERNEL_RISCV_COMMON_SOURCES}
+    ${KERNEL_BLKDEV_SOURCES}
+    ${PPAP_ROOT}/src/kernel/blkdev/flatblk.c
     ${CMAKE_CURRENT_SOURCE_DIR}/target_qemu_rv32.c
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/uart_ns16550.c
     ${CMAKE_CURRENT_SOURCE_DIR}/string.c
@@ -59,6 +61,7 @@ target_compile_options(ppap_qemu_rv32 PRIVATE
 target_compile_definitions(ppap_qemu_rv32 PRIVATE
     PPAP_KERNEL=1
     PPAP_QEMU=1
+    PPAP_HAS_BLKDEV=1
     PPAP_SYS_HZ=10000000u
     PAGE_POOL_BASE=0x80809000u
     PAGE_COUNT_MAX=107u
@@ -100,5 +103,52 @@ target_link_options(ppap_qemu_rv32 PRIVATE
 # Output with .elf extension (build.sh expects it)
 set_target_properties(ppap_qemu_rv32 PROPERTIES SUFFIX ".elf")
 
-# Romfs
-ppap_generate_romfs(ppap_qemu_rv32)
+# Romfs (exclude musl-linked tests — they go into UFS image below)
+ppap_generate_romfs(ppap_qemu_rv32 EXCLUDE_APPS test_musl_child)
+
+# ── UFS test image (musl-linked binaries too large for romfs) ──────────────
+# Build mkufs host tool
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/mkufs
+    COMMAND cc -O2 -o ${CMAKE_BINARY_DIR}/mkufs
+            ${PPAP_ROOT}/tools/mkufs/mkufs.c
+    DEPENDS ${PPAP_ROOT}/tools/mkufs/mkufs.c
+    COMMENT "Building mkufs host tool"
+)
+
+# Stage musl-linked test binaries into a directory for mkufs
+set(_ufs_staging ${CMAKE_BINARY_DIR}/ufs_musl_staging)
+set(_ufs_img ${CMAKE_BINARY_DIR}/ufs_musl.img)
+
+# Collect musl test ELFs (built by user.cmake)
+set(_musl_elf_deps "")
+foreach(tst ${USER_MUSL_TESTS})
+    list(APPEND _musl_elf_deps ${PPAP_SHARED_BUILD}/${tst}.elf)
+endforeach()
+
+add_custom_command(
+    OUTPUT ${_ufs_img}
+    COMMAND ${CMAKE_COMMAND} -E rm -rf ${_ufs_staging}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${_ufs_staging}/bin
+    COMMAND ${CMAKE_COMMAND} -E copy ${_musl_elf_deps} ${_ufs_staging}/bin/
+    # Rename .elf → plain name, strip unneeded symbols (keep relocations)
+    COMMAND ${CMAKE_COMMAND} -E rename
+            ${_ufs_staging}/bin/test_musl_child.elf
+            ${_ufs_staging}/bin/test_musl_child
+    COMMAND ${CMAKE_STRIP} --strip-unneeded ${_ufs_staging}/bin/test_musl_child
+    COMMAND ${CMAKE_BINARY_DIR}/mkufs -s 2M
+            -p ${_ufs_staging} ${_ufs_img}
+    DEPENDS ${CMAKE_BINARY_DIR}/mkufs ${_musl_elf_deps}
+    COMMENT "Generating UFS test image (musl binaries)"
+)
+
+# Embed UFS image as a linker section
+file(WRITE ${CMAKE_BINARY_DIR}/ufsimg_data.S
+"    .section .ufsimg, \"a\", %progbits\n    .incbin \"${_ufs_img}\"\n")
+
+add_custom_target(ufsimg_image DEPENDS ${_ufs_img})
+add_dependencies(ppap_qemu_rv32 ufsimg_image)
+
+set_source_files_properties(${CMAKE_BINARY_DIR}/ufsimg_data.S
+    PROPERTIES OBJECT_DEPENDS ${_ufs_img})
+target_sources(ppap_qemu_rv32 PRIVATE ${CMAKE_BINARY_DIR}/ufsimg_data.S)

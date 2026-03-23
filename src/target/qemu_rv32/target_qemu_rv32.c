@@ -3,16 +3,27 @@
  *
  * QEMU virt: NS16550A UART, CLINT timer, no SD/SPI/display.
  * Used for CI testing and debugging the RISC-V port without hardware.
+ *
+ * Block device: embedded UFS image (flatblk) for musl-linked test binaries
+ * that are too large for romfs.
  */
 
 #include "../target.h"
+#include "blkdev/blkdev.h"
+#include "blkdev/flatblk.h"
 #include "config.h"
 #include "drivers/uart.h"
+#include "fs/ufs.h"
 #include "klog.h"
+#include "vfs/vfs.h"
 
 #ifdef PPAP_TESTS
 #include "ktest.h"
 #endif
+
+/* Linker-provided UFS test image (from ufsimg_data.S) */
+extern const uint8_t __ufsimg_start[];
+extern const uint8_t __ufsimg_end[];
 
 extern void riscv_timer_init(void);
 extern int uart_rx_avail(void);
@@ -33,6 +44,22 @@ void target_late_init(void) {
 }
 
 void target_post_mount(void) {
+  /* Mount embedded UFS image as /mnt/ufs (musl-linked test binaries) */
+  uint32_t ufsimg_size = (uint32_t)(__ufsimg_end - __ufsimg_start);
+  if (ufsimg_size >= 512) {
+    int rc = flatblk_init("ram0", __ufsimg_start, ufsimg_size);
+    if (rc >= 0) {
+      blkdev_t *bd = blkdev_find("ram0");
+      if (bd) {
+        rc = vfs_mount("/mnt/ufs", &ufs_ops, MNT_RDONLY, bd);
+        if (rc == 0)
+          klogf("VFS: UFS mounted at /mnt/ufs (%u KB)\n",
+                ufsimg_size / 1024);
+        else
+          klogf("VFS: UFS mount failed (%u)\n", (uint32_t)(-rc));
+      }
+    }
+  }
 #ifdef PPAP_TESTS
   ktest_run_all();
 #endif

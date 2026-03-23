@@ -44,6 +44,13 @@ SECTIONS {
         __romfs_end = .;
     } > ROM
 
+    .ufsimg : {
+        __ufsimg_start = .;
+        KEEP(*(.ufsimg))
+        . = ALIGN(4);
+        __ufsimg_end = .;
+    } > ROM
+
     .data : {
         __data_start = .;
         *(.data*)

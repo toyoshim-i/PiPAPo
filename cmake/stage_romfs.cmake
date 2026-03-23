@@ -29,6 +29,7 @@ file(MAKE_DIRECTORY
     "${STAGING}/usr/bin"
     "${STAGING}/usr/include"
     "${STAGING}/mnt/sd"
+    "${STAGING}/mnt/ufs"
 )
 
 # --- Install user programs ---

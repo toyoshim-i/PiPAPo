@@ -404,7 +404,6 @@ function(ppap_musl_test_program name source)
         OUTPUT ${_elf}
         COMMAND ${PPAP_CC} ${PPAP_TARGET_FLAGS} ${_musl_ldflags}
                 -o ${_elf} ${_obj}
-        COMMAND ${PPAP_STRIP} ${_elf}
         DEPENDS ${_obj} ${PPAP_SPECS_FILE} ${PPAP_BUSYBOX_LD} ${PPAP_MUSL_LIBC}
         COMMENT "Linking ${name}.elf (musl, ${PPAP_ARCH})"
     )

@@ -13,12 +13,21 @@
 
 #include "utest.h"
 
+/* RISC-V: musl child lives on UFS (/mnt/ufs/bin/) because the
+ * unstripped ELF (with relocations) is too large for romfs.
+ * ARM/m68k: child is in romfs (/bin/) as usual. */
+#if defined(__riscv)
+#define MUSL_CHILD_PATH "/mnt/ufs/bin/test_musl_child"
+#else
+#define MUSL_CHILD_PATH "/bin/test_musl_child"
+#endif
+
 static void run_subtest(const char *name)
 {
     pid_t pid = vfork();
     if (pid == 0) {
-        char *argv[] = { "/bin/test_musl_child", (char *)name, (char *)0 };
-        execve("/bin/test_musl_child", argv, (void *)0);
+        char *argv[] = { MUSL_CHILD_PATH, (char *)name, (char *)0 };
+        execve(MUSL_CHILD_PATH, argv, (void *)0);
         _exit(127);  /* execve failed */
     }
 

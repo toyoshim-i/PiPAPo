@@ -50,6 +50,10 @@ void riscv_exception_handler(uint32_t mcause, uint32_t mepc, uint32_t mtval)
     CRASH_LOG[2] = mepc;
     CRASH_LOG[3] = mtval;
 
+    klogf("TRAP: exception cause=%x mepc=%x mtval=%x pid=%u\n",
+          mcause, mepc, mtval,
+          current ? (uint32_t)current->pid : 0xFFFFFFFFu);
+
     /* Spin with NOP instead of WFI — WFI may gate the Hazard3 core clock,
      * making the debug module unresponsive.  A NOP loop keeps the core
      * running so OpenOCD can always halt and inspect crash state. */
