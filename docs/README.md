@@ -55,6 +55,10 @@ This index is the entry point for project documentation.
   - [`targets/68000.md`](targets/68000.md) — Motorola 68000 (qemu_m68k, x68k)
   - [`targets/pizero.md`](targets/pizero.md) — Pi Zero (future)
 
+- Notes
+  - [`notes/zombie.md`](notes/zombie.md) — Process lifecycle: zombies, orphans, reaping
+  - [`notes/x68k_bootstrap.md`](notes/x68k_bootstrap.md) — X68000 two-stage floppy boot
+
 - Reference
   - [`reference/picocalc.md`](reference/picocalc.md)
   - [`reference/picocalc_lcd.md`](reference/picocalc_lcd.md)
