@@ -192,6 +192,32 @@ add_custom_command(TARGET ppap_ibmpc POST_BUILD
 )
 
 # ==========================================================================
+# Target 4: hello.com (test user program for exec)
+# ==========================================================================
+
+add_executable(hello_com
+  ${CMAKE_CURRENT_SOURCE_DIR}/user/hello.S
+)
+target_compile_options(hello_com PRIVATE -march=i8086 -ffreestanding)
+target_link_options(hello_com PRIVATE
+  -nostartfiles -nostdlib
+  -T ${CMAKE_CURRENT_SOURCE_DIR}/user/flat.ld
+)
+set_target_properties(hello_com PROPERTIES
+  SUFFIX ".elf"
+  OUTPUT_NAME "hello"
+)
+
+add_custom_command(TARGET hello_com POST_BUILD
+  COMMAND ${CMAKE_OBJCOPY} -O binary
+    $<TARGET_FILE:hello_com>
+    ${CMAKE_CURRENT_BINARY_DIR}/hello.com
+  COMMENT "Creating hello.com (test user program)"
+)
+
+add_dependencies(ppap_ibmpc hello_com)
+
+# ==========================================================================
 # Post-build: assemble floppy image via mkpcimg.sh
 # ==========================================================================
 

@@ -57,8 +57,16 @@ fi
 
 UFS_STAGING="$BUILD_DIR/ufs_staging"
 rm -rf "$UFS_STAGING"
-mkdir -p "$UFS_STAGING/boot"
+mkdir -p "$UFS_STAGING/boot" "$UFS_STAGING/bin" "$UFS_STAGING/sbin"
 cp "$KERNEL" "$UFS_STAGING/boot/kernel"
+
+# Include user programs if built
+HELLO="$BUILD_DIR/hello.com"
+if [[ -f "$HELLO" ]]; then
+  cp "$HELLO" "$UFS_STAGING/bin/hello.com"
+  # Use hello.com as init for testing
+  cp "$HELLO" "$UFS_STAGING/sbin/init"
+fi
 
 # ── Create UFS image ─────────────────────────────────────────────────────
 

@@ -42,7 +42,8 @@ void target_post_mount(void)
 
 const char *target_init_path(void)
 {
-  /* No user-space init yet — kernel boots to idle */
+  /* TODO: return "/sbin/init" once UFS root mount works.
+   * For now, rootfs mount fails (no floppy block device). */
   return (const char *)0;
 }
 
