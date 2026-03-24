@@ -49,6 +49,8 @@ typedef struct cpu_state cpu_state_t;
 #define HOST_ARCH_ID CPU_ARCH_RISCV
 #elif defined(__xtensa__)
 #define HOST_ARCH_ID CPU_ARCH_XTENSA
+#elif defined(__IA16__)
+#define HOST_ARCH_ID CPU_ARCH_8086
 #elif !defined(PPAP_HOST_TEST)
 #error "Unsupported host architecture"
 #endif

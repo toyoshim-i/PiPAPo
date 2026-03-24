@@ -303,7 +303,19 @@ void sched_start(void) {
   arch_irq_enable();
 }
 
-#endif /* __ARM_ARCH / __m68k__ / __riscv / __xtensa__ */
+#elif defined(__IA16__)
+
+/* ── Scheduler startup (i16 / 8086 real mode) ──────────────────────────────
+ */
+
+void sched_start(void) {
+  /* i16: no PSP/MSP split, no PendSV priorities.
+   * PIT timer ISR setup is done by target_late_init() → timer_init().
+   * Just enable interrupts to start the scheduler. */
+  arch_irq_enable();
+}
+
+#endif /* __ARM_ARCH / __m68k__ / __riscv / __xtensa__ / __IA16__ */
 
 /* ── Cooperative yield ───────────────────────────────────────────────────────
  */

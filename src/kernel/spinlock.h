@@ -51,6 +51,8 @@ static inline int spin_have_hw(void) {
   return 0; /* no hardware spinlocks on 68k */
 #elif defined(__xtensa__)
   return 0; /* no SIO spinlocks on ESP32-S3 — IRQ disable is sufficient */
+#elif defined(__IA16__)
+  return 0; /* no hardware spinlocks on 8086 */
 #elif defined(__riscv) && !defined(PPAP_QEMU)
   return 1; /* RP2350 SIO spinlocks work from RISC-V cores too */
 #elif defined(__riscv) && defined(PPAP_QEMU)
@@ -66,6 +68,8 @@ static inline uint32_t core_id(void) {
   return 0; /* single core: m68k or QEMU ARM */
 #elif defined(__xtensa__)
   return 0; /* single-core initial Xtensa port */
+#elif defined(__IA16__)
+  return 0; /* 8086: single core */
 #elif defined(__riscv)
   return 0; /* single-core initial RISC-V port (Phase RV-6 will use SIO_CPUID) */
 #else
