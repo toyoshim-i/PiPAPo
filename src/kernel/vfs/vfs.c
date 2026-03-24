@@ -50,10 +50,10 @@ void vfs_init(void) {
         (uint32_t)VFS_VNODE_MAX, (uint32_t)VFS_MOUNT_MAX);
 }
 
-/* ── vnode_alloc / vnode_ref / vnode_put ─────────────────────────────────────
+/* ── vfs_alloc_vnode / vfs_ref_vnode / vfs_rel_vnode ─────────────────────────────────────
  */
 
-vnode_t *vnode_alloc(void) {
+vnode_t *vfs_alloc_vnode(void) {
   uint32_t saved = spin_lock_irqsave(SPIN_VFS);
   vnode_t *vn = kmem_alloc(&vnode_pool);
   if (!vn) {
@@ -73,14 +73,14 @@ vnode_t *vnode_alloc(void) {
   return vn;
 }
 
-void vnode_ref(vnode_t *vn) {
+void vfs_ref_vnode(vnode_t *vn) {
   if (!vn) return;
   uint32_t saved = spin_lock_irqsave(SPIN_VFS);
   vn->refcnt++;
   spin_unlock_irqrestore(SPIN_VFS, saved);
 }
 
-void vnode_put(vnode_t *vn) {
+void vfs_rel_vnode(vnode_t *vn) {
   if (!vn) return;
   uint32_t saved = spin_lock_irqsave(SPIN_VFS);
   if (vn->refcnt > 0) vn->refcnt--;
@@ -131,7 +131,7 @@ int vfs_mount(const char *path, const vfs_ops_t *ops, uint8_t flags,
   mnt->sb_priv = NULL;
 
   /* Release SPIN_VFS before calling the FS mount callback.
-   * The callback may call vnode_alloc() which also acquires SPIN_VFS —
+   * The callback may call vfs_alloc_vnode() which also acquires SPIN_VFS —
    * RP2040 hardware spinlocks are NOT re-entrant (same-core re-acquire
    * returns 0 → infinite spin).  The slot is safe: it's not yet active,
    * so no other code path will find or modify it. */
@@ -190,7 +190,7 @@ int vfs_umount(const char *path) {
   }
 
   /* Release root vnode and deactivate.
-   * Note: vnode_put() also acquires SPIN_VFS, but we already hold it.
+   * Note: vfs_rel_vnode() also acquires SPIN_VFS, but we already hold it.
    * Use kmem_free() directly to avoid recursive lock. */
   if (mnt->root) {
     if (mnt->root->refcnt > 0) mnt->root->refcnt--;
@@ -256,7 +256,6 @@ mount_entry_t *vfs_find_mount(const char *path, const char **remainder) {
 /* ── Module definitions ────────────────────────────────────────────────── */
 
 #include "../mod/mod_vfs.h"
-#include "../mod/mod_vnode.h"
 
 MOD_DEFINE_BEGIN(vfs)
   MOD_IMPL(vfs, init)
@@ -267,10 +266,7 @@ MOD_DEFINE_BEGIN(vfs)
   MOD_IMPL(vfs, lookup_parent)
   MOD_IMPL(vfs, path_normalize)
   MOD_IMPL(vfs, find_mount)
-MOD_DEFINE_END()
-
-MOD_DEFINE_BEGIN(vnode)
-  MOD_IMPL(vnode, alloc)
-  MOD_IMPL(vnode, ref)
-  MOD_IMPL(vnode, put)
+  MOD_IMPL(vfs, alloc_vnode)
+  MOD_IMPL(vfs, ref_vnode)
+  MOD_IMPL(vfs, rel_vnode)
 MOD_DEFINE_END()

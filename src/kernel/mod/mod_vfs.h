@@ -72,7 +72,7 @@ MOD_DECLARE_BEGIN(vfs)
    *
    *   path    Absolute or relative pathname (relative to current->cwd).
    *   result  Output: vnode pointer with incremented refcount.
-   *           Caller must call vnode_put() when done.
+   *           Caller must call vfs_rel_vnode() when done.
    *
    * Returns 0 on success, negative errno (-ENOENT, -ENOTDIR, etc.).
    */
@@ -122,6 +122,41 @@ MOD_DECLARE_BEGIN(vfs)
    * or NULL if no mount covers the path.
    */
   MOD_FUNC(vfs, mount_entry_t *, find_mount, const char *, const char **)
+
+  /* ── Vnode lifecycle ─────────────────────────────────────────────────── */
+
+  /*
+   * alloc_vnode — Allocate a vnode from the pool.
+   *
+   * Returns a zeroed vnode with refcount 1, or NULL if the pool
+   * is exhausted.  The caller must set vn->ops, vn->type, etc.
+   * before making the vnode visible to other subsystems.
+   *
+   * Called by filesystem drivers during mount and lookup to create
+   * in-memory representations of files, directories, and devices.
+   */
+  MOD_FUNC(vfs, vnode_t *, alloc_vnode, void)
+
+  /*
+   * ref_vnode — Increment a vnode's reference count.
+   *
+   *   vn  Vnode to reference.
+   *
+   * Called when a new file descriptor or directory entry points to
+   * an existing vnode (e.g. dup, fork fd inheritance, hardlink).
+   */
+  MOD_FUNC(vfs, void, ref_vnode, vnode_t *)
+
+  /*
+   * rel_vnode — Release a vnode (decrement refcount, free if zero).
+   *
+   *   vn  Vnode to release.  Safe to call with NULL (no-op).
+   *
+   * When the refcount reaches zero, the vnode is returned to the
+   * pool.  Called by sys_close, do_execve cleanup, process exit,
+   * and any code that obtained a vnode via vfs_lookup.
+   */
+  MOD_FUNC(vfs, void, rel_vnode, vnode_t *)
 
 MOD_DECLARE_END(vfs)
 

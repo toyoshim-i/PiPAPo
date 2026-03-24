@@ -88,7 +88,7 @@ static long vfs_file_write(struct file *f, const char *buf, size_t n) {
 }
 
 static int vfs_file_close(struct file *f) {
-  if (f->vnode) vnode_put(f->vnode);
+  if (f->vnode) vfs_rel_vnode(f->vnode);
   f->vnode = NULL;
   /* Note: file_free is called by fd_free when refcnt reaches 0.
    * Do NOT call file_free here — that would be a double-free. */
@@ -118,24 +118,24 @@ long sys_open(const char *path, long flags, long mode) {
     if (err) return (long)err;
 
     if (parent->type != VNODE_DIR) {
-      vnode_put(parent);
+      vfs_rel_vnode(parent);
       return -(long)ENOTDIR;
     }
 
     /* Check that the FS supports create */
     if (!parent->mount || !parent->mount->ops || !parent->mount->ops->create) {
-      vnode_put(parent);
+      vfs_rel_vnode(parent);
       return -(long)ENOSYS;
     }
 
     /* Check read-only mount */
     if (parent->mount->flags & MNT_RDONLY) {
-      vnode_put(parent);
+      vfs_rel_vnode(parent);
       return -(long)EROFS;
     }
 
     err = parent->mount->ops->create(parent, namebuf, (uint32_t)mode, &vn);
-    vnode_put(parent);
+    vfs_rel_vnode(parent);
     if (err) return (long)err;
   } else if (err) {
     return (long)err;
@@ -146,7 +146,7 @@ long sys_open(const char *path, long flags, long mode) {
     if (vn->mount && vn->mount->ops && vn->mount->ops->truncate) {
       int terr = vn->mount->ops->truncate(vn, 0);
       if (terr) {
-        vnode_put(vn);
+        vfs_rel_vnode(vn);
         return (long)terr;
       }
     } else {
@@ -175,7 +175,7 @@ long sys_open(const char *path, long flags, long mode) {
     if (tty_idx >= 0) {
       struct file *ttyf = file_alloc();
       if (!ttyf) {
-        vnode_put(vn);
+        vfs_rel_vnode(vn);
         return -(long)ENOMEM;
       }
       ttyf->ops = &tty_fops;
@@ -185,7 +185,7 @@ long sys_open(const char *path, long flags, long mode) {
       ttyf->vnode = NULL;
       ttyf->offset = 0;
       int fd = fd_alloc(current, ttyf);
-      vnode_put(vn);
+      vfs_rel_vnode(vn);
       if (fd < 0) {
         file_free(ttyf);
         return (long)fd;
@@ -197,7 +197,7 @@ long sys_open(const char *path, long flags, long mode) {
   /* Allocate a struct file from the pool */
   struct file *f = file_alloc();
   if (!f) {
-    vnode_put(vn);
+    vfs_rel_vnode(vn);
     return -(long)ENOMEM;
   }
 
@@ -210,7 +210,7 @@ long sys_open(const char *path, long flags, long mode) {
 
   int fd = fd_alloc(current, f);
   if (fd < 0) {
-    vnode_put(vn);
+    vfs_rel_vnode(vn);
     file_free(f);
     return (long)fd;
   }
@@ -275,12 +275,12 @@ long sys_stat(const char *path, struct stat *buf) {
   if (err) return (long)err;
 
   if (!vn->mount || !vn->mount->ops || !vn->mount->ops->stat) {
-    vnode_put(vn);
+    vfs_rel_vnode(vn);
     return -(long)ENOSYS;
   }
 
   err = vn->mount->ops->stat(vn, buf);
-  vnode_put(vn);
+  vfs_rel_vnode(vn);
   return (long)err;
 }
 
@@ -373,10 +373,10 @@ long sys_chdir(const char *path) {
   if (err) return (long)err;
 
   if (vn->type != VNODE_DIR) {
-    vnode_put(vn);
+    vfs_rel_vnode(vn);
     return -(long)ENOTDIR;
   }
-  vnode_put(vn);
+  vfs_rel_vnode(vn);
 
   /* Resolve relative path to absolute, then normalize */
   char abs_path[VFS_PATH_MAX];
@@ -444,22 +444,22 @@ long sys_mkdir(const char *path, long mode) {
   if (err) return (long)err;
 
   if (parent->type != VNODE_DIR) {
-    vnode_put(parent);
+    vfs_rel_vnode(parent);
     return -(long)ENOTDIR;
   }
 
   if (!parent->mount || !parent->mount->ops || !parent->mount->ops->mkdir) {
-    vnode_put(parent);
+    vfs_rel_vnode(parent);
     return -(long)ENOSYS;
   }
 
   if (parent->mount->flags & MNT_RDONLY) {
-    vnode_put(parent);
+    vfs_rel_vnode(parent);
     return -(long)EROFS;
   }
 
   err = parent->mount->ops->mkdir(parent, namebuf, (uint32_t)mode);
-  vnode_put(parent);
+  vfs_rel_vnode(parent);
   return (long)err;
 }
 
@@ -475,22 +475,22 @@ long sys_unlink(const char *path) {
   if (err) return (long)err;
 
   if (parent->type != VNODE_DIR) {
-    vnode_put(parent);
+    vfs_rel_vnode(parent);
     return -(long)ENOTDIR;
   }
 
   if (!parent->mount || !parent->mount->ops || !parent->mount->ops->unlink) {
-    vnode_put(parent);
+    vfs_rel_vnode(parent);
     return -(long)ENOSYS;
   }
 
   if (parent->mount->flags & MNT_RDONLY) {
-    vnode_put(parent);
+    vfs_rel_vnode(parent);
     return -(long)EROFS;
   }
 
   err = parent->mount->ops->unlink(parent, namebuf);
-  vnode_put(parent);
+  vfs_rel_vnode(parent);
   return (long)err;
 }
 
@@ -511,7 +511,7 @@ long sys_rename(const char *oldpath, const char *newpath) {
   err =
       vfs_lookup_parent(newpath, &new_parent, new_name, (int)sizeof(new_name));
   if (err) {
-    vnode_put(old_parent);
+    vfs_rel_vnode(old_parent);
     return (long)err;
   }
 
@@ -533,8 +533,8 @@ long sys_rename(const char *oldpath, const char *newpath) {
   err = old_parent->mount->ops->rename(old_parent, old_name, new_parent,
                                        new_name);
 out:
-  vnode_put(old_parent);
-  vnode_put(new_parent);
+  vfs_rel_vnode(old_parent);
+  vfs_rel_vnode(new_parent);
   return (long)err;
 }
 
@@ -644,13 +644,13 @@ long sys_stat64(const char *path, void *buf) {
   if (err) return (long)err;
 
   if (!vn->mount || !vn->mount->ops || !vn->mount->ops->stat) {
-    vnode_put(vn);
+    vfs_rel_vnode(vn);
     return -(long)ENOSYS;
   }
 
   struct stat st;
   err = vn->mount->ops->stat(vn, &st);
-  vnode_put(vn);
+  vfs_rel_vnode(vn);
   if (err) return (long)err;
 
   fill_stat64(&st, buf);
@@ -698,13 +698,13 @@ long sys_lstat64(const char *path, void *buf) {
   if (err) return (long)err;
 
   if (!vn->mount || !vn->mount->ops || !vn->mount->ops->stat) {
-    vnode_put(vn);
+    vfs_rel_vnode(vn);
     return -(long)ENOSYS;
   }
 
   struct stat st;
   err = vn->mount->ops->stat(vn, &st);
-  vnode_put(vn);
+  vfs_rel_vnode(vn);
   if (err) return (long)err;
 
   fill_stat64(&st, buf);
@@ -866,7 +866,7 @@ long sys_access(const char *path, long mode) {
   int err = vfs_lookup(path, &vn);
   if (err) return (long)err;
 
-  vnode_put(vn);
+  vfs_rel_vnode(vn);
   return 0;
 }
 
@@ -890,17 +890,17 @@ long sys_readlink(const char *path, char *buf, long bufsiz) {
   if (err) return (long)err;
 
   if (vn->type != VNODE_SYMLINK) {
-    vnode_put(vn);
+    vfs_rel_vnode(vn);
     return -(long)EINVAL;
   }
 
   if (!vn->mount || !vn->mount->ops || !vn->mount->ops->readlink) {
-    vnode_put(vn);
+    vfs_rel_vnode(vn);
     return -(long)EINVAL;
   }
 
   long ret = vn->mount->ops->readlink(vn, buf, (size_t)bufsiz);
-  vnode_put(vn);
+  vfs_rel_vnode(vn);
   return ret;
 }
 

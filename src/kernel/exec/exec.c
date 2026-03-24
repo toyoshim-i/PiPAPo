@@ -40,7 +40,7 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
   if (err < 0) return err;
 
   if (vn->type != VNODE_FILE) {
-    vnode_put(vn);
+    vfs_rel_vnode(vn);
     return -(int)ENOEXEC;
   }
 
@@ -52,21 +52,21 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
 
   if (vn->xip_addr == NULL) {
     if (file_size == 0) {
-      vnode_put(vn);
+      vfs_rel_vnode(vn);
       return -(int)ENOEXEC;
     }
 
     file_pages = (file_size + PAGE_SIZE - 1u) / PAGE_SIZE;
     file_buf = alloc_contiguous(file_pages);
     if (!file_buf) {
-      vnode_put(vn);
+      vfs_rel_vnode(vn);
       return -(int)ENOMEM;
     }
 
     if (!vn->mount || !vn->mount->ops || !vn->mount->ops->read) {
       for (uint32_t i = 0; i < file_pages; i++)
         page_free(file_buf + i * PAGE_SIZE);
-      vnode_put(vn);
+      vfs_rel_vnode(vn);
       return -(int)ENOEXEC;
     }
 
@@ -74,7 +74,7 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
     if (nread < 0 || (uint32_t)nread != file_size) {
       for (uint32_t i = 0; i < file_pages; i++)
         page_free(file_buf + i * PAGE_SIZE);
-      vnode_put(vn);
+      vfs_rel_vnode(vn);
       return (nread < 0) ? (int)nread : -(int)ENOEXEC;
     }
 
@@ -115,7 +115,7 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
       for (uint32_t i = 0; i < file_pages; i++)
         page_free(file_buf + i * PAGE_SIZE);
     }
-    vnode_put(vn);
+    vfs_rel_vnode(vn);
     return rc;
   }
 
@@ -148,6 +148,6 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
   p->sig_pending = 0;
   p->sig_blocked = 0;
 
-  vnode_put(vn);
+  vfs_rel_vnode(vn);
   return 0;
 }

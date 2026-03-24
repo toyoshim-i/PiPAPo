@@ -185,18 +185,18 @@ int vfs_umount(const char *path);
  * Returns NULL if the pool is exhausted.
  * The returned vnode has refcnt = 1.
  */
-vnode_t *vnode_alloc(void);
+vnode_t *vfs_alloc_vnode(void);
 
 /*
  * Increment a vnode's reference count.
  */
-void vnode_ref(vnode_t *vn);
+void vfs_ref_vnode(vnode_t *vn);
 
 /*
  * Decrement a vnode's reference count.  When refcnt reaches 0 the vnode
  * is returned to the free pool.
  */
-void vnode_put(vnode_t *vn);
+void vfs_rel_vnode(vnode_t *vn);
 
 /*
  * Resolve an absolute path to a vnode.
@@ -206,7 +206,7 @@ void vnode_put(vnode_t *vn);
  * resolved lexically (no parent pointers on vnodes).
  *
  * The returned vnode has its refcnt incremented — the caller must call
- * vnode_put() when done.
+ * vfs_rel_vnode() when done.
  *
  * Returns 0 on success, negative errno on failure:
  *   -EINVAL         path is NULL or does not start with '/'

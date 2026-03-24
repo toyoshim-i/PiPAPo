@@ -100,7 +100,7 @@ static int tmpfs_mount(mount_entry_t *mnt, const void *dev_data) {
   inodes[0].name[0] = '\0';
 
   /* Allocate root vnode */
-  vnode_t *root = vnode_alloc();
+  vnode_t *root = vfs_alloc_vnode();
   if (!root) return -ENOMEM;
 
   root->type = VNODE_DIR;
@@ -123,7 +123,7 @@ static int tmpfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
     if (!str_eq(inodes[i].name, name)) continue;
 
     /* Found — create a vnode */
-    vnode_t *vn = vnode_alloc();
+    vnode_t *vn = vfs_alloc_vnode();
     if (!vn) return -ENOMEM;
 
     vn->ino = (uint32_t)i;
@@ -248,7 +248,7 @@ static int tmpfs_create(vnode_t *dir, const char *name, uint32_t mode,
   str_copy(ti->name, name, TMPFS_NAME_MAX + 1);
 
   /* Return vnode for the new file */
-  vnode_t *vn = vnode_alloc();
+  vnode_t *vn = vfs_alloc_vnode();
   if (!vn) {
     ti->active = 0;
     return -ENOMEM;

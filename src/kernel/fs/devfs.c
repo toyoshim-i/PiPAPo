@@ -356,7 +356,7 @@ static int devfs_mount(mount_entry_t *mnt, const void *dev_data) {
   (void)dev_data;
 
   /* Allocate root vnode for /dev directory */
-  vnode_t *root = vnode_alloc();
+  vnode_t *root = vfs_alloc_vnode();
   if (!root) return -ENOMEM;
 
   root->type = VNODE_DIR;
@@ -377,7 +377,7 @@ static int devfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
 
   for (uint32_t i = 0; i < DEVFS_NODE_COUNT; i++) {
     if (str_eq(devfs_nodes[i].name, name)) {
-      vnode_t *vn = vnode_alloc();
+      vnode_t *vn = vfs_alloc_vnode();
       if (!vn) return -ENOMEM;
 
       vn->type = VNODE_DEV;

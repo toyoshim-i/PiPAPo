@@ -784,7 +784,7 @@ static void loopback_integration_test(void)
             klog("SKIP: /mnt/sd not mounted, cannot test loopback\n");
             return;
         }
-        vnode_put(vn);
+        vfs_rel_vnode(vn);
     }
 
     /* 1. Verify pre-populated testloop.bin exists (from mkfatimg) */
@@ -924,7 +924,7 @@ static void tmpfs_integration_test(void)
         vnode_t *vn = (void *)0;
         int rc = vfs_lookup("/tmp", &vn);
         int ok = (rc == 0 && vn && vn->type == VNODE_DIR);
-        if (vn) vnode_put(vn);
+        if (vn) vfs_rel_vnode(vn);
         test_report("/tmp mounted (DIR)", ok);
         if (!ok) return;
     }
