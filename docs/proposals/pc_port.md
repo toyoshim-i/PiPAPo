@@ -848,6 +848,71 @@ void kmain(void) {
 
 ---
 
+## 9.5 Memory Layout by Boot Stage
+
+### Stage1 running (0x7C00)
+
+```
+0x00000-0x003FF  IVT (256 vectors × 4 bytes, BIOS-owned)
+0x00400-0x004FF  BIOS Data Area
+0x00500-0x07BFF  Free conventional memory
+0x07C00-0x07DFF  Stage1 code (512 B, loaded by BIOS)
+0x07C00          Stack (grows down from 0x7C00, below stage1)
+```
+
+### Stage2 running (0x0800)
+
+```
+0x00000-0x004FF  IVT + BIOS Data Area (preserved)
+0x00500-0x007FF  Free
+0x00800-0x017FF  Stage2 code + data (up to 4 KB)
+0x01800-0x027FF  BUF — UFS metadata scratch buffer (4 KB)
+0x02800-0x037FF  IBUF — indirect block scratch buffer (4 KB)
+0x03800-0x07BFF  Free (available for temp kernel load, but small)
+0x07C00          Stack (grows down from 0x7C00)
+0x10000-0x1FFFF  Kernel load area (segment 0x1000, up to 64 KB)
+                 ← stage2 loads kernel here via INT 13h with ES=0x1000
+```
+
+Stage2 loads the kernel to 0x1000:0x0000 (linear 0x10000) to avoid
+overwriting stage2 code, buffers, or the stack.  After loading, stage2
+copies the kernel down to 0x0600 (its linked address) and jumps there.
+
+### Kernel running (0x0600)
+
+```
+0x00000-0x003FF  IVT (kernel installs INT 08h timer, INT 30h syscall)
+0x00400-0x005FF  BIOS Data Area + free gap
+0x00600-0x0????  Kernel .text + .rodata + .data + .bss + stack
+                 Must fit in < 64 KB total (near pointers, DS=0)
+0x?????          __page_pool_start (4 KB-aligned, after stack)
+  ...  -0x9FBFF  Page pool (conventional RAM ceiling - EBDA)
+0x9FC00-0x9FFFF  EBDA (1 KB, preserved)
+0xA0000-0xBFFFF  Video RAM
+0xC0000-0xFFFFF  ROM / BIOS
+```
+
+### Size Constraint
+
+The kernel binary (text + rodata + data) plus BSS and stack must fit
+between 0x0600 and 0xFFFF (~63 KB).  Current P-3b core kernel:
+
+| Component | Size |
+|-----------|------|
+| .text     | ~42 KB |
+| .data     | ~0.5 KB |
+| .bss      | ~5.8 KB (proc_table is ~4.3 KB alone) |
+| stack     | 2 KB |
+| **Total** | **~50 KB** |
+
+This leaves ~13 KB headroom.  As kernel features grow (VFS modules,
+exec, subsystems), the kernel will exceed 64 KB.  At that point, the
+module system (see `docs/proposals/kernel_modules.md`) splits the
+kernel into multiple code segments, each ≤64 KB, sharing one data
+segment (DS=0).
+
+---
+
 ## 10. Implementation Phases
 
 ### Phase P-1: Target Skeleton and BIOS Console
