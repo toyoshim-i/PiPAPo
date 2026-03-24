@@ -108,6 +108,7 @@ add_custom_command(TARGET stage2 POST_BUILD
 set(ARCH_I16_SOURCES
   ${PPAP_ROOT}/src/arch/i16/boot.S
   ${PPAP_ROOT}/src/arch/i16/switch.S
+  ${PPAP_ROOT}/src/arch/i16/trap.S
   ${PPAP_ROOT}/src/arch/i16/i16_common.c
   ${PPAP_ROOT}/src/arch/i16/smp.c
   ${PPAP_ROOT}/src/arch/i16/string.c

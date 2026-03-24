@@ -46,6 +46,31 @@ uint32_t *arch_build_initial_frame(uint32_t *sp_arg, void (*entry)(void))
   return (uint32_t *)(uintptr_t)sp;
 }
 
+/* ── i16 syscall dispatch (called from trap.S INT 30h handler) ─────────────
+ *
+ * Adapts the i16 register-based syscall ABI to the kernel's
+ * syscall_dispatch() which expects a uint32_t frame pointer.
+ */
+long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1,
+                          uint16_t a2, uint16_t a3, uint16_t a4)
+{
+  /* The kernel's syscall_dispatch reads args from frame[0..3] and
+   * writes the return value back to frame[0]. */
+  uint32_t frame[4];
+  frame[0] = a0;
+  frame[1] = a1;
+  frame[2] = a2;
+  frame[3] = a3;
+
+  extern void syscall_dispatch(uint32_t *frame, uint32_t nr,
+                               uint32_t a4, uint32_t a5);
+  syscall_dispatch(frame, (uint32_t)nr, (uint32_t)a4, 0);
+
+  /* syscall_dispatch stores result in frame[0] on ARM/m68k.
+   * On i16 we return it to trap.S which puts it in saved AX. */
+  return (long)(int16_t)frame[0];
+}
+
 /* ── Signal return stubs (TODO: implement for P-4) ────────────────────────── */
 
 long sys_sigreturn(void)

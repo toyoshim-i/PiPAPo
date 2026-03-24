@@ -9,6 +9,8 @@
 
 /* Defined in switch.S */
 extern void i16_timer_isr(void);
+/* Defined in trap.S */
+extern void i16_syscall_isr(void);
 
 /* -- IVT manipulation ----------------------------------------------------- */
 
@@ -37,6 +39,9 @@ void timer_init(void)
 
   /* Install timer ISR at INT 08h */
   set_ivt(0x08, i16_timer_isr);
+
+  /* Install syscall handler at INT 30h (unused by BIOS/DOS) */
+  set_ivt(0x30, i16_syscall_isr);
 
   /* Interrupts will be enabled by the caller (kmain) */
 }
