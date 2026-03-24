@@ -1,0 +1,5 @@
+export PATH=/bin:/sbin:/usr/bin:/subsys/cpm:/subsys/human68k:/subsys/sos
+export PATHEXT=".COM;.OBJ;.X;.R"
+export HOME=/root
+export PS1='PiPAPo:\w# '
+export TERM=dumb

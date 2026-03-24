@@ -9,6 +9,10 @@ CONFIG_ESP_INT_WDT=n
 # Disable task watchdog (fires when FreeRTOS tasks don't yield)
 CONFIG_ESP_TASK_WDT_EN=n
 
+# Run single-core: PPAP doesn't use Core 1 yet, and FreeRTOS tasks
+# on Core 1 (idle, timer, IPC) interfere with PPAP's scheduler/memory.
+CONFIG_FREERTOS_UNICORE=y
+
 # Flash size: CardComputer has 8 MB flash
 CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 

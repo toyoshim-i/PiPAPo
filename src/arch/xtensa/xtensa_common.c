@@ -32,6 +32,7 @@ volatile uint32_t xtensa_timer_ready = 0;
 
 /* Tick counter — incremented by timer ISR. */
 volatile uint32_t xtensa_tick_count = 0;
+volatile uint32_t xtensa_last_isr_epc1 = 0;
 
 /* ── CCOMPARE0 timer ─────────────────────────────────────────────────────── */
 
@@ -45,13 +46,22 @@ static void xtensa_timer_isr(void *arg)
     __asm__ volatile("wsr %0, ccompare0" :: "a"(cmp + XTENSA_TICK_INTERVAL));
     __asm__ volatile("esync");
     xtensa_tick_count++;
-    sched_timer_tick(0); /* from_user=0 (no user/kernel split yet) */
+    sched_timer_tick(0);
 }
 
 void xtensa_timer_init(void)
 {
     typedef void (*xt_handler)(void *);
     extern xt_handler xt_set_interrupt_handler(int n, xt_handler f, void *arg);
+
+    /* Disable FreeRTOS's interrupt-level context switching.
+     * _frxt_int_enter/_frxt_int_exit check this flag; when 0,
+     * they skip TCB save/restore and ISR stack switch.
+     * PPAP manages its own context switching. */
+    {
+        extern uint32_t port_xSchedulerRunning[];
+        port_xSchedulerRunning[0] = 0;
+    }
 
     /* Set CCOMPARE0 for first tick */
     uint32_t cc;
@@ -121,30 +131,25 @@ static void xtensa_syscall_handler(XtExcFrame *frame)
         frame->a2 = svc_saved_a0[0];
     }
 
-    /* Context switch: timer may have fired during syscall.
-     * For vfork: parent is BLOCKED, child is RUNNABLE.  We need to
-     * switch to the child NOW (no PendSV on Xtensa).
-     * Load the next process's context into the exception frame. */
-    if (xtensa_switch_pending) {
+    /* Context switch via cooperative yield.
+     *
+     * Xtensa has no PendSV — we can't modify the exception frame to switch
+     * to a process with a solicited (windowed-ABI) context.  Instead, call
+     * sched_yield() which invokes xtensa_do_yield() to perform a proper
+     * save/restore through the windowed call chain.
+     *
+     * When sched_yield() returns, we're back in THIS handler, which then
+     * returns to ESP-IDF's dispatcher → rfe → user code.
+     *
+     * Yield if:
+     *  - preemption pending (timer slice expired)
+     *  - current process blocked (e.g. read() with no data)
+     */
+    /* Context switch via cooperative yield. */
+    if (xtensa_switch_pending ||
+        (current && current->state != PROC_RUNNABLE && !current->is_idle)) {
         xtensa_switch_pending = 0;
-        pcb_t *next = sched_next();
-        if (next != current) {
-            if (current)
-                current->sp = (uint32_t)(uintptr_t)frame;
-            current_core[core_id()] = next;
-
-            uint32_t *nf = (uint32_t *)(uintptr_t)next->sp;
-            if (nf[0] == 1) {
-                /* New-process frame → load into XtExcFrame for rfe.
-                 * nf layout: [0]=exit, [1]=PC, [2]=PS, [3]=SP, [4]=a0 */
-                frame->pc = nf[1];
-                frame->ps = nf[2];
-                frame->a1 = nf[3];
-                frame->a0 = nf[4];  /* return addr (needed by vfork child) */
-                frame->a2 = 0;      /* vfork child return = 0 */
-            }
-            /* else: solicited frame — deferred to cooperative switch */
-        }
+        sched_yield();
     }
 }
 
@@ -191,8 +196,10 @@ static void xtensa_fault_handler(XtExcFrame *frame)
         klogf("  pid=%u comm=%s — killed\n", current->pid, current->comm);
         current->state = PROC_ZOMBIE;
         current->exit_status = 128 + 11; /* SIGSEGV */
-        arch_yield();
-        return;  /* ESP-IDF restores context; scheduler will pick another */
+        /* Must actually switch — arch_yield() only sets a flag, which
+         * wouldn't be checked before rfe returns to the faulting instr. */
+        sched_yield();
+        return;
     }
 
     /* Kernel fault: halt */
@@ -230,7 +237,7 @@ void __wrap_abort(void)
 void __wrap___assert_func(const char *file, int line, const char *func,
                           const char *expr)
 {
-    klogf("ASSERT FAILED: %s:%d", file ? file : "?", line);
+    klogf("ASSERT FAILED: %s:%u", file ? file : "?", (uint32_t)line);
     if (func) klogf(" (%s)", func);
     if (expr) klogf(": %s", expr);
     klog("\n");

@@ -84,6 +84,7 @@ scripts/build.sh xtensa_cc:
 |---------|-------|--------|
 | `CONFIG_ESP_INT_WDT` | n | PPAP replaces FreeRTOS; watchdog expects FreeRTOS ticks |
 | `CONFIG_ESP_TASK_WDT_EN` | n | Same reason |
+| `CONFIG_FREERTOS_UNICORE` | y | PPAP doesn't use Core 1; FreeRTOS tasks on Core 1 interfere |
 | `CONFIG_ESPTOOLPY_FLASHSIZE_8MB` | y | CardComputer has 8 MB flash |
 | `CONFIG_ESP_SYSTEM_MEMPROT_FEATURE` | n | PPAP allocates user code in IRAM via `heap_caps_malloc(MALLOC_CAP_EXEC)` |
 
@@ -209,9 +210,20 @@ Semi-preemptive: the timer ISR sets `xtensa_switch_pending`, and the idle
 loop performs the actual switch via `sched_yield()` →
 `xtensa_do_yield()` (in `switch.S`).
 
+Context switching also happens from the SYSCALL handler: if the current
+process blocks (e.g., `read()` with no data) or a preemption tick is
+pending, the handler calls `sched_yield()` directly. This uses the
+windowed call chain to save/restore through `xtensa_do_yield()`, then
+returns to the SYSCALL handler which returns via ESP-IDF's
+`_xt_context_restore` → `rfe`.
+
 `switch.S` uses windowed ABI (`entry`/`retw`) for the kernel side. For new
 processes, the `.Lnew_process` path loads entry, PS, and user SP from the
 initial frame, then jumps directly (`jx`) to the user entry point.
+
+FreeRTOS interrupt-level context switching is disabled
+(`port_xSchedulerRunning[0] = 0`) so `_frxt_int_enter`/`_frxt_int_exit`
+skip TCB save/restore. PPAP manages its own context switching entirely.
 
 ### Syscall restart
 
@@ -231,18 +243,46 @@ CCOMPARE0 timer at level-1 interrupt priority:
 
 ## 8. Current Status
 
-As of 2026-03-23:
+As of 2026-03-24:
 
-- Kernel boots, romfs mounts, PID 1 loads without crash
-- User process executes (no exception on entry)
+### Working
+
+- Kernel boots, VFS/fstab mount, init+getty+push shell chain starts
+- User process executes — init prints "init started", vfork/exec works
+- Shell prompt `$` appears (push is running and reading stdin)
 - Literal pool relocation working (R_XTENSA_32, R_XTENSA_PLT)
-- IRAM word-copy, PS.UM=1, MEMPROT disable all in place
+- IRAM word-copy, PS.UM=1, MEMPROT disable, unicore mode all in place
+- FreeRTOS ISR context switching disabled (`port_xSchedulerRunning=0`)
+- Timer ISR working (CCOMPARE0), sets `xtensa_switch_pending`
+- Cooperative context switch (idle loop → `sched_yield` → `xtensa_do_yield`)
+- Fault handler: properly kills user processes and performs context switch
+  (previously used `arch_yield()` which only set a flag → infinite loop)
 
-### Not yet working
+### Known bug: init's solicited frame gets zeroed
 
-- **User process output not visible:** `write(1, ...)` syscall not
-  producing serial output. Likely the context switch to PID 1 is not
-  completing, or the syscall dispatch path needs debugging.
+After the first successful context-switch cycle (idle → init → push → idle),
+the second yield to init crashes with `IllegalInsn` at `retw.n` in
+`xtensa_do_yield`. The solicited frame saved by init (when it blocked
+on vfork) has `pc=0, ps=0` — completely zeroed.
+
+**Confirmed findings (2026-03-24):**
+- The solicited frame SP (0x3fcd7ca0) is within init's stack page (valid)
+- The frame was correctly saved during the first switch (exit=1, pc=valid)
+- Between save and restore, the frame memory was overwritten with zeros
+- Adding klogf inside `xtensa_do_switch` (slow UART output) prevents the
+  hang, suggesting a timing/synchronization-related issue
+- Without debug output, the new-process jump to user code appears to hang
+  (no syscalls fire), but with klogf delay it works correctly
+- Root cause unclear: possibly stale window state, instruction pipeline
+  timing, or memory corruption from the exception/switch chain
+
+**Theories to investigate:**
+1. Window spill writes overlapping with the solicited frame memory
+2. The exception return path (rfe) restoring stale PS/INTLEVEL that
+   masks the timer interrupt needed for the next switch
+3. IRAM instruction cache coherence (though IRAM is tightly-coupled)
+4. FreeRTOS timer ISR (SYSTIMER, interrupt 12) still firing despite
+   INTENABLE being limited to bit 6 (CCOMPARE0)
 
 ### Not yet implemented
 
@@ -270,6 +310,9 @@ As of 2026-03-23:
 | ninja .incbin tracking | `file(WRITE ...)` generates assembly at configure time; need `OBJECT_DEPENDS` for .incbin target. |
 | Strip destroys relocations | User binaries must NOT be stripped (section headers needed for relocation). |
 | `klogf` format | Only `%u`/`%x`/`%s` — no `%d`. Use `(uint32_t)` casts. |
+| Fault handler yield | `arch_yield()` only sets a flag — rfe returns to faulting instruction → infinite loop. Must call `sched_yield()` from fault handler. |
+| `port_xSchedulerRunning` | Must be set to 0 in `xtensa_timer_init()` to prevent FreeRTOS ISR context switching from interfering with PPAP's scheduler. |
+| Docker ESP-IDF patching | ESP-IDF sources are read-only in Docker (`/opt/ppap/src/esp-idf`); vector patches (e.g., KernelExceptionVector redirect) must run as root during build. |
 
 ---
 

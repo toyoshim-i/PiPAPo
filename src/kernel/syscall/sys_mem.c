@@ -142,8 +142,8 @@ long sys_mmap2(uint32_t addr, uint32_t len, uint32_t prot, uint32_t flags,
   }
 
   /* Multi-page: scan for contiguous block */
-  uint32_t pool_base = PAGE_POOL_BASE;
-  uint32_t pool_end = pool_base + PAGE_POOL_SIZE;
+  uint32_t pool_base = page_pool_base();
+  uint32_t pool_end = pool_base + page_count * PAGE_SIZE;
 
   for (uint32_t base = pool_base; base + num_pages * PAGE_SIZE <= pool_end;
        base += PAGE_SIZE) {
