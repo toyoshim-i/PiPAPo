@@ -137,6 +137,7 @@ set(KERNEL_CORE_SOURCES
   ${PPAP_ROOT}/src/kernel/fs/fstab.c
   ${PPAP_ROOT}/src/kernel/fs/ufs.c
   ${PPAP_ROOT}/src/kernel/exec/exec.c
+  ${PPAP_ROOT}/src/kernel/exec/flat_loader.c
   ${PPAP_ROOT}/src/kernel/exec/loader.c
   ${PPAP_ROOT}/src/kernel/subsys/subsys.c
   ${PPAP_ROOT}/src/kernel/syscall/syscall.c
