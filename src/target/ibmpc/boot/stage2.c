@@ -26,11 +26,11 @@
 #define UFS_BLOCK_SIZE   4096u
 #define UFS_FLOPPY_SECS  (UFS_BLOCK_SIZE / FLOPPY_SEC)  /* 8 */
 
-/* Kernel is loaded at linear 0x0600 (segment 0, offset 0x0600).
- * Above IVT (0x0000-0x03FF) and BIOS data area (0x0400-0x04FF).
- * Stage2 code at 0x0800+ will be overwritten — that's fine since
- * stage2 is done by the time the jump happens. */
-#define KERNEL_LOAD      0x0600u
+/* Kernel is linked at 0x0600 but loaded first to 0x3800 (above stage2
+ * code and scratch buffers).  After loading, stage2 copies the kernel
+ * down to 0x0600 (overwriting stage2 itself) and jumps there. */
+#define KERNEL_LINK      0x0600u
+#define KERNEL_LOAD      0x3800u
 
 /* Scratch buffer for one UFS block (4 KB) — above stage2 code at 0x0800.
  * Stage2 code+data is ≤4 KB (0x0800-0x17FF).  Buffer at 0x1800. */
@@ -172,8 +172,27 @@ static void read_inode(uint32_t ino, ufs_inode_t *out)
     dst[i] = src[i];
 }
 
+/* Read one UFS data block directly to dest (not via BUF). */
+static void load_data_block(uint32_t blk_no, uint8_t **dest, uint32_t *loaded,
+                            uint32_t size)
+{
+  if (blk_no == 0 || *loaded >= size)
+    return;
+  uint32_t lba = UFS_FLOPPY_BASE + blk_no * UFS_FLOPPY_SECS;
+  for (uint16_t s = 0; s < UFS_FLOPPY_SECS && *loaded < size; s++) {
+    read_sector(lba + s, *dest);
+    *dest += FLOPPY_SEC;
+    *loaded += FLOPPY_SEC;
+  }
+}
+
+/* Scratch buffer for indirect block (separate from BUF to avoid conflicts).
+ * Located above BUF (0x1800 + 0x1000 = 0x2800). */
+#define IBUF ((uint8_t *)0x2800u)
+
 /* Load file data blocks to a near destination (DS:dest).
- * Returns bytes loaded. */
+ * Supports direct blocks (10 × 4 KB = 40 KB) plus one indirect block
+ * (1024 × 4 KB = 4 MB, more than enough for any kernel). */
 static uint32_t load_file(const ufs_inode_t *inode, uint8_t *dest)
 {
   /* Copy inode fields locally before any disk reads clobber BUF */
@@ -181,19 +200,21 @@ static uint32_t load_file(const ufs_inode_t *inode, uint8_t *dest)
   uint32_t direct[UFS_DIRECT_BLOCKS];
   for (uint16_t i = 0; i < UFS_DIRECT_BLOCKS; i++)
     direct[i] = inode->i_direct[i];
+  uint32_t indirect = inode->i_indirect;
 
   uint32_t loaded = 0;
 
-  for (uint16_t i = 0; i < UFS_DIRECT_BLOCKS && loaded < size; i++) {
-    if (direct[i] == 0)
-      continue;
+  /* Read direct blocks */
+  for (uint16_t i = 0; i < UFS_DIRECT_BLOCKS && loaded < size; i++)
+    load_data_block(direct[i], &dest, &loaded, size);
 
-    uint32_t lba = UFS_FLOPPY_BASE + direct[i] * UFS_FLOPPY_SECS;
-    for (uint16_t s = 0; s < UFS_FLOPPY_SECS && loaded < size; s++) {
-      read_sector(lba + s, dest);
-      dest += FLOPPY_SEC;
-      loaded += FLOPPY_SEC;
-    }
+  /* Read indirect block (contains uint32_t block numbers) */
+  if (indirect != 0 && loaded < size) {
+    read_ufs_block(indirect, IBUF);
+    uint32_t *ind_blks = (uint32_t *)IBUF;
+    uint16_t n_entries = UFS_BLOCK_SIZE / 4;  /* 1024 entries */
+    for (uint16_t i = 0; i < n_entries && loaded < size; i++)
+      load_data_block(ind_blks[i], &dest, &loaded, size);
   }
 
   return (loaded < size) ? loaded : size;
@@ -237,18 +258,28 @@ void stage2_main(void)
     return;
   }
 
-  /* Load kernel to 0x0000:0x2000 (linear 0x2000) */
+  /* Load kernel to temporary area (0x3800+, above stage2 + buffers) */
   read_inode(kernel_ino, &inode);
   puts_bios("Loading kernel...\r\n");
   uint32_t ksize = load_file(&inode, (uint8_t *)KERNEL_LOAD);
-  (void)ksize;
 
-  puts_bios("Jumping to kernel\r\n");
+  puts_bios("Relocating...\r\n");
 
-  /* Jump to kernel entry (near jump, segment 0).
-   * Use ljmp with CS=0 to ensure CS is set correctly for the kernel. */
+  /* Copy kernel from 0x3800 down to 0x0600 (its linked address).
+   * This overwrites stage2 code — must be the last thing we do.
+   * Use inline asm to avoid calling any C functions after the copy. */
   __asm__ volatile (
     "cli\n\t"
-    "ljmp $0x0000, $0x3000"
+    "movw %0, %%cx\n\t"       /* CX = byte count */
+    "movw %1, %%si\n\t"       /* SI = source (KERNEL_LOAD) */
+    "movw %2, %%di\n\t"       /* DI = dest (KERNEL_LINK) */
+    "cld\n\t"
+    "rep movsb\n\t"            /* copy CX bytes from DS:SI to ES:DI */
+    "ljmp $0x0000, $0x0600"    /* jump to kernel entry */
+    :
+    : "r"((uint16_t)ksize),
+      "i"(KERNEL_LOAD),
+      "i"(KERNEL_LINK)
+    : "cx", "si", "di", "memory"
   );
 }
