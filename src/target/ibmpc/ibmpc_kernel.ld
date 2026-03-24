@@ -42,7 +42,8 @@ SECTIONS
   . += 2048;
   __stack_top = .;
 
-  /* Page pool starts after stack (aligned to PAGE_SIZE=4096) */
+  /* Page pool start is computed at runtime by mm_init() since it
+   * may be beyond the 16-bit near-pointer limit (0xFFFF). */
   . = ALIGN(4096);
   __page_pool_start = .;
 
