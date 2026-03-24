@@ -59,8 +59,8 @@ _start:
   xorw  %bx, %bx
   int   $0x10
 
-  /* Load 8 sectors (stage2) from floppy sectors 1-8 to 0x0000:0x0800 */
-  movw  $0x0800, %bx       /* ES:BX = destination */
+  /* Load 8 sectors (stage2) from floppy sectors 1-8 to 0x0000:0x8000 */
+  movw  $0x8000, %bx       /* ES:BX = destination */
   movb  $0x02, %ah         /* BIOS: read sectors */
   movb  $8, %al            /* 8 sectors = 4 KB */
   movb  $0, %ch            /* cylinder 0 */
@@ -72,7 +72,7 @@ _start:
 
   /* Pass drive number in DL and jump to stage2 */
   movb  drive_no, %dl
-  jmp   $0x0000, $0x0800
+  jmp   $0x0000, $0x8000
 
 .Ldisk_err:
   movb  $0x0E, %ah
