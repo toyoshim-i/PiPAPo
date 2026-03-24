@@ -122,10 +122,10 @@ void proc_free(pcb_t *p) {
   spin_unlock_irqrestore(SPIN_PROC, saved);
 }
 
-void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp) {
+void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp) {
   uint32_t *sp;
   if (user_sp)
-    sp = (uint32_t *)(uintptr_t)user_sp;
+    sp = (uint32_t *)(void *)user_sp;
   else
     sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
 

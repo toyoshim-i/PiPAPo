@@ -27,7 +27,7 @@ long sys_brk(long addr) {
    * musl relies on this to detect brk failure and fall back to mmap. */
   if (addr == 0) return (long)(current->brk_current);
 
-  uint32_t new_brk = (uint32_t)addr;
+  uintptr_t new_brk = (uintptr_t)addr;
 
   /* Cannot shrink below initial break */
   if (new_brk < current->brk_base)
@@ -37,9 +37,9 @@ long sys_brk(long addr) {
    * user_pages[0..N-1] hold the data segment (allocated by do_execve).
    * Remaining slots are heap pages, allocated contiguously via
    * page_alloc_at() so brk addresses map to valid physical memory. */
-  uint32_t page0_base = (uint32_t)(uintptr_t)current->user_pages[0];
-  uint32_t old_top = current->brk_current;
-  uint32_t new_top = new_brk;
+  uintptr_t page0_base = (uintptr_t)current->user_pages[0];
+  uintptr_t old_top = current->brk_current;
+  uintptr_t new_top = new_brk;
 
   uint32_t old_pages = (old_top - page0_base + PAGE_SIZE - 1) / PAGE_SIZE;
   uint32_t new_pages = (new_top - page0_base + PAGE_SIZE - 1) / PAGE_SIZE;
@@ -49,7 +49,7 @@ long sys_brk(long addr) {
 
   /* Expand: allocate contiguous pages after existing ones */
   for (uint32_t i = old_pages; i < new_pages; i++) {
-    uint32_t target = page0_base + i * PAGE_SIZE;
+    uintptr_t target = page0_base + i * PAGE_SIZE;
     void *pg = page_alloc_at((void *)(uintptr_t)target);
     if (!pg) {
       /* Roll back any pages we just allocated */
@@ -87,7 +87,7 @@ long sys_brk(long addr) {
 #define MAP_PRIVATE 0x02u
 #define MAP_FIXED 0x10u
 
-long sys_mmap2(uint32_t addr, uint32_t len, uint32_t prot, uint32_t flags,
+long sys_mmap2(uintptr_t addr, size_t len, uint32_t prot, uint32_t flags,
                uint32_t fd, uint32_t pgoff) {
   (void)prot;
   (void)pgoff;
@@ -142,10 +142,10 @@ long sys_mmap2(uint32_t addr, uint32_t len, uint32_t prot, uint32_t flags,
   }
 
   /* Multi-page: scan for contiguous block */
-  uint32_t pool_base = page_pool_base();
-  uint32_t pool_end = pool_base + page_count * PAGE_SIZE;
+  uintptr_t pool_base = page_pool_base();
+  uintptr_t pool_end = pool_base + page_count * PAGE_SIZE;
 
-  for (uint32_t base = pool_base; base + num_pages * PAGE_SIZE <= pool_end;
+  for (uintptr_t base = pool_base; base + num_pages * PAGE_SIZE <= pool_end;
        base += PAGE_SIZE) {
     uint32_t k;
     for (k = 0; k < num_pages; k++) {
@@ -172,7 +172,7 @@ long sys_mmap2(uint32_t addr, uint32_t len, uint32_t prot, uint32_t flags,
 /* ── sys_munmap ───────────────────────────────────────────────────────────────
  */
 
-long sys_munmap(uint32_t addr, uint32_t len) {
+long sys_munmap(uintptr_t addr, size_t len) {
   if (addr == 0 || len == 0) return -(long)EINVAL;
 
   /* Find the matching mmap region */

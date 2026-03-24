@@ -111,9 +111,9 @@ long sys_pipe(int *fds);
 
 /* sys_mem.c */
 long sys_brk(long addr);
-long sys_mmap2(uint32_t addr, uint32_t len, uint32_t prot, uint32_t flags,
+long sys_mmap2(uintptr_t addr, size_t len, uint32_t prot, uint32_t flags,
                uint32_t fd, uint32_t pgoff);
-long sys_munmap(uint32_t addr, uint32_t len);
+long sys_munmap(uintptr_t addr, size_t len);
 
 /* sys_fs.c — dup/dup2 */
 long sys_dup(long oldfd);

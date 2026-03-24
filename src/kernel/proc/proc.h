@@ -52,6 +52,8 @@ typedef void (*sighandler_t)(int);
 #define PCB_SP_OFFSET 48u
 #elif defined(__xtensa__)
 #define PCB_SP_OFFSET 0u
+#elif defined(__IA16__)
+#define PCB_SP_OFFSET 0u
 #else
 #error "Unsupported architecture — define PCB_SP_OFFSET"
 #endif
@@ -109,6 +111,8 @@ typedef struct pcb {
   uint32_t sp;                 /* saved stack pointer     (offset 48)      */
 #elif defined(__xtensa__)
   uint32_t sp;                 /* saved stack pointer     (offset 0)       */
+#elif defined(__IA16__)
+  uint32_t sp;                 /* saved 16-bit SP, zero-extended (offset 0) */
 #else
 #error "Unsupported architecture — define PCB register save area"
 #endif
@@ -138,12 +142,12 @@ typedef struct pcb {
   /* ── vfork / waitpid ──────────────────────────────────────────────── */
   struct pcb *vfork_parent; /* non-NULL while child shares parent's space */
   int exit_status;          /* set by _exit(), read by waitpid()          */
-  uint32_t got_base;        /* r9 value (GOT SRAM address) for PIC       */
+  uintptr_t got_base;       /* r9 value (GOT SRAM address) for PIC       */
   void *wait_channel;       /* sleep/wakeup target (e.g. pipe_t*)        */
 
   /* ── Heap (brk) ──────────────────────────────────────────────────── */
-  uint32_t brk_base;    /* initial break = end of .data+.bss         */
-  uint32_t brk_current; /* current break (grows upward)              */
+  uintptr_t brk_base;   /* initial break = end of .data+.bss         */
+  uintptr_t brk_current; /* current break (grows upward)             */
 
   /* ── Signals ─────────────────────────────────────────────────────── */
   sighandler_t sig_handlers[NSIG]; /* SIG_DFL(0) or SIG_IGN(1) or func */
@@ -175,14 +179,14 @@ typedef struct pcb {
   uint8_t trace_subsys_phase;   /* 0=enter, 1=exit for subsystem mode   */
   uint8_t trace_step_pending;   /* pending ptrace single-step resume    */
   uint8_t trace_swbp_skip_once; /* skip one re-hit at same PC         */
-  uint32_t trace_swbp_skip_pc;  /* PC to ignore once after sw-bp stop */
+  uintptr_t trace_swbp_skip_pc; /* PC to ignore once after sw-bp stop */
   struct {
-    uint32_t addr;
+    uintptr_t addr;
     uint8_t used;
     uint8_t enabled;
   } trace_swbp[TRACE_SW_BP_MAX];
   struct {
-    uint32_t addr;
+    uintptr_t addr;
     uint8_t used;
     uint8_t enabled;
   } trace_hwbp[TRACE_HW_BP_MAX];
@@ -193,7 +197,7 @@ typedef struct pcb {
   void *subsys_data; /* opaque per-process subsystem state  */
 
   /* ── Thread-local storage (TLS) ──────────────────────────── */
-  uint32_t tp_value; /* set/get_thread_area value           */
+  uintptr_t tp_value; /* set/get_thread_area value          */
 
   /* ── mmap regions (Phase 6 Step 7) ───────────────────────────── */
   struct {
@@ -269,6 +273,6 @@ void proc_free(pcb_t *p);
  * threads pass 0 (defaults to stack_page + PAGE_SIZE).  For exec'd
  * processes this points to the argc slot built by do_execve().
  */
-void proc_setup_stack(pcb_t *p, void (*entry)(void), uint32_t user_sp);
+void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp);
 
 #endif /* PPAP_KERNEL_PROC_PROC_H */
