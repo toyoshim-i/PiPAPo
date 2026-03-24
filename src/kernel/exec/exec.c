@@ -151,3 +151,11 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
   mod_vfs.rel_vnode(vn);
   return 0;
 }
+
+/* ── Module definition ─────────────────────────────────────────────────── */
+
+#include "kernel/common/mod/mod_exec.h"
+
+mod_exec_t mod_exec = {
+  .do_execve = do_execve,
+};

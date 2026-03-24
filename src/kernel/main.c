@@ -26,7 +26,7 @@
 #include "cpu/cpu.h"
 #include "cpu/smp.h"
 #include "common/errno.h"
-#include "exec/exec.h"
+#include "common/mod/mod_exec.h"
 #include "common/spinlock.h"
 #include "subsys/subsys.h"
 
@@ -115,10 +115,10 @@ void kmain(void) {
       init->sid = init->pid;
       fd_stdio_init(init);
 
-      int exec_err = do_execve(init, init_path, NULL);
+      int exec_err = mod_exec.do_execve(init, init_path, NULL);
       if (exec_err < 0) {
         klogf("INIT: %s failed, trying /bin/sh\n", init_path);
-        exec_err = do_execve(init, "/bin/sh", NULL);
+        exec_err = mod_exec.do_execve(init, "/bin/sh", NULL);
       }
       if (exec_err == 0) {
         init->state = PROC_RUNNABLE;

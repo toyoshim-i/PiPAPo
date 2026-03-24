@@ -14,7 +14,7 @@
 #include "../cpu/ecpu_m68k.h"
 #include "../cpu/ecpu_z80.h"
 #include "../common/errno.h"
-#include "../exec/exec.h"
+#include "../common/mod/mod_exec.h"
 #include "../fd/fd.h"
 #include "../klog.h"
 #include "../mm/page.h"
@@ -1717,7 +1717,7 @@ long sys_execve(const char *path, const char *const *argv) {
   /* Save old cpu_state so we can free it after successful exec */
   /* Load the new binary.  argv points into the old stack/data pages
    * which are still valid (detached from current but not yet freed). */
-  int err = do_execve(current, path, argv);
+  int err = mod_exec.do_execve(current, path, argv);
   if (err < 0) {
     /* Restore old pages on failure — fds are untouched (POSIX) */
     current->stack_page = old_stack;
