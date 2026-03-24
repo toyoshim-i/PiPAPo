@@ -108,14 +108,12 @@ set(USER_MUSL_TESTS
 
 # --- Busybox applet lists ---
 
-# Applets that link to full busybox binary (transient commands)
+# Applets that link to busybox binary
 set(BB_APPLETS
-    cat chmod cp df echo grep head kill ln ls mkdir mv
+    cat chmod cp df echo grep head hush kill ln ls mkdir mv
     printf ps rm rmdir sed sleep sort tail top uname vi wc
 )
-# Shell applets — link to busybox.sh (dedicated shell binary)
-set(BB_SHELL_APPLETS hush)
-# Sbin applets — link to full busybox via ../bin/busybox
+# Sbin applets — link to busybox via ../bin/busybox
 set(BB_SBIN_APPLETS mount umount)
 
 # =============================================================================
@@ -336,6 +334,7 @@ PPAP_SPECS_FILE=\"${PPAP_SPECS_FILE}\"
 PPAP_BUSYBOX_LD=\"${PPAP_BUSYBOX_LD}\"
 PPAP_BB_ARCH=\"${PPAP_BB_ARCH}\"
 PPAP_ARCH_LABEL=\"${PPAP_ARCH_LABEL}\"
+PPAP_PIE_FLAG=\"${_PIE_FLAG}\"
 ")
 
 # =============================================================================
@@ -600,19 +599,18 @@ function(_ppap_add_musl)
 endfunction()
 
 # _ppap_add_busybox()  [internal]
-# Registers a custom command to build busybox variants.
-# Output: ${PPAP_BB_DIR}/busybox, ${PPAP_BB_DIR}/busybox.sh
+# Registers a custom command to build busybox.
+# Output: ${PPAP_BB_DIR}/busybox
 function(_ppap_add_busybox)
     add_custom_command(
-        OUTPUT ${PPAP_BB_DIR}/busybox ${PPAP_BB_DIR}/busybox.sh
+        OUTPUT ${PPAP_BB_DIR}/busybox
         COMMAND ${CMAKE_COMMAND} -E env "PPAP_CONFIG=${PPAP_CONFIG_FILE}"
                 ${PPAP_ROOT}/third_party/build_busybox.sh
         DEPENDS ${PPAP_ROOT}/third_party/build_busybox.sh
                 ${PPAP_ROOT}/third_party/patches/busybox/busybox_ppap.fragment
-                ${PPAP_ROOT}/third_party/patches/busybox/busybox_sh.fragment
                 ${PPAP_BUSYBOX_LD}
                 ${PPAP_MUSL_LIBC}
-        COMMENT "Building busybox variants (${PPAP_ARCH_LABEL})"
+        COMMENT "Building busybox (${PPAP_ARCH_LABEL})"
     )
 endfunction()
 
@@ -754,7 +752,6 @@ function(ppap_generate_romfs target)
     # CMake list separator for -D arguments
     string(REPLACE ";" "\\;" _user_elfs_escaped "${PPAP_USER_ELFS}")
     string(REPLACE ";" "\\;" _bb_applets_escaped "${BB_APPLETS}")
-    string(REPLACE ";" "\\;" _bb_shell_escaped "${BB_SHELL_APPLETS}")
     string(REPLACE ";" "\\;" _bb_sbin_escaped "${BB_SBIN_APPLETS}")
     set(_exclude_args "")
     if(ARG_EXCLUDE_APPS)
@@ -770,7 +767,6 @@ function(ppap_generate_romfs target)
                 -D "USER_ELFS=${_user_elfs_escaped}"
                 -D "BB_DIR=${PPAP_BB_DIR}"
                 -D "BB_APPLETS=${_bb_applets_escaped}"
-                -D "BB_SHELL_APPLETS=${_bb_shell_escaped}"
                 -D "BB_SBIN_APPLETS=${_bb_sbin_escaped}"
                 -D "ROGUE=${_rogue_path}"
                 -D "ETC_DIR=${PPAP_ROOT}/src/etc"

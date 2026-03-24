@@ -8,7 +8,6 @@
 #   USER_ELFS     — semicolon-separated list of user ELF paths
 #   BB_DIR        — busybox build directory
 #   BB_APPLETS    — semicolon-separated list of busybox applets
-#   BB_SHELL_APPLETS — semicolon-separated list of shell applets
 #   BB_SBIN_APPLETS  — semicolon-separated list of sbin applets
 #   ROGUE         — path to rogue binary
 #   ETC_DIR       — base /etc directory
@@ -61,12 +60,8 @@ file(CREATE_LINK "push" "${STAGING}/bin/sh" SYMBOLIC)
 # --- Install busybox (if available) ---
 if(BB_DIR AND EXISTS "${BB_DIR}/busybox")
     file(COPY "${BB_DIR}/busybox" DESTINATION "${STAGING}/bin")
-    file(COPY "${BB_DIR}/busybox.sh" DESTINATION "${STAGING}/bin")
     foreach(a IN LISTS BB_APPLETS)
         file(CREATE_LINK "busybox" "${STAGING}/bin/${a}" SYMBOLIC)
-    endforeach()
-    foreach(a IN LISTS BB_SHELL_APPLETS)
-        file(CREATE_LINK "busybox.sh" "${STAGING}/bin/${a}" SYMBOLIC)
     endforeach()
     foreach(a IN LISTS BB_SBIN_APPLETS)
         file(CREATE_LINK "../bin/busybox" "${STAGING}/sbin/${a}" SYMBOLIC)

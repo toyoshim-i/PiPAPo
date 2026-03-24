@@ -1,13 +1,9 @@
 #!/bin/bash
-# Build busybox variants for PiPAPo
+# Build busybox for PiPAPo
 #
-# This script builds BusyBox variants:
-#   1. busybox       — full (all applets) for transient commands
-#   2. busybox.sh    — shell + builtins only (interactive shell, resident)
-#
-# Each variant shares musl libc, libgcc, and linker script; only the
-# .config (applet selection) differs.  -ffunction-sections + -fdata-sections
-# enable dead-code stripping in the split binaries.
+# Builds a single busybox binary containing all applets plus hush shell.
+# The default /bin/sh is PPAP's own push shell; hush is available as
+# /bin/hush for bash-compatible scripting.
 #
 # Normally invoked from cmake via user.cmake (PPAP_CONFIG set).
 # Standalone: ./third_party/build_busybox.sh [--m68k] [--clean]
@@ -83,7 +79,6 @@ fi
 # Variant definitions: output_name:fragment_file
 VARIANTS=(
     "busybox:busybox_ppap.fragment"
-    "busybox.sh:busybox_sh.fragment"
 )
 
 # --- Handle --clean ---
@@ -194,7 +189,8 @@ for variant in "${VARIANTS[@]}"; do
         fi
     done < "$CONFIGS_DIR/$fragment"
 
-    # Inject CFLAGS into .config
+    # Inject cross-compiler prefix and CFLAGS into .config
+    sed -i 's|^CONFIG_CROSS_COMPILER_PREFIX=.*|CONFIG_CROSS_COMPILER_PREFIX="'"$PPAP_CROSS_PREFIX"'"|' .config
     sed -i 's|^CONFIG_SYSROOT=.*|CONFIG_SYSROOT=""|' .config
     sed -i 's|^CONFIG_EXTRA_CFLAGS=.*|CONFIG_EXTRA_CFLAGS="'"$PPAP_APP_CFLAGS -specs=$PPAP_SPECS_FILE -T $PPAP_BUSYBOX_LD"'"|' .config
     # RISC-V: --emit-relocs preserves relocation entries so the kernel's
@@ -206,8 +202,8 @@ for variant in "${VARIANTS[@]}"; do
     sed -i 's|^CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS="'"$EXTRA_LD"'"|' .config
     sed -i 's|^CONFIG_EXTRA_LDLIBS=.*|CONFIG_EXTRA_LDLIBS=""|' .config
 
-    # Resolve dependencies
-    echo "" | make oldconfig ARCH="$PPAP_BB_ARCH" 2>&1 | tail -3
+    # Resolve dependencies (yes feeds empty responses; ignore SIGPIPE from pipe)
+    yes "" | make oldconfig ARCH="$PPAP_BB_ARCH" 2>&1 | tail -3 || true
 
     echo "busybox [$name]: enabled applets:"
     grep '=y' .config | grep -v '^#' | grep -v '_FEATURE_\|_STATIC\|_NOMMU\|_LFS\|_CROSS\|_PREFIX\|_EXTRA\|_SH_\|_PREFER\|_OPTIMIZE\|_INTERNAL\|_BUILTIN\|_ALIAS\|_CMDCMD' | sed 's/CONFIG_/  /' | sort
