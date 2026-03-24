@@ -162,17 +162,19 @@ Load flat .COM binaries.
 **Phase 4:** Convert remaining subsystems (eCPU, bridges) to modules.
 Optional — only loaded if present on the floppy.
 
-### Open Questions
+### Design Decisions
 
-- Should `MOD_DECLARE` generate `static inline` wrappers (for type
-  safety) or plain macros? Inline wrappers are cleaner but may not
-  optimize away on ia16-elf-gcc 6.3.0.
-- How many module API surfaces do we need? Rough count:
-  - mod_vfs (filesystem ops)
-  - mod_exec (process creation + loading)
-  - mod_signal (signal delivery)
-  - mod_subsys (eCPU + bridges)
-  - That's only 4 boundaries — manageable.
-- Should modules be loadable at runtime (from floppy), or always
-  loaded by stage2 at boot? Runtime loading is more flexible but
-  adds complexity. Boot-time loading is simpler and sufficient.
+**Type safety:** On 32-bit platforms, `MOD_DECLARE` generates `static
+inline` wrappers that provide compile-time type checking. On i16, the
+wrappers are omitted (plain far-call macros) since ia16-elf-gcc 6.3.0
+may not optimize them away. Type correctness is verified by the 32-bit
+builds; i16 relies on those results.
+
+**Module count:** ~4 API surfaces:
+- mod_vfs (filesystem ops)
+- mod_exec (process creation + loading)
+- mod_signal (signal delivery)
+- mod_subsys (eCPU + bridges)
+
+**Loading:** Stage2 loads all modules at boot time at fixed addresses.
+No runtime module loading for now — simpler and sufficient.
