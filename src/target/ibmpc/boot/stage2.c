@@ -113,14 +113,20 @@ static void read_sector(uint32_t lba, void *dest)
   uint16_t cx = (cyl << 8) | sec;
   uint16_t dx = ((uint16_t)head << 8) | boot_drive;
 
+  /* INT 13h reads to ES:BX.  Ensure ES=0 for flat addressing. */
   __asm__ volatile (
-    "int $0x13"
+    "pushw %%es\n\t"
+    "xorw  %%ax, %%ax\n\t"
+    "movw  %%ax, %%es\n\t"
+    "movw  %0, %%ax\n\t"
+    "int   $0x13\n\t"
+    "popw  %%es"
     :
-    : "a"((uint16_t)0x0201),     /* AH=02 read, AL=1 sector */
-      "b"(dest),                  /* ES:BX = buffer */
+    : "g"((uint16_t)0x0201),     /* AH=02 read, AL=1 sector */
+      "b"(dest),                  /* ES:BX = buffer (ES set to 0 above) */
       "c"(cx),                    /* CH=cyl, CL=sec */
       "d"(dx)                     /* DH=head, DL=drive */
-    : "memory", "cc"
+    : "memory", "cc", "ax"
   );
 }
 
