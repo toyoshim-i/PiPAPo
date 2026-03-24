@@ -98,43 +98,34 @@ Core module contents:
 - `page` — page allocator
 - `proc` / `sched` — process table and scheduler
 
-The core does NOT go through `mod_*` module interface.  Its functions
-are called directly (near call on i16, regular call on 32-bit).  This
-is the "reverse direction" — modules call into core, and core calls
-into modules via `mod_*`.
+The core IS a module (`mod_core`) with its own module interface.  This
+is required because the module system is the only mechanism for
+cross-segment C calls on i16.  Without `mod_core`, VFS code in a
+separate segment could not call `klog()` or `page_alloc()` in C.
 
 ```
-                   Near calls (always accessible)
   ┌─────────────────────────────────────────────────┐
-  │                 Core module                      │
+  │              mod_core (core module)              │
   │  klog, string, kmem, page, proc, sched, main    │
   │                                                  │
-  │  Calls OUT to modules via mod_vfs.init() etc.    │
+  │  mod_vfs.init() ──►  mod_exec.execve() ──►      │
   └──────────┬──────────────┬───────────────────────┘
-             │far call      │far call
+             │mod_vfs.*     │mod_exec.*
        ┌─────▼──────┐ ┌────▼───────┐
        │  mod_vfs    │ │  mod_exec  │
        │  vfs, namei │ │  exec,     │
        │  fs drivers │ │  loaders   │
        │             │ │            │
-       │ Calls core  │ │ Calls core │
-       │ directly    │ │ directly   │
+       │ mod_core.*  │ │ mod_core.* │
        └─────────────┘ └────────────┘
 ```
 
-On i16, each module lives in its own code segment.  Module-to-module
-calls go through far-call thunks (`lcall $seg, $offset`).  But
-module-to-core calls are **near calls** because the core is always
-linked into every module's address space at the same location, or
-the core segment is hardcoded and reachable via `lcall $CORE_SEG`.
+ALL cross-module calls go through `mod_*` interfaces.  No direct
+function calls across module boundaries.  This is the only mechanism
+for cross-segment C calls on i16.
 
-Implementation options for module→core calls on i16:
-1. **Core in segment 0**: core code at 0x0600 in segment 0.  Modules
-   call core via `lcall $0, $func_offset`.  Simple and fast.
-2. **Core linked into each module**: duplicate core code in each
-   module segment.  Wastes memory but avoids far calls entirely.
-
-Option 1 is recommended (core is small relative to total code).
+On 32-bit, `mod_core.klog(...)` is an indirect call through a struct
+(same overhead as `mod_vfs.init()`).  On i16, it's a far-call thunk.
 
 ### i16 Memory Layout
 
@@ -164,14 +155,45 @@ to fit in 64 KB from its own start address.
 
 | From → To | Mechanism |
 |-----------|-----------|
-| Core → VFS module | `lcall $0x0800, $offset` (far call thunk) |
-| Core → exec module | `lcall $0x0D00, $offset` (far call thunk) |
-| VFS module → Core | `lcall $0, $offset` (far call to core) |
-| exec module → Core | `lcall $0, $offset` (far call to core) |
-| VFS → exec | `lcall $0x0D00, $offset` (via mod_exec thunk) |
-| Any module → data | Near access (shared DS=0) |
+| Core → VFS | `mod_vfs.*` → far-call thunk to VFS segment |
+| Core → exec | `mod_exec.*` → far-call thunk to exec segment |
+| VFS → Core | `mod_core.*` → far-call thunk to core segment |
+| exec → Core | `mod_core.*` → far-call thunk to core segment |
+| VFS → exec | `mod_exec.*` → far-call thunk to exec segment |
+| Any → data | Near access (shared DS=0) |
+| Within module | Direct near call (no thunk) |
 
-On 32-bit platforms, all calls are direct (no far call overhead).
+On 32-bit platforms, all `mod_*` calls are indirect calls through
+function-pointer structs (same overhead, uniform mechanism).
+
+### mod_core API Surface
+
+The core module exports common services used by all other modules:
+
+```c
+MOD_DECLARE_BEGIN(core)
+  // Logging
+  MOD_FUNC(core, void, klog, const char *)
+  MOD_FUNC(core, void, klogf, const char *, ...)
+  // Memory
+  MOD_FUNC(core, void *, page_alloc, void)
+  MOD_FUNC(core, void, page_free, void *)
+  MOD_FUNC(core, void *, kmem_alloc, kmem_pool_t *)
+  MOD_FUNC(core, void, kmem_free, kmem_pool_t *, void *)
+  // String (subset — hot-path functions only)
+  MOD_FUNC(core, void *, memcpy, void *, const void *, size_t)
+  MOD_FUNC(core, void *, memset, void *, int, size_t)
+  MOD_FUNC(core, int, strcmp, const char *, const char *)
+  MOD_FUNC(core, size_t, strlen, const char *)
+  // Process
+  MOD_FUNC(core, uint32_t, arch_irq_save, void)
+  MOD_FUNC(core, void, arch_irq_restore, uint32_t)
+  // ... (more as needed)
+MOD_DECLARE_END(core)
+```
+
+This is a large interface (~20-30 functions), but each is a single
+thunk.  The total thunk table is ~60-90 bytes per module — negligible.
 For example, VFS at linear 0x07000 → CS=0x0700. No 64 KB alignment
 needed, no wasted padding. A module only needs to fit in 64 KB from
 its *own* start — overlapping with the next segment's range is fine
@@ -406,8 +428,9 @@ must match exactly — any mismatch is a compile error.  On i16,
 `vfs_mount`, `vfs_alloc_vnode`).  The `MOD_FUNC(vfs, void, init, ...)`
 macro handles the mapping.
 
-**Module count:** ~4 API surfaces:
-- mod_vfs (VFS operations + vnode lifecycle, 11 functions)
+**Module count:** ~5 API surfaces:
+- mod_core (klog, string, memory, process — ~25 functions)
+- mod_vfs (VFS operations + vnode lifecycle — 11 functions)
 - mod_exec (process creation + loading)
 - mod_signal (signal delivery)
 - mod_subsys (eCPU + bridges)
