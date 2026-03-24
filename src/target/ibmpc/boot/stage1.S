@@ -53,10 +53,12 @@ _start:
   /* Save boot drive number */
   movb  %dl, drive_no
 
-  /* Print 'S' to show stage1 is running */
+  /* Print "Pi" — stage1 portion of the progressive banner */
   movb  $0x0E, %ah
-  movb  $'S', %al
+  movb  $'P', %al
   xorw  %bx, %bx
+  int   $0x10
+  movb  $'i', %al
   int   $0x10
 
   /* Load 8 sectors (stage2) from floppy sectors 1-8 to 0x0000:0xC000 */

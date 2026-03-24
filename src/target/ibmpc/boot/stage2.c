@@ -142,26 +142,26 @@ static void __attribute__((noinline)) load_block(uint16_t blk,
 
 void stage2_main(void)
 {
-  puts_bios("\r\nStage2: reading UFS...\r\n");
+  /* Banner continues: "PiPA" already on screen from stage1+stage2_entry */
 
   read_ufs_block(0, BUF);
   ufs_super_t *sb = (ufs_super_t *)BUF;
-  if (sb->s_magic != UFS_MAGIC) { puts_bios("Bad UFS magic!\r\n"); return; }
+  if (sb->s_magic != UFS_MAGIC) { puts_bios("!UFS"); return; }
   sb_itable_block = (uint16_t)sb->s_itable_block;
 
   ufs_inode_t inode;
   read_inode(UFS_ROOT_INO, &inode);
   read_ufs_block((uint16_t)inode.i_direct[0], BUF);
   uint16_t boot_ino = find_in_dir(BUF, "boot");
-  if (!boot_ino) { puts_bios("boot/ not found\r\n"); return; }
+  if (!boot_ino) { puts_bios("!boot"); return; }
 
   read_inode(boot_ino, &inode);
   read_ufs_block((uint16_t)inode.i_direct[0], BUF);
   uint16_t kernel_ino = find_in_dir(BUF, "kernel");
-  if (!kernel_ino) { puts_bios("boot/kernel not found\r\n"); return; }
+  if (!kernel_ino) { puts_bios("!kern"); return; }
 
   read_inode(kernel_ino, &inode);
-  puts_bios("Loading kernel...\r\n");
+  /* Quiet — banner continues in kernel */
 
   uint32_t size = inode.i_size;
   uint16_t direct[UFS_DIRECT_BLOCKS];
@@ -182,6 +182,6 @@ void stage2_main(void)
       load_block((uint16_t)ind[i], &dest, &loaded, size);
   }
 
-  puts_bios("Jumping to kernel\r\n");
+  /* Kernel continues the "PiPA" banner with "Po booting..." */
   __asm__ volatile ("cli\n\t" "ljmp $0x0000, $0x0600");
 }

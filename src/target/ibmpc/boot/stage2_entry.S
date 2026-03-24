@@ -21,10 +21,12 @@ _start2:
   /* DL = boot drive number (passed by stage1) */
   movb  %dl, boot_drive
 
-  /* Print '2' to show stage2 is running */
+  /* Print "PA" — stage2 portion of the progressive banner */
   movb  $0x0E, %ah
-  movb  $'2', %al
+  movb  $'P', %al
   xorw  %bx, %bx
+  int   $0x10
+  movb  $'A', %al
   int   $0x10
 
   call  stage2_main

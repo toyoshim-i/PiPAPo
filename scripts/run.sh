@@ -71,7 +71,12 @@ docker_run() {
     local image="$1"; shift
     local tty_flag=""
     if [[ -t 0 ]]; then tty_flag="-it"; fi
-    docker run --rm $tty_flag \
+    local gui_flags=""
+    if [[ $DO_GUI -eq 1 ]]; then
+        # Docker Desktop: use host networking for X11 (no socket mount needed)
+        gui_flags="--net=host -e DISPLAY=$DISPLAY"
+    fi
+    docker run --rm $tty_flag $gui_flags \
         -u "$(id -u):$(id -g)" \
         -v "$PROJECT_DIR:/ppap" \
         -w /ppap \
@@ -87,6 +92,7 @@ DO_TEST_EXTENDED=0
 DO_CLEAN=0
 DO_GDB=0
 DO_HOST=0
+DO_GUI=0
 DO_H68K_DEBUG=0
 OVERLAY=""
 FILTER=""
@@ -108,6 +114,7 @@ for arg in "$@"; do
         --h68k-debug) DO_H68K_DEBUG=1; DO_BUILD=1 ;;
         --gdb)      DO_GDB=1 ;;
         --host)     DO_HOST=1 ;;
+        --gui)      DO_GUI=1 ;;
         pico1|pico1calc|pico2|pico2rv|qemu_arm|qemu_rv32|qemu_m68k|x68k|xtensa_cc|ibmpc) TARGET="$arg" ;;
         -*)         echo "Unknown option: $arg" >&2; exit 1 ;;
         *)
@@ -132,7 +139,8 @@ if [[ -z "$TARGET" ]]; then
     echo "  --test-extended Build with extended tests and run"
     echo "  --clean         Clean build directory first"
     echo "  --gdb           Start QEMU with GDB server on :1234"
-    echo "  --host          Run QEMU on host instead of Docker"
+    echo "  --host          Run QEMU on host instead of Docker (with GUI)"
+    echo "  --gui           Run Docker QEMU with X11-forwarded VGA window"
     echo "  --filter=NAME   Run only matching tests"
     echo "  --overlay=DIR   Use overlay directory for romfs"
     exit 0
@@ -356,8 +364,12 @@ elif [[ "$TARGET" == "ibmpc" ]]; then
         # --host: open graphical VGA window + serial on stdio
         QEMU_ARGS=(-machine pc -cpu 486 -m 1M -serial mon:stdio
                    -drive "file=$ELF,format=raw,if=floppy")
+    elif [[ $DO_GUI -eq 1 ]]; then
+        # --gui: X11 forwarded VGA window + serial on stdio
+        QEMU_ARGS=(-machine pc -cpu 486 -m 1M -serial mon:stdio
+                   -drive "file=$ELF,format=raw,if=floppy")
     else
-        # Docker: no graphical display, serial + VGA text on stdio
+        # Docker headless: VGA text + serial merged on stdio
         QEMU_ARGS=(-machine pc -cpu 486 -m 1M
                    -drive "file=$ELF,format=raw,if=floppy")
     fi
@@ -483,6 +495,9 @@ fi
 # ── Run interactively ──────────────────────────────────────────────────────
 echo "[run] Running ${ELF:-$TARGET} ..."
 DISPLAY_ARGS=(-nographic)
+if [[ $DO_HOST -eq 1 || $DO_GUI -eq 1 ]]; then
+    DISPLAY_ARGS=()
+fi
 run_qemu \
     "${QEMU_ARGS[@]}" \
     "${DISPLAY_ARGS[@]+"${DISPLAY_ARGS[@]}"}" \

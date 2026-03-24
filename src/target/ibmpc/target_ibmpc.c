@@ -26,7 +26,7 @@ void target_early_init(void)
 {
   uart_init();
   klog_set_mirror(ibmpc_klog_putc, (void (*)(void))0);
-  klog("PiPAPo booting... [ibmpc]\n");
+  klog("Po booting... [ibmpc]\n");
 }
 
 void target_late_init(void)
