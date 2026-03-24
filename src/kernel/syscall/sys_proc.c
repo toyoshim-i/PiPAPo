@@ -1103,6 +1103,13 @@ void trace_exec_stop(void) {
   trace_stop_current(0);
 }
 
+#if defined(__ia16__)
+/* Stub — ptrace not supported on i16 (saves ~4 KB text) */
+long sys_ptrace(long req, long pid, void *addr, void *data) {
+  (void)req; (void)pid; (void)addr; (void)data;
+  return -(long)ENOSYS;
+}
+#else
 long sys_ptrace(long req, long pid, void *addr, void *data) {
   if (req == PTRACE_TRACEME) {
     if (current->tracer_pid != 0 || current->trace_requested)
@@ -1219,6 +1226,8 @@ long sys_ptrace(long req, long pid, void *addr, void *data) {
       return -(long)EINVAL;
   }
 }
+
+#endif /* !__ia16__ (ptrace) */
 
 /* ── sys_exit ─────────────────────────────────────────────────────────────────
  */

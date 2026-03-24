@@ -35,8 +35,13 @@
  * PROC_DEFAULT_TICKS Time-slice length in SysTick ticks for new processes.
  *                    With PPAP_TICK_HZ=100: 10 ticks = 100 ms.
  * ────────────────────────────────────────────────────────────────────────── */
+#if defined(__ia16__)
+#define PROC_MAX 4            /* i16: smaller to save BSS (~2.7 KB)  */
+#define FD_MAX 8              /* i16: fewer FDs per process           */
+#else
 #define PROC_MAX 8            /* maximum concurrent processes         */
 #define FD_MAX 16             /* file descriptors per process         */
+#endif
 #define PROC_DEFAULT_TICKS 10 /* time-slice length in SysTick ticks   */
 #define FILE_MAX 32           /* max concurrent open struct file objs */
 
