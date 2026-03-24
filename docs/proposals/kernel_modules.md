@@ -435,5 +435,17 @@ macro handles the mapping.
 - mod_signal (signal delivery)
 - mod_subsys (eCPU + bridges)
 
+**API surface minimization:** Module interfaces should expose the
+smallest possible set of functions.  Start with what's needed, then
+continuously reduce as the codebase evolves:
+- Merge related functions (e.g. lookup + lookup_flags → one function
+  with default flags)
+- Move helpers inside the module (if only one external caller, maybe
+  the caller belongs in the module)
+- Prefer passing data over calling back (reduce round-trips)
+
+This is an ongoing discipline, not a one-time design.  Every code
+review should ask: "can this module boundary be narrower?"
+
 **Loading:** Stage2 loads all modules at boot time at fixed addresses.
 No runtime module loading for now — simpler and sufficient.
