@@ -83,28 +83,95 @@ On i16: `mod_vfs.read` expands to a far-call wrapper that does
 | ARM, m68k, RISC-V, Xtensa | struct of fn pointers | static init | ~1 indirect call |
 | i16 | far-call wrapper + jump table | jump table asm | ~4 extra instructions |
 
+### The Core Module
+
+The **core module** is special — it provides common services that ALL
+other modules depend on.  It lives in the base code segment and is
+always accessible via near calls from any module (since all modules
+share DS=0 and can reach the core via a known segment value).
+
+Core module contents:
+- `klog` — kernel logging (UART output)
+- `string` — memcpy, memset, strlen, strcmp, etc.
+- `kmem` — slab allocator
+- `spinlock` — interrupt-safe locking
+- `page` — page allocator
+- `proc` / `sched` — process table and scheduler
+
+The core does NOT go through `mod_*` module interface.  Its functions
+are called directly (near call on i16, regular call on 32-bit).  This
+is the "reverse direction" — modules call into core, and core calls
+into modules via `mod_*`.
+
+```
+                   Near calls (always accessible)
+  ┌─────────────────────────────────────────────────┐
+  │                 Core module                      │
+  │  klog, string, kmem, page, proc, sched, main    │
+  │                                                  │
+  │  Calls OUT to modules via mod_vfs.init() etc.    │
+  └──────────┬──────────────┬───────────────────────┘
+             │far call      │far call
+       ┌─────▼──────┐ ┌────▼───────┐
+       │  mod_vfs    │ │  mod_exec  │
+       │  vfs, namei │ │  exec,     │
+       │  fs drivers │ │  loaders   │
+       │             │ │            │
+       │ Calls core  │ │ Calls core │
+       │ directly    │ │ directly   │
+       └─────────────┘ └────────────┘
+```
+
+On i16, each module lives in its own code segment.  Module-to-module
+calls go through far-call thunks (`lcall $seg, $offset`).  But
+module-to-core calls are **near calls** because the core is always
+linked into every module's address space at the same location, or
+the core segment is hardcoded and reachable via `lcall $CORE_SEG`.
+
+Implementation options for module→core calls on i16:
+1. **Core in segment 0**: core code at 0x0600 in segment 0.  Modules
+   call core via `lcall $0, $func_offset`.  Simple and fast.
+2. **Core linked into each module**: duplicate core code in each
+   module segment.  Wastes memory but avoids far calls entirely.
+
+Option 1 is recommended (core is small relative to total code).
+
 ### i16 Memory Layout
 
-On i16, modules are loaded at paragraph-aligned addresses. Unlike the
-earlier proposal with fixed 64 KB segments, modules are **packed tightly**
-with adjustable segment registers:
+On i16, modules are loaded at paragraph-aligned addresses.  Modules
+are **packed tightly** with adjustable segment registers:
 
 ```
-Linear addr   Contents
-────────────────────────────────────────────
-0x00600       Core kernel text (~42 KB)  ← current: all code here
-0x0B200       Module: VFS + FS text (~15 KB, future)
-0x0EE00       Module: exec text (~8 KB, future)
-0x10E00       Module: subsystems (~10 KB, optional)
-  ...         .data + .bss shared (DS=0, ~6 KB)
-  ...         Page pool (up to 0x9FBFF)
+Linear addr   Segment   Contents
+────────────────────────────────────────────────
+0x00600       CS=0      Core kernel (~30 KB)
+                          klog, string, kmem, page, proc, sched
+                          main.c (calls out to modules)
+0x08000       CS=0x0800 Module: VFS + FS (~20 KB)
+                          vfs, namei, romfs, tmpfs, devfs, procfs
+0x0D000       CS=0x0D00 Module: exec (~10 KB)
+                          exec, loaders, signal
+0x10000       CS=0x1000 Module: subsystems (~10 KB, optional)
+                          eCPU, bridges
+0x13000       DS=0      Shared data (.data + .bss, ~6 KB)
+  ...                   Page pool (up to 0x9FBFF)
 ```
 
-Addresses are paragraph-aligned (16 bytes). Modules packed tightly —
-no 64 KB alignment waste. Each module only needs to fit in 64 KB from
-its own start address.
+Addresses are paragraph-aligned (16 bytes).  Each module only needs
+to fit in 64 KB from its own start address.
 
-Each module's CS is set to its paragraph-aligned start address / 16.
+### Call Directions on i16
+
+| From → To | Mechanism |
+|-----------|-----------|
+| Core → VFS module | `lcall $0x0800, $offset` (far call thunk) |
+| Core → exec module | `lcall $0x0D00, $offset` (far call thunk) |
+| VFS module → Core | `lcall $0, $offset` (far call to core) |
+| exec module → Core | `lcall $0, $offset` (far call to core) |
+| VFS → exec | `lcall $0x0D00, $offset` (via mod_exec thunk) |
+| Any module → data | Near access (shared DS=0) |
+
+On 32-bit platforms, all calls are direct (no far call overhead).
 For example, VFS at linear 0x07000 → CS=0x0700. No 64 KB alignment
 needed, no wasted padding. A module only needs to fit in 64 KB from
 its *own* start — overlapping with the next segment's range is fine
