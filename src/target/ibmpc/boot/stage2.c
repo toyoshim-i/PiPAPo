@@ -26,8 +26,9 @@
 #define UFS_BLOCK_SIZE   4096u
 #define UFS_FLOPPY_SECS  (UFS_BLOCK_SIZE / FLOPPY_SEC)
 
-#define BUF  ((uint8_t *)0x9000u)
-#define IBUF ((uint8_t *)0xA000u)
+/* Stage2 at 0xC000 (up to 4 KB), BUF/IBUF above it */
+#define BUF  ((uint8_t *)0xD000u)
+#define IBUF ((uint8_t *)0xE000u)
 
 #define KERNEL_ADDR 0x0600u
 

@@ -15,7 +15,7 @@ _start2:
   movw  %ax, %ds
   movw  %ax, %es
   movw  %ax, %ss
-  movw  $0x7C00, %sp      /* stack below stage2 (0x8000), grows down */
+  movw  $0xC000, %sp      /* stack below stage2 (0xC000), grows down */
   sti
 
   /* DL = boot drive number (passed by stage1) */
