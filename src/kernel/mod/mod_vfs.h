@@ -31,9 +31,6 @@ typedef struct mount_entry mount_entry_t;
 
 #endif /* PPAP_KERNEL_MOD_MOD_VFS_H */
 
-/* ── Phase 1: declaration (always runs) ──────────────────────────────── */
-#undef _MOD_PHASE
-#define _MOD_PHASE 1
 #include "module.h"
 
 MOD_DECLARE_BEGIN(vfs)
@@ -164,26 +161,13 @@ MOD_DECLARE_BEGIN(vfs)
 
 MOD_DECLARE_END(vfs)
 
-/* ── Phase 2: implementation (only when MOD_IMPLEMENTATION defined) ──── */
+/*
+ * When MOD_IMPLEMENTATION is defined, re-include this file in
+ * implementation mode to generate the struct initializer from
+ * the same MOD_FUNC list above.
+ */
 #ifdef MOD_IMPLEMENTATION
 #undef MOD_IMPLEMENTATION
-#undef _MOD_PHASE
-#define _MOD_PHASE 2
-#include "module.h"
-
-MOD_DECLARE_BEGIN(vfs)
-  MOD_FUNC(vfs, void, init, void)
-  MOD_FUNC(vfs, int, mount, const char *, const vfs_ops_t *,
-                             uint8_t, const void *)
-  MOD_FUNC(vfs, int, umount, const char *)
-  MOD_FUNC(vfs, int, lookup, const char *, vnode_t **)
-  MOD_FUNC(vfs, int, lookup_flags, const char *, vnode_t **, int)
-  MOD_FUNC(vfs, int, lookup_parent, const char *, vnode_t **,
-                                     char *, int)
-  MOD_FUNC(vfs, int, path_normalize, const char *, char *, int)
-  MOD_FUNC(vfs, mount_entry_t *, find_mount, const char *, const char **)
-  MOD_FUNC(vfs, vnode_t *, alloc_vnode, void)
-  MOD_FUNC(vfs, void, ref_vnode, vnode_t *)
-  MOD_FUNC(vfs, void, rel_vnode, vnode_t *)
-MOD_DECLARE_END(vfs)
+#define _MOD_IMPL_PHASE
+#include "mod_vfs.h"
 #endif
