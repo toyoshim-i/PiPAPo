@@ -4,13 +4,13 @@
  * Provides vfs_ops_t implementation for mounting and operating on FAT32
  * partitions.  Supports both 8.3 short filenames and VFAT long filenames.
  *
- * Mount: pass a blkdev_t pointer as dev_data to vfs_mount().
+ * Mount: pass a blkdev_t pointer as dev_data to mod_vfs.mount().
  */
 
 #ifndef PPAP_KERNEL_FS_VFAT_H
 #define PPAP_KERNEL_FS_VFAT_H
 
-#include "../vfs/vfs.h"
+#include "../mod/mod_vfs.h"
 
 extern const vfs_ops_t vfat_ops;
 

@@ -26,7 +26,7 @@
 #include "../blkdev/blkdev.h"
 #include "../errno.h"
 #include "../spinlock.h" /* SPIN_FS */
-#include "../vfs/vfs.h"
+#include "../mod/mod_vfs.h"
 #include "klog.h"
 #include "ufs_format.h"
 
@@ -411,7 +411,7 @@ static int ufs_block_set(ufs_priv_t *priv, ufs_inode_t *inode, uint32_t logical,
 
 static vnode_t *ufs_vnode_from_inode(mount_entry_t *mnt, uint32_t ino,
                                      const ufs_inode_t *inode) {
-  vnode_t *vn = vfs_alloc_vnode();
+  vnode_t *vn = mod_vfs.alloc_vnode();
   if (!vn) return (vnode_t *)0;
 
   vn->ino = ino;

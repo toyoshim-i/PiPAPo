@@ -27,7 +27,7 @@ void loopback_init(void);
 /*
  * Set up a loopback device from an image file path.
  *
- * Opens the file via vfs_lookup(), determines its size, computes
+ * Opens the file via mod_vfs.lookup(), determines its size, computes
  * sector_count, and registers a block device named "loopN".
  *
  * The backing vnode is held with an incremented refcnt for the

@@ -8,7 +8,7 @@
 #ifndef PPAP_KERNEL_FS_UFS_H
 #define PPAP_KERNEL_FS_UFS_H
 
-#include "../vfs/vfs.h"
+#include "../mod/mod_vfs.h"
 
 extern const vfs_ops_t ufs_ops;
 

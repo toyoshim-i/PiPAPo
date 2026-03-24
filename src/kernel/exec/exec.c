@@ -15,7 +15,7 @@
 #include "kernel/errno.h"
 #include "kernel/mm/page.h"
 #include "kernel/signal/signal.h"
-#include "kernel/vfs/vfs.h"
+#include "kernel/mod/mod_vfs.h"
 #include "loader.h"
 
 /* ── Contiguous page allocation helper ─────────────────────────────────── */
@@ -36,11 +36,11 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
   }
 
   /* ── 1. Look up the binary in the VFS ──────────────────────────────── */
-  err = vfs_lookup(path, &vn);
+  err = mod_vfs.lookup(path, &vn);
   if (err < 0) return err;
 
   if (vn->type != VNODE_FILE) {
-    vfs_rel_vnode(vn);
+    mod_vfs.rel_vnode(vn);
     return -(int)ENOEXEC;
   }
 
@@ -52,21 +52,21 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
 
   if (vn->xip_addr == NULL) {
     if (file_size == 0) {
-      vfs_rel_vnode(vn);
+      mod_vfs.rel_vnode(vn);
       return -(int)ENOEXEC;
     }
 
     file_pages = (file_size + PAGE_SIZE - 1u) / PAGE_SIZE;
     file_buf = alloc_contiguous(file_pages);
     if (!file_buf) {
-      vfs_rel_vnode(vn);
+      mod_vfs.rel_vnode(vn);
       return -(int)ENOMEM;
     }
 
     if (!vn->mount || !vn->mount->ops || !vn->mount->ops->read) {
       for (uint32_t i = 0; i < file_pages; i++)
         page_free(file_buf + i * PAGE_SIZE);
-      vfs_rel_vnode(vn);
+      mod_vfs.rel_vnode(vn);
       return -(int)ENOEXEC;
     }
 
@@ -74,7 +74,7 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
     if (nread < 0 || (uint32_t)nread != file_size) {
       for (uint32_t i = 0; i < file_pages; i++)
         page_free(file_buf + i * PAGE_SIZE);
-      vfs_rel_vnode(vn);
+      mod_vfs.rel_vnode(vn);
       return (nread < 0) ? (int)nread : -(int)ENOEXEC;
     }
 
@@ -115,7 +115,7 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
       for (uint32_t i = 0; i < file_pages; i++)
         page_free(file_buf + i * PAGE_SIZE);
     }
-    vfs_rel_vnode(vn);
+    mod_vfs.rel_vnode(vn);
     return rc;
   }
 
@@ -148,6 +148,6 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
   p->sig_pending = 0;
   p->sig_blocked = 0;
 
-  vfs_rel_vnode(vn);
+  mod_vfs.rel_vnode(vn);
   return 0;
 }

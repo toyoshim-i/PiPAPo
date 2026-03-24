@@ -2,9 +2,9 @@
  * romfs.c — Read-only romfs filesystem driver
  *
  * Implements vfs_ops_t for mounting a flash-resident romfs image.
- * The image base address is passed as dev_data to vfs_mount():
+ * The image base address is passed as dev_data to mod_vfs.mount():
  *
- *   vfs_mount("/", &romfs_ops, MNT_RDONLY, (const void *)romfs_base);
+ *   mod_vfs.mount("/", &romfs_ops, MNT_RDONLY, (const void *)romfs_base);
  *
  * All data access is direct from XIP flash — no copying to SRAM for
  * reads.  File vnodes carry xip_addr for the ELF loader (Phase 3).
@@ -23,7 +23,7 @@
 #include <stddef.h>
 
 #include "../errno.h"
-#include "../vfs/vfs.h"
+#include "../mod/mod_vfs.h"
 #include "config.h"
 #include "romfs_format.h"
 
@@ -53,7 +53,7 @@ static inline const uint8_t *get_data(const romfs_entry_t *e) {
 
 static vnode_t *vnode_from_entry(mount_entry_t *mnt, const romfs_entry_t *e,
                                  uint32_t off) {
-  vnode_t *vn = vfs_alloc_vnode();
+  vnode_t *vn = mod_vfs.alloc_vnode();
   if (!vn) return NULL;
 
   vn->ino = off;

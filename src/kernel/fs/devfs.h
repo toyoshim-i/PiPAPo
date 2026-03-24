@@ -9,9 +9,9 @@
 #ifndef PPAP_KERNEL_FS_DEVFS_H
 #define PPAP_KERNEL_FS_DEVFS_H
 
-#include "../vfs/vfs.h"
+#include "../mod/mod_vfs.h"
 
-/* FS operations table — pass to vfs_mount() as the ops parameter */
+/* FS operations table — pass to mod_vfs.mount() as the ops parameter */
 extern const vfs_ops_t devfs_ops;
 
 /* Register hardware backlight callbacks (pico1calc I2C).
