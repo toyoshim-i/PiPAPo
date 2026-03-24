@@ -92,13 +92,17 @@ with adjustable segment registers:
 ```
 Linear addr   Contents
 ────────────────────────────────────────────
-0x03000       Core kernel text (~16 KB)
-0x07000       Module: VFS text (~24 KB)
-0x0D000       Module: exec text (~12 KB)
-0x10000       Module: subsystems (~16 KB, optional)
-0x14000       Shared data segment (DS, all modules, ~20 KB)
-0x19000       Page pool (up to 0x9FBFF)
+0x00600       Core kernel text (~42 KB)  ← current: all code here
+0x0B200       Module: VFS + FS text (~15 KB, future)
+0x0EE00       Module: exec text (~8 KB, future)
+0x10E00       Module: subsystems (~10 KB, optional)
+  ...         .data + .bss shared (DS=0, ~6 KB)
+  ...         Page pool (up to 0x9FBFF)
 ```
+
+Addresses are paragraph-aligned (16 bytes). Modules packed tightly —
+no 64 KB alignment waste. Each module only needs to fit in 64 KB from
+its own start address.
 
 Each module's CS is set to its paragraph-aligned start address / 16.
 For example, VFS at linear 0x07000 → CS=0x0700. No 64 KB alignment
@@ -146,20 +150,30 @@ own linker script (`. = 0x0000`, module-internal addressing). The
 `mkpcimg.sh` script places them at the right linear addresses.
 CMakeLists.txt builds N+1 targets: core + one per module.
 
+### Current Status
+
+P-3b is complete: the full PPAP kernel (MM, proc, VFS, CPU, scheduler)
+compiles and boots to idle on i16.  Binary size: 46 KB of the 63 KB
+budget (13 KB headroom).
+
+The module system is needed when adding:
+- exec loader + flat binary support (~5-10 KB)
+- signal delivery (~3-5 KB)
+- additional filesystem features (~5 KB)
+
+At ~58 KB, the module split becomes mandatory.
+
 ### Phased Rollout
 
-**Phase 1 (P-3b-1):** Define MOD_DECLARE/MOD_DEFINE macros.
-Convert VFS as the first module (it already has a vtable pattern).
-Build core kernel for i16 without VFS — boots to idle.
+**Phase 1 (P-4a):** Define MOD_DECLARE/MOD_DEFINE macros.
+Convert VFS as the first module boundary.  On 32-bit platforms this
+is a no-op (struct of function pointers).  On i16, VFS moves to its
+own code segment.
 
-**Phase 2 (P-3b-2):** Build VFS as a separate module on i16.
-Far-call wrappers for vfs_init/open/read/write/close.
-Mount romfs from floppy.
+**Phase 2 (P-4b):** Add exec module with flat .COM binary loader.
+Far-call wrappers for do_execve, proc_create.
 
-**Phase 3 (P-3b-3):** Convert exec subsystem to a module.
-Load flat .COM binaries.
-
-**Phase 4:** Convert remaining subsystems (eCPU, bridges) to modules.
+**Phase 3 (P-4c):** Add subsystems module (eCPU, bridges).
 Optional — only loaded if present on the floppy.
 
 ### Design Decisions
