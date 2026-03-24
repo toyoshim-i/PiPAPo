@@ -33,4 +33,7 @@ const loader_t* loader_registry[] = {
 #ifdef PPAP_ENABLE_ECPU_M68K
     &m68k_emu_loader,
 #endif
-    &elf_loader,      NULL};
+#if !defined(__ia16__)
+    &elf_loader,
+#endif
+    NULL};

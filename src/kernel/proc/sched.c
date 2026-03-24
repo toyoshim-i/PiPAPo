@@ -303,7 +303,7 @@ void sched_start(void) {
   arch_irq_enable();
 }
 
-#elif defined(__IA16__)
+#elif defined(__ia16__)
 
 /* ── Scheduler startup (i16 / 8086 real mode) ──────────────────────────────
  */
@@ -315,7 +315,7 @@ void sched_start(void) {
   arch_irq_enable();
 }
 
-#endif /* __ARM_ARCH / __m68k__ / __riscv / __xtensa__ / __IA16__ */
+#endif /* __ARM_ARCH / __m68k__ / __riscv / __xtensa__ / __ia16__ */
 
 /* ── Cooperative yield ───────────────────────────────────────────────────────
  */

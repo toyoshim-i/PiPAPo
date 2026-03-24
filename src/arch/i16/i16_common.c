@@ -3,6 +3,7 @@
  */
 
 #include <stdint.h>
+#include <stddef.h>
 
 /* Context switch pending flag.
  * Set by arch_yield().  Checked by timer ISR in switch.S.
@@ -43,4 +44,16 @@ uint32_t *arch_build_initial_frame(uint32_t *sp_arg, void (*entry)(void))
   *--sp = 0;  /* ES = 0 (flat model) */
 
   return (uint32_t *)(uintptr_t)sp;
+}
+
+/* ── Signal return stubs (TODO: implement for P-4) ────────────────────────── */
+
+long sys_sigreturn(void)
+{
+  return 0;
+}
+
+long sys_rt_sigreturn(void)
+{
+  return 0;
 }

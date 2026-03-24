@@ -114,13 +114,13 @@ long sys_mmap2(uintptr_t addr, size_t len, uint32_t prot, uint32_t flags,
 
   /* MAP_FIXED: try to allocate at specific address */
   if ((flags & MAP_FIXED) && addr != 0) {
-    void *base = (void *)(uintptr_t)addr;
+    void *base = (void *)addr;
     for (uint32_t i = 0; i < num_pages; i++) {
-      void *pg = page_alloc_at((void *)((uintptr_t)base + i * PAGE_SIZE));
+      void *pg = page_alloc_at((uint8_t *)base + i * PAGE_SIZE);
       if (!pg) {
         /* Rollback */
         for (uint32_t j = 0; j < i; j++)
-          page_free((void *)((uintptr_t)base + j * PAGE_SIZE));
+          page_free((uint8_t *)base + j * PAGE_SIZE);
         return -(long)ENOMEM;
       }
       memset(pg, 0, PAGE_SIZE);

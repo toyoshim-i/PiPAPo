@@ -18,7 +18,7 @@
 #include "riscv/arch.h"
 #elif defined(__xtensa__)
 #include "xtensa/arch.h"
-#elif defined(__IA16__)
+#elif defined(__ia16__)
 #include "i16/arch.h"
 #else
 #error "Unsupported architecture"

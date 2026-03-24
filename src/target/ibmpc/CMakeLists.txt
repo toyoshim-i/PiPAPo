@@ -1,13 +1,14 @@
 # =============================================================================
-# IBM PC target (i16, 8086 real mode) -- Phase P-3a
+# IBM PC target (i16, 8086 real mode) -- Phase P-3b
 # =============================================================================
 #
 # Three-part build:
-#   1. stage1 — 512 B boot sector (stage1.S)
-#   2. stage2 — UFS loader (stage2_entry.S + stage2.c), up to 4 KB
-#   3. kernel — P-2 standalone scheduler (boot.S + switch.S + target code)
+#   1. stage1 — 512 B boot sector
+#   2. stage2 — UFS loader (up to 4 KB)
+#   3. kernel — core PPAP kernel (page alloc, proc, sched, klog)
 #
-# Post-build: mkpcimg.sh assembles the floppy image.
+# Does NOT include: ELF loader, eCPU emulators, subsystem bridges,
+# block devices. Those will be separate modules (see kernel_modules.md).
 #
 # Toolchain: ia16-elf-gcc (16-bit x86 cross-compiler)
 # Output: ppap_ibmpc.img (1.44 MB bootable floppy)
@@ -53,6 +54,7 @@ set(COMMON_FLAGS
   -Os
   -Wall -Wextra -Werror
   -Wno-unused-parameter
+  -Wno-unused-function
 )
 
 # ==========================================================================
@@ -100,21 +102,64 @@ add_custom_command(TARGET stage2 POST_BUILD
 )
 
 # ==========================================================================
-# Target 3: kernel (P-2 standalone scheduler)
+# Target 3: kernel (core PPAP kernel)
 # ==========================================================================
 
-set(KERNEL_SOURCES
+set(ARCH_I16_SOURCES
   ${PPAP_ROOT}/src/arch/i16/boot.S
   ${PPAP_ROOT}/src/arch/i16/switch.S
   ${PPAP_ROOT}/src/arch/i16/i16_common.c
   ${PPAP_ROOT}/src/arch/i16/smp.c
+  ${PPAP_ROOT}/src/arch/i16/string.c
+)
+
+# Core kernel sources — minimal set for boot-to-idle
+set(KERNEL_CORE_SOURCES
+  ${PPAP_ROOT}/src/kernel/main.c
+  ${PPAP_ROOT}/src/kernel/klog.c
+  ${PPAP_ROOT}/src/kernel/mm/page.c
+  ${PPAP_ROOT}/src/kernel/mm/kmem.c
+  ${PPAP_ROOT}/src/kernel/proc/proc.c
+  ${PPAP_ROOT}/src/kernel/proc/sched.c
+  ${PPAP_ROOT}/src/kernel/signal/signal.c
+  ${PPAP_ROOT}/src/kernel/cpu/cpu.c
+  ${PPAP_ROOT}/src/kernel/cpu/cpu_native.c
+  ${PPAP_ROOT}/src/kernel/vfs/vfs.c
+  ${PPAP_ROOT}/src/kernel/vfs/namei.c
+  ${PPAP_ROOT}/src/kernel/fd/fd.c
+  ${PPAP_ROOT}/src/kernel/fd/tty.c
+  ${PPAP_ROOT}/src/kernel/fd/pipe.c
+  ${PPAP_ROOT}/src/kernel/fs/romfs.c
+  ${PPAP_ROOT}/src/kernel/fs/tmpfs.c
+  ${PPAP_ROOT}/src/kernel/fs/devfs.c
+  ${PPAP_ROOT}/src/kernel/fs/procfs.c
+  ${PPAP_ROOT}/src/kernel/fs/fstab.c
+  ${PPAP_ROOT}/src/kernel/fs/ufs.c
+  ${PPAP_ROOT}/src/kernel/exec/exec.c
+  ${PPAP_ROOT}/src/kernel/exec/loader.c
+  ${PPAP_ROOT}/src/kernel/subsys/subsys.c
+  ${PPAP_ROOT}/src/kernel/syscall/syscall.c
+  ${PPAP_ROOT}/src/kernel/syscall/sys_proc.c
+  ${PPAP_ROOT}/src/kernel/syscall/sys_io.c
+  ${PPAP_ROOT}/src/kernel/syscall/sys_time.c
+  ${PPAP_ROOT}/src/kernel/syscall/sys_mem.c
+  ${PPAP_ROOT}/src/kernel/syscall/sys_poll.c
+  ${PPAP_ROOT}/src/kernel/syscall/sys_fs.c
+  ${PPAP_ROOT}/src/target/target_default.c
+)
+
+set(TARGET_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/target_ibmpc.c
   ${CMAKE_CURRENT_SOURCE_DIR}/drivers/uart_com.c
   ${CMAKE_CURRENT_SOURCE_DIR}/drivers/bios_con.c
   ${CMAKE_CURRENT_SOURCE_DIR}/drivers/timer_pit.c
 )
 
-add_executable(ppap_ibmpc ${KERNEL_SOURCES})
+add_executable(ppap_ibmpc
+  ${ARCH_I16_SOURCES}
+  ${KERNEL_CORE_SOURCES}
+  ${TARGET_SOURCES}
+)
 
 target_include_directories(ppap_ibmpc PRIVATE
   ${PPAP_ROOT}/src
@@ -129,6 +174,7 @@ target_link_options(ppap_ibmpc PRIVATE
   -nostartfiles
   -Wl,--gc-sections
 )
+target_link_libraries(ppap_ibmpc PRIVATE gcc)
 
 set_target_properties(ppap_ibmpc PROPERTIES
   SUFFIX ".elf"
@@ -152,5 +198,4 @@ add_custom_command(TARGET ppap_ibmpc POST_BUILD
   COMMENT "Assembling floppy image ppap_ibmpc.img"
 )
 
-# Ensure stage1 and stage2 are built before the kernel post-build step
 add_dependencies(ppap_ibmpc stage1 stage2)

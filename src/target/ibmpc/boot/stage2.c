@@ -26,9 +26,11 @@
 #define UFS_BLOCK_SIZE   4096u
 #define UFS_FLOPPY_SECS  (UFS_BLOCK_SIZE / FLOPPY_SEC)  /* 8 */
 
-/* Kernel is loaded at linear 0x3000 (segment 0, offset 0x3000).
- * Above stage2 code (0x0800-0x17FF) and scratch buffer (0x1800-0x27FF). */
-#define KERNEL_LOAD      0x3000u
+/* Kernel is loaded at linear 0x0600 (segment 0, offset 0x0600).
+ * Above IVT (0x0000-0x03FF) and BIOS data area (0x0400-0x04FF).
+ * Stage2 code at 0x0800+ will be overwritten — that's fine since
+ * stage2 is done by the time the jump happens. */
+#define KERNEL_LOAD      0x0600u
 
 /* Scratch buffer for one UFS block (4 KB) — above stage2 code at 0x0800.
  * Stage2 code+data is ≤4 KB (0x0800-0x17FF).  Buffer at 0x1800. */

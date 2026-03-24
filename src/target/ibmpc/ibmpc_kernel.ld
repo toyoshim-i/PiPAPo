@@ -1,11 +1,7 @@
 /*
- * ibmpc_kernel.ld — Kernel linker script (loaded by stage2 at 0x10000)
+ * ibmpc_kernel.ld — Kernel linker script
  *
- * Stage2 loads this flat binary to linear 0x10000 and far-jumps
- * to 0x0000:0x10000 (segment 0, offset 0x10000 won't work — offset
- * must be <64KB).  Instead, load at linear 0x2000 (above stage2 + scratch)
- * and near-jump within segment 0.
- *
+ * Stage2 loads this flat binary to 0x3000 and jumps here.
  * All segments = 0 (flat real-mode addressing).
  */
 
@@ -15,7 +11,7 @@ ENTRY(_start)
 
 SECTIONS
 {
-  . = 0x3000;
+  . = 0x0600;
 
   .text : {
     *(.text.entry)
@@ -30,6 +26,10 @@ SECTIONS
     *(.data .data.*)
   }
 
+  /* No romfs embedded — loaded from floppy UFS */
+  __romfs_start = .;
+  __romfs_end = .;
+
   .bss (NOLOAD) : {
     __bss_start = .;
     *(.bss .bss.*)
@@ -41,6 +41,10 @@ SECTIONS
   . = ALIGN(2);
   . += 2048;
   __stack_top = .;
+
+  /* Page pool starts after stack (aligned to PAGE_SIZE=4096) */
+  . = ALIGN(4096);
+  __page_pool_start = .;
 
   /DISCARD/ : {
     *(.comment)

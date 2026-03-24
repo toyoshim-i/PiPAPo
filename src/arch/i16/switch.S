@@ -47,8 +47,11 @@ i16_timer_isr:
   xorw  %ax, %ax
   movw  %ax, %ds
 
-  /* Call C timer handler: i16_timer_handler_c() */
-  call  i16_timer_handler_c
+  /* Call kernel timer tick handler */
+  xorw  %ax, %ax          /* from_user = 0 (no user/kernel split in real mode) */
+  pushw %ax
+  call  sched_timer_tick
+  addw  $2, %sp
 
   /* Send EOI to 8259A PIC (non-specific) */
   movb  $0x20, %al
@@ -62,19 +65,20 @@ i16_timer_isr:
   /* Clear the flag */
   movw  $0, i16_switch_pending
 
-  /* Save current SP into current PCB */
-  movw  i16_current, %bx       /* BX = pointer to current i16_pcb_t */
-  movw  %sp, (%bx)             /* pcb->sp = SP */
+  /* Save current SP into current PCB.
+   * current_core[0] is a pcb_t* — SP is at offset 0 (PCB_SP_OFFSET). */
+  movw  current_core, %bx  /* BX = current_core[0] = pcb_t* */
+  movw  %sp, (%bx)         /* pcb->sp = SP */
 
-  /* Pick next process: returns pointer to next i16_pcb_t in AX */
+  /* Pick next process: sched_next() returns pcb_t* in AX */
   call  sched_next
 
-  /* Update current pointer */
-  movw  %ax, i16_current
+  /* Update current_core[0] */
+  movw  %ax, current_core
 
   /* Restore SP from new PCB */
   movw  %ax, %bx
-  movw  (%bx), %sp             /* SP = new pcb->sp */
+  movw  (%bx), %sp         /* SP = new pcb->sp */
 
 .Lno_switch:
   /* Restore all registers */

@@ -178,7 +178,7 @@ const cpu_ops_t native_cpu_ops = {
 #elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
     .name = "native-arm_m",
     .arch_id = CPU_ARCH_ARM,
-#elif defined(__IA16__)
+#elif defined(__ia16__)
     .name = "native-i16",
     .arch_id = CPU_ARCH_8086,
 #else

@@ -51,7 +51,7 @@ static inline int spin_have_hw(void) {
   return 0; /* no hardware spinlocks on 68k */
 #elif defined(__xtensa__)
   return 0; /* no SIO spinlocks on ESP32-S3 — IRQ disable is sufficient */
-#elif defined(__IA16__)
+#elif defined(__ia16__)
   return 0; /* no hardware spinlocks on 8086 */
 #elif defined(__riscv) && !defined(PPAP_QEMU)
   return 1; /* RP2350 SIO spinlocks work from RISC-V cores too */
@@ -68,7 +68,7 @@ static inline uint32_t core_id(void) {
   return 0; /* single core: m68k or QEMU ARM */
 #elif defined(__xtensa__)
   return 0; /* single-core initial Xtensa port */
-#elif defined(__IA16__)
+#elif defined(__ia16__)
   return 0; /* 8086: single core */
 #elif defined(__riscv)
   return 0; /* single-core initial RISC-V port (Phase RV-6 will use SIO_CPUID) */
@@ -89,51 +89,73 @@ static inline uint32_t core_id(void) {
  * The pico-sdk does the same in runtime_init → spin_locks_reset().
  */
 static inline void spin_locks_reset(void) {
+#if defined(__m68k__) || defined(__ia16__) || defined(__xtensa__) || \
+    (defined(__riscv) && defined(PPAP_QEMU))
+  /* No hardware spinlocks — nothing to reset */
+#else
   if (!spin_have_hw()) return;
   for (uint32_t i = 0; i < 32u; i++) {
     volatile uint32_t *lock = (volatile uint32_t *)(SIO_SPINLOCK_BASE + i * 4u);
-    *lock = 0u; /* write any value to release */
+    *lock = 0u;
   }
+#endif
 }
 
 static inline uint32_t spin_lock_irqsave(uint32_t lock_num) {
   uint32_t saved = arch_irq_save();
+#if !defined(__m68k__) && !defined(__ia16__) && !defined(__xtensa__) && \
+    !(defined(__riscv) && defined(PPAP_QEMU))
   if (spin_have_hw()) {
     volatile uint32_t *lock =
         (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
     while (!*lock)
       ;
   }
+#else
+  (void)lock_num;
+#endif
   return saved;
 }
 
 static inline void spin_unlock_irqrestore(uint32_t lock_num, uint32_t saved) {
+#if !defined(__m68k__) && !defined(__ia16__) && !defined(__xtensa__) && \
+    !(defined(__riscv) && defined(PPAP_QEMU))
   if (spin_have_hw()) {
     volatile uint32_t *lock =
         (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
     *lock = 0u;
   }
+#else
+  (void)lock_num;
+#endif
   arch_irq_restore(saved);
 }
 
-/* Bare lock/unlock — no IRQ state change.
- * Use when the caller manages interrupt masking separately
- * (e.g. klog disables only the preemption timer). */
 static inline void spin_lock(uint32_t lock_num) {
+#if !defined(__m68k__) && !defined(__ia16__) && !defined(__xtensa__) && \
+    !(defined(__riscv) && defined(PPAP_QEMU))
   if (spin_have_hw()) {
     volatile uint32_t *lock =
         (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
     while (!*lock)
       ;
   }
+#else
+  (void)lock_num;
+#endif
 }
 
 static inline void spin_unlock(uint32_t lock_num) {
+#if !defined(__m68k__) && !defined(__ia16__) && !defined(__xtensa__) && \
+    !(defined(__riscv) && defined(PPAP_QEMU))
   if (spin_have_hw()) {
     volatile uint32_t *lock =
         (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
     *lock = 0u;
   }
+#else
+  (void)lock_num;
+#endif
 }
 
 #endif /* PPAP_KERNEL_SPINLOCK_H */

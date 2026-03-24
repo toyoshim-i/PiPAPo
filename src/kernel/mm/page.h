@@ -36,10 +36,10 @@ extern char __page_pool_start[];
 #ifndef RAM_END
 #define RAM_END (PAGE_POOL_BASE + PAGE_POOL_SIZE)
 #endif
-#elif defined(__IA16__)
+#elif defined(__ia16__)
 /* i8086 real mode: flat model (all segments = 0).
  * Kernel at 0x3000, page pool placed by linker after stack. */
-#define SRAM_KERNEL_BASE 0x3000u
+#define SRAM_KERNEL_BASE 0x0600u
 #define SRAM_KERNEL_SIZE (4u * 1024u)
 extern char __page_pool_start[];
 #define PAGE_POOL_BASE ((uintptr_t)__page_pool_start)

@@ -1529,6 +1529,10 @@ long sys_vfork(uint32_t *frame) {
     child->sp = (uint32_t)(uintptr_t)sp;
   }
 
+#elif defined(__ia16__)
+  /* TODO: i16 vfork frame setup for P-4 */
+  (void)child_frame;
+  child->sp = (uint32_t)(uintptr_t)((uint8_t *)stack + frame_off);
 #else
 #error "sys_vfork: unsupported architecture — add child frame setup"
 #endif

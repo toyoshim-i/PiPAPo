@@ -52,7 +52,7 @@ typedef void (*sighandler_t)(int);
 #define PCB_SP_OFFSET 48u
 #elif defined(__xtensa__)
 #define PCB_SP_OFFSET 0u
-#elif defined(__IA16__)
+#elif defined(__ia16__)
 #define PCB_SP_OFFSET 0u
 #else
 #error "Unsupported architecture — define PCB_SP_OFFSET"
@@ -111,7 +111,7 @@ typedef struct pcb {
   uint32_t sp;                 /* saved stack pointer     (offset 48)      */
 #elif defined(__xtensa__)
   uint32_t sp;                 /* saved stack pointer     (offset 0)       */
-#elif defined(__IA16__)
+#elif defined(__ia16__)
   uint32_t sp;                 /* saved 16-bit SP, zero-extended (offset 0) */
 #else
 #error "Unsupported architecture — define PCB register save area"
