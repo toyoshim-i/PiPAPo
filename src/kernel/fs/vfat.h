@@ -10,7 +10,7 @@
 #ifndef PPAP_KERNEL_FS_VFAT_H
 #define PPAP_KERNEL_FS_VFAT_H
 
-#include "../vfs/vfs.h"
+#include "../mod/mod_vfs.h"
 
 extern const vfs_ops_t vfat_ops;
 

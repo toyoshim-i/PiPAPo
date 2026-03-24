@@ -255,5 +255,18 @@ mount_entry_t *vfs_find_mount(const char *path, const char **remainder) {
 
 /* ── Module definition ─────────────────────────────────────────────────── */
 
-#define MOD_IMPLEMENTATION
 #include "../mod/mod_vfs.h"
+
+MOD_DEFINE_BEGIN(vfs)
+  MOD_IMPL(vfs, init)
+  MOD_IMPL(vfs, mount)
+  MOD_IMPL(vfs, umount)
+  MOD_IMPL(vfs, lookup)
+  MOD_IMPL(vfs, lookup_flags)
+  MOD_IMPL(vfs, lookup_parent)
+  MOD_IMPL(vfs, path_normalize)
+  MOD_IMPL(vfs, find_mount)
+  MOD_IMPL(vfs, alloc_vnode)
+  MOD_IMPL(vfs, ref_vnode)
+  MOD_IMPL(vfs, rel_vnode)
+MOD_DEFINE_END()

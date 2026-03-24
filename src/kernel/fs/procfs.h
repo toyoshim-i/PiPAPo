@@ -9,7 +9,7 @@
 #ifndef PPAP_KERNEL_FS_PROCFS_H
 #define PPAP_KERNEL_FS_PROCFS_H
 
-#include "../vfs/vfs.h"
+#include "../mod/mod_vfs.h"
 
 /* FS operations table — pass to vfs_mount() as the ops parameter */
 extern const vfs_ops_t procfs_ops;
