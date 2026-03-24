@@ -1,30 +1,16 @@
 /*
  * module.h — Kernel module system macros
  *
- * Platform-agnostic module boundaries for the PPAP kernel.
+ * Each module header (mod_vfs.h) uses MOD_FUNC to declare its API.
+ * The same header serves both declaration and definition:
  *
- * On 32-bit platforms: struct of function pointers.
- *   Callers use mod_<name>.<func>(args).
- *   Struct fields are unprefixed (e.g. .init, .mount).
+ *   Callers:        #include "mod/mod_vfs.h"        → declarations
+ *   Implementation: #define MOD_IMPLEMENTATION       → declarations + definition
+ *                   #include "mod/mod_vfs.h"
  *
- * On i16 (8086): plain extern declarations with prefixed names.
- *   Callers use <name>_<func>(args) directly.
- *
- * Usage:
- *
- *   // In mod/mod_vfs.h:
- *   MOD_DECLARE_BEGIN(vfs)
- *     MOD_FUNC(vfs, void, init, void)
- *     MOD_FUNC(vfs, int,  mount, const char *, ...)
- *   MOD_DECLARE_END(vfs)
- *
- *   // In vfs.c:
- *   MOD_DEFINE_BEGIN(vfs)
- *     MOD_IMPL(vfs, init)       // .init = vfs_init
- *   MOD_DEFINE_END()
- *
- *   // Callers (32-bit): mod_vfs.init()
- *   // Callers (i16):    vfs_init()
+ * Struct fields use unprefixed names (init, mount).  The MOD_FUNC
+ * macro auto-generates prefixed real function names (vfs_init) from
+ * the module name + field name.
  */
 
 #ifndef PPAP_KERNEL_MOD_MODULE_H
@@ -34,14 +20,50 @@
 #define _MOD_CONCAT2(a, b) a##_##b
 #define _MOD_CONCAT(a, b)  _MOD_CONCAT2(a, b)
 
+#endif /* PPAP_KERNEL_MOD_MODULE_H */
+
+/*
+ * Macros below are OUTSIDE the include guard — they are redefined
+ * each time based on _MOD_PHASE.  A module header sets _MOD_PHASE
+ * to control which output is generated.
+ */
+
+#undef MOD_DECLARE_BEGIN
+#undef MOD_FUNC
+#undef MOD_DECLARE_END
+
+#if _MOD_PHASE == 2
+
+/* ── Phase 2: struct initializer (implementation) ─────────────────────── */
+
 #if !defined(__ia16__)
 
-/* ── 32-bit: struct of function pointers ──────────────────────────────── */
+#define MOD_DECLARE_BEGIN(name) \
+  mod_##name##_t mod_##name = {
+
+#define MOD_FUNC(mod, ret, func, ...) \
+    .func = _MOD_CONCAT(mod, func),
+
+#define MOD_DECLARE_END(name) \
+  };
+
+#else
+
+#define MOD_DECLARE_BEGIN(name)
+#define MOD_FUNC(mod, ret, func, ...)
+#define MOD_DECLARE_END(name)
+
+#endif
+
+#else /* _MOD_PHASE == 1 or undefined (declaration) */
+
+/* ── Phase 1: struct typedef + extern (declaration) ───────────────────── */
+
+#if !defined(__ia16__)
 
 #define MOD_DECLARE_BEGIN(name) \
   typedef struct mod_##name##_s {
 
-/* Field name is unprefixed (just 'func'), no conflict inside struct */
 #define MOD_FUNC(mod, ret, func, ...) \
     ret (*func)(__VA_ARGS__);
 
@@ -49,32 +71,15 @@
   } mod_##name##_t; \
   extern mod_##name##_t mod_##name;
 
-#define MOD_DEFINE_BEGIN(name) \
-  mod_##name##_t mod_##name = {
-
-/* Maps unprefixed field to prefixed real function: .init = vfs_init */
-#define MOD_IMPL(mod, func) \
-    .func = _MOD_CONCAT(mod, func),
-
-#define MOD_DEFINE_END() \
-  };
-
-#else /* __ia16__ */
-
-/* ── i16: plain extern declarations with prefixed names ───────────────── */
+#else
 
 #define MOD_DECLARE_BEGIN(name)
 
-/* Generates: ret mod_func(args); e.g. void vfs_init(void); */
 #define MOD_FUNC(mod, ret, func, ...) \
   ret _MOD_CONCAT(mod, func)(__VA_ARGS__);
 
 #define MOD_DECLARE_END(name)
 
-#define MOD_DEFINE_BEGIN(name)
-#define MOD_IMPL(mod, func)
-#define MOD_DEFINE_END()
+#endif
 
-#endif /* __ia16__ */
-
-#endif /* PPAP_KERNEL_MOD_MODULE_H */
+#endif /* _MOD_PHASE */

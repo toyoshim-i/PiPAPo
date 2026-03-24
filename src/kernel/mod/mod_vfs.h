@@ -5,28 +5,23 @@
  * This is the API surface through which the rest of the kernel
  * (syscalls, exec, main.c) accesses VFS functionality.
  *
- * The VFS layer manages mount points and path resolution.  It does
- * NOT implement filesystem-specific logic — that lives in fs/ drivers
- * drivers which register via vfs_mount() and operate through the
- * vfs_ops_t vtable.
+ * The VFS layer manages mount points, path resolution, and vnode
+ * lifecycle.  It does NOT implement filesystem-specific logic — that
+ * lives in fs/ drivers which register via vfs_mount() and operate
+ * through the vfs_ops_t vtable.
  *
- * On 32-bit platforms, these are fields in a function-pointer struct
- * (mod_vfs), enabling future far-call dispatch on i16.
- * On i16, these are plain extern declarations (direct calls).
- *
- * Callers:
- *   32-bit: mod_vfs.init(), mod_vfs.lookup(path, &vn), etc.
- *   i16:    vfs_init(), vfs_lookup(path, &vn), etc.
+ * Usage:
+ *   Callers:          #include "mod/mod_vfs.h"
+ *   Implementation:   #define MOD_IMPLEMENTATION
+ *                     #include "mod/mod_vfs.h"
  *
  * Implementation: src/kernel/vfs/vfs.c, src/kernel/vfs/namei.c
  */
 
+/* Forward declarations (first include only) */
 #ifndef PPAP_KERNEL_MOD_MOD_VFS_H
 #define PPAP_KERNEL_MOD_MOD_VFS_H
 
-#include "module.h"
-
-/* Forward declarations to avoid pulling in the full vfs.h */
 struct vfs_ops;
 typedef struct vfs_ops vfs_ops_t;
 struct vnode;
@@ -34,7 +29,16 @@ typedef struct vnode vnode_t;
 struct mount_entry;
 typedef struct mount_entry mount_entry_t;
 
+#endif /* PPAP_KERNEL_MOD_MOD_VFS_H */
+
+/* ── Phase 1: declaration (always runs) ──────────────────────────────── */
+#undef _MOD_PHASE
+#define _MOD_PHASE 1
+#include "module.h"
+
 MOD_DECLARE_BEGIN(vfs)
+
+  /* ── VFS operations ──────────────────────────────────────────────────── */
 
   /*
    * init — Initialise the VFS layer.
@@ -160,4 +164,26 @@ MOD_DECLARE_BEGIN(vfs)
 
 MOD_DECLARE_END(vfs)
 
-#endif /* PPAP_KERNEL_MOD_MOD_VFS_H */
+/* ── Phase 2: implementation (only when MOD_IMPLEMENTATION defined) ──── */
+#ifdef MOD_IMPLEMENTATION
+#undef MOD_IMPLEMENTATION
+#undef _MOD_PHASE
+#define _MOD_PHASE 2
+#include "module.h"
+
+MOD_DECLARE_BEGIN(vfs)
+  MOD_FUNC(vfs, void, init, void)
+  MOD_FUNC(vfs, int, mount, const char *, const vfs_ops_t *,
+                             uint8_t, const void *)
+  MOD_FUNC(vfs, int, umount, const char *)
+  MOD_FUNC(vfs, int, lookup, const char *, vnode_t **)
+  MOD_FUNC(vfs, int, lookup_flags, const char *, vnode_t **, int)
+  MOD_FUNC(vfs, int, lookup_parent, const char *, vnode_t **,
+                                     char *, int)
+  MOD_FUNC(vfs, int, path_normalize, const char *, char *, int)
+  MOD_FUNC(vfs, mount_entry_t *, find_mount, const char *, const char **)
+  MOD_FUNC(vfs, vnode_t *, alloc_vnode, void)
+  MOD_FUNC(vfs, void, ref_vnode, vnode_t *)
+  MOD_FUNC(vfs, void, rel_vnode, vnode_t *)
+MOD_DECLARE_END(vfs)
+#endif
