@@ -49,12 +49,15 @@ project(ppap_ibmpc C ASM)
 set(COMMON_FLAGS
   -march=i8086
   -mtune=i8086
+  -mcmodel=medium
   -ffreestanding
   -nostdlib
   -Os
   -Wall -Wextra -Werror
   -Wno-unused-parameter
   -Wno-unused-function
+  -Wno-pointer-to-int-cast
+  -Wno-int-to-pointer-cast
 )
 
 # ==========================================================================
