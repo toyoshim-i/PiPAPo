@@ -35,7 +35,7 @@
 #include "../proc/proc.h"
 #include "../proc/sched.h"
 #include "../subsys/subsys.h"
-#include "../mod/mod_vfs.h"
+#include "../vfs/vfs.h"
 #include "config.h"
 
 /* ── Minimal integer-to-string formatter ────────────────────────────────────
@@ -526,7 +526,7 @@ static int gen_pid_subsys(char *buf, int bufsiz, const pcb_t *p) {
 static int procfs_mount(mount_entry_t *mnt, const void *dev_data) {
   (void)dev_data;
 
-  vnode_t *root = mod_vfs.alloc_vnode();
+  vnode_t *root = vfs_alloc_vnode();
   if (!root) return -ENOMEM;
 
   root->type = VNODE_DIR;
@@ -548,7 +548,7 @@ static int procfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
     /* Check static nodes first */
     for (uint32_t i = 0; i < PROCFS_NODE_COUNT; i++) {
       if (str_eq(procfs_nodes[i].name, name)) {
-        vnode_t *vn = mod_vfs.alloc_vnode();
+        vnode_t *vn = vfs_alloc_vnode();
         if (!vn) return -ENOMEM;
 
         vn->type = VNODE_FILE;
@@ -567,7 +567,7 @@ static int procfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
     if (pid >= 0) {
       for (uint32_t i = 0; i < PROC_MAX; i++) {
         if (proc_table[i].state != PROC_FREE && proc_table[i].pid == pid) {
-          vnode_t *vn = mod_vfs.alloc_vnode();
+          vnode_t *vn = vfs_alloc_vnode();
           if (!vn) return -ENOMEM;
 
           vn->type = VNODE_DIR;
@@ -593,7 +593,7 @@ static int procfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
     uint32_t pid_ino = dir->ino;
 
     if (str_eq(name, "stat")) {
-      vnode_t *vn = mod_vfs.alloc_vnode();
+      vnode_t *vn = vfs_alloc_vnode();
       if (!vn) return -ENOMEM;
       vn->type = VNODE_FILE;
       vn->mode = S_IFREG | 0444u;
@@ -606,7 +606,7 @@ static int procfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
     }
 
     if (str_eq(name, "cmdline")) {
-      vnode_t *vn = mod_vfs.alloc_vnode();
+      vnode_t *vn = vfs_alloc_vnode();
       if (!vn) return -ENOMEM;
       vn->type = VNODE_FILE;
       vn->mode = S_IFREG | 0444u;
@@ -619,7 +619,7 @@ static int procfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
     }
 
     if (str_eq(name, "subsys")) {
-      vnode_t *vn = mod_vfs.alloc_vnode();
+      vnode_t *vn = vfs_alloc_vnode();
       if (!vn) return -ENOMEM;
       vn->type = VNODE_FILE;
       vn->mode = S_IFREG | 0444u;
@@ -636,7 +636,7 @@ static int procfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
       uint8_t tag = proc_table[slot].subsys;
       if (tag < SUBSYS_MAX && subsys_ops_table[tag] &&
           subsys_ops_table[tag]->on_proc_read) {
-        vnode_t *vn = mod_vfs.alloc_vnode();
+        vnode_t *vn = vfs_alloc_vnode();
         if (!vn) return -ENOMEM;
         vn->type = VNODE_FILE;
         vn->mode = S_IFREG | 0444u;

@@ -12,7 +12,7 @@
 
 #include "fstab.h"
 
-#include "../mod/mod_vfs.h"
+#include "../vfs/vfs.h"
 #ifdef PPAP_HAS_BLKDEV
 #include "../blkdev/blkdev.h"
 #include "../blkdev/loopback.h"
@@ -188,7 +188,7 @@ int fstab_mount_all(const fstab_entry_t *entries, int count) {
       continue;
     }
 
-    int rc = mod_vfs.mount(e->mountpoint, ops, e->flags, dev_data);
+    int rc = vfs_mount(e->mountpoint, ops, e->flags, dev_data);
     if (rc == 0)
       klogf("VFS: %s mounted at %s\n", e->fstype, e->mountpoint);
     else

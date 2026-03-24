@@ -9,9 +9,9 @@
 #ifndef PPAP_KERNEL_FS_PROCFS_H
 #define PPAP_KERNEL_FS_PROCFS_H
 
-#include "../mod/mod_vfs.h"
+#include "../vfs/vfs.h"
 
-/* FS operations table — pass to mod_vfs.mount() as the ops parameter */
+/* FS operations table — pass to vfs_mount() as the ops parameter */
 extern const vfs_ops_t procfs_ops;
 
 /* Register hardware battery read callback (pico1calc I2C).

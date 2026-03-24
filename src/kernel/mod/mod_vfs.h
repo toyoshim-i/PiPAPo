@@ -18,11 +18,16 @@
  * Implementation: src/kernel/vfs/vfs.c, src/kernel/vfs/namei.c
  */
 
+/* Forward declarations (first include only) */
 #ifndef PPAP_KERNEL_MOD_MOD_VFS_H
 #define PPAP_KERNEL_MOD_MOD_VFS_H
 
-/* Full VFS type definitions (vnode_t, vfs_ops_t, mount_entry_t, etc.) */
-#include "../vfs/vfs_types.h"
+struct vfs_ops;
+typedef struct vfs_ops vfs_ops_t;
+struct vnode;
+typedef struct vnode vnode_t;
+struct mount_entry;
+typedef struct mount_entry mount_entry_t;
 
 #include "module.h"
 

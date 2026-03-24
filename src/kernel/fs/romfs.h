@@ -3,15 +3,15 @@
  *
  * Provides romfs_ops — a vfs_ops_t for mounting a flash-resident romfs
  * image as a read-only filesystem.  The image base address is passed as
- * dev_data to mod_vfs.mount().
+ * dev_data to vfs_mount().
  */
 
 #ifndef PPAP_KERNEL_FS_ROMFS_H
 #define PPAP_KERNEL_FS_ROMFS_H
 
-#include "../mod/mod_vfs.h"
+#include "../vfs/vfs.h"
 
-/* FS operations table — pass to mod_vfs.mount() as the ops parameter */
+/* FS operations table — pass to vfs_mount() as the ops parameter */
 extern const vfs_ops_t romfs_ops;
 
 #endif /* PPAP_KERNEL_FS_ROMFS_H */

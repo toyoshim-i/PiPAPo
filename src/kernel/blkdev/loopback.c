@@ -17,7 +17,7 @@
 #include <stddef.h>
 
 #include "../errno.h"
-#include "../mod/mod_vfs.h"
+#include "../vfs/vfs.h"
 #include "blkdev.h"
 
 /* ── Loopback device state ─────────────────────────────────────────────── */
@@ -96,19 +96,19 @@ int loopback_setup(const char *image_path) {
 
   /* Resolve the image file path to a vnode */
   vnode_t *vn = (vnode_t *)0;
-  int rc = mod_vfs.lookup(image_path, &vn);
+  int rc = vfs_lookup(image_path, &vn);
   if (rc < 0) return rc;
 
   /* Must be a regular file */
   if (vn->type != VNODE_FILE) {
-    mod_vfs.rel_vnode(vn);
+    vfs_rel_vnode(vn);
     return -EINVAL;
   }
 
   /* File size must be non-zero and sector-aligned */
   uint32_t fsize = vn->size;
   if (fsize == 0 || (fsize % BLKDEV_SECTOR_SIZE) != 0) {
-    mod_vfs.rel_vnode(vn);
+    vfs_rel_vnode(vn);
     return -EINVAL;
   }
 
@@ -126,7 +126,7 @@ int loopback_setup(const char *image_path) {
   /* Register as a block device */
   rc = blkdev_register(&loop->blk);
   if (rc < 0) {
-    mod_vfs.rel_vnode(vn);
+    vfs_rel_vnode(vn);
     return rc;
   }
 
@@ -142,7 +142,7 @@ int loopback_teardown(int loop_index) {
 
   /* Release the backing vnode */
   if (loop->backing) {
-    mod_vfs.rel_vnode(loop->backing);
+    vfs_rel_vnode(loop->backing);
     loop->backing = (vnode_t *)0;
   }
 

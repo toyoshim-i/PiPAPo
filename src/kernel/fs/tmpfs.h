@@ -5,13 +5,13 @@
  * All contents are stored in SRAM and lost on reboot.  Total data is
  * bounded by TMPFS_DATA_MAX (config.h) to prevent unbounded SRAM use.
  *
- * Call mod_vfs.mount("/tmp", &tmpfs_ops, 0, NULL) from kmain() after mod_vfs.init().
+ * Call vfs_mount("/tmp", &tmpfs_ops, 0, NULL) from kmain() after vfs_init().
  */
 
 #ifndef PPAP_KERNEL_FS_TMPFS_H
 #define PPAP_KERNEL_FS_TMPFS_H
 
-#include "../mod/mod_vfs.h"
+#include "../vfs/vfs.h"
 
 extern const vfs_ops_t tmpfs_ops;
 

@@ -779,12 +779,12 @@ static void loopback_integration_test(void)
     /* Check if VFAT is mounted (need a real filesystem to test loopback) */
     {
         vnode_t *vn = (void *)0;
-        int rc = mod_vfs.lookup("/mnt/sd", &vn);
+        int rc = vfs_lookup("/mnt/sd", &vn);
         if (rc < 0) {
             klog("SKIP: /mnt/sd not mounted, cannot test loopback\n");
             return;
         }
-        mod_vfs.rel_vnode(vn);
+        vfs_rel_vnode(vn);
     }
 
     /* 1. Verify pre-populated testloop.bin exists (from mkfatimg) */
@@ -922,9 +922,9 @@ static void tmpfs_integration_test(void)
     /* 1. Verify /tmp is mounted */
     {
         vnode_t *vn = (void *)0;
-        int rc = mod_vfs.lookup("/tmp", &vn);
+        int rc = vfs_lookup("/tmp", &vn);
         int ok = (rc == 0 && vn && vn->type == VNODE_DIR);
-        if (vn) mod_vfs.rel_vnode(vn);
+        if (vn) vfs_rel_vnode(vn);
         test_report("/tmp mounted (DIR)", ok);
         if (!ok) return;
     }
@@ -1098,7 +1098,7 @@ static void ufs_integration_test(void)
         test_report("blkdev_find loopN", ok);
         if (!ok) return;
 
-        int rc = mod_vfs.mount("/mnt/ufs", &ufs_ops, 0, bd);
+        int rc = vfs_mount("/mnt/ufs", &ufs_ops, 0, bd);
         test_report("vfs_mount UFS at /mnt/ufs", rc == 0);
         if (rc != 0) return;
     }

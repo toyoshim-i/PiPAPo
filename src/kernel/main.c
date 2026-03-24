@@ -17,7 +17,7 @@
 #include "proc/proc.h"
 #include "proc/sched.h"
 #include "target/target.h"
-#include "mod/mod_vfs.h"
+#include "vfs/vfs.h"
 #ifdef PPAP_HAS_BLKDEV
 #include "blkdev/blkdev.h"
 #include "blkdev/loopback.h"
@@ -57,7 +57,7 @@ void kmain(void) {
   cpu_init();
 
   /* VFS layer + file pool for sys_open */
-  mod_vfs.init();
+  vfs_init();
   file_pool_init();
 
 #ifdef PPAP_HAS_BLKDEV
@@ -73,7 +73,7 @@ void kmain(void) {
    * If an embedded romfs is present use it; otherwise delegate to the
    * target (e.g. x68k mounts a UFS ramdisk loaded by stage2). */
   if (&__romfs_start[0] != &__romfs_end[0]) {
-    if (mod_vfs.mount("/", &romfs_ops, MNT_RDONLY, __romfs_start) == 0)
+    if (vfs_mount("/", &romfs_ops, MNT_RDONLY, __romfs_start) == 0)
       klog("VFS: romfs mounted at /\n");
     else
       klog("VFS: romfs mount FAILED\n");
