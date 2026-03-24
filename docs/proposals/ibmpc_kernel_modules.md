@@ -1,192 +1,178 @@
-# Proposal: IBM PC Kernel Module Architecture
+# Proposal: PPAP Kernel Module System
 
 ## Problem
 
-The PPAP kernel compiled for ARM (Thumb2) is ~177 KB of code. On i8086
-real mode, instructions are 30-50% larger, yielding an estimated 230-260 KB.
-The 8086 segment limit is 64 KB per segment.
+The PPAP kernel is growing (~177 KB code on ARM). On i8086 real mode,
+the 64 KB segment limit makes it impossible to link as a single binary.
+But adding i16-specific `__far` annotations would pollute the portable
+kernel source.
 
-Compiling the full shared kernel with `__far` pointers everywhere would
-pollute the portable codebase. Building a separate mini-kernel for i16
-would create a divergent fork that's hard to maintain.
+## Proposed Design: Platform-Agnostic Module System
 
-## Proposed Design: Segmented Kernel Modules
+Introduce a kernel module system across **all platforms**, not just i16.
+Modules define clear API surfaces. On 32-bit platforms, module calls are
+direct function calls (zero overhead). On i16, the same API surfaces
+become far-call boundaries.
 
-Split the kernel into independently-linked 64 KB modules, each in its
-own code segment. Modules communicate through **far-call jump tables**
-at fixed offsets — the only place segment awareness is needed.
+This is **not** a microkernel — no message passing, no server processes.
+It's a single-process plugin system with explicit API surfaces, like
+Linux kernel modules but simpler.
 
-### Memory Layout
+### Module Definition
 
-```
-Linear addr   Segment   Contents
-─────────────────────────────────────────────────
-0x00000       0x0000    IVT (1 KB) + BIOS data
-0x03000       0x0300    Core kernel (~32 KB)
-                          scheduler, page alloc, timer, console
-                          syscall dispatch, IVT management
-0x10000       0x1000    Module: VFS + filesystems (~40 KB)
-                          vfs, namei, tmpfs, romfs, ufs, devfs,
-                          procfs, fstab, fd, tty, pipe
-0x20000       0x2000    Module: exec + process (~20 KB)
-                          exec, flat/COM loader, proc management,
-                          signal delivery
-0x30000       0x3000    Module: subsystems (~20 KB, optional)
-                          eCPU (Z80/8080/m68k), CP/M bridge,
-                          DOS bridge, Human68k bridge
-0x40000+      0x4000+   Page pool (~384 KB, up to 0x9FBFF)
-```
-
-Each module is ≤64 KB, compiled with `-mcmodel=small` (near pointers
-within the module). No `__far` annotations in source code.
-
-### Jump Table Interface
-
-Each module exposes a jump table at offset 0x0000 of its segment:
-
-```nasm
-; Module VFS jump table at 0x1000:0x0000
-vfs_jtab:
-  jmp vfs_init          ; entry 0: near jump to vfs_init()
-  jmp vfs_open          ; entry 1
-  jmp vfs_close         ; entry 2
-  jmp vfs_read          ; entry 3
-  jmp vfs_write         ; entry 4
-  ...
-```
-
-The core kernel calls into a module via a far call to the jump table:
-
-```nasm
-; Core kernel calling vfs_open (entry 1 in VFS module)
-  lcall $0x1000, $3     ; far call to VFS segment, offset 3 (entry 1)
-```
-
-Or via a C wrapper in the core kernel:
+Each subsystem declares its API surface in a header:
 
 ```c
-/* core/mod_vfs.h — VFS module call stubs */
-#define VFS_SEG     0x1000u
-#define VFS_INIT    0   /* jump table offsets */
-#define VFS_OPEN    3
+/* kernel/mod/mod_vfs.h */
+#include "module.h"
 
-static inline int vfs_open(const char *path, int flags) {
-    int ret;
-    /* Far call: push args, lcall VFS_SEG:VFS_OPEN, get retval */
-    __asm__ volatile (
-        "pushw %2\n\t"
-        "pushw %1\n\t"
-        "lcall $0x1000, $3\n\t"
-        "addw $4, %%sp"
-        : "=a"(ret)
-        : "r"(path), "r"((uint16_t)flags)
-        : "memory"
-    );
-    return ret;
+MOD_DECLARE(vfs,
+    int (*init)(void);
+    int (*open)(const char *path, int flags);
+    int (*close)(int fd);
+    ssize_t (*read)(int fd, void *buf, size_t n);
+    ssize_t (*write)(int fd, const void *buf, size_t n);
+    /* ... */
+)
+```
+
+The `MOD_DECLARE` macro generates:
+- On 32-bit: a struct of function pointers, initialized to the real
+  implementations. `mod_vfs.init()` compiles to an indirect call through
+  the struct — practically free with branch prediction.
+- On i16: a jump table in the module's text segment + far-call wrappers
+  in the caller's segment.
+
+### Module Registration
+
+```c
+/* kernel/fs/vfs.c */
+#include "mod/mod_vfs.h"
+
+MOD_DEFINE(vfs,
+    .init  = vfs_init,
+    .open  = vfs_open,
+    .close = vfs_close,
+    .read  = vfs_read,
+    .write = vfs_write,
+)
+```
+
+### Calling a Module
+
+```c
+/* kernel/syscall/sys_io.c */
+#include "mod/mod_vfs.h"
+
+long sys_read(int fd, char *buf, size_t n) {
+    return mod_vfs.read(fd, buf, n);
 }
 ```
 
-### Module Build Process
+On ARM/m68k/RISC-V: `mod_vfs.read` is a function pointer in a
+statically-initialized struct → compiles to `ldr rN, [struct]; blx rN`.
+Same as today's virtual dispatch for vfs_ops_t.
 
-Each module is built as a separate flat binary:
+On i16: `mod_vfs.read` expands to a far-call wrapper that does
+`lcall $seg, $offset` to the module's jump table entry.
+
+### Platform Behavior
+
+| Platform | MOD_DECLARE | MOD_DEFINE | Call overhead |
+|----------|-------------|------------|---------------|
+| ARM, m68k, RISC-V, Xtensa | struct of fn pointers | static init | ~1 indirect call |
+| i16 | far-call wrapper + jump table | jump table asm | ~4 extra instructions |
+
+### i16 Memory Layout
+
+On i16, modules are loaded at paragraph-aligned addresses. Unlike the
+earlier proposal with fixed 64 KB segments, modules are **packed tightly**
+with adjustable segment registers:
 
 ```
-ia16-elf-gcc -march=i8086 -Os -ffreestanding -nostdlib \
-    -T module_vfs.ld -o module_vfs.elf \
-    jtab_vfs.S vfs.c namei.c tmpfs.c romfs.c ...
-ia16-elf-objcopy -O binary module_vfs.elf module_vfs.bin
+Linear addr   Contents
+────────────────────────────────────────────
+0x03000       Core kernel text (~16 KB)
+0x07000       Module: VFS text (~24 KB)
+0x0D000       Module: exec text (~12 KB)
+0x10000       Module: subsystems (~16 KB, optional)
+0x14000       Shared data segment (DS, all modules, ~20 KB)
+0x19000       Page pool (up to 0x9FBFF)
 ```
 
-The linker script for each module sets `. = 0x0000` (code starts at
-offset 0 within its segment). The jump table assembly file is always
-first so it occupies offset 0.
+Each module's CS is set to its paragraph-aligned start address / 16.
+For example, VFS at linear 0x07000 → CS=0x0700. No 64 KB alignment
+needed, no wasted padding. A module only needs to fit in 64 KB from
+its *own* start — overlapping with the next segment's range is fine
+in real mode since segments are just base+offset windows.
 
-`mkpcimg.sh` places each module binary at the correct linear address
-in the floppy image. Stage2 loads all modules (or the core kernel
-loads them on demand from the floppy UFS).
+Stage2 (or the core kernel at boot) loads each module binary and
+records its segment value. The far-call wrappers use these values.
 
-### Calling Convention
+### Shared Data Segment
 
-- **Intra-module**: Normal near calls (ia16-elf-gcc default ABI).
-  No changes to kernel source code.
-- **Inter-module**: Far calls via jump tables. Only the thin wrapper
-  layer (`mod_*.h`) uses far calls. The actual kernel C code is
-  unaware of segments.
-- **Arguments**: Passed on the stack (ia16 cdecl convention).
-  Pointer arguments are near (16-bit offset within the caller's DS).
-- **DS/ES handling**: Each module assumes DS=its own data segment.
-  The jump table entry stub may need to switch DS before calling
-  the module's C code (if caller DS ≠ module DS).
+All modules share a single DS (e.g., 0x1400 in the layout above).
+This means:
+- Near data pointers work across modules (same DS)
+- Global variables (proc_table, etc.) are accessible from all modules
+- Struct pointers passed as arguments work without conversion
+- Total data+BSS must fit in 64 KB (currently ~35 KB on ARM, fine)
 
-### Data Segment Sharing
+Each module's `.data` and `.bss` are linked into the shared data
+segment, not into the module's own code segment. The code segment
+contains only `.text` and `.rodata`.
 
-**Option A: Shared DS (simpler)**
-All modules share DS=0x0300 (core kernel data segment). Each module's
-`.data`/`.bss` is placed in the core's data segment. Only `.text` is
-in the module's own segment. This means:
-- Pointer arguments work across modules (same DS)
-- Global variables are shared naturally
-- Data must fit in 64 KB total (across all modules)
+### Impact on Existing Code
 
-**Option B: Per-module DS (more scalable)**
-Each module has its own DS. Jump table stubs save/restore DS. Pointer
-arguments need segment:offset conversion at module boundaries.
-More complex but allows more data.
+**Minimal.** The change is:
+1. Add `mod/mod_*.h` headers with `MOD_DECLARE` for each subsystem
+2. Add `MOD_DEFINE` in each subsystem's main .c file
+3. Change cross-subsystem calls from `vfs_open(...)` to
+   `mod_vfs.open(...)` (or keep the old names as macros)
 
-**Recommendation: Option A** for now. The kernel's total data+BSS on
-ARM is ~35 KB, which fits in 64 KB even with 16-bit overhead.
+On 32-bit platforms, `MOD_DECLARE` generates a struct of function
+pointers. The indirect call is the same pattern already used for
+`vfs_ops_t`, `cpu_ops`, etc. — no performance regression.
 
-### Impact on Shared Kernel Source
+### Build System
 
-**None.** The shared kernel .c files compile unchanged for each module.
-The segmentation is handled entirely by:
-1. Linker scripts (one per module, setting text address)
-2. Jump table assembly files (one per module, ~20 lines)
-3. Far-call wrappers in the core kernel headers (~10 lines per API)
-4. `mkpcimg.sh` / CMakeLists.txt build orchestration
+**32-bit targets (ARM, m68k, RISC-V, Xtensa):**
+Link everything into one binary as today. `MOD_DEFINE` creates a
+static struct. No separate compilation needed.
 
-Other architectures (ARM, m68k, RISC-V) continue to link everything
-into a single binary as before.
+**i16 target:**
+Each module is compiled and linked as a separate flat binary with its
+own linker script (`. = 0x0000`, module-internal addressing). The
+`mkpcimg.sh` script places them at the right linear addresses.
+CMakeLists.txt builds N+1 targets: core + one per module.
 
-### Phased Implementation
+### Phased Rollout
 
-**P-3b-1**: Core kernel module only (scheduler, page alloc, console).
-No VFS, no exec. Boots to idle loop. Proves the module build works.
+**Phase 1 (P-3b-1):** Define MOD_DECLARE/MOD_DEFINE macros.
+Convert VFS as the first module (it already has a vtable pattern).
+Build core kernel for i16 without VFS — boots to idle.
 
-**P-3b-2**: Add VFS module. Mount romfs or UFS from floppy.
+**Phase 2 (P-3b-2):** Build VFS as a separate module on i16.
 Far-call wrappers for vfs_init/open/read/write/close.
+Mount romfs from floppy.
 
-**P-3b-3**: Add exec module. Load flat .COM binaries from filesystem.
-Far-call wrappers for do_execve, proc_create, etc.
+**Phase 3 (P-3b-3):** Convert exec subsystem to a module.
+Load flat .COM binaries.
 
-**P-3b-4**: Add subsystems module (optional). eCPU emulators,
-DOS/CP/M bridges.
-
-### Alternatives Considered
-
-1. **Compact model (-mcmodel=medium)**: ia16-elf-gcc generates far
-   calls automatically. But this requires recompiling ALL kernel code
-   with far function pointers, which changes function pointer size
-   from 2 to 4 bytes and affects vtables, callback signatures, etc.
-   Too invasive.
-
-2. **Huge model**: All pointers far (32-bit). Very slow, very invasive.
-
-3. **Separate mini-kernel**: Write an i16-specific kernel from scratch.
-   Avoids segment issues but creates a maintenance fork. The module
-   approach avoids this by reusing the same .c files.
-
-4. **Protected mode (286+)**: Switch to 16-bit protected mode for
-   larger segments. But the proposal targets 8086 real mode (V30),
-   and protected mode loses BIOS access.
+**Phase 4:** Convert remaining subsystems (eCPU, bridges) to modules.
+Optional — only loaded if present on the floppy.
 
 ### Open Questions
 
-- Can ia16-elf-gcc handle the jump table assembly correctly, or do
-  we need NASM for the inter-segment glue?
-- Should the core kernel load modules from floppy at runtime (like
-  a real module loader), or should stage2 load everything at fixed
-  addresses (simpler)?
-- How to handle function pointers that cross module boundaries (e.g.
-  VFS ops callbacks)? These would need to be far pointers even in
-  Option A. May need a small indirection layer.
+- Should `MOD_DECLARE` generate `static inline` wrappers (for type
+  safety) or plain macros? Inline wrappers are cleaner but may not
+  optimize away on ia16-elf-gcc 6.3.0.
+- How many module API surfaces do we need? Rough count:
+  - mod_vfs (filesystem ops)
+  - mod_exec (process creation + loading)
+  - mod_signal (signal delivery)
+  - mod_subsys (eCPU + bridges)
+  - That's only 4 boundaries — manageable.
+- Should modules be loadable at runtime (from floppy), or always
+  loaded by stage2 at boot? Runtime loading is more flexible but
+  adds complexity. Boot-time loading is simpler and sufficient.
