@@ -56,10 +56,16 @@ extern uint32_t m68k_probe_ram(uint32_t start, uint32_t max_size);
 /* ── Public API ─────────────────────────────────────────────────────────────
  */
 
+/* On Xtensa, the page pool is allocated from ESP-IDF's heap at runtime
+ * (see mm_init).  This variable stores the base address. */
+#if defined(__xtensa__)
+static uintptr_t xtensa_pool_base;
+#endif
+
 void mm_init(void) {
-  uint32_t bss_end = (uint32_t)(uintptr_t)&__bss_end;
-  uint32_t stack_top = (uint32_t)(uintptr_t)&__stack_top;
-  uint32_t kern_used = bss_end - SRAM_KERNEL_BASE;
+  uintptr_t bss_end = (uintptr_t)&__bss_end;
+  uintptr_t stack_top = (uintptr_t)&__stack_top;
+  uintptr_t kern_used = bss_end - SRAM_KERNEL_BASE;
 
   /* Detect available RAM and set runtime page_count.
    * On m68k: probe RAM via bus error catching (two-phase: 1MB then 4KB).
@@ -73,6 +79,26 @@ void mm_init(void) {
     page_count = ram_bytes / PAGE_SIZE;
     if (page_count > PAGE_COUNT_MAX) page_count = PAGE_COUNT_MAX;
   }
+#elif defined(__xtensa__)
+  /* ESP-IDF owns the DRAM heap.  Allocate page pool from ESP-IDF so
+   * both systems agree on who owns what memory.  Use MALLOC_CAP_8BIT
+   * (cap 2) to get byte-accessible DRAM, NOT IRAM. */
+  {
+    extern void *heap_caps_malloc(unsigned int size, uint32_t caps);
+    uint32_t pool_bytes = PAGE_COUNT_MAX * PAGE_SIZE + PAGE_SIZE; /* +1 page for alignment */
+    void *pool = heap_caps_malloc(pool_bytes, (1u << 2)); /* MALLOC_CAP_8BIT */
+    if (!pool) {
+      klog("MM: FATAL — heap_caps_malloc failed for page pool\n");
+      for (;;) __asm__ volatile("waiti 15");
+    }
+    /* Align pool start to page boundary */
+    uintptr_t raw = (uintptr_t)pool;
+    xtensa_pool_base = (raw + PAGE_SIZE - 1u) & ~((uintptr_t)PAGE_SIZE - 1u);
+    /* Recalculate how many pages fit after alignment */
+    uintptr_t usable = (raw + pool_bytes) - xtensa_pool_base;
+    page_count = usable / PAGE_SIZE;
+    if (page_count > PAGE_COUNT_MAX) page_count = PAGE_COUNT_MAX;
+  }
 #else
   page_count = PAGE_COUNT_MAX;
 #endif
@@ -80,10 +106,16 @@ void mm_init(void) {
   /* Build the free stack: push pages from the pool that don't overlap
    * with the kernel stack.  On QEMU (flat memory model) the initial
    * stack may extend into the page pool region.  Skip those pages. */
-  uint32_t stack_page_top = (stack_top + PAGE_SIZE - 1u) & ~(PAGE_SIZE - 1u);
+  uintptr_t stack_page_top = (stack_top + PAGE_SIZE - 1u) & ~(PAGE_SIZE - 1u);
+  uintptr_t pool_base;
+#if defined(__xtensa__)
+  pool_base = xtensa_pool_base;
+#else
+  pool_base = PAGE_POOL_BASE;
+#endif
   free_top = 0;
   for (uint32_t i = 0u; i < page_count; i++) {
-    uint32_t paddr = PAGE_POOL_BASE + i * PAGE_SIZE;
+    uintptr_t paddr = pool_base + i * PAGE_SIZE;
     if (paddr < stack_page_top) continue; /* overlaps with kernel stack */
     free_stack[free_top++] = (void *)(uintptr_t)paddr;
   }
@@ -98,10 +130,10 @@ void mm_init(void) {
   else
     klogf("MM:     .data/.bss:  %x B used\n", kern_used);
 
-  uint32_t actual_base =
-      (free_top > 0) ? (uint32_t)(uintptr_t)free_stack[0] : PAGE_POOL_BASE;
+  uintptr_t actual_base =
+      (free_top > 0) ? (uintptr_t)free_stack[0] : pool_base;
   klogf("MM:   pages   %x-%x %u KB (%u x 4 KB, all free)\n", actual_base,
-        PAGE_POOL_BASE + page_count * PAGE_SIZE - 1u,
+        pool_base + page_count * PAGE_SIZE - 1u,
         free_top * PAGE_SIZE / 1024u, free_top);
 #if !defined(__m68k__) && !defined(__xtensa__)
   klogf("MM:   io_buf  %x-%x  %u KB\n", SRAM_IOBUF_BASE,
@@ -153,11 +185,11 @@ void *page_alloc(void) {
 }
 
 void *page_alloc_at(void *addr) {
-  uint32_t target = (uint32_t)(uintptr_t)addr;
+  uintptr_t target = (uintptr_t)addr;
 
   /* Validate: must be page-aligned and within the runtime pool */
-  if (target < PAGE_POOL_BASE ||
-      target >= PAGE_POOL_BASE + page_count * PAGE_SIZE)
+  uintptr_t pb = page_pool_base();
+  if (target < pb || target >= pb + page_count * PAGE_SIZE)
     return NULL;
   if (target & (PAGE_SIZE - 1u)) return NULL;
 
@@ -181,8 +213,9 @@ void *page_alloc_at(void *addr) {
 
 void page_free(void *page) {
   /* Rudimentary double-free / out-of-range guard */
-  uint32_t addr = (uint32_t)(uintptr_t)page;
-  if (addr < PAGE_POOL_BASE || addr >= PAGE_POOL_BASE + page_count * PAGE_SIZE)
+  uintptr_t addr = (uintptr_t)page;
+  uintptr_t pb = page_pool_base();
+  if (addr < pb || addr >= pb + page_count * PAGE_SIZE)
     return; /* ignore bogus pointer rather than corrupt the stack */
 
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
@@ -192,13 +225,21 @@ void page_free(void *page) {
     if (free_stack[i] == page) {
       spin_unlock_irqrestore(SPIN_PAGE, saved);
       klogf("MM: double-free @ %x (ra=%x)\n", addr,
-            (uint32_t)(uintptr_t)__builtin_return_address(0));
+            (uintptr_t)__builtin_return_address(0));
       return;
     }
   }
 
   if (free_top < page_count) free_stack[free_top++] = page;
   spin_unlock_irqrestore(SPIN_PAGE, saved);
+}
+
+uintptr_t page_pool_base(void) {
+#if defined(__xtensa__)
+  return xtensa_pool_base;
+#else
+  return PAGE_POOL_BASE;
+#endif
 }
 
 uint32_t page_free_count(void) {
@@ -216,7 +257,7 @@ static void build_free_bitmap(uint32_t *bmap, uint32_t n_words) {
   for (uint32_t w = 0; w < n_words; w++) bmap[w] = 0;
   for (uint32_t i = 0; i < free_top; i++) {
     uint32_t idx =
-        ((uint32_t)(uintptr_t)free_stack[i] - PAGE_POOL_BASE) / PAGE_SIZE;
+        ((uintptr_t)free_stack[i] - page_pool_base()) / PAGE_SIZE;
     if (idx < page_count) bmap[idx / 32] |= (1u << (idx % 32));
   }
 }
@@ -284,11 +325,11 @@ uint8_t *page_alloc_contiguous(uint32_t n_pages) {
 
   /* Remove the found pages from the free stack.
    * Mark which pages to remove, then compact the stack. */
-  uint32_t base_addr = PAGE_POOL_BASE + found_start * PAGE_SIZE;
-  uint32_t end_addr = base_addr + n_pages * PAGE_SIZE;
+  uintptr_t base_addr = page_pool_base() + found_start * PAGE_SIZE;
+  uintptr_t end_addr = base_addr + n_pages * PAGE_SIZE;
   uint32_t new_top = 0;
   for (uint32_t i = 0; i < free_top; i++) {
-    uint32_t pa = (uint32_t)(uintptr_t)free_stack[i];
+    uintptr_t pa = (uintptr_t)free_stack[i];
     if (pa >= base_addr && pa < end_addr) {
       /* This page is being allocated — skip it */
     } else {

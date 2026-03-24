@@ -31,10 +31,21 @@
 #define SRAM_KERNEL_BASE 0x00000000u
 #define SRAM_KERNEL_SIZE (20u * 1024u)
 extern char __page_pool_start[];
-#define PAGE_POOL_BASE ((uint32_t)(uintptr_t)__page_pool_start)
+#define PAGE_POOL_BASE ((uintptr_t)__page_pool_start)
 #define PAGE_POOL_SIZE (PAGE_COUNT_MAX * PAGE_SIZE)
 #ifndef RAM_END
 #define RAM_END (PAGE_POOL_BASE + PAGE_POOL_SIZE)
+#endif
+#elif defined(__IA16__)
+/* i8086 real mode: flat model (all segments = 0).
+ * Kernel at 0x3000, page pool placed by linker after stack. */
+#define SRAM_KERNEL_BASE 0x3000u
+#define SRAM_KERNEL_SIZE (4u * 1024u)
+extern char __page_pool_start[];
+#define PAGE_POOL_BASE ((uintptr_t)__page_pool_start)
+#define PAGE_POOL_SIZE (PAGE_COUNT_MAX * PAGE_SIZE)
+#ifndef RAM_END
+#define RAM_END 0x9FC0u  /* 640 KB conventional - EBDA */
 #endif
 #elif defined(__xtensa__)
 /* Xtensa / ESP32-S3: ESP-IDF manages the linker script.
@@ -91,7 +102,7 @@ void page_free(void *page);
  * heap_caps_free instead of page_free. */
 static inline void user_page_free(void *page) {
 #if defined(__xtensa__)
-  uint32_t addr = (uint32_t)(uintptr_t)page;
+  uintptr_t addr = (uintptr_t)page;
   if (addr >= 0x40370000u && addr < 0x403E0000u) {
     extern void heap_caps_free(void *ptr);
     heap_caps_free(page);
@@ -104,7 +115,7 @@ static inline void user_page_free(void *page) {
 /* Return the runtime page pool base address.  On Xtensa this is
  * dynamically allocated from ESP-IDF's heap; on other targets it
  * equals the compile-time PAGE_POOL_BASE. */
-uint32_t page_pool_base(void);
+uintptr_t page_pool_base(void);
 
 /* Return the number of pages currently on the free stack. */
 uint32_t page_free_count(void);

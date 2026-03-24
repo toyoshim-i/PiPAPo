@@ -434,9 +434,30 @@ if [[ $DO_TEST -eq 1 ]]; then
         TIMEOUT=180
     fi
     echo "[test] Running on-target tests (timeout ${TIMEOUT}s)..."
-    OUTPUT=$(timeout "$TIMEOUT" run_qemu \
-        "${QEMU_ARGS[@]}" \
-        -nographic 2>&1 || true)
+    # Build QEMU command for timeout (can't use bash functions with timeout)
+    QEMU_CMD=()
+    if [[ -n "$DOCKER_IMAGE" ]]; then
+        TTY_FLAG=""
+        if [[ -t 0 ]]; then TTY_FLAG="-it"; fi
+        QEMU_CMD=(docker run --rm $TTY_FLAG
+            -u "$(id -u):$(id -g)"
+            -v "$PROJECT_DIR:/ppap" -w /ppap
+            "$DOCKER_IMAGE")
+        REMAPPED_ARGS=()
+        for a in "${QEMU_ARGS[@]}"; do
+            REMAPPED_ARGS+=("${a//"$PROJECT_DIR"/"/ppap"}")
+        done
+        TEST_KERNEL_ARGS=()
+        if [[ -n "$ELF" ]]; then
+            TEST_KERNEL_ARGS=(-kernel "/ppap/${ELF#"$PROJECT_DIR/"}")
+        fi
+        QEMU_CMD+=("$QEMU_BIN" "${REMAPPED_ARGS[@]}" -nographic "${TEST_KERNEL_ARGS[@]}")
+    else
+        TEST_KERNEL_ARGS=()
+        if [[ -n "$ELF" ]]; then TEST_KERNEL_ARGS=(-kernel "$ELF"); fi
+        QEMU_CMD=("$QEMU_BIN" "${QEMU_ARGS[@]}" -nographic "${TEST_KERNEL_ARGS[@]}")
+    fi
+    OUTPUT=$(timeout "$TIMEOUT" "${QEMU_CMD[@]}" 2>&1 || true)
 
     echo "$OUTPUT"
 
