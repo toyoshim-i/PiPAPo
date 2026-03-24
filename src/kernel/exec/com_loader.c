@@ -13,7 +13,7 @@
 
 #include "exec.h"
 #include "kernel/cpu/ecpu_z80.h"
-#include "kernel/errno.h"
+#include "kernel/common/errno.h"
 #include "kernel/mm/page.h"
 #include "kernel/subsys/cpm_bridge.h"
 #include "kernel/subsys/cpm_loader.h"

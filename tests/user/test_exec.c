@@ -6,7 +6,7 @@
  */
 
 #include "utest.h"
-#include "kernel/errno.h"
+#include "kernel/common/errno.h"
 
 int main(void)
 {

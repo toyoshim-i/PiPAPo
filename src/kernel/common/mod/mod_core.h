@@ -9,7 +9,7 @@
  * Only functions defined in .c files are exported here.
  *
  * Usage:
- *   #include "mod/mod_core.h"
+ *   #include "common/mod/mod_core.h"
  *   mod_core.klogf("VFS: %s\n", msg);
  *   void *p = mod_core.kmem_alloc(&pool);
  *

@@ -57,7 +57,7 @@ set(KERNEL_SHARED_SOURCES_BASE
     ${_KS_ROOT}/src/target/target_default.c
     ${_KS_ROOT}/src/kernel/main.c
     ${_KS_ROOT}/src/kernel/klog.c
-    ${_KS_ROOT}/src/kernel/mod/mod_core.c
+    ${_KS_ROOT}/src/kernel/common/mod/mod_core.c
     ${_KS_ROOT}/src/kernel/mm/page.c
     ${_KS_ROOT}/src/kernel/mm/kmem.c
     ${_KS_ROOT}/src/kernel/proc/proc.c

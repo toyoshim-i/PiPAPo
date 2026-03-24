@@ -24,9 +24,9 @@
 #include <stddef.h>
 
 #include "../blkdev/blkdev.h"
-#include "../errno.h"
-#include "../spinlock.h" /* SPIN_FS */
-#include "../mod/mod_vfs.h"
+#include "../common/errno.h"
+#include "../common/spinlock.h" /* SPIN_FS */
+#include "../common/mod/mod_vfs.h"
 #include "klog.h"
 #include "ufs_format.h"
 

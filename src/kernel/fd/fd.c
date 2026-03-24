@@ -6,7 +6,7 @@
 
 #include "fd.h"
 
-#include "../errno.h"
+#include "../common/errno.h"
 #include "file.h"
 #include "tty.h"
 

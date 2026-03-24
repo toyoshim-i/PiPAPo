@@ -16,7 +16,7 @@
 #include "proc/sched.h"
 #include "fd/fd.h"
 #include "fd/tty.h"
-#include "mod/mod_vfs.h"
+#include "common/mod/mod_vfs.h"
 #include "syscall/syscall.h"
 #include "signal/signal.h"
 #ifdef PPAP_HAS_BLKDEV

@@ -25,7 +25,7 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "../errno.h"
+#include "../common/errno.h"
 #include "../proc/proc.h" /* current->cwd for relative path resolution */
 #include "vfs.h"
 

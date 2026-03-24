@@ -62,7 +62,7 @@ int sos_parse_header(const uint8_t *file, uint32_t size, sos_header_t *hdr) {
 #include "kernel/fd/fd.h"
 #include "kernel/signal/signal.h"
 #include "kernel/syscall/syscall.h"
-#include "kernel/mod/mod_vfs.h"
+#include "kernel/common/mod/mod_vfs.h"
 
 static void sos_trace_before(uint32_t abi, uint32_t nr, z80_state_t *cpu) {
   (void)trace_before_subsys(abi, nr, z80_af(cpu), z80_bc(cpu), z80_de(cpu),

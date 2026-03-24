@@ -11,7 +11,7 @@
 
 #include <stddef.h>
 
-#include "../errno.h"
+#include "../common/errno.h"
 #include "../fd/file.h"
 #include "../proc/proc.h"
 #include "syscall.h"

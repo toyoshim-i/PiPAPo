@@ -22,7 +22,7 @@
 
 #include "arch/arch.h"
 #include "drivers/uart.h"
-#include "spinlock.h"
+#include "common/spinlock.h"
 
 /* ── Mirror output sink ──────────────────────────────────────────────────── */
 

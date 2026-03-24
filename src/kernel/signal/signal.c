@@ -25,7 +25,7 @@
 
 #include <stddef.h>
 
-#include "../errno.h"
+#include "../common/errno.h"
 #include "../proc/proc.h"
 #include "../proc/sched.h"
 #include "../subsys/subsys.h"

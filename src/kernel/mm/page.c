@@ -20,7 +20,7 @@
 #include <stddef.h>
 
 #include "../klog.h"
-#include "../spinlock.h"
+#include "../common/spinlock.h"
 
 /* ── Linker-provided symbols ────────────────────────────────────────────────
  */

@@ -12,7 +12,7 @@
 #include "exec.h"
 #include "kernel/cpu/ecpu_m68k.h"
 #include "kernel/endian.h"
-#include "kernel/errno.h"
+#include "kernel/common/errno.h"
 #include "kernel/mm/page.h"
 #include "kernel/subsys/ppap_m68k_bridge.h"
 #include "kernel/subsys/subsys.h"

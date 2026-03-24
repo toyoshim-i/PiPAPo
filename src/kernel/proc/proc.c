@@ -16,7 +16,7 @@
 
 #include "../klog.h"
 #include "../mm/page.h"  /* PAGE_SIZE — for proc_setup_stack */
-#include "../spinlock.h" /* SPIN_PROC */
+#include "../common/spinlock.h" /* SPIN_PROC */
 #include "arch/arch.h"   /* arch_build_initial_frame */
 #include "arch/ioregs.h"
 #include "sched.h" /* sched_get_ticks — for start_time */

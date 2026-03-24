@@ -16,7 +16,7 @@
 
 #include <stdint.h>
 
-#include "../errno.h"
+#include "../common/errno.h"
 #include "../fd/fd.h"
 #include "../fd/file.h"
 #include "../fd/tty.h"

@@ -10,7 +10,7 @@
 
 #include <stdint.h>
 
-#include "../errno.h"
+#include "../common/errno.h"
 #include "blkdev.h"
 
 static const uint8_t *flat_base;

@@ -12,7 +12,7 @@
 
 #include "fstab.h"
 
-#include "../mod/mod_vfs.h"
+#include "../common/mod/mod_vfs.h"
 #ifdef PPAP_HAS_BLKDEV
 #include "../blkdev/blkdev.h"
 #include "../blkdev/loopback.h"
@@ -21,7 +21,7 @@
 #endif
 #include <stddef.h>
 
-#include "../errno.h"
+#include "../common/errno.h"
 #include "../klog.h"
 #include "../syscall/syscall.h"
 #include "devfs.h"

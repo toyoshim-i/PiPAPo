@@ -22,8 +22,8 @@
 
 #include <stddef.h>
 
-#include "../errno.h"
-#include "../mod/mod_vfs.h"
+#include "../common/errno.h"
+#include "../common/mod/mod_vfs.h"
 #include "config.h"
 #include "romfs_format.h"
 

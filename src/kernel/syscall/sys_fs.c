@@ -29,7 +29,7 @@
 #include "../fs/tmpfs.h"
 #include "../mm/kmem.h"
 #include "../proc/proc.h"
-#include "../mod/mod_vfs.h"
+#include "../common/mod/mod_vfs.h"
 #include "syscall.h"
 #ifdef PPAP_HAS_BLKDEV
 #include "../blkdev/blkdev.h"
@@ -39,7 +39,7 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "../errno.h"
+#include "../common/errno.h"
 #include "config.h"
 
 /* ── File object pool ────────────────────────────────────────────────────────

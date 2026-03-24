@@ -20,7 +20,7 @@
 
 #include "ramblk.h"
 
-#include "../errno.h"
+#include "../common/errno.h"
 #include "../mm/page.h"
 #include "blkdev.h"
 

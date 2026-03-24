@@ -6,7 +6,7 @@
 
 #include <stdint.h>
 
-#include "../errno.h"
+#include "../common/errno.h"
 #include "../proc/proc.h"
 #include "../proc/sched.h"
 #include "config.h"

@@ -18,7 +18,7 @@
 
 #include "config.h"
 #include "drivers/i2c.h"
-#include "kernel/spinlock.h"
+#include "kernel/common/spinlock.h"
 #include "target/pico1calc/pico1calc.h"
 #include "target/rpico.h"
 

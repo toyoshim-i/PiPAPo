@@ -17,7 +17,7 @@
 #include "common/fcntl.h"
 #include "common/stat.h"
 #include "h68k_util.h"
-#include "kernel/errno.h"
+#include "kernel/common/errno.h"
 #include "kernel/exec/exec.h"
 #include "kernel/klog.h"
 #include "kernel/mm/page.h"

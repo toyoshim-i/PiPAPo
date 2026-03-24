@@ -14,7 +14,7 @@
 
 #include "common/fcntl.h"
 #include "kernel/cpu/ecpu_m68k.h"
-#include "kernel/errno.h"
+#include "kernel/common/errno.h"
 #include "kernel/subsys/h68k_util.h"
 #include "kernel/syscall/syscall.h"
 

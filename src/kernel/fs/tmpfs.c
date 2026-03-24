@@ -17,9 +17,9 @@
 
 #include <stddef.h>
 
-#include "../errno.h"
+#include "../common/errno.h"
 #include "../mm/page.h"
-#include "../mod/mod_vfs.h"
+#include "../common/mod/mod_vfs.h"
 #include "config.h"
 
 /* ── Inode structure ──────────────────────────────────────────────────── */

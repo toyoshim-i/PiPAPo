@@ -20,7 +20,7 @@
 
 #include <stdint.h>
 
-#include "../spinlock.h" /* core_id() — needed by #define current */
+#include "../common/spinlock.h" /* core_id() — needed by #define current */
 #include "common/ptrace.h"
 #include "config.h"
 

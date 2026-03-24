@@ -8,7 +8,7 @@
 
 #include "utest.h"
 #include "kernel/exec/elf.h"
-#include "kernel/errno.h"
+#include "kernel/common/errno.h"
 #include <stdint.h>
 #include <stddef.h>
 

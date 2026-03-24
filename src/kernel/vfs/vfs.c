@@ -17,10 +17,10 @@
 
 #include <stddef.h>
 
-#include "../errno.h"
-#include "../mod/mod_core.h"
+#include "../common/errno.h"
+#include "../common/mod/mod_core.h"
 #include "../mm/kmem.h" /* kmem_pool_t type — functions via mod_core */
-#include "../spinlock.h" /* SPIN_VFS */
+#include "../common/spinlock.h" /* SPIN_VFS */
 
 /* ── Static storage ─────────────────────────────────────────────────────────
  */
@@ -255,7 +255,7 @@ mount_entry_t *vfs_find_mount(const char *path, const char **remainder) {
 
 /* ── Module definition ─────────────────────────────────────────────────── */
 
-#include "../mod/mod_vfs.h"
+#include "../common/mod/mod_vfs.h"
 
 MOD_DEFINE_BEGIN(vfs)
   MOD_IMPL(vfs, init)

@@ -11,7 +11,7 @@
 #ifndef PPAP_KERNEL_FS_TMPFS_H
 #define PPAP_KERNEL_FS_TMPFS_H
 
-#include "../mod/mod_vfs.h"
+#include "../common/mod/mod_vfs.h"
 
 extern const vfs_ops_t tmpfs_ops;
 

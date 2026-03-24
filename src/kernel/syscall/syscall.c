@@ -22,9 +22,9 @@
 
 #include <stdint.h>
 
-#include "../errno.h"
+#include "../common/errno.h"
 #include "../proc/proc.h"
-#include "../mod/mod_vfs.h"
+#include "../common/mod/mod_vfs.h"
 #include "common/ptrace.h"
 
 /* SIGCHLD — needed for clone() fast-path detection */

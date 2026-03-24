@@ -13,7 +13,7 @@
 
 #include "exec.h"
 #include "kernel/endian.h"
-#include "kernel/errno.h"
+#include "kernel/common/errno.h"
 #include "kernel/mm/page.h"
 #include "kernel/subsys/subsys.h"
 #include "loader.h"

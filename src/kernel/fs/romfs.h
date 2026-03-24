@@ -9,7 +9,7 @@
 #ifndef PPAP_KERNEL_FS_ROMFS_H
 #define PPAP_KERNEL_FS_ROMFS_H
 
-#include "../mod/mod_vfs.h"
+#include "../common/mod/mod_vfs.h"
 
 /* FS operations table — pass to vfs_mount() as the ops parameter */
 extern const vfs_ops_t romfs_ops;

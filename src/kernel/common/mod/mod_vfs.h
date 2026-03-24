@@ -11,9 +11,9 @@
  * through the vfs_ops_t vtable.
  *
  * Usage:
- *   Callers:          #include "mod/mod_vfs.h"
+ *   Callers:          #include "common/mod/mod_vfs.h"
  *   Implementation:   #define MOD_IMPLEMENTATION
- *                     #include "mod/mod_vfs.h"
+ *                     #include "common/mod/mod_vfs.h"
  *
  * Implementation: src/kernel/vfs/vfs.c, src/kernel/vfs/namei.c
  */
@@ -22,7 +22,7 @@
 #define PPAP_KERNEL_MOD_MOD_VFS_H
 
 /* Full VFS type definitions */
-#include "../vfs/vfs_types.h"
+#include "../../vfs/vfs_types.h"
 
 #include "module.h"
 

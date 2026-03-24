@@ -17,7 +17,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "../errno.h"
+#include "../common/errno.h"
 #include "../proc/proc.h"
 #include "../proc/sched.h"
 #include "../syscall/syscall.h"

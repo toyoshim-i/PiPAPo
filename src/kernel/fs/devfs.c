@@ -14,7 +14,7 @@
 
 #include "devfs.h"
 
-#include "../mod/mod_vfs.h"
+#include "../common/mod/mod_vfs.h"
 #ifdef PPAP_HAS_BLKDEV
 #include "../blkdev/blkdev.h"
 #include "../blkdev/loopback.h"
@@ -23,7 +23,7 @@
 #include <stdint.h>
 
 #include "../../drivers/uart.h"
-#include "../errno.h"
+#include "../common/errno.h"
 
 /* ── Device node descriptor ──────────────────────────────────────────────── */
 

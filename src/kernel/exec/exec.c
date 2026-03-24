@@ -12,10 +12,10 @@
 #include <string.h>
 
 #include "arch/arch.h"
-#include "kernel/errno.h"
+#include "kernel/common/errno.h"
 #include "kernel/mm/page.h"
 #include "kernel/signal/signal.h"
-#include "kernel/mod/mod_vfs.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "loader.h"
 
 /* ── Contiguous page allocation helper ─────────────────────────────────── */

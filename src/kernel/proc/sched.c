@@ -21,7 +21,7 @@
 #include "../fd/tty.h"  /* tty_rx_notify */
 #include "../mm/page.h" /* PAGE_SIZE */
 #include "../signal/signal.h"
-#include "../spinlock.h" /* SPIN_PROC */
+#include "../common/spinlock.h" /* SPIN_PROC */
 #include "arch/arch.h"
 #include "arch/ioregs.h"
 

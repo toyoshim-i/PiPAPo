@@ -30,12 +30,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../errno.h"
+#include "../common/errno.h"
 #include "../mm/page.h"
 #include "../proc/proc.h"
 #include "../proc/sched.h"
 #include "../subsys/subsys.h"
-#include "../mod/mod_vfs.h"
+#include "../common/mod/mod_vfs.h"
 #include "config.h"
 
 /* ── Minimal integer-to-string formatter ────────────────────────────────────

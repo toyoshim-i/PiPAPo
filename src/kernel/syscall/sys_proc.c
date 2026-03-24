@@ -13,7 +13,7 @@
 #include "../../target/target.h"
 #include "../cpu/ecpu_m68k.h"
 #include "../cpu/ecpu_z80.h"
-#include "../errno.h"
+#include "../common/errno.h"
 #include "../exec/exec.h"
 #include "../fd/fd.h"
 #include "../klog.h"

@@ -9,8 +9,8 @@
  */
 
 #include "mod_core.h"
-#include "../klog.h"
-#include "../mm/kmem.h"
+#include "../../klog.h"
+#include "../../mm/kmem.h"
 
 mod_core_t mod_core = {
   .klog = klog,

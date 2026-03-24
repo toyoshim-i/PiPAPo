@@ -27,7 +27,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../errno.h"           /* ENOTTY, EINTR */
+#include "../common/errno.h"           /* ENOTTY, EINTR */
 #include "../proc/proc.h"       /* proc_table, PROC_MAX, PROC_FREE */
 #include "../proc/sched.h"      /* sched_wakeup, sched_yield */
 #include "../signal/signal.h"   /* SIGINT */

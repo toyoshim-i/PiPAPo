@@ -35,7 +35,7 @@ for mod in $MODULES; do
   violations=$(grep -rn "\"${mod}/\|\"\.\./${mod}/" \
     "$KERNEL_DIR/" --include="*.c" --include="*.h" 2>/dev/null \
     | grep -v "$KERNEL_DIR/${mod}/" \
-    | grep -v "$KERNEL_DIR/mod/" || true)
+    | grep -v "$KERNEL_DIR/common/mod/" || true)
 
   if [ -n "$violations" ]; then
     echo "BOUNDARY VIOLATION: files outside ${mod}/ include its internal headers:"

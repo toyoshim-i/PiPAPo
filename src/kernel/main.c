@@ -17,7 +17,7 @@
 #include "proc/proc.h"
 #include "proc/sched.h"
 #include "target/target.h"
-#include "mod/mod_vfs.h"
+#include "common/mod/mod_vfs.h"
 #ifdef PPAP_HAS_BLKDEV
 #include "blkdev/blkdev.h"
 #include "blkdev/loopback.h"
@@ -25,9 +25,9 @@
 #include "arch/arch.h"
 #include "cpu/cpu.h"
 #include "cpu/smp.h"
-#include "errno.h"
+#include "common/errno.h"
 #include "exec/exec.h"
-#include "spinlock.h"
+#include "common/spinlock.h"
 #include "subsys/subsys.h"
 
 /* Linker-provided romfs image location in flash */

@@ -117,7 +117,7 @@ set(ARCH_I16_SOURCES
 set(KERNEL_CORE_SOURCES
   ${PPAP_ROOT}/src/kernel/main.c
   ${PPAP_ROOT}/src/kernel/klog.c
-  ${PPAP_ROOT}/src/kernel/mod/mod_core.c
+  ${PPAP_ROOT}/src/kernel/common/mod/mod_core.c
   ${PPAP_ROOT}/src/kernel/mm/page.c
   ${PPAP_ROOT}/src/kernel/mm/kmem.c
   ${PPAP_ROOT}/src/kernel/proc/proc.c
