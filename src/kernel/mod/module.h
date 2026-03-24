@@ -28,6 +28,18 @@
 #define _MOD_CONCAT2(a, b) a##_##b
 #define _MOD_CONCAT(a, b)  _MOD_CONCAT2(a, b)
 
+/*
+ * MOD_STATIC — use on module function definitions to enforce the
+ * module boundary.  On 32-bit, functions are static (only accessible
+ * via the module struct).  On i16, functions must be extern (direct
+ * calls from other translation units).
+ */
+#if !defined(__ia16__)
+#define MOD_STATIC static
+#else
+#define MOD_STATIC
+#endif
+
 #endif /* PPAP_KERNEL_MOD_MODULE_H */
 
 /*
