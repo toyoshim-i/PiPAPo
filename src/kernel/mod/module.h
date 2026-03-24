@@ -1,24 +1,20 @@
 /*
  * module.h — Kernel module system macros
  *
- * Defines MOD_DECLARE_BEGIN, MOD_FUNC, MOD_DECLARE_END differently
- * depending on whether MOD_IMPLEMENTATION is defined:
+ * Platform-agnostic module boundaries for the PPAP kernel.
  *
- *   Without MOD_IMPLEMENTATION (callers):
- *     MOD_DECLARE_BEGIN → opens typedef struct
- *     MOD_FUNC          → function pointer field
- *     MOD_DECLARE_END   → closes struct + extern
+ * Declaration (in mod/mod_<name>.h):
+ *   MOD_DECLARE_BEGIN(name) / MOD_FUNC(...) / MOD_DECLARE_END(name)
  *
- *   With MOD_IMPLEMENTATION (the .c file):
- *     MOD_DECLARE_BEGIN → opens struct initializer
- *     MOD_FUNC          → .field = prefixed_func,
- *     MOD_DECLARE_END   → closes initializer
+ * Definition (in the module's .c file):
+ *   MOD_DEFINE_BEGIN(name) / MOD_IMPL(mod, func) / MOD_DEFINE_END()
  *
- * Module headers write the MOD_FUNC list ONCE.  The header self-includes
- * to run the list a second time in implementation mode when
- * MOD_IMPLEMENTATION is defined.
+ * On 32-bit: struct of function pointers.
+ *   Callers use mod_<name>.<func>(args).
  *
- * On i16, all macros expand to plain extern declarations or no-ops.
+ * On i16: plain extern declarations.
+ *   Callers use <name>_<func>(args) directly.
+ *   When i16 exceeds 64 KB, MOD_FUNC will generate far-call thunks.
  */
 
 #ifndef PPAP_KERNEL_MOD_MODULE_H
@@ -28,65 +24,14 @@
 #define _MOD_CONCAT2(a, b) a##_##b
 #define _MOD_CONCAT(a, b)  _MOD_CONCAT2(a, b)
 
-/*
- * MOD_STATIC — use on module function definitions to enforce the
- * module boundary.  On 32-bit, functions are static (only accessible
- * via the module struct).  On i16, functions must be extern (direct
- * calls from other translation units).
- */
-#if !defined(__ia16__)
-#define MOD_STATIC static
-#else
-#define MOD_STATIC
-#endif
-
-#endif /* PPAP_KERNEL_MOD_MODULE_H */
-
-/*
- * Macro definitions below are OUTSIDE the include guard.
- * They are redefined each time module.h is included.
- */
-
-#undef MOD_DECLARE_BEGIN
-#undef MOD_FUNC
-#undef MOD_DECLARE_END
-
-#ifdef _MOD_IMPL_PHASE
-
-/* ── Implementation phase: struct initializer ─────────────────────────── */
-
 #if !defined(__ia16__)
 
-#define MOD_DECLARE_BEGIN(name) \
-  mod_##name##_t mod_##name = {
-
-/* .field = mod_field, — maps unprefixed field to prefixed function */
-#define MOD_FUNC(mod, ret, func, ...) \
-    .func = _MOD_CONCAT(mod, func),
-
-#define MOD_DECLARE_END(name) \
-  };
-
-#else /* i16 implementation — no-op */
-
-#define MOD_DECLARE_BEGIN(name)
-#define MOD_FUNC(mod, ret, func, ...)
-#define MOD_DECLARE_END(name)
-
-#endif
-
-#undef _MOD_IMPL_PHASE
-
-#else /* !_MOD_IMPL_PHASE */
-
-/* ── Declaration phase: struct typedef + extern ───────────────────────── */
-
-#if !defined(__ia16__)
+/* ── 32-bit: struct of function pointers ──────────────────────────────── */
 
 #define MOD_DECLARE_BEGIN(name) \
   typedef struct mod_##name##_s {
 
-/* Unprefixed field name inside struct — no conflict */
+/* Unprefixed field name inside struct */
 #define MOD_FUNC(mod, ret, func, ...) \
     ret (*func)(__VA_ARGS__);
 
@@ -94,15 +39,34 @@
   } mod_##name##_t; \
   extern mod_##name##_t mod_##name;
 
-#else /* i16 declaration — extern functions with prefixed names */
+/* Definition: struct initializer */
+#define MOD_DEFINE_BEGIN(name) \
+  mod_##name##_t mod_##name = {
+
+/* Maps unprefixed field to prefixed real function: .init = vfs_init */
+#define MOD_IMPL(mod, func) \
+    .func = _MOD_CONCAT(mod, func),
+
+#define MOD_DEFINE_END() \
+  };
+
+#else /* __ia16__ */
+
+/* ── i16: plain extern declarations ───────────────────────────────────── */
 
 #define MOD_DECLARE_BEGIN(name)
 
+/* Generates prefixed extern: void vfs_init(void); */
 #define MOD_FUNC(mod, ret, func, ...) \
   ret _MOD_CONCAT(mod, func)(__VA_ARGS__);
 
 #define MOD_DECLARE_END(name)
 
-#endif
+/* No-op on i16 (functions linked directly) */
+#define MOD_DEFINE_BEGIN(name)
+#define MOD_IMPL(mod, func)
+#define MOD_DEFINE_END()
 
-#endif /* _MOD_IMPL_PHASE */
+#endif /* __ia16__ */
+
+#endif /* PPAP_KERNEL_MOD_MODULE_H */

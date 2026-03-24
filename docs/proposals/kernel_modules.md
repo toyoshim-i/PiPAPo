@@ -128,62 +128,140 @@ contains only `.text` and `.rodata`.
 
 ### Directory Structure and Visibility
 
-Each module owns a subdirectory under `src/kernel/`.  Headers inside
-a module directory are **private** — only source files within the same
-directory may include them.  The public interface is exposed through
-`src/kernel/mod/mod_<name>.h`.
+Each module owns a subdirectory under `src/kernel/`.  Communication
+between modules is **only** through `src/kernel/mod/mod_<name>.h`.
 
 ```
 src/kernel/
   mod/
-    module.h        ← module system macros
+    module.h        ← module system macros (MOD_FUNC etc.)
     mod_vfs.h       ← public VFS interface (11 functions)
     mod_exec.h      ← public exec interface (future)
     mod_signal.h    ← public signal interface (future)
   vfs/
     vfs.h           ← PRIVATE: types + internal declarations
-    vfs.c           ← MOD_STATIC functions + MOD_IMPLEMENTATION
-    namei.c         ← internal, can include vfs.h directly
+    vfs.c           ← function definitions + MOD_DEFINE
+    namei.c         ← internal, includes vfs.h directly
   exec/
     exec.h          ← PRIVATE
     exec.c          ← ...
-  ...
+  common/           ← shared utilities (errno.h, string.h, stdint.h)
 ```
 
-**Rule:** Files outside `src/kernel/vfs/` MUST NOT `#include "vfs/vfs.h"`.
-They include `mod/mod_vfs.h` instead.  This is enforced by a compile-time
-validator (CMake custom target or pre-commit hook) that greps for
-cross-boundary includes and fails the build.
+### Boundary Rules
 
-**Enforcement mechanism:**
+Two strict rules, enforced by a compile-time validator:
+
+1. **Inward rule:** Files outside `vfs/` MUST NOT include headers
+   inside `vfs/` (e.g. `vfs/vfs.h`).  They use `mod/mod_vfs.h`.
+
+2. **Outward rule:** Files inside `vfs/` MUST NOT include headers
+   inside other module directories (e.g. `exec/exec.h`).  They use
+   `mod/mod_exec.h`.
+
+**Allowed includes from any module:**
+- `mod/mod_*.h` — public module interfaces
+- `common/*` or standard headers — shared utilities
+- Headers within the same module directory
+
+This makes each module self-contained.  Dependencies between modules
+are explicit and documented in the `mod/mod_*.h` headers.
+
+### Module Header Pattern
+
+`mod/mod_<name>.h` uses `MOD_FUNC` macros to declare the API surface.
+The module .c file has a separate `MOD_DEFINE` section that wires
+functions into the struct.  No self-include tricks — the function
+list appears in `mod_<name>.h` (declaration) and the .c file
+(definition) separately.
+
+```c
+// mod/mod_vfs.h — declaration
+MOD_DECLARE_BEGIN(vfs)
+  MOD_FUNC(vfs, void, init, void)
+  MOD_FUNC(vfs, int,  mount, const char *, ...)
+MOD_DECLARE_END(vfs)
+
+// vfs/vfs.c — definition (at bottom)
+#include "../mod/mod_vfs.h"
+MOD_DEFINE_BEGIN(vfs)
+  MOD_IMPL(vfs, init)
+  MOD_IMPL(vfs, mount)
+MOD_DEFINE_END()
+```
+
+On 32-bit, callers use `mod_vfs.init()`.
+On i16, callers use `vfs_init()` (direct call, same binary).
+
+When i16 exceeds 64 KB, the i16 MOD_FUNC generates far-call thunks
+instead of plain extern declarations.  The thunk code lives in the
+caller's segment and performs `lcall` to the target module's segment:
+
+```nasm
+; Auto-generated thunk for vfs_init (caller segment)
+_vfs_init_thunk:
+    lcall $VFS_SEG, $vfs_init_offset
+    ret
+```
+
+### Enforcement Script
 
 ```bash
-# scripts/check_module_boundaries.sh (run by CMake or pre-commit)
-# Fails if any file outside vfs/ includes vfs/vfs.h
-for mod in vfs exec signal; do
-  violations=$(grep -rn "\"${mod}/${mod}.h\"" src/kernel/ \
+#!/bin/bash
+# scripts/check_module_boundaries.sh
+# Validates that module directories only communicate via mod/ headers.
+
+MODULES="vfs exec signal subsys proc mm fd fs blkdev cpu"
+ERRORS=0
+
+for mod in $MODULES; do
+  dir="src/kernel/${mod}"
+  [ -d "$dir" ] || continue
+
+  # Rule 1: no external file includes headers from this module dir
+  external=$(grep -rn "\"${mod}/\|\"\.\./${mod}/" src/kernel/ \
     --include="*.c" --include="*.h" \
-    | grep -v "src/kernel/${mod}/")
-  if [ -n "$violations" ]; then
-    echo "ERROR: cross-module include of ${mod}/${mod}.h:"
-    echo "$violations"
-    exit 1
+    | grep -v "src/kernel/${mod}/" \
+    | grep -v "src/kernel/mod/")
+  if [ -n "$external" ]; then
+    echo "BOUNDARY: files outside ${mod}/ include its internal headers:"
+    echo "$external"
+    ERRORS=$((ERRORS + 1))
   fi
+
+  # Rule 2: files inside this module don't include other module internals
+  for other in $MODULES; do
+    [ "$other" = "$mod" ] && continue
+    internal=$(grep -rn "\"${other}/\|\"\.\./${other}/" \
+      "src/kernel/${mod}/" \
+      --include="*.c" --include="*.h" 2>/dev/null)
+    if [ -n "$internal" ]; then
+      echo "BOUNDARY: ${mod}/ includes ${other}/ internal headers:"
+      echo "$internal"
+      ERRORS=$((ERRORS + 1))
+    fi
+  done
 done
+
+if [ $ERRORS -gt 0 ]; then
+  echo "Found $ERRORS boundary violation(s)"
+  exit 1
+fi
+echo "Module boundaries OK"
 ```
 
-**MOD_STATIC:** Module functions defined with `MOD_STATIC` are `static`
-on 32-bit platforms (only accessible via the module struct) and extern
-on i16 (direct calls needed).  This enforces the boundary at link time:
-any direct call to a `MOD_STATIC` function from outside the module is
-a compile error.
+### Migration Plan
 
-Migration order:
-1. Move callers from `vfs.h` to `mod/mod_vfs.h`
-2. Mark module functions `MOD_STATIC` in the .c file
-3. Move internal-only declarations from `vfs.h` into the .c files
-   or a `vfs_internal.h`
-4. Add boundary checker to CMake / CI
+For each module (starting with VFS):
+
+1. Create `mod/mod_<name>.h` with MOD_FUNC declarations ✓ (done for VFS)
+2. Add MOD_DEFINE in the module's .c file
+3. Migrate external callers: replace `#include "../vfs/vfs.h"` with
+   `#include "../mod/mod_vfs.h"`, change `vfs_init()` to `mod_vfs.init()`
+4. Move shared types (vnode_t, vfs_ops_t) into mod_vfs.h or a
+   separate `mod/vfs_types.h` so external callers don't need vfs.h
+5. Run boundary checker — zero violations
+6. Repeat for next module
 
 ### Module Header Pattern
 
@@ -232,14 +310,14 @@ At ~58 KB, the module split becomes mandatory.
 ### Phased Rollout
 
 **Phase 1 (P-4a):** ✓ Done.  module.h macros + mod_vfs.h with 11
-functions (8 VFS + 3 vnode lifecycle).  Self-include pattern for
-single-source declaration + definition.  MOD_STATIC defined.
+functions (8 VFS + 3 vnode lifecycle).
 
 **Phase 2 (P-4a.2):** Migrate VFS callers.
 - Move external callers from `vfs/vfs.h` to `mod/mod_vfs.h`
-- Mark module functions `MOD_STATIC` in vfs.c
-- Add boundary enforcement script to CMake
-- Move internal declarations to `vfs_internal.h`
+- Change call sites: `vfs_init()` → `mod_vfs.init()` (32-bit)
+- Move shared types into mod_vfs.h so callers don't need vfs.h
+- Add MOD_DEFINE block in vfs.c (explicit, no self-include)
+- Add boundary enforcement script
 
 **Phase 3 (P-4b):** Add exec module with flat binary loader.
 - `mod/mod_exec.h`: do_execve, proc_create, proc_free

@@ -29,8 +29,6 @@ typedef struct vnode vnode_t;
 struct mount_entry;
 typedef struct mount_entry mount_entry_t;
 
-#endif /* PPAP_KERNEL_MOD_MOD_VFS_H */
-
 #include "module.h"
 
 MOD_DECLARE_BEGIN(vfs)
@@ -161,13 +159,4 @@ MOD_DECLARE_BEGIN(vfs)
 
 MOD_DECLARE_END(vfs)
 
-/*
- * When MOD_IMPLEMENTATION is defined, re-include this file in
- * implementation mode to generate the struct initializer from
- * the same MOD_FUNC list above.
- */
-#ifdef MOD_IMPLEMENTATION
-#undef MOD_IMPLEMENTATION
-#define _MOD_IMPL_PHASE
-#include "mod_vfs.h"
-#endif
+#endif /* PPAP_KERNEL_MOD_MOD_VFS_H */
