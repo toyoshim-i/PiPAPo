@@ -791,58 +791,53 @@ Changes to existing files:
 
 ### 9.2 Stage1 (512 B, boot sector at 0x7C00)
 
-```nasm
-; stage1.asm — loaded by BIOS at 0x7C00
-    cli
-    xor  ax, ax
-    mov  ds, ax
-    mov  ss, ax
-    mov  sp, 0x7C00       ; Stack below stage1 (grows down)
-    sti
+Implemented in `src/target/ibmpc/boot/stage1.S`.
 
-    ; Read stage2 from floppy sectors 1–8 (4 KB) into 0x0800
-    mov  ax, 0x0080       ; ES:BX = 0x0000:0x8000
-    mov  es, ax
-    xor  bx, bx
-    mov  ah, 02h          ; BIOS read sectors
-    mov  al, 8            ; 8 sectors × 512 = 4 KB
-    mov  ch, 0            ; Cylinder 0
-    mov  cl, 2            ; Sector 2 (1-based; sector 1 is boot sector)
-    mov  dh, 0            ; Head 0
-    ; DL = drive number (preserved from BIOS)
-    int  13h
-    jc   error
+1. BIOS loads sector 0 to 0x7C00, jumps here.
+2. Sets up segments (DS=ES=SS=0), stack at 0x7C00.
+3. Prints "Pi" via BIOS INT 10h (progressive banner).
+4. Reads 8 sectors (stage2) from floppy to 0xC000 via INT 13h.
+5. Passes boot drive in DL, jumps to 0x0000:0xC000.
 
-    ; Jump to stage2
-    jmp  0x0080:0x0000    ; Far jump to 0x00800
-```
+Includes BPB (BIOS Parameter Block) at offset 3–61 for 1.44 MB format.
 
-Stage1 must include the BPB (BIOS Parameter Block) at offset 3–61 for
-the BIOS to recognise the floppy format.
+### 9.3 Stage2 (up to 4 KB at 0xC000)
 
-### 9.3 Stage2 (up to 4 KB at 0x0800)
+Implemented in `src/target/ibmpc/boot/stage2.c` + `stage2_entry.S`.
 
-Stage2 is written in C with an assembly entry stub.  It:
+1. Prints "PA" (banner continues).
+2. Reads UFS superblock from floppy sector 9 (start of UFS partition).
+3. Walks directory: root → `/boot/` → `/boot/kernel`.
+4. Loads kernel directly to 0x0600 (linked address) via INT 13h.
+   Supports both direct blocks (10 × 4 KB = 40 KB) and indirect
+   blocks (for kernels >40 KB).
+5. Far jumps to kernel at 0x0000:0x0600.
 
-1. Detects available memory (INT 12h).
-2. Reads the UFS superblock from the floppy (offset after boot area).
-3. Finds `/boot/kernel` in the UFS root directory.
-4. Loads the kernel binary sequentially into 0x10000 (CS segment 0x1000).
-5. Patches the IVT:
-   - Saves BIOS vectors that PPAP will preserve (INT 10h, INT 13h, INT 16h).
-   - Installs PPAP vectors: INT 08h (timer), INT 30h (syscall).
-6. Far jumps to kernel entry point at 0x1000:0x0000.
+**Floppy layout** (1.44 MB, 2880 × 512 B sectors):
+
+| Sectors | Contents |
+|---------|----------|
+| 0 | Stage1 boot sector (512 B) |
+| 1–8 | Stage2 UFS loader (4 KB) |
+| 9+ | UFS partition with `/boot/kernel` |
+
+Assembled by `scripts/mkpcimg.sh` using `tools/mkufs/mkufs`.
 
 ### 9.4 Kernel Entry (kmain)
 
-Same pattern as all PPAP targets:
+Implemented in `src/arch/i16/boot.S` → `src/kernel/main.c`.
+
+boot.S sets DS=ES=SS=0, zeroes BSS, sets SP to `__stack_top`, calls
+kmain(). The kernel follows the standard PPAP boot sequence:
 
 ```c
 void kmain(void) {
-    target_early_init();    /* PIT 100Hz, PIC setup, BIOS console */
-    page_init();            /* Pages from 0x30000 to top of conventional RAM */
-    target_late_init();     /* Mount floppy UFS as root */
-    execve("/sbin/init");
+    target_early_init();    /* UART + BIOS console, prints "Po booting..." */
+    mm_init();              /* Page pool from __page_pool_start to 640 KB */
+    proc_init();            /* Process table (8 slots) */
+    vfs_init();             /* VFS + file pool */
+    target_late_init();     /* PIT 100 Hz timer */
+    sched_start();          /* Enable interrupts, enter idle loop */
 }
 ```
 
@@ -850,7 +845,7 @@ void kmain(void) {
 
 ## 9.5 Memory Layout by Boot Stage
 
-### Stage1 running (0x7C00)
+### Stage1 running (loaded by BIOS at 0x7C00)
 
 ```
 0x00000-0x003FF  IVT (256 vectors × 4 bytes, BIOS-owned)
@@ -860,31 +855,38 @@ void kmain(void) {
 0x07C00          Stack (grows down from 0x7C00, below stage1)
 ```
 
-### Stage2 running (0x0800)
+Stage1 prints "Pi" (progressive banner), loads 8 sectors (stage2) from
+floppy to 0xC000 via INT 13h, and jumps there.
+
+### Stage2 running (loaded by stage1 at 0xC000)
 
 ```
 0x00000-0x004FF  IVT + BIOS Data Area (preserved)
-0x00500-0x007FF  Free
-0x00800-0x017FF  Stage2 code + data (up to 4 KB)
-0x01800-0x027FF  BUF — UFS metadata scratch buffer (4 KB)
-0x02800-0x037FF  IBUF — indirect block scratch buffer (4 KB)
-0x03800-0x07BFF  Free (available for temp kernel load, but small)
-0x07C00          Stack (grows down from 0x7C00)
-0x10000-0x1FFFF  Kernel load area (segment 0x1000, up to 64 KB)
-                 ← stage2 loads kernel here via INT 13h with ES=0x1000
+0x00500-0x005FF  Free
+0x00600-0x0BFFF  Kernel load area (loaded directly to linked address)
+0x0C000          Stack (grows down from 0xC000, below stage2)
+0x0C000-0x0CFFF  Stage2 code + data (up to 4 KB)
+0x0D000-0x0DFFF  BUF — UFS metadata scratch buffer (4 KB)
+0x0E000-0x0EFFF  IBUF — indirect block scratch buffer (4 KB)
 ```
 
-Stage2 loads the kernel to 0x1000:0x0000 (linear 0x10000) to avoid
-overwriting stage2 code, buffers, or the stack.  After loading, stage2
-copies the kernel down to 0x0600 (its linked address) and jumps there.
+Stage2 prints "PA", reads the UFS filesystem on the floppy (sector 9+),
+finds `/boot/kernel`, and loads it directly to 0x0600 — no relocation
+needed since stage2 is above the kernel at 0xC000.  Supports indirect
+blocks (kernels >40 KB).  Then jumps to 0x0000:0x0600.
 
-### Kernel running (0x0600)
+**Key constraint**: stage2 + buffers must be above the kernel end
+(currently 0x0600 + 46 KB = 0xBC2E).  Stage2 at 0xC000 satisfies this.
+
+### Kernel running (linked at 0x0600)
 
 ```
-0x00000-0x003FF  IVT (kernel installs INT 08h timer, INT 30h syscall)
+0x00000-0x003FF  IVT (kernel installs INT 08h timer)
 0x00400-0x005FF  BIOS Data Area + free gap
-0x00600-0x0????  Kernel .text + .rodata + .data + .bss + stack
-                 Must fit in < 64 KB total (near pointers, DS=0)
+0x00600          Kernel .text.entry (boot.S: _start)
+  ...            .text (~42 KB), .rodata, .data (~0.5 KB)
+  ...            .bss (~5.8 KB, includes proc_table ~4.3 KB)
+  ...            Stack (2 KB)
 0x?????          __page_pool_start (4 KB-aligned, after stack)
   ...  -0x9FBFF  Page pool (conventional RAM ceiling - EBDA)
 0x9FC00-0x9FFFF  EBDA (1 KB, preserved)
@@ -892,10 +894,14 @@ copies the kernel down to 0x0600 (its linked address) and jumps there.
 0xC0000-0xFFFFF  ROM / BIOS
 ```
 
+Kernel prints "Po booting... [ibmpc]" — completing the progressive
+banner "PiPAPo booting..." across all three stages.
+
 ### Size Constraint
 
 The kernel binary (text + rodata + data) plus BSS and stack must fit
-between 0x0600 and 0xFFFF (~63 KB).  Current P-3b core kernel:
+between 0x0600 and 0xFFFF (~63 KB) due to 16-bit near pointer limit.
+Current P-3b core kernel:
 
 | Component | Size |
 |-----------|------|
@@ -905,86 +911,115 @@ between 0x0600 and 0xFFFF (~63 KB).  Current P-3b core kernel:
 | stack     | 2 KB |
 | **Total** | **~50 KB** |
 
-This leaves ~13 KB headroom.  As kernel features grow (VFS modules,
-exec, subsystems), the kernel will exceed 64 KB.  At that point, the
-module system (see `docs/proposals/kernel_modules.md`) splits the
+This leaves ~13 KB headroom.  As kernel features grow (exec loader,
+additional subsystems), the kernel will exceed 64 KB.  At that point,
+the module system (see `docs/proposals/kernel_modules.md`) splits the
 kernel into multiple code segments, each ≤64 KB, sharing one data
 segment (DS=0).
+
+Stage2 must also stay above the kernel end — if the kernel grows past
+~48 KB, stage2's address (currently 0xC000) may need to increase.
 
 ---
 
 ## 10. Implementation Phases
 
-### Phase P-1: Target Skeleton and BIOS Console
+### Phase P-1: Target Skeleton and BIOS Console ✓
 
-**Goal**: "PiPAPo booting... [ibmpc]" on screen and COM1.
+**Status**: Complete.
 
-1. Create `src/arch/i8086/` with minimal boot.S, trap.S, switch.S.
-2. Create `src/target/ibmpc/` with linker script and target hooks.
-3. Console via BIOS INT 10h (teletype) + 8250 UART polling output.
-4. Test in 86Box or PCem emulator with a flat binary loaded manually.
+- `src/arch/i16/` — arch dispatch headers, boot.S, cpu.h (inb/outb)
+- `src/target/ibmpc/` — target hooks, linker script, BIOS + UART drivers
+- Boot sector at 0x7C00, COM1 serial + BIOS INT 10h console
+- Docker toolchain: `ppap/ia16` image with ia16-elf-gcc + QEMU i386
+- `./scripts/run.sh ibmpc` runs on QEMU via Docker
 
-**Verification**: Kernel banner visible on emulator screen and serial log.
+### Phase P-2: Timer and Context Switch ✓
 
-### Phase P-2: Timer and Context Switch
+**Status**: Complete.
 
-**Goal**: Preemptive scheduler works; `sleep` and `waitpid` timeout functional.
+- PIT Channel 0 at 100 Hz (mode 3, divisor 11932)
+- 8259A PIC: BIOS-initialized, unmask IRQ 0 only
+- switch.S: timer ISR saves 9 regs + FLAGS/CS/IP (24-byte frame),
+  flag-driven context switch (m68k/RISC-V pattern)
+- Standalone scheduler with two test processes printing A/B
 
-1. PIT Channel 0 at 100 Hz.
-2. 8259A PIC configuration (unmask IRQ 0).
-3. Context switch via timer ISR.
-4. `test_time` and `test_sleep_intr` pass.
+### Phase P-3a: Two-Stage Bootstrap ✓
 
-**Verification**: Multiple processes scheduled and switched correctly.
+**Status**: Complete.
 
-### Phase P-3: Stage1/Stage2 Bootstrap and Floppy Image
+- stage1.S: 512 B boot sector with BPB, loads stage2 to 0xC000
+- stage2.c: UFS reader (direct + indirect blocks), loads kernel
+  directly to 0x0600, supports kernels >40 KB
+- mkpcimg.sh: assembles 1.44 MB floppy (stage1 + stage2 + UFS)
+- Progressive banner: stage1 "Pi" + stage2 "PA" + kernel "Po booting..."
 
-**Goal**: PPAP boots entirely from a floppy image.
+### Phase P-3b: Full Kernel Integration ✓
 
-1. Write boot sector (stage1) with BPB and INT 13h loader.
-2. Write stage2 with UFS parser (C code, similar to X68000 stage2).
-3. `mkpcfloppy` tool produces bootable `.IMG`.
-4. Boot in 86Box from the `.IMG` file.
+**Status**: Complete (kernel boots to idle).
 
-**Verification**: Full boot from floppy image to shell prompt.
+- Full PPAP kernel compiles with ia16-elf-gcc (46 KB binary)
+- Shared kernel changes: `uint32_t` → `uintptr_t` for address fields
+  in page.h/c, proc.h/c, sched.c, sys_mem.c (all arches benefit)
+- `__ia16__` arch guards in spinlock.h, cpu.h, cpu_native.c, sched.c,
+  proc.h, page.h, loader.c, sys_proc.c
+- Minimal string.c (memset/memcpy/strlen/strcmp etc. — no libc)
+- Kernel boots: MM init, proc table, VFS, CPU, PIT timer, scheduler
+- klog MM output shows wrong values (32-bit format on 16-bit — cosmetic)
 
-### Phase P-4: Integration Tests
+**Not yet working**: user-space exec (needs module system for code >64 KB),
+signal delivery (stub), ELF loader (disabled for i16).
 
-**Goal**: `runtests` passes on emulator.
+### Phase P-4: Kernel Module System (next)
 
-1. All core tests (exec, vfork, pipe, signal, etc.) pass.
-2. Add `--test ibmpc` to `run.sh`.
+**Goal**: Split kernel into code-segment modules to exceed 64 KB limit.
+
+The kernel is currently 46 KB of the 63 KB budget.  Adding exec, signal
+delivery, and filesystem features will push it past 64 KB.  The module
+system (`docs/proposals/kernel_modules.md`) introduces `MOD_DECLARE` /
+`MOD_DEFINE` macros that generate:
+- Function pointer structs on 32-bit platforms (zero overhead)
+- Far-call jump tables on i16 (modules in separate code segments)
+
+Phased rollout:
+1. Define MOD macros, convert VFS as first module
+2. Add exec module (flat .COM binary loader)
+3. Add subsystems module (eCPU, bridges)
+
+### Phase P-5: User-Space Exec and Tests
+
+**Goal**: Load and run flat binaries, `runtests` passes.
+
+1. .COM-style flat binary loader (no ELF — 16-bit binaries)
+2. INT 30h syscall trap handler (trap.S)
+3. Signal delivery for i16
+4. `--test ibmpc` in run.sh
 
 **Verification**: "ALL TESTS PASSED" in serial log.
 
-### Phase P-5: V30 8080 Mode eCPU
+### Phase P-6: V30 8080 Mode eCPU
 
 **Goal**: CP/M-80 programs run on V30 hardware 8080 mode.
 
 1. Implement `ecpu_8080_v30.c` — BRKEM/RETEM wrappers.
-2. CP/M memory layout in a dedicated segment (RETEM at 0x0005).
-3. Adapt `cpm_bridge.c` to read 8080 register state from x86 registers.
-4. Test with 8080-clean CP/M programs (ED, PIP, STAT, DDT, MBASIC).
-5. `test_cpm` passes with hardware 8080 backend.
+2. CP/M memory layout in a dedicated segment.
+3. Test with 8080-clean CP/M programs (ED, PIP, STAT, DDT, MBASIC).
 
 **Verification**: MBASIC runs, prints output, exits cleanly.
 
-### Phase P-6: DOS Subsystem
+### Phase P-7: DOS Subsystem
 
 **Goal**: MS-DOS .COM programs run with INT 21h bridge.
 
 1. Implement `dos_loader.c` — .COM and .EXE loading.
 2. Implement `dos_bridge.c` — core INT 21h functions (~20 initially).
 3. PSP construction, drive letter mapping.
-4. Test with simple DOS .COM programs.
 
 **Verification**: "Hello, world" DOS .COM runs and prints output.
 
-### Phase P-7: Real Hardware
+### Phase P-8: Real Hardware
 
 **Goal**: PPAP boots on physical V30 hardware (PC/XT or compatible).
-
-Expected issues and mitigations:
 
 | Issue | Mitigation |
 |-------|-----------|
