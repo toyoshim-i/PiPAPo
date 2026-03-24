@@ -28,9 +28,17 @@
 #define MOD_DECLARE_BEGIN(name) \
   typedef struct mod_##name##_s {
 
-/* Unprefixed field name inside struct — no name conflicts */
+/* Unprefixed field name inside struct — no name conflicts.
+ * When PPAP_MOD_FAR is defined (i16 segment split active),
+ * __far generates 32-bit segment:offset pointers and lcall.
+ * Otherwise near pointers (same segment, normal call). */
+#if defined(PPAP_MOD_FAR)
+#define MOD_FUNC(mod, ret, func, ...) \
+    ret __far (*func)(__VA_ARGS__);
+#else
 #define MOD_FUNC(mod, ret, func, ...) \
     ret (*func)(__VA_ARGS__);
+#endif
 
 #define MOD_DECLARE_END(name) \
   } mod_##name##_t; \
