@@ -126,29 +126,95 @@ Each module's `.data` and `.bss` are linked into the shared data
 segment, not into the module's own code segment. The code segment
 contains only `.text` and `.rodata`.
 
-### Impact on Existing Code
+### Directory Structure and Visibility
 
-**Minimal.** The change is:
-1. Add `mod/mod_*.h` headers with `MOD_DECLARE` for each subsystem
-2. Add `MOD_DEFINE` in each subsystem's main .c file
-3. Change cross-subsystem calls from `vfs_open(...)` to
-   `mod_vfs.open(...)` (or keep the old names as macros)
+Each module owns a subdirectory under `src/kernel/`.  Headers inside
+a module directory are **private** — only source files within the same
+directory may include them.  The public interface is exposed through
+`src/kernel/mod/mod_<name>.h`.
 
-On 32-bit platforms, `MOD_DECLARE` generates a struct of function
-pointers. The indirect call is the same pattern already used for
-`vfs_ops_t`, `cpu_ops`, etc. — no performance regression.
+```
+src/kernel/
+  mod/
+    module.h        ← module system macros
+    mod_vfs.h       ← public VFS interface (11 functions)
+    mod_exec.h      ← public exec interface (future)
+    mod_signal.h    ← public signal interface (future)
+  vfs/
+    vfs.h           ← PRIVATE: types + internal declarations
+    vfs.c           ← MOD_STATIC functions + MOD_IMPLEMENTATION
+    namei.c         ← internal, can include vfs.h directly
+  exec/
+    exec.h          ← PRIVATE
+    exec.c          ← ...
+  ...
+```
+
+**Rule:** Files outside `src/kernel/vfs/` MUST NOT `#include "vfs/vfs.h"`.
+They include `mod/mod_vfs.h` instead.  This is enforced by a compile-time
+validator (CMake custom target or pre-commit hook) that greps for
+cross-boundary includes and fails the build.
+
+**Enforcement mechanism:**
+
+```bash
+# scripts/check_module_boundaries.sh (run by CMake or pre-commit)
+# Fails if any file outside vfs/ includes vfs/vfs.h
+for mod in vfs exec signal; do
+  violations=$(grep -rn "\"${mod}/${mod}.h\"" src/kernel/ \
+    --include="*.c" --include="*.h" \
+    | grep -v "src/kernel/${mod}/")
+  if [ -n "$violations" ]; then
+    echo "ERROR: cross-module include of ${mod}/${mod}.h:"
+    echo "$violations"
+    exit 1
+  fi
+done
+```
+
+**MOD_STATIC:** Module functions defined with `MOD_STATIC` are `static`
+on 32-bit platforms (only accessible via the module struct) and extern
+on i16 (direct calls needed).  This enforces the boundary at link time:
+any direct call to a `MOD_STATIC` function from outside the module is
+a compile error.
+
+Migration order:
+1. Move callers from `vfs.h` to `mod/mod_vfs.h`
+2. Mark module functions `MOD_STATIC` in the .c file
+3. Move internal-only declarations from `vfs.h` into the .c files
+   or a `vfs_internal.h`
+4. Add boundary checker to CMake / CI
+
+### Module Header Pattern
+
+Each module header (`mod/mod_*.h`) serves as both declaration and
+definition, controlled by `MOD_IMPLEMENTATION`:
+
+```c
+// Callers: just include
+#include "mod/mod_vfs.h"
+
+// Implementation: define flag, then include (same header)
+#define MOD_IMPLEMENTATION
+#include "mod/mod_vfs.h"
+```
+
+The header uses `_MOD_IMPL_PHASE` to self-include in implementation
+mode, so the `MOD_FUNC` list is written exactly once.  Per-function
+documentation is part of the module header.
 
 ### Build System
 
 **32-bit targets (ARM, m68k, RISC-V, Xtensa):**
-Link everything into one binary as today. `MOD_DEFINE` creates a
-static struct. No separate compilation needed.
+Link everything into one binary as today.  The module struct is
+initialized at compile time.  `MOD_STATIC` functions are inlined
+or optimized to direct calls by the compiler.
 
 **i16 target:**
-Each module is compiled and linked as a separate flat binary with its
-own linker script (`. = 0x0000`, module-internal addressing). The
-`mkpcimg.sh` script places them at the right linear addresses.
-CMakeLists.txt builds N+1 targets: core + one per module.
+Currently all in one binary (46 KB).  When the kernel exceeds 64 KB,
+each module is compiled and linked as a separate flat binary with its
+own linker script.  `mkpcimg.sh` places them at paragraph-aligned
+addresses.  CMakeLists.txt builds N+1 targets: core + one per module.
 
 ### Current Status
 
@@ -165,27 +231,38 @@ At ~58 KB, the module split becomes mandatory.
 
 ### Phased Rollout
 
-**Phase 1 (P-4a):** Define MOD_DECLARE/MOD_DEFINE macros.
-Convert VFS as the first module boundary.  On 32-bit platforms this
-is a no-op (struct of function pointers).  On i16, VFS moves to its
-own code segment.
+**Phase 1 (P-4a):** ✓ Done.  module.h macros + mod_vfs.h with 11
+functions (8 VFS + 3 vnode lifecycle).  Self-include pattern for
+single-source declaration + definition.  MOD_STATIC defined.
 
-**Phase 2 (P-4b):** Add exec module with flat .COM binary loader.
-Far-call wrappers for do_execve, proc_create.
+**Phase 2 (P-4a.2):** Migrate VFS callers.
+- Move external callers from `vfs/vfs.h` to `mod/mod_vfs.h`
+- Mark module functions `MOD_STATIC` in vfs.c
+- Add boundary enforcement script to CMake
+- Move internal declarations to `vfs_internal.h`
 
-**Phase 3 (P-4c):** Add subsystems module (eCPU, bridges).
-Optional — only loaded if present on the floppy.
+**Phase 3 (P-4b):** Add exec module with flat binary loader.
+- `mod/mod_exec.h`: do_execve, proc_create, proc_free
+- Exec functions become `MOD_STATIC`
+
+**Phase 4 (P-4c):** Add signal + subsystems modules.
+- `mod/mod_signal.h`: signal delivery, sigreturn
+- `mod/mod_subsys.h`: eCPU registration, bridge dispatch
 
 ### Design Decisions
 
-**Type safety:** On 32-bit platforms, `MOD_DECLARE` generates `static
-inline` wrappers that provide compile-time type checking. On i16, the
-wrappers are omitted (plain far-call macros) since ia16-elf-gcc 6.3.0
-may not optimize them away. Type correctness is verified by the 32-bit
-builds; i16 relies on those results.
+**Type safety:** On 32-bit, `MOD_FUNC` generates struct fields with
+full type signatures.  The implementation's `MOD_STATIC` functions
+must match exactly — any mismatch is a compile error.  On i16,
+`MOD_FUNC` generates extern declarations with prefixed names.
+
+**Naming:** Struct fields are unprefixed (`init`, `mount`,
+`alloc_vnode`).  Real function names are prefixed (`vfs_init`,
+`vfs_mount`, `vfs_alloc_vnode`).  The `MOD_FUNC(vfs, void, init, ...)`
+macro handles the mapping.
 
 **Module count:** ~4 API surfaces:
-- mod_vfs (filesystem ops)
+- mod_vfs (VFS operations + vnode lifecycle, 11 functions)
 - mod_exec (process creation + loading)
 - mod_signal (signal delivery)
 - mod_subsys (eCPU + bridges)
