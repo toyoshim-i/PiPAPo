@@ -85,7 +85,7 @@ CFLAGS="$CFLAGS -ffunction-sections -fdata-sections"
 # Rogue uses autoconf-style HAVE_CONFIG_H
 CFLAGS="$CFLAGS -DHAVE_CONFIG_H"
 # Suppress upstream warnings we can't fix
-CFLAGS="$CFLAGS -Wall -Wno-bool-operation -Wno-misleading-indentation -Wno-unused-variable"
+CFLAGS="$CFLAGS -Wall -Wno-bool-operation -Wno-misleading-indentation -Wno-unused-variable -std=gnu11"
 
 # Rogue source files (all .c except xcrypt.c)
 ROGUE_SRCS=(
@@ -169,8 +169,17 @@ OBJS+=("$ROGUE_OUT/obj/curses.o")
 # which overrides specs startfile/endfile).  -pie emits relocations
 # for exec.c to patch at load time.
 echo "rogue [$PPAP_ARCH]: linking..."
-$PPAP_CC $PPAP_TARGET_FLAGS \
-    -pie \
+LINK_FLAGS="$PPAP_TARGET_FLAGS"
+if [[ -n "${PPAP_PIE_FLAG:-}" ]]; then
+    LINK_FLAGS="$LINK_FLAGS $PPAP_PIE_FLAG"
+elif [[ "$PPAP_ARCH" != "riscv" ]]; then
+    LINK_FLAGS="$LINK_FLAGS -pie"
+fi
+# RISC-V bare-metal: use --emit-relocs instead of -pie
+if [[ "$PPAP_ARCH" == "riscv" && -z "${PPAP_PIE_FLAG:-}" ]]; then
+    LINK_FLAGS="$LINK_FLAGS -Wl,--emit-relocs -Wl,--no-relax"
+fi
+$PPAP_CC $LINK_FLAGS \
     -specs="$PPAP_SPECS_FILE" \
     -T "$PPAP_BUSYBOX_LD" \
     -Wl,--gc-sections \
@@ -178,7 +187,8 @@ $PPAP_CC $PPAP_TARGET_FLAGS \
     -o "$ROGUE_OUT/rogue.elf"
 
 # --- Strip ---
-$PPAP_STRIP -s -o "$ROGUE_OUT/rogue" "$ROGUE_OUT/rogue.elf"
+# --strip-unneeded keeps .rela sections needed by the ELF loader
+$PPAP_STRIP --strip-unneeded -o "$ROGUE_OUT/rogue" "$ROGUE_OUT/rogue.elf"
 
 # --- Summary ---
 echo ""

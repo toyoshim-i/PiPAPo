@@ -565,7 +565,9 @@ function(_ppap_build_user_programs)
     endif()
 
     # --- R68K user tests (Human68k DOS call tests) ---
-    if(PPAP_TESTS)
+    # Requires m68k cross-compiler; skip when not available (e.g. Docker
+    # containers that only have the target arch's toolchain).
+    if(PPAP_TESTS AND EXISTS ${PPAP_M68K_CC})
         set(_r68k_dir ${PPAP_ROOT}/tests/user/r68k)
         ppap_r68k_program(test_dos_basic ${_r68k_dir}/test_dos_basic.S)
         ppap_r68k_program(test_dos_mem   ${_r68k_dir}/test_dos_mem.S)
