@@ -18,8 +18,8 @@
 #include <stddef.h>
 
 #include "../errno.h"
-#include "../klog.h"
-#include "../mm/kmem.h"
+#include "../mod/mod_core.h"
+#include "../mm/kmem.h" /* kmem_pool_t type — functions via mod_core */
 #include "../spinlock.h" /* SPIN_VFS */
 
 /* ── Static storage ─────────────────────────────────────────────────────────
@@ -44,9 +44,9 @@ void vfs_init(void) {
   mount_count = 0;
 
   /* Initialise the vnode slab pool */
-  kmem_pool_init(&vnode_pool, vnode_storage, sizeof(vnode_t), VFS_VNODE_MAX);
+  mod_core.kmem_pool_init(&vnode_pool, vnode_storage, sizeof(vnode_t), VFS_VNODE_MAX);
 
-  klogf("VFS: initialised (%u vnodes, %u mount slots)\n",
+  mod_core.klogf("VFS: initialised (%u vnodes, %u mount slots)\n",
         (uint32_t)VFS_VNODE_MAX, (uint32_t)VFS_MOUNT_MAX);
 }
 
@@ -55,7 +55,7 @@ void vfs_init(void) {
 
 vnode_t *vfs_alloc_vnode(void) {
   uint32_t saved = spin_lock_irqsave(SPIN_VFS);
-  vnode_t *vn = kmem_alloc(&vnode_pool);
+  vnode_t *vn = mod_core.kmem_alloc(&vnode_pool);
   if (!vn) {
     spin_unlock_irqrestore(SPIN_VFS, saved);
     return NULL;
@@ -84,11 +84,11 @@ void vfs_rel_vnode(vnode_t *vn) {
   if (!vn) return;
   uint32_t saved = spin_lock_irqsave(SPIN_VFS);
   if (vn->refcnt > 0) vn->refcnt--;
-  if (vn->refcnt == 0) kmem_free(&vnode_pool, vn);
+  if (vn->refcnt == 0) mod_core.kmem_free(&vnode_pool, vn);
   spin_unlock_irqrestore(SPIN_VFS, saved);
 }
 
-uint32_t vnode_free_count(void) { return kmem_free_count(&vnode_pool); }
+uint32_t vnode_free_count(void) { return mod_core.kmem_free_count(&vnode_pool); }
 
 /* ── vfs_mount ──────────────────────────────────────────────────────────────
  */
@@ -191,10 +191,10 @@ int vfs_umount(const char *path) {
 
   /* Release root vnode and deactivate.
    * Note: vfs_rel_vnode() also acquires SPIN_VFS, but we already hold it.
-   * Use kmem_free() directly to avoid recursive lock. */
+   * Use mod_core.kmem_free() directly to avoid recursive lock. */
   if (mnt->root) {
     if (mnt->root->refcnt > 0) mnt->root->refcnt--;
-    if (mnt->root->refcnt == 0) kmem_free(&vnode_pool, mnt->root);
+    if (mnt->root->refcnt == 0) mod_core.kmem_free(&vnode_pool, mnt->root);
   }
   mnt->root = NULL;
   mnt->active = 0;
@@ -202,7 +202,7 @@ int vfs_umount(const char *path) {
 
   spin_unlock_irqrestore(SPIN_VFS, saved);
 
-  klogf("VFS: unmounted %s\n", path);
+  mod_core.klogf("VFS: unmounted %s\n", path);
 
   return 0;
 }
