@@ -357,8 +357,8 @@ elif [[ "$TARGET" == "ibmpc" ]]; then
         QEMU_ARGS=(-machine pc -cpu 486 -m 1M -serial mon:stdio
                    -drive "file=$ELF,format=raw,if=floppy")
     else
-        # Docker: serial only (no display)
-        QEMU_ARGS=(-machine pc -cpu 486 -m 1M -display none -serial mon:stdio
+        # Docker: no graphical display, serial + VGA text on stdio
+        QEMU_ARGS=(-machine pc -cpu 486 -m 1M
                    -drive "file=$ELF,format=raw,if=floppy")
     fi
     ELF=""  # already passed via -drive, clear so run_qemu doesn't add -kernel
@@ -434,11 +434,9 @@ if [[ $DO_TEST -eq 1 ]]; then
         TIMEOUT=180
     fi
     echo "[test] Running on-target tests (timeout ${TIMEOUT}s)..."
-    TEST_DISPLAY=(-nographic)
-    if [[ "$TARGET" == "ibmpc" ]]; then TEST_DISPLAY=(); fi
     OUTPUT=$(timeout "$TIMEOUT" run_qemu \
         "${QEMU_ARGS[@]}" \
-        "${TEST_DISPLAY[@]+"${TEST_DISPLAY[@]}"}" 2>&1 || true)
+        -nographic 2>&1 || true)
 
     echo "$OUTPUT"
 
@@ -463,11 +461,7 @@ fi
 
 # ── Run interactively ──────────────────────────────────────────────────────
 echo "[run] Running ${ELF:-$TARGET} ..."
-# ibmpc already specifies -display none; other targets use -nographic
 DISPLAY_ARGS=(-nographic)
-if [[ "$TARGET" == "ibmpc" ]]; then
-    DISPLAY_ARGS=()
-fi
 run_qemu \
     "${QEMU_ARGS[@]}" \
     "${DISPLAY_ARGS[@]+"${DISPLAY_ARGS[@]}"}" \

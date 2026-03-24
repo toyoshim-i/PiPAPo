@@ -1,12 +1,16 @@
 # =============================================================================
-# IBM PC target (i16, 8086 real mode) -- Phase P-2
+# IBM PC target (i16, 8086 real mode) -- Phase P-3a
 # =============================================================================
 #
-# Standalone scheduler with PIT timer and preemptive context switching.
-# Does NOT link the full kernel yet (P-3).
+# Three-part build:
+#   1. stage1 — 512 B boot sector (stage1.S)
+#   2. stage2 — UFS loader (stage2_entry.S + stage2.c), up to 4 KB
+#   3. kernel — P-2 standalone scheduler (boot.S + switch.S + target code)
+#
+# Post-build: mkpcimg.sh assembles the floppy image.
 #
 # Toolchain: ia16-elf-gcc (16-bit x86 cross-compiler)
-# Output: flat binary ppap_ibmpc.img suitable for QEMU -kernel or floppy boot
+# Output: ppap_ibmpc.img (1.44 MB bootable floppy)
 # =============================================================================
 
 cmake_minimum_required(VERSION 3.13)
@@ -15,13 +19,11 @@ cmake_minimum_required(VERSION 3.13)
 
 set(PPAP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../..")
 
-# Check Docker path first, then local tools path, then system PATH
 if(EXISTS "/opt/ppap/ia16-elf/bin/ia16-elf-gcc")
   set(IA16_TC "/opt/ppap/ia16-elf")
 elseif(EXISTS "${PPAP_ROOT}/tools/ia16-toolchain/usr/bin/ia16-elf-gcc")
   set(IA16_TC "${PPAP_ROOT}/tools/ia16-toolchain/usr")
 else()
-  # Assume ia16-elf-gcc is on PATH
   set(IA16_TC "")
 endif()
 
@@ -43,8 +45,6 @@ set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
 project(ppap_ibmpc C ASM)
 
-# -- Compiler flags ---------------------------------------------------------
-
 set(COMMON_FLAGS
   -march=i8086
   -mtune=i8086
@@ -55,28 +55,66 @@ set(COMMON_FLAGS
   -Wno-unused-parameter
 )
 
-# -- Sources ----------------------------------------------------------------
+# ==========================================================================
+# Target 1: stage1 (boot sector, 512 bytes)
+# ==========================================================================
 
-set(ARCH_I16_SOURCES
+add_executable(stage1
+  ${CMAKE_CURRENT_SOURCE_DIR}/boot/stage1.S
+)
+target_compile_options(stage1 PRIVATE -march=i8086 -ffreestanding)
+target_link_options(stage1 PRIVATE
+  -nostartfiles -nostdlib
+  -T ${CMAKE_CURRENT_SOURCE_DIR}/boot/stage1.ld
+)
+set_target_properties(stage1 PROPERTIES SUFFIX ".elf")
+
+add_custom_command(TARGET stage1 POST_BUILD
+  COMMAND ${CMAKE_OBJCOPY} -O binary
+    $<TARGET_FILE:stage1>
+    ${CMAKE_CURRENT_BINARY_DIR}/stage1.bin
+  COMMENT "Creating stage1.bin (512 B boot sector)"
+)
+
+# ==========================================================================
+# Target 2: stage2 (UFS loader, up to 4 KB)
+# ==========================================================================
+
+add_executable(stage2
+  ${CMAKE_CURRENT_SOURCE_DIR}/boot/stage2_entry.S
+  ${CMAKE_CURRENT_SOURCE_DIR}/boot/stage2.c
+)
+target_compile_options(stage2 PRIVATE ${COMMON_FLAGS})
+target_link_options(stage2 PRIVATE
+  -nostartfiles
+  -T ${CMAKE_CURRENT_SOURCE_DIR}/boot/stage2.ld
+)
+target_link_libraries(stage2 PRIVATE gcc)
+set_target_properties(stage2 PROPERTIES SUFFIX ".elf")
+
+add_custom_command(TARGET stage2 POST_BUILD
+  COMMAND ${CMAKE_OBJCOPY} -O binary
+    $<TARGET_FILE:stage2>
+    ${CMAKE_CURRENT_BINARY_DIR}/stage2.bin
+  COMMENT "Creating stage2.bin"
+)
+
+# ==========================================================================
+# Target 3: kernel (P-2 standalone scheduler)
+# ==========================================================================
+
+set(KERNEL_SOURCES
   ${PPAP_ROOT}/src/arch/i16/boot.S
   ${PPAP_ROOT}/src/arch/i16/switch.S
   ${PPAP_ROOT}/src/arch/i16/i16_common.c
   ${PPAP_ROOT}/src/arch/i16/smp.c
-)
-
-set(TARGET_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/target_ibmpc.c
   ${CMAKE_CURRENT_SOURCE_DIR}/drivers/uart_com.c
   ${CMAKE_CURRENT_SOURCE_DIR}/drivers/bios_con.c
   ${CMAKE_CURRENT_SOURCE_DIR}/drivers/timer_pit.c
 )
 
-# -- Build target -----------------------------------------------------------
-
-add_executable(ppap_ibmpc
-  ${ARCH_I16_SOURCES}
-  ${TARGET_SOURCES}
-)
+add_executable(ppap_ibmpc ${KERNEL_SOURCES})
 
 target_include_directories(ppap_ibmpc PRIVATE
   ${PPAP_ROOT}/src
@@ -87,27 +125,32 @@ target_include_directories(ppap_ibmpc PRIVATE
 target_compile_options(ppap_ibmpc PRIVATE ${COMMON_FLAGS})
 
 target_link_options(ppap_ibmpc PRIVATE
-  -T ${CMAKE_CURRENT_SOURCE_DIR}/ibmpc.ld
+  -T ${CMAKE_CURRENT_SOURCE_DIR}/ibmpc_kernel.ld
   -nostartfiles
   -Wl,--gc-sections
 )
 
 set_target_properties(ppap_ibmpc PROPERTIES
   SUFFIX ".elf"
-  LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ibmpc.ld"
+  LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ibmpc_kernel.ld"
 )
-
-# -- Flat binary output (for QEMU -kernel or floppy boot) ------------------
 
 add_custom_command(TARGET ppap_ibmpc POST_BUILD
   COMMAND ${CMAKE_OBJCOPY} -O binary
     $<TARGET_FILE:ppap_ibmpc>
     ${CMAKE_CURRENT_BINARY_DIR}/ppap_ibmpc.bin
-  # Pad to 1.44 MB floppy image with binary at sector 0
-  COMMAND dd if=/dev/zero of=${CMAKE_CURRENT_BINARY_DIR}/ppap_ibmpc.img
-    bs=512 count=2880 2>/dev/null
-  COMMAND dd if=${CMAKE_CURRENT_BINARY_DIR}/ppap_ibmpc.bin
-    of=${CMAKE_CURRENT_BINARY_DIR}/ppap_ibmpc.img
-    conv=notrunc 2>/dev/null
-  COMMENT "Creating 1.44 MB floppy image ppap_ibmpc.img"
+  COMMENT "Creating kernel binary ppap_ibmpc.bin"
 )
+
+# ==========================================================================
+# Post-build: assemble floppy image via mkpcimg.sh
+# ==========================================================================
+
+add_custom_command(TARGET ppap_ibmpc POST_BUILD
+  COMMAND ${PPAP_ROOT}/scripts/mkpcimg.sh
+  DEPENDS stage1 stage2
+  COMMENT "Assembling floppy image ppap_ibmpc.img"
+)
+
+# Ensure stage1 and stage2 are built before the kernel post-build step
+add_dependencies(ppap_ibmpc stage1 stage2)
