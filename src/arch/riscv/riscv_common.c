@@ -202,9 +202,12 @@ uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void))
     sp[1] = (uint32_t)(uintptr_t)__global_pointer$;
     /* mepc: entry point — mret jumps here */
     sp[30] = (uint32_t)(uintptr_t)entry;
-    /* mstatus: MPP=M-mode, MPIE=1 (mret sets MIE from MPIE) */
-    sp[31] = (3u << 11) | (1u << 7);
-    /* user_sp at offset 32 (= TF_USER_SP / 4) — set by caller or Phase B */
-    /* sp[32] = 0; — already zeroed */
+    /* mstatus: MPP=U-mode (0), MPIE=1 (mret sets MIE from MPIE).
+     * User processes run in U-mode; mret will drop to U-mode when MPP=0.
+     * The kernel (pid 0) stays in M-mode — its frame is built differently
+     * (sched_start sets mscratch directly, pid 0 never mrets to user). */
+    sp[31] = (0u << 11) | (1u << 7);
+    /* user_sp at offset 32 (= TF_USER_SP / 4) — set by caller */
+    /* sp[32] = 0; — already zeroed, caller sets it via proc_setup_stack */
     return sp;
 }

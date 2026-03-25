@@ -47,8 +47,15 @@ _start:
     la      t0, _trap_vector
     csrw    mtvec, t0
 
-    # ── 4. Disable interrupts ────────────────────────────────────────────
+    # ── 4. Disable interrupts, initialize mscratch ──────────────────────
     csrc    mstatus, 0x8           # clear MIE (bit 3)
+    csrw    mscratch, sp           # mscratch = __stack_top (for trap entry)
+
+    # ── 4c. PMP: allow U-mode full memory access ───────────────────────
+    li      t0, 0x1FFFFFFF         # NAPOT mask for 4GB
+    csrw    pmpaddr0, t0
+    li      t0, 0x1F               # A=NAPOT(11), R|W|X, L=0
+    csrw    pmpcfg0, t0
 
 #ifndef PPAP_QEMU
     # ── 4b. Disable watchdog (RP2350 only) ─────────────────────────────
