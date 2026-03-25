@@ -149,56 +149,59 @@ in real mode since segments are just base+offset windows.
 Stage2 (or the core kernel at boot) loads each module binary and
 records its segment value. The far-call wrappers use these values.
 
-### Isolated Segments Per Module (i16)
+### Shared Data Segment, Separate Code Segments (i16)
 
-On i16, each module has its own **isolated segment** containing both
-code AND data.  CS and DS are set to the module's segment base on
-entry.  This means:
+On i16, all modules share **DS=0** for data access.  Each module's
+code (.text) lives in its own segment (separate CS).  Cross-module
+calls use `lcall`/`lret` to switch CS; DS stays unchanged.
 
-- Each module's code + data + BSS must fit in 64 KB (its own segment)
-- Cross-module data access goes through the module interface (far
-  pointers or copy-in/copy-out), just like cross-module function calls
-- No shared global variables — all state is module-private
-- Scales indefinitely: add more modules, each gets its own 64 KB
+This means:
+- Near data pointers work across modules (same DS=0)
+- Pointer arguments passed to module functions work without
+  serialization or copying — same DS, same addresses
+- Global variables (proc_table, etc.) are accessible from all modules
+- Each module's code must fit in 64 KB (its own CS)
+- Total data+BSS from all modules must fit in 64 KB (shared DS=0)
 
-This avoids the medium model limitation (ia16-elf-ld 2.39 cannot
-link fartext sections > 64 KB) and the data segment partitioning
-problem (manually coordinating DS offsets between separately-linked
-binaries).
+Each module is compiled as a separate small-model binary.  The code
+section starts at offset 0 in its own segment.  The data/BSS sections
+are linked into the shared DS=0 address space at non-overlapping
+addresses (coordinated via the core linker script reserving space).
 
-The stub pattern switches both CS and DS on module entry:
+The stub pattern only switches CS (no DS manipulation):
 
 ```asm
 ; Caller-side stub (in caller's segment):
 vfs_init_caller_stub:
-    push ds                     ; save caller's DS
-    mov  ax, [vfs_segment]      ; load VFS segment from manager
-    mov  ds, ax                 ; switch DS to VFS
-    lcall far [vfs_init_entry]  ; far call to VFS
-    pop  ds                     ; restore caller's DS
-    ret
+    lcall *[vfs_init_fptr]      ; far call to VFS CS
+    ret                         ; near return to caller
 
 ; Target-side stub (in VFS segment):
 vfs_init_entry:
     call vfs_init               ; near call within VFS
-    lret                        ; far return to caller
+    lret                        ; far return to caller CS
 ```
 
-On 32-bit platforms, there are no segments — modules share a flat
-address space and all data is directly accessible.
+**Why not isolated DS per module?**
+- Pointer arguments would need serialization at every module call
+  (copy-in/copy-out, like microkernel IPC) — the C compiler cannot
+  access data via ES instead of DS
+- Adds significant complexity and overhead for every cross-module call
+
+**Why not medium model?**
+- ia16-elf-ld 2.39 is broken: R_386_16 overflow for fartext
+  sections, linker segfault with --noinhibit-exec
 
 ### Segment Manager
 
-A **segment manager** in the core module tracks each module's segment
-base.  Stage2 loads module binaries into memory and initializes the
-core module's segment.  After core boots, it initializes the segment
-manager and registers each additional module's segment base.
+A **segment manager** in the core module tracks each module's code
+segment base.  Stage2 loads module binaries into memory and records
+their load addresses.  The core reads this info at boot and registers
+each module's segment base.
 
 ```c
-/* Core segment is set by stage2 (before segment manager exists) */
-/* Other modules register at boot: */
-seg_register(MOD_VFS,  vfs_linear_addr >> 4);
-seg_register(MOD_EXEC, exec_linear_addr >> 4);
+seg_register(MOD_ID_VFS,  vfs_segment);
+seg_register(MOD_ID_EXEC, exec_segment);
 ```
 
 Far-call stubs look up segment values from the manager table at
