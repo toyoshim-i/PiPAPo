@@ -29,14 +29,8 @@ uint32_t *arch_build_initial_frame(uint32_t *sp_arg, void (*entry)(void))
 
   /* Hardware interrupt frame (popped by IRET) */
   *--sp = 0x0200;                     /* FLAGS: IF=1 (interrupts enabled) */
-  /* In medium model (-mcmodel=medium), function pointers are 32-bit
-   * far pointers (segment:offset). Extract CS and IP for IRET frame. */
-  {
-    union { void (*fn)(void); struct { uint16_t off; uint16_t seg; } p; } u;
-    u.fn = entry;
-    *--sp = u.p.seg;   /* CS */
-    *--sp = u.p.off;   /* IP */
-  }
+  *--sp = 0x0000;                     /* CS = 0 (flat model) */
+  *--sp = (uint16_t)(uintptr_t)entry; /* IP = entry point */
 
   /* Software-saved registers (popped by ISR restore path) */
   *--sp = 0;  /* AX */
