@@ -1478,39 +1478,19 @@ long sys_vfork(uint32_t *frame) {
     }
   }
 #elif defined(__riscv)
-  /* RISC-V: The ecall trap frame (36 words) is already on the child's
-   * stack (copied from parent).  child_frame points to saved a0 in the
-   * trap frame (sp + 32).  The trap frame base is child_frame - 8.
+  /* RISC-V: The ecall trap frame (36 words) is on the child's kernel
+   * stack (copied from parent's kernel stack).  child_frame points to
+   * saved a0 in the trap frame (sp + 32).
+   *
+   * With the mscratch stack split, kernel and user stacks are separate.
+   * The child shares the parent's user_pages[] (including user stack),
+   * so no pointer relocation is needed — user stack addresses are the
+   * same in both parent and child.
    *
    * Set child's a0 = 0 (vfork return value for child). */
   child_frame[0] = 0;
 
-  /* Relocate ALL stack-page pointers in the child's copied stack.
-   *
-   * The memcpy produces a byte-for-byte copy, so saved frame pointers,
-   * return addresses in C prologues, and local pointer variables still
-   * reference the parent's page.  Without this fixup, the child's
-   * fp-relative accesses go to the parent's page — corrupting argv.
-   *
-   * Brute-force scan: every aligned word in [parent_base, +PAGE_SIZE)
-   * is shifted by delta.  False positives (integers that look like
-   * addresses) are possible but harmless — the child immediately
-   * calls execve which replaces the entire stack. */
-  {
-    uint32_t parent_base = (uint32_t)(uintptr_t)current->stack_page;
-    uint32_t child_base  = (uint32_t)(uintptr_t)stack;
-    uint32_t delta = child_base - parent_base;
-    uint32_t *words = (uint32_t *)stack;
-    uint32_t n_words = PAGE_SIZE / sizeof(uint32_t);
-
-    for (uint32_t w = 0; w < n_words; w++) {
-      if (words[w] >= parent_base && words[w] < parent_base + PAGE_SIZE)
-        words[w] += delta;
-    }
-  }
-
-  /* child->sp must point to the base of the trap frame (not child_frame).
-   * child_frame = trap_base + 32, so trap_base = child_frame - 8. */
+  /* child->sp = trap frame base on the child's kernel stack */
   child->sp = (uint32_t)(uintptr_t)(child_frame - 8);
   child->kernel_sp = (uint32_t)(uintptr_t)stack + PAGE_SIZE;
 
@@ -1760,10 +1740,12 @@ long sys_execve(const char *path, const char *const *argv) {
   if (!current->fd_table[0] && !current->fd_table[1] && !current->fd_table[2])
     fd_stdio_init(current);
 
-    /* Free old stack page.
-     * m68k / RISC-V have no MSP/PSP split — kernel runs on the process
-     * stack page.  Defer the free until trap.S switches SP to the new
-     * stack.  ARM has MSP/PSP split so it can free immediately. */
+    /* Free old kernel stack page.
+     * m68k / RISC-V: kernel runs on stack_page.  sys_execve returns
+     * through the old kernel stack before trap.S switches to the new
+     * one via exec_pending.  Defer the free until after the switch.
+     * ARM: kernel runs on MSP (separate), so PSP stack can be freed
+     * immediately. */
 #if defined(__m68k__) || defined(__riscv)
   extern volatile void *exec_old_stack;
   exec_old_stack = old_stack;
