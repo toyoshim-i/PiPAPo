@@ -751,7 +751,8 @@ src/arch/i8086/
 
 src/target/ibmpc/
   CMakeLists.txt      — Build rules, memory layout, feature flags
-  ibmpc.ld            — Linker script (CS=0x1000, DS=0x2000)
+  ibmpc_kernel.ld     — Core module linker script (DS=0, reserves VFS data)
+  ibmpc_vfs.ld        — VFS module linker script (.text at 0, .data at DS=0)
   target_ibmpc.c      — target hooks: early_init, console_init, late_init
   drivers/
     uart_8250.c       — 8250 UART driver (COM1 serial console)

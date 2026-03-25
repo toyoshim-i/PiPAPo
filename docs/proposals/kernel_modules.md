@@ -141,13 +141,13 @@ MOD_DECLARE_END(core)
 
 Inline functions (string, spinlock, arch_irq) compile into each
 module's code directly — they are NOT part of any module interface.
-For example, VFS at linear 0x07000 → CS=0x0700. No 64 KB alignment
-needed, no wasted padding. A module only needs to fit in 64 KB from
-its *own* start — overlapping with the next segment's range is fine
-in real mode since segments are just base+offset windows.
+On IBM PC, the VFS module is loaded at linear 0x10000 (CS=0x1000).
+No 64 KB alignment needed — a module only needs to fit in 64 KB
+from its own start.
 
-Stage2 (or the core kernel at boot) loads each module binary and
-records its segment value. The far-call wrappers use these values.
+Stage2 loads each module binary and records its segment value in
+a `mod_info_t` block at 0x0500.  The core reads this at boot and
+patches the far-call wrapper tables.
 
 ### Shared Data Segment, Separate Code Segments (i16)
 
@@ -365,55 +365,53 @@ documentation is part of the module header.
 ### Build System
 
 **32-bit targets (ARM, m68k, RISC-V, Xtensa):**
-Link everything into one binary as today.  The module struct is
-initialized at compile time.  `MOD_STATIC` functions are inlined
-or optimized to direct calls by the compiler.
+Link everything into one binary.  The module struct is initialized
+at compile time.  Module boundaries are enforced by the include
+checker script, not by the linker.
 
-**i16 target:**
-Currently all in one binary (46 KB).  When the kernel exceeds 64 KB,
-each module is compiled and linked as a separate flat binary with its
-own linker script.  `mkpcimg.sh` places them at paragraph-aligned
-addresses.  CMakeLists.txt builds N+1 targets: core + one per module.
+**i16 target (IBM PC):**
+Each module is a separate flat binary with its own linker script
+and code segment.  All modules share DS=0 for data.  CMakeLists.txt
+builds N+1 targets: core + one per module.  `mkpcimg.sh` packages
+them into the UFS floppy.  See `docs/proposals/pc_port.md` §9.5
+for the concrete memory layout and build steps.
 
 ### Current Status
 
-P-3b is complete: the full PPAP kernel (MM, proc, VFS, CPU, scheduler)
-compiles and boots to idle on i16.  Binary size: 46 KB of the 63 KB
-budget (13 KB headroom).
+The module system is implemented and working on all platforms:
 
-The module system is needed when adding:
-- exec loader + flat binary support (~5-10 KB)
-- signal delivery (~3-5 KB)
-- additional filesystem features (~5 KB)
+- Module macros (MOD_DECLARE/MOD_DEFINE) working
+- mod_vfs (11 functions), mod_core (6 functions), mod_exec (1 function)
+- VFS callers migrated to `mod_vfs.init()` syntax on all platforms
+- Boundary enforcement script validates no cross-module includes
+- `kernel/common/` directory for shared headers
 
-At ~58 KB, the module split becomes mandatory.
+On i16, the kernel is split into separate code segments (core 26 KB +
+VFS 27 KB).  Stage2 loads both binaries from UFS floppy.  Core boots
+and detects VFS module.  VFS far calls not yet functional (data
+segment coordination pending — see `docs/proposals/pc_port.md` §9.5
+and P-4b for details).
 
 ### Phased Rollout
 
-**Phase 1 (P-4a):** ✓ Done.  module.h macros + mod_vfs.h with 11
-functions (8 VFS + 3 vnode lifecycle).
+**P-4a:** ✓ Done.  Module macros, mod_vfs/mod_core/mod_exec headers,
+VFS caller migration to `mod_vfs.init()`, boundary enforcement,
+`kernel/common/` directory.
 
-**Phase 2 (P-4a.2):** Migrate VFS callers.
-- Move external callers from `vfs/vfs.h` to `mod/mod_vfs.h`
-- Change call sites: `vfs_init()` → `mod_vfs.init()` (32-bit)
-- Move shared types into mod_vfs.h so callers don't need vfs.h
-- Add MOD_DEFINE block in vfs.c (explicit, no self-include)
-- Add boundary enforcement script
+**P-4b (i16 only):** In progress.  Segment split — separate CS per
+module, shared DS=0.  See `docs/proposals/pc_port.md` P-4b for
+detailed done/remaining checklist.
 
-**Phase 3 (P-4b):** Add exec module with flat binary loader.
-- `mod/mod_exec.h`: do_execve, proc_create, proc_free
-- Exec functions become `MOD_STATIC`
-
-**Phase 4 (P-4c):** Add signal + subsystems modules.
+**Future:** Add more module boundaries as needed:
 - `mod/mod_signal.h`: signal delivery, sigreturn
 - `mod/mod_subsys.h`: eCPU registration, bridge dispatch
 
 ### Design Decisions
 
-**Type safety:** On 32-bit, `MOD_FUNC` generates struct fields with
-full type signatures.  The implementation's `MOD_STATIC` functions
-must match exactly — any mismatch is a compile error.  On i16,
-`MOD_FUNC` generates extern declarations with prefixed names.
+**Type safety:** `MOD_FUNC` generates struct fields with full type
+signatures on all platforms.  The implementation's functions must
+match exactly — any mismatch is a compile error.  Callers use
+`mod_vfs.init()` syntax everywhere.
 
 **Naming:** Struct fields are unprefixed (`init`, `mount`,
 `alloc_vnode`).  Real function names are prefixed (`vfs_init`,
@@ -421,11 +419,11 @@ must match exactly — any mismatch is a compile error.  On i16,
 macro handles the mapping.
 
 **Module count:** ~5 API surfaces:
-- mod_core (klog, string, memory, process — ~25 functions)
+- mod_core (klog, kmem — 6 functions currently, grows as needed)
 - mod_vfs (VFS operations + vnode lifecycle — 11 functions)
-- mod_exec (process creation + loading)
-- mod_signal (signal delivery)
-- mod_subsys (eCPU + bridges)
+- mod_exec (process creation + loading — 1 function currently)
+- mod_signal (signal delivery — future)
+- mod_subsys (eCPU + bridges — future)
 
 **API surface minimization:** Module interfaces should expose the
 smallest possible set of functions.  Start with what's needed, then
