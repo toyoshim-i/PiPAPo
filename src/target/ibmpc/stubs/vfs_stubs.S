@@ -1,15 +1,15 @@
 /*
  * vfs_stubs.S — Core-side caller stubs for VFS module functions
  *
- * These stubs live in the core module's segment. When core code calls
- * a mod_vfs function (e.g. vfs_init()), it calls these near stubs.
+ * These stubs live in the core module's code segment. When core code
+ * calls a mod_vfs function (e.g. vfs_init()), it calls these near
+ * stubs. Each stub does an indirect far call (lcall *fptr) to the
+ * VFS entry point, then returns.
  *
- * Each stub saves DS, loads the VFS segment into DS, performs an
- * indirect far call (lcall *mem) to the VFS entry point, then
- * restores DS and returns.
+ * DS is shared (DS=0) — no DS switching needed.
  *
- * The VFS segment base and entry offsets are stored in vfs_fptrs[],
- * initialized by seg_init_vfs() after stage2 loads the VFS binary.
+ * The far pointer table vfs_fptrs[] is patched at boot by
+ * target_ibmpc.c after reading the VFS module header.
  *
  * Linked into ppap_ibmpc (core binary).
  */
@@ -21,7 +21,6 @@
 
 /*
  * Far pointer table: offset:segment pairs for each VFS entry point.
- * Initialized at runtime by seg_init_vfs() in target_ibmpc.c.
  * Each entry is 4 bytes: [offset 2B][segment 2B].
  */
   .section .data
@@ -42,26 +41,12 @@ vfs_fptrs:
   .section .text
 
 /*
- * Macro: generate a caller-side stub for one VFS function.
- *
- *   1. push ds             — save core's DS
- *   2. mov ax, [fptr+2]    — load VFS segment
- *   3. mov ds, ax          — switch to VFS data segment
- *   4. lcall *[fptr]       — far call (pushes core CS:IP on stack)
- *   5. pop ds              — restore core's DS
- *   6. ret                 — return to caller
- *
- * Arguments stay on the stack. The target-side stub in VFS does
- * a near call to the real function, then lret back here.
+ * Caller stub: lcall *fptr, ret.  DS=0 shared, no switching.
  */
 .macro VFS_CALLER_STUB name, idx
   .global vfs_\name
 vfs_\name:
-  push %ds
-  mov  vfs_fptrs + \idx * 4 + 2, %ax
-  mov  %ax, %ds
   lcall *vfs_fptrs + \idx * 4
-  pop  %ds
   ret
 .endm
 

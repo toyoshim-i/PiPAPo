@@ -1,10 +1,11 @@
 /*
  * core_stubs.S — VFS-side caller stubs for core module functions
  *
- * These stubs live in the VFS module's segment. When VFS code calls
- * a mod_core function (e.g. klog()), it calls these near stubs.
+ * These stubs live in the VFS module's code segment. When VFS code
+ * calls a mod_core function (e.g. klog()), it calls these near stubs.
+ * Each stub does an indirect far call to the core entry point.
  *
- * Same pattern as vfs_stubs.S but in the reverse direction.
+ * DS is shared (DS=0) — no DS switching needed.
  *
  * Linked into ppap_ibmpc_vfs (VFS binary).
  */
@@ -30,14 +31,13 @@ core_fptrs:
 
   .section .text
 
+/*
+ * Caller stub: lcall *fptr, ret.  DS=0 shared, no switching.
+ */
 .macro CORE_CALLER_STUB name, idx
   .global \name
 \name:
-  push %ds
-  mov  core_fptrs + \idx * 4 + 2, %ax
-  mov  %ax, %ds
   lcall *core_fptrs + \idx * 4
-  pop  %ds
   ret
 .endm
 
