@@ -989,9 +989,46 @@ know about segments.
 0xA0000-0xFFFFF  Video RAM + ROM
 ```
 
-VFS data/BSS must be linked to non-overlapping addresses in DS=0.
-The core linker script reserves a range for VFS data.  The VFS
-linker script places its .data/.bss at that reserved address.
+**VFS data in shared DS=0 — concrete mechanism:**
+
+VFS data/BSS must be at known addresses in DS=0.  The VFS linker
+script links .text at offset 0 (VFS CS), but .data/.bss at a fixed
+DS=0 address (e.g. 0xA000):
+
+```ld
+/* ibmpc_vfs.ld */
+SECTIONS {
+  . = 0x0000;
+  .text   : { *(.text*) }      /* VFS code segment, offset 0 */
+  .rodata : { *(.rodata*) }    /* constants in code segment */
+
+  . = 0xA000;                  /* switch to DS=0 address space */
+  .data   : { *(.data*) }      /* VFS globals at DS:0xA000+ */
+  .bss    : { *(.bss*) }       /* VFS BSS at DS:0xA0xx+ */
+}
+```
+
+The compiler generates `mov ax, ds:[0xA0xx]` for VFS globals.
+Since DS=0 at runtime, this correctly accesses linear 0xA0xx.
+
+**Build steps:**
+1. Link VFS ELF with the above script (.text at 0, .data at 0xA000)
+2. Extract .text only: `objcopy -j .text -j .rodata -O binary` → VFS code binary
+3. Extract .data only: `objcopy -j .data -O binary` → VFS data blob
+4. Stage2 loads VFS code to 0x1000:0000 (CS=0x1000)
+5. Stage2 (or core init) copies VFS data blob to DS:0xA000
+6. Core init zeroes VFS BSS range (0xA000+data_size to 0xA000+data+bss)
+
+The core linker script reserves 0xA000-0xBFFF for VFS data (8 KB):
+
+```ld
+/* ibmpc_kernel.ld */
+  __page_pool_start = .;
+  . = 0xA000;
+  __vfs_data_reserved_start = .;
+  . += 8192;   /* 8 KB reserved for VFS .data + .bss */
+  __vfs_data_reserved_end = .;
+```
 
 Stage2 loads both `/boot/kernel` and `/boot/kernel_vfs` from the
 UFS floppy.  A `mod_info_t` block at 0x0500 tells the kernel where
