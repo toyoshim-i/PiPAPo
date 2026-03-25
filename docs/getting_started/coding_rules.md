@@ -1,4 +1,29 @@
-# PiPAPo Coding Style
+# PiPAPo Coding Rules
+
+## C Style
+
+This project follows the
+[Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html)
+with the following project-specific adjustments for embedded C:
+
+- **Language**: C11 (GNU extensions allowed for inline asm).
+- **Indentation**: 2-space indentation, no tabs in `.c`/`.h` files.
+- **Braces**: Opening brace on the same line for functions and control flow.
+- **Naming**:
+  - `snake_case` for functions, variables, and types (not `CamelCase` as in
+    Google C++ style, since this is a C project).
+  - `UPPER_CASE` for macros and constants.
+  - Typedef structs as `<name>_t` (e.g., `pcb_t`, `vfs_ops_t`).
+- **Line length**: 80 columns, strict.
+- **Comments**: Use `/* */` for block comments and `//` for single-line
+  comments. Follow Google style for comment placement and formatting.
+- **Header include order** (following Google style):
+  1. Corresponding header (e.g., `foo.c` includes `foo.h` first).
+  2. C standard library headers (`<stdint.h>`, `<string.h>`, ...).
+  3. Project headers (`"arch/arch.h"`, `"kernel/klog.h"`, ...).
+
+Where the Google C++ Style Guide and this document conflict, this document
+takes precedence.
 
 ## Header Include Guards
 
@@ -94,31 +119,6 @@ When adding a new arch- or target-specific feature:
 4. If you find existing `#ifdef` conditionals that can be replaced by this
    pattern, prefer refactoring them out.
 
-## C Style
-
-This project follows the
-[Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html)
-with the following project-specific adjustments for embedded C:
-
-- **Language**: C11 (GNU extensions allowed for inline asm).
-- **Indentation**: 2-space indentation, no tabs in `.c`/`.h` files.
-- **Braces**: Opening brace on the same line for functions and control flow.
-- **Naming**:
-  - `snake_case` for functions, variables, and types (not `CamelCase` as in
-    Google C++ style, since this is a C project).
-  - `UPPER_CASE` for macros and constants.
-  - Typedef structs as `<name>_t` (e.g., `pcb_t`, `vfs_ops_t`).
-- **Line length**: 80 columns, strict.
-- **Comments**: Use `/* */` for block comments and `//` for single-line
-  comments. Follow Google style for comment placement and formatting.
-- **Header include order** (following Google style):
-  1. Corresponding header (e.g., `foo.c` includes `foo.h` first).
-  2. C standard library headers (`<stdint.h>`, `<string.h>`, ...).
-  3. Project headers (`"arch/arch.h"`, `"kernel/klog.h"`, ...).
-
-Where the Google C++ Style Guide and this document conflict, this document
-takes precedence.
-
 ## TODO Comments
 
 Mark incomplete or temporary code with `TODO` comments so it can be found
@@ -173,3 +173,123 @@ Or via npx if clang-format is not installed system-wide:
 ```sh
 find src -name '*.c' -o -name '*.h' | grep -v third_party | xargs npx clang-format -i
 ```
+
+## Commit Messages
+
+This project uses short, scoped subjects plus clear bodies that explain
+behavior changes and how they were validated.
+
+### Structure
+
+```text
+<scope>: <one-line summary in imperative mood>
+
+<why this change is needed>
+<what changed, focusing on behavior and risks>
+<how you verified the change>
+<extra context only if needed>
+
+Co-Authored-By: <Agent name> (<model name>) [<optional valid email>]
+```
+
+### Rules
+
+- Keep the first line short and specific.
+- Leave one blank line after the subject.
+- Wrap body lines to about 72 columns.
+- Prefer "why + behavior impact" over implementation trivia.
+- Keep one logical change per commit when possible.
+
+### Subject line convention
+
+Use a scope prefix that clearly identifies the area of the change. Prefer
+specific, descriptive scopes over generic category words like `feat:` or
+`fix:`. The scope should tell the reader *what part of the system* changed
+at a glance.
+
+Examples from recent history:
+
+- `semihost: add ARM semihosting serial backend`
+- `pico2: enable SMP Core 1 launch on RP2350`
+- `signal: correct signal delivery for FPU-active processes`
+- `exec: support PIE relocation for m68k ELF binaries`
+- `romfs: fix directory traversal past end of image`
+- `build: add PPAP_ENABLE_CPM build flag`
+- `docs: update arm_m.md with RP2350 MPU details`
+- `test: add pipe stress test for large writes`
+
+General guidelines:
+
+- Pick the scope from the feature, subsystem, driver, or target name —
+  not from the type of change (avoid `feat:`, `fix:`, `refactor:` as
+  the sole scope).
+- If multiple areas are touched equally, choose the dominant behavior
+  change or use the most specific applicable scope.
+- An unscoped subject is acceptable when no single scope fits.
+
+### Body content
+
+Include the details reviewers and future maintainers need:
+
+- Previous behavior (or bug).
+- New behavior after this commit.
+- Any compatibility or regression risk.
+- Follow-up work if this is part of a larger series.
+
+Avoid:
+
+- Repeating obvious diffs ("renamed X to Y") without why.
+- Large narrative text not tied to behavior changes.
+
+### Verification
+
+Include verification details in the commit body instead of a required trailer.
+Keep it concise and concrete.
+
+Examples:
+
+```text
+Verified with ./scripts/run.sh --test qemu_arm
+Verified with ./scripts/run.sh --test qemu_m68k
+Verified by building qemu_m68k target and checking boot output
+```
+
+If tests were not run, be explicit:
+
+```text
+Not verified by running tests (docs-only change)
+```
+
+### Co-Authored-By protocol
+
+Add `Co-Authored-By:` trailers when another contributor materially helped
+create the commit (code, design, debugging, or substantial text).
+
+- Put trailers at the very end of the commit message.
+- Keep a blank line between the body and trailers.
+- One trailer line per contributor.
+
+For human contributors:
+
+```text
+Co-Authored-By: Jane Doe <jane@example.com>
+```
+
+For AI agent-assisted commits:
+
+```text
+Co-Authored-By: <Agent name> (<model name>) [<optional valid email>]
+```
+
+### Pre-commit checklist
+
+1. Does the subject describe the behavioral change clearly?
+2. Does the body explain why this change exists?
+3. Does the body include how the change was verified (or why not)?
+4. Did affected tests pass (or is there a clear reason they were not run)?
+5. Does the code follow this coding rules document?
+   In particular, check that no new `#ifdef` conditionals on arch or target
+   have been introduced — prefer per-arch/per-target implementations instead.
+6. Are affected documents updated?
+7. Are `Co-Authored-By:` trailers present when applicable?
+8. Is this commit scoped tightly enough to review easily?

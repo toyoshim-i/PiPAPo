@@ -35,6 +35,13 @@ prevent the probe from touching memory-mapped I/O.
 `PAGE_COUNT_MAX` is overridable per target via CMake `-DPAGE_COUNT_MAX=...`.
 The QEMU m68k target sets it to 3072 (12 MB).
 
+### RISC-V (QEMU virt / RP2350)
+
+Memory size is fixed at compile time per target:
+
+- `qemu_rv32`: 1 MB RAM at `0x80800000`, kernel code in ROM at `0x80000000`
+- `pico2rv`: 520 KB SRAM at `0x20000000`, kernel in XIP flash at `0x10000000`
+
 ## 2. Memory Layout
 
 ### 2.1 ARM (RP2040)
@@ -126,9 +133,11 @@ Each process owns:
 - **Heap pages** — `user_pages[N..]`, contiguous with data pages, allocated
   on demand by `sys_brk()`.
 - **Kernel stack page** — `stack_page`, one 4 KB page.  On ARM this is the
-  PSP stack; on m68k this is the per-process SSP stack.
-- **User stack page** (m68k only) — `user_stack_page`, one 4 KB page for the
-  USP (User Stack Pointer).
+  PSP stack; on m68k this is the per-process SSP stack; on RISC-V this is the
+  mscratch-based kernel stack (separate from user stack).
+- **User stack page** (m68k and RISC-V) — `user_stack_page` (m68k) or a
+  dedicated page in `user_pages[]` (RISC-V), one 4 KB page for the user
+  stack pointer.
 
 All pages come from the same global page pool.  With `PROC_MAX = 8` processes,
 a typical ARM layout might look like:
@@ -143,7 +152,8 @@ Page pool:
   [page 50]     Free
 ```
 
-On m68k, each process uses an additional page for the user stack (USP).
+On m68k and RISC-V, each process uses an additional page for the user stack
+(USP on m68k; mscratch-swapped user sp on RISC-V).
 
 ## 3. Initial Memory Allocation for a Process
 
@@ -151,8 +161,8 @@ When `do_execve()` loads an ELF binary (`src/kernel/exec/exec.c`):
 
 1. **Pre-allocate the kernel stack page** — `page_alloc()` returns one page.
    This is done first to prevent the LIFO free-stack from interfering with
-   contiguous allocation below.  On m68k, a separate user stack page is also
-   allocated here.
+   contiguous allocation below.  On m68k and RISC-V, a separate user stack
+   page is also allocated here.
 
 2. **Allocate contiguous data pages** — `alloc_contiguous(N)` scans the page
    pool from the bottom and allocates N adjacent pages for the data segment
@@ -195,10 +205,11 @@ When `do_execve()` loads an ELF binary (`src/kernel/exec/exec.c`):
 
 Limits:
 
-| Target | `USER_PAGES_MAX` | Max data + heap |
-|--------|-------------------|-----------------|
-| ARM    | 64                | 256 KB          |
-| m68k   | 512               | 2 MB            |
+| Target  | `USER_PAGES_MAX` | Max data + heap |
+|---------|-------------------|-----------------|
+| ARM     | 64                | 256 KB          |
+| m68k    | 512               | 2 MB            |
+| RISC-V  | 64                | 256 KB          |
 
 ## 5. How the Heap Grows
 
@@ -234,6 +245,8 @@ concurrent regions per process).
 - On ARM, the process stack (PSP) is a single pre-allocated page.
 - On m68k, the user stack (USP) is a single pre-allocated page, separate
   from the kernel stack.
+- On RISC-V, the user stack is a dedicated page in `user_pages[]`, separate
+  from the kernel stack (swapped via `mscratch` on trap entry/exit).
 
 There are no guard pages and no automatic stack expansion.  If a process
 overflows its stack:
@@ -242,9 +255,12 @@ overflows its stack:
   region (region 2 covers the process stack page), triggering a MemManage
   fault.
 - On m68k, the overflow silently corrupts adjacent memory.
+- On RISC-V, PMP is currently configured for full access, so overflow
+  silently corrupts adjacent memory (same as m68k).
 
-The kernel stack (MSP on ARM, SSP on m68k) is also fixed-size: 4 KB on ARM,
-16 KB on m68k.  It is shared by all interrupt and exception handlers.
+The kernel stack (MSP on ARM, SSP on m68k, mscratch-based on RISC-V) is also
+fixed-size: 4 KB on ARM, 16 KB on m68k, 4 KB on RISC-V.  It is shared by
+all interrupt and exception handlers.
 
 ## 7. Stack Pointer Usage on Interrupts and Syscalls
 
@@ -294,16 +310,45 @@ USP onto the SSP, then stores both SSP and USP in the PCB.  On restore,
 both pointers are loaded from the next process's PCB, and `rte` pops
 SR+PC to return to user mode.
 
-### 7.3 Summary
+### 7.3 RISC-V (mscratch stack split)
+
+RISC-V has a single `sp` register with no hardware stack switching.  PPAP
+implements a software kernel/user stack split using the `mscratch` CSR:
+
+| Context                | Stack Pointer  | Notes                              |
+|------------------------|----------------|------------------------------------|
+| User process (U-mode)  | user sp        | Per-process, in `user_pages[]`     |
+| Trap entry             | kernel sp      | `csrrw sp, mscratch, sp` swaps     |
+| ecall (syscall)        | kernel sp      | User sp saved in trap frame        |
+| Timer interrupt         | kernel sp      | Same swap mechanism                |
+| Context switch         | kernel sp      | Swaps PCB `sp` + updates mscratch  |
+
+On trap entry:
+1. `csrrw sp, mscratch, sp` — atomically swap user sp and kernel sp.
+2. Check `mstatus.MPP`: if 0 (U-mode), the swap was correct; if 3 (M-mode),
+   it was a nested trap — undo the swap.
+3. Save all 31 registers + mepc + mstatus + user_sp into a 144-byte trap
+   frame on the kernel stack.
+
+On trap return:
+1. If `TF_USER_SP ≠ 0`: returning to U-mode — restore user sp to mscratch,
+   restore all registers, `csrrw sp, mscratch, sp` to swap back, `mret`.
+2. If `TF_USER_SP = 0`: returning to M-mode (nested) — restore registers,
+   deallocate trap frame, `mret`.
+
+### 7.4 Summary
 
 ```
-ARM:  User code ──SVC──→ [hw saves on PSP] ──→ handler on MSP ──→ [hw restores PSP]
-      User code ──IRQ──→ [hw saves on PSP] ──→ handler on MSP ──→ [hw restores PSP]
+ARM:   User code ──SVC──→ [hw saves on PSP] ──→ handler on MSP ──→ [hw restores PSP]
+       User code ──IRQ──→ [hw saves on PSP] ──→ handler on MSP ──→ [hw restores PSP]
 
-m68k: User code ──TRAP──→ [hw saves SR+PC on SSP] ──→ handler on SSP ──→ rte
-      User code ──IRQ───→ [hw saves SR+PC on SSP] ──→ handler on SSP ──→ rte
+m68k:  User code ──TRAP──→ [hw saves SR+PC on SSP] ──→ handler on SSP ──→ rte
+       User code ──IRQ───→ [hw saves SR+PC on SSP] ──→ handler on SSP ──→ rte
+
+RISCV: User code ──ecall─→ [sw swap sp↔mscratch] ──→ handler on ksp ──→ [sw swap back]
+       User code ──IRQ───→ [sw swap sp↔mscratch] ──→ handler on ksp ──→ [sw swap back]
 ```
 
-The key difference: ARM separates user and kernel stacks in hardware (PSP vs
-MSP), while m68k uses a single supervisor stack for all exception handling,
-with USP only accessible in user mode.
+ARM separates user and kernel stacks in hardware (PSP vs MSP).  m68k uses
+a single supervisor stack with USP only accessible in user mode.  RISC-V
+uses a software swap via `mscratch` to achieve the same separation.

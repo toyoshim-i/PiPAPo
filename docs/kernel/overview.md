@@ -15,6 +15,7 @@ Internal design reference for kernel developers.
 │  Syscall Interface     │  Signal Delivery               │
 │  svc 0 (ARM)           │  sigaction, sigprocmask        │
 │  trap #0 (m68k)        │  user-stack trampoline         │
+│  ecall (RISC-V)        │                                │
 ├────────────────────────┴────────────────────────────────┤
 │  Kernel                                                 │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────┐  │
@@ -146,10 +147,10 @@ No MMU means no Copy-on-Write fork. Instead:
 
 Loads PIE (Position-Independent Executable) ELF binaries:
 
-1. Validate ELF header (architecture-specific: ARM or m68k, ET_DYN for PIE)
-2. Map PT_LOAD segments — on ARM, `.text` stays in flash (XIP); on m68k, `.text` is in RAM
-3. Process relocations (architecture-specific: `R_ARM_RELATIVE` on ARM, `R_68K_RELATIVE` on m68k)
-4. Set PIC base register (r9 on ARM, a5 on m68k) to GOT/data base
+1. Validate ELF header (architecture-specific: ARM, m68k, or RISC-V; ET_DYN for PIE)
+2. Map PT_LOAD segments — on ARM, `.text` stays in flash (XIP); on m68k/RISC-V, `.text` is in RAM
+3. Process relocations (architecture-specific: `R_ARM_RELATIVE`, `R_68K_RELATIVE`, `R_RISCV_32`)
+4. Set PIC base register (r9 on ARM, a5 on m68k, gp on RISC-V) to GOT/data base
 5. Set user stack pointer, return to user mode
 
 On ARM targets, XIP allows code to run directly from flash with zero SRAM footprint for `.text`.
@@ -168,6 +169,8 @@ Preemptive round-robin:
 
 **m68k:** A periodic timer interrupt directly calls the context switch routine, which saves/restores d2-d7/a2-a6 and the stack pointer.
 
+**RISC-V:** Timer interrupt (mtimecmp) fires every 10 ms. The handler sets `riscv_switch_pending`; after the ISR, trap.S calls `riscv_do_switch()` to swap the full 144-byte trap frame via the PCB's `sp` field and updates `mscratch` for the new process's kernel stack.
+
 ### Dual-Core (RP2040 only)
 
 Both RP2040 cores run user processes:
@@ -179,7 +182,7 @@ Both RP2040 cores run user processes:
 
 ### Tick Accounting
 
-User vs system time is tracked per-core. On ARM, `EXC_RETURN` bit 3 distinguishes user mode (thread mode with PSP) from handler mode. On m68k, the supervisor bit in the status register serves a similar purpose.
+User vs system time is tracked per-core. On ARM, `EXC_RETURN` bit 3 distinguishes user mode (thread mode with PSP) from handler mode. On m68k, the supervisor bit in the status register serves a similar purpose. On RISC-V, `mstatus.MPP` distinguishes U-mode (user) from M-mode (kernel).
 
 ## Memory Protection
 
@@ -204,6 +207,13 @@ memory while user mode is restricted.
 
 The m68k QEMU target does not currently have memory protection. All code runs in supervisor mode.
 
+### RISC-V (PMP)
+
+User processes run in U-mode; the kernel runs in M-mode.  A single PMP entry
+covers the full address range with RWX access, allowing U-mode code to access
+all memory.  The kernel/user stack split uses `mscratch` to swap stack
+pointers on trap entry/exit (see [memory.md](/docs/kernel/memory.md) §7.3).
+
 ## System Call Interface
 
 System calls use a unified numbering scheme across all architectures (see [syscall.md](/docs/kernel/syscall.md)). The trap mechanism is architecture-specific:
@@ -211,6 +221,8 @@ System calls use a unified numbering scheme across all architectures (see [sysca
 **ARM:** `svc 0` instruction. Arguments in r0–r5, syscall number in r7, return value in r0.
 
 **m68k:** `trap #0` instruction. Syscall number in d0, arguments in d1–d5/a0, return value in d0.
+
+**RISC-V:** `ecall` instruction. Arguments in a0–a5, syscall number in a7, return value in a0.
 
 The SVC/TRAP handler (`src/kernel/syscall/syscall.c`) dispatches via a shared function pointer table.
 

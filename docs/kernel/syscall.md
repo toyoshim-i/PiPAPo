@@ -8,7 +8,7 @@ kernel, with usage details and notes on how each differs from POSIX / Linux.
 ## Syscall Numbering
 
 PPAP uses a **16-bit grouped numbering** scheme: the high byte is the group,
-the low byte is the index.  The same numbers are used on both ARM and m68k.
+the low byte is the index.  The same numbers are used on all architectures (ARM, m68k, RISC-V).
 
 | Group  | Category       | Range          |
 |--------|---------------|----------------|
@@ -29,8 +29,8 @@ Unimplemented syscalls (0xF0xx) exist so that musl libc compiles, but the
 kernel returns `-ENOSYS` for all of them.
 
 The canonical definitions are in `src/kernel/syscall/syscall.h` (kernel) and
-`third_party/patches/musl/overlay/arch/{arm,m68k}/bits/syscall.h.in` (musl).
-Both architectures must use identical numbers for all implemented syscalls.
+`third_party/patches/musl/overlay/arch/{arm,m68k,riscv}/bits/syscall.h.in` (musl).
+All architectures must use identical numbers for all implemented syscalls.
 
 ---
 
@@ -60,6 +60,17 @@ Invoke with `trap #0`.
 
 On success the return value is zero or positive.
 On error the return value is a negative errno (e.g. `-ENOENT`).
+
+### RISC-V
+
+| Register | Purpose |
+|----------|---------|
+| `a7` | Syscall number |
+| `a0`–`a5` | Arguments 1–6 |
+| `a0` | Return value |
+
+Invoke with `ecall`.  User processes run in U-mode; the ecall traps to
+M-mode where the kernel handles the request.
 
 ---
 
@@ -332,7 +343,7 @@ Fill `buf` (390 bytes = 6 x 65-byte fields) with system identification:
 | nodename | `ppap` |
 | release | `0.11.0` |
 | version | `#1 PPAP` |
-| machine | `armv6m` (ARM) or `m68k` (m68k) |
+| machine | `armv6m` (ARM), `m68k` (m68k), or `riscv32` (RISC-V) |
 | domainname | (empty) |
 
 **vs POSIX/Linux:**  Identical interface.  Values are hardcoded.

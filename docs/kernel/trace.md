@@ -218,7 +218,7 @@ Example output:
 ## `/bin/pdb` — PPAP Debugger
 
 Interactive debugger supporting breakpoints, single-step, memory and register
-inspection, and disassembly across ARM, m68k, and Z80 targets.
+inspection, and disassembly across ARM, m68k, RISC-V, and Z80 targets.
 
 ### Invocation
 

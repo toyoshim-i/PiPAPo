@@ -23,22 +23,27 @@
 ./scripts/run.sh --build x68k           # build kernel + floppy image + launch XEiJ
 ```
 
-## Direct CMake usage
+## Direct CMake usage (via Docker)
+
+All targets build inside Docker containers. To run CMake manually:
 
 ```sh
 # ARM QEMU target
-cmake -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain_arm_m.cmake \
-      -S src/target/qemu_arm -B build/qemu_arm
-cmake --build build/qemu_arm
+docker run --rm -u $(id -u):$(id -g) -v "$PWD:/ppap" -w /ppap ppap/arm bash -c "
+  cmake -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain_arm_m.cmake \
+        -S src/target/qemu_arm -B build/qemu_arm && \
+  cmake --build build/qemu_arm -- -j\$(nproc)"
 
 # Pico target
-cmake -S src/target/pico1calc -B build/pico1calc
-cmake --build build/pico1calc
+docker run --rm -u $(id -u):$(id -g) -v "$PWD:/ppap" -w /ppap ppap/arm bash -c "
+  cmake -S src/target/pico1calc -B build/pico1calc && \
+  cmake --build build/pico1calc -- -j\$(nproc)"
 
 # m68k target
-cmake -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain_m68k.cmake \
-      -S src/target/qemu_m68k -B build/qemu_m68k
-cmake --build build/qemu_m68k
+docker run --rm -u $(id -u):$(id -g) -v "$PWD:/ppap" -w /ppap ppap/m68k bash -c "
+  cmake -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain_m68k.cmake \
+        -S src/target/qemu_m68k -B build/qemu_m68k && \
+  cmake --build build/qemu_m68k -- -j\$(nproc)"
 ```
 
 See also [`build_system.md`](build_system.md).
