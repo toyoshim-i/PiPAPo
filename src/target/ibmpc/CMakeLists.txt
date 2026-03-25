@@ -194,7 +194,54 @@ add_custom_command(TARGET ppap_ibmpc POST_BUILD
 )
 
 # ==========================================================================
-# Target 4: hello.com (test user program for exec)
+# Target 4: VFS module (separate code segment)
+# ==========================================================================
+
+set(VFS_MODULE_SOURCES
+  ${CMAKE_CURRENT_SOURCE_DIR}/vfs_stubs.S
+  ${CMAKE_CURRENT_SOURCE_DIR}/vfs_core_stubs.S
+  ${CMAKE_CURRENT_SOURCE_DIR}/vfs_mod_core.c
+  ${PPAP_ROOT}/src/kernel/vfs/vfs.c
+  ${PPAP_ROOT}/src/kernel/vfs/namei.c
+  ${PPAP_ROOT}/src/kernel/fs/romfs.c
+  ${PPAP_ROOT}/src/kernel/fs/tmpfs.c
+  ${PPAP_ROOT}/src/kernel/fs/devfs.c
+  ${PPAP_ROOT}/src/kernel/fs/procfs.c
+  ${PPAP_ROOT}/src/kernel/fs/fstab.c
+  ${PPAP_ROOT}/src/kernel/fs/ufs.c
+  ${PPAP_ROOT}/src/arch/i16/string.c
+)
+
+add_executable(ppap_ibmpc_vfs ${VFS_MODULE_SOURCES})
+
+target_include_directories(ppap_ibmpc_vfs PRIVATE
+  ${PPAP_ROOT}/src
+  ${PPAP_ROOT}/src/kernel
+  ${PPAP_ROOT}/src/target/ibmpc
+)
+
+target_compile_options(ppap_ibmpc_vfs PRIVATE ${COMMON_FLAGS})
+
+target_link_options(ppap_ibmpc_vfs PRIVATE
+  -T ${CMAKE_CURRENT_SOURCE_DIR}/ibmpc_vfs.ld
+  -nostartfiles
+)
+target_link_libraries(ppap_ibmpc_vfs PRIVATE gcc)
+
+set_target_properties(ppap_ibmpc_vfs PROPERTIES
+  SUFFIX ".elf"
+  LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ibmpc_vfs.ld"
+)
+
+add_custom_command(TARGET ppap_ibmpc_vfs POST_BUILD
+  COMMAND ${CMAKE_OBJCOPY} -O binary
+    $<TARGET_FILE:ppap_ibmpc_vfs>
+    ${CMAKE_CURRENT_BINARY_DIR}/ppap_ibmpc_vfs.bin
+  COMMENT "Creating VFS module binary ppap_ibmpc_vfs.bin"
+)
+
+# ==========================================================================
+# Target 5: hello.com (test user program for exec)
 # ==========================================================================
 
 add_executable(hello_com
