@@ -1,6 +1,6 @@
 # RISC-V Double-Free / Crash Investigation
 
-Status: **root cause found, partial fix applied** (2026-03-25)
+Status: **resolved** (2026-03-25) — mscratch stack split eliminates the root cause
 
 ## Symptom
 
