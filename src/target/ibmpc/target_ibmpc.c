@@ -131,6 +131,9 @@ static void seg_init_modules(void) {
     uint16_t vfs_seg = info->mod[1].segment;
     seg_register(MOD_ID_VFS, vfs_seg);
     patch_vfs_fptrs(vfs_seg);
+
+    /* VFS BSS: stage2 zeroes 0xA000-0xBFFF before loading data */
+
     klog("SEG: VFS module loaded\n");
   }
 }

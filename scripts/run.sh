@@ -194,20 +194,67 @@ if [[ "$TARGET" == "ibmpc" ]]; then
     ELF="$PROJECT_DIR/build/ibmpc/ppap_ibmpc.img"
 fi
 
-# ── ESP-IDF target (xtensa_cc) — uses idf.py, not ELF directly ─────────────
+# ── ESP-IDF target (xtensa_cc) — flash via esptool in Docker ──────────────
 if [[ "$TARGET" == "xtensa_cc" ]]; then
-    XTENSA_TC_DIR="$PROJECT_DIR/tools/xtensa-toolchain"
-    ESP_IDF_DIR="$PROJECT_DIR/third_party/esp-idf"
-    if [[ ! -f "$ESP_IDF_DIR/export.sh" ]]; then
-        echo "[run] Error: ESP-IDF not found. Run: ./scripts/setup_docker.sh xtensa"
+    DOCKER_IMAGE="$(target_docker_image xtensa_cc)"
+    if [[ -z "$DOCKER_IMAGE" ]] || ! docker_image_exists "$DOCKER_IMAGE"; then
+        echo "[run] Error: Docker image for xtensa_cc not found."
+        echo "      Run: ./scripts/setup_docker.sh xtensa"
         exit 1
     fi
-    export IDF_TOOLS_PATH="$XTENSA_TC_DIR"
-    # shellcheck disable=SC1091
-    source "$ESP_IDF_DIR/export.sh" >/dev/null 2>&1
-    echo "[run] Flashing and monitoring xtensa_cc..."
-    cd "$PROJECT_DIR/src/target/xtensa_cc"
-    idf.py -B "$PROJECT_DIR/build/xtensa_cc" -p "${PPAP_PORT:-/dev/ttyACM0}" flash monitor
+
+    FLASH_ARGS_FILE="$BUILD_DIR/flasher_args.json"
+    if [[ ! -f "$FLASH_ARGS_FILE" ]]; then
+        echo "[run] Error: $FLASH_ARGS_FILE not found."
+        echo "      Run: ./scripts/build.sh xtensa_cc"
+        exit 1
+    fi
+
+    PPAP_PORT="${PPAP_PORT:-/dev/ttyACM0}"
+    if [[ ! -e "$PPAP_PORT" ]]; then
+        echo "[run] Error: serial port $PPAP_PORT not found."
+        echo "      Set PPAP_PORT to the correct device."
+        exit 1
+    fi
+
+    # Docker Desktop runs in a VM and cannot pass host devices to containers.
+    # Detect Docker Desktop so we can give a clear error instead of a cryptic
+    # "no such file or directory" from the daemon.
+    if docker info 2>/dev/null | grep -qi "docker desktop"; then
+        echo "[run] Error: Docker Desktop cannot pass serial devices to containers."
+        echo "      Install Docker Engine (native) instead:"
+        echo "        sudo apt install docker-ce docker-ce-cli containerd.io"
+        exit 1
+    fi
+
+    echo "[run] Flashing xtensa_cc via Docker ($PPAP_PORT) ..."
+    docker run --rm \
+        --device="$PPAP_PORT" \
+        -v "$PROJECT_DIR:/ppap" -w /ppap \
+        "$DOCKER_IMAGE" bash -c "
+            export IDF_TOOLS_PATH=/opt/ppap/xtensa-tools && \
+            source /opt/ppap/src/esp-idf/export.sh >/dev/null 2>&1 && \
+            cd /ppap/build/xtensa_cc && \
+            esptool.py --chip esp32s3 -p $PPAP_PORT -b 460800 \
+                --before default_reset --after hard_reset \
+                write_flash \$(cat flash_args) \
+        " 2>&1
+    echo "[run] Flash complete. Starting serial monitor..."
+    echo "      (Press Ctrl-] to quit)"
+
+    # Monitor: stream serial output via pyserial inside Docker.
+    # Use idf_monitor.py for ESP32 panic decoding and auto-reset.
+    docker run --rm -it \
+        --device="$PPAP_PORT" \
+        -v "$PROJECT_DIR:/ppap" -w /ppap \
+        "$DOCKER_IMAGE" bash -c "
+            export IDF_TOOLS_PATH=/opt/ppap/xtensa-tools && \
+            source /opt/ppap/src/esp-idf/export.sh >/dev/null 2>&1 && \
+            python3 -m esp_idf_monitor \
+                --port $PPAP_PORT \
+                --baud 115200 \
+                /ppap/build/xtensa_cc/ppap_xtensa_cc.elf \
+        " || true
     exit 0
 fi
 

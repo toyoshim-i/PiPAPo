@@ -69,7 +69,7 @@ target_compile_definitions(ppap_qemu_rv32 PRIVATE
     PPAP_HAS_BLKDEV=1
     PPAP_SYS_HZ=10000000u
     PAGE_POOL_BASE=0x80809000u
-    PAGE_COUNT_MAX=243u
+    PAGE_COUNT_MAX=116u
 )
 
 # Subsystem/eCPU definitions

@@ -275,8 +275,12 @@ void stage2_main(void)
     vfs_size = load_file_far(vfs_ino, vfs_seg);
   }
 
-  /* VFS data: load to DS:0xA000 (shared DS=0 address space).
-   * This is a near load — 0xA000 is within DS=0. */
+  /* VFS data: zero region then load .rodata+.data to DS:0xA000.
+   * Zeroing first ensures BSS (after loaded data) is clean. */
+  {
+    uint8_t *p = (uint8_t *)0xA000u;
+    for (uint16_t i = 0; i < 8192u; i++) p[i] = 0;
+  }
   uint16_t vfs_data_ino = find_file(boot_ino, "kernel_vfs_data");
   if (vfs_data_ino) {
     load_file(vfs_data_ino, (uint8_t *)0xA000u);

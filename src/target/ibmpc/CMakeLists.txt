@@ -227,6 +227,7 @@ add_executable(ppap_ibmpc_vfs
   # VFS-side stubs: entry stubs for VFS, caller stubs for core
   ${CMAKE_CURRENT_SOURCE_DIR}/stubs/vfs_entries.S
   ${CMAKE_CURRENT_SOURCE_DIR}/stubs/core_stubs.S
+  ${CMAKE_CURRENT_SOURCE_DIR}/stubs/core_mod_init.c
 )
 
 target_include_directories(ppap_ibmpc_vfs PRIVATE ${PPAP_INCLUDES})
