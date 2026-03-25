@@ -265,14 +265,21 @@ void stage2_main(void)
   uint16_t core_size = load_file(kernel_ino, (uint8_t *)KERNEL_ADDR);
   if (!core_size) { puts_bios("!load"); return; }
 
-  /* VFS module: load at segment 0x1000 (linear 0x10000).
+  /* VFS code module: load at segment 0x1000 (linear 0x10000).
    * Must be above core's full footprint (text+data+BSS+stack+page_pool).
-   * Core ends at __page_pool_start = ~0x9000, so 0x10000 is safe. */
+   * Core ends at __page_pool_start = ~0xC000, so 0x10000 is safe. */
   uint16_t vfs_seg = 0x1000u;
   uint16_t vfs_ino = find_file(boot_ino, "kernel_vfs");
   uint16_t vfs_size = 0;
   if (vfs_ino) {
     vfs_size = load_file_far(vfs_ino, vfs_seg);
+  }
+
+  /* VFS data: load to DS:0xA000 (shared DS=0 address space).
+   * This is a near load — 0xA000 is within DS=0. */
+  uint16_t vfs_data_ino = find_file(boot_ino, "kernel_vfs_data");
+  if (vfs_data_ino) {
+    load_file(vfs_data_ino, (uint8_t *)0xA000u);
   }
 
   /* Write module info block for the kernel to read */

@@ -245,11 +245,20 @@ set_target_properties(ppap_ibmpc_vfs PROPERTIES
   LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ibmpc_vfs.ld"
 )
 
+# Extract VFS code (.text + .rodata) and data (.data) as separate binaries.
+# Code goes to VFS CS segment, data goes to DS:0xA000.
 add_custom_command(TARGET ppap_ibmpc_vfs POST_BUILD
-  COMMAND ${CMAKE_OBJCOPY} -O binary
+  COMMAND ${CMAKE_OBJCOPY}
+    -j .text -j .text.header
+    -O binary
     $<TARGET_FILE:ppap_ibmpc_vfs>
     ${CMAKE_CURRENT_BINARY_DIR}/ppap_ibmpc_vfs.bin
-  COMMENT "Creating VFS module binary ppap_ibmpc_vfs.bin"
+  COMMAND ${CMAKE_OBJCOPY}
+    -j .rodata -j .data
+    -O binary
+    $<TARGET_FILE:ppap_ibmpc_vfs>
+    ${CMAKE_CURRENT_BINARY_DIR}/ppap_ibmpc_vfs_data.bin
+  COMMENT "Creating VFS code + data binaries"
 )
 
 add_dependencies(ppap_ibmpc ppap_ibmpc_vfs)

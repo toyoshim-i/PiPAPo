@@ -38,5 +38,7 @@ vfs_module_header:
   .word vfs_alloc_vnode_entry
   .word vfs_ref_vnode_entry
   .word vfs_rel_vnode_entry
+  /* DS=0 address of core_fptrs table (for core to patch) */
+  .word core_fptrs
 
 #endif /* __ia16__ */

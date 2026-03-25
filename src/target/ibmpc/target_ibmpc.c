@@ -78,6 +78,14 @@ static uint16_t far_read16(uint16_t seg, uint16_t off) {
   return val;
 }
 
+/* Core entry point offsets (from core_entries.S) */
+extern uint16_t klog_entry;
+extern uint16_t klogf_entry;
+extern uint16_t kmem_pool_init_entry;
+extern uint16_t kmem_alloc_entry;
+extern uint16_t kmem_free_entry;
+extern uint16_t kmem_free_count_entry;
+
 static void patch_vfs_fptrs(uint16_t vfs_seg) {
   /* VFS header is at vfs_seg:0000 */
   if (far_read16(vfs_seg, 0) != VFS_HDR_MAGIC) {
@@ -88,10 +96,26 @@ static void patch_vfs_fptrs(uint16_t vfs_seg) {
   uint16_t count = far_read16(vfs_seg, 2);
   if (count > 11) count = 11;
 
+  /* Patch core→VFS far pointers (in core's vfs_fptrs table) */
   for (uint16_t i = 0; i < count; i++) {
     vfs_fptrs[i * 2]     = far_read16(vfs_seg, 4 + i * 2);
     vfs_fptrs[i * 2 + 1] = vfs_seg;
   }
+
+  /* Patch VFS→core far pointers (in VFS's core_fptrs table at DS=0).
+   * The core_fptrs address is stored after the 11 entry offsets
+   * in the VFS header (at offset 4 + 11*2 = 26). */
+  uint16_t core_fptrs_addr = far_read16(vfs_seg, 4 + count * 2);
+  uint16_t core_seg = seg_get(MOD_ID_CORE);
+  volatile uint16_t *cfp = (volatile uint16_t *)(uintptr_t)core_fptrs_addr;
+
+  /* Core entry offsets — these are near addresses in core's segment */
+  cfp[0] = (uint16_t)(uintptr_t)&klog_entry;           cfp[1] = core_seg;
+  cfp[2] = (uint16_t)(uintptr_t)&klogf_entry;          cfp[3] = core_seg;
+  cfp[4] = (uint16_t)(uintptr_t)&kmem_pool_init_entry; cfp[5] = core_seg;
+  cfp[6] = (uint16_t)(uintptr_t)&kmem_alloc_entry;     cfp[7] = core_seg;
+  cfp[8] = (uint16_t)(uintptr_t)&kmem_free_entry;      cfp[9] = core_seg;
+  cfp[10] = (uint16_t)(uintptr_t)&kmem_free_count_entry; cfp[11] = core_seg;
 }
 
 static void seg_init_modules(void) {
