@@ -144,6 +144,8 @@ _trap_entry:
     mv      a0, t0                  # mcause
     csrr    a1, mepc                # mepc
     csrr    a2, mtval               # mtval
+    lw      a3, 24(sp)              # saved s0/fp from trap frame
+    addi    a4, sp, TRAP_FRAME_SIZE # saved sp (before trap frame alloc)
     call    riscv_exception_handler
     j       Default_Handler
 
@@ -182,6 +184,8 @@ _trap_entry:
     la      t0, current_core
     lw      t0, 0(t0)              # t0 = current (pcb_t *)
     lw      sp, 48(t0)             # sp = current->sp (PCB_SP_OFFSET=48)
+    # Now on the NEW stack — safe to free the old stack page.
+    call    exec_free_old_stack
     j       .Ltrap_return
 .Lno_exec:
 

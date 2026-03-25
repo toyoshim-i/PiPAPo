@@ -31,7 +31,8 @@ function(ppap_riscv_target_common target)
     )
 
     # Warnings: treat as errors for project code (third-party is built externally)
-    target_compile_options(${target} PRIVATE -Wall -Wextra -Werror -Wno-unused-parameter)
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Werror -Wno-unused-parameter
+        -fno-omit-frame-pointer)
 
     # Core kernel definitions
     target_compile_definitions(${target} PRIVATE PPAP_KERNEL=1)

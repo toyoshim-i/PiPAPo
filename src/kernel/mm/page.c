@@ -175,7 +175,17 @@ void *page_alloc(void) {
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
   void *p = NULL;
   if (free_top != 0u) {
-    p = free_stack[--free_top];
+    /* Pick the highest-address free page.  Single-page allocations
+     * (stacks, scratch) cluster at the top of the pool, leaving the
+     * low end free for large contiguous allocations (ELF images).
+     * O(free_top) scan — negligible for pools ≤ 256 pages. */
+    uint32_t best = 0;
+    for (uint32_t i = 1; i < free_top; i++) {
+      if ((uintptr_t)free_stack[i] > (uintptr_t)free_stack[best])
+        best = i;
+    }
+    p = free_stack[best];
+    free_stack[best] = free_stack[--free_top];
   } else {
     oom_count++;
   }
@@ -211,6 +221,34 @@ void *page_alloc_at(void *addr) {
   return result;
 }
 
+/* ── Stack backtrace (RISC-V) ─────────────────────────────────────────────
+ *
+ * Walk the s0 (frame pointer) chain.  Each frame stores:
+ *   [fp-4] = return address (ra)
+ *   [fp-8] = previous frame pointer
+ *
+ * Requires -fno-omit-frame-pointer in CFLAGS.
+ */
+#if defined(__riscv)
+static void stack_backtrace(void) {
+  uintptr_t fp;
+  __asm__ volatile("mv %0, s0" : "=r"(fp));
+
+  klog("  backtrace:\n");
+  for (uint32_t depth = 0; depth < 16 && fp; depth++) {
+    uintptr_t ra = *(uintptr_t *)(fp - 4);
+    uintptr_t prev_fp = *(uintptr_t *)(fp - 8);
+    klogf("    #%u ra=%x fp=%x\n", depth, (uint32_t)ra, (uint32_t)fp);
+    if (prev_fp <= fp) break; /* stack grows down — prev fp must be higher */
+    fp = prev_fp;
+  }
+}
+#else
+static void stack_backtrace(void) {
+  /* Not yet implemented for this architecture */
+}
+#endif
+
 void page_free(void *page) {
   /* Rudimentary double-free / out-of-range guard */
   uintptr_t addr = (uintptr_t)page;
@@ -226,6 +264,7 @@ void page_free(void *page) {
       spin_unlock_irqrestore(SPIN_PAGE, saved);
       klogf("MM: double-free @ %x (ra=%x)\n", addr,
             (uintptr_t)__builtin_return_address(0));
+      stack_backtrace();
       return;
     }
   }

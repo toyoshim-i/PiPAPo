@@ -1,6 +1,6 @@
 # RISC-V Double-Free / Crash Investigation
 
-Status: **in progress** (2026-03-24)
+Status: **root cause found, partial fix applied** (2026-03-25)
 
 ## Symptom
 
@@ -19,101 +19,123 @@ TRAP: exception cause=0x00000005 mepc=0x80034bc2 mtval=0x00000008 pid=3
 
 Simple applets like `echo hello` work fine.
 
-## Root Cause Analysis
+## Root Cause
 
-### 1. Crash is in kernel `strlen`, during `execve`
+### Missing stack pointer relocation in RISC-V vfork
 
-The faulting `mepc` maps to the kernel's custom `strlen()` function
-(in `src/target/qemu_rv32/string.c`), NOT busybox's musl `strlen`.
+RISC-V has no hardware kernel/user stack split (unlike ARM's MSP/PSP or
+m68k's SSP/USP).  Kernel and user code share a single `stack_page`.
 
-Debug syscall tracing confirmed the crash happens during **SYS_EXECVE**
-(syscall 0x0003), not during normal ls operation.
+When `sys_vfork()` creates a child:
+1. `memcpy(child_stack, parent_stack, PAGE_SIZE)` — byte-for-byte copy
+2. Saved registers (s0/fp, callee-saved) in the trap frame still point
+   to the **parent's** stack page
+3. Stack-spilled frame pointers and local pointer variables also
+   reference the parent's page
 
-### 2. `strlen(argv[i])` reads address 0x8
+After vfork returns in the child, `s0` (frame pointer) still points to
+the parent's page.  All frame-pointer-relative accesses (local variables,
+argv construction, function arguments) go to the **parent's** page
+instead of the child's copy.  The argv array passed to `execve` ends up
+containing stale data from the parent's stack (kernel return addresses,
+saved registers), not the actual command strings.
 
-In `elf_loader.c` line 609:
-```c
-uint32_t len = (uint32_t)strlen(argv[i]) + 1;
+### Backtrace confirmation
+
+Added RISC-V frame pointer backtrace to the exception handler.  The crash
+call chain:
+
+```
+_trap_entry → syscall_dispatch → sys_execve → do_execve → elf_load → strlen
 ```
 
-The shell (`hush`) does `vfork + execve("/bin/ls", argv, NULL)`.
-The `argv` array lives on the shell's user stack.  During `execve`,
-the kernel reads `argv[i]` to copy argument strings to the new
-process stack.  One of the `argv[i]` pointers is `0x8`, causing the
-load fault.
+Debug argv dump showed:
+```
+argv[0]=0x808f78ef ""      ← empty string (stale stack data)
+argv[1]=0x8006277f          ← kernel ROM address (stale saved register)
+argv[3]=0x00000008          ← crash address
+```
 
-### 3. Why is argv[i] = 0x8?
+After applying the stack relocation fix:
+```
+argv[0]=0x808f8280 "/bin/ls"   ← correct
+argv[1]=0x808f8c3b "/"         ← correct
+argc=2                          ← correct
+```
 
-This is the key unsolved question.  Hypotheses:
+### Why RISC-V specific
 
-- **GOT relocation incomplete**: the shell's string pointers weren't
-  fully relocated when busybox was loaded.  The GOT patching in
-  `elf_loader.c` only handles GOT entries and `R_RISCV_32` relocations,
-  but `auipc`-based references (used for local statics) are
-  PC-relative and should work without patching.
+- **ARM**: Hardware MSP/PSP split.  `stack_page` is kernel-only (MSP).
+  User code runs on PSP which points into `user_pages[]` (shared in
+  vfork at the same address).  No relocation needed.
+- **m68k**: SSP/USP split.  vfork already copies and relocates the
+  `user_stack_page` separately, including a6/fp fixup.
+- **RISC-V**: No stack split.  Single `stack_page` holds kernel trap
+  frames AND user stack frames.
 
-- **Page corruption during allocation**: `page_alloc_contiguous(49)`
-  for busybox might overlap with or corrupt pages used by the shell.
-  The shell uses 6 pages (loaded at 0x80809000); busybox allocates
-  49 pages starting at 0x8080f000.  These don't overlap, but the
-  page allocator's contiguous scan might have side effects.
+### Use-after-free in execve (also fixed)
 
-- **User page leak in exec**: when `elf_loader.c` overwrites
-  `p->user_pages[]` at line 421, the old pages are never freed.
-  This is a leak but shouldn't cause the crash directly.
+`sys_execve` freed `old_stack` (line 1745) while still executing on it.
+ARM can do this because the kernel runs on MSP (not PSP).  RISC-V and
+m68k run on the same stack — freeing it is a use-after-free.
 
-- **vfork argv pointer stale**: the parent's stack (where argv lives)
-  should be valid during vfork since the parent is suspended.  But if
-  the child's exec path somehow triggers a page free or reallocation
-  that touches the parent's stack region, the pointers could become
-  invalid.
+Fixed by deferring the free to `trap.S` after the SP switch (same
+pattern m68k already used).
 
-### 4. The "double-free" on pico2rv
+## Fixes Applied
 
-On hardware, the same root cause manifests differently because the
-memory layout is tighter (fewer pages).  The corrupted argv pointer
-may land in a previously freed page, causing the MM double-free
-detection to fire.
+1. **Deferred stack free in execve** — `exec_old_stack` global
+   (shared by m68k and RISC-V); freed in trap.S after SP switch.
 
-## Verified Facts
+2. **Brute-force stack page relocation in vfork** — scans every
+   aligned word in the child's copied stack page; shifts values in
+   `[parent_base, parent_base+PAGE_SIZE)` by delta.  This fixes
+   frame pointers, return addresses, and spilled pointer locals.
 
-- `echo hello` works: simple busybox applets that don't allocate
-  much memory succeed
-- `ls /` crashes: larger applets that read directories fail
-- The crash happens during `execve`, not during `ls` execution
-- The faulting address is always `0x8` (consistent NULL+offset)
-- Busybox loads at 0x8080f000 (49 pages), shell at 0x80809000 (6 pages)
+3. **High-first single-page allocation** — `page_alloc()` picks the
+   highest-address free page, segregating stacks (high) from
+   contiguous ELF images (low).  Reduces fragmentation.
 
-## Docker Build Fixes (committed)
+4. **Stack backtrace on exception** — frame pointer chain walk in
+   `riscv_exception_handler` and `page_free` (double-free).
+   Requires `-fno-omit-frame-pointer`.
 
-While investigating, we fixed several issues blocking Docker-based
-builds for qemu_rv32:
+## Remaining Issues
 
-1. **Toolchain path**: `qemu_rv32/CMakeLists.txt` now respects
-   `PICO_TOOLCHAIN_PATH` env var
-2. **Hard-float libgcc fallback**: `user.cmake` detects hard-float
-   Linux toolchain libgcc and falls back to bare-metal toolchain
-3. **Rogue K&R fix**: `-std=gnu11` for GCC 15 C23 `()` = `(void)`
-4. **Rogue PIE/strip**: conditional `-pie` vs `--emit-relocs`, plus
-   `--strip-unneeded` to preserve relocation sections
-5. **Busybox oldconfig**: `yes ""` for non-interactive config
-6. **r68k test skip**: skip m68k cross-compilation when compiler
-   unavailable
+### Parent shell crash after child exits
 
-## Next Steps
+After `ls` exits (with "out of memory"), the shell (pid=2) crashes.
+The brute-force relocation may have false positives — integer values
+that coincidentally fall in the parent's stack page range get shifted,
+corrupting the child's stack data.  When the child runs before execve,
+this corrupted data could cause subtle problems.
 
-1. **Disassemble the shell's argv construction**: find exactly where
-   the shell builds the argv array for `execve`, and verify all
-   pointer values are correctly relocated
+### `ls: out of memory`
 
-2. **Add argv validation in execve**: before `strlen(argv[i])`, check
-   that each pointer is within the page pool range.  Log and return
-   `-EFAULT` if not.  This won't fix the root cause but will prevent
-   the hard crash and give better diagnostics.
+Busybox `ls` now executes (argv correct) but fails to allocate memory.
+musl apps work fine on ARM with 4KB stacks, so this is not a stack
+size issue.  Likely cause: brk/malloc failure from the relocation
+side effects, or a separate issue with the child's heap setup.
 
-3. **Check page_alloc_contiguous for side effects**: verify that the
-   49-page allocation for busybox doesn't corrupt the shell's 6 pages
+## Proper Fix: mscratch-based kernel/user stack split
 
-4. **Test with simpler busybox applet**: try `cat /etc/hostname`
-   (doesn't need directory reading) to narrow down whether the crash
-   is specific to `ls` or any non-trivial execve
+The brute-force relocation is fragile (false positives).  The proper
+fix is a software kernel/user stack split using the `mscratch` CSR:
+
+1. On trap entry: `csrrw sp, mscratch, sp` — atomically swap user SP
+   and kernel SP
+2. Each process gets separate kernel stack (1 page) and user stack
+   (in `user_pages[]`)
+3. vfork shares `user_pages[]` naturally (same address in parent/child)
+4. No relocation needed, no deferred-free needed
+
+This is the standard approach used by xv6 and Linux on RISC-V.
+
+## Docker Build Fixes (committed earlier)
+
+1. **Toolchain path**: `qemu_rv32/CMakeLists.txt` respects `PICO_TOOLCHAIN_PATH`
+2. **Hard-float libgcc fallback**: `user.cmake` detects and falls back
+3. **Rogue K&R fix**: `-std=gnu11` for GCC 15
+4. **Rogue PIE/strip**: conditional `-pie` vs `--emit-relocs`
+5. **Busybox oldconfig**: `yes ""` for non-interactive
+6. **r68k test skip**: skip when compiler unavailable

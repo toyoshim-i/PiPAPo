@@ -61,7 +61,8 @@ target_include_directories(ppap_qemu_rv32 PRIVATE
     ${PPAP_ROOT}/src/kernel
 )
 target_compile_options(ppap_qemu_rv32 PRIVATE
-    -Wall -Wextra -Werror -Wno-unused-parameter)
+    -Wall -Wextra -Werror -Wno-unused-parameter
+    -fno-omit-frame-pointer)
 target_compile_definitions(ppap_qemu_rv32 PRIVATE
     PPAP_KERNEL=1
     PPAP_QEMU=1

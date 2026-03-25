@@ -39,7 +39,8 @@ volatile uint32_t riscv_tick_count = 0;
  */
 #define CRASH_LOG ((volatile uint32_t *)0x20005F00u)
 
-void riscv_exception_handler(uint32_t mcause, uint32_t mepc, uint32_t mtval)
+void riscv_exception_handler(uint32_t mcause, uint32_t mepc, uint32_t mtval,
+                             uint32_t saved_fp, uint32_t saved_sp)
 {
     /* Disable all interrupts to prevent further traps */
     csr_clear(mstatus, MSTATUS_MIE);
@@ -53,6 +54,20 @@ void riscv_exception_handler(uint32_t mcause, uint32_t mepc, uint32_t mtval)
     klogf("TRAP: exception cause=%x mepc=%x mtval=%x pid=%u\n",
           mcause, mepc, mtval,
           current ? (uint32_t)current->pid : 0xFFFFFFFFu);
+
+    /* Walk the frame pointer chain from the faulting context.
+     * Each frame: [fp-4] = ra, [fp-8] = prev fp.
+     * Requires -fno-omit-frame-pointer. */
+    klogf("  sp=%x fp=%x\n", saved_sp, saved_fp);
+    klog("  backtrace:\n");
+    uintptr_t fp = saved_fp;
+    for (uint32_t depth = 0; depth < 16 && fp >= 0x80000000u; depth++) {
+        uintptr_t ra = *(uintptr_t *)(fp - 4);
+        uintptr_t prev_fp = *(uintptr_t *)(fp - 8);
+        klogf("    #%u ra=%x fp=%x\n", (uint32_t)depth, (uint32_t)ra, (uint32_t)fp);
+        if (prev_fp <= fp) break;
+        fp = prev_fp;
+    }
 
     /* Spin with NOP instead of WFI — WFI may gate the Hazard3 core clock,
      * making the debug module unresponsive.  A NOP loop keeps the core

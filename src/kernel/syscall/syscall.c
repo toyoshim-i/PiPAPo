@@ -43,15 +43,16 @@ void set_svc_restart(void) {
   current->svc_needs_restart = 1;
 }
 
-#if defined(__m68k__)
-/* m68k has no MSP/PSP split — kernel runs on the process stack page.
- * sys_execve cannot free the old stack while still executing on it.
- * Store it here; trap.S frees it after switching SP to the new stack. */
+#if defined(__m68k__) || defined(__riscv)
+/* m68k and RISC-V have no MSP/PSP split — kernel runs on the process
+ * stack page.  sys_execve cannot free the old stack while still
+ * executing on it.  Store it here; trap.S frees it after switching
+ * SP to the new stack. */
 #include "../mm/page.h"
-volatile void *m68k_exec_old_stack = NULL;
-void m68k_exec_free_old_stack(void) {
-  void *p = (void *)m68k_exec_old_stack;
-  m68k_exec_old_stack = NULL;
+volatile void *exec_old_stack = NULL;
+void exec_free_old_stack(void) {
+  void *p = (void *)exec_old_stack;
+  exec_old_stack = NULL;
   if (p) page_free(p);
 }
 #endif
