@@ -194,8 +194,8 @@ uint32_t riscv_do_switch(uint32_t current_sp)
 
 uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void))
 {
-    sp -= 32;  /* 32 words = 128 bytes = TRAP_FRAME_SIZE */
-    for (int i = 0; i < 30; i++)
+    sp -= 36;  /* 36 words = 144 bytes = TRAP_FRAME_SIZE */
+    for (int i = 0; i < 36; i++)
         sp[i] = 0u;
     /* gp (x3) at frame offset 1 */
     extern char __global_pointer$[];
@@ -204,5 +204,7 @@ uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void))
     sp[30] = (uint32_t)(uintptr_t)entry;
     /* mstatus: MPP=M-mode, MPIE=1 (mret sets MIE from MPIE) */
     sp[31] = (3u << 11) | (1u << 7);
+    /* user_sp at offset 32 (= TF_USER_SP / 4) — set by caller or Phase B */
+    /* sp[32] = 0; — already zeroed */
     return sp;
 }

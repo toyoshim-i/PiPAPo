@@ -22,6 +22,8 @@ set(PPAP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../..")
 
 if(EXISTS "/opt/ppap/ia16-elf/bin/ia16-elf-gcc")
   set(IA16_TC "/opt/ppap/ia16-elf")
+elseif(EXISTS "${PPAP_ROOT}/tools/ia16-build/prefix/bin/ia16-elf-gcc")
+  set(IA16_TC "${PPAP_ROOT}/tools/ia16-build/prefix")
 elseif(EXISTS "${PPAP_ROOT}/tools/ia16-toolchain/usr/bin/ia16-elf-gcc")
   set(IA16_TC "${PPAP_ROOT}/tools/ia16-toolchain/usr")
 else()
@@ -58,6 +60,11 @@ set(COMMON_FLAGS
   -Wno-pointer-to-int-cast
   -Wno-int-to-pointer-cast
 )
+
+# Kernel uses medium model: one data segment, multiple code segments.
+# Data stays near (16-bit pointers), code uses far calls where needed.
+# Stage1/stage2 stay small model (standalone boot code).
+set(KERNEL_FLAGS ${COMMON_FLAGS} -mcmodel=medium)
 
 # ==========================================================================
 # Target 1: stage1 (boot sector, 512 bytes)
@@ -172,7 +179,7 @@ target_include_directories(ppap_ibmpc PRIVATE
   ${PPAP_ROOT}/src/target/ibmpc
 )
 
-target_compile_options(ppap_ibmpc PRIVATE ${COMMON_FLAGS})
+target_compile_options(ppap_ibmpc PRIVATE ${KERNEL_FLAGS})
 
 target_link_options(ppap_ibmpc PRIVATE
   -T ${CMAKE_CURRENT_SOURCE_DIR}/ibmpc_kernel.ld

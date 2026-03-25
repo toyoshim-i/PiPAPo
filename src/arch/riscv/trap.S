@@ -10,7 +10,7 @@
 # entry.  We must save everything in software — same pattern as the m68k
 # port (movem.l d0-d7/a0-a6 save/restore).
 #
-# Trap frame layout on stack (32 words = 128 bytes, low → high):
+# Trap frame layout on stack (36 words = 144 bytes, low → high):
 #
 #   [SP+0  ]  x1  (ra)         ← pcb_t.sp will point here (after switch)
 #   [SP+4  ]  x3  (gp)
@@ -44,19 +44,24 @@
 #   [SP+116]  x31 (t6)
 #   [SP+120]  mepc
 #   [SP+124]  mstatus
+#   [SP+128]  user_sp           ← saved user stack pointer (for mscratch split)
+#   [SP+132]  (padding)         ← 16-byte alignment for C ABI
+#   [SP+136]  (padding)
+#   [SP+140]  (padding)
 #
 # x0 (zero) is not saved (always 0).
-# x2 (sp) is implicit — it's the stack pointer itself.
+# x2 (sp) is saved explicitly in user_sp slot (for mscratch stack split).
 # =============================================================================
 
 .option norelax
 
-# Trap frame size: 32 words = 128 bytes
-.equ TRAP_FRAME_SIZE, 128
+# Trap frame size: 36 words = 144 bytes (16-byte aligned)
+.equ TRAP_FRAME_SIZE, 144
 
-# Offsets for mepc and mstatus in the trap frame
+# Offsets for special fields in the trap frame
 .equ TF_MEPC,    120
 .equ TF_MSTATUS, 124
+.equ TF_USER_SP, 128
 
 # mcause bit 31: interrupt flag
 .equ MCAUSE_INT_BIT, 31

@@ -1,11 +1,21 @@
 /*
  * ibmpc_kernel.ld — Kernel linker script (medium model)
  *
- * Layout: near code (.text) + data + BSS + stack in low addresses
- * (< 0xFFFF for near pointers), then far code (.fartext) above.
+ * Memory layout (all in DS=0, linear address space):
  *
- * The medium model (-mcmodel=medium) puts most code in .fartext
- * sections (accessed via lcall/lret). Data stays near (DS=0).
+ *   0x0000-0x05FF  IVT + BIOS data
+ *   0x0600-....    .text (near code: boot, switch, trap ISRs)
+ *                  .fartext (far code: all C functions via -mcmodel=medium)
+ *                  .rodata (constants)
+ *                  .data (initialized globals)
+ *                  .bss (zero-initialized globals)
+ *                  2 KB stack
+ *   ALIGN(4096)    __page_pool_start (free pages for kernel use)
+ *
+ * The medium model puts most C code in .fartext sections (accessed via
+ * lcall/lret). Data stays near (16-bit DS-relative pointers).
+ * Near .text is reserved for assembly that must be directly callable
+ * from IVT entries (interrupt handlers).
  */
 
 OUTPUT_FORMAT("elf32-i386")
@@ -16,11 +26,18 @@ SECTIONS
 {
   . = 0x0600;
 
-  /* Near code: boot.S, switch.S, trap.S (small, must be near for
-   * direct jmp/call from IVT entries) */
+  /* Near code: boot.S, switch.S, trap.S (must be near for
+   * direct jmp/call from IVT entries and context switch) */
   .text : {
     *(.text.entry)
     *(.text .text.*)
+  }
+
+  /* Far code: all C functions compiled with -mcmodel=medium.
+   * Accessed via far calls. DS=0 is still used for data access.
+   * Placed right after near text so it's contiguous with code. */
+  .fartext : {
+    *(.fartext .fartext.*)
   }
 
   /* Read-only data (near, DS=0) */
@@ -49,16 +66,9 @@ SECTIONS
   . += 2048;
   __stack_top = .;
 
-  /* Page pool: one 4 KB page in near range */
+  /* Page pool: free pages start here */
   . = ALIGN(4096);
   __page_pool_start = .;
-
-  /* Far code: all C functions compiled with -mcmodel=medium.
-   * These are accessed via lcall (far pointers in mod_* structs)
-   * and can be above 0xFFFF. DS=0 is still used for data access. */
-  .fartext : {
-    *(.fartext .fartext.*)
-  }
 
   /DISCARD/ : {
     *(.comment)

@@ -109,6 +109,7 @@ typedef struct pcb {
   uint32_t s6, s7, s8, s9;    /* callee-saved (offsets 24–39)             */
   uint32_t s10, s11;           /* callee-saved (offsets 40–47)             */
   uint32_t sp;                 /* saved stack pointer     (offset 48)      */
+  uint32_t kernel_sp;          /* kernel stack top for mscratch (offset 52) */
 #elif defined(__xtensa__)
   uint32_t sp;                 /* saved stack pointer     (offset 0)       */
 #elif defined(__ia16__)

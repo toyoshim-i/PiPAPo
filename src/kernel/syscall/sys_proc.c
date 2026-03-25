@@ -1478,7 +1478,7 @@ long sys_vfork(uint32_t *frame) {
     }
   }
 #elif defined(__riscv)
-  /* RISC-V: The ecall trap frame (32 words) is already on the child's
+  /* RISC-V: The ecall trap frame (36 words) is already on the child's
    * stack (copied from parent).  child_frame points to saved a0 in the
    * trap frame (sp + 32).  The trap frame base is child_frame - 8.
    *

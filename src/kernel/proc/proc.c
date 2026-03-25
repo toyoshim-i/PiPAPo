@@ -137,4 +137,8 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp) {
   sp = arch_build_initial_frame(sp, entry);
   p->sp = (uint32_t)(uintptr_t)sp;
   p->ticks_remaining = PROC_DEFAULT_TICKS;
+#if defined(__riscv)
+  /* kernel_sp = top of kernel stack page (for mscratch in Phase B) */
+  p->kernel_sp = (uint32_t)(uintptr_t)p->stack_page + PAGE_SIZE;
+#endif
 }
