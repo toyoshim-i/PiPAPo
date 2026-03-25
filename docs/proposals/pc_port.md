@@ -911,11 +911,77 @@ Current P-3b core kernel:
 | stack     | 2 KB |
 | **Total** | **~50 KB** |
 
-This leaves ~13 KB headroom.  As kernel features grow (exec loader,
-additional subsystems), the kernel will exceed 64 KB.  At that point,
-the module system (see `docs/proposals/kernel_modules.md`) splits the
-kernel into multiple code segments, each ≤64 KB, sharing one data
-segment (DS=0).
+This leaves ~13 KB headroom.  Adding blkdev + floppy driver pushes
+past 64 KB, requiring the segment split.
+
+### Segment Split: Two-Level Stub Pattern
+
+When the single binary exceeds 64 KB, the kernel is split into
+multiple binaries, each in its own code segment.  All binaries share
+DS=0 for data access.  Both binaries use **small model** (`ret`).
+
+Cross-segment calls use a two-level stub pattern:
+
+```
+Core segment (CS=0):              VFS segment (CS=0x0C00):
+───────────────────               ─────────────────────────
+caller()                          vfs_init_target_stub:
+  call mod_vfs.init()               call vfs_init   ; near
+  ; near call to ──►                vfs_init:
+vfs_init_caller_stub:                  ...
+  lcall $VFS, $stub ─── far ───►     ret            ; near
+  ret  ◄─────────────── far ────  lret
+                                  ─────────────────────────
+```
+
+**Caller-side stub** (6 bytes, in caller's segment):
+```nasm
+vfs_init_caller_stub:
+  lcall $VFS_SEG, $target_stub_offset
+  ret
+```
+
+**Target-side stub** (4 bytes, in target's segment):
+```nasm
+vfs_init_target_stub:
+  call vfs_init        ; near call to real function
+  lret                 ; far return to caller segment
+```
+
+The real function (`vfs_init`) uses normal `ret` — no changes to
+the portable C code.  Only the assembly stubs know about segments.
+
+The `mod_vfs` struct in the core uses **near** pointers to the
+caller-side stubs.  On 32-bit platforms, the struct points directly
+to the real functions (no stubs).  Same `mod_vfs.init()` syntax
+everywhere.
+
+**Approach verified:**
+- `-mcmodel=medium` doesn't work (linker can't merge fartext sections)
+- `-msegelf` doesn't work (linker doesn't support segmented ELF output)
+- Two-level stubs with small model: **works** (tested)
+
+**What goes where (current split):**
+
+| Binary | Segment | Contents | Size |
+|--------|---------|----------|------|
+| Core | CS=0 | main, klog, kmem, page, proc, sched, syscall, exec, blkdev, floppy, stubs | ~30 KB |
+| VFS | CS=VFS_SEG | vfs, namei, romfs, tmpfs, devfs, procfs, ufs, fstab, stubs | ~20 KB |
+
+**Data layout (shared DS=0):**
+
+```
+0x00600  Core .text (boot.S, switch.S, trap.S)
+0x00800  Core .fartext (caller stubs + C functions)
+0x0????  Core .rodata + .data
+0x0????  Core .bss + stack
+0x0????  VFS .data + .bss (at fixed DS=0 address)
+0x0????  Page pool (4 KB aligned)
+0x?????  VFS .text loaded at VFS_SEG:0x0000 (above 64 KB)
+```
+
+Stage2 loads both `/boot/kernel` and `/boot/kernel_vfs` from the
+UFS floppy, placing them at their respective linear addresses.
 
 Stage2 must also stay above the kernel end — if the kernel grows past
 ~48 KB, stage2's address (currently 0xC000) may need to increase.
@@ -972,28 +1038,39 @@ signal delivery (stub), ELF loader (disabled for i16).
 
 ### Phase P-4: Kernel Module System (next)
 
-**Goal**: Split kernel into code-segment modules to exceed 64 KB limit.
+**Status**: Module macros done, VFS + exec + core migrated.
 
-The kernel is currently 46 KB of the 63 KB budget.  Adding exec, signal
-delivery, and filesystem features will push it past 64 KB.  The module
-system (`docs/proposals/kernel_modules.md`) introduces `MOD_DECLARE` /
-`MOD_DEFINE` macros that generate:
-- Function pointer structs on 32-bit platforms (zero overhead)
-- Far-call jump tables on i16 (modules in separate code segments)
+- `MOD_DECLARE`/`MOD_DEFINE` macros in `kernel/common/mod/module.h`
+- mod_vfs (11 functions), mod_exec (1), mod_core (6) — all working
+- VFS callers migrated to `mod_vfs.init()` syntax on all platforms
+- Boundary enforcement script (`check_module_boundaries.sh`)
+- `kernel/common/` directory for shared headers
 
-Phased rollout:
-1. Define MOD macros, convert VFS as first module
-2. Add exec module (flat .COM binary loader)
-3. Add subsystems module (eCPU, bridges)
+Segment split (two-level stubs) designed but not yet implemented.
+See §9.5 "Segment Split" above for the architecture.
+
+### Phase P-4b: Segment Split + Floppy Mount (next)
+
+**Goal**: Split core + VFS into separate binaries, mount UFS root.
+
+1. Two-level assembly stubs (caller-side + target-side)
+2. Separate CMake targets: ppap_ibmpc (core) + ppap_ibmpc_vfs
+3. VFS data at fixed DS=0 address, code in own segment
+4. Stage2 loads both binaries from UFS floppy
+5. Floppy block device driver (INT 13h)
+6. target_mount_rootfs() mounts UFS via blkdev
+7. target_init_path() returns "/sbin/init"
+
+**Verification**: Kernel mounts floppy UFS, loads /sbin/init, prints
+"Hello from user!".
 
 ### Phase P-5: User-Space Exec and Tests
 
-**Goal**: Load and run flat binaries, `runtests` passes.
+**Goal**: Full user-space support, `runtests` passes.
 
-1. .COM-style flat binary loader (no ELF — 16-bit binaries)
-2. INT 30h syscall trap handler (trap.S)
-3. Signal delivery for i16
-4. `--test ibmpc` in run.sh
+1. Signal delivery for i16
+2. More syscalls (fork, waitpid, pipe)
+3. `--test ibmpc` in run.sh
 
 **Verification**: "ALL TESTS PASSED" in serial log.
 
