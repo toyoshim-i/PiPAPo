@@ -1,14 +1,17 @@
 # =============================================================================
-# IBM PC target (i16, 8086 real mode) -- Phase P-3b
+# IBM PC target (i16, 8086 real mode) -- Phase P-4b
 # =============================================================================
 #
-# Three-part build:
+# Five-part build:
 #   1. stage1 — 512 B boot sector
-#   2. stage2 — UFS loader (up to 4 KB)
-#   3. kernel — core PPAP kernel (page alloc, proc, sched, klog)
+#   2. stage2 — UFS loader (up to 4 KB), loads core + VFS modules
+#   3. core   — core PPAP kernel module (scheduler, mm, syscall, blkdev)
+#   4. vfs    — VFS module (filesystems, fd, tty, pipe)
+#   5. hello  — test user program (.COM flat binary)
 #
-# Does NOT include: ELF loader, eCPU emulators, subsystem bridges,
-# block devices. Those will be separate modules (see kernel_modules.md).
+# Each kernel module is a separate small-model binary in its own 64 KB
+# segment (CS=DS). Cross-module calls use far-call stubs with DS switching.
+# Medium model is broken in ia16-elf-ld 2.39.
 #
 # Toolchain: ia16-elf-gcc (16-bit x86 cross-compiler)
 # Output: ppap_ibmpc.img (1.44 MB bootable floppy)
@@ -61,10 +64,16 @@ set(COMMON_FLAGS
   -Wno-int-to-pointer-cast
 )
 
-# Kernel uses medium model: one data segment, multiple code segments.
-# Data stays near (16-bit pointers), code uses far calls where needed.
-# Stage1/stage2 stay small model (standalone boot code).
-set(KERNEL_FLAGS ${COMMON_FLAGS} -mcmodel=medium)
+# Each module is small model (CS=DS within one 64 KB segment).
+# Medium model is broken in ia16-elf-ld 2.39 (R_386_16 overflow).
+# Modules are separate binaries with isolated segments instead.
+set(KERNEL_FLAGS ${COMMON_FLAGS})
+
+set(PPAP_INCLUDES
+  ${PPAP_ROOT}/src
+  ${PPAP_ROOT}/src/kernel
+  ${PPAP_ROOT}/src/target/ibmpc
+)
 
 # ==========================================================================
 # Target 1: stage1 (boot sector, 512 bytes)
@@ -111,7 +120,7 @@ add_custom_command(TARGET stage2 POST_BUILD
 )
 
 # ==========================================================================
-# Target 3: kernel (core PPAP kernel)
+# Target 3: core module (scheduler, memory, syscall, blkdev)
 # ==========================================================================
 
 set(ARCH_I16_SOURCES
@@ -123,11 +132,11 @@ set(ARCH_I16_SOURCES
   ${PPAP_ROOT}/src/arch/i16/string.c
 )
 
-# Core kernel sources — minimal set for boot-to-idle
 set(KERNEL_CORE_SOURCES
   ${PPAP_ROOT}/src/kernel/main.c
   ${PPAP_ROOT}/src/kernel/klog.c
   ${PPAP_ROOT}/src/kernel/common/mod/mod_core.c
+  ${PPAP_ROOT}/src/kernel/common/seg.c
   ${PPAP_ROOT}/src/kernel/mm/page.c
   ${PPAP_ROOT}/src/kernel/mm/kmem.c
   ${PPAP_ROOT}/src/kernel/proc/proc.c
@@ -135,17 +144,7 @@ set(KERNEL_CORE_SOURCES
   ${PPAP_ROOT}/src/kernel/signal/signal.c
   ${PPAP_ROOT}/src/kernel/cpu/cpu.c
   ${PPAP_ROOT}/src/kernel/cpu/cpu_native.c
-  ${PPAP_ROOT}/src/kernel/vfs/vfs.c
-  ${PPAP_ROOT}/src/kernel/vfs/namei.c
-  ${PPAP_ROOT}/src/kernel/fd/fd.c
-  ${PPAP_ROOT}/src/kernel/fd/tty.c
-  ${PPAP_ROOT}/src/kernel/fd/pipe.c
-  ${PPAP_ROOT}/src/kernel/fs/romfs.c
-  ${PPAP_ROOT}/src/kernel/fs/tmpfs.c
-  ${PPAP_ROOT}/src/kernel/fs/devfs.c
-  ${PPAP_ROOT}/src/kernel/fs/procfs.c
-  ${PPAP_ROOT}/src/kernel/fs/fstab.c
-  ${PPAP_ROOT}/src/kernel/fs/ufs.c
+  ${PPAP_ROOT}/src/kernel/blkdev/blkdev.c
   ${PPAP_ROOT}/src/kernel/exec/exec.c
   ${PPAP_ROOT}/src/kernel/exec/flat_loader.c
   ${PPAP_ROOT}/src/kernel/exec/loader.c
@@ -163,6 +162,7 @@ set(KERNEL_CORE_SOURCES
 set(TARGET_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/target_ibmpc.c
   ${CMAKE_CURRENT_SOURCE_DIR}/drivers/uart_com.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/drivers/floppy_blk.c
   ${CMAKE_CURRENT_SOURCE_DIR}/drivers/bios_con.c
   ${CMAKE_CURRENT_SOURCE_DIR}/drivers/timer_pit.c
 )
@@ -173,18 +173,15 @@ add_executable(ppap_ibmpc
   ${TARGET_SOURCES}
 )
 
-target_include_directories(ppap_ibmpc PRIVATE
-  ${PPAP_ROOT}/src
-  ${PPAP_ROOT}/src/kernel
-  ${PPAP_ROOT}/src/target/ibmpc
-)
-
+target_include_directories(ppap_ibmpc PRIVATE ${PPAP_INCLUDES})
 target_compile_options(ppap_ibmpc PRIVATE ${KERNEL_FLAGS})
 
 target_link_options(ppap_ibmpc PRIVATE
   -T ${CMAKE_CURRENT_SOURCE_DIR}/ibmpc_kernel.ld
   -nostartfiles
   -Wl,--gc-sections
+  # TODO: replace with stub objects once far-call stubs are implemented
+  -Wl,--unresolved-symbols=ignore-all
 )
 target_link_libraries(ppap_ibmpc PRIVATE gcc)
 
@@ -197,11 +194,59 @@ add_custom_command(TARGET ppap_ibmpc POST_BUILD
   COMMAND ${CMAKE_OBJCOPY} -O binary
     $<TARGET_FILE:ppap_ibmpc>
     ${CMAKE_CURRENT_BINARY_DIR}/ppap_ibmpc.bin
-  COMMENT "Creating kernel binary ppap_ibmpc.bin"
+  COMMENT "Creating core module binary ppap_ibmpc.bin"
 )
 
 # ==========================================================================
-# Target 4: hello.com (test user program for exec)
+# Target 4: VFS module (separate segment)
+# ==========================================================================
+
+set(KERNEL_VFS_SOURCES
+  ${PPAP_ROOT}/src/kernel/vfs/vfs.c
+  ${PPAP_ROOT}/src/kernel/vfs/namei.c
+  ${PPAP_ROOT}/src/kernel/fd/fd.c
+  ${PPAP_ROOT}/src/kernel/fd/tty.c
+  ${PPAP_ROOT}/src/kernel/fd/pipe.c
+  ${PPAP_ROOT}/src/kernel/fs/romfs.c
+  ${PPAP_ROOT}/src/kernel/fs/tmpfs.c
+  ${PPAP_ROOT}/src/kernel/fs/devfs.c
+  ${PPAP_ROOT}/src/kernel/fs/procfs.c
+  ${PPAP_ROOT}/src/kernel/fs/fstab.c
+  ${PPAP_ROOT}/src/kernel/fs/ufs.c
+  ${PPAP_ROOT}/src/arch/i16/string.c
+)
+
+add_executable(ppap_ibmpc_vfs
+  ${KERNEL_VFS_SOURCES}
+)
+
+target_include_directories(ppap_ibmpc_vfs PRIVATE ${PPAP_INCLUDES})
+target_compile_options(ppap_ibmpc_vfs PRIVATE ${KERNEL_FLAGS})
+
+target_link_options(ppap_ibmpc_vfs PRIVATE
+  -T ${CMAKE_CURRENT_SOURCE_DIR}/ibmpc_vfs.ld
+  -nostartfiles
+  # TODO: replace with stub objects once far-call stubs are implemented
+  -Wl,--unresolved-symbols=ignore-all
+)
+target_link_libraries(ppap_ibmpc_vfs PRIVATE gcc)
+
+set_target_properties(ppap_ibmpc_vfs PROPERTIES
+  SUFFIX ".elf"
+  LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ibmpc_vfs.ld"
+)
+
+add_custom_command(TARGET ppap_ibmpc_vfs POST_BUILD
+  COMMAND ${CMAKE_OBJCOPY} -O binary
+    $<TARGET_FILE:ppap_ibmpc_vfs>
+    ${CMAKE_CURRENT_BINARY_DIR}/ppap_ibmpc_vfs.bin
+  COMMENT "Creating VFS module binary ppap_ibmpc_vfs.bin"
+)
+
+add_dependencies(ppap_ibmpc ppap_ibmpc_vfs)
+
+# ==========================================================================
+# Target 5: hello.com (test user program for exec)
 # ==========================================================================
 
 add_executable(hello_com
