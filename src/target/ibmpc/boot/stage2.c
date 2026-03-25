@@ -74,8 +74,9 @@ static void puts_bios(const char *s)
   while (*s) putc_bios(*s++);
 }
 
-/* Read one sector to 0:dest. Push/pop ES in one asm block. */
-static void __attribute__((noinline)) read_sector(uint16_t lba, void *dest)
+/* Read one sector to seg:off via BIOS INT 13h. */
+static void __attribute__((noinline)) read_sector_far(uint16_t lba,
+    uint16_t seg, uint16_t off)
 {
   uint16_t cyl  = lba / SECS_PER_CYL;
   uint16_t rem  = lba % SECS_PER_CYL;
@@ -84,17 +85,23 @@ static void __attribute__((noinline)) read_sector(uint16_t lba, void *dest)
 
   __asm__ volatile (
     "push %%es\n\t"
-    "xor  %%ax, %%ax\n\t"
-    "mov  %%ax, %%es\n\t"
+    "mov  %0, %%es\n\t"
     "mov  $0x0201, %%ax\n\t"
     "int  $0x13\n\t"
     "pop  %%es"
     :
-    : "b"((uint16_t)(uintptr_t)dest),
+    : "r"(seg),
+      "b"(off),
       "c"((uint16_t)((cyl << 8) | sec)),
       "d"((uint16_t)((head << 8) | boot_drive))
     : "ax", "memory", "cc"
   );
+}
+
+/* Read one sector to 0:dest (near pointer, segment 0). */
+static void __attribute__((noinline)) read_sector(uint16_t lba, void *dest)
+{
+  read_sector_far(lba, 0, (uint16_t)(uintptr_t)dest);
 }
 
 static void __attribute__((noinline)) read_ufs_block(uint16_t blk, void *dest)
@@ -128,22 +135,57 @@ static void read_inode(uint16_t ino, ufs_inode_t *out)
   for (uint16_t i = 0; i < UFS_INODE_SIZE; i++) d[i] = s[i];
 }
 
-static void __attribute__((noinline)) load_block(uint16_t blk,
-    uint8_t **dest, uint32_t *loaded, uint32_t size)
+static void __attribute__((noinline)) load_block_far(uint16_t blk,
+    uint16_t seg, uint16_t *off, uint32_t *loaded, uint32_t size)
 {
   if (blk == 0) return;
   uint16_t lba = UFS_FLOPPY_BASE + blk * UFS_FLOPPY_SECS;
   for (uint16_t s = 0; s < UFS_FLOPPY_SECS && *loaded < size; s++) {
-    read_sector(lba + s, *dest);
-    *dest += FLOPPY_SEC;
+    read_sector_far(lba + s, seg, *off);
+    *off += FLOPPY_SEC;
     *loaded += FLOPPY_SEC;
   }
 }
 
+static void __attribute__((noinline)) load_block(uint16_t blk,
+    uint8_t **dest, uint32_t *loaded, uint32_t size)
+{
+  uint16_t off = (uint16_t)(uintptr_t)*dest;
+  load_block_far(blk, 0, &off, loaded, size);
+  *dest = (uint8_t *)(uintptr_t)off;
+}
+
 /*
- * Load a file from the UFS filesystem to a destination address.
+ * Load a file from UFS to seg:0000.
  * Returns the number of bytes loaded, or 0 on failure.
  */
+static uint16_t load_file_far(uint16_t ino, uint16_t seg)
+{
+  ufs_inode_t inode;
+  read_inode(ino, &inode);
+
+  uint32_t size = inode.i_size;
+  uint16_t direct[UFS_DIRECT_BLOCKS];
+  for (uint16_t i = 0; i < UFS_DIRECT_BLOCKS; i++)
+    direct[i] = (uint16_t)inode.i_direct[i];
+  uint16_t indirect = (uint16_t)inode.i_indirect;
+
+  uint16_t off = 0;
+  uint32_t loaded = 0;
+  for (uint16_t i = 0; i < UFS_DIRECT_BLOCKS && loaded < size; i++)
+    load_block_far(direct[i], seg, &off, &loaded, size);
+
+  if (indirect && loaded < size) {
+    read_ufs_block(indirect, IBUF);
+    uint32_t *ind = (uint32_t *)IBUF;
+    for (uint16_t i = 0; i < UFS_BLOCK_SIZE / 4 && loaded < size; i++)
+      load_block_far((uint16_t)ind[i], seg, &off, &loaded, size);
+  }
+
+  return (uint16_t)loaded;
+}
+
+/* Load a file to 0:dest (near, segment 0). */
 static uint16_t load_file(uint16_t ino, uint8_t *dest)
 {
   ufs_inode_t inode;
@@ -223,12 +265,14 @@ void stage2_main(void)
   uint16_t core_size = load_file(kernel_ino, (uint8_t *)KERNEL_ADDR);
   if (!core_size) { puts_bios("!load"); return; }
 
-  /* VFS module: load paragraph-aligned after core */
-  uint16_t vfs_addr = (KERNEL_ADDR + core_size + 15u) & ~15u;
+  /* VFS module: load at segment 0x1000 (linear 0x10000).
+   * Must be above core's full footprint (text+data+BSS+stack+page_pool).
+   * Core ends at __page_pool_start = ~0x9000, so 0x10000 is safe. */
+  uint16_t vfs_seg = 0x1000u;
   uint16_t vfs_ino = find_file(boot_ino, "kernel_vfs");
   uint16_t vfs_size = 0;
   if (vfs_ino) {
-    vfs_size = load_file(vfs_ino, (uint8_t *)vfs_addr);
+    vfs_size = load_file_far(vfs_ino, vfs_seg);
   }
 
   /* Write module info block for the kernel to read */
@@ -239,7 +283,7 @@ void stage2_main(void)
   info->mod[0].size = core_size;
   /* Module 1: VFS */
   if (vfs_size) {
-    info->mod[1].segment = vfs_addr >> 4;
+    info->mod[1].segment = vfs_seg;
     info->mod[1].size = vfs_size;
   }
 
