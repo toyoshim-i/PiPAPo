@@ -157,24 +157,32 @@ can address any byte in the 1 MB space.
 
 ### 3.2 Kernel Memory Model
 
-PPAP's kernel is small enough to fit in a **small memory model**:
+Each kernel module uses **small model** (CS=DS=SS within one 64 KB
+segment).  The full kernel is split into multiple modules, each in
+its own segment:
 
-- All kernel code in one 64 KB segment (CS)
-- All kernel data in one 64 KB segment (DS = SS)
-- Far pointers used only when accessing user memory or I/O
+```
+Module      Segment     Contents
+────────    ────────    ─────────────────────────────────
+Core        seg 0       main, klog, mm, proc, sched, syscall, blkdev
+VFS         seg N       vfs, namei, romfs, tmpfs, devfs, procfs, ufs
+Exec        seg M       exec, loaders, flat_loader
+...         ...         (future: signal, subsys, dos_bridge)
+```
 
-This mirrors how many real-mode DOS TSRs and small kernels operated.
-The kernel's internal data structures (proc table, VFS nodes, fd table,
-page allocator) use near pointers.  Only the syscall boundary requires
-segment resolution.
+Within each module, all code and data use near 16-bit pointers.
+Cross-module calls use far-call stubs that switch both CS and DS
+to the target module's segment.  The module interface (`mod_*.h`)
+is the only way to communicate across modules.
 
-If the kernel exceeds 64 KB of code or data, it can switch to a
-**compact model** (multiple code segments, one data segment) or **medium
-model** (one code segment, multiple data segments).  But the initial
-target should aim for small model — PPAP's kernel text is currently
-~80–150 KB on m68k with all features enabled; with eCPU Z80 software
-emulator disabled and using hardware 8080 mode instead, it may fit in
-64 KB.
+This is **not** medium or compact model — those are broken in
+ia16-elf-ld 2.39 (R_386_16 overflow for fartext, linker segfault).
+Instead, each module is a separately-linked small-model binary.
+
+A **segment manager** in the core module tracks each module's
+segment base at runtime.  Stage2 loads module binaries and
+initializes the core segment; core then registers additional
+modules as they are discovered in memory.
 
 ### 3.3 User Process Memory
 
@@ -914,77 +922,88 @@ Current P-3b core kernel:
 This leaves ~13 KB headroom.  Adding blkdev + floppy driver pushes
 past 64 KB, requiring the segment split.
 
-### Segment Split: Two-Level Stub Pattern
+### Segment Split: Isolated Segments with DS Switching
 
-When the single binary exceeds 64 KB, the kernel is split into
-multiple binaries, each in its own code segment.  All binaries share
-DS=0 for data access.  Both binaries use **small model** (`ret`).
-
-Cross-segment calls use a two-level stub pattern:
+Each kernel module is a separately-linked small-model binary with
+its own code AND data in one 64 KB segment.  Cross-module calls
+switch both CS and DS via a two-level stub pattern.
 
 ```
-Core segment (CS=0):              VFS segment (CS=0x0C00):
-───────────────────               ─────────────────────────
+Core segment (CS=DS=core_seg):    VFS segment (CS=DS=vfs_seg):
+────────────────────────────      ──────────────────────────────
 caller()                          vfs_init_target_stub:
   call mod_vfs.init()               call vfs_init   ; near
   ; near call to ──►                vfs_init:
-vfs_init_caller_stub:                  ...
-  lcall $VFS, $stub ─── far ───►     ret            ; near
-  ret  ◄─────────────── far ────  lret
-                                  ─────────────────────────
+vfs_init_caller_stub:                  ...  (uses DS for VFS data)
+  push ds                             ret            ; near
+  mov  ax, [vfs_seg]              lret               ; far → core
+  mov  ds, ax                     ──────────────────────────────
+  lcall far [vfs_entry] ─ far ──►
+  pop  ds  ◄──────────── far ──
+  ret
+────────────────────────────
 ```
 
-**Caller-side stub** (6 bytes, in caller's segment):
+**Caller-side stub** (in caller's segment):
 ```nasm
 vfs_init_caller_stub:
-  lcall $VFS_SEG, $target_stub_offset
-  ret
+    push ds
+    mov  ax, [seg_table + MOD_VFS * 2]  ; segment manager lookup
+    mov  ds, ax
+    lcall far [vfs_init_fptr]           ; far call to VFS
+    pop  ds
+    ret
 ```
 
-**Target-side stub** (4 bytes, in target's segment):
+**Target-side stub** (in VFS segment):
 ```nasm
 vfs_init_target_stub:
-  call vfs_init        ; near call to real function
-  lret                 ; far return to caller segment
+    call vfs_init       ; near call to real function (DS=VFS)
+    lret                ; far return, caller restores DS
 ```
 
-The real function (`vfs_init`) uses normal `ret` — no changes to
-the portable C code.  Only the assembly stubs know about segments.
+The real function (`vfs_init`) uses normal `ret` and accesses its
+own data via DS — no changes to the portable C code.
 
-The `mod_vfs` struct in the core uses **near** pointers to the
-caller-side stubs.  On 32-bit platforms, the struct points directly
-to the real functions (no stubs).  Same `mod_vfs.init()` syntax
-everywhere.
+**Segment Manager**: The core module maintains a table mapping
+module IDs to segment bases.  Stage2 initializes the core segment
+(since the segment manager itself lives in core).  At boot, core
+registers each additional module.
 
-**Approach verified:**
-- `-mcmodel=medium` doesn't work (linker can't merge fartext sections)
-- `-msegelf` doesn't work (linker doesn't support segmented ELF output)
-- Two-level stubs with small model: **works** (tested)
+**Why not medium model or shared DS?**
+- `-mcmodel=medium` is broken in ia16-elf-ld 2.39 (R_386_16
+  overflow for fartext, linker segfault with --noinhibit-exec)
+- `-msegelf` is not supported by the linker
+- Shared DS requires manual data partition management between
+  separately-linked binaries (fragile)
+- Isolated segments: each module is self-contained, scales
+  independently, no coordination needed
 
-**What goes where (current split):**
+**What goes where:**
 
-| Binary | Segment | Contents | Size |
-|--------|---------|----------|------|
-| Core | CS=0 | main, klog, kmem, page, proc, sched, syscall, exec, blkdev, floppy, stubs | ~30 KB |
-| VFS | CS=VFS_SEG | vfs, namei, romfs, tmpfs, devfs, procfs, ufs, fstab, stubs | ~20 KB |
+| Binary | Segment | Contents | Budget |
+|--------|---------|----------|--------|
+| Core | stage2-assigned | main, klog, mm, proc, sched, syscall, blkdev, floppy, stubs | ≤64 KB |
+| VFS | seg_table[MOD_VFS] | vfs, namei, romfs, tmpfs, devfs, procfs, ufs, fstab, stubs | ≤64 KB |
+| Exec | seg_table[MOD_EXEC] | exec, loaders, flat_loader, stubs | ≤64 KB |
 
-**Data layout (shared DS=0):**
+**Memory layout:**
 
 ```
-0x00600  Core .text (boot.S, switch.S, trap.S)
-0x00800  Core .fartext (caller stubs + C functions)
-0x0????  Core .rodata + .data
-0x0????  Core .bss + stack
-0x0????  VFS .data + .bss (at fixed DS=0 address)
-0x0????  Page pool (4 KB aligned)
-0x?????  VFS .text loaded at VFS_SEG:0x0000 (above 64 KB)
+0x00000-0x005FF  IVT + BIOS Data Area
+0x00600-0x?????  Core module (text + data + BSS + stack, ≤64 KB)
+                 Includes segment manager table
+0x?????-0x?????  VFS module (text + data + BSS, ≤64 KB)
+0x?????-0x?????  Exec module (text + data + BSS, ≤64 KB)
+0x?????          Page pool start (4 KB aligned, after last module)
+...    -0x9FBFF  Free pages (conventional RAM ceiling - EBDA)
+0x9FC00-0x9FFFF  EBDA (1 KB)
+0xA0000-0xFFFFF  Video RAM + ROM
 ```
 
-Stage2 loads both `/boot/kernel` and `/boot/kernel_vfs` from the
-UFS floppy, placing them at their respective linear addresses.
-
-Stage2 must also stay above the kernel end — if the kernel grows past
-~48 KB, stage2's address (currently 0xC000) may need to increase.
+Module load addresses are paragraph-aligned (16-byte boundary) so
+they can be expressed as segment values (linear_addr >> 4).
+Stage2 loads all module binaries sequentially from the UFS floppy.
 
 ---
 
@@ -1049,17 +1068,27 @@ signal delivery (stub), ELF loader (disabled for i16).
 Segment split (two-level stubs) designed but not yet implemented.
 See §9.5 "Segment Split" above for the architecture.
 
-### Phase P-4b: Segment Split + Floppy Mount (next)
+### Phase P-4b: Isolated Segment Split + Floppy Mount (next)
 
-**Goal**: Split core + VFS into separate binaries, mount UFS root.
+**Goal**: Split kernel into isolated-segment modules, mount UFS root.
 
-1. Two-level assembly stubs (caller-side + target-side)
-2. Separate CMake targets: ppap_ibmpc (core) + ppap_ibmpc_vfs
-3. VFS data at fixed DS=0 address, code in own segment
-4. Stage2 loads both binaries from UFS floppy
-5. Floppy block device driver (INT 13h)
-6. target_mount_rootfs() mounts UFS via blkdev
-7. target_init_path() returns "/sbin/init"
+1. **Segment manager** in core — table mapping module IDs to segment
+   bases, initialized by stage2 (core) then extended at boot
+2. **Two-level assembly stubs** with DS switching — caller saves DS,
+   loads target segment, lcall; target-side stub does near call + lret
+3. **Separate CMake targets**: ppap_ibmpc_core + ppap_ibmpc_vfs
+   (each linked as small model, own text + data + BSS)
+4. **Stage2 multi-load**: loads core + VFS binaries from UFS floppy,
+   initializes core segment base before jumping to kernel
+5. **mkpcimg.sh** packages both binaries into the floppy image
+6. **Floppy block device** driver (INT 13h) in core module
+7. **target_mount_rootfs()** mounts UFS root via blkdev
+8. **target_init_path()** returns "/sbin/init"
+
+**Key design**: each module has isolated CS and DS.  No shared global
+variables — all cross-module communication goes through `mod_*.h`
+interfaces.  Stubs handle both CS switch (lcall/lret) and DS switch
+(push/pop ds).
 
 **Verification**: Kernel mounts floppy UFS, loads /sbin/init, prints
 "Hello from user!".

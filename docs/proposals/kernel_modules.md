@@ -149,18 +149,60 @@ in real mode since segments are just base+offset windows.
 Stage2 (or the core kernel at boot) loads each module binary and
 records its segment value. The far-call wrappers use these values.
 
-### Shared Data Segment
+### Isolated Segments Per Module (i16)
 
-All modules share a single DS (e.g., 0x1400 in the layout above).
-This means:
-- Near data pointers work across modules (same DS)
-- Global variables (proc_table, etc.) are accessible from all modules
-- Struct pointers passed as arguments work without conversion
-- Total data+BSS must fit in 64 KB (currently ~35 KB on ARM, fine)
+On i16, each module has its own **isolated segment** containing both
+code AND data.  CS and DS are set to the module's segment base on
+entry.  This means:
 
-Each module's `.data` and `.bss` are linked into the shared data
-segment, not into the module's own code segment. The code segment
-contains only `.text` and `.rodata`.
+- Each module's code + data + BSS must fit in 64 KB (its own segment)
+- Cross-module data access goes through the module interface (far
+  pointers or copy-in/copy-out), just like cross-module function calls
+- No shared global variables — all state is module-private
+- Scales indefinitely: add more modules, each gets its own 64 KB
+
+This avoids the medium model limitation (ia16-elf-ld 2.39 cannot
+link fartext sections > 64 KB) and the data segment partitioning
+problem (manually coordinating DS offsets between separately-linked
+binaries).
+
+The stub pattern switches both CS and DS on module entry:
+
+```asm
+; Caller-side stub (in caller's segment):
+vfs_init_caller_stub:
+    push ds                     ; save caller's DS
+    mov  ax, [vfs_segment]      ; load VFS segment from manager
+    mov  ds, ax                 ; switch DS to VFS
+    lcall far [vfs_init_entry]  ; far call to VFS
+    pop  ds                     ; restore caller's DS
+    ret
+
+; Target-side stub (in VFS segment):
+vfs_init_entry:
+    call vfs_init               ; near call within VFS
+    lret                        ; far return to caller
+```
+
+On 32-bit platforms, there are no segments — modules share a flat
+address space and all data is directly accessible.
+
+### Segment Manager
+
+A **segment manager** in the core module tracks each module's segment
+base.  Stage2 loads module binaries into memory and initializes the
+core module's segment.  After core boots, it initializes the segment
+manager and registers each additional module's segment base.
+
+```c
+/* Core segment is set by stage2 (before segment manager exists) */
+/* Other modules register at boot: */
+seg_register(MOD_VFS,  vfs_linear_addr >> 4);
+seg_register(MOD_EXEC, exec_linear_addr >> 4);
+```
+
+Far-call stubs look up segment values from the manager table at
+runtime — no hardcoded segment values in the generated code.
 
 ### Directory Structure and Visibility
 
