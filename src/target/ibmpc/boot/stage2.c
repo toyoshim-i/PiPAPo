@@ -140,6 +140,69 @@ static void __attribute__((noinline)) load_block(uint16_t blk,
   }
 }
 
+/*
+ * Load a file from the UFS filesystem to a destination address.
+ * Returns the number of bytes loaded, or 0 on failure.
+ */
+static uint16_t load_file(uint16_t ino, uint8_t *dest)
+{
+  ufs_inode_t inode;
+  read_inode(ino, &inode);
+
+  uint32_t size = inode.i_size;
+  uint16_t direct[UFS_DIRECT_BLOCKS];
+  for (uint16_t i = 0; i < UFS_DIRECT_BLOCKS; i++)
+    direct[i] = (uint16_t)inode.i_direct[i];
+  uint16_t indirect = (uint16_t)inode.i_indirect;
+
+  uint32_t loaded = 0;
+  for (uint16_t i = 0; i < UFS_DIRECT_BLOCKS && loaded < size; i++)
+    load_block(direct[i], &dest, &loaded, size);
+
+  if (indirect && loaded < size) {
+    read_ufs_block(indirect, IBUF);
+    uint32_t *ind = (uint32_t *)IBUF;
+    for (uint16_t i = 0; i < UFS_BLOCK_SIZE / 4 && loaded < size; i++)
+      load_block((uint16_t)ind[i], &dest, &loaded, size);
+  }
+
+  return (uint16_t)loaded;
+}
+
+/*
+ * Find a file in a directory by name.
+ * Returns the inode number, or 0 if not found.
+ * Searches all direct blocks of the directory.
+ */
+static uint16_t find_file(uint16_t dir_ino, const char *name)
+{
+  ufs_inode_t inode;
+  read_inode(dir_ino, &inode);
+  for (uint16_t i = 0; i < UFS_DIRECT_BLOCKS; i++) {
+    if (!inode.i_direct[i]) break;
+    read_ufs_block((uint16_t)inode.i_direct[i], BUF);
+    uint16_t ino = find_in_dir(BUF, name);
+    if (ino) return ino;
+  }
+  return 0;
+}
+
+/*
+ * Module info block: passed to the kernel at a known address.
+ * The kernel reads this to find where each module was loaded
+ * and initialize the segment manager.
+ */
+#define MOD_INFO_ADDR  0x0500u  /* In the free gap 0x0500-0x05FF */
+#define MOD_MAX        4u
+
+typedef struct {
+  uint16_t count;              /* number of loaded modules */
+  struct {
+    uint16_t segment;          /* paragraph address (linear >> 4) */
+    uint16_t size;             /* size in bytes */
+  } mod[MOD_MAX];
+} mod_info_t;
+
 void stage2_main(void)
 {
   /* Banner continues: "PiPA" already on screen from stage1+stage2_entry */
@@ -149,37 +212,35 @@ void stage2_main(void)
   if (sb->s_magic != UFS_MAGIC) { puts_bios("!UFS"); return; }
   sb_itable_block = (uint16_t)sb->s_itable_block;
 
-  ufs_inode_t inode;
-  read_inode(UFS_ROOT_INO, &inode);
-  read_ufs_block((uint16_t)inode.i_direct[0], BUF);
-  uint16_t boot_ino = find_in_dir(BUF, "boot");
+  /* Find /boot directory */
+  uint16_t boot_ino = find_file(UFS_ROOT_INO, "boot");
   if (!boot_ino) { puts_bios("!boot"); return; }
 
-  read_inode(boot_ino, &inode);
-  read_ufs_block((uint16_t)inode.i_direct[0], BUF);
-  uint16_t kernel_ino = find_in_dir(BUF, "kernel");
+  /* Load /boot/kernel (core module) to 0x0600 */
+  uint16_t kernel_ino = find_file(boot_ino, "kernel");
   if (!kernel_ino) { puts_bios("!kern"); return; }
 
-  read_inode(kernel_ino, &inode);
-  /* Quiet — banner continues in kernel */
+  uint16_t core_size = load_file(kernel_ino, (uint8_t *)KERNEL_ADDR);
+  if (!core_size) { puts_bios("!load"); return; }
 
-  uint32_t size = inode.i_size;
-  uint16_t direct[UFS_DIRECT_BLOCKS];
-  for (uint16_t i = 0; i < UFS_DIRECT_BLOCKS; i++)
-    direct[i] = (uint16_t)inode.i_direct[i];
-  uint16_t indirect = (uint16_t)inode.i_indirect;
+  /* VFS module: load paragraph-aligned after core */
+  uint16_t vfs_addr = (KERNEL_ADDR + core_size + 15u) & ~15u;
+  uint16_t vfs_ino = find_file(boot_ino, "kernel_vfs");
+  uint16_t vfs_size = 0;
+  if (vfs_ino) {
+    vfs_size = load_file(vfs_ino, (uint8_t *)vfs_addr);
+  }
 
-  uint8_t *dest = (uint8_t *)KERNEL_ADDR;
-  uint32_t loaded = 0;
-
-  for (uint16_t i = 0; i < UFS_DIRECT_BLOCKS && loaded < size; i++)
-    load_block(direct[i], &dest, &loaded, size);
-
-  if (indirect && loaded < size) {
-    read_ufs_block(indirect, IBUF);
-    uint32_t *ind = (uint32_t *)IBUF;
-    for (uint16_t i = 0; i < UFS_BLOCK_SIZE / 4 && loaded < size; i++)
-      load_block((uint16_t)ind[i], &dest, &loaded, size);
+  /* Write module info block for the kernel to read */
+  mod_info_t *info = (mod_info_t *)MOD_INFO_ADDR;
+  info->count = vfs_size ? 2 : 1;
+  /* Module 0: core (segment = KERNEL_ADDR >> 4 = 0x0060) */
+  info->mod[0].segment = KERNEL_ADDR >> 4;
+  info->mod[0].size = core_size;
+  /* Module 1: VFS */
+  if (vfs_size) {
+    info->mod[1].segment = vfs_addr >> 4;
+    info->mod[1].size = vfs_size;
   }
 
   /* Kernel continues the "PiPA" banner with "Po booting..." */

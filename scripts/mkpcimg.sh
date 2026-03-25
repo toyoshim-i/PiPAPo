@@ -60,6 +60,12 @@ rm -rf "$UFS_STAGING"
 mkdir -p "$UFS_STAGING/boot" "$UFS_STAGING/bin" "$UFS_STAGING/sbin"
 cp "$KERNEL" "$UFS_STAGING/boot/kernel"
 
+# Include VFS module if built
+VFS_BIN="$BUILD_DIR/ppap_ibmpc_vfs.bin"
+if [[ -f "$VFS_BIN" ]]; then
+  cp "$VFS_BIN" "$UFS_STAGING/boot/kernel_vfs"
+fi
+
 # Include user programs if built
 HELLO="$BUILD_DIR/hello.com"
 if [[ -f "$HELLO" ]]; then
