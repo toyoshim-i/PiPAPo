@@ -289,8 +289,10 @@ void stage2_main(void)
   /* Write module info block for the kernel to read */
   mod_info_t *info = (mod_info_t *)MOD_INFO_ADDR;
   info->count = vfs_size ? 2 : 1;
-  /* Module 0: core (segment = KERNEL_ADDR >> 4 = 0x0060) */
-  info->mod[0].segment = KERNEL_ADDR >> 4;
+  /* Module 0: core — linked at absolute 0x0600 with CS=0.
+   * Segment is 0, not KERNEL_ADDR>>4, because the linker uses
+   * absolute addresses starting at 0x0600. */
+  info->mod[0].segment = 0;
   info->mod[0].size = core_size;
   /* Module 1: VFS */
   if (vfs_size) {
