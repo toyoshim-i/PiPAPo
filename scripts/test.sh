@@ -83,8 +83,7 @@ echo "=== Building m68k target (production) ==="
 
 echo ""
 echo "=== m68k binary size (production) ==="
-"$PROJECT_DIR/tools/m68k-toolchain/bin/m68k-elf-size" \
-    build/qemu_m68k/ppap_qemu_m68k.elf 2>/dev/null || true
+m68k-elf-size build/qemu_m68k/ppap_qemu_m68k.elf 2>/dev/null || true
 
 # ── QEMU on-target tests ──────────────────────────────────────────────────
 echo ""

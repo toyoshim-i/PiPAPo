@@ -39,9 +39,8 @@ fi
 # --- Derive variables from PPAP_ARCH (fallback for standalone use) ---
 if [[ -z "${PPAP_CC:-}" ]]; then
     if [[ "$PPAP_ARCH" == "m68k" ]]; then
-        M68K_TC="$PROJECT_ROOT/tools/m68k-toolchain"
-        PPAP_CC="${M68K_TC}/bin/m68k-elf-gcc"
-        PPAP_CROSS_PREFIX="${M68K_TC}/bin/m68k-elf-"
+        PPAP_CC="m68k-elf-gcc"
+        PPAP_CROSS_PREFIX="m68k-elf-"
         PPAP_MUSL_TARGET=m68k-elf
         PPAP_MUSL_SYSROOT="$PROJECT_ROOT/build/m68k/musl-sysroot"
         PPAP_MUSL_CFLAGS="-m68000 -Os -g -msep-data -ffunction-sections -fdata-sections"

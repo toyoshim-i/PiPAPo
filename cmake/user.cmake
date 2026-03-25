@@ -122,8 +122,6 @@ set(BB_SBIN_APPLETS mount umount)
 
 if(DEFINED ENV{PPAP_M68K_TOOLCHAIN})
     set(PPAP_M68K_TC    $ENV{PPAP_M68K_TOOLCHAIN})
-else()
-    set(PPAP_M68K_TC    ${PPAP_ROOT}/tools/m68k-toolchain)
 endif()
 set(PPAP_M68K_CC        ${PPAP_M68K_TC}/bin/m68k-elf-gcc)
 set(PPAP_M68K_OBJCOPY   ${PPAP_M68K_TC}/bin/m68k-elf-objcopy)
@@ -832,18 +830,14 @@ function(ppap_m68k_cross_program name source)
         return()
     endif()
 
-    if(DEFINED ENV{PPAP_M68K_TOOLCHAIN})
-        set(_m68k_tc  $ENV{PPAP_M68K_TOOLCHAIN})
-    else()
-        set(_m68k_tc  ${PPAP_ROOT}/tools/m68k-toolchain)
-    endif()
-    set(_m68k_cc  ${_m68k_tc}/bin/m68k-elf-gcc)
-    if(NOT EXISTS ${_m68k_cc})
+    if(NOT DEFINED ENV{PPAP_M68K_TOOLCHAIN})
         message(FATAL_ERROR
-            "m68k-elf-gcc not found at ${_m68k_cc} and no pre-built "
+            "m68k-elf-gcc not available and no pre-built "
             "${name}_m68k.elf in build/shared_m68k/. "
             "Run: ./scripts/build.sh to pre-build cross binaries via Docker.")
     endif()
+    set(_m68k_tc  $ENV{PPAP_M68K_TOOLCHAIN})
+    set(_m68k_cc  ${_m68k_tc}/bin/m68k-elf-gcc)
     set(_m68k_ld  ${PPAP_ROOT}/src/user/arch/m68k/user.ld)
     execute_process(COMMAND ${_m68k_cc} -m68000 -print-libgcc-file-name
         OUTPUT_VARIABLE _m68k_libgcc OUTPUT_STRIP_TRAILING_WHITESPACE)

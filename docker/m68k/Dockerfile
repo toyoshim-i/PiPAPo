@@ -18,7 +18,7 @@
 #       -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain_m68k.cmake && \
 #     cmake --build build/qemu_m68k
 #
-# Toolchain versions match third_party/build_gcc_m68k.sh exactly.
+# Docker-only toolchain; no local build script.
 # =============================================================================
 
 FROM ubuntu:24.04

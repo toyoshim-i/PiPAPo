@@ -72,7 +72,7 @@ sudo apt install gcc-arm-none-eabi binutils-arm-none-eabi
 
 ### m68k Targets
 
-- `m68k-elf-gcc` — custom-built cross compiler (see `scripts/build-m68k-toolchain.sh`)
+- `m68k-elf-gcc` — custom-built cross compiler (provided by Docker image `docker/m68k/`)
 - `m68k-elf-binutils`
 
 ### musl Sysroot (Path B only)
