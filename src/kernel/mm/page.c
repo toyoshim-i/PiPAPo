@@ -191,18 +191,6 @@ void *page_alloc(void) {
   }
   spin_unlock_irqrestore(SPIN_PAGE, saved);
   if (!p) klog("MM: OOM: page_alloc failed\n");
-  /* Debug: verify allocated page is NOT still on free stack */
-  if (p) {
-    uint32_t s2 = spin_lock_irqsave(SPIN_PAGE);
-    for (uint32_t i = 0; i < free_top; i++) {
-      if (free_stack[i] == p) {
-        klogf("MM: BUG alloc %x still on free_stack[%u]!\n",
-              (uintptr_t)p, i);
-        break;
-      }
-    }
-    spin_unlock_irqrestore(SPIN_PAGE, s2);
-  }
   return p;
 }
 
@@ -261,13 +249,6 @@ static void stack_backtrace(void) {
 }
 #endif
 
-/* Debug: track who last freed each page (index by page number) */
-#ifndef PAGE_COUNT_MAX
-#define PAGE_COUNT_MAX 128
-#endif
-static uintptr_t last_free_ra[PAGE_COUNT_MAX];
-static uint16_t last_free_pid[PAGE_COUNT_MAX];
-
 void page_free(void *page) {
   /* Rudimentary double-free / out-of-range guard */
   uintptr_t addr = (uintptr_t)page;
@@ -275,7 +256,6 @@ void page_free(void *page) {
   if (addr < pb || addr >= pb + page_count * PAGE_SIZE)
     return; /* ignore bogus pointer rather than corrupt the stack */
 
-  uint32_t idx = (addr - pb) / PAGE_SIZE;
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
 
   /* Scan for double-free: O(free_top) ≈ O(51) at 133 MHz ≈ 1 µs */
@@ -284,17 +264,10 @@ void page_free(void *page) {
       spin_unlock_irqrestore(SPIN_PAGE, saved);
       klogf("MM: double-free @ %x (ra=%x)\n", addr,
             (uintptr_t)__builtin_return_address(0));
-      klogf("MM: prev free ra=%x pid=%u\n",
-            (uint32_t)last_free_ra[idx],
-            (uint32_t)last_free_pid[idx]);
       stack_backtrace();
       return;
     }
   }
-
-  /* Record who freed this page */
-  last_free_ra[idx] = (uintptr_t)__builtin_return_address(0);
-  last_free_pid[idx] = 0;
 
   if (free_top < page_count) free_stack[free_top++] = page;
   spin_unlock_irqrestore(SPIN_PAGE, saved);
