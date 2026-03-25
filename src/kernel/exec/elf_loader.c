@@ -9,11 +9,12 @@
 #include "arch/arch.h"
 #include "elf.h"
 #include "kernel/common/errno.h"
+#include "kernel/klog.h"
 #include "kernel/mm/page.h"
 #include "kernel/proc/proc.h"
 
 #if !defined(__riscv) && !defined(__xtensa__)
-static void apply_relocations(const elf32_ehdr_t *ehdr,
+static int apply_relocations(const elf32_ehdr_t *ehdr,
                               const uint8_t *file_base, uint32_t file_size,
                               const elf32_phdr_t *text_seg,
                               const elf32_phdr_t *data_seg, uint8_t *sram_page,
@@ -21,7 +22,7 @@ static void apply_relocations(const elf32_ehdr_t *ehdr,
                               const elf_got_info_t *got_info,
                               const cpu_ops_t *cpu_ops, void *cpu_state) {
   elf_rel_info_t rel_info;
-  if (elf_find_rel(ehdr, file_base, &rel_info, file_size) != 0) return;
+  if (elf_find_rel(ehdr, file_base, &rel_info, file_size) != 0) return 0;
 
   const uint8_t *rel_base = file_base + rel_info.offset;
   uint32_t entry_size =
@@ -74,11 +75,16 @@ static void apply_relocations(const elf32_ehdr_t *ehdr,
       continue;
     }
 
-    if ((cpu_ops->arch_id == CPU_ARCH_M68K && rtype != R_68K_RELATIVE) ||
-        (cpu_ops->arch_id == CPU_ARCH_ARM && rtype != R_ARM_RELATIVE) ||
-        (cpu_ops->arch_id == CPU_ARCH_ARMV6 && rtype != R_ARM_RELATIVE) ||
-        (cpu_ops->arch_id == CPU_ARCH_XTENSA && rtype != R_XTENSA_RELATIVE))
-      continue;
+    if ((cpu_ops->arch_id == CPU_ARCH_M68K && rtype != R_68K_RELATIVE &&
+         rtype != R_68K_JMP_SLOT) ||
+        (cpu_ops->arch_id == CPU_ARCH_ARM && rtype != R_ARM_RELATIVE &&
+         rtype != R_ARM_JMP_SLOT) ||
+        (cpu_ops->arch_id == CPU_ARCH_ARMV6 && rtype != R_ARM_RELATIVE &&
+         rtype != R_ARM_JMP_SLOT) ||
+        (cpu_ops->arch_id == CPU_ARCH_XTENSA && rtype != R_XTENSA_RELATIVE)) {
+      klogf("ELF: unhandled reloc type %u at offset %x\n", rtype, r_offset);
+      return -1;
+    }
 
     uint32_t off = r_offset;
 
@@ -104,6 +110,7 @@ static void apply_relocations(const elf32_ehdr_t *ehdr,
           val - data_seg->p_vaddr + (uint32_t)(uintptr_t)sram_page);
     }
   }
+  return 0;
 }
 #endif /* !__riscv && !__xtensa__ */
 
@@ -459,16 +466,93 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
           uint32_t r_info   = *(const uint32_t *)(rela + 4);
           uint8_t  r_type   = (uint8_t)(r_info & 0xFF);
 
-          /* R_RISCV_32 = 1: absolute 32-bit address */
-          if (r_type != 1) continue;
+          /* PC-relative, linker-internal, and debug relocs: no patching
+           * needed since the entire binary is loaded contiguously. */
+          if (r_type == 0  /* R_RISCV_NONE */ ||
+              r_type == 16 /* R_RISCV_BRANCH */ ||
+              r_type == 17 /* R_RISCV_JAL */ ||
+              r_type == 20 /* R_RISCV_GOT_HI20 (PC-relative to GOT) */ ||
+              r_type == 23 /* R_RISCV_PCREL_HI20 */ ||
+              r_type == 24 /* R_RISCV_PCREL_LO12_I */ ||
+              r_type == 25 /* R_RISCV_PCREL_LO12_S */ ||
+              r_type == 35 /* R_RISCV_ADD32 */ ||
+              r_type == 39 /* R_RISCV_SUB32 */ ||
+              r_type == 44 /* R_RISCV_RVC_BRANCH */ ||
+              r_type == 45 /* R_RISCV_RVC_JUMP */ ||
+              r_type == 51 /* R_RISCV_RELAX */ ||
+              (r_type >= 53 && r_type <= 72) /* R_RISCV_SET/SUB debug */)
+            continue;
 
-          /* Symbol value + addend gives the link-time address.
-           * Add load_base to get the runtime SRAM address. */
-          if (r_offset < image_end) {
+          /* R_RISCV_32 = 1: absolute 32-bit data address */
+          if (r_type == 1 && r_offset < image_end) {
             uint32_t *target = (uint32_t *)(sram_page + r_offset);
             *target += load_base;
             riscv32_reloc_count++;
+            continue;
           }
+
+          /* R_RISCV_HI20 = 26: patch LUI instruction (upper 20 bits)
+           * R_RISCV_LO12_I = 27: patch ADDI instruction (lower 12 bits)
+           * These form absolute address pairs: lui rd,hi20 / addi rd,rd,lo12
+           * The instruction embeds the link-time address; add load_base.
+           *
+           * These relocations modify text (instructions).  This only works
+           * because RISC-V loads text to SRAM (no XIP).  If the target
+           * is in read-only flash (romfs XIP), we cannot patch and must
+           * fail the exec. */
+          /* R_RISCV_HI20 (26) and R_RISCV_LO12_I (27): absolute address
+           * split across LUI (upper 20) and ADDI (lower 12) instructions.
+           * With --emit-relocs the linker already resolved the address into
+           * the instructions.  Extract the link-time value, add load_base,
+           * and re-encode.
+           *
+           * These modify text (instructions) — requires writable SRAM.
+           * Fail if text is in read-only flash (romfs XIP). */
+          if ((r_type == 26 || r_type == 27) && r_offset < image_end) {
+            if (!sram_page) {
+              klogf("ELF: text reloc type %u needs writable text\n", r_type);
+              page_free(stack);
+              page_free(ustack_rv);
+              p->stack_page = NULL;
+              return -(int)ENOEXEC;
+            }
+            /* Instructions may be at 2-byte aligned addresses (after
+             * compressed insns).  Use memcpy to avoid misaligned traps
+             * on Hazard3. */
+            uint8_t *ip = sram_page + r_offset;
+            uint32_t raw;
+            memcpy(&raw, ip, 4);
+
+            if (r_type == 26) {
+              /* LUI: imm[31:12] in bits [31:12].  Add load_base upper
+               * bits, with +0x1000 carry if load_base bit 11 is set
+               * (ADDI sign-extension compensation). */
+              uint32_t new_hi = (raw & 0xFFFFF000u) +
+                                (load_base & 0xFFFFF000u);
+              if (load_base & 0x800u)
+                new_hi += 0x1000u;
+              raw = (raw & 0xFFF) | (new_hi & 0xFFFFF000u);
+            } else {
+              /* ADDI I-type: imm[11:0] in bits [31:20] (sign-extended).
+               * Add load_base's low 12 bits. */
+              int32_t old_imm = (int32_t)raw >> 20;
+              int32_t new_imm = old_imm + (int32_t)(load_base & 0xFFFu);
+              raw = (raw & 0xFFFFF) | (((uint32_t)new_imm & 0xFFFu) << 20);
+            }
+            memcpy(ip, &raw, 4);
+            riscv32_reloc_count++;
+            continue;
+          }
+
+          /* Unhandled relocation type — fail the exec */
+          klogf("ELF: unhandled RISCV reloc type %u at offset %x\n",
+                r_type, r_offset);
+          page_free(stack);
+          page_free(ustack_rv);
+          for (uint32_t i = 0; i < total_image_pages; i++)
+            page_free(sram_page + i * PAGE_SIZE);
+          p->stack_page = NULL;
+          return -(int)ENOEXEC;
         }
       }
     }
@@ -583,9 +667,16 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
       }
     }
 
-    apply_relocations(ehdr, file_buf, file_size, text_seg, data_seg, sram_page,
-                      xip_text_base, got_sram_addr, &got_info, cpu_ops,
-                      cpu_state);
+    if (apply_relocations(ehdr, file_buf, file_size, text_seg, data_seg,
+                          sram_page, xip_text_base, got_sram_addr, &got_info,
+                          cpu_ops, cpu_state) < 0) {
+      page_free(stack);
+      if (user_stack) page_free(user_stack);
+      for (uint32_t i = 0; i < data_pages; i++)
+        page_free(sram_page + i * PAGE_SIZE);
+      p->stack_page = NULL;
+      return -(int)ENOEXEC;
+    }
 
     for (uint32_t i = 0; i < data_pages; i++)
       p->user_pages[i] = sram_page + i * PAGE_SIZE;
