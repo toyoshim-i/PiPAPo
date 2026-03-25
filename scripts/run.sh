@@ -227,9 +227,13 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
         exit 1
     fi
 
+    # Resolve the device's group ID so the container can access it
+    # without running as root (typically "dialout", GID 20).
+    DEV_GID="$(stat -c '%g' "$PPAP_PORT")"
+
     echo "[run] Flashing xtensa_cc via Docker ($PPAP_PORT) ..."
     docker run --rm \
-        --device="$PPAP_PORT" \
+        --device="$PPAP_PORT" --group-add "$DEV_GID" \
         -v "$PROJECT_DIR:/ppap" -w /ppap \
         "$DOCKER_IMAGE" bash -c "
             export IDF_TOOLS_PATH=/opt/ppap/xtensa-tools && \
@@ -245,7 +249,7 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     # Monitor: stream serial output via pyserial inside Docker.
     # Use idf_monitor.py for ESP32 panic decoding and auto-reset.
     docker run --rm -it \
-        --device="$PPAP_PORT" \
+        --device="$PPAP_PORT" --group-add "$DEV_GID" \
         -v "$PROJECT_DIR:/ppap" -w /ppap \
         "$DOCKER_IMAGE" bash -c "
             export IDF_TOOLS_PATH=/opt/ppap/xtensa-tools && \
