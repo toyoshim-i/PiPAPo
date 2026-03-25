@@ -272,18 +272,32 @@ fi
 # ── Flash targets (pico1, pico1calc, pico2, pico2rv) ────────────────────────
 if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 || "$TARGET" == pico2rv ]]; then
 
-    # pico2/pico2rv (RP2350) needs the Raspberry Pi OpenOCD fork; pico1/pico1calc use system openocd
-    if [[ "$TARGET" == pico2 || "$TARGET" == pico2rv ]]; then
-        OPENOCD_BIN="$PROJECT_DIR/tools/openocd-rp/bin/openocd"
-        OPENOCD_SCRIPTS="$PROJECT_DIR/tools/openocd-rp/share/openocd/scripts"
-        if [[ ! -x "$OPENOCD_BIN" ]]; then
-            echo "[run] Error: Raspberry Pi OpenOCD not found at $OPENOCD_BIN"
-            echo "      Build with: ./third_party/build_openocd_rp.sh"
+    # Extract OpenOCD from Docker image to a local cache.  Docker Desktop
+    # cannot pass USB devices to containers, so we run OpenOCD on the host
+    # using the binary from the Docker image.
+    OPENOCD_CACHE="$PROJECT_DIR/tools/openocd-rp"
+    OPENOCD_BIN="$OPENOCD_CACHE/bin/openocd"
+    OPENOCD_SCRIPTS="$OPENOCD_CACHE/share/openocd/scripts"
+    if [[ ! -x "$OPENOCD_BIN" ]]; then
+        DOCKER_IMAGE="$(target_docker_image "$TARGET")"
+        if [[ -z "$DOCKER_IMAGE" ]] || ! docker_image_exists "$DOCKER_IMAGE"; then
+            echo "[run] Error: Docker image for $TARGET not found."
+            echo "      Run: ./scripts/setup_docker.sh $TARGET"
             exit 1
         fi
-        # Use architecture-appropriate OpenOCD config:
-        #   pico2   → rp2350.cfg (ARM Cortex-M33 debug targets)
-        #   pico2rv → rp2350-riscv.cfg (Hazard3 RISC-V debug targets)
+        echo "[run] Extracting OpenOCD from $DOCKER_IMAGE ..."
+        mkdir -p "$OPENOCD_CACHE"
+        docker run --rm "$DOCKER_IMAGE" \
+            tar cf - -C /opt/ppap bin/openocd share/openocd | \
+            tar xf - -C "$OPENOCD_CACHE"
+        if [[ ! -x "$OPENOCD_BIN" ]]; then
+            echo "[run] Error: failed to extract OpenOCD from Docker image."
+            exit 1
+        fi
+        echo "[run] OpenOCD cached at $OPENOCD_BIN"
+    fi
+
+    if [[ "$TARGET" == pico2 || "$TARGET" == pico2rv ]]; then
         if [[ "$TARGET" == pico2rv ]]; then
             OPENOCD_TARGET_CFG="target/rp2350-riscv.cfg"
         else
@@ -294,16 +308,10 @@ if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 || "$TA
                       -f "$OPENOCD_TARGET_CFG"
                       -c "adapter speed 5000")
     else
-        OPENOCD_BIN="openocd"
-        if ! command -v openocd &>/dev/null; then
-            echo "[run] Error: openocd not found in PATH."
-            echo "      Install with: sudo apt install openocd"
-            exit 1
-        fi
         OPENOCD_ARGS=(-f "$SCRIPT_DIR/debug/openocd.cfg")
     fi
 
-    # Stop any running OpenOCD (holds the adapter exclusively)
+    # Stop any running OpenOCD on host (holds the adapter exclusively)
     if pgrep -x openocd &>/dev/null; then
         echo "[run] Stopping existing OpenOCD instance..."
         pkill -x openocd

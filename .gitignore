@@ -28,3 +28,4 @@ src/target/xtensa_cc/sdkconfig.old
 tools/mkromfs/mkromfs
 tools/mkufs/mkufs
 tools/ia16-build/
+tools/openocd-rp/
