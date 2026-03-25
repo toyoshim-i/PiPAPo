@@ -165,6 +165,9 @@ set(TARGET_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/drivers/floppy_blk.c
   ${CMAKE_CURRENT_SOURCE_DIR}/drivers/bios_con.c
   ${CMAKE_CURRENT_SOURCE_DIR}/drivers/timer_pit.c
+  # Core-side stubs: caller stubs for VFS, entry stubs for core
+  ${CMAKE_CURRENT_SOURCE_DIR}/stubs/vfs_stubs.S
+  ${CMAKE_CURRENT_SOURCE_DIR}/stubs/core_entries.S
 )
 
 add_executable(ppap_ibmpc
@@ -218,6 +221,9 @@ set(KERNEL_VFS_SOURCES
 
 add_executable(ppap_ibmpc_vfs
   ${KERNEL_VFS_SOURCES}
+  # VFS-side stubs: entry stubs for VFS, caller stubs for core
+  ${CMAKE_CURRENT_SOURCE_DIR}/stubs/vfs_entries.S
+  ${CMAKE_CURRENT_SOURCE_DIR}/stubs/core_stubs.S
 )
 
 target_include_directories(ppap_ibmpc_vfs PRIVATE ${PPAP_INCLUDES})
