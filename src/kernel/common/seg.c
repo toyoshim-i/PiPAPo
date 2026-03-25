@@ -6,7 +6,7 @@
  * accessible via near pointers from core's stubs.
  */
 
-#ifdef __IA16__
+#ifdef __ia16__
 
 #include "seg.h"
 
@@ -23,4 +23,4 @@ uint16_t seg_get(uint8_t mod_id) {
   return 0;
 }
 
-#endif /* __IA16__ */
+#endif /* __ia16__ */

@@ -14,7 +14,7 @@
  * Linked into ppap_ibmpc (core binary).
  */
 
-#ifdef __IA16__
+#ifdef __ia16__
 
   .code16
   .section .text
@@ -77,4 +77,4 @@ vfs_\name:
   VFS_CALLER_STUB ref_vnode,      9
   VFS_CALLER_STUB rel_vnode,      10
 
-#endif /* __IA16__ */
+#endif /* __ia16__ */

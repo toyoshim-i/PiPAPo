@@ -27,3 +27,4 @@ src/target/xtensa_cc/sdkconfig.old
 # Build outputs in tools/
 tools/mkromfs/mkromfs
 tools/mkufs/mkufs
+tools/ia16-build/

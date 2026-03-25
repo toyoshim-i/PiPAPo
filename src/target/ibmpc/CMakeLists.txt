@@ -168,6 +168,7 @@ set(TARGET_SOURCES
   # Core-side stubs: caller stubs for VFS, entry stubs for core
   ${CMAKE_CURRENT_SOURCE_DIR}/stubs/vfs_stubs.S
   ${CMAKE_CURRENT_SOURCE_DIR}/stubs/core_entries.S
+  ${CMAKE_CURRENT_SOURCE_DIR}/stubs/vfs_mod_init.c
 )
 
 add_executable(ppap_ibmpc

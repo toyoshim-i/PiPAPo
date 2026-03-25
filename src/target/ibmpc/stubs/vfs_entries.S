@@ -10,7 +10,7 @@
  * Linked into ppap_ibmpc_vfs (VFS binary).
  */
 
-#ifdef __IA16__
+#ifdef __ia16__
 
   .code16
   .section .text
@@ -34,4 +34,4 @@ vfs_\name\()_entry:
   VFS_TARGET_STUB ref_vnode
   VFS_TARGET_STUB rel_vnode
 
-#endif /* __IA16__ */
+#endif /* __ia16__ */

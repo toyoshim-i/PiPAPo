@@ -10,7 +10,7 @@
  * Linked into ppap_ibmpc (core binary).
  */
 
-#ifdef __IA16__
+#ifdef __ia16__
 
   .code16
   .section .text
@@ -29,4 +29,4 @@
   CORE_TARGET_STUB kmem_free
   CORE_TARGET_STUB kmem_free_count
 
-#endif /* __IA16__ */
+#endif /* __ia16__ */

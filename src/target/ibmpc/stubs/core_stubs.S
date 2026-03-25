@@ -9,7 +9,7 @@
  * Linked into ppap_ibmpc_vfs (VFS binary).
  */
 
-#ifdef __IA16__
+#ifdef __ia16__
 
   .code16
   .section .text
@@ -48,4 +48,4 @@ core_fptrs:
   CORE_CALLER_STUB kmem_free,      4
   CORE_CALLER_STUB kmem_free_count, 5
 
-#endif /* __IA16__ */
+#endif /* __ia16__ */

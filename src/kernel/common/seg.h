@@ -20,7 +20,7 @@
 #define MOD_ID_EXEC  2
 #define MOD_ID_MAX   8  /* max modules */
 
-#ifdef __IA16__
+#ifdef __ia16__
 
 /* Register a module's segment base (paragraph address).
  * Called by stage2 for core, and by core boot for others. */
@@ -39,6 +39,6 @@ static inline uint16_t seg_get(uint8_t mod_id) {
   (void)mod_id; return 0;
 }
 
-#endif /* __IA16__ */
+#endif /* __ia16__ */
 
 #endif /* PPAP_KERNEL_COMMON_SEG_H */
