@@ -16,7 +16,7 @@
 #include "../target.h"
 #include "arch/arch.h"
 #include "drivers/uart.h"
-#include "errno.h"
+#include "common/errno.h"
 #include "fd/tty.h"
 #include "klog.h"
 #include "mm/page.h"

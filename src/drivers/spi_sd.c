@@ -19,7 +19,7 @@
 #include <stdint.h>
 
 #include "../kernel/blkdev/blkdev.h"
-#include "../kernel/errno.h"
+#include "../kernel/common/errno.h"
 #include "config.h"
 #include "spi.h"
 

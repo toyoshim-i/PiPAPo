@@ -17,7 +17,7 @@
 #include "drivers/spi_lcd.h"
 #include "drivers/spi_sd.h"
 #include "drivers/uart.h"
-#include "errno.h"
+#include "common/errno.h"
 #include "kernel/fd/tty.h"
 #include "kernel/fs/devfs.h"
 #include "kernel/fs/procfs.h"
