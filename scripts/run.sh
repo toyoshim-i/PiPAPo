@@ -217,16 +217,6 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
         exit 1
     fi
 
-    # Docker Desktop runs in a VM and cannot pass host devices to containers.
-    # Detect Docker Desktop so we can give a clear error instead of a cryptic
-    # "no such file or directory" from the daemon.
-    if docker info 2>/dev/null | grep -qi "docker desktop"; then
-        echo "[run] Error: Docker Desktop cannot pass serial devices to containers."
-        echo "      Install Docker Engine (native) instead:"
-        echo "        sudo apt install docker-ce docker-ce-cli containerd.io"
-        exit 1
-    fi
-
     # Resolve the device's group ID so the container can access it
     # without running as root (typically "dialout", GID 20).
     DEV_GID="$(stat -c '%g' "$PPAP_PORT")"
@@ -323,30 +313,22 @@ fi
 # ── Flash targets (pico1, pico1calc, pico2, pico2rv) ────────────────────────
 if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 || "$TARGET" == pico2rv ]]; then
 
-    # Extract OpenOCD from Docker image to a local cache.  Docker Desktop
-    # cannot pass USB devices to containers, so we run OpenOCD on the host
-    # using the binary from the Docker image.
-    OPENOCD_CACHE="$PROJECT_DIR/tools/openocd-rp"
-    OPENOCD_BIN="$OPENOCD_CACHE/bin/openocd"
-    OPENOCD_SCRIPTS="$OPENOCD_CACHE/share/openocd/scripts"
-    if [[ ! -x "$OPENOCD_BIN" ]]; then
-        DOCKER_IMAGE="$(target_docker_image "$TARGET")"
-        if [[ -z "$DOCKER_IMAGE" ]] || ! docker_image_exists "$DOCKER_IMAGE"; then
-            echo "[run] Error: Docker image for $TARGET not found."
-            echo "      Run: ./scripts/setup_docker.sh $TARGET"
-            exit 1
-        fi
-        echo "[run] Extracting OpenOCD from $DOCKER_IMAGE ..."
-        mkdir -p "$OPENOCD_CACHE"
-        docker run --rm "$DOCKER_IMAGE" \
-            tar cf - -C /opt/ppap bin/openocd share/openocd | \
-            tar xf - -C "$OPENOCD_CACHE"
-        if [[ ! -x "$OPENOCD_BIN" ]]; then
-            echo "[run] Error: failed to extract OpenOCD from Docker image."
-            exit 1
-        fi
-        echo "[run] OpenOCD cached at $OPENOCD_BIN"
+    DOCKER_IMAGE="$(target_docker_image "$TARGET")"
+    if [[ -z "$DOCKER_IMAGE" ]] || ! docker_image_exists "$DOCKER_IMAGE"; then
+        echo "[run] Error: Docker image for $TARGET not found."
+        echo "      Run: ./scripts/setup_docker.sh $TARGET"
+        exit 1
     fi
+
+    # OpenOCD uses CMSIS-DAP via USB HID (libusb).  Pass the entire USB bus
+    # so the container can enumerate the debug probe.
+    if [[ ! -d /dev/bus/usb ]]; then
+        echo "[run] Error: /dev/bus/usb not found — Docker Engine required."
+        exit 1
+    fi
+
+    OPENOCD_BIN=/opt/ppap/bin/openocd
+    OPENOCD_SCRIPTS=/opt/ppap/share/openocd/scripts
 
     if [[ "$TARGET" == pico2 || "$TARGET" == pico2rv ]]; then
         if [[ "$TARGET" == pico2rv ]]; then
@@ -359,20 +341,23 @@ if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 || "$TA
                       -f "$OPENOCD_TARGET_CFG"
                       -c "adapter speed 5000")
     else
-        OPENOCD_ARGS=(-f "$SCRIPT_DIR/debug/openocd.cfg")
+        OPENOCD_ARGS=(-f /ppap/scripts/debug/openocd.cfg)
     fi
 
-    # Stop any running OpenOCD on host (holds the adapter exclusively)
-    if pgrep -x openocd &>/dev/null; then
-        echo "[run] Stopping existing OpenOCD instance..."
-        pkill -x openocd
-        sleep 0.5
-    fi
+    # Helper: run OpenOCD inside Docker with USB access
+    run_openocd() {
+        docker run --rm --privileged \
+            -v /dev/bus/usb:/dev/bus/usb \
+            -v "$PROJECT_DIR:/ppap" -w /ppap \
+            "$DOCKER_IMAGE" \
+            "$OPENOCD_BIN" "$@"
+    }
 
     echo "[run] Flashing $ELF ..."
-    if "$OPENOCD_BIN" \
+    DOCKER_ELF="/ppap/${ELF#"$PROJECT_DIR/"}"
+    if run_openocd \
         "${OPENOCD_ARGS[@]}" \
-        -c "program \"$ELF\" verify reset exit" 2>&1; then
+        -c "program \"$DOCKER_ELF\" verify reset exit" 2>&1; then
         echo "[run] Done."
         exit 0
     fi
@@ -388,10 +373,10 @@ if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 || "$TA
             echo "[run] RISC-V target failed — retrying via ARM debug port..."
             echo "      (chip may still be in ARM mode from a previous flash)"
         fi
-        if "$OPENOCD_BIN" -s "$OPENOCD_SCRIPTS" \
+        if run_openocd -s "$OPENOCD_SCRIPTS" \
             -f interface/cmsis-dap.cfg -f "$ALT_CFG" \
             -c "adapter speed 5000" \
-            -c "program \"$ELF\" verify reset exit" 2>&1; then
+            -c "program \"$DOCKER_ELF\" verify reset exit" 2>&1; then
             echo "[run] Done (flashed via alternate debug port)."
             exit 0
         fi
