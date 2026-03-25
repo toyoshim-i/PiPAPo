@@ -134,12 +134,16 @@ for family in "${FAMILIES[@]}"; do
   fi
 
   IMAGE="ppap/${family}"
-  info "Building ${IMAGE} from docker/${family}/..."
-  if docker buildx build --load $NO_CACHE -t "${IMAGE}" "${PPAP_ROOT}/docker/${family}/"; then
-    success "${IMAGE} built successfully"
+  if [[ -z "$NO_CACHE" ]] && docker image inspect "${IMAGE}" &>/dev/null; then
+    success "${IMAGE} already exists (use --no-cache to rebuild)"
   else
-    echo "[WARN]  ${IMAGE} build failed"
-    FAIL=1
+    info "Building ${IMAGE} from docker/${family}/..."
+    if docker buildx build --load $NO_CACHE -t "${IMAGE}" "${PPAP_ROOT}/docker/${family}/"; then
+      success "${IMAGE} built successfully"
+    else
+      echo "[WARN]  ${IMAGE} build failed"
+      FAIL=1
+    fi
   fi
 done
 
