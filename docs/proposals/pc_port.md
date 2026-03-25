@@ -1084,45 +1084,51 @@ each module was loaded.
 **Not yet working**: user-space exec (needs module system for code >64 KB),
 signal delivery (stub), ELF loader (disabled for i16).
 
-### Phase P-4: Kernel Module System (next)
+### Phase P-4a: Kernel Module System ✓
 
-**Status**: Module macros done, VFS + exec + core migrated.
+**Status**: Complete.
+
+Platform-agnostic module system with explicit API surfaces:
 
 - `MOD_DECLARE`/`MOD_DEFINE` macros in `kernel/common/mod/module.h`
-- mod_vfs (11 functions), mod_exec (1), mod_core (6) — all working
+- mod_vfs (11 functions), mod_exec (1), mod_core (6)
 - VFS callers migrated to `mod_vfs.init()` syntax on all platforms
 - Boundary enforcement script (`check_module_boundaries.sh`)
-- `kernel/common/` directory for shared headers
+- `kernel/common/` directory for shared headers (mod/, errno.h, spinlock.h)
 
-Segment split (two-level stubs) designed but not yet implemented.
-See §9.5 "Segment Split" above for the architecture.
-
-### Phase P-4b: Segment Split + Floppy Mount (next)
+### Phase P-4b: i16 Segment Split + Floppy Mount (in progress)
 
 **Goal**: Split kernel into separate code segments, mount UFS root.
 
-1. **Segment manager** in core — table mapping module IDs to code
-   segment bases, initialized from stage2's mod_info at 0x0500
-2. **Two-level assembly stubs** — caller does `lcall *fptr`,
-   target does `call real_fn; lret`.  No DS switching (shared DS=0)
-3. **Separate CMake targets**: ppap_ibmpc (core) + ppap_ibmpc_vfs
-4. **VFS module header** at offset 0 of VFS binary — contains magic
-   + entry point offset table, read by core at boot to patch fptrs
-5. **Stage2 multi-load**: loads core to 0:0x0600, VFS to 0x1000:0000
-   via `load_file_far()`, writes mod_info at 0x0500
-6. **mkpcimg.sh** packages both binaries into the UFS floppy
-7. **Floppy block device** driver (INT 13h) in core module
-8. **target_mount_rootfs()** mounts UFS root via blkdev
-9. **VFS data in shared DS=0** — core linker reserves address range,
-   VFS linker places .data/.bss there
+**Architecture**: Shared DS=0 for all data, separate CS per module.
+Pointer arguments work without serialization.  See §9.5 for details.
 
-**Key design**: shared DS=0 for all data, separate CS per module.
-Pointer arguments work without serialization.  Only code segments
-are isolated.
+**Done:**
 
-**Current status**: Core boots, VFS module loaded at 0x1000:0000,
-segment manager initialized, far pointer table patched.  VFS
-functions not yet callable (data segment coordination pending).
+| Item | Details |
+|------|---------|
+| Segment manager | `seg.h`/`seg.c` — runtime table of module code segments |
+| Separate CMake targets | ppap_ibmpc (core 26 KB) + ppap_ibmpc_vfs (VFS 27 KB) |
+| Two-level stubs | vfs_stubs.S (caller), vfs_entries.S (target), core_stubs.S, core_entries.S |
+| VFS module header | Magic + 11 entry offsets at offset 0, read by core at boot |
+| Stage2 multi-load | `load_file_far()` loads VFS to 0x1000:0000 via INT 13h |
+| mod_info protocol | Stage2 writes module table at 0x0500, core reads at boot |
+| mkpcimg.sh | Packages both binaries into UFS floppy |
+| Floppy block device | `floppy_blk.c` — INT 13h driver, registers as "fd0" |
+| Core boot verified | Core boots, prints "SEG: VFS module loaded", MM/PROC/PIT init |
+
+**Remaining:**
+
+1. **Remove DS switching from stubs** — stubs still have push/pop ds
+   from the earlier isolated-DS design.  Remove since DS=0 is shared.
+2. **VFS data in DS=0** — VFS linker script must place .data/.bss at
+   a reserved DS=0 address (e.g. 0xA000).  Build extracts code and
+   data as separate binaries (objcopy).  See §9.5 for details.
+3. **Core linker reserves VFS data range** — 0xA000-0xBFFF (8 KB)
+4. **Stage2 loads VFS data blob** to DS:0xA000, zeroes BSS
+5. **Wire floppy mount** — target_mount_rootfs() calls mod_vfs.mount
+   via far stub → VFS mounts UFS from fd0
+6. **Test end-to-end** — boot to "Hello from user!"
 
 **Verification**: Kernel mounts floppy UFS, loads /sbin/init, prints
 "Hello from user!".
