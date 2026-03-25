@@ -81,32 +81,17 @@ On i16: `mod_vfs.read` expands to a far-call wrapper that does
 | Platform | MOD_DECLARE | MOD_DEFINE | Call overhead |
 |----------|-------------|------------|---------------|
 | ARM, m68k, RISC-V, Xtensa | struct of fn pointers | static init | ~1 indirect call |
-| i16 | far-call wrapper + jump table | jump table asm | ~4 extra instructions |
+| i16 | struct of fn pointers | runtime init (stubs) | ~2 indirect calls |
 
 ### The Core Module
 
-The **core module** is special — it provides common services that ALL
-other modules depend on.  It lives in the base code segment and is
-always accessible via near calls from any module (since all modules
-share DS=0 and can reach the core via a known segment value).
-
-Core module contents:
-- `klog` — kernel logging (UART output)
-- `string` — memcpy, memset, strlen, strcmp, etc.
-- `kmem` — slab allocator
-- `spinlock` — interrupt-safe locking
-- `page` — page allocator
-- `proc` / `sched` — process table and scheduler
-
-The core IS a module (`mod_core`) with its own module interface.  This
-is required because the module system is the only mechanism for
-cross-segment C calls on i16.  Without `mod_core`, VFS code in a
-separate segment could not call `klog()` or `page_alloc()` in C.
+The **core module** (`mod_core`) provides common services that all
+other modules depend on: logging, memory allocation, and slab allocator.
 
 ```
   ┌─────────────────────────────────────────────────┐
   │              mod_core (core module)              │
-  │  klog, string, kmem, page, proc, sched, main    │
+  │  klog, kmem_alloc, kmem_free, page_alloc, ...   │
   │                                                  │
   │  mod_vfs.init() ──►  mod_exec.execve() ──►      │
   └──────────┬──────────────┬───────────────────────┘
@@ -121,79 +106,41 @@ separate segment could not call `klog()` or `page_alloc()` in C.
 ```
 
 ALL cross-module calls go through `mod_*` interfaces.  No direct
-function calls across module boundaries.  This is the only mechanism
-for cross-segment C calls on i16.
+function calls across module boundaries.  On architectures that
+need code-segment separation (e.g. i16), the `mod_*` struct entries
+point to assembly stubs that handle the segment transition.  On
+other architectures, they point directly to the real functions.
 
-On 32-bit, `mod_core.klog(...)` is an indirect call through a struct
-(same overhead as `mod_vfs.init()`).  On i16, it's a far-call thunk.
+Inline functions (spinlock, string) compile into each module's code
+and do not cross module boundaries.
 
-### i16 Memory Layout
+### Architecture-Specific Segment Details
 
-On i16, modules are loaded at paragraph-aligned addresses.  Modules
-are **packed tightly** with adjustable segment registers:
+The mechanism for cross-segment calls varies by architecture.
+See the target-specific documentation for details:
 
-```
-Linear addr   Segment   Contents
-────────────────────────────────────────────────
-0x00600       CS=0      Core kernel (~30 KB)
-                          klog, string, kmem, page, proc, sched
-                          main.c (calls out to modules)
-0x08000       CS=0x0800 Module: VFS + FS (~20 KB)
-                          vfs, namei, romfs, tmpfs, devfs, procfs
-0x0D000       CS=0x0D00 Module: exec (~10 KB)
-                          exec, loaders, signal
-0x10000       CS=0x1000 Module: subsystems (~10 KB, optional)
-                          eCPU, bridges
-0x13000       DS=0      Shared data (.data + .bss, ~6 KB)
-  ...                   Page pool (up to 0x9FBFF)
-```
-
-Addresses are paragraph-aligned (16 bytes).  Each module only needs
-to fit in 64 KB from its own start address.
-
-### Call Directions on i16
-
-| From → To | Mechanism |
-|-----------|-----------|
-| Core → VFS | `mod_vfs.*` → far-call thunk to VFS segment |
-| Core → exec | `mod_exec.*` → far-call thunk to exec segment |
-| VFS → Core | `mod_core.*` → far-call thunk to core segment |
-| exec → Core | `mod_core.*` → far-call thunk to core segment |
-| VFS → exec | `mod_exec.*` → far-call thunk to exec segment |
-| Any → data | Near access (shared DS=0) |
-| Within module | Direct near call (no thunk) |
-
-On 32-bit platforms, all `mod_*` calls are indirect calls through
-function-pointer structs (same overhead, uniform mechanism).
+- **i16 (IBM PC)**: Two-level stub pattern — see `docs/proposals/pc_port.md` §9.5
+- **Other architectures**: Not applicable (flat address space, no segments)
 
 ### mod_core API Surface
 
-The core module exports common services used by all other modules:
+The core module exports common services used by all other modules.
+The actual function list is defined in `src/kernel/common/mod/mod_core.h`.
+Current exports:
 
 ```c
 MOD_DECLARE_BEGIN(core)
-  // Logging
   MOD_FUNC(core, void, klog, const char *)
   MOD_FUNC(core, void, klogf, const char *, ...)
-  // Memory
-  MOD_FUNC(core, void *, page_alloc, void)
-  MOD_FUNC(core, void, page_free, void *)
+  MOD_FUNC(core, void, kmem_pool_init, kmem_pool_t *, void *, size_t, uint32_t)
   MOD_FUNC(core, void *, kmem_alloc, kmem_pool_t *)
   MOD_FUNC(core, void, kmem_free, kmem_pool_t *, void *)
-  // String (subset — hot-path functions only)
-  MOD_FUNC(core, void *, memcpy, void *, const void *, size_t)
-  MOD_FUNC(core, void *, memset, void *, int, size_t)
-  MOD_FUNC(core, int, strcmp, const char *, const char *)
-  MOD_FUNC(core, size_t, strlen, const char *)
-  // Process
-  MOD_FUNC(core, uint32_t, arch_irq_save, void)
-  MOD_FUNC(core, void, arch_irq_restore, uint32_t)
-  // ... (more as needed)
+  MOD_FUNC(core, uint32_t, kmem_free_count, const kmem_pool_t *)
 MOD_DECLARE_END(core)
 ```
 
-This is a large interface (~20-30 functions), but each is a single
-thunk.  The total thunk table is ~60-90 bytes per module — negligible.
+Inline functions (string, spinlock, arch_irq) compile into each
+module's code directly — they are NOT part of any module interface.
 For example, VFS at linear 0x07000 → CS=0x0700. No 64 KB alignment
 needed, no wasted padding. A module only needs to fit in 64 KB from
 its *own* start — overlapping with the next segment's range is fine
