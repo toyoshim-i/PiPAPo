@@ -272,55 +272,54 @@ fi
 # ── Flash targets (pico1, pico1calc, pico2, pico2rv) ────────────────────────
 if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 || "$TARGET" == pico2rv ]]; then
 
-    # Resolve Docker image (OpenOCD is pre-installed inside)
-    DOCKER_IMAGE="$(target_docker_image "$TARGET")"
-    if [[ -z "$DOCKER_IMAGE" ]] || ! docker_image_exists "$DOCKER_IMAGE"; then
-        echo "[run] Error: Docker image for $TARGET not found."
-        echo "      Run: ./scripts/setup_docker.sh $TARGET"
-        exit 1
-    fi
-
-    # Always build (via Docker)
-    if [[ $DO_BUILD -eq 0 ]]; then
-        "$SCRIPT_DIR/build.sh" "$TARGET"
-    fi
-
-    # Flash via OpenOCD inside Docker with USB passthrough (--privileged)
-    elf_docker="/ppap/${ELF#"$PROJECT_DIR/"}"
-
+    # pico2/pico2rv (RP2350) needs the Raspberry Pi OpenOCD fork; pico1/pico1calc use system openocd
     if [[ "$TARGET" == pico2 || "$TARGET" == pico2rv ]]; then
+        OPENOCD_BIN="$PROJECT_DIR/tools/openocd-rp/bin/openocd"
+        OPENOCD_SCRIPTS="$PROJECT_DIR/tools/openocd-rp/share/openocd/scripts"
+        if [[ ! -x "$OPENOCD_BIN" ]]; then
+            echo "[run] Error: Raspberry Pi OpenOCD not found at $OPENOCD_BIN"
+            echo "      Build with: ./third_party/build_openocd_rp.sh"
+            exit 1
+        fi
+        # Use architecture-appropriate OpenOCD config:
+        #   pico2   → rp2350.cfg (ARM Cortex-M33 debug targets)
+        #   pico2rv → rp2350-riscv.cfg (Hazard3 RISC-V debug targets)
         if [[ "$TARGET" == pico2rv ]]; then
             OPENOCD_TARGET_CFG="target/rp2350-riscv.cfg"
         else
             OPENOCD_TARGET_CFG="target/rp2350.cfg"
         fi
-        OPENOCD_ARGS=(-s /opt/ppap/share/openocd/scripts
+        OPENOCD_ARGS=(-s "$OPENOCD_SCRIPTS"
                       -f interface/cmsis-dap.cfg
                       -f "$OPENOCD_TARGET_CFG"
                       -c "adapter speed 5000")
     else
-        OPENOCD_ARGS=(-f /ppap/scripts/debug/openocd.cfg)
+        OPENOCD_BIN="openocd"
+        if ! command -v openocd &>/dev/null; then
+            echo "[run] Error: openocd not found in PATH."
+            echo "      Install with: sudo apt install openocd"
+            exit 1
+        fi
+        OPENOCD_ARGS=(-f "$SCRIPT_DIR/debug/openocd.cfg")
     fi
 
-    # Stop any running OpenOCD on host (holds the adapter exclusively)
+    # Stop any running OpenOCD (holds the adapter exclusively)
     if pgrep -x openocd &>/dev/null; then
         echo "[run] Stopping existing OpenOCD instance..."
         pkill -x openocd
         sleep 0.5
     fi
 
-    echo "[run] Flashing $ELF via Docker ($DOCKER_IMAGE) ..."
-    if docker run --rm --privileged \
-        -v "$PROJECT_DIR:/ppap" -w /ppap \
-        "$DOCKER_IMAGE" \
-        /opt/ppap/bin/openocd \
-            "${OPENOCD_ARGS[@]}" \
-            -c "program \"$elf_docker\" verify reset exit" 2>&1; then
+    echo "[run] Flashing $ELF ..."
+    if "$OPENOCD_BIN" \
+        "${OPENOCD_ARGS[@]}" \
+        -c "program \"$ELF\" verify reset exit" 2>&1; then
         echo "[run] Done."
         exit 0
     fi
 
-    # RP2350: if primary config failed, try alternate arch (ARM↔RISC-V)
+    # RP2350: if primary config failed, the chip may be in the other arch mode.
+    # Try the alternate config (ARM↔RISC-V) before giving up.
     if [[ "$TARGET" == pico2 || "$TARGET" == pico2rv ]]; then
         if [[ "$TARGET" == pico2 ]]; then
             ALT_CFG="target/rp2350-riscv.cfg"
@@ -330,14 +329,10 @@ if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 || "$TA
             echo "[run] RISC-V target failed — retrying via ARM debug port..."
             echo "      (chip may still be in ARM mode from a previous flash)"
         fi
-        if docker run --rm --privileged \
-            -v "$PROJECT_DIR:/ppap" -w /ppap \
-            "$DOCKER_IMAGE" \
-            /opt/ppap/bin/openocd \
-                -s /opt/ppap/share/openocd/scripts \
-                -f interface/cmsis-dap.cfg -f "$ALT_CFG" \
-                -c "adapter speed 5000" \
-                -c "program \"$elf_docker\" verify reset exit" 2>&1; then
+        if "$OPENOCD_BIN" -s "$OPENOCD_SCRIPTS" \
+            -f interface/cmsis-dap.cfg -f "$ALT_CFG" \
+            -c "adapter speed 5000" \
+            -c "program \"$ELF\" verify reset exit" 2>&1; then
             echo "[run] Done (flashed via alternate debug port)."
             exit 0
         fi
