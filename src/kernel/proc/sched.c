@@ -280,9 +280,14 @@ void sched_start(void) {
  */
 
 void sched_start(void) {
-  /* RISC-V: no PSP/MSP split, no PendSV priorities.
-   * Timer ISR setup is done by target_late_init() → riscv_timer_init().
-   * Just enable interrupts to start the scheduler. */
+  /* Set mscratch to pid 0's kernel stack top.  boot.S initialized it to
+   * __stack_top (linker stack), but now pid 0 has its own stack_page.
+   * Must be done before enabling interrupts. */
+  uint32_t ksp = (uint32_t)(uintptr_t)proc_table[0].stack_page + PAGE_SIZE;
+  proc_table[0].kernel_sp = ksp;
+  __asm__ volatile("csrw mscratch, %0" : : "r"(ksp));
+
+  /* Timer ISR setup is done by target_late_init() → riscv_timer_init(). */
   arch_irq_enable();
 }
 

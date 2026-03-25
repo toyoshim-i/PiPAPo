@@ -159,7 +159,9 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
    * the stack page.  Otherwise the stack could land right after the
    * contiguous block, blocking sys_brk's page_alloc_at for heap growth. */
   void *stack = NULL;
+#if !defined(__riscv)
   void *user_stack = NULL;
+#endif
 
 #if !defined(__riscv) && !defined(__xtensa__)
   uint32_t xip_text_base = (uint32_t)(uintptr_t)file_buf + text_seg->p_offset;
@@ -388,9 +390,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     sram_page = page_alloc_contiguous(total_image_pages);
     if (!sram_page) return -(int)ENOMEM;
 
-    /* Allocate stack AFTER the contiguous block so it doesn't land
-     * right next to it — that would block sys_brk's page_alloc_at
-     * for heap growth into the adjacent free pages. */
+    /* Allocate kernel stack (separate from user stack via mscratch). */
     stack = page_alloc();
     if (!stack) {
       for (uint32_t i = 0; i < total_image_pages; i++)
@@ -399,8 +399,19 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     }
     p->stack_page = stack;
 
+    /* Allocate user stack page, tracked in user_pages[] so vfork
+     * shares it naturally (same address in parent and child). */
+    void *ustack_rv = page_alloc();
+    if (!ustack_rv) {
+      page_free(stack);
+      for (uint32_t i = 0; i < total_image_pages; i++)
+        page_free(sram_page + i * PAGE_SIZE);
+      return -(int)ENOMEM;
+    }
+
     /* Zero entire region first (covers BSS and alignment gaps) */
     memset(sram_page, 0, total_image_pages * PAGE_SIZE);
+    memset(ustack_rv, 0, PAGE_SIZE);
 
     /* Copy text segment */
     if (text_seg->p_filesz > 0)
@@ -416,6 +427,9 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
     for (uint32_t i = 0; i < total_image_pages; i++)
       p->user_pages[i] = sram_page + i * PAGE_SIZE;
+    /* User stack page follows the image pages */
+    if (total_image_pages < USER_PAGES_MAX)
+      p->user_pages[total_image_pages] = ustack_rv;
 
     /* Apply R_RISCV_32 relocations from --emit-relocs sections.
      * These fix up absolute addresses in data (function pointer tables
@@ -590,9 +604,20 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 #endif /* !__riscv && !__xtensa__ */
 
   uint32_t argv_sp = 0;
-  uint32_t stack_top = (cpu_ops->arch_id == CPU_ARCH_M68K)
-                           ? (uint32_t)(uintptr_t)user_stack + PAGE_SIZE
-                           : (uint32_t)(uintptr_t)stack + PAGE_SIZE;
+  uint32_t stack_top;
+#if defined(__riscv)
+  /* RISC-V: argv on user stack (separate from kernel stack) */
+  {
+    void *us = NULL;
+    for (int i = USER_PAGES_MAX - 1; i >= 0; i--)
+      if (p->user_pages[i]) { us = p->user_pages[i]; break; }
+    stack_top = (uint32_t)(uintptr_t)us + PAGE_SIZE;
+  }
+#else
+  stack_top = (cpu_ops->arch_id == CPU_ARCH_M68K)
+                  ? (uint32_t)(uintptr_t)user_stack + PAGE_SIZE
+                  : (uint32_t)(uintptr_t)stack + PAGE_SIZE;
+#endif
   uint32_t sp = stack_top;
 
   int argc = 0;

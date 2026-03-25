@@ -89,11 +89,37 @@ _trap_vector:
 .global _trap_entry
 _trap_entry:
 
-    # ── Save full register set ───────────────────────────────────────────
-    # Allocate trap frame on stack
-    addi    sp, sp, -TRAP_FRAME_SIZE
+    # ── mscratch stack swap ──────────────────────────────────────────────
+    # mscratch = kernel stack top.  Swap sp <-> mscratch.
+    csrrw   sp, mscratch, sp
 
-    # Save x1 (ra), x3-x31
+    # Check MPP to detect nesting (U-mode=0 → from user, M-mode=3 → nested).
+    # Save t0 temporarily on the (possibly wrong) stack.
+    addi    sp, sp, -4
+    sw      t0, 0(sp)
+    csrr    t0, mstatus
+    srli    t0, t0, 11
+    andi    t0, t0, 3               # MPP field
+    bnez    t0, .Lfrom_kernel
+
+    # ── From U-mode: swap was correct ────────────────────────────────────
+    lw      t0, 0(sp)
+    addi    sp, sp, 4
+    addi    sp, sp, -TRAP_FRAME_SIZE
+    csrr    t0, mscratch
+    sw      t0, TF_USER_SP(sp)     # save user sp
+    j       .Lsave_regs
+
+.Lfrom_kernel:
+    # ── From M-mode (nested): undo swap ──────────────────────────────────
+    lw      t0, 0(sp)
+    addi    sp, sp, 4
+    csrrw   sp, mscratch, sp       # undo: sp = kernel sp, mscratch = ksp_top
+    addi    sp, sp, -TRAP_FRAME_SIZE
+    sw      zero, TF_USER_SP(sp)   # mark as kernel frame
+
+.Lsave_regs:
+    # ── Save full register set ───────────────────────────────────────────
     sw      x1,   0(sp)        # ra
     sw      x3,   4(sp)        # gp
     sw      x4,   8(sp)        # tp
@@ -150,7 +176,7 @@ _trap_entry:
     csrr    a1, mepc                # mepc
     csrr    a2, mtval               # mtval
     lw      a3, 24(sp)              # saved s0/fp from trap frame
-    addi    a4, sp, TRAP_FRAME_SIZE # saved sp (before trap frame alloc)
+    lw      a4, TF_USER_SP(sp)     # saved user sp (0 if from kernel)
     call    riscv_exception_handler
     j       Default_Handler
 
@@ -189,6 +215,8 @@ _trap_entry:
     la      t0, current_core
     lw      t0, 0(t0)              # t0 = current (pcb_t *)
     lw      sp, 48(t0)             # sp = current->sp (PCB_SP_OFFSET=48)
+    lw      t1, 52(t0)             # t1 = current->kernel_sp
+    csrw    mscratch, t1           # update mscratch for new kernel stack
     # Now on the NEW stack — safe to free the old stack page.
     call    exec_free_old_stack
     j       .Ltrap_return
@@ -220,6 +248,11 @@ _trap_entry:
     mv      a0, sp
     call    riscv_do_switch
     mv      sp, a0
+    # Update mscratch for the new process
+    la      t0, current_core
+    lw      t0, 0(t0)
+    lw      t1, 52(t0)             # current->kernel_sp
+    csrw    mscratch, t1
     j       .Ltrap_return
 
 .Linterrupt:
@@ -260,17 +293,29 @@ _trap_entry:
     # through the pcb_t.sp field via a C helper.
     mv      a0, sp              # pass current SP (top of trap frame)
     call    riscv_do_switch     # returns new SP in a0
-    mv      sp, a0              # switch to new process's stack
+    mv      sp, a0              # switch to new process's kernel stack
+    # Update mscratch for the new process
+    la      t0, current_core
+    lw      t0, 0(t0)
+    lw      t1, 52(t0)             # current->kernel_sp
+    csrw    mscratch, t1
 
 .Ltrap_return:
     # ── Restore full register set ────────────────────────────────────────
-    # Restore mepc and mstatus
     lw      t0, TF_MEPC(sp)
     lw      t1, TF_MSTATUS(sp)
     csrw    mepc, t0
     csrw    mstatus, t1
 
-    # Restore x1 (ra), x3-x31
+    # Check TF_USER_SP: non-zero → returning to U-mode (do swap)
+    #                    zero    → returning to M-mode (no swap)
+    lw      t0, TF_USER_SP(sp)
+    beqz    t0, .Lret_kernel
+
+    # ── Return to U-mode ─────────────────────────────────────────────────
+    # Put user sp in mscratch, restore all regs, swap sp↔mscratch on exit
+    csrw    mscratch, t0           # mscratch = user sp (temporarily)
+
     lw      x1,   0(sp)        # ra
     lw      x3,   4(sp)        # gp
     lw      x4,   8(sp)        # tp
@@ -302,8 +347,42 @@ _trap_entry:
     lw      x30,112(sp)        # t5
     lw      x31,116(sp)        # t6
 
-    # Deallocate trap frame
-    addi    sp, sp, TRAP_FRAME_SIZE
+    addi    sp, sp, TRAP_FRAME_SIZE    # sp = kernel stack top
+    csrrw   sp, mscratch, sp           # sp = user sp, mscratch = ksp top
+    mret
 
-    # Return from trap
+.Lret_kernel:
+    # ── Return to M-mode (nested or kernel process) ──────────────────────
+    lw      x1,   0(sp)
+    lw      x3,   4(sp)
+    lw      x4,   8(sp)
+    lw      x5,  12(sp)
+    lw      x6,  16(sp)
+    lw      x7,  20(sp)
+    lw      x8,  24(sp)
+    lw      x9,  28(sp)
+    lw      x10, 32(sp)
+    lw      x11, 36(sp)
+    lw      x12, 40(sp)
+    lw      x13, 44(sp)
+    lw      x14, 48(sp)
+    lw      x15, 52(sp)
+    lw      x16, 56(sp)
+    lw      x17, 60(sp)
+    lw      x18, 64(sp)
+    lw      x19, 68(sp)
+    lw      x20, 72(sp)
+    lw      x21, 76(sp)
+    lw      x22, 80(sp)
+    lw      x23, 84(sp)
+    lw      x24, 88(sp)
+    lw      x25, 92(sp)
+    lw      x26, 96(sp)
+    lw      x27,100(sp)
+    lw      x28,104(sp)
+    lw      x29,108(sp)
+    lw      x30,112(sp)
+    lw      x31,116(sp)
+
+    addi    sp, sp, TRAP_FRAME_SIZE
     mret

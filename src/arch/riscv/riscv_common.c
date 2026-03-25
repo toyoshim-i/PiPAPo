@@ -187,6 +187,12 @@ uint32_t riscv_do_switch(uint32_t current_sp)
     pcb_t *next = sched_next();
     current_core[core_id()] = next;
 
+    /* Ensure kernel_sp is set (may be 0 for pid 0 if sched_start ran
+     * before the field was initialized, or for processes that were
+     * created before the mscratch split was in place). */
+    if (!next->kernel_sp && next->stack_page)
+        next->kernel_sp = (uint32_t)(uintptr_t)next->stack_page + PAGE_SIZE;
+
     return next->sp;
 }
 

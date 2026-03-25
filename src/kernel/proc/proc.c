@@ -124,21 +124,28 @@ void proc_free(pcb_t *p) {
 
 void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp) {
   uint32_t *sp;
+
+#if defined(__riscv)
+  /* RISC-V mscratch split: kernel frame on stack_page, user_sp in TF_USER_SP */
+  sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
+  sp = arch_build_initial_frame(sp, entry);
+  /* TF_USER_SP at word offset 32 (byte offset 128) */
+  sp[32] = user_sp ? (uint32_t)user_sp
+                   : (uint32_t)(uintptr_t)p->stack_page + PAGE_SIZE;
+  p->sp = (uint32_t)(uintptr_t)sp;
+  p->kernel_sp = (uint32_t)(uintptr_t)p->stack_page + PAGE_SIZE;
+#elif defined(__m68k__)
+  sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
+  sp = arch_build_initial_frame(sp, entry);
+  p->sp = (uint32_t)(uintptr_t)sp;
+#else
   if (user_sp)
     sp = (uint32_t *)(void *)user_sp;
   else
     sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
-
-#if defined(__m68k__)
-  /* m68k always uses kernel stack, ignoring user_sp */
-  sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
-#endif
-
   sp = arch_build_initial_frame(sp, entry);
   p->sp = (uint32_t)(uintptr_t)sp;
-  p->ticks_remaining = PROC_DEFAULT_TICKS;
-#if defined(__riscv)
-  /* kernel_sp = top of kernel stack page (for mscratch in Phase B) */
-  p->kernel_sp = (uint32_t)(uintptr_t)p->stack_page + PAGE_SIZE;
 #endif
+
+  p->ticks_remaining = PROC_DEFAULT_TICKS;
 }

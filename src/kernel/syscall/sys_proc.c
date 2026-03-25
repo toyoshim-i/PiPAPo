@@ -1512,6 +1512,7 @@ long sys_vfork(uint32_t *frame) {
   /* child->sp must point to the base of the trap frame (not child_frame).
    * child_frame = trap_base + 32, so trap_base = child_frame - 8. */
   child->sp = (uint32_t)(uintptr_t)(child_frame - 8);
+  child->kernel_sp = (uint32_t)(uintptr_t)stack + PAGE_SIZE;
 
 #elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
   /* ARM: Set child's r0 = 0 (child sees vfork return 0) */
