@@ -13,10 +13,10 @@
  *   0x10000000  +-----------------------+  <- FLASH_BOOT  (4 KB)
  *               | stage1 code           |     Sets mtvec, jumps to kernel
  *               | picobin IMAGE_DEF     |     RP2350 boot ROM metadata
- *   0x10001000  +-----------------------+  <- FLASH_KERNEL (160 KB)
+ *   0x10001000  +-----------------------+  <- FLASH_KERNEL (164 KB)
  *               | Kernel .text/.rodata  |     _trap_vector at 0x10001000,
  *               | (trap vector first)   |     then kernel code + data
- *   0x10029000  +-----------------------+  <- FLASH_ROMFS  (~3.8 MB remainder)
+ *   0x1002A000  +-----------------------+  <- FLASH_ROMFS  (~3.8 MB remainder)
  *               | romfs image           |     Populated by mkromfs
  *               +-----------------------+
  *
@@ -30,8 +30,8 @@ MEMORY {
     /* External QSPI Flash — XIP mapped at 0x10000000
      * 4 MB total */
     FLASH_BOOT   (rx)  : ORIGIN = 0x10000000, LENGTH = 4K
-    FLASH_KERNEL (rx)  : ORIGIN = 0x10001000, LENGTH = 160K
-    FLASH_ROMFS  (r)   : ORIGIN = 0x10029000, LENGTH = 4M - 0x29000
+    FLASH_KERNEL (rx)  : ORIGIN = 0x10001000, LENGTH = 164K
+    FLASH_ROMFS  (r)   : ORIGIN = 0x1002A000, LENGTH = 4M - 0x2A000
 
     /* On-chip SRAM — 520KB total */
     RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 24K
