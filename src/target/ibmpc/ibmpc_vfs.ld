@@ -17,6 +17,7 @@ SECTIONS
   . = 0x0000;
 
   .text : {
+    *(.text.header)   /* Module header (entry table) must be at offset 0 */
     *(.text .text.*)
   }
 

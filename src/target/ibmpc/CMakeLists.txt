@@ -221,6 +221,8 @@ set(KERNEL_VFS_SOURCES
 )
 
 add_executable(ppap_ibmpc_vfs
+  # Header must be first — contains entry point table at offset 0
+  ${CMAKE_CURRENT_SOURCE_DIR}/stubs/vfs_header.S
   ${KERNEL_VFS_SOURCES}
   # VFS-side stubs: entry stubs for VFS, caller stubs for core
   ${CMAKE_CURRENT_SOURCE_DIR}/stubs/vfs_entries.S

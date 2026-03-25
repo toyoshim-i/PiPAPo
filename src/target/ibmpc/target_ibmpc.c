@@ -51,28 +51,46 @@ typedef struct {
 } mod_info_t;
 
 /*
- * Patch the vfs_fptrs table with VFS segment + entry offsets.
- * Each entry is [offset:segment] (4 bytes, little-endian).
+ * VFS module header layout (at offset 0 of VFS binary):
+ *   [0] uint16_t magic (0x5646 = "VF")
+ *   [2] uint16_t entry_count
+ *   [4] uint16_t entry_offsets[entry_count]
  */
-static void patch_vfs_fptrs(uint16_t vfs_seg) {
-  /* Entry point addresses from VFS binary (link-time offsets) */
-  static const uint16_t offsets[] = {
-    /* These will be resolved by the linker to 0 (undefined) with
-     * --unresolved-symbols=ignore-all. At runtime we read them
-     * from the VFS ELF or use a known table.
-     * TODO: for now use the nm output to hardcode offsets, or
-     * read from a header block in the VFS binary. */
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0  /* 11 entries — filled below */
-  };
-  (void)offsets;
+#define VFS_HDR_MAGIC 0x5646u
 
-  /* For now: read the VFS binary's jump table at offset 0.
-   * The VFS entries are at known offsets from vfs_entries.S.
-   * We'll use the VFS ELF's symbol values, which the build system
-   * can extract and embed. TODO: implement proper offset discovery. */
-  for (int i = 0; i < 11; i++) {
-    vfs_fptrs[i * 2 + 1] = vfs_seg;   /* segment */
-    /* offset will be patched once we have a proper mechanism */
+/*
+ * Patch the vfs_fptrs table by reading the VFS module's header.
+ * The header is at the start of the VFS binary (linear = vfs_seg << 4).
+ * Each fptrs entry is [offset:segment] (4 bytes, little-endian).
+ */
+/* Read a 16-bit word from seg:offset using ES:BX */
+static uint16_t far_read16(uint16_t seg, uint16_t off) {
+  uint16_t val;
+  __asm__ volatile(
+    "push %%es\n\t"
+    "mov  %1, %%es\n\t"
+    "mov  %%es:(%%bx), %0\n\t"
+    "pop  %%es"
+    : "=a"(val)
+    : "r"(seg), "b"(off)
+    : "memory"
+  );
+  return val;
+}
+
+static void patch_vfs_fptrs(uint16_t vfs_seg) {
+  /* VFS header is at vfs_seg:0000 */
+  if (far_read16(vfs_seg, 0) != VFS_HDR_MAGIC) {
+    klog("SEG: VFS header magic mismatch!\n");
+    return;
+  }
+
+  uint16_t count = far_read16(vfs_seg, 2);
+  if (count > 11) count = 11;
+
+  for (uint16_t i = 0; i < count; i++) {
+    vfs_fptrs[i * 2]     = far_read16(vfs_seg, 4 + i * 2);
+    vfs_fptrs[i * 2 + 1] = vfs_seg;
   }
 }
 
