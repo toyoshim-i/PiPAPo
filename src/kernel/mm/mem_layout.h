@@ -1,0 +1,64 @@
+/*
+ * mem_layout.h — Shared memory-class and process-image descriptors
+ *
+ * Step XT-2.1 introduces explicit memory classes so ports can describe
+ * where executable, immutable, mutable, and stack memory live without
+ * relying on raw address-range heuristics.
+ */
+
+#ifndef PPAP_KERNEL_MM_MEM_LAYOUT_H
+#define PPAP_KERNEL_MM_MEM_LAYOUT_H
+
+#include <stdint.h>
+
+typedef enum {
+  PPAP_MEM_NONE = 0,
+  PPAP_MEM_KERNEL_IRAM,
+  PPAP_MEM_KERNEL_DRAM,
+  PPAP_MEM_XIP_TEXT,
+  PPAP_MEM_XIP_RODATA,
+  PPAP_MEM_USER_EXEC_RAM,
+  PPAP_MEM_USER_EXEC_IRAM,
+  PPAP_MEM_USER_DATA_RAM,
+  PPAP_MEM_USER_STACK_RAM,
+  PPAP_MEM_DEVICE_DMA,
+} ppap_mem_class_t;
+
+enum {
+  PROC_IMAGE_SEG_EXECUTABLE = 1u << 0,
+  PROC_IMAGE_SEG_WRITABLE   = 1u << 1,
+  PROC_IMAGE_SEG_XIP        = 1u << 2,
+};
+
+enum {
+  PROC_IMAGE_FLAG_NONE     = 0u,
+  PROC_IMAGE_FLAG_TEXT_XIP = 1u << 0,
+};
+
+typedef struct {
+  void *base;
+  uint32_t size;
+  ppap_mem_class_t mem_class;
+  uint32_t flags;
+} proc_image_segment_t;
+
+typedef struct {
+  proc_image_segment_t text;
+  proc_image_segment_t rodata;
+  proc_image_segment_t data;
+  proc_image_segment_t stack;
+  uintptr_t entry;
+  uint32_t flags;
+} proc_image_t;
+
+static inline proc_image_segment_t proc_image_segment_make(
+    void *base, uint32_t size, ppap_mem_class_t mem_class, uint32_t flags) {
+  proc_image_segment_t seg;
+  seg.base = base;
+  seg.size = size;
+  seg.mem_class = mem_class;
+  seg.flags = flags;
+  return seg;
+}
+
+#endif /* PPAP_KERNEL_MM_MEM_LAYOUT_H */

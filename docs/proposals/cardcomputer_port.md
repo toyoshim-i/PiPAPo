@@ -207,6 +207,31 @@ Phases CC-1 through CC-3 (architecture bring-up, interrupts, context
 switch, syscalls, user-space binaries) are complete or in progress.
 See [xtensa.md](../targets/xtensa.md) §8 for current status.
 
+### Guiding Principle
+
+Use ESP-IDF to get the ESP32-S3 into a safe, initialized state, then shift
+runtime ownership to PPAP as early as practical.
+
+In other words:
+
+- ESP-IDF is the bootstrap path for boot ROM integration, clock/cache setup,
+  flashing, and vendor-sensitive bring-up
+- PPAP should become the runtime owner of exceptions, scheduling, memory
+  layout, protection policy, and board peripherals
+
+This plan intentionally moves away from "ESP-IDF as the permanent HAL" and
+toward "ESP-IDF as the launch platform."
+
+### Phase CC-3.5: Runtime Ownership Handoff
+
+| Step | Description |
+|------|-------------|
+| CC-3.5a | Define explicit PPAP-owned memory regions for IRAM text, DRAM user data, kernel DRAM, and device/DMA use |
+| CC-3.5b | Replace ad-hoc ESP-IDF heap usage in the Xtensa loader with PPAP region allocators |
+| CC-3.5c | Move exception / interrupt ownership as fully as possible under PPAP after `app_main()` |
+| CC-3.5d | Reintroduce PMS with a PPAP-defined user/kernel memory map |
+| CC-3.5e | Prefer direct MMIO drivers for GPIO/SPI/I2C/UART once the bootstrap phase is complete |
+
 ### Phase CC-4: Display
 
 | Step | Description |

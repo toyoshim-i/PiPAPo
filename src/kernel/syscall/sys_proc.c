@@ -1705,6 +1705,7 @@ long sys_execve(const char *path, const char *const *argv) {
   /* Save old pages to free after successful load */
   void *old_stack = current->stack_page;
   void *old_user[USER_PAGES_MAX];
+  proc_image_t old_image = current->image;
   int owns_pages = (current->vfork_parent == NULL);
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++)
     old_user[i] = current->user_pages[i];
@@ -1715,6 +1716,7 @@ long sys_execve(const char *path, const char *const *argv) {
   /* Clear pages so do_execve allocates fresh ones */
   current->stack_page = NULL;
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) current->user_pages[i] = NULL;
+  current->image = (proc_image_t){0};
 #if defined(__m68k__)
   current->user_stack_page = NULL;
 #endif
@@ -1728,6 +1730,7 @@ long sys_execve(const char *path, const char *const *argv) {
     current->stack_page = old_stack;
     for (uint32_t i = 0; i < USER_PAGES_MAX; i++)
       current->user_pages[i] = old_user[i];
+    current->image = old_image;
 #if defined(__m68k__)
     current->user_stack_page = old_user_stack;
 #endif

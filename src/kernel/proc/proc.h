@@ -5,11 +5,11 @@
  * (pid/ppid), memory (stack page, user pages), file descriptors, and scheduling
  * fields.
  *
- * Layout (fits in 256 B):
- *   [0..35]   saved callee registers r4–r11 + sp  (must match switch.S offsets)
- *   [36..47]  pid, ppid, state
- *   [48..99]  stack_page + user_pages[USER_PAGES_MAX]
- *   fd_table[FD_MAX], cwd[64], scheduling fields, etc.
+ * Layout:
+ *   - saved CPU context (must match switch.S offsets)
+ *   - identity / scheduling state
+ *   - memory ownership pointers and process-image metadata
+ *   - fd table, cwd, signals, tracing, subsystem, mmap state
  *
  * PROC_MAX is intentionally small (8).  Every PCB lives in the static
  * proc_table[] array in kernel BSS — no dynamic allocation needed for Phase 1.
@@ -21,6 +21,7 @@
 #include <stdint.h>
 
 #include "../common/spinlock.h" /* core_id() — needed by #define current */
+#include "../mm/mem_layout.h"
 #include "common/ptrace.h"
 #include "config.h"
 
@@ -126,6 +127,7 @@ typedef struct pcb {
   /* ── Memory ─────────────────────────────────────────────────────────── */
   void *stack_page; /* 4 KB page from page_alloc(): process stack */
   void *user_pages[USER_PAGES_MAX]; /* user data pages (exec data segment) */
+  proc_image_t image; /* explicit process image layout / memory classes */
 #if defined(__m68k__)
   void *user_stack_page; /* m68k: separate user stack page (USP target) */
 #endif
