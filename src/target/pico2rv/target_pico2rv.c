@@ -59,8 +59,10 @@ static void h3_clear_irq_force(void)
         __asm__ volatile ("csrw 0xBE2, %0" : : "r"(i));
     /* Clear mie — no interrupts until riscv_timer_init */
     __asm__ volatile ("csrw mie, zero");
-    /* Clear mscratch — used by exception handler for nesting detection */
-    __asm__ volatile ("csrw mscratch, zero");
+    /* Do NOT clear mscratch — it holds the kernel stack pointer for the
+     * mscratch-based stack split (trap.S: csrrw sp, mscratch, sp).
+     * Zeroing it would cause sp=0 on any exception, leading to an
+     * unrecoverable fault loop on real hardware. */
 }
 
 void target_early_init(void)
