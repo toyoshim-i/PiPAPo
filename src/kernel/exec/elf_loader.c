@@ -1089,11 +1089,17 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     arch_irq_restore(irq_save);
   } else {
     proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, argv_sp);
-    if (got_sram_addr && cpu_ops->arch_id != CPU_ARCH_XTENSA) {
-      /* ARM/RISC-V: patch dedicated PIC register (r9/gp) in initial frame.
+    if (cpu_ops->arch_id != CPU_ARCH_XTENSA) {
+      /* ARM: patch r9 (PIC base) to GOT address in initial frame.
+       * RISC-V: patch gp (x3) to load_base for ePIC GP-relative access.
+       *   ePIC binaries use gp as data base pointer (all data via gp+offset).
+       *   Non-ePIC binaries also work — gp is harmless if unused.
        * Xtensa: GOT accessed via L32R (PC-relative literals), no register. */
       uint32_t *sw = (uint32_t *)(uintptr_t)p->sp;
-      sw[5] = got_sram_addr;
+      if (cpu_ops->arch_id == CPU_ARCH_RISCV && p->user_pages[0])
+        sw[1] = (uint32_t)(uintptr_t)p->user_pages[0]; /* gp = load_base */
+      else if (got_sram_addr)
+        sw[5] = got_sram_addr; /* ARM r9 = GOT */
     }
     p->got_base = got_sram_addr;
   }
