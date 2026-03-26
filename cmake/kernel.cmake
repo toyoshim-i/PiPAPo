@@ -60,6 +60,7 @@ set(KERNEL_SHARED_SOURCES_BASE
     ${_KS_ROOT}/src/kernel/common/mod/mod_core.c
     ${_KS_ROOT}/src/kernel/mm/page.c
     ${_KS_ROOT}/src/kernel/mm/kmem.c
+    ${_KS_ROOT}/src/kernel/mm/mem_region.c
     ${_KS_ROOT}/src/kernel/proc/proc.c
     ${_KS_ROOT}/src/kernel/proc/sched.c
     ${_KS_ROOT}/src/kernel/syscall/syscall.c

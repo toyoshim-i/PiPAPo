@@ -139,6 +139,7 @@ set(KERNEL_CORE_SOURCES
   ${PPAP_ROOT}/src/kernel/common/seg.c
   ${PPAP_ROOT}/src/kernel/mm/page.c
   ${PPAP_ROOT}/src/kernel/mm/kmem.c
+  ${PPAP_ROOT}/src/kernel/mm/mem_region.c
   ${PPAP_ROOT}/src/kernel/proc/proc.c
   ${PPAP_ROOT}/src/kernel/proc/sched.c
   ${PPAP_ROOT}/src/kernel/signal/signal.c

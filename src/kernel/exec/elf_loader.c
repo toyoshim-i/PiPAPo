@@ -10,6 +10,7 @@
 #include "elf.h"
 #include "kernel/common/errno.h"
 #include "kernel/klog.h"
+#include "kernel/mm/mem_region.h"
 #include "kernel/mm/page.h"
 #include "kernel/proc/proc.h"
 
@@ -187,48 +188,45 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
    * Relocations are split: link-time addresses in the text range get the
    * IRAM base, addresses in the data range get the DRAM base. */
   {
+    proc_image_segment_t text_region = {0};
+    proc_image_segment_t data_region = {0};
+    proc_image_segment_t stack_region = {0};
     uint32_t text_end_va = text_seg->p_vaddr + text_seg->p_memsz;
     uint32_t text_size = (text_end_va + 15u) & ~15u;
     uint32_t data_va = data_seg ? data_seg->p_vaddr : text_end_va;
     uint32_t data_memsz = data_seg ? data_seg->p_memsz : 0;
     uint32_t data_size = (data_memsz + 15u) & ~15u;
 
-    extern void *heap_caps_malloc(unsigned int size, uint32_t caps);
-    extern void heap_caps_free(void *ptr);
-
     /* Allocate IRAM for text (executable, word-access only) */
-    sram_page = (uint8_t *)heap_caps_malloc(text_size, (1u << 0));
-    if (!sram_page) return -(int)ENOMEM;
+    if (mem_region_alloc(&text_region, PPAP_MEM_USER_EXEC_IRAM, text_size,
+                         PROC_IMAGE_SEG_EXECUTABLE) < 0) {
+      return -(int)ENOMEM;
+    }
+    sram_page = (uint8_t *)text_region.base;
 
     /* Allocate DRAM for data (byte-accessible, needed for .rodata strings) */
     uint8_t *dram_page = NULL;
     uint32_t data_pages = 0;
     if (data_size > 0) {
       data_pages = (data_size + PAGE_SIZE - 1) / PAGE_SIZE;
-      if (data_pages == 1) {
-        dram_page = (uint8_t *)page_alloc();
-      } else {
-        dram_page = page_alloc_contiguous(data_pages);
-      }
-      if (!dram_page) {
-        heap_caps_free(sram_page);
+      if (mem_region_alloc(&data_region, PPAP_MEM_USER_DATA_RAM, data_size,
+                           PROC_IMAGE_SEG_WRITABLE) < 0) {
+        mem_region_free(&text_region);
         return -(int)ENOMEM;
       }
+      dram_page = (uint8_t *)data_region.base;
     }
 
     /* Allocate kernel stack page */
-    stack = page_alloc();
-    if (!stack) {
-      if (dram_page) {
-        for (uint32_t i = 0; i < data_pages; i++)
-          page_free(dram_page + i * PAGE_SIZE);
-      }
-      heap_caps_free(sram_page);
+    if (mem_region_alloc(&stack_region, PPAP_MEM_USER_STACK_RAM, PAGE_SIZE,
+                         PROC_IMAGE_SEG_WRITABLE) < 0) {
+      mem_region_free(&data_region);
+      mem_region_free(&text_region);
       return -(int)ENOMEM;
     }
+    stack = stack_region.base;
     p->stack_page = stack;
-    p->image.stack = proc_image_segment_make(
-        stack, PAGE_SIZE, PPAP_MEM_USER_STACK_RAM, PROC_IMAGE_SEG_WRITABLE);
+    p->image.stack = stack_region;
 
     /* Zero IRAM (word-at-a-time — byte memset crashes on IRAM) */
     {
@@ -275,9 +273,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
     /* Entry point is in IRAM */
     entry = iram_base + e_entry;
-    p->image.text = proc_image_segment_make(
-        sram_page, text_size, PPAP_MEM_USER_EXEC_IRAM,
-        PROC_IMAGE_SEG_EXECUTABLE);
+    p->image.text = text_region;
     p->image.entry = entry;
 
     /* Apply split relocations from --emit-relocs sections.
@@ -371,7 +367,9 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
       }
     }
 
-    /* Track IRAM allocation for cleanup (user_page_free detects IRAM range) */
+    /* TODO: switch exec teardown to proc_image-based ownership. */
+    /* Track IRAM allocation for cleanup. */
+    /* user_pages[] remains authoritative during teardown for now. */
     p->user_pages[0] = sram_page;
     /* Track each DRAM page individually for cleanup via page_free */
     if (dram_page) {
@@ -381,9 +379,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
     /* Set brk base/current after DRAM data for heap growth */
     if (dram_page) {
-      p->image.data = proc_image_segment_make(
-          dram_page, data_size, PPAP_MEM_USER_DATA_RAM,
-          PROC_IMAGE_SEG_WRITABLE);
+      p->image.data = data_region;
       uint32_t data_end = dram_base + data_memsz;
       data_end = (data_end + 15u) & ~15u;
       p->brk_base = data_end;
