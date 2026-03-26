@@ -3,8 +3,8 @@
 # =============================================================================
 #
 # Contains:
-#   - riscv32-unknown-elf-gcc (prebuilt from pico-sdk-tools v2.2.0-3)
-#   - riscv32-unknown-linux-gnu-gcc (built from source, soft-float ilp32)
+#   - riscv32-unknown-elf-gcc (prebuilt, Pico SDK — kernel + libgcc)
+#   - clang/lld with ePIC support (lowRISC LLVM 16 fork — user-space)
 #   - Pico SDK 2.2.0
 #   - OpenOCD RPi fork sdk-2.2.0 (RP2350 support)
 #   - QEMU RISC-V (apt, qemu-system-misc)
@@ -48,48 +48,26 @@ RUN mkdir -p /opt/ppap/riscv-elf && \
 ENV PATH="/opt/ppap/riscv-elf/bin:${PATH}"
 ENV PICO_TOOLCHAIN_PATH=/opt/ppap/riscv-elf
 
-# -- RISC-V Linux toolchain (user-space PIE binaries) -----------------------
-# Built from source with --with-abi=ilp32 (soft-float).  Prebuilt riscv-collab
-# packages default to rv32gc (double-float) libgcc which is ABI-incompatible
-# with PPAP's ilp32 musl.  Building from source gives us:
-#   - soft-float PIC libgcc (links into -pie binaries)
-#   - ld with -pie support (R_RISCV_RELATIVE relocations)
-#
-# We only need binutils + gcc (stage 1 + libgcc).  No glibc — PPAP uses musl.
+# -- LLVM/Clang with ePIC support (user-space XIP binaries) -----------------
+# lowRISC's LLVM 16 fork adds -fepic: GP-relative data addressing for
+# embedded PIC.  Text stays in flash (XIP), only data lives in SRAM.
+# We build only clang + lld for the RISC-V target (minimal build).
 
-# Step 1: binutils
-RUN wget -q -O /tmp/binutils.tar.xz https://ftp.gnu.org/gnu/binutils/binutils-2.44.tar.xz && \
-    cd /tmp && tar xf binutils.tar.xz && rm binutils.tar.xz && \
-    mkdir /tmp/build-binutils && cd /tmp/build-binutils && \
-    /tmp/binutils-2.44/configure \
-      --prefix=/opt/ppap/riscv-linux \
-      --target=riscv32-unknown-linux-gnu \
-      --with-arch=rv32imac --with-abi=ilp32 \
-      --disable-werror --disable-gdb --disable-sim \
-      --disable-libdecnumber --disable-readline && \
-    make -j$(nproc) && make install && \
-    rm -rf /tmp/binutils-2.44 /tmp/build-binutils
+RUN git clone --depth 1 -b ot-llvm-16-hardening \
+      https://github.com/lowRISC/llvm-project.git /tmp/llvm-epic && \
+    cmake -G Ninja \
+      -S /tmp/llvm-epic/llvm \
+      -B /tmp/build-llvm-epic \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DLLVM_ENABLE_PROJECTS="clang;lld" \
+      -DLLVM_TARGETS_TO_BUILD="RISCV" \
+      -DCMAKE_INSTALL_PREFIX=/opt/ppap/llvm-epic \
+      -DLLVM_ENABLE_ASSERTIONS=ON && \
+    ninja -C /tmp/build-llvm-epic install-clang install-lld && \
+    rm -rf /tmp/llvm-epic /tmp/build-llvm-epic
 
-# Step 2: GCC + libgcc (C compiler, no libc needed — PPAP uses musl)
-RUN wget -q -O /tmp/gcc.tar.xz https://ftp.gnu.org/gnu/gcc/gcc-15.1.0/gcc-15.1.0.tar.xz && \
-    cd /tmp && tar xf gcc.tar.xz && rm gcc.tar.xz && \
-    cd /tmp/gcc-15.1.0 && ./contrib/download_prerequisites && \
-    mkdir /tmp/build-gcc && cd /tmp/build-gcc && \
-    /tmp/gcc-15.1.0/configure \
-      --prefix=/opt/ppap/riscv-linux \
-      --target=riscv32-unknown-linux-gnu \
-      --with-arch=rv32imac --with-abi=ilp32 \
-      --enable-languages=c \
-      --without-headers --with-newlib \
-      --disable-shared --disable-threads --disable-libssp \
-      --disable-libquadmath --disable-libgomp --disable-libatomic \
-      --disable-multilib --disable-decimal-float && \
-    make -j$(nproc) all-gcc && make install-gcc && \
-    make -j$(nproc) all-target-libgcc && make install-target-libgcc && \
-    rm -rf /tmp/gcc-15.1.0 /tmp/build-gcc
-
-ENV PATH="/opt/ppap/riscv-linux/bin:${PATH}"
-ENV PPAP_RISCV_LINUX_TOOLCHAIN=/opt/ppap/riscv-linux
+ENV PATH="/opt/ppap/llvm-epic/bin:${PATH}"
+ENV PPAP_EPIC_CLANG=/opt/ppap/llvm-epic/bin/clang
 
 # -- Pico SDK 2.2.0 ---------------------------------------------------------
 
