@@ -198,7 +198,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     uint32_t data_size = (data_memsz + 15u) & ~15u;
 
     /* Allocate IRAM for text (executable, word-access only) */
-    if (mem_region_alloc(&text_region, PPAP_MEM_USER_EXEC_IRAM, text_size,
+    if (mem_region_alloc(&text_region, PPAP_MEM_RAM_TEXT, text_size,
                          PROC_IMAGE_SEG_EXECUTABLE) < 0) {
       return -(int)ENOMEM;
     }
@@ -209,7 +209,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     uint32_t data_pages = 0;
     if (data_size > 0) {
       data_pages = (data_size + PAGE_SIZE - 1) / PAGE_SIZE;
-      if (mem_region_alloc(&data_region, PPAP_MEM_USER_DATA_RAM, data_size,
+      if (mem_region_alloc(&data_region, PPAP_MEM_RAM_DATA, data_size,
                            PROC_IMAGE_SEG_WRITABLE) < 0) {
         mem_region_free(&text_region);
         return -(int)ENOMEM;
@@ -218,7 +218,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     }
 
     /* Allocate kernel stack page */
-    if (mem_region_alloc(&stack_region, PPAP_MEM_USER_STACK_RAM, PAGE_SIZE,
+    if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
                          PROC_IMAGE_SEG_WRITABLE) < 0) {
       mem_region_free(&data_region);
       mem_region_free(&text_region);
@@ -415,7 +415,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     }
     p->stack_page = stack;
     p->image.stack = proc_image_segment_make(
-        stack, PAGE_SIZE, PPAP_MEM_USER_STACK_RAM, PROC_IMAGE_SEG_WRITABLE);
+        stack, PAGE_SIZE, PPAP_MEM_RAM_STACK, PROC_IMAGE_SEG_WRITABLE);
 
     /* Allocate user stack page, tracked in user_pages[] so vfork
      * shares it naturally (same address in parent and child). */
@@ -427,7 +427,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
       return -(int)ENOMEM;
     }
     p->image.stack = proc_image_segment_make(
-        ustack_rv, PAGE_SIZE, PPAP_MEM_USER_STACK_RAM,
+        ustack_rv, PAGE_SIZE, PPAP_MEM_RAM_STACK,
         PROC_IMAGE_SEG_WRITABLE);
 
     /* Zero entire region first (covers BSS and alignment gaps) */
@@ -447,11 +447,11 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     entry = (uint32_t)(uintptr_t)(sram_page + e_entry);
     p->image.text = proc_image_segment_make(
         sram_page + text_seg->p_vaddr, text_seg->p_memsz,
-        PPAP_MEM_USER_EXEC_RAM, PROC_IMAGE_SEG_EXECUTABLE);
+        PPAP_MEM_RAM_TEXT, PROC_IMAGE_SEG_EXECUTABLE);
     if (data_seg)
       p->image.data = proc_image_segment_make(
           sram_page + data_seg->p_vaddr, data_seg->p_memsz,
-          PPAP_MEM_USER_DATA_RAM, PROC_IMAGE_SEG_WRITABLE);
+          PPAP_MEM_RAM_DATA, PROC_IMAGE_SEG_WRITABLE);
     p->image.entry = entry;
 
     for (uint32_t i = 0; i < total_image_pages; i++)
@@ -633,7 +633,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   if (!stack) return -(int)ENOMEM;
   p->stack_page = stack;
   p->image.stack = proc_image_segment_make(
-      stack, PAGE_SIZE, PPAP_MEM_USER_STACK_RAM, PROC_IMAGE_SEG_WRITABLE);
+      stack, PAGE_SIZE, PPAP_MEM_RAM_STACK, PROC_IMAGE_SEG_WRITABLE);
 
   if (cpu_ops->arch_id == CPU_ARCH_M68K) {
     user_stack = page_alloc();
@@ -643,7 +643,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
       return -(int)ENOMEM;
     }
     p->image.stack = proc_image_segment_make(
-        user_stack, PAGE_SIZE, PPAP_MEM_USER_STACK_RAM,
+        user_stack, PAGE_SIZE, PPAP_MEM_RAM_STACK,
         PROC_IMAGE_SEG_WRITABLE);
   }
 
@@ -654,7 +654,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     entry |= (e_entry & 1u);
   }
   p->image.text = proc_image_segment_make(
-      (void *)(uintptr_t)xip_text_base, text_seg->p_memsz, PPAP_MEM_XIP_TEXT,
+      (void *)(uintptr_t)xip_text_base, text_seg->p_memsz, PPAP_MEM_ROM_TEXT,
       PROC_IMAGE_SEG_EXECUTABLE | PROC_IMAGE_SEG_XIP);
   p->image.entry = entry;
 
@@ -714,7 +714,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     for (uint32_t i = 0; i < data_pages; i++)
       p->user_pages[i] = sram_page + i * PAGE_SIZE;
     p->image.data = proc_image_segment_make(
-        sram_page, data_seg->p_memsz, PPAP_MEM_USER_DATA_RAM,
+        sram_page, data_seg->p_memsz, PPAP_MEM_RAM_DATA,
         PROC_IMAGE_SEG_WRITABLE);
 
     if (cpu_ops->arch_id == CPU_ARCH_M68K) {

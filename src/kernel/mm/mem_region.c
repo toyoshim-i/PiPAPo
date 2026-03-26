@@ -39,27 +39,28 @@ int mem_region_alloc(proc_image_segment_t *seg, ppap_mem_class_t mem_class,
   if (!seg) return -(int)EINVAL;
 
   switch (mem_class) {
-    case PPAP_MEM_KERNEL_DRAM:
-    case PPAP_MEM_USER_EXEC_RAM:
-    case PPAP_MEM_USER_DATA_RAM:
-    case PPAP_MEM_USER_STACK_RAM:
+    case PPAP_MEM_RAM_RODATA:
+    case PPAP_MEM_RAM_DATA:
+    case PPAP_MEM_RAM_STACK:
     case PPAP_MEM_DEVICE_DMA:
       return mem_region_alloc_page_backed(seg, mem_class, size, flags);
 
 #if defined(__xtensa__)
-    case PPAP_MEM_USER_EXEC_IRAM: {
+    case PPAP_MEM_RAM_TEXT: {
       extern void *heap_caps_malloc(unsigned int size, uint32_t caps);
       void *base = heap_caps_malloc(size, (1u << 0));
       if (!base) return -(int)ENOMEM;
       *seg = proc_image_segment_make(base, size, mem_class, flags);
       return 0;
     }
+#else
+    case PPAP_MEM_RAM_TEXT:
+      return mem_region_alloc_page_backed(seg, mem_class, size, flags);
 #endif
 
     case PPAP_MEM_NONE:
-    case PPAP_MEM_KERNEL_IRAM:
-    case PPAP_MEM_XIP_TEXT:
-    case PPAP_MEM_XIP_RODATA:
+    case PPAP_MEM_ROM_TEXT:
+    case PPAP_MEM_ROM_RODATA:
     default:
       return -(int)EINVAL;
   }
@@ -71,10 +72,9 @@ void mem_region_free(const proc_image_segment_t *seg) {
   if (!seg || !seg->base || seg->size == 0) return;
 
   switch (seg->mem_class) {
-    case PPAP_MEM_KERNEL_DRAM:
-    case PPAP_MEM_USER_EXEC_RAM:
-    case PPAP_MEM_USER_DATA_RAM:
-    case PPAP_MEM_USER_STACK_RAM:
+    case PPAP_MEM_RAM_RODATA:
+    case PPAP_MEM_RAM_DATA:
+    case PPAP_MEM_RAM_STACK:
     case PPAP_MEM_DEVICE_DMA:
       n_pages = mem_region_page_count(seg->size);
       for (uint32_t i = 0; i < n_pages; i++)
@@ -82,17 +82,22 @@ void mem_region_free(const proc_image_segment_t *seg) {
       return;
 
 #if defined(__xtensa__)
-    case PPAP_MEM_USER_EXEC_IRAM: {
+    case PPAP_MEM_RAM_TEXT: {
       extern void heap_caps_free(void *ptr);
       heap_caps_free(seg->base);
       return;
     }
+#else
+    case PPAP_MEM_RAM_TEXT:
+      n_pages = mem_region_page_count(seg->size);
+      for (uint32_t i = 0; i < n_pages; i++)
+        page_free((uint8_t *)seg->base + i * PAGE_SIZE);
+      return;
 #endif
 
     case PPAP_MEM_NONE:
-    case PPAP_MEM_KERNEL_IRAM:
-    case PPAP_MEM_XIP_TEXT:
-    case PPAP_MEM_XIP_RODATA:
+    case PPAP_MEM_ROM_TEXT:
+    case PPAP_MEM_ROM_RODATA:
     default:
       return;
   }

@@ -39,6 +39,16 @@
 #define TRACE_MODE_MASK \
   (PPAP_TRACE_MODE_PPAP_SYSCALL | PPAP_TRACE_MODE_SUBSYS_CALL)
 
+static int image_segment_is_page_tracked(const proc_image_segment_t *seg,
+                                         void *const *pages,
+                                         uint32_t num_pages) {
+  if (!seg || !seg->base) return 0;
+  for (uint32_t i = 0; i < num_pages; i++) {
+    if (pages[i] == seg->base) return 1;
+  }
+  return 0;
+}
+
 static void trace_clear_swbp(pcb_t *target);
 static void trace_clear_hwbp(pcb_t *target);
 static int trace_has_hwbp_for(const pcb_t *target);
@@ -1279,7 +1289,8 @@ long sys_exit(long status) {
   /* Free user pages only if we own them (vfork_parent == NULL means
    * either this isn't a vfork child, or execve already replaced them) */
   if (!current->vfork_parent) {
-    if (current->image.text.mem_class == PPAP_MEM_USER_EXEC_IRAM) {
+    if (!image_segment_is_page_tracked(&current->image.text, current->user_pages,
+                                       USER_PAGES_MAX)) {
       mem_region_free(&current->image.text);
       current->image.text = (proc_image_segment_t){0};
     }
@@ -1763,7 +1774,8 @@ long sys_execve(const char *path, const char *const *argv) {
 
   /* Free old user pages only if we owned them */
   if (owns_pages) {
-    if (old_image.text.mem_class == PPAP_MEM_USER_EXEC_IRAM)
+    if (!image_segment_is_page_tracked(&old_image.text, old_user,
+                                       USER_PAGES_MAX))
       mem_region_free(&old_image.text);
     for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
       if (old_user[i]) user_page_free(old_user[i]);
