@@ -600,6 +600,9 @@ Current implementation status:
 - `scripts/build.sh xtensa_cc` now reports each `.xip.elf` as
   `text-blocked`, `text-clean, literal-coupled`, or `XIP-clean`, so the
   remaining XT-2.5 blockers are visible in the normal build flow
+- the loader now mirrors that distinction internally, recording when an
+  Xtensa XIP-layout image remains `literal-coupled` even after
+  flash-text relocations have been eliminated
 - `.rela.text` is now down to `R_XTENSA_SLOT0_OP` references against code
   and the `.literal` table, which is much closer to the intended XIP model
 - XIP remains the planned default direction, but the runtime still uses the

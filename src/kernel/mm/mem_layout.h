@@ -30,8 +30,9 @@ enum {
 };
 
 enum {
-  PROC_IMAGE_FLAG_NONE     = 0u,
-  PROC_IMAGE_FLAG_TEXT_XIP = 1u << 0,
+  PROC_IMAGE_FLAG_NONE            = 0u,
+  PROC_IMAGE_FLAG_TEXT_XIP        = 1u << 0,
+  PROC_IMAGE_FLAG_LITERAL_COUPLED = 1u << 1,
 };
 
 typedef struct {

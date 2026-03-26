@@ -124,6 +124,20 @@ static int elf_detect(const uint8_t *file_buf, uint32_t file_size,
 }
 
 #if defined(__xtensa__)
+typedef struct {
+  uint32_t blocked_offset;
+  uint32_t blocked_type;
+  uint32_t text_blocked_count;
+  uint32_t literal_slot0_count;
+  uint32_t literal32_count;
+} xtensa_xip_report_t;
+
+typedef enum {
+  XTENSA_XIP_STATE_TEXT_BLOCKED = 0,
+  XTENSA_XIP_STATE_LITERAL_COUPLED,
+  XTENSA_XIP_STATE_READY,
+} xtensa_xip_state_t;
+
 static const elf32_shdr_t *elf_section_by_name(const elf32_ehdr_t *ehdr,
                                                const uint8_t *file_base,
                                                uint32_t file_size,
@@ -166,23 +180,59 @@ static int xtensa_elf_uses_xip_layout(const elf32_ehdr_t *ehdr,
   return rodata->sh_addr >= text_start && rodata->sh_addr < text_end;
 }
 
-static int xtensa_elf_xip_ready(const elf32_ehdr_t *ehdr,
-                                const uint8_t *file_base,
-                                uint32_t file_size,
-                                const elf32_phdr_t *text_seg,
-                                uint32_t *blocked_offset,
-                                uint32_t *blocked_type) {
+static int xtensa_rela_symbol_in_range(const elf32_ehdr_t *ehdr,
+                                       const uint8_t *file_base,
+                                       uint32_t file_size,
+                                       const uint8_t *rela_sh,
+                                       uint32_t r_info,
+                                       uint32_t start,
+                                       uint32_t end) {
+  uint32_t symtab_idx = *(const uint32_t *)(rela_sh + 24);
+  uint32_t sym_idx = ELF32_R_SYM(r_info);
+  const elf32_shdr_t *symtab;
+  const elf32_sym_t *sym;
+  uint32_t sym_count;
+
+  if (symtab_idx >= ehdr->e_shnum) return 0;
+
+  symtab = (const elf32_shdr_t *)(file_base + ehdr->e_shoff +
+                                  symtab_idx * ehdr->e_shentsize);
+  if (symtab->sh_entsize < sizeof(elf32_sym_t)) return 0;
+  if (symtab->sh_offset >= file_size ||
+      symtab->sh_offset + symtab->sh_size > file_size)
+    return 0;
+
+  sym_count = symtab->sh_size / symtab->sh_entsize;
+  if (sym_idx >= sym_count) return 0;
+
+  sym = (const elf32_sym_t *)(file_base + symtab->sh_offset +
+                              sym_idx * symtab->sh_entsize);
+  return sym->st_value >= start && sym->st_value < end;
+}
+
+static xtensa_xip_state_t xtensa_elf_xip_state(const elf32_ehdr_t *ehdr,
+                                               const uint8_t *file_base,
+                                               uint32_t file_size,
+                                               const elf32_phdr_t *text_seg,
+                                               const elf32_phdr_t *literal_seg,
+                                               xtensa_xip_report_t *report) {
   uint32_t text_start_va;
   uint32_t text_end_va;
+  uint32_t literal_start_va = 0;
+  uint32_t literal_end_va = 0;
 
-  if (blocked_offset) *blocked_offset = 0;
-  if (blocked_type) *blocked_type = 0;
-  if (!text_seg) return 0;
+  if (report) *report = (xtensa_xip_report_t){0};
+  if (!text_seg) return XTENSA_XIP_STATE_TEXT_BLOCKED;
 
   text_start_va = text_seg->p_vaddr;
   text_end_va = text_start_va + text_seg->p_memsz;
+  if (literal_seg) {
+    literal_start_va = literal_seg->p_vaddr;
+    literal_end_va = literal_start_va + literal_seg->p_memsz;
+  }
 
-  if (!ehdr->e_shoff || !ehdr->e_shnum || ehdr->e_shentsize < 40) return 1;
+  if (!ehdr->e_shoff || !ehdr->e_shnum || ehdr->e_shentsize < 40)
+    return XTENSA_XIP_STATE_READY;
 
   for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
     const uint8_t *sh = file_base + ehdr->e_shoff + si * ehdr->e_shentsize;
@@ -216,17 +266,45 @@ static int xtensa_elf_xip_ready(const elf32_ehdr_t *ehdr,
       uint8_t r_type = (uint8_t)(r_info & 0xFFu);
 
       if (r_type != 1 /* R_XTENSA_32 */ &&
+          r_type != 20 /* R_XTENSA_SLOT0_OP */ &&
           r_type != 6 /* R_XTENSA_PLT */)
         continue;
-      if (r_offset < text_start_va || r_offset >= text_end_va) continue;
 
-      if (blocked_offset) *blocked_offset = r_offset;
-      if (blocked_type) *blocked_type = r_type;
-      return 0;
+      if ((r_type == 1 || r_type == 6) &&
+          r_offset >= text_start_va && r_offset < text_end_va) {
+        if (report) {
+          if (report->text_blocked_count == 0) {
+            report->blocked_offset = r_offset;
+            report->blocked_type = r_type;
+          }
+          report->text_blocked_count++;
+        }
+        continue;
+      }
+
+      if (!literal_seg) continue;
+
+      if (r_type == 1 &&
+          r_offset >= literal_start_va && r_offset < literal_end_va) {
+        if (report) report->literal32_count++;
+        continue;
+      }
+
+      if (r_type == 20 /* R_XTENSA_SLOT0_OP */ &&
+          r_offset >= text_start_va && r_offset < text_end_va &&
+          xtensa_rela_symbol_in_range(ehdr, file_base, file_size, sh, r_info,
+                                      literal_start_va, literal_end_va)) {
+        if (report) report->literal_slot0_count++;
+      }
     }
   }
 
-  return 1;
+  if (report && report->text_blocked_count > 0)
+    return XTENSA_XIP_STATE_TEXT_BLOCKED;
+  if (report &&
+      (report->literal_slot0_count > 0 || report->literal32_count > 0))
+    return XTENSA_XIP_STATE_LITERAL_COUPLED;
+  return XTENSA_XIP_STATE_READY;
 }
 #endif
 
@@ -326,14 +404,23 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     uint32_t data_va = data_seg ? data_seg->p_vaddr : text_end_va;
     uint32_t data_memsz = data_seg ? data_seg->p_memsz : 0;
     uint32_t data_size = (data_memsz + 15u) & ~15u;
-    uint32_t blocked_offset = 0;
-    uint32_t blocked_type = 0;
+    int uses_xip_layout =
+        xtensa_elf_uses_xip_layout(ehdr, file_buf, file_size, text_seg);
+    xtensa_xip_report_t xip_report = {0};
+    xtensa_xip_state_t xip_state = XTENSA_XIP_STATE_TEXT_BLOCKED;
 
-    if (xtensa_elf_uses_xip_layout(ehdr, file_buf, file_size, text_seg) &&
-        !xtensa_elf_xip_ready(ehdr, file_buf, file_size, text_seg,
-                              &blocked_offset, &blocked_type)) {
-      klogf("ELF: xtensa XIP layout blocked by text reloc type %u at %x\n",
-            blocked_type, blocked_offset);
+    if (uses_xip_layout) {
+      xip_state = xtensa_elf_xip_state(ehdr, file_buf, file_size, text_seg,
+                                       literal_seg, &xip_report);
+      if (xip_state == XTENSA_XIP_STATE_TEXT_BLOCKED) {
+        klogf("ELF: xtensa XIP layout blocked by text reloc type %u at %x\n",
+              xip_report.blocked_type, xip_report.blocked_offset);
+      } else if (xip_state == XTENSA_XIP_STATE_LITERAL_COUPLED) {
+        klogf("ELF: xtensa XIP layout remains literal-coupled"
+              " (slot0=%u literal32=%u)\n",
+              xip_report.literal_slot0_count,
+              xip_report.literal32_count);
+      }
     }
 
     /* Allocate IRAM for text (executable, word-access only) */
@@ -442,6 +529,8 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
           PPAP_MEM_RAM_TEXT, 0u);
     }
     p->image.entry = entry;
+    if (uses_xip_layout && xip_state == XTENSA_XIP_STATE_LITERAL_COUPLED)
+      p->image.flags |= PROC_IMAGE_FLAG_LITERAL_COUPLED;
 
     /* Apply split relocations from --emit-relocs sections.
      *
