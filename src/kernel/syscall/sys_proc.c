@@ -1753,7 +1753,7 @@ long sys_execve(const char *path, const char *const *argv) {
 
   /* Clear pages so do_execve allocates fresh ones */
   current->stack_page = NULL;
-  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) current->user_pages[i] = NULL;
+  proc_clear_page_tracking(current);
   current->image = (proc_image_t){0};
 #if defined(__m68k__)
   current->user_stack_page = NULL;

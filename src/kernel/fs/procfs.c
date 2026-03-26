@@ -395,10 +395,8 @@ static uint32_t proc_vsz(const pcb_t *p) {
   uint32_t pages = 0;
   /* Stack page */
   if (p->stack_page) pages++;
-  /* User data pages */
-  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
-    if (p->user_pages[i]) pages++;
-  }
+  /* Tracked page-backed user pages */
+  pages += proc_tracked_page_count(p);
   /* mmap pages */
   for (int i = 0; i < MMAP_REGIONS_MAX; i++) {
     if (p->mmap_regions[i].addr) pages += p->mmap_regions[i].pages;

@@ -278,8 +278,17 @@ int proc_track_page(pcb_t *p, uint32_t slot, void *page);
 /* Return the first tracked page-backed user page, or NULL if none exist. */
 void *proc_page_backed_base(const pcb_t *p);
 
-/* Count contiguous tracked page-backed slots from user_pages[0]. */
+/* Count contiguous tracked page-backed pages from the first tracked slot. */
 uint32_t proc_page_backed_count(const pcb_t *p);
+
+/* Return the slot index of the first tracked page, or USER_PAGES_MAX. */
+uint32_t proc_first_page_backed_slot(const pcb_t *p);
+
+/* Count all tracked page-backed pages regardless of slot layout. */
+uint32_t proc_tracked_page_count(const pcb_t *p);
+
+/* Clear page-backed tracking slots without freeing underlying pages. */
+void proc_clear_page_tracking(pcb_t *p);
 
 /*
  * Set up an initial kernel stack frame for a new process so that

@@ -745,6 +745,15 @@ Current implementation status:
 - `sys_brk` and the current ELF loaders use those helpers
 - Xtensa tracked writable pages are now allocated and freed through
   `mem_region`, rather than assuming the generic page pool everywhere
+- shared process helpers now expose explicit tracked-page operations
+  (`proc_first_page_backed_slot`, `proc_tracked_page_count`,
+  `proc_clear_page_tracking`) so callers do not need to open-code slot-0
+  and full-array assumptions
+- `sys_execve` now clears page tracking through the shared helper instead
+  of open-coded `user_pages[]` loops, and `/proc/<pid>/stat` VSZ accounting
+  now uses explicit tracked-page counting rather than direct array scans
+- Human68k PMB lookup now resolves through the shared tracked-base helper
+  (first tracked page), avoiding a direct `user_pages[0]` dependency
 - `user_pages[]` still remains the compatibility surface for the rest of
   the kernel, so this step is not complete yet
 

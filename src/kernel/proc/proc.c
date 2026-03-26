@@ -145,17 +145,46 @@ int proc_track_page(pcb_t *p, uint32_t slot, void *page) {
   return 0;
 }
 
+uint32_t proc_first_page_backed_slot(const pcb_t *p) {
+  if (!p) return USER_PAGES_MAX;
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
+    if (p->user_pages[i]) return i;
+  }
+  return USER_PAGES_MAX;
+}
+
 void *proc_page_backed_base(const pcb_t *p) {
-  if (!p) return NULL;
-  return p->user_pages[0];
+  uint32_t slot = proc_first_page_backed_slot(p);
+  if (slot >= USER_PAGES_MAX) return NULL;
+  return p->user_pages[slot];
 }
 
 uint32_t proc_page_backed_count(const pcb_t *p) {
+  uint32_t slot;
+  uint32_t count = 0;
+
+  slot = proc_first_page_backed_slot(p);
+  if (slot >= USER_PAGES_MAX) return 0;
+  while (slot < USER_PAGES_MAX && p->user_pages[slot]) {
+    count++;
+    slot++;
+  }
+  return count;
+}
+
+uint32_t proc_tracked_page_count(const pcb_t *p) {
   uint32_t count = 0;
 
   if (!p) return 0;
-  while (count < USER_PAGES_MAX && p->user_pages[count]) count++;
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
+    if (p->user_pages[i]) count++;
+  }
   return count;
+}
+
+void proc_clear_page_tracking(pcb_t *p) {
+  if (!p) return;
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) p->user_pages[i] = NULL;
 }
 
 void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp) {

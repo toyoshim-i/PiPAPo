@@ -776,7 +776,7 @@ static int dos_intvcg(uint32_t *regs, uint32_t usp) {
 static int dos_getpdb(uint32_t *regs) {
   H68K_TRACE("_GETPDB");
   pcb_t *p = current;
-  /* PMB is at user_pages[0] */
+  /* PMB starts at the first tracked page-backed base. */
   regs[0] = (uint32_t)(uintptr_t)proc_page_backed_base(p);
   advance_pc(regs);
   return 2;
