@@ -74,6 +74,55 @@ static void image_release_owned_segments(proc_image_t *image,
   image_segment_release_owned(&image->data, pages, num_pages);
 }
 
+static void proc_pages_copy(void *dst[USER_PAGES_MAX],
+                            void *const src[USER_PAGES_MAX]) {
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) dst[i] = src[i];
+}
+
+static void proc_pages_restore(pcb_t *p, void *const src[USER_PAGES_MAX]) {
+  if (!p) return;
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) p->user_pages[i] = src[i];
+}
+
+static void proc_pages_release_owned(pcb_t *p) {
+  if (!p) return;
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
+    void *page = p->user_pages[i];
+    if (!page) continue;
+    /* If stack_page is also tracked, clear it here to avoid waitpid
+     * double-freeing the same page later. */
+    if (page == p->stack_page) p->stack_page = NULL;
+    mem_region_free_tracked_page(page);
+    p->user_pages[i] = NULL;
+  }
+}
+
+static void proc_pages_release_private(pcb_t *p, const pcb_t *shared_owner) {
+  if (!p || !shared_owner) return;
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
+    if (!p->user_pages[i]) continue;
+    if (p->user_pages[i] == shared_owner->user_pages[i]) continue;
+    mem_region_free_tracked_page(p->user_pages[i]);
+    p->user_pages[i] = NULL;
+  }
+}
+
+static void proc_pages_release_owned_array(void *pages[USER_PAGES_MAX]) {
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
+    if (!pages[i]) continue;
+    mem_region_free_tracked_page(pages[i]);
+  }
+}
+
+static void proc_pages_release_private_array(void *pages[USER_PAGES_MAX],
+                                             void *const shared[USER_PAGES_MAX]) {
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
+    if (!pages[i]) continue;
+    if (pages[i] == shared[i]) continue;
+    mem_region_free_tracked_page(pages[i]);
+  }
+}
+
 static void trace_clear_swbp(pcb_t *target);
 static void trace_clear_hwbp(pcb_t *target);
 static int trace_has_hwbp_for(const pcb_t *target);
@@ -1316,18 +1365,7 @@ long sys_exit(long status) {
   if (!current->vfork_parent) {
     image_release_owned_segments(&current->image, current->user_pages,
                                  USER_PAGES_MAX);
-    for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
-      if (current->user_pages[i]) {
-        /* If the stack page is within the user_pages (RISC-V contiguous
-         * text+data allocation can include the stack address if it was
-         * reused from the page pool), clear it to prevent double-free
-         * when waitpid later frees the zombie's stack_page. */
-        if (current->user_pages[i] == current->stack_page)
-          current->stack_page = NULL;
-        mem_region_free_tracked_page(current->user_pages[i]);
-        current->user_pages[i] = NULL;
-      }
-    }
+    proc_pages_release_owned(current);
 #if defined(__m68k__)
     if (current->user_stack_page) {
       page_free(current->user_stack_page);
@@ -1347,13 +1385,7 @@ long sys_exit(long status) {
   } else {
     /* vfork child exiting without exec: free child-owned pages only
      * (e.g. the user stack copy allocated by sys_vfork). */
-    for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
-      if (current->user_pages[i] &&
-          current->user_pages[i] != current->vfork_parent->user_pages[i]) {
-        mem_region_free_tracked_page(current->user_pages[i]);
-        current->user_pages[i] = NULL;
-      }
-    }
+    proc_pages_release_private(current, current->vfork_parent);
     /* Clear stack_page if it's the parent's — waitpid frees stack_page,
      * and freeing the parent's stack would corrupt its kernel stack.
      * This can happen when execve fails in a vfork child: sys_execve
@@ -1451,8 +1483,7 @@ long sys_vfork(uint32_t *frame) {
   child->stack_page = stack;
 
   /* 3. Share parent's user_pages with child */
-  for (uint32_t i = 0; i < USER_PAGES_MAX; i++)
-    child->user_pages[i] = current->user_pages[i];
+  proc_pages_copy(child->user_pages, current->user_pages);
 
   /* 4. Build child's stack: copy the parent's entire stack page.
    *
@@ -1745,8 +1776,7 @@ long sys_execve(const char *path, const char *const *argv) {
   void *old_user[USER_PAGES_MAX];
   proc_image_t old_image = current->image;
   int owns_pages = (current->vfork_parent == NULL);
-  for (uint32_t i = 0; i < USER_PAGES_MAX; i++)
-    old_user[i] = current->user_pages[i];
+  proc_pages_copy(old_user, current->user_pages);
 #if defined(__m68k__)
   void *old_user_stack = current->user_stack_page;
 #endif
@@ -1766,8 +1796,7 @@ long sys_execve(const char *path, const char *const *argv) {
   if (err < 0) {
     /* Restore old pages on failure — fds are untouched (POSIX) */
     current->stack_page = old_stack;
-    for (uint32_t i = 0; i < USER_PAGES_MAX; i++)
-      current->user_pages[i] = old_user[i];
+    proc_pages_restore(current, old_user);
     current->image = old_image;
 #if defined(__m68k__)
     current->user_stack_page = old_user_stack;
@@ -1797,19 +1826,14 @@ long sys_execve(const char *path, const char *const *argv) {
   /* Free old user pages only if we owned them */
   if (owns_pages) {
     image_release_owned_segments(&old_image, old_user, USER_PAGES_MAX);
-    for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
-      if (old_user[i]) mem_region_free_tracked_page(old_user[i]);
-    }
+    proc_pages_release_owned_array(old_user);
 #if defined(__m68k__)
     if (old_user_stack) page_free(old_user_stack);
 #endif
   } else if (current->vfork_parent) {
     /* vfork child: free pages that were allocated specifically for
      * the child (e.g. user stack copy), not the shared parent pages. */
-    for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
-      if (old_user[i] && old_user[i] != current->vfork_parent->user_pages[i])
-        mem_region_free_tracked_page(old_user[i]);
-    }
+    proc_pages_release_private_array(old_user, current->vfork_parent->user_pages);
 #if defined(__m68k__)
     if (old_user_stack &&
         old_user_stack != current->vfork_parent->user_stack_page)

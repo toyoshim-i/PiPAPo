@@ -754,6 +754,9 @@ Current implementation status:
   now uses explicit tracked-page counting rather than direct array scans
 - Human68k PMB lookup now resolves through the shared tracked-base helper
   (first tracked page), avoiding a direct `user_pages[0]` dependency
+- `sys_exit`, `sys_vfork`, and `sys_execve` now route page tracking copy /
+  restore / release through shared local helpers in `sys_proc.c` rather than
+  repeating open-coded `USER_PAGES_MAX` loops for each path
 - `user_pages[]` still remains the compatibility surface for the rest of
   the kernel, so this step is not complete yet
 
