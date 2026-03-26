@@ -14,6 +14,7 @@
 
 #include <stddef.h> /* NULL, offsetof */
 
+#include "../common/errno.h"
 #include "../klog.h"
 #include "../mm/page.h"  /* PAGE_SIZE — for proc_setup_stack */
 #include "../common/spinlock.h" /* SPIN_PROC */
@@ -120,6 +121,41 @@ void proc_free(pcb_t *p) {
   uint32_t saved = spin_lock_irqsave(SPIN_PROC);
   p->state = PROC_FREE;
   spin_unlock_irqrestore(SPIN_PROC, saved);
+}
+
+int proc_track_page_range(pcb_t *p, uint32_t start_slot, void *base,
+                          uint32_t size) {
+  uint32_t n_pages;
+
+  if (!p || !base || size == 0) return 0;
+
+  n_pages = (size + PAGE_SIZE - 1u) / PAGE_SIZE;
+  if (start_slot > USER_PAGES_MAX || n_pages > USER_PAGES_MAX - start_slot)
+    return -(int)ENOMEM;
+
+  for (uint32_t i = 0; i < n_pages; i++)
+    p->user_pages[start_slot + i] = (uint8_t *)base + i * PAGE_SIZE;
+  return (int)n_pages;
+}
+
+int proc_track_page(pcb_t *p, uint32_t slot, void *page) {
+  if (!p || !page) return 0;
+  if (slot >= USER_PAGES_MAX) return -(int)ENOMEM;
+  p->user_pages[slot] = page;
+  return 0;
+}
+
+void *proc_page_backed_base(const pcb_t *p) {
+  if (!p) return NULL;
+  return p->user_pages[0];
+}
+
+uint32_t proc_page_backed_count(const pcb_t *p) {
+  uint32_t count = 0;
+
+  if (!p) return 0;
+  while (count < USER_PAGES_MAX && p->user_pages[count]) count++;
+  return count;
 }
 
 void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp) {

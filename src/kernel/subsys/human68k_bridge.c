@@ -212,7 +212,7 @@ static int dos_setblock(uint32_t *regs, uint32_t usp) {
 
   /* block_addr points past the 16-byte MMB header.  Derive the raw
    * page base and verify it matches our allocation. */
-  uint32_t base = (uint32_t)(uintptr_t)p->user_pages[0];
+  uint32_t base = (uint32_t)(uintptr_t)proc_page_backed_base(p);
   if (block_addr != base + MMB_HEADER_SIZE) {
     H68K_TRACE("_SETBLOCK: bad block addr %x (expected %x)", block_addr,
                base + MMB_HEADER_SIZE);
@@ -222,8 +222,7 @@ static int dos_setblock(uint32_t *regs, uint32_t usp) {
   }
 
   /* Current allocation */
-  uint32_t cur_pages = 0;
-  while (cur_pages < USER_PAGES_MAX && p->user_pages[cur_pages]) cur_pages++;
+  uint32_t cur_pages = proc_page_backed_count(p);
 
   uint32_t cur_size = cur_pages * PAGE_SIZE;
   /* Total size including MMB header */
@@ -778,7 +777,7 @@ static int dos_getpdb(uint32_t *regs) {
   H68K_TRACE("_GETPDB");
   pcb_t *p = current;
   /* PMB is at user_pages[0] */
-  regs[0] = (uint32_t)(uintptr_t)p->user_pages[0];
+  regs[0] = (uint32_t)(uintptr_t)proc_page_backed_base(p);
   advance_pc(regs);
   return 2;
 }

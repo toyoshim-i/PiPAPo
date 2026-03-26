@@ -13,6 +13,7 @@
 #include "fs/fstab.h"
 #include "fs/romfs.h"
 #include "klog.h"
+#include "mm/mem_region.h"
 #include "mm/page.h"
 #include "proc/proc.h"
 #include "proc/sched.h"
@@ -46,6 +47,10 @@ void kmain(void) {
 
   /* Memory manager + boot-time memory map */
   mm_init();
+  if (mem_region_init() < 0) {
+    klog("PANIC: mem_region_init failed\n");
+    for (;;) arch_wfi();
+  }
 
   /* Process table init */
   proc_init();

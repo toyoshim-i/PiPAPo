@@ -44,6 +44,7 @@ enum {
   SPIN_UART = 4,   /* UART TX serialisation (klog) */
   SPIN_TXRING = 5, /* UART TX ring buffer + IMSC (dual-core) */
   SPIN_I2C = 6,    /* I2C1 controller (kbd, battery, backlight) */
+  SPIN_MEM = 7,    /* mem_region arena state */
 };
 
 static inline int spin_have_hw(void) {

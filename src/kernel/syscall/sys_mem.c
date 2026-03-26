@@ -4,9 +4,9 @@
  *   sys_brk(addr) — adjust the program break (heap boundary)
  *
  * The heap starts at brk_base (end of .data+.bss) and grows upward
- * within user_pages[].  user_pages[0..N-1] are the data/GOT pages
- * allocated by do_execve; remaining slots are heap expansion pages
- * allocated on demand via page_alloc_at() to ensure contiguity.
+ * within page-backed user memory tracked in user_pages[].  The initial
+ * image pages are recorded by the loader; later heap expansion pages are
+ * appended on demand via page_alloc_at() to ensure contiguity.
  */
 
 #include <string.h>
@@ -33,16 +33,20 @@ long sys_brk(long addr) {
   if (new_brk < current->brk_base)
     return (long)(current->brk_current); /* unchanged = failure */
 
-  /* Calculate old and new page counts from user_pages[0] base.
-   * user_pages[0..N-1] hold the data segment (allocated by do_execve).
-   * Remaining slots are heap pages, allocated contiguously via
-   * page_alloc_at() so brk addresses map to valid physical memory. */
-  uintptr_t page0_base = (uintptr_t)current->user_pages[0];
+  /* Calculate old and new page counts from the tracked page-backed base.
+   * The loader records the initial page-backed user image here, and
+   * sys_brk appends heap pages contiguously after it. */
+  uintptr_t page0_base = (uintptr_t)proc_page_backed_base(current);
   uintptr_t old_top = current->brk_current;
   uintptr_t new_top = new_brk;
+  uint32_t old_pages;
+  uint32_t new_pages;
 
-  uint32_t old_pages = (old_top - page0_base + PAGE_SIZE - 1) / PAGE_SIZE;
-  uint32_t new_pages = (new_top - page0_base + PAGE_SIZE - 1) / PAGE_SIZE;
+  if (!page0_base)
+    return (long)(current->brk_current); /* unchanged = failure */
+
+  old_pages = (old_top - page0_base + PAGE_SIZE - 1) / PAGE_SIZE;
+  new_pages = (new_top - page0_base + PAGE_SIZE - 1) / PAGE_SIZE;
 
   if (new_pages > USER_PAGES_MAX)
     return (long)(current->brk_current); /* unchanged = failure */

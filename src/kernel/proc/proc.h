@@ -126,7 +126,7 @@ typedef struct pcb {
 
   /* ── Memory ─────────────────────────────────────────────────────────── */
   void *stack_page; /* 4 KB page from page_alloc(): process stack */
-  void *user_pages[USER_PAGES_MAX]; /* user data pages (exec data segment) */
+  void *user_pages[USER_PAGES_MAX]; /* page-backed user memory tracking */
   proc_image_t image; /* explicit process image layout / memory classes */
 #if defined(__m68k__)
   void *user_stack_page; /* m68k: separate user stack page (USP target) */
@@ -260,6 +260,26 @@ pcb_t *proc_alloc(void);
  * No-op if p is NULL.
  */
 void proc_free(pcb_t *p);
+
+/*
+ * Track page-backed user memory in user_pages[].
+ * Returns the number of tracked pages, or -ENOMEM if the range would
+ * exceed USER_PAGES_MAX.
+ */
+int proc_track_page_range(pcb_t *p, uint32_t start_slot, void *base,
+                          uint32_t size);
+
+/*
+ * Track one page-backed user page in user_pages[].
+ * Returns 0 on success, or -ENOMEM if the slot is out of range.
+ */
+int proc_track_page(pcb_t *p, uint32_t slot, void *page);
+
+/* Return the first tracked page-backed user page, or NULL if none exist. */
+void *proc_page_backed_base(const pcb_t *p);
+
+/* Count contiguous tracked page-backed slots from user_pages[0]. */
+uint32_t proc_page_backed_count(const pcb_t *p);
 
 /*
  * Set up an initial kernel stack frame for a new process so that

@@ -367,11 +367,16 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
       }
     }
 
-    /* Track each DRAM page individually for cleanup via page_free. */
+    /* Track page-backed DRAM for cleanup and later heap growth. */
     /* Xtensa IRAM text is owned through image.text instead. */
-    if (dram_page) {
-      for (uint32_t i = 0; i < data_pages && i < USER_PAGES_MAX; i++)
-        p->user_pages[i] = dram_page + i * PAGE_SIZE;
+    if (dram_page &&
+        proc_track_page_range(p, 0, dram_page, data_pages * PAGE_SIZE) < 0) {
+      mem_region_free(&stack_region);
+      p->stack_page = NULL;
+      p->image.stack = (proc_image_segment_t){0};
+      mem_region_free(&data_region);
+      mem_region_free(&text_region);
+      return -(int)ENOMEM;
     }
 
     /* Set brk base/current after DRAM data for heap growth */
@@ -454,11 +459,17 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
           PROC_IMAGE_SEG_WRITABLE);
     p->image.entry = entry;
 
-    for (uint32_t i = 0; i < total_image_pages; i++)
-      p->user_pages[i] = sram_page + i * PAGE_SIZE;
-    /* User stack page follows the image pages */
-    if (total_image_pages < USER_PAGES_MAX)
-      p->user_pages[total_image_pages] = ustack_rv;
+    if (proc_track_page_range(p, 0, sram_page,
+                              total_image_pages * PAGE_SIZE) < 0 ||
+        proc_track_page(p, total_image_pages, ustack_rv) < 0) {
+      page_free(ustack_rv);
+      page_free(stack);
+      for (uint32_t i = 0; i < total_image_pages; i++)
+        page_free(sram_page + i * PAGE_SIZE);
+      p->stack_page = NULL;
+      p->image.stack = (proc_image_segment_t){0};
+      return -(int)ENOMEM;
+    }
 
     /* Apply R_RISCV_32 relocations from --emit-relocs sections.
      * These fix up absolute addresses in data (function pointer tables
@@ -722,8 +733,15 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
       return -(int)ENOEXEC;
     }
 
-    for (uint32_t i = 0; i < data_pages; i++)
-      p->user_pages[i] = sram_page + i * PAGE_SIZE;
+    if (proc_track_page_range(p, 0, sram_page, data_pages * PAGE_SIZE) < 0) {
+      page_free(stack);
+      if (user_stack) page_free(user_stack);
+      for (uint32_t i = 0; i < data_pages; i++)
+        page_free(sram_page + i * PAGE_SIZE);
+      p->stack_page = NULL;
+      p->image.stack = (proc_image_segment_t){0};
+      return -(int)ENOMEM;
+    }
     p->image.data = proc_image_segment_make(
         sram_page, data_seg->p_memsz, PPAP_MEM_RAM_DATA,
         PROC_IMAGE_SEG_WRITABLE);

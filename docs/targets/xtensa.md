@@ -117,15 +117,17 @@ scripts/build.sh xtensa_cc:
 | `CONFIG_ESP_TASK_WDT_EN` | n | Same reason |
 | `CONFIG_FREERTOS_UNICORE` | y | PPAP doesn't use Core 1; FreeRTOS tasks on Core 1 interfere |
 | `CONFIG_ESPTOOLPY_FLASHSIZE_8MB` | y | CardComputer has 8 MB flash |
-| `CONFIG_ESP_SYSTEM_MEMPROT_FEATURE` | n | PPAP allocates user code in IRAM via `heap_caps_malloc(MALLOC_CAP_EXEC)` |
+| `CONFIG_ESP_SYSTEM_MEMPROT_FEATURE` | n | Temporary until XT-4: PPAP still needs executable RAM and has not installed a final world/PMS policy yet |
 
 ### Planned handoff cleanup
 
 The current implementation still leans on ESP-IDF runtime mechanisms in a
 few places. The new plan is to reduce that over time:
 
-- Replace ad-hoc `heap_caps_malloc()` executable allocations with PPAP-owned
-  IRAM / DRAM arenas reserved at boot
+- Replace the remaining ESP-IDF heap-backed memory policy with fully
+  PPAP-owned RAM / flash region management. XT-2 has already introduced a
+  PPAP-owned `RAM_TEXT` arena at boot; `RAM_DATA` and XIP-backed regions
+  are still pending.
 - Move from ESP-IDF exception registration hooks toward PPAP-owned runtime
   exception control as much as the ROM / boot model allows
 - Re-enable PMS once the PPAP memory map is explicit enough to express
@@ -164,12 +166,12 @@ model for the port.
 - **Word-access only:** IRAM supports only 32-bit aligned access. Byte-level
   `memcpy`/`memset` (from ROM) causes `LoadStoreError` (cause=3). The ELF
   loader uses word-at-a-time copy loops for IRAM.
-- **Allocation:** `heap_caps_malloc(size, MALLOC_CAP_EXEC)` allocates from
-  IRAM heap. `MALLOC_CAP_EXEC = (1<<0)`, not `(1<<4)` which is
-  `MALLOC_CAP_PID2`.
-- **Deallocation:** IRAM allocations must be freed with `heap_caps_free()`,
-  not `page_free()`. The `user_page_free()` helper in `page.h` detects IRAM
-  addresses and routes to the correct free function.
+- **Boot reservation:** the current XT-2 implementation reserves a
+  PPAP-owned `RAM_TEXT` arena once at boot, using `heap_caps_malloc()`
+  only during `mem_region_init()`.
+- **Suballocation:** executable RAM text is then allocated and freed through
+  `mem_region_alloc()` / `mem_region_free()`, not by direct loader calls
+  into ESP-IDF heap APIs.
 
 These rules are architectural, but the **allocator strategy is temporary**.
 The desired end state is not "ELF loader calls ESP-IDF heap APIs directly";
@@ -473,51 +475,118 @@ XT-2 should establish the permanent Xtensa contract:
 - DRAM for mutable process state
 - IRAM only for cache-off critical or otherwise special runtime code
 
-Recommended steps:
+Progress under XT-2 should be reported by the step names below.
 
-1. Define the memory classes explicitly.
-   Use named regions rather than implicit address rules:
-   - `kernel_iram`
-   - `kernel_dram`
-   - `xip_text`
-   - `xip_rodata`
-   - `user_dram`
-   - optional `device_dma`
+#### XT-2.1: Define explicit memory classes
 
-2. Reserve PPAP ownership at boot.
-   Carve out PPAP-owned regions once during Xtensa bootstrap and record
-   them centrally. After that point, Xtensa runtime code should stop
-   treating ESP-IDF heap APIs as the long-term allocator interface.
+Status: **done**
 
-3. Introduce region allocators by purpose.
-   The loader and kernel should request memory by intent, not by backend:
-   - executable cache-off critical code
-   - flash-backed immutable text/rodata
-   - mutable process data
-   - kernel-private allocations
+Use named memory classes rather than implicit address rules. The current
+shared vocabulary is:
 
-4. Separate execution model from allocation model.
-   Keep two executable paths temporarily:
-   - current RAM-loaded ELF path for bring-up/debug
-   - future XIP-capable path for flash-backed text/rodata
-   Both should use the same PPAP region API so only the image format
-   differs, not the ownership rules.
+- `RAM_TEXT`
+- `RAM_RODATA`
+- `RAM_DATA`
+- `ROM_TEXT`
+- `ROM_RODATA`
+- `RAM_STACK`
+- optional `DEVICE_DMA`
 
-5. Add an explicit process-image descriptor.
-   Process teardown should free what was actually allocated, rather than
-   infer ownership from raw addresses. Each process image should record its
-   text, rodata, data, stack, and flags such as XIP vs RAM-loaded.
+This is now implemented in shared process-image metadata and used across
+the ELF loader paths.
 
-6. Make XIP the default target model.
-   XT-2 should deliberately align Xtensa with the ARM-port philosophy of
-   "XIP by default, RAM only when needed" so non-MMU ports converge on one
-   mental model instead of each inventing its own special-case rules.
+#### XT-2.2: Add explicit process-image ownership metadata
+
+Status: **done**
+
+Each process image should record its text, rodata, data, stack, and flags
+such as XIP vs RAM-loaded. Cleanup should free what was actually allocated,
+rather than infer ownership from raw addresses.
+
+This step is implemented: process images are recorded explicitly, and the
+old Xtensa-specific IRAM free heuristic has been removed.
+
+#### XT-2.3: Introduce region allocators by purpose
+
+Status: **in progress**
+
+The loader and kernel should request memory by intent, not by backend:
+
+- executable RAM text
+- flash-backed immutable text / rodata
+- mutable process data
+- kernel-private allocations
+
+Current implementation status:
+
+- a shared `mem_region` layer exists
+- Xtensa `RAM_TEXT` is reserved once at boot and suballocated from a
+  PPAP-owned arena
+- non-Xtensa and writable-memory paths still use the existing page-backed
+  backend
+
+#### XT-2.4: Reserve PPAP ownership at boot
+
+Status: **partially done**
+
+Carve out PPAP-owned regions once during Xtensa bootstrap and record them
+centrally. After that point, Xtensa runtime code should stop treating
+ESP-IDF heap APIs as the long-term allocator interface.
+
+Current implementation status:
+
+- `mem_region_init()` runs during boot
+- Xtensa now reserves a PPAP-owned `RAM_TEXT` arena there
+- Xtensa `RAM_DATA` is still page-pool backed
+- flash-backed executable / immutable regions are not reserved or managed
+  yet
+
+#### XT-2.5: Separate execution model from allocation model
+
+Status: **partially done**
+
+Keep two executable paths temporarily:
+
+- current RAM-loaded ELF path for bring-up/debug
+- future XIP-capable path for flash-backed text/rodata
+
+Both should use the same PPAP region API so only the image format differs,
+not the ownership rules.
+
+Current implementation status:
+
+- Xtensa RAM-loaded text now goes through `mem_region`
+- XIP remains the planned default direction, but Xtensa does not yet have
+  its XIP-capable user image path
+
+#### XT-2.6: Make page-tracked writable memory explicit
+
+Status: **in progress**
+
+Writable page-backed process memory should be handled through explicit
+helpers, rather than open-coded assumptions about `user_pages[0]`,
+contiguous slots, or architecture-specific cleanup paths.
+
+Current implementation status:
+
+- shared helpers now track page-backed user ranges explicitly
+- `sys_brk` and the current ELF loaders use those helpers
+- Xtensa writable process memory is still backed by the generic page pool,
+  so this step is the staging point for the later `RAM_DATA` arena work
+
+#### XT-2.7: Make XIP the default target model
+
+Status: **not started**
+
+XT-2 should deliberately align Xtensa with the ARM-port philosophy of
+"XIP by default, RAM only when needed" so non-MMU ports converge on one
+mental model instead of each inventing its own special-case rules.
 
 Exit criteria for XT-2:
 
 - Xtensa memory ownership is described in named regions, not address-range
   heuristics
-- the loader no longer depends on ad-hoc `heap_caps_malloc()` calls as its
+- the loader no longer depends on ad-hoc ESP-IDF heap calls as its
   architectural interface
 - process cleanup is explicit and format-aware
 - the documentable default model becomes "flash-backed immutable code/data,
@@ -543,6 +612,9 @@ Goal: turn memory protection back on only after the software memory model is
 explicit enough to express PPAP policy without hacks.
 
 - Design a PMS layout for kernel vs user separation on ESP32-S3.
+- Plan to use **World 0** for the kernel / supervisor runtime and
+  **World 1** for user processes, so the world controller becomes the
+  coarse kernel-vs-user boundary beneath finer PMS permissions.
 - Enforce at least coarse user/kernel boundaries before attempting finer
   protection.
 - Aim for W^X-style behavior where practical: flash-mapped executable text,
