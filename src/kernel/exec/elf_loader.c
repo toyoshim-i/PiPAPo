@@ -446,12 +446,12 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
     entry = (uint32_t)(uintptr_t)(sram_page + e_entry);
     p->image.text = proc_image_segment_make(
-        sram_page + text_seg->p_vaddr, text_seg->p_memsz,
-        PPAP_MEM_RAM_TEXT, PROC_IMAGE_SEG_EXECUTABLE);
+        sram_page + text_seg->p_vaddr, text_seg->p_memsz, PPAP_MEM_RAM_TEXT,
+        PROC_IMAGE_SEG_EXECUTABLE);
     if (data_seg)
       p->image.data = proc_image_segment_make(
-          sram_page + data_seg->p_vaddr, data_seg->p_memsz,
-          PPAP_MEM_RAM_DATA, PROC_IMAGE_SEG_WRITABLE);
+          sram_page + data_seg->p_vaddr, data_seg->p_memsz, PPAP_MEM_RAM_DATA,
+          PROC_IMAGE_SEG_WRITABLE);
     p->image.entry = entry;
 
     for (uint32_t i = 0; i < total_image_pages; i++)
@@ -504,6 +504,17 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
               r_type == 51 /* R_RISCV_RELAX */ ||
               (r_type >= 53 && r_type <= 72) /* R_RISCV_SET/SUB debug */)
             continue;
+
+          /* R_RISCV_RELATIVE = 3: PIE base relocation (from -pie).
+           * target = addend + load_base.  Replaces the manual GOT scan
+           * and R_RISCV_32 fixups when the binary is linked with -pie. */
+          if (r_type == 3 && r_offset < image_end) {
+            int32_t r_addend = *(const int32_t *)(rela + 8);
+            uint32_t *target = (uint32_t *)(sram_page + r_offset);
+            *target = (uint32_t)r_addend + load_base;
+            riscv32_reloc_count++;
+            continue;
+          }
 
           /* R_RISCV_32 = 1: absolute 32-bit data address */
           if (r_type == 1 && r_offset < image_end) {
