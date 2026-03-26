@@ -68,6 +68,7 @@ static void image_release_owned_segments(proc_image_t *image,
   if (!image) return;
   image_segment_release_owned(&image->text, pages, num_pages);
   image_segment_release_owned(&image->staged_text, pages, num_pages);
+  image_segment_release_owned(&image->staged_rodata, pages, num_pages);
   image_segment_release_owned(&image->literal, pages, num_pages);
   image_segment_release_owned(&image->rodata, pages, num_pages);
   image_segment_release_owned(&image->data, pages, num_pages);

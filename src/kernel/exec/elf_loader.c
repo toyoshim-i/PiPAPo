@@ -682,8 +682,22 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     uint32_t iram_base = (uint32_t)(uintptr_t)sram_page;
     uint32_t dram_base = dram_page ? (uint32_t)(uintptr_t)dram_page : 0;
 
-    /* Entry point is in IRAM */
-    entry = iram_base + e_entry;
+    /* XT-2.6: Determine active execution path based on XIP readiness.
+     * - If ENABLE_XTENSA_PSRAM_EXEC is set AND staged text exists (XIP-capable
+     *   layout), use PSRAM-backed execution base for entry point.
+     * - Otherwise, fall back to IRAM-loaded execution (current behavior). */
+#if defined(ENABLE_XTENSA_PSRAM_EXEC)
+    uint32_t active_text_base = iram_base;
+    if ((p->image.flags & PROC_IMAGE_FLAG_TEXT_STAGED_EXT) &&
+        p->image.staged_text.base) {
+      active_text_base = (uint32_t)(uintptr_t)p->image.staged_text.base;
+    }
+#else
+    uint32_t active_text_base = iram_base;
+#endif
+
+    /* Entry point calculation based on active execution path */
+    entry = active_text_base + e_entry;
     p->image.text = proc_image_segment_make_vaddr(
         text_region.base, text_region.size, text_seg->p_vaddr,
         PPAP_MEM_RAM_TEXT, text_region.flags);
@@ -703,14 +717,25 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     if (uses_xip_layout && xip_state == XTENSA_XIP_STATE_DATA_COUPLED)
       p->image.flags |= PROC_IMAGE_FLAG_DATA_COUPLED;
 
+#if defined(ENABLE_XTENSA_PSRAM_EXEC)
+    if ((p->image.flags & PROC_IMAGE_FLAG_TEXT_STAGED_EXT) &&
+        p->image.staged_text.base) {
+      klogf("ELF: xtensa entry 0x%x (PSRAM @ 0x%lx)\n", entry,
+            (uintptr_t)p->image.staged_text.base);
+    } else if (uses_xip_layout) {
+      klogf("ELF: xtensa entry 0x%x (IRAM fallback @ 0x%x)\n", entry,
+            iram_base);
+    }
+#endif
+
     /* Apply split relocations from --emit-relocs sections.
      *
      * Link-time layout: text at vaddr [0, text_end_va), data at [data_va, ...).
-     * Runtime: text at iram_base, data at dram_base.
+     * Runtime: text at active_text_base (IRAM or PSRAM), data at dram_base.
      *
      * For each R_XTENSA_32/PLT relocation, the patched word contains a
      * link-time address V.  Convert to runtime:
-     *   V < data_va  → iram_base + V  (text/code reference)
+     *   V < data_va  → active_text_base + V  (text/code reference)
      *   V >= data_va → dram_base + (V - data_va) (data/rodata reference)
      *
      * IMPORTANT: only process RELA sections whose target section (sh_info)
@@ -745,26 +770,37 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
           if (r_type != 1 && r_type != 6) continue;
 
-          /* Determine which memory region the relocation target is in */
+          /* Determine which memory region the relocation target is in.
+           * For ENABLE_XTENSA_PSRAM_EXEC, relocations in staged_text
+           * must be applied there, not in IRAM fallback. */
           volatile uint32_t *target;
-          if (r_offset < text_end_va)
+#if defined(ENABLE_XTENSA_PSRAM_EXEC)
+          if ((p->image.flags & PROC_IMAGE_FLAG_TEXT_STAGED_EXT) &&
+              p->image.staged_text.base &&
+              r_offset < text_end_va) {
+            /* Relocation is in the staged PSRAM text copy */
+            target = (volatile uint32_t *)((uintptr_t)p->image.staged_text.base
+                                           + r_offset);
+          } else
+#endif
+              if (r_offset < text_end_va)
             target = (volatile uint32_t *)(sram_page + r_offset);
           else if (dram_page && r_offset >= data_va)
             target = (volatile uint32_t *)(dram_page + (r_offset - data_va));
           else
             continue;
 
-          /* Read link-time value and apply split base */
+          /* Read link-time value and apply active execution base */
           uint32_t val = *target;
           if (val < data_va)
-            *target = val + iram_base;           /* text reference → IRAM */
+            *target = val + active_text_base;           /* text reference */
           else
             *target = dram_base + (val - data_va); /* data reference → DRAM */
         }
       }
     }
 
-    /* Relocate GOT entries (in DRAM) with split bases */
+    /* Relocate GOT entries (in DRAM) with active execution base */
     if (dram_page && ehdr->e_shoff && ehdr->e_shnum &&
         ehdr->e_shentsize >= 40) {
       for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
@@ -786,7 +822,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
             uint32_t val = got[gi];
             if (val == 0 || val == 0xFFFFFFFFu) continue;
             if (val < data_va)
-              got[gi] = val + iram_base;
+              got[gi] = val + active_text_base;
             else if (val < image_end)
               got[gi] = dram_base + (val - data_va);
           }

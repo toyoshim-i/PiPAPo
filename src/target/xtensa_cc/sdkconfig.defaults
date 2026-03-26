@@ -23,6 +23,12 @@ CONFIG_SPIRAM=y
 CONFIG_SPIRAM_BOOT_INIT=y
 CONFIG_SPIRAM_USE_CAPS_ALLOC=y
 
+# XT-2.6 moves the target toward staged execution from PSRAM-backed runtime
+# memory. Enable the ESP-IDF PSRAM XiP mode so externally staged immutable
+# images can eventually live in an instruction-fetchable / rodata-capable
+# address window instead of a data-only staging pool.
+CONFIG_SPIRAM_XIP_FROM_PSRAM=y
+
 # Disable memory protection so IRAM can be used as executable heap.
 # PPAP allocates user-process code in IRAM via heap_caps_malloc(MALLOC_CAP_EXEC).
 CONFIG_ESP_SYSTEM_MEMPROT_FEATURE=n

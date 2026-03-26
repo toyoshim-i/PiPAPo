@@ -43,6 +43,7 @@ enum {
 typedef struct {
   void *base;
   uint32_t size;
+  uint32_t vaddr;
   ppap_mem_class_t mem_class;
   uint32_t flags;
 } proc_image_segment_t;
@@ -50,6 +51,7 @@ typedef struct {
 typedef struct {
   proc_image_segment_t text;
   proc_image_segment_t staged_text;
+  proc_image_segment_t staged_rodata;
   proc_image_segment_t literal;
   proc_image_segment_t rodata;
   proc_image_segment_t data;
@@ -63,8 +65,18 @@ static inline proc_image_segment_t proc_image_segment_make(
   proc_image_segment_t seg;
   seg.base = base;
   seg.size = size;
+  seg.vaddr = 0u;
   seg.mem_class = mem_class;
   seg.flags = flags;
+  return seg;
+}
+
+static inline proc_image_segment_t proc_image_segment_make_vaddr(
+    void *base, uint32_t size, uint32_t vaddr, ppap_mem_class_t mem_class,
+    uint32_t flags) {
+  proc_image_segment_t seg = proc_image_segment_make(base, size, mem_class,
+                                                     flags);
+  seg.vaddr = vaddr;
   return seg;
 }
 

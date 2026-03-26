@@ -672,6 +672,16 @@ Current implementation status:
   full immutable text/literal copy into the `EXT_TEXT` arena and records it
   explicitly in `proc_image`, while still executing from the current IRAM
   fallback path
+- staged immutable segments now preserve their original link-time virtual
+  addresses in `proc_image`, and the Xtensa loader splits staged external
+  executable bytes (`EXT_TEXT`) from staged immutable companion bytes
+  (`EXT_RODATA`) instead of flattening everything into one external blob;
+  that staged companion data is now tracked explicitly as its own process
+  image segment rather than being overloaded onto the active rodata slot
+- `xtensa_cc` now also enables ESP-IDF's PSRAM XiP mode for XT-2.6
+  experiments, and `mem_region_init()` logs whether the reserved external
+  text / rodata arenas actually land in executable or byte-accessible
+  address ranges on the running system
 - Xtensa now also builds fixed-base `.xipfix.elf` artifacts linked at the
   ESP32-S3 DROM flash base, so XT-2.6 can compare relocatable and
   prelinked packaging without changing the active runtime path
@@ -695,6 +705,31 @@ Current implementation status:
 - the active runtime still uses the internal RAM-loaded path because PPAP
   does not yet have the XT-2.5 PSRAM-backed execution arena and image
   placement logic to replace it
+- **NEW (2026-03-26)**: Loader modifications now implement conditional PSRAM
+  execution via `ENABLE_XTENSA_PSRAM_EXEC` compile-time flag. Entry point
+  calculation and relocation patching (both RELA and GOT) now use active
+  execution base (PSRAM when staged and enabled, IRAM fallback otherwise)
+- **NEW (2026-03-26)**: The `ENABLE_XTENSA_PSRAM_EXEC` flag is now enabled by
+  default in xtensa_cc target `CMakeLists.txt`, making PSRAM-backed execution
+  the standard path for XIP-capable binaries. Non-XIP binaries automatically
+  fall back to IRAM execution path
+
+**Validation points for XT-2.6 PSRAM execution:**
+
+- when `CONFIG_SPIRAM_XIP_FROM_PSRAM` is disabled, PSRAM arenas are
+  reserved but not executable; staged copies exist but entry point
+  allocation fails gracefully (logs "IRAM fallback @ 0x...")
+- entry point allocation from staged text can fail if `mem_region_alloc()`
+  returns NULL (insufficient PSRAM arena space); must verify PSRAM arena
+  sizes vs typical application images
+- relocation patching against staged PSRAM region requires stable reader
+  access while writes apply to DRAM (for GOT entries); mutual exclusion
+  needed if Xtensa moves to preemptive switching before XT-2.8 launch
+- loader must not execute from IRAM text when staged PSRAM path is active;
+  if entry point uses PSRAM base, literal pool relocations must resolve to
+  PSRAM-backed artifacts (not IRAM copies)
+- TODO: add explicit validation that entry address is within staged segment
+  bounds, not stale memory
 
 #### XT-2.7: Make page-tracked writable memory explicit
 
@@ -712,6 +747,17 @@ Current implementation status:
   `mem_region`, rather than assuming the generic page pool everywhere
 - `user_pages[]` still remains the compatibility surface for the rest of
   the kernel, so this step is not complete yet
+
+**Blockers from XT-2.6 cleanup:**
+
+- XT-2.6 PSRAM execution now stages text/rodata but keeps IRAM allocation
+  for fallback; this remains compatible with XT-2.7's page tracking approach
+- the split-base relocation system (XT-2.6 change) affects how writable data
+  addresses are resolved; XT-2.7 must ensure explicit page tracking works
+  correctly with both PSRAM entry paths and IRAM fallback paths
+- TODO: verify that Xtensa `proc_track_page_range()` call in elf_loader.c
+  correctly reports staged PSRAM text region ownership to XT-2.7 (currently
+  only tracks writable DRAM pages; executable regions tracked separately)
 
 #### XT-2.8: Make PSRAM-backed execution the default target model
 

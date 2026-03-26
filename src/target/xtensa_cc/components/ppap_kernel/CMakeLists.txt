@@ -70,6 +70,7 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     MEM_REGION_RAM_DATA_ARENA_SIZE=98304u
     MEM_REGION_EXT_TEXT_ARENA_SIZE=524288u
     MEM_REGION_EXT_RODATA_ARENA_SIZE=262144u
+    ENABLE_XTENSA_PSRAM_EXEC=1
 )
 
 # ── Embed romfs.bin via .incbin ───────────────────────────────────────────────

@@ -11,6 +11,7 @@
 
 #if defined(__xtensa__)
 #include "esp_heap_caps.h"
+#include "esp_memory_utils.h"
 #include "esp_psram.h"
 #include "sdkconfig.h"
 #endif
@@ -169,6 +170,23 @@ static int mem_region_xtensa_psram_init(void) {
                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
                                      "ext_rodata");
   if (err < 0) return err;
+
+#if defined(CONFIG_SPIRAM_XIP_FROM_PSRAM) && CONFIG_SPIRAM_XIP_FROM_PSRAM
+  klog("MM:   psram xip enabled for staged text/rodata\n");
+#else
+  klog("MM:   psram xip disabled; external arenas are staging-only\n");
+#endif
+
+  if (ext_text_arena.ready) {
+    klogf("MM:   ext_text executable=%u byte_access=%u\n",
+          (uint32_t)esp_ptr_executable(ext_text_arena.base),
+          (uint32_t)esp_ptr_byte_accessible(ext_text_arena.base));
+  }
+  if (ext_rodata_arena.ready) {
+    klogf("MM:   ext_rodata executable=%u byte_access=%u\n",
+          (uint32_t)esp_ptr_executable(ext_rodata_arena.base),
+          (uint32_t)esp_ptr_byte_accessible(ext_rodata_arena.base));
+  }
 
   free_size = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
   klogf("MM:   psram free %u KB after reservation\n", free_size / 1024u);
