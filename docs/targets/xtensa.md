@@ -615,6 +615,14 @@ Current implementation status:
   `text-clean, literal-prelinked` when the `.literal` words already carry
   DROM flash-window addresses and the remaining relocation records are
   just preserved bookkeeping from `--emit-relocs`
+- larger fixed-base programs can still classify as
+  `text-clean, data-coupled` when their literal tables reference mutable
+  `.data` / `.bss`, which means the remaining XT-2.5 problem is writable
+  process-state rebasing rather than flash-text rebasing
+- the loader now mirrors those categories internally too, recording
+  `literal-prelinked`, `literal-coupled`, and `data-coupled` states in the
+  process image metadata instead of collapsing everything into one generic
+  “literal-coupled” bucket
 - `.rela.text` is now down to `R_XTENSA_SLOT0_OP` references against code
   and the `.literal` table, which is much closer to the intended XIP model
 - XIP remains the planned default direction, but the runtime still uses the

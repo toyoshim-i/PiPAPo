@@ -213,6 +213,7 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
         local text_blocked=0
         local text_literal_refs=0
         local literal_abs=0
+        local literal_data_refs=0
         local flash_base=0
         local flash_prefix=""
         local literal_prelinked=0
@@ -234,13 +235,18 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
                         text_literal_refs++
                     if (section == ".rela.literal" && $3 == "R_XTENSA_32")
                         literal_abs++
+                    if (section == ".rela.literal" && $3 == "R_XTENSA_32" &&
+                        ($5 == ".data" || $5 == ".bss"))
+                        literal_data_refs++
                 }
                 END {
-                    printf "%u %u %u\n",
-                           text_blocked, text_literal_refs, literal_abs
+                    printf "%u %u %u %u\n",
+                           text_blocked, text_literal_refs,
+                           literal_abs, literal_data_refs
                 }'
         )"
-        read -r text_blocked text_literal_refs literal_abs <<<"$counts"
+        read -r text_blocked text_literal_refs literal_abs literal_data_refs \
+            <<<"$counts"
 
         flash_base="$(
             readelf -s "$elf" 2>/dev/null | awk '
@@ -277,10 +283,12 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
         if [[ "$text_blocked" -gt 0 ]]; then
             status="text-blocked"
         elif [[ "$text_literal_refs" -gt 0 || "$literal_abs" -gt 0 ]]; then
-            if [[ "$literal_prelinked" == "1" ]]; then
+            if [[ "$literal_data_refs" -gt 0 ]]; then
+                status="text-clean, data-coupled"
+            elif [[ "$literal_prelinked" == "1" ]]; then
                 status="text-clean, literal-prelinked"
             else
-            status="text-clean, literal-coupled"
+                status="text-clean, literal-coupled"
             fi
         else
             status="XIP-clean"
@@ -288,7 +296,8 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
 
         echo "[build] Xtensa XIP: $(basename "$elf"): $status" \
              "(text=$text_blocked, slot0->literal=$text_literal_refs," \
-             "literal32=$literal_abs, prelinked=$literal_prelinked)"
+             "literal32=$literal_abs, data32=$literal_data_refs," \
+             "prelinked=$literal_prelinked)"
 
         if [[ "${PPAP_XTENSA_XIP_STRICT:-0}" == "1" &&
               "$text_blocked" -gt 0 ]]; then

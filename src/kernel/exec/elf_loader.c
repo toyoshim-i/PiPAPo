@@ -130,10 +130,14 @@ typedef struct {
   uint32_t text_blocked_count;
   uint32_t literal_slot0_count;
   uint32_t literal32_count;
+  uint32_t literal_data_count;
+  uint32_t literal_prelinked;
 } xtensa_xip_report_t;
 
 typedef enum {
   XTENSA_XIP_STATE_TEXT_BLOCKED = 0,
+  XTENSA_XIP_STATE_DATA_COUPLED,
+  XTENSA_XIP_STATE_LITERAL_PRELINKED,
   XTENSA_XIP_STATE_LITERAL_COUPLED,
   XTENSA_XIP_STATE_READY,
 } xtensa_xip_state_t;
@@ -210,16 +214,93 @@ static int xtensa_rela_symbol_in_range(const elf32_ehdr_t *ehdr,
   return sym->st_value >= start && sym->st_value < end;
 }
 
+static int xtensa_elf_symbol_value_by_name(const elf32_ehdr_t *ehdr,
+                                           const uint8_t *file_base,
+                                           uint32_t file_size,
+                                           const char *name,
+                                           uint32_t *value) {
+  if (!ehdr->e_shoff || !ehdr->e_shnum || !ehdr->e_shentsize) return 0;
+
+  for (uint16_t i = 0; i < ehdr->e_shnum; i++) {
+    const elf32_shdr_t *symtab;
+    const elf32_shdr_t *strtab;
+    uint32_t n_syms;
+
+    symtab = (const elf32_shdr_t *)(file_base + ehdr->e_shoff +
+                                    i * ehdr->e_shentsize);
+    if (symtab->sh_type != 2 /* SHT_SYMTAB */) continue;
+    if (symtab->sh_link >= ehdr->e_shnum) continue;
+    if (symtab->sh_offset >= file_size ||
+        symtab->sh_offset + symtab->sh_size > file_size)
+      continue;
+    if (symtab->sh_entsize < sizeof(elf32_sym_t)) continue;
+
+    strtab = (const elf32_shdr_t *)(file_base + ehdr->e_shoff +
+                                    symtab->sh_link * ehdr->e_shentsize);
+    if (strtab->sh_offset >= file_size ||
+        strtab->sh_offset + strtab->sh_size > file_size)
+      continue;
+
+    n_syms = symtab->sh_size / symtab->sh_entsize;
+    for (uint32_t si = 0; si < n_syms; si++) {
+      const elf32_sym_t *sym = (const elf32_sym_t *)(file_base +
+                                                     symtab->sh_offset +
+                                                     si * symtab->sh_entsize);
+      const char *sym_name;
+
+      if (sym->st_name >= strtab->sh_size) continue;
+      sym_name = (const char *)(file_base + strtab->sh_offset + sym->st_name);
+      if (strcmp(sym_name, name) != 0) continue;
+      if (value) *value = sym->st_value;
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+static int xtensa_literal_word_is_prelinked(const uint8_t *file_base,
+                                            uint32_t file_size,
+                                            const elf32_phdr_t *literal_seg,
+                                            uint32_t literal_start_va,
+                                            uint32_t r_offset,
+                                            uint32_t flash_base) {
+  uint32_t flash_end = flash_base + 0x01000000u;
+  uint32_t file_off;
+  const uint8_t *p;
+  uint32_t word;
+
+  if (!literal_seg) return 0;
+  if (r_offset < literal_start_va ||
+      r_offset + 4 > literal_start_va + literal_seg->p_filesz)
+    return 0;
+
+  file_off = literal_seg->p_offset + (r_offset - literal_start_va);
+  if (file_off + 4 > file_size) return 0;
+
+  p = file_base + file_off;
+  word = (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+         ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+  return word >= flash_base && word < flash_end;
+}
+
 static xtensa_xip_state_t xtensa_elf_xip_state(const elf32_ehdr_t *ehdr,
                                                const uint8_t *file_base,
                                                uint32_t file_size,
                                                const elf32_phdr_t *text_seg,
                                                const elf32_phdr_t *literal_seg,
+                                               const elf32_phdr_t *data_seg,
                                                xtensa_xip_report_t *report) {
   uint32_t text_start_va;
   uint32_t text_end_va;
   uint32_t literal_start_va = 0;
   uint32_t literal_end_va = 0;
+  uint32_t data_start_va = 0;
+  uint32_t data_end_va = 0;
+  uint32_t flash_base = 0;
+  uint32_t prelinked_refs = 0;
+  int have_flash_base;
+  int literal_prelinked_ok = 1;
 
   if (report) *report = (xtensa_xip_report_t){0};
   if (!text_seg) return XTENSA_XIP_STATE_TEXT_BLOCKED;
@@ -230,6 +311,13 @@ static xtensa_xip_state_t xtensa_elf_xip_state(const elf32_ehdr_t *ehdr,
     literal_start_va = literal_seg->p_vaddr;
     literal_end_va = literal_start_va + literal_seg->p_memsz;
   }
+  if (data_seg) {
+    data_start_va = data_seg->p_vaddr;
+    data_end_va = data_start_va + data_seg->p_memsz;
+  }
+  have_flash_base = xtensa_elf_symbol_value_by_name(
+      ehdr, file_base, file_size, "__ppap_xip_flash_base", &flash_base);
+  if (!have_flash_base || flash_base == 0) literal_prelinked_ok = 0;
 
   if (!ehdr->e_shoff || !ehdr->e_shnum || ehdr->e_shentsize < 40)
     return XTENSA_XIP_STATE_READY;
@@ -287,6 +375,19 @@ static xtensa_xip_state_t xtensa_elf_xip_state(const elf32_ehdr_t *ehdr,
       if (r_type == 1 &&
           r_offset >= literal_start_va && r_offset < literal_end_va) {
         if (report) report->literal32_count++;
+        if (data_seg &&
+            xtensa_rela_symbol_in_range(ehdr, file_base, file_size, sh, r_info,
+                                        data_start_va, data_end_va)) {
+          if (report) report->literal_data_count++;
+          continue;
+        }
+        if (literal_prelinked_ok) {
+          prelinked_refs++;
+          if (!xtensa_literal_word_is_prelinked(file_base, file_size,
+                                                literal_seg, literal_start_va,
+                                                r_offset, flash_base))
+            literal_prelinked_ok = 0;
+        }
         continue;
       }
 
@@ -301,6 +402,13 @@ static xtensa_xip_state_t xtensa_elf_xip_state(const elf32_ehdr_t *ehdr,
 
   if (report && report->text_blocked_count > 0)
     return XTENSA_XIP_STATE_TEXT_BLOCKED;
+  if (report && report->literal_data_count > 0)
+    return XTENSA_XIP_STATE_DATA_COUPLED;
+  if (report) report->literal_prelinked = 0u;
+  if (prelinked_refs > 0 && literal_prelinked_ok) {
+    if (report) report->literal_prelinked = 1u;
+    return XTENSA_XIP_STATE_LITERAL_PRELINKED;
+  }
   if (report &&
       (report->literal_slot0_count > 0 || report->literal32_count > 0))
     return XTENSA_XIP_STATE_LITERAL_COUPLED;
@@ -411,10 +519,20 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
     if (uses_xip_layout) {
       xip_state = xtensa_elf_xip_state(ehdr, file_buf, file_size, text_seg,
-                                       literal_seg, &xip_report);
+                                       literal_seg, data_seg, &xip_report);
       if (xip_state == XTENSA_XIP_STATE_TEXT_BLOCKED) {
         klogf("ELF: xtensa XIP layout blocked by text reloc type %u at %x\n",
               xip_report.blocked_type, xip_report.blocked_offset);
+      } else if (xip_state == XTENSA_XIP_STATE_DATA_COUPLED) {
+        klogf("ELF: xtensa XIP layout remains data-coupled"
+              " (slot0=%u literal32=%u data32=%u)\n",
+              xip_report.literal_slot0_count, xip_report.literal32_count,
+              xip_report.literal_data_count);
+      } else if (xip_state == XTENSA_XIP_STATE_LITERAL_PRELINKED) {
+        klogf("ELF: xtensa XIP layout is literal-prelinked"
+              " (slot0=%u literal32=%u)\n",
+              xip_report.literal_slot0_count,
+              xip_report.literal32_count);
       } else if (xip_state == XTENSA_XIP_STATE_LITERAL_COUPLED) {
         klogf("ELF: xtensa XIP layout remains literal-coupled"
               " (slot0=%u literal32=%u)\n",
@@ -534,6 +652,10 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     p->image.entry = entry;
     if (uses_xip_layout && xip_state == XTENSA_XIP_STATE_LITERAL_COUPLED)
       p->image.flags |= PROC_IMAGE_FLAG_LITERAL_COUPLED;
+    if (uses_xip_layout && xip_state == XTENSA_XIP_STATE_LITERAL_PRELINKED)
+      p->image.flags |= PROC_IMAGE_FLAG_LITERAL_PRELINKED;
+    if (uses_xip_layout && xip_state == XTENSA_XIP_STATE_DATA_COUPLED)
+      p->image.flags |= PROC_IMAGE_FLAG_DATA_COUPLED;
 
     /* Apply split relocations from --emit-relocs sections.
      *
