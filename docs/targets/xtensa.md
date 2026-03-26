@@ -639,6 +639,9 @@ Current implementation status:
 - Xtensa now builds separate RAM-layout and XIP-oriented user ELF variants,
   so packaging analysis can evolve independently of the current bring-up
   loader path
+- those `.xip` variants are now also staged into romfs under explicit
+  alternate names (for example `/bin/hello.xip`) so the loader path can be
+  exercised without changing the default init image
 - the loader now recognizes Xtensa XIP-layout artifacts and reports the
   first flash-unsafe text relocation that still blocks direct execution
 - Xtensa inline syscall wrappers now remove the `R_XTENSA_PLT` text-reloc
@@ -665,6 +668,10 @@ Current implementation status:
 - the current RAM-loaded fallback now models `.literal` as a logical
   `RAM_RODATA` support segment in `proc_image`, even though it still sits
   inside the IRAM allocation for L32R reach
+- when an Xtensa XIP-layout image is loaded, the loader now also stages a
+  full immutable text/literal copy into the `EXT_TEXT` arena and records it
+  explicitly in `proc_image`, while still executing from the current IRAM
+  fallback path
 - Xtensa now also builds fixed-base `.xipfix.elf` artifacts linked at the
   ESP32-S3 DROM flash base, so XT-2.6 can compare relocatable and
   prelinked packaging without changing the active runtime path

@@ -502,6 +502,8 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
    * IRAM base, addresses in the data range get the DRAM base. */
   {
     proc_image_segment_t text_region = {0};
+    proc_image_segment_t staged_text_region = {0};
+    proc_image_segment_t staged_rodata_region = {0};
     proc_image_segment_t data_region = {0};
     proc_image_segment_t stack_region = {0};
     uint32_t text_end_va = text_seg->p_vaddr + text_seg->p_memsz;
@@ -575,6 +577,48 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     p->stack_page = stack;
     p->image.stack = stack_region;
 
+    if (uses_xip_layout &&
+        mem_region_alloc(&staged_text_region, PPAP_MEM_EXT_TEXT,
+                         text_seg->p_memsz,
+                         PROC_IMAGE_SEG_EXECUTABLE |
+                             PROC_IMAGE_SEG_OWNED) == 0) {
+      uint8_t *staged_text = (uint8_t *)staged_text_region.base;
+      for (uint32_t i = 0; i < text_seg->p_memsz; i++)
+        staged_text[i] = 0;
+
+      if (text_seg->p_filesz > 0) {
+        const uint8_t *src = file_buf + text_seg->p_offset;
+        uint8_t *dst = staged_text;
+        for (uint32_t i = 0; i < text_seg->p_filesz; i++)
+          dst[i] = src[i];
+      }
+
+      p->image.staged_text = proc_image_segment_make_vaddr(
+          staged_text_region.base, staged_text_region.size, text_seg->p_vaddr,
+          PPAP_MEM_EXT_TEXT, staged_text_region.flags);
+      p->image.flags |= PROC_IMAGE_FLAG_TEXT_STAGED_EXT;
+    }
+
+    if (uses_xip_layout && literal_seg &&
+        mem_region_alloc(&staged_rodata_region, PPAP_MEM_EXT_RODATA,
+                         literal_seg->p_memsz, PROC_IMAGE_SEG_OWNED) == 0) {
+      uint8_t *staged_rodata = (uint8_t *)staged_rodata_region.base;
+      for (uint32_t i = 0; i < literal_seg->p_memsz; i++)
+        staged_rodata[i] = 0;
+
+      if (literal_seg->p_filesz > 0) {
+        const uint8_t *src = file_buf + literal_seg->p_offset;
+        uint8_t *dst = staged_rodata;
+        for (uint32_t i = 0; i < literal_seg->p_filesz; i++)
+          dst[i] = src[i];
+      }
+
+      p->image.staged_rodata = proc_image_segment_make_vaddr(
+          staged_rodata_region.base, staged_rodata_region.size,
+          literal_seg->p_vaddr, PPAP_MEM_EXT_RODATA,
+          staged_rodata_region.flags);
+    }
+
     /* Zero IRAM (word-at-a-time — byte memset crashes on IRAM) */
     {
       uint32_t *dst32 = (uint32_t *)(uintptr_t)sram_page;
@@ -640,14 +684,16 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
     /* Entry point is in IRAM */
     entry = iram_base + e_entry;
-    p->image.text = text_region;
+    p->image.text = proc_image_segment_make_vaddr(
+        text_region.base, text_region.size, text_seg->p_vaddr,
+        PPAP_MEM_RAM_TEXT, text_region.flags);
     if (literal_seg) {
       /* The RAM-loaded fallback still places .literal inside the same
        * IRAM allocation for L32R reach, but model it as read-mostly
        * support data so the future XIP path can lift it out of text. */
-      p->image.literal = proc_image_segment_make(
+      p->image.literal = proc_image_segment_make_vaddr(
           sram_page + literal_seg->p_vaddr, literal_seg->p_memsz,
-          PPAP_MEM_RAM_RODATA, 0u);
+          literal_seg->p_vaddr, PPAP_MEM_RAM_RODATA, 0u);
     }
     p->image.entry = entry;
     if (uses_xip_layout && xip_state == XTENSA_XIP_STATE_LITERAL_COUPLED)
@@ -755,6 +801,10 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
       mem_region_free(&stack_region);
       p->stack_page = NULL;
       p->image.stack = (proc_image_segment_t){0};
+      mem_region_free(&staged_text_region);
+      p->image.staged_text = (proc_image_segment_t){0};
+      mem_region_free(&staged_rodata_region);
+      p->image.staged_rodata = (proc_image_segment_t){0};
       mem_region_free(&data_region);
       mem_region_free(&text_region);
       return -(int)ENOMEM;
@@ -762,7 +812,9 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
     /* Set brk base/current after DRAM data for heap growth */
     if (dram_page) {
-      p->image.data = data_region;
+      p->image.data = proc_image_segment_make_vaddr(
+          data_region.base, data_region.size, data_va, PPAP_MEM_RAM_DATA,
+          data_region.flags);
       uint32_t data_end = dram_base + data_memsz;
       data_end = (data_end + 15u) & ~15u;
       p->brk_base = data_end;
@@ -1214,17 +1266,21 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     arch_irq_restore(irq_save);
   } else {
     proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, argv_sp);
-    if (cpu_ops->arch_id != CPU_ARCH_XTENSA) {
-      /* ARM: patch r9 (PIC base) to GOT address in initial frame.
-       * RISC-V: patch gp (x3) to load_base for ePIC GP-relative access.
-       *   ePIC binaries use gp as data base pointer (all data via gp+offset).
-       *   Non-ePIC binaries also work — gp is harmless if unused.
-       * Xtensa: GOT accessed via L32R (PC-relative literals), no register. */
+    {
       uint32_t *sw = (uint32_t *)(uintptr_t)p->sp;
-      if (cpu_ops->arch_id == CPU_ARCH_RISCV && p->user_pages[0])
-        sw[1] = (uint32_t)(uintptr_t)p->user_pages[0]; /* gp = load_base */
-      else if (got_sram_addr)
-        sw[5] = got_sram_addr; /* ARM r9 = GOT */
+      if (got_sram_addr && cpu_ops->arch_id != CPU_ARCH_XTENSA) {
+        /* ARM/RISC-V (GCC PIC): patch PIC register to GOT address.
+         * Xtensa: GOT via L32R (PC-relative literals), no register. */
+        sw[5] = got_sram_addr; /* ARM r9 */
+      }
+      if (cpu_ops->arch_id == CPU_ARCH_RISCV && !got_sram_addr &&
+          ehdr->e_type == ET_DYN && p->user_pages[0]) {
+        /* RISC-V ePIC: ET_DYN (PIE) with no GOT — gp-relative data.
+         * Set gp = load_base so crt0 can bootstrap __global_pointer$.
+         * GCC non-PIE (ET_EXEC, no GOT) and GCC PIE (ET_DYN, has GOT)
+         * don't use gp for data access, so this only fires for ePIC. */
+        sw[1] = (uint32_t)(uintptr_t)p->user_pages[0];
+      }
     }
     p->got_base = got_sram_addr;
   }

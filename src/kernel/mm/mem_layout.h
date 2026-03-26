@@ -37,6 +37,7 @@ enum {
   PROC_IMAGE_FLAG_LITERAL_COUPLED   = 1u << 1,
   PROC_IMAGE_FLAG_LITERAL_PRELINKED = 1u << 2,
   PROC_IMAGE_FLAG_DATA_COUPLED      = 1u << 3,
+  PROC_IMAGE_FLAG_TEXT_STAGED_EXT   = 1u << 4,
 };
 
 typedef struct {
@@ -48,6 +49,7 @@ typedef struct {
 
 typedef struct {
   proc_image_segment_t text;
+  proc_image_segment_t staged_text;
   proc_image_segment_t literal;
   proc_image_segment_t rodata;
   proc_image_segment_t data;

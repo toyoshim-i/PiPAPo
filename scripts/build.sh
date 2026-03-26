@@ -403,6 +403,10 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     cp "$BUILD_DIR/user/hello.elf" "$ROMFS_STAGING/bin/hello"
     cp "$BUILD_DIR/user/getty.elf" "$ROMFS_STAGING/bin/getty"
     cp "$BUILD_DIR/user/push.elf"  "$ROMFS_STAGING/bin/push"
+    cp "$BUILD_DIR/user/init.xip.elf"  "$ROMFS_STAGING/sbin/init.xip"
+    cp "$BUILD_DIR/user/hello.xip.elf" "$ROMFS_STAGING/bin/hello.xip"
+    cp "$BUILD_DIR/user/getty.xip.elf" "$ROMFS_STAGING/bin/getty.xip"
+    cp "$BUILD_DIR/user/push.xip.elf"  "$ROMFS_STAGING/bin/push.xip"
     ln -sf push "$ROMFS_STAGING/bin/sh"
 
     # Install /etc files (base + target overlay)
