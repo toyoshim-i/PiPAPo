@@ -207,6 +207,58 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     MKROMFS="$PROJECT_DIR/tools/mkromfs/mkromfs"
     USER_ARCH_DIR="$PROJECT_DIR/src/user/arch/xtensa"
 
+    xtensa_xip_report() {
+        local elf="$1"
+        local counts
+        local text_blocked=0
+        local text_literal_refs=0
+        local literal_abs=0
+        local status
+
+        counts="$(
+            readelf -r "$elf" 2>/dev/null | awk '
+                /^Relocation section / {
+                    section = $3
+                    gsub(/'\''/, "", section)
+                    next
+                }
+                $1 ~ /^[0-9a-f]+$/ {
+                    if (section == ".rela.text" &&
+                        ($3 == "R_XTENSA_32" || $3 == "R_XTENSA_PLT"))
+                        text_blocked++
+                    if (section == ".rela.text" &&
+                        $3 == "R_XTENSA_SLOT0_OP" && $5 == ".literal")
+                        text_literal_refs++
+                    if (section == ".rela.literal" && $3 == "R_XTENSA_32")
+                        literal_abs++
+                }
+                END {
+                    printf "%u %u %u\n",
+                           text_blocked, text_literal_refs, literal_abs
+                }'
+        )"
+        read -r text_blocked text_literal_refs literal_abs <<<"$counts"
+
+        if [[ "$text_blocked" -gt 0 ]]; then
+            status="text-blocked"
+        elif [[ "$text_literal_refs" -gt 0 || "$literal_abs" -gt 0 ]]; then
+            status="text-clean, literal-coupled"
+        else
+            status="XIP-clean"
+        fi
+
+        echo "[build] Xtensa XIP: $(basename "$elf"): $status" \
+             "(text=$text_blocked, slot0->literal=$text_literal_refs," \
+             "literal32=$literal_abs)"
+
+        if [[ "${PPAP_XTENSA_XIP_STRICT:-0}" == "1" &&
+              "$text_blocked" -gt 0 ]]; then
+            echo "[build] Xtensa XIP strict mode: refusing text-blocked ELF"
+            return 1
+        fi
+        return 0
+    }
+
     # Build mkromfs host tool if needed
     if [[ ! -x "$MKROMFS" ]]; then
         echo "[build] Building mkromfs host tool..."
@@ -231,7 +283,7 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     mkdir -p "$BUILD_DIR/user"
     echo "[build] Compiling user binaries (xtensa call0)..."
     USER_DIR="$PROJECT_DIR/src/user"
-    XTENSA_USER_COMMON_FLAGS="$XTENSA_DYNCONFIG -mabi=call0 -mlongcalls \
+    XTENSA_USER_COMMON_FLAGS="$XTENSA_DYNCONFIG -mabi=call0 \
         -ffreestanding -nostdlib -Os -fPIC -Wl,--emit-relocs \
         -I$USER_DIR -I$PROJECT_DIR/src \
         $USER_ARCH_DIR/crt0.S $USER_ARCH_DIR/syscall.S"
@@ -272,6 +324,10 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     # Strip debug symbols (keep relocation info)
     for f in "$BUILD_DIR"/user/*.elf; do
         $XTENSA_STRIP --strip-debug "$f"
+    done
+
+    for f in "$BUILD_DIR"/user/*.xip.elf; do
+        xtensa_xip_report "$f"
     done
 
     # Stage romfs directory

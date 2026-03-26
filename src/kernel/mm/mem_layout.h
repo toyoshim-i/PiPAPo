@@ -26,6 +26,7 @@ enum {
   PROC_IMAGE_SEG_EXECUTABLE = 1u << 0,
   PROC_IMAGE_SEG_WRITABLE   = 1u << 1,
   PROC_IMAGE_SEG_XIP        = 1u << 2,
+  PROC_IMAGE_SEG_OWNED      = 1u << 3,
 };
 
 enum {
@@ -42,6 +43,7 @@ typedef struct {
 
 typedef struct {
   proc_image_segment_t text;
+  proc_image_segment_t literal;
   proc_image_segment_t rodata;
   proc_image_segment_t data;
   proc_image_segment_t stack;

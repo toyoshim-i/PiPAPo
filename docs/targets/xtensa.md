@@ -583,11 +583,29 @@ Current implementation status:
 - the loader now recognizes Xtensa XIP-layout artifacts and reports the
   first flash-unsafe text relocation that still blocks direct execution
 - Xtensa inline syscall wrappers now remove the `R_XTENSA_PLT` text-reloc
-  class from simple XIP-layout binaries; the remaining blocker is absolute
-  `R_XTENSA_32` literal-pool addressing for static data / rodata references
+  class from simple XIP-layout binaries
+- XT-2.5 now treats literal / relocation support as a logical segment,
+  usually backed by `RAM_DATA`, rather than assuming it must stay in
+  flash-backed text
+- the current experimental XIP linker layout now emits a dedicated
+  `.literal` load segment ahead of `.text`, and the four absolute
+  `R_XTENSA_32` relocations for static data / rodata references move from
+  `.rela.text` into `.rela.literal`
+- the loader and `proc_image` metadata now have explicit groundwork for a
+  separate literal-support segment, instead of hard-coding "text plus data"
+  as the only image shape
+- the Xtensa loader now classifies `.literal` as distinct from flash text,
+  so XIP-readiness checks no longer treat `.rela.literal` as a
+  flash-text-relocation blocker
+- `scripts/build.sh xtensa_cc` now reports each `.xip.elf` as
+  `text-blocked`, `text-clean, literal-coupled`, or `XIP-clean`, so the
+  remaining XT-2.5 blockers are visible in the normal build flow
+- `.rela.text` is now down to `R_XTENSA_SLOT0_OP` references against code
+  and the `.literal` table, which is much closer to the intended XIP model
 - XIP remains the planned default direction, but the runtime still uses the
   RAM-loaded path because current Xtensa binaries still emit text
-  relocations that would require patching flash-backed code
+  relocations that the runtime does not yet model as a separate RAM-backed
+  literal / relocation support area
 
 #### XT-2.6: Make page-tracked writable memory explicit
 

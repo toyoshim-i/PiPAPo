@@ -6,8 +6,9 @@
  * from the existing RAM-loaded bring-up path in user.ld.
  *
  * Layout:
- *   text (R+X): .literal* + .text* + .rodata*  — intended to stay in flash
- *   data (RW):  .got + .data + .bss            — intended for RAM
+ *   literal (RW): .literal*                    — relocation/literal support
+ *   text (R+X):   .text* + .rodata*            — intended to stay in flash
+ *   data (RW):    .got + .data + .bss          — intended for RAM
  *
  * Current Xtensa code generation still emits text relocations, so these
  * binaries are not yet used by the runtime loader.  They are built as
@@ -18,6 +19,7 @@ ENTRY(_start)
 
 PHDRS
 {
+    literal PT_LOAD FLAGS(6); /* PF_R | PF_W */
     text PT_LOAD FLAGS(5);   /* PF_R | PF_X */
     data PT_LOAD FLAGS(6);   /* PF_R | PF_W */
 }
@@ -26,11 +28,17 @@ SECTIONS
 {
     . = 0;
 
+    /* ── RAM-backed literal / relocation support ──────────────── */
+    .literal : {
+        *(.literal.text.crt0)
+        *(.literal*)
+    } :literal
+
+    . = ALIGN(4);
+
     /* ── Flash-oriented text segment ───────────────────────────── */
     .text : {
-        *(.literal.text.crt0)
         *(.text.crt0)
-        *(.literal*)
         *(.text*)
         *(.rodata*)
     } :text

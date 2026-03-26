@@ -49,6 +49,29 @@ static int image_segment_is_page_tracked(const proc_image_segment_t *seg,
   return 0;
 }
 
+static void image_segment_release_owned(proc_image_segment_t *seg,
+                                        void *const *pages,
+                                        uint32_t num_pages) {
+  if (!seg || !seg->base) return;
+  if (!(seg->flags & PROC_IMAGE_SEG_OWNED)) {
+    *seg = (proc_image_segment_t){0};
+    return;
+  }
+  if (!image_segment_is_page_tracked(seg, pages, num_pages))
+    mem_region_free(seg);
+  *seg = (proc_image_segment_t){0};
+}
+
+static void image_release_owned_segments(proc_image_t *image,
+                                         void *const *pages,
+                                         uint32_t num_pages) {
+  if (!image) return;
+  image_segment_release_owned(&image->text, pages, num_pages);
+  image_segment_release_owned(&image->literal, pages, num_pages);
+  image_segment_release_owned(&image->rodata, pages, num_pages);
+  image_segment_release_owned(&image->data, pages, num_pages);
+}
+
 static void trace_clear_swbp(pcb_t *target);
 static void trace_clear_hwbp(pcb_t *target);
 static int trace_has_hwbp_for(const pcb_t *target);
@@ -1289,11 +1312,8 @@ long sys_exit(long status) {
   /* Free user pages only if we own them (vfork_parent == NULL means
    * either this isn't a vfork child, or execve already replaced them) */
   if (!current->vfork_parent) {
-    if (!image_segment_is_page_tracked(&current->image.text, current->user_pages,
-                                       USER_PAGES_MAX)) {
-      mem_region_free(&current->image.text);
-      current->image.text = (proc_image_segment_t){0};
-    }
+    image_release_owned_segments(&current->image, current->user_pages,
+                                 USER_PAGES_MAX);
     for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
       if (current->user_pages[i]) {
         /* If the stack page is within the user_pages (RISC-V contiguous
@@ -1774,9 +1794,7 @@ long sys_execve(const char *path, const char *const *argv) {
 
   /* Free old user pages only if we owned them */
   if (owns_pages) {
-    if (!image_segment_is_page_tracked(&old_image.text, old_user,
-                                       USER_PAGES_MAX))
-      mem_region_free(&old_image.text);
+    image_release_owned_segments(&old_image, old_user, USER_PAGES_MAX);
     for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
       if (old_user[i]) mem_region_free_tracked_page(old_user[i]);
     }

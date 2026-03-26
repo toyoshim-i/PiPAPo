@@ -168,11 +168,19 @@ static int xtensa_elf_uses_xip_layout(const elf32_ehdr_t *ehdr,
 
 static int xtensa_elf_xip_ready(const elf32_ehdr_t *ehdr,
                                 const uint8_t *file_base,
-                                uint32_t file_size, uint32_t text_end_va,
+                                uint32_t file_size,
+                                const elf32_phdr_t *text_seg,
                                 uint32_t *blocked_offset,
                                 uint32_t *blocked_type) {
+  uint32_t text_start_va;
+  uint32_t text_end_va;
+
   if (blocked_offset) *blocked_offset = 0;
   if (blocked_type) *blocked_type = 0;
+  if (!text_seg) return 0;
+
+  text_start_va = text_seg->p_vaddr;
+  text_end_va = text_start_va + text_seg->p_memsz;
 
   if (!ehdr->e_shoff || !ehdr->e_shnum || ehdr->e_shentsize < 40) return 1;
 
@@ -210,7 +218,7 @@ static int xtensa_elf_xip_ready(const elf32_ehdr_t *ehdr,
       if (r_type != 1 /* R_XTENSA_32 */ &&
           r_type != 6 /* R_XTENSA_PLT */)
         continue;
-      if (r_offset >= text_end_va) continue;
+      if (r_offset < text_start_va || r_offset >= text_end_va) continue;
 
       if (blocked_offset) *blocked_offset = r_offset;
       if (blocked_type) *blocked_type = r_type;
@@ -244,13 +252,33 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
   const elf32_phdr_t *text_seg = NULL;
   const elf32_phdr_t *data_seg = NULL;
+#if defined(__xtensa__)
+  const elf32_phdr_t *literal_seg = NULL;
+#endif
 
+#if defined(__xtensa__)
+  for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
+    if (segs[i].p_flags & PF_X) text_seg = &segs[i];
+  }
+
+  for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
+    if (!(segs[i].p_flags & PF_W)) continue;
+    if (text_seg &&
+        segs[i].p_vaddr + segs[i].p_memsz <= text_seg->p_vaddr) {
+      literal_seg = &segs[i];
+      continue;
+    }
+    if (!data_seg || segs[i].p_vaddr < data_seg->p_vaddr)
+      data_seg = &segs[i];
+  }
+#else
   for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
     if (segs[i].p_flags & PF_X)
       text_seg = &segs[i];
     else if (segs[i].p_flags & PF_W)
       data_seg = &segs[i];
   }
+#endif
 
   if (!text_seg) return -(int)ENOEXEC;
 
@@ -291,6 +319,9 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     proc_image_segment_t data_region = {0};
     proc_image_segment_t stack_region = {0};
     uint32_t text_end_va = text_seg->p_vaddr + text_seg->p_memsz;
+    if (literal_seg &&
+        literal_seg->p_vaddr + literal_seg->p_memsz > text_end_va)
+      text_end_va = literal_seg->p_vaddr + literal_seg->p_memsz;
     uint32_t text_size = (text_end_va + 15u) & ~15u;
     uint32_t data_va = data_seg ? data_seg->p_vaddr : text_end_va;
     uint32_t data_memsz = data_seg ? data_seg->p_memsz : 0;
@@ -299,7 +330,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     uint32_t blocked_type = 0;
 
     if (xtensa_elf_uses_xip_layout(ehdr, file_buf, file_size, text_seg) &&
-        !xtensa_elf_xip_ready(ehdr, file_buf, file_size, text_end_va,
+        !xtensa_elf_xip_ready(ehdr, file_buf, file_size, text_seg,
                               &blocked_offset, &blocked_type)) {
       klogf("ELF: xtensa XIP layout blocked by text reloc type %u at %x\n",
             blocked_type, blocked_offset);
@@ -307,7 +338,8 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
     /* Allocate IRAM for text (executable, word-access only) */
     if (mem_region_alloc(&text_region, PPAP_MEM_RAM_TEXT, text_size,
-                         PROC_IMAGE_SEG_EXECUTABLE) < 0) {
+                         PROC_IMAGE_SEG_EXECUTABLE |
+                             PROC_IMAGE_SEG_OWNED) < 0) {
       return -(int)ENOMEM;
     }
     sram_page = (uint8_t *)text_region.base;
@@ -318,7 +350,8 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     if (data_size > 0) {
       data_pages = (data_size + PAGE_SIZE - 1) / PAGE_SIZE;
       if (mem_region_alloc(&data_region, PPAP_MEM_RAM_DATA, data_size,
-                           PROC_IMAGE_SEG_WRITABLE) < 0) {
+                           PROC_IMAGE_SEG_WRITABLE |
+                               PROC_IMAGE_SEG_OWNED) < 0) {
         mem_region_free(&text_region);
         return -(int)ENOMEM;
       }
@@ -327,7 +360,8 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
     /* Allocate kernel stack page */
     if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                         PROC_IMAGE_SEG_WRITABLE) < 0) {
+                         PROC_IMAGE_SEG_WRITABLE |
+                             PROC_IMAGE_SEG_OWNED) < 0) {
       mem_region_free(&data_region);
       mem_region_free(&text_region);
       return -(int)ENOMEM;
@@ -368,6 +402,26 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
       }
     }
 
+    /* Copy separate Xtensa literal support segment when present.
+     * This keeps the RAM-loaded fallback compatible with the experimental
+     * XIP packaging, even though the runtime still stages text into IRAM. */
+    if (literal_seg && literal_seg->p_filesz > 0) {
+      const uint8_t *src = file_buf + literal_seg->p_offset;
+      volatile uint32_t *dst =
+          (volatile uint32_t *)(uintptr_t)(sram_page + literal_seg->p_vaddr);
+      uint32_t words = (literal_seg->p_filesz + 3) / 4;
+      for (uint32_t w = 0; w < words; w++) {
+        uint32_t val = src[w * 4];
+        if (w * 4 + 1 < literal_seg->p_filesz)
+          val |= (uint32_t)src[w * 4 + 1] << 8;
+        if (w * 4 + 2 < literal_seg->p_filesz)
+          val |= (uint32_t)src[w * 4 + 2] << 16;
+        if (w * 4 + 3 < literal_seg->p_filesz)
+          val |= (uint32_t)src[w * 4 + 3] << 24;
+        dst[w] = val;
+      }
+    }
+
     /* Copy data segment to DRAM (byte access OK) */
     if (dram_page && data_seg && data_seg->p_filesz > 0) {
       const uint8_t *src = file_buf + data_seg->p_offset;
@@ -382,6 +436,11 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     /* Entry point is in IRAM */
     entry = iram_base + e_entry;
     p->image.text = text_region;
+    if (literal_seg) {
+      p->image.literal = proc_image_segment_make(
+          sram_page + literal_seg->p_vaddr, literal_seg->p_memsz,
+          PPAP_MEM_RAM_TEXT, 0u);
+    }
     p->image.entry = entry;
 
     /* Apply split relocations from --emit-relocs sections.
@@ -941,11 +1000,17 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     arch_irq_restore(irq_save);
   } else {
     proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, argv_sp);
-    if (got_sram_addr && cpu_ops->arch_id != CPU_ARCH_XTENSA) {
-      /* ARM/RISC-V: patch dedicated PIC register (r9/gp) in initial frame.
+    if (cpu_ops->arch_id != CPU_ARCH_XTENSA) {
+      /* ARM: patch r9 (PIC base) to GOT address in initial frame.
+       * RISC-V: patch gp (x3) to load_base for ePIC GP-relative access.
+       *   ePIC binaries use gp as data base pointer (all data via gp+offset).
+       *   Non-ePIC binaries also work — gp is harmless if unused.
        * Xtensa: GOT accessed via L32R (PC-relative literals), no register. */
       uint32_t *sw = (uint32_t *)(uintptr_t)p->sp;
-      sw[5] = got_sram_addr;
+      if (cpu_ops->arch_id == CPU_ARCH_RISCV && p->user_pages[0])
+        sw[1] = (uint32_t)(uintptr_t)p->user_pages[0]; /* gp = load_base */
+      else if (got_sram_addr)
+        sw[5] = got_sram_addr; /* ARM r9 = GOT */
     }
     p->got_base = got_sram_addr;
   }
