@@ -213,6 +213,9 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
         local text_blocked=0
         local text_literal_refs=0
         local literal_abs=0
+        local flash_base=0
+        local flash_prefix=""
+        local literal_prelinked=0
         local status
 
         counts="$(
@@ -239,17 +242,53 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
         )"
         read -r text_blocked text_literal_refs literal_abs <<<"$counts"
 
+        flash_base="$(
+            readelf -s "$elf" 2>/dev/null | awk '
+                $8 == "__ppap_xip_flash_base" {
+                    print "0x" $2
+                    exit
+                }'
+        )"
+        if [[ -n "$flash_base" && "$flash_base" != "0x00000000" &&
+              "$literal_abs" -gt 0 ]]; then
+            flash_prefix="$(printf '%04x' $((flash_base >> 16)))"
+            literal_prelinked="$(
+                readelf -x .literal "$elf" 2>/dev/null | awk -v prefix="$flash_prefix" '
+                    BEGIN { ok = 1; words = 0 }
+                    $1 ~ /^0x[0-9a-f]+$/ {
+                        for (i = 2; i <= 5; i++) {
+                            if ($i !~ /^[0-9a-f]{8}$/) continue
+                            word = substr($i, 7, 2) substr($i, 5, 2) \
+                                   substr($i, 3, 2) substr($i, 1, 2)
+                            if (substr(word, 1, 4) != prefix)
+                                ok = 0
+                            words++
+                        }
+                    }
+                    END {
+                        if (words > 0 && ok)
+                            print 1
+                        else
+                            print 0
+                    }'
+            )"
+        fi
+
         if [[ "$text_blocked" -gt 0 ]]; then
             status="text-blocked"
         elif [[ "$text_literal_refs" -gt 0 || "$literal_abs" -gt 0 ]]; then
+            if [[ "$literal_prelinked" == "1" ]]; then
+                status="text-clean, literal-prelinked"
+            else
             status="text-clean, literal-coupled"
+            fi
         else
             status="XIP-clean"
         fi
 
         echo "[build] Xtensa XIP: $(basename "$elf"): $status" \
              "(text=$text_blocked, slot0->literal=$text_literal_refs," \
-             "literal32=$literal_abs)"
+             "literal32=$literal_abs, prelinked=$literal_prelinked)"
 
         if [[ "${PPAP_XTENSA_XIP_STRICT:-0}" == "1" &&
               "$text_blocked" -gt 0 ]]; then
@@ -291,6 +330,9 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
         -T $USER_ARCH_DIR/user.ld"
     XTENSA_XIP_USER_FLAGS="$XTENSA_USER_COMMON_FLAGS \
         -T $USER_ARCH_DIR/user_xip.ld"
+    XTENSA_XIP_FIXED_USER_FLAGS="$XTENSA_USER_COMMON_FLAGS \
+        -Wl,--defsym=__ppap_xip_flash_base=0x3C000000 \
+        -T $USER_ARCH_DIR/user_xip.ld"
 
     # shellcheck disable=SC2086
     $XTENSA_CC $XTENSA_RAM_USER_FLAGS "$USER_DIR/hello.c" \
@@ -321,12 +363,27 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
         "$USER_DIR/push_line.c" \
         -o "$BUILD_DIR/user/push.xip.elf"
 
+    echo "[build] Compiling Xtensa fixed-base XIP variants..."
+    # shellcheck disable=SC2086
+    $XTENSA_CC $XTENSA_XIP_FIXED_USER_FLAGS "$USER_DIR/hello.c" \
+        -o "$BUILD_DIR/user/hello.xipfix.elf"
+    # shellcheck disable=SC2086
+    $XTENSA_CC $XTENSA_XIP_FIXED_USER_FLAGS "$USER_DIR/init.c" \
+        -o "$BUILD_DIR/user/init.xipfix.elf"
+    # shellcheck disable=SC2086
+    $XTENSA_CC $XTENSA_XIP_FIXED_USER_FLAGS "$USER_DIR/getty.c" \
+        -o "$BUILD_DIR/user/getty.xipfix.elf"
+    # shellcheck disable=SC2086
+    $XTENSA_CC $XTENSA_XIP_FIXED_USER_FLAGS "$USER_DIR/push.c" \
+        "$USER_DIR/push_line.c" \
+        -o "$BUILD_DIR/user/push.xipfix.elf"
+
     # Strip debug symbols (keep relocation info)
     for f in "$BUILD_DIR"/user/*.elf; do
         $XTENSA_STRIP --strip-debug "$f"
     done
 
-    for f in "$BUILD_DIR"/user/*.xip.elf; do
+    for f in "$BUILD_DIR"/user/*.xip*.elf; do
         xtensa_xip_report "$f"
     done
 

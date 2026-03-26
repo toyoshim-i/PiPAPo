@@ -281,6 +281,8 @@ Experimental XIP-oriented packaging layout:
 - `src/user/arch/xtensa/user_xip.ld`
 - **text (R+X):** `.literal*`, `.text.crt0`, `.text*`, `.rodata`
 - **data (RW):** `.got`, `.data`, `.bss`
+- optional `__ppap_xip_flash_base` linker symbol for fixed-address XIP
+  experiments against the ESP32-S3 DROM flash window
 
 The XIP layout is now built as a side artifact for XT-2.5, but it is not
 yet the default runtime path because current Xtensa code generation still
@@ -603,6 +605,16 @@ Current implementation status:
 - the loader now mirrors that distinction internally, recording when an
   Xtensa XIP-layout image remains `literal-coupled` even after
   flash-text relocations have been eliminated
+- the current RAM-loaded fallback now models `.literal` as a logical
+  `RAM_RODATA` support segment in `proc_image`, even though it still sits
+  inside the IRAM allocation for L32R reach
+- Xtensa now also builds fixed-base `.xipfix.elf` artifacts linked at the
+  ESP32-S3 DROM flash base, so XT-2.5 can compare relocatable and
+  prelinked XIP packaging without changing the active runtime path
+- those fixed-base artifacts now classify separately as
+  `text-clean, literal-prelinked` when the `.literal` words already carry
+  DROM flash-window addresses and the remaining relocation records are
+  just preserved bookkeeping from `--emit-relocs`
 - `.rela.text` is now down to `R_XTENSA_SLOT0_OP` references against code
   and the `.literal` table, which is much closer to the intended XIP model
 - XIP remains the planned default direction, but the runtime still uses the

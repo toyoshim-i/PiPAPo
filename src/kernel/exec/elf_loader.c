@@ -524,9 +524,12 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     entry = iram_base + e_entry;
     p->image.text = text_region;
     if (literal_seg) {
+      /* The RAM-loaded fallback still places .literal inside the same
+       * IRAM allocation for L32R reach, but model it as read-mostly
+       * support data so the future XIP path can lift it out of text. */
       p->image.literal = proc_image_segment_make(
           sram_page + literal_seg->p_vaddr, literal_seg->p_memsz,
-          PPAP_MEM_RAM_TEXT, 0u);
+          PPAP_MEM_RAM_RODATA, 0u);
     }
     p->image.entry = entry;
     if (uses_xip_layout && xip_state == XTENSA_XIP_STATE_LITERAL_COUPLED)

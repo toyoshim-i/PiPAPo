@@ -17,6 +17,12 @@
 
 ENTRY(_start)
 
+/* Optional flash-window prelink base for fixed-address XIP experiments.
+ * The default remains 0 so the generic relocatable packaging path keeps
+ * its current behaviour unless the build passes __ppap_xip_flash_base. */
+__ppap_xip_flash_base =
+    DEFINED(__ppap_xip_flash_base) ? __ppap_xip_flash_base : 0;
+
 PHDRS
 {
     literal PT_LOAD FLAGS(6); /* PF_R | PF_W */
@@ -26,7 +32,7 @@ PHDRS
 
 SECTIONS
 {
-    . = 0;
+    . = __ppap_xip_flash_base;
 
     /* ── RAM-backed literal / relocation support ──────────────── */
     .literal : {
