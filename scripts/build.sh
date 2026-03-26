@@ -231,23 +231,43 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     mkdir -p "$BUILD_DIR/user"
     echo "[build] Compiling user binaries (xtensa call0)..."
     USER_DIR="$PROJECT_DIR/src/user"
-    XTENSA_USER_FLAGS="$XTENSA_DYNCONFIG -mabi=call0 -mlongcalls \
+    XTENSA_USER_COMMON_FLAGS="$XTENSA_DYNCONFIG -mabi=call0 -mlongcalls \
         -ffreestanding -nostdlib -Os -fPIC -Wl,--emit-relocs \
-        -I$USER_DIR -I$PROJECT_DIR/src -T $USER_ARCH_DIR/user.ld \
+        -I$USER_DIR -I$PROJECT_DIR/src \
         $USER_ARCH_DIR/crt0.S $USER_ARCH_DIR/syscall.S"
+    XTENSA_RAM_USER_FLAGS="$XTENSA_USER_COMMON_FLAGS \
+        -T $USER_ARCH_DIR/user.ld"
+    XTENSA_XIP_USER_FLAGS="$XTENSA_USER_COMMON_FLAGS \
+        -T $USER_ARCH_DIR/user_xip.ld"
 
     # shellcheck disable=SC2086
-    $XTENSA_CC $XTENSA_USER_FLAGS "$USER_DIR/hello.c" \
+    $XTENSA_CC $XTENSA_RAM_USER_FLAGS "$USER_DIR/hello.c" \
         -o "$BUILD_DIR/user/hello.elf"
     # shellcheck disable=SC2086
-    $XTENSA_CC $XTENSA_USER_FLAGS "$USER_DIR/init.c" \
+    $XTENSA_CC $XTENSA_RAM_USER_FLAGS "$USER_DIR/init.c" \
         -o "$BUILD_DIR/user/init.elf"
     # shellcheck disable=SC2086
-    $XTENSA_CC $XTENSA_USER_FLAGS "$USER_DIR/getty.c" \
+    $XTENSA_CC $XTENSA_RAM_USER_FLAGS "$USER_DIR/getty.c" \
         -o "$BUILD_DIR/user/getty.elf"
     # shellcheck disable=SC2086
-    $XTENSA_CC $XTENSA_USER_FLAGS "$USER_DIR/push.c" "$USER_DIR/push_line.c" \
+    $XTENSA_CC $XTENSA_RAM_USER_FLAGS "$USER_DIR/push.c" \
+        "$USER_DIR/push_line.c" \
         -o "$BUILD_DIR/user/push.elf"
+
+    echo "[build] Compiling Xtensa XIP-layout variants..."
+    # shellcheck disable=SC2086
+    $XTENSA_CC $XTENSA_XIP_USER_FLAGS "$USER_DIR/hello.c" \
+        -o "$BUILD_DIR/user/hello.xip.elf"
+    # shellcheck disable=SC2086
+    $XTENSA_CC $XTENSA_XIP_USER_FLAGS "$USER_DIR/init.c" \
+        -o "$BUILD_DIR/user/init.xip.elf"
+    # shellcheck disable=SC2086
+    $XTENSA_CC $XTENSA_XIP_USER_FLAGS "$USER_DIR/getty.c" \
+        -o "$BUILD_DIR/user/getty.xip.elf"
+    # shellcheck disable=SC2086
+    $XTENSA_CC $XTENSA_XIP_USER_FLAGS "$USER_DIR/push.c" \
+        "$USER_DIR/push_line.c" \
+        -o "$BUILD_DIR/user/push.xip.elf"
 
     # Strip debug symbols (keep relocation info)
     for f in "$BUILD_DIR"/user/*.elf; do

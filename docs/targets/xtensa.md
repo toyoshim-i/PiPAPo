@@ -267,12 +267,24 @@ metadata) with `R_XTENSA_32` entries whose `r_offset` values are
 code bytes. The loader checks `sh_info` to find each RELA section's target
 section and skips non-`SHF_ALLOC` sections.
 
-### Linker script
+### Linker scripts
 
-`src/user/arch/xtensa/user.ld` — two-segment layout:
+Current RAM-loaded layout:
+
+- `src/user/arch/xtensa/user.ld`
 - **text (R+X):** `.literal*` (must precede code for L32R backward reach),
-  `.text.crt0`, `.text*`, `.rodata`
+  `.text.crt0`, `.text*`
+- **data (RW):** `.rodata`, `.got`, `.data`, `.bss`
+
+Experimental XIP-oriented packaging layout:
+
+- `src/user/arch/xtensa/user_xip.ld`
+- **text (R+X):** `.literal*`, `.text.crt0`, `.text*`, `.rodata`
 - **data (RW):** `.got`, `.data`, `.bss`
+
+The XIP layout is now built as a side artifact for XT-2.5, but it is not
+yet the default runtime path because current Xtensa code generation still
+emits text relocations that are not flash-safe.
 
 **L32R reach constraint:** `L32R` computes target as a negative PC-relative
 offset (up to -256 KB). Literal pools MUST precede the code that references
@@ -566,8 +578,11 @@ not the ownership rules.
 Current implementation status:
 
 - Xtensa RAM-loaded text now goes through `mem_region`
-- XIP remains the planned default direction, but Xtensa does not yet have
-  its XIP-capable user image path
+- Xtensa now builds separate RAM-layout and XIP-oriented user ELF variants,
+  so packaging can evolve independently of the current bring-up loader path
+- XIP remains the planned default direction, but the runtime still uses the
+  RAM-loaded path because current Xtensa binaries still emit text
+  relocations that would require patching flash-backed code
 
 #### XT-2.6: Make page-tracked writable memory explicit
 
