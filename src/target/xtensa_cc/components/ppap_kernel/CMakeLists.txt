@@ -59,6 +59,7 @@ idf_component_register(
     INCLUDE_DIRS
         "${PPAP_ROOT}/src"
         "${PPAP_ROOT}/src/kernel"
+    REQUIRES esp_psram
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
@@ -67,6 +68,8 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     PAGE_POOL_BASE=0x3FC90000u
     PAGE_COUNT_MAX=24u
     MEM_REGION_RAM_DATA_ARENA_SIZE=98304u
+    MEM_REGION_EXT_TEXT_ARENA_SIZE=524288u
+    MEM_REGION_EXT_RODATA_ARENA_SIZE=262144u
 )
 
 # ── Embed romfs.bin via .incbin ───────────────────────────────────────────────

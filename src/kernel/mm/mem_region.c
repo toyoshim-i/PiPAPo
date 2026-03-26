@@ -9,6 +9,12 @@
 #include "kernel/klog.h"
 #include "page.h"
 
+#if defined(__xtensa__)
+#include "esp_heap_caps.h"
+#include "esp_psram.h"
+#include "sdkconfig.h"
+#endif
+
 static uint32_t mem_region_page_count(uint32_t size) {
   return (size + PAGE_SIZE - 1u) / PAGE_SIZE;
 }
@@ -28,6 +34,14 @@ static uint32_t mem_region_align(uint32_t size) {
 #define MEM_REGION_RAM_DATA_ARENA_SIZE (128u * 1024u)
 #endif
 
+#ifndef MEM_REGION_EXT_TEXT_ARENA_SIZE
+#define MEM_REGION_EXT_TEXT_ARENA_SIZE (512u * 1024u)
+#endif
+
+#ifndef MEM_REGION_EXT_RODATA_ARENA_SIZE
+#define MEM_REGION_EXT_RODATA_ARENA_SIZE (256u * 1024u)
+#endif
+
 #define MEM_REGION_FREE_MAX 16u
 #define MEM_REGION_RAM_DATA_PAGES_MAX \
   (MEM_REGION_RAM_DATA_ARENA_SIZE / PAGE_SIZE)
@@ -37,55 +51,64 @@ typedef struct {
   uint32_t size;
 } mem_region_block_t;
 
-static void *ram_text_arena_raw;
-static uint8_t *ram_text_arena_base;
-static uint32_t ram_text_arena_size;
-static mem_region_block_t ram_text_free[MEM_REGION_FREE_MAX];
-static uint32_t ram_text_free_count;
-static uint8_t ram_text_ready;
+typedef struct {
+  void *raw;
+  uint8_t *base;
+  uint32_t size;
+  mem_region_block_t free[MEM_REGION_FREE_MAX];
+  uint32_t free_count;
+  uint8_t ready;
+} mem_region_linear_arena_t;
+
+static mem_region_linear_arena_t ram_text_arena;
+static mem_region_linear_arena_t ext_text_arena;
+static mem_region_linear_arena_t ext_rodata_arena;
 static void *ram_data_arena_raw;
 static uint8_t *ram_data_arena_base;
 static uint32_t ram_data_page_count;
 static uint8_t ram_data_page_used[MEM_REGION_RAM_DATA_PAGES_MAX];
 static uint8_t ram_data_ready;
 
-static int mem_region_xtensa_text_init(void) {
-  extern void *heap_caps_malloc(unsigned int size, uint32_t caps);
-
-  uint32_t arena_bytes = MEM_REGION_RAM_TEXT_ARENA_SIZE + MEM_REGION_ALIGN - 1u;
+static int mem_region_linear_arena_init(mem_region_linear_arena_t *arena,
+                                        uint32_t arena_size, uint32_t caps,
+                                        const char *name) {
+  uint32_t arena_bytes = arena_size + MEM_REGION_ALIGN - 1u;
   uintptr_t raw;
   uintptr_t aligned;
   uintptr_t raw_end;
 
-  if (ram_text_ready) return 0;
+  if (arena->ready) return 0;
 
-  ram_text_arena_raw = heap_caps_malloc(arena_bytes, (1u << 0));
-  if (!ram_text_arena_raw) return -(int)ENOMEM;
+  arena->raw = heap_caps_malloc(arena_bytes, caps);
+  if (!arena->raw) return -(int)ENOMEM;
 
-  raw = (uintptr_t)ram_text_arena_raw;
+  raw = (uintptr_t)arena->raw;
   aligned = (raw + MEM_REGION_ALIGN - 1u) & ~(uintptr_t)(MEM_REGION_ALIGN - 1u);
   raw_end = raw + arena_bytes;
 
-  ram_text_arena_base = (uint8_t *)aligned;
-  ram_text_arena_size = (uint32_t)(raw_end - aligned);
-  if (ram_text_arena_size > MEM_REGION_RAM_TEXT_ARENA_SIZE)
-    ram_text_arena_size = MEM_REGION_RAM_TEXT_ARENA_SIZE;
+  arena->base = (uint8_t *)aligned;
+  arena->size = (uint32_t)(raw_end - aligned);
+  if (arena->size > arena_size) arena->size = arena_size;
 
-  ram_text_free[0].base = ram_text_arena_base;
-  ram_text_free[0].size = ram_text_arena_size;
-  ram_text_free_count = 1u;
-  ram_text_ready = 1u;
+  arena->free[0].base = arena->base;
+  arena->free[0].size = arena->size;
+  arena->free_count = 1u;
+  arena->ready = 1u;
 
-  klogf("MM:   ram_text %x-%x  %u KB reserved\n",
-        (uint32_t)(uintptr_t)ram_text_arena_base,
-        (uint32_t)(uintptr_t)(ram_text_arena_base + ram_text_arena_size - 1u),
-        ram_text_arena_size / 1024u);
+  klogf("MM:   %s %x-%x  %u KB reserved\n", name,
+        (uint32_t)(uintptr_t)arena->base,
+        (uint32_t)(uintptr_t)(arena->base + arena->size - 1u),
+        arena->size / 1024u);
   return 0;
 }
 
-static int mem_region_xtensa_data_init(void) {
-  extern void *heap_caps_malloc(unsigned int size, uint32_t caps);
+static int mem_region_xtensa_text_init(void) {
+  return mem_region_linear_arena_init(&ram_text_arena,
+                                      MEM_REGION_RAM_TEXT_ARENA_SIZE,
+                                      MALLOC_CAP_EXEC, "ram_text");
+}
 
+static int mem_region_xtensa_data_init(void) {
   uint32_t arena_bytes = MEM_REGION_RAM_DATA_ARENA_SIZE + PAGE_SIZE - 1u;
   uintptr_t raw;
   uintptr_t aligned;
@@ -94,7 +117,7 @@ static int mem_region_xtensa_data_init(void) {
 
   if (ram_data_ready) return 0;
 
-  ram_data_arena_raw = heap_caps_malloc(arena_bytes, (1u << 2));
+  ram_data_arena_raw = heap_caps_malloc(arena_bytes, MALLOC_CAP_8BIT);
   if (!ram_data_arena_raw) return -(int)ENOMEM;
 
   raw = (uintptr_t)ram_data_arena_raw;
@@ -117,6 +140,43 @@ static int mem_region_xtensa_data_init(void) {
                               ram_data_page_count * PAGE_SIZE - 1u),
         (ram_data_page_count * PAGE_SIZE) / 1024u);
   return 0;
+}
+
+static int mem_region_xtensa_psram_init(void) {
+#if defined(CONFIG_SPIRAM) && CONFIG_SPIRAM
+  uint32_t total_size;
+  uint32_t free_size;
+  int err;
+
+  total_size = (uint32_t)esp_psram_get_size();
+  if (total_size == 0) {
+    klog("MM:   psram unavailable; external arenas disabled\n");
+    return 0;
+  }
+
+  free_size = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+  klogf("MM:   psram total %u KB, free %u KB before reservation\n",
+        total_size / 1024u, free_size / 1024u);
+
+  err = mem_region_linear_arena_init(&ext_text_arena,
+                                     MEM_REGION_EXT_TEXT_ARENA_SIZE,
+                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
+                                     "ext_text");
+  if (err < 0) return err;
+
+  err = mem_region_linear_arena_init(&ext_rodata_arena,
+                                     MEM_REGION_EXT_RODATA_ARENA_SIZE,
+                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
+                                     "ext_rodata");
+  if (err < 0) return err;
+
+  free_size = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+  klogf("MM:   psram free %u KB after reservation\n", free_size / 1024u);
+  return 0;
+#else
+  klog("MM:   psram support disabled; external arenas unavailable\n");
+  return 0;
+#endif
 }
 
 static int mem_region_ram_data_contains(const void *base, uint32_t size) {
@@ -142,31 +202,52 @@ static int mem_region_try_mark_ram_data(uint32_t start_page,
   return 1;
 }
 
-static int mem_region_alloc_ram_text(proc_image_segment_t *seg, uint32_t size,
-                                     uint32_t flags) {
+static int mem_region_linear_arena_alloc(mem_region_linear_arena_t *arena,
+                                         proc_image_segment_t *seg,
+                                         uint32_t size,
+                                         ppap_mem_class_t mem_class,
+                                         uint32_t flags) {
   uint32_t saved;
   uint32_t need = mem_region_align(size);
 
-  if (!ram_text_ready) return -(int)ENOMEM;
+  if (!arena->ready) return -(int)ENOMEM;
 
   saved = spin_lock_irqsave(SPIN_MEM);
-  for (uint32_t i = 0; i < ram_text_free_count; i++) {
-    if (ram_text_free[i].size < need) continue;
+  for (uint32_t i = 0; i < arena->free_count; i++) {
+    if (arena->free[i].size < need) continue;
 
-    uint8_t *base = ram_text_free[i].base;
-    ram_text_free[i].base += need;
-    ram_text_free[i].size -= need;
-    if (ram_text_free[i].size == 0) {
-      for (uint32_t j = i + 1; j < ram_text_free_count; j++)
-        ram_text_free[j - 1] = ram_text_free[j];
-      ram_text_free_count--;
+    uint8_t *base = arena->free[i].base;
+    arena->free[i].base += need;
+    arena->free[i].size -= need;
+    if (arena->free[i].size == 0) {
+      for (uint32_t j = i + 1; j < arena->free_count; j++)
+        arena->free[j - 1] = arena->free[j];
+      arena->free_count--;
     }
     spin_unlock_irqrestore(SPIN_MEM, saved);
-    *seg = proc_image_segment_make(base, size, PPAP_MEM_RAM_TEXT, flags);
+    *seg = proc_image_segment_make(base, size, mem_class, flags);
     return 0;
   }
   spin_unlock_irqrestore(SPIN_MEM, saved);
   return -(int)ENOMEM;
+}
+
+static int mem_region_alloc_ram_text(proc_image_segment_t *seg, uint32_t size,
+                                     uint32_t flags) {
+  return mem_region_linear_arena_alloc(&ram_text_arena, seg, size,
+                                       PPAP_MEM_RAM_TEXT, flags);
+}
+
+static int mem_region_alloc_ext_text(proc_image_segment_t *seg, uint32_t size,
+                                     uint32_t flags) {
+  return mem_region_linear_arena_alloc(&ext_text_arena, seg, size,
+                                       PPAP_MEM_EXT_TEXT, flags);
+}
+
+static int mem_region_alloc_ext_rodata(proc_image_segment_t *seg, uint32_t size,
+                                       uint32_t flags) {
+  return mem_region_linear_arena_alloc(&ext_rodata_arena, seg, size,
+                                       PPAP_MEM_EXT_RODATA, flags);
 }
 
 static int mem_region_alloc_ram_data(proc_image_segment_t *seg, uint32_t size,
@@ -219,53 +300,67 @@ static int mem_region_alloc_ram_data_at(proc_image_segment_t *seg, void *base,
   return 0;
 }
 
-static void mem_region_free_ram_text(const proc_image_segment_t *seg) {
+static void mem_region_linear_arena_free(mem_region_linear_arena_t *arena,
+                                         const proc_image_segment_t *seg,
+                                         const char *name) {
   uint32_t saved;
   uint8_t *base = (uint8_t *)seg->base;
   uint32_t size = mem_region_align(seg->size);
   uint8_t *end = base + size;
   uint32_t pos = 0;
 
-  if (!ram_text_ready || !base || size == 0) return;
+  if (!arena->ready || !base || size == 0) return;
 
   saved = spin_lock_irqsave(SPIN_MEM);
-  while (pos < ram_text_free_count && ram_text_free[pos].base < base)
+  while (pos < arena->free_count && arena->free[pos].base < base)
     pos++;
 
   if (pos > 0 &&
-      ram_text_free[pos - 1].base + ram_text_free[pos - 1].size == base) {
-    ram_text_free[pos - 1].size += size;
-    if (pos < ram_text_free_count &&
-        ram_text_free[pos - 1].base + ram_text_free[pos - 1].size ==
-            ram_text_free[pos].base) {
-      ram_text_free[pos - 1].size += ram_text_free[pos].size;
-      for (uint32_t i = pos + 1; i < ram_text_free_count; i++)
-        ram_text_free[i - 1] = ram_text_free[i];
-      ram_text_free_count--;
+      arena->free[pos - 1].base + arena->free[pos - 1].size == base) {
+    arena->free[pos - 1].size += size;
+    if (pos < arena->free_count &&
+        arena->free[pos - 1].base + arena->free[pos - 1].size ==
+            arena->free[pos].base) {
+      arena->free[pos - 1].size += arena->free[pos].size;
+      for (uint32_t i = pos + 1; i < arena->free_count; i++)
+        arena->free[i - 1] = arena->free[i];
+      arena->free_count--;
     }
     spin_unlock_irqrestore(SPIN_MEM, saved);
     return;
   }
 
-  if (pos < ram_text_free_count && end == ram_text_free[pos].base) {
-    ram_text_free[pos].base = base;
-    ram_text_free[pos].size += size;
+  if (pos < arena->free_count && end == arena->free[pos].base) {
+    arena->free[pos].base = base;
+    arena->free[pos].size += size;
     spin_unlock_irqrestore(SPIN_MEM, saved);
     return;
   }
 
-  if (ram_text_free_count >= MEM_REGION_FREE_MAX) {
+  if (arena->free_count >= MEM_REGION_FREE_MAX) {
     spin_unlock_irqrestore(SPIN_MEM, saved);
-    klog("MM: ram_text free-list overflow\n");
+    klogf("MM: %s free-list overflow\n", name);
     return;
   }
 
-  for (uint32_t i = ram_text_free_count; i > pos; i--)
-    ram_text_free[i] = ram_text_free[i - 1];
-  ram_text_free[pos].base = base;
-  ram_text_free[pos].size = size;
-  ram_text_free_count++;
+  for (uint32_t i = arena->free_count; i > pos; i--)
+    arena->free[i] = arena->free[i - 1];
+  arena->free[pos].base = base;
+  arena->free[pos].size = size;
+  arena->free_count++;
   spin_unlock_irqrestore(SPIN_MEM, saved);
+}
+
+static void mem_region_free_ram_text(const proc_image_segment_t *seg) {
+  mem_region_linear_arena_free(&ram_text_arena, seg, "ram_text");
+}
+
+static void mem_region_free_ext_text(const proc_image_segment_t *seg) {
+  mem_region_linear_arena_free(&ext_text_arena, seg, "ext_text");
+}
+
+static void mem_region_free_ext_rodata(const proc_image_segment_t *seg) {
+  mem_region_linear_arena_free(&ext_rodata_arena, seg, "ext_rodata");
 }
 
 static void mem_region_free_ram_data(const proc_image_segment_t *seg) {
@@ -302,6 +397,11 @@ int mem_region_init(void) {
     klogf("MM: mem_region_init: ram_data reservation failed (%d)\n", err);
     return err;
   }
+  err = mem_region_xtensa_psram_init();
+  if (err < 0) {
+    klogf("MM: mem_region_init: psram reservation failed (%d)\n", err);
+    return err;
+  }
   return 0;
 #else
   return 0;
@@ -336,6 +436,12 @@ int mem_region_alloc(proc_image_segment_t *seg, ppap_mem_class_t mem_class,
   if (!seg) return -(int)EINVAL;
 
   switch (mem_class) {
+#if defined(__xtensa__)
+    case PPAP_MEM_EXT_TEXT:
+      return mem_region_alloc_ext_text(seg, size, flags);
+    case PPAP_MEM_EXT_RODATA:
+      return mem_region_alloc_ext_rodata(seg, size, flags);
+#endif
     case PPAP_MEM_RAM_RODATA:
     case PPAP_MEM_RAM_STACK:
     case PPAP_MEM_DEVICE_DMA:
@@ -394,6 +500,14 @@ void mem_region_free(const proc_image_segment_t *seg) {
   if (!seg || !seg->base || seg->size == 0) return;
 
   switch (seg->mem_class) {
+#if defined(__xtensa__)
+    case PPAP_MEM_EXT_TEXT:
+      mem_region_free_ext_text(seg);
+      return;
+    case PPAP_MEM_EXT_RODATA:
+      mem_region_free_ext_rodata(seg);
+      return;
+#endif
     case PPAP_MEM_RAM_RODATA:
     case PPAP_MEM_RAM_STACK:
     case PPAP_MEM_DEVICE_DMA:

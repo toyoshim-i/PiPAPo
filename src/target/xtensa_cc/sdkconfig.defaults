@@ -16,6 +16,13 @@ CONFIG_FREERTOS_UNICORE=y
 # Flash size: CardComputer has 8 MB flash
 CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 
+# Enable managed PSRAM for PPAP-owned external execution arenas.
+# XT-2.5 reserves external memory via heap_caps first; user-image placement
+# into those arenas is a later loader step.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_BOOT_INIT=y
+CONFIG_SPIRAM_USE_CAPS_ALLOC=y
+
 # Disable memory protection so IRAM can be used as executable heap.
 # PPAP allocates user-process code in IRAM via heap_caps_malloc(MALLOC_CAP_EXEC).
 CONFIG_ESP_SYSTEM_MEMPROT_FEATURE=n

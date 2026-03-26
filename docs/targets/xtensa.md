@@ -178,12 +178,13 @@ The desired end state is not "ELF loader calls ESP-IDF heap APIs directly";
 it is "PPAP owns explicit IRAM and DRAM regions and suballocates them with
 full knowledge of protection and process lifetime."
 
-### XIP direction
+### Execution direction
 
-Xtensa should converge with the ARM ports on an **XIP-first model**:
+Xtensa should converge with the ARM ports on an **immutable-code-first
+model**:
 
-- immutable text executes in place from flash when practical
-- read-only data stays flash-backed when practical
+- larger immutable text / rodata should stage into PSRAM-backed runtime
+  memory
 - RAM is reserved for mutable state: `.data`, `.bss`, stack, heap, kernel
   bookkeeping, and cache-off critical routines
 
@@ -192,7 +193,7 @@ Under that model, IRAM is reserved for code that truly needs it:
 - timer / trap / scheduler paths that must survive cache-disabled windows
 - latency-sensitive routines
 - bootstrap / transition stubs
-- fallback execution for code that cannot yet use XIP
+- fallback execution for code that cannot yet use the staged PSRAM path
 
 ### Page pool
 
@@ -204,15 +205,21 @@ Longer term, Xtensa should move from a generic "page pool + special IRAM
 exceptions" model to a region model such as:
 
 - kernel IRAM for cache-off critical code
-- flash-mapped XIP text / rodata
+- internal IRAM for execution-adjacent allocations that genuinely need
+  low-latency internal memory, such as special stacks or literal support
+  areas when required by the final Xtensa layout
+- PSRAM-backed user text / rodata execution space
 - kernel DRAM
 - user data / stack / heap DRAM
 - device / DMA / framebuffer memory
 
 That makes ownership, freeing, and future PMS policy much clearer than
-address-range heuristics, and aligns Xtensa with the existing ARM-port XIP
-philosophy: keep code in flash unless there is a concrete reason it must
-consume internal RAM.
+address-range heuristics. For Xtensa on ESP32-S3, the intended user-space
+execution model is now: storage (romfs, SD, other media) is the source of
+the image, while PSRAM becomes the preferred runtime arena for larger user
+text / rodata. Internal IRAM should be reserved for kernel-critical code,
+special stacks, and other execution-adjacent cases that cannot tolerate the
+external-memory path.
 
 ---
 
@@ -220,22 +227,27 @@ consume internal RAM.
 
 ### Current implementation vs target direction
 
-The current Xtensa loader is **RAM-loaded**, not XIP:
+The current Xtensa loader is **RAM-loaded**, not PSRAM-executed:
 
 - text / literal pools are copied into IRAM
 - mutable data lives in DRAM
 - relocations are applied at load time
 
 That was useful for initial bring-up, but it is not the desired end state.
-The target direction is to follow the ARM ports more closely:
+The target direction is now:
 
-- flash-mapped XIP text where practical
-- flash-backed read-only data where practical
-- DRAM only for mutable process state
-- IRAM reserved for cache-off critical code and other special cases
+- treat romfs and other filesystems as **image sources**, not executable
+  mappings
+- stage larger user `.text` / `.rodata` into PSRAM-backed runtime memory
+- keep DRAM only for mutable process state
+- reserve internal IRAM for cache-off critical code, special stacks, and
+  other execution-adjacent cases that still need internal memory
 
-So the correct reading is: **Xtensa does not currently use XIP for user
-programs, but the plan is to move in that direction.**
+ESP-IDF documents ESP32-S3 support for moving instructions and rodata into
+PSRAM (`CONFIG_SPIRAM_FETCH_INSTRUCTIONS`,
+`CONFIG_SPIRAM_RODATA`, `CONFIG_SPIRAM_XIP_FROM_PSRAM`), so the intended
+Xtensa direction is now better described as **execute from PSRAM-backed
+runtime memory**, not direct XIP from romfs.
 
 ### Literal pool relocation
 
@@ -255,9 +267,10 @@ would destroy section headers needed for relocation scanning).
 
 For each entry, `load_base` is added to the 32-bit value at `r_offset`.
 
-For a future XIP path, the goal is to reduce or eliminate text relocation by
-using a more flash-friendly packaging model, such as prelinked or otherwise
-XIP-aware binaries, while keeping DRAM relocation only for mutable data.
+For a future PSRAM-execution path, the goal is to reduce or eliminate
+flash-text coupling by using a packaging model that can stage code and
+immutable data into PSRAM cleanly, while keeping DRAM relocation only for
+mutable process state.
 
 ### SHF_ALLOC filter (critical)
 
@@ -276,17 +289,18 @@ Current RAM-loaded layout:
   `.text.crt0`, `.text*`
 - **data (RW):** `.rodata`, `.got`, `.data`, `.bss`
 
-Experimental XIP-oriented packaging layout:
+Experimental PSRAM/XIP-oriented packaging layout:
 
 - `src/user/arch/xtensa/user_xip.ld`
 - **text (R+X):** `.literal*`, `.text.crt0`, `.text*`, `.rodata`
 - **data (RW):** `.got`, `.data`, `.bss`
-- optional `__ppap_xip_flash_base` linker symbol for fixed-address XIP
+- optional `__ppap_xip_flash_base` linker symbol for fixed-address
   experiments against the ESP32-S3 DROM flash window
 
-The XIP layout is now built as a side artifact for XT-2.5, but it is not
-yet the default runtime path because current Xtensa code generation still
-emits text relocations that are not flash-safe.
+This layout is still useful as a diagnostic artifact because it exposes
+literal / relocation coupling clearly, but it is no longer the intended
+final runtime path by itself. The preferred direction is to reuse the same
+analysis for a staged PSRAM execution model.
 
 **L32R reach constraint:** `L32R` computes target as a negative PC-relative
 offset (up to -256 KB). Literal pools MUST precede the code that references
@@ -490,7 +504,8 @@ allocation, and address-range heuristics with an explicit Xtensa memory map.
 
 XT-2 should establish the permanent Xtensa contract:
 
-- flash for immutable code/data by default
+- storage as the image source for immutable code/data
+- PSRAM-backed runtime space for larger immutable user text / rodata
 - DRAM for mutable process state
 - IRAM only for cache-off critical or otherwise special runtime code
 
@@ -506,6 +521,8 @@ shared vocabulary is:
 - `RAM_TEXT`
 - `RAM_RODATA`
 - `RAM_DATA`
+- `EXT_TEXT`
+- `EXT_RODATA`
 - `ROM_TEXT`
 - `ROM_RODATA`
 - `RAM_STACK`
@@ -527,12 +544,11 @@ old Xtensa-specific IRAM free heuristic has been removed.
 
 #### XT-2.3: Introduce region allocators by purpose
 
-Status: **in progress**
+Status: **done**
 
 The loader and kernel should request memory by intent, not by backend:
 
 - executable RAM text
-- flash-backed immutable text / rodata
 - mutable process data
 - kernel-private allocations
 
@@ -544,10 +560,13 @@ Current implementation status:
 - Xtensa `RAM_DATA` now also goes through `mem_region`, including
   `sys_brk` growth at an explicit target address
 - non-Xtensa paths still use the existing page-backed backend
+- PSRAM-backed execution memory is intentionally deferred to a later step,
+  so XT-2.3 closes on the current internal-memory model rather than keeping
+  itself open for future execution backends
 
 #### XT-2.4: Reserve PPAP ownership at boot
 
-Status: **in progress**
+Status: **done**
 
 Carve out PPAP-owned regions once during Xtensa bootstrap and record them
 centrally. After that point, Xtensa runtime code should stop treating
@@ -562,31 +581,69 @@ Current implementation status:
 - the current split now boots on hardware; `scripts/run.sh xtensa_cc`
   also supports a configurable Xtensa flash baud to help with unstable
   USB transport during flashing
-- flash-backed executable / immutable regions are not reserved or managed
-  yet
+- PSRAM-backed execution-space reservation is intentionally deferred to the
+  next step, so XT-2.4 closes on current internal-memory ownership rather
+  than remaining open for future runtime arenas
 
-#### XT-2.5: Separate execution model from allocation model
+#### XT-2.5: Introduce PSRAM-backed execution arenas
+
+Status: **done**
+
+Add Xtensa runtime regions for PSRAM-backed user execution without changing
+the already-completed internal-memory groundwork from XT-2.3 and XT-2.4.
+
+Required work for this step:
+
+- detect and initialize the available PSRAM arena during Xtensa bootstrap
+- reserve PPAP-owned PSRAM-backed regions explicitly at boot
+- expose those regions through `mem_region` so later loader work can request
+  execution memory by intent instead of by ESP-IDF API
+- define the ownership boundary between internal IRAM support areas,
+  PSRAM-backed executable/immutable regions, and DRAM-backed mutable state
+
+XT-2.5 is intentionally the first PSRAM-specific step. Earlier steps should
+remain closed and PSRAM-free.
+
+Current implementation status:
+
+- `xtensa_cc` now enables managed PSRAM during bootstrap with
+  `SPIRAM_USE_CAPS_ALLOC`, without changing the active internal RAM-loaded
+  user runtime path
+- Xtensa `mem_region_init()` now detects available PSRAM, logs capacity, and
+  reserves PPAP-owned `EXT_TEXT` and `EXT_RODATA` arenas at boot
+- those external arenas are exposed through `mem_region`, so later loader
+  work can request staged execution memory by intent instead of direct
+  ESP-IDF allocation calls
+- the active loader still uses the existing internal `RAM_TEXT` /
+  `RAM_DATA` path; actual user-image placement into the PSRAM-backed arenas
+  remains the next step
+
+#### XT-2.6: Separate execution model from allocation model
 
 Status: **partially done**
 
 Keep two executable paths temporarily:
 
 - current RAM-loaded ELF path for bring-up/debug
-- future XIP-capable path for flash-backed text/rodata
+- future staged PSRAM execution path for larger user text/rodata
 
 Both should use the same PPAP region API so only the image format differs,
 not the ownership rules.
 
 Current implementation status:
 
+- the current work here is still exploratory packaging and loader analysis;
+  XT-2.5 now reserves real PSRAM-backed arenas, but the active loader does
+  not yet place user images into them
 - Xtensa RAM-loaded text now goes through `mem_region`
 - Xtensa now builds separate RAM-layout and XIP-oriented user ELF variants,
-  so packaging can evolve independently of the current bring-up loader path
+  so packaging analysis can evolve independently of the current bring-up
+  loader path
 - the loader now recognizes Xtensa XIP-layout artifacts and reports the
   first flash-unsafe text relocation that still blocks direct execution
 - Xtensa inline syscall wrappers now remove the `R_XTENSA_PLT` text-reloc
   class from simple XIP-layout binaries
-- XT-2.5 now treats literal / relocation support as a logical segment,
+- XT-2.6 now treats literal / relocation support as a logical segment,
   usually backed by `RAM_DATA`, rather than assuming it must stay in
   flash-backed text
 - the current experimental XIP linker layout now emits a dedicated
@@ -601,7 +658,7 @@ Current implementation status:
   flash-text-relocation blocker
 - `scripts/build.sh xtensa_cc` now reports each `.xip.elf` as
   `text-blocked`, `text-clean, literal-coupled`, or `XIP-clean`, so the
-  remaining XT-2.5 blockers are visible in the normal build flow
+  remaining XT-2.6 blockers are visible in the normal build flow
 - the loader now mirrors that distinction internally, recording when an
   Xtensa XIP-layout image remains `literal-coupled` even after
   flash-text relocations have been eliminated
@@ -609,15 +666,15 @@ Current implementation status:
   `RAM_RODATA` support segment in `proc_image`, even though it still sits
   inside the IRAM allocation for L32R reach
 - Xtensa now also builds fixed-base `.xipfix.elf` artifacts linked at the
-  ESP32-S3 DROM flash base, so XT-2.5 can compare relocatable and
-  prelinked XIP packaging without changing the active runtime path
+  ESP32-S3 DROM flash base, so XT-2.6 can compare relocatable and
+  prelinked packaging without changing the active runtime path
 - those fixed-base artifacts now classify separately as
   `text-clean, literal-prelinked` when the `.literal` words already carry
   DROM flash-window addresses and the remaining relocation records are
   just preserved bookkeeping from `--emit-relocs`
 - larger fixed-base programs can still classify as
   `text-clean, data-coupled` when their literal tables reference mutable
-  `.data` / `.bss`, which means the remaining XT-2.5 problem is writable
+  `.data` / `.bss`, which means the remaining XT-2.6 problem is writable
   process-state rebasing rather than flash-text rebasing
 - the loader now mirrors those categories internally too, recording
   `literal-prelinked`, `literal-coupled`, and `data-coupled` states in the
@@ -625,12 +682,14 @@ Current implementation status:
   “literal-coupled” bucket
 - `.rela.text` is now down to `R_XTENSA_SLOT0_OP` references against code
   and the `.literal` table, which is much closer to the intended XIP model
-- XIP remains the planned default direction, but the runtime still uses the
-  RAM-loaded path because current Xtensa binaries still emit text
-  relocations that the runtime does not yet model as a separate RAM-backed
-  literal / relocation support area
+- direct romfs-XIP is no longer the intended end state for Xtensa user
+  programs; the new target is staged execution from PSRAM-backed runtime
+  memory
+- the active runtime still uses the internal RAM-loaded path because PPAP
+  does not yet have the XT-2.5 PSRAM-backed execution arena and image
+  placement logic to replace it
 
-#### XT-2.6: Make page-tracked writable memory explicit
+#### XT-2.7: Make page-tracked writable memory explicit
 
 Status: **in progress**
 
@@ -647,13 +706,13 @@ Current implementation status:
 - `user_pages[]` still remains the compatibility surface for the rest of
   the kernel, so this step is not complete yet
 
-#### XT-2.7: Make XIP the default target model
+#### XT-2.8: Make PSRAM-backed execution the default target model
 
 Status: **not started**
 
-XT-2 should deliberately align Xtensa with the ARM-port philosophy of
-"XIP by default, RAM only when needed" so non-MMU ports converge on one
-mental model instead of each inventing its own special-case rules.
+After XT-2.5 through XT-2.7 are complete, Xtensa should move from the
+current internal RAM-loaded fallback to a default staged-execution model
+that runs larger user text / rodata from PSRAM-backed runtime memory.
 
 Exit criteria for XT-2:
 
@@ -662,8 +721,9 @@ Exit criteria for XT-2:
 - the loader no longer depends on ad-hoc ESP-IDF heap calls as its
   architectural interface
 - process cleanup is explicit and format-aware
-- the documentable default model becomes "flash-backed immutable code/data,
-  DRAM-backed mutable state"
+- the documentable default model becomes "storage-backed image source,
+  PSRAM-backed executable / immutable runtime state, DRAM-backed mutable
+  process state"
 
 ### Phase XT-3: Reclaim runtime control from ESP-IDF
 
@@ -715,9 +775,9 @@ userland without destabilizing the port.
 
 - Keep the current small freestanding binaries as bring-up tools until XT-1
   through XT-5 are solid.
-- Add an XIP-capable executable packaging path so preinstalled Xtensa
-  programs can follow the same "code in flash, mutable state in RAM"
-  approach already used on ARM.
+- Add a PSRAM-execution-capable packaging path so Xtensa programs can follow
+  the same "immutable executable image separated from mutable state"
+  approach without depending on direct romfs XIP.
 - Add musl support only after the process ABI, loader, and signal/restart
   behavior are stable.
 - Defer busybox until libc, process startup, and TTY behavior are reliable.
