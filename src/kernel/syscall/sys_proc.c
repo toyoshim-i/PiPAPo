@@ -17,6 +17,7 @@
 #include "../common/mod/mod_exec.h"
 #include "../fd/fd.h"
 #include "../klog.h"
+#include "../mm/mem_region.h"
 #include "../mm/page.h"
 #include "../proc/proc.h"
 #include "../proc/sched.h"
@@ -1278,6 +1279,10 @@ long sys_exit(long status) {
   /* Free user pages only if we own them (vfork_parent == NULL means
    * either this isn't a vfork child, or execve already replaced them) */
   if (!current->vfork_parent) {
+    if (current->image.text.mem_class == PPAP_MEM_USER_EXEC_IRAM) {
+      mem_region_free(&current->image.text);
+      current->image.text = (proc_image_segment_t){0};
+    }
     for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
       if (current->user_pages[i]) {
         /* If the stack page is within the user_pages (RISC-V contiguous
@@ -1758,6 +1763,8 @@ long sys_execve(const char *path, const char *const *argv) {
 
   /* Free old user pages only if we owned them */
   if (owns_pages) {
+    if (old_image.text.mem_class == PPAP_MEM_USER_EXEC_IRAM)
+      mem_region_free(&old_image.text);
     for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
       if (old_user[i]) user_page_free(old_user[i]);
     }

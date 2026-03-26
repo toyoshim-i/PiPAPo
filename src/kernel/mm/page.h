@@ -97,20 +97,8 @@ void *page_alloc_at(void *addr);
  * obtained from page_alloc(), or if it is freed more than once. */
 void page_free(void *page);
 
-/* Free a user-process page.  On Xtensa, user code lives in IRAM
- * (allocated via heap_caps_malloc); detect by address range and call
- * heap_caps_free instead of page_free. */
-static inline void user_page_free(void *page) {
-#if defined(__xtensa__)
-  uintptr_t addr = (uintptr_t)page;
-  if (addr >= 0x40370000u && addr < 0x403E0000u) {
-    extern void heap_caps_free(void *ptr);
-    heap_caps_free(page);
-    return;
-  }
-#endif
-  page_free(page);
-}
+/* user_pages[] only tracks page-backed allocations. */
+static inline void user_page_free(void *page) { page_free(page); }
 
 /* Return the runtime page pool base address.  On Xtensa this is
  * dynamically allocated from ESP-IDF's heap; on other targets it

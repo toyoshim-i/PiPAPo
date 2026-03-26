@@ -367,14 +367,11 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
       }
     }
 
-    /* TODO: switch exec teardown to proc_image-based ownership. */
-    /* Track IRAM allocation for cleanup. */
-    /* user_pages[] remains authoritative during teardown for now. */
-    p->user_pages[0] = sram_page;
-    /* Track each DRAM page individually for cleanup via page_free */
+    /* Track each DRAM page individually for cleanup via page_free. */
+    /* Xtensa IRAM text is owned through image.text instead. */
     if (dram_page) {
-      for (uint32_t i = 0; i < data_pages && (i + 1) < USER_PAGES_MAX; i++)
-        p->user_pages[1 + i] = dram_page + i * PAGE_SIZE;
+      for (uint32_t i = 0; i < data_pages && i < USER_PAGES_MAX; i++)
+        p->user_pages[i] = dram_page + i * PAGE_SIZE;
     }
 
     /* Set brk base/current after DRAM data for heap growth */
