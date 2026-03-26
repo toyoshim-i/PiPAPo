@@ -47,9 +47,12 @@ void kmain(void) {
 
   /* Memory manager + boot-time memory map */
   mm_init();
-  if (mem_region_init() < 0) {
-    klog("PANIC: mem_region_init failed\n");
-    for (;;) arch_wfi();
+  {
+    int err = mem_region_init();
+    if (err < 0) {
+      klogf("PANIC: mem_region_init failed (%d)\n", err);
+      for (;;) arch_wfi();
+    }
   }
 
   /* Process table init */

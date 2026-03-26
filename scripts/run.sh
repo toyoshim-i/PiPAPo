@@ -211,6 +211,7 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     fi
 
     PPAP_PORT="${PPAP_PORT:-/dev/ttyACM0}"
+    PPAP_XTENSA_FLASH_BAUD="${PPAP_XTENSA_FLASH_BAUD:-460800}"
     if [[ ! -e "$PPAP_PORT" ]]; then
         echo "[run] Error: serial port $PPAP_PORT not found."
         echo "      Set PPAP_PORT to the correct device."
@@ -221,7 +222,8 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     # without running as root (typically "dialout", GID 20).
     DEV_GID="$(stat -c '%g' "$PPAP_PORT")"
 
-    echo "[run] Flashing xtensa_cc via Docker ($PPAP_PORT) ..."
+    echo "[run] Flashing xtensa_cc via Docker ($PPAP_PORT @ "\
+"$PPAP_XTENSA_FLASH_BAUD bps) ..."
     docker run --rm \
         --device="$PPAP_PORT" --group-add "$DEV_GID" \
         -v "$PROJECT_DIR:/ppap" -w /ppap \
@@ -229,7 +231,7 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
             export IDF_TOOLS_PATH=/opt/ppap/xtensa-tools && \
             source /opt/ppap/src/esp-idf/export.sh >/dev/null 2>&1 && \
             cd /ppap/build/xtensa_cc && \
-            esptool.py --chip esp32s3 -p $PPAP_PORT -b 460800 \
+            esptool.py --chip esp32s3 -p $PPAP_PORT -b $PPAP_XTENSA_FLASH_BAUD \
                 --before default_reset --after hard_reset \
                 write_flash \$(cat flash_args) \
         " 2>&1

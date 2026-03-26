@@ -18,6 +18,11 @@ int mem_region_init(void);
 int mem_region_alloc(proc_image_segment_t *seg, ppap_mem_class_t mem_class,
                      uint32_t size, uint32_t flags);
 
+int mem_region_alloc_at(proc_image_segment_t *seg, ppap_mem_class_t mem_class,
+                        void *base, uint32_t size, uint32_t flags);
+
 void mem_region_free(const proc_image_segment_t *seg);
+
+void mem_region_free_tracked_page(void *page);
 
 #endif /* PPAP_KERNEL_MM_MEM_REGION_H */

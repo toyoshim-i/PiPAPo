@@ -376,13 +376,18 @@ Observed serial output reaches:
 
 - `PiPAPo booting... [xtensa_cc]`
 - memory map / VFS mount logs
+- `MM:   ram_text ... reserved`
+- `MM:   ram_data ... reserved`
 - `INIT: pid=1 loaded`
 - `SCHED: starting scheduler`
 
-No further user-space progress was observed after that point during the
-verification run. In particular, the earlier claims that `init` prints,
-the shell chain starts, and the `$` prompt appears should be treated as
-historical bring-up notes rather than current confirmed behavior.
+This confirms that the current boot-time `RAM_TEXT` / `RAM_DATA` region
+reservation completes on hardware and no longer fails in
+`mem_region_init()`. No further user-space progress was observed after
+that point during the verification run. In particular, the earlier claims
+that `init` prints, the shell chain starts, and the `$` prompt appears
+should be treated as historical bring-up notes rather than current
+confirmed behavior.
 
 ### Known runtime bug: scheduler handoff remains unstable
 
@@ -522,12 +527,13 @@ Current implementation status:
 - a shared `mem_region` layer exists
 - Xtensa `RAM_TEXT` is reserved once at boot and suballocated from a
   PPAP-owned arena
-- non-Xtensa and writable-memory paths still use the existing page-backed
-  backend
+- Xtensa `RAM_DATA` now also goes through `mem_region`, including
+  `sys_brk` growth at an explicit target address
+- non-Xtensa paths still use the existing page-backed backend
 
 #### XT-2.4: Reserve PPAP ownership at boot
 
-Status: **partially done**
+Status: **in progress**
 
 Carve out PPAP-owned regions once during Xtensa bootstrap and record them
 centrally. After that point, Xtensa runtime code should stop treating
@@ -536,8 +542,12 @@ ESP-IDF heap APIs as the long-term allocator interface.
 Current implementation status:
 
 - `mem_region_init()` runs during boot
-- Xtensa now reserves a PPAP-owned `RAM_TEXT` arena there
-- Xtensa `RAM_DATA` is still page-pool backed
+- Xtensa now reserves PPAP-owned `RAM_TEXT` and `RAM_DATA` arenas there
+- the Xtensa page pool has been reduced so writable process memory is not
+  double-reserved at the earlier size
+- the current split now boots on hardware; `scripts/run.sh xtensa_cc`
+  also supports a configurable Xtensa flash baud to help with unstable
+  USB transport during flashing
 - flash-backed executable / immutable regions are not reserved or managed
   yet
 
@@ -571,8 +581,10 @@ Current implementation status:
 
 - shared helpers now track page-backed user ranges explicitly
 - `sys_brk` and the current ELF loaders use those helpers
-- Xtensa writable process memory is still backed by the generic page pool,
-  so this step is the staging point for the later `RAM_DATA` arena work
+- Xtensa tracked writable pages are now allocated and freed through
+  `mem_region`, rather than assuming the generic page pool everywhere
+- `user_pages[]` still remains the compatibility surface for the rest of
+  the kernel, so this step is not complete yet
 
 #### XT-2.7: Make XIP the default target model
 

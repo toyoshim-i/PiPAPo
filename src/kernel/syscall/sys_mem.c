@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "../common/errno.h"
+#include "../mm/mem_region.h"
 #include "../mm/page.h"
 #include "../proc/proc.h"
 #include "syscall.h"
@@ -53,24 +54,26 @@ long sys_brk(long addr) {
 
   /* Expand: allocate contiguous pages after existing ones */
   for (uint32_t i = old_pages; i < new_pages; i++) {
+    proc_image_segment_t page_region = {0};
     uintptr_t target = page0_base + i * PAGE_SIZE;
-    void *pg = page_alloc_at((void *)(uintptr_t)target);
-    if (!pg) {
+    if (mem_region_alloc_at(&page_region, PPAP_MEM_RAM_DATA,
+                            (void *)(uintptr_t)target, PAGE_SIZE,
+                            PROC_IMAGE_SEG_WRITABLE) < 0) {
       /* Roll back any pages we just allocated */
       for (uint32_t j = old_pages; j < i; j++) {
-        page_free(current->user_pages[j]);
+        mem_region_free_tracked_page(current->user_pages[j]);
         current->user_pages[j] = NULL;
       }
       return (long)(current->brk_current); /* unchanged = failure */
     }
-    memset(pg, 0, PAGE_SIZE);
-    current->user_pages[i] = pg;
+    memset(page_region.base, 0, PAGE_SIZE);
+    current->user_pages[i] = page_region.base;
   }
 
   /* Shrink: free excess pages */
   for (uint32_t i = new_pages; i < old_pages; i++) {
     if (current->user_pages[i]) {
-      user_page_free(current->user_pages[i]);
+      mem_region_free_tracked_page(current->user_pages[i]);
       current->user_pages[i] = NULL;
     }
   }

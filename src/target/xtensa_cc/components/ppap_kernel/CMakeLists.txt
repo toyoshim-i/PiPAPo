@@ -65,7 +65,8 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     PPAP_KERNEL=1
     PPAP_SYS_HZ=240000000u
     PAGE_POOL_BASE=0x3FC90000u
-    PAGE_COUNT_MAX=64u
+    PAGE_COUNT_MAX=24u
+    MEM_REGION_RAM_DATA_ARENA_SIZE=98304u
 )
 
 # ── Embed romfs.bin via .incbin ───────────────────────────────────────────────
