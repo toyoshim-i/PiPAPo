@@ -123,6 +123,105 @@ static int elf_detect(const uint8_t *file_buf, uint32_t file_size,
   return elf_validate(ehdr) == 0;
 }
 
+#if defined(__xtensa__)
+static const elf32_shdr_t *elf_section_by_name(const elf32_ehdr_t *ehdr,
+                                               const uint8_t *file_base,
+                                               uint32_t file_size,
+                                               const char *name) {
+  const elf32_shdr_t *shstr;
+  const char *shstrtab;
+
+  if (!ehdr->e_shoff || !ehdr->e_shnum || !ehdr->e_shentsize) return NULL;
+  if (ehdr->e_shstrndx >= ehdr->e_shnum) return NULL;
+
+  shstr = (const elf32_shdr_t *)(file_base + ehdr->e_shoff +
+                                 ehdr->e_shstrndx * ehdr->e_shentsize);
+  if (shstr->sh_offset >= file_size ||
+      shstr->sh_offset + shstr->sh_size > file_size)
+    return NULL;
+  shstrtab = (const char *)(file_base + shstr->sh_offset);
+
+  for (uint16_t i = 0; i < ehdr->e_shnum; i++) {
+    const elf32_shdr_t *sh = (const elf32_shdr_t *)(file_base + ehdr->e_shoff +
+                                                    i * ehdr->e_shentsize);
+    if (sh->sh_name >= shstr->sh_size) continue;
+    if (strcmp(shstrtab + sh->sh_name, name) == 0) return sh;
+  }
+  return NULL;
+}
+
+static int xtensa_elf_uses_xip_layout(const elf32_ehdr_t *ehdr,
+                                      const uint8_t *file_base,
+                                      uint32_t file_size,
+                                      const elf32_phdr_t *text_seg) {
+  const elf32_shdr_t *rodata =
+      elf_section_by_name(ehdr, file_base, file_size, ".rodata");
+  uint32_t text_start;
+  uint32_t text_end;
+
+  if (!rodata || !text_seg) return 0;
+
+  text_start = text_seg->p_vaddr;
+  text_end = text_start + text_seg->p_memsz;
+  return rodata->sh_addr >= text_start && rodata->sh_addr < text_end;
+}
+
+static int xtensa_elf_xip_ready(const elf32_ehdr_t *ehdr,
+                                const uint8_t *file_base,
+                                uint32_t file_size, uint32_t text_end_va,
+                                uint32_t *blocked_offset,
+                                uint32_t *blocked_type) {
+  if (blocked_offset) *blocked_offset = 0;
+  if (blocked_type) *blocked_type = 0;
+
+  if (!ehdr->e_shoff || !ehdr->e_shnum || ehdr->e_shentsize < 40) return 1;
+
+  for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
+    const uint8_t *sh = file_base + ehdr->e_shoff + si * ehdr->e_shentsize;
+    uint32_t sh_type = *(const uint32_t *)(sh + 4);
+    uint32_t sh_info_idx;
+    const uint8_t *target_sh;
+    uint32_t target_flags;
+    uint32_t sh_offset;
+    uint32_t sh_size;
+    uint32_t sh_entsize;
+    uint32_t n_entries;
+
+    if (sh_type != 4 /* SHT_RELA */) continue;
+
+    sh_info_idx = *(const uint32_t *)(sh + 28);
+    if (sh_info_idx >= ehdr->e_shnum) continue;
+    target_sh = file_base + ehdr->e_shoff + sh_info_idx * ehdr->e_shentsize;
+    target_flags = *(const uint32_t *)(target_sh + 8);
+    if (!(target_flags & 2 /* SHF_ALLOC */)) continue;
+
+    sh_offset = *(const uint32_t *)(sh + 16);
+    sh_size = *(const uint32_t *)(sh + 20);
+    sh_entsize = *(const uint32_t *)(sh + 36);
+    if (sh_entsize < 12 || sh_offset + sh_size > file_size) continue;
+
+    n_entries = sh_size / sh_entsize;
+    for (uint32_t ri = 0; ri < n_entries; ri++) {
+      const uint8_t *rela = file_base + sh_offset + ri * sh_entsize;
+      uint32_t r_offset = *(const uint32_t *)(rela + 0);
+      uint32_t r_info = *(const uint32_t *)(rela + 4);
+      uint8_t r_type = (uint8_t)(r_info & 0xFFu);
+
+      if (r_type != 1 /* R_XTENSA_32 */ &&
+          r_type != 6 /* R_XTENSA_PLT */)
+        continue;
+      if (r_offset >= text_end_va) continue;
+
+      if (blocked_offset) *blocked_offset = r_offset;
+      if (blocked_type) *blocked_type = r_type;
+      return 0;
+    }
+  }
+
+  return 1;
+}
+#endif
+
 #define MAX_LOAD_SEGS 4
 
 static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
@@ -196,6 +295,15 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     uint32_t data_va = data_seg ? data_seg->p_vaddr : text_end_va;
     uint32_t data_memsz = data_seg ? data_seg->p_memsz : 0;
     uint32_t data_size = (data_memsz + 15u) & ~15u;
+    uint32_t blocked_offset = 0;
+    uint32_t blocked_type = 0;
+
+    if (xtensa_elf_uses_xip_layout(ehdr, file_buf, file_size, text_seg) &&
+        !xtensa_elf_xip_ready(ehdr, file_buf, file_size, text_end_va,
+                              &blocked_offset, &blocked_type)) {
+      klogf("ELF: xtensa XIP layout blocked by text reloc type %u at %x\n",
+            blocked_type, blocked_offset);
+    }
 
     /* Allocate IRAM for text (executable, word-access only) */
     if (mem_region_alloc(&text_region, PPAP_MEM_RAM_TEXT, text_size,

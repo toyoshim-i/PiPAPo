@@ -580,6 +580,11 @@ Current implementation status:
 - Xtensa RAM-loaded text now goes through `mem_region`
 - Xtensa now builds separate RAM-layout and XIP-oriented user ELF variants,
   so packaging can evolve independently of the current bring-up loader path
+- the loader now recognizes Xtensa XIP-layout artifacts and reports the
+  first flash-unsafe text relocation that still blocks direct execution
+- Xtensa inline syscall wrappers now remove the `R_XTENSA_PLT` text-reloc
+  class from simple XIP-layout binaries; the remaining blocker is absolute
+  `R_XTENSA_32` literal-pool addressing for static data / rodata references
 - XIP remains the planned default direction, but the runtime still uses the
   RAM-loaded path because current Xtensa binaries still emit text
   relocations that would require patching flash-backed code
