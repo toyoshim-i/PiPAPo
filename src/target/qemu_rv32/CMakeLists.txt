@@ -158,6 +158,7 @@ file(WRITE ${CMAKE_BINARY_DIR}/ufsimg_data.S
 "    .section .ufsimg, \"a\", %progbits\n    .incbin \"${_ufs_img}\"\n")
 
 add_custom_target(ufsimg_image DEPENDS ${_ufs_img})
+add_dependencies(ufsimg_image musl_libc)
 add_dependencies(ppap_qemu_rv32 ufsimg_image)
 
 set_source_files_properties(${CMAKE_BINARY_DIR}/ufsimg_data.S

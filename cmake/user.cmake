@@ -596,6 +596,10 @@ function(_ppap_add_musl)
                 ${_musl_overlay}
         COMMENT "Building musl libc (${PPAP_ARCH_LABEL})"
     )
+    # Wrap in a custom target so parallel jobs share a single musl build.
+    # Without this, multiple targets depending on ${PPAP_MUSL_LIBC} can
+    # each trigger the custom command concurrently, causing ar corruption.
+    add_custom_target(musl_libc DEPENDS ${PPAP_MUSL_LIBC})
 endfunction()
 
 # _ppap_add_busybox()  [internal]
@@ -796,6 +800,7 @@ function(ppap_generate_romfs target)
         PROPERTIES OBJECT_DEPENDS ${_romfs_bin})
 
     add_custom_target(romfs_image_${target} DEPENDS ${_romfs_bin})
+    add_dependencies(romfs_image_${target} musl_libc)
     add_dependencies(${target} romfs_image_${target})
     target_sources(${target} PRIVATE ${_romfs_asm})
 endfunction()
