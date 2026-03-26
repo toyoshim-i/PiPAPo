@@ -192,10 +192,10 @@ for variant in "${VARIANTS[@]}"; do
     sed -i 's|^CONFIG_CROSS_COMPILER_PREFIX=.*|CONFIG_CROSS_COMPILER_PREFIX="'"$PPAP_CROSS_PREFIX"'"|' .config
     sed -i 's|^CONFIG_SYSROOT=.*|CONFIG_SYSROOT=""|' .config
     sed -i 's|^CONFIG_EXTRA_CFLAGS=.*|CONFIG_EXTRA_CFLAGS="'"$PPAP_APP_CFLAGS -specs=$PPAP_SPECS_FILE -T $PPAP_BUSYBOX_LD"'"|' .config
-    # RISC-V: --emit-relocs preserves relocation entries so the kernel's
-    # ELF loader can apply address fixups for function pointer tables.
+    # RISC-V: use --emit-relocs (bare-metal, no PIE) or -pie (Linux TC)
+    # to provide relocations for the kernel's ELF loader.
     EXTRA_LD="-L${PPAP_MUSL_SYSROOT}/lib"
-    if [[ "${PPAP_BB_ARCH:-}" == "riscv32" ]]; then
+    if [[ "${PPAP_BB_ARCH:-}" == "riscv32" && -z "${PPAP_PIE_FLAG:-}" ]]; then
         EXTRA_LD="$EXTRA_LD -Wl,--emit-relocs"
     fi
     sed -i 's|^CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS="'"$EXTRA_LD"'"|' .config
@@ -216,8 +216,8 @@ for variant in "${VARIANTS[@]}"; do
 
     # Strip debug info and copy to output.
     # RISC-V with --emit-relocs: keep relocation sections (strip only debug).
-    # Other arches: full strip (-s).
-    if [[ "${PPAP_BB_ARCH:-}" == "riscv32" ]]; then
+    # RISC-V with -pie or other arches: full strip (-s).
+    if [[ "${PPAP_BB_ARCH:-}" == "riscv32" && -z "${PPAP_PIE_FLAG:-}" ]]; then
         $PPAP_STRIP --strip-debug -o "$BB_OUT/$name" busybox
     else
         $PPAP_STRIP -s -o "$BB_OUT/$name" busybox
