@@ -189,16 +189,24 @@ for variant in "${VARIANTS[@]}"; do
     done < "$CONFIGS_DIR/$fragment"
 
     # Inject cross-compiler prefix and CFLAGS into .config
-    sed -i 's|^CONFIG_CROSS_COMPILER_PREFIX=.*|CONFIG_CROSS_COMPILER_PREFIX="'"$PPAP_CROSS_PREFIX"'"|' .config
-    sed -i 's|^CONFIG_SYSROOT=.*|CONFIG_SYSROOT=""|' .config
-    sed -i 's|^CONFIG_EXTRA_CFLAGS=.*|CONFIG_EXTRA_CFLAGS="'"$PPAP_APP_CFLAGS -specs=$PPAP_SPECS_FILE -T $PPAP_BUSYBOX_LD"'"|' .config
-    # RISC-V: use --emit-relocs (bare-metal, no PIE) or -pie (Linux TC)
-    # to provide relocations for the kernel's ELF loader.
-    EXTRA_LD="-L${PPAP_MUSL_SYSROOT}/lib"
-    if [[ "${PPAP_BB_ARCH:-}" == "riscv32" && -z "${PPAP_PIE_FLAG:-}" ]]; then
-        EXTRA_LD="$EXTRA_LD -Wl,--emit-relocs"
+    if [[ "${PPAP_RISCV_EPIC:-}" == "ON" ]]; then
+        # ePIC clang: no CROSS_COMPILE, use --target= in CFLAGS directly.
+        # -std=gnu11 for C23 compat (GCC 15 default is gnu23).
+        sed -i 's|^CONFIG_CROSS_COMPILER_PREFIX=.*|CONFIG_CROSS_COMPILER_PREFIX=""|' .config
+        sed -i "s|^CONFIG_EXTRA_CFLAGS=.*|CONFIG_EXTRA_CFLAGS=\"$PPAP_APP_CFLAGS -std=gnu11 -ffunction-sections -fdata-sections\"|" .config
+        EXTRA_LD="-fuse-ld=$PPAP_LLD -nostdlib -pie -Wl,--strip-debug -Wl,--gc-sections"
+        EXTRA_LD="$EXTRA_LD -Wl,--allow-multiple-definition"
+        EXTRA_LD="$EXTRA_LD $PPAP_MUSL_SYSROOT/lib/crt1.o $PPAP_MUSL_SYSROOT/lib/crti.o"
+        EXTRA_LD="$EXTRA_LD -L$PPAP_MUSL_SYSROOT/lib -lc -L$PPAP_GCC_LIBDIR -lgcc"
+        EXTRA_LD="$EXTRA_LD $PPAP_MUSL_SYSROOT/lib/crtn.o"
+        sed -i "s|^CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS=\"$EXTRA_LD\"|" .config
+    else
+        sed -i 's|^CONFIG_CROSS_COMPILER_PREFIX=.*|CONFIG_CROSS_COMPILER_PREFIX="'"$PPAP_CROSS_PREFIX"'"|' .config
+        sed -i 's|^CONFIG_EXTRA_CFLAGS=.*|CONFIG_EXTRA_CFLAGS="'"$PPAP_APP_CFLAGS -specs=$PPAP_SPECS_FILE -T $PPAP_BUSYBOX_LD"'"|' .config
+        EXTRA_LD="-L${PPAP_MUSL_SYSROOT}/lib"
+        sed -i "s|^CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS=\"$EXTRA_LD\"|" .config
     fi
-    sed -i 's|^CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS="'"$EXTRA_LD"'"|' .config
+    sed -i 's|^CONFIG_SYSROOT=.*|CONFIG_SYSROOT=""|' .config
     sed -i 's|^CONFIG_EXTRA_LDLIBS=.*|CONFIG_EXTRA_LDLIBS=""|' .config
 
     # Resolve dependencies (yes feeds empty responses; ignore SIGPIPE from pipe)
@@ -209,19 +217,21 @@ for variant in "${VARIANTS[@]}"; do
 
     # Build
     echo "busybox [$name]: compiling (musl, $PPAP_ARCH_LABEL)..."
-    make ARCH="$PPAP_BB_ARCH" \
-        CROSS_COMPILE="$PPAP_CROSS_PREFIX" \
-        SKIP_STRIP=y \
-        -j"$(nproc)" 2>&1
-
-    # Strip debug info and copy to output.
-    # RISC-V with --emit-relocs: keep relocation sections (strip only debug).
-    # RISC-V with -pie or other arches: full strip (-s).
-    if [[ "${PPAP_BB_ARCH:-}" == "riscv32" && -z "${PPAP_PIE_FLAG:-}" ]]; then
-        $PPAP_STRIP --strip-debug -o "$BB_OUT/$name" busybox
+    if [[ "${PPAP_RISCV_EPIC:-}" == "ON" ]]; then
+        make ARCH="$PPAP_BB_ARCH" \
+            CC="$PPAP_CC" \
+            HOSTCC=gcc \
+            SKIP_STRIP=y \
+            -j"$(nproc)" 2>&1
     else
-        $PPAP_STRIP -s -o "$BB_OUT/$name" busybox
+        make ARCH="$PPAP_BB_ARCH" \
+            CROSS_COMPILE="$PPAP_CROSS_PREFIX" \
+            SKIP_STRIP=y \
+            -j"$(nproc)" 2>&1
     fi
+
+    # Strip and copy to output.
+    $PPAP_STRIP -s -o "$BB_OUT/$name" busybox
     echo "busybox [$name]: installed to $BB_OUT/$name"
 done
 

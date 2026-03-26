@@ -151,69 +151,41 @@ if(PPAP_ARCH STREQUAL "m68k")
         OUTPUT_VARIABLE PPAP_LIBGCC OUTPUT_STRIP_TRAILING_WHITESPACE)
     get_filename_component(PPAP_GCC_LIBDIR ${PPAP_LIBGCC} DIRECTORY)
 elseif(PPAP_ARCH STREQUAL "riscv")
-    # Prefer the Linux toolchain (built from source with --with-abi=ilp32)
-    # for -pie support (proper GOT-based PIC + soft-float PIC libgcc).
-    # Fall back to bare-metal toolchain if Linux toolchain is not built yet.
-    if(DEFINED ENV{PPAP_RISCV_LINUX_TOOLCHAIN})
-        set(PPAP_RISCV_LINUX_TC $ENV{PPAP_RISCV_LINUX_TOOLCHAIN})
-    else()
-        set(PPAP_RISCV_LINUX_TC ${PPAP_ROOT}/tools/riscv-linux-toolchain)
-    endif()
+    # RISC-V user-space: ePIC clang (GP-relative data, XIP-capable).
+    # Kernel uses bare-metal GCC (Pico SDK); libgcc comes from there.
     if(DEFINED ENV{PICO_TOOLCHAIN_PATH})
         set(PPAP_RISCV_ELF_TC $ENV{PICO_TOOLCHAIN_PATH})
     else()
         set(PPAP_RISCV_ELF_TC ${PPAP_ROOT}/tools/riscv-toolchain)
     endif()
-    # Check if the Linux toolchain's libgcc is usable (soft-float + PIC).
-    # Prebuilt riscv-collab packages default to rv32gc (double-float),
-    # which can't link with our ilp32 musl.  When hard-float is detected,
-    # fall back to bare-metal for everything.
-    set(_use_linux_tc OFF)
-    if(EXISTS ${PPAP_RISCV_LINUX_TC}/bin/riscv32-unknown-linux-gnu-gcc)
-        execute_process(
-            COMMAND ${PPAP_RISCV_LINUX_TC}/bin/riscv32-unknown-linux-gnu-gcc
-                    -march=rv32imac_zicsr -mabi=ilp32 -print-libgcc-file-name
-            OUTPUT_VARIABLE _linux_libgcc OUTPUT_STRIP_TRAILING_WHITESPACE)
-        # Check float ABI via readelf (need bare-metal readelf since
-        # the archive may not exist on the host)
-        set(_readelf "readelf")
-        if(EXISTS ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-readelf)
-            set(_readelf ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-readelf)
-        endif()
-        execute_process(COMMAND ${_readelf} -h ${_linux_libgcc}
-            OUTPUT_VARIABLE _libgcc_hdr ERROR_QUIET)
-        if(NOT _libgcc_hdr MATCHES "double-float")
-            set(_use_linux_tc ON)
-        else()
-            message(STATUS
-                "RISC-V: Linux libgcc is hard-float — "
-                "falling back to bare-metal toolchain")
-        endif()
-    endif()
-    if(_use_linux_tc)
-        set(PPAP_RISCV_TC      ${PPAP_RISCV_LINUX_TC})
-        set(PPAP_CC            ${PPAP_RISCV_TC}/bin/riscv32-unknown-linux-gnu-gcc)
-        set(PPAP_CROSS_PREFIX  ${PPAP_RISCV_TC}/bin/riscv32-unknown-linux-gnu-)
-        set(PPAP_STRIP         ${PPAP_RISCV_TC}/bin/riscv32-unknown-linux-gnu-strip)
-        set(PPAP_OBJCOPY       ${PPAP_RISCV_TC}/bin/riscv32-unknown-linux-gnu-objcopy)
-        set(PPAP_SIZE_CMD      ${PPAP_RISCV_TC}/bin/riscv32-unknown-linux-gnu-size)
-        set(PPAP_MUSL_TARGET   riscv32-unknown-linux-gnu)
-        set(PPAP_RISCV_PIE     ON)
-        message(STATUS "RISC-V: using Linux toolchain (PIE enabled)")
+    # Find ePIC clang (PPAP_EPIC_CLANG env var or /opt/ppap/llvm-epic)
+    if(DEFINED ENV{PPAP_EPIC_CLANG})
+        get_filename_component(_epic_bin_dir $ENV{PPAP_EPIC_CLANG} DIRECTORY)
+    elseif(EXISTS /opt/ppap/llvm-epic/bin/clang)
+        set(_epic_bin_dir /opt/ppap/llvm-epic/bin)
     else()
-        set(PPAP_RISCV_TC      ${PPAP_RISCV_ELF_TC})
-        set(PPAP_CC            ${PPAP_RISCV_TC}/bin/riscv32-unknown-elf-gcc)
-        set(PPAP_CROSS_PREFIX  ${PPAP_RISCV_TC}/bin/riscv32-unknown-elf-)
-        set(PPAP_STRIP         ${PPAP_RISCV_TC}/bin/riscv32-unknown-elf-strip)
-        set(PPAP_OBJCOPY       ${PPAP_RISCV_TC}/bin/riscv32-unknown-elf-objcopy)
-        set(PPAP_SIZE_CMD      ${PPAP_RISCV_TC}/bin/riscv32-unknown-elf-size)
-        set(PPAP_MUSL_TARGET   riscv32-unknown-elf)
-        set(PPAP_RISCV_PIE     OFF)
-        message(STATUS "RISC-V: using bare-metal toolchain (no PIE, SRAM text+data)")
+        # Fallback: try PATH
+        find_program(_epic_clang clang)
+        if(_epic_clang)
+            get_filename_component(_epic_bin_dir ${_epic_clang} DIRECTORY)
+        else()
+            message(FATAL_ERROR "ePIC clang not found — set PPAP_EPIC_CLANG")
+        endif()
     endif()
+    set(PPAP_CC            ${_epic_bin_dir}/clang)
+    set(PPAP_LLD           ${_epic_bin_dir}/ld.lld)
+    set(PPAP_CROSS_PREFIX  ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-)
+    set(PPAP_STRIP         ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-strip)
+    set(PPAP_OBJCOPY       ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-objcopy)
+    set(PPAP_SIZE_CMD      ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-size)
+    set(PPAP_MUSL_TARGET   riscv32)
+    set(PPAP_RISCV_PIE     ON)
+    set(PPAP_RISCV_EPIC    ON)
+    message(STATUS "RISC-V: using ePIC clang (${_epic_bin_dir}/clang)")
+
     set(PPAP_ARCH_DIR      ${PPAP_ROOT}/src/user/arch/riscv)
-    set(PPAP_TARGET_FLAGS  -march=rv32imac_zicsr -mabi=ilp32)
-    set(PPAP_PIC_FLAGS     -fPIC -mcmodel=medany)
+    set(PPAP_TARGET_FLAGS  --target=riscv32 -march=rv32imac -mabi=ilp32)
+    set(PPAP_PIC_FLAGS     -fepic)
     set(PPAP_USER_LD       ${PPAP_ARCH_DIR}/user.ld)
     set(PPAP_BUSYBOX_LD    ${PPAP_ROOT}/third_party/patches/musl/libc_riscv.ld)
     set(PPAP_MUSL_SYSROOT  ${PPAP_SHARED_BUILD}/musl-sysroot)
@@ -221,9 +193,12 @@ elseif(PPAP_ARCH STREQUAL "riscv")
     set(PPAP_BB_ARCH       riscv32)
     set(PPAP_ARCH_LABEL    "rv32imac (Hazard3)")
 
-    execute_process(COMMAND ${PPAP_CC} -print-file-name=include
+    # libgcc from bare-metal GCC (soft-float math routines)
+    execute_process(COMMAND ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-gcc
+                            -print-file-name=include
         OUTPUT_VARIABLE PPAP_GCC_INCLUDE OUTPUT_STRIP_TRAILING_WHITESPACE)
-    execute_process(COMMAND ${PPAP_CC} ${PPAP_TARGET_FLAGS}
+    execute_process(COMMAND ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-gcc
+                            -march=rv32imac_zicsr -mabi=ilp32
                             -print-libgcc-file-name
         OUTPUT_VARIABLE PPAP_LIBGCC OUTPUT_STRIP_TRAILING_WHITESPACE)
     get_filename_component(PPAP_GCC_LIBDIR ${PPAP_LIBGCC} DIRECTORY)
@@ -275,20 +250,15 @@ set(PPAP_USER_ASFLAGS ${PPAP_TARGET_FLAGS})
 
 set(PPAP_USER_LDFLAGS
     -nostdlib -T ${PPAP_USER_LD} -Wl,--gc-sections -Wl,--build-id=none
-    $<$<STREQUAL:${PPAP_ARCH},riscv>:-Wl$<COMMA>--no-relax>)
+    $<$<STREQUAL:${PPAP_ARCH},riscv>:-Wl$<COMMA>--no-relax>
+    $<$<BOOL:${PPAP_RISCV_EPIC}>:-fuse-ld=${PPAP_LLD}>)
 
 # --- String versions for shell config ---
 string(JOIN " " PPAP_TARGET_FLAGS_STR ${PPAP_TARGET_FLAGS})
 string(JOIN " " PPAP_PIC_FLAGS_STR    ${PPAP_PIC_FLAGS})
 set(PPAP_MUSL_CFLAGS_STR
     "${PPAP_TARGET_FLAGS_STR} -Os -g ${PPAP_PIC_FLAGS_STR} -ffunction-sections -fdata-sections")
-# RISC-V: -pie only when Linux toolchain is available (soft-float PIC libgcc).
-# Bare-metal linker doesn't support -pie; uses --emit-relocs instead.
-if(PPAP_ARCH STREQUAL "riscv" AND NOT PPAP_RISCV_PIE)
-    set(_PIE_FLAG "")
-else()
-    set(_PIE_FLAG "-pie")
-endif()
+set(_PIE_FLAG "-pie")
 set(PPAP_APP_CFLAGS_STR
     "${PPAP_TARGET_FLAGS_STR} -Os -nostdinc -isystem ${PPAP_MUSL_SYSROOT}/include -isystem ${PPAP_GCC_INCLUDE} ${PPAP_PIC_FLAGS_STR} -ffunction-sections -fdata-sections ${_PIE_FLAG}")
 
@@ -333,6 +303,8 @@ PPAP_BUSYBOX_LD=\"${PPAP_BUSYBOX_LD}\"
 PPAP_BB_ARCH=\"${PPAP_BB_ARCH}\"
 PPAP_ARCH_LABEL=\"${PPAP_ARCH_LABEL}\"
 PPAP_PIE_FLAG=\"${_PIE_FLAG}\"
+PPAP_LLD=\"${PPAP_LLD}\"
+PPAP_RISCV_EPIC=\"${PPAP_RISCV_EPIC}\"
 ")
 
 # =============================================================================
@@ -425,23 +397,31 @@ function(ppap_musl_test_program name source)
         COMMENT "Compiling ${name}.o (musl, ${PPAP_ARCH})"
     )
 
-    # Link with musl's crt + libc via specs file
-    set(_musl_ldflags
-        -specs=${PPAP_SPECS_FILE}
-        -T ${PPAP_BUSYBOX_LD}
-        -Wl,--gc-sections -Wl,--build-id=none
-        $<$<STREQUAL:${PPAP_ARCH},riscv>:-Wl$<COMMA>--no-relax>)
-    if(_PIE_FLAG)
-        list(APPEND _musl_ldflags ${_PIE_FLAG})
-    endif()
-    if(PPAP_ARCH STREQUAL "riscv" AND NOT PPAP_RISCV_PIE)
-        list(APPEND _musl_ldflags -Wl,--emit-relocs)
+    # Link with musl's crt + libc
+    if(PPAP_RISCV_EPIC)
+        # ePIC clang + lld: explicit CRT and library paths (no specs file)
+        set(_musl_ldflags
+            -fuse-ld=${PPAP_LLD} -nostdlib -pie
+            -Wl,--gc-sections -Wl,--build-id=none -Wl,--strip-debug
+            -Wl,--allow-multiple-definition
+            ${PPAP_MUSL_SYSROOT}/lib/crt1.o ${PPAP_MUSL_SYSROOT}/lib/crti.o
+            -L${PPAP_MUSL_SYSROOT}/lib -lc -L${PPAP_GCC_LIBDIR} -lgcc
+            ${PPAP_MUSL_SYSROOT}/lib/crtn.o)
+    else()
+        set(_musl_ldflags
+            -specs=${PPAP_SPECS_FILE}
+            -T ${PPAP_BUSYBOX_LD}
+            -Wl,--gc-sections -Wl,--build-id=none
+            $<$<STREQUAL:${PPAP_ARCH},riscv>:-Wl$<COMMA>--no-relax>)
+        if(_PIE_FLAG)
+            list(APPEND _musl_ldflags ${_PIE_FLAG})
+        endif()
     endif()
     add_custom_command(
         OUTPUT ${_elf}
         COMMAND ${PPAP_CC} ${PPAP_TARGET_FLAGS} ${_musl_ldflags}
                 -o ${_elf} ${_obj}
-        DEPENDS ${_obj} ${PPAP_SPECS_FILE} ${PPAP_BUSYBOX_LD} ${PPAP_MUSL_LIBC}
+        DEPENDS ${_obj} ${PPAP_MUSL_LIBC}
         COMMENT "Linking ${name}.elf (musl, ${PPAP_ARCH})"
     )
 endfunction()

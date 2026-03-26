@@ -63,7 +63,7 @@ RUN git clone --depth 1 -b ot-llvm-16-hardening \
       -DLLVM_TARGETS_TO_BUILD="RISCV" \
       -DCMAKE_INSTALL_PREFIX=/opt/ppap/llvm-epic \
       -DLLVM_ENABLE_ASSERTIONS=ON && \
-    ninja -C /tmp/build-llvm-epic install-clang install-lld && \
+    ninja -C /tmp/build-llvm-epic install-clang install-clang-resource-headers install-lld && \
     rm -rf /tmp/llvm-epic /tmp/build-llvm-epic
 
 ENV PATH="/opt/ppap/llvm-epic/bin:${PATH}"

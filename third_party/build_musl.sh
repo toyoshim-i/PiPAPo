@@ -138,14 +138,22 @@ done
 echo "musl [$PPAP_ARCH]: configuring for $PPAP_ARCH_LABEL..."
 mkdir -p "$PPAP_MUSL_SYSROOT"
 
+# ePIC clang: use --target= (no CROSS_COMPILE), bare-metal ar/ranlib.
+MUSL_CONFIGURE_EXTRA=()
+if [[ "${PPAP_RISCV_EPIC:-}" == "ON" ]]; then
+    MUSL_CONFIGURE_EXTRA=(AR="${PPAP_CROSS_PREFIX}ar" RANLIB="${PPAP_CROSS_PREFIX}ranlib")
+else
+    MUSL_CONFIGURE_EXTRA=(CROSS_COMPILE="$PPAP_CROSS_PREFIX")
+fi
+
 ./configure \
     --target="$PPAP_MUSL_TARGET" \
     --prefix="$PPAP_MUSL_SYSROOT" \
     --disable-shared \
     --enable-static \
-    CROSS_COMPILE="$PPAP_CROSS_PREFIX" \
     CC="$PPAP_CC" \
-    CFLAGS="$PPAP_MUSL_CFLAGS"
+    CFLAGS="$PPAP_MUSL_CFLAGS" \
+    "${MUSL_CONFIGURE_EXTRA[@]}"
 
 # --- Build ---
 echo "musl [$PPAP_ARCH]: building libc.a..."
