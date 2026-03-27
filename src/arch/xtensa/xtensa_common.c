@@ -307,21 +307,13 @@ void __wrap___assert_func(const char *file, int line, const char *func,
 
 void xtensa_trap_init(void)
 {
-    extern xt_exc_handler _xt_exception_table[];
     xtensa_install_exception_handlers();
-    klogf("XT-TRAP: ill=%x table[0]=%x\n",
-          (uint32_t)(uintptr_t)xtensa_ill_handler,
-          (uint32_t)(uintptr_t)_xt_exception_table[0]);
-
     xtensa_trap_ready = 1;
 }
 
 void xtensa_trap_reassert(void)
 {
-    extern xt_exc_handler _xt_exception_table[];
     xtensa_install_exception_handlers();
-    klogf("XT-TRAP: reassert table[0]=%x\n",
-          (uint32_t)(uintptr_t)_xt_exception_table[0]);
 }
 
 /* ── Initial stack frame for new processes ──────────────────────────────── */
