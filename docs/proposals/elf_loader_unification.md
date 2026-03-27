@@ -15,7 +15,7 @@ relocation callbacks.
 | R-2 | **Done** | Copy helpers use word-at-a-time unconditionally (safe on all arches, required for Xtensa IRAM) |
 | R-3 | **Done** | Literal segment classification unified — two-pass scan for all arches, `literal_seg` is NULL on non-Xtensa |
 | R-4 | **Done** | Dead Xtensa XIP helpers removed (~290 lines); XIP staging moved behind allocator |
-| R-5 | **Blocked** | RISC-V XIP causes test_exec failure — `load_base = data_base - data_va` doesn't produce correct gp with XIP text; needs crt0/linker investigation |
+| R-5 | **Done** | RISC-V uses ELF_TEXT_XIP from romfs; fixed brk=0 for XIP text with no data segment; gp concern moot (all current binaries are ET_EXEC, not ePIC ET_DYN) |
 | R-6 | **Done** | `mem_region_alloc_ram_text` tries PSRAM (ext_text arena) first, falls back to IRAM; free path auto-detects which arena |
 | R-7 | **Done** | RISC-V user stack tracking uses runtime check; m68k struct field guards are irreducible |
 

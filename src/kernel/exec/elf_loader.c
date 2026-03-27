@@ -41,9 +41,8 @@ typedef enum {
  * Xtensa always copies (IRAM/PSRAM is not byte-addressable from flash).
  * Other arches XIP when the source supports it (e.g. romfs). */
 static elf_text_mode_t elf_text_mode(int source_is_xip_capable) {
-#if defined(__xtensa__) || defined(__riscv)
-  /* Xtensa: IRAM/PSRAM requires copy (not flash-XIP capable).
-   * RISC-V: forced SRAM until XIP gp setup is validated (R-5). */
+#if defined(__xtensa__)
+  /* Xtensa: IRAM/PSRAM requires copy (not flash-XIP capable). */
   (void)source_is_xip_capable;
   return ELF_TEXT_SRAM;
 #else
@@ -562,11 +561,17 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
     data_end = (data_end + 15u) & ~15u;
     p->brk_base = data_end;
     p->brk_current = data_end;
-  } else {
+  } else if (text_mode == ELF_TEXT_SRAM) {
+    /* Text in SRAM — brk grows after the text allocation */
     uint32_t text_end = text_base + text_end_va;
     text_end = (text_end + 15u) & ~15u;
     p->brk_base = text_end;
     p->brk_current = text_end;
+  } else {
+    /* XIP text, no data — no writable region for heap.
+     * brk stays 0; sys_brk will allocate fresh pages on demand. */
+    p->brk_base = 0;
+    p->brk_current = 0;
   }
 
   /* Effective load base for gp computation (ePIC RISC-V).
