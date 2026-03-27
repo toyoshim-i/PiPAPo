@@ -1234,6 +1234,10 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     str_addrs[i] = sp;
   }
 
+  /* Align sp after string copies: 4-byte for m68k, 8-byte for ARM/RISC-V.
+   * The extra pad on non-m68k ensures sp stays 8-byte aligned after
+   * pushing the fixed-size frame below (argc + argv[] + terminators +
+   * auxv = argc+7 words; pad an extra word if the count is odd). */
   if (cpu_ops->arch_id == CPU_ARCH_M68K) {
     sp &= ~3u;
   } else {
@@ -1241,24 +1245,35 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     if ((argc + 7) & 1) sp -= 4;
   }
 
+  /* Build initial stack frame (grows downward).  Layout matches what
+   * crt0 / _start expects on entry:
+   *
+   *   sp → argc
+   *         argv[0]  argv[1]  ...  argv[argc-1]
+   *         0        (argv terminator / NULL)
+   *         0        (envp terminator / NULL)
+   *         AT_PAGESZ  PAGE_SIZE   (ELF auxiliary vector)
+   *         AT_NULL    0           (aux terminator)
+   *
+   * Pushed in reverse order since the stack grows down. */
   sp -= 4;
-  *(uint32_t *)(uintptr_t)sp = 0;
+  *(uint32_t *)(uintptr_t)sp = 0;         /* AT_NULL value */
   sp -= 4;
-  *(uint32_t *)(uintptr_t)sp = 0;
+  *(uint32_t *)(uintptr_t)sp = 0;         /* AT_NULL tag */
   sp -= 4;
-  *(uint32_t *)(uintptr_t)sp = PAGE_SIZE;
+  *(uint32_t *)(uintptr_t)sp = PAGE_SIZE; /* AT_PAGESZ value */
   sp -= 4;
-  *(uint32_t *)(uintptr_t)sp = 6;
+  *(uint32_t *)(uintptr_t)sp = 6;         /* AT_PAGESZ tag */
   sp -= 4;
-  *(uint32_t *)(uintptr_t)sp = 0;
+  *(uint32_t *)(uintptr_t)sp = 0;         /* envp terminator */
   sp -= 4;
-  *(uint32_t *)(uintptr_t)sp = 0;
+  *(uint32_t *)(uintptr_t)sp = 0;         /* argv terminator */
   for (int i = argc - 1; i >= 0; i--) {
     sp -= 4;
-    *(uint32_t *)(uintptr_t)sp = str_addrs[i];
+    *(uint32_t *)(uintptr_t)sp = str_addrs[i];  /* argv[i] */
   }
   sp -= 4;
-  *(uint32_t *)(uintptr_t)sp = (uint32_t)argc;
+  *(uint32_t *)(uintptr_t)sp = (uint32_t)argc;  /* argc */
   argv_sp = sp;
 
   if (cpu_ops->arch_id == CPU_ARCH_M68K) {
