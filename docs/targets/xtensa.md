@@ -806,8 +806,12 @@ Specifically:
   hardware variant has no external RAM (`esp_psram_get_size() == 0`)
 - `CONFIG_SPIRAM_XIP_FROM_PSRAM` is intentionally **not** enabled:
   XIP mode requires PSRAM to be present and causes a hard boot abort
-  when detection fails; staged execution uses byte-accessible PSRAM
-  arenas instead, which degrade gracefully to IRAM-only fallback
+  when detection fails; more importantly, PPAP's staged execution model
+  does **not** use the ESP32-S3 hardware XIP instruction window — user
+  text is copied into `ext_text_arena` (allocated with
+  `MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT`) and executed via the data
+  cache path, which requires only byte-accessible PSRAM, not
+  instruction-mapped PSRAM
 - non-XIP binaries automatically fall back to IRAM execution; the
   fallback is now guarded by the entry-bounds check added in XT-2.6
 - larger user text / rodata from XIP-capable binaries runs from the
