@@ -14,107 +14,6 @@
 #include "kernel/mm/page.h"
 #include "kernel/proc/proc.h"
 
-#if !defined(__riscv) && !defined(__xtensa__)
-static int apply_relocations(const elf32_ehdr_t *ehdr,
-                              const uint8_t *file_base, uint32_t file_size,
-                              const elf32_phdr_t *text_seg,
-                              const elf32_phdr_t *data_seg, uint8_t *sram_page,
-                              uint32_t text_base, uint32_t got_sram_addr,
-                              const elf_got_info_t *got_info,
-                              const cpu_ops_t *cpu_ops, void *cpu_state) {
-  elf_rel_info_t rel_info;
-  if (elf_find_rel(ehdr, file_base, &rel_info, file_size) != 0) return 0;
-
-  const uint8_t *rel_base = file_base + rel_info.offset;
-  uint32_t entry_size =
-      rel_info.has_addend ? sizeof(elf32_rela_t) : sizeof(elf32_rel_t);
-  uint32_t n_rel = rel_info.size / entry_size;
-
-  elf_dynsym_info_t dynsym_info = {0, 0};
-  const elf32_sym_t *dynsym = NULL;
-  if (elf_find_dynsym(ehdr, file_base, &dynsym_info, file_size) == 0)
-    dynsym = (const elf32_sym_t *)(file_base + dynsym_info.offset);
-
-  for (uint32_t i = 0; i < n_rel; i++) {
-    uint32_t r_offset, r_info;
-    int32_t r_addend = 0;
-
-    if (rel_info.has_addend) {
-      const elf32_rela_t *rela =
-          (const elf32_rela_t *)(rel_base + i * entry_size);
-      r_offset = rela->r_offset;
-      r_info = rela->r_info;
-      r_addend = rela->r_addend;
-    } else {
-      const elf32_rel_t *rel = (const elf32_rel_t *)(rel_base + i * entry_size);
-      r_offset = rel->r_offset;
-      r_info = rel->r_info;
-    }
-
-    uint32_t rtype = ELF32_R_TYPE(r_info);
-
-    if ((cpu_ops->arch_id == CPU_ARCH_M68K && rtype == R_68K_JMP_SLOT) ||
-        (cpu_ops->arch_id == CPU_ARCH_ARM && rtype == R_ARM_JMP_SLOT)) {
-      if (!dynsym) continue;
-      uint32_t sym_idx = ELF32_R_SYM(r_info);
-      if (sym_idx >= dynsym_info.count) continue;
-      uint32_t off = r_offset;
-      if (off < data_seg->p_vaddr ||
-          off >= data_seg->p_vaddr + data_seg->p_memsz)
-        continue;
-      uint32_t off_in_sram = off - data_seg->p_vaddr;
-      uint32_t word_addr = (uint32_t)(uintptr_t)sram_page + off_in_sram;
-
-      uint32_t sym_val = dynsym[sym_idx].st_value + (uint32_t)r_addend;
-      if (sym_val < data_seg->p_vaddr) {
-        cpu_ops->write32(cpu_state, word_addr, sym_val + text_base);
-      } else {
-        cpu_ops->write32(
-            cpu_state, word_addr,
-            sym_val - data_seg->p_vaddr + (uint32_t)(uintptr_t)sram_page);
-      }
-      continue;
-    }
-
-    if ((cpu_ops->arch_id == CPU_ARCH_M68K && rtype != R_68K_RELATIVE &&
-         rtype != R_68K_JMP_SLOT) ||
-        (cpu_ops->arch_id == CPU_ARCH_ARM && rtype != R_ARM_RELATIVE &&
-         rtype != R_ARM_JMP_SLOT) ||
-        (cpu_ops->arch_id == CPU_ARCH_ARMV6 && rtype != R_ARM_RELATIVE &&
-         rtype != R_ARM_JMP_SLOT) ||
-        (cpu_ops->arch_id == CPU_ARCH_XTENSA && rtype != R_XTENSA_RELATIVE) ||
-        (cpu_ops->arch_id == CPU_ARCH_RISCV && rtype != R_RISCV_RELATIVE)) {
-      klogf("ELF: unhandled reloc type %u at offset %x\n", rtype, r_offset);
-      return -1;
-    }
-
-    uint32_t off = r_offset;
-
-    if (off < data_seg->p_vaddr || off >= data_seg->p_vaddr + data_seg->p_memsz)
-      continue;
-    if (got_sram_addr != 0 && got_info && off >= got_info->addr &&
-        off < got_info->addr + got_info->size)
-      continue;
-
-    uint32_t off_in_sram = off - data_seg->p_vaddr;
-    uint32_t word_addr = (uint32_t)(uintptr_t)sram_page + off_in_sram;
-
-    uint32_t word_val = cpu_ops->read32(cpu_state, word_addr);
-    uint32_t val = rel_info.has_addend ? (uint32_t)r_addend : word_val;
-
-    if (val == 0) continue;
-
-    if (val < data_seg->p_vaddr) {
-      cpu_ops->write32(cpu_state, word_addr, val + text_base);
-    } else {
-      cpu_ops->write32(
-          cpu_state, word_addr,
-          val - data_seg->p_vaddr + (uint32_t)(uintptr_t)sram_page);
-    }
-  }
-  return 0;
-}
-#endif /* !__riscv && !__xtensa__ */
 
 static int elf_detect(const uint8_t *file_buf, uint32_t file_size,
                       const char *path) {
@@ -417,7 +316,6 @@ static xtensa_xip_state_t xtensa_elf_xip_state(const elf32_ehdr_t *ehdr,
 }
 #endif
 
-
 #define MAX_LOAD_SEGS 4
 
 typedef struct {
@@ -445,6 +343,264 @@ static elf_text_mode_t elf_text_mode(int source_is_xip_capable) {
   return source_is_xip_capable ? ELF_TEXT_XIP : ELF_TEXT_SRAM;
 #endif
 }
+
+/* --- Relocation context and per-arch callbacks --- */
+
+typedef struct {
+  const elf32_ehdr_t *ehdr;
+  const uint8_t *file_buf;
+  uint32_t file_size;
+  uint32_t text_base;
+  uint8_t *data_base;
+  uint32_t text_end_va;
+  uint32_t data_va;
+  uint32_t data_memsz;
+  const elf32_phdr_t *text_seg;
+  const elf32_phdr_t *data_seg;
+  const cpu_ops_t *cpu_ops;
+  void *cpu_state;
+} elf_reloc_ctx_t;
+
+static inline uint32_t elf_split_addr(uint32_t link_addr, uint32_t text_base,
+                                      uint32_t data_base, uint32_t data_va) {
+  if (link_addr < data_va)
+    return link_addr + text_base;
+  return data_base + (link_addr - data_va);
+}
+
+static __attribute__((unused))
+void elf_reloc_got_split(const elf_reloc_ctx_t *ctx) {
+  const elf32_ehdr_t *ehdr = ctx->ehdr;
+  uint32_t dram_base = ctx->data_base ? (uint32_t)(uintptr_t)ctx->data_base : 0;
+  uint32_t image_end = ctx->data_va + ctx->data_memsz;
+  if (!ctx->data_base || !ehdr->e_shoff || !ehdr->e_shnum ||
+      ehdr->e_shentsize < 40)
+    return;
+  for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
+    const uint8_t *sh =
+        ctx->file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
+    uint32_t sh_type    = *(const uint32_t *)(sh + 4);
+    uint32_t sh_flags   = *(const uint32_t *)(sh + 8);
+    uint32_t sh_addr    = *(const uint32_t *)(sh + 12);
+    uint32_t sh_size    = *(const uint32_t *)(sh + 20);
+    uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
+    if (sh_type != 1 /* SHT_PROGBITS */) continue;
+    if (!(sh_flags & 3 /* SHF_WRITE|SHF_ALLOC */)) continue;
+    if (sh_entsize != 4) continue;
+    if (sh_addr >= ctx->data_va && sh_size > 0) {
+      uint32_t n_got = sh_size / 4;
+      uint32_t *got =
+          (uint32_t *)(ctx->data_base + (sh_addr - ctx->data_va));
+      for (uint32_t gi = 0; gi < n_got; gi++) {
+        uint32_t val = got[gi];
+        if (val == 0 || val == 0xFFFFFFFFu) continue;
+        if (val < image_end)
+          got[gi] = elf_split_addr(val, ctx->text_base, dram_base,
+                                   ctx->data_va);
+      }
+    }
+  }
+}
+
+#if defined(__xtensa__)
+static int elf_reloc_arch(const elf_reloc_ctx_t *ctx, elf_load_result_t *out) {
+  const elf32_ehdr_t *ehdr = ctx->ehdr;
+  uint32_t dram_base = ctx->data_base ? (uint32_t)(uintptr_t)ctx->data_base : 0;
+  (void)out;
+  if (ehdr->e_shoff && ehdr->e_shnum && ehdr->e_shentsize >= 40) {
+    for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
+      const uint8_t *sh =
+          ctx->file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
+      uint32_t sh_type = *(const uint32_t *)(sh + 4);
+      if (sh_type != 4 /* SHT_RELA */) continue;
+      uint32_t sh_info_idx = *(const uint32_t *)(sh + 28);
+      if (sh_info_idx >= ehdr->e_shnum) continue;
+      const uint8_t *target_sh =
+          ctx->file_buf + ehdr->e_shoff + sh_info_idx * ehdr->e_shentsize;
+      uint32_t target_flags = *(const uint32_t *)(target_sh + 8);
+      if (!(target_flags & 2 /* SHF_ALLOC */)) continue;
+      uint32_t sh_offset  = *(const uint32_t *)(sh + 16);
+      uint32_t sh_size    = *(const uint32_t *)(sh + 20);
+      uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
+      if (sh_entsize < 12) continue;
+      uint32_t n_entries = sh_size / sh_entsize;
+      for (uint32_t ri = 0; ri < n_entries; ri++) {
+        const uint8_t *rela = ctx->file_buf + sh_offset + ri * sh_entsize;
+        uint32_t r_offset = *(const uint32_t *)(rela + 0);
+        uint32_t r_info   = *(const uint32_t *)(rela + 4);
+        uint8_t  r_type   = (uint8_t)(r_info & 0xFF);
+        if (r_type != 1 && r_type != 6) continue;
+        volatile uint32_t *target;
+        if (r_offset < ctx->text_end_va)
+          target = (volatile uint32_t *)((uintptr_t)ctx->text_base + r_offset);
+        else if (ctx->data_base && r_offset >= ctx->data_va)
+          target = (volatile uint32_t *)(ctx->data_base +
+                                         (r_offset - ctx->data_va));
+        else
+          continue;
+        uint32_t val = *target;
+        *target = elf_split_addr(val, ctx->text_base, dram_base, ctx->data_va);
+      }
+    }
+  }
+  elf_reloc_got_split(ctx);
+  return 0;
+}
+#elif defined(__riscv)
+static int elf_reloc_arch(const elf_reloc_ctx_t *ctx, elf_load_result_t *out) {
+  const elf32_ehdr_t *ehdr = ctx->ehdr;
+  uint32_t dram_base = ctx->data_base ? (uint32_t)(uintptr_t)ctx->data_base : 0;
+  (void)out;
+  if (ehdr->e_shoff && ehdr->e_shnum && ehdr->e_shentsize >= 40) {
+    for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
+      const uint8_t *sh =
+          ctx->file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
+      uint32_t sh_type = *(const uint32_t *)(sh + 4);
+      if (sh_type != 4 /* SHT_RELA */) continue;
+      uint32_t sh_offset = *(const uint32_t *)(sh + 16);
+      uint32_t sh_size   = *(const uint32_t *)(sh + 20);
+      uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
+      if (sh_entsize < 12) continue;
+      uint32_t n_entries = sh_size / sh_entsize;
+      for (uint32_t ri = 0; ri < n_entries; ri++) {
+        const uint8_t *rela = ctx->file_buf + sh_offset + ri * sh_entsize;
+        uint32_t r_offset = *(const uint32_t *)(rela + 0);
+        uint32_t r_info   = *(const uint32_t *)(rela + 4);
+        uint8_t  r_type   = (uint8_t)(r_info & 0xFF);
+        if (r_type == 0 || r_type == 16 || r_type == 17 || r_type == 20 ||
+            r_type == 23 || r_type == 24 || r_type == 25 || r_type == 35 ||
+            r_type == 39 || r_type == 44 || r_type == 45 || r_type == 51 ||
+            (r_type >= 53 && r_type <= 72))
+          continue;
+        if (r_type == 3 /* R_RISCV_RELATIVE */) {
+          int32_t r_addend = *(const int32_t *)(rela + 8);
+          uint32_t *target;
+          if (ctx->data_base && r_offset >= ctx->data_va &&
+              r_offset < ctx->data_va + ctx->data_memsz)
+            target = (uint32_t *)(ctx->data_base + (r_offset - ctx->data_va));
+          else
+            continue;
+          *target = elf_split_addr((uint32_t)r_addend, ctx->text_base,
+                                   dram_base, ctx->data_va);
+          continue;
+        }
+        klogf("ELF: unhandled RISCV reloc type %u at offset %x\n",
+              r_type, r_offset);
+        return -(int)ENOEXEC;
+      }
+    }
+  }
+  elf_reloc_got_split(ctx);
+  return 0;
+}
+#else /* ARM/m68k */
+static int apply_relocations(const elf32_ehdr_t *ehdr,
+                              const uint8_t *file_base, uint32_t file_size,
+                              const elf32_phdr_t *text_seg,
+                              const elf32_phdr_t *data_seg, uint8_t *sram_page,
+                              uint32_t text_base, uint32_t got_sram_addr,
+                              const elf_got_info_t *got_info,
+                              const cpu_ops_t *cpu_ops, void *cpu_state) {
+  elf_rel_info_t rel_info;
+  if (elf_find_rel(ehdr, file_base, &rel_info, file_size) != 0) return 0;
+  const uint8_t *rel_base = file_base + rel_info.offset;
+  uint32_t entry_size =
+      rel_info.has_addend ? sizeof(elf32_rela_t) : sizeof(elf32_rel_t);
+  uint32_t n_rel = rel_info.size / entry_size;
+  elf_dynsym_info_t dynsym_info = {0, 0};
+  const elf32_sym_t *dynsym = NULL;
+  if (elf_find_dynsym(ehdr, file_base, &dynsym_info, file_size) == 0)
+    dynsym = (const elf32_sym_t *)(file_base + dynsym_info.offset);
+  for (uint32_t i = 0; i < n_rel; i++) {
+    uint32_t r_offset, r_info;
+    int32_t r_addend = 0;
+    if (rel_info.has_addend) {
+      const elf32_rela_t *rela =
+          (const elf32_rela_t *)(rel_base + i * entry_size);
+      r_offset = rela->r_offset;
+      r_info = rela->r_info;
+      r_addend = rela->r_addend;
+    } else {
+      const elf32_rel_t *rel = (const elf32_rel_t *)(rel_base + i * entry_size);
+      r_offset = rel->r_offset;
+      r_info = rel->r_info;
+    }
+    uint32_t rtype = ELF32_R_TYPE(r_info);
+    if ((cpu_ops->arch_id == CPU_ARCH_M68K && rtype == R_68K_JMP_SLOT) ||
+        (cpu_ops->arch_id == CPU_ARCH_ARM && rtype == R_ARM_JMP_SLOT)) {
+      if (!dynsym) continue;
+      uint32_t sym_idx = ELF32_R_SYM(r_info);
+      if (sym_idx >= dynsym_info.count) continue;
+      uint32_t off = r_offset;
+      if (off < data_seg->p_vaddr ||
+          off >= data_seg->p_vaddr + data_seg->p_memsz)
+        continue;
+      uint32_t off_in_sram = off - data_seg->p_vaddr;
+      uint32_t word_addr = (uint32_t)(uintptr_t)sram_page + off_in_sram;
+      uint32_t sym_val = dynsym[sym_idx].st_value + (uint32_t)r_addend;
+      if (sym_val < data_seg->p_vaddr)
+        cpu_ops->write32(cpu_state, word_addr, sym_val + text_base);
+      else
+        cpu_ops->write32(cpu_state, word_addr,
+            sym_val - data_seg->p_vaddr + (uint32_t)(uintptr_t)sram_page);
+      continue;
+    }
+    if ((cpu_ops->arch_id == CPU_ARCH_M68K && rtype != R_68K_RELATIVE) ||
+        (cpu_ops->arch_id == CPU_ARCH_ARM && rtype != R_ARM_RELATIVE) ||
+        (cpu_ops->arch_id == CPU_ARCH_ARMV6 && rtype != R_ARM_RELATIVE)) {
+      klogf("ELF: unhandled reloc type %u at offset %x\n", rtype, r_offset);
+      return -1;
+    }
+    uint32_t off = r_offset;
+    if (off < data_seg->p_vaddr || off >= data_seg->p_vaddr + data_seg->p_memsz)
+      continue;
+    if (got_sram_addr != 0 && got_info && off >= got_info->addr &&
+        off < got_info->addr + got_info->size)
+      continue;
+    uint32_t off_in_sram = off - data_seg->p_vaddr;
+    uint32_t word_addr = (uint32_t)(uintptr_t)sram_page + off_in_sram;
+    uint32_t word_val = cpu_ops->read32(cpu_state, word_addr);
+    uint32_t val = rel_info.has_addend ? (uint32_t)r_addend : word_val;
+    if (val == 0) continue;
+    if (val < data_seg->p_vaddr)
+      cpu_ops->write32(cpu_state, word_addr, val + text_base);
+    else
+      cpu_ops->write32(cpu_state, word_addr,
+          val - data_seg->p_vaddr + (uint32_t)(uintptr_t)sram_page);
+  }
+  return 0;
+}
+
+static int elf_reloc_arch(const elf_reloc_ctx_t *ctx, elf_load_result_t *out) {
+  elf_got_info_t got_info = {0, 0, 0};
+  if (ctx->data_base &&
+      elf_find_got(ctx->ehdr, ctx->file_buf, &got_info, ctx->file_size) == 0) {
+    uint32_t got_offset_in_data = got_info.addr - ctx->data_seg->p_vaddr;
+    out->got_sram_addr =
+        (uint32_t)(uintptr_t)ctx->data_base + got_offset_in_data;
+    uint32_t n_entries = got_info.size / 4;
+    for (uint32_t i = 0; i < n_entries; i++) {
+      uint32_t word_addr = out->got_sram_addr + (i * 4);
+      uint32_t val = ctx->cpu_ops->read32(ctx->cpu_state, word_addr);
+      if (val == 0) continue;
+      if (val < ctx->data_seg->p_vaddr)
+        ctx->cpu_ops->write32(ctx->cpu_state, word_addr,
+                              val + ctx->text_base);
+      else
+        ctx->cpu_ops->write32(ctx->cpu_state, word_addr,
+            val - ctx->data_seg->p_vaddr +
+                (uint32_t)(uintptr_t)ctx->data_base);
+    }
+  }
+  if (ctx->data_base &&
+      apply_relocations(ctx->ehdr, ctx->file_buf, ctx->file_size,
+                        ctx->text_seg, ctx->data_seg, ctx->data_base,
+                        ctx->text_base, out->got_sram_addr, &got_info,
+                        ctx->cpu_ops, ctx->cpu_state) < 0)
+    return -(int)ENOEXEC;
+  return 0;
+}
+#endif /* arch relocation callbacks */
 
 /* Copy data to text memory.  Xtensa IRAM requires word-at-a-time writes
  * (byte stores fault); other arches use plain memcpy. */
@@ -663,228 +819,27 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
              data_memsz - data_seg->p_filesz);
   }
 
+
   /* --- 5. Arch-specific relocations --- */
-#if defined(__xtensa__)
   {
-    uint32_t dram_base = data_base ? (uint32_t)(uintptr_t)data_base : 0;
-    uint32_t image_end = data_va + data_memsz;
-
-    if (ehdr->e_shoff && ehdr->e_shnum && ehdr->e_shentsize >= 40) {
-      for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
-        const uint8_t *sh =
-            file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
-        uint32_t sh_type = *(const uint32_t *)(sh + 4);
-        if (sh_type != 4 /* SHT_RELA */) continue;
-
-        uint32_t sh_info_idx = *(const uint32_t *)(sh + 28);
-        if (sh_info_idx >= ehdr->e_shnum) continue;
-        const uint8_t *target_sh =
-            file_buf + ehdr->e_shoff + sh_info_idx * ehdr->e_shentsize;
-        uint32_t target_flags = *(const uint32_t *)(target_sh + 8);
-        if (!(target_flags & 2 /* SHF_ALLOC */)) continue;
-
-        uint32_t sh_offset  = *(const uint32_t *)(sh + 16);
-        uint32_t sh_size    = *(const uint32_t *)(sh + 20);
-        uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
-        if (sh_entsize < 12) continue;
-
-        uint32_t n_entries = sh_size / sh_entsize;
-        for (uint32_t ri = 0; ri < n_entries; ri++) {
-          const uint8_t *rela = file_buf + sh_offset + ri * sh_entsize;
-          uint32_t r_offset = *(const uint32_t *)(rela + 0);
-          uint32_t r_info   = *(const uint32_t *)(rela + 4);
-          uint8_t  r_type   = (uint8_t)(r_info & 0xFF);
-
-          if (r_type != 1 && r_type != 6) continue;
-
-          volatile uint32_t *target;
-          if (r_offset < text_end_va)
-            target = (volatile uint32_t *)((uintptr_t)text_base + r_offset);
-          else if (data_base && r_offset >= data_va)
-            target = (volatile uint32_t *)(data_base + (r_offset - data_va));
-          else
-            continue;
-
-          uint32_t val = *target;
-          if (val < data_va)
-            *target = val + text_base;
-          else
-            *target = dram_base + (val - data_va);
-        }
-      }
-    }
-
-    /* Relocate GOT entries in data */
-    if (data_base && ehdr->e_shoff && ehdr->e_shnum &&
-        ehdr->e_shentsize >= 40) {
-      for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
-        const uint8_t *sh =
-            file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
-        uint32_t sh_type    = *(const uint32_t *)(sh + 4);
-        uint32_t sh_flags   = *(const uint32_t *)(sh + 8);
-        uint32_t sh_addr    = *(const uint32_t *)(sh + 12);
-        uint32_t sh_size    = *(const uint32_t *)(sh + 20);
-        uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
-
-        if (sh_type != 1 /* SHT_PROGBITS */) continue;
-        if (!(sh_flags & 3 /* SHF_WRITE|SHF_ALLOC */)) continue;
-        if (sh_entsize != 4) continue;
-        if (sh_addr >= data_va && sh_size > 0) {
-          uint32_t n_got = sh_size / 4;
-          uint32_t *got = (uint32_t *)(data_base + (sh_addr - data_va));
-          for (uint32_t gi = 0; gi < n_got; gi++) {
-            uint32_t val = got[gi];
-            if (val == 0 || val == 0xFFFFFFFFu) continue;
-            if (val < data_va)
-              got[gi] = val + text_base;
-            else if (val < image_end)
-              got[gi] = dram_base + (val - data_va);
-          }
-        }
-      }
-    }
-  }
-
-#elif defined(__riscv)
-  /* RISC-V ePIC: relocate R_RISCV_RELATIVE entries with split
-   * text/data bases.  GOT entries in data point to either text
-   * or data — map addend to the correct runtime address. */
-  {
-    uint32_t dram_base = data_base ? (uint32_t)(uintptr_t)data_base : 0;
-
-    if (ehdr->e_shoff && ehdr->e_shnum && ehdr->e_shentsize >= 40) {
-      for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
-        const uint8_t *sh =
-            file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
-        uint32_t sh_type = *(const uint32_t *)(sh + 4);
-        if (sh_type != 4 /* SHT_RELA */) continue;
-
-        uint32_t sh_offset = *(const uint32_t *)(sh + 16);
-        uint32_t sh_size   = *(const uint32_t *)(sh + 20);
-        uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
-        if (sh_entsize < 12) continue;
-
-        uint32_t n_entries = sh_size / sh_entsize;
-        for (uint32_t ri = 0; ri < n_entries; ri++) {
-          const uint8_t *rela = file_buf + sh_offset + ri * sh_entsize;
-          uint32_t r_offset = *(const uint32_t *)(rela + 0);
-          uint32_t r_info   = *(const uint32_t *)(rela + 4);
-          uint8_t  r_type   = (uint8_t)(r_info & 0xFF);
-
-          /* Skip PC-relative and linker-internal relocs */
-          if (r_type == 0  /* R_RISCV_NONE */ ||
-              r_type == 16 /* R_RISCV_BRANCH */ ||
-              r_type == 17 /* R_RISCV_JAL */ ||
-              r_type == 20 /* R_RISCV_GOT_HI20 */ ||
-              r_type == 23 /* R_RISCV_PCREL_HI20 */ ||
-              r_type == 24 /* R_RISCV_PCREL_LO12_I */ ||
-              r_type == 25 /* R_RISCV_PCREL_LO12_S */ ||
-              r_type == 35 /* R_RISCV_ADD32 */ ||
-              r_type == 39 /* R_RISCV_SUB32 */ ||
-              r_type == 44 /* R_RISCV_RVC_BRANCH */ ||
-              r_type == 45 /* R_RISCV_RVC_JUMP */ ||
-              r_type == 51 /* R_RISCV_RELAX */ ||
-              (r_type >= 53 && r_type <= 72) /* R_RISCV_SET/SUB debug */)
-            continue;
-
-          /* R_RISCV_RELATIVE: split text/data address resolution */
-          if (r_type == 3 /* R_RISCV_RELATIVE */) {
-            int32_t r_addend = *(const int32_t *)(rela + 8);
-            /* Target must be in a writable region (data) */
-            uint32_t *target;
-            if (data_base && r_offset >= data_va &&
-                r_offset < data_va + data_memsz)
-              target = (uint32_t *)(data_base + (r_offset - data_va));
-            else
-              continue;
-            /* Addend in text range → text_base, in data → dram_base */
-            if ((uint32_t)r_addend < data_va)
-              *target = (uint32_t)r_addend + text_base;
-            else
-              *target = dram_base + ((uint32_t)r_addend - data_va);
-            continue;
-          }
-
-          klogf("ELF: unhandled RISCV reloc type %u at offset %x\n",
-                r_type, r_offset);
-          mem_region_free(&data_region);
-          mem_region_free(&text_region);
-          mem_region_free(&ustack_region);
-          mem_region_free(&stack_region);
-          p->stack_page = NULL;
-          return -(int)ENOEXEC;
-        }
-      }
-    }
-
-    /* Relocate GOT entries (same split logic) */
-    if (data_base && ehdr->e_shoff && ehdr->e_shnum &&
-        ehdr->e_shentsize >= 40) {
-      for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
-        const uint8_t *sh =
-            file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
-        uint32_t sh_type  = *(const uint32_t *)(sh + 4);
-        uint32_t sh_flags = *(const uint32_t *)(sh + 8);
-        uint32_t sh_addr  = *(const uint32_t *)(sh + 12);
-        uint32_t sh_size  = *(const uint32_t *)(sh + 20);
-        uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
-
-        if (sh_type != 1 /* SHT_PROGBITS */) continue;
-        if (!(sh_flags & 3 /* SHF_WRITE|SHF_ALLOC */)) continue;
-        if (sh_entsize != 4) continue;
-        if (sh_addr >= data_va && sh_size > 0) {
-          uint32_t n_got = sh_size / 4;
-          uint32_t *got = (uint32_t *)(data_base + (sh_addr - data_va));
-          for (uint32_t gi = 0; gi < n_got; gi++) {
-            if (got[gi] != 0 && got[gi] != 0xFFFFFFFFu) {
-              if (got[gi] < data_va)
-                got[gi] += text_base;
-              else
-                got[gi] = dram_base + (got[gi] - data_va);
-            }
-          }
-        }
-      }
-    }
-  }
-
-#else /* ARM/m68k */
-  {
-    elf_got_info_t got_info = {0, 0, 0};
-
-    if (data_base && elf_find_got(ehdr, file_buf, &got_info, file_size) == 0) {
-      uint32_t got_offset_in_data = got_info.addr - data_seg->p_vaddr;
-      out->got_sram_addr =
-          (uint32_t)(uintptr_t)data_base + got_offset_in_data;
-      uint32_t n_entries = got_info.size / 4;
-
-      for (uint32_t i = 0; i < n_entries; i++) {
-        uint32_t word_addr = out->got_sram_addr + (i * 4);
-        uint32_t val = cpu_ops->read32(cpu_state, word_addr);
-        if (val == 0) continue;
-        if (val < data_seg->p_vaddr)
-          cpu_ops->write32(cpu_state, word_addr, val + text_base);
-        else
-          cpu_ops->write32(
-              cpu_state, word_addr,
-              val - data_seg->p_vaddr + (uint32_t)(uintptr_t)data_base);
-      }
-    }
-
-    if (data_base &&
-        apply_relocations(ehdr, file_buf, file_size, text_seg, data_seg,
-                          data_base, text_base, out->got_sram_addr,
-                          &got_info, cpu_ops, cpu_state) < 0) {
+    elf_reloc_ctx_t rctx = {
+        ehdr, file_buf, file_size, text_base, data_base, text_end_va,
+#if defined(__xtensa__) || defined(__riscv)
+        data_va,
+#else
+        data_seg ? data_seg->p_vaddr : text_end_va,
+#endif
+        data_memsz, text_seg, data_seg, cpu_ops, cpu_state};
+    int reloc_rc = elf_reloc_arch(&rctx, out);
+    if (reloc_rc < 0) {
       mem_region_free(&data_region);
       mem_region_free(&text_region);
       mem_region_free(&ustack_region);
       mem_region_free(&stack_region);
       p->stack_page = NULL;
-      return -(int)ENOEXEC;
+      return reloc_rc;
     }
   }
-#endif /* arch relocations */
-
   /* --- 6. Page tracking --- */
   if (data_base) {
     if (proc_track_page_range(p, 0, data_base, data_pages * PAGE_SIZE) < 0) {
