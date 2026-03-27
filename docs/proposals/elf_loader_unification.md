@@ -12,14 +12,14 @@ relocation callbacks.
 |------|--------|-------------|
 | Steps 1-5 | **Done** | Three per-arch loaders merged into `elf_load_image`; `elf_text_mode()` policy; runtime XIP via `EXEC_FLAG_XIP_SOURCE` |
 | R-1 | **Done** | Relocation callbacks extracted (`elf_reloc_arch` + `elf_reloc_ctx_t`); `apply_relocations` absorbed; shared `elf_split_addr` + `elf_reloc_got_split` helpers |
-| R-2 | Open | Copy helpers (`elf_copy_text`/`elf_zero_text`) still use `#ifdef __xtensa__`; needs allocator-side `mem_region_copy`/`mem_region_zero` |
+| R-2 | **Done** | Copy helpers use word-at-a-time unconditionally (safe on all arches, required for Xtensa IRAM) |
 | R-3 | **Done** | Literal segment classification unified — two-pass scan for all arches, `literal_seg` is NULL on non-Xtensa |
 | R-4 | Open | Xtensa XIP helpers (~290 lines) still in elf_loader.c |
 | R-5 | Open | RISC-V forced to `ELF_TEXT_SRAM`; XIP needs gp validation |
 | R-6 | Open | Xtensa allocator doesn't try PSRAM first yet |
 | R-7 | Open | User stack / m68k USP `#ifdef` blocks (~20 lines) |
 
-Current `#ifdef` count: **28** (down from 39 after R-1, ~100+ before Steps 1-5).
+Current `#ifdef` count: **22** (down from 28 after R-3, ~100+ before Steps 1-5).
 
 ## What Remains
 

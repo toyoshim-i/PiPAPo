@@ -602,10 +602,10 @@ static int elf_reloc_arch(const elf_reloc_ctx_t *ctx, elf_load_result_t *out) {
 }
 #endif /* arch relocation callbacks */
 
-/* Copy data to text memory.  Xtensa IRAM requires word-at-a-time writes
- * (byte stores fault); other arches use plain memcpy. */
+/* Copy data to text memory.  Uses word-at-a-time writes so that this
+ * is safe for Xtensa IRAM (which faults on byte stores) while remaining
+ * correct on all other architectures. */
 static void elf_copy_text(void *dst, const uint8_t *src, uint32_t size) {
-#if defined(__xtensa__)
   volatile uint32_t *d = (volatile uint32_t *)dst;
   uint32_t words = (size + 3) / 4;
   for (uint32_t w = 0; w < words; w++) {
@@ -615,19 +615,13 @@ static void elf_copy_text(void *dst, const uint8_t *src, uint32_t size) {
     if (w * 4 + 3 < size) val |= (uint32_t)src[w * 4 + 3] << 24;
     d[w] = val;
   }
-#else
-  memcpy(dst, src, size);
-#endif
 }
 
-/* Zero text memory.  Same IRAM constraint as elf_copy_text. */
+/* Zero text memory.  Word-at-a-time for Xtensa IRAM safety.
+ * Caller must ensure size is a multiple of 4. */
 static void elf_zero_text(void *dst, uint32_t size) {
-#if defined(__xtensa__)
   uint32_t *d = (uint32_t *)dst;
   for (uint32_t w = 0; w < size / 4; w++) d[w] = 0;
-#else
-  memset(dst, 0, size);
-#endif
 }
 
 /* Unified ELF image loader — handles all architectures.
