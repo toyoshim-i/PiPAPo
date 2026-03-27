@@ -213,6 +213,24 @@ void proc_clear_page_tracking(pcb_t *p) {
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) p->user_pages[i] = NULL;
 }
 
+void proc_copy_page_tracking(pcb_t *dst, const pcb_t *src) {
+  if (!dst || !src) return;
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++)
+    dst->user_pages[i] = src->user_pages[i];
+}
+
+void proc_copy_page_tracking_to_array(const pcb_t *src,
+                                      void *dst[USER_PAGES_MAX]) {
+  if (!src || !dst) return;
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) dst[i] = src->user_pages[i];
+}
+
+void proc_restore_page_tracking_from_array(pcb_t *dst,
+                                           void *const src[USER_PAGES_MAX]) {
+  if (!dst || !src) return;
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) dst->user_pages[i] = src[i];
+}
+
 void proc_release_tracked_pages(pcb_t *p, uint32_t start_slot,
                                 uint32_t end_slot) {
   if (!p) return;
@@ -222,6 +240,34 @@ void proc_release_tracked_pages(pcb_t *p, uint32_t start_slot,
     if (!p->user_pages[i]) continue;
     mem_region_free_tracked_page(p->user_pages[i]);
     p->user_pages[i] = NULL;
+  }
+}
+
+void proc_release_private_tracked_pages(pcb_t *p, const pcb_t *shared_owner) {
+  if (!p || !shared_owner) return;
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
+    if (!p->user_pages[i]) continue;
+    if (p->user_pages[i] == shared_owner->user_pages[i]) continue;
+    mem_region_free_tracked_page(p->user_pages[i]);
+    p->user_pages[i] = NULL;
+  }
+}
+
+void proc_release_tracked_pages_from_array(void *pages[USER_PAGES_MAX]) {
+  if (!pages) return;
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
+    if (!pages[i]) continue;
+    mem_region_free_tracked_page(pages[i]);
+  }
+}
+
+void proc_release_private_tracked_pages_from_array(
+    void *pages[USER_PAGES_MAX], void *const shared[USER_PAGES_MAX]) {
+  if (!pages || !shared) return;
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
+    if (!pages[i]) continue;
+    if (pages[i] == shared[i]) continue;
+    mem_region_free_tracked_page(pages[i]);
   }
 }
 

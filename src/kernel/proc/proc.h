@@ -296,9 +296,30 @@ int proc_page_backed_contains(const pcb_t *p, uintptr_t addr);
 /* Clear page-backed tracking slots without freeing underlying pages. */
 void proc_clear_page_tracking(pcb_t *p);
 
+/* Copy tracked page slots from one process to another. */
+void proc_copy_page_tracking(pcb_t *dst, const pcb_t *src);
+
+/* Save tracked page slots from process into an array snapshot. */
+void proc_copy_page_tracking_to_array(const pcb_t *src,
+                                      void *dst[USER_PAGES_MAX]);
+
+/* Restore tracked page slots for process from an array snapshot. */
+void proc_restore_page_tracking_from_array(pcb_t *dst,
+                                           void *const src[USER_PAGES_MAX]);
+
 /* Free tracked pages in [start_slot, end_slot) and clear the slots. */
 void proc_release_tracked_pages(pcb_t *p, uint32_t start_slot,
                                 uint32_t end_slot);
+
+/* Free tracked pages in p that are not shared with shared_owner. */
+void proc_release_private_tracked_pages(pcb_t *p, const pcb_t *shared_owner);
+
+/* Free all tracked pages recorded in an array snapshot. */
+void proc_release_tracked_pages_from_array(void *pages[USER_PAGES_MAX]);
+
+/* Free pages in snapshot array that are not shared with shared[] slots. */
+void proc_release_private_tracked_pages_from_array(
+  void *pages[USER_PAGES_MAX], void *const shared[USER_PAGES_MAX]);
 
 /*
  * Set up an initial kernel stack frame for a new process so that

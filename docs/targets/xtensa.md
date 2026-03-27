@@ -761,6 +761,9 @@ Current implementation status:
 - `sys_exit`, `sys_vfork`, and `sys_execve` now route page tracking copy /
   restore / release through shared local helpers in `sys_proc.c` rather than
   repeating open-coded `USER_PAGES_MAX` loops for each path
+- the `sys_proc` lifecycle paths now also use shared `proc` APIs for page
+  tracking snapshots and private/shared release decisions, reducing local
+  duplication and keeping ownership logic in one layer
 - legacy loaders (`flat`, `com`, `sos`, `x`, `r`, `m68k_emu`) now route
   tracked page registration through `proc_track_page`, and selected loader
   cleanup paths use shared tracked-page release helpers instead of direct
