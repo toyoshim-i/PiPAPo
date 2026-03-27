@@ -645,12 +645,12 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
                           elf_load_result_t *out, uint32_t flags) {
   const elf32_phdr_t *text_seg = NULL;
   const elf32_phdr_t *data_seg = NULL;
-#if defined(__xtensa__)
   const elf32_phdr_t *literal_seg = NULL;
-#endif
 
-  /* --- 1. Classify segments --- */
-#if defined(__xtensa__)
+  /* --- 1. Classify segments ---
+   * First pass: find text (PF_X).
+   * Second pass: writable segments before text are literal (Xtensa L32R
+   * pool); others are data.  On non-Xtensa, literal_seg stays NULL. */
   for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
     if (segs[i].p_flags & PF_X) text_seg = &segs[i];
   }
@@ -664,14 +664,6 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
     if (!data_seg || segs[i].p_vaddr < data_seg->p_vaddr)
       data_seg = &segs[i];
   }
-#else
-  for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
-    if (segs[i].p_flags & PF_X)
-      text_seg = &segs[i];
-    else if (segs[i].p_flags & PF_W)
-      data_seg = &segs[i];
-  }
-#endif
   if (!text_seg) return -(int)ENOEXEC;
 
   uint32_t e_entry = elf_entry(ehdr);
@@ -680,11 +672,9 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
 
   /* Compute text allocation size (includes literal on Xtensa) */
   uint32_t text_end_va = text_seg->p_vaddr + text_seg->p_memsz;
-#if defined(__xtensa__)
   if (literal_seg &&
       literal_seg->p_vaddr + literal_seg->p_memsz > text_end_va)
     text_end_va = literal_seg->p_vaddr + literal_seg->p_memsz;
-#endif
   uint32_t text_alloc_size =
       (text_mode == ELF_TEXT_SRAM) ? ((text_end_va + 15u) & ~15u)
                                    : text_seg->p_memsz;
@@ -748,26 +738,22 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
       elf_copy_text(text_dst + text_seg->p_vaddr,
                     file_buf + text_seg->p_offset, text_seg->p_filesz);
 
-#if defined(__xtensa__)
-    /* Copy literal segment into same IRAM region */
+    /* Copy literal segment into same text region (Xtensa L32R pool) */
     if (literal_seg && literal_seg->p_filesz > 0)
       elf_copy_text(text_dst + literal_seg->p_vaddr,
                     file_buf + literal_seg->p_offset, literal_seg->p_filesz);
-#endif
 
     p->image.text = proc_image_segment_make(
         text_dst, text_alloc_size, PPAP_MEM_RAM_TEXT,
         PROC_IMAGE_SEG_EXECUTABLE | PROC_IMAGE_SEG_OWNED);
   }
 
-#if defined(__xtensa__)
   if (literal_seg) {
     uint8_t *text_dst = (uint8_t *)(uintptr_t)text_base;
     p->image.literal = proc_image_segment_make_vaddr(
         text_dst + literal_seg->p_vaddr, literal_seg->p_memsz,
         literal_seg->p_vaddr, PPAP_MEM_RAM_RODATA, 0u);
   }
-#endif
 
   /* Entry point — Thumb bit preserved for ARM */
   if (cpu_ops->arch_id == CPU_ARCH_M68K ||
