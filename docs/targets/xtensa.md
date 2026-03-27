@@ -845,7 +845,7 @@ Specifically:
 Goal: keep ESP-IDF as bootstrap infrastructure while reducing dependence on
 its runtime services after `app_main()`.
 
-Status: **in progress**
+Status: **complete**
 
 #### XT-3.1: Establish PPAP-owned interrupt/timer handoff
 
