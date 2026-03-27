@@ -2,7 +2,7 @@
  * tmpfs.c — RAM-backed temporary filesystem
  *
  * Provides a volatile filesystem at /tmp.  File data is stored in pages
- * obtained from page_alloc(); metadata lives in a static inode table.
+ * obtained from mem_region_alloc(); metadata lives in a static inode table.
  *
  * Design:
  *   - Flat inode table (TMPFS_INODE_MAX entries) with parent_ino linkage
@@ -18,8 +18,9 @@
 #include <stddef.h>
 
 #include "../common/errno.h"
-#include "../mm/page.h"
 #include "../common/mod/mod_vfs.h"
+#include "../mm/mem_region.h"
+#include "../mm/page.h"
 #include "config.h"
 
 /* ── Inode structure ──────────────────────────────────────────────────── */
@@ -70,7 +71,10 @@ static int inode_alloc(void) {
 
 static void inode_free(int ino) {
   if (inodes[ino].data) {
-    page_free(inodes[ino].data);
+    proc_image_segment_t data_region = proc_image_segment_make(
+        inodes[ino].data, PAGE_SIZE, PPAP_MEM_RAM_DATA,
+        PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE);
+    mem_region_free(&data_region);
     data_pages_used--;
   }
   inodes[ino].active = 0;
@@ -169,9 +173,13 @@ static long tmpfs_write(vnode_t *vn, const void *buf, size_t n, uint32_t off) {
 
   /* Allocate data page on first write */
   if (!ti->data) {
+    proc_image_segment_t data_region;
+
     if (data_pages_used >= TMPFS_MAX_PAGES) return -(long)ENOSPC;
-    ti->data = (uint8_t *)page_alloc();
-    if (!ti->data) return -(long)ENOMEM;
+    if (mem_region_alloc(&data_region, PPAP_MEM_RAM_DATA, PAGE_SIZE,
+                         PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) < 0)
+      return -(long)ENOMEM;
+    ti->data = (uint8_t *)data_region.base;
     __builtin_memset(ti->data, 0, PAGE_SIZE);
     data_pages_used++;
   }
@@ -354,7 +362,10 @@ static int tmpfs_truncate(vnode_t *vn, uint32_t length) {
   if (ti->type == VNODE_DIR) return -EISDIR;
 
   if (length == 0 && ti->data) {
-    page_free(ti->data);
+    proc_image_segment_t data_region = proc_image_segment_make(
+        ti->data, PAGE_SIZE, PPAP_MEM_RAM_DATA,
+        PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE);
+    mem_region_free(&data_region);
     ti->data = (uint8_t *)0;
     data_pages_used--;
   }

@@ -20,6 +20,7 @@
 #include "kernel/common/errno.h"
 #include "kernel/exec/exec.h"
 #include "kernel/klog.h"
+#include "kernel/mm/mem_region.h"
 #include "kernel/mm/page.h"
 #include "kernel/proc/proc.h"
 #include "kernel/proc/sched.h"
@@ -271,14 +272,13 @@ static int dos_setblock(uint32_t *regs, uint32_t usp) {
  */
 static int dos_malloc(uint32_t *regs, uint32_t usp) {
   uint32_t size = ustack_u32(usp, 0);
+  proc_image_segment_t alloc_region;
   H68K_TRACE("_MALLOC(%x)", size);
-
-  extern uint32_t page_max_contiguous(void);
 
   if (size >= 0x01000000u) {
     /* Query: size >= 16MB (24-bit address space) or $FFFFFFFF.
      * Return largest contiguous block size (minus MMB header). */
-    uint32_t contig_bytes = page_max_contiguous() * PAGE_SIZE;
+    uint32_t contig_bytes = mem_region_largest_free_bytes(PPAP_MEM_RAM_DATA);
     uint32_t avail =
         (contig_bytes > MMB_HEADER_SIZE) ? contig_bytes - MMB_HEADER_SIZE : 0;
     H68K_TRACE("_MALLOC: query => %x", avail);
@@ -289,16 +289,14 @@ static int dos_malloc(uint32_t *regs, uint32_t usp) {
 
   /* Actual allocation — try exact requested size only. */
   uint32_t total = MMB_HEADER_SIZE + size;
-  uint32_t n_pages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
-
-  uint8_t *base = page_alloc_contiguous(n_pages);
-  if (!base) {
+  if (mem_region_alloc(&alloc_region, PPAP_MEM_RAM_DATA, total,
+                       PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) < 0) {
     /* Report largest contiguous run so caller can retry. */
-    uint32_t contig_bytes = page_max_contiguous() * PAGE_SIZE;
+    uint32_t contig_bytes = mem_region_largest_free_bytes(PPAP_MEM_RAM_DATA);
     uint32_t avail = (contig_bytes > MMB_HEADER_SIZE)
                          ? (contig_bytes - MMB_HEADER_SIZE) & 0x00FFFFFFu
                          : 0;
-    H68K_TRACE("_MALLOC: alloc %x pages failed, max_contig=%x", n_pages, avail);
+    H68K_TRACE("_MALLOC: alloc %x bytes failed, max_contig=%x", total, avail);
     regs[0] = 0x81000000u | avail;
     advance_pc(regs);
     return 2;
@@ -309,7 +307,7 @@ static int dos_malloc(uint32_t *regs, uint32_t usp) {
   int slot = -1;
   if (h) {
     for (int i = 0; i < H68K_MALLOC_MAX; i++) {
-      if (!h->mallocs[i].base) {
+      if (!h->mallocs[i].region.base) {
         slot = i;
         break;
       }
@@ -317,18 +315,17 @@ static int dos_malloc(uint32_t *regs, uint32_t usp) {
   }
   if (slot < 0) {
     /* No free tracking slot — free the pages and fail */
-    for (uint32_t i = 0; i < n_pages; i++) page_free(base + i * PAGE_SIZE);
+    mem_region_free(&alloc_region);
     H68K_TRACE("_MALLOC: no tracking slot");
     regs[0] = 0x82000000u; /* Human68k: too many blocks */
     advance_pc(regs);
     return 2;
   }
-  h->mallocs[slot].base = base;
-  h->mallocs[slot].n_pages = n_pages;
+  h->mallocs[slot].region = alloc_region;
 
   /* Write MMB header */
-  uint32_t base_u = (uint32_t)(uintptr_t)base;
-  uint32_t end_u = base_u + n_pages * PAGE_SIZE;
+  uint32_t base_u = (uint32_t)(uintptr_t)alloc_region.base;
+  uint32_t end_u = base_u + alloc_region.size;
   mem_write32(base_u + 0x00, 0);      /* prev */
   mem_write32(base_u + 0x04, base_u); /* owner = self */
   mem_write32(base_u + 0x08, end_u);  /* end+1 */
@@ -336,8 +333,8 @@ static int dos_malloc(uint32_t *regs, uint32_t usp) {
 
   /* Return pointer past MMB header */
   uint32_t user_ptr = base_u + MMB_HEADER_SIZE;
-  H68K_TRACE("_MALLOC: allocated %x pages at %x, user=%x", n_pages, base_u,
-             user_ptr);
+  H68K_TRACE("_MALLOC: allocated %x bytes at %x, user=%x", alloc_region.size,
+             base_u, user_ptr);
   regs[0] = user_ptr;
   advance_pc(regs);
   return 2;
@@ -356,16 +353,14 @@ static int dos_mfree(uint32_t *regs, uint32_t usp) {
   h68k_proc_t *h = (h68k_proc_t *)current->subsys_data;
   if (h) {
     for (int i = 0; i < H68K_MALLOC_MAX; i++) {
-      if (!h->mallocs[i].base) continue;
+      if (!h->mallocs[i].region.base) continue;
       uint32_t user_ptr =
-          (uint32_t)(uintptr_t)h->mallocs[i].base + MMB_HEADER_SIZE;
+          (uint32_t)(uintptr_t)h->mallocs[i].region.base + MMB_HEADER_SIZE;
       if (user_ptr == block_addr) {
-        H68K_TRACE("_MFREE: freeing slot %u (%x pages)", (uint32_t)i,
-                   h->mallocs[i].n_pages);
-        for (uint32_t j = 0; j < h->mallocs[i].n_pages; j++)
-          page_free(h->mallocs[i].base + j * PAGE_SIZE);
-        h->mallocs[i].base = NULL;
-        h->mallocs[i].n_pages = 0;
+        H68K_TRACE("_MFREE: freeing slot %u (%x bytes)", (uint32_t)i,
+                   h->mallocs[i].region.size);
+        mem_region_free(&h->mallocs[i].region);
+        h->mallocs[i].region = (proc_image_segment_t){0};
         regs[0] = 0;
         advance_pc(regs);
         return 2;
@@ -1210,8 +1205,9 @@ static int dos_settime(uint32_t *regs, uint32_t usp) {
 static int dos_dskfre(uint32_t *regs, uint32_t usp) {
   H68K_TRACE("_DSKFRE(%u)", (uint32_t)ustack_u16(usp, 0));
 
-  uint32_t free_pages = page_free_count();
-  uint32_t total_pages = page_count;
+  uint32_t free_pages = mem_region_free_bytes(PPAP_MEM_RAM_STACK) / PAGE_SIZE;
+  uint32_t total_pages =
+      mem_region_total_bytes(PPAP_MEM_RAM_STACK) / PAGE_SIZE;
   uint32_t page_sz = PAGE_SIZE;
 
   /* Model as: 1 sector = PAGE_SIZE bytes, 1 cluster = 1 sector */
@@ -1906,8 +1902,7 @@ static void h68k_on_init(struct pcb *p) {
   h->ctrlvc = 0;
   h->errjvc = 0;
   for (int i = 0; i < H68K_MALLOC_MAX; i++) {
-    h->mallocs[i].base = NULL;
-    h->mallocs[i].n_pages = 0;
+    h->mallocs[i].region = (proc_image_segment_t){0};
   }
   p->subsys_data = h;
 }

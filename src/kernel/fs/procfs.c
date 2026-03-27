@@ -31,6 +31,7 @@
 #include <stdint.h>
 
 #include "../common/errno.h"
+#include "../mm/mem_region.h"
 #include "../mm/page.h"
 #include "../proc/proc.h"
 #include "../proc/sched.h"
@@ -125,9 +126,10 @@ typedef struct {
  */
 
 static int gen_meminfo(char *buf, int bufsiz) {
-  uint32_t free_pages = page_free_count();
-  uint32_t total_kb = (page_count * PAGE_SIZE) / 1024u;
-  uint32_t free_kb = (free_pages * PAGE_SIZE) / 1024u;
+  uint32_t total_bytes = mem_region_total_bytes(PPAP_MEM_RAM_STACK);
+  uint32_t free_bytes = mem_region_free_bytes(PPAP_MEM_RAM_STACK);
+  uint32_t total_kb = total_bytes / 1024u;
+  uint32_t free_kb = free_bytes / 1024u;
 
   int pos = 0;
   pos = fmt_append(buf, pos, bufsiz, "MemTotal:    ");

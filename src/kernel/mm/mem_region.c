@@ -20,6 +20,18 @@ static uint32_t mem_region_page_count(uint32_t size) {
   return (size + PAGE_SIZE - 1u) / PAGE_SIZE;
 }
 
+static uint32_t mem_region_page_pool_total_bytes(void) {
+  return page_count * PAGE_SIZE;
+}
+
+static uint32_t mem_region_page_pool_free_bytes(void) {
+  return page_free_count() * PAGE_SIZE;
+}
+
+static uint32_t mem_region_page_pool_largest_free_bytes(void) {
+  return page_max_contiguous() * PAGE_SIZE;
+}
+
 #if defined(__xtensa__)
 #define MEM_REGION_ALIGN 16u
 
@@ -205,6 +217,64 @@ static int mem_region_ram_data_contains(const void *base, uint32_t size) {
 
   if (!ram_data_ready || !base || size == 0) return 0;
   return addr >= start && last <= end;
+}
+
+static uint32_t mem_region_linear_arena_total_bytes(
+    const mem_region_linear_arena_t *arena) {
+  if (!arena->ready) return 0u;
+  return arena->size;
+}
+
+static uint32_t mem_region_linear_arena_free_bytes(
+    const mem_region_linear_arena_t *arena) {
+  uint32_t free_bytes = 0u;
+
+  if (!arena->ready) return 0u;
+  for (uint32_t i = 0; i < arena->free_count; i++)
+    free_bytes += arena->free[i].size;
+  return free_bytes;
+}
+
+static uint32_t mem_region_linear_arena_largest_free_bytes(
+    const mem_region_linear_arena_t *arena) {
+  uint32_t largest = 0u;
+
+  if (!arena->ready) return 0u;
+  for (uint32_t i = 0; i < arena->free_count; i++) {
+    if (arena->free[i].size > largest) largest = arena->free[i].size;
+  }
+  return largest;
+}
+
+static uint32_t mem_region_ram_data_total_bytes(void) {
+  if (!ram_data_ready) return 0u;
+  return ram_data_page_count * PAGE_SIZE;
+}
+
+static uint32_t mem_region_ram_data_free_bytes(void) {
+  uint32_t free_pages = 0u;
+
+  if (!ram_data_ready) return 0u;
+  for (uint32_t i = 0; i < ram_data_page_count; i++) {
+    if (!ram_data_page_used[i]) free_pages++;
+  }
+  return free_pages * PAGE_SIZE;
+}
+
+static uint32_t mem_region_ram_data_largest_free_bytes(void) {
+  uint32_t run = 0u;
+  uint32_t largest = 0u;
+
+  if (!ram_data_ready) return 0u;
+  for (uint32_t i = 0; i < ram_data_page_count; i++) {
+    if (!ram_data_page_used[i]) {
+      run++;
+      if (run > largest) largest = run;
+    } else {
+      run = 0u;
+    }
+  }
+  return largest * PAGE_SIZE;
 }
 
 static int mem_region_try_mark_ram_data(uint32_t start_page,
@@ -591,4 +661,91 @@ void mem_region_free_tracked_page(void *page) {
 #endif
 
   page_free(page);
+}
+
+uint32_t mem_region_total_bytes(ppap_mem_class_t mem_class) {
+  switch (mem_class) {
+#if defined(__xtensa__)
+    case PPAP_MEM_RAM_TEXT:
+      return mem_region_linear_arena_total_bytes(&ram_text_arena);
+    case PPAP_MEM_RAM_DATA:
+      return mem_region_ram_data_total_bytes();
+    case PPAP_MEM_EXT_TEXT:
+      return mem_region_linear_arena_total_bytes(&ext_text_arena);
+    case PPAP_MEM_EXT_RODATA:
+      return mem_region_linear_arena_total_bytes(&ext_rodata_arena);
+#endif
+    case PPAP_MEM_RAM_RODATA:
+    case PPAP_MEM_RAM_STACK:
+    case PPAP_MEM_DEVICE_DMA:
+      return mem_region_page_pool_total_bytes();
+#if !defined(__xtensa__)
+    case PPAP_MEM_RAM_DATA:
+    case PPAP_MEM_RAM_TEXT:
+      return mem_region_page_pool_total_bytes();
+#endif
+    case PPAP_MEM_NONE:
+    case PPAP_MEM_ROM_TEXT:
+    case PPAP_MEM_ROM_RODATA:
+    default:
+      return 0u;
+  }
+}
+
+uint32_t mem_region_free_bytes(ppap_mem_class_t mem_class) {
+  switch (mem_class) {
+#if defined(__xtensa__)
+    case PPAP_MEM_RAM_TEXT:
+      return mem_region_linear_arena_free_bytes(&ram_text_arena);
+    case PPAP_MEM_RAM_DATA:
+      return mem_region_ram_data_free_bytes();
+    case PPAP_MEM_EXT_TEXT:
+      return mem_region_linear_arena_free_bytes(&ext_text_arena);
+    case PPAP_MEM_EXT_RODATA:
+      return mem_region_linear_arena_free_bytes(&ext_rodata_arena);
+#endif
+    case PPAP_MEM_RAM_RODATA:
+    case PPAP_MEM_RAM_STACK:
+    case PPAP_MEM_DEVICE_DMA:
+      return mem_region_page_pool_free_bytes();
+#if !defined(__xtensa__)
+    case PPAP_MEM_RAM_DATA:
+    case PPAP_MEM_RAM_TEXT:
+      return mem_region_page_pool_free_bytes();
+#endif
+    case PPAP_MEM_NONE:
+    case PPAP_MEM_ROM_TEXT:
+    case PPAP_MEM_ROM_RODATA:
+    default:
+      return 0u;
+  }
+}
+
+uint32_t mem_region_largest_free_bytes(ppap_mem_class_t mem_class) {
+  switch (mem_class) {
+#if defined(__xtensa__)
+    case PPAP_MEM_RAM_TEXT:
+      return mem_region_linear_arena_largest_free_bytes(&ram_text_arena);
+    case PPAP_MEM_RAM_DATA:
+      return mem_region_ram_data_largest_free_bytes();
+    case PPAP_MEM_EXT_TEXT:
+      return mem_region_linear_arena_largest_free_bytes(&ext_text_arena);
+    case PPAP_MEM_EXT_RODATA:
+      return mem_region_linear_arena_largest_free_bytes(&ext_rodata_arena);
+#endif
+    case PPAP_MEM_RAM_RODATA:
+    case PPAP_MEM_RAM_STACK:
+    case PPAP_MEM_DEVICE_DMA:
+      return mem_region_page_pool_largest_free_bytes();
+#if !defined(__xtensa__)
+    case PPAP_MEM_RAM_DATA:
+    case PPAP_MEM_RAM_TEXT:
+      return mem_region_page_pool_largest_free_bytes();
+#endif
+    case PPAP_MEM_NONE:
+    case PPAP_MEM_ROM_TEXT:
+    case PPAP_MEM_ROM_RODATA:
+    default:
+      return 0u;
+  }
 }

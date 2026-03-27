@@ -10,6 +10,7 @@
 #include "blkdev/ramblk.h"
 #include "drivers/uart.h"
 #include "klog.h"
+#include "mm/mem_region.h"
 #include "mm/page.h"
 
 #ifdef PPAP_TESTS
@@ -40,7 +41,12 @@ void target_late_init(void) {
       klog("BLKDEV: ramblk init FAILED\n");
   } else {
     /* No FAT32 image — use test pattern (4 KB = 8 sectors) */
-    uint8_t *test_img = (uint8_t *)page_alloc();
+    proc_image_segment_t image_region;
+    uint8_t *test_img = NULL;
+
+    if (mem_region_alloc(&image_region, PPAP_MEM_RAM_DATA, PAGE_SIZE,
+                         PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) == 0)
+      test_img = (uint8_t *)image_region.base;
     if (test_img) {
       __builtin_memset(test_img, 0, PAGE_SIZE);
       __builtin_memset(test_img, 0xAA, BLKDEV_SECTOR_SIZE);
@@ -50,7 +56,7 @@ void target_late_init(void) {
       else
         klog("BLKDEV: ramblk init FAILED\n");
     } else {
-      klog("BLKDEV: page_alloc failed\n");
+      klog("BLKDEV: test image alloc failed\n");
     }
   }
   /* No MPU, no Core 1 on QEMU */

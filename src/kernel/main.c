@@ -107,7 +107,15 @@ void kmain(void) {
   target_post_mount();
 
   /* Give the kernel init thread (thread 0) its own PSP stack page */
-  proc_table[0].stack_page = page_alloc();
+  {
+    proc_image_segment_t stack_region;
+
+    if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
+                         PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) == 0)
+      proc_table[0].stack_page = stack_region.base;
+    else
+      proc_table[0].stack_page = NULL;
+  }
   if (!proc_table[0].stack_page) {
     klog("PANIC: no page for thread 0 stack\n");
     for (;;) arch_wfi();

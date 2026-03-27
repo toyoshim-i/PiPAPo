@@ -17,12 +17,18 @@
 
 #include <string.h> /* memset */
 
-#include "kernel/mm/page.h"
+#include "kernel/mm/mem_region.h"
 
 /* ── Lifecycle ───────────────────────────────────────────────────────────── */
 
 static void *ecpu_z80_create_state(void) {
-  z80_state_t *s = (z80_state_t *)page_alloc();
+  proc_image_segment_t state_region;
+  z80_state_t *s = NULL;
+
+  if (mem_region_alloc(&state_region, PPAP_MEM_RAM_DATA, sizeof(*s),
+                       PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) < 0)
+    return NULL;
+  s = (z80_state_t *)state_region.base;
   if (s) memset(s, 0, sizeof(*s));
   return s;
 }

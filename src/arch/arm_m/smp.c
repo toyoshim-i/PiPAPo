@@ -33,6 +33,7 @@
 #include "arch/ioregs.h"
 #include "config.h"
 #include "klog.h"
+#include "mm/mem_region.h"
 #include "mm/mpu.h" /* mpu_init */
 #include "mm/page.h"
 #include "proc/proc.h"  /* pcb_t, proc_alloc, current_core */
@@ -134,11 +135,16 @@ void core1_sched_entry(void) {
   /* 3. Allocate an idle PCB for Core 1.
    * PendSV_Handler requires current_core[1] to be valid. */
   pcb_t *idle = proc_alloc();
+  proc_image_segment_t idle_stack_region;
   if (!idle) {
     klog("SMP: Core 1 idle alloc FAILED\n");
     for (;;) arch_wfi();
   }
-  idle->stack_page = page_alloc();
+  if (mem_region_alloc(&idle_stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
+                       PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) == 0)
+    idle->stack_page = idle_stack_region.base;
+  else
+    idle->stack_page = NULL;
   if (!idle->stack_page) {
     klog("SMP: Core 1 stack alloc FAILED\n");
     for (;;) arch_wfi();
@@ -225,7 +231,16 @@ void core1_launch(void (*entry)(void)) {
 
   /* Allocate a 4 KB stack page for Core 1.
    * Stacks grow downward, so Core 1's initial SP = top of the page. */
-  void *stack_page = page_alloc();
+  proc_image_segment_t launch_stack_region;
+  void *stack_page = NULL;
+
+  if (mem_region_alloc(&launch_stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
+                       PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) == 0)
+    stack_page = launch_stack_region.base;
+  if (!stack_page) {
+    klog("SMP: Core 1 launch stack alloc FAILED\n");
+    return;
+  }
   uint32_t sp = (uint32_t)(uintptr_t)stack_page + PAGE_SIZE;
 
   /* Core 1 must use the same vector table as Core 0 so that SVC,

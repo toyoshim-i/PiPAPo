@@ -26,4 +26,10 @@ void mem_region_free(const proc_image_segment_t *seg);
 
 void mem_region_free_tracked_page(void *page);
 
+uint32_t mem_region_total_bytes(ppap_mem_class_t mem_class);
+
+uint32_t mem_region_free_bytes(ppap_mem_class_t mem_class);
+
+uint32_t mem_region_largest_free_bytes(ppap_mem_class_t mem_class);
+
 #endif /* PPAP_KERNEL_MM_MEM_REGION_H */

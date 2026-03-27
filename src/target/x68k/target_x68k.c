@@ -28,6 +28,7 @@
 #include "common/errno.h"
 #include "fd/tty.h"
 #include "klog.h"
+#include "mm/mem_region.h"
 #include "mm/page.h"
 #include "proc/proc.h"
 #include "proc/sched.h"
@@ -228,14 +229,25 @@ int target_mount_rootfs(void) {
   klogf("x68k: ramdisk at %x, %lu bytes (%lu blocks x %lu)\n", addr, size,
         block_count, block_size);
 
-  /* Reserve all page-pool pages that fall inside the rootfs region so the
-   * allocator never hands them out and overwrites the live UFS image.
-   * page_alloc_at() is a no-op for addresses outside the pool bounds, so
-   * it is safe to call even for the sub-pool portion of the rootfs. */
+  /* Reserve the page-pool portion of the rootfs image so the allocator
+   * never hands it out and overwrites the live UFS data. */
   {
-    uint32_t rfs_end = (addr + size + PAGE_SIZE - 1u) & ~(PAGE_SIZE - 1u);
-    for (uint32_t p = addr & ~(PAGE_SIZE - 1u); p < rfs_end; p += PAGE_SIZE)
-      page_alloc_at((void *)(uintptr_t)p);
+    uintptr_t pool_base = page_pool_base();
+    uintptr_t pool_end = pool_base + page_count * PAGE_SIZE;
+    uintptr_t reserve_start = (uintptr_t)addr & ~(uintptr_t)(PAGE_SIZE - 1u);
+    uintptr_t reserve_end =
+        ((uintptr_t)addr + size + PAGE_SIZE - 1u) &
+        ~(uintptr_t)(PAGE_SIZE - 1u);
+    proc_image_segment_t reserved_rootfs;
+
+    if (reserve_start < pool_base) reserve_start = pool_base;
+    if (reserve_end > pool_end) reserve_end = pool_end;
+    if (reserve_start < reserve_end &&
+        mem_region_alloc_at(&reserved_rootfs, PPAP_MEM_RAM_DATA,
+                            (void *)reserve_start,
+                            reserve_end - reserve_start,
+                            PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) < 0)
+      klog("x68k: rootfs reservation FAILED\n");
   }
 
   flatblk_init("ram0", (const void *)(uintptr_t)addr, size);

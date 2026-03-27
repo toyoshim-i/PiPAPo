@@ -18,7 +18,7 @@
 #include <string.h> /* memset */
 
 #include "kernel/cpu/cpu.h"
-#include "kernel/mm/page.h"
+#include "kernel/mm/mem_region.h"
 
 /* ── Trap fire helper ───────────────────────────────────────────────────── */
 
@@ -1374,7 +1374,14 @@ static int ecpu_m68k_run(cpu_state_t *state) {
 
 /* ── Common interface implementations ───────────────────────────────────── */
 
-static void *ecpu_m68k_create_state() { return (m68k_state_t *)page_alloc(); }
+static void *ecpu_m68k_create_state() {
+  proc_image_segment_t state_region;
+
+  if (mem_region_alloc(&state_region, PPAP_MEM_RAM_DATA, sizeof(m68k_state_t),
+                       PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) < 0)
+    return NULL;
+  return state_region.base;
+}
 
 static int ecpu_m68k_init(cpu_state_t *state, uint8_t *memory,
                           uint32_t mem_size) {

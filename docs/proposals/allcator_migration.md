@@ -17,6 +17,23 @@ management subsystem.
 This does **not** remove the page allocator implementation. `page_*` remains
 an internal backend used by `mem_region_*` where appropriate.
 
+## Status
+
+| Phase | Status | Notes |
+|-------|--------|-------|
+| Phase 0 | Done | Proposal + `page.h` guardrail landed |
+| Phase 1 | Done | `kernel/exec/elf_loader.c` migrated to `mem_region_*` |
+| Phase 2 | Done | `kernel/exec/exec.c` and remaining loaders migrated |
+| Phase 3 | Done | Process/syscall paths migrated to `mem_region_*` |
+| Phase 4 | Done | Residual subsystem and bootstrap users migrated |
+| Phase 5 | Open | Enforcement not added yet |
+
+Most recent landing steps:
+
+- `c23f18a` — migrate Human68k `x_loader` / `r_loader`
+- `82bbee1` — migrate remaining exec loaders and `exec.c`
+- `51e0433` — migrate process and syscall allocator users
+
 ## Why This Change
 
 - Enforces one allocator contract for all subsystems.
@@ -32,11 +49,9 @@ an internal backend used by `mem_region_*` where appropriate.
   - Xtensa-specific internal/external arenas.
 - `sys_proc` cleanup already releases owned process-image segments with
   `mem_region_free()`.
-- Many direct `page_*` usages still exist in:
-  - Exec loaders
-  - Process and memory syscalls
-  - Tmpfs and subsystem helpers
-  - Some arch/target bootstrap code
+- Direct `page_*` allocation calls are now confined to `src/kernel/mm/`.
+- Subsystems outside the memory backend now allocate and free through
+  `mem_region_*`, including contiguous page-backed users.
 
 ## Non-Goals
 
@@ -82,6 +97,8 @@ Deliverables:
 
 ## Phase 1: First Real Migration (`elf_loader`)
 
+Status: **Done**
+
 - Rewrite `kernel/exec/elf_loader.c` to use `mem_region_*` consistently.
 - Keep the current target memory semantics unchanged.
 - Prefer minimal `#ifdef` only where an architecture-specific ELF detail
@@ -96,6 +113,8 @@ Deliverables:
 
 ## Phase 2: Remaining Exec Path Migration
 
+Status: **Done**
+
 Migrate these first:
 
 - `kernel/exec/exec.c`
@@ -109,10 +128,17 @@ Rules:
 
 Deliverables:
 
-- No direct `page_*` calls in `kernel/exec/` (except mm-private helpers if any).
-- No regression in ELF and non-ELF loader behavior.
+- No direct `page_*` calls in `kernel/exec/`.
+- `x_loader`, `r_loader`, `com_loader`, `sos_loader`, `flat_loader`,
+  `m68k_emu_loader`, and `exec.c` now use `mem_region_*`.
+- Build-smoke verified on:
+  - `qemu_arm`
+  - `qemu_m68k`
+  - `ibmpc`
 
 ## Phase 3: Process + Syscall Migration
+
+Status: **Done**
 
 Migrate:
 
@@ -131,6 +157,8 @@ Deliverables:
 
 ## Phase 4: Remaining Subsystems
 
+Status: **Done**
+
 Migrate residual users:
 
 - `kernel/fs/tmpfs.c`
@@ -141,8 +169,13 @@ Migrate residual users:
 Deliverables:
 
 - No direct `page_*` calls outside `src/kernel/mm/`.
+- `tmpfs`, `procfs`, `human68k_bridge`, emulator state allocators,
+  ARM SMP startup, and target bootstrap reservations now use `mem_region_*`
+  or `mem_region` query helpers.
 
 ## Phase 5: Enforcement
+
+Status: **Open**
 
 - Optionally hide `page.h` from non-mm include paths.
 - Update coding rules to mandate allocator API usage.

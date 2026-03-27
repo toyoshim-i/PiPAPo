@@ -10,6 +10,7 @@
 
 #include <stdint.h>
 
+#include "kernel/mm/mem_layout.h"
 #include "subsys.h"
 
 /*
@@ -25,8 +26,7 @@ typedef struct {
 
   /* Dynamic allocations from _MALLOC (tracked for _MFREE) */
   struct {
-    uint8_t *base;    /* raw page base (NULL = free slot) */
-    uint32_t n_pages; /* number of pages in this block    */
+    proc_image_segment_t region; /* raw allocation (NULL base = free slot) */
   } mallocs[H68K_MALLOC_MAX];
 
   /* _FILES/_NFILES: directory path for the current search */
