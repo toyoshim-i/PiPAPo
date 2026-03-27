@@ -497,7 +497,7 @@ without timing-sensitive behavior.
 - Tighten invariants around saved SP / PS / return PC so bad frames are
   detected early with explicit diagnostics.
 
-### Phase XT-2: Define a PPAP-owned memory model
+### Phase XT-2: Define a PPAP-owned memory model — **complete**
 
 Goal: replace the current ad-hoc mix of page allocator, IRAM heap
 allocation, and address-range heuristics with an explicit Xtensa memory map.
@@ -791,22 +791,40 @@ Implementation outcomes:
 
 #### XT-2.8: Make PSRAM-backed execution the default target model
 
-Status: **not started**
+Status: **complete**
 
-After XT-2.5 through XT-2.7 are complete, Xtensa should move from the
-current internal RAM-loaded fallback to a default staged-execution model
-that runs larger user text / rodata from PSRAM-backed runtime memory.
+The goal of XT-2.8 — moving from the internal RAM-loaded fallback to a
+default staged PSRAM execution model — was achieved as part of XT-2.6.
 
-Exit criteria for XT-2:
+Specifically:
 
-- Xtensa memory ownership is described in named regions, not address-range
-  heuristics
+- `ENABLE_XTENSA_PSRAM_EXEC=1` is set in
+  `src/target/xtensa_cc/components/ppap_kernel/CMakeLists.txt`, making
+  PSRAM-backed execution the default path for any XIP-capable binary
+- `CONFIG_SPIRAM_XIP_FROM_PSRAM=y` is set in `sdkconfig.defaults`,
+  enabling the ESP32-S3 PSRAM XiP hardware mode
+- non-XIP binaries automatically fall back to IRAM execution; the
+  fallback is now guarded by the entry-bounds check added in XT-2.6
+- larger user text / rodata from XIP-capable binaries runs from the
+  PSRAM-backed `EXT_TEXT` / `EXT_RODATA` arenas reserved in XT-2.5
+- no ad-hoc ESP-IDF heap calls remain in the loader or `mem_region`
+  layer; all allocation goes through named `mem_region_alloc` paths
+
+**XT-2 exit criteria (all satisfied):**
+
+- Xtensa memory ownership is described in named regions, not
+  address-range heuristics — satisfied by XT-2.1 through XT-2.5
 - the loader no longer depends on ad-hoc ESP-IDF heap calls as its
-  architectural interface
-- process cleanup is explicit and format-aware
-- the documentable default model becomes "storage-backed image source,
-  PSRAM-backed executable / immutable runtime state, DRAM-backed mutable
-  process state"
+  architectural interface — satisfied by XT-2.3/XT-2.4 (`mem_region`
+  owns all region allocation; no `heap_caps_malloc` in loader paths)
+- process cleanup is explicit and format-aware — satisfied by XT-2.7
+  (`image_release_owned_segments` dispatches by segment ownership and
+  memory class; `proc_*` helpers own page-tracking lifecycle)
+- the documentable default model is "storage-backed image source,
+  PSRAM-backed executable / immutable runtime state, DRAM-backed
+  mutable process state" — satisfied by XT-2.5 + XT-2.6 + XT-2.8
+
+**Phase XT-2 is complete.**
 
 ### Phase XT-3: Reclaim runtime control from ESP-IDF
 
