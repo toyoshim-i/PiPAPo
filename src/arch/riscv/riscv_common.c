@@ -39,6 +39,8 @@ volatile uint32_t riscv_tick_count = 0;
  */
 #define CRASH_LOG ((volatile uint32_t *)0x20005F00u)
 
+static volatile int exception_reentry_guard;
+
 void riscv_exception_handler(uint32_t mcause, uint32_t mepc, uint32_t mtval,
                              uint32_t saved_fp, uint32_t saved_sp)
 {
@@ -46,19 +48,32 @@ void riscv_exception_handler(uint32_t mcause, uint32_t mepc, uint32_t mtval,
     csr_clear(mstatus, MSTATUS_MIE);
     csr_clear(mie, MIE_MTIE);
 
+    /* Re-entry guard: if the handler itself faults (e.g. during klogf
+     * or backtrace walk), the nested trap must not restart output —
+     * just spin so the first diagnostic remains visible. */
+    if (exception_reentry_guard) {
+        for (;;) __asm__ volatile("nop");
+    }
+    exception_reentry_guard = 1;
+
+    /* Print bare diagnostic FIRST — before touching any pointers that
+     * could fault (current, backtrace).  These three values come from
+     * CSRs passed in registers and are always safe. */
+    klogf("TRAP: cause=%x mepc=%x mtval=%x sp=%x\n",
+          mcause, mepc, mtval, saved_sp);
+
     CRASH_LOG[0] = 0xDEADBEEFu;
     CRASH_LOG[1] = mcause;
     CRASH_LOG[2] = mepc;
     CRASH_LOG[3] = mtval;
 
-    klogf("TRAP: exception cause=%x mepc=%x mtval=%x pid=%u\n",
-          mcause, mepc, mtval,
-          current ? (uint32_t)current->pid : 0xFFFFFFFFu);
+    klogf("  pid=%u fp=%x\n",
+          current ? (uint32_t)current->pid : 0xFFFFFFFFu,
+          saved_fp);
 
     /* Walk the frame pointer chain from the faulting context.
      * Each frame: [fp-4] = ra, [fp-8] = prev fp.
      * Requires -fno-omit-frame-pointer. */
-    klogf("  sp=%x fp=%x\n", saved_sp, saved_fp);
     klog("  backtrace:\n");
     uintptr_t fp = saved_fp;
     for (uint32_t depth = 0; depth < 16 && fp >= 0x80000000u; depth++) {

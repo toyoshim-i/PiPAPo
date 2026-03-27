@@ -153,9 +153,26 @@ static int elf_reloc_arch(const elf_reloc_ctx_t *ctx, elf_load_result_t *out) {
   return 0;
 }
 #elif defined(__riscv)
+/* Resolve a link-time address to a runtime address for RISC-V.
+ *
+ * With the ePIC linker script, the layout is:
+ *   text (R+X, XIP) | rodata (R, SRAM) | data (RW, SRAM)
+ * Rodata and data are contiguous in SRAM starting at data_va.
+ * Text is XIP from the file buffer. */
+static uint32_t riscv_resolve_addr(const elf_reloc_ctx_t *ctx,
+                                   uint32_t link_addr) {
+  uint32_t dram_base = ctx->data_base ? (uint32_t)(uintptr_t)ctx->data_base : 0;
+  /* Rodata + data: everything at or above data_va is in SRAM */
+  if (link_addr >= ctx->data_va)
+    return dram_base + (link_addr - ctx->data_va);
+  /* Text segment (XIP) */
+  if (ctx->text_seg)
+    return ctx->text_base + (link_addr - ctx->text_seg->p_vaddr);
+  return link_addr;
+}
+
 static int elf_reloc_arch(const elf_reloc_ctx_t *ctx, elf_load_result_t *out) {
   const elf32_ehdr_t *ehdr = ctx->ehdr;
-  uint32_t dram_base = ctx->data_base ? (uint32_t)(uintptr_t)ctx->data_base : 0;
   (void)out;
   if (ehdr->e_shoff && ehdr->e_shnum && ehdr->e_shentsize >= 40) {
     for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
@@ -186,8 +203,7 @@ static int elf_reloc_arch(const elf_reloc_ctx_t *ctx, elf_load_result_t *out) {
             target = (uint32_t *)(ctx->data_base + (r_offset - ctx->data_va));
           else
             continue;
-          *target = elf_split_addr((uint32_t)r_addend, ctx->text_base,
-                                   dram_base, ctx->data_va);
+          *target = riscv_resolve_addr(ctx, (uint32_t)r_addend);
           continue;
         }
         klogf("ELF: unhandled RISCV reloc type %u at offset %x\n",
@@ -354,15 +370,27 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
   for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
     if (segs[i].p_flags & PF_X) text_seg = &segs[i];
   }
+  uint32_t data_end_va = 0;
   for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
-    if (!(segs[i].p_flags & PF_W)) continue;
-    if (text_seg &&
+    int is_writable = !!(segs[i].p_flags & PF_W);
+    /* R-only segments after text are part of the data region for ePIC
+     * (rodata must be GP-accessible from SRAM).  On non-ePIC, only
+     * writable segments count as data. */
+    int is_ro_after_text = !is_writable && !(segs[i].p_flags & PF_X) &&
+                           text_seg &&
+                           segs[i].p_vaddr >= text_seg->p_vaddr +
+                                                  text_seg->p_memsz;
+    if (!is_writable && !is_ro_after_text) continue;
+    if (is_writable && text_seg &&
         segs[i].p_vaddr + segs[i].p_memsz <= text_seg->p_vaddr) {
       literal_seg = &segs[i];
       continue;
     }
     if (!data_seg || segs[i].p_vaddr < data_seg->p_vaddr)
       data_seg = &segs[i];
+    uint32_t seg_end = segs[i].p_vaddr + segs[i].p_memsz;
+    if (seg_end > data_end_va)
+      data_end_va = seg_end;
   }
   if (!text_seg) return -(int)ENOEXEC;
 
@@ -465,11 +493,15 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
   }
   p->image.entry = out->entry;
 
-  /* --- 4. Data segment: always SRAM --- */
+  /* --- 4. Data segment: always SRAM ---
+   * When the linker produces multiple writable PT_LOAD segments (e.g.
+   * .data.rel.ro + .sdata/.data/.bss), allocate a single block spanning
+   * from the first writable segment to the end of the last one and copy
+   * each segment's file data into the correct offset. */
   uint8_t *data_base = NULL;
   uint32_t data_pages = 0;
-  uint32_t data_memsz = data_seg ? data_seg->p_memsz : 0;
   uint32_t data_va = data_seg ? data_seg->p_vaddr : text_end_va;
+  uint32_t data_memsz = data_seg ? (data_end_va - data_va) : 0;
 
   out->got_sram_addr = 0;
 
@@ -494,11 +526,21 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
     }
     data_base = (uint8_t *)data_region.base;
 
-    if (data_seg->p_filesz > 0)
-      memcpy(data_base, file_buf + data_seg->p_offset, data_seg->p_filesz);
-    if (data_memsz > data_seg->p_filesz)
-      memset(data_base + data_seg->p_filesz, 0,
-             data_memsz - data_seg->p_filesz);
+    /* Zero entire region (covers gaps between segments and BSS) */
+    memset(data_base, 0, data_memsz);
+    /* Copy file data from each data-region segment (writable segments
+     * plus R-only segments after text for ePIC rodata). */
+    for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
+      if (segs[i].p_flags & PF_X) continue;          /* skip text */
+      if (literal_seg && &segs[i] == literal_seg) continue;
+      if (segs[i].p_vaddr < data_va) continue;        /* before data */
+      if (segs[i].p_vaddr >= data_va + data_memsz) continue; /* after */
+      if (segs[i].p_filesz > 0) {
+        uint32_t off = segs[i].p_vaddr - data_va;
+        memcpy(data_base + off, file_buf + segs[i].p_offset,
+               segs[i].p_filesz);
+      }
+    }
   }
 
 
@@ -533,10 +575,11 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
         PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED);
   }
 
-  /* RISC-V: track user stack in page-backed slots for vfork sharing,
-   * then derive stack_top from the last tracked page. */
+  /* RISC-V: track user stack in the last user_pages slot to keep it
+   * out of the brk growth range (slots data_pages .. USER_PAGES_MAX-2).
+   * Derive stack_top from this tracked page. */
   if (cpu_ops->arch_id == CPU_ARCH_RISCV && need_user_stack) {
-    if (proc_track_page(p, data_pages, ustack_region.base) < 0) {
+    if (proc_track_page(p, USER_PAGES_MAX - 1, ustack_region.base) < 0) {
       mem_region_free(&data_region);
       mem_region_free(&text_region);
       mem_region_free(&ustack_region);

@@ -113,6 +113,7 @@ ppap_generate_romfs(ppap_qemu_rv32
     EXCLUDE_APPS test_musl_child test_musl_fileio test_musl_dir test_musl_fmt)
 
 # ── UFS test image (musl-linked binaries too large for romfs) ──────────────
+if(PPAP_TESTS)
 # Build mkufs host tool
 add_custom_command(
     OUTPUT ${CMAKE_BINARY_DIR}/mkufs
@@ -164,3 +165,4 @@ add_dependencies(ppap_qemu_rv32 ufsimg_image)
 set_source_files_properties(${CMAKE_BINARY_DIR}/ufsimg_data.S
     PROPERTIES OBJECT_DEPENDS ${_ufs_img})
 target_sources(ppap_qemu_rv32 PRIVATE ${CMAKE_BINARY_DIR}/ufsimg_data.S)
+endif()

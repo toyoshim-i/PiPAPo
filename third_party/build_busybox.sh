@@ -194,7 +194,7 @@ for variant in "${VARIANTS[@]}"; do
         # -std=gnu11 for C23 compat (GCC 15 default is gnu23).
         sed -i 's|^CONFIG_CROSS_COMPILER_PREFIX=.*|CONFIG_CROSS_COMPILER_PREFIX=""|' .config
         sed -i "s|^CONFIG_EXTRA_CFLAGS=.*|CONFIG_EXTRA_CFLAGS=\"$PPAP_APP_CFLAGS -std=gnu11 -ffunction-sections -fdata-sections\"|" .config
-        EXTRA_LD="$PPAP_EPIC_LINK_FLAGS $PPAP_EPIC_LINK_PRE $PPAP_EPIC_LINK_POST"
+        EXTRA_LD="$PPAP_EPIC_LINK_FLAGS -T $PPAP_EPIC_LD $PPAP_EPIC_LINK_PRE $PPAP_EPIC_LINK_POST"
         sed -i "s|^CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS=\"$EXTRA_LD\"|" .config
     else
         sed -i 's|^CONFIG_CROSS_COMPILER_PREFIX=.*|CONFIG_CROSS_COMPILER_PREFIX="'"$PPAP_CROSS_PREFIX"'"|' .config
@@ -231,7 +231,7 @@ for variant in "${VARIANTS[@]}"; do
     fi
 
     # Strip and copy to output.
-    $PPAP_STRIP -s -o "$BB_OUT/$name" busybox
+    $PPAP_STRIP $PPAP_STRIP_FLAGS -o "$BB_OUT/$name" busybox
     echo "busybox [$name]: installed to $BB_OUT/$name"
 done
 

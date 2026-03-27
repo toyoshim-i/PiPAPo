@@ -313,6 +313,7 @@ PPAP_ARCH=\"${PPAP_ARCH}\"
 PPAP_CC=\"${PPAP_CC}\"
 PPAP_CROSS_PREFIX=\"${PPAP_CROSS_PREFIX}\"
 PPAP_STRIP=\"${PPAP_STRIP}\"
+PPAP_STRIP_FLAGS=\"--strip-unneeded\"
 PPAP_SIZE_CMD=\"${PPAP_SIZE_CMD}\"
 PPAP_TARGET_FLAGS=\"${PPAP_TARGET_FLAGS_STR}\"
 PPAP_PIC_FLAGS=\"${PPAP_PIC_FLAGS_STR}\"
@@ -332,6 +333,7 @@ PPAP_RISCV_EPIC=\"${PPAP_RISCV_EPIC}\"
 PPAP_EPIC_LINK_PRE=\"${PPAP_MUSL_SYSROOT}/lib/crt1.o ${PPAP_MUSL_SYSROOT}/lib/crti.o\"
 PPAP_EPIC_LINK_POST=\"-L${PPAP_MUSL_SYSROOT}/lib -lc ${PPAP_LIBGCC} ${PPAP_MUSL_SYSROOT}/lib/crtn.o\"
 PPAP_EPIC_LINK_FLAGS=\"-fuse-ld=${PPAP_LLD} -nostdlib -Wl,--pie -Wl,--strip-debug -Wl,--gc-sections -Wl,--allow-multiple-definition\"
+PPAP_EPIC_LD=\"${PPAP_ROOT}/third_party/patches/musl/libc_riscv_epic.ld\"
 ")
 
 # =============================================================================
@@ -429,6 +431,7 @@ function(ppap_musl_test_program name source)
         # ePIC clang + lld: explicit CRT and library paths (no specs file)
         set(_musl_ldflags
             -fuse-ld=${PPAP_LLD} -nostdlib -pie
+            -T ${PPAP_ROOT}/third_party/patches/musl/libc_riscv_epic.ld
             -Wl,--gc-sections -Wl,--build-id=none -Wl,--strip-debug
             -Wl,--allow-multiple-definition
             ${PPAP_MUSL_SYSROOT}/lib/crt1.o ${PPAP_MUSL_SYSROOT}/lib/crti.o

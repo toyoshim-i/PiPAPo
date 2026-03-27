@@ -172,6 +172,7 @@ LINK_FLAGS="$PPAP_TARGET_FLAGS"
 if [[ "${PPAP_RISCV_EPIC:-}" == "ON" ]]; then
     # ePIC clang + lld (link flags from user.cmake)
     $PPAP_CC $LINK_FLAGS $PPAP_EPIC_LINK_FLAGS \
+        -T "$PPAP_EPIC_LD" \
         $PPAP_EPIC_LINK_PRE \
         "${OBJS[@]}" \
         $PPAP_EPIC_LINK_POST \
@@ -194,7 +195,7 @@ else
 fi
 
 # --- Strip ---
-$PPAP_STRIP -s -o "$ROGUE_OUT/rogue" "$ROGUE_OUT/rogue.elf"
+$PPAP_STRIP $PPAP_STRIP_FLAGS -o "$ROGUE_OUT/rogue" "$ROGUE_OUT/rogue.elf"
 
 # --- Summary ---
 echo ""
