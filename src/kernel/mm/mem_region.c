@@ -252,6 +252,14 @@ static int mem_region_linear_arena_alloc(mem_region_linear_arena_t *arena,
 
 static int mem_region_alloc_ram_text(proc_image_segment_t *seg, uint32_t size,
                                      uint32_t flags) {
+  /* Try PSRAM first (larger, cheaper), fall back to IRAM.
+   * The loader doesn't know or care which one it gets — both are
+   * executable on ESP32-S3 when SPIRAM_XIP is enabled. */
+  if (ext_text_arena.ready) {
+    int rc = mem_region_linear_arena_alloc(&ext_text_arena, seg, size,
+                                           PPAP_MEM_RAM_TEXT, flags);
+    if (rc == 0) return 0;
+  }
   return mem_region_linear_arena_alloc(&ram_text_arena, seg, size,
                                        PPAP_MEM_RAM_TEXT, flags);
 }
@@ -369,8 +377,20 @@ static void mem_region_linear_arena_free(mem_region_linear_arena_t *arena,
   spin_unlock_irqrestore(SPIN_MEM, saved);
 }
 
+static int mem_region_arena_contains(const mem_region_linear_arena_t *arena,
+                                     const void *ptr) {
+  if (!arena->ready || !ptr) return 0;
+  uintptr_t a = (uintptr_t)arena->base;
+  uintptr_t p = (uintptr_t)ptr;
+  return p >= a && p < a + arena->size;
+}
+
 static void mem_region_free_ram_text(const proc_image_segment_t *seg) {
-  mem_region_linear_arena_free(&ram_text_arena, seg, "ram_text");
+  /* May have been allocated from PSRAM (ext_text) or IRAM (ram_text) */
+  if (mem_region_arena_contains(&ext_text_arena, seg->base))
+    mem_region_linear_arena_free(&ext_text_arena, seg, "ext_text(ram_text)");
+  else
+    mem_region_linear_arena_free(&ram_text_arena, seg, "ram_text");
 }
 
 static void mem_region_free_ext_text(const proc_image_segment_t *seg) {
