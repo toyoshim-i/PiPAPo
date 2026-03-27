@@ -426,6 +426,24 @@ typedef struct {
   uint32_t got_sram_addr;
 } elf_load_result_t;
 
+typedef enum {
+  ELF_TEXT_XIP,   /* Execute text in-place from file buffer */
+  ELF_TEXT_SRAM,  /* Copy text to SRAM (PPAP_MEM_RAM_TEXT) */
+} elf_text_mode_t;
+
+/* Decide whether text can execute in-place or must be copied to SRAM.
+ * Xtensa always copies (IRAM/PSRAM is not byte-addressable from flash).
+ * Other arches XIP when the source supports it (e.g. romfs). */
+static __attribute__((unused))
+elf_text_mode_t elf_text_mode(int source_is_xip_capable) {
+#if defined(__xtensa__)
+  (void)source_is_xip_capable;
+  return ELF_TEXT_SRAM;
+#else
+  return source_is_xip_capable ? ELF_TEXT_XIP : ELF_TEXT_SRAM;
+#endif
+}
+
 #if defined(__xtensa__)
 static int elf_load_xtensa(pcb_t *p, const elf32_ehdr_t *ehdr,
                            const uint8_t *file_buf, uint32_t file_size,
@@ -1058,11 +1076,12 @@ static int elf_load_generic(pcb_t *p, const elf32_ehdr_t *ehdr,
   if (!text_seg) return -(int)ENOEXEC;
 
   uint32_t e_entry = elf_entry(ehdr);
-  uint32_t xip_text_base = (uint32_t)(uintptr_t)file_buf + text_seg->p_offset;
   elf_got_info_t got_info = {0, 0, 0};
+  elf_text_mode_t text_mode = elf_text_mode(1 /* romfs is XIP-capable */);
 
   proc_image_segment_t stack_region = {0};
   proc_image_segment_t ustack_region = {0};
+  proc_image_segment_t text_region = {0};
   proc_image_segment_t data_region = {0};
 
   if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
@@ -1086,15 +1105,40 @@ static int elf_load_generic(pcb_t *p, const elf32_ehdr_t *ehdr,
     out->stack_top = (uint32_t)(uintptr_t)ustack_region.base + PAGE_SIZE;
   }
 
-  if (cpu_ops->arch_id == CPU_ARCH_M68K) {
-    out->entry = xip_text_base + e_entry - text_seg->p_vaddr;
+  /* Text segment: XIP from file buffer or copy to SRAM */
+  uint32_t text_base;
+  if (text_mode == ELF_TEXT_XIP) {
+    text_base = (uint32_t)(uintptr_t)file_buf + text_seg->p_offset;
+    p->image.text = proc_image_segment_make(
+        (void *)(uintptr_t)text_base, text_seg->p_memsz, PPAP_MEM_ROM_TEXT,
+        PROC_IMAGE_SEG_EXECUTABLE | PROC_IMAGE_SEG_XIP);
   } else {
-    out->entry = xip_text_base + (e_entry & ~1u) - text_seg->p_vaddr;
+    if (mem_region_alloc(&text_region, PPAP_MEM_RAM_TEXT, text_seg->p_memsz,
+                         PROC_IMAGE_SEG_EXECUTABLE |
+                             PROC_IMAGE_SEG_OWNED) < 0) {
+      mem_region_free(&ustack_region);
+      mem_region_free(&stack_region);
+      p->stack_page = NULL;
+      return -(int)ENOMEM;
+    }
+    text_base = (uint32_t)(uintptr_t)text_region.base;
+    if (text_seg->p_filesz > 0)
+      memcpy(text_region.base, file_buf + text_seg->p_offset,
+             text_seg->p_filesz);
+    if (text_seg->p_memsz > text_seg->p_filesz)
+      memset((uint8_t *)text_region.base + text_seg->p_filesz, 0,
+             text_seg->p_memsz - text_seg->p_filesz);
+    p->image.text = proc_image_segment_make(
+        text_region.base, text_seg->p_memsz, PPAP_MEM_RAM_TEXT,
+        PROC_IMAGE_SEG_EXECUTABLE | PROC_IMAGE_SEG_OWNED);
+  }
+
+  if (cpu_ops->arch_id == CPU_ARCH_M68K) {
+    out->entry = text_base + e_entry - text_seg->p_vaddr;
+  } else {
+    out->entry = text_base + (e_entry & ~1u) - text_seg->p_vaddr;
     out->entry |= (e_entry & 1u);
   }
-  p->image.text = proc_image_segment_make(
-      (void *)(uintptr_t)xip_text_base, text_seg->p_memsz, PPAP_MEM_ROM_TEXT,
-      PROC_IMAGE_SEG_EXECUTABLE | PROC_IMAGE_SEG_XIP);
   p->image.entry = out->entry;
 
   out->got_sram_addr = 0;
@@ -1102,6 +1146,7 @@ static int elf_load_generic(pcb_t *p, const elf32_ehdr_t *ehdr,
   if (data_seg && data_seg->p_memsz > 0) {
     uint32_t data_pages = (data_seg->p_memsz + PAGE_SIZE - 1) / PAGE_SIZE;
     if (data_pages > USER_PAGES_MAX) {
+      mem_region_free(&text_region);
       mem_region_free(&ustack_region);
       mem_region_free(&stack_region);
       p->stack_page = NULL;
@@ -1112,6 +1157,7 @@ static int elf_load_generic(pcb_t *p, const elf32_ehdr_t *ehdr,
                          data_seg->p_memsz,
                          PROC_IMAGE_SEG_WRITABLE |
                              PROC_IMAGE_SEG_OWNED) < 0) {
+      mem_region_free(&text_region);
       mem_region_free(&ustack_region);
       mem_region_free(&stack_region);
       p->stack_page = NULL;
@@ -1137,7 +1183,7 @@ static int elf_load_generic(pcb_t *p, const elf32_ehdr_t *ehdr,
         uint32_t val = cpu_ops->read32(cpu_state, word_addr);
         if (val == 0) continue;
         if (val < data_seg->p_vaddr)
-          cpu_ops->write32(cpu_state, word_addr, val + xip_text_base);
+          cpu_ops->write32(cpu_state, word_addr, val + text_base);
         else
           cpu_ops->write32(
               cpu_state, word_addr,
@@ -1146,9 +1192,10 @@ static int elf_load_generic(pcb_t *p, const elf32_ehdr_t *ehdr,
     }
 
     if (apply_relocations(ehdr, file_buf, file_size, text_seg, data_seg,
-                          sram_page, xip_text_base, out->got_sram_addr,
+                          sram_page, text_base, out->got_sram_addr,
                           &got_info, cpu_ops, cpu_state) < 0) {
       mem_region_free(&data_region);
+      mem_region_free(&text_region);
       mem_region_free(&ustack_region);
       mem_region_free(&stack_region);
       p->stack_page = NULL;
@@ -1157,6 +1204,7 @@ static int elf_load_generic(pcb_t *p, const elf32_ehdr_t *ehdr,
 
     if (proc_track_page_range(p, 0, sram_page, data_pages * PAGE_SIZE) < 0) {
       mem_region_free(&data_region);
+      mem_region_free(&text_region);
       mem_region_free(&ustack_region);
       mem_region_free(&stack_region);
       p->stack_page = NULL;
