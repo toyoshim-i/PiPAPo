@@ -417,7 +417,771 @@ static xtensa_xip_state_t xtensa_elf_xip_state(const elf32_ehdr_t *ehdr,
 }
 #endif
 
+
 #define MAX_LOAD_SEGS 4
+
+typedef struct {
+  uint32_t entry;
+  uint32_t stack_top;
+  uint32_t got_sram_addr;
+} elf_load_result_t;
+
+#if defined(__xtensa__)
+static int elf_load_xtensa(pcb_t *p, const elf32_ehdr_t *ehdr,
+                           const uint8_t *file_buf, uint32_t file_size,
+                           elf32_phdr_t *segs, int nseg,
+                           elf_load_result_t *out) {
+  const elf32_phdr_t *text_seg = NULL;
+  const elf32_phdr_t *data_seg = NULL;
+  const elf32_phdr_t *literal_seg = NULL;
+
+  for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
+    if (segs[i].p_flags & PF_X) text_seg = &segs[i];
+  }
+  for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
+    if (!(segs[i].p_flags & PF_W)) continue;
+    if (text_seg &&
+        segs[i].p_vaddr + segs[i].p_memsz <= text_seg->p_vaddr) {
+      literal_seg = &segs[i];
+      continue;
+    }
+    if (!data_seg || segs[i].p_vaddr < data_seg->p_vaddr)
+      data_seg = &segs[i];
+  }
+  if (!text_seg) return -(int)ENOEXEC;
+
+  uint32_t e_entry = elf_entry(ehdr);
+
+  proc_image_segment_t text_region = {0};
+  proc_image_segment_t staged_text_region = {0};
+  proc_image_segment_t staged_rodata_region = {0};
+  proc_image_segment_t data_region = {0};
+  proc_image_segment_t stack_region = {0};
+  uint32_t text_end_va = text_seg->p_vaddr + text_seg->p_memsz;
+  if (literal_seg &&
+      literal_seg->p_vaddr + literal_seg->p_memsz > text_end_va)
+    text_end_va = literal_seg->p_vaddr + literal_seg->p_memsz;
+  uint32_t text_size = (text_end_va + 15u) & ~15u;
+  uint32_t data_va = data_seg ? data_seg->p_vaddr : text_end_va;
+  uint32_t data_memsz = data_seg ? data_seg->p_memsz : 0;
+  uint32_t data_size = (data_memsz + 15u) & ~15u;
+  int uses_xip_layout =
+      xtensa_elf_uses_xip_layout(ehdr, file_buf, file_size, text_seg);
+  xtensa_xip_report_t xip_report = {0};
+  xtensa_xip_state_t xip_state = XTENSA_XIP_STATE_TEXT_BLOCKED;
+
+  if (uses_xip_layout) {
+    xip_state = xtensa_elf_xip_state(ehdr, file_buf, file_size, text_seg,
+                                     literal_seg, data_seg, &xip_report);
+    if (xip_state == XTENSA_XIP_STATE_TEXT_BLOCKED) {
+      klogf("ELF: xtensa XIP layout blocked by text reloc type %u at %x\n",
+            xip_report.blocked_type, xip_report.blocked_offset);
+    } else if (xip_state == XTENSA_XIP_STATE_DATA_COUPLED) {
+      klogf("ELF: xtensa XIP layout remains data-coupled"
+            " (slot0=%u literal32=%u data32=%u)\n",
+            xip_report.literal_slot0_count, xip_report.literal32_count,
+            xip_report.literal_data_count);
+    } else if (xip_state == XTENSA_XIP_STATE_LITERAL_PRELINKED) {
+      klogf("ELF: xtensa XIP layout is literal-prelinked"
+            " (slot0=%u literal32=%u)\n",
+            xip_report.literal_slot0_count,
+            xip_report.literal32_count);
+    } else if (xip_state == XTENSA_XIP_STATE_LITERAL_COUPLED) {
+      klogf("ELF: xtensa XIP layout remains literal-coupled"
+            " (slot0=%u literal32=%u)\n",
+            xip_report.literal_slot0_count,
+            xip_report.literal32_count);
+    }
+  }
+
+  if (mem_region_alloc(&text_region, PPAP_MEM_RAM_TEXT, text_size,
+                       PROC_IMAGE_SEG_EXECUTABLE |
+                           PROC_IMAGE_SEG_OWNED) < 0) {
+    return -(int)ENOMEM;
+  }
+  uint8_t *sram_page = (uint8_t *)text_region.base;
+
+  uint8_t *dram_page = NULL;
+  uint32_t data_pages = 0;
+  if (data_size > 0) {
+    data_pages = (data_size + PAGE_SIZE - 1) / PAGE_SIZE;
+    if (mem_region_alloc(&data_region, PPAP_MEM_RAM_DATA, data_size,
+                         PROC_IMAGE_SEG_WRITABLE |
+                             PROC_IMAGE_SEG_OWNED) < 0) {
+      mem_region_free(&text_region);
+      return -(int)ENOMEM;
+    }
+    dram_page = (uint8_t *)data_region.base;
+  }
+
+  if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
+                       PROC_IMAGE_SEG_WRITABLE |
+                           PROC_IMAGE_SEG_OWNED) < 0) {
+    mem_region_free(&data_region);
+    mem_region_free(&text_region);
+    return -(int)ENOMEM;
+  }
+  p->stack_page = stack_region.base;
+  p->image.stack = stack_region;
+  out->stack_top = (uint32_t)(uintptr_t)stack_region.base + PAGE_SIZE;
+
+  int staged_text_alloc_rc = -(int)ENOMEM;
+  int staged_rodata_alloc_rc = -(int)ENOMEM;
+
+  if (uses_xip_layout) {
+    staged_text_alloc_rc = mem_region_alloc(
+      &staged_text_region, PPAP_MEM_EXT_TEXT,
+      text_seg->p_memsz,
+      PROC_IMAGE_SEG_EXECUTABLE |
+        PROC_IMAGE_SEG_OWNED);
+  }
+
+  if (uses_xip_layout && staged_text_alloc_rc == 0) {
+    uint8_t *staged_text = (uint8_t *)staged_text_region.base;
+    for (uint32_t i = 0; i < text_seg->p_memsz; i++)
+      staged_text[i] = 0;
+
+    if (text_seg->p_filesz > 0) {
+      const uint8_t *src = file_buf + text_seg->p_offset;
+      uint8_t *dst = staged_text;
+      for (uint32_t i = 0; i < text_seg->p_filesz; i++)
+        dst[i] = src[i];
+    }
+
+    p->image.staged_text = proc_image_segment_make_vaddr(
+        staged_text_region.base, staged_text_region.size, text_seg->p_vaddr,
+        PPAP_MEM_EXT_TEXT, staged_text_region.flags);
+    p->image.flags |= PROC_IMAGE_FLAG_TEXT_STAGED_EXT;
+  } else if (uses_xip_layout) {
+    klog("ELF: xtensa PSRAM text staging unavailable; IRAM fallback\n");
+  }
+
+  if (uses_xip_layout && literal_seg) {
+    staged_rodata_alloc_rc = mem_region_alloc(
+        &staged_rodata_region, PPAP_MEM_EXT_RODATA,
+        literal_seg->p_memsz, PROC_IMAGE_SEG_OWNED);
+  }
+
+  if (uses_xip_layout && literal_seg && staged_rodata_alloc_rc == 0) {
+    uint8_t *staged_rodata = (uint8_t *)staged_rodata_region.base;
+    for (uint32_t i = 0; i < literal_seg->p_memsz; i++)
+      staged_rodata[i] = 0;
+
+    if (literal_seg->p_filesz > 0) {
+      const uint8_t *src = file_buf + literal_seg->p_offset;
+      uint8_t *dst = staged_rodata;
+      for (uint32_t i = 0; i < literal_seg->p_filesz; i++)
+        dst[i] = src[i];
+    }
+
+    p->image.staged_rodata = proc_image_segment_make_vaddr(
+        staged_rodata_region.base, staged_rodata_region.size,
+        literal_seg->p_vaddr, PPAP_MEM_EXT_RODATA,
+        staged_rodata_region.flags);
+  } else if (uses_xip_layout && literal_seg) {
+    klog("ELF: xtensa PSRAM rodata staging unavailable\n");
+  }
+
+  if (uses_xip_layout && literal_seg &&
+      (p->image.flags & PROC_IMAGE_FLAG_TEXT_STAGED_EXT) &&
+      !p->image.staged_rodata.base) {
+    mem_region_free(&staged_text_region);
+    p->image.staged_text = (proc_image_segment_t){0};
+    p->image.flags &= ~PROC_IMAGE_FLAG_TEXT_STAGED_EXT;
+    klog("ELF: xtensa staged text disabled due to partial PSRAM staging; "
+         "IRAM fallback\n");
+  }
+
+  /* Zero IRAM (word-at-a-time — byte memset crashes on IRAM) */
+  {
+    uint32_t *dst32 = (uint32_t *)(uintptr_t)sram_page;
+    for (uint32_t w = 0; w < text_size / 4; w++)
+      dst32[w] = 0;
+  }
+
+  if (dram_page) {
+    uint8_t *d = dram_page;
+    for (uint32_t i = 0; i < data_size; i++)
+      d[i] = 0;
+  }
+
+  /* Copy text segment to IRAM (word-at-a-time) */
+  if (text_seg->p_filesz > 0) {
+    const uint8_t *src = file_buf + text_seg->p_offset;
+    volatile uint32_t *dst =
+        (volatile uint32_t *)(uintptr_t)(sram_page + text_seg->p_vaddr);
+    uint32_t words = (text_seg->p_filesz + 3) / 4;
+    for (uint32_t w = 0; w < words; w++) {
+      uint32_t val = src[w * 4];
+      if (w * 4 + 1 < text_seg->p_filesz)
+        val |= (uint32_t)src[w * 4 + 1] << 8;
+      if (w * 4 + 2 < text_seg->p_filesz)
+        val |= (uint32_t)src[w * 4 + 2] << 16;
+      if (w * 4 + 3 < text_seg->p_filesz)
+        val |= (uint32_t)src[w * 4 + 3] << 24;
+      dst[w] = val;
+    }
+  }
+
+  if (literal_seg && literal_seg->p_filesz > 0) {
+    const uint8_t *src = file_buf + literal_seg->p_offset;
+    volatile uint32_t *dst =
+        (volatile uint32_t *)(uintptr_t)(sram_page + literal_seg->p_vaddr);
+    uint32_t words = (literal_seg->p_filesz + 3) / 4;
+    for (uint32_t w = 0; w < words; w++) {
+      uint32_t val = src[w * 4];
+      if (w * 4 + 1 < literal_seg->p_filesz)
+        val |= (uint32_t)src[w * 4 + 1] << 8;
+      if (w * 4 + 2 < literal_seg->p_filesz)
+        val |= (uint32_t)src[w * 4 + 2] << 16;
+      if (w * 4 + 3 < literal_seg->p_filesz)
+        val |= (uint32_t)src[w * 4 + 3] << 24;
+      dst[w] = val;
+    }
+  }
+
+  if (dram_page && data_seg && data_seg->p_filesz > 0) {
+    const uint8_t *src = file_buf + data_seg->p_offset;
+    uint8_t *dst = dram_page;
+    for (uint32_t i = 0; i < data_seg->p_filesz; i++)
+      dst[i] = src[i];
+  }
+
+  uint32_t iram_base = (uint32_t)(uintptr_t)sram_page;
+  uint32_t dram_base = dram_page ? (uint32_t)(uintptr_t)dram_page : 0;
+
+#if defined(ENABLE_XTENSA_PSRAM_EXEC)
+  uint32_t active_text_base = iram_base;
+  if ((p->image.flags & PROC_IMAGE_FLAG_TEXT_STAGED_EXT) &&
+      p->image.staged_text.base) {
+    active_text_base = (uint32_t)(uintptr_t)p->image.staged_text.base;
+  }
+#else
+  uint32_t active_text_base = iram_base;
+#endif
+
+  out->entry = active_text_base + (e_entry - text_seg->p_vaddr);
+#if defined(ENABLE_XTENSA_PSRAM_EXEC)
+  if ((p->image.flags & PROC_IMAGE_FLAG_TEXT_STAGED_EXT) &&
+      p->image.staged_text.base && p->image.staged_text.size > 0) {
+    uint32_t seg_start = (uint32_t)(uintptr_t)p->image.staged_text.base;
+    uint32_t seg_end   = seg_start + p->image.staged_text.size;
+    if (out->entry < seg_start || out->entry >= seg_end) {
+      klogf("ELF: xtensa entry 0x%x outside staged [0x%x, 0x%x) — "
+            "IRAM fallback\n", out->entry, seg_start, seg_end);
+      out->entry = iram_base + (e_entry - text_seg->p_vaddr);
+    }
+  }
+#endif
+  p->image.text = proc_image_segment_make_vaddr(
+      text_region.base, text_region.size, text_seg->p_vaddr,
+      PPAP_MEM_RAM_TEXT, text_region.flags);
+  if (literal_seg) {
+    p->image.literal = proc_image_segment_make_vaddr(
+        sram_page + literal_seg->p_vaddr, literal_seg->p_memsz,
+        literal_seg->p_vaddr, PPAP_MEM_RAM_RODATA, 0u);
+  }
+  p->image.entry = out->entry;
+  if (uses_xip_layout && xip_state == XTENSA_XIP_STATE_LITERAL_COUPLED)
+    p->image.flags |= PROC_IMAGE_FLAG_LITERAL_COUPLED;
+  if (uses_xip_layout && xip_state == XTENSA_XIP_STATE_LITERAL_PRELINKED)
+    p->image.flags |= PROC_IMAGE_FLAG_LITERAL_PRELINKED;
+  if (uses_xip_layout && xip_state == XTENSA_XIP_STATE_DATA_COUPLED)
+    p->image.flags |= PROC_IMAGE_FLAG_DATA_COUPLED;
+
+#if defined(ENABLE_XTENSA_PSRAM_EXEC)
+  if ((p->image.flags & PROC_IMAGE_FLAG_TEXT_STAGED_EXT) &&
+      p->image.staged_text.base) {
+    klogf("ELF: xtensa entry 0x%x (PSRAM @ 0x%lx)\n", out->entry,
+          (uintptr_t)p->image.staged_text.base);
+  } else if (uses_xip_layout) {
+    klogf("ELF: xtensa entry 0x%x (IRAM fallback @ 0x%x)\n", out->entry,
+          iram_base);
+  }
+#endif
+
+  uint32_t image_end = data_va + data_memsz;
+  if (ehdr->e_shoff && ehdr->e_shnum && ehdr->e_shentsize >= 40) {
+    for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
+      const uint8_t *sh =
+          file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
+      uint32_t sh_type = *(const uint32_t *)(sh + 4);
+      if (sh_type != 4 /* SHT_RELA */) continue;
+
+      uint32_t sh_info_idx = *(const uint32_t *)(sh + 28);
+      if (sh_info_idx >= ehdr->e_shnum) continue;
+      const uint8_t *target_sh =
+          file_buf + ehdr->e_shoff + sh_info_idx * ehdr->e_shentsize;
+      uint32_t target_flags = *(const uint32_t *)(target_sh + 8);
+      if (!(target_flags & 2 /* SHF_ALLOC */)) continue;
+
+      uint32_t sh_offset  = *(const uint32_t *)(sh + 16);
+      uint32_t sh_size    = *(const uint32_t *)(sh + 20);
+      uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
+      if (sh_entsize < 12) continue;
+
+      uint32_t n_entries = sh_size / sh_entsize;
+      for (uint32_t ri = 0; ri < n_entries; ri++) {
+        const uint8_t *rela = file_buf + sh_offset + ri * sh_entsize;
+        uint32_t r_offset = *(const uint32_t *)(rela + 0);
+        uint32_t r_info   = *(const uint32_t *)(rela + 4);
+        uint8_t  r_type   = (uint8_t)(r_info & 0xFF);
+
+        if (r_type != 1 && r_type != 6) continue;
+
+        volatile uint32_t *target;
+#if defined(ENABLE_XTENSA_PSRAM_EXEC)
+        if ((p->image.flags & PROC_IMAGE_FLAG_TEXT_STAGED_EXT) &&
+            p->image.staged_text.base &&
+            r_offset < text_end_va) {
+          target = (volatile uint32_t *)((uintptr_t)p->image.staged_text.base
+                                         + r_offset);
+        } else
+#endif
+            if (r_offset < text_end_va)
+          target = (volatile uint32_t *)(sram_page + r_offset);
+        else if (dram_page && r_offset >= data_va)
+          target = (volatile uint32_t *)(dram_page + (r_offset - data_va));
+        else
+          continue;
+
+        uint32_t val = *target;
+        if (val < data_va)
+          *target = val + active_text_base;
+        else
+          *target = dram_base + (val - data_va);
+      }
+    }
+  }
+
+  if (dram_page && ehdr->e_shoff && ehdr->e_shnum &&
+      ehdr->e_shentsize >= 40) {
+    for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
+      const uint8_t *sh =
+          file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
+      uint32_t sh_type    = *(const uint32_t *)(sh + 4);
+      uint32_t sh_flags   = *(const uint32_t *)(sh + 8);
+      uint32_t sh_addr    = *(const uint32_t *)(sh + 12);
+      uint32_t sh_size    = *(const uint32_t *)(sh + 20);
+      uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
+
+      if (sh_type != 1 /* SHT_PROGBITS */) continue;
+      if (!(sh_flags & 3 /* SHF_WRITE|SHF_ALLOC */)) continue;
+      if (sh_entsize != 4) continue;
+      if (sh_addr >= data_va && sh_size > 0) {
+        uint32_t n_got = sh_size / 4;
+        uint32_t *got = (uint32_t *)(dram_page + (sh_addr - data_va));
+        for (uint32_t gi = 0; gi < n_got; gi++) {
+          uint32_t val = got[gi];
+          if (val == 0 || val == 0xFFFFFFFFu) continue;
+          if (val < data_va)
+            got[gi] = val + active_text_base;
+          else if (val < image_end)
+            got[gi] = dram_base + (val - data_va);
+        }
+      }
+    }
+  }
+
+  if (dram_page &&
+      proc_track_page_range(p, 0, dram_page, data_pages * PAGE_SIZE) < 0) {
+    mem_region_free(&stack_region);
+    p->stack_page = NULL;
+    p->image.stack = (proc_image_segment_t){0};
+    mem_region_free(&staged_text_region);
+    p->image.staged_text = (proc_image_segment_t){0};
+    mem_region_free(&staged_rodata_region);
+    p->image.staged_rodata = (proc_image_segment_t){0};
+    mem_region_free(&data_region);
+    mem_region_free(&text_region);
+    return -(int)ENOMEM;
+  }
+
+  if (dram_page) {
+    p->image.data = proc_image_segment_make_vaddr(
+        data_region.base, data_region.size, data_va, PPAP_MEM_RAM_DATA,
+        data_region.flags);
+    uint32_t data_end = dram_base + data_memsz;
+    data_end = (data_end + 15u) & ~15u;
+    p->brk_base = data_end;
+    p->brk_current = data_end;
+  } else {
+    uint32_t text_end = iram_base + text_end_va;
+    text_end = (text_end + 15u) & ~15u;
+    p->brk_base = text_end;
+    p->brk_current = text_end;
+  }
+
+  out->got_sram_addr = 0;
+  return 0;
+}
+
+#elif defined(__riscv)
+static int elf_load_riscv(pcb_t *p, const elf32_ehdr_t *ehdr,
+                          const uint8_t *file_buf, uint32_t file_size,
+                          elf32_phdr_t *segs, int nseg,
+                          elf_load_result_t *out) {
+  const elf32_phdr_t *text_seg = NULL;
+  const elf32_phdr_t *data_seg = NULL;
+
+  for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
+    if (segs[i].p_flags & PF_X)
+      text_seg = &segs[i];
+    else if (segs[i].p_flags & PF_W)
+      data_seg = &segs[i];
+  }
+  if (!text_seg) return -(int)ENOEXEC;
+
+  uint32_t e_entry = elf_entry(ehdr);
+  proc_image_segment_t image_region = {0};
+  proc_image_segment_t stack_region = {0};
+  proc_image_segment_t ustack_region = {0};
+
+  uint32_t image_end = 0;
+  for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
+    uint32_t seg_end = segs[i].p_vaddr + segs[i].p_memsz;
+    if (seg_end > image_end) image_end = seg_end;
+  }
+  uint32_t total_image_pages = (image_end + PAGE_SIZE - 1) / PAGE_SIZE;
+
+  if (mem_region_alloc(&image_region, PPAP_MEM_RAM_DATA, image_end,
+                       PROC_IMAGE_SEG_WRITABLE |
+                           PROC_IMAGE_SEG_OWNED) < 0) {
+    return -(int)ENOMEM;
+  }
+  uint8_t *sram_page = (uint8_t *)image_region.base;
+
+  if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
+                       PROC_IMAGE_SEG_WRITABLE |
+                           PROC_IMAGE_SEG_OWNED) < 0) {
+    mem_region_free(&image_region);
+    return -(int)ENOMEM;
+  }
+  p->stack_page = stack_region.base;
+  p->image.stack = stack_region;
+
+  if (mem_region_alloc(&ustack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
+                       PROC_IMAGE_SEG_WRITABLE |
+                           PROC_IMAGE_SEG_OWNED) < 0) {
+    mem_region_free(&stack_region);
+    mem_region_free(&image_region);
+    p->stack_page = NULL;
+    return -(int)ENOMEM;
+  }
+  void *ustack_rv = ustack_region.base;
+  p->image.stack = ustack_region;
+
+  memset(sram_page, 0, total_image_pages * PAGE_SIZE);
+  memset(ustack_rv, 0, PAGE_SIZE);
+
+  for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
+    if (segs[i].p_filesz > 0 && segs[i].p_vaddr < image_end)
+      memcpy(sram_page + segs[i].p_vaddr,
+             file_buf + segs[i].p_offset, segs[i].p_filesz);
+  }
+
+  out->entry = (uint32_t)(uintptr_t)(sram_page + e_entry);
+  p->image.text = proc_image_segment_make(
+      sram_page + text_seg->p_vaddr, text_seg->p_memsz, PPAP_MEM_RAM_TEXT,
+      PROC_IMAGE_SEG_EXECUTABLE);
+  if (data_seg)
+    p->image.data = proc_image_segment_make(
+        sram_page + data_seg->p_vaddr, data_seg->p_memsz, PPAP_MEM_RAM_DATA,
+        PROC_IMAGE_SEG_WRITABLE);
+  p->image.entry = out->entry;
+
+  if (proc_track_page_range(p, 0, sram_page,
+                            total_image_pages * PAGE_SIZE) < 0 ||
+      proc_track_page(p, total_image_pages, ustack_rv) < 0) {
+    mem_region_free(&ustack_region);
+    mem_region_free(&stack_region);
+    mem_region_free(&image_region);
+    p->stack_page = NULL;
+    p->image.stack = (proc_image_segment_t){0};
+    return -(int)ENOMEM;
+  }
+
+  uint32_t load_base = (uint32_t)(uintptr_t)sram_page;
+  uint32_t riscv32_reloc_count = 0;
+
+  if (ehdr->e_shoff && ehdr->e_shnum && ehdr->e_shentsize >= 40) {
+    for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
+      const uint8_t *sh =
+          file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
+      uint32_t sh_type = *(const uint32_t *)(sh + 4);
+      if (sh_type != 4 /* SHT_RELA */) continue;
+
+      uint32_t sh_offset = *(const uint32_t *)(sh + 16);
+      uint32_t sh_size   = *(const uint32_t *)(sh + 20);
+      uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
+      if (sh_entsize < 12) continue;
+
+      uint32_t n_entries = sh_size / sh_entsize;
+      for (uint32_t ri = 0; ri < n_entries; ri++) {
+        const uint8_t *rela = file_buf + sh_offset + ri * sh_entsize;
+        uint32_t r_offset = *(const uint32_t *)(rela + 0);
+        uint32_t r_info   = *(const uint32_t *)(rela + 4);
+        uint8_t  r_type   = (uint8_t)(r_info & 0xFF);
+
+        if (r_type == 0  /* R_RISCV_NONE */ ||
+            r_type == 16 /* R_RISCV_BRANCH */ ||
+            r_type == 17 /* R_RISCV_JAL */ ||
+            r_type == 20 /* R_RISCV_GOT_HI20 */ ||
+            r_type == 23 /* R_RISCV_PCREL_HI20 */ ||
+            r_type == 24 /* R_RISCV_PCREL_LO12_I */ ||
+            r_type == 25 /* R_RISCV_PCREL_LO12_S */ ||
+            r_type == 35 /* R_RISCV_ADD32 */ ||
+            r_type == 39 /* R_RISCV_SUB32 */ ||
+            r_type == 44 /* R_RISCV_RVC_BRANCH */ ||
+            r_type == 45 /* R_RISCV_RVC_JUMP */ ||
+            r_type == 51 /* R_RISCV_RELAX */ ||
+            (r_type >= 53 && r_type <= 72) /* R_RISCV_SET/SUB debug */)
+          continue;
+
+        if (r_type == 3 && r_offset < image_end) {
+          int32_t r_addend = *(const int32_t *)(rela + 8);
+          uint32_t *target = (uint32_t *)(sram_page + r_offset);
+          *target = (uint32_t)r_addend + load_base;
+          riscv32_reloc_count++;
+          continue;
+        }
+
+        if (r_type == 1 && r_offset < image_end) {
+          uint32_t *target = (uint32_t *)(sram_page + r_offset);
+          *target += load_base;
+          riscv32_reloc_count++;
+          continue;
+        }
+
+        if ((r_type == 26 || r_type == 27) && r_offset < image_end) {
+          if (!sram_page) {
+            klogf("ELF: text reloc type %u needs writable text\n", r_type);
+            mem_region_free(&ustack_region);
+            mem_region_free(&stack_region);
+            p->stack_page = NULL;
+            return -(int)ENOEXEC;
+          }
+          uint8_t *ip = sram_page + r_offset;
+          uint32_t raw;
+          memcpy(&raw, ip, 4);
+
+          if (r_type == 26) {
+            uint32_t new_hi = (raw & 0xFFFFF000u) +
+                              (load_base & 0xFFFFF000u);
+            if (load_base & 0x800u)
+              new_hi += 0x1000u;
+            raw = (raw & 0xFFF) | (new_hi & 0xFFFFF000u);
+          } else {
+            int32_t old_imm = (int32_t)raw >> 20;
+            int32_t new_imm = old_imm + (int32_t)(load_base & 0xFFFu);
+            raw = (raw & 0xFFFFF) | (((uint32_t)new_imm & 0xFFFu) << 20);
+          }
+          memcpy(ip, &raw, 4);
+          riscv32_reloc_count++;
+          continue;
+        }
+
+        klogf("ELF: unhandled RISCV reloc type %u at offset %x\n",
+              r_type, r_offset);
+        mem_region_free(&image_region);
+        mem_region_free(&ustack_region);
+        mem_region_free(&stack_region);
+        p->stack_page = NULL;
+        return -(int)ENOEXEC;
+      }
+    }
+  }
+
+  for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
+    const uint8_t *sh =
+        file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
+    uint32_t sh_type  = *(const uint32_t *)(sh + 4);
+    uint32_t sh_flags = *(const uint32_t *)(sh + 8);
+    uint32_t sh_addr  = *(const uint32_t *)(sh + 12);
+    uint32_t sh_size  = *(const uint32_t *)(sh + 20);
+    uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
+
+    if (sh_type != 1 /* SHT_PROGBITS */) continue;
+    if (!(sh_flags & 3 /* SHF_WRITE|SHF_ALLOC */)) continue;
+    if (sh_entsize != 4) continue;
+    if (sh_addr < image_end && sh_size > 0) {
+      uint32_t n_got = sh_size / 4;
+      uint32_t *got = (uint32_t *)(sram_page + sh_addr);
+      for (uint32_t gi = 0; gi < n_got; gi++) {
+        if (got[gi] != 0 && got[gi] != 0xFFFFFFFFu &&
+            got[gi] < image_end) {
+          got[gi] += load_base;
+          riscv32_reloc_count++;
+        }
+      }
+    }
+  }
+
+  if (data_seg) {
+    uint32_t data_end =
+        (uint32_t)(uintptr_t)sram_page + data_seg->p_vaddr +
+        data_seg->p_memsz;
+    data_end = (data_end + 15u) & ~15u;
+    p->brk_base = data_end;
+    p->brk_current = data_end;
+  } else {
+    uint32_t text_end =
+        (uint32_t)(uintptr_t)sram_page + text_seg->p_vaddr +
+        text_seg->p_memsz;
+    text_end = (text_end + 15u) & ~15u;
+    p->brk_base = text_end;
+    p->brk_current = text_end;
+  }
+
+  void *us = proc_last_page_backed_base(p);
+  out->stack_top = (uint32_t)(uintptr_t)us + PAGE_SIZE;
+  out->got_sram_addr = 0;
+  (void)riscv32_reloc_count;
+  return 0;
+}
+
+#else /* ARM/m68k */
+static int elf_load_generic(pcb_t *p, const elf32_ehdr_t *ehdr,
+                            const uint8_t *file_buf, uint32_t file_size,
+                            elf32_phdr_t *segs, int nseg,
+                            const cpu_ops_t *cpu_ops, void *cpu_state,
+                            elf_load_result_t *out) {
+  const elf32_phdr_t *text_seg = NULL;
+  const elf32_phdr_t *data_seg = NULL;
+
+  for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
+    if (segs[i].p_flags & PF_X)
+      text_seg = &segs[i];
+    else if (segs[i].p_flags & PF_W)
+      data_seg = &segs[i];
+  }
+  if (!text_seg) return -(int)ENOEXEC;
+
+  uint32_t e_entry = elf_entry(ehdr);
+  uint32_t xip_text_base = (uint32_t)(uintptr_t)file_buf + text_seg->p_offset;
+  elf_got_info_t got_info = {0, 0, 0};
+
+  proc_image_segment_t stack_region = {0};
+  proc_image_segment_t ustack_region = {0};
+  proc_image_segment_t data_region = {0};
+
+  if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
+                       PROC_IMAGE_SEG_WRITABLE |
+                           PROC_IMAGE_SEG_OWNED) < 0) {
+    return -(int)ENOMEM;
+  }
+  p->stack_page = stack_region.base;
+  p->image.stack = stack_region;
+  out->stack_top = (uint32_t)(uintptr_t)stack_region.base + PAGE_SIZE;
+
+  if (cpu_ops->arch_id == CPU_ARCH_M68K) {
+    if (mem_region_alloc(&ustack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
+                         PROC_IMAGE_SEG_WRITABLE |
+                             PROC_IMAGE_SEG_OWNED) < 0) {
+      mem_region_free(&stack_region);
+      p->stack_page = NULL;
+      return -(int)ENOMEM;
+    }
+    p->image.stack = ustack_region;
+    out->stack_top = (uint32_t)(uintptr_t)ustack_region.base + PAGE_SIZE;
+  }
+
+  if (cpu_ops->arch_id == CPU_ARCH_M68K) {
+    out->entry = xip_text_base + e_entry - text_seg->p_vaddr;
+  } else {
+    out->entry = xip_text_base + (e_entry & ~1u) - text_seg->p_vaddr;
+    out->entry |= (e_entry & 1u);
+  }
+  p->image.text = proc_image_segment_make(
+      (void *)(uintptr_t)xip_text_base, text_seg->p_memsz, PPAP_MEM_ROM_TEXT,
+      PROC_IMAGE_SEG_EXECUTABLE | PROC_IMAGE_SEG_XIP);
+  p->image.entry = out->entry;
+
+  out->got_sram_addr = 0;
+
+  if (data_seg && data_seg->p_memsz > 0) {
+    uint32_t data_pages = (data_seg->p_memsz + PAGE_SIZE - 1) / PAGE_SIZE;
+    if (data_pages > USER_PAGES_MAX) {
+      mem_region_free(&ustack_region);
+      mem_region_free(&stack_region);
+      p->stack_page = NULL;
+      return -(int)ENOMEM;
+    }
+
+    if (mem_region_alloc(&data_region, PPAP_MEM_RAM_DATA,
+                         data_seg->p_memsz,
+                         PROC_IMAGE_SEG_WRITABLE |
+                             PROC_IMAGE_SEG_OWNED) < 0) {
+      mem_region_free(&ustack_region);
+      mem_region_free(&stack_region);
+      p->stack_page = NULL;
+      return -(int)ENOMEM;
+    }
+    uint8_t *sram_page = (uint8_t *)data_region.base;
+
+    if (data_seg->p_filesz > 0)
+      memcpy(sram_page, file_buf + data_seg->p_offset, data_seg->p_filesz);
+
+    if (data_seg->p_memsz > data_seg->p_filesz)
+      memset(sram_page + data_seg->p_filesz, 0,
+             data_seg->p_memsz - data_seg->p_filesz);
+
+    if (elf_find_got(ehdr, file_buf, &got_info, file_size) == 0) {
+      uint32_t got_offset_in_data = got_info.addr - data_seg->p_vaddr;
+      out->got_sram_addr =
+          (uint32_t)(uintptr_t)sram_page + got_offset_in_data;
+      uint32_t n_entries = got_info.size / 4;
+
+      for (uint32_t i = 0; i < n_entries; i++) {
+        uint32_t word_addr = out->got_sram_addr + (i * 4);
+        uint32_t val = cpu_ops->read32(cpu_state, word_addr);
+        if (val == 0) continue;
+        if (val < data_seg->p_vaddr)
+          cpu_ops->write32(cpu_state, word_addr, val + xip_text_base);
+        else
+          cpu_ops->write32(
+              cpu_state, word_addr,
+              val - data_seg->p_vaddr + (uint32_t)(uintptr_t)sram_page);
+      }
+    }
+
+    if (apply_relocations(ehdr, file_buf, file_size, text_seg, data_seg,
+                          sram_page, xip_text_base, out->got_sram_addr,
+                          &got_info, cpu_ops, cpu_state) < 0) {
+      mem_region_free(&data_region);
+      mem_region_free(&ustack_region);
+      mem_region_free(&stack_region);
+      p->stack_page = NULL;
+      return -(int)ENOEXEC;
+    }
+
+    if (proc_track_page_range(p, 0, sram_page, data_pages * PAGE_SIZE) < 0) {
+      mem_region_free(&data_region);
+      mem_region_free(&ustack_region);
+      mem_region_free(&stack_region);
+      p->stack_page = NULL;
+      p->image.stack = (proc_image_segment_t){0};
+      return -(int)ENOMEM;
+    }
+    p->image.data = proc_image_segment_make(
+        sram_page, data_seg->p_memsz, PPAP_MEM_RAM_DATA,
+        PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED);
+
+    if (cpu_ops->arch_id == CPU_ARCH_M68K) {
+#if defined(__m68k__)
+      p->user_stack_page = ustack_region.base;
+#endif
+    }
+
+    uint32_t data_end = (uint32_t)(uintptr_t)sram_page + data_seg->p_memsz;
+    data_end = (data_end + 15u) & ~15u;
+    p->brk_base = data_end;
+    p->brk_current = data_end;
+  }
+
+  return 0;
+}
+#endif /* arch dispatch */
 
 static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
                     const cpu_ops_t *cpu_ops, void *cpu_state,
@@ -437,859 +1201,24 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   int nseg = elf_load_segments(ehdr, file_buf, segs, MAX_LOAD_SEGS, file_size);
   if (nseg <= 0) return -(int)ENOEXEC;
 
-  const elf32_phdr_t *text_seg = NULL;
-  const elf32_phdr_t *data_seg = NULL;
-#if defined(__xtensa__)
-  const elf32_phdr_t *literal_seg = NULL;
-#endif
-
-#if defined(__xtensa__)
-  for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
-    if (segs[i].p_flags & PF_X) text_seg = &segs[i];
-  }
-
-  for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
-    if (!(segs[i].p_flags & PF_W)) continue;
-    if (text_seg &&
-        segs[i].p_vaddr + segs[i].p_memsz <= text_seg->p_vaddr) {
-      literal_seg = &segs[i];
-      continue;
-    }
-    if (!data_seg || segs[i].p_vaddr < data_seg->p_vaddr)
-      data_seg = &segs[i];
-  }
-#else
-  for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
-    if (segs[i].p_flags & PF_X)
-      text_seg = &segs[i];
-    else if (segs[i].p_flags & PF_W)
-      data_seg = &segs[i];
-  }
-#endif
-
-  if (!text_seg) return -(int)ENOEXEC;
-
-  uint32_t e_entry = elf_entry(ehdr);
-  uint32_t entry;
-  uint8_t *sram_page = NULL;
-  uint32_t got_sram_addr = 0;
-#if !defined(__riscv) && !defined(__xtensa__)
-  elf_got_info_t got_info = {0, 0, 0};
-#endif
-
-  /* On RISC-V/Xtensa, the contiguous SRAM block must be allocated BEFORE
-   * the stack page.  Otherwise the stack could land right after the
-   * contiguous block, blocking sys_brk's page_alloc_at for heap growth. */
-  void *stack = NULL;
-#if !defined(__riscv)
-  void *user_stack = NULL;
-#endif
-
   p->image = (proc_image_t){0};
 
-#if !defined(__riscv) && !defined(__xtensa__)
-  uint32_t xip_text_base = (uint32_t)(uintptr_t)file_buf + text_seg->p_offset;
-#endif
-
+  elf_load_result_t res = {0};
+  int rc;
 #if defined(__xtensa__)
-  /* ESP32-S3 split memory:
-   *   IRAM (0x4037xxxx): executable, word-access only (no byte load/store)
-   *   DRAM (0x3FC9xxxx): byte-accessible, NOT executable
-   *
-   * Text segment → IRAM (via heap_caps_malloc EXEC)
-   * Data segment (rodata + GOT + .data + .bss) → DRAM (via page_alloc)
-   *
-   * Relocations are split: link-time addresses in the text range get the
-   * IRAM base, addresses in the data range get the DRAM base. */
-  {
-    proc_image_segment_t text_region = {0};
-    proc_image_segment_t staged_text_region = {0};
-    proc_image_segment_t staged_rodata_region = {0};
-    proc_image_segment_t data_region = {0};
-    proc_image_segment_t stack_region = {0};
-    uint32_t text_end_va = text_seg->p_vaddr + text_seg->p_memsz;
-    if (literal_seg &&
-        literal_seg->p_vaddr + literal_seg->p_memsz > text_end_va)
-      text_end_va = literal_seg->p_vaddr + literal_seg->p_memsz;
-    uint32_t text_size = (text_end_va + 15u) & ~15u;
-    uint32_t data_va = data_seg ? data_seg->p_vaddr : text_end_va;
-    uint32_t data_memsz = data_seg ? data_seg->p_memsz : 0;
-    uint32_t data_size = (data_memsz + 15u) & ~15u;
-    int uses_xip_layout =
-        xtensa_elf_uses_xip_layout(ehdr, file_buf, file_size, text_seg);
-    xtensa_xip_report_t xip_report = {0};
-    xtensa_xip_state_t xip_state = XTENSA_XIP_STATE_TEXT_BLOCKED;
-
-    if (uses_xip_layout) {
-      xip_state = xtensa_elf_xip_state(ehdr, file_buf, file_size, text_seg,
-                                       literal_seg, data_seg, &xip_report);
-      if (xip_state == XTENSA_XIP_STATE_TEXT_BLOCKED) {
-        klogf("ELF: xtensa XIP layout blocked by text reloc type %u at %x\n",
-              xip_report.blocked_type, xip_report.blocked_offset);
-      } else if (xip_state == XTENSA_XIP_STATE_DATA_COUPLED) {
-        klogf("ELF: xtensa XIP layout remains data-coupled"
-              " (slot0=%u literal32=%u data32=%u)\n",
-              xip_report.literal_slot0_count, xip_report.literal32_count,
-              xip_report.literal_data_count);
-      } else if (xip_state == XTENSA_XIP_STATE_LITERAL_PRELINKED) {
-        klogf("ELF: xtensa XIP layout is literal-prelinked"
-              " (slot0=%u literal32=%u)\n",
-              xip_report.literal_slot0_count,
-              xip_report.literal32_count);
-      } else if (xip_state == XTENSA_XIP_STATE_LITERAL_COUPLED) {
-        klogf("ELF: xtensa XIP layout remains literal-coupled"
-              " (slot0=%u literal32=%u)\n",
-              xip_report.literal_slot0_count,
-              xip_report.literal32_count);
-      }
-    }
-
-    /* Allocate IRAM for text (executable, word-access only) */
-    if (mem_region_alloc(&text_region, PPAP_MEM_RAM_TEXT, text_size,
-                         PROC_IMAGE_SEG_EXECUTABLE |
-                             PROC_IMAGE_SEG_OWNED) < 0) {
-      return -(int)ENOMEM;
-    }
-    sram_page = (uint8_t *)text_region.base;
-
-    /* Allocate DRAM for data (byte-accessible, needed for .rodata strings) */
-    uint8_t *dram_page = NULL;
-    uint32_t data_pages = 0;
-    if (data_size > 0) {
-      data_pages = (data_size + PAGE_SIZE - 1) / PAGE_SIZE;
-      if (mem_region_alloc(&data_region, PPAP_MEM_RAM_DATA, data_size,
-                           PROC_IMAGE_SEG_WRITABLE |
-                               PROC_IMAGE_SEG_OWNED) < 0) {
-        mem_region_free(&text_region);
-        return -(int)ENOMEM;
-      }
-      dram_page = (uint8_t *)data_region.base;
-    }
-
-    /* Allocate kernel stack page */
-    if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                         PROC_IMAGE_SEG_WRITABLE |
-                             PROC_IMAGE_SEG_OWNED) < 0) {
-      mem_region_free(&data_region);
-      mem_region_free(&text_region);
-      return -(int)ENOMEM;
-    }
-    stack = stack_region.base;
-    p->stack_page = stack;
-    p->image.stack = stack_region;
-
-    int staged_text_alloc_rc = -(int)ENOMEM;
-    int staged_rodata_alloc_rc = -(int)ENOMEM;
-
-    if (uses_xip_layout) {
-      staged_text_alloc_rc = mem_region_alloc(
-        &staged_text_region, PPAP_MEM_EXT_TEXT,
-        text_seg->p_memsz,
-        PROC_IMAGE_SEG_EXECUTABLE |
-          PROC_IMAGE_SEG_OWNED);
-    }
-
-    if (uses_xip_layout && staged_text_alloc_rc == 0) {
-      uint8_t *staged_text = (uint8_t *)staged_text_region.base;
-      for (uint32_t i = 0; i < text_seg->p_memsz; i++)
-        staged_text[i] = 0;
-
-      if (text_seg->p_filesz > 0) {
-        const uint8_t *src = file_buf + text_seg->p_offset;
-        uint8_t *dst = staged_text;
-        for (uint32_t i = 0; i < text_seg->p_filesz; i++)
-          dst[i] = src[i];
-      }
-
-      p->image.staged_text = proc_image_segment_make_vaddr(
-          staged_text_region.base, staged_text_region.size, text_seg->p_vaddr,
-          PPAP_MEM_EXT_TEXT, staged_text_region.flags);
-      p->image.flags |= PROC_IMAGE_FLAG_TEXT_STAGED_EXT;
-    } else if (uses_xip_layout) {
-      klog("ELF: xtensa PSRAM text staging unavailable; IRAM fallback\n");
-    }
-
-    if (uses_xip_layout && literal_seg) {
-      staged_rodata_alloc_rc = mem_region_alloc(
-          &staged_rodata_region, PPAP_MEM_EXT_RODATA,
-          literal_seg->p_memsz, PROC_IMAGE_SEG_OWNED);
-    }
-
-    if (uses_xip_layout && literal_seg && staged_rodata_alloc_rc == 0) {
-      uint8_t *staged_rodata = (uint8_t *)staged_rodata_region.base;
-      for (uint32_t i = 0; i < literal_seg->p_memsz; i++)
-        staged_rodata[i] = 0;
-
-      if (literal_seg->p_filesz > 0) {
-        const uint8_t *src = file_buf + literal_seg->p_offset;
-        uint8_t *dst = staged_rodata;
-        for (uint32_t i = 0; i < literal_seg->p_filesz; i++)
-          dst[i] = src[i];
-      }
-
-      p->image.staged_rodata = proc_image_segment_make_vaddr(
-          staged_rodata_region.base, staged_rodata_region.size,
-          literal_seg->p_vaddr, PPAP_MEM_EXT_RODATA,
-          staged_rodata_region.flags);
-    } else if (uses_xip_layout && literal_seg) {
-      klog("ELF: xtensa PSRAM rodata staging unavailable\n");
-    }
-
-    /* If text staging succeeded but literal support staging failed for an
-     * XIP-layout image with a separate literal segment, disable staged-text
-     * execution and run from IRAM to keep a complete, coherent fallback. */
-    if (uses_xip_layout && literal_seg &&
-        (p->image.flags & PROC_IMAGE_FLAG_TEXT_STAGED_EXT) &&
-        !p->image.staged_rodata.base) {
-      mem_region_free(&staged_text_region);
-      p->image.staged_text = (proc_image_segment_t){0};
-      p->image.flags &= ~PROC_IMAGE_FLAG_TEXT_STAGED_EXT;
-      klog("ELF: xtensa staged text disabled due to partial PSRAM staging; "
-           "IRAM fallback\n");
-    }
-
-    /* Zero IRAM (word-at-a-time — byte memset crashes on IRAM) */
-    {
-      uint32_t *dst32 = (uint32_t *)(uintptr_t)sram_page;
-      for (uint32_t w = 0; w < text_size / 4; w++)
-        dst32[w] = 0;
-    }
-
-    /* Zero DRAM (byte access OK) */
-    if (dram_page) {
-      uint8_t *d = dram_page;
-      for (uint32_t i = 0; i < data_size; i++)
-        d[i] = 0;
-    }
-
-    /* Copy text segment to IRAM (word-at-a-time) */
-    if (text_seg->p_filesz > 0) {
-      const uint8_t *src = file_buf + text_seg->p_offset;
-      volatile uint32_t *dst =
-          (volatile uint32_t *)(uintptr_t)(sram_page + text_seg->p_vaddr);
-      uint32_t words = (text_seg->p_filesz + 3) / 4;
-      for (uint32_t w = 0; w < words; w++) {
-        uint32_t val = src[w * 4];
-        if (w * 4 + 1 < text_seg->p_filesz)
-          val |= (uint32_t)src[w * 4 + 1] << 8;
-        if (w * 4 + 2 < text_seg->p_filesz)
-          val |= (uint32_t)src[w * 4 + 2] << 16;
-        if (w * 4 + 3 < text_seg->p_filesz)
-          val |= (uint32_t)src[w * 4 + 3] << 24;
-        dst[w] = val;
-      }
-    }
-
-    /* Copy separate Xtensa literal support segment when present.
-     * This keeps the RAM-loaded fallback compatible with the experimental
-     * XIP packaging, even though the runtime still stages text into IRAM. */
-    if (literal_seg && literal_seg->p_filesz > 0) {
-      const uint8_t *src = file_buf + literal_seg->p_offset;
-      volatile uint32_t *dst =
-          (volatile uint32_t *)(uintptr_t)(sram_page + literal_seg->p_vaddr);
-      uint32_t words = (literal_seg->p_filesz + 3) / 4;
-      for (uint32_t w = 0; w < words; w++) {
-        uint32_t val = src[w * 4];
-        if (w * 4 + 1 < literal_seg->p_filesz)
-          val |= (uint32_t)src[w * 4 + 1] << 8;
-        if (w * 4 + 2 < literal_seg->p_filesz)
-          val |= (uint32_t)src[w * 4 + 2] << 16;
-        if (w * 4 + 3 < literal_seg->p_filesz)
-          val |= (uint32_t)src[w * 4 + 3] << 24;
-        dst[w] = val;
-      }
-    }
-
-    /* Copy data segment to DRAM (byte access OK) */
-    if (dram_page && data_seg && data_seg->p_filesz > 0) {
-      const uint8_t *src = file_buf + data_seg->p_offset;
-      uint8_t *dst = dram_page;
-      for (uint32_t i = 0; i < data_seg->p_filesz; i++)
-        dst[i] = src[i];
-    }
-
-    uint32_t iram_base = (uint32_t)(uintptr_t)sram_page;
-    uint32_t dram_base = dram_page ? (uint32_t)(uintptr_t)dram_page : 0;
-
-    /* XT-2.6: Determine active execution path based on XIP readiness.
-     * - If ENABLE_XTENSA_PSRAM_EXEC is set AND staged text exists (XIP-capable
-     *   layout), use PSRAM-backed execution base for entry point.
-     * - Otherwise, fall back to IRAM-loaded execution (current behavior). */
-#if defined(ENABLE_XTENSA_PSRAM_EXEC)
-    uint32_t active_text_base = iram_base;
-    if ((p->image.flags & PROC_IMAGE_FLAG_TEXT_STAGED_EXT) &&
-        p->image.staged_text.base) {
-      active_text_base = (uint32_t)(uintptr_t)p->image.staged_text.base;
-    }
-#else
-    uint32_t active_text_base = iram_base;
-#endif
-
-    /* Entry point calculation based on active execution path.
-     * Validate entry is within staged segment bounds when PSRAM exec is
-     * active; fall back to IRAM if the ELF entry is out of range. */
-    entry = active_text_base + (e_entry - text_seg->p_vaddr);
-#if defined(ENABLE_XTENSA_PSRAM_EXEC)
-    if ((p->image.flags & PROC_IMAGE_FLAG_TEXT_STAGED_EXT) &&
-        p->image.staged_text.base && p->image.staged_text.size > 0) {
-      uint32_t seg_start = (uint32_t)(uintptr_t)p->image.staged_text.base;
-      uint32_t seg_end   = seg_start + p->image.staged_text.size;
-      if (entry < seg_start || entry >= seg_end) {
-        klogf("ELF: xtensa entry 0x%x outside staged [0x%x, 0x%x) — "
-              "IRAM fallback\n", entry, seg_start, seg_end);
-        entry = iram_base + (e_entry - text_seg->p_vaddr);
-      }
-    }
-#endif
-    p->image.text = proc_image_segment_make_vaddr(
-        text_region.base, text_region.size, text_seg->p_vaddr,
-        PPAP_MEM_RAM_TEXT, text_region.flags);
-    if (literal_seg) {
-      /* The RAM-loaded fallback still places .literal inside the same
-       * IRAM allocation for L32R reach, but model it as read-mostly
-       * support data so the future XIP path can lift it out of text. */
-      p->image.literal = proc_image_segment_make_vaddr(
-          sram_page + literal_seg->p_vaddr, literal_seg->p_memsz,
-          literal_seg->p_vaddr, PPAP_MEM_RAM_RODATA, 0u);
-    }
-    p->image.entry = entry;
-    if (uses_xip_layout && xip_state == XTENSA_XIP_STATE_LITERAL_COUPLED)
-      p->image.flags |= PROC_IMAGE_FLAG_LITERAL_COUPLED;
-    if (uses_xip_layout && xip_state == XTENSA_XIP_STATE_LITERAL_PRELINKED)
-      p->image.flags |= PROC_IMAGE_FLAG_LITERAL_PRELINKED;
-    if (uses_xip_layout && xip_state == XTENSA_XIP_STATE_DATA_COUPLED)
-      p->image.flags |= PROC_IMAGE_FLAG_DATA_COUPLED;
-
-#if defined(ENABLE_XTENSA_PSRAM_EXEC)
-    if ((p->image.flags & PROC_IMAGE_FLAG_TEXT_STAGED_EXT) &&
-        p->image.staged_text.base) {
-      klogf("ELF: xtensa entry 0x%x (PSRAM @ 0x%lx)\n", entry,
-            (uintptr_t)p->image.staged_text.base);
-    } else if (uses_xip_layout) {
-      klogf("ELF: xtensa entry 0x%x (IRAM fallback @ 0x%x)\n", entry,
-            iram_base);
-    }
-#endif
-
-    /* Apply split relocations from --emit-relocs sections.
-     *
-     * Link-time layout: text at vaddr [0, text_end_va), data at [data_va, ...).
-     * Runtime: text at active_text_base (IRAM or PSRAM), data at dram_base.
-     *
-     * For each R_XTENSA_32/PLT relocation, the patched word contains a
-     * link-time address V.  Convert to runtime:
-     *   V < data_va  → active_text_base + V  (text/code reference)
-     *   V >= data_va → dram_base + (V - data_va) (data/rodata reference)
-     *
-     * IMPORTANT: only process RELA sections whose target section (sh_info)
-     * has SHF_ALLOC set.  Metadata sections like .xt.prop and .xt.lit have
-     * their own RELA sections with section-internal offsets. */
-    uint32_t image_end = data_va + data_memsz;
-    if (ehdr->e_shoff && ehdr->e_shnum && ehdr->e_shentsize >= 40) {
-      for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
-        const uint8_t *sh =
-            file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
-        uint32_t sh_type = *(const uint32_t *)(sh + 4);
-        if (sh_type != 4 /* SHT_RELA */) continue;
-
-        uint32_t sh_info_idx = *(const uint32_t *)(sh + 28);
-        if (sh_info_idx >= ehdr->e_shnum) continue;
-        const uint8_t *target_sh =
-            file_buf + ehdr->e_shoff + sh_info_idx * ehdr->e_shentsize;
-        uint32_t target_flags = *(const uint32_t *)(target_sh + 8);
-        if (!(target_flags & 2 /* SHF_ALLOC */)) continue;
-
-        uint32_t sh_offset  = *(const uint32_t *)(sh + 16);
-        uint32_t sh_size    = *(const uint32_t *)(sh + 20);
-        uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
-        if (sh_entsize < 12) continue;
-
-        uint32_t n_entries = sh_size / sh_entsize;
-        for (uint32_t ri = 0; ri < n_entries; ri++) {
-          const uint8_t *rela = file_buf + sh_offset + ri * sh_entsize;
-          uint32_t r_offset = *(const uint32_t *)(rela + 0);
-          uint32_t r_info   = *(const uint32_t *)(rela + 4);
-          uint8_t  r_type   = (uint8_t)(r_info & 0xFF);
-
-          if (r_type != 1 && r_type != 6) continue;
-
-          /* Determine which memory region the relocation target is in.
-           * For ENABLE_XTENSA_PSRAM_EXEC, relocations in staged_text
-           * must be applied there, not in IRAM fallback. */
-          volatile uint32_t *target;
-#if defined(ENABLE_XTENSA_PSRAM_EXEC)
-          if ((p->image.flags & PROC_IMAGE_FLAG_TEXT_STAGED_EXT) &&
-              p->image.staged_text.base &&
-              r_offset < text_end_va) {
-            /* Relocation is in the staged PSRAM text copy */
-            target = (volatile uint32_t *)((uintptr_t)p->image.staged_text.base
-                                           + r_offset);
-          } else
-#endif
-              if (r_offset < text_end_va)
-            target = (volatile uint32_t *)(sram_page + r_offset);
-          else if (dram_page && r_offset >= data_va)
-            target = (volatile uint32_t *)(dram_page + (r_offset - data_va));
-          else
-            continue;
-
-          /* Read link-time value and apply active execution base */
-          uint32_t val = *target;
-          if (val < data_va)
-            *target = val + active_text_base;           /* text reference */
-          else
-            *target = dram_base + (val - data_va); /* data reference → DRAM */
-        }
-      }
-    }
-
-    /* Relocate GOT entries (in DRAM) with active execution base */
-    if (dram_page && ehdr->e_shoff && ehdr->e_shnum &&
-        ehdr->e_shentsize >= 40) {
-      for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
-        const uint8_t *sh =
-            file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
-        uint32_t sh_type    = *(const uint32_t *)(sh + 4);
-        uint32_t sh_flags   = *(const uint32_t *)(sh + 8);
-        uint32_t sh_addr    = *(const uint32_t *)(sh + 12);
-        uint32_t sh_size    = *(const uint32_t *)(sh + 20);
-        uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
-
-        if (sh_type != 1 /* SHT_PROGBITS */) continue;
-        if (!(sh_flags & 3 /* SHF_WRITE|SHF_ALLOC */)) continue;
-        if (sh_entsize != 4) continue;
-        if (sh_addr >= data_va && sh_size > 0) {
-          uint32_t n_got = sh_size / 4;
-          uint32_t *got = (uint32_t *)(dram_page + (sh_addr - data_va));
-          for (uint32_t gi = 0; gi < n_got; gi++) {
-            uint32_t val = got[gi];
-            if (val == 0 || val == 0xFFFFFFFFu) continue;
-            if (val < data_va)
-              got[gi] = val + active_text_base;
-            else if (val < image_end)
-              got[gi] = dram_base + (val - data_va);
-          }
-        }
-      }
-    }
-
-    /* Track page-backed DRAM for cleanup and later heap growth. */
-    /* Xtensa IRAM text is owned through image.text instead. */
-    if (dram_page &&
-        proc_track_page_range(p, 0, dram_page, data_pages * PAGE_SIZE) < 0) {
-      mem_region_free(&stack_region);
-      p->stack_page = NULL;
-      p->image.stack = (proc_image_segment_t){0};
-      mem_region_free(&staged_text_region);
-      p->image.staged_text = (proc_image_segment_t){0};
-      mem_region_free(&staged_rodata_region);
-      p->image.staged_rodata = (proc_image_segment_t){0};
-      mem_region_free(&data_region);
-      mem_region_free(&text_region);
-      return -(int)ENOMEM;
-    }
-
-    /* Set brk base/current after DRAM data for heap growth */
-    if (dram_page) {
-      p->image.data = proc_image_segment_make_vaddr(
-          data_region.base, data_region.size, data_va, PPAP_MEM_RAM_DATA,
-          data_region.flags);
-      uint32_t data_end = dram_base + data_memsz;
-      data_end = (data_end + 15u) & ~15u;
-      p->brk_base = data_end;
-      p->brk_current = data_end;
-    } else {
-      uint32_t text_end = iram_base + text_end_va;
-      text_end = (text_end + 15u) & ~15u;
-      p->brk_base = text_end;
-      p->brk_current = text_end;
-    }
-  }
+  rc = elf_load_xtensa(p, ehdr, file_buf, file_size, segs, nseg, &res);
 #elif defined(__riscv)
-  /* RISC-V PIC uses auipc (PC-relative) for ALL address references,
-   * including writable globals.  This only works when text and data are
-   * at their link-time relative offsets.  With XIP (text in flash, data
-   * in SRAM), they'd be at completely different addresses.
-   *
-   * Fix: allocate contiguous SRAM for the entire image (text + data),
-   * copy both segments there, and execute from SRAM.  This trades RAM
-   * for correctness — no GOT patching needed. */
-  {
-    proc_image_segment_t image_region = {0};
-    proc_image_segment_t stack_region = {0};
-    proc_image_segment_t ustack_region = {0};
-
-    /* Compute image extent from ALL LOAD segments (ePIC PIE may have 4) */
-    uint32_t image_end = 0;
-    for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
-      uint32_t seg_end = segs[i].p_vaddr + segs[i].p_memsz;
-      if (seg_end > image_end) image_end = seg_end;
-    }
-    uint32_t total_image_pages = (image_end + PAGE_SIZE - 1) / PAGE_SIZE;
-
-    if (mem_region_alloc(&image_region, PPAP_MEM_RAM_DATA, image_end,
-                         PROC_IMAGE_SEG_WRITABLE |
-                             PROC_IMAGE_SEG_OWNED) < 0) {
-      return -(int)ENOMEM;
-    }
-    sram_page = (uint8_t *)image_region.base;
-
-    /* Allocate kernel stack (separate from user stack via mscratch). */
-    if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                         PROC_IMAGE_SEG_WRITABLE |
-                             PROC_IMAGE_SEG_OWNED) < 0) {
-      mem_region_free(&image_region);
-      return -(int)ENOMEM;
-    }
-    stack = stack_region.base;
-    p->stack_page = stack;
-    p->image.stack = stack_region;
-
-    /* Allocate user stack page, tracked in page-backed slots so vfork
-     * shares it naturally (same address in parent and child). */
-    if (mem_region_alloc(&ustack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                         PROC_IMAGE_SEG_WRITABLE |
-                             PROC_IMAGE_SEG_OWNED) < 0) {
-      mem_region_free(&stack_region);
-      mem_region_free(&image_region);
-      p->stack_page = NULL;
-      return -(int)ENOMEM;
-    }
-    void *ustack_rv = ustack_region.base;
-    p->image.stack = ustack_region;
-
-    /* Zero entire region first (covers BSS and alignment gaps) */
-    memset(sram_page, 0, total_image_pages * PAGE_SIZE);
-    memset(ustack_rv, 0, PAGE_SIZE);
-
-    /* Copy ALL LOAD segments (ePIC PIE binaries may have 4: R, RE, RW, RW) */
-    for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
-      if (segs[i].p_filesz > 0 && segs[i].p_vaddr < image_end)
-        memcpy(sram_page + segs[i].p_vaddr,
-               file_buf + segs[i].p_offset, segs[i].p_filesz);
-    }
-
-    entry = (uint32_t)(uintptr_t)(sram_page + e_entry);
-    p->image.text = proc_image_segment_make(
-        sram_page + text_seg->p_vaddr, text_seg->p_memsz, PPAP_MEM_RAM_TEXT,
-        PROC_IMAGE_SEG_EXECUTABLE);
-    if (data_seg)
-      p->image.data = proc_image_segment_make(
-          sram_page + data_seg->p_vaddr, data_seg->p_memsz, PPAP_MEM_RAM_DATA,
-          PROC_IMAGE_SEG_WRITABLE);
-    p->image.entry = entry;
-
-    if (proc_track_page_range(p, 0, sram_page,
-                              total_image_pages * PAGE_SIZE) < 0 ||
-        proc_track_page(p, total_image_pages, ustack_rv) < 0) {
-      mem_region_free(&ustack_region);
-      mem_region_free(&stack_region);
-      mem_region_free(&image_region);
-      p->stack_page = NULL;
-      p->image.stack = (proc_image_segment_t){0};
-      return -(int)ENOMEM;
-    }
-
-    /* Apply relocations from SHT_RELA sections.  Handles:
-     * - R_RISCV_RELATIVE (3): PIE base relocation from -pie / ePIC
-     * - R_RISCV_32 (1): absolute 32-bit from --emit-relocs
-     * - R_RISCV_HI20/LO12_I (26/27): instruction patching */
-    uint32_t load_base = (uint32_t)(uintptr_t)sram_page;
-    uint32_t riscv32_reloc_count = 0;
-
-    if (ehdr->e_shoff && ehdr->e_shnum && ehdr->e_shentsize >= 40) {
-      for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
-        const uint8_t *sh =
-            file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
-        uint32_t sh_type = *(const uint32_t *)(sh + 4);
-        if (sh_type != 4 /* SHT_RELA */) continue;
-
-        uint32_t sh_offset = *(const uint32_t *)(sh + 16);
-        uint32_t sh_size   = *(const uint32_t *)(sh + 20);
-        uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
-        if (sh_entsize < 12) continue; /* RELA entry = 12 bytes */
-
-        uint32_t n_entries = sh_size / sh_entsize;
-        for (uint32_t ri = 0; ri < n_entries; ri++) {
-          const uint8_t *rela = file_buf + sh_offset + ri * sh_entsize;
-          uint32_t r_offset = *(const uint32_t *)(rela + 0);
-          uint32_t r_info   = *(const uint32_t *)(rela + 4);
-          uint8_t  r_type   = (uint8_t)(r_info & 0xFF);
-
-          /* PC-relative, linker-internal, and debug relocs: no patching
-           * needed since the entire binary is loaded contiguously. */
-          if (r_type == 0  /* R_RISCV_NONE */ ||
-              r_type == 16 /* R_RISCV_BRANCH */ ||
-              r_type == 17 /* R_RISCV_JAL */ ||
-              r_type == 20 /* R_RISCV_GOT_HI20 (PC-relative to GOT) */ ||
-              r_type == 23 /* R_RISCV_PCREL_HI20 */ ||
-              r_type == 24 /* R_RISCV_PCREL_LO12_I */ ||
-              r_type == 25 /* R_RISCV_PCREL_LO12_S */ ||
-              r_type == 35 /* R_RISCV_ADD32 */ ||
-              r_type == 39 /* R_RISCV_SUB32 */ ||
-              r_type == 44 /* R_RISCV_RVC_BRANCH */ ||
-              r_type == 45 /* R_RISCV_RVC_JUMP */ ||
-              r_type == 51 /* R_RISCV_RELAX */ ||
-              (r_type >= 53 && r_type <= 72) /* R_RISCV_SET/SUB debug */)
-            continue;
-
-          /* R_RISCV_RELATIVE = 3: PIE base relocation (from -pie).
-           * target = addend + load_base.  Replaces the manual GOT scan
-           * and R_RISCV_32 fixups when the binary is linked with -pie. */
-          if (r_type == 3 && r_offset < image_end) {
-            int32_t r_addend = *(const int32_t *)(rela + 8);
-            uint32_t *target = (uint32_t *)(sram_page + r_offset);
-            *target = (uint32_t)r_addend + load_base;
-            riscv32_reloc_count++;
-            continue;
-          }
-
-          /* R_RISCV_32 = 1: absolute 32-bit data address */
-          if (r_type == 1 && r_offset < image_end) {
-            uint32_t *target = (uint32_t *)(sram_page + r_offset);
-            *target += load_base;
-            riscv32_reloc_count++;
-            continue;
-          }
-
-          /* R_RISCV_HI20 (26) and R_RISCV_LO12_I (27): absolute address
-           * split across LUI (upper 20) and ADDI (lower 12) instructions.
-           * With --emit-relocs the linker already resolved the address into
-           * the instructions.  Extract the link-time value, add load_base,
-           * and re-encode.
-           *
-           * These modify text (instructions) — requires writable SRAM.
-           * Fail if text is in read-only flash (romfs XIP). */
-          if ((r_type == 26 || r_type == 27) && r_offset < image_end) {
-            if (!sram_page) {
-              klogf("ELF: text reloc type %u needs writable text\n", r_type);
-              mem_region_free(&ustack_region);
-              mem_region_free(&stack_region);
-              p->stack_page = NULL;
-              return -(int)ENOEXEC;
-            }
-            /* Instructions may be at 2-byte aligned addresses (after
-             * compressed insns).  Use memcpy to avoid misaligned traps
-             * on Hazard3. */
-            uint8_t *ip = sram_page + r_offset;
-            uint32_t raw;
-            memcpy(&raw, ip, 4);
-
-            if (r_type == 26) {
-              /* LUI: imm[31:12] in bits [31:12].  Add load_base upper
-               * bits, with +0x1000 carry if load_base bit 11 is set
-               * (ADDI sign-extension compensation). */
-              uint32_t new_hi = (raw & 0xFFFFF000u) +
-                                (load_base & 0xFFFFF000u);
-              if (load_base & 0x800u)
-                new_hi += 0x1000u;
-              raw = (raw & 0xFFF) | (new_hi & 0xFFFFF000u);
-            } else {
-              /* ADDI I-type: imm[11:0] in bits [31:20] (sign-extended).
-               * Add load_base's low 12 bits. */
-              int32_t old_imm = (int32_t)raw >> 20;
-              int32_t new_imm = old_imm + (int32_t)(load_base & 0xFFFu);
-              raw = (raw & 0xFFFFF) | (((uint32_t)new_imm & 0xFFFu) << 20);
-            }
-            memcpy(ip, &raw, 4);
-            riscv32_reloc_count++;
-            continue;
-          }
-
-          /* Unhandled relocation type — fail the exec */
-          klogf("ELF: unhandled RISCV reloc type %u at offset %x\n",
-                r_type, r_offset);
-          mem_region_free(&image_region);
-          mem_region_free(&ustack_region);
-          mem_region_free(&stack_region);
-          p->stack_page = NULL;
-          return -(int)ENOEXEC;
-        }
-      }
-    }
-    /* Also relocate GOT entries.  --emit-relocs doesn't produce R_RISCV_32
-     * for GOT slots (the linker resolves them directly).  Scan section
-     * headers for .got (SHT_PROGBITS, SHF_WRITE, SHF_ALLOC) and add
-     * load_base to every non-zero, non-0xFFFFFFFF entry. */
-    for (uint16_t si = 0; si < ehdr->e_shnum; si++) {
-      const uint8_t *sh =
-          file_buf + ehdr->e_shoff + si * ehdr->e_shentsize;
-      uint32_t sh_type  = *(const uint32_t *)(sh + 4);
-      uint32_t sh_flags = *(const uint32_t *)(sh + 8);
-      uint32_t sh_addr  = *(const uint32_t *)(sh + 12);
-      uint32_t sh_size  = *(const uint32_t *)(sh + 20);
-      uint32_t sh_entsize = *(const uint32_t *)(sh + 36);
-
-      /* .got: PROGBITS, WRITE+ALLOC, entsize=4 */
-      if (sh_type != 1 /* SHT_PROGBITS */) continue;
-      if (!(sh_flags & 3 /* SHF_WRITE|SHF_ALLOC */)) continue;
-      if (sh_entsize != 4) continue;
-      if (sh_addr < image_end && sh_size > 0) {
-        uint32_t n_got = sh_size / 4;
-        uint32_t *got = (uint32_t *)(sram_page + sh_addr);
-        for (uint32_t gi = 0; gi < n_got; gi++) {
-          if (got[gi] != 0 && got[gi] != 0xFFFFFFFFu &&
-              got[gi] < image_end) {
-            got[gi] += load_base;
-            riscv32_reloc_count++;
-          }
-        }
-      }
-    }
-
-    /* Set brk base/current for heap allocation (busybox needs this).
-     * brk starts after the end of the loaded image in SRAM. */
-    if (data_seg) {
-      uint32_t data_end =
-          (uint32_t)(uintptr_t)sram_page + data_seg->p_vaddr +
-          data_seg->p_memsz;
-      data_end = (data_end + 15u) & ~15u;
-      p->brk_base = data_end;
-      p->brk_current = data_end;
-    } else {
-      uint32_t text_end =
-          (uint32_t)(uintptr_t)sram_page + text_seg->p_vaddr +
-          text_seg->p_memsz;
-      text_end = (text_end + 15u) & ~15u;
-      p->brk_base = text_end;
-      p->brk_current = text_end;
-    }
-  }
+  rc = elf_load_riscv(p, ehdr, file_buf, file_size, segs, nseg, &res);
 #else
-  /* ARM/m68k: text is XIP from romfs; allocate stack + data via
-   * mem_region to keep allocator API uniform across targets. */
-  {
-    proc_image_segment_t stack_region = {0};
-    proc_image_segment_t ustack_region = {0};
-    proc_image_segment_t data_region = {0};
-
-    if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                         PROC_IMAGE_SEG_WRITABLE |
-                             PROC_IMAGE_SEG_OWNED) < 0) {
-      return -(int)ENOMEM;
-    }
-    stack = stack_region.base;
-    p->stack_page = stack;
-    p->image.stack = stack_region;
-
-    if (cpu_ops->arch_id == CPU_ARCH_M68K) {
-      if (mem_region_alloc(&ustack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                           PROC_IMAGE_SEG_WRITABLE |
-                               PROC_IMAGE_SEG_OWNED) < 0) {
-        mem_region_free(&stack_region);
-        p->stack_page = NULL;
-        return -(int)ENOMEM;
-      }
-      user_stack = ustack_region.base;
-      p->image.stack = ustack_region;
-    }
-
-    if (cpu_ops->arch_id == CPU_ARCH_M68K) {
-      entry = xip_text_base + e_entry - text_seg->p_vaddr;
-    } else {
-      entry = xip_text_base + (e_entry & ~1u) - text_seg->p_vaddr;
-      entry |= (e_entry & 1u);
-    }
-    p->image.text = proc_image_segment_make(
-        (void *)(uintptr_t)xip_text_base, text_seg->p_memsz, PPAP_MEM_ROM_TEXT,
-        PROC_IMAGE_SEG_EXECUTABLE | PROC_IMAGE_SEG_XIP);
-    p->image.entry = entry;
-
-    if (data_seg && data_seg->p_memsz > 0) {
-      uint32_t data_pages = (data_seg->p_memsz + PAGE_SIZE - 1) / PAGE_SIZE;
-      if (data_pages > USER_PAGES_MAX) {
-        mem_region_free(&ustack_region);
-        mem_region_free(&stack_region);
-        p->stack_page = NULL;
-        return -(int)ENOMEM;
-      }
-
-      if (mem_region_alloc(&data_region, PPAP_MEM_RAM_DATA,
-                           data_seg->p_memsz,
-                           PROC_IMAGE_SEG_WRITABLE |
-                               PROC_IMAGE_SEG_OWNED) < 0) {
-        mem_region_free(&ustack_region);
-        mem_region_free(&stack_region);
-        p->stack_page = NULL;
-        return -(int)ENOMEM;
-      }
-      sram_page = (uint8_t *)data_region.base;
-
-      if (data_seg->p_filesz > 0)
-        memcpy(sram_page, file_buf + data_seg->p_offset, data_seg->p_filesz);
-
-      if (data_seg->p_memsz > data_seg->p_filesz)
-        memset(sram_page + data_seg->p_filesz, 0,
-               data_seg->p_memsz - data_seg->p_filesz);
-
-      if (elf_find_got(ehdr, file_buf, &got_info, file_size) == 0) {
-        uint32_t got_offset_in_data = got_info.addr - data_seg->p_vaddr;
-        got_sram_addr = (uint32_t)(uintptr_t)sram_page + got_offset_in_data;
-        uint32_t n_entries = got_info.size / 4;
-
-        for (uint32_t i = 0; i < n_entries; i++) {
-          uint32_t word_addr = got_sram_addr + (i * 4);
-          uint32_t val = cpu_ops->read32(cpu_state, word_addr);
-          if (val == 0) continue;
-          if (val < data_seg->p_vaddr)
-            cpu_ops->write32(cpu_state, word_addr, val + xip_text_base);
-          else
-            cpu_ops->write32(
-                cpu_state, word_addr,
-                val - data_seg->p_vaddr + (uint32_t)(uintptr_t)sram_page);
-        }
-      }
-
-      if (apply_relocations(ehdr, file_buf, file_size, text_seg, data_seg,
-                            sram_page, xip_text_base, got_sram_addr, &got_info,
-                            cpu_ops, cpu_state) < 0) {
-        mem_region_free(&data_region);
-        mem_region_free(&ustack_region);
-        mem_region_free(&stack_region);
-        p->stack_page = NULL;
-        return -(int)ENOEXEC;
-      }
-
-      if (proc_track_page_range(p, 0, sram_page, data_pages * PAGE_SIZE) < 0) {
-        mem_region_free(&data_region);
-        mem_region_free(&ustack_region);
-        mem_region_free(&stack_region);
-        p->stack_page = NULL;
-        p->image.stack = (proc_image_segment_t){0};
-        return -(int)ENOMEM;
-      }
-      p->image.data = proc_image_segment_make(
-          sram_page, data_seg->p_memsz, PPAP_MEM_RAM_DATA,
-          PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED);
-
-      if (cpu_ops->arch_id == CPU_ARCH_M68K) {
-#if defined(__m68k__)
-        p->user_stack_page = user_stack;
+  rc = elf_load_generic(p, ehdr, file_buf, file_size, segs, nseg,
+                        cpu_ops, cpu_state, &res);
 #endif
-      }
+  if (rc < 0) return rc;
 
-      uint32_t data_end = (uint32_t)(uintptr_t)sram_page + data_seg->p_memsz;
-      data_end = (data_end + 15u) & ~15u;
-      p->brk_base = data_end;
-      p->brk_current = data_end;
-    }
-  }
-#endif /* !__riscv && !__xtensa__ */
-
+  uint32_t entry = res.entry;
+  uint32_t got_sram_addr = res.got_sram_addr;
   uint32_t argv_sp = 0;
-  uint32_t stack_top;
-#if defined(__riscv)
-  /* RISC-V: argv on user stack (separate from kernel stack) */
-  {
-    void *us = proc_last_page_backed_base(p);
-    stack_top = (uint32_t)(uintptr_t)us + PAGE_SIZE;
-  }
-#else
-  stack_top = (cpu_ops->arch_id == CPU_ARCH_M68K)
-                  ? (uint32_t)(uintptr_t)user_stack + PAGE_SIZE
-                  : (uint32_t)(uintptr_t)stack + PAGE_SIZE;
-#endif
-  uint32_t sp = stack_top;
+  uint32_t sp = res.stack_top;
 
   int argc = 0;
   while (argv && argv[argc]) {
