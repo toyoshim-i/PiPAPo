@@ -6,7 +6,7 @@
 
 #include "test_framework.h"
 #include "kernel/subsys/h68k_util.h"
-#include "kernel/errno.h"
+#include "kernel/common/errno.h"
 #include <string.h>
 
 /* ── Path translation tests ──────────────────────────────────────────── */

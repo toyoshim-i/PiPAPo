@@ -58,7 +58,7 @@ void proc_init(void) {
 
   /* Pre-initialise slot 0 as the initial kernel thread.
    * stack_page is NULL: this thread runs on the initial kernel stack
-   * set up by startup.S; no page_alloc() needed. */
+   * set up by startup.S; no extra stack allocation is needed. */
   proc_table[0].pid = 0;
   proc_table[0].ppid = 0;
   proc_table[0].state = PROC_RUNNABLE;

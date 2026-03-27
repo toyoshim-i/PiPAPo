@@ -84,6 +84,9 @@ if [[ -z "$TARGET" ]]; then
     exit 0
 fi
 
+# ── Repository boundary checks ───────────────────────────────────────────────
+"$SCRIPT_DIR/check_allocator_boundaries.sh"
+
 # ── Determine source and build directories ──────────────────────────────────
 case "$TARGET" in
     qemu_arm|qemu_rv32|pico1|pico1calc|pico2|pico2rv)

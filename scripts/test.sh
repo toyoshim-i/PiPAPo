@@ -42,6 +42,10 @@ if [[ $USE_EXTENDED -eq 1 && $DO_ALL -eq 0 ]]; then
     exit 1
 fi
 
+echo "=== Allocator boundary check ==="
+"$SCRIPT_DIR/check_allocator_boundaries.sh"
+echo ""
+
 # ── Host unit tests ────────────────────────────────────────────────────────
 BUILD_DIR="$PROJECT_DIR/build/host"
 

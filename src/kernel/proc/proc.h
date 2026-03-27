@@ -125,7 +125,7 @@ typedef struct pcb {
   proc_state_t state;
 
   /* ── Memory ─────────────────────────────────────────────────────────── */
-  void *stack_page; /* 4 KB page from page_alloc(): process stack */
+  void *stack_page; /* 4 KB stack backing page for this process */
   void *user_pages[USER_PAGES_MAX]; /* page-backed user memory tracking */
   proc_image_t image; /* explicit process image layout / memory classes */
 #if defined(__m68k__)
@@ -325,9 +325,9 @@ void proc_release_private_tracked_pages_from_array(
  * Set up an initial kernel stack frame for a new process so that
  * PendSV_Handler can restore it on the first context switch.
  *
- * Pre-condition: p->stack_page must already point to a 4 KB page obtained
- * from page_alloc().  After this call p->sp is set and the process is ready
- * to be made PROC_RUNNABLE.
+ * Pre-condition: p->stack_page must already point to a 4 KB stack backing
+ * page. After this call p->sp is set and the process is ready to be made
+ * PROC_RUNNABLE.
  *
  * On entry to `entry`, all callee-saved registers are zero, r0–r3 are zero,
  * and lr = 0xFFFFFFFD (EXC_RETURN: Thread mode, PSP, basic frame).

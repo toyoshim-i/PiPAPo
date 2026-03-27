@@ -41,6 +41,7 @@ add_test(NAME h68k_path COMMAND test_h68k_path)
 add_executable(test_ecpu_z80
     ${SRC}/kernel/cpu/ecpu_z80.c
     ${SRC}/kernel/cpu/ecpu_z80_alu.c
+    test_mem_region_stubs.c
     test_ecpu_z80.c
 )
 target_include_directories(test_ecpu_z80 PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
@@ -51,6 +52,7 @@ add_test(NAME ecpu_z80 COMMAND test_ecpu_z80)
 add_executable(test_ecpu_m68k
     ${SRC}/kernel/cpu/ecpu_m68k.c
     ${SRC}/kernel/cpu/ecpu_m68k_alu.c
+    test_mem_region_stubs.c
     test_ecpu_m68k.c
 )
 target_include_directories(test_ecpu_m68k PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
@@ -63,6 +65,7 @@ set(ZEXALL_COM ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/zexall/zexall.com)
 add_executable(test_zexall
     ${SRC}/kernel/cpu/ecpu_z80.c
     ${SRC}/kernel/cpu/ecpu_z80_alu.c
+    test_mem_region_stubs.c
     test_zexall.c
 )
 target_include_directories(test_zexall PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})

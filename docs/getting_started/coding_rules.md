@@ -140,6 +140,33 @@ Use `TODO` for:
 Do **not** include author names or dates — `git blame` provides that
 information.  Keep the description short and actionable.
 
+## Allocator Boundary
+
+Code outside `src/kernel/mm/` must allocate through `mem_region_*`.
+
+- Allowed outside `src/kernel/mm/`:
+  - `mem_region_alloc`
+  - `mem_region_alloc_at`
+  - `mem_region_free`
+  - `mem_region_*` query helpers
+- Not allowed outside `src/kernel/mm/`:
+  - `page_alloc`
+  - `page_alloc_at`
+  - `page_alloc_contiguous`
+  - `page_free`
+  - `page_free_count`
+  - `page_max_contiguous`
+
+`page_*` remains a backend implementation detail.  If non-mm code needs
+capacity or free-space information, add an appropriate `mem_region_*`
+helper instead of reaching into `page.h` directly for allocator state.
+
+Run the boundary checker before committing allocator-related work:
+
+```sh
+./scripts/check_allocator_boundaries.sh
+```
+
 ## Compile-Time Flags for Work in Progress
 
 When working on changes — even in the current worktree — always guard your
@@ -290,6 +317,7 @@ Co-Authored-By: <Agent name> (<model name>) [<optional valid email>]
 5. Does the code follow this coding rules document?
    In particular, check that no new `#ifdef` conditionals on arch or target
    have been introduced — prefer per-arch/per-target implementations instead.
+   Also check that non-mm code does not introduce new direct `page_*` calls.
 6. Are affected documents updated?
 7. Are `Co-Authored-By:` trailers present when applicable?
 8. Is this commit scoped tightly enough to review easily?

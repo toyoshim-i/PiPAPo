@@ -130,7 +130,7 @@
  *
  * TMPFS_DATA_MAX    Maximum total file data stored in tmpfs.  Enforced at
  *                   write time (returns -ENOSPC when exceeded).  Data is
- *                   allocated in PAGE_SIZE chunks via page_alloc().
+ *                   allocated in PAGE_SIZE chunks.
  * ────────────────────────────────────────────────────────────────────────── */
 #define TMPFS_INODE_MAX 16   /* maximum files + directories in tmpfs   */
 #define TMPFS_NAME_MAX 31    /* max filename in tmpfs (31 chars + NUL) */
