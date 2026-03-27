@@ -194,7 +194,7 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   uint32_t emu_mem_size = emu_mem_pages * PAGE_SIZE;
 
   for (uint32_t i = 0; i < total_pages; i++)
-    p->user_pages[i] = mem_base + i * PAGE_SIZE;
+    proc_track_page(p, i, mem_base + i * PAGE_SIZE);
 
   uint8_t *emu_mem = mem_base;
   h68k_emu_exec_state_t *st =
@@ -236,12 +236,7 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     err = x68k_apply_relocs(emu_mem + X68K_PMB_SIZE, image_size, reloc_data,
                             reloc_size, delta);
     if (err < 0) {
-      for (uint32_t i = 0; i < total_pages; i++) {
-        if (p->user_pages[i]) {
-          page_free(p->user_pages[i]);
-          p->user_pages[i] = NULL;
-        }
-      }
+      proc_release_tracked_pages(p, 0, total_pages);
       page_free(p->stack_page);
       p->stack_page = NULL;
       return err;
@@ -291,7 +286,7 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   uint32_t total_bytes = n_pages * PAGE_SIZE;
 
   for (uint32_t i = 0; i < n_pages; i++)
-    p->user_pages[i] = base + i * PAGE_SIZE;
+    proc_track_page(p, i, base + i * PAGE_SIZE);
 
   /* Zero PMB, copy text+data, zero BSS */
   memset(base, 0, X68K_PMB_SIZE);

@@ -91,7 +91,7 @@ static int r_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
       (h68k_emu_exec_state_t *)(mem_base + emu_mem_pages * PAGE_SIZE);
 
   for (uint32_t i = 0; i < total_pages; i++)
-    p->user_pages[i] = mem_base + i * PAGE_SIZE;
+    proc_track_page(p, i, mem_base + i * PAGE_SIZE);
 
   memset(st, 0, sizeof(*st));
   ecpu_m68k_ops.init((cpu_state_t *)&st->m68k, emu_mem, emu_mem_size);
@@ -161,7 +161,7 @@ static int r_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   uint32_t total_bytes = n_pages * PAGE_SIZE;
 
   for (uint32_t i = 0; i < n_pages; i++)
-    p->user_pages[i] = base + i * PAGE_SIZE;
+    proc_track_page(p, i, base + i * PAGE_SIZE);
 
   /* Zero PMB, copy file image */
   memset(base, 0, X68K_PMB_SIZE);

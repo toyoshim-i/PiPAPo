@@ -101,9 +101,9 @@ static int m68k_emu_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   ppap_m68k_exec_state_t *state =
       (ppap_m68k_exec_state_t *)(mem_base + emu_mem_pages * PAGE_SIZE);
 
-  /* Store pages for cleanup on exit */
+  /* Track pages for cleanup on exit */
   for (uint32_t i = 0; i < total_pages && i < USER_PAGES_MAX; i++)
-    p->user_pages[i] = mem_base + i * PAGE_SIZE;
+    proc_track_page(p, i, mem_base + i * PAGE_SIZE);
 
   /* ── 2. Allocate stack page ────────────────────────────────────────── */
   void *stack = page_alloc();

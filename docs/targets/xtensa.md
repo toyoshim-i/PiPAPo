@@ -761,6 +761,10 @@ Current implementation status:
 - `sys_exit`, `sys_vfork`, and `sys_execve` now route page tracking copy /
   restore / release through shared local helpers in `sys_proc.c` rather than
   repeating open-coded `USER_PAGES_MAX` loops for each path
+- legacy loaders (`flat`, `com`, `sos`, `x`, `r`, `m68k_emu`) now route
+  tracked page registration through `proc_track_page`, and selected loader
+  cleanup paths use shared tracked-page release helpers instead of direct
+  `user_pages[]` clear loops
 - `user_pages[]` still remains the compatibility surface for the rest of
   the kernel, so this step is not complete yet
 

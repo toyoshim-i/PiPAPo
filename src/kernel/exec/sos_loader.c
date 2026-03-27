@@ -195,10 +195,11 @@ static int sos_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
   sos_exec_state_t *state = (sos_exec_state_t *)state_page;
 
-  /* Store pages in user_pages[] for cleanup on exit */
+  /* Track pages for cleanup on exit */
   for (uint32_t i = 0; i < Z80_MEM_PAGES && i < USER_PAGES_MAX; i++)
-    p->user_pages[i] = mem_base + i * PAGE_SIZE;
-  if (Z80_MEM_PAGES < USER_PAGES_MAX) p->user_pages[Z80_MEM_PAGES] = state_page;
+    proc_track_page(p, i, mem_base + i * PAGE_SIZE);
+  if (Z80_MEM_PAGES < USER_PAGES_MAX)
+    proc_track_page(p, Z80_MEM_PAGES, state_page);
 
   /* ── 3. Allocate stack page ────────────────────────────────────────── */
   void *stack = page_alloc();

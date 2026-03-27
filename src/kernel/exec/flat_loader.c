@@ -8,7 +8,7 @@
  * starts with a valid 8086 instruction (not ELF/script magic).
  *
  * Memory layout after load:
- *   user_pages[0] = flat binary + stack (4 KB page)
+ *   tracked page-backed slot 0 = flat binary + stack (4 KB page)
  *   Entry point: page base + 0
  *   Stack: top of page (grows down)
  */
@@ -78,7 +78,10 @@ static int flat_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   /* Zero remaining space (stack area) */
   memset((uint8_t *)page + file_size, 0, PAGE_SIZE - file_size);
 
-  p->user_pages[0] = page;
+  if (proc_track_page(p, 0, page) < 0) {
+    page_free(page);
+    return -ENOMEM;
+  }
 
   /* Entry point: start of page. Stack: top of page. */
   void (*entry)(void) = (void (*)(void))page;
