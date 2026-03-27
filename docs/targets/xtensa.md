@@ -878,11 +878,18 @@ Status: **complete**
 
 #### XT-3.3: Move steady-state device control to MMIO-first paths
 
-Status: **not started**
+Status: **complete**
 
-- migrate timers, interrupt routing control, GPIO, UART, SPI, and I2C
-  runtime policy to direct MMIO access where practical
-- keep ESP-IDF calls only where vendor boot/clock/cache coupling is required
+- Xtensa steady-state ownership is now scoped to devices that are actively used
+  by the current target/runtime path; unused device classes are intentionally
+  left untouched in this step
+- timer tick control and interrupt routing policy are PPAP-owned and handled
+  through direct register/table control in Xtensa target/arch code
+- UART remains on the ROM console shim as the explicit vendor-coupled exception
+  for console-channel selection (UART0 vs USB Serial JTAG), which depends on
+  ESP-IDF boot-time console routing
+- keep ESP-IDF calls only where vendor boot/clock/cache/console coupling is
+  required
 
 #### XT-3.4: Define and enforce the bootstrap boundary contract
 
