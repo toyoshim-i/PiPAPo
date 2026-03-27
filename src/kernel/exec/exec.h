@@ -28,12 +28,4 @@
  */
 int do_execve(pcb_t *p, const char *path, const char *const *argv);
 
-/*
- * alloc_contiguous — allocate n contiguous pages from the page pool.
- *
- * Returns pointer to the first page, or NULL if a contiguous block
- * of n pages is not available.  Used by both ELF and X-format loaders.
- */
-uint8_t *alloc_contiguous(uint32_t n_pages);
-
 #endif /* PPAP_KERNEL_EXEC_EXEC_H */

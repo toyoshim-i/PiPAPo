@@ -14,6 +14,7 @@
 #include "exec.h"
 #include "kernel/cpu/ecpu_z80.h"
 #include "kernel/common/errno.h"
+#include "kernel/mm/mem_region.h"
 #include "kernel/mm/page.h"
 #include "kernel/subsys/cpm_bridge.h"
 #include "kernel/subsys/cpm_loader.h"
@@ -93,36 +94,35 @@ static int com_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   (void)cpu_ops;
   (void)cpu_state;
 
-  /* ── 1. Allocate Z80 memory (64KB contiguous) + separate state page ── */
-  uint8_t *mem_base = alloc_contiguous(Z80_MEM_PAGES);
-  if (!mem_base) return -(int)ENOMEM;
+  proc_image_segment_t data_region = {0};
+  proc_image_segment_t stack_region = {0};
 
-  uint8_t *z80_mem = mem_base;
-
-  uint8_t *state_page = page_alloc();
-  if (!state_page) {
-    for (uint32_t i = 0; i < Z80_MEM_PAGES; i++)
-      page_free(mem_base + i * PAGE_SIZE);
+  /* ── 1. Allocate Z80 memory (64KB contiguous) + state page ─────────── */
+  if (mem_region_alloc(&data_region, PPAP_MEM_RAM_DATA,
+                       (Z80_MEM_PAGES + 1u) * PAGE_SIZE,
+                       PROC_IMAGE_SEG_WRITABLE |
+                           PROC_IMAGE_SEG_OWNED) < 0) {
     return -(int)ENOMEM;
   }
 
-  cpm_exec_state_t *state = (cpm_exec_state_t *)state_page;
+  if (proc_track_page_range(p, 0, data_region.base, data_region.size) < 0) {
+    mem_region_free(&data_region);
+    return -(int)ENOMEM;
+  }
 
-  /* Track pages for cleanup on exit */
-  for (uint32_t i = 0; i < Z80_MEM_PAGES && i < USER_PAGES_MAX; i++)
-    proc_track_page(p, i, mem_base + i * PAGE_SIZE);
-  if (Z80_MEM_PAGES < USER_PAGES_MAX)
-    proc_track_page(p, Z80_MEM_PAGES, state_page);
+  uint8_t *z80_mem = (uint8_t *)data_region.base;
+  cpm_exec_state_t *state =
+      (cpm_exec_state_t *)(z80_mem + Z80_MEM_PAGES * PAGE_SIZE);
 
   /* ── 2. Allocate stack page ────────────────────────────────────────── */
-  void *stack = page_alloc();
-  if (!stack) {
-    for (uint32_t i = 0; i < Z80_MEM_PAGES; i++)
-      page_free(mem_base + i * PAGE_SIZE);
-    page_free(state_page);
+  if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
+                       PROC_IMAGE_SEG_WRITABLE |
+                           PROC_IMAGE_SEG_OWNED) < 0) {
+    proc_release_tracked_pages(p, 0, Z80_MEM_PAGES + 1u);
     return -(int)ENOMEM;
   }
-  p->stack_page = stack;
+  p->stack_page = stack_region.base;
+  p->image.stack = stack_region;
 
   /* ── 3. Initialize Z80 emulator ────────────────────────────────────── */
   memset(state, 0, sizeof(*state));
@@ -152,6 +152,11 @@ static int com_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   const char *path = (argv && argv[0]) ? argv[0] : "";
   cpm_load_com(&state->z80, &state->cpm, file_buf, file_size, cmdline);
   cpm_set_drive_a_root(&state->cpm, path);
+  p->image.text = proc_image_segment_make(z80_mem + CPM_TPA_BASE, file_size,
+                                          PPAP_MEM_RAM_TEXT,
+                                          PROC_IMAGE_SEG_EXECUTABLE);
+  p->image.data = data_region;
+  p->image.entry = CPM_TPA_BASE;
 
   /* ── 6. Tag as CP/M process ────────────────────────────────────────── */
   p->subsys = SUBSYS_CPM;

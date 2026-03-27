@@ -13,16 +13,11 @@
 
 #include "arch/arch.h"
 #include "kernel/common/errno.h"
+#include "kernel/mm/mem_region.h"
 #include "kernel/mm/page.h"
 #include "kernel/signal/signal.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "loader.h"
-
-/* ── Contiguous page allocation helper ─────────────────────────────────── */
-
-uint8_t *alloc_contiguous(uint32_t n_pages) {
-  return page_alloc_contiguous(n_pages);
-}
 
 /* ── do_execve ─────────────────────────────────────────────────────────── */
 
@@ -45,8 +40,8 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
   }
 
   /* ── 2. Read the file into memory (or use XIP address) ─────────────── */
+  proc_image_segment_t file_region = {0};
   uint8_t *file_buf = NULL;
-  uint32_t file_pages = 0;
   const uint8_t *file_base;
   uint32_t file_size = vn->size;
 
@@ -56,24 +51,22 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
       return -(int)ENOEXEC;
     }
 
-    file_pages = (file_size + PAGE_SIZE - 1u) / PAGE_SIZE;
-    file_buf = alloc_contiguous(file_pages);
-    if (!file_buf) {
+    if (mem_region_alloc(&file_region, PPAP_MEM_RAM_DATA, file_size,
+                         PROC_IMAGE_SEG_WRITABLE) < 0) {
       mod_vfs.rel_vnode(vn);
       return -(int)ENOMEM;
     }
+    file_buf = (uint8_t *)file_region.base;
 
     if (!vn->mount || !vn->mount->ops || !vn->mount->ops->read) {
-      for (uint32_t i = 0; i < file_pages; i++)
-        page_free(file_buf + i * PAGE_SIZE);
+      mem_region_free(&file_region);
       mod_vfs.rel_vnode(vn);
       return -(int)ENOEXEC;
     }
 
     long nread = vn->mount->ops->read(vn, file_buf, file_size, 0);
     if (nread < 0 || (uint32_t)nread != file_size) {
-      for (uint32_t i = 0; i < file_pages; i++)
-        page_free(file_buf + i * PAGE_SIZE);
+      mem_region_free(&file_region);
       mod_vfs.rel_vnode(vn);
       return (nread < 0) ? (int)nread : -(int)ENOEXEC;
     }
@@ -112,19 +105,13 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
   }
 
   if (!matched_loader) {
-    if (file_buf) {
-      for (uint32_t i = 0; i < file_pages; i++)
-        page_free(file_buf + i * PAGE_SIZE);
-    }
+    if (file_buf) mem_region_free(&file_region);
     mod_vfs.rel_vnode(vn);
     return rc;
   }
 
   /* ── 4. Free file buffer if the loader doesn't need it for XIP ───── */
-  if (file_buf && !matched_loader->xip) {
-    for (uint32_t i = 0; i < file_pages; i++)
-      page_free(file_buf + i * PAGE_SIZE);
-  }
+  if (file_buf && !matched_loader->xip) mem_region_free(&file_region);
 
   /* ── 5. Set process metadata ───────────────────────────────────────── */
   {

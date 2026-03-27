@@ -18,6 +18,7 @@
 #include <string.h>
 
 #include "kernel/common/errno.h"
+#include "kernel/mm/mem_region.h"
 #include "kernel/mm/page.h"
 #include "kernel/proc/proc.h"
 #include "arch/arch.h"
@@ -69,9 +70,15 @@ static int flat_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
   if (file_size > FLAT_MAX_SIZE) return -ENOMEM;
 
+  proc_image_segment_t page_region = {0};
+
   /* Allocate one page for code + data + stack */
-  void *page = page_alloc();
-  if (!page) return -ENOMEM;
+  if (mem_region_alloc(&page_region, PPAP_MEM_RAM_DATA, PAGE_SIZE,
+                       PROC_IMAGE_SEG_WRITABLE |
+                           PROC_IMAGE_SEG_OWNED) < 0) {
+    return -ENOMEM;
+  }
+  void *page = page_region.base;
 
   /* Copy binary to start of page */
   memcpy(page, file_buf, file_size);
@@ -80,7 +87,7 @@ static int flat_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   memset((uint8_t *)page + file_size, 0, PAGE_SIZE - file_size);
 
   if (proc_track_page(p, 0, page) < 0) {
-    page_free(page);
+    mem_region_free(&page_region);
     return -ENOMEM;
   }
 
@@ -89,6 +96,10 @@ static int flat_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   uintptr_t user_sp = (uintptr_t)page + PAGE_SIZE;
 
   proc_setup_stack(p, entry, user_sp);
+  p->image.text = proc_image_segment_make(page, file_size, PPAP_MEM_RAM_TEXT,
+                                          PROC_IMAGE_SEG_EXECUTABLE);
+  p->image.data = page_region;
+  p->image.entry = (uintptr_t)page;
 
   return 0;
 }

@@ -13,6 +13,7 @@
 #include "kernel/cpu/ecpu_m68k.h"
 #include "kernel/endian.h"
 #include "kernel/common/errno.h"
+#include "kernel/mm/mem_region.h"
 #include "kernel/mm/page.h"
 #include "kernel/subsys/ppap_m68k_bridge.h"
 #include "kernel/subsys/subsys.h"
@@ -56,6 +57,28 @@ static int m68k_emu_detect(const uint8_t *file_buf, uint32_t file_size,
 #endif
 }
 
+static int m68k_emu_alloc_region(proc_image_segment_t *seg,
+                                 uint32_t preferred_pages,
+                                 uint32_t min_pages) {
+  if (!seg || min_pages == 0 || preferred_pages < min_pages)
+    return -(int)ENOMEM;
+
+  uint32_t total_pages = preferred_pages;
+  while (total_pages >= min_pages) {
+    if (mem_region_alloc(seg, PPAP_MEM_RAM_DATA, total_pages * PAGE_SIZE,
+                         PROC_IMAGE_SEG_WRITABLE |
+                             PROC_IMAGE_SEG_OWNED) == 0) {
+      return (int)total_pages;
+    }
+    if (total_pages == min_pages) break;
+    total_pages /= 2u;
+    if (total_pages < min_pages) total_pages = min_pages;
+  }
+
+  *seg = (proc_image_segment_t){0};
+  return -(int)ENOMEM;
+}
+
 /* ── Loader ────────────────────────────────────────────────────────────── */
 
 static int m68k_emu_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
@@ -79,41 +102,33 @@ static int m68k_emu_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   /* ── 1. Allocate emulated memory + state struct ────────────────────── */
   uint32_t state_pages =
       (sizeof(ppap_m68k_exec_state_t) + PAGE_SIZE - 1) / PAGE_SIZE;
+  proc_image_segment_t data_region = {0};
+  proc_image_segment_t stack_region = {0};
 
   /* Try preferred size first, then halve until we fit or hit minimum.
    * Reserve a few pages (4) for the process stack and kernel overhead. */
   uint32_t emu_mem_pages = M68K_EMU_MEM_PREFERRED / PAGE_SIZE;
   uint32_t min_emu_pages = M68K_EMU_MEM_MIN / PAGE_SIZE;
-  uint8_t *mem_base = NULL;
-  uint32_t total_pages;
+  int total_pages = m68k_emu_alloc_region(&data_region,
+                                          emu_mem_pages + state_pages,
+                                          min_emu_pages + state_pages);
+  if (total_pages < 0) return total_pages;
 
-  while (emu_mem_pages >= min_emu_pages) {
-    total_pages = emu_mem_pages + state_pages;
-    if (total_pages + 4 <= page_free_count()) {
-      mem_base = alloc_contiguous(total_pages);
-      if (mem_base) break;
-    }
-    emu_mem_pages /= 2;
-  }
-  if (!mem_base) return -(int)ENOMEM;
-
+  emu_mem_pages = (uint32_t)total_pages - state_pages;
   uint32_t emu_mem_size = emu_mem_pages * PAGE_SIZE;
-  uint8_t *emu_mem = mem_base;
+  uint8_t *emu_mem = (uint8_t *)data_region.base;
   ppap_m68k_exec_state_t *state =
-      (ppap_m68k_exec_state_t *)(mem_base + emu_mem_pages * PAGE_SIZE);
-
-  /* Track pages for cleanup on exit */
-  for (uint32_t i = 0; i < total_pages && i < USER_PAGES_MAX; i++)
-    proc_track_page(p, i, mem_base + i * PAGE_SIZE);
+      (ppap_m68k_exec_state_t *)(emu_mem + emu_mem_pages * PAGE_SIZE);
 
   /* ── 2. Allocate stack page ────────────────────────────────────────── */
-  void *stack = page_alloc();
-  if (!stack) {
-    for (uint32_t i = 0; i < total_pages; i++)
-      page_free(mem_base + i * PAGE_SIZE);
+  if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
+                       PROC_IMAGE_SEG_WRITABLE |
+                           PROC_IMAGE_SEG_OWNED) < 0) {
+    mem_region_free(&data_region);
     return -(int)ENOMEM;
   }
-  p->stack_page = stack;
+  p->stack_page = stack_region.base;
+  p->image.stack = stack_region;
 
   /* ── 3. Initialize m68k emulator ───────────────────────────────────── */
   memset(state, 0, sizeof(*state));
@@ -153,6 +168,8 @@ static int m68k_emu_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   /* ── 5. Set entry point ────────────────────────────────────────────── */
   uint32_t entry = be32_load(&ehdr->e_entry);
   state->m68k.pc = entry;
+  p->image.data = data_region;
+  p->image.entry = entry;
 
   /* ── 6. Set up user stack with argc/argv (big-endian) ──────────────── */
   {

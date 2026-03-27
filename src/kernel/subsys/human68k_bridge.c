@@ -291,7 +291,7 @@ static int dos_malloc(uint32_t *regs, uint32_t usp) {
   uint32_t total = MMB_HEADER_SIZE + size;
   uint32_t n_pages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
 
-  uint8_t *base = alloc_contiguous(n_pages);
+  uint8_t *base = page_alloc_contiguous(n_pages);
   if (!base) {
     /* Report largest contiguous run so caller can retry. */
     uint32_t contig_bytes = page_max_contiguous() * PAGE_SIZE;
