@@ -839,9 +839,9 @@ Status: **complete**
 
 - PPAP disables FreeRTOS ISR-level context switching at timer init by forcing
   `port_xSchedulerRunning[0] = 0`
-- PPAP now installs the CCOMPARE0 timer ISR directly through
-  `_xt_interrupt_table` instead of relying on ESP-IDF helper registration
-  APIs in steady-state runtime code
+- PPAP installs the CCOMPARE0 timer ISR via `xt_set_interrupt_handler()`;
+  direct `_xt_interrupt_table` patching in this path was attempted and then
+  reverted after hardware startup regression during XT-3 bring-up
 - `target_early_init()` continues to clear SYSTIMER alarm sources and CPU
   interrupt enable state before PPAP scheduling starts
 

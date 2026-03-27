@@ -51,6 +51,9 @@ static void xtensa_timer_isr(void *arg)
 
 void xtensa_timer_init(void)
 {
+    typedef void (*xt_handler)(void *);
+    extern xt_handler xt_set_interrupt_handler(int n, xt_handler f, void *arg);
+
     /* Disable FreeRTOS's interrupt-level context switching.
      * _frxt_int_enter/_frxt_int_exit check this flag; when 0,
      * they skip TCB save/restore and ISR stack switch.
@@ -66,15 +69,10 @@ void xtensa_timer_init(void)
     __asm__ volatile("wsr %0, ccompare0" :: "a"(cc + XTENSA_TICK_INTERVAL));
     __asm__ volatile("esync");
 
-    /* Register the CCOMPARE0 timer ISR directly in the Xtensa interrupt
-     * dispatch table. This keeps PPAP's steady-state interrupt policy local
-     * and reduces dependence on ESP-IDF helper APIs after app_main(). */
-    {
-        extern void *_xt_interrupt_table[];
-        _xt_interrupt_table[XTENSA_TIMER0_INTNUM * 2 + 0] =
-            (void *)xtensa_timer_isr;
-        _xt_interrupt_table[XTENSA_TIMER0_INTNUM * 2 + 1] = (void *)0;
-    }
+    /* Register the CCOMPARE0 timer ISR through the Xtensa helper API.
+     * Direct table patching regressed startup on hardware; keep this
+     * stable path while XT-3 exception/timer ownership is refactored. */
+    xt_set_interrupt_handler(XTENSA_TIMER0_INTNUM, xtensa_timer_isr, (void *)0);
 
     /* Set INTENABLE to ONLY the CCOMPARE0 bit (bit 6).
      * This replaces whatever FreeRTOS had configured (including bit 12
