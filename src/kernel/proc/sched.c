@@ -297,6 +297,8 @@ void sched_start(void) {
  */
 
 void sched_start(void) {
+  extern void xtensa_trap_reassert(void);
+
   /* Xtensa: no PSP/MSP split, no PendSV priorities.
    * Timer ISR setup is done by target_late_init() → xtensa_timer_init(),
    * which runs BEFORE sched_start().  xtensa_timer_init() already set
@@ -304,6 +306,7 @@ void sched_start(void) {
    *
    * Clear pending interrupts but preserve INTENABLE — timer init has
    * already configured it correctly. */
+  xtensa_trap_reassert();
   __asm__ volatile("wsr %0, intclear; rsync" :: "r"(0xFFFFFFFFu));
   arch_irq_enable();
 }

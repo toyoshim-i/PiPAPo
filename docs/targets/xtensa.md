@@ -17,7 +17,7 @@ is the M5Stack CardComputer (`xtensa_cc`, ESP32-S3 dual-core LX7).
 | Kernel ABI | Windowed (ESP-IDF default) |
 | User ABI | Call0 (flat register file, `-mabi=call0`) |
 | PCB_SP_OFFSET | 0 |
-| Syscall | `syscall` instruction (a7=number, a2-a6=args) |
+| Syscall | `ill` instruction / EXCCAUSE=0 (a7=number, a2-a6=args) |
 | Timer | CCOMPARE0 (cycle-count compare, level-1 interrupt) |
 | Context switch | Timer ISR sets `xtensa_switch_pending`, idle loop calls `sched_yield` |
 | FPU | Single-precision (present but unused by PPAP) |
@@ -253,24 +253,38 @@ runtime memory**, not direct XIP from romfs.
 
 Xtensa PIC uses `L32R` (PC-relative literal load) for address constants.
 The literal pool values are absolute addresses resolved by the linker at
-link-time base `0x0`. When loaded at a non-zero IRAM address, these values
-need `load_base` added.
+link-time base `0x0`. When loaded at non-zero IRAM/DRAM addresses, these
+values must be relocated to the actual runtime addresses.
 
 **Build side:** user binaries are compiled with `-Wl,--emit-relocs` to
 preserve relocation entries in the ELF. Binaries are NOT stripped (strip
 would destroy section headers needed for relocation scanning).
 
-**Loader side:** the ELF loader scans `SHT_RELA` sections for:
+Xtensa user binaries do **not** use `.rela.dyn` or GOT/PLT for text
+relocations. Splitting literal-pool relocations into GOT/PLT was
+investigated and abandoned — the Xtensa L32R instruction encodes a
+negative PC-relative offset into the literal pool, so the literal words
+must remain in the text segment (IRAM) within L32R reach of the code
+that references them. The only relocation mechanism is `--emit-relocs`
+`.rela.text`, processed during the SRAM copy at load time.
+
+**Loader side:** the Xtensa `elf_reloc_arch()` in `elf_loader.c` scans
+all `SHT_RELA` sections (including `.rela.text`) for:
 - `R_XTENSA_32` (type 1) — absolute 32-bit data (literal pool values,
   initialized data pointers)
 - `R_XTENSA_PLT` (type 6) — PLT-resolved function addresses in literal pool
 
-For each entry, `load_base` is added to the 32-bit value at `r_offset`.
+For each entry, the loader reads the link-time value at `r_offset` and
+applies a **split relocation** via `elf_split_addr()`:
+- if the link-time address falls in the text range (< `data_va`):
+  relocated value = `text_base + link_addr`
+- if the link-time address falls in the data range (≥ `data_va`):
+  relocated value = `data_base + (link_addr - data_va)`
 
-For a future PSRAM-execution path, the goal is to reduce or eliminate
-flash-text coupling by using a packaging model that can stage code and
-immutable data into PSRAM cleanly, while keeping DRAM relocation only for
-mutable process state.
+This split is necessary because Xtensa loads text into IRAM and data
+into DRAM at independent base addresses. A single `load_base` offset
+would produce wrong addresses for literal pool entries that reference
+the data segment (rodata strings, initialized data pointers, etc.).
 
 ### SHF_ALLOC filter (critical)
 
@@ -315,16 +329,25 @@ offsets.
 
 Xtensa uses a level-based interrupt model with separate vectors per level.
 Level-1 exceptions include syscalls, memory faults, and illegal
-instructions. ESP-IDF dispatches level-1 exceptions through a handler table.
+instructions. ESP-IDF dispatches level-1 exceptions through
+`_xt_exception_table`, but **intercepts EXCCAUSE=1 (Syscall)** with a
+hardcoded stub (`_xt_syscall_exc` in `xtensa_vectors.S`) that returns -1
+without dispatching through the table. This means handlers registered in
+`_xt_exception_table[1]` are never called for `syscall` instructions.
 
-PPAP registers handlers via `xt_set_exception_handler()`:
+PPAP works around this by using the `ill` (illegal instruction) opcode
+as the syscall trap instead of `syscall`. EXCCAUSE=0 (IllegalInstruction)
+falls through to the table dispatch. The combined handler at table index 0
+reads the 3-byte instruction at EPC1: if it is `ill` (0x000000), it
+dispatches as a syscall; otherwise, it falls through to the fault handler.
 
 | EXCCAUSE | Handler | Action |
 |----------|---------|--------|
-| 1 (Syscall) | `xtensa_syscall_handler` | Advance PC+3, dispatch syscall |
-| 0, 2-29 (others) | `xtensa_fault_handler` | Kill user process or kernel panic |
+| 0 (IllegalInsn) | `xtensa_ill_handler` | If opcode=ILL → syscall; else fault |
+| 1 (Syscall) | `xtensa_fault_handler` | Safety net (ESP-IDF intercepts first) |
+| 2-29 (others) | `xtensa_fault_handler` | Kill user process or kernel panic |
 
-Exceptions 1 (Level-1 interrupt) and 5 (Alloca) are left to ESP-IDF.
+Exceptions 4 (Level-1 interrupt) and 5 (Alloca) are left to ESP-IDF.
 
 ### PS.UM flag
 
@@ -981,6 +1004,7 @@ Those belong to the CardComputer target plan, not the Xtensa port plan.
 
 | Issue | Detail |
 |-------|--------|
+| ESP-IDF syscall stub | `_xt_user_exc` intercepts `EXCCAUSE_SYSCALL` (1) with a hardcoded `beqi` branch to `_xt_syscall_exc`, which returns `-1` without dispatching through `_xt_exception_table`. PPAP uses `ill` (EXCCAUSE=0) as the syscall trap instead, avoiding the intercept entirely. |
 | IRAM byte access | LoadStoreError (cause=3). Must use 32-bit word operations. |
 | MALLOC_CAP_EXEC | `(1<<0)`, NOT `(1<<4)` which is `MALLOC_CAP_PID2`. |
 | PS.UM=0 | Routes to KernelExceptionVector → `break 1, 0` → crash. |

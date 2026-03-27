@@ -34,7 +34,7 @@ static inline long __attribute__((always_inline))
 ppap_xtensa_syscall0(long nr) {
   register long a2 asm("a2") = 0;
   register long a7 asm("a7") = nr;
-  asm volatile("syscall" : "+r"(a2) : "r"(a7) : "memory");
+  asm volatile("ill" : "+r"(a2) : "r"(a7) : "memory");
   return a2;
 }
 
@@ -42,7 +42,7 @@ static inline long __attribute__((always_inline))
 ppap_xtensa_syscall1(long nr, long arg0) {
   register long a2 asm("a2") = arg0;
   register long a7 asm("a7") = nr;
-  asm volatile("syscall" : "+r"(a2) : "r"(a7) : "memory");
+  asm volatile("ill" : "+r"(a2) : "r"(a7) : "memory");
   return a2;
 }
 
@@ -51,7 +51,7 @@ ppap_xtensa_syscall2(long nr, long arg0, long arg1) {
   register long a2 asm("a2") = arg0;
   register long a3 asm("a3") = arg1;
   register long a7 asm("a7") = nr;
-  asm volatile("syscall" : "+r"(a2) : "r"(a3), "r"(a7) : "memory");
+  asm volatile("ill" : "+r"(a2) : "r"(a3), "r"(a7) : "memory");
   return a2;
 }
 
@@ -61,7 +61,7 @@ ppap_xtensa_syscall3(long nr, long arg0, long arg1, long arg2) {
   register long a3 asm("a3") = arg1;
   register long a4 asm("a4") = arg2;
   register long a7 asm("a7") = nr;
-  asm volatile("syscall"
+  asm volatile("ill"
                : "+r"(a2)
                : "r"(a3), "r"(a4), "r"(a7)
                : "memory");
@@ -75,7 +75,7 @@ ppap_xtensa_syscall4(long nr, long arg0, long arg1, long arg2, long arg3) {
   register long a4 asm("a4") = arg2;
   register long a5 asm("a5") = arg3;
   register long a7 asm("a7") = nr;
-  asm volatile("syscall"
+  asm volatile("ill"
                : "+r"(a2)
                : "r"(a3), "r"(a4), "r"(a5), "r"(a7)
                : "memory");
@@ -91,7 +91,7 @@ ppap_xtensa_syscall5(long nr, long arg0, long arg1, long arg2, long arg3,
   register long a5 asm("a5") = arg3;
   register long a6 asm("a6") = arg4;
   register long a7 asm("a7") = nr;
-  asm volatile("syscall"
+  asm volatile("ill"
                : "+r"(a2)
                : "r"(a3), "r"(a4), "r"(a5), "r"(a6), "r"(a7)
                : "memory");

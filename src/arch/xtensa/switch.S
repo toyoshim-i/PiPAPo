@@ -10,17 +10,19 @@
 #   5. Restore PS and return PC from the new process's solicited frame
 #   6. RETW — rotates window back, underflow reloads from new stack
 #
-# Solicited frame layout (16 bytes, 16-byte aligned):
+# Solicited frame layout (metadata above ABI scratch area):
 #
-#   [SP+0 ]  exit marker  (0 = solicited frame, 1 = new-process frame)
-#   [SP+4 ]  return PC    (a0, encoded with window rotation info)
-#   [SP+8 ]  saved PS
-#   [SP+12]  user SP      (new-process frame only)
+#   [SP+0 ..+15] ABI scratch area (kept unused by PPAP metadata)
+#   [SP+16]  exit marker  (0 = solicited frame, 1 = new-process frame)
+#   [SP+20]  return PC    (a0, encoded with window rotation info)
+#   [SP+24]  saved PS
+#   [SP+28]  user SP      (new-process frame only)
+#   [SP+32]  saved a0     (new-process frames only; vfork return addr)
 #
 # New-process frame (exit marker = 1):
 #   Built by arch_build_initial_frame() for exec'd processes.
-#   [SP+4] = entry address (NOT encoded), [SP+12] = user stack pointer,
-#   [SP+16] = a0 (return address — needed by vfork child which starts
+#   [SP+20] = entry address (NOT encoded), [SP+28] = user stack pointer,
+#   [SP+32] = a0 (return address — needed by vfork child which starts
 #   at the `ret` after SYSCALL and needs a0 to jump back to caller).
 #   Restored via direct jump (jx) instead of retw, avoiding the
 #   base-save-area overlap that would corrupt the user SP.
@@ -28,12 +30,12 @@
 # PCB layout: sp is at offset 0 in pcb_t (PCB_SP_OFFSET = 0).
 # =============================================================================
 
-    .equ SOL_EXIT,   0
-    .equ SOL_PC,     4
-    .equ SOL_PS,     8
-    .equ SOL_SP,     12
-    .equ SOL_A0,     16    # saved a0 (new-process frames only; vfork return addr)
-    .equ SOL_FRMSZ,  32    # must be multiple of 16 for alignment
+    .equ SOL_EXIT,   16
+    .equ SOL_PC,     20
+    .equ SOL_PS,     24
+    .equ SOL_SP,     28
+    .equ SOL_A0,     32    # saved a0 (new-process frames only; vfork return addr)
+    .equ SOL_FRMSZ,  64    # keep low 16 bytes free for ABI scratch
 
     .text
     .align 4

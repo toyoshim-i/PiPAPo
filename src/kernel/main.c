@@ -155,6 +155,10 @@ void kmain(void) {
   klog("SCHED: starting scheduler\n");
   sched_start();
 
+  /* Run one immediate handoff so PID 1 starts without waiting for the
+   * first timer preemption tick. */
+  sched_yield();
+
   /* Idle thread — wake on every interrupt, flush LCD if needed, sleep. */
   for (;;) {
     sched_display_poll();

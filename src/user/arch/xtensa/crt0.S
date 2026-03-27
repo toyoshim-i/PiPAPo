@@ -25,7 +25,7 @@ _start:
 
     # _exit(main's return value in a2)
     movi    a7, 0               # SYS_EXIT = 0x0000
-    syscall
+    ill                         # PPAP syscall trap (EXCCAUSE=0)
 
     # Should never reach here
 .Lhang:

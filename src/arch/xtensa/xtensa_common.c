@@ -31,7 +31,63 @@ volatile uint32_t xtensa_trap_ready = 0;
 
 /* Tick counter — incremented by timer ISR. */
 volatile uint32_t xtensa_tick_count = 0;
-volatile uint32_t xtensa_last_isr_epc1 = 0;
+
+static void xtensa_syscall_handler(XtExcFrame *frame);
+static void xtensa_fault_handler(XtExcFrame *frame);
+
+/* Combined handler for EXCCAUSE=0 (IllegalInstruction).
+ *
+ * PPAP user-space uses the ILL instruction (opcode 0x000000) as the syscall
+ * trap instead of SYSCALL (EXCCAUSE=1), because ESP-IDF's _xt_user_exc
+ * intercepts EXCCAUSE=1 with a hardcoded stub that bypasses
+ * _xt_exception_table.  EXCCAUSE=0 falls through to the table dispatch.
+ *
+ * This handler reads the 3-byte instruction at EPC1:
+ *   - If it is ILL (0x000000): dispatch as a PPAP syscall
+ *   - Otherwise: fall through to the fault handler
+ */
+static void xtensa_ill_handler(XtExcFrame *frame)
+{
+    /* Read the 3-byte instruction at the faulting PC.
+     * The exception frame is fully saved, so EPC1 == frame->pc. */
+    uint32_t pc = (uint32_t)frame->pc;
+    /* ILL is 3 bytes of zero.  Read the containing 32-bit word from the
+     * instruction bus (IRAM or flash — both support aligned word reads). */
+    uint32_t word = *(volatile uint32_t *)(pc & ~3u);
+    uint32_t shift = (pc & 3u) * 8;
+    uint32_t insn = (word >> shift) & 0xFFFFFFu;
+
+    if (insn == 0x000000u) {
+        /* ILL-as-syscall: dispatch through the normal syscall path */
+        xtensa_syscall_handler(frame);
+        return;
+    }
+
+    /* Real illegal instruction — fall through to fault handler */
+    xtensa_fault_handler(frame);
+}
+
+static void xtensa_install_exception_handlers(void)
+{
+    extern xt_exc_handler xt_set_exception_handler(int n, xt_exc_handler f);
+    extern xt_exc_handler _xt_exception_table[];
+
+    /* EXCCAUSE=0 (IllegalInstruction): combined ILL-as-syscall + fault */
+    xt_set_exception_handler(0, xtensa_ill_handler);
+    _xt_exception_table[0] = xtensa_ill_handler;
+
+    /* EXCCAUSE=1 (Syscall): ESP-IDF intercepts this before the table,
+     * so our handler here is just a safety net — it should never fire. */
+    _xt_exception_table[EXCCAUSE_SYSCALL] = xtensa_fault_handler;
+
+    for (int i = 2; i < 30; i++) {
+        if (i == (int)EXCCAUSE_LEVEL1_INT ||
+            i == (int)EXCCAUSE_ALLOCA)
+            continue;
+        xt_set_exception_handler(i, xtensa_fault_handler);
+        _xt_exception_table[i] = xtensa_fault_handler;
+    }
+}
 
 /* ── CCOMPARE0 timer ─────────────────────────────────────────────────────── */
 
@@ -89,6 +145,7 @@ void xtensa_timer_init(void)
  * Saves SP to old PCB, picks next process, returns new SP. */
 uint32_t xtensa_do_switch(uint32_t current_sp)
 {
+    pcb_t *prev = current;
     if (current)
         current->sp = current_sp;
     pcb_t *next = sched_next();
@@ -98,12 +155,13 @@ uint32_t xtensa_do_switch(uint32_t current_sp)
 
 /* ── Syscall handler ──────────────────────────────────────────────────────── */
 
-/* Called by ESP-IDF's exception dispatch when EXCCAUSE == SYSCALL (1).
- * The XtExcFrame has all registers saved; we extract syscall args from
- * a2-a7 and call the shared syscall_dispatch(). */
+/* Syscall handler — called from xtensa_ill_handler when the faulting
+ * instruction is ILL (PPAP's syscall trap).  The XtExcFrame has all
+ * registers saved; we extract syscall args from a2-a7 and call the
+ * shared syscall_dispatch(). */
 static void xtensa_syscall_handler(XtExcFrame *frame)
 {
-    /* Advance PC past the 3-byte SYSCALL instruction */
+    /* Advance PC past the 3-byte ILL instruction */
     frame->pc += 3;
 
     /* syscall_dispatch(frame, nr, a4, a5):
@@ -249,42 +307,34 @@ void __wrap___assert_func(const char *file, int line, const char *func,
 
 void xtensa_trap_init(void)
 {
-    /* PPAP owns the exception dispatch table directly.
-     * On unicore ESP32-S3 (portNUM_PROCESSORS=1, xPortGetCoreID()=0) the
-     * flat index equals the exception cause number (no per-CPU stride).
-     * We write _xt_exception_table directly rather than going through the
-     * xt_set_exception_handler() wrapper to make ownership explicit.
-     * The table is defined in ESP-IDF's xtensa_intr_asm.S. */
     extern xt_exc_handler _xt_exception_table[];
-
-    /* Install SYSCALL handler */
-    _xt_exception_table[EXCCAUSE_SYSCALL] = xtensa_syscall_handler;
-
-    /* Install fault handler for all user-visible exception causes.
-     * Skip: SYSCALL (1) handled above; LEVEL1_INT (4) dispatched by the
-     * hardware interrupt vector; ALLOCA (5) handled by windowed ABI.
-     * Causes 30-63 are reserved/undefined on ESP32-S3 LX7. */
-    for (int i = 0; i < 30; i++) {
-        if (i == (int)EXCCAUSE_SYSCALL ||
-            i == (int)EXCCAUSE_LEVEL1_INT ||
-            i == (int)EXCCAUSE_ALLOCA)
-            continue;
-        _xt_exception_table[i] = xtensa_fault_handler;
-    }
+    xtensa_install_exception_handlers();
+    klogf("XT-TRAP: ill=%x table[0]=%x\n",
+          (uint32_t)(uintptr_t)xtensa_ill_handler,
+          (uint32_t)(uintptr_t)_xt_exception_table[0]);
 
     xtensa_trap_ready = 1;
+}
+
+void xtensa_trap_reassert(void)
+{
+    extern xt_exc_handler _xt_exception_table[];
+    xtensa_install_exception_handlers();
+    klogf("XT-TRAP: reassert table[0]=%x\n",
+          (uint32_t)(uintptr_t)_xt_exception_table[0]);
 }
 
 /* ── Initial stack frame for new processes ──────────────────────────────── */
 
 /* Build a "new-process" frame for switch.S (exit marker = 1).
  *
- * Layout (20 bytes, 16-byte aligned):
- *   [SP+0 ] = 1       (exit marker — triggers direct-jump path in switch.S)
- *   [SP+4 ] = entry   (entry address, NOT windowed-encoded)
- *   [SP+8 ] = PS      (UM=1, WOE=0, INTLEVEL=0)
- *   [SP+12] = user_sp (stack pointer passed to user code in a1)
- *   [SP+16] = a0      (return address; needed by vfork child, 0 for exec)
+ * Layout (36 bytes used, 16-byte aligned):
+ *   [SP+0 ..+15] ABI scratch area (unused by PPAP metadata)
+ *   [SP+16] = 1       (exit marker — triggers direct-jump path in switch.S)
+ *   [SP+20] = entry   (entry address, NOT windowed-encoded)
+ *   [SP+24] = PS      (0: supervisor mode, WOE=0, INTLEVEL=0)
+ *   [SP+28] = user_sp (stack pointer passed to user code in a1)
+ *   [SP+32] = a0      (return address; needed by vfork child, 0 for exec)
  *
  * switch.S detects exit != 0, loads entry/PS/user_sp/a0, and does jx.
  * This avoids the base-save-area overlap that would corrupt a1 with the PC.
@@ -296,17 +346,25 @@ uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void))
 {
     uint32_t user_sp = (uint32_t)(uintptr_t)sp;
     sp = (uint32_t *)((uintptr_t)sp & ~0xFu);  /* 16-byte align */
-    user_sp = (uint32_t)(uintptr_t)sp;          /* use aligned value */
 
-    *--sp = 0;                                   /* [SP+16] a0 = 0 (unused by _start) */
-    *--sp = user_sp;                            /* [SP+12] user SP */
-    /* PS for user process: WOE=0 (call0 ABI, no window operations),
-     * UM=1 (user mode — routes exceptions through UserExceptionVector
-     *       which properly dispatches SYSCALL, interrupts, etc.
-     *       KernelExceptionVector panics on ALL exceptions.),
-     * INTLEVEL=0 (interrupts enabled for preemption). */
-    *--sp = (1u << 5);                          /* [SP+8]  PS: UM=1 */
-    *--sp = (uint32_t)(uintptr_t)entry;         /* [SP+4]  entry addr */
-    *--sp = 1u;                                 /* [SP+0]  exit = 1 (new proc) */
+    *--sp = 0;                                  /* [SP+32] a0 = 0 (unused by _start) */
+    *--sp = user_sp;                            /* [SP+28] user SP */
+    /* PS for new process entry:
+     * WOE=0 (call0 ABI), INTLEVEL=0 (interrupts enabled), UM=1.
+     * UM=1 routes exceptions through UserExceptionVector, which is where
+     * PPAP's syscall and fault handlers are registered via
+     * _xt_exception_table.  UM=0 would route to KernelExceptionVector
+     * (just `break 1, 0` in ESP-IDF) — silently halting on first syscall.
+     */
+    *--sp = (1u << 5);                          /* [SP+24] PS: UM=1 */
+    *--sp = (uint32_t)(uintptr_t)entry;         /* [SP+20] entry addr */
+    *--sp = 1u;                                 /* [SP+16] exit = 1 */
+
+    /* Keep the low ABI scratch area reserved to avoid metadata clobbering
+     * by windowed-call spill/restore helpers. */
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
     return sp;
 }

@@ -7,8 +7,12 @@
 #   a2–a6 = arguments (up to 5)
 #   a2  = return value (negative errno on error)
 #
-# The SYSCALL instruction triggers EXCCAUSE=1.  The kernel's exception
-# handler (xtensa_syscall_handler) reads a2–a7 from the XtExcFrame.
+# Trap mechanism: the ILL instruction (EXCCAUSE=0, IllegalInstruction) is
+# used instead of the SYSCALL instruction (EXCCAUSE=1).  ESP-IDF's
+# _xt_user_exc intercepts EXCCAUSE=1 with a hardcoded stub that returns -1
+# without dispatching through _xt_exception_table.  EXCCAUSE=0 falls
+# through to the table, where PPAP's handler distinguishes ILL-as-syscall
+# from real illegal instructions by checking the opcode at EPC1.
 #
 # PPAP syscall numbers: 16-bit, high byte = group, low byte = index.
 # =============================================================================
@@ -19,7 +23,7 @@
 .global \name
 \name:
     movi    a7, \nr
-    syscall
+    ill
     ret
 .endm
 
@@ -28,7 +32,7 @@
 .global _exit
 _exit:
     movi    a7, 0               # SYS_EXIT = 0x0000
-    syscall
+    ill
     j       .                   # should never return
 
 # --- Process management ---
