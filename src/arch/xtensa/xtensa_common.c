@@ -10,14 +10,12 @@
  */
 
 #include <stdint.h>
+#include "xtensa_api.h"
 #include "cpu.h"
 #include "../../kernel/proc/proc.h"
 #include "../../kernel/proc/sched.h"
 #include "../../kernel/syscall/syscall.h"
 #include "../../kernel/klog.h"
-
-/* ESP-IDF exception frame and handler registration API */
-#include "xtensa_api.h"
 
 /* Context switch pending flag.
  * Set by arch_yield() (via sched_tick or sched_yield).
@@ -250,16 +248,27 @@ void __wrap___assert_func(const char *file, int line, const char *func,
 
 void xtensa_trap_init(void)
 {
-    /* Install SYSCALL handler */
-    xt_set_exception_handler(EXCCAUSE_SYSCALL, xtensa_syscall_handler);
+    /* PPAP owns the exception dispatch table directly.
+     * On unicore ESP32-S3 (portNUM_PROCESSORS=1, xPortGetCoreID()=0) the
+     * flat index equals the exception cause number (no per-CPU stride).
+     * We write _xt_exception_table directly rather than going through the
+     * xt_set_exception_handler() wrapper to make ownership explicit.
+     * The table is defined in ESP-IDF's xtensa_intr_asm.S. */
+    extern xt_exc_handler _xt_exception_table[];
 
-    /* Install fault handler for all other exception causes */
+    /* Install SYSCALL handler */
+    _xt_exception_table[EXCCAUSE_SYSCALL] = xtensa_syscall_handler;
+
+    /* Install fault handler for all user-visible exception causes.
+     * Skip: SYSCALL (1) handled above; LEVEL1_INT (4) dispatched by the
+     * hardware interrupt vector; ALLOCA (5) handled by windowed ABI.
+     * Causes 30-63 are reserved/undefined on ESP32-S3 LX7. */
     for (int i = 0; i < 30; i++) {
         if (i == (int)EXCCAUSE_SYSCALL ||
             i == (int)EXCCAUSE_LEVEL1_INT ||
             i == (int)EXCCAUSE_ALLOCA)
-            continue;  /* handled by ESP-IDF / windowed ABI */
-        xt_set_exception_handler(i, xtensa_fault_handler);
+            continue;
+        _xt_exception_table[i] = xtensa_fault_handler;
     }
 }
 

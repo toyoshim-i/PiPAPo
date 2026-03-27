@@ -856,12 +856,20 @@ Status: **complete**
 
 #### XT-3.2: Make PPAP the explicit syscall/fault policy owner
 
-Status: **in progress**
+Status: **complete**
 
-- syscall and fault handling are already centralized in
+- syscall and fault handling are centralized in
   `src/arch/xtensa/xtensa_common.c`
-- exception handler registration still goes through ESP-IDF helper hooks;
-  next step is to isolate or replace this path with a PPAP-owned mechanism
+- `xtensa_trap_init()` now writes `_xt_exception_table[]` directly instead
+  of calling `xt_set_exception_handler()`; the ESP-IDF wrapper for exception
+  registration is bypassed — PPAP declares the `extern` symbol and owns the
+  writes
+- on unicore ESP32-S3 (`portNUM_PROCESSORS=1`) the table index equals the
+  exception cause number directly; this assumption is documented in code and
+  is enforced by `CONFIG_FREERTOS_UNICORE=y` in `sdkconfig.defaults`
+- `xtensa_api.h` is still included for `XtExcFrame` and `xt_exc_handler`
+  types, but the registration API (`xt_set_exception_handler`) is no longer
+  called; the include comment was updated to reflect this reduced scope
 
 #### XT-3.3: Move steady-state device control to MMIO-first paths
 
