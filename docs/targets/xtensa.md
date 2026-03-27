@@ -831,14 +831,44 @@ Specifically:
 Goal: keep ESP-IDF as bootstrap infrastructure while reducing dependence on
 its runtime services after `app_main()`.
 
-- Minimize reliance on ESP-IDF exception registration hooks where possible,
-  and make PPAP the clear owner of syscall / fault / timer policy.
-- Continue disabling FreeRTOS runtime behavior that conflicts with PPAP, but
-  move toward a cleaner handoff model instead of accumulating one-off stubs.
-- Prefer direct MMIO access for timers, interrupt control, GPIO, SPI, I2C,
-  and UART in steady-state runtime code.
-- Treat ESP-IDF as the launch environment for boot, clock/cache bring-up,
-  flashing, and vendor-sensitive initialization only.
+Status: **in progress**
+
+#### XT-3.1: Establish PPAP-owned interrupt/timer handoff
+
+Status: **complete**
+
+- PPAP disables FreeRTOS ISR-level context switching at timer init by forcing
+  `port_xSchedulerRunning[0] = 0`
+- PPAP now installs the CCOMPARE0 timer ISR directly through
+  `_xt_interrupt_table` instead of relying on ESP-IDF helper registration
+  APIs in steady-state runtime code
+- `target_early_init()` continues to clear SYSTIMER alarm sources and CPU
+  interrupt enable state before PPAP scheduling starts
+
+#### XT-3.2: Make PPAP the explicit syscall/fault policy owner
+
+Status: **in progress**
+
+- syscall and fault handling are already centralized in
+  `src/arch/xtensa/xtensa_common.c`
+- exception handler registration still goes through ESP-IDF helper hooks;
+  next step is to isolate or replace this path with a PPAP-owned mechanism
+
+#### XT-3.3: Move steady-state device control to MMIO-first paths
+
+Status: **not started**
+
+- migrate timers, interrupt routing control, GPIO, UART, SPI, and I2C
+  runtime policy to direct MMIO access where practical
+- keep ESP-IDF calls only where vendor boot/clock/cache coupling is required
+
+#### XT-3.4: Define and enforce the bootstrap boundary contract
+
+Status: **not started**
+
+- define exactly what remains ESP-IDF-owned after `app_main()`
+- assert PPAP ownership for syscall/exception/timer/scheduler policy and
+  maintain this boundary in build/runtime checks
 
 ### Phase XT-4: Reintroduce protection cleanly
 
