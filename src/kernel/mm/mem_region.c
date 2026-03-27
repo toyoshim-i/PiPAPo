@@ -146,6 +146,7 @@ static int mem_region_xtensa_data_init(void) {
 static int mem_region_xtensa_psram_init(void) {
 #if defined(CONFIG_SPIRAM) && CONFIG_SPIRAM
   uint32_t total_size;
+  uint32_t free_size;
   int err;
 
   total_size = (uint32_t)esp_psram_get_size();
@@ -153,6 +154,10 @@ static int mem_region_xtensa_psram_init(void) {
     klog("MM:   psram unavailable; external arenas disabled\n");
     return 0;
   }
+
+  free_size = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+  klogf("MM:   psram total %u KB, free %u KB before reservation\n",
+        total_size / 1024u, free_size / 1024u);
 
   err = mem_region_linear_arena_init(&ext_text_arena,
                                      MEM_REGION_EXT_TEXT_ARENA_SIZE,
@@ -172,6 +177,19 @@ static int mem_region_xtensa_psram_init(void) {
   klog("MM:   psram xip disabled; external arenas are staging-only\n");
 #endif
 
+  if (ext_text_arena.ready) {
+    klogf("MM:   ext_text executable=%u byte_access=%u\n",
+          (uint32_t)esp_ptr_executable(ext_text_arena.base),
+          (uint32_t)esp_ptr_byte_accessible(ext_text_arena.base));
+  }
+  if (ext_rodata_arena.ready) {
+    klogf("MM:   ext_rodata executable=%u byte_access=%u\n",
+          (uint32_t)esp_ptr_executable(ext_rodata_arena.base),
+          (uint32_t)esp_ptr_byte_accessible(ext_rodata_arena.base));
+  }
+
+  free_size = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+  klogf("MM:   psram free %u KB after reservation\n", free_size / 1024u);
   return 0;
 #else
   klog("MM:   psram support disabled; external arenas unavailable\n");
