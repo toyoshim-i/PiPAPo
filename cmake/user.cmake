@@ -175,7 +175,7 @@ elseif(PPAP_ARCH STREQUAL "riscv")
     set(PPAP_CC            ${_epic_bin_dir}/clang)
     set(PPAP_LLD           ${_epic_bin_dir}/ld.lld)
     set(PPAP_CROSS_PREFIX  ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-)
-    set(PPAP_STRIP         ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-strip)
+    set(PPAP_STRIP         ${_epic_bin_dir}/llvm-strip)
     set(PPAP_OBJCOPY       ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-objcopy)
     set(PPAP_SIZE_CMD      ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-size)
     set(PPAP_MUSL_TARGET   riscv32)
@@ -204,15 +204,18 @@ elseif(PPAP_ARCH STREQUAL "riscv")
                             -print-libgcc-file-name
         OUTPUT_VARIABLE _orig_libgcc OUTPUT_STRIP_TRAILING_WHITESPACE)
     if(PPAP_RISCV_EPIC)
-        file(MAKE_DIRECTORY ${PPAP_SHARED_BUILD})
-        set(_libgcc_dir ${PPAP_SHARED_BUILD}/libgcc-nodebug)
-        set(PPAP_LIBGCC ${_libgcc_dir}/libgcc.a)
-        if(NOT EXISTS ${PPAP_LIBGCC})
-            file(MAKE_DIRECTORY ${_libgcc_dir})
-            file(COPY_FILE ${_orig_libgcc} ${PPAP_LIBGCC})
-            execute_process(
-                COMMAND ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-strip
-                        --strip-debug ${PPAP_LIBGCC})
+        # Use compiler-rt builtins (built with -fepic, PIC-compatible)
+        # instead of GCC's libgcc (not PIC, R_RISCV_HI20 fails in PIE)
+        set(_rt_lib ${_epic_bin_dir}/../lib/clang/16/lib/libclang_rt.builtins-riscv32.a)
+        if(EXISTS ${_rt_lib})
+            # Create a libgcc.a symlink so -lgcc finds compiler-rt
+            file(MAKE_DIRECTORY ${PPAP_SHARED_BUILD}/compiler-rt)
+            file(CREATE_LINK ${_rt_lib}
+                 ${PPAP_SHARED_BUILD}/compiler-rt/libgcc.a SYMBOLIC)
+            set(PPAP_LIBGCC ${PPAP_SHARED_BUILD}/compiler-rt/libgcc.a)
+        else()
+            message(WARNING "compiler-rt not found at ${_rt_lib}, falling back to libgcc")
+            set(PPAP_LIBGCC ${_orig_libgcc})
         endif()
     else()
         set(PPAP_LIBGCC ${_orig_libgcc})
@@ -268,6 +271,11 @@ set(PPAP_USER_LDFLAGS
     -nostdlib -T ${PPAP_USER_LD} -Wl,--gc-sections -Wl,--build-id=none
     $<$<STREQUAL:${PPAP_ARCH},riscv>:-Wl$<COMMA>--no-relax>
     $<$<BOOL:${PPAP_RISCV_EPIC}>:-fuse-ld=${PPAP_LLD}>)
+if(PPAP_RISCV_EPIC)
+    list(APPEND PPAP_USER_LDFLAGS
+        -Wl,--strip-debug --rtlib=compiler-rt
+        -resource-dir ${_epic_bin_dir}/../lib/clang/16)
+endif()
 
 # --- String versions for shell config ---
 string(JOIN " " PPAP_TARGET_FLAGS_STR ${PPAP_TARGET_FLAGS})
@@ -322,7 +330,7 @@ PPAP_PIE_FLAG=\"${_PIE_FLAG}\"
 PPAP_LLD=\"${PPAP_LLD}\"
 PPAP_RISCV_EPIC=\"${PPAP_RISCV_EPIC}\"
 PPAP_EPIC_LINK_PRE=\"${PPAP_MUSL_SYSROOT}/lib/crt1.o ${PPAP_MUSL_SYSROOT}/lib/crti.o\"
-PPAP_EPIC_LINK_POST=\"-L${PPAP_MUSL_SYSROOT}/lib -lc -L${PPAP_GCC_LIBDIR} -lgcc ${PPAP_MUSL_SYSROOT}/lib/crtn.o\"
+PPAP_EPIC_LINK_POST=\"-L${PPAP_MUSL_SYSROOT}/lib -lc ${PPAP_LIBGCC} ${PPAP_MUSL_SYSROOT}/lib/crtn.o\"
 PPAP_EPIC_LINK_FLAGS=\"-fuse-ld=${PPAP_LLD} -nostdlib -Wl,--pie -Wl,--strip-debug -Wl,--gc-sections -Wl,--allow-multiple-definition\"
 ")
 
