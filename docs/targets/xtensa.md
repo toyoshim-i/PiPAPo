@@ -768,8 +768,14 @@ Current implementation status:
   tracked page registration through `proc_track_page`, and selected loader
   cleanup paths use shared tracked-page release helpers instead of direct
   `user_pages[]` clear loops
-- `user_pages[]` still remains the compatibility surface for the rest of
-  the kernel, so this step is not complete yet
+- closeout audit (2026-03-27): non-`proc` runtime and loader paths now use
+  shared `proc_*` tracking helpers; remaining direct `user_pages[]` access is
+  intentionally contained to the `proc` layer internals and descriptive
+  comments
+
+At this point XT-2.7 is **code-side complete** but remains **in progress**
+until the runtime verification gates in the checklist below are exercised on
+real Xtensa flows.
 
 **XT-2.7 near-exit checklist:**
 

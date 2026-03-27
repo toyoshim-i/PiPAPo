@@ -1502,7 +1502,8 @@ long sys_vfork(uint32_t *frame) {
    * saved a0 in the trap frame (sp + 32).
    *
    * With the mscratch stack split, kernel and user stacks are separate.
-   * The child shares the parent's user_pages[] (including user stack),
+  * The child shares the parent's tracked page-backed slots
+  * (including user stack),
    * so no pointer relocation is needed — user stack addresses are the
    * same in both parent and child.
    *
