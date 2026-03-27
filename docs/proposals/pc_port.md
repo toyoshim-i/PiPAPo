@@ -1109,27 +1109,43 @@ Pointer arguments work without serialization.  See §9.5 for details.
 | Item | Details |
 |------|---------|
 | Segment manager | `seg.h`/`seg.c` — runtime table of module code segments |
-| Separate CMake targets | ppap_ibmpc (core 26 KB) + ppap_ibmpc_vfs (VFS 27 KB) |
-| Two-level stubs | vfs_stubs.S (caller), vfs_entries.S (target), core_stubs.S, core_entries.S |
+| Separate CMake targets | ppap_ibmpc (core 28 KB) + ppap_ibmpc_vfs (linked separately) |
+| Two-level stubs | vfs_stubs.S, vfs_entries.S, core_stubs.S, core_entries.S — no DS switching |
 | VFS module header | Magic + 11 entry offsets at offset 0, read by core at boot |
 | Stage2 multi-load | `load_file_far()` loads VFS to 0x1000:0000 via INT 13h |
 | mod_info protocol | Stage2 writes module table at 0x0500, core reads at boot |
 | mkpcimg.sh | Packages both binaries into UFS floppy |
-| Floppy block device | `floppy_blk.c` — INT 13h driver, registers as "fd0" |
-| Core boot verified | Core boots, prints "SEG: VFS module loaded", MM/PROC/PIT init |
+| Floppy block device | `floppy_blk.c` — INT 13h driver (code exists, not wired) |
+| Core boot verified | Core boots with "SEG: VFS module loaded", MM/PROC/CPU init OK |
+| DS switching removed | Stubs use lcall/lret only, shared DS=0 confirmed |
+| VFS data in DS=0 | VFS linker places .data/.bss at 0xA000 in DS=0 |
+| Core reserves VFS data | Core linker reserves 0xA000-0xBFFF for VFS |
+| Far call core→VFS | lcall to VFS segment works, vfs_init code runs |
+
+**Current blocker — far call VFS→core:**
+
+The VFS `vfs_init()` calls `mod_core.kmem_pool_init()` which requires
+a far call back to core (CS=0x0000).  The call chain:
+
+```
+vfs_init (CS=0x1000) → near call → kmem_pool_init_stub (CS=0x1000)
+  → lcall → kmem_pool_init_entry (CS=0x0000)
+    → near call → kmem_pool_init (CS=0x0000)
+```
+
+GDB shows the near call within `vfs_init` to the stub works.  The lcall
+into core segment 0x0000 appears to reach the entry point.  However
+`kmem_pool_init` does not return — execution loops or crashes inside
+the function.  Suspected cause: stack frame mismatch between the far
+call's extra CS:IP push (4 bytes) and the near-call conventions the
+compiled function expects for parameter access (BP-relative offsets).
 
 **Remaining:**
 
-1. **Remove DS switching from stubs** — stubs still have push/pop ds
-   from the earlier isolated-DS design.  Remove since DS=0 is shared.
-2. **VFS data in DS=0** — VFS linker script must place .data/.bss at
-   a reserved DS=0 address (e.g. 0xA000).  Build extracts code and
-   data as separate binaries (objcopy).  See §9.5 for details.
-3. **Core linker reserves VFS data range** — 0xA000-0xBFFF (8 KB)
-4. **Stage2 loads VFS data blob** to DS:0xA000, zeroes BSS
-5. **Wire floppy mount** — target_mount_rootfs() calls mod_vfs.mount
-   via far stub → VFS mounts UFS from fd0
-6. **Test end-to-end** — boot to "Hello from user!"
+1. **Debug VFS→core far call** — fix stack frame / BP offset for
+   functions called via far call entry points
+2. **Wire floppy mount** — target_mount_rootfs() calls mod_vfs.mount
+3. **Test end-to-end** — boot to "Hello from user!"
 
 **Verification**: Kernel mounts floppy UFS, loads /sbin/init, prints
 "Hello from user!".

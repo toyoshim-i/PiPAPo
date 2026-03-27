@@ -271,8 +271,10 @@ MOD_DEFINE_BEGIN(vfs)
 MOD_DEFINE_END()
 ```
 
-On 32-bit, callers use `mod_vfs.init()`.
-On i16, callers use `vfs_init()` (direct call, same binary).
+All platforms use `mod_vfs.init()` — uniform syntax.
+On 32-bit, this is a direct function pointer call.
+On i16, the struct entry points to a near stub that does `lcall` to
+the target module's code segment.
 
 When i16 exceeds 64 KB, the i16 MOD_FUNC generates far-call thunks
 instead of plain extern declarations.  The thunk code lives in the
@@ -344,24 +346,6 @@ For each module (starting with VFS):
 5. Run boundary checker — zero violations
 6. Repeat for next module
 
-### Module Header Pattern
-
-Each module header (`mod/mod_*.h`) serves as both declaration and
-definition, controlled by `MOD_IMPLEMENTATION`:
-
-```c
-// Callers: just include
-#include "mod/mod_vfs.h"
-
-// Implementation: define flag, then include (same header)
-#define MOD_IMPLEMENTATION
-#include "mod/mod_vfs.h"
-```
-
-The header uses `_MOD_IMPL_PHASE` to self-include in implementation
-mode, so the `MOD_FUNC` list is written exactly once.  Per-function
-documentation is part of the module header.
-
 ### Build System
 
 **32-bit targets (ARM, m68k, RISC-V, Xtensa):**
@@ -386,11 +370,13 @@ The module system is implemented and working on all platforms:
 - Boundary enforcement script validates no cross-module includes
 - `kernel/common/` directory for shared headers
 
-On i16, the kernel is split into separate code segments (core 26 KB +
-VFS 27 KB).  Stage2 loads both binaries from UFS floppy.  Core boots
-and detects VFS module.  VFS far calls not yet functional (data
-segment coordination pending — see `docs/proposals/pc_port.md` §9.5
-and P-4b for details).
+On i16, the kernel is split into separate code segments (core 28 KB +
+VFS ~27 KB).  Stage2 loads both binaries from UFS floppy.  Core boots,
+detects VFS module, and VFS data is placed at DS:0xA000.  Core→VFS far
+calls work (vfs_init code executes in CS=0x1000).  VFS→core far calls
+(e.g. mod_core.kmem_pool_init from within vfs_init) hang — suspected
+stack frame mismatch from the far call's extra CS:IP push.
+See `docs/proposals/pc_port.md` P-4b for the current blocker and plan.
 
 ### Phased Rollout
 
