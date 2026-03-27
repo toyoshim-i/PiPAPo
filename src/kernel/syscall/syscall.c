@@ -48,12 +48,16 @@ void set_svc_restart(void) {
  * stack page.  sys_execve cannot free the old stack while still
  * executing on it.  Store it here; trap.S frees it after switching
  * SP to the new stack. */
-#include "../mm/page.h"
+#include "../mm/mem_region.h"
 volatile void *exec_old_stack = NULL;
 void exec_free_old_stack(void) {
   void *p = (void *)exec_old_stack;
   exec_old_stack = NULL;
-  if (p) page_free(p);
+  if (p) {
+    proc_image_segment_t seg = proc_image_segment_make(
+        p, PAGE_SIZE, PPAP_MEM_RAM_STACK, PROC_IMAGE_SEG_WRITABLE);
+    mem_region_free(&seg);
+  }
 }
 #endif
 

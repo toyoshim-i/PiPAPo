@@ -6,14 +6,13 @@
  * The heap starts at brk_base (end of .data+.bss) and grows upward
  * within tracked page-backed user memory slots. The initial
  * image pages are recorded by the loader; later heap expansion pages are
- * appended on demand via page_alloc_at() to ensure contiguity.
+ * appended on demand via mem_region_alloc_at() to ensure contiguity.
  */
 
 #include <string.h>
 
 #include "../common/errno.h"
 #include "../mm/mem_region.h"
-#include "../mm/page.h"
 #include "../proc/proc.h"
 #include "syscall.h"
 
@@ -77,8 +76,9 @@ long sys_brk(long addr) {
 /* ── sys_mmap2 ────────────────────────────────────────────────────────────────
  */
 /*
- * Anonymous-only mmap.  Allocates pages from the page pool and tracks
- * them in current->mmap_regions[].  File-backed mmap is not supported.
+ * Anonymous-only mmap.  Allocates page-backed RAM data via mem_region and
+ * tracks the resulting contiguous region in current->mmap_regions[].
+ * File-backed mmap is not supported.
  *
  * mmap2 takes page-offset (not byte-offset): pgoff = byte_offset / 4096.
  */
@@ -113,59 +113,30 @@ long sys_mmap2(uintptr_t addr, size_t len, uint32_t prot, uint32_t flags,
 
   /* MAP_FIXED: try to allocate at specific address */
   if ((flags & MAP_FIXED) && addr != 0) {
+    proc_image_segment_t region = {0};
     void *base = (void *)addr;
-    for (uint32_t i = 0; i < num_pages; i++) {
-      void *pg = page_alloc_at((uint8_t *)base + i * PAGE_SIZE);
-      if (!pg) {
-        /* Rollback */
-        for (uint32_t j = 0; j < i; j++)
-          page_free((uint8_t *)base + j * PAGE_SIZE);
-        return -(long)ENOMEM;
-      }
-      memset(pg, 0, PAGE_SIZE);
+    if (mem_region_alloc_at(&region, PPAP_MEM_RAM_DATA, base,
+                            num_pages * PAGE_SIZE,
+                            PROC_IMAGE_SEG_WRITABLE) < 0) {
+      return -(long)ENOMEM;
     }
+    memset(region.base, 0, region.size);
     current->mmap_regions[slot].addr = base;
     current->mmap_regions[slot].pages = num_pages;
     return (long)((uintptr_t)base);
   }
 
-  /* Non-fixed: allocate from pool. Try contiguous first, fall back to
-   * single-page if only 1 page needed. */
-  if (num_pages == 1) {
-    void *pg = page_alloc();
-    if (!pg) return -(long)ENOMEM;
-    memset(pg, 0, PAGE_SIZE);
-    current->mmap_regions[slot].addr = pg;
-    current->mmap_regions[slot].pages = 1;
-    return (long)((uintptr_t)pg);
-  }
-
-  /* Multi-page: scan for contiguous block */
-  uintptr_t pool_base = page_pool_base();
-  uintptr_t pool_end = pool_base + page_count * PAGE_SIZE;
-
-  for (uintptr_t base = pool_base; base + num_pages * PAGE_SIZE <= pool_end;
-       base += PAGE_SIZE) {
-    uint32_t k;
-    for (k = 0; k < num_pages; k++) {
-      void *pg = page_alloc_at((void *)(uintptr_t)(base + k * PAGE_SIZE));
-      if (!pg) {
-        for (uint32_t l = 0; l < k; l++)
-          page_free((void *)(uintptr_t)(base + l * PAGE_SIZE));
-        break;
-      }
+  {
+    proc_image_segment_t region = {0};
+    if (mem_region_alloc(&region, PPAP_MEM_RAM_DATA, num_pages * PAGE_SIZE,
+                         PROC_IMAGE_SEG_WRITABLE) < 0) {
+      return -(long)ENOMEM;
     }
-    if (k == num_pages) {
-      void *result = (void *)(uintptr_t)base;
-      for (uint32_t i = 0; i < num_pages; i++)
-        memset((void *)(uintptr_t)(base + i * PAGE_SIZE), 0, PAGE_SIZE);
-      current->mmap_regions[slot].addr = result;
-      current->mmap_regions[slot].pages = num_pages;
-      return (long)((uintptr_t)result);
-    }
+    memset(region.base, 0, region.size);
+    current->mmap_regions[slot].addr = region.base;
+    current->mmap_regions[slot].pages = num_pages;
+    return (long)((uintptr_t)region.base);
   }
-
-  return -(long)ENOMEM;
 }
 
 /* ── sys_munmap ───────────────────────────────────────────────────────────────
@@ -178,9 +149,10 @@ long sys_munmap(uintptr_t addr, size_t len) {
   for (int i = 0; i < MMAP_REGIONS_MAX; i++) {
     if (current->mmap_regions[i].addr == (void *)(uintptr_t)addr) {
       uint32_t pages = current->mmap_regions[i].pages;
-      for (uint32_t j = 0; j < pages; j++) {
-        page_free((void *)(uintptr_t)(addr + j * PAGE_SIZE));
-      }
+      proc_image_segment_t region = proc_image_segment_make(
+          (void *)(uintptr_t)addr, pages * PAGE_SIZE, PPAP_MEM_RAM_DATA,
+          PROC_IMAGE_SEG_WRITABLE);
+      mem_region_free(&region);
       current->mmap_regions[i].addr = NULL;
       current->mmap_regions[i].pages = 0;
       return 0;
@@ -190,7 +162,9 @@ long sys_munmap(uintptr_t addr, size_t len) {
   /* Not found in mmap_regions — try freeing as a single page anyway.
    * musl may mmap then munmap pages we didn't track (edge case). */
   uint32_t num_pages = (len + PAGE_SIZE - 1) / PAGE_SIZE;
-  for (uint32_t j = 0; j < num_pages; j++)
-    page_free((void *)(uintptr_t)(addr + j * PAGE_SIZE));
+  proc_image_segment_t region = proc_image_segment_make(
+      (void *)(uintptr_t)addr, num_pages * PAGE_SIZE, PPAP_MEM_RAM_DATA,
+      PROC_IMAGE_SEG_WRITABLE);
+  mem_region_free(&region);
   return 0;
 }

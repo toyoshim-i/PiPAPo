@@ -74,6 +74,27 @@ static void image_release_owned_segments(proc_image_t *image,
   image_segment_release_owned(&image->data, pages, num_pages);
 }
 
+static void proc_release_stack_page(void **page) {
+  proc_image_segment_t seg;
+
+  if (!page || !*page) return;
+  seg = proc_image_segment_make(*page, PAGE_SIZE, PPAP_MEM_RAM_STACK,
+                                PROC_IMAGE_SEG_WRITABLE);
+  mem_region_free(&seg);
+  *page = NULL;
+}
+
+static void proc_release_mmap_region(void **addr, uint32_t *pages) {
+  proc_image_segment_t seg;
+
+  if (!addr || !pages || !*addr || *pages == 0) return;
+  seg = proc_image_segment_make(*addr, *pages * PAGE_SIZE, PPAP_MEM_RAM_DATA,
+                                PROC_IMAGE_SEG_WRITABLE);
+  mem_region_free(&seg);
+  *addr = NULL;
+  *pages = 0;
+}
+
 static void trace_clear_swbp(pcb_t *target);
 static void trace_clear_hwbp(pcb_t *target);
 static int trace_has_hwbp_for(const pcb_t *target);
@@ -1291,8 +1312,15 @@ long sys_exit(long status) {
    * here if the context switch after the first exit doesn't happen
    * before the ecall return path re-executes. */
   if (current->state == PROC_ZOMBIE) {
+#if defined(__xtensa__)
+    /* On Xtensa, syscall handler performs the post-syscall switch when it
+     * sees !PROC_RUNNABLE. Triggering a nested cooperative yield here can
+     * bounce back to user stub loops. */
+    return 0;
+#else
     sched_yield();
     return 0; /* unreachable — zombie won't be scheduled */
+#endif
   }
 
   current->exit_status = (int)status;
@@ -1318,19 +1346,13 @@ long sys_exit(long status) {
     proc_release_tracked_pages(current, 0, USER_PAGES_MAX);
 #if defined(__m68k__)
     if (current->user_stack_page) {
-      page_free(current->user_stack_page);
-      current->user_stack_page = NULL;
+      proc_release_stack_page(&current->user_stack_page);
     }
 #endif
     /* Free mmap regions */
     for (int i = 0; i < MMAP_REGIONS_MAX; i++) {
-      if (current->mmap_regions[i].addr) {
-        uint32_t base = (uint32_t)(uintptr_t)current->mmap_regions[i].addr;
-        for (uint32_t j = 0; j < current->mmap_regions[i].pages; j++)
-          page_free((void *)(uintptr_t)(base + j * PAGE_SIZE));
-        current->mmap_regions[i].addr = NULL;
-        current->mmap_regions[i].pages = 0;
-      }
+      proc_release_mmap_region(&current->mmap_regions[i].addr,
+                               &current->mmap_regions[i].pages);
     }
   } else {
     /* vfork child exiting without exec: free child-owned pages only
@@ -1346,8 +1368,7 @@ long sys_exit(long status) {
     /* Free child's user stack copy if different from parent's */
     if (current->user_stack_page &&
         current->user_stack_page != current->vfork_parent->user_stack_page) {
-      page_free(current->user_stack_page);
-      current->user_stack_page = NULL;
+      proc_release_stack_page(&current->user_stack_page);
     }
 #endif
   }
@@ -1395,8 +1416,14 @@ long sys_exit(long status) {
   }
 
   current->state = PROC_ZOMBIE;
+#if defined(__xtensa__)
+  /* Xtensa: return to syscall handler and let it switch away based on
+   * current->state != PROC_RUNNABLE. */
+  return 0;
+#else
   sched_yield();
   return 0; /* never reached — PendSV switches away after SVC returns */
+#endif
 }
 
 /* ── sys_getpid ───────────────────────────────────────────────────────────────
@@ -1425,11 +1452,13 @@ long sys_vfork(uint32_t *frame) {
   if (!child) return -(long)ENOMEM;
 
   /* 2. Allocate stack page for child */
-  void *stack = page_alloc();
-  if (!stack) {
+  proc_image_segment_t stack_region = {0};
+  if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
+                       PROC_IMAGE_SEG_WRITABLE) < 0) {
     proc_free(child);
     return -(long)ENOMEM;
   }
+  void *stack = stack_region.base;
   child->stack_page = stack;
 
   /* 3. Share parent's user_pages with child */
@@ -1471,12 +1500,15 @@ long sys_vfork(uint32_t *frame) {
     void *parent_ustack = current->user_stack_page;
 
     if (parent_ustack) {
-      void *child_ustack = page_alloc();
-      if (!child_ustack) {
-        page_free(stack);
+      proc_image_segment_t ustack_region = {0};
+      if (mem_region_alloc(&ustack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
+                           PROC_IMAGE_SEG_WRITABLE) < 0) {
+        proc_release_stack_page(&stack);
+        child->stack_page = NULL;
         proc_free(child);
         return -(long)ENOMEM;
       }
+      void *child_ustack = ustack_region.base;
       memcpy(child_ustack, parent_ustack, PAGE_SIZE);
       child->user_stack_page = child_ustack;
 
@@ -1555,11 +1587,15 @@ long sys_vfork(uint32_t *frame) {
      * instruction after SYSCALL in the vfork stub. */
     uint32_t *sp = (uint32_t *)((uint8_t *)stack + PAGE_SIZE);
     sp = (uint32_t *)((uintptr_t)sp & ~0xFu);
-    *--sp = child_a0;                   /* [SP+16] a0 = return addr */
-    *--sp = child_user_sp;              /* [SP+12] user SP */
-    *--sp = (1u << 5);                  /* [SP+8]  PS: UM=1 */
-    *--sp = child_pc;                   /* [SP+4]  entry */
-    *--sp = 1u;                         /* [SP+0]  exit = 1 */
+    *--sp = child_a0;                   /* [SP+32] a0 = return addr */
+    *--sp = child_user_sp;              /* [SP+28] user SP */
+    *--sp = 0u;                         /* [SP+24] PS */
+    *--sp = child_pc;                   /* [SP+20] entry */
+    *--sp = 1u;                         /* [SP+16] exit = 1 */
+    *--sp = 0;                          /* [SP+12] ABI scratch */
+    *--sp = 0;                          /* [SP+8]  ABI scratch */
+    *--sp = 0;                          /* [SP+4]  ABI scratch */
+    *--sp = 0;                          /* [SP+0]  ABI scratch */
     child->sp = (uint32_t)(uintptr_t)sp;
   }
 
@@ -1690,8 +1726,7 @@ long sys_waitpid(long pid, long status_ptr, long options) {
     /* Reap the zombie child. */
     /* Free zombie's stack page */
     if (zombie->stack_page) {
-      page_free(zombie->stack_page);
-      zombie->stack_page = NULL;
+      proc_release_stack_page(&zombie->stack_page);
     }
 
     proc_free(zombie);
@@ -1771,7 +1806,7 @@ long sys_execve(const char *path, const char *const *argv) {
   extern volatile void *exec_old_stack;
   exec_old_stack = old_stack;
 #else
-  if (old_stack) page_free(old_stack);
+  if (old_stack) proc_release_stack_page(&old_stack);
 #endif
 
   /* Free old user pages only if we owned them */
@@ -1779,7 +1814,7 @@ long sys_execve(const char *path, const char *const *argv) {
     image_release_owned_segments(&old_image, old_user, USER_PAGES_MAX);
     proc_release_tracked_pages_from_array(old_user);
 #if defined(__m68k__)
-    if (old_user_stack) page_free(old_user_stack);
+    if (old_user_stack) proc_release_stack_page(&old_user_stack);
 #endif
   } else if (current->vfork_parent) {
     /* vfork child: free pages that were allocated specifically for
@@ -1789,7 +1824,7 @@ long sys_execve(const char *path, const char *const *argv) {
 #if defined(__m68k__)
     if (old_user_stack &&
         old_user_stack != current->vfork_parent->user_stack_page)
-      page_free(old_user_stack);
+      proc_release_stack_page(&old_user_stack);
 #endif
   }
 
