@@ -194,11 +194,7 @@ for variant in "${VARIANTS[@]}"; do
         # -std=gnu11 for C23 compat (GCC 15 default is gnu23).
         sed -i 's|^CONFIG_CROSS_COMPILER_PREFIX=.*|CONFIG_CROSS_COMPILER_PREFIX=""|' .config
         sed -i "s|^CONFIG_EXTRA_CFLAGS=.*|CONFIG_EXTRA_CFLAGS=\"$PPAP_APP_CFLAGS -std=gnu11 -ffunction-sections -fdata-sections\"|" .config
-        EXTRA_LD="-fuse-ld=$PPAP_LLD -nostdlib -pie -Wl,--strip-debug -Wl,--gc-sections"
-        EXTRA_LD="$EXTRA_LD -Wl,--allow-multiple-definition"
-        EXTRA_LD="$EXTRA_LD $PPAP_MUSL_SYSROOT/lib/crt1.o $PPAP_MUSL_SYSROOT/lib/crti.o"
-        EXTRA_LD="$EXTRA_LD -L$PPAP_MUSL_SYSROOT/lib -lc -L$PPAP_GCC_LIBDIR -lgcc"
-        EXTRA_LD="$EXTRA_LD $PPAP_MUSL_SYSROOT/lib/crtn.o"
+        EXTRA_LD="$PPAP_EPIC_LINK_FLAGS $PPAP_EPIC_LINK_PRE $PPAP_EPIC_LINK_POST"
         sed -i "s|^CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS=\"$EXTRA_LD\"|" .config
     else
         sed -i 's|^CONFIG_CROSS_COMPILER_PREFIX=.*|CONFIG_CROSS_COMPILER_PREFIX="'"$PPAP_CROSS_PREFIX"'"|' .config
@@ -218,8 +214,12 @@ for variant in "${VARIANTS[@]}"; do
     # Build
     echo "busybox [$name]: compiling (musl, $PPAP_ARCH_LABEL)..."
     if [[ "${PPAP_RISCV_EPIC:-}" == "ON" ]]; then
+        # ePIC clang: let busybox build handle everything including link.
+        # Partial links use LD (bare-metal), final link uses CC (clang).
+        _EPIC_CC="$PPAP_CC $PPAP_TARGET_FLAGS -fepic -std=gnu11"
         make ARCH="$PPAP_BB_ARCH" \
-            CC="$PPAP_CC" \
+            CC="$_EPIC_CC" \
+            LD="riscv32-unknown-elf-ld" \
             HOSTCC=gcc \
             SKIP_STRIP=y \
             -j"$(nproc)" 2>&1

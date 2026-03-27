@@ -63,11 +63,36 @@ RUN git clone --depth 1 -b ot-llvm-16-hardening \
       -DLLVM_TARGETS_TO_BUILD="RISCV" \
       -DCMAKE_INSTALL_PREFIX=/opt/ppap/llvm-epic \
       -DLLVM_ENABLE_ASSERTIONS=ON && \
-    ninja -C /tmp/build-llvm-epic clang lld && \
+    ninja -C /tmp/build-llvm-epic \
+      clang lld llvm-ar llvm-nm llvm-ranlib llvm-strip llvm-objdump && \
     cmake --install /tmp/build-llvm-epic --component clang && \
     cmake --install /tmp/build-llvm-epic --component clang-resource-headers && \
     cmake --install /tmp/build-llvm-epic --component lld && \
-    rm -rf /tmp/llvm-epic /tmp/build-llvm-epic
+    for tool in llvm-ar llvm-nm llvm-ranlib llvm-strip llvm-objdump; do \
+      cp /tmp/build-llvm-epic/bin/$tool /opt/ppap/llvm-epic/bin/; \
+    done && \
+    cmake -G Ninja \
+      -S /tmp/llvm-epic/compiler-rt \
+      -B /tmp/build-rt \
+      -DCMAKE_C_COMPILER=/opt/ppap/llvm-epic/bin/clang \
+      -DCMAKE_AR=/opt/ppap/llvm-epic/bin/llvm-ar \
+      -DCMAKE_NM=/opt/ppap/llvm-epic/bin/llvm-nm \
+      -DCMAKE_RANLIB=/opt/ppap/llvm-epic/bin/llvm-ranlib \
+      -DCMAKE_C_COMPILER_TARGET=riscv32-unknown-elf \
+      -DCMAKE_ASM_COMPILER_TARGET=riscv32-unknown-elf \
+      -DCMAKE_C_FLAGS="-march=rv32imac -mabi=ilp32 -fepic" \
+      -DCMAKE_ASM_FLAGS="-march=rv32imac -mabi=ilp32" \
+      -DCOMPILER_RT_BUILD_BUILTINS=ON \
+      -DCOMPILER_RT_BUILD_SANITIZERS=OFF \
+      -DCOMPILER_RT_BUILD_XRAY=OFF \
+      -DCOMPILER_RT_BUILD_LIBFUZZER=OFF \
+      -DCOMPILER_RT_BUILD_PROFILE=OFF \
+      -DCOMPILER_RT_BAREMETAL_BUILD=ON \
+      -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON && \
+    ninja -C /tmp/build-rt && \
+    cp /tmp/build-rt/lib/*/libclang_rt.builtins-*.a \
+       /opt/ppap/llvm-epic/lib/clang/16/lib/libclang_rt.builtins-riscv32.a && \
+    rm -rf /tmp/llvm-epic /tmp/build-llvm-epic /tmp/build-rt
 
 ENV PATH="/opt/ppap/llvm-epic/bin:${PATH}"
 ENV PPAP_EPIC_CLANG=/opt/ppap/llvm-epic/bin/clang

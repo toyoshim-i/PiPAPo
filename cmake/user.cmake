@@ -193,14 +193,30 @@ elseif(PPAP_ARCH STREQUAL "riscv")
     set(PPAP_BB_ARCH       riscv32)
     set(PPAP_ARCH_LABEL    "rv32imac (Hazard3)")
 
-    # libgcc from bare-metal GCC (soft-float math routines)
+    # libgcc from bare-metal GCC (soft-float math routines).
+    # LLVM 16's lld doesn't support R_RISCV_SET_ULEB128 (reloc 60) from
+    # GCC 15's DWARF debug sections.  Strip debug from libgcc before use.
     execute_process(COMMAND ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-gcc
                             -print-file-name=include
         OUTPUT_VARIABLE PPAP_GCC_INCLUDE OUTPUT_STRIP_TRAILING_WHITESPACE)
     execute_process(COMMAND ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-gcc
                             -march=rv32imac_zicsr -mabi=ilp32
                             -print-libgcc-file-name
-        OUTPUT_VARIABLE PPAP_LIBGCC OUTPUT_STRIP_TRAILING_WHITESPACE)
+        OUTPUT_VARIABLE _orig_libgcc OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(PPAP_RISCV_EPIC)
+        file(MAKE_DIRECTORY ${PPAP_SHARED_BUILD})
+        set(_libgcc_dir ${PPAP_SHARED_BUILD}/libgcc-nodebug)
+        set(PPAP_LIBGCC ${_libgcc_dir}/libgcc.a)
+        if(NOT EXISTS ${PPAP_LIBGCC})
+            file(MAKE_DIRECTORY ${_libgcc_dir})
+            file(COPY_FILE ${_orig_libgcc} ${PPAP_LIBGCC})
+            execute_process(
+                COMMAND ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-strip
+                        --strip-debug ${PPAP_LIBGCC})
+        endif()
+    else()
+        set(PPAP_LIBGCC ${_orig_libgcc})
+    endif()
     get_filename_component(PPAP_GCC_LIBDIR ${PPAP_LIBGCC} DIRECTORY)
 else()
     set(PPAP_CC            arm-none-eabi-gcc)
@@ -305,6 +321,9 @@ PPAP_ARCH_LABEL=\"${PPAP_ARCH_LABEL}\"
 PPAP_PIE_FLAG=\"${_PIE_FLAG}\"
 PPAP_LLD=\"${PPAP_LLD}\"
 PPAP_RISCV_EPIC=\"${PPAP_RISCV_EPIC}\"
+PPAP_EPIC_LINK_PRE=\"${PPAP_MUSL_SYSROOT}/lib/crt1.o ${PPAP_MUSL_SYSROOT}/lib/crti.o\"
+PPAP_EPIC_LINK_POST=\"-L${PPAP_MUSL_SYSROOT}/lib -lc -L${PPAP_GCC_LIBDIR} -lgcc ${PPAP_MUSL_SYSROOT}/lib/crtn.o\"
+PPAP_EPIC_LINK_FLAGS=\"-fuse-ld=${PPAP_LLD} -nostdlib -Wl,--pie -Wl,--strip-debug -Wl,--gc-sections -Wl,--allow-multiple-definition\"
 ")
 
 # =============================================================================
