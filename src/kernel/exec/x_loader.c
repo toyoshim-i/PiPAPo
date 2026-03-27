@@ -149,7 +149,8 @@ static int x68k_apply_relocs(uint8_t *image, uint32_t image_size,
 
 static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
                   const cpu_ops_t *cpu_ops, void *cpu_state,
-                  const char *const *argv) {
+                  const char *const *argv, uint32_t flags) {
+  (void)flags;
   (void)cpu_ops;
   (void)cpu_state;
 

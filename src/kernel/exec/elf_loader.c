@@ -486,7 +486,7 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
                           const uint8_t *file_buf, uint32_t file_size,
                           elf32_phdr_t *segs, int nseg,
                           const cpu_ops_t *cpu_ops, void *cpu_state,
-                          elf_load_result_t *out) {
+                          elf_load_result_t *out, uint32_t flags) {
   const elf32_phdr_t *text_seg = NULL;
   const elf32_phdr_t *data_seg = NULL;
 #if defined(__xtensa__)
@@ -519,7 +519,8 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
   if (!text_seg) return -(int)ENOEXEC;
 
   uint32_t e_entry = elf_entry(ehdr);
-  elf_text_mode_t text_mode = elf_text_mode(1 /* romfs is XIP-capable */);
+  elf_text_mode_t text_mode =
+      elf_text_mode(!!(flags & EXEC_FLAG_XIP_SOURCE));
 
   /* Compute text allocation size (includes literal on Xtensa) */
   uint32_t text_end_va = text_seg->p_vaddr + text_seg->p_memsz;
@@ -951,7 +952,7 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
 
 static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
                     const cpu_ops_t *cpu_ops, void *cpu_state,
-                    const char *const *argv) {
+                    const char *const *argv, uint32_t flags) {
   /* Create CPU state if not provided by coordinator */
   int own_state = 0;
   if (!cpu_state) {
@@ -971,7 +972,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
   elf_load_result_t res = {0};
   int rc = elf_load_image(p, ehdr, file_buf, file_size, segs, nseg,
-                          cpu_ops, cpu_state, &res);
+                          cpu_ops, cpu_state, &res, flags);
   if (rc < 0) return rc;
 
   uint32_t entry = res.entry;

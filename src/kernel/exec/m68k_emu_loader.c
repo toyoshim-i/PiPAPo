@@ -60,7 +60,8 @@ static int m68k_emu_detect(const uint8_t *file_buf, uint32_t file_size,
 
 static int m68k_emu_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
                          const cpu_ops_t *cpu_ops, void *cpu_state,
-                         const char *const *argv) {
+                         const char *const *argv, uint32_t flags) {
+  (void)flags;
   (void)cpu_ops;
   (void)cpu_state;
 

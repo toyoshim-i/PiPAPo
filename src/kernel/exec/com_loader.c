@@ -88,7 +88,8 @@ static void cpm_set_drive_a_root(cpm_state_t *cpm, const char *path) {
 
 static int com_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
                     const cpu_ops_t *cpu_ops, void *cpu_state,
-                    const char *const *argv) {
+                    const char *const *argv, uint32_t flags) {
+  (void)flags;
   (void)cpu_ops;
   (void)cpu_state;
 

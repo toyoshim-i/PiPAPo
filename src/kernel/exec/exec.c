@@ -103,8 +103,9 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
         break;
       }
 
+      uint32_t exec_flags = (vn->xip_addr != NULL) ? EXEC_FLAG_XIP_SOURCE : 0;
       rc = loader_registry[i]->load(p, file_base, file_size, cpu_ops, NULL,
-                                    argv);
+                                    argv, exec_flags);
       if (rc == 0) matched_loader = loader_registry[i];
       break;
     }

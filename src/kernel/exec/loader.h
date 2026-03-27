@@ -12,6 +12,9 @@
 // Forward declaration of pcb_t
 typedef struct pcb pcb_t;
 
+/* Flags passed to loader_t.load() */
+#define EXEC_FLAG_XIP_SOURCE (1u << 0) /* file buffer is XIP-capable (romfs) */
+
 typedef struct loader {
   const char* name;
 
@@ -22,9 +25,10 @@ typedef struct loader {
   // This function is responsible for populating memory and setting the initial
   // CPU state (PC, SP, etc.) via the provided cpu_ops interface. It should not
   // modify the pcb_t directly, other than what's needed for loading.
+  // flags: EXEC_FLAG_* bits (e.g. EXEC_FLAG_XIP_SOURCE).
   int (*load)(pcb_t* p, const uint8_t* file_buf, uint32_t file_size,
               const cpu_ops_t* cpu_ops, void* cpu_state,
-              const char* const* argv);
+              const char* const* argv, uint32_t flags);
 
   // The required CPU architecture for this loader.
   int required_arch_id;
