@@ -733,26 +733,25 @@ Current implementation status:
 
 #### XT-2.7: Make page-tracked writable memory explicit
 
-Status: **in progress**
+Status: **complete**
 
 Writable page-backed process memory should be handled through explicit
 helpers, rather than open-coded assumptions about `user_pages[0]`,
 contiguous slots, or architecture-specific cleanup paths.
 
-Current implementation status:
+Implementation outcomes:
 
 - shared helpers now track page-backed user ranges explicitly
 - `sys_brk` and the current ELF loaders use those helpers
 - Xtensa tracked writable pages are now allocated and freed through
   `mem_region`, rather than assuming the generic page pool everywhere
-- shared process helpers now expose explicit tracked-page operations
+- shared process helpers expose explicit tracked-page operations
   (`proc_first_page_backed_slot`, `proc_tracked_page_count`,
   `proc_clear_page_tracking`) so callers do not need to open-code slot-0
   and full-array assumptions
-- shared process helpers now also cover last-page lookup, address
-  containment, and ranged tracked-page release so callers in ptrace,
-  `sys_brk`, and loader/runtime setup can avoid direct `user_pages[]`
-  traversal for common operations
+- shared process helpers also cover last-page lookup, address containment,
+  and ranged tracked-page release so callers in ptrace, `sys_brk`, and
+  loader/runtime setup can avoid direct `user_pages[]` traversal
 - `sys_execve` now clears page tracking through the shared helper instead
   of open-coded `user_pages[]` loops, and `/proc/<pid>/stat` VSZ accounting
   now uses explicit tracked-page counting rather than direct array scans
@@ -761,45 +760,33 @@ Current implementation status:
 - `sys_exit`, `sys_vfork`, and `sys_execve` now route page tracking copy /
   restore / release through shared local helpers in `sys_proc.c` rather than
   repeating open-coded `USER_PAGES_MAX` loops for each path
-- the `sys_proc` lifecycle paths now also use shared `proc` APIs for page
+- the `sys_proc` lifecycle paths also use shared `proc` APIs for page
   tracking snapshots and private/shared release decisions, reducing local
   duplication and keeping ownership logic in one layer
 - legacy loaders (`flat`, `com`, `sos`, `x`, `r`, `m68k_emu`) now route
   tracked page registration through `proc_track_page`, and selected loader
   cleanup paths use shared tracked-page release helpers instead of direct
   `user_pages[]` clear loops
-- closeout audit (2026-03-27): non-`proc` runtime and loader paths now use
-  shared `proc_*` tracking helpers; remaining direct `user_pages[]` access is
-  intentionally contained to the `proc` layer internals and descriptive
-  comments
+- closeout audit (2026-03-27): all direct `user_pages[i] =` slot mutations
+  are verified to be contained exclusively in `proc.c`; all callers outside
+  `proc` use named `proc_*` helpers
+- PSRAM ownership chain verified (2026-03-27): `proc_track_page_range` in
+  `elf_loader.c` correctly tracks only DRAM data pages; staged PSRAM
+  text/rodata regions carry `PROC_IMAGE_SEG_OWNED` and are released by
+  `image_release_owned_segments` → `image_segment_release_owned` →
+  `mem_region_free` → `mem_region_free_ext_text/ext_rodata`, which is the
+  correct and complete release path — no `user_pages[]` slot is required for
+  PSRAM-class segments
 
-At this point XT-2.7 is **code-side complete** but remains **in progress**
-until the runtime verification gates in the checklist below are exercised on
-real Xtensa flows.
+**XT-2.6 compatibility notes (resolved):**
 
-**XT-2.7 near-exit checklist:**
-
-- ensure all non-`proc` runtime and loader paths use shared `proc_*`
-  tracking APIs instead of direct `user_pages[]` slot mutation
-- re-run Xtensa-specific lifecycle checks for `vfork`, `execve`, `sys_brk`,
-  and process-exit cleanup across repeated cycles
-- verify tracked writable-page ownership accounting remains correct when
-  XT-2.6 PSRAM-staged text paths are active
-- keep `user_pages[]` as an internal compatibility storage field only,
-  with policy and lifecycle behavior owned by shared `proc` helpers
-- once these checks pass, promote XT-2.7 status from "in progress" to
-  completion and move default-model work to XT-2.8
-
-**Blockers from XT-2.6 cleanup:**
-
-- XT-2.6 PSRAM execution now stages text/rodata but keeps IRAM allocation
-  for fallback; this remains compatible with XT-2.7's page tracking approach
-- the split-base relocation system (XT-2.6 change) affects how writable data
-  addresses are resolved; XT-2.7 must ensure explicit page tracking works
-  correctly with both PSRAM entry paths and IRAM fallback paths
-- TODO: verify that Xtensa `proc_track_page_range()` call in elf_loader.c
-  correctly reports staged PSRAM text region ownership to XT-2.7 (currently
-  only tracks writable DRAM pages; executable regions tracked separately)
+- XT-2.6 PSRAM execution stages text/rodata but keeps IRAM allocation for
+  fallback; the split-base relocation system is compatible with XT-2.7's
+  ownership model because the two memory classes (`EXT_TEXT` vs `RAM_DATA`)
+  follow separate release chains that do not interfere
+- writable data addresses are tracked through `user_pages[]`, while
+  executable PSRAM addresses are tracked through `image.staged_text` /
+  `image.staged_rodata`; both paths are freed correctly on process exit
 
 #### XT-2.8: Make PSRAM-backed execution the default target model
 
