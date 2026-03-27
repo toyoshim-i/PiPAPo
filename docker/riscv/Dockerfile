@@ -75,6 +75,12 @@ RUN git clone --depth 1 -b ot-llvm-16-hardening \
       -S /tmp/llvm-epic/compiler-rt \
       -B /tmp/build-rt \
       -DCMAKE_C_COMPILER=/opt/ppap/llvm-epic/bin/clang \
+      -DCMAKE_CXX_COMPILER=/opt/ppap/llvm-epic/bin/clang++ \
+      -DCMAKE_C_COMPILER_WORKS=ON \
+      -DCMAKE_CXX_COMPILER_WORKS=ON \
+      -DCMAKE_ASM_COMPILER_WORKS=ON \
+      -DCMAKE_SYSTEM_NAME=Generic \
+      -DCMAKE_CXX_COMPILER_TARGET=riscv32-unknown-elf \
       -DCMAKE_AR=/opt/ppap/llvm-epic/bin/llvm-ar \
       -DCMAKE_NM=/opt/ppap/llvm-epic/bin/llvm-nm \
       -DCMAKE_RANLIB=/opt/ppap/llvm-epic/bin/llvm-ranlib \
@@ -90,8 +96,9 @@ RUN git clone --depth 1 -b ot-llvm-16-hardening \
       -DCOMPILER_RT_BAREMETAL_BUILD=ON \
       -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON && \
     ninja -C /tmp/build-rt && \
-    cp /tmp/build-rt/lib/*/libclang_rt.builtins-*.a \
-       /opt/ppap/llvm-epic/lib/clang/16/lib/libclang_rt.builtins-riscv32.a && \
+    mkdir -p /opt/ppap/llvm-epic/lib/clang/16/lib && \
+    find /tmp/build-rt -name 'libclang_rt.builtins*.a' -exec \
+      cp {} /opt/ppap/llvm-epic/lib/clang/16/lib/libclang_rt.builtins-riscv32.a \; && \
     rm -rf /tmp/llvm-epic /tmp/build-llvm-epic /tmp/build-rt
 
 ENV PATH="/opt/ppap/llvm-epic/bin:${PATH}"
