@@ -15,11 +15,16 @@ relocation callbacks.
 | R-2 | **Done** | Copy helpers use word-at-a-time unconditionally (safe on all arches, required for Xtensa IRAM) |
 | R-3 | **Done** | Literal segment classification unified — two-pass scan for all arches, `literal_seg` is NULL on non-Xtensa |
 | R-4 | **Done** | Dead Xtensa XIP helpers removed (~290 lines); staging moved behind allocator |
-| R-5 | Open | RISC-V forced to `ELF_TEXT_SRAM`; XIP needs gp validation |
+| R-5 | **Blocked** | RISC-V XIP causes test_exec failure — gp = data_base - data_va doesn't work with XIP text; needs crt0/linker investigation |
 | R-6 | Open | Xtensa allocator doesn't try PSRAM first yet |
-| R-7 | Open | User stack / m68k USP `#ifdef` blocks (~20 lines) |
+| R-7 | **Done** | RISC-V user stack tracking uses runtime check; m68k user_stack_page/usp guards are irreducible (struct field doesn't exist on other arches) |
 
-Current `#ifdef` count: **20** (down from 22 after R-2, ~100+ before Steps 1-5).
+Current `#ifdef` count: **11** (down from 20 after R-4, ~100+ before Steps 1-5).
+
+Remaining 11 lines are:
+- 3 lines: `elf_text_mode` Xtensa/RISC-V SRAM guard (R-5, blocked)
+- 4 lines: reloc callback definitions (genuinely per-arch, irreducible)
+- 4 lines: m68k `user_stack_page`/`usp` struct field guards (irreducible)
 
 ## What Remains
 

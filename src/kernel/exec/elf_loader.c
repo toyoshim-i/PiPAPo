@@ -43,7 +43,7 @@ typedef enum {
 static elf_text_mode_t elf_text_mode(int source_is_xip_capable) {
 #if defined(__xtensa__) || defined(__riscv)
   /* Xtensa: IRAM/PSRAM requires copy (not flash-XIP capable).
-   * RISC-V: use SRAM until XIP gp setup is validated. */
+   * RISC-V: forced SRAM until XIP gp setup is validated (R-5). */
   (void)source_is_xip_capable;
   return ELF_TEXT_SRAM;
 #else
@@ -409,9 +409,7 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
     }
     p->image.stack = ustack_region;
     out->stack_top = (uint32_t)(uintptr_t)ustack_region.base + PAGE_SIZE;
-#if defined(__riscv)
     memset(ustack_region.base, 0, PAGE_SIZE);
-#endif
   }
 
   /* --- 3. Text segment: XIP or SRAM --- */
@@ -472,9 +470,7 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
   uint8_t *data_base = NULL;
   uint32_t data_pages = 0;
   uint32_t data_memsz = data_seg ? data_seg->p_memsz : 0;
-#if defined(__xtensa__) || defined(__riscv)
   uint32_t data_va = data_seg ? data_seg->p_vaddr : text_end_va;
-#endif
 
   out->got_sram_addr = 0;
 
@@ -511,12 +507,7 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
   {
     elf_reloc_ctx_t rctx = {
         ehdr, file_buf, file_size, text_base, data_base, text_end_va,
-#if defined(__xtensa__) || defined(__riscv)
-        data_va,
-#else
-        data_seg ? data_seg->p_vaddr : text_end_va,
-#endif
-        data_memsz, text_seg, data_seg, cpu_ops, cpu_state};
+        data_va, data_memsz, text_seg, data_seg, cpu_ops, cpu_state};
     int reloc_rc = elf_reloc_arch(&rctx, out);
     if (reloc_rc < 0) {
       mem_region_free(&data_region);
@@ -543,24 +534,21 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
         PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED);
   }
 
-#if defined(__riscv)
-  /* Track user stack after data pages for vfork sharing */
-  if (need_user_stack &&
-      proc_track_page(p, data_pages, ustack_region.base) < 0) {
-    mem_region_free(&data_region);
-    mem_region_free(&text_region);
-    mem_region_free(&ustack_region);
-    mem_region_free(&stack_region);
-    p->stack_page = NULL;
-    p->image.stack = (proc_image_segment_t){0};
-    return -(int)ENOMEM;
-  }
-  /* RISC-V: stack_top from last page-backed page (user stack) */
-  if (need_user_stack) {
+  /* RISC-V: track user stack in page-backed slots for vfork sharing,
+   * then derive stack_top from the last tracked page. */
+  if (cpu_ops->arch_id == CPU_ARCH_RISCV && need_user_stack) {
+    if (proc_track_page(p, data_pages, ustack_region.base) < 0) {
+      mem_region_free(&data_region);
+      mem_region_free(&text_region);
+      mem_region_free(&ustack_region);
+      mem_region_free(&stack_region);
+      p->stack_page = NULL;
+      p->image.stack = (proc_image_segment_t){0};
+      return -(int)ENOMEM;
+    }
     void *us = proc_last_page_backed_base(p);
     out->stack_top = (uint32_t)(uintptr_t)us + PAGE_SIZE;
   }
-#endif
 
 #if defined(__m68k__)
   if (cpu_ops->arch_id == CPU_ARCH_M68K && need_user_stack)
