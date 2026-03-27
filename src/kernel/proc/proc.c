@@ -16,6 +16,7 @@
 
 #include "../common/errno.h"
 #include "../klog.h"
+#include "../mm/mem_region.h"
 #include "../mm/page.h"  /* PAGE_SIZE — for proc_setup_stack */
 #include "../common/spinlock.h" /* SPIN_PROC */
 #include "arch/arch.h"   /* arch_build_initial_frame */
@@ -153,8 +154,22 @@ uint32_t proc_first_page_backed_slot(const pcb_t *p) {
   return USER_PAGES_MAX;
 }
 
+static uint32_t proc_last_page_backed_slot(const pcb_t *p) {
+  if (!p) return USER_PAGES_MAX;
+  for (uint32_t i = USER_PAGES_MAX; i > 0; i--) {
+    if (p->user_pages[i - 1]) return i - 1;
+  }
+  return USER_PAGES_MAX;
+}
+
 void *proc_page_backed_base(const pcb_t *p) {
   uint32_t slot = proc_first_page_backed_slot(p);
+  if (slot >= USER_PAGES_MAX) return NULL;
+  return p->user_pages[slot];
+}
+
+void *proc_last_page_backed_base(const pcb_t *p) {
+  uint32_t slot = proc_last_page_backed_slot(p);
   if (slot >= USER_PAGES_MAX) return NULL;
   return p->user_pages[slot];
 }
@@ -182,9 +197,32 @@ uint32_t proc_tracked_page_count(const pcb_t *p) {
   return count;
 }
 
+int proc_page_backed_contains(const pcb_t *p, uintptr_t addr) {
+  if (!p) return 0;
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
+    uintptr_t base;
+    if (!p->user_pages[i]) continue;
+    base = (uintptr_t)p->user_pages[i];
+    if (addr >= base && addr < base + PAGE_SIZE) return 1;
+  }
+  return 0;
+}
+
 void proc_clear_page_tracking(pcb_t *p) {
   if (!p) return;
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) p->user_pages[i] = NULL;
+}
+
+void proc_release_tracked_pages(pcb_t *p, uint32_t start_slot,
+                                uint32_t end_slot) {
+  if (!p) return;
+  if (start_slot >= USER_PAGES_MAX) return;
+  if (end_slot > USER_PAGES_MAX) end_slot = USER_PAGES_MAX;
+  for (uint32_t i = start_slot; i < end_slot; i++) {
+    if (!p->user_pages[i]) continue;
+    mem_region_free_tracked_page(p->user_pages[i]);
+    p->user_pages[i] = NULL;
+  }
 }
 
 void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp) {

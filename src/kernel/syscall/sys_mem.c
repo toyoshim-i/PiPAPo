@@ -60,23 +60,15 @@ long sys_brk(long addr) {
                             (void *)(uintptr_t)target, PAGE_SIZE,
                             PROC_IMAGE_SEG_WRITABLE) < 0) {
       /* Roll back any pages we just allocated */
-      for (uint32_t j = old_pages; j < i; j++) {
-        mem_region_free_tracked_page(current->user_pages[j]);
-        current->user_pages[j] = NULL;
-      }
+      proc_release_tracked_pages(current, old_pages, i);
       return (long)(current->brk_current); /* unchanged = failure */
     }
     memset(page_region.base, 0, PAGE_SIZE);
-    current->user_pages[i] = page_region.base;
+    proc_track_page(current, i, page_region.base);
   }
 
   /* Shrink: free excess pages */
-  for (uint32_t i = new_pages; i < old_pages; i++) {
-    if (current->user_pages[i]) {
-      mem_region_free_tracked_page(current->user_pages[i]);
-      current->user_pages[i] = NULL;
-    }
-  }
+  proc_release_tracked_pages(current, new_pages, old_pages);
 
   current->brk_current = new_brk;
   return (long)(new_brk);

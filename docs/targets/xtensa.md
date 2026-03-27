@@ -749,6 +749,10 @@ Current implementation status:
   (`proc_first_page_backed_slot`, `proc_tracked_page_count`,
   `proc_clear_page_tracking`) so callers do not need to open-code slot-0
   and full-array assumptions
+- shared process helpers now also cover last-page lookup, address
+  containment, and ranged tracked-page release so callers in ptrace,
+  `sys_brk`, and loader/runtime setup can avoid direct `user_pages[]`
+  traversal for common operations
 - `sys_execve` now clears page tracking through the shared helper instead
   of open-coded `user_pages[]` loops, and `/proc/<pid>/stat` VSZ accounting
   now uses explicit tracked-page counting rather than direct array scans

@@ -244,8 +244,7 @@ static int dos_setblock(uint32_t *regs, uint32_t usp) {
   if (new_pages < 1) new_pages = 1; /* keep at least the PMB page */
 
   for (uint32_t i = new_pages; i < cur_pages; i++) {
-    page_free(p->user_pages[i]);
-    p->user_pages[i] = NULL;
+    proc_release_tracked_pages(p, i, i + 1);
   }
 
   /* Update MMB end pointer (offset 0x08 in the block) */

@@ -502,11 +502,7 @@ static int trace_native_contains(const pcb_t *target, uint32_t addr) {
   }
 #endif
 
-  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
-    if (!target->user_pages[i]) continue;
-    uint32_t base = (uint32_t)(uintptr_t)target->user_pages[i];
-    if (addr >= base && addr < base + PAGE_SIZE) return 1;
-  }
+  if (proc_page_backed_contains(target, addr)) return 1;
 
   for (uint32_t i = 0; i < MMAP_REGIONS_MAX; i++) {
     if (!target->mmap_regions[i].addr || !target->mmap_regions[i].pages)

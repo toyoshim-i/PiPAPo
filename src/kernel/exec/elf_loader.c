@@ -1233,9 +1233,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 #if defined(__riscv)
   /* RISC-V: argv on user stack (separate from kernel stack) */
   {
-    void *us = NULL;
-    for (int i = USER_PAGES_MAX - 1; i >= 0; i--)
-      if (p->user_pages[i]) { us = p->user_pages[i]; break; }
+    void *us = proc_last_page_backed_base(p);
     stack_top = (uint32_t)(uintptr_t)us + PAGE_SIZE;
   }
 #else
@@ -1310,12 +1308,12 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
         sw[5] = got_sram_addr; /* ARM r9 */
       }
       if (cpu_ops->arch_id == CPU_ARCH_RISCV && !got_sram_addr &&
-          ehdr->e_type == ET_DYN && p->user_pages[0]) {
+          ehdr->e_type == ET_DYN && proc_page_backed_base(p)) {
         /* RISC-V ePIC: ET_DYN (PIE) with no GOT — gp-relative data.
          * Set gp = load_base so crt0 can bootstrap __global_pointer$.
          * GCC non-PIE (ET_EXEC, no GOT) and GCC PIE (ET_DYN, has GOT)
          * don't use gp for data access, so this only fires for ePIC. */
-        sw[1] = (uint32_t)(uintptr_t)p->user_pages[0];
+        sw[1] = (uint32_t)(uintptr_t)proc_page_backed_base(p);
       }
     }
     p->got_base = got_sram_addr;
