@@ -4,7 +4,7 @@
  *   sys_brk(addr) — adjust the program break (heap boundary)
  *
  * The heap starts at brk_base (end of .data+.bss) and grows upward
- * within page-backed user memory tracked in user_pages[].  The initial
+ * within tracked page-backed user memory slots. The initial
  * image pages are recorded by the loader; later heap expansion pages are
  * appended on demand via page_alloc_at() to ensure contiguity.
  */

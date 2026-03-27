@@ -771,6 +771,19 @@ Current implementation status:
 - `user_pages[]` still remains the compatibility surface for the rest of
   the kernel, so this step is not complete yet
 
+**XT-2.7 near-exit checklist:**
+
+- ensure all non-`proc` runtime and loader paths use shared `proc_*`
+  tracking APIs instead of direct `user_pages[]` slot mutation
+- re-run Xtensa-specific lifecycle checks for `vfork`, `execve`, `sys_brk`,
+  and process-exit cleanup across repeated cycles
+- verify tracked writable-page ownership accounting remains correct when
+  XT-2.6 PSRAM-staged text paths are active
+- keep `user_pages[]` as an internal compatibility storage field only,
+  with policy and lifecycle behavior owned by shared `proc` helpers
+- once these checks pass, promote XT-2.7 status from "in progress" to
+  completion and move default-model work to XT-2.8
+
 **Blockers from XT-2.6 cleanup:**
 
 - XT-2.6 PSRAM execution now stages text/rodata but keeps IRAM allocation

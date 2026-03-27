@@ -891,7 +891,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     p->image.stack = proc_image_segment_make(
         stack, PAGE_SIZE, PPAP_MEM_RAM_STACK, PROC_IMAGE_SEG_WRITABLE);
 
-    /* Allocate user stack page, tracked in user_pages[] so vfork
+    /* Allocate user stack page, tracked in page-backed slots so vfork
      * shares it naturally (same address in parent and child). */
     void *ustack_rv = page_alloc();
     if (!ustack_rv) {

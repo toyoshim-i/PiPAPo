@@ -1275,7 +1275,7 @@ long sys_ptrace(long req, long pid, void *addr, void *data) {
  *   7. Mark ZOMBIE and yield
  *
  * Page lifecycle:
- *   - user_pages[] are freed here in sys_exit() (step 3).
+ *   - tracked page-backed slots are released here in sys_exit() (step 3).
  *   - stack_page is freed later in sys_waitpid() when the parent reaps
  *     the zombie.  Orphans are reparented to init (step 6), ensuring
  *     init can always reap them.
@@ -1412,8 +1412,8 @@ long sys_getpid(void) { return (long)current->pid; }
  * execve() or _exit().
  *
  * The child gets its own stack page with a copy of the parent's exception
- * frame (return register = 0 for child).  The child shares the parent's
- * user_pages (GOT/data).
+ * frame (return register = 0 for child). The child shares the parent's
+ * tracked page-backed slots (GOT/data).
  *
  * frame: pointer to the parent's stacked exception frame
  *   ARM:  [r0, r1, r2, r3, r12, lr, pc, xpsr] on PSP
