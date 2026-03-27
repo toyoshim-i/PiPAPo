@@ -27,6 +27,7 @@ volatile uint32_t xtensa_switch_pending = 0;
  * arch_preempt_enable() checks this to avoid enabling the timer interrupt
  * before the ISR is registered. */
 volatile uint32_t xtensa_timer_ready = 0;
+volatile uint32_t xtensa_trap_ready = 0;
 
 /* Tick counter — incremented by timer ISR. */
 volatile uint32_t xtensa_tick_count = 0;
@@ -270,6 +271,8 @@ void xtensa_trap_init(void)
             continue;
         _xt_exception_table[i] = xtensa_fault_handler;
     }
+
+    xtensa_trap_ready = 1;
 }
 
 /* ── Initial stack frame for new processes ──────────────────────────────── */

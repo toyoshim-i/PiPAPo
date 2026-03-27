@@ -893,11 +893,18 @@ Status: **complete**
 
 #### XT-3.4: Define and enforce the bootstrap boundary contract
 
-Status: **not started**
+Status: **complete**
 
-- define exactly what remains ESP-IDF-owned after `app_main()`
-- assert PPAP ownership for syscall/exception/timer/scheduler policy and
-  maintain this boundary in build/runtime checks
+- post-`app_main()` ownership contract is now explicit:
+  ESP-IDF remains bootstrap owner for bootloader, cache/clock bring-up,
+  memory-controller wiring, and console-route provisioning; PPAP owns
+  scheduler/timer/trap/runtime policy
+- build-time guard: Xtensa target now requires `CONFIG_FREERTOS_UNICORE=y`
+  as a hard invariant for the current PPAP ownership model
+- runtime checks in target late init now enforce the boundary by:
+  validating FreeRTOS scheduler handoff remains disabled,
+  requiring PPAP timer/trap readiness flags,
+  and normalizing active `INTENABLE` policy to PPAP-owned timer mask
 
 ### Phase XT-4: Reintroduce protection cleanly
 

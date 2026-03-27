@@ -17,6 +17,12 @@
 #include "../target.h"
 #include "xtensa_cc.h"
 #include "klog.h"
+#include "sdkconfig.h"
+#include "arch/xtensa/cpu.h"
+
+#if !defined(CONFIG_FREERTOS_UNICORE) || !CONFIG_FREERTOS_UNICORE
+#error "xtensa_cc requires CONFIG_FREERTOS_UNICORE=y"
+#endif
 
 /* ESP-IDF: IRAM_ATTR for ISR placed in IRAM */
 #include "esp_attr.h"
@@ -106,6 +112,38 @@ void target_late_init(void)
     /* CC-3: install syscall + exception handlers. */
     extern void xtensa_trap_init(void);
     xtensa_trap_init();
+
+    /* XT-3.4 bootstrap boundary checks:
+     * - FreeRTOS scheduler handoff must stay disabled
+     * - PPAP must own timer and trap paths
+     * - active interrupt mask must remain PPAP-owned */
+    {
+        extern uint32_t port_xSchedulerRunning[];
+        extern volatile uint32_t xtensa_timer_ready;
+        extern volatile uint32_t xtensa_trap_ready;
+
+        if (port_xSchedulerRunning[0] != 0u) {
+            klog("XT-3.4: forcing FreeRTOS scheduler handoff off\n");
+            port_xSchedulerRunning[0] = 0u;
+        }
+
+        if (!xtensa_timer_ready || !xtensa_trap_ready) {
+            klog("PANIC: XT-3.4 ownership checks failed\n");
+            for (;;)
+                __asm__ volatile ("waiti 15");
+        }
+
+        {
+            uint32_t intenable;
+            __asm__ volatile("rsr %0, intenable" : "=a"(intenable));
+            if (intenable != XTENSA_TIMER0_INTMASK) {
+                klogf("XT-3.4: normalize INTENABLE %x -> %x\n",
+                      (uint32_t)intenable, (uint32_t)XTENSA_TIMER0_INTMASK);
+                __asm__ volatile("wsr %0, intenable; rsync" ::
+                                 "a"(XTENSA_TIMER0_INTMASK));
+            }
+        }
+    }
 }
 
 void target_post_mount(void)
