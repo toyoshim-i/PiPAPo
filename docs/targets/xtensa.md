@@ -801,8 +801,13 @@ Specifically:
 - `ENABLE_XTENSA_PSRAM_EXEC=1` is set in
   `src/target/xtensa_cc/components/ppap_kernel/CMakeLists.txt`, making
   PSRAM-backed execution the default path for any XIP-capable binary
-- `CONFIG_SPIRAM_XIP_FROM_PSRAM=y` is set in `sdkconfig.defaults`,
-  enabling the ESP32-S3 PSRAM XiP hardware mode
+- `CONFIG_SPIRAM=y` and `CONFIG_SPIRAM_IGNORE_NOTFOUND=y` are set in
+  `sdkconfig.defaults`; PSRAM arenas are disabled at runtime when the
+  hardware variant has no external RAM (`esp_psram_get_size() == 0`)
+- `CONFIG_SPIRAM_XIP_FROM_PSRAM` is intentionally **not** enabled:
+  XIP mode requires PSRAM to be present and causes a hard boot abort
+  when detection fails; staged execution uses byte-accessible PSRAM
+  arenas instead, which degrade gracefully to IRAM-only fallback
 - non-XIP binaries automatically fall back to IRAM execution; the
   fallback is now guarded by the entry-bounds check added in XT-2.6
 - larger user text / rodata from XIP-capable binaries runs from the
