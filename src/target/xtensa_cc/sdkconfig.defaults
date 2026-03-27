@@ -22,6 +22,11 @@ CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_BOOT_INIT=y
 CONFIG_SPIRAM_USE_CAPS_ALLOC=y
+# M5Stack CardComputer PSRAM wiring: CLK=GPIO30, CS=GPIO26, quad mode
+CONFIG_SPIRAM_MODE_QUAD=y
+CONFIG_SPIRAM_TYPE_AUTO=y
+CONFIG_SPIRAM_CLK_IO=30
+CONFIG_SPIRAM_CS_IO=26
 
 # Allow PSRAM to be absent on hardware variants without external RAM.
 # With XIP-from-PSRAM mode, ESP-IDF hard-aborts if PSRAM detection fails
