@@ -70,6 +70,7 @@
 #define R_68K_RELATIVE 22     /* m68k PIE base relocation              */
 #define R_68K_JMP_SLOT 21     /* m68k PLT GOT slot                     */
 #define R_XTENSA_RELATIVE 7   /* Xtensa PIE base relocation            */
+#define R_RISCV_RELATIVE 3    /* RISC-V PIE base relocation            */
 
 /* ── Section types ──────────────────────────────────────────────────────── */
 

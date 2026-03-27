@@ -82,7 +82,8 @@ static int apply_relocations(const elf32_ehdr_t *ehdr,
          rtype != R_ARM_JMP_SLOT) ||
         (cpu_ops->arch_id == CPU_ARCH_ARMV6 && rtype != R_ARM_RELATIVE &&
          rtype != R_ARM_JMP_SLOT) ||
-        (cpu_ops->arch_id == CPU_ARCH_XTENSA && rtype != R_XTENSA_RELATIVE)) {
+        (cpu_ops->arch_id == CPU_ARCH_XTENSA && rtype != R_XTENSA_RELATIVE) ||
+        (cpu_ops->arch_id == CPU_ARCH_RISCV && rtype != R_RISCV_RELATIVE)) {
       klogf("ELF: unhandled reloc type %u at offset %x\n", rtype, r_offset);
       return -1;
     }
@@ -727,7 +728,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     /* Entry point calculation based on active execution path.
      * Validate entry is within staged segment bounds when PSRAM exec is
      * active; fall back to IRAM if the ELF entry is out of range. */
-    entry = active_text_base + e_entry;
+    entry = active_text_base + (e_entry - text_seg->p_vaddr);
 #if defined(ENABLE_XTENSA_PSRAM_EXEC)
     if ((p->image.flags & PROC_IMAGE_FLAG_TEXT_STAGED_EXT) &&
         p->image.staged_text.base && p->image.staged_text.size > 0) {
@@ -736,7 +737,7 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
       if (entry < seg_start || entry >= seg_end) {
         klogf("ELF: xtensa entry 0x%x outside staged [0x%x, 0x%x) — "
               "IRAM fallback\n", entry, seg_start, seg_end);
-        entry = iram_base + e_entry;
+        entry = iram_base + (e_entry - text_seg->p_vaddr);
       }
     }
 #endif
@@ -914,9 +915,12 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
    * copy both segments there, and execute from SRAM.  This trades RAM
    * for correctness — no GOT patching needed. */
   {
-    uint32_t image_end = text_seg->p_vaddr + text_seg->p_memsz;
-    if (data_seg && data_seg->p_vaddr + data_seg->p_memsz > image_end)
-      image_end = data_seg->p_vaddr + data_seg->p_memsz;
+    /* Compute image extent from ALL LOAD segments (ePIC PIE may have 4) */
+    uint32_t image_end = 0;
+    for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
+      uint32_t seg_end = segs[i].p_vaddr + segs[i].p_memsz;
+      if (seg_end > image_end) image_end = seg_end;
+    }
     uint32_t total_image_pages = (image_end + PAGE_SIZE - 1) / PAGE_SIZE;
 
     sram_page = page_alloc_contiguous(total_image_pages);
@@ -950,15 +954,12 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     memset(sram_page, 0, total_image_pages * PAGE_SIZE);
     memset(ustack_rv, 0, PAGE_SIZE);
 
-    /* Copy text segment */
-    if (text_seg->p_filesz > 0)
-      memcpy(sram_page + text_seg->p_vaddr,
-             file_buf + text_seg->p_offset, text_seg->p_filesz);
-
-    /* Copy data segment (initialized portion) */
-    if (data_seg && data_seg->p_filesz > 0)
-      memcpy(sram_page + data_seg->p_vaddr,
-             file_buf + data_seg->p_offset, data_seg->p_filesz);
+    /* Copy ALL LOAD segments (ePIC PIE binaries may have 4: R, RE, RW, RW) */
+    for (int i = 0; i < nseg && i < MAX_LOAD_SEGS; i++) {
+      if (segs[i].p_filesz > 0 && segs[i].p_vaddr < image_end)
+        memcpy(sram_page + segs[i].p_vaddr,
+               file_buf + segs[i].p_offset, segs[i].p_filesz);
+    }
 
     entry = (uint32_t)(uintptr_t)(sram_page + e_entry);
     p->image.text = proc_image_segment_make(
@@ -982,12 +983,10 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
       return -(int)ENOMEM;
     }
 
-    /* Apply R_RISCV_32 relocations from --emit-relocs sections.
-     * These fix up absolute addresses in data (function pointer tables
-     * like applet_main[]) by adding the SRAM load base.
-     *
-     * Scan all SHT_RELA sections in the ELF.  For each R_RISCV_32 entry
-     * whose target falls within the loaded image, add the load base. */
+    /* Apply relocations from SHT_RELA sections.  Handles:
+     * - R_RISCV_RELATIVE (3): PIE base relocation from -pie / ePIC
+     * - R_RISCV_32 (1): absolute 32-bit from --emit-relocs
+     * - R_RISCV_HI20/LO12_I (26/27): instruction patching */
     uint32_t load_base = (uint32_t)(uintptr_t)sram_page;
     uint32_t riscv32_reloc_count = 0;
 
