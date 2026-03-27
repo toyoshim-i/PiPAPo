@@ -812,6 +812,11 @@ Specifically:
   `MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT`) and executed via the data
   cache path, which requires only byte-accessible PSRAM, not
   instruction-mapped PSRAM
+- XIP-capable binaries also have an explicit IRAM fallback when external
+  staging is unavailable or exhausted: if `EXT_TEXT` cannot be reserved,
+  or if only partial staging succeeds (for example `EXT_TEXT` succeeds but
+  `EXT_RODATA` fails), the loader disables staged execution and runs from
+  IRAM
 - non-XIP binaries automatically fall back to IRAM execution; the
   fallback is now guarded by the entry-bounds check added in XT-2.6
 - larger user text / rodata from XIP-capable binaries runs from the

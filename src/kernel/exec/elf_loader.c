@@ -577,11 +577,18 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     p->stack_page = stack;
     p->image.stack = stack_region;
 
-    if (uses_xip_layout &&
-        mem_region_alloc(&staged_text_region, PPAP_MEM_EXT_TEXT,
-                         text_seg->p_memsz,
-                         PROC_IMAGE_SEG_EXECUTABLE |
-                             PROC_IMAGE_SEG_OWNED) == 0) {
+    int staged_text_alloc_rc = -(int)ENOMEM;
+    int staged_rodata_alloc_rc = -(int)ENOMEM;
+
+    if (uses_xip_layout) {
+      staged_text_alloc_rc = mem_region_alloc(
+        &staged_text_region, PPAP_MEM_EXT_TEXT,
+        text_seg->p_memsz,
+        PROC_IMAGE_SEG_EXECUTABLE |
+          PROC_IMAGE_SEG_OWNED);
+    }
+
+    if (uses_xip_layout && staged_text_alloc_rc == 0) {
       uint8_t *staged_text = (uint8_t *)staged_text_region.base;
       for (uint32_t i = 0; i < text_seg->p_memsz; i++)
         staged_text[i] = 0;
@@ -597,11 +604,17 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
           staged_text_region.base, staged_text_region.size, text_seg->p_vaddr,
           PPAP_MEM_EXT_TEXT, staged_text_region.flags);
       p->image.flags |= PROC_IMAGE_FLAG_TEXT_STAGED_EXT;
+    } else if (uses_xip_layout) {
+      klog("ELF: xtensa PSRAM text staging unavailable; IRAM fallback\n");
     }
 
-    if (uses_xip_layout && literal_seg &&
-        mem_region_alloc(&staged_rodata_region, PPAP_MEM_EXT_RODATA,
-                         literal_seg->p_memsz, PROC_IMAGE_SEG_OWNED) == 0) {
+    if (uses_xip_layout && literal_seg) {
+      staged_rodata_alloc_rc = mem_region_alloc(
+          &staged_rodata_region, PPAP_MEM_EXT_RODATA,
+          literal_seg->p_memsz, PROC_IMAGE_SEG_OWNED);
+    }
+
+    if (uses_xip_layout && literal_seg && staged_rodata_alloc_rc == 0) {
       uint8_t *staged_rodata = (uint8_t *)staged_rodata_region.base;
       for (uint32_t i = 0; i < literal_seg->p_memsz; i++)
         staged_rodata[i] = 0;
@@ -617,6 +630,21 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
           staged_rodata_region.base, staged_rodata_region.size,
           literal_seg->p_vaddr, PPAP_MEM_EXT_RODATA,
           staged_rodata_region.flags);
+    } else if (uses_xip_layout && literal_seg) {
+      klog("ELF: xtensa PSRAM rodata staging unavailable\n");
+    }
+
+    /* If text staging succeeded but literal support staging failed for an
+     * XIP-layout image with a separate literal segment, disable staged-text
+     * execution and run from IRAM to keep a complete, coherent fallback. */
+    if (uses_xip_layout && literal_seg &&
+        (p->image.flags & PROC_IMAGE_FLAG_TEXT_STAGED_EXT) &&
+        !p->image.staged_rodata.base) {
+      mem_region_free(&staged_text_region);
+      p->image.staged_text = (proc_image_segment_t){0};
+      p->image.flags &= ~PROC_IMAGE_FLAG_TEXT_STAGED_EXT;
+      klog("ELF: xtensa staged text disabled due to partial PSRAM staging; "
+           "IRAM fallback\n");
     }
 
     /* Zero IRAM (word-at-a-time — byte memset crashes on IRAM) */
