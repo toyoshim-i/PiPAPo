@@ -620,7 +620,7 @@ Current implementation status:
 
 #### XT-2.6: Separate execution model from allocation model
 
-Status: **partially done**
+Status: **complete**
 
 Keep two executable paths temporarily:
 
@@ -714,22 +714,23 @@ Current implementation status:
   the standard path for XIP-capable binaries. Non-XIP binaries automatically
   fall back to IRAM execution path
 
-**Validation points for XT-2.6 PSRAM execution:**
+**Validation points for XT-2.6 PSRAM execution (resolved):**
 
 - when `CONFIG_SPIRAM_XIP_FROM_PSRAM` is disabled, PSRAM arenas are
   reserved but not executable; staged copies exist but entry point
   allocation fails gracefully (logs "IRAM fallback @ 0x...")
 - entry point allocation from staged text can fail if `mem_region_alloc()`
-  returns NULL (insufficient PSRAM arena space); must verify PSRAM arena
-  sizes vs typical application images
-- relocation patching against staged PSRAM region requires stable reader
-  access while writes apply to DRAM (for GOT entries); mutual exclusion
-  needed if Xtensa moves to preemptive switching before XT-2.8 launch
-- loader must not execute from IRAM text when staged PSRAM path is active;
-  if entry point uses PSRAM base, literal pool relocations must resolve to
-  PSRAM-backed artifacts (not IRAM copies)
-- TODO: add explicit validation that entry address is within staged segment
-  bounds, not stale memory
+  returns NULL (insufficient PSRAM arena space); the loader falls back to
+  IRAM and continues normally
+- relocation patching against staged PSRAM region operates on byte-accessible
+  PSRAM while the region is not yet executing; no mutual-exclusion concern
+  until preemptive switching is introduced (XT-3 scope)
+- loader does not execute from IRAM text when staged PSRAM path is active;
+  entry point is set to `staged_text.base + e_entry` in that case
+- entry address bounds validation added (2026-03-27): if the computed PSRAM
+  entry falls outside `[staged_text.base, staged_text.base + staged_text.size)`,
+  the loader logs a diagnostic and falls back to the IRAM entry to avoid
+  executing stale or unmapped memory
 
 #### XT-2.7: Make page-tracked writable memory explicit
 

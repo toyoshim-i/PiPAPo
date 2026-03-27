@@ -696,8 +696,22 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     uint32_t active_text_base = iram_base;
 #endif
 
-    /* Entry point calculation based on active execution path */
+    /* Entry point calculation based on active execution path.
+     * Validate entry is within staged segment bounds when PSRAM exec is
+     * active; fall back to IRAM if the ELF entry is out of range. */
     entry = active_text_base + e_entry;
+#if defined(ENABLE_XTENSA_PSRAM_EXEC)
+    if ((p->image.flags & PROC_IMAGE_FLAG_TEXT_STAGED_EXT) &&
+        p->image.staged_text.base && p->image.staged_text.size > 0) {
+      uint32_t seg_start = (uint32_t)(uintptr_t)p->image.staged_text.base;
+      uint32_t seg_end   = seg_start + p->image.staged_text.size;
+      if (entry < seg_start || entry >= seg_end) {
+        klogf("ELF: xtensa entry 0x%x outside staged [0x%x, 0x%x) — "
+              "IRAM fallback\n", entry, seg_start, seg_end);
+        entry = iram_base + e_entry;
+      }
+    }
+#endif
     p->image.text = proc_image_segment_make_vaddr(
         text_region.base, text_region.size, text_seg->p_vaddr,
         PPAP_MEM_RAM_TEXT, text_region.flags);
