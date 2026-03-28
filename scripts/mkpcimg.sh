@@ -71,11 +71,16 @@ if [[ -f "$VFS_DATA" ]]; then
 fi
 
 # Include user programs if built
-HELLO="$BUILD_DIR/hello.com"
-if [[ -f "$HELLO" ]]; then
-  cp "$HELLO" "$UFS_STAGING/bin/hello.com"
-  # Use hello.com as init for testing
-  cp "$HELLO" "$UFS_STAGING/sbin/init"
+HELLO_COM="$BUILD_DIR/hello.com"
+HELLO_ELF="$BUILD_DIR/hello.elf"
+if [[ -f "$HELLO_COM" ]]; then
+  cp "$HELLO_COM" "$UFS_STAGING/bin/hello.com"
+fi
+# Use ELF binary as /sbin/init (loaded by elf16_loader)
+if [[ -f "$HELLO_ELF" ]]; then
+  cp "$HELLO_ELF" "$UFS_STAGING/sbin/init"
+elif [[ -f "$HELLO_COM" ]]; then
+  cp "$HELLO_COM" "$UFS_STAGING/sbin/init"
 fi
 
 # ── Create UFS image ─────────────────────────────────────────────────────

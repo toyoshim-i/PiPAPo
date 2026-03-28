@@ -147,6 +147,7 @@ set(KERNEL_CORE_SOURCES
   ${PPAP_ROOT}/src/kernel/cpu/cpu_native.c
   ${PPAP_ROOT}/src/kernel/blkdev/blkdev.c
   ${PPAP_ROOT}/src/kernel/exec/exec.c
+  ${PPAP_ROOT}/src/kernel/exec/elf16_loader.c
   ${PPAP_ROOT}/src/kernel/exec/flat_loader.c
   ${PPAP_ROOT}/src/kernel/exec/loader.c
   ${PPAP_ROOT}/src/kernel/subsys/subsys.c

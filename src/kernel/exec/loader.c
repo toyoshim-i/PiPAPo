@@ -19,6 +19,7 @@
 #include "m68k_emu_loader.h"
 #endif
 #if defined(__ia16__)
+extern const loader_t elf16_loader;
 extern const loader_t flat_loader;
 #endif
 #include <stddef.h>
@@ -40,6 +41,7 @@ const loader_t* loader_registry[] = {
     &elf_loader,
 #endif
 #if defined(__ia16__)
+    &elf16_loader,   /* ELF before flat (ELF detection is stricter) */
     &flat_loader,
 #endif
     NULL};

@@ -47,6 +47,7 @@
 
 /* ── ELF machine ─────────────────────────────────────────────────────────── */
 
+#define EM_386 3
 #define EM_ARM 40
 #define EM_68K 4
 #define EM_XTENSA 94
