@@ -248,6 +248,7 @@ static int apply_relocations(const elf32_ehdr_t *ehdr,
       r_info = rel->r_info;
     }
     uint32_t rtype = ELF32_R_TYPE(r_info);
+    if (rtype == 0) continue; /* R_*_NONE — padding, skip */
     if ((cpu_ops->arch_id == CPU_ARCH_M68K && rtype == R_68K_JMP_SLOT) ||
         (cpu_ops->arch_id == CPU_ARCH_ARM && rtype == R_ARM_JMP_SLOT)) {
       if (!dynsym) continue;

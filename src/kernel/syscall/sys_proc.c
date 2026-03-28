@@ -84,6 +84,7 @@ static void proc_release_stack_page(void **page) {
   *page = NULL;
 }
 
+#if defined(__m68k__) || defined(__riscv)
 /* Allocate a user-stack copy for a vfork child.
  *
  * Architectures with separate user/kernel stacks (m68k, RISC-V) must
@@ -107,6 +108,7 @@ static int vfork_copy_user_stack(void *parent_ustack, uint32_t parent_usp,
   *usp_out = (uint32_t)(uintptr_t)child_ustack + usp_off;
   return 0;
 }
+#endif /* __m68k__ || __riscv */
 
 static void proc_release_mmap_region(void **addr, uint32_t *pages) {
   proc_image_segment_t seg;
