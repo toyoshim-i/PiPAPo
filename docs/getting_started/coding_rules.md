@@ -119,6 +119,21 @@ When adding a new arch- or target-specific feature:
 4. If you find existing `#ifdef` conditionals that can be replaced by this
    pattern, prefer refactoring them out.
 
+## Code Quality
+
+- **Keep code clean**: refactor as you go.  When touching an area, leave
+  it better than you found it.
+- **Required refactoring**: if adding a feature creates duplication or
+  makes an existing pattern harder to follow, refactor first (or in the
+  same commit).  Do not defer cleanup that the next reader will trip over.
+- **Avoid code duplication**: when two or more architectures share the
+  same logic (e.g., user-stack copy in vfork, split-address relocation),
+  extract a shared helper and call it from the arch-specific paths.
+- **Diverge per-arch by introducing the right abstraction**: instead of
+  duplicating a function with small per-arch tweaks, factor out the
+  common algorithm into a shared function and pass arch-specific details
+  via parameters, callbacks, or per-arch constants.
+
 ## TODO Comments
 
 Mark incomplete or temporary code with `TODO` comments so it can be found
