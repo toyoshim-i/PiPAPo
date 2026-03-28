@@ -121,7 +121,14 @@ _trap_entry:
 .Lsave_regs:
     # ── Save full register set ───────────────────────────────────────────
     sw      x1,   0(sp)        # ra
-    sw      x3,   4(sp)        # gp
+    sw      x3,   4(sp)        # gp (user)
+    # Restore kernel GP so GP-relative access in kernel code works.
+    # Without this, the kernel runs with the user's GP and reads/writes
+    # kernel globals at wrong addresses.
+.option push
+.option norelax
+    la      gp, __global_pointer$
+.option pop
     sw      x4,   8(sp)        # tp
     sw      x5,  12(sp)        # t0
     sw      x6,  16(sp)        # t1
