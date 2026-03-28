@@ -31,12 +31,12 @@
 #include <stdint.h>
 
 #include "../common/errno.h"
-#include "../mm/mem_region.h"
+#include "../common/mod/mod_core.h"
+#include "../common/mod/mod_vfs.h"
 #include "../mm/page.h"
 #include "../proc/proc.h"
 #include "../proc/sched.h"
 #include "../subsys/subsys.h"
-#include "../common/mod/mod_vfs.h"
 #include "config.h"
 
 /* ── Minimal integer-to-string formatter ────────────────────────────────────
@@ -126,8 +126,8 @@ typedef struct {
  */
 
 static int gen_meminfo(char *buf, int bufsiz) {
-  uint32_t total_bytes = mem_region_total_bytes(PPAP_MEM_RAM_STACK);
-  uint32_t free_bytes = mem_region_free_bytes(PPAP_MEM_RAM_STACK);
+  uint32_t total_bytes = mod_core.mem_region_total_bytes(PPAP_MEM_RAM_STACK);
+  uint32_t free_bytes = mod_core.mem_region_free_bytes(PPAP_MEM_RAM_STACK);
   uint32_t total_kb = total_bytes / 1024u;
   uint32_t free_kb = free_bytes / 1024u;
 

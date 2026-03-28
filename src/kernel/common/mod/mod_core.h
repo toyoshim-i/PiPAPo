@@ -2,7 +2,7 @@
  * mod_core.h — Core kernel module interface
  *
  * The core module provides common services used by ALL other modules:
- * logging, slab memory allocation, and (future) page allocation.
+ * logging, slab memory allocation, and region-based page allocation.
  *
  * Inline functions (spinlock, string, arch_irq) do NOT need module
  * thunks — they compile into each module's code segment directly.
@@ -12,8 +12,10 @@
  *   #include "common/mod/mod_core.h"
  *   mod_core.klogf("VFS: %s\n", msg);
  *   void *p = mod_core.kmem_alloc(&pool);
+ *   mod_core.mem_region_alloc(&seg, PPAP_MEM_RAM_DATA, PAGE_SIZE, flags);
  *
- * Implementation: src/kernel/klog.c, src/kernel/mm/kmem.c
+ * Implementation: src/kernel/klog.c, src/kernel/mm/kmem.c,
+ *                 src/kernel/mm/mem_region.c
  */
 
 #ifndef PPAP_KERNEL_MOD_MOD_CORE_H
@@ -22,9 +24,11 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/* Forward declaration — full definition in mm/kmem.h */
+/* Forward declarations — full definitions in mm/ headers */
 struct kmem_pool;
 typedef struct kmem_pool kmem_pool_t;
+
+#include "../../mm/mem_layout.h"  /* ppap_mem_class_t, proc_image_segment_t */
 
 #include "module.h"
 
@@ -84,6 +88,37 @@ MOD_DECLARE_BEGIN(core)
    * kmem_free_count — Return the number of free objects in a pool.
    */
   MOD_FUNC(core, uint32_t, kmem_free_count, const kmem_pool_t *)
+
+  /* ── Region allocator (page-granularity) ──────────────────────────────── */
+
+  /*
+   * mem_region_alloc — Allocate a memory region.
+   *
+   *   seg        Output segment descriptor (base, size, class filled in).
+   *   mem_class  Memory class (PPAP_MEM_RAM_DATA, PPAP_MEM_RAM_STACK, ...).
+   *   size       Requested size in bytes (rounded up to page boundary).
+   *   flags      PROC_IMAGE_SEG_WRITABLE, PROC_IMAGE_SEG_OWNED, etc.
+   *
+   * Returns 0 on success, -ENOMEM or -EINVAL on failure.
+   */
+  MOD_FUNC(core, int, mem_region_alloc, proc_image_segment_t *,
+                       ppap_mem_class_t, uint32_t, uint32_t)
+
+  /*
+   * mem_region_free — Release a previously allocated memory region.
+   *
+   *   seg  Segment descriptor returned by mem_region_alloc.
+   */
+  MOD_FUNC(core, void, mem_region_free, const proc_image_segment_t *)
+
+  /*
+   * mem_region_total_bytes — Total bytes available for a memory class.
+   * mem_region_free_bytes  — Free bytes available for a memory class.
+   *
+   * Used by procfs for /proc/meminfo reporting.
+   */
+  MOD_FUNC(core, uint32_t, mem_region_total_bytes, ppap_mem_class_t)
+  MOD_FUNC(core, uint32_t, mem_region_free_bytes, ppap_mem_class_t)
 
 MOD_DECLARE_END(core)
 
