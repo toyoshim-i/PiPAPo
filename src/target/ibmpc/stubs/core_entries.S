@@ -54,6 +54,11 @@ saved_ip: .word 0
   mov  %ax, %ss:saved_ip
   mov  %bx, %ss:saved_cs
   sti
+  /* Restore DS to core's data segment (SS=DS=0 for shared data).
+   * VFS code uses DS as a scratch register, so DS may be garbage
+   * when entering core via far call. */
+  xor  %ax, %ax
+  mov  %ax, %ds
   call \name
   cli
   push %ss:saved_cs

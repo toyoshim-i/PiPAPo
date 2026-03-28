@@ -175,40 +175,29 @@ void target_early_init(void)
 
 void target_late_init(void)
 {
-  timer_init();
-  klog("PIT: 100 Hz timer started\n");
+  /* PIT timer deferred to target_post_mount — BIOS INT 13h floppy
+   * driver needs the original INT 08h timer for motor control. */
 }
 
 #ifdef __ia16__
 int target_mount_rootfs(void)
 {
-  klog("FLOPPY: blkdev_init\n");
   blkdev_init();
-  klog("FLOPPY: floppy_blk_init\n");
   floppy_blk_init();
-  klog("FLOPPY: blkdev_find\n");
   blkdev_t *bd = blkdev_find("fd0");
   if (!bd) {
     klog("FLOPPY: fd0 not found\n");
     return -1;
   }
-  /* Test: read sector 0 directly from core to verify INT 13h works */
-  {
-    static uint8_t test_buf[512];
-    int trc = bd->read(bd, test_buf, 0, 1);
-    klogf("FLOPPY: direct read rc=%d magic=%x\n",
-          (uint32_t)trc, (uint32_t)((uint16_t)test_buf[0] | ((uint16_t)test_buf[1] << 8)));
-  }
-  klog("FLOPPY: calling mount_ufs\n");
   int rc = mod_vfs.mount_ufs("/", MNT_RDONLY, bd);
-  klogf("FLOPPY: mount_ufs returned %d\n", (uint32_t)rc);
   return rc;
 }
 #endif
 
 void target_post_mount(void)
 {
-  /* Nothing needed after rootfs mount */
+  timer_init();
+  klog("PIT: 100 Hz timer started\n");
 }
 
 const char *target_init_path(void)

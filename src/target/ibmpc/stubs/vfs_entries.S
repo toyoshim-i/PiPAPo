@@ -33,6 +33,10 @@ vfs_\name\()_entry:
   mov  %ax, %ss:vfs_saved_ip
   mov  %bx, %ss:vfs_saved_cs
   sti
+  /* Restore DS to shared data segment (SS=DS=0).
+   * Core code may leave DS as scratch. */
+  xor  %ax, %ax
+  mov  %ax, %ds
   call vfs_\name
   cli
   push %ss:vfs_saved_cs

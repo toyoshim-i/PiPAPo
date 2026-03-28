@@ -14,14 +14,15 @@
 #include "../../mm/mem_region.h"
 #include "../../blkdev/blkdev.h"
 
-/* Cross-module blkdev wrappers — execute dev->read/write in core's CS */
-static int core_blkdev_read(blkdev_t *dev, void *buf,
-                            uint32_t sector, uint32_t count) {
+/* Cross-module blkdev wrappers — execute dev->read/write in core's CS.
+ * NOT static: called by name from core_entries.S on i16. */
+int core_blkdev_read(blkdev_t *dev, void *buf,
+                     uint32_t sector, uint32_t count) {
   return dev->read(dev, buf, sector, count);
 }
 
-static int core_blkdev_write(blkdev_t *dev, const void *buf,
-                             uint32_t sector, uint32_t count) {
+int core_blkdev_write(blkdev_t *dev, const void *buf,
+                      uint32_t sector, uint32_t count) {
   return dev->write(dev, buf, sector, count);
 }
 
