@@ -172,14 +172,14 @@ static void xtensa_syscall_handler(XtExcFrame *frame)
                      (uint32_t)frame->a4, (uint32_t)frame->a5);
 
     /* exec_pending: execve built a new-process frame at current->sp.
-     * Reload the frame's PC/PS/SP so rfe jumps to the new program. */
+     * Reload the frame's PC/PS/SP so rfe jumps to the new program.
+     * Frame layout (byte offsets): [16]=exit, [20]=PC, [24]=PS, [28]=SP. */
     if (exec_pending[0]) {
         exec_pending[0] = 0;
         uint32_t *nf = (uint32_t *)(uintptr_t)current->sp;
-        /* new-process frame: [0]=exit=1, [1]=entry, [2]=PS, [3]=user_sp */
-        frame->pc = nf[1];
-        frame->ps = nf[2];
-        frame->a1 = nf[3];
+        frame->pc = nf[5];  /* SOL_PC / 4 = 20/4 */
+        frame->ps = nf[6];  /* SOL_PS / 4 = 24/4 */
+        frame->a1 = nf[7];  /* SOL_SP / 4 = 28/4 */
         frame->a2 = 0;
     }
 
@@ -339,6 +339,7 @@ uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void))
     uint32_t user_sp = (uint32_t)(uintptr_t)sp;
     sp = (uint32_t *)((uintptr_t)sp & ~0xFu);  /* 16-byte align */
 
+    *--sp = 0;                                  /* [SP+36] a3 = 0 (unused by _start) */
     *--sp = 0;                                  /* [SP+32] a0 = 0 (unused by _start) */
     *--sp = user_sp;                            /* [SP+28] user SP */
     /* PS for new process entry:

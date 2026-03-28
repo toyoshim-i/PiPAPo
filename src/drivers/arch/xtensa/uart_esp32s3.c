@@ -6,8 +6,6 @@
  * directly (which won't work on USB-JTAG consoles like the CardComputer),
  * we use the ESP-IDF ROM putchar/getchar functions that go through the
  * correct console channel.
- *
- * CC-2+ can switch to a direct driver once the console path is known.
  */
 
 #include "drivers/uart.h"
@@ -17,6 +15,12 @@
  * but we declare them here to avoid header dependency issues. */
 extern void esp_rom_uart_putc(char c);
 extern int esp_rom_uart_rx_one_char(unsigned char *c);
+
+/* One-character peek buffer.  esp_rom_uart_rx_one_char() is destructive
+ * (no way to put a character back), so uart_rx_avail() reads one char
+ * into this buffer and uart_getc() drains it first. */
+static int peek_valid;
+static unsigned char peek_char;
 
 void uart_init(void)
 {
@@ -32,6 +36,10 @@ int uart_putc(char c, void (*notify)(void))
 
 int uart_getc(void)
 {
+    if (peek_valid) {
+        peek_valid = 0;
+        return (int)peek_char;
+    }
     unsigned char c;
     if (esp_rom_uart_rx_one_char(&c) == 0)
         return (int)c;
@@ -40,7 +48,13 @@ int uart_getc(void)
 
 int uart_rx_avail(void)
 {
-    /* ROM doesn't provide a non-blocking peek.
-     * Return 0 — polling callers will retry. */
+    if (peek_valid)
+        return 1;
+    unsigned char c;
+    if (esp_rom_uart_rx_one_char(&c) == 0) {
+        peek_char = c;
+        peek_valid = 1;
+        return 1;
+    }
     return 0;
 }

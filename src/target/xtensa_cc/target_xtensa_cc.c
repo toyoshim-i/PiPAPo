@@ -19,6 +19,9 @@
 #include "klog.h"
 #include "sdkconfig.h"
 #include "arch/xtensa/cpu.h"
+#include "drivers/uart.h"
+#include "kernel/proc/sched.h"
+#include "kernel/fd/tty.h"
 
 #if !defined(CONFIG_FREERTOS_UNICORE) || !CONFIG_FREERTOS_UNICORE
 #error "xtensa_cc requires CONFIG_FREERTOS_UNICORE=y"
@@ -112,6 +115,11 @@ void target_late_init(void)
     /* CC-3: install syscall + exception handlers. */
     extern void xtensa_trap_init(void);
     xtensa_trap_init();
+
+    /* Register UART RX polling so the idle loop feeds input to TTY.
+     * uart_rx_avail() peeks the ROM console; when it returns non-zero,
+     * the scheduler calls tty_rx_notify(TTY_SERIAL) to wake readers. */
+    sched_set_input_poll(uart_rx_avail, TTY_SERIAL);
 
     /* XT-3.4 bootstrap boundary checks:
      * - FreeRTOS scheduler handoff must stay disabled

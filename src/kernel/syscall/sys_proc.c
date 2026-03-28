@@ -1581,15 +1581,19 @@ long sys_vfork(uint32_t *frame) {
     uint32_t child_pc = frame[-4];      /* pc (already advanced +3) */
     uint32_t child_user_sp = frame[-1]; /* a1 = user SP at syscall */
     uint32_t child_a0 = frame[-2];      /* a0 = return addr to caller */
+    uint32_t child_a3 = frame[1];       /* a3 (compiler expects preserved) */
 
     /* Build new-process frame at top of child's kernel stack page.
      * a0 is needed because vfork child starts at `ret` (jx a0) — the
-     * instruction after SYSCALL in the vfork stub. */
+     * instruction after SYSCALL in the vfork stub.
+     * a3 is needed because the compiler does not clobber it across the
+     * inline syscall wrapper — spawn() keeps the inittab entry ptr in a3. */
     uint32_t *sp = (uint32_t *)((uint8_t *)stack + PAGE_SIZE);
     sp = (uint32_t *)((uintptr_t)sp & ~0xFu);
+    *--sp = child_a3;                   /* [SP+36] a3 = preserved reg */
     *--sp = child_a0;                   /* [SP+32] a0 = return addr */
     *--sp = child_user_sp;              /* [SP+28] user SP */
-    *--sp = 0u;                         /* [SP+24] PS */
+    *--sp = (1u << 5);                  /* [SP+24] PS: UM=1 */
     *--sp = child_pc;                   /* [SP+20] entry */
     *--sp = 1u;                         /* [SP+16] exit = 1 */
     *--sp = 0;                          /* [SP+12] ABI scratch */

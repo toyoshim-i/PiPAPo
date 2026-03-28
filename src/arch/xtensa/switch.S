@@ -35,6 +35,7 @@
     .equ SOL_PS,     24
     .equ SOL_SP,     28
     .equ SOL_A0,     32    # saved a0 (new-process frames only; vfork return addr)
+    .equ SOL_A3,     36    # saved a3 (vfork child needs entry ptr preserved)
     .equ SOL_FRMSZ,  64    # keep low 16 bytes free for ABI scratch
 
     .text
@@ -103,19 +104,23 @@ xtensa_do_yield:
 
 .Lnew_process:
     # ── New-process restore: direct jump to entry point ───────────────
-    # Frame: [4]=entry, [8]=PS, [12]=user_sp, [16]=a0
     # This path is used for freshly exec'd processes whose initial frame
     # was built by arch_build_initial_frame().  Also used by vfork child
     # (entry = instruction after syscall, a2 = 0 = vfork return value).
     # We set all registers directly and jump, avoiding retw (which would
     # read the base save area and corrupt a1 with the entry address).
-    l32i    a3, a1, SOL_PC            # a3 = entry address
+    #
+    # a8 is used as the jump target so a3 can be restored from the frame
+    # (vfork child needs a3 preserved — the compiler does not clobber it
+    # across the inline syscall wrapper).
+    l32i    a8, a1, SOL_PC            # a8 = entry address (temp for jx)
     l32i    a4, a1, SOL_PS            # a4 = PS
     l32i    a0, a1, SOL_A0            # a0 = return addr (vfork needs this)
+    l32i    a3, a1, SOL_A3            # a3 = saved a3 (vfork entry ptr)
     l32i    a1, a1, SOL_SP            # a1 = user SP (load LAST — clobbers sp)
     wsr     a4, ps
     rsync
     movi    a2, 0                     # a2 = 0 (vfork return; harmless for exec)
-    jx      a3                        # jump to entry
+    jx      a8                        # jump to entry
 
     .size   xtensa_do_yield, . - xtensa_do_yield
