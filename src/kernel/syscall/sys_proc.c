@@ -84,6 +84,30 @@ static void proc_release_stack_page(void **page) {
   *page = NULL;
 }
 
+/* Allocate a user-stack copy for a vfork child.
+ *
+ * Architectures with separate user/kernel stacks (m68k, RISC-V) must
+ * give the vfork child its own user stack page.  Without this, the
+ * child's post-vfork code overwrites the parent's stack, corrupting
+ * the parent's return state.
+ *
+ * Returns 0 on success, -ENOMEM on failure.  On success, *out_ustack
+ * is the new page and *usp_inout is adjusted to the same offset
+ * within the new page. */
+static int vfork_copy_user_stack(void *parent_ustack, uint32_t parent_usp,
+                                 void **out_ustack, uint32_t *usp_out) {
+  proc_image_segment_t ustack_region = {0};
+  if (mem_region_alloc(&ustack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
+                       PROC_IMAGE_SEG_WRITABLE) < 0)
+    return -(int)ENOMEM;
+  void *child_ustack = ustack_region.base;
+  memcpy(child_ustack, parent_ustack, PAGE_SIZE);
+  *out_ustack = child_ustack;
+  uint32_t usp_off = parent_usp - (uint32_t)(uintptr_t)parent_ustack;
+  *usp_out = (uint32_t)(uintptr_t)child_ustack + usp_off;
+  return 0;
+}
+
 static void proc_release_mmap_region(void **addr, uint32_t *pages) {
   proc_image_segment_t seg;
 
@@ -1493,29 +1517,21 @@ long sys_vfork(uint32_t *frame) {
   child->sp = (uint32_t)(uintptr_t)child_regs;
 
   /* m68k user mode: USP points to a user_stack_page (separate from
-   * stack_page / SSP).  The child must have its own user stack copy;
-   * otherwise the child's post-vfork code (pushing execve arguments)
-   * overwrites the parent's return addresses on the shared stack. */
+   * stack_page / SSP).  The child must have its own user stack copy. */
   {
     void *parent_ustack = current->user_stack_page;
-
     if (parent_ustack) {
-      proc_image_segment_t ustack_region = {0};
-      if (mem_region_alloc(&ustack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                           PROC_IMAGE_SEG_WRITABLE) < 0) {
+      void *child_ustack = NULL;
+      uint32_t child_usp = 0;
+      if (vfork_copy_user_stack(parent_ustack, current->usp,
+                                &child_ustack, &child_usp) < 0) {
         proc_release_stack_page(&stack);
         child->stack_page = NULL;
         proc_free(child);
         return -(long)ENOMEM;
       }
-      void *child_ustack = ustack_region.base;
-      memcpy(child_ustack, parent_ustack, PAGE_SIZE);
       child->user_stack_page = child_ustack;
-
-      /* Adjust child USP to same offset within the new page */
-      uint32_t parent_usp = current->usp;
-      uint32_t usp_off = parent_usp - (uint32_t)(uintptr_t)parent_ustack;
-      child->usp = (uint32_t)(uintptr_t)child_ustack + usp_off;
+      child->usp = child_usp;
 
       /* Patch a6 (frame pointer) if it points into the user stack */
       uint32_t parent_base = (uint32_t)(uintptr_t)parent_ustack;
@@ -1540,31 +1556,23 @@ long sys_vfork(uint32_t *frame) {
   child->sp = (uint32_t)(uintptr_t)(child_frame - 8);
   child->kernel_sp = (uint32_t)(uintptr_t)stack + PAGE_SIZE;
 
-  /* RISC-V mscratch split: the child must have its own user stack copy.
-   * Without this, the child's post-vfork code (function prologues,
-   * ptrace/execve call setup) overwrites the parent's user stack,
-   * corrupting the parent's return state. */
+  /* RISC-V mscratch split: the child must have its own user stack copy. */
   {
     uint32_t ustack_slot = USER_PAGES_MAX - 1;
     void *parent_ustack = current->user_pages[ustack_slot];
     if (parent_ustack) {
-      proc_image_segment_t ustack_region = {0};
-      if (mem_region_alloc(&ustack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                           PROC_IMAGE_SEG_WRITABLE) < 0) {
+      void *child_ustack = NULL;
+      uint32_t *child_tf = child_frame - 8; /* trap frame base */
+      uint32_t child_usp = 0;
+      if (vfork_copy_user_stack(parent_ustack, child_tf[32],
+                                &child_ustack, &child_usp) < 0) {
         proc_release_stack_page(&stack);
         child->stack_page = NULL;
         proc_free(child);
         return -(long)ENOMEM;
       }
-      void *child_ustack = ustack_region.base;
-      memcpy(child_ustack, parent_ustack, PAGE_SIZE);
       child->user_pages[ustack_slot] = child_ustack;
-
-      /* Patch TF_USER_SP in child's trap frame to the new user stack */
-      uint32_t *child_tf = child_frame - 8; /* trap frame base */
-      uint32_t parent_usp = child_tf[32]; /* TF_USER_SP at word 32 */
-      uint32_t usp_off = parent_usp - (uint32_t)(uintptr_t)parent_ustack;
-      child_tf[32] = (uint32_t)(uintptr_t)child_ustack + usp_off;
+      child_tf[32] = child_usp; /* patch TF_USER_SP */
     }
   }
 
