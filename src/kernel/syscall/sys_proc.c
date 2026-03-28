@@ -1533,18 +1533,40 @@ long sys_vfork(uint32_t *frame) {
    * stack (copied from parent's kernel stack).  child_frame points to
    * saved a0 in the trap frame (sp + 32).
    *
-   * With the mscratch stack split, kernel and user stacks are separate.
-  * The child shares the parent's tracked page-backed slots
-  * (including user stack),
-   * so no pointer relocation is needed — user stack addresses are the
-   * same in both parent and child.
-   *
    * Set child's a0 = 0 (vfork return value for child). */
   child_frame[0] = 0;
 
   /* child->sp = trap frame base on the child's kernel stack */
   child->sp = (uint32_t)(uintptr_t)(child_frame - 8);
   child->kernel_sp = (uint32_t)(uintptr_t)stack + PAGE_SIZE;
+
+  /* RISC-V mscratch split: the child must have its own user stack copy.
+   * Without this, the child's post-vfork code (function prologues,
+   * ptrace/execve call setup) overwrites the parent's user stack,
+   * corrupting the parent's return state. */
+  {
+    uint32_t ustack_slot = USER_PAGES_MAX - 1;
+    void *parent_ustack = current->user_pages[ustack_slot];
+    if (parent_ustack) {
+      proc_image_segment_t ustack_region = {0};
+      if (mem_region_alloc(&ustack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
+                           PROC_IMAGE_SEG_WRITABLE) < 0) {
+        proc_release_stack_page(&stack);
+        child->stack_page = NULL;
+        proc_free(child);
+        return -(long)ENOMEM;
+      }
+      void *child_ustack = ustack_region.base;
+      memcpy(child_ustack, parent_ustack, PAGE_SIZE);
+      child->user_pages[ustack_slot] = child_ustack;
+
+      /* Patch TF_USER_SP in child's trap frame to the new user stack */
+      uint32_t *child_tf = child_frame - 8; /* trap frame base */
+      uint32_t parent_usp = child_tf[32]; /* TF_USER_SP at word 32 */
+      uint32_t usp_off = parent_usp - (uint32_t)(uintptr_t)parent_ustack;
+      child_tf[32] = (uint32_t)(uintptr_t)child_ustack + usp_off;
+    }
+  }
 
 #elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
   /* ARM: Set child's r0 = 0 (child sees vfork return 0) */
