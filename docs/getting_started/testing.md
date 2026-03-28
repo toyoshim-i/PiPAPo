@@ -362,17 +362,19 @@ coverage is not exhaustive yet.
   random-record variants, and several disk/attribute vector functions.
   CP/M test coverage is therefore good for bootstrapping and basic file I/O,
   but not yet complete for directory iteration and random-record compatibility.
-- **`qemu_rv32`: kernel 69/87 pass, user 1/3 pass (remaining tests blocked).**
-  Kernel: 14 of 18 failures are blkdev/VFAT/loopback/UFS (no SD card
-  on QEMU, same as ARM).  Other failures: `/proc/meminfo` format (1),
-  fstab SD mount (2), loopback stat (1).  VFS, pipe, dup, brk, signal,
-  tmpfs, blocking I/O, SMP, orphan, OOM, and signal-stack suites all
-  pass cleanly.
-  User: `test_vfork` passes.  `test_exec` fails (counter/reporting
-  bug), `test_elf` fails (2 arch-specific checks).  `test_fault`
-  halts QEMU (exception handler spins on illegal instruction), blocking
-  the remaining ~18 user tests from executing.  Fixing `test_fault` to
-  not halt on RISC-V would unblock the full user suite.
+- **`qemu_rv32`: kernel 68/87 pass, user 10/22 pass (full suite runs).**
+  Kernel: 19 failures are mostly blkdev/VFAT/loopback/UFS (no SD card
+  on QEMU, same as ARM) plus `/proc/meminfo` format and fstab SD mount.
+  VFS, pipe, dup, brk, signal, tmpfs, blocking I/O, SMP, orphan, OOM,
+  and signal-stack suites all pass cleanly.
+  User: `test_fault` is `TEST_DISABLED` on RISC-V (fault handler does
+  not yet classify signals).  10 tests pass (vfork, pipe, fd, poll, id,
+  rw, iov, stat, tmpfs, float).  9 fail: `test_exec` (counter bug),
+  `test_elf` (2 arch checks), `test_brk` (address mismatch),
+  `test_signal` / `test_sleep_intr` / `test_signal_float` (signal
+  delivery), `test_orphan` (procfs), `test_fs` (reporting), `test_time`
+  (clock_gettime EINVAL).  `test_cpm` crashes (Z80 instruction fetch
+  fault) — last test in the suite, does not block others.
 - **`pdb` scripted coverage is architecture-asymmetric.**
   `test_pdb` has 170/367 failures on m68k and is marked `TEST_DISABLED` there.
   On ARM it is `TEST_SLOW` (base runner) / `TEST_ENABLED` (extended runner).
