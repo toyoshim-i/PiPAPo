@@ -1615,6 +1615,17 @@ long sys_vfork(uint32_t *frame) {
     uint32_t child_a0 = frame[-2];      /* a0 = return addr to caller */
     uint32_t child_a3 = frame[1];       /* a3 (compiler expects preserved) */
 
+    /* Xtensa shares user/kernel on one stack page.  The memcpy above
+     * gave the child its own copy; remap pointers that still reference
+     * the parent's page (same pattern as m68k's a6 redirect). */
+    {
+      uint32_t pbase = (uint32_t)(uintptr_t)current->stack_page;
+      uint32_t cbase = (uint32_t)(uintptr_t)stack;
+      child_user_sp = cbase + (child_user_sp - pbase);
+      if (child_a3 >= pbase && child_a3 < pbase + PAGE_SIZE)
+        child_a3 = cbase + (child_a3 - pbase);
+    }
+
     /* Build new-process frame at top of child's kernel stack page.
      * a0 is needed because vfork child starts at `ret` (jx a0) — the
      * instruction after SYSCALL in the vfork stub.

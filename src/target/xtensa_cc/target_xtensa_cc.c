@@ -117,8 +117,9 @@ void target_late_init(void)
     xtensa_trap_init();
 
     /* Register UART RX polling so the idle loop feeds input to TTY.
-     * uart_rx_avail() peeks the ROM console; when it returns non-zero,
-     * the scheduler calls tty_rx_notify(TTY_SERIAL) to wake readers. */
+     * uart_rx_avail() checks UART0 RX FIFO via bare-metal register access
+     * (no ROM calls — ROM functions may use `syscall 0` internally, which
+     * crashes in kernel mode where KernelExceptionVector doesn't handle it). */
     sched_set_input_poll(uart_rx_avail, TTY_SERIAL);
 
     /* XT-3.4 bootstrap boundary checks:
