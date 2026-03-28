@@ -1195,12 +1195,26 @@ caller stub from `lcall+ret` to `pop ret; push CS; push ret; ljmp`.
 The entry stub pops the far frame, `call`s the real function (which
 sees args at correct offsets), then restores the far frame and `lret`s.
 
+**Done (continued):**
+
+| Item | Details |
+|------|---------|
+| SS: prefix in stubs | Assembly stubs use `%ss:` for all data access (DS is scratch) |
+| floppy_blk registered | `blkdev_init` + `floppy_blk_init` + `blkdev_find("fd0")` all work |
+| mount_ufs wired | `target_mount_rootfs` calls `mod_vfs.mount_ufs("/", MNT_RDONLY, bd)` |
+| mod_vfs.mount_ufs | Added to VFS module (12 entries), far call reaches VFS code |
+
+**Current blocker — function pointer across segments:**
+
+`ufs_mount` calls `bd->read()` via near function pointer.  But
+`floppy_read` is in core (CS=0) while UFS runs in VFS (CS=0x1000).
+Near call goes to 0x1000:floppy_read_offset = wrong code.
+
 **Remaining:**
 
-1. **Wire floppy block device** — connect `floppy_blk.c` INT 13h driver
-   to blkdev, register as `/dev/fd0`
-2. **Wire rootfs mount** — `target_mount_rootfs()` calls
-   `mod_vfs.mount("/", &ufs_ops, 0, blkdev)` using floppy blkdev
+1. **Fix blkdev function pointer issue** — add `mod_core.blkdev_read`
+   wrapper so UFS can read floppy sectors via far call to core
+2. **Verify UFS mount completes** — superblock read, root inode
 3. **Test end-to-end** — boot to "Hello from user!"
 
 **Verification**: Kernel mounts floppy UFS, loads /sbin/init, prints
