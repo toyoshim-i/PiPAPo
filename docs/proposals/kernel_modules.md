@@ -402,11 +402,10 @@ The module system is implemented and working on all platforms:
 
 On i16, the kernel is split into separate code segments (core 28 KB +
 VFS ~27 KB).  Stage2 loads both binaries from UFS floppy.  Core boots,
-detects VFS module, and VFS data is placed at DS:0xA000.  Core→VFS far
-calls work (vfs_init code executes in CS=0x1000).  VFS→core far calls
-(e.g. mod_core.kmem_pool_init from within vfs_init) hang — suspected
-stack frame mismatch from the far call's extra CS:IP push.
-See `docs/proposals/pc_port.md` P-4b for the current blocker and plan.
+detects VFS module, and VFS data is placed at DS:0xA000.  Both call
+directions work: core→VFS (vfs_init) and VFS→core (mod_core.klogf,
+mod_core.kmem_pool_init).  VFS fully initialises (64 vnodes, 8 mounts).
+Remaining: wire floppy block device and rootfs mount.
 
 **Known boundary violations to fix:**
 - `exec/*.c` and `cpu/ecpu_*.c` include `mm/mem_region.h` directly —

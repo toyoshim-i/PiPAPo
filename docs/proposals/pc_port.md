@@ -1121,30 +1121,24 @@ Pointer arguments work without serialization.  See §9.5 for details.
 | VFS data in DS=0 | VFS linker places .data/.bss at 0xA000 in DS=0 |
 | Core reserves VFS data | Core linker reserves 0xA000-0xBFFF for VFS |
 | Far call core→VFS | lcall to VFS segment works, vfs_init code runs |
+| Far call VFS→core | ✓ Fixed — mod_core.kmem_pool_init/klogf work from VFS |
+| VFS fully initialised | "64 vnodes, 8 mount slots" — both directions verified |
+| fstab parsed | VFS reads /etc/fstab (8 entries) from UFS |
 
-**Current blocker — far call VFS→core:**
+**Far-call stub fix (resolved):**
 
-The VFS `vfs_init()` calls `mod_core.kmem_pool_init()` which requires
-a far call back to core (CS=0x0000).  The call chain:
-
-```
-vfs_init (CS=0x1000) → near call → kmem_pool_init_stub (CS=0x1000)
-  → lcall → kmem_pool_init_entry (CS=0x0000)
-    → near call → kmem_pool_init (CS=0x0000)
-```
-
-GDB shows the near call within `vfs_init` to the stub works.  The lcall
-into core segment 0x0000 appears to reach the entry point.  However
-`kmem_pool_init` does not return — execution loops or crashes inside
-the function.  Suspected cause: stack frame mismatch between the far
-call's extra CS:IP push (4 bytes) and the near-call conventions the
-compiled function expects for parameter access (BP-relative offsets).
+The original `lcall; ret` pattern left extra return addresses on the
+stack, shifting BP-relative argument offsets.  Fixed by converting the
+caller stub from `lcall+ret` to `pop ret; push CS; push ret; ljmp`.
+The entry stub pops the far frame, `call`s the real function (which
+sees args at correct offsets), then restores the far frame and `lret`s.
 
 **Remaining:**
 
-1. **Debug VFS→core far call** — fix stack frame / BP offset for
-   functions called via far call entry points
-2. **Wire floppy mount** — target_mount_rootfs() calls mod_vfs.mount
+1. **Wire floppy block device** — connect `floppy_blk.c` INT 13h driver
+   to blkdev, register as `/dev/fd0`
+2. **Wire rootfs mount** — `target_mount_rootfs()` calls
+   `mod_vfs.mount("/", &ufs_ops, 0, blkdev)` using floppy blkdev
 3. **Test end-to-end** — boot to "Hello from user!"
 
 **Verification**: Kernel mounts floppy UFS, loads /sbin/init, prints
