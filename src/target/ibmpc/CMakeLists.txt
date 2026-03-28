@@ -180,6 +180,9 @@ add_executable(ppap_ibmpc
 )
 
 target_include_directories(ppap_ibmpc PRIVATE ${PPAP_INCLUDES})
+# Limit page pool to near-pointer range (0xC000-0xFFFF = 4 pages).
+# TODO: replace with page-indexed memory model (page_id_t).
+target_compile_definitions(ppap_ibmpc PRIVATE PAGE_COUNT_MAX=4u)
 target_compile_options(ppap_ibmpc PRIVATE ${KERNEL_FLAGS})
 
 target_link_options(ppap_ibmpc PRIVATE

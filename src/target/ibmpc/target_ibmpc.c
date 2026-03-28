@@ -196,8 +196,9 @@ int target_mount_rootfs(void)
 
 void target_post_mount(void)
 {
-  timer_init();
-  klog("PIT: 100 Hz timer started\n");
+  /* PIT timer deferred further — timer ISR (sched_timer_tick) must not
+   * fire until the scheduler is fully set up with thread 0's stack page
+   * and init is loaded.  Called from sched_start_hook() instead. */
 }
 
 const char *target_init_path(void)
