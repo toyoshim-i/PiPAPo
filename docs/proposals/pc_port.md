@@ -1035,6 +1035,41 @@ Stage2 loads both `/boot/kernel` and `/boot/kernel_vfs` from the
 UFS floppy.  A `mod_info_t` block at 0x0500 tells the kernel where
 each module was loaded.
 
+### Page-Indexed Memory Model
+
+The 8086 address space is 1 MB (20-bit), but near pointers are 16-bit
+(64 KB range).  `proc_image_segment_t.base` is `void *` — on i16
+that's 16-bit, unable to address process segments loaded at 0x20000+.
+
+Solution: memory allocation uses **page indices** instead of pointers:
+
+```c
+typedef uint16_t page_id_t;           // page index (0..N), not pointer
+
+page_id_t mm_page_alloc(void);        // returns page index
+void      mm_page_free(page_id_t id);
+
+// Cross-segment data access (required on i16, optional on 32-bit)
+void mm_page_read(page_id_t id, uint16_t off, void *buf, uint16_t len);
+void mm_page_write(page_id_t id, uint16_t off, const void *buf, uint16_t len);
+
+// Direct pointer access (32-bit only — NOT available on i16)
+void *mm_page_to_ptr(page_id_t id);
+page_id_t mm_ptr_to_page(void *ptr);
+```
+
+On i16, `mm_page_read/write` internally computes `segment = page_base >> 4`
+and uses far pointer access (ES:BX) to copy data.
+
+Modules that want i16 support must use `mm_page_read/write` for
+cross-page access instead of raw pointer dereferences.
+
+**i16 scope exclusions** (components that don't use page-indexed API):
+- No eCPU emulators (ecpu_m68k, ecpu_z80 — use raw pointers extensively)
+- No subsystem bridges (human68k, sos, cpm)
+- No tmpfs, procfs, devfs (root is read-only UFS on floppy)
+- Dedicated `elf16_loader.c` instead of the 32-bit ELF loader
+
 ---
 
 ## 10. Implementation Phases

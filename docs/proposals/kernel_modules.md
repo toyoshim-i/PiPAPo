@@ -237,6 +237,23 @@ seg_register(MOD_ID_EXEC, exec_segment);
 Far-call stubs look up segment values from the manager table at
 runtime — no hardcoded segment values in the generated code.
 
+### Page-Indexed Memory Model
+
+The 8086 address space is 1 MB, but near pointers are 16-bit (64 KB).
+`proc_image_segment_t.base` is `void *` — on i16 that's 16-bit,
+unable to address process segments beyond 64 KB.
+
+Solution: `mm_page_alloc` returns a `page_id_t` (index, not pointer).
+Cross-segment access uses `mm_page_read/write` which internally
+sets up segment:offset pairs.  On 32-bit, `mm_page_to_ptr` provides
+direct pointer access.  See `docs/proposals/pc_port.md` §9.5 for
+the full API.
+
+Modules that want i16 support must use `mm_page_read/write` instead
+of raw pointer dereferences for cross-page data.  Components that
+don't (eCPU emulators, subsystem bridges, tmpfs, procfs) are
+excluded from the i16 build.
+
 ### Directory Structure and Visibility
 
 Each module owns a subdirectory under `src/kernel/`.  Communication
