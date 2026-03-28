@@ -41,13 +41,20 @@ vfs_fptrs:
   .section .text
 
 /*
- * Caller stub: lcall *fptr, ret.  DS=0 shared, no switching.
+ * Caller stub: convert near call to far call.
+ *
+ * Compiler does `call *mod_vfs.field` which pushes a near ret IP.
+ * We pop it, construct a far frame (push CS, push IP), then ljmp
+ * to the VFS entry.  The entry does `call fn; lret` which returns
+ * through the far frame back to the compiled call site.
  */
 .macro VFS_CALLER_STUB name, idx
   .global vfs_\name
 vfs_\name:
-  lcall *vfs_fptrs + \idx * 4
-  ret
+  pop  %ax                        /* near_ret_IP */
+  push %cs                        /* save caller CS for lret */
+  push %ax                        /* save near_ret_IP */
+  ljmp *vfs_fptrs + \idx * 4      /* far jump — no return addr pushed */
 .endm
 
   VFS_CALLER_STUB init,           0

@@ -2,17 +2,14 @@
  * vfs_entries.S — VFS-side target entry stubs
  *
  * These stubs live in the VFS module's code segment. They are the
- * targets of far calls from core. Each entry adjusts the stack
- * (removes the far return address), calls the real function, then
- * restores the far return and does lret.
+ * targets of ljmp from core caller stubs.
  *
- * This is needed because the call chain is:
- *   core: call *mod_vfs.field   → pushes near IP (2B)
- *   stub: lcall *vfs_fptrs[i]  → pushes far CS:IP (4B)
- *   entry: call vfs_fn          → pushes near IP (2B)
+ * The caller stub converts the compiler's near call into a far frame:
+ *   Stack: [args] [caller_CS 2B] [near_ret_IP 2B] ← SP
+ * Then does ljmp here (no push).
  *
- * Without adjustment, vfs_fn sees 6 extra bytes on the stack
- * and reads wrong argument values.
+ * The entry pops the far frame, calls the real function (which sees
+ * [args] [ret_IP] correctly), then restores the far frame and lrets.
  *
  * Linked into ppap_ibmpc_vfs (VFS binary).
  */
@@ -30,12 +27,12 @@ vfs_saved_ip: .word 0
 .macro VFS_TARGET_STUB name
   .global vfs_\name\()_entry
 vfs_\name\()_entry:
-  /* Stack: [args] [near_IP 2B] [far_IP 2B] [far_CS 2B] ← SP */
+  /* Stack: [args] [far_IP 2B] [far_CS 2B] ← SP */
   pop  %ax
   pop  %bx
   mov  %ax, vfs_saved_ip
   mov  %bx, vfs_saved_cs
-  /* Stack: [args] [near_IP 2B] ← SP — correct for function */
+  /* Stack: [args] ← SP — exactly what the function expects */
   call vfs_\name
   /* Restore far return and lret */
   push vfs_saved_cs

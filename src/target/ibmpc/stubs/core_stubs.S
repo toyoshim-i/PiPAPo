@@ -32,13 +32,23 @@ core_fptrs:
   .section .text
 
 /*
- * Caller stub: lcall *fptr, ret.  DS=0 shared, no switching.
+ * Caller stub: convert the compiler's near call into a far call.
+ *
+ * On entry (after compiler's `call *struct_field`):
+ *   Stack: [args...] [near_ret_IP] ← SP
+ *
+ * We need the target function to see the SAME layout — [args] [ret_IP].
+ * So: pop near_ret, push CS:near_ret (far frame), ljmp to target.
+ * The entry stub just does `call fn; lret`.  Function sees correct args.
+ * The lret pops CS:near_ret, returning to the compiled call site.
  */
 .macro CORE_CALLER_STUB name, idx
   .global \name
 \name:
-  lcall *core_fptrs + \idx * 4
-  ret
+  pop  %ax                      /* near_ret_IP */
+  push %cs                      /* save caller CS for lret */
+  push %ax                      /* save near_ret_IP */
+  ljmp *core_fptrs + \idx * 4   /* far jump — no return addr pushed */
 .endm
 
   CORE_CALLER_STUB klog,           0
