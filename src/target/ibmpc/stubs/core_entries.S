@@ -38,19 +38,27 @@ saved_ip: .word 0
 
   .section .text
 
+/*
+ * Entry stub: pop far return, call function, lret.
+ *
+ * Uses static saved_cs/saved_ip — NOT reentrant.  Interrupts are
+ * disabled around the save/restore to prevent timer ISR from
+ * making a nested far call that overwrites the saved values.
+ */
 .macro CORE_TARGET_STUB name
   .global \name\()_entry
 \name\()_entry:
-  /* Stack: [args] [far_IP 2B] [far_CS 2B] ← SP */
-  pop  %ax                      /* far_IP */
-  pop  %bx                      /* far_CS */
+  cli
+  pop  %ax
+  pop  %bx
   mov  %ax, %ss:saved_ip
   mov  %bx, %ss:saved_cs
-  /* Stack: [args] ← SP — exactly what the function expects */
+  sti
   call \name
-  /* Function returned. Push far frame and lret. */
+  cli
   push %ss:saved_cs
   push %ss:saved_ip
+  sti
   lret
 .endm
 

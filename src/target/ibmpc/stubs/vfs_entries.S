@@ -27,16 +27,17 @@ vfs_saved_ip: .word 0
 .macro VFS_TARGET_STUB name
   .global vfs_\name\()_entry
 vfs_\name\()_entry:
-  /* Stack: [args] [far_IP 2B] [far_CS 2B] ← SP */
+  cli
   pop  %ax
   pop  %bx
   mov  %ax, %ss:vfs_saved_ip
   mov  %bx, %ss:vfs_saved_cs
-  /* Stack: [args] ← SP — exactly what the function expects */
+  sti
   call vfs_\name
-  /* Restore far return and lret */
+  cli
   push %ss:vfs_saved_cs
   push %ss:vfs_saved_ip
+  sti
   lret
 .endm
 

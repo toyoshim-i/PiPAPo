@@ -192,7 +192,17 @@ int target_mount_rootfs(void)
     klog("FLOPPY: fd0 not found\n");
     return -1;
   }
-  return mod_vfs.mount_ufs("/", MNT_RDONLY, bd);
+  /* Test: read sector 0 directly from core to verify INT 13h works */
+  {
+    static uint8_t test_buf[512];
+    int trc = bd->read(bd, test_buf, 0, 1);
+    klogf("FLOPPY: direct read rc=%d magic=%x\n",
+          (uint32_t)trc, (uint32_t)((uint16_t)test_buf[0] | ((uint16_t)test_buf[1] << 8)));
+  }
+  klog("FLOPPY: calling mount_ufs\n");
+  int rc = mod_vfs.mount_ufs("/", MNT_RDONLY, bd);
+  klogf("FLOPPY: mount_ufs returned %d\n", (uint32_t)rc);
+  return rc;
 }
 #endif
 
