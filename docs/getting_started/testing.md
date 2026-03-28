@@ -362,11 +362,17 @@ coverage is not exhaustive yet.
   random-record variants, and several disk/attribute vector functions.
   CP/M test coverage is therefore good for bootstrapping and basic file I/O,
   but not yet complete for directory iteration and random-record compatibility.
-- **`qemu_rv32`: 17/22 pass.**
-  Failures: `test_elf` (arch-specific checks), `test_signal` (signal frame
-  not implemented), `test_sleep_intr` (sleep+signal), `test_orphan` (process
-  lifecycle), `test_time` (`clock_gettime` not wired).
-  `test_float` times out (no FPU, soft-float too slow).
+- **`qemu_rv32`: kernel 69/87 pass, user 1/3 pass (remaining tests blocked).**
+  Kernel: 14 of 18 failures are blkdev/VFAT/loopback/UFS (no SD card
+  on QEMU, same as ARM).  Other failures: `/proc/meminfo` format (1),
+  fstab SD mount (2), loopback stat (1).  VFS, pipe, dup, brk, signal,
+  tmpfs, blocking I/O, SMP, orphan, OOM, and signal-stack suites all
+  pass cleanly.
+  User: `test_vfork` passes.  `test_exec` fails (counter/reporting
+  bug), `test_elf` fails (2 arch-specific checks).  `test_fault`
+  halts QEMU (exception handler spins on illegal instruction), blocking
+  the remaining ~18 user tests from executing.  Fixing `test_fault` to
+  not halt on RISC-V would unblock the full user suite.
 - **`pdb` scripted coverage is architecture-asymmetric.**
   `test_pdb` has 170/367 failures on m68k and is marked `TEST_DISABLED` there.
   On ARM it is `TEST_SLOW` (base runner) / `TEST_ENABLED` (extended runner).

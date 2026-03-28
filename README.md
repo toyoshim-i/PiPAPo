@@ -24,8 +24,8 @@ A portable UNIX-like micro OS for bare-metal microcontrollers and retro CPUs.
 | `pico1` | Raspberry Pi Pico | ARM Cortex-M0+ | Dual-core @ 133 MHz | 264 KB | Stable |
 | `pico1calc` | ClockworkPi PicoCalc | ARM Cortex-M0+ | Dual-core @ 133 MHz | 264 KB | Stable |
 | `pico2` | Raspberry Pi Pico 2 | ARM Cortex-M33 | Dual-core @ 150 MHz | 520 KB | Stable |
-| `pico2rv` | Raspberry Pi Pico 2 | RISC-V Hazard3 | RV32IMAC @ 150 MHz | 520 KB | Functional |
-| `qemu_rv32` | QEMU virt rv32 | RISC-V | RV32IMAC | 512 KB | 17/22 tests |
+| `pico2rv` | Raspberry Pi Pico 2 | RISC-V Hazard3 | RV32IMAC @ 150 MHz | 520 KB | Stable |
+| `qemu_rv32` | QEMU virt rv32 | RISC-V | RV32IMAC | 1 MB | Kernel 69/87, user partial |
 | `qemu_m68k` | QEMU virt m68k | Motorola 68000 | m68000 | Up to 16 MB | 19/19 tests |
 | `x68k` | XEiJ emulator | Motorola 68000 | m68000 @ 10 MHz | 2+ MB | Stable |
 | `xtensa_cc` | M5Stack CardComputer | Xtensa LX7 | ESP32-S3 @ 240 MHz | 512 KB | Boots, user-space WIP |
@@ -43,12 +43,12 @@ All targets share the same kernel source, syscall interface, VFS, and process mo
 - **PicoCalc display** — SPI LCD framebuffer console (40×20 / 80×40 / 40×40), VT100/ANSI color emulator
 - **PicoCalc keyboard** — I2C STM32 co-processor, full keymap with function keys
 - **Multi-TTY** — serial console + LCD console with getty login on each
-- **PIE/PIC binaries** — position-independent ELFs; on ARM targets, code runs from flash via XIP
+- **PIE/PIC binaries** — position-independent ELFs; XIP text from flash/romfs on ARM and RISC-V (ePIC)
 
 ## Known Issues
 
 - **SD card disabled** — SD/VFAT support is tentatively disabled in the current build
-- **RISC-V no XIP text** — user binaries loaded entirely to SRAM (auipc PC-relative limitation); see [docs/targets/rv32.md](/docs/targets/rv32.md)
+- **RISC-V trace tool** — vfork in the trace tool crashes (context switch issue); see [docs/targets/rv32.md](/docs/targets/rv32.md)
 - **Xtensa port WIP** — CardComputer (ESP32-S3) boots, romfs mounts, PID 1 loads; user-space write() output not yet visible; see [docs/targets/xtensa.md](/docs/targets/xtensa.md)
 
 ## Future Work
@@ -59,7 +59,7 @@ All targets share the same kernel source, syscall interface, VFS, and process mo
 - **i8086 eCPU** — software 8086 emulator for cross-architecture DOS binary execution; see [docs/proposals/i8086_ecpu.md](/docs/proposals/i8086_ecpu.md)
 - **GDB RSP Stub** — in-kernel GDB stub for source-level debugging over UART without a debug probe; see [docs/proposals/gdb_rsp_stub.md](/docs/proposals/gdb_rsp_stub.md)
 - **M33 MPU Full Protection** — per-process data protection using remaining MPU regions; see [docs/proposals/m33_mpu_full_protection.md](/docs/proposals/m33_mpu_full_protection.md)
-- **RISC-V PIC toolchain** — build riscv32-unknown-linux-gnu with soft-float for -pie support (XIP text + SRAM data separation)
+- **RISC-V PMP** — configure PMP entries for user/kernel memory protection
 - **PicoCalc 2** — RP2350 + PicoCalc hardware, dual architecture (ARM/RISC-V)
 - Audio driver support
 
