@@ -29,10 +29,12 @@ SECTIONS
 
   _code_end = .;
 
-  /* Data follows code contiguously within the same segment.
-   * Small-model requires CS=DS.  Stage2 loads VFS at a fixed
-   * offset in DS=0 (e.g. 0x8000).  Core and VFS share CS=DS=0. */
-  . = ALIGN(16);
+  /* Data segment: at DS=0 address 0xA000.
+   * .rodata must also be here (not in code segment) because the
+   * compiler generates DS-relative access for all data, including
+   * string literals and const tables.
+   * Must match the reservation in ibmpc_kernel.ld */
+  . = 0xA000;
 
   __vfs_data_start = .;
   .rodata : {
