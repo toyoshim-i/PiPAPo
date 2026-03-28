@@ -48,6 +48,7 @@ vfs_\name\()_entry:
   VFS_TARGET_STUB lookup_parent
   VFS_TARGET_STUB path_normalize
   VFS_TARGET_STUB find_mount
+  VFS_TARGET_STUB mount_ufs
   VFS_TARGET_STUB alloc_vnode
   VFS_TARGET_STUB ref_vnode
   VFS_TARGET_STUB rel_vnode

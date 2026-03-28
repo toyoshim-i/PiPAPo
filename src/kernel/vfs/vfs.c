@@ -253,6 +253,15 @@ mount_entry_t *vfs_find_mount(const char *path, const char **remainder) {
   return best;
 }
 
+/* ── Convenience mount wrappers ────────────────────────────────────────── */
+
+#include "../fs/ufs.h"
+
+int vfs_mount_ufs(const char *path, uint8_t flags, const void *dev_data)
+{
+  return vfs_mount(path, &ufs_ops, flags, dev_data);
+}
+
 /* ── Module definition ─────────────────────────────────────────────────── */
 
 #include "../common/mod/mod_vfs.h"
@@ -266,6 +275,7 @@ MOD_DEFINE_BEGIN(vfs)
   MOD_IMPL(vfs, lookup_parent)
   MOD_IMPL(vfs, path_normalize)
   MOD_IMPL(vfs, find_mount)
+  MOD_IMPL(vfs, mount_ufs)
   MOD_IMPL(vfs, alloc_vnode)
   MOD_IMPL(vfs, ref_vnode)
   MOD_IMPL(vfs, rel_vnode)

@@ -16,7 +16,6 @@
 #ifdef __ia16__
 
 #include "blkdev/blkdev.h"
-#include "fs/ufs.h"
 #include "common/mod/mod_vfs.h"
 
 extern void floppy_blk_init(void);
@@ -94,7 +93,7 @@ static void patch_vfs_fptrs(uint16_t vfs_seg) {
   }
 
   uint16_t count = far_read16(vfs_seg, 2);
-  if (count > 11) count = 11;
+  if (count > 12) count = 12;
 
   /* Patch core→VFS far pointers (in core's vfs_fptrs table) */
   for (uint16_t i = 0; i < count; i++) {
@@ -103,8 +102,8 @@ static void patch_vfs_fptrs(uint16_t vfs_seg) {
   }
 
   /* Patch VFS→core far pointers (in VFS's core_fptrs table at DS=0).
-   * The core_fptrs address is stored after the 11 entry offsets
-   * in the VFS header (at offset 4 + 11*2 = 26). */
+   * The core_fptrs address is stored after the entry offsets
+   * in the VFS header (at offset 4 + count*2). */
   uint16_t core_fptrs_addr = far_read16(vfs_seg, 4 + count * 2);
   uint16_t core_seg = seg_get(MOD_ID_CORE);
   volatile uint16_t *cfp = (volatile uint16_t *)(uintptr_t)core_fptrs_addr;
@@ -171,13 +170,17 @@ void target_late_init(void)
 #ifdef __ia16__
 int target_mount_rootfs(void)
 {
+  klog("FLOPPY: blkdev_init\n");
+  blkdev_init();
+  klog("FLOPPY: floppy_blk_init\n");
   floppy_blk_init();
+  klog("FLOPPY: blkdev_find\n");
   blkdev_t *bd = blkdev_find("fd0");
   if (!bd) {
     klog("FLOPPY: fd0 not found\n");
     return -1;
   }
-  return mod_vfs.mount("/", &ufs_ops, MNT_RDONLY, bd);
+  return mod_vfs.mount_ufs("/", MNT_RDONLY, bd);
 }
 #endif
 

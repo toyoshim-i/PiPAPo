@@ -1,5 +1,5 @@
 /*
- * page.h — Physical page allocator
+ * page.h — Physical page allocator backend
  *
  * Manages the page pool starting at 0x20005000 (size set by PAGE_COUNT_MAX).
  * Uses a free-stack (array-based LIFO) for O(1) alloc/free with no per-page
@@ -7,6 +7,10 @@
  *
  * All pages are single-owner; no reference counting.  True CoW is not
  * feasible on the RP2040's 4-region MPU — see phase01-plan.md §Step 1.
+ *
+ * This header is backend-facing.  New code outside `src/kernel/mm/` should
+ * allocate via `mem_region_*` so architecture-specific memory policy stays
+ * centralized in `mem_region.c`.
  */
 
 #ifndef PPAP_KERNEL_MM_PAGE_H

@@ -26,7 +26,7 @@
   .global vfs_module_header
 vfs_module_header:
   .word 0x5646                    /* magic: "VF" */
-  .word 11                        /* entry_count */
+  .word 12                        /* entry_count */
   .word vfs_init_entry
   .word vfs_mount_entry
   .word vfs_umount_entry
@@ -35,6 +35,7 @@ vfs_module_header:
   .word vfs_lookup_parent_entry
   .word vfs_path_normalize_entry
   .word vfs_find_mount_entry
+  .word vfs_mount_ufs_entry
   .word vfs_alloc_vnode_entry
   .word vfs_ref_vnode_entry
   .word vfs_rel_vnode_entry

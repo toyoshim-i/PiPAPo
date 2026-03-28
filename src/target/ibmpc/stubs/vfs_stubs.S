@@ -34,9 +34,10 @@ vfs_fptrs:
   .word 0, 0    /* [5]  vfs_lookup_parent_entry */
   .word 0, 0    /* [6]  vfs_path_normalize_entry */
   .word 0, 0    /* [7]  vfs_find_mount_entry */
-  .word 0, 0    /* [8]  vfs_alloc_vnode_entry */
-  .word 0, 0    /* [9]  vfs_ref_vnode_entry */
-  .word 0, 0    /* [10] vfs_rel_vnode_entry */
+  .word 0, 0    /* [8]  vfs_mount_ufs_entry */
+  .word 0, 0    /* [9]  vfs_alloc_vnode_entry */
+  .word 0, 0    /* [10] vfs_ref_vnode_entry */
+  .word 0, 0    /* [11] vfs_rel_vnode_entry */
 
   .section .text
 
@@ -65,8 +66,9 @@ vfs_\name:
   VFS_CALLER_STUB lookup_parent,  5
   VFS_CALLER_STUB path_normalize, 6
   VFS_CALLER_STUB find_mount,     7
-  VFS_CALLER_STUB alloc_vnode,    8
-  VFS_CALLER_STUB ref_vnode,      9
-  VFS_CALLER_STUB rel_vnode,      10
+  VFS_CALLER_STUB mount_ufs,     8
+  VFS_CALLER_STUB alloc_vnode,    9
+  VFS_CALLER_STUB ref_vnode,      10
+  VFS_CALLER_STUB rel_vnode,      11
 
 #endif /* __ia16__ */

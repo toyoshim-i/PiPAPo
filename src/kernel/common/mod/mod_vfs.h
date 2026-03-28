@@ -117,6 +117,19 @@ MOD_DECLARE_BEGIN(vfs)
    */
   MOD_FUNC(vfs, mount_entry_t *, find_mount, const char *, const char **)
 
+  /*
+   * mount_ufs — Mount a UFS filesystem at a given path.
+   *
+   *   path     Mount point (e.g. "/").
+   *   flags    Mount flags (MNT_RDONLY, etc.).
+   *   dev_data Opaque data passed to ufs_ops.mount() (blkdev_t *).
+   *
+   * Convenience wrapper: calls vfs_mount(path, &ufs_ops, flags, dev_data).
+   * Keeps the ufs_ops reference inside the VFS module so callers
+   * (e.g. target_ibmpc.c) don't need to link against ufs.c.
+   */
+  MOD_FUNC(vfs, int, mount_ufs, const char *, uint8_t, const void *)
+
   /* ── Vnode lifecycle ─────────────────────────────────────────────────── */
 
   /*
