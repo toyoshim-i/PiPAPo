@@ -44,13 +44,13 @@ saved_ip: .word 0
   /* Stack: [args] [far_IP 2B] [far_CS 2B] ← SP */
   pop  %ax                      /* far_IP */
   pop  %bx                      /* far_CS */
-  mov  %ax, saved_ip
-  mov  %bx, saved_cs
+  mov  %ax, %ss:saved_ip
+  mov  %bx, %ss:saved_cs
   /* Stack: [args] ← SP — exactly what the function expects */
   call \name
   /* Function returned. Push far frame and lret. */
-  push saved_cs
-  push saved_ip
+  push %ss:saved_cs
+  push %ss:saved_ip
   lret
 .endm
 

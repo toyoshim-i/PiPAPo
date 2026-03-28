@@ -55,7 +55,7 @@ vfs_\name:
   pop  %ax                        /* near_ret_IP */
   push %cs                        /* save caller CS for lret */
   push %ax                        /* save near_ret_IP */
-  ljmp *vfs_fptrs + \idx * 4      /* far jump — no return addr pushed */
+  ljmp *%ss:vfs_fptrs + \idx * 4   /* far jump via SS (DS is free) */
 .endm
 
   VFS_CALLER_STUB init,           0

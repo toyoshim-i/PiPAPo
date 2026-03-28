@@ -30,13 +30,13 @@ vfs_\name\()_entry:
   /* Stack: [args] [far_IP 2B] [far_CS 2B] ← SP */
   pop  %ax
   pop  %bx
-  mov  %ax, vfs_saved_ip
-  mov  %bx, vfs_saved_cs
+  mov  %ax, %ss:vfs_saved_ip
+  mov  %bx, %ss:vfs_saved_cs
   /* Stack: [args] ← SP — exactly what the function expects */
   call vfs_\name
   /* Restore far return and lret */
-  push vfs_saved_cs
-  push vfs_saved_ip
+  push %ss:vfs_saved_cs
+  push %ss:vfs_saved_ip
   lret
 .endm
 
