@@ -26,7 +26,8 @@ Produce a bootable PPAP system on an IBM PC/XT-class machine with V30 that:
 
 - DOS subsystem: load and run MS-DOS .COM and .EXE (MZ) binaries with an
   INT 21h bridge (analogous to the Human68k bridge on X68000).
-- Boot from a hard disk (IDE/ATA) or CF card.
+- Boot from a hard disk via BIOS INT 13h (Phase P-5b); direct ATA/IDE
+  PIO driver as an extended feature.
 - Direct VGA text-mode driver replacing BIOS calls.
 - Keyboard input via INT 16h / direct 8042 controller access.
 - Full Z80 CP/M support via software eCPU (for programs using Z80 extensions
@@ -38,7 +39,7 @@ Produce a bootable PPAP system on an IBM PC/XT-class machine with V30 that:
 - Sound (PC speaker melody, Sound Blaster, AdLib).
 - 80286/80386 protected mode — the kernel runs entirely in real mode.
 - Network drivers (NE2000, etc.).
-- Hard disk partitioning (MBR/GPT) — initial target is floppy-only.
+- GPT partitioning — MBR only (matches PC/XT scope).
 
 ---
 
@@ -1234,6 +1235,38 @@ starts scheduler.
 
 **Verification**: "ALL TESTS PASSED" in serial log.
 
+### Phase P-5b: Hard Disk (IDE/ATA) Boot Support
+
+**Goal**: PPAP boots from an HDD image and mounts a UFS root volume,
+using BIOS INT 13h for all disk I/O (no direct ATA/IDE driver).
+
+1. **HDD block device driver** (`hdd_blk.c`) — clone of `floppy_blk.c`
+   with dynamic CHS geometry queried via INT 13h AH=08h and drive
+   number 0x80.  Register as "hd0" in the blkdev table.
+2. **MBR partition table parser** (`mbr.c`) — read sector 0, parse the
+   four 16-byte entries at offset 0x1BE.  Use a dedicated partition
+   type byte (e.g. 0xA9) to identify the PPAP UFS partition.  The
+   partition's start LBA becomes the base offset for the block device,
+   same pattern as `UFS_FLOPPY_BASE`.
+3. **Stage1 for HDD** (`stage1_hdd.S`) — MBR boot sector (446 bytes of
+   code + 64-byte partition table + 0xAA55 signature).  Locates the
+   active partition, loads stage2 from it, passes drive number 0x80.
+4. **Stage2 dynamic geometry** — replace hardcoded 18 spt / 2 heads
+   with values from INT 13h AH=08h so the same stage2 works for both
+   floppy and HDD.
+5. **target_ibmpc.c probe** — detect HDD at boot via INT 13h AH=08h
+   (DL=0x80); if present, register "hd0" and prefer it over "fd0" for
+   root mount.
+6. **HDD image builder** (`mkhddimg.sh`) — create a raw disk image with
+   MBR + single PPAP partition + UFS filesystem.
+
+**Constraints**: CHS addressing only (no INT 13h extensions / LBA),
+max ~504 MB (1024 cyl × 16 heads × 63 spt × 512 B).  This matches
+the PC/XT target scope.
+
+**Verification**: `qemu-system-i386 -hda ppap.img` boots to shell,
+mounts UFS root from the HDD partition, runs runtests.
+
 ### Phase P-6: V30 8080 Mode eCPU
 
 **Goal**: CP/M-80 programs run on V30 hardware 8080 mode.
@@ -1267,12 +1300,12 @@ starts scheduler.
 
 **Verification**: PPAP boots and runs tests on physical hardware.
 
-### Phase P-8: Extended Features
+### Phase P-9: Extended Features
 
 - Software Z80 eCPU (fallback for Z80 CP/M programs on V30)
 - Direct video driver (replacing BIOS INT 10h)
 - Direct keyboard driver (replacing BIOS INT 16h)
-- Hard disk support (IDE/ATA or CF card)
+- Direct ATA/IDE PIO driver (replacing BIOS INT 13h for HDD)
 - DOS .EXE (MZ) multi-segment loading
 
 ---
@@ -1358,14 +1391,16 @@ P-1 (console + kernel build)
   └─→ P-2 (PIT timer + context switch)
         └─→ P-3 (stage1/2 + floppy image)
               └─→ P-4 (integration tests)
-                    ├─→ P-5 (V30 8080 eCPU)
-                    └─→ P-6 (DOS subsystem)
-                          └─→ P-7 (real hardware)
-                                └─→ P-8 (extended features)
+                    └─→ P-5 (user-space exec + tests)
+                          ├─→ P-5b (HDD boot via BIOS INT 13h)
+                          ├─→ P-6 (V30 8080 eCPU)
+                          └─→ P-7 (DOS subsystem)
+                                └─→ P-8 (real hardware)
+                                      └─→ P-9 (extended features)
 ```
 
-P-5 and P-6 can be developed in parallel after P-4.  P-7 requires at least
-P-4 (basic tests passing on emulator) before attempting real hardware.
+P-5b, P-6, and P-7 can be developed in parallel after P-5.  P-8 requires
+at least P-5 (tests passing on emulator) before attempting real hardware.
 
 ---
 
