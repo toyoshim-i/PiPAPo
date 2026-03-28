@@ -84,6 +84,12 @@ extern uint16_t kmem_pool_init_entry;
 extern uint16_t kmem_alloc_entry;
 extern uint16_t kmem_free_entry;
 extern uint16_t kmem_free_count_entry;
+extern uint16_t mem_region_alloc_entry;
+extern uint16_t mem_region_free_entry;
+extern uint16_t mem_region_total_bytes_entry;
+extern uint16_t mem_region_free_bytes_entry;
+extern uint16_t core_blkdev_read_entry;
+extern uint16_t core_blkdev_write_entry;
 
 static void patch_vfs_fptrs(uint16_t vfs_seg) {
   /* VFS header is at vfs_seg:0000 */
@@ -109,12 +115,18 @@ static void patch_vfs_fptrs(uint16_t vfs_seg) {
   volatile uint16_t *cfp = (volatile uint16_t *)(uintptr_t)core_fptrs_addr;
 
   /* Core entry offsets — these are near addresses in core's segment */
-  cfp[0] = (uint16_t)(uintptr_t)&klog_entry;           cfp[1] = core_seg;
-  cfp[2] = (uint16_t)(uintptr_t)&klogf_entry;          cfp[3] = core_seg;
-  cfp[4] = (uint16_t)(uintptr_t)&kmem_pool_init_entry; cfp[5] = core_seg;
-  cfp[6] = (uint16_t)(uintptr_t)&kmem_alloc_entry;     cfp[7] = core_seg;
-  cfp[8] = (uint16_t)(uintptr_t)&kmem_free_entry;      cfp[9] = core_seg;
-  cfp[10] = (uint16_t)(uintptr_t)&kmem_free_count_entry; cfp[11] = core_seg;
+  cfp[0]  = (uint16_t)(uintptr_t)&klog_entry;               cfp[1]  = core_seg;
+  cfp[2]  = (uint16_t)(uintptr_t)&klogf_entry;              cfp[3]  = core_seg;
+  cfp[4]  = (uint16_t)(uintptr_t)&kmem_pool_init_entry;     cfp[5]  = core_seg;
+  cfp[6]  = (uint16_t)(uintptr_t)&kmem_alloc_entry;         cfp[7]  = core_seg;
+  cfp[8]  = (uint16_t)(uintptr_t)&kmem_free_entry;          cfp[9]  = core_seg;
+  cfp[10] = (uint16_t)(uintptr_t)&kmem_free_count_entry;    cfp[11] = core_seg;
+  cfp[12] = (uint16_t)(uintptr_t)&mem_region_alloc_entry;   cfp[13] = core_seg;
+  cfp[14] = (uint16_t)(uintptr_t)&mem_region_free_entry;    cfp[15] = core_seg;
+  cfp[16] = (uint16_t)(uintptr_t)&mem_region_total_bytes_entry; cfp[17] = core_seg;
+  cfp[18] = (uint16_t)(uintptr_t)&mem_region_free_bytes_entry;  cfp[19] = core_seg;
+  cfp[20] = (uint16_t)(uintptr_t)&core_blkdev_read_entry;  cfp[21] = core_seg;
+  cfp[22] = (uint16_t)(uintptr_t)&core_blkdev_write_entry; cfp[23] = core_seg;
 }
 
 static void seg_init_modules(void) {

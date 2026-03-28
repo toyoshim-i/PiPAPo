@@ -26,6 +26,7 @@
 #include "../blkdev/blkdev.h"
 #include "../common/errno.h"
 #include "../common/spinlock.h" /* SPIN_FS */
+#include "../common/mod/mod_core.h"
 #include "../common/mod/mod_vfs.h"
 #include "klog.h"
 #include "ufs_format.h"
@@ -62,7 +63,7 @@ static uint8_t ufs_buf[BLKDEV_SECTOR_SIZE];
 
 /* Read one sector from the underlying block device into ufs_buf */
 static int ufs_read_sector(ufs_priv_t *priv, uint32_t abs_sector) {
-  return priv->dev->read(priv->dev, ufs_buf, abs_sector, 1);
+  return mod_core.blkdev_read(priv->dev, ufs_buf, abs_sector, 1);
 }
 
 /* Read one sector within a UFS block into ufs_buf */
@@ -75,7 +76,7 @@ static int ufs_read_blk_sector(ufs_priv_t *priv, uint32_t block,
 
 /* Write ufs_buf to one sector on the underlying block device */
 static int ufs_write_sector(ufs_priv_t *priv, uint32_t abs_sector) {
-  return priv->dev->write(priv->dev, ufs_buf, abs_sector, 1);
+  return mod_core.blkdev_write(priv->dev, ufs_buf, abs_sector, 1);
 }
 
 /* Write ufs_buf to one sector within a UFS block */
@@ -440,7 +441,7 @@ static int ufs_mount(mount_entry_t *mnt, const void *dev_data) {
   if (!dev) return -EINVAL;
 
   /* Read superblock (first sector of block 0) */
-  int rc = dev->read(dev, ufs_buf, 0, 1);
+  int rc = mod_core.blkdev_read(dev, ufs_buf, 0, 1);
   if (rc < 0) return rc;
 
   ufs_super_t *sb = (ufs_super_t *)ufs_buf;

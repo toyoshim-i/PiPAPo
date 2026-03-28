@@ -24,9 +24,11 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/* Forward declarations — full definitions in mm/ headers */
+/* Forward declarations — full definitions in mm/ and blkdev/ headers */
 struct kmem_pool;
 typedef struct kmem_pool kmem_pool_t;
+struct blkdev;
+typedef struct blkdev blkdev_t;
 
 #include "../../mm/mem_layout.h"  /* ppap_mem_class_t, proc_image_segment_t */
 
@@ -119,6 +121,32 @@ MOD_DECLARE_BEGIN(core)
    */
   MOD_FUNC(core, uint32_t, mem_region_total_bytes, ppap_mem_class_t)
   MOD_FUNC(core, uint32_t, mem_region_free_bytes, ppap_mem_class_t)
+
+  /* ── Block device I/O (cross-module safe) ────────────────────────────── */
+
+  /*
+   * blkdev_read — Read sectors from a block device.
+   *
+   * Wrapper around dev->read() that executes in core's CS.
+   * Needed because blkdev_t function pointers are near pointers
+   * valid only in core's code segment.  VFS modules must call
+   * this instead of dev->read() directly.
+   *
+   *   dev     Block device (in SS=0 shared data).
+   *   buf     Destination buffer (in SS=0).
+   *   sector  Starting sector number.
+   *   count   Number of sectors to read.
+   *
+   * Returns 0 on success, negative errno on failure.
+   */
+  MOD_FUNC(core, int, blkdev_read, blkdev_t *, void *,
+                                    uint32_t, uint32_t)
+
+  /*
+   * blkdev_write — Write sectors to a block device.
+   */
+  MOD_FUNC(core, int, blkdev_write, blkdev_t *, const void *,
+                                     uint32_t, uint32_t)
 
 MOD_DECLARE_END(core)
 

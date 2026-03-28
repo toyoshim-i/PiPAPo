@@ -28,6 +28,12 @@ core_fptrs:
   .word 0, 0    /* [3]  kmem_alloc_entry */
   .word 0, 0    /* [4]  kmem_free_entry */
   .word 0, 0    /* [5]  kmem_free_count_entry */
+  .word 0, 0    /* [6]  mem_region_alloc_entry */
+  .word 0, 0    /* [7]  mem_region_free_entry */
+  .word 0, 0    /* [8]  mem_region_total_bytes_entry */
+  .word 0, 0    /* [9]  mem_region_free_bytes_entry */
+  .word 0, 0    /* [10] core_blkdev_read_entry */
+  .word 0, 0    /* [11] core_blkdev_write_entry */
 
   .section .text
 
@@ -51,11 +57,17 @@ core_fptrs:
   ljmp *%ss:core_fptrs + \idx * 4  /* far jump via SS (DS is free) */
 .endm
 
-  CORE_CALLER_STUB klog,           0
-  CORE_CALLER_STUB klogf,          1
-  CORE_CALLER_STUB kmem_pool_init, 2
-  CORE_CALLER_STUB kmem_alloc,     3
-  CORE_CALLER_STUB kmem_free,      4
-  CORE_CALLER_STUB kmem_free_count, 5
+  CORE_CALLER_STUB klog,                0
+  CORE_CALLER_STUB klogf,               1
+  CORE_CALLER_STUB kmem_pool_init,      2
+  CORE_CALLER_STUB kmem_alloc,          3
+  CORE_CALLER_STUB kmem_free,           4
+  CORE_CALLER_STUB kmem_free_count,     5
+  CORE_CALLER_STUB mem_region_alloc,    6
+  CORE_CALLER_STUB mem_region_free,     7
+  CORE_CALLER_STUB mem_region_total_bytes, 8
+  CORE_CALLER_STUB mem_region_free_bytes,  9
+  CORE_CALLER_STUB core_blkdev_read,   10
+  CORE_CALLER_STUB core_blkdev_write,  11
 
 #endif /* __ia16__ */

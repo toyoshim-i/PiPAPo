@@ -12,6 +12,18 @@
 #include "../../klog.h"
 #include "../../mm/kmem.h"
 #include "../../mm/mem_region.h"
+#include "../../blkdev/blkdev.h"
+
+/* Cross-module blkdev wrappers — execute dev->read/write in core's CS */
+static int core_blkdev_read(blkdev_t *dev, void *buf,
+                            uint32_t sector, uint32_t count) {
+  return dev->read(dev, buf, sector, count);
+}
+
+static int core_blkdev_write(blkdev_t *dev, const void *buf,
+                             uint32_t sector, uint32_t count) {
+  return dev->write(dev, buf, sector, count);
+}
 
 mod_core_t mod_core = {
   .klog = klog,
@@ -24,4 +36,6 @@ mod_core_t mod_core = {
   .mem_region_free = mem_region_free,
   .mem_region_total_bytes = mem_region_total_bytes,
   .mem_region_free_bytes = mem_region_free_bytes,
+  .blkdev_read = core_blkdev_read,
+  .blkdev_write = core_blkdev_write,
 };

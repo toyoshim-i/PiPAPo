@@ -60,5 +60,11 @@ saved_ip: .word 0
   CORE_TARGET_STUB kmem_alloc
   CORE_TARGET_STUB kmem_free
   CORE_TARGET_STUB kmem_free_count
+  CORE_TARGET_STUB mem_region_alloc
+  CORE_TARGET_STUB mem_region_free
+  CORE_TARGET_STUB mem_region_total_bytes
+  CORE_TARGET_STUB mem_region_free_bytes
+  CORE_TARGET_STUB core_blkdev_read
+  CORE_TARGET_STUB core_blkdev_write
 
 #endif /* __ia16__ */
