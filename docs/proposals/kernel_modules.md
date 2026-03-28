@@ -179,70 +179,44 @@ Stage2 loads each module binary and records its segment value in
 a `mod_info_t` block at 0x0500.  The core reads this at boot and
 patches the far-call wrapper tables.
 
-### Isolated Data Segments per Module (i16)
+### Shared Data Segment, Separate Code Segments (i16)
 
-On i16, each module has its own **CS=DS** segment.  Small-model
-ia16-elf-gcc requires CS=DS — the compiler generates DS-relative
-access for all data.  With separate code segments, DS must match
-the module's segment base.
+On i16, all modules share **DS=0** for data access.  Each module's
+code (.text) lives in its own segment (separate CS).  Cross-module
+calls use `lcall`/`lret` to switch CS; DS stays unchanged.
 
-Cross-module calls switch both CS (via `lcall`/`lret`) and DS
-(via save/restore in the stubs).  Pointer arguments that reference
-the caller's data segment are passed through a **shared transfer
-buffer** at a fixed linear address (0x0500).
+This means:
+- Near data pointers work across modules (same DS=0)
+- Pointer arguments passed to module functions work without
+  serialization or copying — same DS, same addresses
+- Global variables (proc_table, etc.) are accessible from all modules
+- Each module's code must fit in 64 KB (its own CS)
+- Total data+BSS from all modules must fit in 64 KB (shared DS=0)
+
+Each module is compiled as a separate small-model binary.  The code
+section starts at offset 0 in its own segment.  The data/BSS sections
+are linked into the shared DS=0 address space at non-overlapping
+addresses (coordinated via the core linker script reserving space).
+
+The stub pattern only switches CS (no DS manipulation):
 
 ```asm
 ; Caller-side stub (in caller's segment):
 vfs_init_caller_stub:
-    ; copy pointer args to xfer buffer (0x0500)
-    pop  %ax                    ; near ret IP
-    push %cs                    ; far frame
-    push %ax
-    push %ds                    ; save caller DS
-    mov  $VFS_SEG, %ds          ; switch to VFS DS
-    ljmp *vfs_fptrs[0]          ; far jump to VFS
-    pop  %ds                    ; restore caller DS
-    ret
+    lcall *[vfs_init_fptr]      ; far call to VFS CS
+    ret                         ; near return to caller
 
 ; Target-side stub (in VFS segment):
 vfs_init_entry:
-    pop  far return             ; save far frame
-    call vfs_init               ; near call within VFS (CS=DS)
-    push far return
-    lret
+    call vfs_init               ; near call within VFS
+    lret                        ; far return to caller CS
 ```
 
-**Page-indexed memory model:**
-
-Memory allocation uses page indices (not pointers) so the allocator
-works across the full 1 MB address space without 16-bit pointer
-limitations:
-
-```c
-typedef uint16_t page_id_t;
-page_id_t mm_page_alloc(void);
-void      mm_page_free(page_id_t id);
-void mm_page_read(page_id_t id, uint16_t off, void *buf, uint16_t len);
-void mm_page_write(page_id_t id, uint16_t off, const void *buf, uint16_t len);
-void *mm_page_to_ptr(page_id_t id);  /* 32-bit only */
-```
-
-On 32-bit, `mm_page_to_ptr` provides direct pointer access.
-On i16, all cross-page access goes through `mm_page_read/write`.
-Modules that want i16 support must use this interface.
-
-**i16 module scope:**
-
-The i16 port excludes complex 32-bit-only components:
-- No eCPU emulators (ecpu_m68k, ecpu_z80)
-- No subsystem bridges (human68k, sos, cpm)
-- No tmpfs, procfs, devfs (root is UFS on floppy, read-only)
-- Dedicated `elf16_loader.c` instead of the 32-bit ELF loader
-
-**Why isolated DS, not shared DS=0?**
-- Small-model ia16-elf-gcc requires CS=DS.  Placing .text and .data
-  at different segment bases causes the compiler to generate
-  `mov $seg, %ds` instructions that corrupt DS at runtime.
+**Why not isolated DS per module?**
+- Pointer arguments would need serialization at every module call
+  (copy-in/copy-out, like microkernel IPC) — the C compiler cannot
+  access data via ES instead of DS
+- Adds significant complexity and overhead for every cross-module call
 
 **Why not medium model?**
 - ia16-elf-ld 2.39 is broken: R_386_16 overflow for fartext
@@ -426,14 +400,12 @@ The module system is implemented and working on all platforms:
 - Boundary enforcement script validates no cross-module includes
 - `kernel/common/` directory for shared headers
 
-On i16, the kernel is split into separate code segments (core + VFS).
-Stage2 loads both binaries from UFS floppy.  Far-call stubs work in
-both directions (core→VFS and VFS→core verified).  However, the
-original shared-DS=0 approach failed: small-model ia16-elf-gcc
-requires CS=DS and corrupts DS when .text and .data are at different
-segment bases.  Redesigned to use isolated DS per module with a
-shared transfer buffer for pointer arguments, and page-indexed
-memory allocation for cross-segment memory access.
+On i16, the kernel is split into separate code segments (core 28 KB +
+VFS ~27 KB).  Stage2 loads both binaries from UFS floppy.  Core boots,
+detects VFS module, and VFS data is placed at DS:0xA000.  Both call
+directions work: core→VFS (vfs_init) and VFS→core (mod_core.klogf,
+mod_core.kmem_pool_init).  VFS fully initialises (64 vnodes, 8 mounts).
+Remaining: wire floppy block device and rootfs mount.
 
 **Known boundary violations to fix:**
 - `exec/*.c` and `cpu/ecpu_*.c` include `mm/mem_region.h` directly —
@@ -452,10 +424,9 @@ query functions to `mod_core.h` (10 functions total).  Migrated
 Remaining: `exec/*.c` and `cpu/ecpu_*.c` still use `mem_region.h`
 directly — will be migrated when exec/subsys become modules.
 
-**P-4b (i16 only):** In progress.  Segment split — isolated DS per
-module (CS=DS).  DS switching in stubs, shared transfer buffer for
-pointer args, page-indexed memory model.  See `docs/proposals/pc_port.md`
-P-4b for detailed done/remaining checklist.
+**P-4b (i16 only):** In progress.  Segment split — separate CS per
+module, shared DS=0.  See `docs/proposals/pc_port.md` P-4b for
+detailed done/remaining checklist.
 
 **Future:** Add more module boundaries as needed:
 - `mod/mod_signal.h`: signal delivery, sigreturn
