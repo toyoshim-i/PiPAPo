@@ -24,6 +24,7 @@ int  vfs_lookup_flags(const char *, vnode_t **, int);
 int  vfs_lookup_parent(const char *, vnode_t **, char *, int);
 int  vfs_path_normalize(const char *, char *, int);
 mount_entry_t *vfs_find_mount(const char *, const char **);
+int  vfs_mount_ufs(const char *, uint8_t, const void *);
 vnode_t *vfs_alloc_vnode(void);
 void vfs_ref_vnode(vnode_t *);
 void vfs_rel_vnode(vnode_t *);
@@ -40,6 +41,7 @@ MOD_DEFINE_BEGIN(vfs)
   MOD_IMPL(vfs, lookup_parent)
   MOD_IMPL(vfs, path_normalize)
   MOD_IMPL(vfs, find_mount)
+  MOD_IMPL(vfs, mount_ufs)
   MOD_IMPL(vfs, alloc_vnode)
   MOD_IMPL(vfs, ref_vnode)
   MOD_IMPL(vfs, rel_vnode)
