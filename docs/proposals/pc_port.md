@@ -1204,18 +1204,22 @@ sees args at correct offsets), then restores the far frame and `lret`s.
 | mount_ufs wired | `target_mount_rootfs` calls `mod_vfs.mount_ufs("/", MNT_RDONLY, bd)` |
 | mod_vfs.mount_ufs | Added to VFS module (12 entries), far call reaches VFS code |
 
-**Current blocker — function pointer across segments:**
+**Bugs found and fixed:**
 
-`ufs_mount` calls `bd->read()` via near function pointer.  But
-`floppy_read` is in core (CS=0) while UFS runs in VFS (CS=0x1000).
-Near call goes to 0x1000:floppy_read_offset = wrong code.
+| Bug | Root cause | Fix |
+|-----|-----------|-----|
+| INT 13h returns "not ready" | PIT timer replaced BIOS INT 08h handler, breaking floppy motor control | Defer `timer_init` to `target_post_mount` |
+| VFS→core function call crashes | DS clobbered by VFS (used as scratch register), core functions need DS=0 | Entry stubs restore DS=0 before calling C functions |
+| blkdev_read call goes to address 0 | `core_blkdev_read` was `static`, entry stub couldn't resolve symbol | Remove `static` from blkdev wrappers |
+| Near function pointer crosses segments | `blkdev_t.read = floppy_read` is a near pointer valid only in core's CS | Add `mod_core.blkdev_read` far-call wrapper |
 
-**Remaining:**
+**Status: ✓ Complete** — kernel boots, mounts UFS floppy, reads fstab,
+starts scheduler.
 
-1. **Fix blkdev function pointer issue** — add `mod_core.blkdev_read`
-   wrapper so UFS can read floppy sectors via far call to core
-2. **Verify UFS mount completes** — superblock read, root inode
-3. **Test end-to-end** — boot to "Hello from user!"
+**Remaining for full P-4b:**
+
+1. **Write elf16_loader or COM loader** for i16 user-space exec
+2. **Test end-to-end** — boot to "Hello from user!"
 
 **Verification**: Kernel mounts floppy UFS, loads /sbin/init, prints
 "Hello from user!".
