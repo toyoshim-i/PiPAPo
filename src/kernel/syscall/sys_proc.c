@@ -84,11 +84,10 @@ static void proc_release_stack_page(void **page) {
   *page = NULL;
 }
 
-#if defined(__m68k__) || defined(__riscv)
+#if defined(__m68k__) || defined(__riscv) || defined(__xtensa__)
 /* Allocate a user-stack copy for a vfork child.
  *
- * Architectures with separate user/kernel stacks (m68k, RISC-V) must
- * give the vfork child its own user stack page.  Without this, the
+ * The child must have its own user stack page.  Without this, the
  * child's post-vfork code overwrites the parent's stack, corrupting
  * the parent's return state.
  *
@@ -108,7 +107,7 @@ static int vfork_copy_user_stack(void *parent_ustack, uint32_t parent_usp,
   *usp_out = (uint32_t)(uintptr_t)child_ustack + usp_off;
   return 0;
 }
-#endif /* __m68k__ || __riscv */
+#endif /* __m68k__ || __riscv || __xtensa__ */
 
 static void proc_release_mmap_region(void **addr, uint32_t *pages) {
   proc_image_segment_t seg;
@@ -1607,30 +1606,38 @@ long sys_vfork(uint32_t *frame) {
    * XtExcFrame layout: exit, pc, ps, a0, a1, a2, ...
    * 'frame' points to a2, so frame[-4] = pc, frame[-1] = a1.
    *
-   * The child resumes at the instruction after SYSCALL (pc already +3)
-   * with a2 = 0 (switch.S .Lnew_process clears a2 before jx). */
+   * The child resumes at the instruction after the ILL trap (pc already +3)
+   * with a2 = 0 (switch.S .Lnew_process clears a2 before jx).
+   *
+   * Xtensa shares user/kernel on one stack page.  Allocate a separate
+   * user stack page via the shared vfork_copy_user_stack helper so the
+   * child's pre-execve writes don't corrupt the parent's saved frames. */
   {
     uint32_t child_pc = frame[-4];      /* pc (already advanced +3) */
     uint32_t child_user_sp = frame[-1]; /* a1 = user SP at syscall */
     uint32_t child_a0 = frame[-2];      /* a0 = return addr to caller */
     uint32_t child_a3 = frame[1];       /* a3 (compiler expects preserved) */
 
-    /* Xtensa shares user/kernel on one stack page.  The memcpy above
-     * gave the child its own copy; remap pointers that still reference
-     * the parent's page (same pattern as m68k's a6 redirect). */
+    void *child_ustack = NULL;
+    uint32_t remapped_sp = 0;
+    if (vfork_copy_user_stack(current->stack_page, child_user_sp,
+                              &child_ustack, &remapped_sp) < 0) {
+      proc_release_stack_page(&stack);
+      child->stack_page = NULL;
+      proc_free(child);
+      return -(long)ENOMEM;
+    }
+    child_user_sp = remapped_sp;
+
+    /* Remap a3 if it points into the parent's stack page */
     {
       uint32_t pbase = (uint32_t)(uintptr_t)current->stack_page;
-      uint32_t cbase = (uint32_t)(uintptr_t)stack;
-      child_user_sp = cbase + (child_user_sp - pbase);
+      uint32_t cbase = (uint32_t)(uintptr_t)child_ustack;
       if (child_a3 >= pbase && child_a3 < pbase + PAGE_SIZE)
         child_a3 = cbase + (child_a3 - pbase);
     }
 
-    /* Build new-process frame at top of child's kernel stack page.
-     * a0 is needed because vfork child starts at `ret` (jx a0) — the
-     * instruction after SYSCALL in the vfork stub.
-     * a3 is needed because the compiler does not clobber it across the
-     * inline syscall wrapper — spawn() keeps the inittab entry ptr in a3. */
+    /* Build new-process frame at top of child's kernel stack page. */
     uint32_t *sp = (uint32_t *)((uint8_t *)stack + PAGE_SIZE);
     sp = (uint32_t *)((uintptr_t)sp & ~0xFu);
     *--sp = child_a3;                   /* [SP+36] a3 = preserved reg */
