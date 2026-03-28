@@ -212,11 +212,17 @@ vfs_init_entry:
     lret                        ; far return to caller CS
 ```
 
-**Why not isolated DS per module?**
-- Pointer arguments would need serialization at every module call
-  (copy-in/copy-out, like microkernel IPC) — the C compiler cannot
-  access data via ES instead of DS
-- Adds significant complexity and overhead for every cross-module call
+**ia16-elf-gcc segment behaviour:**
+- The compiler uses **SS for all data access** (`%ss:` prefix).
+  DS is a scratch register (compiler stores arbitrary values in it).
+- SS must always = 0 (the shared data segment invariant).
+- Assembly stubs must use `%ss:` for any data access.
+
+**Function pointer constraint:**
+Near function pointers are CS-relative.  Passing a function pointer
+from one module to another (e.g. `blkdev_t.read`) breaks because
+the callee's CS differs from the module that set the pointer.
+Such callbacks must go through `mod_core` or use far pointers.
 
 **Why not medium model?**
 - ia16-elf-ld 2.39 is broken: R_386_16 overflow for fartext

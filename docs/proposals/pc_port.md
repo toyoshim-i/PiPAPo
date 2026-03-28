@@ -955,14 +955,41 @@ vfs_init_entry:
     lret                     ; far return to caller
 ```
 
-No DS manipulation — both sides use DS=0 for all data access.
+No DS manipulation — both sides use SS=0 for all data access.
 The real function uses normal `ret`.  Only the assembly stubs
-know about segments.
+know about segments.  Assembly stubs must use `%ss:` prefix for
+any data access (far pointer tables, saved registers).
+
+**ia16-elf-gcc segment register behaviour (important):**
+
+The small-model compiler uses **SS for all data access** (`%ss:`
+prefix on every memory operand).  DS is used as a **scratch
+register** — the compiler freely loads arbitrary values into DS
+for temporary storage (e.g. loop-invariant address computations).
+DS is NOT used for actual memory reads/writes.
+
+This means:
+- SS must always point to the shared data segment (SS=0)
+- DS can contain any value — it does not affect data access
+- Assembly code must use `%ss:` for data access, not rely on DS
+- The shared DS=0 design works because SS=0 is the invariant
+
+**Function pointers across modules:**
+
+Near function pointers (e.g. `blkdev_t.read = floppy_read`) are
+CS-relative.  When VFS (CS=0x1000) dereferences a function pointer
+that was set in core (CS=0), the near call targets 0x1000:offset
+instead of 0:offset — jumping to wrong code.
+
+Solution: function pointer tables that cross module boundaries
+(blkdev_t, vfs_ops_t) must use the module interface (`mod_core`)
+for callbacks, or use far function pointers.  On i16, blkdev_read
+should go through a `mod_core.blkdev_read()` wrapper that does the
+far call back to core.
 
 **Why shared DS, not isolated DS per module?**
-- Isolated DS requires argument serialization (copy-in/copy-out)
-  at every cross-module call — the C compiler cannot access data
-  via ES instead of DS
+- The compiler uses SS for all data access, not DS
+- DS is a scratch register — isolated DS provides no benefit
 - Shared DS: pointer arguments just work, zero overhead
 
 **Why not medium model?**
