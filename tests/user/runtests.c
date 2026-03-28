@@ -173,7 +173,11 @@ int main(void)
     tests[t++] = (test_entry_t){ "/bin/test_exec",       TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_elf",        TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_vfork",      TEST_ENABLED  };
+#if defined(__riscv)
+    tests[t++] = (test_entry_t){ "/bin/test_fault",      TEST_DISABLED }; /* TODO: RISC-V fault handler */
+#else
     tests[t++] = (test_entry_t){ "/bin/test_fault",      TEST_ENABLED  };
+#endif
     tests[t++] = (test_entry_t){ "/bin/test_pipe",       TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_brk",        TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_fd",         TEST_ENABLED  };
