@@ -130,14 +130,35 @@ Current exports:
 
 ```c
 MOD_DECLARE_BEGIN(core)
+  /* Logging */
   MOD_FUNC(core, void, klog, const char *)
   MOD_FUNC(core, void, klogf, const char *, ...)
+
+  /* Slab allocator */
   MOD_FUNC(core, void, kmem_pool_init, kmem_pool_t *, void *, size_t, uint32_t)
   MOD_FUNC(core, void *, kmem_alloc, kmem_pool_t *)
   MOD_FUNC(core, void, kmem_free, kmem_pool_t *, void *)
   MOD_FUNC(core, uint32_t, kmem_free_count, const kmem_pool_t *)
+
+  /* Memory region allocator (needed by tmpfs, exec, subsys) */
+  MOD_FUNC(core, int, mem_region_alloc, proc_image_segment_t *,
+                       ppap_mem_class_t, uint32_t, uint32_t)
+  MOD_FUNC(core, void, mem_region_free, const proc_image_segment_t *)
 MOD_DECLARE_END(core)
 ```
+
+**Note on mem_region:** The `mem_region_alloc`/`mem_region_free` API
+was introduced to abstract memory backends (page pool on ARM/m68k,
+arenas on Xtensa).  It is used by:
+- `tmpfs.c` — allocating data pages for file contents
+- `exec/*.c` loaders — allocating process image segments
+- `ecpu_*.c` — allocating emulator workspaces
+
+Since tmpfs is part of the VFS module and exec is part of the exec
+module, these functions must be in `mod_core` so that cross-module
+access works on i16.  Functions that are only used within core
+(`mem_region_init`, `mem_region_alloc_at`, query functions) need
+not be exported.
 
 Inline functions (string, spinlock, arch_irq) compile into each
 module's code directly — they are NOT part of any module interface.
@@ -365,7 +386,7 @@ for the concrete memory layout and build steps.
 The module system is implemented and working on all platforms:
 
 - Module macros (MOD_DECLARE/MOD_DEFINE) working
-- mod_vfs (11 functions), mod_core (6 functions), mod_exec (1 function)
+- mod_vfs (11 functions), mod_core (8 functions), mod_exec (1 function)
 - VFS callers migrated to `mod_vfs.init()` syntax on all platforms
 - Boundary enforcement script validates no cross-module includes
 - `kernel/common/` directory for shared headers
@@ -378,11 +399,23 @@ calls work (vfs_init code executes in CS=0x1000).  VFS→core far calls
 stack frame mismatch from the far call's extra CS:IP push.
 See `docs/proposals/pc_port.md` P-4b for the current blocker and plan.
 
+**Known boundary violations to fix:**
+- `fs/tmpfs.c` includes `mm/mem_region.h` directly — should use
+  `mod_core.mem_region_alloc()` once added to mod_core
+- `exec/*.c` and `cpu/ecpu_*.c` include `mm/mem_region.h` — same fix
+  needed when exec/subsys become separate modules
+
 ### Phased Rollout
 
 **P-4a:** ✓ Done.  Module macros, mod_vfs/mod_core/mod_exec headers,
 VFS caller migration to `mod_vfs.init()`, boundary enforcement,
 `kernel/common/` directory.
+
+**P-4a.3 (pending):** Add `mem_region_alloc`/`mem_region_free` to
+`mod_core.h` and wire in `mod_core.c`.  Migrate callers in
+`fs/tmpfs.c` from `#include "mm/mem_region.h"` to
+`mod_core.mem_region_alloc()`.  Same for `exec/*.c` and
+`cpu/ecpu_*.c` when those become separate modules.
 
 **P-4b (i16 only):** In progress.  Segment split — separate CS per
 module, shared DS=0.  See `docs/proposals/pc_port.md` P-4b for
@@ -405,7 +438,7 @@ match exactly — any mismatch is a compile error.  Callers use
 macro handles the mapping.
 
 **Module count:** ~5 API surfaces:
-- mod_core (klog, kmem — 6 functions currently, grows as needed)
+- mod_core (klog, kmem, mem_region — 8 functions currently, grows as needed)
 - mod_vfs (VFS operations + vnode lifecycle — 11 functions)
 - mod_exec (process creation + loading — 1 function currently)
 - mod_signal (signal delivery — future)
