@@ -923,113 +923,103 @@ Current P-3b core kernel:
 This leaves ~13 KB headroom.  Adding blkdev + floppy driver pushes
 past 64 KB, requiring the segment split.
 
-### Segment Split: Shared DS, Separate CS
+### Segment Split: Isolated DS per Module
 
-All modules share DS=0 for data.  Each module's code is in its own
-segment (separate CS).  Cross-module calls use `lcall`/`lret` —
-DS stays unchanged, so pointer arguments work without serialization.
+Each module has its own CS **and** DS.  Small-model ia16-elf-gcc
+requires CS=DS — the compiler generates DS-relative access for all
+data (globals, string literals, const tables).  With separate code
+segments, DS must match the module's segment base.
+
+Cross-module calls switch both CS (via `lcall`/`lret`) and DS
+(via the caller/entry stubs).  Pointer arguments that reference
+the caller's data segment are passed through a shared transfer
+area at a fixed linear address accessible from any segment.
 
 ```
-Core code segment (CS=0x0060):    VFS code segment (CS=0x1000):
+Core segment (CS=DS=0x0060):      VFS segment (CS=DS=0x1000):
 ──────────────────────────────    ──────────────────────────────
-caller()                          vfs_init_entry:
-  call mod_vfs.init()               call vfs_init   ; near
-  ; near call to ──►                vfs_init:
-vfs_init_caller_stub:                  ...  (DS=0, shared data)
-  lcall *[vfs_fptrs + 0] ─ far ─►    ret            ; near
-  ret  ◄─────────────────── far ── lret
-──────────────────────────────    ──────────────────────────────
+caller()                          vfs_mount_ufs_entry:
+  push args                         pop saved far ret
+  call mod_vfs.mount_ufs()          push ds         ; save VFS DS
+  ; near call to ──►                mov $core_seg, %ds
+vfs_mount_ufs_stub:                  ; copy ptr args from xfer buf
+  ; copy ptr args to xfer buf       call vfs_mount_ufs ; near
+  pop  %ax  (near ret)               pop ds          ; restore VFS DS
+  push %cs                           push saved far ret
+  push %ax                           lret
+  push ds                          ──────────────────────────────
+  mov  $vfs_seg, %ds
+  ljmp *vfs_fptrs[8]  ────far────►
+  pop  ds              ◄──far────
+  ret
+──────────────────────────────
 ```
 
-**Caller-side stub** (in core segment):
-```nasm
-vfs_init_caller_stub:
-    lcall *vfs_fptrs + 0    ; indirect far call [offset:segment]
-    ret
+**Shared transfer area:**
+
+A fixed 256-byte buffer at linear 0x0500 (between BIOS data area
+and kernel) is accessible from any segment via SS=0 or absolute
+segment overrides.  Stubs copy pointer arguments (path strings,
+small structs) into this buffer before switching DS.
+
+**Why isolated DS, not shared DS=0?**
+- Small-model ia16-elf-gcc requires CS=DS.  Placing .text and .data
+  at different segment bases causes the compiler to generate segment
+  register loads (`mov $seg, %ds`) that corrupt DS at runtime.
+- Medium model (which separates code/data segments) is broken in
+  ia16-elf-ld 2.39 (R_386_16 overflow, linker segfault).
+
+**Page-indexed memory model:**
+
+Memory allocation uses page indices (not pointers) so the allocator
+works across the full 1 MB address space:
+
+```c
+typedef uint16_t page_id_t;           // page index, not pointer
+page_id_t mm_page_alloc(void);
+void      mm_page_free(page_id_t id);
+void mm_page_read(page_id_t id, uint16_t off, void *buf, uint16_t len);
+void mm_page_write(page_id_t id, uint16_t off, const void *buf, uint16_t len);
+// 32-bit only (not available on i16):
+void *mm_page_to_ptr(page_id_t id);
 ```
 
-**Target-side stub** (in VFS segment):
-```nasm
-vfs_init_entry:
-    call vfs_init            ; near call to real function
-    lret                     ; far return to caller
-```
+On 32-bit platforms, `mm_page_to_ptr` provides direct access.
+On i16, all cross-page data access goes through `mm_page_read/write`
+which internally sets up the correct segment:offset pair.
 
-No DS manipulation — both sides use DS=0 for all data access.
-The real function uses normal `ret`.  Only the assembly stubs
-know about segments.
+**i16 module scope:**
 
-**Why shared DS, not isolated DS per module?**
-- Isolated DS requires argument serialization (copy-in/copy-out)
-  at every cross-module call — the C compiler cannot access data
-  via ES instead of DS
-- Shared DS: pointer arguments just work, zero overhead
+The i16 port uses a minimal module set — no eCPU emulators, no
+subsystem bridges, no tmpfs/procfs/devfs:
 
-**Why not medium model?**
-- ia16-elf-ld 2.39 is broken (R_386_16 overflow, linker segfault)
+| Binary | Segment | Contents |
+|--------|---------|----------|
+| Core | CS=DS | main, klog, mm, proc, sched, syscall, blkdev, floppy, stubs |
+| VFS | CS=DS | vfs, namei, ufs, fstab, fd, tty, stubs |
 
-**What goes where:**
-
-| Binary | Segment | Contents | Code budget |
-|--------|---------|----------|-------------|
-| Core | CS=0x0060 | main, klog, mm, proc, sched, syscall, blkdev, stubs | ≤64 KB code |
-| VFS | CS=0x1000 | vfs, namei, romfs, tmpfs, devfs, procfs, ufs, stubs | ≤64 KB code |
+Modules that want i16 support must use `mm_page_read/write` for
+cross-page access.  A dedicated `elf16_loader.c` handles 16-bit
+ELF loading (the existing 32-bit ELF loader is too complex to port).
 
 **Memory layout:**
 
 ```
-0x00000-0x005FF  IVT + BIOS Data Area
-0x00600-0x?????  Core .text (code only, ~26 KB)
-  .rodata, .data, .bss  (shared DS=0, after core .text)
-  stack (2 KB)
-  __page_pool_start (4 KB aligned)
-0x10000-0x?????  VFS .text (code only, ~27 KB, CS=0x1000)
-  VFS .data, .bss linked into DS=0 at reserved addresses
-...    -0x9FBFF  Page pool (conventional RAM ceiling - EBDA)
+0x00000-0x003FF  IVT (256 vectors × 4 bytes)
+0x00400-0x004FF  BIOS Data Area
+0x00500-0x005FF  mod_xfer — shared transfer buffer (256 B)
+0x00600-0x?????  Core module (code + data + BSS, CS=DS=0x0060)
+  stack grows down within core segment
+0x10000-0x?????  VFS module (code + data + BSS, CS=DS=0x1000)
+0x20000+         Process segments (loaded by elf16_loader)
+  ...  -0x9FBFF  Page pool (conventional RAM ceiling - EBDA)
 0x9FC00-0x9FFFF  EBDA (1 KB)
 0xA0000-0xFFFFF  Video RAM + ROM
 ```
 
-**VFS data in shared DS=0 — concrete mechanism:**
-
-VFS data/BSS must be at known addresses in DS=0.  The VFS linker
-script links .text at offset 0 (VFS CS), but .data/.bss at a fixed
-DS=0 address (e.g. 0xA000):
-
-```ld
-/* ibmpc_vfs.ld */
-SECTIONS {
-  . = 0x0000;
-  .text   : { *(.text*) }      /* VFS code segment, offset 0 */
-  .rodata : { *(.rodata*) }    /* constants in code segment */
-
-  . = 0xA000;                  /* switch to DS=0 address space */
-  .data   : { *(.data*) }      /* VFS globals at DS:0xA000+ */
-  .bss    : { *(.bss*) }       /* VFS BSS at DS:0xA0xx+ */
-}
-```
-
-The compiler generates `mov ax, ds:[0xA0xx]` for VFS globals.
-Since DS=0 at runtime, this correctly accesses linear 0xA0xx.
-
-**Build steps:**
-1. Link VFS ELF with the above script (.text at 0, .data at 0xA000)
-2. Extract .text only: `objcopy -j .text -j .rodata -O binary` → VFS code binary
-3. Extract .data only: `objcopy -j .data -O binary` → VFS data blob
-4. Stage2 loads VFS code to 0x1000:0000 (CS=0x1000)
-5. Stage2 (or core init) copies VFS data blob to DS:0xA000
-6. Core init zeroes VFS BSS range (0xA000+data_size to 0xA000+data+bss)
-
-The core linker script reserves 0xA000-0xBFFF for VFS data (8 KB):
-
-```ld
-/* ibmpc_kernel.ld */
-  __page_pool_start = .;
-  . = 0xA000;
-  __vfs_data_reserved_start = .;
-  . += 8192;   /* 8 KB reserved for VFS .data + .bss */
-  __vfs_data_reserved_end = .;
-```
+Each module is a self-contained small-model binary (CS=DS) loaded
+at a paragraph-aligned address.  Stage2 loads both modules and
+records their segment bases in `mod_info` at 0x0500.
 
 Stage2 loads both `/boot/kernel` and `/boot/kernel_vfs` from the
 UFS floppy.  A `mod_info_t` block at 0x0500 tells the kernel where
@@ -1101,45 +1091,45 @@ Platform-agnostic module system with explicit API surfaces:
 
 **Goal**: Split kernel into separate code segments, mount UFS root.
 
-**Architecture**: Shared DS=0 for all data, separate CS per module.
-Pointer arguments work without serialization.  See §9.5 for details.
+**Architecture**: Isolated DS per module (CS=DS), shared transfer
+buffer for cross-module pointer arguments, page-indexed memory
+model.  See §9.5 for details.
 
 **Done:**
 
 | Item | Details |
 |------|---------|
 | Segment manager | `seg.h`/`seg.c` — runtime table of module code segments |
-| Separate CMake targets | ppap_ibmpc (core 28 KB) + ppap_ibmpc_vfs (linked separately) |
-| Two-level stubs | vfs_stubs.S, vfs_entries.S, core_stubs.S, core_entries.S — no DS switching |
-| VFS module header | Magic + 11 entry offsets at offset 0, read by core at boot |
+| Separate CMake targets | ppap_ibmpc (core) + ppap_ibmpc_vfs (separate binary) |
+| Two-level stubs | Far-call stubs with stack frame adjustment (pop/push CS/ljmp) |
+| VFS module header | Magic + entry offsets at offset 0, read by core at boot |
 | Stage2 multi-load | `load_file_far()` loads VFS to 0x1000:0000 via INT 13h |
 | mod_info protocol | Stage2 writes module table at 0x0500, core reads at boot |
 | mkpcimg.sh | Packages both binaries into UFS floppy |
-| Floppy block device | `floppy_blk.c` — INT 13h driver (code exists, not wired) |
-| Core boot verified | Core boots with "SEG: VFS module loaded", MM/PROC/CPU init OK |
-| DS switching removed | Stubs use lcall/lret only, shared DS=0 confirmed |
-| VFS data in DS=0 | VFS linker places .data/.bss at 0xA000 in DS=0 |
-| Core reserves VFS data | Core linker reserves 0xA000-0xBFFF for VFS |
-| Far call core→VFS | lcall to VFS segment works, vfs_init code runs |
-| Far call VFS→core | ✓ Fixed — mod_core.kmem_pool_init/klogf work from VFS |
-| VFS fully initialised | "64 vnodes, 8 mount slots" — both directions verified |
-| fstab parsed | VFS reads /etc/fstab (8 entries) from UFS |
+| Floppy block device | `floppy_blk.c` — INT 13h driver, blkdev_find works |
+| Far call both directions | core→VFS and VFS→core verified (vfs_init, klogf, kmem) |
 
-**Far-call stub fix (resolved):**
+**Design revision — shared DS=0 abandoned:**
 
-The original `lcall; ret` pattern left extra return addresses on the
-stack, shifting BP-relative argument offsets.  Fixed by converting the
-caller stub from `lcall+ret` to `pop ret; push CS; push ret; ljmp`.
-The entry stub pops the far frame, `call`s the real function (which
-sees args at correct offsets), then restores the far frame and `lret`s.
+The original plan used shared DS=0 for all data.  This failed
+because ia16-elf-gcc small model requires CS=DS — the compiler
+generates `mov $segment, %ds` to access data when .text and .data
+are at different addresses.  Placing VFS .data at DS=0 0xA000 while
+VFS .text is at CS=0x1000 caused DS corruption at runtime.
+
+New approach: each module is a self-contained small-model binary
+(CS=DS).  Cross-module calls switch DS via stubs.  Pointer arguments
+are passed through a shared transfer buffer at 0x0500.
 
 **Remaining:**
 
-1. **Wire floppy block device** — connect `floppy_blk.c` INT 13h driver
-   to blkdev, register as `/dev/fd0`
-2. **Wire rootfs mount** — `target_mount_rootfs()` calls
-   `mod_vfs.mount("/", &ufs_ops, 0, blkdev)` using floppy blkdev
-3. **Test end-to-end** — boot to "Hello from user!"
+1. **Add DS switching to stubs** — save/restore DS on cross-module calls
+2. **Implement shared transfer buffer** — copy pointer args at boundary
+3. **Implement page-indexed memory model** — `mm_page_alloc`,
+   `mm_page_read/write` for cross-segment memory access
+4. **Write elf16_loader.c** — dedicated 16-bit ELF loader
+5. **Wire floppy mount** — `target_mount_rootfs()` via mod_vfs.mount_ufs
+6. **Test end-to-end** — boot to "Hello from user!"
 
 **Verification**: Kernel mounts floppy UFS, loads /sbin/init, prints
 "Hello from user!".
