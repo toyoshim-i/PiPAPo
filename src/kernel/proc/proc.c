@@ -218,7 +218,7 @@ int proc_page_backed_contains(const pcb_t *p, uintptr_t addr) {
 
 void proc_clear_page_tracking(pcb_t *p) {
   if (!p) return;
-  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) p->user_page_ids[i] = NULL;
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) p->user_page_ids[i] = PAGE_ID_INVALID;
 }
 
 void proc_copy_page_tracking(pcb_t *dst, const pcb_t *src) {
@@ -228,15 +228,15 @@ void proc_copy_page_tracking(pcb_t *dst, const pcb_t *src) {
 }
 
 void proc_copy_page_tracking_to_array(const pcb_t *src,
-                                      void *dst[USER_PAGES_MAX]) {
+                                      page_id_t dst[USER_PAGES_MAX]) {
   if (!src || !dst) return;
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) dst[i] = src->user_page_ids[i];
 }
 
 void proc_restore_page_tracking_from_array(pcb_t *dst,
-                                           void *const src[USER_PAGES_MAX]) {
+                                           const page_id_t src[USER_PAGES_MAX]) {
   if (!dst || !src) return;
-  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) dst->user_page_ids[i] = src[i];
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) dst->user_page_ids[i] = (page_id_t)(uintptr_t)src[i];
 }
 
 void proc_release_tracked_pages(pcb_t *p, uint32_t start_slot,
@@ -245,37 +245,37 @@ void proc_release_tracked_pages(pcb_t *p, uint32_t start_slot,
   if (start_slot >= USER_PAGES_MAX) return;
   if (end_slot > USER_PAGES_MAX) end_slot = USER_PAGES_MAX;
   for (uint32_t i = start_slot; i < end_slot; i++) {
-    if (!p->user_page_ids[i]) continue;
-    mem_region_free_tracked_page(p->user_page_ids[i]);
-    p->user_page_ids[i] = NULL;
+    if (p->user_page_ids[i] == PAGE_ID_INVALID) continue;
+    mm_page_free(p->user_page_ids[i]);
+    p->user_page_ids[i] = PAGE_ID_INVALID;
   }
 }
 
 void proc_release_private_tracked_pages(pcb_t *p, const pcb_t *shared_owner) {
   if (!p || !shared_owner) return;
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
-    if (!p->user_page_ids[i]) continue;
+    if (p->user_page_ids[i] == PAGE_ID_INVALID) continue;
     if (p->user_page_ids[i] == shared_owner->user_page_ids[i]) continue;
-    mem_region_free_tracked_page(p->user_page_ids[i]);
-    p->user_page_ids[i] = NULL;
+    mm_page_free(p->user_page_ids[i]);
+    p->user_page_ids[i] = PAGE_ID_INVALID;
   }
 }
 
-void proc_release_tracked_pages_from_array(void *pages[USER_PAGES_MAX]) {
+void proc_release_tracked_pages_from_array(page_id_t pages[USER_PAGES_MAX]) {
   if (!pages) return;
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
-    if (!pages[i]) continue;
-    mem_region_free_tracked_page(pages[i]);
+    if (pages[i] == PAGE_ID_INVALID) continue;
+    mm_page_free(pages[i]);
   }
 }
 
 void proc_release_private_tracked_pages_from_array(
-    void *pages[USER_PAGES_MAX], void *const shared[USER_PAGES_MAX]) {
+    page_id_t pages[USER_PAGES_MAX], const page_id_t shared[USER_PAGES_MAX]) {
   if (!pages || !shared) return;
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
-    if (!pages[i]) continue;
+    if (pages[i] == PAGE_ID_INVALID) continue;
     if (pages[i] == shared[i]) continue;
-    mem_region_free_tracked_page(pages[i]);
+    mm_page_free(pages[i]);
   }
 }
 
@@ -284,22 +284,22 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp) {
 
 #if defined(__riscv)
   /* RISC-V mscratch split: kernel frame on stack_page, user_sp in TF_USER_SP */
-  sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
+  sp = (uint32_t *)((uint8_t *)mm_page_to_ptr(p->stack_page_id) + PAGE_SIZE);
   sp = arch_build_initial_frame(sp, entry);
   /* TF_USER_SP at word offset 32 (byte offset 128) */
   sp[32] = user_sp ? (uint32_t)user_sp
-                   : (uint32_t)(uintptr_t)p->stack_page + PAGE_SIZE;
+                   : (uint32_t)(uintptr_t)mm_page_to_ptr(p->stack_page_id) + PAGE_SIZE;
   p->sp = (uint32_t)(uintptr_t)sp;
-  p->kernel_sp = (uint32_t)(uintptr_t)p->stack_page + PAGE_SIZE;
+  p->kernel_sp = (uint32_t)(uintptr_t)mm_page_to_ptr(p->stack_page_id) + PAGE_SIZE;
 #elif defined(__m68k__)
-  sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
+  sp = (uint32_t *)((uint8_t *)mm_page_to_ptr(p->stack_page_id) + PAGE_SIZE);
   sp = arch_build_initial_frame(sp, entry);
   p->sp = (uint32_t)(uintptr_t)sp;
 #else
   if (user_sp)
     sp = (uint32_t *)(void *)user_sp;
   else
-    sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
+    sp = (uint32_t *)((uint8_t *)mm_page_to_ptr(p->stack_page_id) + PAGE_SIZE);
   sp = arch_build_initial_frame(sp, entry);
   p->sp = (uint32_t)(uintptr_t)sp;
 #endif

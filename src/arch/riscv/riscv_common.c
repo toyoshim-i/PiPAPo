@@ -205,8 +205,8 @@ uint32_t riscv_do_switch(uint32_t current_sp)
     /* Ensure kernel_sp is set (may be 0 for pid 0 if sched_start ran
      * before the field was initialized, or for processes that were
      * created before the mscratch split was in place). */
-    if (!next->kernel_sp && next->stack_page)
-        next->kernel_sp = (uint32_t)(uintptr_t)next->stack_page + PAGE_SIZE;
+    if (!next->kernel_sp && next->stack_page_id)
+        next->kernel_sp = (uint32_t)(uintptr_t)mm_page_to_ptr(next->stack_page_id) + PAGE_SIZE;
 
     return next->sp;
 }

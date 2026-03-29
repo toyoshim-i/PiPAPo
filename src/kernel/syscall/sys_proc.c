@@ -40,17 +40,18 @@
   (PPAP_TRACE_MODE_PPAP_SYSCALL | PPAP_TRACE_MODE_SUBSYS_CALL)
 
 static int image_segment_is_page_tracked(const proc_image_segment_t *seg,
-                                         void *const *pages,
+                                         const page_id_t *pages,
                                          uint32_t num_pages) {
   if (!seg || !seg->base) return 0;
   for (uint32_t i = 0; i < num_pages; i++) {
-    if (pages[i] == seg->base) return 1;
+    if (pages[i] != PAGE_ID_INVALID &&
+        mm_page_to_ptr(pages[i]) == seg->base) return 1;
   }
   return 0;
 }
 
 static void image_segment_release_owned(proc_image_segment_t *seg,
-                                        void *const *pages,
+                                        const page_id_t *pages,
                                         uint32_t num_pages) {
   if (!seg || !seg->base) return;
   if (!(seg->flags & PROC_IMAGE_SEG_OWNED)) {
@@ -63,7 +64,7 @@ static void image_segment_release_owned(proc_image_segment_t *seg,
 }
 
 static void image_release_owned_segments(proc_image_t *image,
-                                         void *const *pages,
+                                         const page_id_t *pages,
                                          uint32_t num_pages) {
   if (!image) return;
   image_segment_release_owned(&image->text, pages, num_pages);
@@ -493,8 +494,8 @@ static int trace_native_contains(const pcb_t *target, uint32_t addr) {
     if (addr >= base && addr < base + PAGE_SIZE) return 1;
   }
 #else
-  if (target->stack_page) {
-    uint32_t base = (uint32_t)(uintptr_t)target->stack_page;
+  if (target->stack_page_id != PAGE_ID_INVALID) {
+    uint32_t base = (uint32_t)(uintptr_t)mm_page_to_ptr(target->stack_page_id);
     if (addr >= base && addr < base + PAGE_SIZE) return 1;
   }
 #endif
@@ -1363,11 +1364,11 @@ long sys_exit(long status) {
   /* Free user pages only if we own them (vfork_parent == NULL means
    * either this isn't a vfork child, or execve already replaced them) */
   if (!current->vfork_parent) {
-    image_release_owned_segments(&current->image, current->user_pages,
+    image_release_owned_segments(&current->image, current->user_page_ids,
                                  USER_PAGES_MAX);
-    if (current->stack_page &&
-        proc_page_backed_contains(current, (uintptr_t)current->stack_page))
-      current->stack_page = NULL;
+    if (current->stack_page_id != PAGE_ID_INVALID &&
+        proc_page_backed_contains(current, (uintptr_t)mm_page_to_ptr(current->stack_page_id)))
+      current->stack_page_id = PAGE_ID_INVALID;
     proc_release_tracked_pages(current, 0, USER_PAGES_MAX);
 #if defined(__m68k__)
     if (current->user_stack_page) {
@@ -1387,8 +1388,8 @@ long sys_exit(long status) {
      * and freeing the parent's stack would corrupt its kernel stack.
      * This can happen when execve fails in a vfork child: sys_execve
      * restores the parent's stack_page into the child's pcb. */
-    if (current->stack_page == current->vfork_parent->stack_page)
-      current->stack_page = NULL;
+    if (current->stack_page_id == current->vfork_parent->stack_page_id)
+      current->stack_page_id = PAGE_ID_INVALID;
 #if defined(__m68k__)
     /* Free child's user stack copy if different from parent's */
     if (current->user_stack_page &&
@@ -1484,7 +1485,7 @@ long sys_vfork(uint32_t *frame) {
     return -(long)ENOMEM;
   }
   void *stack = stack_region.base;
-  child->stack_page = stack;
+  child->stack_page_id = mm_ptr_to_page(stack);
 
   /* 3. Share parent's user_pages with child */
   proc_copy_page_tracking(child, current);
@@ -1499,10 +1500,10 @@ long sys_vfork(uint32_t *frame) {
    *    Then build the PendSV context (SW + HW frames) at the same offset
    *    on the child's page as the parent's PSP frame.
    */
-  memcpy(stack, current->stack_page, PAGE_SIZE);
+  memcpy(stack, mm_page_to_ptr(current->stack_page_id), PAGE_SIZE);
 
   /* Calculate child's frame position at the same offset as parent's */
-  uintptr_t frame_off = (uintptr_t)frame - (uintptr_t)current->stack_page;
+  uintptr_t frame_off = (uintptr_t)frame - (uintptr_t)mm_page_to_ptr(current->stack_page_id);
   uint32_t *child_frame = (uint32_t *)((uint8_t *)stack + frame_off);
 
 #if defined(__m68k__)
@@ -1527,7 +1528,7 @@ long sys_vfork(uint32_t *frame) {
       if (vfork_copy_user_stack(parent_ustack, current->usp,
                                 &child_ustack, &child_usp) < 0) {
         proc_release_stack_page(&stack);
-        child->stack_page = NULL;
+        child->stack_page_id = PAGE_ID_INVALID;
         proc_free(child);
         return -(long)ENOMEM;
       }
@@ -1568,7 +1569,7 @@ long sys_vfork(uint32_t *frame) {
       if (vfork_copy_user_stack(parent_ustack, child_tf[32],
                                 &child_ustack, &child_usp) < 0) {
         proc_release_stack_page(&stack);
-        child->stack_page = NULL;
+        child->stack_page_id = PAGE_ID_INVALID;
         proc_free(child);
         return -(long)ENOMEM;
       }
@@ -1620,10 +1621,10 @@ long sys_vfork(uint32_t *frame) {
 
     void *child_ustack = NULL;
     uint32_t remapped_sp = 0;
-    if (vfork_copy_user_stack(current->stack_page, child_user_sp,
+    if (vfork_copy_user_stack(mm_page_to_ptr(current->stack_page_id), child_user_sp,
                               &child_ustack, &remapped_sp) < 0) {
       proc_release_stack_page(&stack);
-      child->stack_page = NULL;
+      child->stack_page_id = PAGE_ID_INVALID;
       proc_free(child);
       return -(long)ENOMEM;
     }
@@ -1631,7 +1632,7 @@ long sys_vfork(uint32_t *frame) {
 
     /* Remap a3 if it points into the parent's stack page */
     {
-      uint32_t pbase = (uint32_t)(uintptr_t)current->stack_page;
+      uint32_t pbase = (uint32_t)(uintptr_t)mm_page_to_ptr(current->stack_page_id);
       uint32_t cbase = (uint32_t)(uintptr_t)child_ustack;
       if (child_a3 >= pbase && child_a3 < pbase + PAGE_SIZE)
         child_a3 = cbase + (child_a3 - pbase);
@@ -1779,8 +1780,8 @@ long sys_waitpid(long pid, long status_ptr, long options) {
 
     /* Reap the zombie child. */
     /* Free zombie's stack page */
-    if (zombie->stack_page) {
-      proc_release_stack_page(&zombie->stack_page);
+    if (zombie->stack_page_id != PAGE_ID_INVALID) {
+      { void *zs = mm_page_to_ptr(zombie->stack_page_id); proc_release_stack_page(&zs); zombie->stack_page_id = PAGE_ID_INVALID; }
     }
 
     proc_free(zombie);
@@ -1812,8 +1813,8 @@ long sys_waitpid(long pid, long status_ptr, long options) {
  */
 long sys_execve(const char *path, const char *const *argv) {
   /* Save old pages to free after successful load */
-  void *old_stack = current->stack_page;
-  void *old_user[USER_PAGES_MAX];
+  page_id_t old_stack_id = current->stack_page_id;
+  page_id_t old_user[USER_PAGES_MAX];
   proc_image_t old_image = current->image;
   int owns_pages = (current->vfork_parent == NULL);
   proc_copy_page_tracking_to_array(current, old_user);
@@ -1822,7 +1823,7 @@ long sys_execve(const char *path, const char *const *argv) {
 #endif
 
   /* Clear pages so do_execve allocates fresh ones */
-  current->stack_page = NULL;
+  current->stack_page_id = PAGE_ID_INVALID;
   proc_clear_page_tracking(current);
   current->image = (proc_image_t){0};
 #if defined(__m68k__)
@@ -1835,7 +1836,7 @@ long sys_execve(const char *path, const char *const *argv) {
   int err = mod_exec.do_execve(current, path, argv);
   if (err < 0) {
     /* Restore old pages on failure — fds are untouched (POSIX) */
-    current->stack_page = old_stack;
+    current->stack_page_id = old_stack_id;
     proc_restore_page_tracking_from_array(current, old_user);
     current->image = old_image;
 #if defined(__m68k__)
@@ -1860,7 +1861,7 @@ long sys_execve(const char *path, const char *const *argv) {
   extern volatile void *exec_old_stack;
   exec_old_stack = old_stack;
 #else
-  if (old_stack) proc_release_stack_page(&old_stack);
+  if (old_stack_id != PAGE_ID_INVALID) { void *os = mm_page_to_ptr(old_stack_id); proc_release_stack_page(&os); }
 #endif
 
   /* Free old user pages only if we owned them */
@@ -1874,7 +1875,7 @@ long sys_execve(const char *path, const char *const *argv) {
     /* vfork child: free pages that were allocated specifically for
      * the child (e.g. user stack copy), not the shared parent pages. */
     proc_release_private_tracked_pages_from_array(old_user,
-                            current->vfork_parent->user_pages);
+                            current->vfork_parent->user_page_ids);
 #if defined(__m68k__)
     if (old_user_stack &&
         old_user_stack != current->vfork_parent->user_stack_page)

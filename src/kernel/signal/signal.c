@@ -219,7 +219,7 @@ static int signal_setup_frame(int sig, sighandler_t handler) {
 #endif
 
   /* Bounds check: don't write below the stack page */
-  uint32_t stack_base = (uint32_t)(uintptr_t)current->stack_page;
+  uint32_t stack_base = (uint32_t)(uintptr_t)mm_page_to_ptr(current->stack_page_id);
   if (new_psp < stack_base)
     return -1; /* stack overflow — cannot deliver signal */
 

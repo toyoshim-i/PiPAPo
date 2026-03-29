@@ -396,7 +396,7 @@ static char state_char(const pcb_t *p) {
 static uint32_t proc_vsz(const pcb_t *p) {
   uint32_t pages = 0;
   /* Stack page */
-  if (p->stack_page) pages++;
+  if (p->stack_page_id != PAGE_ID_INVALID) pages++;
   /* Tracked page-backed user pages */
   pages += proc_tracked_page_count(p);
   /* mmap pages */

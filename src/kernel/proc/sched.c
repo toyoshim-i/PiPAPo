@@ -242,7 +242,7 @@ void sched_start(void) {
   /*
    * Switch Thread mode from MSP to PSP using Thread 0's dedicated stack.
    */
-  uint32_t psp_top = (uint32_t)(uintptr_t)proc_table[0].stack_page + PAGE_SIZE;
+  uint32_t psp_top = (uint32_t)(uintptr_t)mm_page_to_ptr(proc_table[0].stack_page_id) + PAGE_SIZE;
   __asm__ volatile(
       "msr  psp, %0      \n" /* PSP = top of Thread 0's stack page */
       "movs r0, #2       \n" /* CONTROL.SPSEL = 1 */
@@ -283,7 +283,7 @@ void sched_start(void) {
   /* Set mscratch to pid 0's kernel stack top.  boot.S initialized it to
    * __stack_top (linker stack), but now pid 0 has its own stack_page.
    * Must be done before enabling interrupts. */
-  uint32_t ksp = (uint32_t)(uintptr_t)proc_table[0].stack_page + PAGE_SIZE;
+  uint32_t ksp = (uint32_t)(uintptr_t)mm_page_to_ptr(proc_table[0].stack_page_id) + PAGE_SIZE;
   proc_table[0].kernel_sp = ksp;
   __asm__ volatile("csrw mscratch, %0" : : "r"(ksp));
 

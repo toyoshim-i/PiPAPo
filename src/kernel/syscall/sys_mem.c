@@ -36,7 +36,7 @@ long sys_brk(long addr) {
   /* Calculate old and new page counts from the tracked page-backed base.
    * The loader records the initial page-backed user image here, and
    * sys_brk appends heap pages contiguously after it. */
-  uintptr_t page0_base = (uintptr_t)proc_page_backed_base(current);
+  uintptr_t page0_base = (uintptr_t)mm_page_to_ptr(proc_page_backed_base(current));
   uintptr_t old_top = current->brk_current;
   uintptr_t new_top = new_brk;
   uint32_t old_pages;
@@ -63,7 +63,7 @@ long sys_brk(long addr) {
       return (long)(current->brk_current); /* unchanged = failure */
     }
     memset(page_region.base, 0, PAGE_SIZE);
-    proc_track_page(current, i, page_region.base);
+    proc_track_page(current, i, mm_ptr_to_page(page_region.base));
   }
 
   /* Shrink: free excess pages */

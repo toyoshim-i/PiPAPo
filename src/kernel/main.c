@@ -84,7 +84,7 @@ void kmain(void) {
     proc_image_segment_t stack_region;
     if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
                          PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) == 0) {
-      proc_table[0].stack_page = stack_region.base;
+      proc_table[0].stack_page_id = mm_ptr_to_page(stack_region.base);
       klogf("MM: thread0 stack at %x\n", (uint32_t)(uintptr_t)stack_region.base);
     }
   }
@@ -131,12 +131,12 @@ void kmain(void) {
     proc_image_segment_t stack_region;
     if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
                          PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) == 0)
-      proc_table[0].stack_page = stack_region.base;
+      proc_table[0].stack_page_id = mm_ptr_to_page(stack_region.base);
     else
-      proc_table[0].stack_page = NULL;
+      proc_table[0].stack_page_id = PAGE_ID_INVALID;
   }
 #endif
-  if (!proc_table[0].stack_page) {
+  if (proc_table[0].stack_page_id == PAGE_ID_INVALID) {
     klog("PANIC: no page for thread 0 stack\n");
     for (;;) arch_wfi();
   }

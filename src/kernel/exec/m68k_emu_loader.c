@@ -127,7 +127,7 @@ static int m68k_emu_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     mem_region_free(&data_region);
     return -(int)ENOMEM;
   }
-  p->stack_page = stack_region.base;
+  p->stack_page_id = mm_ptr_to_page(stack_region.base);
   p->image.stack = stack_region;
 
   /* ── 3. Initialize m68k emulator ───────────────────────────────────── */

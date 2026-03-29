@@ -442,7 +442,7 @@ static void brk_integration_test(void)
     /* Set up a fake data page for proc_table[0] so sys_brk works.
      * In real use, do_execve sets brk_base/brk_current. */
     void *fake_page = page_alloc();
-    current->user_pages[0] = fake_page;
+    current->user_page_ids[0] = mm_ptr_to_page(fake_page);
     uint32_t base = (uint32_t)(uintptr_t)fake_page + 256;  /* pretend 256B used */
     current->brk_base    = base;
     current->brk_current = base;
@@ -469,7 +469,7 @@ static void brk_integration_test(void)
     current->brk_base = 0;
     current->brk_current = 0;
     page_free(fake_page);
-    current->user_pages[0] = NULL;
+    current->user_page_ids[0] = PAGE_ID_INVALID;
 
     /* Summary */
     klogf("=== brk results: %u passed, %u failed ===\n\n",
@@ -1655,8 +1655,8 @@ static void signal_stack_overflow_test(void)
     if (!ok) return;
 
     /* Give it a stack page */
-    p->stack_page = page_alloc();
-    ok = (p->stack_page != NULL);
+    p->stack_page_id = mm_page_alloc();
+    ok = (p->stack_page_id != PAGE_ID_INVALID);
     test_report("alloc stack page", ok);
     if (!ok) {
         proc_free(p);
@@ -1667,7 +1667,7 @@ static void signal_stack_overflow_test(void)
      * signal_setup_frame checks new_psp < stack_base.
      * new_psp = psp - 32, so overflow occurs when psp < stack_base + 32.
      * We test the condition directly since signal_setup_frame is static. */
-    uint32_t stack_base = (uint32_t)(uintptr_t)p->stack_page;
+    uint32_t stack_base = (uint32_t)(uintptr_t)mm_page_to_ptr(p->stack_page_id);
     uint32_t psp_at_limit = stack_base + 32;  /* new_psp = stack_base: OK */
     uint32_t psp_overflow = stack_base + 31;  /* new_psp = stack_base - 1: overflow */
 
@@ -1678,8 +1678,8 @@ static void signal_stack_overflow_test(void)
     test_report("frame below stack base is overflow", new_psp_bad < stack_base);
 
     /* Clean up */
-    page_free(p->stack_page);
-    p->stack_page = NULL;
+    mm_page_free(p->stack_page_id);
+    p->stack_page_id = PAGE_ID_INVALID;
     proc_free(p);
 
     klogf("Phase 10 signal stack: %u passed, %u failed\n",

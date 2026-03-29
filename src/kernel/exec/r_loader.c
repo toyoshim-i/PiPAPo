@@ -88,7 +88,7 @@ static int r_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
                            PROC_IMAGE_SEG_OWNED) < 0) {
     return -(int)ENOMEM;
   }
-  p->stack_page = stack_region.base;
+  p->stack_page_id = mm_ptr_to_page(stack_region.base);
   p->image.stack = stack_region;
 
 #if !defined(__m68k__) && defined(PPAP_ENABLE_ECPU_M68K)
@@ -97,7 +97,7 @@ static int r_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   uint32_t min_pages = (X68K_PMB_SIZE + file_size + PAGE_SIZE - 1u) / PAGE_SIZE;
   if (min_pages > H68K_EMU_MEM_PAGES_MAX) {
     mem_region_free(&stack_region);
-    p->stack_page = NULL;
+    p->stack_page_id = PAGE_ID_INVALID;
     p->image.stack = (proc_image_segment_t){0};
     return -(int)ENOMEM;
   }
@@ -107,15 +107,15 @@ static int r_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
                                                     min_total_pages);
   if (total_pages < 0) {
     mem_region_free(&stack_region);
-    p->stack_page = NULL;
+    p->stack_page_id = PAGE_ID_INVALID;
     p->image.stack = (proc_image_segment_t){0};
     return total_pages;
   }
 
-  if (proc_track_page_range(p, 0, image_region.base, image_region.size) < 0) {
+  if (proc_track_page_range(p, 0, mm_ptr_to_page(image_region.base), image_region.size) < 0) {
     mem_region_free(&image_region);
     mem_region_free(&stack_region);
-    p->stack_page = NULL;
+    p->stack_page_id = PAGE_ID_INVALID;
     p->image.stack = (proc_image_segment_t){0};
     return -(int)ENOMEM;
   }
@@ -180,22 +180,22 @@ static int r_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
   if (min_pages > USER_PAGES_MAX) {
     mem_region_free(&stack_region);
-    p->stack_page = NULL;
+    p->stack_page_id = PAGE_ID_INVALID;
     p->image.stack = (proc_image_segment_t){0};
     return -(int)ENOMEM;
   }
   int n_pages = r68k_alloc_largest_image_region(&image_region, min_pages);
   if (n_pages < 0) {
     mem_region_free(&stack_region);
-    p->stack_page = NULL;
+    p->stack_page_id = PAGE_ID_INVALID;
     p->image.stack = (proc_image_segment_t){0};
     return n_pages;
   }
 
-  if (proc_track_page_range(p, 0, image_region.base, image_region.size) < 0) {
+  if (proc_track_page_range(p, 0, mm_ptr_to_page(image_region.base), image_region.size) < 0) {
     mem_region_free(&image_region);
     mem_region_free(&stack_region);
-    p->stack_page = NULL;
+    p->stack_page_id = PAGE_ID_INVALID;
     p->image.stack = (proc_image_segment_t){0};
     return -(int)ENOMEM;
   }

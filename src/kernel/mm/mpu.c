@@ -253,7 +253,7 @@ void mpu_init(void) {
 void mpu_switch(pcb_t *next) {
   if (!mpu_present) return;
 
-  if (!next->stack_page) {
+  if (!next->stack_page_id) {
     /* No stack page allocated yet — disable region 2 */
     MPU_RNR = 2u;
 #if __ARM_ARCH >= 8
@@ -265,7 +265,7 @@ void mpu_switch(pcb_t *next) {
   }
 
   /* Reprogram region 2 for the incoming process's 4 KB stack page */
-  uint32_t base = (uint32_t)(uintptr_t)next->stack_page;
+  uint32_t base = (uint32_t)(uintptr_t)mm_page_to_ptr(next->stack_page_id);
 #if __ARM_ARCH >= 8
   mpu_set_region(
       2u, base | RBAR_SH(SH_NONE) | RBAR_AP(AP8_RW_ALL) | RBAR_XN,

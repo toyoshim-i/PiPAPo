@@ -484,5 +484,9 @@ page_id_t mm_ptr_to_page(void *ptr) {
   if (addr < pb) return PAGE_ID_INVALID;
   page_id_t id = (page_id_t)((addr - pb) / PAGE_SIZE);
   if (id >= page_count) return PAGE_ID_INVALID;
+  /* Ensure page_linear is populated (may have been allocated via
+   * old page_alloc() API, not mm_page_alloc). */
+  if (page_linear[id] == 0)
+    page_linear[id] = (uint32_t)pb + (uint32_t)id * PAGE_SIZE;
   return id;
 }
