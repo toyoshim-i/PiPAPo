@@ -31,7 +31,7 @@ extern int uart_rx_avail(void);
 void target_early_init(void) {
   uart_init();
   klog("PiPAPo booting... [qemu_rv32]\n");
-  klogf("System clock: %lu MHz\n", PPAP_SYS_HZ / 1000000u);
+  klogf("System clock: %lu MHz\n", (unsigned long)(PPAP_SYS_HZ / 1000000u));
 }
 
 void target_late_init(void) {
@@ -54,9 +54,9 @@ void target_post_mount(void) {
         rc = vfs_mount("/mnt/ufs", &ufs_ops, MNT_RDONLY, bd);
         if (rc == 0)
           klogf("VFS: UFS mounted at /mnt/ufs (%lu KB)\n",
-                ufsimg_size / 1024);
+                (unsigned long)(ufsimg_size / 1024));
         else
-          klogf("VFS: UFS mount failed (%lu)\n", (uint32_t)(-rc));
+          klogf("VFS: UFS mount failed (%lu)\n", (unsigned long)(uint32_t)(-rc));
       }
     }
   }

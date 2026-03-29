@@ -226,8 +226,9 @@ int target_mount_rootfs(void) {
   uint32_t bs_shift = 0;
   for (uint32_t bs = block_size; bs > 1u; bs >>= 1) bs_shift++;
   uint32_t size = block_count << bs_shift;
-  klogf("x68k: ramdisk at %lx, %lu bytes (%lu blocks x %lu)\n", addr, size,
-        block_count, block_size);
+  klogf("x68k: ramdisk at %lx, %lu bytes (%lu blocks x %lu)\n",
+        (unsigned long)addr, (unsigned long)size,
+        (unsigned long)block_count, (unsigned long)block_size);
 
   /* Reserve the page-pool portion of the rootfs image so the allocator
    * never hands it out and overwrites the live UFS data. */

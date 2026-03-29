@@ -201,7 +201,7 @@ void kbd_init(void) {
     return;
   }
   kbd_detected = 1;
-  klogf("KBD: STM32 firmware version %u\n", (uint32_t)ver);
+  klogf("KBD: STM32 firmware version %u\n", (unsigned)ver);
 
   /* Drain any stale FIFO entries */
   for (int i = 0; i < 16; i++) {

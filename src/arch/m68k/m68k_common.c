@@ -134,13 +134,13 @@ int m68k_crash_handler(int fault_type, uint32_t *regs) {
 
   /* Print crash report (klogf supports: %s %u %x %% only) */
   klogf("\n*** %s ***", fault_name(fault_type));
-  if (p) klogf("  Process %u (%s)", (uint32_t)p->pid, p->comm);
-  klogf("  PC=%lx  SR=%lx", pc, (uint32_t)sr);
-  if (is_group0) klogf("  Fault addr=%lx  FC=%lx", fault_addr, (uint32_t)exc[0]);
-  klogf("  d0=%lx d1=%lx d2=%lx d3=%lx", regs[0], regs[1], regs[2], regs[3]);
-  klogf("  d4=%lx d5=%lx d6=%lx d7=%lx", regs[4], regs[5], regs[6], regs[7]);
-  klogf("  a0=%lx a1=%lx a2=%lx a3=%lx", regs[8], regs[9], regs[10], regs[11]);
-  klogf("  a4=%lx a5=%lx a6=%lx", regs[12], regs[13], regs[14]);
+  if (p) klogf("  Process %u (%s)", (unsigned)p->pid, p->comm);
+  klogf("  PC=%lx  SR=%lx", (unsigned long)pc, (unsigned long)(uint32_t)sr);
+  if (is_group0) klogf("  Fault addr=%lx  FC=%lx", (unsigned long)fault_addr, (unsigned long)(uint32_t)exc[0]);
+  klogf("  d0=%lx d1=%lx d2=%lx d3=%lx", (unsigned long)regs[0], (unsigned long)regs[1], (unsigned long)regs[2], (unsigned long)regs[3]);
+  klogf("  d4=%lx d5=%lx d6=%lx d7=%lx", (unsigned long)regs[4], (unsigned long)regs[5], (unsigned long)regs[6], (unsigned long)regs[7]);
+  klogf("  a0=%lx a1=%lx a2=%lx a3=%lx", (unsigned long)regs[8], (unsigned long)regs[9], (unsigned long)regs[10], (unsigned long)regs[11]);
+  klogf("  a4=%lx a5=%lx a6=%lx", (unsigned long)regs[12], (unsigned long)regs[13], (unsigned long)regs[14]);
 
   /* Kernel fault → unrecoverable */
   if (!p || p->pid == 0) {
@@ -165,13 +165,13 @@ int m68k_crash_handler(int fault_type, uint32_t *regs) {
   sighandler_t handler = p->sig_handlers[sig];
   if (handler != (sighandler_t)0 /* SIG_DFL */ &&
       handler != (sighandler_t)1 /* SIG_IGN */) {
-    klogf("  Signal %lu posted (handler at %lx)", (uint32_t)sig,
-          (uint32_t)(uintptr_t)handler);
+    klogf("  Signal %lu posted (handler at %lx)", (unsigned long)(uint32_t)sig,
+          (unsigned long)(uintptr_t)handler);
     p->sig_pending |= (1u << sig);
     return 1; /* resume — signal_check will deliver the handler */
   }
 
-  klogf("  Killed (exit status %lu)", (uint32_t)(128 + sig));
+  klogf("  Killed (exit status %lu)", (unsigned long)(uint32_t)(128 + sig));
   sys_exit(128 + sig);
   return 1;
 }

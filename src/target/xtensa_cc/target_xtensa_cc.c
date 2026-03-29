@@ -103,7 +103,7 @@ void target_early_init(void)
     __asm__ volatile("wsr %0, intenable; rsync" :: "r"(0));
 
     klog("PiPAPo booting... [xtensa_cc]\n");
-    klogf("System clock: %lu MHz\n", PPAP_SYS_HZ / 1000000u);
+    klogf("System clock: %lu MHz\n", (unsigned long)(PPAP_SYS_HZ / 1000000u));
 }
 
 void target_late_init(void)
@@ -147,7 +147,7 @@ void target_late_init(void)
             __asm__ volatile("rsr %0, intenable" : "=a"(intenable));
             if (intenable != XTENSA_TIMER0_INTMASK) {
                 klogf("XT-3.4: normalize INTENABLE %lx -> %lx\n",
-                      (uint32_t)intenable, (uint32_t)XTENSA_TIMER0_INTMASK);
+                      (unsigned long)intenable, (unsigned long)XTENSA_TIMER0_INTMASK);
                 __asm__ volatile("wsr %0, intenable; rsync" ::
                                  "a"(XTENSA_TIMER0_INTMASK));
             }

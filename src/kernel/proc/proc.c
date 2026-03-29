@@ -77,7 +77,7 @@ void proc_init(void) {
   klogf(
       "PROC: process table  slots=%u"
       "  (pid 0 = kernel, pids 1-%u available)\n",
-      (uint32_t)PROC_MAX, (uint32_t)(PROC_MAX - 1u));
+      (unsigned)PROC_MAX, (unsigned)(PROC_MAX - 1u));
 
 #ifdef PPAP_TESTS
   /* Self-test: allocate a slot, verify it looks sane, then free it. */

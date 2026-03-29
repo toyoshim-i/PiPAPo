@@ -198,7 +198,7 @@ void target_late_init(void) {
     else if (rc == -ENODEV)
         klog("SD: no card detected (skipping)\n");
     else
-        klogf("SD: init failed (err=%u)\n", (uint32_t)(-(int)rc));
+        klogf("SD: init failed (err=%u)\n", (unsigned)(-(int)rc));
 #else
   klog("SD: disabled (SPI0 hang under investigation)\n");
 #endif

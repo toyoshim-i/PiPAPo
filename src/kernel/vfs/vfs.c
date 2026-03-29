@@ -47,7 +47,7 @@ void vfs_init(void) {
   mod_core.kmem_pool_init(&vnode_pool, vnode_storage, sizeof(vnode_t), VFS_VNODE_MAX);
 
   mod_core.klogf("VFS: initialised (%u vnodes, %u mount slots)\n",
-        (uint32_t)VFS_VNODE_MAX, (uint32_t)VFS_MOUNT_MAX);
+        (unsigned)VFS_VNODE_MAX, (unsigned)VFS_MOUNT_MAX);
 }
 
 /* ── vfs_alloc_vnode / vfs_ref_vnode / vfs_rel_vnode ─────────────────────────────────────
