@@ -25,7 +25,7 @@
 #include "fs/ufs.h"
 #endif
 #include "fs/fstab.h"
-#include "errno.h"
+#include "common/errno.h"
 
 /* ── Test helpers ──────────────────────────────────────────────────────────── */
 
@@ -442,7 +442,7 @@ static void brk_integration_test(void)
     /* Set up a fake data page for proc_table[0] so sys_brk works.
      * In real use, do_execve sets brk_base/brk_current. */
     void *fake_page = page_alloc();
-    current->user_page_ids[0] = mm_ptr_to_page(fake_page);
+    current->user_pages[0] = fake_page;
     uint32_t base = (uint32_t)(uintptr_t)fake_page + 256;  /* pretend 256B used */
     current->brk_base    = base;
     current->brk_current = base;
@@ -469,7 +469,7 @@ static void brk_integration_test(void)
     current->brk_base = 0;
     current->brk_current = 0;
     page_free(fake_page);
-    current->user_page_ids[0] = PAGE_ID_INVALID;
+    current->user_pages[0] = NULL;
 
     /* Summary */
     klogf("=== brk results: %u passed, %u failed ===\n\n",

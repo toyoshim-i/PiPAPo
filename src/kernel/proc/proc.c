@@ -54,6 +54,7 @@ void proc_init(void) {
   for (uint32_t i = 0u; i < PROC_MAX; i++) {
     __builtin_memset(&proc_table[i], 0, sizeof(pcb_t));
     proc_table[i].state = PROC_FREE;
+    proc_table[i].stack_page_id = PAGE_ID_INVALID;
   }
 
   /* Pre-initialise slot 0 as the initial kernel thread.
@@ -105,6 +106,7 @@ pcb_t *proc_alloc(void) {
     if (proc_table[i].state == PROC_FREE) {
       __builtin_memset(&proc_table[i], 0, sizeof(pcb_t));
       proc_table[i].pid = next_pid++;
+      proc_table[i].stack_page_id = PAGE_ID_INVALID;
       proc_table[i].umask_val = DEFAULT_UMASK;
       proc_table[i].running_on_core = -1;
       proc_table[i].start_time = sched_get_ticks();
@@ -274,27 +276,30 @@ void proc_release_private_tracked_pages_from_array(
 void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp) {
   uint32_t *sp;
 
+{
+  uint8_t *stack_base = (uint8_t *)mm_page_to_ptr(p->stack_page_id);
 #if defined(__riscv)
   /* RISC-V mscratch split: kernel frame on stack_page, user_sp in TF_USER_SP */
-  sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
+  sp = (uint32_t *)(stack_base + PAGE_SIZE);
   sp = arch_build_initial_frame(sp, entry);
   /* TF_USER_SP at word offset 32 (byte offset 128) */
   sp[32] = user_sp ? (uint32_t)user_sp
-                   : (uint32_t)(uintptr_t)p->stack_page + PAGE_SIZE;
+                   : (uint32_t)(uintptr_t)stack_base + PAGE_SIZE;
   p->sp = (uint32_t)(uintptr_t)sp;
-  p->kernel_sp = (uint32_t)(uintptr_t)p->stack_page + PAGE_SIZE;
+  p->kernel_sp = (uint32_t)(uintptr_t)stack_base + PAGE_SIZE;
 #elif defined(__m68k__)
-  sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
+  sp = (uint32_t *)(stack_base + PAGE_SIZE);
   sp = arch_build_initial_frame(sp, entry);
   p->sp = (uint32_t)(uintptr_t)sp;
 #else
   if (user_sp)
     sp = (uint32_t *)(void *)user_sp;
   else
-    sp = (uint32_t *)((uint8_t *)p->stack_page + PAGE_SIZE);
+    sp = (uint32_t *)(stack_base + PAGE_SIZE);
   sp = arch_build_initial_frame(sp, entry);
   p->sp = (uint32_t)(uintptr_t)sp;
 #endif
+  }
 
   p->ticks_remaining = PROC_DEFAULT_TICKS;
 }

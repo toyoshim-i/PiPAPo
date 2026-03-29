@@ -106,7 +106,8 @@ SVC_Handler:
     ldr   r0, =current_core
     adds  r0, r0, r6
     ldr   r0, [r0]                    @ r0 = current PCB
-    ldr   r1, [r0, #PCB_STATE_OFFSET] @ r1 = current->state
+    movs  r1, #PCB_STATE_OFFSET
+    ldrb  r1, [r0, r1]               @ r1 = current->state (byte-sized enum)
     cmp   r1, #PROC_RUNNABLE
     bne   .Lcheck_restart
 

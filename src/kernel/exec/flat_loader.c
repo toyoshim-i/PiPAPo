@@ -86,7 +86,7 @@ static int flat_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   /* Zero remaining space (stack area) */
   memset((uint8_t *)page + file_size, 0, PAGE_SIZE - file_size);
 
-  if (proc_track_page(p, 0, mm_ptr_to_page(page)) < 0) {
+  if (proc_track_page(p, 0, page) < 0) {
     mem_region_free(&page_region);
     return -ENOMEM;
   }

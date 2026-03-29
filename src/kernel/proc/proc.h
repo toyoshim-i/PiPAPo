@@ -22,6 +22,7 @@
 
 #include "../common/spinlock.h" /* core_id() — needed by #define current */
 #include "../mm/mem_layout.h"
+#include "../mm/page.h"        /* page_id_t, PAGE_ID_INVALID */
 #include "common/ptrace.h"
 #include "config.h"
 
@@ -125,7 +126,7 @@ typedef struct pcb {
   proc_state_t state;
 
   /* ── Memory ─────────────────────────────────────────────────────────── */
-  void *stack_page; /* 4 KB stack backing page for this process */
+  page_id_t stack_page_id; /* page index for 4 KB stack backing page */
   void *user_pages[USER_PAGES_MAX]; /* page-backed user memory tracking */
   proc_image_t image; /* explicit process image layout / memory classes */
 #if defined(__m68k__)
@@ -325,7 +326,7 @@ void proc_release_private_tracked_pages_from_array(
  * Set up an initial kernel stack frame for a new process so that
  * PendSV_Handler can restore it on the first context switch.
  *
- * Pre-condition: p->stack_page must already point to a 4 KB stack backing
+ * Pre-condition: p->stack_page_id must already reference a 4 KB stack backing
  * page. After this call p->sp is set and the process is ready to be made
  * PROC_RUNNABLE.
  *

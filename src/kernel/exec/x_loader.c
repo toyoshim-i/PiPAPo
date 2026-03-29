@@ -217,7 +217,7 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     return total_pages;
   }
 
-  if (proc_track_page_range(p, 0, mm_ptr_to_page(image_region.base), image_region.size) < 0) {
+  if (proc_track_page_range(p, 0, image_region.base, image_region.size) < 0) {
     mem_region_free(&image_region);
     mem_region_free(&stack_region);
     p->stack_page_id = PAGE_ID_INVALID;
@@ -317,7 +317,7 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     return n_pages;
   }
 
-  if (proc_track_page_range(p, 0, mm_ptr_to_page(image_region.base), image_region.size) < 0) {
+  if (proc_track_page_range(p, 0, image_region.base, image_region.size) < 0) {
     mem_region_free(&image_region);
     mem_region_free(&stack_region);
     p->stack_page_id = PAGE_ID_INVALID;

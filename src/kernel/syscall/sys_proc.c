@@ -40,18 +40,17 @@
   (PPAP_TRACE_MODE_PPAP_SYSCALL | PPAP_TRACE_MODE_SUBSYS_CALL)
 
 static int image_segment_is_page_tracked(const proc_image_segment_t *seg,
-                                         const page_id_t *pages,
+                                         void *const *pages,
                                          uint32_t num_pages) {
   if (!seg || !seg->base) return 0;
   for (uint32_t i = 0; i < num_pages; i++) {
-    if (pages[i] != PAGE_ID_INVALID &&
-        mm_page_to_ptr(pages[i]) == seg->base) return 1;
+    if (pages[i] == seg->base) return 1;
   }
   return 0;
 }
 
 static void image_segment_release_owned(proc_image_segment_t *seg,
-                                        const page_id_t *pages,
+                                        void *const *pages,
                                         uint32_t num_pages) {
   if (!seg || !seg->base) return;
   if (!(seg->flags & PROC_IMAGE_SEG_OWNED)) {
@@ -64,7 +63,7 @@ static void image_segment_release_owned(proc_image_segment_t *seg,
 }
 
 static void image_release_owned_segments(proc_image_t *image,
-                                         const page_id_t *pages,
+                                         void *const *pages,
                                          uint32_t num_pages) {
   if (!image) return;
   image_segment_release_owned(&image->text, pages, num_pages);
@@ -1364,7 +1363,7 @@ long sys_exit(long status) {
   /* Free user pages only if we own them (vfork_parent == NULL means
    * either this isn't a vfork child, or execve already replaced them) */
   if (!current->vfork_parent) {
-    image_release_owned_segments(&current->image, current->user_page_ids,
+    image_release_owned_segments(&current->image, current->user_pages,
                                  USER_PAGES_MAX);
     if (current->stack_page_id != PAGE_ID_INVALID &&
         proc_page_backed_contains(current, (uintptr_t)mm_page_to_ptr(current->stack_page_id)))
@@ -1561,7 +1560,7 @@ long sys_vfork(uint32_t *frame) {
   /* RISC-V mscratch split: the child must have its own user stack copy. */
   {
     uint32_t ustack_slot = USER_PAGES_MAX - 1;
-    void *parent_ustack = current->user_page_ids[ustack_slot];
+    void *parent_ustack = current->user_pages[ustack_slot];
     if (parent_ustack) {
       void *child_ustack = NULL;
       uint32_t *child_tf = child_frame - 8; /* trap frame base */
@@ -1573,7 +1572,7 @@ long sys_vfork(uint32_t *frame) {
         proc_free(child);
         return -(long)ENOMEM;
       }
-      child->user_page_ids[ustack_slot] = child_ustack;
+      child->user_pages[ustack_slot] = child_ustack;
       child_tf[32] = child_usp; /* patch TF_USER_SP */
     }
   }
@@ -1814,7 +1813,7 @@ long sys_waitpid(long pid, long status_ptr, long options) {
 long sys_execve(const char *path, const char *const *argv) {
   /* Save old pages to free after successful load */
   page_id_t old_stack_id = current->stack_page_id;
-  page_id_t old_user[USER_PAGES_MAX];
+  void *old_user[USER_PAGES_MAX];
   proc_image_t old_image = current->image;
   int owns_pages = (current->vfork_parent == NULL);
   proc_copy_page_tracking_to_array(current, old_user);
@@ -1859,7 +1858,7 @@ long sys_execve(const char *path, const char *const *argv) {
      * immediately. */
 #if defined(__m68k__) || defined(__riscv)
   extern volatile void *exec_old_stack;
-  exec_old_stack = old_stack;
+  exec_old_stack = (old_stack_id != PAGE_ID_INVALID) ? mm_page_to_ptr(old_stack_id) : NULL;
 #else
   if (old_stack_id != PAGE_ID_INVALID) { void *os = mm_page_to_ptr(old_stack_id); proc_release_stack_page(&os); }
 #endif
@@ -1875,7 +1874,7 @@ long sys_execve(const char *path, const char *const *argv) {
     /* vfork child: free pages that were allocated specifically for
      * the child (e.g. user stack copy), not the shared parent pages. */
     proc_release_private_tracked_pages_from_array(old_user,
-                            current->vfork_parent->user_page_ids);
+                            current->vfork_parent->user_pages);
 #if defined(__m68k__)
     if (old_user_stack &&
         old_user_stack != current->vfork_parent->user_stack_page)

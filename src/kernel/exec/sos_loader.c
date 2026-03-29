@@ -193,7 +193,7 @@ static int sos_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     return -(int)ENOMEM;
   }
 
-  if (proc_track_page_range(p, 0, mm_ptr_to_page(data_region.base), data_region.size) < 0) {
+  if (proc_track_page_range(p, 0, data_region.base, data_region.size) < 0) {
     mem_region_free(&data_region);
     return -(int)ENOMEM;
   }
