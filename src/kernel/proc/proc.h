@@ -22,6 +22,7 @@
 
 #include "../common/spinlock.h" /* core_id() — needed by #define current */
 #include "../mm/mem_layout.h"
+#include "../mm/page.h"         /* page_id_t */
 #include "common/ptrace.h"
 #include "config.h"
 
@@ -125,8 +126,8 @@ typedef struct pcb {
   proc_state_t state;
 
   /* ── Memory ─────────────────────────────────────────────────────────── */
-  void *stack_page; /* 4 KB stack backing page for this process */
-  void *user_pages[USER_PAGES_MAX]; /* page-backed user memory tracking */
+  page_id_t stack_page_id; /* 4 KB stack backing page (page index) */
+  page_id_t user_page_ids[USER_PAGES_MAX]; /* page-backed user memory */
   proc_image_t image; /* explicit process image layout / memory classes */
 #if defined(__m68k__)
   void *user_stack_page; /* m68k: separate user stack page (USP target) */
@@ -262,26 +263,28 @@ pcb_t *proc_alloc(void);
 void proc_free(pcb_t *p);
 
 /*
- * Track page-backed user memory in user_pages[].
+ * Track page-backed user memory in user_page_ids[].
+ * base is a page_id_t for the first page; consecutive pages are
+ * assumed to be base+1, base+2, etc.
  * Returns the number of tracked pages, or -ENOMEM if the range would
  * exceed USER_PAGES_MAX.
  */
-int proc_track_page_range(pcb_t *p, uint32_t start_slot, void *base,
+int proc_track_page_range(pcb_t *p, uint32_t start_slot, page_id_t base_id,
                           uint32_t size);
 
 /*
- * Track one page-backed user page in user_pages[].
+ * Track one page in user_page_ids[].
  * Returns 0 on success, or -ENOMEM if the slot is out of range.
  */
-int proc_track_page(pcb_t *p, uint32_t slot, void *page);
+int proc_track_page(pcb_t *p, uint32_t slot, page_id_t id);
 
-/* Return the first tracked page-backed user page, or NULL if none exist. */
-void *proc_page_backed_base(const pcb_t *p);
+/* Return the first tracked page id, or PAGE_ID_INVALID if none exist. */
+page_id_t proc_page_backed_base(const pcb_t *p);
 
-/* Return the last tracked page-backed user page, or NULL if none exist. */
-void *proc_last_page_backed_base(const pcb_t *p);
+/* Return the last tracked page id, or PAGE_ID_INVALID if none exist. */
+page_id_t proc_last_page_backed_base(const pcb_t *p);
 
-/* Count contiguous tracked page-backed pages from the first tracked slot. */
+/* Count contiguous tracked pages from the first tracked slot. */
 uint32_t proc_page_backed_count(const pcb_t *p);
 
 /* Return the slot index of the first tracked page, or USER_PAGES_MAX. */

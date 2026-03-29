@@ -124,32 +124,32 @@ void proc_free(pcb_t *p) {
   spin_unlock_irqrestore(SPIN_PROC, saved);
 }
 
-int proc_track_page_range(pcb_t *p, uint32_t start_slot, void *base,
+int proc_track_page_range(pcb_t *p, uint32_t start_slot, page_id_t base_id,
                           uint32_t size) {
   uint32_t n_pages;
 
-  if (!p || !base || size == 0) return 0;
+  if (!p || base_id == PAGE_ID_INVALID || size == 0) return 0;
 
   n_pages = (size + PAGE_SIZE - 1u) / PAGE_SIZE;
   if (start_slot > USER_PAGES_MAX || n_pages > USER_PAGES_MAX - start_slot)
     return -(int)ENOMEM;
 
   for (uint32_t i = 0; i < n_pages; i++)
-    p->user_pages[start_slot + i] = (uint8_t *)base + i * PAGE_SIZE;
+    p->user_page_ids[start_slot + i] = (page_id_t)(base_id + i);
   return (int)n_pages;
 }
 
-int proc_track_page(pcb_t *p, uint32_t slot, void *page) {
-  if (!p || !page) return 0;
+int proc_track_page(pcb_t *p, uint32_t slot, page_id_t id) {
+  if (!p || id == PAGE_ID_INVALID) return 0;
   if (slot >= USER_PAGES_MAX) return -(int)ENOMEM;
-  p->user_pages[slot] = page;
+  p->user_page_ids[slot] = id;
   return 0;
 }
 
 uint32_t proc_first_page_backed_slot(const pcb_t *p) {
   if (!p) return USER_PAGES_MAX;
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
-    if (p->user_pages[i]) return i;
+    if (p->user_page_ids[i] != PAGE_ID_INVALID) return i;
   }
   return USER_PAGES_MAX;
 }
@@ -157,21 +157,21 @@ uint32_t proc_first_page_backed_slot(const pcb_t *p) {
 static uint32_t proc_last_page_backed_slot(const pcb_t *p) {
   if (!p) return USER_PAGES_MAX;
   for (uint32_t i = USER_PAGES_MAX; i > 0; i--) {
-    if (p->user_pages[i - 1]) return i - 1;
+    if (p->user_page_ids[i - 1] != PAGE_ID_INVALID) return i - 1;
   }
   return USER_PAGES_MAX;
 }
 
-void *proc_page_backed_base(const pcb_t *p) {
+page_id_t proc_page_backed_base(const pcb_t *p) {
   uint32_t slot = proc_first_page_backed_slot(p);
-  if (slot >= USER_PAGES_MAX) return NULL;
-  return p->user_pages[slot];
+  if (slot >= USER_PAGES_MAX) return PAGE_ID_INVALID;
+  return p->user_page_ids[slot];
 }
 
-void *proc_last_page_backed_base(const pcb_t *p) {
+page_id_t proc_last_page_backed_base(const pcb_t *p) {
   uint32_t slot = proc_last_page_backed_slot(p);
-  if (slot >= USER_PAGES_MAX) return NULL;
-  return p->user_pages[slot];
+  if (slot >= USER_PAGES_MAX) return PAGE_ID_INVALID;
+  return p->user_page_ids[slot];
 }
 
 uint32_t proc_page_backed_count(const pcb_t *p) {
@@ -180,7 +180,8 @@ uint32_t proc_page_backed_count(const pcb_t *p) {
 
   slot = proc_first_page_backed_slot(p);
   if (slot >= USER_PAGES_MAX) return 0;
-  while (slot < USER_PAGES_MAX && p->user_pages[slot]) {
+  while (slot < USER_PAGES_MAX &&
+         p->user_page_ids[slot] != PAGE_ID_INVALID) {
     count++;
     slot++;
   }
@@ -192,43 +193,50 @@ uint32_t proc_tracked_page_count(const pcb_t *p) {
 
   if (!p) return 0;
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
-    if (p->user_pages[i]) count++;
+    if (p->user_page_ids[i] != PAGE_ID_INVALID) count++;
   }
   return count;
 }
 
 int proc_page_backed_contains(const pcb_t *p, uintptr_t addr) {
   if (!p) return 0;
+#if defined(__ia16__)
+  /* On i16, user pages are beyond near-pointer range; addr comparisons
+   * don't work with 16-bit uintptr_t.  Use page_id-based lookup. */
+  (void)addr;
+  return 0;  /* TODO: implement via page_id range check */
+#else
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
     uintptr_t base;
-    if (!p->user_pages[i]) continue;
-    base = (uintptr_t)p->user_pages[i];
+    if (p->user_page_ids[i] == PAGE_ID_INVALID) continue;
+    base = (uintptr_t)mm_page_to_ptr(p->user_page_ids[i]);
     if (addr >= base && addr < base + PAGE_SIZE) return 1;
   }
   return 0;
+#endif
 }
 
 void proc_clear_page_tracking(pcb_t *p) {
   if (!p) return;
-  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) p->user_pages[i] = NULL;
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) p->user_page_ids[i] = NULL;
 }
 
 void proc_copy_page_tracking(pcb_t *dst, const pcb_t *src) {
   if (!dst || !src) return;
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++)
-    dst->user_pages[i] = src->user_pages[i];
+    dst->user_page_ids[i] = src->user_page_ids[i];
 }
 
 void proc_copy_page_tracking_to_array(const pcb_t *src,
                                       void *dst[USER_PAGES_MAX]) {
   if (!src || !dst) return;
-  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) dst[i] = src->user_pages[i];
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) dst[i] = src->user_page_ids[i];
 }
 
 void proc_restore_page_tracking_from_array(pcb_t *dst,
                                            void *const src[USER_PAGES_MAX]) {
   if (!dst || !src) return;
-  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) dst->user_pages[i] = src[i];
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) dst->user_page_ids[i] = src[i];
 }
 
 void proc_release_tracked_pages(pcb_t *p, uint32_t start_slot,
@@ -237,19 +245,19 @@ void proc_release_tracked_pages(pcb_t *p, uint32_t start_slot,
   if (start_slot >= USER_PAGES_MAX) return;
   if (end_slot > USER_PAGES_MAX) end_slot = USER_PAGES_MAX;
   for (uint32_t i = start_slot; i < end_slot; i++) {
-    if (!p->user_pages[i]) continue;
-    mem_region_free_tracked_page(p->user_pages[i]);
-    p->user_pages[i] = NULL;
+    if (!p->user_page_ids[i]) continue;
+    mem_region_free_tracked_page(p->user_page_ids[i]);
+    p->user_page_ids[i] = NULL;
   }
 }
 
 void proc_release_private_tracked_pages(pcb_t *p, const pcb_t *shared_owner) {
   if (!p || !shared_owner) return;
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
-    if (!p->user_pages[i]) continue;
-    if (p->user_pages[i] == shared_owner->user_pages[i]) continue;
-    mem_region_free_tracked_page(p->user_pages[i]);
-    p->user_pages[i] = NULL;
+    if (!p->user_page_ids[i]) continue;
+    if (p->user_page_ids[i] == shared_owner->user_page_ids[i]) continue;
+    mem_region_free_tracked_page(p->user_page_ids[i]);
+    p->user_page_ids[i] = NULL;
   }
 }
 

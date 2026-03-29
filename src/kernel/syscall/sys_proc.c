@@ -1560,7 +1560,7 @@ long sys_vfork(uint32_t *frame) {
   /* RISC-V mscratch split: the child must have its own user stack copy. */
   {
     uint32_t ustack_slot = USER_PAGES_MAX - 1;
-    void *parent_ustack = current->user_pages[ustack_slot];
+    void *parent_ustack = current->user_page_ids[ustack_slot];
     if (parent_ustack) {
       void *child_ustack = NULL;
       uint32_t *child_tf = child_frame - 8; /* trap frame base */
@@ -1572,7 +1572,7 @@ long sys_vfork(uint32_t *frame) {
         proc_free(child);
         return -(long)ENOMEM;
       }
-      child->user_pages[ustack_slot] = child_ustack;
+      child->user_page_ids[ustack_slot] = child_ustack;
       child_tf[32] = child_usp; /* patch TF_USER_SP */
     }
   }
