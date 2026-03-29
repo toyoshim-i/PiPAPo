@@ -108,7 +108,7 @@ static int mem_region_linear_arena_init(mem_region_linear_arena_t *arena,
   arena->free_count = 1u;
   arena->ready = 1u;
 
-  klogf("MM:   %s %x-%x  %u KB reserved\n", name,
+  klogf("MM:   %s %lx-%lx  %lu KB reserved\n", name,
         (uint32_t)(uintptr_t)arena->base,
         (uint32_t)(uintptr_t)(arena->base + arena->size - 1u),
         arena->size / 1024u);
@@ -147,7 +147,7 @@ static int mem_region_xtensa_data_init(void) {
     ram_data_page_used[i] = 0u;
   ram_data_ready = 1u;
 
-  klogf("MM:   ram_data %x-%x  %u KB reserved\n",
+  klogf("MM:   ram_data %lx-%lx  %lu KB reserved\n",
         (uint32_t)(uintptr_t)ram_data_arena_base,
         (uint32_t)(uintptr_t)(ram_data_arena_base +
                               ram_data_page_count * PAGE_SIZE - 1u),
@@ -168,7 +168,7 @@ static int mem_region_xtensa_psram_init(void) {
   }
 
   free_size = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
-  klogf("MM:   psram total %u KB, free %u KB before reservation\n",
+  klogf("MM:   psram total %lu KB, free %lu KB before reservation\n",
         total_size / 1024u, free_size / 1024u);
 
   err = mem_region_linear_arena_init(&ext_text_arena,
@@ -190,18 +190,18 @@ static int mem_region_xtensa_psram_init(void) {
 #endif
 
   if (ext_text_arena.ready) {
-    klogf("MM:   ext_text executable=%u byte_access=%u\n",
+    klogf("MM:   ext_text executable=%lu byte_access=%lu\n",
           (uint32_t)esp_ptr_executable(ext_text_arena.base),
           (uint32_t)esp_ptr_byte_accessible(ext_text_arena.base));
   }
   if (ext_rodata_arena.ready) {
-    klogf("MM:   ext_rodata executable=%u byte_access=%u\n",
+    klogf("MM:   ext_rodata executable=%lu byte_access=%lu\n",
           (uint32_t)esp_ptr_executable(ext_rodata_arena.base),
           (uint32_t)esp_ptr_byte_accessible(ext_rodata_arena.base));
   }
 
   free_size = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
-  klogf("MM:   psram free %u KB after reservation\n", free_size / 1024u);
+  klogf("MM:   psram free %lu KB after reservation\n", free_size / 1024u);
   return 0;
 #else
   klog("MM:   psram support disabled; external arenas unavailable\n");

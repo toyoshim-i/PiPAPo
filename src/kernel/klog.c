@@ -113,10 +113,10 @@ void klogf(const char *fmt, ...) {
           klog_puts_raw(va_arg(ap, const char *));
           break;
         case 'u':
-          klog_print_dec(va_arg(ap, uint32_t));
+          klog_print_dec((uint32_t)va_arg(ap, unsigned int));
           break;
         case 'x':
-          klog_print_hex32(va_arg(ap, uint32_t));
+          klog_print_hex32((uint32_t)va_arg(ap, unsigned int));
           break;
         case 'l':
           fmt++;

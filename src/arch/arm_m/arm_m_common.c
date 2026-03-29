@@ -155,18 +155,18 @@ void arm_crash_handler(uint32_t *psp_frame, uint32_t *callee_regs) {
 
   klogf("\n*** %s ***", signame);
   if (p) klogf("  Process %u (%s)", (uint32_t)p->pid, p->comm);
-  klogf("  PC=%x  xPSR=%x", pc, xpsr);
+  klogf("  PC=%lx  xPSR=%lx", pc, xpsr);
 
   /* Print registers from the exception frame (r0-r3, r12, lr) */
-  klogf("  r0=%x r1=%x r2=%x r3=%x", psp_frame[0], psp_frame[1], psp_frame[2],
+  klogf("  r0=%lx r1=%lx r2=%lx r3=%lx", psp_frame[0], psp_frame[1], psp_frame[2],
         psp_frame[3]);
-  klogf("  r12=%x lr=%x", psp_frame[4], psp_frame[5]);
+  klogf("  r12=%lx lr=%lx", psp_frame[4], psp_frame[5]);
 
   /* Print callee-saved registers: layout on MSP is {r8,r9,r10,r11,r4,r5,r6,r7}
    */
-  klogf("  r4=%x r5=%x r6=%x r7=%x", callee_regs[4], callee_regs[5],
+  klogf("  r4=%lx r5=%lx r6=%lx r7=%lx", callee_regs[4], callee_regs[5],
         callee_regs[6], callee_regs[7]);
-  klogf("  r8=%x r9=%x r10=%x r11=%x", callee_regs[0], callee_regs[1],
+  klogf("  r8=%lx r9=%lx r10=%lx r11=%lx", callee_regs[0], callee_regs[1],
         callee_regs[2], callee_regs[3]);
 
   /* Kernel fault: process 0 is the idle thread running on PSP. */
@@ -175,7 +175,7 @@ void arm_crash_handler(uint32_t *psp_frame, uint32_t *callee_regs) {
     while (1) __asm volatile("" ::: "memory");
   }
 
-  klogf("  Killed (exit status %u)", (uint32_t)(128 + sig));
+  klogf("  Killed (exit status %lu)", (uint32_t)(128 + sig));
   sys_exit(128 + sig);
 
   /* Patch the stacked PC so if PendSV doesn't tail-chain, the CPU won't

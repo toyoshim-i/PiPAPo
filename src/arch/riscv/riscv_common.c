@@ -59,7 +59,7 @@ void riscv_exception_handler(uint32_t mcause, uint32_t mepc, uint32_t mtval,
     /* Print bare diagnostic FIRST — before touching any pointers that
      * could fault (current, backtrace).  These three values come from
      * CSRs passed in registers and are always safe. */
-    klogf("TRAP: cause=%x mepc=%x mtval=%x sp=%x\n",
+    klogf("TRAP: cause=%lx mepc=%lx mtval=%lx sp=%lx\n",
           mcause, mepc, mtval, saved_sp);
 
     CRASH_LOG[0] = 0xDEADBEEFu;
@@ -67,7 +67,7 @@ void riscv_exception_handler(uint32_t mcause, uint32_t mepc, uint32_t mtval,
     CRASH_LOG[2] = mepc;
     CRASH_LOG[3] = mtval;
 
-    klogf("  pid=%u fp=%x\n",
+    klogf("  pid=%lu fp=%lx\n",
           current ? (uint32_t)current->pid : 0xFFFFFFFFu,
           saved_fp);
 
@@ -79,7 +79,7 @@ void riscv_exception_handler(uint32_t mcause, uint32_t mepc, uint32_t mtval,
     for (uint32_t depth = 0; depth < 16 && fp >= 0x80000000u; depth++) {
         uintptr_t ra = *(uintptr_t *)(fp - 4);
         uintptr_t prev_fp = *(uintptr_t *)(fp - 8);
-        klogf("    #%u ra=%x fp=%x\n", (uint32_t)depth, (uint32_t)ra, (uint32_t)fp);
+        klogf("    #%u ra=%lx fp=%lx\n", (uint32_t)depth, (uint32_t)ra, (uint32_t)fp);
         if (prev_fp <= fp) break;
         fp = prev_fp;
     }

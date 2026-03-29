@@ -112,7 +112,7 @@ void kmain(void) {
     fstab_entry_t fstab[FSTAB_MAX_ENTRIES];
     int nfstab = fstab_parse(fstab, FSTAB_MAX_ENTRIES);
     if (nfstab > 0) {
-      klogf("fstab: %u entries parsed\n", (uint32_t)nfstab);
+      klogf("fstab: %lu entries parsed\n", (uint32_t)nfstab);
       fstab_mount_all(fstab, nfstab);
     } else {
       klog("fstab: no entries (fallback not implemented)\n");
@@ -160,7 +160,7 @@ void kmain(void) {
         init->state = PROC_RUNNABLE;
         klogf("INIT: pid=%u loaded\n", init->pid);
       } else {
-        klogf("PANIC: no init or shell (err=%u)\n", (uint32_t)(-(int)exec_err));
+        klogf("PANIC: no init or shell (err=%lu)\n", (uint32_t)(-(int)exec_err));
         proc_free(init);
         for (;;) arch_wfi();
       }

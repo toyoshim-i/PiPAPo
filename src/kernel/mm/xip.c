@@ -98,14 +98,14 @@ __attribute__((section(".ramfunc.sram_bench"), noinline)) uint32_t sram_bench(
  * ========================================================================== */
 
 void xip_verify(void) {
-  klogf("XIP: xip_add @ %x\n", (uint32_t)(uintptr_t)xip_add);
+  klogf("XIP: xip_add @ %lx\n", (uint32_t)(uintptr_t)xip_add);
 
   int result = xip_add(3, 4);
-  klogf("XIP: xip_add(3,4) = %u %s\n", (uint32_t)result,
+  klogf("XIP: xip_add(3,4) = %lu %s\n", (uint32_t)result,
         result == 7 ? "OK" : "FAIL");
 
   uint32_t flash_cyc = xip_bench(10000);
   uint32_t sram_cyc = sram_bench(10000);
-  klogf("XIP: flash bench(10000) = %x cycles\n", flash_cyc);
-  klogf("XIP: sram  bench(10000) = %x cycles\n", sram_cyc);
+  klogf("XIP: flash bench(10000) = %lx cycles\n", flash_cyc);
+  klogf("XIP: sram  bench(10000) = %lx cycles\n", sram_cyc);
 }

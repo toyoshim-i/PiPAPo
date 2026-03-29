@@ -239,14 +239,14 @@ static const char *exccause_name(uint32_t cause)
 static void xtensa_fault_handler(XtExcFrame *frame)
 {
     uint32_t cause = (uint32_t)frame->exccause;
-    klogf("EXCEPTION: %s (cause=%u) pc=%x vaddr=%x\n",
+    klogf("EXCEPTION: %s (cause=%lu) pc=%lx vaddr=%lx\n",
           exccause_name(cause), cause,
           (uint32_t)frame->pc, (uint32_t)frame->excvaddr);
-    klogf("  a0=%x a1=%x a2=%x a3=%x a4=%x a5=%x\n",
+    klogf("  a0=%lx a1=%lx a2=%lx a3=%lx a4=%lx a5=%lx\n",
           (uint32_t)frame->a0, (uint32_t)frame->a1,
           (uint32_t)frame->a2, (uint32_t)frame->a3,
           (uint32_t)frame->a4, (uint32_t)frame->a5);
-    klogf("  a6=%x a7=%x a8=%x a9=%x a10=%x a11=%x\n",
+    klogf("  a6=%lx a7=%lx a8=%lx a9=%lx a10=%lx a11=%lx\n",
           (uint32_t)frame->a6, (uint32_t)frame->a7,
           (uint32_t)frame->a8, (uint32_t)frame->a9,
           (uint32_t)frame->a10, (uint32_t)frame->a11);
@@ -296,7 +296,7 @@ void __wrap_abort(void)
 void __wrap___assert_func(const char *file, int line, const char *func,
                           const char *expr)
 {
-    klogf("ASSERT FAILED: %s:%u", file ? file : "?", (uint32_t)line);
+    klogf("ASSERT FAILED: %s:%lu", file ? file : "?", (uint32_t)line);
     if (func) klogf(" (%s)", func);
     if (expr) klogf(": %s", expr);
     klog("\n");
