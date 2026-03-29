@@ -380,3 +380,109 @@ uint8_t *page_alloc_contiguous(uint32_t n_pages) {
   spin_unlock_irqrestore(SPIN_PAGE, saved);
   return (uint8_t *)(uintptr_t)base_addr;
 }
+
+/* ── Page-indexed API ────────────────────────────────────────────────────── */
+
+/* Linear address table: maps page_id → 32-bit linear address.
+ * On 32-bit, this is redundant (page_pool_base + id * PAGE_SIZE).
+ * On i16, this stores the full 20-bit linear address that doesn't
+ * fit in a 16-bit void *. */
+static uint32_t page_linear[PAGE_COUNT_MAX];
+
+page_id_t mm_page_alloc(void) {
+  void *p = page_alloc();
+  if (!p) return PAGE_ID_INVALID;
+  uintptr_t pb = page_pool_base();
+  page_id_t id = (page_id_t)((uintptr_t)p - pb) / PAGE_SIZE;
+  if (id >= page_count) {
+    /* Should not happen — page_alloc returned out-of-range page */
+    page_free(p);
+    return PAGE_ID_INVALID;
+  }
+  page_linear[id] = (uint32_t)pb + (uint32_t)id * PAGE_SIZE;
+  return id;
+}
+
+void mm_page_free(page_id_t id) {
+  if (id == PAGE_ID_INVALID || id >= page_count) return;
+#if defined(__ia16__)
+  /* On i16, reconstruct the void * from the id.  The free_stack stores
+   * 16-bit pointers, so this only works for pages in near range.
+   * For pages beyond 0xFFFF, page_free needs a 32-bit version (TODO). */
+  uintptr_t addr = (uintptr_t)(page_pool_base() + id * PAGE_SIZE);
+  page_free((void *)addr);
+#else
+  page_free((void *)(uintptr_t)page_linear[id]);
+#endif
+  page_linear[id] = 0;
+}
+
+void mm_page_read(page_id_t id, uint16_t off, void *buf, uint16_t len) {
+  if (id == PAGE_ID_INVALID || id >= page_count || len == 0) return;
+#if defined(__ia16__)
+  /* Compute segment:offset from 20-bit linear address.
+   * rep movsb copies DS:SI → ES:DI.  We want src=far page, dst=SS:buf. */
+  uint32_t linear = page_linear[id] + off;
+  uint16_t seg = (uint16_t)(linear >> 4);
+  uint16_t ofs = (uint16_t)(linear & 0x000Fu);
+  uint16_t dst = (uint16_t)(uintptr_t)buf;
+  __asm__ volatile (
+    "push %%ds\n\t"
+    "push %%es\n\t"
+    "mov  %%ss, %%ax\n\t"
+    "mov  %%ax, %%es\n\t"  /* ES = SS (destination) */
+    "mov  %0, %%ds\n\t"    /* DS = source segment */
+    "cld\n\t"
+    "rep movsb\n\t"
+    "pop  %%es\n\t"
+    "pop  %%ds"
+    :
+    : "r"(seg), "S"(ofs), "D"(dst), "c"(len)
+    : "ax", "memory", "cc"
+  );
+#else
+  __builtin_memcpy(buf,
+                   (const uint8_t *)(uintptr_t)page_linear[id] + off,
+                   len);
+#endif
+}
+
+void mm_page_write(page_id_t id, uint16_t off, const void *buf, uint16_t len) {
+  if (id == PAGE_ID_INVALID || id >= page_count || len == 0) return;
+#if defined(__ia16__)
+  /* rep movsb copies DS:SI → ES:DI.  We want src=SS:buf, dst=far page. */
+  uint32_t linear = page_linear[id] + off;
+  uint16_t seg = (uint16_t)(linear >> 4);
+  uint16_t ofs = (uint16_t)(linear & 0x000Fu);
+  uint16_t src = (uint16_t)(uintptr_t)buf;
+  __asm__ volatile (
+    "push %%es\n\t"
+    "mov  %0, %%es\n\t"    /* ES = destination segment */
+    "cld\n\t"
+    "rep movsb\n\t"
+    "pop  %%es"
+    :
+    : "r"(seg), "S"(src), "D"(ofs), "c"(len)
+    : "memory", "cc"
+  );
+#else
+  __builtin_memcpy((uint8_t *)(uintptr_t)page_linear[id] + off,
+                   buf, len);
+#endif
+}
+
+#if !defined(__ia16__)
+void *mm_page_to_ptr(page_id_t id) {
+  if (id == PAGE_ID_INVALID || id >= page_count) return NULL;
+  return (void *)(uintptr_t)page_linear[id];
+}
+#endif
+
+page_id_t mm_ptr_to_page(void *ptr) {
+  uintptr_t addr = (uintptr_t)ptr;
+  uintptr_t pb = page_pool_base();
+  if (addr < pb) return PAGE_ID_INVALID;
+  page_id_t id = (page_id_t)((addr - pb) / PAGE_SIZE);
+  if (id >= page_count) return PAGE_ID_INVALID;
+  return id;
+}

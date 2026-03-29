@@ -129,4 +129,38 @@ extern uint32_t page_count;
 /* OOM event counter (incremented each time page_alloc returns NULL). */
 extern uint32_t oom_count;
 
+/* ── Page-indexed API ──────────────────────────────────────────────────────
+ *
+ * Allocations return a page_id_t (index) instead of void *.  Data on
+ * pages is accessed via mm_page_read/write which handles segment setup
+ * on i16 internally.  On 32-bit, it's just memcpy from a direct pointer.
+ *
+ * All platforms use the same code — no architecture #ifdefs in callers.
+ */
+
+typedef uint16_t page_id_t;
+#define PAGE_ID_INVALID 0xFFFFu
+
+/* Allocate one page, return its index (or PAGE_ID_INVALID on OOM). */
+page_id_t mm_page_alloc(void);
+
+/* Free a page by index. */
+void mm_page_free(page_id_t id);
+
+/* Read `len` bytes from page `id` at byte offset `off` into `buf`. */
+void mm_page_read(page_id_t id, uint16_t off, void *buf, uint16_t len);
+
+/* Write `len` bytes from `buf` to page `id` at byte offset `off`. */
+void mm_page_write(page_id_t id, uint16_t off, const void *buf, uint16_t len);
+
+/* Return the linear address of a page (32-bit only).
+ * On i16 this is NOT available — use mm_page_read/write instead. */
+#if !defined(__ia16__)
+void *mm_page_to_ptr(page_id_t id);
+#endif
+
+/* Return the page_id for an existing pointer (reverse lookup).
+ * Returns PAGE_ID_INVALID if the pointer is not in the page pool. */
+page_id_t mm_ptr_to_page(void *ptr);
+
 #endif /* PPAP_KERNEL_MM_PAGE_H */
