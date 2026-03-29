@@ -77,6 +77,19 @@ void kmain(void) {
   /* Target-specific late init: SD/ramblk, IRQ UART, MPU, Core 1 */
   target_late_init();
 
+  /* Pre-mount test: allocate thread 0 stack now (before VFS mount
+   * corrupts something on i16) */
+#ifdef __ia16__
+  {
+    proc_image_segment_t stack_region;
+    if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
+                         PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) == 0) {
+      proc_table[0].stack_page = stack_region.base;
+      klogf("MM: thread0 stack at %x\n", (uint32_t)(uintptr_t)stack_region.base);
+    }
+  }
+#endif
+
   /* Bootstrap: mount root filesystem (needed to read /etc/fstab).
    * If an embedded romfs is present use it; otherwise delegate to the
    * target (e.g. x68k mounts a UFS ramdisk loaded by stage2). */
@@ -91,7 +104,11 @@ void kmain(void) {
     klog("VFS: rootfs mount FAILED\n");
   }
 
-  /* Parse /etc/fstab and mount all entries */
+  /* Parse /etc/fstab and mount all entries.
+   * Skipped on i16 for now — UFS read returns corrupt data for
+   * fstab (likely a 16-bit pointer/size issue in the VFS read path).
+   * TODO: investigate and fix. */
+#if !defined(__ia16__)
   {
     fstab_entry_t fstab[FSTAB_MAX_ENTRIES];
     int nfstab = fstab_parse(fstab, FSTAB_MAX_ENTRIES);
@@ -102,20 +119,23 @@ void kmain(void) {
       klog("fstab: no entries (fallback not implemented)\n");
     }
   }
+#endif
 
   /* Kernel integration tests (no-op unless PPAP_TESTS=ON) */
   target_post_mount();
 
-  /* Give the kernel init thread (thread 0) its own PSP stack page */
+  /* Give the kernel init thread (thread 0) its own PSP stack page.
+   * On i16, this is done before mount (see above). */
+#if !defined(__ia16__)
   {
     proc_image_segment_t stack_region;
-
     if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
                          PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) == 0)
       proc_table[0].stack_page = stack_region.base;
     else
       proc_table[0].stack_page = NULL;
   }
+#endif
   if (!proc_table[0].stack_page) {
     klog("PANIC: no page for thread 0 stack\n");
     for (;;) arch_wfi();
@@ -125,8 +145,9 @@ void kmain(void) {
    * e.g. m68k targets that don't have ELF user-mode binaries yet). */
   {
     const char *init_path = target_init_path();
+    klog("INIT: starting\n");
     if (init_path) {
-      pcb_t *init = proc_alloc();
+        pcb_t *init = proc_alloc();
       init->pgid = init->pid;
       init->sid = init->pid;
       fd_stdio_init(init);

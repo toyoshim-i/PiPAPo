@@ -61,6 +61,9 @@ saved_ip: .word 0
   mov  %ax, %ds
   call \name
   cli
+  /* Restore DS=0 before returning — the callee may have clobbered DS. */
+  xor  %ax, %ax
+  mov  %ax, %ds
   push %ss:saved_cs
   push %ss:saved_ip
   sti

@@ -39,6 +39,10 @@ vfs_\name\()_entry:
   mov  %ax, %ds
   call vfs_\name
   cli
+  /* Restore DS=0 before returning to core — VFS code uses DS
+   * as a scratch register, and core expects DS=0. */
+  xor  %ax, %ax
+  mov  %ax, %ds
   push %ss:vfs_saved_cs
   push %ss:vfs_saved_ip
   sti
