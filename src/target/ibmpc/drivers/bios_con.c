@@ -15,6 +15,7 @@ void bios_putc(char c)
     :
     : "a"((unsigned short)(0x0E00u | (unsigned char)c)),
       "b"((unsigned short)0x0007u)  /* Page 0, light grey */
+    : "cx", "dx", "si", "di", "cc", "memory"
   );
 }
 
