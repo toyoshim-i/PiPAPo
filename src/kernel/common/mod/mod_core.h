@@ -31,6 +31,7 @@ struct blkdev;
 typedef struct blkdev blkdev_t;
 
 #include "../../mm/mem_layout.h"  /* ppap_mem_class_t, proc_image_segment_t */
+#include "../../mm/page.h"       /* page_id_t */
 
 #include "module.h"
 
@@ -121,6 +122,31 @@ MOD_DECLARE_BEGIN(core)
    */
   MOD_FUNC(core, uint32_t, mem_region_total_bytes, ppap_mem_class_t)
   MOD_FUNC(core, uint32_t, mem_region_free_bytes, ppap_mem_class_t)
+
+  /* ── Page-indexed memory ─────────────────────────────────────────────── */
+
+  /*
+   * mm_page_alloc — Allocate one page, return its index.
+   *
+   * Returns PAGE_ID_INVALID on OOM.
+   */
+  MOD_FUNC(core, page_id_t, mm_page_alloc, void)
+
+  /*
+   * mm_page_free — Free a page by index.
+   */
+  MOD_FUNC(core, void, mm_page_free, page_id_t)
+
+  /*
+   * mm_page_read — Read `len` bytes from page `id` at offset `off` into `buf`.
+   */
+  MOD_FUNC(core, void, mm_page_read, page_id_t, uint16_t, void *, uint16_t)
+
+  /*
+   * mm_page_write — Write `len` bytes from `buf` to page `id` at offset `off`.
+   */
+  MOD_FUNC(core, void, mm_page_write, page_id_t, uint16_t, const void *,
+                                       uint16_t)
 
   /* ── Block device I/O (cross-module safe) ────────────────────────────── */
 

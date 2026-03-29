@@ -12,6 +12,7 @@
 #include "../../klog.h"
 #include "../../mm/kmem.h"
 #include "../../mm/mem_region.h"
+#include "../../mm/page.h"
 #include "../../blkdev/blkdev.h"
 
 /* Cross-module blkdev wrappers — execute dev->read/write in core's CS.
@@ -37,6 +38,10 @@ mod_core_t mod_core = {
   .mem_region_free = mem_region_free,
   .mem_region_total_bytes = mem_region_total_bytes,
   .mem_region_free_bytes = mem_region_free_bytes,
+  .mm_page_alloc = mm_page_alloc,
+  .mm_page_free = mm_page_free,
+  .mm_page_read = mm_page_read,
+  .mm_page_write = mm_page_write,
   .blkdev_read = core_blkdev_read,
   .blkdev_write = core_blkdev_write,
 };

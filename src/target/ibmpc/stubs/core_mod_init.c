@@ -27,6 +27,10 @@ int mem_region_alloc(proc_image_segment_t *, ppap_mem_class_t,
 void mem_region_free(const proc_image_segment_t *);
 uint32_t mem_region_total_bytes(ppap_mem_class_t);
 uint32_t mem_region_free_bytes(ppap_mem_class_t);
+uint16_t mm_page_alloc(void);
+void mm_page_free(uint16_t);
+void mm_page_read(uint16_t, uint16_t, void *, uint16_t);
+void mm_page_write(uint16_t, uint16_t, const void *, uint16_t);
 int core_blkdev_read(blkdev_t *, void *, uint32_t, uint32_t);
 int core_blkdev_write(blkdev_t *, const void *, uint32_t, uint32_t);
 
@@ -41,6 +45,10 @@ int core_blkdev_write(blkdev_t *, const void *, uint32_t, uint32_t);
 #define core_mem_region_free     mem_region_free
 #define core_mem_region_total_bytes mem_region_total_bytes
 #define core_mem_region_free_bytes mem_region_free_bytes
+#define core_mm_page_alloc       mm_page_alloc
+#define core_mm_page_free        mm_page_free
+#define core_mm_page_read        mm_page_read
+#define core_mm_page_write       mm_page_write
 #define core_blkdev_read         core_blkdev_read
 #define core_blkdev_write        core_blkdev_write
 
@@ -57,6 +65,10 @@ MOD_DEFINE_BEGIN(core)
   MOD_IMPL(core, mem_region_free)
   MOD_IMPL(core, mem_region_total_bytes)
   MOD_IMPL(core, mem_region_free_bytes)
+  MOD_IMPL(core, mm_page_alloc)
+  MOD_IMPL(core, mm_page_free)
+  MOD_IMPL(core, mm_page_read)
+  MOD_IMPL(core, mm_page_write)
   MOD_IMPL(core, blkdev_read)
   MOD_IMPL(core, blkdev_write)
 MOD_DEFINE_END()

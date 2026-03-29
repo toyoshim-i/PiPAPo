@@ -277,8 +277,21 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp) {
   uint32_t *sp;
 
 {
-  uint8_t *stack_base = (uint8_t *)mm_page_to_ptr(p->stack_page_id);
-#if defined(__riscv)
+#if defined(__ia16__)
+  /* i16: stack_base not used — frame is built at user_sp or via
+   * mm_page_write.  arch_build_initial_frame handles it. */
+  uint8_t *stack_base = NULL;
+  (void)stack_base;
+  if (user_sp)
+    sp = (uint32_t *)(void *)user_sp;
+  else {
+    /* TODO: i16 proc_setup_stack without user_sp */
+    p->ticks_remaining = PROC_DEFAULT_TICKS;
+    return;
+  }
+  sp = arch_build_initial_frame(sp, entry);
+  p->sp = (uint32_t)(uintptr_t)sp;
+#elif defined(__riscv)
   /* RISC-V mscratch split: kernel frame on stack_page, user_sp in TF_USER_SP */
   sp = (uint32_t *)(stack_base + PAGE_SIZE);
   sp = arch_build_initial_frame(sp, entry);

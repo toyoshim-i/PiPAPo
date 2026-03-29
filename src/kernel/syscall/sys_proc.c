@@ -492,7 +492,7 @@ static int trace_native_contains(const pcb_t *target, uint32_t addr) {
     uint32_t base = (uint32_t)(uintptr_t)target->user_stack_page;
     if (addr >= base && addr < base + PAGE_SIZE) return 1;
   }
-#else
+#elif !defined(__ia16__)
   if (target->stack_page_id != PAGE_ID_INVALID) {
     uint32_t base = (uint32_t)(uintptr_t)mm_page_to_ptr(target->stack_page_id);
     if (addr >= base && addr < base + PAGE_SIZE) return 1;
@@ -1365,9 +1365,11 @@ long sys_exit(long status) {
   if (!current->vfork_parent) {
     image_release_owned_segments(&current->image, current->user_pages,
                                  USER_PAGES_MAX);
+#if !defined(__ia16__)
     if (current->stack_page_id != PAGE_ID_INVALID &&
         proc_page_backed_contains(current, (uintptr_t)mm_page_to_ptr(current->stack_page_id)))
       current->stack_page_id = PAGE_ID_INVALID;
+#endif
     proc_release_tracked_pages(current, 0, USER_PAGES_MAX);
 #if defined(__m68k__)
     if (current->user_stack_page) {
@@ -1499,11 +1501,18 @@ long sys_vfork(uint32_t *frame) {
    *    Then build the PendSV context (SW + HW frames) at the same offset
    *    on the child's page as the parent's PSP frame.
    */
+#if defined(__ia16__)
+  /* TODO: i16 vfork — use mm_page_read for cross-segment copy */
+  mm_page_read(current->stack_page_id, 0, stack, PAGE_SIZE);
+  uintptr_t frame_off = 0;
+  uint32_t *child_frame = (uint32_t *)stack;
+#else
   memcpy(stack, mm_page_to_ptr(current->stack_page_id), PAGE_SIZE);
 
   /* Calculate child's frame position at the same offset as parent's */
   uintptr_t frame_off = (uintptr_t)frame - (uintptr_t)mm_page_to_ptr(current->stack_page_id);
   uint32_t *child_frame = (uint32_t *)((uint8_t *)stack + frame_off);
+#endif
 
 #if defined(__m68k__)
   /* m68k: The TRAP #0 frame (15 regs + SR + PC) has the same layout as
@@ -1780,7 +1789,12 @@ long sys_waitpid(long pid, long status_ptr, long options) {
     /* Reap the zombie child. */
     /* Free zombie's stack page */
     if (zombie->stack_page_id != PAGE_ID_INVALID) {
-      { void *zs = mm_page_to_ptr(zombie->stack_page_id); proc_release_stack_page(&zs); zombie->stack_page_id = PAGE_ID_INVALID; }
+#if defined(__ia16__)
+      mm_page_free(zombie->stack_page_id);
+#else
+      { void *zs = mm_page_to_ptr(zombie->stack_page_id); proc_release_stack_page(&zs); }
+#endif
+      zombie->stack_page_id = PAGE_ID_INVALID;
     }
 
     proc_free(zombie);
@@ -1859,6 +1873,8 @@ long sys_execve(const char *path, const char *const *argv) {
 #if defined(__m68k__) || defined(__riscv)
   extern volatile void *exec_old_stack;
   exec_old_stack = (old_stack_id != PAGE_ID_INVALID) ? mm_page_to_ptr(old_stack_id) : NULL;
+#elif defined(__ia16__)
+  if (old_stack_id != PAGE_ID_INVALID) mm_page_free(old_stack_id);
 #else
   if (old_stack_id != PAGE_ID_INVALID) { void *os = mm_page_to_ptr(old_stack_id); proc_release_stack_page(&os); }
 #endif
