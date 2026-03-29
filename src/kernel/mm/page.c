@@ -474,6 +474,11 @@ void mm_page_write(page_id_t id, uint16_t off, const void *buf, uint16_t len) {
 #if !defined(__ia16__)
 void *mm_page_to_ptr(page_id_t id) {
   if (id == PAGE_ID_INVALID || id >= page_count) return NULL;
+  /* Lazily populate if not yet set (page was allocated via old API) */
+  if (page_linear[id] == 0) {
+    uintptr_t pb = page_pool_base();
+    page_linear[id] = (uint32_t)pb + (uint32_t)id * PAGE_SIZE;
+  }
   return (void *)(uintptr_t)page_linear[id];
 }
 #endif

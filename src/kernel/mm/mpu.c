@@ -253,7 +253,7 @@ void mpu_init(void) {
 void mpu_switch(pcb_t *next) {
   if (!mpu_present) return;
 
-  if (!next->stack_page_id) {
+  if (next->stack_page_id == PAGE_ID_INVALID) {
     /* No stack page allocated yet — disable region 2 */
     MPU_RNR = 2u;
 #if __ARM_ARCH >= 8
