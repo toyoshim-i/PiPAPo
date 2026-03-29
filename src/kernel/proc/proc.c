@@ -54,6 +54,9 @@ void proc_init(void) {
   for (uint32_t i = 0u; i < PROC_MAX; i++) {
     __builtin_memset(&proc_table[i], 0, sizeof(pcb_t));
     proc_table[i].state = PROC_FREE;
+    proc_table[i].stack_page_id = PAGE_ID_INVALID;
+    for (uint32_t j = 0; j < USER_PAGES_MAX; j++)
+      proc_table[i].user_page_ids[j] = PAGE_ID_INVALID;
   }
 
   /* Pre-initialise slot 0 as the initial kernel thread.
@@ -104,6 +107,9 @@ pcb_t *proc_alloc(void) {
   for (uint32_t i = 1u; i < PROC_MAX; i++) {
     if (proc_table[i].state == PROC_FREE) {
       __builtin_memset(&proc_table[i], 0, sizeof(pcb_t));
+      proc_table[i].stack_page_id = PAGE_ID_INVALID;
+      for (uint32_t j = 0; j < USER_PAGES_MAX; j++)
+        proc_table[i].user_page_ids[j] = PAGE_ID_INVALID;
       proc_table[i].pid = next_pid++;
       proc_table[i].umask_val = DEFAULT_UMASK;
       proc_table[i].running_on_core = -1;
