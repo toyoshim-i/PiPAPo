@@ -100,15 +100,6 @@ static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     return -ENOMEM;
   }
   uint8_t *base = (uint8_t *)region.base;
-#ifdef __ia16__
-  {
-    extern void klogf(const char *, ...);
-    klogf("ELF16: base=%lx alloc=%lu entry=%lx\n",
-          (unsigned long)(uintptr_t)base,
-          (unsigned long)alloc_size,
-          (unsigned long)ehdr->e_entry);
-  }
-#endif
 
   /* Zero entire region (covers BSS and gaps) */
   memset(base, 0, alloc_size);
@@ -169,15 +160,6 @@ static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   *--frame = proc_seg;   /* ES = process segment */
 
   p->sp = (uint32_t)(uintptr_t)frame;
-#ifdef __ia16__
-  {
-    extern void klogf(const char *, ...);
-    klogf("ELF16: sp=%lx base=%lx seg=%x\n",
-          (unsigned long)(uintptr_t)frame,
-          (unsigned long)(uintptr_t)base,
-          (unsigned)proc_seg);
-  }
-#endif
 
   p->image.text = proc_image_segment_make(base, mem_end, PPAP_MEM_RAM_TEXT,
                                           PROC_IMAGE_SEG_EXECUTABLE);

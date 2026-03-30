@@ -181,15 +181,6 @@ void kmain(void) {
     klog("PIT: 100 Hz timer started\n");
   }
 #endif
-#ifdef __ia16__
-  {
-    uint16_t *chk = (uint16_t *)(uintptr_t)(uint16_t)proc_table[1].sp;
-    klogf("FINAL: sp=%lx CS=%x IP=%x byte@DFFA=%x\n",
-          (unsigned long)proc_table[1].sp,
-          (unsigned)chk[10], (unsigned)chk[9],
-          (unsigned)*(uint16_t *)0xDFFA);
-  }
-#endif
   klog("SCHED: starting scheduler\n");
   sched_start();
 #ifdef __ia16__

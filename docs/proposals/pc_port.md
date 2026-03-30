@@ -758,6 +758,22 @@ The VFS header at offset 0 in the VFS segment contains a magic word
 | VFS→core crash | DS clobbered by compiler (scratch register) | Entry stubs restore DS=0 before call; all data via SS |
 | Near fptr crosses segments | `blkdev_t.read = floppy_read` invalid in VFS CS | `mod_core.blkdev_read` far-call wrapper |
 | Far-call BP shift | `lcall; ret` left extra return addresses on stack | Rewrite stubs: pop/push CS:IP, ljmp; entry pops far frame |
+| klogf garbled output | `%x`/`%u` read `uint32_t` (4B) but i16 `unsigned int` is 2B | `%x`/`%u` read `unsigned int`; `%lx`/`%lu` for 32-bit |
+| klogf string corruption | BIOS INT 10h teletype no-op on QEMU; QEMU floppy DMA byte corruption | Not BIOS — QEMU-specific DMA quirk; correct on DOSBox-X |
+| DOSBox-X INT 0/6 crash | `subsys_init` → `procfs_register_subsys` unresolved → call 0 | Guard with `PPAP_HAS_PROCFS`; add INT 0/6 debug handler |
+| vfs_fd_stdio_init call 0 | VFS entry stub calls `vfs_fd_stdio_init` but actual function is `fd_stdio_init` | `.set vfs_fd_stdio_init, fd_stdio_init` alias in vfs_entries.S |
+| core_fptrs overflow | 12 slots but 16 functions; boot-time patching overwrote mod_core | Add mm_page_* slots to core_fptrs (16 entries) |
+| Far-call return value lost | Entry stubs did `xor %ax,%ax; mov %ax,%ds` after call, destroying AX | Use BX instead of AX for DS restore |
+| exec ops->read hangs | `vn->mount->ops->read` is a near pointer valid only in VFS CS | `mod_vfs.file_read()` wrapper executes read in VFS CS |
+| `fd_close_all` crash in sys_exit | Unresolved VFS function called from core sys_exit path | **Blocker**: requires completing module boundary migration |
+
+### Memory Model
+
+**Page-indexed free stack**: `free_stack[]` stores `page_id_t` indices
+(16-bit), not `void *` pointers.  This allows pages beyond the 64 KB
+near-pointer range on i16.  `page_linear[]` maps each index to its
+32-bit linear address.  BIOS INT 12h detects conventional RAM size
+at boot (typically 640 KB = 147 pages).
 
 ### Size Constraint
 
@@ -766,12 +782,13 @@ Core binary (text + rodata + data) plus BSS and stack must fit between
 
 | Component | Size |
 |-----------|------|
-| Core .text | ~28 KB |
-| VFS .text | ~27 KB (separate segment) |
+| Core .text | ~30 KB |
+| VFS .text | ~26 KB (separate segment) |
 | .data | ~0.5 KB |
 | .bss | ~5.8 KB |
 | stack | 2 KB |
 | VFS data | 8 KB (reserved at 0xA000) |
+| Page pool | 588 KB (147 pages, far access via page_id_t) |
 
 The segment split resolved the original 64 KB code limit.  Future
 modules (exec) can use additional code segments.
@@ -780,64 +797,49 @@ modules (exec) can use additional code segments.
 
 ## 8. Phase P-5: User-Space Exec and Tests
 
-**Status**: Not started.
+**Status**: In progress.  ELF loading works; user process starts but
+crashes in `sys_exit` due to unresolved cross-module calls.
 
-**Goal**: Full user-space support, `runtests` passes.
+**Blocker**: The i16 build uses `--unresolved-symbols=ignore-all`
+which silently links ~82 cross-module calls to address 0.  This must
+be resolved before user processes can run reliably.  See
+`docs/proposals/kernel_modules.md` §Completion Plan for the 5-step
+fix.
 
-### Steps
+### What Works
 
-1. **COM loader** (`com_loader.c` or extend existing loader) — load flat
-   binaries at offset 0x0100 in a user segment, set CS=DS=ES=SS=segment.
-   The existing `hello.com` test binary should run first.
+- `elf16_loader.c` detects and loads ELF32 (EM_386) static executables
+- Process gets its own segment: CS=DS=ES = `base >> 4`
+- Segment-aware initial frame: 24-byte ISR frame with correct CS/IP
+- Direct PID 1 launch via inline IRET (bypasses timer ISR)
+- `mod_vfs.file_read()` wraps `ops->read` for cross-module safety
+- PIT 100 Hz timer and preemptive scheduler start
 
-2. **Signal delivery for i16** — implement `sys_sigreturn` / signal
-   trampoline.  The 24-byte frame format matches the timer ISR; the
-   trampoline must build this frame on the user stack and `IRET` into the
-   signal handler.
+### What Crashes
 
-3. **Fork / waitpid** — process segment duplication.  Far-copy parent's
-   code+data segment to a new segment for the child.  `mm_page_read/write`
-   handles cross-segment data access.
+- `sys_exit` → `fd_close_all(current)` — unresolved VFS function
+- Any syscall that touches FD subsystem (read, write, close)
+- Any VFS code that calls `sched_wakeup`, `sched_yield` — unresolved
+  core functions
 
-4. **Pipe** — should work largely unmodified (kernel-side buffers in SS=0).
+### Steps (revised)
 
-5. **`--test ibmpc` in run.sh** — integrate with existing test harness.
+1. **Complete module boundary migration** — see `kernel_modules.md`
+   Steps 1-5.  This is the prerequisite for everything else.
 
-### Page-Indexed Memory Model
+2. **Verify hello.S exit(42)** — after modulization, the minimal
+   `exit(42)` program should complete without crashing.
 
-The 8086 address space is 1 MB (20-bit), but near pointers are 16-bit
-(64 KB range).  `proc_image_segment_t.base` is `void *` — on i16
-that's 16-bit, unable to address process segments loaded at 0x20000+.
+3. **hello.S with write** — add `sys_write` with segment-relative
+   string address computation (`CS << 4 + offset`).
 
-Solution: memory allocation uses **page indices** instead of pointers:
+4. **Signal delivery for i16** — implement `sys_sigreturn` / signal
+   trampoline.
 
-```c
-typedef uint16_t page_id_t;           // page index (0..N), not pointer
+5. **Fork / waitpid** — process segment duplication via
+   `mm_page_read/write` for cross-segment copy.
 
-page_id_t mm_page_alloc(void);        // returns page index
-void      mm_page_free(page_id_t id);
-
-// Cross-segment data access (required on i16, optional on 32-bit)
-void mm_page_read(page_id_t id, uint16_t off, void *buf, uint16_t len);
-void mm_page_write(page_id_t id, uint16_t off, const void *buf, uint16_t len);
-
-// Direct pointer access (32-bit only — NOT available on i16)
-void *mm_page_to_ptr(page_id_t id);
-page_id_t mm_ptr_to_page(void *ptr);
-```
-
-On i16, `mm_page_read/write` internally computes `segment = page_base >> 4`
-and uses far pointer access (ES:BX) to copy data.  These functions are
-already declared in `mod_core.h` (16 exports).
-
-**i16 scope exclusions** (components that don't use page-indexed API):
-- No eCPU emulators (ecpu_m68k, ecpu_z80 — use raw pointers extensively)
-- No subsystem bridges (human68k, sos, cpm)
-- No tmpfs, procfs, devfs (root is read-only UFS on floppy)
-- Dedicated flat/COM binary loader instead of the 32-bit ELF loader
-
-**Verification**: Kernel mounts floppy UFS, loads `/sbin/init`, prints
-"Hello from user!".  Then `runtests` passes.
+6. **`--test ibmpc` in run.sh** — integrate with existing test harness.
 
 ---
 

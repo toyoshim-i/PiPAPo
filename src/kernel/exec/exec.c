@@ -13,7 +13,6 @@
 
 #include "arch/arch.h"
 #include "kernel/common/errno.h"
-#include "kernel/klog.h"
 #include "kernel/mm/mem_region.h"
 #include "kernel/mm/page.h"
 #include "kernel/signal/signal.h"
@@ -32,15 +31,7 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
   }
 
   /* ── 1. Look up the binary in the VFS ──────────────────────────────── */
-#ifdef __ia16__
-  klogf("EXEC: &vn=%lx path=%s\n", (unsigned long)(uintptr_t)&vn, path);
-#endif
   err = mod_vfs.lookup(path, &vn);
-#ifdef __ia16__
-  klogf("EXEC: err=%u vn=%lx\n",
-        (unsigned)(err < 0 ? -err : 0),
-        (unsigned long)(uintptr_t)vn);
-#endif
   if (err < 0) return err;
 
   if (vn->type != VNODE_FILE) {
@@ -68,22 +59,11 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
     file_buf = (uint8_t *)file_region.base;
 
     if (!vn->mount || !vn->mount->ops || !vn->mount->ops->read) {
-#ifdef __ia16__
-      klogf("EXEC: no read op (mount=%lx ops=%lx)\n",
-            (unsigned long)(uintptr_t)vn->mount,
-            (unsigned long)(uintptr_t)(vn->mount ? vn->mount->ops : 0));
-#endif
       mem_region_free(&file_region);
       mod_vfs.rel_vnode(vn);
       return -(int)ENOEXEC;
     }
 
-#ifdef __ia16__
-    klogf("EXEC: reading %lu bytes (xip=%lx read=%lx)\n",
-          (unsigned long)file_size,
-          (unsigned long)(uintptr_t)vn->xip_addr,
-          (unsigned long)(uintptr_t)vn->mount->ops->read);
-#endif
     long nread = mod_vfs.file_read(vn, file_buf, file_size, 0);
     if (nread < 0 || (uint32_t)nread != file_size) {
       mem_region_free(&file_region);
@@ -131,23 +111,7 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
   }
 
   /* ── 4. Free file buffer if the loader doesn't need it for XIP ───── */
-#ifdef __ia16__
-  klogf("EXEC: file_buf=%lx file_region.base=%lx p->sp=%lx\n",
-        (unsigned long)(uintptr_t)file_buf,
-        (unsigned long)(uintptr_t)file_region.base,
-        (unsigned long)p->sp);
-  {
-    uint16_t *chk = (uint16_t *)(uintptr_t)(uint16_t)p->sp;
-    klogf("EXEC: pre-free CS=%x IP=%x\n", (unsigned)chk[10], (unsigned)chk[9]);
-  }
-#endif
   if (file_buf && !matched_loader->xip) mem_region_free(&file_region);
-#ifdef __ia16__
-  {
-    uint16_t *chk = (uint16_t *)(uintptr_t)(uint16_t)p->sp;
-    klogf("EXEC: post-free CS=%x IP=%x\n", (unsigned)chk[10], (unsigned)chk[9]);
-  }
-#endif
 
   /* ── 5. Set process metadata ───────────────────────────────────────── */
   {
