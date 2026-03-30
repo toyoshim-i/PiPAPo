@@ -11,7 +11,7 @@
  * The far pointer table vfs_fptrs[] is patched at boot by
  * target_ibmpc.c after reading the VFS module header.
  *
- * Function list auto-generated from mod_vfs_funcs.inc.
+ * Function list auto-generated from mod_vfs.inc.
  *
  * Linked into ppap_ibmpc (core binary).
  */
@@ -24,14 +24,14 @@
 /*
  * Far pointer table: offset:segment pairs for each VFS entry point.
  * Each entry is 4 bytes: [offset 2B][segment 2B].
- * Auto-generated from mod_vfs_funcs.inc.
+ * Auto-generated from mod_vfs.inc.
  */
   .section .data
   .global vfs_fptrs
   .global vfs_fptrs_end
 vfs_fptrs:
 #define MOD_VFS_ENTRY(name, idx)  .word 0, 0  /* idx */
-#include "common/mod/mod_vfs_funcs.inc"
+#include "common/mod/mod_vfs.inc"
 #undef MOD_VFS_ENTRY
 vfs_fptrs_end:
 
@@ -55,7 +55,7 @@ vfs_\name:
 .endm
 
 #define MOD_VFS_ENTRY(name, idx)  VFS_CALLER_STUB name, idx
-#include "common/mod/mod_vfs_funcs.inc"
+#include "common/mod/mod_vfs.inc"
 #undef MOD_VFS_ENTRY
 
 #endif /* __ia16__ */

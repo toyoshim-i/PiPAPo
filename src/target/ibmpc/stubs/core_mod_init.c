@@ -69,29 +69,9 @@ int uart_rx_avail(void);
 #include "common/mod/mod_core.h"
 
 MOD_DEFINE_BEGIN(core)
-  MOD_IMPL(core, klog)
-  MOD_IMPL(core, klogf)
-  MOD_IMPL(core, kmem_pool_init)
-  MOD_IMPL(core, kmem_alloc)
-  MOD_IMPL(core, kmem_free)
-  MOD_IMPL(core, kmem_free_count)
-  MOD_IMPL(core, mem_region_alloc)
-  MOD_IMPL(core, mem_region_free)
-  MOD_IMPL(core, mem_region_total_bytes)
-  MOD_IMPL(core, mem_region_free_bytes)
-  MOD_IMPL(core, mm_page_alloc)
-  MOD_IMPL(core, mm_page_free)
-  MOD_IMPL(core, mm_page_read)
-  MOD_IMPL(core, mm_page_write)
-  MOD_IMPL(core, sched_wakeup)
-  MOD_IMPL(core, sched_yield)
-  MOD_IMPL(core, sched_get_ticks)
-  MOD_IMPL(core, set_svc_restart)
-  MOD_IMPL(core, uart_putc)
-  MOD_IMPL(core, uart_getc)
-  MOD_IMPL(core, uart_rx_avail)
-  MOD_IMPL(core, blkdev_read)
-  MOD_IMPL(core, blkdev_write)
+#define MOD_CORE_ENTRY(name, idx)  MOD_IMPL(core, name)
+#include "common/mod/mod_core.inc"
+#undef MOD_CORE_ENTRY
 MOD_DEFINE_END()
 
 #endif /* __ia16__ */

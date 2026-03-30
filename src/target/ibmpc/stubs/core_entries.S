@@ -5,26 +5,15 @@
  * of ljmp from VFS caller stubs.
  *
  * The caller stub (core_stubs.S) converts the compiler's near call
- * into a far frame: [args] [caller_CS] [near_ret_IP] ← SP.
+ * into a far frame: [args] [caller_CS] [near_ret_IP] <- SP.
  * It then does `ljmp` (no push) to the entry point below.
  *
  * The entry stub simply calls the real C function (near call within
  * core's segment) and does `lret` to return via the far frame.
  *
- * Stack on entry (after ljmp):
- *   [args]  [caller_CS 2B]  [near_ret_IP 2B] ← SP
+ * Function list auto-generated from mod_core.inc.
  *
- * This is a valid far return frame. The function call adds one
- * more near IP, so the function sees [args] at the correct offset
- * (BP+4 for first arg after push BP; mov SP,BP).
- *
- * Wait — the function expects [args] [ret_IP] ← SP (2-byte ret),
- * but we have [args] [CS 2B] [IP 2B] ← SP (4-byte far frame).
- * The `call` below adds another 2B. Function sees args at BP+8
- * instead of BP+4. That's wrong.
- *
- * Fix: the entry stub must remove the far frame, call the function
- * (so it sees [args] [ret_IP]), then restore the far frame and lret.
+ * Linked into ppap_ibmpc (core binary).
  */
 
 #ifdef __ia16__
@@ -71,28 +60,14 @@ saved_ip: .word 0
   lret
 .endm
 
-  CORE_TARGET_STUB klog
-  CORE_TARGET_STUB klogf
-  CORE_TARGET_STUB kmem_pool_init
-  CORE_TARGET_STUB kmem_alloc
-  CORE_TARGET_STUB kmem_free
-  CORE_TARGET_STUB kmem_free_count
-  CORE_TARGET_STUB mem_region_alloc
-  CORE_TARGET_STUB mem_region_free
-  CORE_TARGET_STUB mem_region_total_bytes
-  CORE_TARGET_STUB mem_region_free_bytes
-  CORE_TARGET_STUB core_blkdev_read
-  CORE_TARGET_STUB core_blkdev_write
-  CORE_TARGET_STUB mm_page_alloc
-  CORE_TARGET_STUB mm_page_free
-  CORE_TARGET_STUB mm_page_read
-  CORE_TARGET_STUB mm_page_write
-  CORE_TARGET_STUB sched_wakeup
-  CORE_TARGET_STUB sched_yield
-  CORE_TARGET_STUB sched_get_ticks
-  CORE_TARGET_STUB set_svc_restart
-  CORE_TARGET_STUB uart_putc
-  CORE_TARGET_STUB uart_getc
-  CORE_TARGET_STUB uart_rx_avail
+#define MOD_CORE_ENTRY(name, idx)  CORE_TARGET_STUB name
+#include "common/mod/mod_core.inc"
+#undef MOD_CORE_ENTRY
+
+/* blkdev entries use core_ prefix (matching the wrapper in mod_core.c) */
+  .global blkdev_read_entry
+  .set blkdev_read_entry, core_blkdev_read_entry
+  .global blkdev_write_entry
+  .set blkdev_write_entry, core_blkdev_write_entry
 
 #endif /* __ia16__ */

@@ -15,7 +15,7 @@
  * The core reads this table, verifies the magic, and patches
  * vfs_fptrs[] with (offset, vfs_segment) pairs.
  *
- * Entry list auto-generated from mod_vfs_funcs.inc.
+ * Entry list auto-generated from mod_vfs.inc.
  *
  * Linked FIRST into ppap_ibmpc_vfs so it appears at offset 0.
  */
@@ -31,7 +31,7 @@ vfs_module_header:
   .word (vfs_entry_table_end - vfs_entry_table) / 2  /* entry_count */
 vfs_entry_table:
 #define MOD_VFS_ENTRY(name, idx)  .word vfs_##name##_entry
-#include "common/mod/mod_vfs_funcs.inc"
+#include "common/mod/mod_vfs.inc"
 #undef MOD_VFS_ENTRY
 vfs_entry_table_end:
   /* DS=0 address of core_fptrs table (for core to patch) */

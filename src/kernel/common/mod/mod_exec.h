@@ -43,4 +43,11 @@ MOD_DECLARE_BEGIN(exec)
 
 MOD_DECLARE_END(exec)
 
+#define MOD_EXEC_ENTRY(name, idx) /* count only */
+#include "mod_exec.inc"
+#undef MOD_EXEC_ENTRY
+_Static_assert(sizeof(mod_exec_t) == MOD_EXEC_FUNC_COUNT * sizeof(void (*)(void)),
+               "mod_exec_t size mismatch — update MOD_EXEC_FUNC_COUNT in "
+               "mod_exec.inc");
+
 #endif /* PPAP_KERNEL_MOD_MOD_EXEC_H */

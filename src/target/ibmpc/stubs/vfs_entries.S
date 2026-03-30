@@ -11,7 +11,7 @@
  * The entry pops the far frame, calls the real function (which sees
  * [args] [ret_IP] correctly), then restores the far frame and lrets.
  *
- * Function list auto-generated from mod_vfs_funcs.inc.
+ * Function list auto-generated from mod_vfs.inc.
  *
  * Linked into ppap_ibmpc_vfs (VFS binary).
  */
@@ -68,7 +68,7 @@ vfs_\name\()_entry:
 
 /* Generate all entry stubs from the .inc file */
 #define MOD_VFS_ENTRY(name, idx)  VFS_TARGET_STUB name
-#include "common/mod/mod_vfs_funcs.inc"
+#include "common/mod/mod_vfs.inc"
 #undef MOD_VFS_ENTRY
 
 #endif /* __ia16__ */

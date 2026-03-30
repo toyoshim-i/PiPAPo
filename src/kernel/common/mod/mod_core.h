@@ -238,12 +238,13 @@ MOD_DECLARE_BEGIN(core)
 
 MOD_DECLARE_END(core)
 
-/* Number of function pointers in mod_core_t.
- * Must match core_stubs.S slot count and core_entries.S stub count.
- * Static assert catches mismatches at compile time. */
-#define MOD_CORE_FUNC_COUNT 23
+/* MOD_CORE_FUNC_COUNT is defined in mod_core.inc — the single source
+ * of truth shared by both C and assembly stubs. */
+#define MOD_CORE_ENTRY(name, idx) /* count only */
+#include "mod_core.inc"
+#undef MOD_CORE_ENTRY
 _Static_assert(sizeof(mod_core_t) == MOD_CORE_FUNC_COUNT * sizeof(void (*)(void)),
-               "mod_core_t size mismatch — update MOD_CORE_FUNC_COUNT, "
-               "core_stubs.S, and core_entries.S");
+               "mod_core_t size mismatch — update MOD_CORE_FUNC_COUNT in "
+               "mod_core.inc");
 
 #endif /* PPAP_KERNEL_MOD_MOD_CORE_H */

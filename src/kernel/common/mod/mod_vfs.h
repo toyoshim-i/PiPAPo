@@ -246,16 +246,16 @@ MOD_DECLARE_BEGIN(vfs)
 
 MOD_DECLARE_END(vfs)
 
-/* MOD_VFS_FUNC_COUNT is defined in mod_vfs_funcs.inc — the single source
+/* MOD_VFS_FUNC_COUNT is defined in mod_vfs.inc — the single source
  * of truth shared by both C and assembly stubs.  The _Static_assert
  * below catches mismatches between this struct and the .inc file.
- * To add a new function: update mod_vfs.h (types) AND mod_vfs_funcs.inc
+ * To add a new function: update mod_vfs.h (types) AND mod_vfs.inc
  * (name + index).  Assembly stubs auto-generate from the .inc file. */
 #define MOD_VFS_ENTRY(name, idx) /* count only */
-#include "mod_vfs_funcs.inc"
+#include "mod_vfs.inc"
 #undef MOD_VFS_ENTRY
 _Static_assert(sizeof(mod_vfs_t) == MOD_VFS_FUNC_COUNT * sizeof(void (*)(void)),
                "mod_vfs_t size mismatch — update MOD_VFS_FUNC_COUNT in "
-               "mod_vfs_funcs.inc");
+               "mod_vfs.inc");
 
 #endif /* PPAP_KERNEL_MOD_MOD_VFS_H */

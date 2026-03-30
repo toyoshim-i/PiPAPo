@@ -60,7 +60,7 @@ void *vfs_fd_get_priv(int);
 
 MOD_DEFINE_BEGIN(vfs)
 #define MOD_VFS_ENTRY(name, idx)  MOD_IMPL(vfs, name)
-#include "common/mod/mod_vfs_funcs.inc"
+#include "common/mod/mod_vfs.inc"
 #undef MOD_VFS_ENTRY
 MOD_DEFINE_END()
 
