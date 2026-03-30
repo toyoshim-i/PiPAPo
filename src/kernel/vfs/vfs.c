@@ -271,9 +271,34 @@ int vfs_mount_ufs(const char *path, uint8_t flags, const void *dev_data)
 #include "../fd/fd.h"
 
 /* Aliases for MOD_IMPL convention: vfs_<name> → <name> */
-#define vfs_fd_stdio_init fd_stdio_init
 #define vfs_file_pool_init file_pool_init
 #define vfs_tty_rx_notify tty_rx_notify
+
+/* fd.c: fd_stdio_init takes pcb_t* (compat wrapper) */
+struct pcb;
+typedef struct pcb pcb_t;
+extern void fd_stdio_init(pcb_t *);
+#define vfs_fd_stdio_init fd_stdio_init
+
+/* fd.c pool functions — already named vfs_fd_* */
+extern int vfs_fd_open(const char *, int, int);
+extern void vfs_fd_release(int);
+extern void vfs_fd_ref(int);
+extern int vfs_fd_stdio_desc(int);
+extern long vfs_fd_read(int, char *, size_t);
+extern long vfs_fd_write(int, const char *, size_t);
+extern int vfs_fd_ioctl(int, uint32_t, void *);
+extern int vfs_fd_poll(int);
+extern long vfs_fd_lseek(int, long, int);
+extern int vfs_fd_fstat(int, void *);
+extern long vfs_fd_getdents(int, void *, size_t);
+extern long vfs_fd_getdents64(int, void *, long);
+extern int vfs_fd_fstatfs(int, void *);
+extern long vfs_fd_fcntl(int, int, long);
+extern void *vfs_fd_get_priv(int);
+
+/* pipe.c */
+extern int vfs_fd_pipe_create(int *, int *);
 
 /* Combined fstab parse + mount behind the module boundary. */
 void vfs_fstab_automount(void) {
@@ -313,4 +338,20 @@ MOD_DEFINE_BEGIN(vfs)
   MOD_IMPL(vfs, file_pool_init)
   MOD_IMPL(vfs, tty_rx_notify)
   MOD_IMPL(vfs, fstab_automount)
+  MOD_IMPL(vfs, fd_open)
+  MOD_IMPL(vfs, fd_release)
+  MOD_IMPL(vfs, fd_ref)
+  MOD_IMPL(vfs, fd_pipe_create)
+  MOD_IMPL(vfs, fd_stdio_desc)
+  MOD_IMPL(vfs, fd_read)
+  MOD_IMPL(vfs, fd_write)
+  MOD_IMPL(vfs, fd_ioctl)
+  MOD_IMPL(vfs, fd_poll)
+  MOD_IMPL(vfs, fd_lseek)
+  MOD_IMPL(vfs, fd_fstat)
+  MOD_IMPL(vfs, fd_getdents)
+  MOD_IMPL(vfs, fd_getdents64)
+  MOD_IMPL(vfs, fd_fstatfs)
+  MOD_IMPL(vfs, fd_fcntl)
+  MOD_IMPL(vfs, fd_get_priv)
 MOD_DEFINE_END()

@@ -110,6 +110,9 @@ pcb_t *proc_alloc(void) {
       proc_table[i].umask_val = DEFAULT_UMASK;
       proc_table[i].running_on_core = -1;
       proc_table[i].start_time = sched_get_ticks();
+      /* Init fd_map to "no descriptor" (0 is a valid desc_id) */
+      for (int _f = 0; _f < FD_MAX; _f++)
+        proc_table[i].fd_map[_f] = FD_DESC_NONE;
       result = &proc_table[i];
       break;
     }

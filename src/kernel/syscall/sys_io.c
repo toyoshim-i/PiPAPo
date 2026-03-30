@@ -4,16 +4,16 @@
  *   sys_write(fd, buf, n) — write n bytes from buf to file descriptor fd
  *   sys_read (fd, buf, n) — read  up to n bytes from fd into buf
  *
- * Both syscalls dispatch through the fd table in the current process's PCB.
- * The fd table is populated with the tty driver (Step 10 — fd_stdio_init).
- * Until then, all fds are NULL and calls return -EBADF.
+ * Core resolves per-process fd → descriptor ID via fd_map[],
+ * then delegates to mod_vfs.fd_read/fd_write (VFS module).
  */
 
 #include <stddef.h>
 
 #include "../common/errno.h"
-#include "../fd/file.h"
+#include "../common/mod/mod_vfs.h"
 #include "../proc/proc.h"
+#include "config.h"
 #include "syscall.h"
 
 /* ── sys_write ────────────────────────────────────────────────────────────────
@@ -21,11 +21,9 @@
 
 long sys_write(long fd, const char *buf, size_t n) {
   if (fd < 0 || (uint32_t)fd >= FD_MAX) return -(long)EBADF;
-
-  struct file *f = current->fd_table[(uint32_t)fd];
-  if (!f || !f->ops || !f->ops->write) return -(long)EBADF;
-
-  return f->ops->write(f, buf, n);
+  int16_t desc = current->fd_map[(uint32_t)fd];
+  if (desc == FD_DESC_NONE) return -(long)EBADF;
+  return mod_vfs.fd_write(desc, buf, n);
 }
 
 /* ── sys_read ─────────────────────────────────────────────────────────────────
@@ -33,11 +31,9 @@ long sys_write(long fd, const char *buf, size_t n) {
 
 long sys_read(long fd, char *buf, size_t n) {
   if (fd < 0 || (uint32_t)fd >= FD_MAX) return -(long)EBADF;
-
-  struct file *f = current->fd_table[(uint32_t)fd];
-  if (!f || !f->ops || !f->ops->read) return -(long)EBADF;
-
-  return f->ops->read(f, buf, n);
+  int16_t desc = current->fd_map[(uint32_t)fd];
+  if (desc == FD_DESC_NONE) return -(long)EBADF;
+  return mod_vfs.fd_read(desc, buf, n);
 }
 
 /* ── sys_writev ───────────────────────────────────────────────────────────────
@@ -91,11 +87,8 @@ long sys_readv(long fd, const void *iov_ptr, long iovcnt) {
 
 long sys_ioctl(long fd, long cmd, long arg) {
   if (fd < 0 || (uint32_t)fd >= FD_MAX) return -(long)EBADF;
-
-  struct file *f = current->fd_table[(uint32_t)fd];
-  if (!f || !f->ops) return -(long)EBADF;
-
-  if (!f->ops->ioctl) return -(long)ENOTTY;
-
-  return (long)f->ops->ioctl(f, (uint32_t)cmd, (void *)(uintptr_t)arg);
+  int16_t desc = current->fd_map[(uint32_t)fd];
+  if (desc == FD_DESC_NONE) return -(long)EBADF;
+  return (long)mod_vfs.fd_ioctl(desc, (uint32_t)cmd,
+                                (void *)(uintptr_t)arg);
 }

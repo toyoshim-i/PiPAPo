@@ -220,12 +220,36 @@ MOD_DECLARE_BEGIN(vfs)
    */
   MOD_FUNC(vfs, void, fstab_automount, void)
 
+  /* ── File descriptor pool (system-wide, process-agnostic) ────────────── */
+
+  /* Lifecycle: allocate/release file objects by descriptor ID. */
+  MOD_FUNC(vfs, int, fd_open, const char *, int, int)
+  MOD_FUNC(vfs, void, fd_release, int)
+  MOD_FUNC(vfs, void, fd_ref, int)
+  MOD_FUNC(vfs, int, fd_pipe_create, int *, int *)
+  MOD_FUNC(vfs, int, fd_stdio_desc, int)
+
+  /* I/O by descriptor ID. */
+  MOD_FUNC(vfs, long, fd_read, int, char *, size_t)
+  MOD_FUNC(vfs, long, fd_write, int, const char *, size_t)
+  MOD_FUNC(vfs, int, fd_ioctl, int, uint32_t, void *)
+  MOD_FUNC(vfs, int, fd_poll, int)
+
+  /* File state (needs VFS internals: vnode, offset, flags). */
+  MOD_FUNC(vfs, long, fd_lseek, int, long, int)
+  MOD_FUNC(vfs, int, fd_fstat, int, void *)
+  MOD_FUNC(vfs, long, fd_getdents, int, void *, size_t)
+  MOD_FUNC(vfs, long, fd_getdents64, int, void *, long)
+  MOD_FUNC(vfs, int, fd_fstatfs, int, void *)
+  MOD_FUNC(vfs, long, fd_fcntl, int, int, long)
+  MOD_FUNC(vfs, void *, fd_get_priv, int)
+
 MOD_DECLARE_END(vfs)
 
 /* Number of function pointers in mod_vfs_t.
  * Must match entry_count in vfs_header.S, vfs_stubs.S slot count,
  * and vfs_entries.S stub count.  Static assert catches mismatches. */
-#define MOD_VFS_FUNC_COUNT 17
+#define MOD_VFS_FUNC_COUNT 33
 _Static_assert(sizeof(mod_vfs_t) == MOD_VFS_FUNC_COUNT * sizeof(void (*)(void)),
                "mod_vfs_t size mismatch — update MOD_VFS_FUNC_COUNT, "
                "vfs_header.S, vfs_stubs.S, and vfs_entries.S");

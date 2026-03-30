@@ -22,6 +22,10 @@
 #include "../proc/proc.h"
 #include "fd.h"
 #include "file.h"
+#include "config.h"
+
+/* Forward declarations for pool operations (fd.c) */
+extern void vfs_fd_release(int desc);
 
 /* ── Pipe configuration ─────────────────────────────────────────────────────
  */
@@ -155,60 +159,67 @@ static const struct file_ops pipe_read_ops = {pipe_read, NULL, pipe_close, NULL,
 static const struct file_ops pipe_write_ops = {NULL, pipe_write, pipe_close,
                                                NULL, NULL};
 
-/* ── sys_pipe ───────────────────────────────────────────────────────────────
+/* ── vfs_fd_pipe_create ─────────────────────────────────────────────────────
+ *
+ * Allocate a pipe and two pool entries for read/write ends.
+ * Returns 0 on success (desc IDs in *rdesc, *wdesc), negative errno on error.
+ * Called via mod_vfs.fd_pipe_create().
+ */
+
+int vfs_fd_pipe_create(int *rdesc, int *wdesc) {
+  if (!rdesc || !wdesc) return -EINVAL;
+
+  pipe_t *p = pipe_alloc();
+  if (!p) return -ENOMEM;
+
+  int rd = fd_pool_alloc_pipe(&pipe_read_ops, p, O_RDONLY);
+  if (rd < 0) {
+    pipe_free(p);
+    return rd;
+  }
+
+  int wd = fd_pool_alloc_pipe(&pipe_write_ops, p, O_WRONLY);
+  if (wd < 0) {
+    vfs_fd_release(rd);
+    pipe_free(p);
+    return wd;
+  }
+
+  *rdesc = rd;
+  *wdesc = wd;
+  return 0;
+}
+
+/* ── sys_pipe (core-callable wrapper) ──────────────────────────────────────
+ *
+ * On non-i16 platforms, syscall dispatch calls this directly.
+ * On i16, it goes through mod_vfs.fd_pipe_create + core fd_map assignment.
  */
 
 long sys_pipe(int *fds) {
   if (!fds) return -(long)EINVAL;
 
-  /* Allocate pipe */
-  pipe_t *p = pipe_alloc();
-  if (!p) return -(long)ENOMEM;
+  int rdesc, wdesc;
+  int err = vfs_fd_pipe_create(&rdesc, &wdesc);
+  if (err) return (long)err;
 
-  /* Allocate read-end file */
-  struct file *rf = file_alloc();
-  if (!rf) {
-    pipe_free(p);
-    return -(long)ENOMEM;
-  }
-  rf->ops = &pipe_read_ops;
-  rf->priv = p;
-  rf->flags = O_RDONLY;
-  rf->refcnt = 0;
-  rf->vnode = NULL;
-  rf->offset = 0;
-
-  /* Allocate write-end file */
-  struct file *wf = file_alloc();
-  if (!wf) {
-    file_free(rf);
-    pipe_free(p);
-    return -(long)ENOMEM;
-  }
-  wf->ops = &pipe_write_ops;
-  wf->priv = p;
-  wf->flags = O_WRONLY;
-  wf->refcnt = 0;
-  wf->vnode = NULL;
-  wf->offset = 0;
-
-  /* Allocate fds */
-  int rfd = fd_alloc(current, rf);
-  if (rfd < 0) {
-    file_free(wf);
-    file_free(rf);
-    pipe_free(p);
-    return (long)rfd;
+  /* Find two free fd_map slots */
+  int rfd = -1, wfd = -1;
+  for (int i = 0; i < FD_MAX && (rfd < 0 || wfd < 0); i++) {
+    if (current->fd_map[i] == FD_DESC_NONE) {
+      if (rfd < 0) rfd = i;
+      else wfd = i;
+    }
   }
 
-  int wfd = fd_alloc(current, wf);
-  if (wfd < 0) {
-    fd_free(current, rfd);
-    file_free(wf);
-    pipe_free(p);
-    return (long)wfd;
+  if (rfd < 0 || wfd < 0) {
+    vfs_fd_release(rdesc);
+    vfs_fd_release(wdesc);
+    return -(long)EMFILE;
   }
 
+  current->fd_map[rfd] = (int16_t)rdesc;
+  current->fd_map[wfd] = (int16_t)wdesc;
   fds[0] = rfd;
   fds[1] = wfd;
   return 0;

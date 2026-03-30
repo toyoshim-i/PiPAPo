@@ -17,11 +17,10 @@
 #include <stdint.h>
 
 #include "../common/errno.h"
-#include "../fd/fd.h"
-#include "../fd/file.h"
-#include "../fd/tty.h"
+#include "../common/mod/mod_core.h"
+#include "../common/mod/mod_vfs.h"
+#include "../fd/file.h"  /* POLLIN, POLLOUT, POLLNVAL, struct pollfd */
 #include "../proc/proc.h"
-#include "../proc/sched.h"
 #include "config.h"
 #include "syscall.h"
 
@@ -58,18 +57,13 @@ static long do_ppoll(struct pollfd *fds, uint32_t nfds, uint32_t timeout_ticks,
     int fd = fds[i].fd;
     if (fd < 0) continue; /* negative fd → skip (Linux behaviour) */
 
-    if (fd >= FD_MAX || !current->fd_table[fd]) {
+    if (fd >= FD_MAX || current->fd_map[fd] == FD_DESC_NONE) {
       fds[i].revents = (short)POLLNVAL;
       ready++;
       continue;
     }
 
-    struct file *f = current->fd_table[fd];
-    int mask;
-    if (f->ops && f->ops->poll)
-      mask = f->ops->poll(f);
-    else
-      mask = (int)(POLLIN | POLLOUT); /* no poll → assume ready */
+    int mask = mod_vfs.fd_poll(current->fd_map[fd]);
 
     fds[i].revents = (short)(mask & (int)fds[i].events);
     if (fds[i].revents) ready++;
@@ -88,7 +82,7 @@ static long do_ppoll(struct pollfd *fds, uint32_t nfds, uint32_t timeout_ticks,
 
   /* Check if we've timed out (on svc_restart re-entry) */
   if (current->sleep_until != 0 &&
-      (int32_t)(sched_get_ticks() - current->sleep_until) >= 0) {
+      (int32_t)(mod_core.sched_get_ticks() - current->sleep_until) >= 0) {
     current->sleep_until = 0;
     return 0; /* timeout */
   }
@@ -101,7 +95,7 @@ static long do_ppoll(struct pollfd *fds, uint32_t nfds, uint32_t timeout_ticks,
 
   /* Set up the deadline on first entry (sleep_until still 0) */
   if (has_timeout && current->sleep_until == 0)
-    current->sleep_until = sched_get_ticks() + timeout_ticks;
+    current->sleep_until = mod_core.sched_get_ticks() + timeout_ticks;
 
   /* Block: wait for data or timeout.
    * Use the first polled fd's priv as wait channel — for tty fds this
@@ -109,17 +103,17 @@ static long do_ppoll(struct pollfd *fds, uint32_t nfds, uint32_t timeout_ticks,
   current->wait_channel = NULL;
   for (uint32_t i = 0; i < nfds; i++) {
     int fd = fds[i].fd;
-    if (fd >= 0 && fd < FD_MAX && current->fd_table[fd]) {
-      struct file *f = current->fd_table[fd];
-      if (f->priv) {
-        current->wait_channel = f->priv;
+    if (fd >= 0 && fd < FD_MAX && current->fd_map[fd] != FD_DESC_NONE) {
+      void *priv = mod_vfs.fd_get_priv(current->fd_map[fd]);
+      if (priv) {
+        current->wait_channel = priv;
         break;
       }
     }
   }
   current->state = PROC_BLOCKED;
-  set_svc_restart();
-  sched_yield();
+  mod_core.set_svc_restart();
+  mod_core.sched_yield();
   return 0; /* ignored — SVC restores original args */
 }
 

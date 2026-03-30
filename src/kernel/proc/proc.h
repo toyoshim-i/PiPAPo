@@ -134,7 +134,9 @@ typedef struct pcb {
 #endif
 
   /* ── File descriptors ───────────────────────────────────────────────── */
-  struct file *fd_table[FD_MAX];
+  int16_t fd_map[FD_MAX]; /* per-process fd → system descriptor ID map
+                           * -1 (FD_DESC_NONE) = empty slot.
+                           * VFS owns the file objects; core owns the map. */
   char cwd[64]; /* current working directory (Phase 2+)       */
 
   /* ── Scheduling ─────────────────────────────────────────────────────── */

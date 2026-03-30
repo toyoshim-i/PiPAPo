@@ -44,6 +44,7 @@
 #endif
 #define PROC_DEFAULT_TICKS 10 /* time-slice length in SysTick ticks   */
 #define FILE_MAX 32           /* max concurrent open struct file objs */
+#define FD_DESC_NONE (-1)     /* empty fd_map slot (no descriptor)    */
 
 /* ── UART ring buffers ─────────────────────────────────────────────────────
  * Sizes must be powers of two.

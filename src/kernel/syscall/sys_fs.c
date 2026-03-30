@@ -1,105 +1,21 @@
 /*
- * sys_fs.c — VFS-routed filesystem syscalls
+ * sys_fs.c — Filesystem syscall implementations
  *
- *   sys_open     open a file by path via VFS lookup
- *   sys_close    close an open fd (release vnode + file object)
- *   sys_lseek    reposition file offset (SEEK_SET/CUR/END)
- *   sys_stat     stat a path (lookup + FS stat)
- *   sys_fstat    stat an open fd
- *   sys_getdents read directory entries from an open directory fd
- *   sys_getcwd   return the current working directory
- *   sys_chdir    change the current working directory
+ * File descriptor syscalls resolve fd_map[fd] → descriptor ID, then
+ * delegate to mod_vfs.fd_*(desc, ...) in the VFS module.
  *
- * All operations route through the VFS layer — no FS-specific code here.
- *
- * The file pool (FILE_MAX objects) is managed by the kmem slab allocator.
- * file_pool_init() must be called from kmain() before any sys_open calls.
- *
- * VFS bridge: vfs_file_ops translates struct file_ops (read/write/close)
- * into vfs_ops calls on the backing vnode, maintaining the file offset.
- * Legacy tty files (fd 0/1/2) have vnode == NULL and use tty_fops
- * directly — no change from Phase 1.
+ * Path-based syscalls (stat, mkdir, unlink, etc.) route through
+ * mod_vfs.lookup / mod_vfs.lookup_parent as before.
  */
-
-#include "../fd/fd.h"
-#include "../fd/file.h"
-#include "../fd/tty.h"
-#include "../fs/devfs.h"
-#include "../fs/procfs.h"
-#include "../fs/tmpfs.h"
-#include "../mm/kmem.h"
-#include "../proc/proc.h"
-#include "../common/mod/mod_vfs.h"
-#include "syscall.h"
-#ifdef PPAP_HAS_BLKDEV
-#include "../blkdev/blkdev.h"
-#include "../fs/ufs.h"
-#include "../fs/vfat.h"
-#endif
-#include <stddef.h>
-#include <string.h>
 
 #include "../common/errno.h"
+#include "../common/mod/mod_vfs.h"
+#include "../proc/proc.h"
 #include "config.h"
+#include "syscall.h"
 
-/* ── File object pool ────────────────────────────────────────────────────────
- */
-
-static struct file file_storage[FILE_MAX];
-static kmem_pool_t file_pool;
-
-void file_pool_init(void) {
-  kmem_pool_init(&file_pool, file_storage, sizeof(struct file), FILE_MAX);
-}
-
-struct file *file_alloc(void) { return kmem_alloc(&file_pool); }
-
-void file_free(struct file *f) {
-  /* Only free if f is within the file pool (not a static tty file) */
-  if (f >= &file_storage[0] && f < &file_storage[FILE_MAX])
-    kmem_free(&file_pool, f);
-}
-
-/* ── VFS bridge file_ops ─────────────────────────────────────────────────────
- */
-
-static long vfs_file_read(struct file *f, char *buf, size_t n) {
-  if (!f->vnode || !f->vnode->mount || !f->vnode->mount->ops ||
-      !f->vnode->mount->ops->read)
-    return -(long)EBADF;
-
-  long ret = f->vnode->mount->ops->read(f->vnode, buf, n, f->offset);
-  if (ret > 0) f->offset += (uint32_t)ret;
-  return ret;
-}
-
-static long vfs_file_write(struct file *f, const char *buf, size_t n) {
-  if (!f->vnode || !f->vnode->mount || !f->vnode->mount->ops ||
-      !f->vnode->mount->ops->write)
-    return -(long)EBADF;
-
-  /* O_APPEND: always write at end of file */
-  if (f->flags & O_APPEND) f->offset = f->vnode->size;
-
-  long ret =
-      f->vnode->mount->ops->write(f->vnode, (const void *)buf, n, f->offset);
-  if (ret > 0) f->offset += (uint32_t)ret;
-  return ret;
-}
-
-static int vfs_file_close(struct file *f) {
-  if (f->vnode) mod_vfs.rel_vnode(f->vnode);
-  f->vnode = NULL;
-  /* Note: file_free is called by fd_free when refcnt reaches 0.
-   * Do NOT call file_free here — that would be a double-free. */
-  return 0;
-}
-
-static const struct file_ops vfs_file_ops = {
-    vfs_file_read,  vfs_file_write,
-    vfs_file_close, NULL, /* ioctl — regular files don't support ioctl */
-    NULL,                 /* poll */
-};
+#include <stddef.h>
+#include <string.h>
 
 /* ── sys_open ────────────────────────────────────────────────────────────────
  */
@@ -107,115 +23,19 @@ static const struct file_ops vfs_file_ops = {
 long sys_open(const char *path, long flags, long mode) {
   if (!path) return -(long)EINVAL;
 
-  vnode_t *vn = NULL;
-  int err = mod_vfs.lookup(path, &vn);
+  int desc = mod_vfs.fd_open(path, (int)flags, (int)mode);
+  if (desc < 0) return (long)desc;
 
-  /* O_CREAT: if file doesn't exist, create it via the FS driver */
-  if (err == -ENOENT && ((uint32_t)flags & O_CREAT)) {
-    vnode_t *parent = NULL;
-    char namebuf[VFS_NAME_MAX + 1];
-    err = mod_vfs.lookup_parent(path, &parent, namebuf, (int)sizeof(namebuf));
-    if (err) return (long)err;
-
-    if (parent->type != VNODE_DIR) {
-      mod_vfs.rel_vnode(parent);
-      return -(long)ENOTDIR;
-    }
-
-    /* Check that the FS supports create */
-    if (!parent->mount || !parent->mount->ops || !parent->mount->ops->create) {
-      mod_vfs.rel_vnode(parent);
-      return -(long)ENOSYS;
-    }
-
-    /* Check read-only mount */
-    if (parent->mount->flags & MNT_RDONLY) {
-      mod_vfs.rel_vnode(parent);
-      return -(long)EROFS;
-    }
-
-    err = parent->mount->ops->create(parent, namebuf, (uint32_t)mode, &vn);
-    mod_vfs.rel_vnode(parent);
-    if (err) return (long)err;
-  } else if (err) {
-    return (long)err;
-  }
-
-  /* O_TRUNC: truncate existing file to zero length */
-  if (((uint32_t)flags & O_TRUNC) && vn->type == VNODE_FILE) {
-    if (vn->mount && vn->mount->ops && vn->mount->ops->truncate) {
-      int terr = vn->mount->ops->truncate(vn, 0);
-      if (terr) {
-        mod_vfs.rel_vnode(vn);
-        return (long)terr;
-      }
-    } else {
-      vn->size = 0; /* simple fallback */
+  /* Find free fd_map slot */
+  for (int i = 0; i < FD_MAX; i++) {
+    if (current->fd_map[i] == FD_DESC_NONE) {
+      current->fd_map[i] = (int16_t)desc;
+      return (long)i;
     }
   }
 
-  /* TTY device detection: redirect /dev/ttyS0, /dev/tty1, /dev/console,
-   * /dev/tty opens to the tty driver so they get line discipline processing.
-   * devfs vnodes have fs_priv → devfs_node_t whose first field is name.
-   * Each open allocates a new file object with priv pointing to the
-   * appropriate tty_dev_t instance for independent per-TTY state. */
-  if (vn->type == VNODE_DEV && vn->fs_priv) {
-    const char *devname = *(const char **)vn->fs_priv;
-    int tty_idx = -1;
-    if (devname) {
-      if (strcmp(devname, "ttyS0") == 0)
-        tty_idx = TTY_SERIAL;
-      else if (strcmp(devname, "tty1") == 0)
-        tty_idx = TTY_DISPLAY;
-      else if (strcmp(devname, "console") == 0)
-        tty_idx = TTY_SERIAL;
-      else if (strcmp(devname, "tty") == 0)
-        tty_idx = TTY_SERIAL;
-    }
-    if (tty_idx >= 0) {
-      struct file *ttyf = file_alloc();
-      if (!ttyf) {
-        mod_vfs.rel_vnode(vn);
-        return -(long)ENOMEM;
-      }
-      ttyf->ops = &tty_fops;
-      ttyf->priv = tty_get_dev(tty_idx);
-      ttyf->flags = (uint32_t)flags;
-      ttyf->refcnt = 0; /* fd_alloc will increment to 1 */
-      ttyf->vnode = NULL;
-      ttyf->offset = 0;
-      int fd = fd_alloc(current, ttyf);
-      mod_vfs.rel_vnode(vn);
-      if (fd < 0) {
-        file_free(ttyf);
-        return (long)fd;
-      }
-      return (long)fd;
-    }
-  }
-
-  /* Allocate a struct file from the pool */
-  struct file *f = file_alloc();
-  if (!f) {
-    mod_vfs.rel_vnode(vn);
-    return -(long)ENOMEM;
-  }
-
-  f->ops = &vfs_file_ops;
-  f->priv = NULL;
-  f->flags = (uint32_t)flags;
-  f->refcnt = 0; /* fd_alloc will increment to 1 */
-  f->vnode = vn;
-  f->offset = ((uint32_t)flags & O_APPEND) ? vn->size : 0;
-
-  int fd = fd_alloc(current, f);
-  if (fd < 0) {
-    mod_vfs.rel_vnode(vn);
-    file_free(f);
-    return (long)fd;
-  }
-
-  return (long)fd;
+  mod_vfs.fd_release(desc);
+  return -(long)EMFILE;
 }
 
 /* ── sys_close ───────────────────────────────────────────────────────────────
@@ -223,11 +43,11 @@ long sys_open(const char *path, long flags, long mode) {
 
 long sys_close(long fd) {
   if (fd < 0 || (uint32_t)fd >= FD_MAX) return -(long)EBADF;
+  int16_t desc = current->fd_map[(uint32_t)fd];
+  if (desc == FD_DESC_NONE) return -(long)EBADF;
 
-  struct file *f = fd_get(current, (int)fd);
-  if (!f) return -(long)EBADF;
-
-  fd_free(current, (int)fd);
+  current->fd_map[(uint32_t)fd] = FD_DESC_NONE;
+  mod_vfs.fd_release(desc);
   return 0;
 }
 
@@ -236,32 +56,9 @@ long sys_close(long fd) {
 
 long sys_lseek(long fd, long off, long whence) {
   if (fd < 0 || (uint32_t)fd >= FD_MAX) return -(long)EBADF;
-
-  struct file *f = fd_get(current, (int)fd);
-  if (!f) return -(long)EBADF;
-
-  /* lseek doesn't apply to tty or devices without a vnode */
-  if (!f->vnode) return -(long)ESPIPE;
-
-  long new_off;
-  switch (whence) {
-    case SEEK_SET:
-      new_off = off;
-      break;
-    case SEEK_CUR:
-      new_off = (long)f->offset + off;
-      break;
-    case SEEK_END:
-      new_off = (long)f->vnode->size + off;
-      break;
-    default:
-      return -(long)EINVAL;
-  }
-
-  if (new_off < 0) return -(long)EINVAL;
-
-  f->offset = (uint32_t)new_off;
-  return new_off;
+  int16_t desc = current->fd_map[(uint32_t)fd];
+  if (desc == FD_DESC_NONE) return -(long)EBADF;
+  return mod_vfs.fd_lseek(desc, off, (int)whence);
 }
 
 /* ── sys_stat ────────────────────────────────────────────────────────────────
@@ -289,53 +86,19 @@ long sys_stat(const char *path, struct stat *buf) {
 
 long sys_fstat(long fd, struct stat *buf) {
   if (fd < 0 || (uint32_t)fd >= FD_MAX || !buf) return -(long)EBADF;
-
-  struct file *f = fd_get(current, (int)fd);
-  if (!f) return -(long)EBADF;
-
-  if (!f->vnode || !f->vnode->mount || !f->vnode->mount->ops ||
-      !f->vnode->mount->ops->stat)
-    return -(long)ENOSYS;
-
-  return (long)f->vnode->mount->ops->stat(f->vnode, buf);
+  int16_t desc = current->fd_map[(uint32_t)fd];
+  if (desc == FD_DESC_NONE) return -(long)EBADF;
+  return (long)mod_vfs.fd_fstat(desc, buf);
 }
 
 /* ── sys_getdents ────────────────────────────────────────────────────────────
  */
 
-/* Sentinel: directory fully read.  Prevents romfs (which uses byte-offset
- * cookies where 0 means "start from first child") from restarting when the
- * last child's next_off is 0. */
-#define GETDENTS_EOF 0xFFFFFFFFu
-
 long sys_getdents(long fd, struct dirent *buf, size_t count) {
   if (fd < 0 || (uint32_t)fd >= FD_MAX || !buf) return -(long)EBADF;
-
-  struct file *f = fd_get(current, (int)fd);
-  if (!f) return -(long)EBADF;
-
-  if (!f->vnode || f->vnode->type != VNODE_DIR) return -(long)ENOTDIR;
-
-  if (!f->vnode->mount || !f->vnode->mount->ops ||
-      !f->vnode->mount->ops->readdir)
-    return -(long)ENOSYS;
-
-  /* Already reached end of directory */
-  if (f->offset == GETDENTS_EOF) return 0;
-
-  /* Convert byte count to entry count — user passes sizeof(struct dirent)
-   * per entry, but readdir expects a max entry count. */
-  size_t max_entries = count / sizeof(struct dirent);
-  if (max_entries == 0) return -(long)EINVAL;
-
-  /* Use the file offset as the readdir cookie */
-  uint32_t cookie = f->offset;
-  int n = f->vnode->mount->ops->readdir(f->vnode, buf, max_entries, &cookie);
-  if (n > 0)
-    f->offset = (cookie == 0) ? GETDENTS_EOF : cookie;
-  else if (n == 0)
-    f->offset = GETDENTS_EOF;
-  return (long)n;
+  int16_t desc = current->fd_map[(uint32_t)fd];
+  if (desc == FD_DESC_NONE) return -(long)EBADF;
+  return mod_vfs.fd_getdents(desc, buf, count);
 }
 
 /* ── sys_getcwd ──────────────────────────────────────────────────────────────
@@ -347,7 +110,6 @@ long sys_getcwd(char *buf, size_t size) {
   const char *cwd = current->cwd;
   size_t len = __builtin_strlen(cwd);
 
-  /* Default to "/" if cwd is empty (e.g. pid 0 before any chdir) */
   if (len == 0) {
     if (size < 2) return -(long)ERANGE;
     buf[0] = '/';
@@ -356,7 +118,6 @@ long sys_getcwd(char *buf, size_t size) {
   }
 
   if (len + 1 > size) return -(long)ERANGE;
-
   __builtin_memcpy(buf, cwd, len + 1);
   return (long)(len + 1);
 }
@@ -367,7 +128,6 @@ long sys_getcwd(char *buf, size_t size) {
 long sys_chdir(const char *path) {
   if (!path) return -(long)EINVAL;
 
-  /* Verify the path resolves to a directory */
   vnode_t *vn = NULL;
   int err = mod_vfs.lookup(path, &vn);
   if (err) return (long)err;
@@ -400,7 +160,6 @@ long sys_chdir(const char *path) {
   if (nlen < 0) return (long)nlen;
 
   if ((size_t)nlen >= sizeof(current->cwd)) return -(long)ENAMETOOLONG;
-
   __builtin_memcpy(current->cwd, normalized, (size_t)nlen + 1);
   return 0;
 }
@@ -410,9 +169,17 @@ long sys_chdir(const char *path) {
 
 long sys_dup(long oldfd) {
   if (oldfd < 0 || (uint32_t)oldfd >= FD_MAX) return -(long)EBADF;
-  struct file *f = fd_get(current, (int)oldfd);
-  if (!f) return -(long)EBADF;
-  return (long)fd_alloc(current, f);
+  int16_t desc = current->fd_map[(uint32_t)oldfd];
+  if (desc == FD_DESC_NONE) return -(long)EBADF;
+
+  for (int i = 0; i < FD_MAX; i++) {
+    if (current->fd_map[i] == FD_DESC_NONE) {
+      current->fd_map[i] = desc;
+      mod_vfs.fd_ref(desc);
+      return (long)i;
+    }
+  }
+  return -(long)EMFILE;
 }
 
 /* ── sys_dup2 ───────────────────────────────────────────────────────────────
@@ -421,14 +188,19 @@ long sys_dup(long oldfd) {
 long sys_dup2(long oldfd, long newfd) {
   if (oldfd < 0 || (uint32_t)oldfd >= FD_MAX) return -(long)EBADF;
   if (newfd < 0 || (uint32_t)newfd >= FD_MAX) return -(long)EBADF;
-  struct file *f = fd_get(current, (int)oldfd);
-  if (!f) return -(long)EBADF;
+  int16_t desc = current->fd_map[(uint32_t)oldfd];
+  if (desc == FD_DESC_NONE) return -(long)EBADF;
   if (oldfd == newfd) return newfd;
-  /* Close newfd if it is currently open */
-  fd_free(current, (int)newfd);
-  /* Point newfd at the same struct file, increment refcnt */
-  current->fd_table[(int)newfd] = f;
-  f->refcnt++;
+
+  /* Close newfd if open */
+  int16_t old_desc = current->fd_map[(uint32_t)newfd];
+  if (old_desc != FD_DESC_NONE) {
+    current->fd_map[(uint32_t)newfd] = FD_DESC_NONE;
+    mod_vfs.fd_release(old_desc);
+  }
+
+  current->fd_map[(uint32_t)newfd] = desc;
+  mod_vfs.fd_ref(desc);
   return newfd;
 }
 
@@ -440,19 +212,18 @@ long sys_mkdir(const char *path, long mode) {
 
   vnode_t *parent = NULL;
   char namebuf[VFS_NAME_MAX + 1];
-  int err = mod_vfs.lookup_parent(path, &parent, namebuf, (int)sizeof(namebuf));
+  int err = mod_vfs.lookup_parent(path, &parent, namebuf,
+                                  (int)sizeof(namebuf));
   if (err) return (long)err;
 
   if (parent->type != VNODE_DIR) {
     mod_vfs.rel_vnode(parent);
     return -(long)ENOTDIR;
   }
-
   if (!parent->mount || !parent->mount->ops || !parent->mount->ops->mkdir) {
     mod_vfs.rel_vnode(parent);
     return -(long)ENOSYS;
   }
-
   if (parent->mount->flags & MNT_RDONLY) {
     mod_vfs.rel_vnode(parent);
     return -(long)EROFS;
@@ -471,19 +242,18 @@ long sys_unlink(const char *path) {
 
   vnode_t *parent = NULL;
   char namebuf[VFS_NAME_MAX + 1];
-  int err = mod_vfs.lookup_parent(path, &parent, namebuf, (int)sizeof(namebuf));
+  int err = mod_vfs.lookup_parent(path, &parent, namebuf,
+                                  (int)sizeof(namebuf));
   if (err) return (long)err;
 
   if (parent->type != VNODE_DIR) {
     mod_vfs.rel_vnode(parent);
     return -(long)ENOTDIR;
   }
-
   if (!parent->mount || !parent->mount->ops || !parent->mount->ops->unlink) {
     mod_vfs.rel_vnode(parent);
     return -(long)ENOSYS;
   }
-
   if (parent->mount->flags & MNT_RDONLY) {
     mod_vfs.rel_vnode(parent);
     return -(long)EROFS;
@@ -502,20 +272,19 @@ long sys_rename(const char *oldpath, const char *newpath) {
 
   vnode_t *old_parent = NULL;
   char old_name[VFS_NAME_MAX + 1];
-  int err =
-      mod_vfs.lookup_parent(oldpath, &old_parent, old_name, (int)sizeof(old_name));
+  int err = mod_vfs.lookup_parent(oldpath, &old_parent, old_name,
+                                  (int)sizeof(old_name));
   if (err) return (long)err;
 
   vnode_t *new_parent = NULL;
   char new_name[VFS_NAME_MAX + 1];
-  err =
-      mod_vfs.lookup_parent(newpath, &new_parent, new_name, (int)sizeof(new_name));
+  err = mod_vfs.lookup_parent(newpath, &new_parent, new_name,
+                              (int)sizeof(new_name));
   if (err) {
     mod_vfs.rel_vnode(old_parent);
     return (long)err;
   }
 
-  /* Both parents must be directories on the same mount */
   if (old_parent->type != VNODE_DIR || new_parent->type != VNODE_DIR) {
     err = -(int)ENOTDIR;
     goto out;
@@ -539,56 +308,38 @@ out:
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
- * Phase 6 Step 7: Linux-compatible syscalls (musl libc ABI)
+ * Linux-compatible syscalls (musl libc ABI)
  * ══════════════════════════════════════════════════════════════════════════════
  */
 
 /* ── Linux struct stat64 — architecture-specific layout ─────────────────── */
-/*
- * Layout must exactly match musl's arch/{arm,m68k}/bits/stat.h.
- * ARM and m68k have different padding and field sizes.
- *
- * The m68k musl layout has a 2-byte __st_dev_padding (vs 4 on ARM),
- * shifting all subsequent fields.  We write m68k fields at their exact
- * offsets (verified with offsetof against the musl sysroot):
- *
- *   m68k:  st_dev=0 st_mode=14 st_nlink=18 st_uid=22 st_gid=26
- *          st_rdev=30 st_size=40 st_blksize=48 st_blocks=52
- *          st_ino=84 st_atim=92 sizeof=140
- *
- *   ARM:   st_dev=0 st_mode=16 st_nlink=20 st_uid=24 st_gid=28
- *          st_rdev=32 st_size=44 st_blksize=52 st_blocks=56
- *          st_ino=88 st_atim=96 sizeof=152 (struct linux_stat64=96)
- */
 
 #if !defined(__m68k__)
-/* ARM: compact struct linux_stat64 (96 bytes, musl arch/arm/bits/stat.h) */
 struct linux_stat64 {
-  uint64_t st_dev;             /* +0  */
-  uint32_t __pad1;             /* +8  */
-  uint32_t __st_ino_truncated; /* +12 */
-  uint32_t st_mode;            /* +16 */
-  uint32_t st_nlink;           /* +20 */
-  uint32_t st_uid;             /* +24 */
-  uint32_t st_gid;             /* +28 */
-  uint64_t st_rdev;            /* +32 */
-  uint32_t __pad2;             /* +40 */
-  int64_t st_size;             /* +44 */
-  uint32_t st_blksize;         /* +52 */
-  uint64_t st_blocks;          /* +56 */
-  uint32_t st_atime;           /* +64 */
-  uint32_t st_atime_nsec;      /* +68 */
-  uint32_t st_mtime;           /* +72 */
-  uint32_t st_mtime_nsec;      /* +76 */
-  uint32_t st_ctime;           /* +80 */
-  uint32_t st_ctime_nsec;      /* +84 */
-  uint64_t st_ino;             /* +88 */
+  uint64_t st_dev;
+  uint32_t __pad1;
+  uint32_t __st_ino_truncated;
+  uint32_t st_mode;
+  uint32_t st_nlink;
+  uint32_t st_uid;
+  uint32_t st_gid;
+  uint64_t st_rdev;
+  uint32_t __pad2;
+  int64_t st_size;
+  uint32_t st_blksize;
+  uint64_t st_blocks;
+  uint32_t st_atime;
+  uint32_t st_atime_nsec;
+  uint32_t st_mtime;
+  uint32_t st_mtime_nsec;
+  uint32_t st_ctime;
+  uint32_t st_ctime_nsec;
+  uint64_t st_ino;
 };
 #endif
 
 static void fill_stat64(const struct stat *src, void *buf) {
 #if defined(__m68k__)
-/* Helper: write a big-endian uint32 at a byte offset */
 #define PUT_BE32(base, off, v)                \
   do {                                        \
     (base)[(off)] = (uint8_t)((v) >> 24);     \
@@ -596,27 +347,14 @@ static void fill_stat64(const struct stat *src, void *buf) {
     (base)[(off) + 2] = (uint8_t)((v) >> 8);  \
     (base)[(off) + 3] = (uint8_t)(v);         \
   } while (0)
-  /*
-   * m68k musl struct stat (140 bytes).
-   * Offsets verified by compiling against musl sysroot with offsetof().
-   */
   uint8_t *d = (uint8_t *)buf;
   memset(d, 0, 140);
-
-  /* __st_ino_truncated at +10 (2-byte __st_dev_padding at +8, then long) */
   PUT_BE32(d, 10, (uint32_t)src->st_ino);
-  /* st_mode at +14 */
   PUT_BE32(d, 14, src->st_mode);
-  /* st_nlink at +18 */
   PUT_BE32(d, 18, src->st_nlink);
-  /* st_uid at +22 = 0, st_gid at +26 = 0 — already zeroed */
-  /* st_size at +40 (off_t is 8 bytes; write low 4 bytes at +44) */
   PUT_BE32(d, 44, (uint32_t)src->st_size);
-  /* st_blksize at +48 */
   PUT_BE32(d, 48, 4096);
-  /* st_blocks at +52 (blkcnt_t is 8 bytes; write low 4 bytes at +56) */
   PUT_BE32(d, 56, ((uint32_t)src->st_size + 511u) / 512u);
-  /* st_ino at +84 (ino_t is 8 bytes; write low 4 bytes at +88) */
   PUT_BE32(d, 88, (uint32_t)src->st_ino);
 #undef PUT_BE32
 #else
@@ -629,7 +367,6 @@ static void fill_stat64(const struct stat *src, void *buf) {
   dst->st_size = (int64_t)src->st_size;
   dst->st_blksize = 4096;
   dst->st_blocks = ((uint64_t)src->st_size + 511u) / 512u;
-  /* uid, gid, dev, rdev, times left as zero */
 #endif
 }
 
@@ -662,25 +399,11 @@ long sys_stat64(const char *path, void *buf) {
 
 long sys_fstat64(long fd, void *buf) {
   if (fd < 0 || (uint32_t)fd >= FD_MAX || !buf) return -(long)EBADF;
-
-  struct file *f = fd_get(current, (int)fd);
-  if (!f) return -(long)EBADF;
-
-  /* tty files (no vnode): synthesize a minimal char-device stat */
-  if (!f->vnode) {
-    struct stat tty_st;
-    memset(&tty_st, 0, sizeof(tty_st));
-    tty_st.st_mode = S_IFCHR | 0666u;
-    tty_st.st_nlink = 1;
-    fill_stat64(&tty_st, buf);
-    return 0;
-  }
-
-  if (!f->vnode->mount || !f->vnode->mount->ops || !f->vnode->mount->ops->stat)
-    return -(long)ENOSYS;
+  int16_t desc = current->fd_map[(uint32_t)fd];
+  if (desc == FD_DESC_NONE) return -(long)EBADF;
 
   struct stat st;
-  int err = f->vnode->mount->ops->stat(f->vnode, &st);
+  int err = mod_vfs.fd_fstat(desc, &st);
   if (err) return (long)err;
 
   fill_stat64(&st, buf);
@@ -713,86 +436,19 @@ long sys_lstat64(const char *path, void *buf) {
 
 /* ── sys_getdents64 ──────────────────────────────────────────────────────────
  */
-/*
- * Linux struct dirent64 (variable-length):
- *   uint64_t d_ino;     +0
- *   int64_t  d_off;     +8   (next cookie)
- *   uint16_t d_reclen;  +16  (total record length)
- *   uint8_t  d_type;    +18
- *   char     d_name[];  +19  (NUL-terminated, padded to 4-byte align)
- */
+
 long sys_getdents64(long fd, void *buf, long count) {
   if (fd < 0 || (uint32_t)fd >= FD_MAX || !buf) return -(long)EBADF;
-
-  struct file *f = fd_get(current, (int)fd);
-  if (!f) return -(long)EBADF;
-
-  if (!f->vnode || f->vnode->type != VNODE_DIR) return -(long)ENOTDIR;
-
-  if (!f->vnode->mount || !f->vnode->mount->ops ||
-      !f->vnode->mount->ops->readdir)
-    return -(long)ENOSYS;
-
-  /* Already reached end of directory */
-  if (f->offset == GETDENTS_EOF) return 0;
-
-  /* Read internal dirent entries */
-  struct dirent entries[8];
-  uint32_t cookie = f->offset;
-  int n = f->vnode->mount->ops->readdir(f->vnode, entries, 8, &cookie);
-  if (n < 0) return (long)n;
-  if (n == 0) {
-    f->offset = GETDENTS_EOF;
-    return 0;
-  }
-
-  /* Pack into linux dirent64 format */
-  uint8_t *out = (uint8_t *)buf;
-  long total = 0;
-
-  for (int i = 0; i < n; i++) {
-    size_t name_len = strlen(entries[i].d_name);
-    /* reclen = 19 (header) + name_len + 1 (NUL), aligned to 8 */
-    uint16_t reclen = (uint16_t)((19 + name_len + 1 + 7) & ~7u);
-
-    if (total + reclen > count) break;
-
-    memset(out + total, 0, reclen);
-
-    /* d_ino (uint64_t at offset 0) */
-    uint64_t ino = entries[i].d_ino;
-    memcpy(out + total, &ino, 8);
-
-    /* d_off (int64_t at offset 8) — next cookie */
-    int64_t d_off = (int64_t)(f->offset + (uint32_t)i + 1);
-    memcpy(out + total + 8, &d_off, 8);
-
-    /* d_reclen (uint16_t at offset 16) */
-    memcpy(out + total + 16, &reclen, 2);
-
-    /* d_type (uint8_t at offset 18) */
-    out[total + 18] = entries[i].d_type;
-
-    /* d_name (at offset 19) */
-    memcpy(out + total + 19, entries[i].d_name, name_len + 1);
-
-    total += reclen;
-  }
-
-  f->offset = (cookie == 0) ? GETDENTS_EOF : cookie;
-  return total;
+  int16_t desc = current->fd_map[(uint32_t)fd];
+  if (desc == FD_DESC_NONE) return -(long)EBADF;
+  return mod_vfs.fd_getdents64(desc, buf, count);
 }
 
 /* ── sys_llseek ──────────────────────────────────────────────────────────────
  */
-/*
- * _llseek(fd, offset_hi, offset_lo, &result, whence)
- * result is a pointer to loff_t (int64_t).
- */
-long sys_llseek(long fd, long off_hi, long off_lo, void *result, long whence) {
-  /* PPAP files are small — ignore off_hi */
-  (void)off_hi;
 
+long sys_llseek(long fd, long off_hi, long off_lo, void *result, long whence) {
+  (void)off_hi;
   long pos = sys_lseek(fd, off_lo, whence);
   if (pos < 0) return pos;
 
@@ -805,10 +461,7 @@ long sys_llseek(long fd, long off_hi, long off_lo, void *result, long whence) {
 
 /* ── sys_fcntl64 ─────────────────────────────────────────────────────────────
  */
-/*
- * F_DUPFD(0), F_GETFD(1), F_SETFD(2), F_GETFL(3), F_SETFL(4)
- * F_DUPFD_CLOEXEC(1030)
- */
+
 #define F_DUPFD 0
 #define F_GETFD 1
 #define F_SETFD 2
@@ -818,36 +471,30 @@ long sys_llseek(long fd, long off_hi, long off_lo, void *result, long whence) {
 
 long sys_fcntl64(long fd, long cmd, long arg) {
   if (fd < 0 || (uint32_t)fd >= FD_MAX) return -(long)EBADF;
-
-  struct file *f = fd_get(current, (int)fd);
-  if (!f) return -(long)EBADF;
+  int16_t desc = current->fd_map[(uint32_t)fd];
+  if (desc == FD_DESC_NONE) return -(long)EBADF;
 
   switch (cmd) {
     case F_DUPFD:
     case F_DUPFD_CLOEXEC:
       /* Find lowest fd >= arg */
       for (long i = arg; i < FD_MAX; i++) {
-        if (!current->fd_table[i]) {
-          current->fd_table[i] = f;
-          f->refcnt++;
+        if (current->fd_map[i] == FD_DESC_NONE) {
+          current->fd_map[i] = desc;
+          mod_vfs.fd_ref(desc);
           return i;
         }
       }
       return -(long)EMFILE;
 
     case F_GETFD:
-      return 0; /* no CLOEXEC tracking yet */
-
+      return 0;
     case F_SETFD:
-      return 0; /* ignore CLOEXEC */
+      return 0;
 
     case F_GETFL:
-      return (long)f->flags;
-
     case F_SETFL:
-      /* Only O_APPEND and O_NONBLOCK can be changed; we support O_APPEND */
-      f->flags = (f->flags & O_ACCMODE) | ((uint32_t)arg & ~O_ACCMODE);
-      return 0;
+      return mod_vfs.fd_fcntl(desc, (int)cmd, arg);
 
     default:
       return -(long)EINVAL;
@@ -858,8 +505,7 @@ long sys_fcntl64(long fd, long cmd, long arg) {
  */
 
 long sys_access(const char *path, long mode) {
-  (void)mode; /* always root — all access checks pass */
-
+  (void)mode;
   if (!path) return -(long)EINVAL;
 
   vnode_t *vn = NULL;
@@ -876,7 +522,6 @@ long sys_access(const char *path, long mode) {
 long sys_readlink(const char *path, char *buf, long bufsiz) {
   if (!path || !buf || bufsiz <= 0) return -(long)EINVAL;
 
-  /* Special case: /proc/self/exe — busybox needs this */
   if (strcmp(path, "/proc/self/exe") == 0) {
     const char *exe = "/bin/busybox";
     size_t len = strlen(exe);
@@ -893,7 +538,6 @@ long sys_readlink(const char *path, char *buf, long bufsiz) {
     mod_vfs.rel_vnode(vn);
     return -(long)EINVAL;
   }
-
   if (!vn->mount || !vn->mount->ops || !vn->mount->ops->readlink) {
     mod_vfs.rel_vnode(vn);
     return -(long)EINVAL;
@@ -908,7 +552,7 @@ long sys_readlink(const char *path, char *buf, long bufsiz) {
  */
 
 long sys_rmdir(const char *path) {
-  return sys_unlink(path); /* VFS unlink handles directories too */
+  return sys_unlink(path);
 }
 
 /* ── sys_umask ───────────────────────────────────────────────────────────────
@@ -920,32 +564,28 @@ long sys_umask(long mask) {
   return (long)old;
 }
 
-/* ══════════════════════════════════════════════════════════════════════════════
- * Phase 6 Step 15: mount / umount / statfs syscalls
- * ══════════════════════════════════════════════════════════════════════════════
- */
-
-/* ── String comparison helper (local) ───────────────────────────────────────
- */
-
-static int fs_str_eq(const char *a, const char *b) {
-  while (*a && *a == *b) {
-    a++;
-    b++;
-  }
-  return (*a == '\0' && *b == '\0');
-}
-
 /* ── sys_mount ───────────────────────────────────────────────────────────────
  */
+
+#include "../fs/devfs.h"
+#include "../fs/procfs.h"
+#include "../fs/tmpfs.h"
+#ifdef PPAP_HAS_BLKDEV
+#include "../blkdev/blkdev.h"
+#include "../fs/ufs.h"
+#include "../fs/vfat.h"
+#endif
+
+static int fs_str_eq(const char *a, const char *b) {
+  while (*a && *a == *b) { a++; b++; }
+  return (*a == '\0' && *b == '\0');
+}
 
 long sys_mount(const char *source, const char *target, const char *fstype,
                long flags, const void *data) {
   (void)data;
-
   if (!target || !fstype) return -(long)EINVAL;
 
-  /* Map fstype string to vfs_ops_t pointer */
   const vfs_ops_t *ops = NULL;
   const void *dev_data = NULL;
 
@@ -959,7 +599,6 @@ long sys_mount(const char *source, const char *target, const char *fstype,
   else if (fs_str_eq(fstype, "vfat")) {
     ops = &vfat_ops;
     if (source) {
-      /* Strip leading "/dev/" from source to get blkdev name */
       const char *devname = source;
       if (devname[0] == '/' && devname[1] == 'd' && devname[2] == 'e' &&
           devname[3] == 'v' && devname[4] == '/')
@@ -985,7 +624,6 @@ long sys_mount(const char *source, const char *target, const char *fstype,
     return -(long)ENODEV;
   }
 
-  /* Convert Linux mount flags: MS_RDONLY → MNT_RDONLY */
   uint8_t mnt_flags = 0;
   if ((uint32_t)flags & MS_RDONLY) mnt_flags |= MNT_RDONLY;
 
@@ -997,14 +635,11 @@ long sys_mount(const char *source, const char *target, const char *fstype,
 
 long sys_umount2(const char *target, long flags) {
   (void)flags;
-
   if (!target) return -(long)EINVAL;
 
-  /* Normalize path for comparison */
   char norm[VFS_PATH_MAX];
   int nlen = mod_vfs.path_normalize(target, norm, (int)sizeof(norm));
   if (nlen < 0) return (long)nlen;
-
   return (long)mod_vfs.umount(norm);
 }
 
@@ -1012,20 +647,16 @@ long sys_umount2(const char *target, long flags) {
  */
 
 long sys_statfs64(const char *path, long sz, void *buf) {
-  (void)sz; /* struct size — fixed layout */
-
+  (void)sz;
   if (!path || !buf) return -(long)EINVAL;
 
-  /* Find the mount that covers this path */
   const char *remainder;
   mount_entry_t *mnt = mod_vfs.find_mount(path, &remainder);
   if (!mnt) return -(long)ENOENT;
 
   struct kernel_statfs ksf;
   __builtin_memset(&ksf, 0, sizeof(ksf));
-
   if (mnt->ops && mnt->ops->statfs) mnt->ops->statfs(mnt, &ksf);
-
   __builtin_memcpy(buf, &ksf, sizeof(ksf));
   return 0;
 }
@@ -1035,21 +666,8 @@ long sys_statfs64(const char *path, long sz, void *buf) {
 
 long sys_fstatfs64(long fd, long sz, void *buf) {
   (void)sz;
-
   if (fd < 0 || (uint32_t)fd >= FD_MAX || !buf) return -(long)EBADF;
-
-  struct file *f = fd_get(current, (int)fd);
-  if (!f) return -(long)EBADF;
-
-  mount_entry_t *mnt = NULL;
-
-  if (f->vnode && f->vnode->mount) mnt = f->vnode->mount;
-
-  struct kernel_statfs ksf;
-  __builtin_memset(&ksf, 0, sizeof(ksf));
-
-  if (mnt && mnt->ops && mnt->ops->statfs) mnt->ops->statfs(mnt, &ksf);
-
-  __builtin_memcpy(buf, &ksf, sizeof(ksf));
-  return 0;
+  int16_t desc = current->fd_map[(uint32_t)fd];
+  if (desc == FD_DESC_NONE) return -(long)EBADF;
+  return (long)mod_vfs.fd_fstatfs(desc, buf);
 }

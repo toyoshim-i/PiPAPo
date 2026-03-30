@@ -7,7 +7,6 @@
  * — see src/target/target.h.
  */
 
-#include "fd/fd.h"
 #include "fs/romfs.h"
 #include "klog.h"
 #include "mm/mem_region.h"
@@ -54,6 +53,11 @@ void kmain(void) {
 
   /* Process table init */
   proc_init();
+
+  /* Init fd_map for all processes (BSS is zero, but FD_DESC_NONE is -1) */
+  for (int _p = 0; _p < PROC_MAX; _p++)
+    for (int _f = 0; _f < FD_MAX; _f++)
+      proc_table[_p].fd_map[_f] = FD_DESC_NONE;
 
   /* Register OS personality subsystem names with procfs */
   subsys_init();

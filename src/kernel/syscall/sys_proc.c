@@ -16,7 +16,7 @@
 #include "../common/errno.h"
 #include "../common/mod/mod_exec.h"
 #include "../common/mod/mod_vfs.h"
-#include "../fd/fd.h"
+#include "../common/mod/mod_vfs.h"
 #include "../klog.h"
 #include "../mm/mem_region.h"
 #include "../mm/page.h"
@@ -1359,7 +1359,12 @@ long sys_exit(long status) {
   }
 
   /* Close all open fds */
-  fd_close_all(current);
+  for (int _i = 0; _i < FD_MAX; _i++) {
+    if (current->fd_map[_i] != FD_DESC_NONE) {
+      mod_vfs.fd_release(current->fd_map[_i]);
+      current->fd_map[_i] = FD_DESC_NONE;
+    }
+  }
 
   /* Free user pages only if we own them (vfork_parent == NULL means
    * either this isn't a vfork child, or execve already replaced them) */
@@ -1683,7 +1688,11 @@ long sys_vfork(uint32_t *frame) {
   memcpy(child->comm, current->comm, sizeof(child->comm));
 
   /* 6. Inherit file descriptors from parent */
-  fd_inherit(child, current);
+  for (int _i = 0; _i < FD_MAX; _i++) {
+    child->fd_map[_i] = current->fd_map[_i];
+    if (current->fd_map[_i] != FD_DESC_NONE)
+      mod_vfs.fd_ref(current->fd_map[_i]);
+  }
 
   /* 7. Set parent's return value (child PID) in stacked r0 */
   frame[0] = (uint32_t)child->pid;
@@ -1862,7 +1871,9 @@ long sys_execve(const char *path, const char *const *argv) {
   /* POSIX: preserve open fds across execve (redirections, pipes).
    * Only install default tty stdio if fd 0/1/2 are not already open
    * (e.g. init's first exec before any shell sets up fds). */
-  if (!current->fd_table[0] && !current->fd_table[1] && !current->fd_table[2])
+  if (current->fd_map[0] == FD_DESC_NONE &&
+      current->fd_map[1] == FD_DESC_NONE &&
+      current->fd_map[2] == FD_DESC_NONE)
     mod_vfs.fd_stdio_init(current);
 
     /* Free old kernel stack page.
