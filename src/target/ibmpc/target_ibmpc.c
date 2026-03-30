@@ -162,10 +162,69 @@ static int ibmpc_klog_putc(char c, void (*notify)(void))
 
 /* ── Target hooks ────────────────────────────────────────────────────────── */
 
+#ifdef __ia16__
+/* INT 0/6 debug trap — prints faulting CS:IP to COM1, then halts. */
+extern void int_debug_handler(void);
+__asm__(
+  ".code16\n"
+  "int_debug_handler:\n"
+  "  push %bp\n"
+  "  mov  %sp, %bp\n"
+  "  mov  4(%bp), %ax\n"     /* faulting IP */
+  "  mov  6(%bp), %dx\n"     /* faulting CS */
+  "  push %ax\n"
+  "  mov  %dx, %ax\n"
+  "  call 2f\n"
+  "  mov  $0x3A, %al\n"
+  "  mov  $0x03F8, %dx\n"
+  "  out  %al, %dx\n"
+  "  pop  %ax\n"
+  "  call 2f\n"
+  "  mov  $0x0D, %al\n"
+  "  mov  $0x03F8, %dx\n"
+  "  out  %al, %dx\n"
+  "  mov  $0x0A, %al\n"
+  "  out  %al, %dx\n"
+  "  hlt\n"
+  "  jmp  .\n"
+  "2:\n"
+  "  push %cx\n"
+  "  mov  $4, %cx\n"
+  "3: rol  $1, %ax\n"
+  "  rol  $1, %ax\n"
+  "  rol  $1, %ax\n"
+  "  rol  $1, %ax\n"
+  "  push %ax\n"
+  "  and  $0x0F, %al\n"
+  "  add  $0x30, %al\n"
+  "  cmp  $0x3A, %al\n"
+  "  jb   4f\n"
+  "  add  $0x07, %al\n"
+  "4: mov  $0x03F8, %dx\n"
+  "  out  %al, %dx\n"
+  "  pop  %ax\n"
+  "  loop 3b\n"
+  "  pop  %cx\n"
+  "  ret\n"
+);
+
+static void install_int_debug(void) {
+  volatile uint16_t *ivt = (volatile uint16_t *)0;
+  uint16_t off = (uint16_t)(uintptr_t)int_debug_handler;
+  ivt[0] = off; ivt[1] = 0;   /* INT 0 — divide overflow */
+  ivt[12] = off; ivt[13] = 0; /* INT 6 — invalid opcode  */
+}
+#endif
+
 void target_early_init(void)
 {
   uart_init();
   klog_set_mirror(ibmpc_klog_putc, (void (*)(void))0);
+
+#ifdef __ia16__
+  install_int_debug();
+#endif
+
   klog("Po booting... [ibmpc]\n");
 
 #ifdef __ia16__

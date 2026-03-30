@@ -11,11 +11,15 @@
 void bios_putc(char c)
 {
   __asm__ volatile (
-    "int $0x10"
+    "push %%ds\n\t"
+    "push %%es\n\t"
+    "int $0x10\n\t"
+    "pop %%es\n\t"
+    "pop %%ds"
     :
     : "a"((unsigned short)(0x0E00u | (unsigned char)c)),
       "b"((unsigned short)0x0007u)  /* Page 0, light grey */
-    : "cx", "dx", "si", "di", "cc", "memory"
+    : "cc", "memory"
   );
 }
 
