@@ -42,6 +42,9 @@ vfs_entry_table:
   .word vfs_rel_vnode_entry
   .word vfs_fd_stdio_init_entry
   .word vfs_file_read_entry
+  .word vfs_file_pool_init_entry
+  .word vfs_tty_rx_notify_entry
+  .word vfs_fstab_automount_entry
 vfs_entry_table_end:
   /* DS=0 address of core_fptrs table (for core to patch) */
   .word core_fptrs

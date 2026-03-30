@@ -41,6 +41,9 @@ vfs_fptrs:
   .word 0, 0    /* [11] vfs_rel_vnode_entry */
   .word 0, 0    /* [12] vfs_fd_stdio_init_entry */
   .word 0, 0    /* [13] vfs_file_read_entry */
+  .word 0, 0    /* [14] vfs_file_pool_init_entry */
+  .word 0, 0    /* [15] vfs_tty_rx_notify_entry */
+  .word 0, 0    /* [16] vfs_fstab_automount_entry */
 vfs_fptrs_end:
 
   .section .text
@@ -76,5 +79,8 @@ vfs_\name:
   VFS_CALLER_STUB rel_vnode,      11
   VFS_CALLER_STUB fd_stdio_init,  12
   VFS_CALLER_STUB file_read,      13
+  VFS_CALLER_STUB file_pool_init, 14
+  VFS_CALLER_STUB tty_rx_notify,  15
+  VFS_CALLER_STUB fstab_automount, 16
 
 #endif /* __ia16__ */

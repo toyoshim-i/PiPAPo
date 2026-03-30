@@ -67,5 +67,14 @@ vfs_\name\()_entry:
   .set vfs_fd_stdio_init, fd_stdio_init
   VFS_TARGET_STUB fd_stdio_init
   VFS_TARGET_STUB file_read
+  /* file_pool_init lives in sys_fs.c — alias */
+  .global vfs_file_pool_init
+  .set vfs_file_pool_init, file_pool_init
+  VFS_TARGET_STUB file_pool_init
+  /* tty_rx_notify lives in tty.c — alias */
+  .global vfs_tty_rx_notify
+  .set vfs_tty_rx_notify, tty_rx_notify
+  VFS_TARGET_STUB tty_rx_notify
+  VFS_TARGET_STUB fstab_automount
 
 #endif /* __ia16__ */

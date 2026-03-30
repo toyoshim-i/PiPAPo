@@ -18,7 +18,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../fd/tty.h"  /* tty_rx_notify */
+#include "../common/mod/mod_vfs.h"  /* mod_vfs.tty_rx_notify */
 #include "../mm/page.h" /* PAGE_SIZE */
 #include "../signal/signal.h"
 #include "../common/spinlock.h" /* SPIN_PROC */
@@ -141,8 +141,8 @@ void sched_display_poll(void) {
    * UART and other IRQs are not blocked during the slow I2C transfer. */
   if (input_poll_due && input_poll_fn) {
     input_poll_due = 0;
-    if (input_poll_fn()) tty_rx_notify(input_poll_tty_idx);
-    if (input_poll_fn2 && input_poll_fn2()) tty_rx_notify(input_poll_tty_idx2);
+    if (input_poll_fn()) mod_vfs.tty_rx_notify(input_poll_tty_idx);
+    if (input_poll_fn2 && input_poll_fn2()) mod_vfs.tty_rx_notify(input_poll_tty_idx2);
   }
   if (display_poll_fn) display_poll_fn();
 }

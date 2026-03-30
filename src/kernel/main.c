@@ -8,9 +8,6 @@
  */
 
 #include "fd/fd.h"
-#include "fd/file.h"
-#include "fd/tty.h"
-#include "fs/fstab.h"
 #include "fs/romfs.h"
 #include "klog.h"
 #include "mm/mem_region.h"
@@ -66,7 +63,7 @@ void kmain(void) {
 
   /* VFS layer + file pool for sys_open */
   mod_vfs.init();
-  file_pool_init();
+  mod_vfs.file_pool_init();
 
 #ifdef PPAP_HAS_BLKDEV
   /* Block device registry + loopback subsystem */
@@ -108,16 +105,7 @@ void kmain(void) {
    * fstab (likely a 16-bit pointer/size issue in the VFS read path).
    * TODO: investigate and fix. */
 #if !defined(__ia16__)
-  {
-    fstab_entry_t fstab[FSTAB_MAX_ENTRIES];
-    int nfstab = fstab_parse(fstab, FSTAB_MAX_ENTRIES);
-    if (nfstab > 0) {
-      klogf("fstab: %lu entries parsed\n", (unsigned long)(uint32_t)nfstab);
-      fstab_mount_all(fstab, nfstab);
-    } else {
-      klog("fstab: no entries (fallback not implemented)\n");
-    }
-  }
+  mod_vfs.fstab_automount();
 #endif
 
   /* Kernel integration tests (no-op unless PPAP_TESTS=ON) */

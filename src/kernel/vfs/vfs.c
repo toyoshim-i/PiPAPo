@@ -19,6 +19,9 @@
 
 #include "../common/errno.h"
 #include "../common/mod/mod_core.h"
+#include "../fd/file.h"   /* file_pool_init */
+#include "../fd/tty.h"    /* tty_rx_notify */
+#include "../fs/fstab.h"  /* fstab_parse, fstab_mount_all */
 #include "../mm/kmem.h" /* kmem_pool_t type — functions via mod_core */
 #include "../common/spinlock.h" /* SPIN_VFS */
 
@@ -267,8 +270,23 @@ int vfs_mount_ufs(const char *path, uint8_t flags, const void *dev_data)
 #include "../common/mod/mod_vfs.h"
 #include "../fd/fd.h"
 
-/* Alias for MOD_IMPL convention: vfs_fd_stdio_init → fd_stdio_init */
+/* Aliases for MOD_IMPL convention: vfs_<name> → <name> */
 #define vfs_fd_stdio_init fd_stdio_init
+#define vfs_file_pool_init file_pool_init
+#define vfs_tty_rx_notify tty_rx_notify
+
+/* Combined fstab parse + mount behind the module boundary. */
+void vfs_fstab_automount(void) {
+  fstab_entry_t fstab[FSTAB_MAX_ENTRIES];
+  int n = fstab_parse(fstab, FSTAB_MAX_ENTRIES);
+  if (n > 0) {
+    mod_core.klogf("fstab: %lu entries parsed\n",
+                   (unsigned long)(uint32_t)n);
+    fstab_mount_all(fstab, n);
+  } else {
+    mod_core.klog("fstab: no entries\n");
+  }
+}
 
 /* Cross-module wrapper: execute ops->read in VFS's code segment. */
 long vfs_file_read(vnode_t *vn, void *buf, uint32_t size, uint32_t off) {
@@ -292,4 +310,7 @@ MOD_DEFINE_BEGIN(vfs)
   MOD_IMPL(vfs, rel_vnode)
   MOD_IMPL(vfs, fd_stdio_init)
   MOD_IMPL(vfs, file_read)
+  MOD_IMPL(vfs, file_pool_init)
+  MOD_IMPL(vfs, tty_rx_notify)
+  MOD_IMPL(vfs, fstab_automount)
 MOD_DEFINE_END()

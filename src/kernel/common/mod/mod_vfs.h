@@ -190,12 +190,42 @@ MOD_DECLARE_BEGIN(vfs)
    */
   MOD_FUNC(vfs, long, file_read, vnode_t *, void *, uint32_t, uint32_t)
 
+  /* ── Init helpers (called from kmain) ────────────────────────────────── */
+
+  /*
+   * file_pool_init — Initialise the struct file slab pool.
+   *
+   * Must be called once after vfs_init().  Sets up the kmem pool
+   * backing sys_open / pipe / dup file allocations.
+   */
+  MOD_FUNC(vfs, void, file_pool_init, void)
+
+  /*
+   * tty_rx_notify — Notify a TTY that RX data is available.
+   *
+   *   idx  TTY index (TTY_SERIAL=0, TTY_DISPLAY=1).
+   *
+   * Called from the scheduler's deferred input poll when the backend
+   * reports new data.  Wakes processes blocked on that TTY.
+   */
+  MOD_FUNC(vfs, void, tty_rx_notify, int)
+
+  /*
+   * fstab_automount — Parse /etc/fstab and mount all entries.
+   *
+   * Reads /etc/fstab from the root filesystem, parses mount entries,
+   * and mounts them in order (best-effort, skips failures).
+   * Combines fstab_parse + fstab_mount_all behind the module boundary
+   * so core never needs to know about fstab_entry_t.
+   */
+  MOD_FUNC(vfs, void, fstab_automount, void)
+
 MOD_DECLARE_END(vfs)
 
 /* Number of function pointers in mod_vfs_t.
  * Must match entry_count in vfs_header.S, vfs_stubs.S slot count,
  * and vfs_entries.S stub count.  Static assert catches mismatches. */
-#define MOD_VFS_FUNC_COUNT 14
+#define MOD_VFS_FUNC_COUNT 17
 _Static_assert(sizeof(mod_vfs_t) == MOD_VFS_FUNC_COUNT * sizeof(void (*)(void)),
                "mod_vfs_t size mismatch — update MOD_VFS_FUNC_COUNT, "
                "vfs_header.S, vfs_stubs.S, and vfs_entries.S");
