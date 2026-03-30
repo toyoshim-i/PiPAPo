@@ -117,7 +117,7 @@ Shell calls vfork()
     │
     ├── Child runs:
     │   ├── execve("/bin/cat", ...)
-    │   │   ├── do_execve: allocate NEW stack + user_pages for cat
+    │   │   ├── execve: allocate NEW stack + user_pages for cat
     │   │   ├── Free old_stack (vfork-allocated copy)
     │   │   ├── If vfork child: don't free old_user_pages (parent owns them)
     │   │   └── exec_pending = 1 → trap return reloads SP

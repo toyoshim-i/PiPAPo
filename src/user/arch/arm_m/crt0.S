@@ -3,12 +3,12 @@
 @ =============================================================================
 @
 @ Entry point: _start
-@   1. Read argc/argv from the stack (set up by do_execve)
+@   1. Read argc/argv from the stack (set up by execve)
 @   2. Call main(argc, argv)
 @   3. Call _exit(main's return value)
 @   4. Dead loop (safety net — _exit should never return)
 @
-@ Stack layout at entry (set by do_execve):
+@ Stack layout at entry (set by execve):
 @   [SP+0] = argc
 @   [SP+4] = argv[0], argv[1], ..., argv[argc]=NULL, envp..., auxv...
 @
@@ -27,7 +27,7 @@
 .global _start
 .thumb_func
 _start:
-    @ Read argc and argv from stack (set up by kernel's do_execve)
+    @ Read argc and argv from stack (set up by kernel's execve)
     ldr  r0, [sp]          @ r0 = argc
     mov  r1, sp
     adds r1, #4            @ r1 = argv = &SP[1]

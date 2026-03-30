@@ -705,7 +705,7 @@ indicates which PPAP implementation phase targets each call.
 | `_SETBLOCK` | $FF4A | Resize block (shrink/grow pages) | ✅ |
 | `_MALLOC2` | $FF58 | Same as `_MALLOC` (v2 mode selector) | ☐ |
 | **Process** | | | |
-| `_EXEC` | $FF4B | Mode 0: `proc_alloc` + `do_execve` + wait | ✅ |
+| `_EXEC` | $FF4B | Mode 0: `proc_alloc` + `execve` + wait | ✅ |
 | `_EXIT2` | $FF4C | `sys_exit(code)` | ✅ |
 | `_ASSIGN` | $FF4D | Drive assignment — stub (return 0) | ✅ |
 | `_FILES` | $FF4E | Directory search with wildcard matching | ✅ |
@@ -1415,7 +1415,7 @@ and error code mapping.
 
 **Status:** Complete (basic).
 
-- `_EXEC` ($FF4B) — mode 0 LOADEXEC via `proc_alloc` + `do_execve`
+- `_EXEC` ($FF4B) — mode 0 LOADEXEC via `proc_alloc` + `execve`
   + polling `waitpid` (WNOHANG + yield)
 - `_GETPDB` ($FF51) — return PMB address
 - `_SUPER` ($FF20) — logical supervisor mode toggle

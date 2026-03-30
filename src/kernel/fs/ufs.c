@@ -412,7 +412,7 @@ static int ufs_block_set(ufs_priv_t *priv, ufs_inode_t *inode, uint32_t logical,
 
 static vnode_t *ufs_vnode_from_inode(mount_entry_t *mnt, uint32_t ino,
                                      const ufs_inode_t *inode) {
-  vnode_t *vn = mod_vfs.alloc_vnode();
+  vnode_t *vn = mod_vfs.vnode_alloc();
   if (!vn) return (vnode_t *)0;
 
   vn->ino = ino;

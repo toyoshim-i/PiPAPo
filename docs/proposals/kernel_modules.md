@@ -441,7 +441,7 @@ runtime (e.g. `fd_close_all` in `sys_exit`, `sched_wakeup` in pipe.c).
 
 | Function | Defined in | Called from | Occurrences |
 |----------|-----------|-------------|-------------|
-| `file_pool_init` | sys_fs.c | main.c | 1 |
+| `fd_pool_init` | sys_fs.c | main.c | 1 |
 | `file_alloc/free` | sys_fs.c | sys_fs.c, sys_proc.c | 5 |
 | `fd_alloc/free/get` | fd.c | sys_fs.c, sys_proc.c | ~18 |
 | `fd_close_all` | fd.c | sys_proc.c (sys_exit) | 1 |
@@ -457,7 +457,7 @@ runtime (e.g. `fd_close_all` in `sys_exit`, `sched_wakeup` in pipe.c).
 |----------|-----------|-------------|-------------|
 | `sched_wakeup` | sched.c | pipe.c, tty.c | 7 |
 | `sched_yield` | sched.c | pipe.c, tty.c | 8 |
-| `set_svc_restart` | syscall.c | pipe.c, tty.c | 6 |
+| `svc_set_restart` | syscall.c | pipe.c, tty.c | 6 |
 | `sched_get_ticks` | sched.c | procfs.c | 1 |
 | `current_core` (data) | proc.c | pipe.c, tty.c, namei.c | ~6 |
 | `proc_table` (data) | proc.c | tty.c, procfs.c | ~9 |
@@ -502,7 +502,7 @@ Add to `mod_core.h` (and corresponding stubs):
 ```c
 MOD_FUNC(core, void, sched_wakeup, void *)
 MOD_FUNC(core, void, sched_yield, void)
-MOD_FUNC(core, void, set_svc_restart, void)
+MOD_FUNC(core, void, svc_set_restart, void)
 MOD_FUNC(core, uint32_t, sched_get_ticks, void)
 MOD_FUNC(core, void, uart_putc, char)
 MOD_FUNC(core, int, uart_getc, void)
@@ -517,7 +517,7 @@ Migrate callers in `pipe.c`, `tty.c`, `devfs.c`, `procfs.c` to
 Add to `mod_vfs.h`:
 
 ```c
-MOD_FUNC(vfs, void, file_pool_init, void)
+MOD_FUNC(vfs, void, fd_pool_init, void)
 MOD_FUNC(vfs, void, tty_rx_notify, int)
 MOD_FUNC(vfs, int, fstab_parse, void)
 MOD_FUNC(vfs, int, fstab_mount_all, void)
@@ -638,7 +638,7 @@ match exactly — any mismatch is a compile error.  Callers use
 `mod_vfs.init()` syntax everywhere.
 
 **Naming:** Struct fields are unprefixed (`init`, `mount`,
-`alloc_vnode`).  Real function names are prefixed (`vfs_init`,
+`vnode_alloc`).  Real function names are prefixed (`vfs_init`,
 `vfs_mount`, `vfs_alloc_vnode`).  The `MOD_FUNC(vfs, void, init, ...)`
 macro handles the mapping.
 

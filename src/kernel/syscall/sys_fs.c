@@ -72,12 +72,12 @@ long sys_stat(const char *path, struct stat *buf) {
   if (err) return (long)err;
 
   if (!vn->mount || !vn->mount->ops || !vn->mount->ops->stat) {
-    mod_vfs.release_vnode(vn);
+    mod_vfs.vnode_release(vn);
     return -(long)ENOSYS;
   }
 
   err = vn->mount->ops->stat(vn, buf);
-  mod_vfs.release_vnode(vn);
+  mod_vfs.vnode_release(vn);
   return (long)err;
 }
 
@@ -133,10 +133,10 @@ long sys_chdir(const char *path) {
   if (err) return (long)err;
 
   if (vn->type != VNODE_DIR) {
-    mod_vfs.release_vnode(vn);
+    mod_vfs.vnode_release(vn);
     return -(long)ENOTDIR;
   }
-  mod_vfs.release_vnode(vn);
+  mod_vfs.vnode_release(vn);
 
   /* Resolve relative path to absolute, then normalize */
   char abs_path[VFS_PATH_MAX];
@@ -217,20 +217,20 @@ long sys_mkdir(const char *path, long mode) {
   if (err) return (long)err;
 
   if (parent->type != VNODE_DIR) {
-    mod_vfs.release_vnode(parent);
+    mod_vfs.vnode_release(parent);
     return -(long)ENOTDIR;
   }
   if (!parent->mount || !parent->mount->ops || !parent->mount->ops->mkdir) {
-    mod_vfs.release_vnode(parent);
+    mod_vfs.vnode_release(parent);
     return -(long)ENOSYS;
   }
   if (parent->mount->flags & MNT_RDONLY) {
-    mod_vfs.release_vnode(parent);
+    mod_vfs.vnode_release(parent);
     return -(long)EROFS;
   }
 
   err = parent->mount->ops->mkdir(parent, namebuf, (uint32_t)mode);
-  mod_vfs.release_vnode(parent);
+  mod_vfs.vnode_release(parent);
   return (long)err;
 }
 
@@ -247,20 +247,20 @@ long sys_unlink(const char *path) {
   if (err) return (long)err;
 
   if (parent->type != VNODE_DIR) {
-    mod_vfs.release_vnode(parent);
+    mod_vfs.vnode_release(parent);
     return -(long)ENOTDIR;
   }
   if (!parent->mount || !parent->mount->ops || !parent->mount->ops->unlink) {
-    mod_vfs.release_vnode(parent);
+    mod_vfs.vnode_release(parent);
     return -(long)ENOSYS;
   }
   if (parent->mount->flags & MNT_RDONLY) {
-    mod_vfs.release_vnode(parent);
+    mod_vfs.vnode_release(parent);
     return -(long)EROFS;
   }
 
   err = parent->mount->ops->unlink(parent, namebuf);
-  mod_vfs.release_vnode(parent);
+  mod_vfs.vnode_release(parent);
   return (long)err;
 }
 
@@ -281,7 +281,7 @@ long sys_rename(const char *oldpath, const char *newpath) {
   err = mod_vfs.lookup_parent(newpath, &new_parent, new_name,
                               (int)sizeof(new_name));
   if (err) {
-    mod_vfs.release_vnode(old_parent);
+    mod_vfs.vnode_release(old_parent);
     return (long)err;
   }
 
@@ -302,8 +302,8 @@ long sys_rename(const char *oldpath, const char *newpath) {
   err = old_parent->mount->ops->rename(old_parent, old_name, new_parent,
                                        new_name);
 out:
-  mod_vfs.release_vnode(old_parent);
-  mod_vfs.release_vnode(new_parent);
+  mod_vfs.vnode_release(old_parent);
+  mod_vfs.vnode_release(new_parent);
   return (long)err;
 }
 
@@ -381,13 +381,13 @@ long sys_stat64(const char *path, void *buf) {
   if (err) return (long)err;
 
   if (!vn->mount || !vn->mount->ops || !vn->mount->ops->stat) {
-    mod_vfs.release_vnode(vn);
+    mod_vfs.vnode_release(vn);
     return -(long)ENOSYS;
   }
 
   struct stat st;
   err = vn->mount->ops->stat(vn, &st);
-  mod_vfs.release_vnode(vn);
+  mod_vfs.vnode_release(vn);
   if (err) return (long)err;
 
   fill_stat64(&st, buf);
@@ -421,13 +421,13 @@ long sys_lstat64(const char *path, void *buf) {
   if (err) return (long)err;
 
   if (!vn->mount || !vn->mount->ops || !vn->mount->ops->stat) {
-    mod_vfs.release_vnode(vn);
+    mod_vfs.vnode_release(vn);
     return -(long)ENOSYS;
   }
 
   struct stat st;
   err = vn->mount->ops->stat(vn, &st);
-  mod_vfs.release_vnode(vn);
+  mod_vfs.vnode_release(vn);
   if (err) return (long)err;
 
   fill_stat64(&st, buf);
@@ -512,7 +512,7 @@ long sys_access(const char *path, long mode) {
   int err = mod_vfs.lookup(path, &vn);
   if (err) return (long)err;
 
-  mod_vfs.release_vnode(vn);
+  mod_vfs.vnode_release(vn);
   return 0;
 }
 
@@ -535,16 +535,16 @@ long sys_readlink(const char *path, char *buf, long bufsiz) {
   if (err) return (long)err;
 
   if (vn->type != VNODE_SYMLINK) {
-    mod_vfs.release_vnode(vn);
+    mod_vfs.vnode_release(vn);
     return -(long)EINVAL;
   }
   if (!vn->mount || !vn->mount->ops || !vn->mount->ops->readlink) {
-    mod_vfs.release_vnode(vn);
+    mod_vfs.vnode_release(vn);
     return -(long)EINVAL;
   }
 
   long ret = vn->mount->ops->readlink(vn, buf, (size_t)bufsiz);
-  mod_vfs.release_vnode(vn);
+  mod_vfs.vnode_release(vn);
   return ret;
 }
 
@@ -651,7 +651,7 @@ long sys_statfs64(const char *path, long sz, void *buf) {
   if (!path || !buf) return -(long)EINVAL;
 
   const char *remainder;
-  mount_entry_t *mnt = mod_vfs.find_mount(path, &remainder);
+  mount_entry_t *mnt = mod_vfs.mount_find(path, &remainder);
   if (!mnt) return -(long)ENOENT;
 
   struct kernel_statfs ksf;

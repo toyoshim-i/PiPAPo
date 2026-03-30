@@ -36,7 +36,7 @@ int core_blkdev_write(blkdev_t *, const void *, uint32_t, uint32_t);
 void sched_wakeup(void *);
 void sched_yield(void);
 uint32_t sched_get_ticks(void);
-void set_svc_restart(void);
+void svc_set_restart(void);
 int uart_putc(char, void (*)(void));
 int uart_getc(void);
 int uart_rx_avail(void);
@@ -59,7 +59,7 @@ int uart_rx_avail(void);
 #define core_sched_wakeup        sched_wakeup
 #define core_sched_yield         sched_yield
 #define core_sched_get_ticks     sched_get_ticks
-#define core_set_svc_restart     set_svc_restart
+#define core_svc_set_restart     svc_set_restart
 #define core_uart_putc           uart_putc
 #define core_uart_getc           uart_getc
 #define core_uart_rx_avail       uart_rx_avail

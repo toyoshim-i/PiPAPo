@@ -337,7 +337,7 @@ void proc_release_private_tracked_pages_from_array(
  *
  * user_sp: the PSP value after the hardware frame pop.  For plain kernel
  * threads pass 0 (defaults to stack_page + PAGE_SIZE).  For exec'd
- * processes this points to the argc slot built by do_execve().
+ * processes this points to the argc slot built by execve().
  */
 void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp);
 

@@ -329,7 +329,7 @@ static int vfat_mount(mount_entry_t *mnt, const void *dev_data) {
   sb->fat_cache_dirty = 0;
 
   /* Allocate root vnode */
-  vnode_t *root = mod_vfs.alloc_vnode();
+  vnode_t *root = mod_vfs.vnode_alloc();
   if (!root) return -ENOMEM;
 
   root->type = VNODE_DIR;
@@ -415,7 +415,7 @@ static int vfat_lookup(vnode_t *dir, const char *name, vnode_t **result) {
 
         if (str_eq_ci(dname, name)) {
           /* Match found — allocate vnode */
-          vnode_t *vn = mod_vfs.alloc_vnode();
+          vnode_t *vn = mod_vfs.vnode_alloc();
           if (!vn) return -ENOMEM;
 
           uint32_t clus = DIRENT_CLUSTER(de);
@@ -775,7 +775,7 @@ static int vfat_create(vnode_t *dir, const char *name, uint32_t mode,
           fat_flush(sb);
 
           /* Allocate vnode */
-          vnode_t *vn = mod_vfs.alloc_vnode();
+          vnode_t *vn = mod_vfs.vnode_alloc();
           if (!vn) return -ENOMEM;
           vn->type = VNODE_FILE;
           vn->mode = S_IFREG | 0644u;

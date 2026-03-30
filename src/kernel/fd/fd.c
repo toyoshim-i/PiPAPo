@@ -66,7 +66,7 @@ static long vfs_bridge_write(struct file *f, const char *buf, size_t n) {
 }
 
 static int vfs_bridge_close(struct file *f) {
-  if (f->vnode) mod_vfs.release_vnode(f->vnode);
+  if (f->vnode) mod_vfs.vnode_release(f->vnode);
   f->vnode = NULL;
   return 0;
 }
@@ -77,9 +77,9 @@ static const struct file_ops vfs_bridge_ops = {
     NULL,                   /* poll */
 };
 
-/* ── Pool init (replaces file_pool_init) ───────────────────────────────────── */
+/* ── Pool init (replaces fd_pool_init) ───────────────────────────────────── */
 
-void file_pool_init(void) {
+void fd_pool_init(void) {
   /* Pre-allocate entries 0-2 for tty stdin/stdout/stderr.
    * These have a permanent base ref and are never freed. */
   void *console = tty_get_console_dev();
@@ -132,20 +132,20 @@ int vfs_fd_open(const char *path, int flags, int mode) {
                                 (int)sizeof(namebuf));
     if (err) return err;
     if (parent->type != VNODE_DIR) {
-      mod_vfs.release_vnode(parent);
+      mod_vfs.vnode_release(parent);
       return -ENOTDIR;
     }
     if (!parent->mount || !parent->mount->ops ||
         !parent->mount->ops->create) {
-      mod_vfs.release_vnode(parent);
+      mod_vfs.vnode_release(parent);
       return -ENOSYS;
     }
     if (parent->mount->flags & MNT_RDONLY) {
-      mod_vfs.release_vnode(parent);
+      mod_vfs.vnode_release(parent);
       return -EROFS;
     }
     err = parent->mount->ops->create(parent, namebuf, (uint32_t)mode, &vn);
-    mod_vfs.release_vnode(parent);
+    mod_vfs.vnode_release(parent);
     if (err) return err;
   } else if (err) {
     return err;
@@ -156,7 +156,7 @@ int vfs_fd_open(const char *path, int flags, int mode) {
     if (vn->mount && vn->mount->ops && vn->mount->ops->truncate) {
       int terr = vn->mount->ops->truncate(vn, 0);
       if (terr) {
-        mod_vfs.release_vnode(vn);
+        mod_vfs.vnode_release(vn);
         return terr;
       }
     } else {
@@ -181,7 +181,7 @@ int vfs_fd_open(const char *path, int flags, int mode) {
     if (tty_idx >= 0) {
       int desc = fd_pool_alloc();
       if (desc < 0) {
-        mod_vfs.release_vnode(vn);
+        mod_vfs.vnode_release(vn);
         return -ENOMEM;
       }
       fd_pool[desc].ops = &tty_fops;
@@ -190,7 +190,7 @@ int vfs_fd_open(const char *path, int flags, int mode) {
       fd_pool[desc].refcnt = 1;
       fd_pool[desc].vnode = NULL;
       fd_pool[desc].offset = 0;
-      mod_vfs.release_vnode(vn);
+      mod_vfs.vnode_release(vn);
       return desc;
     }
   }
@@ -198,7 +198,7 @@ int vfs_fd_open(const char *path, int flags, int mode) {
   /* Regular file: allocate pool entry */
   int desc = fd_pool_alloc();
   if (desc < 0) {
-    mod_vfs.release_vnode(vn);
+    mod_vfs.vnode_release(vn);
     return -ENOMEM;
   }
 

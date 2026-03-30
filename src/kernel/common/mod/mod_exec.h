@@ -7,7 +7,7 @@
  *
  * Usage:
  *   #include "common/mod/mod_exec.h"
- *   int err = mod_exec.do_execve(proc, "/sbin/init", NULL);
+ *   int err = mod_exec.execve(proc, "/sbin/init", NULL);
  *
  * Implementation: src/kernel/exec/exec.c, src/kernel/exec/loader.c
  */
@@ -24,7 +24,7 @@ typedef struct pcb pcb_t;
 MOD_DECLARE_BEGIN(exec)
 
   /*
-   * do_execve — Load and execute a binary file.
+   * execve — Load and execute a binary file.
    *
    *   p     Target process (PCB). Must have stack_page allocated.
    *   path  Filesystem path to the executable (e.g. "/sbin/init").
@@ -38,7 +38,7 @@ MOD_DECLARE_BEGIN(exec)
    * On success: p->sp, p->user_pages, p->comm are set. Returns 0.
    * On failure: returns negative errno (-ENOENT, -ENOEXEC, -ENOMEM).
    */
-  MOD_FUNC(exec, int, do_execve, pcb_t *, const char *,
+  MOD_FUNC(exec, int, execve, pcb_t *, const char *,
                                   const char * const *)
 
 MOD_DECLARE_END(exec)

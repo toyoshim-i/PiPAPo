@@ -168,9 +168,9 @@ MOD_DECLARE_BEGIN(core)
   MOD_FUNC(core, uint32_t, sched_get_ticks, void)
 
   /*
-   * set_svc_restart — Mark the current syscall for restart after wake.
+   * svc_set_restart — Mark the current syscall for restart after wake.
    */
-  MOD_FUNC(core, void, set_svc_restart, void)
+  MOD_FUNC(core, void, svc_set_restart, void)
 
   /* ── UART (bootstrap console) ────────────────────────────────────────── */
 

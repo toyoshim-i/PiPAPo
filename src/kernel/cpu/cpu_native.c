@@ -6,7 +6,7 @@
  * operations.  The run() function is a stub — native processes use the
  * scheduler's context switch mechanism (PendSV on ARM, RTE on m68k)
  * rather than an interpreter loop.  This will be connected in Phase 2
- * when do_execve is refactored.
+ * when execve is refactored.
  */
 
 #include <string.h>

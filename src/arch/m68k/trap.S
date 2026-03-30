@@ -113,7 +113,7 @@ m68k_trap0_handler:
     | --- sys_execve: full context restore from new process image ---
     clr.l   exec_pending
 
-    | Load current->sp (points to the new frame built by do_execve).
+    | Load current->sp (points to the new frame built by execve).
     | Switch stack to the new process's frame and restore from there.
     move.l  current_core,%a0
     move.l  %a0@(PCB_SP_OFFSET),%sp

@@ -60,8 +60,8 @@ vfs_\name\()_entry:
   .global vfs_fd_stdio_init
   .set vfs_fd_stdio_init, fd_stdio_init
 
-  .global vfs_file_pool_init
-  .set vfs_file_pool_init, file_pool_init
+  .global vfs_fd_pool_init
+  .set vfs_fd_pool_init, fd_pool_init
 
   .global vfs_tty_rx_notify
   .set vfs_tty_rx_notify, tty_rx_notify

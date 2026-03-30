@@ -58,7 +58,7 @@ extern volatile uint32_t
 /* Helper: mark current syscall for restart after blocking yield.
  * Sets both the global svc_restart (for ARM trap.S) and the per-process
  * flag (for m68k, where globals leak between nested TRAP #0 handlers). */
-void set_svc_restart(void);
+void svc_set_restart(void);
 
 /* ── Syscall implementations ─────────────────────────────────────────────────
  */
@@ -130,7 +130,7 @@ long sys_rt_sigreturn(void);
 /* sys_fs.c — VFS-routed file system calls */
 struct stat;
 struct dirent;
-void file_pool_init(void);
+void fd_pool_init(void);
 long sys_open(const char *path, long flags, long mode);
 long sys_close(long fd);
 long sys_lseek(long fd, long off, long whence);

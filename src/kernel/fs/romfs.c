@@ -53,7 +53,7 @@ static inline const uint8_t *get_data(const romfs_entry_t *e) {
 
 static vnode_t *vnode_from_entry(mount_entry_t *mnt, const romfs_entry_t *e,
                                  uint32_t off) {
-  vnode_t *vn = mod_vfs.alloc_vnode();
+  vnode_t *vn = mod_vfs.vnode_alloc();
   if (!vn) return NULL;
 
   vn->ino = off;

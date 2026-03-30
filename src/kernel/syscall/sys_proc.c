@@ -191,7 +191,7 @@ static void trace_stop_current(int restart) {
     return;
   }
 #endif
-  if (restart) set_svc_restart();
+  if (restart) svc_set_restart();
   sched_yield();
 }
 
@@ -1819,7 +1819,7 @@ long sys_waitpid(long pid, long status_ptr, long options) {
    * sys_exit will wake us by setting PROC_RUNNABLE.
    * SVC_Handler will restore frame[0] and PC-2 so the SVC re-executes. */
   current->state = PROC_BLOCKED;
-  set_svc_restart();
+  svc_set_restart();
   sched_yield();
   return 0; /* value ignored — SVC_Handler restores original frame[0] */
 }
@@ -1845,7 +1845,7 @@ long sys_execve(const char *path, const char *const *argv) {
   void *old_user_stack = current->user_stack_page;
 #endif
 
-  /* Clear pages so do_execve allocates fresh ones */
+  /* Clear pages so execve allocates fresh ones */
   current->stack_page_id = PAGE_ID_INVALID;
   proc_clear_page_tracking(current);
   current->image = (proc_image_t){0};
@@ -1856,7 +1856,7 @@ long sys_execve(const char *path, const char *const *argv) {
   /* Save old cpu_state so we can free it after successful exec */
   /* Load the new binary.  argv points into the old stack/data pages
    * which are still valid (detached from current but not yet freed). */
-  int err = mod_exec.do_execve(current, path, argv);
+  int err = mod_exec.execve(current, path, argv);
   if (err < 0) {
     /* Restore old pages on failure — fds are untouched (POSIX) */
     current->stack_page_id = old_stack_id;

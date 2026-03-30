@@ -111,7 +111,7 @@ MOD_DECLARE_BEGIN(vfs)
   MOD_FUNC(vfs, int, path_normalize, const char *, char *, int)
 
   /*
-   * find_mount — Find the mount entry for a given path.
+   * mount_find — Find the mount entry for a given path.
    *
    *   path       Absolute pathname to look up.
    *   remainder  Output: portion of path below the mount point.
@@ -119,7 +119,7 @@ MOD_DECLARE_BEGIN(vfs)
    * Returns the mount_entry_t with the longest matching prefix,
    * or NULL if no mount covers the path.
    */
-  MOD_FUNC(vfs, mount_entry_t *, find_mount, const char *, const char **)
+  MOD_FUNC(vfs, mount_entry_t *, mount_find, const char *, const char **)
 
   /*
    * mount_ufs — Mount a UFS filesystem at a given path.
@@ -137,7 +137,7 @@ MOD_DECLARE_BEGIN(vfs)
   /* ── Vnode lifecycle ─────────────────────────────────────────────────── */
 
   /*
-   * alloc_vnode — Allocate a vnode from the pool.
+   * vnode_alloc — Allocate a vnode from the pool.
    *
    * Returns a zeroed vnode with refcount 1, or NULL if the pool
    * is exhausted.  The caller must set vn->ops, vn->type, etc.
@@ -146,28 +146,28 @@ MOD_DECLARE_BEGIN(vfs)
    * Called by filesystem drivers during mount and lookup to create
    * in-memory representations of files, directories, and devices.
    */
-  MOD_FUNC(vfs, vnode_t *, alloc_vnode, void)
+  MOD_FUNC(vfs, vnode_t *, vnode_alloc, void)
 
   /*
-   * acquire_vnode — Increment a vnode's reference count.
+   * vnode_acquire — Increment a vnode's reference count.
    *
    *   vn  Vnode to reference.
    *
    * Called when a new file descriptor or directory entry points to
    * an existing vnode (e.g. dup, fork fd inheritance, hardlink).
    */
-  MOD_FUNC(vfs, void, acquire_vnode, vnode_t *)
+  MOD_FUNC(vfs, void, vnode_acquire, vnode_t *)
 
   /*
-   * release_vnode — Release a vnode (decrement refcount, free if zero).
+   * vnode_release — Release a vnode (decrement refcount, free if zero).
    *
    *   vn  Vnode to release.  Safe to call with NULL (no-op).
    *
    * When the refcount reaches zero, the vnode is returned to the
-   * pool.  Called by sys_close, do_execve cleanup, process exit,
+   * pool.  Called by sys_close, execve cleanup, process exit,
    * and any code that obtained a vnode via vfs_lookup.
    */
-  MOD_FUNC(vfs, void, release_vnode, vnode_t *)
+  MOD_FUNC(vfs, void, vnode_release, vnode_t *)
 
   /* ── File descriptor helpers ──────────────────────────────────────────── */
 
@@ -182,23 +182,23 @@ MOD_DECLARE_BEGIN(vfs)
   MOD_FUNC(vfs, void, fd_stdio_init, pcb_t *)
 
   /*
-   * file_read — Read from a vnode via its mount's ops->read.
+   * vnode_read — Read from a vnode via its mount's ops->read.
    *
    * Wraps vn->mount->ops->read() so the call executes in the VFS
    * module's code segment.  Needed because ops->read is a near
    * function pointer valid only in VFS's CS.
    */
-  MOD_FUNC(vfs, long, file_read, vnode_t *, void *, uint32_t, uint32_t)
+  MOD_FUNC(vfs, long, vnode_read, vnode_t *, void *, uint32_t, uint32_t)
 
   /* ── Init helpers (called from kmain) ────────────────────────────────── */
 
   /*
-   * file_pool_init — Initialise the struct file slab pool.
+   * fd_pool_init — Initialise the struct file slab pool.
    *
    * Must be called once after vfs_init().  Sets up the kmem pool
    * backing sys_open / pipe / dup file allocations.
    */
-  MOD_FUNC(vfs, void, file_pool_init, void)
+  MOD_FUNC(vfs, void, fd_pool_init, void)
 
   /*
    * tty_rx_notify — Notify a TTY that RX data is available.

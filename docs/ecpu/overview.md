@@ -87,7 +87,7 @@ The kernel's `exec()` path dispatches to the appropriate subsystem
 loader when it encounters a foreign binary:
 
 ```c
-int do_execve(pcb_t *p, const char *path, const char *const *argv) {
+int execve(pcb_t *p, const char *path, const char *const *argv) {
     const uint8_t *file = romfs_lookup(path);
 
     /* Try native ELF */

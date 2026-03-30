@@ -141,7 +141,7 @@ m68k_timer_isr:
     | ── Context switch ────────────────────────────────────────────────────
     clr.l   m68k_switch_pending
 
-    | exec_pending: do_execve has set current->sp to the new process frame
+    | exec_pending: execve has set current->sp to the new process frame
     | and is about to return to trap.S .Lexec_restore.  Saving the kernel
     | SSP here would overwrite the new frame pointer and corrupt exec.
     | Skip the sp-save; trap.S handles the context restore on exec return.

@@ -70,7 +70,7 @@ long sys_nanosleep(void *req, void *rem) {
 
   /* Block with svc_restart so SVC re-executes when woken */
   current->state = PROC_SLEEPING;
-  set_svc_restart();
+  svc_set_restart();
   sched_yield();
   return 0; /* ignored — SVC restores original args */
 }
@@ -179,7 +179,7 @@ long sys_clock_nanosleep32(long clk, long flags, const void *req, void *rem) {
 
   /* Block with svc_restart */
   current->state = PROC_SLEEPING;
-  set_svc_restart();
+  svc_set_restart();
   sched_yield();
   return 0;
 }
@@ -222,7 +222,7 @@ long sys_clock_nanosleep64(long clk, long flags, const void *req, void *rem) {
 
   /* Block with svc_restart */
   current->state = PROC_SLEEPING;
-  set_svc_restart();
+  svc_set_restart();
   sched_yield();
   return 0;
 }

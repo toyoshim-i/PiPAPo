@@ -165,7 +165,7 @@ static void check_run_slow(void)
 int main(void)
 {
     /* Initialize the test list at runtime — PIC binaries don't support
-     * static pointer arrays because do_execve only relocates GOT entries,
+     * static pointer arrays because execve only relocates GOT entries,
      * not initialized data pointers.  Runtime assignment uses GOT-resolved
      * addresses which are correctly relocated. */
     test_entry_t tests[32];

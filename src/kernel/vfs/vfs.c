@@ -8,7 +8,7 @@
  * The vnode pool is a statically-allocated slab managed by the kmem
  * allocator — O(1) alloc/free with no per-vnode metadata overhead.
  *
- * The mount table is a simple fixed-size array.  vfs_find_mount() does a
+ * The mount table is a simple fixed-size array.  vfs_mount_find() does a
  * longest-prefix match so that "/dev/ttyS0" resolves to the "/dev" mount
  * rather than "/".
  */
@@ -19,7 +19,7 @@
 
 #include "../common/errno.h"
 #include "../common/mod/mod_core.h"
-#include "../fd/file.h"   /* file_pool_init */
+#include "../fd/file.h"   /* fd_pool_init */
 #include "../fd/tty.h"    /* tty_rx_notify */
 #include "../fs/fstab.h"  /* fstab_parse, fstab_mount_all */
 #include "../mm/kmem.h" /* kmem_pool_t type — functions via mod_core */
@@ -53,10 +53,10 @@ void vfs_init(void) {
         (unsigned)VFS_VNODE_MAX, (unsigned)VFS_MOUNT_MAX);
 }
 
-/* ── vfs_alloc_vnode / vfs_acquire_vnode / vfs_release_vnode ─────────────────────────────────────
+/* ── vfs_vnode_alloc / vfs_vnode_acquire / vfs_vnode_release ─────────────────────────────────────
  */
 
-vnode_t *vfs_alloc_vnode(void) {
+vnode_t *vfs_vnode_alloc(void) {
   uint32_t saved = spin_lock_irqsave(SPIN_VFS);
   vnode_t *vn = mod_core.kmem_alloc(&vnode_pool);
   if (!vn) {
@@ -76,14 +76,14 @@ vnode_t *vfs_alloc_vnode(void) {
   return vn;
 }
 
-void vfs_acquire_vnode(vnode_t *vn) {
+void vfs_vnode_acquire(vnode_t *vn) {
   if (!vn) return;
   uint32_t saved = spin_lock_irqsave(SPIN_VFS);
   vn->refcnt++;
   spin_unlock_irqrestore(SPIN_VFS, saved);
 }
 
-void vfs_release_vnode(vnode_t *vn) {
+void vfs_vnode_release(vnode_t *vn) {
   if (!vn) return;
   uint32_t saved = spin_lock_irqsave(SPIN_VFS);
   if (vn->refcnt > 0) vn->refcnt--;
@@ -134,7 +134,7 @@ int vfs_mount(const char *path, const vfs_ops_t *ops, uint8_t flags,
   mnt->sb_priv = NULL;
 
   /* Release SPIN_VFS before calling the FS mount callback.
-   * The callback may call vfs_alloc_vnode() which also acquires SPIN_VFS —
+   * The callback may call vfs_vnode_alloc() which also acquires SPIN_VFS —
    * RP2040 hardware spinlocks are NOT re-entrant (same-core re-acquire
    * returns 0 → infinite spin).  The slot is safe: it's not yet active,
    * so no other code path will find or modify it. */
@@ -193,7 +193,7 @@ int vfs_umount(const char *path) {
   }
 
   /* Release root vnode and deactivate.
-   * Note: vfs_release_vnode() also acquires SPIN_VFS, but we already hold it.
+   * Note: vfs_vnode_release() also acquires SPIN_VFS, but we already hold it.
    * Use mod_core.kmem_free() directly to avoid recursive lock. */
   if (mnt->root) {
     if (mnt->root->refcnt > 0) mnt->root->refcnt--;
@@ -210,10 +210,10 @@ int vfs_umount(const char *path) {
   return 0;
 }
 
-/* ── vfs_find_mount ─────────────────────────────────────────────────────────
+/* ── vfs_mount_find ─────────────────────────────────────────────────────────
  */
 
-mount_entry_t *vfs_find_mount(const char *path, const char **remainder) {
+mount_entry_t *vfs_mount_find(const char *path, const char **remainder) {
   mount_entry_t *best = NULL;
   uint8_t best_len = 0;
 
@@ -271,7 +271,7 @@ int vfs_mount_ufs(const char *path, uint8_t flags, const void *dev_data)
 #include "../fd/fd.h"
 
 /* Aliases for MOD_IMPL convention: vfs_<name> → <name> */
-#define vfs_file_pool_init file_pool_init
+#define vfs_fd_pool_init fd_pool_init
 #define vfs_tty_rx_notify tty_rx_notify
 
 /* fd.c: fd_stdio_init takes pcb_t* (compat wrapper) */
@@ -314,7 +314,7 @@ void vfs_fstab_automount(void) {
 }
 
 /* Cross-module wrapper: execute ops->read in VFS's code segment. */
-long vfs_file_read(vnode_t *vn, void *buf, uint32_t size, uint32_t off) {
+long vfs_vnode_read(vnode_t *vn, void *buf, uint32_t size, uint32_t off) {
   if (!vn || !vn->mount || !vn->mount->ops || !vn->mount->ops->read)
     return -2; /* ENOENT */
   return vn->mount->ops->read(vn, buf, size, off);
@@ -328,14 +328,14 @@ MOD_DEFINE_BEGIN(vfs)
   MOD_IMPL(vfs, lookup_flags)
   MOD_IMPL(vfs, lookup_parent)
   MOD_IMPL(vfs, path_normalize)
-  MOD_IMPL(vfs, find_mount)
+  MOD_IMPL(vfs, mount_find)
   MOD_IMPL(vfs, mount_ufs)
-  MOD_IMPL(vfs, alloc_vnode)
-  MOD_IMPL(vfs, acquire_vnode)
-  MOD_IMPL(vfs, release_vnode)
+  MOD_IMPL(vfs, vnode_alloc)
+  MOD_IMPL(vfs, vnode_acquire)
+  MOD_IMPL(vfs, vnode_release)
   MOD_IMPL(vfs, fd_stdio_init)
-  MOD_IMPL(vfs, file_read)
-  MOD_IMPL(vfs, file_pool_init)
+  MOD_IMPL(vfs, vnode_read)
+  MOD_IMPL(vfs, fd_pool_init)
   MOD_IMPL(vfs, tty_rx_notify)
   MOD_IMPL(vfs, fstab_automount)
   MOD_IMPL(vfs, fd_open)

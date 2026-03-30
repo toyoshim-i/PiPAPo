@@ -107,7 +107,7 @@ void target_late_init(void) {
 }
 
 void target_post_mount(void) {
-  /* User-space init (/sbin/init) is launched by main.c via do_execve() */
+  /* User-space init (/sbin/init) is launched by main.c via execve() */
 }
 
 const char *target_init_path(void) {

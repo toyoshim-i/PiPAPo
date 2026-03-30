@@ -764,7 +764,7 @@ The VFS header at offset 0 in the VFS segment contains a magic word
 | vfs_fd_stdio_init call 0 | VFS entry stub calls `vfs_fd_stdio_init` but actual function is `fd_stdio_init` | `.set vfs_fd_stdio_init, fd_stdio_init` alias in vfs_entries.S |
 | core_fptrs overflow | 12 slots but 16 functions; boot-time patching overwrote mod_core | Add mm_page_* slots to core_fptrs (16 entries) |
 | Far-call return value lost | Entry stubs did `xor %ax,%ax; mov %ax,%ds` after call, destroying AX | Use BX instead of AX for DS restore |
-| exec ops->read hangs | `vn->mount->ops->read` is a near pointer valid only in VFS CS | `mod_vfs.file_read()` wrapper executes read in VFS CS |
+| exec ops->read hangs | `vn->mount->ops->read` is a near pointer valid only in VFS CS | `mod_vfs.vnode_read()` wrapper executes read in VFS CS |
 | `fd_close_all` crash in sys_exit | Unresolved VFS function called from core sys_exit path | **Blocker**: requires completing module boundary migration |
 
 ### Memory Model
@@ -812,7 +812,7 @@ fix.
 - Process gets its own segment: CS=DS=ES = `base >> 4`
 - Segment-aware initial frame: 24-byte ISR frame with correct CS/IP
 - Direct PID 1 launch via inline IRET (bypasses timer ISR)
-- `mod_vfs.file_read()` wraps `ops->read` for cross-module safety
+- `mod_vfs.vnode_read()` wraps `ops->read` for cross-module safety
 - PIT 100 Hz timer and preemptive scheduler start
 
 ### What Crashes

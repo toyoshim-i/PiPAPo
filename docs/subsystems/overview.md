@@ -74,7 +74,7 @@ registered subsystem detectors. Foreign-arch ELF is handled as
 a subsystem (the PPAP cross-arch personality), not as a special case:
 
 ```c
-int do_execve(pcb_t *p, const char *path, const char *const *argv) {
+int execve(pcb_t *p, const char *path, const char *const *argv) {
     const uint8_t *file = romfs_lookup(path);
 
     /* Try native ELF (matching host e_machine) */

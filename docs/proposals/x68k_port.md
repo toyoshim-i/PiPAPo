@@ -486,7 +486,7 @@ Text and data locations are fully independent -- there is no PC-relative
 GOT lookup as on ARM.
 
 The kernel sets a5 (slot 13 in the software register frame on the SSP)
-during `do_execve`:
+during `execve`:
 
 ```c
 if (got_sram_addr) {
@@ -525,7 +525,7 @@ Each process gets **two separate stack pages**:
 | `stack_page` | `p->stack_page` | **Kernel stack (SSP target)**: exception frames, context switch save area, syscall handling |
 | `user_stack_page` | `p->user_stack_page` | **User stack (USP target)**: argc/argv/envp/auxv, user function calls, local variables |
 
-Allocation order in `do_execve()`:
+Allocation order in `execve()`:
 
 ```c
 // Pre-allocate stack (SSP) page first to avoid LIFO brk conflict
@@ -556,7 +556,7 @@ Kernel stack (SSP) layout, built by proc_setup_stack():
   [SP+40]  a2
   [SP+44]  a3
   [SP+48]  a4
-  [SP+52]  a5          <- GOT base (slot 13, patched by do_execve)
+  [SP+52]  a5          <- GOT base (slot 13, patched by execve)
   [SP+56]  a6
   [SP+60]  SR (16-bit)  <- SR_USER (S=0, IPL=0) -> switches to USP on RTE
   [SP+62]  PC (32-bit)  <- entry point
@@ -571,7 +571,7 @@ hardware stack pointer becomes the USP.
 
 ### 7.4 USP Setup
 
-The user stack (USP) is set up in `do_execve()`:
+The user stack (USP) is set up in `execve()`:
 
 ```c
 // Build argc/argv/envp/auxv at top of user_stack page
@@ -610,7 +610,7 @@ move.l  %a1,%usp                      | restore USP
 
 ### 7.6 exec_pending Protection
 
-During `do_execve()`, there is a critical window between constructing the
+During `execve()`, there is a critical window between constructing the
 new process's exception frame and the trap return path restoring it.  If
 the timer ISR fires in this window and performs a context switch, it would
 save the kernel's SSP into `current->sp`, overwriting the carefully
@@ -619,7 +619,7 @@ constructed exec frame.
 The solution uses an `exec_pending` flag:
 
 ```c
-// In do_execve(), with interrupts disabled:
+// In execve(), with interrupts disabled:
 uint32_t irq_save = arch_irq_save();
 proc_setup_stack(p, entry, m68k_user_sp);
 p->usp = m68k_user_sp;

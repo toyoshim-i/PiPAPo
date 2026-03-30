@@ -67,7 +67,7 @@ void kmain(void) {
 
   /* VFS layer + file pool for sys_open */
   mod_vfs.init();
-  mod_vfs.file_pool_init();
+  mod_vfs.fd_pool_init();
 
 #ifdef PPAP_HAS_BLKDEV
   /* Block device registry + loopback subsystem */
@@ -143,10 +143,10 @@ void kmain(void) {
       init->sid = init->pid;
       mod_vfs.fd_stdio_init(init);
 
-      int exec_err = mod_exec.do_execve(init, init_path, NULL);
+      int exec_err = mod_exec.execve(init, init_path, NULL);
       if (exec_err < 0) {
         klogf("INIT: %s failed, trying /bin/sh\n", init_path);
-        exec_err = mod_exec.do_execve(init, "/bin/sh", NULL);
+        exec_err = mod_exec.execve(init, "/bin/sh", NULL);
       }
       if (exec_err == 0) {
         init->state = PROC_RUNNABLE;

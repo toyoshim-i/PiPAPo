@@ -129,7 +129,7 @@ stack.  Everything from there to the detected RAM end is the page pool.
 Each process owns:
 
 - **Data segment pages** — `user_pages[0..N-1]`, contiguous, allocated by
-  `do_execve()`.  Contains `.data`, `.bss`, GOT (Global Offset Table).
+  `execve()`.  Contains `.data`, `.bss`, GOT (Global Offset Table).
 - **Heap pages** — `user_pages[N..]`, contiguous with data pages, allocated
   on demand by `sys_brk()`.
 - **Kernel stack page** — `stack_page`, one 4 KB page.  On ARM this is the
@@ -157,7 +157,7 @@ On m68k and RISC-V, each process uses an additional page for the user stack
 
 ## 3. Initial Memory Allocation for a Process
 
-When `do_execve()` loads an ELF binary (`src/kernel/exec/exec.c`):
+When `execve()` loads an ELF binary (`src/kernel/exec/exec.c`):
 
 1. **Pre-allocate the kernel stack page** — `page_alloc()` returns one page.
    This is done first to prevent the LIFO free-stack from interfering with

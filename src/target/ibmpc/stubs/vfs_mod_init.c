@@ -23,17 +23,17 @@ int  vfs_lookup(const char *, vnode_t **);
 int  vfs_lookup_flags(const char *, vnode_t **, int);
 int  vfs_lookup_parent(const char *, vnode_t **, char *, int);
 int  vfs_path_normalize(const char *, char *, int);
-mount_entry_t *vfs_find_mount(const char *, const char **);
+mount_entry_t *vfs_mount_find(const char *, const char **);
 int  vfs_mount_ufs(const char *, uint8_t, const void *);
-vnode_t *vfs_alloc_vnode(void);
-void vfs_acquire_vnode(vnode_t *);
-void vfs_release_vnode(vnode_t *);
+vnode_t *vfs_vnode_alloc(void);
+void vfs_vnode_acquire(vnode_t *);
+void vfs_vnode_release(vnode_t *);
 
 struct pcb;
 typedef struct pcb pcb_t;
 void vfs_fd_stdio_init(pcb_t *);
-long vfs_file_read(vnode_t *, void *, uint32_t, uint32_t);
-void vfs_file_pool_init(void);
+long vfs_vnode_read(vnode_t *, void *, uint32_t, uint32_t);
+void vfs_fd_pool_init(void);
 void vfs_tty_rx_notify(int);
 void vfs_fstab_automount(void);
 

@@ -331,7 +331,7 @@ block:
 
   current->wait_channel = &t->tx_user_buf;
   current->state = PROC_BLOCKED;
-  mod_core.set_svc_restart();
+  mod_core.svc_set_restart();
   mod_core.sched_yield();
   return 0; /* ignored — SVC restores original args */
 }
@@ -349,7 +349,7 @@ static long tty_read_canon(tty_dev_t *t, char *buf, size_t n) {
       /* Block via svc_restart: re-executes this syscall when woken */
       current->wait_channel = t;
       current->state = PROC_BLOCKED;
-      mod_core.set_svc_restart();
+      mod_core.svc_set_restart();
       mod_core.sched_yield();
       return 0; /* ignored — SVC restores original args */
     }
@@ -465,7 +465,7 @@ static long tty_read_raw(tty_dev_t *t, char *buf, size_t n) {
     /* Block via svc_restart */
     current->wait_channel = t;
     current->state = PROC_BLOCKED;
-    mod_core.set_svc_restart();
+    mod_core.svc_set_restart();
     mod_core.sched_yield();
     return 0; /* ignored — SVC restores original args */
   }
@@ -503,7 +503,7 @@ static long tty_read(struct file *f, char *buf, size_t n) {
     /* No backend — block forever (process sleeps until killed) */
     current->wait_channel = t;
     current->state = PROC_BLOCKED;
-    mod_core.set_svc_restart();
+    mod_core.svc_set_restart();
     mod_core.sched_yield();
     return 0;
   }
