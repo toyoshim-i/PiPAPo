@@ -25,17 +25,8 @@ extern uint16_t vfs_fptrs[];  /* in core: caller stubs for VFS */
 
 /* VFS entry point offsets — obtained from the VFS binary's symbol table.
  * These are fixed at build time since the VFS linker script starts at 0. */
-extern uint16_t vfs_init_entry;
-extern uint16_t vfs_mount_entry;
-extern uint16_t vfs_umount_entry;
-extern uint16_t vfs_lookup_entry;
-extern uint16_t vfs_lookup_flags_entry;
-extern uint16_t vfs_lookup_parent_entry;
-extern uint16_t vfs_path_normalize_entry;
-extern uint16_t vfs_mount_find_entry;
-extern uint16_t vfs_vnode_alloc_entry;
-extern uint16_t vfs_vnode_acquire_entry;
-extern uint16_t vfs_vnode_release_entry;
+/* VFS entry point symbols are no longer referenced individually —
+ * patch_vfs_fptrs reads them from the VFS header dynamically. */
 
 /* mod_info_t — boot protocol from stage2 (at 0x0500) */
 #define MOD_INFO_ADDR  0x0500u
@@ -77,7 +68,7 @@ static uint16_t far_read16(uint16_t seg, uint16_t off) {
   return val;
 }
 
-/* Core entry point offsets (from core_entries.S) */
+/* Core entry point offsets (from core_entries.S, order matches mod_core.inc) */
 extern uint16_t klog_entry;
 extern uint16_t klogf_entry;
 extern uint16_t kmem_pool_init_entry;
@@ -88,12 +79,19 @@ extern uint16_t mem_region_alloc_entry;
 extern uint16_t mem_region_free_entry;
 extern uint16_t mem_region_total_bytes_entry;
 extern uint16_t mem_region_free_bytes_entry;
-extern uint16_t core_blkdev_read_entry;
-extern uint16_t core_blkdev_write_entry;
 extern uint16_t mm_page_alloc_entry;
 extern uint16_t mm_page_free_entry;
 extern uint16_t mm_page_read_entry;
 extern uint16_t mm_page_write_entry;
+extern uint16_t sched_wakeup_entry;
+extern uint16_t sched_yield_entry;
+extern uint16_t sched_get_ticks_entry;
+extern uint16_t svc_set_restart_entry;
+extern uint16_t uart_putc_entry;
+extern uint16_t uart_getc_entry;
+extern uint16_t uart_rx_avail_entry;
+extern uint16_t blkdev_read_entry;
+extern uint16_t blkdev_write_entry;
 
 static void patch_vfs_fptrs(uint16_t vfs_seg) {
   /* VFS header is at vfs_seg:0000 */
@@ -103,7 +101,6 @@ static void patch_vfs_fptrs(uint16_t vfs_seg) {
   }
 
   uint16_t count = far_read16(vfs_seg, 2);
-  if (count > 14) count = 14;
 
   /* Patch core→VFS far pointers (in core's vfs_fptrs table) */
   for (uint16_t i = 0; i < count; i++) {
@@ -118,23 +115,34 @@ static void patch_vfs_fptrs(uint16_t vfs_seg) {
   uint16_t core_seg = seg_get(MOD_ID_CORE);
   volatile uint16_t *cfp = (volatile uint16_t *)(uintptr_t)core_fptrs_addr;
 
-  /* Core entry offsets — these are near addresses in core's segment */
-  cfp[0]  = (uint16_t)(uintptr_t)&klog_entry;               cfp[1]  = core_seg;
-  cfp[2]  = (uint16_t)(uintptr_t)&klogf_entry;              cfp[3]  = core_seg;
-  cfp[4]  = (uint16_t)(uintptr_t)&kmem_pool_init_entry;     cfp[5]  = core_seg;
-  cfp[6]  = (uint16_t)(uintptr_t)&kmem_alloc_entry;         cfp[7]  = core_seg;
-  cfp[8]  = (uint16_t)(uintptr_t)&kmem_free_entry;          cfp[9]  = core_seg;
-  cfp[10] = (uint16_t)(uintptr_t)&kmem_free_count_entry;    cfp[11] = core_seg;
-  cfp[12] = (uint16_t)(uintptr_t)&mem_region_alloc_entry;   cfp[13] = core_seg;
-  cfp[14] = (uint16_t)(uintptr_t)&mem_region_free_entry;    cfp[15] = core_seg;
-  cfp[16] = (uint16_t)(uintptr_t)&mem_region_total_bytes_entry; cfp[17] = core_seg;
-  cfp[18] = (uint16_t)(uintptr_t)&mem_region_free_bytes_entry;  cfp[19] = core_seg;
-  cfp[20] = (uint16_t)(uintptr_t)&core_blkdev_read_entry;  cfp[21] = core_seg;
-  cfp[22] = (uint16_t)(uintptr_t)&core_blkdev_write_entry; cfp[23] = core_seg;
-  cfp[24] = (uint16_t)(uintptr_t)&mm_page_alloc_entry;    cfp[25] = core_seg;
-  cfp[26] = (uint16_t)(uintptr_t)&mm_page_free_entry;     cfp[27] = core_seg;
-  cfp[28] = (uint16_t)(uintptr_t)&mm_page_read_entry;     cfp[29] = core_seg;
-  cfp[30] = (uint16_t)(uintptr_t)&mm_page_write_entry;    cfp[31] = core_seg;
+  /* Core entry offsets — order MUST match mod_core.inc indices. */
+#define PATCH_CORE(idx, sym) \
+  cfp[(idx)*2] = (uint16_t)(uintptr_t)&sym##_entry; \
+  cfp[(idx)*2+1] = core_seg
+  PATCH_CORE( 0, klog);
+  PATCH_CORE( 1, klogf);
+  PATCH_CORE( 2, kmem_pool_init);
+  PATCH_CORE( 3, kmem_alloc);
+  PATCH_CORE( 4, kmem_free);
+  PATCH_CORE( 5, kmem_free_count);
+  PATCH_CORE( 6, mem_region_alloc);
+  PATCH_CORE( 7, mem_region_free);
+  PATCH_CORE( 8, mem_region_total_bytes);
+  PATCH_CORE( 9, mem_region_free_bytes);
+  PATCH_CORE(10, mm_page_alloc);
+  PATCH_CORE(11, mm_page_free);
+  PATCH_CORE(12, mm_page_read);
+  PATCH_CORE(13, mm_page_write);
+  PATCH_CORE(14, sched_wakeup);
+  PATCH_CORE(15, sched_yield);
+  PATCH_CORE(16, sched_get_ticks);
+  PATCH_CORE(17, svc_set_restart);
+  PATCH_CORE(18, uart_putc);
+  PATCH_CORE(19, uart_getc);
+  PATCH_CORE(20, uart_rx_avail);
+  PATCH_CORE(21, blkdev_read);
+  PATCH_CORE(22, blkdev_write);
+#undef PATCH_CORE
 }
 
 static void seg_init_modules(void) {
