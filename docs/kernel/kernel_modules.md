@@ -329,3 +329,8 @@ No runtime module loading — simpler and sufficient.
 - **mod_subsys** — eCPU emulators + personality bridges
 - **mm_page / mem_region integration** — unify page-indexed and
   region-based allocators behind a single API surface
+- **Source tree alignment** — restructure `src/kernel/` so each
+  module's directory matches its boundary exactly (e.g. move
+  `fd/`, `fs/` into `vfs/`; move `proc/`, `syscall/`, `mm/` into
+  `core/`).  Currently the boundary is defined by the build
+  system and `.inc` files, not by directory structure
