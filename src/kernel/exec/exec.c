@@ -13,6 +13,7 @@
 
 #include "arch/arch.h"
 #include "kernel/common/errno.h"
+#include "kernel/klog.h"
 #include "kernel/mm/mem_region.h"
 #include "kernel/mm/page.h"
 #include "kernel/signal/signal.h"
@@ -32,6 +33,8 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
 
   /* ── 1. Look up the binary in the VFS ──────────────────────────────── */
   err = mod_vfs.lookup(path, &vn);
+  klogf("EXEC: lookup '%s' err=%u vn=%lx\n", path, (unsigned)(err < 0 ? -err : 0),
+        (unsigned long)(uintptr_t)vn);
   if (err < 0) return err;
 
   if (vn->type != VNODE_FILE) {

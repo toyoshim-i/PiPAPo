@@ -183,4 +183,12 @@ MOD_DECLARE_BEGIN(vfs)
 
 MOD_DECLARE_END(vfs)
 
+/* Number of function pointers in mod_vfs_t.
+ * Must match entry_count in vfs_header.S, vfs_stubs.S slot count,
+ * and vfs_entries.S stub count.  Static assert catches mismatches. */
+#define MOD_VFS_FUNC_COUNT 13
+_Static_assert(sizeof(mod_vfs_t) == MOD_VFS_FUNC_COUNT * sizeof(void (*)(void)),
+               "mod_vfs_t size mismatch — update MOD_VFS_FUNC_COUNT, "
+               "vfs_header.S, vfs_stubs.S, and vfs_entries.S");
+
 #endif /* PPAP_KERNEL_MOD_MOD_VFS_H */
