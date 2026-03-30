@@ -181,8 +181,41 @@ void kmain(void) {
     klog("PIT: 100 Hz timer started\n");
   }
 #endif
+#ifdef __ia16__
+  {
+    uint16_t *chk = (uint16_t *)(uintptr_t)(uint16_t)proc_table[1].sp;
+    klogf("FINAL: sp=%lx CS=%x IP=%x byte@DFFA=%x\n",
+          (unsigned long)proc_table[1].sp,
+          (unsigned)chk[10], (unsigned)chk[9],
+          (unsigned)*(uint16_t *)0xDFFA);
+  }
+#endif
   klog("SCHED: starting scheduler\n");
   sched_start();
+#ifdef __ia16__
+  /* Direct jump to PID 1: load SP from PCB and restore via ISR path.
+   * This avoids relying on the timer ISR for the first context switch. */
+  {
+    pcb_t *p1 = &proc_table[1];
+    if (p1->state == PROC_RUNNABLE) {
+      current_core[0] = p1;
+      __asm__ volatile (
+        "movw %0, %%sp\n\t"
+        "popw %%es\n\t"
+        "popw %%ds\n\t"
+        "popw %%bp\n\t"
+        "popw %%di\n\t"
+        "popw %%si\n\t"
+        "popw %%dx\n\t"
+        "popw %%cx\n\t"
+        "popw %%bx\n\t"
+        "popw %%ax\n\t"
+        "iret"
+        : : "r"((uint16_t)p1->sp)
+      );
+    }
+  }
+#endif
 
   /* Run one immediate handoff so PID 1 starts without waiting for the
    * first timer preemption tick. */

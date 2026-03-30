@@ -131,7 +131,23 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
   }
 
   /* ── 4. Free file buffer if the loader doesn't need it for XIP ───── */
+#ifdef __ia16__
+  klogf("EXEC: file_buf=%lx file_region.base=%lx p->sp=%lx\n",
+        (unsigned long)(uintptr_t)file_buf,
+        (unsigned long)(uintptr_t)file_region.base,
+        (unsigned long)p->sp);
+  {
+    uint16_t *chk = (uint16_t *)(uintptr_t)(uint16_t)p->sp;
+    klogf("EXEC: pre-free CS=%x IP=%x\n", (unsigned)chk[10], (unsigned)chk[9]);
+  }
+#endif
   if (file_buf && !matched_loader->xip) mem_region_free(&file_region);
+#ifdef __ia16__
+  {
+    uint16_t *chk = (uint16_t *)(uintptr_t)(uint16_t)p->sp;
+    klogf("EXEC: post-free CS=%x IP=%x\n", (unsigned)chk[10], (unsigned)chk[9]);
+  }
+#endif
 
   /* ── 5. Set process metadata ───────────────────────────────────────── */
   {

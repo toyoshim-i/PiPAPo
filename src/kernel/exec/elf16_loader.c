@@ -100,6 +100,15 @@ static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     return -ENOMEM;
   }
   uint8_t *base = (uint8_t *)region.base;
+#ifdef __ia16__
+  {
+    extern void klogf(const char *, ...);
+    klogf("ELF16: base=%lx alloc=%lu entry=%lx\n",
+          (unsigned long)(uintptr_t)base,
+          (unsigned long)alloc_size,
+          (unsigned long)ehdr->e_entry);
+  }
+#endif
 
   /* Zero entire region (covers BSS and gaps) */
   memset(base, 0, alloc_size);
@@ -129,16 +138,52 @@ static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     }
   }
 
-  /* Entry point and stack */
-  uintptr_t entry_addr = (uintptr_t)base + ehdr->e_entry;
-  uintptr_t user_sp = (uintptr_t)base + alloc_size;
+  /* Entry point and stack setup.
+   * Each user process gets CS=DS=ES = base>>4.  The ELF is linked at
+   * vaddr 0, so e_entry and $msg are segment-relative offsets that
+   * work directly with CS/DS set to the load segment.
+   * SS stays 0 (kernel flat space) — stack operations use absolute
+   * addresses.  SP points into the allocated region. */
+  uint16_t proc_seg = (uint16_t)((uintptr_t)base >> 4);
+  uint16_t entry_ip = (uint16_t)ehdr->e_entry;
+  uint16_t sp_abs = (uint16_t)((uintptr_t)base + alloc_size);
 
-  proc_setup_stack(p, (void (*)(void))entry_addr, user_sp);
+  /* Build the initial interrupt frame on the process stack.
+   * SP is an absolute address (SS=0), but CS/DS/ES use proc_seg. */
+  uint16_t *frame = (uint16_t *)(uintptr_t)sp_abs;
+
+  /* Hardware interrupt frame (popped by IRET) */
+  *--frame = 0x0200;     /* FLAGS: IF=1 */
+  *--frame = proc_seg;   /* CS = process segment */
+  *--frame = entry_ip;   /* IP = entry point (segment-relative) */
+
+  /* Software-saved registers (popped by ISR restore path) */
+  *--frame = 0;          /* AX */
+  *--frame = 0;          /* BX */
+  *--frame = 0;          /* CX */
+  *--frame = 0;          /* DX */
+  *--frame = 0;          /* SI */
+  *--frame = 0;          /* DI */
+  *--frame = 0;          /* BP */
+  *--frame = proc_seg;   /* DS = process segment */
+  *--frame = proc_seg;   /* ES = process segment */
+
+  p->sp = (uint32_t)(uintptr_t)frame;
+#ifdef __ia16__
+  {
+    extern void klogf(const char *, ...);
+    klogf("ELF16: sp=%lx base=%lx seg=%x\n",
+          (unsigned long)(uintptr_t)frame,
+          (unsigned long)(uintptr_t)base,
+          (unsigned)proc_seg);
+  }
+#endif
 
   p->image.text = proc_image_segment_make(base, mem_end, PPAP_MEM_RAM_TEXT,
                                           PROC_IMAGE_SEG_EXECUTABLE);
   p->image.data = region;
-  p->image.entry = entry_addr;
+  p->image.entry = (uintptr_t)entry_ip;
+  p->ticks_remaining = PROC_DEFAULT_TICKS;
 
   return 0;
 }
