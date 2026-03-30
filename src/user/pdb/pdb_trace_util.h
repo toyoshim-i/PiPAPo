@@ -1,5 +1,5 @@
-#ifndef PPAP_USER_PDB_TRACE_UTIL_H
-#define PPAP_USER_PDB_TRACE_UTIL_H
+#ifndef PPAP_USER_PDB_PDB_TRACE_UTIL_H
+#define PPAP_USER_PDB_PDB_TRACE_UTIL_H
 
 #include "syscall.h"
 
@@ -22,4 +22,4 @@ int z80_is_call_opcode(uint8_t op);
 void print_backtrace(pid_t pid, const struct ppap_ptrace_regs *regs,
                      uint32_t count);
 
-#endif /* PPAP_USER_PDB_TRACE_UTIL_H */
+#endif /* PPAP_USER_PDB_PDB_TRACE_UTIL_H */

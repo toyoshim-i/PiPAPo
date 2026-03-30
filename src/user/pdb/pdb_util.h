@@ -1,5 +1,5 @@
-#ifndef PPAP_USER_PDB_UTIL_H
-#define PPAP_USER_PDB_UTIL_H
+#ifndef PPAP_USER_PDB_PDB_UTIL_H
+#define PPAP_USER_PDB_PDB_UTIL_H
 
 #include "lib/uclib.h"
 
@@ -33,4 +33,4 @@ int parse_x_spec(const char *tok0, uint32_t *count_out, char *fmt_out);
 int parse_mem_width(const char *tok, uint32_t *width_out);
 int parse_surface_token(const char *token, uint32_t *surface_out);
 
-#endif /* PPAP_USER_PDB_UTIL_H */
+#endif /* PPAP_USER_PDB_PDB_UTIL_H */

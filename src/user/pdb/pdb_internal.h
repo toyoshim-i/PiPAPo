@@ -1,5 +1,5 @@
-#ifndef PPAP_USER_PDB_INTERNAL_H
-#define PPAP_USER_PDB_INTERNAL_H
+#ifndef PPAP_USER_PDB_PDB_INTERNAL_H
+#define PPAP_USER_PDB_PDB_INTERNAL_H
 
 #include "syscall.h"
 
@@ -77,4 +77,4 @@ int handle_inspect_commands(pdb_dispatch_ctx_t *ctx, char **tok, int ntok);
 int handle_write_commands(pdb_dispatch_ctx_t *ctx, char **tok, int ntok);
 int handle_breakpoint_commands(pdb_dispatch_ctx_t *ctx, char **tok, int ntok);
 
-#endif /* PPAP_USER_PDB_INTERNAL_H */
+#endif /* PPAP_USER_PDB_PDB_INTERNAL_H */
