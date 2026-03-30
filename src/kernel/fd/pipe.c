@@ -190,37 +190,3 @@ int vfs_fd_pipe_create(int *rdesc, int *wdesc) {
   return 0;
 }
 
-/* ── sys_pipe (core-callable wrapper) ──────────────────────────────────────
- *
- * On non-i16 platforms, syscall dispatch calls this directly.
- * On i16, it goes through mod_vfs.fd_pipe_create + core fd_map assignment.
- */
-
-long sys_pipe(int *fds) {
-  if (!fds) return -(long)EINVAL;
-
-  int rdesc, wdesc;
-  int err = vfs_fd_pipe_create(&rdesc, &wdesc);
-  if (err) return (long)err;
-
-  /* Find two free fd_map slots */
-  int rfd = -1, wfd = -1;
-  for (int i = 0; i < FD_MAX && (rfd < 0 || wfd < 0); i++) {
-    if (current->fd_map[i] == FD_DESC_NONE) {
-      if (rfd < 0) rfd = i;
-      else wfd = i;
-    }
-  }
-
-  if (rfd < 0 || wfd < 0) {
-    vfs_fd_release(rdesc);
-    vfs_fd_release(wdesc);
-    return -(long)EMFILE;
-  }
-
-  current->fd_map[rfd] = (int16_t)rdesc;
-  current->fd_map[wfd] = (int16_t)wdesc;
-  fds[0] = rfd;
-  fds[1] = wfd;
-  return 0;
-}

@@ -54,6 +54,8 @@ long vfs_fd_getdents64(int, void *, long);
 int  vfs_fd_fstatfs(int, void *);
 long vfs_fd_fcntl(int, int, long);
 void *vfs_fd_get_priv(int);
+int  vfs_mount_romfs(const char *, uint8_t, const void *);
+int  vfs_mount_by_fstype(const char *, const char *, const char *, long);
 
 /* Now include mod_vfs.h which declares mod_vfs_t */
 #include "common/mod/mod_vfs.h"

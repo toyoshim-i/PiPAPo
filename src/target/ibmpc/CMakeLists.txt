@@ -193,9 +193,6 @@ target_link_options(ppap_ibmpc PRIVATE
   -T ${CMAKE_CURRENT_SOURCE_DIR}/ibmpc_kernel.ld
   -nostartfiles
   -Wl,--gc-sections
-  # Core→VFS boundary violations remain (sys_pipe, sys_mount
-  # fs ops).  These will be migrated in a follow-up step.
-  -Wl,--unresolved-symbols=ignore-all
 )
 target_link_libraries(ppap_ibmpc PRIVATE gcc)
 

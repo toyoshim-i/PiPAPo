@@ -48,7 +48,9 @@ MOD_VFS_ENTRY(fd_getdents64,  29)
 MOD_VFS_ENTRY(fd_fstatfs,     30)
 MOD_VFS_ENTRY(fd_fcntl,       31)
 MOD_VFS_ENTRY(fd_get_priv,    32)
+MOD_VFS_ENTRY(mount_romfs,    33)
+MOD_VFS_ENTRY(mount_by_fstype, 34)
 
 #ifndef MOD_VFS_FUNC_COUNT
-#define MOD_VFS_FUNC_COUNT 33
+#define MOD_VFS_FUNC_COUNT 35
 #endif

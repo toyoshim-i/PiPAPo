@@ -244,6 +244,19 @@ MOD_DECLARE_BEGIN(vfs)
   MOD_FUNC(vfs, long, fd_fcntl, int, int, long)
   MOD_FUNC(vfs, void *, fd_get_priv, int)
 
+  /* ── Convenience mount wrappers ──────────────────────────────────────── */
+
+  MOD_FUNC(vfs, int, mount_romfs, const char *, uint8_t, const void *)
+
+  /*
+   * mount_by_fstype — Mount a filesystem by type name string.
+   *
+   * Resolves fstype to the correct vfs_ops_t internally so core
+   * never needs to link against fs driver ops tables.
+   */
+  MOD_FUNC(vfs, int, mount_by_fstype, const char *, const char *,
+                                       const char *, long)
+
 MOD_DECLARE_END(vfs)
 
 /* MOD_VFS_FUNC_COUNT is defined in mod_vfs.inc — the single source

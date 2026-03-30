@@ -259,10 +259,80 @@ mount_entry_t *vfs_mount_find(const char *path, const char **remainder) {
 /* ── Convenience mount wrappers ────────────────────────────────────────── */
 
 #include "../fs/ufs.h"
+#include "../fs/romfs.h"
+#include "../fs/devfs.h"
+#include "../fs/procfs.h"
+#include "../fs/tmpfs.h"
+#ifdef PPAP_HAS_BLKDEV
+#include "../blkdev/blkdev.h"
+#include "../fs/vfat.h"
+#endif
 
 int vfs_mount_ufs(const char *path, uint8_t flags, const void *dev_data)
 {
   return vfs_mount(path, &ufs_ops, flags, dev_data);
+}
+
+int vfs_mount_romfs(const char *path, uint8_t flags, const void *dev_data)
+{
+  return vfs_mount(path, &romfs_ops, flags, dev_data);
+}
+
+/* ── String helper for mount_by_fstype ─────────────────────────────────── */
+
+static int fs_str_eq(const char *a, const char *b) {
+  while (*a && *a == *b) { a++; b++; }
+  return (*a == '\0' && *b == '\0');
+}
+
+#define MS_RDONLY 1u
+
+int vfs_mount_by_fstype(const char *source, const char *target,
+                        const char *fstype, long flags) {
+  if (!target || !fstype) return -EINVAL;
+
+  const vfs_ops_t *ops = NULL;
+  const void *dev_data = NULL;
+
+  if (fs_str_eq(fstype, "devfs"))
+    ops = &devfs_ops;
+  else if (fs_str_eq(fstype, "proc") || fs_str_eq(fstype, "procfs"))
+    ops = &procfs_ops;
+  else if (fs_str_eq(fstype, "tmpfs"))
+    ops = &tmpfs_ops;
+#ifdef PPAP_HAS_BLKDEV
+  else if (fs_str_eq(fstype, "vfat")) {
+    ops = &vfat_ops;
+    if (source) {
+      const char *devname = source;
+      if (devname[0] == '/' && devname[1] == 'd' && devname[2] == 'e' &&
+          devname[3] == 'v' && devname[4] == '/')
+        devname += 5;
+      blkdev_t *bd = blkdev_find(devname);
+      if (!bd) return -ENODEV;
+      dev_data = bd;
+    }
+  } else if (fs_str_eq(fstype, "ufs")) {
+    ops = &ufs_ops;
+    if (source) {
+      const char *devname = source;
+      if (devname[0] == '/' && devname[1] == 'd' && devname[2] == 'e' &&
+          devname[3] == 'v' && devname[4] == '/')
+        devname += 5;
+      blkdev_t *bd = blkdev_find(devname);
+      if (!bd) return -ENODEV;
+      dev_data = bd;
+    }
+  }
+#endif
+  else {
+    return -ENODEV;
+  }
+
+  uint8_t mnt_flags = 0;
+  if ((uint32_t)flags & MS_RDONLY) mnt_flags |= MNT_RDONLY;
+
+  return vfs_mount(target, ops, mnt_flags, dev_data);
 }
 
 /* ── Module definition ─────────────────────────────────────────────────── */
@@ -321,37 +391,7 @@ long vfs_vnode_read(vnode_t *vn, void *buf, uint32_t size, uint32_t off) {
 }
 
 MOD_DEFINE_BEGIN(vfs)
-  MOD_IMPL(vfs, init)
-  MOD_IMPL(vfs, mount)
-  MOD_IMPL(vfs, umount)
-  MOD_IMPL(vfs, lookup)
-  MOD_IMPL(vfs, lookup_flags)
-  MOD_IMPL(vfs, lookup_parent)
-  MOD_IMPL(vfs, path_normalize)
-  MOD_IMPL(vfs, mount_find)
-  MOD_IMPL(vfs, mount_ufs)
-  MOD_IMPL(vfs, vnode_alloc)
-  MOD_IMPL(vfs, vnode_acquire)
-  MOD_IMPL(vfs, vnode_release)
-  MOD_IMPL(vfs, fd_stdio_init)
-  MOD_IMPL(vfs, vnode_read)
-  MOD_IMPL(vfs, fd_pool_init)
-  MOD_IMPL(vfs, tty_rx_notify)
-  MOD_IMPL(vfs, fstab_automount)
-  MOD_IMPL(vfs, fd_open)
-  MOD_IMPL(vfs, fd_release)
-  MOD_IMPL(vfs, fd_acquire)
-  MOD_IMPL(vfs, fd_pipe_create)
-  MOD_IMPL(vfs, fd_stdio_desc)
-  MOD_IMPL(vfs, fd_read)
-  MOD_IMPL(vfs, fd_write)
-  MOD_IMPL(vfs, fd_ioctl)
-  MOD_IMPL(vfs, fd_poll)
-  MOD_IMPL(vfs, fd_lseek)
-  MOD_IMPL(vfs, fd_fstat)
-  MOD_IMPL(vfs, fd_getdents)
-  MOD_IMPL(vfs, fd_getdents64)
-  MOD_IMPL(vfs, fd_fstatfs)
-  MOD_IMPL(vfs, fd_fcntl)
-  MOD_IMPL(vfs, fd_get_priv)
+#define MOD_VFS_ENTRY(name, idx)  MOD_IMPL(vfs, name)
+#include "../common/mod/mod_vfs.inc"
+#undef MOD_VFS_ENTRY
 MOD_DEFINE_END()

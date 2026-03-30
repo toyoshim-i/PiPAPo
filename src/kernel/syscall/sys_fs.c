@@ -567,67 +567,41 @@ long sys_umask(long mask) {
 /* ── sys_mount ───────────────────────────────────────────────────────────────
  */
 
-#include "../fs/devfs.h"
-#include "../fs/procfs.h"
-#include "../fs/tmpfs.h"
-#ifdef PPAP_HAS_BLKDEV
-#include "../blkdev/blkdev.h"
-#include "../fs/ufs.h"
-#include "../fs/vfat.h"
-#endif
-
-static int fs_str_eq(const char *a, const char *b) {
-  while (*a && *a == *b) { a++; b++; }
-  return (*a == '\0' && *b == '\0');
-}
-
 long sys_mount(const char *source, const char *target, const char *fstype,
                long flags, const void *data) {
   (void)data;
-  if (!target || !fstype) return -(long)EINVAL;
+  return (long)mod_vfs.mount_by_fstype(source, target, fstype, flags);
+}
 
-  const vfs_ops_t *ops = NULL;
-  const void *dev_data = NULL;
+/* ── sys_pipe ────────────────────────────────────────────────────────────────
+ */
 
-  if (fs_str_eq(fstype, "devfs"))
-    ops = &devfs_ops;
-  else if (fs_str_eq(fstype, "proc") || fs_str_eq(fstype, "procfs"))
-    ops = &procfs_ops;
-  else if (fs_str_eq(fstype, "tmpfs"))
-    ops = &tmpfs_ops;
-#ifdef PPAP_HAS_BLKDEV
-  else if (fs_str_eq(fstype, "vfat")) {
-    ops = &vfat_ops;
-    if (source) {
-      const char *devname = source;
-      if (devname[0] == '/' && devname[1] == 'd' && devname[2] == 'e' &&
-          devname[3] == 'v' && devname[4] == '/')
-        devname += 5;
-      blkdev_t *bd = blkdev_find(devname);
-      if (!bd) return -(long)ENODEV;
-      dev_data = bd;
-    }
-  } else if (fs_str_eq(fstype, "ufs")) {
-    ops = &ufs_ops;
-    if (source) {
-      const char *devname = source;
-      if (devname[0] == '/' && devname[1] == 'd' && devname[2] == 'e' &&
-          devname[3] == 'v' && devname[4] == '/')
-        devname += 5;
-      blkdev_t *bd = blkdev_find(devname);
-      if (!bd) return -(long)ENODEV;
-      dev_data = bd;
+long sys_pipe(int *fds) {
+  if (!fds) return -(long)EINVAL;
+
+  int rdesc, wdesc;
+  int err = mod_vfs.fd_pipe_create(&rdesc, &wdesc);
+  if (err) return (long)err;
+
+  int rfd = -1, wfd = -1;
+  for (int i = 0; i < FD_MAX && (rfd < 0 || wfd < 0); i++) {
+    if (current->fd_map[i] == FD_DESC_NONE) {
+      if (rfd < 0) rfd = i;
+      else wfd = i;
     }
   }
-#endif
-  else {
-    return -(long)ENODEV;
+
+  if (rfd < 0 || wfd < 0) {
+    mod_vfs.fd_release(rdesc);
+    mod_vfs.fd_release(wdesc);
+    return -(long)EMFILE;
   }
 
-  uint8_t mnt_flags = 0;
-  if ((uint32_t)flags & MS_RDONLY) mnt_flags |= MNT_RDONLY;
-
-  return (long)mod_vfs.mount(target, ops, mnt_flags, dev_data);
+  current->fd_map[rfd] = (int16_t)rdesc;
+  current->fd_map[wfd] = (int16_t)wdesc;
+  fds[0] = rfd;
+  fds[1] = wfd;
+  return 0;
 }
 
 /* ── sys_umount2 ────────────────────────────────────────────────────────────
