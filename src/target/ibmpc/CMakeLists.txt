@@ -37,10 +37,12 @@ if(IA16_TC)
   set(CMAKE_C_COMPILER "${IA16_TC}/bin/ia16-elf-gcc")
   set(CMAKE_ASM_COMPILER "${IA16_TC}/bin/ia16-elf-gcc")
   set(CMAKE_OBJCOPY "${IA16_TC}/bin/ia16-elf-objcopy")
+  set(CMAKE_NM "${IA16_TC}/bin/ia16-elf-nm")
 else()
   set(CMAKE_C_COMPILER "ia16-elf-gcc")
   set(CMAKE_ASM_COMPILER "ia16-elf-gcc")
   set(CMAKE_OBJCOPY "ia16-elf-objcopy")
+  set(CMAKE_NM "ia16-elf-nm")
 endif()
 
 set(CMAKE_C_COMPILER_WORKS TRUE)
@@ -191,7 +193,8 @@ target_link_options(ppap_ibmpc PRIVATE
   -T ${CMAKE_CURRENT_SOURCE_DIR}/ibmpc_kernel.ld
   -nostartfiles
   -Wl,--gc-sections
-  # TODO: replace with stub objects once far-call stubs are implemented
+  # Core→VFS boundary violations remain (sys_pipe, sys_mount
+  # fs ops).  These will be migrated in a follow-up step.
   -Wl,--unresolved-symbols=ignore-all
 )
 target_link_libraries(ppap_ibmpc PRIVATE gcc)
@@ -205,7 +208,7 @@ add_custom_command(TARGET ppap_ibmpc POST_BUILD
   COMMAND ${CMAKE_OBJCOPY} -O binary
     $<TARGET_FILE:ppap_ibmpc>
     ${CMAKE_CURRENT_BINARY_DIR}/ppap_ibmpc.bin
-  COMMENT "Creating core module binary ppap_ibmpc.bin"
+  COMMENT "Creating core module binary"
 )
 
 # ==========================================================================
@@ -240,11 +243,28 @@ add_executable(ppap_ibmpc_vfs
 target_include_directories(ppap_ibmpc_vfs PRIVATE ${PPAP_INCLUDES})
 target_compile_options(ppap_ibmpc_vfs PRIVATE ${KERNEL_FLAGS})
 
+# Two-pass link: VFS needs core_exports.ld from core ELF.
+# Use a custom target to break the circular dependency:
+#   ppap_ibmpc → (POST_BUILD) → core_exports_gen → ppap_ibmpc_vfs
+# CMake doesn't allow cycles between executables, so core_exports_gen
+# is an intermediate custom target.
+if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/core_exports.ld")
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/core_exports.ld"
+    "/* auto-generated — will be replaced after core links */\n")
+endif()
+add_custom_target(core_exports_gen
+  COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/gen_core_exports.sh
+    ${CMAKE_NM} ${CMAKE_CURRENT_BINARY_DIR}/ppap_ibmpc.elf
+    ${CMAKE_CURRENT_BINARY_DIR}/core_exports.ld
+  DEPENDS ppap_ibmpc
+  COMMENT "Generating core_exports.ld from core ELF"
+)
+add_dependencies(ppap_ibmpc_vfs core_exports_gen)
+
 target_link_options(ppap_ibmpc_vfs PRIVATE
   -T ${CMAKE_CURRENT_SOURCE_DIR}/ibmpc_vfs.ld
+  -T ${CMAKE_CURRENT_BINARY_DIR}/core_exports.ld
   -nostartfiles
-  # TODO: replace with stub objects once far-call stubs are implemented
-  -Wl,--unresolved-symbols=ignore-all
 )
 target_link_libraries(ppap_ibmpc_vfs PRIVATE gcc)
 
@@ -268,8 +288,6 @@ add_custom_command(TARGET ppap_ibmpc_vfs POST_BUILD
     ${CMAKE_CURRENT_BINARY_DIR}/ppap_ibmpc_vfs_data.bin
   COMMENT "Creating VFS code + data binaries"
 )
-
-add_dependencies(ppap_ibmpc ppap_ibmpc_vfs)
 
 # ==========================================================================
 # Target 5: hello.com (test user program for exec)
@@ -295,16 +313,17 @@ add_custom_command(TARGET hello_com POST_BUILD
   COMMENT "Creating hello.com (test user program)"
 )
 
-add_dependencies(ppap_ibmpc hello_com)
-
 # ==========================================================================
 # Post-build: assemble floppy image via mkpcimg.sh
 # ==========================================================================
 
-add_custom_command(TARGET ppap_ibmpc POST_BUILD
+# Floppy image depends on both core and VFS binaries + bootloader.
+# This breaks what was previously a circular dependency:
+#   old: ppap_ibmpc -(POST_BUILD)-> needs VFS binary -(dep)-> ppap_ibmpc
+#   new: ppap_ibmpc_img depends on both independently
+add_custom_target(ppap_ibmpc_img ALL
   COMMAND ${PPAP_ROOT}/scripts/mkpcimg.sh
-  DEPENDS stage1 stage2
+  DEPENDS ppap_ibmpc ppap_ibmpc_vfs stage1 stage2 hello_com
   COMMENT "Assembling floppy image ppap_ibmpc.img"
 )
-
-add_dependencies(ppap_ibmpc stage1 stage2)
+add_dependencies(ppap_ibmpc_img ppap_ibmpc ppap_ibmpc_vfs stage1 stage2 hello_com)

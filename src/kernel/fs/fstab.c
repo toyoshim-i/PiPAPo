@@ -22,8 +22,7 @@
 #include <stddef.h>
 
 #include "../common/errno.h"
-#include "../klog.h"
-#include "../syscall/syscall.h"
+#include "../common/mod/mod_core.h"
 #include "devfs.h"
 #include "procfs.h"
 #include "romfs.h"
@@ -76,13 +75,13 @@ static void parse_options(const char *opts, uint8_t *flags, uint8_t *loop) {
 /* ── fstab_parse ──────────────────────────────────────────────────────── */
 
 int fstab_parse(fstab_entry_t *entries, int max_entries) {
-  long fd = sys_open("/etc/fstab", 0 /* O_RDONLY */, 0);
-  if (fd < 0) return (int)fd;
+  int desc = mod_vfs.fd_open("/etc/fstab", 0 /* O_RDONLY */, 0);
+  if (desc < 0) return desc;
 
   /* Read entire fstab (expected to be small — well under 512 bytes) */
   char buf[512];
-  long n = sys_read(fd, buf, sizeof(buf) - 1);
-  sys_close(fd);
+  long n = mod_vfs.fd_read(desc, buf, sizeof(buf) - 1);
+  mod_vfs.fd_release(desc);
   if (n <= 0) return 0;
   buf[n] = '\0';
 
@@ -157,7 +156,7 @@ int fstab_mount_all(const fstab_entry_t *entries, int count) {
       ops = &vfat_ops;
       blkdev_t *bd = blkdev_find(e->device);
       if (!bd) {
-        klogf("fstab: %s not found, skipping %s\n", e->device, e->mountpoint);
+        mod_core.klogf("fstab: %s not found, skipping %s\n", e->device, e->mountpoint);
         continue;
       }
       dev_data = bd;
@@ -167,7 +166,7 @@ int fstab_mount_all(const fstab_entry_t *entries, int count) {
         /* Loopback mount: set up loop device first */
         int loop_idx = loopback_setup(e->device);
         if (loop_idx < 0) {
-          klogf("fstab: loopback_setup(%s) failed, skipping %s\n", e->device,
+          mod_core.klogf("fstab: loopback_setup(%s) failed, skipping %s\n", e->device,
                 e->mountpoint);
           continue;
         }
@@ -184,15 +183,15 @@ int fstab_mount_all(const fstab_entry_t *entries, int count) {
     }
 #endif
     else {
-      klogf("fstab: unknown fstype '%s'\n", e->fstype);
+      mod_core.klogf("fstab: unknown fstype '%s'\n", e->fstype);
       continue;
     }
 
     int rc = mod_vfs.mount(e->mountpoint, ops, e->flags, dev_data);
     if (rc == 0)
-      klogf("VFS: %s mounted at %s\n", e->fstype, e->mountpoint);
+      mod_core.klogf("VFS: %s mounted at %s\n", e->fstype, e->mountpoint);
     else
-      klogf("VFS: mount %s failed\n", e->mountpoint);
+      mod_core.klogf("VFS: mount %s failed\n", e->mountpoint);
   }
 
   return 0;
