@@ -25,6 +25,7 @@
  */
   .section .data
   .global vfs_fptrs
+  .global vfs_fptrs_end
 vfs_fptrs:
   .word 0, 0    /* [0]  vfs_init_entry */
   .word 0, 0    /* [1]  vfs_mount_entry */
@@ -40,6 +41,7 @@ vfs_fptrs:
   .word 0, 0    /* [11] vfs_rel_vnode_entry */
   .word 0, 0    /* [12] vfs_fd_stdio_init_entry */
   .word 0, 0    /* [13] vfs_file_read_entry */
+vfs_fptrs_end:
 
   .section .text
 

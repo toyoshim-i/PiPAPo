@@ -26,7 +26,8 @@
   .global vfs_module_header
 vfs_module_header:
   .word 0x5646                    /* magic: "VF" */
-  .word 14                        /* entry_count */
+  .word (vfs_entry_table_end - vfs_entry_table) / 2  /* entry_count */
+vfs_entry_table:
   .word vfs_init_entry
   .word vfs_mount_entry
   .word vfs_umount_entry
@@ -41,6 +42,7 @@ vfs_module_header:
   .word vfs_rel_vnode_entry
   .word vfs_fd_stdio_init_entry
   .word vfs_file_read_entry
+vfs_entry_table_end:
   /* DS=0 address of core_fptrs table (for core to patch) */
   .word core_fptrs
 

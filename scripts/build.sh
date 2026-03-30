@@ -116,6 +116,12 @@ case "$TARGET" in
         ;;
 esac
 
+# Separate build dirs for test vs non-test to avoid stale cached objects
+# when PPAP_TESTS changes (target_init_path depends on the define).
+if [[ "$TESTS" == "ON" ]]; then
+    BUILD_DIR="${BUILD_DIR}_test"
+fi
+
 CMAKE_TARGET="ppap_${TARGET}"
 ELF="$BUILD_DIR/${CMAKE_TARGET}.elf"
 

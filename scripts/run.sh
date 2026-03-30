@@ -148,6 +148,9 @@ fi
 
 # ── Resolve ELF path ───────────────────────────────────────────────────────
 BUILD_DIR="$PROJECT_DIR/build/$TARGET"
+if [[ $DO_TEST -eq 1 ]]; then
+    BUILD_DIR="${BUILD_DIR}_test"
+fi
 CMAKE_TARGET="ppap_${TARGET}"
 ELF="$BUILD_DIR/${CMAKE_TARGET}.elf"
 
