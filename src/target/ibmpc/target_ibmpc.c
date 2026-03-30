@@ -90,6 +90,10 @@ extern uint16_t mem_region_total_bytes_entry;
 extern uint16_t mem_region_free_bytes_entry;
 extern uint16_t core_blkdev_read_entry;
 extern uint16_t core_blkdev_write_entry;
+extern uint16_t mm_page_alloc_entry;
+extern uint16_t mm_page_free_entry;
+extern uint16_t mm_page_read_entry;
+extern uint16_t mm_page_write_entry;
 
 static void patch_vfs_fptrs(uint16_t vfs_seg) {
   /* VFS header is at vfs_seg:0000 */
@@ -127,6 +131,10 @@ static void patch_vfs_fptrs(uint16_t vfs_seg) {
   cfp[18] = (uint16_t)(uintptr_t)&mem_region_free_bytes_entry;  cfp[19] = core_seg;
   cfp[20] = (uint16_t)(uintptr_t)&core_blkdev_read_entry;  cfp[21] = core_seg;
   cfp[22] = (uint16_t)(uintptr_t)&core_blkdev_write_entry; cfp[23] = core_seg;
+  cfp[24] = (uint16_t)(uintptr_t)&mm_page_alloc_entry;    cfp[25] = core_seg;
+  cfp[26] = (uint16_t)(uintptr_t)&mm_page_free_entry;     cfp[27] = core_seg;
+  cfp[28] = (uint16_t)(uintptr_t)&mm_page_read_entry;     cfp[29] = core_seg;
+  cfp[30] = (uint16_t)(uintptr_t)&mm_page_write_entry;    cfp[31] = core_seg;
 }
 
 static void seg_init_modules(void) {

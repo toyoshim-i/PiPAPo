@@ -82,5 +82,9 @@ saved_ip: .word 0
   CORE_TARGET_STUB mem_region_free_bytes
   CORE_TARGET_STUB core_blkdev_read
   CORE_TARGET_STUB core_blkdev_write
+  CORE_TARGET_STUB mm_page_alloc
+  CORE_TARGET_STUB mm_page_free
+  CORE_TARGET_STUB mm_page_read
+  CORE_TARGET_STUB mm_page_write
 
 #endif /* __ia16__ */

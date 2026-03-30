@@ -34,6 +34,10 @@ core_fptrs:
   .word 0, 0    /* [9]  mem_region_free_bytes_entry */
   .word 0, 0    /* [10] core_blkdev_read_entry */
   .word 0, 0    /* [11] core_blkdev_write_entry */
+  .word 0, 0    /* [12] mm_page_alloc_entry */
+  .word 0, 0    /* [13] mm_page_free_entry */
+  .word 0, 0    /* [14] mm_page_read_entry */
+  .word 0, 0    /* [15] mm_page_write_entry */
 
   .section .text
 
@@ -69,5 +73,9 @@ core_fptrs:
   CORE_CALLER_STUB mem_region_free_bytes,  9
   CORE_CALLER_STUB core_blkdev_read,   10
   CORE_CALLER_STUB core_blkdev_write,  11
+  CORE_CALLER_STUB mm_page_alloc,      12
+  CORE_CALLER_STUB mm_page_free,       13
+  CORE_CALLER_STUB mm_page_read,       14
+  CORE_CALLER_STUB mm_page_write,      15
 
 #endif /* __ia16__ */
