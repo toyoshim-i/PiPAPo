@@ -29,15 +29,22 @@ This index is the entry point for project documentation.
 
 - Kernel
   - [`kernel/overview.md`](kernel/overview.md)
+  - [`kernel/kernel_modules.md`](kernel/kernel_modules.md) — Module system (mod_core, mod_vfs, mod_exec)
   - [`kernel/memory.md`](kernel/memory.md)
   - [`kernel/syscall.md`](kernel/syscall.md)
+  - [`kernel/filesystems.md`](kernel/filesystems.md)
   - [`kernel/procfs.md`](kernel/procfs.md)
   - [`kernel/trace.md`](kernel/trace.md)
-  - [`kernel/filesystems.md`](kernel/filesystems.md)
 
 - Proposals
-  - [`proposals/cardcomputer_port.md`](proposals/cardcomputer_port.md) — CardComputer device support (display, keyboard, SD)
-  - [`proposals/debugger_ptrace.md`](proposals/debugger_ptrace.md)
+  - [`proposals/pc_port.md`](proposals/pc_port.md) — IBM PC i8086 real-mode port
+  - [`proposals/x68k_port.md`](proposals/x68k_port.md) — X68000 m68k port
+  - [`proposals/pizero_port.md`](proposals/pizero_port.md) — Raspberry Pi Zero (future)
+  - [`proposals/cardcomputer_port.md`](proposals/cardcomputer_port.md) — M5Stack CardComputer (Xtensa)
+  - [`proposals/msdos_subsystem.md`](proposals/msdos_subsystem.md) — MS-DOS personality subsystem
+  - [`proposals/i8086_ecpu.md`](proposals/i8086_ecpu.md) — i8086 eCPU emulator
+  - [`proposals/gdb_rsp_stub.md`](proposals/gdb_rsp_stub.md) — GDB Remote Serial Protocol stub
+  - [`proposals/m33_mpu_full_protection.md`](proposals/m33_mpu_full_protection.md) — Cortex-M33 MPU full protection
 
 - Subsystems
   - [`subsystems/overview.md`](subsystems/overview.md)
@@ -55,7 +62,6 @@ This index is the entry point for project documentation.
   - [`targets/rv32.md`](targets/rv32.md) — RISC-V RV32IMAC (qemu_rv32, pico2rv)
   - [`targets/68000.md`](targets/68000.md) — Motorola 68000 (qemu_m68k, x68k)
   - [`targets/xtensa.md`](targets/xtensa.md) — Xtensa LX7 (xtensa_cc / M5Stack CardComputer)
-  - [`targets/pizero.md`](targets/pizero.md) — Pi Zero (future)
 
 - Notes
   - [`notes/zombie.md`](notes/zombie.md) — Process lifecycle: zombies, orphans, reaping

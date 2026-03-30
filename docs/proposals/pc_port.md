@@ -803,7 +803,7 @@ crashes in `sys_exit` due to unresolved cross-module calls.
 **Blocker**: The i16 build uses `--unresolved-symbols=ignore-all`
 which silently links ~82 cross-module calls to address 0.  This must
 be resolved before user processes can run reliably.  See
-`docs/proposals/kernel_modules.md` §Completion Plan for the 5-step
+`docs/kernel/kernel_modules.md` §Completion Plan for the 5-step
 fix.
 
 ### What Works
@@ -824,7 +824,7 @@ fix.
 
 ### Steps (revised)
 
-1. **Complete module boundary migration** — see `kernel_modules.md`
+1. **Complete module boundary migration** — see `docs/kernel/kernel_modules.md`
    Steps 1-5.  This is the prerequisite for everything else.
 
 2. **Verify hello.S exit(42)** — after modulization, the minimal
