@@ -119,29 +119,29 @@ static void patch_vfs_fptrs(uint16_t vfs_seg) {
 #define PATCH_CORE(idx, sym) \
   cfp[(idx)*2] = (uint16_t)(uintptr_t)&sym##_entry; \
   cfp[(idx)*2+1] = core_seg
-  PATCH_CORE( 0, klog);
-  PATCH_CORE( 1, klogf);
-  PATCH_CORE( 2, kmem_pool_init);
-  PATCH_CORE( 3, kmem_alloc);
-  PATCH_CORE( 4, kmem_free);
-  PATCH_CORE( 5, kmem_free_count);
-  PATCH_CORE( 6, mem_region_alloc);
-  PATCH_CORE( 7, mem_region_free);
-  PATCH_CORE( 8, mem_region_total_bytes);
-  PATCH_CORE( 9, mem_region_free_bytes);
-  PATCH_CORE(10, mm_page_alloc);
-  PATCH_CORE(11, mm_page_free);
-  PATCH_CORE(12, mm_page_read);
-  PATCH_CORE(13, mm_page_write);
-  PATCH_CORE(14, sched_wakeup);
-  PATCH_CORE(15, sched_yield);
+  PATCH_CORE( 0, blkdev_read);
+  PATCH_CORE( 1, blkdev_write);
+  PATCH_CORE( 2, klog);
+  PATCH_CORE( 3, klogf);
+  PATCH_CORE( 4, kmem_alloc);
+  PATCH_CORE( 5, kmem_free);
+  PATCH_CORE( 6, kmem_free_count);
+  PATCH_CORE( 7, kmem_pool_init);
+  PATCH_CORE( 8, mem_region_alloc);
+  PATCH_CORE( 9, mem_region_free);
+  PATCH_CORE(10, mem_region_free_bytes);
+  PATCH_CORE(11, mem_region_total_bytes);
+  PATCH_CORE(12, mm_page_alloc);
+  PATCH_CORE(13, mm_page_free);
+  PATCH_CORE(14, mm_page_read);
+  PATCH_CORE(15, mm_page_write);
   PATCH_CORE(16, sched_get_ticks);
-  PATCH_CORE(17, svc_set_restart);
-  PATCH_CORE(18, uart_putc);
-  PATCH_CORE(19, uart_getc);
-  PATCH_CORE(20, uart_rx_avail);
-  PATCH_CORE(21, blkdev_read);
-  PATCH_CORE(22, blkdev_write);
+  PATCH_CORE(17, sched_wakeup);
+  PATCH_CORE(18, sched_yield);
+  PATCH_CORE(19, svc_set_restart);
+  PATCH_CORE(20, uart_getc);
+  PATCH_CORE(21, uart_putc);
+  PATCH_CORE(22, uart_rx_avail);
 #undef PATCH_CORE
 }
 

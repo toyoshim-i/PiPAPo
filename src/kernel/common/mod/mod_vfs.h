@@ -32,230 +32,46 @@ typedef struct pcb pcb_t;
 
 MOD_DECLARE_BEGIN(vfs)
 
-  /* ── VFS operations ──────────────────────────────────────────────────── */
+  /* Fields are sorted alphabetically to match mod_vfs.inc indices. */
 
-  /*
-   * init — Initialise the VFS layer.
-   *
-   * Sets up the mount table and vnode pool (kmem slab allocator).
-   * Must be called once from kmain() before any filesystem mounts.
-   */
-  MOD_FUNC(vfs, void, init, void)
-
-  /*
-   * mount — Mount a filesystem at a given path.
-   *
-   *   path     Mount point (e.g. "/", "/dev", "/proc").
-   *   ops      Filesystem driver vtable (romfs_ops, tmpfs_ops, etc.).
-   *   flags    Mount flags (MNT_RDONLY, etc.).
-   *   dev_data Opaque data passed to ops->mount() (e.g. romfs image
-   *            pointer, block device, NULL for pseudo-filesystems).
-   *
-   * Returns 0 on success, negative errno on failure.
-   */
-  MOD_FUNC(vfs, int, mount, const char *, const vfs_ops_t *,
-                             uint8_t, const void *)
-
-  /*
-   * umount — Unmount a filesystem.
-   *
-   *   path  Mount point to detach.
-   *
-   * Returns 0 on success, -ENOENT if not mounted, -EBUSY if in use.
-   */
-  MOD_FUNC(vfs, int, umount, const char *)
-
-  /*
-   * lookup — Resolve a pathname to a vnode.
-   *
-   *   path    Absolute or relative pathname (relative to current->cwd).
-   *   result  Output: vnode pointer with incremented refcount.
-   *           Caller must call vfs_release_vnode() when done.
-   *
-   * Returns 0 on success, negative errno (-ENOENT, -ENOTDIR, etc.).
-   */
-  MOD_FUNC(vfs, int, lookup, const char *, vnode_t **)
-
-  /*
-   * lookup_flags — Resolve a pathname with flags.
-   *
-   * Same as lookup() but with additional flags:
-   *   LOOKUP_NOFOLLOW  Do not follow terminal symlinks.
-   *   LOOKUP_CREATE    Return parent dir if final component missing.
-   */
-  MOD_FUNC(vfs, int, lookup_flags, const char *, vnode_t **, int)
-
-  /*
-   * lookup_parent — Resolve the parent directory of a pathname.
-   *
-   *   path       Pathname to resolve.
-   *   parent     Output: vnode of the parent directory.
-   *   namebuf    Output: final path component (filename).
-   *   namebuf_size  Size of namebuf.
-   *
-   * Used by sys_open(O_CREAT), sys_mkdir, sys_unlink, sys_rename.
-   * Returns 0 on success, negative errno on failure.
-   */
-  MOD_FUNC(vfs, int, lookup_parent, const char *, vnode_t **,
-                                     char *, int)
-
-  /*
-   * path_normalize — Normalize a pathname (resolve . and ..).
-   *
-   *   path   Input pathname.
-   *   buf    Output buffer for normalized path.
-   *   bufsiz Size of output buffer.
-   *
-   * Returns 0 on success, -ENAMETOOLONG if result doesn't fit.
-   */
-  MOD_FUNC(vfs, int, path_normalize, const char *, char *, int)
-
-  /*
-   * mount_find — Find the mount entry for a given path.
-   *
-   *   path       Absolute pathname to look up.
-   *   remainder  Output: portion of path below the mount point.
-   *
-   * Returns the mount_entry_t with the longest matching prefix,
-   * or NULL if no mount covers the path.
-   */
-  MOD_FUNC(vfs, mount_entry_t *, mount_find, const char *, const char **)
-
-  /*
-   * mount_ufs — Mount a UFS filesystem at a given path.
-   *
-   *   path     Mount point (e.g. "/").
-   *   flags    Mount flags (MNT_RDONLY, etc.).
-   *   dev_data Opaque data passed to ufs_ops.mount() (blkdev_t *).
-   *
-   * Convenience wrapper: calls vfs_mount(path, &ufs_ops, flags, dev_data).
-   * Keeps the ufs_ops reference inside the VFS module so callers
-   * (e.g. target_ibmpc.c) don't need to link against ufs.c.
-   */
-  MOD_FUNC(vfs, int, mount_ufs, const char *, uint8_t, const void *)
-
-  /* ── Vnode lifecycle ─────────────────────────────────────────────────── */
-
-  /*
-   * vnode_alloc — Allocate a vnode from the pool.
-   *
-   * Returns a zeroed vnode with refcount 1, or NULL if the pool
-   * is exhausted.  The caller must set vn->ops, vn->type, etc.
-   * before making the vnode visible to other subsystems.
-   *
-   * Called by filesystem drivers during mount and lookup to create
-   * in-memory representations of files, directories, and devices.
-   */
-  MOD_FUNC(vfs, vnode_t *, vnode_alloc, void)
-
-  /*
-   * vnode_acquire — Increment a vnode's reference count.
-   *
-   *   vn  Vnode to reference.
-   *
-   * Called when a new file descriptor or directory entry points to
-   * an existing vnode (e.g. dup, fork fd inheritance, hardlink).
-   */
-  MOD_FUNC(vfs, void, vnode_acquire, vnode_t *)
-
-  /*
-   * vnode_release — Release a vnode (decrement refcount, free if zero).
-   *
-   *   vn  Vnode to release.  Safe to call with NULL (no-op).
-   *
-   * When the refcount reaches zero, the vnode is returned to the
-   * pool.  Called by sys_close, execve cleanup, process exit,
-   * and any code that obtained a vnode via vfs_lookup.
-   */
-  MOD_FUNC(vfs, void, vnode_release, vnode_t *)
-
-  /* ── File descriptor helpers ──────────────────────────────────────────── */
-
-  /*
-   * fd_stdio_init — Wire fd 0/1/2 to the console TTY for a process.
-   *
-   *   p  Target process (PCB).
-   *
-   * Sets up stdin/stdout/stderr pointing at the primary console device.
-   * Called from kmain for init and from sys_execve when fds are empty.
-   */
-  MOD_FUNC(vfs, void, fd_stdio_init, pcb_t *)
-
-  /*
-   * vnode_read — Read from a vnode via its mount's ops->read.
-   *
-   * Wraps vn->mount->ops->read() so the call executes in the VFS
-   * module's code segment.  Needed because ops->read is a near
-   * function pointer valid only in VFS's CS.
-   */
-  MOD_FUNC(vfs, long, vnode_read, vnode_t *, void *, uint32_t, uint32_t)
-
-  /* ── Init helpers (called from kmain) ────────────────────────────────── */
-
-  /*
-   * fd_pool_init — Initialise the struct file slab pool.
-   *
-   * Must be called once after vfs_init().  Sets up the kmem pool
-   * backing sys_open / pipe / dup file allocations.
-   */
-  MOD_FUNC(vfs, void, fd_pool_init, void)
-
-  /*
-   * tty_rx_notify — Notify a TTY that RX data is available.
-   *
-   *   idx  TTY index (TTY_SERIAL=0, TTY_DISPLAY=1).
-   *
-   * Called from the scheduler's deferred input poll when the backend
-   * reports new data.  Wakes processes blocked on that TTY.
-   */
-  MOD_FUNC(vfs, void, tty_rx_notify, int)
-
-  /*
-   * fstab_automount — Parse /etc/fstab and mount all entries.
-   *
-   * Reads /etc/fstab from the root filesystem, parses mount entries,
-   * and mounts them in order (best-effort, skips failures).
-   * Combines fstab_parse + fstab_mount_all behind the module boundary
-   * so core never needs to know about fstab_entry_t.
-   */
-  MOD_FUNC(vfs, void, fstab_automount, void)
-
-  /* ── File descriptor pool (system-wide, process-agnostic) ────────────── */
-
-  /* Lifecycle: allocate/release file objects by descriptor ID. */
-  MOD_FUNC(vfs, int, fd_open, const char *, int, int)
-  MOD_FUNC(vfs, void, fd_release, int)
   MOD_FUNC(vfs, void, fd_acquire, int)
-  MOD_FUNC(vfs, int, fd_pipe_create, int *, int *)
-  MOD_FUNC(vfs, int, fd_stdio_desc, int)
-
-  /* I/O by descriptor ID. */
-  MOD_FUNC(vfs, long, fd_read, int, char *, size_t)
-  MOD_FUNC(vfs, long, fd_write, int, const char *, size_t)
-  MOD_FUNC(vfs, int, fd_ioctl, int, uint32_t, void *)
-  MOD_FUNC(vfs, int, fd_poll, int)
-
-  /* File state (needs VFS internals: vnode, offset, flags). */
-  MOD_FUNC(vfs, long, fd_lseek, int, long, int)
+  MOD_FUNC(vfs, long, fd_fcntl, int, int, long)
   MOD_FUNC(vfs, int, fd_fstat, int, void *)
+  MOD_FUNC(vfs, int, fd_fstatfs, int, void *)
   MOD_FUNC(vfs, long, fd_getdents, int, void *, size_t)
   MOD_FUNC(vfs, long, fd_getdents64, int, void *, long)
-  MOD_FUNC(vfs, int, fd_fstatfs, int, void *)
-  MOD_FUNC(vfs, long, fd_fcntl, int, int, long)
   MOD_FUNC(vfs, void *, fd_get_priv, int)
-
-  /* ── Convenience mount wrappers ──────────────────────────────────────── */
-
-  MOD_FUNC(vfs, int, mount_romfs, const char *, uint8_t, const void *)
-
-  /*
-   * mount_by_fstype — Mount a filesystem by type name string.
-   *
-   * Resolves fstype to the correct vfs_ops_t internally so core
-   * never needs to link against fs driver ops tables.
-   */
+  MOD_FUNC(vfs, int, fd_ioctl, int, uint32_t, void *)
+  MOD_FUNC(vfs, long, fd_lseek, int, long, int)
+  MOD_FUNC(vfs, int, fd_open, const char *, int, int)
+  MOD_FUNC(vfs, int, fd_pipe_create, int *, int *)
+  MOD_FUNC(vfs, int, fd_poll, int)
+  MOD_FUNC(vfs, void, fd_pool_init, void)
+  MOD_FUNC(vfs, long, fd_read, int, char *, size_t)
+  MOD_FUNC(vfs, void, fd_release, int)
+  MOD_FUNC(vfs, int, fd_stdio_desc, int)
+  MOD_FUNC(vfs, void, fd_stdio_init, pcb_t *)
+  MOD_FUNC(vfs, long, fd_write, int, const char *, size_t)
+  MOD_FUNC(vfs, void, fstab_automount, void)
+  MOD_FUNC(vfs, void, init, void)
+  MOD_FUNC(vfs, int, lookup, const char *, vnode_t **)
+  MOD_FUNC(vfs, int, lookup_flags, const char *, vnode_t **, int)
+  MOD_FUNC(vfs, int, lookup_parent, const char *, vnode_t **,
+                                     char *, int)
+  MOD_FUNC(vfs, int, mount, const char *, const vfs_ops_t *,
+                             uint8_t, const void *)
   MOD_FUNC(vfs, int, mount_by_fstype, const char *, const char *,
                                        const char *, long)
+  MOD_FUNC(vfs, mount_entry_t *, mount_find, const char *, const char **)
+  MOD_FUNC(vfs, int, mount_romfs, const char *, uint8_t, const void *)
+  MOD_FUNC(vfs, int, mount_ufs, const char *, uint8_t, const void *)
+  MOD_FUNC(vfs, int, path_normalize, const char *, char *, int)
+  MOD_FUNC(vfs, void, tty_rx_notify, int)
+  MOD_FUNC(vfs, int, umount, const char *)
+  MOD_FUNC(vfs, void, vnode_acquire, vnode_t *)
+  MOD_FUNC(vfs, vnode_t *, vnode_alloc, void)
+  MOD_FUNC(vfs, long, vnode_read, vnode_t *, void *, uint32_t, uint32_t)
+  MOD_FUNC(vfs, void, vnode_release, vnode_t *)
 
 MOD_DECLARE_END(vfs)
 
