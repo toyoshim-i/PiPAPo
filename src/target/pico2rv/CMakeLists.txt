@@ -50,6 +50,7 @@ add_executable(ppap_pico2rv
 ppap_riscv_target_common(ppap_pico2rv)
 
 target_compile_definitions(ppap_pico2rv PRIVATE
+    PPAP_HAS_PROCFS=1
     PPAP_SYS_HZ=150000000u
     PPAP_PLL_FBDIV=125u
     PPAP_PLL_PD1=5u

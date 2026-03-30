@@ -36,7 +36,7 @@ add_executable(ppap_qemu_arm
 
 ppap_arm_target_common(ppap_qemu_arm)
 
-target_compile_definitions(ppap_qemu_arm PRIVATE PPAP_QEMU=1 PPAP_HAS_BLKDEV=1)
+target_compile_definitions(ppap_qemu_arm PRIVATE PPAP_QEMU=1 PPAP_HAS_BLKDEV=1 PPAP_HAS_PROCFS=1)
 
 target_link_options(ppap_qemu_arm PRIVATE
     -T ${CMAKE_CURRENT_SOURCE_DIR}/qemu.ld

@@ -44,6 +44,7 @@ target_compile_definitions(ppap_x68k PRIVATE
     PPAP_X68K=1
     PPAP_M68K=1
     PPAP_HAS_BLKDEV=1
+    PPAP_HAS_PROCFS=1
     # PAGE_COUNT_MAX: supports up to 12 MB expanded X68000 RAM.
     # mm_init() uses m68k_probe_ram() to detect actual physical RAM at runtime.
     PAGE_COUNT_MAX=3072u

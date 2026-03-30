@@ -59,9 +59,7 @@ void kmain(void) {
   proc_init();
 
   /* Register OS personality subsystem names with procfs */
-#if !defined(__ia16__)
   subsys_init();
-#endif
 
   /* Log native + emulated CPU support */
   cpu_init();

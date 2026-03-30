@@ -60,6 +60,7 @@ endif()
 ppap_arm_target_common(ppap_pico2)
 
 target_compile_definitions(ppap_pico2 PRIVATE
+    PPAP_HAS_PROCFS=1
     PPAP_SYS_HZ=150000000u
     PPAP_PLL_FBDIV=125u
     PPAP_PLL_PD1=5u

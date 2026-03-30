@@ -67,6 +67,7 @@ target_compile_definitions(ppap_qemu_rv32 PRIVATE
     PPAP_KERNEL=1
     PPAP_QEMU=1
     PPAP_HAS_BLKDEV=1
+    PPAP_HAS_PROCFS=1
     PPAP_SYS_HZ=10000000u
     PAGE_POOL_BASE=0x80809000u
     PAGE_COUNT_MAX=243u

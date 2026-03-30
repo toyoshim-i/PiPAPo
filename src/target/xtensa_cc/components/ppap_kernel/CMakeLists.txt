@@ -64,6 +64,7 @@ idf_component_register(
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     PPAP_KERNEL=1
+    PPAP_HAS_PROCFS=1
     PPAP_SYS_HZ=240000000u
     PAGE_POOL_BASE=0x3FC90000u
     PAGE_COUNT_MAX=24u

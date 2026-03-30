@@ -39,6 +39,7 @@ const subsys_ops_t *subsys_ops_table[SUBSYS_MAX] = {
 };
 
 void subsys_init(void) {
+#ifdef PPAP_HAS_PROCFS
   procfs_register_subsys(SUBSYS_PPAP, "ppap");
 #ifdef PPAP_ENABLE_HUMAN68K
   procfs_register_subsys(SUBSYS_HUMAN68K, "human68k");
@@ -55,4 +56,5 @@ void subsys_init(void) {
 #ifdef PPAP_ENABLE_SOS
   procfs_register_subsys(SUBSYS_SOS, "sos");
 #endif
+#endif /* PPAP_HAS_PROCFS */
 }

@@ -49,6 +49,7 @@ ppap_arm_target_common(ppap_pico1calc)
 
 target_compile_definitions(ppap_pico1calc PRIVATE
     PPAP_HAS_BLKDEV=1
+    PPAP_HAS_PROCFS=1
     SRAM_KERNEL_SIZE=24576u
     PAGE_POOL_BASE=0x20006000u
     PAGE_COUNT_MAX=50u
