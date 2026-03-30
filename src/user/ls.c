@@ -71,7 +71,7 @@ int main(int argc, char *argv[]) {
   }
 
   struct dirent de;
-  while (getdents(fd, &de, 1) > 0) {
+  while (getdents(fd, &de, sizeof(de)) > 0) {
     if (long_fmt) {
       /* Build full path for stat. */
       char fullpath[128];

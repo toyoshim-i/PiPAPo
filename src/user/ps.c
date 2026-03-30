@@ -76,7 +76,7 @@ int main(void) {
   if (dfd < 0) return 1;
 
   struct dirent de;
-  while (getdents(dfd, &de, 1) > 0) {
+  while (getdents(dfd, &de, sizeof(de)) > 0) {
     /* Only numeric entries (pids). */
     if (de.d_name[0] < '1' || de.d_name[0] > '9') continue;
 
