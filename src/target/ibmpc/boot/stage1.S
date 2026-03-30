@@ -2,8 +2,8 @@
  * stage1.S — IBM PC boot sector (sector 0, 512 bytes)
  *
  * BIOS loads this to 0x0000:0x7C00 and jumps here.
- * Loads 8 sectors (stage2, 4 KB) from floppy to 0x0000:0x0800,
- * then jumps to stage2 entry at 0x0000:0x0800.
+ * Loads 8 sectors (stage2, 4 KB) from floppy to 0x0000:0xC000,
+ * then jumps to stage2 entry at 0x0000:0xC000.
  *
  * Includes a minimal BPB (BIOS Parameter Block) for 1.44 MB floppy
  * so that BIOSes recognise the floppy format.

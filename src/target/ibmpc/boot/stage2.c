@@ -1,16 +1,16 @@
 /*
  * stage2.c — PPAP IBM PC Stage 2: UFS kernel loader
  *
- * Stage2 runs at 0x8000 (loaded there by stage1).  Reads the UFS
+ * Stage2 runs at 0xC000 (loaded there by stage1).  Reads the UFS
  * filesystem on the floppy (sector 9+), finds /boot/kernel, loads it
  * directly to 0x0600 (its linked address), and jumps there.
  *
  * Memory layout while stage2 runs:
  *   0x0600-0x????  Kernel load area (directly at linked address)
  *   0x7C00         Stack (grows down)
- *   0x8000-0x8FFF  Stage2 code (4 KB)
- *   0x9000-0x9FFF  BUF — UFS metadata scratch (4 KB)
- *   0xA000-0xAFFF  IBUF — indirect block scratch (4 KB)
+ *   0xC000-0xCFFF  Stage2 code (4 KB)
+ *   0xD000-0xDFFF  BUF — UFS metadata scratch (4 KB)
+ *   0xE000-0xEFFF  IBUF — indirect block scratch (4 KB)
  *
  * No relocation needed — kernel is loaded to its final address.
  */

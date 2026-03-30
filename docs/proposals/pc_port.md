@@ -13,7 +13,7 @@ programs without a software interpreter.
 
 Produce a bootable PPAP system on an IBM PC/XT-class machine with V30 that:
 
-- Boots from a floppy disk (360 KB or 1.44 MB) with a two-stage bootstrap.
+- Boots from a floppy disk (1.44 MB) with a two-stage bootstrap.
 - Provides a console on the CGA/MDA text display via BIOS INT 10h, mirrored
   to COM1 serial (same pattern as pico1's USB + UART mirror and x68k's
   TVRAM + serial mirror).
@@ -158,32 +158,39 @@ can address any byte in the 1 MB space.
 
 ### 3.2 Kernel Memory Model
 
-All kernel modules share **DS=0** for data.  Each module's code
+All kernel modules share **SS=0** for data access.  Each module's code
 lives in its own code segment (separate CS).  Cross-module calls
-use `lcall`/`lret` stubs — DS stays unchanged, so pointer arguments
+use `lcall`/`lret` stubs — SS stays unchanged, so pointer arguments
 work without serialization.
+
+**ia16-elf-gcc segment register behaviour (important):**
+
+The small-model compiler uses **SS for all data access** (`%ss:`
+prefix on every memory operand).  DS is used as a **scratch
+register** — the compiler freely loads arbitrary values into DS
+for temporary storage.  DS is NOT used for actual memory reads/writes.
+
+This means:
+- SS must always point to the shared data segment (SS=0)
+- DS can contain any value — it does not affect data access
+- Assembly code must use `%ss:` for data access, not rely on DS
 
 ```
 Segment     Contents
-────────    ─────────────────────────────────
+────────    ─────────────────────────────
 CS=0x0060   Core code: main, klog, mm, proc, sched, syscall, blkdev
 CS=0x1000   VFS code: vfs, namei, romfs, tmpfs, devfs, procfs, ufs
 CS=????     Exec code: exec, loaders (future)
-DS=SS=0     Shared data: all modules' .data, .bss, stack, page pool
+SS=0        Shared data: all modules' .data, .bss, stack, page pool
 ```
 
 Each module's code must fit in 64 KB.  Total data+BSS from all
-modules must fit in 64 KB (shared DS=0; currently ~6 KB).
+modules must fit in 64 KB (shared SS=0; currently ~6 KB).
 
-This is **not** medium or compact model — those are broken in
-ia16-elf-ld 2.39 (R_386_16 overflow, linker segfault).  And it is
-**not** isolated DS per module — that would require argument
-serialization at every cross-module call (the C compiler cannot
-access data via ES instead of DS).
-
-A **segment manager** in the core module tracks each module's code
-segment base at runtime.  Stage2 loads module binaries and records
-their addresses; the core reads this at boot.
+A **segment manager** (`src/kernel/common/seg.h`/`seg.c`) in the core
+module tracks each module's code segment base at runtime.  Stage2 loads
+module binaries and records their addresses in a `mod_info_t` block at
+0x0500; the core reads this at boot.
 
 ### 3.3 User Process Memory
 
@@ -273,7 +280,7 @@ Divisor for 100 Hz:  11932  (0x2E9C)
 ```
 
 The BIOS initialises Channel 0 to ~18.2 Hz (divisor 65536).  PPAP
-reprograms it to 100 Hz during `target_early_init()`:
+reprograms it to 100 Hz during `target_late_init()`:
 
 ```c
 outb(0x43, 0x36);       /* Channel 0, lobyte/hibyte, mode 3 (square wave) */
@@ -284,6 +291,11 @@ outb(0x40, 0x2E);       /* Divisor high byte */
 IRQ 0 (INT 08h) fires at 100 Hz.  The ISR increments the tick counter
 and triggers context switch, same as SysTick on ARM and MFP Timer-C on
 X68000.
+
+**Note**: Timer init is deferred to `target_post_mount` (after
+`target_late_init`) because INT 08h replacement breaks BIOS floppy motor
+control.  The floppy block device uses INT 13h, which depends on the
+original BIOS timer handler for motor timeout.
 
 ### 4.4 Interrupt Controller (8259A PIC)
 
@@ -311,120 +323,24 @@ outb(0x20, 0x20);       /* Non-specific EOI */
 
 ---
 
-## 5. Architecture Layer: 8086
-
-A new architecture directory `src/arch/i8086/` provides the 8086-specific
-low-level code, analogous to `src/arch/arm_m/` and `src/arch/m68k/`.
-
-### 5.1 New Files
-
-```
-src/arch/i8086/
-  boot.S            — Reset vector, GDT (none in real mode), IVT setup
-  switch.S          — Context switch: save/restore AX-DI, segment regs, FLAGS
-  trap.S            — INT 30h syscall handler (or chosen software interrupt)
-  arch_i8086.h      — Register frame struct, inline I/O (inb/outb)
-  cpu_i8086.h       — CLI/STI wrappers, HLT for idle
-  probe_mem.S       — Detect conventional memory size (INT 12h or probe)
-```
-
-### 5.2 Syscall Convention
-
-Use a dedicated software interrupt for PPAP syscalls:
-
-```nasm
-; User-space syscall stub
-; AX = syscall number, BX/CX/DX/SI/DI = arguments
-; Return value in AX
-INT 30h
-```
-
-INT 30h is unused by BIOS and DOS, making it a clean choice.  The trap
-handler in `trap.S` saves the user register frame, switches to the kernel
-stack (SS:SP), dispatches via `syscall_dispatch()`, and returns via `IRET`.
-
-### 5.3 Context Switch
-
-```nasm
-; switch.S — context switch on x86 real mode
-; Save callee-saved registers + segment registers to PCB
-;
-; PCB layout:
-;   +0   SP
-;   +2   SS
-;   +4   BX
-;   +6   SI
-;   +8   DI
-;   +10  BP
-;   +12  DS
-;   +14  ES
-;   +16  FLAGS (saved via PUSHF)
-;
-; Total: 18 bytes per PCB save area
-
-ppap_switch:
-    pushf
-    push es
-    push ds
-    push bp
-    push di
-    push si
-    push bx
-    ; Save SP and SS to current PCB
-    mov  [current_pcb + 0], sp
-    mov  [current_pcb + 2], ss
-    ; Load next PCB
-    mov  sp, [next_pcb + 0]
-    mov  ss, [next_pcb + 2]
-    pop  bx
-    pop  si
-    pop  di
-    pop  bp
-    pop  ds
-    pop  es
-    popf
-    ret
-```
-
-### 5.4 Memory Map (640 KB Conventional)
-
-| Address | Size | Use |
-|---------|------|-----|
-| 0x00000–0x003FF | 1 KB | Interrupt Vector Table (256 × 4B far pointers) |
-| 0x00400–0x004FF | 256 B | BIOS Data Area (BDA) — must not clobber |
-| 0x00500–0x07BFF | ~30 KB | Free (stage1/stage2 load area, then freed) |
-| 0x07C00–0x07DFF | 512 B | Stage1 boot sector (BIOS loads here) |
-| 0x07E00–0x0FFFF | ~33 KB | Stage2 + scratch; freed after boot |
-| 0x10000–0x1FFFF | 64 KB | Kernel code segment (CS = 0x1000) |
-| 0x20000–0x2FFFF | 64 KB | Kernel data segment (DS = SS = 0x2000) |
-| 0x30000–0x9FBFF | ~448 KB | Page pool (~112 pages × 4 KB) |
-| 0x9FC00–0x9FFFF | 1 KB | Extended BIOS Data Area (EBDA) — preserve |
-| 0xA0000–0xBFFFF | 128 KB | Video RAM (CGA/MDA text at 0xB8000) |
-| 0xC0000–0xEFFFF | 192 KB | ROM expansion area |
-| 0xF0000–0xFFFFF | 64 KB | BIOS ROM |
-
-~112 user pages is comparable to RP2040 (51) and X68000 1 MB (250).
-
----
-
-## 6. V30 8080 Mode as eCPU
+## 5. V30 8080 Mode as eCPU
 
 This is the key differentiator of the V30 port.  Instead of the software
 Z80 interpreter (`ecpu_z80.c`, ~1400 lines), the V30's hardware 8080 mode
 provides native instruction execution for 8080-clean CP/M programs.
 
-### 6.1 Architecture Mapping
+### 5.1 Architecture Mapping
 
 | PPAP eCPU Concept | Software Z80 (current) | V30 8080 Mode |
 |-------------------|----------------------|---------------|
 | Emulator loop | `ecpu_z80_run()` in C | `BRKEM imm8` — CPU runs 8080 natively |
 | Trap on CALL 0x0005 | Check PC after decode | 8080 `CALL 0x0005` → hits `RETEM` at address 0x0005 |
-| Trap on I/O IN/OUT | Decoded in emulator loop | 8080 `IN`/`OUT` → real x86 I/O port access (see §6.3) |
+| Trap on I/O IN/OUT | Decoded in emulator loop | 8080 `IN`/`OUT` → real x86 I/O port access (see §5.3) |
 | Register access | `cpu->regs[]` struct | x86 registers (AL=A, CH=B, CL=C, etc.) |
 | Memory access | `cpu->mem[]` array | Direct memory in the 64 KB DS segment |
 | Context switch cost | Zero (it's just C data) | `BRKEM`/`RETEM` save/restore (~30 clocks) |
 
-### 6.2 BDOS/BIOS Trap Mechanism
+### 5.2 BDOS/BIOS Trap Mechanism
 
 CP/M programs call BDOS at address 0x0005 and BIOS via the jump table at
 the top of the TPA (typically 0xFE00+).  The trap mechanism:
@@ -464,7 +380,7 @@ User: CP/M program continues in 8080 mode
 This is functionally identical to the software Z80's `ECPU_TRAP_RST`
 mechanism, but the "emulator loop" is the V30 hardware itself.
 
-### 6.3 I/O Port Handling
+### 5.3 I/O Port Handling
 
 The 8080 `IN` and `OUT` instructions in V30 8080 mode execute as real x86
 I/O port accesses.  This is different from the software emulator, which
@@ -493,7 +409,7 @@ programs.
 The recommended initial approach is Option A: let I/O fall through to
 unused ports.  Add Option C selectively if specific CP/M programs need it.
 
-### 6.4 Memory Layout for 8080 Mode
+### 5.4 Memory Layout for 8080 Mode
 
 Each CP/M process gets one 64 KB segment.  The kernel sets DS to point at
 this segment before issuing `BRKEM`:
@@ -521,7 +437,7 @@ This matches the standard CP/M memory map exactly.  The `cpm_loader.c`
 already builds this layout for the software Z80; the same logic applies
 here, just writing into a real memory segment instead of `cpu->mem[]`.
 
-### 6.5 Dual eCPU Strategy
+### 5.5 Dual eCPU Strategy
 
 The V30 port should support both:
 
@@ -555,21 +471,14 @@ runz80 foo.com
 cpm foo.com
 ```
 
-The ptrace debug surface concept already supports this:
-
-```
-surface=real  → V30 x86 registers
-surface=ecpu  → 8080 or Z80 registers (depending on which eCPU is active)
-```
-
 ---
 
-## 7. DOS Subsystem
+## 6. DOS Subsystem
 
 The extended goal: run MS-DOS .COM and .EXE programs with a DOS
 personality bridge, analogous to the Human68k bridge on X68000.
 
-### 7.1 Program Formats
+### 6.1 Program Formats
 
 #### .COM Files
 
@@ -628,7 +537,7 @@ Loading:
 Segment relocation is simpler than ELF relocation or Human68k .x
 relocation — it's a flat list of fixup addresses containing segment values.
 
-### 7.2 INT 21h Bridge
+### 6.2 INT 21h Bridge
 
 The core of the DOS subsystem.  Function number in AH:
 
@@ -687,7 +596,7 @@ Most functions map directly to existing PPAP VFS operations (`sys_open`,
 The bridge translates DOS-style error codes (carry flag + AX) and
 path separators (`\` → `/`).
 
-### 7.3 Drive Letter Mapping
+### 6.3 Drive Letter Mapping
 
 Same pattern as Human68k:
 
@@ -700,7 +609,7 @@ C: → /c/   (hard disk — if present)
 Current working directory is tracked per-drive in the bridge, matching
 DOS semantics.
 
-### 7.4 PSP Construction
+### 6.4 PSP Construction
 
 The DOS bridge builds a 256-byte PSP for each loaded program:
 
@@ -721,347 +630,178 @@ The DOS bridge builds a 256-byte PSP for each loaded program:
 | 0x80 | 1 | Command tail length |
 | 0x81 | 127 | Command tail string |
 
-### 7.5 Trace Integration
-
-```c
-#define PPAP_TRACE_ABI_DOS_INT21  5   /* New ABI tag */
-#define PPAP_TRACE_REGSET_8086    4   /* AX,BX,CX,DX,SI,DI,BP,SP,CS,DS,ES,SS,IP,FLAGS */
-```
-
-The trace tool and pdb gain DOS awareness:
-
-```
-$ trace --subsys hello.com
-[subsys:dos] INT 21h AH=09h PRINT_STRING DS:DX=0x0180
-[subsys:dos] INT 21h AH=4Ch EXIT code=0
-```
-
 ---
 
-## 8. New Files and Directory Layout
+## 7. Completed Phases (P-1 through P-4b)
+
+Phases P-1 through P-4b are complete.  The kernel boots on QEMU,
+mounts a UFS floppy, and enters the scheduler.
+
+### Summary
+
+| Phase | Scope | Key Result |
+|-------|-------|------------|
+| P-1 | Target skeleton + BIOS console | `src/arch/i16/`, `src/target/ibmpc/`, Docker toolchain, BIOS INT 10h + COM1 serial |
+| P-2 | Timer + context switch | PIT 100 Hz, 8259A PIC, 24-byte frame, flag-driven switch |
+| P-3a | Two-stage bootstrap | stage1 (512 B) + stage2 (UFS reader, indirect blocks), mkpcimg.sh |
+| P-3b | Full kernel integration | 46 KB binary, ia16-elf-gcc, `uintptr_t` address fields, boots to idle |
+| P-4a | Module system | `MOD_DECLARE`/`MOD_DEFINE`, mod_vfs (12 fn), mod_core (16 fn), boundary enforcement |
+| P-4b | Segment split + floppy mount | Core (CS=0x0060) + VFS (CS=0x1000) + shared SS=0, far-call stubs, UFS root mounted |
+
+### Current File Layout
 
 ```
-src/arch/i8086/
-  boot.S              — IVT setup, initial stack, jump to kmain
-  switch.S            — Context switch (save/restore regs + segments)
-  trap.S              — INT 30h syscall handler
-  arch_i8086.h        — Register frame, inb/outb, CLI/STI
-  cpu_i8086.h         — CPU control macros
-  probe_mem.S         — Conventional memory detection
-  v30_8080.S          — BRKEM/RETEM wrappers for eCPU 8080 mode
+src/arch/i16/
+  arch.h              — IRQ save/restore (CLI/STI), preemption, hints
+  cpu.h               — inb/outb, PIC/PIT/UART register definitions
+  boot.S              — DS=ES=SS=0, BSS zero, stack, → kmain()
+  switch.S            — INT 08h timer ISR, 24-byte frame, context switch
+  trap.S              — INT 30h syscall handler (AX=nr, BX-DI=args)
+  i16_common.c        — arch_build_initial_frame(), syscall ABI adapter
 
 src/target/ibmpc/
-  CMakeLists.txt      — Build rules, memory layout, feature flags
-  ibmpc_kernel.ld     — Core module linker script (DS=0, reserves VFS data)
-  ibmpc_vfs.ld        — VFS module linker script (.text at 0, .data at DS=0)
-  target_ibmpc.c      — target hooks: early_init, console_init, late_init
+  CMakeLists.txt      — Builds stage1, stage2, core, VFS, hello_com
+  ibmpc_kernel.ld     — Core linker (0x0600, reserves 0xA000-0xBFFF for VFS data)
+  ibmpc_vfs.ld        — VFS linker (.text at 0, .data at DS:0xA000)
+  target_ibmpc.c      — early/late/post_mount hooks, seg_register, far-call patching
+  boot/
+    stage1.S          — 512 B boot sector + BPB, loads stage2 to 0xC000
+    stage2_entry.S    — Stack at 0x7C00, entry stub for stage2.c
+    stage2.c          — UFS reader, loads core+VFS+VFS data, mod_info at 0x0500
+    stage2.ld         — Linked at 0xC000
   drivers/
-    uart_8250.c       — 8250 UART driver (COM1 serial console)
-    timer_pit.c       — 8253/8254 PIT driver (100 Hz tick)
-    pic_8259.c        — 8259A PIC driver (IRQ mask, EOI)
-    fdc_pc.c          — µPD765A floppy block driver (via BIOS INT 13h initially)
-    kbd_pc.c          — Keyboard (via BIOS INT 16h initially)
-    video_pc.c        — Text output (via BIOS INT 10h initially; direct VGA later)
+    uart_com.c        — 8250 UART, COM1 9600 baud, polled I/O
+    bios_con.c        — BIOS INT 10h teletype output
+    timer_pit.c       — PIT 100 Hz + PIC unmask + ISR/syscall install
+    floppy_blk.c      — BIOS INT 13h floppy, LBA→CHS, read-only, "fd0"
+  stubs/
+    vfs_stubs.S       — Core→VFS far-call caller stubs
+    vfs_entries.S     — VFS-side entry point targets
+    vfs_header.S      — VFS module header (magic 0x5646, 12 entries)
+    core_stubs.S      — VFS→Core far-call caller stubs
+    core_entries.S    — Core-side entry point targets
 
-src/kernel/subsys/
-  dos_bridge.c        — INT 21h → PPAP syscall bridge
-  dos_bridge.h
-  dos_loader.c        — .COM and .EXE (MZ) binary loader
-  dos_loader.h
+src/kernel/common/
+  seg.h / seg.c       — Segment manager (i16 only), mod_id → segment lookup
+  mod/
+    module.h          — MOD_DECLARE / MOD_DEFINE macros
+    mod_core.h        — Core exports (16 functions: klog, kmem, mm_page, blkdev)
+    mod_vfs.h         — VFS exports (12 functions: init, mount, lookup, etc.)
 
-src/kernel/ecpu/
-  ecpu_8080_v30.c     — V30 hardware 8080 mode eCPU wrapper
-  ecpu_8080_v30.h     — Register mapping, BRKEM/RETEM interface
-
-tools/
-  mkpcfloppy/
-    mkpcfloppy.c      — Produces bootable .IMG floppy image:
-                        boot sector + stage2 + UFS partition
+scripts/
+  mkpcimg.sh          — Assembles 1.44 MB floppy (stage1 + stage2 + UFS)
 ```
 
-Changes to existing files:
+### Boot Sequence
 
-| File | Change |
-|------|--------|
-| `src/common/ptrace.h` | Add `PPAP_TRACE_REGSET_8086`, `PPAP_TRACE_ABI_DOS_INT21` |
-| `src/kernel/ecpu/ecpu.h` | Add 8080 eCPU type |
-| `src/kernel/subsys/subsys.c` | Register DOS subsystem |
-| `scripts/build.sh` | Add `ibmpc` as valid target |
-| `scripts/run.sh` | Add `ibmpc` target (runs under 86Box or PCem) |
+1. BIOS loads sector 0 → 0x7C00 (stage1).  Prints "Pi".
+2. Stage1 loads 8 sectors → 0xC000 (stage2).  Prints "PA".
+3. Stage2 reads UFS: loads `/boot/kernel` → 0x0600,
+   `/boot/kernel_vfs` → 0x1000:0000, `/boot/kernel_vfs_data` → DS:0xA000.
+   Writes `mod_info_t` at 0x0500.  Jumps to 0x0000:0x0600.
+4. Kernel prints "Po booting... [ibmpc]" — completing "PiPAPo booting...".
+5. `target_early_init()`: UART + BIOS console, reads mod_info, registers
+   segments, patches far-call tables (vfs_fptrs[], core_fptrs[]).
+6. `mm_init()` → `proc_init()` → `vfs_init()` (via far call to VFS).
+7. `target_late_init()`: registers floppy block device, mounts UFS root.
+8. `target_post_mount()`: installs PIT timer (deferred — BIOS INT 13h
+   floppy motor control needs original INT 08h handler).
+9. `sched_start()`: enables interrupts, enters idle loop.
 
----
-
-## 9. Boot Sequence
-
-### 9.1 BIOS Boot
-
-1. BIOS POST completes.
-2. BIOS reads boot sector (512 bytes from floppy sector 0) into 0x7C00.
-3. BIOS jumps to 0x7C00 (Stage1).
-
-### 9.2 Stage1 (512 B, boot sector at 0x7C00)
-
-Implemented in `src/target/ibmpc/boot/stage1.S`.
-
-1. BIOS loads sector 0 to 0x7C00, jumps here.
-2. Sets up segments (DS=ES=SS=0), stack at 0x7C00.
-3. Prints "Pi" via BIOS INT 10h (progressive banner).
-4. Reads 8 sectors (stage2) from floppy to 0xC000 via INT 13h.
-5. Passes boot drive in DL, jumps to 0x0000:0xC000.
-
-Includes BPB (BIOS Parameter Block) at offset 3–61 for 1.44 MB format.
-
-### 9.3 Stage2 (up to 4 KB at 0xC000)
-
-Implemented in `src/target/ibmpc/boot/stage2.c` + `stage2_entry.S`.
-
-1. Prints "PA" (banner continues).
-2. Reads UFS superblock from floppy sector 9 (start of UFS partition).
-3. Walks directory: root → `/boot/` → `/boot/kernel`.
-4. Loads kernel directly to 0x0600 (linked address) via INT 13h.
-   Supports both direct blocks (10 × 4 KB = 40 KB) and indirect
-   blocks (for kernels >40 KB).
-5. Far jumps to kernel at 0x0000:0x0600.
-
-**Floppy layout** (1.44 MB, 2880 × 512 B sectors):
-
-| Sectors | Contents |
-|---------|----------|
-| 0 | Stage1 boot sector (512 B) |
-| 1–8 | Stage2 UFS loader (4 KB) |
-| 9+ | UFS partition with `/boot/kernel` |
-
-Assembled by `scripts/mkpcimg.sh` using `tools/mkufs/mkufs`.
-
-### 9.4 Kernel Entry (kmain)
-
-Implemented in `src/arch/i16/boot.S` → `src/kernel/main.c`.
-
-boot.S sets DS=ES=SS=0, zeroes BSS, sets SP to `__stack_top`, calls
-kmain(). The kernel follows the standard PPAP boot sequence:
-
-```c
-void kmain(void) {
-    target_early_init();    /* UART + BIOS console, prints "Po booting..." */
-    mm_init();              /* Page pool from __page_pool_start to 640 KB */
-    proc_init();            /* Process table (8 slots) */
-    vfs_init();             /* VFS + file pool */
-    target_late_init();     /* PIT 100 Hz timer */
-    sched_start();          /* Enable interrupts, enter idle loop */
-}
-```
-
----
-
-## 9.5 Memory Layout by Boot Stage
-
-### Stage1 running (loaded by BIOS at 0x7C00)
+### Memory Layout (Kernel Running)
 
 ```
-0x00000-0x003FF  IVT (256 vectors × 4 bytes, BIOS-owned)
+0x00000-0x003FF  IVT (256 vectors × 4 bytes)
 0x00400-0x004FF  BIOS Data Area
-0x00500-0x07BFF  Free conventional memory
-0x07C00-0x07DFF  Stage1 code (512 B, loaded by BIOS)
-0x07C00          Stack (grows down from 0x7C00, below stage1)
-```
-
-Stage1 prints "Pi" (progressive banner), loads 8 sectors (stage2) from
-floppy to 0xC000 via INT 13h, and jumps there.
-
-### Stage2 running (loaded by stage1 at 0xC000)
-
-```
-0x00000-0x004FF  IVT + BIOS Data Area (preserved)
-0x00500-0x005FF  Free
-0x00600-0x0BFFF  Kernel load area (loaded directly to linked address)
-0x0C000          Stack (grows down from 0xC000, below stage2)
-0x0C000-0x0CFFF  Stage2 code + data (up to 4 KB)
-0x0D000-0x0DFFF  BUF — UFS metadata scratch buffer (4 KB)
-0x0E000-0x0EFFF  IBUF — indirect block scratch buffer (4 KB)
-```
-
-Stage2 prints "PA", reads the UFS filesystem on the floppy (sector 9+),
-finds `/boot/kernel`, and loads it directly to 0x0600 — no relocation
-needed since stage2 is above the kernel at 0xC000.  Supports indirect
-blocks (kernels >40 KB).  Then jumps to 0x0000:0x0600.
-
-**Key constraint**: stage2 + buffers must be above the kernel end
-(currently 0x0600 + 46 KB = 0xBC2E).  Stage2 at 0xC000 satisfies this.
-
-### Kernel running (linked at 0x0600)
-
-```
-0x00000-0x003FF  IVT (kernel installs INT 08h timer)
-0x00400-0x005FF  BIOS Data Area + free gap
-0x00600          Kernel .text.entry (boot.S: _start)
-  ...            .text (~42 KB), .rodata, .data (~0.5 KB)
-  ...            .bss (~5.8 KB, includes proc_table ~4.3 KB)
+0x00500-0x005FF  mod_info_t (module load addresses, written by stage2)
+0x00600          Core .text.entry (boot.S: _start)
+  ...            Core .text (~28 KB), .rodata, .data (~0.5 KB)
+  ...            Core .bss (~5.8 KB, includes proc_table ~4.3 KB)
   ...            Stack (2 KB)
-0x?????          __page_pool_start (4 KB-aligned, after stack)
-  ...  -0x9FBFF  Page pool (conventional RAM ceiling - EBDA)
+0x0A000-0x0BFFF  VFS .data + .bss (8 KB reserved in core linker)
+0x0C000-0x0FFFF  Page pool (within near-pointer range, 4 pages max)
+0x10000-0x1????  VFS .text (code segment, CS=0x1000)
+  ...  -0x9FBFF  Extended page pool (far-pointer access only)
 0x9FC00-0x9FFFF  EBDA (1 KB, preserved)
 0xA0000-0xBFFFF  Video RAM
 0xC0000-0xFFFFF  ROM / BIOS
 ```
 
-Kernel prints "Po booting... [ibmpc]" — completing the progressive
-banner "PiPAPo booting..." across all three stages.
+### Far-Call Mechanism
+
+Cross-module calls use assembly stubs to bridge code segments:
+
+```
+Core segment (CS=0x0060):        VFS segment (CS=0x1000):
+──────────────────────────       ──────────────────────────
+caller()                         vfs_init_entry:
+  call mod_vfs.init()              call vfs_init   ; near
+  ; near call to ──►              vfs_init:
+vfs_init_caller_stub:                ...  (SS=0, shared data)
+  pop ret_ip                       ret            ; near
+  push CS; push ret_ip            lret  ◄── far return
+  ljmp *[vfs_fptrs + 0] ── far ──►
+──────────────────────────       ──────────────────────────
+```
+
+The VFS header at offset 0 in the VFS segment contains a magic word
+(0x5646 = "VF"), entry count (12), and a table of entry offsets.
+`target_early_init()` reads this header and patches both the core's
+`vfs_fptrs[]` and the VFS's `core_fptrs[]` with far pointer pairs
+(offset, segment).
+
+### Key Bugs Found and Fixed
+
+| Bug | Root Cause | Fix |
+|-----|-----------|-----|
+| INT 13h "not ready" | PIT timer replaced BIOS INT 08h, breaking floppy motor timeout | Defer `timer_init` to `target_post_mount` |
+| VFS→core crash | DS clobbered by compiler (scratch register) | Entry stubs restore DS=0 before call; all data via SS |
+| Near fptr crosses segments | `blkdev_t.read = floppy_read` invalid in VFS CS | `mod_core.blkdev_read` far-call wrapper |
+| Far-call BP shift | `lcall; ret` left extra return addresses on stack | Rewrite stubs: pop/push CS:IP, ljmp; entry pops far frame |
 
 ### Size Constraint
 
-The kernel binary (text + rodata + data) plus BSS and stack must fit
-between 0x0600 and 0xFFFF (~63 KB) due to 16-bit near pointer limit.
-Current P-3b core kernel:
+Core binary (text + rodata + data) plus BSS and stack must fit between
+0x0600 and 0xFFFF (~63 KB) due to 16-bit near pointer limit.
 
 | Component | Size |
 |-----------|------|
-| .text     | ~42 KB |
-| .data     | ~0.5 KB |
-| .bss      | ~5.8 KB (proc_table is ~4.3 KB alone) |
-| stack     | 2 KB |
-| **Total** | **~50 KB** |
+| Core .text | ~28 KB |
+| VFS .text | ~27 KB (separate segment) |
+| .data | ~0.5 KB |
+| .bss | ~5.8 KB |
+| stack | 2 KB |
+| VFS data | 8 KB (reserved at 0xA000) |
 
-This leaves ~13 KB headroom.  Adding blkdev + floppy driver pushes
-past 64 KB, requiring the segment split.
+The segment split resolved the original 64 KB code limit.  Future
+modules (exec) can use additional code segments.
 
-### Segment Split: Shared DS, Separate CS
+---
 
-All modules share DS=0 for data.  Each module's code is in its own
-segment (separate CS).  Cross-module calls use `lcall`/`lret` —
-DS stays unchanged, so pointer arguments work without serialization.
+## 8. Phase P-5: User-Space Exec and Tests
 
-```
-Core code segment (CS=0x0060):    VFS code segment (CS=0x1000):
-──────────────────────────────    ──────────────────────────────
-caller()                          vfs_init_entry:
-  call mod_vfs.init()               call vfs_init   ; near
-  ; near call to ──►                vfs_init:
-vfs_init_caller_stub:                  ...  (DS=0, shared data)
-  lcall *[vfs_fptrs + 0] ─ far ─►    ret            ; near
-  ret  ◄─────────────────── far ── lret
-──────────────────────────────    ──────────────────────────────
-```
+**Status**: Not started.
 
-**Caller-side stub** (in core segment):
-```nasm
-vfs_init_caller_stub:
-    lcall *vfs_fptrs + 0    ; indirect far call [offset:segment]
-    ret
-```
+**Goal**: Full user-space support, `runtests` passes.
 
-**Target-side stub** (in VFS segment):
-```nasm
-vfs_init_entry:
-    call vfs_init            ; near call to real function
-    lret                     ; far return to caller
-```
+### Steps
 
-No DS manipulation — both sides use SS=0 for all data access.
-The real function uses normal `ret`.  Only the assembly stubs
-know about segments.  Assembly stubs must use `%ss:` prefix for
-any data access (far pointer tables, saved registers).
+1. **COM loader** (`com_loader.c` or extend existing loader) — load flat
+   binaries at offset 0x0100 in a user segment, set CS=DS=ES=SS=segment.
+   The existing `hello.com` test binary should run first.
 
-**ia16-elf-gcc segment register behaviour (important):**
+2. **Signal delivery for i16** — implement `sys_sigreturn` / signal
+   trampoline.  The 24-byte frame format matches the timer ISR; the
+   trampoline must build this frame on the user stack and `IRET` into the
+   signal handler.
 
-The small-model compiler uses **SS for all data access** (`%ss:`
-prefix on every memory operand).  DS is used as a **scratch
-register** — the compiler freely loads arbitrary values into DS
-for temporary storage (e.g. loop-invariant address computations).
-DS is NOT used for actual memory reads/writes.
+3. **Fork / waitpid** — process segment duplication.  Far-copy parent's
+   code+data segment to a new segment for the child.  `mm_page_read/write`
+   handles cross-segment data access.
 
-This means:
-- SS must always point to the shared data segment (SS=0)
-- DS can contain any value — it does not affect data access
-- Assembly code must use `%ss:` for data access, not rely on DS
-- The shared DS=0 design works because SS=0 is the invariant
+4. **Pipe** — should work largely unmodified (kernel-side buffers in SS=0).
 
-**Function pointers across modules:**
-
-Near function pointers (e.g. `blkdev_t.read = floppy_read`) are
-CS-relative.  When VFS (CS=0x1000) dereferences a function pointer
-that was set in core (CS=0), the near call targets 0x1000:offset
-instead of 0:offset — jumping to wrong code.
-
-Solution: function pointer tables that cross module boundaries
-(blkdev_t, vfs_ops_t) must use the module interface (`mod_core`)
-for callbacks, or use far function pointers.  On i16, blkdev_read
-should go through a `mod_core.blkdev_read()` wrapper that does the
-far call back to core.
-
-**Why shared DS, not isolated DS per module?**
-- The compiler uses SS for all data access, not DS
-- DS is a scratch register — isolated DS provides no benefit
-- Shared DS: pointer arguments just work, zero overhead
-
-**Why not medium model?**
-- ia16-elf-ld 2.39 is broken (R_386_16 overflow, linker segfault)
-
-**What goes where:**
-
-| Binary | Segment | Contents | Code budget |
-|--------|---------|----------|-------------|
-| Core | CS=0x0060 | main, klog, mm, proc, sched, syscall, blkdev, stubs | ≤64 KB code |
-| VFS | CS=0x1000 | vfs, namei, romfs, tmpfs, devfs, procfs, ufs, stubs | ≤64 KB code |
-
-**Memory layout:**
-
-```
-0x00000-0x005FF  IVT + BIOS Data Area
-0x00600-0x?????  Core .text (code only, ~26 KB)
-  .rodata, .data, .bss  (shared DS=0, after core .text)
-  stack (2 KB)
-  __page_pool_start (4 KB aligned)
-0x10000-0x?????  VFS .text (code only, ~27 KB, CS=0x1000)
-  VFS .data, .bss linked into DS=0 at reserved addresses
-...    -0x9FBFF  Page pool (conventional RAM ceiling - EBDA)
-0x9FC00-0x9FFFF  EBDA (1 KB)
-0xA0000-0xFFFFF  Video RAM + ROM
-```
-
-**VFS data in shared DS=0 — concrete mechanism:**
-
-VFS data/BSS must be at known addresses in DS=0.  The VFS linker
-script links .text at offset 0 (VFS CS), but .data/.bss at a fixed
-DS=0 address (e.g. 0xA000):
-
-```ld
-/* ibmpc_vfs.ld */
-SECTIONS {
-  . = 0x0000;
-  .text   : { *(.text*) }      /* VFS code segment, offset 0 */
-  .rodata : { *(.rodata*) }    /* constants in code segment */
-
-  . = 0xA000;                  /* switch to DS=0 address space */
-  .data   : { *(.data*) }      /* VFS globals at DS:0xA000+ */
-  .bss    : { *(.bss*) }       /* VFS BSS at DS:0xA0xx+ */
-}
-```
-
-The compiler generates `mov ax, ds:[0xA0xx]` for VFS globals.
-Since DS=0 at runtime, this correctly accesses linear 0xA0xx.
-
-**Build steps:**
-1. Link VFS ELF with the above script (.text at 0, .data at 0xA000)
-2. Extract .text only: `objcopy -j .text -j .rodata -O binary` → VFS code binary
-3. Extract .data only: `objcopy -j .data -O binary` → VFS data blob
-4. Stage2 loads VFS code to 0x1000:0000 (CS=0x1000)
-5. Stage2 (or core init) copies VFS data blob to DS:0xA000
-6. Core init zeroes VFS BSS range (0xA000+data_size to 0xA000+data+bss)
-
-The core linker script reserves 0xA000-0xBFFF for VFS data (8 KB):
-
-```ld
-/* ibmpc_kernel.ld */
-  __page_pool_start = .;
-  . = 0xA000;
-  __vfs_data_reserved_start = .;
-  . += 8192;   /* 8 KB reserved for VFS .data + .bss */
-  __vfs_data_reserved_end = .;
-```
-
-Stage2 loads both `/boot/kernel` and `/boot/kernel_vfs` from the
-UFS floppy.  A `mod_info_t` block at 0x0500 tells the kernel where
-each module was loaded.
+5. **`--test ibmpc` in run.sh** — integrate with existing test harness.
 
 ### Page-Indexed Memory Model
 
@@ -1087,155 +827,23 @@ page_id_t mm_ptr_to_page(void *ptr);
 ```
 
 On i16, `mm_page_read/write` internally computes `segment = page_base >> 4`
-and uses far pointer access (ES:BX) to copy data.
-
-Modules that want i16 support must use `mm_page_read/write` for
-cross-page access instead of raw pointer dereferences.
+and uses far pointer access (ES:BX) to copy data.  These functions are
+already declared in `mod_core.h` (16 exports).
 
 **i16 scope exclusions** (components that don't use page-indexed API):
 - No eCPU emulators (ecpu_m68k, ecpu_z80 — use raw pointers extensively)
 - No subsystem bridges (human68k, sos, cpm)
 - No tmpfs, procfs, devfs (root is read-only UFS on floppy)
-- Dedicated `elf16_loader.c` instead of the 32-bit ELF loader
+- Dedicated flat/COM binary loader instead of the 32-bit ELF loader
+
+**Verification**: Kernel mounts floppy UFS, loads `/sbin/init`, prints
+"Hello from user!".  Then `runtests` passes.
 
 ---
 
-## 10. Implementation Phases
+## 9. Phase P-5b: Hard Disk (IDE/ATA) Boot Support
 
-### Phase P-1: Target Skeleton and BIOS Console ✓
-
-**Status**: Complete.
-
-- `src/arch/i16/` — arch dispatch headers, boot.S, cpu.h (inb/outb)
-- `src/target/ibmpc/` — target hooks, linker script, BIOS + UART drivers
-- Boot sector at 0x7C00, COM1 serial + BIOS INT 10h console
-- Docker toolchain: `ppap/ia16` image with ia16-elf-gcc + QEMU i386
-- `./scripts/run.sh ibmpc` runs on QEMU via Docker
-
-### Phase P-2: Timer and Context Switch ✓
-
-**Status**: Complete.
-
-- PIT Channel 0 at 100 Hz (mode 3, divisor 11932)
-- 8259A PIC: BIOS-initialized, unmask IRQ 0 only
-- switch.S: timer ISR saves 9 regs + FLAGS/CS/IP (24-byte frame),
-  flag-driven context switch (m68k/RISC-V pattern)
-- Standalone scheduler with two test processes printing A/B
-
-### Phase P-3a: Two-Stage Bootstrap ✓
-
-**Status**: Complete.
-
-- stage1.S: 512 B boot sector with BPB, loads stage2 to 0xC000
-- stage2.c: UFS reader (direct + indirect blocks), loads kernel
-  directly to 0x0600, supports kernels >40 KB
-- mkpcimg.sh: assembles 1.44 MB floppy (stage1 + stage2 + UFS)
-- Progressive banner: stage1 "Pi" + stage2 "PA" + kernel "Po booting..."
-
-### Phase P-3b: Full Kernel Integration ✓
-
-**Status**: Complete (kernel boots to idle).
-
-- Full PPAP kernel compiles with ia16-elf-gcc (46 KB binary)
-- Shared kernel changes: `uint32_t` → `uintptr_t` for address fields
-  in page.h/c, proc.h/c, sched.c, sys_mem.c (all arches benefit)
-- `__ia16__` arch guards in spinlock.h, cpu.h, cpu_native.c, sched.c,
-  proc.h, page.h, loader.c, sys_proc.c
-- Minimal string.c (memset/memcpy/strlen/strcmp etc. — no libc)
-- Kernel boots: MM init, proc table, VFS, CPU, PIT timer, scheduler
-- klog MM output shows wrong values (32-bit format on 16-bit — cosmetic)
-
-**Not yet working**: user-space exec (needs module system for code >64 KB),
-signal delivery (stub), ELF loader (disabled for i16).
-
-### Phase P-4a: Kernel Module System ✓
-
-**Status**: Complete.
-
-Platform-agnostic module system with explicit API surfaces:
-
-- `MOD_DECLARE`/`MOD_DEFINE` macros in `kernel/common/mod/module.h`
-- mod_vfs (11 functions), mod_exec (1), mod_core (6)
-- VFS callers migrated to `mod_vfs.init()` syntax on all platforms
-- Boundary enforcement script (`check_module_boundaries.sh`)
-- `kernel/common/` directory for shared headers (mod/, errno.h, spinlock.h)
-
-### Phase P-4b: i16 Segment Split + Floppy Mount (in progress)
-
-**Goal**: Split kernel into separate code segments, mount UFS root.
-
-**Architecture**: Shared DS=0 for all data, separate CS per module.
-Pointer arguments work without serialization.  See §9.5 for details.
-
-**Done:**
-
-| Item | Details |
-|------|---------|
-| Segment manager | `seg.h`/`seg.c` — runtime table of module code segments |
-| Separate CMake targets | ppap_ibmpc (core 28 KB) + ppap_ibmpc_vfs (linked separately) |
-| Two-level stubs | vfs_stubs.S, vfs_entries.S, core_stubs.S, core_entries.S — no DS switching |
-| VFS module header | Magic + 11 entry offsets at offset 0, read by core at boot |
-| Stage2 multi-load | `load_file_far()` loads VFS to 0x1000:0000 via INT 13h |
-| mod_info protocol | Stage2 writes module table at 0x0500, core reads at boot |
-| mkpcimg.sh | Packages both binaries into UFS floppy |
-| Floppy block device | `floppy_blk.c` — INT 13h driver (code exists, not wired) |
-| Core boot verified | Core boots with "SEG: VFS module loaded", MM/PROC/CPU init OK |
-| DS switching removed | Stubs use lcall/lret only, shared DS=0 confirmed |
-| VFS data in DS=0 | VFS linker places .data/.bss at 0xA000 in DS=0 |
-| Core reserves VFS data | Core linker reserves 0xA000-0xBFFF for VFS |
-| Far call core→VFS | lcall to VFS segment works, vfs_init code runs |
-| Far call VFS→core | ✓ Fixed — mod_core.kmem_pool_init/klogf work from VFS |
-| VFS fully initialised | "64 vnodes, 8 mount slots" — both directions verified |
-| fstab parsed | VFS reads /etc/fstab (8 entries) from UFS |
-
-**Far-call stub fix (resolved):**
-
-The original `lcall; ret` pattern left extra return addresses on the
-stack, shifting BP-relative argument offsets.  Fixed by converting the
-caller stub from `lcall+ret` to `pop ret; push CS; push ret; ljmp`.
-The entry stub pops the far frame, `call`s the real function (which
-sees args at correct offsets), then restores the far frame and `lret`s.
-
-**Done (continued):**
-
-| Item | Details |
-|------|---------|
-| SS: prefix in stubs | Assembly stubs use `%ss:` for all data access (DS is scratch) |
-| floppy_blk registered | `blkdev_init` + `floppy_blk_init` + `blkdev_find("fd0")` all work |
-| mount_ufs wired | `target_mount_rootfs` calls `mod_vfs.mount_ufs("/", MNT_RDONLY, bd)` |
-| mod_vfs.mount_ufs | Added to VFS module (12 entries), far call reaches VFS code |
-
-**Bugs found and fixed:**
-
-| Bug | Root cause | Fix |
-|-----|-----------|-----|
-| INT 13h returns "not ready" | PIT timer replaced BIOS INT 08h handler, breaking floppy motor control | Defer `timer_init` to `target_post_mount` |
-| VFS→core function call crashes | DS clobbered by VFS (used as scratch register), core functions need DS=0 | Entry stubs restore DS=0 before calling C functions |
-| blkdev_read call goes to address 0 | `core_blkdev_read` was `static`, entry stub couldn't resolve symbol | Remove `static` from blkdev wrappers |
-| Near function pointer crosses segments | `blkdev_t.read = floppy_read` is a near pointer valid only in core's CS | Add `mod_core.blkdev_read` far-call wrapper |
-
-**Status: ✓ Complete** — kernel boots, mounts UFS floppy, reads fstab,
-starts scheduler.
-
-**Remaining for full P-4b:**
-
-1. **Write elf16_loader or COM loader** for i16 user-space exec
-2. **Test end-to-end** — boot to "Hello from user!"
-
-**Verification**: Kernel mounts floppy UFS, loads /sbin/init, prints
-"Hello from user!".
-
-### Phase P-5: User-Space Exec and Tests
-
-**Goal**: Full user-space support, `runtests` passes.
-
-1. Signal delivery for i16
-2. More syscalls (fork, waitpid, pipe)
-3. `--test ibmpc` in run.sh
-
-**Verification**: "ALL TESTS PASSED" in serial log.
-
-### Phase P-5b: Hard Disk (IDE/ATA) Boot Support
+**Status**: Not started.
 
 **Goal**: PPAP boots from an HDD image and mounts a UFS root volume,
 using BIOS INT 13h for all disk I/O (no direct ATA/IDE driver).
@@ -1267,7 +875,11 @@ the PC/XT target scope.
 **Verification**: `qemu-system-i386 -hda ppap.img` boots to shell,
 mounts UFS root from the HDD partition, runs runtests.
 
-### Phase P-6: V30 8080 Mode eCPU
+---
+
+## 10. Phase P-6: V30 8080 Mode eCPU
+
+**Status**: Not started.
 
 **Goal**: CP/M-80 programs run on V30 hardware 8080 mode.
 
@@ -1277,7 +889,11 @@ mounts UFS root from the HDD partition, runs runtests.
 
 **Verification**: MBASIC runs, prints output, exits cleanly.
 
-### Phase P-7: DOS Subsystem
+---
+
+## 11. Phase P-7: DOS Subsystem
+
+**Status**: Not started.
 
 **Goal**: MS-DOS .COM programs run with INT 21h bridge.
 
@@ -1287,7 +903,11 @@ mounts UFS root from the HDD partition, runs runtests.
 
 **Verification**: "Hello, world" DOS .COM runs and prints output.
 
-### Phase P-8: Real Hardware
+---
+
+## 12. Phase P-8: Real Hardware
+
+**Status**: Not started.
 
 **Goal**: PPAP boots on physical V30 hardware (PC/XT or compatible).
 
@@ -1300,7 +920,9 @@ mounts UFS root from the HDD partition, runs runtests.
 
 **Verification**: PPAP boots and runs tests on physical hardware.
 
-### Phase P-9: Extended Features
+---
+
+## 13. Phase P-9: Extended Features
 
 - Software Z80 eCPU (fallback for Z80 CP/M programs on V30)
 - Direct video driver (replacing BIOS INT 10h)
@@ -1310,55 +932,47 @@ mounts UFS root from the HDD partition, runs runtests.
 
 ---
 
-## 11. Risks and Open Questions
+## 14. Dependency Graph
 
-### 11.1 Kernel Size vs. 64 KB Code Segment
+```
+P-1 through P-4b (complete — kernel boots, mounts UFS, scheduler runs)
+  └─→ P-5 (user-space exec + tests)
+        ├─→ P-5b (HDD boot via BIOS INT 13h)
+        ├─→ P-6 (V30 8080 eCPU)
+        └─→ P-7 (DOS subsystem)
+              └─→ P-8 (real hardware)
+                    └─→ P-9 (extended features)
+```
 
-The PPAP kernel is ~80–150 KB on m68k with all features.  On 8086, code
-may be larger (16-bit addressing needs more instructions for 32-bit
-arithmetic) or smaller (simpler ABI).  If it exceeds 64 KB, options:
+P-5b, P-6, and P-7 can be developed in parallel after P-5.  P-8 requires
+at least P-5 (tests passing on emulator) before attempting real hardware.
 
-1. Disable optional features (eCPU Z80 software emulator, DOS subsystem)
-   to stay within 64 KB.
-2. Use compact model (multiple CS values, far calls between modules).
-3. Split kernel into a resident core (≤64 KB) and loadable overlays.
+---
 
-Option 1 is recommended initially.  The V30 port can start minimal.
+## 15. Risks and Open Questions
 
-### 11.2 V30 Availability
+### 15.1 V30 Availability
 
 V30 is required only for hardware 8080 mode.  On a standard 8086/8088 PC,
 the same kernel works but falls back to the software 8080/Z80 emulator.
 This should be a runtime detection, not a build-time switch.
 
-### 11.3 Toolchain
+### 15.2 Toolchain
 
-PPAP's current build uses `arm-none-eabi-gcc` and `m68k-elf-gcc`.  For
-8086 real mode, options:
+`ia16-elf-gcc` (GCC port for 16-bit x86, actively maintained) is used
+for all C and assembly code.  The Docker image `ppap/ia16` bundles the
+toolchain and QEMU.  Build via `./scripts/run.sh --build ibmpc`.
 
-- **ia16-elf-gcc** — GCC port for 16-bit x86 (actively maintained,
-  available via `gcc-ia16` packages).  Recommended.
-- **OpenWatcom** — Classic 16-bit x86 C compiler.  Good codegen but
-  different calling convention.
-- **NASM/FASM + C** — Assembly for arch layer, C via ia16-elf-gcc for
-  kernel.
+### 15.3 Emulator for Development
 
-Recommended: `ia16-elf-gcc` for C code, NASM for assembly files in
-`src/arch/i8086/`.
-
-### 11.4 Emulator for Development
-
+- **QEMU** — `qemu-system-i386` via Docker.  Primary development
+  emulator.  Does not emulate V30 8080 mode.
 - **86Box** — cycle-accurate PC/XT emulation, supports V30 CPU selection,
-  serial port passthrough, floppy images.  Recommended primary emulator.
+  serial port passthrough, floppy images.  Recommended for V30/8080 testing.
 - **PCem** — similar capabilities, slightly different UI.
-- **QEMU** — `qemu-system-i386` with `-cpu 486` can test 8086 code but
-  does not emulate V30 8080 mode.  Useful for non-8080 testing only.
 - **MartyPC** — Rust-based cycle-accurate IBM PC 5150 emulator.
 
-86Box is recommended because it explicitly supports V30 CPU selection
-and has good debugging facilities.
-
-### 11.5 8080 Mode I/O Port Conflict
+### 15.4 8080 Mode I/O Port Conflict
 
 8080 `IN`/`OUT` instructions access real x86 I/O ports.  If a CP/M program
 does `OUT 0x20, A` it would send an EOI to the PIC.  Mitigation: the CP/M
@@ -1366,7 +980,7 @@ BIOS should not expose I/O ports directly; programs that bypass BIOS for
 I/O are inherently non-portable and unlikely to work on any non-native
 platform.
 
-### 11.6 Interrupt Handling During 8080 Mode
+### 15.5 Interrupt Handling During 8080 Mode
 
 When the V30 is executing in 8080 mode, hardware interrupts (timer, UART)
 are still delivered using 8080 interrupt handling semantics.  The timer ISR
@@ -1384,27 +998,7 @@ at trap points.
 
 ---
 
-## 12. Dependency Graph
-
-```
-P-1 (console + kernel build)
-  └─→ P-2 (PIT timer + context switch)
-        └─→ P-3 (stage1/2 + floppy image)
-              └─→ P-4 (integration tests)
-                    └─→ P-5 (user-space exec + tests)
-                          ├─→ P-5b (HDD boot via BIOS INT 13h)
-                          ├─→ P-6 (V30 8080 eCPU)
-                          └─→ P-7 (DOS subsystem)
-                                └─→ P-8 (real hardware)
-                                      └─→ P-9 (extended features)
-```
-
-P-5b, P-6, and P-7 can be developed in parallel after P-5.  P-8 requires
-at least P-5 (tests passing on emulator) before attempting real hardware.
-
----
-
-## 13. Related Documentation
+## 16. Related Documentation
 
 - [docs/kernel/overview.md](../kernel/overview.md) — PPAP kernel architecture
 - [docs/kernel/trace.md](../kernel/trace.md) — Trace and debug subsystem
