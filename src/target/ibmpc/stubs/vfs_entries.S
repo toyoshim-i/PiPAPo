@@ -76,5 +76,21 @@ vfs_\name\()_entry:
   .set vfs_tty_rx_notify, tty_rx_notify
   VFS_TARGET_STUB tty_rx_notify
   VFS_TARGET_STUB fstab_automount
+  VFS_TARGET_STUB fd_open
+  VFS_TARGET_STUB fd_release
+  VFS_TARGET_STUB fd_ref
+  VFS_TARGET_STUB fd_pipe_create
+  VFS_TARGET_STUB fd_stdio_desc
+  VFS_TARGET_STUB fd_read
+  VFS_TARGET_STUB fd_write
+  VFS_TARGET_STUB fd_ioctl
+  VFS_TARGET_STUB fd_poll
+  VFS_TARGET_STUB fd_lseek
+  VFS_TARGET_STUB fd_fstat
+  VFS_TARGET_STUB fd_getdents
+  VFS_TARGET_STUB fd_getdents64
+  VFS_TARGET_STUB fd_fstatfs
+  VFS_TARGET_STUB fd_fcntl
+  VFS_TARGET_STUB fd_get_priv
 
 #endif /* __ia16__ */

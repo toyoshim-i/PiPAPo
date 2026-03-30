@@ -44,6 +44,22 @@ vfs_fptrs:
   .word 0, 0    /* [14] vfs_file_pool_init_entry */
   .word 0, 0    /* [15] vfs_tty_rx_notify_entry */
   .word 0, 0    /* [16] vfs_fstab_automount_entry */
+  .word 0, 0    /* [17] vfs_fd_open_entry */
+  .word 0, 0    /* [18] vfs_fd_release_entry */
+  .word 0, 0    /* [19] vfs_fd_ref_entry */
+  .word 0, 0    /* [20] vfs_fd_pipe_create_entry */
+  .word 0, 0    /* [21] vfs_fd_stdio_desc_entry */
+  .word 0, 0    /* [22] vfs_fd_read_entry */
+  .word 0, 0    /* [23] vfs_fd_write_entry */
+  .word 0, 0    /* [24] vfs_fd_ioctl_entry */
+  .word 0, 0    /* [25] vfs_fd_poll_entry */
+  .word 0, 0    /* [26] vfs_fd_lseek_entry */
+  .word 0, 0    /* [27] vfs_fd_fstat_entry */
+  .word 0, 0    /* [28] vfs_fd_getdents_entry */
+  .word 0, 0    /* [29] vfs_fd_getdents64_entry */
+  .word 0, 0    /* [30] vfs_fd_fstatfs_entry */
+  .word 0, 0    /* [31] vfs_fd_fcntl_entry */
+  .word 0, 0    /* [32] vfs_fd_get_priv_entry */
 vfs_fptrs_end:
 
   .section .text
@@ -82,5 +98,21 @@ vfs_\name:
   VFS_CALLER_STUB file_pool_init, 14
   VFS_CALLER_STUB tty_rx_notify,  15
   VFS_CALLER_STUB fstab_automount, 16
+  VFS_CALLER_STUB fd_open,         17
+  VFS_CALLER_STUB fd_release,      18
+  VFS_CALLER_STUB fd_ref,          19
+  VFS_CALLER_STUB fd_pipe_create,  20
+  VFS_CALLER_STUB fd_stdio_desc,   21
+  VFS_CALLER_STUB fd_read,         22
+  VFS_CALLER_STUB fd_write,        23
+  VFS_CALLER_STUB fd_ioctl,        24
+  VFS_CALLER_STUB fd_poll,         25
+  VFS_CALLER_STUB fd_lseek,        26
+  VFS_CALLER_STUB fd_fstat,        27
+  VFS_CALLER_STUB fd_getdents,     28
+  VFS_CALLER_STUB fd_getdents64,   29
+  VFS_CALLER_STUB fd_fstatfs,      30
+  VFS_CALLER_STUB fd_fcntl,        31
+  VFS_CALLER_STUB fd_get_priv,     32
 
 #endif /* __ia16__ */

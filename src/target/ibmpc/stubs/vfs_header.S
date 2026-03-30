@@ -45,6 +45,22 @@ vfs_entry_table:
   .word vfs_file_pool_init_entry
   .word vfs_tty_rx_notify_entry
   .word vfs_fstab_automount_entry
+  .word vfs_fd_open_entry
+  .word vfs_fd_release_entry
+  .word vfs_fd_ref_entry
+  .word vfs_fd_pipe_create_entry
+  .word vfs_fd_stdio_desc_entry
+  .word vfs_fd_read_entry
+  .word vfs_fd_write_entry
+  .word vfs_fd_ioctl_entry
+  .word vfs_fd_poll_entry
+  .word vfs_fd_lseek_entry
+  .word vfs_fd_fstat_entry
+  .word vfs_fd_getdents_entry
+  .word vfs_fd_getdents64_entry
+  .word vfs_fd_fstatfs_entry
+  .word vfs_fd_fcntl_entry
+  .word vfs_fd_get_priv_entry
 vfs_entry_table_end:
   /* DS=0 address of core_fptrs table (for core to patch) */
   .word core_fptrs
