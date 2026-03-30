@@ -78,14 +78,15 @@ endif()
 # Install destinations: init -> sbin, ttyctl -> usr/bin, others -> bin
 
 # Optional per-app extra sources (for multi-file user programs).
+set(PPAP_USER_MAIN_SOURCE_pdb ${PPAP_ROOT}/src/user/pdb/pdb.c)
 set(PPAP_USER_EXTRA_SOURCES_pdb
-    ${PPAP_ROOT}/src/user/pdb_util.c
-    ${PPAP_ROOT}/src/user/pdb_trace_util.c
-    ${PPAP_ROOT}/src/user/pdb_cmd.c
-    ${PPAP_ROOT}/src/user/pdb_regs.c
-    ${PPAP_ROOT}/src/user/pdb_target.c
-    ${PPAP_ROOT}/src/user/pdb_inspect.c
-    ${PPAP_ROOT}/src/user/pdb_break.c
+    ${PPAP_ROOT}/src/user/pdb/pdb_util.c
+    ${PPAP_ROOT}/src/user/pdb/pdb_trace_util.c
+    ${PPAP_ROOT}/src/user/pdb/pdb_cmd.c
+    ${PPAP_ROOT}/src/user/pdb/pdb_regs.c
+    ${PPAP_ROOT}/src/user/pdb/pdb_target.c
+    ${PPAP_ROOT}/src/user/pdb/pdb_inspect.c
+    ${PPAP_ROOT}/src/user/pdb/pdb_break.c
 )
 set(PPAP_USER_EXTRA_SOURCES_push
     ${PPAP_ROOT}/src/user/push_line.c
@@ -376,6 +377,7 @@ function(ppap_user_program name source)
                 OUTPUT ${_obj}
                 COMMAND ${PPAP_CC} ${_cflags} -c -o ${_obj} ${_src}
                 DEPENDS ${_src} ${PPAP_ROOT}/src/user/syscall.h
+                        ${PPAP_ROOT}/src/user/lib/uclib.h
                 COMMENT "Compiling ${name}_${_src_base}.o (${PPAP_ARCH})"
             )
         endif()
@@ -539,8 +541,19 @@ function(_ppap_build_user_programs)
         DEPENDS ${PPAP_ARCH_DIR}/syscall.S
         COMMENT "Assembling syscall.o (${PPAP_ARCH})"
     )
+    add_custom_command(
+        OUTPUT ${PPAP_SHARED_BUILD}/uclib.o
+        COMMAND ${PPAP_CC} ${PPAP_USER_CFLAGS}
+                -ffunction-sections -fdata-sections
+                -c -o ${PPAP_SHARED_BUILD}/uclib.o
+                ${PPAP_ROOT}/src/user/lib/uclib.c
+        DEPENDS ${PPAP_ROOT}/src/user/lib/uclib.c
+                ${PPAP_ROOT}/src/user/lib/uclib.h
+        COMMENT "Compiling uclib.o (${PPAP_ARCH})"
+    )
     set(PPAP_CRT_OBJS
-        ${PPAP_SHARED_BUILD}/crt0.o ${PPAP_SHARED_BUILD}/syscall.o)
+        ${PPAP_SHARED_BUILD}/crt0.o ${PPAP_SHARED_BUILD}/syscall.o
+        ${PPAP_SHARED_BUILD}/uclib.o)
 
     # --- Application programs ---
     set(_all_elfs "")
@@ -548,6 +561,8 @@ function(_ppap_build_user_programs)
         # getty: ARM uses arch-specific .S (no CRT), m68k uses generic .c
         if(app STREQUAL "getty" AND EXISTS ${PPAP_ARCH_DIR}/getty.S)
             ppap_user_program(${app} ${PPAP_ARCH_DIR}/getty.S NO_CRT)
+        elseif(DEFINED PPAP_USER_MAIN_SOURCE_${app})
+            ppap_user_program(${app} ${PPAP_USER_MAIN_SOURCE_${app}})
         else()
             ppap_user_program(${app} ${PPAP_ROOT}/src/user/${app}.c)
         endif()

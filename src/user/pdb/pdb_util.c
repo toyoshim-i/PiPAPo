@@ -4,72 +4,6 @@
 #define PDB_SCRIPT_LINE_MAX 128
 #define PDB_SCRIPT_BUF_MAX 2048
 
-void put_str(const char *s) {
-  int n = 0;
-  while (s[n]) n++;
-  write(1, s, (size_t)n);
-}
-
-void put_err(const char *s) {
-  int n = 0;
-  while (s[n]) n++;
-  write(2, s, (size_t)n);
-}
-
-void put_chr(char c) { write(1, &c, 1); }
-
-void put_u32(uint32_t v) {
-  static const uint32_t pw[] = {1000000000u, 100000000u, 10000000u, 1000000u,
-                                100000u,     10000u,     1000u,     100u,
-                                10u,         1u};
-  int started = 0;
-
-  if (v == 0) {
-    put_chr('0');
-    return;
-  }
-
-  for (int i = 0; i < 10; i++) {
-    uint32_t d = 0;
-    while (v >= pw[i]) {
-      v -= pw[i];
-      d++;
-    }
-    if (d || started) {
-      put_chr((char)('0' + d));
-      started = 1;
-    }
-  }
-}
-
-void put_i32(int32_t v) {
-  if (v < 0) {
-    put_chr('-');
-    put_u32((uint32_t)(-v));
-    return;
-  }
-  put_u32((uint32_t)v);
-}
-
-void put_hex32(uint32_t v) {
-  static const char hex[] = "0123456789abcdef";
-  put_str("0x");
-  for (int s = 28; s >= 0; s -= 4) put_chr(hex[(v >> s) & 0xf]);
-}
-
-void put_hex16(uint32_t v) {
-  static const char hex[] = "0123456789abcdef";
-  put_str("0x");
-  for (int s = 12; s >= 0; s -= 4) put_chr(hex[(v >> s) & 0xf]);
-}
-
-void put_hex8(uint32_t v) {
-  static const char hex[] = "0123456789abcdef";
-  put_str("0x");
-  put_chr(hex[(v >> 4) & 0xf]);
-  put_chr(hex[v & 0xf]);
-}
-
 uint32_t select_bp_flag_from_caps(uint32_t caps_bits) {
   if (caps_bits & PPAP_PTRACE_CAP_SW_BP) return PPAP_PTRACE_BP_SW;
   if (caps_bits & PPAP_PTRACE_CAP_HW_BP) return PPAP_PTRACE_BP_HW;
@@ -80,14 +14,6 @@ const char *bp_flag_name(uint32_t flags) {
   if (flags & PPAP_PTRACE_BP_SW) return "sw";
   if (flags & PPAP_PTRACE_BP_HW) return "hw";
   return "unknown";
-}
-
-int streq(const char *a, const char *b) {
-  while (*a && *b && *a == *b) {
-    a++;
-    b++;
-  }
-  return *a == *b;
 }
 
 int readline(char *buf, int size) {

@@ -1,58 +1,15 @@
 #include "common/syscall_nr.h"
-#include "syscall.h"
+#include "lib/uclib.h"
 
-static void put_str(const char *s) {
-  int len = 0;
-  while (s[len]) len++;
-  write(1, s, len);
-}
+#define put_str uc_puts
+#define put_chr uc_putc
+#define put_u32 uc_putu
+#define put_hex32 uc_putx32
+#define put_hex16 uc_putx16
 
-static void put_chr(char c) { write(1, &c, 1); }
+static void put_nl(void) { uc_putc('\n'); }
 
-static void put_u32(uint32_t v) {
-  static const uint32_t pw[] = {1000000000u, 100000000u, 10000000u, 1000000u,
-                                100000u,     10000u,     1000u,     100u,
-                                10u,         1u};
-  int started = 0;
-
-  if (v == 0) {
-    put_chr('0');
-    return;
-  }
-  for (int i = 0; i < 10; i++) {
-    uint32_t d = 0;
-    while (v >= pw[i]) {
-      v -= pw[i];
-      d++;
-    }
-    if (d || started) {
-      put_chr((char)('0' + d));
-      started = 1;
-    }
-  }
-}
-
-static void put_hex32(uint32_t v) {
-  static const char hex[] = "0123456789abcdef";
-  put_str("0x");
-  for (int shift = 28; shift >= 0; shift -= 4) put_chr(hex[(v >> shift) & 0xf]);
-}
-
-static void put_hex16(uint32_t v) {
-  static const char hex[] = "0123456789abcdef";
-  put_str("0x");
-  for (int shift = 12; shift >= 0; shift -= 4) put_chr(hex[(v >> shift) & 0xf]);
-}
-
-static void put_nl(void) { put_chr('\n'); }
-
-static int streq(const char *a, const char *b) {
-  while (*a && *b && *a == *b) {
-    a++;
-    b++;
-  }
-  return *a == *b;
-}
+static int streq(const char *a, const char *b) { return uc_strcmp(a, b) == 0; }
 
 static const char *event_name(uint32_t event) {
   switch (event) {
