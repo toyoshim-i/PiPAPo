@@ -144,8 +144,14 @@ typedef uint16_t page_id_t;
 /* Allocate one page, return its index (or PAGE_ID_INVALID on OOM). */
 page_id_t mm_page_alloc(void);
 
+/* Allocate n contiguous pages, return base index (or PAGE_ID_INVALID). */
+page_id_t mm_page_alloc_contiguous(uint32_t n_pages);
+
 /* Free a page by index. */
 void mm_page_free(page_id_t id);
+
+/* Return the 32-bit linear address of a page by index. */
+uint32_t mm_page_linear(page_id_t id);
 
 /* Read `len` bytes from page `id` at byte offset `off` into `buf`. */
 void mm_page_read(page_id_t id, uint16_t off, void *buf, uint16_t len);

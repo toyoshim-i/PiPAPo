@@ -91,79 +91,108 @@ static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   /* Round up to page boundary, add stack space */
   uint32_t alloc_size = ((mem_end + ELF16_STACK_SIZE + PAGE_SIZE - 1)
                          / PAGE_SIZE) * PAGE_SIZE;
+  uint16_t npages = (uint16_t)(alloc_size / PAGE_SIZE);
 
-  /* Allocate process memory */
-  proc_image_segment_t region = {0};
-  if (mem_region_alloc(&region, PPAP_MEM_RAM_DATA, alloc_size,
-                       PROC_IMAGE_SEG_WRITABLE |
-                           PROC_IMAGE_SEG_OWNED) < 0) {
-    return -ENOMEM;
+  /* Allocate contiguous pages via page-indexed API.
+   * mm_page_alloc_contiguous returns a page_id_t (index), not a
+   * pointer — safe on i16 where near pointers can't address pages
+   * above 64 KB.  mm_page_write copies data via segment:offset. */
+  if (npages > 16) return -ENOMEM;
+  page_id_t base_id = mm_page_alloc_contiguous(npages);
+  if (base_id == PAGE_ID_INVALID) return -ENOMEM;
+
+  /* Zero entire region via page-indexed writes */
+  {
+    uint8_t zeros[256];
+    memset(zeros, 0, sizeof(zeros));
+    for (uint16_t pg = 0; pg < npages; pg++) {
+      for (uint16_t off = 0; off < PAGE_SIZE; off += sizeof(zeros))
+        mm_page_write(base_id + pg, off, zeros, sizeof(zeros));
+    }
   }
-  uint8_t *base = (uint8_t *)region.base;
 
-  /* Zero entire region (covers BSS and gaps) */
-  memset(base, 0, alloc_size);
-
-  /* Second pass: copy PT_LOAD segment data */
+  /* Second pass: copy PT_LOAD segment data via mm_page_write */
   for (uint16_t i = 0; i < ehdr->e_phnum; i++) {
     if (phdrs[i].p_type != PT_LOAD) continue;
     if (phdrs[i].p_filesz == 0) continue;
 
-    /* Validate file offsets */
     if (phdrs[i].p_offset + phdrs[i].p_filesz > file_size) {
-      mem_region_free(&region);
+      for (uint16_t j = 0; j < npages; j++)
+        mm_page_free(base_id + j);
       return -ENOEXEC;
     }
 
-    memcpy(base + phdrs[i].p_vaddr,
-           file_buf + phdrs[i].p_offset,
-           phdrs[i].p_filesz);
-  }
+    uint32_t vaddr = phdrs[i].p_vaddr;
+    uint32_t remaining = phdrs[i].p_filesz;
+    const uint8_t *src = file_buf + phdrs[i].p_offset;
 
-  /* Track pages for process memory management */
-  uint16_t npages = (uint16_t)(alloc_size / PAGE_SIZE);
-  for (uint16_t i = 0; i < npages; i++) {
-    if (proc_track_page(p, i, base + i * PAGE_SIZE) < 0) {
-      mem_region_free(&region);
-      return -ENOMEM;
+    while (remaining > 0) {
+      uint16_t pg_idx = (uint16_t)(vaddr / PAGE_SIZE);
+      uint16_t pg_off = (uint16_t)(vaddr % PAGE_SIZE);
+      uint16_t chunk = PAGE_SIZE - pg_off;
+      if (chunk > remaining) chunk = (uint16_t)remaining;
+
+      mm_page_write(base_id + pg_idx, pg_off, src, chunk);
+      src += chunk;
+      vaddr += chunk;
+      remaining -= chunk;
     }
   }
 
-  /* Entry point and stack setup.
-   * Each user process gets CS=DS=ES = base>>4.  The ELF is linked at
-   * vaddr 0, so e_entry and $msg are segment-relative offsets that
-   * work directly with CS/DS set to the load segment.
-   * SS stays 0 (kernel flat space) — stack operations use absolute
-   * addresses.  SP points into the allocated region. */
-  uint16_t proc_seg = (uint16_t)((uintptr_t)base >> 4);
+  /* Compute process segment from the 32-bit linear address of page 0.
+   * page_linear[] holds the full 20-bit+ address, avoiding truncation. */
+  uint32_t base_linear = mm_page_linear(base_id);
+  uint16_t proc_seg = (uint16_t)(base_linear >> 4);
   uint16_t entry_ip = (uint16_t)ehdr->e_entry;
-  uint16_t sp_abs = (uint16_t)((uintptr_t)base + alloc_size);
+
+  /* Stack: SP is an absolute linear address (SS=0).
+   * Stack top = base_linear + alloc_size. */
+  uint32_t sp_linear = base_linear + alloc_size;
 
   /* Build the initial interrupt frame on the process stack.
-   * SP is an absolute address (SS=0), but CS/DS/ES use proc_seg. */
-  uint16_t *frame = (uint16_t *)(uintptr_t)sp_abs;
+   * Use mm_page_write to place it (avoids near-pointer truncation).
+   * Frame grows downward: HW frame (6B) on top, then SW frame (18B). */
+  uint16_t hw_frame[3];
+  hw_frame[0] = entry_ip;     /* IP */
+  hw_frame[1] = proc_seg;     /* CS */
+  hw_frame[2] = 0x0200;       /* FLAGS: IF=1 */
 
-  /* Hardware interrupt frame (popped by IRET) */
-  *--frame = 0x0200;     /* FLAGS: IF=1 */
-  *--frame = proc_seg;   /* CS = process segment */
-  *--frame = entry_ip;   /* IP = entry point (segment-relative) */
+  uint16_t sw_frame[9];
+  sw_frame[0] = proc_seg;     /* ES = process segment */
+  sw_frame[1] = proc_seg;     /* DS = process segment */
+  sw_frame[2] = 0;            /* BP */
+  sw_frame[3] = 0;            /* DI */
+  sw_frame[4] = 0;            /* SI */
+  sw_frame[5] = 0;            /* DX */
+  sw_frame[6] = 0;            /* CX */
+  sw_frame[7] = 0;            /* BX */
+  sw_frame[8] = 0;            /* AX */
 
-  /* Software-saved registers (popped by ISR restore path) */
-  *--frame = 0;          /* AX */
-  *--frame = 0;          /* BX */
-  *--frame = 0;          /* CX */
-  *--frame = 0;          /* DX */
-  *--frame = 0;          /* SI */
-  *--frame = 0;          /* DI */
-  *--frame = 0;          /* BP */
-  *--frame = proc_seg;   /* DS = process segment */
-  *--frame = proc_seg;   /* ES = process segment */
+  uint32_t hw_pos = sp_linear - sizeof(hw_frame);
+  uint16_t hw_pg = (uint16_t)((hw_pos - base_linear) / PAGE_SIZE);
+  uint16_t hw_off = (uint16_t)((hw_pos - base_linear) % PAGE_SIZE);
+  mm_page_write(base_id + hw_pg, hw_off, hw_frame, sizeof(hw_frame));
 
-  p->sp = (uint32_t)(uintptr_t)frame;
+  uint32_t sw_pos = hw_pos - sizeof(sw_frame);
+  uint16_t sw_pg = (uint16_t)((sw_pos - base_linear) / PAGE_SIZE);
+  uint16_t sw_off = (uint16_t)((sw_pos - base_linear) % PAGE_SIZE);
+  mm_page_write(base_id + sw_pg, sw_off, sw_frame, sizeof(sw_frame));
 
-  p->image.text = proc_image_segment_make(base, mem_end, PPAP_MEM_RAM_TEXT,
-                                          PROC_IMAGE_SEG_EXECUTABLE);
-  p->image.data = region;
+  p->sp = (uint32_t)sw_pos;
+
+  /* Track pages (proc_track_page uses near pointer — truncated on i16,
+   * but only used for bookkeeping, not for actual memory access) */
+  for (uint16_t i = 0; i < npages; i++)
+    proc_track_page(p, i, (void *)(uintptr_t)
+                    (uint16_t)(base_linear + i * PAGE_SIZE));
+
+  p->image.text = proc_image_segment_make(
+      (void *)(uintptr_t)(uint16_t)base_linear, mem_end,
+      PPAP_MEM_RAM_TEXT, PROC_IMAGE_SEG_EXECUTABLE);
+  p->image.data = proc_image_segment_make(
+      (void *)(uintptr_t)(uint16_t)base_linear, alloc_size,
+      PPAP_MEM_RAM_DATA,
+      PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED);
   p->image.entry = (uintptr_t)entry_ip;
   p->ticks_remaining = PROC_DEFAULT_TICKS;
 

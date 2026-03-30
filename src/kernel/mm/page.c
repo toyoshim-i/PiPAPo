@@ -419,6 +419,54 @@ uint8_t *page_alloc_contiguous(uint32_t n_pages) {
   return (uint8_t *)(uintptr_t)base_addr;
 }
 
+/* Contiguous allocation returning base page_id_t (i16-safe). */
+page_id_t mm_page_alloc_contiguous(uint32_t n_pages) {
+  if (n_pages == 0) return PAGE_ID_INVALID;
+  if (n_pages == 1) return mm_page_alloc();
+
+  uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
+
+  uint32_t n_words = (page_count + 31) / 32;
+  uint32_t bmap[n_words];
+  build_free_bitmap(bmap, n_words);
+
+  uint32_t run_start = 0, run_len = 0;
+  uint32_t found_start = 0;
+  int found = 0;
+
+  for (uint32_t i = 0; i < page_count; i++) {
+    if (bmap_test(bmap, i)) {
+      if (run_len == 0) run_start = i;
+      run_len++;
+      if (run_len >= n_pages) {
+        found_start = run_start;
+        found = 1;
+        break;
+      }
+    } else {
+      run_len = 0;
+    }
+  }
+
+  if (!found) {
+    spin_unlock_irqrestore(SPIN_PAGE, saved);
+    return PAGE_ID_INVALID;
+  }
+
+  uint32_t new_top = 0;
+  for (uint32_t i = 0; i < free_top; i++) {
+    page_id_t pid = free_stack[i];
+    if (pid >= found_start && pid < found_start + n_pages) {
+    } else {
+      free_stack[new_top++] = free_stack[i];
+    }
+  }
+  free_top = new_top;
+
+  spin_unlock_irqrestore(SPIN_PAGE, saved);
+  return (page_id_t)found_start;
+}
+
 /* ── Page-indexed API ────────────────────────────────────────────────────── */
 
 page_id_t mm_page_alloc(void) {
@@ -439,6 +487,11 @@ page_id_t mm_page_alloc(void) {
   free_stack[best] = free_stack[--free_top];
   spin_unlock_irqrestore(SPIN_PAGE, saved);
   return id;
+}
+
+uint32_t mm_page_linear(page_id_t id) {
+  if (id >= page_count) return 0;
+  return page_linear[id];
 }
 
 void mm_page_free(page_id_t id) {
