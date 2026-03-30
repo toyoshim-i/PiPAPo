@@ -32,7 +32,15 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
   }
 
   /* ── 1. Look up the binary in the VFS ──────────────────────────────── */
+#ifdef __ia16__
+  klogf("EXEC: &vn=%lx path=%s\n", (unsigned long)(uintptr_t)&vn, path);
+#endif
   err = mod_vfs.lookup(path, &vn);
+#ifdef __ia16__
+  klogf("EXEC: err=%u vn=%lx\n",
+        (unsigned)(err < 0 ? -err : 0),
+        (unsigned long)(uintptr_t)vn);
+#endif
   if (err < 0) return err;
 
   if (vn->type != VNODE_FILE) {
@@ -60,11 +68,22 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
     file_buf = (uint8_t *)file_region.base;
 
     if (!vn->mount || !vn->mount->ops || !vn->mount->ops->read) {
+#ifdef __ia16__
+      klogf("EXEC: no read op (mount=%lx ops=%lx)\n",
+            (unsigned long)(uintptr_t)vn->mount,
+            (unsigned long)(uintptr_t)(vn->mount ? vn->mount->ops : 0));
+#endif
       mem_region_free(&file_region);
       mod_vfs.rel_vnode(vn);
       return -(int)ENOEXEC;
     }
 
+#ifdef __ia16__
+    klogf("EXEC: reading %lu bytes (xip=%lx read=%lx)\n",
+          (unsigned long)file_size,
+          (unsigned long)(uintptr_t)vn->xip_addr,
+          (unsigned long)(uintptr_t)vn->mount->ops->read);
+#endif
     long nread = vn->mount->ops->read(vn, file_buf, file_size, 0);
     if (nread < 0 || (uint32_t)nread != file_size) {
       mem_region_free(&file_region);
