@@ -270,6 +270,13 @@ int vfs_mount_ufs(const char *path, uint8_t flags, const void *dev_data)
 /* Alias for MOD_IMPL convention: vfs_fd_stdio_init → fd_stdio_init */
 #define vfs_fd_stdio_init fd_stdio_init
 
+/* Cross-module wrapper: execute ops->read in VFS's code segment. */
+long vfs_file_read(vnode_t *vn, void *buf, uint32_t size, uint32_t off) {
+  if (!vn || !vn->mount || !vn->mount->ops || !vn->mount->ops->read)
+    return -2; /* ENOENT */
+  return vn->mount->ops->read(vn, buf, size, off);
+}
+
 MOD_DEFINE_BEGIN(vfs)
   MOD_IMPL(vfs, init)
   MOD_IMPL(vfs, mount)
@@ -284,4 +291,5 @@ MOD_DEFINE_BEGIN(vfs)
   MOD_IMPL(vfs, ref_vnode)
   MOD_IMPL(vfs, rel_vnode)
   MOD_IMPL(vfs, fd_stdio_init)
+  MOD_IMPL(vfs, file_read)
 MOD_DEFINE_END()

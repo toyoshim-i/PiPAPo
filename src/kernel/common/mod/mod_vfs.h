@@ -181,12 +181,21 @@ MOD_DECLARE_BEGIN(vfs)
    */
   MOD_FUNC(vfs, void, fd_stdio_init, pcb_t *)
 
+  /*
+   * file_read — Read from a vnode via its mount's ops->read.
+   *
+   * Wraps vn->mount->ops->read() so the call executes in the VFS
+   * module's code segment.  Needed because ops->read is a near
+   * function pointer valid only in VFS's CS.
+   */
+  MOD_FUNC(vfs, long, file_read, vnode_t *, void *, uint32_t, uint32_t)
+
 MOD_DECLARE_END(vfs)
 
 /* Number of function pointers in mod_vfs_t.
  * Must match entry_count in vfs_header.S, vfs_stubs.S slot count,
  * and vfs_entries.S stub count.  Static assert catches mismatches. */
-#define MOD_VFS_FUNC_COUNT 13
+#define MOD_VFS_FUNC_COUNT 14
 _Static_assert(sizeof(mod_vfs_t) == MOD_VFS_FUNC_COUNT * sizeof(void (*)(void)),
                "mod_vfs_t size mismatch — update MOD_VFS_FUNC_COUNT, "
                "vfs_header.S, vfs_stubs.S, and vfs_entries.S");

@@ -66,5 +66,6 @@ vfs_\name\()_entry:
   .global vfs_fd_stdio_init
   .set vfs_fd_stdio_init, fd_stdio_init
   VFS_TARGET_STUB fd_stdio_init
+  VFS_TARGET_STUB file_read
 
 #endif /* __ia16__ */

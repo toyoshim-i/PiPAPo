@@ -32,6 +32,7 @@ void vfs_rel_vnode(vnode_t *);
 struct pcb;
 typedef struct pcb pcb_t;
 void vfs_fd_stdio_init(pcb_t *);
+long vfs_file_read(vnode_t *, void *, uint32_t, uint32_t);
 
 /* Now include mod_vfs.h which declares mod_vfs_t */
 #include "common/mod/mod_vfs.h"
@@ -50,6 +51,7 @@ MOD_DEFINE_BEGIN(vfs)
   MOD_IMPL(vfs, ref_vnode)
   MOD_IMPL(vfs, rel_vnode)
   MOD_IMPL(vfs, fd_stdio_init)
+  MOD_IMPL(vfs, file_read)
 MOD_DEFINE_END()
 
 #endif /* __ia16__ */

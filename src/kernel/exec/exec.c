@@ -84,7 +84,7 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
           (unsigned long)(uintptr_t)vn->xip_addr,
           (unsigned long)(uintptr_t)vn->mount->ops->read);
 #endif
-    long nread = vn->mount->ops->read(vn, file_buf, file_size, 0);
+    long nread = mod_vfs.file_read(vn, file_buf, file_size, 0);
     if (nread < 0 || (uint32_t)nread != file_size) {
       mem_region_free(&file_region);
       mod_vfs.rel_vnode(vn);

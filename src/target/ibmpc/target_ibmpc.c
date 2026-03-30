@@ -103,7 +103,7 @@ static void patch_vfs_fptrs(uint16_t vfs_seg) {
   }
 
   uint16_t count = far_read16(vfs_seg, 2);
-  if (count > 13) count = 13;
+  if (count > 14) count = 14;
 
   /* Patch core→VFS far pointers (in core's vfs_fptrs table) */
   for (uint16_t i = 0; i < count; i++) {
