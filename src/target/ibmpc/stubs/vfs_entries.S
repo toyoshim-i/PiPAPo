@@ -61,6 +61,9 @@ vfs_\name\()_entry:
   VFS_TARGET_STUB alloc_vnode
   VFS_TARGET_STUB ref_vnode
   VFS_TARGET_STUB rel_vnode
+  /* fd_stdio_init lives in fd.c, not vfs.c — alias for the stub macro */
+  .global vfs_fd_stdio_init
+  .set vfs_fd_stdio_init, fd_stdio_init
   VFS_TARGET_STUB fd_stdio_init
 
 #endif /* __ia16__ */
