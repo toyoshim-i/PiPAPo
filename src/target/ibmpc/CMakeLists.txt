@@ -180,9 +180,11 @@ add_executable(ppap_ibmpc
 )
 
 target_include_directories(ppap_ibmpc PRIVATE ${PPAP_INCLUDES})
-# Limit page pool to near-pointer range (0xC000-0xFFFF = 4 pages).
-# TODO: replace with page-indexed memory model (page_id_t).
-target_compile_definitions(ppap_ibmpc PRIVATE PAGE_COUNT_MAX=4u)
+# 640 KB conventional RAM: pages from __page_pool_start to 0x9FC00.
+# free_stack[] uses page_id_t (16-bit index), not void*, so pages
+# beyond 64 KB are accessible.  ~150 pages typical (depends on
+# kernel size and VFS data reservation).
+target_compile_definitions(ppap_ibmpc PRIVATE PAGE_COUNT_MAX=150u)
 target_compile_options(ppap_ibmpc PRIVATE ${KERNEL_FLAGS})
 
 target_link_options(ppap_ibmpc PRIVATE

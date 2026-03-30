@@ -49,7 +49,7 @@ extern char __page_pool_start[];
 #define PAGE_POOL_BASE ((uintptr_t)__page_pool_start)
 #define PAGE_POOL_SIZE (PAGE_COUNT_MAX * PAGE_SIZE)
 #ifndef RAM_END
-#define RAM_END 0x9FC0u  /* 640 KB conventional - EBDA */
+#define RAM_END 0x9FC00ul  /* 640 KB conventional - EBDA */
 #endif
 #elif defined(__xtensa__)
 /* Xtensa / ESP32-S3: ESP-IDF manages the linker script.
