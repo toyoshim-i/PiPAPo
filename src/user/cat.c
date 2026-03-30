@@ -1,42 +1,95 @@
 /*
  * cat.c — concatenate and print files
  *
- * Usage: cat [file ...]
+ * Usage: cat [-nE] [file ...]
  * With no arguments, copies stdin to stdout.
+ * -n: number all output lines.
+ * -E: display $ at end of each line.
  */
 
 #include "lib/uclib.h"
 
+static int opt_number;
+static int opt_show_ends;
+static int line_nr;
+
 static int cat_fd(int fd) {
   char buf[256];
   ssize_t n;
+  int at_bol = 1; /* at beginning of line */
 
   while ((n = read(fd, buf, sizeof(buf))) > 0) {
-    ssize_t off = 0;
-    while (off < n) {
-      ssize_t w = write(1, buf + off, (size_t)(n - off));
-      if (w <= 0) return 1;
-      off += w;
+    for (ssize_t i = 0; i < n; i++) {
+      if (opt_number && at_bol) {
+        char tmp[12];
+        uc_snprintf(tmp, (int)sizeof(tmp), "%6d\t", ++line_nr);
+        uc_puts(tmp);
+      }
+      if (buf[i] == '\n') {
+        if (opt_show_ends) uc_putc('$');
+        uc_putc('\n');
+        at_bol = 1;
+      } else {
+        uc_putc(buf[i]);
+        at_bol = 0;
+      }
     }
   }
   return (n < 0) ? 1 : 0;
 }
 
 int main(int argc, char *argv[]) {
-  if (argc <= 1) return cat_fd(0);
+  int argi = 1;
+
+  while (argi < argc && argv[argi][0] == '-' &&
+         uc_strcmp(argv[argi], "-") != 0) {
+    if (uc_strcmp(argv[argi], "--help") == 0) {
+      uc_puts(
+          "Usage: cat [-nE] [file ...]\n"
+          "  -n  Number output lines\n"
+          "  -E  Show $ at end of each line\n"
+          "  -   Read from stdin\n");
+      return 0;
+    }
+    const char *p = argv[argi] + 1;
+    while (*p) {
+      switch (*p) {
+        case 'n':
+          opt_number = 1;
+          break;
+        case 'E':
+          opt_show_ends = 1;
+          break;
+        default:
+          uc_eputs("cat: unknown option: -");
+          uc_putc(*p);
+          uc_eputs("\n");
+          return 1;
+      }
+      p++;
+    }
+    argi++;
+  }
+
+  if (argi >= argc) return cat_fd(0);
 
   int rc = 0;
-  for (int i = 1; i < argc; i++) {
-    int fd = open(argv[i], O_RDONLY, 0);
-    if (fd < 0) {
-      uc_eputs("cat: ");
-      uc_eputs(argv[i]);
-      uc_eputs(": No such file or directory\n");
-      rc = 1;
-      continue;
+  for (int i = argi; i < argc; i++) {
+    int fd;
+    if (uc_strcmp(argv[i], "-") == 0) {
+      fd = 0;
+    } else {
+      fd = open(argv[i], O_RDONLY, 0);
+      if (fd < 0) {
+        uc_eputs("cat: ");
+        uc_eputs(argv[i]);
+        uc_eputs(": No such file or directory\n");
+        rc = 1;
+        continue;
+      }
     }
     if (cat_fd(fd)) rc = 1;
-    close(fd);
+    if (fd != 0) close(fd);
   }
   return rc;
 }
