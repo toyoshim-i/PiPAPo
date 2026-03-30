@@ -1691,7 +1691,7 @@ long sys_vfork(uint32_t *frame) {
   for (int _i = 0; _i < FD_MAX; _i++) {
     child->fd_map[_i] = current->fd_map[_i];
     if (current->fd_map[_i] != FD_DESC_NONE)
-      mod_vfs.fd_ref(current->fd_map[_i]);
+      mod_vfs.fd_acquire(current->fd_map[_i]);
   }
 
   /* 7. Set parent's return value (child PID) in stacked r0 */

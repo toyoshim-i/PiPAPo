@@ -66,7 +66,7 @@ static long vfs_bridge_write(struct file *f, const char *buf, size_t n) {
 }
 
 static int vfs_bridge_close(struct file *f) {
-  if (f->vnode) mod_vfs.rel_vnode(f->vnode);
+  if (f->vnode) mod_vfs.release_vnode(f->vnode);
   f->vnode = NULL;
   return 0;
 }
@@ -101,7 +101,7 @@ int vfs_fd_stdio_desc(int which) {
   return stdio_descs[which];
 }
 
-void vfs_fd_ref(int desc) {
+void vfs_fd_acquire(int desc) {
   if (desc < 0 || desc >= FILE_MAX) return;
   fd_pool[desc].refcnt++;
 }
@@ -132,20 +132,20 @@ int vfs_fd_open(const char *path, int flags, int mode) {
                                 (int)sizeof(namebuf));
     if (err) return err;
     if (parent->type != VNODE_DIR) {
-      mod_vfs.rel_vnode(parent);
+      mod_vfs.release_vnode(parent);
       return -ENOTDIR;
     }
     if (!parent->mount || !parent->mount->ops ||
         !parent->mount->ops->create) {
-      mod_vfs.rel_vnode(parent);
+      mod_vfs.release_vnode(parent);
       return -ENOSYS;
     }
     if (parent->mount->flags & MNT_RDONLY) {
-      mod_vfs.rel_vnode(parent);
+      mod_vfs.release_vnode(parent);
       return -EROFS;
     }
     err = parent->mount->ops->create(parent, namebuf, (uint32_t)mode, &vn);
-    mod_vfs.rel_vnode(parent);
+    mod_vfs.release_vnode(parent);
     if (err) return err;
   } else if (err) {
     return err;
@@ -156,7 +156,7 @@ int vfs_fd_open(const char *path, int flags, int mode) {
     if (vn->mount && vn->mount->ops && vn->mount->ops->truncate) {
       int terr = vn->mount->ops->truncate(vn, 0);
       if (terr) {
-        mod_vfs.rel_vnode(vn);
+        mod_vfs.release_vnode(vn);
         return terr;
       }
     } else {
@@ -181,7 +181,7 @@ int vfs_fd_open(const char *path, int flags, int mode) {
     if (tty_idx >= 0) {
       int desc = fd_pool_alloc();
       if (desc < 0) {
-        mod_vfs.rel_vnode(vn);
+        mod_vfs.release_vnode(vn);
         return -ENOMEM;
       }
       fd_pool[desc].ops = &tty_fops;
@@ -190,7 +190,7 @@ int vfs_fd_open(const char *path, int flags, int mode) {
       fd_pool[desc].refcnt = 1;
       fd_pool[desc].vnode = NULL;
       fd_pool[desc].offset = 0;
-      mod_vfs.rel_vnode(vn);
+      mod_vfs.release_vnode(vn);
       return desc;
     }
   }
@@ -198,7 +198,7 @@ int vfs_fd_open(const char *path, int flags, int mode) {
   /* Regular file: allocate pool entry */
   int desc = fd_pool_alloc();
   if (desc < 0) {
-    mod_vfs.rel_vnode(vn);
+    mod_vfs.release_vnode(vn);
     return -ENOMEM;
   }
 

@@ -70,7 +70,7 @@ MOD_DECLARE_BEGIN(vfs)
    *
    *   path    Absolute or relative pathname (relative to current->cwd).
    *   result  Output: vnode pointer with incremented refcount.
-   *           Caller must call vfs_rel_vnode() when done.
+   *           Caller must call vfs_release_vnode() when done.
    *
    * Returns 0 on success, negative errno (-ENOENT, -ENOTDIR, etc.).
    */
@@ -149,17 +149,17 @@ MOD_DECLARE_BEGIN(vfs)
   MOD_FUNC(vfs, vnode_t *, alloc_vnode, void)
 
   /*
-   * ref_vnode — Increment a vnode's reference count.
+   * acquire_vnode — Increment a vnode's reference count.
    *
    *   vn  Vnode to reference.
    *
    * Called when a new file descriptor or directory entry points to
    * an existing vnode (e.g. dup, fork fd inheritance, hardlink).
    */
-  MOD_FUNC(vfs, void, ref_vnode, vnode_t *)
+  MOD_FUNC(vfs, void, acquire_vnode, vnode_t *)
 
   /*
-   * rel_vnode — Release a vnode (decrement refcount, free if zero).
+   * release_vnode — Release a vnode (decrement refcount, free if zero).
    *
    *   vn  Vnode to release.  Safe to call with NULL (no-op).
    *
@@ -167,7 +167,7 @@ MOD_DECLARE_BEGIN(vfs)
    * pool.  Called by sys_close, do_execve cleanup, process exit,
    * and any code that obtained a vnode via vfs_lookup.
    */
-  MOD_FUNC(vfs, void, rel_vnode, vnode_t *)
+  MOD_FUNC(vfs, void, release_vnode, vnode_t *)
 
   /* ── File descriptor helpers ──────────────────────────────────────────── */
 
@@ -225,7 +225,7 @@ MOD_DECLARE_BEGIN(vfs)
   /* Lifecycle: allocate/release file objects by descriptor ID. */
   MOD_FUNC(vfs, int, fd_open, const char *, int, int)
   MOD_FUNC(vfs, void, fd_release, int)
-  MOD_FUNC(vfs, void, fd_ref, int)
+  MOD_FUNC(vfs, void, fd_acquire, int)
   MOD_FUNC(vfs, int, fd_pipe_create, int *, int *)
   MOD_FUNC(vfs, int, fd_stdio_desc, int)
 
@@ -246,12 +246,16 @@ MOD_DECLARE_BEGIN(vfs)
 
 MOD_DECLARE_END(vfs)
 
-/* Number of function pointers in mod_vfs_t.
- * Must match entry_count in vfs_header.S, vfs_stubs.S slot count,
- * and vfs_entries.S stub count.  Static assert catches mismatches. */
-#define MOD_VFS_FUNC_COUNT 33
+/* MOD_VFS_FUNC_COUNT is defined in mod_vfs_funcs.inc — the single source
+ * of truth shared by both C and assembly stubs.  The _Static_assert
+ * below catches mismatches between this struct and the .inc file.
+ * To add a new function: update mod_vfs.h (types) AND mod_vfs_funcs.inc
+ * (name + index).  Assembly stubs auto-generate from the .inc file. */
+#define MOD_VFS_ENTRY(name, idx) /* count only */
+#include "mod_vfs_funcs.inc"
+#undef MOD_VFS_ENTRY
 _Static_assert(sizeof(mod_vfs_t) == MOD_VFS_FUNC_COUNT * sizeof(void (*)(void)),
-               "mod_vfs_t size mismatch — update MOD_VFS_FUNC_COUNT, "
-               "vfs_header.S, vfs_stubs.S, and vfs_entries.S");
+               "mod_vfs_t size mismatch — update MOD_VFS_FUNC_COUNT in "
+               "mod_vfs_funcs.inc");
 
 #endif /* PPAP_KERNEL_MOD_MOD_VFS_H */

@@ -101,14 +101,14 @@ int loopback_setup(const char *image_path) {
 
   /* Must be a regular file */
   if (vn->type != VNODE_FILE) {
-    mod_vfs.rel_vnode(vn);
+    mod_vfs.release_vnode(vn);
     return -EINVAL;
   }
 
   /* File size must be non-zero and sector-aligned */
   uint32_t fsize = vn->size;
   if (fsize == 0 || (fsize % BLKDEV_SECTOR_SIZE) != 0) {
-    mod_vfs.rel_vnode(vn);
+    mod_vfs.release_vnode(vn);
     return -EINVAL;
   }
 
@@ -126,7 +126,7 @@ int loopback_setup(const char *image_path) {
   /* Register as a block device */
   rc = blkdev_register(&loop->blk);
   if (rc < 0) {
-    mod_vfs.rel_vnode(vn);
+    mod_vfs.release_vnode(vn);
     return rc;
   }
 
@@ -142,7 +142,7 @@ int loopback_teardown(int loop_index) {
 
   /* Release the backing vnode */
   if (loop->backing) {
-    mod_vfs.rel_vnode(loop->backing);
+    mod_vfs.release_vnode(loop->backing);
     loop->backing = (vnode_t *)0;
   }
 

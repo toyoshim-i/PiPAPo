@@ -35,7 +35,7 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
   if (err < 0) return err;
 
   if (vn->type != VNODE_FILE) {
-    mod_vfs.rel_vnode(vn);
+    mod_vfs.release_vnode(vn);
     return -(int)ENOEXEC;
   }
 
@@ -47,27 +47,27 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
 
   if (vn->xip_addr == NULL) {
     if (file_size == 0) {
-      mod_vfs.rel_vnode(vn);
+      mod_vfs.release_vnode(vn);
       return -(int)ENOEXEC;
     }
 
     if (mem_region_alloc(&file_region, PPAP_MEM_RAM_DATA, file_size,
                          PROC_IMAGE_SEG_WRITABLE) < 0) {
-      mod_vfs.rel_vnode(vn);
+      mod_vfs.release_vnode(vn);
       return -(int)ENOMEM;
     }
     file_buf = (uint8_t *)file_region.base;
 
     if (!vn->mount || !vn->mount->ops || !vn->mount->ops->read) {
       mem_region_free(&file_region);
-      mod_vfs.rel_vnode(vn);
+      mod_vfs.release_vnode(vn);
       return -(int)ENOEXEC;
     }
 
     long nread = mod_vfs.file_read(vn, file_buf, file_size, 0);
     if (nread < 0 || (uint32_t)nread != file_size) {
       mem_region_free(&file_region);
-      mod_vfs.rel_vnode(vn);
+      mod_vfs.release_vnode(vn);
       return (nread < 0) ? (int)nread : -(int)ENOEXEC;
     }
 
@@ -106,7 +106,7 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
 
   if (!matched_loader) {
     if (file_buf) mem_region_free(&file_region);
-    mod_vfs.rel_vnode(vn);
+    mod_vfs.release_vnode(vn);
     return rc;
   }
 
@@ -136,7 +136,7 @@ int do_execve(pcb_t *p, const char *path, const char *const *argv) {
   p->sig_pending = 0;
   p->sig_blocked = 0;
 
-  mod_vfs.rel_vnode(vn);
+  mod_vfs.release_vnode(vn);
   return 0;
 }
 

@@ -15,6 +15,8 @@
  * The core reads this table, verifies the magic, and patches
  * vfs_fptrs[] with (offset, vfs_segment) pairs.
  *
+ * Entry list auto-generated from mod_vfs_funcs.inc.
+ *
  * Linked FIRST into ppap_ibmpc_vfs so it appears at offset 0.
  */
 
@@ -28,39 +30,9 @@ vfs_module_header:
   .word 0x5646                    /* magic: "VF" */
   .word (vfs_entry_table_end - vfs_entry_table) / 2  /* entry_count */
 vfs_entry_table:
-  .word vfs_init_entry
-  .word vfs_mount_entry
-  .word vfs_umount_entry
-  .word vfs_lookup_entry
-  .word vfs_lookup_flags_entry
-  .word vfs_lookup_parent_entry
-  .word vfs_path_normalize_entry
-  .word vfs_find_mount_entry
-  .word vfs_mount_ufs_entry
-  .word vfs_alloc_vnode_entry
-  .word vfs_ref_vnode_entry
-  .word vfs_rel_vnode_entry
-  .word vfs_fd_stdio_init_entry
-  .word vfs_file_read_entry
-  .word vfs_file_pool_init_entry
-  .word vfs_tty_rx_notify_entry
-  .word vfs_fstab_automount_entry
-  .word vfs_fd_open_entry
-  .word vfs_fd_release_entry
-  .word vfs_fd_ref_entry
-  .word vfs_fd_pipe_create_entry
-  .word vfs_fd_stdio_desc_entry
-  .word vfs_fd_read_entry
-  .word vfs_fd_write_entry
-  .word vfs_fd_ioctl_entry
-  .word vfs_fd_poll_entry
-  .word vfs_fd_lseek_entry
-  .word vfs_fd_fstat_entry
-  .word vfs_fd_getdents_entry
-  .word vfs_fd_getdents64_entry
-  .word vfs_fd_fstatfs_entry
-  .word vfs_fd_fcntl_entry
-  .word vfs_fd_get_priv_entry
+#define MOD_VFS_ENTRY(name, idx)  .word vfs_##name##_entry
+#include "common/mod/mod_vfs_funcs.inc"
+#undef MOD_VFS_ENTRY
 vfs_entry_table_end:
   /* DS=0 address of core_fptrs table (for core to patch) */
   .word core_fptrs

@@ -34,8 +34,8 @@ extern uint16_t vfs_lookup_parent_entry;
 extern uint16_t vfs_path_normalize_entry;
 extern uint16_t vfs_find_mount_entry;
 extern uint16_t vfs_alloc_vnode_entry;
-extern uint16_t vfs_ref_vnode_entry;
-extern uint16_t vfs_rel_vnode_entry;
+extern uint16_t vfs_acquire_vnode_entry;
+extern uint16_t vfs_release_vnode_entry;
 
 /* mod_info_t — boot protocol from stage2 (at 0x0500) */
 #define MOD_INFO_ADDR  0x0500u

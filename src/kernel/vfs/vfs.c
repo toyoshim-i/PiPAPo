@@ -53,7 +53,7 @@ void vfs_init(void) {
         (unsigned)VFS_VNODE_MAX, (unsigned)VFS_MOUNT_MAX);
 }
 
-/* ── vfs_alloc_vnode / vfs_ref_vnode / vfs_rel_vnode ─────────────────────────────────────
+/* ── vfs_alloc_vnode / vfs_acquire_vnode / vfs_release_vnode ─────────────────────────────────────
  */
 
 vnode_t *vfs_alloc_vnode(void) {
@@ -76,14 +76,14 @@ vnode_t *vfs_alloc_vnode(void) {
   return vn;
 }
 
-void vfs_ref_vnode(vnode_t *vn) {
+void vfs_acquire_vnode(vnode_t *vn) {
   if (!vn) return;
   uint32_t saved = spin_lock_irqsave(SPIN_VFS);
   vn->refcnt++;
   spin_unlock_irqrestore(SPIN_VFS, saved);
 }
 
-void vfs_rel_vnode(vnode_t *vn) {
+void vfs_release_vnode(vnode_t *vn) {
   if (!vn) return;
   uint32_t saved = spin_lock_irqsave(SPIN_VFS);
   if (vn->refcnt > 0) vn->refcnt--;
@@ -193,7 +193,7 @@ int vfs_umount(const char *path) {
   }
 
   /* Release root vnode and deactivate.
-   * Note: vfs_rel_vnode() also acquires SPIN_VFS, but we already hold it.
+   * Note: vfs_release_vnode() also acquires SPIN_VFS, but we already hold it.
    * Use mod_core.kmem_free() directly to avoid recursive lock. */
   if (mnt->root) {
     if (mnt->root->refcnt > 0) mnt->root->refcnt--;
@@ -283,7 +283,7 @@ extern void fd_stdio_init(pcb_t *);
 /* fd.c pool functions — already named vfs_fd_* */
 extern int vfs_fd_open(const char *, int, int);
 extern void vfs_fd_release(int);
-extern void vfs_fd_ref(int);
+extern void vfs_fd_acquire(int);
 extern int vfs_fd_stdio_desc(int);
 extern long vfs_fd_read(int, char *, size_t);
 extern long vfs_fd_write(int, const char *, size_t);
@@ -331,8 +331,8 @@ MOD_DEFINE_BEGIN(vfs)
   MOD_IMPL(vfs, find_mount)
   MOD_IMPL(vfs, mount_ufs)
   MOD_IMPL(vfs, alloc_vnode)
-  MOD_IMPL(vfs, ref_vnode)
-  MOD_IMPL(vfs, rel_vnode)
+  MOD_IMPL(vfs, acquire_vnode)
+  MOD_IMPL(vfs, release_vnode)
   MOD_IMPL(vfs, fd_stdio_init)
   MOD_IMPL(vfs, file_read)
   MOD_IMPL(vfs, file_pool_init)
@@ -340,7 +340,7 @@ MOD_DEFINE_BEGIN(vfs)
   MOD_IMPL(vfs, fstab_automount)
   MOD_IMPL(vfs, fd_open)
   MOD_IMPL(vfs, fd_release)
-  MOD_IMPL(vfs, fd_ref)
+  MOD_IMPL(vfs, fd_acquire)
   MOD_IMPL(vfs, fd_pipe_create)
   MOD_IMPL(vfs, fd_stdio_desc)
   MOD_IMPL(vfs, fd_read)

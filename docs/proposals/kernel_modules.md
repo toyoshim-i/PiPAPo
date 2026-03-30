@@ -575,10 +575,10 @@ or pcb_t.
   `mod_vfs.fd_release(desc_id)` for each valid entry.  VFS never
   needs to know about pid.
 - `fork (fd_inherit)`: core copies parent's `fd_map[]` to child,
-  calls `mod_vfs.fd_ref(desc_id)` for each shared entry to bump
+  calls `mod_vfs.fd_acquire(desc_id)` for each shared entry to bump
   refcount.
 - `dup/dup2`: core assigns a new `fd_map[]` slot pointing to the
-  same `desc_id`, calls `mod_vfs.fd_ref(desc_id)`.
+  same `desc_id`, calls `mod_vfs.fd_acquire(desc_id)`.
 
 This is similar to real UNIX kernels (system-wide `struct file`
 table + per-process fd table).  Benefits:
@@ -592,7 +592,7 @@ table + per-process fd table).  Benefits:
 /* mod_vfs.h exports for fd operations */
 MOD_FUNC(vfs, int, fd_open, const char *, int)     /* → desc_id */
 MOD_FUNC(vfs, int, fd_release, int)                /* desc_id */
-MOD_FUNC(vfs, int, fd_ref, int)                    /* desc_id */
+MOD_FUNC(vfs, int, fd_acquire, int)                    /* desc_id */
 MOD_FUNC(vfs, long, fd_read, int, void *, uint32_t)
 MOD_FUNC(vfs, long, fd_write, int, const void *, uint32_t)
 ```

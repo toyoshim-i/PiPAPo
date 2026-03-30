@@ -130,7 +130,7 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
 
   /* Handle bare "/" */
   if (normalized[0] == '/' && normalized[1] == '\0') {
-    vfs_ref_vnode(root_mnt->root);
+    vfs_acquire_vnode(root_mnt->root);
     *result = root_mnt->root;
     return 0;
   }
@@ -144,7 +144,7 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
    * (refcnt = 1 from vfs_alloc_vnode in the FS driver's lookup).
    *
    * `cur_from_lookup` tracks whether we own a reference to `cur` that
-   * needs vfs_rel_vnode() on cleanup.  Mount root vnodes are permanent
+   * needs vfs_release_vnode() on cleanup.  Mount root vnodes are permanent
    * (owned by the mount entry), so we don't put them.
    */
   char resolved[VFS_PATH_MAX]; /* absolute path built so far */
@@ -163,7 +163,7 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
 
     /* Current vnode must be a directory */
     if (cur->type != VNODE_DIR) {
-      if (cur_from_lookup) vfs_rel_vnode(cur);
+      if (cur_from_lookup) vfs_release_vnode(cur);
       return -ENOTDIR;
     }
 
@@ -173,14 +173,14 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
     while (*p && *p != '/' && i < VFS_NAME_MAX) comp[i++] = *p++;
     if (*p && *p != '/') {
       /* Component exceeds VFS_NAME_MAX */
-      if (cur_from_lookup) vfs_rel_vnode(cur);
+      if (cur_from_lookup) vfs_release_vnode(cur);
       return -ENAMETOOLONG;
     }
     comp[i] = '\0';
 
     /* Build the resolved path: append "/component" */
     if (rlen + 1 + i >= VFS_PATH_MAX) {
-      if (cur_from_lookup) vfs_rel_vnode(cur);
+      if (cur_from_lookup) vfs_release_vnode(cur);
       return -ENAMETOOLONG;
     }
     resolved[rlen++] = '/';
@@ -197,7 +197,7 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
     if (child_mnt && child_mnt->root &&
         child_mnt != (cur_from_lookup ? cur->mount : root_mnt)) {
       /* Cross into the new mount */
-      if (cur_from_lookup) vfs_rel_vnode(cur);
+      if (cur_from_lookup) vfs_release_vnode(cur);
       cur = child_mnt->root;
       cur_from_lookup = 0; /* mount root — don't put */
       continue;
@@ -211,19 +211,19 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
      */
     mount_entry_t *cur_mnt = cur->mount ? cur->mount : root_mnt;
     if (!cur_mnt || !cur_mnt->ops || !cur_mnt->ops->lookup) {
-      if (cur_from_lookup) vfs_rel_vnode(cur);
+      if (cur_from_lookup) vfs_release_vnode(cur);
       return -ENOENT;
     }
 
     vnode_t *child = NULL;
     int err = cur_mnt->ops->lookup(cur, comp, &child);
     if (err) {
-      if (cur_from_lookup) vfs_rel_vnode(cur);
+      if (cur_from_lookup) vfs_release_vnode(cur);
       return err;
     }
 
     /* Release the previous directory vnode (if we own it) */
-    if (cur_from_lookup) vfs_rel_vnode(cur);
+    if (cur_from_lookup) vfs_release_vnode(cur);
 
     /* ── Symlink handling ─────────────────────────────────────────
      * Read the link target, build a new absolute path (incorporating
@@ -245,11 +245,11 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
       char target[VFS_PATH_MAX];
 
       if (!child->mount || !child->mount->ops || !child->mount->ops->readlink) {
-        vfs_rel_vnode(child);
+        vfs_release_vnode(child);
         return -EINVAL;
       }
       long tlen = child->mount->ops->readlink(child, target, VFS_PATH_MAX - 1);
-      vfs_rel_vnode(child);
+      vfs_release_vnode(child);
       if (tlen < 0) return (int)tlen;
       target[tlen] = '\0';
 
@@ -308,7 +308,7 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
   /* Reached the end of the path — `cur` is the result */
   if (!cur_from_lookup) {
     /* Result is a mount root — add a reference for the caller */
-    vfs_ref_vnode(cur);
+    vfs_acquire_vnode(cur);
   }
   /* else: cur has refcnt = 1 from the last FS lookup — caller owns it */
 

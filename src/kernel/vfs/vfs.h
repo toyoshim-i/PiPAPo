@@ -21,8 +21,8 @@ int vfs_mount(const char *path, const vfs_ops_t *ops, uint8_t flags,
               const void *dev_data);
 int vfs_umount(const char *path);
 vnode_t *vfs_alloc_vnode(void);
-void vfs_ref_vnode(vnode_t *vn);
-void vfs_rel_vnode(vnode_t *vn);
+void vfs_acquire_vnode(vnode_t *vn);
+void vfs_release_vnode(vnode_t *vn);
 int vfs_lookup(const char *path, vnode_t **result);
 int vfs_lookup_flags(const char *path, vnode_t **result, int flags);
 int vfs_lookup_parent(const char *path, vnode_t **parent, char *namebuf,
