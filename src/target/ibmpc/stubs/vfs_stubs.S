@@ -38,6 +38,7 @@ vfs_fptrs:
   .word 0, 0    /* [9]  vfs_alloc_vnode_entry */
   .word 0, 0    /* [10] vfs_ref_vnode_entry */
   .word 0, 0    /* [11] vfs_rel_vnode_entry */
+  .word 0, 0    /* [12] vfs_fd_stdio_init_entry */
 
   .section .text
 
@@ -70,5 +71,6 @@ vfs_\name:
   VFS_CALLER_STUB alloc_vnode,    9
   VFS_CALLER_STUB ref_vnode,      10
   VFS_CALLER_STUB rel_vnode,      11
+  VFS_CALLER_STUB fd_stdio_init,  12
 
 #endif /* __ia16__ */

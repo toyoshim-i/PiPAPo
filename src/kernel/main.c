@@ -149,7 +149,7 @@ void kmain(void) {
         pcb_t *init = proc_alloc();
       init->pgid = init->pid;
       init->sid = init->pid;
-      fd_stdio_init(init);
+      mod_vfs.fd_stdio_init(init);
 
       int exec_err = mod_exec.do_execve(init, init_path, NULL);
       if (exec_err < 0) {

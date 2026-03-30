@@ -265,6 +265,10 @@ int vfs_mount_ufs(const char *path, uint8_t flags, const void *dev_data)
 /* ── Module definition ─────────────────────────────────────────────────── */
 
 #include "../common/mod/mod_vfs.h"
+#include "../fd/fd.h"
+
+/* Alias for MOD_IMPL convention: vfs_fd_stdio_init → fd_stdio_init */
+#define vfs_fd_stdio_init fd_stdio_init
 
 MOD_DEFINE_BEGIN(vfs)
   MOD_IMPL(vfs, init)
@@ -279,4 +283,5 @@ MOD_DEFINE_BEGIN(vfs)
   MOD_IMPL(vfs, alloc_vnode)
   MOD_IMPL(vfs, ref_vnode)
   MOD_IMPL(vfs, rel_vnode)
+  MOD_IMPL(vfs, fd_stdio_init)
 MOD_DEFINE_END()

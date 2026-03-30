@@ -61,5 +61,6 @@ vfs_\name\()_entry:
   VFS_TARGET_STUB alloc_vnode
   VFS_TARGET_STUB ref_vnode
   VFS_TARGET_STUB rel_vnode
+  VFS_TARGET_STUB fd_stdio_init
 
 #endif /* __ia16__ */

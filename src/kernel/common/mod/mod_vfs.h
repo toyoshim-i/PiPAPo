@@ -26,6 +26,10 @@
 
 #include "module.h"
 
+/* Forward declaration for fd_stdio_init parameter */
+struct pcb;
+typedef struct pcb pcb_t;
+
 MOD_DECLARE_BEGIN(vfs)
 
   /* ── VFS operations ──────────────────────────────────────────────────── */
@@ -164,6 +168,18 @@ MOD_DECLARE_BEGIN(vfs)
    * and any code that obtained a vnode via vfs_lookup.
    */
   MOD_FUNC(vfs, void, rel_vnode, vnode_t *)
+
+  /* ── File descriptor helpers ──────────────────────────────────────────── */
+
+  /*
+   * fd_stdio_init — Wire fd 0/1/2 to the console TTY for a process.
+   *
+   *   p  Target process (PCB).
+   *
+   * Sets up stdin/stdout/stderr pointing at the primary console device.
+   * Called from kmain for init and from sys_execve when fds are empty.
+   */
+  MOD_FUNC(vfs, void, fd_stdio_init, pcb_t *)
 
 MOD_DECLARE_END(vfs)
 

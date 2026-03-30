@@ -15,6 +15,7 @@
 #include "../cpu/ecpu_z80.h"
 #include "../common/errno.h"
 #include "../common/mod/mod_exec.h"
+#include "../common/mod/mod_vfs.h"
 #include "../fd/fd.h"
 #include "../klog.h"
 #include "../mm/mem_region.h"
@@ -1862,7 +1863,7 @@ long sys_execve(const char *path, const char *const *argv) {
    * Only install default tty stdio if fd 0/1/2 are not already open
    * (e.g. init's first exec before any shell sets up fds). */
   if (!current->fd_table[0] && !current->fd_table[1] && !current->fd_table[2])
-    fd_stdio_init(current);
+    mod_vfs.fd_stdio_init(current);
 
     /* Free old kernel stack page.
      * m68k / RISC-V: kernel runs on stack_page.  sys_execve returns
