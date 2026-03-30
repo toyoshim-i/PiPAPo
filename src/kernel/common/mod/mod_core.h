@@ -148,6 +148,68 @@ MOD_DECLARE_BEGIN(core)
   MOD_FUNC(core, void, mm_page_write, page_id_t, uint16_t, const void *,
                                        uint16_t)
 
+  /* ── Scheduler ────────────────────────────────────────────────────────── */
+
+  /*
+   * sched_wakeup — Wake all processes blocked on a wait channel.
+   *
+   *   channel  The wait_channel value to match (e.g. pipe_t *, tty_dev_t *).
+   */
+  MOD_FUNC(core, void, sched_wakeup, void *)
+
+  /*
+   * sched_yield — Voluntarily yield the CPU to another runnable process.
+   */
+  MOD_FUNC(core, void, sched_yield, void)
+
+  /*
+   * sched_get_ticks — Return the current tick count (monotonic).
+   */
+  MOD_FUNC(core, uint32_t, sched_get_ticks, void)
+
+  /*
+   * set_svc_restart — Mark the current syscall for restart after wake.
+   */
+  MOD_FUNC(core, void, set_svc_restart, void)
+
+  /* ── UART (bootstrap console) ────────────────────────────────────────── */
+
+  /*
+   * UART lives in core because klog needs uart_putc to print before
+   * VFS is initialized.  In a strict device-driver hierarchy, UART
+   * would belong under VFS/devfs as a character device, but the
+   * bootstrap dependency makes that impractical: the kernel must be
+   * able to emit diagnostics from the earliest boot stage, long
+   * before VFS mounts or the tty layer is ready.
+   *
+   * VFS-side consumers (tty.c, devfs.c) access UART through these
+   * mod_core exports rather than calling the driver directly.
+   */
+
+  /*
+   * uart_putc — Write one character to the UART.
+   *
+   *   c       Character to send.
+   *   notify  Optional callback when TX becomes ready (NULL = no callback).
+   *
+   * Returns 1 on success, 0 if TX buffer is full.
+   */
+  MOD_FUNC(core, int, uart_putc, char, void (*)(void))
+
+  /*
+   * uart_getc — Read one character from the UART.
+   *
+   * Returns the character (0-255), or -1 if no data available.
+   */
+  MOD_FUNC(core, int, uart_getc, void)
+
+  /*
+   * uart_rx_avail — Check if UART has received data available.
+   *
+   * Returns non-zero if at least one byte is available.
+   */
+  MOD_FUNC(core, int, uart_rx_avail, void)
+
   /* ── Block device I/O (cross-module safe) ────────────────────────────── */
 
   /*
@@ -179,7 +241,7 @@ MOD_DECLARE_END(core)
 /* Number of function pointers in mod_core_t.
  * Must match core_stubs.S slot count and core_entries.S stub count.
  * Static assert catches mismatches at compile time. */
-#define MOD_CORE_FUNC_COUNT 16
+#define MOD_CORE_FUNC_COUNT 23
 _Static_assert(sizeof(mod_core_t) == MOD_CORE_FUNC_COUNT * sizeof(void (*)(void)),
                "mod_core_t size mismatch — update MOD_CORE_FUNC_COUNT, "
                "core_stubs.S, and core_entries.S");

@@ -33,6 +33,13 @@ void mm_page_read(uint16_t, uint16_t, void *, uint16_t);
 void mm_page_write(uint16_t, uint16_t, const void *, uint16_t);
 int core_blkdev_read(blkdev_t *, void *, uint32_t, uint32_t);
 int core_blkdev_write(blkdev_t *, const void *, uint32_t, uint32_t);
+void sched_wakeup(void *);
+void sched_yield(void);
+uint32_t sched_get_ticks(void);
+void set_svc_restart(void);
+int uart_putc(char, void (*)(void));
+int uart_getc(void);
+int uart_rx_avail(void);
 
 /* MOD_IMPL(core, X) expands to .X = core_X — alias stubs */
 #define core_klog                klog
@@ -49,6 +56,13 @@ int core_blkdev_write(blkdev_t *, const void *, uint32_t, uint32_t);
 #define core_mm_page_free        mm_page_free
 #define core_mm_page_read        mm_page_read
 #define core_mm_page_write       mm_page_write
+#define core_sched_wakeup        sched_wakeup
+#define core_sched_yield         sched_yield
+#define core_sched_get_ticks     sched_get_ticks
+#define core_set_svc_restart     set_svc_restart
+#define core_uart_putc           uart_putc
+#define core_uart_getc           uart_getc
+#define core_uart_rx_avail       uart_rx_avail
 #define core_blkdev_read         core_blkdev_read
 #define core_blkdev_write        core_blkdev_write
 
@@ -69,6 +83,13 @@ MOD_DEFINE_BEGIN(core)
   MOD_IMPL(core, mm_page_free)
   MOD_IMPL(core, mm_page_read)
   MOD_IMPL(core, mm_page_write)
+  MOD_IMPL(core, sched_wakeup)
+  MOD_IMPL(core, sched_yield)
+  MOD_IMPL(core, sched_get_ticks)
+  MOD_IMPL(core, set_svc_restart)
+  MOD_IMPL(core, uart_putc)
+  MOD_IMPL(core, uart_getc)
+  MOD_IMPL(core, uart_rx_avail)
   MOD_IMPL(core, blkdev_read)
   MOD_IMPL(core, blkdev_write)
 MOD_DEFINE_END()

@@ -87,5 +87,12 @@ saved_ip: .word 0
   CORE_TARGET_STUB mm_page_free
   CORE_TARGET_STUB mm_page_read
   CORE_TARGET_STUB mm_page_write
+  CORE_TARGET_STUB sched_wakeup
+  CORE_TARGET_STUB sched_yield
+  CORE_TARGET_STUB sched_get_ticks
+  CORE_TARGET_STUB set_svc_restart
+  CORE_TARGET_STUB uart_putc
+  CORE_TARGET_STUB uart_getc
+  CORE_TARGET_STUB uart_rx_avail
 
 #endif /* __ia16__ */

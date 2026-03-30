@@ -38,6 +38,13 @@ core_fptrs:
   .word 0, 0    /* [13] mm_page_free_entry */
   .word 0, 0    /* [14] mm_page_read_entry */
   .word 0, 0    /* [15] mm_page_write_entry */
+  .word 0, 0    /* [16] sched_wakeup_entry */
+  .word 0, 0    /* [17] sched_yield_entry */
+  .word 0, 0    /* [18] sched_get_ticks_entry */
+  .word 0, 0    /* [19] set_svc_restart_entry */
+  .word 0, 0    /* [20] uart_putc_entry */
+  .word 0, 0    /* [21] uart_getc_entry */
+  .word 0, 0    /* [22] uart_rx_avail_entry */
 
   .section .text
 
@@ -77,5 +84,12 @@ core_fptrs:
   CORE_CALLER_STUB mm_page_free,       13
   CORE_CALLER_STUB mm_page_read,       14
   CORE_CALLER_STUB mm_page_write,      15
+  CORE_CALLER_STUB sched_wakeup,       16
+  CORE_CALLER_STUB sched_yield,        17
+  CORE_CALLER_STUB sched_get_ticks,    18
+  CORE_CALLER_STUB set_svc_restart,    19
+  CORE_CALLER_STUB uart_putc,          20
+  CORE_CALLER_STUB uart_getc,          21
+  CORE_CALLER_STUB uart_rx_avail,      22
 
 #endif /* __ia16__ */

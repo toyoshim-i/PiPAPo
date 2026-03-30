@@ -22,7 +22,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../../drivers/uart.h"
+#include "../common/mod/mod_core.h"
 #include "../common/errno.h"
 
 /* ── Device node descriptor ──────────────────────────────────────────────── */
@@ -67,7 +67,7 @@ static long devtty_read(void *buf, size_t n, uint32_t off) {
   uint8_t *p = (uint8_t *)buf;
   size_t count = 0;
   while (count < n) {
-    int c = uart_getc();
+    int c = mod_core.uart_getc();
     if (c < 0) break; /* no more data available */
     p[count++] = (uint8_t)c;
   }
@@ -77,7 +77,7 @@ static long devtty_read(void *buf, size_t n, uint32_t off) {
 static long devtty_write(const void *buf, size_t n, uint32_t off) {
   (void)off;
   const uint8_t *p = (const uint8_t *)buf;
-  for (size_t i = 0; i < n; i++) uart_putc((char)p[i], NULL);
+  for (size_t i = 0; i < n; i++) mod_core.uart_putc((char)p[i], NULL);
   return (long)n;
 }
 

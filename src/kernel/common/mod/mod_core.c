@@ -14,6 +14,9 @@
 #include "../../mm/mem_region.h"
 #include "../../mm/page.h"
 #include "../../blkdev/blkdev.h"
+#include "../../proc/sched.h"
+#include "../../syscall/syscall.h"
+#include "../../../drivers/uart.h"
 
 /* Cross-module blkdev wrappers — execute dev->read/write in core's CS.
  * NOT static: called by name from core_entries.S on i16. */
@@ -42,6 +45,13 @@ mod_core_t mod_core = {
   .mm_page_free = mm_page_free,
   .mm_page_read = mm_page_read,
   .mm_page_write = mm_page_write,
+  .sched_wakeup = sched_wakeup,
+  .sched_yield = sched_yield,
+  .sched_get_ticks = sched_get_ticks,
+  .set_svc_restart = set_svc_restart,
+  .uart_putc = uart_putc,
+  .uart_getc = uart_getc,
+  .uart_rx_avail = uart_rx_avail,
   .blkdev_read = core_blkdev_read,
   .blkdev_write = core_blkdev_write,
 };

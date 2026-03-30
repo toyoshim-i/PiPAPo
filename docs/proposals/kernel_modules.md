@@ -518,37 +518,88 @@ Add to `mod_vfs.h`:
 
 ```c
 MOD_FUNC(vfs, void, file_pool_init, void)
-MOD_FUNC(vfs, void, fd_close_all, pcb_t *)
-MOD_FUNC(vfs, int, fd_inherit, pcb_t *, pcb_t *)
 MOD_FUNC(vfs, void, tty_rx_notify, int)
 MOD_FUNC(vfs, int, fstab_parse, void)
 MOD_FUNC(vfs, int, fstab_mount_all, void)
 ```
 
-Migrate callers in `main.c`, `sys_proc.c`, `sched.c`.
+Migrate callers in `main.c`, `sched.c`.
 
-#### Step 3: Handle fd_table[] and file operations
+FD-related exports (`fd_close_all`, `fd_inherit`) are handled in
+Step 3 as part of the fd table redesign.
 
-The `fd_table[]` array lives in `pcb_t` (core BSS), but FD operations
-are defined in `fd.c` (VFS module).  Two approaches:
+#### Step 3: System-wide file descriptor table
 
-**Option A:** Export fd helper functions via mod_vfs:
-```c
-MOD_FUNC(vfs, long, fd_open, pcb_t *, const char *, int, int)
-MOD_FUNC(vfs, long, fd_close, pcb_t *, int)
-MOD_FUNC(vfs, long, fd_read, pcb_t *, int, void *, uint32_t)
-MOD_FUNC(vfs, long, fd_write, pcb_t *, int, const void *, uint32_t)
+Redesign the fd layer to separate concerns between core and VFS.
+
+**Current problem:** `fd_table[]` lives in `pcb_t` (core BSS), but
+all FD operations are in `fd.c` (VFS module), creating ~30 direct
+cross-module accesses.  Passing `pcb_t *` to VFS also leaks process
+internals into VFS.
+
+**New design: core owns the mapping, VFS owns the file objects.**
+
+VFS manages a **system-wide file descriptor pool**, indexed by an
+opaque descriptor ID.  VFS is process-agnostic — it never sees pid
+or pcb_t.
+
+```
+  Core (per-process)              VFS (system-wide, process-agnostic)
+  ┌──────────────────┐            ┌──────────────────────────────┐
+  │ pcb_t.fd_map[]   │            │ fd_pool[MAX_SYSTEM_FDS]      │
+  │  [0] → desc 5   ─┼───────►   │  [5] vnode, offset, flags,   │
+  │  [1] → desc 12  ─┼───────►   │      refcount                │
+  │  [2] → -1       │            │  [12] ...                    │
+  └──────────────────┘            └──────────────────────────────┘
 ```
 
-Syscalls call `mod_vfs.fd_read()` instead of inlining
-`current->fd_table[fd]->ops->read()`.
+- **Core** owns `fd_map[MAX_FDS]` in `pcb_t` — a small array of
+  descriptor IDs (e.g. `int16_t[16]` = 32 bytes).  Core resolves
+  per-process fd number → descriptor ID.
+- **VFS** owns `fd_pool[MAX_SYSTEM_FDS]` (e.g. 128 entries) — each
+  entry holds vnode pointer, offset, flags, and a reference count.
+  VFS allocates/releases entries and performs I/O by descriptor ID.
+- Syscalls: core looks up `fd_map[local_fd]` → `desc_id`, then
+  calls `mod_vfs.fd_read(desc_id, buf, n)`.
 
-**Option B:** Move sys_fs.c into the VFS module.  File syscalls are
-logically VFS operations.  This eliminates most Core→VFS violations.
+**Operations:**
 
-Option B is cleaner but larger scope.  Option A is incremental.
-Start with Option A for critical paths (`fd_close_all`, `fd_inherit`),
-evaluate Option B later.
+- `open`: core calls `mod_vfs.fd_open(path, flags)` → VFS allocates
+  a pool entry, returns `desc_id` → core stores in `fd_map[]`.
+- `read/write`: core resolves `fd_map[fd]` → `desc_id`, calls
+  `mod_vfs.fd_read(desc_id, ...)`.
+- `close`: core resolves `fd_map[fd]` → `desc_id`, clears the slot,
+  calls `mod_vfs.fd_release(desc_id)` (decrements refcount, frees
+  at zero).
+- `exit (fd_close_all)`: core iterates its own `fd_map[]`, calls
+  `mod_vfs.fd_release(desc_id)` for each valid entry.  VFS never
+  needs to know about pid.
+- `fork (fd_inherit)`: core copies parent's `fd_map[]` to child,
+  calls `mod_vfs.fd_ref(desc_id)` for each shared entry to bump
+  refcount.
+- `dup/dup2`: core assigns a new `fd_map[]` slot pointing to the
+  same `desc_id`, calls `mod_vfs.fd_ref(desc_id)`.
+
+This is similar to real UNIX kernels (system-wide `struct file`
+table + per-process fd table).  Benefits:
+- VFS is fully process-agnostic — no pid, no pcb_t, no proc.h
+- Fork/dup sharing is natural (refcounted pool entries)
+- Most fd operations are VFS-internal; core only calls a small
+  mod_vfs surface
+- `fd_map[]` in pcb_t is tiny (just indices)
+
+```c
+/* mod_vfs.h exports for fd operations */
+MOD_FUNC(vfs, int, fd_open, const char *, int)     /* → desc_id */
+MOD_FUNC(vfs, int, fd_release, int)                /* desc_id */
+MOD_FUNC(vfs, int, fd_ref, int)                    /* desc_id */
+MOD_FUNC(vfs, long, fd_read, int, void *, uint32_t)
+MOD_FUNC(vfs, long, fd_write, int, const void *, uint32_t)
+```
+
+Move `sys_fs.c` and `sys_io.c` into the VFS module — file syscalls
+are logically VFS operations.  This eliminates the bulk of Core→VFS
+boundary violations.
 
 #### Step 4: Two-pass link for shared data
 
@@ -590,6 +641,11 @@ match exactly — any mismatch is a compile error.  Callers use
 `alloc_vnode`).  Real function names are prefixed (`vfs_init`,
 `vfs_mount`, `vfs_alloc_vnode`).  The `MOD_FUNC(vfs, void, init, ...)`
 macro handles the mapping.
+
+**UART in core:** Theoretically, uart is a character device driver
+that belongs under VFS/devfs.  Pragmatically, `klog` needs `uart_putc`
+before VFS is initialized — uart must be in core for bootstrap.
+VFS accesses uart through `mod_core.uart_putc()` etc.
 
 **Module count:** ~5 API surfaces:
 - mod_core (klog, kmem, mem_region, sched, uart — 16 functions, grows as needed)

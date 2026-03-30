@@ -28,12 +28,11 @@
 #include <stdint.h>
 
 #include "../common/errno.h"           /* ENOTTY, EINTR */
+#include "../common/mod/mod_core.h"
 #include "../proc/proc.h"       /* proc_table, PROC_MAX, PROC_FREE */
-#include "../proc/sched.h"      /* sched_wakeup, sched_yield */
 #include "../signal/signal.h"   /* SIGINT */
-#include "../syscall/syscall.h" /* svc_restart */
 #include "arch/arch.h"          /* read_user_byte */
-#include "drivers/uart.h"
+#include "drivers/uart.h"       /* uart_putc/getc/rx_avail for static init */
 #include "file.h"
 
 /* ── Termios flag bits ───────────────────────────────────────────────────────
@@ -192,8 +191,8 @@ static int console_tty_idx = TTY_SERIAL;
  */
 
 /* TX-ready callbacks — one per TTY, called from the backend ISR */
-static void tx_ready_0(void) { sched_wakeup(&tty_devs[0].tx_user_buf); }
-static void tx_ready_1(void) { sched_wakeup(&tty_devs[1].tx_user_buf); }
+static void tx_ready_0(void) { mod_core.sched_wakeup(&tty_devs[0].tx_user_buf); }
+static void tx_ready_1(void) { mod_core.sched_wakeup(&tty_devs[1].tx_user_buf); }
 static void (*const tx_ready_fn[TTY_MAX])(void) = {tx_ready_0, tx_ready_1};
 
 void tty_set_backend(int idx, const tty_backend_t *be) {
@@ -272,7 +271,7 @@ static void dev_send_signal(tty_dev_t *t, int sig) {
     }
   }
   /* Trigger context switch so woken process handles the signal promptly */
-  if (woke) sched_yield();
+  if (woke) mod_core.sched_yield();
 }
 
 /* ── tty_write ───────────────────────────────────────────────────────────────
@@ -332,8 +331,8 @@ block:
 
   current->wait_channel = &t->tx_user_buf;
   current->state = PROC_BLOCKED;
-  set_svc_restart();
-  sched_yield();
+  mod_core.set_svc_restart();
+  mod_core.sched_yield();
   return 0; /* ignored — SVC restores original args */
 }
 
@@ -350,8 +349,8 @@ static long tty_read_canon(tty_dev_t *t, char *buf, size_t n) {
       /* Block via svc_restart: re-executes this syscall when woken */
       current->wait_channel = t;
       current->state = PROC_BLOCKED;
-      set_svc_restart();
-      sched_yield();
+      mod_core.set_svc_restart();
+      mod_core.sched_yield();
       return 0; /* ignored — SVC restores original args */
     }
 
@@ -466,8 +465,8 @@ static long tty_read_raw(tty_dev_t *t, char *buf, size_t n) {
     /* Block via svc_restart */
     current->wait_channel = t;
     current->state = PROC_BLOCKED;
-    set_svc_restart();
-    sched_yield();
+    mod_core.set_svc_restart();
+    mod_core.sched_yield();
     return 0; /* ignored — SVC restores original args */
   }
 
@@ -504,8 +503,8 @@ static long tty_read(struct file *f, char *buf, size_t n) {
     /* No backend — block forever (process sleeps until killed) */
     current->wait_channel = t;
     current->state = PROC_BLOCKED;
-    set_svc_restart();
-    sched_yield();
+    mod_core.set_svc_restart();
+    mod_core.sched_yield();
     return 0;
   }
   if (n == 0) return 0;
@@ -600,7 +599,7 @@ static int tty_poll(struct file *f) {
 
 void tty_rx_notify(int idx) {
   if ((unsigned)idx >= TTY_MAX) return;
-  sched_wakeup(&tty_devs[idx]);
+  mod_core.sched_wakeup(&tty_devs[idx]);
 }
 
 int tty_signal_intr(int idx) {

@@ -18,9 +18,8 @@
 #include <string.h>
 
 #include "../common/errno.h"
+#include "../common/mod/mod_core.h"
 #include "../proc/proc.h"
-#include "../proc/sched.h"
-#include "../syscall/syscall.h"
 #include "fd.h"
 #include "file.h"
 
@@ -88,7 +87,7 @@ static long pipe_read(struct file *f, char *buf, size_t n) {
       p->tail = (uint16_t)((p->tail + 1u) & PIPE_MASK);
     }
     /* Wake any blocked writers — we freed space */
-    sched_wakeup(p);
+    mod_core.sched_wakeup(p);
     return (long)count;
   }
 
@@ -98,8 +97,8 @@ static long pipe_read(struct file *f, char *buf, size_t n) {
   /* Block: wait for data */
   current->wait_channel = p;
   current->state = PROC_BLOCKED;
-  set_svc_restart();
-  sched_yield();
+  mod_core.set_svc_restart();
+  mod_core.sched_yield();
   return 0; /* ignored — SVC_Handler restores original frame[0] */
 }
 
@@ -118,15 +117,15 @@ static long pipe_write(struct file *f, const char *buf, size_t n) {
       p->head = (uint16_t)((p->head + 1u) & PIPE_MASK);
     }
     /* Wake any blocked readers — we added data */
-    sched_wakeup(p);
+    mod_core.sched_wakeup(p);
     return (long)count;
   }
 
   /* Buffer full — block: wait for space */
   current->wait_channel = p;
   current->state = PROC_BLOCKED;
-  set_svc_restart();
-  sched_yield();
+  mod_core.set_svc_restart();
+  mod_core.sched_yield();
   return 0; /* ignored — SVC_Handler restores original frame[0] */
 }
 
@@ -139,7 +138,7 @@ static int pipe_close(struct file *f) {
     p->writers--;
 
   /* Wake the other end so it can detect EOF / EPIPE */
-  sched_wakeup(p);
+  mod_core.sched_wakeup(p);
 
   if (p->readers == 0 && p->writers == 0) pipe_free(p);
 

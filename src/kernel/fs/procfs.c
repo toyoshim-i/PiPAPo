@@ -35,7 +35,7 @@
 #include "../common/mod/mod_vfs.h"
 #include "../mm/page.h"
 #include "../proc/proc.h"
-#include "../proc/sched.h"
+#include "../proc/sched.h"      /* cpu_*_ticks[] data (Step 4: two-pass link) */
 #include "../subsys/subsys.h"
 #include "config.h"
 
@@ -207,7 +207,7 @@ static int gen_stat(char *buf, int bufsiz) {
  */
 
 static int gen_uptime(char *buf, int bufsiz) {
-  uint32_t ticks = sched_get_ticks();
+  uint32_t ticks = mod_core.sched_get_ticks();
   uint32_t secs = ticks / PPAP_TICK_HZ;
   uint32_t hundredths = (ticks % PPAP_TICK_HZ) * 100 / PPAP_TICK_HZ;
   uint32_t total_idle = 0;
