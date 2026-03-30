@@ -422,7 +422,9 @@ uint8_t *page_alloc_contiguous(uint32_t n_pages) {
 /* Contiguous allocation returning base page_id_t (i16-safe). */
 page_id_t mm_page_alloc_contiguous(uint32_t n_pages) {
   if (n_pages == 0) return PAGE_ID_INVALID;
-  if (n_pages == 1) return mm_page_alloc();
+  /* Don't delegate to mm_page_alloc for n=1 — that picks the highest
+   * page, but contiguous allocation should prefer low addresses
+   * (needed on i16 where SS=0 limits SP to the first 64 KB). */
 
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
 
