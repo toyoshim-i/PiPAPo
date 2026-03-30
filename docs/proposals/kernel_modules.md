@@ -413,47 +413,171 @@ builds N+1 targets: core + one per module.  `mkpcimg.sh` packages
 them into the UFS floppy.  See `docs/proposals/pc_port.md` §9.5
 for the concrete memory layout and build steps.
 
-### Current Status
+### Current Status (as of 2026-03-30)
 
 The module system is implemented and working on all platforms:
 
 - Module macros (MOD_DECLARE/MOD_DEFINE) working
-- mod_vfs (11 functions), mod_core (10 functions), mod_exec (1 function)
-- VFS callers migrated to `mod_vfs.init()` syntax on all platforms
-- Boundary enforcement script validates no cross-module includes
+- mod_core (16 functions), mod_vfs (14 functions), mod_exec (1 function)
+- Static asserts: `MOD_CORE_FUNC_COUNT` / `MOD_VFS_FUNC_COUNT` catch
+  mismatches between struct and assembly stub tables at compile time
 - `kernel/common/` directory for shared headers
 
-On i16, the kernel is split into separate code segments (core 28 KB +
-VFS ~27 KB).  Stage2 loads both binaries from UFS floppy.  Core boots,
+On i16, the kernel is split into separate code segments (core ~30 KB +
+VFS ~26 KB).  Stage2 loads both binaries from UFS floppy.  Core boots,
 detects VFS module, and VFS data is placed at DS:0xA000.  Both call
-directions work: core→VFS (vfs_init) and VFS→core (mod_core.klogf,
-mod_core.kmem_pool_init).  VFS fully initialises (64 vnodes, 8 mounts).
-Remaining: wire floppy block device and rootfs mount.
+directions work via two-level far-call stubs.
 
-**Known boundary violations to fix:**
-- `exec/*.c` and `cpu/ecpu_*.c` include `mm/mem_region.h` directly —
-  will be migrated to `mod_core.mem_region_*()` when exec/subsys
-  become separate modules
+**Blocker:** The i16 build still uses `--unresolved-symbols=ignore-all`
+because ~82 cross-module calls bypass the `mod_*` interfaces.
+Unresolved symbols silently link to address 0, causing crashes at
+runtime (e.g. `fd_close_all` in `sys_exit`, `sched_wakeup` in pipe.c).
 
-### Phased Rollout
+### Boundary Violation Audit
 
-**P-4a:** ✓ Done.  Module macros, mod_vfs/mod_core/mod_exec headers,
-VFS caller migration to `mod_vfs.init()`, boundary enforcement,
-`kernel/common/` directory.
+**82 violations** across 11 files.  Grouped by direction:
 
-**P-4a.3:** ✓ Done.  Added `mem_region_alloc`/`mem_region_free` and
-query functions to `mod_core.h` (10 functions total).  Migrated
-`fs/tmpfs.c` and `fs/procfs.c` to `mod_core.mem_region_*()`.
-Remaining: `exec/*.c` and `cpu/ecpu_*.c` still use `mem_region.h`
-directly — will be migrated when exec/subsys become modules.
+#### Core → VFS (bypassing mod_vfs)
 
-**P-4b (i16 only):** In progress.  Segment split — separate CS per
-module, shared DS=0.  See `docs/proposals/pc_port.md` P-4b for
-detailed done/remaining checklist.
+| Function | Defined in | Called from | Occurrences |
+|----------|-----------|-------------|-------------|
+| `file_pool_init` | sys_fs.c | main.c | 1 |
+| `file_alloc/free` | sys_fs.c | sys_fs.c, sys_proc.c | 5 |
+| `fd_alloc/free/get` | fd.c | sys_fs.c, sys_proc.c | ~18 |
+| `fd_close_all` | fd.c | sys_proc.c (sys_exit) | 1 |
+| `fd_inherit` | fd.c | sys_proc.c (vfork) | 1 |
+| `tty_get_dev` | tty.c | sys_fs.c | 1 |
+| `tty_rx_notify` | tty.c | sched.c | 1 |
+| `fstab_parse/mount_all` | fstab.c | main.c | 2 |
+| direct `fd_table[]` | pcb_t | sys_fs/io/poll.c | ~30 |
 
-**Future:** Add more module boundaries as needed:
-- `mod/mod_signal.h`: signal delivery, sigreturn
-- `mod/mod_subsys.h`: eCPU registration, bridge dispatch
+#### VFS → Core (bypassing mod_core)
+
+| Function/Variable | Defined in | Called from | Occurrences |
+|----------|-----------|-------------|-------------|
+| `sched_wakeup` | sched.c | pipe.c, tty.c | 7 |
+| `sched_yield` | sched.c | pipe.c, tty.c | 8 |
+| `set_svc_restart` | syscall.c | pipe.c, tty.c | 6 |
+| `sched_get_ticks` | sched.c | procfs.c | 1 |
+| `current_core` (data) | proc.c | pipe.c, tty.c, namei.c | ~6 |
+| `proc_table` (data) | proc.c | tty.c, procfs.c | ~9 |
+| `uart_putc/getc/rx_avail` | drivers/ | tty.c, devfs.c | 4 |
+
+### Two-Pass Link for Shared Data
+
+Both modules share DS=0, so global variables (`current_core`,
+`proc_table`, `tick_count`, etc.) are accessible from either module
+at the **same** linear address.  But each module is linked separately,
+so the linker doesn't know the other module's symbol addresses.
+
+**Solution: two-pass link.**
+
+1. **Pass 1:** Link the core module → produce core ELF.
+2. **Generate symbol file:** Extract shared data addresses from core
+   ELF via `nm`, generate a linker symbol file (`core_exports.ld`):
+   ```
+   /* Auto-generated from ppap_ibmpc.elf */
+   current_core = 0x8208;
+   proc_table   = 0x84E6;
+   tick_count   = 0x7A70;
+   /* ... */
+   ```
+3. **Pass 2:** Link the VFS module with `core_exports.ld` as an
+   additional linker script.  The VFS linker resolves `current_core`
+   etc. to the correct DS=0 addresses.
+
+This eliminates `--unresolved-symbols=ignore-all` for data references.
+For function references, all cross-module calls must go through
+`mod_core` / `mod_vfs` stubs.
+
+The symbol file is regenerated automatically by CMake whenever the
+core binary changes.
+
+### Completion Plan
+
+#### Step 1: Export remaining VFS→Core functions via mod_core
+
+Add to `mod_core.h` (and corresponding stubs):
+
+```c
+MOD_FUNC(core, void, sched_wakeup, void *)
+MOD_FUNC(core, void, sched_yield, void)
+MOD_FUNC(core, void, set_svc_restart, void)
+MOD_FUNC(core, uint32_t, sched_get_ticks, void)
+MOD_FUNC(core, void, uart_putc, char)
+MOD_FUNC(core, int, uart_getc, void)
+MOD_FUNC(core, int, uart_rx_avail, void)
+```
+
+Migrate callers in `pipe.c`, `tty.c`, `devfs.c`, `procfs.c` to
+`mod_core.sched_wakeup()` etc.
+
+#### Step 2: Export remaining Core→VFS functions via mod_vfs
+
+Add to `mod_vfs.h`:
+
+```c
+MOD_FUNC(vfs, void, file_pool_init, void)
+MOD_FUNC(vfs, void, fd_close_all, pcb_t *)
+MOD_FUNC(vfs, int, fd_inherit, pcb_t *, pcb_t *)
+MOD_FUNC(vfs, void, tty_rx_notify, int)
+MOD_FUNC(vfs, int, fstab_parse, void)
+MOD_FUNC(vfs, int, fstab_mount_all, void)
+```
+
+Migrate callers in `main.c`, `sys_proc.c`, `sched.c`.
+
+#### Step 3: Handle fd_table[] and file operations
+
+The `fd_table[]` array lives in `pcb_t` (core BSS), but FD operations
+are defined in `fd.c` (VFS module).  Two approaches:
+
+**Option A:** Export fd helper functions via mod_vfs:
+```c
+MOD_FUNC(vfs, long, fd_open, pcb_t *, const char *, int, int)
+MOD_FUNC(vfs, long, fd_close, pcb_t *, int)
+MOD_FUNC(vfs, long, fd_read, pcb_t *, int, void *, uint32_t)
+MOD_FUNC(vfs, long, fd_write, pcb_t *, int, const void *, uint32_t)
+```
+
+Syscalls call `mod_vfs.fd_read()` instead of inlining
+`current->fd_table[fd]->ops->read()`.
+
+**Option B:** Move sys_fs.c into the VFS module.  File syscalls are
+logically VFS operations.  This eliminates most Core→VFS violations.
+
+Option B is cleaner but larger scope.  Option A is incremental.
+Start with Option A for critical paths (`fd_close_all`, `fd_inherit`),
+evaluate Option B later.
+
+#### Step 4: Two-pass link for shared data
+
+Implement the `core_exports.ld` generation in CMake:
+```cmake
+add_custom_command(TARGET ppap_ibmpc POST_BUILD
+  COMMAND ${CMAKE_NM} $<TARGET_FILE:ppap_ibmpc>
+    | grep -E "B current_core|B proc_table|B tick_count|..."
+    | awk '{ print $$3 " = 0x" $$1 ";" }'
+    > ${CMAKE_CURRENT_BINARY_DIR}/core_exports.ld
+)
+```
+
+Link VFS with the generated symbol file:
+```cmake
+target_link_options(ppap_ibmpc_vfs PRIVATE
+  -T ${CMAKE_CURRENT_BINARY_DIR}/core_exports.ld
+)
+```
+
+#### Step 5: Remove --unresolved-symbols=ignore-all
+
+After Steps 1-4, all cross-module references are resolved:
+- Functions: through `mod_core` / `mod_vfs` stubs
+- Data: through `core_exports.ld` symbol file
+
+Remove `--unresolved-symbols=ignore-all` from both link commands.
+Any remaining unresolved symbol becomes a **build error**, catching
+future boundary violations at compile time.
 
 ### Design Decisions
 
@@ -468,8 +592,8 @@ match exactly — any mismatch is a compile error.  Callers use
 macro handles the mapping.
 
 **Module count:** ~5 API surfaces:
-- mod_core (klog, kmem, mem_region — 10 functions currently, grows as needed)
-- mod_vfs (VFS operations + vnode lifecycle — 11 functions)
+- mod_core (klog, kmem, mem_region, sched, uart — 16 functions, grows as needed)
+- mod_vfs (VFS, vnode, fd, tty, fstab — 14 functions, grows as needed)
 - mod_exec (process creation + loading — 1 function currently)
 - mod_signal (signal delivery — future)
 - mod_subsys (eCPU + bridges — future)
