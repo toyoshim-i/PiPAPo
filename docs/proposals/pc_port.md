@@ -205,17 +205,22 @@ Each user process is assigned one or more 64 KB segments:
 
 ### 3.4 Page Allocator Adaptation
 
-The page allocator currently returns flat 32-bit addresses.  On x86 real
-mode, it must return paragraph-aligned addresses that can be expressed as
-`segment:0000`.
+The page allocator uses `page_id_t` (16-bit index) to identify pages,
+not `void *` pointers.  This is essential on i16 where `void *` is
+16-bit and cannot represent page-pool addresses above 64 KB.
 
 - 4 KB page = 256 paragraphs (0x100 segment units)
 - 1 MB address space / 4 KB = 256 possible pages
 - Minus kernel, BIOS, video memory → ~200 usable pages
 - Comparable to RP2040 (51 pages) and X68000 1 MB (250 pages)
 
-Page addresses are stored as segment values internally.  Conversion to
-linear address: `page_seg << 4`.  This is purely arithmetic.
+`mm_page_linear(id)` returns the 32-bit linear address of a page.
+Data on pages is accessed via `mm_page_read()`/`mm_page_write()`
+which handle segment setup internally.
+
+The broader memory management refactoring (converting `user_pages[]`,
+`mmap_regions[]`, and `proc_image_t` from `void *` to `page_id_t`) is
+described in [`memory_management.md`](../kernel/memory_management.md).
 
 ### 3.5 Pointer Translation at the Syscall Boundary
 
@@ -797,49 +802,46 @@ modules (exec) can use additional code segments.
 
 ## 8. Phase P-5: User-Space Exec and Tests
 
-**Status**: In progress.  ELF loading works; user process starts but
-crashes in `sys_exit` due to unresolved cross-module calls.
-
-**Blocker**: The i16 build uses `--unresolved-symbols=ignore-all`
-which silently links ~82 cross-module calls to address 0.  This must
-be resolved before user processes can run reliably.  See
-`docs/kernel/kernel_modules.md` §Completion Plan for the 5-step
-fix.
+**Status**: In progress.  Module system complete (P-4a/P-4b done).
+ELF loading and exit work.  Memory management needs refactoring
+(see [`memory_management.md`](../kernel/memory_management.md)).
 
 ### What Works
 
-- `elf16_loader.c` detects and loads ELF32 (EM_386) static executables
+- `elf16_loader.c` loads ELF32 (EM_386) via page-indexed API
+  (`mm_page_alloc_contiguous` + `mm_page_write`)
 - Process gets its own segment: CS=DS=ES = `base >> 4`
 - Segment-aware initial frame: 24-byte ISR frame with correct CS/IP
-- Direct PID 1 launch via inline IRET (bypasses timer ISR)
-- `mod_vfs.vnode_read()` wraps `ops->read` for cross-module safety
-- PIT 100 Hz timer and preemptive scheduler start
+- Module boundary fully resolved: `--unresolved-symbols=ignore-all`
+  removed; two-pass link with `core_exports.ld`
+- PIT 100 Hz timer and preemptive scheduler run
+- Process exits cleanly (exit syscall works)
 
-### What Crashes
+### Current Blocker
 
-- `sys_exit` → `fd_close_all(current)` — unresolved VFS function
-- Any syscall that touches FD subsystem (read, write, close)
-- Any VFS code that calls `sched_wakeup`, `sched_yield` — unresolved
-  core functions
+`user_pages[]` uses `void *` (16-bit on i16).  Page-pool addresses
+above 64 KB are truncated, causing double-free on exit.  The
+`elf16_loader` works around this by using `mm_page_*` directly and
+not setting `PROC_IMAGE_SEG_OWNED`, but `proc_track_page()` still
+stores truncated pointers.  Fixed by the page-index refactoring
+(see [`memory_management.md`](../kernel/memory_management.md) §4).
 
 ### Steps (revised)
 
-1. **Complete module boundary migration** — see `docs/kernel/kernel_modules.md`
-   Steps 1-5.  This is the prerequisite for everything else.
+1. **Memory management refactoring** — convert `user_pages[]` to
+   `page_id_t` (done — see `memory_management.md`).  This is the
+   prerequisite for reliable process lifecycle.
 
-2. **Verify hello.S exit(42)** — after modulization, the minimal
-   `exit(42)` program should complete without crashing.
+2. **hello.S with write** — verify `sys_write` with segment-relative
+   string address computation (`DS << 4 + offset`).
 
-3. **hello.S with write** — add `sys_write` with segment-relative
-   string address computation (`CS << 4 + offset`).
-
-4. **Signal delivery for i16** — implement `sys_sigreturn` / signal
+3. **Signal delivery for i16** — implement `sys_sigreturn` / signal
    trampoline.
 
-5. **Fork / waitpid** — process segment duplication via
+4. **Fork / waitpid** — process segment duplication via
    `mm_page_read/write` for cross-segment copy.
 
-6. **`--test ibmpc` in run.sh** — integrate with existing test harness.
+5. **`--test ibmpc` in run.sh** — integrate with existing test harness.
 
 ---
 
@@ -1006,4 +1008,5 @@ at trap points.
 - [docs/kernel/trace.md](../kernel/trace.md) — Trace and debug subsystem
 - [docs/kernel/syscall.md](../kernel/syscall.md) — System call reference
 - [docs/proposals/x68k_port.md](x68k_port.md) — X68000 target port (analogous m68k effort)
+- [docs/kernel/memory_management.md](../kernel/memory_management.md) — Memory management architecture
 - [docs/archive/history/target-68000-plan.md](../archive/history/target-68000-plan.md) — Original m68k planning

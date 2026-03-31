@@ -1,7 +1,9 @@
 # Memory Management
 
-This document describes how PPAP detects, lays out, and manages physical memory
-across the supported targets.
+This document describes how PPAP detects, lays out, allocates, and
+tracks physical memory across the supported targets.
+
+---
 
 ## 1. Detecting Installed Memory
 
@@ -41,6 +43,8 @@ Memory size is fixed at compile time per target:
 
 - `qemu_rv32`: 1 MB RAM at `0x80800000`, kernel code in ROM at `0x80000000`
 - `pico2rv`: 520 KB SRAM at `0x20000000`, kernel in XIP flash at `0x10000000`
+
+---
 
 ## 2. Memory Layout
 
@@ -124,7 +128,117 @@ Flat RAM starting at 0, size auto-detected (up to 16 MB):
 The linker script places `__page_pool_start` immediately after the supervisor
 stack.  Everything from there to the detected RAM end is the page pool.
 
-### 2.3 Per-Process Memory (when multiple processes run)
+---
+
+## 3. Allocation Layers
+
+### 3.1 Public API: `mem_region`
+
+All code outside `src/kernel/mm/` allocates through `mem_region_*`:
+
+| API | Returns | Used by |
+|-----|---------|---------|
+| `mem_region_alloc()` | `proc_image_segment_t` (with `base_page`) | All loaders, syscalls |
+| `mem_region_alloc_at()` | `proc_image_segment_t` | `sys_brk`, `sys_mmap2` (MAP_FIXED) |
+| `mem_region_free()` | — | OWNED segment cleanup |
+| `mem_region_free_tracked_page_id()` | — | `proc_release_tracked_pages` |
+
+### 3.2 Page-Index Wrappers
+
+Code outside `mm/` accesses pages by index through these wrappers
+(declared in `mem_region.h`, implemented in `mem_region.c`):
+
+| Function | Returns | i16-safe? | Use when |
+|---|---|---|---|
+| `mem_region_page_alloc()` | `page_id_t` | **Yes** | Allocate one page by index |
+| `mem_region_page_alloc_contiguous(n)` | `page_id_t` | **Yes** | Allocate n contiguous pages |
+| `mem_region_page_free(id)` | — | **Yes** | Free a page by index |
+| `mem_region_page_linear(id)` | `uint32_t` | **Yes** | Linear address for arithmetic, comparisons |
+| `mem_region_page_to_ptr(id)` | `void *` | **No** | Dereferenceable pointer (32-bit only) |
+| `mem_region_ptr_to_page(ptr)` | `page_id_t` | **Yes** | Reverse lookup from pointer to index |
+| `mem_region_page_read(id, off, buf, len)` | — | **Yes** | Read page payload (i16-safe) |
+| `mem_region_page_write(id, off, buf, len)` | — | **Yes** | Write page payload (i16-safe) |
+
+### 3.3 Internal Backend: `mm_page_*`
+
+The `mm_page_*` functions in `page.h` are internal to `src/kernel/mm/`.
+They are the implementation behind the `mem_region_page_*` wrappers.
+Code outside `mm/` must not call them directly.
+
+On Xtensa, some memory classes (RAM_TEXT, RAM_DATA, EXT_TEXT,
+EXT_RODATA) use ESP-IDF `heap_caps_malloc` arenas instead of the
+page pool.  These classes are never used on i16.
+
+### 3.4 Module Interface
+
+The `mod_core` vtable exposes page operations as `mem_region_page_*`:
+
+| vtable field | Implementation |
+|---|---|
+| `mem_region_page_alloc` | `mem_region_page_alloc()` → `mm_page_alloc()` |
+| `mem_region_page_free` | `mem_region_page_free()` → `mm_page_free()` |
+| `mem_region_page_read` | `mem_region_page_read()` → `mm_page_read()` |
+| `mem_region_page_write` | `mem_region_page_write()` → `mm_page_write()` |
+
+The i16 module loader patches these into cross-segment far-call
+entries so modules can allocate and access pages without linking
+directly against `page.c`.
+
+---
+
+## 4. Per-Process Memory Tracking
+
+### 4.1 Single Page-Tracking Array: `user_pages[]`
+
+```c
+page_id_t user_pages[USER_PAGES_MAX];  /* PAGE_ID_INVALID = empty */
+```
+
+This is the single source of truth for all page-backed process memory:
+data region, brk growth, mmap allocations, and user stack (RISC-V).
+
+- Set by loaders via `proc_track_page()` / `proc_track_page_range()`.
+- Freed on exit via `proc_release_tracked_pages()`.
+- Used by `sys_brk` to grow/shrink the data region (low slots, grows up).
+- Used by `sys_mmap2` to track anonymous mappings (high slots, grows down).
+- Used by `sys_munmap` to find and free mapped pages by address.
+- Copied on `vfork` via `proc_copy_page_tracking()`.
+
+**Initialization**: slots are set to `PAGE_ID_INVALID` (0xFFFF) after
+`memset` in `proc_init()` and `proc_alloc()`.  This is critical because
+0 is a valid page index.
+
+| Target  | `USER_PAGES_MAX` | Max tracked pages |
+|---------|-------------------|-------------------|
+| ARM     | 64                | 256 KB            |
+| m68k    | 512               | 2 MB              |
+| RISC-V  | 64                | 256 KB            |
+
+### 4.2 `proc_image_t` — Layout Metadata
+
+```c
+typedef struct {
+    void *base;
+    uint32_t size;
+    uint32_t vaddr;
+    ppap_mem_class_t mem_class;
+    uint32_t flags;
+    page_id_t base_page;  /* PAGE_ID_INVALID for non-page-backed */
+} proc_image_segment_t;
+```
+
+`proc_image_t` stores layout metadata for procfs reporting and runtime
+queries (entry point, XIP flags, memory class, size).
+
+Segments with `PROC_IMAGE_SEG_OWNED` are independently allocated and
+freed by `image_release_owned_segments()` on exit.  Only text, staged,
+and emulator-state segments carry this flag.  Data regions are NOT
+OWNED — they are freed via `user_pages[]`.
+
+Non-page-backed segments (XIP ROM text, Xtensa arenas) have
+`base_page = PAGE_ID_INVALID`.
+
+### 4.3 Per-Process Memory Overview
 
 Each process owns:
 
@@ -132,39 +246,40 @@ Each process owns:
   `execve()`.  Contains `.data`, `.bss`, GOT (Global Offset Table).
 - **Heap pages** — `user_pages[N..]`, contiguous with data pages, allocated
   on demand by `sys_brk()`.
-- **Kernel stack page** — `stack_page`, one 4 KB page.  On ARM this is the
-  PSP stack; on m68k this is the per-process SSP stack; on RISC-V this is the
-  mscratch-based kernel stack (separate from user stack).
+- **mmap pages** — `user_pages[]` high slots (top-down), allocated by
+  `sys_mmap2()` for anonymous mappings.
+- **Kernel stack page** — `stack_page_id`, one 4 KB page.  On ARM this is
+  the PSP stack; on m68k the per-process SSP stack; on RISC-V the
+  mscratch-based kernel stack.
 - **User stack page** (m68k and RISC-V) — `user_stack_page` (m68k) or a
-  dedicated page in `user_pages[]` (RISC-V), one 4 KB page for the user
-  stack pointer.
+  dedicated page in `user_pages[]` (RISC-V), one 4 KB page.
 
-All pages come from the same global page pool.  With `PROC_MAX = 8` processes,
-a typical ARM layout might look like:
+All pages come from the same global page pool.
+
+### 4.4 Exit Path
 
 ```
-Page pool:
-  [page 0..2]   Process 1 data + heap
-  [page 3]      Process 1 stack (PSP)
-  [page 4..5]   Process 2 data + heap
-  [page 6]      Process 2 stack (PSP)
-  ...
-  [page 50]     Free
+sys_exit:
+  1. image_release_owned_segments()  <- frees OWNED text/staged segments
+  2. proc_release_tracked_pages()    <- frees user_pages[] (data, brk, mmap)
+  3. free stack_page_id              <- kernel stack
 ```
 
-On m68k and RISC-V, each process uses an additional page for the user stack
-(USP on m68k; mscratch-swapped user sp on RISC-V).
+No duplicate-tracking, no overlap check.  Each page has exactly one
+owner.
 
-## 3. Initial Memory Allocation for a Process
+---
+
+## 5. Initial Memory Allocation for a Process
 
 When `execve()` loads an ELF binary (`src/kernel/exec/exec.c`):
 
-1. **Pre-allocate the kernel stack page** — `page_alloc()` returns one page.
-   This is done first to prevent the LIFO free-stack from interfering with
-   contiguous allocation below.  On m68k and RISC-V, a separate user stack
-   page is also allocated here.
+1. **Pre-allocate the kernel stack page** — `mem_region_alloc()` returns one
+   page.  This is done first to prevent the LIFO free-stack from interfering
+   with contiguous allocation below.  On m68k and RISC-V, a separate user
+   stack page is also allocated here.
 
-2. **Allocate contiguous data pages** — `alloc_contiguous(N)` scans the page
+2. **Allocate contiguous data pages** — `mem_region_alloc()` scans the page
    pool from the bottom and allocates N adjacent pages for the data segment
    (`.data` + `.bss` + GOT).  Contiguity is required so that `brk()` can
    later extend the heap by adding the next adjacent page.
@@ -175,43 +290,43 @@ When `execve()` loads an ELF binary (`src/kernel/exec/exec.c`):
 4. **Apply relocations** — GOT entries and relocation tables are patched to
    reflect the actual SRAM addresses.
 
-5. **Set up brk** — The initial program break is set to the end of the data
+5. **Track pages** — Data pages are stored in `user_pages[]` via
+   `proc_track_page_range()` using `mem_region_ptr_to_page()` to convert
+   the allocation pointer to a page index.
+
+6. **Set up brk** — The initial program break is set to the end of the data
    segment, 16-byte aligned:
    ```c
    p->brk_base    = ALIGN_UP(data_end, 16);
    p->brk_current = p->brk_base;
    ```
 
-6. **Build the initial stack frame** — `proc_setup_stack()` writes a synthetic
+7. **Build the initial stack frame** — `proc_setup_stack()` writes a synthetic
    exception frame onto the kernel stack page so that the first context switch
    enters the process at the ELF entry point.
 
-## 4. How brk Changes Memory Allocation
+---
+
+## 6. How brk Changes Memory Allocation
 
 `sys_brk()` (`src/kernel/syscall/sys_mem.c`) adjusts the program break:
 
 - **Query**: `brk(0)` returns the current break address without changes.
 - **Expand**: When `brk(addr)` requests a higher address, the kernel calculates
-  how many new pages are needed and allocates them via `page_alloc_at()` at
-  the exact addresses following the existing data/heap pages.  Each new page
-  is zeroed and stored in `user_pages[]`.
+  how many new pages are needed and allocates them via `mem_region_alloc_at()`
+  at the exact addresses following the existing data/heap pages.  Each new page
+  is zeroed and tracked in `user_pages[]`.
 - **Shrink**: When `brk(addr)` requests a lower address (but not below
-  `brk_base`), excess pages are freed via `page_free()`.
-- **Failure**: If `page_alloc_at()` fails (the target page is already in use
-  or the pool is exhausted), or if the request exceeds `USER_PAGES_MAX`
+  `brk_base`), excess pages are freed via `proc_release_tracked_pages()`.
+- **Failure**: If `mem_region_alloc_at()` fails (the target page is already in
+  use or the pool is exhausted), or if the request exceeds `USER_PAGES_MAX`
   pages, the break is left unchanged.  The return value is always the
   current break (never a negative errno), matching Linux semantics.  musl
   libc relies on this to detect failure and fall back to `mmap()`.
 
-Limits:
+---
 
-| Target  | `USER_PAGES_MAX` | Max data + heap |
-|---------|-------------------|-----------------|
-| ARM     | 64                | 256 KB          |
-| m68k    | 512               | 2 MB            |
-| RISC-V  | 64                | 256 KB          |
-
-## 5. How the Heap Grows
+## 7. How the Heap Grows
 
 User programs call `malloc()` (provided by musl libc), which internally
 calls `brk()` to expand the heap.  The heap grows **upward** from `brk_base`:
@@ -235,10 +350,12 @@ allocates the next contiguous page, zeroes it, and advances `brk_current`.
 
 For large allocations, musl falls back to `mmap()`.  PPAP supports
 anonymous-only `mmap()` via `sys_mmap2()`, which allocates pages from the
-same pool and tracks them in `mmap_regions[]` (up to `MMAP_REGIONS_MAX = 8`
-concurrent regions per process).
+same pool and tracks them in `user_pages[]` (high slots, allocated
+top-down to avoid collision with brk growth).
 
-## 6. How the Stack Grows (or Cannot Grow)
+---
+
+## 8. How the Stack Grows (or Cannot Grow)
 
 **Stacks are fixed at 4 KB (one page) and cannot grow.**
 
@@ -262,9 +379,69 @@ The kernel stack (MSP on ARM, SSP on m68k, mscratch-based on RISC-V) is also
 fixed-size: 4 KB on ARM, 16 KB on m68k, 4 KB on RISC-V.  It is shared by
 all interrupt and exception handlers.
 
-## 7. Stack Pointer Usage on Interrupts and Syscalls
+---
 
-### 7.1 ARM Cortex-M
+## 9. Page-Index Conversion Rules
+
+### When to use each function
+
+- **Default to `mem_region_page_linear()`.**  It returns a 32-bit
+  linear address that works on every architecture including i16.
+  Use it for:
+  - Computing offsets and sizes (e.g. `brk` arithmetic).
+  - Address-range containment checks (e.g. `proc_page_backed_contains`).
+  - Returning addresses to userspace or subsystem bridges.
+
+- **Use `mem_region_page_to_ptr()` only when you need a dereferenceable
+  pointer** (e.g. to pass to `memcpy`, `memset`, or to cast to a typed
+  pointer for direct access).  This function is unavailable on i16.
+
+- **Use `mem_region_page_read()` / `mem_region_page_write()` to access
+  page payloads on i16.**  On i16, `void *` is 16-bit and cannot
+  address pages above 64 KB, so there is no dereferenceable pointer.
+  These functions handle segment register setup internally and work on
+  all platforms (on 32-bit they reduce to `memcpy`).
+
+### Reverse lookup
+
+`mem_region_ptr_to_page(ptr)` converts a `void *` from
+`mem_region_alloc()` to a page index.  Returns `PAGE_ID_INVALID`
+if the pointer is not in the page pool.
+
+---
+
+## 10. Architecture-Specific Notes
+
+### i16 (IBM PC)
+
+- `void *` is 16-bit.  All memory tracking uses `page_id_t` (uint16_t
+  index), not pointers.
+- All access to user-process pages goes through
+  `mem_region_page_read/write`.
+- `SS=0` means SP is a 20-bit linear address.  Stack pages must be
+  allocated at low addresses (< 64 KB) for SP to fit in 16 bits.
+- `proc_image_segment_t.base` pointer is meaningless on i16 for
+  page-backed segments; `base_page` is authoritative.
+
+### Xtensa (ESP32-S3)
+
+- Some memory classes use ESP-IDF heap arenas, not the page pool.
+- Arena-backed segments have `base_page = PAGE_ID_INVALID` and are
+  freed via `mem_region_free()` based on `mem_class`.
+- `PROC_IMAGE_SEG_OWNED` on text/staged segments triggers arena-aware
+  freeing through `image_release_owned_segments()`.
+
+### ARM / m68k / RISC-V
+
+- `void *` is 32-bit; `mem_region_page_to_ptr()` is available.
+- Page tracking is index-based for consistency with i16, but pointers
+  are derived via `mem_region_page_to_ptr()` where needed.
+
+---
+
+## 11. Stack Pointer Usage on Interrupts and Syscalls
+
+### 11.1 ARM Cortex-M
 
 The ARM Cortex-M has two stack pointers with hardware-managed switching:
 
@@ -286,7 +463,7 @@ On exception entry, the hardware automatically:
 The context switch (PendSV) additionally saves/restores the software frame
 (r4-r11) and swaps the PSP value via the PCB's `sp` field.
 
-### 7.2 m68k (Motorola 68000)
+### 11.2 m68k (Motorola 68000)
 
 The m68k has two stack pointers selected by the supervisor bit in the SR:
 
@@ -310,7 +487,7 @@ USP onto the SSP, then stores both SSP and USP in the PCB.  On restore,
 both pointers are loaded from the next process's PCB, and `rte` pops
 SR+PC to return to user mode.
 
-### 7.3 RISC-V (mscratch stack split)
+### 11.3 RISC-V (mscratch stack split)
 
 RISC-V has a single `sp` register with no hardware stack switching.  PPAP
 implements a software kernel/user stack split using the `mscratch` CSR:
@@ -336,7 +513,7 @@ On trap return:
 2. If `TF_USER_SP = 0`: returning to M-mode (nested) — restore registers,
    deallocate trap frame, `mret`.
 
-### 7.4 Summary
+### 11.4 Summary
 
 ```
 ARM:   User code ──SVC──→ [hw saves on PSP] ──→ handler on MSP ──→ [hw restores PSP]
@@ -352,3 +529,14 @@ RISCV: User code ──ecall─→ [sw swap sp↔mscratch] ──→ handler on 
 ARM separates user and kernel stacks in hardware (PSP vs MSP).  m68k uses
 a single supervisor stack with USP only accessible in user mode.  RISC-V
 uses a software swap via `mscratch` to achieve the same separation.
+
+---
+
+## 12. Related Documentation
+
+- [Kernel Module System](kernel_modules.md) -- module boundary
+  and `mem_region` as the public allocation API
+- [IBM PC Port Plan](../proposals/pc_port.md) -- i16-specific memory
+  model (S3.4)
+- [Design Specification](../spec_v07.md) -- overall memory management
+  design

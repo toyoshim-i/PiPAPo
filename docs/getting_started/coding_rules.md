@@ -199,8 +199,8 @@ the right one for portability:
 - **`mm_page_to_ptr(id)`** → `void *`: 32-bit targets only (unavailable
   on i16).  Use only when you need a dereferenceable pointer.
 
-See [Memory Management Refactoring](../proposals/memory_management.md)
-§6 for the full conversion rules and rationale.
+See [Memory Management](../kernel/memory_management.md) §9 for the full
+conversion rules and rationale.
 
 ## Compile-Time Flags for Work in Progress
 

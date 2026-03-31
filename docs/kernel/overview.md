@@ -212,7 +212,7 @@ The m68k QEMU target does not currently have memory protection. All code runs in
 User processes run in U-mode; the kernel runs in M-mode.  A single PMP entry
 covers the full address range with RWX access, allowing U-mode code to access
 all memory.  The kernel/user stack split uses `mscratch` to swap stack
-pointers on trap entry/exit (see [memory.md](/docs/kernel/memory.md) §7.3).
+pointers on trap entry/exit (see [memory_management.md](/docs/kernel/memory_management.md) §11.3).
 
 ## System Call Interface
 

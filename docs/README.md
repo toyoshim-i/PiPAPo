@@ -30,7 +30,7 @@ This index is the entry point for project documentation.
 - Kernel
   - [`kernel/overview.md`](kernel/overview.md)
   - [`kernel/kernel_modules.md`](kernel/kernel_modules.md) — Module system (mod_core, mod_vfs, mod_exec)
-  - [`kernel/memory.md`](kernel/memory.md)
+  - [`kernel/memory_management.md`](kernel/memory_management.md)
   - [`kernel/syscall.md`](kernel/syscall.md)
   - [`kernel/filesystems.md`](kernel/filesystems.md)
   - [`kernel/procfs.md`](kernel/procfs.md)
@@ -44,6 +44,7 @@ This index is the entry point for project documentation.
   - [`proposals/msdos_subsystem.md`](proposals/msdos_subsystem.md) — MS-DOS personality subsystem
   - [`proposals/i8086_ecpu.md`](proposals/i8086_ecpu.md) — i8086 eCPU emulator
   - [`proposals/gdb_rsp_stub.md`](proposals/gdb_rsp_stub.md) — GDB Remote Serial Protocol stub
+
   - [`proposals/m33_mpu_full_protection.md`](proposals/m33_mpu_full_protection.md) — Cortex-M33 MPU full protection
 
 - Subsystems
