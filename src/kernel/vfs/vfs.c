@@ -268,10 +268,18 @@ mount_entry_t *vfs_mount_find(const char *path, const char **remainder) {
 #include "../fs/vfat.h"
 #endif
 
+#ifdef PPAP_HAS_BLKDEV
 int vfs_mount_ufs(const char *path, uint8_t flags, const void *dev_data)
 {
   return vfs_mount(path, &ufs_ops, flags, dev_data);
 }
+#else
+int vfs_mount_ufs(const char *path, uint8_t flags, const void *dev_data)
+{
+  (void)path; (void)flags; (void)dev_data;
+  return -ENODEV;
+}
+#endif
 
 int vfs_mount_romfs(const char *path, uint8_t flags, const void *dev_data)
 {

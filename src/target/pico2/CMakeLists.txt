@@ -65,8 +65,8 @@ target_compile_definitions(ppap_pico2 PRIVATE
     PPAP_PLL_FBDIV=125u
     PPAP_PLL_PD1=5u
     PPAP_PLL_PD2=2u
-    PAGE_POOL_BASE=0x20006000u
-    PAGE_COUNT_MAX=116u
+    PAGE_POOL_BASE=0x20007000u
+    PAGE_COUNT_MAX=115u
 )
 
 target_link_libraries(ppap_pico2 pico_base_headers hardware_regs)
