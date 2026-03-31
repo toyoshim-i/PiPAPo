@@ -393,6 +393,7 @@ static int mem_region_alloc_ram_data_at(proc_image_segment_t *seg, void *base,
   spin_unlock_irqrestore(SPIN_MEM, saved);
 
   *seg = proc_image_segment_make(base, size, PPAP_MEM_RAM_DATA, flags);
+  seg->base_page = mm_ptr_to_page(base);
   return 0;
 }
 
@@ -536,6 +537,7 @@ static int mem_region_alloc_page_backed(proc_image_segment_t *seg,
   if (!base) return -(int)ENOMEM;
 
   *seg = proc_image_segment_make(base, size, mem_class, flags);
+  seg->base_page = mm_ptr_to_page(base);
   return 0;
 }
 
@@ -596,6 +598,7 @@ int mem_region_alloc_at(proc_image_segment_t *seg, ppap_mem_class_t mem_class,
       }
     }
     *seg = proc_image_segment_make(base, size, mem_class, flags);
+    seg->base_page = mm_ptr_to_page(base);
     return 0;
   }
 

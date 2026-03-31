@@ -11,6 +11,8 @@
 
 #include <stdint.h>
 
+#include "page.h" /* page_id_t, PAGE_ID_INVALID */
+
 typedef enum {
   PPAP_MEM_NONE = 0,
   PPAP_MEM_RAM_TEXT,
@@ -46,6 +48,7 @@ typedef struct {
   uint32_t vaddr;
   ppap_mem_class_t mem_class;
   uint32_t flags;
+  page_id_t base_page; /* PAGE_ID_INVALID for non-page-backed (XIP, arena) */
 } proc_image_segment_t;
 
 typedef struct {
@@ -68,6 +71,7 @@ static inline proc_image_segment_t proc_image_segment_make(
   seg.vaddr = 0u;
   seg.mem_class = mem_class;
   seg.flags = flags;
+  seg.base_page = PAGE_ID_INVALID;
   return seg;
 }
 

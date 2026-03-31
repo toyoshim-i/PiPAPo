@@ -473,6 +473,7 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
     p->image.text = proc_image_segment_make(
         text_dst, text_alloc_size, PPAP_MEM_RAM_TEXT,
         PROC_IMAGE_SEG_EXECUTABLE | PROC_IMAGE_SEG_OWNED);
+    p->image.text.base_page = text_region.base_page;
   }
 
   if (literal_seg) {
@@ -574,6 +575,7 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
     p->image.data = proc_image_segment_make(
         data_base, data_memsz, PPAP_MEM_RAM_DATA,
         PROC_IMAGE_SEG_WRITABLE);
+    p->image.data.base_page = data_region.base_page;
   }
 
   /* RISC-V: track user stack in the last user_pages slot to keep it
