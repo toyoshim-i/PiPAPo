@@ -478,7 +478,7 @@ static int dos_create(uint32_t *regs, uint32_t usp) {
     return 2;
   }
   H68K_TRACE("_CREATE(%s)", path);
-  long r = sys_open(path, O_CREAT | O_TRUNC | O_WRONLY, 0644);
+  long r = sys_open((uint32_t)(uintptr_t)path, O_CREAT | O_TRUNC | O_WRONLY, 0644);
   regs[0] = (uint32_t)h68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -513,7 +513,7 @@ static int dos_open(uint32_t *regs, uint32_t usp) {
       flags = O_RDWR;
       break;
   }
-  long r = sys_open(path, flags, 0644);
+  long r = sys_open((uint32_t)(uintptr_t)path, flags, 0644);
   regs[0] = (uint32_t)h68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -580,7 +580,7 @@ static int dos_delete(uint32_t *regs, uint32_t usp) {
     return 2;
   }
   H68K_TRACE("_DELETE(%s)", path);
-  long r = sys_unlink(path);
+  long r = sys_unlink((uint32_t)(uintptr_t)path);
   regs[0] = (uint32_t)h68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -619,7 +619,7 @@ static int dos_chdir(uint32_t *regs, uint32_t usp) {
     return 2;
   }
   H68K_TRACE("_CHDIR(%s)", path);
-  long r = sys_chdir(path);
+  long r = sys_chdir((uint32_t)(uintptr_t)path);
   regs[0] = (uint32_t)h68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -719,7 +719,7 @@ static int dos_rename(uint32_t *regs, uint32_t usp) {
   h68k_translate_path(old_src, old_path, sizeof(old_path));
   h68k_translate_path(new_src, new_path, sizeof(new_path));
   H68K_TRACE("_RENAME(%s, %s)", old_path, new_path);
-  long r = sys_rename(old_path, new_path);
+  long r = sys_rename((uint32_t)(uintptr_t)old_path, (uint32_t)(uintptr_t)new_path);
   regs[0] = (uint32_t)h68k_errno((int)r);
   advance_pc(regs);
   return 2;
@@ -1316,7 +1316,7 @@ static int dos_mkdir(uint32_t *regs, uint32_t usp) {
     return 2;
   }
   H68K_TRACE("_MKDIR(%s)", path);
-  long r = sys_mkdir(path, 0755);
+  long r = sys_mkdir((uint32_t)(uintptr_t)path, 0755);
   regs[0] = (uint32_t)h68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -1337,7 +1337,7 @@ static int dos_rmdir(uint32_t *regs, uint32_t usp) {
     return 2;
   }
   H68K_TRACE("_RMDIR(%s)", path);
-  long r = sys_rmdir(path);
+  long r = sys_rmdir((uint32_t)(uintptr_t)path);
   regs[0] = (uint32_t)h68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -1363,7 +1363,7 @@ static int dos_chmod(uint32_t *regs, uint32_t usp) {
   H68K_TRACE("_CHMOD(%x, %s)", (uint32_t)attr, path);
 
   struct stat st;
-  long r = sys_stat(path, &st);
+  long r = sys_stat((uint32_t)(uintptr_t)path, &st);
   if (r < 0) {
     regs[0] = (uint32_t)h68k_errno(r);
     advance_pc(regs);
@@ -1463,7 +1463,7 @@ static void filbuf_fill(uint32_t filbuf, const char *dir_path,
     }
     fullpath[dlen + 1 + nlen] = '\0';
     struct stat st;
-    if (sys_stat(fullpath, &st) == 0) fsize = st.st_size;
+    if (sys_stat((uint32_t)(uintptr_t)fullpath, &st) == 0) fsize = st.st_size;
   }
 
   fb[0x15] = attr;
@@ -1542,7 +1542,7 @@ static int dos_files(uint32_t *regs, uint32_t usp) {
   H68K_TRACE("_FILES: dir=%s pat=%s", dir, pattern);
 
   /* Open the directory */
-  long fd = sys_open(dir, O_RDONLY, 0);
+  long fd = sys_open((uint32_t)(uintptr_t)dir, O_RDONLY, 0);
   if (fd < 0) {
     regs[0] = (uint32_t)h68k_errno(fd);
     advance_pc(regs);

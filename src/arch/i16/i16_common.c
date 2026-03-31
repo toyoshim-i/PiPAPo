@@ -74,25 +74,25 @@ long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1,
   frame[2] = a2;
   frame[3] = a3;
 
-  /* Resolve user-space pointer arguments to linear addresses.
-   * Which arguments are pointers depends on the syscall number.
-   * SYS_READ/SYS_WRITE use uaccess (copy_from_user/copy_to_user)
-   * with the linear address, so they don't need resolution here. */
+  /* Resolve user-space pointer arguments to 20-bit linear addresses.
+   * Syscalls that use uaccess (copy_from_user, strncpy_from_user) need
+   * the linear address; the uaccess functions handle page resolution.
+   * This switch will shrink as more syscalls move to uaccess. */
   switch (nr) {
-    case 0x0003: /* SYS_READ:  read(fd, buf, n)  — a1 = user offset */
-    case 0x0004: /* SYS_WRITE: write(fd, buf, n) — a1 = user offset */
-      frame[1] = seg_base + a1; /* linear address for uaccess */
+    case 0x0003: /* SYS_READ:  a1 = buf */
+    case 0x0004: /* SYS_WRITE: a1 = buf */
+      frame[1] = seg_base + a1;
       break;
-    case 0x0005: /* SYS_OPEN:  open(path, flags, mode) — a0 = path */
-    case 0x000B: /* SYS_EXECVE: execve(path, argv) — a0 = path */
-    case 0x000C: /* SYS_CHDIR: chdir(path) — a0 = path */
-    case 0x0015: /* SYS_ACCESS: access(path, mode) — a0 = path */
-    case 0x0026: /* SYS_MKDIR: mkdir(path, mode) — a0 = path */
-    case 0x000A: /* SYS_UNLINK: unlink(path) — a0 = path */
-    case 0x0028: /* SYS_RMDIR: rmdir(path) — a0 = path */
+    case 0x0005: /* SYS_OPEN:  a0 = path */
+    case 0x000B: /* SYS_EXECVE: a0 = path */
+    case 0x000C: /* SYS_CHDIR: a0 = path */
+    case 0x0015: /* SYS_ACCESS: a0 = path */
+    case 0x0026: /* SYS_MKDIR: a0 = path */
+    case 0x000A: /* SYS_UNLINK: a0 = path */
+    case 0x0028: /* SYS_RMDIR: a0 = path */
       frame[0] = seg_base + a0;
       break;
-    case 0x0036: /* SYS_IOCTL: ioctl(fd, req, arg) — a2 = arg (may be ptr) */
+    case 0x0036: /* SYS_IOCTL: a2 = arg */
       frame[2] = seg_base + a2;
       break;
     default:

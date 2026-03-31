@@ -140,7 +140,7 @@ static int sos_char_ready(void) {
 }
 
 static int sos_file_open(const char *path, int flags) {
-  return (int)sys_open(path, (long)flags, 0644);
+  return (int)sys_open((uint32_t)(uintptr_t)path, (long)flags, 0644);
 }
 
 static int sos_file_close(int fd) { return (int)sys_close((long)fd); }
@@ -153,10 +153,10 @@ static int sos_file_write(int fd, const void *buf, int count) {
   return (int)sys_write((long)fd, (uint32_t)(uintptr_t)buf, (size_t)count);
 }
 
-static int sos_file_delete(const char *path) { return (int)sys_unlink(path); }
+static int sos_file_delete(const char *path) { return (int)sys_unlink((uint32_t)(uintptr_t)path); }
 
 static int sos_file_rename(const char *oldpath, const char *newpath) {
-  return (int)sys_rename(oldpath, newpath);
+  return (int)sys_rename((uint32_t)(uintptr_t)oldpath, (uint32_t)(uintptr_t)newpath);
 }
 
 /* ── Helper: read/write 16-bit LE from Z80 memory ────────────────────── */

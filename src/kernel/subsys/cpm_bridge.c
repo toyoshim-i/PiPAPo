@@ -341,7 +341,7 @@ static int cpm_char_ready(void) {
 }
 
 static int cpm_file_open(const char *path, int flags) {
-  return (int)sys_open(path, (long)flags, 0644);
+  return (int)sys_open((uint32_t)(uintptr_t)path, (long)flags, 0644);
 }
 
 static int cpm_file_close(int fd) { return (int)sys_close((long)fd); }
@@ -358,10 +358,10 @@ static int cpm_file_seek(int fd, int offset, int whence) {
   return (int)sys_lseek((long)fd, (long)offset, (long)whence);
 }
 
-static int cpm_file_delete(const char *path) { return (int)sys_unlink(path); }
+static int cpm_file_delete(const char *path) { return (int)sys_unlink((uint32_t)(uintptr_t)path); }
 
 static int cpm_file_rename(const char *oldpath, const char *newpath) {
-  return (int)sys_rename(oldpath, newpath);
+  return (int)sys_rename((uint32_t)(uintptr_t)oldpath, (uint32_t)(uintptr_t)newpath);
 }
 
 /* Directory operations — stub for now (PPAP VFS doesn't have opendir yet) */
