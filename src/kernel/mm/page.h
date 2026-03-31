@@ -69,10 +69,10 @@ extern char __page_pool_start[];
  * target_compile_definitions(). */
 #define SRAM_KERNEL_BASE 0x20000000u /* kernel data region start        */
 #ifndef SRAM_KERNEL_SIZE
-#define SRAM_KERNEL_SIZE (20u * 1024u) /* reserved for kernel .data/.bss  */
+#define SRAM_KERNEL_SIZE (24u * 1024u) /* reserved for kernel .data/.bss  */
 #endif
 #ifndef PAGE_POOL_BASE
-#define PAGE_POOL_BASE 0x20005000u /* first page in the pool          */
+#define PAGE_POOL_BASE 0x20006000u /* first page in the pool          */
 #endif
 #define PAGE_POOL_SIZE (PAGE_COUNT_MAX * PAGE_SIZE)
 #define SRAM_IOBUF_BASE (PAGE_POOL_BASE + PAGE_POOL_SIZE) /* after pool    */

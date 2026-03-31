@@ -72,7 +72,7 @@
 #define PAGE_SIZE 4096u /* bytes per page                       */
 
 #ifndef PAGE_COUNT_MAX
-#define PAGE_COUNT_MAX 51u /* RP2040 default: 204 KB pool          */
+#define PAGE_COUNT_MAX 50u /* RP2040 default: 200 KB pool          */
 #endif
 
 /* ── VFS (Virtual File System) ────────────────────────────────────────────
