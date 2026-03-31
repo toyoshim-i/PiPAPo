@@ -12,7 +12,6 @@
 #include "../../klog.h"
 #include "../../mm/kmem.h"
 #include "../../mm/mem_region.h"
-#include "../../mm/page.h"
 #include "../../blkdev/blkdev.h"
 #include "../../proc/sched.h"
 #include "../../syscall/syscall.h"
@@ -39,12 +38,12 @@ mod_core_t mod_core = {
   .kmem_free_count = kmem_free_count,
   .mem_region_alloc = mem_region_alloc,
   .mem_region_free = mem_region_free,
-  .mem_region_total_bytes = mem_region_total_bytes,
   .mem_region_free_bytes = mem_region_free_bytes,
-  .mm_page_alloc = mm_page_alloc,
-  .mm_page_free = mm_page_free,
-  .mm_page_read = mm_page_read,
-  .mm_page_write = mm_page_write,
+  .mem_region_page_alloc = mem_region_page_alloc,
+  .mem_region_page_free = mem_region_page_free,
+  .mem_region_page_read = mem_region_page_read,
+  .mem_region_page_write = mem_region_page_write,
+  .mem_region_total_bytes = mem_region_total_bytes,
   .sched_wakeup = sched_wakeup,
   .sched_yield = sched_yield,
   .sched_get_ticks = sched_get_ticks,

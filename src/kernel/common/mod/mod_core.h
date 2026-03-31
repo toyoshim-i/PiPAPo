@@ -30,8 +30,8 @@ typedef struct kmem_pool kmem_pool_t;
 struct blkdev;
 typedef struct blkdev blkdev_t;
 
-#include "../../mm/mem_layout.h"  /* ppap_mem_class_t, proc_image_segment_t */
-#include "../../mm/page.h"       /* page_id_t */
+#include "../../mm/mem_layout.h"  /* ppap_mem_class_t, proc_image_segment_t,
+                                  * page_id_t (via page.h) */
 
 #include "module.h"
 
@@ -54,12 +54,13 @@ MOD_DECLARE_BEGIN(core)
                        ppap_mem_class_t, uint32_t, uint32_t)
   MOD_FUNC(core, void, mem_region_free, const proc_image_segment_t *)
   MOD_FUNC(core, uint32_t, mem_region_free_bytes, ppap_mem_class_t)
+  MOD_FUNC(core, page_id_t, mem_region_page_alloc, void)
+  MOD_FUNC(core, void, mem_region_page_free, page_id_t)
+  MOD_FUNC(core, void, mem_region_page_read, page_id_t, uint16_t,
+                                              void *, uint16_t)
+  MOD_FUNC(core, void, mem_region_page_write, page_id_t, uint16_t,
+                                               const void *, uint16_t)
   MOD_FUNC(core, uint32_t, mem_region_total_bytes, ppap_mem_class_t)
-  MOD_FUNC(core, page_id_t, mm_page_alloc, void)
-  MOD_FUNC(core, void, mm_page_free, page_id_t)
-  MOD_FUNC(core, void, mm_page_read, page_id_t, uint16_t, void *, uint16_t)
-  MOD_FUNC(core, void, mm_page_write, page_id_t, uint16_t, const void *,
-                                       uint16_t)
   MOD_FUNC(core, uint32_t, sched_get_ticks, void)
   MOD_FUNC(core, void, sched_wakeup, void *)
   MOD_FUNC(core, void, sched_yield, void)
