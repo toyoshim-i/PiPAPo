@@ -133,13 +133,22 @@ typedef struct {
   size_t tx_user_len;      /* total write length */
 } tty_dev_t;
 
+/* UART access goes through mod_core on all targets.  This keeps the
+ * module boundary clean (tty is in VFS, uart is in core) and avoids
+ * cross-segment function pointer issues on i16. */
+static int tty_uart_putc(char c, void (*notify)(void)) {
+  return mod_core.uart_putc(c, notify);
+}
+static int tty_uart_getc(void) { return mod_core.uart_getc(); }
+static int tty_uart_rx_avail(void) { return mod_core.uart_rx_avail(); }
+
 static tty_dev_t tty_devs[TTY_MAX] = {
     [TTY_SERIAL] =
         {
-            .out = uart_putc,
+            .out = tty_uart_putc,
             .out_flush = NULL,
-            .in = uart_getc,
-            .in_avail = uart_rx_avail,
+            .in = tty_uart_getc,
+            .in_avail = tty_uart_rx_avail,
             .win_cols = NULL,
             .win_rows = NULL,
             .termios =

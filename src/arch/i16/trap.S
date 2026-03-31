@@ -48,10 +48,11 @@ i16_syscall_isr:
   xorw  %ax, %ax
   movw  %ax, %ds
 
-  /* Build args for syscall_dispatch(nr, a0, a1, a2, a3, a4)
+  /* Build args for i16_syscall_dispatch(nr, a0, a1, a2, a3, a4, user_ds)
    * Read from the saved frame on the stack. */
   movw  %sp, %bp
 
+  pushw 2(%bp)        /* user_ds = saved DS */
   pushw 6(%bp)        /* a4 = DI */
   pushw 8(%bp)        /* a3 = SI */
   pushw 10(%bp)       /* a2 = DX */
@@ -61,7 +62,7 @@ i16_syscall_isr:
 
   call  i16_syscall_dispatch
 
-  addw  $12, %sp      /* clean 6 args */
+  addw  $14, %sp      /* clean 7 args */
 
   /* Store return value in the saved AX slot */
   movw  %sp, %bp

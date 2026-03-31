@@ -826,22 +826,104 @@ not setting `PROC_IMAGE_SEG_OWNED`, but `proc_track_page()` still
 stores truncated pointers.  Fixed by the page-index refactoring
 (see [`memory_management.md`](../kernel/memory_management.md) §4).
 
+### What's Fixed So Far
+
+- `user_pages[]` converted to `page_id_t` — page tracking works.
+- Timer ISR race fixed — `sched_start()` moved after direct IRET
+  removed; idle thread (PID 0) gets proper context save.
+- Process exits cleanly via `exit()` syscall.
+- tty.c uses `mod_core.uart_*` wrappers on all targets (not direct
+  function pointers) — fixes cross-segment function pointer issue.
+
 ### Steps (revised)
 
-1. **Memory management refactoring** — convert `user_pages[]` to
-   `page_id_t` (done — see `memory_management.md`).  This is the
-   prerequisite for reliable process lifecycle.
+1. **User-space memory access abstraction** — implement
+   `copy_from_user` / `copy_to_user` / `strncpy_from_user` as a
+   uniform API on all targets.  See §8.1 below.
 
-2. **hello.S with write** — verify `sys_write` with segment-relative
-   string address computation (`DS << 4 + offset`).
+2. **Convert syscalls to use uaccess** — sys_write, sys_read, and
+   path-taking syscalls use kernel bounce buffers instead of raw
+   user pointers.
 
 3. **Signal delivery for i16** — implement `sys_sigreturn` / signal
    trampoline.
 
 4. **Fork / waitpid** — process segment duplication via
-   `mm_page_read/write` for cross-segment copy.
+   `mem_region_page_read/write` for cross-segment copy.
 
 5. **`--test ibmpc` in run.sh** — integrate with existing test harness.
+
+### 8.1 User-Space Memory Access (uaccess)
+
+Syscall handlers currently receive user pointers as raw `void *` and
+dereference them directly.  This is broken on i16 (user memory is in
+a different segment) and will not scale to MMU or 64-bit targets.
+
+An audit found **35+ syscalls with 60+ unresolved pointer arguments**.
+
+#### Design
+
+All user-space memory access goes through a page-index-based API:
+
+```c
+int copy_from_user(void *kernel_buf, uint32_t user_off, size_t n);
+int copy_to_user(uint32_t user_off, const void *kernel_buf, size_t n);
+int strncpy_from_user(char *kernel_buf, uint32_t user_off, size_t max);
+```
+
+`user_off` is a process-relative offset.  The implementation resolves
+it through `current->user_pages[]`:
+
+1. `page_index = user_off / PAGE_SIZE`
+2. `page_offset = user_off % PAGE_SIZE`
+3. `mem_region_page_read(user_pages[page_index], page_offset, ...)`
+
+On i16, `user_off` is the DS-relative offset from the syscall
+register.  `i16_syscall_dispatch` stores the user's DS in the PCB;
+`copy_from_user` computes the linear address as
+`user_ds * 16 + user_off` and resolves it through the page index.
+
+On 32-bit targets without MMU, the implementation is a bounds-checked
+`memcpy`.  The interface is the same, preparing for future MMU/64-bit.
+
+#### Syscall changes
+
+- `sys_write(fd, buf, n)` copies user data into a kernel bounce
+  buffer via `copy_from_user`, then calls `mod_vfs.fd_write` with
+  the kernel buffer.
+- `sys_read(fd, buf, n)` reads into a kernel buffer, then copies
+  out via `copy_to_user`.
+- Path syscalls (`sys_open`, `sys_chdir`, etc.) use
+  `strncpy_from_user` to copy the path into a kernel-stack buffer.
+- Struct-returning syscalls (`stat`, `getcwd`, etc.) fill a kernel
+  struct, then `copy_to_user`.
+
+After this, VFS and file-ops layers receive **kernel buffers only**,
+never user pointers.  `read_user_byte()` in `tty_write` is removed.
+
+#### Affected syscalls
+
+| Category | Syscalls | Pointer args |
+|----------|----------|-------------|
+| I/O | read, write, readv, writev | buf, iovec |
+| FS paths | open, chdir, access, mkdir, unlink, rmdir, rename, readlink, mount | path strings |
+| FS data | stat, fstat, getdents, getcwd, llseek | output structs/buffers |
+| Process | execve, pipe, wait4, set_tid_address | argv, fds[], status |
+| Signals | rt_sigaction, rt_sigprocmask | sigaction structs |
+| Time | gettimeofday, clock_gettime, clock_nanosleep | timespec structs |
+| Terminal | ioctl | arg struct |
+| Info | uname | utsname struct |
+
+#### Migration order
+
+1. Add `user_ds` field to pcb_t (i16 only).
+2. Implement `copy_from_user` / `copy_to_user` / `strncpy_from_user`
+   in `src/kernel/mm/uaccess.h`.
+3. Convert `sys_write` / `sys_read` (validates the approach).
+4. Convert path syscalls (`strncpy_from_user`).
+5. Convert struct-returning syscalls (`copy_to_user`).
+6. Remove `read_user_byte` from tty_write.
+7. Remove per-syscall switch from `i16_syscall_dispatch`.
 
 ---
 

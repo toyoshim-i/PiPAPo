@@ -50,10 +50,17 @@ uint32_t *arch_build_initial_frame(uint32_t *sp_arg, void (*entry)(void))
  *
  * Adapts the i16 register-based syscall ABI to the kernel's
  * syscall_dispatch() which expects a uint32_t frame pointer.
+ *
+ * user_ds is the saved DS from the user process.  For syscalls that pass
+ * user-space pointers (read, write, open, etc.), the offset argument is
+ * resolved to a 20-bit linear address: user_ds * 16 + offset.
  */
 long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1,
-                          uint16_t a2, uint16_t a3, uint16_t a4)
+                          uint16_t a2, uint16_t a3, uint16_t a4,
+                          uint16_t user_ds)
 {
+  uint32_t seg_base = (uint32_t)user_ds << 4;
+
   /* The kernel's syscall_dispatch reads args from frame[0..3] and
    * writes the return value back to frame[0]. */
   uint32_t frame[4];
@@ -61,6 +68,29 @@ long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1,
   frame[1] = a1;
   frame[2] = a2;
   frame[3] = a3;
+
+  /* Resolve user-space pointer arguments to linear addresses.
+   * Which arguments are pointers depends on the syscall number. */
+  switch (nr) {
+    case 0x0003: /* SYS_READ:  read(fd, buf, n)  — a1 = buf */
+    case 0x0004: /* SYS_WRITE: write(fd, buf, n) — a1 = buf */
+      frame[1] = seg_base + a1;
+      break;
+    case 0x0005: /* SYS_OPEN:  open(path, flags, mode) — a0 = path */
+    case 0x000B: /* SYS_EXECVE: execve(path, argv) — a0 = path */
+    case 0x000C: /* SYS_CHDIR: chdir(path) — a0 = path */
+    case 0x0015: /* SYS_ACCESS: access(path, mode) — a0 = path */
+    case 0x0026: /* SYS_MKDIR: mkdir(path, mode) — a0 = path */
+    case 0x000A: /* SYS_UNLINK: unlink(path) — a0 = path */
+    case 0x0028: /* SYS_RMDIR: rmdir(path) — a0 = path */
+      frame[0] = seg_base + a0;
+      break;
+    case 0x0036: /* SYS_IOCTL: ioctl(fd, req, arg) — a2 = arg (may be ptr) */
+      frame[2] = seg_base + a2;
+      break;
+    default:
+      break;
+  }
 
   extern void syscall_dispatch(uint32_t *frame, uint32_t nr,
                                uint32_t a4, uint32_t a5);
