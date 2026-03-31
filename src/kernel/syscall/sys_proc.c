@@ -470,7 +470,7 @@ static int trace_native_contains(const pcb_t *target, uint32_t addr) {
   }
 #elif !defined(__ia16__)
   if (target->stack_page_id != PAGE_ID_INVALID) {
-    uint32_t base = (uint32_t)(uintptr_t)mm_page_to_ptr(target->stack_page_id);
+    uint32_t base = (uint32_t)(uintptr_t)mem_region_page_to_ptr(target->stack_page_id);
     if (addr >= base && addr < base + PAGE_SIZE) return 1;
   }
 #endif
@@ -1339,7 +1339,7 @@ long sys_exit(long status) {
     image_release_owned_segments(&current->image);
 #if !defined(__ia16__)
     if (current->stack_page_id != PAGE_ID_INVALID &&
-        proc_page_backed_contains(current, (uintptr_t)mm_page_to_ptr(current->stack_page_id)))
+        proc_page_backed_contains(current, (uintptr_t)mem_region_page_to_ptr(current->stack_page_id)))
       current->stack_page_id = PAGE_ID_INVALID;
 #endif
     proc_release_tracked_pages(current, 0, USER_PAGES_MAX);
@@ -1453,7 +1453,7 @@ long sys_vfork(uint32_t *frame) {
     return -(long)ENOMEM;
   }
   void *stack = stack_region.base;
-  child->stack_page_id = mm_ptr_to_page(stack);
+  child->stack_page_id = mem_region_ptr_to_page(stack);
 
   /* 3. Share parent's user_pages with child */
   proc_copy_page_tracking(child, current);
@@ -1469,15 +1469,15 @@ long sys_vfork(uint32_t *frame) {
    *    on the child's page as the parent's PSP frame.
    */
 #if defined(__ia16__)
-  /* TODO: i16 vfork — use mm_page_read for cross-segment copy */
-  mm_page_read(current->stack_page_id, 0, stack, PAGE_SIZE);
+  /* TODO: i16 vfork — use mem_region_page_read for cross-segment copy */
+  mem_region_page_read(current->stack_page_id, 0, stack, PAGE_SIZE);
   uintptr_t frame_off = 0;
   uint32_t *child_frame = (uint32_t *)stack;
 #else
-  memcpy(stack, mm_page_to_ptr(current->stack_page_id), PAGE_SIZE);
+  memcpy(stack, mem_region_page_to_ptr(current->stack_page_id), PAGE_SIZE);
 
   /* Calculate child's frame position at the same offset as parent's */
-  uintptr_t frame_off = (uintptr_t)frame - (uintptr_t)mm_page_to_ptr(current->stack_page_id);
+  uintptr_t frame_off = (uintptr_t)frame - (uintptr_t)mem_region_page_to_ptr(current->stack_page_id);
   uint32_t *child_frame = (uint32_t *)((uint8_t *)stack + frame_off);
 #endif
 
@@ -1538,7 +1538,7 @@ long sys_vfork(uint32_t *frame) {
     uint32_t ustack_slot = USER_PAGES_MAX - 1;
     page_id_t parent_ustack_id = current->user_pages[ustack_slot];
     if (parent_ustack_id != PAGE_ID_INVALID) {
-      void *parent_ustack = mm_page_to_ptr(parent_ustack_id);
+      void *parent_ustack = mem_region_page_to_ptr(parent_ustack_id);
       void *child_ustack = NULL;
       uint32_t *child_tf = child_frame - 8; /* trap frame base */
       uint32_t child_usp = 0;
@@ -1549,7 +1549,7 @@ long sys_vfork(uint32_t *frame) {
         proc_free(child);
         return -(long)ENOMEM;
       }
-      child->user_pages[ustack_slot] = mm_ptr_to_page(child_ustack);
+      child->user_pages[ustack_slot] = mem_region_ptr_to_page(child_ustack);
       child_tf[32] = child_usp; /* patch TF_USER_SP */
     }
   }
@@ -1597,7 +1597,7 @@ long sys_vfork(uint32_t *frame) {
 
     void *child_ustack = NULL;
     uint32_t remapped_sp = 0;
-    if (vfork_copy_user_stack(mm_page_to_ptr(current->stack_page_id), child_user_sp,
+    if (vfork_copy_user_stack(mem_region_page_to_ptr(current->stack_page_id), child_user_sp,
                               &child_ustack, &remapped_sp) < 0) {
       proc_release_stack_page(&stack);
       child->stack_page_id = PAGE_ID_INVALID;
@@ -1608,7 +1608,7 @@ long sys_vfork(uint32_t *frame) {
 
     /* Remap a3 if it points into the parent's stack page */
     {
-      uint32_t pbase = (uint32_t)(uintptr_t)mm_page_to_ptr(current->stack_page_id);
+      uint32_t pbase = (uint32_t)(uintptr_t)mem_region_page_to_ptr(current->stack_page_id);
       uint32_t cbase = (uint32_t)(uintptr_t)child_ustack;
       if (child_a3 >= pbase && child_a3 < pbase + PAGE_SIZE)
         child_a3 = cbase + (child_a3 - pbase);
@@ -1762,9 +1762,9 @@ long sys_waitpid(long pid, long status_ptr, long options) {
     /* Free zombie's stack page */
     if (zombie->stack_page_id != PAGE_ID_INVALID) {
 #if defined(__ia16__)
-      mm_page_free(zombie->stack_page_id);
+      mem_region_page_free(zombie->stack_page_id);
 #else
-      { void *zs = mm_page_to_ptr(zombie->stack_page_id); proc_release_stack_page(&zs); }
+      { void *zs = mem_region_page_to_ptr(zombie->stack_page_id); proc_release_stack_page(&zs); }
 #endif
       zombie->stack_page_id = PAGE_ID_INVALID;
     }
@@ -1846,11 +1846,11 @@ long sys_execve(const char *path, const char *const *argv) {
      * immediately. */
 #if defined(__m68k__) || defined(__riscv)
   extern volatile void *exec_old_stack;
-  exec_old_stack = (old_stack_id != PAGE_ID_INVALID) ? mm_page_to_ptr(old_stack_id) : NULL;
+  exec_old_stack = (old_stack_id != PAGE_ID_INVALID) ? mem_region_page_to_ptr(old_stack_id) : NULL;
 #elif defined(__ia16__)
-  if (old_stack_id != PAGE_ID_INVALID) mm_page_free(old_stack_id);
+  if (old_stack_id != PAGE_ID_INVALID) mem_region_page_free(old_stack_id);
 #else
-  if (old_stack_id != PAGE_ID_INVALID) { void *os = mm_page_to_ptr(old_stack_id); proc_release_stack_page(&os); }
+  if (old_stack_id != PAGE_ID_INVALID) { void *os = mem_region_page_to_ptr(old_stack_id); proc_release_stack_page(&os); }
 #endif
 
   /* Free old user pages only if we owned them */

@@ -651,21 +651,6 @@ void mem_region_free(const proc_image_segment_t *seg) {
   }
 }
 
-void mem_region_free_tracked_page(void *page) {
-#if defined(__xtensa__)
-  proc_image_segment_t seg;
-
-  if (mem_region_ram_data_contains(page, PAGE_SIZE)) {
-    seg = proc_image_segment_make(page, PAGE_SIZE, PPAP_MEM_RAM_DATA,
-                                  PROC_IMAGE_SEG_WRITABLE);
-    mem_region_free_ram_data(&seg);
-    return;
-  }
-#endif
-
-  page_free(page);
-}
-
 void mem_region_free_tracked_page_id(page_id_t id) {
   if (id == PAGE_ID_INVALID) return;
   mm_page_free(id);

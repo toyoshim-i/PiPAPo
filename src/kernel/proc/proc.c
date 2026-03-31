@@ -209,7 +209,7 @@ int proc_page_backed_contains(const pcb_t *p, uintptr_t addr) {
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
     uint32_t base;
     if (p->user_pages[i] == PAGE_ID_INVALID) continue;
-    base = mm_page_linear(p->user_pages[i]);
+    base = mem_region_page_linear(p->user_pages[i]);
     if (addr >= base && addr < base + PAGE_SIZE) return 1;
   }
   return 0;
@@ -288,7 +288,7 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp) {
 {
 #if defined(__ia16__)
   /* i16: stack_base not used — frame is built at user_sp or via
-   * mm_page_write.  arch_build_initial_frame handles it. */
+   * mem_region_page_write.  arch_build_initial_frame handles it. */
   if (user_sp)
     sp = (uint32_t *)(void *)user_sp;
   else {
@@ -299,7 +299,7 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp) {
   sp = arch_build_initial_frame(sp, entry);
   p->sp = (uint32_t)(uintptr_t)sp;
 #else
-  uint8_t *stack_base = (uint8_t *)mm_page_to_ptr(p->stack_page_id);
+  uint8_t *stack_base = (uint8_t *)mem_region_page_to_ptr(p->stack_page_id);
 #endif
 
 #if !defined(__ia16__)

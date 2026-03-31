@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include "cpu.h"
 #include "klog.h"
+#include "mm/mem_region.h"
 #include "proc/proc.h"
 #include "proc/sched.h"
 
@@ -206,7 +207,7 @@ uint32_t riscv_do_switch(uint32_t current_sp)
      * before the field was initialized, or for processes that were
      * created before the mscratch split was in place). */
     if (!next->kernel_sp && next->stack_page_id != PAGE_ID_INVALID)
-        next->kernel_sp = (uint32_t)(uintptr_t)mm_page_to_ptr(next->stack_page_id) + PAGE_SIZE;
+        next->kernel_sp = (uint32_t)(uintptr_t)mem_region_page_to_ptr(next->stack_page_id) + PAGE_SIZE;
 
     return next->sp;
 }

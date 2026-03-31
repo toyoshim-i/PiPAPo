@@ -192,7 +192,7 @@ static int sos_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     return -(int)ENOMEM;
   }
 
-  if (proc_track_page_range(p, 0, mm_ptr_to_page(data_region.base),
+  if (proc_track_page_range(p, 0, mem_region_ptr_to_page(data_region.base),
                             data_region.size / PAGE_SIZE) < 0) {
     mem_region_free(&data_region);
     return -(int)ENOMEM;
@@ -209,7 +209,7 @@ static int sos_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     proc_release_tracked_pages(p, 0, Z80_MEM_PAGES + 1u);
     return -(int)ENOMEM;
   }
-  p->stack_page_id = mm_ptr_to_page(stack_region.base);
+  p->stack_page_id = mem_region_ptr_to_page(stack_region.base);
   p->image.stack = stack_region;
 
   /* ── 4. Initialize Z80 emulator ────────────────────────────────────── */
@@ -269,7 +269,7 @@ static int sos_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   {
     uint8_t *exc = (uint8_t *)(uintptr_t)p->sp + 15u * sizeof(uint32_t);
     *(uint16_t *)(void *)exc = SR_SUPV_IRQ;
-    p->usp = (uint32_t)(uintptr_t)mm_page_to_ptr(p->stack_page_id) + PAGE_SIZE;
+    p->usp = (uint32_t)(uintptr_t)mem_region_page_to_ptr(p->stack_page_id) + PAGE_SIZE;
   }
 #endif
 

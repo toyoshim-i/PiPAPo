@@ -19,6 +19,7 @@
 #include <stdint.h>
 
 #include "../common/mod/mod_vfs.h"  /* mod_vfs.tty_rx_notify */
+#include "../mm/mem_region.h"
 #include "../mm/page.h" /* PAGE_SIZE */
 #include "../signal/signal.h"
 #include "../common/spinlock.h" /* SPIN_PROC */
@@ -289,7 +290,7 @@ void sched_start(void) {
   /* Set mscratch to pid 0's kernel stack top.  boot.S initialized it to
    * __stack_top (linker stack), but now pid 0 has its own stack_page.
    * Must be done before enabling interrupts. */
-  uint32_t ksp = (uint32_t)(uintptr_t)mm_page_to_ptr(proc_table[0].stack_page_id) + PAGE_SIZE;
+  uint32_t ksp = (uint32_t)(uintptr_t)mem_region_page_to_ptr(proc_table[0].stack_page_id) + PAGE_SIZE;
   proc_table[0].kernel_sp = ksp;
   __asm__ volatile("csrw mscratch, %0" : : "r"(ksp));
 

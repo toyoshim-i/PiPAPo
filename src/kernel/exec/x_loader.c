@@ -191,7 +191,7 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
                            PROC_IMAGE_SEG_OWNED) < 0) {
     return -(int)ENOMEM;
   }
-  p->stack_page_id = mm_ptr_to_page(stack_region.base);
+  p->stack_page_id = mem_region_ptr_to_page(stack_region.base);
   p->image.stack = stack_region;
 
 #if !defined(__m68k__) && defined(PPAP_ENABLE_ECPU_M68K)
@@ -216,7 +216,7 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     return total_pages;
   }
 
-  if (proc_track_page_range(p, 0, mm_ptr_to_page(image_region.base),
+  if (proc_track_page_range(p, 0, mem_region_ptr_to_page(image_region.base),
                             image_region.size / PAGE_SIZE) < 0) {
     mem_region_free(&image_region);
     mem_region_free(&stack_region);
@@ -317,7 +317,7 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     return n_pages;
   }
 
-  if (proc_track_page_range(p, 0, mm_ptr_to_page(image_region.base),
+  if (proc_track_page_range(p, 0, mem_region_ptr_to_page(image_region.base),
                             image_region.size / PAGE_SIZE) < 0) {
     mem_region_free(&image_region);
     mem_region_free(&stack_region);

@@ -42,8 +42,6 @@ void mem_region_free(const proc_image_segment_t *seg) {
   free(seg->base);
 }
 
-void mem_region_free_tracked_page(void *page) { free(page); }
-
 void mem_region_free_tracked_page_id(page_id_t id) { (void)id; }
 
 page_id_t mem_region_page_alloc(void) { return PAGE_ID_INVALID; }

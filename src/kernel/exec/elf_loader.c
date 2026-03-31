@@ -419,7 +419,7 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
                            PROC_IMAGE_SEG_OWNED) < 0) {
     return -(int)ENOMEM;
   }
-  p->stack_page_id = mm_ptr_to_page(stack_region.base);
+  p->stack_page_id = mem_region_ptr_to_page(stack_region.base);
   p->image.stack = stack_region;
   out->stack_top = (uint32_t)(uintptr_t)stack_region.base + PAGE_SIZE;
 
@@ -562,7 +562,7 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
   }
   /* --- 6. Page tracking --- */
   if (data_base) {
-    if (proc_track_page_range(p, 0, mm_ptr_to_page(data_base),
+    if (proc_track_page_range(p, 0, mem_region_ptr_to_page(data_base),
                               data_pages) < 0) {
       mem_region_free(&data_region);
       mem_region_free(&text_region);
@@ -583,7 +583,7 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
    * Derive stack_top from this tracked page. */
   if (cpu_ops->arch_id == CPU_ARCH_RISCV && need_user_stack) {
     if (proc_track_page(p, USER_PAGES_MAX - 1,
-                        mm_ptr_to_page(ustack_region.base)) < 0) {
+                        mem_region_ptr_to_page(ustack_region.base)) < 0) {
       mem_region_free(&data_region);
       mem_region_free(&text_region);
       mem_region_free(&ustack_region);
@@ -593,7 +593,7 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
       return -(int)ENOMEM;
     }
     page_id_t us_id = proc_last_page_backed_base(p);
-    out->stack_top = mm_page_linear(us_id) + PAGE_SIZE;
+    out->stack_top = mem_region_page_linear(us_id) + PAGE_SIZE;
   }
 
 #if defined(__m68k__)

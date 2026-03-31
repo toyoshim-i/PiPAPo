@@ -142,7 +142,7 @@ void core1_sched_entry(void) {
   }
   if (mem_region_alloc(&idle_stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
                        PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) == 0)
-    idle->stack_page_id = mm_ptr_to_page(idle_stack_region.base);
+    idle->stack_page_id = mem_region_ptr_to_page(idle_stack_region.base);
   else
     idle->stack_page_id = PAGE_ID_INVALID;
   if (idle->stack_page_id == PAGE_ID_INVALID) {
@@ -158,7 +158,7 @@ void core1_sched_entry(void) {
 
   /* 4. Switch Thread mode to PSP using idle's stack page.
    * MSP (set by core1_launch) remains the exception stack. */
-  uint32_t psp_top = (uint32_t)(uintptr_t)mm_page_to_ptr(idle->stack_page_id) + PAGE_SIZE;
+  uint32_t psp_top = (uint32_t)(uintptr_t)mem_region_page_to_ptr(idle->stack_page_id) + PAGE_SIZE;
   __asm__ volatile(
       "msr  psp, %0      \n" /* PSP = top of idle's stack page */
       "movs r0, #2       \n" /* CONTROL.SPSEL = 1 */

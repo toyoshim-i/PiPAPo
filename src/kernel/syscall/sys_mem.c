@@ -40,7 +40,7 @@ long sys_brk(long addr) {
   page_id_t page0_id = proc_page_backed_base(current);
   if (page0_id == PAGE_ID_INVALID)
     return (long)(current->brk_current); /* unchanged = failure */
-  uintptr_t page0_base = (uintptr_t)mm_page_linear(page0_id);
+  uintptr_t page0_base = (uintptr_t)mem_region_page_linear(page0_id);
   uintptr_t old_top = current->brk_current;
   uintptr_t new_top = new_brk;
   uint32_t old_pages;
@@ -64,7 +64,7 @@ long sys_brk(long addr) {
       return (long)(current->brk_current); /* unchanged = failure */
     }
     memset(page_region.base, 0, PAGE_SIZE);
-    proc_track_page(current, i, mm_ptr_to_page(page_region.base));
+    proc_track_page(current, i, mem_region_ptr_to_page(page_region.base));
   }
 
   /* Shrink: free excess pages */
@@ -132,7 +132,7 @@ long sys_mmap2(uintptr_t addr, size_t len, uint32_t prot, uint32_t flags,
       return -(long)ENOMEM;
     }
     memset(region.base, 0, region.size);
-    page_id_t base_id = mm_ptr_to_page(region.base);
+    page_id_t base_id = mem_region_ptr_to_page(region.base);
     for (uint32_t i = 0; i < num_pages; i++)
       current->user_pages[(uint32_t)slot + i] = base_id + (page_id_t)i;
     return (long)((uintptr_t)base);
@@ -145,7 +145,7 @@ long sys_mmap2(uintptr_t addr, size_t len, uint32_t prot, uint32_t flags,
       return -(long)ENOMEM;
     }
     memset(region.base, 0, region.size);
-    page_id_t base_id = mm_ptr_to_page(region.base);
+    page_id_t base_id = mem_region_ptr_to_page(region.base);
     for (uint32_t i = 0; i < num_pages; i++)
       current->user_pages[(uint32_t)slot + i] = base_id + (page_id_t)i;
     return (long)((uintptr_t)region.base);
@@ -163,7 +163,7 @@ long sys_munmap(uintptr_t addr, size_t len) {
   /* Find the matching page in user_pages[] by linear address */
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
     if (current->user_pages[i] == PAGE_ID_INVALID) continue;
-    if (mm_page_linear(current->user_pages[i]) != (uint32_t)addr) continue;
+    if (mem_region_page_linear(current->user_pages[i]) != (uint32_t)addr) continue;
 
     /* Free num_pages contiguous slots from this position */
     for (uint32_t j = 0; j < num_pages && (i + j) < USER_PAGES_MAX; j++) {
