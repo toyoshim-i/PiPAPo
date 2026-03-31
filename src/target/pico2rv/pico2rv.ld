@@ -30,8 +30,8 @@ MEMORY {
     /* External QSPI Flash — XIP mapped at 0x10000000
      * 4 MB total */
     FLASH_BOOT   (rx)  : ORIGIN = 0x10000000, LENGTH = 4K
-    FLASH_KERNEL (rx)  : ORIGIN = 0x10001000, LENGTH = 168K
-    FLASH_ROMFS  (r)   : ORIGIN = 0x1002B000, LENGTH = 4M - 0x2B000
+    FLASH_KERNEL (rx)  : ORIGIN = 0x10001000, LENGTH = 172K
+    FLASH_ROMFS  (r)   : ORIGIN = 0x1002C000, LENGTH = 4M - 0x2C000
 
     /* On-chip SRAM — 520KB total */
     RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 24K
