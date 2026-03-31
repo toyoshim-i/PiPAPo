@@ -45,15 +45,8 @@ uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void));
  * plain byte dereference.  Xtensa needs word-aligned reads because user
  * code/rodata lives in IRAM (word-access only).
  *
- * copy_from_user(dst, src, n) — copy n bytes from user-space to kernel.
- * Default implementation using read_user_byte(); architectures may
- * override with a more efficient version.
+ * For bulk user-space memory access, use the functions declared in
+ * kernel/mm/uaccess.h (copy_from_user, copy_to_user, strncpy_from_user).
  */
-static inline void copy_from_user(void *dst, const void *src, size_t n) {
-  uint8_t *d = (uint8_t *)dst;
-  const uint8_t *s = (const uint8_t *)src;
-  for (size_t i = 0; i < n; i++)
-    d[i] = read_user_byte(s + i);
-}
 
 #endif /* PPAP_ARCH_ARCH_H */

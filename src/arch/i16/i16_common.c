@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include "kernel/proc/proc.h"
+
 /* Context switch pending flag.
  * Set by arch_yield().  Checked by timer ISR in switch.S.
  * Same pattern as m68k_switch_pending / riscv_switch_pending. */
@@ -60,6 +62,9 @@ long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1,
                           uint16_t user_ds)
 {
   uint32_t seg_base = (uint32_t)user_ds << 4;
+
+  /* Save user DS for uaccess (copy_from_user / copy_to_user). */
+  current->user_ds = user_ds;
 
   /* The kernel's syscall_dispatch reads args from frame[0..3] and
    * writes the return value back to frame[0]. */

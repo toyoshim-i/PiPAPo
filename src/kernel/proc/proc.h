@@ -116,6 +116,7 @@ typedef struct pcb {
   uint32_t sp;                 /* saved stack pointer     (offset 0)       */
 #elif defined(__ia16__)
   uint32_t sp;                 /* saved 16-bit SP, zero-extended (offset 0) */
+  uint16_t user_ds;            /* saved user DS at syscall entry (for uaccess) */
 #else
 #error "Unsupported architecture — define PCB register save area"
 #endif

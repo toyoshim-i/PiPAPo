@@ -24,6 +24,7 @@ set(KERNEL_SOURCES
     ${PPAP_ROOT}/src/kernel/mm/page.c
     ${PPAP_ROOT}/src/kernel/mm/kmem.c
     ${PPAP_ROOT}/src/kernel/mm/mem_region.c
+    ${PPAP_ROOT}/src/kernel/mm/uaccess.c
     ${PPAP_ROOT}/src/kernel/proc/proc.c
     ${PPAP_ROOT}/src/kernel/proc/sched.c
     ${PPAP_ROOT}/src/kernel/syscall/syscall.c
