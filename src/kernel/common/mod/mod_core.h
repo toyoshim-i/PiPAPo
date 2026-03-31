@@ -239,6 +239,13 @@ MOD_DECLARE_BEGIN(core)
    */
   MOD_FUNC(core, void, svc_set_restart, void)
 
+  /* UART lives in core (not VFS) because klog/klogf need raw UART
+   * access for boot-time output before VFS is initialized.  Putting
+   * UART in VFS would create a circular dependency: core depends on
+   * UART for logging, VFS depends on core for allocation.  The TTY
+   * layer in VFS wraps these primitives with line discipline and
+   * buffering for user-facing I/O. */
+
   /*
    * uart_getc — Dequeue one character from the UART receive ring.
    *
