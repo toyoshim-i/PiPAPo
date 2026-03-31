@@ -66,7 +66,7 @@ void svc_set_restart(void);
 /* sys_proc.c */
 long sys_exit(long status);
 long sys_getpid(void);
-long sys_execve(uint32_t user_path, const char *const *argv);
+long sys_execve(const char *path, const char *const *argv);
 long sys_vfork(uint32_t *frame);
 long sys_waitpid(long pid, long status_ptr, long options);
 long sys_set_tid_address(void *tidptr);
@@ -92,8 +92,8 @@ void trace_arm_hwbp_on_switch(const pcb_t *next);
 int trace_arm_hardfault_debug_stop(uint32_t *psp_frame);
 
 /* sys_io.c */
-long sys_read(long fd, uint32_t user_buf, size_t n);
-long sys_write(long fd, uint32_t user_buf, size_t n);
+long sys_read(long fd, char *buf, size_t n);
+long sys_write(long fd, const char *buf, size_t n);
 long sys_writev(long fd, const void *iov, long iovcnt);
 long sys_readv(long fd, const void *iov, long iovcnt);
 long sys_ioctl(long fd, long cmd, long arg);
@@ -131,31 +131,31 @@ long sys_rt_sigreturn(void);
 struct stat;
 struct dirent;
 void fd_pool_init(void);
-long sys_open(uint32_t user_path, long flags, long mode);
+long sys_open(const char *path, long flags, long mode);
 long sys_close(long fd);
 long sys_lseek(long fd, long off, long whence);
-long sys_stat(uint32_t user_path, struct stat *buf);
+long sys_stat(const char *path, struct stat *buf);
 long sys_fstat(long fd, struct stat *buf);
 long sys_getdents(long fd, struct dirent *buf, size_t count);
 long sys_getcwd(char *buf, size_t size);
-long sys_chdir(uint32_t user_path);
-long sys_mkdir(uint32_t user_path, long mode);
-long sys_unlink(uint32_t user_path);
-long sys_stat64(uint32_t user_path, void *buf);
+long sys_chdir(const char *path);
+long sys_mkdir(const char *path, long mode);
+long sys_unlink(const char *path);
+long sys_stat64(const char *path, void *buf);
 long sys_fstat64(long fd, void *buf);
-long sys_lstat64(uint32_t user_path, void *buf);
+long sys_lstat64(const char *path, void *buf);
 long sys_getdents64(long fd, void *buf, long count);
 long sys_llseek(long fd, long off_hi, long off_lo, void *result, long whence);
 long sys_fcntl64(long fd, long cmd, long arg);
-long sys_access(uint32_t user_path, long mode);
-long sys_readlink(uint32_t user_path, char *buf, long bufsiz);
-long sys_rmdir(uint32_t user_path);
-long sys_rename(uint32_t user_oldpath, uint32_t user_newpath);
+long sys_access(const char *path, long mode);
+long sys_readlink(const char *path, char *buf, long bufsiz);
+long sys_rmdir(const char *path);
+long sys_rename(const char *oldpath, const char *newpath);
 long sys_umask(long mask);
-long sys_mount(uint32_t user_source, uint32_t user_target, uint32_t user_fstype,
+long sys_mount(const char *source, const char *target, const char *fstype,
                long flags, const void *data);
-long sys_umount2(uint32_t user_target, long flags);
-long sys_statfs64(uint32_t user_path, long sz, void *buf);
+long sys_umount2(const char *target, long flags);
+long sys_statfs64(const char *path, long sz, void *buf);
 long sys_fstatfs64(long fd, long sz, void *buf);
 
 /* sys_poll.c */

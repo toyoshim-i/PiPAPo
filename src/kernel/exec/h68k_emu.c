@@ -30,13 +30,11 @@ static inline uint32_t h68k_emu_ustack_u32(m68k_state_t *cpu, uint32_t offset) {
 
 static inline uint32_t h68k_emu_align4(uint32_t x) { return (x + 3u) & ~3u; }
 
-static void h68k_emu_putc(uint8_t ch) {
-  sys_write(1, (uint32_t)(uintptr_t)&ch, 1);
-}
+static void h68k_emu_putc(uint8_t ch) { sys_write(1, (const char *)&ch, 1); }
 
 static uint8_t h68k_emu_getc(void) {
   uint8_t ch = 0;
-  sys_read(0, (uint32_t)(uintptr_t)&ch, 1);
+  sys_read(0, (char *)&ch, 1);
   return ch;
 }
 
@@ -83,7 +81,7 @@ static long h68k_emu_write_guest_to_fd(m68k_state_t *cpu, int fd,
     if (chunk > sizeof(tmp)) chunk = sizeof(tmp);
     for (uint32_t i = 0; i < chunk; i++)
       tmp[i] = m68k_read8(cpu, guest_addr + done + i);
-    long wr = sys_write(fd, (uint32_t)(uintptr_t)tmp, chunk);
+    long wr = sys_write(fd, (const char *)tmp, chunk);
     if (wr < 0) return (done > 0) ? (long)done : wr;
     done += (uint32_t)wr;
     if ((uint32_t)wr < chunk) break;
@@ -99,7 +97,7 @@ static long h68k_emu_read_fd_to_guest(m68k_state_t *cpu, int fd,
   while (done < len) {
     uint32_t chunk = len - done;
     if (chunk > sizeof(tmp)) chunk = sizeof(tmp);
-    long rd = sys_read(fd, (uint32_t)(uintptr_t)tmp, chunk);
+    long rd = sys_read(fd, (char *)tmp, chunk);
     if (rd < 0) return (done > 0) ? (long)done : rd;
     if (rd == 0) break;
     for (uint32_t i = 0; i < (uint32_t)rd; i++)
@@ -355,7 +353,7 @@ int h68k_emu_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
             cpu->d[0] = (uint32_t)h68k_errno(err);
             return CPU_TRAP_HANDLED;
           }
-          cpu->d[0] = (uint32_t)h68k_errno(sys_mkdir((uint32_t)(uintptr_t)path, 0755));
+          cpu->d[0] = (uint32_t)h68k_errno(sys_mkdir(path, 0755));
           return CPU_TRAP_HANDLED;
         }
 
@@ -367,7 +365,7 @@ int h68k_emu_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
             cpu->d[0] = (uint32_t)h68k_errno(err);
             return CPU_TRAP_HANDLED;
           }
-          cpu->d[0] = (uint32_t)h68k_errno(sys_rmdir((uint32_t)(uintptr_t)path));
+          cpu->d[0] = (uint32_t)h68k_errno(sys_rmdir(path));
           return CPU_TRAP_HANDLED;
         }
 
@@ -379,7 +377,7 @@ int h68k_emu_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
             cpu->d[0] = (uint32_t)h68k_errno(err);
             return CPU_TRAP_HANDLED;
           }
-          cpu->d[0] = (uint32_t)h68k_errno(sys_chdir((uint32_t)(uintptr_t)path));
+          cpu->d[0] = (uint32_t)h68k_errno(sys_chdir(path));
           return CPU_TRAP_HANDLED;
         }
 
@@ -392,7 +390,7 @@ int h68k_emu_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
             return CPU_TRAP_HANDLED;
           }
           cpu->d[0] = (uint32_t)h68k_errno(
-              sys_open((uint32_t)(uintptr_t)path, O_CREAT | O_TRUNC | O_WRONLY, 0644));
+              sys_open(path, O_CREAT | O_TRUNC | O_WRONLY, 0644));
           return CPU_TRAP_HANDLED;
         }
 
@@ -416,7 +414,7 @@ int h68k_emu_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
               flags = O_RDWR;
               break;
           }
-          cpu->d[0] = (uint32_t)h68k_errno(sys_open((uint32_t)(uintptr_t)path, flags, 0644));
+          cpu->d[0] = (uint32_t)h68k_errno(sys_open(path, flags, 0644));
           return CPU_TRAP_HANDLED;
         }
 
@@ -452,7 +450,7 @@ int h68k_emu_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
             cpu->d[0] = (uint32_t)h68k_errno(err);
             return CPU_TRAP_HANDLED;
           }
-          cpu->d[0] = (uint32_t)h68k_errno(sys_unlink((uint32_t)(uintptr_t)path));
+          cpu->d[0] = (uint32_t)h68k_errno(sys_unlink(path));
           return CPU_TRAP_HANDLED;
         }
 
@@ -514,7 +512,7 @@ int h68k_emu_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
             cpu->d[0] = (uint32_t)h68k_errno(err);
             return CPU_TRAP_HANDLED;
           }
-          cpu->d[0] = (uint32_t)h68k_errno(sys_rename((uint32_t)(uintptr_t)old_path, (uint32_t)(uintptr_t)new_path));
+          cpu->d[0] = (uint32_t)h68k_errno(sys_rename(old_path, new_path));
           return CPU_TRAP_HANDLED;
         }
 

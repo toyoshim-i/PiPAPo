@@ -10,7 +10,6 @@
 
 #include "../common/errno.h"
 #include "../common/mod/mod_vfs.h"
-#include "../mm/uaccess.h"
 #include "../proc/proc.h"
 #include "config.h"
 #include "syscall.h"
@@ -21,12 +20,10 @@
 /* ── sys_open ────────────────────────────────────────────────────────────────
  */
 
-long sys_open(uint32_t user_path, long flags, long mode) {
-  char kpath[VFS_PATH_MAX];
-  if (strncpy_from_user(kpath, user_path, sizeof(kpath)) < 0)
-    return -(long)EFAULT;
+long sys_open(const char *path, long flags, long mode) {
+  if (!path) return -(long)EINVAL;
 
-  int desc = mod_vfs.fd_open(kpath, (int)flags, (int)mode);
+  int desc = mod_vfs.fd_open(path, (int)flags, (int)mode);
   if (desc < 0) return (long)desc;
 
   /* Find free fd_map slot */
@@ -67,14 +64,11 @@ long sys_lseek(long fd, long off, long whence) {
 /* ── sys_stat ────────────────────────────────────────────────────────────────
  */
 
-long sys_stat(uint32_t user_path, struct stat *buf) {
-  if (!buf) return -(long)EINVAL;
-  char kpath[VFS_PATH_MAX];
-  if (strncpy_from_user(kpath, user_path, sizeof(kpath)) < 0)
-    return -(long)EFAULT;
+long sys_stat(const char *path, struct stat *buf) {
+  if (!path || !buf) return -(long)EINVAL;
 
   vnode_t *vn = NULL;
-  int err = mod_vfs.lookup(kpath, &vn);
+  int err = mod_vfs.lookup(path, &vn);
   if (err) return (long)err;
 
   if (!vn->mount || !vn->mount->ops || !vn->mount->ops->stat) {
@@ -131,13 +125,11 @@ long sys_getcwd(char *buf, size_t size) {
 /* ── sys_chdir ───────────────────────────────────────────────────────────────
  */
 
-long sys_chdir(uint32_t user_path) {
-  char kpath[VFS_PATH_MAX];
-  if (strncpy_from_user(kpath, user_path, sizeof(kpath)) < 0)
-    return -(long)EFAULT;
+long sys_chdir(const char *path) {
+  if (!path) return -(long)EINVAL;
 
   vnode_t *vn = NULL;
-  int err = mod_vfs.lookup(kpath, &vn);
+  int err = mod_vfs.lookup(path, &vn);
   if (err) return (long)err;
 
   if (vn->type != VNODE_DIR) {
@@ -148,18 +140,17 @@ long sys_chdir(uint32_t user_path) {
 
   /* Resolve relative path to absolute, then normalize */
   char abs_path[VFS_PATH_MAX];
-  const char *path = kpath;
-  if (kpath[0] != '/') {
+  if (path[0] != '/') {
     const char *cwd = current->cwd[0] ? current->cwd : "/";
     int cwdlen = (int)__builtin_strlen(cwd);
-    int pathlen = (int)__builtin_strlen(kpath);
+    int pathlen = (int)__builtin_strlen(path);
     if (cwdlen == 1) {
       abs_path[0] = '/';
-      __builtin_memcpy(abs_path + 1, kpath, (size_t)pathlen + 1);
+      __builtin_memcpy(abs_path + 1, path, (size_t)pathlen + 1);
     } else {
       __builtin_memcpy(abs_path, cwd, (size_t)cwdlen);
       abs_path[cwdlen] = '/';
-      __builtin_memcpy(abs_path + cwdlen + 1, kpath, (size_t)pathlen + 1);
+      __builtin_memcpy(abs_path + cwdlen + 1, path, (size_t)pathlen + 1);
     }
     path = abs_path;
   }
@@ -216,14 +207,12 @@ long sys_dup2(long oldfd, long newfd) {
 /* ── sys_mkdir ───────────────────────────────────────────────────────────────
  */
 
-long sys_mkdir(uint32_t user_path, long mode) {
-  char kpath[VFS_PATH_MAX];
-  if (strncpy_from_user(kpath, user_path, sizeof(kpath)) < 0)
-    return -(long)EFAULT;
+long sys_mkdir(const char *path, long mode) {
+  if (!path) return -(long)EINVAL;
 
   vnode_t *parent = NULL;
   char namebuf[VFS_NAME_MAX + 1];
-  int err = mod_vfs.lookup_parent(kpath, &parent, namebuf,
+  int err = mod_vfs.lookup_parent(path, &parent, namebuf,
                                   (int)sizeof(namebuf));
   if (err) return (long)err;
 
@@ -248,14 +237,12 @@ long sys_mkdir(uint32_t user_path, long mode) {
 /* ── sys_unlink ──────────────────────────────────────────────────────────────
  */
 
-long sys_unlink(uint32_t user_path) {
-  char kpath[VFS_PATH_MAX];
-  if (strncpy_from_user(kpath, user_path, sizeof(kpath)) < 0)
-    return -(long)EFAULT;
+long sys_unlink(const char *path) {
+  if (!path) return -(long)EINVAL;
 
   vnode_t *parent = NULL;
   char namebuf[VFS_NAME_MAX + 1];
-  int err = mod_vfs.lookup_parent(kpath, &parent, namebuf,
+  int err = mod_vfs.lookup_parent(path, &parent, namebuf,
                                   (int)sizeof(namebuf));
   if (err) return (long)err;
 
@@ -280,23 +267,18 @@ long sys_unlink(uint32_t user_path) {
 /* ── sys_rename ──────────────────────────────────────────────────────────────
  */
 
-long sys_rename(uint32_t user_oldpath, uint32_t user_newpath) {
-  char kold[VFS_PATH_MAX];
-  char knew[VFS_PATH_MAX];
-  if (strncpy_from_user(kold, user_oldpath, sizeof(kold)) < 0)
-    return -(long)EFAULT;
-  if (strncpy_from_user(knew, user_newpath, sizeof(knew)) < 0)
-    return -(long)EFAULT;
+long sys_rename(const char *oldpath, const char *newpath) {
+  if (!oldpath || !newpath) return -(long)EINVAL;
 
   vnode_t *old_parent = NULL;
   char old_name[VFS_NAME_MAX + 1];
-  int err = mod_vfs.lookup_parent(kold, &old_parent, old_name,
+  int err = mod_vfs.lookup_parent(oldpath, &old_parent, old_name,
                                   (int)sizeof(old_name));
   if (err) return (long)err;
 
   vnode_t *new_parent = NULL;
   char new_name[VFS_NAME_MAX + 1];
-  err = mod_vfs.lookup_parent(knew, &new_parent, new_name,
+  err = mod_vfs.lookup_parent(newpath, &new_parent, new_name,
                               (int)sizeof(new_name));
   if (err) {
     mod_vfs.vnode_release(old_parent);
@@ -391,14 +373,11 @@ static void fill_stat64(const struct stat *src, void *buf) {
 /* ── sys_stat64 ──────────────────────────────────────────────────────────────
  */
 
-long sys_stat64(uint32_t user_path, void *buf) {
-  if (!buf) return -(long)EINVAL;
-  char kpath[VFS_PATH_MAX];
-  if (strncpy_from_user(kpath, user_path, sizeof(kpath)) < 0)
-    return -(long)EFAULT;
+long sys_stat64(const char *path, void *buf) {
+  if (!path || !buf) return -(long)EINVAL;
 
   vnode_t *vn = NULL;
-  int err = mod_vfs.lookup(kpath, &vn);
+  int err = mod_vfs.lookup(path, &vn);
   if (err) return (long)err;
 
   if (!vn->mount || !vn->mount->ops || !vn->mount->ops->stat) {
@@ -434,14 +413,11 @@ long sys_fstat64(long fd, void *buf) {
 /* ── sys_lstat64 ─────────────────────────────────────────────────────────────
  */
 
-long sys_lstat64(uint32_t user_path, void *buf) {
-  if (!buf) return -(long)EINVAL;
-  char kpath[VFS_PATH_MAX];
-  if (strncpy_from_user(kpath, user_path, sizeof(kpath)) < 0)
-    return -(long)EFAULT;
+long sys_lstat64(const char *path, void *buf) {
+  if (!path || !buf) return -(long)EINVAL;
 
   vnode_t *vn = NULL;
-  int err = mod_vfs.lookup_flags(kpath, &vn, VFS_LOOKUP_NOFOLLOW);
+  int err = mod_vfs.lookup_flags(path, &vn, VFS_LOOKUP_NOFOLLOW);
   if (err) return (long)err;
 
   if (!vn->mount || !vn->mount->ops || !vn->mount->ops->stat) {
@@ -528,14 +504,12 @@ long sys_fcntl64(long fd, long cmd, long arg) {
 /* ── sys_access ──────────────────────────────────────────────────────────────
  */
 
-long sys_access(uint32_t user_path, long mode) {
+long sys_access(const char *path, long mode) {
   (void)mode;
-  char kpath[VFS_PATH_MAX];
-  if (strncpy_from_user(kpath, user_path, sizeof(kpath)) < 0)
-    return -(long)EFAULT;
+  if (!path) return -(long)EINVAL;
 
   vnode_t *vn = NULL;
-  int err = mod_vfs.lookup(kpath, &vn);
+  int err = mod_vfs.lookup(path, &vn);
   if (err) return (long)err;
 
   mod_vfs.vnode_release(vn);
@@ -545,13 +519,10 @@ long sys_access(uint32_t user_path, long mode) {
 /* ── sys_readlink ────────────────────────────────────────────────────────────
  */
 
-long sys_readlink(uint32_t user_path, char *buf, long bufsiz) {
-  if (!buf || bufsiz <= 0) return -(long)EINVAL;
-  char kpath[VFS_PATH_MAX];
-  if (strncpy_from_user(kpath, user_path, sizeof(kpath)) < 0)
-    return -(long)EFAULT;
+long sys_readlink(const char *path, char *buf, long bufsiz) {
+  if (!path || !buf || bufsiz <= 0) return -(long)EINVAL;
 
-  if (strcmp(kpath, "/proc/self/exe") == 0) {
+  if (strcmp(path, "/proc/self/exe") == 0) {
     const char *exe = "/bin/busybox";
     size_t len = strlen(exe);
     if ((long)len > bufsiz) len = (size_t)bufsiz;
@@ -560,7 +531,7 @@ long sys_readlink(uint32_t user_path, char *buf, long bufsiz) {
   }
 
   vnode_t *vn = NULL;
-  int err = mod_vfs.lookup_flags(kpath, &vn, VFS_LOOKUP_NOFOLLOW);
+  int err = mod_vfs.lookup_flags(path, &vn, VFS_LOOKUP_NOFOLLOW);
   if (err) return (long)err;
 
   if (vn->type != VNODE_SYMLINK) {
@@ -580,8 +551,8 @@ long sys_readlink(uint32_t user_path, char *buf, long bufsiz) {
 /* ── sys_rmdir ───────────────────────────────────────────────────────────────
  */
 
-long sys_rmdir(uint32_t user_path) {
-  return sys_unlink(user_path);
+long sys_rmdir(const char *path) {
+  return sys_unlink(path);
 }
 
 /* ── sys_umask ───────────────────────────────────────────────────────────────
@@ -596,17 +567,10 @@ long sys_umask(long mask) {
 /* ── sys_mount ───────────────────────────────────────────────────────────────
  */
 
-long sys_mount(uint32_t user_source, uint32_t user_target, uint32_t user_fstype,
+long sys_mount(const char *source, const char *target, const char *fstype,
                long flags, const void *data) {
   (void)data;
-  char ksrc[VFS_PATH_MAX], ktgt[VFS_PATH_MAX], kfs[32];
-  if (strncpy_from_user(ksrc, user_source, sizeof(ksrc)) < 0)
-    return -(long)EFAULT;
-  if (strncpy_from_user(ktgt, user_target, sizeof(ktgt)) < 0)
-    return -(long)EFAULT;
-  if (strncpy_from_user(kfs, user_fstype, sizeof(kfs)) < 0)
-    return -(long)EFAULT;
-  return (long)mod_vfs.mount_by_fstype(ksrc, ktgt, kfs, flags);
+  return (long)mod_vfs.mount_by_fstype(source, target, fstype, flags);
 }
 
 /* ── sys_pipe ────────────────────────────────────────────────────────────────
@@ -643,14 +607,12 @@ long sys_pipe(int *fds) {
 /* ── sys_umount2 ────────────────────────────────────────────────────────────
  */
 
-long sys_umount2(uint32_t user_target, long flags) {
+long sys_umount2(const char *target, long flags) {
   (void)flags;
-  char kpath[VFS_PATH_MAX];
-  if (strncpy_from_user(kpath, user_target, sizeof(kpath)) < 0)
-    return -(long)EFAULT;
+  if (!target) return -(long)EINVAL;
 
   char norm[VFS_PATH_MAX];
-  int nlen = mod_vfs.path_normalize(kpath, norm, (int)sizeof(norm));
+  int nlen = mod_vfs.path_normalize(target, norm, (int)sizeof(norm));
   if (nlen < 0) return (long)nlen;
   return (long)mod_vfs.umount(norm);
 }
@@ -658,15 +620,12 @@ long sys_umount2(uint32_t user_target, long flags) {
 /* ── sys_statfs64 ───────────────────────────────────────────────────────────
  */
 
-long sys_statfs64(uint32_t user_path, long sz, void *buf) {
+long sys_statfs64(const char *path, long sz, void *buf) {
   (void)sz;
-  if (!buf) return -(long)EINVAL;
-  char kpath[VFS_PATH_MAX];
-  if (strncpy_from_user(kpath, user_path, sizeof(kpath)) < 0)
-    return -(long)EFAULT;
+  if (!path || !buf) return -(long)EINVAL;
 
   const char *remainder;
-  mount_entry_t *mnt = mod_vfs.mount_find(kpath, &remainder);
+  mount_entry_t *mnt = mod_vfs.mount_find(path, &remainder);
   if (!mnt) return -(long)ENOENT;
 
   struct kernel_statfs ksf;

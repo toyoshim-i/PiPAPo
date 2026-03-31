@@ -74,13 +74,9 @@ static void sos_trace_after(uint32_t abi, uint32_t nr, z80_state_t *cpu) {
                      z80_hl(cpu), cpu->sp, cpu->pc, (int32_t)cpu->a);
 }
 
-static void sos_raw_putchar(uint8_t ch) {
-  sys_write(1, (uint32_t)(uintptr_t)&ch, 1);
-}
+static void sos_raw_putchar(uint8_t ch) { sys_write(1, (const char *)&ch, 1); }
 
-static void sos_putstr(const char *s, int len) {
-  sys_write(1, (uint32_t)(uintptr_t)s, (size_t)len);
-}
+static void sos_putstr(const char *s, int len) { sys_write(1, s, (size_t)len); }
 
 /* ── Screen buffer helpers ───────────────────────────────────────────── */
 
@@ -127,7 +123,7 @@ static void sos_screen_putc(sos_state_t *sos, uint8_t ch) {
 static uint8_t sos_getchar(void) {
   uint8_t ch = 0;
   for (;;) {
-    long rc = sys_read(0, (uint32_t)(uintptr_t)&ch, 1);
+    long rc = sys_read(0, (char *)&ch, 1);
     if (rc > 0) return ch;
     signal_check_kernel();
   }
@@ -140,23 +136,23 @@ static int sos_char_ready(void) {
 }
 
 static int sos_file_open(const char *path, int flags) {
-  return (int)sys_open((uint32_t)(uintptr_t)path, (long)flags, 0644);
+  return (int)sys_open(path, (long)flags, 0644);
 }
 
 static int sos_file_close(int fd) { return (int)sys_close((long)fd); }
 
 static int sos_file_read(int fd, void *buf, int count) {
-  return (int)sys_read((long)fd, (uint32_t)(uintptr_t)buf, (size_t)count);
+  return (int)sys_read((long)fd, (char *)buf, (size_t)count);
 }
 
 static int sos_file_write(int fd, const void *buf, int count) {
-  return (int)sys_write((long)fd, (uint32_t)(uintptr_t)buf, (size_t)count);
+  return (int)sys_write((long)fd, (const char *)buf, (size_t)count);
 }
 
-static int sos_file_delete(const char *path) { return (int)sys_unlink((uint32_t)(uintptr_t)path); }
+static int sos_file_delete(const char *path) { return (int)sys_unlink(path); }
 
 static int sos_file_rename(const char *oldpath, const char *newpath) {
-  return (int)sys_rename((uint32_t)(uintptr_t)oldpath, (uint32_t)(uintptr_t)newpath);
+  return (int)sys_rename(oldpath, newpath);
 }
 
 /* ── Helper: read/write 16-bit LE from Z80 memory ────────────────────── */
@@ -1006,7 +1002,7 @@ void sos_run_process(void) {
   /* Clear screen before running the S-OS program */
   {
     static const char cls[] = "\033[2J\033[H";
-    sys_write(1, (uint32_t)(uintptr_t)cls, sizeof(cls) - 1);
+    sys_write(1, cls, sizeof(cls) - 1);
   }
 
   for (;;) {
@@ -1058,7 +1054,7 @@ static void sos_print_fn(int i) {
   if (name) {
     int len = 0;
     while (name[len]) len++;
-    sys_write(2, (uint32_t)(uintptr_t)name, (size_t)len);
+    sys_write(2, name, (size_t)len);
   } else {
     char buf[4];
     int pos = 0;
@@ -1071,7 +1067,7 @@ static void sos_print_fn(int i) {
     }
     if (tens) buf[pos++] = '0' + (char)tens;
     buf[pos++] = '0' + (char)v;
-    sys_write(2, (uint32_t)(uintptr_t)buf, (size_t)pos);
+    sys_write(2, buf, (size_t)pos);
   }
 }
 
@@ -1080,22 +1076,22 @@ static void sos_print_unsupported(sos_state_t *sos) {
   uint32_t hi = sos->unsupported_hi;
   if (!lo && !hi) return;
 
-  sys_write(2, (uint32_t)(uintptr_t)"\nsos: unsupported API calls:", 27);
+  sys_write(2, "\nsos: unsupported API calls:", 27);
   for (int i = 0; i < 32 && lo; i++) {
     if (lo & (1u << i)) {
-      sys_write(2, (uint32_t)(uintptr_t)" ", 1);
+      sys_write(2, " ", 1);
       sos_print_fn(i);
       lo &= ~(1u << i);
     }
   }
   for (int i = 0; i < 27 && hi; i++) {
     if (hi & (1u << i)) {
-      sys_write(2, (uint32_t)(uintptr_t)" ", 1);
+      sys_write(2, " ", 1);
       sos_print_fn(i + 32);
       hi &= ~(1u << i);
     }
   }
-  sys_write(2, (uint32_t)(uintptr_t)"\n", 1);
+  sys_write(2, "\n", 1);
 }
 
 static void sos_on_exit(struct pcb *p) {

@@ -4,79 +4,36 @@
  *   sys_write(fd, buf, n) — write n bytes from buf to file descriptor fd
  *   sys_read (fd, buf, n) — read  up to n bytes from fd into buf
  *
- * User buffers are accessed via copy_from_user / copy_to_user so that
- * VFS and file-ops layers receive kernel buffers only, never user
- * pointers.  This is required on i16 where user memory lives in a
- * different segment.
+ * Core resolves per-process fd → descriptor ID via fd_map[],
+ * then delegates to mod_vfs.fd_read/fd_write (VFS module).
  */
 
 #include <stddef.h>
 
 #include "../common/errno.h"
 #include "../common/mod/mod_vfs.h"
-#include "../mm/uaccess.h"
 #include "../proc/proc.h"
 #include "config.h"
 #include "syscall.h"
 
-/* Bounce buffer size — must fit on the kernel stack (2 KB on i16). */
-#define IO_BOUNCE_SIZE 128
-
 /* ── sys_write ────────────────────────────────────────────────────────────────
  */
 
-long sys_write(long fd, uint32_t user_buf, size_t n) {
+long sys_write(long fd, const char *buf, size_t n) {
   if (fd < 0 || (uint32_t)fd >= FD_MAX) return -(long)EBADF;
   int16_t desc = current->fd_map[(uint32_t)fd];
   if (desc == FD_DESC_NONE) return -(long)EBADF;
-
-  char bounce[IO_BOUNCE_SIZE];
-  long total = 0;
-  uint32_t addr = user_buf;
-  size_t remaining = n;
-
-  while (remaining > 0) {
-    size_t chunk = remaining < IO_BOUNCE_SIZE ? remaining : IO_BOUNCE_SIZE;
-    int err = copy_from_user(bounce, addr, chunk);
-    if (err) return total > 0 ? total : -(long)EFAULT;
-
-    long wrote = mod_vfs.fd_write(desc, bounce, chunk);
-    if (wrote < 0) return total > 0 ? total : wrote;
-    total += wrote;
-    if ((size_t)wrote < chunk) break; /* short write */
-    addr += (uint32_t)wrote;
-    remaining -= (size_t)wrote;
-  }
-  return total;
+  return mod_vfs.fd_write(desc, buf, n);
 }
 
 /* ── sys_read ─────────────────────────────────────────────────────────────────
  */
 
-long sys_read(long fd, uint32_t user_buf, size_t n) {
+long sys_read(long fd, char *buf, size_t n) {
   if (fd < 0 || (uint32_t)fd >= FD_MAX) return -(long)EBADF;
   int16_t desc = current->fd_map[(uint32_t)fd];
   if (desc == FD_DESC_NONE) return -(long)EBADF;
-
-  char bounce[IO_BOUNCE_SIZE];
-  long total = 0;
-  uint32_t addr = user_buf;
-  size_t remaining = n;
-
-  while (remaining > 0) {
-    size_t chunk = remaining < IO_BOUNCE_SIZE ? remaining : IO_BOUNCE_SIZE;
-    long got = mod_vfs.fd_read(desc, bounce, chunk);
-    if (got < 0) return total > 0 ? total : got;
-    if (got == 0) break; /* EOF */
-
-    int err = copy_to_user(addr, bounce, (size_t)got);
-    if (err) return total > 0 ? total : -(long)EFAULT;
-    total += got;
-    if ((size_t)got < chunk) break; /* short read */
-    addr += (uint32_t)got;
-    remaining -= (size_t)got;
-  }
-  return total;
+  return mod_vfs.fd_read(desc, buf, n);
 }
 
 /* ── sys_writev ───────────────────────────────────────────────────────────────
@@ -92,8 +49,7 @@ long sys_writev(long fd, const void *iov_ptr, long iovcnt) {
 
   for (long i = 0; i < iovcnt; i++) {
     if (iov[i].iov_len == 0) continue;
-    long n = sys_write(fd, (uint32_t)(uintptr_t)iov[i].iov_base,
-                       iov[i].iov_len);
+    long n = sys_write(fd, (const char *)iov[i].iov_base, iov[i].iov_len);
     if (n < 0) {
       if (total > 0) return total;
       return n;
@@ -115,8 +71,7 @@ long sys_readv(long fd, const void *iov_ptr, long iovcnt) {
 
   for (long i = 0; i < iovcnt; i++) {
     if (iov[i].iov_len == 0) continue;
-    long n = sys_read(fd, (uint32_t)(uintptr_t)iov[i].iov_base,
-                      iov[i].iov_len);
+    long n = sys_read(fd, (char *)iov[i].iov_base, iov[i].iov_len);
     if (n < 0) {
       if (total > 0) return total;
       return n;

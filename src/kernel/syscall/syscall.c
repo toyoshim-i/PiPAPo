@@ -81,23 +81,23 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_exit(a0);
       break;
     case SYS_READ:
-      ret = sys_read(a0, (uint32_t)a1, (size_t)a2);
+      ret = sys_read(a0, (char *)(uintptr_t)a1, (size_t)a2);
       break;
     case SYS_WRITE:
-      ret = sys_write(a0, (uint32_t)a1, (size_t)a2);
+      ret = sys_write(a0, (const char *)(uintptr_t)a1, (size_t)a2);
       break;
     case SYS_OPEN:
-      ret = sys_open((uint32_t)a0, a1, a2);
+      ret = sys_open((const char *)(uintptr_t)a0, a1, a2);
       break;
     case SYS_CLOSE:
       ret = sys_close(a0);
       break;
     case SYS_EXECVE:
-      ret = sys_execve((uint32_t)a0,
+      ret = sys_execve((const char *)(uintptr_t)a0,
                        (const char *const *)(uintptr_t)a1);
       break;
     case SYS_CHDIR:
-      ret = sys_chdir((uint32_t)a0);
+      ret = sys_chdir((const char *)(uintptr_t)a0);
       break;
     case SYS_LSEEK:
       ret = sys_lseek(a0, a1, a2);
@@ -106,7 +106,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_getpid();
       break;
     case SYS_STAT:
-      ret = sys_stat((uint32_t)a0, (struct stat *)(uintptr_t)a1);
+      ret = sys_stat((const char *)(uintptr_t)a0, (struct stat *)(uintptr_t)a1);
       break;
     case SYS_FSTAT:
       ret = sys_fstat(a0, (struct stat *)(uintptr_t)a1);
@@ -145,10 +145,10 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_sigreturn();
       break;
     case SYS_UNLINK:
-      ret = sys_unlink((uint32_t)a0);
+      ret = sys_unlink((const char *)(uintptr_t)a0);
       break;
     case SYS_MKDIR:
-      ret = sys_mkdir((uint32_t)a0, a1);
+      ret = sys_mkdir((const char *)(uintptr_t)a0, a1);
       break;
     case SYS_VFORK:
       ret = sys_vfork(frame);
@@ -204,13 +204,13 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_fcntl64(a0, a1, a2);
       break;
     case SYS_STAT64:
-      ret = sys_stat64((uint32_t)a0, (void *)(uintptr_t)a1);
+      ret = sys_stat64((const char *)(uintptr_t)a0, (void *)(uintptr_t)a1);
       break;
     case SYS_FSTAT64:
       ret = sys_fstat64(a0, (void *)(uintptr_t)a1);
       break;
     case SYS_LSTAT64:
-      ret = sys_lstat64((uint32_t)a0, (void *)(uintptr_t)a1);
+      ret = sys_lstat64((const char *)(uintptr_t)a0, (void *)(uintptr_t)a1);
       break;
     case SYS_GETDENTS64:
       ret = sys_getdents64(a0, (void *)(uintptr_t)a1, a2);
@@ -244,11 +244,11 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
 
     /* ── P1: interactive shell ──────────────────────────────────────────── */
     case SYS_ACCESS:
-      ret = sys_access((uint32_t)a0, a1);
+      ret = sys_access((const char *)(uintptr_t)a0, a1);
       break;
     case SYS_READLINK:
       ret =
-          sys_readlink((uint32_t)a0, (char *)(uintptr_t)a1, a2);
+          sys_readlink((const char *)(uintptr_t)a0, (char *)(uintptr_t)a1, a2);
       break;
     case SYS_GETPPID:
       ret = (long)current->ppid;
@@ -283,7 +283,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_umask(a0);
       break;
     case SYS_RMDIR:
-      ret = sys_rmdir((uint32_t)a0);
+      ret = sys_rmdir((const char *)(uintptr_t)a0);
       break;
     case SYS_GETTIMEOFDAY:
       ret = sys_gettimeofday((void *)(uintptr_t)a0, (void *)(uintptr_t)a1);
@@ -298,11 +298,11 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       break;
     case SYS_OPENAT:
       /* AT_FDCWD fast-path: route to sys_open (path=a1, flags=a2, mode=a3) */
-      ret = sys_open((uint32_t)a1, a2, a3);
+      ret = sys_open((const char *)(uintptr_t)a1, a2, a3);
       break;
     case SYS_FSTATAT64:
       /* AT_FDCWD fast-path: dirfd ignored, route to stat64/lstat64 */
-      ret = sys_stat64((uint32_t)a1, (void *)(uintptr_t)a2);
+      ret = sys_stat64((const char *)(uintptr_t)a1, (void *)(uintptr_t)a2);
       break;
     case SYS_MREMAP:
       ret = -(long)ENOMEM; /* force malloc to mmap new region */
@@ -317,7 +317,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       break;
     case SYS_RENAME:
       ret =
-          sys_rename((uint32_t)a0, (uint32_t)a1);
+          sys_rename((const char *)(uintptr_t)a0, (const char *)(uintptr_t)a1);
       break;
     case SYS_LCHOWN:
     case SYS_FCHOWN:
@@ -338,16 +338,16 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
     /* ── P3: mount / umount / statfs ────────────────────────────────────────
      */
     case SYS_MOUNT:
-      ret = sys_mount((uint32_t)a0, (uint32_t)a1,
-                      (uint32_t)a2, a3,
+      ret = sys_mount((const char *)(uintptr_t)a0, (const char *)(uintptr_t)a1,
+                      (const char *)(uintptr_t)a2, a3,
                       (const void *)(uintptr_t)a4);
       break;
     case SYS_UMOUNT2:
-      ret = sys_umount2((uint32_t)a0, a1);
+      ret = sys_umount2((const char *)(uintptr_t)a0, a1);
       break;
     case SYS_STATFS64:
       ret =
-          sys_statfs64((uint32_t)a0, a1, (void *)(uintptr_t)a2);
+          sys_statfs64((const char *)(uintptr_t)a0, a1, (void *)(uintptr_t)a2);
       break;
     case SYS_FSTATFS64:
       ret = sys_fstatfs64(a0, a1, (void *)(uintptr_t)a2);

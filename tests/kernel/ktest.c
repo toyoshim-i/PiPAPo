@@ -54,11 +54,11 @@ static void vfs_integration_test(void)
 
     /* 1. open + read /etc/hostname via syscall layer */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/etc/hostname", O_RDONLY, 0);
+        long fd = sys_open("/etc/hostname", O_RDONLY, 0);
         int ok = 0;
         if (fd >= 0) {
             char buf[32];
-            long n = sys_read(fd, (uint32_t)(uintptr_t)buf, sizeof(buf) - 1);
+            long n = sys_read(fd, buf, sizeof(buf) - 1);
             if (n == 5) {
                 buf[n] = '\0';
                 /* "ppap\n" */
@@ -72,11 +72,11 @@ static void vfs_integration_test(void)
 
     /* 2. open + read /etc/motd */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/etc/motd", O_RDONLY, 0);
+        long fd = sys_open("/etc/motd", O_RDONLY, 0);
         int ok = 0;
         if (fd >= 0) {
             char buf[64];
-            long n = sys_read(fd, (uint32_t)(uintptr_t)buf, sizeof(buf) - 1);
+            long n = sys_read(fd, buf, sizeof(buf) - 1);
             if (n > 0) {
                 buf[n] = '\0';
                 /* starts with "Welcome" */
@@ -89,16 +89,16 @@ static void vfs_integration_test(void)
 
     /* 3. open nonexistent file → -ENOENT */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/nonexistent", O_RDONLY, 0);
+        long fd = sys_open("/nonexistent", O_RDONLY, 0);
         test_report("open /nonexistent → ENOENT", fd == -(long)ENOENT);
     }
 
     /* 4. open + write /dev/null */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/dev/null", O_WRONLY, 0);
+        long fd = sys_open("/dev/null", O_WRONLY, 0);
         int ok = 0;
         if (fd >= 0) {
-            long n = sys_write(fd, (uint32_t)(uintptr_t)"discarded", 9);
+            long n = sys_write(fd, "discarded", 9);
             ok = (n == 9);
             sys_close(fd);
         }
@@ -107,11 +107,11 @@ static void vfs_integration_test(void)
 
     /* 5. open + read /dev/zero → all zero bytes */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/dev/zero", O_RDONLY, 0);
+        long fd = sys_open("/dev/zero", O_RDONLY, 0);
         int ok = 0;
         if (fd >= 0) {
             char buf[4] = {0xFF, 0xFF, 0xFF, 0xFF};
-            long n = sys_read(fd, (uint32_t)(uintptr_t)buf, 4);
+            long n = sys_read(fd, buf, 4);
             if (n == 4)
                 ok = (buf[0]==0 && buf[1]==0 && buf[2]==0 && buf[3]==0);
             sys_close(fd);
@@ -121,11 +121,11 @@ static void vfs_integration_test(void)
 
     /* 6. open + read /proc/meminfo */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/proc/meminfo", O_RDONLY, 0);
+        long fd = sys_open("/proc/meminfo", O_RDONLY, 0);
         int ok = 0;
         if (fd >= 0) {
             char buf[128];
-            long n = sys_read(fd, (uint32_t)(uintptr_t)buf, sizeof(buf) - 1);
+            long n = sys_read(fd, buf, sizeof(buf) - 1);
             if (n > 0) {
                 buf[n] = '\0';
                 /* should start with "MemTotal:" */
@@ -140,7 +140,7 @@ static void vfs_integration_test(void)
     /* 7. stat /etc/hostname → regular file, size 5 */
     {
         struct stat st;
-        long rc = sys_stat((uint32_t)(uintptr_t)"/etc/hostname", &st);
+        long rc = sys_stat("/etc/hostname", &st);
         int ok = (rc == 0 && S_ISREG(st.st_mode) && st.st_size == 5);
         test_report("stat /etc/hostname", ok);
     }
@@ -148,14 +148,14 @@ static void vfs_integration_test(void)
     /* 8. stat /etc → directory */
     {
         struct stat st;
-        long rc = sys_stat((uint32_t)(uintptr_t)"/etc", &st);
+        long rc = sys_stat("/etc", &st);
         int ok = (rc == 0 && S_ISDIR(st.st_mode));
         test_report("stat /etc → DIR", ok);
     }
 
     /* 9. getdents / → should list "etc" and "bin" */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/", O_RDONLY, 0);
+        long fd = sys_open("/", O_RDONLY, 0);
         int ok = 0;
         if (fd >= 0) {
             struct dirent entries[8];
@@ -177,7 +177,7 @@ static void vfs_integration_test(void)
 
     /* 10. getdents /dev → should list device nodes */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/dev", O_RDONLY, 0);
+        long fd = sys_open("/dev", O_RDONLY, 0);
         int ok = 0;
         if (fd >= 0) {
             struct dirent entries[8];
@@ -199,7 +199,7 @@ static void vfs_integration_test(void)
 
     /* 11. chdir + getcwd */
     {
-        long rc = sys_chdir((uint32_t)(uintptr_t)"/etc");
+        long rc = sys_chdir("/etc");
         int ok = 0;
         if (rc == 0) {
             char buf[64];
@@ -210,13 +210,13 @@ static void vfs_integration_test(void)
         }
         test_report("chdir+getcwd /etc", ok);
         /* Restore cwd to / */
-        sys_chdir((uint32_t)(uintptr_t)"/");
+        sys_chdir("/");
     }
 
     /* 12. stat /bin/hello — user-space ELF binary in romfs (Phase 3 Step 1) */
     {
         struct stat st;
-        int ok = (sys_stat((uint32_t)(uintptr_t)"/bin/hello", &st) == 0
+        int ok = (sys_stat("/bin/hello", &st) == 0
                   && (st.st_mode & 0170000) == 0100000  /* S_IFREG */
                   && st.st_size > 0);
         test_report("stat /bin/hello → regular file", ok);
@@ -241,10 +241,10 @@ static void pipe_integration_test(void)
         long rc = sys_pipe(fds);
         int ok = 0;
         if (rc == 0) {
-            long nw = sys_write(fds[1], (uint32_t)(uintptr_t)"hello", 5);
+            long nw = sys_write(fds[1], "hello", 5);
             if (nw == 5) {
                 char buf[8] = {0};
-                long nr = sys_read(fds[0], (uint32_t)(uintptr_t)buf, sizeof(buf));
+                long nr = sys_read(fds[0], buf, sizeof(buf));
                 if (nr == 5)
                     ok = (buf[0]=='h' && buf[1]=='e' && buf[2]=='l'
                        && buf[3]=='l' && buf[4]=='o');
@@ -263,7 +263,7 @@ static void pipe_integration_test(void)
         if (rc == 0) {
             sys_close(fds[1]);   /* close write end */
             char buf[4];
-            long nr = sys_read(fds[0], (uint32_t)(uintptr_t)buf, sizeof(buf));
+            long nr = sys_read(fds[0], buf, sizeof(buf));
             ok = (nr == 0);      /* EOF */
             sys_close(fds[0]);
         }
@@ -277,7 +277,7 @@ static void pipe_integration_test(void)
         int ok = 0;
         if (rc == 0) {
             sys_close(fds[0]);   /* close read end */
-            long nw = sys_write(fds[1], (uint32_t)(uintptr_t)"x", 1);
+            long nw = sys_write(fds[1], "x", 1);
             ok = (nw == -(long)EPIPE);
             sys_close(fds[1]);
         }
@@ -295,14 +295,14 @@ static void pipe_integration_test(void)
             char wbuf[256];
             for (int i = 0; i < 256; i++) wbuf[i] = (char)i;
 
-            long n1 = sys_write(fds[1], (uint32_t)(uintptr_t)wbuf, 256);
-            long n2 = sys_write(fds[1], (uint32_t)(uintptr_t)wbuf, 256);
+            long n1 = sys_write(fds[1], wbuf, 256);
+            long n2 = sys_write(fds[1], wbuf, 256);
             /* n1=256, n2=255 (only 255 bytes of space left) */
             ok = (n1 == 256 && n2 == 255);
 
             /* Drain and verify first byte */
             char rbuf[512];
-            long nr = sys_read(fds[0], (uint32_t)(uintptr_t)rbuf, sizeof(rbuf));
+            long nr = sys_read(fds[0], rbuf, sizeof(rbuf));
             if (nr == 511)
                 ok = ok && (rbuf[0] == 0);
 
@@ -353,9 +353,9 @@ static void dup_integration_test(void)
         if (rc == 0) {
             long dup_fd = sys_dup(fds[0]);
             if (dup_fd >= 0) {
-                sys_write(fds[1], (uint32_t)(uintptr_t)"dup!", 4);
+                sys_write(fds[1], "dup!", 4);
                 char buf[8] = {0};
-                long nr = sys_read(dup_fd, (uint32_t)(uintptr_t)buf, sizeof(buf));
+                long nr = sys_read(dup_fd, buf, sizeof(buf));
                 ok = (nr == 4 && buf[0]=='d' && buf[1]=='u'
                    && buf[2]=='p' && buf[3]=='!');
                 sys_close(dup_fd);
@@ -374,9 +374,9 @@ static void dup_integration_test(void)
         if (rc == 0) {
             long rc2 = sys_dup2(fds[1], 4);
             if (rc2 == 4) {
-                sys_write(4, (uint32_t)(uintptr_t)"hi", 2);
+                sys_write(4, "hi", 2);
                 char buf[4] = {0};
-                long nr = sys_read(fds[0], (uint32_t)(uintptr_t)buf, sizeof(buf));
+                long nr = sys_read(fds[0], buf, sizeof(buf));
                 ok = (nr == 2 && buf[0]=='h' && buf[1]=='i');
             }
             sys_close(4);
@@ -411,7 +411,7 @@ static void dup_integration_test(void)
             sys_dup2(fds_a[0], fds_b[0]);
             /* Writing to pipe B write-end should now get EPIPE since
              * its read-end was closed by dup2 */
-            long nw = sys_write(fds_b[1], (uint32_t)(uintptr_t)"x", 1);
+            long nw = sys_write(fds_b[1], "x", 1);
             ok = (nw == -(long)EPIPE);
             sys_close(fds_a[0]);
             sys_close(fds_a[1]);
@@ -604,7 +604,7 @@ static void blkdev_integration_test(void)
 
     /* 6. /dev/mmcblk0 accessible via devfs */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/dev/mmcblk0", O_RDONLY, 0);
+        long fd = sys_open("/dev/mmcblk0", O_RDONLY, 0);
         test_report("/dev/mmcblk0 open", fd >= 0);
         if (fd >= 0)
             sys_close(fd);
@@ -625,11 +625,11 @@ static void vfat_integration_test(void)
 
     /* 1. Read /mnt/sd/hello.txt */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/mnt/sd/hello.txt", O_RDONLY, 0);
+        long fd = sys_open("/mnt/sd/hello.txt", O_RDONLY, 0);
         int ok = 0;
         if (fd >= 0) {
             char buf[32];
-            long n = sys_read(fd, (uint32_t)(uintptr_t)buf, sizeof(buf) - 1);
+            long n = sys_read(fd, buf, sizeof(buf) - 1);
             if (n == 19) {
                 buf[n] = '\0';
                 /* "Hello from FAT32!\n\0" (18 chars + NUL = 19 bytes) */
@@ -643,11 +643,11 @@ static void vfat_integration_test(void)
 
     /* 2. Read /mnt/sd/data.bin (256 bytes: 0x00..0xFF) */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/mnt/sd/data.bin", O_RDONLY, 0);
+        long fd = sys_open("/mnt/sd/data.bin", O_RDONLY, 0);
         int ok = 0;
         if (fd >= 0) {
             char buf[256];
-            long n = sys_read(fd, (uint32_t)(uintptr_t)buf, 256);
+            long n = sys_read(fd, buf, 256);
             if (n == 256) {
                 ok = 1;
                 for (int i = 0; i < 256; i++) {
@@ -662,7 +662,7 @@ static void vfat_integration_test(void)
     /* 3. stat /mnt/sd/hello.txt — regular file, 19 bytes */
     {
         struct stat st;
-        long rc = sys_stat((uint32_t)(uintptr_t)"/mnt/sd/hello.txt", &st);
+        long rc = sys_stat("/mnt/sd/hello.txt", &st);
         int ok = (rc == 0 && S_ISREG(st.st_mode) && st.st_size == 19);
         test_report("stat /mnt/sd/hello.txt", ok);
     }
@@ -670,14 +670,14 @@ static void vfat_integration_test(void)
     /* 4. stat /mnt/sd/subdir — directory */
     {
         struct stat st;
-        long rc = sys_stat((uint32_t)(uintptr_t)"/mnt/sd/subdir", &st);
+        long rc = sys_stat("/mnt/sd/subdir", &st);
         int ok = (rc == 0 && S_ISDIR(st.st_mode));
         test_report("stat /mnt/sd/subdir", ok);
     }
 
     /* 5. getdents /mnt/sd → list hello.txt, data.bin, subdir */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/mnt/sd", O_RDONLY, 0);
+        long fd = sys_open("/mnt/sd", O_RDONLY, 0);
         int ok = 0;
         if (fd >= 0) {
             struct dirent entries[8];
@@ -701,17 +701,17 @@ static void vfat_integration_test(void)
 
     /* 6. Create + write + read a new file */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/mnt/sd/newfile.txt", O_WRONLY | O_CREAT, 0644);
+        long fd = sys_open("/mnt/sd/newfile.txt", O_WRONLY | O_CREAT, 0644);
         int ok = 0;
         if (fd >= 0) {
-            long nw = sys_write(fd, (uint32_t)(uintptr_t)"test data", 9);
+            long nw = sys_write(fd, "test data", 9);
             sys_close(fd);
             if (nw == 9) {
                 /* Read it back */
-                fd = sys_open((uint32_t)(uintptr_t)"/mnt/sd/newfile.txt", O_RDONLY, 0);
+                fd = sys_open("/mnt/sd/newfile.txt", O_RDONLY, 0);
                 if (fd >= 0) {
                     char buf[16] = {0};
-                    long nr = sys_read(fd, (uint32_t)(uintptr_t)buf, sizeof(buf));
+                    long nr = sys_read(fd, buf, sizeof(buf));
                     ok = (nr == 9 && buf[0] == 't' && buf[4] == ' '
                        && buf[8] == 'a');
                     sys_close(fd);
@@ -723,34 +723,34 @@ static void vfat_integration_test(void)
 
     /* 7. mkdir /mnt/sd/testdir */
     {
-        long rc = sys_mkdir((uint32_t)(uintptr_t)"/mnt/sd/testdir", 0755);
+        long rc = sys_mkdir("/mnt/sd/testdir", 0755);
         int ok = 0;
         if (rc == 0) {
             struct stat st;
-            ok = (sys_stat((uint32_t)(uintptr_t)"/mnt/sd/testdir", &st) == 0 && S_ISDIR(st.st_mode));
+            ok = (sys_stat("/mnt/sd/testdir", &st) == 0 && S_ISDIR(st.st_mode));
         }
         test_report("mkdir /mnt/sd/testdir", ok);
     }
 
     /* 8. unlink /mnt/sd/newfile.txt */
     {
-        long rc = sys_unlink((uint32_t)(uintptr_t)"/mnt/sd/newfile.txt");
+        long rc = sys_unlink("/mnt/sd/newfile.txt");
         int ok = 0;
         if (rc == 0) {
             /* Should no longer exist */
-            ok = (sys_stat((uint32_t)(uintptr_t)"/mnt/sd/newfile.txt", &(struct stat){0}) == -(long)ENOENT);
+            ok = (sys_stat("/mnt/sd/newfile.txt", &(struct stat){0}) == -(long)ENOENT);
         }
         test_report("unlink /mnt/sd/newfile.txt", ok);
     }
 
     /* 9. lseek + partial read */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/mnt/sd/data.bin", O_RDONLY, 0);
+        long fd = sys_open("/mnt/sd/data.bin", O_RDONLY, 0);
         int ok = 0;
         if (fd >= 0) {
             sys_lseek(fd, 128, SEEK_SET);
             char buf[4];
-            long n = sys_read(fd, (uint32_t)(uintptr_t)buf, 4);
+            long n = sys_read(fd, buf, 4);
             ok = (n == 4 && (uint8_t)buf[0] == 128 && (uint8_t)buf[1] == 129
                && (uint8_t)buf[2] == 130 && (uint8_t)buf[3] == 131);
             sys_close(fd);
@@ -760,7 +760,7 @@ static void vfat_integration_test(void)
 
     /* 10. open nonexistent on vfat → -ENOENT */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/mnt/sd/nofile", O_RDONLY, 0);
+        long fd = sys_open("/mnt/sd/nofile", O_RDONLY, 0);
         test_report("open nonexistent on vfat", fd == -(long)ENOENT);
     }
 
@@ -791,7 +791,7 @@ static void loopback_integration_test(void)
     /* 1. Verify pre-populated testloop.bin exists (from mkfatimg) */
     {
         struct stat st;
-        long rc = sys_stat((uint32_t)(uintptr_t)"/mnt/sd/testloop.bin", &st);
+        long rc = sys_stat("/mnt/sd/testloop.bin", &st);
         int ok = (rc == 0 && st.st_size == 2048);
         test_report("stat /mnt/sd/testloop.bin (2048 B)", ok);
         if (!ok) return;  /* can't continue without the test file */
@@ -932,18 +932,18 @@ static void tmpfs_integration_test(void)
 
     /* 2. Create a file, write, close, re-open, read back */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/tmp/hello.txt", O_CREAT | O_WRONLY, 0644);
+        long fd = sys_open("/tmp/hello.txt", O_CREAT | O_WRONLY, 0644);
         int ok = (fd >= 0);
         if (ok) {
-            long n = sys_write(fd, (uint32_t)(uintptr_t)"hello", 5);
+            long n = sys_write(fd, "hello", 5);
             ok = (n == 5);
             sys_close(fd);
         }
         if (ok) {
-            fd = sys_open((uint32_t)(uintptr_t)"/tmp/hello.txt", O_RDONLY, 0);
+            fd = sys_open("/tmp/hello.txt", O_RDONLY, 0);
             if (fd >= 0) {
                 char buf[16];
-                long n = sys_read(fd, (uint32_t)(uintptr_t)buf, 16);
+                long n = sys_read(fd, buf, 16);
                 ok = (n == 5 && buf[0] == 'h' && buf[4] == 'o');
                 sys_close(fd);
             } else {
@@ -956,17 +956,17 @@ static void tmpfs_integration_test(void)
     /* 3. stat the file */
     {
         struct stat st;
-        long rc = sys_stat((uint32_t)(uintptr_t)"/tmp/hello.txt", &st);
+        long rc = sys_stat("/tmp/hello.txt", &st);
         int ok = (rc == 0 && st.st_size == 5 && S_ISREG(st.st_mode));
         test_report("stat /tmp/hello.txt (5 bytes, REG)", ok);
     }
 
     /* 4. Unlink and verify ENOENT */
     {
-        long rc = sys_unlink((uint32_t)(uintptr_t)"/tmp/hello.txt");
+        long rc = sys_unlink("/tmp/hello.txt");
         int ok = (rc == 0);
         if (ok) {
-            long fd = sys_open((uint32_t)(uintptr_t)"/tmp/hello.txt", O_RDONLY, 0);
+            long fd = sys_open("/tmp/hello.txt", O_RDONLY, 0);
             ok = (fd == -ENOENT);
             if (fd >= 0) sys_close(fd);
         }
@@ -975,21 +975,21 @@ static void tmpfs_integration_test(void)
 
     /* 5. mkdir + nested file */
     {
-        long rc = sys_mkdir((uint32_t)(uintptr_t)"/tmp/sub", 0755);
+        long rc = sys_mkdir("/tmp/sub", 0755);
         int ok = (rc == 0);
         if (ok) {
-            long fd = sys_open((uint32_t)(uintptr_t)"/tmp/sub/nested.txt", O_CREAT | O_WRONLY, 0644);
+            long fd = sys_open("/tmp/sub/nested.txt", O_CREAT | O_WRONLY, 0644);
             ok = (fd >= 0);
             if (fd >= 0) {
-                sys_write(fd, (uint32_t)(uintptr_t)"nest", 4);
+                sys_write(fd, "nest", 4);
                 sys_close(fd);
             }
         }
         if (ok) {
-            long fd = sys_open((uint32_t)(uintptr_t)"/tmp/sub/nested.txt", O_RDONLY, 0);
+            long fd = sys_open("/tmp/sub/nested.txt", O_RDONLY, 0);
             if (fd >= 0) {
                 char buf[8];
-                long n = sys_read(fd, (uint32_t)(uintptr_t)buf, 8);
+                long n = sys_read(fd, buf, 8);
                 ok = (n == 4 && buf[0] == 'n');
                 sys_close(fd);
             } else {
@@ -1002,7 +1002,7 @@ static void tmpfs_integration_test(void)
     /* 6. readdir /tmp */
     {
         struct dirent entries[8];
-        long fd = sys_open((uint32_t)(uintptr_t)"/tmp", O_RDONLY, 0);
+        long fd = sys_open("/tmp", O_RDONLY, 0);
         int ok = 0;
         if (fd >= 0) {
             long n = sys_getdents(fd, entries, sizeof(entries));
@@ -1018,14 +1018,14 @@ static void tmpfs_integration_test(void)
         /* TMPFS_DATA_MAX = 8192, PAGE_SIZE = 4096, max 2 pages.
          * nested.txt already used 1 page. big1 uses the 2nd.
          * big2 write should fail (3rd page needed, only 2 allowed). */
-        long fd1 = sys_open((uint32_t)(uintptr_t)"/tmp/big1.bin", O_CREAT | O_WRONLY, 0644);
-        long fd2 = sys_open((uint32_t)(uintptr_t)"/tmp/big2.bin", O_CREAT | O_WRONLY, 0644);
+        long fd1 = sys_open("/tmp/big1.bin", O_CREAT | O_WRONLY, 0644);
+        long fd2 = sys_open("/tmp/big2.bin", O_CREAT | O_WRONLY, 0644);
         int ok = 0;
         if (fd1 >= 0 && fd2 >= 0) {
             char buf[64];
             __builtin_memset(buf, 'A', 64);
-            long n1 = sys_write(fd1, (uint32_t)(uintptr_t)buf, 64);  /* allocates page 2 of 2 */
-            long n2 = sys_write(fd2, (uint32_t)(uintptr_t)buf, 64);  /* 3rd page → ENOSPC */
+            long n1 = sys_write(fd1, buf, 64);  /* allocates page 2 of 2 */
+            long n2 = sys_write(fd2, buf, 64);  /* 3rd page → ENOSPC */
             ok = (n1 == 64 && n2 == -(long)ENOSPC);
         }
         if (fd1 >= 0) sys_close(fd1);
@@ -1035,13 +1035,13 @@ static void tmpfs_integration_test(void)
 
     /* 8. Unlink reclaims page, write succeeds */
     {
-        sys_unlink((uint32_t)(uintptr_t)"/tmp/big1.bin");
-        long fd = sys_open((uint32_t)(uintptr_t)"/tmp/big2.bin", O_WRONLY, 0);
+        sys_unlink("/tmp/big1.bin");
+        long fd = sys_open("/tmp/big2.bin", O_WRONLY, 0);
         int ok = 0;
         if (fd >= 0) {
             char buf[32];
             __builtin_memset(buf, 'B', 32);
-            long n = sys_write(fd, (uint32_t)(uintptr_t)buf, 32);
+            long n = sys_write(fd, buf, 32);
             ok = (n == 32);
             sys_close(fd);
         }
@@ -1049,9 +1049,9 @@ static void tmpfs_integration_test(void)
     }
 
     /* Cleanup */
-    sys_unlink((uint32_t)(uintptr_t)"/tmp/sub/nested.txt");
-    sys_unlink((uint32_t)(uintptr_t)"/tmp/sub");
-    sys_unlink((uint32_t)(uintptr_t)"/tmp/big2.bin");
+    sys_unlink("/tmp/sub/nested.txt");
+    sys_unlink("/tmp/sub");
+    sys_unlink("/tmp/big2.bin");
 
     /* Summary */
     klogf("Phase 5 Step 2 tmpfs: %u passed, %u failed\n",
@@ -1070,7 +1070,7 @@ static void ufs_integration_test(void)
     /* 1. Verify testufs.img exists on VFAT */
     {
         struct stat st;
-        long rc = sys_stat((uint32_t)(uintptr_t)"/mnt/sd/testufs.img", &st);
+        long rc = sys_stat("/mnt/sd/testufs.img", &st);
         int ok = (rc == 0 && S_ISREG(st.st_mode) && st.st_size > 0);
         test_report("stat /mnt/sd/testufs.img", ok);
         if (!ok) {
@@ -1106,7 +1106,7 @@ static void ufs_integration_test(void)
 
     /* 4. readdir /mnt/ufs → should find "hello.txt" */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/mnt/ufs", O_RDONLY, 0);
+        long fd = sys_open("/mnt/ufs", O_RDONLY, 0);
         int ok = 0;
         if (fd >= 0) {
             struct dirent entries[8];
@@ -1123,18 +1123,18 @@ static void ufs_integration_test(void)
     /* 5. stat /mnt/ufs/hello.txt — regular file, 16 bytes */
     {
         struct stat st;
-        long rc = sys_stat((uint32_t)(uintptr_t)"/mnt/ufs/hello.txt", &st);
+        long rc = sys_stat("/mnt/ufs/hello.txt", &st);
         int ok = (rc == 0 && S_ISREG(st.st_mode) && st.st_size == 16);
         test_report("stat /mnt/ufs/hello.txt (16 B, REG)", ok);
     }
 
     /* 6. read /mnt/ufs/hello.txt — "Hello from UFS!\n" */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/mnt/ufs/hello.txt", O_RDONLY, 0);
+        long fd = sys_open("/mnt/ufs/hello.txt", O_RDONLY, 0);
         int ok = 0;
         if (fd >= 0) {
             char buf[32];
-            long n = sys_read(fd, (uint32_t)(uintptr_t)buf, sizeof(buf) - 1);
+            long n = sys_read(fd, buf, sizeof(buf) - 1);
             if (n == 16) {
                 buf[n] = '\0';
                 ok = (buf[0] == 'H' && buf[6] == 'f'
@@ -1148,7 +1148,7 @@ static void ufs_integration_test(void)
 
     /* 7. open nonexistent → -ENOENT */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/mnt/ufs/nofile", O_RDONLY, 0);
+        long fd = sys_open("/mnt/ufs/nofile", O_RDONLY, 0);
         test_report("open /mnt/ufs/nofile → ENOENT", fd == -(long)ENOENT);
     }
 
@@ -1173,16 +1173,16 @@ static void ufs_integration_test(void)
 
     /* 1. Create + write + read back */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/mnt/ufs/newfile.txt", O_CREAT | O_WRONLY, 0644);
+        long fd = sys_open("/mnt/ufs/newfile.txt", O_CREAT | O_WRONLY, 0644);
         int ok = 0;
         if (fd >= 0) {
-            long n = sys_write(fd, (uint32_t)(uintptr_t)"test data\n", 10);
+            long n = sys_write(fd, "test data\n", 10);
             sys_close(fd);
             if (n == 10) {
-                fd = sys_open((uint32_t)(uintptr_t)"/mnt/ufs/newfile.txt", O_RDONLY, 0);
+                fd = sys_open("/mnt/ufs/newfile.txt", O_RDONLY, 0);
                 if (fd >= 0) {
                     char buf[16];
-                    long r = sys_read(fd, (uint32_t)(uintptr_t)buf, sizeof(buf));
+                    long r = sys_read(fd, buf, sizeof(buf));
                     ok = (r == 10 && buf[0] == 't' && buf[4] == ' '
                        && buf[5] == 'd' && buf[9] == '\n');
                     sys_close(fd);
@@ -1195,19 +1195,19 @@ static void ufs_integration_test(void)
     /* 2. Stat new file */
     {
         struct stat st;
-        long rc = sys_stat((uint32_t)(uintptr_t)"/mnt/ufs/newfile.txt", &st);
+        long rc = sys_stat("/mnt/ufs/newfile.txt", &st);
         int ok = (rc == 0 && S_ISREG(st.st_mode) && st.st_size == 10);
         test_report("stat /mnt/ufs/newfile.txt (10 B, REG)", ok);
     }
 
     /* 3. Open with O_TRUNC → size becomes 0 */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/mnt/ufs/newfile.txt", O_WRONLY | O_TRUNC, 0);
+        long fd = sys_open("/mnt/ufs/newfile.txt", O_WRONLY | O_TRUNC, 0);
         int ok = 0;
         if (fd >= 0) {
             sys_close(fd);
             struct stat st;
-            long rc = sys_stat((uint32_t)(uintptr_t)"/mnt/ufs/newfile.txt", &st);
+            long rc = sys_stat("/mnt/ufs/newfile.txt", &st);
             ok = (rc == 0 && st.st_size == 0);
         }
         test_report("open O_TRUNC → size 0", ok);
@@ -1215,16 +1215,16 @@ static void ufs_integration_test(void)
 
     /* 4. Write after truncate + read back */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/mnt/ufs/newfile.txt", O_WRONLY, 0);
+        long fd = sys_open("/mnt/ufs/newfile.txt", O_WRONLY, 0);
         int ok = 0;
         if (fd >= 0) {
-            long n = sys_write(fd, (uint32_t)(uintptr_t)"rewritten\n", 10);
+            long n = sys_write(fd, "rewritten\n", 10);
             sys_close(fd);
             if (n == 10) {
-                fd = sys_open((uint32_t)(uintptr_t)"/mnt/ufs/newfile.txt", O_RDONLY, 0);
+                fd = sys_open("/mnt/ufs/newfile.txt", O_RDONLY, 0);
                 if (fd >= 0) {
                     char buf[16];
-                    long r = sys_read(fd, (uint32_t)(uintptr_t)buf, sizeof(buf));
+                    long r = sys_read(fd, buf, sizeof(buf));
                     ok = (r == 10 && buf[0] == 'r' && buf[2] == 'w');
                     sys_close(fd);
                 }
@@ -1235,7 +1235,7 @@ static void ufs_integration_test(void)
 
     /* 5. Readdir sees new file */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/mnt/ufs", O_RDONLY, 0);
+        long fd = sys_open("/mnt/ufs", O_RDONLY, 0);
         int ok = 0;
         if (fd >= 0) {
             struct dirent entries[8];
@@ -1251,11 +1251,11 @@ static void ufs_integration_test(void)
 
     /* 6. Existing file still intact */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/mnt/ufs/hello.txt", O_RDONLY, 0);
+        long fd = sys_open("/mnt/ufs/hello.txt", O_RDONLY, 0);
         int ok = 0;
         if (fd >= 0) {
             char buf[32];
-            long n = sys_read(fd, (uint32_t)(uintptr_t)buf, sizeof(buf) - 1);
+            long n = sys_read(fd, buf, sizeof(buf) - 1);
             ok = (n == 16 && buf[0] == 'H' && buf[14] == '!');
             sys_close(fd);
         }
@@ -1271,21 +1271,21 @@ static void ufs_integration_test(void)
 
     /* 1. mkdir /mnt/ufs/testdir */
     {
-        long rc = sys_mkdir((uint32_t)(uintptr_t)"/mnt/ufs/testdir", 0755);
+        long rc = sys_mkdir("/mnt/ufs/testdir", 0755);
         test_report("mkdir /mnt/ufs/testdir", rc == 0);
     }
 
     /* 2. stat /mnt/ufs/testdir → DIR, nlink == 2 */
     {
         struct stat st;
-        long rc = sys_stat((uint32_t)(uintptr_t)"/mnt/ufs/testdir", &st);
+        long rc = sys_stat("/mnt/ufs/testdir", &st);
         int ok = (rc == 0 && S_ISDIR(st.st_mode) && st.st_nlink == 2);
         test_report("stat /mnt/ufs/testdir (DIR, nlink=2)", ok);
     }
 
     /* 3. readdir sees testdir */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/mnt/ufs", O_RDONLY, 0);
+        long fd = sys_open("/mnt/ufs", O_RDONLY, 0);
         int ok = 0;
         if (fd >= 0) {
             struct dirent entries[8];
@@ -1301,37 +1301,37 @@ static void ufs_integration_test(void)
 
     /* 4. unlink /mnt/ufs/newfile.txt */
     {
-        long rc = sys_unlink((uint32_t)(uintptr_t)"/mnt/ufs/newfile.txt");
+        long rc = sys_unlink("/mnt/ufs/newfile.txt");
         test_report("unlink /mnt/ufs/newfile.txt", rc == 0);
     }
 
     /* 5. stat after unlink → ENOENT */
     {
         struct stat st;
-        long rc = sys_stat((uint32_t)(uintptr_t)"/mnt/ufs/newfile.txt", &st);
+        long rc = sys_stat("/mnt/ufs/newfile.txt", &st);
         test_report("stat after unlink → ENOENT", rc == -(long)ENOENT);
     }
 
     /* 6. unlink empty directory */
     {
-        long rc = sys_unlink((uint32_t)(uintptr_t)"/mnt/ufs/testdir");
+        long rc = sys_unlink("/mnt/ufs/testdir");
         test_report("unlink /mnt/ufs/testdir (empty)", rc == 0);
     }
 
     /* 7. stat after rmdir → ENOENT */
     {
         struct stat st;
-        long rc = sys_stat((uint32_t)(uintptr_t)"/mnt/ufs/testdir", &st);
+        long rc = sys_stat("/mnt/ufs/testdir", &st);
         test_report("stat after rmdir → ENOENT", rc == -(long)ENOENT);
     }
 
     /* 8. Existing hello.txt still intact */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/mnt/ufs/hello.txt", O_RDONLY, 0);
+        long fd = sys_open("/mnt/ufs/hello.txt", O_RDONLY, 0);
         int ok = 0;
         if (fd >= 0) {
             char buf[32];
-            long n = sys_read(fd, (uint32_t)(uintptr_t)buf, sizeof(buf) - 1);
+            long n = sys_read(fd, buf, sizeof(buf) - 1);
             ok = (n == 16 && buf[0] == 'H' && buf[14] == '!');
             sys_close(fd);
         }
@@ -1362,13 +1362,13 @@ static void fstab_integration_test(void)
     /* 2. /dev is mounted (devfs) */
     {
         struct stat st;
-        long rc = sys_stat((uint32_t)(uintptr_t)"/dev/null", &st);
+        long rc = sys_stat("/dev/null", &st);
         test_report("/dev mounted (devfs)", rc == 0);
     }
 
     /* 3. /proc is mounted (procfs) */
     {
-        long fd = sys_open((uint32_t)(uintptr_t)"/proc/meminfo", O_RDONLY, 0);
+        long fd = sys_open("/proc/meminfo", O_RDONLY, 0);
         int ok = (fd >= 0);
         if (fd >= 0) sys_close(fd);
         test_report("/proc mounted (procfs)", ok);
@@ -1377,14 +1377,14 @@ static void fstab_integration_test(void)
     /* 4. /tmp is mounted (tmpfs) */
     {
         struct stat st;
-        long rc = sys_stat((uint32_t)(uintptr_t)"/tmp", &st);
+        long rc = sys_stat("/tmp", &st);
         test_report("/tmp mounted (tmpfs)", rc == 0 && S_ISDIR(st.st_mode));
     }
 
     /* 5. /mnt/sd is mounted (vfat) */
     {
         struct stat st;
-        long rc = sys_stat((uint32_t)(uintptr_t)"/mnt/sd/hello.txt", &st);
+        long rc = sys_stat("/mnt/sd/hello.txt", &st);
         test_report("/mnt/sd mounted (vfat)", rc == 0);
     }
 

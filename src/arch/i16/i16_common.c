@@ -5,8 +5,6 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#include "kernel/proc/proc.h"
-
 /* Context switch pending flag.
  * Set by arch_yield().  Checked by timer ISR in switch.S.
  * Same pattern as m68k_switch_pending / riscv_switch_pending. */
@@ -63,9 +61,6 @@ long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1,
 {
   uint32_t seg_base = (uint32_t)user_ds << 4;
 
-  /* Save user DS for uaccess (copy_from_user / copy_to_user). */
-  current->user_ds = user_ds;
-
   /* The kernel's syscall_dispatch reads args from frame[0..3] and
    * writes the return value back to frame[0]. */
   uint32_t frame[4];
@@ -74,25 +69,23 @@ long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1,
   frame[2] = a2;
   frame[3] = a3;
 
-  /* Resolve user-space pointer arguments to 20-bit linear addresses.
-   * Syscalls that use uaccess (copy_from_user, strncpy_from_user) need
-   * the linear address; the uaccess functions handle page resolution.
-   * This switch will shrink as more syscalls move to uaccess. */
+  /* Resolve user-space pointer arguments to linear addresses.
+   * Which arguments are pointers depends on the syscall number. */
   switch (nr) {
-    case 0x0003: /* SYS_READ:  a1 = buf */
-    case 0x0004: /* SYS_WRITE: a1 = buf */
+    case 0x0003: /* SYS_READ:  read(fd, buf, n)  — a1 = buf */
+    case 0x0004: /* SYS_WRITE: write(fd, buf, n) — a1 = buf */
       frame[1] = seg_base + a1;
       break;
-    case 0x0005: /* SYS_OPEN:  a0 = path */
-    case 0x000B: /* SYS_EXECVE: a0 = path */
-    case 0x000C: /* SYS_CHDIR: a0 = path */
-    case 0x0015: /* SYS_ACCESS: a0 = path */
-    case 0x0026: /* SYS_MKDIR: a0 = path */
-    case 0x000A: /* SYS_UNLINK: a0 = path */
-    case 0x0028: /* SYS_RMDIR: a0 = path */
+    case 0x0005: /* SYS_OPEN:  open(path, flags, mode) — a0 = path */
+    case 0x000B: /* SYS_EXECVE: execve(path, argv) — a0 = path */
+    case 0x000C: /* SYS_CHDIR: chdir(path) — a0 = path */
+    case 0x0015: /* SYS_ACCESS: access(path, mode) — a0 = path */
+    case 0x0026: /* SYS_MKDIR: mkdir(path, mode) — a0 = path */
+    case 0x000A: /* SYS_UNLINK: unlink(path) — a0 = path */
+    case 0x0028: /* SYS_RMDIR: rmdir(path) — a0 = path */
       frame[0] = seg_base + a0;
       break;
-    case 0x0036: /* SYS_IOCTL: a2 = arg */
+    case 0x0036: /* SYS_IOCTL: ioctl(fd, req, arg) — a2 = arg (may be ptr) */
       frame[2] = seg_base + a2;
       break;
     default:

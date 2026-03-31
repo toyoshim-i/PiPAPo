@@ -14,7 +14,6 @@
 #include "../cpu/ecpu_m68k.h"
 #include "../cpu/ecpu_z80.h"
 #include "../common/errno.h"
-#include "../mm/uaccess.h"
 #include "../common/mod/mod_exec.h"
 #include "../common/mod/mod_vfs.h"
 #include "../common/mod/mod_vfs.h"
@@ -1797,11 +1796,7 @@ long sys_waitpid(long pid, long status_ptr, long options) {
  * On success: never returns — the new program starts executing.
  * On failure: returns negative errno.
  */
-long sys_execve(uint32_t user_path, const char *const *argv) {
-  char kpath[VFS_PATH_MAX];
-  if (strncpy_from_user(kpath, user_path, sizeof(kpath)) < 0)
-    return -(long)EFAULT;
-
+long sys_execve(const char *path, const char *const *argv) {
   /* Save old pages to free after successful load */
   page_id_t old_stack_id = current->stack_page_id;
   page_id_t old_user[USER_PAGES_MAX];
@@ -1823,7 +1818,7 @@ long sys_execve(uint32_t user_path, const char *const *argv) {
   /* Save old cpu_state so we can free it after successful exec */
   /* Load the new binary.  argv points into the old stack/data pages
    * which are still valid (detached from current but not yet freed). */
-  int err = mod_exec.execve(current, kpath, argv);
+  int err = mod_exec.execve(current, path, argv);
   if (err < 0) {
     /* Restore old pages on failure — fds are untouched (POSIX) */
     current->stack_page_id = old_stack_id;

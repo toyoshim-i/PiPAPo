@@ -76,22 +76,20 @@ static inline void advance_pc(uint32_t *regs) {
  */
 
 /* Write one character to stdout */
-static void h68k_putc(uint8_t ch) {
-  sys_write(1, (uint32_t)(uintptr_t)&ch, 1);
-}
+static void h68k_putc(uint8_t ch) { sys_write(1, (const char *)&ch, 1); }
 
 /* Write a NUL-terminated string to stdout; return length written */
 static int h68k_print(const char *str) {
   int len = 0;
   while (str[len]) len++;
-  if (len > 0) sys_write(1, (uint32_t)(uintptr_t)str, (size_t)len);
+  if (len > 0) sys_write(1, str, (size_t)len);
   return len;
 }
 
 /* Read one character from stdin (blocking) */
 static uint8_t h68k_keyinp(void) {
   uint8_t ch = 0;
-  sys_read(0, (uint32_t)(uintptr_t)&ch, 1);
+  sys_read(0, (char *)&ch, 1);
   return ch;
 }
 
@@ -387,7 +385,7 @@ static int dos_fgetc(uint32_t *regs, uint32_t usp) {
   int fd = (int)(int16_t)ustack_u16(usp, 0);
   H68K_TRACE("_FGETC(%u)", (uint32_t)fd);
   uint8_t ch = 0;
-  long r = sys_read(fd, (uint32_t)(uintptr_t)&ch, 1);
+  long r = sys_read(fd, (char *)&ch, 1);
   regs[0] = (r > 0) ? (uint32_t)ch : (uint32_t)(-1);
   advance_pc(regs);
   return 2;
@@ -412,7 +410,7 @@ static int dos_fgets(uint32_t *regs, uint32_t usp) {
 
   while (count < max) {
     uint8_t ch;
-    long r = sys_read(fd, (uint32_t)(uintptr_t)&ch, 1);
+    long r = sys_read(fd, (char *)&ch, 1);
     if (r <= 0) break;
     if (ch == 0x0D || ch == 0x0A) break;
     buf[2 + count] = ch;
@@ -434,7 +432,7 @@ static int dos_fputc(uint32_t *regs, uint32_t usp) {
   uint8_t ch = (uint8_t)ustack_u16(usp, 0);
   int fd = (int)(int16_t)ustack_u16(usp, 2);
   H68K_TRACE("_FPUTC(%u, %x)", (uint32_t)fd, (uint32_t)ch);
-  sys_write(fd, (uint32_t)(uintptr_t)&ch, 1);
+  sys_write(fd, (const char *)&ch, 1);
   regs[0] = (uint32_t)ch;
   advance_pc(regs);
   return 2;
@@ -455,7 +453,7 @@ static int dos_fputs(uint32_t *regs, uint32_t usp) {
   uint32_t len = 0;
   while (str[len]) len++;
 
-  if (len > 0) sys_write(fd, (uint32_t)(uintptr_t)str, len);
+  if (len > 0) sys_write(fd, str, len);
 
   regs[0] = 0;
   advance_pc(regs);
@@ -478,7 +476,7 @@ static int dos_create(uint32_t *regs, uint32_t usp) {
     return 2;
   }
   H68K_TRACE("_CREATE(%s)", path);
-  long r = sys_open((uint32_t)(uintptr_t)path, O_CREAT | O_TRUNC | O_WRONLY, 0644);
+  long r = sys_open(path, O_CREAT | O_TRUNC | O_WRONLY, 0644);
   regs[0] = (uint32_t)h68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -513,7 +511,7 @@ static int dos_open(uint32_t *regs, uint32_t usp) {
       flags = O_RDWR;
       break;
   }
-  long r = sys_open((uint32_t)(uintptr_t)path, flags, 0644);
+  long r = sys_open(path, flags, 0644);
   regs[0] = (uint32_t)h68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -543,7 +541,7 @@ static int dos_read(uint32_t *regs, uint32_t usp) {
   uint32_t buf_addr = ustack_u32(usp, 2);
   uint32_t len = ustack_u32(usp, 6);
   H68K_TRACE("_READ(%u, %x, %x)", (uint32_t)fd, buf_addr, len);
-  long r = sys_read(fd, (uint32_t)buf_addr, (size_t)len);
+  long r = sys_read(fd, (char *)(uintptr_t)buf_addr, (size_t)len);
   regs[0] = (uint32_t)h68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -559,7 +557,7 @@ static int dos_write(uint32_t *regs, uint32_t usp) {
   uint32_t buf_addr = ustack_u32(usp, 2);
   uint32_t len = ustack_u32(usp, 6);
   H68K_TRACE("_WRITE(%u, %x, %x)", (uint32_t)fd, buf_addr, len);
-  long r = sys_write(fd, (uint32_t)buf_addr, (size_t)len);
+  long r = sys_write(fd, (const char *)(uintptr_t)buf_addr, (size_t)len);
   regs[0] = (uint32_t)h68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -580,7 +578,7 @@ static int dos_delete(uint32_t *regs, uint32_t usp) {
     return 2;
   }
   H68K_TRACE("_DELETE(%s)", path);
-  long r = sys_unlink((uint32_t)(uintptr_t)path);
+  long r = sys_unlink(path);
   regs[0] = (uint32_t)h68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -619,7 +617,7 @@ static int dos_chdir(uint32_t *regs, uint32_t usp) {
     return 2;
   }
   H68K_TRACE("_CHDIR(%s)", path);
-  long r = sys_chdir((uint32_t)(uintptr_t)path);
+  long r = sys_chdir(path);
   regs[0] = (uint32_t)h68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -719,7 +717,7 @@ static int dos_rename(uint32_t *regs, uint32_t usp) {
   h68k_translate_path(old_src, old_path, sizeof(old_path));
   h68k_translate_path(new_src, new_path, sizeof(new_path));
   H68K_TRACE("_RENAME(%s, %s)", old_path, new_path);
-  long r = sys_rename((uint32_t)(uintptr_t)old_path, (uint32_t)(uintptr_t)new_path);
+  long r = sys_rename(old_path, new_path);
   regs[0] = (uint32_t)h68k_errno((int)r);
   advance_pc(regs);
   return 2;
@@ -1316,7 +1314,7 @@ static int dos_mkdir(uint32_t *regs, uint32_t usp) {
     return 2;
   }
   H68K_TRACE("_MKDIR(%s)", path);
-  long r = sys_mkdir((uint32_t)(uintptr_t)path, 0755);
+  long r = sys_mkdir(path, 0755);
   regs[0] = (uint32_t)h68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -1337,7 +1335,7 @@ static int dos_rmdir(uint32_t *regs, uint32_t usp) {
     return 2;
   }
   H68K_TRACE("_RMDIR(%s)", path);
-  long r = sys_rmdir((uint32_t)(uintptr_t)path);
+  long r = sys_rmdir(path);
   regs[0] = (uint32_t)h68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -1363,7 +1361,7 @@ static int dos_chmod(uint32_t *regs, uint32_t usp) {
   H68K_TRACE("_CHMOD(%x, %s)", (uint32_t)attr, path);
 
   struct stat st;
-  long r = sys_stat((uint32_t)(uintptr_t)path, &st);
+  long r = sys_stat(path, &st);
   if (r < 0) {
     regs[0] = (uint32_t)h68k_errno(r);
     advance_pc(regs);
@@ -1463,7 +1461,7 @@ static void filbuf_fill(uint32_t filbuf, const char *dir_path,
     }
     fullpath[dlen + 1 + nlen] = '\0';
     struct stat st;
-    if (sys_stat((uint32_t)(uintptr_t)fullpath, &st) == 0) fsize = st.st_size;
+    if (sys_stat(fullpath, &st) == 0) fsize = st.st_size;
   }
 
   fb[0x15] = attr;
@@ -1542,7 +1540,7 @@ static int dos_files(uint32_t *regs, uint32_t usp) {
   H68K_TRACE("_FILES: dir=%s pat=%s", dir, pattern);
 
   /* Open the directory */
-  long fd = sys_open((uint32_t)(uintptr_t)dir, O_RDONLY, 0);
+  long fd = sys_open(dir, O_RDONLY, 0);
   if (fd < 0) {
     regs[0] = (uint32_t)h68k_errno(fd);
     advance_pc(regs);
@@ -2088,7 +2086,7 @@ static int iocs_skey_mod(uint32_t *regs) {
  */
 static int iocs_b_curmov(uint32_t *regs, char dir) {
   char seq[4] = {'\033', '[', dir, '\0'};
-  sys_write(1, (uint32_t)(uintptr_t)seq, 3);
+  sys_write(1, seq, 3);
   regs[0] = 0;
   return 2;
 }
@@ -2114,7 +2112,7 @@ static int iocs_b_clrst(uint32_t *regs) {
   else
     seq[2] = '0';
   seq[3] = 'J';
-  sys_write(1, (uint32_t)(uintptr_t)seq, 4);
+  sys_write(1, seq, 4);
   regs[0] = 0;
   return 2;
 }
@@ -2125,7 +2123,7 @@ static int iocs_b_clrst(uint32_t *regs) {
  */
 static int iocs_b_era_al(uint32_t *regs) {
   H68K_TRACE("IOCS _B_ERA_AL");
-  sys_write(1, (uint32_t)(uintptr_t)"\033[0K", 4);
+  sys_write(1, "\033[0K", 4);
   regs[0] = 0;
   return 2;
 }
