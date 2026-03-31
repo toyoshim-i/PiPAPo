@@ -205,11 +205,6 @@ typedef struct pcb {
   /* ── Thread-local storage (TLS) ──────────────────────────── */
   uintptr_t tp_value; /* set/get_thread_area value          */
 
-  /* ── mmap regions (Phase 6 Step 7) ───────────────────────────── */
-  struct {
-    page_id_t base_page;            /* PAGE_ID_INVALID = empty           */
-    uint32_t pages;                 /* number of pages in this region    */
-  } mmap_regions[MMAP_REGIONS_MAX]; /* max concurrent mmap regions     */
 } pcb_t;
 
 /* ── Globals ──────────────────────────────────────────────────────────────────

@@ -78,7 +78,7 @@ long sys_brk(long addr) {
  */
 /*
  * Anonymous-only mmap.  Allocates page-backed RAM data via mem_region and
- * tracks the resulting contiguous region in current->mmap_regions[].
+ * tracks pages in user_pages[] (high slots, searched top-down).
  * File-backed mmap is not supported.
  *
  * mmap2 takes page-offset (not byte-offset): pgoff = byte_offset / 4096.
@@ -86,6 +86,22 @@ long sys_brk(long addr) {
 #define MAP_ANONYMOUS 0x20u
 #define MAP_PRIVATE 0x02u
 #define MAP_FIXED 0x10u
+
+/* Find num_pages contiguous free slots in user_pages[], searching from
+ * the top down (high slots) to avoid colliding with brk growth (low
+ * slots).  Returns the start slot index, or -1 if no run found. */
+static int mmap_find_slots(const pcb_t *p, uint32_t num_pages) {
+  uint32_t run = 0;
+  for (uint32_t i = USER_PAGES_MAX; i > 0; i--) {
+    if (p->user_pages[i - 1] == PAGE_ID_INVALID) {
+      run++;
+      if (run >= num_pages) return (int)(i - 1);
+    } else {
+      run = 0;
+    }
+  }
+  return -1;
+}
 
 long sys_mmap2(uintptr_t addr, size_t len, uint32_t prot, uint32_t flags,
                uint32_t fd, uint32_t pgoff) {
@@ -102,14 +118,8 @@ long sys_mmap2(uintptr_t addr, size_t len, uint32_t prot, uint32_t flags,
 
   uint32_t num_pages = (len + PAGE_SIZE - 1) / PAGE_SIZE;
 
-  /* Find a free mmap_regions slot */
-  int slot = -1;
-  for (int i = 0; i < MMAP_REGIONS_MAX; i++) {
-    if (current->mmap_regions[i].base_page == PAGE_ID_INVALID) {
-      slot = i;
-      break;
-    }
-  }
+  /* Find contiguous free slots in user_pages[] (top-down) */
+  int slot = mmap_find_slots(current, num_pages);
   if (slot < 0) return -(long)ENOMEM;
 
   /* MAP_FIXED: try to allocate at specific address */
@@ -122,8 +132,9 @@ long sys_mmap2(uintptr_t addr, size_t len, uint32_t prot, uint32_t flags,
       return -(long)ENOMEM;
     }
     memset(region.base, 0, region.size);
-    current->mmap_regions[slot].base_page = mm_ptr_to_page(region.base);
-    current->mmap_regions[slot].pages = num_pages;
+    page_id_t base_id = mm_ptr_to_page(region.base);
+    for (uint32_t i = 0; i < num_pages; i++)
+      current->user_pages[(uint32_t)slot + i] = base_id + (page_id_t)i;
     return (long)((uintptr_t)base);
   }
 
@@ -134,8 +145,9 @@ long sys_mmap2(uintptr_t addr, size_t len, uint32_t prot, uint32_t flags,
       return -(long)ENOMEM;
     }
     memset(region.base, 0, region.size);
-    current->mmap_regions[slot].base_page = mm_ptr_to_page(region.base);
-    current->mmap_regions[slot].pages = num_pages;
+    page_id_t base_id = mm_ptr_to_page(region.base);
+    for (uint32_t i = 0; i < num_pages; i++)
+      current->user_pages[(uint32_t)slot + i] = base_id + (page_id_t)i;
     return (long)((uintptr_t)region.base);
   }
 }
@@ -146,24 +158,24 @@ long sys_mmap2(uintptr_t addr, size_t len, uint32_t prot, uint32_t flags,
 long sys_munmap(uintptr_t addr, size_t len) {
   if (addr == 0 || len == 0) return -(long)EINVAL;
 
-  /* Find the matching mmap region */
-  for (int i = 0; i < MMAP_REGIONS_MAX; i++) {
-    if (current->mmap_regions[i].base_page == PAGE_ID_INVALID) continue;
-    if (mm_page_linear(current->mmap_regions[i].base_page) !=
-        (uint32_t)addr)
-      continue;
-    page_id_t base = current->mmap_regions[i].base_page;
-    uint32_t n = current->mmap_regions[i].pages;
-    for (uint32_t j = 0; j < n; j++)
-      mm_page_free(base + (page_id_t)j);
-    current->mmap_regions[i].base_page = PAGE_ID_INVALID;
-    current->mmap_regions[i].pages = 0;
+  uint32_t num_pages = (len + PAGE_SIZE - 1) / PAGE_SIZE;
+
+  /* Find the matching page in user_pages[] by linear address */
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
+    if (current->user_pages[i] == PAGE_ID_INVALID) continue;
+    if (mm_page_linear(current->user_pages[i]) != (uint32_t)addr) continue;
+
+    /* Free num_pages contiguous slots from this position */
+    for (uint32_t j = 0; j < num_pages && (i + j) < USER_PAGES_MAX; j++) {
+      if (current->user_pages[i + j] == PAGE_ID_INVALID) break;
+      mem_region_free_tracked_page_id(current->user_pages[i + j]);
+      current->user_pages[i + j] = PAGE_ID_INVALID;
+    }
     return 0;
   }
 
-  /* Not found in mmap_regions — try freeing as a single page anyway.
+  /* Not found in user_pages — try freeing as a single page anyway.
    * musl may mmap then munmap pages we didn't track (edge case). */
-  uint32_t num_pages = (len + PAGE_SIZE - 1) / PAGE_SIZE;
   proc_image_segment_t region = proc_image_segment_make(
       (void *)(uintptr_t)addr, num_pages * PAGE_SIZE, PPAP_MEM_RAM_DATA,
       PROC_IMAGE_SEG_WRITABLE);

@@ -104,17 +104,10 @@
 #define BLKDEV_MAX 4            /* maximum registered block devices      */
 #define BLKDEV_SECTOR_SIZE 512u /* bytes per sector                      */
 
-/* ── mmap regions ─────────────────────────────────────────────────────────
- * MMAP_REGIONS_MAX  Maximum concurrent anonymous mmap regions per process.
- *                   musl's malloc uses mmap for large allocations; busybox
- *                   applets need 5–6 concurrent regions.
- * ────────────────────────────────────────────────────────────────────────── */
-#define MMAP_REGIONS_MAX 8 /* max concurrent mmap regions per proc  */
-
 /* ── ELF loader (exec) ───────────────────────────────────────────────────
- * USER_PAGES_MAX  Maximum data-segment pages per process.  Must match
- *                 the user_pages[] array size in pcb_t (proc.h).
- *                 Costs USER_PAGES_MAX × 4 B per PCB slot.
+ * USER_PAGES_MAX  Maximum tracked pages per process (data, brk, mmap,
+ *                 user stack).  Must match user_pages[] in pcb_t (proc.h).
+ *                 Costs USER_PAGES_MAX × 2 B per PCB slot (page_id_t).
  *                 Default 64 pages = 256 KB.  m68k targets override to 512
  *                 (2 MB) since they have ample RAM.
  * ────────────────────────────────────────────────────────────────────────── */
