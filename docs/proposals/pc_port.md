@@ -853,7 +853,7 @@ stores truncated pointers.  Fixed by the page-index refactoring
 
 5. **`--test ibmpc` in run.sh** — integrate with existing test harness.
 
-### 8.1 User-Space Memory Access (uaccess)
+### 8.1 User-Space Memory Access (`user_to_page`)
 
 Syscall handlers currently receive user pointers as raw `void *` and
 dereference them directly.  This is broken on i16 (user memory is in
@@ -863,67 +863,127 @@ An audit found **35+ syscalls with 60+ unresolved pointer arguments**.
 
 #### Design
 
-All user-space memory access goes through a page-index-based API:
+All user-space pointer arguments are resolved to a **page_id + offset
+pair** before access.  No new files, no new cross-module APIs — the
+existing `mem_region_page_read/write` (already in the `mod_core`
+vtable) is the only mechanism used.
+
+A single inline helper converts a user-space offset to a page
+reference:
 
 ```c
-int copy_from_user(void *kernel_buf, uint32_t user_off, size_t n);
-int copy_to_user(uint32_t user_off, const void *kernel_buf, size_t n);
-int strncpy_from_user(char *kernel_buf, uint32_t user_off, size_t max);
+typedef struct { page_id_t page; uint16_t off; } user_page_ref_t;
+
+static inline user_page_ref_t user_to_page(const pcb_t *p,
+                                           uint32_t user_off) {
+  page_id_t base = proc_page_backed_base(p);
+  uint32_t page_idx = user_off / PAGE_SIZE;
+  uint16_t page_off = (uint16_t)(user_off % PAGE_SIZE);
+  return (user_page_ref_t){ base + (page_id_t)page_idx, page_off };
+}
 ```
 
-`user_off` is a process-relative offset.  The implementation resolves
-it through `current->user_pages[]`:
+`user_off` is a process-relative byte offset from the start of the
+process's contiguous page allocation:
 
-1. `page_index = user_off / PAGE_SIZE`
-2. `page_offset = user_off % PAGE_SIZE`
-3. `mem_region_page_read(user_pages[page_index], page_offset, ...)`
+- **i16**: the raw 16-bit register value.  The user process runs with
+  DS pointing at its page allocation base, so the register value *is*
+  the offset from base.  No DS lookup or storage needed — the process
+  segment is derivable from `proc_page_backed_base(current)`.
+- **32-bit flat (no MMU)**: `user_off = (uint32_t)arg - base_linear`,
+  where `base_linear = mem_region_page_linear(proc_page_backed_base(p))`.
+- **Future MMU targets**: page-table walk from virtual address.
 
-On i16, `user_off` is the DS-relative offset from the syscall
-register.  `i16_syscall_dispatch` stores the user's DS in the PCB;
-`copy_from_user` computes the linear address as
-`user_ds * 16 + user_off` and resolves it through the page index.
+The resolution produces a `(page_id_t, uint16_t offset)` pair that
+works with the existing `mem_region_page_read/write` on all targets.
 
-On 32-bit targets without MMU, the implementation is a bounds-checked
-`memcpy`.  The interface is the same, preparing for future MMU/64-bit.
+#### I/O syscall changes
 
-#### Syscall changes
+`fd_read` and `fd_write` in the VFS API change from
+`(desc, char *buf, size_t n)` to
+`(desc, page_id_t page, uint16_t off, size_t n)`.
 
-- `sys_write(fd, buf, n)` copies user data into a kernel bounce
-  buffer via `copy_from_user`, then calls `mod_vfs.fd_write` with
-  the kernel buffer.
-- `sys_read(fd, buf, n)` reads into a kernel buffer, then copies
-  out via `copy_to_user`.
-- Path syscalls (`sys_open`, `sys_chdir`, etc.) use
-  `strncpy_from_user` to copy the path into a kernel-stack buffer.
-- Struct-returning syscalls (`stat`, `getcwd`, etc.) fill a kernel
-  struct, then `copy_to_user`.
+VFS implementations (tty, pipe, tmpfs, romfs, etc.) use
+`mem_region_page_read/write` to access the user buffer.  No bounce
+copies.  The same code path works on all architectures:
 
-After this, VFS and file-ops layers receive **kernel buffers only**,
-never user pointers.  `read_user_byte()` in `tty_write` is removed.
+```c
+/* sys_write: resolve user buf, pass page ref to VFS */
+user_page_ref_t ref = user_to_page(current, user_buf_off);
+return mod_vfs.fd_write(desc, ref.page, ref.off, n);
+
+/* Inside tty_write (VFS module): */
+char ch;
+mem_region_page_read(page, off + i, &ch, 1);
+uart_putc(ch);
+```
+
+Internal callers (subsystem bridges, ktest) that pass kernel-space
+buffers use `mem_region_ptr_to_page()` to get a page_id, or allocate
+a kernel page for the buffer.
+
+#### Path syscalls
+
+Path arguments are copied into a kernel stack buffer before calling
+VFS (the copy is unavoidable — VFS needs a NUL-terminated `const
+char *`).  The copy uses `mem_region_page_read` directly:
+
+```c
+/* sys_open: read path from user page into kernel stack */
+char kpath[VFS_PATH_MAX];
+user_page_ref_t ref = user_to_page(current, user_path_off);
+/* read across page boundaries in chunks */
+mem_region_page_read(ref.page, ref.off, kpath, n);
+int desc = mod_vfs.fd_open(kpath, flags, mode);
+```
+
+#### Struct-output syscalls
+
+Syscalls that write structured results (stat, getcwd, pipe fds,
+uname, timespec, etc.) fill a kernel-stack struct, then write it to
+the user page via `mem_region_page_write`:
+
+```c
+/* sys_getcwd: fill kernel buf, write to user page */
+char kbuf[64];
+memcpy(kbuf, current->cwd, len + 1);
+user_page_ref_t ref = user_to_page(current, user_buf_off);
+mem_region_page_write(ref.page, ref.off, kbuf, len + 1);
+```
+
+#### `i16_syscall_dispatch` cleanup
+
+The per-syscall pointer-resolution switch is **removed entirely**.
+`i16_syscall_dispatch` passes raw 16-bit register values as
+`frame[0..3]`.  Each syscall handler resolves its own pointer
+arguments via `user_to_page`.
 
 #### Affected syscalls
 
-| Category | Syscalls | Pointer args |
-|----------|----------|-------------|
-| I/O | read, write, readv, writev | buf, iovec |
-| FS paths | open, chdir, access, mkdir, unlink, rmdir, rename, readlink, mount | path strings |
-| FS data | stat, fstat, getdents, getcwd, llseek | output structs/buffers |
-| Process | execve, pipe, wait4, set_tid_address | argv, fds[], status |
-| Signals | rt_sigaction, rt_sigprocmask | sigaction structs |
-| Time | gettimeofday, clock_gettime, clock_nanosleep | timespec structs |
-| Terminal | ioctl | arg struct |
-| Info | uname | utsname struct |
+| Category | Syscalls | Pointer args | Access |
+|----------|----------|-------------|--------|
+| I/O | read, write, readv, writev | buf, iovec | page_read/write via VFS |
+| FS paths | open, chdir, access, mkdir, unlink, rmdir, rename, readlink, mount, execve | path strings | page_read → kernel stack |
+| FS data | stat, fstat, getdents, getcwd, llseek | output structs | page_write from kernel stack |
+| Process | pipe, wait4, set_tid_address | fds[], status | page_write from kernel stack |
+| Signals | rt_sigaction, rt_sigprocmask | sigaction structs | page_read + page_write |
+| Time | gettimeofday, clock_gettime, clock_nanosleep | timespec structs | page_read + page_write |
+| Terminal | ioctl | arg struct | page_read/write |
+| Info | uname | utsname struct | page_write from kernel stack |
 
 #### Migration order
 
-1. Add `user_ds` field to pcb_t (i16 only).
-2. Implement `copy_from_user` / `copy_to_user` / `strncpy_from_user`
-   in `src/kernel/mm/uaccess.h`.
-3. Convert `sys_write` / `sys_read` (validates the approach).
-4. Convert path syscalls (`strncpy_from_user`).
-5. Convert struct-returning syscalls (`copy_to_user`).
-6. Remove `read_user_byte` from tty_write.
-7. Remove per-syscall switch from `i16_syscall_dispatch`.
+1. Add `user_page_ref_t` and `user_to_page()` inline helper
+   (in `proc.h`, no new files).
+2. Change `fd_read`/`fd_write` VFS API to accept `page_id_t` +
+   `uint16_t offset` instead of `char *`.  Update tty, pipe, tmpfs,
+   romfs, devfs, ufs implementations.
+3. Convert `sys_write` / `sys_read` to use `user_to_page`.
+4. Convert path syscalls (page_read into kernel stack buffer).
+5. Convert struct-output syscalls (page_write from kernel stack).
+6. Remove `read_user_byte` from arch.h.
+7. Remove per-syscall pointer switch from `i16_syscall_dispatch`.
+8. Remove `(void *)(uintptr_t)` casts from `syscall_dispatch`.
 
 ---
 
