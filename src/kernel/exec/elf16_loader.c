@@ -139,8 +139,7 @@ static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     }
   }
 
-  /* Compute process segment from the 32-bit linear address of page 0.
-   * page_linear[] holds the full 20-bit+ address, avoiding truncation. */
+  /* Compute process segment from the 32-bit linear address of page 0. */
   uint32_t base_linear = mm_page_linear(base_id);
   uint16_t proc_seg = (uint16_t)(base_linear >> 4);
   uint16_t entry_ip = (uint16_t)ehdr->e_entry;
@@ -189,10 +188,12 @@ static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   p->image.text = proc_image_segment_make(
       (void *)(uintptr_t)(uint16_t)base_linear, mem_end,
       PPAP_MEM_RAM_TEXT, PROC_IMAGE_SEG_EXECUTABLE);
+  /* Data region is NOT OWNED — pages are freed by proc_release_tracked_pages.
+   * Marking it OWNED would cause double-free (image_segment_release_owned +
+   * proc_release_tracked_pages both try to free the same pages). */
   p->image.data = proc_image_segment_make(
       (void *)(uintptr_t)(uint16_t)base_linear, alloc_size,
-      PPAP_MEM_RAM_DATA,
-      PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED);
+      PPAP_MEM_RAM_DATA, PROC_IMAGE_SEG_WRITABLE);
   p->image.entry = (uintptr_t)entry_ip;
   p->ticks_remaining = PROC_DEFAULT_TICKS;
 
