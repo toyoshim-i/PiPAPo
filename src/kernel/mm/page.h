@@ -101,9 +101,6 @@ void *page_alloc_at(void *addr);
  * obtained from page_alloc(), or if it is freed more than once. */
 void page_free(void *page);
 
-/* user_pages[] only tracks page-backed allocations. */
-static inline void user_page_free(void *page) { page_free(page); }
-
 /* Return the runtime page pool base address.  On Xtensa this is
  * dynamically allocated from ESP-IDF's heap; on other targets it
  * equals the compile-time PAGE_POOL_BASE. */
