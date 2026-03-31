@@ -105,7 +105,7 @@ long sys_mmap2(uintptr_t addr, size_t len, uint32_t prot, uint32_t flags,
   /* Find a free mmap_regions slot */
   int slot = -1;
   for (int i = 0; i < MMAP_REGIONS_MAX; i++) {
-    if (current->mmap_regions[i].addr == NULL) {
+    if (current->mmap_regions[i].base_page == PAGE_ID_INVALID) {
       slot = i;
       break;
     }
@@ -122,7 +122,7 @@ long sys_mmap2(uintptr_t addr, size_t len, uint32_t prot, uint32_t flags,
       return -(long)ENOMEM;
     }
     memset(region.base, 0, region.size);
-    current->mmap_regions[slot].addr = base;
+    current->mmap_regions[slot].base_page = mm_ptr_to_page(region.base);
     current->mmap_regions[slot].pages = num_pages;
     return (long)((uintptr_t)base);
   }
@@ -134,7 +134,7 @@ long sys_mmap2(uintptr_t addr, size_t len, uint32_t prot, uint32_t flags,
       return -(long)ENOMEM;
     }
     memset(region.base, 0, region.size);
-    current->mmap_regions[slot].addr = region.base;
+    current->mmap_regions[slot].base_page = mm_ptr_to_page(region.base);
     current->mmap_regions[slot].pages = num_pages;
     return (long)((uintptr_t)region.base);
   }
@@ -148,16 +148,17 @@ long sys_munmap(uintptr_t addr, size_t len) {
 
   /* Find the matching mmap region */
   for (int i = 0; i < MMAP_REGIONS_MAX; i++) {
-    if (current->mmap_regions[i].addr == (void *)(uintptr_t)addr) {
-      uint32_t pages = current->mmap_regions[i].pages;
-      proc_image_segment_t region = proc_image_segment_make(
-          (void *)(uintptr_t)addr, pages * PAGE_SIZE, PPAP_MEM_RAM_DATA,
-          PROC_IMAGE_SEG_WRITABLE);
-      mem_region_free(&region);
-      current->mmap_regions[i].addr = NULL;
-      current->mmap_regions[i].pages = 0;
-      return 0;
-    }
+    if (current->mmap_regions[i].base_page == PAGE_ID_INVALID) continue;
+    if (mm_page_linear(current->mmap_regions[i].base_page) !=
+        (uint32_t)addr)
+      continue;
+    page_id_t base = current->mmap_regions[i].base_page;
+    uint32_t n = current->mmap_regions[i].pages;
+    for (uint32_t j = 0; j < n; j++)
+      mm_page_free(base + (page_id_t)j);
+    current->mmap_regions[i].base_page = PAGE_ID_INVALID;
+    current->mmap_regions[i].pages = 0;
+    return 0;
   }
 
   /* Not found in mmap_regions — try freeing as a single page anyway.

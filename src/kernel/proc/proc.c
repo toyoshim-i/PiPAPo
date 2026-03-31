@@ -57,6 +57,8 @@ void proc_init(void) {
     proc_table[i].stack_page_id = PAGE_ID_INVALID;
     for (uint32_t j = 0; j < USER_PAGES_MAX; j++)
       proc_table[i].user_pages[j] = PAGE_ID_INVALID;
+    for (uint32_t j = 0; j < MMAP_REGIONS_MAX; j++)
+      proc_table[i].mmap_regions[j].base_page = PAGE_ID_INVALID;
   }
 
   /* Pre-initialise slot 0 as the initial kernel thread.
@@ -111,6 +113,8 @@ pcb_t *proc_alloc(void) {
       proc_table[i].stack_page_id = PAGE_ID_INVALID;
       for (uint32_t j = 0; j < USER_PAGES_MAX; j++)
         proc_table[i].user_pages[j] = PAGE_ID_INVALID;
+      for (uint32_t j = 0; j < MMAP_REGIONS_MAX; j++)
+        proc_table[i].mmap_regions[j].base_page = PAGE_ID_INVALID;
       proc_table[i].umask_val = DEFAULT_UMASK;
       proc_table[i].running_on_core = -1;
       proc_table[i].start_time = sched_get_ticks();

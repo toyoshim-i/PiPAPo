@@ -401,7 +401,8 @@ static uint32_t proc_vsz(const pcb_t *p) {
   pages += proc_tracked_page_count(p);
   /* mmap pages */
   for (int i = 0; i < MMAP_REGIONS_MAX; i++) {
-    if (p->mmap_regions[i].addr) pages += p->mmap_regions[i].pages;
+    if (p->mmap_regions[i].base_page != PAGE_ID_INVALID)
+      pages += p->mmap_regions[i].pages;
   }
   return pages * PAGE_SIZE;
 }

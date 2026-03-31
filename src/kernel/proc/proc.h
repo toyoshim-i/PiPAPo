@@ -207,7 +207,7 @@ typedef struct pcb {
 
   /* ── mmap regions (Phase 6 Step 7) ───────────────────────────── */
   struct {
-    void *addr;                     /* base address of mapped region     */
+    page_id_t base_page;            /* PAGE_ID_INVALID = empty           */
     uint32_t pages;                 /* number of pages in this region    */
   } mmap_regions[MMAP_REGIONS_MAX]; /* max concurrent mmap regions     */
 } pcb_t;

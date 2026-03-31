@@ -113,14 +113,12 @@ static int vfork_copy_user_stack(void *parent_ustack, uint32_t parent_usp,
 }
 #endif /* __m68k__ || __riscv || __xtensa__ */
 
-static void proc_release_mmap_region(void **addr, uint32_t *pages) {
-  proc_image_segment_t seg;
-
-  if (!addr || !pages || !*addr || *pages == 0) return;
-  seg = proc_image_segment_make(*addr, *pages * PAGE_SIZE, PPAP_MEM_RAM_DATA,
-                                PROC_IMAGE_SEG_WRITABLE);
-  mem_region_free(&seg);
-  *addr = NULL;
+static void proc_release_mmap_region(page_id_t *base_page, uint32_t *pages) {
+  if (!base_page || !pages || *base_page == PAGE_ID_INVALID || *pages == 0)
+    return;
+  for (uint32_t i = 0; i < *pages; i++)
+    mm_page_free(*base_page + (page_id_t)i);
+  *base_page = PAGE_ID_INVALID;
   *pages = 0;
 }
 
@@ -506,9 +504,10 @@ static int trace_native_contains(const pcb_t *target, uint32_t addr) {
   if (proc_page_backed_contains(target, addr)) return 1;
 
   for (uint32_t i = 0; i < MMAP_REGIONS_MAX; i++) {
-    if (!target->mmap_regions[i].addr || !target->mmap_regions[i].pages)
+    if (target->mmap_regions[i].base_page == PAGE_ID_INVALID ||
+        !target->mmap_regions[i].pages)
       continue;
-    uint32_t base = (uint32_t)(uintptr_t)target->mmap_regions[i].addr;
+    uint32_t base = mm_page_linear(target->mmap_regions[i].base_page);
     uint32_t end = base + target->mmap_regions[i].pages * PAGE_SIZE;
     if (addr >= base && addr < end) return 1;
   }
@@ -1387,7 +1386,7 @@ long sys_exit(long status) {
 #endif
     /* Free mmap regions */
     for (int i = 0; i < MMAP_REGIONS_MAX; i++) {
-      proc_release_mmap_region(&current->mmap_regions[i].addr,
+      proc_release_mmap_region(&current->mmap_regions[i].base_page,
                                &current->mmap_regions[i].pages);
     }
   } else {
