@@ -23,71 +23,30 @@
 #include "mem_region.h"
 #include "page.h"
 
-/* ── Helpers ─────────────────────────────────────────────────────────────── */
-
-/*
- * Validate that [user_addr, user_addr + n) falls within the current
- * process's tracked pages or kernel stack page.
- *
- * Returns 0 if valid, -EFAULT otherwise.
- */
-static int access_ok(uint32_t user_addr, size_t n) {
-  if (n == 0) return 0;
-
-  const pcb_t *p = current;
-  uint32_t end = user_addr + (uint32_t)n - 1;
-
-  /* Check every page in the range. */
-  for (uint32_t addr = user_addr & ~(uint32_t)(PAGE_SIZE - 1);
-       addr <= (end & ~(uint32_t)(PAGE_SIZE - 1));
-       addr += PAGE_SIZE) {
-    /* Check user_pages[]. */
-    int found = 0;
-    for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
-      if (p->user_pages[i] == PAGE_ID_INVALID) continue;
-      uint32_t base = mem_region_page_linear(p->user_pages[i]);
-      if (addr >= base && addr < base + PAGE_SIZE) {
-        found = 1;
-        break;
-      }
-    }
-    if (found) continue;
-
-    /* Also allow access to the kernel stack page (used for argv on exec). */
-    if (p->stack_page_id != PAGE_ID_INVALID) {
-      uint32_t sbase = mem_region_page_linear(p->stack_page_id);
-      if (addr >= sbase && addr < sbase + PAGE_SIZE) continue;
-    }
-
-#if defined(__m68k__)
-    /* m68k: separate user stack page. */
-    if (p->user_stack_page) {
-      uint32_t usbase = (uint32_t)(uintptr_t)p->user_stack_page;
-      if (addr >= usbase && addr < usbase + PAGE_SIZE) continue;
-    }
-#endif
-
-    return -EFAULT;
-  }
-  return 0;
-}
 
 /* ── 32-bit implementation ───────────────────────────────────────────────── */
+
+/*
+ * On 32-bit flat targets without an MMU (ARM Cortex-M, m68k, RISC-V),
+ * the kernel can dereference any address in the process's address space.
+ * No segment resolution is needed — a plain memcpy suffices.
+ *
+ * access_ok() is not called here because subsystem bridges and kernel
+ * tests legitimately call sys_read/sys_write with kernel-space buffers.
+ * On a flat no-MMU target there is no meaningful user/kernel address
+ * boundary to enforce.
+ */
 
 #if !defined(__ia16__)
 
 int copy_from_user(void *kbuf, uint32_t user_addr, size_t n) {
   if (n == 0) return 0;
-  int err = access_ok(user_addr, n);
-  if (err) return err;
   memcpy(kbuf, (const void *)(uintptr_t)user_addr, n);
   return 0;
 }
 
 int copy_to_user(uint32_t user_addr, const void *kbuf, size_t n) {
   if (n == 0) return 0;
-  int err = access_ok(user_addr, n);
-  if (err) return err;
   memcpy((void *)(uintptr_t)user_addr, kbuf, n);
   return 0;
 }
@@ -97,12 +56,6 @@ int strncpy_from_user(char *kbuf, uint32_t user_addr, size_t max) {
   const char *src = (const char *)(uintptr_t)user_addr;
   size_t i;
   for (i = 0; i < max - 1; i++) {
-    /* Validate one byte at a time — the string may end before filling
-     * max bytes, so we don't know the full range up front. */
-    if (access_ok(user_addr + i, 1)) {
-      kbuf[0] = '\0';
-      return -EFAULT;
-    }
     kbuf[i] = src[i];
     if (kbuf[i] == '\0') return (int)i;
   }

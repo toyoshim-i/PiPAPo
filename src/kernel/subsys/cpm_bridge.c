@@ -312,7 +312,9 @@ static void cpm_trace_after(uint32_t abi, uint32_t nr, z80_state_t *cpu) {
                      z80_hl(cpu), cpu->sp, cpu->pc, cpm_trace_ret(cpu));
 }
 
-static void cpm_raw_putchar(uint8_t ch) { sys_write(1, (const char *)&ch, 1); }
+static void cpm_raw_putchar(uint8_t ch) {
+  sys_write(1, (uint32_t)(uintptr_t)&ch, 1);
+}
 
 static void cpm_putchar(uint8_t ch) {
   adm_raw_out = cpm_raw_putchar;
@@ -322,7 +324,7 @@ static void cpm_putchar(uint8_t ch) {
 static uint8_t cpm_getchar(void) {
   uint8_t ch = 0;
   for (;;) {
-    long rc = sys_read(0, (char *)&ch, 1);
+    long rc = sys_read(0, (uint32_t)(uintptr_t)&ch, 1);
     if (rc > 0) return ch;
     /* tty_read() blocks by setting PROC_BLOCKED + sched_yield() and
      * returns 0 when the task is resumed.  Kernel-mode callers do not
@@ -345,11 +347,11 @@ static int cpm_file_open(const char *path, int flags) {
 static int cpm_file_close(int fd) { return (int)sys_close((long)fd); }
 
 static int cpm_file_read(int fd, void *buf, int count) {
-  return (int)sys_read((long)fd, (char *)buf, (size_t)count);
+  return (int)sys_read((long)fd, (uint32_t)(uintptr_t)buf, (size_t)count);
 }
 
 static int cpm_file_write(int fd, const void *buf, int count) {
-  return (int)sys_write((long)fd, (const char *)buf, (size_t)count);
+  return (int)sys_write((long)fd, (uint32_t)(uintptr_t)buf, (size_t)count);
 }
 
 static int cpm_file_seek(int fd, int offset, int whence) {

@@ -75,11 +75,13 @@ long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1,
   frame[3] = a3;
 
   /* Resolve user-space pointer arguments to linear addresses.
-   * Which arguments are pointers depends on the syscall number. */
+   * Which arguments are pointers depends on the syscall number.
+   * SYS_READ/SYS_WRITE use uaccess (copy_from_user/copy_to_user)
+   * with the linear address, so they don't need resolution here. */
   switch (nr) {
-    case 0x0003: /* SYS_READ:  read(fd, buf, n)  — a1 = buf */
-    case 0x0004: /* SYS_WRITE: write(fd, buf, n) — a1 = buf */
-      frame[1] = seg_base + a1;
+    case 0x0003: /* SYS_READ:  read(fd, buf, n)  — a1 = user offset */
+    case 0x0004: /* SYS_WRITE: write(fd, buf, n) — a1 = user offset */
+      frame[1] = seg_base + a1; /* linear address for uaccess */
       break;
     case 0x0005: /* SYS_OPEN:  open(path, flags, mode) — a0 = path */
     case 0x000B: /* SYS_EXECVE: execve(path, argv) — a0 = path */

@@ -58,7 +58,7 @@ static void vfs_integration_test(void)
         int ok = 0;
         if (fd >= 0) {
             char buf[32];
-            long n = sys_read(fd, buf, sizeof(buf) - 1);
+            long n = sys_read(fd, (uint32_t)(uintptr_t)buf, sizeof(buf) - 1);
             if (n == 5) {
                 buf[n] = '\0';
                 /* "ppap\n" */
@@ -76,7 +76,7 @@ static void vfs_integration_test(void)
         int ok = 0;
         if (fd >= 0) {
             char buf[64];
-            long n = sys_read(fd, buf, sizeof(buf) - 1);
+            long n = sys_read(fd, (uint32_t)(uintptr_t)buf, sizeof(buf) - 1);
             if (n > 0) {
                 buf[n] = '\0';
                 /* starts with "Welcome" */
@@ -98,7 +98,7 @@ static void vfs_integration_test(void)
         long fd = sys_open("/dev/null", O_WRONLY, 0);
         int ok = 0;
         if (fd >= 0) {
-            long n = sys_write(fd, "discarded", 9);
+            long n = sys_write(fd, (uint32_t)(uintptr_t)"discarded", 9);
             ok = (n == 9);
             sys_close(fd);
         }
@@ -111,7 +111,7 @@ static void vfs_integration_test(void)
         int ok = 0;
         if (fd >= 0) {
             char buf[4] = {0xFF, 0xFF, 0xFF, 0xFF};
-            long n = sys_read(fd, buf, 4);
+            long n = sys_read(fd, (uint32_t)(uintptr_t)buf, 4);
             if (n == 4)
                 ok = (buf[0]==0 && buf[1]==0 && buf[2]==0 && buf[3]==0);
             sys_close(fd);
@@ -125,7 +125,7 @@ static void vfs_integration_test(void)
         int ok = 0;
         if (fd >= 0) {
             char buf[128];
-            long n = sys_read(fd, buf, sizeof(buf) - 1);
+            long n = sys_read(fd, (uint32_t)(uintptr_t)buf, sizeof(buf) - 1);
             if (n > 0) {
                 buf[n] = '\0';
                 /* should start with "MemTotal:" */
@@ -241,10 +241,10 @@ static void pipe_integration_test(void)
         long rc = sys_pipe(fds);
         int ok = 0;
         if (rc == 0) {
-            long nw = sys_write(fds[1], "hello", 5);
+            long nw = sys_write(fds[1], (uint32_t)(uintptr_t)"hello", 5);
             if (nw == 5) {
                 char buf[8] = {0};
-                long nr = sys_read(fds[0], buf, sizeof(buf));
+                long nr = sys_read(fds[0], (uint32_t)(uintptr_t)buf, sizeof(buf));
                 if (nr == 5)
                     ok = (buf[0]=='h' && buf[1]=='e' && buf[2]=='l'
                        && buf[3]=='l' && buf[4]=='o');
@@ -263,7 +263,7 @@ static void pipe_integration_test(void)
         if (rc == 0) {
             sys_close(fds[1]);   /* close write end */
             char buf[4];
-            long nr = sys_read(fds[0], buf, sizeof(buf));
+            long nr = sys_read(fds[0], (uint32_t)(uintptr_t)buf, sizeof(buf));
             ok = (nr == 0);      /* EOF */
             sys_close(fds[0]);
         }
@@ -277,7 +277,7 @@ static void pipe_integration_test(void)
         int ok = 0;
         if (rc == 0) {
             sys_close(fds[0]);   /* close read end */
-            long nw = sys_write(fds[1], "x", 1);
+            long nw = sys_write(fds[1], (uint32_t)(uintptr_t)"x", 1);
             ok = (nw == -(long)EPIPE);
             sys_close(fds[1]);
         }
@@ -295,14 +295,14 @@ static void pipe_integration_test(void)
             char wbuf[256];
             for (int i = 0; i < 256; i++) wbuf[i] = (char)i;
 
-            long n1 = sys_write(fds[1], wbuf, 256);
-            long n2 = sys_write(fds[1], wbuf, 256);
+            long n1 = sys_write(fds[1], (uint32_t)(uintptr_t)wbuf, 256);
+            long n2 = sys_write(fds[1], (uint32_t)(uintptr_t)wbuf, 256);
             /* n1=256, n2=255 (only 255 bytes of space left) */
             ok = (n1 == 256 && n2 == 255);
 
             /* Drain and verify first byte */
             char rbuf[512];
-            long nr = sys_read(fds[0], rbuf, sizeof(rbuf));
+            long nr = sys_read(fds[0], (uint32_t)(uintptr_t)rbuf, sizeof(rbuf));
             if (nr == 511)
                 ok = ok && (rbuf[0] == 0);
 
@@ -353,9 +353,9 @@ static void dup_integration_test(void)
         if (rc == 0) {
             long dup_fd = sys_dup(fds[0]);
             if (dup_fd >= 0) {
-                sys_write(fds[1], "dup!", 4);
+                sys_write(fds[1], (uint32_t)(uintptr_t)"dup!", 4);
                 char buf[8] = {0};
-                long nr = sys_read(dup_fd, buf, sizeof(buf));
+                long nr = sys_read(dup_fd, (uint32_t)(uintptr_t)buf, sizeof(buf));
                 ok = (nr == 4 && buf[0]=='d' && buf[1]=='u'
                    && buf[2]=='p' && buf[3]=='!');
                 sys_close(dup_fd);
@@ -374,9 +374,9 @@ static void dup_integration_test(void)
         if (rc == 0) {
             long rc2 = sys_dup2(fds[1], 4);
             if (rc2 == 4) {
-                sys_write(4, "hi", 2);
+                sys_write(4, (uint32_t)(uintptr_t)"hi", 2);
                 char buf[4] = {0};
-                long nr = sys_read(fds[0], buf, sizeof(buf));
+                long nr = sys_read(fds[0], (uint32_t)(uintptr_t)buf, sizeof(buf));
                 ok = (nr == 2 && buf[0]=='h' && buf[1]=='i');
             }
             sys_close(4);
@@ -411,7 +411,7 @@ static void dup_integration_test(void)
             sys_dup2(fds_a[0], fds_b[0]);
             /* Writing to pipe B write-end should now get EPIPE since
              * its read-end was closed by dup2 */
-            long nw = sys_write(fds_b[1], "x", 1);
+            long nw = sys_write(fds_b[1], (uint32_t)(uintptr_t)"x", 1);
             ok = (nw == -(long)EPIPE);
             sys_close(fds_a[0]);
             sys_close(fds_a[1]);
@@ -629,7 +629,7 @@ static void vfat_integration_test(void)
         int ok = 0;
         if (fd >= 0) {
             char buf[32];
-            long n = sys_read(fd, buf, sizeof(buf) - 1);
+            long n = sys_read(fd, (uint32_t)(uintptr_t)buf, sizeof(buf) - 1);
             if (n == 19) {
                 buf[n] = '\0';
                 /* "Hello from FAT32!\n\0" (18 chars + NUL = 19 bytes) */
@@ -647,7 +647,7 @@ static void vfat_integration_test(void)
         int ok = 0;
         if (fd >= 0) {
             char buf[256];
-            long n = sys_read(fd, buf, 256);
+            long n = sys_read(fd, (uint32_t)(uintptr_t)buf, 256);
             if (n == 256) {
                 ok = 1;
                 for (int i = 0; i < 256; i++) {
@@ -704,14 +704,14 @@ static void vfat_integration_test(void)
         long fd = sys_open("/mnt/sd/newfile.txt", O_WRONLY | O_CREAT, 0644);
         int ok = 0;
         if (fd >= 0) {
-            long nw = sys_write(fd, "test data", 9);
+            long nw = sys_write(fd, (uint32_t)(uintptr_t)"test data", 9);
             sys_close(fd);
             if (nw == 9) {
                 /* Read it back */
                 fd = sys_open("/mnt/sd/newfile.txt", O_RDONLY, 0);
                 if (fd >= 0) {
                     char buf[16] = {0};
-                    long nr = sys_read(fd, buf, sizeof(buf));
+                    long nr = sys_read(fd, (uint32_t)(uintptr_t)buf, sizeof(buf));
                     ok = (nr == 9 && buf[0] == 't' && buf[4] == ' '
                        && buf[8] == 'a');
                     sys_close(fd);
@@ -750,7 +750,7 @@ static void vfat_integration_test(void)
         if (fd >= 0) {
             sys_lseek(fd, 128, SEEK_SET);
             char buf[4];
-            long n = sys_read(fd, buf, 4);
+            long n = sys_read(fd, (uint32_t)(uintptr_t)buf, 4);
             ok = (n == 4 && (uint8_t)buf[0] == 128 && (uint8_t)buf[1] == 129
                && (uint8_t)buf[2] == 130 && (uint8_t)buf[3] == 131);
             sys_close(fd);
@@ -935,7 +935,7 @@ static void tmpfs_integration_test(void)
         long fd = sys_open("/tmp/hello.txt", O_CREAT | O_WRONLY, 0644);
         int ok = (fd >= 0);
         if (ok) {
-            long n = sys_write(fd, "hello", 5);
+            long n = sys_write(fd, (uint32_t)(uintptr_t)"hello", 5);
             ok = (n == 5);
             sys_close(fd);
         }
@@ -943,7 +943,7 @@ static void tmpfs_integration_test(void)
             fd = sys_open("/tmp/hello.txt", O_RDONLY, 0);
             if (fd >= 0) {
                 char buf[16];
-                long n = sys_read(fd, buf, 16);
+                long n = sys_read(fd, (uint32_t)(uintptr_t)buf, 16);
                 ok = (n == 5 && buf[0] == 'h' && buf[4] == 'o');
                 sys_close(fd);
             } else {
@@ -981,7 +981,7 @@ static void tmpfs_integration_test(void)
             long fd = sys_open("/tmp/sub/nested.txt", O_CREAT | O_WRONLY, 0644);
             ok = (fd >= 0);
             if (fd >= 0) {
-                sys_write(fd, "nest", 4);
+                sys_write(fd, (uint32_t)(uintptr_t)"nest", 4);
                 sys_close(fd);
             }
         }
@@ -989,7 +989,7 @@ static void tmpfs_integration_test(void)
             long fd = sys_open("/tmp/sub/nested.txt", O_RDONLY, 0);
             if (fd >= 0) {
                 char buf[8];
-                long n = sys_read(fd, buf, 8);
+                long n = sys_read(fd, (uint32_t)(uintptr_t)buf, 8);
                 ok = (n == 4 && buf[0] == 'n');
                 sys_close(fd);
             } else {
@@ -1024,8 +1024,8 @@ static void tmpfs_integration_test(void)
         if (fd1 >= 0 && fd2 >= 0) {
             char buf[64];
             __builtin_memset(buf, 'A', 64);
-            long n1 = sys_write(fd1, buf, 64);  /* allocates page 2 of 2 */
-            long n2 = sys_write(fd2, buf, 64);  /* 3rd page → ENOSPC */
+            long n1 = sys_write(fd1, (uint32_t)(uintptr_t)buf, 64);  /* allocates page 2 of 2 */
+            long n2 = sys_write(fd2, (uint32_t)(uintptr_t)buf, 64);  /* 3rd page → ENOSPC */
             ok = (n1 == 64 && n2 == -(long)ENOSPC);
         }
         if (fd1 >= 0) sys_close(fd1);
@@ -1041,7 +1041,7 @@ static void tmpfs_integration_test(void)
         if (fd >= 0) {
             char buf[32];
             __builtin_memset(buf, 'B', 32);
-            long n = sys_write(fd, buf, 32);
+            long n = sys_write(fd, (uint32_t)(uintptr_t)buf, 32);
             ok = (n == 32);
             sys_close(fd);
         }
@@ -1134,7 +1134,7 @@ static void ufs_integration_test(void)
         int ok = 0;
         if (fd >= 0) {
             char buf[32];
-            long n = sys_read(fd, buf, sizeof(buf) - 1);
+            long n = sys_read(fd, (uint32_t)(uintptr_t)buf, sizeof(buf) - 1);
             if (n == 16) {
                 buf[n] = '\0';
                 ok = (buf[0] == 'H' && buf[6] == 'f'
@@ -1176,13 +1176,13 @@ static void ufs_integration_test(void)
         long fd = sys_open("/mnt/ufs/newfile.txt", O_CREAT | O_WRONLY, 0644);
         int ok = 0;
         if (fd >= 0) {
-            long n = sys_write(fd, "test data\n", 10);
+            long n = sys_write(fd, (uint32_t)(uintptr_t)"test data\n", 10);
             sys_close(fd);
             if (n == 10) {
                 fd = sys_open("/mnt/ufs/newfile.txt", O_RDONLY, 0);
                 if (fd >= 0) {
                     char buf[16];
-                    long r = sys_read(fd, buf, sizeof(buf));
+                    long r = sys_read(fd, (uint32_t)(uintptr_t)buf, sizeof(buf));
                     ok = (r == 10 && buf[0] == 't' && buf[4] == ' '
                        && buf[5] == 'd' && buf[9] == '\n');
                     sys_close(fd);
@@ -1218,13 +1218,13 @@ static void ufs_integration_test(void)
         long fd = sys_open("/mnt/ufs/newfile.txt", O_WRONLY, 0);
         int ok = 0;
         if (fd >= 0) {
-            long n = sys_write(fd, "rewritten\n", 10);
+            long n = sys_write(fd, (uint32_t)(uintptr_t)"rewritten\n", 10);
             sys_close(fd);
             if (n == 10) {
                 fd = sys_open("/mnt/ufs/newfile.txt", O_RDONLY, 0);
                 if (fd >= 0) {
                     char buf[16];
-                    long r = sys_read(fd, buf, sizeof(buf));
+                    long r = sys_read(fd, (uint32_t)(uintptr_t)buf, sizeof(buf));
                     ok = (r == 10 && buf[0] == 'r' && buf[2] == 'w');
                     sys_close(fd);
                 }
@@ -1255,7 +1255,7 @@ static void ufs_integration_test(void)
         int ok = 0;
         if (fd >= 0) {
             char buf[32];
-            long n = sys_read(fd, buf, sizeof(buf) - 1);
+            long n = sys_read(fd, (uint32_t)(uintptr_t)buf, sizeof(buf) - 1);
             ok = (n == 16 && buf[0] == 'H' && buf[14] == '!');
             sys_close(fd);
         }
@@ -1331,7 +1331,7 @@ static void ufs_integration_test(void)
         int ok = 0;
         if (fd >= 0) {
             char buf[32];
-            long n = sys_read(fd, buf, sizeof(buf) - 1);
+            long n = sys_read(fd, (uint32_t)(uintptr_t)buf, sizeof(buf) - 1);
             ok = (n == 16 && buf[0] == 'H' && buf[14] == '!');
             sys_close(fd);
         }

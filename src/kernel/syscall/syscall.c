@@ -81,10 +81,10 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_exit(a0);
       break;
     case SYS_READ:
-      ret = sys_read(a0, (char *)(uintptr_t)a1, (size_t)a2);
+      ret = sys_read(a0, (uint32_t)a1, (size_t)a2);
       break;
     case SYS_WRITE:
-      ret = sys_write(a0, (const char *)(uintptr_t)a1, (size_t)a2);
+      ret = sys_write(a0, (uint32_t)a1, (size_t)a2);
       break;
     case SYS_OPEN:
       ret = sys_open((const char *)(uintptr_t)a0, a1, a2);
