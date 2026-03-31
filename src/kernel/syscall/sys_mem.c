@@ -13,6 +13,7 @@
 
 #include "../common/errno.h"
 #include "../mm/mem_region.h"
+#include "../mm/page.h"
 #include "../proc/proc.h"
 #include "syscall.h"
 
@@ -36,14 +37,14 @@ long sys_brk(long addr) {
   /* Calculate old and new page counts from the tracked page-backed base.
    * The loader records the initial page-backed user image here, and
    * sys_brk appends heap pages contiguously after it. */
-  uintptr_t page0_base = (uintptr_t)proc_page_backed_base(current);
+  page_id_t page0_id = proc_page_backed_base(current);
+  if (page0_id == PAGE_ID_INVALID)
+    return (long)(current->brk_current); /* unchanged = failure */
+  uintptr_t page0_base = (uintptr_t)mm_page_linear(page0_id);
   uintptr_t old_top = current->brk_current;
   uintptr_t new_top = new_brk;
   uint32_t old_pages;
   uint32_t new_pages;
-
-  if (!page0_base)
-    return (long)(current->brk_current); /* unchanged = failure */
 
   old_pages = (old_top - page0_base + PAGE_SIZE - 1) / PAGE_SIZE;
   new_pages = (new_top - page0_base + PAGE_SIZE - 1) / PAGE_SIZE;
@@ -63,7 +64,7 @@ long sys_brk(long addr) {
       return (long)(current->brk_current); /* unchanged = failure */
     }
     memset(page_region.base, 0, PAGE_SIZE);
-    proc_track_page(current, i, page_region.base);
+    proc_track_page(current, i, mm_ptr_to_page(page_region.base));
   }
 
   /* Shrink: free excess pages */

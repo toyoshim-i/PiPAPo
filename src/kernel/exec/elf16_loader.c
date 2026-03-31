@@ -179,11 +179,9 @@ static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
   p->sp = (uint32_t)sw_pos;
 
-  /* Track pages (proc_track_page uses near pointer — truncated on i16,
-   * but only used for bookkeeping, not for actual memory access) */
+  /* Track pages by index — no pointer truncation. */
   for (uint16_t i = 0; i < npages; i++)
-    proc_track_page(p, i, (void *)(uintptr_t)
-                    (uint16_t)(base_linear + i * PAGE_SIZE));
+    proc_track_page(p, i, base_id + i);
 
   p->image.text = proc_image_segment_make(
       (void *)(uintptr_t)(uint16_t)base_linear, mem_end,

@@ -6,6 +6,8 @@
 
 #include <stdlib.h>
 
+#include "kernel/mm/page.h"
+
 #include "kernel/common/errno.h"
 
 int mem_region_alloc(proc_image_segment_t *seg, ppap_mem_class_t mem_class,
@@ -41,6 +43,8 @@ void mem_region_free(const proc_image_segment_t *seg) {
 }
 
 void mem_region_free_tracked_page(void *page) { free(page); }
+
+void mem_region_free_tracked_page_id(page_id_t id) { (void)id; }
 
 uint32_t mem_region_total_bytes(ppap_mem_class_t mem_class) {
   (void)mem_class;

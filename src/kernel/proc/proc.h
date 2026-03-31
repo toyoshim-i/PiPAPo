@@ -127,7 +127,7 @@ typedef struct pcb {
 
   /* ── Memory ─────────────────────────────────────────────────────────── */
   page_id_t stack_page_id; /* page index for 4 KB stack backing page */
-  void *user_pages[USER_PAGES_MAX]; /* page-backed user memory tracking */
+  page_id_t user_pages[USER_PAGES_MAX]; /* page-backed user memory tracking */
   proc_image_t image; /* explicit process image layout / memory classes */
 #if defined(__m68k__)
   void *user_stack_page; /* m68k: separate user stack page (USP target) */
@@ -269,20 +269,20 @@ void proc_free(pcb_t *p);
  * Returns the number of tracked pages, or -ENOMEM if the range would
  * exceed USER_PAGES_MAX.
  */
-int proc_track_page_range(pcb_t *p, uint32_t start_slot, void *base,
-                          uint32_t size);
+int proc_track_page_range(pcb_t *p, uint32_t start_slot,
+                          page_id_t base_page_id, uint32_t n_pages);
 
 /*
  * Track one page-backed user page in user_pages[].
  * Returns 0 on success, or -ENOMEM if the slot is out of range.
  */
-int proc_track_page(pcb_t *p, uint32_t slot, void *page);
+int proc_track_page(pcb_t *p, uint32_t slot, page_id_t page_id);
 
-/* Return the first tracked page-backed user page, or NULL if none exist. */
-void *proc_page_backed_base(const pcb_t *p);
+/* Return the first tracked page-backed page ID, or PAGE_ID_INVALID. */
+page_id_t proc_page_backed_base(const pcb_t *p);
 
-/* Return the last tracked page-backed user page, or NULL if none exist. */
-void *proc_last_page_backed_base(const pcb_t *p);
+/* Return the last tracked page-backed page ID, or PAGE_ID_INVALID. */
+page_id_t proc_last_page_backed_base(const pcb_t *p);
 
 /* Count contiguous tracked page-backed pages from the first tracked slot. */
 uint32_t proc_page_backed_count(const pcb_t *p);
@@ -304,11 +304,11 @@ void proc_copy_page_tracking(pcb_t *dst, const pcb_t *src);
 
 /* Save tracked page slots from process into an array snapshot. */
 void proc_copy_page_tracking_to_array(const pcb_t *src,
-                                      void *dst[USER_PAGES_MAX]);
+                                      page_id_t dst[USER_PAGES_MAX]);
 
 /* Restore tracked page slots for process from an array snapshot. */
 void proc_restore_page_tracking_from_array(pcb_t *dst,
-                                           void *const src[USER_PAGES_MAX]);
+                                           const page_id_t src[USER_PAGES_MAX]);
 
 /* Free tracked pages in [start_slot, end_slot) and clear the slots. */
 void proc_release_tracked_pages(pcb_t *p, uint32_t start_slot,
@@ -318,11 +318,12 @@ void proc_release_tracked_pages(pcb_t *p, uint32_t start_slot,
 void proc_release_private_tracked_pages(pcb_t *p, const pcb_t *shared_owner);
 
 /* Free all tracked pages recorded in an array snapshot. */
-void proc_release_tracked_pages_from_array(void *pages[USER_PAGES_MAX]);
+void proc_release_tracked_pages_from_array(page_id_t pages[USER_PAGES_MAX]);
 
 /* Free pages in snapshot array that are not shared with shared[] slots. */
 void proc_release_private_tracked_pages_from_array(
-  void *pages[USER_PAGES_MAX], void *const shared[USER_PAGES_MAX]);
+  page_id_t pages[USER_PAGES_MAX],
+  const page_id_t shared[USER_PAGES_MAX]);
 
 /*
  * Set up an initial kernel stack frame for a new process so that

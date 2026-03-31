@@ -133,6 +133,12 @@ When adding a new arch- or target-specific feature:
   duplicating a function with small per-arch tweaks, factor out the
   common algorithm into a shared function and pass arch-specific details
   via parameters, callbacks, or per-arch constants.
+- **Fix root causes, not symptoms**: when a bug or limitation surfaces,
+  invest in the essential fix that addresses the underlying design issue.
+  Avoid short-term ad-hoc workarounds that paper over the problem —
+  they accumulate technical debt and make the real fix harder later.
+  If a proper fix is too large for the current step, file a TODO with
+  a clear description of the root cause and the intended fix.
 
 ## TODO Comments
 
@@ -181,6 +187,20 @@ Run the boundary checker before committing allocator-related work:
 ```sh
 ./scripts/check_allocator_boundaries.sh
 ```
+
+### Page-index conversions
+
+Per-process memory is tracked by `page_id_t` (uint16_t index), not by
+raw pointers.  Two functions convert an index back to an address — use
+the right one for portability:
+
+- **`mm_page_linear(id)`** → `uint32_t`: safe on all targets including
+  i16.  Use for arithmetic, comparisons, and reporting.
+- **`mm_page_to_ptr(id)`** → `void *`: 32-bit targets only (unavailable
+  on i16).  Use only when you need a dereferenceable pointer.
+
+See [Memory Management Refactoring](../proposals/memory_management.md)
+§6 for the full conversion rules and rationale.
 
 ## Compile-Time Flags for Work in Progress
 

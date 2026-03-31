@@ -41,17 +41,20 @@
   (PPAP_TRACE_MODE_PPAP_SYSCALL | PPAP_TRACE_MODE_SUBSYS_CALL)
 
 static int image_segment_is_page_tracked(const proc_image_segment_t *seg,
-                                         void *const *pages,
+                                         const page_id_t *pages,
                                          uint32_t num_pages) {
+  page_id_t seg_id;
   if (!seg || !seg->base) return 0;
+  seg_id = mm_ptr_to_page(seg->base);
+  if (seg_id == PAGE_ID_INVALID) return 0;
   for (uint32_t i = 0; i < num_pages; i++) {
-    if (pages[i] == seg->base) return 1;
+    if (pages[i] == seg_id) return 1;
   }
   return 0;
 }
 
 static void image_segment_release_owned(proc_image_segment_t *seg,
-                                        void *const *pages,
+                                        const page_id_t *pages,
                                         uint32_t num_pages) {
   if (!seg || !seg->base) return;
   if (!(seg->flags & PROC_IMAGE_SEG_OWNED)) {
@@ -64,7 +67,7 @@ static void image_segment_release_owned(proc_image_segment_t *seg,
 }
 
 static void image_release_owned_segments(proc_image_t *image,
-                                         void *const *pages,
+                                         const page_id_t *pages,
                                          uint32_t num_pages) {
   if (!image) return;
   image_segment_release_owned(&image->text, pages, num_pages);
@@ -1575,8 +1578,9 @@ long sys_vfork(uint32_t *frame) {
   /* RISC-V mscratch split: the child must have its own user stack copy. */
   {
     uint32_t ustack_slot = USER_PAGES_MAX - 1;
-    void *parent_ustack = current->user_pages[ustack_slot];
-    if (parent_ustack) {
+    page_id_t parent_ustack_id = current->user_pages[ustack_slot];
+    if (parent_ustack_id != PAGE_ID_INVALID) {
+      void *parent_ustack = mm_page_to_ptr(parent_ustack_id);
       void *child_ustack = NULL;
       uint32_t *child_tf = child_frame - 8; /* trap frame base */
       uint32_t child_usp = 0;
@@ -1587,7 +1591,7 @@ long sys_vfork(uint32_t *frame) {
         proc_free(child);
         return -(long)ENOMEM;
       }
-      child->user_pages[ustack_slot] = child_ustack;
+      child->user_pages[ustack_slot] = mm_ptr_to_page(child_ustack);
       child_tf[32] = child_usp; /* patch TF_USER_SP */
     }
   }
@@ -1837,7 +1841,7 @@ long sys_waitpid(long pid, long status_ptr, long options) {
 long sys_execve(const char *path, const char *const *argv) {
   /* Save old pages to free after successful load */
   page_id_t old_stack_id = current->stack_page_id;
-  void *old_user[USER_PAGES_MAX];
+  page_id_t old_user[USER_PAGES_MAX];
   proc_image_t old_image = current->image;
   int owns_pages = (current->vfork_parent == NULL);
   proc_copy_page_tracking_to_array(current, old_user);

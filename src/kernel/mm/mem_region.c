@@ -663,6 +663,11 @@ void mem_region_free_tracked_page(void *page) {
   page_free(page);
 }
 
+void mem_region_free_tracked_page_id(page_id_t id) {
+  if (id == PAGE_ID_INVALID) return;
+  mm_page_free(id);
+}
+
 uint32_t mem_region_total_bytes(ppap_mem_class_t mem_class) {
   switch (mem_class) {
 #if defined(__xtensa__)
