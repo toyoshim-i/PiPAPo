@@ -837,13 +837,21 @@ stores truncated pointers.  Fixed by the page-index refactoring
 
 ### Steps (revised)
 
-1. **User-space memory access abstraction** — implement
-   `copy_from_user` / `copy_to_user` / `strncpy_from_user` as a
-   uniform API on all targets.  See §8.1 below.
+1. **Redesign page_id_t** — change `page_id_t` from pool-relative
+   index to `linear_address / PAGE_SIZE`.  Arch-specific width:
+   `uint32_t` (ARM, RISC-V, Xtensa), `uint16_t` (m68k),
+   `uint8_t` (i16).  Eliminates `page_linear[]` lookup table on
+   32-bit — `linear = page_id * PAGE_SIZE` directly.  Any address
+   (kernel, ROM, page pool) maps to a valid page_id.  See §8.0.
 
-2. **Convert syscalls to use uaccess** — sys_write, sys_read, and
-   path-taking syscalls use kernel bounce buffers instead of raw
-   user pointers.
+2. **User-space memory access** — `user_to_page()` resolves user
+   pointer args to page_id + offset.  `fd_read`/`fd_write` VFS API
+   changes to accept page_id + offset.  All VFS implementations
+   use `mem_region_page_read/write`.  See §8.1.
+
+3. **Convert syscalls** — path syscalls copy path to kernel stack
+   via `mem_region_page_read`.  Struct-output syscalls write via
+   `mem_region_page_write`.  Remove i16 pointer-resolution switch.
 
 3. **Signal delivery for i16** — implement `sys_sigreturn` / signal
    trampoline.
@@ -852,6 +860,47 @@ stores truncated pointers.  Fixed by the page-index refactoring
    `mem_region_page_read/write` for cross-segment copy.
 
 5. **`--test ibmpc` in run.sh** — integrate with existing test harness.
+
+### 8.0 page_id_t Redesign
+
+Currently `page_id_t` is a pool-relative index: page_id 0 = first
+page in the page pool, not first page in RAM.  This means kernel
+addresses (stack, `.rodata`, ROM) have no page_id, blocking the
+user-to-page conversion for kernel callers (bridges, ktest, PID 0).
+
+**New design**: `page_id = linear_address / PAGE_SIZE`.  Any address
+in the system maps to a valid page_id.  The type width varies by
+architecture to minimize memory usage:
+
+| Arch | `page_id_t` | Max linear | Max page_id | `PAGE_ID_INVALID` |
+|------|------------|-----------|-------------|-------------------|
+| ARM | `uint32_t` | 0x2041FFF | 0x20041 | `0xFFFFFFFF` |
+| RISC-V | `uint32_t` | 0x80BFFFF | 0x80BFF | `0xFFFFFFFF` |
+| Xtensa | `uint32_t` | varies | varies | `0xFFFFFFFF` |
+| m68k | `uint16_t` | 0xFFFFFF | 4095 | `0xFFFF` |
+| i16 | `uint8_t` | 0x9FFFF | 159 | `0xFF` |
+
+**Changes required**:
+
+1. `page.h`: `page_id_t` typedef becomes arch-conditional.
+   `PAGE_ID_INVALID` uses the max value for the type.
+2. `page.c`: `page_linear[]` array removed (32-bit) or kept
+   as a simple multiply (all arches).  `mm_page_read/write`
+   compute `linear = (uint32_t)id * PAGE_SIZE + off`.
+   Free-stack stores page_ids using the new encoding.
+3. `mem_region.c`: `mem_region_page_linear()` = `id * PAGE_SIZE`.
+   `mem_region_ptr_to_page()` = `(uintptr_t)ptr / PAGE_SIZE`.
+4. `proc.h`: `user_pages[USER_PAGES_MAX]` element size changes
+   per arch (1/2/4 bytes).  `user_to_page()` simplifies to
+   `(page_id_t)((uint32_t)user_addr / PAGE_SIZE)`.
+5. All code using `PAGE_ID_INVALID` comparisons: unchanged in
+   logic, but the constant value changes per arch.
+6. Page pool init: free-stack entries computed as
+   `(pool_base / PAGE_SIZE) + i` instead of bare `i`.
+
+**Verification**: all existing tests must pass on ARM and m68k.
+ibmpc must build.  The page_id encoding is an internal detail —
+no user-visible ABI change.
 
 ### 8.1 User-Space Memory Access (`user_to_page`)
 
