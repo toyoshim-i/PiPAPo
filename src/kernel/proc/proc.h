@@ -73,6 +73,38 @@ typedef void (*sighandler_t)(int);
 /* ── Types ───────────────────────────────────────────────────────────────────
  */
 
+/*
+ * user_page_ref_t — page-index + offset reference to user-space memory.
+ *
+ * Syscall handlers resolve user pointer arguments to this type via
+ * user_to_page(), then access user memory through mem_region_page_read
+ * / mem_region_page_write.  This works on all architectures:
+ *
+ *   i16:  raw register value is DS-relative offset = process-relative
+ *   flat: (linear address - process base) = process-relative offset
+ *   MMU:  future page-table walk
+ *
+ * user_to_page() takes the process's base page ID and a byte offset
+ * from the start of the process's contiguous page allocation.  The
+ * caller extracts the offset from the raw syscall argument:
+ *
+ *   i16:    user_off = (uint32_t)raw_arg
+ *   32-bit: user_off = (uint32_t)raw_arg
+ *                     - mem_region_page_linear(proc_page_backed_base(p))
+ */
+typedef struct {
+  page_id_t page;
+  uint16_t off;
+} user_page_ref_t;
+
+static inline user_page_ref_t user_to_page(page_id_t base,
+                                           uint32_t user_off) {
+  user_page_ref_t ref;
+  ref.page = base + (page_id_t)(user_off / PAGE_SIZE);
+  ref.off = (uint16_t)(user_off % PAGE_SIZE);
+  return ref;
+}
+
 /* pid_t: POSIX process ID type.  Not provided by arm-none-eabi without
  * POSIX headers, so we define it here for bare-metal use. */
 typedef int32_t pid_t;
