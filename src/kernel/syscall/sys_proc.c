@@ -40,42 +40,25 @@
 #define TRACE_MODE_MASK \
   (PPAP_TRACE_MODE_PPAP_SYSCALL | PPAP_TRACE_MODE_SUBSYS_CALL)
 
-static int image_segment_is_page_tracked(const proc_image_segment_t *seg,
-                                         const page_id_t *pages,
-                                         uint32_t num_pages) {
-  page_id_t seg_id;
-  if (!seg || !seg->base) return 0;
-  seg_id = mm_ptr_to_page(seg->base);
-  if (seg_id == PAGE_ID_INVALID) return 0;
-  for (uint32_t i = 0; i < num_pages; i++) {
-    if (pages[i] == seg_id) return 1;
-  }
-  return 0;
-}
-
-static void image_segment_release_owned(proc_image_segment_t *seg,
-                                        const page_id_t *pages,
-                                        uint32_t num_pages) {
+/* Release an image segment if it is OWNED (independently allocated).
+ * Non-OWNED segments (XIP, sub-pointers into another allocation) are
+ * just cleared.  Data regions are no longer OWNED — they are freed via
+ * proc_release_tracked_pages(), so no overlap check is needed. */
+static void image_segment_release_owned(proc_image_segment_t *seg) {
   if (!seg || !seg->base) return;
-  if (!(seg->flags & PROC_IMAGE_SEG_OWNED)) {
-    *seg = (proc_image_segment_t){0};
-    return;
-  }
-  if (!image_segment_is_page_tracked(seg, pages, num_pages))
+  if (seg->flags & PROC_IMAGE_SEG_OWNED)
     mem_region_free(seg);
   *seg = (proc_image_segment_t){0};
 }
 
-static void image_release_owned_segments(proc_image_t *image,
-                                         const page_id_t *pages,
-                                         uint32_t num_pages) {
+static void image_release_owned_segments(proc_image_t *image) {
   if (!image) return;
-  image_segment_release_owned(&image->text, pages, num_pages);
-  image_segment_release_owned(&image->staged_text, pages, num_pages);
-  image_segment_release_owned(&image->staged_rodata, pages, num_pages);
-  image_segment_release_owned(&image->literal, pages, num_pages);
-  image_segment_release_owned(&image->rodata, pages, num_pages);
-  image_segment_release_owned(&image->data, pages, num_pages);
+  image_segment_release_owned(&image->text);
+  image_segment_release_owned(&image->staged_text);
+  image_segment_release_owned(&image->staged_rodata);
+  image_segment_release_owned(&image->literal);
+  image_segment_release_owned(&image->rodata);
+  image_segment_release_owned(&image->data);
 }
 
 static void proc_release_stack_page(void **page) {
@@ -1371,8 +1354,7 @@ long sys_exit(long status) {
   /* Free user pages only if we own them (vfork_parent == NULL means
    * either this isn't a vfork child, or execve already replaced them) */
   if (!current->vfork_parent) {
-    image_release_owned_segments(&current->image, current->user_pages,
-                                 USER_PAGES_MAX);
+    image_release_owned_segments(&current->image);
 #if !defined(__ia16__)
     if (current->stack_page_id != PAGE_ID_INVALID &&
         proc_page_backed_contains(current, (uintptr_t)mm_page_to_ptr(current->stack_page_id)))
@@ -1896,7 +1878,7 @@ long sys_execve(const char *path, const char *const *argv) {
 
   /* Free old user pages only if we owned them */
   if (owns_pages) {
-    image_release_owned_segments(&old_image, old_user, USER_PAGES_MAX);
+    image_release_owned_segments(&old_image);
     proc_release_tracked_pages_from_array(old_user);
 #if defined(__m68k__)
     if (old_user_stack) proc_release_stack_page(&old_user_stack);

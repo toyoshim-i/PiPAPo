@@ -188,8 +188,7 @@ static int sos_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   /* ── 2. Allocate Z80 memory (64KB) + state page ────────────────────── */
   if (mem_region_alloc(&data_region, PPAP_MEM_RAM_DATA,
                        (Z80_MEM_PAGES + 1u) * PAGE_SIZE,
-                       PROC_IMAGE_SEG_WRITABLE |
-                           PROC_IMAGE_SEG_OWNED) < 0) {
+                       PROC_IMAGE_SEG_WRITABLE) < 0) {
     return -(int)ENOMEM;
   }
 

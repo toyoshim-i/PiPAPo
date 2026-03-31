@@ -59,8 +59,7 @@ static int r68k_alloc_largest_image_region(proc_image_segment_t *seg,
   for (uint32_t total_pages = USER_PAGES_MAX; total_pages >= min_pages;
        total_pages--) {
     if (mem_region_alloc(seg, PPAP_MEM_RAM_DATA, total_pages * PAGE_SIZE,
-                         PROC_IMAGE_SEG_WRITABLE |
-                             PROC_IMAGE_SEG_OWNED) == 0)
+                         PROC_IMAGE_SEG_WRITABLE) == 0)
       return (int)total_pages;
     if (total_pages == min_pages) break;
   }

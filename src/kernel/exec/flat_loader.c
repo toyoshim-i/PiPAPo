@@ -74,8 +74,7 @@ static int flat_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
   /* Allocate one page for code + data + stack */
   if (mem_region_alloc(&page_region, PPAP_MEM_RAM_DATA, PAGE_SIZE,
-                       PROC_IMAGE_SEG_WRITABLE |
-                           PROC_IMAGE_SEG_OWNED) < 0) {
+                       PROC_IMAGE_SEG_WRITABLE) < 0) {
     return -ENOMEM;
   }
   void *page = page_region.base;
