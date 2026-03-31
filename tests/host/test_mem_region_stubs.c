@@ -46,6 +46,37 @@ void mem_region_free_tracked_page(void *page) { free(page); }
 
 void mem_region_free_tracked_page_id(page_id_t id) { (void)id; }
 
+page_id_t mem_region_page_alloc(void) { return PAGE_ID_INVALID; }
+
+page_id_t mem_region_page_alloc_contiguous(uint32_t n) {
+  (void)n;
+  return PAGE_ID_INVALID;
+}
+
+void mem_region_page_free(page_id_t id) { (void)id; }
+
+uint32_t mem_region_page_linear(page_id_t id) { return (uint32_t)id; }
+
+page_id_t mem_region_ptr_to_page(void *ptr) {
+  (void)ptr;
+  return PAGE_ID_INVALID;
+}
+
+void *mem_region_page_to_ptr(page_id_t id) {
+  (void)id;
+  return NULL;
+}
+
+void mem_region_page_read(page_id_t id, uint16_t off,
+                          void *buf, uint16_t len) {
+  (void)id; (void)off; (void)buf; (void)len;
+}
+
+void mem_region_page_write(page_id_t id, uint16_t off,
+                           const void *buf, uint16_t len) {
+  (void)id; (void)off; (void)buf; (void)len;
+}
+
 uint32_t mem_region_total_bytes(ppap_mem_class_t mem_class) {
   (void)mem_class;
   return 0u;

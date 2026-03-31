@@ -19,7 +19,6 @@
 
 #include "kernel/common/errno.h"
 #include "kernel/mm/mem_region.h"
-#include "kernel/mm/page.h"
 #include "kernel/proc/proc.h"
 #include "arch/arch.h"
 #include "kernel/cpu/cpu.h"
@@ -94,11 +93,11 @@ static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   uint16_t npages = (uint16_t)(alloc_size / PAGE_SIZE);
 
   /* Allocate contiguous pages via page-indexed API.
-   * mm_page_alloc_contiguous returns a page_id_t (index), not a
+   * mem_region_page_alloc_contiguous returns a page_id_t (index), not a
    * pointer — safe on i16 where near pointers can't address pages
-   * above 64 KB.  mm_page_write copies data via segment:offset. */
+   * above 64 KB.  mem_region_page_write copies data via segment:offset. */
   if (npages > 16) return -ENOMEM;
-  page_id_t base_id = mm_page_alloc_contiguous(npages);
+  page_id_t base_id = mem_region_page_alloc_contiguous(npages);
   if (base_id == PAGE_ID_INVALID) return -ENOMEM;
 
   /* Zero entire region via page-indexed writes */
@@ -107,18 +106,18 @@ static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     memset(zeros, 0, sizeof(zeros));
     for (uint16_t pg = 0; pg < npages; pg++) {
       for (uint16_t off = 0; off < PAGE_SIZE; off += sizeof(zeros))
-        mm_page_write(base_id + pg, off, zeros, sizeof(zeros));
+        mem_region_page_write(base_id + pg, off, zeros, sizeof(zeros));
     }
   }
 
-  /* Second pass: copy PT_LOAD segment data via mm_page_write */
+  /* Second pass: copy PT_LOAD segment data via mem_region_page_write */
   for (uint16_t i = 0; i < ehdr->e_phnum; i++) {
     if (phdrs[i].p_type != PT_LOAD) continue;
     if (phdrs[i].p_filesz == 0) continue;
 
     if (phdrs[i].p_offset + phdrs[i].p_filesz > file_size) {
       for (uint16_t j = 0; j < npages; j++)
-        mm_page_free(base_id + j);
+        mem_region_page_free(base_id + j);
       return -ENOEXEC;
     }
 
@@ -132,7 +131,7 @@ static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
       uint16_t chunk = PAGE_SIZE - pg_off;
       if (chunk > remaining) chunk = (uint16_t)remaining;
 
-      mm_page_write(base_id + pg_idx, pg_off, src, chunk);
+      mem_region_page_write(base_id + pg_idx, pg_off, src, chunk);
       src += chunk;
       vaddr += chunk;
       remaining -= chunk;
@@ -140,7 +139,7 @@ static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   }
 
   /* Compute process segment from the 32-bit linear address of page 0. */
-  uint32_t base_linear = mm_page_linear(base_id);
+  uint32_t base_linear = mem_region_page_linear(base_id);
   uint16_t proc_seg = (uint16_t)(base_linear >> 4);
   uint16_t entry_ip = (uint16_t)ehdr->e_entry;
 
@@ -149,7 +148,7 @@ static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   uint32_t sp_linear = base_linear + alloc_size;
 
   /* Build the initial interrupt frame on the process stack.
-   * Use mm_page_write to place it (avoids near-pointer truncation).
+   * Use mem_region_page_write to place it (avoids near-pointer truncation).
    * Frame grows downward: HW frame (6B) on top, then SW frame (18B). */
   uint16_t hw_frame[3];
   hw_frame[0] = entry_ip;     /* IP */
@@ -170,12 +169,12 @@ static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   uint32_t hw_pos = sp_linear - sizeof(hw_frame);
   uint16_t hw_pg = (uint16_t)((hw_pos - base_linear) / PAGE_SIZE);
   uint16_t hw_off = (uint16_t)((hw_pos - base_linear) % PAGE_SIZE);
-  mm_page_write(base_id + hw_pg, hw_off, hw_frame, sizeof(hw_frame));
+  mem_region_page_write(base_id + hw_pg, hw_off, hw_frame, sizeof(hw_frame));
 
   uint32_t sw_pos = hw_pos - sizeof(sw_frame);
   uint16_t sw_pg = (uint16_t)((sw_pos - base_linear) / PAGE_SIZE);
   uint16_t sw_off = (uint16_t)((sw_pos - base_linear) % PAGE_SIZE);
-  mm_page_write(base_id + sw_pg, sw_off, sw_frame, sizeof(sw_frame));
+  mem_region_page_write(base_id + sw_pg, sw_off, sw_frame, sizeof(sw_frame));
 
   p->sp = (uint32_t)sw_pos;
 

@@ -129,13 +129,14 @@ extern uint32_t page_count;
 /* OOM event counter (incremented each time page_alloc returns NULL). */
 extern uint32_t oom_count;
 
-/* ── Page-indexed API ──────────────────────────────────────────────────────
+/* ── Page-indexed API (mm-internal) ───────────────────────────────────────
+ *
+ * These functions are internal to src/kernel/mm/.  Code outside mm/
+ * should use the mem_region_page_* wrappers in mem_region.h instead.
  *
  * Allocations return a page_id_t (index) instead of void *.  Data on
  * pages is accessed via mm_page_read/write which handles segment setup
  * on i16 internally.  On 32-bit, it's just memcpy from a direct pointer.
- *
- * All platforms use the same code — no architecture #ifdefs in callers.
  */
 
 typedef uint16_t page_id_t;

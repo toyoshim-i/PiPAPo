@@ -671,6 +671,42 @@ void mem_region_free_tracked_page_id(page_id_t id) {
   mm_page_free(id);
 }
 
+/* ── Page-index wrappers ────────────────────────────────────────────── */
+
+page_id_t mem_region_page_alloc(void) { return mm_page_alloc(); }
+
+page_id_t mem_region_page_alloc_contiguous(uint32_t n_pages) {
+  return mm_page_alloc_contiguous(n_pages);
+}
+
+void mem_region_page_free(page_id_t id) { mm_page_free(id); }
+
+uint32_t mem_region_page_linear(page_id_t id) {
+  return mm_page_linear(id);
+}
+
+page_id_t mem_region_ptr_to_page(void *ptr) {
+  return mm_ptr_to_page(ptr);
+}
+
+#if !defined(__ia16__)
+void *mem_region_page_to_ptr(page_id_t id) {
+  return mm_page_to_ptr(id);
+}
+#endif
+
+void mem_region_page_read(page_id_t id, uint16_t off,
+                          void *buf, uint16_t len) {
+  mm_page_read(id, off, buf, len);
+}
+
+void mem_region_page_write(page_id_t id, uint16_t off,
+                           const void *buf, uint16_t len) {
+  mm_page_write(id, off, buf, len);
+}
+
+/* ── Capacity queries ──────────────────────────────────────────────── */
+
 uint32_t mem_region_total_bytes(ppap_mem_class_t mem_class) {
   switch (mem_class) {
 #if defined(__xtensa__)

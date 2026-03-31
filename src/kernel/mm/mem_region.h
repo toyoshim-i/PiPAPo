@@ -30,6 +30,38 @@ void mem_region_free_tracked_page(void *page);
 /* Free a tracked user page by page index. */
 void mem_region_free_tracked_page_id(page_id_t id);
 
+/* ── Page-index wrappers (public API for mm_page_* internals) ──────── */
+
+/* Allocate one page, return its index (or PAGE_ID_INVALID on OOM). */
+page_id_t mem_region_page_alloc(void);
+
+/* Allocate n contiguous pages, return base index (or PAGE_ID_INVALID). */
+page_id_t mem_region_page_alloc_contiguous(uint32_t n_pages);
+
+/* Free a page by index. */
+void mem_region_page_free(page_id_t id);
+
+/* Return the 32-bit linear address of a page by index. */
+uint32_t mem_region_page_linear(page_id_t id);
+
+/* Return the page_id for an existing pointer (reverse lookup). */
+page_id_t mem_region_ptr_to_page(void *ptr);
+
+/* Return a dereferenceable pointer (32-bit only, not available on i16). */
+#if !defined(__ia16__)
+void *mem_region_page_to_ptr(page_id_t id);
+#endif
+
+/* Read `len` bytes from page `id` at byte offset `off` into `buf`. */
+void mem_region_page_read(page_id_t id, uint16_t off,
+                          void *buf, uint16_t len);
+
+/* Write `len` bytes from `buf` to page `id` at byte offset `off`. */
+void mem_region_page_write(page_id_t id, uint16_t off,
+                           const void *buf, uint16_t len);
+
+/* ── Capacity queries ──────────────────────────────────────────────── */
+
 uint32_t mem_region_total_bytes(ppap_mem_class_t mem_class);
 
 uint32_t mem_region_free_bytes(ppap_mem_class_t mem_class);
