@@ -13,7 +13,7 @@
  *
  * Function list auto-generated from mod_core.inc.
  *
- * Linked into ppap_ibmpc (core binary).
+ * Linked into ppap_pcxt (core binary).
  */
 
 #ifdef __ia16__

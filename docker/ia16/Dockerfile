@@ -1,5 +1,5 @@
 # =============================================================================
-# ppap/ia16 — Docker image for IBM PC (i8086) target
+# ppap/ia16 — Docker image for PC/XT (i8086) target
 # =============================================================================
 #
 # Contains:
@@ -13,8 +13,8 @@
 #
 # Usage:
 #   docker run --rm -u $(id -u):$(id -g) -v "$PWD:/ppap" -w /ppap ppap/ia16 \
-#     cmake -S src/target/ibmpc -B build/ibmpc && \
-#     cmake --build build/ibmpc
+#     cmake -S src/target/pcxt -B build/pcxt && \
+#     cmake --build build/pcxt
 #
 # The ia16-elf-gcc toolchain is built from tkchia/build-ia16 (GitLab).
 # Stages: prereqs → binutils → gcc1 (C only) → newlib

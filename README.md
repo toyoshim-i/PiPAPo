@@ -29,11 +29,11 @@ A portable UNIX-like micro OS for bare-metal microcontrollers and retro CPUs.
 | `qemu_m68k` | QEMU virt m68k | Motorola 68000 | m68000 | Up to 16 MB | 19/19 tests |
 | `x68k` | XEiJ emulator | Motorola 68000 | m68000 @ 10 MHz | 2+ MB | Stable |
 | `xtensa_cc` | M5Stack CardComputer | Xtensa LX7 | ESP32-S3 @ 240 MHz | 512 KB | Boots, user-space WIP |
-| `ibmpc` | QEMU / DOSBox-X | Intel 8086 | i8086 real mode | 640 KB | Boots to scheduler |
+| `pcxt` | QEMU / DOSBox-X | Intel 8086 | i8086 real mode | 640 KB | Boots to scheduler |
 
 All targets share the same kernel source, syscall interface, VFS, and process model. Only drivers, boot sequences, linker scripts, and architecture-specific code (context switch, syscall trap) differ per target.
 
-On i16 (IBM PC), the kernel is split into separate code-segment modules (core + VFS) with far-call stubs at the boundaries. See [docs/kernel/kernel_modules.md](/docs/kernel/kernel_modules.md) and [docs/proposals/pc_port.md](/docs/proposals/pc_port.md).
+On i16 (PC/XT), the kernel is split into separate code-segment modules (core + VFS) with far-call stubs at the boundaries. See [docs/kernel/kernel_modules.md](/docs/kernel/kernel_modules.md) and [docs/proposals/pc_port.md](/docs/proposals/pc_port.md).
 
 ## Features
 
@@ -57,7 +57,7 @@ On i16 (IBM PC), the kernel is split into separate code-segment modules (core + 
 ## Future Work
 
 - **Pi Zero Port** — ARM1176JZF-S with full MMU, SD card boot; see [docs/proposals/pizero_port.md](/docs/proposals/pizero_port.md)
-- **IBM PC Port** — i8086 kernel boots to scheduler with module system; user-space WIP; see [docs/proposals/pc_port.md](/docs/proposals/pc_port.md)
+- **PC/XT Port** — i8086 kernel boots to scheduler with module system; user-space WIP; see [docs/proposals/pc_port.md](/docs/proposals/pc_port.md)
 - **MS-DOS Subsystem** — INT 21h translation layer for running DOS .COM/.EXE binaries; see [docs/proposals/msdos_subsystem.md](/docs/proposals/msdos_subsystem.md)
 - **i8086 eCPU** — software 8086 emulator for cross-architecture DOS binary execution; see [docs/proposals/i8086_ecpu.md](/docs/proposals/i8086_ecpu.md)
 - **GDB RSP Stub** — in-kernel GDB stub for source-level debugging over UART without a debug probe; see [docs/proposals/gdb_rsp_stub.md](/docs/proposals/gdb_rsp_stub.md)
@@ -81,7 +81,7 @@ PPAP/
         pico1.ld            Pico: 2 MB flash, 80 KB kernel @ 0x10001000
       pico1calc/            ClockworkPi PicoCalc: SPI SD card, 16 MB flash
         pico1calc.ld        PicoCalc: 16 MB flash, 96 KB kernel @ 0x10004000
-      ibmpc/                IBM PC i8086: UFS floppy, module segment split
+      pcxt/                PC/XT i8086: UFS floppy, module segment split
         stubs/              Far-call stubs for core↔VFS module boundary
     boot/
       stage1.S              Stage 1 bootloader (ARM/RP2040: sets VTOR, jumps to kernel)
@@ -164,7 +164,7 @@ Builds Docker images containing the cross-compiler, emulator, and build tools fo
 ./scripts/build.sh pico2rv             # build RISC-V Pico 2 target
 ./scripts/build.sh qemu_rv32           # build RISC-V QEMU target
 ./scripts/build.sh xtensa_cc           # build Xtensa CardComputer target
-./scripts/build.sh ibmpc               # build IBM PC i8086 target
+./scripts/build.sh pcxt               # build PC/XT i8086 target
 ```
 
 Or invoke CMake directly (each target is a standalone project):

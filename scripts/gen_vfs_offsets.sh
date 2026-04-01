@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # gen_vfs_offsets.sh — Extract VFS entry point offsets from the VFS ELF
 #
-# Reads symbol addresses from ppap_ibmpc_vfs.elf and generates a C
+# Reads symbol addresses from ppap_pcxt_vfs.elf and generates a C
 # source file that initializes vfs_fptrs[] with the correct offsets.
 # The segment field is left as 0 — patched at runtime by seg_init.
 #

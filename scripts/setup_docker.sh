@@ -44,7 +44,7 @@ if [[ $# -eq 0 ]]; then
   echo "  m68k          Motorola 68k — m68k-elf-gcc, QEMU m68k, XEiJ"
   echo "  riscv         RISC-V — riscv32 bare-metal + linux toolchains, Pico SDK, QEMU"
   echo "  xtensa        Xtensa/ESP32-S3 — ESP-IDF v5.4, Xtensa toolchain"
-  echo "  ia16          IBM PC (i16) — ia16-elf-gcc, NASM, QEMU i386"
+  echo "  ia16          PC/XT (i16) — ia16-elf-gcc, NASM, QEMU i386"
   echo "  all           Build all available images"
   echo ""
   echo "Target aliases:"
@@ -52,7 +52,7 @@ if [[ $# -eq 0 ]]; then
   echo "  qemu_m68k, x68k                    → m68k"
   echo "  qemu_rv32, pico2rv                 → riscv"
   echo "  xtensa_cc                          → xtensa"
-  echo "  ibmpc                              → ia16"
+  echo "  pcxt                              → ia16"
   exit 0
 fi
 
@@ -88,7 +88,7 @@ target_to_family() {
     qemu_m68k|x68k)                 echo "m68k" ;;
     qemu_rv32|pico2rv)              echo "riscv" ;;
     xtensa_cc)                      echo "xtensa" ;;
-    ibmpc)                          echo "ia16" ;;
+    pcxt)                          echo "ia16" ;;
     arm|m68k|riscv|xtensa|ia16)      echo "$1" ;;  # direct family name
     *)                              error "Unknown target or family: $1" ;;
   esac

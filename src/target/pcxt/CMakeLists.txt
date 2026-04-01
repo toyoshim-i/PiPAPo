@@ -1,5 +1,5 @@
 # =============================================================================
-# IBM PC target (i16, 8086 real mode) -- Phase P-4b
+# PC/XT target (i16, 8086 real mode) -- Phase P-4b
 # =============================================================================
 #
 # Five-part build:
@@ -14,7 +14,7 @@
 # Medium model is broken in ia16-elf-ld 2.39.
 #
 # Toolchain: ia16-elf-gcc (16-bit x86 cross-compiler)
-# Output: ppap_ibmpc.img (1.44 MB bootable floppy)
+# Output: ppap_pcxt.img (1.44 MB bootable floppy)
 # =============================================================================
 
 cmake_minimum_required(VERSION 3.13)
@@ -51,7 +51,7 @@ set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_PROCESSOR i16)
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
-project(ppap_ibmpc C ASM)
+project(ppap_pcxt C ASM)
 
 set(COMMON_FLAGS
   -march=i8086
@@ -74,7 +74,7 @@ set(KERNEL_FLAGS ${COMMON_FLAGS})
 set(PPAP_INCLUDES
   ${PPAP_ROOT}/src
   ${PPAP_ROOT}/src/kernel
-  ${PPAP_ROOT}/src/target/ibmpc
+  ${PPAP_ROOT}/src/target/pcxt
 )
 
 # ==========================================================================
@@ -164,7 +164,7 @@ set(KERNEL_CORE_SOURCES
 )
 
 set(TARGET_SOURCES
-  ${CMAKE_CURRENT_SOURCE_DIR}/target_ibmpc.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/target_pcxt.c
   ${CMAKE_CURRENT_SOURCE_DIR}/drivers/uart_com.c
   ${CMAKE_CURRENT_SOURCE_DIR}/drivers/floppy_blk.c
   ${CMAKE_CURRENT_SOURCE_DIR}/drivers/bios_con.c
@@ -175,36 +175,36 @@ set(TARGET_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/stubs/vfs_mod_init.c
 )
 
-add_executable(ppap_ibmpc
+add_executable(ppap_pcxt
   ${ARCH_I16_SOURCES}
   ${KERNEL_CORE_SOURCES}
   ${TARGET_SOURCES}
 )
 
-target_include_directories(ppap_ibmpc PRIVATE ${PPAP_INCLUDES})
+target_include_directories(ppap_pcxt PRIVATE ${PPAP_INCLUDES})
 # 640 KB conventional RAM: pages from __page_pool_start to 0x9FC00.
 # free_stack[] uses page_id_t (16-bit index), not void*, so pages
 # beyond 64 KB are accessible.  ~150 pages typical (depends on
 # kernel size and VFS data reservation).
-target_compile_definitions(ppap_ibmpc PRIVATE PAGE_COUNT_MAX=150u)
-target_compile_options(ppap_ibmpc PRIVATE ${KERNEL_FLAGS})
+target_compile_definitions(ppap_pcxt PRIVATE PAGE_COUNT_MAX=150u)
+target_compile_options(ppap_pcxt PRIVATE ${KERNEL_FLAGS})
 
-target_link_options(ppap_ibmpc PRIVATE
-  -T ${CMAKE_CURRENT_SOURCE_DIR}/ibmpc_kernel.ld
+target_link_options(ppap_pcxt PRIVATE
+  -T ${CMAKE_CURRENT_SOURCE_DIR}/pcxt_kernel.ld
   -nostartfiles
   -Wl,--gc-sections
 )
-target_link_libraries(ppap_ibmpc PRIVATE gcc)
+target_link_libraries(ppap_pcxt PRIVATE gcc)
 
-set_target_properties(ppap_ibmpc PROPERTIES
+set_target_properties(ppap_pcxt PROPERTIES
   SUFFIX ".elf"
-  LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ibmpc_kernel.ld"
+  LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/pcxt_kernel.ld"
 )
 
-add_custom_command(TARGET ppap_ibmpc POST_BUILD
+add_custom_command(TARGET ppap_pcxt POST_BUILD
   COMMAND ${CMAKE_OBJCOPY} -O binary
-    $<TARGET_FILE:ppap_ibmpc>
-    ${CMAKE_CURRENT_BINARY_DIR}/ppap_ibmpc.bin
+    $<TARGET_FILE:ppap_pcxt>
+    ${CMAKE_CURRENT_BINARY_DIR}/ppap_pcxt.bin
   COMMENT "Creating core module binary"
 )
 
@@ -227,7 +227,7 @@ set(KERNEL_VFS_SOURCES
   ${PPAP_ROOT}/src/arch/i16/string.c
 )
 
-add_executable(ppap_ibmpc_vfs
+add_executable(ppap_pcxt_vfs
   # Header must be first — contains entry point table at offset 0
   ${CMAKE_CURRENT_SOURCE_DIR}/stubs/vfs_header.S
   ${KERNEL_VFS_SOURCES}
@@ -237,12 +237,12 @@ add_executable(ppap_ibmpc_vfs
   ${CMAKE_CURRENT_SOURCE_DIR}/stubs/core_mod_init.c
 )
 
-target_include_directories(ppap_ibmpc_vfs PRIVATE ${PPAP_INCLUDES})
-target_compile_options(ppap_ibmpc_vfs PRIVATE ${KERNEL_FLAGS})
+target_include_directories(ppap_pcxt_vfs PRIVATE ${PPAP_INCLUDES})
+target_compile_options(ppap_pcxt_vfs PRIVATE ${KERNEL_FLAGS})
 
 # Two-pass link: VFS needs core_exports.ld from core ELF.
 # Use a custom target to break the circular dependency:
-#   ppap_ibmpc → (POST_BUILD) → core_exports_gen → ppap_ibmpc_vfs
+#   ppap_pcxt → (POST_BUILD) → core_exports_gen → ppap_pcxt_vfs
 # CMake doesn't allow cycles between executables, so core_exports_gen
 # is an intermediate custom target.
 if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/core_exports.ld")
@@ -251,38 +251,38 @@ if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/core_exports.ld")
 endif()
 add_custom_target(core_exports_gen
   COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/gen_core_exports.sh
-    ${CMAKE_NM} ${CMAKE_CURRENT_BINARY_DIR}/ppap_ibmpc.elf
+    ${CMAKE_NM} ${CMAKE_CURRENT_BINARY_DIR}/ppap_pcxt.elf
     ${CMAKE_CURRENT_BINARY_DIR}/core_exports.ld
-  DEPENDS ppap_ibmpc
+  DEPENDS ppap_pcxt
   COMMENT "Generating core_exports.ld from core ELF"
 )
-add_dependencies(ppap_ibmpc_vfs core_exports_gen)
+add_dependencies(ppap_pcxt_vfs core_exports_gen)
 
-target_link_options(ppap_ibmpc_vfs PRIVATE
-  -T ${CMAKE_CURRENT_SOURCE_DIR}/ibmpc_vfs.ld
+target_link_options(ppap_pcxt_vfs PRIVATE
+  -T ${CMAKE_CURRENT_SOURCE_DIR}/pcxt_vfs.ld
   -T ${CMAKE_CURRENT_BINARY_DIR}/core_exports.ld
   -nostartfiles
 )
-target_link_libraries(ppap_ibmpc_vfs PRIVATE gcc)
+target_link_libraries(ppap_pcxt_vfs PRIVATE gcc)
 
-set_target_properties(ppap_ibmpc_vfs PROPERTIES
+set_target_properties(ppap_pcxt_vfs PROPERTIES
   SUFFIX ".elf"
-  LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ibmpc_vfs.ld"
+  LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/pcxt_vfs.ld"
 )
 
 # Extract VFS code (.text + .rodata) and data (.data) as separate binaries.
 # Code goes to VFS CS segment, data goes to DS:0xA000.
-add_custom_command(TARGET ppap_ibmpc_vfs POST_BUILD
+add_custom_command(TARGET ppap_pcxt_vfs POST_BUILD
   COMMAND ${CMAKE_OBJCOPY}
     -j .text -j .text.header
     -O binary
-    $<TARGET_FILE:ppap_ibmpc_vfs>
-    ${CMAKE_CURRENT_BINARY_DIR}/ppap_ibmpc_vfs.bin
+    $<TARGET_FILE:ppap_pcxt_vfs>
+    ${CMAKE_CURRENT_BINARY_DIR}/ppap_pcxt_vfs.bin
   COMMAND ${CMAKE_OBJCOPY}
     -j .rodata -j .data
     -O binary
-    $<TARGET_FILE:ppap_ibmpc_vfs>
-    ${CMAKE_CURRENT_BINARY_DIR}/ppap_ibmpc_vfs_data.bin
+    $<TARGET_FILE:ppap_pcxt_vfs>
+    ${CMAKE_CURRENT_BINARY_DIR}/ppap_pcxt_vfs_data.bin
   COMMENT "Creating VFS code + data binaries"
 )
 
@@ -316,11 +316,11 @@ add_custom_command(TARGET hello_com POST_BUILD
 
 # Floppy image depends on both core and VFS binaries + bootloader.
 # This breaks what was previously a circular dependency:
-#   old: ppap_ibmpc -(POST_BUILD)-> needs VFS binary -(dep)-> ppap_ibmpc
-#   new: ppap_ibmpc_img depends on both independently
-add_custom_target(ppap_ibmpc_img ALL
+#   old: ppap_pcxt -(POST_BUILD)-> needs VFS binary -(dep)-> ppap_pcxt
+#   new: ppap_pcxt_img depends on both independently
+add_custom_target(ppap_pcxt_img ALL
   COMMAND ${PPAP_ROOT}/scripts/mkpcimg.sh
-  DEPENDS ppap_ibmpc ppap_ibmpc_vfs stage1 stage2 hello_com
-  COMMENT "Assembling floppy image ppap_ibmpc.img"
+  DEPENDS ppap_pcxt ppap_pcxt_vfs stage1 stage2 hello_com
+  COMMENT "Assembling floppy image ppap_pcxt.img"
 )
-add_dependencies(ppap_ibmpc_img ppap_ibmpc ppap_ibmpc_vfs stage1 stage2 hello_com)
+add_dependencies(ppap_pcxt_img ppap_pcxt ppap_pcxt_vfs stage1 stage2 hello_com)

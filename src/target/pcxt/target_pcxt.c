@@ -1,5 +1,5 @@
 /*
- * target_ibmpc.c — IBM PC target hooks for the PPAP kernel
+ * target_pcxt.c — PC/XT target hooks for the PPAP kernel
  *
  * Phase P-4b: isolated segment split.  Core + VFS modules in
  * separate segments.  Reads mod_info from stage2, initializes
@@ -169,7 +169,7 @@ static void seg_init_modules(void) {
 
 /* ── klog sink: serial + BIOS screen ─────────────────────────────────────── */
 
-static int ibmpc_klog_putc(char c, void (*notify)(void))
+static int pcxt_klog_putc(char c, void (*notify)(void))
 {
   (void)notify;
   bios_putc(c);
@@ -235,13 +235,13 @@ static void install_int_debug(void) {
 void target_early_init(void)
 {
   uart_init();
-  klog_set_mirror(ibmpc_klog_putc, (void (*)(void))0);
+  klog_set_mirror(pcxt_klog_putc, (void (*)(void))0);
 
 #ifdef __ia16__
   install_int_debug();
 #endif
 
-  klog("Po booting... [ibmpc]\n");
+  klog("Po booting... [pcxt]\n");
 
 #ifdef __ia16__
   seg_init_modules();
@@ -287,7 +287,7 @@ const char *target_init_path(void)
 
 const char *target_name(void)
 {
-  return "ibmpc";
+  return "pcxt";
 }
 
 uint32_t target_caps(void)

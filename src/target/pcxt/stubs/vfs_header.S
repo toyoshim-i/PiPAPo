@@ -17,7 +17,7 @@
  *
  * Entry list auto-generated from mod_vfs.inc.
  *
- * Linked FIRST into ppap_ibmpc_vfs so it appears at offset 0.
+ * Linked FIRST into ppap_pcxt_vfs so it appears at offset 0.
  */
 
 #ifdef __ia16__

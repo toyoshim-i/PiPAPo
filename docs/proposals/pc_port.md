@@ -1,6 +1,6 @@
-# IBM PC Target Port Plan (V30 with 8080 Mode)
+# PC/XT Target Port Plan (V30 with 8080 Mode)
 
-Porting PPAP to the IBM PC platform using the NEC V30 (μPD70116) CPU.
+Porting PPAP to the PC/XT platform using the NEC V30 (μPD70116) CPU.
 The V30 is 8086-compatible and includes a hardware 8080 emulation mode,
 which maps naturally onto PPAP's eCPU architecture for running CP/M-80
 programs without a software interpreter.
@@ -11,7 +11,7 @@ programs without a software interpreter.
 
 ### 1.1 Primary Goal
 
-Produce a bootable PPAP system on an IBM PC/XT-class machine with V30 that:
+Produce a bootable PPAP system on an PC/XT/XT-class machine with V30 that:
 
 - Boots from a floppy disk (1.44 MB) with a two-stage bootstrap.
 - Provides a console on the CGA/MDA text display via BIOS INT 10h, mirrored
@@ -241,7 +241,7 @@ the segment resolution local to the syscall handler.
 
 ---
 
-## 4. IBM PC Hardware
+## 4. PC/XT Hardware
 
 ### 4.1 Base Machine (PC/XT Class)
 
@@ -646,7 +646,7 @@ mounts a UFS floppy, and enters the scheduler.
 
 | Phase | Scope | Key Result |
 |-------|-------|------------|
-| P-1 | Target skeleton + BIOS console | `src/arch/i16/`, `src/target/ibmpc/`, Docker toolchain, BIOS INT 10h + COM1 serial |
+| P-1 | Target skeleton + BIOS console | `src/arch/i16/`, `src/target/pcxt/`, Docker toolchain, BIOS INT 10h + COM1 serial |
 | P-2 | Timer + context switch | PIT 100 Hz, 8259A PIC, 24-byte frame, flag-driven switch |
 | P-3a | Two-stage bootstrap | stage1 (512 B) + stage2 (UFS reader, indirect blocks), mkpcimg.sh |
 | P-3b | Full kernel integration | 46 KB binary, ia16-elf-gcc, `uintptr_t` address fields, boots to idle |
@@ -664,11 +664,11 @@ src/arch/i16/
   trap.S              — INT 30h syscall handler (AX=nr, BX-DI=args)
   i16_common.c        — arch_build_initial_frame(), syscall ABI adapter
 
-src/target/ibmpc/
+src/target/pcxt/
   CMakeLists.txt      — Builds stage1, stage2, core, VFS, hello_com
-  ibmpc_kernel.ld     — Core linker (0x0600, reserves 0xA000-0xBFFF for VFS data)
-  ibmpc_vfs.ld        — VFS linker (.text at 0, .data at DS:0xA000)
-  target_ibmpc.c      — early/late/post_mount hooks, seg_register, far-call patching
+  pcxt_kernel.ld     — Core linker (0x0600, reserves 0xA000-0xBFFF for VFS data)
+  pcxt_vfs.ld        — VFS linker (.text at 0, .data at DS:0xA000)
+  target_pcxt.c      — early/late/post_mount hooks, seg_register, far-call patching
   boot/
     stage1.S          — 512 B boot sector + BPB, loads stage2 to 0xC000
     stage2_entry.S    — Stack at 0x7C00, entry stub for stage2.c
@@ -704,7 +704,7 @@ scripts/
 3. Stage2 reads UFS: loads `/boot/kernel` → 0x0600,
    `/boot/kernel_vfs` → 0x1000:0000, `/boot/kernel_vfs_data` → DS:0xA000.
    Writes `mod_info_t` at 0x0500.  Jumps to 0x0000:0x0600.
-4. Kernel prints "Po booting... [ibmpc]" — completing "PiPAPo booting...".
+4. Kernel prints "Po booting... [pcxt]" — completing "PiPAPo booting...".
 5. `target_early_init()`: UART + BIOS console, reads mod_info, registers
    segments, patches far-call tables (vfs_fptrs[], core_fptrs[]).
 6. `mm_init()` → `proc_init()` → `vfs_init()` (via far call to VFS).
@@ -859,7 +859,7 @@ stores truncated pointers.  Fixed by the page-index refactoring
 4. **Fork / waitpid** — process segment duplication via
    `mem_region_page_read/write` for cross-segment copy.
 
-5. **`--test ibmpc` in run.sh** — integrate with existing test harness.
+5. **`--test pcxt` in run.sh** — integrate with existing test harness.
 
 ### 8.0 page_id_t Redesign
 
@@ -899,7 +899,7 @@ architecture to minimize memory usage:
    `(pool_base / PAGE_SIZE) + i` instead of bare `i`.
 
 **Verification**: all existing tests must pass on ARM and m68k.
-ibmpc must build.  The page_id encoding is an internal detail —
+pcxt must build.  The page_id encoding is an internal detail —
 no user-visible ABI change.
 
 ### 8.1 User-Space Memory Access (`user_to_page`)
@@ -1057,7 +1057,7 @@ using BIOS INT 13h for all disk I/O (no direct ATA/IDE driver).
 4. **Stage2 dynamic geometry** — replace hardcoded 18 spt / 2 heads
    with values from INT 13h AH=08h so the same stage2 works for both
    floppy and HDD.
-5. **target_ibmpc.c probe** — detect HDD at boot via INT 13h AH=08h
+5. **target_pcxt.c probe** — detect HDD at boot via INT 13h AH=08h
    (DL=0x80); if present, register "hd0" and prefer it over "fd0" for
    root mount.
 6. **HDD image builder** (`mkhddimg.sh`) — create a raw disk image with
@@ -1156,7 +1156,7 @@ This should be a runtime detection, not a build-time switch.
 
 `ia16-elf-gcc` (GCC port for 16-bit x86, actively maintained) is used
 for all C and assembly code.  The Docker image `ppap/ia16` bundles the
-toolchain and QEMU.  Build via `./scripts/run.sh --build ibmpc`.
+toolchain and QEMU.  Build via `./scripts/run.sh --build pcxt`.
 
 ### 15.3 Emulator for Development
 
@@ -1165,7 +1165,7 @@ toolchain and QEMU.  Build via `./scripts/run.sh --build ibmpc`.
 - **86Box** — cycle-accurate PC/XT emulation, supports V30 CPU selection,
   serial port passthrough, floppy images.  Recommended for V30/8080 testing.
 - **PCem** — similar capabilities, slightly different UI.
-- **MartyPC** — Rust-based cycle-accurate IBM PC 5150 emulator.
+- **MartyPC** — Rust-based cycle-accurate PC/XT 5150 emulator.
 
 ### 15.4 8080 Mode I/O Port Conflict
 

@@ -37,7 +37,7 @@ target_docker_image() {
         qemu_m68k|x68k)                 echo "ppap/m68k" ;;
         qemu_rv32|pico2rv)              echo "ppap/riscv" ;;
         xtensa_cc)                      echo "ppap/xtensa" ;;
-        ibmpc)                          echo "ppap/ia16" ;;
+        pcxt)                          echo "ppap/ia16" ;;
         *)                              echo "" ;;
     esac
 }
@@ -105,13 +105,13 @@ case "$TARGET" in
         SOURCE_DIR="$PROJECT_DIR/src/target/xtensa_cc"
         BUILD_DIR="$PROJECT_DIR/build/xtensa_cc"
         ;;
-    ibmpc)
-        SOURCE_DIR="$PROJECT_DIR/src/target/ibmpc"
-        BUILD_DIR="$PROJECT_DIR/build/ibmpc"
+    pcxt)
+        SOURCE_DIR="$PROJECT_DIR/src/target/pcxt"
+        BUILD_DIR="$PROJECT_DIR/build/pcxt"
         ;;
     *)
         echo "[build] Error: unknown target '$TARGET'"
-        echo "        Valid targets: pico1, pico1calc, pico2, pico2rv, qemu_arm, qemu_rv32, qemu_m68k, x68k, xtensa_cc, ibmpc"
+        echo "        Valid targets: pico1, pico1calc, pico2, pico2rv, qemu_arm, qemu_rv32, qemu_m68k, x68k, xtensa_cc, pcxt"
         exit 1
         ;;
 esac

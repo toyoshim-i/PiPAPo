@@ -1,5 +1,5 @@
 /*
- * ibmpc.ld -- Linker script for IBM PC target (i8086 real mode)
+ * pcxt.ld -- Linker script for PC/XT target (i8086 real mode)
  *
  * Two-part layout within a single binary:
  *   Sector 0 (0x7C00-0x7DFF): boot.S — loads remaining sectors, jumps to kmain

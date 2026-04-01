@@ -187,7 +187,7 @@ Syscalls resolve `fd_map[fd]` → `desc_id`, then call
 calls `mod_vfs.fd_acquire(desc_id)` to bump refcount.  Exit
 iterates `fd_map[]` calling `mod_vfs.fd_release(desc_id)`.
 
-### i16 Segment Split (IBM PC)
+### i16 Segment Split (PC/XT)
 
 On i16, all modules share **DS=0** for data access.  Each module's
 code (.text) lives in its own segment (separate CS).  Cross-module
@@ -276,7 +276,7 @@ src/kernel/
   fs/
     romfs.c, tmpfs.c, devfs.c, procfs.c, ufs.c, vfat.c, fstab.c
 
-src/target/ibmpc/stubs/
+src/target/pcxt/stubs/
   core_stubs.S        ← VFS-side caller stubs for core (auto-gen from .inc)
   core_entries.S      ← core-side target entry stubs (auto-gen from .inc)
   core_mod_init.c     ← VFS-side mod_core struct (i16 only)

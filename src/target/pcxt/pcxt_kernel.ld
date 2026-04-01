@@ -1,5 +1,5 @@
 /*
- * ibmpc_kernel.ld — Core module linker script (small model, DS=0)
+ * pcxt_kernel.ld — Core module linker script (small model, DS=0)
  *
  * Memory layout (shared DS=0 linear address space):
  *
@@ -52,7 +52,7 @@ SECTIONS
   . += 2048;
   __stack_top = .;
 
-  /* Reserved for VFS module data (must match ibmpc_vfs.ld) */
+  /* Reserved for VFS module data (must match pcxt_vfs.ld) */
   . = 0xA000;
   __vfs_data_reserved = .;
   . += 8192;   /* 8 KB for VFS .data + .bss */

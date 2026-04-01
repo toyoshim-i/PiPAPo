@@ -1,5 +1,5 @@
 /*
- * ibmpc_vfs.ld — VFS module linker script (shared DS=0)
+ * pcxt_vfs.ld — VFS module linker script (shared DS=0)
  *
  * Code (.text, .rodata) starts at offset 0 in the VFS code segment.
  * Data (.data, .bss) is placed at 0xA000 in the shared DS=0 space.
@@ -33,7 +33,7 @@ SECTIONS
    * .rodata must also be here (not in code segment) because the
    * compiler generates DS-relative access for all data, including
    * string literals and const tables.
-   * Must match the reservation in ibmpc_kernel.ld */
+   * Must match the reservation in pcxt_kernel.ld */
   . = 0xA000;
 
   __vfs_data_start = .;

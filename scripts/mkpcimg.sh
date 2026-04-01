@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# mkpcimg.sh — Assemble IBM PC bootable floppy image
+# mkpcimg.sh — Assemble PC/XT bootable floppy image
 # =============================================================================
 #
 # Layout (1.44 MB, 2880 × 512-byte sectors):
@@ -11,25 +11,25 @@
 # Usage:
 #   ./scripts/mkpcimg.sh
 #
-# Expects build artifacts in build/ibmpc/:
+# Expects build artifacts in build/pcxt/:
 #   stage1.bin     — boot sector flat binary (512 B)
 #   stage2.bin     — stage2 flat binary (≤4 KB)
-#   ppap_ibmpc.bin — kernel flat binary
+#   ppap_pcxt.bin — kernel flat binary
 #
-# Output: build/ibmpc/ppap_ibmpc.img (1.44 MB floppy image)
+# Output: build/pcxt/ppap_pcxt.img (1.44 MB floppy image)
 # =============================================================================
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-BUILD_DIR="$PROJECT_DIR/build/ibmpc"
+BUILD_DIR="$PROJECT_DIR/build/pcxt"
 MKUFS="$PROJECT_DIR/tools/mkufs/mkufs"
 
 STAGE1="$BUILD_DIR/stage1.bin"
 STAGE2="$BUILD_DIR/stage2.bin"
-KERNEL="$BUILD_DIR/ppap_ibmpc.bin"
-IMG="$BUILD_DIR/ppap_ibmpc.img"
+KERNEL="$BUILD_DIR/ppap_pcxt.bin"
+IMG="$BUILD_DIR/ppap_pcxt.img"
 
 # Floppy parameters
 SECTOR_SIZE=512
@@ -61,14 +61,14 @@ mkdir -p "$UFS_STAGING/boot" "$UFS_STAGING/bin" "$UFS_STAGING/sbin" "$UFS_STAGIN
 
 # Minimal fstab — no extra mounts needed for i16 testing
 cat > "$UFS_STAGING/etc/fstab" << 'FSTAB_EOF'
-# /etc/fstab — IBM PC (i16) minimal configuration
+# /etc/fstab — PC/XT (i16) minimal configuration
 # device    mountpoint    fstype    options
 FSTAB_EOF
 cp "$KERNEL" "$UFS_STAGING/boot/kernel"
 
 # Include VFS module if built (code + data as separate files)
-VFS_BIN="$BUILD_DIR/ppap_ibmpc_vfs.bin"
-VFS_DATA="$BUILD_DIR/ppap_ibmpc_vfs_data.bin"
+VFS_BIN="$BUILD_DIR/ppap_pcxt_vfs.bin"
+VFS_DATA="$BUILD_DIR/ppap_pcxt_vfs_data.bin"
 if [[ -f "$VFS_BIN" ]]; then
   cp "$VFS_BIN" "$UFS_STAGING/boot/kernel_vfs"
 fi

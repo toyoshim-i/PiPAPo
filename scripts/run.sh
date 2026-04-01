@@ -58,7 +58,7 @@ target_docker_image() {
         qemu_m68k|x68k)                 echo "ppap/m68k" ;;
         qemu_rv32|pico2rv)              echo "ppap/riscv" ;;
         xtensa_cc)                      echo "ppap/xtensa" ;;
-        ibmpc)                          echo "ppap/ia16" ;;
+        pcxt)                          echo "ppap/ia16" ;;
         *)                              echo "" ;;
     esac
 }
@@ -115,11 +115,11 @@ for arg in "$@"; do
         --gdb)      DO_GDB=1 ;;
         --host)     DO_HOST=1 ;;
         --gui)      DO_GUI=1 ;;
-        pico1|pico1calc|pico2|pico2rv|qemu_arm|qemu_rv32|qemu_m68k|x68k|xtensa_cc|ibmpc) TARGET="$arg" ;;
+        pico1|pico1calc|pico2|pico2rv|qemu_arm|qemu_rv32|qemu_m68k|x68k|xtensa_cc|pcxt) TARGET="$arg" ;;
         -*)         echo "Unknown option: $arg" >&2; exit 1 ;;
         *)
             echo "Unknown target: $arg" >&2
-            echo "Valid targets: pico1, pico1calc, pico2, pico2rv, qemu_arm, qemu_rv32, qemu_m68k, x68k, xtensa_cc, ibmpc" >&2
+            echo "Valid targets: pico1, pico1calc, pico2, pico2rv, qemu_arm, qemu_rv32, qemu_m68k, x68k, xtensa_cc, pcxt" >&2
             exit 1
             ;;
     esac
@@ -129,7 +129,7 @@ if [[ -z "$TARGET" ]]; then
     echo "Usage: $0 [options] <target>"
     echo ""
     echo "Targets:"
-    echo "  qemu_arm qemu_m68k qemu_rv32 ibmpc  (emulator)"
+    echo "  qemu_arm qemu_m68k qemu_rv32 pcxt  (emulator)"
     echo "  pico1 pico1calc pico2 pico2rv        (flash to hardware)"
     echo "  x68k xtensa_cc                       (emulator / flash)"
     echo ""
@@ -192,9 +192,9 @@ if [[ $DO_BUILD -eq 1 ]]; then
     if [[ -n "$TEMP_OVERLAY" ]]; then rm -rf "$TEMP_OVERLAY"; fi
 fi
 
-# ── IBM PC target (ibmpc) — override ELF to floppy image ───────────────────
-if [[ "$TARGET" == "ibmpc" ]]; then
-    ELF="$PROJECT_DIR/build/ibmpc/ppap_ibmpc.img"
+# ── PC/XT target (pcxt) — override ELF to floppy image ───────────────────
+if [[ "$TARGET" == "pcxt" ]]; then
+    ELF="$PROJECT_DIR/build/pcxt/ppap_pcxt.img"
 fi
 
 # ── ESP-IDF target (xtensa_cc) — flash via esptool in Docker ──────────────
@@ -407,7 +407,7 @@ if [[ "$TARGET" == "qemu_m68k" ]]; then
 elif [[ "$TARGET" == "qemu_rv32" ]]; then
     QEMU_BIN="qemu-system-riscv32"
     QEMU_ARGS=(-M virt -bios none -serial mon:stdio)
-elif [[ "$TARGET" == "ibmpc" ]]; then
+elif [[ "$TARGET" == "pcxt" ]]; then
     QEMU_BIN="qemu-system-i386"
     if [[ $DO_HOST -eq 1 ]]; then
         # --host: open graphical VGA window + serial on stdio

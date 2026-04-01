@@ -5,7 +5,7 @@
  * to the caller-side stubs (core_stubs.S). The stubs do the far
  * call to the core segment.
  *
- * Linked into ppap_ibmpc_vfs (VFS binary).
+ * Linked into ppap_pcxt_vfs (VFS binary).
  */
 
 #ifdef __ia16__

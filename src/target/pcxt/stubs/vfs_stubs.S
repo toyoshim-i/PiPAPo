@@ -9,11 +9,11 @@
  * DS is shared (DS=0) — no DS switching needed.
  *
  * The far pointer table vfs_fptrs[] is patched at boot by
- * target_ibmpc.c after reading the VFS module header.
+ * target_pcxt.c after reading the VFS module header.
  *
  * Function list auto-generated from mod_vfs.inc.
  *
- * Linked into ppap_ibmpc (core binary).
+ * Linked into ppap_pcxt (core binary).
  */
 
 #ifdef __ia16__
