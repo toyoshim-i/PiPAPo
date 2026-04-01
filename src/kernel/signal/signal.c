@@ -96,6 +96,11 @@ int signal_check_kernel(void) {
  * m68k: Synchronous call — signal_check calls the handler directly via
  *       m68k_call_signal_handler (assembly thunk that sets a5 = GOT base).
  *       No sigreturn needed; sys_sigreturn / sys_rt_sigreturn return -ENOSYS.
+ *
+ * i16:  RTE-based real-mode delivery. trap.S passes the saved 24-byte INT
+ *       frame to signal_check(), which can swap SP to a synthetic handler
+ *       frame. The handler returns with `ret` into sigreturn_trampoline,
+ *       which issues INT 30h SYS_RT_SIGRETURN.
  * ────────────────────────────────────────────────────────────────────────── */
 
 #if defined(__m68k__)
@@ -176,6 +181,85 @@ void signal_check(uint32_t *regs) {
   /* Restore SSP frame and signal mask */
   __builtin_memcpy(regs, saved_frame, SIGFRAME_SIZE);
   current->sig_blocked = old_blocked;
+}
+
+#elif defined(__ia16__)
+
+#define I16_SIGNAL_FRAME_WORDS 12u
+#define I16_SIGNAL_FRAME_BYTES (I16_SIGNAL_FRAME_WORDS * 2u)
+#define I16_SIGNAL_CALL_BYTES 4u /* ret IP + int arg */
+#define I16_SIGNAL_DELIVERY_BYTES \
+  (I16_SIGNAL_FRAME_BYTES + I16_SIGNAL_CALL_BYTES)
+#define I16_FRAME_AX 8u
+#define I16_FRAME_IP 9u
+#define I16_FRAME_CS 10u
+
+extern volatile uint16_t i16_trap_frame_sp;
+extern volatile uint16_t i16_sigreturn_restore_sp;
+
+__attribute__((used, section(".text.sigreturn_trampoline"))) void
+__asm_sigreturn_trampoline(void);
+__asm(
+    ".section .text.sigreturn_trampoline,\"ax\",@progbits\n"
+    ".globl sigreturn_trampoline\n"
+    "sigreturn_trampoline:\n"
+    "    addw $2, %sp\n"
+    "    movw $0x0605, %ax\n"
+    "    int  $0x30\n"
+    "1:  jmp 1b\n"
+    ".previous\n");
+
+static uint16_t *signal_setup_frame_i16(uint16_t *frame, int sig,
+                                        sighandler_t handler) {
+  uintptr_t old_sp = (uintptr_t)frame;
+  uintptr_t new_sp = old_sp - I16_SIGNAL_DELIVERY_BYTES;
+  uint16_t *new_frame;
+  uint16_t *call_frame;
+  uintptr_t stack_base;
+
+  stack_base = mem_region_page_linear(current->stack_page_id);
+  if (new_sp < stack_base) return NULL;
+
+  new_frame = (uint16_t *)new_sp;
+  __builtin_memcpy(new_frame, frame, I16_SIGNAL_FRAME_BYTES);
+  new_frame[I16_FRAME_IP] = (uint16_t)(uintptr_t)handler;
+  new_frame[I16_FRAME_CS] = 0;
+
+  call_frame = (uint16_t *)(new_sp + I16_SIGNAL_FRAME_BYTES);
+  call_frame[0] = (uint16_t)(uintptr_t)sigreturn_trampoline;
+  call_frame[1] = (uint16_t)sig;
+  return new_frame;
+}
+
+uint16_t *signal_check(uint16_t *frame) {
+  uint32_t deliverable;
+  int sig;
+  sighandler_t handler;
+  uint16_t *new_frame;
+
+  if (!frame || current->state != PROC_RUNNABLE) return frame;
+
+  deliverable = current->sig_pending & ~current->sig_blocked;
+  if (!deliverable) return frame;
+
+  sig = ctz32(deliverable);
+  current->sig_pending &= ~(1u << sig);
+
+  handler = current->sig_handlers[sig];
+  if (handler == SIG_IGN) return frame;
+
+  if (handler == SIG_DFL) {
+    signal_default_action(sig, NULL);
+    return frame;
+  }
+
+  new_frame = signal_setup_frame_i16(frame, sig, handler);
+  if (!new_frame) {
+    sys_exit(128 + sig);
+    return frame;
+  }
+
+  return new_frame;
 }
 
 #elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
@@ -368,6 +452,17 @@ long sys_sigaction(long sig, long handler, long old_ptr) {
  * These stubs exist for the syscall dispatch table. */
 long sys_sigreturn(void) { return -(long)ENOSYS; }
 long sys_rt_sigreturn(void) { return -(long)ENOSYS; }
+
+#elif defined(__ia16__)
+
+long sys_sigreturn(void) {
+  if (i16_trap_frame_sp == 0u) return -(long)EFAULT;
+  i16_sigreturn_restore_sp =
+      (uint16_t)(i16_trap_frame_sp + I16_SIGNAL_FRAME_BYTES);
+  return 0;
+}
+
+long sys_rt_sigreturn(void) { return sys_sigreturn(); }
 
 #elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
 

@@ -48,6 +48,9 @@ i16_syscall_isr:
   xorw  %ax, %ax
   movw  %ax, %ds
 
+  /* Save the actual syscall frame pointer for sys_sigreturn. */
+  movw  %sp, i16_trap_frame_sp
+
   /* Build args for i16_syscall_dispatch(nr, a0, a1, a2, a3, a4, user_ds)
    * Read from the saved frame on the stack. */
   movw  %sp, %bp
@@ -68,7 +71,23 @@ i16_syscall_isr:
   movw  %sp, %bp
   movw  %ax, 16(%bp)
 
+  /* sys_sigreturn may ask us to resume from an older saved frame. */
+  movw  i16_sigreturn_restore_sp, %ax
+  testw %ax, %ax
+  jz    .Lcheck_signal
+  movw  $0, i16_sigreturn_restore_sp
+  movw  %ax, %sp
+  jmp   .Lrestore
+
+.Lcheck_signal:
+  /* User-signal delivery can replace the frame we restore from. */
+  pushw %sp
+  call  signal_check
+  addw  $2, %sp
+  movw  %ax, %sp
+
   /* Restore all registers (AX will have the return value) */
+.Lrestore:
   popw  %es
   popw  %ds
   popw  %bp

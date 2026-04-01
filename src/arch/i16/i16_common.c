@@ -13,6 +13,12 @@ volatile uint16_t i16_switch_pending = 0;
 /* Tick counter incremented by timer handler */
 volatile uint32_t i16_tick_count = 0;
 
+/* Current INT 30h saved-frame SP, captured by trap.S for sys_sigreturn. */
+volatile uint16_t i16_trap_frame_sp = 0;
+
+/* Non-zero when sys_sigreturn wants trap.S to restore a different frame. */
+volatile uint16_t i16_sigreturn_restore_sp = 0;
+
 /* -- Initial stack frame for new processes --------------------------------
  *
  * Build a 24-byte frame matching what i16_timer_isr saves/restores:
@@ -76,16 +82,4 @@ long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1,
   /* syscall_dispatch stores result in frame[0] on ARM/m68k.
    * On i16 we return it to trap.S which puts it in saved AX. */
   return (long)(int16_t)frame[0];
-}
-
-/* ── Signal return stubs (TODO: implement for P-4) ────────────────────────── */
-
-long sys_sigreturn(void)
-{
-  return 0;
-}
-
-long sys_rt_sigreturn(void)
-{
-  return 0;
 }

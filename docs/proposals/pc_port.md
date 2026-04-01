@@ -841,6 +841,9 @@ syscall conversion is the remaining work.
 
 2. **Signal delivery for i16** — implement `sys_sigreturn` / signal
    trampoline.
+   Current status: trap return now routes through an i16 signal-delivery
+   frame plus `sigreturn_trampoline`, and `sys_sigreturn` restores the
+   interrupted frame. Runtime validation still depends on `--test pcxt`.
 
 3. **Fork / waitpid** — process segment duplication via
    `mem_region_page_read/write` for cross-segment copy.

@@ -40,10 +40,14 @@ typedef void (*sighandler_t)(int);
  *
  * m68k: takes a pointer to the saved register frame (d0-d7/a0-a6 + SR + PC)
  *       on the supervisor stack so it can modify the return context.
+ * i16:  takes the saved 24-byte interrupt frame and returns the stack
+ *       pointer that trap.S should restore from.
  * ARM:  takes no args — manipulates PSP directly.
  */
 #if defined(__m68k__)
 void signal_check(uint32_t *regs);
+#elif defined(__ia16__)
+uint16_t *signal_check(uint16_t *regs);
 #else
 void signal_check(void);
 #endif
@@ -60,9 +64,10 @@ void signal_check(void);
  */
 int signal_check_kernel(void);
 
-/* Trampoline in kernel .text (flash XIP) — signal handler returns here
- * via bx lr (ARM) which triggers SVC SYS_SIGRETURN to restore context.
- * On m68k this is a stub (synchronous delivery, no trampoline needed). */
+/* Trampoline in kernel .text — the signal handler returns here to ask the
+ * kernel to restore the interrupted context.
+ * ARM reaches it via bx lr, i16 via ret, and m68k keeps a stub because it
+ * uses synchronous delivery. */
 extern void sigreturn_trampoline(void);
 
 #endif /* PPAP_KERNEL_SIGNAL_SIGNAL_H */
