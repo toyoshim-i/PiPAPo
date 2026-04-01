@@ -18,7 +18,7 @@
 #include "common/stat.h"
 #include "h68k_util.h"
 #include "kernel/common/errno.h"
-#include "../common/mod/mod_exec.h"
+#include "../exec/exec.h"
 #include "kernel/klog.h"
 #include "kernel/mm/mem_region.h"
 #include "kernel/mm/page.h"
@@ -1105,7 +1105,7 @@ static int dos_exec(uint32_t *regs, uint32_t usp) {
   child->subsys = current->subsys;
 
   /* Load the executable */
-  int err = mod_exec.execve(child, path, NULL);
+  int err = exec_execve(child, path, NULL);
   if (err < 0) {
     /* execve failed — free the child */
     child->state = PROC_FREE;

@@ -96,7 +96,7 @@ PPAP/
       blkdev/               Block device layer (registry, RAM, SD, loopback)
       exec/                 ELF loader + execve
       signal/               Signal infrastructure
-      common/mod/           Module system (mod_core, mod_vfs, mod_exec, .inc files)
+      common/mod/           Module system (mod_core, mod_vfs, .inc files)
     drivers/                Hardware drivers (UART, SPI, LCD, I2C, etc.)
   src/user/                 User-space programs + per-arch build rules
     arch/arm_m/             ARM: crt0.S, syscall.S, user.ld

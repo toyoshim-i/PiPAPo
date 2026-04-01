@@ -12,12 +12,12 @@ OUT="$3"
 
 # Export only shared data symbols needed by VFS, excluding:
 # - linker-script symbols (__*) — conflict with VFS linker script
-# - mod_vfs, mod_exec, vfs_fptrs* — these belong to the core binary
+# - mod_vfs, vfs_fptrs* — these belong to the core binary
 #   and must not override VFS's own definitions
 # - mod_core — defined in VFS's core_mod_init.c
 "$NM" "$ELF" \
   | grep -E ' [BD] ' \
   | grep -v -E '^.{8} . (__|\.)' \
-  | grep -v -E 'mod_vfs|mod_exec|mod_core|vfs_fptrs' \
+  | grep -v -E 'mod_vfs|mod_core|vfs_fptrs' \
   | awk '{ print $3 " = 0x" $1 ";" }' \
   > "$OUT"

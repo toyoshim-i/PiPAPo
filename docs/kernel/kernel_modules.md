@@ -24,19 +24,20 @@ surfaces, like Linux kernel modules but simpler.
   ┌─────────────────────────────────────────────────┐
   │              mod_core (core module)              │
   │  klog, kmem, mem_region, sched, uart, blkdev    │
+  │  exec, loaders                                   │
   │                                                  │
-  │  mod_vfs.*  ──►              mod_exec.*  ──►    │
-  └──────────┬──────────────────────┬───────────────┘
-             │                      │
-       ┌─────▼──────┐        ┌─────▼──────┐
-       │  mod_vfs    │        │  mod_exec  │
-       │  vfs, namei │        │  exec,     │
-       │  fd pool    │        │  loaders   │
-       │  fs drivers │        │            │
-       │  tty, pipe  │        │            │
-       │             │        │            │
-       │ mod_core.*  │        │ mod_core.* │
-       └─────────────┘        └────────────┘
+  │  mod_vfs.*  ──►                                  │
+  └──────────┬──────────────────────────────────────┘
+             │
+       ┌─────▼──────┐
+       │  mod_vfs    │
+       │  vfs, namei │
+       │  fd pool    │
+       │  fs drivers │
+       │  tty, pipe  │
+       │             │
+       │ mod_core.*  │
+       └─────────────┘
 ```
 
 ALL cross-module calls go through `mod_*` interfaces.  No direct
@@ -101,7 +102,6 @@ for function names and indices:
 src/kernel/common/mod/
   mod_core.inc    ← 23 functions
   mod_vfs.inc     ← 35 functions
-  mod_exec.inc    ← 1 function
 ```
 
 Both C headers (`_Static_assert`) and assembly stubs (`#include`)
@@ -157,12 +157,6 @@ VFS layer, file descriptor pool, filesystem drivers, TTY.
 | Vnode lifecycle | `vnode_alloc`, `vnode_acquire`, `vnode_release`, `vnode_read` |
 | File descriptor pool | `fd_acquire`, `fd_fcntl`, `fd_fstat`, `fd_fstatfs`, `fd_getdents`, `fd_getdents64`, `fd_get_priv`, `fd_ioctl`, `fd_lseek`, `fd_open`, `fd_pipe_create`, `fd_poll`, `fd_pool_init`, `fd_read`, `fd_release`, `fd_stdio_desc`, `fd_stdio_init`, `fd_write` |
 | Init helpers | `fstab_automount`, `tty_rx_notify` |
-
-#### mod_exec (1 function)
-
-| Group | Functions |
-|-------|-----------|
-| Process loading | `execve` |
 
 ### System-Wide File Descriptor Pool
 
@@ -256,8 +250,6 @@ src/kernel/
     mod_core.inc      ← core function index (alphabetical)
     mod_vfs.h         ← VFS module interface (35 functions)
     mod_vfs.inc       ← VFS function index (alphabetical)
-    mod_exec.h        ← exec module interface (1 function)
-    mod_exec.inc      ← exec function index
     mod_core.c        ← core struct initializer (32-bit)
   vfs/
     vfs.h             ← PRIVATE: types + internal declarations
@@ -271,7 +263,7 @@ src/kernel/
     pipe.c            ← pipe implementation + fd_pipe_create
     tty.c             ← TTY driver + line discipline
   exec/
-    exec.c            ← exec coordinator + MOD_DEFINE
+    exec.c            ← exec coordinator (direct call from core)
     loader.c          ← binary format detection
   fs/
     romfs.c, tmpfs.c, devfs.c, procfs.c, ufs.c, vfat.c, fstab.c
@@ -294,8 +286,8 @@ Two strict rules:
    inside `vfs/` (e.g. `vfs/vfs.h`).  They use `mod/mod_vfs.h`.
 
 2. **Outward rule:** Files inside `vfs/` MUST NOT include headers
-   inside other module directories (e.g. `exec/exec.h`).  They use
-   `mod/mod_exec.h`.
+   inside other module directories (e.g. `exec/exec.h`, `proc/proc.h`).
+   They use `mod/mod_core.h` for core services.
 
 **Allowed includes from any module:**
 - `mod/mod_*.h` — public module interfaces

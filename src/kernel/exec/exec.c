@@ -140,10 +140,3 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
   return 0;
 }
 
-/* ── Module definition ─────────────────────────────────────────────────── */
-
-#include "kernel/common/mod/mod_exec.h"
-
-mod_exec_t mod_exec = {
-  .execve = exec_execve,
-};

@@ -29,7 +29,7 @@ This index is the entry point for project documentation.
 
 - Kernel
   - [`kernel/overview.md`](kernel/overview.md)
-  - [`kernel/kernel_modules.md`](kernel/kernel_modules.md) — Module system (mod_core, mod_vfs, mod_exec)
+  - [`kernel/kernel_modules.md`](kernel/kernel_modules.md) — Module system (mod_core, mod_vfs)
   - [`kernel/memory_management.md`](kernel/memory_management.md)
   - [`kernel/syscall.md`](kernel/syscall.md)
   - [`kernel/filesystems.md`](kernel/filesystems.md)
