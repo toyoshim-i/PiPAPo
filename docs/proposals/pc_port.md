@@ -868,15 +868,16 @@ syscall conversion is the remaining work.
 - [x] Convert path-based syscalls (`open`, `execve`, `chdir`, `mkdir`,
   `unlink`, `rmdir`, `rename`, `readlink`, `mount`) to copy strings from
   user pages into kernel buffers.
-- [ ] Convert struct-output syscalls (`stat*`, `getdents*`, `getcwd`,
+- [x] Convert struct-output syscalls (`stat*`, `getdents*`, `getcwd`,
   `pipe`, `wait4`, `uname`, time syscalls, `ioctl`) to write results back
   with `mem_region_page_write`.
   Current progress: `stat*`, `getdents*`, `getcwd`, `pipe`, `wait4`,
   `uname`, `gettimeofday`, `clock_gettime*`, `nanosleep` /
   `clock_nanosleep*`, `ioctl`, `poll`, `ppoll`, and the realtime
   signal-struct syscalls are now on the shared copy-in / copy-out path.
-  Remaining gaps are the optional / not-yet-supported outputs such as
-  `nanosleep(rem)` and `wait4(rusage)`.
+  The next remaining non-output raw-user-pointer cases are things like
+  `set_tid_address` and `ptrace`, which need their own handling rather
+  than more copy-back shims.
 - [x] Remove `SYS_READ` / `SYS_WRITE` pointer rewriting from
   `i16_syscall_dispatch` and then remove the remaining per-syscall pointer
   rewriting once all converted syscalls resolve their own user buffers.

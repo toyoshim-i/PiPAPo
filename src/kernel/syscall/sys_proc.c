@@ -2032,6 +2032,19 @@ long sys_setsid(void) {
  */
 
 long sys_wait4(long pid, long status_ptr, long options, uintptr_t rusage_ptr) {
-  (void)rusage_ptr; /* rusage not supported */
-  return sys_waitpid(pid, status_ptr, options);
+  struct {
+    long ru_utime[2];
+    long ru_stime[2];
+    long stats[30];
+  } rusage;
+  long ret;
+
+  ret = sys_waitpid(pid, status_ptr, options);
+  if (ret < 0) return ret;
+  if (rusage_ptr != 0u) {
+    __builtin_memset(&rusage, 0, sizeof(rusage));
+    if (sys_copy_to_user(rusage_ptr, &rusage, sizeof(rusage)) < 0)
+      return -(long)EFAULT;
+  }
+  return ret;
 }

@@ -21,6 +21,43 @@ struct timespec {
   long tv_nsec; /* nanoseconds [0, 999999999] */
 };
 
+/* Nanoseconds per SysTick tick */
+#define NS_PER_TICK (1000000000u / PPAP_TICK_HZ)
+
+static int timespec32_write_remaining(uintptr_t rem_ptr) {
+  struct timespec rem;
+  uint32_t now;
+  uint32_t remaining_ticks;
+
+  if (rem_ptr == 0u) return 0;
+  now = sched_get_ticks();
+  if (current->sleep_until != 0 &&
+      (int32_t)(current->sleep_until - now) > 0)
+    remaining_ticks = current->sleep_until - now;
+  else
+    remaining_ticks = 0;
+  rem.tv_sec = (long)(remaining_ticks / PPAP_TICK_HZ);
+  rem.tv_nsec = (long)((remaining_ticks % PPAP_TICK_HZ) * NS_PER_TICK);
+  return sys_copy_to_user(rem_ptr, &rem, sizeof(rem));
+}
+
+static int timespec64_write_remaining(uintptr_t rem_ptr) {
+  int64_t rem[2];
+  uint32_t now;
+  uint32_t remaining_ticks;
+
+  if (rem_ptr == 0u) return 0;
+  now = sched_get_ticks();
+  if (current->sleep_until != 0 &&
+      (int32_t)(current->sleep_until - now) > 0)
+    remaining_ticks = current->sleep_until - now;
+  else
+    remaining_ticks = 0;
+  rem[0] = (int64_t)(remaining_ticks / PPAP_TICK_HZ);
+  rem[1] = (int64_t)((remaining_ticks % PPAP_TICK_HZ) * NS_PER_TICK);
+  return sys_copy_to_user(rem_ptr, rem, sizeof(rem));
+}
+
 /* ── sys_nanosleep ────────────────────────────────────────────────────────────
  */
 
@@ -38,11 +75,11 @@ struct timespec {
  *   - tv_sec is capped at UINT32_MAX / PPAP_TICK_HZ to prevent wrap-around.
  */
 long sys_nanosleep(uintptr_t req_ptr, uintptr_t rem_ptr) {
-  (void)rem_ptr;
   if (req_ptr == 0u) return -(long)EINVAL;
 
   /* On svc_restart re-entry: check for pending signal first */
   if (current->sig_pending & ~current->sig_blocked) {
+    if (timespec32_write_remaining(rem_ptr) < 0) return -(long)EFAULT;
     current->sleep_until = 0;
     return -(long)EINTR;
   }
@@ -61,7 +98,6 @@ long sys_nanosleep(uintptr_t req_ptr, uintptr_t rem_ptr) {
     if (ts.tv_sec < 0 || ts.tv_nsec < 0 || ts.tv_nsec >= 1000000000L)
       return -(long)EINVAL;
 
-    const uint32_t NS_PER_TICK = 1000000000u / PPAP_TICK_HZ;
     uint32_t ticks = (uint32_t)ts.tv_sec * PPAP_TICK_HZ +
                      (uint32_t)ts.tv_nsec / NS_PER_TICK;
     if (ticks == 0u) ticks = 1u;
@@ -78,9 +114,6 @@ long sys_nanosleep(uintptr_t req_ptr, uintptr_t rem_ptr) {
 
 /* ── Time conversion helper ───────────────────────────────────────────────────
  */
-
-/* Nanoseconds per SysTick tick */
-#define NS_PER_TICK (1000000000u / PPAP_TICK_HZ)
 
 /* ── sys_clock_gettime32 ─────────────────────────────────────────────────────
  */
@@ -159,11 +192,11 @@ long sys_clock_nanosleep32(long clk, long flags, uintptr_t req_ptr,
 
   (void)clk;
   (void)flags;
-  (void)rem_ptr;
   if (req_ptr == 0u) return -(long)EINVAL;
 
   /* On svc_restart re-entry: check for pending signal first */
   if (current->sig_pending & ~current->sig_blocked) {
+    if (timespec32_write_remaining(rem_ptr) < 0) return -(long)EFAULT;
     current->sleep_until = 0;
     return -(long)EINTR;
   }
@@ -205,11 +238,11 @@ long sys_clock_nanosleep64(long clk, long flags, uintptr_t req_ptr,
 
   (void)clk;
   (void)flags;
-  (void)rem_ptr;
   if (req_ptr == 0u) return -(long)EINVAL;
 
   /* On svc_restart re-entry: check for pending signal first */
   if (current->sig_pending & ~current->sig_blocked) {
+    if (timespec64_write_remaining(rem_ptr) < 0) return -(long)EFAULT;
     current->sleep_until = 0;
     return -(long)EINTR;
   }
