@@ -194,10 +194,16 @@ Per-process memory is tracked by `page_id_t` (uint16_t index), not by
 raw pointers.  Two functions convert an index back to an address — use
 the right one for portability:
 
-- **`mm_page_linear(id)`** → `uint32_t`: safe on all targets including
-  i16.  Use for arithmetic, comparisons, and reporting.
-- **`mm_page_to_ptr(id)`** → `void *`: 32-bit targets only (unavailable
-  on i16).  Use only when you need a dereferenceable pointer.
+- **`mem_region_page_linear(id)`** → `uint32_t`: safe on all targets
+  including i16.  Use for arithmetic, comparisons, and reporting.
+- **`mem_region_page_to_ptr(id)`** → `void *`: 32-bit targets only
+  (unavailable on i16).  Use only when you need a dereferenceable
+  pointer.
+- **`mem_region_page_read(id, off, buf, len)`** /
+  **`mem_region_page_write(id, off, buf, len)`**: use these to access
+  page payloads.  They are safe on all targets including i16, where
+  `void *` cannot address pages above 64 KB.  On 32-bit targets they
+  reduce to `memcpy`.
 
 See [Memory Management](../kernel/memory_management.md) §9 for the full
 conversion rules and rationale.

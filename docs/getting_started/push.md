@@ -8,7 +8,7 @@ It is a minimal, purpose-built shell that runs without malloc, targets
 PiPAPo's multi-subsystem architecture (CP/M, Human68k, SOS, etc.) — notably
 case-insensitive PATH search for retro subsystem compatibility.
 
-Busybox hush remains available as `/bin/hush` for POSIX compatibility.
+Busybox hush is optionally available as `/bin/hush` for POSIX compatibility.
 
 ## Resource Budget
 

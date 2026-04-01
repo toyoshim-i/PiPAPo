@@ -51,7 +51,7 @@ Reference implementation: `src/user/` directory.
 ### Path B: musl libc
 
 Link against musl libc for full POSIX C library support (`printf`,
-`malloc`, `fopen`, etc.). This is what busybox uses and is the
+`malloc`, `fopen`, etc.). This is what busybox and Rogue use and is the
 recommended path for non-trivial applications.
 
 Reference implementations:

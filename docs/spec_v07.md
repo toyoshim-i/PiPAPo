@@ -13,7 +13,7 @@ March 2026
 3. [File System](#3-file-system)
 4. [Kernel Design](#4-kernel-design)
 5. [System Calls](#5-system-calls)
-6. [busybox Support Strategy](#6-busybox-support-strategy)
+6. [User-Space Strategy](#6-user-space-strategy)
 7. [Boot Sequence](#7-boot-sequence)
 8. [Device Drivers](#8-device-drivers)
 9. [Feature Summary](#9-feature-summary)
@@ -33,7 +33,7 @@ PiPAPo (PPAP) is a UNIX-like operating system designed for bare-metal microcontr
 ### 1.2 Project Goals
 
 - Provide a POSIX-subset system call interface, consistent across architectures
-- Run busybox (statically linked) with an interactive hush shell
+- Native push shell and core utilities; optional busybox for extended applets
 - Place the root file system on flash/ROM as romfs, with optional SD card support via VFAT + UFS loopback
 - Support multiple target architectures and boards from a single source tree
 - Run Rogue 5.4.4 and other ported UNIX applications
@@ -217,7 +217,7 @@ The UFS on image files is a simplified implementation based on 4.4BSD's FFS (Fas
 
 ```
 /               romfs (flash/ROM) — system root
-├── /bin        core commands (busybox symlink farm)
+├── /bin        core commands (push, native utils, busybox applets)
 ├── /sbin       system administration commands (init, mount, etc.)
 ├── /etc        configuration files (inittab, fstab, passwd, profile)
 ├── /dev        devfs mount point (auto-mounted by kernel)
@@ -363,27 +363,35 @@ See [syscall.md](/docs/kernel/syscall.md) for the complete reference.
 
 ---
 
-## 6. busybox Support Strategy
+## 6. User-Space Strategy
 
-### 6.1 Build Approach
+### 6.1 Native Shell and Utilities
 
-busybox is cross-compiled for each target architecture using musl libc with full static linking. In minimal configuration (hush + basic coreutils), the binary is approximately 200–400 KB. On ARM targets, this binary is placed in the flash romfs and executed directly via XIP. On m68k targets, it is loaded into RAM from romfs.
+PiPAPo ships a native, purpose-built user space:
 
-### 6.2 Minimum Applet Set
+| Program | Description |
+|---|---|
+| **push** | PiPAPo μShell — default `/bin/sh`, ~14 KB code, no malloc. See [push.md](/docs/getting_started/push.md) |
+| **init** | PID 1 process. Reads `/etc/inittab`, spawns getty on each console |
+| **getty** | Serial/LCD login (with auto-login support) |
+| **ps** | Process listing via `/proc` |
+| **ls** | Directory listing |
+| **cat** | Concatenate files |
+| **df** | Disk free space |
+| **pdb** | PiPAPo debugger (ptrace-based) |
+| **ttyctl** | Terminal mode, backlight, battery, poweroff |
+| **trace** | Tracing utility |
+| **hello** | Example program |
 
-| Category | Applets | Notes |
-|---|---|---|
-| Shell | hush | Lightweight shell with bash compatibility. Pipes, redirection, variable expansion |
-| File Operations | ls, cp, mv, rm, cat, mkdir, rmdir, ln, chmod | Basic file operations |
-| Text Processing | echo, printf, grep, head, tail, wc, sort, sed | Pipeline processing |
-| Process Management | ps, kill, sleep | Process control |
-| System | mount, umount, df, free, uname, dmesg | System administration |
-| Initialization | init | PID 1 process. Launches hush based on /etc/inittab |
-| Block Devices | losetup | Loop device setup |
+These are freestanding (no libc) single-file programs built from `src/user/`.  Each uses ~2 pages (8 KB) at runtime, making them far lighter than busybox applets.
+
+### 6.2 busybox (Optional)
+
+busybox is cross-compiled for each target architecture using musl libc with full static linking. It provides extended applets (grep, sed, cp, mv, etc.) beyond the native set. In minimal configuration the binary is approximately 200–400 KB. On ARM targets, it is placed in the flash romfs and executed directly via XIP. On m68k targets, it is loaded into RAM from romfs.
 
 ### 6.3 XIP Execution Model (ARM targets)
 
-On ARM targets, the busybox binary resides on flash and is executed directly via XIP. SRAM consumption per applet execution is limited to each process's stack and heap only — the code segment consumes no SRAM at all. On m68k targets, the code is loaded into RAM pages.
+On ARM targets, PIE binaries (both native and busybox) reside on flash and are executed directly via XIP. SRAM consumption per process is limited to stack and heap only — the code segment consumes no SRAM at all. On m68k targets, code is loaded into RAM pages.
 
 ### 6.4 musl libc Porting
 
@@ -433,7 +441,7 @@ The boot sequence from power-on to shell prompt follows a target-specific early 
 
 ### 7.3 User Space
 
-init reads /etc/inittab and spawns hush on the console. The shell reads /etc/profile and displays the prompt.
+init reads /etc/inittab and spawns getty on each console. getty launches push (the default shell), which reads /etc/profile and displays the prompt.
 
 ---
 
@@ -489,9 +497,10 @@ The m68k QEMU target currently uses a UART for console and a RAM-backed block de
 ### 9.3 User Space
 
 - **musl libc:** ported to ARM and m68k with PPAP's unified syscall interface
-- **busybox:** statically linked multicall binary with interactive hush shell
+- **push:** native shell (`/bin/sh`), ~14 KB, no malloc
+- **Native utilities:** init, getty (with auto-login), ps, ls, cat, df, pdb, ttyctl, trace, hello
+- **busybox:** optional statically linked multicall binary for extended applets
 - **Rogue 5.4.4:** classic dungeon crawler with minimal VT100 curses shim
-- **User programs:** hello, init, getty (with auto-login support), ttyctl (terminal mode/backlight/battery/poweroff)
 - **PIE/PIC binaries:** position-independent ELFs with architecture-specific relocation
 
 ### 9.4 Display and Input (PicoCalc)
@@ -531,11 +540,11 @@ The loopback mount introduces an additional I/O indirection layer. In the worst 
 
 ### 10.4 Multi-Architecture Binary Compatibility
 
-PPAP uses a unified syscall numbering scheme across all architectures, so the kernel-side syscall dispatch table is shared. However, user-space binaries are architecture-specific (ARM Thumb ELFs vs m68k ELFs). The musl libc build and busybox build must be performed separately for each architecture.
+PPAP uses a unified syscall numbering scheme across all architectures, so the kernel-side syscall dispatch table is shared. However, user-space binaries are architecture-specific (ARM Thumb ELFs vs m68k ELFs). Native utilities are built per-architecture by CMake. The musl libc and busybox builds must also be performed separately for each architecture.
 
 ### 10.5 busybox Compatibility
 
-busybox is developed with the assumption of a Linux kernel, and some applets depend on Linux-specific system calls. The hush shell and basic command set are prioritized, with Linux-specific features returning stubs or ENOSYS. Syscall coverage is expanded incrementally.
+busybox is developed with the assumption of a Linux kernel, and some applets depend on Linux-specific system calls. Core utilities (ps, ls, cat, df) are now provided natively without busybox. For extended busybox applets, Linux-specific features return stubs or ENOSYS. Syscall coverage is expanded incrementally.
 
 ### 10.6 Target-Specific Constraints
 
@@ -572,7 +581,7 @@ busybox is developed with the assumption of a Linux kernel, and some applets dep
 - **Traditional UNIX:** romfs (/) + UFS (loopback on VFAT) maintains UNIX semantics while embracing real-world interoperability
 - **Universal Interoperability:** The SD card is standard FAT32, readable by any PC/Mac
 - **Maximize XIP:** On targets with flash, execute code via XIP, reserving RAM exclusively for data
-- **busybox First:** All design decisions prioritize running busybox hush as the primary goal
+- **Native First:** Core shell and utilities are purpose-built for PiPAPo; busybox provides extended applets
 - **Architecture-neutral kernel:** Shared kernel source with thin target abstraction layer (target.h)
 - **Multi-target from day one:** Target-specific code (drivers, pin definitions, boot sequences, linker scripts) is isolated in per-target directories
 - **Unified syscall interface:** Same syscall numbers and semantics across all architectures

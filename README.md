@@ -10,7 +10,7 @@ A portable UNIX-like micro OS for bare-metal microcontrollers and retro CPUs.
 ## Goals
 
 - POSIX-subset system call interface — same syscall numbers across all architectures
-- Run **busybox** (statically linked) with an interactive `hush` shell
+- Native **push** shell and core utilities (ps, ls, cat, df); optional **busybox** for extended applets
 - Run **Rogue 5.4.4** (classic dungeon crawler) via a minimal VT100 curses shim
 - Root file system on flash/ROM as **romfs**; SD card as **VFAT (FAT32)** with **UFS** loopback images
 - Multiple target architectures and boards from a shared kernel codebase
@@ -39,7 +39,7 @@ On i16 (PC/XT), the kernel is split into separate code-segment modules (core + V
 
 - **Kernel** — preemptive scheduler, vfork/exec, signals, pipes, memory protection
 - **File systems** — romfs, VFAT (SD card), UFS (loopback images), devfs, procfs, tmpfs
-- **User space** — musl libc, busybox (hush shell + 100+ applets), Rogue 5.4.4
+- **User space** — push shell, native utilities (ps, ls, cat, df, getty, pdb), musl libc, optional busybox, Rogue 5.4.4
 - **5 architectures** — ARM Cortex-M, RISC-V (RV32IMAC), Motorola 68000, Xtensa LX7, Intel 8086
 - **eCPU emulators** — Z80 and m68k software interpreters enable cross-architecture binary execution (CP/M .COM, Human68k .X/.R, S-OS .OBJ)
 - **Subsystems** — Human68k, CP/M, S-OS SWORD — run retro OS binaries via syscall bridge
