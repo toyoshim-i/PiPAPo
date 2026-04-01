@@ -268,7 +268,7 @@ mount_entry_t *vfs_mount_find(const char *path, const char **remainder) {
 #include "../fs/vfat.h"
 #endif
 
-#ifdef PPAP_HAS_BLKDEV
+#if defined(PPAP_HAS_BLKDEV) || defined(PPAP_HAS_UFS)
 int vfs_mount_ufs(const char *path, uint8_t flags, const void *dev_data)
 {
   return vfs_mount(path, &ufs_ops, flags, dev_data);

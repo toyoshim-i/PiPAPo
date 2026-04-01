@@ -186,7 +186,7 @@ target_include_directories(ppap_pcxt PRIVATE ${PPAP_INCLUDES})
 # free_stack[] uses page_id_t (16-bit index), not void*, so pages
 # beyond 64 KB are accessible.  ~150 pages typical (depends on
 # kernel size and VFS data reservation).
-target_compile_definitions(ppap_pcxt PRIVATE PAGE_COUNT_MAX=150u)
+target_compile_definitions(ppap_pcxt PRIVATE PAGE_COUNT_MAX=150u PPAP_HAS_BLKDEV=1)
 target_compile_options(ppap_pcxt PRIVATE ${KERNEL_FLAGS})
 
 target_link_options(ppap_pcxt PRIVATE
@@ -238,6 +238,7 @@ add_executable(ppap_pcxt_vfs
 )
 
 target_include_directories(ppap_pcxt_vfs PRIVATE ${PPAP_INCLUDES})
+target_compile_definitions(ppap_pcxt_vfs PRIVATE PPAP_HAS_UFS=1)
 target_compile_options(ppap_pcxt_vfs PRIVATE ${KERNEL_FLAGS})
 
 # Two-pass link: VFS needs core_exports.ld from core ELF.

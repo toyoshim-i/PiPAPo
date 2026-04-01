@@ -71,7 +71,9 @@ void kmain(void) {
 #ifdef PPAP_HAS_BLKDEV
   /* Block device registry + loopback subsystem */
   blkdev_init();
+#if !defined(__ia16__)
   loopback_init();
+#endif
 #endif
 
   /* Target-specific late init: SD/ramblk, IRQ UART, MPU, Core 1 */
