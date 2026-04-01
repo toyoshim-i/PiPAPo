@@ -84,7 +84,7 @@ typedef void (*sighandler_t)(int);
  *   flat: (linear address - process base) = process-relative offset
  *   MMU:  future page-table walk
  *
- * user_to_page() takes the process's base page ID and a byte offset
+ * user_to_page() takes the process's base page_id_t and a byte offset
  * from the start of the process's contiguous page allocation.  The
  * caller extracts the offset from the raw syscall argument:
  *
@@ -158,7 +158,7 @@ typedef struct pcb {
   proc_state_t state;
 
   /* ── Memory ─────────────────────────────────────────────────────────── */
-  page_id_t stack_page_id; /* page index for 4 KB stack backing page */
+  page_id_t stack_page_id; /* page_id_t for 4 KB stack backing page */
   page_id_t user_pages[USER_PAGES_MAX]; /* page-backed user memory tracking */
   proc_image_t image; /* explicit process image layout / memory classes */
 #if defined(__m68k__)

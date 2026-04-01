@@ -1,11 +1,14 @@
 /*
  * page.c — Physical page allocator
  *
- * Free-stack implementation: a fixed array of PAGE_COUNT_MAX page_id_t indices,
+ * Free-stack implementation: a fixed array of PAGE_COUNT_MAX page_id_t values,
  * managed as a LIFO stack.  Alloc pops the top; free pushes onto the top.
  * Both operations are O(1) with no heap or dynamic storage needed.
- * Using page indices (not void*) allows pages beyond the 16-bit address
- * range on i16, where uintptr_t is only 16 bits but RAM extends to 640 KB.
+ *
+ * page_id_t is a linear page number (address / PAGE_SIZE), not a page-pool
+ * index.  That lets non-ia16 code form page references for arbitrary linear
+ * buffers directly, while the allocator still tracks which page IDs belong to
+ * the pool.
  *
  * mm_init() also prints the boot-time memory map, showing:
  *   - actual kernel data usage (measured from __bss_end at link time)
@@ -43,13 +46,8 @@ extern char __stack_top;
 
 static page_id_t free_stack[PAGE_COUNT_MAX];
 static uint32_t free_top = 0u; /* index of next empty slot (0 = pool empty) */
-uint32_t page_count = 0u;      /* runtime page count (set by mm_init)       */
+uint32_t page_count = 0u;      /* runtime pool page count (set by mm_init)  */
 uint32_t oom_count = 0u;       /* number of page_alloc() failures */
-
-/* Linear address table: maps page_id → 32-bit linear address.
- * Populated by mm_init(); used by mm_page_to_ptr, mm_page_read/write,
- * and page_alloc (to convert index back to void*). */
-static uint32_t page_linear[PAGE_COUNT_MAX];
 
 #if defined(__m68k__)
 /* Assembly RAM probe — detects accessible RAM via bus error catching.
@@ -66,6 +64,29 @@ static uint32_t i16_detect_ram(void) {
 
 /* ── Internal helpers ───────────────────────────────────────────────────────
  */
+
+static inline uintptr_t page_id_linear(page_id_t id) {
+  return (uintptr_t)id * PAGE_SIZE;
+}
+
+static inline page_id_t linear_page_id(uintptr_t addr) {
+  return (page_id_t)(addr / PAGE_SIZE);
+}
+
+static inline page_id_t pool_base_page_id(void) {
+  return linear_page_id(page_pool_base());
+}
+
+static int pool_page_id_to_index(page_id_t id, uint32_t *index) {
+  page_id_t base = pool_base_page_id();
+  uint32_t rel;
+
+  if (id < base) return 0;
+  rel = (uint32_t)(id - base);
+  if (rel >= page_count) return 0;
+  if (index) *index = rel;
+  return 1;
+}
 
 /* ── Public API ─────────────────────────────────────────────────────────────
  */
@@ -139,16 +160,13 @@ void mm_init(void) {
 #else
   pool_base = PAGE_POOL_BASE;
 #endif
-  /* Populate page_linear[] and build the free stack using page indices.
-   * page_linear[i] stores the 32-bit linear address for page i.
-   * free_stack[] stores page_id_t indices, not void* pointers —
-   * this allows pages beyond the 16-bit address range on i16. */
+  /* Build the free stack using linear page numbers, not raw pointers. */
   free_top = 0;
   for (uint32_t i = 0u; i < page_count; i++) {
     uint32_t paddr = (uint32_t)pool_base + i * PAGE_SIZE;
-    page_linear[i] = paddr;
+    page_id_t pid = linear_page_id(paddr);
     if (paddr < (uint32_t)stack_page_top) continue; /* overlaps kernel stack */
-    free_stack[free_top++] = (page_id_t)i;
+    free_stack[free_top++] = pid;
   }
 
   /* ── Boot-time memory map ─────────────────────────────────────────────── */
@@ -164,7 +182,8 @@ void mm_init(void) {
     klogf("MM:     .data/.bss:  %lx B used\n", (unsigned long)kern_used);
 
   uint32_t actual_base =
-      (free_top > 0) ? page_linear[free_stack[0]] : (uint32_t)pool_base;
+      (free_top > 0) ? (uint32_t)page_id_linear(free_stack[0])
+                     : (uint32_t)pool_base;
   klogf("MM:   pages   %lx-%lx %lu KB (%u x 4 KB, all free)\n",
         (unsigned long)actual_base,
         (unsigned long)(pool_base + page_count * PAGE_SIZE - 1u),
@@ -222,7 +241,7 @@ void *page_alloc(void) {
     }
     page_id_t id = free_stack[best];
     free_stack[best] = free_stack[--free_top];
-    p = (void *)(uintptr_t)page_linear[id];
+    p = (void *)page_id_linear(id);
   } else {
     oom_count++;
   }
@@ -240,7 +259,7 @@ void *page_alloc_at(void *addr) {
     return NULL;
   if (target & (PAGE_SIZE - 1u)) return NULL;
 
-  page_id_t target_id = (page_id_t)((target - pb) / PAGE_SIZE);
+  page_id_t target_id = linear_page_id(target);
 
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
   void *result = NULL;
@@ -295,7 +314,7 @@ void page_free(void *page) {
   if (addr < pb || addr >= pb + page_count * PAGE_SIZE)
     return; /* ignore bogus pointer rather than corrupt the stack */
 
-  page_id_t id = (page_id_t)((addr - pb) / PAGE_SIZE);
+  page_id_t id = linear_page_id(addr);
 
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
 
@@ -336,8 +355,10 @@ uint32_t page_free_count(void) {
 static void build_free_bitmap(uint32_t *bmap, uint32_t n_words) {
   for (uint32_t w = 0; w < n_words; w++) bmap[w] = 0;
   for (uint32_t i = 0; i < free_top; i++) {
-    uint32_t idx = free_stack[i];
-    if (idx < page_count) bmap[idx / 32] |= (1u << (idx % 32));
+    uint32_t idx;
+
+    if (!pool_page_id_to_index(free_stack[i], &idx)) continue;
+    bmap[idx / 32] |= (1u << (idx % 32));
   }
 }
 
@@ -403,10 +424,11 @@ uint8_t *page_alloc_contiguous(uint32_t n_pages) {
   }
 
   /* Remove the found pages from the free stack by page index. */
+  page_id_t base_id = pool_base_page_id() + (page_id_t)found_start;
   uint32_t new_top = 0;
   for (uint32_t i = 0; i < free_top; i++) {
     page_id_t pid = free_stack[i];
-    if (pid >= found_start && pid < found_start + n_pages) {
+    if (pid >= base_id && pid < base_id + n_pages) {
       /* This page is being allocated — skip it */
     } else {
       free_stack[new_top++] = free_stack[i];
@@ -414,7 +436,7 @@ uint8_t *page_alloc_contiguous(uint32_t n_pages) {
   }
   free_top = new_top;
 
-  uintptr_t base_addr = page_pool_base() + found_start * PAGE_SIZE;
+  uintptr_t base_addr = page_id_linear(base_id);
   spin_unlock_irqrestore(SPIN_PAGE, saved);
   return (uint8_t *)(uintptr_t)base_addr;
 }
@@ -455,10 +477,11 @@ page_id_t mm_page_alloc_contiguous(uint32_t n_pages) {
     return PAGE_ID_INVALID;
   }
 
+  page_id_t base_id = pool_base_page_id() + (page_id_t)found_start;
   uint32_t new_top = 0;
   for (uint32_t i = 0; i < free_top; i++) {
     page_id_t pid = free_stack[i];
-    if (pid >= found_start && pid < found_start + n_pages) {
+    if (pid >= base_id && pid < base_id + n_pages) {
     } else {
       free_stack[new_top++] = free_stack[i];
     }
@@ -466,7 +489,7 @@ page_id_t mm_page_alloc_contiguous(uint32_t n_pages) {
   free_top = new_top;
 
   spin_unlock_irqrestore(SPIN_PAGE, saved);
-  return (page_id_t)found_start;
+  return base_id;
 }
 
 /* ── Page-indexed API ────────────────────────────────────────────────────── */
@@ -492,12 +515,12 @@ page_id_t mm_page_alloc(void) {
 }
 
 uint32_t mm_page_linear(page_id_t id) {
-  if (id >= page_count) return 0;
-  return page_linear[id];
+  if (id == PAGE_ID_INVALID) return 0;
+  return (uint32_t)page_id_linear(id);
 }
 
 void mm_page_free(page_id_t id) {
-  if (id == PAGE_ID_INVALID || id >= page_count) return;
+  if (id == PAGE_ID_INVALID || !pool_page_id_to_index(id, NULL)) return;
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
   /* Double-free check */
   for (uint32_t i = 0; i < free_top; i++) {
@@ -512,11 +535,11 @@ void mm_page_free(page_id_t id) {
 }
 
 void mm_page_read(page_id_t id, uint16_t off, void *buf, uint16_t len) {
-  if (id == PAGE_ID_INVALID || id >= page_count || len == 0) return;
+  if (id == PAGE_ID_INVALID || len == 0) return;
 #if defined(__ia16__)
   /* Compute segment:offset from 20-bit linear address.
    * rep movsb copies DS:SI → ES:DI.  We want src=far page, dst=SS:buf. */
-  uint32_t linear = page_linear[id] + off;
+  uint32_t linear = (uint32_t)page_id_linear(id) + off;
   uint16_t seg = (uint16_t)(linear >> 4);
   uint16_t ofs = (uint16_t)(linear & 0x000Fu);
   uint16_t dst = (uint16_t)(uintptr_t)buf;
@@ -536,16 +559,16 @@ void mm_page_read(page_id_t id, uint16_t off, void *buf, uint16_t len) {
   );
 #else
   __builtin_memcpy(buf,
-                   (const uint8_t *)(uintptr_t)page_linear[id] + off,
+                   (const uint8_t *)page_id_linear(id) + off,
                    len);
 #endif
 }
 
 void mm_page_write(page_id_t id, uint16_t off, const void *buf, uint16_t len) {
-  if (id == PAGE_ID_INVALID || id >= page_count || len == 0) return;
+  if (id == PAGE_ID_INVALID || len == 0) return;
 #if defined(__ia16__)
   /* rep movsb copies DS:SI → ES:DI.  We want src=SS:buf, dst=far page. */
-  uint32_t linear = page_linear[id] + off;
+  uint32_t linear = (uint32_t)page_id_linear(id) + off;
   uint16_t seg = (uint16_t)(linear >> 4);
   uint16_t ofs = (uint16_t)(linear & 0x000Fu);
   uint16_t src = (uint16_t)(uintptr_t)buf;
@@ -560,23 +583,21 @@ void mm_page_write(page_id_t id, uint16_t off, const void *buf, uint16_t len) {
     : "memory", "cc"
   );
 #else
-  __builtin_memcpy((uint8_t *)(uintptr_t)page_linear[id] + off,
+  __builtin_memcpy((uint8_t *)page_id_linear(id) + off,
                    buf, len);
 #endif
 }
 
 #if !defined(__ia16__)
 void *mm_page_to_ptr(page_id_t id) {
-  if (id == PAGE_ID_INVALID || id >= page_count) return NULL;
-  return (void *)(uintptr_t)page_linear[id];
+  if (id == PAGE_ID_INVALID) return NULL;
+  return (void *)page_id_linear(id);
 }
 #endif
 
 page_id_t mm_ptr_to_page(void *ptr) {
   uintptr_t addr = (uintptr_t)ptr;
-  uintptr_t pb = page_pool_base();
-  if (addr < pb) return PAGE_ID_INVALID;
-  page_id_t id = (page_id_t)((addr - pb) / PAGE_SIZE);
-  if (id >= page_count) return PAGE_ID_INVALID;
-  return id;
+
+  if (addr == 0u) return PAGE_ID_INVALID;
+  return linear_page_id(addr);
 }

@@ -27,10 +27,10 @@ int mem_region_alloc(proc_image_segment_t *, ppap_mem_class_t,
 void mem_region_free(const proc_image_segment_t *);
 uint32_t mem_region_total_bytes(ppap_mem_class_t);
 uint32_t mem_region_free_bytes(ppap_mem_class_t);
-uint16_t mem_region_page_alloc(void);
-void mem_region_page_free(uint16_t);
-void mem_region_page_read(uint16_t, uint16_t, void *, uint16_t);
-void mem_region_page_write(uint16_t, uint16_t, const void *, uint16_t);
+page_id_t mem_region_page_alloc(void);
+void mem_region_page_free(page_id_t);
+void mem_region_page_read(page_id_t, uint16_t, void *, uint16_t);
+void mem_region_page_write(page_id_t, uint16_t, const void *, uint16_t);
 int core_blkdev_read(blkdev_t *, void *, uint32_t, uint32_t);
 int core_blkdev_write(blkdev_t *, const void *, uint32_t, uint32_t);
 void sched_wakeup(void *);

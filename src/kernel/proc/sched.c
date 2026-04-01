@@ -247,9 +247,8 @@ void sched_start(void) {
    * to MSP.  After the MSP→PSP switch below, the function epilogue pops
    * from PSP (different memory), so sched_start must not have a prologue
    * that saves registers.  Keeping everything as simple loads avoids that. */
-  uint32_t psp_top = PAGE_POOL_BASE +
-                     (uint32_t)proc_table[0].stack_page_id * PAGE_SIZE +
-                     PAGE_SIZE;
+  uint32_t psp_top =
+      (uint32_t)(proc_table[0].stack_page_id * PAGE_SIZE) + PAGE_SIZE;
   __asm__ volatile(
       "msr  psp, %0      \n" /* PSP = top of Thread 0's stack page */
       "movs r0, #2       \n" /* CONTROL.SPSEL = 1 */

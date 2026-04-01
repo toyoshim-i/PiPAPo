@@ -25,21 +25,22 @@ int mem_region_alloc_at(proc_image_segment_t *seg, ppap_mem_class_t mem_class,
 
 void mem_region_free(const proc_image_segment_t *seg);
 
-/* Free a tracked user page by page index. */
+/* Free a tracked user page by page_id_t. */
 void mem_region_free_tracked_page_id(page_id_t id);
 
-/* ── Page-index wrappers (public API for mm_page_* internals) ──────── */
+/* ── Page wrappers (public API for mm_page_* internals) ────────────── */
 
-/* Allocate one page, return its index (or PAGE_ID_INVALID on OOM). */
+/* Allocate one page, return its page_id_t (or PAGE_ID_INVALID on OOM). */
 page_id_t mem_region_page_alloc(void);
 
-/* Allocate n contiguous pages, return base index (or PAGE_ID_INVALID). */
+/* Allocate n contiguous pages, return the base page_id_t
+ * (or PAGE_ID_INVALID). */
 page_id_t mem_region_page_alloc_contiguous(uint32_t n_pages);
 
-/* Free a page by index. */
+/* Free a page by page_id_t. */
 void mem_region_page_free(page_id_t id);
 
-/* Return the 32-bit linear address of a page by index. */
+/* Return the 32-bit linear address of a page_id_t. */
 uint32_t mem_region_page_linear(page_id_t id);
 
 /* Return the page_id for an existing pointer (reverse lookup). */
