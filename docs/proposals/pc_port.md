@@ -690,8 +690,8 @@ src/kernel/common/
   seg.h / seg.c       — Segment manager (i16 only), mod_id → segment lookup
   mod/
     module.h          — MOD_DECLARE / MOD_DEFINE macros
-    mod_core.h        — Core exports (16 functions: klog, kmem, mm_page, blkdev)
-    mod_vfs.h         — VFS exports (12 functions: init, mount, lookup, etc.)
+    mod_core.h        — Core exports (klog, kmem, mm_page, blkdev, sched, uart)
+    mod_vfs.h         — VFS exports (init, mount, lookup, fd_read/write, etc.)
 
 scripts/
   mkpcimg.sh          — Assembles 1.44 MB floppy (stage1 + stage2 + UFS)
@@ -803,8 +803,8 @@ modules (exec) can use additional code segments.
 ## 8. Phase P-5: User-Space Exec and Tests
 
 **Status**: In progress.  Module system complete (P-4a/P-4b done).
-ELF loading and exit work.  Memory management needs refactoring
-(see [`memory_management.md`](../kernel/memory_management.md)).
+ELF loading and exit work.  `mod_exec` vtable removed — `exec_execve`
+is now called directly (not cross-module).
 
 ### What Works
 
@@ -816,24 +816,17 @@ ELF loading and exit work.  Memory management needs refactoring
   removed; two-pass link with `core_exports.ld`
 - PIT 100 Hz timer and preemptive scheduler run
 - Process exits cleanly (exit syscall works)
+- `user_pages[]` converted to `page_id_t` — page tracking works
+- Timer ISR race fixed — idle thread (PID 0) gets proper context save
+- tty.c uses `mod_core.uart_*` wrappers on all targets
 
 ### Current Blocker
 
-`user_pages[]` uses `void *` (16-bit on i16).  Page-pool addresses
-above 64 KB are truncated, causing double-free on exit.  The
-`elf16_loader` works around this by using `mm_page_*` directly and
-not setting `PROC_IMAGE_SEG_OWNED`, but `proc_track_page()` still
-stores truncated pointers.  Fixed by the page-index refactoring
-(see [`memory_management.md`](../kernel/memory_management.md) §4).
-
-### What's Fixed So Far
-
-- `user_pages[]` converted to `page_id_t` — page tracking works.
-- Timer ISR race fixed — `sched_start()` moved after direct IRET
-  removed; idle thread (PID 0) gets proper context save.
-- Process exits cleanly via `exit()` syscall.
-- tty.c uses `mod_core.uart_*` wrappers on all targets (not direct
-  function pointers) — fixes cross-segment function pointer issue.
+page_id_t redesign (§8.0) needed before user-space memory access
+conversion (§8.1).  The typedef change (arch-specific width) passes
+all tests, but the `page_linear[]` removal and absolute page_id
+encoding causes a runtime crash on ARM during user-space exec.
+Investigation in progress — see §8.0 notes.
 
 ### Steps (revised)
 
@@ -853,13 +846,13 @@ stores truncated pointers.  Fixed by the page-index refactoring
    via `mem_region_page_read`.  Struct-output syscalls write via
    `mem_region_page_write`.  Remove i16 pointer-resolution switch.
 
-3. **Signal delivery for i16** — implement `sys_sigreturn` / signal
+4. **Signal delivery for i16** — implement `sys_sigreturn` / signal
    trampoline.
 
-4. **Fork / waitpid** — process segment duplication via
+5. **Fork / waitpid** — process segment duplication via
    `mem_region_page_read/write` for cross-segment copy.
 
-5. **`--test pcxt` in run.sh** — integrate with existing test harness.
+6. **`--test pcxt` in run.sh** — integrate with existing test harness.
 
 ### 8.0 page_id_t Redesign
 
@@ -898,6 +891,17 @@ architecture to minimize memory usage:
 6. Page pool init: free-stack entries computed as
    `(pool_base / PAGE_SIZE) + i` instead of bare `i`.
 
+**Status**: Not done.  The typedef change alone (arch-specific
+width, pool-relative indexing unchanged) passes all ARM tests.
+The `page_linear[]` removal + absolute encoding causes a crash:
+PID 0's saved context zeroes out during user-space exec.  Kernel
+tests pass (46 pages allocated, no overlap).  The crash occurs
+deterministically after 3 user-space execs.  Root cause TBD.
+
+Committed so far: typedef is uint16_t (unchanged), ARM kernel
+region bumped to 24 KB to accommodate the eventual uint32_t growth,
+`user_to_page()` added to proc.h with pool-relative signature.
+
 **Verification**: all existing tests must pass on ARM and m68k.
 pcxt must build.  The page_id encoding is an internal detail —
 no user-visible ABI change.
@@ -918,29 +922,38 @@ existing `mem_region_page_read/write` (already in the `mod_core`
 vtable) is the only mechanism used.
 
 A single inline helper converts a user-space offset to a page
-reference:
+reference (committed in `proc.h`):
 
 ```c
 typedef struct { page_id_t page; uint16_t off; } user_page_ref_t;
 
-static inline user_page_ref_t user_to_page(const pcb_t *p,
+/* Current (pool-relative) — will simplify after §8.0 */
+static inline user_page_ref_t user_to_page(page_id_t base,
                                            uint32_t user_off) {
-  page_id_t base = proc_page_backed_base(p);
-  uint32_t page_idx = user_off / PAGE_SIZE;
-  uint16_t page_off = (uint16_t)(user_off % PAGE_SIZE);
-  return (user_page_ref_t){ base + (page_id_t)page_idx, page_off };
+  user_page_ref_t ref;
+  ref.page = base + (page_id_t)(user_off / PAGE_SIZE);
+  ref.off  = (uint16_t)(user_off % PAGE_SIZE);
+  return ref;
+}
+
+/* After §8.0 (absolute page_id): */
+static inline user_page_ref_t user_to_page(uint32_t linear) {
+  return (user_page_ref_t){
+    (page_id_t)(linear / PAGE_SIZE),
+    (uint16_t)(linear % PAGE_SIZE)
+  };
 }
 ```
 
-`user_off` is a process-relative byte offset from the start of the
-process's contiguous page allocation:
+With pool-relative page_ids (current), the caller passes
+`proc_page_backed_base(current)` as `base` and a process-relative
+offset as `user_off`.  After §8.0, the helper takes a single
+linear address and the `base` parameter is eliminated.
 
-- **i16**: the raw 16-bit register value.  The user process runs with
-  DS pointing at its page allocation base, so the register value *is*
-  the offset from base.  No DS lookup or storage needed — the process
-  segment is derivable from `proc_page_backed_base(current)`.
-- **32-bit flat (no MMU)**: `user_off = (uint32_t)arg - base_linear`,
-  where `base_linear = mem_region_page_linear(proc_page_backed_base(p))`.
+- **i16**: `linear = user_ds * 16 + raw_arg` (DS derived from
+  process base page).
+- **32-bit flat (no MMU)**: `linear = (uint32_t)raw_arg` (already
+  a linear address).
 - **Future MMU targets**: page-table walk from virtual address.
 
 The resolution produces a `(page_id_t, uint16_t offset)` pair that
