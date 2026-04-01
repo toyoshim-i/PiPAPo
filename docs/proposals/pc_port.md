@@ -819,92 +819,33 @@ is now called directly (not cross-module).
 - `user_pages[]` converted to `page_id_t` — page tracking works
 - Timer ISR race fixed — idle thread (PID 0) gets proper context save
 - tty.c uses `mod_core.uart_*` wrappers on all targets
+- `PPAP_HAS_BLKDEV` + `PPAP_HAS_UFS` flags added — rootfs mounts
+- Memory management architecture stable: pool-relative `page_id_t`
+  (uint16_t), `page_linear[]` lookup, `mem_region_page_*` wrappers
+  (see [memory_management.md](../kernel/memory_management.md))
 
 ### Current Blocker
 
-page_id_t redesign (§8.0) needed before user-space memory access
-conversion (§8.1).  The typedef change (arch-specific width) passes
-all tests, but the `page_linear[]` removal and absolute page_id
-encoding causes a runtime crash on ARM during user-space exec.
-Investigation in progress — see §8.0 notes.
+User-space memory access (§8.1).  Syscall handlers dereference user
+pointers directly as `void *`, which is broken on i16 where user
+memory lives in a different segment.  The `user_to_page()` helper
+and `mem_region_page_read/write` infrastructure are ready; the
+syscall conversion is the remaining work.
 
-### Steps (revised)
+### Steps
 
-1. **Redesign page_id_t** — change `page_id_t` from pool-relative
-   index to `linear_address / PAGE_SIZE`.  Arch-specific width:
-   `uint32_t` (ARM, RISC-V, Xtensa), `uint16_t` (m68k),
-   `uint8_t` (i16).  Eliminates `page_linear[]` lookup table on
-   32-bit — `linear = page_id * PAGE_SIZE` directly.  Any address
-   (kernel, ROM, page pool) maps to a valid page_id.  See §8.0.
+1. **User-space memory access** — convert syscall handlers to
+   resolve user pointers via `user_to_page()` + `mem_region_page_read/
+   write`.  Change `fd_read`/`fd_write` VFS API to accept
+   `page_id_t` + offset.  See §8.1 for details.
 
-2. **User-space memory access** — `user_to_page()` resolves user
-   pointer args to page_id + offset.  `fd_read`/`fd_write` VFS API
-   changes to accept page_id + offset.  All VFS implementations
-   use `mem_region_page_read/write`.  See §8.1.
-
-3. **Convert syscalls** — path syscalls copy path to kernel stack
-   via `mem_region_page_read`.  Struct-output syscalls write via
-   `mem_region_page_write`.  Remove i16 pointer-resolution switch.
-
-4. **Signal delivery for i16** — implement `sys_sigreturn` / signal
+2. **Signal delivery for i16** — implement `sys_sigreturn` / signal
    trampoline.
 
-5. **Fork / waitpid** — process segment duplication via
+3. **Fork / waitpid** — process segment duplication via
    `mem_region_page_read/write` for cross-segment copy.
 
-6. **`--test pcxt` in run.sh** — integrate with existing test harness.
-
-### 8.0 page_id_t Redesign
-
-Currently `page_id_t` is a pool-relative index: page_id 0 = first
-page in the page pool, not first page in RAM.  This means kernel
-addresses (stack, `.rodata`, ROM) have no page_id, blocking the
-user-to-page conversion for kernel callers (bridges, ktest, PID 0).
-
-**New design**: `page_id = linear_address / PAGE_SIZE`.  Any address
-in the system maps to a valid page_id.  The type width varies by
-architecture to minimize memory usage:
-
-| Arch | `page_id_t` | Max linear | Max page_id | `PAGE_ID_INVALID` |
-|------|------------|-----------|-------------|-------------------|
-| ARM | `uint32_t` | 0x2041FFF | 0x20041 | `0xFFFFFFFF` |
-| RISC-V | `uint32_t` | 0x80BFFFF | 0x80BFF | `0xFFFFFFFF` |
-| Xtensa | `uint32_t` | varies | varies | `0xFFFFFFFF` |
-| m68k | `uint16_t` | 0xFFFFFF | 4095 | `0xFFFF` |
-| i16 | `uint8_t` | 0x9FFFF | 159 | `0xFF` |
-
-**Changes required**:
-
-1. `page.h`: `page_id_t` typedef becomes arch-conditional.
-   `PAGE_ID_INVALID` uses the max value for the type.
-2. `page.c`: `page_linear[]` array removed (32-bit) or kept
-   as a simple multiply (all arches).  `mm_page_read/write`
-   compute `linear = (uint32_t)id * PAGE_SIZE + off`.
-   Free-stack stores page_ids using the new encoding.
-3. `mem_region.c`: `mem_region_page_linear()` = `id * PAGE_SIZE`.
-   `mem_region_ptr_to_page()` = `(uintptr_t)ptr / PAGE_SIZE`.
-4. `proc.h`: `user_pages[USER_PAGES_MAX]` element size changes
-   per arch (1/2/4 bytes).  `user_to_page()` simplifies to
-   `(page_id_t)((uint32_t)user_addr / PAGE_SIZE)`.
-5. All code using `PAGE_ID_INVALID` comparisons: unchanged in
-   logic, but the constant value changes per arch.
-6. Page pool init: free-stack entries computed as
-   `(pool_base / PAGE_SIZE) + i` instead of bare `i`.
-
-**Status**: Not done.  The typedef change alone (arch-specific
-width, pool-relative indexing unchanged) passes all ARM tests.
-The `page_linear[]` removal + absolute encoding causes a crash:
-PID 0's saved context zeroes out during user-space exec.  Kernel
-tests pass (46 pages allocated, no overlap).  The crash occurs
-deterministically after 3 user-space execs.  Root cause TBD.
-
-Committed so far: typedef is uint16_t (unchanged), ARM kernel
-region bumped to 24 KB to accommodate the eventual uint32_t growth,
-`user_to_page()` added to proc.h with pool-relative signature.
-
-**Verification**: all existing tests must pass on ARM and m68k.
-pcxt must build.  The page_id encoding is an internal detail —
-no user-visible ABI change.
+4. **`--test pcxt` in run.sh** — integrate with existing test harness.
 
 ### 8.1 User-Space Memory Access (`user_to_page`)
 
@@ -927,7 +868,6 @@ reference (committed in `proc.h`):
 ```c
 typedef struct { page_id_t page; uint16_t off; } user_page_ref_t;
 
-/* Current (pool-relative) — will simplify after §8.0 */
 static inline user_page_ref_t user_to_page(page_id_t base,
                                            uint32_t user_off) {
   user_page_ref_t ref;
@@ -935,25 +875,18 @@ static inline user_page_ref_t user_to_page(page_id_t base,
   ref.off  = (uint16_t)(user_off % PAGE_SIZE);
   return ref;
 }
-
-/* After §8.0 (absolute page_id): */
-static inline user_page_ref_t user_to_page(uint32_t linear) {
-  return (user_page_ref_t){
-    (page_id_t)(linear / PAGE_SIZE),
-    (uint16_t)(linear % PAGE_SIZE)
-  };
-}
 ```
 
-With pool-relative page_ids (current), the caller passes
-`proc_page_backed_base(current)` as `base` and a process-relative
-offset as `user_off`.  After §8.0, the helper takes a single
-linear address and the `base` parameter is eliminated.
+The caller passes the process's base page ID
+(`proc_page_backed_base(current)`) and a byte offset within the
+process's address space.
 
 - **i16**: `linear = user_ds * 16 + raw_arg` (DS derived from
-  process base page).
+  process base page).  The offset is relative to the process
+  segment base.
 - **32-bit flat (no MMU)**: `linear = (uint32_t)raw_arg` (already
-  a linear address).
+  a linear address).  The offset is computed as
+  `raw_arg - mem_region_page_linear(base_page)`.
 - **Future MMU targets**: page-table walk from virtual address.
 
 The resolution produces a `(page_id_t, uint16_t offset)` pair that
@@ -971,7 +904,7 @@ copies.  The same code path works on all architectures:
 
 ```c
 /* sys_write: resolve user buf, pass page ref to VFS */
-user_page_ref_t ref = user_to_page(current, user_buf_off);
+user_page_ref_t ref = user_to_page(base, user_buf_off);
 return mod_vfs.fd_write(desc, ref.page, ref.off, n);
 
 /* Inside tty_write (VFS module): */
@@ -993,7 +926,7 @@ char *`).  The copy uses `mem_region_page_read` directly:
 ```c
 /* sys_open: read path from user page into kernel stack */
 char kpath[VFS_PATH_MAX];
-user_page_ref_t ref = user_to_page(current, user_path_off);
+user_page_ref_t ref = user_to_page(base, user_path_off);
 /* read across page boundaries in chunks */
 mem_region_page_read(ref.page, ref.off, kpath, n);
 int desc = mod_vfs.fd_open(kpath, flags, mode);
@@ -1009,7 +942,7 @@ the user page via `mem_region_page_write`:
 /* sys_getcwd: fill kernel buf, write to user page */
 char kbuf[64];
 memcpy(kbuf, current->cwd, len + 1);
-user_page_ref_t ref = user_to_page(current, user_buf_off);
+user_page_ref_t ref = user_to_page(base, user_buf_off);
 mem_region_page_write(ref.page, ref.off, kbuf, len + 1);
 ```
 
@@ -1035,17 +968,15 @@ arguments via `user_to_page`.
 
 #### Migration order
 
-1. Add `user_page_ref_t` and `user_to_page()` inline helper
-   (in `proc.h`, no new files).
-2. Change `fd_read`/`fd_write` VFS API to accept `page_id_t` +
+1. Change `fd_read`/`fd_write` VFS API to accept `page_id_t` +
    `uint16_t offset` instead of `char *`.  Update tty, pipe, tmpfs,
    romfs, devfs, ufs implementations.
-3. Convert `sys_write` / `sys_read` to use `user_to_page`.
-4. Convert path syscalls (page_read into kernel stack buffer).
-5. Convert struct-output syscalls (page_write from kernel stack).
-6. Remove `read_user_byte` from arch.h.
-7. Remove per-syscall pointer switch from `i16_syscall_dispatch`.
-8. Remove `(void *)(uintptr_t)` casts from `syscall_dispatch`.
+2. Convert `sys_write` / `sys_read` to use `user_to_page`.
+3. Convert path syscalls (page_read into kernel stack buffer).
+4. Convert struct-output syscalls (page_write from kernel stack).
+5. Remove `read_user_byte` from arch.h.
+6. Remove per-syscall pointer switch from `i16_syscall_dispatch`.
+7. Remove `(void *)(uintptr_t)` casts from `syscall_dispatch`.
 
 ---
 
