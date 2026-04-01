@@ -158,7 +158,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_vfork(frame);
       break;
     case SYS_PTRACE:
-      ret = sys_ptrace(a0, a1, (void *)(uintptr_t)a2, (void *)(uintptr_t)a3);
+      ret = sys_ptrace(a0, a1, (uintptr_t)a2, (uintptr_t)a3);
       break;
     case SYS_CLONE: /* musl's _Fork() uses clone(SIGCHLD, 0) */
       if (a0 == SIGCHLD_NR && a1 == 0)
@@ -167,7 +167,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
         ret = -(long)ENOSYS;
       break;
     case SYS_SET_TID_ADDRESS:
-      ret = sys_set_tid_address((void *)(uintptr_t)a0);
+      ret = sys_set_tid_address((uintptr_t)a0);
       break;
     case SYS_UNAME:
       ret = sys_uname((uintptr_t)a0);

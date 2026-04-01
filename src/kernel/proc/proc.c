@@ -55,6 +55,7 @@ void proc_init(void) {
     __builtin_memset(&proc_table[i], 0, sizeof(pcb_t));
     proc_table[i].state = PROC_FREE;
     proc_table[i].stack_page_id = PAGE_ID_INVALID;
+    proc_table[i].clear_child_tid = user_page_ref_invalid();
     for (uint32_t j = 0; j < USER_PAGES_MAX; j++)
       proc_table[i].user_pages[j] = PAGE_ID_INVALID;
   }
@@ -109,6 +110,7 @@ pcb_t *proc_alloc(void) {
       __builtin_memset(&proc_table[i], 0, sizeof(pcb_t));
       proc_table[i].pid = next_pid++;
       proc_table[i].stack_page_id = PAGE_ID_INVALID;
+      proc_table[i].clear_child_tid = user_page_ref_invalid();
       for (uint32_t j = 0; j < USER_PAGES_MAX; j++)
         proc_table[i].user_pages[j] = PAGE_ID_INVALID;
       proc_table[i].umask_val = DEFAULT_UMASK;

@@ -1152,12 +1152,27 @@ void trace_exec_stop(void) {
 
 #if defined(__ia16__)
 /* Stub — ptrace not supported on i16 (saves ~4 KB text) */
-long sys_ptrace(long req, long pid, void *addr, void *data) {
-  (void)req; (void)pid; (void)addr; (void)data;
+long sys_ptrace(long req, long pid, uintptr_t addr, uintptr_t data_ptr) {
+  (void)req;
+  (void)pid;
+  (void)addr;
+  (void)data_ptr;
   return -(long)ENOSYS;
 }
 #else
-long sys_ptrace(long req, long pid, void *addr, void *data) {
+static long ptrace_copy_in(void *dst, uintptr_t user_ptr, size_t len) {
+  if (user_ptr == 0u) return -(long)EINVAL;
+  if (sys_copy_from_user(dst, user_ptr, len) < 0) return -(long)EFAULT;
+  return 0;
+}
+
+static long ptrace_copy_out(uintptr_t user_ptr, const void *src, size_t len) {
+  if (user_ptr == 0u) return -(long)EINVAL;
+  if (sys_copy_to_user(user_ptr, src, len) < 0) return -(long)EFAULT;
+  return 0;
+}
+
+long sys_ptrace(long req, long pid, uintptr_t addr, uintptr_t data_ptr) {
   if (req == PTRACE_TRACEME) {
     if (current->tracer_pid != 0 || current->trace_requested)
       return -(long)EPERM;
@@ -1199,49 +1214,89 @@ long sys_ptrace(long req, long pid, void *addr, void *data) {
   if (!target) return -(long)ESRCH;
 
   switch (req) {
-    case PTRACE_GETEVENT:
-      if (!data) return -(long)EINVAL;
-      *(struct ppap_ptrace_event *)data = target->trace_event;
-      return 0;
-    case PTRACE_PEEKDATA:
-      if (!data) return -(long)EINVAL;
-      return trace_read32(target, (uint32_t)(uintptr_t)addr, (uint32_t *)data);
-    case PTRACE_POKEDATA:
-      if (!data) return -(long)EINVAL;
-      return trace_write32(target, (uint32_t)(uintptr_t)addr,
-                           *(const uint32_t *)data);
-    case PTRACE_GETREGS:
-      if (!data) return -(long)EINVAL;
-      return trace_fill_regs(target, (struct ppap_ptrace_regs *)data);
-    case PTRACE_SETREGS:
-      if (!data) return -(long)EINVAL;
-      {
-        int rc =
-            trace_store_regs(target, (const struct ppap_ptrace_regs *)data);
-        if (rc == 0) target->trace_swbp_skip_once = 0;
-        return rc;
-      }
-    case PTRACE_GETCAPS:
-      if (!data) return -(long)EINVAL;
-      return trace_fill_caps(target, (struct ppap_ptrace_caps *)data);
-    case PTRACE_GETSURFACE:
-      if (!data) return -(long)EINVAL;
-      *(uint32_t *)data = trace_active_surface_for(target);
-      return 0;
+    case PTRACE_GETEVENT: {
+      struct ppap_ptrace_event event = target->trace_event;
+
+      return ptrace_copy_out(data_ptr, &event, sizeof(event));
+    }
+    case PTRACE_PEEKDATA: {
+      uint32_t word;
+      int rc;
+
+      if (data_ptr == 0u) return -(long)EINVAL;
+      rc = trace_read32(target, (uint32_t)addr, &word);
+      if (rc < 0) return rc;
+      return ptrace_copy_out(data_ptr, &word, sizeof(word));
+    }
+    case PTRACE_POKEDATA: {
+      uint32_t word;
+      long rc = ptrace_copy_in(&word, data_ptr, sizeof(word));
+
+      if (rc < 0) return rc;
+      return trace_write32(target, (uint32_t)addr, word);
+    }
+    case PTRACE_GETREGS: {
+      struct ppap_ptrace_regs regs;
+      int rc = trace_fill_regs(target, &regs);
+
+      if (rc < 0) return rc;
+      return ptrace_copy_out(data_ptr, &regs, sizeof(regs));
+    }
+    case PTRACE_SETREGS: {
+      struct ppap_ptrace_regs regs;
+      long rc = ptrace_copy_in(&regs, data_ptr, sizeof(regs));
+
+      if (rc < 0) return rc;
+      rc = trace_store_regs(target, &regs);
+      if (rc == 0) target->trace_swbp_skip_once = 0;
+      return rc;
+    }
+    case PTRACE_GETCAPS: {
+      struct ppap_ptrace_caps caps;
+      int rc = trace_fill_caps(target, &caps);
+
+      if (rc < 0) return rc;
+      return ptrace_copy_out(data_ptr, &caps, sizeof(caps));
+    }
+    case PTRACE_GETSURFACE: {
+      uint32_t surface = trace_active_surface_for(target);
+
+      return ptrace_copy_out(data_ptr, &surface, sizeof(surface));
+    }
     case PTRACE_SETSURFACE:
-      return trace_set_surface(target, (uint32_t)(uintptr_t)addr);
+      return trace_set_surface(target, (uint32_t)addr);
     case PTRACE_SETMODE: {
-      uint8_t mode = (uint8_t)(uintptr_t)addr;
+      uint8_t mode = (uint8_t)addr;
       if (mode & (uint8_t)~TRACE_MODE_MASK) return -(long)EINVAL;
       trace_reset_mode_state(target, mode);
       return 0;
     }
-    case PTRACE_SETBP:
-      if (!data) return -(long)EINVAL;
-      return trace_set_bp(target, (struct ppap_ptrace_bp *)data);
-    case PTRACE_CLRBP:
-      if (!data) return -(long)EINVAL;
-      return trace_clr_bp(target, (struct ppap_ptrace_bp *)data);
+    case PTRACE_SETBP: {
+      struct ppap_ptrace_bp bp;
+      int rc;
+
+      if (data_ptr == 0u) return -(long)EINVAL;
+      if (sys_copy_from_user(&bp, data_ptr, sizeof(bp)) < 0)
+        return -(long)EFAULT;
+      rc = trace_set_bp(target, &bp);
+      if (rc < 0) return rc;
+      if (sys_copy_to_user(data_ptr, &bp, sizeof(bp)) < 0)
+        return -(long)EFAULT;
+      return rc;
+    }
+    case PTRACE_CLRBP: {
+      struct ppap_ptrace_bp bp;
+      int rc;
+
+      if (data_ptr == 0u) return -(long)EINVAL;
+      if (sys_copy_from_user(&bp, data_ptr, sizeof(bp)) < 0)
+        return -(long)EFAULT;
+      rc = trace_clr_bp(target, &bp);
+      if (rc < 0) return rc;
+      if (sys_copy_to_user(data_ptr, &bp, sizeof(bp)) < 0)
+        return -(long)EFAULT;
+      return rc;
+    }
     case PTRACE_SINGLESTEP:
       return trace_request_single_step(target);
     case PTRACE_CONT:
@@ -1940,8 +1995,13 @@ long sys_execve(uintptr_t path_ptr, uintptr_t argv_ptr) {
 /* ── sys_set_tid_address ─────────────────────────────────────────────────────
  */
 
-long sys_set_tid_address(void *tidptr) {
-  current->clear_child_tid = (int *)tidptr;
+long sys_set_tid_address(uintptr_t tidptr) {
+  if (tidptr == 0u) {
+    current->clear_child_tid = user_page_ref_invalid();
+    return (long)current->pid;
+  }
+  if (proc_user_ptr_to_page_ref(current, tidptr, &current->clear_child_tid) < 0)
+    return -(long)EFAULT;
   return (long)current->pid;
 }
 

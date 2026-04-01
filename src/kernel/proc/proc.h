@@ -20,6 +20,7 @@
 
 #include <stdint.h>
 
+#include "arch/arch.h"
 #include "../common/spinlock.h" /* core_id() — needed by #define current */
 #include "../mm/mem_layout.h"
 #include "../mm/page.h"        /* page_id_t, PAGE_ID_INVALID */
@@ -81,7 +82,7 @@ typedef void (*sighandler_t)(int);
  * / mem_region_page_write.  This works on all architectures:
  *
  *   i16:  raw register value is DS-relative offset = process-relative
- *   flat: (linear address - process base) = process-relative offset
+ *   flat: page = mem_region_ptr_to_page(raw), off = raw & (PAGE_SIZE - 1)
  *   MMU:  future page-table walk
  *
  * user_to_page() takes the process's base page_id_t and a byte offset
@@ -96,6 +97,13 @@ typedef struct {
   page_id_t page;
   uint16_t off;
 } user_page_ref_t;
+
+static inline user_page_ref_t user_page_ref_invalid(void) {
+  user_page_ref_t ref;
+  ref.page = PAGE_ID_INVALID;
+  ref.off = 0;
+  return ref;
+}
 
 static inline user_page_ref_t user_to_page(page_id_t base,
                                            uint32_t user_off) {
@@ -201,8 +209,8 @@ typedef struct pcb {
   /* ── Process group / session (Phase 6 Step 7) ────────────────── */
   pid_t pgid;           /* process group ID                  */
   pid_t sid;            /* session ID                        */
-  uint32_t umask_val;   /* file creation mask (default 022)  */
-  int *clear_child_tid; /* set_tid_address pointer           */
+  uint32_t umask_val;              /* file creation mask (default 022)  */
+  user_page_ref_t clear_child_tid; /* set_tid_address reference         */
 
   /* ── m68k syscall restart (per-process, not global) ─────────── */
   uint8_t svc_needs_restart; /* set by blocking syscalls            */
@@ -307,6 +315,25 @@ int proc_track_page(pcb_t *p, uint32_t slot, page_id_t page_id);
 
 /* Return the first tracked page-backed page ID, or PAGE_ID_INVALID. */
 page_id_t proc_page_backed_base(const pcb_t *p);
+
+/* Resolve a raw user pointer to a page+offset reference for process p. */
+static inline int proc_user_ptr_to_page_ref(const pcb_t *p, uintptr_t user_ptr,
+                                            user_page_ref_t *ref) {
+  page_id_t base_page;
+
+  if (!p || !ref) return -1;
+  base_page = proc_page_backed_base(p);
+  if (base_page == PAGE_ID_INVALID) {
+    *ref = user_page_ref_invalid();
+    return -1;
+  }
+  ref->page = arch_user_ptr_to_page(base_page, user_ptr, &ref->off);
+  if (ref->page == PAGE_ID_INVALID) {
+    *ref = user_page_ref_invalid();
+    return -1;
+  }
+  return 0;
+}
 
 /* Return the last tracked page-backed page ID, or PAGE_ID_INVALID. */
 page_id_t proc_last_page_backed_base(const pcb_t *p);

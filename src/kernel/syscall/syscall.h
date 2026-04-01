@@ -69,12 +69,12 @@ long sys_getpid(void);
 long sys_execve(uintptr_t path_ptr, uintptr_t argv_ptr);
 long sys_vfork(uint32_t *frame);
 long sys_waitpid(long pid, long status_ptr, long options);
-long sys_set_tid_address(void *tidptr);
+long sys_set_tid_address(uintptr_t tidptr);
 long sys_uname(uintptr_t buf_ptr);
 long sys_setpgid(long pid, long pgid);
 long sys_setsid(void);
 long sys_wait4(long pid, long status_ptr, long options, uintptr_t rusage_ptr);
-long sys_ptrace(long req, long pid, void *addr, void *data);
+long sys_ptrace(long req, long pid, uintptr_t addr, uintptr_t data_ptr);
 int trace_before_syscall(uint32_t *frame, uint32_t nr, uint32_t a4,
                          uint32_t a5);
 void trace_after_syscall(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5,

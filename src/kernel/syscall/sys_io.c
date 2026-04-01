@@ -11,7 +11,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "arch/arch.h"
 #include "../common/errno.h"
 #include "../common/mod/mod_vfs.h"
 #include "../mm/mem_region.h"
@@ -46,15 +45,6 @@ struct syscall_winsize {
   uint16_t ws_ypixel;
 };
 
-int sys_user_ref_from_ptr(uintptr_t user_ptr, user_page_ref_t *ref) {
-  page_id_t base_page = proc_page_backed_base(current);
-
-  if (base_page == PAGE_ID_INVALID) return -(long)EFAULT;
-  ref->page = arch_user_ptr_to_page(base_page, user_ptr, &ref->off);
-  if (ref->page == PAGE_ID_INVALID) return -(long)EFAULT;
-  return 0;
-}
-
 static void sys_io_advance_ref(user_page_ref_t *ref, size_t delta) {
   size_t pos = (size_t)ref->off + delta;
 
@@ -79,7 +69,7 @@ static void sys_io_copy_from_user_ref(void *dst, user_page_ref_t *ref,
 
 int sys_copy_from_user(void *dst, uintptr_t user_ptr, size_t len) {
   user_page_ref_t ref;
-  int rc = sys_user_ref_from_ptr(user_ptr, &ref);
+  int rc = proc_user_ptr_to_page_ref(current, user_ptr, &ref);
 
   if (rc < 0) return rc;
   sys_io_copy_from_user_ref(dst, &ref, len);
@@ -89,7 +79,7 @@ int sys_copy_from_user(void *dst, uintptr_t user_ptr, size_t len) {
 int sys_copy_to_user(uintptr_t user_ptr, const void *src, size_t len) {
   user_page_ref_t ref;
   const uint8_t *in = (const uint8_t *)src;
-  int rc = sys_user_ref_from_ptr(user_ptr, &ref);
+  int rc = proc_user_ptr_to_page_ref(current, user_ptr, &ref);
 
   if (rc < 0) return rc;
   while (len > 0) {
@@ -109,7 +99,7 @@ int sys_copy_user_string(char *dst, size_t dst_size, uintptr_t user_ptr) {
   int rc;
 
   if (!dst || dst_size == 0) return -(long)EINVAL;
-  rc = sys_user_ref_from_ptr(user_ptr, &ref);
+  rc = proc_user_ptr_to_page_ref(current, user_ptr, &ref);
   if (rc < 0) return rc;
 
   for (size_t i = 0; i < dst_size; i++) {
@@ -134,7 +124,7 @@ long sys_write(long fd, uintptr_t user_ptr, size_t n) {
 
   if (desc < 0) return desc;
 
-  rc = sys_user_ref_from_ptr(user_ptr, &ref);
+  rc = proc_user_ptr_to_page_ref(current, user_ptr, &ref);
   if (rc < 0) return rc;
   return mod_vfs.fd_write((int)desc, ref.page, ref.off, n);
 }
@@ -146,7 +136,7 @@ long sys_read(long fd, uintptr_t user_ptr, size_t n) {
 
   if (desc < 0) return desc;
 
-  rc = sys_user_ref_from_ptr(user_ptr, &ref);
+  rc = proc_user_ptr_to_page_ref(current, user_ptr, &ref);
   if (rc < 0) return rc;
   return mod_vfs.fd_read((int)desc, ref.page, ref.off, n);
 }

@@ -875,9 +875,10 @@ syscall conversion is the remaining work.
   `uname`, `gettimeofday`, `clock_gettime*`, `nanosleep` /
   `clock_nanosleep*`, `ioctl`, `poll`, `ppoll`, and the realtime
   signal-struct syscalls are now on the shared copy-in / copy-out path.
-  The next remaining non-output raw-user-pointer cases are things like
-  `set_tid_address` and `ptrace`, which need their own handling rather
-  than more copy-back shims.
+  `set_tid_address` now stores a resolved `user_page_ref_t` instead of a
+  raw pointer, and `ptrace` now copies tracer-owned payloads through the
+  shared helpers while keeping tracee addresses as scalar control
+  values.
 - [x] Remove `SYS_READ` / `SYS_WRITE` pointer rewriting from
   `i16_syscall_dispatch` and then remove the remaining per-syscall pointer
   rewriting once all converted syscalls resolve their own user buffers.
