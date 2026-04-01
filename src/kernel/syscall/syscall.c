@@ -87,17 +87,16 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_write(a0, (uintptr_t)a1, (size_t)a2);
       break;
     case SYS_OPEN:
-      ret = sys_open((const char *)(uintptr_t)a0, a1, a2);
+      ret = sys_open((uintptr_t)a0, a1, a2);
       break;
     case SYS_CLOSE:
       ret = sys_close(a0);
       break;
     case SYS_EXECVE:
-      ret = sys_execve((const char *)(uintptr_t)a0,
-                       (const char *const *)(uintptr_t)a1);
+      ret = sys_execve((uintptr_t)a0, (uintptr_t)a1);
       break;
     case SYS_CHDIR:
-      ret = sys_chdir((const char *)(uintptr_t)a0);
+      ret = sys_chdir((uintptr_t)a0);
       break;
     case SYS_LSEEK:
       ret = sys_lseek(a0, a1, a2);
@@ -106,28 +105,28 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_getpid();
       break;
     case SYS_STAT:
-      ret = sys_stat((const char *)(uintptr_t)a0, (struct stat *)(uintptr_t)a1);
+      ret = sys_stat((uintptr_t)a0, (uintptr_t)a1);
       break;
     case SYS_FSTAT:
-      ret = sys_fstat(a0, (struct stat *)(uintptr_t)a1);
+      ret = sys_fstat(a0, (uintptr_t)a1);
       break;
     case SYS_GETDENTS:
-      ret = sys_getdents(a0, (struct dirent *)(uintptr_t)a1, (size_t)a2);
+      ret = sys_getdents(a0, (uintptr_t)a1, (size_t)a2);
       break;
     case SYS_NANOSLEEP:
-      ret = sys_nanosleep((void *)(uintptr_t)a0, (void *)(uintptr_t)a1);
+      ret = sys_nanosleep((uintptr_t)a0, (uintptr_t)a1);
       break;
     case SYS_WAITPID:
       ret = sys_waitpid(a0, a1, a2);
       break;
     case SYS_GETCWD:
-      ret = sys_getcwd((char *)(uintptr_t)a0, (size_t)a1);
+      ret = sys_getcwd((uintptr_t)a0, (size_t)a1);
       break;
     case SYS_DUP:
       ret = sys_dup(a0);
       break;
     case SYS_PIPE:
-      ret = sys_pipe((int *)(uintptr_t)a0);
+      ret = sys_pipe((uintptr_t)a0);
       break;
     case SYS_BRK:
       ret = sys_brk(a0);
@@ -145,10 +144,10 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_sigreturn();
       break;
     case SYS_UNLINK:
-      ret = sys_unlink((const char *)(uintptr_t)a0);
+      ret = sys_unlink((uintptr_t)a0);
       break;
     case SYS_MKDIR:
-      ret = sys_mkdir((const char *)(uintptr_t)a0, a1);
+      ret = sys_mkdir((uintptr_t)a0, a1);
       break;
     case SYS_VFORK:
       ret = sys_vfork(frame);
@@ -171,7 +170,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_set_tid_address((void *)(uintptr_t)a0);
       break;
     case SYS_UNAME:
-      ret = sys_uname((void *)(uintptr_t)a0);
+      ret = sys_uname((uintptr_t)a0);
       break;
     case SYS_WRITEV:
       ret = sys_writev(a0, (uintptr_t)a1, a2);
@@ -180,7 +179,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_readv(a0, (uintptr_t)a1, a2);
       break;
     case SYS_IOCTL:
-      ret = sys_ioctl(a0, a1, a2);
+      ret = sys_ioctl(a0, a1, (uintptr_t)a2);
       break;
     case SYS_MMAP2:
       ret = sys_mmap2((uint32_t)a0, (uint32_t)a1, (uint32_t)a2, (uint32_t)a3,
@@ -190,12 +189,10 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_munmap((uint32_t)a0, (uint32_t)a1);
       break;
     case SYS_RT_SIGACTION:
-      ret = sys_rt_sigaction(a0, (const void *)(uintptr_t)a1,
-                             (void *)(uintptr_t)a2, a3);
+      ret = sys_rt_sigaction(a0, (uintptr_t)a1, (uintptr_t)a2, a3);
       break;
     case SYS_RT_SIGPROCMASK:
-      ret = sys_rt_sigprocmask(a0, (const void *)(uintptr_t)a1,
-                               (void *)(uintptr_t)a2, a3);
+      ret = sys_rt_sigprocmask(a0, (uintptr_t)a1, (uintptr_t)a2, a3);
       break;
     case SYS_RT_SIGRETURN:
       ret = sys_rt_sigreturn();
@@ -204,28 +201,28 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_fcntl64(a0, a1, a2);
       break;
     case SYS_STAT64:
-      ret = sys_stat64((const char *)(uintptr_t)a0, (void *)(uintptr_t)a1);
+      ret = sys_stat64((uintptr_t)a0, (uintptr_t)a1);
       break;
     case SYS_FSTAT64:
-      ret = sys_fstat64(a0, (void *)(uintptr_t)a1);
+      ret = sys_fstat64(a0, (uintptr_t)a1);
       break;
     case SYS_LSTAT64:
-      ret = sys_lstat64((const char *)(uintptr_t)a0, (void *)(uintptr_t)a1);
+      ret = sys_lstat64((uintptr_t)a0, (uintptr_t)a1);
       break;
     case SYS_GETDENTS64:
-      ret = sys_getdents64(a0, (void *)(uintptr_t)a1, a2);
+      ret = sys_getdents64(a0, (uintptr_t)a1, a2);
       break;
     case SYS_WAIT4:
-      ret = sys_wait4(a0, a1, a2, (void *)(uintptr_t)a3);
+      ret = sys_wait4(a0, a1, a2, (uintptr_t)a3);
       break;
     case SYS_LLSEEK:
-      ret = sys_llseek(a0, a1, a2, (void *)(uintptr_t)a3, (long)a4);
+      ret = sys_llseek(a0, a1, a2, (uintptr_t)a3, (long)a4);
       break;
     case SYS_CLOCK_GETTIME32:
-      ret = sys_clock_gettime32(a0, (void *)(uintptr_t)a1);
+      ret = sys_clock_gettime32(a0, (uintptr_t)a1);
       break;
     case SYS_CLOCK_GETTIME64:
-      ret = sys_clock_gettime64(a0, (void *)(uintptr_t)a1);
+      ret = sys_clock_gettime64(a0, (uintptr_t)a1);
       break;
 
     /* ── P0: trivial return-0 stubs ─────────────────────────────────────── */
@@ -244,11 +241,10 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
 
     /* ── P1: interactive shell ──────────────────────────────────────────── */
     case SYS_ACCESS:
-      ret = sys_access((const char *)(uintptr_t)a0, a1);
+      ret = sys_access((uintptr_t)a0, a1);
       break;
     case SYS_READLINK:
-      ret =
-          sys_readlink((const char *)(uintptr_t)a0, (char *)(uintptr_t)a1, a2);
+      ret = sys_readlink((uintptr_t)a0, (uintptr_t)a1, a2);
       break;
     case SYS_GETPPID:
       ret = (long)current->ppid;
@@ -283,26 +279,24 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_umask(a0);
       break;
     case SYS_RMDIR:
-      ret = sys_rmdir((const char *)(uintptr_t)a0);
+      ret = sys_rmdir((uintptr_t)a0);
       break;
     case SYS_GETTIMEOFDAY:
-      ret = sys_gettimeofday((void *)(uintptr_t)a0, (void *)(uintptr_t)a1);
+      ret = sys_gettimeofday((uintptr_t)a0, (uintptr_t)a1);
       break;
     case SYS_CLOCK_NANOSLEEP32:
-      ret = sys_clock_nanosleep32(a0, a1, (const void *)(uintptr_t)a2,
-                                  (void *)(uintptr_t)a3);
+      ret = sys_clock_nanosleep32(a0, a1, (uintptr_t)a2, (uintptr_t)a3);
       break;
     case SYS_CLOCK_NANOSLEEP64:
-      ret = sys_clock_nanosleep64(a0, a1, (const void *)(uintptr_t)a2,
-                                  (void *)(uintptr_t)a3);
+      ret = sys_clock_nanosleep64(a0, a1, (uintptr_t)a2, (uintptr_t)a3);
       break;
     case SYS_OPENAT:
       /* AT_FDCWD fast-path: route to sys_open (path=a1, flags=a2, mode=a3) */
-      ret = sys_open((const char *)(uintptr_t)a1, a2, a3);
+      ret = sys_open((uintptr_t)a1, a2, a3);
       break;
     case SYS_FSTATAT64:
       /* AT_FDCWD fast-path: dirfd ignored, route to stat64/lstat64 */
-      ret = sys_stat64((const char *)(uintptr_t)a1, (void *)(uintptr_t)a2);
+      ret = sys_stat64((uintptr_t)a1, (uintptr_t)a2);
       break;
     case SYS_MREMAP:
       ret = -(long)ENOMEM; /* force malloc to mmap new region */
@@ -316,8 +310,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = 0; /* stub — no real permission model */
       break;
     case SYS_RENAME:
-      ret =
-          sys_rename((const char *)(uintptr_t)a0, (const char *)(uintptr_t)a1);
+      ret = sys_rename((uintptr_t)a0, (uintptr_t)a1);
       break;
     case SYS_LCHOWN:
     case SYS_FCHOWN:
@@ -338,29 +331,26 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
     /* ── P3: mount / umount / statfs ────────────────────────────────────────
      */
     case SYS_MOUNT:
-      ret = sys_mount((const char *)(uintptr_t)a0, (const char *)(uintptr_t)a1,
-                      (const char *)(uintptr_t)a2, a3,
+      ret = sys_mount((uintptr_t)a0, (uintptr_t)a1, (uintptr_t)a2, a3,
                       (const void *)(uintptr_t)a4);
       break;
     case SYS_UMOUNT2:
-      ret = sys_umount2((const char *)(uintptr_t)a0, a1);
+      ret = sys_umount2((uintptr_t)a0, a1);
       break;
     case SYS_STATFS64:
-      ret =
-          sys_statfs64((const char *)(uintptr_t)a0, a1, (void *)(uintptr_t)a2);
+      ret = sys_statfs64((uintptr_t)a0, a1, (uintptr_t)a2);
       break;
     case SYS_FSTATFS64:
-      ret = sys_fstatfs64(a0, a1, (void *)(uintptr_t)a2);
+      ret = sys_fstatfs64(a0, a1, (uintptr_t)a2);
       break;
 
     /* ── P4: poll / blocking I/O ─────────────────────────────────────────── */
     case SYS_POLL:
-      ret = sys_poll((void *)(uintptr_t)a0, (uint32_t)a1, a2);
+      ret = sys_poll((uintptr_t)a0, (uint32_t)a1, a2);
       break;
     case SYS_PPOLL:
-      ret = sys_ppoll((void *)(uintptr_t)a0, (uint32_t)a1,
-                      (const void *)(uintptr_t)a2, (const void *)(uintptr_t)a3,
-                      a4);
+      ret = sys_ppoll((uintptr_t)a0, (uint32_t)a1, (uintptr_t)a2,
+                      (uintptr_t)a3, a4);
       break;
 
     /* ── TLS: set/get_thread_area (m68k musl uses these for TLS) ──────── */

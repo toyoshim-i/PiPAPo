@@ -32,6 +32,13 @@
 #include "../subsys/subsys.h"
 #include "../syscall/syscall.h"
 
+struct kernel_sigaction {
+  uint32_t handler;
+  uint32_t flags;
+  uint32_t restorer;
+  uint32_t mask[2];
+};
+
 static int ctz32(uint32_t x) {
   int n = 0;
   if (!(x & 0xFFFF)) {
@@ -431,26 +438,32 @@ long sys_rt_sigreturn(void) { return -(long)ENOSYS; }
  *     unsigned long sa_mask[2];  // offset 12
  * };
  */
-long sys_rt_sigaction(long sig, const void *act, void *oact, long sigsetsize) {
+long sys_rt_sigaction(long sig, uintptr_t act_ptr, uintptr_t oact_ptr,
+                      long sigsetsize) {
+  struct kernel_sigaction user_act;
+  struct kernel_sigaction user_oact;
+  int rc;
   (void)sigsetsize;
 
   if (sig < 1 || sig >= NSIG) return -(long)EINVAL;
   if (sig == SIGKILL || sig == SIGSTOP) return -(long)EINVAL;
 
   /* Return old handler if requested */
-  if (oact) {
-    uint32_t *out = (uint32_t *)oact;
-    out[0] = (uint32_t)(uintptr_t)current->sig_handlers[sig];
-    out[1] = 0; /* sa_flags */
-    out[2] = 0; /* sa_restorer */
-    out[3] = 0; /* sa_mask[0] */
-    out[4] = 0; /* sa_mask[1] */
+  if (oact_ptr != 0u) {
+    user_oact.handler = (uint32_t)(uintptr_t)current->sig_handlers[sig];
+    user_oact.flags = 0;
+    user_oact.restorer = 0;
+    user_oact.mask[0] = 0;
+    user_oact.mask[1] = 0;
+    rc = sys_copy_to_user(oact_ptr, &user_oact, sizeof(user_oact));
+    if (rc < 0) return (long)rc;
   }
 
   /* Install new handler */
-  if (act) {
-    const uint32_t *in = (const uint32_t *)act;
-    current->sig_handlers[sig] = (sighandler_t)(uintptr_t)in[0];
+  if (act_ptr != 0u) {
+    rc = sys_copy_from_user(&user_act, act_ptr, sizeof(user_act));
+    if (rc < 0) return (long)rc;
+    current->sig_handlers[sig] = (sighandler_t)(uintptr_t)user_act.handler;
     /* sa_flags and sa_mask are noted but not fully supported yet */
   }
 
@@ -467,30 +480,36 @@ long sys_rt_sigaction(long sig, const void *act, void *oact, long sigsetsize) {
 #define SIG_UNBLOCK 1
 #define SIG_SETMASK 2
 
-long sys_rt_sigprocmask(long how, const void *set, void *oset,
+long sys_rt_sigprocmask(long how, uintptr_t set_ptr, uintptr_t oset_ptr,
                         long sigsetsize) {
-  (void)sigsetsize;
+  uint32_t user_set[2] = {0, 0};
+  uint32_t user_old[2] = {0, 0};
+  size_t mask_size = 4;
+  int rc;
+
+  if (sigsetsize >= 8) mask_size = 8;
 
   /* Return current mask if requested */
-  if (oset) {
-    uint32_t *out = (uint32_t *)oset;
-    out[0] = current->sig_blocked;
-    if (sigsetsize >= 8) out[1] = 0; /* high 32 bits — always 0 */
+  if (oset_ptr != 0u) {
+    user_old[0] = current->sig_blocked;
+    rc = sys_copy_to_user(oset_ptr, user_old, mask_size);
+    if (rc < 0) return (long)rc;
   }
 
-  if (!set) return 0;
+  if (set_ptr == 0u) return 0;
 
-  uint32_t mask = *(const uint32_t *)set;
+  rc = sys_copy_from_user(user_set, set_ptr, mask_size);
+  if (rc < 0) return (long)rc;
 
   switch (how) {
     case SIG_BLOCK:
-      current->sig_blocked |= mask;
+      current->sig_blocked |= user_set[0];
       break;
     case SIG_UNBLOCK:
-      current->sig_blocked &= ~mask;
+      current->sig_blocked &= ~user_set[0];
       break;
     case SIG_SETMASK:
-      current->sig_blocked = mask;
+      current->sig_blocked = user_set[0];
       break;
     default:
       return -(long)EINVAL;

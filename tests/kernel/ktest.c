@@ -43,6 +43,68 @@ static inline long ktest_sys_write(long fd, const void *buf, size_t n) {
     return sys_write(fd, (uintptr_t)buf, n);
 }
 
+static inline long ktest_sys_open(const char *path, long flags, long mode) {
+    return sys_open((uintptr_t)path, flags, mode);
+}
+
+static inline long ktest_sys_stat(const char *path, struct stat *buf) {
+    return sys_stat((uintptr_t)path, (uintptr_t)buf);
+}
+
+static inline long ktest_sys_getdents(long fd, struct dirent *buf, size_t count) {
+    return sys_getdents(fd, (uintptr_t)buf, count);
+}
+
+static inline long ktest_sys_getcwd(char *buf, size_t size) {
+    return sys_getcwd((uintptr_t)buf, size);
+}
+
+static inline long ktest_sys_pipe(int *fds) {
+    return sys_pipe((uintptr_t)fds);
+}
+
+static inline long ktest_sys_chdir(const char *path) {
+    return sys_chdir((uintptr_t)path);
+}
+
+static inline long ktest_sys_mkdir(const char *path, long mode) {
+    return sys_mkdir((uintptr_t)path, mode);
+}
+
+static inline long ktest_sys_unlink(const char *path) {
+    return sys_unlink((uintptr_t)path);
+}
+
+static inline long ktest_sys_nanosleep(const void *req, void *rem) {
+    return sys_nanosleep((uintptr_t)req, (uintptr_t)rem);
+}
+
+static inline long ktest_sys_ppoll(void *fds, uint32_t nfds, const void *timeout,
+                                   const void *sigmask, uint32_t sigsetsize) {
+    return sys_ppoll((uintptr_t)fds, nfds, (uintptr_t)timeout,
+                     (uintptr_t)sigmask, sigsetsize);
+}
+
+static inline long ktest_sys_ppoll_time64(void *fds, uint32_t nfds,
+                                          const void *timeout,
+                                          const void *sigmask,
+                                          uint32_t sigsetsize) {
+    return sys_ppoll_time64((uintptr_t)fds, nfds, (uintptr_t)timeout,
+                            (uintptr_t)sigmask, sigsetsize);
+}
+
+#define sys_open   ktest_sys_open
+#define sys_stat   ktest_sys_stat
+#define sys_getdents ktest_sys_getdents
+#define sys_getcwd ktest_sys_getcwd
+#define sys_pipe   ktest_sys_pipe
+#define sys_chdir  ktest_sys_chdir
+#define sys_mkdir  ktest_sys_mkdir
+#define sys_unlink ktest_sys_unlink
+#define sys_nanosleep ktest_sys_nanosleep
+#define sys_ppoll ktest_sys_ppoll
+#define sys_ppoll_time64 ktest_sys_ppoll_time64
+
 static void test_report(const char *name, int ok)
 {
     klogf("TEST: %s ... %s\n", name, ok ? "PASS" : "FAIL");

@@ -26,18 +26,15 @@
 
 /* struct pollfd is now in common/poll.h, included via file.h */
 
-/* Convert timespec to ticks.  Returns 0 for zero timeout, UINT32_MAX
- * for negative/overflow. */
-static uint32_t ts32_to_ticks(const void *ts_ptr) {
-  const long *ts = (const long *)ts_ptr;
+/* Convert timespec to ticks.  Returns 0 for zero timeout. */
+static uint32_t ts32_to_ticks(const long *ts) {
   if (ts[0] < 0) return 0;
   uint32_t ticks = (uint32_t)ts[0] * PPAP_TICK_HZ +
                    (uint32_t)ts[1] / (1000000000u / PPAP_TICK_HZ);
   return ticks;
 }
 
-static uint32_t ts64_to_ticks(const void *ts_ptr) {
-  const int64_t *ts = (const int64_t *)ts_ptr;
+static uint32_t ts64_to_ticks(const int64_t *ts) {
   if (ts[0] < 0) return 0;
   uint32_t ticks = (uint32_t)ts[0] * PPAP_TICK_HZ +
                    (uint32_t)ts[1] / (1000000000u / PPAP_TICK_HZ);
@@ -125,12 +122,26 @@ static long do_ppoll(struct pollfd *fds, uint32_t nfds, uint32_t timeout_ticks,
  *   timeout_ms == 0 → non-blocking
  *   timeout_ms > 0  → wait up to timeout_ms milliseconds
  */
-long sys_poll(void *fds, uint32_t nfds, long timeout_ms) {
+long sys_poll(uintptr_t fds_ptr, uint32_t nfds, long timeout_ms) {
+  struct pollfd local_fds[FD_MAX];
   int has_timeout = (timeout_ms >= 0);
   uint32_t ticks = 0;
-  if (timeout_ms > 0) ticks = (uint32_t)timeout_ms * PPAP_TICK_HZ / 1000u;
+  int rc;
 
-  return do_ppoll((struct pollfd *)fds, nfds, ticks, has_timeout);
+  if (timeout_ms > 0) ticks = (uint32_t)timeout_ms * PPAP_TICK_HZ / 1000u;
+  if (nfds > (uint32_t)FD_MAX) nfds = (uint32_t)FD_MAX;
+  if (nfds > 0) {
+    if (fds_ptr == 0u) return -(long)EINVAL;
+    rc = sys_copy_from_user(local_fds, fds_ptr, nfds * sizeof(local_fds[0]));
+    if (rc < 0) return (long)rc;
+  }
+
+  rc = (int)do_ppoll(local_fds, nfds, ticks, has_timeout);
+  if (nfds > 0) {
+    int copy_rc = sys_copy_to_user(fds_ptr, local_fds, nfds * sizeof(local_fds[0]));
+    if (copy_rc < 0) return (long)copy_rc;
+  }
+  return (long)rc;
 }
 
 /* ── sys_ppoll (SYS_PPOLL = 336) ────────────────────────────────────────────
@@ -139,16 +150,35 @@ long sys_poll(void *fds, uint32_t nfds, long timeout_ms) {
  * ppoll(fds, nfds, timeout_ts, sigmask, sigsetsize)
  * timeout_ts: 32-bit struct timespec { long tv_sec; long tv_nsec; }
  */
-long sys_ppoll(void *fds, uint32_t nfds, const void *timeout,
-               const void *sigmask, uint32_t sigsetsize) {
-  (void)sigmask;
+long sys_ppoll(uintptr_t fds_ptr, uint32_t nfds, uintptr_t timeout_ptr,
+               uintptr_t sigmask_ptr, uint32_t sigsetsize) {
+  struct pollfd local_fds[FD_MAX];
+  long timeout[2];
+  int rc;
+
+  (void)sigmask_ptr;
   (void)sigsetsize;
 
-  int has_timeout = (timeout != NULL);
+  int has_timeout = (timeout_ptr != 0u);
   uint32_t ticks = 0;
-  if (has_timeout) ticks = ts32_to_ticks(timeout);
+  if (nfds > (uint32_t)FD_MAX) nfds = (uint32_t)FD_MAX;
+  if (nfds > 0) {
+    if (fds_ptr == 0u) return -(long)EINVAL;
+    rc = sys_copy_from_user(local_fds, fds_ptr, nfds * sizeof(local_fds[0]));
+    if (rc < 0) return (long)rc;
+  }
+  if (has_timeout) {
+    rc = sys_copy_from_user(timeout, timeout_ptr, sizeof(timeout));
+    if (rc < 0) return (long)rc;
+    ticks = ts32_to_ticks(timeout);
+  }
 
-  return do_ppoll((struct pollfd *)fds, nfds, ticks, has_timeout);
+  rc = (int)do_ppoll(local_fds, nfds, ticks, has_timeout);
+  if (nfds > 0) {
+    int copy_rc = sys_copy_to_user(fds_ptr, local_fds, nfds * sizeof(local_fds[0]));
+    if (copy_rc < 0) return (long)copy_rc;
+  }
+  return (long)rc;
 }
 
 /* ── sys_ppoll_time64 (SYS_PPOLL_TIME64 = 414) ───────────────────────────── */
@@ -156,14 +186,33 @@ long sys_ppoll(void *fds, uint32_t nfds, const void *timeout,
  * ppoll_time64(fds, nfds, timeout_ts64, sigmask, sigsetsize)
  * timeout_ts64: 64-bit struct timespec { int64_t tv_sec; int64_t tv_nsec; }
  */
-long sys_ppoll_time64(void *fds, uint32_t nfds, const void *timeout,
-                      const void *sigmask, uint32_t sigsetsize) {
-  (void)sigmask;
+long sys_ppoll_time64(uintptr_t fds_ptr, uint32_t nfds, uintptr_t timeout_ptr,
+                      uintptr_t sigmask_ptr, uint32_t sigsetsize) {
+  struct pollfd local_fds[FD_MAX];
+  int64_t timeout[2];
+  int rc;
+
+  (void)sigmask_ptr;
   (void)sigsetsize;
 
-  int has_timeout = (timeout != NULL);
+  int has_timeout = (timeout_ptr != 0u);
   uint32_t ticks = 0;
-  if (has_timeout) ticks = ts64_to_ticks(timeout);
+  if (nfds > (uint32_t)FD_MAX) nfds = (uint32_t)FD_MAX;
+  if (nfds > 0) {
+    if (fds_ptr == 0u) return -(long)EINVAL;
+    rc = sys_copy_from_user(local_fds, fds_ptr, nfds * sizeof(local_fds[0]));
+    if (rc < 0) return (long)rc;
+  }
+  if (has_timeout) {
+    rc = sys_copy_from_user(timeout, timeout_ptr, sizeof(timeout));
+    if (rc < 0) return (long)rc;
+    ticks = ts64_to_ticks(timeout);
+  }
 
-  return do_ppoll((struct pollfd *)fds, nfds, ticks, has_timeout);
+  rc = (int)do_ppoll(local_fds, nfds, ticks, has_timeout);
+  if (nfds > 0) {
+    int copy_rc = sys_copy_to_user(fds_ptr, local_fds, nfds * sizeof(local_fds[0]));
+    if (copy_rc < 0) return (long)copy_rc;
+  }
+  return (long)rc;
 }

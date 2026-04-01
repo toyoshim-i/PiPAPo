@@ -865,12 +865,18 @@ syscall conversion is the remaining work.
   `uint16_t off` directly.
 - [x] Convert `sys_writev` / `sys_readv` to the same user-buffer
   resolution path.
-- [ ] Convert path-based syscalls (`open`, `execve`, `chdir`, `mkdir`,
+- [x] Convert path-based syscalls (`open`, `execve`, `chdir`, `mkdir`,
   `unlink`, `rmdir`, `rename`, `readlink`, `mount`) to copy strings from
   user pages into kernel buffers.
 - [ ] Convert struct-output syscalls (`stat*`, `getdents*`, `getcwd`,
   `pipe`, `wait4`, `uname`, time syscalls, `ioctl`) to write results back
   with `mem_region_page_write`.
+  Current progress: `stat*`, `getdents*`, `getcwd`, `pipe`, `wait4`,
+  `uname`, `gettimeofday`, `clock_gettime*`, `nanosleep` /
+  `clock_nanosleep*`, `ioctl`, `poll`, `ppoll`, and the realtime
+  signal-struct syscalls are now on the shared copy-in / copy-out path.
+  Remaining gaps are the optional / not-yet-supported outputs such as
+  `nanosleep(rem)` and `wait4(rusage)`.
 - [x] Remove `SYS_READ` / `SYS_WRITE` pointer rewriting from
   `i16_syscall_dispatch` and then remove the remaining per-syscall pointer
   rewriting once all converted syscalls resolve their own user buffers.
@@ -927,6 +933,13 @@ Current status:
   / `fd_write` are page-based.
 - `tty.c`, `pipe.c`, and vnode-backed files now all consume those page
   references directly.
+- Path-string syscalls now copy their inputs through the same helpers
+  before calling VFS / exec.
+- `stat*`, `getdents*`, `getcwd`, `pipe`, `wait4`, `uname`, and the basic
+  time syscalls now write results back with the same user-page helpers.
+- `ioctl`, `poll`, `ppoll`, `rt_sigaction`, and `rt_sigprocmask` now
+  copy their small argument / result structs through the same helpers
+  instead of dereferencing raw user pointers.
 - Kernel callers with ordinary linear buffers can now convert the original
   pointer to `(page_id_t, uint16_t off)` and use the same fd / vnode path
   without a hidden bounce layer.

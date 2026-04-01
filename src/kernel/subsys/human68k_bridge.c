@@ -511,7 +511,7 @@ static int dos_create(uint32_t *regs, uint32_t usp) {
     return 2;
   }
   H68K_TRACE("_CREATE(%s)", path);
-  long r = sys_open(path, O_CREAT | O_TRUNC | O_WRONLY, 0644);
+  long r = sys_open((uintptr_t)path, O_CREAT | O_TRUNC | O_WRONLY, 0644);
   regs[0] = (uint32_t)h68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -546,7 +546,7 @@ static int dos_open(uint32_t *regs, uint32_t usp) {
       flags = O_RDWR;
       break;
   }
-  long r = sys_open(path, flags, 0644);
+  long r = sys_open((uintptr_t)path, flags, 0644);
   regs[0] = (uint32_t)h68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -613,7 +613,7 @@ static int dos_delete(uint32_t *regs, uint32_t usp) {
     return 2;
   }
   H68K_TRACE("_DELETE(%s)", path);
-  long r = sys_unlink(path);
+  long r = sys_unlink((uintptr_t)path);
   regs[0] = (uint32_t)h68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -652,7 +652,7 @@ static int dos_chdir(uint32_t *regs, uint32_t usp) {
     return 2;
   }
   H68K_TRACE("_CHDIR(%s)", path);
-  long r = sys_chdir(path);
+  long r = sys_chdir((uintptr_t)path);
   regs[0] = (uint32_t)h68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -672,7 +672,7 @@ static int dos_curdir(uint32_t *regs, uint32_t usp) {
   (void)drive; /* single-drive system — ignore drive number */
 
   char cwd[128];
-  long r = sys_getcwd(cwd, sizeof(cwd));
+  long r = sys_getcwd((uintptr_t)cwd, sizeof(cwd));
   if (r < 0) {
     regs[0] = (uint32_t)h68k_errno(r);
     advance_pc(regs);
@@ -752,7 +752,7 @@ static int dos_rename(uint32_t *regs, uint32_t usp) {
   h68k_translate_path(old_src, old_path, sizeof(old_path));
   h68k_translate_path(new_src, new_path, sizeof(new_path));
   H68K_TRACE("_RENAME(%s, %s)", old_path, new_path);
-  long r = sys_rename(old_path, new_path);
+  long r = sys_rename((uintptr_t)old_path, (uintptr_t)new_path);
   regs[0] = (uint32_t)h68k_errno((int)r);
   advance_pc(regs);
   return 2;
@@ -1349,7 +1349,7 @@ static int dos_mkdir(uint32_t *regs, uint32_t usp) {
     return 2;
   }
   H68K_TRACE("_MKDIR(%s)", path);
-  long r = sys_mkdir(path, 0755);
+  long r = sys_mkdir((uintptr_t)path, 0755);
   regs[0] = (uint32_t)h68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -1370,7 +1370,7 @@ static int dos_rmdir(uint32_t *regs, uint32_t usp) {
     return 2;
   }
   H68K_TRACE("_RMDIR(%s)", path);
-  long r = sys_rmdir(path);
+  long r = sys_rmdir((uintptr_t)path);
   regs[0] = (uint32_t)h68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -1396,7 +1396,7 @@ static int dos_chmod(uint32_t *regs, uint32_t usp) {
   H68K_TRACE("_CHMOD(%x, %s)", (uint32_t)attr, path);
 
   struct stat st;
-  long r = sys_stat(path, &st);
+  long r = sys_stat((uintptr_t)path, (uintptr_t)&st);
   if (r < 0) {
     regs[0] = (uint32_t)h68k_errno(r);
     advance_pc(regs);
@@ -1496,7 +1496,7 @@ static void filbuf_fill(uint32_t filbuf, const char *dir_path,
     }
     fullpath[dlen + 1 + nlen] = '\0';
     struct stat st;
-    if (sys_stat(fullpath, &st) == 0) fsize = st.st_size;
+    if (sys_stat((uintptr_t)fullpath, (uintptr_t)&st) == 0) fsize = st.st_size;
   }
 
   fb[0x15] = attr;
@@ -1575,7 +1575,7 @@ static int dos_files(uint32_t *regs, uint32_t usp) {
   H68K_TRACE("_FILES: dir=%s pat=%s", dir, pattern);
 
   /* Open the directory */
-  long fd = sys_open(dir, O_RDONLY, 0);
+  long fd = sys_open((uintptr_t)dir, O_RDONLY, 0);
   if (fd < 0) {
     regs[0] = (uint32_t)h68k_errno(fd);
     advance_pc(regs);
@@ -1609,7 +1609,7 @@ static int dos_files(uint32_t *regs, uint32_t usp) {
   /* Read entries until we find one matching the pattern */
   struct dirent de;
   while (1) {
-    long n = sys_getdents(fd, &de, 1);
+    long n = sys_getdents(fd, (uintptr_t)&de, 1);
     if (n <= 0) {
       sys_close(fd);
       mem_write32(filbuf_addr, 0xFFFFFFFFu); /* mark closed */
@@ -1658,7 +1658,7 @@ static int dos_nfiles(uint32_t *regs, uint32_t usp) {
 
   struct dirent de;
   while (1) {
-    long n = sys_getdents((long)fd, &de, 1);
+    long n = sys_getdents((long)fd, (uintptr_t)&de, 1);
     if (n <= 0) {
       sys_close((long)fd);
       mem_write32(filbuf_addr, 0xFFFFFFFFu);

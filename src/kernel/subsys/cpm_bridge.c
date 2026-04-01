@@ -54,6 +54,18 @@ static long cpm_fd_write(long fd, const void *buf, size_t n) {
   return mod_vfs.fd_write((int)desc, page, off, n);
 }
 
+static int cpm_fd_poll(long fd) {
+  long desc = cpm_fd_desc(fd);
+  if (desc < 0) return (int)desc;
+  return mod_vfs.fd_poll((int)desc);
+}
+
+static int cpm_fd_ioctl(long fd, uint32_t cmd, void *arg) {
+  long desc = cpm_fd_desc(fd);
+  if (desc < 0) return (int)desc;
+  return mod_vfs.fd_ioctl((int)desc, cmd, arg);
+}
+
 /*
  * CP/M programs commonly emit ADM-3A (Lear Siegler) escape sequences.
  * Our fbcon implements VT100/ANSI CSI.  This translator sits in the
@@ -372,13 +384,13 @@ static uint8_t cpm_getchar(void) {
 }
 
 static int cpm_char_ready(void) {
-  struct pollfd pfd = {.fd = 0, .events = POLLIN, .revents = 0};
-  sys_poll(&pfd, 1, 0); /* non-blocking */
-  return (pfd.revents & POLLIN) ? 1 : 0;
+  int mask = cpm_fd_poll(0);
+  if (mask < 0) return 0;
+  return (mask & POLLIN) ? 1 : 0;
 }
 
 static int cpm_file_open(const char *path, int flags) {
-  return (int)sys_open(path, (long)flags, 0644);
+  return (int)sys_open((uintptr_t)path, (long)flags, 0644);
 }
 
 static int cpm_file_close(int fd) { return (int)sys_close((long)fd); }
@@ -395,10 +407,12 @@ static int cpm_file_seek(int fd, int offset, int whence) {
   return (int)sys_lseek((long)fd, (long)offset, (long)whence);
 }
 
-static int cpm_file_delete(const char *path) { return (int)sys_unlink(path); }
+static int cpm_file_delete(const char *path) {
+  return (int)sys_unlink((uintptr_t)path);
+}
 
 static int cpm_file_rename(const char *oldpath, const char *newpath) {
-  return (int)sys_rename(oldpath, newpath);
+  return (int)sys_rename((uintptr_t)oldpath, (uintptr_t)newpath);
 }
 
 /* Directory operations — stub for now (PPAP VFS doesn't have opendir yet) */
@@ -1498,7 +1512,7 @@ void cpm_run_process(void) {
       uint8_t line;
       uint8_t cc[19];
     } t;
-    sys_ioctl(0, 0x5401 /*TCGETS*/, (long)&t);
+    cpm_fd_ioctl(0, 0x5401 /*TCGETS*/, &t);
     cpm->saved_termios[0] = t.iflag;
     cpm->saved_termios[1] = t.oflag;
     cpm->saved_termios[2] = t.cflag;
@@ -1508,7 +1522,7 @@ void cpm_run_process(void) {
     cpm->termios_saved = 1;
     t.lflag &= ~0x000Au; /* clear ICANON (0x02) | ECHO (0x08) */
     t.iflag &= ~0x0100u; /* clear ICRNL */
-    sys_ioctl(0, 0x5402 /*TCSETS*/, (long)&t);
+    cpm_fd_ioctl(0, 0x5402 /*TCSETS*/, &t);
   }
 
   for (;;) {
@@ -1566,7 +1580,7 @@ static void cpm_on_exit(struct pcb *p) {
   t.lflag = cpm->saved_termios[3];
   t.line = (uint8_t)cpm->saved_termios[4];
   __builtin_memcpy(t.cc, cpm->saved_termios_cc, 19);
-  sys_ioctl(0, 0x5402 /*TCSETS*/, (long)&t);
+  cpm_fd_ioctl(0, 0x5402 /*TCSETS*/, &t);
   cpm->termios_saved = 0;
 }
 

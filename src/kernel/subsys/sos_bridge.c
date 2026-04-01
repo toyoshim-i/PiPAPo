@@ -61,6 +61,18 @@ static long sos_fd_write(long fd, const void *buf, size_t n) {
   return mod_vfs.fd_write((int)desc, page, off, n);
 }
 
+static int sos_fd_poll(long fd) {
+  long desc = sos_fd_desc(fd);
+  if (desc < 0) return (int)desc;
+  return mod_vfs.fd_poll((int)desc);
+}
+
+static int sos_fd_ioctl(long fd, uint32_t cmd, void *arg) {
+  long desc = sos_fd_desc(fd);
+  if (desc < 0) return (int)desc;
+  return mod_vfs.fd_ioctl((int)desc, cmd, arg);
+}
+
 static int hex2byte(const uint8_t *p) {
   int hi = hex_digit(p[0]);
   int lo = hex_digit(p[1]);
@@ -170,13 +182,13 @@ static uint8_t sos_getchar(void) {
 }
 
 static int sos_char_ready(void) {
-  struct pollfd pfd = {.fd = 0, .events = POLLIN, .revents = 0};
-  sys_poll(&pfd, 1, 0);
-  return (pfd.revents & POLLIN) ? 1 : 0;
+  int mask = sos_fd_poll(0);
+  if (mask < 0) return 0;
+  return (mask & POLLIN) ? 1 : 0;
 }
 
 static int sos_file_open(const char *path, int flags) {
-  return (int)sys_open(path, (long)flags, 0644);
+  return (int)sys_open((uintptr_t)path, (long)flags, 0644);
 }
 
 static int sos_file_close(int fd) { return (int)sys_close((long)fd); }
@@ -189,10 +201,12 @@ static int sos_file_write(int fd, const void *buf, int count) {
   return (int)sos_fd_write((long)fd, buf, (size_t)count);
 }
 
-static int sos_file_delete(const char *path) { return (int)sys_unlink(path); }
+static int sos_file_delete(const char *path) {
+  return (int)sys_unlink((uintptr_t)path);
+}
 
 static int sos_file_rename(const char *oldpath, const char *newpath) {
-  return (int)sys_rename(oldpath, newpath);
+  return (int)sys_rename((uintptr_t)oldpath, (uintptr_t)newpath);
 }
 
 /* ── Helper: read/write 16-bit LE from Z80 memory ────────────────────── */
@@ -1026,7 +1040,7 @@ void sos_run_process(void) {
       uint8_t line;
       uint8_t cc[19];
     } t;
-    sys_ioctl(0, 0x5401 /*TCGETS*/, (long)&t);
+    sos_fd_ioctl(0, 0x5401 /*TCGETS*/, &t);
     sos->saved_termios[0] = t.iflag;
     sos->saved_termios[1] = t.oflag;
     sos->saved_termios[2] = t.cflag;
@@ -1036,7 +1050,7 @@ void sos_run_process(void) {
     sos->termios_saved = 1;
     t.lflag &= ~0x000Au; /* clear ICANON | ECHO */
     t.iflag &= ~0x0100u; /* clear ICRNL */
-    sys_ioctl(0, 0x5402 /*TCSETS*/, (long)&t);
+    sos_fd_ioctl(0, 0x5402 /*TCSETS*/, &t);
   }
 
   /* Clear screen before running the S-OS program */
@@ -1170,7 +1184,7 @@ static void sos_on_exit(struct pcb *p) {
   t.lflag = sos->saved_termios[3];
   t.line = (uint8_t)sos->saved_termios[4];
   __builtin_memcpy(t.cc, sos->saved_termios_cc, 19);
-  sys_ioctl(0, 0x5402 /*TCSETS*/, (long)&t);
+  sos_fd_ioctl(0, 0x5402 /*TCSETS*/, &t);
   sos->termios_saved = 0;
 }
 

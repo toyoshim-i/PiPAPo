@@ -16,6 +16,7 @@
 #include "../common/errno.h"
 #include "../exec/exec.h"
 #include "../common/mod/mod_vfs.h"
+#include "../exec/exec.h"
 #include "../common/mod/mod_vfs.h"
 #include "../klog.h"
 #include "../mm/mem_region.h"
@@ -1730,8 +1731,9 @@ long sys_waitpid(long pid, long status_ptr, long options) {
 
   if (stopped) {
     if (status_ptr) {
-      int *sp = (int *)(uintptr_t)status_ptr;
-      *sp = W_STOPCODE(SIGTRAP);
+      int status = W_STOPCODE(SIGTRAP);
+      if (sys_copy_to_user((uintptr_t)status_ptr, &status, sizeof(status)) < 0)
+        return -(long)EFAULT;
     }
     stopped->trace_wait_pending = 0;
     return (long)stopped->pid;
@@ -1741,8 +1743,9 @@ long sys_waitpid(long pid, long status_ptr, long options) {
     pid_t cpid = zombie->pid;
 
     if (status_ptr) {
-      int *sp = (int *)(uintptr_t)status_ptr;
-      *sp = W_EXITCODE(zombie->exit_status);
+      int status = W_EXITCODE(zombie->exit_status);
+      if (sys_copy_to_user((uintptr_t)status_ptr, &status, sizeof(status)) < 0)
+        return -(long)EFAULT;
     }
 
     if (!zombie_is_child) {
@@ -1796,7 +1799,50 @@ long sys_waitpid(long pid, long status_ptr, long options) {
  * On success: never returns — the new program starts executing.
  * On failure: returns negative errno.
  */
-long sys_execve(const char *path, const char *const *argv) {
+#define EXEC_ARG_BYTES_MAX 1024u
+
+static int sys_execve_copy_user_argv(const char **argv_out,
+                                     char *arg_buf,
+                                     size_t arg_buf_size,
+                                     uintptr_t argv_ptr) {
+  size_t used = 0;
+
+  if (argv_ptr == 0u) return 0;
+
+  for (int i = 0; i < EXEC_ARGV_MAX; i++) {
+    uintptr_t arg_ptr;
+    int rc = sys_copy_from_user(&arg_ptr,
+                                argv_ptr + (uintptr_t)(i * sizeof(arg_ptr)),
+                                sizeof(arg_ptr));
+    size_t len;
+
+    if (rc < 0) return rc;
+    if (arg_ptr == 0u) {
+      argv_out[i] = NULL;
+      return 0;
+    }
+    rc = sys_copy_user_string(arg_buf + used, arg_buf_size - used, arg_ptr);
+    if (rc < 0) return (rc == -(long)ENAMETOOLONG) ? -(long)E2BIG : rc;
+    argv_out[i] = arg_buf + used;
+    len = __builtin_strlen(argv_out[i]) + 1;
+    used += len;
+    if (used >= arg_buf_size) return -(long)E2BIG;
+  }
+  return -(long)E2BIG;
+}
+
+long sys_execve(uintptr_t path_ptr, uintptr_t argv_ptr) {
+  char path[VFS_PATH_MAX];
+  const char *argv_copy[EXEC_ARGV_MAX + 1];
+  char argv_buf[EXEC_ARG_BYTES_MAX];
+  const char *const *argv = NULL;
+  int rc = sys_copy_user_string(path, sizeof(path), path_ptr);
+
+  if (rc < 0) return (long)rc;
+  rc = sys_execve_copy_user_argv(argv_copy, argv_buf, sizeof(argv_buf), argv_ptr);
+  if (rc < 0) return (long)rc;
+  if (argv_ptr != 0u) argv = argv_copy;
+
   /* Save old pages to free after successful load */
   page_id_t old_stack_id = current->stack_page_id;
   page_id_t old_user[USER_PAGES_MAX];
@@ -1908,11 +1954,14 @@ long sys_set_tid_address(void *tidptr) {
  */
 #define UTS_LEN 65
 
-long sys_uname(void *buf) {
-  if (!buf) return -(long)EINVAL;
+long sys_uname(uintptr_t buf_ptr) {
+  char out[UTS_LEN * 6];
+  char *p;
 
-  char *p = (char *)buf;
-  __builtin_memset(p, 0, UTS_LEN * 6);
+  if (buf_ptr == 0u) return -(long)EINVAL;
+
+  p = out;
+  __builtin_memset(p, 0, sizeof(out));
 
   /* sysname */
   const char *s = "PiPAPo";
@@ -1943,6 +1992,7 @@ long sys_uname(void *buf) {
   for (int i = 0; s[i] && i < UTS_LEN - 1; i++) p[i] = s[i];
   /* p += UTS_LEN; — domainname follows but we leave it zeroed */
 
+  if (sys_copy_to_user(buf_ptr, out, sizeof(out)) < 0) return -(long)EFAULT;
   return 0;
 }
 
@@ -1981,7 +2031,7 @@ long sys_setsid(void) {
 /* ── sys_wait4 ────────────────────────────────────────────────────────────────
  */
 
-long sys_wait4(long pid, long status_ptr, long options, void *rusage) {
-  (void)rusage; /* rusage not supported */
+long sys_wait4(long pid, long status_ptr, long options, uintptr_t rusage_ptr) {
+  (void)rusage_ptr; /* rusage not supported */
   return sys_waitpid(pid, status_ptr, options);
 }

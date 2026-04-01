@@ -66,14 +66,14 @@ void svc_set_restart(void);
 /* sys_proc.c */
 long sys_exit(long status);
 long sys_getpid(void);
-long sys_execve(const char *path, const char *const *argv);
+long sys_execve(uintptr_t path_ptr, uintptr_t argv_ptr);
 long sys_vfork(uint32_t *frame);
 long sys_waitpid(long pid, long status_ptr, long options);
 long sys_set_tid_address(void *tidptr);
-long sys_uname(void *buf);
+long sys_uname(uintptr_t buf_ptr);
 long sys_setpgid(long pid, long pgid);
 long sys_setsid(void);
-long sys_wait4(long pid, long status_ptr, long options, void *rusage);
+long sys_wait4(long pid, long status_ptr, long options, uintptr_t rusage_ptr);
 long sys_ptrace(long req, long pid, void *addr, void *data);
 int trace_before_syscall(uint32_t *frame, uint32_t nr, uint32_t a4,
                          uint32_t a5);
@@ -92,22 +92,27 @@ void trace_arm_hwbp_on_switch(const pcb_t *next);
 int trace_arm_hardfault_debug_stop(uint32_t *psp_frame);
 
 /* sys_io.c */
+int sys_copy_from_user(void *dst, uintptr_t user_ptr, size_t len);
+int sys_copy_to_user(uintptr_t user_ptr, const void *src, size_t len);
+int sys_copy_user_string(char *dst, size_t dst_size, uintptr_t user_ptr);
 long sys_read(long fd, uintptr_t user_ptr, size_t n);
 long sys_write(long fd, uintptr_t user_ptr, size_t n);
 long sys_writev(long fd, uintptr_t iov, long iovcnt);
 long sys_readv(long fd, uintptr_t iov, long iovcnt);
-long sys_ioctl(long fd, long cmd, long arg);
+long sys_ioctl(long fd, long cmd, uintptr_t arg_ptr);
 
 /* sys_time.c */
-long sys_nanosleep(void *req, void *rem);
-long sys_clock_gettime32(long clk_id, void *tp);
-long sys_clock_gettime64(long clk_id, void *tp);
-long sys_gettimeofday(void *tv, void *tz);
-long sys_clock_nanosleep32(long clk, long flags, const void *req, void *rem);
-long sys_clock_nanosleep64(long clk, long flags, const void *req, void *rem);
+long sys_nanosleep(uintptr_t req_ptr, uintptr_t rem_ptr);
+long sys_clock_gettime32(long clk_id, uintptr_t tp_ptr);
+long sys_clock_gettime64(long clk_id, uintptr_t tp_ptr);
+long sys_gettimeofday(uintptr_t tv_ptr, uintptr_t tz_ptr);
+long sys_clock_nanosleep32(long clk, long flags, uintptr_t req_ptr,
+                           uintptr_t rem_ptr);
+long sys_clock_nanosleep64(long clk, long flags, uintptr_t req_ptr,
+                           uintptr_t rem_ptr);
 
 /* fd/pipe.c */
-long sys_pipe(int *fds);
+long sys_pipe(uintptr_t fds_ptr);
 
 /* sys_mem.c */
 long sys_brk(long addr);
@@ -123,46 +128,49 @@ long sys_dup2(long oldfd, long newfd);
 long sys_kill(long pid, long sig);
 long sys_sigaction(long sig, long handler, long old_ptr);
 long sys_sigreturn(void);
-long sys_rt_sigaction(long sig, const void *act, void *oact, long sigsetsize);
-long sys_rt_sigprocmask(long how, const void *set, void *oset, long sigsetsize);
+long sys_rt_sigaction(long sig, uintptr_t act_ptr, uintptr_t oact_ptr,
+                      long sigsetsize);
+long sys_rt_sigprocmask(long how, uintptr_t set_ptr, uintptr_t oset_ptr,
+                        long sigsetsize);
 long sys_rt_sigreturn(void);
 
 /* sys_fs.c — VFS-routed file system calls */
 struct stat;
 struct dirent;
 void fd_pool_init(void);
-long sys_open(const char *path, long flags, long mode);
+long sys_open(uintptr_t path_ptr, long flags, long mode);
 long sys_close(long fd);
 long sys_lseek(long fd, long off, long whence);
-long sys_stat(const char *path, struct stat *buf);
-long sys_fstat(long fd, struct stat *buf);
-long sys_getdents(long fd, struct dirent *buf, size_t count);
-long sys_getcwd(char *buf, size_t size);
-long sys_chdir(const char *path);
-long sys_mkdir(const char *path, long mode);
-long sys_unlink(const char *path);
-long sys_stat64(const char *path, void *buf);
-long sys_fstat64(long fd, void *buf);
-long sys_lstat64(const char *path, void *buf);
-long sys_getdents64(long fd, void *buf, long count);
-long sys_llseek(long fd, long off_hi, long off_lo, void *result, long whence);
+long sys_stat(uintptr_t path_ptr, uintptr_t buf_ptr);
+long sys_fstat(long fd, uintptr_t buf_ptr);
+long sys_getdents(long fd, uintptr_t buf_ptr, size_t count);
+long sys_getcwd(uintptr_t buf_ptr, size_t size);
+long sys_chdir(uintptr_t path_ptr);
+long sys_mkdir(uintptr_t path_ptr, long mode);
+long sys_unlink(uintptr_t path_ptr);
+long sys_stat64(uintptr_t path_ptr, uintptr_t buf_ptr);
+long sys_fstat64(long fd, uintptr_t buf_ptr);
+long sys_lstat64(uintptr_t path_ptr, uintptr_t buf_ptr);
+long sys_getdents64(long fd, uintptr_t buf_ptr, long count);
+long sys_llseek(long fd, long off_hi, long off_lo, uintptr_t result_ptr,
+                long whence);
 long sys_fcntl64(long fd, long cmd, long arg);
-long sys_access(const char *path, long mode);
-long sys_readlink(const char *path, char *buf, long bufsiz);
-long sys_rmdir(const char *path);
-long sys_rename(const char *oldpath, const char *newpath);
+long sys_access(uintptr_t path_ptr, long mode);
+long sys_readlink(uintptr_t path_ptr, uintptr_t buf_ptr, long bufsiz);
+long sys_rmdir(uintptr_t path_ptr);
+long sys_rename(uintptr_t oldpath_ptr, uintptr_t newpath_ptr);
 long sys_umask(long mask);
-long sys_mount(const char *source, const char *target, const char *fstype,
+long sys_mount(uintptr_t source_ptr, uintptr_t target_ptr, uintptr_t fstype_ptr,
                long flags, const void *data);
-long sys_umount2(const char *target, long flags);
-long sys_statfs64(const char *path, long sz, void *buf);
-long sys_fstatfs64(long fd, long sz, void *buf);
+long sys_umount2(uintptr_t target_ptr, long flags);
+long sys_statfs64(uintptr_t path_ptr, long sz, uintptr_t buf_ptr);
+long sys_fstatfs64(long fd, long sz, uintptr_t buf_ptr);
 
 /* sys_poll.c */
-long sys_poll(void *fds, uint32_t nfds, long timeout_ms);
-long sys_ppoll(void *fds, uint32_t nfds, const void *timeout,
-               const void *sigmask, uint32_t sigsetsize);
-long sys_ppoll_time64(void *fds, uint32_t nfds, const void *timeout,
-                      const void *sigmask, uint32_t sigsetsize);
+long sys_poll(uintptr_t fds_ptr, uint32_t nfds, long timeout_ms);
+long sys_ppoll(uintptr_t fds_ptr, uint32_t nfds, uintptr_t timeout_ptr,
+               uintptr_t sigmask_ptr, uint32_t sigsetsize);
+long sys_ppoll_time64(uintptr_t fds_ptr, uint32_t nfds, uintptr_t timeout_ptr,
+                      uintptr_t sigmask_ptr, uint32_t sigsetsize);
 
 #endif /* PPAP_KERNEL_SYSCALL_SYSCALL_H */

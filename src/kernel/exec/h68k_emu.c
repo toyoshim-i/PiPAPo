@@ -390,7 +390,7 @@ int h68k_emu_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
             cpu->d[0] = (uint32_t)h68k_errno(err);
             return CPU_TRAP_HANDLED;
           }
-          cpu->d[0] = (uint32_t)h68k_errno(sys_mkdir(path, 0755));
+          cpu->d[0] = (uint32_t)h68k_errno(sys_mkdir((uintptr_t)path, 0755));
           return CPU_TRAP_HANDLED;
         }
 
@@ -402,7 +402,7 @@ int h68k_emu_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
             cpu->d[0] = (uint32_t)h68k_errno(err);
             return CPU_TRAP_HANDLED;
           }
-          cpu->d[0] = (uint32_t)h68k_errno(sys_rmdir(path));
+          cpu->d[0] = (uint32_t)h68k_errno(sys_rmdir((uintptr_t)path));
           return CPU_TRAP_HANDLED;
         }
 
@@ -414,7 +414,7 @@ int h68k_emu_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
             cpu->d[0] = (uint32_t)h68k_errno(err);
             return CPU_TRAP_HANDLED;
           }
-          cpu->d[0] = (uint32_t)h68k_errno(sys_chdir(path));
+          cpu->d[0] = (uint32_t)h68k_errno(sys_chdir((uintptr_t)path));
           return CPU_TRAP_HANDLED;
         }
 
@@ -427,7 +427,7 @@ int h68k_emu_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
             return CPU_TRAP_HANDLED;
           }
           cpu->d[0] = (uint32_t)h68k_errno(
-              sys_open(path, O_CREAT | O_TRUNC | O_WRONLY, 0644));
+              sys_open((uintptr_t)path, O_CREAT | O_TRUNC | O_WRONLY, 0644));
           return CPU_TRAP_HANDLED;
         }
 
@@ -451,7 +451,7 @@ int h68k_emu_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
               flags = O_RDWR;
               break;
           }
-          cpu->d[0] = (uint32_t)h68k_errno(sys_open(path, flags, 0644));
+          cpu->d[0] = (uint32_t)h68k_errno(sys_open((uintptr_t)path, flags, 0644));
           return CPU_TRAP_HANDLED;
         }
 
@@ -487,7 +487,7 @@ int h68k_emu_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
             cpu->d[0] = (uint32_t)h68k_errno(err);
             return CPU_TRAP_HANDLED;
           }
-          cpu->d[0] = (uint32_t)h68k_errno(sys_unlink(path));
+          cpu->d[0] = (uint32_t)h68k_errno(sys_unlink((uintptr_t)path));
           return CPU_TRAP_HANDLED;
         }
 
@@ -512,7 +512,7 @@ int h68k_emu_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
         case 0x47: { /* _CURDIR */
           uint32_t buf = h68k_emu_ustack_u32(cpu, 2);
           char cwd[128];
-          long r = sys_getcwd(cwd, sizeof(cwd));
+          long r = sys_getcwd((uintptr_t)cwd, sizeof(cwd));
           if (r < 0) {
             cpu->d[0] = (uint32_t)h68k_errno(r);
             return CPU_TRAP_HANDLED;
@@ -549,7 +549,8 @@ int h68k_emu_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
             cpu->d[0] = (uint32_t)h68k_errno(err);
             return CPU_TRAP_HANDLED;
           }
-          cpu->d[0] = (uint32_t)h68k_errno(sys_rename(old_path, new_path));
+          cpu->d[0] = (uint32_t)h68k_errno(
+              sys_rename((uintptr_t)old_path, (uintptr_t)new_path));
           return CPU_TRAP_HANDLED;
         }
 
