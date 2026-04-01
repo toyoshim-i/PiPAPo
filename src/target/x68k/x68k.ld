@@ -106,4 +106,10 @@ SECTIONS {
         __page_pool_start = .;
         /* Extends to end of physical RAM — detected at runtime */
     } > RAM
+
+    /* Sanity checks */
+    ASSERT((__stack_top <= __page_pool_start),
+           "ERROR: Kernel stack overflows into page pool")
+    ASSERT((__page_pool_start <= ORIGIN(RAM) + LENGTH(RAM)),
+           "ERROR: Kernel image too large — page pool outside RAM")
 }

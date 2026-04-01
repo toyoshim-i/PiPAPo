@@ -94,6 +94,12 @@ SECTIONS {
         __page_pool_end = .;
     } > RAM
 
+    /* Sanity checks */
+    ASSERT((__stack_top <= __page_pool_start),
+           "ERROR: Kernel stack overflows into page pool")
+    ASSERT((__stack_top <= ORIGIN(RAM) + LENGTH(RAM)),
+           "ERROR: Kernel data + bss + stack overflows RAM")
+
     /DISCARD/ : {
         *(.ARM.exidx*)
         *(.ARM.extab*)

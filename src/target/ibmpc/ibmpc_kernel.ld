@@ -61,6 +61,12 @@ SECTIONS
   . = ALIGN(4096);
   __page_pool_start = .;
 
+  /* Sanity checks */
+  ASSERT((__stack_top <= 0xA000),
+         "ERROR: Kernel stack overflows into VFS reserved area (0xA000)")
+  ASSERT((__page_pool_start <= 0x9FC00),
+         "ERROR: Page pool starts beyond conventional memory (640 KB)")
+
   /DISCARD/ : {
     *(.comment)
     *(.note.*)

@@ -132,6 +132,11 @@ SECTIONS {
     ASSERT((__stack_top <= ORIGIN(RAM_KERNEL) + LENGTH(RAM_KERNEL)),
            "ERROR: Kernel data + bss + stack overflow RAM_KERNEL (24KB)")
 
+    __flash_kernel_used = (LOADADDR(.ramfunc) + SIZEOF(.ramfunc)) - ORIGIN(FLASH_KERNEL);
+    __flash_kernel_free = LENGTH(FLASH_KERNEL) - __flash_kernel_used;
+    ASSERT((LOADADDR(.ramfunc) + SIZEOF(.ramfunc) <= ORIGIN(FLASH_KERNEL) + LENGTH(FLASH_KERNEL)),
+           "ERROR: Kernel text + data LMA overflows FLASH_KERNEL")
+
     .page_pool (NOLOAD) : {
         __page_pool_start = .;
         . += LENGTH(RAM_PAGES);

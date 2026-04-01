@@ -126,6 +126,20 @@ SECTIONS {
     } > RAM
 
 
+    /* ------------------------------------------------------------------
+     * Page pool — remainder of RAM available for page_alloc()
+     * ------------------------------------------------------------------ */
+    .page_pool (NOLOAD) : {
+        . = ALIGN(4096);
+        __page_pool_start = .;
+    } > RAM
+
+    /* Sanity checks */
+    ASSERT((__stack_top <= __page_pool_start),
+           "ERROR: Kernel stack overflows into page pool")
+    ASSERT((__stack_top <= ORIGIN(RAM) + LENGTH(RAM)),
+           "ERROR: Kernel data + bss + stack overflows RAM")
+
     /* Discard ARM unwind info (not needed) */
     /DISCARD/ : {
         *(.ARM.exidx*)
