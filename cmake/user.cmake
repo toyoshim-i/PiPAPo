@@ -274,6 +274,7 @@ set(PPAP_USER_LDFLAGS
     $<$<BOOL:${PPAP_RISCV_EPIC}>:-fuse-ld=${PPAP_LLD}>)
 if(PPAP_RISCV_EPIC)
     list(APPEND PPAP_USER_LDFLAGS
+        -Wl,--pie
         -Wl,--strip-debug --rtlib=compiler-rt
         -resource-dir ${_epic_bin_dir}/../lib/clang/16)
 endif()

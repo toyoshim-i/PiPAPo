@@ -736,17 +736,17 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, argv_sp);
     {
       uint32_t *sw = (uint32_t *)(uintptr_t)p->sp;
-      if (got_sram_addr && cpu_ops->arch_id != CPU_ARCH_XTENSA) {
-        /* ARM/RISC-V (GCC PIC): patch PIC register to GOT address.
-         * Xtensa: GOT via L32R (PC-relative literals), no register. */
+      if (got_sram_addr &&
+          (cpu_ops->arch_id == CPU_ARCH_ARM ||
+           cpu_ops->arch_id == CPU_ARCH_ARMV6)) {
+        /* ARM PIC uses r9 as the static base for GOT/data access. */
         sw[5] = got_sram_addr; /* ARM r9 */
       }
-      if (cpu_ops->arch_id == CPU_ARCH_RISCV && !got_sram_addr &&
-          ehdr->e_type == ET_DYN && res.load_base) {
-        /* RISC-V ePIC: ET_DYN (PIE) with no GOT — gp-relative data.
-         * Set gp = load_base so crt0 can bootstrap __global_pointer$.
-         * load_base = data_base - data_va, accounting for separate
-         * text/data allocations. */
+      if (cpu_ops->arch_id == CPU_ARCH_RISCV && res.load_base) {
+        /* RISC-V ePIC uses gp-relative addressing for data access.
+         * Seed x3/gp with the effective load base for both PIE and the
+         * current EXEC user binaries so gp + linked-address resolves
+         * into the SRAM-backed data region. */
         sw[1] = res.load_base;
       }
     }
