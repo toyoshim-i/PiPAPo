@@ -942,6 +942,9 @@ Current status:
 - `ioctl`, `poll`, `ppoll`, `rt_sigaction`, and `rt_sigprocmask` now
   copy their small argument / result structs through the same helpers
   instead of dereferencing raw user pointers.
+- `i16_syscall_dispatch` now passes raw register values through to the
+  shared syscall layer, and the dead `read_user_byte` shim has been
+  removed from `arch.h`.
 - Kernel callers with ordinary linear buffers can now convert the original
   pointer to `(page_id_t, uint16_t off)` and use the same fd / vnode path
   without a hidden bounce layer.
@@ -1036,7 +1039,7 @@ arguments via `user_to_page`.
 4. Convert struct-output syscalls (page_write from kernel stack).
 5. Remove `read_user_byte` from arch.h.
 6. Remove per-syscall pointer switch from `i16_syscall_dispatch`.
-7. Remove `(void *)(uintptr_t)` casts from `syscall_dispatch`.
+7. Remove obsolete pointer casts from `syscall_dispatch`.
 
 ---
 

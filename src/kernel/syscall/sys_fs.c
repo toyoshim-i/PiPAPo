@@ -675,7 +675,7 @@ long sys_umask(long mask) {
  */
 
 long sys_mount(uintptr_t source_ptr, uintptr_t target_ptr, uintptr_t fstype_ptr,
-               long flags, const void *data) {
+               long flags, uintptr_t data_ptr) {
   char source[VFS_PATH_MAX];
   char target[VFS_PATH_MAX];
   char fstype[VFS_NAME_MAX + 1];
@@ -691,7 +691,7 @@ long sys_mount(uintptr_t source_ptr, uintptr_t target_ptr, uintptr_t fstype_ptr,
   if (rc < 0) return (long)rc;
   rc = sys_copy_user_string(fstype, sizeof(fstype), fstype_ptr);
   if (rc < 0) return (long)rc;
-  (void)data;
+  (void)data_ptr;
   return (long)mod_vfs.mount_by_fstype(source_path, target, fstype, flags);
 }
 

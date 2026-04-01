@@ -95,16 +95,6 @@ static inline void arch_dsb_isb(void)
   __asm__ volatile ("" ::: "memory");  /* Compiler barrier only */
 }
 
-/* -- User-space byte read -----------------------------------------------
- *
- * Real mode: all memory is directly accessible.  Plain dereference.
- * ------------------------------------------------------------------- */
-
-static inline uint8_t read_user_byte(const uint8_t *ptr)
-{
-  return *ptr;
-}
-
 static inline page_id_t arch_user_ptr_to_page(page_id_t base_page,
                                               uintptr_t user_ptr,
                                               uint16_t *off)

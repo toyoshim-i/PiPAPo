@@ -332,7 +332,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
      */
     case SYS_MOUNT:
       ret = sys_mount((uintptr_t)a0, (uintptr_t)a1, (uintptr_t)a2, a3,
-                      (const void *)(uintptr_t)a4);
+                      (uintptr_t)a4);
       break;
     case SYS_UMOUNT2:
       ret = sys_umount2((uintptr_t)a0, a1);

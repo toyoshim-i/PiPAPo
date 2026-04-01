@@ -161,7 +161,7 @@ long sys_rmdir(uintptr_t path_ptr);
 long sys_rename(uintptr_t oldpath_ptr, uintptr_t newpath_ptr);
 long sys_umask(long mask);
 long sys_mount(uintptr_t source_ptr, uintptr_t target_ptr, uintptr_t fstype_ptr,
-               long flags, const void *data);
+               long flags, uintptr_t data_ptr);
 long sys_umount2(uintptr_t target_ptr, long flags);
 long sys_statfs64(uintptr_t path_ptr, long sz, uintptr_t buf_ptr);
 long sys_fstatfs64(long fd, long sz, uintptr_t buf_ptr);
