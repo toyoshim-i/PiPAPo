@@ -41,6 +41,10 @@
 #define TRACE_MODE_MASK \
   (PPAP_TRACE_MODE_PPAP_SYSCALL | PPAP_TRACE_MODE_SUBSYS_CALL)
 
+#if defined(__ia16__)
+extern volatile uint16_t i16_trap_frame_sp;
+#endif
+
 /* Release an image segment if it is OWNED (independently allocated).
  * Non-OWNED segments (XIP, sub-pointers into another allocation) are
  * just cleared.  Data regions are no longer OWNED — they are freed via
@@ -1525,10 +1529,26 @@ long sys_vfork(uint32_t *frame) {
    *    on the child's page as the parent's PSP frame.
    */
 #if defined(__ia16__)
-  /* TODO: i16 vfork — use mem_region_page_read for cross-segment copy */
+  /* i16: trap.S saves the real INT frame on the user stack, and
+   * i16_trap_frame_sp points at its ES slot. Recreate the child at the
+   * same frame offset inside the copied stack page so switch.S restores
+   * the child straight back to user mode via iret. */
   mem_region_page_read(current->stack_page_id, 0, stack, PAGE_SIZE);
-  uintptr_t frame_off = 0;
-  uint32_t *child_frame = (uint32_t *)stack;
+  uintptr_t parent_stack_base =
+      mem_region_page_linear(current->stack_page_id);
+  uintptr_t frame_off =
+      (uintptr_t)(uint16_t)i16_trap_frame_sp - parent_stack_base;
+  uint16_t *child_frame16;
+
+  if (frame_off + 24u > PAGE_SIZE) {
+    proc_release_stack_page(&stack);
+    child->stack_page_id = PAGE_ID_INVALID;
+    proc_free(child);
+    return -(long)EFAULT;
+  }
+
+  child_frame16 = (uint16_t *)((uint8_t *)stack + frame_off);
+  child_frame16[8] = 0; /* AX = 0 for child return from vfork */
 #else
   memcpy(stack, mem_region_page_to_ptr(current->stack_page_id), PAGE_SIZE);
 
@@ -1687,9 +1707,7 @@ long sys_vfork(uint32_t *frame) {
   }
 
 #elif defined(__ia16__)
-  /* TODO: i16 vfork frame setup for P-4 */
-  (void)child_frame;
-  child->sp = (uint32_t)(uintptr_t)((uint8_t *)stack + frame_off);
+  child->sp = (uint32_t)(uintptr_t)child_frame16;
 #else
 #error "sys_vfork: unsupported architecture — add child frame setup"
 #endif
