@@ -12,6 +12,7 @@
 #define PPAP_ARCH_XTENSA_ARCH_H
 
 #include <stdint.h>
+#include "../../kernel/mm/mem_region.h"
 #include "cpu.h"
 
 /* ── Interrupt save / restore ─────────────────────────────────────────────
@@ -135,6 +136,15 @@ static inline uint8_t read_user_byte(const uint8_t *ptr)
     uint32_t addr = (uint32_t)(uintptr_t)ptr;
     uint32_t word = *(volatile uint32_t *)(uintptr_t)(addr & ~3u);
     return (uint8_t)(word >> ((addr & 3u) * 8));
+}
+
+static inline page_id_t arch_user_ptr_to_page(page_id_t base_page,
+                                              uintptr_t user_ptr,
+                                              uint16_t *off)
+{
+    (void)base_page;
+    *off = (uint16_t)((uintptr_t)user_ptr & (PAGE_SIZE - 1u));
+    return mem_region_ptr_to_page((void *)(uintptr_t)user_ptr);
 }
 
 #endif /* PPAP_ARCH_XTENSA_ARCH_H */

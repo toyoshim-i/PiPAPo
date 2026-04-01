@@ -20,6 +20,7 @@
 #include "../common/errno.h"
 #include "../common/mod/mod_core.h"
 #include "../common/mod/mod_vfs.h"
+#include "../mm/mem_region.h"
 #include "../mm/page.h"
 #include "config.h"
 
@@ -144,7 +145,8 @@ static int tmpfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
   return -ENOENT;
 }
 
-static long tmpfs_read(vnode_t *vn, void *buf, size_t n, uint32_t off) {
+static long tmpfs_read(vnode_t *vn, page_id_t page, uint16_t page_off,
+                       size_t n, uint32_t off) {
   if (vn->type == VNODE_DIR) return -(long)EISDIR;
 
   tmpfs_inode_t *ti = &inodes[vn->ino];
@@ -152,15 +154,36 @@ static long tmpfs_read(vnode_t *vn, void *buf, size_t n, uint32_t off) {
   if (off >= ti->size) return 0;
   if (off + n > ti->size) n = ti->size - off;
 
-  if (ti->data)
-    __builtin_memcpy(buf, ti->data + off, n);
-  else
-    __builtin_memset(buf, 0, n);
+  size_t remaining = n;
+  uint32_t pos = off;
+  static const uint8_t zero_chunk[32];
+
+  while (remaining > 0) {
+    uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
+
+    if (ti->data) {
+      mem_region_page_write(page, page_off, ti->data + pos, chunk);
+    } else {
+      uint16_t zero_off = 0;
+
+      while (zero_off < chunk) {
+        uint16_t zero_len = chunk - zero_off;
+        if (zero_len > sizeof(zero_chunk)) zero_len = sizeof(zero_chunk);
+        mem_region_page_write(page, (uint16_t)(page_off + zero_off), zero_chunk,
+                              zero_len);
+        zero_off = (uint16_t)(zero_off + zero_len);
+      }
+    }
+    pos += chunk;
+    remaining -= chunk;
+    mem_region_page_advance(&page, &page_off, chunk);
+  }
 
   return (long)n;
 }
 
-static long tmpfs_write(vnode_t *vn, const void *buf, size_t n, uint32_t off) {
+static long tmpfs_write(vnode_t *vn, page_id_t page, uint16_t page_off,
+                        size_t n, uint32_t off) {
   if (vn->type == VNODE_DIR) return -(long)EISDIR;
 
   tmpfs_inode_t *ti = &inodes[vn->ino];
@@ -184,7 +207,17 @@ static long tmpfs_write(vnode_t *vn, const void *buf, size_t n, uint32_t off) {
     data_pages_used++;
   }
 
-  __builtin_memcpy(ti->data + off, buf, n);
+  size_t remaining = n;
+  uint32_t pos = off;
+
+  while (remaining > 0) {
+    uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
+    if (chunk > PAGE_SIZE - pos) chunk = (uint16_t)(PAGE_SIZE - pos);
+    mem_region_page_read(page, page_off, ti->data + pos, chunk);
+    pos += chunk;
+    remaining -= chunk;
+    mem_region_page_advance(&page, &page_off, chunk);
+  }
 
   /* Extend file size if needed */
   if (off + (uint32_t)n > ti->size) {

@@ -10,6 +10,7 @@
 #define PPAP_ARCH_M68K_ARCH_H
 
 #include <stdint.h>
+#include "../../kernel/mm/mem_region.h"
 
 /* ── Interrupt save / restore ─────────────────────────────────────────────
  *
@@ -101,5 +102,13 @@ static inline void arch_dsb_isb(void) { __asm__ volatile("nop" ::: "memory"); }
 /* ── User-space byte read ──────────────────────────────────────────────────
  * m68k SRAM supports byte access — plain dereference is fine. */
 static inline uint8_t read_user_byte(const uint8_t *ptr) { return *ptr; }
+
+static inline page_id_t arch_user_ptr_to_page(page_id_t base_page,
+                                              uintptr_t user_ptr,
+                                              uint16_t *off) {
+  (void)base_page;
+  *off = (uint16_t)((uintptr_t)user_ptr & (PAGE_SIZE - 1u));
+  return mem_region_ptr_to_page((void *)(uintptr_t)user_ptr);
+}
 
 #endif /* PPAP_ARCH_M68K_ARCH_H */

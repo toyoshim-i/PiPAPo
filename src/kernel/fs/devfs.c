@@ -24,27 +24,32 @@
 
 #include "../common/mod/mod_core.h"
 #include "../common/errno.h"
+#include "../mm/mem_region.h"
 
 /* ── Device node descriptor ──────────────────────────────────────────────── */
 
 typedef struct {
   const char *name;
-  long (*read)(void *buf, size_t n, uint32_t off);
-  long (*write)(const void *buf, size_t n, uint32_t off);
+  long (*read)(page_id_t page, uint16_t page_off, size_t n, uint32_t off);
+  long (*write)(page_id_t page, uint16_t page_off, size_t n, uint32_t off);
 } devfs_node_t;
 
 /* ── /dev/null ──────────────────────────────────────────────────────────────
  */
 
-static long devnull_read(void *buf, size_t n, uint32_t off) {
-  (void)buf;
+static long devnull_read(page_id_t page, uint16_t page_off, size_t n,
+                         uint32_t off) {
+  (void)page;
+  (void)page_off;
   (void)n;
   (void)off;
   return 0; /* EOF */
 }
 
-static long devnull_write(const void *buf, size_t n, uint32_t off) {
-  (void)buf;
+static long devnull_write(page_id_t page, uint16_t page_off, size_t n,
+                          uint32_t off) {
+  (void)page;
+  (void)page_off;
   (void)off;
   return (long)n; /* discard, report success */
 }
@@ -52,32 +57,56 @@ static long devnull_write(const void *buf, size_t n, uint32_t off) {
 /* ── /dev/zero ──────────────────────────────────────────────────────────────
  */
 
-static long devzero_read(void *buf, size_t n, uint32_t off) {
+static long devzero_read(page_id_t page, uint16_t page_off, size_t n,
+                         uint32_t off) {
   (void)off;
-  uint8_t *p = (uint8_t *)buf;
-  for (size_t i = 0; i < n; i++) p[i] = 0;
+  static const uint8_t zero_chunk[32];
+  size_t remaining = n;
+
+  while (remaining > 0) {
+    uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
+    uint16_t written = 0;
+
+    while (written < chunk) {
+      uint16_t zero_len = chunk - written;
+      if (zero_len > sizeof(zero_chunk)) zero_len = sizeof(zero_chunk);
+      mem_region_page_write(page, (uint16_t)(page_off + written), zero_chunk,
+                            zero_len);
+      written = (uint16_t)(written + zero_len);
+    }
+    remaining -= chunk;
+    mem_region_page_advance(&page, &page_off, chunk);
+  }
   return (long)n;
 }
 
 /* ── /dev/ttyS0 ─────────────────────────────────────────────────────────────
  */
 
-static long devtty_read(void *buf, size_t n, uint32_t off) {
+static long devtty_read(page_id_t page, uint16_t page_off, size_t n,
+                        uint32_t off) {
   (void)off;
-  uint8_t *p = (uint8_t *)buf;
   size_t count = 0;
   while (count < n) {
     int c = mod_core.uart_getc();
     if (c < 0) break; /* no more data available */
-    p[count++] = (uint8_t)c;
+    uint8_t ch = (uint8_t)c;
+    mem_region_page_write(page, page_off, &ch, 1);
+    count++;
+    mem_region_page_advance(&page, &page_off, 1);
   }
   return (long)count;
 }
 
-static long devtty_write(const void *buf, size_t n, uint32_t off) {
+static long devtty_write(page_id_t page, uint16_t page_off, size_t n,
+                         uint32_t off) {
   (void)off;
-  const uint8_t *p = (const uint8_t *)buf;
-  for (size_t i = 0; i < n; i++) mod_core.uart_putc((char)p[i], NULL);
+  for (size_t i = 0; i < n; i++) {
+    uint8_t ch;
+    mem_region_page_read(page, page_off, &ch, 1);
+    mod_core.uart_putc((char)ch, NULL);
+    mem_region_page_advance(&page, &page_off, 1);
+  }
   return (long)n;
 }
 
@@ -118,10 +147,14 @@ static uint8_t random_byte(void) {
   return (uint8_t)(lfsr_state & 0xFFu);
 }
 
-static long devrandom_read(void *buf, size_t n, uint32_t off) {
+static long devrandom_read(page_id_t page, uint16_t page_off, size_t n,
+                           uint32_t off) {
   (void)off;
-  uint8_t *p = (uint8_t *)buf;
-  for (size_t i = 0; i < n; i++) p[i] = random_byte();
+  for (size_t i = 0; i < n; i++) {
+    uint8_t ch = random_byte();
+    mem_region_page_write(page, page_off, &ch, 1);
+    mem_region_page_advance(&page, &page_off, 1);
+  }
   return (long)n;
 }
 
@@ -136,7 +169,8 @@ void devfs_set_backlight(int (*get)(uint8_t *), int (*set)(uint8_t)) {
 }
 
 /* Read: returns ASCII decimal brightness + newline, e.g. "128\n" */
-static long devbacklight_read(void *buf, size_t n, uint32_t off) {
+static long devbacklight_read(page_id_t page, uint16_t page_off, size_t n,
+                              uint32_t off) {
   if (!bl_hw_get) return -(long)ENODEV;
   uint8_t val;
   if (bl_hw_get(&val) < 0) return -(long)EIO;
@@ -149,28 +183,39 @@ static long devbacklight_read(void *buf, size_t n, uint32_t off) {
   tmp[len++] = '\n';
   /* Handle offset (for sequential reads) */
   if (off >= (uint32_t)len) return 0;
-  size_t avail = (size_t)(len - (int)off);
-  if (avail > n) avail = n;
-  __builtin_memcpy(buf, tmp + off, avail);
-  return (long)avail;
+  size_t remaining = (size_t)(len - (int)off);
+  if (remaining > n) remaining = n;
+  size_t total = remaining;
+
+  while (remaining > 0) {
+    uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
+    mem_region_page_write(page, page_off, tmp + off, chunk);
+    remaining -= chunk;
+    off += chunk;
+    mem_region_page_advance(&page, &page_off, chunk);
+  }
+  return (long)total;
 }
 
 /* Write: parse ASCII decimal 0–255, set brightness */
-static long devbacklight_write(const void *buf, size_t n, uint32_t off) {
+static long devbacklight_write(page_id_t page, uint16_t page_off, size_t n,
+                               uint32_t off) {
   (void)off;
   if (!bl_hw_set) return -(long)ENODEV;
-  const uint8_t *p = (const uint8_t *)buf;
   uint32_t val = 0;
   int digits = 0;
   for (size_t i = 0; i < n; i++) {
-    if (p[i] >= '0' && p[i] <= '9') {
-      val = val * 10 + (uint32_t)(p[i] - '0');
+    uint8_t ch;
+    mem_region_page_read(page, page_off, &ch, 1);
+    if (ch >= '0' && ch <= '9') {
+      val = val * 10 + (uint32_t)(ch - '0');
       digits++;
-    } else if (p[i] == '\n' || p[i] == '\r' || p[i] == ' ') {
+    } else if (ch == '\n' || ch == '\r' || ch == ' ') {
       if (digits) break; /* trailing whitespace */
     } else {
       return -(long)EINVAL;
     }
+    mem_region_page_advance(&page, &page_off, 1);
   }
   if (!digits || val > 255) return -(long)EINVAL;
   if (bl_hw_set((uint8_t)val) < 0) return -(long)EIO;
@@ -184,24 +229,47 @@ static int (*power_hw_off)(void);
 void devfs_set_power(int (*off_fn)(void)) { power_hw_off = off_fn; }
 
 /* Read: returns "on\n" — system is running */
-static long devpower_read(void *buf, size_t n, uint32_t off) {
+static long devpower_read(page_id_t page, uint16_t page_off, size_t n,
+                          uint32_t off) {
   const char *msg = "on\n";
   int len = 3;
   if (off >= (uint32_t)len) return 0;
-  size_t avail = (size_t)(len - (int)off);
-  if (avail > n) avail = n;
-  __builtin_memcpy(buf, msg + off, avail);
-  return (long)avail;
+  size_t remaining = (size_t)(len - (int)off);
+  if (remaining > n) remaining = n;
+  size_t total = remaining;
+
+  while (remaining > 0) {
+    uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
+    mem_region_page_write(page, page_off, msg + off, chunk);
+    remaining -= chunk;
+    off += chunk;
+    mem_region_page_advance(&page, &page_off, chunk);
+  }
+  return (long)total;
 }
 
 /* Write "off" or "0" to power down */
-static long devpower_write(const void *buf, size_t n, uint32_t off) {
+static long devpower_write(page_id_t page, uint16_t page_off, size_t n,
+                           uint32_t off) {
   (void)off;
   if (!power_hw_off) return -(long)ENODEV;
-  const char *p = (const char *)buf;
+  uint8_t p0 = 0, p1 = 0, p2 = 0;
+  if (n >= 1) mem_region_page_read(page, page_off, &p0, 1);
+  if (n >= 2) {
+    page_id_t next_page = page;
+    uint16_t next_off = page_off;
+    mem_region_page_advance(&next_page, &next_off, 1);
+    mem_region_page_read(next_page, next_off, &p1, 1);
+  }
+  if (n >= 3) {
+    page_id_t next_page = page;
+    uint16_t next_off = page_off;
+    mem_region_page_advance(&next_page, &next_off, 2);
+    mem_region_page_read(next_page, next_off, &p2, 1);
+  }
   /* Accept "off", "off\n", "0", "0\n" */
-  if ((n >= 3 && p[0] == 'o' && p[1] == 'f' && p[2] == 'f') ||
-      (n >= 1 && p[0] == '0')) {
+  if ((n >= 3 && p0 == 'o' && p1 == 'f' && p2 == 'f') ||
+      (n >= 1 && p0 == '0')) {
     power_hw_off();
     /* Should not return, but just in case: */
     return (long)n;
@@ -213,43 +281,64 @@ static long devpower_write(const void *buf, size_t n, uint32_t off) {
 /* ── /dev/mmcblk0 — raw block device ────────────────────────────────────────
  */
 
-static long devblk_read(void *buf, size_t n, uint32_t off) {
+static long devblk_read(page_id_t page, uint16_t page_off, size_t n,
+                        uint32_t off) {
   blkdev_t *bd = blkdev_find("mmcblk0");
   if (!bd) return -(long)ENOENT;
 
   /* Sector-aligned access only */
-  if ((off % BLKDEV_SECTOR_SIZE) != 0 || (n % BLKDEV_SECTOR_SIZE) != 0)
+  if ((off % BLKDEV_SECTOR_SIZE) != 0 || (page_off % BLKDEV_SECTOR_SIZE) != 0 ||
+      (n % BLKDEV_SECTOR_SIZE) != 0)
     return -(long)EINVAL;
 
   uint32_t sector = off / BLKDEV_SECTOR_SIZE;
-  uint32_t count = (uint32_t)n / BLKDEV_SECTOR_SIZE;
-  if (count == 0) return 0;
+  size_t remaining = n;
 
-  int rc = bd->read(bd, buf, sector, count);
-  if (rc < 0) return (long)rc;
+  while (remaining > 0) {
+    uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
+    uint32_t count = (uint32_t)chunk / BLKDEV_SECTOR_SIZE;
+    int rc = bd->read(
+        bd, (void *)(uintptr_t)(mem_region_page_linear(page) + page_off),
+        sector, count);
+    if (rc < 0) return (long)rc;
+    remaining -= chunk;
+    sector += count;
+    mem_region_page_advance(&page, &page_off, chunk);
+  }
   return (long)n;
 }
 
-static long devblk_write(const void *buf, size_t n, uint32_t off) {
+static long devblk_write(page_id_t page, uint16_t page_off, size_t n,
+                         uint32_t off) {
   blkdev_t *bd = blkdev_find("mmcblk0");
   if (!bd) return -(long)ENOENT;
 
-  if ((off % BLKDEV_SECTOR_SIZE) != 0 || (n % BLKDEV_SECTOR_SIZE) != 0)
+  if ((off % BLKDEV_SECTOR_SIZE) != 0 || (page_off % BLKDEV_SECTOR_SIZE) != 0 ||
+      (n % BLKDEV_SECTOR_SIZE) != 0)
     return -(long)EINVAL;
 
   uint32_t sector = off / BLKDEV_SECTOR_SIZE;
-  uint32_t count = (uint32_t)n / BLKDEV_SECTOR_SIZE;
-  if (count == 0) return 0;
+  size_t remaining = n;
 
-  int rc = bd->write(bd, buf, sector, count);
-  if (rc < 0) return (long)rc;
+  while (remaining > 0) {
+    uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
+    uint32_t count = (uint32_t)chunk / BLKDEV_SECTOR_SIZE;
+    int rc = bd->write(
+        bd, (const void *)(uintptr_t)(mem_region_page_linear(page) + page_off),
+        sector, count);
+    if (rc < 0) return (long)rc;
+    remaining -= chunk;
+    sector += count;
+    mem_region_page_advance(&page, &page_off, chunk);
+  }
   return (long)n;
 }
 
 /* ── /dev/loopN — loopback block devices ────────────────────────────────────
  */
 
-static long devloop_read_n(int idx, void *buf, size_t n, uint32_t off) {
+static long devloop_read_n(int idx, page_id_t page, uint16_t page_off, size_t n,
+                           uint32_t off) {
   if (!loopback_is_active(idx)) return -(long)ENODEV;
 
   static const char *names[] = {"loop0", "loop1", "loop2"};
@@ -257,54 +346,79 @@ static long devloop_read_n(int idx, void *buf, size_t n, uint32_t off) {
   if (!bd) return -(long)ENOENT;
 
   /* Sector-aligned access only */
-  if ((off % BLKDEV_SECTOR_SIZE) != 0 || (n % BLKDEV_SECTOR_SIZE) != 0)
+  if ((off % BLKDEV_SECTOR_SIZE) != 0 || (page_off % BLKDEV_SECTOR_SIZE) != 0 ||
+      (n % BLKDEV_SECTOR_SIZE) != 0)
     return -(long)EINVAL;
 
   uint32_t sector = off / BLKDEV_SECTOR_SIZE;
-  uint32_t count = (uint32_t)n / BLKDEV_SECTOR_SIZE;
-  if (count == 0) return 0;
+  size_t remaining = n;
 
-  int rc = bd->read(bd, buf, sector, count);
-  if (rc < 0) return (long)rc;
+  while (remaining > 0) {
+    uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
+    uint32_t count = (uint32_t)chunk / BLKDEV_SECTOR_SIZE;
+    int rc = bd->read(
+        bd, (void *)(uintptr_t)(mem_region_page_linear(page) + page_off),
+        sector, count);
+    if (rc < 0) return (long)rc;
+    remaining -= chunk;
+    sector += count;
+    mem_region_page_advance(&page, &page_off, chunk);
+  }
   return (long)n;
 }
 
-static long devloop_write_n(int idx, const void *buf, size_t n, uint32_t off) {
+static long devloop_write_n(int idx, page_id_t page, uint16_t page_off, size_t n,
+                            uint32_t off) {
   if (!loopback_is_active(idx)) return -(long)ENODEV;
 
   static const char *names[] = {"loop0", "loop1", "loop2"};
   blkdev_t *bd = blkdev_find(names[idx]);
   if (!bd) return -(long)ENOENT;
 
-  if ((off % BLKDEV_SECTOR_SIZE) != 0 || (n % BLKDEV_SECTOR_SIZE) != 0)
+  if ((off % BLKDEV_SECTOR_SIZE) != 0 || (page_off % BLKDEV_SECTOR_SIZE) != 0 ||
+      (n % BLKDEV_SECTOR_SIZE) != 0)
     return -(long)EINVAL;
 
   uint32_t sector = off / BLKDEV_SECTOR_SIZE;
-  uint32_t count = (uint32_t)n / BLKDEV_SECTOR_SIZE;
-  if (count == 0) return 0;
+  size_t remaining = n;
 
-  int rc = bd->write(bd, buf, sector, count);
-  if (rc < 0) return (long)rc;
+  while (remaining > 0) {
+    uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
+    uint32_t count = (uint32_t)chunk / BLKDEV_SECTOR_SIZE;
+    int rc = bd->write(
+        bd, (const void *)(uintptr_t)(mem_region_page_linear(page) + page_off),
+        sector, count);
+    if (rc < 0) return (long)rc;
+    remaining -= chunk;
+    sector += count;
+    mem_region_page_advance(&page, &page_off, chunk);
+  }
   return (long)n;
 }
 
-static long devloop0_read(void *buf, size_t n, uint32_t off) {
-  return devloop_read_n(0, buf, n, off);
+static long devloop0_read(page_id_t page, uint16_t page_off, size_t n,
+                          uint32_t off) {
+  return devloop_read_n(0, page, page_off, n, off);
 }
-static long devloop0_write(const void *buf, size_t n, uint32_t off) {
-  return devloop_write_n(0, buf, n, off);
+static long devloop0_write(page_id_t page, uint16_t page_off, size_t n,
+                           uint32_t off) {
+  return devloop_write_n(0, page, page_off, n, off);
 }
-static long devloop1_read(void *buf, size_t n, uint32_t off) {
-  return devloop_read_n(1, buf, n, off);
+static long devloop1_read(page_id_t page, uint16_t page_off, size_t n,
+                          uint32_t off) {
+  return devloop_read_n(1, page, page_off, n, off);
 }
-static long devloop1_write(const void *buf, size_t n, uint32_t off) {
-  return devloop_write_n(1, buf, n, off);
+static long devloop1_write(page_id_t page, uint16_t page_off, size_t n,
+                           uint32_t off) {
+  return devloop_write_n(1, page, page_off, n, off);
 }
-static long devloop2_read(void *buf, size_t n, uint32_t off) {
-  return devloop_read_n(2, buf, n, off);
+static long devloop2_read(page_id_t page, uint16_t page_off, size_t n,
+                          uint32_t off) {
+  return devloop_read_n(2, page, page_off, n, off);
 }
-static long devloop2_write(const void *buf, size_t n, uint32_t off) {
-  return devloop_write_n(2, buf, n, off);
+static long devloop2_write(page_id_t page, uint16_t page_off, size_t n,
+                           uint32_t off) {
+  return devloop_write_n(2, page, page_off, n, off);
 }
 #endif /* PPAP_HAS_BLKDEV */
 
@@ -398,25 +512,27 @@ static int devfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
 /* ── devfs_read ─────────────────────────────────────────────────────────────
  */
 
-static long devfs_read(vnode_t *vn, void *buf, size_t n, uint32_t off) {
+static long devfs_read(vnode_t *vn, page_id_t page, uint16_t page_off,
+                       size_t n, uint32_t off) {
   if (vn->type == VNODE_DIR) return -(long)EISDIR;
 
   const devfs_node_t *node = (const devfs_node_t *)vn->fs_priv;
   if (!node || !node->read) return -(long)EIO;
 
-  return node->read(buf, n, off);
+  return node->read(page, page_off, n, off);
 }
 
 /* ── devfs_write ────────────────────────────────────────────────────────────
  */
 
-static long devfs_write(vnode_t *vn, const void *buf, size_t n, uint32_t off) {
+static long devfs_write(vnode_t *vn, page_id_t page, uint16_t page_off,
+                        size_t n, uint32_t off) {
   if (vn->type == VNODE_DIR) return -(long)EISDIR;
 
   const devfs_node_t *node = (const devfs_node_t *)vn->fs_priv;
   if (!node || !node->write) return -(long)EIO;
 
-  return node->write(buf, n, off);
+  return node->write(page, page_off, n, off);
 }
 
 /* ── devfs_readdir ──────────────────────────────────────────────────────────

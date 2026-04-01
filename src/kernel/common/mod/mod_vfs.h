@@ -23,6 +23,7 @@
 
 /* Full VFS type definitions */
 #include "../../vfs/vfs_types.h"
+#include "../../mm/page.h"
 
 #include "module.h"
 
@@ -171,13 +172,14 @@ MOD_DECLARE_BEGIN(vfs)
    * fd_read — Read from a file descriptor.
    *
    *   desc  Descriptor ID.
-   *   buf   Destination buffer.
+   *   page  Destination buffer page.
+   *   off   Destination buffer offset.
    *   n     Maximum bytes to read.
    *
    * Returns bytes read (0 = EOF), or negative errno.  May block
    * on TTY or pipe (uses svc_set_restart + sched_yield).
    */
-  MOD_FUNC(vfs, long, fd_read, int, char *, size_t)
+  MOD_FUNC(vfs, long, fd_read, int, page_id_t, uint16_t, size_t)
 
   /*
    * fd_release — Decrement refcount; close when it reaches zero.
@@ -211,13 +213,14 @@ MOD_DECLARE_BEGIN(vfs)
    * fd_write — Write to a file descriptor.
    *
    *   desc  Descriptor ID.
-   *   buf   Source buffer.
+   *   page  Source buffer page.
+   *   off   Source buffer offset.
    *   n     Bytes to write.
    *
    * Returns bytes written, or negative errno.  Respects O_APPEND.
    * May block on TTY or pipe.
    */
-  MOD_FUNC(vfs, long, fd_write, int, const char *, size_t)
+  MOD_FUNC(vfs, long, fd_write, int, page_id_t, uint16_t, size_t)
 
   /*
    * fstab_automount — Parse /etc/fstab and mount all entries.
@@ -362,15 +365,17 @@ MOD_DECLARE_BEGIN(vfs)
   /*
    * vnode_read — Read data from a vnode at a specified offset.
    *
-   *   vn    Vnode to read from.
-   *   buf   Destination buffer.
-   *   size  Bytes to read.
-   *   off   Byte offset within file.
+   *   vn        Vnode to read from.
+   *   page      Destination buffer page.
+   *   page_off  Destination buffer offset.
+   *   size      Bytes to read.
+   *   off       Byte offset within file.
    *
    * Returns bytes read, or negative errno.  Executes in VFS code
    * segment to maintain module isolation.
    */
-  MOD_FUNC(vfs, long, vnode_read, vnode_t *, void *, uint32_t, uint32_t)
+  MOD_FUNC(vfs, long, vnode_read, vnode_t *, page_id_t, uint16_t, uint32_t,
+           uint32_t)
 
   /*
    * vnode_release — Decrement refcnt; free vnode when it reaches zero.

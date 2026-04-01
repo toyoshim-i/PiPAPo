@@ -51,9 +51,9 @@ uint32_t *arch_build_initial_frame(uint32_t *sp_arg, void (*entry)(void))
  * Adapts the i16 register-based syscall ABI to the kernel's
  * syscall_dispatch() which expects a uint32_t frame pointer.
  *
- * user_ds is the saved DS from the user process.  For syscalls that pass
- * user-space pointers (read, write, open, etc.), the offset argument is
- * resolved to a 20-bit linear address: user_ds * 16 + offset.
+ * user_ds is the saved DS from the user process.  Syscalls that still pass
+ * raw user-space pointers through syscall_dispatch() are resolved here to a
+ * 20-bit linear address: user_ds * 16 + offset.
  */
 long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1,
                           uint16_t a2, uint16_t a3, uint16_t a4,
@@ -72,10 +72,6 @@ long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1,
   /* Resolve user-space pointer arguments to linear addresses.
    * Which arguments are pointers depends on the syscall number. */
   switch (nr) {
-    case 0x0003: /* SYS_READ:  read(fd, buf, n)  — a1 = buf */
-    case 0x0004: /* SYS_WRITE: write(fd, buf, n) — a1 = buf */
-      frame[1] = seg_base + a1;
-      break;
     case 0x0005: /* SYS_OPEN:  open(path, flags, mode) — a0 = path */
     case 0x000B: /* SYS_EXECVE: execve(path, argv) — a0 = path */
     case 0x000C: /* SYS_CHDIR: chdir(path) — a0 = path */

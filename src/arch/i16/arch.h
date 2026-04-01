@@ -12,6 +12,7 @@
 #define PPAP_ARCH_I16_ARCH_H
 
 #include <stdint.h>
+#include "../../kernel/mm/page.h"
 
 /* -- Interrupt save / restore ----------------------------------------------
  *
@@ -102,6 +103,16 @@ static inline void arch_dsb_isb(void)
 static inline uint8_t read_user_byte(const uint8_t *ptr)
 {
   return *ptr;
+}
+
+static inline page_id_t arch_user_ptr_to_page(page_id_t base_page,
+                                              uintptr_t user_ptr,
+                                              uint16_t *off)
+{
+  uint32_t user_off = (uint32_t)(uint16_t)user_ptr;
+
+  *off = (uint16_t)(user_off % PAGE_SIZE);
+  return base_page + (page_id_t)(user_off / PAGE_SIZE);
 }
 
 #endif /* PPAP_ARCH_I16_ARCH_H */

@@ -12,6 +12,7 @@
 #ifdef __ia16__
 
 #include "vfs/vfs_types.h"
+#include "mm/page.h"
 #include "common/mod/module.h"
 
 /* Forward-declare the caller-side stubs from vfs_stubs.S.
@@ -32,7 +33,7 @@ void vfs_vnode_release(vnode_t *);
 struct pcb;
 typedef struct pcb pcb_t;
 void vfs_fd_stdio_init(pcb_t *);
-long vfs_vnode_read(vnode_t *, void *, uint32_t, uint32_t);
+long vfs_vnode_read(vnode_t *, page_id_t, uint16_t, uint32_t, uint32_t);
 void vfs_fd_pool_init(void);
 void vfs_tty_rx_notify(int);
 void vfs_fstab_automount(void);
@@ -43,8 +44,8 @@ void vfs_fd_release(int);
 void vfs_fd_acquire(int);
 int  vfs_fd_pipe_create(int *, int *);
 int  vfs_fd_stdio_desc(int);
-long vfs_fd_read(int, char *, size_t);
-long vfs_fd_write(int, const char *, size_t);
+long vfs_fd_read(int, page_id_t, uint16_t, size_t);
+long vfs_fd_write(int, page_id_t, uint16_t, size_t);
 int  vfs_fd_ioctl(int, uint32_t, void *);
 int  vfs_fd_poll(int);
 long vfs_fd_lseek(int, long, int);

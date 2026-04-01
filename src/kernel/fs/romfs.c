@@ -24,6 +24,7 @@
 
 #include "../common/errno.h"
 #include "../common/mod/mod_vfs.h"
+#include "../mm/mem_region.h"
 #include "config.h"
 #include "romfs_format.h"
 
@@ -137,7 +138,8 @@ static int romfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
 /* ── romfs_read ──────────────────────────────────────────────────────────────
  */
 
-static long romfs_read(vnode_t *vn, void *buf, size_t n, uint32_t off) {
+static long romfs_read(vnode_t *vn, page_id_t page, uint16_t page_off,
+                       size_t n, uint32_t off) {
   if (vn->type == VNODE_DIR) return -(long)EISDIR;
 
   if (off >= vn->size) return 0;
@@ -149,7 +151,16 @@ static long romfs_read(vnode_t *vn, void *buf, size_t n, uint32_t off) {
   const romfs_entry_t *e = get_entry(base, vn->ino);
   const uint8_t *data = get_data(e);
 
-  __builtin_memcpy(buf, data + off, n);
+  const uint8_t *src = data + off;
+  size_t remaining = n;
+
+  while (remaining > 0) {
+    uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
+    mem_region_page_write(page, page_off, src, chunk);
+    src += chunk;
+    remaining -= chunk;
+    mem_region_page_advance(&page, &page_off, chunk);
+  }
   return (long)n;
 }
 

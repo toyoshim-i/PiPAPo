@@ -18,6 +18,7 @@
 
 #include "../common/errno.h"
 #include "../common/mod/mod_vfs.h"
+#include "../mm/mem_region.h"
 #include "blkdev.h"
 
 /* ── Loopback device state ─────────────────────────────────────────────── */
@@ -49,7 +50,10 @@ static int loop_read(struct blkdev *dev, void *buf, uint32_t sector,
 
   /* Read from the backing vnode via its filesystem's read op */
   vnode_t *vn = loop->backing;
-  long n = vn->mount->ops->read(vn, buf, nbytes, offset);
+  page_id_t page;
+  uint16_t page_off;
+  if (mem_region_ptr_ref(buf, &page, &page_off) < 0) return -EFAULT;
+  long n = vn->mount->ops->read(vn, page, page_off, nbytes, offset);
   return (n == (long)nbytes) ? 0 : -EIO;
 }
 
@@ -68,7 +72,10 @@ static int loop_write(struct blkdev *dev, const void *buf, uint32_t sector,
   vnode_t *vn = loop->backing;
   if (!vn->mount->ops->write) return -EROFS;
 
-  long n = vn->mount->ops->write(vn, buf, nbytes, offset);
+  page_id_t page;
+  uint16_t page_off;
+  if (mem_region_ptr_ref(buf, &page, &page_off) < 0) return -EFAULT;
+  long n = vn->mount->ops->write(vn, page, page_off, nbytes, offset);
   return (n == (long)nbytes) ? 0 : -EIO;
 }
 

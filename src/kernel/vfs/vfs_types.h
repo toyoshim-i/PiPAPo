@@ -25,6 +25,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "../mm/page.h"
 #include "config.h"
 
 /* ── Forward declarations ───────────────────────────────────────────────────
@@ -119,8 +120,10 @@ struct vnode {
 struct vfs_ops {
   int (*mount)(mount_entry_t *mnt, const void *dev_data);
   int (*lookup)(vnode_t *dir, const char *name, vnode_t **result);
-  long (*read)(vnode_t *vn, void *buf, size_t n, uint32_t off);
-  long (*write)(vnode_t *vn, const void *buf, size_t n, uint32_t off);
+  long (*read)(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
+               uint32_t off);
+  long (*write)(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
+                uint32_t off);
   int (*readdir)(vnode_t *dir, struct dirent *entries, size_t max_entries,
                  uint32_t *cookie);
   int (*stat)(vnode_t *vn, struct stat *st);

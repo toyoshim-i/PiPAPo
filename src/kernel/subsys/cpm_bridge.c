@@ -13,8 +13,47 @@
 #include <string.h>
 
 #include "common/ptrace.h"
+#include "kernel/common/errno.h"
+#include "kernel/common/mod/mod_vfs.h"
+#include "kernel/mm/mem_region.h"
+#include "kernel/proc/proc.h"
 
 /* ── ADM-3A → VT100 escape sequence translator ────────────────────────── */
+
+static long cpm_fd_desc(long fd) {
+  if (fd < 0 || (uint32_t)fd >= FD_MAX) return -(long)EBADF;
+  if (current->fd_map[(uint32_t)fd] == FD_DESC_NONE) return -(long)EBADF;
+  return current->fd_map[(uint32_t)fd];
+}
+
+static int cpm_page_ref(const void *buf, page_id_t *page, uint16_t *off) {
+  return (mem_region_ptr_ref(buf, page, off) < 0) ? -EFAULT : 0;
+}
+
+static long cpm_fd_read(long fd, void *buf, size_t n) {
+  long desc = cpm_fd_desc(fd);
+  page_id_t page;
+  uint16_t off;
+  int rc;
+
+  if (desc < 0) return desc;
+  rc = cpm_page_ref(buf, &page, &off);
+  if (rc < 0) return rc;
+  return mod_vfs.fd_read((int)desc, page, off, n);
+}
+
+static long cpm_fd_write(long fd, const void *buf, size_t n) {
+  long desc = cpm_fd_desc(fd);
+  page_id_t page;
+  uint16_t off;
+  int rc;
+
+  if (desc < 0) return desc;
+  rc = cpm_page_ref(buf, &page, &off);
+  if (rc < 0) return rc;
+  return mod_vfs.fd_write((int)desc, page, off, n);
+}
+
 /*
  * CP/M programs commonly emit ADM-3A (Lear Siegler) escape sequences.
  * Our fbcon implements VT100/ANSI CSI.  This translator sits in the
@@ -312,7 +351,7 @@ static void cpm_trace_after(uint32_t abi, uint32_t nr, z80_state_t *cpu) {
                      z80_hl(cpu), cpu->sp, cpu->pc, cpm_trace_ret(cpu));
 }
 
-static void cpm_raw_putchar(uint8_t ch) { sys_write(1, (const char *)&ch, 1); }
+static void cpm_raw_putchar(uint8_t ch) { cpm_fd_write(1, &ch, 1); }
 
 static void cpm_putchar(uint8_t ch) {
   adm_raw_out = cpm_raw_putchar;
@@ -322,7 +361,7 @@ static void cpm_putchar(uint8_t ch) {
 static uint8_t cpm_getchar(void) {
   uint8_t ch = 0;
   for (;;) {
-    long rc = sys_read(0, (char *)&ch, 1);
+    long rc = cpm_fd_read(0, &ch, 1);
     if (rc > 0) return ch;
     /* tty_read() blocks by setting PROC_BLOCKED + sched_yield() and
      * returns 0 when the task is resumed.  Kernel-mode callers do not
@@ -345,11 +384,11 @@ static int cpm_file_open(const char *path, int flags) {
 static int cpm_file_close(int fd) { return (int)sys_close((long)fd); }
 
 static int cpm_file_read(int fd, void *buf, int count) {
-  return (int)sys_read((long)fd, (char *)buf, (size_t)count);
+  return (int)cpm_fd_read((long)fd, buf, (size_t)count);
 }
 
 static int cpm_file_write(int fd, const void *buf, int count) {
-  return (int)sys_write((long)fd, (const char *)buf, (size_t)count);
+  return (int)cpm_fd_write((long)fd, buf, (size_t)count);
 }
 
 static int cpm_file_seek(int fd, int offset, int whence) {

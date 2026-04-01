@@ -33,6 +33,7 @@
 #include "../common/errno.h"
 #include "../common/mod/mod_core.h"
 #include "../common/mod/mod_vfs.h"
+#include "../mm/mem_region.h"
 #include "../mm/page.h"
 #include "../proc/proc.h"
 #include "../proc/sched.h"      /* cpu_*_ticks[] data (Step 4: two-pass link) */
@@ -654,7 +655,8 @@ static int procfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
 /* ── procfs_read ────────────────────────────────────────────────────────────
  */
 
-static long procfs_read(vnode_t *vn, void *buf, size_t n, uint32_t off) {
+static long procfs_read(vnode_t *vn, page_id_t page, uint16_t page_off,
+                        size_t n, uint32_t off) {
   if (vn->type == VNODE_DIR) return -(long)EISDIR;
 
   char tmp[512];
@@ -697,7 +699,16 @@ static long procfs_read(vnode_t *vn, void *buf, size_t n, uint32_t off) {
   uint32_t avail = (uint32_t)total - off;
   if (n > avail) n = avail;
 
-  __builtin_memcpy(buf, tmp + off, n);
+  const char *src = tmp + off;
+  size_t remaining = n;
+
+  while (remaining > 0) {
+    uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
+    mem_region_page_write(page, page_off, src, chunk);
+    src += chunk;
+    remaining -= chunk;
+    mem_region_page_advance(&page, &page_off, chunk);
+  }
   return (long)n;
 }
 

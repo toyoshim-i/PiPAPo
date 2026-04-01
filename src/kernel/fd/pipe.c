@@ -19,6 +19,7 @@
 
 #include "../common/errno.h"
 #include "../common/mod/mod_core.h"
+#include "../mm/mem_region.h"
 #include "../proc/proc.h"
 #include "fd.h"
 #include "file.h"
@@ -79,7 +80,15 @@ static uint16_t pipe_space(pipe_t *p) {
 /* ── File operations ────────────────────────────────────────────────────────
  */
 
-static long pipe_read(struct file *f, char *buf, size_t n) {
+static void pipe_advance(page_id_t *page, uint16_t *off) {
+  (*off)++;
+  if (*off == PAGE_SIZE) {
+    *off = 0;
+    (*page)++;
+  }
+}
+
+static long pipe_read(struct file *f, page_id_t page, uint16_t off, size_t n) {
   pipe_t *p = f->priv;
   uint16_t avail = pipe_used(p);
 
@@ -87,7 +96,10 @@ static long pipe_read(struct file *f, char *buf, size_t n) {
     /* Copy min(avail, n) bytes from ring buffer */
     size_t count = (n < avail) ? n : avail;
     for (size_t i = 0; i < count; i++) {
-      buf[i] = (char)p->buf[p->tail];
+      char ch = (char)p->buf[p->tail];
+
+      mem_region_page_write(page, off, &ch, 1);
+      pipe_advance(&page, &off);
       p->tail = (uint16_t)((p->tail + 1u) & PIPE_MASK);
     }
     /* Wake any blocked writers — we freed space */
@@ -106,7 +118,8 @@ static long pipe_read(struct file *f, char *buf, size_t n) {
   return 0; /* ignored — SVC_Handler restores original frame[0] */
 }
 
-static long pipe_write(struct file *f, const char *buf, size_t n) {
+static long pipe_write(struct file *f, page_id_t page,
+                       uint16_t off, size_t n) {
   pipe_t *p = f->priv;
 
   if (p->readers == 0) return -(long)EPIPE; /* broken pipe — no readers */
@@ -117,7 +130,11 @@ static long pipe_write(struct file *f, const char *buf, size_t n) {
     /* Copy min(space, n) bytes into ring buffer */
     size_t count = (n < space) ? n : space;
     for (size_t i = 0; i < count; i++) {
-      p->buf[p->head] = (uint8_t)buf[i];
+      uint8_t ch;
+
+      mem_region_page_read(page, off, &ch, 1);
+      pipe_advance(&page, &off);
+      p->buf[p->head] = ch;
       p->head = (uint16_t)((p->head + 1u) & PIPE_MASK);
     }
     /* Wake any blocked readers — we added data */
@@ -189,4 +206,3 @@ int vfs_fd_pipe_create(int *rdesc, int *wdesc) {
   *wdesc = wd;
   return 0;
 }
-

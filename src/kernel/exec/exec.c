@@ -64,7 +64,14 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
       return -(int)ENOEXEC;
     }
 
-    long nread = mod_vfs.vnode_read(vn, file_buf, file_size, 0);
+    page_id_t page;
+    uint16_t page_off;
+    if (mem_region_ptr_ref(file_buf, &page, &page_off) < 0) {
+      mem_region_free(&file_region);
+      mod_vfs.vnode_release(vn);
+      return -(int)ENOMEM;
+    }
+    long nread = mod_vfs.vnode_read(vn, page, page_off, file_size, 0);
     if (nread < 0 || (uint32_t)nread != file_size) {
       mem_region_free(&file_region);
       mod_vfs.vnode_release(vn);
@@ -139,4 +146,3 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
   mod_vfs.vnode_release(vn);
   return 0;
 }
-

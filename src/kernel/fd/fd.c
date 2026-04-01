@@ -19,6 +19,7 @@
 #include "../common/mod/mod_core.h"
 #include "../common/mod/mod_vfs.h"
 #include "../fs/devfs.h"
+#include "../mm/mem_region.h"
 #include "../proc/proc.h" /* pcb_t — only for fd_stdio_init compat */
 #include "config.h"
 
@@ -41,26 +42,25 @@ static int fd_pool_alloc(void) {
 
 /* ── VFS bridge file_ops ───────────────────────────────────────────────────── */
 
-static long vfs_bridge_read(struct file *f, char *buf, size_t n) {
+static long vfs_bridge_read(struct file *f, page_id_t page,
+                            uint16_t off, size_t n) {
   if (!f->vnode || !f->vnode->mount || !f->vnode->mount->ops ||
       !f->vnode->mount->ops->read)
     return -(long)EBADF;
-
-  long ret = f->vnode->mount->ops->read(f->vnode, buf, n, f->offset);
+  long ret = f->vnode->mount->ops->read(f->vnode, page, off, n, f->offset);
   if (ret > 0) f->offset += (uint32_t)ret;
   return ret;
 }
 
-static long vfs_bridge_write(struct file *f, const char *buf, size_t n) {
+static long vfs_bridge_write(struct file *f, page_id_t page,
+                             uint16_t off, size_t n) {
   if (!f->vnode || !f->vnode->mount || !f->vnode->mount->ops ||
       !f->vnode->mount->ops->write)
     return -(long)EBADF;
 
   /* O_APPEND: always write at end of file */
   if (f->flags & O_APPEND) f->offset = f->vnode->size;
-
-  long ret =
-      f->vnode->mount->ops->write(f->vnode, (const void *)buf, n, f->offset);
+  long ret = f->vnode->mount->ops->write(f->vnode, page, off, n, f->offset);
   if (ret > 0) f->offset += (uint32_t)ret;
   return ret;
 }
@@ -213,18 +213,18 @@ int vfs_fd_open(const char *path, int flags, int mode) {
 
 /* ── I/O ───────────────────────────────────────────────────────────────────── */
 
-long vfs_fd_read(int desc, char *buf, size_t n) {
+long vfs_fd_read(int desc, page_id_t page, uint16_t off, size_t n) {
   if (desc < 0 || desc >= FILE_MAX) return -(long)EBADF;
   struct file *f = &fd_pool[desc];
   if (!f->ops || !f->ops->read) return -(long)EBADF;
-  return f->ops->read(f, buf, n);
+  return f->ops->read(f, page, off, n);
 }
 
-long vfs_fd_write(int desc, const char *buf, size_t n) {
+long vfs_fd_write(int desc, page_id_t page, uint16_t off, size_t n) {
   if (desc < 0 || desc >= FILE_MAX) return -(long)EBADF;
   struct file *f = &fd_pool[desc];
   if (!f->ops || !f->ops->write) return -(long)EBADF;
-  return f->ops->write(f, buf, n);
+  return f->ops->write(f, page, off, n);
 }
 
 int vfs_fd_ioctl(int desc, uint32_t cmd, void *arg) {

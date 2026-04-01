@@ -22,6 +22,7 @@
 
 #include "common/fcntl.h"
 #include "common/seek.h"
+#include "../mm/page.h"
 
 /* Forward declarations */
 struct file;
@@ -39,8 +40,8 @@ struct vnode;
  *   close: 0 on success, negative errno on error
  */
 struct file_ops {
-  long (*read)(struct file *f, char *buf, size_t n);
-  long (*write)(struct file *f, const char *buf, size_t n);
+  long (*read)(struct file *f, page_id_t page, uint16_t off, size_t n);
+  long (*write)(struct file *f, page_id_t page, uint16_t off, size_t n);
   int (*close)(struct file *f);
   int (*ioctl)(struct file *f, uint32_t cmd, void *arg);
   int (*poll)(struct file *f); /* returns POLLIN/POLLOUT bitmask */

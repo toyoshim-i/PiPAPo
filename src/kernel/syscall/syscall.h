@@ -92,10 +92,10 @@ void trace_arm_hwbp_on_switch(const pcb_t *next);
 int trace_arm_hardfault_debug_stop(uint32_t *psp_frame);
 
 /* sys_io.c */
-long sys_read(long fd, char *buf, size_t n);
-long sys_write(long fd, const char *buf, size_t n);
-long sys_writev(long fd, const void *iov, long iovcnt);
-long sys_readv(long fd, const void *iov, long iovcnt);
+long sys_read(long fd, uintptr_t user_ptr, size_t n);
+long sys_write(long fd, uintptr_t user_ptr, size_t n);
+long sys_writev(long fd, uintptr_t iov, long iovcnt);
+long sys_readv(long fd, uintptr_t iov, long iovcnt);
 long sys_ioctl(long fd, long cmd, long arg);
 
 /* sys_time.c */

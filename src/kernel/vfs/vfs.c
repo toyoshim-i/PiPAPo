@@ -363,8 +363,8 @@ extern int vfs_fd_open(const char *, int, int);
 extern void vfs_fd_release(int);
 extern void vfs_fd_acquire(int);
 extern int vfs_fd_stdio_desc(int);
-extern long vfs_fd_read(int, char *, size_t);
-extern long vfs_fd_write(int, const char *, size_t);
+extern long vfs_fd_read(int, page_id_t, uint16_t, size_t);
+extern long vfs_fd_write(int, page_id_t, uint16_t, size_t);
 extern int vfs_fd_ioctl(int, uint32_t, void *);
 extern int vfs_fd_poll(int);
 extern long vfs_fd_lseek(int, long, int);
@@ -392,10 +392,11 @@ void vfs_fstab_automount(void) {
 }
 
 /* Cross-module wrapper: execute ops->read in VFS's code segment. */
-long vfs_vnode_read(vnode_t *vn, void *buf, uint32_t size, uint32_t off) {
+long vfs_vnode_read(vnode_t *vn, page_id_t page, uint16_t page_off,
+                    uint32_t size, uint32_t off) {
   if (!vn || !vn->mount || !vn->mount->ops || !vn->mount->ops->read)
     return -2; /* ENOENT */
-  return vn->mount->ops->read(vn, buf, size, off);
+  return vn->mount->ops->read(vn, page, page_off, size, off);
 }
 
 MOD_DEFINE_BEGIN(vfs)

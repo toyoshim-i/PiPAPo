@@ -28,6 +28,7 @@
 #include "../common/spinlock.h" /* SPIN_FS */
 #include "../common/mod/mod_core.h"
 #include "../common/mod/mod_vfs.h"
+#include "../mm/mem_region.h"
 #include "klog.h"
 #include "ufs_format.h"
 
@@ -527,7 +528,8 @@ static int ufs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
 
 /* ── ufs_read ─────────────────────────────────────────────────────────── */
 
-static long ufs_read(vnode_t *vn, void *buf, size_t n, uint32_t off) {
+static long ufs_read(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
+                     uint32_t off) {
   if (vn->type == VNODE_DIR) return -(long)EISDIR;
 
   ufs_priv_t *priv = (ufs_priv_t *)vn->fs_priv;
@@ -539,7 +541,6 @@ static long ufs_read(vnode_t *vn, void *buf, size_t n, uint32_t off) {
   int rc = ufs_read_inode(priv, vn->ino, &inode);
   if (rc < 0) return (long)rc;
 
-  uint8_t *dst = (uint8_t *)buf;
   uint32_t remaining = (uint32_t)n;
   uint32_t pos = off;
 
@@ -560,8 +561,8 @@ static long ufs_read(vnode_t *vn, void *buf, size_t n, uint32_t off) {
     uint32_t avail = BLKDEV_SECTOR_SIZE - off_in_sec;
     if (avail > remaining) avail = remaining;
 
-    __builtin_memcpy(dst, &ufs_buf[off_in_sec], avail);
-    dst += avail;
+    mem_region_page_write(page, page_off, &ufs_buf[off_in_sec], (uint16_t)avail);
+    mem_region_page_advance(&page, &page_off, avail);
     pos += avail;
     remaining -= avail;
   }
@@ -571,7 +572,8 @@ static long ufs_read(vnode_t *vn, void *buf, size_t n, uint32_t off) {
 
 /* ── ufs_write ─────────────────────────────────────────────────────────── */
 
-static long ufs_write(vnode_t *vn, const void *buf, size_t n, uint32_t off) {
+static long ufs_write(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
+                      uint32_t off) {
   if (vn->type == VNODE_DIR) return -(long)EISDIR;
 
   ufs_priv_t *priv = (ufs_priv_t *)vn->fs_priv;
@@ -580,7 +582,6 @@ static long ufs_write(vnode_t *vn, const void *buf, size_t n, uint32_t off) {
   int rc = ufs_read_inode(priv, vn->ino, &inode);
   if (rc < 0) return (long)rc;
 
-  const uint8_t *src = (const uint8_t *)buf;
   uint32_t remaining = (uint32_t)n;
   uint32_t pos = off;
 
@@ -612,16 +613,16 @@ static long ufs_write(vnode_t *vn, const void *buf, size_t n, uint32_t off) {
       /* Partial sector: read-modify-write */
       rc = ufs_read_blk_sector(priv, phys, sec_in_blk);
       if (rc < 0) return (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
-      __builtin_memcpy(&ufs_buf[off_in_sec], src, avail);
+      mem_region_page_read(page, page_off, &ufs_buf[off_in_sec], (uint16_t)avail);
     } else {
       /* Full sector: write directly */
-      __builtin_memcpy(ufs_buf, src, BLKDEV_SECTOR_SIZE);
+      mem_region_page_read(page, page_off, ufs_buf, BLKDEV_SECTOR_SIZE);
     }
 
     rc = ufs_write_blk_sector(priv, phys, sec_in_blk);
     if (rc < 0) return (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
 
-    src += avail;
+    mem_region_page_advance(&page, &page_off, avail);
     pos += avail;
     remaining -= avail;
   }
@@ -1254,17 +1255,18 @@ static int ufs_lookup_locked(vnode_t *dir, const char *name, vnode_t **result) {
   return r;
 }
 
-static long ufs_read_locked(vnode_t *vn, void *buf, size_t n, uint32_t off) {
+static long ufs_read_locked(vnode_t *vn, page_id_t page, uint16_t page_off,
+                            size_t n, uint32_t off) {
   uint32_t s = spin_lock_irqsave(SPIN_FS);
-  long r = ufs_read(vn, buf, n, off);
+  long r = ufs_read(vn, page, page_off, n, off);
   spin_unlock_irqrestore(SPIN_FS, s);
   return r;
 }
 
-static long ufs_write_locked(vnode_t *vn, const void *buf, size_t n,
-                             uint32_t off) {
+static long ufs_write_locked(vnode_t *vn, page_id_t page, uint16_t page_off,
+                             size_t n, uint32_t off) {
   uint32_t s = spin_lock_irqsave(SPIN_FS);
-  long r = ufs_write(vn, buf, n, off);
+  long r = ufs_write(vn, page, page_off, n, off);
   spin_unlock_irqrestore(SPIN_FS, s);
   return r;
 }

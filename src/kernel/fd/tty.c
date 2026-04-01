@@ -29,9 +29,9 @@
 
 #include "../common/errno.h"           /* ENOTTY, EINTR */
 #include "../common/mod/mod_core.h"
+#include "../mm/mem_region.h"
 #include "../proc/proc.h"       /* proc_table, PROC_MAX, PROC_FREE */
 #include "../signal/signal.h"   /* SIGINT */
-#include "arch/arch.h"          /* read_user_byte */
 #include "drivers/uart.h"       /* uart_putc/getc/rx_avail for static init */
 #include "file.h"
 
@@ -128,9 +128,10 @@ typedef struct {
   /* TX write progress — tracks partial writes across sleep/wake cycles.
    * When SVC restart replays the original syscall args, we resume from
    * tx_user_pos instead of re-sending already-enqueued bytes. */
-  const char *tx_user_buf; /* current write source (NULL = no active write) */
-  size_t tx_user_pos;      /* bytes already enqueued */
-  size_t tx_user_len;      /* total write length */
+  page_id_t tx_page;  /* current write source page */
+  uint16_t tx_off;    /* current write source offset */
+  size_t tx_user_pos; /* bytes already enqueued */
+  size_t tx_user_len; /* total write length */
 } tty_dev_t;
 
 /* UART access goes through mod_core on all targets.  This keeps the
@@ -200,8 +201,8 @@ static int console_tty_idx = TTY_SERIAL;
  */
 
 /* TX-ready callbacks — one per TTY, called from the backend ISR */
-static void tx_ready_0(void) { mod_core.sched_wakeup(&tty_devs[0].tx_user_buf); }
-static void tx_ready_1(void) { mod_core.sched_wakeup(&tty_devs[1].tx_user_buf); }
+static void tx_ready_0(void) { mod_core.sched_wakeup(&tty_devs[0].tx_page); }
+static void tx_ready_1(void) { mod_core.sched_wakeup(&tty_devs[1].tx_page); }
 static void (*const tx_ready_fn[TTY_MAX])(void) = {tx_ready_0, tx_ready_1};
 
 void tty_set_backend(int idx, const tty_backend_t *be) {
@@ -235,6 +236,28 @@ void *tty_get_console_dev(void) {
   /* Initialize tx_wakeup for the statically-initialized TTY_SERIAL. */
   tty_devs[TTY_SERIAL].tx_wakeup = tx_ready_0;
   return tty_get_dev(console_tty_idx);
+}
+
+static void tty_advance(page_id_t *page, uint16_t *off, size_t delta) {
+  size_t pos = (size_t)*off + delta;
+
+  *page += (page_id_t)(pos / PAGE_SIZE);
+  *off = (uint16_t)(pos % PAGE_SIZE);
+}
+
+static void tty_copy_to_pages(page_id_t page, uint16_t off,
+                              const void *src, size_t len) {
+  const uint8_t *in = (const uint8_t *)src;
+
+  while (len > 0) {
+    size_t chunk = PAGE_SIZE - off;
+
+    if (chunk > len) chunk = len;
+    mem_region_page_write(page, off, in, (uint16_t)chunk);
+    in += chunk;
+    len -= chunk;
+    tty_advance(&page, &off, chunk);
+  }
 }
 
 /* ── Output helpers (echo + flush) ───────────────────────────────────────────
@@ -293,7 +316,7 @@ static void dev_send_signal(tty_dev_t *t, int sig) {
  * from tx_user_pos to avoid re-sending bytes already enqueued.
  */
 
-static long tty_write(struct file *f, const char *buf, size_t n) {
+static long tty_write(struct file *f, page_id_t page, uint16_t off, size_t n) {
   tty_dev_t *t = (tty_dev_t *)f->priv;
   if (!t) return -(long)ENODEV;
   if (!t->out) return (long)n; /* no backend — silently discard */
@@ -304,41 +327,48 @@ static long tty_write(struct file *f, const char *buf, size_t n) {
   /* Resume tracking: if SVC restart replayed with the same args,
    * pick up where we left off.  Otherwise start fresh. */
   size_t pos;
-  if (t->tx_user_buf == buf && t->tx_user_len == n)
+  if (t->tx_page == page && t->tx_off == off && t->tx_user_len == n)
     pos = t->tx_user_pos;
   else
     pos = 0;
 
+  page_id_t cur_page = page;
+  uint16_t cur_off = off;
+  tty_advance(&cur_page, &cur_off, pos);
+
   while (pos < n) {
-    /* read_user_byte: safe for IRAM buffers on Xtensa (word-aligned) */
-    char c = (char)read_user_byte((const uint8_t *)&buf[pos]);
+    char c;
+
+    mem_region_page_read(cur_page, cur_off, &c, 1);
     /* OPOST: expand \n → \r\n */
     if (onlcr && c == '\n') {
       if (!t->out('\r', t->tx_wakeup)) goto block;
     }
     if (!t->out(c, t->tx_wakeup)) goto block;
     pos++;
+    tty_advance(&cur_page, &cur_off, 1);
   }
 
   /* All data written — clear resume state */
-  t->tx_user_buf = NULL;
+  t->tx_user_len = 0;
   dev_echo_flush(t);
   return (long)n;
 
 block:
   /* Backend full — callback already registered atomically by putc.
    * Save progress and sleep. */
-  t->tx_user_buf = buf;
+  t->tx_page = page;
+  t->tx_off = off;
   t->tx_user_pos = pos;
   t->tx_user_len = n;
 
   /* Check for pending signal before blocking */
   if (current->sig_pending & ~current->sig_blocked) {
-    t->tx_user_buf = NULL;
+    t->tx_user_len = 0;
     return pos > 0 ? (long)pos : -(long)EINTR;
   }
 
-  current->wait_channel = &t->tx_user_buf;
+  current->wait_channel = &t->tx_page;
   current->state = PROC_BLOCKED;
   mod_core.svc_set_restart();
   mod_core.sched_yield();
@@ -348,7 +378,8 @@ block:
 /* ── tty_read: canonical (cooked) mode ───────────────────────────────────────
  */
 
-static long tty_read_canon(tty_dev_t *t, char *buf, size_t n) {
+static long tty_read_canon(tty_dev_t *t, page_id_t page,
+                           uint16_t off, size_t n) {
   /* Drain all available characters from input */
   while (!t->line_ready) {
     int c = t->in();
@@ -447,7 +478,7 @@ static long tty_read_canon(tty_dev_t *t, char *buf, size_t n) {
   /* Deliver buffered data to user */
   size_t avail = t->line_pos;
   if (avail > n) avail = n;
-  __builtin_memcpy(buf, t->line_buf, avail);
+  tty_copy_to_pages(page, off, t->line_buf, avail);
 
   /* Shift remaining data (if partial read) */
   if (avail < t->line_pos) {
@@ -465,7 +496,8 @@ static long tty_read_canon(tty_dev_t *t, char *buf, size_t n) {
 /* ── tty_read: raw mode ──────────────────────────────────────────────────────
  */
 
-static long tty_read_raw(tty_dev_t *t, char *buf, size_t n) {
+static long tty_read_raw(tty_dev_t *t, page_id_t page,
+                         uint16_t off, size_t n) {
   (void)n;
   int c = t->in();
   if (c < 0) {
@@ -498,14 +530,17 @@ static long tty_read_raw(tty_dev_t *t, char *buf, size_t n) {
     dev_echo_flush(t);
   }
 
-  buf[0] = (char)c;
+  {
+    char out = (char)c;
+    mem_region_page_write(page, off, &out, 1);
+  }
   return 1; /* raw mode: return after first char (VMIN=1) */
 }
 
 /* ── tty_read dispatcher ─────────────────────────────────────────────────────
  */
 
-static long tty_read(struct file *f, char *buf, size_t n) {
+static long tty_read(struct file *f, page_id_t page, uint16_t off, size_t n) {
   tty_dev_t *t = (tty_dev_t *)f->priv;
   if (!t) return -(long)ENODEV;
   if (!t->in) {
@@ -519,9 +554,9 @@ static long tty_read(struct file *f, char *buf, size_t n) {
   if (n == 0) return 0;
 
   if (t->termios.c_lflag & ICANON)
-    return tty_read_canon(t, buf, n);
+    return tty_read_canon(t, page, off, n);
   else
-    return tty_read_raw(t, buf, n);
+    return tty_read_raw(t, page, off, n);
 }
 
 /* ── tty_close ───────────────────────────────────────────────────────────────

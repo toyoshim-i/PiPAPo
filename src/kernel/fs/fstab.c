@@ -23,6 +23,7 @@
 
 #include "../common/errno.h"
 #include "../common/mod/mod_core.h"
+#include "../mm/mem_region.h"
 #include "devfs.h"
 #include "procfs.h"
 #include "romfs.h"
@@ -75,13 +76,20 @@ static void parse_options(const char *opts, uint8_t *flags, uint8_t *loop) {
 /* ── fstab_parse ──────────────────────────────────────────────────────── */
 
 int fstab_parse(fstab_entry_t *entries, int max_entries) {
-  int desc = mod_vfs.fd_open("/etc/fstab", 0 /* O_RDONLY */, 0);
-  if (desc < 0) return desc;
+  vnode_t *vn = NULL;
+  int err = mod_vfs.lookup("/etc/fstab", &vn);
+  if (err < 0) return err;
 
   /* Read entire fstab (expected to be small — well under 512 bytes) */
   char buf[512];
-  long n = mod_vfs.fd_read(desc, buf, sizeof(buf) - 1);
-  mod_vfs.fd_release(desc);
+  page_id_t page;
+  uint16_t page_off;
+  if (mem_region_ptr_ref(buf, &page, &page_off) < 0) {
+    mod_vfs.vnode_release(vn);
+    return -EFAULT;
+  }
+  long n = mod_vfs.vnode_read(vn, page, page_off, sizeof(buf) - 1, 0);
+  mod_vfs.vnode_release(vn);
   if (n <= 0) return 0;
   buf[n] = '\0';
 

@@ -847,6 +847,34 @@ syscall conversion is the remaining work.
 
 4. **`--test pcxt` in run.sh** — integrate with existing test harness.
 
+### P-5 Step 1 Checklist
+
+- [x] Route `SYS_READ` / `SYS_WRITE` through a shared
+  `user_to_page()`-based syscall path so both ia16 and flat targets
+  resolve user buffers the same way.
+- [x] Change `mod_vfs.fd_read` / `fd_write` to accept `page_id_t` +
+  `uint16_t off`.
+- [x] Change `struct file_ops.read` / `write` to accept `page_id_t` +
+  `uint16_t off`.
+- [x] Update `tty.c` and `pipe.c` to access user buffers via
+  `mem_region_page_read` / `write`.
+- [x] Update vnode-backed `fd.c` read/write bridge for page-backed user
+  buffers without relying on raw user pointers.
+- [x] Remove the temporary bounce buffer in `fd.c` by changing vnode /
+  filesystem `read` / `write` callbacks to accept `page_id_t` +
+  `uint16_t off` directly.
+- [x] Convert `sys_writev` / `sys_readv` to the same user-buffer
+  resolution path.
+- [ ] Convert path-based syscalls (`open`, `execve`, `chdir`, `mkdir`,
+  `unlink`, `rmdir`, `rename`, `readlink`, `mount`) to copy strings from
+  user pages into kernel buffers.
+- [ ] Convert struct-output syscalls (`stat*`, `getdents*`, `getcwd`,
+  `pipe`, `wait4`, `uname`, time syscalls, `ioctl`) to write results back
+  with `mem_region_page_write`.
+- [x] Remove `SYS_READ` / `SYS_WRITE` pointer rewriting from
+  `i16_syscall_dispatch` and then remove the remaining per-syscall pointer
+  rewriting once all converted syscalls resolve their own user buffers.
+
 ### 8.1 User-Space Memory Access (`user_to_page`)
 
 Syscall handlers currently receive user pointers as raw `void *` and
@@ -892,15 +920,29 @@ process's address space.
 The resolution produces a `(page_id_t, uint16_t offset)` pair that
 works with the existing `mem_region_page_read/write` on all targets.
 
+Current status:
+
+- `sys_read` / `sys_write` already convert user pointers to
+  `(page_id_t, uint16_t off)` through an arch hook, and `mod_vfs.fd_read`
+  / `fd_write` are page-based.
+- `tty.c`, `pipe.c`, and vnode-backed files now all consume those page
+  references directly.
+- Kernel callers with ordinary linear buffers can now convert the original
+  pointer to `(page_id_t, uint16_t off)` and use the same fd / vnode path
+  without a hidden bounce layer.
+- Explicit copies still remain only at true foreign-memory boundaries such
+  as emulated guest RAM, where there is no kernel linear pointer to convert.
+
 #### I/O syscall changes
 
 `fd_read` and `fd_write` in the VFS API change from
 `(desc, char *buf, size_t n)` to
 `(desc, page_id_t page, uint16_t off, size_t n)`.
 
-VFS implementations (tty, pipe, tmpfs, romfs, etc.) use
-`mem_region_page_read/write` to access the user buffer.  No bounce
-copies.  The same code path works on all architectures:
+The fd API is already page-based.  `tty.c`, `pipe.c`, and vnode-backed
+files all use `mem_region_page_read/write` directly now that the
+filesystem callbacks also take `page_id_t + off`.  The same
+syscall-to-fd code path works on all architectures:
 
 ```c
 /* sys_write: resolve user buf, pass page ref to VFS */
@@ -913,9 +955,11 @@ mem_region_page_read(page, off + i, &ch, 1);
 uart_putc(ch);
 ```
 
-Internal callers (subsystem bridges, ktest) that pass kernel-space
-buffers use `mem_region_ptr_to_page()` to get a page_id, or allocate
-a kernel page for the buffer.
+Internal callers can pass page-backed kernel buffers through the same
+fd API by using `mem_region_ptr_to_page()` plus the in-page offset.
+Arbitrary non-page-backed buffers are still copied explicitly at the
+caller boundary; they are not yet handled directly by the page-based
+fd API.
 
 #### Path syscalls
 
@@ -968,10 +1012,11 @@ arguments via `user_to_page`.
 
 #### Migration order
 
-1. Change `fd_read`/`fd_write` VFS API to accept `page_id_t` +
+1. Route `sys_write` / `sys_read` / `sys_writev` / `sys_readv`
+   through a shared `user_to_page`-based syscall layer.
+2. Change `fd_read`/`fd_write` VFS API to accept `page_id_t` +
    `uint16_t offset` instead of `char *`.  Update tty, pipe, tmpfs,
    romfs, devfs, ufs implementations.
-2. Convert `sys_write` / `sys_read` to use `user_to_page`.
 3. Convert path syscalls (page_read into kernel stack buffer).
 4. Convert struct-output syscalls (page_write from kernel stack).
 5. Remove `read_user_byte` from arch.h.

@@ -20,6 +20,7 @@
 #include "../common/errno.h"
 #include "../common/spinlock.h" /* SPIN_FS */
 #include "../common/mod/mod_vfs.h"
+#include "../mm/mem_region.h"
 #include "config.h"
 #include "vfat_format.h"
 
@@ -452,14 +453,13 @@ static int vfat_lookup(vnode_t *dir, const char *name, vnode_t **result) {
 
 /* ── vfat_read ──────────────────────────────────────────────────────────── */
 
-static long vfat_read(vnode_t *vn, void *buf, size_t n, uint32_t off) {
+static long vfat_read(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
+                      uint32_t off) {
   if (vn->type == VNODE_DIR) return -(long)EISDIR;
 
   vfat_sb_t *sb = (vfat_sb_t *)vn->fs_priv;
   uint32_t cluster = VNODE_CLUSTER(vn);
   uint32_t file_size = vn->size;
-  uint8_t *dst = (uint8_t *)buf;
-
   if (off >= file_size) return 0;
   if (off + n > file_size) n = file_size - off;
 
@@ -489,7 +489,8 @@ static long vfat_read(vnode_t *vn, void *buf, size_t n, uint32_t off) {
       uint32_t start = (s == sec_off) ? byte_off : 0;
       uint32_t avail = 512 - start;
       if (avail > n - total) avail = (uint32_t)(n - total);
-      __builtin_memcpy(dst + total, &sector_buf[start], avail);
+      mem_region_page_write(page, page_off, &sector_buf[start], (uint16_t)avail);
+      mem_region_page_advance(&page, &page_off, avail);
       total += avail;
     }
 
@@ -505,13 +506,12 @@ static long vfat_read(vnode_t *vn, void *buf, size_t n, uint32_t off) {
 
 /* ── vfat_write ─────────────────────────────────────────────────────────── */
 
-static long vfat_write(vnode_t *vn, const void *buf, size_t n, uint32_t off) {
+static long vfat_write(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
+                       uint32_t off) {
   if (vn->type == VNODE_DIR) return -(long)EISDIR;
 
   vfat_sb_t *sb = (vfat_sb_t *)vn->fs_priv;
   uint32_t cluster = VNODE_CLUSTER(vn);
-  const uint8_t *src = (const uint8_t *)buf;
-
   /* If file has no cluster yet, allocate one */
   if (cluster < 2) {
     uint32_t new_clus;
@@ -586,9 +586,10 @@ static long vfat_write(vnode_t *vn, const void *buf, size_t n, uint32_t off) {
         int rc = read_sector(sb, sec_base + s, sector_buf);
         if (rc < 0) return (long)(total > 0 ? (int)total : rc);
       }
-      __builtin_memcpy(&sector_buf[start], src + total, avail);
+      mem_region_page_read(page, page_off, &sector_buf[start], (uint16_t)avail);
       int rc = write_sector(sb, sec_base + s, sector_buf);
       if (rc < 0) return (long)(total > 0 ? (int)total : rc);
+      mem_region_page_advance(&page, &page_off, avail);
       total += avail;
     }
 
@@ -1018,17 +1019,18 @@ static int vfat_lookup_locked(vnode_t *dir, const char *name,
   return r;
 }
 
-static long vfat_read_locked(vnode_t *vn, void *buf, size_t n, uint32_t off) {
+static long vfat_read_locked(vnode_t *vn, page_id_t page, uint16_t page_off,
+                             size_t n, uint32_t off) {
   uint32_t s = spin_lock_irqsave(SPIN_FS);
-  long r = vfat_read(vn, buf, n, off);
+  long r = vfat_read(vn, page, page_off, n, off);
   spin_unlock_irqrestore(SPIN_FS, s);
   return r;
 }
 
-static long vfat_write_locked(vnode_t *vn, const void *buf, size_t n,
-                              uint32_t off) {
+static long vfat_write_locked(vnode_t *vn, page_id_t page, uint16_t page_off,
+                              size_t n, uint32_t off) {
   uint32_t s = spin_lock_irqsave(SPIN_FS);
-  long r = vfat_write(vn, buf, n, off);
+  long r = vfat_write(vn, page, page_off, n, off);
   spin_unlock_irqrestore(SPIN_FS, s);
   return r;
 }
