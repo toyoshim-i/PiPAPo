@@ -43,9 +43,10 @@ i16_timer_isr:
   pushw %ds
   pushw %es
 
-  /* Set DS = 0 for kernel data access (flat model) */
+  /* Set DS = ES = 0 for kernel data access (flat model) */
   xorw  %ax, %ax
   movw  %ax, %ds
+  movw  %ax, %es
 
   /* Call kernel timer tick handler */
   xorw  %ax, %ax          /* from_user = 0 (no user/kernel split in real mode) */

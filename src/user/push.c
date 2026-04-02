@@ -195,7 +195,7 @@ static void env_compact(void) {
   for (int i = 0; i < env_count; i++) {
     const char *s = env_pool + env_tab[i].off;
     int len = my_strlen(s) + 1;
-    if (env_tab[i].off != pos) {
+    if (env_tab[i].off != (unsigned short)pos) {
       for (int j = 0; j < len; j++) env_pool[pos + j] = s[j];
     }
     env_tab[i].off = pos;
@@ -1210,8 +1210,8 @@ static int exec_simple(char **argv, int argc) {
 
     int wstatus;
     waitpid(pid, &wstatus, 0);
-    int st =
-        WIFEXITED(wstatus) ? WEXITSTATUS(wstatus) : 128 + WTERMSIG(wstatus);
+    int st = WIFEXITED(wstatus) ? (int)WEXITSTATUS(wstatus)
+                                : (128 + (int)WTERMSIG(wstatus));
 
     /* If child exited 127 (execve failed), try next PATH candidate */
     if (st == 127 && ntried < SKIP_MAX) {
@@ -1268,11 +1268,12 @@ static int exec_pipeline(char **toks, int ntoks, int *pos) {
     (*pos)++;
   }
   nstages++;
+  int stage_count = nstages;
 
-  for (int i = 0; i < nstages; i++) stages[i].argv[stages[i].argc] = 0;
+  for (int i = 0; i < stage_count; i++) stages[i].argv[stages[i].argc] = 0;
 
   /* Single command — no pipe overhead */
-  if (nstages == 1) return exec_simple(stages[0].argv, stages[0].argc);
+  if (stage_count == 1) return exec_simple(stages[0].argv, stages[0].argc);
 
   /* Multi-stage pipeline */
   char *envp[ENV_MAX + 1];
@@ -1281,9 +1282,9 @@ static int exec_pipeline(char **toks, int ntoks, int *pos) {
   pid_t pids[PIPE_MAX];
   int prev_read = -1;
 
-  for (int i = 0; i < nstages; i++) {
+  for (int i = 0; i < stage_count; i++) {
     int pipefd[2] = {-1, -1};
-    if (i < nstages - 1) {
+    if (i < stage_count - 1) {
       if (pipe(pipefd) < 0) {
         err_msg("pipe", "failed");
         return 1;
@@ -1296,10 +1297,10 @@ static int exec_pipeline(char **toks, int ntoks, int *pos) {
         parse_redirects(stages[i].argv, stages[i].argc, redirs, &nredirs);
 
     char resolved[PATH_BUF];
-    int has_path = 0;
-    if (stages[i].argc > 0)
-      has_path =
-          (search_path(stages[i].argv[0], resolved, sizeof(resolved)) == 0);
+    resolved[0] = '\0';
+    if (stages[i].argc > 0 &&
+        search_path(stages[i].argv[0], resolved, sizeof(resolved)) != 0)
+      resolved[0] = '\0';
 
     pid_t pid = vfork();
     if (pid == 0) {
@@ -1313,7 +1314,7 @@ static int exec_pipeline(char **toks, int ntoks, int *pos) {
       }
       if (pipefd[0] >= 0) close(pipefd[0]);
       apply_redirects(redirs, nredirs);
-      if (has_path && stages[i].argc > 0)
+      if (resolved[0] != '\0' && stages[i].argc > 0)
         execve(resolved, stages[i].argv, envp);
       _exit(127);
     }
@@ -1326,12 +1327,12 @@ static int exec_pipeline(char **toks, int ntoks, int *pos) {
 
   /* Wait for all children; report last stage's exit status */
   int status = 0;
-  for (int i = 0; i < nstages; i++) {
+  for (int i = 0; i < stage_count; i++) {
     int wstatus;
     waitpid(pids[i], &wstatus, 0);
-    if (i == nstages - 1)
-      status =
-          WIFEXITED(wstatus) ? WEXITSTATUS(wstatus) : 128 + WTERMSIG(wstatus);
+    if (i == stage_count - 1)
+      status = WIFEXITED(wstatus) ? (int)WEXITSTATUS(wstatus)
+                                  : (128 + (int)WTERMSIG(wstatus));
   }
   return status;
 }

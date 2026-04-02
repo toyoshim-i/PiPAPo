@@ -47,6 +47,18 @@ getpid:
   int   $0x30
   SYSCALL_RET
 
+/* pid_t getppid(void); */
+  .global getppid
+getppid:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  $0x0008, %ax
+  int   $0x30
+  SYSCALL_RET
+
 /* pid_t vfork(void); */
   .global vfork
 vfork:
@@ -146,6 +158,148 @@ close:
   movw  $0x0103, %ax
   int   $0x30
   SYSCALL_RET
+
+/* int dup(int oldfd); */
+  .global dup
+dup:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx
+  movw  $0x0104, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* int dup2(int oldfd, int newfd); */
+  .global dup2
+dup2:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx
+  movw  6(%bp), %cx
+  movw  $0x0105, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* int pipe(int fds[2]); */
+  .global pipe
+pipe:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx
+  movw  $0x0106, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* int lseek(int fd, int offset, int whence); */
+  .global lseek
+lseek:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx
+  movw  6(%bp), %cx
+  movw  8(%bp), %dx
+  movw  $0x010B, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* int stat(const char *path, struct stat *buf); */
+  .global stat
+stat:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx
+  movw  6(%bp), %cx
+  movw  $0x0200, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* int access(const char *path, int mode); */
+  .global access
+access:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx
+  movw  6(%bp), %cx
+  movw  $0x0202, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* int getcwd(char *buf, size_t size); */
+  .global getcwd
+getcwd:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx
+  movw  6(%bp), %cx
+  movw  $0x0203, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* int chdir(const char *path); */
+  .global chdir
+chdir:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx
+  movw  $0x0207, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* int getdents(int fd, struct dirent *buf, size_t count); */
+  .global getdents
+getdents:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx
+  movw  6(%bp), %cx
+  movw  8(%bp), %dx
+  movw  $0x0300, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* void *brk(void *addr); */
+  .global brk
+brk:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx
+  movw  $0x0400, %ax
+  int   $0x30
+  popw  %di
+  popw  %si
+  popw  %bx
+  popw  %bp
+  ret
 
 /* int clock_gettime(int clk_id, void *tp); */
   .global clock_gettime

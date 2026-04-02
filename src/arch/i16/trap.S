@@ -44,9 +44,10 @@ i16_syscall_isr:
   pushw %ds
   pushw %es
 
-  /* Set DS = 0 for kernel data */
+  /* Set DS = ES = 0 for kernel data / string ops */
   xorw  %ax, %ax
   movw  %ax, %ds
+  movw  %ax, %es
 
   /* Save the actual syscall frame pointer for sys_sigreturn. */
   movw  %sp, i16_trap_frame_sp

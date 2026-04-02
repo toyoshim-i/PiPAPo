@@ -134,13 +134,22 @@ add_custom_command(
   COMMENT "Assembling ia16 syscall.o"
 )
 
+add_custom_command(
+  OUTPUT ${PCXT_USER_BUILD_DIR}/runtime.o
+  COMMAND ${CMAKE_C_COMPILER} ${PCXT_USER_CFLAGS} -c
+          -o ${PCXT_USER_BUILD_DIR}/runtime.o ${PCXT_USER_ARCH_DIR}/runtime.c
+  DEPENDS ${PCXT_USER_ARCH_DIR}/runtime.c
+  COMMENT "Compiling ia16 runtime.o"
+)
+
 set(PCXT_CRT_OBJS
   ${PCXT_USER_BUILD_DIR}/crt0.o
   ${PCXT_USER_BUILD_DIR}/syscall.o
+  ${PCXT_USER_BUILD_DIR}/runtime.o
 )
 
 function(pcxt_user_program name source)
-  cmake_parse_arguments(ARG "" "OUTPUT_NAME" "EXTRA_CFLAGS" ${ARGN})
+  cmake_parse_arguments(ARG "" "OUTPUT_NAME" "EXTRA_CFLAGS;EXTRA_SOURCES" ${ARGN})
 
   if(ARG_OUTPUT_NAME)
     set(_out_name ${ARG_OUTPUT_NAME})
@@ -152,6 +161,7 @@ function(pcxt_user_program name source)
   get_filename_component(_src_ext ${source} LAST_EXT)
   set(_obj ${PCXT_USER_BUILD_DIR}/${name}_${_src_base}.o)
   set(_elf ${PCXT_USER_BUILD_DIR}/${_out_name}.elf)
+  set(_objs ${_obj})
 
   if(_src_ext STREQUAL ".S" OR _src_ext STREQUAL ".s")
     add_custom_command(
@@ -170,11 +180,36 @@ function(pcxt_user_program name source)
     )
   endif()
 
+  foreach(_extra_source ${ARG_EXTRA_SOURCES})
+    get_filename_component(_extra_base ${_extra_source} NAME_WE)
+    get_filename_component(_extra_ext ${_extra_source} LAST_EXT)
+    set(_extra_obj ${PCXT_USER_BUILD_DIR}/${name}_${_extra_base}.o)
+    list(APPEND _objs ${_extra_obj})
+
+    if(_extra_ext STREQUAL ".S" OR _extra_ext STREQUAL ".s")
+      add_custom_command(
+        OUTPUT ${_extra_obj}
+        COMMAND ${CMAKE_C_COMPILER} ${PCXT_USER_ASFLAGS} -c -o ${_extra_obj}
+                ${_extra_source}
+        DEPENDS ${_extra_source}
+        COMMENT "Assembling ia16 ${name}_${_extra_base}.o"
+      )
+    else()
+      add_custom_command(
+        OUTPUT ${_extra_obj}
+        COMMAND ${CMAKE_C_COMPILER} ${PCXT_USER_CFLAGS} ${ARG_EXTRA_CFLAGS}
+                -c -o ${_extra_obj} ${_extra_source}
+        DEPENDS ${_extra_source} ${PPAP_ROOT}/src/user/syscall.h
+        COMMENT "Compiling ia16 ${name}_${_extra_base}.o"
+      )
+    endif()
+  endforeach()
+
   add_custom_command(
     OUTPUT ${_elf}
     COMMAND ${CMAKE_C_COMPILER} ${PCXT_USER_LDFLAGS}
-            -o ${_elf} ${PCXT_CRT_OBJS} ${_obj} ${IA16_LIBGCC}
-    DEPENDS ${PCXT_CRT_OBJS} ${_obj} ${PCXT_USER_ARCH_DIR}/user.ld ${IA16_LIBGCC}
+            -o ${_elf} ${PCXT_CRT_OBJS} ${_objs} ${IA16_LIBGCC}
+    DEPENDS ${PCXT_CRT_OBJS} ${_objs} ${PCXT_USER_ARCH_DIR}/user.ld ${IA16_LIBGCC}
     COMMENT "Linking ia16 ${_out_name}.elf"
   )
 
@@ -403,6 +438,8 @@ add_custom_command(TARGET ppap_pcxt_vfs POST_BUILD
 
 pcxt_user_program(hello ${PPAP_ROOT}/src/user/hello.c)
 pcxt_user_program(init ${PPAP_ROOT}/src/user/init.c)
+pcxt_user_program(push ${PPAP_ROOT}/src/user/push.c
+  EXTRA_SOURCES ${PCXT_USER_ARCH_DIR}/push_line_stub.c)
 
 if(PPAP_TESTS)
   pcxt_user_program(runtests ${PPAP_ROOT}/tests/user/runtests.c

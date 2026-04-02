@@ -77,12 +77,19 @@ if [[ -f "$VFS_DATA" ]]; then
   cp "$VFS_DATA" "$UFS_STAGING/boot/kernel_vfs_data"
 fi
 
+# Install base /etc files
+cp "$PROJECT_DIR/src/etc/"* "$UFS_STAGING/etc/" 2>/dev/null || true
+
 # Include user programs if built
 if [[ -f "$USER_BUILD_DIR/hello.elf" ]]; then
   cp "$USER_BUILD_DIR/hello.elf" "$UFS_STAGING/bin/hello"
 fi
 if [[ -f "$USER_BUILD_DIR/init.elf" ]]; then
   cp "$USER_BUILD_DIR/init.elf" "$UFS_STAGING/sbin/init"
+fi
+if [[ -f "$USER_BUILD_DIR/push.elf" ]]; then
+  cp "$USER_BUILD_DIR/push.elf" "$UFS_STAGING/bin/push"
+  cp "$USER_BUILD_DIR/push.elf" "$UFS_STAGING/bin/sh"
 fi
 if [[ -f "$USER_BUILD_DIR/runtests.elf" ]]; then
   cp "$USER_BUILD_DIR/runtests.elf" "$UFS_STAGING/bin/runtests"
