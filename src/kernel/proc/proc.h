@@ -155,7 +155,8 @@ typedef struct pcb {
 #elif defined(__xtensa__)
   uint32_t sp;                 /* saved stack pointer     (offset 0)       */
 #elif defined(__ia16__)
-  uint32_t sp;                 /* saved 16-bit SP, zero-extended (offset 0) */
+  uint32_t sp;                 /* saved kernel-stack SP (offset 0)          */
+  uint16_t kernel_stack_top;   /* top of this process's 1 KB kernel stack   */
 #else
 #error "Unsupported architecture — define PCB register save area"
 #endif

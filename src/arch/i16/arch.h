@@ -69,6 +69,7 @@ static inline void arch_preempt_enable(void)
  * ------------------------------------------------------------------- */
 
 extern volatile uint16_t i16_switch_pending;
+extern volatile uint16_t i16_current_ksp;
 
 static inline void arch_yield(void)
 {

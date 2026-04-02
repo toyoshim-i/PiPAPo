@@ -143,16 +143,16 @@ static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   uint16_t proc_seg = (uint16_t)(base_linear >> 4);
   uint16_t entry_ip = (uint16_t)ehdr->e_entry;
 
-  /* Stack: SP is an absolute linear address (SS=0).
-   * Stack top = base_linear + alloc_size. */
-  uint32_t sp_linear = base_linear + alloc_size;
+  /* User stack: SS=proc_seg, SP is segment-relative.
+   * Stack top = alloc_size (top of the allocated region within segment). */
+  uint16_t user_sp_top = (uint16_t)alloc_size;
 
-  /* Build the initial interrupt frame on the process stack.
-   * Use mem_region_page_write to place it (avoids near-pointer truncation).
-   * Frame grows downward: HW frame (6B) on top, then SW frame (18B). */
+  /* Build the 24-byte frame on the user stack (proc_seg segment).
+   * This is what the ISR restore path pops: GP regs + IRET frame.
+   * Frame grows downward within the segment. */
   uint16_t hw_frame[3];
   hw_frame[0] = entry_ip;     /* IP */
-  hw_frame[1] = proc_seg;     /* CS */
+  hw_frame[1] = proc_seg;     /* CS = process segment */
   hw_frame[2] = 0x0200;       /* FLAGS: IF=1 */
 
   uint16_t sw_frame[9];
@@ -166,17 +166,31 @@ static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   sw_frame[7] = 0;            /* BX */
   sw_frame[8] = 0;            /* AX */
 
-  uint32_t hw_pos = sp_linear - sizeof(hw_frame);
+  /* Write hardware frame (6B) at top of user stack */
+  uint16_t hw_off_seg = user_sp_top - sizeof(hw_frame);
+  uint32_t hw_pos = base_linear + hw_off_seg;
   uint16_t hw_pg = (uint16_t)((hw_pos - base_linear) / PAGE_SIZE);
   uint16_t hw_off = (uint16_t)((hw_pos - base_linear) % PAGE_SIZE);
   mem_region_page_write(base_id + hw_pg, hw_off, hw_frame, sizeof(hw_frame));
 
-  uint32_t sw_pos = hw_pos - sizeof(sw_frame);
+  /* Write software frame (18B) below hardware frame */
+  uint16_t sw_off_seg = hw_off_seg - sizeof(sw_frame);
+  uint32_t sw_pos = base_linear + sw_off_seg;
   uint16_t sw_pg = (uint16_t)((sw_pos - base_linear) / PAGE_SIZE);
   uint16_t sw_off = (uint16_t)((sw_pos - base_linear) % PAGE_SIZE);
   mem_region_page_write(base_id + sw_pg, sw_off, sw_frame, sizeof(sw_frame));
 
-  p->sp = (uint32_t)sw_pos;
+  /* user_SP points to top of GP frame (segment-relative) */
+  uint16_t user_sp = sw_off_seg;
+
+  /* Build the 4-byte kernel stack frame: [user_SS, user_SP].
+   * The ISR restore path pops these to switch back to the user stack.
+   * Write directly to the kernel stack (it's in DS=0 near memory). */
+  uint16_t ksp = p->kernel_stack_top;
+  uint16_t *kstack = (uint16_t *)(uintptr_t)ksp;
+  *--kstack = proc_seg;        /* user_SS */
+  *--kstack = user_sp;         /* user_SP (segment-relative) */
+  p->sp = (uint32_t)(uintptr_t)kstack;
 
   /* Track pages by index — no pointer truncation. */
   for (uint16_t i = 0; i < npages; i++)

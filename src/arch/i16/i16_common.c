@@ -10,6 +10,11 @@
  * Same pattern as m68k_switch_pending / riscv_switch_pending. */
 volatile uint16_t i16_switch_pending = 0;
 
+/* Current process's kernel stack pointer.  ISR/syscall entry loads
+ * SS:SP from SS=0:i16_current_ksp.  Updated on context switch and
+ * at boot.  Avoids dereferencing current_core before SS=0 is set. */
+volatile uint16_t i16_current_ksp = 0xF400;  /* kernel_stack[0] top */
+
 /* Tick counter incremented by timer handler */
 volatile uint32_t i16_tick_count = 0;
 
@@ -21,13 +26,19 @@ volatile uint16_t i16_sigreturn_restore_sp = 0;
 
 /* -- Initial stack frame for new processes --------------------------------
  *
- * Build a 24-byte frame matching what i16_timer_isr saves/restores:
- *   [SP+0 ] ES    [SP+2 ] DS    [SP+4 ] BP    [SP+6 ] DI
- *   [SP+8 ] SI    [SP+10] DX    [SP+12] CX    [SP+14] BX
- *   [SP+16] AX    [SP+18] IP    [SP+20] CS    [SP+22] FLAGS
+ * New frame layout (split between user stack and kernel stack):
  *
- * When the ISR's restore path pops this frame and executes IRET,
- * the CPU loads FLAGS/CS/IP and the process starts at entry().
+ * User/interrupted stack (24 bytes, popped by ISR restore + IRET):
+ *   [uSP+0 ] ES    [uSP+2 ] DS    [uSP+4 ] BP    [uSP+6 ] DI
+ *   [uSP+8 ] SI    [uSP+10] DX    [uSP+12] CX    [uSP+14] BX
+ *   [uSP+16] AX    [uSP+18] IP    [uSP+20] CS    [uSP+22] FLAGS
+ *
+ * Kernel stack (4 bytes, top of frame = pcb.sp):
+ *   [kSP+0] user_SS    [kSP+2] user_SP
+ *
+ * This function builds the kernel-only case (SS=0, PID 0) where
+ * both parts are on the same stack.  User processes use elf16_loader
+ * which builds the split frame directly.
  */
 uint32_t *arch_build_initial_frame(uint32_t *sp_arg, void (*entry)(void))
 {
@@ -35,7 +46,7 @@ uint32_t *arch_build_initial_frame(uint32_t *sp_arg, void (*entry)(void))
 
   /* Hardware interrupt frame (popped by IRET) */
   *--sp = 0x0200;                     /* FLAGS: IF=1 (interrupts enabled) */
-  *--sp = 0x0000;                     /* CS = 0 (flat model) */
+  *--sp = 0x0000;                     /* CS = 0 (kernel code segment) */
   *--sp = (uint16_t)(uintptr_t)entry; /* IP = entry point */
 
   /* Software-saved registers (popped by ISR restore path) */
@@ -46,8 +57,14 @@ uint32_t *arch_build_initial_frame(uint32_t *sp_arg, void (*entry)(void))
   *--sp = 0;  /* SI */
   *--sp = 0;  /* DI */
   *--sp = 0;  /* BP */
-  *--sp = 0;  /* DS = 0 (flat model) */
-  *--sp = 0;  /* ES = 0 (flat model) */
+  *--sp = 0;  /* DS = 0 */
+  *--sp = 0;  /* ES = 0 */
+
+  /* user_SS:user_SP — for PID 0 (kernel), SS=0 and SP points to
+   * the GP frame above on the same stack. */
+  uint16_t user_sp = (uint16_t)(uintptr_t)sp;
+  *--sp = 0;         /* user_SS = 0 */
+  *--sp = user_sp;   /* user_SP = points to ES at top of GP frame */
 
   return (uint32_t *)(uintptr_t)sp;
 }

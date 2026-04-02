@@ -1,27 +1,35 @@
 /*
  * switch.S -- Timer ISR and context switch for i8086 real mode
  *
- * PIT IRQ 0 fires INT 08h at 100 Hz.  The ISR saves all registers,
- * calls the C tick handler, sends EOI to the 8259A PIC, checks the
- * i16_switch_pending flag, and performs a context switch if set.
+ * PIT IRQ 0 fires INT 08h at 100 Hz.  The ISR saves GP registers on
+ * the current stack (user or kernel), switches to the per-process
+ * kernel stack (SS=0), and saves the original SS:SP there.  The
+ * hardware-pushed FLAGS/CS/IP and the GP register frame stay on the
+ * interrupted stack.  On exit, user SS:SP is restored and IRET pops
+ * FLAGS/CS/IP from there.
  *
- * Register save order (9 pushw = 18 bytes software + 6 bytes hardware):
- *   [SP+0 ] ES
- *   [SP+2 ] DS
- *   [SP+4 ] BP
- *   [SP+6 ] DI
- *   [SP+8 ] SI
- *   [SP+10] DX
- *   [SP+12] CX
- *   [SP+14] BX
- *   [SP+16] AX
- *   [SP+18] IP   (pushed by INT)
- *   [SP+20] CS   (pushed by INT)
- *   [SP+22] FLAGS (pushed by INT)
+ * Kernel stack (4 bytes at pcb.sp):
+ *   [SP+0] user_SS
+ *   [SP+2] user_SP   (points to saved GP regs on interrupted stack)
  *
- * Total frame: 24 bytes.  pcb.sp points to SP+0 (ES slot).
+ * Interrupted stack (24 bytes, GP + hardware frame):
+ *   [uSP+0 ] ES
+ *   [uSP+2 ] DS
+ *   [uSP+4 ] BP
+ *   [uSP+6 ] DI
+ *   [uSP+8 ] SI
+ *   [uSP+10] DX
+ *   [uSP+12] CX
+ *   [uSP+14] BX
+ *   [uSP+16] AX
+ *   [uSP+18] IP     (pushed by INT)
+ *   [uSP+20] CS     (pushed by INT)
+ *   [uSP+22] FLAGS  (pushed by INT)
  *
- * Note: 8086 has no PUSHA/POPA (those are 80186+).
+ * When interrupted from kernel (SS=0, e.g. PID 0 idle loop), the
+ * GP regs and user_SS:SP are all on the same kernel stack.
+ * The restore path is uniform: always mov user_SS→SS, user_SP→SP,
+ * then pop GP regs + IRET.
  */
 
   .code16
@@ -30,9 +38,10 @@
   .global i16_timer_isr
 
 i16_timer_isr:
-  /* CPU has pushed FLAGS, CS, IP (6 bytes) onto the current stack */
+  /* CPU has pushed FLAGS, CS, IP (6 bytes) onto current SS:SP.
+   * IF=0 (disabled by INT hardware). */
 
-  /* Save all general-purpose registers + segment registers */
+  /* Save all GP registers on the CURRENT stack */
   pushw %ax
   pushw %bx
   pushw %cx
@@ -42,14 +51,35 @@ i16_timer_isr:
   pushw %bp
   pushw %ds
   pushw %es
+  /* Current stack now has 24 bytes: ES..AX + IP/CS/FLAGS */
 
-  /* Set DS = ES = 0 for kernel data access (flat model) */
+  /* Capture current SS:SP */
+  movw  %ss, %ax        /* AX = interrupted SS */
+  movw  %sp, %bp        /* BP = interrupted SP (top of 24-byte frame) */
+
+  /* If already on kernel stack (SS=0), skip the switch */
+  testw %ax, %ax
+  jz    .Lkstack_ready
+
+  /* Switch to kernel stack.
+   * 8086 guarantees: instruction after SS load runs with interrupts
+   * inhibited, so the SS:SP pair is set atomically. */
+  xorw  %bx, %bx
+  movw  %bx, %ss
+  movw  i16_current_ksp, %sp
+
+.Lkstack_ready:
+  /* Push interrupted SS:SP onto kernel stack */
+  pushw %ax             /* user_SS */
+  pushw %bp             /* user_SP (points to GP frame) */
+
+  /* Set DS = ES = 0 for kernel data access */
   xorw  %ax, %ax
   movw  %ax, %ds
   movw  %ax, %es
 
   /* Call kernel timer tick handler */
-  xorw  %ax, %ax          /* from_user = 0 (no user/kernel split in real mode) */
+  xorw  %ax, %ax        /* from_user = 0 (TODO: detect from saved SS) */
   pushw %ax
   call  sched_timer_tick
   addw  $2, %sp
@@ -66,23 +96,37 @@ i16_timer_isr:
   /* Clear the flag */
   movw  $0, i16_switch_pending
 
-  /* Save current SP into current PCB.
-   * current_core[0] is a pcb_t* — SP is at offset 0 (PCB_SP_OFFSET). */
-  movw  current_core, %bx  /* BX = current_core[0] = pcb_t* */
-  movw  %sp, (%bx)         /* pcb->sp = SP */
+  /* Save current kernel SP into current PCB (offset 0) */
+  movw  current_core, %bx
+  movw  %sp, (%bx)
 
-  /* Pick next process: sched_next() returns pcb_t* in AX */
+  /* Pick next process */
   call  sched_next
 
   /* Update current_core[0] */
   movw  %ax, current_core
 
-  /* Restore SP from new PCB */
+  /* Load new process's kernel SP */
   movw  %ax, %bx
-  movw  (%bx), %sp         /* SP = new pcb->sp */
+  movw  (%bx), %sp
+
+  /* Update i16_current_ksp from new PCB.
+   * kernel_stack_top is at PCB offset 4 (sp is uint32_t = 4 bytes). */
+  movw  4(%bx), %ax
+  movw  %ax, i16_current_ksp
 
 .Lno_switch:
-  /* Restore all registers */
+  /* Restore interrupted SS:SP */
+  popw  %bp             /* user_SP */
+  popw  %ax             /* user_SS */
+
+  /* Switch back to interrupted stack.
+   * For kernel (SS=0): already SS=0, just sets SP back.
+   * For user (SS=proc_seg): switches to user segment. */
+  movw  %ax, %ss
+  movw  %bp, %sp
+
+  /* Pop GP registers from the interrupted stack */
   popw  %es
   popw  %ds
   popw  %bp
