@@ -7,9 +7,11 @@ programs without a software interpreter.
 
 ---
 
-## 1. Goals and Scope
+## Part I — Port-Specific Design
 
-### 1.1 Primary Goal
+### 1. Goals and Scope
+
+#### 1.1 Primary Goal
 
 Produce a bootable PPAP system on an PC/XT/XT-class machine with V30 that:
 
@@ -22,18 +24,18 @@ Produce a bootable PPAP system on an PC/XT/XT-class machine with V30 that:
 - Uses the V30's hardware 8080 emulation mode (`BRKEM`/`RETEM`) as an eCPU
   for running 8080 CP/M-80 programs at native speed.
 
-### 1.2 Extended Goals
+#### 1.2 Extended Goals
 
 - DOS subsystem: load and run MS-DOS .COM and .EXE (MZ) binaries with an
   INT 21h bridge (analogous to the Human68k bridge on X68000).
-- Boot from a hard disk via BIOS INT 13h (Phase P-5b); direct ATA/IDE
-  PIO driver as an extended feature.
+- Boot from a hard disk via BIOS INT 13h; direct ATA/IDE PIO driver as an
+  extended feature.
 - Direct VGA text-mode driver replacing BIOS calls.
 - Keyboard input via INT 16h / direct 8042 controller access.
 - Full Z80 CP/M support via software eCPU (for programs using Z80 extensions
   beyond the 8080 instruction set).
 
-### 1.3 Out of Scope
+#### 1.3 Out of Scope
 
 - Graphics modes (VGA/EGA/CGA graphics, VESA).
 - Sound (PC speaker melody, Sound Blaster, AdLib).
@@ -43,15 +45,13 @@ Produce a bootable PPAP system on an PC/XT/XT-class machine with V30 that:
 
 ---
 
-## 2. V30 CPU Overview
+### 2. V30 CPU Overview
 
-### 2.1 8086 Compatibility
+#### 2.1 8086 Compatibility
 
 The NEC V30 (μPD70116) is a pin-compatible and instruction-compatible
 replacement for the Intel 8086.  It runs all 8086 code unchanged, with
 slightly improved cycle counts on many instructions.
-
-Key properties relevant to PPAP:
 
 | Property | Value |
 |----------|-------|
@@ -66,12 +66,12 @@ Key properties relevant to PPAP:
 The V20 (μPD70108) is the 8088-compatible variant (8-bit external bus).
 Both V20 and V30 include the 8080 emulation mode described below.
 
-### 2.2 Hardware 8080 Emulation Mode
+#### 2.2 Hardware 8080 Emulation Mode
 
 The V30 includes dedicated microcode for executing Intel 8080 instructions
 natively.  This is distinct from Z80 — the 8080 is a strict subset.
 
-#### Entering 8080 mode: `BRKEM imm8`
+**Entering 8080 mode: `BRKEM imm8`**
 
 ```nasm
 BRKEM imm8      ; opcode: 0F E0 imm8
@@ -105,7 +105,7 @@ The 8080 code sees a flat 64 KB address space corresponding to the x86
 segment that was active when `BRKEM` was issued.  All 8080 memory accesses
 use DS as the implicit segment base.
 
-#### Exiting 8080 mode: `RETEM`
+**Exiting 8080 mode: `RETEM`**
 
 ```nasm
 RETEM           ; 8080 opcode: ED FD
@@ -118,9 +118,7 @@ sequence `ED FD`).  When executed:
 2. The instruction decoder switches back to x86 mode.
 3. Execution continues at the x86 instruction following the original `BRKEM`.
 
-This provides a clean, symmetric context switch between the two ISAs.
-
-### 2.3 8080 vs Z80 — What Works, What Doesn't
+#### 2.3 8080 vs Z80 — What Works, What Doesn't
 
 | Feature | 8080 | Z80 | V30 8080 mode |
 |---------|------|-----|---------------|
@@ -145,18 +143,18 @@ most post-1980 CP/M software) will not run.
 
 ---
 
-## 3. Segmented Memory — Impact on PPAP
+### 3. Segmented Memory — Impact on PPAP
 
 This is the most significant architectural difference from ARM and m68k.
 
-### 3.1 The Segment Model
+#### 3.1 The Segment Model
 
 Physical address = `segment × 16 + offset`.  All pointers are implicitly
 relative to a segment register (CS for code, DS for data, SS for stack,
 ES for extra).  A "far pointer" is a 32-bit `segment:offset` pair that
 can address any byte in the 1 MB space.
 
-### 3.2 Kernel Memory Model
+#### 3.2 Kernel Memory Model
 
 All kernel modules share **SS=0** for data access.  Each module's code
 lives in its own code segment (separate CS).  Cross-module calls
@@ -178,21 +176,27 @@ This means:
 ```
 Segment     Contents
 ────────    ─────────────────────────────
-CS=0x0060   Core code: main, klog, mm, proc, sched, syscall, blkdev
-CS=0x1000   VFS code: vfs, namei, romfs, tmpfs, devfs, procfs, ufs
+CS=????     Core code: main, klog, mm, proc, sched, syscall, blkdev
+CS=????     VFS code: vfs, namei, romfs, tmpfs, devfs, procfs, ufs
 CS=????     Exec code: exec, loaders (future)
-SS=0        Shared data: all modules' .data, .bss, stack, page pool
+SS=0        Shared data: all modules' .data, .bss, kernel stacks
 ```
 
+Code segments are separate from the data segment — `.text` and
+`.rodata` do NOT occupy DS=0 address space.  Stage2 loads each
+module's code to its own segment and data to DS=0 (same pattern
+already used for VFS).
+
 Each module's code must fit in 64 KB.  Total data+BSS from all
-modules must fit in 64 KB (shared SS=0; currently ~6 KB).
+modules plus kernel stacks must fit in 64 KB (shared SS=0;
+currently ~14 KB including 4 × 1 KB kernel stacks).
 
 A **segment manager** (`src/kernel/common/seg.h`/`seg.c`) in the core
 module tracks each module's code segment base at runtime.  Stage2 loads
 module binaries and records their addresses in a `mod_info_t` block at
 0x0500; the core reads this at boot.
 
-### 3.3 User Process Memory
+#### 3.3 User Process Memory
 
 Each user process is assigned one or more 64 KB segments:
 
@@ -203,7 +207,7 @@ Each user process is assigned one or more 64 KB segments:
 | .EXE (DOS MZ) | N segments | Code segment(s) + data segment + stack segment |
 | PPAP native | 1–2 segments | Flat binary or PIE-like within segments |
 
-### 3.4 Page Allocator Adaptation
+#### 3.4 Page Allocator Adaptation
 
 The page allocator uses `page_id_t` (16-bit index) to identify pages,
 not `void *` pointers.  This is essential on i16 where `void *` is
@@ -222,7 +226,7 @@ The broader memory management refactoring (converting `user_pages[]`,
 `mmap_regions[]`, and `proc_image_t` from `void *` to `page_id_t`) is
 described in [`memory_management.md`](../kernel/memory_management.md).
 
-### 3.5 Pointer Translation at the Syscall Boundary
+#### 3.5 Pointer Translation at the Syscall Boundary
 
 When a user process passes a pointer to the kernel (e.g., buffer for
 `read()`), the kernel must resolve the segment:offset pair to a linear
@@ -241,9 +245,9 @@ the segment resolution local to the syscall handler.
 
 ---
 
-## 4. PC/XT Hardware
+### 4. PC/XT Hardware
 
-### 4.1 Base Machine (PC/XT Class)
+#### 4.1 Base Machine (PC/XT Class)
 
 | Item | Address/IRQ | PPAP Use |
 |------|-------------|----------|
@@ -257,7 +261,7 @@ the segment resolution local to the syscall handler.
 | FDC (µPD765A) | 0x3F0–0x3F7, IRQ 6 | **Floppy block driver** |
 | DMA (8237A) | 0x00–0x0F | FDC DMA channel 2 |
 
-### 4.2 BIOS Availability
+#### 4.2 BIOS Availability
 
 Like the X68000 IPL ROM, the PC BIOS remains mapped at 0xF0000 throughout
 execution.  BIOS interrupt handlers are always callable via software
@@ -274,7 +278,7 @@ interrupts:
 The initial port uses BIOS calls for all I/O, replacing them with direct
 hardware drivers later (same phased approach as X68000).
 
-### 4.3 Timer (8253/8254 PIT)
+#### 4.3 Timer (8253/8254 PIT)
 
 Channel 0 drives IRQ 0 for the system timer.
 
@@ -302,7 +306,7 @@ X68000.
 control.  The floppy block device uses INT 13h, which depends on the
 original BIOS timer handler for motor timeout.
 
-### 4.4 Interrupt Controller (8259A PIC)
+#### 4.4 Interrupt Controller (8259A PIC)
 
 The PC/XT has one 8259A with 8 IRQ lines (IRQ 0–7) mapped to INT 08h–0Fh:
 
@@ -328,13 +332,13 @@ outb(0x20, 0x20);       /* Non-specific EOI */
 
 ---
 
-## 5. V30 8080 Mode as eCPU
+### 5. V30 8080 Mode as eCPU
 
 This is the key differentiator of the V30 port.  Instead of the software
 Z80 interpreter (`ecpu_z80.c`, ~1400 lines), the V30's hardware 8080 mode
 provides native instruction execution for 8080-clean CP/M programs.
 
-### 5.1 Architecture Mapping
+#### 5.1 Architecture Mapping
 
 | PPAP eCPU Concept | Software Z80 (current) | V30 8080 Mode |
 |-------------------|----------------------|---------------|
@@ -345,7 +349,7 @@ provides native instruction execution for 8080-clean CP/M programs.
 | Memory access | `cpu->mem[]` array | Direct memory in the 64 KB DS segment |
 | Context switch cost | Zero (it's just C data) | `BRKEM`/`RETEM` save/restore (~30 clocks) |
 
-### 5.2 BDOS/BIOS Trap Mechanism
+#### 5.2 BDOS/BIOS Trap Mechanism
 
 CP/M programs call BDOS at address 0x0005 and BIOS via the jump table at
 the top of the TPA (typically 0xFE00+).  The trap mechanism:
@@ -382,42 +386,31 @@ Kernel: cpm_bridge.c
 User: CP/M program continues in 8080 mode
 ```
 
-This is functionally identical to the software Z80's `ECPU_TRAP_RST`
-mechanism, but the "emulator loop" is the V30 hardware itself.
-
-### 5.3 I/O Port Handling
+#### 5.3 I/O Port Handling
 
 The 8080 `IN` and `OUT` instructions in V30 8080 mode execute as real x86
-I/O port accesses.  This is different from the software emulator, which
-traps every I/O instruction.
-
-Options:
+I/O port accesses.
 
 **Option A — Unused port range (recommended)**:
 Map CP/M virtual I/O ports to a range of x86 I/O ports that are unused on
-the PC (e.g., 0x300–0x30F).  The CP/M BIOS routines set up the port
-addresses accordingly.  Since these ports have no hardware behind them on
-a standard PC, reads return 0xFF and writes are silently ignored — safe
+a standard PC (e.g., 0x300–0x30F).  Since these ports have no hardware
+behind them, reads return 0xFF and writes are silently ignored — safe
 but useless.  Most CP/M programs do not use direct I/O; they go through
 BDOS.
 
 **Option B — NMI on port access**:
-Some I/O addresses can be configured to generate NMI or other traps.
 Complex and hardware-dependent; not recommended for the initial port.
 
 **Option C — Pre/post-process in bridge**:
 For the few CP/M programs that use direct I/O (mainly terminal control),
-the CP/M bridge can patch the I/O addresses in the loaded binary to
-redirect to known trap addresses.  Fragile but workable for specific
-programs.
+patch I/O addresses in the loaded binary.  Fragile but workable for
+specific programs.
 
-The recommended initial approach is Option A: let I/O fall through to
-unused ports.  Add Option C selectively if specific CP/M programs need it.
+Initial approach: Option A.  Add Option C selectively if needed.
 
-### 5.4 Memory Layout for 8080 Mode
+#### 5.4 Memory Layout for 8080 Mode
 
-Each CP/M process gets one 64 KB segment.  The kernel sets DS to point at
-this segment before issuing `BRKEM`:
+Each CP/M process gets one 64 KB segment:
 
 ```
 8080 address space (64 KB segment at DS:0000)
@@ -438,58 +431,24 @@ this segment before issuing `BRKEM`:
 └──────────────────────────────┘
 ```
 
-This matches the standard CP/M memory map exactly.  The `cpm_loader.c`
-already builds this layout for the software Z80; the same logic applies
-here, just writing into a real memory segment instead of `cpu->mem[]`.
+#### 5.5 Dual eCPU Strategy
 
-### 5.5 Dual eCPU Strategy
-
-The V30 port should support both:
+The V30 port supports both:
 
 1. **Hardware 8080 mode** — for 8080-clean CP/M programs (fast, native)
 2. **Software Z80 emulator** — for Z80 CP/M programs (slower, full compat)
 
-The subsystem loader can auto-detect which to use:
-
-```c
-int cpm_load(const char *path, ...) {
-    /* Scan binary for Z80-only opcodes (CB/DD/ED/FD prefixes) */
-    if (binary_uses_z80_extensions(code, size)) {
-        /* Use software Z80 emulator */
-        return cpm_load_ecpu_z80(path, ...);
-    }
-    /* Use V30 hardware 8080 mode */
-    return cpm_load_v30_8080(path, ...);
-}
-```
-
-Or the user explicitly selects:
-
-```sh
-# Force hardware 8080 mode (fails if binary uses Z80 instructions)
-run8080 foo.com
-
-# Force software Z80 emulator (always works)
-runz80 foo.com
-
-# Auto-detect (default)
-cpm foo.com
-```
+Auto-detection scans for Z80-only opcodes (CB/DD/ED/FD prefixes).
+Explicit selection via `run8080`, `runz80`, or `cpm` (auto-detect default).
 
 ---
 
-## 6. DOS Subsystem
+### 6. DOS Subsystem Design
 
-The extended goal: run MS-DOS .COM and .EXE programs with a DOS
-personality bridge, analogous to the Human68k bridge on X68000.
+#### 6.1 Program Formats
 
-### 6.1 Program Formats
-
-#### .COM Files
-
-Identical in concept to CP/M .COM — flat binary loaded at offset 0x0100
-within a single segment.  PSP (Program Segment Prefix) occupies
-0x0000–0x00FF.
+**.COM Files** — flat binary loaded at offset 0x0100 within a single
+segment.  PSP (Program Segment Prefix) occupies 0x0000–0x00FF.
 
 ```
 DOS .COM layout (single segment, CS=DS=ES=SS)
@@ -505,9 +464,8 @@ DOS .COM layout (single segment, CS=DS=ES=SS)
 └──────────────────────┘
 ```
 
-#### .EXE Files (MZ Format)
-
-Multi-segment programs with a relocation table in the MZ header:
+**.EXE Files (MZ Format)** — multi-segment programs with a relocation
+table in the MZ header:
 
 ```c
 struct mz_header {
@@ -528,21 +486,10 @@ struct mz_header {
 };
 ```
 
-Loading:
+Segment relocation is simpler than ELF or Human68k .x — a flat list of
+fixup addresses containing segment values, adjusted by the load segment.
 
-1. Parse MZ header, compute load size.
-2. Allocate segments for code + data + stack + extra.
-3. Load program image after the header.
-4. Apply segment relocations: each entry is a `(offset, segment)` pair
-   within the loaded image where a 16-bit segment value must be adjusted
-   by adding the actual load segment.
-5. Build PSP in the first paragraph.
-6. Set CS:IP and SS:SP from the header (adjusted by load segment).
-
-Segment relocation is simpler than ELF relocation or Human68k .x
-relocation — it's a flat list of fixup addresses containing segment values.
-
-### 6.2 INT 21h Bridge
+#### 6.2 INT 21h Bridge
 
 The core of the DOS subsystem.  Function number in AH:
 
@@ -558,50 +505,49 @@ static int dos_dispatch(struct dos_regs *r) {
     case 0x0A: return dos_buffered_input(r);  /* Buffered keyboard input */
 
     /* File operations — map to PPAP VFS */
-    case 0x3C: return dos_create(r);          /* Create file: DS:DX=path, CX=attr */
-    case 0x3D: return dos_open(r);            /* Open file: DS:DX=path, AL=mode */
-    case 0x3E: return dos_close(r);           /* Close: BX=handle */
-    case 0x3F: return dos_read(r);            /* Read: BX=handle, CX=count, DS:DX=buf */
-    case 0x40: return dos_write(r);           /* Write: BX=handle, CX=count, DS:DX=buf */
-    case 0x41: return dos_unlink(r);          /* Delete: DS:DX=path */
+    case 0x3C: return dos_create(r);          /* Create file */
+    case 0x3D: return dos_open(r);            /* Open file */
+    case 0x3E: return dos_close(r);           /* Close */
+    case 0x3F: return dos_read(r);            /* Read */
+    case 0x40: return dos_write(r);           /* Write */
+    case 0x41: return dos_unlink(r);          /* Delete */
     case 0x43: return dos_chmod(r);           /* Get/set attributes */
-    case 0x56: return dos_rename(r);          /* Rename: DS:DX=old, ES:DI=new */
+    case 0x56: return dos_rename(r);          /* Rename */
 
     /* Directory */
-    case 0x39: return dos_mkdir(r);           /* Create directory */
-    case 0x3A: return dos_rmdir(r);           /* Remove directory */
-    case 0x3B: return dos_chdir(r);           /* Change directory */
-    case 0x47: return dos_getcwd(r);          /* Get current directory */
+    case 0x39: return dos_mkdir(r);
+    case 0x3A: return dos_rmdir(r);
+    case 0x3B: return dos_chdir(r);
+    case 0x47: return dos_getcwd(r);
 
     /* File position */
-    case 0x42: return dos_lseek(r);           /* Seek: BX=handle, CX:DX=offset, AL=whence */
+    case 0x42: return dos_lseek(r);
 
     /* Memory management */
-    case 0x48: return dos_alloc(r);           /* Alloc: BX=paragraphs → AX=segment */
-    case 0x49: return dos_free(r);            /* Free: ES=segment */
-    case 0x4A: return dos_realloc(r);         /* Resize: ES=segment, BX=paragraphs */
+    case 0x48: return dos_alloc(r);           /* Alloc paragraphs → segment */
+    case 0x49: return dos_free(r);            /* Free segment */
+    case 0x4A: return dos_realloc(r);         /* Resize segment */
 
     /* Process control */
-    case 0x4B: return dos_exec(r);            /* EXEC: AL=subfunc, DS:DX=path */
-    case 0x4C: return dos_exit(r);            /* EXIT: AL=return code */
+    case 0x4B: return dos_exec(r);            /* EXEC */
+    case 0x4C: return dos_exit(r);            /* EXIT */
     case 0x4D: return dos_wait(r);            /* Get child return code */
 
     /* Misc */
-    case 0x25: return dos_set_vector(r);      /* Set interrupt vector */
+    case 0x25: return dos_set_vector(r);
     case 0x30: return dos_get_version(r);     /* Report DOS version (e.g. 3.30) */
-    case 0x35: return dos_get_vector(r);      /* Get interrupt vector */
+    case 0x35: return dos_get_vector(r);
     case 0x44: return dos_ioctl(r);           /* IOCTL (subset) */
     }
     return -1; /* Unhandled */
 }
 ```
 
-Most functions map directly to existing PPAP VFS operations (`sys_open`,
-`sys_read`, `sys_write`, `sys_close`, `sys_unlink`, `sys_rename`, etc.).
-The bridge translates DOS-style error codes (carry flag + AX) and
-path separators (`\` → `/`).
+Most functions map directly to existing PPAP VFS operations.  The bridge
+translates DOS-style error codes (carry flag + AX) and path separators
+(`\` → `/`).
 
-### 6.3 Drive Letter Mapping
+#### 6.3 Drive Letter Mapping
 
 Same pattern as Human68k:
 
@@ -611,12 +557,9 @@ B: → /b/   (floppy drive 1)
 C: → /c/   (hard disk — if present)
 ```
 
-Current working directory is tracked per-drive in the bridge, matching
-DOS semantics.
+Current working directory tracked per-drive in the bridge.
 
-### 6.4 PSP Construction
-
-The DOS bridge builds a 256-byte PSP for each loaded program:
+#### 6.4 PSP Construction
 
 | Offset | Size | Content |
 |--------|------|---------|
@@ -637,12 +580,72 @@ The DOS bridge builds a 256-byte PSP for each loaded program:
 
 ---
 
-## 7. Completed Phases (P-1 through P-4b)
+### 7. User-Space Memory Access Design (`user_to_page`)
 
-Phases P-1 through P-4b are complete.  The kernel boots on QEMU,
-mounts a UFS floppy, and enters the scheduler.
+All user-space pointer arguments are resolved to a **page_id + offset
+pair** before access.  The existing `mem_region_page_read/write` (already
+in the `mod_core` vtable) is the only mechanism used.
 
-### Summary
+```c
+typedef struct { page_id_t page; uint16_t off; } user_page_ref_t;
+
+static inline user_page_ref_t user_to_page(page_id_t base,
+                                           uint32_t user_off) {
+  user_page_ref_t ref;
+  ref.page = base + (page_id_t)(user_off / PAGE_SIZE);
+  ref.off  = (uint16_t)(user_off % PAGE_SIZE);
+  return ref;
+}
+```
+
+- **i16**: `linear = user_ds * 16 + raw_arg`; offset relative to process
+  segment base.
+- **32-bit flat (no MMU)**: `linear = (uint32_t)raw_arg`; offset computed
+  as `raw_arg - mem_region_page_linear(base_page)`.
+- **Future MMU targets**: page-table walk from virtual address.
+
+#### I/O syscall interface
+
+`fd_read` and `fd_write` in the VFS API accept
+`(desc, page_id_t page, uint16_t off, size_t n)`.
+`tty.c`, `pipe.c`, and vnode-backed files all use
+`mem_region_page_read/write` directly.
+
+```c
+/* sys_write: resolve user buf, pass page ref to VFS */
+user_page_ref_t ref = user_to_page(base, user_buf_off);
+return mod_vfs.fd_write(desc, ref.page, ref.off, n);
+```
+
+#### Path syscalls
+
+Path arguments are copied into a kernel stack buffer via
+`mem_region_page_read` before calling VFS.
+
+#### Struct-output syscalls
+
+Syscalls that write structured results (stat, getcwd, pipe fds,
+uname, timespec, etc.) fill a kernel-stack struct, then write to
+the user page via `mem_region_page_write`.
+
+#### Affected syscall categories
+
+| Category | Syscalls | Access |
+|----------|----------|--------|
+| I/O | read, write, readv, writev | page_read/write via VFS |
+| FS paths | open, chdir, access, mkdir, unlink, rmdir, rename, readlink, mount, execve | page_read → kernel stack |
+| FS data | stat, fstat, getdents, getcwd, llseek | page_write from kernel stack |
+| Process | pipe, wait4, set_tid_address | page_write from kernel stack |
+| Signals | rt_sigaction, rt_sigprocmask | page_read + page_write |
+| Time | gettimeofday, clock_gettime, clock_nanosleep | page_read + page_write |
+| Terminal | ioctl | page_read/write |
+| Info | uname | page_write from kernel stack |
+
+---
+
+## Part II — Current Status
+
+### 8. Completed Phases Summary
 
 | Phase | Scope | Key Result |
 |-------|-------|------------|
@@ -652,8 +655,9 @@ mounts a UFS floppy, and enters the scheduler.
 | P-3b | Full kernel integration | 46 KB binary, ia16-elf-gcc, `uintptr_t` address fields, boots to idle |
 | P-4a | Module system | `MOD_DECLARE`/`MOD_DEFINE`, mod_vfs (12 fn), mod_core (16 fn), boundary enforcement |
 | P-4b | Segment split + floppy mount | Core (CS=0x0060) + VFS (CS=0x1000) + shared SS=0, far-call stubs, UFS root mounted |
+| P-5 (partial) | User-space exec | ELF16 load, exit, timer, preemptive scheduler, `user_to_page` conversion complete, signal delivery + fork/vfork scaffolding written |
 
-### Current File Layout
+### 9. File Layout
 
 ```
 src/arch/i16/
@@ -697,13 +701,15 @@ scripts/
   mkpcimg.sh          — Assembles 1.44 MB floppy (stage1 + stage2 + UFS)
 ```
 
-### Boot Sequence
+### 10. Boot Sequence
 
 1. BIOS loads sector 0 → 0x7C00 (stage1).  Prints "Pi".
 2. Stage1 loads 8 sectors → 0xC000 (stage2).  Prints "PA".
-3. Stage2 reads UFS: loads `/boot/kernel` → 0x0600,
-   `/boot/kernel_vfs` → 0x1000:0000, `/boot/kernel_vfs_data` → DS:0xA000.
-   Writes `mod_info_t` at 0x0500.  Jumps to 0x0000:0x0600.
+3. Stage2 reads UFS: loads `/boot/kernel_text` → core CS,
+   `/boot/kernel_data` → DS:0x0600,
+   `/boot/kernel_vfs` → VFS CS, `/boot/kernel_vfs_data` → DS
+   (after core data).
+   Writes `mod_info_t` at 0x0500.  Far-jumps to core CS entry.
 4. Kernel prints "Po booting... [pcxt]" — completing "PiPAPo booting...".
 5. `target_early_init()`: UART + BIOS console, reads mod_info, registers
    segments, patches far-call tables (vfs_fptrs[], core_fptrs[]).
@@ -713,31 +719,68 @@ scripts/
    floppy motor control needs original INT 08h handler).
 9. `sched_start()`: enables interrupts, enters idle loop.
 
-### Memory Layout (Kernel Running)
+### 11. Memory Layout (Kernel Running)
+
+The kernel binary is linked at DS=0 addresses starting at 0x0600
+(text + rodata + data + BSS all contiguous).  Stage2 loads it to
+DS:0x0600 for data access AND to a far segment for code execution
+(double-load).  VFS code is in a separate far segment after the
+core copy.
 
 ```
+DS=0 (shared data/code addresses):
 0x00000-0x003FF  IVT (256 vectors × 4 bytes)
 0x00400-0x004FF  BIOS Data Area
 0x00500-0x005FF  mod_info_t (module load addresses, written by stage2)
-0x00600          Core .text.entry (boot.S: _start)
-  ...            Core .text (~28 KB), .rodata, .data (~0.5 KB)
-  ...            Core .bss (~5.8 KB, includes proc_table ~4.3 KB)
-  ...            Stack (2 KB)
-0x0A000-0x0BFFF  VFS .data + .bss (8 KB reserved in core linker)
-0x0C000-0x0FFFF  Page pool (within near-pointer range, 4 pages max)
-0x10000-0x1????  VFS .text (code segment, CS=0x1000)
-  ...  -0x9FBFF  Extended page pool (far-pointer access only)
+0x00600          Core .text + .rodata + .data + .bss (~34 KB)
+  ~0x9558        (free)
+0x0A000-0x0ECEE  VFS .data + .bss (~7.4 KB, loaded by stage2)
+  ~0x0EFFF       (free)
+0x0F000          kernel_stack[0] (1 KB, also boot stack)
+0x0F400          kernel_stack[1] (1 KB)
+0x0F800          kernel_stack[2] (1 KB)
+0x0FC00          kernel_stack[3] (1 KB)
+0x0FFFF          End of first segment
+
+Code segments (far copies, loaded by stage2):
+0x10600          Core .text copy (CS=0x1000, same offsets as DS=0)
+  ~0x18???       VFS .text (own CS, placed after core by stage2)
+  ~0x20???       (page-aligned)
+
+Page pool (all far-pointer access via page_id_t):
+0x2????-0x9FBFF  User pages (starts after last code segment)
 0x9FC00-0x9FFFF  EBDA (1 KB, preserved)
 0xA0000-0xBFFFF  Video RAM
 0xC0000-0xFFFFF  ROM / BIOS
 ```
 
-### Far-Call Mechanism
+Per-process kernel stacks (4 × 1 KB) sit at the top of the DS=0
+segment.  Each process (PROC_MAX=4) gets its own kernel stack;
+ISR/syscall entry switches SS:SP to the current process's kernel
+stack.  boot.S uses `kernel_stack[0]` (SP=0xF400) as the initial
+boot stack.
+
+### 12. Size Constraint
+
+Core text + rodata + data + BSS must fit between 0x0600 and 0x9FFF
+(~38 KB usable).  VFS data at 0xA000 must end before 0xF000
+(kernel stacks).
+
+| Component | Size | DS=0 address |
+|-----------|------|-------------|
+| Core .text + .rodata | ~34 KB | 0x0600–~0x8B7C |
+| Core .data + .bss | ~2.8 KB | ~0x8B7C–~0x9558 |
+| VFS .data + .bss | ~7.4 KB | 0xA000–~0xBCE8 |
+| Kernel stacks | 4 KB (4 × 1 KB) | 0xF000–0xFFFF |
+| VFS .text | ~33 KB | (separate far CS) |
+| Page pool | ~504 KB | after code segments (far access) |
+
+### 13. Far-Call Mechanism
 
 Cross-module calls use assembly stubs to bridge code segments:
 
 ```
-Core segment (CS=0x0060):        VFS segment (CS=0x1000):
+Core segment (own CS):           VFS segment (own CS):
 ──────────────────────────       ──────────────────────────
 caller()                         vfs_init_entry:
   call mod_vfs.init()              call vfs_init   ; near
@@ -755,7 +798,7 @@ The VFS header at offset 0 in the VFS segment contains a magic word
 `vfs_fptrs[]` and the VFS's `core_fptrs[]` with far pointer pairs
 (offset, segment).
 
-### Key Bugs Found and Fixed
+### 14. Key Bugs Found and Fixed
 
 | Bug | Root Cause | Fix |
 |-----|-----------|-----|
@@ -764,457 +807,71 @@ The VFS header at offset 0 in the VFS segment contains a magic word
 | Near fptr crosses segments | `blkdev_t.read = floppy_read` invalid in VFS CS | `mod_core.blkdev_read` far-call wrapper |
 | Far-call BP shift | `lcall; ret` left extra return addresses on stack | Rewrite stubs: pop/push CS:IP, ljmp; entry pops far frame |
 | klogf garbled output | `%x`/`%u` read `uint32_t` (4B) but i16 `unsigned int` is 2B | `%x`/`%u` read `unsigned int`; `%lx`/`%lu` for 32-bit |
-| klogf string corruption | BIOS INT 10h teletype no-op on QEMU; QEMU floppy DMA byte corruption | Not BIOS — QEMU-specific DMA quirk; correct on DOSBox-X |
 | DOSBox-X INT 0/6 crash | `subsys_init` → `procfs_register_subsys` unresolved → call 0 | Guard with `PPAP_HAS_PROCFS`; add INT 0/6 debug handler |
 | vfs_fd_stdio_init call 0 | VFS entry stub calls `vfs_fd_stdio_init` but actual function is `fd_stdio_init` | `.set vfs_fd_stdio_init, fd_stdio_init` alias in vfs_entries.S |
 | core_fptrs overflow | 12 slots but 16 functions; boot-time patching overwrote mod_core | Add mm_page_* slots to core_fptrs (16 entries) |
 | Far-call return value lost | Entry stubs did `xor %ax,%ax; mov %ax,%ds` after call, destroying AX | Use BX instead of AX for DS restore |
 | exec ops->read hangs | `vn->mount->ops->read` is a near pointer valid only in VFS CS | `mod_vfs.vnode_read()` wrapper executes read in VFS CS |
-| `fd_close_all` crash in sys_exit | Unresolved VFS function called from core sys_exit path | **Blocker**: requires completing module boundary migration |
-
-### Memory Model
-
-**Page-indexed free stack**: `free_stack[]` stores `page_id_t` indices
-(16-bit), not `void *` pointers.  This allows pages beyond the 64 KB
-near-pointer range on i16.  `page_linear[]` maps each index to its
-32-bit linear address.  BIOS INT 12h detects conventional RAM size
-at boot (typically 640 KB = 147 pages).
-
-### Size Constraint
-
-Core binary (text + rodata + data) plus BSS and stack must fit between
-0x0600 and 0xFFFF (~63 KB) due to 16-bit near pointer limit.
-
-| Component | Size |
-|-----------|------|
-| Core .text | ~30 KB |
-| VFS .text | ~26 KB (separate segment) |
-| .data | ~0.5 KB |
-| .bss | ~5.8 KB |
-| stack | 2 KB |
-| VFS data | 8 KB (reserved at 0xA000) |
-| Page pool | 588 KB (147 pages, far access via page_id_t) |
-
-The segment split resolved the original 64 KB code limit.  Future
-modules (exec) can use additional code segments.
+| `fd_close_all` crash in sys_exit | Unresolved VFS function called from core sys_exit path | Requires completing module boundary migration |
 
 ---
 
-## 8. Phase P-5: User-Space Exec and Tests
+## Part III — Remaining Work
 
-**Status**: In progress.  Module system complete (P-4a/P-4b done).
-ELF loading and exit work.  `mod_exec` vtable removed — `exec_execve`
-is now called directly (not cross-module).
+### Phase R-1: User-Space Bring-Up (current)
 
-### What Works
+Complete the remaining P-5 items to get `init` and `runtests` passing.
 
-- `elf16_loader.c` loads ELF32 (EM_386) via page-indexed API
-  (`mm_page_alloc_contiguous` + `mm_page_write`)
-- Process gets its own segment: CS=DS=ES = `base >> 4`
-- Segment-aware initial frame: 24-byte ISR frame with correct CS/IP
-- Module boundary fully resolved: `--unresolved-symbols=ignore-all`
-  removed; two-pass link with `core_exports.ld`
-- PIT 100 Hz timer and preemptive scheduler run
-- Process exits cleanly (exit syscall works)
-- `user_pages[]` converted to `page_id_t` — page tracking works
-- Timer ISR race fixed — idle thread (PID 0) gets proper context save
-- tty.c uses `mod_core.uart_*` wrappers on all targets
-- `PPAP_HAS_BLKDEV` + `PPAP_HAS_UFS` flags added — rootfs mounts
-- Memory management architecture stable: pool-relative `page_id_t`
-  (uint16_t), `page_linear[]` lookup, `mem_region_page_*` wrappers
-  (see [memory_management.md](../kernel/memory_management.md))
+#### R-1.1 Per-process kernel stacks and SS fix (G-4 + G-5)
 
-### Current Blocker
+User processes must run with `SS=proc_seg` so that ia16-elf-gcc's
+SS-relative data access hits the process segment.  The kernel must
+run with `SS=0` to access kernel globals.  Since user pages live
+above 0x10000, a 16-bit SP with SS=0 cannot reach them — so the
+kernel cannot use the user stack.  Per-process kernel stacks are
+required.
 
-User-space memory access conversion (§8.1) is complete — all syscalls
-now resolve pointers via `user_to_page()` + `mem_region_page_read/write`.
+**Design**: 4 × 1 KB kernel stacks at the top of the DS=0 segment
+(0xF000–0xFFFF).  ISR/syscall entry saves user SS:SP to the kernel
+stack and switches to `SS=0, SP=kernel_stack_top[pid]`.  IRET path
+restores user SS:SP.
 
-The current blockers preventing first user output are documented in
-§8.2 (Gap Analysis).  Serial/headless output (G-3), BIOS tty output
-(G-2), and the first-segment DS=0 / page-pool overlap are now fixed.
-The remaining bring-up blockers are the user `SS` / initial `SP`
-issues in G-4 / G-5 plus the post-`init` exec handoff that still falls
-back to `/bin/sh`.  See §8.3 for the updated ordered bring-up plan.
+**Prerequisites**: Split core `.text` out of DS=0 into its own code
+segment (same pattern as VFS), freeing ~34 KB of DS=0 space.  Stage2
+already supports loading separate text/data files via `load_file_far`.
 
-### Steps
+**Steps**:
 
-1. **User-space memory access** — convert syscall handlers to
-   resolve user pointers via `user_to_page()` + `mem_region_page_read/
-   write`.  Change `fd_read`/`fd_write` VFS API to accept
-   `page_id_t` + offset.  See §8.1 for details.
+1. **Split core text/data** — separate linker scripts for core .text
+   (own CS) and core .data+.bss (DS=0 at 0x0600).  Update stage2 to
+   load `/boot/kernel_text` and `/boot/kernel_data` separately.
+   Update `mkpcimg.sh` and CMakeLists.txt.
 
-2. **Signal delivery for i16** — implement `sys_sigreturn` / signal
-   trampoline.
-   Current status: trap return now routes through an i16 signal-delivery
-   frame plus `sigreturn_trampoline`, and `sys_sigreturn` restores the
-   interrupted frame. Runtime validation still depends on `--test pcxt`.
+2. **Relocate VFS data** — place VFS .data+.bss immediately after
+   core .bss (no hardcoded 0xA000).  Two-pass link via
+   `core_exports.ld` provides the start address.
 
-3. **Fork / waitpid** — process segment duplication via
-   `mem_region_page_read/write` for cross-segment copy.
-   Current status: i16 `vfork` now restores children from the copied
-   INT 30h frame offset, and trap return now handles `execve`,
-   blocking-syscall restart, and immediate post-syscall switches from
-   the syscall path. Runtime validation still depends on `--test pcxt`.
+3. **Add kernel stacks** — define `kernel_stack[4]` at 0xF000 in
+   the core linker script.  boot.S sets SP=0xF400 (top of stack[0]).
+   Remove the old 2 KB static stack.
 
-4. **`--test pcxt` in run.sh** — integrate with existing test harness.
+4. **Extend ISR/syscall frame** — on INT entry, save user SS:SP to
+   the kernel stack, set SS=0 and SP to the process's kernel stack.
+   On IRET, restore user SS:SP.  Frame grows from 24 to 28 bytes
+   (add SS and SP slots).
 
-### P-5 Step 1 Checklist
+5. **Update elf16_loader** — set initial user SS=proc_seg and
+   SP=segment-relative offset (e.g., 0x2000 for 2 pages).  Build
+   the initial frame on the process's kernel stack, not user memory.
 
-- [x] Route `SYS_READ` / `SYS_WRITE` through a shared
-  `user_to_page()`-based syscall path so both ia16 and flat targets
-  resolve user buffers the same way.
-- [x] Change `mod_vfs.fd_read` / `fd_write` to accept `page_id_t` +
-  `uint16_t off`.
-- [x] Change `struct file_ops.read` / `write` to accept `page_id_t` +
-  `uint16_t off`.
-- [x] Update `tty.c` and `pipe.c` to access user buffers via
-  `mem_region_page_read` / `write`.
-- [x] Update vnode-backed `fd.c` read/write bridge for page-backed user
-  buffers without relying on raw user pointers.
-- [x] Remove the temporary bounce buffer in `fd.c` by changing vnode /
-  filesystem `read` / `write` callbacks to accept `page_id_t` +
-  `uint16_t off` directly.
-- [x] Convert `sys_writev` / `sys_readv` to the same user-buffer
-  resolution path.
-- [x] Convert path-based syscalls (`open`, `execve`, `chdir`, `mkdir`,
-  `unlink`, `rmdir`, `rename`, `readlink`, `mount`) to copy strings from
-  user pages into kernel buffers.
-- [x] Convert struct-output syscalls (`stat*`, `getdents*`, `getcwd`,
-  `pipe`, `wait4`, `uname`, time syscalls, `ioctl`) to write results back
-  with `mem_region_page_write`.
-  Current progress: `stat*`, `getdents*`, `getcwd`, `pipe`, `wait4`,
-  `uname`, `gettimeofday`, `clock_gettime*`, `nanosleep` /
-  `clock_nanosleep*`, `ioctl`, `poll`, `ppoll`, and the realtime
-  signal-struct syscalls are now on the shared copy-in / copy-out path.
-  `set_tid_address` now stores a resolved `user_page_ref_t` instead of a
-  raw pointer, and `ptrace` now copies tracer-owned payloads through the
-  shared helpers while keeping tracee addresses as scalar control
-  values.
-- [x] Remove `SYS_READ` / `SYS_WRITE` pointer rewriting from
-  `i16_syscall_dispatch` and then remove the remaining per-syscall pointer
-  rewriting once all converted syscalls resolve their own user buffers.
+6. **Update context switch** — `pcb->sp` now points into the
+   per-process kernel stack.  `sched_next` swap works as before.
 
-### 8.1 User-Space Memory Access (`user_to_page`)
+Files affected: `pcxt_kernel.ld`, `pcxt_vfs.ld`, `boot.S`,
+`switch.S`, `trap.S`, `i16_common.c`, `elf16_loader.c`, `stage2.c`,
+`mkpcimg.sh`, `CMakeLists.txt`, `signal_check` frame layout.
 
-Syscall handlers currently receive user pointers as raw `void *` and
-dereference them directly.  This is broken on i16 (user memory is in
-a different segment) and will not scale to MMU or 64-bit targets.
-
-An audit found **35+ syscalls with 60+ unresolved pointer arguments**.
-
-#### Design
-
-All user-space pointer arguments are resolved to a **page_id + offset
-pair** before access.  No new files, no new cross-module APIs — the
-existing `mem_region_page_read/write` (already in the `mod_core`
-vtable) is the only mechanism used.
-
-A single inline helper converts a user-space offset to a page
-reference (committed in `proc.h`):
-
-```c
-typedef struct { page_id_t page; uint16_t off; } user_page_ref_t;
-
-static inline user_page_ref_t user_to_page(page_id_t base,
-                                           uint32_t user_off) {
-  user_page_ref_t ref;
-  ref.page = base + (page_id_t)(user_off / PAGE_SIZE);
-  ref.off  = (uint16_t)(user_off % PAGE_SIZE);
-  return ref;
-}
-```
-
-The caller passes the process's base page ID
-(`proc_page_backed_base(current)`) and a byte offset within the
-process's address space.
-
-- **i16**: `linear = user_ds * 16 + raw_arg` (DS derived from
-  process base page).  The offset is relative to the process
-  segment base.
-- **32-bit flat (no MMU)**: `linear = (uint32_t)raw_arg` (already
-  a linear address).  The offset is computed as
-  `raw_arg - mem_region_page_linear(base_page)`.
-- **Future MMU targets**: page-table walk from virtual address.
-
-The resolution produces a `(page_id_t, uint16_t offset)` pair that
-works with the existing `mem_region_page_read/write` on all targets.
-
-Current status:
-
-- `sys_read` / `sys_write` already convert user pointers to
-  `(page_id_t, uint16_t off)` through an arch hook, and `mod_vfs.fd_read`
-  / `fd_write` are page-based.
-- `tty.c`, `pipe.c`, and vnode-backed files now all consume those page
-  references directly.
-- Path-string syscalls now copy their inputs through the same helpers
-  before calling VFS / exec.
-- `stat*`, `getdents*`, `getcwd`, `pipe`, `wait4`, `uname`, and the basic
-  time syscalls now write results back with the same user-page helpers.
-- `ioctl`, `poll`, `ppoll`, `rt_sigaction`, and `rt_sigprocmask` now
-  copy their small argument / result structs through the same helpers
-  instead of dereferencing raw user pointers.
-- `i16_syscall_dispatch` now passes raw register values through to the
-  shared syscall layer, and the dead `read_user_byte` shim has been
-  removed from `arch.h`.
-- Kernel callers with ordinary linear buffers can now convert the original
-  pointer to `(page_id_t, uint16_t off)` and use the same fd / vnode path
-  without a hidden bounce layer.
-- Explicit copies still remain only at true foreign-memory boundaries such
-  as emulated guest RAM, where there is no kernel linear pointer to convert.
-
-#### I/O syscall changes
-
-`fd_read` and `fd_write` in the VFS API change from
-`(desc, char *buf, size_t n)` to
-`(desc, page_id_t page, uint16_t off, size_t n)`.
-
-The fd API is already page-based.  `tty.c`, `pipe.c`, and vnode-backed
-files all use `mem_region_page_read/write` directly now that the
-filesystem callbacks also take `page_id_t + off`.  The same
-syscall-to-fd code path works on all architectures:
-
-```c
-/* sys_write: resolve user buf, pass page ref to VFS */
-user_page_ref_t ref = user_to_page(base, user_buf_off);
-return mod_vfs.fd_write(desc, ref.page, ref.off, n);
-
-/* Inside tty_write (VFS module): */
-char ch;
-mem_region_page_read(page, off + i, &ch, 1);
-uart_putc(ch);
-```
-
-Internal callers can pass page-backed kernel buffers through the same
-fd API by using `mem_region_ptr_to_page()` plus the in-page offset.
-Arbitrary non-page-backed buffers are still copied explicitly at the
-caller boundary; they are not yet handled directly by the page-based
-fd API.
-
-#### Path syscalls
-
-Path arguments are copied into a kernel stack buffer before calling
-VFS (the copy is unavoidable — VFS needs a NUL-terminated `const
-char *`).  The copy uses `mem_region_page_read` directly:
-
-```c
-/* sys_open: read path from user page into kernel stack */
-char kpath[VFS_PATH_MAX];
-user_page_ref_t ref = user_to_page(base, user_path_off);
-/* read across page boundaries in chunks */
-mem_region_page_read(ref.page, ref.off, kpath, n);
-int desc = mod_vfs.fd_open(kpath, flags, mode);
-```
-
-#### Struct-output syscalls
-
-Syscalls that write structured results (stat, getcwd, pipe fds,
-uname, timespec, etc.) fill a kernel-stack struct, then write it to
-the user page via `mem_region_page_write`:
-
-```c
-/* sys_getcwd: fill kernel buf, write to user page */
-char kbuf[64];
-memcpy(kbuf, current->cwd, len + 1);
-user_page_ref_t ref = user_to_page(base, user_buf_off);
-mem_region_page_write(ref.page, ref.off, kbuf, len + 1);
-```
-
-#### `i16_syscall_dispatch` cleanup
-
-The per-syscall pointer-resolution switch is **removed entirely**.
-`i16_syscall_dispatch` passes raw 16-bit register values as
-`frame[0..3]`.  Each syscall handler resolves its own pointer
-arguments via `user_to_page`.
-
-#### Affected syscalls
-
-| Category | Syscalls | Pointer args | Access |
-|----------|----------|-------------|--------|
-| I/O | read, write, readv, writev | buf, iovec | page_read/write via VFS |
-| FS paths | open, chdir, access, mkdir, unlink, rmdir, rename, readlink, mount, execve | path strings | page_read → kernel stack |
-| FS data | stat, fstat, getdents, getcwd, llseek | output structs | page_write from kernel stack |
-| Process | pipe, wait4, set_tid_address | fds[], status | page_write from kernel stack |
-| Signals | rt_sigaction, rt_sigprocmask | sigaction structs | page_read + page_write |
-| Time | gettimeofday, clock_gettime, clock_nanosleep | timespec structs | page_read + page_write |
-| Terminal | ioctl | arg struct | page_read/write |
-| Info | uname | utsname struct | page_write from kernel stack |
-
-#### Migration order
-
-1. Route `sys_write` / `sys_read` / `sys_writev` / `sys_readv`
-   through a shared `user_to_page`-based syscall layer.
-2. Change `fd_read`/`fd_write` VFS API to accept `page_id_t` +
-   `uint16_t offset` instead of `char *`.  Update tty, pipe, tmpfs,
-   romfs, devfs, ufs implementations.
-3. Convert path syscalls (page_read into kernel stack buffer).
-4. Convert struct-output syscalls (page_write from kernel stack).
-5. Remove `read_user_byte` from arch.h.
-6. Remove per-syscall pointer switch from `i16_syscall_dispatch`.
-7. Remove obsolete pointer casts from `syscall_dispatch`.
-
-### 8.2 Gap Analysis: Why `init` Still Falls Back to `/bin/sh`
-
-An audit of the exec → schedule → user-space → syscall chain found five
-concrete issues preventing user-space output on pcxt.
-
-#### G-1. Old `/etc/inittab` lookup failure is fixed, but init handoff still fails
-
-The original `open("/etc/inittab") -> -EIO` failure is no longer the
-current blocker.  The real problem was the first-segment memory layout:
-the page pool still started inside the first 64 KiB segment, and the
-VFS DS=0 data window had already outgrown the old 8 KiB reservation.
-That overlap corrupted floppy-backed UFS reads during early user-space
-bring-up, which made `/etc/inittab` look unreadable even though it was
-present on the image.
-
-Current status:
-
-- the first free page now starts at `0x10000`, outside the first segment
-- the shared DS=0 region uses the rest of the first segment
-  (`0x0600..0xFFFF`)
-- the VFS linker now asserts that its DS=0 data fits inside that window
-- `init` now moves forward past the old `open("/etc/inittab")` failure
-
-What still fails now is later in the handoff:
-
-```text
-INIT: starting
-INIT: /sbin/init failed, trying /bin/sh
-```
-
-So G-1 is no longer “missing or unreadable inittab”; it is now “why
-does `init` fail after startup and fall back to `/bin/sh`?”
-
-#### G-2. BIOS console output is fixed
-
-This is no longer a blocker.
-
-- `pcxt` now models BIOS as `tty1` and COM1 as `ttyS0`
-- VFS owns the normal tty backends; we no longer pass core callbacks
-  across the module boundary
-- BIOS tty output now translates ANSI SGR colors for the VGA path
-
-This means GUI/QEMU VGA runs can show user-facing tty output directly on
-the BIOS console again.
-
-#### G-3. Headless serial capture is fixed
-
-This is no longer a blocker.
-
-The Docker/headless `pcxt` run path now uses `-serial mon:stdio`, so
-COM1 output is visible on stdio for boot and user-space debugging.
-
-#### G-4. SS=0 in user space vs DS=proc_seg (segment mismatch)
-
-The `elf16_loader` builds an initial frame with `DS=ES=proc_seg` but
-`SS` is **unchanged** — IRET in real mode pops only IP, CS, FLAGS.
-After IRET, the user process runs with:
-
-```
-CS = proc_seg   (correct — code segment)
-DS = proc_seg   (correct — data segment)
-ES = proc_seg   (correct)
-SS = 0           ← kernel data segment, NOT process segment
-```
-
-`ia16-elf-gcc` uses **SS for all data access** (`%ss:` prefix on every
-memory operand; DS is a scratch register).  This means:
-
-- `static const char msg[]` at offset 0x50 is accessed as
-  `SS:0x50 = 0:0x50 = linear 0x50` (BIOS data area — garbage)
-- Actual data is at `proc_seg:0x50` = linear `base + 0x50`
-
-The compiler's SS-for-everything behavior was verified in the kernel
-(kernel_modules.md §"i16 Segment Split") but applies equally to user
-binaries compiled with the same flags.
-
-**Consequence**: Any user program that accesses static data crashes or
-reads garbage.  Even `write(1, banner, sizeof(banner)-1)` may appear
-to work (the kernel resolves the pointer via page index), but the C
-runtime itself (crt0, main locals via SS-relative BP) could malfunction
-depending on exact address layout.
-
-**Fix**: The user process must run with `SS=proc_seg` so that
-SS-relative data access hits the process segment.  Two approaches:
-
-1. **Set SS in elf16_loader's initial frame** — add an SS-switching
-   trampoline at process entry.  The timer ISR / syscall handler must
-   save and restore SS (currently they assume SS=0).  On entry to the
-   ISR, immediately load SS=0; on exit (before IRET), restore user SS
-   from the saved frame.  This requires adding an SS slot to the
-   24-byte frame (26 bytes total) and updating both `switch.S` and
-   `trap.S`.
-
-2. **Link user binaries at their linear address** — set proc_seg=0 by
-   placing user code in the 0-64K range.  This avoids changing SS but
-   limits user memory to the first 64 KB, conflicting with the kernel.
-   Not viable.
-
-Approach 1 is the correct fix.  The frame change ripples into:
-- `arch_build_initial_frame()` in `i16_common.c`
-- `elf16_loader.c` — frame construction
-- `switch.S` — save/restore SS
-- `trap.S` — save/restore SS
-- `signal_check` frame layout
-
-#### G-5. SP wraps to 0x0000 after IRET (fragile but not broken)
-
-For a 2-page process at 0xE000-0xFFFF, SP after IRET = 0x10000 mod
-2^16 = 0x0000.  The first `pushw` wraps SP to 0xFFFE (correct due to
-16-bit unsigned arithmetic).  With SS=0, writes hit linear 0xFFFE
-(inside the process pages).
-
-This is technically correct but fragile: if SS is changed to
-`proc_seg` (fix G-4), then `SP=0x0000` → first push at
-`proc_seg:0xFFFE`, which is offset 0xFFFE within the segment = linear
-`base + 0xFFFE`.  For `base = 0xE000` this is linear 0x1DFFE (above
-the allocated pages).
-
-**Fix**: After fixing G-4 (SS=proc_seg), set the initial SP to an
-offset within the segment instead of a linear address.  For 2 pages
-(8 KB), SP should be 0x2000 (the segment-relative top).
-
-### 8.3 Bring-Up Plan (Current)
-
-Ordered by dependency.  Each step is independently verifiable.
-
-**Step B-1: Fix QEMU serial + headless output** (G-3)
-
-Status: done.
-
-**Step B-2: Mirror user tty to BIOS screen** (G-2)
-
-Status: done.
-
-The implementation is slightly different from the original sketch:
-BIOS now backs `tty1`, COM1 backs `ttyS0`, and BIOS tty output
-translates ANSI colors directly.
-
-**Step B-3: Use `/bin/hello` as init target** (G-1)
-
-Status: done.
-
-This proved the basic `exec + write + exit` path.  The hello banner
-appeared on `pcxt`, so the bring-up has already moved beyond “no first
-user output”.
-
-**Step B-4: Fix SS for user processes** (G-4 + G-5)
-
-Extend the ISR frame to include SS.  Modify `elf16_loader` to build
-the frame with SS=proc_seg and SP as a segment-relative offset.
-Update `switch.S` and `trap.S` to save/restore SS on entry/exit.
-This remains open.
-
-**Step B-5: Keep the first free page outside the first segment**
-
-Status: done.
-
-The first free page now starts at `0x10000`, outside the first
-segment, and the VFS DS=0 data window is validated against the full
-`0xA000..0xFFFF` range.  This removed the old `/etc/inittab` read
-failure during early bring-up.
-
-**Step B-6: Restore `init` bring-up and debug the post-startup failure**
+#### R-1.2 Debug init post-startup failure (G-1)
 
 Current state:
 
@@ -1223,19 +880,27 @@ INIT: starting
 INIT: /sbin/init failed, trying /bin/sh
 ```
 
-The next concrete task is to trace why `init` falls back after startup
-now that floppy-backed reads are no longer failing.
+Trace why `init` falls back after startup now that floppy-backed reads
+work and `/bin/hello` exec+write+exit succeeds.
 
-**Step B-7: Enable `--test pcxt` in run.sh** (P-5 step 4)
+#### R-1.3 Signal delivery runtime validation
+
+`sys_sigreturn` / signal trampoline is scaffolded for i16 but not yet
+runtime-tested.  Validate with `--test pcxt`.
+
+#### R-1.4 Fork / waitpid runtime validation
+
+i16 `vfork` frame restore and trap-return `execve` handling are
+scaffolded.  Validate with `--test pcxt`.
+
+#### R-1.5 Enable `--test pcxt` in run.sh
 
 Wire up `--test pcxt` to build + run QEMU with exit-on-serial-match
 (same as `--test qemu_m68k`).  Verify that runtests passes.
 
 ---
 
-## 9. Phase P-5b: Hard Disk (IDE/ATA) Boot Support
-
-**Status**: Not started.
+### Phase R-2: Hard Disk (IDE/ATA) Boot Support
 
 **Goal**: PPAP boots from an HDD image and mounts a UFS root volume,
 using BIOS INT 13h for all disk I/O (no direct ATA/IDE driver).
@@ -1246,32 +911,26 @@ using BIOS INT 13h for all disk I/O (no direct ATA/IDE driver).
 2. **MBR partition table parser** (`mbr.c`) — read sector 0, parse the
    four 16-byte entries at offset 0x1BE.  Use a dedicated partition
    type byte (e.g. 0xA9) to identify the PPAP UFS partition.  The
-   partition's start LBA becomes the base offset for the block device,
-   same pattern as `UFS_FLOPPY_BASE`.
+   partition's start LBA becomes the base offset for the block device.
 3. **Stage1 for HDD** (`stage1_hdd.S`) — MBR boot sector (446 bytes of
    code + 64-byte partition table + 0xAA55 signature).  Locates the
-   active partition, loads stage2 from it, passes drive number 0x80.
+   active partition, loads stage2, passes drive number 0x80.
 4. **Stage2 dynamic geometry** — replace hardcoded 18 spt / 2 heads
-   with values from INT 13h AH=08h so the same stage2 works for both
-   floppy and HDD.
+   with values from INT 13h AH=08h.
 5. **target_pcxt.c probe** — detect HDD at boot via INT 13h AH=08h
-   (DL=0x80); if present, register "hd0" and prefer it over "fd0" for
-   root mount.
-6. **HDD image builder** (`mkhddimg.sh`) — create a raw disk image with
-   MBR + single PPAP partition + UFS filesystem.
+   (DL=0x80); if present, register "hd0" and prefer over "fd0".
+6. **HDD image builder** (`mkhddimg.sh`) — raw disk image with MBR +
+   single PPAP partition + UFS filesystem.
 
 **Constraints**: CHS addressing only (no INT 13h extensions / LBA),
-max ~504 MB (1024 cyl × 16 heads × 63 spt × 512 B).  This matches
-the PC/XT target scope.
+max ~504 MB.
 
 **Verification**: `qemu-system-i386 -hda ppap.img` boots to shell,
-mounts UFS root from the HDD partition, runs runtests.
+mounts UFS root, runs runtests.
 
 ---
 
-## 10. Phase P-6: V30 8080 Mode eCPU
-
-**Status**: Not started.
+### Phase R-3: V30 8080 Mode eCPU
 
 **Goal**: CP/M-80 programs run on V30 hardware 8080 mode.
 
@@ -1283,9 +942,7 @@ mounts UFS root from the HDD partition, runs runtests.
 
 ---
 
-## 11. Phase P-7: DOS Subsystem
-
-**Status**: Not started.
+### Phase R-4: DOS Subsystem
 
 **Goal**: MS-DOS .COM programs run with INT 21h bridge.
 
@@ -1297,9 +954,7 @@ mounts UFS root from the HDD partition, runs runtests.
 
 ---
 
-## 12. Phase P-8: Real Hardware
-
-**Status**: Not started.
+### Phase R-5: Real Hardware
 
 **Goal**: PPAP boots on physical V30 hardware (PC/XT or compatible).
 
@@ -1314,7 +969,7 @@ mounts UFS root from the HDD partition, runs runtests.
 
 ---
 
-## 13. Phase P-9: Extended Features
+### Phase R-6: Extended Features
 
 - Software Z80 eCPU (fallback for Z80 CP/M programs on V30)
 - Direct video driver (replacing BIOS INT 10h)
@@ -1324,77 +979,50 @@ mounts UFS root from the HDD partition, runs runtests.
 
 ---
 
-## 14. Dependency Graph
+### Dependency Graph
 
 ```
-P-1 through P-4b (complete — kernel boots, mounts UFS, scheduler runs)
-  └─→ P-5 (user-space exec + tests)
-        ├─→ P-5b (HDD boot via BIOS INT 13h)
-        ├─→ P-6 (V30 8080 eCPU)
-        └─→ P-7 (DOS subsystem)
-              └─→ P-8 (real hardware)
-                    └─→ P-9 (extended features)
+Completed (P-1 through P-4b + partial P-5)
+  └─→ R-1 (user-space bring-up)
+        ├─→ R-2 (HDD boot via BIOS INT 13h)
+        ├─→ R-3 (V30 8080 eCPU)
+        └─→ R-4 (DOS subsystem)
+              └─→ R-5 (real hardware)
+                    └─→ R-6 (extended features)
 ```
 
-P-5b, P-6, and P-7 can be developed in parallel after P-5.  P-8 requires
-at least P-5 (tests passing on emulator) before attempting real hardware.
+R-2, R-3, and R-4 can be developed in parallel after R-1.  R-5 requires
+at least R-1 (tests passing on emulator) before attempting real hardware.
 
 ---
 
-## 15. Risks and Open Questions
+## Part IV — Risks and References
 
-### 15.1 V30 Availability
+### Risks and Open Questions
 
-V30 is required only for hardware 8080 mode.  On a standard 8086/8088 PC,
-the same kernel works but falls back to the software 8080/Z80 emulator.
-This should be a runtime detection, not a build-time switch.
+**V30 Availability** — V30 is required only for hardware 8080 mode.  On a
+standard 8086/8088 PC, the kernel falls back to the software 8080/Z80
+emulator.  Runtime detection, not build-time switch.
 
-### 15.2 Toolchain
+**Toolchain** — `ia16-elf-gcc` (GCC port for 16-bit x86, actively
+maintained).  Docker image `ppap/ia16` bundles toolchain and QEMU.
+Build via `./scripts/run.sh --build pcxt`.
 
-`ia16-elf-gcc` (GCC port for 16-bit x86, actively maintained) is used
-for all C and assembly code.  The Docker image `ppap/ia16` bundles the
-toolchain and QEMU.  Build via `./scripts/run.sh --build pcxt`.
+**Emulators** — QEMU (`qemu-system-i386` via Docker, primary).  86Box
+(cycle-accurate, supports V30 8080 mode).  PCem, MartyPC as alternatives.
 
-### 15.3 Emulator for Development
+**8080 Mode I/O Port Conflict** — 8080 `IN`/`OUT` access real x86 I/O
+ports.  Mitigation: CP/M BIOS should not expose I/O ports directly.
 
-- **QEMU** — `qemu-system-i386` via Docker.  Primary development
-  emulator.  Does not emulate V30 8080 mode.
-- **86Box** — cycle-accurate PC/XT emulation, supports V30 CPU selection,
-  serial port passthrough, floppy images.  Recommended for V30/8080 testing.
-- **PCem** — similar capabilities, slightly different UI.
-- **MartyPC** — Rust-based cycle-accurate PC/XT 5150 emulator.
+**Interrupt Handling During 8080 Mode** — Hardware interrupts use 8080
+semantics.  Recommended approach: disable interrupts (`DI`) before
+entering 8080 mode; rely on periodic `RETEM` exits (BDOS calls) for
+timeslicing — matches existing eCPU design.
 
-### 15.4 8080 Mode I/O Port Conflict
-
-8080 `IN`/`OUT` instructions access real x86 I/O ports.  If a CP/M program
-does `OUT 0x20, A` it would send an EOI to the PIC.  Mitigation: the CP/M
-BIOS should not expose I/O ports directly; programs that bypass BIOS for
-I/O are inherently non-portable and unlikely to work on any non-native
-platform.
-
-### 15.5 Interrupt Handling During 8080 Mode
-
-When the V30 is executing in 8080 mode, hardware interrupts (timer, UART)
-are still delivered using 8080 interrupt handling semantics.  The timer ISR
-needs to work correctly in both x86 and 8080 contexts.
-
-Options:
-- Disable interrupts (`DI` in 8080) before entering 8080 mode; rely on
-  periodic `RETEM` exits (via BDOS calls) for timeslicing.
-- Keep interrupts enabled and ensure the timer ISR can handle being invoked
-  in 8080 mode (execute `RETEM` to return to x86, then handle the interrupt).
-
-Option 1 is simpler and matches PPAP's existing eCPU design where the
-emulator loop runs with interrupts disabled and checks for pending signals
-at trap points.
-
----
-
-## 16. Related Documentation
+### Related Documentation
 
 - [docs/kernel/overview.md](../kernel/overview.md) — PPAP kernel architecture
 - [docs/kernel/trace.md](../kernel/trace.md) — Trace and debug subsystem
 - [docs/kernel/syscall.md](../kernel/syscall.md) — System call reference
 - [docs/proposals/x68k_port.md](x68k_port.md) — X68000 target port (analogous m68k effort)
 - [docs/kernel/memory_management.md](../kernel/memory_management.md) — Memory management architecture
-- [docs/archive/history/target-68000-plan.md](../archive/history/target-68000-plan.md) — Original m68k planning

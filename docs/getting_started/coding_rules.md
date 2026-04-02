@@ -139,6 +139,13 @@ When adding a new arch- or target-specific feature:
   they accumulate technical debt and make the real fix harder later.
   If a proper fix is too large for the current step, file a TODO with
   a clear description of the root cause and the intended fix.
+- **Don't change or revert the plan without discussion**: when an
+  implementation hits a blocker (toolchain limitation, unexpected
+  constraint, etc.), stop and discuss the problem with the team before
+  switching to an alternative approach or reverting changes.  Silently
+  falling back to a different design — or undoing agreed-upon work —
+  wastes effort and can produce a result nobody reviewed.  Present the
+  blocker, the options, and let the design discussion decide the path.
 
 ## TODO Comments
 

@@ -7,6 +7,7 @@
 build/
 
 # Editor / tool state
+.codex
 .claude/
 .gdb-index
 .gdb_history
