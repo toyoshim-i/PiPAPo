@@ -2,7 +2,8 @@
  * pcxt_vfs.ld — VFS module linker script (shared DS=0)
  *
  * Code (.text, .rodata) starts at offset 0 in the VFS code segment.
- * Data (.data, .bss) is placed at 0xA000 in the shared DS=0 space.
+ * Data (.rodata, .data, .bss) is placed in the 0xA000-0xFFFF shared DS=0
+ * window owned by the first segment.
  *
  * The compiler generates DS-relative data access (e.g. mov ax,[0xA0xx]).
  * Since DS=0 at runtime, this correctly accesses linear 0xA0xx.
@@ -52,6 +53,9 @@ SECTIONS
   }
 
   __vfs_data_end = .;
+
+  ASSERT((__vfs_data_end <= 0x10000),
+         "ERROR: VFS DS=0 data overflows first segment (0x10000)")
 
   /DISCARD/ : {
     *(.comment)

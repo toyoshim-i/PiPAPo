@@ -154,7 +154,7 @@ void mm_init(void) {
    * with the kernel stack.  On QEMU (flat memory model) the initial
    * stack may extend into the page pool region.  Skip those pages. */
   uintptr_t stack_page_top = (stack_top + PAGE_SIZE - 1u) & ~(PAGE_SIZE - 1u);
-  uintptr_t pool_base;
+  uint32_t pool_base;
 #if defined(__xtensa__)
   pool_base = xtensa_pool_base;
 #else
@@ -254,7 +254,7 @@ void *page_alloc_at(void *addr) {
   uintptr_t target = (uintptr_t)addr;
 
   /* Validate: must be page-aligned and within the runtime pool */
-  uintptr_t pb = page_pool_base();
+  uint32_t pb = page_pool_base();
   if (target < pb || target >= pb + page_count * PAGE_SIZE)
     return NULL;
   if (target & (PAGE_SIZE - 1u)) return NULL;
@@ -310,7 +310,7 @@ static void stack_backtrace(void) {
 void page_free(void *page) {
   /* Rudimentary double-free / out-of-range guard */
   uintptr_t addr = (uintptr_t)page;
-  uintptr_t pb = page_pool_base();
+  uint32_t pb = page_pool_base();
   if (addr < pb || addr >= pb + page_count * PAGE_SIZE)
     return; /* ignore bogus pointer rather than corrupt the stack */
 
@@ -333,9 +333,9 @@ void page_free(void *page) {
   spin_unlock_irqrestore(SPIN_PAGE, saved);
 }
 
-uintptr_t page_pool_base(void) {
+uint32_t page_pool_base(void) {
 #if defined(__xtensa__)
-  return xtensa_pool_base;
+  return (uint32_t)xtensa_pool_base;
 #else
   return PAGE_POOL_BASE;
 #endif

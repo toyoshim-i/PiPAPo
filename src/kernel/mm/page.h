@@ -42,11 +42,11 @@ extern char __page_pool_start[];
 #endif
 #elif defined(__ia16__)
 /* i8086 real mode: flat model (all segments = 0).
- * Kernel at 0x3000, page pool placed by linker after stack. */
+ * Kernel occupies the first segment; the page pool starts at the next
+ * 64 KiB boundary so mem_region pages live outside shared DS=0 space. */
 #define SRAM_KERNEL_BASE 0x0600u
 #define SRAM_KERNEL_SIZE (4u * 1024u)
-extern char __page_pool_start[];
-#define PAGE_POOL_BASE ((uintptr_t)__page_pool_start)
+#define PAGE_POOL_BASE 0x10000ul
 #define PAGE_POOL_SIZE (PAGE_COUNT_MAX * PAGE_SIZE)
 #ifndef RAM_END
 #define RAM_END 0x9FC00ul  /* 640 KB conventional - EBDA */
@@ -101,10 +101,10 @@ void *page_alloc_at(void *addr);
  * obtained from page_alloc(), or if it is freed more than once. */
 void page_free(void *page);
 
-/* Return the runtime page pool base address.  On Xtensa this is
+/* Return the runtime page pool base linear address.  On Xtensa this is
  * dynamically allocated from ESP-IDF's heap; on other targets it
  * equals the compile-time PAGE_POOL_BASE. */
-uintptr_t page_pool_base(void);
+uint32_t page_pool_base(void);
 
 /* Return the number of pages currently on the free stack. */
 uint32_t page_free_count(void);

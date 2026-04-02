@@ -1853,6 +1853,8 @@ long sys_waitpid(long pid, long status_ptr, long options) {
 
   if (options & WNOHANG) return 0;
 
+  target_enable_deferred_timer();
+
   /* Block and arrange for syscall restart.
    * sys_exit will wake us by setting PROC_RUNNABLE.
    * SVC_Handler will restore frame[0] and PC-2 so the SVC re-executes. */

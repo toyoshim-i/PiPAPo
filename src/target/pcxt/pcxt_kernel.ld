@@ -9,8 +9,8 @@
  *                  .data (core initialized globals)
  *                  .bss (core zero-initialized globals)
  *                  2 KB stack
- *   0xA000-0xBFFF  Reserved for VFS module .data + .bss
- *   ALIGN(4096)    __page_pool_start (free pages)
+ *   0xA000-0xFFFF  Reserved for VFS module DS=0 data + bss
+ *   0x10000+       __page_pool_start (free pages)
  *
  * VFS code lives in a separate segment (CS=0x1000).
  * VFS data lives at 0xA000 in this shared DS=0 space.
@@ -33,6 +33,8 @@ SECTIONS
     *(.rodata .rodata.*)
   }
 
+  __core_cs_end = .;
+
   .data : {
     *(.data .data.*)
   }
@@ -49,15 +51,17 @@ SECTIONS
 
   /* Stack (2 KB) */
   . = ALIGN(2);
+  __stack_bottom = .;
   . += 2048;
   __stack_top = .;
 
-  /* Reserved for VFS module data (must match pcxt_vfs.ld) */
+  /* Reserved for VFS DS=0 data (must match pcxt_vfs.ld).  The entire
+   * remainder of the first segment stays out of the page allocator. */
   . = 0xA000;
   __vfs_data_reserved = .;
-  . += 8192;   /* 8 KB for VFS .data + .bss */
+  . = 0x10000;
 
-  /* Page pool: free pages start here */
+  /* Page pool: free pages start outside the first segment */
   . = ALIGN(4096);
   __page_pool_start = .;
 

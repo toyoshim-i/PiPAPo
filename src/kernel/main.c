@@ -165,15 +165,6 @@ void kmain(void) {
    * Self-stubs on QEMU (no SIO). */
   core1_launch(core1_sched_entry);
 
-#ifdef __ia16__
-  /* On i16, PIT timer must start after init is loaded — earlier timer
-   * ISRs interfere with page allocation and exec setup. */
-  {
-    extern void timer_init(void);
-    timer_init();
-    klog("PIT: 100 Hz timer started\n");
-  }
-#endif
   klog("SCHED: starting scheduler\n");
   sched_start();
 

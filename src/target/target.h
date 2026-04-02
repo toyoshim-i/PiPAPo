@@ -107,6 +107,14 @@ uint32_t target_caps(void);
 int target_mount_rootfs(void);
 
 /*
+ * target_enable_deferred_timer() — start any target timer deferred until
+ * user-space bring-up reaches a safe point.
+ *
+ * Most targets do not need this and inherit the default no-op.
+ */
+void target_enable_deferred_timer(void);
+
+/*
  * Optional native debugger HW-breakpoint hooks.
  *
  * These are used by ptrace for native real-surface breakpoints on targets

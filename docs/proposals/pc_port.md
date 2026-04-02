@@ -830,9 +830,11 @@ User-space memory access conversion (§8.1) is complete — all syscalls
 now resolve pointers via `user_to_page()` + `mem_region_page_read/write`.
 
 The current blockers preventing first user output are documented in
-§8.2 (Gap Analysis).  The critical path is: G-3 (serial output),
-G-2 (tty mirroring), G-4 (SS segment mismatch), G-1 (no inittab).
-See §8.3 for the ordered bring-up plan.
+§8.2 (Gap Analysis).  Serial/headless output (G-3), BIOS tty output
+(G-2), and the first-segment DS=0 / page-pool overlap are now fixed.
+The remaining bring-up blockers are the user `SS` / initial `SP`
+issues in G-4 / G-5 plus the post-`init` exec handoff that still falls
+back to `/bin/sh`.  See §8.3 for the updated ordered bring-up plan.
 
 ### Steps
 
@@ -1050,47 +1052,57 @@ arguments via `user_to_page`.
 6. Remove per-syscall pointer switch from `i16_syscall_dispatch`.
 7. Remove obsolete pointer casts from `syscall_dispatch`.
 
-### 8.2 Gap Analysis: Why No User Output Yet
+### 8.2 Gap Analysis: Why `init` Still Falls Back to `/bin/sh`
 
 An audit of the exec → schedule → user-space → syscall chain found five
 concrete issues preventing user-space output on pcxt.
 
-#### G-1. No `/etc/inittab` on the floppy image
+#### G-1. Old `/etc/inittab` lookup failure is fixed, but init handoff still fails
 
-`mkpcimg.sh` creates an empty `/etc/fstab` but never writes
-`/etc/inittab`.  When `init.c` runs, `open("/etc/inittab")` fails.
-Init falls through to `execve("/bin/sh")`, which also doesn't exist,
-so `_exit(1)` is reached immediately.  The process dies silently.
+The original `open("/etc/inittab") -> -EIO` failure is no longer the
+current blocker.  The real problem was the first-segment memory layout:
+the page pool still started inside the first 64 KiB segment, and the
+VFS DS=0 data window had already outgrown the old 8 KiB reservation.
+That overlap corrupted floppy-backed UFS reads during early user-space
+bring-up, which made `/etc/inittab` look unreadable even though it was
+present on the image.
 
-**Fix**: Add a minimal `/etc/inittab` to `mkpcimg.sh` with one
-respawn entry (`::respawn:/bin/hello`).  Alternatively, change
-`target_init_path()` to return `"/bin/hello"` during P-5 bring-up so
-the first user-space execution doesn't depend on vfork/waitpid.
+Current status:
 
-#### G-2. User tty output goes to COM1 only — not the BIOS screen
+- the first free page now starts at `0x10000`, outside the first segment
+- the shared DS=0 region uses the rest of the first segment
+  (`0x0600..0xFFFF`)
+- the VFS linker now asserts that its DS=0 data fits inside that window
+- `init` now moves forward past the old `open("/etc/inittab")` failure
 
-Kernel `klog` outputs to **both** COM1 (via `uart_putc`) and the BIOS
-screen (via `bios_putc` mirror).  But user `write(1, ...)` goes
-through `tty_write` → `tty_uart_putc` → `mod_core.uart_putc` →
-COM1 **only**.  There is no mirror to INT 10h for user writes.
+What still fails now is later in the handoff:
 
-If you watch the QEMU VGA window, kernel boot messages appear but
-user output is invisible.
+```text
+INIT: starting
+INIT: /sbin/init failed, trying /bin/sh
+```
 
-**Fix**: Either (a) register a tty backend that also calls `bios_putc`
-(a thin wrapper that calls both `uart_putc` and `bios_putc`), or
-(b) set `tty_set_backend(0, &pcxt_backend)` where `pcxt_backend.putc`
-mirrors to both outputs — same pattern as pico1calc's UART + fbcon.
+So G-1 is no longer “missing or unreadable inittab”; it is now “why
+does `init` fail after startup and fall back to `/bin/sh`?”
 
-#### G-3. Docker headless QEMU lacks `-serial mon:stdio`
+#### G-2. BIOS console output is fixed
 
-`run.sh` line 422 (headless Docker path) omits `-serial mon:stdio`.
-COM1 output goes nowhere.  Even if user programs write to COM1
-successfully, the output is discarded.
+This is no longer a blocker.
 
-**Fix**: Add `-serial mon:stdio -nographic` to the headless QEMU args,
-matching the `--host` and `--gui` modes.  Without `-nographic`, QEMU
-also attempts to open a VGA window (fails in Docker).
+- `pcxt` now models BIOS as `tty1` and COM1 as `ttyS0`
+- VFS owns the normal tty backends; we no longer pass core callbacks
+  across the module boundary
+- BIOS tty output now translates ANSI SGR colors for the VGA path
+
+This means GUI/QEMU VGA runs can show user-facing tty output directly on
+the BIOS console again.
+
+#### G-3. Headless serial capture is fixed
+
+This is no longer a blocker.
+
+The Docker/headless `pcxt` run path now uses `-serial mon:stdio`, so
+COM1 output is visible on stdio for boot and user-space debugging.
 
 #### G-4. SS=0 in user space vs DS=proc_seg (segment mismatch)
 
@@ -1162,43 +1174,59 @@ the allocated pages).
 offset within the segment instead of a linear address.  For 2 pages
 (8 KB), SP should be 0x2000 (the segment-relative top).
 
-### 8.3 Bring-Up Plan (Getting First User Output)
+### 8.3 Bring-Up Plan (Current)
 
 Ordered by dependency.  Each step is independently verifiable.
 
 **Step B-1: Fix QEMU serial + headless output** (G-3)
 
-Add `-serial mon:stdio -nographic` to the Docker headless QEMU args.
-Verify that `klog` output appears on Docker stdio.
+Status: done.
 
 **Step B-2: Mirror user tty to BIOS screen** (G-2)
 
-Create a `pcxt_tty_putc()` that calls both `uart_putc` and
-`bios_putc`.  Register it via `tty_set_backend(0, ...)` in
-`target_early_init()`.  Verify that klog AND user writes both appear
-on the VGA window.
+Status: done.
+
+The implementation is slightly different from the original sketch:
+BIOS now backs `tty1`, COM1 backs `ttyS0`, and BIOS tty output
+translates ANSI colors directly.
 
 **Step B-3: Use `/bin/hello` as init target** (G-1)
 
-Temporarily change `target_init_path()` to return `"/bin/hello"` to
-bypass init.c's vfork/inittab dependency.  hello.c does a simple
-write() + exit() — if the exec + schedule + syscall chain works, the
-rainbow banner appears.
+Status: done.
+
+This proved the basic `exec + write + exit` path.  The hello banner
+appeared on `pcxt`, so the bring-up has already moved beyond “no first
+user output”.
 
 **Step B-4: Fix SS for user processes** (G-4 + G-5)
 
 Extend the ISR frame to include SS.  Modify `elf16_loader` to build
 the frame with SS=proc_seg and SP as a segment-relative offset.
 Update `switch.S` and `trap.S` to save/restore SS on entry/exit.
-Verify that hello.c static data access works.
+This remains open.
 
-**Step B-5: Add `/etc/inittab` and restore init** (G-1)
+**Step B-5: Keep the first free page outside the first segment**
 
-Add `::respawn:/bin/hello` to `/etc/inittab` in `mkpcimg.sh`.
-Restore `target_init_path()` to `"/sbin/init"`.  Verify that init
-launches hello as a child and respawns it after exit.
+Status: done.
 
-**Step B-6: Enable `--test pcxt` in run.sh** (P-5 step 4)
+The first free page now starts at `0x10000`, outside the first
+segment, and the VFS DS=0 data window is validated against the full
+`0xA000..0xFFFF` range.  This removed the old `/etc/inittab` read
+failure during early bring-up.
+
+**Step B-6: Restore `init` bring-up and debug the post-startup failure**
+
+Current state:
+
+```text
+INIT: starting
+INIT: /sbin/init failed, trying /bin/sh
+```
+
+The next concrete task is to trace why `init` falls back after startup
+now that floppy-backed reads are no longer failing.
+
+**Step B-7: Enable `--test pcxt` in run.sh** (P-5 step 4)
 
 Wire up `--test pcxt` to build + run QEMU with exit-on-serial-match
 (same as `--test qemu_m68k`).  Verify that runtests passes.

@@ -38,11 +38,13 @@ if(IA16_TC)
   set(CMAKE_ASM_COMPILER "${IA16_TC}/bin/ia16-elf-gcc")
   set(CMAKE_OBJCOPY "${IA16_TC}/bin/ia16-elf-objcopy")
   set(CMAKE_NM "${IA16_TC}/bin/ia16-elf-nm")
+  set(CMAKE_SIZE_UTIL "${IA16_TC}/bin/ia16-elf-size")
 else()
   set(CMAKE_C_COMPILER "ia16-elf-gcc")
   set(CMAKE_ASM_COMPILER "ia16-elf-gcc")
   set(CMAKE_OBJCOPY "ia16-elf-objcopy")
   set(CMAKE_NM "ia16-elf-nm")
+  set(CMAKE_SIZE_UTIL "ia16-elf-size")
 endif()
 
 set(CMAKE_C_COMPILER_WORKS TRUE)
@@ -433,6 +435,16 @@ add_custom_command(TARGET ppap_pcxt_vfs POST_BUILD
     $<TARGET_FILE:ppap_pcxt_vfs>
     ${CMAKE_CURRENT_BINARY_DIR}/ppap_pcxt_vfs_data.bin
   COMMENT "Creating VFS code + data binaries"
+)
+
+add_custom_target(pcxt_memory_report ALL
+  COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/report_memory_usage.sh
+    ${CMAKE_SIZE_UTIL}
+    ${CMAKE_NM}
+    ${CMAKE_CURRENT_BINARY_DIR}/ppap_pcxt.elf
+    ${CMAKE_CURRENT_BINARY_DIR}/ppap_pcxt_vfs.elf
+  DEPENDS ppap_pcxt ppap_pcxt_vfs
+  COMMENT "Reporting PC/XT core and VFS memory usage"
 )
 
 # ==========================================================================

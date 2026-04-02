@@ -418,8 +418,9 @@ elif [[ "$TARGET" == "pcxt" ]]; then
         QEMU_ARGS=(-machine pc -cpu 486 -m 1M -serial mon:stdio
                    -drive "file=$ELF,format=raw,if=floppy")
     else
-        # Docker headless: VGA text + serial merged on stdio
-        QEMU_ARGS=(-machine pc -cpu 486 -m 1M
+        # Docker headless: keep serial on stdio for kernel logs and
+        # user-space debugging over ttyS0.
+        QEMU_ARGS=(-machine pc -cpu 486 -m 1M -serial mon:stdio
                    -drive "file=$ELF,format=raw,if=floppy")
     fi
     ELF=""  # already passed via -drive, clear so run_qemu doesn't add -kernel

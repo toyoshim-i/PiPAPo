@@ -257,7 +257,18 @@ void target_post_mount(void)
 {
   /* PIT timer deferred further — timer ISR (sched_timer_tick) must not
    * fire until the scheduler is fully set up with thread 0's stack page
-   * and init is loaded.  Called from sched_start_hook() instead. */
+   * and init has finished its first floppy-backed startup work. */
+}
+
+void target_enable_deferred_timer(void)
+{
+  static uint8_t pit_started;
+
+  if (!pit_started) {
+    timer_init();
+    pit_started = 1;
+    klog("PIT: 100 Hz timer started\n");
+  }
 }
 
 const char *target_init_path(void)
