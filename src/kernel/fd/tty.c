@@ -201,7 +201,11 @@ static tty_dev_t tty_devs[TTY_MAX] = {
 };
 
 /* Primary console TTY index — changed by tty_set_console() before first fork */
+#ifdef __ia16__
+static int console_tty_idx = TTY_DISPLAY;
+#else
 static int console_tty_idx = TTY_SERIAL;
+#endif
 
 /* ── tty ioctl numbers ───────────────────────────────────────────────────────
  */

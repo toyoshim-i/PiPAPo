@@ -1,8 +1,10 @@
 /*
  * pcxt_logger.c — Core-side logger sink for PC/XT
  *
- * Keeps early boot logging entirely inside the core segment. The logger
- * duplicates each character to COM1 and the BIOS teletype console.
+ * Keeps early boot logging entirely inside the core segment. We
+ * initialise both BIOS and UART output paths here, but log through the
+ * BIOS console so QEMU's -nographic mode does not interleave duplicate
+ * kernel logs from two captured sinks.
  */
 
 #include "drivers/bios_con.h"
@@ -11,7 +13,7 @@
 #include "klog.h"
 
 static int pcxt_logger_putc(char c, void (*notify)(void)) {
-  if (!uart_putc(c, notify)) return 0;
+  (void)notify;
   bios_putc(c);
   return 1;
 }
