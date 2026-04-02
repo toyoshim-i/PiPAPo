@@ -31,12 +31,13 @@ static inline void ut_print_int(int v)
 {
     if (v < 0) { UT_PRINT("-"); v = -v; }
     if (v == 0) { UT_PRINT("0"); return; }
-    static const int powers[] = {1000000000,100000000,10000000,1000000,
-                                 100000,10000,1000,100,10,1};
+    static const long powers[] = {1000000000L,100000000L,10000000L,1000000L,
+                                  100000L,10000L,1000L,100L,10L,1L};
+    long rem = v;
     int started = 0;
     for (int p = 0; p < 10; p++) {
         int d = 0;
-        while (v >= powers[p]) { v -= powers[p]; d++; }
+        while (rem >= powers[p]) { rem -= powers[p]; d++; }
         if (d || started) {
             char c = '0' + d;
             write(1, &c, 1);

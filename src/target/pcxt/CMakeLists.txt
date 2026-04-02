@@ -53,6 +53,9 @@ set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
 project(ppap_pcxt C ASM)
 
+option(PPAP_TESTS "Enable test suite" OFF)
+option(PPAP_TESTS_EXTENDED "Use extended test init runner" OFF)
+
 set(COMMON_FLAGS
   -march=i8086
   -mtune=i8086
@@ -76,6 +79,107 @@ set(PPAP_INCLUDES
   ${PPAP_ROOT}/src/kernel
   ${PPAP_ROOT}/src/target/pcxt
 )
+
+set(PCXT_USER_DIR ${PPAP_ROOT}/src/user)
+set(PCXT_USER_ARCH_DIR ${PPAP_ROOT}/src/user/arch/i16)
+set(PCXT_TEST_DIR ${PPAP_ROOT}/tests/user)
+set(PCXT_USER_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/user)
+file(MAKE_DIRECTORY ${PCXT_USER_BUILD_DIR})
+
+execute_process(
+  COMMAND ${CMAKE_C_COMPILER} -march=i8086 -print-libgcc-file-name
+  OUTPUT_VARIABLE IA16_LIBGCC
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+set(PCXT_USER_CFLAGS
+  -march=i8086
+  -mtune=i8086
+  -ffreestanding
+  -nostdlib
+  -Os
+  -Wall -Wextra -Werror
+  -Wno-unused-parameter
+  -I${PPAP_ROOT}/src
+  -I${PCXT_USER_DIR}
+)
+
+set(PCXT_USER_ASFLAGS
+  -march=i8086
+  -mtune=i8086
+)
+
+set(PCXT_USER_LDFLAGS
+  -march=i8086
+  -mtune=i8086
+  -nostdlib
+  -T ${PCXT_USER_ARCH_DIR}/user.ld
+  -Wl,--gc-sections
+  -Wl,--build-id=none
+)
+
+add_custom_command(
+  OUTPUT ${PCXT_USER_BUILD_DIR}/crt0.o
+  COMMAND ${CMAKE_C_COMPILER} ${PCXT_USER_ASFLAGS} -c
+          -o ${PCXT_USER_BUILD_DIR}/crt0.o ${PCXT_USER_ARCH_DIR}/crt0.S
+  DEPENDS ${PCXT_USER_ARCH_DIR}/crt0.S
+  COMMENT "Assembling ia16 crt0.o"
+)
+
+add_custom_command(
+  OUTPUT ${PCXT_USER_BUILD_DIR}/syscall.o
+  COMMAND ${CMAKE_C_COMPILER} ${PCXT_USER_ASFLAGS} -c
+          -o ${PCXT_USER_BUILD_DIR}/syscall.o ${PCXT_USER_ARCH_DIR}/syscall.S
+  DEPENDS ${PCXT_USER_ARCH_DIR}/syscall.S
+  COMMENT "Assembling ia16 syscall.o"
+)
+
+set(PCXT_CRT_OBJS
+  ${PCXT_USER_BUILD_DIR}/crt0.o
+  ${PCXT_USER_BUILD_DIR}/syscall.o
+)
+
+function(pcxt_user_program name source)
+  cmake_parse_arguments(ARG "" "OUTPUT_NAME" "EXTRA_CFLAGS" ${ARGN})
+
+  if(ARG_OUTPUT_NAME)
+    set(_out_name ${ARG_OUTPUT_NAME})
+  else()
+    set(_out_name ${name})
+  endif()
+
+  get_filename_component(_src_base ${source} NAME_WE)
+  get_filename_component(_src_ext ${source} LAST_EXT)
+  set(_obj ${PCXT_USER_BUILD_DIR}/${name}_${_src_base}.o)
+  set(_elf ${PCXT_USER_BUILD_DIR}/${_out_name}.elf)
+
+  if(_src_ext STREQUAL ".S" OR _src_ext STREQUAL ".s")
+    add_custom_command(
+      OUTPUT ${_obj}
+      COMMAND ${CMAKE_C_COMPILER} ${PCXT_USER_ASFLAGS} -c -o ${_obj} ${source}
+      DEPENDS ${source}
+      COMMENT "Assembling ia16 ${name}.o"
+    )
+  else()
+    add_custom_command(
+      OUTPUT ${_obj}
+      COMMAND ${CMAKE_C_COMPILER} ${PCXT_USER_CFLAGS} ${ARG_EXTRA_CFLAGS}
+              -c -o ${_obj} ${source}
+      DEPENDS ${source} ${PPAP_ROOT}/src/user/syscall.h
+      COMMENT "Compiling ia16 ${name}.o"
+    )
+  endif()
+
+  add_custom_command(
+    OUTPUT ${_elf}
+    COMMAND ${CMAKE_C_COMPILER} ${PCXT_USER_LDFLAGS}
+            -o ${_elf} ${PCXT_CRT_OBJS} ${_obj} ${IA16_LIBGCC}
+    DEPENDS ${PCXT_CRT_OBJS} ${_obj} ${PCXT_USER_ARCH_DIR}/user.ld ${IA16_LIBGCC}
+    COMMENT "Linking ia16 ${_out_name}.elf"
+  )
+
+  set_property(GLOBAL APPEND PROPERTY PCXT_USER_ELFS ${_elf})
+endfunction()
 
 # ==========================================================================
 # Target 1: stage1 (boot sector, 512 bytes)
@@ -187,6 +291,12 @@ target_include_directories(ppap_pcxt PRIVATE ${PPAP_INCLUDES})
 # beyond 64 KB are accessible.  ~150 pages typical (depends on
 # kernel size and VFS data reservation).
 target_compile_definitions(ppap_pcxt PRIVATE PAGE_COUNT_MAX=150u PPAP_HAS_BLKDEV=1)
+if(PPAP_TESTS)
+  target_compile_definitions(ppap_pcxt PRIVATE PPAP_TESTS=1)
+endif()
+if(PPAP_TESTS_EXTENDED)
+  target_compile_definitions(ppap_pcxt PRIVATE PPAP_TESTS_EXTENDED=1)
+endif()
 target_compile_options(ppap_pcxt PRIVATE ${KERNEL_FLAGS})
 
 target_link_options(ppap_pcxt PRIVATE
@@ -288,28 +398,28 @@ add_custom_command(TARGET ppap_pcxt_vfs POST_BUILD
 )
 
 # ==========================================================================
-# Target 5: hello.com (test user program for exec)
+# Target 5: ia16 user ELFs
 # ==========================================================================
 
-add_executable(hello_com
-  ${CMAKE_CURRENT_SOURCE_DIR}/user/hello.S
-)
-target_compile_options(hello_com PRIVATE -march=i8086 -ffreestanding)
-target_link_options(hello_com PRIVATE
-  -nostartfiles -nostdlib
-  -T ${CMAKE_CURRENT_SOURCE_DIR}/user/flat.ld
-)
-set_target_properties(hello_com PROPERTIES
-  SUFFIX ".elf"
-  OUTPUT_NAME "hello"
-)
+pcxt_user_program(hello ${PPAP_ROOT}/src/user/hello.c)
+pcxt_user_program(init ${PPAP_ROOT}/src/user/init.c)
 
-add_custom_command(TARGET hello_com POST_BUILD
-  COMMAND ${CMAKE_OBJCOPY} -O binary
-    $<TARGET_FILE:hello_com>
-    ${CMAKE_CURRENT_BINARY_DIR}/hello.com
-  COMMENT "Creating hello.com (test user program)"
-)
+if(PPAP_TESTS)
+  pcxt_user_program(runtests ${PPAP_ROOT}/tests/user/runtests.c
+    EXTRA_CFLAGS -I${PCXT_TEST_DIR})
+  pcxt_user_program(test_exec ${PPAP_ROOT}/tests/user/test_exec.c
+    EXTRA_CFLAGS -I${PCXT_TEST_DIR})
+  pcxt_user_program(test_vfork ${PPAP_ROOT}/tests/user/test_vfork.c
+    EXTRA_CFLAGS -I${PCXT_TEST_DIR})
+endif()
+
+if(PPAP_TESTS_EXTENDED)
+  pcxt_user_program(runtests_ext ${PPAP_ROOT}/tests/user/runtests_ext.c
+    EXTRA_CFLAGS -I${PCXT_TEST_DIR})
+endif()
+
+get_property(PCXT_USER_ELFS GLOBAL PROPERTY PCXT_USER_ELFS)
+add_custom_target(pcxt_user_elfs DEPENDS ${PCXT_USER_ELFS})
 
 # ==========================================================================
 # Post-build: assemble floppy image via mkpcimg.sh
@@ -320,8 +430,8 @@ add_custom_command(TARGET hello_com POST_BUILD
 #   old: ppap_pcxt -(POST_BUILD)-> needs VFS binary -(dep)-> ppap_pcxt
 #   new: ppap_pcxt_img depends on both independently
 add_custom_target(ppap_pcxt_img ALL
-  COMMAND ${PPAP_ROOT}/scripts/mkpcimg.sh
-  DEPENDS ppap_pcxt ppap_pcxt_vfs stage1 stage2 hello_com
+  COMMAND ${PPAP_ROOT}/scripts/mkpcimg.sh ${CMAKE_CURRENT_BINARY_DIR}
+  DEPENDS ppap_pcxt ppap_pcxt_vfs stage1 stage2 pcxt_user_elfs
   COMMENT "Assembling floppy image ppap_pcxt.img"
 )
-add_dependencies(ppap_pcxt_img ppap_pcxt ppap_pcxt_vfs stage1 stage2 hello_com)
+add_dependencies(ppap_pcxt_img ppap_pcxt ppap_pcxt_vfs stage1 stage2 pcxt_user_elfs)

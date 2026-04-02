@@ -826,11 +826,13 @@ is now called directly (not cross-module).
 
 ### Current Blocker
 
-User-space memory access (§8.1).  Syscall handlers dereference user
-pointers directly as `void *`, which is broken on i16 where user
-memory lives in a different segment.  The `user_to_page()` helper
-and `mem_region_page_read/write` infrastructure are ready; the
-syscall conversion is the remaining work.
+User-space memory access conversion (§8.1) is complete — all syscalls
+now resolve pointers via `user_to_page()` + `mem_region_page_read/write`.
+
+The current blockers preventing first user output are documented in
+§8.2 (Gap Analysis).  The critical path is: G-3 (serial output),
+G-2 (tty mirroring), G-4 (SS segment mismatch), G-1 (no inittab).
+See §8.3 for the ordered bring-up plan.
 
 ### Steps
 
@@ -1047,6 +1049,159 @@ arguments via `user_to_page`.
 5. Remove `read_user_byte` from arch.h.
 6. Remove per-syscall pointer switch from `i16_syscall_dispatch`.
 7. Remove obsolete pointer casts from `syscall_dispatch`.
+
+### 8.2 Gap Analysis: Why No User Output Yet
+
+An audit of the exec → schedule → user-space → syscall chain found five
+concrete issues preventing user-space output on pcxt.
+
+#### G-1. No `/etc/inittab` on the floppy image
+
+`mkpcimg.sh` creates an empty `/etc/fstab` but never writes
+`/etc/inittab`.  When `init.c` runs, `open("/etc/inittab")` fails.
+Init falls through to `execve("/bin/sh")`, which also doesn't exist,
+so `_exit(1)` is reached immediately.  The process dies silently.
+
+**Fix**: Add a minimal `/etc/inittab` to `mkpcimg.sh` with one
+respawn entry (`::respawn:/bin/hello`).  Alternatively, change
+`target_init_path()` to return `"/bin/hello"` during P-5 bring-up so
+the first user-space execution doesn't depend on vfork/waitpid.
+
+#### G-2. User tty output goes to COM1 only — not the BIOS screen
+
+Kernel `klog` outputs to **both** COM1 (via `uart_putc`) and the BIOS
+screen (via `bios_putc` mirror).  But user `write(1, ...)` goes
+through `tty_write` → `tty_uart_putc` → `mod_core.uart_putc` →
+COM1 **only**.  There is no mirror to INT 10h for user writes.
+
+If you watch the QEMU VGA window, kernel boot messages appear but
+user output is invisible.
+
+**Fix**: Either (a) register a tty backend that also calls `bios_putc`
+(a thin wrapper that calls both `uart_putc` and `bios_putc`), or
+(b) set `tty_set_backend(0, &pcxt_backend)` where `pcxt_backend.putc`
+mirrors to both outputs — same pattern as pico1calc's UART + fbcon.
+
+#### G-3. Docker headless QEMU lacks `-serial mon:stdio`
+
+`run.sh` line 422 (headless Docker path) omits `-serial mon:stdio`.
+COM1 output goes nowhere.  Even if user programs write to COM1
+successfully, the output is discarded.
+
+**Fix**: Add `-serial mon:stdio -nographic` to the headless QEMU args,
+matching the `--host` and `--gui` modes.  Without `-nographic`, QEMU
+also attempts to open a VGA window (fails in Docker).
+
+#### G-4. SS=0 in user space vs DS=proc_seg (segment mismatch)
+
+The `elf16_loader` builds an initial frame with `DS=ES=proc_seg` but
+`SS` is **unchanged** — IRET in real mode pops only IP, CS, FLAGS.
+After IRET, the user process runs with:
+
+```
+CS = proc_seg   (correct — code segment)
+DS = proc_seg   (correct — data segment)
+ES = proc_seg   (correct)
+SS = 0           ← kernel data segment, NOT process segment
+```
+
+`ia16-elf-gcc` uses **SS for all data access** (`%ss:` prefix on every
+memory operand; DS is a scratch register).  This means:
+
+- `static const char msg[]` at offset 0x50 is accessed as
+  `SS:0x50 = 0:0x50 = linear 0x50` (BIOS data area — garbage)
+- Actual data is at `proc_seg:0x50` = linear `base + 0x50`
+
+The compiler's SS-for-everything behavior was verified in the kernel
+(kernel_modules.md §"i16 Segment Split") but applies equally to user
+binaries compiled with the same flags.
+
+**Consequence**: Any user program that accesses static data crashes or
+reads garbage.  Even `write(1, banner, sizeof(banner)-1)` may appear
+to work (the kernel resolves the pointer via page index), but the C
+runtime itself (crt0, main locals via SS-relative BP) could malfunction
+depending on exact address layout.
+
+**Fix**: The user process must run with `SS=proc_seg` so that
+SS-relative data access hits the process segment.  Two approaches:
+
+1. **Set SS in elf16_loader's initial frame** — add an SS-switching
+   trampoline at process entry.  The timer ISR / syscall handler must
+   save and restore SS (currently they assume SS=0).  On entry to the
+   ISR, immediately load SS=0; on exit (before IRET), restore user SS
+   from the saved frame.  This requires adding an SS slot to the
+   24-byte frame (26 bytes total) and updating both `switch.S` and
+   `trap.S`.
+
+2. **Link user binaries at their linear address** — set proc_seg=0 by
+   placing user code in the 0-64K range.  This avoids changing SS but
+   limits user memory to the first 64 KB, conflicting with the kernel.
+   Not viable.
+
+Approach 1 is the correct fix.  The frame change ripples into:
+- `arch_build_initial_frame()` in `i16_common.c`
+- `elf16_loader.c` — frame construction
+- `switch.S` — save/restore SS
+- `trap.S` — save/restore SS
+- `signal_check` frame layout
+
+#### G-5. SP wraps to 0x0000 after IRET (fragile but not broken)
+
+For a 2-page process at 0xE000-0xFFFF, SP after IRET = 0x10000 mod
+2^16 = 0x0000.  The first `pushw` wraps SP to 0xFFFE (correct due to
+16-bit unsigned arithmetic).  With SS=0, writes hit linear 0xFFFE
+(inside the process pages).
+
+This is technically correct but fragile: if SS is changed to
+`proc_seg` (fix G-4), then `SP=0x0000` → first push at
+`proc_seg:0xFFFE`, which is offset 0xFFFE within the segment = linear
+`base + 0xFFFE`.  For `base = 0xE000` this is linear 0x1DFFE (above
+the allocated pages).
+
+**Fix**: After fixing G-4 (SS=proc_seg), set the initial SP to an
+offset within the segment instead of a linear address.  For 2 pages
+(8 KB), SP should be 0x2000 (the segment-relative top).
+
+### 8.3 Bring-Up Plan (Getting First User Output)
+
+Ordered by dependency.  Each step is independently verifiable.
+
+**Step B-1: Fix QEMU serial + headless output** (G-3)
+
+Add `-serial mon:stdio -nographic` to the Docker headless QEMU args.
+Verify that `klog` output appears on Docker stdio.
+
+**Step B-2: Mirror user tty to BIOS screen** (G-2)
+
+Create a `pcxt_tty_putc()` that calls both `uart_putc` and
+`bios_putc`.  Register it via `tty_set_backend(0, ...)` in
+`target_early_init()`.  Verify that klog AND user writes both appear
+on the VGA window.
+
+**Step B-3: Use `/bin/hello` as init target** (G-1)
+
+Temporarily change `target_init_path()` to return `"/bin/hello"` to
+bypass init.c's vfork/inittab dependency.  hello.c does a simple
+write() + exit() — if the exec + schedule + syscall chain works, the
+rainbow banner appears.
+
+**Step B-4: Fix SS for user processes** (G-4 + G-5)
+
+Extend the ISR frame to include SS.  Modify `elf16_loader` to build
+the frame with SS=proc_seg and SP as a segment-relative offset.
+Update `switch.S` and `trap.S` to save/restore SS on entry/exit.
+Verify that hello.c static data access works.
+
+**Step B-5: Add `/etc/inittab` and restore init** (G-1)
+
+Add `::respawn:/bin/hello` to `/etc/inittab` in `mkpcimg.sh`.
+Restore `target_init_path()` to `"/sbin/init"`.  Verify that init
+launches hello as a child and respawns it after exit.
+
+**Step B-6: Enable `--test pcxt` in run.sh** (P-5 step 4)
+
+Wire up `--test pcxt` to build + run QEMU with exit-on-serial-match
+(same as `--test qemu_m68k`).  Verify that runtests passes.
 
 ---
 

@@ -9,9 +9,9 @@
 #   Sectors 9+        UFS partition (contains /boot/kernel)
 #
 # Usage:
-#   ./scripts/mkpcimg.sh
+#   ./scripts/mkpcimg.sh [build_dir]
 #
-# Expects build artifacts in build/pcxt/:
+# Expects build artifacts in the selected build directory:
 #   stage1.bin     — boot sector flat binary (512 B)
 #   stage2.bin     — stage2 flat binary (≤4 KB)
 #   ppap_pcxt.bin — kernel flat binary
@@ -23,7 +23,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-BUILD_DIR="$PROJECT_DIR/build/pcxt"
+BUILD_DIR="${1:-$PROJECT_DIR/build/pcxt}"
 MKUFS="$PROJECT_DIR/tools/mkufs/mkufs"
 
 STAGE1="$BUILD_DIR/stage1.bin"
@@ -55,6 +55,7 @@ fi
 
 # ── Stage UFS content ─────────────────────────────────────────────────────
 
+USER_BUILD_DIR="$BUILD_DIR/user"
 UFS_STAGING="$BUILD_DIR/ufs_staging"
 rm -rf "$UFS_STAGING"
 mkdir -p "$UFS_STAGING/boot" "$UFS_STAGING/bin" "$UFS_STAGING/sbin" "$UFS_STAGING/etc"
@@ -77,16 +78,23 @@ if [[ -f "$VFS_DATA" ]]; then
 fi
 
 # Include user programs if built
-HELLO_COM="$BUILD_DIR/hello.com"
-HELLO_ELF="$BUILD_DIR/hello.elf"
-if [[ -f "$HELLO_COM" ]]; then
-  cp "$HELLO_COM" "$UFS_STAGING/bin/hello.com"
+if [[ -f "$USER_BUILD_DIR/hello.elf" ]]; then
+  cp "$USER_BUILD_DIR/hello.elf" "$UFS_STAGING/bin/hello"
 fi
-# Use ELF binary as /sbin/init (loaded by elf16_loader)
-if [[ -f "$HELLO_ELF" ]]; then
-  cp "$HELLO_ELF" "$UFS_STAGING/sbin/init"
-elif [[ -f "$HELLO_COM" ]]; then
-  cp "$HELLO_COM" "$UFS_STAGING/sbin/init"
+if [[ -f "$USER_BUILD_DIR/init.elf" ]]; then
+  cp "$USER_BUILD_DIR/init.elf" "$UFS_STAGING/sbin/init"
+fi
+if [[ -f "$USER_BUILD_DIR/runtests.elf" ]]; then
+  cp "$USER_BUILD_DIR/runtests.elf" "$UFS_STAGING/bin/runtests"
+fi
+if [[ -f "$USER_BUILD_DIR/runtests_ext.elf" ]]; then
+  cp "$USER_BUILD_DIR/runtests_ext.elf" "$UFS_STAGING/bin/runtests_ext"
+fi
+if [[ -f "$USER_BUILD_DIR/test_exec.elf" ]]; then
+  cp "$USER_BUILD_DIR/test_exec.elf" "$UFS_STAGING/bin/test_exec"
+fi
+if [[ -f "$USER_BUILD_DIR/test_vfork.elf" ]]; then
+  cp "$USER_BUILD_DIR/test_vfork.elf" "$UFS_STAGING/bin/test_vfork"
 fi
 
 # ── Create UFS image ─────────────────────────────────────────────────────

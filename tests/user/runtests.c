@@ -36,26 +36,59 @@ static void print(const char *s)
     write(1, s, len);
 }
 
+#if !defined(__ia16__)
 static int slen(const char *s) { int n = 0; while (s[n]) n++; return n; }
+#endif
 
 static void print_int(int v)
 {
+#if defined(__ia16__)
+    unsigned int x;
+    char buf[6];
+    int n = 0;
+
+    if (v < 0) {
+        write(1, "-", 1);
+        x = (unsigned int)(-v);
+    } else {
+        x = (unsigned int)v;
+    }
+
+    do {
+        unsigned int q = 0;
+
+        while (x >= 10u) {
+            x -= 10u;
+            q++;
+        }
+        buf[n++] = (char)('0' + x);
+        x = q;
+    } while (x > 0u);
+
+    while (n > 0) {
+        char c = buf[--n];
+        write(1, &c, 1);
+    }
+#else
     if (v == 0) { write(1, "0", 1); return; }
-    static const int powers[] = {1000000000,100000000,10000000,1000000,
-                                 100000,10000,1000,100,10,1};
+    static const long powers[] = {1000000000L,100000000L,10000000L,1000000L,
+                                  100000L,10000L,1000L,100L,10L,1L};
+    long rem = v;
     int started = 0, p;
     for (p = 0; p < 10; p++) {
         int d = 0;
-        while (v >= powers[p]) { v -= powers[p]; d++; }
+        while (rem >= powers[p]) { rem -= powers[p]; d++; }
         if (d || started) {
             char c = '0' + d;
             write(1, &c, 1);
             started = 1;
         }
     }
+#endif
 }
 
 /* Print two-digit decimal 00-99 without division (M0+, no libgcc) */
+#if !defined(__ia16__)
 static void print_dd(int v)
 {
     int tens = 0;
@@ -65,9 +98,11 @@ static void print_dd(int v)
     buf[1] = '0' + v;
     write(1, buf, 2);
 }
+#endif
 
 /* ── Timestamps ──────────────────────────────────────────────────────────── */
 
+#if !defined(__ia16__)
 struct rt_ts { long tv_sec; long tv_nsec; };
 
 static struct rt_ts g_start;
@@ -159,9 +194,77 @@ static void check_run_slow(void)
     int fd = open("/etc/test_run_slow", O_RDONLY, 0);
     if (fd >= 0) { close(fd); g_run_slow = 1; }
 }
+#endif
 
 /* ── Main ────────────────────────────────────────────────────────────────── */
 
+#if defined(__ia16__)
+static int g_total;
+static int g_passed;
+static int g_failed;
+
+static int run_test_simple(const char *path)
+{
+  pid_t pid;
+  int status = 0;
+
+    print("RUN   ");
+    print(path);
+    print("\n");
+
+    pid = vfork();
+    if (pid == 0) {
+        execve(path, (void *)0, (void *)0);
+        _exit(127);
+    }
+
+    waitpid(pid, &status, 0);
+    return (status >> 8) & 0xff;
+}
+
+static void record_test_simple(const char *path)
+{
+    int code = run_test_simple(path);
+
+    g_total++;
+
+    if (code == 0) {
+        g_passed++;
+        print("PASS  ");
+    } else {
+        g_failed++;
+        print("FAIL  ");
+    }
+    print(path);
+    print("\n");
+}
+
+int main(void)
+{
+    g_total = 0;
+    g_passed = 0;
+    g_failed = 0;
+
+    print("=== PPAP on-target test suite ===\n");
+    record_test_simple("/bin/test_exec");
+    record_test_simple("/bin/test_vfork");
+
+    print("\n=== Results: ");
+    print_int(g_total);
+    print(" run, ");
+    print_int(g_passed);
+    print(" passed, ");
+    print_int(g_failed);
+    print(" failed, 0 skipped ===\n");
+
+    if (g_failed == 0)
+        print("ALL TESTS PASSED\n");
+    else
+        print("SOME TESTS FAILED\n");
+
+    return g_failed;
+}
+#else
 int main(void)
 {
     /* Initialize the test list at runtime — PIC binaries don't support
@@ -303,3 +406,4 @@ int main(void)
 
     return failed;
 }
+#endif

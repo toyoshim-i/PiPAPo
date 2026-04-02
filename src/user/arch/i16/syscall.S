@@ -1,0 +1,162 @@
+/*
+ * syscall.S — INT 30h syscall stubs for PPAP i16 user-space programs
+ *
+ * PPAP i16 syscall convention:
+ *   AX = syscall number
+ *   BX, CX, DX, SI, DI = arguments 1-5
+ *   AX = return value (16-bit; sign-extended to 32-bit for C)
+ *
+ * GCC's ia16 cdecl ABI preserves BX, SI, and DI across calls, so the
+ * wrappers save and restore them around INT 30h.
+ */
+
+  .code16
+  .text
+
+.macro SYSCALL_RET
+  cwd                     /* sign-extend AX into DX for 32-bit C returns */
+  popw  %di
+  popw  %si
+  popw  %bx
+  popw  %bp
+  ret
+.endm
+
+/* void _exit(int status); */
+  .global _exit
+_exit:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  movw  4(%bp), %bx
+  movw  $0x0000, %ax
+  int   $0x30
+.Lexit_hang:
+  hlt
+  jmp   .Lexit_hang
+
+/* pid_t getpid(void); */
+  .global getpid
+getpid:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  $0x0006, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* pid_t vfork(void); */
+  .global vfork
+vfork:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  $0x0002, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* pid_t waitpid(pid_t pid, int *status, int options); */
+  .global waitpid
+waitpid:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx      /* pid low 16 bits */
+  movw  8(%bp), %cx      /* status pointer */
+  movw  10(%bp), %dx     /* options */
+  movw  $0x0004, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* int execve(const char *path, char *const argv[], char *const envp[]); */
+  .global execve
+execve:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx
+  movw  6(%bp), %cx
+  movw  8(%bp), %dx
+  movw  $0x0003, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* ssize_t read(int fd, void *buf, size_t n); */
+  .global read
+read:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx
+  movw  6(%bp), %cx
+  movw  8(%bp), %dx
+  movw  $0x0100, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* ssize_t write(int fd, const void *buf, size_t n); */
+  .global write
+write:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx
+  movw  6(%bp), %cx
+  movw  8(%bp), %dx
+  movw  $0x0101, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* int open(const char *path, int flags, int mode); */
+  .global open
+open:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx
+  movw  6(%bp), %cx
+  movw  8(%bp), %dx
+  movw  $0x0102, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* int close(int fd); */
+  .global close
+close:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx
+  movw  $0x0103, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* int clock_gettime(int clk_id, void *tp); */
+  .global clock_gettime
+clock_gettime:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx
+  movw  6(%bp), %cx
+  movw  $0x0501, %ax
+  int   $0x30
+  SYSCALL_RET

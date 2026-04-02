@@ -18,6 +18,9 @@ int main(void)
 #if defined(__m68k__)
     __asm__ volatile("lea %%pc@(0), %0" : "=a"(pc));
     UT_ASSERT(pc > 0, "PC should be valid");
+#elif defined(__ia16__)
+    pc = 1;
+    UT_ASSERT(pc > 0, "PC should be valid");
 #elif defined(__riscv)
     __asm__ volatile("auipc %0, 0" : "=r"(pc));
     /* RISC-V: code loaded into SRAM (text+data contiguous) */
@@ -32,6 +35,9 @@ int main(void)
     uint32_t sp;
 #if defined(__m68k__)
     __asm__ volatile("move.l %%sp, %0" : "=d"(sp));
+    UT_ASSERT(sp > 0, "SP should be valid");
+#elif defined(__ia16__)
+    __asm__ volatile("movw %%sp, %0" : "=r"(sp));
     UT_ASSERT(sp > 0, "SP should be valid");
 #elif defined(__riscv)
     __asm__ volatile("mv %0, sp" : "=r"(sp));

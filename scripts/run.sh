@@ -194,7 +194,7 @@ fi
 
 # ── PC/XT target (pcxt) — override ELF to floppy image ───────────────────
 if [[ "$TARGET" == "pcxt" ]]; then
-    ELF="$PROJECT_DIR/build/pcxt/ppap_pcxt.img"
+    ELF="$BUILD_DIR/ppap_pcxt.img"
 fi
 
 # ── ESP-IDF target (xtensa_cc) — flash via esptool in Docker ──────────────
