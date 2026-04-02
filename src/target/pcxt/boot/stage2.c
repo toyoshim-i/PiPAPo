@@ -258,17 +258,28 @@ void stage2_main(void)
   uint16_t boot_ino = find_file(UFS_ROOT_INO, "boot");
   if (!boot_ino) { puts_bios("!boot"); return; }
 
-  /* Load /boot/kernel (core module) to 0x0600 */
+  /* Load /boot/kernel to DS:0x0600 (for data access via SS=0) */
   uint16_t kernel_ino = find_file(boot_ino, "kernel");
   if (!kernel_ino) { puts_bios("!kern"); return; }
 
   uint16_t core_size = load_file(kernel_ino, (uint8_t *)KERNEL_ADDR);
   if (!core_size) { puts_bios("!load"); return; }
 
-  /* VFS code module: load at segment 0x1000 (linear 0x10000).
-   * Must be above core's full footprint (text+data+BSS+stack+page_pool).
-   * Core ends at __page_pool_start = ~0xC000, so 0x10000 is safe. */
-  uint16_t vfs_seg = 0x1000u;
+  /* Load same kernel binary to a far segment for code execution.
+   * Core CS = 0x1000.  Binary starts at file offset 0 = ELF 0x0600.
+   * Loading to segment 0x1060 places it at linear 0x10600, so
+   * CS:0x0600 = 0x1000:0x0600 = 0x10600 = correct _start address.
+   * Near calls to any ELF address X resolve to CS:X = 0x10000+X,
+   * which is where that byte was loaded. */
+  uint16_t core_cs = 0x1000u;
+  uint16_t core_load_seg = core_cs + (KERNEL_ADDR >> 4); /* 0x1060 */
+  load_file_far(kernel_ino, core_load_seg);
+
+  /* VFS code module: load after the core far copy, page-aligned.
+   * Core far copy occupies core_load_seg..core_load_seg+core_paras. */
+  uint16_t core_paras = (core_size + 15u) >> 4;
+  uint16_t vfs_seg = core_load_seg + core_paras;
+  vfs_seg = (vfs_seg + 0xFFu) & ~0xFFu;  /* page-align (4 KB) */
   uint16_t vfs_ino = find_file(boot_ino, "kernel_vfs");
   uint16_t vfs_size = 0;
   if (vfs_ino) {
@@ -286,20 +297,36 @@ void stage2_main(void)
     load_file(vfs_data_ino, (uint8_t *)0xA000u);
   }
 
+  /* Compute page pool start: after last far segment, page-aligned */
+  uint16_t pool_seg;
+  if (vfs_size) {
+    uint16_t vfs_paras = (vfs_size + 15u) >> 4;
+    pool_seg = (vfs_seg + vfs_paras + 0xFFu) & ~0xFFu;
+  } else {
+    pool_seg = (core_load_seg + core_paras + 0xFFu) & ~0xFFu;
+  }
+
   /* Write module info block for the kernel to read */
   mod_info_t *info = (mod_info_t *)MOD_INFO_ADDR;
   info->count = vfs_size ? 2 : 1;
-  /* Module 0: core — linked at absolute 0x0600 with CS=0.
-   * Segment is 0, not KERNEL_ADDR>>4, because the linker uses
-   * absolute addresses starting at 0x0600. */
-  info->mod[0].segment = 0;
+  /* Module 0: core code segment (CS=0x1000) */
+  info->mod[0].segment = core_cs;
   info->mod[0].size = core_size;
   /* Module 1: VFS */
   if (vfs_size) {
     info->mod[1].segment = vfs_seg;
     info->mod[1].size = vfs_size;
   }
+  /* Module 2 slot: page pool start (read by target_pcxt.c) */
+  info->mod[2].segment = pool_seg;
+  info->mod[2].size = 0;
 
-  /* Kernel continues the "PiPA" banner with "Po booting..." */
-  __asm__ volatile ("cli\n\t" "ljmp $0x0000, $0x0600");
+  /* Far-jump to core CS, IP=0x0600 (_start in boot.S).
+   * Write far pointer to scratch area and use indirect ljmp. */
+  {
+    uint16_t *fptr = (uint16_t *)0x0400u;
+    fptr[0] = KERNEL_ADDR;  /* IP = 0x0600 */
+    fptr[1] = core_cs;      /* CS = 0x1000 */
+    __asm__ volatile ("cli\n\t" "ljmp *0x0400");
+  }
 }

@@ -65,8 +65,8 @@ static uint32_t i16_detect_ram(void) {
 /* ── Internal helpers ───────────────────────────────────────────────────────
  */
 
-static inline uintptr_t page_id_linear(page_id_t id) {
-  return (uintptr_t)id * PAGE_SIZE;
+static inline uint32_t page_id_linear(page_id_t id) {
+  return (uint32_t)id * PAGE_SIZE;
 }
 
 static inline page_id_t linear_page_id(uintptr_t addr) {

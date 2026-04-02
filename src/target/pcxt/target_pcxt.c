@@ -20,6 +20,9 @@
 
 extern void floppy_blk_init(void);
 
+/* Page pool base: set from stage2's mod_info before mm_init(). */
+uint32_t i16_page_pool_base = 0x10000ul;  /* safe default */
+
 /* Far pointer tables from the stub assembly files */
 extern uint16_t vfs_fptrs[];  /* in core: caller stubs for VFS */
 
@@ -142,7 +145,12 @@ static void patch_vfs_fptrs(uint16_t vfs_seg) {
 static void seg_init_modules(void) {
   volatile mod_info_t *info = (volatile mod_info_t *)MOD_INFO_ADDR;
 
-  /* Module 0: core — already running, register our own segment */
+  /* Page pool start: stage2 stores it in mod[2].segment */
+  if (info->mod[2].segment) {
+    i16_page_pool_base = (uint32_t)info->mod[2].segment << 4;
+  }
+
+  /* Module 0: core — already running in far CS, register segment */
   if (info->count >= 1) {
     seg_register(MOD_ID_CORE, info->mod[0].segment);
   }

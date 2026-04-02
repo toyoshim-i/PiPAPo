@@ -41,12 +41,13 @@ extern char __page_pool_start[];
 #define RAM_END (PAGE_POOL_BASE + PAGE_POOL_SIZE)
 #endif
 #elif defined(__ia16__)
-/* i8086 real mode: flat model (all segments = 0).
- * Kernel occupies the first segment; the page pool starts at the next
- * 64 KiB boundary so mem_region pages live outside shared DS=0 space. */
+/* i8086 real mode: code is in a far CS segment; data at DS=0.
+ * Page pool starts after the last code segment (computed by stage2,
+ * passed via mod_info, set in target_pcxt.c before mm_init). */
 #define SRAM_KERNEL_BASE 0x0600u
 #define SRAM_KERNEL_SIZE (4u * 1024u)
-#define PAGE_POOL_BASE 0x10000ul
+extern uint32_t i16_page_pool_base;
+#define PAGE_POOL_BASE i16_page_pool_base
 #define PAGE_POOL_SIZE (PAGE_COUNT_MAX * PAGE_SIZE)
 #ifndef RAM_END
 #define RAM_END 0x9FC00ul  /* 640 KB conventional - EBDA */

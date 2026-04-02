@@ -3,16 +3,21 @@
  *
  * Memory layout (shared DS=0 linear address space):
  *
- *   0x0000-0x05FF  IVT + BIOS data
- *   0x0600+        .text (core code)
+ *   0x0000-0x05FF  IVT + BIOS data + mod_info
+ *   0x0600+        .text (core code, also copied to far CS by stage2)
  *                  .rodata (constants)
  *                  .data (core initialized globals)
  *                  .bss (core zero-initialized globals)
- *                  2 KB stack
- *   0xA000-0xFFFF  Reserved for VFS module DS=0 data + bss
+ *   0xA000-0xEFFF  Reserved for VFS module DS=0 data + bss
+ *   0xF000-0xFFFF  Per-process kernel stacks (4 × 1 KB)
  *   0x10000+       __page_pool_start (free pages)
  *
- * VFS code lives in a separate segment (CS=0x1000).
+ * Stage2 loads the kernel binary to DS:0x0600 (for data access via
+ * SS=0) and also to a far segment (for code execution via separate
+ * CS).  All symbols are linked at DS=0 addresses; the far copy has
+ * the same offsets so near calls resolve correctly in both copies.
+ *
+ * VFS code lives in a separate segment (after core far copy).
  * VFS data lives at 0xA000 in this shared DS=0 space.
  */
 
@@ -49,25 +54,31 @@ SECTIONS
     __bss_end = .;
   }
 
-  /* Stack (2 KB) */
+  /* __stack_top right after BSS: used by page.c diagnostics.
+   * Must stay contiguous with BSS to avoid R_386_16 overflow.
+   * The actual boot SP is set to 0xF400 (kernel_stack[0] top)
+   * explicitly in boot.S. */
   . = ALIGN(2);
-  __stack_bottom = .;
-  . += 2048;
   __stack_top = .;
 
-  /* Reserved for VFS DS=0 data (must match pcxt_vfs.ld).  The entire
-   * remainder of the first segment stays out of the page allocator. */
+  /* Reserved for VFS DS=0 data (must match pcxt_vfs.ld). */
   . = 0xA000;
   __vfs_data_reserved = .;
-  . = 0x10000;
+
+  /* Per-process kernel stacks: 4 × 1 KB at top of DS=0 segment.
+   * PROC_MAX=4, one stack per process slot.  kernel_stack[0]
+   * doubles as the boot stack (SP=0xF400 in boot.S). */
+  . = 0xF000;
+  __kstack_base = .;
+  . += 4096;  /* 4 × 1024 */
 
   /* Page pool: free pages start outside the first segment */
   . = ALIGN(4096);
   __page_pool_start = .;
 
   /* Sanity checks */
-  ASSERT((__stack_top <= 0xA000),
-         "ERROR: Kernel stack overflows into VFS reserved area (0xA000)")
+  ASSERT((__bss_end <= 0xA000),
+         "ERROR: Kernel BSS overflows into VFS reserved area (0xA000)")
   ASSERT((__page_pool_start <= 0x9FC00),
          "ERROR: Page pool starts beyond conventional memory (640 KB)")
 

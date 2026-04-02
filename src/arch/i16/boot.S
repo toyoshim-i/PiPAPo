@@ -18,8 +18,8 @@ _start:
   movw  %ax, %es
   movw  %ax, %ss
 
-  /* Stack at top of BSS + stack area */
-  movw  $__stack_top, %sp
+  /* Boot stack = top of kernel_stack[0] (0xF000 + 1 KB) */
+  movw  $0xF400, %sp
 
   /* Zero BSS */
   movw  $__bss_start, %di

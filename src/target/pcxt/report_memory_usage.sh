@@ -40,29 +40,24 @@ format_pct() {
 report_core() {
   core_cs_end_hex="$(lookup_symbol "$CORE_ELF" "__core_cs_end")"
   bss_end_hex="$(lookup_symbol "$CORE_ELF" "__bss_end")"
-  stack_bottom_hex="$(lookup_symbol "$CORE_ELF" "__stack_bottom")"
+  kstack_base_hex="$(lookup_symbol "$CORE_ELF" "__kstack_base")"
   stack_top_hex="$(lookup_symbol "$CORE_ELF" "__stack_top")"
-  page_pool_hex="$(lookup_symbol "$CORE_ELF" "__page_pool_start")"
   data_start_hex="$(lookup_symbol "$VFS_ELF" "__vfs_data_start")"
   data_end_hex="$(lookup_symbol "$VFS_ELF" "__vfs_data_end")"
 
   core_cs_used=$((0x$core_cs_end_hex - CORE_BASE_HEX))
   core_ds_used=$((0x$bss_end_hex - 0x$core_cs_end_hex))
-  stack_used=$((0x$stack_top_hex - 0x$stack_bottom_hex))
+  stack_used=$((0x10000 - 0x$kstack_base_hex))  # 4 × 1 KB kernel stacks to end of segment
   vfs_ds_used=$((0x$data_end_hex - 0x$data_start_hex))
   ds0_limit=$((DS0_LIMIT_HEX - CORE_BASE_HEX))
   total_ds_used=$((core_ds_used + stack_used + vfs_ds_used))
-  page_pool_addr=$((0x$page_pool_hex))
-  free_ram=$((0x9FC00 - page_pool_addr))
 
   printf '%s\n' \
     "$core_cs_used" \
     "$core_ds_used" \
     "$stack_used" \
     "$total_ds_used" \
-    "$ds0_limit" \
-    "$page_pool_addr" \
-    "$free_ram"
+    "$ds0_limit"
 }
 
 report_vfs() {
@@ -85,8 +80,6 @@ core_ds_used="$(printf '%s\n' "$core_report" | sed -n '2p')"
 stack_used="$(printf '%s\n' "$core_report" | sed -n '3p')"
 total_ds_used="$(printf '%s\n' "$core_report" | sed -n '4p')"
 ds0_limit="$(printf '%s\n' "$core_report" | sed -n '5p')"
-page_pool_addr="$(printf '%s\n' "$core_report" | sed -n '6p')"
-free_ram="$(printf '%s\n' "$core_report" | sed -n '7p')"
 
 vfs_cs_used="$(printf '%s\n' "$vfs_report" | sed -n '1p')"
 vfs_code_limit="$(printf '%s\n' "$vfs_report" | sed -n '2p')"
@@ -104,5 +97,3 @@ echo "  kernel stack reserve: ${stack_used} bytes"
 echo "  VFS CS usage:         ${vfs_cs_used} / ${vfs_code_limit} bytes ($(format_pct "$vfs_cs_used" "$vfs_code_limit"))"
 echo "  VFS DS=0 window use:  ${vfs_ds_used} / ${VFS_DATA_LIMIT} bytes ($(format_pct "$vfs_ds_used" "$VFS_DATA_LIMIT"))"
 echo "  total DS=0 use:       ${total_ds_used} / ${ds0_limit} bytes ($(format_pct "$total_ds_used" "$ds0_limit"))"
-printf '  first free page:      0x%05x (%u bytes free to 0x9FC00)\n' \
-  "$page_pool_addr" "$free_ram"
