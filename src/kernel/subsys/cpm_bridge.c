@@ -375,7 +375,7 @@ static uint8_t cpm_getchar(void) {
   for (;;) {
     long rc = cpm_fd_read(0, &ch, 1);
     if (rc > 0) return ch;
-    /* tty_read() blocks by setting PROC_BLOCKED + sched_yield() and
+    /* tty_read() blocks by setting PROC_BLOCKED + sched_switch() and
      * returns 0 when the task is resumed.  Kernel-mode callers do not
      * get the user-space SVC restart path, so retry until a byte arrives
      * or a pending signal takes the default action. */
@@ -1534,7 +1534,7 @@ void cpm_run_process(void) {
       p->trace_step_pending = 0;
 
       if (trace_maybe_stop_at_swbp(PPAP_TRACE_ABI_CPM_BDOS, z80->pc)) {
-        if (p->state == PROC_TRACED_STOP) sched_yield();
+        if (p->state == PROC_TRACED_STOP) sched_switch();
         continue;
       }
 
@@ -1544,7 +1544,7 @@ void cpm_run_process(void) {
       if (do_step_stop && p->tracer_pid != 0 && p->state == PROC_RUNNABLE)
         trace_debug_stop(PPAP_TRACE_ABI_CPM_BDOS, z80->pc,
                          PPAP_DEBUG_STOP_STEP);
-      if (p->state == PROC_TRACED_STOP) sched_yield();
+      if (p->state == PROC_TRACED_STOP) sched_switch();
       continue;
     }
 

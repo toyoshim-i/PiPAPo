@@ -172,7 +172,7 @@ static void trace_stop_current(int restart) {
   }
 #endif
   if (restart) svc_set_restart();
-  sched_yield();
+  sched_switch();
 }
 
 static void trace_reset_mode_state(pcb_t *p, uint8_t mode) {
@@ -186,7 +186,7 @@ static void trace_reset_mode_state(pcb_t *p, uint8_t mode) {
 static void trace_resume_target(pcb_t *target) {
   target->trace_wait_pending = 0;
   if (target->state == PROC_TRACED_STOP) target->state = PROC_RUNNABLE;
-  sched_yield();
+  sched_switch();
 }
 
 static void trace_regs_init(struct ppap_ptrace_regs *regs, uint32_t regset,
@@ -1354,7 +1354,7 @@ long sys_ptrace(long req, long pid, uintptr_t addr, uintptr_t data_ptr) {
  *     the zombie.  Orphans are reparented to init (step 6), ensuring
  *     init can always reap them.
  *
- * Note: sys_exit runs inside SVC_Handler (Handler mode).  sched_yield()
+ * Note: sys_exit runs inside SVC_Handler (Handler mode).  sched_switch()
  * only pends PendSV, which tail-chains after SVC returns.  There is no
  * need for an infinite loop — the ZOMBIE process will never be scheduled
  * again because sched_next() only picks PROC_RUNNABLE processes.
@@ -1371,7 +1371,7 @@ long sys_exit(long status) {
      * bounce back to user stub loops. */
     return 0;
 #else
-    sched_yield();
+    sched_switch();
     return 0; /* unreachable — zombie won't be scheduled */
 #endif
   }
@@ -1475,7 +1475,7 @@ long sys_exit(long status) {
    * current->state != PROC_RUNNABLE. */
   return 0;
 #else
-  sched_yield();
+  sched_switch();
   return 0; /* never reached — PendSV switches away after SVC returns */
 #endif
 }
@@ -1738,10 +1738,10 @@ long sys_vfork(uint32_t *frame) {
   child->state = PROC_RUNNABLE;
 
   /* 9. Yield — PendSV will switch to child after SVC returns.
-   * Note: sched_yield() only pends PendSV (can't preempt SVC), so the
+   * Note: sched_switch() only pends PendSV (can't preempt SVC), so the
    * code below still executes.  This is harmless — the parent is BLOCKED,
    * so PendSV tail-chains and switches it out after our SVC return. */
-  sched_yield();
+  sched_switch();
 
   /* Clear stale flags left by the child's syscalls while we were blocked.
    * exec_pending and svc_restart are global (not per-process), so a child's
@@ -1764,7 +1764,7 @@ long sys_vfork(uint32_t *frame) {
  * Returns child PID on success, -ECHILD if no children, 0 if WNOHANG.
  *
  * Blocking: since this runs inside SVC_Handler (Handler mode), we cannot
- * loop and retry — sched_yield() only pends PendSV, which cannot preempt
+ * loop and retry — sched_switch() only pends PendSV, which cannot preempt
  * SVC.  Instead, we mark PROC_BLOCKED, set svc_restart = 1, and return.
  * SVC_Handler restores frame[0] and adjusts PC-2 so the syscall re-executes
  * when the process is rescheduled.  PendSV tail-chains after SVC returns.
@@ -1858,7 +1858,7 @@ long sys_waitpid(long pid, long status_ptr, long options) {
    * SVC_Handler will restore frame[0] and PC-2 so the SVC re-executes. */
   current->state = PROC_BLOCKED;
   svc_set_restart();
-  sched_yield();
+  sched_switch();
   return 0; /* value ignored — SVC_Handler restores original frame[0] */
 }
 

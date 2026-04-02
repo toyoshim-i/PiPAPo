@@ -90,6 +90,7 @@ void m68k_syscall_entry(uint32_t *regs) {
 
 void target_early_init(void) {
   uart_init();
+  klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
   klog("PiPAPo booting... [qemu_m68k]\n");
   klog("UART: Goldfish TTY @ 0xFF008000\n");
   klog("Clock: emulated (no PLL)\n");
@@ -128,8 +129,8 @@ uint32_t target_caps(void) { return 0; /* No SD, no SPI, no Core 1 */ }
 
 /* Yield-test process — runs on its own stack, yields back to thread 0 */
 void yield_test_process(void) {
-  for (int i = 0; i < 4; i++) sched_yield();
+  for (int i = 0; i < 4; i++) sched_switch();
 
   current->state = PROC_FREE;
-  for (;;) sched_yield();
+  for (;;) sched_switch();
 }

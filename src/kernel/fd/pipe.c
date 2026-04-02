@@ -114,7 +114,7 @@ static long pipe_read(struct file *f, page_id_t page, uint16_t off, size_t n) {
   current->wait_channel = p;
   current->state = PROC_BLOCKED;
   mod_core.svc_set_restart();
-  mod_core.sched_yield();
+  mod_core.sched_switch();
   return 0; /* ignored — SVC_Handler restores original frame[0] */
 }
 
@@ -146,7 +146,7 @@ static long pipe_write(struct file *f, page_id_t page,
   current->wait_channel = p;
   current->state = PROC_BLOCKED;
   mod_core.svc_set_restart();
-  mod_core.sched_yield();
+  mod_core.sched_switch();
   return 0; /* ignored — SVC_Handler restores original frame[0] */
 }
 

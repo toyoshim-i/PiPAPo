@@ -91,7 +91,7 @@ m68k_trace_handler:
     jsr     trace_m68k_trace_exception
     addq.l  #4,%sp
 
-    | If tracing requested a stop, sched_yield() set m68k_switch_pending.
+    | If tracing requested a stop, sched_switch() set m68k_switch_pending.
     tst.l   m68k_switch_pending
     beq.s   .Ltrace_no_switch
     clr.l   m68k_switch_pending

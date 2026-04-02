@@ -110,7 +110,7 @@ static long do_ppoll(struct pollfd *fds, uint32_t nfds, uint32_t timeout_ticks,
   }
   current->state = PROC_BLOCKED;
   mod_core.svc_set_restart();
-  mod_core.sched_yield();
+  mod_core.sched_switch();
   return 0; /* ignored — SVC restores original args */
 }
 

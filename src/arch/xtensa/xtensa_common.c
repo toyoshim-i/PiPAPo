@@ -18,8 +18,8 @@
 #include "../../kernel/klog.h"
 
 /* Context switch pending flag.
- * Set by arch_yield() (via sched_tick or sched_yield).
- * Checked by switch.S / sched_yield to perform the switch.
+ * Set by arch_yield() (via sched_tick or sched_switch).
+ * Checked by switch.S / sched_switch to perform the switch.
  * Same pattern as riscv_switch_pending / m68k_switch_pending. */
 volatile uint32_t xtensa_switch_pending = 0;
 
@@ -194,10 +194,10 @@ static void xtensa_syscall_handler(XtExcFrame *frame)
      *
      * Xtensa has no PendSV — we can't modify the exception frame to switch
      * to a process with a solicited (windowed-ABI) context.  Instead, call
-     * sched_yield() which invokes xtensa_do_yield() to perform a proper
+     * sched_switch() which invokes xtensa_do_yield() to perform a proper
      * save/restore through the windowed call chain.
      *
-     * When sched_yield() returns, we're back in THIS handler, which then
+     * When sched_switch() returns, we're back in THIS handler, which then
      * returns to ESP-IDF's dispatcher → rfe → user code.
      *
      * Yield if:
@@ -208,7 +208,7 @@ static void xtensa_syscall_handler(XtExcFrame *frame)
     if (xtensa_switch_pending ||
         (current && current->state != PROC_RUNNABLE && !current->is_idle)) {
         xtensa_switch_pending = 0;
-        sched_yield();
+        sched_switch();
     }
 }
 
@@ -257,7 +257,7 @@ static void xtensa_fault_handler(XtExcFrame *frame)
         current->exit_status = 128 + 11; /* SIGSEGV */
         /* Must actually switch — arch_yield() only sets a flag, which
          * wouldn't be checked before rfe returns to the faulting instr. */
-        sched_yield();
+        sched_switch();
         return;
     }
 

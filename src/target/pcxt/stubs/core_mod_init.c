@@ -34,7 +34,7 @@ void mem_region_page_write(page_id_t, uint16_t, const void *, uint16_t);
 int core_blkdev_read(blkdev_t *, void *, uint32_t, uint32_t);
 int core_blkdev_write(blkdev_t *, const void *, uint32_t, uint32_t);
 void sched_wakeup(void *);
-void sched_yield(void);
+void sched_switch(void);
 uint32_t sched_get_ticks(void);
 void svc_set_restart(void);
 int uart_putc(char, void (*)(void));
@@ -57,7 +57,7 @@ int uart_rx_avail(void);
 #define core_mem_region_page_read   mem_region_page_read
 #define core_mem_region_page_write  mem_region_page_write
 #define core_sched_wakeup        sched_wakeup
-#define core_sched_yield         sched_yield
+#define core_sched_switch        sched_switch
 #define core_sched_get_ticks     sched_get_ticks
 #define core_svc_set_restart     svc_set_restart
 #define core_uart_putc           uart_putc

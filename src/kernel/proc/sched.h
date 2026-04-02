@@ -27,7 +27,7 @@
  * SysTick reload value — derived from config.h.
  * Hardware (RP2040): PPAP_SYS_HZ / PPAP_TICK_HZ − 1 = 1,329,999 (10 ms)
  * QEMU (mps2-an500): SysTick counter runs but TICKINT is never asserted,
- * so preemptive scheduling on QEMU uses cooperative sched_yield() instead.
+ * so preemptive scheduling on QEMU uses cooperative sched_switch() instead.
  */
 #define SYSTICK_RELOAD (PPAP_SYS_HZ / PPAP_TICK_HZ - 1u)
 
@@ -65,17 +65,12 @@ void sched_tick(void);
 void sched_timer_tick(int from_user);
 
 /*
- * Voluntarily yield the CPU to the next RUNNABLE process.
+ * Voluntarily switch to the next RUNNABLE process.
  * Sets PENDSVSET so PendSV_Handler runs at the next opportunity and
  * switches context.  Safe to call from Thread mode at any time.
  * Used by QEMU smoke tests where SysTick IRQ delivery is not available.
  */
-#if defined(__xtensa__)
-void ppap_sched_yield(void);
-#define sched_yield ppap_sched_yield
-#else
-void sched_yield(void);
-#endif
+void sched_switch(void);
 
 /*
  * Put the current process to sleep for `ticks` SysTick ticks.

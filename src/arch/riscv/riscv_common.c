@@ -16,7 +16,7 @@
 #include "proc/sched.h"
 
 /* Context switch pending flag.
- * Set by arch_yield() (via sched_tick or sched_yield).
+ * Set by arch_yield() (via sched_tick or sched_switch).
  * Checked by timer ISR before mret to perform the switch.
  * Same pattern as m68k_switch_pending. */
 volatile uint32_t riscv_switch_pending = 0;

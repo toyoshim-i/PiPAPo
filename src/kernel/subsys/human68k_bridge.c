@@ -1156,7 +1156,7 @@ static int dos_exec(uint32_t *regs, uint32_t usp) {
   long wpid;
   do {
     wpid = sys_waitpid(child->pid, 0, 1 /* WNOHANG */);
-    if (wpid == 0) sched_yield();
+    if (wpid == 0) sched_switch();
   } while (wpid == 0);
 
   regs[0] = (wpid > 0) ? 0 : (uint32_t)h68k_errno(wpid);

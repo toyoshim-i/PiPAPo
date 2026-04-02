@@ -77,7 +77,7 @@ m68k_trap0_handler:
     tst.l   exec_pending
     bne.s   .Lexec_restore
 
-    | If a syscall requested scheduling (sched_yield), switch now
+    | If a syscall requested scheduling (sched_switch), switch now
     | before returning to user mode.
     tst.l   m68k_switch_pending
     beq.s   .Lret_current

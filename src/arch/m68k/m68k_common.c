@@ -16,7 +16,7 @@
 #endif
 
 /* Context switch pending flag.
- * Set by arch_yield() (via sched_tick or sched_yield).
+ * Set by arch_yield() (via sched_tick or sched_switch).
  * Checked by timer ISR before RTE to perform the switch. */
 volatile uint32_t m68k_switch_pending = 0;
 

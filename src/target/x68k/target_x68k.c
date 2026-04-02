@@ -152,6 +152,7 @@ void target_early_init(void) {
     asm volatile("trap #15" : "+r"(d0) : "r"(d1) : "a0", "a1", "memory");
   }
   uart_init();
+  klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
   klog(" booting... [x68k]\n");
   klog("Console: X68000 IOCS (TVRAM)\n");
   klog("Phase X-2: preemptive scheduling (MFP Timer-C), embedded romfs\n");
@@ -185,7 +186,7 @@ void target_late_init(void) {
   tty_set_backend(TTY_DISPLAY, &tvram_be);
   tty_set_backend(TTY_SERIAL, &serial_be);
   tty_set_console(TTY_DISPLAY);
-  klog_set_mirror(uart_serial_putc, NULL);
+  klog_set_logger(KLOG_LOGGER_SECONDARY, uart_serial_putc, NULL);
 
   /* Register input polls for both consoles.
    * Both use direct hardware register reads — NO IOCS TRAP #15 calls —
@@ -284,8 +285,8 @@ uint32_t target_caps(void) {
 
 /* Yield-test process — runs on its own stack, yields back to thread 0 */
 void yield_test_process(void) {
-  for (int i = 0; i < 4; i++) sched_yield();
+  for (int i = 0; i < 4; i++) sched_switch();
 
   current->state = PROC_FREE;
-  for (;;) sched_yield();
+  for (;;) sched_switch();
 }

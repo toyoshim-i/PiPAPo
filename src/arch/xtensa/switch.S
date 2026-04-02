@@ -46,7 +46,7 @@
 # -----------------------------------------------------------------------------
 # xtensa_do_yield — cooperative context switch
 #
-# Called from sched_yield() via normal windowed call (CALL4).
+# Called from sched_switch() via normal windowed call (CALL4).
 # Saves current context, picks next process, restores its context.
 # Returns to the new (or same) process's caller.
 # -----------------------------------------------------------------------------

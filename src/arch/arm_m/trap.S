@@ -30,7 +30,7 @@
 @      (including r9/GOT base) are correct for the new program.
 @
 @   2. Process not RUNNABLE — the syscall blocked (PROC_BLOCKED/ZOMBIE/
-@      SLEEPING).  sched_yield() already pended PendSV, which will
+@      SLEEPING).  sched_switch() already pended PendSV, which will
 @      tail-chain after our exception return and perform the context
 @      switch.  If svc_restart[core_id] is set (e.g. by sys_waitpid),
 @      we restore the original frame[0] and adjust the stacked PC back
@@ -117,7 +117,7 @@ SVC_Handler:
     b     .Lnormal_return
 
 .Lcheck_restart:
-    @ Process is not runnable.  PendSV (already pended by sched_yield)
+    @ Process is not runnable.  PendSV (already pended by sched_switch)
     @ will tail-chain after our exception return and switch context.
     @ Check if we need to restart the syscall on next schedule.
     ldr   r0, =svc_restart

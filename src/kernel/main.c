@@ -179,7 +179,7 @@ void kmain(void) {
 
   /* Run one immediate handoff so PID 1 starts without waiting for the
    * first timer preemption tick. */
-  sched_yield();
+  sched_switch();
 
   /* Idle thread — wake on every interrupt, flush LCD if needed, sleep. */
   for (;;) {
@@ -191,7 +191,7 @@ void kmain(void) {
       extern volatile uint32_t xtensa_switch_pending;
       if (xtensa_switch_pending) {
         xtensa_switch_pending = 0;
-        sched_yield();
+        sched_switch();
       }
     }
 #endif

@@ -303,7 +303,7 @@ static void dev_send_signal(tty_dev_t *t, int sig) {
     }
   }
   /* Trigger context switch so woken process handles the signal promptly */
-  if (woke) mod_core.sched_yield();
+  if (woke) mod_core.sched_switch();
 }
 
 /* ── tty_write ───────────────────────────────────────────────────────────────
@@ -371,7 +371,7 @@ block:
   current->wait_channel = &t->tx_page;
   current->state = PROC_BLOCKED;
   mod_core.svc_set_restart();
-  mod_core.sched_yield();
+  mod_core.sched_switch();
   return 0; /* ignored — SVC restores original args */
 }
 
@@ -390,7 +390,7 @@ static long tty_read_canon(tty_dev_t *t, page_id_t page,
       current->wait_channel = t;
       current->state = PROC_BLOCKED;
       mod_core.svc_set_restart();
-      mod_core.sched_yield();
+      mod_core.sched_switch();
       return 0; /* ignored — SVC restores original args */
     }
 
@@ -507,7 +507,7 @@ static long tty_read_raw(tty_dev_t *t, page_id_t page,
     current->wait_channel = t;
     current->state = PROC_BLOCKED;
     mod_core.svc_set_restart();
-    mod_core.sched_yield();
+    mod_core.sched_switch();
     return 0; /* ignored — SVC restores original args */
   }
 
@@ -548,7 +548,7 @@ static long tty_read(struct file *f, page_id_t page, uint16_t off, size_t n) {
     current->wait_channel = t;
     current->state = PROC_BLOCKED;
     mod_core.svc_set_restart();
-    mod_core.sched_yield();
+    mod_core.sched_switch();
     return 0;
   }
   if (n == 0) return 0;

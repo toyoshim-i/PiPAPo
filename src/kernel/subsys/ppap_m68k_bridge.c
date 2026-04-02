@@ -84,7 +84,7 @@ void ppap_m68k_run_process(void) {
       p->trace_step_pending = 0;
 
       if (trace_maybe_stop_at_swbp(PPAP_TRACE_ABI_PPAP, m68k->pc)) {
-        if (p->state == PROC_TRACED_STOP) sched_yield();
+        if (p->state == PROC_TRACED_STOP) sched_switch();
         continue;
       }
 
@@ -94,7 +94,7 @@ void ppap_m68k_run_process(void) {
       if (m68k->step_trap_exit) break;
       if (do_step_stop && p->tracer_pid != 0 && p->state == PROC_RUNNABLE)
         trace_debug_stop(PPAP_TRACE_ABI_PPAP, m68k->pc, PPAP_DEBUG_STOP_STEP);
-      if (p->state == PROC_TRACED_STOP) sched_yield();
+      if (p->state == PROC_TRACED_STOP) sched_switch();
       continue;
     }
 

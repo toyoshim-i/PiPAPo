@@ -7,7 +7,7 @@
  */
 
 #include "drivers/uart.h"
-#include "drivers/bios_con.h"
+#include "drivers/pcxt_logger.h"
 #include "drivers/timer_pit.h"
 #include "target/target.h"
 #include "klog.h"
@@ -84,7 +84,7 @@ extern uint16_t mem_region_page_free_entry;
 extern uint16_t mem_region_page_read_entry;
 extern uint16_t mem_region_page_write_entry;
 extern uint16_t sched_wakeup_entry;
-extern uint16_t sched_yield_entry;
+extern uint16_t sched_switch_entry;
 extern uint16_t sched_get_ticks_entry;
 extern uint16_t svc_set_restart_entry;
 extern uint16_t uart_putc_entry;
@@ -137,7 +137,7 @@ static void patch_vfs_fptrs(uint16_t vfs_seg) {
   PATCH_CORE(15, mem_region_total_bytes);
   PATCH_CORE(16, sched_get_ticks);
   PATCH_CORE(17, sched_wakeup);
-  PATCH_CORE(18, sched_yield);
+  PATCH_CORE(18, sched_switch);
   PATCH_CORE(19, svc_set_restart);
   PATCH_CORE(20, uart_getc);
   PATCH_CORE(21, uart_putc);
@@ -166,15 +166,6 @@ static void seg_init_modules(void) {
 }
 
 #endif /* __ia16__ */
-
-/* ── klog sink: serial + BIOS screen ─────────────────────────────────────── */
-
-static int pcxt_klog_putc(char c, void (*notify)(void))
-{
-  (void)notify;
-  bios_putc(c);
-  return 1;
-}
 
 /* ── Target hooks ────────────────────────────────────────────────────────── */
 
@@ -234,8 +225,7 @@ static void install_int_debug(void) {
 
 void target_early_init(void)
 {
-  uart_init();
-  klog_set_mirror(pcxt_klog_putc, (void (*)(void))0);
+  pcxt_logger_init();
 
 #ifdef __ia16__
   install_int_debug();

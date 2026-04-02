@@ -223,12 +223,12 @@ MOD_DECLARE_BEGIN(core)
   MOD_FUNC(core, void, sched_wakeup, void *)
 
   /*
-   * sched_yield — Voluntarily yield the CPU to the next process.
+   * sched_switch — Voluntarily switch to the next process.
    *
    * On ARM, pends PendSV.  On m68k, TRAP #1.  On RISC-V/Xtensa/i16,
    * arch_yield().
    */
-  MOD_FUNC(core, void, sched_yield, void)
+  MOD_FUNC(core, void, sched_switch, void)
 
   /*
    * svc_set_restart — Mark current syscall for replay on wakeup.
