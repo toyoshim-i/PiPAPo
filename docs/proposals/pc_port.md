@@ -176,20 +176,23 @@ This means:
 ```
 Segment     Contents
 ────────    ─────────────────────────────
-CS=????     Core code: main, klog, mm, proc, sched, syscall, blkdev
+CS=0x1000   Core code (far copy of DS=0 .text, loaded by stage2)
 CS=????     VFS code: vfs, namei, romfs, tmpfs, devfs, procfs, ufs
 CS=????     Exec code: exec, loaders (future)
-SS=0        Shared data: all modules' .data, .bss, kernel stacks
+SS=0        Shared data: all modules' .text, .rodata, .data, .bss,
+            kernel stacks (core .text is also here for linking)
 ```
 
-Code segments are separate from the data segment — `.text` and
-`.rodata` do NOT occupy DS=0 address space.  Stage2 loads each
-module's code to its own segment and data to DS=0 (same pattern
-already used for VFS).
+The core binary is linked entirely at DS=0 addresses (0x0600+).
+Stage2 double-loads it: once to DS:0x0600 (data access via SS=0),
+and again to a far segment (code execution via separate CS).  This
+avoids ia16-elf-ld's R_386_16 overflow limitation while keeping
+code in a separate segment at runtime.  VFS code is loaded to a
+separate far segment after the core copy.
 
-Each module's code must fit in 64 KB.  Total data+BSS from all
-modules plus kernel stacks must fit in 64 KB (shared SS=0;
-currently ~14 KB including 4 × 1 KB kernel stacks).
+Each module's code must fit in 64 KB.  The DS=0 segment holds
+core text+rodata+data+BSS (~38 KB), VFS data (~7.4 KB), and
+4 × 1 KB per-process kernel stacks at 0xF000–0xFFFF.
 
 A **segment manager** (`src/kernel/common/seg.h`/`seg.c`) in the core
 module tracks each module's code segment base at runtime.  Stage2 loads
@@ -656,27 +659,28 @@ the user page via `mem_region_page_write`.
 | P-4a | Module system | `MOD_DECLARE`/`MOD_DEFINE`, mod_vfs (12 fn), mod_core (16 fn), boundary enforcement |
 | P-4b | Segment split + floppy mount | Core (CS=0x0060) + VFS (CS=0x1000) + shared SS=0, far-call stubs, UFS root mounted |
 | P-5 (partial) | User-space exec | ELF16 load, exit, timer, preemptive scheduler, `user_to_page` conversion complete, signal delivery + fork/vfork scaffolding written |
+| R-1.1 | Per-process kernel stacks + SS fix | 4 × 1 KB stacks at 0xF000, double-load stage2 (DS:0x0600 + far CS=0x1000), ISR/syscall SS save/restore, split frame (GP on user stack, SS:SP on kernel stack), dynamic page pool |
 
 ### 9. File Layout
 
 ```
 src/arch/i16/
-  arch.h              — IRQ save/restore (CLI/STI), preemption, hints
+  arch.h              — IRQ save/restore, i16_switch_pending, i16_current_ksp
   cpu.h               — inb/outb, PIC/PIT/UART register definitions
-  boot.S              — DS=ES=SS=0, BSS zero, stack, → kmain()
-  switch.S            — INT 08h timer ISR, 24-byte frame, context switch
-  trap.S              — INT 30h syscall handler (AX=nr, BX-DI=args)
-  i16_common.c        — arch_build_initial_frame(), syscall ABI adapter
+  boot.S              — DS=ES=SS=0, BSS zero, SP=0xF400, → kmain()
+  switch.S            — INT 08h timer ISR, SS save/restore, context switch
+  trap.S              — INT 30h syscall handler, SS save/restore
+  i16_common.c        — arch_build_initial_frame(), i16_current_ksp, syscall ABI
 
 src/target/pcxt/
-  CMakeLists.txt      — Builds stage1, stage2, core, VFS, hello_com
-  pcxt_kernel.ld     — Core linker (0x0600, reserves 0xA000-0xBFFF for VFS data)
+  CMakeLists.txt      — Builds stage1, stage2, core, VFS, user programs
+  pcxt_kernel.ld     — Core linker (0x0600, VFS at 0xA000, stacks at 0xF000)
   pcxt_vfs.ld        — VFS linker (.text at 0, .data at DS:0xA000)
   target_pcxt.c      — early/late/post_mount hooks, seg_register, far-call patching
   boot/
     stage1.S          — 512 B boot sector + BPB, loads stage2 to 0xC000
     stage2_entry.S    — Stack at 0x7C00, entry stub for stage2.c
-    stage2.c          — UFS reader, loads core+VFS+VFS data, mod_info at 0x0500
+    stage2.c          — UFS reader, double-loads core, VFS, mod_info at 0x0500
     stage2.ld         — Linked at 0xC000
   drivers/
     uart_com.c        — 8250 UART, COM1 9600 baud, polled I/O
@@ -705,11 +709,14 @@ scripts/
 
 1. BIOS loads sector 0 → 0x7C00 (stage1).  Prints "Pi".
 2. Stage1 loads 8 sectors → 0xC000 (stage2).  Prints "PA".
-3. Stage2 reads UFS: loads `/boot/kernel_text` → core CS,
-   `/boot/kernel_data` → DS:0x0600,
-   `/boot/kernel_vfs` → VFS CS, `/boot/kernel_vfs_data` → DS
-   (after core data).
-   Writes `mod_info_t` at 0x0500.  Far-jumps to core CS entry.
+3. Stage2 reads UFS:
+   - loads `/boot/kernel` → DS:0x0600 (data access via SS=0)
+   - loads `/boot/kernel` again → segment 0x1060 (code, CS=0x1000)
+   - loads `/boot/kernel_vfs` → VFS CS (after core far copy)
+   - loads `/boot/kernel_vfs_data` → DS:0xA000
+   - computes page pool start (after last code segment)
+   - writes `mod_info_t` at 0x0500 (segments + pool address)
+   - far-jumps to 0x1000:0x0600 (_start in boot.S)
 4. Kernel prints "Po booting... [pcxt]" — completing "PiPAPo booting...".
 5. `target_early_init()`: UART + BIOS console, reads mod_info, registers
    segments, patches far-call tables (vfs_fptrs[], core_fptrs[]).
@@ -780,7 +787,7 @@ Core text + rodata + data + BSS must fit between 0x0600 and 0x9FFF
 Cross-module calls use assembly stubs to bridge code segments:
 
 ```
-Core segment (own CS):           VFS segment (own CS):
+Core segment (CS=0x1000):        VFS segment (own CS):
 ──────────────────────────       ──────────────────────────
 caller()                         vfs_init_entry:
   call mod_vfs.init()              call vfs_init   ; near
@@ -813,6 +820,7 @@ The VFS header at offset 0 in the VFS segment contains a magic word
 | Far-call return value lost | Entry stubs did `xor %ax,%ax; mov %ax,%ds` after call, destroying AX | Use BX instead of AX for DS restore |
 | exec ops->read hangs | `vn->mount->ops->read` is a near pointer valid only in VFS CS | `mod_vfs.vnode_read()` wrapper executes read in VFS CS |
 | `fd_close_all` crash in sys_exit | Unresolved VFS function called from core sys_exit path | Requires completing module boundary migration |
+| Page pool at wrong address | `page_id_linear`/`linear_page_id` used `uintptr_t` (16-bit on i16), truncating page addresses above 64 KB | Changed both to `uint32_t` parameter/return types |
 
 ---
 
@@ -824,52 +832,41 @@ Complete the remaining P-5 items to get `init` and `runtests` passing.
 
 #### R-1.1 Per-process kernel stacks and SS fix (G-4 + G-5)
 
-User processes must run with `SS=proc_seg` so that ia16-elf-gcc's
-SS-relative data access hits the process segment.  The kernel must
-run with `SS=0` to access kernel globals.  Since user pages live
-above 0x10000, a 16-bit SP with SS=0 cannot reach them — so the
-kernel cannot use the user stack.  Per-process kernel stacks are
-required.
+**Status**: Complete.
 
-**Design**: 4 × 1 KB kernel stacks at the top of the DS=0 segment
-(0xF000–0xFFFF).  ISR/syscall entry saves user SS:SP to the kernel
-stack and switches to `SS=0, SP=kernel_stack_top[pid]`.  IRET path
-restores user SS:SP.
+User processes run with `SS=proc_seg` so ia16-elf-gcc's SS-relative
+data access hits the process segment.  The kernel runs with `SS=0`.
 
-**Prerequisites**: Split core `.text` out of DS=0 into its own code
-segment (same pattern as VFS), freeing ~34 KB of DS=0 space.  Stage2
-already supports loading separate text/data files via `load_file_far`.
+**Implementation**:
 
-**Steps**:
+- **4 × 1 KB kernel stacks** at 0xF000–0xFFFF in DS=0.  `proc_init`
+  assigns `kernel_stack_top = 0xF000 + (slot+1)*1024` per process.
+  boot.S uses SP=0xF400 (kernel_stack[0] top).
 
-1. **Split core text/data** — separate linker scripts for core .text
-   (own CS) and core .data+.bss (DS=0 at 0x0600).  Update stage2 to
-   load `/boot/kernel_text` and `/boot/kernel_data` separately.
-   Update `mkpcimg.sh` and CMakeLists.txt.
+- **Double-load in stage2**: kernel binary loaded to DS:0x0600
+  (data) and to far segment 0x1060 (code, CS=0x1000).  ia16-elf-ld
+  R_386_16 limits prevent separating text/data VMA in the linker, so
+  both are linked at DS=0 addresses and the far copy preserves the
+  same offsets.  VFS code placed after core far copy, page-aligned.
+  Page pool start computed dynamically and passed via mod_info.
 
-2. **Relocate VFS data** — place VFS .data+.bss immediately after
-   core .bss (no hardcoded 0xA000).  Two-pass link via
-   `core_exports.ld` provides the start address.
+- **Split ISR/syscall frame**: GP registers (18 bytes) + hardware
+  FLAGS/CS/IP (6 bytes) = 24 bytes stay on the interrupted stack.
+  Only user_SS:user_SP (4 bytes) is saved on the kernel stack.
+  `pcb->sp` points to the kernel stack.  On exit, user SS:SP is
+  restored and IRET pops from the user stack (no copy needed).
 
-3. **Add kernel stacks** — define `kernel_stack[4]` at 0xF000 in
-   the core linker script.  boot.S sets SP=0xF400 (top of stack[0]).
-   Remove the old 2 KB static stack.
+- **`i16_current_ksp`** global holds the current process's kernel
+  stack top.  Updated on context switch.  ISR entry uses the 8086
+  SS-load interrupt inhibit to set SS:SP atomically.
 
-4. **Extend ISR/syscall frame** — on INT entry, save user SS:SP to
-   the kernel stack, set SS=0 and SP to the process's kernel stack.
-   On IRET, restore user SS:SP.  Frame grows from 24 to 28 bytes
-   (add SS and SP slots).
+- **elf16_loader** builds initial frames in two parts: 24-byte
+  GP+IRET frame on user stack (SS=proc_seg, segment-relative SP),
+  4-byte user_SS:SP on kernel stack.
 
-5. **Update elf16_loader** — set initial user SS=proc_seg and
-   SP=segment-relative offset (e.g., 0x2000 for 2 pages).  Build
-   the initial frame on the process's kernel stack, not user memory.
-
-6. **Update context switch** — `pcb->sp` now points into the
-   per-process kernel stack.  `sched_next` swap works as before.
-
-Files affected: `pcxt_kernel.ld`, `pcxt_vfs.ld`, `boot.S`,
-`switch.S`, `trap.S`, `i16_common.c`, `elf16_loader.c`, `stage2.c`,
-`mkpcimg.sh`, `CMakeLists.txt`, `signal_check` frame layout.
+- **PID 0 detection**: if SS=0 on ISR entry (kernel context), the
+  stack switch is skipped — GP regs and user_SS:SP are all on the
+  same kernel stack.
 
 #### R-1.2 Debug init post-startup failure (G-1)
 
