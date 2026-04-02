@@ -30,6 +30,7 @@ extern int uart_rx_avail(void);
 
 void target_early_init(void) {
   uart_init();
+  klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
   klog("PiPAPo booting... [qemu_rv32]\n");
   klogf("System clock: %lu MHz\n", (unsigned long)(PPAP_SYS_HZ / 1000000u));
 }

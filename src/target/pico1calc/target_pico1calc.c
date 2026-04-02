@@ -142,6 +142,7 @@ static const tty_backend_t fbcon_backend = {
 
 void target_early_init(void) {
   uart_init();
+  klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
   klog("PiPAPo booting... [pico1calc]\n");
   klog("UART: 115200 bps @ 12 MHz XOSC\n");
   klog("PLL: configuring...\n");
@@ -168,7 +169,8 @@ void target_early_init(void) {
       klog("LCD: ST7365P initialised (320x320 RGB565)\n");
     fbcon_init();
     klog("FBCON: text console initialised (40x20)\n");
-    klog_set_mirror(fbcon_putc, fbcon_flush_deferred);
+    klog_set_logger(KLOG_LOGGER_SECONDARY, fbcon_putc,
+                    fbcon_flush_deferred);
     klog("KLOG: output mirrored to LCD\n");
     tty_set_backend(TTY_DISPLAY, &fbcon_backend);
     sched_set_input_poll(fbcon_avail_wrapper, TTY_DISPLAY);

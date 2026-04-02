@@ -16,6 +16,12 @@
 
 #include <stdint.h>
 
+typedef int (*klog_putc_fn)(char c, void (*notify)(void));
+
+#define KLOG_LOGGER_PRIMARY 0
+#define KLOG_LOGGER_SECONDARY 1
+#define KLOG_LOGGER_COUNT 2
+
 /* Atomic single-string log (no format parsing). */
 void klog(const char *msg);
 
@@ -36,12 +42,7 @@ void klogf(const char *fmt, ...);
 #define PPAP_DEBUG_LOGF(tag, fmt, ...) ((void)0)
 #endif
 
-/*
- * Register a mirror output sink (e.g. fbcon for LCD).
- * When set, all klog/klogf output is sent to both UART and the mirror.
- * UART always remains the primary debug channel.
- */
-void klog_set_mirror(int (*putc)(char c, void (*notify)(void)),
-                     void (*flush)(void));
+/* Register or replace one logger slot. */
+void klog_set_logger(int id, klog_putc_fn putc, void (*flush)(void));
 
 #endif /* PPAP_KERNEL_KLOG_H */

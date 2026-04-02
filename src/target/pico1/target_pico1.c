@@ -20,6 +20,7 @@
 
 void target_early_init(void) {
   uart_init();
+  klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
   klog("PiPAPo booting... [pico1]\n");
   klog("UART: 115200 bps @ 12 MHz XOSC\n");
   uart_tx_drain();   /* drain at 12 MHz; also disables UART0 NVIC */

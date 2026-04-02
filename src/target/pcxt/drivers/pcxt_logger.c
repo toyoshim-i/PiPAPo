@@ -1,0 +1,25 @@
+/*
+ * pcxt_logger.c — Core-side logger sink for PC/XT
+ *
+ * Keeps early boot logging entirely inside the core segment. The logger
+ * duplicates each character to COM1 and the BIOS teletype console.
+ */
+
+#include "drivers/bios_con.h"
+#include "drivers/pcxt_logger.h"
+#include "drivers/uart.h"
+#include "klog.h"
+
+static int pcxt_logger_putc(char c, void (*notify)(void)) {
+  if (!uart_putc(c, notify)) return 0;
+  bios_putc(c);
+  return 1;
+}
+
+static void pcxt_logger_flush(void) {}
+
+void pcxt_logger_init(void) {
+  uart_init();
+  klog_set_logger(KLOG_LOGGER_PRIMARY, pcxt_logger_putc, pcxt_logger_flush);
+  klog_set_logger(KLOG_LOGGER_SECONDARY, NULL, NULL);
+}

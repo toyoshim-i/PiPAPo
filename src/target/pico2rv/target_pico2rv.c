@@ -103,6 +103,7 @@ void target_early_init(void)
     }
 
     uart_init();
+    klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
     /* No bytes have been emitted yet, so there is nothing to drain here.
      * On Hazard3, UART_FR.BUSY can remain set spuriously and hang boot if we
      * spin on uart_tx_drain() before the first write. */

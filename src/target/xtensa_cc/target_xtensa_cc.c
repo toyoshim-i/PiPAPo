@@ -68,6 +68,7 @@ static void IRAM_ATTR systimer_noop_isr(void *arg) { (void)arg; }
 
 void target_early_init(void)
 {
+    klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
     /* FIRST: patch the Xtensa interrupt dispatch table directly to replace
      * the default "xt_unhandled_interrupt" handler for CPU interrupt 12
      * (FreeRTOS's SYSTIMER tick) with our no-op.

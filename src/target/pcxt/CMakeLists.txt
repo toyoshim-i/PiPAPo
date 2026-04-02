@@ -307,6 +307,7 @@ set(TARGET_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/drivers/uart_com.c
   ${CMAKE_CURRENT_SOURCE_DIR}/drivers/floppy_blk.c
   ${CMAKE_CURRENT_SOURCE_DIR}/drivers/bios_con.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/drivers/pcxt_logger.c
   ${CMAKE_CURRENT_SOURCE_DIR}/drivers/timer_pit.c
   # Core-side stubs: caller stubs for VFS, entry stubs for core
   ${CMAKE_CURRENT_SOURCE_DIR}/stubs/vfs_stubs.S

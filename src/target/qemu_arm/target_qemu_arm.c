@@ -23,6 +23,7 @@ extern const uint8_t __fatimg_end[];
 
 void target_early_init(void) {
   uart_init();
+  klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
   klog("PiPAPo booting... [qemu_arm]\n");
   klog("UART: CMSDK UART0 @ 0x40004000\n");
   klog("Clock: emulated (no PLL)\n");

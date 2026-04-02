@@ -6,8 +6,9 @@
  * Only the preemption timer is disabled — the UART ISR remains active
  * so it can drain the TX ring while klog spins on a full ring.
  *
- * An optional mirror sink (e.g. fbcon for LCD) can be registered via
- * klog_set_mirror().  When set, output goes to both UART and the mirror.
+ * Output goes through registered logger slots instead of calling the
+ * UART driver directly. Targets install a primary logger during early
+ * init and may add a secondary mirror logger.
  *
  * Supported format specifiers:
  *   %s — const char * string
@@ -21,18 +22,17 @@
 #include <stdarg.h>
 
 #include "arch/arch.h"
-#include "drivers/uart.h"
 #include "common/spinlock.h"
 
-/* ── Mirror output sink ──────────────────────────────────────────────────── */
+/* ── Registered loggers ──────────────────────────────────────────────────── */
 
-static int (*mirror_putc)(char c, void (*notify)(void));
-static void (*mirror_flush)(void);
+static klog_putc_fn logger_putc[KLOG_LOGGER_COUNT];
+static void (*logger_flush[KLOG_LOGGER_COUNT])(void);
 
-void klog_set_mirror(int (*putc)(char c, void (*notify)(void)),
-                     void (*flush)(void)) {
-  mirror_putc = putc;
-  mirror_flush = flush;
+void klog_set_logger(int id, klog_putc_fn putc, void (*flush)(void)) {
+  if ((unsigned)id >= KLOG_LOGGER_COUNT) return;
+  logger_putc[id] = putc;
+  logger_flush[id] = flush;
 }
 
 /* ── Lock helpers ────────────────────────────────────────────────────────── *
@@ -52,12 +52,20 @@ static inline void klog_unlock(void) {
   arch_preempt_enable();
 }
 
-/* ── Internal helpers (UART + mirror) ────────────────────────────────────── */
+/* ── Internal helpers (registered loggers) ──────────────────────────────── */
 
 static void klog_putc(char c) {
-  while (!uart_putc(c, NULL))
-    ; /* ISR drains the ring — spin until space available */
-  if (mirror_putc) mirror_putc(c, NULL);
+  for (unsigned i = 0; i < KLOG_LOGGER_COUNT; i++) {
+    if (!logger_putc[i]) continue;
+    while (!logger_putc[i](c, NULL))
+      ; /* logger remains responsible for making forward progress */
+  }
+}
+
+static void klog_flush_all(void) {
+  for (unsigned i = 0; i < KLOG_LOGGER_COUNT; i++) {
+    if (logger_flush[i]) logger_flush[i]();
+  }
 }
 
 static void klog_puts_raw(const char *s) {
@@ -96,7 +104,7 @@ void klog(const char *msg) {
   klog_lock();
   klog_puts_raw(msg);
   klog_unlock();
-  if (mirror_flush) mirror_flush();
+  klog_flush_all();
 }
 
 void klogf(const char *fmt, ...) {
@@ -151,5 +159,5 @@ void klogf(const char *fmt, ...) {
 done:
   va_end(ap);
   klog_unlock();
-  if (mirror_flush) mirror_flush();
+  klog_flush_all();
 }

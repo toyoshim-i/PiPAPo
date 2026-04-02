@@ -20,6 +20,7 @@
 
 void target_early_init(void) {
   uart_init();
+  klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
   klog("PiPAPo booting... [pico2]\n");
 #ifdef PPAP_SEMIHOST
   clock_init_pll(); /* still need PLL for SysTick */
