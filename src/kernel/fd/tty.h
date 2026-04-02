@@ -2,8 +2,8 @@
  * tty.h — Multi-TTY driver public interface
  *
  * Supports multiple independent TTY instances:
- *   tty_devs[0] — /dev/ttyS0 (UART, always available)
- *   tty_devs[1] — /dev/tty1  (fbcon+kbd on PicoCalc)
+ *   tty_devs[0] — /dev/ttyS0 (serial console)
+ *   tty_devs[1] — /dev/tty1  (display console: fbcon or BIOS)
  *
  * Three static struct file objects for the default console:
  *   tty_stdin  — read-only
@@ -22,8 +22,8 @@
 
 /* TTY instance indices */
 #define TTY_MAX 2
-#define TTY_SERIAL 0  /* /dev/ttyS0 — UART */
-#define TTY_DISPLAY 1 /* /dev/tty1  — fbcon+kbd */
+#define TTY_SERIAL 0  /* /dev/ttyS0 — serial console */
+#define TTY_DISPLAY 1 /* /dev/tty1  — display console */
 
 extern struct file tty_stdin;
 extern struct file tty_stdout;

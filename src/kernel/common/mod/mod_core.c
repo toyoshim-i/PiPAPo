@@ -15,7 +15,6 @@
 #include "../../blkdev/blkdev.h"
 #include "../../proc/sched.h"
 #include "../../syscall/syscall.h"
-#include "../../../drivers/uart.h"
 
 /* Cross-module blkdev wrappers — execute dev->read/write in core's CS.
  * NOT static: called by name from core_entries.S on i16. */
@@ -48,9 +47,6 @@ mod_core_t mod_core = {
   .sched_switch = sched_switch,
   .sched_get_ticks = sched_get_ticks,
   .svc_set_restart = svc_set_restart,
-  .uart_putc = uart_putc,
-  .uart_getc = uart_getc,
-  .uart_rx_avail = uart_rx_avail,
   .blkdev_read = core_blkdev_read,
   .blkdev_write = core_blkdev_write,
 };

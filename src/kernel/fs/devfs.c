@@ -22,9 +22,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../common/mod/mod_core.h"
 #include "../common/errno.h"
 #include "../mm/mem_region.h"
+#include "drivers/uart.h"
 
 /* ── Device node descriptor ──────────────────────────────────────────────── */
 
@@ -88,7 +88,7 @@ static long devtty_read(page_id_t page, uint16_t page_off, size_t n,
   (void)off;
   size_t count = 0;
   while (count < n) {
-    int c = mod_core.uart_getc();
+    int c = uart_getc();
     if (c < 0) break; /* no more data available */
     uint8_t ch = (uint8_t)c;
     mem_region_page_write(page, page_off, &ch, 1);
@@ -104,7 +104,7 @@ static long devtty_write(page_id_t page, uint16_t page_off, size_t n,
   for (size_t i = 0; i < n; i++) {
     uint8_t ch;
     mem_region_page_read(page, page_off, &ch, 1);
-    mod_core.uart_putc((char)ch, NULL);
+    uart_putc((char)ch, NULL);
     mem_region_page_advance(&page, &page_off, 1);
   }
   return (long)n;

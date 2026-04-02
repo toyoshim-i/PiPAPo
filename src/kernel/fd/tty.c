@@ -33,6 +33,9 @@
 #include "../proc/proc.h"       /* proc_table, PROC_MAX, PROC_FREE */
 #include "../signal/signal.h"   /* SIGINT */
 #include "drivers/uart.h"       /* uart_putc/getc/rx_avail for static init */
+#ifdef __ia16__
+#include "drivers/bios_con.h"
+#endif
 #include "file.h"
 
 /* ── Termios flag bits ───────────────────────────────────────────────────────
@@ -134,14 +137,22 @@ typedef struct {
   size_t tx_user_len; /* total write length */
 } tty_dev_t;
 
-/* UART access goes through mod_core on all targets.  This keeps the
- * module boundary clean (tty is in VFS, uart is in core) and avoids
- * cross-segment function pointer issues on i16. */
 static int tty_uart_putc(char c, void (*notify)(void)) {
-  return mod_core.uart_putc(c, notify);
+  return uart_putc(c, notify);
 }
-static int tty_uart_getc(void) { return mod_core.uart_getc(); }
-static int tty_uart_rx_avail(void) { return mod_core.uart_rx_avail(); }
+
+static int tty_uart_getc(void) { return uart_getc(); }
+static int tty_uart_rx_avail(void) { return uart_rx_avail(); }
+
+#ifdef __ia16__
+static int tty_bios_putc(char c, void (*notify)(void)) {
+  (void)notify;
+  bios_putc(c);
+  return 1;
+}
+static int tty_bios_getc(void) { return -1; }
+static int tty_bios_rx_avail(void) { return 0; }
+#endif
 
 static tty_dev_t tty_devs[TTY_MAX] = {
     [TTY_SERIAL] =
@@ -165,8 +176,17 @@ static tty_dev_t tty_devs[TTY_MAX] = {
         },
     [TTY_DISPLAY] =
         {
+#ifdef __ia16__
+            .out = tty_bios_putc,
+            .out_flush = NULL,
+            .in = tty_bios_getc,
+            .in_avail = tty_bios_rx_avail,
+            .win_cols = NULL,
+            .win_rows = NULL,
+#else
             /* All NULL — pico1calc registers fbcon backend via
                tty_set_backend() */
+#endif
             .termios =
                 {
                     .c_iflag = ICRNL | IXON,
@@ -233,8 +253,9 @@ void tty_set_console(int idx) {
 }
 
 void *tty_get_console_dev(void) {
-  /* Initialize tx_wakeup for the statically-initialized TTY_SERIAL. */
+  /* Initialize tx wakeups for statically initialized backends. */
   tty_devs[TTY_SERIAL].tx_wakeup = tx_ready_0;
+  tty_devs[TTY_DISPLAY].tx_wakeup = tx_ready_1;
   return tty_get_dev(console_tty_idx);
 }
 

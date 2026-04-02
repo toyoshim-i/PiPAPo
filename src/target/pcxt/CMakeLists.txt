@@ -377,6 +377,8 @@ add_executable(ppap_pcxt_vfs
   # Header must be first — contains entry point table at offset 0
   ${CMAKE_CURRENT_SOURCE_DIR}/stubs/vfs_header.S
   ${KERNEL_VFS_SOURCES}
+  ${CMAKE_CURRENT_SOURCE_DIR}/drivers/uart_com.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/drivers/bios_con.c
   # VFS-side stubs: entry stubs for VFS, caller stubs for core
   ${CMAKE_CURRENT_SOURCE_DIR}/stubs/vfs_entries.S
   ${CMAKE_CURRENT_SOURCE_DIR}/stubs/core_stubs.S

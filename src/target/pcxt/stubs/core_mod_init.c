@@ -37,9 +37,6 @@ void sched_wakeup(void *);
 void sched_switch(void);
 uint32_t sched_get_ticks(void);
 void svc_set_restart(void);
-int uart_putc(char, void (*)(void));
-int uart_getc(void);
-int uart_rx_avail(void);
 
 /* MOD_IMPL(core, X) expands to .X = core_X — alias stubs */
 #define core_klog                klog
@@ -60,9 +57,6 @@ int uart_rx_avail(void);
 #define core_sched_switch        sched_switch
 #define core_sched_get_ticks     sched_get_ticks
 #define core_svc_set_restart     svc_set_restart
-#define core_uart_putc           uart_putc
-#define core_uart_getc           uart_getc
-#define core_uart_rx_avail       uart_rx_avail
 #define core_blkdev_read         core_blkdev_read
 #define core_blkdev_write        core_blkdev_write
 

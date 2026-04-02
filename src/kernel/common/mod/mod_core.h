@@ -239,40 +239,6 @@ MOD_DECLARE_BEGIN(core)
    */
   MOD_FUNC(core, void, svc_set_restart, void)
 
-  /* UART lives in core (not VFS) because klog/klogf need raw UART
-   * access for boot-time output before VFS is initialized.  Putting
-   * UART in VFS would create a circular dependency: core depends on
-   * UART for logging, VFS depends on core for allocation.  The TTY
-   * layer in VFS wraps these primitives with line discipline and
-   * buffering for user-facing I/O. */
-
-  /*
-   * uart_getc — Dequeue one character from the UART receive ring.
-   *
-   * Returns character (0-255), or -1 if the ring is empty.
-   * Non-blocking.
-   */
-  MOD_FUNC(core, int, uart_getc, void)
-
-  /*
-   * uart_putc — Enqueue one character to the UART transmit ring.
-   *
-   *   c       Character to transmit.
-   *   notify  Callback fired by ISR when TX FIFO has space (may be
-   *           NULL).
-   *
-   * Returns 1 if enqueued, 0 if ring full (notify registered for
-   * retry).
-   */
-  MOD_FUNC(core, int, uart_putc, char, void (*)(void))
-
-  /*
-   * uart_rx_avail — Check if UART receive ring has buffered data.
-   *
-   * Returns non-zero if data available, 0 if empty.  No side effects.
-   */
-  MOD_FUNC(core, int, uart_rx_avail, void)
-
 MOD_DECLARE_END(core)
 
 /* MOD_CORE_FUNC_COUNT is defined in mod_core.inc — the single source

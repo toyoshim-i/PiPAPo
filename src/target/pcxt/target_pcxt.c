@@ -87,9 +87,6 @@ extern uint16_t sched_wakeup_entry;
 extern uint16_t sched_switch_entry;
 extern uint16_t sched_get_ticks_entry;
 extern uint16_t svc_set_restart_entry;
-extern uint16_t uart_putc_entry;
-extern uint16_t uart_getc_entry;
-extern uint16_t uart_rx_avail_entry;
 extern uint16_t blkdev_read_entry;
 extern uint16_t blkdev_write_entry;
 
@@ -139,9 +136,6 @@ static void patch_vfs_fptrs(uint16_t vfs_seg) {
   PATCH_CORE(17, sched_wakeup);
   PATCH_CORE(18, sched_switch);
   PATCH_CORE(19, svc_set_restart);
-  PATCH_CORE(20, uart_getc);
-  PATCH_CORE(21, uart_putc);
-  PATCH_CORE(22, uart_rx_avail);
 #undef PATCH_CORE
 }
 
