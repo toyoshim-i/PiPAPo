@@ -279,7 +279,15 @@ void target_post_mount(void)
 const char *target_init_path(void)
 {
 #ifdef __ia16__
+#ifdef PPAP_TESTS
+#ifdef PPAP_TESTS_EXTENDED
+  return "/bin/runtests_ext";
+#else
+  return "/bin/runtests";
+#endif
+#else
   return "/sbin/init";
+#endif
 #else
   return (const char *)0;
 #endif

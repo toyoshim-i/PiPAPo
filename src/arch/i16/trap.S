@@ -67,9 +67,52 @@ i16_syscall_isr:
 
   addw  $14, %sp      /* clean 7 args */
 
-  /* Store return value in the saved AX slot */
+  /* Keep the return value aside while we inspect trap-return state. */
+  movw  %ax, %dx
   movw  %sp, %bp
-  movw  %ax, 16(%bp)
+
+  /* execve replaced the process image: switch to current->sp before
+   * touching the saved AX/IP slots. */
+  movw  exec_pending, %ax
+  testw %ax, %ax
+  jz    .Lcheck_restart
+  movw  $0, exec_pending
+  movw  current_core, %bx
+  movw  (%bx), %sp
+  jmp   .Lmaybe_switch
+
+.Lcheck_restart:
+  /* Blocking syscalls keep the original AX/BX..DI frame and rewind IP so
+   * INT 30h re-executes when the process runs again. */
+  movw  svc_restart, %ax
+  testw %ax, %ax
+  jz    .Lstore_ret
+  movw  $0, svc_restart
+  subw  $2, 18(%bp)   /* back to INT 30h */
+  jmp   .Lmaybe_switch
+
+.Lstore_ret:
+  /* Normal return: store the syscall result in the saved AX slot. */
+  movw  %dx, 16(%bp)
+
+.Lmaybe_switch:
+  /* sys_waitpid/sys_execve/trace stops can pend a switch directly from the
+   * syscall path.  Do the same save/restore sequence as the timer ISR so we
+   * do not return to a blocked task until the next PIT tick. */
+  movw  i16_switch_pending, %ax
+  testw %ax, %ax
+  jz    .Lafter_switch
+  movw  $0, i16_switch_pending
+
+  movw  current_core, %bx
+  movw  %sp, (%bx)
+
+  call  sched_next
+  movw  %ax, current_core
+  movw  %ax, %bx
+  movw  (%bx), %sp
+
+.Lafter_switch:
 
   /* sys_sigreturn may ask us to resume from an older saved frame. */
   movw  i16_sigreturn_restore_sp, %ax

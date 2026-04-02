@@ -847,6 +847,10 @@ syscall conversion is the remaining work.
 
 3. **Fork / waitpid** — process segment duplication via
    `mem_region_page_read/write` for cross-segment copy.
+   Current status: i16 `vfork` now restores children from the copied
+   INT 30h frame offset, and trap return now handles `execve`,
+   blocking-syscall restart, and immediate post-syscall switches from
+   the syscall path. Runtime validation still depends on `--test pcxt`.
 
 4. **`--test pcxt` in run.sh** — integrate with existing test harness.
 
