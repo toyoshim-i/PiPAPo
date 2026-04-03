@@ -36,6 +36,7 @@
   .text
 
   .global i16_timer_isr
+  .extern i16_timer_can_preempt
 
 i16_timer_isr:
   /* CPU has pushed FLAGS, CS, IP (6 bytes) onto current SS:SP.
@@ -79,8 +80,20 @@ i16_timer_isr:
   movw  %ax, %ds
   movw  %ax, %es
 
-  /* Call kernel timer tick handler */
-  xorw  %ax, %ax        /* from_user = 0 (TODO: detect from saved SS) */
+  /* Call kernel timer tick handler.
+   * user_SS is 0 when the timer interrupted kernel code and non-zero
+   * when it interrupted user mode. */
+  movw  %sp, %bp
+  movw  2(%bp), %ax
+  testw %ax, %ax
+  jz    .Ltick_from_kernel
+  movw  $1, %ax
+  jmp   .Ltick_arg_ready
+
+.Ltick_from_kernel:
+  xorw  %ax, %ax
+
+.Ltick_arg_ready:
   pushw %ax
   call  sched_timer_tick
   addw  $2, %sp
@@ -88,6 +101,21 @@ i16_timer_isr:
   /* Chain to the original BIOS INT 08h handler.  It handles floppy
    * motor timeout and sends EOI — we must NOT send EOI ourselves. */
   call  i16_bios_timer_chain
+
+  /* Do not context-switch away from in-kernel work.  i16 currently
+   * lacks a fully reentrant kernel preemption model, and switching
+   * in the middle of BIOS/VFS/exec paths can corrupt in-flight state.
+   * Leave i16_switch_pending set so a later safe return path can
+   * perform the deferred switch.  The one exception is the idle
+   * thread, where the timer tick is the normal path that hands off
+   * from pid 0 to runnable user processes. */
+  movw  %sp, %bp
+  movw  2(%bp), %ax
+  pushw %ax
+  call  i16_timer_can_preempt
+  addw  $2, %sp
+  testw %ax, %ax
+  jz    .Lno_switch
 
   /* Check context switch flag */
   movw  i16_switch_pending, %ax

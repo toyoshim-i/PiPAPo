@@ -192,7 +192,7 @@ separate far segment after the core copy.
 
 Each module's code must fit in 64 KB.  The DS=0 segment holds
 core text+rodata+data+BSS (~38 KB), VFS data (~7.4 KB), and
-4 × 1 KB per-process kernel stacks at 0xF000–0xFFFF.
+4 × 2 KB per-process kernel stacks at 0xE000–0xFFFF.
 
 A **segment manager** (`src/kernel/common/seg.h`/`seg.c`) in the core
 module tracks each module's code segment base at runtime.  Stage2 loads
@@ -694,7 +694,7 @@ the user page via `mem_region_page_write`.
 | P-4a | Module system | `MOD_DECLARE`/`MOD_DEFINE`, mod_vfs (12 fn), mod_core (16 fn), boundary enforcement |
 | P-4b | Segment split + floppy mount | Core (CS=0x0060) + VFS (CS=0x1000) + shared SS=0, far-call stubs, UFS root mounted |
 | P-5 (partial) | User-space exec | ELF16 load, exit, timer, preemptive scheduler, `user_to_page` conversion complete, signal delivery + fork/vfork scaffolding written |
-| R-1.1 | Per-process kernel stacks + SS fix | 4 × 1 KB stacks at 0xF000, double-load stage2 (DS:0x0600 + far CS=0x1000), ISR/syscall SS save/restore, split frame (GP on user stack, SS:SP on kernel stack), dynamic page pool |
+| R-1.1 | Per-process kernel stacks + SS fix | 4 × 2 KB stacks at 0xE000, double-load stage2 (DS:0x0600 + far CS=0x1000), ISR/syscall SS save/restore, split frame (GP on user stack, SS:SP on kernel stack), dynamic page pool |
 
 ### 9. File Layout
 
@@ -702,14 +702,14 @@ the user page via `mem_region_page_write`.
 src/arch/i16/
   arch.h              — IRQ save/restore, i16_switch_pending, i16_current_ksp
   cpu.h               — inb/outb, PIC/PIT/UART register definitions
-  boot.S              — DS=ES=SS=0, BSS zero, SP=0xF400, → kmain()
+  boot.S              — DS=ES=SS=0, BSS zero, SP=0xE800, → kmain()
   switch.S            — INT 08h timer ISR, SS save/restore, context switch
   trap.S              — INT 30h syscall handler, SS save/restore
   i16_common.c        — arch_build_initial_frame(), i16_current_ksp, syscall ABI
 
 src/target/pcxt/
   CMakeLists.txt      — Builds stage1, stage2, core, VFS, user programs
-  pcxt_kernel.ld     — Core linker (0x0600, VFS at 0xA000, stacks at 0xF000)
+  pcxt_kernel.ld     — Core linker (0x0600, VFS at 0xA000, stacks at 0xE000)
   pcxt_vfs.ld        — VFS linker (.text at 0, .data at DS:0xA000)
   target_pcxt.c      — early/late/post_mount hooks, seg_register, far-call patching
   boot/
@@ -778,10 +778,10 @@ DS=0 (shared data/code addresses):
   ~0x9558        (free)
 0x0A000-0x0ECEE  VFS .data + .bss (~7.4 KB, loaded by stage2)
   ~0x0EFFF       (free)
-0x0F000          kernel_stack[0] (1 KB, also boot stack)
-0x0F400          kernel_stack[1] (1 KB)
-0x0F800          kernel_stack[2] (1 KB)
-0x0FC00          kernel_stack[3] (1 KB)
+0x0E000          kernel_stack[0] (2 KB, also boot stack)
+0x0E800          kernel_stack[1] (2 KB)
+0x0F000          kernel_stack[2] (2 KB)
+0x0F800          kernel_stack[3] (2 KB)
 0x0FFFF          End of first segment
 
 Code segments (far copies, loaded by stage2):
@@ -796,16 +796,16 @@ Page pool (all far-pointer access via page_id_t):
 0xC0000-0xFFFFF  ROM / BIOS
 ```
 
-Per-process kernel stacks (4 × 1 KB) sit at the top of the DS=0
+Per-process kernel stacks (4 × 2 KB) sit at the top of the DS=0
 segment.  Each process (PROC_MAX=4) gets its own kernel stack;
 ISR/syscall entry switches SS:SP to the current process's kernel
-stack.  boot.S uses `kernel_stack[0]` (SP=0xF400) as the initial
+stack.  boot.S uses `kernel_stack[0]` (SP=0xE800) as the initial
 boot stack.
 
 ### 12. Size Constraint
 
 Core text + rodata + data + BSS must fit between 0x0600 and 0x9FFF
-(~38 KB usable).  VFS data at 0xA000 must end before 0xF000
+(~38 KB usable).  VFS data at 0xA000 must end before 0xE000
 (kernel stacks).
 
 | Component | Size | DS=0 address |
@@ -813,7 +813,7 @@ Core text + rodata + data + BSS must fit between 0x0600 and 0x9FFF
 | Core .text + .rodata | ~34 KB | 0x0600–~0x8B7C |
 | Core .data + .bss | ~2.8 KB | ~0x8B7C–~0x9558 |
 | VFS .data + .bss | ~7.4 KB | 0xA000–~0xBCE8 |
-| Kernel stacks | 4 KB (4 × 1 KB) | 0xF000–0xFFFF |
+| Kernel stacks | 8 KB (4 × 2 KB) | 0xE000–0xFFFF |
 | VFS .text | ~33 KB | (separate far CS) |
 | Page pool | ~504 KB | after code segments (far access) |
 
@@ -874,9 +874,9 @@ data access hits the process segment.  The kernel runs with `SS=0`.
 
 **Implementation**:
 
-- **4 × 1 KB kernel stacks** at 0xF000–0xFFFF in DS=0.  `proc_init`
-  assigns `kernel_stack_top = 0xF000 + (slot+1)*1024` per process.
-  boot.S uses SP=0xF400 (kernel_stack[0] top).
+- **4 × 2 KB kernel stacks** at 0xE000–0xFFFF in DS=0.  `proc_init`
+  assigns `kernel_stack_top = 0xE000 + (slot+1)*2048` per process.
+  boot.S uses SP=0xE800 (kernel_stack[0] top).
 
 - **Double-load in stage2**: kernel binary loaded to DS:0x0600
   (data) and to far segment 0x1060 (code, CS=0x1000).  ia16-elf-ld
@@ -902,6 +902,42 @@ data access hits the process segment.  The kernel runs with `SS=0`.
 - **PID 0 detection**: if SS=0 on ISR entry (kernel context), the
   stack switch is skipped — GP regs and user_SS:SP are all on the
   same kernel stack.
+
+#### R-1.1a `vfork()` / `execve()` on the split-frame i16 ABI
+
+With the split-frame i16 layout, `vfork()` does not allocate or copy a
+separate child user stack.  The child shares the parent's user stack, as
+`vfork()` semantics already imply.  The only state that must be preserved is
+the parent's 24-byte GP+IRET resume frame on that shared user stack.
+
+**Implementation**:
+
+- **Shared user stack**: the child reuses the parent's `user_SS:user_SP`.
+  `sys_vfork()` builds the child's kernel-stack entry as just:
+  `[user_SP, user_SS]`.
+
+- **Parent frame save**: before the parent blocks, `sys_vfork()` reads the
+  parent's 24-byte user resume frame from `current->image.data.base_page`
+  and copies it onto the parent's kernel stack above `[user_SP, user_SS]`.
+  The saved AX slot is patched with `child_pid`, so the restored parent frame
+  already contains the correct `vfork()` return value.
+
+- **Child return value**: `sys_vfork()` also patches the shared user frame's
+  AX slot to `0`, so the child returns from `vfork()` as the child process.
+
+- **Parent restore**: when the parent is runnable again, trap return calls
+  `i16_vfork_restore_frame()` before the normal restore path.  That copies the
+  saved 24-byte frame back to `user_SS:user_SP`, after which the normal GP-pop
+  and `iret` sequence resumes the parent cleanly.
+
+- **`execve()` handoff**: `elf16_loader` records `exec_user_ss` and
+  `exec_user_sp` in the PCB.  On the trap return path, `exec_pending`
+  rebuilds the new `[user_SP, user_SS]` kernel-stack entry from those PCB
+  fields instead of trying to return through the old user frame.
+
+This design avoids a target-specific user-stack copy on i16 while still
+keeping the parent resume path correct.  It is also a useful reference for a
+possible future cross-target "`vfork()` without stack copy" cleanup.
 
 #### R-1.2 Debug init post-startup failure (G-1)
 

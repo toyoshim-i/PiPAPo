@@ -13,7 +13,7 @@ volatile uint16_t i16_switch_pending = 0;
 /* Current process's kernel stack pointer.  ISR/syscall entry loads
  * SS:SP from SS=0:i16_current_ksp.  Updated on context switch and
  * at boot.  Avoids dereferencing current_core before SS=0 is set. */
-volatile uint16_t i16_current_ksp = 0xF400;  /* kernel_stack[0] top */
+volatile uint16_t i16_current_ksp = 0xE800;  /* kernel_stack[0] top */
 
 /* Tick counter incremented by timer handler */
 volatile uint32_t i16_tick_count = 0;
@@ -67,6 +67,62 @@ uint32_t *arch_build_initial_frame(uint32_t *sp_arg, void (*entry)(void))
   *--sp = user_sp;   /* user_SP = points to ES at top of GP frame */
 
   return (uint32_t *)(uintptr_t)sp;
+}
+
+/* ── vfork parent frame restore ───────────────────────────────────────────
+ *
+ * Called from trap.S before the restore path when the current process
+ * is a vfork parent whose GP+IRET frame was saved on the kernel stack.
+ * Copies the 24-byte saved frame back to the user stack so the parent
+ * resumes with its original register state.
+ *
+ * kstack_sp: current kernel stack pointer (points to [user_SP, user_SS,
+ *            24B saved frame]).
+ * Returns the same kstack_sp (frame stays on kstack for pop). */
+#include "kernel/proc/proc.h"
+#include "kernel/mm/mem_region.h"
+
+int i16_timer_can_preempt(uint16_t interrupted_ss)
+{
+  if (interrupted_ss != 0) return 1;
+  return current && current->is_idle;
+}
+
+int i16_trap_should_skip_ret_store(void)
+{
+  return current && current->vfork_frame_saved;
+}
+
+int i16_trap_should_switch_now(void)
+{
+  return !current || current->state != PROC_RUNNABLE;
+}
+
+void i16_vfork_restore_frame(void)
+{
+  if (!current || !current->vfork_frame_saved) return;
+  current->vfork_frame_saved = 0;
+
+  /* Read user_SS:SP and saved frame from kernel stack.
+   * Layout: [user_SP 2B] [user_SS 2B] [saved 24B] */
+  uint16_t ksp = (uint16_t)(uintptr_t)current->sp;
+  uint16_t *kf = (uint16_t *)(uintptr_t)ksp;
+  uint16_t user_sp = kf[0];
+  uint16_t user_ss = kf[1];
+  uint8_t *saved = (uint8_t *)(uintptr_t)(ksp + 4);
+
+  /* AX slot (offset 16) in the saved frame already contains the
+   * parent's vfork return value (child PID), patched by sys_vfork. */
+
+  /* Write 24 bytes back to user stack at user_SS:user_SP */
+  uint32_t frame_linear = (uint32_t)user_ss * 16 + user_sp;
+  uint32_t data_base =
+      mem_region_page_linear(current->image.data.base_page);
+  uint32_t rel = frame_linear - data_base;
+  page_id_t page =
+      current->image.data.base_page + (page_id_t)(rel / PAGE_SIZE);
+  uint16_t off = (uint16_t)(rel % PAGE_SIZE);
+  mem_region_page_write(page, off, saved, 24);
 }
 
 /* ── i16 syscall dispatch (called from trap.S INT 30h handler) ─────────────

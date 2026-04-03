@@ -54,8 +54,8 @@ SECTIONS
 
   __vfs_data_end = .;
 
-  ASSERT((__vfs_data_end <= 0xF000),
-         "ERROR: VFS DS=0 data overflows into kernel stack area (0xF000)")
+  ASSERT((__vfs_data_end <= 0xE000),
+         "ERROR: VFS DS=0 data overflows into kernel stack area (0xE000)")
 
   /DISCARD/ : {
     *(.comment)

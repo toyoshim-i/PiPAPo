@@ -85,12 +85,7 @@ long sys_stat(uintptr_t path_ptr, uintptr_t buf_ptr) {
   int err = mod_vfs.lookup(path, &vn);
   if (err) return (long)err;
 
-  if (!vn->mount || !vn->mount->ops || !vn->mount->ops->stat) {
-    mod_vfs.vnode_release(vn);
-    return -(long)ENOSYS;
-  }
-
-  err = vn->mount->ops->stat(vn, &st);
+  err = mod_vfs.vnode_stat(vn, &st);
   mod_vfs.vnode_release(vn);
   if (err) return (long)err;
   rc = sys_copy_to_user(buf_ptr, &st, sizeof(st));
@@ -449,13 +444,8 @@ long sys_stat64(uintptr_t path_ptr, uintptr_t buf_ptr) {
   int err = mod_vfs.lookup(path, &vn);
   if (err) return (long)err;
 
-  if (!vn->mount || !vn->mount->ops || !vn->mount->ops->stat) {
-    mod_vfs.vnode_release(vn);
-    return -(long)ENOSYS;
-  }
-
   struct stat st;
-  err = vn->mount->ops->stat(vn, &st);
+  err = mod_vfs.vnode_stat(vn, &st);
   mod_vfs.vnode_release(vn);
   if (err) return (long)err;
 
@@ -500,13 +490,8 @@ long sys_lstat64(uintptr_t path_ptr, uintptr_t buf_ptr) {
   int err = mod_vfs.lookup_flags(path, &vn, VFS_LOOKUP_NOFOLLOW);
   if (err) return (long)err;
 
-  if (!vn->mount || !vn->mount->ops || !vn->mount->ops->stat) {
-    mod_vfs.vnode_release(vn);
-    return -(long)ENOSYS;
-  }
-
   struct stat st;
-  err = vn->mount->ops->stat(vn, &st);
+  err = mod_vfs.vnode_stat(vn, &st);
   mod_vfs.vnode_release(vn);
   if (err) return (long)err;
 
@@ -639,14 +624,9 @@ long sys_readlink(uintptr_t path_ptr, uintptr_t buf_ptr, long bufsiz) {
     mod_vfs.vnode_release(vn);
     return -(long)EINVAL;
   }
-  if (!vn->mount || !vn->mount->ops || !vn->mount->ops->readlink) {
-    mod_vfs.vnode_release(vn);
-    return -(long)EINVAL;
-  }
-
   size_t out_size = (size_t)bufsiz;
   if (out_size > sizeof(out)) out_size = sizeof(out);
-  long ret = vn->mount->ops->readlink(vn, out, out_size);
+  long ret = mod_vfs.vnode_readlink(vn, out, out_size);
   mod_vfs.vnode_release(vn);
   if (ret > 0) {
     rc = sys_copy_to_user(buf_ptr, out, (size_t)ret);

@@ -33,6 +33,8 @@
   .text
 
   .global i16_syscall_isr
+  .extern i16_trap_should_skip_ret_store
+  .extern i16_trap_should_switch_now
 
 i16_syscall_isr:
   /* CPU pushed FLAGS, CS, IP onto current SS:SP.  IF=0. */
@@ -108,13 +110,19 @@ i16_syscall_isr:
   movw  0(%bp), %bx     /* user_SP */
   movw  2(%bp), %cx     /* user_SS */
 
-  /* execve replaced the process image: switch to current->sp */
+  /* execve replaced the process image: build kernel stack frame
+   * from PCB's exec_user_ss/sp and switch to it. */
   movw  exec_pending, %ax
   testw %ax, %ax
   jz    .Lcheck_restart
   movw  $0, exec_pending
   movw  current_core, %bx
-  movw  (%bx), %sp
+  /* Build [user_SP, user_SS] at kernel_stack_top - 4.
+   * PCB layout: sp(4B), kernel_stack_top(2B), exec_user_ss(2B),
+   *             exec_user_sp(2B). Offsets: 4, 6, 8. */
+  movw  4(%bx), %sp           /* SP = kernel_stack_top */
+  pushw 6(%bx)                /* push exec_user_ss */
+  pushw 8(%bx)                /* push exec_user_sp */
   jmp   .Lmaybe_switch
 
 .Lcheck_restart:
@@ -131,6 +139,20 @@ i16_syscall_isr:
   jmp   .Lmaybe_switch
 
 .Lstore_ret:
+  /* Only skip the AX write for the vfork parent case where the child is
+   * still running on the parent's shared user stack. A normal deferred
+   * switch must still commit the current syscall's return value before
+   * we hand the CPU to another runnable task. */
+  pushw %bx
+  pushw %cx
+  pushw %dx
+  call  i16_trap_should_skip_ret_store
+  popw  %dx
+  popw  %cx
+  popw  %bx
+  testw %ax, %ax
+  jnz   .Lmaybe_switch
+
   /* Normal return: store syscall result in saved AX slot */
   movw  %cx, %ds        /* DS = user_SS */
   movw  %dx, 16(%bx)    /* saved AX = return value */
@@ -140,6 +162,9 @@ i16_syscall_isr:
 .Lmaybe_switch:
   /* Check if a context switch was requested (e.g. by sys_waitpid) */
   movw  i16_switch_pending, %ax
+  testw %ax, %ax
+  jz    .Lafter_switch
+  call  i16_trap_should_switch_now
   testw %ax, %ax
   jz    .Lafter_switch
   movw  $0, i16_switch_pending
@@ -157,6 +182,10 @@ i16_syscall_isr:
   movw  %ax, i16_current_ksp
 
 .Lafter_switch:
+  /* Restore vfork parent's saved GP+IRET frame to user stack.
+   * If current is a vfork parent whose frame was saved on the kernel
+   * stack, this copies it back before the normal restore path. */
+  call  i16_vfork_restore_frame
 
   /* sys_sigreturn may ask us to resume from an older saved frame */
   movw  i16_sigreturn_restore_sp, %ax

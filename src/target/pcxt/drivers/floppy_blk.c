@@ -61,14 +61,15 @@ static int floppy_read(blkdev_t *dev, void *buf, uint32_t sector,
   (void)dev;
   uint8_t *p = (uint8_t *)buf;
 
+  int rc = 0;
   for (uint32_t i = 0; i < count; i++) {
     uint16_t lba = UFS_FLOPPY_BASE + (uint16_t)(sector + i);
-    if (lba >= FLOPPY_TOTAL) return -EIO;
-    int rc = read_sector_bios(lba, p);
-    if (rc < 0) return rc;
+    if (lba >= FLOPPY_TOTAL) { rc = -EIO; break; }
+    rc = read_sector_bios(lba, p);
+    if (rc < 0) break;
     p += FLOPPY_SEC;
   }
-  return 0;
+  return rc;
 }
 
 static int floppy_write(blkdev_t *dev, const void *buf, uint32_t sector,

@@ -156,7 +156,9 @@ typedef struct pcb {
   uint32_t sp;                 /* saved stack pointer     (offset 0)       */
 #elif defined(__ia16__)
   uint32_t sp;                 /* saved kernel-stack SP (offset 0)          */
-  uint16_t kernel_stack_top;   /* top of this process's 1 KB kernel stack   */
+  uint16_t kernel_stack_top;   /* top of this process's 2 KB kernel stack   */
+  uint16_t exec_user_ss;       /* new user SS after execve (set by loader)  */
+  uint16_t exec_user_sp;       /* new user SP after execve (set by loader)  */
 #else
 #error "Unsupported architecture — define PCB register save area"
 #endif
@@ -188,6 +190,9 @@ typedef struct pcb {
 
   /* ── vfork / waitpid ──────────────────────────────────────────────── */
   struct pcb *vfork_parent; /* non-NULL while child shares parent's space */
+#if defined(__ia16__)
+  uint8_t vfork_frame_saved; /* 1 if 24B GP+IRET frame saved on kstack */
+#endif
   int exit_status;          /* set by _exit(), read by waitpid()          */
   uintptr_t got_base;       /* r9 value (GOT SRAM address) for PIC       */
   void *wait_channel;       /* sleep/wakeup target (e.g. pipe_t*)        */

@@ -1242,90 +1242,90 @@ static int ufs_statfs(mount_entry_t *mnt, struct kernel_statfs *buf) {
  */
 
 static int ufs_mount_locked(mount_entry_t *mnt, const void *dev_data) {
-  uint32_t s = spin_lock_irqsave(SPIN_FS);
+  spin_lock(SPIN_FS);
   int r = ufs_mount(mnt, dev_data);
-  spin_unlock_irqrestore(SPIN_FS, s);
+  spin_unlock(SPIN_FS);
   return r;
 }
 
 static int ufs_lookup_locked(vnode_t *dir, const char *name, vnode_t **result) {
-  uint32_t s = spin_lock_irqsave(SPIN_FS);
+  spin_lock(SPIN_FS);
   int r = ufs_lookup(dir, name, result);
-  spin_unlock_irqrestore(SPIN_FS, s);
+  spin_unlock(SPIN_FS);
   return r;
 }
 
 static long ufs_read_locked(vnode_t *vn, page_id_t page, uint16_t page_off,
                             size_t n, uint32_t off) {
-  uint32_t s = spin_lock_irqsave(SPIN_FS);
+  spin_lock(SPIN_FS);
   long r = ufs_read(vn, page, page_off, n, off);
-  spin_unlock_irqrestore(SPIN_FS, s);
+  spin_unlock(SPIN_FS);
   return r;
 }
 
 static long ufs_write_locked(vnode_t *vn, page_id_t page, uint16_t page_off,
                              size_t n, uint32_t off) {
-  uint32_t s = spin_lock_irqsave(SPIN_FS);
+  spin_lock(SPIN_FS);
   long r = ufs_write(vn, page, page_off, n, off);
-  spin_unlock_irqrestore(SPIN_FS, s);
+  spin_unlock(SPIN_FS);
   return r;
 }
 
 static int ufs_readdir_locked(vnode_t *dir, struct dirent *entries,
                               size_t max_entries, uint32_t *cookie) {
-  uint32_t s = spin_lock_irqsave(SPIN_FS);
+  spin_lock(SPIN_FS);
   int r = ufs_readdir(dir, entries, max_entries, cookie);
-  spin_unlock_irqrestore(SPIN_FS, s);
+  spin_unlock(SPIN_FS);
   return r;
 }
 
 static int ufs_stat_locked(vnode_t *vn, struct stat *st) {
-  uint32_t s = spin_lock_irqsave(SPIN_FS);
+  spin_lock(SPIN_FS);
   int r = ufs_stat(vn, st);
-  spin_unlock_irqrestore(SPIN_FS, s);
+  spin_unlock(SPIN_FS);
   return r;
 }
 
 static long ufs_readlink_locked(vnode_t *vn, char *buf, size_t bufsiz) {
-  uint32_t s = spin_lock_irqsave(SPIN_FS);
+  spin_lock(SPIN_FS);
   long r = ufs_readlink(vn, buf, bufsiz);
-  spin_unlock_irqrestore(SPIN_FS, s);
+  spin_unlock(SPIN_FS);
   return r;
 }
 
 static int ufs_create_locked(vnode_t *dir, const char *name, uint32_t mode,
                              vnode_t **result) {
-  uint32_t s = spin_lock_irqsave(SPIN_FS);
+  spin_lock(SPIN_FS);
   int r = ufs_create(dir, name, mode, result);
-  spin_unlock_irqrestore(SPIN_FS, s);
+  spin_unlock(SPIN_FS);
   return r;
 }
 
 static int ufs_mkdir_locked(vnode_t *dir, const char *name, uint32_t mode) {
-  uint32_t s = spin_lock_irqsave(SPIN_FS);
+  spin_lock(SPIN_FS);
   int r = ufs_mkdir(dir, name, mode);
-  spin_unlock_irqrestore(SPIN_FS, s);
+  spin_unlock(SPIN_FS);
   return r;
 }
 
 static int ufs_unlink_locked(vnode_t *dir, const char *name) {
-  uint32_t s = spin_lock_irqsave(SPIN_FS);
+  spin_lock(SPIN_FS);
   int r = ufs_unlink(dir, name);
-  spin_unlock_irqrestore(SPIN_FS, s);
+  spin_unlock(SPIN_FS);
   return r;
 }
 
 static int ufs_truncate_locked(vnode_t *vn, uint32_t length) {
-  uint32_t s = spin_lock_irqsave(SPIN_FS);
+  spin_lock(SPIN_FS);
   int r = ufs_truncate(vn, length);
-  spin_unlock_irqrestore(SPIN_FS, s);
+  spin_unlock(SPIN_FS);
   return r;
 }
 
 static int ufs_statfs_locked(mount_entry_t *mnt, struct kernel_statfs *buf) {
-  uint32_t s = spin_lock_irqsave(SPIN_FS);
+  spin_lock(SPIN_FS);
   int r = ufs_statfs(mnt, buf);
-  spin_unlock_irqrestore(SPIN_FS, s);
+  spin_unlock(SPIN_FS);
   return r;
 }
 

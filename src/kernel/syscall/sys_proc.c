@@ -1505,6 +1505,7 @@ long sys_vfork(uint32_t *frame) {
   pcb_t *child = proc_alloc();
   if (!child) return -(long)ENOMEM;
 
+#if !defined(__ia16__)
   /* 2. Allocate stack page for child */
   proc_image_segment_t stack_region = {0};
   if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
@@ -1514,6 +1515,7 @@ long sys_vfork(uint32_t *frame) {
   }
   void *stack = stack_region.base;
   child->stack_page_id = mem_region_ptr_to_page(stack);
+#endif
 
   /* 3. Share parent's user_pages with child */
   proc_copy_page_tracking(child, current);
@@ -1529,26 +1531,56 @@ long sys_vfork(uint32_t *frame) {
    *    on the child's page as the parent's PSP frame.
    */
 #if defined(__ia16__)
-  /* i16: trap.S saves the real INT frame on the user stack, and
-   * i16_trap_frame_sp points at its ES slot. Recreate the child at the
-   * same frame offset inside the copied stack page so switch.S restores
-   * the child straight back to user mode via iret. */
-  mem_region_page_read(current->stack_page_id, 0, stack, PAGE_SIZE);
-  uintptr_t parent_stack_base =
-      mem_region_page_linear(current->stack_page_id);
-  uintptr_t frame_off =
-      (uintptr_t)(uint16_t)i16_trap_frame_sp - parent_stack_base;
-  uint16_t *child_frame16;
+  /* i16 split-frame layout: GP+IRET (24B) on user stack, user_SS:SP
+   * (4B) on kernel stack.  Child shares parent's user stack (vfork).
+   *
+   * Save parent's 24B user frame to parent's kernel stack so it
+   * survives the child's execve overwriting the user stack.
+   * Build the child's kernel stack with the same user_SS:SP. */
+  {
+    /* Read parent's user_SS:SP from kernel stack.
+     * i16_trap_frame_sp was captured by trap.S at syscall entry. */
+    uint16_t *trap_ksp = (uint16_t *)(uintptr_t)i16_trap_frame_sp;
+    uint16_t parent_user_sp = trap_ksp[0];
+    uint16_t parent_user_ss = trap_ksp[1];
 
-  if (frame_off + 24u > PAGE_SIZE) {
-    proc_release_stack_page(&stack);
-    child->stack_page_id = PAGE_ID_INVALID;
-    proc_free(child);
-    return -(long)EFAULT;
+    /* Compute the user frame's page location */
+    uint32_t frame_linear =
+        (uint32_t)parent_user_ss * 16 + parent_user_sp;
+    uint32_t data_base =
+        mem_region_page_linear(current->image.data.base_page);
+    uint32_t rel = frame_linear - data_base;
+    page_id_t frame_page =
+        current->image.data.base_page + (page_id_t)(rel / PAGE_SIZE);
+    uint16_t frame_page_off = (uint16_t)(rel % PAGE_SIZE);
+
+    /* Save parent's 24B GP+IRET frame to parent's kernel stack.
+     * Patch the AX slot (offset 16) with child PID so the parent
+     * sees the correct vfork return value when the frame is restored. */
+    uint8_t saved_frame[24];
+    mem_region_page_read(frame_page, frame_page_off, saved_frame, 24);
+    uint16_t child_pid16 = (uint16_t)child->pid;
+    saved_frame[16] = (uint8_t)(child_pid16 & 0xFF);
+    saved_frame[17] = (uint8_t)(child_pid16 >> 8);
+    uint8_t *kstack_save = (uint8_t *)(uintptr_t)(trap_ksp + 2);
+    __builtin_memcpy(kstack_save, saved_frame, 24);
+    current->vfork_frame_saved = 1;
+
+    /* Build child's kernel stack: [user_SP, user_SS] */
+    uint16_t child_ksp = child->kernel_stack_top;
+    uint16_t *ckf = (uint16_t *)(uintptr_t)(child_ksp - 4);
+    ckf[0] = parent_user_sp;
+    ckf[1] = parent_user_ss;
+    child->sp = (uint32_t)(child_ksp - 4);
+
+      /* Patch AX=0 in shared user stack frame for child return */
+    uint16_t zero = 0;
+    uint16_t ax_rel = (uint16_t)(rel + 16);
+    page_id_t ax_page =
+        current->image.data.base_page + (page_id_t)(ax_rel / PAGE_SIZE);
+    uint16_t ax_off = ax_rel % PAGE_SIZE;
+    mem_region_page_write(ax_page, ax_off, &zero, 2);
   }
-
-  child_frame16 = (uint16_t *)((uint8_t *)stack + frame_off);
-  child_frame16[8] = 0; /* AX = 0 for child return from vfork */
 #else
   memcpy(stack, mem_region_page_to_ptr(current->stack_page_id), PAGE_SIZE);
 
@@ -1707,7 +1739,7 @@ long sys_vfork(uint32_t *frame) {
   }
 
 #elif defined(__ia16__)
-  child->sp = (uint32_t)(uintptr_t)child_frame16;
+  /* child->sp already set in the i16 block above */
 #else
 #error "sys_vfork: unsupported architecture — add child frame setup"
 #endif
@@ -1874,7 +1906,11 @@ long sys_waitpid(long pid, long status_ptr, long options) {
  * On success: never returns — the new program starts executing.
  * On failure: returns negative errno.
  */
+#if defined(__ia16__)
+#define EXEC_ARG_BYTES_MAX 128u  /* i16: 1 KB kernel stacks */
+#else
 #define EXEC_ARG_BYTES_MAX 1024u
+#endif
 
 static int sys_execve_copy_user_argv(const char **argv_out,
                                      char *arg_buf,

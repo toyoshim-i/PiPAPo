@@ -17,7 +17,28 @@
 #include "kernel/mm/page.h"
 #include "kernel/signal/signal.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "elf.h"
 #include "loader.h"
+
+#if defined(__ia16__)
+/*
+ * On i16, local stack buffers live in the shared DS=0 low-memory window, so
+ * we can safely use a tiny header buffer there for ELF probing.
+ */
+extern const loader_t elf16_loader;
+int elf16_load_vnode(pcb_t *p, vnode_t *vn, uint32_t file_size,
+                     const cpu_ops_t *cpu_ops, void *cpu_state,
+                     const char *const *argv, uint32_t flags);
+
+static long exec_vnode_read_near(vnode_t *vn, void *buf, uint16_t len,
+                                 uint32_t off) {
+  page_id_t page;
+  uint16_t page_off;
+
+  if (mem_region_ptr_ref(buf, &page, &page_off) < 0) return -(long)ENOMEM;
+  return mod_vfs.vnode_read(vn, page, page_off, len, off);
+}
+#endif
 
 /* ── execve ─────────────────────────────────────────────────────────── */
 
@@ -44,6 +65,27 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
   uint8_t *file_buf = NULL;
   const uint8_t *file_base;
   uint32_t file_size = vn->size;
+  extern const loader_t *loader_registry[];
+  const loader_t *matched_loader = NULL;
+  int rc = -(int)ENOEXEC;
+
+#if defined(__ia16__)
+  if (vn->xip_addr == NULL && file_size >= sizeof(elf32_ehdr_t)) {
+    elf32_ehdr_t ehdr;
+    long hdr_read = exec_vnode_read_near(vn, &ehdr, sizeof(ehdr), 0);
+
+    if (hdr_read == (long)sizeof(ehdr) &&
+        elf16_loader.detect((const uint8_t *)&ehdr, file_size, path)) {
+      rc = elf16_load_vnode(p, vn, file_size, &native_cpu_ops, NULL, argv, 0);
+      if (rc < 0) {
+        mod_vfs.vnode_release(vn);
+        return rc;
+      }
+      matched_loader = &elf16_loader;
+      goto exec_loaded;
+    }
+  }
+#endif
 
   if (vn->xip_addr == NULL) {
     if (file_size == 0) {
@@ -84,10 +126,6 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
   }
 
   /* ── 3. Iterate loader registry ────────────────────────────────────── */
-  extern const loader_t *loader_registry[];
-  const loader_t *matched_loader = NULL;
-  int rc = -(int)ENOEXEC;
-
   for (int i = 0; loader_registry[i] != NULL; i++) {
     int det = loader_registry[i]->detect(file_base, file_size, path);
     if (det) {
@@ -116,6 +154,8 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
     mod_vfs.vnode_release(vn);
     return rc;
   }
+
+exec_loaded:
 
   /* ── 4. Free file buffer if the loader doesn't need it for XIP ───── */
   if (file_buf && !matched_loader->xip) mem_region_free(&file_region);

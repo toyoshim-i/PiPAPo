@@ -47,7 +47,7 @@ report_core() {
 
   core_cs_used=$((0x$core_cs_end_hex - CORE_BASE_HEX))
   core_ds_used=$((0x$bss_end_hex - 0x$core_cs_end_hex))
-  stack_used=$((0x10000 - 0x$kstack_base_hex))  # 4 × 1 KB kernel stacks to end of segment
+  stack_used=$((0x10000 - 0x$kstack_base_hex))  # 4 × 2 KB kernel stacks to end of segment
   vfs_ds_used=$((0x$data_end_hex - 0x$data_start_hex))
   ds0_limit=$((DS0_LIMIT_HEX - CORE_BASE_HEX))
   total_ds_used=$((core_ds_used + stack_used + vfs_ds_used))

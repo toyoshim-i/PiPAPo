@@ -18,13 +18,16 @@
 #include <string.h>
 
 #include "kernel/common/errno.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/mm/mem_region.h"
 #include "kernel/proc/proc.h"
+#include "kernel/vfs/vfs_types.h"
 #include "arch/arch.h"
 #include "kernel/cpu/cpu.h"
 
 #define ELF16_MAX_SIZE  (60u * 1024u)  /* 60 KB max (leave room for stack) */
 #define ELF16_STACK_SIZE 2048u         /* 2 KB user stack */
+#define ELF16_MAX_PHDRS 16u
 
 /* ── Detection ─────────────────────────────────────────────────────────── */
 
@@ -58,27 +61,34 @@ static int elf16_detect(const uint8_t *buf, uint32_t size, const char *path)
 
 /* ── Loading ───────────────────────────────────────────────────────────── */
 
-static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
-                      const cpu_ops_t *cpu_ops, void *cpu_state,
-                      const char *const *argv, uint32_t flags)
-{
+static long elf16_read_near(vnode_t *vn, uint32_t off, void *buf,
+                            uint16_t len) {
+  page_id_t page;
+  uint16_t page_off;
+
+  if (mem_region_ptr_ref(buf, &page, &page_off) < 0) return -ENOMEM;
+  return mod_vfs.vnode_read(vn, page, page_off, len, off);
+}
+
+static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
+                                   const elf32_phdr_t *phdrs, uint16_t phnum,
+                                   const uint8_t *file_buf, vnode_t *vn,
+                                   uint32_t file_size,
+                                   const cpu_ops_t *cpu_ops, void *cpu_state,
+                                   const char *const *argv, uint32_t flags) {
   (void)flags;
   (void)cpu_ops;
   (void)cpu_state;
   (void)argv;
 
-  const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)file_buf;
-
-  /* Validate program header table */
-  if (ehdr->e_phoff == 0 || ehdr->e_phnum == 0) return -ENOEXEC;
-  if (ehdr->e_phoff + ehdr->e_phnum * sizeof(elf32_phdr_t) > file_size)
+  if (phnum == 0) return -ENOEXEC;
+  if (ehdr->e_phoff == 0) return -ENOEXEC;
+  if (ehdr->e_phoff + (uint32_t)phnum * sizeof(elf32_phdr_t) > file_size)
     return -ENOEXEC;
-
-  const elf32_phdr_t *phdrs = (const elf32_phdr_t *)(file_buf + ehdr->e_phoff);
 
   /* First pass: find total memory footprint of PT_LOAD segments */
   uint32_t mem_end = 0;
-  for (uint16_t i = 0; i < ehdr->e_phnum; i++) {
+  for (uint16_t i = 0; i < phnum; i++) {
     if (phdrs[i].p_type != PT_LOAD) continue;
     uint32_t seg_end = phdrs[i].p_vaddr + phdrs[i].p_memsz;
     if (seg_end > mem_end) mem_end = seg_end;
@@ -111,7 +121,7 @@ static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   }
 
   /* Second pass: copy PT_LOAD segment data via mem_region_page_write */
-  for (uint16_t i = 0; i < ehdr->e_phnum; i++) {
+  for (uint16_t i = 0; i < phnum; i++) {
     if (phdrs[i].p_type != PT_LOAD) continue;
     if (phdrs[i].p_filesz == 0) continue;
 
@@ -123,7 +133,7 @@ static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
     uint32_t vaddr = phdrs[i].p_vaddr;
     uint32_t remaining = phdrs[i].p_filesz;
-    const uint8_t *src = file_buf + phdrs[i].p_offset;
+    uint32_t src_off = phdrs[i].p_offset;
 
     while (remaining > 0) {
       uint16_t pg_idx = (uint16_t)(vaddr / PAGE_SIZE);
@@ -131,8 +141,19 @@ static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
       uint16_t chunk = PAGE_SIZE - pg_off;
       if (chunk > remaining) chunk = (uint16_t)remaining;
 
-      mem_region_page_write(base_id + pg_idx, pg_off, src, chunk);
-      src += chunk;
+      if (file_buf != NULL) {
+        mem_region_page_write(base_id + pg_idx, pg_off, file_buf + src_off,
+                              chunk);
+      } else {
+        long nread =
+            mod_vfs.vnode_read(vn, base_id + pg_idx, pg_off, chunk, src_off);
+        if (nread < 0 || (uint16_t)nread != chunk) {
+          for (uint16_t j = 0; j < npages; j++)
+            mem_region_page_free(base_id + j);
+          return (nread < 0) ? (int)nread : -ENOEXEC;
+        }
+      }
+      src_off += chunk;
       vaddr += chunk;
       remaining -= chunk;
     }
@@ -183,14 +204,20 @@ static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   /* user_SP points to top of GP frame (segment-relative) */
   uint16_t user_sp = sw_off_seg;
 
-  /* Build the 4-byte kernel stack frame: [user_SS, user_SP].
-   * The ISR restore path pops these to switch back to the user stack.
-   * Write directly to the kernel stack (it's in DS=0 near memory). */
-  uint16_t ksp = p->kernel_stack_top;
-  uint16_t *kstack = (uint16_t *)(uintptr_t)ksp;
-  *--kstack = proc_seg;        /* user_SS */
-  *--kstack = user_sp;         /* user_SP (segment-relative) */
-  p->sp = (uint32_t)(uintptr_t)kstack;
+  /* Store new user SS:SP in PCB fields for the exec_pending path
+   * in trap.S (which builds the kernel stack frame after C returns).
+   * Also write the frame directly — safe for the initial exec from
+   * kmain where the kernel stack isn't in use.  For the syscall case,
+   * trap.S overwrites it with the same values from the PCB fields. */
+  p->exec_user_ss = proc_seg;
+  p->exec_user_sp = user_sp;
+  {
+    uint16_t ksp = p->kernel_stack_top;
+    uint16_t *kstack = (uint16_t *)(uintptr_t)ksp;
+    *--kstack = proc_seg;      /* user_SS */
+    *--kstack = user_sp;       /* user_SP */
+    p->sp = (uint32_t)(uintptr_t)kstack;
+  }
 
   /* Track pages by index — no pointer truncation. */
   for (uint16_t i = 0; i < npages; i++)
@@ -209,6 +236,57 @@ static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   p->ticks_remaining = PROC_DEFAULT_TICKS;
 
   return 0;
+}
+
+static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
+                      const cpu_ops_t *cpu_ops, void *cpu_state,
+                      const char *const *argv, uint32_t flags) {
+  const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)file_buf;
+
+  /* Validate program header table */
+  if (ehdr->e_phoff == 0 || ehdr->e_phnum == 0) return -ENOEXEC;
+  if (ehdr->e_phentsize != sizeof(elf32_phdr_t)) return -ENOEXEC;
+  if (ehdr->e_phnum > ELF16_MAX_PHDRS) return -ENOEXEC;
+  if (ehdr->e_phoff + ehdr->e_phnum * sizeof(elf32_phdr_t) > file_size)
+    return -ENOEXEC;
+
+  return elf16_load_from_headers(p, ehdr,
+                                 (const elf32_phdr_t *)(file_buf + ehdr->e_phoff),
+                                 ehdr->e_phnum, file_buf, NULL, file_size,
+                                 cpu_ops, cpu_state, argv, flags);
+}
+
+int elf16_load_vnode(pcb_t *p, vnode_t *vn, uint32_t file_size,
+                     const cpu_ops_t *cpu_ops, void *cpu_state,
+                     const char *const *argv, uint32_t flags) {
+  elf32_ehdr_t ehdr;
+  elf32_phdr_t phdrs[ELF16_MAX_PHDRS];
+  uint16_t phnum;
+  uint32_t phbytes;
+  long nread;
+
+  if (file_size < sizeof(ehdr)) return -ENOEXEC;
+
+  nread = elf16_read_near(vn, 0, &ehdr, sizeof(ehdr));
+  if (nread < 0) return (int)nread;
+  if ((uint16_t)nread != sizeof(ehdr)) return -ENOEXEC;
+  if (!elf16_detect((const uint8_t *)&ehdr, file_size, "")) return -ENOEXEC;
+
+  if (ehdr.e_phoff == 0 || ehdr.e_phnum == 0) return -ENOEXEC;
+  if (ehdr.e_phentsize != sizeof(elf32_phdr_t)) return -ENOEXEC;
+
+  phnum = ehdr.e_phnum;
+  if (phnum > ELF16_MAX_PHDRS) return -ENOEXEC;
+
+  phbytes = (uint32_t)phnum * sizeof(elf32_phdr_t);
+  if (ehdr.e_phoff + phbytes > file_size) return -ENOEXEC;
+
+  nread = elf16_read_near(vn, ehdr.e_phoff, phdrs, (uint16_t)phbytes);
+  if (nread < 0) return (int)nread;
+  if ((uint32_t)nread != phbytes) return -ENOEXEC;
+
+  return elf16_load_from_headers(p, &ehdr, phdrs, phnum, NULL, vn, file_size,
+                                 cpu_ops, cpu_state, argv, flags);
 }
 
 /* ── Loader registration ──────────────────────────────────────────────── */

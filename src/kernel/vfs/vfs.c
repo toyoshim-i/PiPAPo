@@ -399,6 +399,19 @@ long vfs_vnode_read(vnode_t *vn, page_id_t page, uint16_t page_off,
   return vn->mount->ops->read(vn, page, page_off, size, off);
 }
 
+int vfs_vnode_stat(vnode_t *vn, void *st) {
+  if (!vn || !st || !vn->mount || !vn->mount->ops || !vn->mount->ops->stat)
+    return -2; /* ENOENT / unsupported */
+  return vn->mount->ops->stat(vn, st);
+}
+
+long vfs_vnode_readlink(vnode_t *vn, char *buf, size_t bufsiz) {
+  if (!vn || !buf || !vn->mount || !vn->mount->ops ||
+      !vn->mount->ops->readlink)
+    return -2; /* ENOENT / unsupported */
+  return vn->mount->ops->readlink(vn, buf, bufsiz);
+}
+
 MOD_DEFINE_BEGIN(vfs)
 #define MOD_VFS_ENTRY(name, idx)  MOD_IMPL(vfs, name)
 #include "../common/mod/mod_vfs.inc"

@@ -44,8 +44,10 @@ MOD_VFS_ENTRY(umount,         30)
 MOD_VFS_ENTRY(vnode_acquire,  31)
 MOD_VFS_ENTRY(vnode_alloc,    32)
 MOD_VFS_ENTRY(vnode_read,     33)
-MOD_VFS_ENTRY(vnode_release,  34)
+MOD_VFS_ENTRY(vnode_readlink, 34)
+MOD_VFS_ENTRY(vnode_release,  35)
+MOD_VFS_ENTRY(vnode_stat,     36)
 
 #ifndef MOD_VFS_FUNC_COUNT
-#define MOD_VFS_FUNC_COUNT 35
+#define MOD_VFS_FUNC_COUNT 37
 #endif

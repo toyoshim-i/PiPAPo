@@ -34,6 +34,8 @@ struct pcb;
 typedef struct pcb pcb_t;
 void vfs_fd_stdio_init(pcb_t *);
 long vfs_vnode_read(vnode_t *, page_id_t, uint16_t, uint32_t, uint32_t);
+long vfs_vnode_readlink(vnode_t *, char *, size_t);
+int  vfs_vnode_stat(vnode_t *, void *);
 void vfs_fd_pool_init(void);
 void vfs_tty_rx_notify(int);
 void vfs_fstab_automount(void);

@@ -56,8 +56,8 @@ void proc_init(void) {
     proc_table[i].state = PROC_FREE;
     proc_table[i].stack_page_id = PAGE_ID_INVALID;
 #if defined(__ia16__)
-    /* Per-process kernel stacks at 0xF000 + i*1024.  Top = base + 1024. */
-    proc_table[i].kernel_stack_top = 0xF000u + (uint16_t)(i + 1u) * 1024u;
+    /* Per-process kernel stacks at 0xE000 + i*2048.  Top = base + 2048. */
+    proc_table[i].kernel_stack_top = 0xE000u + (uint16_t)(i + 1u) * 2048u;
 #endif
     proc_table[i].clear_child_tid = user_page_ref_invalid();
     for (uint32_t j = 0; j < USER_PAGES_MAX; j++)
@@ -114,6 +114,10 @@ pcb_t *proc_alloc(void) {
       __builtin_memset(&proc_table[i], 0, sizeof(pcb_t));
       proc_table[i].pid = next_pid++;
       proc_table[i].stack_page_id = PAGE_ID_INVALID;
+#if defined(__ia16__)
+      proc_table[i].kernel_stack_top =
+          0xE000u + (uint16_t)(i + 1u) * 2048u;
+#endif
       proc_table[i].clear_child_tid = user_page_ref_invalid();
       for (uint32_t j = 0; j < USER_PAGES_MAX; j++)
         proc_table[i].user_pages[j] = PAGE_ID_INVALID;

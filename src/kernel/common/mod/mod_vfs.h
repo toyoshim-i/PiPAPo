@@ -378,11 +378,34 @@ MOD_DECLARE_BEGIN(vfs)
            uint32_t)
 
   /*
+   * vnode_readlink — Read symlink target data from a vnode.
+   *
+   *   vn      Symlink vnode.
+   *   buf     Output buffer in caller memory.
+   *   bufsiz  Maximum bytes to write.
+   *
+   * Returns bytes written, or negative errno.  Executes in VFS code
+   * segment to maintain module isolation.
+   */
+  MOD_FUNC(vfs, long, vnode_readlink, vnode_t *, char *, size_t)
+
+  /*
    * vnode_release — Decrement refcnt; free vnode when it reaches zero.
    *
    *   vn  Vnode to release (NULL is a no-op).
    */
   MOD_FUNC(vfs, void, vnode_release, vnode_t *)
+
+  /*
+   * vnode_stat — Fetch metadata for a vnode.
+   *
+   *   vn  Vnode to inspect.
+   *   st  Output stat structure.
+   *
+   * Returns 0 on success, negative errno on failure.  Executes in VFS
+   * code segment to maintain module isolation.
+   */
+  MOD_FUNC(vfs, int, vnode_stat, vnode_t *, void *)
 
 MOD_DECLARE_END(vfs)
 
