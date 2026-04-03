@@ -58,6 +58,7 @@ pcb_t *sched_next(void) {
     }
   }
 
+
   /* Track which core is running which process. */
   if (result != current) {
     current->running_on_core = -1;

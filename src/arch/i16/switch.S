@@ -63,10 +63,11 @@ i16_timer_isr:
 
   /* Switch to kernel stack.
    * 8086 guarantees: instruction after SS load runs with interrupts
-   * inhibited, so the SS:SP pair is set atomically. */
+   * inhibited, so the SS:SP pair is set atomically.
+   * Use %ss: prefix because DS may be garbage (compiler scratch). */
   xorw  %bx, %bx
   movw  %bx, %ss
-  movw  i16_current_ksp, %sp
+  movw  %ss:i16_current_ksp, %sp
 
 .Lkstack_ready:
   /* Push interrupted SS:SP onto kernel stack */
@@ -84,9 +85,9 @@ i16_timer_isr:
   call  sched_timer_tick
   addw  $2, %sp
 
-  /* Send EOI to 8259A PIC (non-specific) */
-  movb  $0x20, %al
-  outb  %al, $0x20
+  /* Chain to the original BIOS INT 08h handler.  It handles floppy
+   * motor timeout and sends EOI — we must NOT send EOI ourselves. */
+  call  i16_bios_timer_chain
 
   /* Check context switch flag */
   movw  i16_switch_pending, %ax

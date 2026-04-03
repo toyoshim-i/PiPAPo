@@ -1,9 +1,9 @@
 /*
  * target_pcxt.c — PC/XT target hooks for the PPAP kernel
  *
- * Phase P-4b: isolated segment split.  Core + VFS modules in
- * separate segments.  Reads mod_info from stage2, initializes
- * segment manager, patches far pointer tables.
+ * Isolated segment split.  Core + VFS modules in separate segments.
+ * Reads mod_info from stage2, initializes segment manager, patches
+ * far pointer tables.  Chains BIOS INT 08h for floppy motor timeout.
  */
 
 #include "drivers/uart.h"
@@ -12,9 +12,6 @@
 #include "target/target.h"
 #include "klog.h"
 #include "common/seg.h"
-
-#ifdef __ia16__
-
 #include "blkdev/blkdev.h"
 #include "common/mod/mod_vfs.h"
 
@@ -25,11 +22,6 @@ uint32_t i16_page_pool_base = 0x10000ul;  /* safe default */
 
 /* Far pointer tables from the stub assembly files */
 extern uint16_t vfs_fptrs[];  /* in core: caller stubs for VFS */
-
-/* VFS entry point offsets — obtained from the VFS binary's symbol table.
- * These are fixed at build time since the VFS linker script starts at 0. */
-/* VFS entry point symbols are no longer referenced individually —
- * patch_vfs_fptrs reads them from the VFS header dynamically. */
 
 /* mod_info_t — boot protocol from stage2 (at 0x0500) */
 #define MOD_INFO_ADDR  0x0500u
@@ -51,11 +43,6 @@ typedef struct {
  */
 #define VFS_HDR_MAGIC 0x5646u
 
-/*
- * Patch the vfs_fptrs table by reading the VFS module's header.
- * The header is at the start of the VFS binary (linear = vfs_seg << 4).
- * Each fptrs entry is [offset:segment] (4 bytes, little-endian).
- */
 /* Read a 16-bit word from seg:offset using ES:BX */
 static uint16_t far_read16(uint16_t seg, uint16_t off) {
   uint16_t val;
@@ -94,7 +81,6 @@ extern uint16_t blkdev_read_entry;
 extern uint16_t blkdev_write_entry;
 
 static void patch_vfs_fptrs(uint16_t vfs_seg) {
-  /* VFS header is at vfs_seg:0000 */
   if (far_read16(vfs_seg, 0) != VFS_HDR_MAGIC) {
     klog("SEG: VFS header magic mismatch!\n");
     return;
@@ -161,17 +147,12 @@ static void seg_init_modules(void) {
     seg_register(MOD_ID_VFS, vfs_seg);
     patch_vfs_fptrs(vfs_seg);
 
-    /* VFS BSS: stage2 zeroes 0xA000-0xBFFF before loading data */
-
     klog("SEG: VFS module loaded\n");
   }
 }
 
-#endif /* __ia16__ */
-
 /* ── Target hooks ────────────────────────────────────────────────────────── */
 
-#ifdef __ia16__
 /* INT 0/6 debug trap — prints faulting CS:IP to COM1, then halts. */
 extern void int_debug_handler(void);
 __asm__(
@@ -220,33 +201,27 @@ __asm__(
 static void install_int_debug(void) {
   volatile uint16_t *ivt = (volatile uint16_t *)0;
   uint16_t off = (uint16_t)(uintptr_t)int_debug_handler;
-  ivt[0] = off; ivt[1] = 0;   /* INT 0 — divide overflow */
-  ivt[12] = off; ivt[13] = 0; /* INT 6 — invalid opcode  */
+  uint16_t cs = seg_get(MOD_ID_CORE);
+  ivt[0] = off; ivt[1] = cs;   /* INT 0 — divide overflow */
+  ivt[12] = off; ivt[13] = cs; /* INT 6 — invalid opcode  */
 }
-#endif
 
 void target_early_init(void)
 {
   pcxt_logger_init();
 
-#ifdef __ia16__
+  seg_init_modules();
   install_int_debug();
-#endif
 
   klog("Po booting... [pcxt]\n");
-
-#ifdef __ia16__
-  seg_init_modules();
-#endif
 }
 
 void target_late_init(void)
 {
-  /* PIT timer deferred to target_post_mount — BIOS INT 13h floppy
-   * driver needs the original INT 08h timer for motor control. */
+  /* PIT timer deferred — BIOS INT 13h floppy driver needs the
+   * original INT 08h timer for motor control. */
 }
 
-#ifdef __ia16__
 int target_mount_rootfs(void)
 {
   blkdev_init();
@@ -259,13 +234,12 @@ int target_mount_rootfs(void)
   int rc = mod_vfs.mount_ufs("/", MNT_RDONLY, bd);
   return rc;
 }
-#endif
 
 void target_post_mount(void)
 {
-  /* PIT timer deferred further — timer ISR (sched_timer_tick) must not
-   * fire until the scheduler is fully set up with thread 0's stack page
-   * and init has finished its first floppy-backed startup work. */
+  /* PIT timer is deferred — BIOS INT 13h floppy driver needs the
+   * original INT 08h handler for motor timeout.  Timer will be
+   * started after init exec completes (in kmain). */
 }
 
 void target_enable_deferred_timer(void)
@@ -281,7 +255,6 @@ void target_enable_deferred_timer(void)
 
 const char *target_init_path(void)
 {
-#ifdef __ia16__
 #ifdef PPAP_TESTS
 #ifdef PPAP_TESTS_EXTENDED
   return "/bin/runtests_ext";
@@ -290,9 +263,6 @@ const char *target_init_path(void)
 #endif
 #else
   return "/sbin/init";
-#endif
-#else
-  return (const char *)0;
 #endif
 }
 

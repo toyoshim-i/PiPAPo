@@ -58,7 +58,7 @@ i16_syscall_isr:
 
   xorw  %bx, %bx
   movw  %bx, %ss
-  movw  i16_current_ksp, %sp
+  movw  %ss:i16_current_ksp, %sp
 
 .Lkstack_ready:
   /* Push interrupted SS:SP onto kernel stack */

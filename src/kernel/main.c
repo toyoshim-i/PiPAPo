@@ -160,6 +160,11 @@ void kmain(void) {
     }
   }
 
+  /* Start deferred timer now that all floppy-backed exec is done.
+   * Must happen before sched_start() so the first context switch can
+   * fire.  No-op on targets that already started the timer. */
+  target_enable_deferred_timer();
+
   /* Launch Core 1 after init has PID 1 — core1_sched_entry() calls
    * proc_alloc() which would steal PID 1 if called earlier.
    * Self-stubs on QEMU (no SIO). */
