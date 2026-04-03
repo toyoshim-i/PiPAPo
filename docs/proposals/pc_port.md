@@ -309,6 +309,41 @@ X68000.
 control.  The floppy block device uses INT 13h, which depends on the
 original BIOS timer handler for motor timeout.
 
+#### 4.3.1 Technical Note — BIOS Timer vs BIOS Floppy
+
+Bring-up showed that BIOS floppy I/O is coupled to the BIOS timer path in
+two separate ways:
+
+- **INT 08h cadence matters.**  If PPAP leaves the PIT at the BIOS default
+  ~18.2 Hz but chains the BIOS INT 08h handler only every Nth tick (for a
+  later 100 Hz design), BIOS floppy timing slows down by the same factor.
+  In practice, chaining every 5th tick at 18.2 Hz reduced BIOS timer
+  service to about 3.6 Hz and caused INT 13h floppy reads to fail.
+- **IRQ 6 must remain unmasked.**  An early `timer_init()` version wrote a
+  fixed PIC mask of `0xFE`, enabling only IRQ 0.  That also masked the FDC
+  interrupt on IRQ 6, so BIOS INT 13h reads started failing immediately
+  after the deferred timer was enabled.
+
+The failure signature was misleading: `/sbin/init` loaded successfully, but
+later `/etc/inittab` lookup fell back to `/bin/sh`.  The file was present
+on disk; the real problem was that post-timer floppy reads failed, and the
+filesystem then interpreted stale or unread sector data as valid metadata.
+
+The current safe policy while PPAP still uses BIOS INT 13h for floppy I/O is:
+
+- Defer `timer_init()` until after the initial floppy-backed exec of
+  `/sbin/init`.
+- Preserve the BIOS PIC mask and only unmask IRQ 0 explicitly, so IRQ 6
+  remains available for floppy completion.
+- Chain the BIOS INT 08h handler on every tick while the PIT is still left
+  at the BIOS default rate.
+- Return `-EIO` on BIOS read failure so stale sector contents cannot be
+  reused as if they were valid UFS data.
+
+Once PPAP has a native floppy/FDC driver, the PIT can be reprogrammed to
+100 Hz unconditionally and BIOS timer/floppy coupling can be removed from
+the design.
+
 #### 4.4 Interrupt Controller (8259A PIC)
 
 The PC/XT has one 8259A with 8 IRQ lines (IRQ 0–7) mapped to INT 08h–0Fh:

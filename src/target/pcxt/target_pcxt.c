@@ -249,7 +249,7 @@ void target_enable_deferred_timer(void)
   if (!pit_started) {
     timer_init();
     pit_started = 1;
-    klog("PIT: 100 Hz timer started\n");
+    klog("PIT: timer started\n");
   }
 }
 

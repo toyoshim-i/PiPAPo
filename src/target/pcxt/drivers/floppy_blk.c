@@ -25,12 +25,13 @@ static uint8_t drive_no;
 
 /* ── INT 13h sector read ──────────────────────────────────────────────── */
 
-static void read_sector_bios(uint16_t lba, void *dest)
+static int read_sector_bios(uint16_t lba, void *dest)
 {
   uint16_t cyl  = lba / SECS_PER_CYL;
   uint16_t rem  = lba % SECS_PER_CYL;
   uint16_t head = rem / SECS_PER_TRACK;
   uint16_t sec  = rem % SECS_PER_TRACK + 1;
+  uint16_t err;
 
   __asm__ volatile (
     "push %%es\n\t"
@@ -38,13 +39,18 @@ static void read_sector_bios(uint16_t lba, void *dest)
     "mov  %%ax, %%es\n\t"
     "mov  $0x0201, %%ax\n\t"
     "int  $0x13\n\t"
+    "movb %%ah, %%al\n\t"
+    "xorb %%ah, %%ah\n\t"
+    "mov  %%ax, %0\n\t"
     "pop  %%es"
-    :
+    : "=m"(err)
     : "b"((uint16_t)(uintptr_t)dest),
       "c"((uint16_t)((cyl << 8) | sec)),
       "d"((uint16_t)((head << 8) | drive_no))
     : "ax", "memory", "cc"
   );
+
+  return err == 0 ? 0 : -EIO;
 }
 
 /* ── Block device interface ───────────────────────────────────────────── */
@@ -58,7 +64,8 @@ static int floppy_read(blkdev_t *dev, void *buf, uint32_t sector,
   for (uint32_t i = 0; i < count; i++) {
     uint16_t lba = UFS_FLOPPY_BASE + (uint16_t)(sector + i);
     if (lba >= FLOPPY_TOTAL) return -EIO;
-    read_sector_bios(lba, p);
+    int rc = read_sector_bios(lba, p);
+    if (rc < 0) return rc;
     p += FLOPPY_SEC;
   }
   return 0;
