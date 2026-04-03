@@ -26,26 +26,39 @@ vfs_saved_ip: .word 0
 
   .section .text
 
+/*
+ * Entry stub ABI note:
+ *   - AX is the return-value register, so post-call stub code must
+ *     leave it untouched.
+ *   - BX, SI, DI, and BP are callee-saved, so the stub must not use
+ *     them as scratch around the call.
+ *   - DX is caller-saved, so it is the right scratch register for
+ *     handling the far-return frame and restoring DS=0.
+ *   - DS is compiler scratch in ia16 small model; shared kernel data
+ *     is addressed via SS, so the stub restores DS only for callers
+ *     that expect the conventional DS=0 state on return.
+ */
 .macro VFS_TARGET_STUB name
   .global vfs_\name\()_entry
 vfs_\name\()_entry:
   cli
   pop  %ax
-  pop  %bx
+  pop  %dx
   mov  %ax, %ss:vfs_saved_ip
-  mov  %bx, %ss:vfs_saved_cs
+  mov  %dx, %ss:vfs_saved_cs
   sti
   /* Restore DS to shared data segment (SS=DS=0).
    * Core code may leave DS as scratch. */
-  xor  %ax, %ax
-  mov  %ax, %ds
+  xor  %dx, %dx
+  mov  %dx, %ds
   call vfs_\name
   cli
   /* Restore DS=0 before returning to core — VFS code uses DS
    * as a scratch register, and core expects DS=0.
-   * Use BX to avoid clobbering AX (return value). */
-  xor  %bx, %bx
-  mov  %bx, %ds
+   * Use DX (caller-saved) to avoid clobbering AX (return value)
+   * or BX/SI/DI (callee-saved). */
+  xor  %dx, %dx
+  mov  %dx, %ds
   push %ss:vfs_saved_cs
   push %ss:vfs_saved_ip
   sti
