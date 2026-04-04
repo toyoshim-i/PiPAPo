@@ -15,9 +15,12 @@ extern void i16_timer_isr(void);
 extern void i16_syscall_isr(void);
 
 /* Saved BIOS INT 08h handler — written by timer_init() before
- * installing our ISR and used by i16_bios_timer_chain(). */
-static uint16_t bios_int08_ip;
-static uint16_t bios_int08_cs;
+ * installing our ISR and used by i16_bios_timer_chain().
+ * Must be a contiguous IP:CS pair for lcall *addr. */
+static struct {
+  uint16_t ip;
+  uint16_t cs;
+} bios_int08;
 
 /* Chain to the original BIOS INT 08h handler.
  * Called from switch.S after our timer processing, BEFORE sending EOI.
@@ -38,13 +41,12 @@ void i16_bios_timer_chain(void)
 
   if (++div_count >= BIOS_CHAIN_DIVISOR) {
     div_count = 0;
-    /* Chain to BIOS handler — it sends EOI and manages motor timeout */
-    uint16_t ip = bios_int08_ip;
-    uint16_t cs = bios_int08_cs;
+    /* Chain to BIOS handler — it sends EOI and manages motor timeout.
+     * lcall *addr reads IP:CS from consecutive memory words. */
     __asm__ volatile (
       "pushf\n\t"
       "lcall *%%ss:%0"
-      : : "m" (ip), "m" (cs)
+      : : "m" (bios_int08)
       : "ax", "bx", "cx", "dx", "si", "di", "memory", "cc"
     );
   } else {
@@ -72,8 +74,8 @@ void timer_init(void)
    * We chain to it from our ISR so floppy motor timeout etc. work. */
   {
     volatile uint16_t *ivt = (volatile uint16_t *)0;
-    bios_int08_ip = ivt[0x08 * 2 + 0];
-    bios_int08_cs = ivt[0x08 * 2 + 1];
+    bios_int08.ip = ivt[0x08 * 2 + 0];
+    bios_int08.cs = ivt[0x08 * 2 + 1];
   }
 
   /* BIOS already initialized the PIC and IRQ masks.  Preserve the
