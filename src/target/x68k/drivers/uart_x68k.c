@@ -31,7 +31,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "drivers/uart.h"
+#include "core/driver/uart.h"
 
 /* ── IRQ guard: raise IPL to 7 around every IOCS call ──────────────────── */
 

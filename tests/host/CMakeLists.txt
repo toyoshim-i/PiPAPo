@@ -13,14 +13,15 @@ add_compile_definitions(PPAP_HOST_TEST)
 enable_testing()
 
 # ── Include path for kernel headers ──────────────────────────────────────────
-# All kernel source files use paths relative to src/ (e.g. "config.h",
-# "kernel/mm/page.h").  Point the host compiler at the same root.
+# All kernel source files use paths relative to src/ and src/kernel/
+# (e.g. "common/config.h", "core/mm/page.h").  Point the host compiler
+# at the same roots.
 set(SRC ${CMAKE_CURRENT_SOURCE_DIR}/../../src)
 
 # ── test_kmem ─────────────────────────────────────────────────────────────────
 # kmem.c has no hardware dependencies — compiles and tests cleanly on the host.
 add_executable(test_kmem
-    ${SRC}/kernel/mm/kmem.c
+    ${SRC}/kernel/core/mm/kmem.c
     test_kmem.c
 )
 target_include_directories(test_kmem PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
@@ -30,7 +31,7 @@ add_test(NAME kmem COMMAND test_kmem)
 # Human68k path translation and error code mapping — compiles the real
 # h68k_util.c from kernel source.  Pure C, no stubs needed.
 add_executable(test_h68k_path
-    ${SRC}/kernel/subsys/h68k_util.c
+    ${SRC}/kernel/core/subsys/h68k_util.c
     test_h68k_path.c
 )
 target_include_directories(test_h68k_path PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
@@ -39,8 +40,8 @@ add_test(NAME h68k_path COMMAND test_h68k_path)
 # ── test_ecpu_z80 ─────────────────────────────────────────────────────────
 # Z80 eCPU core — pure C interpreter, no hardware dependencies.
 add_executable(test_ecpu_z80
-    ${SRC}/kernel/cpu/ecpu_z80.c
-    ${SRC}/kernel/cpu/ecpu_z80_alu.c
+    ${SRC}/kernel/core/cpu/ecpu_z80.c
+    ${SRC}/kernel/core/cpu/ecpu_z80_alu.c
     test_mem_region_stubs.c
     test_ecpu_z80.c
 )
@@ -50,8 +51,8 @@ add_test(NAME ecpu_z80 COMMAND test_ecpu_z80)
 # ── test_ecpu_m68k ────────────────────────────────────────────────────────
 # m68k eCPU core — pure C interpreter, no hardware dependencies.
 add_executable(test_ecpu_m68k
-    ${SRC}/kernel/cpu/ecpu_m68k.c
-    ${SRC}/kernel/cpu/ecpu_m68k_alu.c
+    ${SRC}/kernel/core/cpu/ecpu_m68k.c
+    ${SRC}/kernel/core/cpu/ecpu_m68k_alu.c
     test_mem_region_stubs.c
     test_ecpu_m68k.c
 )
@@ -63,8 +64,8 @@ add_test(NAME ecpu_m68k COMMAND test_ecpu_m68k)
 # Superset of ZEXDOC: tests documented + undocumented flag behaviour (~4 min).
 set(ZEXALL_COM ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/zexall/zexall.com)
 add_executable(test_zexall
-    ${SRC}/kernel/cpu/ecpu_z80.c
-    ${SRC}/kernel/cpu/ecpu_z80_alu.c
+    ${SRC}/kernel/core/cpu/ecpu_z80.c
+    ${SRC}/kernel/core/cpu/ecpu_z80_alu.c
     test_mem_region_stubs.c
     test_zexall.c
 )

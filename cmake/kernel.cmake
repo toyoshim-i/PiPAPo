@@ -55,73 +55,73 @@ set(ARCH_XTENSA_SOURCES
 
 set(KERNEL_SHARED_SOURCES_BASE
     ${_KS_ROOT}/src/target/target_default.c
-    ${_KS_ROOT}/src/kernel/main.c
-    ${_KS_ROOT}/src/kernel/klog.c
+    ${_KS_ROOT}/src/kernel/core/main.c
+    ${_KS_ROOT}/src/kernel/core/klog.c
     ${_KS_ROOT}/src/kernel/common/mod/mod_core.c
-    ${_KS_ROOT}/src/kernel/mm/page.c
-    ${_KS_ROOT}/src/kernel/mm/kmem.c
-    ${_KS_ROOT}/src/kernel/mm/mem_region.c
-    ${_KS_ROOT}/src/kernel/proc/proc.c
-    ${_KS_ROOT}/src/kernel/proc/sched.c
-    ${_KS_ROOT}/src/kernel/syscall/syscall.c
-    ${_KS_ROOT}/src/kernel/syscall/sys_proc.c
-    ${_KS_ROOT}/src/kernel/syscall/sys_io.c
-    ${_KS_ROOT}/src/kernel/syscall/sys_time.c
-    ${_KS_ROOT}/src/kernel/syscall/sys_mem.c
-    ${_KS_ROOT}/src/kernel/syscall/sys_poll.c
-    ${_KS_ROOT}/src/kernel/syscall/sys_fs.c
-    ${_KS_ROOT}/src/kernel/fd/fd.c
-    ${_KS_ROOT}/src/kernel/fd/tty.c
-    ${_KS_ROOT}/src/kernel/fd/pipe.c
-    ${_KS_ROOT}/src/kernel/signal/signal.c
+    ${_KS_ROOT}/src/kernel/core/mm/page.c
+    ${_KS_ROOT}/src/kernel/core/mm/kmem.c
+    ${_KS_ROOT}/src/kernel/core/mm/mem_region.c
+    ${_KS_ROOT}/src/kernel/core/proc/proc.c
+    ${_KS_ROOT}/src/kernel/core/proc/sched.c
+    ${_KS_ROOT}/src/kernel/core/syscall/syscall.c
+    ${_KS_ROOT}/src/kernel/core/syscall/sys_proc.c
+    ${_KS_ROOT}/src/kernel/core/syscall/sys_io.c
+    ${_KS_ROOT}/src/kernel/core/syscall/sys_time.c
+    ${_KS_ROOT}/src/kernel/core/syscall/sys_mem.c
+    ${_KS_ROOT}/src/kernel/core/syscall/sys_poll.c
+    ${_KS_ROOT}/src/kernel/core/syscall/sys_fs.c
+    ${_KS_ROOT}/src/kernel/vfs/fd.c
+    ${_KS_ROOT}/src/kernel/vfs/tty.c
+    ${_KS_ROOT}/src/kernel/vfs/pipe.c
+    ${_KS_ROOT}/src/kernel/core/signal/signal.c
     ${_KS_ROOT}/src/kernel/vfs/vfs.c
     ${_KS_ROOT}/src/kernel/vfs/namei.c
-    ${_KS_ROOT}/src/kernel/fs/romfs.c
-    ${_KS_ROOT}/src/kernel/fs/devfs.c
-    ${_KS_ROOT}/src/kernel/fs/procfs.c
-    ${_KS_ROOT}/src/kernel/fs/tmpfs.c
-    ${_KS_ROOT}/src/kernel/fs/fstab.c
-    ${_KS_ROOT}/src/kernel/cpu/cpu.c
-    ${_KS_ROOT}/src/kernel/cpu/cpu_native.c
-    ${_KS_ROOT}/src/kernel/exec/elf.c
-    ${_KS_ROOT}/src/kernel/exec/loader.c
-    ${_KS_ROOT}/src/kernel/exec/elf_loader.c
-    ${_KS_ROOT}/src/kernel/exec/exec.c
-    ${_KS_ROOT}/src/kernel/subsys/subsys.c
+    ${_KS_ROOT}/src/kernel/vfs/romfs.c
+    ${_KS_ROOT}/src/kernel/vfs/devfs.c
+    ${_KS_ROOT}/src/kernel/vfs/procfs.c
+    ${_KS_ROOT}/src/kernel/vfs/tmpfs.c
+    ${_KS_ROOT}/src/kernel/vfs/fstab.c
+    ${_KS_ROOT}/src/kernel/core/cpu/cpu.c
+    ${_KS_ROOT}/src/kernel/core/cpu/cpu_native.c
+    ${_KS_ROOT}/src/kernel/core/exec/elf.c
+    ${_KS_ROOT}/src/kernel/core/exec/loader.c
+    ${_KS_ROOT}/src/kernel/core/exec/elf_loader.c
+    ${_KS_ROOT}/src/kernel/core/exec/exec.c
+    ${_KS_ROOT}/src/kernel/core/subsys/subsys.c
 )
 
 # ── Optional subsystem and eCPU sources ──────────────────────────────────────
 
 set(KERNEL_SUBSYS_HUMAN68K_SOURCES
-    ${_KS_ROOT}/src/kernel/subsys/h68k_util.c
-    ${_KS_ROOT}/src/kernel/subsys/human68k_bridge.c
-    ${_KS_ROOT}/src/kernel/subsys/human68k_loader.c
-    ${_KS_ROOT}/src/kernel/exec/x_loader.c
-    ${_KS_ROOT}/src/kernel/exec/r_loader.c
-    ${_KS_ROOT}/src/kernel/exec/h68k_emu.c
+    ${_KS_ROOT}/src/kernel/core/subsys/h68k_util.c
+    ${_KS_ROOT}/src/kernel/core/subsys/human68k_bridge.c
+    ${_KS_ROOT}/src/kernel/core/subsys/human68k_loader.c
+    ${_KS_ROOT}/src/kernel/core/exec/x_loader.c
+    ${_KS_ROOT}/src/kernel/core/exec/r_loader.c
+    ${_KS_ROOT}/src/kernel/core/exec/h68k_emu.c
 )
 
 set(KERNEL_SUBSYS_CPM_SOURCES
-    ${_KS_ROOT}/src/kernel/subsys/cpm_bridge.c
-    ${_KS_ROOT}/src/kernel/subsys/cpm_loader.c
-    ${_KS_ROOT}/src/kernel/exec/com_loader.c
+    ${_KS_ROOT}/src/kernel/core/subsys/cpm_bridge.c
+    ${_KS_ROOT}/src/kernel/core/subsys/cpm_loader.c
+    ${_KS_ROOT}/src/kernel/core/exec/com_loader.c
 )
 
 set(KERNEL_SUBSYS_SOS_SOURCES
-    ${_KS_ROOT}/src/kernel/subsys/sos_bridge.c
-    ${_KS_ROOT}/src/kernel/exec/sos_loader.c
+    ${_KS_ROOT}/src/kernel/core/subsys/sos_bridge.c
+    ${_KS_ROOT}/src/kernel/core/exec/sos_loader.c
 )
 
 set(KERNEL_ECPU_Z80_SOURCES
-    ${_KS_ROOT}/src/kernel/cpu/ecpu_z80.c
-    ${_KS_ROOT}/src/kernel/cpu/ecpu_z80_alu.c
+    ${_KS_ROOT}/src/kernel/core/cpu/ecpu_z80.c
+    ${_KS_ROOT}/src/kernel/core/cpu/ecpu_z80_alu.c
 )
 
 set(KERNEL_ECPU_M68K_SOURCES
-    ${_KS_ROOT}/src/kernel/cpu/ecpu_m68k.c
-    ${_KS_ROOT}/src/kernel/cpu/ecpu_m68k_alu.c
-    ${_KS_ROOT}/src/kernel/exec/m68k_emu_loader.c
-    ${_KS_ROOT}/src/kernel/subsys/ppap_m68k_bridge.c
+    ${_KS_ROOT}/src/kernel/core/cpu/ecpu_m68k.c
+    ${_KS_ROOT}/src/kernel/core/cpu/ecpu_m68k_alu.c
+    ${_KS_ROOT}/src/kernel/core/exec/m68k_emu_loader.c
+    ${_KS_ROOT}/src/kernel/core/subsys/ppap_m68k_bridge.c
 )
 
 # ── Composite kernel sources (conditionally assembled) ───────────────────────
@@ -151,8 +151,8 @@ endif()
 # ── ARM-only kernel modules (XIP flash, MPU) ────────────────────────────────
 
 set(KERNEL_ARM_ONLY_SOURCES
-    ${_KS_ROOT}/src/kernel/mm/xip.c
-    ${_KS_ROOT}/src/kernel/mm/mpu.c
+    ${_KS_ROOT}/src/kernel/core/mm/xip.c
+    ${_KS_ROOT}/src/kernel/core/mm/mpu.c
 )
 
 # ── Convenience: complete kernel sources for ARM targets ────────────────────
@@ -181,8 +181,8 @@ set(KERNEL_XTENSA_COMMON_SOURCES
 # ── Block device + VFAT/UFS sources (targets with PPAP_HAS_BLKDEV) ─────────
 
 set(KERNEL_BLKDEV_SOURCES
-    ${_KS_ROOT}/src/kernel/blkdev/blkdev.c
-    ${_KS_ROOT}/src/kernel/blkdev/loopback.c
-    ${_KS_ROOT}/src/kernel/fs/vfat.c
-    ${_KS_ROOT}/src/kernel/fs/ufs.c
+    ${_KS_ROOT}/src/kernel/core/driver/blkdev.c
+    ${_KS_ROOT}/src/kernel/core/driver/loopback.c
+    ${_KS_ROOT}/src/kernel/vfs/vfat.c
+    ${_KS_ROOT}/src/kernel/vfs/ufs.c
 )

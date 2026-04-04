@@ -2,11 +2,11 @@
  * test_mem_region_stubs.c — Minimal mem_region stubs for host-only tests
  */
 
-#include "kernel/mm/mem_region.h"
+#include "kernel/core/mm/mem_region.h"
 
 #include <stdlib.h>
 
-#include "kernel/mm/page.h"
+#include "kernel/core/mm/page.h"
 
 #include "kernel/common/errno.h"
 

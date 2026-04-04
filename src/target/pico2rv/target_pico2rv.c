@@ -7,11 +7,11 @@
 
 #include "../target.h"
 #include "pico2rv.h"
-#include "config.h"
-#include "drivers/uart.h"
-#include "drivers/arch/riscv/uart_rp2350.h"
-#include "drivers/clock.h"
-#include "klog.h"
+#include "common/config.h"
+#include "core/driver/uart.h"
+#include "core/driver/arch/riscv/uart_rp2350.h"
+#include "core/driver/clock.h"
+#include "core/klog.h"
 #include "target/rpico.h"
 
 #ifdef PPAP_TESTS

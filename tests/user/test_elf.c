@@ -7,13 +7,13 @@
  */
 
 #include "utest.h"
-#include "kernel/exec/elf.h"
+#include "kernel/core/exec/elf.h"
 #include "kernel/common/errno.h"
 #include <stdint.h>
 #include <stddef.h>
 
 /* Build the parser into this user test directly. */
-#include "kernel/exec/elf.c"
+#include "kernel/core/exec/elf.c"
 
 static void mem_zero(void *dst, size_t len)
 {

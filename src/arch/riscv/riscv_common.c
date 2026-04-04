@@ -10,10 +10,10 @@
 
 #include <stdint.h>
 #include "cpu.h"
-#include "klog.h"
-#include "mm/mem_region.h"
-#include "proc/proc.h"
-#include "proc/sched.h"
+#include "core/klog.h"
+#include "core/mm/mem_region.h"
+#include "core/proc/proc.h"
+#include "core/proc/sched.h"
 
 /* Context switch pending flag.
  * Set by arch_yield() (via sched_tick or sched_switch).

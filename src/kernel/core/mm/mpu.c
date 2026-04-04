@@ -1,0 +1,278 @@
+/*
+ * mpu.c — MPU 4-region layout for PPAP
+ *
+ * Region map:
+ *   0  base=0x20000000  16 KB   kernel data   RW priv-only, XN
+ *   1  base=0x10000000  16 MB   flash (XIP)   RO all modes, executable
+ *   2  base=per-process  4 KB   stack page    RW all modes, XN  (updated each
+ * switch) 3  base=0x40000000 512 MB   peripherals   RW priv-only, XN
+ *
+ * The Cortex-M0+ MPU has 8 regions.  We use only 4.
+ * MPU_CTRL.PRIVDEFENA is set so the kernel uses the default background map
+ * (full privileged access) while the MPU only restricts user-mode access.
+ *
+ * QEMU: MPU_TYPE reads as 0 on mps2-an500, so mpu_init() exits early and
+ * mpu_switch() becomes a no-op via the mpu_present flag.
+ */
+
+#include "mpu.h"
+
+#include <stdint.h>
+
+#include "../driver/uart.h"
+#include "../klog.h"
+#include "../proc/proc.h"
+#include "arch/arch.h"
+
+/* ── MPU register addresses (common to ARMv6-M and ARMv8-M) ─────────────── */
+
+#define MPU_TYPE (*(volatile uint32_t *)0xE000ED90u)
+#define MPU_CTRL (*(volatile uint32_t *)0xE000ED94u)
+#define MPU_RNR (*(volatile uint32_t *)0xE000ED98u)
+#define MPU_RBAR (*(volatile uint32_t *)0xE000ED9Cu)
+
+/* MPU_CTRL bits */
+#define MPU_CTRL_ENABLE (1u << 0)     /* enable the MPU */
+#define MPU_CTRL_PRIVDEFENA (1u << 2) /* privileged code uses default map */
+
+#if __ARM_ARCH >= 8
+/* ══════════════════════════════════════════════════════════════════════════
+ * ARMv8-M MPU (Cortex-M33 / RP2350)
+ *
+ * Key differences from ARMv6-M:
+ *   - RBAR encodes base[31:5] | SH[4:3] | AP[2:1] | XN[0]
+ *   - RLAR (at RASR offset) encodes limit[31:5] | (reserved) | AttrIdx[3:1] |
+ * EN[0]
+ *   - Memory attributes are in MAIR0/MAIR1, referenced by 3-bit index in RLAR
+ *   - Region sizes are base+limit, no power-of-2 restriction
+ *   - AP encoding: 00=Priv RW, 01=RW all, 10=Priv RO, 11=RO all
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+#define MPU_RLAR (*(volatile uint32_t *)0xE000EDA0u)
+#define MPU_MAIR0 (*(volatile uint32_t *)0xE000EDC0u)
+#define MPU_MAIR1 (*(volatile uint32_t *)0xE000EDC4u)
+
+/* RBAR fields: base[31:5] | SH[4:3] | AP[2:1] | XN[0] */
+#define RBAR_XN (1u << 0)
+#define RBAR_AP(a) ((uint32_t)(a) << 1)
+#define RBAR_SH(s) ((uint32_t)(s) << 3)
+
+/* AP codes (ARMv8-M) */
+#define AP8_RW_PRIV 0u /* RW privileged, no user access */
+#define AP8_RW_ALL 1u  /* RW user + privileged          */
+#define AP8_RO_PRIV 2u /* RO privileged only            */
+#define AP8_RO_ALL 3u  /* RO user + privileged          */
+
+/* Shareability */
+#define SH_NONE 0u
+#define SH_OUTER 2u
+#define SH_INNER 3u
+
+/* RLAR fields: limit[31:5] | (reserved)[4:3] | AttrIdx[3:1] | EN[0] */
+#define RLAR_EN (1u << 0)
+#define RLAR_ATTR(i) ((uint32_t)(i) << 1)
+
+/*
+ * MAIR attribute indices:
+ *   0 — Normal, outer+inner write-back, read+write allocate (SRAM)
+ *   1 — Device-nGnRnE (peripherals)
+ *   2 — Normal, outer+inner write-through, read allocate (flash XIP)
+ */
+#define MAIR_IDX_WB 0u
+#define MAIR_IDX_DEV 1u
+#define MAIR_IDX_WT 2u
+
+/* MAIR byte encodings (outer | inner, each 4 bits) */
+#define MAIR_BYTE_WB 0xFFu  /* outer WB/WA + inner WB/WA */
+#define MAIR_BYTE_DEV 0x00u /* Device-nGnRnE             */
+#define MAIR_BYTE_WT 0xAAu  /* outer WT/RA + inner WT/RA */
+
+#define MAIR0_VALUE                                 \
+  ((uint32_t)MAIR_BYTE_WB << (8u * MAIR_IDX_WB) |   \
+   (uint32_t)MAIR_BYTE_DEV << (8u * MAIR_IDX_DEV) | \
+   (uint32_t)MAIR_BYTE_WT << (8u * MAIR_IDX_WT))
+
+/* Helper: RLAR value for a region from base to base+size-1 */
+#define RLAR_LIMIT(base, size) (((base) + (size)-1u) & ~0x1Fu)
+
+#else /* ARMv6-M */
+/* ══════════════════════════════════════════════════════════════════════════
+ * ARMv6-M MPU (Cortex-M0+ / RP2040)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+#define MPU_RASR (*(volatile uint32_t *)0xE000EDA0u)
+
+/* ── RASR field helpers ──────────────────────────────────────────────────── */
+
+/*
+ * SIZE field [5:1]: SIZE = log2(region_bytes) − 1
+ *   4 KB  → SIZE = 11  (2^12)
+ *  16 KB  → SIZE = 13  (2^14)
+ *  16 MB  → SIZE = 23  (2^24)
+ * 512 MB  → SIZE = 28  (2^29)
+ */
+#define RASR_ENABLE (1u << 0)
+#define RASR_SIZE(s) ((uint32_t)(s) << 1)
+#define RASR_B (1u << 16) /* bufferable */
+#define RASR_C (1u << 17) /* cacheable  */
+#define RASR_AP(a) ((uint32_t)(a) << 24)
+#define RASR_XN (1u << 28) /* execute never */
+
+/* Access-permission codes (AP field [26:24]) */
+#define AP_RW_PRIV 1u      /* RW privileged, no user access */
+#define AP_RW_ALL 3u       /* RW user + privileged           */
+#define AP_RO_ALL 6u       /* RO user + privileged           */
+
+/* ── Per-region RASR constants ───────────────────────────────────────────── */
+
+/*
+ * Region 0 — Kernel data (0x20000000, 16 KB)
+ *   Normal SRAM: C=1, B=1 (write-back).  Privileged RW only.  XN.
+ */
+#define RASR_R0                                                       \
+  (RASR_XN | RASR_AP(AP_RW_PRIV) | RASR_C | RASR_B | RASR_SIZE(13u) | \
+   RASR_ENABLE)
+
+/*
+ * Region 1 — Flash XIP (0x10000000, 16 MB)
+ *   Normal flash: C=1, B=0 (write-through).  RO all modes.  Executable.
+ */
+#define RASR_R1 (RASR_AP(AP_RO_ALL) | RASR_C | RASR_SIZE(23u) | RASR_ENABLE)
+
+/*
+ * Region 2 — Process stack (per-process, 4 KB)
+ *   Normal SRAM: C=1, B=1.  RW all modes.  XN.
+ *   Base address is updated on every context switch by mpu_switch().
+ */
+#define RASR_R2                                                      \
+  (RASR_XN | RASR_AP(AP_RW_ALL) | RASR_C | RASR_B | RASR_SIZE(11u) | \
+   RASR_ENABLE)
+
+/*
+ * Region 3 — Peripheral I/O (0x40000000, 512 MB)
+ *   Device memory: C=0, B=1 (strongly ordered for MMIO).  Privileged RW.  XN.
+ */
+#define RASR_R3 \
+  (RASR_XN | RASR_AP(AP_RW_PRIV) | RASR_B | RASR_SIZE(28u) | RASR_ENABLE)
+
+#endif /* __ARM_ARCH >= 8 */
+
+/* ── Module state ────────────────────────────────────────────────────────── */
+
+static int mpu_present = 0; /* set to 1 by mpu_init() when MPU is found */
+
+/* ── Internal helpers ────────────────────────────────────────────────────── */
+
+#if __ARM_ARCH >= 8
+
+static void mpu_set_region(uint32_t region, uint32_t rbar, uint32_t rlar) {
+  MPU_RNR = region;
+  MPU_RBAR = rbar;
+  MPU_RLAR = rlar;
+}
+
+#else /* ARMv6-M */
+
+static void mpu_set_region(uint32_t region, uint32_t base, uint32_t rasr) {
+  MPU_RNR = region;
+  MPU_RBAR = base;
+  MPU_RASR = rasr;
+}
+
+#endif
+
+/* ── mpu_init ────────────────────────────────────────────────────────────── */
+
+void mpu_init(void) {
+  if (MPU_TYPE == 0u) {
+    klog("MPU: not present: skipping (QEMU)\n");
+    return;
+  }
+
+  /* Disable MPU while programming to avoid faults during region setup */
+  MPU_CTRL = 0u;
+
+#if __ARM_ARCH >= 8
+  /* ── ARMv8-M: program MAIR, then set regions with RBAR/RLAR ────────── */
+
+  MPU_MAIR0 = MAIR0_VALUE;
+
+  /* Region 0: Kernel data (0x20000000, 16 KB) — Priv RW, XN, WB */
+  mpu_set_region(
+      0u, 0x20000000u | RBAR_SH(SH_NONE) | RBAR_AP(AP8_RW_PRIV) | RBAR_XN,
+      RLAR_LIMIT(0x20000000u, 16u * 1024u) | RLAR_ATTR(MAIR_IDX_WB) | RLAR_EN);
+
+  /* Region 1: Flash XIP (0x10000000, 16 MB) — RO all, executable, WT */
+  mpu_set_region(1u, 0x10000000u | RBAR_SH(SH_NONE) | RBAR_AP(AP8_RO_ALL),
+                 RLAR_LIMIT(0x10000000u, 16u * 1024u * 1024u) |
+                     RLAR_ATTR(MAIR_IDX_WT) | RLAR_EN);
+
+  /* Region 2: Process stack — disabled until first mpu_switch() */
+  mpu_set_region(2u, 0u, 0u);
+
+  /* Region 3: Peripheral I/O (0x40000000, 512 MB) — Priv RW, XN, Device */
+  mpu_set_region(
+      3u, 0x40000000u | RBAR_SH(SH_NONE) | RBAR_AP(AP8_RW_PRIV) | RBAR_XN,
+      RLAR_LIMIT(0x40000000u, 512u * 1024u * 1024u) | RLAR_ATTR(MAIR_IDX_DEV) |
+          RLAR_EN);
+
+#else /* ARMv6-M */
+
+  /* Region 0: Kernel data */
+  mpu_set_region(0u, 0x20000000u, RASR_R0);
+
+  /* Region 1: Flash XIP — read-only, executable */
+  mpu_set_region(1u, 0x10000000u, RASR_R1);
+
+  /* Region 2: Process stack — disabled until first mpu_switch() */
+  mpu_set_region(2u, 0x00000000u, 0u);
+
+  /* Region 3: Peripheral I/O */
+  mpu_set_region(3u, 0x40000000u, RASR_R3);
+
+#endif
+
+  /*
+   * Enable MPU with PRIVDEFENA:
+   *   - ENABLE     (bit 0): MPU is active
+   *   - PRIVDEFENA (bit 2): privileged code falls through to the default
+   *                         background map — kernel still sees all SRAM
+   */
+  MPU_CTRL = MPU_CTRL_PRIVDEFENA | MPU_CTRL_ENABLE;
+
+  /* Data and instruction synchronisation barriers required after enabling
+   * the MPU to ensure subsequent memory accesses use the new configuration */
+  arch_dsb_isb();
+
+  mpu_present = 1;
+  klog("MPU: 4 regions active (kernel/flash/stack/periph)\n");
+}
+
+/* ── mpu_switch ──────────────────────────────────────────────────────────── */
+
+void mpu_switch(pcb_t *next) {
+  if (!mpu_present) return;
+
+  if (next->stack_page_id == PAGE_ID_INVALID) {
+    /* No stack page allocated yet — disable region 2 */
+    MPU_RNR = 2u;
+#if __ARM_ARCH >= 8
+    MPU_RLAR = 0u;
+#else
+    MPU_RASR = 0u;
+#endif
+    return;
+  }
+
+  /* Reprogram region 2 for the incoming process's 4 KB stack page */
+  uint32_t base = (uint32_t)(uintptr_t)mm_page_to_ptr(next->stack_page_id);
+#if __ARM_ARCH >= 8
+  mpu_set_region(
+      2u, base | RBAR_SH(SH_NONE) | RBAR_AP(AP8_RW_ALL) | RBAR_XN,
+      RLAR_LIMIT(base, 4u * 1024u) | RLAR_ATTR(MAIR_IDX_WB) | RLAR_EN);
+#else
+  mpu_set_region(2u, base, RASR_R2);
+#endif
+
+  arch_dsb_isb();
+}

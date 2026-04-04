@@ -7,7 +7,7 @@
  */
 
 #include "test_framework.h"
-#include "kernel/mm/kmem.h"
+#include "kernel/core/mm/kmem.h"
 #include <stdint.h>
 #include <string.h>
 

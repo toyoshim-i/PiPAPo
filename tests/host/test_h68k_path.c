@@ -5,7 +5,7 @@
  */
 
 #include "test_framework.h"
-#include "kernel/subsys/h68k_util.h"
+#include "kernel/core/subsys/h68k_util.h"
 #include "kernel/common/errno.h"
 #include <string.h>
 

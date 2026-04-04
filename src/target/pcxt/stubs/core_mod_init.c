@@ -10,9 +10,9 @@
 
 #ifdef __ia16__
 
-#include "mm/kmem.h"  /* kmem_pool_t */
-#include "mm/mem_layout.h"  /* proc_image_segment_t, ppap_mem_class_t */
-#include "blkdev/blkdev.h"  /* blkdev_t */
+#include "core/mm/kmem.h"  /* kmem_pool_t */
+#include "core/mm/mem_layout.h"  /* proc_image_segment_t, ppap_mem_class_t */
+#include "core/driver/blkdev.h"  /* blkdev_t */
 #include "common/mod/module.h"
 
 /* Forward-declare the caller-side stubs from core_stubs.S. */

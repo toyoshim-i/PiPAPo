@@ -16,12 +16,12 @@
 
 #include "../target.h"
 #include "xtensa_cc.h"
-#include "klog.h"
+#include "core/klog.h"
 #include "sdkconfig.h"
 #include "arch/xtensa/cpu.h"
-#include "drivers/uart.h"
-#include "kernel/proc/sched.h"
-#include "kernel/fd/tty.h"
+#include "core/driver/uart.h"
+#include "kernel/core/proc/sched.h"
+#include "kernel/vfs/tty.h"
 
 #if !defined(CONFIG_FREERTOS_UNICORE) || !CONFIG_FREERTOS_UNICORE
 #error "xtensa_cc requires CONFIG_FREERTOS_UNICORE=y"

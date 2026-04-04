@@ -8,11 +8,11 @@
 
 #include <stdint.h>
 
-#include "../kernel/klog.h"
-#include "../kernel/proc/proc.h"
-#include "../kernel/subsys/subsys.h"
+#include "../kernel/core/klog.h"
+#include "../kernel/core/proc/proc.h"
+#include "../kernel/core/subsys/subsys.h"
 #ifdef PPAP_ENABLE_HUMAN68K
-#include "../kernel/subsys/human68k_bridge.h"
+#include "../kernel/core/subsys/human68k_bridge.h"
 #endif
 
 /* Context switch pending flag.

@@ -16,8 +16,8 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-#include "kernel/cpu/cpu.h"
-#include "kernel/cpu/ecpu_m68k.h"
+#include "kernel/core/cpu/cpu.h"
+#include "kernel/core/cpu/ecpu_m68k.h"
 #include "common/syscall_nr.h"
 
 /* ── Stubs for page allocator (not linked in host tests) ────────────────── */

@@ -6,13 +6,13 @@
  * far pointer tables.  Chains BIOS INT 08h for floppy motor timeout.
  */
 
-#include "drivers/uart.h"
+#include "core/driver/uart.h"
 #include "drivers/pcxt_logger.h"
 #include "drivers/timer_pit.h"
 #include "target/target.h"
-#include "klog.h"
+#include "core/klog.h"
 #include "common/seg.h"
-#include "blkdev/blkdev.h"
+#include "core/driver/blkdev.h"
 #include "common/mod/mod_vfs.h"
 
 extern void floppy_blk_init(void);

@@ -43,17 +43,17 @@ add_executable(ppap_pico2
     ${PPAP_ROOT}/src/arch/arm_m/stage1.S
     ${CMAKE_CURRENT_SOURCE_DIR}/picobin_block.S
     ${CMAKE_CURRENT_SOURCE_DIR}/target_pico2.c
-    ${PPAP_ROOT}/src/drivers/arch/arm_m/clock_rpico.c
+    ${PPAP_ROOT}/src/kernel/core/driver/arch/arm_m/clock_rpico.c
 )
 
 if(PPAP_SEMIHOST)
     target_sources(ppap_pico2 PRIVATE
-        ${PPAP_ROOT}/src/drivers/arch/arm_m/semihost.c
+        ${PPAP_ROOT}/src/kernel/core/driver/arch/arm_m/semihost.c
     )
     target_compile_definitions(ppap_pico2 PRIVATE PPAP_SEMIHOST=1)
 else()
     target_sources(ppap_pico2 PRIVATE
-        ${PPAP_ROOT}/src/drivers/arch/arm_m/uart_rpico.c
+        ${PPAP_ROOT}/src/kernel/core/driver/arch/arm_m/uart_rpico.c
     )
 endif()
 

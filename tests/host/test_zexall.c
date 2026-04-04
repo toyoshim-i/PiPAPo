@@ -10,8 +10,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "kernel/cpu/cpu.h"
-#include "kernel/cpu/ecpu_z80.h"
+#include "kernel/core/cpu/cpu.h"
+#include "kernel/core/cpu/ecpu_z80.h"
 
 #ifndef ZEXALL_COM_PATH
 #error "ZEXALL_COM_PATH must be defined at compile time"

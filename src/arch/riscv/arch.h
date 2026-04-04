@@ -10,7 +10,7 @@
 #define PPAP_ARCH_RISCV_ARCH_H
 
 #include <stdint.h>
-#include "../../kernel/mm/mem_region.h"
+#include "../../kernel/core/mm/mem_region.h"
 #include "cpu.h"
 
 /* ── Interrupt save / restore ─────────────────────────────────────────────

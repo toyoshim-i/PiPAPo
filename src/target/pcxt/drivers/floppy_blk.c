@@ -10,7 +10,7 @@
  */
 
 #include "arch/i16/cpu.h"
-#include "kernel/blkdev/blkdev.h"
+#include "kernel/core/driver/blkdev.h"
 #include "kernel/common/errno.h"
 
 #define FLOPPY_SEC       512u

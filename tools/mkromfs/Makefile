@@ -1,6 +1,6 @@
 CC ?= gcc
 CFLAGS ?= -Wall -Wextra -O2 -std=c11
-ROMFS_INC = ../../src/kernel/fs
+ROMFS_INC = ../../src/kernel/vfs
 
 mkromfs: mkromfs.c $(ROMFS_INC)/romfs_format.h
 	$(CC) $(CFLAGS) -I$(ROMFS_INC) -o $@ $<

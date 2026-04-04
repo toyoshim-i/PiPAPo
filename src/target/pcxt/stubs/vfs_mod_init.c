@@ -12,7 +12,7 @@
 #ifdef __ia16__
 
 #include "vfs/vfs_types.h"
-#include "mm/page.h"
+#include "core/mm/page.h"
 #include "common/mod/module.h"
 
 /* Forward-declare the caller-side stubs from vfs_stubs.S.

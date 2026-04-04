@@ -12,45 +12,45 @@ set(ARCH_SOURCES
     ${PPAP_ROOT}/src/arch/xtensa/switch.S
     ${PPAP_ROOT}/src/arch/xtensa/xtensa_common.c
     ${PPAP_ROOT}/src/arch/xtensa/smp.c
-    ${PPAP_ROOT}/src/drivers/arch/xtensa/uart_esp32s3.c
+    ${PPAP_ROOT}/src/kernel/core/driver/arch/xtensa/uart_esp32s3.c
 )
 
 # ── Kernel shared sources ────────────────────────────────────────────────────
 set(KERNEL_SOURCES
     ${PPAP_ROOT}/src/target/target_default.c
-    ${PPAP_ROOT}/src/kernel/main.c
-    ${PPAP_ROOT}/src/kernel/klog.c
+    ${PPAP_ROOT}/src/kernel/core/main.c
+    ${PPAP_ROOT}/src/kernel/core/klog.c
     ${PPAP_ROOT}/src/kernel/common/mod/mod_core.c
-    ${PPAP_ROOT}/src/kernel/mm/page.c
-    ${PPAP_ROOT}/src/kernel/mm/kmem.c
-    ${PPAP_ROOT}/src/kernel/mm/mem_region.c
-    ${PPAP_ROOT}/src/kernel/proc/proc.c
-    ${PPAP_ROOT}/src/kernel/proc/sched.c
-    ${PPAP_ROOT}/src/kernel/syscall/syscall.c
-    ${PPAP_ROOT}/src/kernel/syscall/sys_proc.c
-    ${PPAP_ROOT}/src/kernel/syscall/sys_io.c
-    ${PPAP_ROOT}/src/kernel/syscall/sys_time.c
-    ${PPAP_ROOT}/src/kernel/syscall/sys_mem.c
-    ${PPAP_ROOT}/src/kernel/syscall/sys_poll.c
-    ${PPAP_ROOT}/src/kernel/syscall/sys_fs.c
-    ${PPAP_ROOT}/src/kernel/fd/fd.c
-    ${PPAP_ROOT}/src/kernel/fd/tty.c
-    ${PPAP_ROOT}/src/kernel/fd/pipe.c
-    ${PPAP_ROOT}/src/kernel/signal/signal.c
+    ${PPAP_ROOT}/src/kernel/core/mm/page.c
+    ${PPAP_ROOT}/src/kernel/core/mm/kmem.c
+    ${PPAP_ROOT}/src/kernel/core/mm/mem_region.c
+    ${PPAP_ROOT}/src/kernel/core/proc/proc.c
+    ${PPAP_ROOT}/src/kernel/core/proc/sched.c
+    ${PPAP_ROOT}/src/kernel/core/syscall/syscall.c
+    ${PPAP_ROOT}/src/kernel/core/syscall/sys_proc.c
+    ${PPAP_ROOT}/src/kernel/core/syscall/sys_io.c
+    ${PPAP_ROOT}/src/kernel/core/syscall/sys_time.c
+    ${PPAP_ROOT}/src/kernel/core/syscall/sys_mem.c
+    ${PPAP_ROOT}/src/kernel/core/syscall/sys_poll.c
+    ${PPAP_ROOT}/src/kernel/core/syscall/sys_fs.c
+    ${PPAP_ROOT}/src/kernel/vfs/fd.c
+    ${PPAP_ROOT}/src/kernel/vfs/tty.c
+    ${PPAP_ROOT}/src/kernel/vfs/pipe.c
+    ${PPAP_ROOT}/src/kernel/core/signal/signal.c
     ${PPAP_ROOT}/src/kernel/vfs/vfs.c
     ${PPAP_ROOT}/src/kernel/vfs/namei.c
-    ${PPAP_ROOT}/src/kernel/fs/romfs.c
-    ${PPAP_ROOT}/src/kernel/fs/devfs.c
-    ${PPAP_ROOT}/src/kernel/fs/procfs.c
-    ${PPAP_ROOT}/src/kernel/fs/tmpfs.c
-    ${PPAP_ROOT}/src/kernel/fs/fstab.c
-    ${PPAP_ROOT}/src/kernel/cpu/cpu.c
-    ${PPAP_ROOT}/src/kernel/cpu/cpu_native.c
-    ${PPAP_ROOT}/src/kernel/exec/elf.c
-    ${PPAP_ROOT}/src/kernel/exec/loader.c
-    ${PPAP_ROOT}/src/kernel/exec/elf_loader.c
-    ${PPAP_ROOT}/src/kernel/exec/exec.c
-    ${PPAP_ROOT}/src/kernel/subsys/subsys.c
+    ${PPAP_ROOT}/src/kernel/vfs/romfs.c
+    ${PPAP_ROOT}/src/kernel/vfs/devfs.c
+    ${PPAP_ROOT}/src/kernel/vfs/procfs.c
+    ${PPAP_ROOT}/src/kernel/vfs/tmpfs.c
+    ${PPAP_ROOT}/src/kernel/vfs/fstab.c
+    ${PPAP_ROOT}/src/kernel/core/cpu/cpu.c
+    ${PPAP_ROOT}/src/kernel/core/cpu/cpu_native.c
+    ${PPAP_ROOT}/src/kernel/core/exec/elf.c
+    ${PPAP_ROOT}/src/kernel/core/exec/loader.c
+    ${PPAP_ROOT}/src/kernel/core/exec/elf_loader.c
+    ${PPAP_ROOT}/src/kernel/core/exec/exec.c
+    ${PPAP_ROOT}/src/kernel/core/subsys/subsys.c
     ${PPAP_ROOT}/src/target/xtensa_cc/xtensa_cc_stubs.c
 )
 

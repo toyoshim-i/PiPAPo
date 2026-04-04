@@ -672,11 +672,11 @@ endfunction()
 function(_ppap_add_mkromfs)
     add_custom_command(
         OUTPUT ${PPAP_SHARED_BUILD}/mkromfs
-        COMMAND cc -O2 -I ${PPAP_ROOT}/src/kernel/fs
+        COMMAND cc -O2 -I ${PPAP_ROOT}/src/kernel/vfs
                 -o ${PPAP_SHARED_BUILD}/mkromfs
                 ${PPAP_ROOT}/tools/mkromfs/mkromfs.c
         DEPENDS ${PPAP_ROOT}/tools/mkromfs/mkromfs.c
-                ${PPAP_ROOT}/src/kernel/fs/romfs_format.h
+                ${PPAP_ROOT}/src/kernel/vfs/romfs_format.h
         COMMENT "Building mkromfs host tool"
     )
 endfunction()

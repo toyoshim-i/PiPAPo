@@ -43,8 +43,8 @@ add_executable(ppap_pico2rv
     ${PPAP_ROOT}/src/arch/riscv/stage1.S
     ${CMAKE_CURRENT_SOURCE_DIR}/picobin_block.S
     ${CMAKE_CURRENT_SOURCE_DIR}/target_pico2rv.c
-    ${PPAP_ROOT}/src/drivers/arch/riscv/uart_rp2350.c
-    ${PPAP_ROOT}/src/drivers/arch/arm_m/clock_rpico.c
+    ${PPAP_ROOT}/src/kernel/core/driver/arch/riscv/uart_rp2350.c
+    ${PPAP_ROOT}/src/kernel/core/driver/arch/arm_m/clock_rpico.c
 )
 
 ppap_riscv_target_common(ppap_pico2rv)

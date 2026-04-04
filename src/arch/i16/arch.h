@@ -12,7 +12,7 @@
 #define PPAP_ARCH_I16_ARCH_H
 
 #include <stdint.h>
-#include "../../kernel/mm/page.h"
+#include "../../kernel/core/mm/page.h"
 
 /* -- Interrupt save / restore ----------------------------------------------
  *

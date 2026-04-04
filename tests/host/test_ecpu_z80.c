@@ -8,8 +8,8 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-#include "kernel/cpu/cpu.h"
-#include "kernel/cpu/ecpu_z80.h"
+#include "kernel/core/cpu/cpu.h"
+#include "kernel/core/cpu/ecpu_z80.h"
 
 /* ── Stubs for page allocator (not linked in host tests) ────────────────── */
 void *page_alloc(void) { return NULL; }

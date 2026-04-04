@@ -6,7 +6,7 @@
  */
 
 #include <stdint.h>
-#include "drivers/uart.h"
+#include "core/driver/uart.h"
 
 #define UART0_BASE 0x10000000u
 

@@ -13,7 +13,7 @@
  * no stage1.S — the vector table sits directly at 0x00000000.
  *
  * Peripheral differences from RP2040:
- *   UART0: CMSDK UART at 0x40004000 (see src/drivers/uart_qemu.c)
+ *   UART0: CMSDK UART at 0x40004000 (see src/target/qemu_arm/drivers/uart_qemu.c)
  *   Clock: fixed emulated clock (no PLL, no XOSC)
  *   SysTick: present (ARM standard), but timing is emulation-speed
  */

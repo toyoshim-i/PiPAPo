@@ -27,9 +27,9 @@
 
 #include <stdint.h>
 
-#include "config.h" /* UART_RX_SIZE */
-#include "drivers/uart.h"
-#include "kernel/fd/tty.h" /* tty_rx_notify, tty_signal_intr */
+#include "common/config.h" /* UART_RX_SIZE */
+#include "core/driver/uart.h"
+#include "kernel/vfs/tty.h" /* tty_rx_notify, tty_signal_intr */
 
 /* ==========================================================================
  * Register access helper

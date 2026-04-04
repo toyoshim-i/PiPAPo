@@ -34,15 +34,15 @@ add_executable(ppap_pico1calc
     ${KERNEL_BLKDEV_SOURCES}
     ${PPAP_ROOT}/src/arch/arm_m/stage1.S
     ${CMAKE_CURRENT_SOURCE_DIR}/target_pico1calc.c
-    ${PPAP_ROOT}/src/drivers/arch/arm_m/uart_rpico.c
-    ${PPAP_ROOT}/src/drivers/arch/arm_m/clock_rpico.c
-    ${PPAP_ROOT}/src/drivers/arch/arm_m/spi_rpico.c
-    ${PPAP_ROOT}/src/drivers/arch/arm_m/i2c_rpico.c
-    ${PPAP_ROOT}/src/drivers/arch/arm_m/spi_lcd_rpico.c
-    ${PPAP_ROOT}/src/drivers/spi_sd.c
-    ${PPAP_ROOT}/src/drivers/lcd_panel.c
-    ${PPAP_ROOT}/src/drivers/i2c_kbd.c
-    ${PPAP_ROOT}/src/drivers/fbcon.c
+    ${PPAP_ROOT}/src/kernel/core/driver/arch/arm_m/uart_rpico.c
+    ${PPAP_ROOT}/src/kernel/core/driver/arch/arm_m/clock_rpico.c
+    ${PPAP_ROOT}/src/kernel/core/driver/arch/arm_m/spi_rpico.c
+    ${PPAP_ROOT}/src/kernel/core/driver/arch/arm_m/i2c_rpico.c
+    ${PPAP_ROOT}/src/kernel/core/driver/arch/arm_m/spi_lcd_rpico.c
+    ${PPAP_ROOT}/src/kernel/core/driver/spi_sd.c
+    ${PPAP_ROOT}/src/kernel/core/driver/lcd_panel.c
+    ${PPAP_ROOT}/src/kernel/core/driver/i2c_kbd.c
+    ${PPAP_ROOT}/src/kernel/core/driver/fbcon.c
 )
 
 ppap_arm_target_common(ppap_pico1calc)
