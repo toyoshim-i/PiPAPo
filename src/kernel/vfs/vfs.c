@@ -22,7 +22,7 @@
 #include "file.h"   /* fd_pool_init */
 #include "tty.h"    /* tty_rx_notify */
 #include "fstab.h"  /* fstab_parse, fstab_mount_all */
-#include "kernel/core/mm/kmem.h" /* kmem_pool_t type — functions via mod_core */
+#include "kernel/common/core/kmem_types.h" /* kmem_pool_t */
 #include "kernel/common/spinlock.h" /* SPIN_VFS */
 
 /* ── Static storage ─────────────────────────────────────────────────────────

@@ -31,7 +31,7 @@
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"       /* proc_table, PROC_MAX, PROC_FREE */
-#include "kernel/core/signal/signal.h"   /* SIGINT */
+#include "common/signal.h"   /* SIGINT */
 #include "kernel/core/driver/uart.h"       /* uart_putc/getc/rx_avail for static init */
 #ifdef __ia16__
 #include "kernel/core/driver/bios_con.h"

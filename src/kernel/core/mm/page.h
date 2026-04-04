@@ -138,16 +138,7 @@ extern uint32_t oom_count;
  * the linear address described by the page_id + offset pair.
  */
 
-#if defined(__ia16__)
-typedef uint8_t page_id_t;
-#define PAGE_ID_INVALID ((page_id_t)0xFFu)
-#elif defined(__m68k__)
-typedef uint16_t page_id_t;
-#define PAGE_ID_INVALID ((page_id_t)0xFFFFu)
-#else
-typedef uint32_t page_id_t;
-#define PAGE_ID_INVALID ((page_id_t)0xFFFFFFFFu)
-#endif
+#include "kernel/common/core/page_types.h"
 
 /* Allocate one page from the page pool, return its page_id_t
  * (or PAGE_ID_INVALID on OOM). */

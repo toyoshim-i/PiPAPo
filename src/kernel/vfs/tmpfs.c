@@ -21,7 +21,7 @@
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
-#include "kernel/core/mm/page.h"
+#include "kernel/common/core/page_types.h"
 #include "kernel/common/config.h"
 
 /* ── Inode structure ──────────────────────────────────────────────────── */

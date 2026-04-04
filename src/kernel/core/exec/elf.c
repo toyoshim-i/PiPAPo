@@ -11,7 +11,7 @@
 
 #include "elf.h"
 
-#include "kernel/common/errno.h"
+#include "common/errno.h"
 
 static void copy_bytes(void *dst, const void *src, uint32_t len) {
   uint8_t *d = (uint8_t *)dst;

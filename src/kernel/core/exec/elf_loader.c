@@ -8,7 +8,7 @@
 
 #include "kernel/core/arch.h"
 #include "elf.h"
-#include "kernel/common/errno.h"
+#include "common/errno.h"
 #include "kernel/core/klog.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"

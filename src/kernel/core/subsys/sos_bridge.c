@@ -15,7 +15,7 @@
 #include "common/ptrace.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/proc/proc.h"
-#include "kernel/common/errno.h"
+#include "common/errno.h"
 #include "kernel/core/mm/mem_region.h"
 
 /* ── _SOS header parsing ───────────────────────────────────────────────── */

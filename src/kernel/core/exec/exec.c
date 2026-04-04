@@ -12,7 +12,7 @@
 #include <string.h>
 
 #include "kernel/core/arch.h"
-#include "kernel/common/errno.h"
+#include "common/errno.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/signal/signal.h"

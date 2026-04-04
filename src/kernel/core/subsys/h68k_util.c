@@ -4,7 +4,7 @@
 
 #include "h68k_util.h"
 
-#include "kernel/common/errno.h"
+#include "common/errno.h"
 
 /* ── Path translation: Human68k → UNIX ─────────────────────────────── */
 

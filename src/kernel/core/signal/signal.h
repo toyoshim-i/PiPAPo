@@ -12,25 +12,11 @@
 
 #include <stdint.h>
 
-#define NSIG 32
+#include "common/signal.h"
 
 typedef void (*sighandler_t)(int);
 #define SIG_DFL ((sighandler_t)0)
 #define SIG_IGN ((sighandler_t)1)
-
-/* Signal numbers (Linux ARM compatible) */
-#define SIGHUP 1
-#define SIGINT 2
-#define SIGQUIT 3
-#define SIGTRAP 5
-#define SIGKILL 9
-#define SIGUSR1 10
-#define SIGUSR2 12
-#define SIGPIPE 13
-#define SIGTERM 15
-#define SIGCHLD 17
-#define SIGCONT 18
-#define SIGSTOP 19
 
 /*
  * Called from the trap/SVC handler after syscall_dispatch(), when the

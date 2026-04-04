@@ -13,7 +13,7 @@
 
 #include "exec.h"
 #include "kernel/core/endian.h"
-#include "kernel/common/errno.h"
+#include "common/errno.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/subsys/subsys.h"

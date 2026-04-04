@@ -4,7 +4,7 @@
 
 #include "mem_region.h"
 
-#include "kernel/common/errno.h"
+#include "common/errno.h"
 #include "kernel/common/spinlock.h"
 #include "kernel/core/klog.h"
 #include "page.h"

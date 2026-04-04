@@ -11,7 +11,7 @@
 
 #include "kernel/core/cpu.h"
 #include "kernel/core/driver/blkdev.h"
-#include "kernel/common/errno.h"
+#include "common/errno.h"
 
 #define FLOPPY_SEC       512u
 #define SECS_PER_TRACK   18u

@@ -34,7 +34,7 @@
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
-#include "kernel/core/mm/page.h"
+#include "kernel/common/core/page_types.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"      /* cpu_*_ticks[] data (Step 4: two-pass link) */
 #include "kernel/core/subsys/subsys.h"
