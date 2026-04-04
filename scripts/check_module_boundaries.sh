@@ -25,7 +25,7 @@ rc=0
 
 # ── core/ must not include vfs/ ──────────────────────────────────────────────
 
-core_violations="$(grep -rn '#include.*"vfs/' \
+core_violations="$(grep -rn '#include.*"kernel/vfs/' \
   "$PPAP_ROOT/src/kernel/core" \
   --include='*.c' --include='*.h' \
   2>/dev/null || true)"
@@ -41,7 +41,7 @@ fi
 
 # ── vfs/ must not include core/ ──────────────────────────────────────────────
 
-vfs_violations="$(grep -rn '#include.*"core/' \
+vfs_violations="$(grep -rn '#include.*"kernel/core/' \
   "$PPAP_ROOT/src/kernel/vfs" \
   --include='*.c' --include='*.h' \
   2>/dev/null || true)"

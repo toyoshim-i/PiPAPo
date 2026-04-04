@@ -10,7 +10,7 @@
 #ifndef PPAP_KERNEL_VFS_VFS_H
 #define PPAP_KERNEL_VFS_VFS_H
 
-#include "vfs_types.h"
+#include "kernel/common/vfs/vfs_types.h"
 
 /* Lookup flags */
 #define VFS_LOOKUP_NOFOLLOW 0x01

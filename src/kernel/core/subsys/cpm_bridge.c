@@ -345,7 +345,6 @@ static void adm_putchar(uint8_t ch) {
 #ifdef PPAP_KERNEL
 
 #include "common/poll.h"
-#include "kernel/vfs/fd.h"
 #include "kernel/core/signal/signal.h"
 #include "kernel/core/syscall/syscall.h"
 

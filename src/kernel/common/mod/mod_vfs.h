@@ -22,7 +22,7 @@
 #define PPAP_KERNEL_MOD_MOD_VFS_H
 
 /* Full VFS type definitions */
-#include "kernel/vfs/vfs_types.h"
+#include "kernel/common/vfs/vfs_types.h"
 #include "kernel/core/mm/page.h"
 
 #include "module.h"

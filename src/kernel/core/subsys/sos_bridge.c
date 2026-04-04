@@ -109,7 +109,6 @@ int sos_parse_header(const uint8_t *file, uint32_t size, sos_header_t *hdr) {
 #ifdef PPAP_KERNEL
 
 #include "common/poll.h"
-#include "kernel/vfs/fd.h"
 #include "kernel/core/signal/signal.h"
 #include "kernel/core/syscall/syscall.h"
 #include "kernel/common/mod/mod_vfs.h"

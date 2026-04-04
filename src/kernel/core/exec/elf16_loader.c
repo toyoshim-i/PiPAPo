@@ -21,7 +21,7 @@
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
-#include "kernel/vfs/vfs_types.h"
+#include "kernel/common/vfs/vfs_types.h"
 #include "kernel/core/arch.h"
 #include "kernel/core/cpu/cpu.h"
 
