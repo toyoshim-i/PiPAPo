@@ -1,67 +1,62 @@
 #!/usr/bin/env bash
 # =============================================================================
-# check_module_boundaries.sh — Validate kernel module include boundaries
+# check_module_boundaries.sh — Enforce kernel module include boundaries
 # =============================================================================
 #
-# Checks that module directories only communicate via mod/ headers.
-#
 # Rules:
-#   1. Inward:  Files outside vfs/ must not include vfs/vfs.h (use mod/mod_vfs.h)
-#   2. Outward: Files inside vfs/ must not include other module internals
+#   1. kernel/core/ must not #include "vfs/" headers directly
+#   2. kernel/vfs/ must not #include "core/" headers directly
+#
+# Cross-module function calls go through kernel/common/mod/ interfaces.
+# kernel/common/ is the bridge layer — it may reference both core/ and vfs/.
 #
 # Usage:
 #   ./scripts/check_module_boundaries.sh
 #
-# Returns 0 if all boundaries are clean, 1 if violations found.
+# Returns 0 if boundaries are clean, 1 if violations are found.
 # =============================================================================
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PPAP_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-KERNEL_DIR="$PPAP_ROOT/src/kernel"
 
-# Modules with enforced boundaries.
-# Add new modules here as they are migrated.
-MODULES="vfs"
+rc=0
 
-ERRORS=0
+# ── core/ must not include vfs/ ──────────────────────────────────────────────
 
-for mod in $MODULES; do
-  dir="$KERNEL_DIR/${mod}"
-  [ -d "$dir" ] || continue
+core_violations="$(grep -rn '#include.*"vfs/' \
+  "$PPAP_ROOT/src/kernel/core" \
+  --include='*.c' --include='*.h' \
+  2>/dev/null || true)"
 
-  # Rule 1: no external file includes ANY header from this module dir
-  violations=$(grep -rn "\"${mod}/\|\"\.\./${mod}/" \
-    "$KERNEL_DIR/" --include="*.c" --include="*.h" 2>/dev/null \
-    | grep -v "$KERNEL_DIR/${mod}/" \
-    | grep -v "$KERNEL_DIR/common/mod/" || true)
-
-  if [ -n "$violations" ]; then
-    echo "BOUNDARY VIOLATION: files outside ${mod}/ include its internal headers:"
-    echo "$violations"
-    ERRORS=$((ERRORS + 1))
-  fi
-
-  # Rule 2: files inside this module don't include other module internals
-  for other in $MODULES; do
-    [ "$other" = "$mod" ] && continue
-    violations=$(grep -rn "\"${other}/\|\"\.\./${other}/" \
-      "$KERNEL_DIR/${mod}/" --include="*.c" --include="*.h" 2>/dev/null \
-      | grep -v "mod/mod_" || true)
-
-    if [ -n "$violations" ]; then
-      echo "BOUNDARY VIOLATION: ${mod}/ includes ${other}/ internal headers:"
-      echo "$violations"
-      ERRORS=$((ERRORS + 1))
-    fi
-  done
-done
-
-if [ $ERRORS -gt 0 ]; then
+if [[ -n "$core_violations" ]]; then
+  echo "MODULE BOUNDARY VIOLATION: core/ includes vfs/ directly"
+  echo "Use common/mod/mod_vfs.h for cross-module access."
   echo ""
-  echo "Found $ERRORS boundary violation(s)"
-  exit 1
+  echo "$core_violations"
+  echo ""
+  rc=1
 fi
 
-echo "Module boundaries OK ($MODULES)"
+# ── vfs/ must not include core/ ──────────────────────────────────────────────
+
+vfs_violations="$(grep -rn '#include.*"core/' \
+  "$PPAP_ROOT/src/kernel/vfs" \
+  --include='*.c' --include='*.h' \
+  2>/dev/null || true)"
+
+if [[ -n "$vfs_violations" ]]; then
+  echo "MODULE BOUNDARY VIOLATION: vfs/ includes core/ directly"
+  echo "Use common/mod/mod_core.h for cross-module access."
+  echo ""
+  echo "$vfs_violations"
+  echo ""
+  rc=1
+fi
+
+if [[ $rc -eq 0 ]]; then
+  echo "Module boundaries OK"
+fi
+
+exit $rc
