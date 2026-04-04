@@ -316,17 +316,23 @@ int proc_track_page(pcb_t *p, uint32_t slot, page_id_t page_id);
 /* Return the first tracked page-backed page ID, or PAGE_ID_INVALID. */
 page_id_t proc_page_backed_base(const pcb_t *p);
 
-/* Resolve a raw user pointer to a page+offset reference for process p. */
+/* Resolve a raw user pointer to a page+offset reference for process p.
+ *
+ * i16 needs base_page (DS-relative addressing), so we gate on it.
+ * Flat-memory architectures (ARM, m68k, RISC-V) resolve addresses
+ * directly and don't need tracked pages to exist. */
 static inline int proc_user_ptr_to_page_ref(const pcb_t *p, uintptr_t user_ptr,
                                             user_page_ref_t *ref) {
   page_id_t base_page;
 
   if (!p || !ref) return -1;
   base_page = proc_page_backed_base(p);
+#if defined(__ia16__)
   if (base_page == PAGE_ID_INVALID) {
     *ref = user_page_ref_invalid();
     return -1;
   }
+#endif
   ref->page = arch_user_ptr_to_page(base_page, user_ptr, &ref->off);
   if (ref->page == PAGE_ID_INVALID) {
     *ref = user_page_ref_invalid();
