@@ -22,7 +22,7 @@
 #include "core/driver/uart.h"
 #include "core/klog.h"
 #include "core/proc/proc.h"
-#include "common/arch.h"
+#include "kernel/core/arch.h"
 
 /* ── MPU register addresses (common to ARMv6-M and ARMv8-M) ─────────────── */
 

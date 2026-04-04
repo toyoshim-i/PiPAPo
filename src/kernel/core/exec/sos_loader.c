@@ -15,7 +15,7 @@
 #include "kernel/core/subsys/subsys.h"
 #include "loader.h"
 #if defined(__m68k__)
-#include "common/ioregs.h"
+#include "kernel/core/ioregs.h"
 #endif
 #include <string.h>
 

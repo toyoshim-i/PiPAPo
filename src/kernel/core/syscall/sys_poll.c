@@ -19,12 +19,10 @@
 #include "common/errno.h"
 #include "common/mod/mod_core.h"
 #include "common/mod/mod_vfs.h"
-#include "vfs/file.h"  /* POLLIN, POLLOUT, POLLNVAL, struct pollfd */
+#include "common/poll.h"  /* POLLIN, POLLOUT, POLLNVAL, struct pollfd */
 #include "core/proc/proc.h"
 #include "common/config.h"
 #include "syscall.h"
-
-/* struct pollfd is now in common/poll.h, included via file.h */
 
 /* Convert timespec to ticks.  Returns 0 for zero timeout. */
 static uint32_t ts32_to_ticks(const long *ts) {

@@ -26,7 +26,7 @@
 #include "core/signal/signal.h"
 #include "core/subsys/ppap_m68k_bridge.h"
 #include "core/subsys/subsys.h"
-#include "common/arch.h"
+#include "kernel/core/arch.h"
 #include "common/ptrace.h"
 #include "common/wait.h"
 #include "kernel/core/cpu/cpu.h"

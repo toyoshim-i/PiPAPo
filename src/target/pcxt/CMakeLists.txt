@@ -274,13 +274,13 @@ set(ARCH_I16_SOURCES
   ${PPAP_ROOT}/src/arch/i16/kernel/core/i16_common.c
   ${PPAP_ROOT}/src/arch/i16/kernel/core/smp.c
   ${PPAP_ROOT}/src/arch/i16/kernel/core/string.c
+  ${PPAP_ROOT}/src/arch/i16/kernel/core/seg.c
 )
 
 set(KERNEL_CORE_SOURCES
   ${PPAP_ROOT}/src/kernel/core/main.c
   ${PPAP_ROOT}/src/kernel/core/klog.c
   ${PPAP_ROOT}/src/kernel/common/mod/mod_core.c
-  ${PPAP_ROOT}/src/kernel/common/seg.c
   ${PPAP_ROOT}/src/kernel/core/mm/page.c
   ${PPAP_ROOT}/src/kernel/core/mm/kmem.c
   ${PPAP_ROOT}/src/kernel/core/mm/mem_region.c

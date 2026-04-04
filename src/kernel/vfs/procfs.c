@@ -307,56 +307,47 @@ static int gen_battery(char *buf, int bufsiz) {
 /* ── /proc/subsys — registered OS personality subsystems ─────────────────────
  */
 
-/* Names for subsystem tags — slot 0 is always "ppap" (default kernel).
- * Other slots are filled dynamically via procfs_register_subsys(). */
-static const char *subsys_tag_names[SUBSYS_MAX] = {
-    "ppap",
-    NULL,
-    NULL,
-    NULL,
-};
-
-void procfs_register_subsys(uint8_t tag, const char *name) {
-  if (tag < SUBSYS_MAX) subsys_tag_names[tag] = name;
-}
+#ifdef PPAP_HAS_SUBSYS
+#include "common/core/subsys_info.h"
+#endif
 
 static int gen_subsys(char *buf, int bufsiz) {
+#ifdef PPAP_HAS_SUBSYS
   int pos = 0;
   for (uint32_t i = 0; i < SUBSYS_MAX; i++) {
-    if (!subsys_tag_names[i]) continue;
+    if (!subsys_names[i]) continue;
     pos = fmt_append_u32(buf, pos, bufsiz, i);
     pos = fmt_append(buf, pos, bufsiz, " ");
-    pos = fmt_append(buf, pos, bufsiz, subsys_tag_names[i]);
+    pos = fmt_append(buf, pos, bufsiz, subsys_names[i]);
     if (subsys_ops_table[i]) pos = fmt_append(buf, pos, bufsiz, " [active]");
     pos = fmt_append(buf, pos, bufsiz, "\n");
   }
   return pos;
+#else
+  return fmt_append(buf, 0, bufsiz, "0 ppap\n");
+#endif
 }
 
 /* ── /proc/ecpu — available eCPU emulator cores ──────────────────────────────
  */
 
-#define ECPU_REG_MAX 4
-static const char *ecpu_registered[ECPU_REG_MAX];
-
-void procfs_register_ecpu(const char *name) {
-  for (uint32_t i = 0; i < ECPU_REG_MAX; i++) {
-    if (!ecpu_registered[i]) {
-      ecpu_registered[i] = name;
-      return;
-    }
-  }
-}
+#ifdef PPAP_HAS_SUBSYS
+#include "common/core/ecpu_info.h"
+#endif
 
 static int gen_ecpu(char *buf, int bufsiz) {
+#ifdef PPAP_HAS_SUBSYS
   int pos = 0;
-  for (uint32_t i = 0; i < ECPU_REG_MAX; i++) {
-    if (!ecpu_registered[i]) continue;
-    pos = fmt_append(buf, pos, bufsiz, ecpu_registered[i]);
+  for (uint32_t i = 0; i < ECPU_MAX; i++) {
+    if (!ecpu_names[i]) continue;
+    pos = fmt_append(buf, pos, bufsiz, ecpu_names[i]);
     pos = fmt_append(buf, pos, bufsiz, "\n");
   }
   if (pos == 0) pos = fmt_append(buf, pos, bufsiz, "(none)\n");
   return pos;
+#else
+  return fmt_append(buf, 0, bufsiz, "(none)\n");
+#endif
 }
 
 /* ── Node table ─────────────────────────────────────────────────────────────
@@ -473,7 +464,11 @@ static int gen_pid_cmdline(char *buf, int bufsiz, const pcb_t *p) {
 
 /* /proc/<pid>/subsys — OS personality name */
 static const char *subsys_name(uint8_t tag) {
-  if (tag < SUBSYS_MAX && subsys_tag_names[tag]) return subsys_tag_names[tag];
+#ifdef PPAP_HAS_SUBSYS
+  if (tag < SUBSYS_MAX && subsys_names[tag]) return subsys_names[tag];
+#else
+  if (tag == 0) return "ppap";
+#endif
   return "unknown";
 }
 

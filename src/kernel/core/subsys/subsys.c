@@ -8,8 +8,8 @@
 
 #include "subsys.h"
 
-#include "vfs/procfs.h"
-#include "core/proc/proc.h" /* SUBSYS_xxx defines */
+#include "common/core/subsys_info.h"
+#include "common/core/ecpu_info.h"
 
 /* Forward declarations — conditionally compiled based on CMake flags */
 #ifdef PPAP_ENABLE_HUMAN68K
@@ -24,37 +24,43 @@
 #include "sos_bridge.h"
 #endif
 
-/* Build the ops table with enabled subsystems */
-const subsys_ops_t *subsys_ops_table[SUBSYS_MAX] = {
-    [0] = (const subsys_ops_t *)0, /* SUBSYS_PPAP: default kernel behavior */
+/* Statically initialised name arrays — read by procfs via shared headers */
+const char *subsys_names[SUBSYS_MAX] = {
+    [SUBSYS_PPAP] = "ppap",
 #ifdef PPAP_ENABLE_HUMAN68K
-    [1] = &human68k_subsys_ops, /* SUBSYS_HUMAN68K */
+    [SUBSYS_HUMAN68K] = "human68k",
 #endif
 #ifdef PPAP_ENABLE_CPM
-    [2] = &cpm_subsys_ops, /* SUBSYS_CPM */
+    [SUBSYS_CPM] = "cpm",
 #endif
 #ifdef PPAP_ENABLE_SOS
-    [3] = &sos_subsys_ops, /* SUBSYS_SOS */
+    [SUBSYS_SOS] = "sos",
+#endif
+};
+
+const char *ecpu_names[ECPU_MAX] = {
+#ifdef PPAP_ENABLE_ECPU_M68K
+    "m68k",
+#endif
+#ifdef PPAP_ENABLE_ECPU_Z80
+    "z80",
+#endif
+};
+
+/* Build the ops table with enabled subsystems */
+const subsys_ops_t *subsys_ops_table[SUBSYS_MAX] = {
+    [SUBSYS_PPAP] = (const subsys_ops_t *)0,
+#ifdef PPAP_ENABLE_HUMAN68K
+    [SUBSYS_HUMAN68K] = &human68k_subsys_ops,
+#endif
+#ifdef PPAP_ENABLE_CPM
+    [SUBSYS_CPM] = &cpm_subsys_ops,
+#endif
+#ifdef PPAP_ENABLE_SOS
+    [SUBSYS_SOS] = &sos_subsys_ops,
 #endif
 };
 
 void subsys_init(void) {
-#ifdef PPAP_HAS_PROCFS
-  procfs_register_subsys(SUBSYS_PPAP, "ppap");
-#ifdef PPAP_ENABLE_HUMAN68K
-  procfs_register_subsys(SUBSYS_HUMAN68K, "human68k");
-#endif
-#ifdef PPAP_ENABLE_ECPU_M68K
-  procfs_register_ecpu("m68k");
-#endif
-#ifdef PPAP_ENABLE_ECPU_Z80
-  procfs_register_ecpu("z80");
-#endif
-#ifdef PPAP_ENABLE_CPM
-  procfs_register_subsys(SUBSYS_CPM, "cpm");
-#endif
-#ifdef PPAP_ENABLE_SOS
-  procfs_register_subsys(SUBSYS_SOS, "sos");
-#endif
-#endif /* PPAP_HAS_PROCFS */
+  /* Name arrays are statically initialised above. */
 }

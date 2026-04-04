@@ -11,7 +11,7 @@
 #include "kernel/core/driver/timer_pit.h"
 #include "target/target.h"
 #include "core/klog.h"
-#include "common/seg.h"
+#include "common/core/seg.h"
 #include "core/driver/blkdev.h"
 #include "common/mod/mod_vfs.h"
 

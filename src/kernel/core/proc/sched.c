@@ -23,8 +23,8 @@
 #include "core/mm/page.h" /* PAGE_SIZE */
 #include "core/signal/signal.h"
 #include "common/spinlock.h" /* SPIN_PROC */
-#include "common/arch.h"
-#include "common/ioregs.h"
+#include "kernel/core/arch.h"
+#include "kernel/core/ioregs.h"
 
 /* ── Tick counter ─────────────────────────────────────────────────────────────
  */

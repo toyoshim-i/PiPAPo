@@ -86,8 +86,7 @@ typedef struct subsys_ops {
   int (*on_proc_read)(struct pcb *p, const char *name, char *buf, int bufsiz);
 } subsys_ops_t;
 
-/* Maximum number of subsystem types (index into subsys_ops_table[]) */
-#define SUBSYS_MAX 5
+#include "common/core/subsys_info.h"
 
 /* Global ops table — indexed by pcb_t::subsys tag.
  * Slot 0 (SUBSYS_PPAP) is NULL (default kernel behavior). */

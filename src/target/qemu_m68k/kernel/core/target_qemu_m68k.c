@@ -14,7 +14,7 @@
 #include <stdint.h>
 
 #include "target/target.h"
-#include "common/arch.h"
+#include "kernel/core/arch.h"
 #include "core/driver/uart.h"
 #include "common/errno.h"
 #include "vfs/tty.h"

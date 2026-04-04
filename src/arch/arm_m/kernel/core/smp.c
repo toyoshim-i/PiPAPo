@@ -29,8 +29,8 @@
 #include <stdint.h>
 
 #include "core/driver/uart.h"
-#include "common/arch.h"
-#include "common/ioregs.h"
+#include "kernel/core/arch.h"
+#include "kernel/core/ioregs.h"
 #include "common/config.h"
 #include "core/klog.h"
 #include "core/mm/mem_region.h"

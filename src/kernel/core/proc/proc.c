@@ -19,8 +19,8 @@
 #include "core/mm/mem_region.h"
 #include "core/mm/page.h"  /* PAGE_SIZE — for proc_setup_stack */
 #include "common/spinlock.h" /* SPIN_PROC */
-#include "common/arch.h"   /* arch_build_initial_frame */
-#include "common/ioregs.h"
+#include "kernel/core/arch.h"   /* arch_build_initial_frame */
+#include "kernel/core/ioregs.h"
 #include "sched.h" /* sched_get_ticks — for start_time */
 
 /* Default file creation mask (octal 022 → owner rw, group/other r) */

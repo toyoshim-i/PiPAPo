@@ -21,7 +21,7 @@
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
-#include "common/arch.h"
+#include "kernel/core/arch.h"
 #include "kernel/core/cpu/cpu.h"
 
 #define FLAT_MAX_SIZE (PAGE_SIZE - 256)  /* leave room for stack */

@@ -55,7 +55,10 @@ function(ppap_m68k_target_common target)
     if(PPAP_ENABLE_ECPU_Z80)
         target_compile_definitions(${target} PRIVATE PPAP_ENABLE_ECPU_Z80=1)
     endif()
-    
+    if(PPAP_ENABLE_HUMAN68K OR PPAP_ENABLE_CPM OR PPAP_ENABLE_SOS OR PPAP_ENABLE_ECPU_M68K OR PPAP_ENABLE_ECPU_Z80)
+        target_compile_definitions(${target} PRIVATE PPAP_HAS_SUBSYS=1)
+    endif()
+
     # Test suite
     if(PPAP_TESTS)
         target_sources(${target} PRIVATE ${PPAP_ROOT}/tests/kernel/ktest.c)

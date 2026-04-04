@@ -20,7 +20,7 @@
 
 #include <stdint.h>
 
-#include "common/arch.h"
+#include "kernel/core/arch.h"
 #include "common/spinlock.h" /* core_id() — needed by #define current */
 #include "core/mm/mem_layout.h"
 #include "core/mm/page.h"        /* page_id_t, PAGE_ID_INVALID */
@@ -61,13 +61,7 @@ typedef void (*sighandler_t)(int);
 #error "Unsupported architecture — define PCB_SP_OFFSET"
 #endif
 
-/* Subsystem tags — identifies which OS personality a process uses.
- * The F-line handler checks this to dispatch Human68k DOS calls
- * vs. crashing non-Human68k processes that hit F-line opcodes. */
-#define SUBSYS_PPAP 0     /* native PPAP ELF binary (default)    */
-#define SUBSYS_HUMAN68K 1 /* Human68k X-format binary             */
-#define SUBSYS_CPM 2      /* CP/M 2.2 .COM binary (Z80 emulated) */
-#define SUBSYS_SOS 3      /* S-OS SWORD binary (Z80 emulated)    */
+#include "common/core/subsys_info.h"
 #define TRACE_SW_BP_MAX 8 /* max software breakpoints per tracee  */
 #define TRACE_HW_BP_MAX 4 /* max native hardware breakpoints       */
 
@@ -401,5 +395,12 @@ void proc_release_private_tracked_pages_from_array(
  * processes this points to the argc slot built by execve().
  */
 void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp);
+
+/*
+ * Build the initial stack frame for a new process so that the
+ * context-switch path can restore it on first schedule.
+ * Provided by each architecture (switch.S / arch_common.c).
+ */
+uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void));
 
 #endif /* PPAP_KERNEL_PROC_PROC_H */

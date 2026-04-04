@@ -22,7 +22,7 @@
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/vfs/vfs_types.h"
-#include "common/arch.h"
+#include "kernel/core/arch.h"
 #include "kernel/core/cpu/cpu.h"
 
 #define ELF16_MAX_SIZE  (60u * 1024u)  /* 60 KB max (leave room for stack) */
