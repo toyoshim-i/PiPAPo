@@ -278,7 +278,6 @@ set(ARCH_I16_SOURCES
 
 set(KERNEL_CORE_SOURCES
   ${PPAP_ROOT}/src/kernel/core/main.c
-  ${PPAP_ROOT}/src/kernel/core/klog.c
   ${PPAP_ROOT}/src/kernel/common/mod/mod_core.c
   ${PPAP_ROOT}/src/kernel/core/mm/page.c
   ${PPAP_ROOT}/src/kernel/core/mm/kmem.c
@@ -361,6 +360,7 @@ add_custom_command(TARGET ppap_pcxt POST_BUILD
 # ==========================================================================
 
 set(KERNEL_VFS_SOURCES
+  ${PPAP_ROOT}/src/kernel/vfs/klog.c
   ${PPAP_ROOT}/src/kernel/vfs/vfs.c
   ${PPAP_ROOT}/src/kernel/vfs/namei.c
   ${PPAP_ROOT}/src/kernel/vfs/fd.c

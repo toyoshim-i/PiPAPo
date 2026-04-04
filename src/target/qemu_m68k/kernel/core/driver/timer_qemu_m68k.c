@@ -15,7 +15,7 @@
 
 #include <stdint.h>
 
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/proc/sched.h"
 
 /* ── Goldfish RTC #0 registers ───────────────────────────────────────────── */

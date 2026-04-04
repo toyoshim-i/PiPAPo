@@ -14,7 +14,7 @@
 #include "kernel/common/config.h"
 #include "kernel/core/driver/uart.h"
 #include "kernel/vfs/ufs.h"
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/vfs/vfs.h"
 
 #ifdef PPAP_TESTS
@@ -30,9 +30,9 @@ extern int uart_rx_avail(void);
 
 void target_early_init(void) {
   uart_init();
-  klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
-  klog("PiPAPo booting... [qemu_rv32]\n");
-  klogf("System clock: %lu MHz\n", (unsigned long)(PPAP_SYS_HZ / 1000000u));
+  mod_vfs.klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
+  mod_vfs.klogf("PiPAPo booting... [qemu_rv32]\n");
+  mod_vfs.klogf("System clock: %lu MHz\n", (unsigned long)(PPAP_SYS_HZ / 1000000u));
 }
 
 void target_late_init(void) {
@@ -54,10 +54,10 @@ void target_post_mount(void) {
       if (bd) {
         rc = vfs_mount("/mnt/ufs", &ufs_ops, MNT_RDONLY, bd);
         if (rc == 0)
-          klogf("VFS: UFS mounted at /mnt/ufs (%lu KB)\n",
+          mod_vfs.klogf("VFS: UFS mounted at /mnt/ufs (%lu KB)\n",
                 (unsigned long)(ufsimg_size / 1024));
         else
-          klogf("VFS: UFS mount failed (%lu)\n", (unsigned long)(uint32_t)(-rc));
+          mod_vfs.klogf("VFS: UFS mount failed (%lu)\n", (unsigned long)(uint32_t)(-rc));
       }
     }
   }

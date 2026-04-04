@@ -3,7 +3,7 @@
 # Registers the PPAP kernel as an ESP-IDF component so that idf.py
 # can build it alongside the ESP-IDF framework.
 
-set(PPAP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../../..)
+set(PPAP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../..)
 
 # ── Architecture sources ─────────────────────────────────────────────────────
 set(ARCH_SOURCES
@@ -19,7 +19,7 @@ set(ARCH_SOURCES
 set(KERNEL_SOURCES
     ${PPAP_ROOT}/src/target/target_default.c
     ${PPAP_ROOT}/src/kernel/core/main.c
-    ${PPAP_ROOT}/src/kernel/core/klog.c
+    ${PPAP_ROOT}/src/kernel/vfs/klog.c
     ${PPAP_ROOT}/src/kernel/common/mod/mod_core.c
     ${PPAP_ROOT}/src/kernel/core/mm/page.c
     ${PPAP_ROOT}/src/kernel/core/mm/kmem.c
@@ -58,7 +58,6 @@ idf_component_register(
     SRCS ${ARCH_SOURCES} ${KERNEL_SOURCES}
     INCLUDE_DIRS
         "${PPAP_ROOT}/src"
-        "${PPAP_ROOT}/src/kernel"
         "${PPAP_ROOT}/src/arch/xtensa"
         "${PPAP_ROOT}/src/target/xtensa_cc"
     REQUIRES esp_psram

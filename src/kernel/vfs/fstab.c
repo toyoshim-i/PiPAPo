@@ -12,6 +12,7 @@
 
 #include "fstab.h"
 
+#include "kernel/vfs/klog.h"
 #include "kernel/common/mod/mod_vfs.h"
 #ifdef PPAP_HAS_BLKDEV
 #include "kernel/core/driver/blkdev.h"
@@ -164,7 +165,7 @@ int fstab_mount_all(const fstab_entry_t *entries, int count) {
       ops = &vfat_ops;
       blkdev_t *bd = blkdev_find(e->device);
       if (!bd) {
-        mod_core.klogf("fstab: %s not found, skipping %s\n", e->device, e->mountpoint);
+        klogf("fstab: %s not found, skipping %s\n", e->device, e->mountpoint);
         continue;
       }
       dev_data = bd;
@@ -174,7 +175,7 @@ int fstab_mount_all(const fstab_entry_t *entries, int count) {
         /* Loopback mount: set up loop device first */
         int loop_idx = loopback_setup(e->device);
         if (loop_idx < 0) {
-          mod_core.klogf("fstab: loopback_setup(%s) failed, skipping %s\n", e->device,
+          klogf("fstab: loopback_setup(%s) failed, skipping %s\n", e->device,
                 e->mountpoint);
           continue;
         }
@@ -191,15 +192,15 @@ int fstab_mount_all(const fstab_entry_t *entries, int count) {
     }
 #endif
     else {
-      mod_core.klogf("fstab: unknown fstype '%s'\n", e->fstype);
+      klogf("fstab: unknown fstype '%s'\n", e->fstype);
       continue;
     }
 
     int rc = mod_vfs.mount(e->mountpoint, ops, e->flags, dev_data);
     if (rc == 0)
-      mod_core.klogf("VFS: %s mounted at %s\n", e->fstype, e->mountpoint);
+      klogf("VFS: %s mounted at %s\n", e->fstype, e->mountpoint);
     else
-      mod_core.klogf("VFS: mount %s failed\n", e->mountpoint);
+      klogf("VFS: mount %s failed\n", e->mountpoint);
   }
 
   return 0;

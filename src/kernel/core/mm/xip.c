@@ -28,7 +28,7 @@
 
 #include <stdint.h>
 
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/ioregs.h"
 
 /* Alias: xip.c uses CLKSOURCE name without _CPU suffix for brevity */
@@ -98,14 +98,14 @@ __attribute__((section(".ramfunc.sram_bench"), noinline)) uint32_t sram_bench(
  * ========================================================================== */
 
 void xip_verify(void) {
-  klogf("XIP: xip_add @ %lx\n", (unsigned long)(uintptr_t)xip_add);
+  mod_vfs.klogf("XIP: xip_add @ %lx\n", (unsigned long)(uintptr_t)xip_add);
 
   int result = xip_add(3, 4);
-  klogf("XIP: xip_add(3,4) = %lu %s\n", (unsigned long)(uint32_t)result,
+  mod_vfs.klogf("XIP: xip_add(3,4) = %lu %s\n", (unsigned long)(uint32_t)result,
         result == 7 ? "OK" : "FAIL");
 
   uint32_t flash_cyc = xip_bench(10000);
   uint32_t sram_cyc = sram_bench(10000);
-  klogf("XIP: flash bench(10000) = %lx cycles\n", (unsigned long)flash_cyc);
-  klogf("XIP: sram  bench(10000) = %lx cycles\n", (unsigned long)sram_cyc);
+  mod_vfs.klogf("XIP: flash bench(10000) = %lx cycles\n", (unsigned long)flash_cyc);
+  mod_vfs.klogf("XIP: sram  bench(10000) = %lx cycles\n", (unsigned long)sram_cyc);
 }

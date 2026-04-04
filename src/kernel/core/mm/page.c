@@ -24,7 +24,7 @@
 #endif
 #include <stddef.h>
 
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/spinlock.h"
 
 /* ── Linker-provided symbols ────────────────────────────────────────────────
@@ -123,7 +123,7 @@ void mm_init(void) {
     uint32_t pool_bytes = PAGE_COUNT_MAX * PAGE_SIZE + PAGE_SIZE; /* +1 page for alignment */
     void *pool = heap_caps_malloc(pool_bytes, (1u << 2)); /* MALLOC_CAP_8BIT */
     if (!pool) {
-      klog("MM: FATAL — heap_caps_malloc failed for page pool\n");
+      mod_vfs.klogf("MM: FATAL — heap_caps_malloc failed for page pool\n");
       for (;;) __asm__ volatile("waiti 15");
     }
     /* Align pool start to page boundary */
@@ -170,29 +170,29 @@ void mm_init(void) {
   }
 
   /* ── Boot-time memory map ─────────────────────────────────────────────── */
-  klog("MM: memory map\n");
-  klogf("MM:   kernel  %lx-%lx  %lu KB reserved\n",
+  mod_vfs.klogf("MM: memory map\n");
+  mod_vfs.klogf("MM:   kernel  %lx-%lx  %lu KB reserved\n",
         (unsigned long)SRAM_KERNEL_BASE,
         (unsigned long)(SRAM_KERNEL_BASE + SRAM_KERNEL_SIZE - 1u),
         (unsigned long)(SRAM_KERNEL_SIZE / 1024u));
   if (stack_top > bss_end)
-    klogf("MM:     .data/.bss:  %lx B used, %lx B to stack top\n",
+    mod_vfs.klogf("MM:     .data/.bss:  %lx B used, %lx B to stack top\n",
           (unsigned long)kern_used, (unsigned long)(stack_top - bss_end));
   else
-    klogf("MM:     .data/.bss:  %lx B used\n", (unsigned long)kern_used);
+    mod_vfs.klogf("MM:     .data/.bss:  %lx B used\n", (unsigned long)kern_used);
 
   uint32_t actual_base =
       (free_top > 0) ? (uint32_t)page_id_linear(free_stack[0])
                      : (uint32_t)pool_base;
-  klogf("MM:   pages   %lx-%lx %lu KB (%u x 4 KB, all free)\n",
+  mod_vfs.klogf("MM:   pages   %lx-%lx %lu KB (%u x 4 KB, all free)\n",
         (unsigned long)actual_base,
         (unsigned long)(pool_base + page_count * PAGE_SIZE - 1u),
         (unsigned long)(free_top * PAGE_SIZE / 1024u), free_top);
 #if !defined(__m68k__) && !defined(__xtensa__) && !defined(__ia16__)
-  klogf("MM:   io_buf  %lx-%lx  %lu KB\n", (unsigned long)SRAM_IOBUF_BASE,
+  mod_vfs.klogf("MM:   io_buf  %lx-%lx  %lu KB\n", (unsigned long)SRAM_IOBUF_BASE,
         (unsigned long)(SRAM_IOBUF_BASE + SRAM_IOBUF_SIZE - 1u),
         (unsigned long)(SRAM_IOBUF_SIZE / 1024u));
-  klogf("MM:   dma     %lx-%lx  %lu KB\n", (unsigned long)SRAM_DMA_BASE,
+  mod_vfs.klogf("MM:   dma     %lx-%lx  %lu KB\n", (unsigned long)SRAM_DMA_BASE,
         (unsigned long)(SRAM_DMA_BASE + SRAM_DMA_SIZE - 1u),
         (unsigned long)(SRAM_DMA_SIZE / 1024u));
 #endif
@@ -217,7 +217,7 @@ void mm_init(void) {
   uint32_t ok = (o1 != NULL) && (o2 != NULL) && (o3 != NULL) &&
                 (kmem_free_count(&test_pool) == 2u);
 
-  klogf("MM: kmem self-test %s\n", ok ? "PASSED" : "FAILED");
+  mod_vfs.klogf("MM: kmem self-test %s\n", ok ? "PASSED" : "FAILED");
 #endif
 
 #if defined(PPAP_TESTS) && (defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__))
@@ -246,7 +246,7 @@ void *page_alloc(void) {
     oom_count++;
   }
   spin_unlock_irqrestore(SPIN_PAGE, saved);
-  if (!p) klog("MM: OOM: page_alloc failed\n");
+  if (!p) mod_vfs.klogf("MM: OOM: page_alloc failed\n");
   return p;
 }
 
@@ -292,11 +292,11 @@ static void stack_backtrace(void) {
   uintptr_t fp;
   __asm__ volatile("mv %0, s0" : "=r"(fp));
 
-  klog("  backtrace:\n");
+  mod_vfs.klogf("  backtrace:\n");
   for (uint32_t depth = 0; depth < 16 && fp; depth++) {
     uintptr_t ra = *(uintptr_t *)(fp - 4);
     uintptr_t prev_fp = *(uintptr_t *)(fp - 8);
-    klogf("    #%u ra=%lx fp=%lx\n", depth, (unsigned long)ra, (unsigned long)fp);
+    mod_vfs.klogf("    #%u ra=%lx fp=%lx\n", depth, (unsigned long)ra, (unsigned long)fp);
     if (prev_fp <= fp) break; /* stack grows down — prev fp must be higher */
     fp = prev_fp;
   }
@@ -322,7 +322,7 @@ void page_free(void *page) {
   for (uint32_t i = 0u; i < free_top; i++) {
     if (free_stack[i] == id) {
       spin_unlock_irqrestore(SPIN_PAGE, saved);
-      klogf("MM: double-free @ %lx (ra=%lx)\n", (unsigned long)addr,
+      mod_vfs.klogf("MM: double-free @ %lx (ra=%lx)\n", (unsigned long)addr,
             (unsigned long)(uintptr_t)__builtin_return_address(0));
       stack_backtrace();
       return;
@@ -499,7 +499,7 @@ page_id_t mm_page_alloc(void) {
   if (free_top == 0u) {
     oom_count++;
     spin_unlock_irqrestore(SPIN_PAGE, saved);
-    klog("MM: OOM: page_alloc failed\n");
+    mod_vfs.klogf("MM: OOM: page_alloc failed\n");
     return PAGE_ID_INVALID;
   }
   /* Pick highest-index free page (same policy as page_alloc) */
@@ -526,7 +526,7 @@ void mm_page_free(page_id_t id) {
   for (uint32_t i = 0; i < free_top; i++) {
     if (free_stack[i] == id) {
       spin_unlock_irqrestore(SPIN_PAGE, saved);
-      klogf("MM: double-free page %u\n", (unsigned)id);
+      mod_vfs.klogf("MM: double-free page %u\n", (unsigned)id);
       return;
     }
   }

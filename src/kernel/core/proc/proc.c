@@ -15,7 +15,7 @@
 #include <stddef.h> /* NULL, offsetof */
 
 #include "common/errno.h"
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"  /* PAGE_SIZE — for proc_setup_stack */
 #include "kernel/common/spinlock.h" /* SPIN_PROC */
@@ -81,7 +81,7 @@ void proc_init(void) {
   if (spin_have_hw())
     core_id_reg = (volatile uint32_t *)0xD0000000u;
 
-  klogf(
+  mod_vfs.klogf(
       "PROC: process table  slots=%u"
       "  (pid 0 = kernel, pids 1-%u available)\n",
       (unsigned)PROC_MAX, (unsigned)(PROC_MAX - 1u));
@@ -100,7 +100,7 @@ void proc_init(void) {
   /* Reset PID counter so the first real process gets PID 1. */
   next_pid = 1;
 
-  klogf("PROC: self-test %s\n", ok ? "PASSED" : "FAILED");
+  mod_vfs.klogf("PROC: self-test %s\n", ok ? "PASSED" : "FAILED");
 #endif
 }
 

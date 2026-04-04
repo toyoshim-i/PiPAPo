@@ -1,8 +1,8 @@
 /*
  * klog.c — Atomic kernel logging (SMP-safe)
  *
- * klog() and klogf() disable preemption and acquire SPIN_UART for the
- * entire output sequence, ensuring no interleaving from the other core.
+ * klogf() disables preemption and acquires SPIN_UART for the entire
+ * output sequence, ensuring no interleaving from the other core.
  * Only the preemption timer is disabled — the UART ISR remains active
  * so it can drain the TX ring while klog spins on a full ring.
  *
@@ -17,9 +17,10 @@
  *   %% — literal '%'
  */
 
-#include "klog.h"
+#include "kernel/vfs/klog.h"
 
 #include <stdarg.h>
+#include <stddef.h>
 
 #include "kernel/core/arch.h"
 #include "kernel/common/spinlock.h"
@@ -100,13 +101,6 @@ static void klog_print_dec(uint32_t v) {
 
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
-void klog(const char *msg) {
-  klog_lock();
-  klog_puts_raw(msg);
-  klog_unlock();
-  klog_flush_all();
-}
-
 void klogf(const char *fmt, ...) {
   klog_lock();
 
@@ -160,4 +154,15 @@ done:
   va_end(ap);
   klog_unlock();
   klog_flush_all();
+}
+
+/* ── Module aliases ─────────────────────────────────────────────────────────
+ *
+ * MOD_IMPL(vfs, klogf) expands to .klogf = vfs_klogf — provide that symbol.
+ * Linker-level alias avoids the variadic forwarding problem.
+ */
+void vfs_klogf(const char *, ...) __attribute__((alias("klogf")));
+
+void vfs_klog_set_logger(int id, klog_putc_fn putc, void (*flush)(void)) {
+  klog_set_logger(id, putc, flush);
 }

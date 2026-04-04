@@ -3,7 +3,7 @@
  *
  * Drives the SPI0 controller to communicate with the SD card on the
  * PicoCalc board.  Pin assignments are defined in
- * src/target/pico1calc/pico1calc.h.
+ * src/target/pico1calc/kernel/core/pico1calc.h.
  *
  * The PL022 operates in SPI master mode, 8-bit frames, CPOL=0, CPHA=0
  * (SD SPI mode 0).  CS is driven manually via GPIO (not the SSP's SSPFSSOUT).
@@ -16,7 +16,7 @@
 
 #include "kernel/common/config.h"
 #include "kernel/core/driver/spi.h"
-#include "target/pico1calc/pico1calc.h"
+#include "target/pico1calc/kernel/core/pico1calc.h"
 #include "target/rpico.h"
 
 /* ── SPI0 (PL022) ───────────────────────────────────────────────────────── */

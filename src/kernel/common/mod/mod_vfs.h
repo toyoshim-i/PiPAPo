@@ -27,6 +27,12 @@
 
 #include "module.h"
 
+/* klog types — needed for klog_set_logger signature */
+typedef int (*klog_putc_fn)(char c, void (*notify)(void));
+#define KLOG_LOGGER_PRIMARY 0
+#define KLOG_LOGGER_SECONDARY 1
+#define KLOG_LOGGER_COUNT 2
+
 /* Forward declaration for fd_stdio_init parameter */
 struct pcb;
 typedef struct pcb pcb_t;
@@ -237,6 +243,33 @@ MOD_DECLARE_BEGIN(vfs)
    * kmain() before any filesystem is mounted.
    */
   MOD_FUNC(vfs, void, init, void)
+
+  /*
+   * klogf — Formatted kernel log output (printf-like).
+   *
+   *   fmt   Format string (%s, %u, %x, %lu, %lx, %%).
+   *   ...   Arguments matching format specifiers.
+   *
+   * Converts '\n' to '\r\n'.  Holds SPIN_UART for atomicity.
+   */
+  MOD_FUNC(vfs, void, klogf, const char *, ...)
+
+  /*
+   * klog_set_logger — Register or replace one logger slot.
+   *
+   *   id     Logger slot (KLOG_LOGGER_PRIMARY or KLOG_LOGGER_SECONDARY).
+   *   putc   Character output function (NULL to clear).
+   *   flush  Optional flush callback (NULL if not needed).
+   *
+   * Temporary: will become VFS-internal once logger init moves to VFS.
+   *
+   * TODO: on i16, mod_vfs far pointers are not patched until
+   * seg_init_modules() runs, so this cannot be called from
+   * target_early_init() before that point.  Callers on i16 must
+   * ensure VFS module is loaded before calling.
+   */
+  MOD_FUNC(vfs, void, klog_set_logger, int, klog_putc_fn,
+                                        void (*)(void))
 
   /*
    * lookup — Resolve a pathname to a vnode.

@@ -19,6 +19,7 @@
 
 #include "common/errno.h"
 #include "kernel/common/mod/mod_core.h"
+#include "kernel/vfs/klog.h"
 #include "file.h"   /* fd_pool_init */
 #include "tty.h"    /* tty_rx_notify */
 #include "fstab.h"  /* fstab_parse, fstab_mount_all */
@@ -49,7 +50,7 @@ void vfs_init(void) {
   /* Initialise the vnode slab pool */
   mod_core.kmem_pool_init(&vnode_pool, vnode_storage, sizeof(vnode_t), VFS_VNODE_MAX);
 
-  mod_core.klogf("VFS: initialised (%u vnodes, %u mount slots)\n",
+  klogf("VFS: initialised (%u vnodes, %u mount slots)\n",
         (unsigned)VFS_VNODE_MAX, (unsigned)VFS_MOUNT_MAX);
 }
 
@@ -205,7 +206,7 @@ int vfs_umount(const char *path) {
 
   spin_unlock_irqrestore(SPIN_VFS, saved);
 
-  mod_core.klogf("VFS: unmounted %s\n", path);
+  klogf("VFS: unmounted %s\n", path);
 
   return 0;
 }
@@ -383,11 +384,11 @@ void vfs_fstab_automount(void) {
   fstab_entry_t fstab[FSTAB_MAX_ENTRIES];
   int n = fstab_parse(fstab, FSTAB_MAX_ENTRIES);
   if (n > 0) {
-    mod_core.klogf("fstab: %lu entries parsed\n",
+    klogf("fstab: %lu entries parsed\n",
                    (unsigned long)(uint32_t)n);
     fstab_mount_all(fstab, n);
   } else {
-    mod_core.klog("fstab: no entries\n");
+    klogf("fstab: no entries\n");
   }
 }
 
@@ -411,6 +412,10 @@ long vfs_vnode_readlink(vnode_t *vn, char *buf, size_t bufsiz) {
     return -2; /* ENOENT / unsupported */
   return vn->mount->ops->readlink(vn, buf, bufsiz);
 }
+
+/* klog aliases — defined in klog.c, needed by MOD_IMPL(vfs, klogf) etc. */
+extern void vfs_klogf(const char *, ...);
+extern void vfs_klog_set_logger(int, klog_putc_fn, void (*)(void));
 
 MOD_DEFINE_BEGIN(vfs)
 #define MOD_VFS_ENTRY(name, idx)  MOD_IMPL(vfs, name)

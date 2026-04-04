@@ -27,7 +27,7 @@
 #include "kernel/core/driver/uart.h"
 #include "common/errno.h"
 #include "kernel/vfs/tty.h"
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
@@ -152,10 +152,10 @@ void target_early_init(void) {
     asm volatile("trap #15" : "+r"(d0) : "r"(d1) : "a0", "a1", "memory");
   }
   uart_init();
-  klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
-  klog(" booting... [x68k]\n");
-  klog("Console: X68000 IOCS (TVRAM)\n");
-  klog("Phase X-2: preemptive scheduling (MFP Timer-C), embedded romfs\n");
+  mod_vfs.klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
+  mod_vfs.klogf(" booting... [x68k]\n");
+  mod_vfs.klogf("Console: X68000 IOCS (TVRAM)\n");
+  mod_vfs.klogf("Phase X-2: preemptive scheduling (MFP Timer-C), embedded romfs\n");
 }
 
 extern int uart_serial_putc(char c, void (*notify)(void));
@@ -186,7 +186,7 @@ void target_late_init(void) {
   tty_set_backend(TTY_DISPLAY, &tvram_be);
   tty_set_backend(TTY_SERIAL, &serial_be);
   tty_set_console(TTY_DISPLAY);
-  klog_set_logger(KLOG_LOGGER_SECONDARY, uart_serial_putc, NULL);
+  mod_vfs.klog_set_logger(KLOG_LOGGER_SECONDARY, uart_serial_putc, NULL);
 
   /* Register input polls for both consoles.
    * Both use direct hardware register reads — NO IOCS TRAP #15 calls —
@@ -216,7 +216,7 @@ int target_mount_rootfs(void) {
   /* Validate rootfs: check UFS magic at the rootfs address */
   const uint32_t *sb = (const uint32_t *)(uintptr_t)addr;
   if (sb[0] != 0x55465331u) { /* UFS_MAGIC */
-    klogf("x68k: no UFS magic at 0x%lx (got 0x%lx)\n", (unsigned long)addr,
+    mod_vfs.klogf("x68k: no UFS magic at 0x%lx (got 0x%lx)\n", (unsigned long)addr,
           (unsigned long)sb[0]);
     return -1;
   }
@@ -227,7 +227,7 @@ int target_mount_rootfs(void) {
   uint32_t bs_shift = 0;
   for (uint32_t bs = block_size; bs > 1u; bs >>= 1) bs_shift++;
   uint32_t size = block_count << bs_shift;
-  klogf("x68k: ramdisk at %lx, %lu bytes (%lu blocks x %lu)\n",
+  mod_vfs.klogf("x68k: ramdisk at %lx, %lu bytes (%lu blocks x %lu)\n",
         (unsigned long)addr, (unsigned long)size,
         (unsigned long)block_count, (unsigned long)block_size);
 
@@ -249,7 +249,7 @@ int target_mount_rootfs(void) {
                             (void *)reserve_start,
                             reserve_end - reserve_start,
                             PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) < 0)
-      klog("x68k: rootfs reservation FAILED\n");
+      mod_vfs.klogf("x68k: rootfs reservation FAILED\n");
   }
 
   flatblk_init("ram0", (const void *)(uintptr_t)addr, size);

@@ -2,14 +2,13 @@
  * mod_core.c — Core module struct definition
  *
  * Wires the mod_core function pointer struct to the real
- * implementations in klog.c, kmem.c, and mem_region.c.
+ * implementations in kmem.c, mem_region.c, sched.c, etc.
  *
  * Core functions don't follow the mod_func naming convention
- * (they're klog, not core_klog) so we wire them manually.
+ * (they're kmem_alloc, not core_kmem_alloc) so we wire them manually.
  */
 
 #include "mod_core.h"
-#include "kernel/core/klog.h"
 #include "kernel/core/mm/kmem.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/driver/blkdev.h"
@@ -29,8 +28,6 @@ int core_blkdev_write(blkdev_t *dev, const void *buf,
 }
 
 mod_core_t mod_core = {
-  .klog = klog,
-  .klogf = klogf,
   .kmem_pool_init = kmem_pool_init,
   .kmem_alloc = kmem_alloc,
   .kmem_free = kmem_free,

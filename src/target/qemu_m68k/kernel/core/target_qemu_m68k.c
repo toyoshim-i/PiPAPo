@@ -18,7 +18,7 @@
 #include "kernel/core/driver/uart.h"
 #include "common/errno.h"
 #include "kernel/vfs/tty.h"
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
@@ -90,10 +90,10 @@ void m68k_syscall_entry(uint32_t *regs) {
 
 void target_early_init(void) {
   uart_init();
-  klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
-  klog("PiPAPo booting... [qemu_m68k]\n");
-  klog("UART: Goldfish TTY @ 0xFF008000\n");
-  klog("Clock: emulated (no PLL)\n");
+  mod_vfs.klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
+  mod_vfs.klogf("PiPAPo booting... [qemu_m68k]\n");
+  mod_vfs.klogf("UART: Goldfish TTY @ 0xFF008000\n");
+  mod_vfs.klogf("Clock: emulated (no PLL)\n");
   /* romfs is pre-built by mkromfs -b and linked via .incbin */
 }
 

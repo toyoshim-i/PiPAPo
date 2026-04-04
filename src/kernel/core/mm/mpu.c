@@ -20,7 +20,7 @@
 #include <stdint.h>
 
 #include "kernel/core/driver/uart.h"
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/arch.h"
 
@@ -185,7 +185,7 @@ static void mpu_set_region(uint32_t region, uint32_t base, uint32_t rasr) {
 
 void mpu_init(void) {
   if (MPU_TYPE == 0u) {
-    klog("MPU: not present: skipping (QEMU)\n");
+    mod_vfs.klogf("MPU: not present: skipping (QEMU)\n");
     return;
   }
 
@@ -245,7 +245,7 @@ void mpu_init(void) {
   arch_dsb_isb();
 
   mpu_present = 1;
-  klog("MPU: 4 regions active (kernel/flash/stack/periph)\n");
+  mod_vfs.klogf("MPU: 4 regions active (kernel/flash/stack/periph)\n");
 }
 
 /* ── mpu_switch ──────────────────────────────────────────────────────────── */

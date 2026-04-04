@@ -1,18 +1,18 @@
 /*
  * klog.h — Atomic kernel logging (SMP-safe)
  *
- * All kernel diagnostic output should use klog() or klogf() to prevent
+ * All kernel diagnostic output should use klogf() to prevent
  * interleaved characters when both cores are printing concurrently.
  *
- * Simple message:
- *     klog("VFS: romfs mounted at /\n");
+ * VFS code includes this header directly.  Core code uses
+ * mod_vfs.klogf() through the module interface.
  *
- * Formatted message (%s, %u, %x, %%):
+ * Example:
  *     klogf("INIT: pid=%u loaded\n", init->pid);
  */
 
-#ifndef PPAP_KERNEL_KLOG_H
-#define PPAP_KERNEL_KLOG_H
+#ifndef PPAP_KERNEL_VFS_KLOG_H
+#define PPAP_KERNEL_VFS_KLOG_H
 
 #include <stdint.h>
 
@@ -21,9 +21,6 @@ typedef int (*klog_putc_fn)(char c, void (*notify)(void));
 #define KLOG_LOGGER_PRIMARY 0
 #define KLOG_LOGGER_SECONDARY 1
 #define KLOG_LOGGER_COUNT 2
-
-/* Atomic single-string log (no format parsing). */
-void klog(const char *msg);
 
 /*
  * klogf(fmt, ...) — formatted atomic log.
@@ -45,4 +42,4 @@ void klogf(const char *fmt, ...);
 /* Register or replace one logger slot. */
 void klog_set_logger(int id, klog_putc_fn putc, void (*flush)(void));
 
-#endif /* PPAP_KERNEL_KLOG_H */
+#endif /* PPAP_KERNEL_VFS_KLOG_H */

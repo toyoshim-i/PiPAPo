@@ -6,7 +6,7 @@
 
 #include "common/errno.h"
 #include "kernel/common/spinlock.h"
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "page.h"
 
 #if defined(__xtensa__)
@@ -108,7 +108,7 @@ static int mem_region_linear_arena_init(mem_region_linear_arena_t *arena,
   arena->free_count = 1u;
   arena->ready = 1u;
 
-  klogf("MM:   %s %lx-%lx  %lu KB reserved\n", name,
+  mod_vfs.klogf("MM:   %s %lx-%lx  %lu KB reserved\n", name,
         (unsigned long)(uintptr_t)arena->base,
         (unsigned long)(uintptr_t)(arena->base + arena->size - 1u),
         (unsigned long)(arena->size / 1024u));
@@ -147,7 +147,7 @@ static int mem_region_xtensa_data_init(void) {
     ram_data_page_used[i] = 0u;
   ram_data_ready = 1u;
 
-  klogf("MM:   ram_data %lx-%lx  %lu KB reserved\n",
+  mod_vfs.klogf("MM:   ram_data %lx-%lx  %lu KB reserved\n",
         (unsigned long)(uintptr_t)ram_data_arena_base,
         (unsigned long)(uintptr_t)(ram_data_arena_base +
                               ram_data_page_count * PAGE_SIZE - 1u),
@@ -163,12 +163,12 @@ static int mem_region_xtensa_psram_init(void) {
 
   total_size = (uint32_t)esp_psram_get_size();
   if (total_size == 0) {
-    klog("MM:   psram unavailable; external arenas disabled\n");
+    mod_vfs.klogf("MM:   psram unavailable; external arenas disabled\n");
     return 0;
   }
 
   free_size = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
-  klogf("MM:   psram total %lu KB, free %lu KB before reservation\n",
+  mod_vfs.klogf("MM:   psram total %lu KB, free %lu KB before reservation\n",
         (unsigned long)(total_size / 1024u), (unsigned long)(free_size / 1024u));
 
   err = mem_region_linear_arena_init(&ext_text_arena,
@@ -184,27 +184,27 @@ static int mem_region_xtensa_psram_init(void) {
   if (err < 0) return err;
 
 #if defined(CONFIG_SPIRAM_XIP_FROM_PSRAM) && CONFIG_SPIRAM_XIP_FROM_PSRAM
-  klog("MM:   psram xip enabled for staged text/rodata\n");
+  mod_vfs.klogf("MM:   psram xip enabled for staged text/rodata\n");
 #else
-  klog("MM:   psram xip disabled; external arenas are staging-only\n");
+  mod_vfs.klogf("MM:   psram xip disabled; external arenas are staging-only\n");
 #endif
 
   if (ext_text_arena.ready) {
-    klogf("MM:   ext_text executable=%lu byte_access=%lu\n",
+    mod_vfs.klogf("MM:   ext_text executable=%lu byte_access=%lu\n",
           (unsigned long)(uint32_t)esp_ptr_executable(ext_text_arena.base),
           (unsigned long)(uint32_t)esp_ptr_byte_accessible(ext_text_arena.base));
   }
   if (ext_rodata_arena.ready) {
-    klogf("MM:   ext_rodata executable=%lu byte_access=%lu\n",
+    mod_vfs.klogf("MM:   ext_rodata executable=%lu byte_access=%lu\n",
           (unsigned long)(uint32_t)esp_ptr_executable(ext_rodata_arena.base),
           (unsigned long)(uint32_t)esp_ptr_byte_accessible(ext_rodata_arena.base));
   }
 
   free_size = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
-  klogf("MM:   psram free %lu KB after reservation\n", (unsigned long)(free_size / 1024u));
+  mod_vfs.klogf("MM:   psram free %lu KB after reservation\n", (unsigned long)(free_size / 1024u));
   return 0;
 #else
-  klog("MM:   psram support disabled; external arenas unavailable\n");
+  mod_vfs.klogf("MM:   psram support disabled; external arenas unavailable\n");
   return 0;
 #endif
 }
@@ -436,7 +436,7 @@ static void mem_region_linear_arena_free(mem_region_linear_arena_t *arena,
 
   if (arena->free_count >= MEM_REGION_FREE_MAX) {
     spin_unlock_irqrestore(SPIN_MEM, saved);
-    klogf("MM: %s free-list overflow\n", name);
+    mod_vfs.klogf("MM: %s free-list overflow\n", name);
     return;
   }
 
@@ -498,17 +498,17 @@ int mem_region_init(void) {
 #if defined(__xtensa__)
   int err = mem_region_xtensa_text_init();
   if (err < 0) {
-    klogf("MM: mem_region_init: ram_text reservation failed (%d)\n", err);
+    mod_vfs.klogf("MM: mem_region_init: ram_text reservation failed (%d)\n", err);
     return err;
   }
   err = mem_region_xtensa_data_init();
   if (err < 0) {
-    klogf("MM: mem_region_init: ram_data reservation failed (%d)\n", err);
+    mod_vfs.klogf("MM: mem_region_init: ram_data reservation failed (%d)\n", err);
     return err;
   }
   err = mem_region_xtensa_psram_init();
   if (err < 0) {
-    klogf("MM: mem_region_init: psram reservation failed (%d)\n", err);
+    mod_vfs.klogf("MM: mem_region_init: psram reservation failed (%d)\n", err);
     return err;
   }
   return 0;

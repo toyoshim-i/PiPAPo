@@ -15,6 +15,9 @@
 #include "kernel/core/mm/page.h"
 #include "kernel/common/mod/module.h"
 
+/* klog types for klog_set_logger signature */
+typedef int (*klog_putc_fn)(char c, void (*notify)(void));
+
 /* Forward-declare the caller-side stubs from vfs_stubs.S.
  * Signatures must match the mod_vfs_t struct fields. */
 void vfs_init(void);
@@ -39,6 +42,10 @@ int  vfs_vnode_stat(vnode_t *, void *);
 void vfs_fd_pool_init(void);
 void vfs_tty_rx_notify(int);
 void vfs_fstab_automount(void);
+
+/* klog functions (now in VFS) */
+void vfs_klogf(const char *, ...);
+void vfs_klog_set_logger(int, klog_putc_fn, void (*)(void));
 
 /* Step 3: fd pool operations (fd.c / pipe.c) */
 int  vfs_fd_open(const char *, int, int);

@@ -15,7 +15,7 @@
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/syscall/syscall.h"
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 
 /* Context switch pending flag.
  * Set by arch_yield() (via sched_tick or sched_switch).
@@ -239,20 +239,20 @@ static const char *exccause_name(uint32_t cause)
 static void xtensa_fault_handler(XtExcFrame *frame)
 {
     uint32_t cause = (uint32_t)frame->exccause;
-    klogf("EXCEPTION: %s (cause=%lu) pc=%lx vaddr=%lx\n",
+    mod_vfs.klogf("EXCEPTION: %s (cause=%lu) pc=%lx vaddr=%lx\n",
           exccause_name(cause), (unsigned long)cause,
           (unsigned long)(uint32_t)frame->pc, (unsigned long)(uint32_t)frame->excvaddr);
-    klogf("  a0=%lx a1=%lx a2=%lx a3=%lx a4=%lx a5=%lx\n",
+    mod_vfs.klogf("  a0=%lx a1=%lx a2=%lx a3=%lx a4=%lx a5=%lx\n",
           (unsigned long)(uint32_t)frame->a0, (unsigned long)(uint32_t)frame->a1,
           (unsigned long)(uint32_t)frame->a2, (unsigned long)(uint32_t)frame->a3,
           (unsigned long)(uint32_t)frame->a4, (unsigned long)(uint32_t)frame->a5);
-    klogf("  a6=%lx a7=%lx a8=%lx a9=%lx a10=%lx a11=%lx\n",
+    mod_vfs.klogf("  a6=%lx a7=%lx a8=%lx a9=%lx a10=%lx a11=%lx\n",
           (unsigned long)(uint32_t)frame->a6, (unsigned long)(uint32_t)frame->a7,
           (unsigned long)(uint32_t)frame->a8, (unsigned long)(uint32_t)frame->a9,
           (unsigned long)(uint32_t)frame->a10, (unsigned long)(uint32_t)frame->a11);
 
     if (current && !current->is_idle) {
-        klogf("  pid=%u comm=%s — killed\n", current->pid, current->comm);
+        mod_vfs.klogf("  pid=%u comm=%s — killed\n", current->pid, current->comm);
         current->state = PROC_ZOMBIE;
         current->exit_status = 128 + 11; /* SIGSEGV */
         /* Must actually switch — arch_yield() only sets a flag, which
@@ -262,7 +262,7 @@ static void xtensa_fault_handler(XtExcFrame *frame)
     }
 
     /* Kernel fault: halt */
-    klog("PANIC: kernel exception — halting\n");
+    mod_vfs.klogf("PANIC: kernel exception — halting\n");
     for (;;)
         __asm__ volatile ("waiti 15");
 }
@@ -279,15 +279,15 @@ static void xtensa_fault_handler(XtExcFrame *frame)
 
 void __wrap_abort(void)
 {
-    klog("ABORT called");
+    mod_vfs.klogf("ABORT called");
     if (current && !current->is_idle) {
-        klogf(" (pid=%u comm=%s)\n", current->pid, current->comm);
+        mod_vfs.klogf(" (pid=%u comm=%s)\n", current->pid, current->comm);
         current->state = PROC_ZOMBIE;
         current->exit_status = 128 + 6; /* SIGABRT */
         arch_yield();
         /* Try to let scheduler run — if we return, hang. */
     } else {
-        klog(" — kernel abort, halting\n");
+        mod_vfs.klogf(" — kernel abort, halting\n");
     }
     for (;;)
         __asm__ volatile ("waiti 15");
@@ -296,10 +296,10 @@ void __wrap_abort(void)
 void __wrap___assert_func(const char *file, int line, const char *func,
                           const char *expr)
 {
-    klogf("ASSERT FAILED: %s:%lu", file ? file : "?", (unsigned long)(uint32_t)line);
-    if (func) klogf(" (%s)", func);
-    if (expr) klogf(": %s", expr);
-    klog("\n");
+    mod_vfs.klogf("ASSERT FAILED: %s:%lu", file ? file : "?", (unsigned long)(uint32_t)line);
+    if (func) mod_vfs.klogf(" (%s)", func);
+    if (expr) mod_vfs.klogf(": %s", expr);
+    mod_vfs.klogf("\n");
     __wrap_abort();
 }
 

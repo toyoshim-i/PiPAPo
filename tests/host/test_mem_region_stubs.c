@@ -8,7 +8,7 @@
 
 #include "kernel/core/mm/page.h"
 
-#include "kernel/common/errno.h"
+#include "common/errno.h"
 
 int mem_region_alloc(proc_image_segment_t *seg, ppap_mem_class_t mem_class,
                      uint32_t size, uint32_t flags) {

@@ -20,14 +20,18 @@
 #include "common/errno.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/exec/exec.h"
-#include "kernel/core/klog.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/syscall/syscall.h"
 
-#define H68K_TRACE(fmt, ...) PPAP_DEBUG_LOGF("h68k", fmt, ##__VA_ARGS__)
+#ifdef PPAP_DEBUG_LOG
+#define H68K_TRACE(fmt, ...) \
+  mod_vfs.klogf("[h68k] " fmt "\n", ##__VA_ARGS__)
+#else
+#define H68K_TRACE(fmt, ...) ((void)0)
+#endif
 
 static long h68k_fd_desc(long fd) {
   if (fd < 0 || (uint32_t)fd >= FD_MAX) return -(long)EBADF;
@@ -1954,13 +1958,13 @@ static int h68k_on_crash(struct pcb *p, uint32_t *regs, uint16_t *exc,
   if (!h) return 0;
 
   if (h->errjvc) {
-    PPAP_DEBUG_LOGF("h68k", "_ERRJVC: jumping to %x", h->errjvc);
+    H68K_TRACE("_ERRJVC: jumping to %x", h->errjvc);
     exc[is_group0 ? 5 : 1] = (uint16_t)(h->errjvc >> 16);
     exc[is_group0 ? 6 : 2] = (uint16_t)(h->errjvc & 0xFFFF);
     return 2; /* return to (redirected) user mode */
   }
 
-  PPAP_DEBUG_LOGF("h68k", "_ERRJVC default: _EXIT(-1)");
+  H68K_TRACE("_ERRJVC default: _EXIT(-1)");
   sys_exit(-1);
   return 1;
 }

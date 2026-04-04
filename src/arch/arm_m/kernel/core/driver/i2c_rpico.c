@@ -4,7 +4,7 @@
  *
  * Drives the I2C1 controller in master mode to communicate with the STM32
  * keyboard controller on the PicoCalc board.  Pin assignments are defined
- * in src/target/pico1calc/pico1calc.h.
+ * in src/target/pico1calc/kernel/core/pico1calc.h.
  *
  * Bus speed: 10 kHz (critical for STM32 stability per PicoCalc hardware spec).
  * External 4.7kΩ pull-ups on GP6/GP7 (mainboard V2.0).
@@ -19,7 +19,7 @@
 #include "kernel/common/config.h"
 #include "kernel/core/driver/i2c.h"
 #include "kernel/common/spinlock.h"
-#include "target/pico1calc/pico1calc.h"
+#include "target/pico1calc/kernel/core/pico1calc.h"
 #include "target/rpico.h"
 
 /* ── I2C1 (DW_apb_i2c) ──────────────────────────────────────────────────── */

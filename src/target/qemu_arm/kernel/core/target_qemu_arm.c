@@ -9,7 +9,7 @@
 #include "kernel/core/driver/blkdev.h"
 #include "kernel/core/driver/ramblk.h"
 #include "kernel/core/driver/uart.h"
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 
@@ -23,10 +23,10 @@ extern const uint8_t __fatimg_end[];
 
 void target_early_init(void) {
   uart_init();
-  klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
-  klog("PiPAPo booting... [qemu_arm]\n");
-  klog("UART: CMSDK UART0 @ 0x40004000\n");
-  klog("Clock: emulated (no PLL)\n");
+  mod_vfs.klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
+  mod_vfs.klogf("PiPAPo booting... [qemu_arm]\n");
+  mod_vfs.klogf("UART: CMSDK UART0 @ 0x40004000\n");
+  mod_vfs.klogf("Clock: emulated (no PLL)\n");
   /* No PLL, no SPI */
 }
 
@@ -36,10 +36,10 @@ void target_late_init(void) {
   if (fatimg_size >= BLKDEV_SECTOR_SIZE) {
     int rc = ramblk_init(__fatimg_start, fatimg_size);
     if (rc >= 0)
-      klogf("BLKDEV: ramblk mmcblk0 (FAT32 image, %u KB)\n",
+      mod_vfs.klogf("BLKDEV: ramblk mmcblk0 (FAT32 image, %u KB)\n",
             fatimg_size / 1024);
     else
-      klog("BLKDEV: ramblk init FAILED\n");
+      mod_vfs.klogf("BLKDEV: ramblk init FAILED\n");
   } else {
     /* No FAT32 image — use test pattern (4 KB = 8 sectors) */
     proc_image_segment_t image_region;
@@ -53,11 +53,11 @@ void target_late_init(void) {
       __builtin_memset(test_img, 0xAA, BLKDEV_SECTOR_SIZE);
       int rc = ramblk_init(test_img, PAGE_SIZE);
       if (rc >= 0)
-        klog("BLKDEV: ramblk mmcblk0 (test, 8 sectors)\n");
+        mod_vfs.klogf("BLKDEV: ramblk mmcblk0 (test, 8 sectors)\n");
       else
-        klog("BLKDEV: ramblk init FAILED\n");
+        mod_vfs.klogf("BLKDEV: ramblk init FAILED\n");
     } else {
-      klog("BLKDEV: test image alloc failed\n");
+      mod_vfs.klogf("BLKDEV: test image alloc failed\n");
     }
   }
   /* No MPU, no Core 1 on QEMU */

@@ -19,7 +19,7 @@
 
 #include "lcd_panel.h"
 
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "spi_lcd.h"
 
 /* ── Timing helper ─────────────────────────────────────────────────────── */
@@ -80,7 +80,7 @@ void lcd_init(void) {
   spi_lcd_cmd(CMD_SWRESET);
   delay_ms(120);
   if (!spi_lcd_ok()) {
-    klog("LCD: fail @ SWRESET\n");
+    mod_vfs.klogf("LCD: fail @ SWRESET\n");
     return;
   }
 
@@ -88,7 +88,7 @@ void lcd_init(void) {
   lcd_cmd(CMD_CMDSET, (const uint8_t[]){0xC3}, 1);
   lcd_cmd(CMD_CMDSET, (const uint8_t[]){0x96}, 1);
   if (!spi_lcd_ok()) {
-    klog("LCD: fail @ vendor unlock\n");
+    mod_vfs.klogf("LCD: fail @ vendor unlock\n");
     return;
   }
 
@@ -103,7 +103,7 @@ void lcd_init(void) {
   /* 8. Entry mode set */
   lcd_cmd(CMD_ETMOD, (const uint8_t[]){0xC6}, 1);
   if (!spi_lcd_ok()) {
-    klog("LCD: fail @ config\n");
+    mod_vfs.klogf("LCD: fail @ config\n");
     return;
   }
 
@@ -113,7 +113,7 @@ void lcd_init(void) {
   lcd_cmd(CMD_PWRCTL3, (const uint8_t[]){0xA7}, 1);
   lcd_cmd(CMD_VMCTRL1, (const uint8_t[]){0x04}, 1);
   if (!spi_lcd_ok()) {
-    klog("LCD: fail @ power\n");
+    mod_vfs.klogf("LCD: fail @ power\n");
     return;
   }
 
@@ -121,7 +121,7 @@ void lcd_init(void) {
   lcd_cmd(0xE8,
           (const uint8_t[]){0x40, 0x8A, 0x00, 0x00, 0x29, 0x19, 0xAA, 0x33}, 8);
   if (!spi_lcd_ok()) {
-    klog("LCD: fail @ timing\n");
+    mod_vfs.klogf("LCD: fail @ timing\n");
     return;
   }
 
@@ -131,7 +131,7 @@ void lcd_init(void) {
                             0x4C, 0x37, 0x13, 0x14, 0x2B, 0x31},
           14);
   if (!spi_lcd_ok()) {
-    klog("LCD: fail @ pgamma\n");
+    mod_vfs.klogf("LCD: fail @ pgamma\n");
     return;
   }
 
@@ -141,7 +141,7 @@ void lcd_init(void) {
                             0x4C, 0x37, 0x13, 0x13, 0x2C, 0x32},
           14);
   if (!spi_lcd_ok()) {
-    klog("LCD: fail @ ngamma\n");
+    mod_vfs.klogf("LCD: fail @ ngamma\n");
     return;
   }
 
@@ -155,7 +155,7 @@ void lcd_init(void) {
   /* 15. Set full 320×320 address window */
   spi_lcd_set_window(0, 0, LCD_WIDTH - 1, LCD_HEIGHT - 1);
   if (!spi_lcd_ok()) {
-    klog("LCD: fail @ window\n");
+    mod_vfs.klogf("LCD: fail @ window\n");
     return;
   }
 
@@ -167,17 +167,17 @@ void lcd_init(void) {
   spi_lcd_cmd(CMD_DISPON);
   delay_ms(120);
   if (!spi_lcd_ok()) {
-    klog("LCD: fail @ dispon\n");
+    mod_vfs.klogf("LCD: fail @ dispon\n");
     return;
   }
 
   /* 18. Fill screen white (diagnostic) */
   lcd_fill_rect(0, 0, LCD_WIDTH, LCD_HEIGHT, 0xFFFF);
   if (!spi_lcd_ok()) {
-    klog("LCD: fail @ fill\n");
+    mod_vfs.klogf("LCD: fail @ fill\n");
     return;
   }
-  klog("LCD: init complete, fill done\n");
+  mod_vfs.klogf("LCD: init complete, fill done\n");
 }
 
 void lcd_fill_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h,

@@ -18,7 +18,6 @@
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/exec/exec.h"
 #include "kernel/common/mod/mod_vfs.h"
-#include "kernel/core/klog.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"

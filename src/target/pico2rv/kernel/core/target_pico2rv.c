@@ -9,9 +9,9 @@
 #include "pico2rv.h"
 #include "kernel/common/config.h"
 #include "kernel/core/driver/uart.h"
-#include "kernel/core/driver/arch/riscv/uart_rp2350.h"
+#include "kernel/core/driver/uart_rp2350.h"
 #include "kernel/core/driver/clock.h"
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "target/rpico.h"
 
 #ifdef PPAP_TESTS
@@ -103,14 +103,14 @@ void target_early_init(void)
     }
 
     uart_init();
-    klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
+    mod_vfs.klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
     /* No bytes have been emitted yet, so there is nothing to drain here.
      * On Hazard3, UART_FR.BUSY can remain set spuriously and hang boot if we
      * spin on uart_tx_drain() before the first write. */
     clock_init_pll();          /* switch clk_sys to PLL (PPAP_SYS_HZ)      */
     uart_reinit_pll();         /* set PLL-speed baud divisors               */
-    klog("PiPAPo booting... [pico2rv]\n");
-    klogf("System clock: %u MHz\n", PPAP_SYS_HZ / 1000000u);
+    mod_vfs.klogf("PiPAPo booting... [pico2rv]\n");
+    mod_vfs.klogf("System clock: %u MHz\n", PPAP_SYS_HZ / 1000000u);
     /* No SPI init — pico2rv has no SD card slot */
 }
 

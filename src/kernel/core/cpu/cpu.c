@@ -9,7 +9,7 @@
 
 #include <stddef.h>
 
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 
 #ifdef PPAP_ENABLE_ECPU_Z80
 #include "kernel/core/cpu/ecpu_z80.h"
@@ -41,13 +41,13 @@ const cpu_ops_t *cpu_ops_for_arch(int arch_id) {
 /* ── Boot log ──────────────────────────────────────────────────────────── */
 
 void cpu_init(void) {
-  klogf("CPU: %s", native_cpu_ops.name);
+  mod_vfs.klogf("CPU: %s", native_cpu_ops.name);
 
   int first = 1;
   for (int i = 0; cpu_ops_registry[i] != NULL; i++) {
     if (cpu_ops_registry[i] == &native_cpu_ops) continue;
-    klogf("%s %s", first ? " + emulated" : ",", cpu_ops_registry[i]->name);
+    mod_vfs.klogf("%s %s", first ? " + emulated" : ",", cpu_ops_registry[i]->name);
     first = 0;
   }
-  klog("\n");
+  mod_vfs.klogf("\n");
 }

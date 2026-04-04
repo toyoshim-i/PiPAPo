@@ -3,7 +3,7 @@
  *
  * Drives the Synopsys DesignWare I2C1 controller on the RP2040 to
  * communicate with the STM32 keyboard controller on the PicoCalc board.
- * Pin assignments come from src/target/pico1calc/pico1calc.h.
+ * Pin assignments come from src/target/pico1calc/kernel/core/pico1calc.h.
  *
  * Usage:
  *   i2c_init()                          — initialise I2C1 at 10 kHz

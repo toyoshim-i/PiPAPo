@@ -8,7 +8,7 @@
 
 #include <stdint.h>
 
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/subsys/subsys.h"
 #ifdef PPAP_ENABLE_HUMAN68K
@@ -133,18 +133,18 @@ int m68k_crash_handler(int fault_type, uint32_t *regs) {
   int sig = fault_signal(fault_type);
 
   /* Print crash report (klogf supports: %s %u %x %% only) */
-  klogf("\n*** %s ***", fault_name(fault_type));
-  if (p) klogf("  Process %u (%s)", (unsigned)p->pid, p->comm);
-  klogf("  PC=%lx  SR=%lx", (unsigned long)pc, (unsigned long)(uint32_t)sr);
-  if (is_group0) klogf("  Fault addr=%lx  FC=%lx", (unsigned long)fault_addr, (unsigned long)(uint32_t)exc[0]);
-  klogf("  d0=%lx d1=%lx d2=%lx d3=%lx", (unsigned long)regs[0], (unsigned long)regs[1], (unsigned long)regs[2], (unsigned long)regs[3]);
-  klogf("  d4=%lx d5=%lx d6=%lx d7=%lx", (unsigned long)regs[4], (unsigned long)regs[5], (unsigned long)regs[6], (unsigned long)regs[7]);
-  klogf("  a0=%lx a1=%lx a2=%lx a3=%lx", (unsigned long)regs[8], (unsigned long)regs[9], (unsigned long)regs[10], (unsigned long)regs[11]);
-  klogf("  a4=%lx a5=%lx a6=%lx", (unsigned long)regs[12], (unsigned long)regs[13], (unsigned long)regs[14]);
+  mod_vfs.klogf("\n*** %s ***", fault_name(fault_type));
+  if (p) mod_vfs.klogf("  Process %u (%s)", (unsigned)p->pid, p->comm);
+  mod_vfs.klogf("  PC=%lx  SR=%lx", (unsigned long)pc, (unsigned long)(uint32_t)sr);
+  if (is_group0) mod_vfs.klogf("  Fault addr=%lx  FC=%lx", (unsigned long)fault_addr, (unsigned long)(uint32_t)exc[0]);
+  mod_vfs.klogf("  d0=%lx d1=%lx d2=%lx d3=%lx", (unsigned long)regs[0], (unsigned long)regs[1], (unsigned long)regs[2], (unsigned long)regs[3]);
+  mod_vfs.klogf("  d4=%lx d5=%lx d6=%lx d7=%lx", (unsigned long)regs[4], (unsigned long)regs[5], (unsigned long)regs[6], (unsigned long)regs[7]);
+  mod_vfs.klogf("  a0=%lx a1=%lx a2=%lx a3=%lx", (unsigned long)regs[8], (unsigned long)regs[9], (unsigned long)regs[10], (unsigned long)regs[11]);
+  mod_vfs.klogf("  a4=%lx a5=%lx a6=%lx", (unsigned long)regs[12], (unsigned long)regs[13], (unsigned long)regs[14]);
 
   /* Kernel fault → unrecoverable */
   if (!p || p->pid == 0) {
-    klogf("  Kernel fault — halting.");
+    mod_vfs.klogf("  Kernel fault — halting.");
     return 0;
   }
 
@@ -165,13 +165,13 @@ int m68k_crash_handler(int fault_type, uint32_t *regs) {
   sighandler_t handler = p->sig_handlers[sig];
   if (handler != (sighandler_t)0 /* SIG_DFL */ &&
       handler != (sighandler_t)1 /* SIG_IGN */) {
-    klogf("  Signal %lu posted (handler at %lx)", (unsigned long)(uint32_t)sig,
+    mod_vfs.klogf("  Signal %lu posted (handler at %lx)", (unsigned long)(uint32_t)sig,
           (unsigned long)(uintptr_t)handler);
     p->sig_pending |= (1u << sig);
     return 1; /* resume — signal_check will deliver the handler */
   }
 
-  klogf("  Killed (exit status %lu)", (unsigned long)(uint32_t)(128 + sig));
+  mod_vfs.klogf("  Killed (exit status %lu)", (unsigned long)(uint32_t)(128 + sig));
   sys_exit(128 + sig);
   return 1;
 }

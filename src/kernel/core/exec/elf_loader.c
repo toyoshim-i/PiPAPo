@@ -9,7 +9,7 @@
 #include "kernel/core/arch.h"
 #include "elf.h"
 #include "common/errno.h"
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
@@ -206,7 +206,7 @@ static int elf_reloc_arch(const elf_reloc_ctx_t *ctx, elf_load_result_t *out) {
           *target = riscv_resolve_addr(ctx, (uint32_t)r_addend);
           continue;
         }
-        klogf("ELF: unhandled RISCV reloc type %lu at offset %lx\n",
+        mod_vfs.klogf("ELF: unhandled RISCV reloc type %lu at offset %lx\n",
               (unsigned long)r_type, (unsigned long)r_offset);
         return -(int)ENOEXEC;
       }
@@ -271,7 +271,7 @@ static int apply_relocations(const elf32_ehdr_t *ehdr,
     if ((cpu_ops->arch_id == CPU_ARCH_M68K && rtype != R_68K_RELATIVE) ||
         (cpu_ops->arch_id == CPU_ARCH_ARM && rtype != R_ARM_RELATIVE) ||
         (cpu_ops->arch_id == CPU_ARCH_ARMV6 && rtype != R_ARM_RELATIVE)) {
-      klogf("ELF: unhandled reloc type %lu at offset %lx\n", (unsigned long)rtype, (unsigned long)r_offset);
+      mod_vfs.klogf("ELF: unhandled reloc type %lu at offset %lx\n", (unsigned long)rtype, (unsigned long)r_offset);
       return -1;
     }
     uint32_t off = r_offset;

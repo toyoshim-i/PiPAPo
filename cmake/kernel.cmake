@@ -57,7 +57,6 @@ set(ARCH_XTENSA_SOURCES
 set(KERNEL_SHARED_SOURCES_BASE
     ${_KS_ROOT}/src/target/target_default.c
     ${_KS_ROOT}/src/kernel/core/main.c
-    ${_KS_ROOT}/src/kernel/core/klog.c
     ${_KS_ROOT}/src/kernel/common/mod/mod_core.c
     ${_KS_ROOT}/src/kernel/core/mm/page.c
     ${_KS_ROOT}/src/kernel/core/mm/kmem.c
@@ -75,6 +74,7 @@ set(KERNEL_SHARED_SOURCES_BASE
     ${_KS_ROOT}/src/kernel/vfs/tty.c
     ${_KS_ROOT}/src/kernel/vfs/pipe.c
     ${_KS_ROOT}/src/kernel/core/signal/signal.c
+    ${_KS_ROOT}/src/kernel/vfs/klog.c
     ${_KS_ROOT}/src/kernel/vfs/vfs.c
     ${_KS_ROOT}/src/kernel/vfs/namei.c
     ${_KS_ROOT}/src/kernel/vfs/romfs.c

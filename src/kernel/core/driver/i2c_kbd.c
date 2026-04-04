@@ -16,7 +16,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "i2c.h"
 
 /* ── STM32 I2C address and registers ────────────────────────────────────── */
@@ -197,11 +197,11 @@ void kbd_init(void) {
   uint8_t ver = 0;
   int rc = i2c_read_reg(KBD_ADDR, REG_ID_VER, &ver, 1);
   if (rc < 0) {
-    klog("KBD: STM32 not responding on I2C1\n");
+    mod_vfs.klogf("KBD: STM32 not responding on I2C1\n");
     return;
   }
   kbd_detected = 1;
-  klogf("KBD: STM32 firmware version %u\n", (unsigned)ver);
+  mod_vfs.klogf("KBD: STM32 firmware version %u\n", (unsigned)ver);
 
   /* Drain any stale FIFO entries */
   for (int i = 0; i < 16; i++) {

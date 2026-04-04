@@ -66,25 +66,6 @@ MOD_DECLARE_BEGIN(core)
                                      uint32_t, uint32_t)
 
   /*
-   * klog — Output a static string to the kernel log.
-   *
-   *   msg   Null-terminated message.
-   *
-   * Acquires SPIN_UART for atomic, non-interleaved SMP output.
-   */
-  MOD_FUNC(core, void, klog, const char *)
-
-  /*
-   * klogf — Formatted kernel log output (printf-like).
-   *
-   *   fmt   Format string (%s, %u, %x, %lu, %lx, %%).
-   *   ...   Arguments matching format specifiers.
-   *
-   * Converts '\n' to '\r\n'.  Holds SPIN_UART for atomicity.
-   */
-  MOD_FUNC(core, void, klogf, const char *, ...)
-
-  /*
    * kmem_alloc — Allocate one object from a slab pool in O(1).
    *
    *   pool  Initialized slab pool.

@@ -32,7 +32,7 @@
 #include "kernel/core/arch.h"
 #include "kernel/core/ioregs.h"
 #include "kernel/common/config.h"
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/mpu.h" /* mpu_init */
 #include "kernel/core/mm/page.h"
@@ -137,7 +137,7 @@ void core1_sched_entry(void) {
   pcb_t *idle = proc_alloc();
   proc_image_segment_t idle_stack_region;
   if (!idle) {
-    klog("SMP: Core 1 idle alloc FAILED\n");
+    mod_vfs.klogf("SMP: Core 1 idle alloc FAILED\n");
     for (;;) arch_wfi();
   }
   if (mem_region_alloc(&idle_stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
@@ -146,7 +146,7 @@ void core1_sched_entry(void) {
   else
     idle->stack_page_id = PAGE_ID_INVALID;
   if (idle->stack_page_id == PAGE_ID_INVALID) {
-    klog("SMP: Core 1 stack alloc FAILED\n");
+    mod_vfs.klogf("SMP: Core 1 stack alloc FAILED\n");
     for (;;) arch_wfi();
   }
   idle->state = PROC_RUNNABLE;
@@ -171,7 +171,7 @@ void core1_sched_entry(void) {
   SYST_CVR = 0u;
   SYST_CSR = SYST_CSR_ENABLE | SYST_CSR_TICKINT | SYST_CSR_CLKSOURCE;
 
-  klog("SMP: Core 1 scheduler started\n");
+  mod_vfs.klogf("SMP: Core 1 scheduler started\n");
 
   /* 6. Enable interrupts and enter idle loop.
    * PendSV switches to a RUNNABLE process when one becomes available. */
@@ -220,7 +220,7 @@ void core1_launch(void (*entry)(void)) {
    */
   uint32_t partno = SCB_CPUID & CPUID_PARTNO_MASK;
   if (partno != CPUID_PARTNO_M0P && partno != CPUID_PARTNO_M33) {
-    klog("SMP: unknown CPU (QEMU?): skipping Core 1 launch\n");
+    mod_vfs.klogf("SMP: unknown CPU (QEMU?): skipping Core 1 launch\n");
     return;
   }
 
@@ -238,7 +238,7 @@ void core1_launch(void (*entry)(void)) {
                        PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) == 0)
     stack_page = launch_stack_region.base;
   if (!stack_page) {
-    klog("SMP: Core 1 launch stack alloc FAILED\n");
+    mod_vfs.klogf("SMP: Core 1 launch stack alloc FAILED\n");
     return;
   }
   uint32_t sp = (uint32_t)(uintptr_t)stack_page + PAGE_SIZE;
@@ -284,5 +284,5 @@ void core1_launch(void (*entry)(void)) {
       i = 0; /* mismatch → restart handshake */
   }
 
-  klog("SMP: Core 1 launched\n");
+  mod_vfs.klogf("SMP: Core 1 launched\n");
 }

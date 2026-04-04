@@ -7,7 +7,6 @@
  * — see src/target/target.h.
  */
 
-#include "kernel/core/klog.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
@@ -45,7 +44,7 @@ void kmain(void) {
   {
     int err = mem_region_init();
     if (err < 0) {
-      klogf("PANIC: mem_region_init failed (%d)\n", err);
+      mod_vfs.klogf("PANIC: mem_region_init failed (%d)\n", err);
       for (;;) arch_wfi();
     }
   }
@@ -96,13 +95,13 @@ void kmain(void) {
    * target (e.g. x68k mounts a UFS ramdisk loaded by stage2). */
   if (&__romfs_start[0] != &__romfs_end[0]) {
     if (mod_vfs.mount_romfs("/", MNT_RDONLY, __romfs_start) == 0)
-      klog("VFS: romfs mounted at /\n");
+      mod_vfs.klogf("VFS: romfs mounted at /\n");
     else
-      klog("VFS: romfs mount FAILED\n");
+      mod_vfs.klogf("VFS: romfs mount FAILED\n");
   } else if (target_mount_rootfs() == 0) {
-    klog("VFS: rootfs mounted\n");
+    mod_vfs.klogf("VFS: rootfs mounted\n");
   } else {
-    klog("VFS: rootfs mount FAILED\n");
+    mod_vfs.klogf("VFS: rootfs mount FAILED\n");
   }
 
   /* Parse /etc/fstab and mount all entries.
@@ -129,7 +128,7 @@ void kmain(void) {
   }
 #endif
   if (proc_table[0].stack_page_id == PAGE_ID_INVALID) {
-    klog("PANIC: no page for thread 0 stack\n");
+    mod_vfs.klogf("PANIC: no page for thread 0 stack\n");
     for (;;) arch_wfi();
   }
 
@@ -137,7 +136,7 @@ void kmain(void) {
    * e.g. m68k targets that don't have ELF user-mode binaries yet). */
   {
     const char *init_path = target_init_path();
-    klog("INIT: starting\n");
+    mod_vfs.klogf("INIT: starting\n");
     if (init_path) {
         pcb_t *init = proc_alloc();
       init->pgid = init->pid;
@@ -146,14 +145,14 @@ void kmain(void) {
 
       int exec_err = exec_execve(init, init_path, NULL);
       if (exec_err < 0) {
-        klogf("INIT: %s failed, trying /bin/sh\n", init_path);
+        mod_vfs.klogf("INIT: %s failed, trying /bin/sh\n", init_path);
         exec_err = exec_execve(init, "/bin/sh", NULL);
       }
       if (exec_err == 0) {
         init->state = PROC_RUNNABLE;
-        klogf("INIT: pid=%u loaded\n", init->pid);
+        mod_vfs.klogf("INIT: pid=%u loaded\n", init->pid);
       } else {
-        klogf("PANIC: no init or shell (err=%lu)\n", (unsigned long)(uint32_t)(-(int)exec_err));
+        mod_vfs.klogf("PANIC: no init or shell (err=%lu)\n", (unsigned long)(uint32_t)(-(int)exec_err));
         proc_free(init);
         for (;;) arch_wfi();
       }
@@ -170,7 +169,7 @@ void kmain(void) {
    * Self-stubs on QEMU (no SIO). */
   core1_launch(core1_sched_entry);
 
-  klog("SCHED: starting scheduler\n");
+  mod_vfs.klogf("SCHED: starting scheduler\n");
   sched_start();
 
   /* Run one immediate handoff so PID 1 starts without waiting for the

@@ -10,7 +10,6 @@
 #include "kernel/core/driver/pcxt_logger.h"
 #include "kernel/core/driver/timer_pit.h"
 #include "target/target.h"
-#include "kernel/core/klog.h"
 #include "kernel/common/core/seg.h"
 #include "kernel/core/driver/blkdev.h"
 #include "kernel/common/mod/mod_vfs.h"
@@ -59,8 +58,6 @@ static uint16_t far_read16(uint16_t seg, uint16_t off) {
 }
 
 /* Core entry point offsets (from core_entries.S, order matches mod_core.inc) */
-extern uint16_t klog_entry;
-extern uint16_t klogf_entry;
 extern uint16_t kmem_pool_init_entry;
 extern uint16_t kmem_alloc_entry;
 extern uint16_t kmem_free_entry;
@@ -82,7 +79,7 @@ extern uint16_t blkdev_write_entry;
 
 static void patch_vfs_fptrs(uint16_t vfs_seg) {
   if (far_read16(vfs_seg, 0) != VFS_HDR_MAGIC) {
-    klog("SEG: VFS header magic mismatch!\n");
+    mod_vfs.klogf("SEG: VFS header magic mismatch!\n");
     return;
   }
 
@@ -107,24 +104,22 @@ static void patch_vfs_fptrs(uint16_t vfs_seg) {
   cfp[(idx)*2+1] = core_seg
   PATCH_CORE( 0, blkdev_read);
   PATCH_CORE( 1, blkdev_write);
-  PATCH_CORE( 2, klog);
-  PATCH_CORE( 3, klogf);
-  PATCH_CORE( 4, kmem_alloc);
-  PATCH_CORE( 5, kmem_free);
-  PATCH_CORE( 6, kmem_free_count);
-  PATCH_CORE( 7, kmem_pool_init);
-  PATCH_CORE( 8, mem_region_alloc);
-  PATCH_CORE( 9, mem_region_free);
-  PATCH_CORE(10, mem_region_free_bytes);
-  PATCH_CORE(11, mem_region_page_alloc);
-  PATCH_CORE(12, mem_region_page_free);
-  PATCH_CORE(13, mem_region_page_read);
-  PATCH_CORE(14, mem_region_page_write);
-  PATCH_CORE(15, mem_region_total_bytes);
-  PATCH_CORE(16, sched_get_ticks);
-  PATCH_CORE(17, sched_wakeup);
-  PATCH_CORE(18, sched_switch);
-  PATCH_CORE(19, svc_set_restart);
+  PATCH_CORE( 2, kmem_alloc);
+  PATCH_CORE( 3, kmem_free);
+  PATCH_CORE( 4, kmem_free_count);
+  PATCH_CORE( 5, kmem_pool_init);
+  PATCH_CORE( 6, mem_region_alloc);
+  PATCH_CORE( 7, mem_region_free);
+  PATCH_CORE( 8, mem_region_free_bytes);
+  PATCH_CORE( 9, mem_region_page_alloc);
+  PATCH_CORE(10, mem_region_page_free);
+  PATCH_CORE(11, mem_region_page_read);
+  PATCH_CORE(12, mem_region_page_write);
+  PATCH_CORE(13, mem_region_total_bytes);
+  PATCH_CORE(14, sched_get_ticks);
+  PATCH_CORE(15, sched_wakeup);
+  PATCH_CORE(16, sched_switch);
+  PATCH_CORE(17, svc_set_restart);
 #undef PATCH_CORE
 }
 
@@ -147,7 +142,7 @@ static void seg_init_modules(void) {
     seg_register(MOD_ID_VFS, vfs_seg);
     patch_vfs_fptrs(vfs_seg);
 
-    klog("SEG: VFS module loaded\n");
+    mod_vfs.klogf("SEG: VFS module loaded\n");
   }
 }
 
@@ -208,12 +203,19 @@ static void install_int_debug(void) {
 
 void target_early_init(void)
 {
-  pcxt_logger_init();
-
+  uart_init();
   seg_init_modules();
   install_int_debug();
 
-  klog("Po booting... [pcxt]\n");
+  /* Logger registration deferred to VFS init (step 3 of uart_relocation
+   * plan).  mod_vfs.klog_set_logger() is not safe before VFS init on
+   * i16 — the far call reaches VFS code, but the static logger arrays
+   * may not be at a valid DS=0 address yet.
+   *
+   * TODO: move pcxt_logger_init() into a VFS-side target hook so that
+   * logger is registered during mod_vfs.init().  Until then, early boot
+   * messages are lost on pcxt (klogf output is silently discarded when
+   * no logger is registered). */
 }
 
 void target_late_init(void)
@@ -228,7 +230,7 @@ int target_mount_rootfs(void)
   floppy_blk_init();
   blkdev_t *bd = blkdev_find("fd0");
   if (!bd) {
-    klog("FLOPPY: fd0 not found\n");
+    mod_vfs.klogf("FLOPPY: fd0 not found\n");
     return -1;
   }
   int rc = mod_vfs.mount_ufs("/", MNT_RDONLY, bd);
@@ -249,7 +251,7 @@ void target_enable_deferred_timer(void)
   if (!pit_started) {
     timer_init();
     pit_started = 1;
-    klog("PIT: timer started\n");
+    mod_vfs.klogf("PIT: timer started\n");
   }
 }
 

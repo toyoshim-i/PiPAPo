@@ -43,10 +43,10 @@
  *
  * SRAM layout (total 264KB):
  *
- *   0x20000000  +-----------------------+  <- RAM_KERNEL  (24KB)
+ *   0x20000000  +-----------------------+  <- RAM_KERNEL  (25KB)
  *               | Kernel .data/.bss     |     Kernel globals, initial stack
  *               | Stack (grows down)    |
- *   0x20006000  +-----------------------+  <- RAM_PAGES   (200KB = 50 × 4KB)
+ *   0x20006400  +-----------------------+  <- RAM_PAGES   (199KB)
  *               | Page pool             |     User process pages (Phase 1+)
  *   0x20038000  +-----------------------+  <- RAM_IOBUF   (24KB)
  *               | I/O buffer            |     SD card DMA, FS metadata cache
@@ -66,8 +66,8 @@ MEMORY {
     FLASH_ROMFS  (r)   : ORIGIN = 0x10038000, LENGTH = 16M - 0x38000
 
     /* On-chip SRAM — 264KB total */
-    RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 24K
-    RAM_PAGES    (rwx) : ORIGIN = 0x20006000, LENGTH = 200K
+    RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 25K
+    RAM_PAGES    (rwx) : ORIGIN = 0x20006400, LENGTH = 199K
     RAM_IOBUF    (rw)  : ORIGIN = 0x20038000, LENGTH = 24K
     RAM_DMA      (rw)  : ORIGIN = 0x2003E000, LENGTH = 16K
 }
@@ -217,7 +217,7 @@ SECTIONS {
 
     /* Sanity check: kernel data + bss + stack must fit in 24KB */
     ASSERT((__stack_top <= ORIGIN(RAM_KERNEL) + LENGTH(RAM_KERNEL)),
-           "ERROR: Kernel data + bss + stack overflow RAM_KERNEL (24KB)")
+           "ERROR: Kernel data + bss + stack overflow RAM_KERNEL (25KB)")
 
     __flash_kernel_used = (LOADADDR(.ramfunc) + SIZEOF(.ramfunc)) - ORIGIN(FLASH_KERNEL);
     __flash_kernel_free = LENGTH(FLASH_KERNEL) - __flash_kernel_used;

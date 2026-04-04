@@ -7,10 +7,10 @@
 
 #include "target/target.h"
 #include "kernel/common/config.h"
-#include "kernel/core/driver/arch/arm_m/uart_rpico.h"
+#include "kernel/core/driver/uart_rpico.h"
 #include "kernel/core/driver/clock.h"
 #include "kernel/core/driver/uart.h"
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mpu.h"
 #include "pico1.h"
 
@@ -20,13 +20,13 @@
 
 void target_early_init(void) {
   uart_init();
-  klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
-  klog("PiPAPo booting... [pico1]\n");
-  klog("UART: 115200 bps @ 12 MHz XOSC\n");
+  mod_vfs.klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
+  mod_vfs.klogf("PiPAPo booting... [pico1]\n");
+  mod_vfs.klogf("UART: 115200 bps @ 12 MHz XOSC\n");
   uart_tx_drain();   /* drain at 12 MHz; also disables UART0 NVIC */
   clock_init_pll();  /* switch clk_sys to PLL (PPAP_SYS_HZ)      */
   uart_reinit_pll(); /* set PLL-speed baud divisors               */
-  klogf("System clock: %u MHz\n", PPAP_SYS_HZ / 1000000u);
+  mod_vfs.klogf("System clock: %u MHz\n", PPAP_SYS_HZ / 1000000u);
   /* No SPI init — pico1 has no SD card slot */
 }
 

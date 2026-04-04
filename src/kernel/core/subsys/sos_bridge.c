@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "common/ptrace.h"
+#include "common/fcntl.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/proc/proc.h"
 #include "common/errno.h"

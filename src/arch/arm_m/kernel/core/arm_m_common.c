@@ -12,7 +12,7 @@
 
 #include <stdint.h>
 
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/syscall/syscall.h"
 
@@ -153,29 +153,29 @@ void arm_crash_handler(uint32_t *psp_frame, uint32_t *callee_regs) {
       break;
   }
 
-  klogf("\n*** %s ***", signame);
-  if (p) klogf("  Process %u (%s)", (unsigned)p->pid, p->comm);
-  klogf("  PC=%lx  xPSR=%lx", (unsigned long)pc, (unsigned long)xpsr);
+  mod_vfs.klogf("\n*** %s ***", signame);
+  if (p) mod_vfs.klogf("  Process %u (%s)", (unsigned)p->pid, p->comm);
+  mod_vfs.klogf("  PC=%lx  xPSR=%lx", (unsigned long)pc, (unsigned long)xpsr);
 
   /* Print registers from the exception frame (r0-r3, r12, lr) */
-  klogf("  r0=%lx r1=%lx r2=%lx r3=%lx", (unsigned long)psp_frame[0], (unsigned long)psp_frame[1],
+  mod_vfs.klogf("  r0=%lx r1=%lx r2=%lx r3=%lx", (unsigned long)psp_frame[0], (unsigned long)psp_frame[1],
         (unsigned long)psp_frame[2], (unsigned long)psp_frame[3]);
-  klogf("  r12=%lx lr=%lx", (unsigned long)psp_frame[4], (unsigned long)psp_frame[5]);
+  mod_vfs.klogf("  r12=%lx lr=%lx", (unsigned long)psp_frame[4], (unsigned long)psp_frame[5]);
 
   /* Print callee-saved registers: layout on MSP is {r8,r9,r10,r11,r4,r5,r6,r7}
    */
-  klogf("  r4=%lx r5=%lx r6=%lx r7=%lx", (unsigned long)callee_regs[4], (unsigned long)callee_regs[5],
+  mod_vfs.klogf("  r4=%lx r5=%lx r6=%lx r7=%lx", (unsigned long)callee_regs[4], (unsigned long)callee_regs[5],
         (unsigned long)callee_regs[6], (unsigned long)callee_regs[7]);
-  klogf("  r8=%lx r9=%lx r10=%lx r11=%lx", (unsigned long)callee_regs[0], (unsigned long)callee_regs[1],
+  mod_vfs.klogf("  r8=%lx r9=%lx r10=%lx r11=%lx", (unsigned long)callee_regs[0], (unsigned long)callee_regs[1],
         (unsigned long)callee_regs[2], (unsigned long)callee_regs[3]);
 
   /* Kernel fault: process 0 is the idle thread running on PSP. */
   if (!p || p->pid == 0) {
-    klogf("  Kernel fault — halting.\n");
+    mod_vfs.klogf("  Kernel fault — halting.\n");
     while (1) __asm volatile("" ::: "memory");
   }
 
-  klogf("  Killed (exit status %lu)", (unsigned long)(uint32_t)(128 + sig));
+  mod_vfs.klogf("  Killed (exit status %lu)", (unsigned long)(uint32_t)(128 + sig));
   sys_exit(128 + sig);
 
   /* Patch the stacked PC so if PendSV doesn't tail-chain, the CPU won't

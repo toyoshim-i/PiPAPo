@@ -16,8 +16,6 @@
 #include "kernel/common/mod/module.h"
 
 /* Forward-declare the caller-side stubs from core_stubs.S. */
-void klog(const char *);
-void klogf(const char *, ...);
 void kmem_pool_init(kmem_pool_t *, void *, size_t, uint32_t);
 void *kmem_alloc(kmem_pool_t *);
 void kmem_free(kmem_pool_t *, void *);
@@ -39,8 +37,6 @@ uint32_t sched_get_ticks(void);
 void svc_set_restart(void);
 
 /* MOD_IMPL(core, X) expands to .X = core_X — alias stubs */
-#define core_klog                klog
-#define core_klogf               klogf
 #define core_kmem_pool_init      kmem_pool_init
 #define core_kmem_alloc          kmem_alloc
 #define core_kmem_free           kmem_free

@@ -79,6 +79,13 @@ vfs_\name\()_entry:
   .global vfs_tty_rx_notify
   .set vfs_tty_rx_notify, tty_rx_notify
 
+  /* klog functions — klog.c is in VFS, alias for MOD_IMPL naming */
+  .global vfs_klogf
+  .set vfs_klogf, klogf
+
+  .global vfs_klog_set_logger
+  .set vfs_klog_set_logger, klog_set_logger
+
 /* Generate all entry stubs from the .inc file */
 #define MOD_VFS_ENTRY(name, idx)  VFS_TARGET_STUB name
 #include "kernel/common/mod/mod_vfs.inc"

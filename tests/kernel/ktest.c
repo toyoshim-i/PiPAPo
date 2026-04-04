@@ -10,7 +10,7 @@
  */
 
 #include "ktest.h"
-#include "kernel/core/klog.h"
+#include "kernel/vfs/klog.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
@@ -107,7 +107,7 @@ static inline long ktest_sys_ppoll_time64(void *fds, uint32_t nfds,
 
 static void test_report(const char *name, int ok)
 {
-    klogf("TEST: %s ... %s\n", name, ok ? "PASS" : "FAIL");
+    mod_vfs.klogf("TEST: %s ... %s\n", name, ok ? "PASS" : "FAIL");
     if (ok)
         test_pass++;
     else
@@ -118,7 +118,7 @@ static void test_report(const char *name, int ok)
 
 static void vfs_integration_test(void)
 {
-    klog("\n=== Phase 2 Step 10: VFS integration tests ===\n");
+    mod_vfs.klogf("\n=== Phase 2 Step 10: VFS integration tests ===\n");
     test_pass = 0;
     test_fail = 0;
 
@@ -293,7 +293,7 @@ static void vfs_integration_test(void)
     }
 
     /* Summary */
-    klogf("=== Results: %u passed, %u failed ===\n\n",
+    mod_vfs.klogf("=== Results: %u passed, %u failed ===\n\n",
           (unsigned)test_pass, (unsigned)test_fail);
 }
 
@@ -301,7 +301,7 @@ static void vfs_integration_test(void)
 
 static void pipe_integration_test(void)
 {
-    klog("\n=== Phase 3 Step 7: Pipe integration tests ===\n");
+    mod_vfs.klogf("\n=== Phase 3 Step 7: Pipe integration tests ===\n");
     test_pass = 0;
     test_fail = 0;
 
@@ -403,7 +403,7 @@ static void pipe_integration_test(void)
     }
 
     /* Summary */
-    klogf("=== Pipe results: %u passed, %u failed ===\n\n",
+    mod_vfs.klogf("=== Pipe results: %u passed, %u failed ===\n\n",
           (unsigned)test_pass, (unsigned)test_fail);
 }
 
@@ -411,7 +411,7 @@ static void pipe_integration_test(void)
 
 static void dup_integration_test(void)
 {
-    klog("\n=== Phase 3 Step 8: dup/dup2 integration tests ===\n");
+    mod_vfs.klogf("\n=== Phase 3 Step 8: dup/dup2 integration tests ===\n");
     test_pass = 0;
     test_fail = 0;
 
@@ -498,7 +498,7 @@ static void dup_integration_test(void)
     }
 
     /* Summary */
-    klogf("=== dup/dup2 results: %u passed, %u failed ===\n\n",
+    mod_vfs.klogf("=== dup/dup2 results: %u passed, %u failed ===\n\n",
           (unsigned)test_pass, (unsigned)test_fail);
 }
 
@@ -506,7 +506,7 @@ static void dup_integration_test(void)
 
 static void brk_integration_test(void)
 {
-    klog("\n=== Phase 3 Step 9: brk integration tests ===\n");
+    mod_vfs.klogf("\n=== Phase 3 Step 9: brk integration tests ===\n");
     test_pass = 0;
     test_fail = 0;
 
@@ -543,7 +543,7 @@ static void brk_integration_test(void)
     current->user_pages[0] = PAGE_ID_INVALID;
 
     /* Summary */
-    klogf("=== brk results: %u passed, %u failed ===\n\n",
+    mod_vfs.klogf("=== brk results: %u passed, %u failed ===\n\n",
           (unsigned)test_pass, (unsigned)test_fail);
 }
 
@@ -554,7 +554,7 @@ static void dummy_sig_handler(int sig) { (void)sig; }
 
 static void signal_integration_test(void)
 {
-    klog("\n=== Phase 3 Step 10: signal integration tests ===\n");
+    mod_vfs.klogf("\n=== Phase 3 Step 10: signal integration tests ===\n");
     test_pass = 0;
     test_fail = 0;
 
@@ -601,7 +601,7 @@ static void signal_integration_test(void)
         current->sig_handlers[i] = (sighandler_t)0;
 
     /* Summary */
-    klogf("=== signal results: %u passed, %u failed ===\n\n",
+    mod_vfs.klogf("=== signal results: %u passed, %u failed ===\n\n",
           (unsigned)test_pass, (unsigned)test_fail);
 }
 
@@ -610,7 +610,7 @@ static void signal_integration_test(void)
 
 static void blkdev_integration_test(void)
 {
-    klog("\n=== Phase 4 Step 1: blkdev integration tests ===\n");
+    mod_vfs.klogf("\n=== Phase 4 Step 1: blkdev integration tests ===\n");
     test_pass = 0;
     test_fail = 0;
 
@@ -681,7 +681,7 @@ static void blkdev_integration_test(void)
     }
 
     /* Summary */
-    klogf("=== blkdev results: %u passed, %u failed ===\n\n",
+    mod_vfs.klogf("=== blkdev results: %u passed, %u failed ===\n\n",
           (unsigned)test_pass, (unsigned)test_fail);
 }
 
@@ -689,7 +689,7 @@ static void blkdev_integration_test(void)
 
 static void vfat_integration_test(void)
 {
-    klog("\n=== Phase 4 Step 9: VFAT integration tests ===\n");
+    mod_vfs.klogf("\n=== Phase 4 Step 9: VFAT integration tests ===\n");
     test_pass = 0;
     test_fail = 0;
 
@@ -835,7 +835,7 @@ static void vfat_integration_test(void)
     }
 
     /* Summary */
-    klogf("=== VFAT results: %u passed, %u failed ===\n\n",
+    mod_vfs.klogf("=== VFAT results: %u passed, %u failed ===\n\n",
           (unsigned)test_pass, (unsigned)test_fail);
 }
 
@@ -843,7 +843,7 @@ static void vfat_integration_test(void)
 
 static void loopback_integration_test(void)
 {
-    klog("\n=== Phase 5 Step 1: loopback integration tests ===\n");
+    mod_vfs.klogf("\n=== Phase 5 Step 1: loopback integration tests ===\n");
     test_pass = 0;
     test_fail = 0;
 
@@ -852,7 +852,7 @@ static void loopback_integration_test(void)
         vnode_t *vn = (void *)0;
         int rc = mod_vfs.lookup("/mnt/sd", &vn);
         if (rc < 0) {
-            klog("SKIP: /mnt/sd not mounted, cannot test loopback\n");
+            mod_vfs.klogf("SKIP: /mnt/sd not mounted, cannot test loopback\n");
             return;
         }
         mod_vfs.vnode_release(vn);
@@ -975,7 +975,7 @@ static void loopback_integration_test(void)
     }
 
     /* Summary */
-    klogf("Phase 5 Step 1 loopback: %u passed, %u failed\n",
+    mod_vfs.klogf("Phase 5 Step 1 loopback: %u passed, %u failed\n",
           (unsigned)test_pass, (unsigned)test_fail);
 
     /* testloop.bin is ROM-resident (from mkfatimg), no cleanup needed */
@@ -986,7 +986,7 @@ static void loopback_integration_test(void)
 
 static void tmpfs_integration_test(void)
 {
-    klog("\n=== Phase 5 Step 2: tmpfs integration tests ===\n");
+    mod_vfs.klogf("\n=== Phase 5 Step 2: tmpfs integration tests ===\n");
     test_pass = 0;
     test_fail = 0;
 
@@ -1124,7 +1124,7 @@ static void tmpfs_integration_test(void)
     sys_unlink("/tmp/big2.bin");
 
     /* Summary */
-    klogf("Phase 5 Step 2 tmpfs: %u passed, %u failed\n",
+    mod_vfs.klogf("Phase 5 Step 2 tmpfs: %u passed, %u failed\n",
           (unsigned)test_pass, (unsigned)test_fail);
 }
 
@@ -1133,7 +1133,7 @@ static void tmpfs_integration_test(void)
 
 static void ufs_integration_test(void)
 {
-    klog("\n=== Phase 5 Step 6: UFS read-only integration tests ===\n");
+    mod_vfs.klogf("\n=== Phase 5 Step 6: UFS read-only integration tests ===\n");
     test_pass = 0;
     test_fail = 0;
 
@@ -1144,7 +1144,7 @@ static void ufs_integration_test(void)
         int ok = (rc == 0 && S_ISREG(st.st_mode) && st.st_size > 0);
         test_report("stat /mnt/sd/testufs.img", ok);
         if (!ok) {
-            klog("SKIP: testufs.img not found\n");
+            mod_vfs.klogf("SKIP: testufs.img not found\n");
             return;
         }
     }
@@ -1223,23 +1223,23 @@ static void ufs_integration_test(void)
     }
 
     /* Summary */
-    klogf("Phase 5 Step 6 UFS: %u passed, %u failed\n",
+    mod_vfs.klogf("Phase 5 Step 6 UFS: %u passed, %u failed\n",
           (unsigned)test_pass, (unsigned)test_fail);
 
     /* ── Step 7: allocation self-test (requires UFS already mounted) ──── */
-    klog("\n=== Phase 5 Step 7: UFS allocation tests ===\n");
+    mod_vfs.klogf("\n=== Phase 5 Step 7: UFS allocation tests ===\n");
     {
         int alloc_pass = 0, alloc_fail = 0;
         ufs_alloc_selftest(&alloc_pass, &alloc_fail);
         test_pass += alloc_pass;
         test_fail += alloc_fail;
 
-        klogf("Phase 5 Step 7 UFS alloc: %u passed, %u failed\n",
+        mod_vfs.klogf("Phase 5 Step 7 UFS alloc: %u passed, %u failed\n",
               (unsigned)alloc_pass, (unsigned)alloc_fail);
     }
 
     /* ── Step 8: write/create/truncate tests ──────────────────────────── */
-    klog("\n=== Phase 5 Step 8: UFS write/create/truncate tests ===\n");
+    mod_vfs.klogf("\n=== Phase 5 Step 8: UFS write/create/truncate tests ===\n");
 
     /* 1. Create + write + read back */
     {
@@ -1333,11 +1333,11 @@ static void ufs_integration_test(void)
     }
 
     /* Summary */
-    klogf("Phase 5 Step 8 UFS write: %u passed, %u failed\n",
+    mod_vfs.klogf("Phase 5 Step 8 UFS write: %u passed, %u failed\n",
           (unsigned)test_pass, (unsigned)test_fail);
 
     /* ── Step 9: directory ops + links tests ──────────────────────────── */
-    klog("\n=== Phase 5 Step 9: UFS mkdir/unlink tests ===\n");
+    mod_vfs.klogf("\n=== Phase 5 Step 9: UFS mkdir/unlink tests ===\n");
 
     /* 1. mkdir /mnt/ufs/testdir */
     {
@@ -1409,7 +1409,7 @@ static void ufs_integration_test(void)
     }
 
     /* Summary */
-    klogf("Phase 5 Step 9 UFS dir ops: %u passed, %u failed\n",
+    mod_vfs.klogf("Phase 5 Step 9 UFS dir ops: %u passed, %u failed\n",
           (unsigned)test_pass, (unsigned)test_fail);
 }
 #endif /* PPAP_HAS_BLKDEV */
@@ -1418,7 +1418,7 @@ static void ufs_integration_test(void)
 
 static void fstab_integration_test(void)
 {
-    klog("\n=== Phase 5 Step 10: fstab integration tests ===\n");
+    mod_vfs.klogf("\n=== Phase 5 Step 10: fstab integration tests ===\n");
     test_pass = 0;
     test_fail = 0;
 
@@ -1459,7 +1459,7 @@ static void fstab_integration_test(void)
     }
 
     /* Summary */
-    klogf("Phase 5 Step 10 fstab: %u passed, %u failed\n",
+    mod_vfs.klogf("Phase 5 Step 10 fstab: %u passed, %u failed\n",
           (unsigned)test_pass, (unsigned)test_fail);
 }
 
@@ -1470,7 +1470,7 @@ struct test_pollfd { int fd; short events; short revents; };
 
 static void blocking_io_integration_test(void)
 {
-    klog("\n=== Phase 6 Step 16: blocking I/O integration tests ===\n");
+    mod_vfs.klogf("\n=== Phase 6 Step 16: blocking I/O integration tests ===\n");
     test_pass = 0;
     test_fail = 0;
 
@@ -1573,7 +1573,7 @@ static void blocking_io_integration_test(void)
     }
 
     /* Summary */
-    klogf("Phase 6 Step 16 blocking I/O: %u passed, %u failed\n",
+    mod_vfs.klogf("Phase 6 Step 16 blocking I/O: %u passed, %u failed\n",
           (unsigned)test_pass, (unsigned)test_fail);
 }
 
@@ -1581,7 +1581,7 @@ static void blocking_io_integration_test(void)
 
 static void smp_integration_test(void)
 {
-    klog("\n=== Phase 9 Step 14: SMP infrastructure tests ===\n");
+    mod_vfs.klogf("\n=== Phase 9 Step 14: SMP infrastructure tests ===\n");
     test_pass = 0;
     test_fail = 0;
 
@@ -1614,7 +1614,7 @@ static void smp_integration_test(void)
                 current->running_on_core >= 0);
 
     /* Summary */
-    klogf("Phase 9 Step 14 SMP: %u passed, %u failed\n",
+    mod_vfs.klogf("Phase 9 Step 14 SMP: %u passed, %u failed\n",
           (unsigned)test_pass, (unsigned)test_fail);
 }
 
@@ -1622,7 +1622,7 @@ static void smp_integration_test(void)
 
 static void orphan_reparent_test(void)
 {
-    klog("\n=== Phase 10 Step 1: orphan reparenting tests ===\n");
+    mod_vfs.klogf("\n=== Phase 10 Step 1: orphan reparenting tests ===\n");
     test_pass = 0;
     test_fail = 0;
 
@@ -1664,7 +1664,7 @@ static void orphan_reparent_test(void)
     proc_free(child);
     proc_free(parent);
 
-    klogf("Phase 10 Step 1 orphan: %u passed, %u failed\n",
+    mod_vfs.klogf("Phase 10 Step 1 orphan: %u passed, %u failed\n",
           (unsigned)test_pass, (unsigned)test_fail);
 }
 
@@ -1672,7 +1672,7 @@ static void orphan_reparent_test(void)
 
 static void oom_test(void)
 {
-    klog("\n=== Phase 10 Step 18: OOM ENOMEM test ===\n");
+    mod_vfs.klogf("\n=== Phase 10 Step 18: OOM ENOMEM test ===\n");
     test_pass = 0;
     test_fail = 0;
 
@@ -1707,7 +1707,7 @@ static void oom_test(void)
     /* Free count should be restored */
     test_report("free pages restored after free", page_free_count() == baseline_free);
 
-    klogf("Phase 10 OOM: %u passed, %u failed\n",
+    mod_vfs.klogf("Phase 10 OOM: %u passed, %u failed\n",
           (unsigned)test_pass, (unsigned)test_fail);
 }
 
@@ -1715,7 +1715,7 @@ static void oom_test(void)
 
 static void signal_stack_overflow_test(void)
 {
-    klog("\n=== Phase 10 Step 18: signal stack overflow test ===\n");
+    mod_vfs.klogf("\n=== Phase 10 Step 18: signal stack overflow test ===\n");
     test_pass = 0;
     test_fail = 0;
 
@@ -1753,7 +1753,7 @@ static void signal_stack_overflow_test(void)
     p->stack_page_id = PAGE_ID_INVALID;
     proc_free(p);
 
-    klogf("Phase 10 signal stack: %u passed, %u failed\n",
+    mod_vfs.klogf("Phase 10 signal stack: %u passed, %u failed\n",
           (unsigned)test_pass, (unsigned)test_fail);
 }
 
@@ -1817,11 +1817,11 @@ void ktest_run_all(void)
     total_pass += test_pass; total_fail += test_fail;
 
     /* Final summary */
-    klog("\n=== KERNEL TEST SUMMARY ===\n");
-    klogf("Total: %u passed, %u failed\n",
+    mod_vfs.klogf("\n=== KERNEL TEST SUMMARY ===\n");
+    mod_vfs.klogf("Total: %u passed, %u failed\n",
           (unsigned)total_pass, (unsigned)total_fail);
     if (total_fail == 0)
-        klog("ALL KERNEL TESTS PASSED\n");
+        mod_vfs.klogf("ALL KERNEL TESTS PASSED\n");
     else
-        klog("KERNEL TESTS FAILED\n");
+        mod_vfs.klogf("KERNEL TESTS FAILED\n");
 }

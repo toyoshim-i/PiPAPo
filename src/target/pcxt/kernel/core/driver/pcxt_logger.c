@@ -10,7 +10,7 @@
 #include "kernel/core/driver/bios_con.h"
 #include "kernel/core/driver/pcxt_logger.h"
 #include "kernel/core/driver/uart.h"
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 
 static int pcxt_logger_putc(char c, void (*notify)(void)) {
   if (!uart_putc(c, notify)) return 0;
@@ -21,7 +21,8 @@ static int pcxt_logger_putc(char c, void (*notify)(void)) {
 static void pcxt_logger_flush(void) {}
 
 void pcxt_logger_init(void) {
-  uart_init();
-  klog_set_logger(KLOG_LOGGER_PRIMARY, pcxt_logger_putc, pcxt_logger_flush);
-  klog_set_logger(KLOG_LOGGER_SECONDARY, NULL, NULL);
+  /* uart_init() is called separately before seg_init_modules() so that
+   * hardware is ready before mod_vfs far pointers are patched. */
+  mod_vfs.klog_set_logger(KLOG_LOGGER_PRIMARY, pcxt_logger_putc, pcxt_logger_flush);
+  mod_vfs.klog_set_logger(KLOG_LOGGER_SECONDARY, NULL, NULL);
 }

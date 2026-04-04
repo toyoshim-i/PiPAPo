@@ -7,7 +7,7 @@
 
 #include "target/target.h"
 #include "kernel/common/config.h"
-#include "kernel/core/driver/arch/arm_m/uart_rpico.h"
+#include "kernel/core/driver/uart_rpico.h"
 #include "kernel/core/driver/clock.h"
 #include "kernel/core/driver/fbcon.h"
 #include "kernel/core/driver/i2c.h"
@@ -22,7 +22,7 @@
 #include "kernel/vfs/devfs.h"
 #include "kernel/vfs/procfs.h"
 #include "kernel/core/proc/sched.h"
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mpu.h"
 #include "pico1calc.h"
 
@@ -142,48 +142,48 @@ static const tty_backend_t fbcon_backend = {
 
 void target_early_init(void) {
   uart_init();
-  klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
-  klog("PiPAPo booting... [pico1calc]\n");
-  klog("UART: 115200 bps @ 12 MHz XOSC\n");
-  klog("PLL: configuring...\n");
+  mod_vfs.klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
+  mod_vfs.klogf("PiPAPo booting... [pico1calc]\n");
+  mod_vfs.klogf("UART: 115200 bps @ 12 MHz XOSC\n");
+  mod_vfs.klogf("PLL: configuring...\n");
   uart_tx_drain();   /* drain at 12 MHz; also disables UART0 NVIC */
   clock_init_pll();  /* switch clk_sys to PLL (PPAP_SYS_HZ)      */
   uart_reinit_pll(); /* set PLL-speed baud divisors               */
-  klogf("System clock: %u MHz\n", PPAP_SYS_HZ / 1000000u);
+  mod_vfs.klogf("System clock: %u MHz\n", PPAP_SYS_HZ / 1000000u);
   spi_init(400000);
-  klog("SPI0: initialised at 400 kHz\n");
+  mod_vfs.klogf("SPI0: initialised at 400 kHz\n");
   /* Probe I2C first to detect PicoCalc carrier board (STM32 keyboard
    * controller).  LCD init is gated on this because PL022 SPI master
    * mode completes transfers even without a slave, so spi_lcd_ok()
    * cannot detect a missing LCD. */
   i2c_init();
-  klog("I2C1: initialised at 10 kHz\n");
+  mod_vfs.klogf("I2C1: initialised at 10 kHz\n");
   kbd_init();
   if (kbd_present()) {
     spi_lcd_init();
-    klog("SPI1: LCD initialised at 33 MHz\n");
+    mod_vfs.klogf("SPI1: LCD initialised at 33 MHz\n");
     lcd_init();
     if (!spi_lcd_ok())
-      klog("LCD: *** SPI timeout during init ***\n");
+      mod_vfs.klogf("LCD: *** SPI timeout during init ***\n");
     else
-      klog("LCD: ST7365P initialised (320x320 RGB565)\n");
+      mod_vfs.klogf("LCD: ST7365P initialised (320x320 RGB565)\n");
     fbcon_init();
-    klog("FBCON: text console initialised (40x20)\n");
-    klog_set_logger(KLOG_LOGGER_SECONDARY, fbcon_putc,
+    mod_vfs.klogf("FBCON: text console initialised (40x20)\n");
+    mod_vfs.klog_set_logger(KLOG_LOGGER_SECONDARY, fbcon_putc,
                     fbcon_flush_deferred);
-    klog("KLOG: output mirrored to LCD\n");
+    mod_vfs.klogf("KLOG: output mirrored to LCD\n");
     tty_set_backend(TTY_DISPLAY, &fbcon_backend);
     sched_set_input_poll(fbcon_avail_wrapper, TTY_DISPLAY);
     sched_set_display_poll(fbcon_poll_flush);
-    klog("TTY: backend switched to LCD+keyboard\n");
+    mod_vfs.klogf("TTY: backend switched to LCD+keyboard\n");
     devfs_set_backlight(bl_i2c_get, bl_i2c_set);
     bl_i2c_set(128);
-    klog("BACKLIGHT: set to 128/255\n");
+    mod_vfs.klogf("BACKLIGHT: set to 128/255\n");
     procfs_set_battery(bat_i2c_read);
     devfs_set_power(power_i2c_off);
-    klog("POWER: battery monitor and power-off registered\n");
+    mod_vfs.klogf("POWER: battery monitor and power-off registered\n");
   } else {
-    klog("PicoCalc peripherals not detected (skipping LCD/fbcon)\n");
+    mod_vfs.klogf("PicoCalc peripherals not detected (skipping LCD/fbcon)\n");
   }
 }
 
@@ -196,13 +196,13 @@ void target_late_init(void) {
 #if 0
     int rc = sd_init();
     if (rc == 0)
-        klog("SD: card initialised, mmcblk0 registered\n");
+        mod_vfs.klogf("SD: card initialised, mmcblk0 registered\n");
     else if (rc == -ENODEV)
-        klog("SD: no card detected (skipping)\n");
+        mod_vfs.klogf("SD: no card detected (skipping)\n");
     else
-        klogf("SD: init failed (err=%u)\n", (unsigned)(-(int)rc));
+        mod_vfs.klogf("SD: init failed (err=%u)\n", (unsigned)(-(int)rc));
 #else
-  klog("SD: disabled (SPI0 hang under investigation)\n");
+  mod_vfs.klogf("SD: disabled (SPI0 hang under investigation)\n");
 #endif
 
   while (uart_getc() >= 0)

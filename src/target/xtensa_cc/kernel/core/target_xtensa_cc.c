@@ -16,7 +16,7 @@
 
 #include "target/target.h"
 #include "xtensa_cc.h"
-#include "kernel/core/klog.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "sdkconfig.h"
 #include "kernel/core/cpu.h"
 #include "kernel/core/driver/uart.h"
@@ -68,7 +68,7 @@ static void IRAM_ATTR systimer_noop_isr(void *arg) { (void)arg; }
 
 void target_early_init(void)
 {
-    klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
+    mod_vfs.klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
     /* FIRST: patch the Xtensa interrupt dispatch table directly to replace
      * the default "xt_unhandled_interrupt" handler for CPU interrupt 12
      * (FreeRTOS's SYSTIMER tick) with our no-op.
@@ -103,8 +103,8 @@ void target_early_init(void)
     __asm__ volatile("wsr %0, intclear; rsync" :: "r"(0xFFFFFFFFu));
     __asm__ volatile("wsr %0, intenable; rsync" :: "r"(0));
 
-    klog("PiPAPo booting... [xtensa_cc]\n");
-    klogf("System clock: %lu MHz\n", (unsigned long)(PPAP_SYS_HZ / 1000000u));
+    mod_vfs.klogf("PiPAPo booting... [xtensa_cc]\n");
+    mod_vfs.klogf("System clock: %lu MHz\n", (unsigned long)(PPAP_SYS_HZ / 1000000u));
 }
 
 void target_late_init(void)
@@ -133,12 +133,12 @@ void target_late_init(void)
         extern volatile uint32_t xtensa_trap_ready;
 
         if (port_xSchedulerRunning[0] != 0u) {
-            klog("XT-3.4: forcing FreeRTOS scheduler handoff off\n");
+            mod_vfs.klogf("XT-3.4: forcing FreeRTOS scheduler handoff off\n");
             port_xSchedulerRunning[0] = 0u;
         }
 
         if (!xtensa_timer_ready || !xtensa_trap_ready) {
-            klog("PANIC: XT-3.4 ownership checks failed\n");
+            mod_vfs.klogf("PANIC: XT-3.4 ownership checks failed\n");
             for (;;)
                 __asm__ volatile ("waiti 15");
         }
@@ -147,7 +147,7 @@ void target_late_init(void)
             uint32_t intenable;
             __asm__ volatile("rsr %0, intenable" : "=a"(intenable));
             if (intenable != XTENSA_TIMER0_INTMASK) {
-                klogf("XT-3.4: normalize INTENABLE %lx -> %lx\n",
+                mod_vfs.klogf("XT-3.4: normalize INTENABLE %lx -> %lx\n",
                       (unsigned long)intenable, (unsigned long)XTENSA_TIMER0_INTMASK);
                 __asm__ volatile("wsr %0, intenable; rsync" ::
                                  "a"(XTENSA_TIMER0_INTMASK));

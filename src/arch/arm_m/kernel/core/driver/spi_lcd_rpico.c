@@ -9,14 +9,14 @@
  * still fills its RX FIFO on every transfer, so we must drain it to prevent
  * overflow.
  *
- * Pin assignments come from src/target/pico1calc/pico1calc.h.
+ * Pin assignments come from src/target/pico1calc/kernel/core/pico1calc.h.
  */
 
 #include <stdint.h>
 
 #include "kernel/common/config.h"
 #include "kernel/core/driver/spi_lcd.h"
-#include "target/pico1calc/pico1calc.h"
+#include "target/pico1calc/kernel/core/pico1calc.h"
 #include "target/rpico.h"
 
 /* ── SPI1 (PL022) ───────────────────────────────────────────────────────── */
