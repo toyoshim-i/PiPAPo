@@ -21,25 +21,30 @@ set(CMAKE_EXECUTABLE_SUFFIX .elf)
 
 # Select UART driver: semihosting (bkpt 0xAB) or CMSDK UART hardware
 if(PPAP_SEMIHOST)
-    set(UART_DRIVER ${PPAP_ROOT}/src/kernel/core/driver/arch/arm_m/semihost.c)
+    set(UART_DRIVER ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/semihost.c)
 else()
-    set(UART_DRIVER ${CMAKE_CURRENT_SOURCE_DIR}/drivers/uart_qemu.c)
+    set(UART_DRIVER ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/uart_qemu.c)
 endif()
 
 add_executable(ppap_qemu_arm
     ${KERNEL_COMMON_SOURCES}
     ${KERNEL_BLKDEV_SOURCES}
-    ${CMAKE_CURRENT_SOURCE_DIR}/target_qemu_arm.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_qemu_arm.c
     ${UART_DRIVER}
     ${PPAP_ROOT}/src/kernel/core/driver/ramblk.c
 )
 
 ppap_arm_target_common(ppap_qemu_arm)
 
+target_include_directories(ppap_qemu_arm PRIVATE
+    ${PPAP_ROOT}/src/arch/arm_m
+    ${PPAP_ROOT}/src/target/qemu_arm
+)
+
 target_compile_definitions(ppap_qemu_arm PRIVATE PPAP_QEMU=1 PPAP_HAS_BLKDEV=1 PPAP_HAS_PROCFS=1)
 
 target_link_options(ppap_qemu_arm PRIVATE
-    -T ${CMAKE_CURRENT_SOURCE_DIR}/qemu.ld
+    -T ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/qemu.ld
     -nostartfiles
     -Wl,--gc-sections
 )

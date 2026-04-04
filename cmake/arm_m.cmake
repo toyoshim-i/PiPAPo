@@ -33,6 +33,7 @@ function(ppap_arm_target_common target)
     target_include_directories(${target} PRIVATE
         ${PPAP_ROOT}/src
         ${PPAP_ROOT}/src/kernel
+        ${PPAP_ROOT}/src/arch/arm_m
     )
     
     # Warnings: treat as errors for project code (third-party is built externally)

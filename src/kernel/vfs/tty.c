@@ -27,14 +27,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../common/errno.h"           /* ENOTTY, EINTR */
-#include "../common/mod/mod_core.h"
-#include "../core/mm/mem_region.h"
-#include "../core/proc/proc.h"       /* proc_table, PROC_MAX, PROC_FREE */
-#include "../core/signal/signal.h"   /* SIGINT */
+#include "common/errno.h"           /* ENOTTY, EINTR */
+#include "common/mod/mod_core.h"
+#include "core/mm/mem_region.h"
+#include "core/proc/proc.h"       /* proc_table, PROC_MAX, PROC_FREE */
+#include "core/signal/signal.h"   /* SIGINT */
 #include "core/driver/uart.h"       /* uart_putc/getc/rx_avail for static init */
 #ifdef __ia16__
-#include "drivers/bios_con.h"
+#include "kernel/core/driver/bios_con.h"
 #endif
 #include "file.h"
 

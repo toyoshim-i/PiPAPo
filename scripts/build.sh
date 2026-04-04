@@ -145,10 +145,10 @@ case "$TARGET" in
             docker_run "$M68K_CROSS_IMAGE" bash -c "
                 mkdir -p /ppap/build/shared_m68k && \
                 M68K_CC=m68k-elf-gcc && \
-                M68K_LD=/ppap/src/user/arch/m68k/user.ld && \
+                M68K_LD=/ppap/src/arch/m68k/user/user.ld && \
                 M68K_LIBGCC=\$(\$M68K_CC -m68000 -print-libgcc-file-name) && \
                 \$M68K_CC -m68000 -c -o /ppap/build/shared_m68k/hello_m68k.o \
-                    /ppap/src/user/arch/m68k/hello.S && \
+                    /ppap/src/arch/m68k/user/hello.S && \
                 \$M68K_CC -m68000 -nostdlib -T \$M68K_LD \
                     -Wl,--gc-sections -Wl,--build-id=none \
                     -o /ppap/build/shared_m68k/hello_m68k.elf \
@@ -214,7 +214,7 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     export LD_LIBRARY_PATH="$XTENSA_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     XTENSA_DYNCONFIG="-mdynconfig=xtensa_esp32s3.so"
     MKROMFS="$PROJECT_DIR/tools/mkromfs/mkromfs"
-    USER_ARCH_DIR="$PROJECT_DIR/src/user/arch/xtensa"
+    USER_ARCH_DIR="$PROJECT_DIR/src/arch/xtensa/user"
 
     xtensa_xip_report() {
         local elf="$1"

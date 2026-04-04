@@ -18,8 +18,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../kernel/core/driver/blkdev.h"
-#include "../kernel/common/errno.h"
+#include "core/driver/blkdev.h"
+#include "common/errno.h"
 #include "common/config.h"
 #include "spi.h"
 

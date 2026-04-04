@@ -8,9 +8,9 @@
  * mod_vfs.lookup / mod_vfs.lookup_parent as before.
  */
 
-#include "../../common/errno.h"
-#include "../../common/mod/mod_vfs.h"
-#include "../proc/proc.h"
+#include "common/errno.h"
+#include "common/mod/mod_vfs.h"
+#include "core/proc/proc.h"
 #include "common/config.h"
 #include "syscall.h"
 

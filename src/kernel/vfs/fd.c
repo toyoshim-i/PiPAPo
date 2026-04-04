@@ -15,12 +15,12 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "../common/errno.h"
-#include "../common/mod/mod_core.h"
-#include "../common/mod/mod_vfs.h"
+#include "common/errno.h"
+#include "common/mod/mod_core.h"
+#include "common/mod/mod_vfs.h"
 #include "devfs.h"
-#include "../core/mm/mem_region.h"
-#include "../core/proc/proc.h" /* pcb_t — only for fd_stdio_init compat */
+#include "core/mm/mem_region.h"
+#include "core/proc/proc.h" /* pcb_t — only for fd_stdio_init compat */
 #include "common/config.h"
 
 /* ── System-wide file descriptor pool ──────────────────────────────────────── */

@@ -40,14 +40,19 @@ include(${PPAP_ROOT}/cmake/riscv.cmake)
 
 add_executable(ppap_pico2rv
     ${KERNEL_RISCV_COMMON_SOURCES}
-    ${PPAP_ROOT}/src/arch/riscv/stage1.S
-    ${CMAKE_CURRENT_SOURCE_DIR}/picobin_block.S
-    ${CMAKE_CURRENT_SOURCE_DIR}/target_pico2rv.c
-    ${PPAP_ROOT}/src/kernel/core/driver/arch/riscv/uart_rp2350.c
-    ${PPAP_ROOT}/src/kernel/core/driver/arch/arm_m/clock_rpico.c
+    ${PPAP_ROOT}/src/arch/riscv/boot/stage1.S
+    ${CMAKE_CURRENT_SOURCE_DIR}/boot/picobin_block.S
+    ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_pico2rv.c
+    ${PPAP_ROOT}/src/arch/riscv/kernel/core/driver/uart_rp2350.c
+    ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/clock_rpico.c
 )
 
 ppap_riscv_target_common(ppap_pico2rv)
+
+target_include_directories(ppap_pico2rv PRIVATE
+    ${PPAP_ROOT}/src/arch/riscv
+    ${PPAP_ROOT}/src/target/pico2rv
+)
 
 target_compile_definitions(ppap_pico2rv PRIVATE
     PPAP_HAS_PROCFS=1
@@ -63,7 +68,7 @@ target_link_libraries(ppap_pico2rv pico_base_headers hardware_regs)
 # No boot2 needed — RP2350 ROM handles QSPI/XIP setup natively
 
 target_link_options(ppap_pico2rv PRIVATE
-    -T ${CMAKE_CURRENT_SOURCE_DIR}/pico2rv.ld
+    -T ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/pico2rv.ld
     -nostartfiles
     -Wl,--gc-sections
 )

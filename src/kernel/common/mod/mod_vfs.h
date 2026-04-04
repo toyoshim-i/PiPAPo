@@ -22,8 +22,8 @@
 #define PPAP_KERNEL_MOD_MOD_VFS_H
 
 /* Full VFS type definitions */
-#include "../../vfs/vfs_types.h"
-#include "../../core/mm/page.h"
+#include "vfs/vfs_types.h"
+#include "core/mm/page.h"
 
 #include "module.h"
 

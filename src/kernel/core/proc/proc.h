@@ -20,10 +20,10 @@
 
 #include <stdint.h>
 
-#include "arch/arch.h"
-#include "../../common/spinlock.h" /* core_id() — needed by #define current */
-#include "../mm/mem_layout.h"
-#include "../mm/page.h"        /* page_id_t, PAGE_ID_INVALID */
+#include "common/arch.h"
+#include "common/spinlock.h" /* core_id() — needed by #define current */
+#include "core/mm/mem_layout.h"
+#include "core/mm/page.h"        /* page_id_t, PAGE_ID_INVALID */
 #include "common/ptrace.h"
 #include "common/config.h"
 

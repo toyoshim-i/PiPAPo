@@ -25,9 +25,9 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "../common/errno.h"
-#include "../common/mod/mod_core.h"
-#include "../core/proc/proc.h" /* current->cwd for relative path resolution */
+#include "common/errno.h"
+#include "common/mod/mod_core.h"
+#include "core/proc/proc.h" /* current->cwd for relative path resolution */
 #include "vfs.h"
 
 /* ── Path normalization ─────────────────────────────────────────────────────

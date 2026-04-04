@@ -20,8 +20,8 @@
 
 #include "ramblk.h"
 
-#include "../../common/errno.h"
-#include "../mm/page.h"
+#include "common/errno.h"
+#include "core/mm/page.h"
 #include "blkdev.h"
 
 /* ── Overlay ────────────────────────────────────────────────────────────── */

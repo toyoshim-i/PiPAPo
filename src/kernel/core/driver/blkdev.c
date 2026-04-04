@@ -7,7 +7,7 @@
 
 #include "blkdev.h"
 
-#include "../../common/errno.h"
+#include "common/errno.h"
 
 /* ── Registry ────────────────────────────────────────────────────────────── */
 

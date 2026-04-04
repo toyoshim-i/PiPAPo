@@ -21,7 +21,7 @@
 
 #include <stdarg.h>
 
-#include "arch/arch.h"
+#include "common/arch.h"
 #include "common/spinlock.h"
 
 /* ── Registered loggers ──────────────────────────────────────────────────── */

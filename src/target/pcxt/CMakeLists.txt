@@ -79,11 +79,12 @@ set(KERNEL_FLAGS ${COMMON_FLAGS})
 set(PPAP_INCLUDES
   ${PPAP_ROOT}/src
   ${PPAP_ROOT}/src/kernel
+  ${PPAP_ROOT}/src/arch/i16
   ${PPAP_ROOT}/src/target/pcxt
 )
 
 set(PCXT_USER_DIR ${PPAP_ROOT}/src/user)
-set(PCXT_USER_ARCH_DIR ${PPAP_ROOT}/src/user/arch/i16)
+set(PCXT_USER_ARCH_DIR ${PPAP_ROOT}/src/arch/i16/user)
 set(PCXT_TEST_DIR ${PPAP_ROOT}/tests/user)
 set(PCXT_USER_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/user)
 file(MAKE_DIRECTORY ${PCXT_USER_BUILD_DIR})
@@ -267,12 +268,12 @@ add_custom_command(TARGET stage2 POST_BUILD
 # ==========================================================================
 
 set(ARCH_I16_SOURCES
-  ${PPAP_ROOT}/src/arch/i16/boot.S
-  ${PPAP_ROOT}/src/arch/i16/switch.S
-  ${PPAP_ROOT}/src/arch/i16/trap.S
-  ${PPAP_ROOT}/src/arch/i16/i16_common.c
-  ${PPAP_ROOT}/src/arch/i16/smp.c
-  ${PPAP_ROOT}/src/arch/i16/string.c
+  ${PPAP_ROOT}/src/arch/i16/boot/boot.S
+  ${PPAP_ROOT}/src/arch/i16/kernel/core/switch.S
+  ${PPAP_ROOT}/src/arch/i16/kernel/core/trap.S
+  ${PPAP_ROOT}/src/arch/i16/kernel/core/i16_common.c
+  ${PPAP_ROOT}/src/arch/i16/kernel/core/smp.c
+  ${PPAP_ROOT}/src/arch/i16/kernel/core/string.c
 )
 
 set(KERNEL_CORE_SOURCES
@@ -305,16 +306,16 @@ set(KERNEL_CORE_SOURCES
 )
 
 set(TARGET_SOURCES
-  ${CMAKE_CURRENT_SOURCE_DIR}/target_pcxt.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/drivers/uart_com.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/drivers/floppy_blk.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/drivers/bios_con.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/drivers/pcxt_logger.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/drivers/timer_pit.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_pcxt.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/uart_com.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/floppy_blk.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/bios_con.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/pcxt_logger.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/timer_pit.c
   # Core-side stubs: caller stubs for VFS, entry stubs for core
-  ${CMAKE_CURRENT_SOURCE_DIR}/stubs/vfs_stubs.S
-  ${CMAKE_CURRENT_SOURCE_DIR}/stubs/core_entries.S
-  ${CMAKE_CURRENT_SOURCE_DIR}/stubs/vfs_mod_init.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/vfs_stubs.S
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/core_entries.S
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/vfs_mod_init.c
 )
 
 add_executable(ppap_pcxt
@@ -338,7 +339,7 @@ endif()
 target_compile_options(ppap_pcxt PRIVATE ${KERNEL_FLAGS})
 
 target_link_options(ppap_pcxt PRIVATE
-  -T ${CMAKE_CURRENT_SOURCE_DIR}/pcxt_kernel.ld
+  -T ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/pcxt_kernel.ld
   -nostartfiles
   -Wl,--gc-sections
 )
@@ -346,7 +347,7 @@ target_link_libraries(ppap_pcxt PRIVATE gcc)
 
 set_target_properties(ppap_pcxt PROPERTIES
   SUFFIX ".elf"
-  LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/pcxt_kernel.ld"
+  LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/pcxt_kernel.ld"
 )
 
 add_custom_command(TARGET ppap_pcxt POST_BUILD
@@ -372,19 +373,19 @@ set(KERNEL_VFS_SOURCES
   ${PPAP_ROOT}/src/kernel/vfs/procfs.c
   ${PPAP_ROOT}/src/kernel/vfs/fstab.c
   ${PPAP_ROOT}/src/kernel/vfs/ufs.c
-  ${PPAP_ROOT}/src/arch/i16/string.c
+  ${PPAP_ROOT}/src/arch/i16/kernel/core/string.c
 )
 
 add_executable(ppap_pcxt_vfs
   # Header must be first — contains entry point table at offset 0
-  ${CMAKE_CURRENT_SOURCE_DIR}/stubs/vfs_header.S
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/vfs_header.S
   ${KERNEL_VFS_SOURCES}
-  ${CMAKE_CURRENT_SOURCE_DIR}/drivers/uart_com.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/drivers/bios_con.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/uart_com.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/bios_con.c
   # VFS-side stubs: entry stubs for VFS, caller stubs for core
-  ${CMAKE_CURRENT_SOURCE_DIR}/stubs/vfs_entries.S
-  ${CMAKE_CURRENT_SOURCE_DIR}/stubs/core_stubs.S
-  ${CMAKE_CURRENT_SOURCE_DIR}/stubs/core_mod_init.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/vfs_entries.S
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/core_stubs.S
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/core_mod_init.c
 )
 
 target_include_directories(ppap_pcxt_vfs PRIVATE ${PPAP_INCLUDES})
@@ -401,7 +402,7 @@ if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/core_exports.ld")
     "/* auto-generated — will be replaced after core links */\n")
 endif()
 add_custom_target(core_exports_gen
-  COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/gen_core_exports.sh
+  COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/gen_core_exports.sh
     ${CMAKE_NM} ${CMAKE_CURRENT_BINARY_DIR}/ppap_pcxt.elf
     ${CMAKE_CURRENT_BINARY_DIR}/core_exports.ld
   DEPENDS ppap_pcxt
@@ -410,7 +411,7 @@ add_custom_target(core_exports_gen
 add_dependencies(ppap_pcxt_vfs core_exports_gen)
 
 target_link_options(ppap_pcxt_vfs PRIVATE
-  -T ${CMAKE_CURRENT_SOURCE_DIR}/pcxt_vfs.ld
+  -T ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/pcxt_vfs.ld
   -T ${CMAKE_CURRENT_BINARY_DIR}/core_exports.ld
   -nostartfiles
 )
@@ -418,7 +419,7 @@ target_link_libraries(ppap_pcxt_vfs PRIVATE gcc)
 
 set_target_properties(ppap_pcxt_vfs PROPERTIES
   SUFFIX ".elf"
-  LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/pcxt_vfs.ld"
+  LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/pcxt_vfs.ld"
 )
 
 # Extract VFS code (.text + .rodata) and data (.data) as separate binaries.
@@ -438,7 +439,7 @@ add_custom_command(TARGET ppap_pcxt_vfs POST_BUILD
 )
 
 add_custom_target(pcxt_memory_report ALL
-  COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/report_memory_usage.sh
+  COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/report_memory_usage.sh
     ${CMAKE_SIZE_UTIL}
     ${CMAKE_NM}
     ${CMAKE_CURRENT_BINARY_DIR}/ppap_pcxt.elf

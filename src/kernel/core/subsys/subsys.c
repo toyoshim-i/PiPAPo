@@ -8,8 +8,8 @@
 
 #include "subsys.h"
 
-#include "../../vfs/procfs.h"
-#include "../proc/proc.h" /* SUBSYS_xxx defines */
+#include "vfs/procfs.h"
+#include "core/proc/proc.h" /* SUBSYS_xxx defines */
 
 /* Forward declarations — conditionally compiled based on CMake flags */
 #ifdef PPAP_ENABLE_HUMAN68K

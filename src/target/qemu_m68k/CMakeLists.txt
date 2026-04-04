@@ -22,12 +22,17 @@ set(CMAKE_EXECUTABLE_SUFFIX .elf)
 add_executable(ppap_qemu_m68k
     ${ARCH_M68K_SOURCES}
     ${KERNEL_SHARED_SOURCES}
-    ${CMAKE_CURRENT_SOURCE_DIR}/target_qemu_m68k.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/drivers/uart_qemu_m68k.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/drivers/timer_qemu_m68k.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_qemu_m68k.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/uart_qemu_m68k.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/timer_qemu_m68k.c
 )
 
 ppap_m68k_target_common(ppap_qemu_m68k)
+
+target_include_directories(ppap_qemu_m68k PRIVATE
+    ${PPAP_ROOT}/src/arch/m68k
+    ${PPAP_ROOT}/src/target/qemu_m68k
+)
 
 target_compile_definitions(ppap_qemu_m68k PRIVATE
     PPAP_QEMU=1
@@ -44,7 +49,7 @@ target_compile_options(ppap_qemu_m68k PRIVATE
 )
 
 target_link_options(ppap_qemu_m68k PRIVATE
-    -T ${CMAKE_CURRENT_SOURCE_DIR}/qemu_m68k.ld
+    -T ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/qemu_m68k.ld
     -nostartfiles -nostdlib -nodefaultlibs
     -Wl,--gc-sections
     -Wl,--build-id=none

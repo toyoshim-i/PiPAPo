@@ -24,8 +24,8 @@
 #endif
 #include <stddef.h>
 
-#include "../klog.h"
-#include "../../common/spinlock.h"
+#include "core/klog.h"
+#include "common/spinlock.h"
 
 /* ── Linker-provided symbols ────────────────────────────────────────────────
  */

@@ -14,13 +14,13 @@
 
 #include <stddef.h> /* NULL, offsetof */
 
-#include "../../common/errno.h"
-#include "../klog.h"
-#include "../mm/mem_region.h"
-#include "../mm/page.h"  /* PAGE_SIZE — for proc_setup_stack */
-#include "../../common/spinlock.h" /* SPIN_PROC */
-#include "arch/arch.h"   /* arch_build_initial_frame */
-#include "arch/ioregs.h"
+#include "common/errno.h"
+#include "core/klog.h"
+#include "core/mm/mem_region.h"
+#include "core/mm/page.h"  /* PAGE_SIZE — for proc_setup_stack */
+#include "common/spinlock.h" /* SPIN_PROC */
+#include "common/arch.h"   /* arch_build_initial_frame */
+#include "common/ioregs.h"
 #include "sched.h" /* sched_get_ticks — for start_time */
 
 /* Default file creation mask (octal 022 → owner rw, group/other r) */

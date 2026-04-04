@@ -40,24 +40,29 @@ include(${PPAP_ROOT}/cmake/arm_m.cmake)
 
 add_executable(ppap_pico2
     ${KERNEL_COMMON_SOURCES}
-    ${PPAP_ROOT}/src/arch/arm_m/stage1.S
-    ${CMAKE_CURRENT_SOURCE_DIR}/picobin_block.S
-    ${CMAKE_CURRENT_SOURCE_DIR}/target_pico2.c
-    ${PPAP_ROOT}/src/kernel/core/driver/arch/arm_m/clock_rpico.c
+    ${PPAP_ROOT}/src/arch/arm_m/boot/stage1.S
+    ${CMAKE_CURRENT_SOURCE_DIR}/boot/picobin_block.S
+    ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_pico2.c
+    ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/clock_rpico.c
 )
 
 if(PPAP_SEMIHOST)
     target_sources(ppap_pico2 PRIVATE
-        ${PPAP_ROOT}/src/kernel/core/driver/arch/arm_m/semihost.c
+        ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/semihost.c
     )
     target_compile_definitions(ppap_pico2 PRIVATE PPAP_SEMIHOST=1)
 else()
     target_sources(ppap_pico2 PRIVATE
-        ${PPAP_ROOT}/src/kernel/core/driver/arch/arm_m/uart_rpico.c
+        ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/uart_rpico.c
     )
 endif()
 
 ppap_arm_target_common(ppap_pico2)
+
+target_include_directories(ppap_pico2 PRIVATE
+    ${PPAP_ROOT}/src/arch/arm_m
+    ${PPAP_ROOT}/src/target/pico2
+)
 
 target_compile_definitions(ppap_pico2 PRIVATE
     PPAP_HAS_PROCFS=1
@@ -73,7 +78,7 @@ target_link_libraries(ppap_pico2 pico_base_headers hardware_regs)
 # No boot2 needed — RP2350 ROM handles QSPI/XIP setup natively
 
 target_link_options(ppap_pico2 PRIVATE
-    -T ${CMAKE_CURRENT_SOURCE_DIR}/pico2.ld
+    -T ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/pico2.ld
     -nostartfiles
     -Wl,--gc-sections
 )

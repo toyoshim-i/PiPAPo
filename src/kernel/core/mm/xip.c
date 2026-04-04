@@ -28,8 +28,8 @@
 
 #include <stdint.h>
 
-#include "../klog.h"
-#include "arch/ioregs.h"
+#include "core/klog.h"
+#include "common/ioregs.h"
 
 /* Alias: xip.c uses CLKSOURCE name without _CPU suffix for brevity */
 #define SYST_CSR_CLKSOURCE_CPU SYST_CSR_CLKSOURCE

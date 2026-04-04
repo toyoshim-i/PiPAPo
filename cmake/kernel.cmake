@@ -18,37 +18,38 @@ get_filename_component(_KS_ROOT ${CMAKE_CURRENT_LIST_DIR}/.. ABSOLUTE)
 # ── Architecture-specific sources ───────────────────────────────────────────
 
 set(ARCH_ARM_M_SOURCES
-    ${_KS_ROOT}/src/arch/arm_m/boot.S
-    ${_KS_ROOT}/src/arch/arm_m/switch.S
-    ${_KS_ROOT}/src/arch/arm_m/trap.S
-    ${_KS_ROOT}/src/arch/arm_m/arm_m_common.c
-    ${_KS_ROOT}/src/arch/arm_m/smp.c
+    ${_KS_ROOT}/src/arch/arm_m/boot/boot.S
+    ${_KS_ROOT}/src/arch/arm_m/kernel/core/switch.S
+    ${_KS_ROOT}/src/arch/arm_m/kernel/core/trap.S
+    ${_KS_ROOT}/src/arch/arm_m/kernel/core/arm_m_common.c
+    ${_KS_ROOT}/src/arch/arm_m/kernel/core/smp.c
 )
 
 set(ARCH_M68K_SOURCES
-    ${_KS_ROOT}/src/arch/m68k/boot.S
-    ${_KS_ROOT}/src/arch/m68k/m68k_common.c
-    ${_KS_ROOT}/src/arch/m68k/probe_ram.S
-    ${_KS_ROOT}/src/arch/m68k/string.c
-    ${_KS_ROOT}/src/arch/m68k/switch.S
-    ${_KS_ROOT}/src/arch/m68k/trap.S
-    ${_KS_ROOT}/src/arch/m68k/math.S
-    ${_KS_ROOT}/src/arch/m68k/signal_m68k.S
-    ${_KS_ROOT}/src/arch/m68k/smp.c
+    ${_KS_ROOT}/src/arch/m68k/boot/boot.S
+    ${_KS_ROOT}/src/arch/m68k/kernel/core/m68k_common.c
+    ${_KS_ROOT}/src/arch/m68k/kernel/core/probe_ram.S
+    ${_KS_ROOT}/src/arch/m68k/kernel/core/string.c
+    ${_KS_ROOT}/src/arch/m68k/kernel/core/switch.S
+    ${_KS_ROOT}/src/arch/m68k/kernel/core/trap.S
+    ${_KS_ROOT}/src/arch/m68k/kernel/core/math.S
+    ${_KS_ROOT}/src/arch/m68k/kernel/core/signal_m68k.S
+    ${_KS_ROOT}/src/arch/m68k/kernel/core/smp.c
 )
 
 set(ARCH_RISCV_SOURCES
-    ${_KS_ROOT}/src/arch/riscv/boot.S
-    ${_KS_ROOT}/src/arch/riscv/trap.S
-    ${_KS_ROOT}/src/arch/riscv/riscv_common.c
-    ${_KS_ROOT}/src/arch/riscv/smp.c
+    ${_KS_ROOT}/src/arch/riscv/boot/boot.S
+    ${_KS_ROOT}/src/arch/riscv/kernel/core/trap.S
+    ${_KS_ROOT}/src/arch/riscv/kernel/core/riscv_common.c
+    ${_KS_ROOT}/src/arch/riscv/kernel/core/smp.c
 )
 
 set(ARCH_XTENSA_SOURCES
-    ${_KS_ROOT}/src/arch/xtensa/boot.S
-    ${_KS_ROOT}/src/arch/xtensa/trap.S
-    ${_KS_ROOT}/src/arch/xtensa/xtensa_common.c
-    ${_KS_ROOT}/src/arch/xtensa/smp.c
+    ${_KS_ROOT}/src/arch/xtensa/boot/boot.S
+    ${_KS_ROOT}/src/arch/xtensa/kernel/core/trap.S
+    ${_KS_ROOT}/src/arch/xtensa/kernel/core/switch.S
+    ${_KS_ROOT}/src/arch/xtensa/kernel/core/xtensa_common.c
+    ${_KS_ROOT}/src/arch/xtensa/kernel/core/smp.c
 )
 
 # ── Kernel sources shared across ALL architectures ──────────────────────────

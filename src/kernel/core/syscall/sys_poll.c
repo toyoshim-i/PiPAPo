@@ -16,11 +16,11 @@
 
 #include <stdint.h>
 
-#include "../../common/errno.h"
-#include "../../common/mod/mod_core.h"
-#include "../../common/mod/mod_vfs.h"
-#include "../../vfs/file.h"  /* POLLIN, POLLOUT, POLLNVAL, struct pollfd */
-#include "../proc/proc.h"
+#include "common/errno.h"
+#include "common/mod/mod_core.h"
+#include "common/mod/mod_vfs.h"
+#include "vfs/file.h"  /* POLLIN, POLLOUT, POLLNVAL, struct pollfd */
+#include "core/proc/proc.h"
 #include "common/config.h"
 #include "syscall.h"
 

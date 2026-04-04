@@ -33,12 +33,17 @@ add_executable(ppap_x68k
     ${KERNEL_SHARED_SOURCES}
     ${KERNEL_BLKDEV_SOURCES}
     ${PPAP_ROOT}/src/kernel/core/driver/flatblk.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/target_x68k.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/drivers/uart_x68k.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/drivers/timer_x68k.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_x68k.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/uart_x68k.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/timer_x68k.c
 )
 
 ppap_m68k_target_common(ppap_x68k)
+
+target_include_directories(ppap_x68k PRIVATE
+    ${PPAP_ROOT}/src/arch/m68k
+    ${PPAP_ROOT}/src/target/x68k
+)
 
 target_compile_definitions(ppap_x68k PRIVATE
     PPAP_X68K=1
@@ -61,7 +66,7 @@ target_compile_options(ppap_x68k PRIVATE
 )
 
 target_link_options(ppap_x68k PRIVATE
-    -T ${CMAKE_CURRENT_SOURCE_DIR}/x68k.ld
+    -T ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/x68k.ld
     -nostartfiles -nostdlib -nodefaultlibs
     -Wl,--gc-sections
     -Wl,--build-id=none

@@ -30,6 +30,7 @@ function(ppap_m68k_target_common target)
         ${PPAP_ROOT}/src/arch/m68k/include
         ${PPAP_ROOT}/src
         ${PPAP_ROOT}/src/kernel
+        ${PPAP_ROOT}/src/arch/m68k
     )
     
     # Warnings: treat as errors for project code (third-party is built externally)

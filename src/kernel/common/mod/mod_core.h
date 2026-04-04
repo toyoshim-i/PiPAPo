@@ -30,8 +30,8 @@ typedef struct kmem_pool kmem_pool_t;
 struct blkdev;
 typedef struct blkdev blkdev_t;
 
-#include "../../core/mm/mem_layout.h"  /* ppap_mem_class_t, proc_image_segment_t,
-                                       * page_id_t (via page.h) */
+#include "core/mm/mem_layout.h"  /* ppap_mem_class_t, proc_image_segment_t,
+                                  * page_id_t (via page.h) */
 
 #include "module.h"
 

@@ -6,7 +6,7 @@
 
 #include <string.h>
 
-#include "arch/arch.h"
+#include "common/arch.h"
 #include "elf.h"
 #include "kernel/common/errno.h"
 #include "kernel/core/klog.h"

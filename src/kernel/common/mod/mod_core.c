@@ -9,12 +9,12 @@
  */
 
 #include "mod_core.h"
-#include "../../core/klog.h"
-#include "../../core/mm/kmem.h"
-#include "../../core/mm/mem_region.h"
-#include "../../core/driver/blkdev.h"
-#include "../../core/proc/sched.h"
-#include "../../core/syscall/syscall.h"
+#include "core/klog.h"
+#include "core/mm/kmem.h"
+#include "core/mm/mem_region.h"
+#include "core/driver/blkdev.h"
+#include "core/proc/sched.h"
+#include "core/syscall/syscall.h"
 
 /* Cross-module blkdev wrappers — execute dev->read/write in core's CS.
  * NOT static: called by name from core_entries.S on i16. */

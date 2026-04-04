@@ -20,7 +20,7 @@
 #include "kernel/core/subsys/cpm_loader.h"
 #include "kernel/core/subsys/subsys.h"
 #if defined(__m68k__)
-#include "arch/ioregs.h"
+#include "common/ioregs.h"
 #endif
 #include <string.h>
 

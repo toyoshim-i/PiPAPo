@@ -14,16 +14,16 @@
 
 #include "devfs.h"
 
-#include "../common/mod/mod_vfs.h"
+#include "common/mod/mod_vfs.h"
 #ifdef PPAP_HAS_BLKDEV
-#include "../core/driver/blkdev.h"
-#include "../core/driver/loopback.h"
+#include "core/driver/blkdev.h"
+#include "core/driver/loopback.h"
 #endif
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../common/errno.h"
-#include "../core/mm/mem_region.h"
+#include "common/errno.h"
+#include "core/mm/mem_region.h"
 #include "core/driver/uart.h"
 
 /* ── Device node descriptor ──────────────────────────────────────────────── */

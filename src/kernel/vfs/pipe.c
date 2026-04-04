@@ -17,10 +17,10 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "../common/errno.h"
-#include "../common/mod/mod_core.h"
-#include "../core/mm/mem_region.h"
-#include "../core/proc/proc.h"
+#include "common/errno.h"
+#include "common/mod/mod_core.h"
+#include "core/mm/mem_region.h"
+#include "core/proc/proc.h"
 #include "fd.h"
 #include "file.h"
 #include "common/config.h"

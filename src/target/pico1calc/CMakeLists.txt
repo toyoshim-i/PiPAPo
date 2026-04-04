@@ -32,13 +32,13 @@ include(${PPAP_ROOT}/cmake/arm_m.cmake)
 add_executable(ppap_pico1calc
     ${KERNEL_COMMON_SOURCES}
     ${KERNEL_BLKDEV_SOURCES}
-    ${PPAP_ROOT}/src/arch/arm_m/stage1.S
-    ${CMAKE_CURRENT_SOURCE_DIR}/target_pico1calc.c
-    ${PPAP_ROOT}/src/kernel/core/driver/arch/arm_m/uart_rpico.c
-    ${PPAP_ROOT}/src/kernel/core/driver/arch/arm_m/clock_rpico.c
-    ${PPAP_ROOT}/src/kernel/core/driver/arch/arm_m/spi_rpico.c
-    ${PPAP_ROOT}/src/kernel/core/driver/arch/arm_m/i2c_rpico.c
-    ${PPAP_ROOT}/src/kernel/core/driver/arch/arm_m/spi_lcd_rpico.c
+    ${PPAP_ROOT}/src/arch/arm_m/boot/stage1.S
+    ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_pico1calc.c
+    ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/uart_rpico.c
+    ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/clock_rpico.c
+    ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/spi_rpico.c
+    ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/i2c_rpico.c
+    ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/spi_lcd_rpico.c
     ${PPAP_ROOT}/src/kernel/core/driver/spi_sd.c
     ${PPAP_ROOT}/src/kernel/core/driver/lcd_panel.c
     ${PPAP_ROOT}/src/kernel/core/driver/i2c_kbd.c
@@ -46,6 +46,11 @@ add_executable(ppap_pico1calc
 )
 
 ppap_arm_target_common(ppap_pico1calc)
+
+target_include_directories(ppap_pico1calc PRIVATE
+    ${PPAP_ROOT}/src/arch/arm_m
+    ${PPAP_ROOT}/src/target/pico1calc
+)
 
 target_compile_definitions(ppap_pico1calc PRIVATE
     PPAP_HAS_BLKDEV=1
@@ -58,7 +63,7 @@ target_link_libraries(ppap_pico1calc pico_base_headers hardware_regs)
 target_sources(ppap_pico1calc PRIVATE $<TARGET_OBJECTS:bs2_default_library>)
 
 target_link_options(ppap_pico1calc PRIVATE
-    -T ${CMAKE_CURRENT_SOURCE_DIR}/pico1calc.ld
+    -T ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/pico1calc.ld
     -nostartfiles
     -Wl,--gc-sections
 )

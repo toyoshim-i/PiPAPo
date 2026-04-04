@@ -22,9 +22,9 @@
 
 #include <stdint.h>
 
-#include "../../common/errno.h"
-#include "../proc/proc.h"
-#include "../../common/mod/mod_vfs.h"
+#include "common/errno.h"
+#include "core/proc/proc.h"
+#include "common/mod/mod_vfs.h"
 #include "common/ptrace.h"
 
 /* SIGCHLD — needed for clone() fast-path detection */
@@ -48,7 +48,7 @@ void svc_set_restart(void) {
  * stack page.  sys_execve cannot free the old stack while still
  * executing on it.  Store it here; trap.S frees it after switching
  * SP to the new stack. */
-#include "../mm/mem_region.h"
+#include "core/mm/mem_region.h"
 volatile void *exec_old_stack = NULL;
 void exec_free_old_stack(void) {
   void *p = (void *)exec_old_stack;

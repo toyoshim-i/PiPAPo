@@ -18,7 +18,7 @@
 #include "core/driver/blkdev.h"
 #include "core/driver/loopback.h"
 #endif
-#include "arch/arch.h"
+#include "common/arch.h"
 #include "core/cpu/cpu.h"
 #include "core/cpu/smp.h"
 #include "common/errno.h"

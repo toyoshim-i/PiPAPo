@@ -22,9 +22,9 @@
 
 #include <stddef.h>
 
-#include "../common/errno.h"
-#include "../common/mod/mod_vfs.h"
-#include "../core/mm/mem_region.h"
+#include "common/errno.h"
+#include "common/mod/mod_vfs.h"
+#include "core/mm/mem_region.h"
 #include "common/config.h"
 #include "romfs_format.h"
 

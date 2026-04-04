@@ -31,19 +31,24 @@ include(${PPAP_ROOT}/cmake/arm_m.cmake)
 
 add_executable(ppap_pico1
     ${KERNEL_COMMON_SOURCES}
-    ${PPAP_ROOT}/src/arch/arm_m/stage1.S
-    ${CMAKE_CURRENT_SOURCE_DIR}/target_pico1.c
-    ${PPAP_ROOT}/src/kernel/core/driver/arch/arm_m/uart_rpico.c
-    ${PPAP_ROOT}/src/kernel/core/driver/arch/arm_m/clock_rpico.c
+    ${PPAP_ROOT}/src/arch/arm_m/boot/stage1.S
+    ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_pico1.c
+    ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/uart_rpico.c
+    ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/clock_rpico.c
 )
 
 ppap_arm_target_common(ppap_pico1)
+
+target_include_directories(ppap_pico1 PRIVATE
+    ${PPAP_ROOT}/src/arch/arm_m
+    ${PPAP_ROOT}/src/target/pico1
+)
 
 target_link_libraries(ppap_pico1 pico_base_headers hardware_regs)
 target_sources(ppap_pico1 PRIVATE $<TARGET_OBJECTS:bs2_default_library>)
 
 target_link_options(ppap_pico1 PRIVATE
-    -T ${CMAKE_CURRENT_SOURCE_DIR}/pico1.ld
+    -T ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/pico1.ld
     -nostartfiles
     -Wl,--gc-sections
 )

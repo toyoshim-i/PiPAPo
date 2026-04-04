@@ -50,15 +50,17 @@ add_executable(ppap_qemu_rv32
     ${KERNEL_RISCV_COMMON_SOURCES}
     ${KERNEL_BLKDEV_SOURCES}
     ${PPAP_ROOT}/src/kernel/core/driver/flatblk.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/target_qemu_rv32.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/drivers/uart_ns16550.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/string.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_qemu_rv32.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/uart_ns16550.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/string.c
 )
 
 # Common includes, warnings, definitions
 target_include_directories(ppap_qemu_rv32 PRIVATE
     ${PPAP_ROOT}/src
     ${PPAP_ROOT}/src/kernel
+    ${PPAP_ROOT}/src/arch/riscv
+    ${PPAP_ROOT}/src/target/qemu_rv32
 )
 target_compile_options(ppap_qemu_rv32 PRIVATE
     -Wall -Wextra -Werror -Wno-unused-parameter
@@ -101,7 +103,7 @@ if(PPAP_TESTS_EXTENDED)
 endif()
 
 target_link_options(ppap_qemu_rv32 PRIVATE
-    -T ${CMAKE_CURRENT_SOURCE_DIR}/qemu_rv32.ld
+    -T ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/qemu_rv32.ld
     -nostartfiles
     -Wl,--gc-sections
 )

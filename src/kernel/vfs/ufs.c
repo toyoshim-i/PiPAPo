@@ -23,12 +23,12 @@
 
 #include <stddef.h>
 
-#include "../core/driver/blkdev.h"
-#include "../common/errno.h"
-#include "../common/spinlock.h" /* SPIN_FS */
-#include "../common/mod/mod_core.h"
-#include "../common/mod/mod_vfs.h"
-#include "../core/mm/mem_region.h"
+#include "core/driver/blkdev.h"
+#include "common/errno.h"
+#include "common/spinlock.h" /* SPIN_FS */
+#include "common/mod/mod_core.h"
+#include "common/mod/mod_vfs.h"
+#include "core/mm/mem_region.h"
 #include "core/klog.h"
 #include "ufs_format.h"
 

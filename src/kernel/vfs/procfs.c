@@ -30,14 +30,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../common/errno.h"
-#include "../common/mod/mod_core.h"
-#include "../common/mod/mod_vfs.h"
-#include "../core/mm/mem_region.h"
-#include "../core/mm/page.h"
-#include "../core/proc/proc.h"
-#include "../core/proc/sched.h"      /* cpu_*_ticks[] data (Step 4: two-pass link) */
-#include "../core/subsys/subsys.h"
+#include "common/errno.h"
+#include "common/mod/mod_core.h"
+#include "common/mod/mod_vfs.h"
+#include "core/mm/mem_region.h"
+#include "core/mm/page.h"
+#include "core/proc/proc.h"
+#include "core/proc/sched.h"      /* cpu_*_ticks[] data (Step 4: two-pass link) */
+#include "core/subsys/subsys.h"
 #include "common/config.h"
 
 /* ── Minimal integer-to-string formatter ────────────────────────────────────

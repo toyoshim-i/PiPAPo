@@ -11,10 +11,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../../common/errno.h"
-#include "../../common/mod/mod_vfs.h"
-#include "../mm/mem_region.h"
-#include "../proc/proc.h"
+#include "common/errno.h"
+#include "common/mod/mod_vfs.h"
+#include "core/mm/mem_region.h"
+#include "core/proc/proc.h"
 #include "common/config.h"
 #include "syscall.h"
 

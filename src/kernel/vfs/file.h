@@ -22,7 +22,7 @@
 
 #include "common/fcntl.h"
 #include "common/seek.h"
-#include "../core/mm/page.h"
+#include "core/mm/page.h"
 
 /* Forward declarations */
 struct file;
