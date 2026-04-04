@@ -454,7 +454,7 @@ add_custom_target(pcxt_memory_report ALL
 pcxt_user_program(hello ${PPAP_ROOT}/src/user/hello.c)
 pcxt_user_program(init ${PPAP_ROOT}/src/user/init.c)
 pcxt_user_program(push ${PPAP_ROOT}/src/user/push.c
-  EXTRA_SOURCES ${PCXT_USER_ARCH_DIR}/push_line_stub.c)
+  EXTRA_SOURCES ${PPAP_ROOT}/src/user/push_line.c)
 
 if(PPAP_TESTS)
   pcxt_user_program(runtests ${PPAP_ROOT}/tests/user/runtests.c

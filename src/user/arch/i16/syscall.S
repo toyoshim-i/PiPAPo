@@ -314,3 +314,204 @@ clock_gettime:
   movw  $0x0501, %ax
   int   $0x30
   SYSCALL_RET
+
+/* int ioctl(int fd, unsigned long cmd, void *arg); */
+  .global ioctl
+ioctl:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx      /* fd */
+  movw  6(%bp), %cx      /* cmd (low 16 bits) */
+  movw  8(%bp), %dx      /* arg */
+  movw  $0x0107, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* int sigaction(int sig, void *handler, void *old_handler); */
+  .global sigaction
+sigaction:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx      /* sig */
+  movw  6(%bp), %cx      /* handler */
+  movw  8(%bp), %dx      /* old_handler */
+  movw  $0x0601, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* int kill(pid_t pid, int sig); */
+  .global kill
+kill:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx      /* pid */
+  movw  6(%bp), %cx      /* sig */
+  movw  $0x0600, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* int nanosleep(const void *req, void *rem); */
+  .global nanosleep
+nanosleep:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx      /* req */
+  movw  6(%bp), %cx      /* rem */
+  movw  $0x0500, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* int ppoll(struct pollfd *fds, int nfds, void *timeout,
+ *           void *sigmask, int sigsetsize); */
+  .global ppoll
+ppoll:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx      /* fds */
+  movw  6(%bp), %cx      /* nfds */
+  movw  8(%bp), %dx      /* timeout */
+  movw  10(%bp), %si     /* sigmask */
+  movw  12(%bp), %di     /* sigsetsize */
+  movw  $0x0701, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* ssize_t writev(int fd, const struct iovec *iov, int iovcnt); */
+  .global writev
+writev:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx      /* fd */
+  movw  6(%bp), %cx      /* iov */
+  movw  8(%bp), %dx      /* iovcnt */
+  movw  $0x010A, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* ssize_t readv(int fd, const struct iovec *iov, int iovcnt); */
+  .global readv
+readv:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx      /* fd */
+  movw  6(%bp), %cx      /* iov */
+  movw  8(%bp), %dx      /* iovcnt */
+  movw  $0x0109, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* int mkdir(const char *path, int mode); */
+  .global mkdir
+mkdir:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx      /* path */
+  movw  6(%bp), %cx      /* mode */
+  movw  $0x0204, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* int unlink(const char *path); */
+  .global unlink
+unlink:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx      /* path */
+  movw  $0x0206, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* int rmdir(const char *path); */
+  .global rmdir
+rmdir:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx      /* path */
+  movw  $0x0205, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* pid_t setsid(void); */
+  .global setsid
+setsid:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  $0x000B, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* int setpgid(pid_t pid, pid_t pgid); */
+  .global setpgid
+setpgid:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx      /* pid */
+  movw  6(%bp), %cx      /* pgid */
+  movw  $0x0009, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* pid_t getpgid(pid_t pid); */
+  .global getpgid
+getpgid:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx      /* pid */
+  movw  $0x000A, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* long ptrace(int req, pid_t pid, void *addr, void *data); */
+  .global ptrace
+ptrace:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx      /* req */
+  movw  6(%bp), %cx      /* pid */
+  movw  8(%bp), %dx      /* addr */
+  movw  10(%bp), %si     /* data */
+  movw  $0x000F, %ax
+  int   $0x30
+  SYSCALL_RET
