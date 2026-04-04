@@ -1,5 +1,9 @@
 # Raspberry Pi Zero Port — Target Plan
 
+> **Note**: File paths in this document may be outdated after the source tree
+> reorganization.  See [Source Tree Structure](../getting_started/source_tree.md)
+> for the current layout.
+
 Porting PPAP to the Raspberry Pi Zero (BCM2835, ARM1176JZF-S). This is a
 major architectural leap: the ARM1176 has a **full MMU**, transforming PPAP
 from a micro OS into a modern Unix-like OS capable of proper virtual memory,

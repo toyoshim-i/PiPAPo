@@ -1,5 +1,9 @@
 # PC/XT Target Port Plan (V30 with 8080 Mode)
 
+> **Note**: File paths in this document may be outdated after the source tree
+> reorganization.  See [Source Tree Structure](../getting_started/source_tree.md)
+> for the current layout.
+
 Porting PPAP to the PC/XT platform using the NEC V30 (μPD70116) CPU.
 The V30 is 8086-compatible and includes a hardware 8080 emulation mode,
 which maps naturally onto PPAP's eCPU architecture for running CP/M-80

@@ -1,5 +1,9 @@
 # ARM Cortex-M Targets
 
+> **Note**: File paths in this document may be outdated after the source tree
+> reorganization.  See [Source Tree Structure](../getting_started/source_tree.md)
+> for the current layout.
+
 Architecture-specific reference for the PPAP ARM Cortex-M port. Current targets
 are QEMU (`mps2-an500`, Cortex-M3), Raspberry Pi Pico (RP2040, Cortex-M0+),
 PicoCalc (RP2040 + LCD/keyboard/SD), and Pico 2 (RP2350, Cortex-M33).

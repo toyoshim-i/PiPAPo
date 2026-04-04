@@ -1,5 +1,9 @@
 # MS-DOS Subsystem Proposal
 
+> **Note**: File paths in this document may be outdated after the source tree
+> reorganization.  See [Source Tree Structure](../getting_started/source_tree.md)
+> for the current layout.
+
 An MS-DOS personality layer for PPAP, following the same pattern as the
 Human68k subsystem (`human68k_bridge.c`) and CP/M subsystem
 (`cpm_bridge.c`).  Translates DOS INT 21h calls and related interrupts

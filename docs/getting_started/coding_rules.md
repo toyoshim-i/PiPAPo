@@ -64,36 +64,8 @@ The closing `#endif` must include the guard name as a comment:
 
 ## Directory Layout
 
-```
-src/
-  arch/           Architecture abstraction layer
-    arch.h          Dispatch header -> arm_m/arch.h or m68k/arch.h
-    ioregs.h        Dispatch header -> arm_m/ioregs.h or m68k/ioregs.h
-    arm_m/          ARM Cortex-M (boot, switch, trap, SMP, ioregs)
-    m68k/           Motorola 68000 (boot, switch, trap, SMP, ioregs)
-  common/         Headers shared between kernel and userland
-  config.h        Build configuration
-  drivers/        Device drivers (uart, spi, i2c, lcd, sd, ...)
-    arch/arm_m/     ARM-specific driver implementations
-  kernel/         Kernel core
-    blkdev/         Block device layer
-    cpu/            eCPU abstraction (emulated CPU vtable, Z80/m68k emulators)
-    exec/           ELF/flat/X/R-format loaders
-    fd/             File descriptors, TTY, pipes
-    fs/             Filesystems (romfs, tmpfs, devfs, procfs, vfat, ufs)
-    mm/             Memory management (pages, kmem, MPU, XIP)
-    proc/           Process table, scheduler
-    signal/         Signal delivery
-    subsys/         Personality subsystems (Human68k, CP/M, S-OS)
-    syscall/        Syscall dispatch
-    vfs/            Virtual filesystem layer
-  target/         Per-board target configuration
-  user/           Userland programs and libraries
-```
-
-Key distinction:
-- `arch/ioregs.h` -- memory-mapped I/O register definitions (SysTick, SCB, NVIC, SR, ...)
-- `kernel/cpu/cpu.h` -- emulated CPU (eCPU) abstraction layer and vtable
+See [Source Tree Structure](source_tree.md) for the full layout and
+include path conventions.
 
 ## Architecture- and Target-Specific Code
 
@@ -146,6 +118,12 @@ When adding a new arch- or target-specific feature:
   falling back to a different design — or undoing agreed-upon work —
   wastes effort and can produce a result nobody reviewed.  Present the
   blocker, the options, and let the design discussion decide the path.
+- **Don't commit or amend without approval**: always wait for explicit
+  approval before creating a commit or amending an existing one.
+  Commits are review checkpoints — the reviewer decides when a change
+  set is ready to be recorded.  Premature commits (especially amends
+  that mix unrelated changes into an existing commit) make history
+  harder to review and harder to bisect.
 
 ## TODO Comments
 

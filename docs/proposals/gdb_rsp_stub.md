@@ -1,5 +1,9 @@
 # GDB RSP Stub for PPAP Kernel Debugging
 
+> **Note**: File paths in this document may be outdated after the source tree
+> reorganization.  See [Source Tree Structure](../getting_started/source_tree.md)
+> for the current layout.
+
 ## Motivation
 
 Source-level debugging of the PPAP kernel and userland apps currently requires

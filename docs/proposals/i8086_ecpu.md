@@ -1,5 +1,9 @@
 # i8086 eCPU Emulator Proposal
 
+> **Note**: File paths in this document may be outdated after the source tree
+> reorganization.  See [Source Tree Structure](../getting_started/source_tree.md)
+> for the current layout.
+
 A software Intel 8086 emulator core for PPAP, following the same
 `ecpu_core_ops_t` pattern as the existing Z80 (`ecpu_z80.c`) and m68k
 (`ecpu_m68k.c`) eCPU cores.  Enables running DOS .COM and .EXE programs

@@ -242,33 +242,20 @@ is a **compile-time error**.
 
 ### Directory Structure
 
+See [Source Tree Structure](../getting_started/source_tree.md) for the
+full layout.  Module-related files:
+
 ```
 src/kernel/
   common/mod/
     module.h          ← module system macros (MOD_FUNC etc.)
-    mod_core.h        ← core module interface (23 functions)
-    mod_core.inc      ← core function index (alphabetical)
-    mod_vfs.h         ← VFS module interface (35 functions)
-    mod_vfs.inc       ← VFS function index (alphabetical)
+    mod_core.h/.inc   ← core module interface
+    mod_vfs.h/.inc    ← VFS module interface
     mod_core.c        ← core struct initializer (32-bit)
-  vfs/
-    vfs.h             ← PRIVATE: types + internal declarations
-    vfs.c             ← VFS implementation + MOD_DEFINE
-    vfs_types.h       ← shared types (vnode_t, mount_entry_t)
-    namei.c           ← path resolution (VFS-internal)
-  fd/
-    fd.c              ← system-wide fd pool + VFS bridge ops
-    fd.h              ← VFS-internal fd declarations
-    file.h            ← struct file definition
-    pipe.c            ← pipe implementation + fd_pipe_create
-    tty.c             ← TTY driver + line discipline
-  exec/
-    exec.c            ← exec coordinator (direct call from core)
-    loader.c          ← binary format detection
-  fs/
-    romfs.c, tmpfs.c, devfs.c, procfs.c, ufs.c, vfat.c, fstab.c
+  core/               ← core module implementation
+  vfs/                ← VFS module (VFS, fd, tty, pipe, all FS)
 
-src/target/pcxt/stubs/
+src/target/pcxt/kernel/common/stubs/
   core_stubs.S        ← VFS-side caller stubs for core (auto-gen from .inc)
   core_entries.S      ← core-side target entry stubs (auto-gen from .inc)
   core_mod_init.c     ← VFS-side mod_core struct (i16 only)

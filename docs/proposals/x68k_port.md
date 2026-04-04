@@ -1,5 +1,9 @@
 # X68000 Target Port — Implementation Status
 
+> **Note**: File paths in this document may be outdated after the source tree
+> reorganization.  See [Source Tree Structure](../getting_started/source_tree.md)
+> for the current layout.
+
 Porting PPAP to the Sharp X68000 (MC68000 @ 10 MHz).  The QEMU `qemu_m68k`
 target already proves the m68k kernel works; this document describes the
 X68000-specific boot sequence, ELF loading, and process model as implemented.
