@@ -12,8 +12,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "common/config.h"
-#include "core/driver/uart.h"
+#include "kernel/common/config.h"
+#include "kernel/core/driver/uart.h"
 #include "kernel/vfs/tty.h"   /* tty_rx_notify, tty_signal_intr */
 #include "kernel/common/spinlock.h" /* SPIN_TXRING — SIO bus fence */
 #include "target/rpico.h"

@@ -27,7 +27,6 @@ include(${CMAKE_CURRENT_LIST_DIR}/kernel.cmake)
 function(ppap_xtensa_target_common target)
     target_include_directories(${target} PRIVATE
         ${PPAP_ROOT}/src
-        ${PPAP_ROOT}/src/kernel
         ${PPAP_ROOT}/src/arch/xtensa
     )
 

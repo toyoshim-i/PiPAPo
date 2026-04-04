@@ -20,7 +20,7 @@
 
 #include <stdint.h>
 
-#include "core/proc/sched.h"
+#include "kernel/core/proc/sched.h"
 
 /* ── MFP register map ───────────────────────────────────────────────────── */
 

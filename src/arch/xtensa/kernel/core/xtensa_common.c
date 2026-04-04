@@ -12,10 +12,10 @@
 #include <stdint.h>
 #include "xtensa_api.h"
 #include "cpu.h"
-#include "core/proc/proc.h"
-#include "core/proc/sched.h"
-#include "core/syscall/syscall.h"
-#include "core/klog.h"
+#include "kernel/core/proc/proc.h"
+#include "kernel/core/proc/sched.h"
+#include "kernel/core/syscall/syscall.h"
+#include "kernel/core/klog.h"
 
 /* Context switch pending flag.
  * Set by arch_yield() (via sched_tick or sched_switch).

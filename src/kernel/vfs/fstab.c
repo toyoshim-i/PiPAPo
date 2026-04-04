@@ -12,18 +12,18 @@
 
 #include "fstab.h"
 
-#include "common/mod/mod_vfs.h"
+#include "kernel/common/mod/mod_vfs.h"
 #ifdef PPAP_HAS_BLKDEV
-#include "core/driver/blkdev.h"
-#include "core/driver/loopback.h"
+#include "kernel/core/driver/blkdev.h"
+#include "kernel/core/driver/loopback.h"
 #include "ufs.h"
 #include "vfat.h"
 #endif
 #include <stddef.h>
 
 #include "common/errno.h"
-#include "common/mod/mod_core.h"
-#include "core/mm/mem_region.h"
+#include "kernel/common/mod/mod_core.h"
+#include "kernel/core/mm/mem_region.h"
 #include "devfs.h"
 #include "procfs.h"
 #include "romfs.h"

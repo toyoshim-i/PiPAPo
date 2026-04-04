@@ -18,7 +18,7 @@
 
 #include <stdint.h>
 
-#include "common/config.h"
+#include "kernel/common/config.h"
 
 /* ── Memory map constants (must match the target linker script) ───────────────
  */

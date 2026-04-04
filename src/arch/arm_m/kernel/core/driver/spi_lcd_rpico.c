@@ -14,8 +14,8 @@
 
 #include <stdint.h>
 
-#include "common/config.h"
-#include "core/driver/spi_lcd.h"
+#include "kernel/common/config.h"
+#include "kernel/core/driver/spi_lcd.h"
 #include "target/pico1calc/pico1calc.h"
 #include "target/rpico.h"
 

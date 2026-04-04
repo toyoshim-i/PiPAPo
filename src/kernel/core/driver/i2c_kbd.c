@@ -16,7 +16,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "core/klog.h"
+#include "kernel/core/klog.h"
 #include "i2c.h"
 
 /* ── STM32 I2C address and registers ────────────────────────────────────── */

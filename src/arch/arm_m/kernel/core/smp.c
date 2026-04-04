@@ -24,20 +24,20 @@
  *   Cortex-M3 returns 0xC23.  Only proceed with SIO if we're on M0+.
  */
 
-#include "core/cpu/smp.h"
+#include "kernel/core/cpu/smp.h"
 
 #include <stdint.h>
 
-#include "core/driver/uart.h"
+#include "kernel/core/driver/uart.h"
 #include "kernel/core/arch.h"
 #include "kernel/core/ioregs.h"
-#include "common/config.h"
-#include "core/klog.h"
-#include "core/mm/mem_region.h"
-#include "core/mm/mpu.h" /* mpu_init */
-#include "core/mm/page.h"
-#include "core/proc/proc.h"  /* pcb_t, proc_alloc, current_core */
-#include "core/proc/sched.h" /* SYSTICK_RELOAD */
+#include "kernel/common/config.h"
+#include "kernel/core/klog.h"
+#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/mm/mpu.h" /* mpu_init */
+#include "kernel/core/mm/page.h"
+#include "kernel/core/proc/proc.h"  /* pcb_t, proc_alloc, current_core */
+#include "kernel/core/proc/sched.h" /* SYSTICK_RELOAD */
 
 /* ── SIO register file ───────────────────────────────────────────────────── */
 

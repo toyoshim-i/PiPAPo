@@ -30,11 +30,11 @@ vfs_module_header:
   .word 0x5646                    /* magic: "VF" */
 /* Get MOD_VFS_FUNC_COUNT from the .inc (discard entry macro) */
 #define MOD_VFS_ENTRY(name, idx) /* nothing */
-#include "common/mod/mod_vfs.inc"
+#include "kernel/common/mod/mod_vfs.inc"
 #undef MOD_VFS_ENTRY
   .word MOD_VFS_FUNC_COUNT                          /* entry_count */
 #define MOD_VFS_ENTRY(name, idx)  .word vfs_##name##_entry
-#include "common/mod/mod_vfs.inc"
+#include "kernel/common/mod/mod_vfs.inc"
 #undef MOD_VFS_ENTRY
   /* DS=0 address of core_fptrs table (for core to patch) */
   .word core_fptrs

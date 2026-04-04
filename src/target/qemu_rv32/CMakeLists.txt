@@ -58,7 +58,6 @@ add_executable(ppap_qemu_rv32
 # Common includes, warnings, definitions
 target_include_directories(ppap_qemu_rv32 PRIVATE
     ${PPAP_ROOT}/src
-    ${PPAP_ROOT}/src/kernel
     ${PPAP_ROOT}/src/arch/riscv
     ${PPAP_ROOT}/src/target/qemu_rv32
 )

@@ -10,7 +10,7 @@
 #define PPAP_ARCH_M68K_ARCH_H
 
 #include <stdint.h>
-#include "core/mm/mem_region.h"
+#include "kernel/core/mm/mem_region.h"
 
 /* ── Interrupt save / restore ─────────────────────────────────────────────
  *

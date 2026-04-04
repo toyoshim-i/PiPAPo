@@ -26,11 +26,11 @@
 #include <stddef.h>
 
 #include "common/errno.h"
-#include "core/mm/mem_region.h"
-#include "core/proc/proc.h"
-#include "core/proc/sched.h"
-#include "core/subsys/subsys.h"
-#include "core/syscall/syscall.h"
+#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/proc/proc.h"
+#include "kernel/core/proc/sched.h"
+#include "kernel/core/subsys/subsys.h"
+#include "kernel/core/syscall/syscall.h"
 
 struct kernel_sigaction {
   uint32_t handler;

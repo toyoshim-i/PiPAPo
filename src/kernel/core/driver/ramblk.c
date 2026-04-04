@@ -21,7 +21,7 @@
 #include "ramblk.h"
 
 #include "common/errno.h"
-#include "core/mm/page.h"
+#include "kernel/core/mm/page.h"
 #include "blkdev.h"
 
 /* ── Overlay ────────────────────────────────────────────────────────────── */

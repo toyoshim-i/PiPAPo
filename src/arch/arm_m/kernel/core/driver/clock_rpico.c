@@ -14,7 +14,7 @@
 
 #include <stdint.h>
 
-#include "core/driver/clock.h"
+#include "kernel/core/driver/clock.h"
 #include "target/rpico.h"
 
 /* ==========================================================================

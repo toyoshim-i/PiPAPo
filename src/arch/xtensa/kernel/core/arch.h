@@ -12,7 +12,7 @@
 #define PPAP_ARCH_XTENSA_ARCH_H
 
 #include <stdint.h>
-#include "core/mm/mem_region.h"
+#include "kernel/core/mm/mem_region.h"
 #include "cpu.h"
 
 /* ── Interrupt save / restore ─────────────────────────────────────────────

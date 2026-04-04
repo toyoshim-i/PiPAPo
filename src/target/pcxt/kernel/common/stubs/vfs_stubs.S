@@ -31,7 +31,7 @@
   .global vfs_fptrs_end
 vfs_fptrs:
 #define MOD_VFS_ENTRY(name, idx)  .word 0, 0  /* idx */
-#include "common/mod/mod_vfs.inc"
+#include "kernel/common/mod/mod_vfs.inc"
 #undef MOD_VFS_ENTRY
 vfs_fptrs_end:
 
@@ -55,7 +55,7 @@ vfs_\name:
 .endm
 
 #define MOD_VFS_ENTRY(name, idx)  VFS_CALLER_STUB name, idx
-#include "common/mod/mod_vfs.inc"
+#include "kernel/common/mod/mod_vfs.inc"
 #undef MOD_VFS_ENTRY
 
 #endif /* __ia16__ */

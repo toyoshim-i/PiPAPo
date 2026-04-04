@@ -78,7 +78,6 @@ set(KERNEL_FLAGS ${COMMON_FLAGS})
 
 set(PPAP_INCLUDES
   ${PPAP_ROOT}/src
-  ${PPAP_ROOT}/src/kernel
   ${PPAP_ROOT}/src/arch/i16
   ${PPAP_ROOT}/src/target/pcxt
 )

@@ -21,11 +21,11 @@
 #include <stdint.h>
 
 #include "kernel/core/arch.h"
-#include "common/spinlock.h" /* core_id() — needed by #define current */
-#include "core/mm/mem_layout.h"
-#include "core/mm/page.h"        /* page_id_t, PAGE_ID_INVALID */
+#include "kernel/common/spinlock.h" /* core_id() — needed by #define current */
+#include "kernel/core/mm/mem_layout.h"
+#include "kernel/core/mm/page.h"        /* page_id_t, PAGE_ID_INVALID */
 #include "common/ptrace.h"
-#include "common/config.h"
+#include "kernel/common/config.h"
 
 /* Forward declaration — struct file is defined in fd/file.h (Step 10).
  * We only store pointers here so the incomplete type is sufficient. */
@@ -61,7 +61,7 @@ typedef void (*sighandler_t)(int);
 #error "Unsupported architecture — define PCB_SP_OFFSET"
 #endif
 
-#include "common/core/subsys_info.h"
+#include "kernel/common/core/subsys_info.h"
 #define TRACE_SW_BP_MAX 8 /* max software breakpoints per tracee  */
 #define TRACE_HW_BP_MAX 4 /* max native hardware breakpoints       */
 

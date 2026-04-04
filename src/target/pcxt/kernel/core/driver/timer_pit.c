@@ -7,7 +7,7 @@
  */
 
 #include "kernel/core/cpu.h"
-#include "common/core/seg.h"
+#include "kernel/common/core/seg.h"
 
 /* Defined in switch.S */
 extern void i16_timer_isr(void);

@@ -25,8 +25,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "core/mm/page.h"
-#include "common/config.h"
+#include "kernel/core/mm/page.h"
+#include "kernel/common/config.h"
 
 /* ── Forward declarations ───────────────────────────────────────────────────
  */

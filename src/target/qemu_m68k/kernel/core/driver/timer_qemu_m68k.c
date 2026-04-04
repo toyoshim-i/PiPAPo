@@ -15,8 +15,8 @@
 
 #include <stdint.h>
 
-#include "core/klog.h"
-#include "core/proc/sched.h"
+#include "kernel/core/klog.h"
+#include "kernel/core/proc/sched.h"
 
 /* ── Goldfish RTC #0 registers ───────────────────────────────────────────── */
 

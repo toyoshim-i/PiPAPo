@@ -9,8 +9,8 @@
 
 #include "kernel/core/driver/bios_con.h"
 #include "kernel/core/driver/pcxt_logger.h"
-#include "core/driver/uart.h"
-#include "core/klog.h"
+#include "kernel/core/driver/uart.h"
+#include "kernel/core/klog.h"
 
 static int pcxt_logger_putc(char c, void (*notify)(void)) {
   if (!uart_putc(c, notify)) return 0;

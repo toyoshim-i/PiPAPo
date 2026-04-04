@@ -19,9 +19,9 @@
 
 #include <stdint.h>
 
-#include "core/driver/uart.h"
-#include "core/klog.h"
-#include "core/proc/proc.h"
+#include "kernel/core/driver/uart.h"
+#include "kernel/core/klog.h"
+#include "kernel/core/proc/proc.h"
 #include "kernel/core/arch.h"
 
 /* ── MPU register addresses (common to ARMv6-M and ARMv8-M) ─────────────── */

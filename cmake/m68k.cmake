@@ -29,7 +29,6 @@ function(ppap_m68k_target_common target)
     target_include_directories(${target} PRIVATE
         ${PPAP_ROOT}/src/arch/m68k/include
         ${PPAP_ROOT}/src
-        ${PPAP_ROOT}/src/kernel
         ${PPAP_ROOT}/src/arch/m68k
     )
     

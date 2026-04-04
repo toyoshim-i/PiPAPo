@@ -7,9 +7,9 @@
 #include <stdint.h>
 
 #include "common/errno.h"
-#include "core/proc/proc.h"
-#include "core/proc/sched.h"
-#include "common/config.h"
+#include "kernel/core/proc/proc.h"
+#include "kernel/core/proc/sched.h"
+#include "kernel/common/config.h"
 #include "syscall.h"
 
 /*

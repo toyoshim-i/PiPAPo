@@ -9,9 +9,9 @@
  */
 
 #include "common/errno.h"
-#include "common/mod/mod_vfs.h"
-#include "core/proc/proc.h"
-#include "common/config.h"
+#include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/proc/proc.h"
+#include "kernel/common/config.h"
 #include "syscall.h"
 
 #include <stddef.h>

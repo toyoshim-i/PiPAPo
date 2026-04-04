@@ -81,7 +81,7 @@ saved_ip: .word 0
   .set blkdev_write, core_blkdev_write
 
 #define MOD_CORE_ENTRY(name, idx)  CORE_TARGET_STUB name
-#include "common/mod/mod_core.inc"
+#include "kernel/common/mod/mod_core.inc"
 #undef MOD_CORE_ENTRY
 
 #endif /* __ia16__ */

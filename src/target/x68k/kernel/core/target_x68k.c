@@ -24,19 +24,19 @@
 
 #include "target/target.h"
 #include "kernel/core/arch.h"
-#include "core/driver/uart.h"
+#include "kernel/core/driver/uart.h"
 #include "common/errno.h"
-#include "vfs/tty.h"
-#include "core/klog.h"
-#include "core/mm/mem_region.h"
-#include "core/mm/page.h"
-#include "core/proc/proc.h"
-#include "core/proc/sched.h"
-#include "vfs/vfs.h"
+#include "kernel/vfs/tty.h"
+#include "kernel/core/klog.h"
+#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/mm/page.h"
+#include "kernel/core/proc/proc.h"
+#include "kernel/core/proc/sched.h"
+#include "kernel/vfs/vfs.h"
 #ifdef PPAP_HAS_BLKDEV
-#include "core/driver/blkdev.h"
-#include "core/driver/flatblk.h"
-#include "vfs/ufs.h"
+#include "kernel/core/driver/blkdev.h"
+#include "kernel/core/driver/flatblk.h"
+#include "kernel/vfs/ufs.h"
 #endif
 #include <stddef.h>
 #include <stdint.h>
@@ -66,8 +66,8 @@ extern void m68k_irq_ignore(void);
  * Maps the m68k register frame onto the shared syscall_dispatch() API.
  * ────────────────────────────────────────────────────────────────────── */
 
-#include "core/signal/signal.h"
-#include "core/syscall/syscall.h"
+#include "kernel/core/signal/signal.h"
+#include "kernel/core/syscall/syscall.h"
 
 void m68k_syscall_entry(uint32_t *regs) {
   uint32_t nr = regs[0]; /* d0 = syscall number */

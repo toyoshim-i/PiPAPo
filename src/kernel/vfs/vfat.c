@@ -16,12 +16,12 @@
 
 #include <stddef.h>
 
-#include "core/driver/blkdev.h"
+#include "kernel/core/driver/blkdev.h"
 #include "common/errno.h"
-#include "common/spinlock.h" /* SPIN_FS */
-#include "common/mod/mod_vfs.h"
-#include "core/mm/mem_region.h"
-#include "common/config.h"
+#include "kernel/common/spinlock.h" /* SPIN_FS */
+#include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/mm/mem_region.h"
+#include "kernel/common/config.h"
 #include "vfat_format.h"
 
 /* ── Sector buffer (on stack or static) ─────────────────────────────────── */

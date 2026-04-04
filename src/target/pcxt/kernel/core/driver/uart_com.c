@@ -6,7 +6,7 @@
  */
 
 #include "kernel/core/cpu.h"
-#include "core/driver/uart.h"
+#include "kernel/core/driver/uart.h"
 
 void uart_init(void)
 {

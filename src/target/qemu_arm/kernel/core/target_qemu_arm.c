@@ -6,12 +6,12 @@
  */
 
 #include "target/target.h"
-#include "core/driver/blkdev.h"
-#include "core/driver/ramblk.h"
-#include "core/driver/uart.h"
-#include "core/klog.h"
-#include "core/mm/mem_region.h"
-#include "core/mm/page.h"
+#include "kernel/core/driver/blkdev.h"
+#include "kernel/core/driver/ramblk.h"
+#include "kernel/core/driver/uart.h"
+#include "kernel/core/klog.h"
+#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/mm/page.h"
 
 #ifdef PPAP_TESTS
 #include "ktest.h"

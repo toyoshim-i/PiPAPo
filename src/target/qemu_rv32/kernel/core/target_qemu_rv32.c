@@ -9,13 +9,13 @@
  */
 
 #include "target/target.h"
-#include "core/driver/blkdev.h"
-#include "core/driver/flatblk.h"
-#include "common/config.h"
-#include "core/driver/uart.h"
-#include "vfs/ufs.h"
-#include "core/klog.h"
-#include "vfs/vfs.h"
+#include "kernel/core/driver/blkdev.h"
+#include "kernel/core/driver/flatblk.h"
+#include "kernel/common/config.h"
+#include "kernel/core/driver/uart.h"
+#include "kernel/vfs/ufs.h"
+#include "kernel/core/klog.h"
+#include "kernel/vfs/vfs.h"
 
 #ifdef PPAP_TESTS
 #include "ktest.h"

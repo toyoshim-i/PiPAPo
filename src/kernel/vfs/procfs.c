@@ -31,14 +31,14 @@
 #include <stdint.h>
 
 #include "common/errno.h"
-#include "common/mod/mod_core.h"
-#include "common/mod/mod_vfs.h"
-#include "core/mm/mem_region.h"
-#include "core/mm/page.h"
-#include "core/proc/proc.h"
-#include "core/proc/sched.h"      /* cpu_*_ticks[] data (Step 4: two-pass link) */
-#include "core/subsys/subsys.h"
-#include "common/config.h"
+#include "kernel/common/mod/mod_core.h"
+#include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/mm/page.h"
+#include "kernel/core/proc/proc.h"
+#include "kernel/core/proc/sched.h"      /* cpu_*_ticks[] data (Step 4: two-pass link) */
+#include "kernel/core/subsys/subsys.h"
+#include "kernel/common/config.h"
 
 /* ── Minimal integer-to-string formatter ────────────────────────────────────
  */
@@ -308,7 +308,7 @@ static int gen_battery(char *buf, int bufsiz) {
  */
 
 #ifdef PPAP_HAS_SUBSYS
-#include "common/core/subsys_info.h"
+#include "kernel/common/core/subsys_info.h"
 #endif
 
 static int gen_subsys(char *buf, int bufsiz) {
@@ -332,7 +332,7 @@ static int gen_subsys(char *buf, int bufsiz) {
  */
 
 #ifdef PPAP_HAS_SUBSYS
-#include "common/core/ecpu_info.h"
+#include "kernel/common/core/ecpu_info.h"
 #endif
 
 static int gen_ecpu(char *buf, int bufsiz) {

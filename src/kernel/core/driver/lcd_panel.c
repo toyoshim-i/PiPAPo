@@ -19,7 +19,7 @@
 
 #include "lcd_panel.h"
 
-#include "core/klog.h"
+#include "kernel/core/klog.h"
 #include "spi_lcd.h"
 
 /* ── Timing helper ─────────────────────────────────────────────────────── */

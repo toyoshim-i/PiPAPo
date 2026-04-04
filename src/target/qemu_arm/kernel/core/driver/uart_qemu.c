@@ -27,8 +27,8 @@
 
 #include <stdint.h>
 
-#include "common/config.h" /* UART_RX_SIZE */
-#include "core/driver/uart.h"
+#include "kernel/common/config.h" /* UART_RX_SIZE */
+#include "kernel/core/driver/uart.h"
 #include "kernel/vfs/tty.h" /* tty_rx_notify, tty_signal_intr */
 
 /* ==========================================================================

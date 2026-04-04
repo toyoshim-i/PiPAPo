@@ -12,9 +12,9 @@
 
 #include <stdint.h>
 
-#include "core/klog.h"
-#include "core/proc/proc.h"
-#include "core/syscall/syscall.h"
+#include "kernel/core/klog.h"
+#include "kernel/core/proc/proc.h"
+#include "kernel/core/syscall/syscall.h"
 
 /* POSIX signal numbers */
 #define SIGILL 4

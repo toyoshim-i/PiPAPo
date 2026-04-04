@@ -18,12 +18,12 @@
 #include <stddef.h>
 
 #include "common/errno.h"
-#include "common/mod/mod_core.h"
+#include "kernel/common/mod/mod_core.h"
 #include "file.h"   /* fd_pool_init */
 #include "tty.h"    /* tty_rx_notify */
 #include "fstab.h"  /* fstab_parse, fstab_mount_all */
-#include "core/mm/kmem.h" /* kmem_pool_t type — functions via mod_core */
-#include "common/spinlock.h" /* SPIN_VFS */
+#include "kernel/core/mm/kmem.h" /* kmem_pool_t type — functions via mod_core */
+#include "kernel/common/spinlock.h" /* SPIN_VFS */
 
 /* ── Static storage ─────────────────────────────────────────────────────────
  */
@@ -264,7 +264,7 @@ mount_entry_t *vfs_mount_find(const char *path, const char **remainder) {
 #include "procfs.h"
 #include "tmpfs.h"
 #ifdef PPAP_HAS_BLKDEV
-#include "core/driver/blkdev.h"
+#include "kernel/core/driver/blkdev.h"
 #include "vfat.h"
 #endif
 
@@ -345,7 +345,7 @@ int vfs_mount_by_fstype(const char *source, const char *target,
 
 /* ── Module definition ─────────────────────────────────────────────────── */
 
-#include "common/mod/mod_vfs.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "fd.h"
 
 /* Aliases for MOD_IMPL convention: vfs_<name> → <name> */
@@ -414,6 +414,6 @@ long vfs_vnode_readlink(vnode_t *vn, char *buf, size_t bufsiz) {
 
 MOD_DEFINE_BEGIN(vfs)
 #define MOD_VFS_ENTRY(name, idx)  MOD_IMPL(vfs, name)
-#include "common/mod/mod_vfs.inc"
+#include "kernel/common/mod/mod_vfs.inc"
 #undef MOD_VFS_ENTRY
 MOD_DEFINE_END()

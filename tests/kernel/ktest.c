@@ -10,22 +10,22 @@
  */
 
 #include "ktest.h"
-#include "core/klog.h"
-#include "core/mm/mem_region.h"
-#include "core/mm/page.h"
-#include "core/proc/proc.h"
-#include "core/proc/sched.h"
-#include "vfs/fd.h"
-#include "vfs/tty.h"
-#include "common/mod/mod_vfs.h"
-#include "core/syscall/syscall.h"
-#include "core/signal/signal.h"
+#include "kernel/core/klog.h"
+#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/mm/page.h"
+#include "kernel/core/proc/proc.h"
+#include "kernel/core/proc/sched.h"
+#include "kernel/vfs/fd.h"
+#include "kernel/vfs/tty.h"
+#include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/syscall/syscall.h"
+#include "kernel/core/signal/signal.h"
 #ifdef PPAP_HAS_BLKDEV
-#include "core/driver/blkdev.h"
-#include "core/driver/loopback.h"
-#include "vfs/ufs.h"
+#include "kernel/core/driver/blkdev.h"
+#include "kernel/core/driver/loopback.h"
+#include "kernel/vfs/ufs.h"
 #endif
-#include "vfs/fstab.h"
+#include "kernel/vfs/fstab.h"
 #include "common/errno.h"
 
 /* ── Test helpers ──────────────────────────────────────────────────────────── */

@@ -16,10 +16,10 @@
 
 #include "target/target.h"
 #include "xtensa_cc.h"
-#include "core/klog.h"
+#include "kernel/core/klog.h"
 #include "sdkconfig.h"
 #include "kernel/core/cpu.h"
-#include "core/driver/uart.h"
+#include "kernel/core/driver/uart.h"
 #include "kernel/core/proc/sched.h"
 #include "kernel/vfs/tty.h"
 

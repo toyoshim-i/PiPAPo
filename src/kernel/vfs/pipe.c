@@ -18,12 +18,12 @@
 #include <string.h>
 
 #include "common/errno.h"
-#include "common/mod/mod_core.h"
-#include "core/mm/mem_region.h"
-#include "core/proc/proc.h"
+#include "kernel/common/mod/mod_core.h"
+#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/proc/proc.h"
 #include "fd.h"
 #include "file.h"
-#include "common/config.h"
+#include "kernel/common/config.h"
 
 /* Forward declarations for pool operations (fd.c) */
 extern void vfs_fd_release(int desc);

@@ -6,7 +6,7 @@
  * core1_launch() / sio_fifo_push() / sio_fifo_pop() unconditionally.
  */
 
-#include "core/cpu/smp.h"
+#include "kernel/core/cpu/smp.h"
 
 void core1_launch(void (*entry)(void)) { (void)entry; }
 void core1_sched_entry(void) {}

@@ -17,7 +17,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "common/config.h"
+#include "kernel/common/config.h"
 
 /* ── Block device struct ─────────────────────────────────────────────────── */
 

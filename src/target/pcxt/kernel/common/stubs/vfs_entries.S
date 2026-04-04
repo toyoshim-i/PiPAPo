@@ -81,7 +81,7 @@ vfs_\name\()_entry:
 
 /* Generate all entry stubs from the .inc file */
 #define MOD_VFS_ENTRY(name, idx)  VFS_TARGET_STUB name
-#include "common/mod/mod_vfs.inc"
+#include "kernel/common/mod/mod_vfs.inc"
 #undef MOD_VFS_ENTRY
 
 #endif /* __ia16__ */

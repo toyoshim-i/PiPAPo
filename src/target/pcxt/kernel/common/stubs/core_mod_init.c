@@ -10,10 +10,10 @@
 
 #ifdef __ia16__
 
-#include "core/mm/kmem.h"  /* kmem_pool_t */
-#include "core/mm/mem_layout.h"  /* proc_image_segment_t, ppap_mem_class_t */
-#include "core/driver/blkdev.h"  /* blkdev_t */
-#include "common/mod/module.h"
+#include "kernel/core/mm/kmem.h"  /* kmem_pool_t */
+#include "kernel/core/mm/mem_layout.h"  /* proc_image_segment_t, ppap_mem_class_t */
+#include "kernel/core/driver/blkdev.h"  /* blkdev_t */
+#include "kernel/common/mod/module.h"
 
 /* Forward-declare the caller-side stubs from core_stubs.S. */
 void klog(const char *);
@@ -60,11 +60,11 @@ void svc_set_restart(void);
 #define core_blkdev_read         core_blkdev_read
 #define core_blkdev_write        core_blkdev_write
 
-#include "common/mod/mod_core.h"
+#include "kernel/common/mod/mod_core.h"
 
 MOD_DEFINE_BEGIN(core)
 #define MOD_CORE_ENTRY(name, idx)  MOD_IMPL(core, name)
-#include "common/mod/mod_core.inc"
+#include "kernel/common/mod/mod_core.inc"
 #undef MOD_CORE_ENTRY
 MOD_DEFINE_END()
 

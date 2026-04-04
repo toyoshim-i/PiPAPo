@@ -15,13 +15,13 @@
 
 #include "target/target.h"
 #include "kernel/core/arch.h"
-#include "core/driver/uart.h"
+#include "kernel/core/driver/uart.h"
 #include "common/errno.h"
-#include "vfs/tty.h"
-#include "core/klog.h"
-#include "core/mm/page.h"
-#include "core/proc/proc.h"
-#include "core/proc/sched.h"
+#include "kernel/vfs/tty.h"
+#include "kernel/core/klog.h"
+#include "kernel/core/mm/page.h"
+#include "kernel/core/proc/proc.h"
+#include "kernel/core/proc/sched.h"
 
 /* ── Timer driver ────────────────────────────────────────────────────── */
 
@@ -47,8 +47,8 @@ extern void timer_init(void);
  * we then copy it to regs[0] (d0) for the caller.
  * ────────────────────────────────────────────────────────────────────── */
 
-#include "core/signal/signal.h"
-#include "core/syscall/syscall.h"
+#include "kernel/core/signal/signal.h"
+#include "kernel/core/syscall/syscall.h"
 
 void m68k_syscall_entry(uint32_t *regs) {
   uint32_t nr = regs[0]; /* d0 = syscall number */

@@ -6,12 +6,12 @@
  */
 
 #include "target/target.h"
-#include "common/config.h"
-#include "core/driver/arch/arm_m/uart_rpico.h"
-#include "core/driver/clock.h"
-#include "core/driver/uart.h"
-#include "core/klog.h"
-#include "core/mm/mpu.h"
+#include "kernel/common/config.h"
+#include "kernel/core/driver/arch/arm_m/uart_rpico.h"
+#include "kernel/core/driver/clock.h"
+#include "kernel/core/driver/uart.h"
+#include "kernel/core/klog.h"
+#include "kernel/core/mm/mpu.h"
 #include "pico1.h"
 
 #ifdef PPAP_TESTS

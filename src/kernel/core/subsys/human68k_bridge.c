@@ -19,7 +19,7 @@
 #include "h68k_util.h"
 #include "kernel/common/errno.h"
 #include "kernel/common/mod/mod_vfs.h"
-#include "core/exec/exec.h"
+#include "kernel/core/exec/exec.h"
 #include "kernel/core/klog.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"

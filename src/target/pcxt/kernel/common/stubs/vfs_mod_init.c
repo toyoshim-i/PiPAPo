@@ -11,9 +11,9 @@
 
 #ifdef __ia16__
 
-#include "vfs/vfs_types.h"
-#include "core/mm/page.h"
-#include "common/mod/module.h"
+#include "kernel/vfs/vfs_types.h"
+#include "kernel/core/mm/page.h"
+#include "kernel/common/mod/module.h"
 
 /* Forward-declare the caller-side stubs from vfs_stubs.S.
  * Signatures must match the mod_vfs_t struct fields. */
@@ -61,11 +61,11 @@ int  vfs_mount_romfs(const char *, uint8_t, const void *);
 int  vfs_mount_by_fstype(const char *, const char *, const char *, long);
 
 /* Now include mod_vfs.h which declares mod_vfs_t */
-#include "common/mod/mod_vfs.h"
+#include "kernel/common/mod/mod_vfs.h"
 
 MOD_DEFINE_BEGIN(vfs)
 #define MOD_VFS_ENTRY(name, idx)  MOD_IMPL(vfs, name)
-#include "common/mod/mod_vfs.inc"
+#include "kernel/common/mod/mod_vfs.inc"
 #undef MOD_VFS_ENTRY
 MOD_DEFINE_END()
 

@@ -8,8 +8,8 @@
 
 #include "subsys.h"
 
-#include "common/core/subsys_info.h"
-#include "common/core/ecpu_info.h"
+#include "kernel/common/core/subsys_info.h"
+#include "kernel/common/core/ecpu_info.h"
 
 /* Forward declarations — conditionally compiled based on CMake flags */
 #ifdef PPAP_ENABLE_HUMAN68K

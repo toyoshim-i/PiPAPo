@@ -18,11 +18,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "common/mod/mod_vfs.h"  /* mod_vfs.tty_rx_notify */
-#include "core/mm/mem_region.h"
-#include "core/mm/page.h" /* PAGE_SIZE */
-#include "core/signal/signal.h"
-#include "common/spinlock.h" /* SPIN_PROC */
+#include "kernel/common/mod/mod_vfs.h"  /* mod_vfs.tty_rx_notify */
+#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/mm/page.h" /* PAGE_SIZE */
+#include "kernel/core/signal/signal.h"
+#include "kernel/common/spinlock.h" /* SPIN_PROC */
 #include "kernel/core/arch.h"
 #include "kernel/core/ioregs.h"
 

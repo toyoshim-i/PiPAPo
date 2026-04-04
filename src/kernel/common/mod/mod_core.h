@@ -9,7 +9,7 @@
  * Only functions defined in .c files are exported here.
  *
  * Usage:
- *   #include "common/mod/mod_core.h"
+ *   #include "kernel/common/mod/mod_core.h"
  *   mod_core.klogf("VFS: %s\n", msg);
  *   void *p = mod_core.kmem_alloc(&pool);
  *   mod_core.mem_region_alloc(&seg, PPAP_MEM_RAM_DATA, PAGE_SIZE, flags);
@@ -30,7 +30,7 @@ typedef struct kmem_pool kmem_pool_t;
 struct blkdev;
 typedef struct blkdev blkdev_t;
 
-#include "core/mm/mem_layout.h"  /* ppap_mem_class_t, proc_image_segment_t,
+#include "kernel/core/mm/mem_layout.h"  /* ppap_mem_class_t, proc_image_segment_t,
                                   * page_id_t (via page.h) */
 
 #include "module.h"

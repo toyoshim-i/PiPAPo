@@ -12,7 +12,7 @@
 #define PPAP_ARCH_ARM_M_ARCH_H
 
 #include <stdint.h>
-#include "core/mm/mem_region.h"
+#include "kernel/core/mm/mem_region.h"
 
 #include "ioregs.h" /* SCB_ICSR, PENDSVSET */
 

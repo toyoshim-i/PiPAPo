@@ -15,10 +15,10 @@
 #include <stddef.h> /* NULL, offsetof */
 
 #include "common/errno.h"
-#include "core/klog.h"
-#include "core/mm/mem_region.h"
-#include "core/mm/page.h"  /* PAGE_SIZE — for proc_setup_stack */
-#include "common/spinlock.h" /* SPIN_PROC */
+#include "kernel/core/klog.h"
+#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/mm/page.h"  /* PAGE_SIZE — for proc_setup_stack */
+#include "kernel/common/spinlock.h" /* SPIN_PROC */
 #include "kernel/core/arch.h"   /* arch_build_initial_frame */
 #include "kernel/core/ioregs.h"
 #include "sched.h" /* sched_get_ticks — for start_time */

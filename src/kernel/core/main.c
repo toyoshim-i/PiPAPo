@@ -7,24 +7,24 @@
  * — see src/target/target.h.
  */
 
-#include "core/klog.h"
-#include "core/mm/mem_region.h"
-#include "core/mm/page.h"
-#include "core/proc/proc.h"
-#include "core/proc/sched.h"
+#include "kernel/core/klog.h"
+#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/mm/page.h"
+#include "kernel/core/proc/proc.h"
+#include "kernel/core/proc/sched.h"
 #include "target/target.h"
-#include "common/mod/mod_vfs.h"
+#include "kernel/common/mod/mod_vfs.h"
 #ifdef PPAP_HAS_BLKDEV
-#include "core/driver/blkdev.h"
-#include "core/driver/loopback.h"
+#include "kernel/core/driver/blkdev.h"
+#include "kernel/core/driver/loopback.h"
 #endif
 #include "kernel/core/arch.h"
-#include "core/cpu/cpu.h"
-#include "core/cpu/smp.h"
+#include "kernel/core/cpu/cpu.h"
+#include "kernel/core/cpu/smp.h"
 #include "common/errno.h"
-#include "core/exec/exec.h"
-#include "common/spinlock.h"
-#include "core/subsys/subsys.h"
+#include "kernel/core/exec/exec.h"
+#include "kernel/common/spinlock.h"
+#include "kernel/core/subsys/subsys.h"
 
 /* Linker-provided romfs image location in flash */
 extern const uint8_t __romfs_start[];

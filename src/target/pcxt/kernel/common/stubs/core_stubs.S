@@ -26,7 +26,7 @@
   .global core_fptrs
 core_fptrs:
 #define MOD_CORE_ENTRY(name, idx)  .word 0, 0  /* idx */
-#include "common/mod/mod_core.inc"
+#include "kernel/common/mod/mod_core.inc"
 #undef MOD_CORE_ENTRY
 
   .section .text
@@ -52,7 +52,7 @@ core_fptrs:
 .endm
 
 #define MOD_CORE_ENTRY(name, idx)  CORE_CALLER_STUB name, idx
-#include "common/mod/mod_core.inc"
+#include "kernel/common/mod/mod_core.inc"
 #undef MOD_CORE_ENTRY
 
 /* blkdev stubs need core_ prefix aliases (struct field is blkdev_read,
