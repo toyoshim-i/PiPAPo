@@ -856,6 +856,11 @@ The VFS header at offset 0 in the VFS segment contains a magic word
 | exec ops->read hangs | `vn->mount->ops->read` is a near pointer valid only in VFS CS | `mod_vfs.vnode_read()` wrapper executes read in VFS CS |
 | `fd_close_all` crash in sys_exit | Unresolved VFS function called from core sys_exit path | Requires completing module boundary migration |
 | Page pool at wrong address | `page_id_linear`/`linear_page_id` used `uintptr_t` (16-bit on i16), truncating page addresses above 64 KB | Changed both to `uint32_t` parameter/return types |
+| Floppy reads fail with timer | BIOS INT 13h returns AH=0x80 (timeout) — timer ISR replaces BIOS INT 08h, breaking floppy motor timeout | Mask IRQ 0 during floppy reads; retry+reset; chain to BIOS INT 08h |
+| Far-call stubs clobber BX | Entry stubs used BX (callee-saved) as scratch, corrupting 32-bit locals | Changed to DX (caller-saved) |
+| proc_alloc zeros kernel_stack_top | `memset` in `proc_alloc` zeroes PCB including `kernel_stack_top` | Re-assign `kernel_stack_top` in `proc_alloc` after memset |
+| vfork parent overwrites child AX | trap.S `.Lstore_ret` writes parent return value to shared user stack, overwriting child's AX=0 | Check `i16_switch_pending` and skip AX write |
+| elf16_loader overwrites active kstack | During execve, loader wrote new frame at `kernel_stack_top`, overwriting active C call frames | Store `exec_user_ss/sp` in PCB; trap.S builds frame after C returns |
 
 ---
 
@@ -905,6 +910,8 @@ data access hits the process segment.  The kernel runs with `SS=0`.
 
 #### R-1.1a `vfork()` / `execve()` on the split-frame i16 ABI
 
+**Status**: Complete.
+
 With the split-frame i16 layout, `vfork()` does not allocate or copy a
 separate child user stack.  The child shares the parent's user stack, as
 `vfork()` semantics already imply.  The only state that must be preserved is
@@ -941,27 +948,35 @@ possible future cross-target "`vfork()` without stack copy" cleanup.
 
 #### R-1.2 Debug init post-startup failure (G-1)
 
-Current state:
+**Status**: Complete.
 
-```text
-INIT: starting
-INIT: /sbin/init failed, trying /bin/sh
-```
+Root cause was floppy read failures (BIOS INT 13h timeout due to timer
+ISR interference).  Fixed by masking IRQ 0 during floppy reads and
+adding retry+reset logic.  Init now reads `/etc/inittab` and spawns
+`/bin/sh` via `vfork` + `execve`.
 
-Trace why `init` falls back after startup now that floppy-backed reads
-work and `/bin/hello` exec+write+exit succeeds.
+#### R-1.3 Keyboard / serial input
 
-#### R-1.3 Signal delivery runtime validation
+Shell starts and makes syscalls (getpid, getcwd, stat) but currently
+has no input path.  Needs:
+
+1. **Keyboard driver** — INT 16h BIOS interface for console input.
+2. **Serial input** — COM1 receive (INT 14h or direct 8250 UART RX).
+3. **TTY read path** — wire keyboard/serial input into the VFS TTY
+   device so `read(0, ...)` returns user keystrokes.
+
+#### R-1.4 Signal delivery runtime validation
 
 `sys_sigreturn` / signal trampoline is scaffolded for i16 but not yet
 runtime-tested.  Validate with `--test pcxt`.
 
-#### R-1.4 Fork / waitpid runtime validation
+#### R-1.5 Fork / waitpid runtime validation
 
-i16 `vfork` frame restore and trap-return `execve` handling are
-scaffolded.  Validate with `--test pcxt`.
+i16 `vfork` frame restore and trap-return `execve` handling work for
+the init→sh path.  Full `fork` / `waitpid` not yet runtime-tested.
+Validate with `--test pcxt`.
 
-#### R-1.5 Enable `--test pcxt` in run.sh
+#### R-1.6 Enable `--test pcxt` in run.sh
 
 Wire up `--test pcxt` to build + run QEMU with exit-on-serial-match
 (same as `--test qemu_m68k`).  Verify that runtests passes.
@@ -1050,8 +1065,8 @@ mounts UFS root, runs runtests.
 ### Dependency Graph
 
 ```
-Completed (P-1 through P-4b + partial P-5)
-  └─→ R-1 (user-space bring-up)
+Completed: P-1 through P-4b, R-1.1, R-1.1a, R-1.2
+  └─→ R-1.3–R-1.6 (input, signals, fork, test suite)
         ├─→ R-2 (HDD boot via BIOS INT 13h)
         ├─→ R-3 (V30 8080 eCPU)
         └─→ R-4 (DOS subsystem)
