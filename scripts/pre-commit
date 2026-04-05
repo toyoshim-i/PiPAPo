@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# =============================================================================
+# pre-commit — Git pre-commit hook for PPAP
+# =============================================================================
+#
+# Runs all code quality checks before each commit.  Install with:
+#   git config core.hooksPath scripts
+# or:
+#   ./scripts/setup.sh host
+#
+# To bypass temporarily (e.g. WIP commits):
+#   git commit --no-verify
+# =============================================================================
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+echo "=== pre-commit checks ==="
+
+"$SCRIPT_DIR/check_allocator_boundaries.sh"
+"$SCRIPT_DIR/check_module_boundaries.sh"
+"$SCRIPT_DIR/check_include_paths.sh"
+python3 "$SCRIPT_DIR/check_include_order.py"
+python3 "$SCRIPT_DIR/check_include_guards.py"
+python3 "$SCRIPT_DIR/check_own_header.py"
+"$SCRIPT_DIR/check_clang_format.sh"
+
+echo "=== all checks passed ==="

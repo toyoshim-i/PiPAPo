@@ -89,6 +89,13 @@ install_host_tools() {
 
 install_host_tools
 
+# --- Install git pre-commit hook ---------------------------------------------
+
+if git -C "$PPAP_ROOT" rev-parse --git-dir &>/dev/null; then
+  git -C "$PPAP_ROOT" config core.hooksPath scripts
+  success "Git pre-commit hook installed (scripts/pre-commit)"
+fi
+
 # --- Step 0b: Ensure Docker is installed (skip for host-only) ----------------
 
 setup_docker() {
