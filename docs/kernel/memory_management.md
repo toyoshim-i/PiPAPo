@@ -86,7 +86,7 @@ Memory size is fixed at compile time per target:
 0x20042000  └────────────────────────────┘
 ```
 
-Default constants (from `page.h`, as used by `pico1` and `qemu_arm`):
+Default constants (from `config.h`, as used by `pico1` and `qemu_arm`):
 
 | Symbol             | Value        | Size    |
 |--------------------|--------------|---------|
@@ -145,8 +145,9 @@ All code outside `src/kernel/mm/` allocates through `mem_region_*`:
 
 ### 3.2 Page-Index Wrappers
 
-Code outside `mm/` accesses pages by index through these wrappers
-(declared in `mem_region.h`, implemented in `mem_region.c`):
+Code outside `mm/` accesses pages by index.  Most are exposed via
+`mod_core` for cross-module use.  Inline cursor helpers live in
+`kernel/common/subtle/mem_helper.h` (legacy — do not add new uses).
 
 | Function | Returns | i16-safe? | Use when |
 |---|---|---|---|
@@ -171,14 +172,22 @@ page pool.  These classes are never used on i16.
 
 ### 3.4 Module Interface
 
-The `mod_core` vtable exposes page operations as `mem_region_page_*`:
+The `mod_core` vtable exposes page and region operations:
 
 | vtable field | Implementation |
 |---|---|
+| `mem_region_alloc` | `mem_region_alloc()` |
+| `mem_region_free` | `mem_region_free()` |
+| `mem_region_free_bytes` | `mem_region_free_bytes()` |
+| `mem_region_total_bytes` | `mem_region_total_bytes()` |
 | `mem_region_page_alloc` | `mem_region_page_alloc()` → `mm_page_alloc()` |
 | `mem_region_page_free` | `mem_region_page_free()` → `mm_page_free()` |
+| `mem_region_page_linear`\* | `mem_region_page_linear()` → `mm_page_linear()` |
 | `mem_region_page_read` | `mem_region_page_read()` → `mm_page_read()` |
 | `mem_region_page_write` | `mem_region_page_write()` → `mm_page_write()` |
+
+\* `mem_region_page_linear` is a **subtle** workaround for blkdev DMA.
+New code should use `page_read/write`.  See [issue #48](https://github.com/toyoshim-i/PiPAPo/issues/48).
 
 The i16 module loader patches these into cross-segment far-call
 entries so modules can allocate and access pages without linking

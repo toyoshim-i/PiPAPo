@@ -86,6 +86,7 @@ fi
 
 # ── Repository boundary checks ───────────────────────────────────────────────
 "$SCRIPT_DIR/check_allocator_boundaries.sh"
+"$SCRIPT_DIR/check_module_boundaries.sh"
 
 # ── Determine source and build directories ──────────────────────────────────
 case "$TARGET" in

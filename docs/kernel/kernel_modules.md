@@ -100,7 +100,7 @@ for function names and indices:
 
 ```
 src/kernel/common/mod/
-  mod_core.inc    ← 23 functions
+  mod_core.inc    ← 20 functions
   mod_vfs.inc     ← 35 functions
 ```
 
@@ -117,23 +117,22 @@ of sync.
 
 ### Modules
 
-#### mod_core (23 functions)
+#### mod_core (20 functions)
 
 Common services that all other modules depend on.
 
 | Group | Functions |
 |-------|-----------|
-| Logging | `klog`, `klogf` |
 | Slab allocator | `kmem_alloc`, `kmem_free`, `kmem_free_count`, `kmem_pool_init` |
 | Region allocator | `mem_region_alloc`, `mem_region_free`, `mem_region_free_bytes`, `mem_region_total_bytes` |
-| Page-indexed memory | `mm_page_alloc`, `mm_page_free`, `mm_page_read`, `mm_page_write` |
-| Scheduler | `sched_get_ticks`, `sched_wakeup`, `sched_yield`, `svc_set_restart` |
-| UART (bootstrap) | `uart_getc`, `uart_putc`, `uart_rx_avail` |
+| Page-indexed memory | `mem_region_page_alloc`, `mem_region_page_free`, `mem_region_page_linear`\*, `mem_region_page_read`, `mem_region_page_write` |
+| Scheduler | `sched_get_ticks`, `sched_wakeup`, `sched_switch`, `svc_set_restart` |
+| Subsystem | `subsys_read_proc` |
 | Block device I/O | `blkdev_read`, `blkdev_write` |
 
-**UART in core:** UART is theoretically a character device belonging
-under VFS/devfs, but `klog` needs `uart_putc` before VFS is
-initialized.  The bootstrap dependency requires it in core.
+\* `mem_region_page_linear` is a **subtle** workaround — it returns a
+raw linear address for blkdev DMA.  New VFS code should use
+`mem_region_page_read/write` instead.  See [issue #48](https://github.com/toyoshim-i/PiPAPo/issues/48).
 
 **kmem vs mem_region:** `kmem` is a sub-page slab allocator for
 fixed-size kernel objects (vnodes, files).  `mem_region` is a
@@ -247,22 +246,39 @@ full layout.  Module-related files:
 
 ```
 src/kernel/
-  common/mod/
-    module.h          ← module system macros (MOD_FUNC etc.)
-    mod_core.h/.inc   ← core module interface
-    mod_vfs.h/.inc    ← VFS module interface
-    mod_core.c        ← core struct initializer (32-bit)
-  core/               ← core module implementation
-  vfs/                ← VFS module (VFS, fd, tty, pipe, all FS)
+  common/
+    mod/
+      module.h          ← module system macros (MOD_FUNC etc.)
+      mod_core.h/.inc   ← core module interface (20 functions)
+      mod_vfs.h/.inc    ← VFS module interface (35 functions)
+      mod_core.c        ← core struct initializer (32-bit)
+    core/               ← shared data-only headers
+      mem_layout.h      ← memory class enums, proc_image_segment_t
+      page_types.h      ← page_id_t, PAGE_SIZE, page_count, oom_count
+      proc_info.h       ← pcb_t struct, proc_state_t, proc_table, current
+      sched_info.h      ← cpu tick counters
+      subsys_info.h     ← subsystem name constants
+    subtle/
+      mem_helper.h      ← legacy page-cursor inlines (do not add new uses)
+    config.h            ← build config, memory map constants
+    spinlock.h          ← SMP spinlock / core_id()
+  core/                 ← core module implementation
+  vfs/                  ← VFS module (VFS, fd, tty, pipe, all FS)
+    driver/             ← device drivers (blkdev, uart, spi, i2c, lcd, ...)
+
+src/arch/<arch>/kernel/
+  common/
+    irq.h               ← arch_irq_save/restore, arch_preempt_disable/enable
+    ioregs.h            ← I/O register definitions (+ CSR defs on riscv/xtensa)
 
 src/target/pcxt/kernel/common/stubs/
-  core_stubs.S        ← VFS-side caller stubs for core (auto-gen from .inc)
-  core_entries.S      ← core-side target entry stubs (auto-gen from .inc)
-  core_mod_init.c     ← VFS-side mod_core struct (i16 only)
-  vfs_stubs.S         ← core-side caller stubs for VFS (auto-gen from .inc)
-  vfs_entries.S       ← VFS-side target entry stubs (auto-gen from .inc)
-  vfs_header.S        ← VFS module header (entry point table)
-  vfs_mod_init.c      ← core-side mod_vfs struct (i16 only)
+  core_stubs.S          ← VFS-side caller stubs for core (auto-gen from .inc)
+  core_entries.S        ← core-side target entry stubs (auto-gen from .inc)
+  core_mod_init.c       ← VFS-side mod_core struct (i16 only)
+  vfs_stubs.S           ← core-side caller stubs for VFS (auto-gen from .inc)
+  vfs_entries.S         ← VFS-side target entry stubs (auto-gen from .inc)
+  vfs_header.S          ← VFS module header (entry point table)
+  vfs_mod_init.c        ← core-side mod_vfs struct (i16 only)
 ```
 
 ### Boundary Rules
@@ -274,15 +290,20 @@ Two strict rules:
 
 2. **Outward rule:** Files inside `vfs/` MUST NOT include headers
    inside other module directories (e.g. `exec/exec.h`, `proc/proc.h`).
-   They use `mod/mod_core.h` for core services.
+   They use `mod/mod_core.h` for core services and `common/core/*.h`
+   for data-only type definitions (pcb_t, page_id_t, etc.).
 
 **Allowed includes from any module:**
 - `mod/mod_*.h` — public module interfaces
-- `common/*` or standard headers — shared utilities
+- `common/*` or standard headers — shared utilities and data types
+- `arch/<arch>/kernel/common/*` — arch-specific IRQ/IO definitions
 - Headers within the same module directory
 
-On i16, the linker enforces these boundaries — unresolved symbols
-from the wrong module cause build errors.
+**Enforcement:**
+- On i16, the linker catches cross-module symbol references at build time.
+- On all targets, `scripts/check_module_boundaries.sh` runs as a
+  pre-build step in `build.sh` and fails the build if any VFS file
+  includes `kernel/core/` headers or vice versa.
 
 ### Design Decisions
 
@@ -306,8 +327,10 @@ No runtime module loading — simpler and sufficient.
 
 - **mod_signal** — signal delivery (currently direct calls)
 - **mod_subsys** — eCPU emulators + personality bridges
-- **mm_page / mem_region integration** — unify page-indexed and
-  region-based allocators behind a single API surface
+- **blkdev page-indexed API** — refactor `blkdev_t.read/write` to
+  accept `(page_id_t, uint16_t off)` instead of `void *buf`,
+  eliminating the `mem_region_page_linear` workaround.
+  See [issue #48](https://github.com/toyoshim-i/PiPAPo/issues/48)
 - **Source tree alignment** — restructure `src/kernel/` so each
   module's directory matches its boundary exactly (e.g. move
   `fd/`, `fs/` into `vfs/`; move `proc/`, `syscall/`, `mm/` into

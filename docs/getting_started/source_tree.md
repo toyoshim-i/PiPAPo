@@ -27,17 +27,19 @@ boundary enforced on ia16 (where core and VFS are separate binaries):
 ```
 kernel/
   common/            Shared between core and VFS
-    mod/             Module interfaces (mod_core.h, mod_vfs.h, mod_vfs.inc)
-    arch.h           Architecture dispatcher (includes kernel/core/arch.h via overlay)
-    ioregs.h         I/O register dispatcher
-    config.h         Build configuration
-    errno.h          Error codes
-    seg.c/h          Segment manager
+    mod/             Module interfaces (mod_core.h/.inc, mod_vfs.h/.inc)
+    core/            Data-only shared headers (no function declarations)
+      mem_layout.h   Memory class enums, proc_image_segment_t
+      page_types.h   page_id_t, PAGE_SIZE, page_count, oom_count
+      proc_info.h    pcb_t struct, proc_state_t, proc_table, current
+      sched_info.h   CPU tick counters (user/system/idle per core)
+      subsys_info.h  Subsystem name constants and subsys_names[]
+    subtle/          Legacy helpers (do not add new uses)
+      mem_helper.h   Page-cursor inlines (see issue #48)
+    config.h         Build configuration + memory map constants
     spinlock.h       SMP spinlock / core_id()
   core/              Core module
     main.c           Kernel entry point
-    klog.c/h         Kernel logger
-    endian.h         Byte-order helpers
     mm/              Memory management (page, kmem, mem_region, mpu, xip)
     proc/            Process management and scheduler
     signal/          Signal delivery
@@ -45,13 +47,12 @@ kernel/
     syscall/         System call dispatch and handlers
     subsys/          Subsystem bridges (Human68k, CP/M, SOS)
     cpu/             CPU abstraction and emulated CPUs (m68k, z80)
-    driver/          Shared drivers (blkdev, uart, fbcon, i2c, spi, lcd, ...)
+    driver/          clock.h (only core driver remaining)
   vfs/               VFS module
     vfs.c/h          VFS layer and mount table
+    klog.c/h         Kernel logger
     namei.c          Path resolution
-    vfs_types.h      VFS type definitions
     fd.c/h           File descriptor pool
-    file.h           struct file and file_ops
     tty.c/h          TTY driver
     pipe.c           Pipe implementation
     devfs.c/h        /dev filesystem
@@ -61,15 +62,18 @@ kernel/
     ufs.c/h          Unix filesystem (block device)
     vfat.c/h         FAT filesystem
     fstab.c/h        /etc/fstab automount
+    driver/          Device drivers (blkdev, uart, spi, i2c, lcd, fbcon, ...)
 ```
 
 ### Module Boundary Rules
 
 - **Core code** may include `core/` and `common/` headers.
-- **VFS code** may include `vfs/` and `common/` headers.
+- **VFS code** may include `vfs/`, `common/`, and `arch/<arch>/kernel/common/` headers.
+- **VFS code MUST NOT include `kernel/core/` headers** — enforced by
+  `scripts/check_module_boundaries.sh` (runs as pre-build step).
 - Cross-module **function calls** go through `mod_core` / `mod_vfs`
   interfaces (far calls on ia16, direct calls on 32-bit).
-- Cross-module **type definitions** are shared via `common/` headers
+- Cross-module **type definitions** are shared via `common/core/` headers
   (data types only, no function prototypes).
 
 ---
@@ -81,8 +85,12 @@ Each architecture directory mirrors the primary `src/` tree:
 ```
 arch/<arch>/
   boot/              Boot code (boot.S, stage1.S)
-  kernel/core/       Arch-specific kernel core (arch.h, switch.S, trap.S, ...)
-    driver/          Arch-specific drivers (uart_rpico.c, clock_rpico.c, ...)
+  kernel/
+    common/          Arch-specific shared headers
+      irq.h          IRQ save/restore, preemption control
+      ioregs.h       I/O register definitions (+ CSR defs on riscv/xtensa)
+    core/            Arch-specific kernel core (arch.h, switch.S, trap.S, ...)
+    vfs/             Arch-specific VFS drivers (uart_rpico.c, spi_rpico.c, ...)
   user/              Arch-specific user code (crt0.S, syscall.S, user.ld)
 ```
 

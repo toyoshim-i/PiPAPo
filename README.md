@@ -20,7 +20,7 @@ A portable UNIX-like micro OS for bare-metal microcontrollers and retro CPUs.
 
 | Target | Board / Emulator | Architecture | CPU | RAM | Status |
 |---|---|---|---|---|---|
-| `qemu_arm` | QEMU mps2-an500 | ARM Cortex-M3 | ARMv7-M | 4 MB | 23/23 tests |
+| `qemu_arm` | QEMU mps2-an500 | ARM Cortex-M3 | ARMv7-M | 4 MB | 24/24 tests |
 | `pico1` | Raspberry Pi Pico | ARM Cortex-M0+ | Dual-core @ 133 MHz | 264 KB | Stable |
 | `pico1calc` | ClockworkPi PicoCalc | ARM Cortex-M0+ | Dual-core @ 133 MHz | 264 KB | Stable |
 | `pico2` | Raspberry Pi Pico 2 | ARM Cortex-M33 | Dual-core @ 150 MHz | 520 KB | Stable |
@@ -86,18 +86,26 @@ PPAP/
     boot/
       stage1.S              Stage 1 bootloader (ARM/RP2040: sets VTOR, jumps to kernel)
     kernel/
-      main.c                Unified kmain() — uses target hooks for all platforms
-      mm/                   Memory management (page allocator, kmem)
-      proc/                 Process management (PCB, scheduler, context switch)
-      syscall/              System call layer (trap handler, dispatch, sys_*)
-      fd/                   File descriptors (fd table, tty, pipe)
-      vfs/                  Virtual filesystem (mount table, path resolution)
-      fs/                   Filesystem drivers (romfs, devfs, procfs, vfat, ufs, tmpfs)
-      blkdev/               Block device layer (registry, RAM, SD, loopback)
-      exec/                 ELF loader + execve
-      signal/               Signal infrastructure
-      common/mod/           Module system (mod_core, mod_vfs, .inc files)
-    drivers/                Hardware drivers (UART, SPI, LCD, I2C, etc.)
+      common/               Shared headers and module interfaces
+        mod/                Module system (mod_core, mod_vfs, .inc files)
+        core/               Data-only shared types (pcb_t, page_id_t, mem_layout)
+        subtle/             Legacy helpers (page-cursor inlines)
+        config.h            Build configuration + memory map constants
+        spinlock.h          SMP spinlock / core_id()
+      core/                 Core module
+        main.c              Unified kmain() — uses target hooks for all platforms
+        mm/                 Memory management (page allocator, kmem, mem_region)
+        proc/               Process management (PCB, scheduler, context switch)
+        syscall/            System call layer (trap handler, dispatch, sys_*)
+        exec/               ELF loader + execve
+        signal/             Signal infrastructure
+        subsys/             Subsystem bridges (Human68k, CP/M, SOS)
+        cpu/                CPU abstraction and emulated CPUs (m68k, z80)
+      vfs/                  VFS module
+        vfs.c, namei.c      Virtual filesystem (mount table, path resolution)
+        fd.c, tty.c, pipe.c File descriptors, TTY, pipes
+        devfs, procfs, ...  Filesystem drivers (romfs, devfs, procfs, vfat, ufs, tmpfs)
+        driver/             Device drivers (blkdev, uart, spi, i2c, lcd, fbcon, ...)
   src/user/                 User-space programs + per-arch build rules
     arch/arm_m/             ARM: crt0.S, syscall.S, user.ld
     arch/m68k/              m68k: crt0.S, syscall.S, user.ld
