@@ -451,7 +451,8 @@ int h68k_emu_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
               flags = O_RDWR;
               break;
           }
-          cpu->d[0] = (uint32_t)h68k_errno(sys_open((uintptr_t)path, flags, 0644));
+          cpu->d[0] =
+              (uint32_t)h68k_errno(sys_open((uintptr_t)path, flags, 0644));
           return CPU_TRAP_HANDLED;
         }
 

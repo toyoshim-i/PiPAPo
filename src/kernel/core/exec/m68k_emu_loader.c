@@ -58,16 +58,14 @@ static int m68k_emu_detect(const uint8_t *file_buf, uint32_t file_size,
 }
 
 static int m68k_emu_alloc_region(proc_image_segment_t *seg,
-                                 uint32_t preferred_pages,
-                                 uint32_t min_pages) {
+                                 uint32_t preferred_pages, uint32_t min_pages) {
   if (!seg || min_pages == 0 || preferred_pages < min_pages)
     return -(int)ENOMEM;
 
   uint32_t total_pages = preferred_pages;
   while (total_pages >= min_pages) {
     if (mem_region_alloc(seg, PPAP_MEM_RAM_DATA, total_pages * PAGE_SIZE,
-                         PROC_IMAGE_SEG_WRITABLE |
-                             PROC_IMAGE_SEG_OWNED) == 0) {
+                         PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) == 0) {
       return (int)total_pages;
     }
     if (total_pages == min_pages) break;
@@ -109,9 +107,8 @@ static int m68k_emu_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
    * Reserve a few pages (4) for the process stack and kernel overhead. */
   uint32_t emu_mem_pages = M68K_EMU_MEM_PREFERRED / PAGE_SIZE;
   uint32_t min_emu_pages = M68K_EMU_MEM_MIN / PAGE_SIZE;
-  int total_pages = m68k_emu_alloc_region(&data_region,
-                                          emu_mem_pages + state_pages,
-                                          min_emu_pages + state_pages);
+  int total_pages = m68k_emu_alloc_region(
+      &data_region, emu_mem_pages + state_pages, min_emu_pages + state_pages);
   if (total_pages < 0) return total_pages;
 
   emu_mem_pages = (uint32_t)total_pages - state_pages;
@@ -122,8 +119,7 @@ static int m68k_emu_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
   /* ── 2. Allocate stack page ────────────────────────────────────────── */
   if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                       PROC_IMAGE_SEG_WRITABLE |
-                           PROC_IMAGE_SEG_OWNED) < 0) {
+                       PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) < 0) {
     mem_region_free(&data_region);
     return -(int)ENOMEM;
   }

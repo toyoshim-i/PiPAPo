@@ -561,7 +561,8 @@ static long ufs_read(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
     uint32_t avail = BLKDEV_SECTOR_SIZE - off_in_sec;
     if (avail > remaining) avail = remaining;
 
-    mod_core.mem_region_page_write(page, page_off, &ufs_buf[off_in_sec], (uint16_t)avail);
+    mod_core.mem_region_page_write(page, page_off, &ufs_buf[off_in_sec],
+                                   (uint16_t)avail);
     mem_region_page_advance(&page, &page_off, avail);
     pos += avail;
     remaining -= avail;
@@ -613,10 +614,12 @@ static long ufs_write(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
       /* Partial sector: read-modify-write */
       rc = ufs_read_blk_sector(priv, phys, sec_in_blk);
       if (rc < 0) return (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
-      mod_core.mem_region_page_read(page, page_off, &ufs_buf[off_in_sec], (uint16_t)avail);
+      mod_core.mem_region_page_read(page, page_off, &ufs_buf[off_in_sec],
+                                    (uint16_t)avail);
     } else {
       /* Full sector: write directly */
-      mod_core.mem_region_page_read(page, page_off, ufs_buf, BLKDEV_SECTOR_SIZE);
+      mod_core.mem_region_page_read(page, page_off, ufs_buf,
+                                    BLKDEV_SECTOR_SIZE);
     }
 
     rc = ufs_write_blk_sector(priv, phys, sec_in_blk);

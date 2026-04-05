@@ -153,9 +153,8 @@ long sys_writev(long fd, uintptr_t iov_ptr, long iovcnt) {
 
   for (long i = 0; i < iovcnt; i++) {
     struct iovec iov;
-    int rc = sys_copy_from_user(&iov,
-                                   iov_ptr + (uintptr_t)(i * sizeof(iov)),
-                                   sizeof(iov));
+    int rc = sys_copy_from_user(&iov, iov_ptr + (uintptr_t)(i * sizeof(iov)),
+                                sizeof(iov));
     long n;
 
     if (rc < 0) return total > 0 ? total : rc;
@@ -181,9 +180,8 @@ long sys_readv(long fd, uintptr_t iov_ptr, long iovcnt) {
 
   for (long i = 0; i < iovcnt; i++) {
     struct iovec iov;
-    int rc = sys_copy_from_user(&iov,
-                                   iov_ptr + (uintptr_t)(i * sizeof(iov)),
-                                   sizeof(iov));
+    int rc = sys_copy_from_user(&iov, iov_ptr + (uintptr_t)(i * sizeof(iov)),
+                                sizeof(iov));
     long n;
 
     if (rc < 0) return total > 0 ? total : rc;

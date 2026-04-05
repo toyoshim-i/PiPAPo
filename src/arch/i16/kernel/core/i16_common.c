@@ -13,7 +13,7 @@ volatile uint16_t i16_switch_pending = 0;
 /* Current process's kernel stack pointer.  ISR/syscall entry loads
  * SS:SP from SS=0:i16_current_ksp.  Updated on context switch and
  * at boot.  Avoids dereferencing current_core before SS=0 is set. */
-volatile uint16_t i16_current_ksp = 0xE800;  /* kernel_stack[0] top */
+volatile uint16_t i16_current_ksp = 0xE800; /* kernel_stack[0] top */
 
 /* Tick counter incremented by timer handler */
 volatile uint32_t i16_tick_count = 0;
@@ -40,8 +40,7 @@ volatile uint16_t i16_sigreturn_restore_sp = 0;
  * both parts are on the same stack.  User processes use elf16_loader
  * which builds the split frame directly.
  */
-uint32_t *arch_build_initial_frame(uint32_t *sp_arg, void (*entry)(void))
-{
+uint32_t *arch_build_initial_frame(uint32_t *sp_arg, void (*entry)(void)) {
   uint16_t *sp = (uint16_t *)(uintptr_t)sp_arg;
 
   /* Hardware interrupt frame (popped by IRET) */
@@ -50,21 +49,21 @@ uint32_t *arch_build_initial_frame(uint32_t *sp_arg, void (*entry)(void))
   *--sp = (uint16_t)(uintptr_t)entry; /* IP = entry point */
 
   /* Software-saved registers (popped by ISR restore path) */
-  *--sp = 0;  /* AX */
-  *--sp = 0;  /* BX */
-  *--sp = 0;  /* CX */
-  *--sp = 0;  /* DX */
-  *--sp = 0;  /* SI */
-  *--sp = 0;  /* DI */
-  *--sp = 0;  /* BP */
-  *--sp = 0;  /* DS = 0 */
-  *--sp = 0;  /* ES = 0 */
+  *--sp = 0; /* AX */
+  *--sp = 0; /* BX */
+  *--sp = 0; /* CX */
+  *--sp = 0; /* DX */
+  *--sp = 0; /* SI */
+  *--sp = 0; /* DI */
+  *--sp = 0; /* BP */
+  *--sp = 0; /* DS = 0 */
+  *--sp = 0; /* ES = 0 */
 
   /* user_SS:user_SP — for PID 0 (kernel), SS=0 and SP points to
    * the GP frame above on the same stack. */
   uint16_t user_sp = (uint16_t)(uintptr_t)sp;
-  *--sp = 0;         /* user_SS = 0 */
-  *--sp = user_sp;   /* user_SP = points to ES at top of GP frame */
+  *--sp = 0;       /* user_SS = 0 */
+  *--sp = user_sp; /* user_SP = points to ES at top of GP frame */
 
   return (uint32_t *)(uintptr_t)sp;
 }
@@ -82,24 +81,20 @@ uint32_t *arch_build_initial_frame(uint32_t *sp_arg, void (*entry)(void))
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
 
-int i16_timer_can_preempt(uint16_t interrupted_ss)
-{
+int i16_timer_can_preempt(uint16_t interrupted_ss) {
   if (interrupted_ss != 0) return 1;
   return current && current->is_idle;
 }
 
-int i16_trap_should_skip_ret_store(void)
-{
+int i16_trap_should_skip_ret_store(void) {
   return current && current->vfork_frame_saved;
 }
 
-int i16_trap_should_switch_now(void)
-{
+int i16_trap_should_switch_now(void) {
   return !current || current->state != PROC_RUNNABLE;
 }
 
-void i16_vfork_restore_frame(void)
-{
+void i16_vfork_restore_frame(void) {
   if (!current || !current->vfork_frame_saved) return;
   current->vfork_frame_saved = 0;
 
@@ -116,11 +111,9 @@ void i16_vfork_restore_frame(void)
 
   /* Write 24 bytes back to user stack at user_SS:user_SP */
   uint32_t frame_linear = (uint32_t)user_ss * 16 + user_sp;
-  uint32_t data_base =
-      mem_region_page_linear(current->image.data.base_page);
+  uint32_t data_base = mem_region_page_linear(current->image.data.base_page);
   uint32_t rel = frame_linear - data_base;
-  page_id_t page =
-      current->image.data.base_page + (page_id_t)(rel / PAGE_SIZE);
+  page_id_t page = current->image.data.base_page + (page_id_t)(rel / PAGE_SIZE);
   uint16_t off = (uint16_t)(rel % PAGE_SIZE);
   mem_region_page_write(page, off, saved, 24);
 }
@@ -134,10 +127,8 @@ void i16_vfork_restore_frame(void)
  * the shared syscall layer now receives the raw 16-bit register values and
  * resolves user pointers itself through arch_user_ptr_to_page().
  */
-long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1,
-                          uint16_t a2, uint16_t a3, uint16_t a4,
-                          uint16_t user_ds)
-{
+long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1, uint16_t a2,
+                          uint16_t a3, uint16_t a4, uint16_t user_ds) {
   (void)user_ds;
 
   /* The kernel's syscall_dispatch reads args from frame[0..3] and
@@ -148,8 +139,8 @@ long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1,
   frame[2] = a2;
   frame[3] = a3;
 
-  extern void syscall_dispatch(uint32_t *frame, uint32_t nr,
-                               uint32_t a4, uint32_t a5);
+  extern void syscall_dispatch(uint32_t * frame, uint32_t nr, uint32_t a4,
+                               uint32_t a5);
   syscall_dispatch(frame, (uint32_t)nr, (uint32_t)a4, 0);
 
   /* syscall_dispatch stores result in frame[0] on ARM/m68k.

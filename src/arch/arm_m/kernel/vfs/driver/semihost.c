@@ -25,39 +25,33 @@
 /* ── Semihosting call primitive ──────────────────────────────────────────── */
 
 #define SYS_WRITEC 0x03
-#define SYS_READC  0x07
+#define SYS_READC 0x07
 
-static inline int semihost_call(int op, const void *arg)
-{
-    register int r0 __asm__("r0") = op;
-    register const void *r1 __asm__("r1") = arg;
-    __asm__ volatile("bkpt 0xAB" : "+r"(r0) : "r"(r1) : "memory");
-    return r0;
+static inline int semihost_call(int op, const void *arg) {
+  register int r0 __asm__("r0") = op;
+  register const void *r1 __asm__("r1") = arg;
+  __asm__ volatile("bkpt 0xAB" : "+r"(r0) : "r"(r1) : "memory");
+  return r0;
 }
-
 
 /* ── uart.h API ──────────────────────────────────────────────────────────── */
 
-void uart_init(void)
-{
-    /* No hardware to initialize — semihosting is always available
-     * when a debugger is attached. */
+void uart_init(void) {
+  /* No hardware to initialize — semihosting is always available
+   * when a debugger is attached. */
 }
 
-int uart_putc(char c, void (*notify)(void))
-{
-    (void)notify;
-    semihost_call(SYS_WRITEC, &c);
-    return 1; /* semihosting is synchronous, never full */
+int uart_putc(char c, void (*notify)(void)) {
+  (void)notify;
+  semihost_call(SYS_WRITEC, &c);
+  return 1; /* semihosting is synchronous, never full */
 }
 
-int uart_getc(void)
-{
-    int ch = semihost_call(SYS_READC, NULL);
-    return (ch < 0) ? -1 : ch;
+int uart_getc(void) {
+  int ch = semihost_call(SYS_READC, NULL);
+  return (ch < 0) ? -1 : ch;
 }
 
-int uart_rx_avail(void)
-{
-    return 0; /* no interrupt-driven RX; TTY layer polls via getc */
+int uart_rx_avail(void) {
+  return 0; /* no interrupt-driven RX; TTY layer polls via getc */
 }

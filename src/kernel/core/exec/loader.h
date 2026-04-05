@@ -13,7 +13,9 @@
 typedef struct pcb pcb_t;
 
 /* Flags passed to loader_t.load() */
-#define EXEC_FLAG_XIP_SOURCE (1u << 0) /* file buffer is XIP-capable (romfs) */
+#define EXEC_FLAG_XIP_SOURCE                      \
+  (1u << 0) /* file buffer is XIP-capable (romfs) \
+             */
 
 typedef struct loader {
   const char* name;

@@ -126,7 +126,7 @@ void kmain(void) {
     const char *init_path = target_init_path();
     mod_vfs.klogf("INIT: starting\n");
     if (init_path) {
-        pcb_t *init = proc_alloc();
+      pcb_t *init = proc_alloc();
       init->pgid = init->pid;
       init->sid = init->pid;
       mod_vfs.fd_stdio_init(init);
@@ -140,7 +140,8 @@ void kmain(void) {
         init->state = PROC_RUNNABLE;
         mod_vfs.klogf("INIT: pid=%u loaded\n", init->pid);
       } else {
-        mod_vfs.klogf("PANIC: no init or shell (err=%lu)\n", (unsigned long)(uint32_t)(-(int)exec_err));
+        mod_vfs.klogf("PANIC: no init or shell (err=%lu)\n",
+                      (unsigned long)(uint32_t)(-(int)exec_err));
         proc_free(init);
         for (;;) arch_wfi();
       }

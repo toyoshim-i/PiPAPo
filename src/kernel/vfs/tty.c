@@ -27,11 +27,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "common/errno.h"           /* ENOTTY, EINTR */
-#include "common/signal.h"   /* SIGINT */
-#include "kernel/common/core/proc_info.h"       /* proc_table, PROC_MAX, PROC_FREE */
+#include "common/errno.h"                 /* ENOTTY, EINTR */
+#include "common/signal.h"                /* SIGINT */
+#include "kernel/common/core/proc_info.h" /* proc_table, PROC_MAX, PROC_FREE */
 #include "kernel/common/mod/mod_core.h"
-#include "kernel/vfs/driver/uart.h"       /* uart_putc/getc/rx_avail for static init */
+#include "kernel/vfs/driver/uart.h" /* uart_putc/getc/rx_avail for static init */
 #ifdef __ia16__
 #include "kernel/vfs/driver/bios_con.h"
 #endif
@@ -183,8 +183,8 @@ static tty_dev_t tty_devs[TTY_MAX] = {
             .win_cols = NULL,
             .win_rows = NULL,
 #else
-            /* All NULL — pico1calc registers fbcon backend via
-               tty_set_backend() */
+/* All NULL — pico1calc registers fbcon backend via
+   tty_set_backend() */
 #endif
             .termios =
                 {
@@ -269,8 +269,8 @@ static void tty_advance(page_id_t *page, uint16_t *off, size_t delta) {
   *off = (uint16_t)(pos % PAGE_SIZE);
 }
 
-static void tty_copy_to_pages(page_id_t page, uint16_t off,
-                              const void *src, size_t len) {
+static void tty_copy_to_pages(page_id_t page, uint16_t off, const void *src,
+                              size_t len) {
   const uint8_t *in = (const uint8_t *)src;
 
   while (len > 0) {
@@ -289,10 +289,7 @@ static void tty_copy_to_pages(page_id_t page, uint16_t off,
 
 /* Echo one character — retries if the backend is full.
  * Echo is single-character so busy-spin is acceptable. */
-static inline void dev_echo(tty_dev_t *t, char c) {
-  while (!t->out(c, NULL))
-    ;
-}
+static inline void dev_echo(tty_dev_t *t, char c) { while (!t->out(c, NULL)); }
 
 static inline void dev_echo_flush(tty_dev_t *t) {
   if (t->out_flush) t->out_flush();
@@ -402,8 +399,8 @@ block:
 /* ── tty_read: canonical (cooked) mode ───────────────────────────────────────
  */
 
-static long tty_read_canon(tty_dev_t *t, page_id_t page,
-                           uint16_t off, size_t n) {
+static long tty_read_canon(tty_dev_t *t, page_id_t page, uint16_t off,
+                           size_t n) {
   /* Drain all available characters from input */
   while (!t->line_ready) {
     int c = t->in();
@@ -520,8 +517,7 @@ static long tty_read_canon(tty_dev_t *t, page_id_t page,
 /* ── tty_read: raw mode ──────────────────────────────────────────────────────
  */
 
-static long tty_read_raw(tty_dev_t *t, page_id_t page,
-                         uint16_t off, size_t n) {
+static long tty_read_raw(tty_dev_t *t, page_id_t page, uint16_t off, size_t n) {
   (void)n;
   int c = t->in();
   if (c < 0) {

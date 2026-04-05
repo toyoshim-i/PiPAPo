@@ -72,7 +72,8 @@ static inline uint32_t core_id(void) {
 #elif defined(__ia16__)
   return 0; /* 8086: single core */
 #elif defined(__riscv)
-  return 0; /* single-core initial RISC-V port (Phase RV-6 will use SIO_CPUID) */
+  return 0; /* single-core initial RISC-V port (Phase RV-6 will use SIO_CPUID)
+             */
 #else
   return SIO_CPUID; /* RP2040: single MMIO read, ~1 cycle */
 #endif
@@ -109,8 +110,7 @@ static inline uint32_t spin_lock_irqsave(uint32_t lock_num) {
   if (spin_have_hw()) {
     volatile uint32_t *lock =
         (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
-    while (!*lock)
-      ;
+    while (!*lock);
   }
 #else
   (void)lock_num;
@@ -138,8 +138,7 @@ static inline void spin_lock(uint32_t lock_num) {
   if (spin_have_hw()) {
     volatile uint32_t *lock =
         (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
-    while (!*lock)
-      ;
+    while (!*lock);
   }
 #else
   (void)lock_num;

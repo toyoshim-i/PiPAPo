@@ -45,11 +45,11 @@
 
 /* ── GPIO — IO_BANK0 ────────────────────────────────────────────────────── */
 
-#define GPIO_CTRL(n) REG(IO_BANK0_BASE + (n)*8u + 4u)
+#define GPIO_CTRL(n) REG(IO_BANK0_BASE + (n) * 8u + 4u)
 
 /* ── GPIO — PADS_BANK0 ──────────────────────────────────────────────────── */
 
-#define PAD_GPIO(n) REG(PADS_BANK0_BASE + 4u + (n)*4u)
+#define PAD_GPIO(n) REG(PADS_BANK0_BASE + 4u + (n) * 4u)
 
 #define PAD_SPI_OUT (0x50u)  /* IE=1, DRIVE=4mA               */
 #define PAD_GPIO_OUT (0x50u) /* IE=1, DRIVE=4mA               */
@@ -72,8 +72,7 @@
 
 static void delay_ms(uint32_t ms) {
   volatile uint32_t count = ms * DELAY_LOOPS_PER_MS;
-  while (count--)
-    ;
+  while (count--);
 }
 
 /* ── Timeout — ~50 ms at 133 MHz (generous for any single SPI op) ─────── */
@@ -95,8 +94,7 @@ static inline void drain_rx(void) {
 
 static inline int wait_idle(void) {
   uint32_t t = SPI_TIMEOUT;
-  while ((SPI1_SR & SR_BSY) && --t)
-    ;
+  while ((SPI1_SR & SR_BSY) && --t);
   if (!t) {
     lcd_ok = 0;
     return -1;
@@ -107,8 +105,7 @@ static inline int wait_idle(void) {
 
 static int spi1_write_byte(uint8_t b) {
   uint32_t t = SPI_TIMEOUT;
-  while (!(SPI1_SR & SR_TNF) && --t)
-    ;
+  while (!(SPI1_SR & SR_TNF) && --t);
   if (!t) {
     lcd_ok = 0;
     return -1;
@@ -139,8 +136,7 @@ void spi_lcd_init(void) {
    *    in spi.c: the UF2 bootloader may leave the peripheral in use). */
   RESETS_RESET_SET = RESET_SPI1;
   RESETS_RESET_CLR = RESET_SPI1;
-  while (!(RESETS_RESET_DONE & RESET_SPI1))
-    ;
+  while (!(RESETS_RESET_DONE & RESET_SPI1));
 
   /* 2. Configure GPIO pads */
   PAD_GPIO(PICOCALC_SPI1_SCK) = PAD_SPI_OUT;

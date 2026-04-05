@@ -53,8 +53,7 @@ static int r_detect(const uint8_t *file_buf, uint32_t file_size,
 
 static int r68k_alloc_largest_image_region(proc_image_segment_t *seg,
                                            uint32_t min_pages) {
-  if (!seg || min_pages == 0 || min_pages > USER_PAGES_MAX)
-    return -(int)ENOMEM;
+  if (!seg || min_pages == 0 || min_pages > USER_PAGES_MAX) return -(int)ENOMEM;
 
   for (uint32_t total_pages = USER_PAGES_MAX; total_pages >= min_pages;
        total_pages--) {
@@ -83,8 +82,7 @@ static int r_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   proc_image_segment_t image_region = {0};
 
   if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                       PROC_IMAGE_SEG_WRITABLE |
-                           PROC_IMAGE_SEG_OWNED) < 0) {
+                       PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) < 0) {
     return -(int)ENOMEM;
   }
   p->stack_page_id = mem_region_ptr_to_page(stack_region.base);
@@ -102,8 +100,8 @@ static int r_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   }
 
   uint32_t min_total_pages = min_pages + 1u; /* +1 page for emu state */
-  int total_pages = r68k_alloc_largest_image_region(&image_region,
-                                                    min_total_pages);
+  int total_pages =
+      r68k_alloc_largest_image_region(&image_region, min_total_pages);
   if (total_pages < 0) {
     mem_region_free(&stack_region);
     p->stack_page_id = PAGE_ID_INVALID;
@@ -160,9 +158,9 @@ static int r_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   st->m68k.a[4] = X68K_PMB_SIZE;
   st->m68k.a[7] = emu_mem_size;
 
-  p->image.text = proc_image_segment_make(emu_mem + X68K_PMB_SIZE, file_size,
-                                          PPAP_MEM_RAM_TEXT,
-                                          PROC_IMAGE_SEG_EXECUTABLE);
+  p->image.text =
+      proc_image_segment_make(emu_mem + X68K_PMB_SIZE, file_size,
+                              PPAP_MEM_RAM_TEXT, PROC_IMAGE_SEG_EXECUTABLE);
   p->image.data = image_region;
   p->image.entry = X68K_PMB_SIZE;
   p->subsys = SUBSYS_PPAP;
@@ -219,9 +217,8 @@ static int r_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   /* Set up entry point (no relocation needed) */
   uint32_t entry = (uint32_t)(uintptr_t)image_dst;
   proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, 0);
-  p->image.text = proc_image_segment_make(image_dst, file_size,
-                                          PPAP_MEM_RAM_TEXT,
-                                          PROC_IMAGE_SEG_EXECUTABLE);
+  p->image.text = proc_image_segment_make(
+      image_dst, file_size, PPAP_MEM_RAM_TEXT, PROC_IMAGE_SEG_EXECUTABLE);
   p->image.data = image_region;
   p->image.entry = entry;
 

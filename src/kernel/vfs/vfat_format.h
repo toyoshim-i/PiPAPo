@@ -125,10 +125,10 @@ typedef struct {
 
 /* First sector of a cluster (relative to partition start) */
 #define CLUSTER_TO_SECTOR(sb, c) \
-  ((sb)->data_start_sector + ((uint32_t)((c)-2) * (sb)->sectors_per_cluster))
+  ((sb)->data_start_sector + ((uint32_t)((c) - 2) * (sb)->sectors_per_cluster))
 
 /* End-of-chain marker check */
-#define FAT_EOC(val) (((val)&0x0FFFFFF8u) == 0x0FFFFFF8u)
+#define FAT_EOC(val) (((val) & 0x0FFFFFF8u) == 0x0FFFFFF8u)
 
 /* Free cluster marker */
 #define FAT_FREE 0x00000000u

@@ -29,49 +29,40 @@ static unsigned char peek_char;
 
 /* Call ROM rx with PS.UM=1 so any internal `syscall 0` (window spill)
  * routes through UserExceptionVector instead of KernelExceptionVector. */
-static inline int rom_rx_safe(unsigned char *c)
-{
-    uint32_t ps;
-    __asm__ volatile("rsr %0, ps" : "=a"(ps));
-    __asm__ volatile("wsr %0, ps; rsync" :: "a"(ps | (1u << 5)));
-    int rc = esp_rom_uart_rx_one_char(c);
-    __asm__ volatile("wsr %0, ps; rsync" :: "a"(ps));
-    return rc;
+static inline int rom_rx_safe(unsigned char *c) {
+  uint32_t ps;
+  __asm__ volatile("rsr %0, ps" : "=a"(ps));
+  __asm__ volatile("wsr %0, ps; rsync" ::"a"(ps | (1u << 5)));
+  int rc = esp_rom_uart_rx_one_char(c);
+  __asm__ volatile("wsr %0, ps; rsync" ::"a"(ps));
+  return rc;
 }
 
-void uart_init(void)
-{
-    /* ESP-IDF already configured the console channel. */
+void uart_init(void) { /* ESP-IDF already configured the console channel. */ }
+
+int uart_putc(char c, void (*notify)(void)) {
+  (void)notify;
+  esp_rom_uart_putc(c);
+  return 1;
 }
 
-int uart_putc(char c, void (*notify)(void))
-{
-    (void)notify;
-    esp_rom_uart_putc(c);
+int uart_getc(void) {
+  if (peek_valid) {
+    peek_valid = 0;
+    return (int)peek_char;
+  }
+  unsigned char c;
+  if (rom_rx_safe(&c) == 0) return (int)c;
+  return -1;
+}
+
+int uart_rx_avail(void) {
+  if (peek_valid) return 1;
+  unsigned char c;
+  if (rom_rx_safe(&c) == 0) {
+    peek_char = c;
+    peek_valid = 1;
     return 1;
-}
-
-int uart_getc(void)
-{
-    if (peek_valid) {
-        peek_valid = 0;
-        return (int)peek_char;
-    }
-    unsigned char c;
-    if (rom_rx_safe(&c) == 0)
-        return (int)c;
-    return -1;
-}
-
-int uart_rx_avail(void)
-{
-    if (peek_valid)
-        return 1;
-    unsigned char c;
-    if (rom_rx_safe(&c) == 0) {
-        peek_char = c;
-        peek_valid = 1;
-        return 1;
-    }
-    return 0;
+  }
+  return 0;
 }

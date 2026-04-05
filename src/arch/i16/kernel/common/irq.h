@@ -24,8 +24,7 @@ static inline uint16_t arch_irq_save(void) {
 }
 
 static inline void arch_irq_restore(uint16_t saved) {
-  if (saved)
-    __asm__ volatile("sti");
+  if (saved) __asm__ volatile("sti");
 }
 
 /* -- Interrupt enable / disable ------------------------------------------- */

@@ -60,11 +60,13 @@ static int classify_fault(uint32_t pc) {
  * because the UART ISR is masked (HardFault has highest priority).
  * These helpers write directly to the UART TX FIFO, waiting for space.
  */
-static volatile uint32_t *const crash_uart_dr = (volatile uint32_t *)0x40034000u;
-static volatile uint32_t *const crash_uart_fr = (volatile uint32_t *)0x40034018u;
+static volatile uint32_t *const crash_uart_dr =
+    (volatile uint32_t *)0x40034000u;
+static volatile uint32_t *const crash_uart_fr =
+    (volatile uint32_t *)0x40034018u;
 
 static void crash_putc(char c) {
-  while (*crash_uart_fr & (1u << 5)) ; /* wait while TX FIFO full */
+  while (*crash_uart_fr & (1u << 5)); /* wait while TX FIFO full */
   *crash_uart_dr = (uint32_t)c;
 }
 
@@ -76,7 +78,8 @@ static void crash_puts(const char *s) {
 }
 
 static void crash_hex32(uint32_t v) {
-  crash_putc('0'); crash_putc('x');
+  crash_putc('0');
+  crash_putc('x');
   for (int i = 7; i >= 0; i--) {
     unsigned n = (v >> (i * 4)) & 0xFu;
     crash_putc(n < 10 ? (char)('0' + n) : (char)('a' + n - 10));
@@ -84,9 +87,16 @@ static void crash_hex32(uint32_t v) {
 }
 
 static void crash_dec(uint32_t v) {
-  char buf[10]; int i = 0;
-  if (v == 0) { crash_putc('0'); return; }
-  while (v) { buf[i++] = (char)('0' + v % 10); v /= 10; }
+  char buf[10];
+  int i = 0;
+  if (v == 0) {
+    crash_putc('0');
+    return;
+  }
+  while (v) {
+    buf[i++] = (char)('0' + v % 10);
+    v /= 10;
+  }
   while (--i >= 0) crash_putc(buf[i]);
 }
 
@@ -97,19 +107,30 @@ void kernel_hardfault_dump(uint32_t *msp_frame) {
 
   crash_puts("\n*** KERNEL HARDFAULT ***  Core ");
   crash_dec(core_id());
-  crash_puts("\n  PC="); crash_hex32(pc);
-  crash_puts("  LR="); crash_hex32(lr);
-  crash_puts("  xPSR="); crash_hex32(msp_frame[7]);
-  crash_puts("\n  r0="); crash_hex32(msp_frame[0]);
-  crash_puts(" r1="); crash_hex32(msp_frame[1]);
-  crash_puts(" r2="); crash_hex32(msp_frame[2]);
-  crash_puts(" r3="); crash_hex32(msp_frame[3]);
-  crash_puts("\n  r12="); crash_hex32(msp_frame[4]);
+  crash_puts("\n  PC=");
+  crash_hex32(pc);
+  crash_puts("  LR=");
+  crash_hex32(lr);
+  crash_puts("  xPSR=");
+  crash_hex32(msp_frame[7]);
+  crash_puts("\n  r0=");
+  crash_hex32(msp_frame[0]);
+  crash_puts(" r1=");
+  crash_hex32(msp_frame[1]);
+  crash_puts(" r2=");
+  crash_hex32(msp_frame[2]);
+  crash_puts(" r3=");
+  crash_hex32(msp_frame[3]);
+  crash_puts("\n  r12=");
+  crash_hex32(msp_frame[4]);
 
   pcb_t *p = current;
   if (p) {
-    crash_puts("\n  current: pid="); crash_dec((uint32_t)p->pid);
-    crash_puts(" ("); crash_puts(p->comm); crash_putc(')');
+    crash_puts("\n  current: pid=");
+    crash_dec((uint32_t)p->pid);
+    crash_puts(" (");
+    crash_puts(p->comm);
+    crash_putc(')');
   }
   crash_puts("\n  Halting.\n");
 }
@@ -158,16 +179,20 @@ void arm_crash_handler(uint32_t *psp_frame, uint32_t *callee_regs) {
   mod_vfs.klogf("  PC=%lx  xPSR=%lx", (unsigned long)pc, (unsigned long)xpsr);
 
   /* Print registers from the exception frame (r0-r3, r12, lr) */
-  mod_vfs.klogf("  r0=%lx r1=%lx r2=%lx r3=%lx", (unsigned long)psp_frame[0], (unsigned long)psp_frame[1],
-        (unsigned long)psp_frame[2], (unsigned long)psp_frame[3]);
-  mod_vfs.klogf("  r12=%lx lr=%lx", (unsigned long)psp_frame[4], (unsigned long)psp_frame[5]);
+  mod_vfs.klogf("  r0=%lx r1=%lx r2=%lx r3=%lx", (unsigned long)psp_frame[0],
+                (unsigned long)psp_frame[1], (unsigned long)psp_frame[2],
+                (unsigned long)psp_frame[3]);
+  mod_vfs.klogf("  r12=%lx lr=%lx", (unsigned long)psp_frame[4],
+                (unsigned long)psp_frame[5]);
 
   /* Print callee-saved registers: layout on MSP is {r8,r9,r10,r11,r4,r5,r6,r7}
    */
-  mod_vfs.klogf("  r4=%lx r5=%lx r6=%lx r7=%lx", (unsigned long)callee_regs[4], (unsigned long)callee_regs[5],
-        (unsigned long)callee_regs[6], (unsigned long)callee_regs[7]);
-  mod_vfs.klogf("  r8=%lx r9=%lx r10=%lx r11=%lx", (unsigned long)callee_regs[0], (unsigned long)callee_regs[1],
-        (unsigned long)callee_regs[2], (unsigned long)callee_regs[3]);
+  mod_vfs.klogf("  r4=%lx r5=%lx r6=%lx r7=%lx", (unsigned long)callee_regs[4],
+                (unsigned long)callee_regs[5], (unsigned long)callee_regs[6],
+                (unsigned long)callee_regs[7]);
+  mod_vfs.klogf("  r8=%lx r9=%lx r10=%lx r11=%lx",
+                (unsigned long)callee_regs[0], (unsigned long)callee_regs[1],
+                (unsigned long)callee_regs[2], (unsigned long)callee_regs[3]);
 
   /* Kernel fault: process 0 is the idle thread running on PSP. */
   if (!p || p->pid == 0) {
@@ -175,7 +200,8 @@ void arm_crash_handler(uint32_t *psp_frame, uint32_t *callee_regs) {
     while (1) __asm volatile("" ::: "memory");
   }
 
-  mod_vfs.klogf("  Killed (exit status %lu)", (unsigned long)(uint32_t)(128 + sig));
+  mod_vfs.klogf("  Killed (exit status %lu)",
+                (unsigned long)(uint32_t)(128 + sig));
   sys_exit(128 + sig);
 
   /* Patch the stacked PC so if PendSV doesn't tail-chain, the CPU won't
@@ -204,13 +230,13 @@ uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void)) {
 #if __ARM_ARCH >= 8
   *--sp = EXC_RETURN_THREAD_PSP; /* EXC_RETURN (no FPU frame)   */
 #endif
-  *--sp = 0u;  /* r11 */
-  *--sp = 0u;  /* r10 */
-  *--sp = 0u;  /* r9  */
-  *--sp = 0u;  /* r8  */
-  *--sp = 0u;  /* r7  */
-  *--sp = 0u;  /* r6  */
-  *--sp = 0u;  /* r5  */
-  *--sp = 0u;  /* r4 — pcb_t.sp points here */
+  *--sp = 0u; /* r11 */
+  *--sp = 0u; /* r10 */
+  *--sp = 0u; /* r9  */
+  *--sp = 0u; /* r8  */
+  *--sp = 0u; /* r7  */
+  *--sp = 0u; /* r6  */
+  *--sp = 0u; /* r5  */
+  *--sp = 0u; /* r4 — pcb_t.sp points here */
   return sp;
 }

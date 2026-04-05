@@ -283,7 +283,7 @@ static void sfn_generate(const char *name, uint8_t sfn[11]) {
 /* Pack/unpack directory entry position in xip_addr */
 #define DIRENT_POS_PACK(sec, off)                      \
   ((const void *)(uintptr_t)(((uint32_t)(sec) << 16) | \
-                             ((uint32_t)(off)&0xFFFF)))
+                             ((uint32_t)(off) & 0xFFFF)))
 #define DIRENT_POS_SEC(vn) ((uint32_t)(uintptr_t)(vn)->xip_addr >> 16)
 #define DIRENT_POS_OFF(vn) ((uint32_t)(uintptr_t)(vn)->xip_addr & 0xFFFF)
 
@@ -490,7 +490,8 @@ static long vfat_read(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
       uint32_t start = (s == sec_off) ? byte_off : 0;
       uint32_t avail = 512 - start;
       if (avail > n - total) avail = (uint32_t)(n - total);
-      mod_core.mem_region_page_write(page, page_off, &sector_buf[start], (uint16_t)avail);
+      mod_core.mem_region_page_write(page, page_off, &sector_buf[start],
+                                     (uint16_t)avail);
       mem_region_page_advance(&page, &page_off, avail);
       total += avail;
     }
@@ -587,7 +588,8 @@ static long vfat_write(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
         int rc = read_sector(sb, sec_base + s, sector_buf);
         if (rc < 0) return (long)(total > 0 ? (int)total : rc);
       }
-      mod_core.mem_region_page_read(page, page_off, &sector_buf[start], (uint16_t)avail);
+      mod_core.mem_region_page_read(page, page_off, &sector_buf[start],
+                                    (uint16_t)avail);
       int rc = write_sector(sb, sec_base + s, sector_buf);
       if (rc < 0) return (long)(total > 0 ? (int)total : rc);
       mem_region_page_advance(&page, &page_off, avail);

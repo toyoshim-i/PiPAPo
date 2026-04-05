@@ -492,7 +492,7 @@ static int gen_pid_subsys(char *buf, int bufsiz, const pcb_t *p) {
  */
 #define PID_INO_BASE 0x1000u
 #define PID_INO_STRIDE 16u
-#define PID_INO(pid) (PID_INO_BASE + (uint32_t)(pid)*PID_INO_STRIDE)
+#define PID_INO(pid) (PID_INO_BASE + (uint32_t)(pid) * PID_INO_STRIDE)
 
 /* ── fs_priv encoding for vnodes ─────────────────────────────────────────── */
 /*
@@ -677,8 +677,8 @@ static long procfs_read(vnode_t *vn, page_id_t page, uint16_t page_off,
 #ifdef PPAP_HAS_SUBSYS
     else if (sub == PRIV_PID_TERMCONV) {
       uint8_t tag = p->subsys;
-      total = mod_core.subsys_read_proc(tag, (struct pcb *)p, "termconv",
-                               tmp, (int)sizeof(tmp));
+      total = mod_core.subsys_read_proc(tag, (struct pcb *)p, "termconv", tmp,
+                                        (int)sizeof(tmp));
     }
 #endif
     else
@@ -775,7 +775,8 @@ static int procfs_readdir(vnode_t *dir, struct dirent *entries,
     uint32_t slot = (uint32_t)(uintptr_t)dir->fs_priv;
     uint8_t tag = (slot < PROC_MAX) ? proc_table[slot].subsys : 0;
 #ifdef PPAP_HAS_SUBSYS
-    int has_proc_read = mod_core.subsys_read_proc(tag, NULL, NULL, NULL, 0) >= 0;
+    int has_proc_read =
+        mod_core.subsys_read_proc(tag, NULL, NULL, NULL, 0) >= 0;
 #else
     int has_proc_read = 0;
     (void)tag;

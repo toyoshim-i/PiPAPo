@@ -29,7 +29,8 @@ const loader_t* loader_registry[] = {
     &com_loader,
 #endif
 #ifdef PPAP_ENABLE_HUMAN68K
-    &x_loader,        &r_loader,
+    &x_loader,
+    &r_loader,
 #endif
 #ifdef PPAP_ENABLE_SOS
     &sos_loader,
@@ -41,7 +42,7 @@ const loader_t* loader_registry[] = {
     &elf_loader,
 #endif
 #if defined(__ia16__)
-    &elf16_loader,   /* ELF before flat (ELF detection is stricter) */
+    &elf16_loader, /* ELF before flat (ELF detection is stricter) */
     &flat_loader,
 #endif
     NULL};

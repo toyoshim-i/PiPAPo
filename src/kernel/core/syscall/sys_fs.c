@@ -8,15 +8,15 @@
  * mod_vfs.lookup / mod_vfs.lookup_parent as before.
  */
 
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+
 #include "common/errno.h"
 #include "kernel/common/config.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/syscall/syscall.h"
-
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
 
 static int sys_copy_path(char *dst, uintptr_t path_ptr) {
   if (path_ptr == 0u) return -(long)EINVAL;
@@ -189,15 +189,14 @@ long sys_chdir(uintptr_t path_ptr) {
     } else {
       __builtin_memcpy(abs_path, cwd, (size_t)cwdlen);
       abs_path[cwdlen] = '/';
-      __builtin_memcpy(abs_path + cwdlen + 1, target_path,
-                       (size_t)pathlen + 1);
+      __builtin_memcpy(abs_path + cwdlen + 1, target_path, (size_t)pathlen + 1);
     }
     target_path = abs_path;
   }
 
   char normalized[VFS_PATH_MAX];
-  int nlen = mod_vfs.path_normalize(target_path, normalized,
-                                    (int)sizeof(normalized));
+  int nlen =
+      mod_vfs.path_normalize(target_path, normalized, (int)sizeof(normalized));
   if (nlen < 0) return (long)nlen;
 
   if ((size_t)nlen >= sizeof(current->cwd)) return -(long)ENAMETOOLONG;
@@ -256,8 +255,7 @@ long sys_mkdir(uintptr_t path_ptr, long mode) {
 
   vnode_t *parent = NULL;
   char namebuf[VFS_NAME_MAX + 1];
-  int err = mod_vfs.lookup_parent(path, &parent, namebuf,
-                                  (int)sizeof(namebuf));
+  int err = mod_vfs.lookup_parent(path, &parent, namebuf, (int)sizeof(namebuf));
   if (err) return (long)err;
 
   if (parent->type != VNODE_DIR) {
@@ -289,8 +287,7 @@ long sys_unlink(uintptr_t path_ptr) {
 
   vnode_t *parent = NULL;
   char namebuf[VFS_NAME_MAX + 1];
-  int err = mod_vfs.lookup_parent(path, &parent, namebuf,
-                                  (int)sizeof(namebuf));
+  int err = mod_vfs.lookup_parent(path, &parent, namebuf, (int)sizeof(namebuf));
   if (err) return (long)err;
 
   if (parent->type != VNODE_DIR) {
@@ -638,9 +635,7 @@ long sys_readlink(uintptr_t path_ptr, uintptr_t buf_ptr, long bufsiz) {
 /* ── sys_rmdir ───────────────────────────────────────────────────────────────
  */
 
-long sys_rmdir(uintptr_t path_ptr) {
-  return sys_unlink(path_ptr);
-}
+long sys_rmdir(uintptr_t path_ptr) { return sys_unlink(path_ptr); }
 
 /* ── sys_umask ───────────────────────────────────────────────────────────────
  */
@@ -690,8 +685,10 @@ long sys_pipe(uintptr_t fds_ptr) {
   int rfd = -1, wfd = -1;
   for (int i = 0; i < FD_MAX && (rfd < 0 || wfd < 0); i++) {
     if (current->fd_map[i] == FD_DESC_NONE) {
-      if (rfd < 0) rfd = i;
-      else wfd = i;
+      if (rfd < 0)
+        rfd = i;
+      else
+        wfd = i;
     }
   }
 

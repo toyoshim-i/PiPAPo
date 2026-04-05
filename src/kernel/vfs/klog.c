@@ -58,8 +58,8 @@ static inline void klog_unlock(void) {
 static void klog_putc(char c) {
   for (unsigned i = 0; i < KLOG_LOGGER_COUNT; i++) {
     if (!logger_putc[i]) continue;
-    while (!logger_putc[i](c, NULL))
-      ; /* logger remains responsible for making forward progress */
+    while (!logger_putc[i](
+        c, NULL)); /* logger remains responsible for making forward progress */
   }
 }
 

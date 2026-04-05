@@ -56,12 +56,11 @@ void *mem_region_page_to_ptr(page_id_t id);
 #endif
 
 /* Read `len` bytes from page `id` at byte offset `off` into `buf`. */
-void mem_region_page_read(page_id_t id, uint16_t off,
-                          void *buf, uint16_t len);
+void mem_region_page_read(page_id_t id, uint16_t off, void *buf, uint16_t len);
 
 /* Write `len` bytes from `buf` to page `id` at byte offset `off`. */
-void mem_region_page_write(page_id_t id, uint16_t off,
-                           const void *buf, uint16_t len);
+void mem_region_page_write(page_id_t id, uint16_t off, const void *buf,
+                           uint16_t len);
 
 /* ── Capacity queries ──────────────────────────────────────────────── */
 

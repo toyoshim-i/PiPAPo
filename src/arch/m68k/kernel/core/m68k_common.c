@@ -135,12 +135,22 @@ int m68k_crash_handler(int fault_type, uint32_t *regs) {
   /* Print crash report (klogf supports: %s %u %x %% only) */
   mod_vfs.klogf("\n*** %s ***", fault_name(fault_type));
   if (p) mod_vfs.klogf("  Process %u (%s)", (unsigned)p->pid, p->comm);
-  mod_vfs.klogf("  PC=%lx  SR=%lx", (unsigned long)pc, (unsigned long)(uint32_t)sr);
-  if (is_group0) mod_vfs.klogf("  Fault addr=%lx  FC=%lx", (unsigned long)fault_addr, (unsigned long)(uint32_t)exc[0]);
-  mod_vfs.klogf("  d0=%lx d1=%lx d2=%lx d3=%lx", (unsigned long)regs[0], (unsigned long)regs[1], (unsigned long)regs[2], (unsigned long)regs[3]);
-  mod_vfs.klogf("  d4=%lx d5=%lx d6=%lx d7=%lx", (unsigned long)regs[4], (unsigned long)regs[5], (unsigned long)regs[6], (unsigned long)regs[7]);
-  mod_vfs.klogf("  a0=%lx a1=%lx a2=%lx a3=%lx", (unsigned long)regs[8], (unsigned long)regs[9], (unsigned long)regs[10], (unsigned long)regs[11]);
-  mod_vfs.klogf("  a4=%lx a5=%lx a6=%lx", (unsigned long)regs[12], (unsigned long)regs[13], (unsigned long)regs[14]);
+  mod_vfs.klogf("  PC=%lx  SR=%lx", (unsigned long)pc,
+                (unsigned long)(uint32_t)sr);
+  if (is_group0)
+    mod_vfs.klogf("  Fault addr=%lx  FC=%lx", (unsigned long)fault_addr,
+                  (unsigned long)(uint32_t)exc[0]);
+  mod_vfs.klogf("  d0=%lx d1=%lx d2=%lx d3=%lx", (unsigned long)regs[0],
+                (unsigned long)regs[1], (unsigned long)regs[2],
+                (unsigned long)regs[3]);
+  mod_vfs.klogf("  d4=%lx d5=%lx d6=%lx d7=%lx", (unsigned long)regs[4],
+                (unsigned long)regs[5], (unsigned long)regs[6],
+                (unsigned long)regs[7]);
+  mod_vfs.klogf("  a0=%lx a1=%lx a2=%lx a3=%lx", (unsigned long)regs[8],
+                (unsigned long)regs[9], (unsigned long)regs[10],
+                (unsigned long)regs[11]);
+  mod_vfs.klogf("  a4=%lx a5=%lx a6=%lx", (unsigned long)regs[12],
+                (unsigned long)regs[13], (unsigned long)regs[14]);
 
   /* Kernel fault → unrecoverable */
   if (!p || p->pid == 0) {
@@ -165,13 +175,15 @@ int m68k_crash_handler(int fault_type, uint32_t *regs) {
   sighandler_t handler = p->sig_handlers[sig];
   if (handler != (sighandler_t)0 /* SIG_DFL */ &&
       handler != (sighandler_t)1 /* SIG_IGN */) {
-    mod_vfs.klogf("  Signal %lu posted (handler at %lx)", (unsigned long)(uint32_t)sig,
-          (unsigned long)(uintptr_t)handler);
+    mod_vfs.klogf("  Signal %lu posted (handler at %lx)",
+                  (unsigned long)(uint32_t)sig,
+                  (unsigned long)(uintptr_t)handler);
     p->sig_pending |= (1u << sig);
     return 1; /* resume — signal_check will deliver the handler */
   }
 
-  mod_vfs.klogf("  Killed (exit status %lu)", (unsigned long)(uint32_t)(128 + sig));
+  mod_vfs.klogf("  Killed (exit status %lu)",
+                (unsigned long)(uint32_t)(128 + sig));
   sys_exit(128 + sig);
   return 1;
 }
@@ -223,7 +235,6 @@ uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void)) {
   *(uint16_t *)sp = SR_USER;            /* SR: user mode, IPL=0   */
   /* Software register frame (a6..a0, d7..d0, high → low).
    * Must match movem.l %d0-%d7/%a0-%a6 register order. */
-  for (int i = 0; i < 15; i++)
-    *--sp = 0u;
-  return sp;  /* pcb_t.sp points to d0 */
+  for (int i = 0; i < 15; i++) *--sp = 0u;
+  return sp; /* pcb_t.sp points to d0 */
 }

@@ -26,8 +26,7 @@ static inline uint32_t arch_irq_save(void) {
 }
 
 static inline void arch_irq_restore(uint32_t saved) {
-  if (saved)
-    __asm__ volatile("csrs mstatus, %0" ::"r"(MSTATUS_MIE));
+  if (saved) __asm__ volatile("csrs mstatus, %0" ::"r"(MSTATUS_MIE));
 }
 
 /* -- Interrupt enable / disable ------------------------------------------- */

@@ -38,11 +38,11 @@
  *                    With PPAP_TICK_HZ=100: 10 ticks = 100 ms.
  * ────────────────────────────────────────────────────────────────────────── */
 #if defined(__ia16__)
-#define PROC_MAX 4            /* i16: smaller to save BSS (~2.7 KB)  */
-#define FD_MAX 8              /* i16: fewer FDs per process           */
+#define PROC_MAX 4 /* i16: smaller to save BSS (~2.7 KB)  */
+#define FD_MAX 8   /* i16: fewer FDs per process           */
 #else
-#define PROC_MAX 8            /* maximum concurrent processes         */
-#define FD_MAX 16             /* file descriptors per process         */
+#define PROC_MAX 8 /* maximum concurrent processes         */
+#define FD_MAX 16  /* file descriptors per process         */
 #endif
 #define PROC_DEFAULT_TICKS 10 /* time-slice length in SysTick ticks   */
 #define FILE_MAX 32           /* max concurrent open struct file objs */
@@ -113,7 +113,7 @@ extern uint32_t i16_page_pool_base;
 #define PAGE_POOL_BASE i16_page_pool_base
 #define PAGE_POOL_SIZE (PAGE_COUNT_MAX * PAGE_SIZE)
 #ifndef RAM_END
-#define RAM_END 0x9FC00ul  /* 640 KB conventional - EBDA */
+#define RAM_END 0x9FC00ul /* 640 KB conventional - EBDA */
 #endif
 #elif defined(__xtensa__)
 /* Xtensa / ESP32-S3: ESP-IDF manages the linker script.
@@ -125,8 +125,8 @@ extern uint32_t i16_page_pool_base;
 /* Stub IOBUF/DMA to zero-size regions at end of page pool */
 #define SRAM_IOBUF_BASE (PAGE_POOL_BASE + PAGE_POOL_SIZE)
 #define SRAM_IOBUF_SIZE 0u
-#define SRAM_DMA_BASE   SRAM_IOBUF_BASE
-#define SRAM_DMA_SIZE   0u
+#define SRAM_DMA_BASE SRAM_IOBUF_BASE
+#define SRAM_DMA_SIZE 0u
 #else
 /* ARM / RP2040: SRAM layout defaults match pico1 / qemu_arm.
  * Targets with a different split (for example PicoCalc) override these via

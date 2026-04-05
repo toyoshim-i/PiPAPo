@@ -12,9 +12,6 @@
  *   - No shared libraries, no PIE
  */
 
-#include "kernel/core/exec/elf.h"
-#include "kernel/core/exec/loader.h"
-
 #include <string.h>
 
 #include "common/errno.h"
@@ -22,17 +19,18 @@
 #include "kernel/common/vfs/vfs_types.h"
 #include "kernel/core/arch.h"
 #include "kernel/core/cpu/cpu.h"
+#include "kernel/core/exec/elf.h"
+#include "kernel/core/exec/loader.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
 
-#define ELF16_MAX_SIZE  (60u * 1024u)  /* 60 KB max (leave room for stack) */
-#define ELF16_STACK_SIZE 2048u         /* 2 KB user stack */
+#define ELF16_MAX_SIZE (60u * 1024u) /* 60 KB max (leave room for stack) */
+#define ELF16_STACK_SIZE 2048u       /* 2 KB user stack */
 #define ELF16_MAX_PHDRS 16u
 
 /* ── Detection ─────────────────────────────────────────────────────────── */
 
-static int elf16_detect(const uint8_t *buf, uint32_t size, const char *path)
-{
+static int elf16_detect(const uint8_t *buf, uint32_t size, const char *path) {
   (void)path;
 
   /* Only on native i16 host */
@@ -44,10 +42,8 @@ static int elf16_detect(const uint8_t *buf, uint32_t size, const char *path)
   const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)buf;
 
   /* Check ELF magic */
-  if (ehdr->e_ident[EI_MAG0] != ELFMAG0 ||
-      ehdr->e_ident[EI_MAG1] != ELFMAG1 ||
-      ehdr->e_ident[EI_MAG2] != ELFMAG2 ||
-      ehdr->e_ident[EI_MAG3] != ELFMAG3)
+  if (ehdr->e_ident[EI_MAG0] != ELFMAG0 || ehdr->e_ident[EI_MAG1] != ELFMAG1 ||
+      ehdr->e_ident[EI_MAG2] != ELFMAG2 || ehdr->e_ident[EI_MAG3] != ELFMAG3)
     return 0;
 
   /* Must be 32-bit, little-endian, executable, EM_386 */
@@ -73,9 +69,9 @@ static long elf16_read_near(vnode_t *vn, uint32_t off, void *buf,
 static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
                                    const elf32_phdr_t *phdrs, uint16_t phnum,
                                    const uint8_t *file_buf, vnode_t *vn,
-                                   uint32_t file_size,
-                                   const cpu_ops_t *cpu_ops, void *cpu_state,
-                                   const char *const *argv, uint32_t flags) {
+                                   uint32_t file_size, const cpu_ops_t *cpu_ops,
+                                   void *cpu_state, const char *const *argv,
+                                   uint32_t flags) {
   (void)flags;
   (void)cpu_ops;
   (void)cpu_state;
@@ -98,8 +94,8 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
   if (mem_end > ELF16_MAX_SIZE) return -ENOMEM;
 
   /* Round up to page boundary, add stack space */
-  uint32_t alloc_size = ((mem_end + ELF16_STACK_SIZE + PAGE_SIZE - 1)
-                         / PAGE_SIZE) * PAGE_SIZE;
+  uint32_t alloc_size =
+      ((mem_end + ELF16_STACK_SIZE + PAGE_SIZE - 1) / PAGE_SIZE) * PAGE_SIZE;
   uint16_t npages = (uint16_t)(alloc_size / PAGE_SIZE);
 
   /* Allocate contiguous pages via page-indexed API.
@@ -126,8 +122,7 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
     if (phdrs[i].p_filesz == 0) continue;
 
     if (phdrs[i].p_offset + phdrs[i].p_filesz > file_size) {
-      for (uint16_t j = 0; j < npages; j++)
-        mem_region_page_free(base_id + j);
+      for (uint16_t j = 0; j < npages; j++) mem_region_page_free(base_id + j);
       return -ENOEXEC;
     }
 
@@ -172,20 +167,20 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
    * This is what the ISR restore path pops: GP regs + IRET frame.
    * Frame grows downward within the segment. */
   uint16_t hw_frame[3];
-  hw_frame[0] = entry_ip;     /* IP */
-  hw_frame[1] = proc_seg;     /* CS = process segment */
-  hw_frame[2] = 0x0200;       /* FLAGS: IF=1 */
+  hw_frame[0] = entry_ip; /* IP */
+  hw_frame[1] = proc_seg; /* CS = process segment */
+  hw_frame[2] = 0x0200;   /* FLAGS: IF=1 */
 
   uint16_t sw_frame[9];
-  sw_frame[0] = proc_seg;     /* ES = process segment */
-  sw_frame[1] = proc_seg;     /* DS = process segment */
-  sw_frame[2] = 0;            /* BP */
-  sw_frame[3] = 0;            /* DI */
-  sw_frame[4] = 0;            /* SI */
-  sw_frame[5] = 0;            /* DX */
-  sw_frame[6] = 0;            /* CX */
-  sw_frame[7] = 0;            /* BX */
-  sw_frame[8] = 0;            /* AX */
+  sw_frame[0] = proc_seg; /* ES = process segment */
+  sw_frame[1] = proc_seg; /* DS = process segment */
+  sw_frame[2] = 0;        /* BP */
+  sw_frame[3] = 0;        /* DI */
+  sw_frame[4] = 0;        /* SI */
+  sw_frame[5] = 0;        /* DX */
+  sw_frame[6] = 0;        /* CX */
+  sw_frame[7] = 0;        /* BX */
+  sw_frame[8] = 0;        /* AX */
 
   /* Write hardware frame (6B) at top of user stack */
   uint16_t hw_off_seg = user_sp_top - sizeof(hw_frame);
@@ -214,23 +209,22 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
   {
     uint16_t ksp = p->kernel_stack_top;
     uint16_t *kstack = (uint16_t *)(uintptr_t)ksp;
-    *--kstack = proc_seg;      /* user_SS */
-    *--kstack = user_sp;       /* user_SP */
+    *--kstack = proc_seg; /* user_SS */
+    *--kstack = user_sp;  /* user_SP */
     p->sp = (uint32_t)(uintptr_t)kstack;
   }
 
   /* Track pages by index — no pointer truncation. */
-  for (uint16_t i = 0; i < npages; i++)
-    proc_track_page(p, i, base_id + i);
+  for (uint16_t i = 0; i < npages; i++) proc_track_page(p, i, base_id + i);
 
-  p->image.text = proc_image_segment_make(
-      (void *)(uintptr_t)(uint16_t)base_linear, mem_end,
-      PPAP_MEM_RAM_TEXT, PROC_IMAGE_SEG_EXECUTABLE);
+  p->image.text =
+      proc_image_segment_make((void *)(uintptr_t)(uint16_t)base_linear, mem_end,
+                              PPAP_MEM_RAM_TEXT, PROC_IMAGE_SEG_EXECUTABLE);
   p->image.text.base_page = base_id;
   /* Data region: freed via proc_release_tracked_pages, not OWNED. */
   p->image.data = proc_image_segment_make(
-      (void *)(uintptr_t)(uint16_t)base_linear, alloc_size,
-      PPAP_MEM_RAM_DATA, PROC_IMAGE_SEG_WRITABLE);
+      (void *)(uintptr_t)(uint16_t)base_linear, alloc_size, PPAP_MEM_RAM_DATA,
+      PROC_IMAGE_SEG_WRITABLE);
   p->image.data.base_page = base_id;
   p->image.entry = (uintptr_t)entry_ip;
   p->ticks_remaining = PROC_DEFAULT_TICKS;
@@ -250,10 +244,9 @@ static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   if (ehdr->e_phoff + ehdr->e_phnum * sizeof(elf32_phdr_t) > file_size)
     return -ENOEXEC;
 
-  return elf16_load_from_headers(p, ehdr,
-                                 (const elf32_phdr_t *)(file_buf + ehdr->e_phoff),
-                                 ehdr->e_phnum, file_buf, NULL, file_size,
-                                 cpu_ops, cpu_state, argv, flags);
+  return elf16_load_from_headers(
+      p, ehdr, (const elf32_phdr_t *)(file_buf + ehdr->e_phoff), ehdr->e_phnum,
+      file_buf, NULL, file_size, cpu_ops, cpu_state, argv, flags);
 }
 
 int elf16_load_vnode(pcb_t *p, vnode_t *vn, uint32_t file_size,

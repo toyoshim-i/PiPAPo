@@ -12,9 +12,9 @@
 #include <stdint.h>
 
 /* Module IDs */
-#define MOD_ID_CORE  0
-#define MOD_ID_VFS   1
-#define MOD_ID_MAX   8
+#define MOD_ID_CORE 0
+#define MOD_ID_VFS 1
+#define MOD_ID_MAX 8
 
 extern uint16_t seg_table[MOD_ID_MAX];
 
@@ -22,8 +22,6 @@ static inline void seg_register(uint8_t id, uint16_t seg) {
   seg_table[id] = seg;
 }
 
-static inline uint16_t seg_get(uint8_t id) {
-  return seg_table[id];
-}
+static inline uint16_t seg_get(uint8_t id) { return seg_table[id]; }
 
 #endif /* PPAP_KERNEL_COMMON_CORE_SEG_H */

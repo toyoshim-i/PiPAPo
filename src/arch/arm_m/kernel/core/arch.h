@@ -13,10 +13,9 @@
 
 #include <stdint.h>
 
+#include "kernel/common/ioregs.h" /* SCB_ICSR, PENDSVSET */
 #include "kernel/common/irq.h"
 #include "kernel/core/mm/mem_region.h"
-
-#include "kernel/common/ioregs.h" /* SCB_ICSR, PENDSVSET */
 
 /* ── Context switch trigger ─────────────────────────────────────────────────
  */

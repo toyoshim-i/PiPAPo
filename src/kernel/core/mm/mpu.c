@@ -92,7 +92,7 @@
    (uint32_t)MAIR_BYTE_WT << (8u * MAIR_IDX_WT))
 
 /* Helper: RLAR value for a region from base to base+size-1 */
-#define RLAR_LIMIT(base, size) (((base) + (size)-1u) & ~0x1Fu)
+#define RLAR_LIMIT(base, size) (((base) + (size) - 1u) & ~0x1Fu)
 
 #else /* ARMv6-M */
 /* ══════════════════════════════════════════════════════════════════════════

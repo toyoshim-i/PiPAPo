@@ -21,7 +21,6 @@
  * Used by pipe.c to create pipe read/write file objects.
  * Returns descriptor ID, or negative errno if pool is exhausted.
  */
-int fd_pool_alloc_pipe(const struct file_ops *ops, void *priv,
-                       uint32_t flags);
+int fd_pool_alloc_pipe(const struct file_ops *ops, void *priv, uint32_t flags);
 
 #endif /* PPAP_KERNEL_VFS_FD_H */

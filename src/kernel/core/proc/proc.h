@@ -50,8 +50,8 @@ void proc_free(pcb_t *p);
  * Returns the number of tracked pages, or -ENOMEM if the range would
  * exceed USER_PAGES_MAX.
  */
-int proc_track_page_range(pcb_t *p, uint32_t start_slot,
-                          page_id_t base_page_id, uint32_t n_pages);
+int proc_track_page_range(pcb_t *p, uint32_t start_slot, page_id_t base_page_id,
+                          uint32_t n_pages);
 
 /*
  * Track one page-backed user page in user_pages[].
@@ -128,8 +128,7 @@ void proc_release_tracked_pages_from_array(page_id_t pages[USER_PAGES_MAX]);
 
 /* Free pages in snapshot array that are not shared with shared[] slots. */
 void proc_release_private_tracked_pages_from_array(
-  page_id_t pages[USER_PAGES_MAX],
-  const page_id_t shared[USER_PAGES_MAX]);
+    page_id_t pages[USER_PAGES_MAX], const page_id_t shared[USER_PAGES_MAX]);
 
 /*
  * Set up an initial kernel stack frame for a new process so that

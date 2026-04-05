@@ -120,7 +120,8 @@ void mm_init(void) {
    * (cap 2) to get byte-accessible DRAM, NOT IRAM. */
   {
     extern void *heap_caps_malloc(unsigned int size, uint32_t caps);
-    uint32_t pool_bytes = PAGE_COUNT_MAX * PAGE_SIZE + PAGE_SIZE; /* +1 page for alignment */
+    uint32_t pool_bytes =
+        PAGE_COUNT_MAX * PAGE_SIZE + PAGE_SIZE; /* +1 page for alignment */
     void *pool = heap_caps_malloc(pool_bytes, (1u << 2)); /* MALLOC_CAP_8BIT */
     if (!pool) {
       mod_vfs.klogf("MM: FATAL — heap_caps_malloc failed for page pool\n");
@@ -172,29 +173,32 @@ void mm_init(void) {
   /* ── Boot-time memory map ─────────────────────────────────────────────── */
   mod_vfs.klogf("MM: memory map\n");
   mod_vfs.klogf("MM:   kernel  %lx-%lx  %lu KB reserved\n",
-        (unsigned long)SRAM_KERNEL_BASE,
-        (unsigned long)(SRAM_KERNEL_BASE + SRAM_KERNEL_SIZE - 1u),
-        (unsigned long)(SRAM_KERNEL_SIZE / 1024u));
+                (unsigned long)SRAM_KERNEL_BASE,
+                (unsigned long)(SRAM_KERNEL_BASE + SRAM_KERNEL_SIZE - 1u),
+                (unsigned long)(SRAM_KERNEL_SIZE / 1024u));
   if (stack_top > bss_end)
     mod_vfs.klogf("MM:     .data/.bss:  %lx B used, %lx B to stack top\n",
-          (unsigned long)kern_used, (unsigned long)(stack_top - bss_end));
+                  (unsigned long)kern_used,
+                  (unsigned long)(stack_top - bss_end));
   else
-    mod_vfs.klogf("MM:     .data/.bss:  %lx B used\n", (unsigned long)kern_used);
+    mod_vfs.klogf("MM:     .data/.bss:  %lx B used\n",
+                  (unsigned long)kern_used);
 
-  uint32_t actual_base =
-      (free_top > 0) ? (uint32_t)page_id_linear(free_stack[0])
-                     : (uint32_t)pool_base;
+  uint32_t actual_base = (free_top > 0)
+                             ? (uint32_t)page_id_linear(free_stack[0])
+                             : (uint32_t)pool_base;
   mod_vfs.klogf("MM:   pages   %lx-%lx %lu KB (%u x 4 KB, all free)\n",
-        (unsigned long)actual_base,
-        (unsigned long)(pool_base + page_count * PAGE_SIZE - 1u),
-        (unsigned long)(free_top * PAGE_SIZE / 1024u), free_top);
+                (unsigned long)actual_base,
+                (unsigned long)(pool_base + page_count * PAGE_SIZE - 1u),
+                (unsigned long)(free_top * PAGE_SIZE / 1024u), free_top);
 #if !defined(__m68k__) && !defined(__xtensa__) && !defined(__ia16__)
-  mod_vfs.klogf("MM:   io_buf  %lx-%lx  %lu KB\n", (unsigned long)SRAM_IOBUF_BASE,
-        (unsigned long)(SRAM_IOBUF_BASE + SRAM_IOBUF_SIZE - 1u),
-        (unsigned long)(SRAM_IOBUF_SIZE / 1024u));
+  mod_vfs.klogf("MM:   io_buf  %lx-%lx  %lu KB\n",
+                (unsigned long)SRAM_IOBUF_BASE,
+                (unsigned long)(SRAM_IOBUF_BASE + SRAM_IOBUF_SIZE - 1u),
+                (unsigned long)(SRAM_IOBUF_SIZE / 1024u));
   mod_vfs.klogf("MM:   dma     %lx-%lx  %lu KB\n", (unsigned long)SRAM_DMA_BASE,
-        (unsigned long)(SRAM_DMA_BASE + SRAM_DMA_SIZE - 1u),
-        (unsigned long)(SRAM_DMA_SIZE / 1024u));
+                (unsigned long)(SRAM_DMA_BASE + SRAM_DMA_SIZE - 1u),
+                (unsigned long)(SRAM_DMA_SIZE / 1024u));
 #endif
 
 #ifdef PPAP_TESTS
@@ -220,7 +224,8 @@ void mm_init(void) {
   mod_vfs.klogf("MM: kmem self-test %s\n", ok ? "PASSED" : "FAILED");
 #endif
 
-#if defined(PPAP_TESTS) && (defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__))
+#if defined(PPAP_TESTS) && \
+    (defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__))
   /* ── XIP verification and benchmark (ARM only) ───────────────────────── */
   xip_verify();
 #endif
@@ -236,8 +241,7 @@ void *page_alloc(void) {
      * O(free_top) scan — negligible for pools ≤ 256 pages. */
     uint32_t best = 0;
     for (uint32_t i = 1; i < free_top; i++) {
-      if (free_stack[i] > free_stack[best])
-        best = i;
+      if (free_stack[i] > free_stack[best]) best = i;
     }
     page_id_t id = free_stack[best];
     free_stack[best] = free_stack[--free_top];
@@ -255,8 +259,7 @@ void *page_alloc_at(void *addr) {
 
   /* Validate: must be page-aligned and within the runtime pool */
   uint32_t pb = page_pool_base();
-  if (target < pb || target >= pb + page_count * PAGE_SIZE)
-    return NULL;
+  if (target < pb || target >= pb + page_count * PAGE_SIZE) return NULL;
   if (target & (PAGE_SIZE - 1u)) return NULL;
 
   page_id_t target_id = linear_page_id(target);
@@ -296,7 +299,8 @@ static void stack_backtrace(void) {
   for (uint32_t depth = 0; depth < 16 && fp; depth++) {
     uintptr_t ra = *(uintptr_t *)(fp - 4);
     uintptr_t prev_fp = *(uintptr_t *)(fp - 8);
-    mod_vfs.klogf("    #%u ra=%lx fp=%lx\n", depth, (unsigned long)ra, (unsigned long)fp);
+    mod_vfs.klogf("    #%u ra=%lx fp=%lx\n", depth, (unsigned long)ra,
+                  (unsigned long)fp);
     if (prev_fp <= fp) break; /* stack grows down — prev fp must be higher */
     fp = prev_fp;
   }
@@ -323,7 +327,7 @@ void page_free(void *page) {
     if (free_stack[i] == id) {
       spin_unlock_irqrestore(SPIN_PAGE, saved);
       mod_vfs.klogf("MM: double-free @ %lx (ra=%lx)\n", (unsigned long)addr,
-            (unsigned long)(uintptr_t)__builtin_return_address(0));
+                    (unsigned long)(uintptr_t)__builtin_return_address(0));
       stack_backtrace();
       return;
     }
@@ -505,8 +509,7 @@ page_id_t mm_page_alloc(void) {
   /* Pick highest-index free page (same policy as page_alloc) */
   uint32_t best = 0;
   for (uint32_t i = 1; i < free_top; i++) {
-    if (free_stack[i] > free_stack[best])
-      best = i;
+    if (free_stack[i] > free_stack[best]) best = i;
   }
   page_id_t id = free_stack[best];
   free_stack[best] = free_stack[--free_top];
@@ -543,24 +546,21 @@ void mm_page_read(page_id_t id, uint16_t off, void *buf, uint16_t len) {
   uint16_t seg = (uint16_t)(linear >> 4);
   uint16_t ofs = (uint16_t)(linear & 0x000Fu);
   uint16_t dst = (uint16_t)(uintptr_t)buf;
-  __asm__ volatile (
-    "push %%ds\n\t"
-    "push %%es\n\t"
-    "mov  %%ss, %%ax\n\t"
-    "mov  %%ax, %%es\n\t"  /* ES = SS (destination) */
-    "mov  %0, %%ds\n\t"    /* DS = source segment */
-    "cld\n\t"
-    "rep movsb\n\t"
-    "pop  %%es\n\t"
-    "pop  %%ds"
-    :
-    : "r"(seg), "S"(ofs), "D"(dst), "c"(len)
-    : "ax", "memory", "cc"
-  );
+  __asm__ volatile(
+      "push %%ds\n\t"
+      "push %%es\n\t"
+      "mov  %%ss, %%ax\n\t"
+      "mov  %%ax, %%es\n\t" /* ES = SS (destination) */
+      "mov  %0, %%ds\n\t"   /* DS = source segment */
+      "cld\n\t"
+      "rep movsb\n\t"
+      "pop  %%es\n\t"
+      "pop  %%ds"
+      :
+      : "r"(seg), "S"(ofs), "D"(dst), "c"(len)
+      : "ax", "memory", "cc");
 #else
-  __builtin_memcpy(buf,
-                   (const uint8_t *)page_id_linear(id) + off,
-                   len);
+  __builtin_memcpy(buf, (const uint8_t *)page_id_linear(id) + off, len);
 #endif
 }
 
@@ -572,19 +572,17 @@ void mm_page_write(page_id_t id, uint16_t off, const void *buf, uint16_t len) {
   uint16_t seg = (uint16_t)(linear >> 4);
   uint16_t ofs = (uint16_t)(linear & 0x000Fu);
   uint16_t src = (uint16_t)(uintptr_t)buf;
-  __asm__ volatile (
-    "push %%es\n\t"
-    "mov  %0, %%es\n\t"    /* ES = destination segment */
-    "cld\n\t"
-    "rep movsb\n\t"
-    "pop  %%es"
-    :
-    : "r"(seg), "S"(src), "D"(ofs), "c"(len)
-    : "memory", "cc"
-  );
+  __asm__ volatile(
+      "push %%es\n\t"
+      "mov  %0, %%es\n\t" /* ES = destination segment */
+      "cld\n\t"
+      "rep movsb\n\t"
+      "pop  %%es"
+      :
+      : "r"(seg), "S"(src), "D"(ofs), "c"(len)
+      : "memory", "cc");
 #else
-  __builtin_memcpy((uint8_t *)page_id_linear(id) + off,
-                   buf, len);
+  __builtin_memcpy((uint8_t *)page_id_linear(id) + off, buf, len);
 #endif
 }
 

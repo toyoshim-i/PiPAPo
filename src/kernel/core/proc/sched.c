@@ -19,8 +19,8 @@
 #include <stdint.h>
 
 #include "kernel/common/ioregs.h"
-#include "kernel/common/mod/mod_vfs.h"  /* mod_vfs.tty_rx_notify */
-#include "kernel/common/spinlock.h" /* SPIN_PROC */
+#include "kernel/common/mod/mod_vfs.h" /* mod_vfs.tty_rx_notify */
+#include "kernel/common/spinlock.h"    /* SPIN_PROC */
 #include "kernel/core/arch.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h" /* PAGE_SIZE */
@@ -57,7 +57,6 @@ pcb_t *sched_next(void) {
       break;
     }
   }
-
 
   /* Track which core is running which process. */
   if (result != current) {
@@ -144,7 +143,8 @@ void sched_display_poll(void) {
   if (input_poll_due && input_poll_fn) {
     input_poll_due = 0;
     if (input_poll_fn()) mod_vfs.tty_rx_notify(input_poll_tty_idx);
-    if (input_poll_fn2 && input_poll_fn2()) mod_vfs.tty_rx_notify(input_poll_tty_idx2);
+    if (input_poll_fn2 && input_poll_fn2())
+      mod_vfs.tty_rx_notify(input_poll_tty_idx2);
   }
   if (display_poll_fn) display_poll_fn();
 }
@@ -290,7 +290,9 @@ void sched_start(void) {
   /* Set mscratch to pid 0's kernel stack top.  boot.S initialized it to
    * __stack_top (linker stack), but now pid 0 has its own stack_page.
    * Must be done before enabling interrupts. */
-  uint32_t ksp = (uint32_t)(uintptr_t)mem_region_page_to_ptr(proc_table[0].stack_page_id) + PAGE_SIZE;
+  uint32_t ksp =
+      (uint32_t)(uintptr_t)mem_region_page_to_ptr(proc_table[0].stack_page_id) +
+      PAGE_SIZE;
   proc_table[0].kernel_sp = ksp;
   __asm__ volatile("csrw mscratch, %0" : : "r"(ksp));
 
@@ -314,7 +316,7 @@ void sched_start(void) {
    * Clear pending interrupts but preserve INTENABLE — timer init has
    * already configured it correctly. */
   xtensa_trap_reassert();
-  __asm__ volatile("wsr %0, intclear; rsync" :: "r"(0xFFFFFFFFu));
+  __asm__ volatile("wsr %0, intclear; rsync" ::"r"(0xFFFFFFFFu));
   arch_irq_enable();
 }
 

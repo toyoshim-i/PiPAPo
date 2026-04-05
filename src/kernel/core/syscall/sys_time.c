@@ -31,8 +31,7 @@ static int timespec32_write_remaining(uintptr_t rem_ptr) {
 
   if (rem_ptr == 0u) return 0;
   now = sched_get_ticks();
-  if (current->sleep_until != 0 &&
-      (int32_t)(current->sleep_until - now) > 0)
+  if (current->sleep_until != 0 && (int32_t)(current->sleep_until - now) > 0)
     remaining_ticks = current->sleep_until - now;
   else
     remaining_ticks = 0;
@@ -48,8 +47,7 @@ static int timespec64_write_remaining(uintptr_t rem_ptr) {
 
   if (rem_ptr == 0u) return 0;
   now = sched_get_ticks();
-  if (current->sleep_until != 0 &&
-      (int32_t)(current->sleep_until - now) > 0)
+  if (current->sleep_until != 0 && (int32_t)(current->sleep_until - now) > 0)
     remaining_ticks = current->sleep_until - now;
   else
     remaining_ticks = 0;
@@ -98,8 +96,8 @@ long sys_nanosleep(uintptr_t req_ptr, uintptr_t rem_ptr) {
     if (ts.tv_sec < 0 || ts.tv_nsec < 0 || ts.tv_nsec >= 1000000000L)
       return -(long)EINVAL;
 
-    uint32_t ticks = (uint32_t)ts.tv_sec * PPAP_TICK_HZ +
-                     (uint32_t)ts.tv_nsec / NS_PER_TICK;
+    uint32_t ticks =
+        (uint32_t)ts.tv_sec * PPAP_TICK_HZ + (uint32_t)ts.tv_nsec / NS_PER_TICK;
     if (ticks == 0u) ticks = 1u;
 
     current->sleep_until = sched_get_ticks() + ticks;

@@ -349,8 +349,8 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_poll((uintptr_t)a0, (uint32_t)a1, a2);
       break;
     case SYS_PPOLL:
-      ret = sys_ppoll((uintptr_t)a0, (uint32_t)a1, (uintptr_t)a2,
-                      (uintptr_t)a3, a4);
+      ret = sys_ppoll((uintptr_t)a0, (uint32_t)a1, (uintptr_t)a2, (uintptr_t)a3,
+                      a4);
       break;
 
     /* ── TLS: set/get_thread_area (m68k musl uses these for TLS) ──────── */

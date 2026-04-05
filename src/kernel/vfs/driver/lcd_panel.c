@@ -28,8 +28,7 @@
 
 static void delay_ms(uint32_t ms) {
   volatile uint32_t count = ms * DELAY_LOOPS_PER_MS;
-  while (count--)
-    ;
+  while (count--);
 }
 
 /* ── MIPI DCS commands ─────────────────────────────────────────────────── */

@@ -13,23 +13,21 @@
  *   Stack: top of page (grows down)
  */
 
-#include "kernel/core/exec/loader.h"
-
 #include <string.h>
 
 #include "common/errno.h"
 #include "kernel/core/arch.h"
 #include "kernel/core/cpu/cpu.h"
+#include "kernel/core/exec/loader.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
 
-#define FLAT_MAX_SIZE (PAGE_SIZE - 256)  /* leave room for stack */
+#define FLAT_MAX_SIZE (PAGE_SIZE - 256) /* leave room for stack */
 
 /* ── Detection ─────────────────────────────────────────────────────────── */
 
-static int flat_detect(const uint8_t *buf, uint32_t size, const char *path)
-{
+static int flat_detect(const uint8_t *buf, uint32_t size, const char *path) {
   (void)buf;
 
   /* Only on native i16 host */
@@ -39,18 +37,17 @@ static int flat_detect(const uint8_t *buf, uint32_t size, const char *path)
   if (path) {
     int len = 0;
     while (path[len]) len++;
-    if (len >= 4 &&
-        (path[len-4] == '.' &&
-         (path[len-3] == 'c' || path[len-3] == 'C') &&
-         (path[len-2] == 'o' || path[len-2] == 'O') &&
-         (path[len-1] == 'm' || path[len-1] == 'M')))
+    if (len >= 4 && (path[len - 4] == '.' &&
+                     (path[len - 3] == 'c' || path[len - 3] == 'C') &&
+                     (path[len - 2] == 'o' || path[len - 2] == 'O') &&
+                     (path[len - 1] == 'm' || path[len - 1] == 'M')))
       return 1;
   }
 
   /* Accept any small file that doesn't start with ELF or script magic */
   if (size > 0 && size <= FLAT_MAX_SIZE) {
     if (buf[0] == 0x7F && buf[1] == 'E') return 0; /* ELF */
-    if (buf[0] == '#' && buf[1] == '!')  return 0; /* script */
+    if (buf[0] == '#' && buf[1] == '!') return 0;  /* script */
     return 1;
   }
 
@@ -61,8 +58,7 @@ static int flat_detect(const uint8_t *buf, uint32_t size, const char *path)
 
 static int flat_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
                      const cpu_ops_t *cpu_ops, void *cpu_state,
-                     const char *const *argv, uint32_t flags)
-{
+                     const char *const *argv, uint32_t flags) {
   (void)flags;
   (void)cpu_ops;
   (void)cpu_state;

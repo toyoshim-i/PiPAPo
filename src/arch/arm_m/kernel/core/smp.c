@@ -77,8 +77,7 @@
 /* ── sio_fifo_push ───────────────────────────────────────────────────────── */
 
 void sio_fifo_push(uint32_t value) {
-  while (!(SIO_FIFO_ST & SIO_FIFO_RDY))
-    ;
+  while (!(SIO_FIFO_ST & SIO_FIFO_RDY));
   SIO_FIFO_WR = value;
   arch_sev(); /* wake the other core if it is in WFE */
 }
@@ -157,7 +156,9 @@ void core1_sched_entry(void) {
 
   /* 4. Switch Thread mode to PSP using idle's stack page.
    * MSP (set by core1_launch) remains the exception stack. */
-  uint32_t psp_top = (uint32_t)(uintptr_t)mem_region_page_to_ptr(idle->stack_page_id) + PAGE_SIZE;
+  uint32_t psp_top =
+      (uint32_t)(uintptr_t)mem_region_page_to_ptr(idle->stack_page_id) +
+      PAGE_SIZE;
   __asm__ volatile(
       "msr  psp, %0      \n" /* PSP = top of idle's stack page */
       "movs r0, #2       \n" /* CONTROL.SPSEL = 1 */
@@ -196,8 +197,7 @@ void core1_sched_entry(void) {
 static void core1_reset(void) {
   /* Force Core 1 off */
   PSM_FRCE_OFF_SET = PSM_PROC1;
-  while (!(PSM_FRCE_OFF & PSM_PROC1))
-    ;
+  while (!(PSM_FRCE_OFF & PSM_PROC1));
 
   /* Let Core 1 restart — it will re-enter the boot ROM */
   PSM_FRCE_OFF_CLR = PSM_PROC1;

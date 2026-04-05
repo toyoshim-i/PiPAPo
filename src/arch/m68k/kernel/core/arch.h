@@ -39,8 +39,7 @@ static inline void arch_wfi(void) {
 
 /* WFE/SEV: not applicable on single-core 68k — stub as WFI/nop */
 static inline void arch_wfe(void) { arch_wfi(); }
-static inline void arch_sev(void) { /* no-op on single-core */
-}
+static inline void arch_sev(void) { /* no-op on single-core */ }
 
 /* ── Memory barriers ──────────────────────────────────────────────────────
  *

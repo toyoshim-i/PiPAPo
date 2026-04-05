@@ -61,17 +61,15 @@ const subsys_ops_t *subsys_ops_table[SUBSYS_MAX] = {
 #endif
 };
 
-void subsys_init(void) {
-  /* Name arrays are statically initialised above. */
-}
+void subsys_init(void) { /* Name arrays are statically initialised above. */ }
 
 /* ── Query interface (called by procfs via subsys_info.h) ────────────── */
 
-int subsys_read_proc(int tag, struct pcb *p, const char *name,
-                     char *buf, int bufsiz) {
+int subsys_read_proc(int tag, struct pcb *p, const char *name, char *buf,
+                     int bufsiz) {
   if ((unsigned)tag >= SUBSYS_MAX) return -1;
   if (!subsys_ops_table[tag]) return -1;
   if (!subsys_ops_table[tag]->on_proc_read) return -1;
-  if (!buf) return 0;  /* probe: handler exists */
+  if (!buf) return 0; /* probe: handler exists */
   return subsys_ops_table[tag]->on_proc_read(p, name, buf, bufsiz);
 }

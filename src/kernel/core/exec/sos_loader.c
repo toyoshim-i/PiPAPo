@@ -204,8 +204,7 @@ static int sos_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
   /* ── 3. Allocate stack page ────────────────────────────────────────── */
   if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                       PROC_IMAGE_SEG_WRITABLE |
-                           PROC_IMAGE_SEG_OWNED) < 0) {
+                       PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) < 0) {
     proc_release_tracked_pages(p, 0, Z80_MEM_PAGES + 1u);
     return -(int)ENOMEM;
   }
@@ -247,9 +246,9 @@ static int sos_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   z80_mem[SOS_SIZE + 1] = (payload_size >> 8) & 0xFF;
   z80_mem[SOS_EXADR] = hdr.exec_addr & 0xFF;
   z80_mem[SOS_EXADR + 1] = hdr.exec_addr >> 8;
-  p->image.text = proc_image_segment_make(z80_mem + hdr.load_addr,
-                                          payload_size, PPAP_MEM_RAM_TEXT,
-                                          PROC_IMAGE_SEG_EXECUTABLE);
+  p->image.text =
+      proc_image_segment_make(z80_mem + hdr.load_addr, payload_size,
+                              PPAP_MEM_RAM_TEXT, PROC_IMAGE_SEG_EXECUTABLE);
   p->image.data = data_region;
   p->image.entry = hdr.exec_addr;
 
@@ -269,7 +268,8 @@ static int sos_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   {
     uint8_t *exc = (uint8_t *)(uintptr_t)p->sp + 15u * sizeof(uint32_t);
     *(uint16_t *)(void *)exc = SR_SUPV_IRQ;
-    p->usp = (uint32_t)(uintptr_t)mem_region_page_to_ptr(p->stack_page_id) + PAGE_SIZE;
+    p->usp = (uint32_t)(uintptr_t)mem_region_page_to_ptr(p->stack_page_id) +
+             PAGE_SIZE;
   }
 #endif
 

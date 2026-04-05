@@ -45,11 +45,11 @@
 
 /* ── GPIO — IO_BANK0 ────────────────────────────────────────────────────── */
 
-#define GPIO_CTRL(n) REG(IO_BANK0_BASE + (n)*8u + 4u)
+#define GPIO_CTRL(n) REG(IO_BANK0_BASE + (n) * 8u + 4u)
 
 /* ── GPIO — PADS_BANK0 ──────────────────────────────────────────────────── */
 
-#define PAD_GPIO(n) REG(PADS_BANK0_BASE + 4u + (n)*4u)
+#define PAD_GPIO(n) REG(PADS_BANK0_BASE + 4u + (n) * 4u)
 
 /* Pad defaults for SPI: IE=1, OD=0, DRIVE=1 (4mA), slew normal */
 #define PAD_SPI_OUT (0x50u)  /* IE=1, DRIVE=4mA               */
@@ -111,8 +111,7 @@ void spi_init(uint32_t baud_hz) {
    *    true hardware reset that clears FIFOs and all internal state. */
   RESETS_RESET_SET = RESET_SPI0;
   RESETS_RESET_CLR = RESET_SPI0;
-  while (!(RESETS_RESET_DONE & RESET_SPI0))
-    ;
+  while (!(RESETS_RESET_DONE & RESET_SPI0));
 
   /* 2. Configure GPIO pads */
   PAD_GPIO(PICOCALC_SPI0_SCK) = PAD_SPI_OUT;
@@ -164,13 +163,11 @@ void spi_set_baud(uint32_t baud_hz) {
 
 uint8_t spi_xfer(uint8_t tx) {
   /* Wait for TX FIFO space */
-  while (!(SPI0_SR & SR_TNF))
-    ;
+  while (!(SPI0_SR & SR_TNF));
   SPI0_DR = tx;
 
   /* Wait for RX data */
-  while (!(SPI0_SR & SR_RNE))
-    ;
+  while (!(SPI0_SR & SR_RNE));
   return (uint8_t)SPI0_DR;
 }
 

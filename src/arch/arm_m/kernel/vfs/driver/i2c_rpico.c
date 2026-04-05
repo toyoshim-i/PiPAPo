@@ -62,11 +62,11 @@
 
 /* ── GPIO — IO_BANK0 ────────────────────────────────────────────────────── */
 
-#define GPIO_CTRL(n) REG(IO_BANK0_BASE + (n)*8u + 4u)
+#define GPIO_CTRL(n) REG(IO_BANK0_BASE + (n) * 8u + 4u)
 
 /* ── GPIO — PADS_BANK0 ──────────────────────────────────────────────────── */
 
-#define PAD_GPIO(n) REG(PADS_BANK0_BASE + 4u + (n)*4u)
+#define PAD_GPIO(n) REG(PADS_BANK0_BASE + 4u + (n) * 4u)
 
 /* IE=1, PUE=1, DRIVE=4mA — same as PAD_SPI_IN.
  * External 4.7kΩ pull-ups exist; internal PUE is harmless in parallel. */
@@ -94,8 +94,7 @@ static void i2c_disable(void) {
   IC_ENABLE = 0;
   /* Wait for controller to become disabled */
   uint32_t timeout = I2C_TIMEOUT;
-  while ((IC_ENABLE_STATUS & 1u) && --timeout)
-    ;
+  while ((IC_ENABLE_STATUS & 1u) && --timeout);
 }
 
 static void i2c_enable(void) { IC_ENABLE = 1; }
@@ -152,8 +151,7 @@ void i2c_init(void) {
    *    the UF2 bootloader may leave the peripheral in an unknown state). */
   RESETS_RESET_SET = RESET_I2C1;
   RESETS_RESET_CLR = RESET_I2C1;
-  while (!(RESETS_RESET_DONE & RESET_I2C1))
-    ;
+  while (!(RESETS_RESET_DONE & RESET_I2C1));
 
   /* 2. Configure GPIO pads for I2C (IE=1, PUE=1, 4mA) */
   PAD_GPIO(PICOCALC_I2C1_SDA) = PAD_I2C;

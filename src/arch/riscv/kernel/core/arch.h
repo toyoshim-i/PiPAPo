@@ -24,17 +24,11 @@
 
 extern volatile uint32_t riscv_switch_pending;
 
-static inline void arch_yield(void)
-{
-    riscv_switch_pending = 1;
-}
+static inline void arch_yield(void) { riscv_switch_pending = 1; }
 
 /* ── CPU hints ────────────────────────────────────────────────────────── */
 
-static inline void arch_wfi(void)
-{
-    __asm__ volatile ("wfi");
-}
+static inline void arch_wfi(void) { __asm__ volatile("wfi"); }
 
 /* WFE: not a standard RISC-V instruction — use WFI as fallback */
 static inline void arch_wfe(void) { arch_wfi(); }
@@ -45,10 +39,9 @@ static inline void arch_sev(void) { /* no-op on single-core */ }
 
 /* ── Memory barriers ──────────────────────────────────────────────────── */
 
-static inline void arch_dsb_isb(void)
-{
-    __asm__ volatile ("fence rw, rw" ::: "memory");
-    __asm__ volatile ("fence.i" ::: "memory");
+static inline void arch_dsb_isb(void) {
+  __asm__ volatile("fence rw, rw" ::: "memory");
+  __asm__ volatile("fence.i" ::: "memory");
 }
 
 static inline page_id_t arch_user_ptr_to_page(page_id_t base_page,

@@ -20,7 +20,7 @@
 #include "kernel/common/ioregs.h"
 #include "kernel/common/spinlock.h" /* SPIN_TXRING */
 #include "kernel/vfs/driver/uart.h"
-#include "kernel/vfs/tty.h"   /* tty_rx_notify, tty_signal_intr */
+#include "kernel/vfs/tty.h" /* tty_rx_notify, tty_signal_intr */
 #include "target/rpico.h"
 
 /* ==========================================================================
@@ -46,7 +46,7 @@
  * We must clear ISO and set IE for UART GPIO pins.
  * ========================================================================== */
 
-#define PAD_GPIO(n) REG(PADS_BANK0_BASE + 4u + (n)*4u)
+#define PAD_GPIO(n) REG(PADS_BANK0_BASE + 4u + (n) * 4u)
 #define PAD_IE (1u << 6)  /* input enable  */
 #define PAD_OD (1u << 7)  /* output disable */
 #define PAD_ISO (1u << 8) /* pad isolation (RP2350 only) */
@@ -154,30 +154,25 @@ static volatile uint8_t rx_head, rx_tail;
 
 static void unreset_periph(uint32_t mask) {
   RESETS_RESET_CLR = mask;
-  while ((RESETS_RESET_DONE & mask) != mask)
-    ;
+  while ((RESETS_RESET_DONE & mask) != mask);
 }
 
 static void clock_switch_to_xosc(void) {
   CLK_SYS_CTRL = CLK_SYS_CTRL & ~1u;
-  while (!(CLK_SYS_SELECTED & (1u << CLK_SYS_SRC_REF)))
-    ;
+  while (!(CLK_SYS_SELECTED & (1u << CLK_SYS_SRC_REF)));
 
   CLK_REF_CTRL = CLK_REF_CTRL & ~3u;
-  while (!(CLK_REF_SELECTED & (1u << CLK_REF_SRC_ROSC)))
-    ;
+  while (!(CLK_REF_SELECTED & (1u << CLK_REF_SRC_ROSC)));
 
   XOSC_CTRL = XOSC_CTRL_FREQ_1_15MHZ;
   XOSC_STARTUP = XOSC_STARTUP_DELAY_12MHZ;
   XOSC_CTRL = XOSC_CTRL_ENABLE | XOSC_CTRL_FREQ_1_15MHZ;
-  while (!(XOSC_STATUS & XOSC_STATUS_STABLE))
-    ;
+  while (!(XOSC_STATUS & XOSC_STATUS_STABLE));
 
   CLK_REF_CTRL = CLK_REF_SRC_XOSC;
-  while (!(CLK_REF_SELECTED & (1u << CLK_REF_SRC_XOSC)))
-    ;
+  while (!(CLK_REF_SELECTED & (1u << CLK_REF_SRC_XOSC)));
 
-  CLK_PERI_DIV  = 0x10000u;       /* RP2350: reset divider to 1:1 (no-op on RP2040) */
+  CLK_PERI_DIV = 0x10000u; /* RP2350: reset divider to 1:1 (no-op on RP2040) */
   CLK_PERI_CTRL = CLK_PERI_ENABLE;
 }
 
@@ -278,8 +273,7 @@ void uart_tx_drain(void) {
     }
     spin_unlock_irqrestore(SPIN_TXRING, saved);
   }
-  while (UART0_FR & UART_FR_BUSY)
-    ;
+  while (UART0_FR & UART_FR_BUSY);
   /* Ring is empty — clear TXIM so the next uart_putc burst will kick
    * bytes directly into the FIFO instead of waiting for an ISR that
    * has nothing to drain. */

@@ -117,8 +117,7 @@ static long pipe_read(struct file *f, page_id_t page, uint16_t off, size_t n) {
   return 0; /* ignored — SVC_Handler restores original frame[0] */
 }
 
-static long pipe_write(struct file *f, page_id_t page,
-                       uint16_t off, size_t n) {
+static long pipe_write(struct file *f, page_id_t page, uint16_t off, size_t n) {
   pipe_t *p = f->priv;
 
   if (p->readers == 0) return -(long)EPIPE; /* broken pipe — no readers */

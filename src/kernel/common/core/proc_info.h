@@ -78,8 +78,7 @@ static inline user_page_ref_t user_page_ref_invalid(void) {
   return ref;
 }
 
-static inline user_page_ref_t user_to_page(page_id_t base,
-                                           uint32_t user_off) {
+static inline user_page_ref_t user_to_page(page_id_t base, uint32_t user_off) {
   user_page_ref_t ref;
   ref.page = base + (page_id_t)(user_off / PAGE_SIZE);
   ref.off = (uint16_t)(user_off % PAGE_SIZE);
@@ -104,19 +103,19 @@ typedef struct pcb {
   uint32_t sp;                 /* saved SSP               (offset 44)      */
   uint32_t usp;                /* saved USP               (offset 48)      */
 #elif defined(__riscv)
-  uint32_t s0, s1;             /* callee-saved (offsets 0-7)               */
-  uint32_t s2, s3, s4, s5;    /* callee-saved (offsets 8-23)              */
-  uint32_t s6, s7, s8, s9;    /* callee-saved (offsets 24-39)             */
-  uint32_t s10, s11;           /* callee-saved (offsets 40-47)             */
-  uint32_t sp;                 /* saved stack pointer     (offset 48)      */
-  uint32_t kernel_sp;          /* kernel stack top for mscratch (offset 52) */
+  uint32_t s0, s1;         /* callee-saved (offsets 0-7)               */
+  uint32_t s2, s3, s4, s5; /* callee-saved (offsets 8-23)              */
+  uint32_t s6, s7, s8, s9; /* callee-saved (offsets 24-39)             */
+  uint32_t s10, s11;       /* callee-saved (offsets 40-47)             */
+  uint32_t sp;             /* saved stack pointer     (offset 48)      */
+  uint32_t kernel_sp;      /* kernel stack top for mscratch (offset 52) */
 #elif defined(__xtensa__)
-  uint32_t sp;                 /* saved stack pointer     (offset 0)       */
+  uint32_t sp; /* saved stack pointer     (offset 0)       */
 #elif defined(__ia16__)
-  uint32_t sp;                 /* saved kernel-stack SP (offset 0)          */
-  uint16_t kernel_stack_top;   /* top of this process's 2 KB kernel stack   */
-  uint16_t exec_user_ss;       /* new user SS after execve (set by loader)  */
-  uint16_t exec_user_sp;       /* new user SP after execve (set by loader)  */
+  uint32_t sp;               /* saved kernel-stack SP (offset 0)          */
+  uint16_t kernel_stack_top; /* top of this process's 2 KB kernel stack   */
+  uint16_t exec_user_ss;     /* new user SS after execve (set by loader)  */
+  uint16_t exec_user_sp;     /* new user SP after execve (set by loader)  */
 #else
 #error "Unsupported architecture — define PCB register save area"
 #endif
@@ -138,7 +137,7 @@ typedef struct pcb {
   int16_t fd_map[FD_MAX]; /* per-process fd -> system descriptor ID map
                            * -1 (FD_DESC_NONE) = empty slot.
                            * VFS owns the file objects; core owns the map. */
-  char cwd[64]; /* current working directory (Phase 2+)       */
+  char cwd[64];           /* current working directory (Phase 2+)       */
 
   /* ── Scheduling ─────────────────────────────────────────────────────── */
   uint32_t ticks_remaining; /* SysTick ticks left in current time-slice   */
@@ -151,12 +150,12 @@ typedef struct pcb {
 #if defined(__ia16__)
   uint8_t vfork_frame_saved; /* 1 if 24B GP+IRET frame saved on kstack */
 #endif
-  int exit_status;          /* set by _exit(), read by waitpid()          */
-  uintptr_t got_base;       /* r9 value (GOT SRAM address) for PIC       */
-  void *wait_channel;       /* sleep/wakeup target (e.g. pipe_t*)        */
+  int exit_status;    /* set by _exit(), read by waitpid()          */
+  uintptr_t got_base; /* r9 value (GOT SRAM address) for PIC       */
+  void *wait_channel; /* sleep/wakeup target (e.g. pipe_t*)        */
 
   /* ── Heap (brk) ──────────────────────────────────────────────────── */
-  uintptr_t brk_base;   /* initial break = end of .data+.bss         */
+  uintptr_t brk_base;    /* initial break = end of .data+.bss         */
   uintptr_t brk_current; /* current break (grows upward)             */
 
   /* ── Signals ─────────────────────────────────────────────────────── */
@@ -171,8 +170,8 @@ typedef struct pcb {
   uint32_t start_time; /* boot tick when process created    */
 
   /* ── Process group / session (Phase 6 Step 7) ────────────────── */
-  pid_t pgid;           /* process group ID                  */
-  pid_t sid;            /* session ID                        */
+  pid_t pgid;                      /* process group ID                  */
+  pid_t sid;                       /* session ID                        */
   uint32_t umask_val;              /* file creation mask (default 022)  */
   user_page_ref_t clear_child_tid; /* set_tid_address reference         */
 

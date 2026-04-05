@@ -46,7 +46,8 @@ void cpu_init(void) {
   int first = 1;
   for (int i = 0; cpu_ops_registry[i] != NULL; i++) {
     if (cpu_ops_registry[i] == &native_cpu_ops) continue;
-    mod_vfs.klogf("%s %s", first ? " + emulated" : ",", cpu_ops_registry[i]->name);
+    mod_vfs.klogf("%s %s", first ? " + emulated" : ",",
+                  cpu_ops_registry[i]->name);
     first = 0;
   }
   mod_vfs.klogf("\n");

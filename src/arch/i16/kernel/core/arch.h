@@ -25,17 +25,11 @@
 extern volatile uint16_t i16_switch_pending;
 extern volatile uint16_t i16_current_ksp;
 
-static inline void arch_yield(void)
-{
-  i16_switch_pending = 1;
-}
+static inline void arch_yield(void) { i16_switch_pending = 1; }
 
 /* -- CPU hints ---------------------------------------------------------- */
 
-static inline void arch_wfi(void)
-{
-  __asm__ volatile ("hlt");
-}
+static inline void arch_wfi(void) { __asm__ volatile("hlt"); }
 
 static inline void arch_wfe(void) { arch_wfi(); }
 static inline void arch_sev(void) { /* no-op, single core */ }
@@ -45,15 +39,13 @@ static inline void arch_sev(void) { /* no-op, single core */ }
  * 8086 is single-core with in-order execution.  No barriers needed.
  * ------------------------------------------------------------------- */
 
-static inline void arch_dsb_isb(void)
-{
-  __asm__ volatile ("" ::: "memory");  /* Compiler barrier only */
+static inline void arch_dsb_isb(void) {
+  __asm__ volatile("" ::: "memory"); /* Compiler barrier only */
 }
 
 static inline page_id_t arch_user_ptr_to_page(page_id_t base_page,
                                               uintptr_t user_ptr,
-                                              uint16_t *off)
-{
+                                              uint16_t *off) {
   uint32_t user_off = (uint32_t)(uint16_t)user_ptr;
 
   *off = (uint16_t)(user_off % PAGE_SIZE);

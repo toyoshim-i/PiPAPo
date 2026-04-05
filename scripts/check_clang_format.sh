@@ -51,7 +51,7 @@ if [[ $FIX -eq 1 ]]; then
     if ! diff -q <(clang-format --style=file "$f") "$f" &>/dev/null; then
       clang-format -i --style=file "$f"
       echo "  formatted: ${f#"$PPAP_ROOT/"}"
-      ((fixed++))
+      fixed=$((fixed + 1))
     fi
   done
   echo "clang-format: $fixed files reformatted"

@@ -9,8 +9,6 @@
  */
 
 #include "kernel/vfs/fd.h"
-#include "kernel/vfs/file.h"
-#include "kernel/vfs/tty.h"
 
 #include <stddef.h>
 #include <string.h>
@@ -21,8 +19,11 @@
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/vfs/devfs.h"
+#include "kernel/vfs/file.h"
+#include "kernel/vfs/tty.h"
 
-/* ── System-wide file descriptor pool ──────────────────────────────────────── */
+/* ── System-wide file descriptor pool ────────────────────────────────────────
+ */
 
 static struct file fd_pool[FILE_MAX];
 
@@ -39,10 +40,11 @@ static int fd_pool_alloc(void) {
   return -1;
 }
 
-/* ── VFS bridge file_ops ───────────────────────────────────────────────────── */
+/* ── VFS bridge file_ops ─────────────────────────────────────────────────────
+ */
 
-static long vfs_bridge_read(struct file *f, page_id_t page,
-                            uint16_t off, size_t n) {
+static long vfs_bridge_read(struct file *f, page_id_t page, uint16_t off,
+                            size_t n) {
   if (!f->vnode || !f->vnode->mount || !f->vnode->mount->ops ||
       !f->vnode->mount->ops->read)
     return -(long)EBADF;
@@ -51,8 +53,8 @@ static long vfs_bridge_read(struct file *f, page_id_t page,
   return ret;
 }
 
-static long vfs_bridge_write(struct file *f, page_id_t page,
-                             uint16_t off, size_t n) {
+static long vfs_bridge_write(struct file *f, page_id_t page, uint16_t off,
+                             size_t n) {
   if (!f->vnode || !f->vnode->mount || !f->vnode->mount->ops ||
       !f->vnode->mount->ops->write)
     return -(long)EBADF;
@@ -71,9 +73,11 @@ static int vfs_bridge_close(struct file *f) {
 }
 
 static const struct file_ops vfs_bridge_ops = {
-    vfs_bridge_read,  vfs_bridge_write,
-    vfs_bridge_close, NULL, /* ioctl */
-    NULL,                   /* poll */
+    vfs_bridge_read,
+    vfs_bridge_write,
+    vfs_bridge_close,
+    NULL, /* ioctl */
+    NULL, /* poll */
 };
 
 /* ── Pool init (replaces fd_pool_init) ───────────────────────────────────── */
@@ -92,7 +96,8 @@ void fd_pool_init(void) {
   }
 }
 
-/* ── Lifecycle ─────────────────────────────────────────────────────────────── */
+/* ── Lifecycle ───────────────────────────────────────────────────────────────
+ */
 
 int vfs_fd_stdio_desc(int which) {
   if (which < 0 || which > 2) return -1;
@@ -115,7 +120,8 @@ void vfs_fd_release(int desc) {
   }
 }
 
-/* ── fd_open ───────────────────────────────────────────────────────────────── */
+/* ── fd_open ─────────────────────────────────────────────────────────────────
+ */
 
 int vfs_fd_open(const char *path, int flags, int mode) {
   if (!path) return -EINVAL;
@@ -127,15 +133,13 @@ int vfs_fd_open(const char *path, int flags, int mode) {
   if (err == -ENOENT && ((uint32_t)flags & O_CREAT)) {
     vnode_t *parent = NULL;
     char namebuf[VFS_NAME_MAX + 1];
-    err = mod_vfs.lookup_parent(path, &parent, namebuf,
-                                (int)sizeof(namebuf));
+    err = mod_vfs.lookup_parent(path, &parent, namebuf, (int)sizeof(namebuf));
     if (err) return err;
     if (parent->type != VNODE_DIR) {
       mod_vfs.vnode_release(parent);
       return -ENOTDIR;
     }
-    if (!parent->mount || !parent->mount->ops ||
-        !parent->mount->ops->create) {
+    if (!parent->mount || !parent->mount->ops || !parent->mount->ops->create) {
       mod_vfs.vnode_release(parent);
       return -ENOSYS;
     }
@@ -210,7 +214,8 @@ int vfs_fd_open(const char *path, int flags, int mode) {
   return desc;
 }
 
-/* ── I/O ───────────────────────────────────────────────────────────────────── */
+/* ── I/O ─────────────────────────────────────────────────────────────────────
+ */
 
 long vfs_fd_read(int desc, page_id_t page, uint16_t off, size_t n) {
   if (desc < 0 || desc >= FILE_MAX) return -(long)EBADF;
@@ -241,7 +246,8 @@ int vfs_fd_poll(int desc) {
   return POLLIN | POLLOUT; /* no poll → assume ready */
 }
 
-/* ── File state ────────────────────────────────────────────────────────────── */
+/* ── File state ──────────────────────────────────────────────────────────────
+ */
 
 long vfs_fd_lseek(int desc, long off, int whence) {
   if (desc < 0 || desc >= FILE_MAX) return -(long)EBADF;
@@ -281,8 +287,7 @@ int vfs_fd_fstat(int desc, void *buf) {
     return 0;
   }
 
-  if (!f->vnode->mount || !f->vnode->mount->ops ||
-      !f->vnode->mount->ops->stat)
+  if (!f->vnode->mount || !f->vnode->mount->ops || !f->vnode->mount->ops->stat)
     return -ENOSYS;
 
   return f->vnode->mount->ops->stat(f->vnode, (struct stat *)buf);
@@ -384,11 +389,11 @@ long vfs_fd_fcntl(int desc, int cmd, long arg) {
   }
 }
 
-/* ── Pipe support ──────────────────────────────────────────────────────────── */
+/* ── Pipe support ────────────────────────────────────────────────────────────
+ */
 
 /* Called from pipe.c to allocate pool entries for pipe ends. */
-int fd_pool_alloc_pipe(const struct file_ops *ops, void *priv,
-                       uint32_t flags) {
+int fd_pool_alloc_pipe(const struct file_ops *ops, void *priv, uint32_t flags) {
   int desc = fd_pool_alloc();
   if (desc < 0) return -ENOMEM;
   fd_pool[desc].ops = ops;
@@ -400,16 +405,17 @@ int fd_pool_alloc_pipe(const struct file_ops *ops, void *priv,
   return desc;
 }
 
-/* ── Wait channel (for poll blocking) ──────────────────────────────────────── */
+/* ── Wait channel (for poll blocking) ────────────────────────────────────────
+ */
 
 void *vfs_fd_get_priv(int desc) {
   if (desc < 0 || desc >= FILE_MAX) return NULL;
   return fd_pool[desc].priv;
 }
 
-/* ── Compat: fd_stdio_init (transition wrapper) ────────────────────────────── */
+/* ── Compat: fd_stdio_init (transition wrapper) ──────────────────────────────
+ */
 
 void fd_stdio_init(pcb_t *p) {
-  for (int i = 0; i < 3; i++)
-    p->fd_map[i] = (int16_t)vfs_fd_stdio_desc(i);
+  for (int i = 0; i < 3; i++) p->fd_map[i] = (int16_t)vfs_fd_stdio_desc(i);
 }

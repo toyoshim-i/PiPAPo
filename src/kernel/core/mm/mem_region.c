@@ -109,9 +109,9 @@ static int mem_region_linear_arena_init(mem_region_linear_arena_t *arena,
   arena->ready = 1u;
 
   mod_vfs.klogf("MM:   %s %lx-%lx  %lu KB reserved\n", name,
-        (unsigned long)(uintptr_t)arena->base,
-        (unsigned long)(uintptr_t)(arena->base + arena->size - 1u),
-        (unsigned long)(arena->size / 1024u));
+                (unsigned long)(uintptr_t)arena->base,
+                (unsigned long)(uintptr_t)(arena->base + arena->size - 1u),
+                (unsigned long)(arena->size / 1024u));
   return 0;
 }
 
@@ -143,15 +143,15 @@ static int mem_region_xtensa_data_init(void) {
   if (ram_data_page_count > MEM_REGION_RAM_DATA_PAGES_MAX)
     ram_data_page_count = MEM_REGION_RAM_DATA_PAGES_MAX;
 
-  for (uint32_t i = 0; i < ram_data_page_count; i++)
-    ram_data_page_used[i] = 0u;
+  for (uint32_t i = 0; i < ram_data_page_count; i++) ram_data_page_used[i] = 0u;
   ram_data_ready = 1u;
 
-  mod_vfs.klogf("MM:   ram_data %lx-%lx  %lu KB reserved\n",
-        (unsigned long)(uintptr_t)ram_data_arena_base,
-        (unsigned long)(uintptr_t)(ram_data_arena_base +
-                              ram_data_page_count * PAGE_SIZE - 1u),
-        (unsigned long)((ram_data_page_count * PAGE_SIZE) / 1024u));
+  mod_vfs.klogf(
+      "MM:   ram_data %lx-%lx  %lu KB reserved\n",
+      (unsigned long)(uintptr_t)ram_data_arena_base,
+      (unsigned long)(uintptr_t)(ram_data_arena_base +
+                                 ram_data_page_count * PAGE_SIZE - 1u),
+      (unsigned long)((ram_data_page_count * PAGE_SIZE) / 1024u));
   return 0;
 }
 
@@ -169,18 +169,17 @@ static int mem_region_xtensa_psram_init(void) {
 
   free_size = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
   mod_vfs.klogf("MM:   psram total %lu KB, free %lu KB before reservation\n",
-        (unsigned long)(total_size / 1024u), (unsigned long)(free_size / 1024u));
+                (unsigned long)(total_size / 1024u),
+                (unsigned long)(free_size / 1024u));
 
-  err = mem_region_linear_arena_init(&ext_text_arena,
-                                     MEM_REGION_EXT_TEXT_ARENA_SIZE,
-                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
-                                     "ext_text");
+  err = mem_region_linear_arena_init(
+      &ext_text_arena, MEM_REGION_EXT_TEXT_ARENA_SIZE,
+      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT, "ext_text");
   if (err < 0) return err;
 
-  err = mem_region_linear_arena_init(&ext_rodata_arena,
-                                     MEM_REGION_EXT_RODATA_ARENA_SIZE,
-                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
-                                     "ext_rodata");
+  err = mem_region_linear_arena_init(
+      &ext_rodata_arena, MEM_REGION_EXT_RODATA_ARENA_SIZE,
+      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT, "ext_rodata");
   if (err < 0) return err;
 
 #if defined(CONFIG_SPIRAM_XIP_FROM_PSRAM) && CONFIG_SPIRAM_XIP_FROM_PSRAM
@@ -190,18 +189,22 @@ static int mem_region_xtensa_psram_init(void) {
 #endif
 
   if (ext_text_arena.ready) {
-    mod_vfs.klogf("MM:   ext_text executable=%lu byte_access=%lu\n",
-          (unsigned long)(uint32_t)esp_ptr_executable(ext_text_arena.base),
-          (unsigned long)(uint32_t)esp_ptr_byte_accessible(ext_text_arena.base));
+    mod_vfs.klogf(
+        "MM:   ext_text executable=%lu byte_access=%lu\n",
+        (unsigned long)(uint32_t)esp_ptr_executable(ext_text_arena.base),
+        (unsigned long)(uint32_t)esp_ptr_byte_accessible(ext_text_arena.base));
   }
   if (ext_rodata_arena.ready) {
-    mod_vfs.klogf("MM:   ext_rodata executable=%lu byte_access=%lu\n",
-          (unsigned long)(uint32_t)esp_ptr_executable(ext_rodata_arena.base),
-          (unsigned long)(uint32_t)esp_ptr_byte_accessible(ext_rodata_arena.base));
+    mod_vfs.klogf(
+        "MM:   ext_rodata executable=%lu byte_access=%lu\n",
+        (unsigned long)(uint32_t)esp_ptr_executable(ext_rodata_arena.base),
+        (unsigned long)(uint32_t)esp_ptr_byte_accessible(
+            ext_rodata_arena.base));
   }
 
   free_size = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
-  mod_vfs.klogf("MM:   psram free %lu KB after reservation\n", (unsigned long)(free_size / 1024u));
+  mod_vfs.klogf("MM:   psram free %lu KB after reservation\n",
+                (unsigned long)(free_size / 1024u));
   return 0;
 #else
   mod_vfs.klogf("MM:   psram support disabled; external arenas unavailable\n");
@@ -277,8 +280,7 @@ static uint32_t mem_region_ram_data_largest_free_bytes(void) {
   return largest * PAGE_SIZE;
 }
 
-static int mem_region_try_mark_ram_data(uint32_t start_page,
-                                        uint32_t n_pages) {
+static int mem_region_try_mark_ram_data(uint32_t start_page, uint32_t n_pages) {
   if (start_page > ram_data_page_count ||
       n_pages > ram_data_page_count - start_page)
     return 0;
@@ -409,8 +411,7 @@ static void mem_region_linear_arena_free(mem_region_linear_arena_t *arena,
   if (!arena->ready || !base || size == 0) return;
 
   saved = spin_lock_irqsave(SPIN_MEM);
-  while (pos < arena->free_count && arena->free[pos].base < base)
-    pos++;
+  while (pos < arena->free_count && arena->free[pos].base < base) pos++;
 
   if (pos > 0 &&
       arena->free[pos - 1].base + arena->free[pos - 1].size == base) {
@@ -498,12 +499,14 @@ int mem_region_init(void) {
 #if defined(__xtensa__)
   int err = mem_region_xtensa_text_init();
   if (err < 0) {
-    mod_vfs.klogf("MM: mem_region_init: ram_text reservation failed (%d)\n", err);
+    mod_vfs.klogf("MM: mem_region_init: ram_text reservation failed (%d)\n",
+                  err);
     return err;
   }
   err = mem_region_xtensa_data_init();
   if (err < 0) {
-    mod_vfs.klogf("MM: mem_region_init: ram_data reservation failed (%d)\n", err);
+    mod_vfs.klogf("MM: mem_region_init: ram_data reservation failed (%d)\n",
+                  err);
     return err;
   }
   err = mem_region_xtensa_psram_init();
@@ -586,8 +589,7 @@ int mem_region_alloc_at(proc_image_segment_t *seg, ppap_mem_class_t mem_class,
 #endif
 
   if (mem_class == PPAP_MEM_RAM_DATA || mem_class == PPAP_MEM_RAM_STACK ||
-      mem_class == PPAP_MEM_RAM_RODATA ||
-      mem_class == PPAP_MEM_DEVICE_DMA) {
+      mem_class == PPAP_MEM_RAM_RODATA || mem_class == PPAP_MEM_DEVICE_DMA) {
     uint32_t n_pages = mem_region_page_count(size);
     for (uint32_t i = 0; i < n_pages; i++) {
       void *addr = (uint8_t *)base + i * PAGE_SIZE;
@@ -666,27 +668,20 @@ page_id_t mem_region_page_alloc_contiguous(uint32_t n_pages) {
 
 void mem_region_page_free(page_id_t id) { mm_page_free(id); }
 
-uint32_t mem_region_page_linear(page_id_t id) {
-  return mm_page_linear(id);
-}
+uint32_t mem_region_page_linear(page_id_t id) { return mm_page_linear(id); }
 
-page_id_t mem_region_ptr_to_page(void *ptr) {
-  return mm_ptr_to_page(ptr);
-}
+page_id_t mem_region_ptr_to_page(void *ptr) { return mm_ptr_to_page(ptr); }
 
 #if !defined(__ia16__)
-void *mem_region_page_to_ptr(page_id_t id) {
-  return mm_page_to_ptr(id);
-}
+void *mem_region_page_to_ptr(page_id_t id) { return mm_page_to_ptr(id); }
 #endif
 
-void mem_region_page_read(page_id_t id, uint16_t off,
-                          void *buf, uint16_t len) {
+void mem_region_page_read(page_id_t id, uint16_t off, void *buf, uint16_t len) {
   mm_page_read(id, off, buf, len);
 }
 
-void mem_region_page_write(page_id_t id, uint16_t off,
-                           const void *buf, uint16_t len) {
+void mem_region_page_write(page_id_t id, uint16_t off, const void *buf,
+                           uint16_t len) {
   mm_page_write(id, off, buf, len);
 }
 

@@ -80,8 +80,7 @@ static uint32_t sd_part_sectors; /* sector count of partition */
 /* Busy-wait ~1 ms at 133 MHz (imprecise but sufficient for SD init) */
 static void delay_ms(uint32_t ms) {
   volatile uint32_t count = ms * DELAY_LOOPS_PER_MS;
-  while (count--)
-    ;
+  while (count--);
 }
 
 /* ── SD command transport ────────────────────────────────────────────────── */

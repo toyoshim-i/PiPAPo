@@ -155,7 +155,8 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
     return rc;
   }
 
-exec_loaded: __attribute__((unused));
+exec_loaded:
+  __attribute__((unused));
 
   /* ── 4. Free file buffer if the loader doesn't need it for XIP ───── */
   if (file_buf && !matched_loader->xip) mem_region_free(&file_region);

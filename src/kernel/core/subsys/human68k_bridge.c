@@ -27,8 +27,7 @@
 #include "kernel/core/syscall/syscall.h"
 
 #ifdef PPAP_DEBUG_LOG
-#define H68K_TRACE(fmt, ...) \
-  mod_vfs.klogf("[h68k] " fmt "\n", ##__VA_ARGS__)
+#define H68K_TRACE(fmt, ...) mod_vfs.klogf("[h68k] " fmt "\n", ##__VA_ARGS__)
 #else
 #define H68K_TRACE(fmt, ...) ((void)0)
 #endif
@@ -253,8 +252,8 @@ static int dos_setblock(uint32_t *regs, uint32_t usp) {
   /* block_addr points past the 16-byte MMB header.  Derive the raw
    * page base and verify it matches our allocation. */
   page_id_t base_id = proc_page_backed_base(p);
-  uint32_t base = (base_id != PAGE_ID_INVALID) ? mem_region_page_linear(base_id)
-                                                : 0;
+  uint32_t base =
+      (base_id != PAGE_ID_INVALID) ? mem_region_page_linear(base_id) : 0;
   if (block_addr != base + MMB_HEADER_SIZE) {
     H68K_TRACE("_SETBLOCK: bad block addr %x (expected %x)", block_addr,
                base + MMB_HEADER_SIZE);
@@ -1248,8 +1247,7 @@ static int dos_dskfre(uint32_t *regs, uint32_t usp) {
   H68K_TRACE("_DSKFRE(%u)", (uint32_t)ustack_u16(usp, 0));
 
   uint32_t free_pages = mem_region_free_bytes(PPAP_MEM_RAM_STACK) / PAGE_SIZE;
-  uint32_t total_pages =
-      mem_region_total_bytes(PPAP_MEM_RAM_STACK) / PAGE_SIZE;
+  uint32_t total_pages = mem_region_total_bytes(PPAP_MEM_RAM_STACK) / PAGE_SIZE;
   uint32_t page_sz = PAGE_SIZE;
 
   /* Model as: 1 sector = PAGE_SIZE bytes, 1 cluster = 1 sector */

@@ -163,7 +163,8 @@ long sys_munmap(uintptr_t addr, size_t len) {
   /* Find the matching page in user_pages[] by linear address */
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
     if (current->user_pages[i] == PAGE_ID_INVALID) continue;
-    if (mem_region_page_linear(current->user_pages[i]) != (uint32_t)addr) continue;
+    if (mem_region_page_linear(current->user_pages[i]) != (uint32_t)addr)
+      continue;
 
     /* Free num_pages contiguous slots from this position */
     for (uint32_t j = 0; j < num_pages && (i + j) < USER_PAGES_MAX; j++) {
@@ -176,9 +177,9 @@ long sys_munmap(uintptr_t addr, size_t len) {
 
   /* Not found in user_pages — try freeing as a single page anyway.
    * musl may mmap then munmap pages we didn't track (edge case). */
-  proc_image_segment_t region = proc_image_segment_make(
-      (void *)(uintptr_t)addr, num_pages * PAGE_SIZE, PPAP_MEM_RAM_DATA,
-      PROC_IMAGE_SEG_WRITABLE);
+  proc_image_segment_t region =
+      proc_image_segment_make((void *)(uintptr_t)addr, num_pages * PAGE_SIZE,
+                              PPAP_MEM_RAM_DATA, PROC_IMAGE_SEG_WRITABLE);
   mem_region_free(&region);
   return 0;
 }

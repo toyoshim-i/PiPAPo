@@ -27,8 +27,9 @@ static inline uint32_t arch_irq_save(void) {
 }
 
 static inline void arch_irq_restore(uint32_t saved) {
-  __asm__ volatile("wsr %0, ps\n\t"
-                   "rsync" ::"a"(saved));
+  __asm__ volatile(
+      "wsr %0, ps\n\t"
+      "rsync" ::"a"(saved));
 }
 
 /* -- Interrupt enable / disable ------------------------------------------- */
@@ -37,8 +38,9 @@ static inline void arch_irq_enable(void) {
   uint32_t ps;
   __asm__ volatile("rsr %0, ps" : "=a"(ps));
   ps &= ~PS_INTLEVEL_MASK; /* INTLEVEL=0: all interrupts enabled */
-  __asm__ volatile("wsr %0, ps\n\t"
-                   "rsync" ::"a"(ps));
+  __asm__ volatile(
+      "wsr %0, ps\n\t"
+      "rsync" ::"a"(ps));
 }
 
 static inline void arch_irq_disable(void) {
@@ -63,8 +65,9 @@ static inline void arch_preempt_disable(void) {
   uint32_t intenable;
   __asm__ volatile("rsr %0, intenable" : "=a"(intenable));
   intenable &= ~XTENSA_TIMER0_INTMASK;
-  __asm__ volatile("wsr %0, intenable\n\t"
-                   "rsync" ::"a"(intenable));
+  __asm__ volatile(
+      "wsr %0, intenable\n\t"
+      "rsync" ::"a"(intenable));
 }
 
 static inline void arch_preempt_enable(void) {
@@ -72,8 +75,9 @@ static inline void arch_preempt_enable(void) {
   uint32_t intenable;
   __asm__ volatile("rsr %0, intenable" : "=a"(intenable));
   intenable |= XTENSA_TIMER0_INTMASK;
-  __asm__ volatile("wsr %0, intenable\n\t"
-                   "rsync" ::"a"(intenable));
+  __asm__ volatile(
+      "wsr %0, intenable\n\t"
+      "rsync" ::"a"(intenable));
 }
 
 #endif /* PPAP_ARCH_XTENSA_KERNEL_COMMON_IRQ_H */

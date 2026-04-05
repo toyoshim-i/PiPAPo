@@ -92,8 +92,7 @@
  * during the clock transition.  boot.S copies .ramfunc from flash to
  * SRAM before calling kmain().
  */
-__attribute__((section(".ramfunc.clock_init_pll")))
-void clock_init_pll(void) {
+__attribute__((section(".ramfunc.clock_init_pll"))) void clock_init_pll(void) {
   uint32_t t;
 
   /* The SDK clears resus before clock reconfiguration so a previous session's
@@ -112,8 +111,7 @@ void clock_init_pll(void) {
   RESETS_RESET_SET = RESET_PLL_SYS;
   RESETS_RESET_CLR = RESET_PLL_SYS;
   t = PLL_TIMEOUT;
-  while (!(RESETS_RESET_DONE & RESET_PLL_SYS) && --t)
-    ;
+  while (!(RESETS_RESET_DONE & RESET_PLL_SYS) && --t);
 
   /* Step 3: Program reference divisor and feedback divisor.
    * Must be written before powering up the VCO. */
@@ -126,8 +124,7 @@ void clock_init_pll(void) {
 
   /* Step 5: Wait for the VCO to lock. */
   t = PLL_TIMEOUT;
-  while (!(PLL_SYS_CS & PLL_CS_LOCK) && --t)
-    ;
+  while (!(PLL_SYS_CS & PLL_CS_LOCK) && --t);
 
   /* Step 6: Program the post-dividers: POSTDIV1=6, POSTDIV2=2 → 133 MHz. */
   PLL_SYS_PRIM = PLL_PRIM_VALUE;
@@ -139,8 +136,7 @@ void clock_init_pll(void) {
    * clk_sys from clk_ref to the AUX mux (SRC = 1). */
   CLK_SYS_CTRL = (CLK_SYS_AUXSRC_PLL << 5) | CLK_SYS_SRC_AUX;
   t = PLL_TIMEOUT;
-  while (!(CLK_SYS_SELECTED & (1u << CLK_SYS_SRC_AUX)) && --t)
-    ;
+  while (!(CLK_SYS_SELECTED & (1u << CLK_SYS_SRC_AUX)) && --t);
 
   /* Step 9: Reconfigure clk_peri for the new clock speed.
    * clk_peri has no glitchless mux — must disable before the source
@@ -151,9 +147,9 @@ void clock_init_pll(void) {
    * for ENABLE propagation.  At high ROSC speeds (up to 96 MHz on
    * RP2350 A3+) the back-to-back writes execute too quickly, causing
    * a clock glitch that corrupts the UART shift register state. */
-  CLK_PERI_CTRL = 0;               /* disable */
-  for (volatile int i = 0; i < 64; i++) ; /* wait for ENABLE propagation */
-  CLK_PERI_CTRL = CLK_PERI_ENABLE; /* re-enable on clk_sys = PLL speed */
+  CLK_PERI_CTRL = 0;                     /* disable */
+  for (volatile int i = 0; i < 64; i++); /* wait for ENABLE propagation */
+  CLK_PERI_CTRL = CLK_PERI_ENABLE;       /* re-enable on clk_sys = PLL speed */
 
   /* No XIP cache flush needed: the QMI clock divider automatically
    * scales with clk_sys, so flash reads work correctly at PLL speed.

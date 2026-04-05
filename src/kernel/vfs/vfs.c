@@ -21,10 +21,10 @@
 #include "kernel/common/core/kmem_types.h" /* kmem_pool_t */
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/spinlock.h" /* SPIN_VFS */
-#include "kernel/vfs/file.h"   /* fd_pool_init */
-#include "kernel/vfs/fstab.h"  /* fstab_parse, fstab_mount_all */
+#include "kernel/vfs/file.h"        /* fd_pool_init */
+#include "kernel/vfs/fstab.h"       /* fstab_parse, fstab_mount_all */
 #include "kernel/vfs/klog.h"
-#include "kernel/vfs/tty.h"    /* tty_rx_notify */
+#include "kernel/vfs/tty.h" /* tty_rx_notify */
 
 /* ── Static storage ─────────────────────────────────────────────────────────
  */
@@ -53,7 +53,8 @@ void vfs_init(void) {
   mount_count = 0;
 
   /* Initialise the vnode slab pool */
-  mod_core.kmem_pool_init(&vnode_pool, vnode_storage, sizeof(vnode_t), VFS_VNODE_MAX);
+  mod_core.kmem_pool_init(&vnode_pool, vnode_storage, sizeof(vnode_t),
+                          VFS_VNODE_MAX);
 
   /* Block device registry + loopback subsystem */
 #ifdef PPAP_HAS_BLKDEV
@@ -69,7 +70,8 @@ void vfs_init(void) {
         (unsigned)VFS_VNODE_MAX, (unsigned)VFS_MOUNT_MAX);
 }
 
-/* ── vfs_vnode_alloc / vfs_vnode_acquire / vfs_vnode_release ─────────────────────────────────────
+/* ── vfs_vnode_alloc / vfs_vnode_acquire / vfs_vnode_release
+ * ─────────────────────────────────────
  */
 
 vnode_t *vfs_vnode_alloc(void) {
@@ -107,7 +109,9 @@ void vfs_vnode_release(vnode_t *vn) {
   spin_unlock_irqrestore(SPIN_VFS, saved);
 }
 
-uint32_t vnode_free_count(void) { return mod_core.kmem_free_count(&vnode_pool); }
+uint32_t vnode_free_count(void) {
+  return mod_core.kmem_free_count(&vnode_pool);
+}
 
 /* ── vfs_mount ──────────────────────────────────────────────────────────────
  */
@@ -285,27 +289,29 @@ mount_entry_t *vfs_mount_find(const char *path, const char **remainder) {
 #endif
 
 #if defined(PPAP_HAS_BLKDEV) || defined(PPAP_HAS_UFS)
-int vfs_mount_ufs(const char *path, uint8_t flags, const void *dev_data)
-{
+int vfs_mount_ufs(const char *path, uint8_t flags, const void *dev_data) {
   return vfs_mount(path, &ufs_ops, flags, dev_data);
 }
 #else
-int vfs_mount_ufs(const char *path, uint8_t flags, const void *dev_data)
-{
-  (void)path; (void)flags; (void)dev_data;
+int vfs_mount_ufs(const char *path, uint8_t flags, const void *dev_data) {
+  (void)path;
+  (void)flags;
+  (void)dev_data;
   return -ENODEV;
 }
 #endif
 
-int vfs_mount_romfs(const char *path, uint8_t flags, const void *dev_data)
-{
+int vfs_mount_romfs(const char *path, uint8_t flags, const void *dev_data) {
   return vfs_mount(path, &romfs_ops, flags, dev_data);
 }
 
 /* ── String helper for mount_by_fstype ─────────────────────────────────── */
 
 static int fs_str_eq(const char *a, const char *b) {
-  while (*a && *a == *b) { a++; b++; }
+  while (*a && *a == *b) {
+    a++;
+    b++;
+  }
   return (*a == '\0' && *b == '\0');
 }
 
@@ -399,8 +405,7 @@ void vfs_fstab_automount(void) {
   fstab_entry_t fstab[FSTAB_MAX_ENTRIES];
   int n = fstab_parse(fstab, FSTAB_MAX_ENTRIES);
   if (n > 0) {
-    klogf("fstab: %lu entries parsed\n",
-                   (unsigned long)(uint32_t)n);
+    klogf("fstab: %lu entries parsed\n", (unsigned long)(uint32_t)n);
     fstab_mount_all(fstab, n);
   } else {
     klogf("fstab: no entries\n");
@@ -422,8 +427,7 @@ int vfs_vnode_stat(vnode_t *vn, void *st) {
 }
 
 long vfs_vnode_readlink(vnode_t *vn, char *buf, size_t bufsiz) {
-  if (!vn || !buf || !vn->mount || !vn->mount->ops ||
-      !vn->mount->ops->readlink)
+  if (!vn || !buf || !vn->mount || !vn->mount->ops || !vn->mount->ops->readlink)
     return -2; /* ENOENT / unsupported */
   return vn->mount->ops->readlink(vn, buf, bufsiz);
 }
@@ -435,7 +439,7 @@ extern void vfs_klogf(const char *, ...);
 __attribute__((weak)) void vfs_notify(int event) { (void)event; }
 
 MOD_DEFINE_BEGIN(vfs)
-#define MOD_VFS_ENTRY(name, idx)  MOD_IMPL(vfs, name)
+#define MOD_VFS_ENTRY(name, idx) MOD_IMPL(vfs, name)
 #include "kernel/common/mod/mod_vfs.inc"
 #undef MOD_VFS_ENTRY
 MOD_DEFINE_END()

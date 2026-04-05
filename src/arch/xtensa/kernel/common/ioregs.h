@@ -26,22 +26,25 @@
  * XSR (exchange) instructions.  The SR number must be an immediate.
  */
 
-#define rsr(sr) ({                                                      \
-    uint32_t __v;                                                       \
-    __asm__ volatile ("rsr %0, " #sr : "=a"(__v));                      \
-    __v;                                                                \
-})
+#define rsr(sr)                                   \
+  ({                                              \
+    uint32_t __v;                                 \
+    __asm__ volatile("rsr %0, " #sr : "=a"(__v)); \
+    __v;                                          \
+  })
 
-#define wsr(sr, val) ({                                                 \
-    uint32_t __v = (uint32_t)(val);                                     \
-    __asm__ volatile ("wsr %0, " #sr :: "a"(__v));                      \
-})
+#define wsr(sr, val)                             \
+  ({                                             \
+    uint32_t __v = (uint32_t)(val);              \
+    __asm__ volatile("wsr %0, " #sr ::"a"(__v)); \
+  })
 
-#define xsr(sr, val) ({                                                 \
-    uint32_t __v = (uint32_t)(val);                                     \
-    __asm__ volatile ("xsr %0, " #sr : "+a"(__v));                      \
-    __v;                                                                \
-})
+#define xsr(sr, val)                              \
+  ({                                              \
+    uint32_t __v = (uint32_t)(val);               \
+    __asm__ volatile("xsr %0, " #sr : "+a"(__v)); \
+    __v;                                          \
+  })
 
 /* ── PS — Processor State Register (SR 230) ─────────────────────────────── *
  *
@@ -55,87 +58,87 @@
  */
 
 #ifndef PS_INTLEVEL_MASK
-#define PS_INTLEVEL_MASK    0x0Fu
+#define PS_INTLEVEL_MASK 0x0Fu
 #endif
 #ifndef PS_INTLEVEL_SHIFT
-#define PS_INTLEVEL_SHIFT   0
+#define PS_INTLEVEL_SHIFT 0
 #endif
 #ifndef PS_EXCM
-#define PS_EXCM             (1u << 4)
+#define PS_EXCM (1u << 4)
 #endif
 #ifndef PS_UM
-#define PS_UM               (1u << 5)
+#define PS_UM (1u << 5)
 #endif
 #ifndef PS_RING_MASK
-#define PS_RING_MASK        (3u << 6)
+#define PS_RING_MASK (3u << 6)
 #endif
 #ifndef PS_RING_SHIFT
-#define PS_RING_SHIFT       6
+#define PS_RING_SHIFT 6
 #endif
 #ifndef PS_OWB_SHIFT
-#define PS_OWB_SHIFT        8
+#define PS_OWB_SHIFT 8
 #endif
 #ifndef PS_OWB_MASK
-#define PS_OWB_MASK         (0xFu << PS_OWB_SHIFT)
+#define PS_OWB_MASK (0xFu << PS_OWB_SHIFT)
 #endif
 #ifndef PS_CALLINC_SHIFT
-#define PS_CALLINC_SHIFT    16
+#define PS_CALLINC_SHIFT 16
 #endif
 #ifndef PS_CALLINC_MASK
-#define PS_CALLINC_MASK     (3u << PS_CALLINC_SHIFT)
+#define PS_CALLINC_MASK (3u << PS_CALLINC_SHIFT)
 #endif
 #ifndef PS_WOE
-#define PS_WOE              (1u << 18)
+#define PS_WOE (1u << 18)
 #endif
 
 /* EXCM level for ESP32-S3 (max level at which EXCM exceptions can occur) */
 #ifndef XCHAL_EXCM_LEVEL
-#define XCHAL_EXCM_LEVEL    3u
+#define XCHAL_EXCM_LEVEL 3u
 #endif
 
 /* ── EXCCAUSE — Exception Cause Register (SR 232) ───────────────────────── */
 
 #ifndef EXCCAUSE_ILLEGAL_INSN
-#define EXCCAUSE_ILLEGAL_INSN       0u
+#define EXCCAUSE_ILLEGAL_INSN 0u
 #endif
 #ifndef EXCCAUSE_SYSCALL
-#define EXCCAUSE_SYSCALL            1u
+#define EXCCAUSE_SYSCALL 1u
 #endif
 #ifndef EXCCAUSE_INSN_FETCH_ERROR
-#define EXCCAUSE_INSN_FETCH_ERROR   2u
+#define EXCCAUSE_INSN_FETCH_ERROR 2u
 #endif
 #ifndef EXCCAUSE_LOAD_STORE_ERROR
-#define EXCCAUSE_LOAD_STORE_ERROR   3u
+#define EXCCAUSE_LOAD_STORE_ERROR 3u
 #endif
 #ifndef EXCCAUSE_LEVEL1_INT
-#define EXCCAUSE_LEVEL1_INT         4u
+#define EXCCAUSE_LEVEL1_INT 4u
 #endif
 #ifndef EXCCAUSE_ALLOCA
-#define EXCCAUSE_ALLOCA             5u  /* windowed ABI only */
+#define EXCCAUSE_ALLOCA 5u /* windowed ABI only */
 #endif
 #ifndef EXCCAUSE_DIVIDE_BY_ZERO
-#define EXCCAUSE_DIVIDE_BY_ZERO     6u
+#define EXCCAUSE_DIVIDE_BY_ZERO 6u
 #endif
 #ifndef EXCCAUSE_PRIVILEGED
-#define EXCCAUSE_PRIVILEGED         8u
+#define EXCCAUSE_PRIVILEGED 8u
 #endif
 #ifndef EXCCAUSE_LOAD_ALIGN
-#define EXCCAUSE_LOAD_ALIGN         9u
+#define EXCCAUSE_LOAD_ALIGN 9u
 #endif
 #ifndef EXCCAUSE_INSN_FETCH_PF
-#define EXCCAUSE_INSN_FETCH_PF     12u  /* PMS/MPU page fault */
+#define EXCCAUSE_INSN_FETCH_PF 12u /* PMS/MPU page fault */
 #endif
 #ifndef EXCCAUSE_LOAD_PF
-#define EXCCAUSE_LOAD_PF           13u
+#define EXCCAUSE_LOAD_PF 13u
 #endif
 #ifndef EXCCAUSE_STORE_PF
-#define EXCCAUSE_STORE_PF          15u
+#define EXCCAUSE_STORE_PF 15u
 #endif
 #ifndef EXCCAUSE_LOAD_PROHIBITED
-#define EXCCAUSE_LOAD_PROHIBITED   28u
+#define EXCCAUSE_LOAD_PROHIBITED 28u
 #endif
 #ifndef EXCCAUSE_STORE_PROHIBITED
-#define EXCCAUSE_STORE_PROHIBITED  29u
+#define EXCCAUSE_STORE_PROHIBITED 29u
 #endif
 
 /* ── Interrupt control registers ─────────────────────────────────────────── *
@@ -147,28 +150,28 @@
 
 /* Timer interrupt: CCOMPARE0 is typically wired to interrupt number 6
  * on ESP32-S3.  The exact mapping is in the interrupt matrix. */
-#define XTENSA_TIMER0_INTNUM    6u
-#define XTENSA_TIMER0_INTMASK   (1u << XTENSA_TIMER0_INTNUM)
+#define XTENSA_TIMER0_INTNUM 6u
+#define XTENSA_TIMER0_INTMASK (1u << XTENSA_TIMER0_INTNUM)
 
 /* ── ESP32-S3 peripheral base addresses ──────────────────────────────────── */
 
-#define PPAP_DR_REG_UART_BASE    0x60000000u
-#define PPAP_DR_REG_UART1_BASE   0x60010000u
-#define PPAP_DR_REG_SYSTEM_BASE  0x600C0000u
+#define PPAP_DR_REG_UART_BASE 0x60000000u
+#define PPAP_DR_REG_UART1_BASE 0x60010000u
+#define PPAP_DR_REG_SYSTEM_BASE 0x600C0000u
 
 /* UART0 registers (subset needed for polled I/O) */
-#define UART0_FIFO              REG(PPAP_DR_REG_UART_BASE + 0x00u)
-#define UART0_STATUS            REG(PPAP_DR_REG_UART_BASE + 0x1Cu)
-#define UART0_CONF0             REG(PPAP_DR_REG_UART_BASE + 0x20u)
+#define UART0_FIFO REG(PPAP_DR_REG_UART_BASE + 0x00u)
+#define UART0_STATUS REG(PPAP_DR_REG_UART_BASE + 0x1Cu)
+#define UART0_CONF0 REG(PPAP_DR_REG_UART_BASE + 0x20u)
 
 /* UART_STATUS bits */
-#define UART_TXFIFO_CNT_MASK    0x000003FFu  /* bits [9:0] */
-#define UART_TXFIFO_CNT_SHIFT   0
-#define UART_RXFIFO_CNT_MASK    0x000003FFu  /* bits [9:0] of STATUS[13:0]? */
-#define UART_RXFIFO_CNT_SHIFT   0
+#define UART_TXFIFO_CNT_MASK 0x000003FFu /* bits [9:0] */
+#define UART_TXFIFO_CNT_SHIFT 0
+#define UART_RXFIFO_CNT_MASK 0x000003FFu /* bits [9:0] of STATUS[13:0]? */
+#define UART_RXFIFO_CNT_SHIFT 0
 
 /* TX FIFO depth */
-#define UART_FIFO_DEPTH         128u
+#define UART_FIFO_DEPTH 128u
 
 /* ── Timer — CCOUNT / CCOMPARE ──────────────────────────────────────────── *
  *
@@ -189,17 +192,17 @@
  * romfs (which lives in .rodata -> DROM) must have their entry point
  * shifted to IROM for the instruction bus to fetch them.
  */
-#define XTENSA_DROM_BASE         0x3C000000u
-#define XTENSA_IROM_BASE         0x42000000u
-#define XTENSA_DROM_TO_IROM      (XTENSA_IROM_BASE - XTENSA_DROM_BASE)
+#define XTENSA_DROM_BASE 0x3C000000u
+#define XTENSA_IROM_BASE 0x42000000u
+#define XTENSA_DROM_TO_IROM (XTENSA_IROM_BASE - XTENSA_DROM_BASE)
 
 /* Internal SRAM dual-mapping (ESP32-S3 SRAM1):
  *   DRAM: 0x3FC88000  (data bus — page_alloc returns these addresses)
  *   IRAM: 0x40380000  (instruction bus — CPU fetches from here)
  * Linear forward mapping: IRAM_addr = DRAM_addr + 0x6F8000 */
-#define XTENSA_DRAM_BASE         0x3FC88000u
-#define XTENSA_IRAM_BASE         0x40380000u
-#define XTENSA_DRAM_TO_IRAM      (XTENSA_IRAM_BASE - XTENSA_DRAM_BASE)
+#define XTENSA_DRAM_BASE 0x3FC88000u
+#define XTENSA_IRAM_BASE 0x40380000u
+#define XTENSA_DRAM_TO_IRAM (XTENSA_IRAM_BASE - XTENSA_DRAM_BASE)
 
 #ifndef PPAP_SYS_HZ
 #define PPAP_SYS_HZ 240000000u

@@ -17,7 +17,7 @@
 #include <stdint.h>
 
 #include "common/errno.h"
-#include "common/poll.h"  /* POLLIN, POLLOUT, POLLNVAL, struct pollfd */
+#include "common/poll.h" /* POLLIN, POLLOUT, POLLNVAL, struct pollfd */
 #include "kernel/common/config.h"
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
@@ -136,7 +136,8 @@ long sys_poll(uintptr_t fds_ptr, uint32_t nfds, long timeout_ms) {
 
   rc = (int)do_ppoll(local_fds, nfds, ticks, has_timeout);
   if (nfds > 0) {
-    int copy_rc = sys_copy_to_user(fds_ptr, local_fds, nfds * sizeof(local_fds[0]));
+    int copy_rc =
+        sys_copy_to_user(fds_ptr, local_fds, nfds * sizeof(local_fds[0]));
     if (copy_rc < 0) return (long)copy_rc;
   }
   return (long)rc;
@@ -173,7 +174,8 @@ long sys_ppoll(uintptr_t fds_ptr, uint32_t nfds, uintptr_t timeout_ptr,
 
   rc = (int)do_ppoll(local_fds, nfds, ticks, has_timeout);
   if (nfds > 0) {
-    int copy_rc = sys_copy_to_user(fds_ptr, local_fds, nfds * sizeof(local_fds[0]));
+    int copy_rc =
+        sys_copy_to_user(fds_ptr, local_fds, nfds * sizeof(local_fds[0]));
     if (copy_rc < 0) return (long)copy_rc;
   }
   return (long)rc;
@@ -209,7 +211,8 @@ long sys_ppoll_time64(uintptr_t fds_ptr, uint32_t nfds, uintptr_t timeout_ptr,
 
   rc = (int)do_ppoll(local_fds, nfds, ticks, has_timeout);
   if (nfds > 0) {
-    int copy_rc = sys_copy_to_user(fds_ptr, local_fds, nfds * sizeof(local_fds[0]));
+    int copy_rc =
+        sys_copy_to_user(fds_ptr, local_fds, nfds * sizeof(local_fds[0]));
     if (copy_rc < 0) return (long)copy_rc;
   }
   return (long)rc;

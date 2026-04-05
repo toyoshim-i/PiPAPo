@@ -50,8 +50,8 @@ __attribute__((section(".text.xip_test"), noinline)) int xip_add(int a, int b) {
  * xip_bench — runs from XIP flash; measures a tight summation loop with
  * SysTick.  Returns elapsed processor-clock cycles.
  */
-__attribute__((section(".text.xip_test"), noinline)) uint32_t xip_bench(
-    uint32_t n) {
+__attribute__((section(".text.xip_test"), noinline)) uint32_t
+xip_bench(uint32_t n) {
   SYST_RVR = SYST_MAX; /* set reload to max */
   SYST_CVR = 0;        /* writing any value clears CVR and the COUNTFLAG */
   SYST_CSR = SYST_CSR_CLKSOURCE_CPU | SYST_CSR_ENABLE;
@@ -78,8 +78,8 @@ __attribute__((section(".text.xip_test"), noinline)) uint32_t xip_bench(
  *   4. PC-relative literals (absolute register addresses) remain valid
  *      because both instructions and literals shift by the same offset.
  */
-__attribute__((section(".ramfunc.sram_bench"), noinline)) uint32_t sram_bench(
-    uint32_t n) {
+__attribute__((section(".ramfunc.sram_bench"), noinline)) uint32_t
+sram_bench(uint32_t n) {
   SYST_RVR = SYST_MAX;
   SYST_CVR = 0;
   SYST_CSR = SYST_CSR_CLKSOURCE_CPU | SYST_CSR_ENABLE;
@@ -102,10 +102,12 @@ void xip_verify(void) {
 
   int result = xip_add(3, 4);
   mod_vfs.klogf("XIP: xip_add(3,4) = %lu %s\n", (unsigned long)(uint32_t)result,
-        result == 7 ? "OK" : "FAIL");
+                result == 7 ? "OK" : "FAIL");
 
   uint32_t flash_cyc = xip_bench(10000);
   uint32_t sram_cyc = sram_bench(10000);
-  mod_vfs.klogf("XIP: flash bench(10000) = %lx cycles\n", (unsigned long)flash_cyc);
-  mod_vfs.klogf("XIP: sram  bench(10000) = %lx cycles\n", (unsigned long)sram_cyc);
+  mod_vfs.klogf("XIP: flash bench(10000) = %lx cycles\n",
+                (unsigned long)flash_cyc);
+  mod_vfs.klogf("XIP: sram  bench(10000) = %lx cycles\n",
+                (unsigned long)sram_cyc);
 }

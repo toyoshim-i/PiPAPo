@@ -18,9 +18,9 @@
 #include "kernel/common/ioregs.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/spinlock.h" /* SPIN_PROC */
-#include "kernel/core/arch.h"   /* arch_build_initial_frame */
+#include "kernel/core/arch.h"       /* arch_build_initial_frame */
 #include "kernel/core/mm/mem_region.h"
-#include "kernel/core/mm/page.h"  /* PAGE_SIZE — for proc_setup_stack */
+#include "kernel/core/mm/page.h"    /* PAGE_SIZE — for proc_setup_stack */
 #include "kernel/core/proc/sched.h" /* sched_get_ticks — for start_time */
 
 /* Default file creation mask (octal 022 → owner rw, group/other r) */
@@ -78,8 +78,7 @@ void proc_init(void) {
 
   /* Point assembly's core_id_reg at the SIO_CPUID register on RP2040.
    * On QEMU (no SIO), it stays pointing at core_id_zero → always 0. */
-  if (spin_have_hw())
-    core_id_reg = (volatile uint32_t *)0xD0000000u;
+  if (spin_have_hw()) core_id_reg = (volatile uint32_t *)0xD0000000u;
 
   mod_vfs.klogf(
       "PROC: process table  slots=%u"
@@ -90,8 +89,7 @@ void proc_init(void) {
   /* Self-test: allocate a slot, verify it looks sane, then free it. */
   pcb_t *p = proc_alloc();
 
-  uint32_t ok = (p != NULL) && (p->pid == 1) &&
-                (p->state == PROC_FREE) &&
+  uint32_t ok = (p != NULL) && (p->pid == 1) && (p->state == PROC_FREE) &&
                 (current == &proc_table[0]) &&
                 (current->state == PROC_RUNNABLE);
 
@@ -115,8 +113,7 @@ pcb_t *proc_alloc(void) {
       proc_table[i].pid = next_pid++;
       proc_table[i].stack_page_id = PAGE_ID_INVALID;
 #if defined(__ia16__)
-      proc_table[i].kernel_stack_top =
-          0xE000u + (uint16_t)(i + 1u) * 2048u;
+      proc_table[i].kernel_stack_top = 0xE000u + (uint16_t)(i + 1u) * 2048u;
 #endif
       proc_table[i].clear_child_tid = user_page_ref_invalid();
       for (uint32_t j = 0; j < USER_PAGES_MAX; j++)
@@ -143,8 +140,8 @@ void proc_free(pcb_t *p) {
   spin_unlock_irqrestore(SPIN_PROC, saved);
 }
 
-int proc_track_page_range(pcb_t *p, uint32_t start_slot,
-                          page_id_t base_page_id, uint32_t n_pages) {
+int proc_track_page_range(pcb_t *p, uint32_t start_slot, page_id_t base_page_id,
+                          uint32_t n_pages) {
   if (!p || base_page_id == PAGE_ID_INVALID || n_pages == 0) return 0;
 
   if (start_slot > USER_PAGES_MAX || n_pages > USER_PAGES_MAX - start_slot)
@@ -196,8 +193,7 @@ uint32_t proc_page_backed_count(const pcb_t *p) {
 
   slot = proc_first_page_backed_slot(p);
   if (slot >= USER_PAGES_MAX) return 0;
-  while (slot < USER_PAGES_MAX &&
-         p->user_pages[slot] != PAGE_ID_INVALID) {
+  while (slot < USER_PAGES_MAX && p->user_pages[slot] != PAGE_ID_INVALID) {
     count++;
     slot++;
   }
@@ -261,8 +257,7 @@ void proc_release_tracked_pages(pcb_t *p, uint32_t start_slot,
   }
 }
 
-void proc_release_private_tracked_pages(pcb_t *p,
-                                        const pcb_t *shared_owner) {
+void proc_release_private_tracked_pages(pcb_t *p, const pcb_t *shared_owner) {
   if (!p || !shared_owner) return;
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
     if (p->user_pages[i] == PAGE_ID_INVALID) continue;
@@ -272,8 +267,7 @@ void proc_release_private_tracked_pages(pcb_t *p,
   }
 }
 
-void proc_release_tracked_pages_from_array(
-    page_id_t pages[USER_PAGES_MAX]) {
+void proc_release_tracked_pages_from_array(page_id_t pages[USER_PAGES_MAX]) {
   if (!pages) return;
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
     if (pages[i] == PAGE_ID_INVALID) continue;
@@ -282,8 +276,7 @@ void proc_release_tracked_pages_from_array(
 }
 
 void proc_release_private_tracked_pages_from_array(
-    page_id_t pages[USER_PAGES_MAX],
-    const page_id_t shared[USER_PAGES_MAX]) {
+    page_id_t pages[USER_PAGES_MAX], const page_id_t shared[USER_PAGES_MAX]) {
   if (!pages || !shared) return;
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
     if (pages[i] == PAGE_ID_INVALID) continue;
@@ -295,44 +288,45 @@ void proc_release_private_tracked_pages_from_array(
 void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp) {
   uint32_t *sp;
 
-{
+  {
 #if defined(__ia16__)
-  /* i16: stack_base not used — frame is built at user_sp or via
-   * mem_region_page_write.  arch_build_initial_frame handles it. */
-  if (user_sp)
-    sp = (uint32_t *)(void *)user_sp;
-  else {
-    /* TODO: i16 proc_setup_stack without user_sp */
-    p->ticks_remaining = PROC_DEFAULT_TICKS;
-    return;
-  }
-  sp = arch_build_initial_frame(sp, entry);
-  p->sp = (uint32_t)(uintptr_t)sp;
+    /* i16: stack_base not used — frame is built at user_sp or via
+     * mem_region_page_write.  arch_build_initial_frame handles it. */
+    if (user_sp)
+      sp = (uint32_t *)(void *)user_sp;
+    else {
+      /* TODO: i16 proc_setup_stack without user_sp */
+      p->ticks_remaining = PROC_DEFAULT_TICKS;
+      return;
+    }
+    sp = arch_build_initial_frame(sp, entry);
+    p->sp = (uint32_t)(uintptr_t)sp;
 #else
-  uint8_t *stack_base = (uint8_t *)mem_region_page_to_ptr(p->stack_page_id);
+    uint8_t *stack_base = (uint8_t *)mem_region_page_to_ptr(p->stack_page_id);
 #endif
 
 #if !defined(__ia16__)
 #if defined(__riscv)
-  /* RISC-V mscratch split: kernel frame on stack_page, user_sp in TF_USER_SP */
-  sp = (uint32_t *)(stack_base + PAGE_SIZE);
-  sp = arch_build_initial_frame(sp, entry);
-  /* TF_USER_SP at word offset 32 (byte offset 128) */
-  sp[32] = user_sp ? (uint32_t)user_sp
-                   : (uint32_t)(uintptr_t)stack_base + PAGE_SIZE;
-  p->sp = (uint32_t)(uintptr_t)sp;
-  p->kernel_sp = (uint32_t)(uintptr_t)stack_base + PAGE_SIZE;
-#elif defined(__m68k__)
-  sp = (uint32_t *)(stack_base + PAGE_SIZE);
-  sp = arch_build_initial_frame(sp, entry);
-  p->sp = (uint32_t)(uintptr_t)sp;
-#else
-  if (user_sp)
-    sp = (uint32_t *)(void *)user_sp;
-  else
+    /* RISC-V mscratch split: kernel frame on stack_page, user_sp in TF_USER_SP
+     */
     sp = (uint32_t *)(stack_base + PAGE_SIZE);
-  sp = arch_build_initial_frame(sp, entry);
-  p->sp = (uint32_t)(uintptr_t)sp;
+    sp = arch_build_initial_frame(sp, entry);
+    /* TF_USER_SP at word offset 32 (byte offset 128) */
+    sp[32] = user_sp ? (uint32_t)user_sp
+                     : (uint32_t)(uintptr_t)stack_base + PAGE_SIZE;
+    p->sp = (uint32_t)(uintptr_t)sp;
+    p->kernel_sp = (uint32_t)(uintptr_t)stack_base + PAGE_SIZE;
+#elif defined(__m68k__)
+    sp = (uint32_t *)(stack_base + PAGE_SIZE);
+    sp = arch_build_initial_frame(sp, entry);
+    p->sp = (uint32_t)(uintptr_t)sp;
+#else
+    if (user_sp)
+      sp = (uint32_t *)(void *)user_sp;
+    else
+      sp = (uint32_t *)(stack_base + PAGE_SIZE);
+    sp = arch_build_initial_frame(sp, entry);
+    p->sp = (uint32_t)(uintptr_t)sp;
 #endif
 #endif /* !__ia16__ */
   }

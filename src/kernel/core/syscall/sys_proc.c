@@ -14,12 +14,10 @@
 #include "common/ptrace.h"
 #include "common/wait.h"
 #include "kernel/common/mod/mod_vfs.h"
-#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/arch.h"
 #include "kernel/core/cpu/cpu.h"
 #include "kernel/core/cpu/ecpu_m68k.h"
 #include "kernel/core/cpu/ecpu_z80.h"
-#include "kernel/core/exec/exec.h"
 #include "kernel/core/exec/exec.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
@@ -32,8 +30,8 @@
 #include "target/target.h"
 
 /* Wait status encoding (POSIX-compatible) */
-#define W_EXITCODE(ret) (((ret)&0xff) << 8)
-#define W_STOPCODE(sig) ((((sig)&0xff) << 8) | 0x7f)
+#define W_EXITCODE(ret) (((ret) & 0xff) << 8)
+#define W_STOPCODE(sig) ((((sig) & 0xff) << 8) | 0x7f)
 
 #define TRACE_PHASE_ENTER 0
 #define TRACE_PHASE_EXIT 1
@@ -50,8 +48,7 @@ extern volatile uint16_t i16_trap_frame_sp;
  * proc_release_tracked_pages(), so no overlap check is needed. */
 static void image_segment_release_owned(proc_image_segment_t *seg) {
   if (!seg || !seg->base) return;
-  if (seg->flags & PROC_IMAGE_SEG_OWNED)
-    mem_region_free(seg);
+  if (seg->flags & PROC_IMAGE_SEG_OWNED) mem_region_free(seg);
   *seg = (proc_image_segment_t){0};
 }
 
@@ -474,7 +471,8 @@ static int trace_native_contains(const pcb_t *target, uint32_t addr) {
   }
 #elif !defined(__ia16__)
   if (target->stack_page_id != PAGE_ID_INVALID) {
-    uint32_t base = (uint32_t)(uintptr_t)mem_region_page_to_ptr(target->stack_page_id);
+    uint32_t base =
+        (uint32_t)(uintptr_t)mem_region_page_to_ptr(target->stack_page_id);
     if (addr >= base && addr < base + PAGE_SIZE) return 1;
   }
 #endif
@@ -1283,8 +1281,7 @@ long sys_ptrace(long req, long pid, uintptr_t addr, uintptr_t data_ptr) {
         return -(long)EFAULT;
       rc = trace_set_bp(target, &bp);
       if (rc < 0) return rc;
-      if (sys_copy_to_user(data_ptr, &bp, sizeof(bp)) < 0)
-        return -(long)EFAULT;
+      if (sys_copy_to_user(data_ptr, &bp, sizeof(bp)) < 0) return -(long)EFAULT;
       return rc;
     }
     case PTRACE_CLRBP: {
@@ -1296,8 +1293,7 @@ long sys_ptrace(long req, long pid, uintptr_t addr, uintptr_t data_ptr) {
         return -(long)EFAULT;
       rc = trace_clr_bp(target, &bp);
       if (rc < 0) return rc;
-      if (sys_copy_to_user(data_ptr, &bp, sizeof(bp)) < 0)
-        return -(long)EFAULT;
+      if (sys_copy_to_user(data_ptr, &bp, sizeof(bp)) < 0) return -(long)EFAULT;
       return rc;
     }
     case PTRACE_SINGLESTEP:
@@ -1398,7 +1394,8 @@ long sys_exit(long status) {
     image_release_owned_segments(&current->image);
 #if !defined(__ia16__)
     if (current->stack_page_id != PAGE_ID_INVALID &&
-        proc_page_backed_contains(current, (uintptr_t)mem_region_page_to_ptr(current->stack_page_id)))
+        proc_page_backed_contains(
+            current, (uintptr_t)mem_region_page_to_ptr(current->stack_page_id)))
       current->stack_page_id = PAGE_ID_INVALID;
 #endif
     proc_release_tracked_pages(current, 0, USER_PAGES_MAX);
@@ -1544,10 +1541,8 @@ long sys_vfork(uint32_t *frame) {
     uint16_t parent_user_ss = trap_ksp[1];
 
     /* Compute the user frame's page location */
-    uint32_t frame_linear =
-        (uint32_t)parent_user_ss * 16 + parent_user_sp;
-    uint32_t data_base =
-        mem_region_page_linear(current->image.data.base_page);
+    uint32_t frame_linear = (uint32_t)parent_user_ss * 16 + parent_user_sp;
+    uint32_t data_base = mem_region_page_linear(current->image.data.base_page);
     uint32_t rel = frame_linear - data_base;
     page_id_t frame_page =
         current->image.data.base_page + (page_id_t)(rel / PAGE_SIZE);
@@ -1572,7 +1567,7 @@ long sys_vfork(uint32_t *frame) {
     ckf[1] = parent_user_ss;
     child->sp = (uint32_t)(child_ksp - 4);
 
-      /* Patch AX=0 in shared user stack frame for child return */
+    /* Patch AX=0 in shared user stack frame for child return */
     uint16_t zero = 0;
     uint16_t ax_rel = (uint16_t)(rel + 16);
     page_id_t ax_page =
@@ -1584,7 +1579,8 @@ long sys_vfork(uint32_t *frame) {
   memcpy(stack, mem_region_page_to_ptr(current->stack_page_id), PAGE_SIZE);
 
   /* Calculate child's frame position at the same offset as parent's */
-  uintptr_t frame_off = (uintptr_t)frame - (uintptr_t)mem_region_page_to_ptr(current->stack_page_id);
+  uintptr_t frame_off = (uintptr_t)frame - (uintptr_t)mem_region_page_to_ptr(
+                                               current->stack_page_id);
   uint32_t *child_frame = (uint32_t *)((uint8_t *)stack + frame_off);
 #endif
 
@@ -1607,8 +1603,8 @@ long sys_vfork(uint32_t *frame) {
     if (parent_ustack) {
       void *child_ustack = NULL;
       uint32_t child_usp = 0;
-      if (vfork_copy_user_stack(parent_ustack, current->usp,
-                                &child_ustack, &child_usp) < 0) {
+      if (vfork_copy_user_stack(parent_ustack, current->usp, &child_ustack,
+                                &child_usp) < 0) {
         proc_release_stack_page(&stack);
         child->stack_page_id = PAGE_ID_INVALID;
         proc_free(child);
@@ -1649,8 +1645,8 @@ long sys_vfork(uint32_t *frame) {
       void *child_ustack = NULL;
       uint32_t *child_tf = child_frame - 8; /* trap frame base */
       uint32_t child_usp = 0;
-      if (vfork_copy_user_stack(parent_ustack, child_tf[32],
-                                &child_ustack, &child_usp) < 0) {
+      if (vfork_copy_user_stack(parent_ustack, child_tf[32], &child_ustack,
+                                &child_usp) < 0) {
         proc_release_stack_page(&stack);
         child->stack_page_id = PAGE_ID_INVALID;
         proc_free(child);
@@ -1704,8 +1700,8 @@ long sys_vfork(uint32_t *frame) {
 
     void *child_ustack = NULL;
     uint32_t remapped_sp = 0;
-    if (vfork_copy_user_stack(mem_region_page_to_ptr(current->stack_page_id), child_user_sp,
-                              &child_ustack, &remapped_sp) < 0) {
+    if (vfork_copy_user_stack(mem_region_page_to_ptr(current->stack_page_id),
+                              child_user_sp, &child_ustack, &remapped_sp) < 0) {
       proc_release_stack_page(&stack);
       child->stack_page_id = PAGE_ID_INVALID;
       proc_free(child);
@@ -1715,7 +1711,8 @@ long sys_vfork(uint32_t *frame) {
 
     /* Remap a3 if it points into the parent's stack page */
     {
-      uint32_t pbase = (uint32_t)(uintptr_t)mem_region_page_to_ptr(current->stack_page_id);
+      uint32_t pbase =
+          (uint32_t)(uintptr_t)mem_region_page_to_ptr(current->stack_page_id);
       uint32_t cbase = (uint32_t)(uintptr_t)child_ustack;
       if (child_a3 >= pbase && child_a3 < pbase + PAGE_SIZE)
         child_a3 = cbase + (child_a3 - pbase);
@@ -1724,16 +1721,16 @@ long sys_vfork(uint32_t *frame) {
     /* Build new-process frame at top of child's kernel stack page. */
     uint32_t *sp = (uint32_t *)((uint8_t *)stack + PAGE_SIZE);
     sp = (uint32_t *)((uintptr_t)sp & ~0xFu);
-    *--sp = child_a3;                   /* [SP+36] a3 = preserved reg */
-    *--sp = child_a0;                   /* [SP+32] a0 = return addr */
-    *--sp = child_user_sp;              /* [SP+28] user SP */
-    *--sp = (1u << 5);                  /* [SP+24] PS: UM=1 */
-    *--sp = child_pc;                   /* [SP+20] entry */
-    *--sp = 1u;                         /* [SP+16] exit = 1 */
-    *--sp = 0;                          /* [SP+12] ABI scratch */
-    *--sp = 0;                          /* [SP+8]  ABI scratch */
-    *--sp = 0;                          /* [SP+4]  ABI scratch */
-    *--sp = 0;                          /* [SP+0]  ABI scratch */
+    *--sp = child_a3;      /* [SP+36] a3 = preserved reg */
+    *--sp = child_a0;      /* [SP+32] a0 = return addr */
+    *--sp = child_user_sp; /* [SP+28] user SP */
+    *--sp = (1u << 5);     /* [SP+24] PS: UM=1 */
+    *--sp = child_pc;      /* [SP+20] entry */
+    *--sp = 1u;            /* [SP+16] exit = 1 */
+    *--sp = 0;             /* [SP+12] ABI scratch */
+    *--sp = 0;             /* [SP+8]  ABI scratch */
+    *--sp = 0;             /* [SP+4]  ABI scratch */
+    *--sp = 0;             /* [SP+0]  ABI scratch */
     child->sp = (uint32_t)(uintptr_t)sp;
   }
 
@@ -1871,7 +1868,10 @@ long sys_waitpid(long pid, long status_ptr, long options) {
 #if defined(__ia16__)
       mem_region_page_free(zombie->stack_page_id);
 #else
-      { void *zs = mem_region_page_to_ptr(zombie->stack_page_id); proc_release_stack_page(&zs); }
+      {
+        void *zs = mem_region_page_to_ptr(zombie->stack_page_id);
+        proc_release_stack_page(&zs);
+      }
 #endif
       zombie->stack_page_id = PAGE_ID_INVALID;
     }
@@ -1906,24 +1906,21 @@ long sys_waitpid(long pid, long status_ptr, long options) {
  * On failure: returns negative errno.
  */
 #if defined(__ia16__)
-#define EXEC_ARG_BYTES_MAX 128u  /* i16: 1 KB kernel stacks */
+#define EXEC_ARG_BYTES_MAX 128u /* i16: 1 KB kernel stacks */
 #else
 #define EXEC_ARG_BYTES_MAX 1024u
 #endif
 
-static int sys_execve_copy_user_argv(const char **argv_out,
-                                     char *arg_buf,
-                                     size_t arg_buf_size,
-                                     uintptr_t argv_ptr) {
+static int sys_execve_copy_user_argv(const char **argv_out, char *arg_buf,
+                                     size_t arg_buf_size, uintptr_t argv_ptr) {
   size_t used = 0;
 
   if (argv_ptr == 0u) return 0;
 
   for (int i = 0; i < EXEC_ARGV_MAX; i++) {
     uintptr_t arg_ptr;
-    int rc = sys_copy_from_user(&arg_ptr,
-                                argv_ptr + (uintptr_t)(i * sizeof(arg_ptr)),
-                                sizeof(arg_ptr));
+    int rc = sys_copy_from_user(
+        &arg_ptr, argv_ptr + (uintptr_t)(i * sizeof(arg_ptr)), sizeof(arg_ptr));
     size_t len;
 
     if (rc < 0) return rc;
@@ -1949,7 +1946,8 @@ long sys_execve(uintptr_t path_ptr, uintptr_t argv_ptr) {
   int rc = sys_copy_user_string(path, sizeof(path), path_ptr);
 
   if (rc < 0) return (long)rc;
-  rc = sys_execve_copy_user_argv(argv_copy, argv_buf, sizeof(argv_buf), argv_ptr);
+  rc = sys_execve_copy_user_argv(argv_copy, argv_buf, sizeof(argv_buf),
+                                 argv_ptr);
   if (rc < 0) return (long)rc;
   if (argv_ptr != 0u) argv = argv_copy;
 
@@ -1990,8 +1988,7 @@ long sys_execve(uintptr_t path_ptr, uintptr_t argv_ptr) {
    * Only install default tty stdio if fd 0/1/2 are not already open
    * (e.g. init's first exec before any shell sets up fds). */
   if (current->fd_map[0] == FD_DESC_NONE &&
-      current->fd_map[1] == FD_DESC_NONE &&
-      current->fd_map[2] == FD_DESC_NONE)
+      current->fd_map[1] == FD_DESC_NONE && current->fd_map[2] == FD_DESC_NONE)
     mod_vfs.fd_stdio_init(current);
 
     /* Free old kernel stack page.
@@ -2002,11 +1999,16 @@ long sys_execve(uintptr_t path_ptr, uintptr_t argv_ptr) {
      * immediately. */
 #if defined(__m68k__) || defined(__riscv)
   extern volatile void *exec_old_stack;
-  exec_old_stack = (old_stack_id != PAGE_ID_INVALID) ? mem_region_page_to_ptr(old_stack_id) : NULL;
+  exec_old_stack = (old_stack_id != PAGE_ID_INVALID)
+                       ? mem_region_page_to_ptr(old_stack_id)
+                       : NULL;
 #elif defined(__ia16__)
   if (old_stack_id != PAGE_ID_INVALID) mem_region_page_free(old_stack_id);
 #else
-  if (old_stack_id != PAGE_ID_INVALID) { void *os = mem_region_page_to_ptr(old_stack_id); proc_release_stack_page(&os); }
+  if (old_stack_id != PAGE_ID_INVALID) {
+    void *os = mem_region_page_to_ptr(old_stack_id);
+    proc_release_stack_page(&os);
+  }
 #endif
 
   /* Free old user pages only if we owned them */
@@ -2019,8 +2021,8 @@ long sys_execve(uintptr_t path_ptr, uintptr_t argv_ptr) {
   } else if (current->vfork_parent) {
     /* vfork child: free pages that were allocated specifically for
      * the child (e.g. user stack copy), not the shared parent pages. */
-    proc_release_private_tracked_pages_from_array(old_user,
-                            current->vfork_parent->user_pages);
+    proc_release_private_tracked_pages_from_array(
+        old_user, current->vfork_parent->user_pages);
 #if defined(__m68k__)
     if (old_user_stack &&
         old_user_stack != current->vfork_parent->user_stack_page)

@@ -28,18 +28,18 @@ typedef enum {
 
 enum {
   PROC_IMAGE_SEG_EXECUTABLE = 1u << 0,
-  PROC_IMAGE_SEG_WRITABLE   = 1u << 1,
-  PROC_IMAGE_SEG_XIP        = 1u << 2,
-  PROC_IMAGE_SEG_OWNED      = 1u << 3,
+  PROC_IMAGE_SEG_WRITABLE = 1u << 1,
+  PROC_IMAGE_SEG_XIP = 1u << 2,
+  PROC_IMAGE_SEG_OWNED = 1u << 3,
 };
 
 enum {
-  PROC_IMAGE_FLAG_NONE              = 0u,
-  PROC_IMAGE_FLAG_TEXT_XIP          = 1u << 0,
-  PROC_IMAGE_FLAG_LITERAL_COUPLED   = 1u << 1,
+  PROC_IMAGE_FLAG_NONE = 0u,
+  PROC_IMAGE_FLAG_TEXT_XIP = 1u << 0,
+  PROC_IMAGE_FLAG_LITERAL_COUPLED = 1u << 1,
   PROC_IMAGE_FLAG_LITERAL_PRELINKED = 1u << 2,
-  PROC_IMAGE_FLAG_DATA_COUPLED      = 1u << 3,
-  PROC_IMAGE_FLAG_TEXT_STAGED_EXT   = 1u << 4,
+  PROC_IMAGE_FLAG_DATA_COUPLED = 1u << 3,
+  PROC_IMAGE_FLAG_TEXT_STAGED_EXT = 1u << 4,
 };
 
 typedef struct {
@@ -78,8 +78,8 @@ static inline proc_image_segment_t proc_image_segment_make(
 static inline proc_image_segment_t proc_image_segment_make_vaddr(
     void *base, uint32_t size, uint32_t vaddr, ppap_mem_class_t mem_class,
     uint32_t flags) {
-  proc_image_segment_t seg = proc_image_segment_make(base, size, mem_class,
-                                                     flags);
+  proc_image_segment_t seg =
+      proc_image_segment_make(base, size, mem_class, flags);
   seg.vaddr = vaddr;
   return seg;
 }

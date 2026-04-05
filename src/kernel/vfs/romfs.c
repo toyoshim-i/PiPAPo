@@ -139,8 +139,8 @@ static int romfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
 /* ── romfs_read ──────────────────────────────────────────────────────────────
  */
 
-static long romfs_read(vnode_t *vn, page_id_t page, uint16_t page_off,
-                       size_t n, uint32_t off) {
+static long romfs_read(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
+                       uint32_t off) {
   if (vn->type == VNODE_DIR) return -(long)EISDIR;
 
   if (off >= vn->size) return 0;

@@ -2,7 +2,8 @@
  * tmpfs.c — RAM-backed temporary filesystem
  *
  * Provides a volatile filesystem at /tmp.  File data is stored in pages
- * obtained from mod_core.mem_region_alloc(); metadata lives in a static inode table.
+ * obtained from mod_core.mem_region_alloc(); metadata lives in a static inode
+ * table.
  *
  * Design:
  *   - Flat inode table (TMPFS_INODE_MAX entries) with parent_ino linkage
@@ -72,9 +73,9 @@ static int inode_alloc(void) {
 
 static void inode_free(int ino) {
   if (inodes[ino].data) {
-    proc_image_segment_t data_region = proc_image_segment_make(
-        inodes[ino].data, PAGE_SIZE, PPAP_MEM_RAM_DATA,
-        PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE);
+    proc_image_segment_t data_region =
+        proc_image_segment_make(inodes[ino].data, PAGE_SIZE, PPAP_MEM_RAM_DATA,
+                                PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE);
     mod_core.mem_region_free(&data_region);
     data_pages_used--;
   }
@@ -145,8 +146,8 @@ static int tmpfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
   return -ENOENT;
 }
 
-static long tmpfs_read(vnode_t *vn, page_id_t page, uint16_t page_off,
-                       size_t n, uint32_t off) {
+static long tmpfs_read(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
+                       uint32_t off) {
   if (vn->type == VNODE_DIR) return -(long)EISDIR;
 
   tmpfs_inode_t *ti = &inodes[vn->ino];
@@ -169,8 +170,8 @@ static long tmpfs_read(vnode_t *vn, page_id_t page, uint16_t page_off,
       while (zero_off < chunk) {
         uint16_t zero_len = chunk - zero_off;
         if (zero_len > sizeof(zero_chunk)) zero_len = sizeof(zero_chunk);
-        mod_core.mem_region_page_write(page, (uint16_t)(page_off + zero_off), zero_chunk,
-                              zero_len);
+        mod_core.mem_region_page_write(page, (uint16_t)(page_off + zero_off),
+                                       zero_chunk, zero_len);
         zero_off = (uint16_t)(zero_off + zero_len);
       }
     }
@@ -199,8 +200,9 @@ static long tmpfs_write(vnode_t *vn, page_id_t page, uint16_t page_off,
     proc_image_segment_t data_region;
 
     if (data_pages_used >= TMPFS_MAX_PAGES) return -(long)ENOSPC;
-    if (mod_core.mem_region_alloc(&data_region, PPAP_MEM_RAM_DATA, PAGE_SIZE,
-                         PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) < 0)
+    if (mod_core.mem_region_alloc(
+            &data_region, PPAP_MEM_RAM_DATA, PAGE_SIZE,
+            PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) < 0)
       return -(long)ENOMEM;
     ti->data = (uint8_t *)data_region.base;
     __builtin_memset(ti->data, 0, PAGE_SIZE);
@@ -395,9 +397,9 @@ static int tmpfs_truncate(vnode_t *vn, uint32_t length) {
   if (ti->type == VNODE_DIR) return -EISDIR;
 
   if (length == 0 && ti->data) {
-    proc_image_segment_t data_region = proc_image_segment_make(
-        ti->data, PAGE_SIZE, PPAP_MEM_RAM_DATA,
-        PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE);
+    proc_image_segment_t data_region =
+        proc_image_segment_make(ti->data, PAGE_SIZE, PPAP_MEM_RAM_DATA,
+                                PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE);
     mod_core.mem_region_free(&data_region);
     ti->data = (uint8_t *)0;
     data_pages_used--;

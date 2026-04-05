@@ -116,8 +116,7 @@ static int com_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
   /* ── 2. Allocate stack page ────────────────────────────────────────── */
   if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                       PROC_IMAGE_SEG_WRITABLE |
-                           PROC_IMAGE_SEG_OWNED) < 0) {
+                       PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) < 0) {
     proc_release_tracked_pages(p, 0, Z80_MEM_PAGES + 1u);
     return -(int)ENOMEM;
   }
@@ -152,9 +151,9 @@ static int com_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   const char *path = (argv && argv[0]) ? argv[0] : "";
   cpm_load_com(&state->z80, &state->cpm, file_buf, file_size, cmdline);
   cpm_set_drive_a_root(&state->cpm, path);
-  p->image.text = proc_image_segment_make(z80_mem + CPM_TPA_BASE, file_size,
-                                          PPAP_MEM_RAM_TEXT,
-                                          PROC_IMAGE_SEG_EXECUTABLE);
+  p->image.text =
+      proc_image_segment_make(z80_mem + CPM_TPA_BASE, file_size,
+                              PPAP_MEM_RAM_TEXT, PROC_IMAGE_SEG_EXECUTABLE);
   p->image.data = data_region;
   p->image.entry = CPM_TPA_BASE;
 
@@ -182,7 +181,8 @@ static int com_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   {
     uint8_t *exc = (uint8_t *)(uintptr_t)p->sp + 15u * sizeof(uint32_t);
     *(uint16_t *)(void *)exc = SR_SUPV_IRQ;
-    p->usp = (uint32_t)(uintptr_t)mem_region_page_to_ptr(p->stack_page_id) + PAGE_SIZE;
+    p->usp = (uint32_t)(uintptr_t)mem_region_page_to_ptr(p->stack_page_id) +
+             PAGE_SIZE;
   }
 #endif
 
