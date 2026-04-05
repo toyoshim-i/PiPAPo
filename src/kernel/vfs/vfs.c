@@ -436,7 +436,9 @@ long vfs_vnode_readlink(vnode_t *vn, char *buf, size_t bufsiz) {
 extern void vfs_klogf(const char *, ...);
 
 /* Weak default notify — targets override for PLL/TTY/input events */
-__attribute__((weak)) void vfs_notify(int event) { (void)event; }
+__attribute__((weak)) void vfs_notify(int event) {
+  if (event == VFS_EVENT_MODULE_READY) klog_init_logger();
+}
 
 MOD_DEFINE_BEGIN(vfs)
 #define MOD_VFS_ENTRY(name, idx) MOD_IMPL(vfs, name)

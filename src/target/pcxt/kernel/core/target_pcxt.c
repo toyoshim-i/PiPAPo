@@ -203,12 +203,12 @@ static void install_int_debug(void) {
   ivt[12] = off; ivt[13] = cs; /* INT 6 — invalid opcode  */
 }
 
-void target_early_init(void)
-{
+void target_early_init(void) {
   seg_init_modules();
   install_int_debug();
-  /* Logger registration happens in klog_init_logger() called from
-   * vfs_init() — all VFS-side, no far call issues on i16. */
+  /* Register UART logger early so mm_init/proc_init messages are visible.
+   * Far-call stubs are patched by seg_init_modules() above. */
+  mod_vfs.notify(VFS_EVENT_MODULE_READY);
 }
 
 void target_late_init(void)

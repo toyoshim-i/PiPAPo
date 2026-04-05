@@ -27,10 +27,11 @@
 #include "kernel/common/vfs/vfs_types.h"
 
 /* VFS event IDs for mod_vfs.notify() */
-#define VFS_EVENT_WILL_PLL_CHANGE 1 /* before clock_init_pll(): drain UART */
-#define VFS_EVENT_PLL_CHANGED 2     /* after clock_init_pll(): reinit baud */
+#define VFS_EVENT_MODULE_READY 1    /* far-call stubs patched, VFS callable */
+#define VFS_EVENT_WILL_PLL_CHANGE 2 /* before clock_init_pll(): drain UART */
+#define VFS_EVENT_PLL_CHANGED 3     /* after clock_init_pll(): reinit baud */
 #define VFS_EVENT_LATE_INIT                   \
-  3 /* from target_late_init(): TTY backends, \
+  4 /* from target_late_init(): TTY backends, \
      * input polls, secondary logger, fbcon */
 
 /* Forward declaration for fd_stdio_init parameter */

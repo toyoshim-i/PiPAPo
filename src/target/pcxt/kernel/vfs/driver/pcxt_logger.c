@@ -25,8 +25,9 @@ void pcxt_logger_init(void) {
   klog_set_logger(KLOG_LOGGER_SECONDARY, NULL, NULL);
 }
 
-/* Override weak default — called from vfs_init() */
+/* Override weak default — called via VFS_EVENT_MODULE_READY on pcxt */
 void klog_init_logger(void) {
   uart_init();
   pcxt_logger_init();
+  klogf("Po booting... [pcxt]\n");
 }
