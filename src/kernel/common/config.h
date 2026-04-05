@@ -75,6 +75,74 @@
 #define PAGE_COUNT_MAX 50u /* RP2040 default: 200 KB pool          */
 #endif
 
+/* ── Memory map (must match the target linker script) ────────────────────
+ * SRAM_KERNEL_BASE/SIZE   Kernel data region (.data/.bss).
+ * PAGE_POOL_BASE/SIZE     Physical page pool for user pages.
+ * SRAM_IOBUF_BASE/SIZE    Block device write overlay (ARM/RP2040 only).
+ * SRAM_DMA_BASE/SIZE      DMA-capable buffer region (ARM/RP2040 only).
+ * RAM_END                 Hard ceiling for RAM probing.
+ *
+ * Targets override via -D flags in CMake (e.g. PAGE_POOL_BASE, RAM_END).
+ * ────────────────────────────────────────────────────────────────────────── */
+
+#if defined(__m68k__)
+/* M68K: RAM at 0x0, page pool placed by linker after stack.
+ * No IOBUF/DMA regions — those are RP2040-specific.
+ *
+ * RAM_END is the hard ceiling for the RAM probe — addresses at or above
+ * this value are never probed (e.g. X68000 VRAM starts at 0xC00000).
+ * Targets override via -DRAM_END=... in CMake; default = PAGE_POOL_BASE
+ * + PAGE_COUNT_MAX * PAGE_SIZE (set after PAGE_POOL_BASE is known). */
+#define SRAM_KERNEL_BASE 0x00000000u
+#define SRAM_KERNEL_SIZE (20u * 1024u)
+extern char __page_pool_start[];
+#define PAGE_POOL_BASE ((uintptr_t)__page_pool_start)
+#define PAGE_POOL_SIZE (PAGE_COUNT_MAX * PAGE_SIZE)
+#ifndef RAM_END
+#define RAM_END (PAGE_POOL_BASE + PAGE_POOL_SIZE)
+#endif
+#elif defined(__ia16__)
+/* i8086 real mode: code is in a far CS segment; data at DS=0.
+ * Page pool starts after the last code segment (computed by stage2,
+ * passed via mod_info, set in target_pcxt.c before mm_init). */
+#define SRAM_KERNEL_BASE 0x0600u
+#define SRAM_KERNEL_SIZE (4u * 1024u)
+extern uint32_t i16_page_pool_base;
+#define PAGE_POOL_BASE i16_page_pool_base
+#define PAGE_POOL_SIZE (PAGE_COUNT_MAX * PAGE_SIZE)
+#ifndef RAM_END
+#define RAM_END 0x9FC00ul  /* 640 KB conventional - EBDA */
+#endif
+#elif defined(__xtensa__)
+/* Xtensa / ESP32-S3: ESP-IDF manages the linker script.
+ * PAGE_POOL_BASE and PAGE_COUNT_MAX are defined via CMake -D flags.
+ * No IOBUF/DMA regions — ESP-IDF manages DMA buffers. */
+#define SRAM_KERNEL_BASE 0x3FC90000u /* ESP32-S3 DRAM region start      */
+#define SRAM_KERNEL_SIZE (32u * 1024u)
+#define PAGE_POOL_SIZE (PAGE_COUNT_MAX * PAGE_SIZE)
+/* Stub IOBUF/DMA to zero-size regions at end of page pool */
+#define SRAM_IOBUF_BASE (PAGE_POOL_BASE + PAGE_POOL_SIZE)
+#define SRAM_IOBUF_SIZE 0u
+#define SRAM_DMA_BASE   SRAM_IOBUF_BASE
+#define SRAM_DMA_SIZE   0u
+#else
+/* ARM / RP2040: SRAM layout defaults match pico1 / qemu_arm.
+ * Targets with a different split (for example PicoCalc) override these via
+ * target_compile_definitions(). */
+#define SRAM_KERNEL_BASE 0x20000000u /* kernel data region start        */
+#ifndef SRAM_KERNEL_SIZE
+#define SRAM_KERNEL_SIZE (24u * 1024u) /* reserved for kernel .data/.bss  */
+#endif
+#ifndef PAGE_POOL_BASE
+#define PAGE_POOL_BASE 0x20006000u /* first page in the pool          */
+#endif
+#define PAGE_POOL_SIZE (PAGE_COUNT_MAX * PAGE_SIZE)
+#define SRAM_IOBUF_BASE (PAGE_POOL_BASE + PAGE_POOL_SIZE) /* after pool    */
+#define SRAM_IOBUF_SIZE (24u * 1024u) /* 24 KB                           */
+#define SRAM_DMA_BASE (SRAM_IOBUF_BASE + SRAM_IOBUF_SIZE)
+#define SRAM_DMA_SIZE (16u * 1024u) /* 16 KB                           */
+#endif
+
 /* ── VFS (Virtual File System) ────────────────────────────────────────────
  * VFS_MOUNT_MAX     Maximum concurrent mount points (romfs /, devfs /dev,
  *                   procfs /proc, tmpfs /tmp, UFS /usr, /home, /var, spare).

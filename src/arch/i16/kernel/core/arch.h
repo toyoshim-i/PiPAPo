@@ -13,7 +13,7 @@
 
 #include <stdint.h>
 #include "kernel/common/irq.h"
-#include "kernel/core/mm/page.h"
+#include "kernel/common/core/page_types.h"
 
 /* -- Context switch trigger ---------------------------------------------
  *

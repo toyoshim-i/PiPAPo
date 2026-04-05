@@ -23,7 +23,7 @@
 
 /* Full VFS type definitions */
 #include "kernel/common/vfs/vfs_types.h"
-#include "kernel/core/mm/page.h"
+#include "kernel/common/core/page_types.h"
 
 #include "module.h"
 

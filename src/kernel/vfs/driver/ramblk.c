@@ -21,7 +21,7 @@
 #include "kernel/vfs/driver/ramblk.h"
 
 #include "common/errno.h"
-#include "kernel/core/mm/page.h"
+#include "kernel/common/config.h"
 #include "kernel/vfs/driver/blkdev.h"
 
 /* ── Overlay ────────────────────────────────────────────────────────────── */
