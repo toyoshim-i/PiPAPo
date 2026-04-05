@@ -5,7 +5,7 @@
  * Register layout matches the NS16550 used in QEMU virt.
  */
 
-#include "kernel/core/cpu.h"
+#include "kernel/common/ioregs.h"
 #include "kernel/vfs/driver/uart.h"
 
 void uart_init(void)

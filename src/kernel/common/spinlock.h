@@ -20,7 +20,7 @@
 
 #include <stdint.h>
 
-#include "kernel/core/arch.h"
+#include "kernel/common/irq.h"
 
 #ifndef SIO_BASE
 #define SIO_BASE 0xD0000000u

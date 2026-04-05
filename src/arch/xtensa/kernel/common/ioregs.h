@@ -1,22 +1,23 @@
 /*
- * cpu.h — Xtensa special register definitions
+ * ioregs.h — Xtensa I/O register and special register definitions
  *
- * Defines special register (SR) numbers, bit fields, and access macros
- * for the Xtensa LX7 cores in the ESP32-S3.
+ * On ESP32-S3, peripherals (UART, SPI, GPIO) are at 0x60000000+.
+ * Also defines Xtensa special register (SR) numbers, bit fields, and
+ * access macros for the LX7 cores in the ESP32-S3.
  *
  * Windowed ABI: ESP-IDF requires windowed register ABI.
  * Context switch uses solicited-frame pattern with window spill.
  */
 
-#ifndef PPAP_ARCH_XTENSA_CPU_H
-#define PPAP_ARCH_XTENSA_CPU_H
+#ifndef PPAP_ARCH_XTENSA_IOREGS_H
+#define PPAP_ARCH_XTENSA_IOREGS_H
 
 #include <stdint.h>
 
 /* ── Register access helper ─────────────────────────────────────────────── */
 
 #ifndef REG
-#define REG(addr)  (*(volatile uint32_t *)(uintptr_t)(addr))
+#define REG(addr) (*(volatile uint32_t *)(uintptr_t)(addr))
 #endif
 
 /* ── Special Register access macros ─────────────────────────────────────── *
@@ -185,7 +186,7 @@
  *   IROM: 0x42000000 (instruction fetches via instruction cache)
  *
  * The same flash content is at both addresses; XIP binaries stored in
- * romfs (which lives in .rodata → DROM) must have their entry point
+ * romfs (which lives in .rodata -> DROM) must have their entry point
  * shifted to IROM for the instruction bus to fetch them.
  */
 #define XTENSA_DROM_BASE         0x3C000000u
@@ -205,4 +206,4 @@
 #endif
 #define XTENSA_TICK_INTERVAL (PPAP_SYS_HZ / 100u)
 
-#endif /* PPAP_ARCH_XTENSA_CPU_H */
+#endif /* PPAP_ARCH_XTENSA_IOREGS_H */

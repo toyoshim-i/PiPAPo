@@ -9,7 +9,7 @@
  * Write is not supported (read-only floppy UFS).
  */
 
-#include "kernel/core/cpu.h"
+#include "kernel/common/ioregs.h"
 #include "kernel/vfs/driver/blkdev.h"
 #include "common/errno.h"
 

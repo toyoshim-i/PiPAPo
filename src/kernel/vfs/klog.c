@@ -22,7 +22,7 @@
 #include <stdarg.h>
 #include <stddef.h>
 
-#include "kernel/core/arch.h"
+#include "kernel/common/irq.h"
 #include "kernel/common/spinlock.h"
 
 /* ── Registered loggers ──────────────────────────────────────────────────── */

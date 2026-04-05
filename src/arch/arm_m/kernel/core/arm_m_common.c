@@ -188,7 +188,7 @@ void arm_crash_handler(uint32_t *psp_frame, uint32_t *callee_regs) {
 
 /* ── Initial stack frame for new processes ──────────────────────────────── */
 
-#include "ioregs.h"
+#include "kernel/common/ioregs.h"
 
 uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void)) {
   /* Hardware exception frame (8 words, popped by EXC_RETURN) */

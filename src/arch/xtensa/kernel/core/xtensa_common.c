@@ -11,7 +11,7 @@
 
 #include <stdint.h>
 #include "xtensa_api.h"
-#include "cpu.h"
+#include "kernel/common/ioregs.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/syscall/syscall.h"

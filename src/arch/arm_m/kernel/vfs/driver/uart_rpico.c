@@ -16,7 +16,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "kernel/core/ioregs.h"
+#include "kernel/common/ioregs.h"
 #include "kernel/common/config.h"
 #include "kernel/vfs/driver/uart.h"
 #include "kernel/vfs/tty.h"   /* tty_rx_notify, tty_signal_intr */

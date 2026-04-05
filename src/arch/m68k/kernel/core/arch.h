@@ -10,58 +10,8 @@
 #define PPAP_ARCH_M68K_ARCH_H
 
 #include <stdint.h>
+#include "kernel/common/irq.h"
 #include "kernel/core/mm/mem_region.h"
-
-/* ── Interrupt save / restore ─────────────────────────────────────────────
- *
- * 68k uses the SR interrupt priority level (IPL) bits 10-8.
- * Setting IPL to 7 masks all maskable interrupts.
- * We save the full SR and restore it to get back the original IPL.
- * ────────────────────────────────────────────────────────────────────────── */
-
-static inline uint32_t arch_irq_save(void) {
-  uint16_t saved;
-  __asm__ volatile(
-      "move.w  %%sr,%0\n"
-      "or.w    #0x0700,%%sr\n"
-      : "=d"(saved)
-      :
-      : "cc");
-  return (uint32_t)saved;
-}
-
-static inline void arch_irq_restore(uint32_t saved) {
-  __asm__ volatile("move.w  %0,%%sr\n" : : "d"((uint16_t)saved) : "cc");
-}
-
-/* ── Interrupt enable / disable ───────────────────────────────────────────
- *
- * Enable: set IPL to 0 (supervisor mode, all IRQs enabled).
- * Disable: set IPL to 7 (mask all maskable IRQs).
- * Both preserve the S bit (stay in supervisor mode).
- * ────────────────────────────────────────────────────────────────────────── */
-
-static inline void arch_irq_enable(void) {
-  __asm__ volatile("and.w   #0xF8FF,%%sr\n" /* clear IPL bits → IPL=0 */
-                   ::
-                       : "cc");
-}
-
-static inline void arch_irq_disable(void) {
-  __asm__ volatile("or.w    #0x0700,%%sr\n" /* set IPL=7 → mask all */
-                   ::
-                       : "cc");
-}
-
-/* ── Preemption control ──────────────────────────────────────────────────
- *
- * On single-core 68k, disabling all IRQs is sufficient and safe —
- * putc is synchronous (never blocks), so no deadlock risk.
- * ────────────────────────────────────────────────────────────────────────── */
-
-static inline void arch_preempt_disable(void) { arch_irq_disable(); }
-
-static inline void arch_preempt_enable(void) { arch_irq_enable(); }
 
 /* ── Context switch trigger ───────────────────────────────────────────────
  *

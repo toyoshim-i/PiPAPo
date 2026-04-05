@@ -24,7 +24,7 @@
 #include "kernel/core/signal/signal.h"
 #include "kernel/common/spinlock.h" /* SPIN_PROC */
 #include "kernel/core/arch.h"
-#include "kernel/core/ioregs.h"
+#include "kernel/common/ioregs.h"
 
 /* ── Tick counter ─────────────────────────────────────────────────────────────
  */

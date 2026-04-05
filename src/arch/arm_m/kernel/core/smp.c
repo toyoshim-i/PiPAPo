@@ -29,7 +29,7 @@
 #include <stdint.h>
 
 #include "kernel/core/arch.h"
-#include "kernel/core/ioregs.h"
+#include "kernel/common/ioregs.h"
 #include "kernel/common/config.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"

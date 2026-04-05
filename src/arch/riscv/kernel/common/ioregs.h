@@ -1,19 +1,23 @@
 /*
- * cpu.h — RISC-V system register (CSR) definitions
+ * ioregs.h — RISC-V I/O register and CSR definitions
  *
- * Defines Machine-mode CSR addresses, bit fields, and register access
+ * On RP2350, peripherals (UART, SPI, GPIO, PLL) are at the same addresses
+ * regardless of CPU architecture.  ARM-specific PPB registers (SysTick, NVIC,
+ * SCB) do not exist; the RISC-V port uses SIO mtime for ticks instead.
+ *
+ * Also defines Machine-mode CSR addresses, bit fields, and register access
  * macros for the Hazard3 RV32IMAC cores in the RP2350.
  */
 
-#ifndef PPAP_ARCH_RISCV_CPU_H
-#define PPAP_ARCH_RISCV_CPU_H
+#ifndef PPAP_ARCH_RISCV_IOREGS_H
+#define PPAP_ARCH_RISCV_IOREGS_H
 
 #include <stdint.h>
 
 /* ── Register access helper ─────────────────────────────────────────────── */
 
 #ifndef REG
-#define REG(addr)  (*(volatile uint32_t *)(uintptr_t)(addr))
+#define REG(addr) (*(volatile uint32_t *)(uintptr_t)(addr))
 #endif
 
 /* ── CSR access macros ──────────────────────────────────────────────────── *
@@ -161,4 +165,4 @@
 #endif
 #define RISCV_TICK_INTERVAL (PPAP_SYS_HZ / 100u)
 
-#endif /* PPAP_ARCH_RISCV_CPU_H */
+#endif /* PPAP_ARCH_RISCV_IOREGS_H */

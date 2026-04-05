@@ -1,14 +1,22 @@
 /*
- * cpu.h -- i8086 port I/O and hardware definitions
+ * ioregs.h -- i8086 I/O register and hardware definitions
+ *
+ * On the IBM PC, peripherals are accessed via port I/O (in/out
+ * instructions), not memory-mapped I/O.  The REG() macro is provided
+ * for API compatibility but is not typically used on this architecture.
  *
  * Provides inline port I/O functions and register addresses for the
  * IBM PC/XT hardware: 8259A PIC, 8253/8254 PIT, 8250 UART (COM1).
  */
 
-#ifndef PPAP_ARCH_I16_CPU_H
-#define PPAP_ARCH_I16_CPU_H
+#ifndef PPAP_ARCH_I16_IOREGS_H
+#define PPAP_ARCH_I16_IOREGS_H
 
 #include <stdint.h>
+
+#ifndef REG
+#define REG(addr) (*(volatile uint32_t *)(uintptr_t)(addr))
+#endif
 
 /* -- Port I/O -------------------------------------------------------------- */
 
@@ -66,8 +74,8 @@ static inline void io_wait(void)
 #define LCR_8N1    0x03       /* 8 data bits, no parity, 1 stop bit */
 
 /* Baud rate divisor: 115200 / baud.  Base clock = 1.8432 MHz.
- * 115200 baud → divisor 1, 9600 baud → divisor 12 */
+ * 115200 baud -> divisor 1, 9600 baud -> divisor 12 */
 #define UART_DIV_9600   12
 #define UART_DIV_115200 1
 
-#endif /* PPAP_ARCH_I16_CPU_H */
+#endif /* PPAP_ARCH_I16_IOREGS_H */

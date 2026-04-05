@@ -18,7 +18,7 @@
 #include "xtensa_cc.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "sdkconfig.h"
-#include "kernel/core/cpu.h"
+#include "kernel/common/ioregs.h"
 #include "kernel/core/proc/sched.h"
 
 #if !defined(CONFIG_FREERTOS_UNICORE) || !CONFIG_FREERTOS_UNICORE

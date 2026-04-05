@@ -215,7 +215,7 @@ int m68k_fline_dispatch(uint32_t *regs, uint32_t usp) {
 
 /* ── Initial stack frame for new processes ──────────────────────────────── */
 
-#include "ioregs.h" /* SR_USER */
+#include "kernel/common/ioregs.h" /* SR_USER */
 
 uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void)) {
   *--sp = (uint32_t)entry;              /* PC (4 bytes)            */

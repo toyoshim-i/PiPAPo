@@ -6,7 +6,7 @@
  * handler so that BIOS floppy motor timeout and other services still work.
  */
 
-#include "kernel/core/cpu.h"
+#include "kernel/common/ioregs.h"
 #include "kernel/common/core/seg.h"
 
 /* Defined in switch.S */
