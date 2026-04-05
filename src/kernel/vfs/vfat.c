@@ -19,9 +19,10 @@
 #include "kernel/vfs/driver/blkdev.h"
 #include "common/errno.h"
 #include "kernel/common/spinlock.h" /* SPIN_FS */
+#include "kernel/common/config.h"
+#include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
-#include "kernel/common/config.h"
 #include "kernel/vfs/vfat_format.h"
 
 /* ── Sector buffer (on stack or static) ─────────────────────────────────── */
@@ -489,7 +490,7 @@ static long vfat_read(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
       uint32_t start = (s == sec_off) ? byte_off : 0;
       uint32_t avail = 512 - start;
       if (avail > n - total) avail = (uint32_t)(n - total);
-      mem_region_page_write(page, page_off, &sector_buf[start], (uint16_t)avail);
+      mod_core.mem_region_page_write(page, page_off, &sector_buf[start], (uint16_t)avail);
       mem_region_page_advance(&page, &page_off, avail);
       total += avail;
     }
@@ -586,7 +587,7 @@ static long vfat_write(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
         int rc = read_sector(sb, sec_base + s, sector_buf);
         if (rc < 0) return (long)(total > 0 ? (int)total : rc);
       }
-      mem_region_page_read(page, page_off, &sector_buf[start], (uint16_t)avail);
+      mod_core.mem_region_page_read(page, page_off, &sector_buf[start], (uint16_t)avail);
       int rc = write_sector(sb, sec_base + s, sector_buf);
       if (rc < 0) return (long)(total > 0 ? (int)total : rc);
       mem_region_page_advance(&page, &page_off, avail);

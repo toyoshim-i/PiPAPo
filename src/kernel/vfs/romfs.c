@@ -23,9 +23,10 @@
 #include <stddef.h>
 
 #include "common/errno.h"
+#include "kernel/common/config.h"
+#include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
-#include "kernel/common/config.h"
 #include "romfs_format.h"
 
 /* ── Flash accessor helpers ──────────────────────────────────────────────────
@@ -156,7 +157,7 @@ static long romfs_read(vnode_t *vn, page_id_t page, uint16_t page_off,
 
   while (remaining > 0) {
     uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
-    mem_region_page_write(page, page_off, src, chunk);
+    mod_core.mem_region_page_write(page, page_off, src, chunk);
     src += chunk;
     remaining -= chunk;
     mem_region_page_advance(&page, &page_off, chunk);

@@ -162,14 +162,14 @@ static long tmpfs_read(vnode_t *vn, page_id_t page, uint16_t page_off,
     uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
 
     if (ti->data) {
-      mem_region_page_write(page, page_off, ti->data + pos, chunk);
+      mod_core.mem_region_page_write(page, page_off, ti->data + pos, chunk);
     } else {
       uint16_t zero_off = 0;
 
       while (zero_off < chunk) {
         uint16_t zero_len = chunk - zero_off;
         if (zero_len > sizeof(zero_chunk)) zero_len = sizeof(zero_chunk);
-        mem_region_page_write(page, (uint16_t)(page_off + zero_off), zero_chunk,
+        mod_core.mem_region_page_write(page, (uint16_t)(page_off + zero_off), zero_chunk,
                               zero_len);
         zero_off = (uint16_t)(zero_off + zero_len);
       }
@@ -213,7 +213,7 @@ static long tmpfs_write(vnode_t *vn, page_id_t page, uint16_t page_off,
   while (remaining > 0) {
     uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
     if (chunk > PAGE_SIZE - pos) chunk = (uint16_t)(PAGE_SIZE - pos);
-    mem_region_page_read(page, page_off, ti->data + pos, chunk);
+    mod_core.mem_region_page_read(page, page_off, ti->data + pos, chunk);
     pos += chunk;
     remaining -= chunk;
     mem_region_page_advance(&page, &page_off, chunk);
