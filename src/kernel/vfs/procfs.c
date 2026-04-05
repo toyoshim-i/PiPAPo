@@ -26,11 +26,11 @@
 #include "common/errno.h"
 #include "kernel/common/config.h"
 #include "kernel/common/core/page_types.h"
+#include "kernel/common/core/proc_info.h"
 #include "kernel/common/core/sched_info.h"
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/subtle/mem_helper.h"
-#include "kernel/core/proc/proc.h" /* proc_tracked_page_count — TODO: move to mod_core */
 #include "kernel/vfs/devfs.h"
 #include "kernel/vfs/romfs.h"
 #include "kernel/vfs/tmpfs.h"
@@ -390,7 +390,9 @@ static uint32_t proc_vsz(const pcb_t *p) {
   /* Stack page */
   if (p->stack_page_id != PAGE_ID_INVALID) pages++;
   /* Tracked page-backed user pages (includes mmap pages) */
-  pages += proc_tracked_page_count(p);
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
+    if (p->user_pages[i] != PAGE_ID_INVALID) pages++;
+  }
   return pages * PAGE_SIZE;
 }
 

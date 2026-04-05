@@ -23,4 +23,10 @@ typedef uint32_t page_id_t;
 #define PAGE_ID_INVALID ((page_id_t)0xFFFFFFFFu)
 #endif
 
+/* Runtime page count (set by mm_init after RAM probe, <= PAGE_COUNT_MAX). */
+extern uint32_t page_count;
+
+/* OOM event counter (incremented each time page_alloc returns NULL). */
+extern uint32_t oom_count;
+
 #endif /* PPAP_KERNEL_COMMON_CORE_PAGE_TYPES_H */

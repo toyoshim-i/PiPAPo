@@ -61,13 +61,7 @@ uint32_t page_max_contiguous(void);
  * Uses a bitmap scan — O(page_count), safe for large pools. */
 uint8_t *page_alloc_contiguous(uint32_t n_pages);
 
-/* Runtime page count in the allocator-owned pool — set by mm_init() after
- * probing available RAM.  Always <= PAGE_COUNT_MAX.  Use this (not
- * PAGE_COUNT_MAX) for runtime decisions such as total-memory reporting. */
-extern uint32_t page_count;
-
-/* OOM event counter (incremented each time page_alloc returns NULL). */
-extern uint32_t oom_count;
+/* page_count and oom_count externs are in page_types.h */
 
 /* ── Page-indexed API (mm-internal) ───────────────────────────────────────
  *
