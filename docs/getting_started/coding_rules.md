@@ -2,363 +2,153 @@
 
 ## C Style
 
-This project follows the
+Based on the
 [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html)
-with the following project-specific adjustments for embedded C:
+with these adjustments for embedded C:
 
 - **Language**: C11 (GNU extensions allowed for inline asm).
-- **Indentation**: 2-space indentation, no tabs in `.c`/`.h` files.
-- **Braces**: Opening brace on the same line for functions and control flow.
-- **Naming**:
-  - `snake_case` for functions, variables, and types (not `CamelCase` as in
-    Google C++ style, since this is a C project).
-  - `UPPER_CASE` for macros and constants.
-  - Typedef structs as `<name>_t` (e.g., `pcb_t`, `vfs_ops_t`).
+- **Indentation**: 2 spaces, no tabs.
+- **Braces**: same-line opening brace.
+- **Naming**: `snake_case` for functions, variables, types.
+  `UPPER_CASE` for macros/constants.  Typedef structs as `<name>_t`.
 - **Line length**: 80 columns, strict.
-- **Comments**: Use `/* */` for block comments and `//` for single-line
-  comments. Follow Google style for comment placement and formatting.
-- **Header include order** (following Google style):
-  1. Corresponding header (e.g., `foo.c` includes `foo.h` first).
-  2. C standard library headers (`<stdint.h>`, `<string.h>`, ...).
-  3. Project headers (`"arch/arch.h"`, `"kernel/klog.h"`, ...).
+- **Comments**: `/* */` for block, `//` for single-line.
+- **Include order**: (1) corresponding header, (2) C stdlib,
+  (3) project headers.
 
-Where the Google C++ Style Guide and this document conflict, this document
-takes precedence.
+This document overrides the Google guide on conflicts.
 
 ## Header Include Guards
 
-Every header file uses traditional `#ifndef` / `#define` / `#endif` guards
-(no `#pragma once`).
+Use `#ifndef` / `#define` / `#endif` (no `#pragma once`).
 
-The guard macro is derived mechanically from the file path relative to `src/`:
-
-```
-src/<path>/<name>.h  ->  PPAP_<PATH>_<NAME>_H
-```
-
-- Strip the leading `src/`.
-- Replace `/` and `-` with `_`.
-- Convert to upper case.
-- Prefix with `PPAP_`.
-
-Examples:
-
-| File                              | Guard                                  |
-|-----------------------------------|----------------------------------------|
-| `src/kernel/fs/tmpfs.h`          | `PPAP_KERNEL_FS_TMPFS_H`              |
-| `src/arch/arm_m/ioregs.h`       | `PPAP_ARCH_ARM_M_IOREGS_H`           |
-| `src/drivers/spi_sd.h`          | `PPAP_DRIVERS_SPI_SD_H`              |
-| `src/target/pico1/pico1.h`      | `PPAP_TARGET_PICO1_PICO1_H`          |
-| `src/user/syscall.h`            | `PPAP_USER_SYSCALL_H`                |
-
-The closing `#endif` must include the guard name as a comment:
+Derive the guard from the path relative to `src/`:
+strip `src/`, replace `/` and `-` with `_`, uppercase, prefix `PPAP_`.
 
 ```c
-#ifndef PPAP_KERNEL_FS_TMPFS_H
-#define PPAP_KERNEL_FS_TMPFS_H
-
+/* src/kernel/vfs/klog.h */
+#ifndef PPAP_KERNEL_VFS_KLOG_H
+#define PPAP_KERNEL_VFS_KLOG_H
 /* ... */
-
-#endif /* PPAP_KERNEL_FS_TMPFS_H */
+#endif /* PPAP_KERNEL_VFS_KLOG_H */
 ```
 
 ## Directory Layout
 
-See [Source Tree Structure](source_tree.md) for the full layout and
-include path conventions.
+See [Source Tree Structure](source_tree.md).
 
 ## Architecture- and Target-Specific Code
 
-**Avoid `#ifdef` for arch/target conditionals.**  Do not scatter
-`#ifdef __arm__` / `#ifdef __m68k__` or target-specific `#ifdef` guards
-through shared kernel or driver code.  Instead, introduce an abstraction
-(a common header declaring the interface) and provide per-arch or per-target
-implementations in their own directories.
-
-Architecture-specific implementations live under `src/arch/<arch>/`, and
-target-specific implementations live under `src/target/<target>/`.  Shared
-kernel code calls through dispatch headers (`arch/arch.h`, `arch/ioregs.h`)
-or common APIs (`cpu/smp.h`) — never through preprocessor conditionals on
-the architecture or target.
-
-When adding a new arch- or target-specific feature:
-1. Define a common interface (function prototype or struct) in a shared
-   header under `src/kernel/`, `src/arch/`, or `src/drivers/`.
-2. Add the implementation in `src/arch/<arch>/` or `src/target/<target>/`.
-3. Wire each implementation into the appropriate source list in
-   `cmake/kernel.cmake` (e.g., `ARCH_ARM_M_SOURCES`,
-   `ARCH_M68K_SOURCES`, or the target's source list).
-4. If you find existing `#ifdef` conditionals that can be replaced by this
-   pattern, prefer refactoring them out.
+**No `#ifdef` for arch/target conditionals in shared code.**
+Define a common interface in a shared header, provide per-arch or
+per-target implementations in `src/arch/<arch>/` or
+`src/target/<target>/`, and wire them in cmake source lists.
 
 ## Code Quality
 
-- **Keep code clean**: refactor as you go.  When touching an area, leave
-  it better than you found it.
-- **Required refactoring**: if adding a feature creates duplication or
-  makes an existing pattern harder to follow, refactor first (or in the
-  same commit).  Do not defer cleanup that the next reader will trip over.
-- **Avoid code duplication**: when two or more architectures share the
-  same logic (e.g., user-stack copy in vfork, split-address relocation),
-  extract a shared helper and call it from the arch-specific paths.
-- **Diverge per-arch by introducing the right abstraction**: instead of
-  duplicating a function with small per-arch tweaks, factor out the
-  common algorithm into a shared function and pass arch-specific details
-  via parameters, callbacks, or per-arch constants.
-- **Fix root causes, not symptoms**: when a bug or limitation surfaces,
-  invest in the essential fix that addresses the underlying design issue.
-  Avoid short-term ad-hoc workarounds that paper over the problem —
-  they accumulate technical debt and make the real fix harder later.
-  If a proper fix is too large for the current step, file a TODO with
-  a clear description of the root cause and the intended fix.
-- **Don't change or revert the plan without discussion**: when an
-  implementation hits a blocker (toolchain limitation, unexpected
-  constraint, etc.), stop and discuss the problem with the team before
-  switching to an alternative approach or reverting changes.  Silently
-  falling back to a different design — or undoing agreed-upon work —
-  wastes effort and can produce a result nobody reviewed.  Present the
-  blocker, the options, and let the design discussion decide the path.
-- **Don't commit or amend without approval**: always wait for explicit
-  approval before creating a commit or amending an existing one.
-  Commits are review checkpoints — the reviewer decides when a change
-  set is ready to be recorded.  Premature commits (especially amends
-  that mix unrelated changes into an existing commit) make history
-  harder to review and harder to bisect.
+- **No code duplication.** Extract shared helpers when two or more
+  arch/target paths share logic.  Three similar lines is better than
+  a premature abstraction, but ten duplicated functions is not.
+- **Fix root causes.** Avoid workarounds.  If a proper fix is too
+  large, file a TODO with the root cause and intended fix.
+- **No plan changes without discussion.** Stop and discuss blockers
+  before switching approach or reverting agreed-upon work.
+- **No commits without approval.** Always wait for explicit approval
+  before `git commit` or `git commit --amend`.  Commits are review
+  checkpoints.
 
 ## TODO Comments
 
-Mark incomplete or temporary code with `TODO` comments so it can be found
-and resolved later.  Format:
-
 ```c
-// TODO: brief description of what needs to be done
+// TODO: brief actionable description
 ```
 
-```sh
-# TODO: brief description of what needs to be done
-```
-
-Use `TODO` for:
-- Workarounds that should be removed once an upstream issue is fixed.
-- Missing features or error handling that will be added in a later step.
-- Known limitations that are acceptable now but should be revisited.
-
-Do **not** include author names or dates — `git blame` provides that
-information.  Keep the description short and actionable.
+No author names or dates.  Use for workarounds, missing features, and
+known limitations that will be revisited.
 
 ## Allocator Boundary
 
-Code outside `src/kernel/mm/` must allocate through `mem_region_*`.
+Code outside `src/kernel/core/mm/` must use `mem_region_*` only.
+Direct `page_*` calls are forbidden outside mm.
 
-- Allowed outside `src/kernel/mm/`:
-  - `mem_region_alloc`
-  - `mem_region_alloc_at`
-  - `mem_region_free`
-  - `mem_region_*` query helpers
-- Not allowed outside `src/kernel/mm/`:
-  - `page_alloc`
-  - `page_alloc_at`
-  - `page_alloc_contiguous`
-  - `page_free`
-  - `page_free_count`
-  - `page_max_contiguous`
+Page-index conversions:
+- `mem_region_page_linear(id)` -- `uint32_t`, safe on all targets.
+- `mem_region_page_to_ptr(id)` -- `void *`, 32-bit only.
+- `mem_region_page_read/write(id, off, buf, len)` -- safe on all
+  targets including i16.
 
-`page_*` remains a backend implementation detail.  If non-mm code needs
-capacity or free-space information, add an appropriate `mem_region_*`
-helper instead of reaching into `page.h` directly for allocator state.
+See [Memory Management](../kernel/memory_management.md) section 9.
 
-Run the boundary checker before committing allocator-related work:
-
-```sh
-./scripts/check_allocator_boundaries.sh
-```
-
-### Page-index conversions
-
-Per-process memory is tracked by `page_id_t` (uint16_t index), not by
-raw pointers.  Two functions convert an index back to an address — use
-the right one for portability:
-
-- **`mem_region_page_linear(id)`** → `uint32_t`: safe on all targets
-  including i16.  Use for arithmetic, comparisons, and reporting.
-- **`mem_region_page_to_ptr(id)`** → `void *`: 32-bit targets only
-  (unavailable on i16).  Use only when you need a dereferenceable
-  pointer.
-- **`mem_region_page_read(id, off, buf, len)`** /
-  **`mem_region_page_write(id, off, buf, len)`**: use these to access
-  page payloads.  They are safe on all targets including i16, where
-  `void *` cannot address pages above 64 KB.  On 32-bit targets they
-  reduce to `memcpy`.
-
-See [Memory Management](../kernel/memory_management.md) §9 for the full
-conversion rules and rationale.
+Run `./scripts/check_allocator_boundaries.sh` before committing
+allocator-related work.
 
 ## Compile-Time Flags for Work in Progress
 
-When working on changes — even in the current worktree — always guard your
-work-in-progress code behind a compile-time flag (e.g.,
-`#if defined(ENABLE_MY_FEATURE)`).  This ensures that your uncommitted or
-partially complete changes do not affect other agents or developers who may
-be building and testing in parallel on the same workspace.
+Guard WIP code behind a compile-time flag
+(`#if defined(ENABLE_MY_FEATURE)`) disabled by default.
+Remove the flag once the feature is complete and merged.
 
-- Define a descriptive flag for your feature or change (e.g.,
-  `ENABLE_XTENSA_PORT`, `ENABLE_NEW_SCHEDULER`).
-- Keep the flag disabled by default; only enable it in your own build
-  configuration (e.g., via `-D` in `cmake/user.cmake` or a target-specific
-  CMake file).
-- Remove the flag and make the code unconditional once the feature is
-  complete, reviewed, and merged.
+## Formatting
 
-This practice prevents build breakage and test interference when multiple
-agents work on the same tree concurrently.
-
-## Formatting with clang-format
-
-The repository includes a `.clang-format` file based on Google style.
-Run it on all source files:
+Run clang-format (`.clang-format` in repo root):
 
 ```sh
-find src -name '*.c' -o -name '*.h' | grep -v third_party | xargs clang-format -i
-```
-
-Or via npx if clang-format is not installed system-wide:
-
-```sh
-find src -name '*.c' -o -name '*.h' | grep -v third_party | xargs npx clang-format -i
+find src -name '*.c' -o -name '*.h' | grep -v third_party \
+  | xargs clang-format -i
 ```
 
 ## Commit Messages
 
-This project uses short, scoped subjects plus clear bodies that explain
-behavior changes and how they were validated.
-
-### Structure
+### Format
 
 ```text
-<scope>: <one-line summary in imperative mood>
+<scope>: <imperative summary>
 
-<why this change is needed>
-<what changed, focusing on behavior and risks>
-<how you verified the change>
-<extra context only if needed>
+<why + what changed + how verified>
 
-Co-Authored-By: <Agent name> (<model name>) [<optional valid email>]
+Co-Authored-By: ...
 ```
 
 ### Rules
 
-- Keep the first line short and specific.
-- Leave one blank line after the subject.
-- Wrap body lines to about 72 columns.
-- Prefer "why + behavior impact" over implementation trivia.
-- Keep one logical change per commit when possible.
-
-### Subject line convention
-
-Use a scope prefix that clearly identifies the area of the change. Prefer
-specific, descriptive scopes over generic category words like `feat:` or
-`fix:`. The scope should tell the reader *what part of the system* changed
-at a glance.
-
-Examples from recent history:
-
-- `semihost: add ARM semihosting serial backend`
-- `pico2: enable SMP Core 1 launch on RP2350`
-- `signal: correct signal delivery for FPU-active processes`
-- `exec: support PIE relocation for m68k ELF binaries`
-- `romfs: fix directory traversal past end of image`
-- `build: add PPAP_ENABLE_CPM build flag`
-- `docs: update arm_m.md with RP2350 MPU details`
-- `test: add pipe stress test for large writes`
-
-General guidelines:
-
-- Pick the scope from the feature, subsystem, driver, or target name —
-  not from the type of change (avoid `feat:`, `fix:`, `refactor:` as
-  the sole scope).
-- If multiple areas are touched equally, choose the dominant behavior
-  change or use the most specific applicable scope.
-- An unscoped subject is acceptable when no single scope fits.
-
-### Body content
-
-Include the details reviewers and future maintainers need:
-
-- Previous behavior (or bug).
-- New behavior after this commit.
-- Any compatibility or regression risk.
-- Follow-up work if this is part of a larger series.
-
-Avoid:
-
-- Repeating obvious diffs ("renamed X to Y") without why.
-- Large narrative text not tied to behavior changes.
+- Short, specific subject line.  Scope = subsystem/driver/target name
+  (not `feat:`/`fix:`).
+- Body: why, behavior impact, verification.  72-column wrap.
+- One logical change per commit.
 
 ### Verification
 
-Include verification details in the commit body instead of a required trailer.
-Keep it concise and concrete.
+Include in the commit body.
 
-**Build verification** (`./scripts/build.sh <target>`):
-Use `build.sh` to catch compilation and link errors after mechanical changes
-(file moves, include path updates, cmake edits).  It exits promptly on
-success or failure and is safe to run for all targets in sequence.
-
-**Test verification** (`./scripts/run.sh --test <target>`):
-`run.sh --test` launches QEMU and waits for the test harness to print
-results.  It does **not** exit on its own — you must use an external
-timeout (e.g., `timeout 90 ./scripts/run.sh --test qemu_arm`) or the
-script's built-in timeout.  Without a timeout, a hung QEMU will block
-the terminal indefinitely.
-
-Examples:
+`./scripts/build.sh <target>` exits promptly -- use for mechanical
+changes.  `./scripts/run.sh --test <target>` launches QEMU and does
+**not** exit on its own -- always use with an external timeout.
 
 ```text
 Verified with ./scripts/build.sh qemu_arm
-Verified with ./scripts/build.sh pcxt
 Verified with ./scripts/run.sh --test qemu_arm (24/24 pass)
 ```
 
-If tests were not run, be explicit:
+If not verified:
 
 ```text
 Not verified by running tests (docs-only change)
-Verified by build only — mechanical change, no behavioral impact
 ```
 
-### Co-Authored-By protocol
+### Co-Authored-By
 
-Add `Co-Authored-By:` trailers when another contributor materially helped
-create the commit (code, design, debugging, or substantial text).
-
-- Put trailers at the very end of the commit message.
-- Keep a blank line between the body and trailers.
-- One trailer line per contributor.
-
-For human contributors:
-
-```text
-Co-Authored-By: Jane Doe <jane@example.com>
-```
-
-For AI agent-assisted commits:
-
-```text
-Co-Authored-By: <Agent name> (<model name>) [<optional valid email>]
-```
+Add trailers at the end of the commit message for contributors who
+materially helped (code, design, debugging).
 
 ### Pre-commit checklist
 
-1. Does the subject describe the behavioral change clearly?
-2. Does the body explain why this change exists?
-3. Does the body include how the change was verified (or why not)?
-4. Did affected tests pass (or is there a clear reason they were not run)?
-5. Does the code follow this coding rules document?
-   In particular, review the [Code Quality](#code-quality) section:
-   no code duplication, no `#ifdef` conditionals on arch or target
-   (prefer per-arch/per-target implementations), no direct `page_*`
-   calls outside `src/kernel/mm/`, and no plan changes without
-   discussion.
-6. Are affected documents updated?
-7. Are `Co-Authored-By:` trailers present when applicable?
-8. Is this commit scoped tightly enough to review easily?
+1. Subject describes the behavioral change?
+2. Body explains why?
+3. Verification included?
+4. Tests pass (or reason they were not run)?
+5. Code follows this document?  Review [Code Quality](#code-quality):
+   no duplication, no arch/target `#ifdef`, no direct `page_*` outside
+   mm, no plan changes without discussion.
+6. Affected docs updated?
+7. `Co-Authored-By:` present when applicable?
+8. Commit scoped tightly enough to review?
