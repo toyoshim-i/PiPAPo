@@ -37,12 +37,12 @@ add_executable(ppap_pico1calc
     ${PPAP_ROOT}/src/arch/arm_m/kernel/vfs/driver/uart_rpico.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/pico1calc_logger.c
     ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/clock_rpico.c
-    ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/spi_rpico.c
-    ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/i2c_rpico.c
+    ${PPAP_ROOT}/src/arch/arm_m/kernel/vfs/driver/spi_rpico.c
+    ${PPAP_ROOT}/src/arch/arm_m/kernel/vfs/driver/i2c_rpico.c
     ${PPAP_ROOT}/src/arch/arm_m/kernel/vfs/driver/spi_lcd_rpico.c
-    ${PPAP_ROOT}/src/kernel/core/driver/spi_sd.c
+    ${PPAP_ROOT}/src/kernel/vfs/driver/spi_sd.c
     ${PPAP_ROOT}/src/kernel/vfs/driver/lcd_panel.c
-    ${PPAP_ROOT}/src/kernel/core/driver/i2c_kbd.c
+    ${PPAP_ROOT}/src/kernel/vfs/driver/i2c_kbd.c
     ${PPAP_ROOT}/src/kernel/vfs/driver/fbcon.c
 )
 

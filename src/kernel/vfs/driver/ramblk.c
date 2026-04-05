@@ -18,11 +18,11 @@
  * Registers as "mmcblk0" via blkdev_register().
  */
 
-#include "ramblk.h"
+#include "kernel/vfs/driver/ramblk.h"
 
 #include "common/errno.h"
 #include "kernel/core/mm/page.h"
-#include "blkdev.h"
+#include "kernel/vfs/driver/blkdev.h"
 
 /* ── Overlay ────────────────────────────────────────────────────────────── */
 

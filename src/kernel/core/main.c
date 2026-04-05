@@ -13,10 +13,6 @@
 #include "kernel/core/proc/sched.h"
 #include "target/target.h"
 #include "kernel/common/mod/mod_vfs.h"
-#ifdef PPAP_HAS_BLKDEV
-#include "kernel/core/driver/blkdev.h"
-#include "kernel/core/driver/loopback.h"
-#endif
 #include "kernel/core/arch.h"
 #include "kernel/core/cpu/cpu.h"
 #include "kernel/core/cpu/smp.h"
@@ -66,14 +62,6 @@ void kmain(void) {
   /* VFS layer + file pool for sys_open */
   mod_vfs.init();
   mod_vfs.fd_pool_init();
-
-#ifdef PPAP_HAS_BLKDEV
-  /* Block device registry + loopback subsystem */
-  blkdev_init();
-#if !defined(__ia16__)
-  loopback_init();
-#endif
-#endif
 
   /* Target-specific late init: SD/ramblk, IRQ UART, MPU, Core 1 */
   target_late_init();

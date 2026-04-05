@@ -8,10 +8,12 @@
 #include "kernel/vfs/devfs.h"
 #include "kernel/vfs/procfs.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "common/errno.h"
 #include "kernel/common/config.h"
-#include "kernel/core/driver/i2c.h"
-#include "kernel/core/driver/i2c_kbd.h"
+#include "kernel/vfs/driver/i2c.h"
+#include "kernel/vfs/driver/i2c_kbd.h"
 #include "kernel/vfs/driver/lcd_panel.h"
+#include "kernel/vfs/driver/spi.h"
 #include "kernel/vfs/driver/spi_lcd.h"
 
 extern void sched_set_input_poll(int (*fn)(void), int tty_idx);
@@ -145,6 +147,14 @@ void vfs_notify(int event) {
     case VFS_EVENT_PLL_CHANGED:
       uart_reinit_pll();
       klogf("System clock: %u MHz\n", PPAP_SYS_HZ / 1000000u);
+      spi_init(400000);
+      klogf("SPI0: initialised at 400 kHz\n");
+      i2c_init();
+      klogf("I2C1: initialised at 10 kHz\n");
+      kbd_init();
+      if (!kbd_present())
+        klogf("PicoCalc peripherals not detected "
+              "(skipping LCD/fbcon)\n");
       break;
     case VFS_EVENT_LATE_INIT:
       while (uart_getc() >= 0)
@@ -173,6 +183,25 @@ void vfs_notify(int event) {
         devfs_set_power(power_i2c_off);
         klogf("POWER: battery monitor and power-off registered\n");
       }
+      /* TODO: SD init disabled — spi_xfer() hangs on the first SPI0
+       * transfer after UF2 warm boot.  The PL022 accepts TX data but
+       * never produces RX data, suggesting clk_peri or GPIO mux issue.
+       * Investigate: try SPI0 loopback test, verify clk_peri, check if
+       * the bootloader's boot2 reconfigures pin mux for QSPI. */
+#if 0
+      {
+        extern int sd_init(void);
+        int rc = sd_init();
+        if (rc == 0)
+          klogf("SD: card initialised, mmcblk0 registered\n");
+        else if (rc == -(int)ENODEV)
+          klogf("SD: no card detected (skipping)\n");
+        else
+          klogf("SD: init failed (err=%u)\n", (unsigned)(-(int)rc));
+      }
+#else
+      klogf("SD: disabled (SPI0 hang under investigation)\n");
+#endif
       break;
   }
 }

@@ -15,7 +15,7 @@
 #include <stdint.h>
 
 #include "kernel/common/config.h"
-#include "kernel/core/driver/spi.h"
+#include "kernel/vfs/driver/spi.h"
 #include "target/pico1calc/kernel/core/pico1calc.h"
 #include "target/rpico.h"
 

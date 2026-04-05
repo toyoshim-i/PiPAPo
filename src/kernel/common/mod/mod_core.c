@@ -11,7 +11,7 @@
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/core/mm/kmem.h"
 #include "kernel/core/mm/mem_region.h"
-#include "kernel/core/driver/blkdev.h"
+#include "kernel/vfs/driver/blkdev.h"
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/subsys/subsys.h"
 #include "kernel/core/syscall/syscall.h"

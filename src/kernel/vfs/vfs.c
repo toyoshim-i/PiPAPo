@@ -13,16 +13,16 @@
  * rather than "/".
  */
 
-#include "vfs.h"
+#include "kernel/vfs/vfs.h"
 
 #include <stddef.h>
 
 #include "common/errno.h"
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/vfs/klog.h"
-#include "file.h"   /* fd_pool_init */
-#include "tty.h"    /* tty_rx_notify */
-#include "fstab.h"  /* fstab_parse, fstab_mount_all */
+#include "kernel/vfs/file.h"   /* fd_pool_init */
+#include "kernel/vfs/tty.h"    /* tty_rx_notify */
+#include "kernel/vfs/fstab.h"  /* fstab_parse, fstab_mount_all */
 #include "kernel/common/core/kmem_types.h" /* kmem_pool_t */
 #include "kernel/common/spinlock.h" /* SPIN_VFS */
 
@@ -54,6 +54,16 @@ void vfs_init(void) {
 
   /* Initialise the vnode slab pool */
   mod_core.kmem_pool_init(&vnode_pool, vnode_storage, sizeof(vnode_t), VFS_VNODE_MAX);
+
+  /* Block device registry + loopback subsystem */
+#ifdef PPAP_HAS_BLKDEV
+  extern void blkdev_init(void);
+  blkdev_init();
+#if !defined(__ia16__)
+  extern void loopback_init(void);
+  loopback_init();
+#endif
+#endif
 
   klogf("VFS: initialised (%u vnodes, %u mount slots)\n",
         (unsigned)VFS_VNODE_MAX, (unsigned)VFS_MOUNT_MAX);
@@ -264,14 +274,14 @@ mount_entry_t *vfs_mount_find(const char *path, const char **remainder) {
 
 /* ── Convenience mount wrappers ────────────────────────────────────────── */
 
-#include "ufs.h"
-#include "romfs.h"
-#include "devfs.h"
-#include "procfs.h"
-#include "tmpfs.h"
+#include "kernel/vfs/ufs.h"
+#include "kernel/vfs/romfs.h"
+#include "kernel/vfs/devfs.h"
+#include "kernel/vfs/procfs.h"
+#include "kernel/vfs/tmpfs.h"
 #ifdef PPAP_HAS_BLKDEV
-#include "kernel/core/driver/blkdev.h"
-#include "vfat.h"
+#include "kernel/vfs/driver/blkdev.h"
+#include "kernel/vfs/vfat.h"
 #endif
 
 #if defined(PPAP_HAS_BLKDEV) || defined(PPAP_HAS_UFS)
@@ -352,7 +362,7 @@ int vfs_mount_by_fstype(const char *source, const char *target,
 /* ── Module definition ─────────────────────────────────────────────────── */
 
 #include "kernel/common/mod/mod_vfs.h"
-#include "fd.h"
+#include "kernel/vfs/fd.h"
 
 /* Aliases for MOD_IMPL convention: vfs_<name> → <name> */
 #define vfs_fd_pool_init fd_pool_init

@@ -6,12 +6,12 @@
  * loaded into RAM by stage2.
  */
 
-#include "flatblk.h"
+#include "kernel/vfs/driver/flatblk.h"
 
 #include <stdint.h>
 
 #include "common/errno.h"
-#include "blkdev.h"
+#include "kernel/vfs/driver/blkdev.h"
 
 static const uint8_t *flat_base;
 static uint32_t flat_sectors;

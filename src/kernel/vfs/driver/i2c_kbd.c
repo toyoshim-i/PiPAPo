@@ -11,13 +11,13 @@
  * combinations on our side.
  */
 
-#include "i2c_kbd.h"
+#include "kernel/vfs/driver/i2c_kbd.h"
 
 #include <stdint.h>
 #include <string.h>
 
 #include "kernel/common/mod/mod_vfs.h"
-#include "i2c.h"
+#include "kernel/vfs/driver/i2c.h"
 
 /* ── STM32 I2C address and registers ────────────────────────────────────── */
 

@@ -182,8 +182,8 @@ set(KERNEL_XTENSA_COMMON_SOURCES
 # ── Block device + VFAT/UFS sources (targets with PPAP_HAS_BLKDEV) ─────────
 
 set(KERNEL_BLKDEV_SOURCES
-    ${_KS_ROOT}/src/kernel/core/driver/blkdev.c
-    ${_KS_ROOT}/src/kernel/core/driver/loopback.c
+    ${_KS_ROOT}/src/kernel/vfs/driver/blkdev.c
+    ${_KS_ROOT}/src/kernel/vfs/driver/loopback.c
     ${_KS_ROOT}/src/kernel/vfs/vfat.c
     ${_KS_ROOT}/src/kernel/vfs/ufs.c
 )

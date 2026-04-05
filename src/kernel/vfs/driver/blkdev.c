@@ -5,7 +5,7 @@
  * drivers look up devices by name; hardware drivers register at boot.
  */
 
-#include "blkdev.h"
+#include "kernel/vfs/driver/blkdev.h"
 
 #include "common/errno.h"
 

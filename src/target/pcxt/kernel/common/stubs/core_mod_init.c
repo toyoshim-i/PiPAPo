@@ -12,7 +12,7 @@
 
 #include "kernel/core/mm/kmem.h"  /* kmem_pool_t */
 #include "kernel/core/mm/mem_layout.h"  /* proc_image_segment_t, ppap_mem_class_t */
-#include "kernel/core/driver/blkdev.h"  /* blkdev_t */
+#include "kernel/vfs/driver/blkdev.h"  /* blkdev_t */
 #include "kernel/common/mod/module.h"
 
 /* Forward-declare the caller-side stubs from core_stubs.S. */

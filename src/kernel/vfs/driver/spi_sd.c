@@ -13,15 +13,15 @@
  *   - RP2040 Datasheet §4.4 (PL022 SPI)
  */
 
-#include "spi_sd.h"
+#include "kernel/vfs/driver/spi_sd.h"
 
 #include <stddef.h>
 #include <stdint.h>
 
-#include "kernel/core/driver/blkdev.h"
+#include "kernel/vfs/driver/blkdev.h"
 #include "common/errno.h"
 #include "kernel/common/config.h"
-#include "spi.h"
+#include "kernel/vfs/driver/spi.h"
 
 /* ── SD command indices ──────────────────────────────────────────────────── */
 

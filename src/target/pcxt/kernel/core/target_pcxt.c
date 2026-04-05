@@ -9,7 +9,7 @@
 #include "kernel/core/driver/timer_pit.h"
 #include "target/target.h"
 #include "kernel/common/core/seg.h"
-#include "kernel/core/driver/blkdev.h"
+#include "kernel/vfs/driver/blkdev.h"
 #include "kernel/common/mod/mod_vfs.h"
 
 extern void floppy_blk_init(void);

@@ -32,7 +32,7 @@ add_executable(ppap_qemu_arm
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_qemu_arm.c
     ${UART_DRIVER}
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/qemu_arm_logger.c
-    ${PPAP_ROOT}/src/kernel/core/driver/ramblk.c
+    ${PPAP_ROOT}/src/kernel/vfs/driver/ramblk.c
 )
 
 ppap_arm_target_common(ppap_qemu_arm)

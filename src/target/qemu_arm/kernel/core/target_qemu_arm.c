@@ -6,8 +6,8 @@
  */
 
 #include "target/target.h"
-#include "kernel/core/driver/blkdev.h"
-#include "kernel/core/driver/ramblk.h"
+#include "kernel/vfs/driver/blkdev.h"
+#include "kernel/vfs/driver/ramblk.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"

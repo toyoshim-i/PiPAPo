@@ -6,16 +6,10 @@
  */
 
 #include "target/target.h"
-#include "kernel/common/config.h"
 #include "kernel/core/driver/clock.h"
-#include "kernel/core/driver/i2c.h"
-#include "kernel/core/driver/i2c_kbd.h"
-#include "kernel/core/driver/spi.h"
-#include "kernel/core/driver/spi_sd.h"
-#include "common/errno.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mpu.h"
-#include "pico1calc.h"
+#include "kernel/core/pico1calc.h"
 
 #ifdef PPAP_TESTS
 #include "ktest.h"
@@ -25,41 +19,12 @@ void target_early_init(void) {
   mod_vfs.notify(VFS_EVENT_WILL_PLL_CHANGE);
   clock_init_pll();
   mod_vfs.notify(VFS_EVENT_PLL_CHANGED);
-  spi_init(400000);
-  mod_vfs.klogf("SPI0: initialised at 400 kHz\n");
-  /* Probe I2C first to detect PicoCalc carrier board (STM32 keyboard
-   * controller).  LCD init is gated on this because PL022 SPI master
-   * mode completes transfers even without a slave, so spi_lcd_ok()
-   * cannot detect a missing LCD. */
-  i2c_init();
-  mod_vfs.klogf("I2C1: initialised at 10 kHz\n");
-  kbd_init();
-  if (!kbd_present())
-    mod_vfs.klogf("PicoCalc peripherals not detected (skipping LCD/fbcon)\n");
-  /* LCD + fbcon init deferred to VFS_EVENT_LATE_INIT (pico1calc_logger.c) */
+  /* SPI, I2C, LCD, fbcon init deferred to VFS events (pico1calc_logger.c) */
 }
 
 void target_late_init(void) {
-  /* TODO: SD init disabled — spi_xfer() hangs on the first SPI0 data
-   * transfer after UF2 bootloader warm boot.  The PL022 accepts TX data
-   * but never produces RX data, suggesting clk_peri or GPIO mux issue.
-   * Investigate: try SPI0 loopback test, verify clk_peri, check if the
-   * bootloader's boot2 reconfigures pin mux for QSPI that conflicts. */
-#if 0
-    int rc = sd_init();
-    if (rc == 0)
-        mod_vfs.klogf("SD: card initialised, mmcblk0 registered\n");
-    else if (rc == -ENODEV)
-        mod_vfs.klogf("SD: no card detected (skipping)\n");
-    else
-        mod_vfs.klogf("SD: init failed (err=%u)\n", (unsigned)(-(int)rc));
-#else
-  mod_vfs.klogf("SD: disabled (SPI0 hang under investigation)\n");
-#endif
-
   mod_vfs.notify(VFS_EVENT_LATE_INIT);
   mpu_init();
-  /* core1_launch moved to kmain — must run after init gets PID 1 */
 }
 
 void target_post_mount(void) {
@@ -81,6 +46,8 @@ const char *target_init_path(void) {
 }
 
 const char *target_name(void) { return "pico1calc"; }
+
+extern int kbd_present(void);
 
 uint32_t target_caps(void) {
   uint32_t caps =

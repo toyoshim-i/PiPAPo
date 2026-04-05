@@ -12,17 +12,17 @@
  * a single-sector FAT cache for efficiency.
  */
 
-#include "vfat.h"
+#include "kernel/vfs/vfat.h"
 
 #include <stddef.h>
 
-#include "kernel/core/driver/blkdev.h"
+#include "kernel/vfs/driver/blkdev.h"
 #include "common/errno.h"
 #include "kernel/common/spinlock.h" /* SPIN_FS */
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/common/config.h"
-#include "vfat_format.h"
+#include "kernel/vfs/vfat_format.h"
 
 /* ── Sector buffer (on stack or static) ─────────────────────────────────── */
 

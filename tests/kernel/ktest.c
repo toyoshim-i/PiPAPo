@@ -21,8 +21,8 @@
 #include "kernel/core/syscall/syscall.h"
 #include "kernel/core/signal/signal.h"
 #ifdef PPAP_HAS_BLKDEV
-#include "kernel/core/driver/blkdev.h"
-#include "kernel/core/driver/loopback.h"
+#include "kernel/vfs/driver/blkdev.h"
+#include "kernel/vfs/driver/loopback.h"
 #include "kernel/vfs/ufs.h"
 #endif
 #include "kernel/vfs/fstab.h"

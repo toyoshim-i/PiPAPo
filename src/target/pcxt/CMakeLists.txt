@@ -287,7 +287,7 @@ set(KERNEL_CORE_SOURCES
   ${PPAP_ROOT}/src/kernel/core/signal/signal.c
   ${PPAP_ROOT}/src/kernel/core/cpu/cpu.c
   ${PPAP_ROOT}/src/kernel/core/cpu/cpu_native.c
-  ${PPAP_ROOT}/src/kernel/core/driver/blkdev.c
+  ${PPAP_ROOT}/src/kernel/vfs/driver/blkdev.c
   ${PPAP_ROOT}/src/kernel/core/exec/exec.c
   ${PPAP_ROOT}/src/kernel/core/exec/elf16_loader.c
   ${PPAP_ROOT}/src/kernel/core/exec/flat_loader.c
@@ -305,7 +305,7 @@ set(KERNEL_CORE_SOURCES
 
 set(TARGET_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_pcxt.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/floppy_blk.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/floppy_blk.c
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/timer_pit.c
   # Core-side stubs: caller stubs for VFS, entry stubs for core
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/vfs_stubs.S

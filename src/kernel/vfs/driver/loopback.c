@@ -12,14 +12,14 @@
  * incremented on setup, decremented on teardown).
  */
 
-#include "loopback.h"
+#include "kernel/vfs/driver/loopback.h"
 
 #include <stddef.h>
 
 #include "common/errno.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
-#include "blkdev.h"
+#include "kernel/vfs/driver/blkdev.h"
 
 /* ── Loopback device state ─────────────────────────────────────────────── */
 

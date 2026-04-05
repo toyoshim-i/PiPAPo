@@ -9,8 +9,8 @@
  */
 
 #include "target/target.h"
-#include "kernel/core/driver/blkdev.h"
-#include "kernel/core/driver/flatblk.h"
+#include "kernel/vfs/driver/blkdev.h"
+#include "kernel/vfs/driver/flatblk.h"
 #include "kernel/common/mod/mod_vfs.h"
 
 #ifdef PPAP_TESTS

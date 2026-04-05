@@ -10,25 +10,25 @@
  * with '#' are comments, blank lines are skipped.
  */
 
-#include "fstab.h"
+#include "kernel/vfs/fstab.h"
 
 #include "kernel/vfs/klog.h"
 #include "kernel/common/mod/mod_vfs.h"
 #ifdef PPAP_HAS_BLKDEV
-#include "kernel/core/driver/blkdev.h"
-#include "kernel/core/driver/loopback.h"
-#include "ufs.h"
-#include "vfat.h"
+#include "kernel/vfs/driver/blkdev.h"
+#include "kernel/vfs/driver/loopback.h"
+#include "kernel/vfs/ufs.h"
+#include "kernel/vfs/vfat.h"
 #endif
 #include <stddef.h>
 
 #include "common/errno.h"
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/core/mm/mem_region.h"
-#include "devfs.h"
-#include "procfs.h"
-#include "romfs.h"
-#include "tmpfs.h"
+#include "kernel/vfs/devfs.h"
+#include "kernel/vfs/procfs.h"
+#include "kernel/vfs/romfs.h"
+#include "kernel/vfs/tmpfs.h"
 
 /* ── String helpers ───────────────────────────────────────────────────── */
 

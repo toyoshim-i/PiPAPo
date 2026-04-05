@@ -31,8 +31,8 @@
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
 #ifdef PPAP_HAS_BLKDEV
-#include "kernel/core/driver/blkdev.h"
-#include "kernel/core/driver/flatblk.h"
+#include "kernel/vfs/driver/blkdev.h"
+#include "kernel/vfs/driver/flatblk.h"
 #endif
 #include <stddef.h>
 #include <stdint.h>

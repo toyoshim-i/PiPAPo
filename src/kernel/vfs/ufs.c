@@ -19,18 +19,18 @@
  *   readlink — fast symlink (inline) or data block symlink
  */
 
-#include "ufs.h"
+#include "kernel/vfs/ufs.h"
 
 #include <stddef.h>
 
-#include "kernel/core/driver/blkdev.h"
+#include "kernel/vfs/driver/blkdev.h"
 #include "common/errno.h"
 #include "kernel/common/spinlock.h" /* SPIN_FS */
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/vfs/klog.h"
-#include "ufs_format.h"
+#include "kernel/vfs/ufs_format.h"
 
 /* ── Constants ────────────────────────────────────────────────────────── */
 

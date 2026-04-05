@@ -12,12 +12,12 @@
  *   /dev/urandom — read → RP2040 ROSC random bits (LFSR fallback on QEMU)
  */
 
-#include "devfs.h"
+#include "kernel/vfs/devfs.h"
 
 #include "kernel/common/mod/mod_vfs.h"
 #ifdef PPAP_HAS_BLKDEV
-#include "kernel/core/driver/blkdev.h"
-#include "kernel/core/driver/loopback.h"
+#include "kernel/vfs/driver/blkdev.h"
+#include "kernel/vfs/driver/loopback.h"
 #endif
 #include <stddef.h>
 #include <stdint.h>
