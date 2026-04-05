@@ -18,7 +18,7 @@
 
 #include "kernel/core/ioregs.h"
 #include "kernel/common/config.h"
-#include "kernel/vfs/uart.h"
+#include "kernel/vfs/driver/uart.h"
 #include "kernel/vfs/tty.h"   /* tty_rx_notify, tty_signal_intr */
 #include "kernel/common/spinlock.h" /* SPIN_TXRING */
 #include "target/rpico.h"

@@ -1,7 +1,7 @@
 /* pico2_logger.c — VFS-side UART/logger for Pico 2 */
 
 #include "kernel/vfs/klog.h"
-#include "kernel/vfs/uart.h"
+#include "kernel/vfs/driver/uart.h"
 #include "kernel/vfs/driver/uart_rpico.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/config.h"

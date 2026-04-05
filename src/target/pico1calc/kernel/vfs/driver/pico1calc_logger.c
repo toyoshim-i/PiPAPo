@@ -1,9 +1,9 @@
 /* pico1calc_logger.c — VFS-side UART/logger for PicoCalc */
 
 #include "kernel/vfs/klog.h"
-#include "kernel/vfs/uart.h"
+#include "kernel/vfs/driver/uart.h"
 #include "kernel/vfs/driver/uart_rpico.h"
-#include "kernel/vfs/fbcon.h"
+#include "kernel/vfs/driver/fbcon.h"
 #include "kernel/vfs/tty.h"
 #include "kernel/vfs/devfs.h"
 #include "kernel/vfs/procfs.h"

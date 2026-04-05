@@ -12,7 +12,7 @@
  * movement, screen/line erase, SGR colors, and scroll regions.
  */
 
-#include "kernel/vfs/fbcon.h"
+#include "kernel/vfs/driver/fbcon.h"
 
 #include <stdint.h>
 #include <string.h>

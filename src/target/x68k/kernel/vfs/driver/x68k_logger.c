@@ -1,7 +1,7 @@
 /* x68k_logger.c — VFS-side UART/logger for X68000 */
 
 #include "kernel/vfs/klog.h"
-#include "kernel/vfs/uart.h"
+#include "kernel/vfs/driver/uart.h"
 #include "kernel/vfs/tty.h"
 #include "kernel/common/mod/mod_vfs.h"
 

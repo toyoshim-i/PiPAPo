@@ -9,7 +9,7 @@
 #include "kernel/vfs/driver/bios_con.h"
 #include "kernel/vfs/driver/pcxt_logger.h"
 #include "kernel/vfs/klog.h"
-#include "kernel/vfs/uart.h"
+#include "kernel/vfs/driver/uart.h"
 
 static int pcxt_logger_putc(char c, void (*notify)(void)) {
   if (!uart_putc(c, notify)) return 0;

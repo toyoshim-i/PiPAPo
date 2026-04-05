@@ -24,7 +24,7 @@
 
 #include "common/errno.h"
 #include "kernel/core/mm/mem_region.h"
-#include "kernel/vfs/uart.h"
+#include "kernel/vfs/driver/uart.h"
 
 /* ── Device node descriptor ──────────────────────────────────────────────── */
 

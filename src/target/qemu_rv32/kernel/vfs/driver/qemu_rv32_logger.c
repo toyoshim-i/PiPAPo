@@ -1,7 +1,7 @@
 /* qemu_rv32_logger.c — VFS-side UART/logger for QEMU RISC-V */
 
 #include "kernel/vfs/klog.h"
-#include "kernel/vfs/uart.h"
+#include "kernel/vfs/driver/uart.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/config.h"
 

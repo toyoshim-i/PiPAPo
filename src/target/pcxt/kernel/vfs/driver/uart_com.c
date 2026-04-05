@@ -6,7 +6,7 @@
  */
 
 #include "kernel/core/cpu.h"
-#include "kernel/vfs/uart.h"
+#include "kernel/vfs/driver/uart.h"
 
 void uart_init(void)
 {

@@ -43,7 +43,7 @@ add_executable(ppap_pico1calc
     ${PPAP_ROOT}/src/kernel/core/driver/spi_sd.c
     ${PPAP_ROOT}/src/kernel/vfs/driver/lcd_panel.c
     ${PPAP_ROOT}/src/kernel/core/driver/i2c_kbd.c
-    ${PPAP_ROOT}/src/kernel/vfs/fbcon.c
+    ${PPAP_ROOT}/src/kernel/vfs/driver/fbcon.c
 )
 
 ppap_arm_target_common(ppap_pico1calc)
