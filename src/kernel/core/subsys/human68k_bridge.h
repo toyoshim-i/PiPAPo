@@ -10,7 +10,7 @@
 
 #include <stdint.h>
 
-#include "kernel/core/mm/mem_layout.h"
+#include "kernel/common/core/mem_layout.h"
 #include "subsys.h"
 
 /*

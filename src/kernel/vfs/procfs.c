@@ -30,7 +30,7 @@
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
-#include "kernel/core/proc/proc.h"
+#include "kernel/core/proc/proc.h" /* proc_tracked_page_count — TODO: move to mod_core */
 #include "kernel/vfs/devfs.h"
 #include "kernel/vfs/romfs.h"
 #include "kernel/vfs/tmpfs.h"

@@ -11,7 +11,7 @@
 
 #include <stdint.h>
 
-#include "page.h" /* page_id_t, PAGE_ID_INVALID */
+#include "kernel/common/core/page_types.h" /* page_id_t, PAGE_ID_INVALID */
 
 typedef enum {
   PPAP_MEM_NONE = 0,

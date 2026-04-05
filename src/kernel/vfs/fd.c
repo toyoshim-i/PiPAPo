@@ -20,7 +20,7 @@
 #include "kernel/common/mod/mod_vfs.h"
 #include "devfs.h"
 #include "kernel/core/mm/mem_region.h"
-#include "kernel/core/proc/proc.h" /* pcb_t — only for fd_stdio_init compat */
+#include "kernel/common/core/proc_info.h" /* pcb_t — only for fd_stdio_init compat */
 #include "kernel/common/config.h"
 
 /* ── System-wide file descriptor pool ──────────────────────────────────────── */

@@ -31,7 +31,7 @@ struct blkdev;
 typedef struct blkdev blkdev_t;
 struct pcb;
 
-#include "kernel/core/mm/mem_layout.h"  /* ppap_mem_class_t, proc_image_segment_t,
+#include "kernel/common/core/mem_layout.h"  /* ppap_mem_class_t, proc_image_segment_t,
                                   * page_id_t (via page.h) */
 
 #include "kernel/common/mod/module.h"
