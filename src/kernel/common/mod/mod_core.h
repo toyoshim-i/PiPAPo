@@ -24,16 +24,17 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/* Forward declarations — full definitions in mm/ and blkdev/ headers */
+/* Forward declarations — full definitions in mm/, blkdev/, proc/ headers */
 struct kmem_pool;
 typedef struct kmem_pool kmem_pool_t;
 struct blkdev;
 typedef struct blkdev blkdev_t;
+struct pcb;
 
 #include "kernel/core/mm/mem_layout.h"  /* ppap_mem_class_t, proc_image_segment_t,
                                   * page_id_t (via page.h) */
 
-#include "module.h"
+#include "kernel/common/mod/module.h"
 
 MOD_DECLARE_BEGIN(core)
 
@@ -218,6 +219,21 @@ MOD_DECLARE_BEGIN(core)
    * The SVC handler saves original arguments and restores them when
    * the process is woken, re-entering the syscall transparently.
    */
+  /*
+   * subsys_read_proc — Generate /proc content for a subsystem.
+   *
+   *   tag     Subsystem index (SUBSYS_PPAP, etc.).
+   *   p       Target process (NULL to probe).
+   *   name    Filename (e.g. "termconv", NULL to probe).
+   *   buf     Output buffer (NULL to probe).
+   *   bufsiz  Buffer size.
+   *
+   * Returns bytes written (>= 0) on success.
+   * Returns -1 if the subsystem has no handler (probe check).
+   */
+  MOD_FUNC(core, int, subsys_read_proc, int, struct pcb *, const char *,
+                                         char *, int)
+
   MOD_FUNC(core, void, svc_set_restart, void)
 
 MOD_DECLARE_END(core)
@@ -225,7 +241,7 @@ MOD_DECLARE_END(core)
 /* MOD_CORE_FUNC_COUNT is defined in mod_core.inc — the single source
  * of truth shared by both C and assembly stubs. */
 #define MOD_CORE_ENTRY(name, idx) /* count only */
-#include "mod_core.inc"
+#include "kernel/common/mod/mod_core.inc"
 #undef MOD_CORE_ENTRY
 _Static_assert(sizeof(mod_core_t) == MOD_CORE_FUNC_COUNT * sizeof(void (*)(void)),
                "mod_core_t size mismatch — update MOD_CORE_FUNC_COUNT in "

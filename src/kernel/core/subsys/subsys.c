@@ -6,25 +6,25 @@
  * CMake build flags: PPAP_ENABLE_HUMAN68K, PPAP_ENABLE_CPM, PPAP_ENABLE_SOS.
  */
 
-#include "subsys.h"
+#include "kernel/core/subsys/subsys.h"
 
-#include "kernel/common/core/subsys_info.h"
 #include "kernel/common/core/ecpu_info.h"
+#include "kernel/common/core/subsys_info.h"
 
 /* Forward declarations — conditionally compiled based on CMake flags */
 #ifdef PPAP_ENABLE_HUMAN68K
-#include "human68k_bridge.h"
+#include "kernel/core/subsys/human68k_bridge.h"
 #endif
 
 #ifdef PPAP_ENABLE_CPM
-#include "cpm_bridge.h"
+#include "kernel/core/subsys/cpm_bridge.h"
 #endif
 
 #ifdef PPAP_ENABLE_SOS
-#include "sos_bridge.h"
+#include "kernel/core/subsys/sos_bridge.h"
 #endif
 
-/* Statically initialised name arrays — read by procfs via shared headers */
+/* Statically initialised name arrays — shared via subsys_info.h */
 const char *subsys_names[SUBSYS_MAX] = {
     [SUBSYS_PPAP] = "ppap",
 #ifdef PPAP_ENABLE_HUMAN68K
@@ -63,4 +63,15 @@ const subsys_ops_t *subsys_ops_table[SUBSYS_MAX] = {
 
 void subsys_init(void) {
   /* Name arrays are statically initialised above. */
+}
+
+/* ── Query interface (called by procfs via subsys_info.h) ────────────── */
+
+int subsys_read_proc(int tag, struct pcb *p, const char *name,
+                     char *buf, int bufsiz) {
+  if ((unsigned)tag >= SUBSYS_MAX) return -1;
+  if (!subsys_ops_table[tag]) return -1;
+  if (!subsys_ops_table[tag]->on_proc_read) return -1;
+  if (!buf) return 0;  /* probe: handler exists */
+  return subsys_ops_table[tag]->on_proc_read(p, name, buf, bufsiz);
 }

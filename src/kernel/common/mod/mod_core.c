@@ -8,11 +8,12 @@
  * (they're kmem_alloc, not core_kmem_alloc) so we wire them manually.
  */
 
-#include "mod_core.h"
+#include "kernel/common/mod/mod_core.h"
 #include "kernel/core/mm/kmem.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/driver/blkdev.h"
 #include "kernel/core/proc/sched.h"
+#include "kernel/core/subsys/subsys.h"
 #include "kernel/core/syscall/syscall.h"
 
 /* Cross-module blkdev wrappers — execute dev->read/write in core's CS.
@@ -43,6 +44,7 @@ mod_core_t mod_core = {
   .sched_wakeup = sched_wakeup,
   .sched_switch = sched_switch,
   .sched_get_ticks = sched_get_ticks,
+  .subsys_read_proc = subsys_read_proc,
   .svc_set_restart = svc_set_restart,
   .blkdev_read = core_blkdev_read,
   .blkdev_write = core_blkdev_write,

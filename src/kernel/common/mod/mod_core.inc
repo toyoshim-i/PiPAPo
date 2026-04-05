@@ -26,8 +26,9 @@ MOD_CORE_ENTRY(mem_region_total_bytes, 13)
 MOD_CORE_ENTRY(sched_get_ticks,      14)
 MOD_CORE_ENTRY(sched_wakeup,         15)
 MOD_CORE_ENTRY(sched_switch,         16)
-MOD_CORE_ENTRY(svc_set_restart,      17)
+MOD_CORE_ENTRY(subsys_read_proc,     17)
+MOD_CORE_ENTRY(svc_set_restart,      18)
 
 #ifndef MOD_CORE_FUNC_COUNT
-#define MOD_CORE_FUNC_COUNT 18
+#define MOD_CORE_FUNC_COUNT 19
 #endif

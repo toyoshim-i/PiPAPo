@@ -21,7 +21,8 @@
 #ifndef PPAP_KERNEL_PROC_SCHED_H
 #define PPAP_KERNEL_PROC_SCHED_H
 
-#include "proc.h"
+#include "kernel/common/core/sched_info.h"
+#include "kernel/core/proc/proc.h"
 
 /*
  * SysTick reload value — derived from config.h.
@@ -118,14 +119,5 @@ void sched_wakeup(void *channel);
  * Used by time syscalls (clock_gettime, gettimeofday) to derive wall time.
  */
 uint32_t sched_get_ticks(void);
-
-/*
- * Per-core CPU jiffy counters — updated in SysTick_Handler.
- * Indexed by core_id() (0 or 1).
- * Used by procfs to generate /proc/stat and /proc/uptime.
- */
-extern uint32_t cpu_user_ticks[2];
-extern uint32_t cpu_system_ticks[2];
-extern uint32_t cpu_idle_ticks[2];
 
 #endif /* PPAP_KERNEL_PROC_SCHED_H */

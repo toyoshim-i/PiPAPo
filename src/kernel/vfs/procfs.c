@@ -18,27 +18,26 @@
  *   /proc/<pid>/termconv — terminal conversion mode (subsystem-specific)
  */
 
-#include "procfs.h"
+#include "kernel/vfs/procfs.h"
 
-#include "devfs.h"
-#include "romfs.h"
-#include "tmpfs.h"
-#ifdef PPAP_HAS_BLKDEV
-#include "ufs.h"
-#include "vfat.h"
-#endif
 #include <stddef.h>
 #include <stdint.h>
 
 #include "common/errno.h"
+#include "kernel/common/config.h"
+#include "kernel/common/core/page_types.h"
+#include "kernel/common/core/sched_info.h"
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
-#include "kernel/common/core/page_types.h"
 #include "kernel/core/proc/proc.h"
-#include "kernel/core/proc/sched.h"      /* cpu_*_ticks[] data (Step 4: two-pass link) */
-#include "kernel/core/subsys/subsys.h"
-#include "kernel/common/config.h"
+#include "kernel/vfs/devfs.h"
+#include "kernel/vfs/romfs.h"
+#include "kernel/vfs/tmpfs.h"
+#ifdef PPAP_HAS_BLKDEV
+#include "kernel/vfs/ufs.h"
+#include "kernel/vfs/vfat.h"
+#endif
 
 /* ── Minimal integer-to-string formatter ────────────────────────────────────
  */
@@ -319,7 +318,8 @@ static int gen_subsys(char *buf, int bufsiz) {
     pos = fmt_append_u32(buf, pos, bufsiz, i);
     pos = fmt_append(buf, pos, bufsiz, " ");
     pos = fmt_append(buf, pos, bufsiz, subsys_names[i]);
-    if (subsys_ops_table[i]) pos = fmt_append(buf, pos, bufsiz, " [active]");
+    if (mod_core.subsys_read_proc(i, NULL, NULL, NULL, 0) >= 0)
+      pos = fmt_append(buf, pos, bufsiz, " [active]");
     pos = fmt_append(buf, pos, bufsiz, "\n");
   }
   return pos;
@@ -623,11 +623,11 @@ static int procfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
       return 0;
     }
 
+#ifdef PPAP_HAS_SUBSYS
     if (str_eq(name, "termconv")) {
       /* Only visible if the subsystem provides on_proc_read */
       uint8_t tag = proc_table[slot].subsys;
-      if (tag < SUBSYS_MAX && subsys_ops_table[tag] &&
-          subsys_ops_table[tag]->on_proc_read) {
+      if (mod_core.subsys_read_proc(tag, NULL, NULL, NULL, 0) >= 0) {
         vnode_t *vn = mod_vfs.vnode_alloc();
         if (!vn) return -ENOMEM;
         vn->type = VNODE_FILE;
@@ -640,6 +640,7 @@ static int procfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
         return 0;
       }
     }
+#endif
 
     return -ENOENT;
   }
@@ -671,15 +672,14 @@ static long procfs_read(vnode_t *vn, page_id_t page, uint16_t page_off,
       total = gen_pid_cmdline(tmp, (int)sizeof(tmp), p);
     else if (sub == PRIV_PID_SUBSYS)
       total = gen_pid_subsys(tmp, (int)sizeof(tmp), p);
+#ifdef PPAP_HAS_SUBSYS
     else if (sub == PRIV_PID_TERMCONV) {
       uint8_t tag = p->subsys;
-      if (tag < SUBSYS_MAX && subsys_ops_table[tag] &&
-          subsys_ops_table[tag]->on_proc_read)
-        total = subsys_ops_table[tag]->on_proc_read((pcb_t *)p, "termconv", tmp,
-                                                    (int)sizeof(tmp));
-      else
-        total = 0;
-    } else
+      total = mod_core.subsys_read_proc(tag, (struct pcb *)p, "termconv",
+                               tmp, (int)sizeof(tmp));
+    }
+#endif
+    else
       return -(long)EIO;
   } else {
     /* Static node */
@@ -772,8 +772,12 @@ static int procfs_readdir(vnode_t *dir, struct dirent *entries,
 
     uint32_t slot = (uint32_t)(uintptr_t)dir->fs_priv;
     uint8_t tag = (slot < PROC_MAX) ? proc_table[slot].subsys : 0;
-    int has_proc_read = (tag < SUBSYS_MAX && subsys_ops_table[tag] &&
-                         subsys_ops_table[tag]->on_proc_read);
+#ifdef PPAP_HAS_SUBSYS
+    int has_proc_read = mod_core.subsys_read_proc(tag, NULL, NULL, NULL, 0) >= 0;
+#else
+    int has_proc_read = 0;
+    (void)tag;
+#endif
 
     while (idx < nentries && (size_t)count < max_entries) {
       if (pid_entries[idx].needs_proc_read && !has_proc_read) {

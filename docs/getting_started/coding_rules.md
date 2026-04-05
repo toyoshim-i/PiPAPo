@@ -14,7 +14,11 @@ with these adjustments for embedded C:
 - **Line length**: 80 columns, strict.
 - **Comments**: `/* */` for block, `//` for single-line.
 - **Include order**: (1) corresponding header, (2) C stdlib,
-  (3) project headers.
+  (3) project headers — alphabetical within each group.
+- **Include paths**: always use full paths from `src/` root, never
+  relative paths.  Example: `#include "kernel/vfs/procfs.h"`, not
+  `#include "procfs.h"`.  This ensures the module boundary checker
+  can detect cross-module violations by inspecting include strings.
 
 This document overrides the Google guide on conflicts.
 

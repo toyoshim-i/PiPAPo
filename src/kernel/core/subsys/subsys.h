@@ -95,4 +95,8 @@ extern const subsys_ops_t *subsys_ops_table[SUBSYS_MAX];
 /* Register subsystem names with procfs. Call once at boot. */
 void subsys_init(void);
 
+/* Query interface — VFS (procfs) calls via mod_core. */
+int subsys_read_proc(int tag, struct pcb *p, const char *name,
+                     char *buf, int bufsiz);
+
 #endif /* PPAP_KERNEL_SUBSYS_SUBSYS_H */
