@@ -70,87 +70,17 @@ On i16 (PC/XT), the kernel is split into separate code-segment modules (core + V
 
 ```
 PPAP/
-  cmake/                    Shared cmake modules (arm_m, m68k, kernel, user)
-  src/
-    target/
-      target.h              Target abstraction API (5-function interface)
-      qemu_arm/             QEMU mps2-an500 (ARM): CMSDK UART, RAM block device
-        qemu.ld             ARM QEMU layout: ROM @ 0x0, RAM @ 0x20000000
-      qemu_m68k/            QEMU MCF5208 (m68k): UART, RAM block device
-      pico1/                Official Raspberry Pi Pico: romfs-only, no SD
-        pico1.ld            Pico: 2 MB flash, 80 KB kernel @ 0x10001000
-      pico1calc/            ClockworkPi PicoCalc: SPI SD card, 16 MB flash
-        pico1calc.ld        PicoCalc: 16 MB flash, 96 KB kernel @ 0x10004000
-      pcxt/                PC/XT i8086: UFS floppy, module segment split
-        stubs/              Far-call stubs for core↔VFS module boundary
-    boot/
-      stage1.S              Stage 1 bootloader (ARM/RP2040: sets VTOR, jumps to kernel)
-    kernel/
-      common/               Shared headers and module interfaces
-        mod/                Module system (mod_core, mod_vfs, .inc files)
-        core/               Data-only shared types (pcb_t, page_id_t, mem_layout)
-        subtle/             Legacy helpers (page-cursor inlines)
-        config.h            Build configuration + memory map constants
-        spinlock.h          SMP spinlock / core_id()
-      core/                 Core module
-        main.c              Unified kmain() — uses target hooks for all platforms
-        mm/                 Memory management (page allocator, kmem, mem_region)
-        proc/               Process management (PCB, scheduler, context switch)
-        syscall/            System call layer (trap handler, dispatch, sys_*)
-        exec/               ELF loader + execve
-        signal/             Signal infrastructure
-        subsys/             Subsystem bridges (Human68k, CP/M, SOS)
-        cpu/                CPU abstraction and emulated CPUs (m68k, z80)
-      vfs/                  VFS module
-        vfs.c, namei.c      Virtual filesystem (mount table, path resolution)
-        fd.c, tty.c, pipe.c File descriptors, TTY, pipes
-        devfs, procfs, ...  Filesystem drivers (romfs, devfs, procfs, vfat, ufs, tmpfs)
-        driver/             Device drivers (blkdev, uart, spi, i2c, lcd, fbcon, ...)
-  src/user/                 User-space programs + per-arch build rules
-    arch/arm_m/             ARM: crt0.S, syscall.S, user.ld
-    arch/m68k/              m68k: crt0.S, syscall.S, user.ld
-    arch/xtensa/            Xtensa: crt0.S, syscall.S, user.ld
-  tests/
-    kernel/                 On-target kernel integration tests (ktest.c)
-    host/                   Host-native unit tests (test_kmem, h68k_path, eCPU cores)
-    user/                   User-space test programs (test_exec, test_pipe, etc.)
-  tools/
-    mkromfs/                Host tool: generate romfs.bin image
-    mkufs/                  Host tool: generate UFS filesystem image
-    mkfatimg/               Host tool: generate FAT32 test image
-    bdf2c.py                Convert BDF font to C array
-    json2c.py               Convert IchigoJam JSON font to C array
-    uf2sanitize.py          Post-process UF2 for PicoCalc bootloader
-  third_party/
-    pico-sdk/               git submodule — Raspberry Pi Pico SDK (ARM targets)
-    musl/                   git submodule — musl libc v1.2.5
-    busybox/                git submodule — busybox 1_36_1
-    rogue/                  git submodule — Rogue 5.4.4 (Davidslv/rogue)
-    patches/
-      musl/                 musl overlay + PIE linker scripts (libc_arm_m.ld, libc_m68k.ld)
-      busybox/              busybox config fragments
-      rogue/                rogue curses shim + header overrides
-    build_musl.sh           Build script: musl libc.a (ARM and m68k)
-    build_busybox.sh        Build script: static busybox binary
-    build_rogue.sh          Build script: Rogue with minimal curses shim
-    esp-idf/                git submodule — ESP-IDF v5.x (Xtensa targets)
-  src/etc/                  Root filesystem config templates (fstab, passwd, …)
-  scripts/
-    setup.sh         Build Docker toolchain images per target
-    build.sh                Build any target (pico1, pico1calc, qemu_arm, qemu_m68k)
-    run.sh                  Flash or run any target
-    test.sh                 Run tests (--all for full suite)
-  docs/
-    README.md               Documentation index
-    spec_v07.md             Full design specification
-    getting_started/        Build/run/test/debug guides + dev workflow docs
-    kernel/                 Kernel internals (memory, syscall, procfs, trace, fs)
-    subsystems/             Subsystem framework + Human68k/CP/M docs
-    ecpu/                   eCPU framework + m68k/z80 docs
-    targets/                Target-specific notes
-    reference/              Hardware reference documents (PicoCalc, LCD)
-    archive/history/        Development phase plans and historical notes
+  cmake/          Shared cmake modules (arm_m, m68k, kernel, user)
+  src/            Kernel, arch overlays, target overlays, user programs
+  tests/          Kernel integration tests, host unit tests, user-space tests
+  tools/          Host tools (mkromfs, mkufs, mkfatimg, font converters)
+  third_party/    git submodules (pico-sdk, musl, busybox, rogue, esp-idf)
+  scripts/        setup.sh, build.sh, run.sh, test.sh, pre-build checks
+  docs/           Design spec, kernel internals, target notes, proposals
 ```
+
+For the full `src/` tree layout (kernel modules, arch overlays, include conventions),
+see [docs/getting_started/source_tree.md](/docs/getting_started/source_tree.md).
 
 ## Quick Start
 
