@@ -11,8 +11,8 @@
  * #ifdef for QEMU — the hardware check handles both targets transparently.
  */
 
-#ifndef PPAP_KERNEL_MM_MPU_H
-#define PPAP_KERNEL_MM_MPU_H
+#ifndef PPAP_KERNEL_CORE_MM_MPU_H
+#define PPAP_KERNEL_CORE_MM_MPU_H
 
 /* Forward declaration — full definition in proc/proc.h */
 typedef struct pcb pcb_t;
@@ -43,4 +43,4 @@ void mpu_init(void);
  */
 void mpu_switch(pcb_t *next);
 
-#endif /* PPAP_KERNEL_MM_MPU_H */
+#endif /* PPAP_KERNEL_CORE_MM_MPU_H */

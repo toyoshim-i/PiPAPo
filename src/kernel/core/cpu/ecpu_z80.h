@@ -8,8 +8,8 @@
  * See docs/ecpu/z80.md for the full design.
  */
 
-#ifndef PPAP_KERNEL_CPU_ECPU_Z80_H
-#define PPAP_KERNEL_CPU_ECPU_Z80_H
+#ifndef PPAP_KERNEL_CORE_CPU_ECPU_Z80_H
+#define PPAP_KERNEL_CORE_CPU_ECPU_Z80_H
 
 #include <stdint.h>
 
@@ -279,4 +279,4 @@ void z80_write_rr(z80_state_t *cpu, uint8_t pp, uint16_t val);
 /* The Z80 core's ops table — registered for use by subsystems/kernel */
 extern const cpu_ops_t ecpu_z80_ops;
 
-#endif /* PPAP_KERNEL_CPU_ECPU_Z80_H */
+#endif /* PPAP_KERNEL_CORE_CPU_ECPU_Z80_H */

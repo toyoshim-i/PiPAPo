@@ -5,8 +5,8 @@
  * Constants only — no function declarations.
  */
 
-#ifndef PPAP_KERNEL_COMMON_CORE_SIGNAL_DEFS_H
-#define PPAP_KERNEL_COMMON_CORE_SIGNAL_DEFS_H
+#ifndef PPAP_COMMON_SIGNAL_H
+#define PPAP_COMMON_SIGNAL_H
 
 #define SIGHUP 1
 #define SIGINT 2
@@ -23,4 +23,4 @@
 
 #define NSIG 32
 
-#endif /* PPAP_KERNEL_COMMON_CORE_SIGNAL_DEFS_H */
+#endif /* PPAP_COMMON_SIGNAL_H */

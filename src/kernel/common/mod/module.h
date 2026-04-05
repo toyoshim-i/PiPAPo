@@ -16,8 +16,8 @@
  * the struct entries become far-call thunks.
  */
 
-#ifndef PPAP_KERNEL_MOD_MODULE_H
-#define PPAP_KERNEL_MOD_MODULE_H
+#ifndef PPAP_KERNEL_COMMON_MOD_MODULE_H
+#define PPAP_KERNEL_COMMON_MOD_MODULE_H
 
 /* Token-pasting helpers (two levels for argument expansion) */
 #define _MOD_CONCAT2(a, b) a##_##b
@@ -56,4 +56,4 @@
 #define MOD_DEFINE_END() \
   };
 
-#endif /* PPAP_KERNEL_MOD_MODULE_H */
+#endif /* PPAP_KERNEL_COMMON_MOD_MODULE_H */

@@ -6,8 +6,8 @@
  * kernel/vfs (klog.c) without requiring kernel/core/arch.h.
  */
 
-#ifndef PPAP_ARCH_ARM_M_IRQ_H
-#define PPAP_ARCH_ARM_M_IRQ_H
+#ifndef PPAP_ARCH_ARM_M_KERNEL_COMMON_IRQ_H
+#define PPAP_ARCH_ARM_M_KERNEL_COMMON_IRQ_H
 
 #include <stdint.h>
 
@@ -45,4 +45,4 @@ static inline void arch_preempt_disable(void) { SYST_CSR &= ~SYST_CSR_TICKINT; }
 
 static inline void arch_preempt_enable(void) { SYST_CSR |= SYST_CSR_TICKINT; }
 
-#endif /* PPAP_ARCH_ARM_M_IRQ_H */
+#endif /* PPAP_ARCH_ARM_M_KERNEL_COMMON_IRQ_H */

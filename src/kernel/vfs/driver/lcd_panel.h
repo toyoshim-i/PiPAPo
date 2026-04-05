@@ -5,8 +5,8 @@
  * transport layer (spi_lcd.h) for hardware communication.
  */
 
-#ifndef PPAP_DRIVERS_LCD_PANEL_H
-#define PPAP_DRIVERS_LCD_PANEL_H
+#ifndef PPAP_KERNEL_VFS_DRIVER_LCD_PANEL_H
+#define PPAP_KERNEL_VFS_DRIVER_LCD_PANEL_H
 
 #include <stdint.h>
 
@@ -20,4 +20,4 @@ void lcd_init(void);
 void lcd_fill_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
                    uint16_t color);
 
-#endif /* PPAP_DRIVERS_LCD_PANEL_H */
+#endif /* PPAP_KERNEL_VFS_DRIVER_LCD_PANEL_H */

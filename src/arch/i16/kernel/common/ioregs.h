@@ -9,8 +9,8 @@
  * IBM PC/XT hardware: 8259A PIC, 8253/8254 PIT, 8250 UART (COM1).
  */
 
-#ifndef PPAP_ARCH_I16_IOREGS_H
-#define PPAP_ARCH_I16_IOREGS_H
+#ifndef PPAP_ARCH_I16_KERNEL_COMMON_IOREGS_H
+#define PPAP_ARCH_I16_KERNEL_COMMON_IOREGS_H
 
 #include <stdint.h>
 
@@ -78,4 +78,4 @@ static inline void io_wait(void)
 #define UART_DIV_9600   12
 #define UART_DIV_115200 1
 
-#endif /* PPAP_ARCH_I16_IOREGS_H */
+#endif /* PPAP_ARCH_I16_KERNEL_COMMON_IOREGS_H */

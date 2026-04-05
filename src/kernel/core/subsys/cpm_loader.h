@@ -5,8 +5,8 @@
  * initializes the Z80 memory, CP/M state, and binary image.
  */
 
-#ifndef PPAP_KERNEL_SUBSYS_CPM_LOADER_H
-#define PPAP_KERNEL_SUBSYS_CPM_LOADER_H
+#ifndef PPAP_KERNEL_CORE_SUBSYS_CPM_LOADER_H
+#define PPAP_KERNEL_CORE_SUBSYS_CPM_LOADER_H
 
 #include "kernel/core/subsys/cpm_bridge.h"
 
@@ -32,4 +32,4 @@
 void cpm_load_com(z80_state_t *cpu, cpm_state_t *cpm, const uint8_t *binary,
                   uint32_t size, const char *cmdline);
 
-#endif /* PPAP_KERNEL_SUBSYS_CPM_LOADER_H */
+#endif /* PPAP_KERNEL_CORE_SUBSYS_CPM_LOADER_H */

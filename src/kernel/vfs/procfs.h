@@ -6,8 +6,8 @@
  * on each read.
  */
 
-#ifndef PPAP_KERNEL_FS_PROCFS_H
-#define PPAP_KERNEL_FS_PROCFS_H
+#ifndef PPAP_KERNEL_VFS_PROCFS_H
+#define PPAP_KERNEL_VFS_PROCFS_H
 
 #include "kernel/common/mod/mod_vfs.h"
 
@@ -20,4 +20,4 @@ extern const vfs_ops_t procfs_ops;
  * /proc/battery shows "not available" if not registered. */
 void procfs_set_battery(int (*read_fn)(uint8_t *buf, int len));
 
-#endif /* PPAP_KERNEL_FS_PROCFS_H */
+#endif /* PPAP_KERNEL_VFS_PROCFS_H */

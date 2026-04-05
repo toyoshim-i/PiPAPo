@@ -15,8 +15,8 @@
  *   I2C1_SCL       : GP7    FUNCSEL 3
  */
 
-#ifndef PPAP_TARGET_PICO1CALC_PICO1CALC_H
-#define PPAP_TARGET_PICO1CALC_PICO1CALC_H
+#ifndef PPAP_TARGET_PICO1CALC_KERNEL_CORE_PICO1CALC_H
+#define PPAP_TARGET_PICO1CALC_KERNEL_CORE_PICO1CALC_H
 
 /* ── SPI0 / SD card pins ────────────────────────────────────────────────────
  */
@@ -47,4 +47,4 @@
 #define GPIO_FUNC_I2C 3 /* I2C function (FUNCSEL = 3) */
 #define GPIO_FUNC_SIO 5 /* SIO — manual GPIO (FUNCSEL = 5) */
 
-#endif /* PPAP_TARGET_PICO1CALC_PICO1CALC_H */
+#endif /* PPAP_TARGET_PICO1CALC_KERNEL_CORE_PICO1CALC_H */

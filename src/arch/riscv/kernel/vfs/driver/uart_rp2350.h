@@ -4,10 +4,10 @@
  * Baud rate switching for the 12 MHz → PLL transition.
  */
 
-#ifndef PPAP_DRIVERS_ARCH_RISCV_UART_RP2350_H
-#define PPAP_DRIVERS_ARCH_RISCV_UART_RP2350_H
+#ifndef PPAP_ARCH_RISCV_KERNEL_VFS_DRIVER_UART_RP2350_H
+#define PPAP_ARCH_RISCV_KERNEL_VFS_DRIVER_UART_RP2350_H
 
 void uart_tx_drain(void);
 void uart_reinit_pll(void);
 
-#endif /* PPAP_DRIVERS_ARCH_RISCV_UART_RP2350_H */
+#endif /* PPAP_ARCH_RISCV_KERNEL_VFS_DRIVER_UART_RP2350_H */

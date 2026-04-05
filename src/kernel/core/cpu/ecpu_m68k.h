@@ -8,8 +8,8 @@
  * See docs/ecpu/m68k.md for the full design.
  */
 
-#ifndef PPAP_KERNEL_CPU_ECPU_M68K_H
-#define PPAP_KERNEL_CPU_ECPU_M68K_H
+#ifndef PPAP_KERNEL_CORE_CPU_ECPU_M68K_H
+#define PPAP_KERNEL_CORE_CPU_ECPU_M68K_H
 
 #include <stdint.h>
 
@@ -278,4 +278,4 @@ void m68k_write_ea(m68k_state_t *cpu, ea_result_t *ea, uint8_t size,
 
 extern const cpu_ops_t ecpu_m68k_ops;
 
-#endif /* PPAP_KERNEL_CPU_ECPU_M68K_H */
+#endif /* PPAP_KERNEL_CORE_CPU_ECPU_M68K_H */

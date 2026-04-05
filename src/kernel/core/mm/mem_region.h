@@ -7,8 +7,8 @@
  * behaviour.
  */
 
-#ifndef PPAP_KERNEL_MM_MEM_REGION_H
-#define PPAP_KERNEL_MM_MEM_REGION_H
+#ifndef PPAP_KERNEL_CORE_MM_MEM_REGION_H
+#define PPAP_KERNEL_CORE_MM_MEM_REGION_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -71,4 +71,4 @@ uint32_t mem_region_free_bytes(ppap_mem_class_t mem_class);
 
 uint32_t mem_region_largest_free_bytes(ppap_mem_class_t mem_class);
 
-#endif /* PPAP_KERNEL_MM_MEM_REGION_H */
+#endif /* PPAP_KERNEL_CORE_MM_MEM_REGION_H */

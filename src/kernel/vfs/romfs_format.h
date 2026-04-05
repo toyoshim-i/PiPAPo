@@ -16,8 +16,8 @@
  * Offsets are relative to the image start (position-independent).
  */
 
-#ifndef PPAP_KERNEL_FS_ROMFS_FORMAT_H
-#define PPAP_KERNEL_FS_ROMFS_FORMAT_H
+#ifndef PPAP_KERNEL_VFS_ROMFS_FORMAT_H
+#define PPAP_KERNEL_VFS_ROMFS_FORMAT_H
 
 #include <stdint.h>
 
@@ -81,4 +81,4 @@ typedef struct {
 /* Total on-flash size of an entry (header + padded name + padded data) */
 #define ROMFS_ENTRY_SIZE(e) (ROMFS_DATA_OFF(e) + ROMFS_ALIGN4((e)->size))
 
-#endif /* PPAP_KERNEL_FS_ROMFS_FORMAT_H */
+#endif /* PPAP_KERNEL_VFS_ROMFS_FORMAT_H */

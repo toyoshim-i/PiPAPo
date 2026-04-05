@@ -15,8 +15,8 @@
  * from file_pool with priv = tty_get_dev(idx).
  */
 
-#ifndef PPAP_KERNEL_FD_TTY_H
-#define PPAP_KERNEL_FD_TTY_H
+#ifndef PPAP_KERNEL_VFS_TTY_H
+#define PPAP_KERNEL_VFS_TTY_H
 
 #include "kernel/vfs/file.h"
 
@@ -79,4 +79,4 @@ void tty_set_console(int idx);
  * primary console. */
 void *tty_get_console_dev(void);
 
-#endif /* PPAP_KERNEL_FD_TTY_H */
+#endif /* PPAP_KERNEL_VFS_TTY_H */

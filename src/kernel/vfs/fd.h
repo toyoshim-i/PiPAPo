@@ -8,8 +8,8 @@
  * This header provides VFS-internal declarations for pipe.c and tty.c.
  */
 
-#ifndef PPAP_KERNEL_FD_FD_H
-#define PPAP_KERNEL_FD_FD_H
+#ifndef PPAP_KERNEL_VFS_FD_H
+#define PPAP_KERNEL_VFS_FD_H
 
 #include <stdint.h>
 
@@ -24,4 +24,4 @@
 int fd_pool_alloc_pipe(const struct file_ops *ops, void *priv,
                        uint32_t flags);
 
-#endif /* PPAP_KERNEL_FD_FD_H */
+#endif /* PPAP_KERNEL_VFS_FD_H */

@@ -10,8 +10,8 @@
  *   - Microsoft Extensible Firmware Initiative FAT32 FS Spec v1.03
  */
 
-#ifndef PPAP_KERNEL_FS_VFAT_FORMAT_H
-#define PPAP_KERNEL_FS_VFAT_FORMAT_H
+#ifndef PPAP_KERNEL_VFS_VFAT_FORMAT_H
+#define PPAP_KERNEL_VFS_VFAT_FORMAT_H
 
 #include <stdint.h>
 
@@ -153,4 +153,4 @@ static inline uint8_t fat_sfn_checksum(const uint8_t name[11]) {
   return sum;
 }
 
-#endif /* PPAP_KERNEL_FS_VFAT_FORMAT_H */
+#endif /* PPAP_KERNEL_VFS_VFAT_FORMAT_H */

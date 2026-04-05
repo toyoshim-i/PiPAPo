@@ -7,8 +7,8 @@
  * sequence around this call.
  */
 
-#ifndef PPAP_DRIVERS_CLOCK_H
-#define PPAP_DRIVERS_CLOCK_H
+#ifndef PPAP_KERNEL_CORE_DRIVER_CLOCK_H
+#define PPAP_KERNEL_CORE_DRIVER_CLOCK_H
 
 /* Configure PLL_SYS and switch clk_sys to it.
  * Output frequency is determined by PPAP_PLL_FBDIV / PPAP_PLL_PD1 / PD2.
@@ -16,4 +16,4 @@
  * After this call clk_sys = clk_peri = PPAP_SYS_HZ. */
 void clock_init_pll(void);
 
-#endif /* PPAP_DRIVERS_CLOCK_H */
+#endif /* PPAP_KERNEL_CORE_DRIVER_CLOCK_H */

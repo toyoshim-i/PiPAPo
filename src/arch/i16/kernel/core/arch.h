@@ -8,8 +8,8 @@
  * Phase P-2 will add real timer/preemption/context-switch support.
  */
 
-#ifndef PPAP_ARCH_I16_ARCH_H
-#define PPAP_ARCH_I16_ARCH_H
+#ifndef PPAP_ARCH_I16_KERNEL_CORE_ARCH_H
+#define PPAP_ARCH_I16_KERNEL_CORE_ARCH_H
 
 #include <stdint.h>
 
@@ -60,4 +60,4 @@ static inline page_id_t arch_user_ptr_to_page(page_id_t base_page,
   return base_page + (page_id_t)(user_off / PAGE_SIZE);
 }
 
-#endif /* PPAP_ARCH_I16_ARCH_H */
+#endif /* PPAP_ARCH_I16_KERNEL_CORE_ARCH_H */

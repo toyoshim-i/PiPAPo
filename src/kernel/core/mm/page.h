@@ -13,8 +13,8 @@
  * centralized in `mem_region.c`.
  */
 
-#ifndef PPAP_KERNEL_MM_PAGE_H
-#define PPAP_KERNEL_MM_PAGE_H
+#ifndef PPAP_KERNEL_CORE_MM_PAGE_H
+#define PPAP_KERNEL_CORE_MM_PAGE_H
 
 #include <stdint.h>
 
@@ -104,4 +104,4 @@ void *mm_page_to_ptr(page_id_t id);
  * Returns PAGE_ID_INVALID only for NULL. */
 page_id_t mm_ptr_to_page(void *ptr);
 
-#endif /* PPAP_KERNEL_MM_PAGE_H */
+#endif /* PPAP_KERNEL_CORE_MM_PAGE_H */

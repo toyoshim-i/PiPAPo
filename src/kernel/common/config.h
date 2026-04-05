@@ -9,8 +9,8 @@
  * one value makes the implications obvious at a glance.
  */
 
-#ifndef PPAP_CONFIG_H
-#define PPAP_CONFIG_H
+#ifndef PPAP_KERNEL_COMMON_CONFIG_H
+#define PPAP_KERNEL_COMMON_CONFIG_H
 
 #include <stdint.h>
 
@@ -200,4 +200,4 @@ extern uint32_t i16_page_pool_base;
 #define TMPFS_NAME_MAX 31    /* max filename in tmpfs (31 chars + NUL) */
 #define TMPFS_DATA_MAX 8192u /* max total file data (8 KB = 2 pages)   */
 
-#endif /* PPAP_CONFIG_H */
+#endif /* PPAP_KERNEL_COMMON_CONFIG_H */

@@ -6,8 +6,8 @@
  * relying on raw address-range heuristics.
  */
 
-#ifndef PPAP_KERNEL_MM_MEM_LAYOUT_H
-#define PPAP_KERNEL_MM_MEM_LAYOUT_H
+#ifndef PPAP_KERNEL_COMMON_CORE_MEM_LAYOUT_H
+#define PPAP_KERNEL_COMMON_CORE_MEM_LAYOUT_H
 
 #include <stdint.h>
 
@@ -84,4 +84,4 @@ static inline proc_image_segment_t proc_image_segment_make_vaddr(
   return seg;
 }
 
-#endif /* PPAP_KERNEL_MM_MEM_LAYOUT_H */
+#endif /* PPAP_KERNEL_COMMON_CORE_MEM_LAYOUT_H */

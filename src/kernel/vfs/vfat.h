@@ -7,11 +7,11 @@
  * Mount: pass a blkdev_t pointer as dev_data to vfs_mount().
  */
 
-#ifndef PPAP_KERNEL_FS_VFAT_H
-#define PPAP_KERNEL_FS_VFAT_H
+#ifndef PPAP_KERNEL_VFS_VFAT_H
+#define PPAP_KERNEL_VFS_VFAT_H
 
 #include "kernel/common/mod/mod_vfs.h"
 
 extern const vfs_ops_t vfat_ops;
 
-#endif /* PPAP_KERNEL_FS_VFAT_H */
+#endif /* PPAP_KERNEL_VFS_VFAT_H */

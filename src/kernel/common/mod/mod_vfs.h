@@ -18,8 +18,8 @@
  * Implementation: src/kernel/vfs/vfs.c, src/kernel/vfs/namei.c
  */
 
-#ifndef PPAP_KERNEL_MOD_MOD_VFS_H
-#define PPAP_KERNEL_MOD_MOD_VFS_H
+#ifndef PPAP_KERNEL_COMMON_MOD_MOD_VFS_H
+#define PPAP_KERNEL_COMMON_MOD_MOD_VFS_H
 
 /* Full VFS type definitions */
 #include "kernel/common/core/page_types.h"
@@ -448,4 +448,4 @@ _Static_assert(sizeof(mod_vfs_t) == MOD_VFS_FUNC_COUNT * sizeof(void (*)(void)),
                "mod_vfs_t size mismatch — update MOD_VFS_FUNC_COUNT in "
                "mod_vfs.inc");
 
-#endif /* PPAP_KERNEL_MOD_MOD_VFS_H */
+#endif /* PPAP_KERNEL_COMMON_MOD_MOD_VFS_H */

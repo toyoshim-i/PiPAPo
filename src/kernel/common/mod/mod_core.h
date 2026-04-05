@@ -18,8 +18,8 @@
  *                 src/kernel/mm/mem_region.c
  */
 
-#ifndef PPAP_KERNEL_MOD_MOD_CORE_H
-#define PPAP_KERNEL_MOD_MOD_CORE_H
+#ifndef PPAP_KERNEL_COMMON_MOD_MOD_CORE_H
+#define PPAP_KERNEL_COMMON_MOD_MOD_CORE_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -260,4 +260,4 @@ _Static_assert(sizeof(mod_core_t) == MOD_CORE_FUNC_COUNT * sizeof(void (*)(void)
                "mod_core_t size mismatch — update MOD_CORE_FUNC_COUNT in "
                "mod_core.inc");
 
-#endif /* PPAP_KERNEL_MOD_MOD_CORE_H */
+#endif /* PPAP_KERNEL_COMMON_MOD_MOD_CORE_H */

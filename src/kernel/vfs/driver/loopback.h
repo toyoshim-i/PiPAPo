@@ -11,8 +11,8 @@
  * corresponding to /dev/loop0, /dev/loop1, /dev/loop2.
  */
 
-#ifndef PPAP_KERNEL_BLKDEV_LOOPBACK_H
-#define PPAP_KERNEL_BLKDEV_LOOPBACK_H
+#ifndef PPAP_KERNEL_VFS_DRIVER_LOOPBACK_H
+#define PPAP_KERNEL_VFS_DRIVER_LOOPBACK_H
 
 #include <stdint.h>
 
@@ -54,4 +54,4 @@ int loopback_teardown(int loop_index);
  */
 int loopback_is_active(int loop_index);
 
-#endif /* PPAP_KERNEL_BLKDEV_LOOPBACK_H */
+#endif /* PPAP_KERNEL_VFS_DRIVER_LOOPBACK_H */

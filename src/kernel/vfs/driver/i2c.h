@@ -11,8 +11,8 @@
  *   i2c_write_reg(0x1F, 0x05, &val, 1) — write 1 byte to register 0x05
  */
 
-#ifndef PPAP_DRIVERS_I2C_H
-#define PPAP_DRIVERS_I2C_H
+#ifndef PPAP_KERNEL_VFS_DRIVER_I2C_H
+#define PPAP_KERNEL_VFS_DRIVER_I2C_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -33,4 +33,4 @@ int i2c_read_reg(uint8_t addr, uint8_t reg, uint8_t *buf, size_t len);
  * Returns 0 on success, -1 on NAK/timeout. */
 int i2c_write_reg(uint8_t addr, uint8_t reg, const uint8_t *buf, size_t len);
 
-#endif /* PPAP_DRIVERS_I2C_H */
+#endif /* PPAP_KERNEL_VFS_DRIVER_I2C_H */

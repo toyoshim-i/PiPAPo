@@ -10,8 +10,8 @@
  * For 4-pixel-wide glyphs, only the top 4 bits of each byte are used.
  */
 
-#ifndef PPAP_DRIVERS_FONT_H
-#define PPAP_DRIVERS_FONT_H
+#ifndef PPAP_KERNEL_VFS_DRIVER_FONT_H
+#define PPAP_KERNEL_VFS_DRIVER_FONT_H
 
 #include <stdint.h>
 
@@ -19,4 +19,4 @@ extern const uint8_t font8x16[256][16]; /* 4 KB in .rodata (flash) */
 extern const uint8_t font8x8[256][8];   /* 2 KB in .rodata (flash) */
 extern const uint8_t font4x8[256][8];   /* 2 KB in .rodata (flash) */
 
-#endif /* PPAP_DRIVERS_FONT_H */
+#endif /* PPAP_KERNEL_VFS_DRIVER_FONT_H */

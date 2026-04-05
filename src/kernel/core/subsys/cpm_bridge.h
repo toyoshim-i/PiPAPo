@@ -7,8 +7,8 @@
  * See docs/subsystems/cpm.md for the full design.
  */
 
-#ifndef PPAP_KERNEL_SUBSYS_CPM_BRIDGE_H
-#define PPAP_KERNEL_SUBSYS_CPM_BRIDGE_H
+#ifndef PPAP_KERNEL_CORE_SUBSYS_CPM_BRIDGE_H
+#define PPAP_KERNEL_CORE_SUBSYS_CPM_BRIDGE_H
 
 #include <stdint.h>
 
@@ -81,4 +81,4 @@ void cpm_run_process(void);
 /* Subsystem ops for CP/M — registered into subsys_ops_table[] */
 extern const subsys_ops_t cpm_subsys_ops;
 
-#endif /* PPAP_KERNEL_SUBSYS_CPM_BRIDGE_H */
+#endif /* PPAP_KERNEL_CORE_SUBSYS_CPM_BRIDGE_H */

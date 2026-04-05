@@ -11,8 +11,8 @@
  *   - Subsystem code (human68k_bridge.c) implements the hooks
  */
 
-#ifndef PPAP_KERNEL_SUBSYS_SUBSYS_H
-#define PPAP_KERNEL_SUBSYS_SUBSYS_H
+#ifndef PPAP_KERNEL_CORE_SUBSYS_SUBSYS_H
+#define PPAP_KERNEL_CORE_SUBSYS_SUBSYS_H
 
 #include <stdint.h>
 
@@ -99,4 +99,4 @@ void subsys_init(void);
 int subsys_read_proc(int tag, struct pcb *p, const char *name,
                      char *buf, int bufsiz);
 
-#endif /* PPAP_KERNEL_SUBSYS_SUBSYS_H */
+#endif /* PPAP_KERNEL_CORE_SUBSYS_SUBSYS_H */

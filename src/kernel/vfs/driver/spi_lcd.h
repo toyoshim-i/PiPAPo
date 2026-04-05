@@ -7,8 +7,8 @@
  * display driver (Step 3).
  */
 
-#ifndef PPAP_DRIVERS_SPI_LCD_H
-#define PPAP_DRIVERS_SPI_LCD_H
+#ifndef PPAP_KERNEL_VFS_DRIVER_SPI_LCD_H
+#define PPAP_KERNEL_VFS_DRIVER_SPI_LCD_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -46,4 +46,4 @@ int spi_lcd_ok(void);
 /* Diagnostic: read SPI1 status register (SR) raw value. */
 uint32_t spi_lcd_read_sr(void);
 
-#endif /* PPAP_DRIVERS_SPI_LCD_H */
+#endif /* PPAP_KERNEL_VFS_DRIVER_SPI_LCD_H */

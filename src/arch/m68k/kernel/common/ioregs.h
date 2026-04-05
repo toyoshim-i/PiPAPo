@@ -5,8 +5,8 @@
  * hardware register access for 68k targets.
  */
 
-#ifndef PPAP_ARCH_M68K_IOREGS_H
-#define PPAP_ARCH_M68K_IOREGS_H
+#ifndef PPAP_ARCH_M68K_KERNEL_COMMON_IOREGS_H
+#define PPAP_ARCH_M68K_KERNEL_COMMON_IOREGS_H
 
 #include <stdint.h>
 
@@ -85,4 +85,4 @@ typedef struct {
 #define VEC_TRAP0 32 /* TRAP #0 vector number                      */
 #define VEC_TRAP1 33 /* TRAP #1 vector number                      */
 
-#endif /* PPAP_ARCH_M68K_IOREGS_H */
+#endif /* PPAP_ARCH_M68K_KERNEL_COMMON_IOREGS_H */

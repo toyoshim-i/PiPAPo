@@ -8,8 +8,8 @@
  * VFS code should include proc_info.h instead of this header.
  */
 
-#ifndef PPAP_KERNEL_PROC_PROC_H
-#define PPAP_KERNEL_PROC_PROC_H
+#ifndef PPAP_KERNEL_CORE_PROC_PROC_H
+#define PPAP_KERNEL_CORE_PROC_PROC_H
 
 #include "kernel/common/core/proc_info.h"
 #include "kernel/core/arch.h"
@@ -155,4 +155,4 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp);
  */
 uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void));
 
-#endif /* PPAP_KERNEL_PROC_PROC_H */
+#endif /* PPAP_KERNEL_CORE_PROC_PROC_H */

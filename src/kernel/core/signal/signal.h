@@ -7,8 +7,8 @@
  * user mode.
  */
 
-#ifndef PPAP_KERNEL_SIGNAL_SIGNAL_H
-#define PPAP_KERNEL_SIGNAL_SIGNAL_H
+#ifndef PPAP_KERNEL_CORE_SIGNAL_SIGNAL_H
+#define PPAP_KERNEL_CORE_SIGNAL_SIGNAL_H
 
 #include <stdint.h>
 
@@ -56,4 +56,4 @@ int signal_check_kernel(void);
  * uses synchronous delivery. */
 extern void sigreturn_trampoline(void);
 
-#endif /* PPAP_KERNEL_SIGNAL_SIGNAL_H */
+#endif /* PPAP_KERNEL_CORE_SIGNAL_SIGNAL_H */

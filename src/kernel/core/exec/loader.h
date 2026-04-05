@@ -2,8 +2,8 @@
  * loader.h — Common binary format loader interface
  */
 
-#ifndef PPAP_KERNEL_EXEC_LOADER_H
-#define PPAP_KERNEL_EXEC_LOADER_H
+#ifndef PPAP_KERNEL_CORE_EXEC_LOADER_H
+#define PPAP_KERNEL_CORE_EXEC_LOADER_H
 
 #include <stdint.h>
 
@@ -40,4 +40,4 @@ typedef struct loader {
 
 } loader_t;
 
-#endif /* PPAP_KERNEL_EXEC_LOADER_H */
+#endif /* PPAP_KERNEL_CORE_EXEC_LOADER_H */

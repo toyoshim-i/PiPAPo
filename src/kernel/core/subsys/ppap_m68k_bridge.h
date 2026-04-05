@@ -12,8 +12,8 @@
  * See docs/ecpu/m68k.md §Step 8 for the full design.
  */
 
-#ifndef PPAP_KERNEL_SUBSYS_PPAP_M68K_BRIDGE_H
-#define PPAP_KERNEL_SUBSYS_PPAP_M68K_BRIDGE_H
+#ifndef PPAP_KERNEL_CORE_SUBSYS_PPAP_M68K_BRIDGE_H
+#define PPAP_KERNEL_CORE_SUBSYS_PPAP_M68K_BRIDGE_H
 
 #include "kernel/core/cpu/cpu.h"
 #include "kernel/core/cpu/ecpu_m68k.h"
@@ -54,4 +54,4 @@ extern const subsys_ops_t ppap_m68k_subsys_ops;
 
 #endif /* PPAP_KERNEL */
 
-#endif /* PPAP_KERNEL_SUBSYS_PPAP_M68K_BRIDGE_H */
+#endif /* PPAP_KERNEL_CORE_SUBSYS_PPAP_M68K_BRIDGE_H */

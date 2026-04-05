@@ -10,8 +10,8 @@
  *      prints both cycle counts so the XIP cache benefit is visible.
  */
 
-#ifndef PPAP_KERNEL_MM_XIP_H
-#define PPAP_KERNEL_MM_XIP_H
+#ifndef PPAP_KERNEL_CORE_MM_XIP_H
+#define PPAP_KERNEL_CORE_MM_XIP_H
 
 #include <stdint.h>
 
@@ -24,4 +24,4 @@ int xip_add(int a, int b);
 uint32_t xip_bench(uint32_t n);
 uint32_t sram_bench(uint32_t n);
 
-#endif /* PPAP_KERNEL_MM_XIP_H */
+#endif /* PPAP_KERNEL_CORE_MM_XIP_H */

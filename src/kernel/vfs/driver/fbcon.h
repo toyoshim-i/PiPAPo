@@ -9,8 +9,8 @@
  * Renders text to the 320×320 LCD via the SPI1 transport layer.
  */
 
-#ifndef PPAP_DRIVERS_FBCON_H
-#define PPAP_DRIVERS_FBCON_H
+#ifndef PPAP_KERNEL_VFS_DRIVER_FBCON_H
+#define PPAP_KERNEL_VFS_DRIVER_FBCON_H
 
 #include <stdint.h>
 
@@ -56,4 +56,4 @@ int fbcon_rows(void);
 /* Set the current text attribute (fg in bits [3:0], bg in bits [7:4]). */
 void fbcon_set_attr(uint8_t attr);
 
-#endif /* PPAP_DRIVERS_FBCON_H */
+#endif /* PPAP_KERNEL_VFS_DRIVER_FBCON_H */

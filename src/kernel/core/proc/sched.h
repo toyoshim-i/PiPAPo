@@ -18,8 +18,8 @@
  * sched_next() returns current and the running process keeps its slice.
  */
 
-#ifndef PPAP_KERNEL_PROC_SCHED_H
-#define PPAP_KERNEL_PROC_SCHED_H
+#ifndef PPAP_KERNEL_CORE_PROC_SCHED_H
+#define PPAP_KERNEL_CORE_PROC_SCHED_H
 
 #include "kernel/common/core/sched_info.h"
 #include "kernel/core/proc/proc.h"
@@ -120,4 +120,4 @@ void sched_wakeup(void *channel);
  */
 uint32_t sched_get_ticks(void);
 
-#endif /* PPAP_KERNEL_PROC_SCHED_H */
+#endif /* PPAP_KERNEL_CORE_PROC_SCHED_H */

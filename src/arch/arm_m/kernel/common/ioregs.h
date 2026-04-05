@@ -8,8 +8,8 @@
  * MPU registers remain local to mpu.c (single consumer).
  */
 
-#ifndef PPAP_ARCH_ARM_M_IOREGS_H
-#define PPAP_ARCH_ARM_M_IOREGS_H
+#ifndef PPAP_ARCH_ARM_M_KERNEL_COMMON_IOREGS_H
+#define PPAP_ARCH_ARM_M_KERNEL_COMMON_IOREGS_H
 
 #include <stdint.h>
 
@@ -87,4 +87,4 @@
 
 #define XPSR_THUMB_BIT 0x01000000u /* Thumb state bit (T=1, required)   */
 
-#endif /* PPAP_ARCH_ARM_M_IOREGS_H */
+#endif /* PPAP_ARCH_ARM_M_KERNEL_COMMON_IOREGS_H */

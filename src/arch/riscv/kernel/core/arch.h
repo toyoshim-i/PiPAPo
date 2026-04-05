@@ -6,8 +6,8 @@
  * sched.c, main.c, etc.) for architecture-independent operations.
  */
 
-#ifndef PPAP_ARCH_RISCV_ARCH_H
-#define PPAP_ARCH_RISCV_ARCH_H
+#ifndef PPAP_ARCH_RISCV_KERNEL_CORE_ARCH_H
+#define PPAP_ARCH_RISCV_KERNEL_CORE_ARCH_H
 
 #include <stdint.h>
 
@@ -59,4 +59,4 @@ static inline page_id_t arch_user_ptr_to_page(page_id_t base_page,
   return mem_region_ptr_to_page((void *)(uintptr_t)user_ptr);
 }
 
-#endif /* PPAP_ARCH_RISCV_ARCH_H */
+#endif /* PPAP_ARCH_RISCV_KERNEL_CORE_ARCH_H */

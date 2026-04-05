@@ -5,8 +5,8 @@
  * Display, keyboard, and SD card pins are defined here for future phases.
  */
 
-#ifndef PPAP_TARGET_XTENSA_CC_H
-#define PPAP_TARGET_XTENSA_CC_H
+#ifndef PPAP_TARGET_XTENSA_CC_KERNEL_CORE_XTENSA_CC_H
+#define PPAP_TARGET_XTENSA_CC_KERNEL_CORE_XTENSA_CC_H
 
 /* ── System clock ──────────────────────────────────────────────────────── */
 
@@ -55,4 +55,4 @@
 
 #define IR_TX_PIN           44
 
-#endif /* PPAP_TARGET_XTENSA_CC_H */
+#endif /* PPAP_TARGET_XTENSA_CC_KERNEL_CORE_XTENSA_CC_H */

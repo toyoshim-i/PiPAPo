@@ -8,11 +8,11 @@
  * Call vfs_mount("/tmp", &tmpfs_ops, 0, NULL) from kmain() after vfs_init().
  */
 
-#ifndef PPAP_KERNEL_FS_TMPFS_H
-#define PPAP_KERNEL_FS_TMPFS_H
+#ifndef PPAP_KERNEL_VFS_TMPFS_H
+#define PPAP_KERNEL_VFS_TMPFS_H
 
 #include "kernel/common/mod/mod_vfs.h"
 
 extern const vfs_ops_t tmpfs_ops;
 
-#endif /* PPAP_KERNEL_FS_TMPFS_H */
+#endif /* PPAP_KERNEL_VFS_TMPFS_H */

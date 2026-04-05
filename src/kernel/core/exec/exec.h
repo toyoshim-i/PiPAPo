@@ -6,8 +6,8 @@
  * to PROC_RUNNABLE after a successful return.
  */
 
-#ifndef PPAP_KERNEL_EXEC_EXEC_H
-#define PPAP_KERNEL_EXEC_EXEC_H
+#ifndef PPAP_KERNEL_CORE_EXEC_EXEC_H
+#define PPAP_KERNEL_CORE_EXEC_EXEC_H
 
 #include "kernel/core/proc/proc.h"
 
@@ -28,4 +28,4 @@
  */
 int exec_execve(pcb_t *p, const char *path, const char *const *argv);
 
-#endif /* PPAP_KERNEL_EXEC_EXEC_H */
+#endif /* PPAP_KERNEL_CORE_EXEC_EXEC_H */

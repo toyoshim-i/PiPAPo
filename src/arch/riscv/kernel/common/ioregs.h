@@ -9,8 +9,8 @@
  * macros for the Hazard3 RV32IMAC cores in the RP2350.
  */
 
-#ifndef PPAP_ARCH_RISCV_IOREGS_H
-#define PPAP_ARCH_RISCV_IOREGS_H
+#ifndef PPAP_ARCH_RISCV_KERNEL_COMMON_IOREGS_H
+#define PPAP_ARCH_RISCV_KERNEL_COMMON_IOREGS_H
 
 #include <stdint.h>
 
@@ -165,4 +165,4 @@
 #endif
 #define RISCV_TICK_INTERVAL (PPAP_SYS_HZ / 100u)
 
-#endif /* PPAP_ARCH_RISCV_IOREGS_H */
+#endif /* PPAP_ARCH_RISCV_KERNEL_COMMON_IOREGS_H */

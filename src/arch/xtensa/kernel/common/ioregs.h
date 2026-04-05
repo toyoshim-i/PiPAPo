@@ -9,8 +9,8 @@
  * Context switch uses solicited-frame pattern with window spill.
  */
 
-#ifndef PPAP_ARCH_XTENSA_IOREGS_H
-#define PPAP_ARCH_XTENSA_IOREGS_H
+#ifndef PPAP_ARCH_XTENSA_KERNEL_COMMON_IOREGS_H
+#define PPAP_ARCH_XTENSA_KERNEL_COMMON_IOREGS_H
 
 #include <stdint.h>
 
@@ -206,4 +206,4 @@
 #endif
 #define XTENSA_TICK_INTERVAL (PPAP_SYS_HZ / 100u)
 
-#endif /* PPAP_ARCH_XTENSA_IOREGS_H */
+#endif /* PPAP_ARCH_XTENSA_KERNEL_COMMON_IOREGS_H */

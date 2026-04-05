@@ -6,8 +6,8 @@
  * kernel/vfs (klog.c) without requiring kernel/core/arch.h.
  */
 
-#ifndef PPAP_ARCH_M68K_IRQ_H
-#define PPAP_ARCH_M68K_IRQ_H
+#ifndef PPAP_ARCH_M68K_KERNEL_COMMON_IRQ_H
+#define PPAP_ARCH_M68K_KERNEL_COMMON_IRQ_H
 
 #include <stdint.h>
 
@@ -52,4 +52,4 @@ static inline void arch_preempt_disable(void) { arch_irq_disable(); }
 
 static inline void arch_preempt_enable(void) { arch_irq_enable(); }
 
-#endif /* PPAP_ARCH_M68K_IRQ_H */
+#endif /* PPAP_ARCH_M68K_KERNEL_COMMON_IRQ_H */

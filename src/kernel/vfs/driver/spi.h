@@ -13,8 +13,8 @@
  *   spi_card_detect()         — check SD card presence (GP22, active low)
  */
 
-#ifndef PPAP_DRIVERS_SPI_H
-#define PPAP_DRIVERS_SPI_H
+#ifndef PPAP_KERNEL_VFS_DRIVER_SPI_H
+#define PPAP_KERNEL_VFS_DRIVER_SPI_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -47,4 +47,4 @@ void sd_cs_high(void);
  * Returns 1 if a card is inserted, 0 if absent. */
 int spi_card_detect(void);
 
-#endif /* PPAP_DRIVERS_SPI_H */
+#endif /* PPAP_KERNEL_VFS_DRIVER_SPI_H */

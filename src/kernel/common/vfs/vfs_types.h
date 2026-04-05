@@ -19,8 +19,8 @@
  * are never removed in Phase 2 (romfs, devfs, procfs are permanent).
  */
 
-#ifndef PPAP_KERNEL_VFS_VFS_TYPES_H
-#define PPAP_KERNEL_VFS_VFS_TYPES_H
+#ifndef PPAP_KERNEL_COMMON_VFS_VFS_TYPES_H
+#define PPAP_KERNEL_COMMON_VFS_VFS_TYPES_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -158,4 +158,4 @@ struct mount_entry {
 /* Read-only access to the mount table */
 extern mount_entry_t vfs_mount_table[VFS_MOUNT_MAX];
 
-#endif /* PPAP_KERNEL_VFS_VFS_TYPES_H */
+#endif /* PPAP_KERNEL_COMMON_VFS_VFS_TYPES_H */
