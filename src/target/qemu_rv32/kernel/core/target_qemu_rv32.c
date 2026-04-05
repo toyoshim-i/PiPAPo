@@ -11,8 +11,6 @@
 #include "target/target.h"
 #include "kernel/core/driver/blkdev.h"
 #include "kernel/core/driver/flatblk.h"
-#include "kernel/common/config.h"
-#include "kernel/core/driver/uart.h"
 #include "kernel/vfs/ufs.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/vfs/vfs.h"
@@ -26,22 +24,14 @@ extern const uint8_t __ufsimg_start[];
 extern const uint8_t __ufsimg_end[];
 
 extern void riscv_timer_init(void);
-extern int uart_rx_avail(void);
 
 void target_early_init(void) {
-  uart_init();
-  mod_vfs.klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
-  mod_vfs.klogf("PiPAPo booting... [qemu_rv32]\n");
-  mod_vfs.klogf("System clock: %lu MHz\n", (unsigned long)(PPAP_SYS_HZ / 1000000u));
+  /* Boot banner printed from klog_logger_init() (VFS side) */
 }
 
 void target_late_init(void) {
-  while (uart_getc() >= 0)
-    ; /* drain boot noise */
   riscv_timer_init();
-
-  extern void sched_set_input_poll(int (*fn)(void), int tty_idx);
-  sched_set_input_poll(uart_rx_avail, 0 /* TTY_SERIAL */);
+  mod_vfs.notify(VFS_EVENT_LATE_INIT);
 }
 
 void target_post_mount(void) {

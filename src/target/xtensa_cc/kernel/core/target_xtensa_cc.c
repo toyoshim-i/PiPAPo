@@ -19,9 +19,7 @@
 #include "kernel/common/mod/mod_vfs.h"
 #include "sdkconfig.h"
 #include "kernel/core/cpu.h"
-#include "kernel/core/driver/uart.h"
 #include "kernel/core/proc/sched.h"
-#include "kernel/vfs/tty.h"
 
 #if !defined(CONFIG_FREERTOS_UNICORE) || !CONFIG_FREERTOS_UNICORE
 #error "xtensa_cc requires CONFIG_FREERTOS_UNICORE=y"
@@ -68,7 +66,6 @@ static void IRAM_ATTR systimer_noop_isr(void *arg) { (void)arg; }
 
 void target_early_init(void)
 {
-    mod_vfs.klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
     /* FIRST: patch the Xtensa interrupt dispatch table directly to replace
      * the default "xt_unhandled_interrupt" handler for CPU interrupt 12
      * (FreeRTOS's SYSTIMER tick) with our no-op.
@@ -103,8 +100,7 @@ void target_early_init(void)
     __asm__ volatile("wsr %0, intclear; rsync" :: "r"(0xFFFFFFFFu));
     __asm__ volatile("wsr %0, intenable; rsync" :: "r"(0));
 
-    mod_vfs.klogf("PiPAPo booting... [xtensa_cc]\n");
-    mod_vfs.klogf("System clock: %lu MHz\n", (unsigned long)(PPAP_SYS_HZ / 1000000u));
+    /* Boot banner printed from klog_logger_init() (VFS side) */
 }
 
 void target_late_init(void)
@@ -121,7 +117,7 @@ void target_late_init(void)
      * uart_rx_avail() checks UART0 RX FIFO via bare-metal register access
      * (no ROM calls — ROM functions may use `syscall 0` internally, which
      * crashes in kernel mode where KernelExceptionVector doesn't handle it). */
-    sched_set_input_poll(uart_rx_avail, TTY_SERIAL);
+    mod_vfs.notify(VFS_EVENT_LATE_INIT);
 
     /* XT-3.4 bootstrap boundary checks:
      * - FreeRTOS scheduler handoff must stay disabled

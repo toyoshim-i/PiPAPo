@@ -12,14 +12,14 @@
  * movement, screen/line erase, SGR colors, and scroll regions.
  */
 
-#include "fbcon.h"
+#include "kernel/vfs/fbcon.h"
 
 #include <stdint.h>
 #include <string.h>
 
-#include "font.h"
-#include "lcd_panel.h"
-#include "spi_lcd.h"
+#include "kernel/core/driver/font.h"
+#include "kernel/core/driver/lcd_panel.h"
+#include "kernel/core/driver/spi_lcd.h"
 
 /* ---------- constants ---------- */
 

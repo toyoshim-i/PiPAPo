@@ -19,7 +19,6 @@
 
 #include <stdint.h>
 
-#include "kernel/core/driver/uart.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/arch.h"

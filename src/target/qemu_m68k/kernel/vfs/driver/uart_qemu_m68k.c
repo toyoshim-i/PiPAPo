@@ -18,7 +18,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "kernel/core/driver/uart.h"
+#include "kernel/vfs/uart.h"
 
 /* ── Goldfish TTY registers ─────────────────────────────────────────────── */
 

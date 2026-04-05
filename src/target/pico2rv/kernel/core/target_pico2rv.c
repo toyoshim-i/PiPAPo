@@ -7,9 +7,6 @@
 
 #include "target/target.h"
 #include "pico2rv.h"
-#include "kernel/common/config.h"
-#include "kernel/core/driver/uart.h"
-#include "kernel/core/driver/uart_rp2350.h"
 #include "kernel/core/driver/clock.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "target/rpico.h"
@@ -102,36 +99,19 @@ void target_early_init(void)
             ;
     }
 
-    uart_init();
-    mod_vfs.klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
-    /* No bytes have been emitted yet, so there is nothing to drain here.
-     * On Hazard3, UART_FR.BUSY can remain set spuriously and hang boot if we
-     * spin on uart_tx_drain() before the first write. */
-    clock_init_pll();          /* switch clk_sys to PLL (PPAP_SYS_HZ)      */
-    uart_reinit_pll();         /* set PLL-speed baud divisors               */
-    mod_vfs.klogf("PiPAPo booting... [pico2rv]\n");
-    mod_vfs.klogf("System clock: %u MHz\n", PPAP_SYS_HZ / 1000000u);
+    mod_vfs.notify(VFS_EVENT_WILL_PLL_CHANGE);
+    clock_init_pll();
+    mod_vfs.notify(VFS_EVENT_PLL_CHANGED);
     /* No SPI init — pico2rv has no SD card slot */
 }
 
 /* Timer init — defined in riscv_common.c */
 extern void riscv_timer_init(void);
 
-/* UART RX availability check — declared in uart_rp2350.c */
-extern int uart_rx_avail(void);
-
 void target_late_init(void)
 {
-    /* No SD card to initialize */
-    while (uart_getc() >= 0) ;   /* drain boot noise from RX ring */
+    mod_vfs.notify(VFS_EVENT_LATE_INIT);
     riscv_timer_init();            /* start 10ms tick timer         */
-
-    /* Register UART RX polling for the serial TTY.
-     * RISC-V UART is polled (no RX interrupt), so the idle loop's
-     * sched_display_poll() checks uart_rx_avail() every 20ms and
-     * wakes blocked tty readers when data arrives. */
-    extern void sched_set_input_poll(int (*fn)(void), int tty_idx);
-    sched_set_input_poll(uart_rx_avail, 0 /* TTY_SERIAL */);
 }
 
 void target_post_mount(void)

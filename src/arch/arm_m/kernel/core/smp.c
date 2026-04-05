@@ -28,7 +28,6 @@
 
 #include <stdint.h>
 
-#include "kernel/core/driver/uart.h"
 #include "kernel/core/arch.h"
 #include "kernel/core/ioregs.h"
 #include "kernel/common/config.h"

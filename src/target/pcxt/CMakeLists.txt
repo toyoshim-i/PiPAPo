@@ -305,10 +305,10 @@ set(KERNEL_CORE_SOURCES
 
 set(TARGET_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_pcxt.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/uart_com.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/uart_com.c
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/floppy_blk.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/bios_con.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/pcxt_logger.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/bios_con.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/pcxt_logger.c
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/timer_pit.c
   # Core-side stubs: caller stubs for VFS, entry stubs for core
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/vfs_stubs.S
@@ -379,8 +379,8 @@ add_executable(ppap_pcxt_vfs
   # Header must be first — contains entry point table at offset 0
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/vfs_header.S
   ${KERNEL_VFS_SOURCES}
-  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/uart_com.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/bios_con.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/uart_com.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/bios_con.c
   # VFS-side stubs: entry stubs for VFS, caller stubs for core
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/vfs_entries.S
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/core_stubs.S

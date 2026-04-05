@@ -14,7 +14,7 @@
  */
 
 #include <stdint.h>
-#include "kernel/core/driver/uart.h"
+#include "kernel/vfs/uart.h"
 
 /* ESP-IDF ROM console functions */
 extern void esp_rom_uart_putc(char c);

@@ -24,19 +24,17 @@
 
 #include "target/target.h"
 #include "kernel/core/arch.h"
-#include "kernel/core/driver/uart.h"
 #include "common/errno.h"
-#include "kernel/vfs/tty.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
-#include "kernel/vfs/vfs.h"
 #ifdef PPAP_HAS_BLKDEV
 #include "kernel/core/driver/blkdev.h"
 #include "kernel/core/driver/flatblk.h"
 #include "kernel/vfs/ufs.h"
+#include "kernel/vfs/vfs.h"
 #endif
 #include <stddef.h>
 #include <stdint.h>
@@ -151,53 +149,16 @@ void target_early_init(void) {
     d1 = (uint32_t)'o';
     asm volatile("trap #15" : "+r"(d0) : "r"(d1) : "a0", "a1", "memory");
   }
-  uart_init();
-  mod_vfs.klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
   mod_vfs.klogf(" booting... [x68k]\n");
   mod_vfs.klogf("Console: X68000 IOCS (TVRAM)\n");
   mod_vfs.klogf("Phase X-2: preemptive scheduling (MFP Timer-C), embedded romfs\n");
 }
 
-extern int uart_serial_putc(char c, void (*notify)(void));
-
 void target_late_init(void) {
-  /* Vector patching was done in target_early_init() before the first IOCS
-   * call.  Here we start MFP Timer-C for preemptive scheduling.
-   * timer_init() overwrites vector 69 with m68k_timer_isr. */
+  /* MFP Timer-C for preemptive scheduling */
   timer_init();
-
-  /* Set up dual-TTY: TTY_DISPLAY = TVRAM (primary), TTY_SERIAL = RS-232C */
-  extern int uart_serial_getc(void);
-  extern int uart_serial_rx_avail(void);
-  static const tty_backend_t tvram_be = {
-      .putc = uart_putc,
-      .getc = uart_getc,
-      .rx_avail = uart_rx_avail,
-      .get_cols = NULL,
-      .get_rows = NULL,
-  };
-  static const tty_backend_t serial_be = {
-      .putc = uart_serial_putc,
-      .getc = uart_serial_getc,
-      .rx_avail = uart_serial_rx_avail,
-      .get_cols = NULL,
-      .get_rows = NULL,
-  };
-  tty_set_backend(TTY_DISPLAY, &tvram_be);
-  tty_set_backend(TTY_SERIAL, &serial_be);
-  tty_set_console(TTY_DISPLAY);
-  mod_vfs.klog_set_logger(KLOG_LOGGER_SECONDARY, uart_serial_putc, NULL);
-
-  /* Register input polls for both consoles.
-   * Both use direct hardware register reads — NO IOCS TRAP #15 calls —
-   * because IOCS functions hang when called from the idle thread context.
-   *
-   * TVRAM: uart_rx_avail_hw() checks IOCS key buffer byte count at $0812
-   * Serial: uart_serial_rx_avail_hw() checks SCC channel B RR0 bit 0 */
-  extern int uart_rx_avail_hw(void);
-  extern int uart_serial_rx_avail_hw(void);
-  sched_set_input_poll(uart_rx_avail_hw, TTY_DISPLAY);
-  sched_set_input_poll2(uart_serial_rx_avail_hw, TTY_SERIAL);
+  /* TTY backends, input polls, secondary logger — all VFS side */
+  mod_vfs.notify(VFS_EVENT_LATE_INIT);
 }
 
 int target_mount_rootfs(void) {

@@ -43,6 +43,11 @@ static uint32_t mount_count;
  */
 
 void vfs_init(void) {
+  /* Register UART/display loggers before any klogf output.
+   * Target provides klog_logger_init() to call uart_init() +
+   * klog_set_logger() — all VFS-side now, no far call needed on i16. */
+  klog_logger_init();
+
   /* Zero the mount table (BSS guarantees this, but be explicit) */
   for (int i = 0; i < VFS_MOUNT_MAX; i++) vfs_mount_table[i].active = 0;
   mount_count = 0;
@@ -413,9 +418,11 @@ long vfs_vnode_readlink(vnode_t *vn, char *buf, size_t bufsiz) {
   return vn->mount->ops->readlink(vn, buf, bufsiz);
 }
 
-/* klog aliases — defined in klog.c, needed by MOD_IMPL(vfs, klogf) etc. */
+/* klog alias — defined in klog.c, needed by MOD_IMPL(vfs, klogf) */
 extern void vfs_klogf(const char *, ...);
-extern void vfs_klog_set_logger(int, klog_putc_fn, void (*)(void));
+
+/* Weak default notify — targets override for PLL/TTY/input events */
+__attribute__((weak)) void vfs_notify(int event) { (void)event; }
 
 MOD_DEFINE_BEGIN(vfs)
 #define MOD_VFS_ENTRY(name, idx)  MOD_IMPL(vfs, name)

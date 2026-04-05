@@ -27,11 +27,11 @@
 
 #include "module.h"
 
-/* klog types — needed for klog_set_logger signature */
-typedef int (*klog_putc_fn)(char c, void (*notify)(void));
-#define KLOG_LOGGER_PRIMARY 0
-#define KLOG_LOGGER_SECONDARY 1
-#define KLOG_LOGGER_COUNT 2
+/* VFS event IDs for mod_vfs.notify() */
+#define VFS_EVENT_WILL_PLL_CHANGE  1  /* before clock_init_pll(): drain UART */
+#define VFS_EVENT_PLL_CHANGED      2  /* after clock_init_pll(): reinit baud */
+#define VFS_EVENT_LATE_INIT        3  /* from target_late_init(): TTY backends,
+                                       * input polls, secondary logger, fbcon */
 
 /* Forward declaration for fd_stdio_init parameter */
 struct pcb;
@@ -255,23 +255,6 @@ MOD_DECLARE_BEGIN(vfs)
   MOD_FUNC(vfs, void, klogf, const char *, ...)
 
   /*
-   * klog_set_logger — Register or replace one logger slot.
-   *
-   *   id     Logger slot (KLOG_LOGGER_PRIMARY or KLOG_LOGGER_SECONDARY).
-   *   putc   Character output function (NULL to clear).
-   *   flush  Optional flush callback (NULL if not needed).
-   *
-   * Temporary: will become VFS-internal once logger init moves to VFS.
-   *
-   * TODO: on i16, mod_vfs far pointers are not patched until
-   * seg_init_modules() runs, so this cannot be called from
-   * target_early_init() before that point.  Callers on i16 must
-   * ensure VFS module is loaded before calling.
-   */
-  MOD_FUNC(vfs, void, klog_set_logger, int, klog_putc_fn,
-                                        void (*)(void))
-
-  /*
    * lookup — Resolve a pathname to a vnode.
    *
    *   path    Absolute or relative pathname.
@@ -349,6 +332,17 @@ MOD_DECLARE_BEGIN(vfs)
 
   /* mount_ufs — Convenience mount for UFS (Unix File System). */
   MOD_FUNC(vfs, int, mount_ufs, const char *, uint8_t, const void *)
+
+  /*
+   * notify -- Deliver a boot-timing event to VFS-side drivers.
+   *
+   *   event  VFS_EVENT_WILL_PLL_CHANGE, VFS_EVENT_PLL_CHANGED,
+   *          VFS_EVENT_LATE_INIT, etc.
+   *
+   * Target-provided weak override handles UART drain/reinit, TTY
+   * backend registration, secondary loggers, and input poll setup.
+   */
+  MOD_FUNC(vfs, void, notify, int)
 
   /*
    * path_normalize — Normalize a path (resolve ".", "..", collapse "//").

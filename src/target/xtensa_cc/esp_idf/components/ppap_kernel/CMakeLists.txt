@@ -12,7 +12,8 @@ set(ARCH_SOURCES
     ${PPAP_ROOT}/src/arch/xtensa/kernel/core/switch.S
     ${PPAP_ROOT}/src/arch/xtensa/kernel/core/xtensa_common.c
     ${PPAP_ROOT}/src/arch/xtensa/kernel/core/smp.c
-    ${PPAP_ROOT}/src/arch/xtensa/kernel/core/driver/uart_esp32s3.c
+    ${PPAP_ROOT}/src/arch/xtensa/kernel/vfs/driver/uart_esp32s3.c
+    ${PPAP_ROOT}/src/target/xtensa_cc/kernel/vfs/driver/xtensa_cc_logger.c
 )
 
 # ── Kernel shared sources ────────────────────────────────────────────────────

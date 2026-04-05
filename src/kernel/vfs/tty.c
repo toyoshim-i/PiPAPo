@@ -32,9 +32,9 @@
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"       /* proc_table, PROC_MAX, PROC_FREE */
 #include "common/signal.h"   /* SIGINT */
-#include "kernel/core/driver/uart.h"       /* uart_putc/getc/rx_avail for static init */
+#include "kernel/vfs/uart.h"       /* uart_putc/getc/rx_avail for static init */
 #ifdef __ia16__
-#include "kernel/core/driver/bios_con.h"
+#include "kernel/vfs/driver/bios_con.h"
 #endif
 #include "file.h"
 

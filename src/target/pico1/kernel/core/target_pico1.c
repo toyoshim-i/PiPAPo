@@ -6,10 +6,7 @@
  */
 
 #include "target/target.h"
-#include "kernel/common/config.h"
-#include "kernel/core/driver/uart_rpico.h"
 #include "kernel/core/driver/clock.h"
-#include "kernel/core/driver/uart.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mpu.h"
 #include "pico1.h"
@@ -19,23 +16,14 @@
 #endif
 
 void target_early_init(void) {
-  uart_init();
-  mod_vfs.klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
-  mod_vfs.klogf("PiPAPo booting... [pico1]\n");
-  mod_vfs.klogf("UART: 115200 bps @ 12 MHz XOSC\n");
-  uart_tx_drain();   /* drain at 12 MHz; also disables UART0 NVIC */
-  clock_init_pll();  /* switch clk_sys to PLL (PPAP_SYS_HZ)      */
-  uart_reinit_pll(); /* set PLL-speed baud divisors               */
-  mod_vfs.klogf("System clock: %u MHz\n", PPAP_SYS_HZ / 1000000u);
-  /* No SPI init — pico1 has no SD card slot */
+  mod_vfs.notify(VFS_EVENT_WILL_PLL_CHANGE);
+  clock_init_pll();
+  mod_vfs.notify(VFS_EVENT_PLL_CHANGED);
 }
 
 void target_late_init(void) {
-  /* No SD card to initialize */
-  while (uart_getc() >= 0)
-    ; /* drain boot noise from RX ring */
+  mod_vfs.notify(VFS_EVENT_LATE_INIT);
   mpu_init();
-  /* core1_launch moved to kmain — must run after init gets PID 1 */
 }
 
 void target_post_mount(void) {

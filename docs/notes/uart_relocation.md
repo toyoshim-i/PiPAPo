@@ -1,92 +1,53 @@
-# UART / klog Relocation Plan: Core → VFS
+# UART / klog Relocation: Core → VFS (COMPLETE)
 
-## Motivation
+## Summary
 
-`klog`, `uart`, and display drivers (`bios_con`, `fbcon`, `semihost`)
-are currently in the core module, but their consumers are VFS (TTY,
-devfs) and target init (logger registration).  Moving them to VFS
-eliminates vfs→core include violations for these headers and aligns
+Moved `klog`, `uart`, and display drivers from the core module to VFS.
+This eliminates core→VFS include violations for these headers and aligns
 ownership with the actual I/O path: user → TTY → uart.
 
-## Steps
+Completed in two commits:
+- `60f9d6b` — Step 1: move klog, drop klog(), add klogf/klog_set_logger to mod_vfs
+- `d86a008` — Steps 2+3: move uart/display drivers, add klog_logger_init hook
 
-### 1. Move klog to VFS, drop klog()
+## What changed
 
-- `kernel/core/klog.c` → `kernel/vfs/klog.c`
-- `kernel/core/klog.h` → `kernel/vfs/klog.h`
-- Remove `klog()` — all call sites use `klogf()` instead
-- Add `klogf` to `mod_vfs.inc` / `mod_vfs.h`
-- Remove `klog` / `klogf` from `mod_core.inc` / `mod_core.h`
-- Core code calls `mod_vfs.klogf()` for all logging
+### klog (step 1)
+- `kernel/core/klog.c/h` → `kernel/vfs/klog.c/h`
+- Removed `klog()` — all sites use `klogf()`
+- `klogf` + `klog_set_logger` added to mod_vfs; removed from mod_core
+- Core calls `mod_vfs.klogf()`; VFS calls `klogf()` directly
 
-`klog.c` uses `arch_preempt_disable/enable` and `spin_lock/unlock` —
-both are inline (arch overlay + `spinlock.h`), so no new mod_core
-entries are needed.
+### uart + display drivers (step 2)
+- `uart.h`, `fbcon.c/h` → `kernel/vfs/`
+- All uart implementations → `kernel/vfs/driver/` in their arch/target
+- `semihost.c`, `bios_con.c/h`, `pcxt_logger.c/h` → `kernel/vfs/driver/`
 
-### 2. Move uart + display drivers to VFS side
+### Logger init (step 3)
+- Weak `klog_logger_init()` in klog.c, called from `vfs_init()`
+- Each target overrides in a VFS-side `*_logger.c` file
+- `target_early_init()` no longer calls `uart_init()`/`klog_set_logger()`
+- pcxt logger is fully VFS-side (no far call needed on i16)
 
-| File | From | To |
-|------|------|----|
-| `uart.h` | `kernel/core/driver/` | `kernel/vfs/` |
-| `uart_rpico.c/h` | `arch/arm_m/kernel/core/driver/` | `arch/arm_m/kernel/vfs/driver/` |
-| `uart_rp2350.c/h` | `arch/riscv/kernel/core/driver/` | `arch/riscv/kernel/vfs/driver/` |
-| `uart_esp32s3.c` | `arch/xtensa/kernel/core/driver/` | `arch/xtensa/kernel/vfs/driver/` |
-| `semihost.c` | `arch/arm_m/kernel/core/driver/` | `arch/arm_m/kernel/vfs/driver/` |
-| `uart_qemu.c` | `target/qemu_arm/kernel/core/driver/` | `target/qemu_arm/kernel/vfs/driver/` |
-| `uart_qemu_m68k.c` | `target/qemu_m68k/kernel/core/driver/` | `target/qemu_m68k/kernel/vfs/driver/` |
-| `uart_ns16550.c` | `target/qemu_rv32/kernel/core/driver/` | `target/qemu_rv32/kernel/vfs/driver/` |
-| `uart_x68k.c` | `target/x68k/kernel/core/driver/` | `target/x68k/kernel/vfs/driver/` |
-| `uart_com.c` | `target/pcxt/kernel/core/driver/` | `target/pcxt/kernel/vfs/driver/` |
-| `bios_con.c/h` | `target/pcxt/kernel/core/driver/` | `target/pcxt/kernel/vfs/driver/` |
-| `pcxt_logger.c/h` | `target/pcxt/kernel/core/driver/` | `target/pcxt/kernel/vfs/driver/` |
-| `fbcon.c/h` | `kernel/core/driver/` | `kernel/vfs/` |
+### ia16/pcxt stubs (step 4) — done in step 1
+- mod_core: 20→18 entries (klog/klogf removed)
+- mod_vfs: 37→39 entries (klogf/klog_set_logger added)
+- PATCH_CORE table renumbered in target_pcxt.c
 
-### 3. Move logger init from core to VFS
+### Build files (step 5) — done in steps 1–3
+- cmake/kernel.cmake, all target CMakeLists.txt updated
+- xtensa_cc ESP-IDF component CMakeLists.txt updated
 
-Each target's `target_early_init()` currently calls:
-```c
-uart_init();
-klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
-```
+## Remaining work
 
-This moves into the VFS init path.  Options:
-- `mod_vfs.init()` calls a target-provided hook for logger setup
-- Target provides a VFS-side init function registered during build
-
-`klog_set_logger()` stays VFS-internal (not in mod_vfs).
-
-### 4. Update ia16/pcxt stubs
-
-- Remove `klog` (idx 2) and `klogf` (idx 3) from `mod_core.inc`
-- Renumber remaining mod_core entries (idx 2+ shift down by 2)
-- Add `klogf` to `mod_vfs.inc`
-- Update `core_entries.S`, `core_stubs.S` (auto-generated from .inc)
-- Update `vfs_entries.S`, `vfs_stubs.S` (auto-generated from .inc)
-- Update `target_pcxt.c` core→VFS far pointer patching (count changes)
-
-### 5. Update build files
-
-- `cmake/kernel.cmake`: move klog.c, fbcon.c from core to VFS sources
-- All `target/*/CMakeLists.txt`: move uart impl sources to VFS target
-- `arch/*/CMakeLists.txt` or `cmake/*.cmake`: move arch uart to VFS
-
-## Risks
-
-- **Boot ordering**: `mod_vfs.init()` must run before any `klogf()`
-  call.  Stage1/stage2 boot loaders have their own output — kernel
-  logging starts after VFS init.
-- **ia16 far-call cost**: every `klogf` from core goes through a
-  far call.  Acceptable — klog is diagnostic, not hot-path.
-- **pcxt dual-compile**: uart_com.c is currently compiled into both
-  core and VFS modules.  After the move, it's VFS-only.  Core's
-  direct UART access (if any) must go through mod_vfs.
+- **x68k target_late_init**: secondary logger + TTY backend still in
+  core, uses `mod_vfs.klog_set_logger()` and uart symbols
+- **pico1calc target_early_init**: PLL/SPI/LCD/fbcon init interleaved
+  with uart — secondary logger and TTY backend still in core
+- **Boot banner**: "PiPaPo booting..." messages moved from
+  target_early_init to after vfs_init; could be added to logger files
 
 ## Verification
 
-- `./scripts/build.sh qemu_arm`
-- `./scripts/build.sh qemu_m68k`
-- `./scripts/build.sh qemu_rv32`
-- `./scripts/build.sh pcxt`
-- `./scripts/run.sh --test qemu_arm`
-- `./scripts/run.sh --test qemu_m68k`
-- Boot test on pcxt (QEMU) — verify klog output appears
+All 9 targets build: qemu_arm, qemu_m68k, qemu_rv32, pico1, pico1calc,
+pico2, pico2rv, pcxt, xtensa_cc.  qemu_arm 24/24 user tests pass.

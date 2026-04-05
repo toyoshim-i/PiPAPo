@@ -8,7 +8,6 @@
 #include "target/target.h"
 #include "kernel/core/driver/blkdev.h"
 #include "kernel/core/driver/ramblk.h"
-#include "kernel/core/driver/uart.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
@@ -22,12 +21,7 @@ extern const uint8_t __fatimg_start[];
 extern const uint8_t __fatimg_end[];
 
 void target_early_init(void) {
-  uart_init();
-  mod_vfs.klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
-  mod_vfs.klogf("PiPAPo booting... [qemu_arm]\n");
-  mod_vfs.klogf("UART: CMSDK UART0 @ 0x40004000\n");
-  mod_vfs.klogf("Clock: emulated (no PLL)\n");
-  /* No PLL, no SPI */
+  /* Boot banner printed from klog_logger_init() (VFS side) */
 }
 
 void target_late_init(void) {

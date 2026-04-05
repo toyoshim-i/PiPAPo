@@ -6,8 +6,6 @@
  * far pointer tables.  Chains BIOS INT 08h for floppy motor timeout.
  */
 
-#include "kernel/core/driver/uart.h"
-#include "kernel/core/driver/pcxt_logger.h"
 #include "kernel/core/driver/timer_pit.h"
 #include "target/target.h"
 #include "kernel/common/core/seg.h"
@@ -203,19 +201,10 @@ static void install_int_debug(void) {
 
 void target_early_init(void)
 {
-  uart_init();
   seg_init_modules();
   install_int_debug();
-
-  /* Logger registration deferred to VFS init (step 3 of uart_relocation
-   * plan).  mod_vfs.klog_set_logger() is not safe before VFS init on
-   * i16 — the far call reaches VFS code, but the static logger arrays
-   * may not be at a valid DS=0 address yet.
-   *
-   * TODO: move pcxt_logger_init() into a VFS-side target hook so that
-   * logger is registered during mod_vfs.init().  Until then, early boot
-   * messages are lost on pcxt (klogf output is silently discarded when
-   * no logger is registered). */
+  /* Logger registration happens in klog_logger_init() called from
+   * vfs_init() — all VFS-side, no far call issues on i16. */
 }
 
 void target_late_init(void)

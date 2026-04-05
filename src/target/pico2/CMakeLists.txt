@@ -48,12 +48,13 @@ add_executable(ppap_pico2
 
 if(PPAP_SEMIHOST)
     target_sources(ppap_pico2 PRIVATE
-        ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/semihost.c
+        ${PPAP_ROOT}/src/arch/arm_m/kernel/vfs/driver/semihost.c
     )
     target_compile_definitions(ppap_pico2 PRIVATE PPAP_SEMIHOST=1)
 else()
     target_sources(ppap_pico2 PRIVATE
-        ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/uart_rpico.c
+        ${PPAP_ROOT}/src/arch/arm_m/kernel/vfs/driver/uart_rpico.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/pico2_logger.c
     )
 endif()
 

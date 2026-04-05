@@ -34,7 +34,8 @@ add_executable(ppap_x68k
     ${KERNEL_BLKDEV_SOURCES}
     ${PPAP_ROOT}/src/kernel/core/driver/flatblk.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_x68k.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/uart_x68k.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/uart_x68k.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/x68k_logger.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/timer_x68k.c
 )
 

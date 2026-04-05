@@ -20,7 +20,7 @@
  *   - Without a semihosting-aware debugger, bkpt 0xAB triggers HardFault.
  */
 
-#include "kernel/core/driver/uart.h"
+#include "kernel/vfs/uart.h"
 
 /* ── Semihosting call primitive ──────────────────────────────────────────── */
 
