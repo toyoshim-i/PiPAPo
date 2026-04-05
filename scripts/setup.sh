@@ -5,12 +5,12 @@
 # Builds Docker images for per-target toolchains.
 #
 # Usage:
-#   ./scripts/setup_docker.sh [--no-cache] <target|family> [...]
+#   ./scripts/setup.sh [--no-cache] <target|family> [...]
 #
 # Examples:
-#   ./scripts/setup_docker.sh ia16              # Build only the ia16 image
-#   ./scripts/setup_docker.sh all               # Build all available images
-#   ./scripts/setup_docker.sh --no-cache m68k   # Rebuild from scratch
+#   ./scripts/setup.sh ia16              # Build only the ia16 image
+#   ./scripts/setup.sh all               # Build all available images
+#   ./scripts/setup.sh --no-cache m68k   # Rebuild from scratch
 #
 # Each image contains the cross-compiler, emulator, and build tools for
 # its target family.  The project root is bind-mounted at /ppap when

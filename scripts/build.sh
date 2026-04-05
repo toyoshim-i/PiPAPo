@@ -190,7 +190,7 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
         DOCKER_IMAGE="$(target_docker_image xtensa_cc)"
         if [[ -z "$DOCKER_IMAGE" ]] || ! docker_image_exists "$DOCKER_IMAGE"; then
             echo "[build] Error: Docker image for xtensa_cc not found."
-            echo "        Run: ./scripts/setup_docker.sh xtensa"
+            echo "        Run: ./scripts/setup.sh xtensa"
             exit 1
         fi
         echo "[build] Building xtensa_cc via Docker ($DOCKER_IMAGE)..."
@@ -462,7 +462,7 @@ echo "[build] Building $CMAKE_TARGET (PPAP_TESTS=$TESTS, PPAP_TESTS_EXTENDED=$TE
 DOCKER_IMAGE="$(target_docker_image "$TARGET")"
 if [[ -z "$DOCKER_IMAGE" ]] || ! docker_image_exists "$DOCKER_IMAGE"; then
     echo "[build] Error: Docker image $DOCKER_IMAGE not found."
-    echo "        Run: ./scripts/setup_docker.sh $TARGET"
+    echo "        Run: ./scripts/setup.sh $TARGET"
     exit 1
 fi
 

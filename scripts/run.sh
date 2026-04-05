@@ -202,7 +202,7 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     DOCKER_IMAGE="$(target_docker_image xtensa_cc)"
     if [[ -z "$DOCKER_IMAGE" ]] || ! docker_image_exists "$DOCKER_IMAGE"; then
         echo "[run] Error: Docker image for xtensa_cc not found."
-        echo "      Run: ./scripts/setup_docker.sh xtensa"
+        echo "      Run: ./scripts/setup.sh xtensa"
         exit 1
     fi
 
@@ -273,7 +273,7 @@ if [[ "$TARGET" == "x68k" ]]; then
     XEIJ_JAR="$XEIJ_DIR/XEiJ.jar"
     if [[ ! -f "$XEIJ_JAR" ]]; then
         echo "[run] Error: XEiJ not found at $XEIJ_JAR"
-        echo "      Install with: ./scripts/setup_docker.sh m68k"
+        echo "      Install with: ./scripts/setup.sh m68k"
         exit 1
     fi
     # XEiJ requires Java 25+; prefer /usr/lib/jvm/java-25-openjdk-* over default
@@ -321,7 +321,7 @@ if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 || "$TA
     DOCKER_IMAGE="$(target_docker_image "$TARGET")"
     if [[ -z "$DOCKER_IMAGE" ]] || ! docker_image_exists "$DOCKER_IMAGE"; then
         echo "[run] Error: Docker image for $TARGET not found."
-        echo "      Run: ./scripts/setup_docker.sh $TARGET"
+        echo "      Run: ./scripts/setup.sh $TARGET"
         exit 1
     fi
 
@@ -445,7 +445,7 @@ else
     DOCKER_IMAGE="$(target_docker_image "$TARGET")"
     if [[ -z "$DOCKER_IMAGE" ]] || ! docker_image_exists "$DOCKER_IMAGE"; then
         echo "[run] Error: Docker image for $TARGET not found."
-        echo "      Run: ./scripts/setup_docker.sh $TARGET"
+        echo "      Run: ./scripts/setup.sh $TARGET"
         exit 1
     fi
     echo "[run] Using Docker image $DOCKER_IMAGE"

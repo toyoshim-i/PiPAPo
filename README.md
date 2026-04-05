@@ -136,7 +136,7 @@ PPAP/
     esp-idf/                git submodule — ESP-IDF v5.x (Xtensa targets)
   src/etc/                  Root filesystem config templates (fstab, passwd, …)
   scripts/
-    setup_docker.sh         Build Docker toolchain images per target
+    setup.sh         Build Docker toolchain images per target
     build.sh                Build any target (pico1, pico1calc, qemu_arm, qemu_m68k)
     run.sh                  Flash or run any target
     test.sh                 Run tests (--all for full suite)
@@ -159,8 +159,8 @@ PPAP/
 ### 1. Install the toolchain
 
 ```sh
-./scripts/setup_docker.sh arm        # build only the ARM image
-./scripts/setup_docker.sh all        # build all target images
+./scripts/setup.sh arm        # build only the ARM image
+./scripts/setup.sh all        # build all target images
 ```
 
 Builds Docker images containing the cross-compiler, emulator, and build tools for each target family. Requires Docker. See `docker/*/Dockerfile` for image contents.
