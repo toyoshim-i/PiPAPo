@@ -25,7 +25,7 @@ void pcxt_logger_init(void) {
 }
 
 /* Override weak default — called from vfs_init() */
-void klog_logger_init(void) {
+void klog_init_logger(void) {
   uart_init();
   pcxt_logger_init();
 }

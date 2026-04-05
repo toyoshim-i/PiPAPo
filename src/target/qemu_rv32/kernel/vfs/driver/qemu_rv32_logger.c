@@ -7,7 +7,7 @@
 
 extern void sched_set_input_poll(int (*fn)(void), int tty_idx);
 
-void klog_logger_init(void) {
+void klog_init_logger(void) {
   uart_init();
   klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
   klogf("PiPaPo booting... [qemu_rv32]\n");

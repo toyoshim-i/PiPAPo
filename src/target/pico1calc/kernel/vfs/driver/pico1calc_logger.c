@@ -127,7 +127,7 @@ static const tty_backend_t fbcon_backend = {
 
 /* ── Logger init and VFS event handler ────────────────────────────────── */
 
-void klog_logger_init(void) {
+void klog_init_logger(void) {
   uart_init();
   klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
   klogf("PiPaPo booting... [pico1calc]\n");

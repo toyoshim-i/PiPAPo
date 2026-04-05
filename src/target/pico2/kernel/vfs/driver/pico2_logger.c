@@ -6,7 +6,7 @@
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/config.h"
 
-void klog_logger_init(void) {
+void klog_init_logger(void) {
 #ifndef PPAP_SEMIHOST
   uart_init();
 #endif

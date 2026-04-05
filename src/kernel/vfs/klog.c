@@ -164,4 +164,4 @@ done:
 void vfs_klogf(const char *, ...) __attribute__((alias("klogf")));
 
 /* Weak default — targets override to register UART/display loggers. */
-__attribute__((weak)) void klog_logger_init(void) {}
+__attribute__((weak)) void klog_init_logger(void) {}

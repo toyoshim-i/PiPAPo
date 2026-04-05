@@ -100,7 +100,7 @@ void target_early_init(void)
     __asm__ volatile("wsr %0, intclear; rsync" :: "r"(0xFFFFFFFFu));
     __asm__ volatile("wsr %0, intenable; rsync" :: "r"(0));
 
-    /* Boot banner printed from klog_logger_init() (VFS side) */
+    /* Boot banner printed from klog_init_logger() (VFS side) */
 }
 
 void target_late_init(void)

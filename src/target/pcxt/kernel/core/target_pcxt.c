@@ -203,7 +203,7 @@ void target_early_init(void)
 {
   seg_init_modules();
   install_int_debug();
-  /* Logger registration happens in klog_logger_init() called from
+  /* Logger registration happens in klog_init_logger() called from
    * vfs_init() — all VFS-side, no far call issues on i16. */
 }
 

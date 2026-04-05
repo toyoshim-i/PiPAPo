@@ -7,7 +7,7 @@
 
 extern void sched_set_input_poll(int (*fn)(void), int tty_idx);
 
-void klog_logger_init(void) {
+void klog_init_logger(void) {
   /* ESP-IDF already initializes UART0 during ROM boot — no uart_init needed */
   klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
   klogf("PiPaPo booting... [xtensa_cc]\n");

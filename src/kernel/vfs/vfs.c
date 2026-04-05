@@ -44,9 +44,9 @@ static uint32_t mount_count;
 
 void vfs_init(void) {
   /* Register UART/display loggers before any klogf output.
-   * Target provides klog_logger_init() to call uart_init() +
+   * Target provides klog_init_logger() to call uart_init() +
    * klog_set_logger() — all VFS-side now, no far call needed on i16. */
-  klog_logger_init();
+  klog_init_logger();
 
   /* Zero the mount table (BSS guarantees this, but be explicit) */
   for (int i = 0; i < VFS_MOUNT_MAX; i++) vfs_mount_table[i].active = 0;

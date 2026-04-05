@@ -45,6 +45,6 @@ void klog_set_logger(int id, klog_putc_fn putc, void (*flush)(void));
 /* Target-provided logger init — called from vfs_init() before first klogf.
  * Each target overrides this to call uart_init() + klog_set_logger().
  * Default (weak) implementation is a no-op. */
-void klog_logger_init(void);
+void klog_init_logger(void);
 
 #endif /* PPAP_KERNEL_VFS_KLOG_H */
