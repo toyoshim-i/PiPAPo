@@ -19,7 +19,6 @@
 
 #include "common/errno.h"
 #include "kernel/common/mod/mod_core.h"
-#include "kernel/core/mm/mem_region.h"
 #include "kernel/common/core/proc_info.h"
 #include "fd.h"
 #include "file.h"

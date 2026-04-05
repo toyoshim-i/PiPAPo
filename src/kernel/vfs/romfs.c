@@ -26,7 +26,7 @@
 #include "kernel/common/config.h"
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
-#include "kernel/core/mm/mem_region.h"
+#include "kernel/common/subtle/mem_helper.h"
 #include "romfs_format.h"
 
 /* ── Flash accessor helpers ──────────────────────────────────────────────────

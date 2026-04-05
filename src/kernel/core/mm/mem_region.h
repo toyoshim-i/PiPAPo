@@ -14,7 +14,8 @@
 #include <stdint.h>
 
 #include "kernel/common/core/mem_layout.h"
-#include "page.h"
+#include "kernel/common/subtle/mem_helper.h"
+#include "kernel/core/mm/page.h"
 
 int mem_region_init(void);
 
@@ -47,38 +48,7 @@ uint32_t mem_region_page_linear(page_id_t id);
 /* Return the page_id for an existing pointer (reverse lookup). */
 page_id_t mem_region_ptr_to_page(void *ptr);
 
-/* Split a linear pointer into a page_id + byte offset pair. */
-static inline int mem_region_ptr_ref(const void *ptr, page_id_t *page,
-                                     uint16_t *off) {
-  uintptr_t addr = (uintptr_t)ptr;
-
-  if (addr == 0u) {
-    *page = PAGE_ID_INVALID;
-    *off = 0;
-    return -1;
-  }
-  *page = (page_id_t)(addr / PAGE_SIZE);
-  *off = (uint16_t)(addr & (PAGE_SIZE - 1u));
-  return (*page == PAGE_ID_INVALID) ? -1 : 0;
-}
-
-/* Return the largest safe transfer that stays within the current page. */
-static inline uint16_t mem_region_page_chunk_len(uint16_t off,
-                                                 size_t remaining) {
-  size_t chunk = PAGE_SIZE - off;
-
-  if (chunk > remaining) chunk = remaining;
-  return (uint16_t)chunk;
-}
-
-/* Advance a page_id + offset pair by delta bytes. */
-static inline void mem_region_page_advance(page_id_t *page, uint16_t *off,
-                                           size_t delta) {
-  size_t pos = (size_t)*off + delta;
-
-  *page += (page_id_t)(pos / PAGE_SIZE);
-  *off = (uint16_t)(pos % PAGE_SIZE);
-}
+/* ptr_ref, page_chunk_len, page_advance are in mem_helper.h */
 
 /* Return a dereferenceable pointer (32-bit only, not available on i16). */
 #if !defined(__ia16__)

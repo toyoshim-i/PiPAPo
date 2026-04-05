@@ -24,7 +24,7 @@
 
 #include "common/errno.h"
 #include "kernel/common/mod/mod_core.h"
-#include "kernel/core/mm/mem_region.h"
+#include "kernel/common/subtle/mem_helper.h"
 #include "kernel/vfs/devfs.h"
 #include "kernel/vfs/procfs.h"
 #include "kernel/vfs/romfs.h"
