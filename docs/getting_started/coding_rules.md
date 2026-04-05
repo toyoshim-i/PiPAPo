@@ -299,18 +299,31 @@ Avoid:
 Include verification details in the commit body instead of a required trailer.
 Keep it concise and concrete.
 
+**Build verification** (`./scripts/build.sh <target>`):
+Use `build.sh` to catch compilation and link errors after mechanical changes
+(file moves, include path updates, cmake edits).  It exits promptly on
+success or failure and is safe to run for all targets in sequence.
+
+**Test verification** (`./scripts/run.sh --test <target>`):
+`run.sh --test` launches QEMU and waits for the test harness to print
+results.  It does **not** exit on its own — you must use an external
+timeout (e.g., `timeout 90 ./scripts/run.sh --test qemu_arm`) or the
+script's built-in timeout.  Without a timeout, a hung QEMU will block
+the terminal indefinitely.
+
 Examples:
 
 ```text
-Verified with ./scripts/run.sh --test qemu_arm
-Verified with ./scripts/run.sh --test qemu_m68k
-Verified by building qemu_m68k target and checking boot output
+Verified with ./scripts/build.sh qemu_arm
+Verified with ./scripts/build.sh pcxt
+Verified with ./scripts/run.sh --test qemu_arm (24/24 pass)
 ```
 
 If tests were not run, be explicit:
 
 ```text
 Not verified by running tests (docs-only change)
+Verified by build only — mechanical change, no behavioral impact
 ```
 
 ### Co-Authored-By protocol
@@ -341,9 +354,11 @@ Co-Authored-By: <Agent name> (<model name>) [<optional valid email>]
 3. Does the body include how the change was verified (or why not)?
 4. Did affected tests pass (or is there a clear reason they were not run)?
 5. Does the code follow this coding rules document?
-   In particular, check that no new `#ifdef` conditionals on arch or target
-   have been introduced — prefer per-arch/per-target implementations instead.
-   Also check that non-mm code does not introduce new direct `page_*` calls.
+   In particular, review the [Code Quality](#code-quality) section:
+   no code duplication, no `#ifdef` conditionals on arch or target
+   (prefer per-arch/per-target implementations), no direct `page_*`
+   calls outside `src/kernel/mm/`, and no plan changes without
+   discussion.
 6. Are affected documents updated?
 7. Are `Co-Authored-By:` trailers present when applicable?
 8. Is this commit scoped tightly enough to review easily?
