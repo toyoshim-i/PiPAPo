@@ -96,6 +96,7 @@ fi
 python3 "$SCRIPT_DIR/check_include_order.py"
 python3 "$SCRIPT_DIR/check_include_guards.py"
 python3 "$SCRIPT_DIR/check_own_header.py"
+"$SCRIPT_DIR/check_clang_format.sh"
 
 # ── Determine source and build directories ──────────────────────────────────
 case "$TARGET" in

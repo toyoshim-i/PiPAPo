@@ -56,7 +56,7 @@ if [[ $# -eq 0 ]]; then
   exit 0
 fi
 
-# --- Step 0: Ensure Docker is installed --------------------------------------
+# --- Step 0: Ensure host tools are installed ----------------------------------
 
 if ! command -v docker &>/dev/null; then
   info "Docker not found. Installing docker.io + buildx..."
@@ -64,6 +64,14 @@ if ! command -v docker &>/dev/null; then
   sudo apt-get install -y docker.io docker-buildx
   command -v docker &>/dev/null || error "Docker installation failed."
   success "Docker installed: $(docker --version)"
+fi
+
+# clang-format is used by pre-build code style checks (optional but recommended)
+if ! command -v clang-format &>/dev/null; then
+  info "Installing clang-format for code style checks..."
+  sudo apt-get update -qq
+  sudo apt-get install -y clang-format
+  success "clang-format installed: $(clang-format --version)"
 fi
 
 # Ensure the current user can run Docker without sudo

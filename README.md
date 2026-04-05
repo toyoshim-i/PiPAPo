@@ -84,7 +84,7 @@ see [docs/getting_started/source_tree.md](/docs/getting_started/source_tree.md).
 
 ## Quick Start
 
-**Host prerequisites:** Docker, bash, python3 (for pre-build code quality checks).
+**Host prerequisites:** Docker, bash, python3, clang-format (all installed by `./scripts/setup.sh`).
 
 ### 1. Install the toolchain
 
