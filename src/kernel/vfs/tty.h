@@ -58,6 +58,10 @@ void *tty_get_dev(int idx);
  * Wakes processes blocked on that TTY. */
 void tty_rx_notify(int idx);
 
+/* Check in_avail() on all TTY instances and wake blocked readers.
+ * Called from vfs_notify(VFS_EVENT_INPUT_POLL) in the idle loop. */
+void tty_poll_input(void);
+
 /* Called from UART ISR when Ctrl-C (0x03) is received on instance idx.
  * Echoes ^C and sends SIGINT when ISIG is enabled.
  * Returns 1 if the character was consumed, 0 otherwise. */

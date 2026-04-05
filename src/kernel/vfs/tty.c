@@ -149,8 +149,55 @@ static int tty_bios_putc(char c, void (*notify)(void)) {
   bios_putc(c);
   return 1;
 }
-static int tty_bios_getc(void) { return -1; }
-static int tty_bios_rx_avail(void) { return 0; }
+static int tty_bios_getc(void) {
+  /* BIOS INT 16h AH=01h: check if keystroke available (non-blocking) */
+  unsigned short flags;
+  unsigned short ax;
+  __asm__ volatile(
+      "push %%ds\n\t"
+      "push %%es\n\t"
+      "mov $0x0100, %%ax\n\t"
+      "int $0x16\n\t"
+      "pushf\n\t"
+      "pop %0\n\t"
+      "mov %%ax, %1\n\t"
+      "pop %%es\n\t"
+      "pop %%ds"
+      : "=r"(flags), "=r"(ax)
+      :
+      : "ax", "cc", "memory");
+  if (flags & 0x0040u) return -1; /* ZF set = no key */
+
+  /* BIOS INT 16h AH=00h: read the keystroke (consume it) */
+  __asm__ volatile(
+      "push %%ds\n\t"
+      "push %%es\n\t"
+      "mov $0x0000, %%ax\n\t"
+      "int $0x16\n\t"
+      "mov %%ax, %0\n\t"
+      "pop %%es\n\t"
+      "pop %%ds"
+      : "=r"(ax)
+      :
+      : "ax", "cc", "memory");
+  return ax & 0x00FFu; /* AL = ASCII code */
+}
+static int tty_bios_rx_avail(void) {
+  /* Direct BDA read: keyboard buffer head/tail at 0x0040:0x001A/0x001C */
+  unsigned short head;
+  unsigned short tail;
+  __asm__ volatile(
+      "push %%es\n\t"
+      "mov $0x0040, %%ax\n\t"
+      "mov %%ax, %%es\n\t"
+      "mov %%es:0x1A, %0\n\t"
+      "mov %%es:0x1C, %1\n\t"
+      "pop %%es"
+      : "=r"(head), "=r"(tail)
+      :
+      : "ax", "memory");
+  return head != tail ? 1 : 0;
+}
 #endif
 
 static tty_dev_t tty_devs[TTY_MAX] = {
@@ -664,6 +711,12 @@ static int tty_poll(struct file *f) {
 void tty_rx_notify(int idx) {
   if ((unsigned)idx >= TTY_MAX) return;
   mod_core.sched_wakeup(&tty_devs[idx]);
+}
+
+void tty_poll_input(void) {
+  for (unsigned i = 0; i < TTY_MAX; i++) {
+    if (tty_devs[i].in_avail && tty_devs[i].in_avail()) tty_rx_notify((int)i);
+  }
 }
 
 int tty_signal_intr(int idx) {

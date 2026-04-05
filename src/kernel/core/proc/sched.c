@@ -103,34 +103,6 @@ void sched_tick(void) {
 /* ── Periodic polling callbacks (shared across architectures) ────────────────
  */
 
-/* Optional input-available callbacks, registered by target via
- * sched_set_input_poll(). Returns non-zero if input is available (e.g. keyboard
- * FIFO has data). */
-static int (*input_poll_fn)(void);
-static int input_poll_tty_idx;
-
-/* Optional second input poll (e.g. serial TTY on dual-console targets). */
-static int (*input_poll_fn2)(void);
-static int input_poll_tty_idx2;
-
-/* Keyboard polling counter and deferred flag.
- * SysTick increments the counter; when it reaches the threshold it sets
- * input_poll_due = 1 instead of calling the (slow) I2C poll function
- * directly.  The actual poll happens in sched_display_poll(), which runs
- * from the idle loop in thread context — no interrupt blocking. */
-static uint32_t input_poll_counter;
-static volatile uint8_t input_poll_due;
-
-void sched_set_input_poll(int (*fn)(void), int tty_idx) {
-  input_poll_fn = fn;
-  input_poll_tty_idx = tty_idx;
-}
-
-void sched_set_input_poll2(int (*fn)(void), int tty_idx) {
-  input_poll_fn2 = fn;
-  input_poll_tty_idx2 = tty_idx;
-}
-
 /* Optional display flush callback, registered by target via
  * sched_set_display_poll(). */
 static void (*display_poll_fn)(void);
@@ -138,14 +110,9 @@ static void (*display_poll_fn)(void);
 void sched_set_display_poll(void (*fn)(void)) { display_poll_fn = fn; }
 
 void sched_display_poll(void) {
-  /* Run deferred input poll (keyboard I2C) in thread context so that
-   * UART and other IRQs are not blocked during the slow I2C transfer. */
-  if (input_poll_due && input_poll_fn) {
-    input_poll_due = 0;
-    if (input_poll_fn()) mod_vfs.tty_rx_notify(input_poll_tty_idx);
-    if (input_poll_fn2 && input_poll_fn2())
-      mod_vfs.tty_rx_notify(input_poll_tty_idx2);
-  }
+  /* Notify VFS to check TTY input backends and wake blocked readers.
+   * Runs in thread context (idle loop) so slow I/O (I2C, BIOS) is safe. */
+  mod_vfs.notify(VFS_EVENT_INPUT_POLL);
   if (display_poll_fn) display_poll_fn();
 }
 
@@ -169,14 +136,6 @@ void sched_timer_tick(int from_user) {
   /* Only Core 0 maintains the global tick counter */
   if (core_id() == 0) {
     tick_count++;
-
-    /* Defer input poll to idle loop every 2 ticks (20 ms).
-     * The actual I2C transaction runs in sched_display_poll() (thread
-     * context) so it does not block UART and other IRQs. */
-    if (input_poll_fn && ++input_poll_counter >= 2u) {
-      input_poll_counter = 0;
-      input_poll_due = 1;
-    }
   }
 
   uint32_t cid = core_id();

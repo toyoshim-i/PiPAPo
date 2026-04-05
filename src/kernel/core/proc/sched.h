@@ -82,27 +82,16 @@ void sched_switch(void);
 void sched_sleep(uint32_t ticks);
 
 /*
- * Register an input-available callback, polled every 20 ms from SysTick.
- * When fn() returns non-zero, tty_rx_notify(tty_idx) is called to wake
- * blocked readers on that TTY instance.
- * Used by PicoCalc to poll the STM32 keyboard controller for tty1.
- */
-void sched_set_input_poll(int (*fn)(void), int tty_idx);
-
-/* Register a second input-available callback for a secondary TTY.
- * Same semantics as sched_set_input_poll but for a second device. */
-void sched_set_input_poll2(int (*fn)(void), int tty_idx);
-
-/*
- * Register a display flush callback, polled every 20 ms from SysTick.
+ * Register a display flush callback, polled from the idle loop.
  * Used by PicoCalc to defer LCD flush (fbcon_poll_flush) out of critical
  * sections.
  */
 void sched_set_display_poll(void (*fn)(void));
 
 /*
- * Run the display poll callback if registered.  Must be called from
- * thread context (not ISR) because the LCD flush does long SPI transfers.
+ * Run idle-loop polls: fires VFS_EVENT_INPUT_POLL (TTY input check)
+ * and the display flush callback.  Must be called from thread context
+ * (not ISR) because backends may do slow I/O (I2C, BIOS calls).
  */
 void sched_display_poll(void);
 

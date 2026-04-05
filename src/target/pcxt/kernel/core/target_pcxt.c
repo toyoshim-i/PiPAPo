@@ -215,6 +215,7 @@ void target_late_init(void)
 {
   /* PIT timer deferred — BIOS INT 13h floppy driver needs the
    * original INT 08h timer for motor control. */
+  mod_vfs.notify(VFS_EVENT_LATE_INIT);
 }
 
 int target_mount_rootfs(void)

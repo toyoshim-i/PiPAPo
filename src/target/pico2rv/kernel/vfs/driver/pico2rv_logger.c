@@ -6,11 +6,6 @@
 #include "kernel/vfs/driver/uart_rp2350.h"
 #include "kernel/vfs/klog.h"
 
-/* UART RX availability check — declared in uart_rp2350.c */
-extern int uart_rx_avail(void);
-
-extern void sched_set_input_poll(int (*fn)(void), int tty_idx);
-
 void klog_init_logger(void) {
   uart_init();
   klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
@@ -30,11 +25,6 @@ void vfs_notify(int event) {
     case VFS_EVENT_LATE_INIT:
       while (uart_getc() >= 0)
         ; /* drain boot noise from RX ring */
-      /* Register UART RX polling for the serial TTY.
-       * RISC-V UART is polled (no RX interrupt), so the idle loop's
-       * sched_display_poll() checks uart_rx_avail() every 20ms and
-       * wakes blocked tty readers when data arrives. */
-      sched_set_input_poll(uart_rx_avail, 0 /* TTY_SERIAL */);
       break;
   }
 }

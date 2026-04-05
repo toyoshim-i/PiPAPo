@@ -5,8 +5,6 @@
 #include "kernel/vfs/driver/uart.h"
 #include "kernel/vfs/klog.h"
 
-extern void sched_set_input_poll(int (*fn)(void), int tty_idx);
-
 void klog_init_logger(void) {
   uart_init();
   klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
@@ -18,6 +16,5 @@ void vfs_notify(int event) {
   if (event == VFS_EVENT_LATE_INIT) {
     while (uart_getc() >= 0)
       ; /* drain boot noise */
-    sched_set_input_poll(uart_rx_avail, 0 /* TTY_SERIAL */);
   }
 }

@@ -438,6 +438,7 @@ extern void vfs_klogf(const char *, ...);
 /* Weak default notify — targets override for PLL/TTY/input events */
 __attribute__((weak)) void vfs_notify(int event) {
   if (event == VFS_EVENT_MODULE_READY) klog_init_logger();
+  if (event == VFS_EVENT_INPUT_POLL) tty_poll_input();
 }
 
 MOD_DEFINE_BEGIN(vfs)

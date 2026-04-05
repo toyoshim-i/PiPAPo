@@ -33,6 +33,8 @@
 #define VFS_EVENT_LATE_INIT                   \
   4 /* from target_late_init(): TTY backends, \
      * input polls, secondary logger, fbcon */
+#define VFS_EVENT_INPUT_POLL \
+  5 /* from idle loop: check TTY input and wake blocked readers */
 
 /* Forward declaration for fd_stdio_init parameter */
 struct pcb;
