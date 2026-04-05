@@ -154,6 +154,8 @@ PPAP/
 
 ## Quick Start
 
+**Host prerequisites:** Docker, bash, python3 (for pre-build code quality checks).
+
 ### 1. Install the toolchain
 
 ```sh

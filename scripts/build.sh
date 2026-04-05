@@ -85,6 +85,11 @@ if [[ -z "$TARGET" ]]; then
 fi
 
 # ── Repository boundary checks ───────────────────────────────────────────────
+if ! command -v python3 &>/dev/null; then
+  echo "[build] Error: python3 is required for pre-build checks."
+  echo "        Install it with: sudo apt install python3"
+  exit 1
+fi
 "$SCRIPT_DIR/check_allocator_boundaries.sh"
 "$SCRIPT_DIR/check_module_boundaries.sh"
 "$SCRIPT_DIR/check_include_paths.sh"
