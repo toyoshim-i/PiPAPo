@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # =============================================================================
-# check_clang_format.sh — Check code formatting with clang-format
+# check_clang_format.sh — Check / fix code formatting with clang-format
 # =============================================================================
 #
-# Checks all .c and .h files under src/kernel/ and src/arch/*/kernel/ against
-# the project .clang-format config.  Skips user/ directories.
+# Modes:
+#   ./scripts/check_clang_format.sh          Check only (used by build.sh)
+#   ./scripts/check_clang_format.sh --fix    Reformat files in place
+#
+# Scans all .c and .h files under src/kernel/ and src/arch/*/kernel/.
+# Skips user/ directories.
 #
 # If clang-format is not installed, the check is skipped with a warning.
-# If installed and violations are found, the build fails.
-#
-# Usage:
-#   ./scripts/check_clang_format.sh
+# If installed and violations are found, the check fails with exit 1.
 # =============================================================================
 
 set -euo pipefail
@@ -18,8 +19,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PPAP_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+FIX=0
+if [[ "${1:-}" == "--fix" ]]; then
+  FIX=1
+fi
+
 if ! command -v clang-format &>/dev/null; then
   echo "clang-format check: skipped (not installed)"
+  echo "       Run: ./scripts/setup.sh host"
   exit 0
 fi
 
@@ -37,7 +44,21 @@ if [[ ${#files[@]} -eq 0 ]]; then
   exit 0
 fi
 
-# Check formatting (dry-run)
+if [[ $FIX -eq 1 ]]; then
+  # Fix mode: reformat in place
+  fixed=0
+  for f in "${files[@]}"; do
+    if ! diff -q <(clang-format --style=file "$f") "$f" &>/dev/null; then
+      clang-format -i --style=file "$f"
+      echo "  formatted: ${f#"$PPAP_ROOT/"}"
+      ((fixed++))
+    fi
+  done
+  echo "clang-format: $fixed files reformatted"
+  exit 0
+fi
+
+# Check mode: dry-run
 bad=()
 for f in "${files[@]}"; do
   if ! diff -q <(clang-format --style=file "$f") "$f" &>/dev/null; then
@@ -47,7 +68,7 @@ done
 
 if [[ ${#bad[@]} -gt 0 ]]; then
   echo "CLANG-FORMAT VIOLATION: ${#bad[@]} files need formatting"
-  echo "Run: clang-format -i <file> to fix"
+  echo "Run: ./scripts/check_clang_format.sh --fix"
   echo ""
   for f in "${bad[@]}"; do
     echo "  $f"
