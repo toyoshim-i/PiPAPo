@@ -27,3 +27,6 @@ python3 "$SCRIPT_DIR/check_own_header.py"
 "$SCRIPT_DIR/check_clang_format.sh"
 
 echo "=== all checks passed ==="
+echo ""
+echo "REMINDER: Follow docs/getting_started/coding_rules.md"
+echo "          Do NOT commit without the user's explicit approval."
