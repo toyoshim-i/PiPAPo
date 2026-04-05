@@ -13,7 +13,7 @@
  *   Stack: top of page (grows down)
  */
 
-#include "loader.h"
+#include "kernel/core/exec/loader.h"
 
 #include <string.h>
 

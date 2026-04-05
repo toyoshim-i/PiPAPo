@@ -11,15 +11,15 @@
 
 #include <string.h>
 
-#include "exec.h"
+#include "kernel/core/exec/exec.h"
 #include "kernel/core/endian.h"
 #include "common/errno.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/subsys/subsys.h"
-#include "loader.h"
+#include "kernel/core/exec/loader.h"
 #if !defined(__m68k__)
-#include "h68k_emu.h"
+#include "kernel/core/exec/h68k_emu.h"
 #else
 #include "kernel/core/signal/signal.h"
 #include "kernel/core/subsys/human68k_loader.h"

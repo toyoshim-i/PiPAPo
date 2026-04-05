@@ -7,7 +7,7 @@
  * See docs/ecpu/m68k.md §8 for flag computation rules.
  */
 
-#include "ecpu_m68k.h"
+#include "kernel/core/cpu/ecpu_m68k.h"
 
 /* ── ADD with CCR ───────────────────────────────────────────────────────── */
 

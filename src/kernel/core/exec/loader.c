@@ -2,21 +2,21 @@
  * loader.c — Binary format loader registry
  */
 
-#include "loader.h"
+#include "kernel/core/exec/loader.h"
 
-#include "elf_loader.h"
+#include "kernel/core/exec/elf_loader.h"
 #ifdef PPAP_ENABLE_CPM
-#include "com_loader.h"
+#include "kernel/core/exec/com_loader.h"
 #endif
 #ifdef PPAP_ENABLE_HUMAN68K
-#include "r_loader.h"
-#include "x_loader.h"
+#include "kernel/core/exec/r_loader.h"
+#include "kernel/core/exec/x_loader.h"
 #endif
 #ifdef PPAP_ENABLE_SOS
-#include "sos_loader.h"
+#include "kernel/core/exec/sos_loader.h"
 #endif
 #ifdef PPAP_ENABLE_ECPU_M68K
-#include "m68k_emu_loader.h"
+#include "kernel/core/exec/m68k_emu_loader.h"
 #endif
 #if defined(__ia16__)
 extern const loader_t elf16_loader;

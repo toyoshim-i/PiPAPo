@@ -8,7 +8,7 @@
 #ifndef PPAP_KERNEL_SUBSYS_CPM_LOADER_H
 #define PPAP_KERNEL_SUBSYS_CPM_LOADER_H
 
-#include "cpm_bridge.h"
+#include "kernel/core/subsys/cpm_bridge.h"
 
 /*
  * cpm_load_com — load a .COM binary into Z80 memory with CP/M setup.

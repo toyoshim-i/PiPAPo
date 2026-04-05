@@ -28,7 +28,7 @@
 #include "common/errno.h"
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/core/proc_info.h" /* current->cwd for relative path resolution */
-#include "vfs.h"
+#include "kernel/vfs/vfs.h"
 
 /* ── Path normalization ─────────────────────────────────────────────────────
  */

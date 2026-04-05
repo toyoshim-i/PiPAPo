@@ -13,7 +13,7 @@
  *     the reset default (0x00 = highest) for Phase 1.
  */
 
-#include "sched.h" /* includes proc.h via sched.h */
+#include "kernel/core/proc/sched.h" /* includes proc.h via sched.h */
 
 #include <stddef.h>
 #include <stdint.h>

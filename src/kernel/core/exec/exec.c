@@ -7,7 +7,7 @@
  * signals) and manages the file buffer lifecycle.
  */
 
-#include "exec.h"
+#include "kernel/core/exec/exec.h"
 
 #include <string.h>
 
@@ -17,8 +17,8 @@
 #include "kernel/core/mm/page.h"
 #include "kernel/core/signal/signal.h"
 #include "kernel/common/mod/mod_vfs.h"
-#include "elf.h"
-#include "loader.h"
+#include "kernel/core/exec/elf.h"
+#include "kernel/core/exec/loader.h"
 
 #if defined(__ia16__)
 /*

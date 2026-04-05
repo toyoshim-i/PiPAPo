@@ -8,7 +8,7 @@
  * Phase 3: _CREATE, _OPEN, _CLOSE, _READ, _WRITE, _DELETE, _SEEK.
  */
 
-#include "human68k_bridge.h"
+#include "kernel/core/subsys/human68k_bridge.h"
 
 #include <stddef.h>
 #include <string.h>
@@ -16,7 +16,7 @@
 #include "common/dirent.h"
 #include "common/fcntl.h"
 #include "common/stat.h"
-#include "h68k_util.h"
+#include "kernel/core/subsys/h68k_util.h"
 #include "common/errno.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/exec/exec.h"

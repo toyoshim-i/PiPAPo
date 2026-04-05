@@ -10,7 +10,7 @@
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
 #include "kernel/common/config.h"
-#include "syscall.h"
+#include "kernel/core/syscall/syscall.h"
 
 /*
  * struct timespec — POSIX nanosecond-resolution time value.

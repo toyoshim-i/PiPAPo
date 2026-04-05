@@ -11,7 +11,7 @@
 #include <stdint.h>
 
 #include "kernel/common/core/mem_layout.h"
-#include "subsys.h"
+#include "kernel/core/subsys/subsys.h"
 
 /*
  * Per-process Human68k state (stored in pcb_t::subsys_data).

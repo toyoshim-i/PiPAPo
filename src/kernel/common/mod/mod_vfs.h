@@ -25,7 +25,7 @@
 #include "kernel/common/vfs/vfs_types.h"
 #include "kernel/common/core/page_types.h"
 
-#include "module.h"
+#include "kernel/common/mod/module.h"
 
 /* VFS event IDs for mod_vfs.notify() */
 #define VFS_EVENT_WILL_PLL_CHANGE  1  /* before clock_init_pll(): drain UART */
@@ -442,7 +442,7 @@ MOD_DECLARE_END(vfs)
  * To add a new function: update mod_vfs.h (types) AND mod_vfs.inc
  * (name + index).  Assembly stubs auto-generate from the .inc file. */
 #define MOD_VFS_ENTRY(name, idx) /* count only */
-#include "mod_vfs.inc"
+#include "kernel/common/mod/mod_vfs.inc"
 #undef MOD_VFS_ENTRY
 _Static_assert(sizeof(mod_vfs_t) == MOD_VFS_FUNC_COUNT * sizeof(void (*)(void)),
                "mod_vfs_t size mismatch — update MOD_VFS_FUNC_COUNT in "

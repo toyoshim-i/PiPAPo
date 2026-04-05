@@ -8,7 +8,7 @@
  * See docs/subsystems/cpm.md §5 for the full design.
  */
 
-#include "cpm_bridge.h"
+#include "kernel/core/subsys/cpm_bridge.h"
 
 #include <string.h>
 
@@ -1481,7 +1481,7 @@ int cpm_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
 
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
-#include "subsys.h"
+#include "kernel/core/subsys/subsys.h"
 
 /*
  * cpm_run_process — kernel-mode entry point for CP/M .COM processes.

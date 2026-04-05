@@ -15,7 +15,7 @@
  * mpu_switch() becomes a no-op via the mpu_present flag.
  */
 
-#include "mpu.h"
+#include "kernel/core/mm/mpu.h"
 
 #include <stdint.h>
 

@@ -8,7 +8,7 @@
  * See docs/subsystems/human68k.md for the full design.
  */
 
-#include "human68k_loader.h"
+#include "kernel/core/subsys/human68k_loader.h"
 
 #include <string.h>
 

@@ -15,7 +15,7 @@
 #include "kernel/common/config.h"
 #include "kernel/core/cpu/cpu.h"
 #include "kernel/core/cpu/ecpu_z80.h"
-#include "subsys.h"
+#include "kernel/core/subsys/subsys.h"
 
 /* ── CP/M memory map constants ──────────────────────────────────────────── */
 #define CPM_TPA_BASE 0x0100 /* .COM programs load here              */

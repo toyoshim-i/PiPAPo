@@ -16,11 +16,11 @@
  * This lets you track how much kernel data grows as Phase 1+ code is added.
  */
 
-#include "page.h"
+#include "kernel/core/mm/page.h"
 
-#include "kmem.h"
+#include "kernel/core/mm/kmem.h"
 #if !defined(__m68k__)
-#include "xip.h"
+#include "kernel/core/mm/xip.h"
 #endif
 #include <stddef.h>
 

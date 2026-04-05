@@ -9,9 +9,9 @@
  * See docs/subsystems/cpm.md §4 for the full design.
  */
 
-#include "com_loader.h"
+#include "kernel/core/exec/com_loader.h"
 
-#include "exec.h"
+#include "kernel/core/exec/exec.h"
 #include "kernel/core/cpu/ecpu_z80.h"
 #include "common/errno.h"
 #include "kernel/core/mm/mem_region.h"

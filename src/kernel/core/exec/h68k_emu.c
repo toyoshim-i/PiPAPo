@@ -8,7 +8,7 @@
 
 #if !defined(__m68k__)
 
-#include "h68k_emu.h"
+#include "kernel/core/exec/h68k_emu.h"
 
 #include <string.h>
 

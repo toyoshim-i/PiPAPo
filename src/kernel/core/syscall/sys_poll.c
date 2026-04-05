@@ -22,7 +22,7 @@
 #include "common/poll.h"  /* POLLIN, POLLOUT, POLLNVAL, struct pollfd */
 #include "kernel/core/proc/proc.h"
 #include "kernel/common/config.h"
-#include "syscall.h"
+#include "kernel/core/syscall/syscall.h"
 
 /* Convert timespec to ticks.  Returns 0 for zero timeout. */
 static uint32_t ts32_to_ticks(const long *ts) {

@@ -18,7 +18,7 @@
 #ifndef PPAP_KERNEL_FD_TTY_H
 #define PPAP_KERNEL_FD_TTY_H
 
-#include "file.h"
+#include "kernel/vfs/file.h"
 
 /* TTY instance indices */
 #define TTY_MAX 2

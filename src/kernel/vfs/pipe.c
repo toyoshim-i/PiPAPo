@@ -20,8 +20,8 @@
 #include "common/errno.h"
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/core/proc_info.h"
-#include "fd.h"
-#include "file.h"
+#include "kernel/vfs/fd.h"
+#include "kernel/vfs/file.h"
 #include "kernel/common/config.h"
 
 /* Forward declarations for pool operations (fd.c) */

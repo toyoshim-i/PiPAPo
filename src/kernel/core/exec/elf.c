@@ -9,7 +9,7 @@
  * Pure C — no hardware dependencies, no memory allocation.
  */
 
-#include "elf.h"
+#include "kernel/core/exec/elf.h"
 
 #include "common/errno.h"
 

@@ -8,9 +8,9 @@
  * VFS is process-agnostic — it never sees pid or pcb_t.
  */
 
-#include "fd.h"
-#include "file.h"
-#include "tty.h"
+#include "kernel/vfs/fd.h"
+#include "kernel/vfs/file.h"
+#include "kernel/vfs/tty.h"
 
 #include <stddef.h>
 #include <string.h>
@@ -18,7 +18,7 @@
 #include "common/errno.h"
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
-#include "devfs.h"
+#include "kernel/vfs/devfs.h"
 #include "kernel/common/core/proc_info.h" /* pcb_t — only for fd_stdio_init compat */
 #include "kernel/common/config.h"
 

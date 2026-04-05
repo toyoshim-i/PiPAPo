@@ -22,7 +22,7 @@
  * ISIG: Ctrl-C sends SIGINT to the foreground process group.
  */
 
-#include "tty.h"
+#include "kernel/vfs/tty.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -35,7 +35,7 @@
 #ifdef __ia16__
 #include "kernel/vfs/driver/bios_con.h"
 #endif
-#include "file.h"
+#include "kernel/vfs/file.h"
 
 /* ── Termios flag bits ───────────────────────────────────────────────────────
  */

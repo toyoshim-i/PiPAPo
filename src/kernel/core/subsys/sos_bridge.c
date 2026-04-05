@@ -8,7 +8,7 @@
  * instructions pass through unhandled.
  */
 
-#include "sos_bridge.h"
+#include "kernel/core/subsys/sos_bridge.h"
 
 #include <string.h>
 
@@ -1023,7 +1023,7 @@ int sos_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
 
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
-#include "subsys.h"
+#include "kernel/core/subsys/subsys.h"
 
 void sos_run_process(void) {
   pcb_t *p = current;

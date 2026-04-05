@@ -18,7 +18,7 @@
  * a spinlock will be added around pool operations.
  */
 
-#include "kmem.h"
+#include "kernel/core/mm/kmem.h"
 
 #include <stddef.h> /* NULL */
 

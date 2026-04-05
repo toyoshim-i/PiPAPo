@@ -10,7 +10,7 @@
  * unique for the lifetime of the kernel (no wraparound in Phase 1).
  */
 
-#include "proc.h"
+#include "kernel/core/proc/proc.h"
 
 #include <stddef.h> /* NULL, offsetof */
 
@@ -21,7 +21,7 @@
 #include "kernel/common/spinlock.h" /* SPIN_PROC */
 #include "kernel/core/arch.h"   /* arch_build_initial_frame */
 #include "kernel/common/ioregs.h"
-#include "sched.h" /* sched_get_ticks — for start_time */
+#include "kernel/core/proc/sched.h" /* sched_get_ticks — for start_time */
 
 /* Default file creation mask (octal 022 → owner rw, group/other r) */
 #define DEFAULT_UMASK 022

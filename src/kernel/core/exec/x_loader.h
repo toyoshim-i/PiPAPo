@@ -5,7 +5,7 @@
 #ifndef PPAP_KERNEL_EXEC_X_LOADER_H
 #define PPAP_KERNEL_EXEC_X_LOADER_H
 
-#include "loader.h"
+#include "kernel/core/exec/loader.h"
 
 extern const loader_t x_loader;
 

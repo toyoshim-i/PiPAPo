@@ -24,7 +24,7 @@
  * At 133 MHz, 0xFFFFFF ticks ≈ 126 ms — more than enough for short benchmarks.
  */
 
-#include "xip.h"
+#include "kernel/core/mm/xip.h"
 
 #include <stdint.h>
 

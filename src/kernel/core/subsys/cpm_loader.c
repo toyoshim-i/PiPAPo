@@ -18,7 +18,7 @@
 
 #include <string.h>
 
-#include "cpm_bridge.h"
+#include "kernel/core/subsys/cpm_bridge.h"
 
 /* ── Zero page setup ───────────────────────────────────────────────────── */
 

@@ -11,7 +11,7 @@
  *   return value → d0
  */
 
-#include "ppap_m68k_bridge.h"
+#include "kernel/core/subsys/ppap_m68k_bridge.h"
 
 #include "common/syscall_nr.h"
 

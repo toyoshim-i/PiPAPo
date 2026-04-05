@@ -21,7 +21,7 @@
  *       (original context) on exception return.
  */
 
-#include "signal.h"
+#include "kernel/core/signal/signal.h"
 
 #include <stddef.h>
 

@@ -18,7 +18,7 @@
  *   signal.c    — sys_kill, sys_sigaction, sys_sigreturn
  */
 
-#include "syscall.h"
+#include "kernel/core/syscall/syscall.h"
 
 #include <stdint.h>
 

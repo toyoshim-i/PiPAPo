@@ -12,7 +12,7 @@
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/common/config.h"
-#include "syscall.h"
+#include "kernel/core/syscall/syscall.h"
 
 #include <stddef.h>
 #include <stdint.h>

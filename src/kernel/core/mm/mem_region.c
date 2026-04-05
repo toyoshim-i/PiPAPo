@@ -2,12 +2,12 @@
  * mem_region.c — Memory-region allocation helpers
  */
 
-#include "mem_region.h"
+#include "kernel/core/mm/mem_region.h"
 
 #include "common/errno.h"
 #include "kernel/common/spinlock.h"
 #include "kernel/common/mod/mod_vfs.h"
-#include "page.h"
+#include "kernel/core/mm/page.h"
 
 #if defined(__xtensa__)
 #include "esp_heap_caps.h"

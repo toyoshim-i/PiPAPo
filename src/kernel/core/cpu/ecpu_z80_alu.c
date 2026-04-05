@@ -5,7 +5,7 @@
  * operation. See docs/ecpu/z80.md §8 for the flag computation design.
  */
 
-#include "ecpu_z80.h"
+#include "kernel/core/cpu/ecpu_z80.h"
 
 /* ── Parity lookup table ─────────────────────────────────────────────────── */
 /* parity_table[v] = FLAG_PV if v has even number of set bits, else 0 */

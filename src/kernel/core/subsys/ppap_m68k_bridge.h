@@ -17,7 +17,7 @@
 
 #include "kernel/core/cpu/cpu.h"
 #include "kernel/core/cpu/ecpu_m68k.h"
-#include "subsys.h"
+#include "kernel/core/subsys/subsys.h"
 
 /* ── Per-process eCPU-m68k execution state ─────────────────────────────── */
 

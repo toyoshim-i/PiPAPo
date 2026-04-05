@@ -13,7 +13,7 @@
  *   - No symbolic links (not needed for /tmp use cases)
  */
 
-#include "tmpfs.h"
+#include "kernel/vfs/tmpfs.h"
 
 #include <stddef.h>
 

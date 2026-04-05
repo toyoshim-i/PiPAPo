@@ -12,7 +12,7 @@
 #define PPAP_KERNEL_FD_FD_H
 
 #include <stdint.h>
-#include "file.h"
+#include "kernel/vfs/file.h"
 
 /*
  * fd_pool_alloc_pipe — Allocate a pool entry for a pipe end.

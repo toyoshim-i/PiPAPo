@@ -2,7 +2,7 @@
  * h68k_util.c — Human68k path translation and error code mapping
  */
 
-#include "h68k_util.h"
+#include "kernel/core/subsys/h68k_util.h"
 
 #include "common/errno.h"
 

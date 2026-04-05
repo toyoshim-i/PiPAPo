@@ -2,12 +2,12 @@
  * elf_loader.c — ELF binary format loader
  */
 
-#include "elf_loader.h"
+#include "kernel/core/exec/elf_loader.h"
 
 #include <string.h>
 
 #include "kernel/core/arch.h"
-#include "elf.h"
+#include "kernel/core/exec/elf.h"
 #include "common/errno.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"

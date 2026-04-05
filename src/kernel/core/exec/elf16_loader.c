@@ -12,8 +12,8 @@
  *   - No shared libraries, no PIE
  */
 
-#include "loader.h"
-#include "elf.h"
+#include "kernel/core/exec/loader.h"
+#include "kernel/core/exec/elf.h"
 
 #include <string.h>
 

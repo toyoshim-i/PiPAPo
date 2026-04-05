@@ -29,7 +29,7 @@
 #include "common/ptrace.h"
 #include "common/wait.h"
 #include "kernel/core/cpu/cpu.h"
-#include "syscall.h"
+#include "kernel/core/syscall/syscall.h"
 
 /* Wait status encoding (POSIX-compatible) */
 #define W_EXITCODE(ret) (((ret)&0xff) << 8)

@@ -5,7 +5,7 @@
 #ifndef PPAP_KERNEL_EXEC_M68K_EMU_LOADER_H
 #define PPAP_KERNEL_EXEC_M68K_EMU_LOADER_H
 
-#include "loader.h"
+#include "kernel/core/exec/loader.h"
 
 extern const loader_t m68k_emu_loader;
 

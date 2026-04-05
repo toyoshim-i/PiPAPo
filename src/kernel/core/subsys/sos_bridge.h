@@ -15,7 +15,7 @@
 #include "kernel/common/config.h"
 #include "kernel/core/cpu/cpu.h"
 #include "kernel/core/cpu/ecpu_z80.h"
-#include "subsys.h"
+#include "kernel/core/subsys/subsys.h"
 
 /* ── S-OS _SOS header format ───────────────────────────────────────────── */
 #define SOS_MAGIC "_SOS"
