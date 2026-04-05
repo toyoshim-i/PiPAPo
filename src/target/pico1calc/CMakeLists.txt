@@ -39,9 +39,9 @@ add_executable(ppap_pico1calc
     ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/clock_rpico.c
     ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/spi_rpico.c
     ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/i2c_rpico.c
-    ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/spi_lcd_rpico.c
+    ${PPAP_ROOT}/src/arch/arm_m/kernel/vfs/driver/spi_lcd_rpico.c
     ${PPAP_ROOT}/src/kernel/core/driver/spi_sd.c
-    ${PPAP_ROOT}/src/kernel/core/driver/lcd_panel.c
+    ${PPAP_ROOT}/src/kernel/vfs/driver/lcd_panel.c
     ${PPAP_ROOT}/src/kernel/core/driver/i2c_kbd.c
     ${PPAP_ROOT}/src/kernel/vfs/fbcon.c
 )

@@ -17,9 +17,9 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "kernel/core/driver/font.h"
-#include "kernel/core/driver/lcd_panel.h"
-#include "kernel/core/driver/spi_lcd.h"
+#include "kernel/vfs/driver/font.h"
+#include "kernel/vfs/driver/lcd_panel.h"
+#include "kernel/vfs/driver/spi_lcd.h"
 
 /* ---------- constants ---------- */
 

@@ -11,6 +11,8 @@
 #include "kernel/common/config.h"
 #include "kernel/core/driver/i2c.h"
 #include "kernel/core/driver/i2c_kbd.h"
+#include "kernel/vfs/driver/lcd_panel.h"
+#include "kernel/vfs/driver/spi_lcd.h"
 
 extern void sched_set_input_poll(int (*fn)(void), int tty_idx);
 extern void sched_set_display_poll(void (*fn)(void));
@@ -148,6 +150,13 @@ void vfs_notify(int event) {
       while (uart_getc() >= 0)
         ; /* drain boot noise from RX ring */
       if (kbd_present()) {
+        spi_lcd_init();
+        klogf("SPI1: LCD initialised at 33 MHz\n");
+        lcd_init();
+        if (!spi_lcd_ok())
+          klogf("LCD: *** SPI timeout during init ***\n");
+        else
+          klogf("LCD: ST7365P initialised (320x320 RGB565)\n");
         fbcon_init();
         klogf("FBCON: text console initialised (40x20)\n");
         klog_set_logger(KLOG_LOGGER_SECONDARY, fbcon_putc,

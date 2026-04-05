@@ -17,10 +17,10 @@
  * PicoCalc repository.
  */
 
-#include "lcd_panel.h"
+#include "kernel/vfs/driver/lcd_panel.h"
 
 #include "kernel/common/mod/mod_vfs.h"
-#include "spi_lcd.h"
+#include "kernel/vfs/driver/spi_lcd.h"
 
 /* ── Timing helper ─────────────────────────────────────────────────────── */
 

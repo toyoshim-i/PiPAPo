@@ -10,9 +10,7 @@
 #include "kernel/core/driver/clock.h"
 #include "kernel/core/driver/i2c.h"
 #include "kernel/core/driver/i2c_kbd.h"
-#include "kernel/core/driver/lcd_panel.h"
 #include "kernel/core/driver/spi.h"
-#include "kernel/core/driver/spi_lcd.h"
 #include "kernel/core/driver/spi_sd.h"
 #include "common/errno.h"
 #include "kernel/common/mod/mod_vfs.h"
@@ -36,17 +34,9 @@ void target_early_init(void) {
   i2c_init();
   mod_vfs.klogf("I2C1: initialised at 10 kHz\n");
   kbd_init();
-  if (kbd_present()) {
-    spi_lcd_init();
-    mod_vfs.klogf("SPI1: LCD initialised at 33 MHz\n");
-    lcd_init();
-    if (!spi_lcd_ok())
-      mod_vfs.klogf("LCD: *** SPI timeout during init ***\n");
-    else
-      mod_vfs.klogf("LCD: ST7365P initialised (320x320 RGB565)\n");
-  } else {
+  if (!kbd_present())
     mod_vfs.klogf("PicoCalc peripherals not detected (skipping LCD/fbcon)\n");
-  }
+  /* LCD + fbcon init deferred to VFS_EVENT_LATE_INIT (pico1calc_logger.c) */
 }
 
 void target_late_init(void) {
