@@ -33,8 +33,6 @@
 #ifdef PPAP_HAS_BLKDEV
 #include "kernel/core/driver/blkdev.h"
 #include "kernel/core/driver/flatblk.h"
-#include "kernel/vfs/ufs.h"
-#include "kernel/vfs/vfs.h"
 #endif
 #include <stddef.h>
 #include <stdint.h>
@@ -216,7 +214,7 @@ int target_mount_rootfs(void) {
   flatblk_init("ram0", (const void *)(uintptr_t)addr, size);
   blkdev_t *bd = blkdev_find("ram0");
   if (!bd) return -1;
-  return vfs_mount("/", &ufs_ops, MNT_RDONLY, bd);
+  return mod_vfs.mount_ufs("/", MNT_RDONLY, bd);
 #else
   return -1;
 #endif

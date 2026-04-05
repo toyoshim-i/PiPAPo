@@ -11,9 +11,7 @@
 #include "target/target.h"
 #include "kernel/core/driver/blkdev.h"
 #include "kernel/core/driver/flatblk.h"
-#include "kernel/vfs/ufs.h"
 #include "kernel/common/mod/mod_vfs.h"
-#include "kernel/vfs/vfs.h"
 
 #ifdef PPAP_TESTS
 #include "ktest.h"
@@ -42,7 +40,7 @@ void target_post_mount(void) {
     if (rc >= 0) {
       blkdev_t *bd = blkdev_find("ram0");
       if (bd) {
-        rc = vfs_mount("/mnt/ufs", &ufs_ops, MNT_RDONLY, bd);
+        rc = mod_vfs.mount_ufs("/mnt/ufs", MNT_RDONLY, bd);
         if (rc == 0)
           mod_vfs.klogf("VFS: UFS mounted at /mnt/ufs (%lu KB)\n",
                 (unsigned long)(ufsimg_size / 1024));
