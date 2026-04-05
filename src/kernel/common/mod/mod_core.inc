@@ -19,16 +19,17 @@ MOD_CORE_ENTRY(mem_region_alloc,       6)
 MOD_CORE_ENTRY(mem_region_free,        7)
 MOD_CORE_ENTRY(mem_region_free_bytes,  8)
 MOD_CORE_ENTRY(mem_region_page_alloc,  9)
-MOD_CORE_ENTRY(mem_region_page_free,  10)
-MOD_CORE_ENTRY(mem_region_page_read,  11)
-MOD_CORE_ENTRY(mem_region_page_write, 12)
-MOD_CORE_ENTRY(mem_region_total_bytes, 13)
-MOD_CORE_ENTRY(sched_get_ticks,      14)
-MOD_CORE_ENTRY(sched_wakeup,         15)
-MOD_CORE_ENTRY(sched_switch,         16)
-MOD_CORE_ENTRY(subsys_read_proc,     17)
-MOD_CORE_ENTRY(svc_set_restart,      18)
+MOD_CORE_ENTRY(mem_region_page_free,   10)
+MOD_CORE_ENTRY(mem_region_page_linear, 11)
+MOD_CORE_ENTRY(mem_region_page_read,   12)
+MOD_CORE_ENTRY(mem_region_page_write,  13)
+MOD_CORE_ENTRY(mem_region_total_bytes, 14)
+MOD_CORE_ENTRY(sched_get_ticks,        15)
+MOD_CORE_ENTRY(sched_wakeup,           16)
+MOD_CORE_ENTRY(sched_switch,           17)
+MOD_CORE_ENTRY(subsys_read_proc,       18)
+MOD_CORE_ENTRY(svc_set_restart,        19)
 
 #ifndef MOD_CORE_FUNC_COUNT
-#define MOD_CORE_FUNC_COUNT 19
+#define MOD_CORE_FUNC_COUNT 20
 #endif

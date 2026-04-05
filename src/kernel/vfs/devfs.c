@@ -24,7 +24,7 @@
 
 #include "common/errno.h"
 #include "kernel/common/mod/mod_core.h"
-#include "kernel/core/mm/mem_region.h"
+#include "kernel/common/subtle/mem_helper.h"
 #include "kernel/vfs/driver/uart.h"
 
 /* ── Device node descriptor ──────────────────────────────────────────────── */
@@ -299,7 +299,7 @@ static long devblk_read(page_id_t page, uint16_t page_off, size_t n,
     uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
     uint32_t count = (uint32_t)chunk / BLKDEV_SECTOR_SIZE;
     int rc = bd->read(
-        bd, (void *)(uintptr_t)(mem_region_page_linear(page) + page_off),
+        bd, (void *)(uintptr_t)(mod_core.mem_region_page_linear(page) + page_off),
         sector, count);
     if (rc < 0) return (long)rc;
     remaining -= chunk;
@@ -325,7 +325,7 @@ static long devblk_write(page_id_t page, uint16_t page_off, size_t n,
     uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
     uint32_t count = (uint32_t)chunk / BLKDEV_SECTOR_SIZE;
     int rc = bd->write(
-        bd, (const void *)(uintptr_t)(mem_region_page_linear(page) + page_off),
+        bd, (const void *)(uintptr_t)(mod_core.mem_region_page_linear(page) + page_off),
         sector, count);
     if (rc < 0) return (long)rc;
     remaining -= chunk;
@@ -358,7 +358,7 @@ static long devloop_read_n(int idx, page_id_t page, uint16_t page_off, size_t n,
     uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
     uint32_t count = (uint32_t)chunk / BLKDEV_SECTOR_SIZE;
     int rc = bd->read(
-        bd, (void *)(uintptr_t)(mem_region_page_linear(page) + page_off),
+        bd, (void *)(uintptr_t)(mod_core.mem_region_page_linear(page) + page_off),
         sector, count);
     if (rc < 0) return (long)rc;
     remaining -= chunk;
@@ -387,7 +387,7 @@ static long devloop_write_n(int idx, page_id_t page, uint16_t page_off, size_t n
     uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
     uint32_t count = (uint32_t)chunk / BLKDEV_SECTOR_SIZE;
     int rc = bd->write(
-        bd, (const void *)(uintptr_t)(mem_region_page_linear(page) + page_off),
+        bd, (const void *)(uintptr_t)(mod_core.mem_region_page_linear(page) + page_off),
         sector, count);
     if (rc < 0) return (long)rc;
     remaining -= chunk;
