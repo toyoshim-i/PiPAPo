@@ -40,12 +40,13 @@ if [[ $# -eq 0 ]]; then
   echo "  --no-cache    Rebuild images from scratch (ignore Docker cache)"
   echo ""
   echo "Families:"
+  echo "  host          Host tools only — python3, clang-format (no Docker images)"
   echo "  arm           ARM Cortex-M — arm-none-eabi-gcc, Pico SDK, QEMU ARM, OpenOCD"
   echo "  m68k          Motorola 68k — m68k-elf-gcc, QEMU m68k, XEiJ"
   echo "  riscv         RISC-V — riscv32 bare-metal + linux toolchains, Pico SDK, QEMU"
   echo "  xtensa        Xtensa/ESP32-S3 — ESP-IDF v5.4, Xtensa toolchain"
   echo "  ia16          PC/XT (i16) — ia16-elf-gcc, NASM, QEMU i386"
-  echo "  all           Build all available images"
+  echo "  all           Host tools + all available Docker images"
   echo ""
   echo "Target aliases:"
   echo "  qemu_arm, pico1, pico1calc, pico2  → arm"
@@ -56,35 +57,61 @@ if [[ $# -eq 0 ]]; then
   exit 0
 fi
 
-# --- Step 0: Ensure host tools are installed ----------------------------------
+# --- Step 0: Install host tools (python3, clang-format) ----------------------
 
-if ! command -v docker &>/dev/null; then
-  info "Docker not found. Installing docker.io + buildx..."
-  sudo apt-get update -qq
-  sudo apt-get install -y docker.io docker-buildx
-  command -v docker &>/dev/null || error "Docker installation failed."
-  success "Docker installed: $(docker --version)"
-fi
+install_host_tools() {
+  local need_apt=0
 
-# clang-format is used by pre-build code style checks (optional but recommended)
-if ! command -v clang-format &>/dev/null; then
-  info "Installing clang-format for code style checks..."
-  sudo apt-get update -qq
-  sudo apt-get install -y clang-format
-  success "clang-format installed: $(clang-format --version)"
-fi
+  if ! command -v python3 &>/dev/null; then
+    need_apt=1
+  fi
+  if ! command -v clang-format &>/dev/null; then
+    need_apt=1
+  fi
+  if [[ $need_apt -eq 1 ]]; then
+    sudo apt-get update -qq
+  fi
+  if ! command -v python3 &>/dev/null; then
+    info "Installing python3..."
+    sudo apt-get install -y python3
+    success "python3 installed: $(python3 --version)"
+  else
+    success "python3 ready: $(python3 --version)"
+  fi
+  if ! command -v clang-format &>/dev/null; then
+    info "Installing clang-format..."
+    sudo apt-get install -y clang-format
+    success "clang-format installed: $(clang-format --version)"
+  else
+    success "clang-format ready: $(clang-format --version)"
+  fi
+}
 
-# Ensure the current user can run Docker without sudo
-if ! docker info &>/dev/null 2>&1; then
-  id -nG | grep -qw docker || {
-    info "Adding $(whoami) to the docker group..."
-    sudo usermod -aG docker "$(whoami)"
-  }
-  info "Activating docker group in current shell..."
-  exec sg docker "$0 $*"
-fi
+install_host_tools
 
-success "Docker ready: $(docker --version)"
+# --- Step 0b: Ensure Docker is installed (skip for host-only) ----------------
+
+setup_docker() {
+  if ! command -v docker &>/dev/null; then
+    info "Docker not found. Installing docker.io + buildx..."
+    sudo apt-get update -qq
+    sudo apt-get install -y docker.io docker-buildx
+    command -v docker &>/dev/null || error "Docker installation failed."
+    success "Docker installed: $(docker --version)"
+  fi
+
+  # Ensure the current user can run Docker without sudo
+  if ! docker info &>/dev/null 2>&1; then
+    id -nG | grep -qw docker || {
+      info "Adding $(whoami) to the docker group..."
+      sudo usermod -aG docker "$(whoami)"
+    }
+    info "Activating docker group in current shell..."
+    exec sg docker "$0 $*"
+  fi
+
+  success "Docker ready: $(docker --version)"
+}
 
 # --- Resolve targets to image families ---------------------------------------
 
@@ -97,6 +124,7 @@ target_to_family() {
     qemu_rv32|pico2rv)              echo "riscv" ;;
     xtensa_cc)                      echo "xtensa" ;;
     pcxt)                          echo "ia16" ;;
+    host)                            echo "host" ;;  # host tools only
     arm|m68k|riscv|xtensa|ia16)      echo "$1" ;;  # direct family name
     *)                              error "Unknown target or family: $1" ;;
   esac
@@ -110,6 +138,7 @@ for arg in "$@"; do
   case "$arg" in
     --no-cache) NO_CACHE="--no-cache" ;;
     all)
+      FAMILIES+=("host")
       for dir in "${PPAP_ROOT}"/docker/*/; do
         [[ -f "${dir}Dockerfile" ]] && FAMILIES+=("$(basename "$dir")")
       done
@@ -123,14 +152,25 @@ done
 FAMILIES=($(printf '%s\n' "${FAMILIES[@]}" | sort -u))
 
 if [[ ${#FAMILIES[@]} -eq 0 ]]; then
-  error "No Dockerfiles found under docker/. Nothing to build."
+  error "No targets specified. Nothing to build."
 fi
 
-# --- Check Docker availability -----------------------------------------------
+# Remove "host" from FAMILIES (already handled above) and check if Docker needed
+DOCKER_FAMILIES=()
+for f in "${FAMILIES[@]}"; do
+  [[ "$f" != "host" ]] && DOCKER_FAMILIES+=("$f")
+done
 
-if ! command -v docker &>/dev/null; then
-  error "Docker not found. Install Docker: https://docs.docker.com/get-docker/"
+if [[ ${#DOCKER_FAMILIES[@]} -eq 0 ]]; then
+  success "Host tools installed. No Docker images requested."
+  exit 0
 fi
+
+FAMILIES=("${DOCKER_FAMILIES[@]}")
+
+# --- Ensure Docker is available -----------------------------------------------
+
+setup_docker
 
 # --- Build images ------------------------------------------------------------
 
