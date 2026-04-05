@@ -13,9 +13,9 @@
 #include <stdint.h>
 
 #include "kernel/common/config.h"
+#include "kernel/common/spinlock.h" /* SPIN_TXRING — SIO bus fence */
 #include "kernel/vfs/driver/uart.h"
 #include "kernel/vfs/tty.h"   /* tty_rx_notify, tty_signal_intr */
-#include "kernel/common/spinlock.h" /* SPIN_TXRING — SIO bus fence */
 #include "target/rpico.h"
 
 /* ==========================================================================

@@ -1,9 +1,9 @@
 /* x68k_logger.c — VFS-side UART/logger for X68000 */
 
-#include "kernel/vfs/klog.h"
-#include "kernel/vfs/driver/uart.h"
-#include "kernel/vfs/tty.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/vfs/driver/uart.h"
+#include "kernel/vfs/klog.h"
+#include "kernel/vfs/tty.h"
 
 extern int uart_serial_putc(char c, void (*notify)(void));
 extern int uart_serial_getc(void);

@@ -14,12 +14,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "kernel/common/ioregs.h"
+#include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/proc/sched.h"
+#include "sdkconfig.h"
 #include "target/target.h"
 #include "xtensa_cc.h"
-#include "kernel/common/mod/mod_vfs.h"
-#include "sdkconfig.h"
-#include "kernel/common/ioregs.h"
-#include "kernel/core/proc/sched.h"
 
 #if !defined(CONFIG_FREERTOS_UNICORE) || !CONFIG_FREERTOS_UNICORE
 #error "xtensa_cc requires CONFIG_FREERTOS_UNICORE=y"

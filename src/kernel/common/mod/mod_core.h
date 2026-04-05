@@ -21,8 +21,8 @@
 #ifndef PPAP_KERNEL_MOD_MOD_CORE_H
 #define PPAP_KERNEL_MOD_MOD_CORE_H
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 /* Forward declarations — full definitions in mm/, blkdev/, proc/ headers */
 struct kmem_pool;

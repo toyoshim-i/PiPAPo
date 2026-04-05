@@ -12,6 +12,8 @@
 #ifndef PPAP_CONFIG_H
 #define PPAP_CONFIG_H
 
+#include <stdint.h>
+
 /* ── System clock ──────────────────────────────────────────────────────────
  * PPAP_SYS_HZ   CPU frequency after clock_init_pll() completes.
  *               Drives SYSTICK_RELOAD (sched.h) and the UART baud divisors

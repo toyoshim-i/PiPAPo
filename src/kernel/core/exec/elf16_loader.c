@@ -12,18 +12,18 @@
  *   - No shared libraries, no PIE
  */
 
-#include "kernel/core/exec/loader.h"
 #include "kernel/core/exec/elf.h"
+#include "kernel/core/exec/loader.h"
 
 #include <string.h>
 
 #include "common/errno.h"
 #include "kernel/common/mod/mod_vfs.h"
-#include "kernel/core/mm/mem_region.h"
-#include "kernel/core/proc/proc.h"
 #include "kernel/common/vfs/vfs_types.h"
 #include "kernel/core/arch.h"
 #include "kernel/core/cpu/cpu.h"
+#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/proc/proc.h"
 
 #define ELF16_MAX_SIZE  (60u * 1024u)  /* 60 KB max (leave room for stack) */
 #define ELF16_STACK_SIZE 2048u         /* 2 KB user stack */

@@ -11,10 +11,10 @@
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/core/mm/kmem.h"
 #include "kernel/core/mm/mem_region.h"
-#include "kernel/vfs/driver/blkdev.h"
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/subsys/subsys.h"
 #include "kernel/core/syscall/syscall.h"
+#include "kernel/vfs/driver/blkdev.h"
 
 /* Cross-module blkdev wrappers — execute dev->read/write in core's CS.
  * NOT static: called by name from core_entries.S on i16. */

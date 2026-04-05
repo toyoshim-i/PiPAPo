@@ -18,13 +18,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "kernel/common/ioregs.h"
 #include "kernel/common/mod/mod_vfs.h"  /* mod_vfs.tty_rx_notify */
+#include "kernel/common/spinlock.h" /* SPIN_PROC */
+#include "kernel/core/arch.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h" /* PAGE_SIZE */
 #include "kernel/core/signal/signal.h"
-#include "kernel/common/spinlock.h" /* SPIN_PROC */
-#include "kernel/core/arch.h"
-#include "kernel/common/ioregs.h"
 
 /* ── Tick counter ─────────────────────────────────────────────────────────────
  */

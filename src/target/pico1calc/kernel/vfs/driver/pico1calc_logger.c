@@ -1,20 +1,20 @@
 /* pico1calc_logger.c — VFS-side UART/logger for PicoCalc */
 
-#include "kernel/vfs/klog.h"
-#include "kernel/vfs/driver/uart.h"
-#include "kernel/vfs/driver/uart_rpico.h"
-#include "kernel/vfs/driver/fbcon.h"
-#include "kernel/vfs/tty.h"
-#include "kernel/vfs/devfs.h"
-#include "kernel/vfs/procfs.h"
-#include "kernel/common/mod/mod_vfs.h"
 #include "common/errno.h"
 #include "kernel/common/config.h"
+#include "kernel/common/mod/mod_vfs.h"
+#include "kernel/vfs/devfs.h"
+#include "kernel/vfs/driver/fbcon.h"
 #include "kernel/vfs/driver/i2c.h"
 #include "kernel/vfs/driver/i2c_kbd.h"
 #include "kernel/vfs/driver/lcd_panel.h"
 #include "kernel/vfs/driver/spi.h"
 #include "kernel/vfs/driver/spi_lcd.h"
+#include "kernel/vfs/driver/uart.h"
+#include "kernel/vfs/driver/uart_rpico.h"
+#include "kernel/vfs/klog.h"
+#include "kernel/vfs/procfs.h"
+#include "kernel/vfs/tty.h"
 
 extern void sched_set_input_poll(int (*fn)(void), int tty_idx);
 extern void sched_set_display_poll(void (*fn)(void));

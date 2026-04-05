@@ -2,8 +2,8 @@
  * i16_common.c -- Shared i16 architecture state and helpers
  */
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 /* Context switch pending flag.
  * Set by arch_yield().  Checked by timer ISR in switch.S.
@@ -79,8 +79,8 @@ uint32_t *arch_build_initial_frame(uint32_t *sp_arg, void (*entry)(void))
  * kstack_sp: current kernel stack pointer (points to [user_SP, user_SS,
  *            24B saved frame]).
  * Returns the same kstack_sp (frame stays on kstack for pop). */
-#include "kernel/core/proc/proc.h"
 #include "kernel/core/mm/mem_region.h"
+#include "kernel/core/proc/proc.h"
 
 int i16_timer_can_preempt(uint16_t interrupted_ss)
 {

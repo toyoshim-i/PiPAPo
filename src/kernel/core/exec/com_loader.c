@@ -11,9 +11,9 @@
 
 #include "kernel/core/exec/com_loader.h"
 
-#include "kernel/core/exec/exec.h"
-#include "kernel/core/cpu/ecpu_z80.h"
 #include "common/errno.h"
+#include "kernel/core/cpu/ecpu_z80.h"
+#include "kernel/core/exec/exec.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/subsys/cpm_bridge.h"

@@ -18,13 +18,13 @@
 #include <stddef.h>
 
 #include "common/errno.h"
-#include "kernel/common/mod/mod_core.h"
-#include "kernel/vfs/klog.h"
-#include "kernel/vfs/file.h"   /* fd_pool_init */
-#include "kernel/vfs/tty.h"    /* tty_rx_notify */
-#include "kernel/vfs/fstab.h"  /* fstab_parse, fstab_mount_all */
 #include "kernel/common/core/kmem_types.h" /* kmem_pool_t */
+#include "kernel/common/mod/mod_core.h"
 #include "kernel/common/spinlock.h" /* SPIN_VFS */
+#include "kernel/vfs/file.h"   /* fd_pool_init */
+#include "kernel/vfs/fstab.h"  /* fstab_parse, fstab_mount_all */
+#include "kernel/vfs/klog.h"
+#include "kernel/vfs/tty.h"    /* tty_rx_notify */
 
 /* ── Static storage ─────────────────────────────────────────────────────────
  */
@@ -274,11 +274,11 @@ mount_entry_t *vfs_mount_find(const char *path, const char **remainder) {
 
 /* ── Convenience mount wrappers ────────────────────────────────────────── */
 
-#include "kernel/vfs/ufs.h"
-#include "kernel/vfs/romfs.h"
 #include "kernel/vfs/devfs.h"
 #include "kernel/vfs/procfs.h"
+#include "kernel/vfs/romfs.h"
 #include "kernel/vfs/tmpfs.h"
+#include "kernel/vfs/ufs.h"
 #ifdef PPAP_HAS_BLKDEV
 #include "kernel/vfs/driver/blkdev.h"
 #include "kernel/vfs/vfat.h"

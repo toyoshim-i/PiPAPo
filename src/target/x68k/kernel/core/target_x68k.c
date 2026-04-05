@@ -22,14 +22,14 @@
  *   - Kernel mounts it via flatblk ("ram0") as the initial root filesystem
  */
 
-#include "target/target.h"
-#include "kernel/core/arch.h"
 #include "common/errno.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/arch.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
+#include "target/target.h"
 #ifdef PPAP_HAS_BLKDEV
 #include "kernel/vfs/driver/blkdev.h"
 #include "kernel/vfs/driver/flatblk.h"

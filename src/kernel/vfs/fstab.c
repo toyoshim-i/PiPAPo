@@ -12,8 +12,8 @@
 
 #include "kernel/vfs/fstab.h"
 
-#include "kernel/vfs/klog.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/vfs/klog.h"
 #ifdef PPAP_HAS_BLKDEV
 #include "kernel/vfs/driver/blkdev.h"
 #include "kernel/vfs/driver/loopback.h"

@@ -10,10 +10,10 @@
 
 #ifdef __ia16__
 
-#include "kernel/core/mm/kmem.h"  /* kmem_pool_t */
 #include "kernel/common/core/mem_layout.h"  /* proc_image_segment_t, ppap_mem_class_t */
-#include "kernel/vfs/driver/blkdev.h"  /* blkdev_t */
 #include "kernel/common/mod/module.h"
+#include "kernel/core/mm/kmem.h"  /* kmem_pool_t */
+#include "kernel/vfs/driver/blkdev.h"  /* blkdev_t */
 
 /* Forward-declare the caller-side stubs from core_stubs.S. */
 void kmem_pool_init(kmem_pool_t *, void *, size_t, uint32_t);

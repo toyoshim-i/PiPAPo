@@ -12,8 +12,9 @@
 #define PPAP_ARCH_I16_ARCH_H
 
 #include <stdint.h>
-#include "kernel/common/irq.h"
+
 #include "kernel/common/core/page_types.h"
+#include "kernel/common/irq.h"
 
 /* -- Context switch trigger ---------------------------------------------
  *

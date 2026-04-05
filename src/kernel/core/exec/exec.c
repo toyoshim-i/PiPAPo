@@ -11,14 +11,14 @@
 
 #include <string.h>
 
-#include "kernel/core/arch.h"
 #include "common/errno.h"
+#include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/arch.h"
+#include "kernel/core/exec/elf.h"
+#include "kernel/core/exec/loader.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/signal/signal.h"
-#include "kernel/common/mod/mod_vfs.h"
-#include "kernel/core/exec/elf.h"
-#include "kernel/core/exec/loader.h"
 
 #if defined(__ia16__)
 /*

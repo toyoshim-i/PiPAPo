@@ -16,11 +16,11 @@
 #include <string.h>
 
 #include "common/errno.h"
+#include "kernel/common/config.h"
+#include "kernel/common/core/proc_info.h" /* pcb_t — only for fd_stdio_init compat */
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/vfs/devfs.h"
-#include "kernel/common/core/proc_info.h" /* pcb_t — only for fd_stdio_init compat */
-#include "kernel/common/config.h"
 
 /* ── System-wide file descriptor pool ──────────────────────────────────────── */
 

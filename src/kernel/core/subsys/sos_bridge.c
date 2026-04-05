@@ -12,12 +12,12 @@
 
 #include <string.h>
 
-#include "common/ptrace.h"
-#include "common/fcntl.h"
-#include "kernel/common/mod/mod_vfs.h"
-#include "kernel/core/proc/proc.h"
 #include "common/errno.h"
+#include "common/fcntl.h"
+#include "common/ptrace.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
+#include "kernel/core/proc/proc.h"
 
 /* ── _SOS header parsing ───────────────────────────────────────────────── */
 
@@ -110,9 +110,9 @@ int sos_parse_header(const uint8_t *file, uint32_t size, sos_header_t *hdr) {
 #ifdef PPAP_KERNEL
 
 #include "common/poll.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/signal/signal.h"
 #include "kernel/core/syscall/syscall.h"
-#include "kernel/common/mod/mod_vfs.h"
 
 static void sos_trace_before(uint32_t abi, uint32_t nr, z80_state_t *cpu) {
   (void)trace_before_subsys(abi, nr, z80_af(cpu), z80_bc(cpu), z80_de(cpu),

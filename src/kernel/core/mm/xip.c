@@ -28,8 +28,8 @@
 
 #include <stdint.h>
 
-#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/ioregs.h"
+#include "kernel/common/mod/mod_vfs.h"
 
 /* Alias: xip.c uses CLKSOURCE name without _CPU suffix for brevity */
 #define SYST_CSR_CLKSOURCE_CPU SYST_CSR_CLKSOURCE

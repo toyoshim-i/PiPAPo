@@ -8,16 +8,16 @@
 
 #include <string.h>
 
-#include "kernel/core/exec/elf.h"
-#include "kernel/core/exec/exec.h"
+#include "common/errno.h"
 #include "kernel/core/cpu/ecpu_m68k.h"
 #include "kernel/core/endian.h"
-#include "common/errno.h"
+#include "kernel/core/exec/elf.h"
+#include "kernel/core/exec/exec.h"
+#include "kernel/core/exec/loader.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/subsys/ppap_m68k_bridge.h"
 #include "kernel/core/subsys/subsys.h"
-#include "kernel/core/exec/loader.h"
 
 /* Preferred emulated memory size — the loader will try this first,
  * then fall back to whatever contiguous pages are available (minimum

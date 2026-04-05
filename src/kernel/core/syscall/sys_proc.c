@@ -10,14 +10,17 @@
 
 #include <string.h>
 
-#include "target/target.h"
+#include "common/errno.h"
+#include "common/ptrace.h"
+#include "common/wait.h"
+#include "kernel/common/mod/mod_vfs.h"
+#include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/arch.h"
+#include "kernel/core/cpu/cpu.h"
 #include "kernel/core/cpu/ecpu_m68k.h"
 #include "kernel/core/cpu/ecpu_z80.h"
-#include "common/errno.h"
 #include "kernel/core/exec/exec.h"
-#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/exec/exec.h"
-#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
@@ -25,11 +28,8 @@
 #include "kernel/core/signal/signal.h"
 #include "kernel/core/subsys/ppap_m68k_bridge.h"
 #include "kernel/core/subsys/subsys.h"
-#include "kernel/core/arch.h"
-#include "common/ptrace.h"
-#include "common/wait.h"
-#include "kernel/core/cpu/cpu.h"
 #include "kernel/core/syscall/syscall.h"
+#include "target/target.h"
 
 /* Wait status encoding (POSIX-compatible) */
 #define W_EXITCODE(ret) (((ret)&0xff) << 8)

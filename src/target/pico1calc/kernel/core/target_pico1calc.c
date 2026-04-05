@@ -5,11 +5,11 @@
  * Full hardware feature set: PLL, SPI, SD, IRQ UART, MPU, Core 1.
  */
 
-#include "target/target.h"
-#include "kernel/core/driver/clock.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/driver/clock.h"
 #include "kernel/core/mm/mpu.h"
 #include "kernel/core/pico1calc.h"
+#include "target/target.h"
 
 #ifdef PPAP_TESTS
 #include "ktest.h"

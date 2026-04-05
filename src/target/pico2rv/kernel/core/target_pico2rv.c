@@ -5,11 +5,11 @@
  * No SPI bus — omits spi_init() and sd_init().
  */
 
-#include "target/target.h"
-#include "pico2rv.h"
-#include "kernel/core/driver/clock.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/driver/clock.h"
+#include "pico2rv.h"
 #include "target/rpico.h"
+#include "target/target.h"
 
 #ifdef PPAP_TESTS
 #include "ktest.h"

@@ -28,9 +28,9 @@
 #include <stdint.h>
 
 #include "common/errno.h"           /* ENOTTY, EINTR */
-#include "kernel/common/mod/mod_core.h"
-#include "kernel/common/core/proc_info.h"       /* proc_table, PROC_MAX, PROC_FREE */
 #include "common/signal.h"   /* SIGINT */
+#include "kernel/common/core/proc_info.h"       /* proc_table, PROC_MAX, PROC_FREE */
+#include "kernel/common/mod/mod_core.h"
 #include "kernel/vfs/driver/uart.h"       /* uart_putc/getc/rx_avail for static init */
 #ifdef __ia16__
 #include "kernel/vfs/driver/bios_con.h"

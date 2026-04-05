@@ -12,6 +12,7 @@
 #define PPAP_KERNEL_FD_FD_H
 
 #include <stdint.h>
+
 #include "kernel/vfs/file.h"
 
 /*

@@ -8,10 +8,10 @@
  * that are too large for romfs.
  */
 
-#include "target/target.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/vfs/driver/blkdev.h"
 #include "kernel/vfs/driver/flatblk.h"
-#include "kernel/common/mod/mod_vfs.h"
+#include "target/target.h"
 
 #ifdef PPAP_TESTS
 #include "ktest.h"

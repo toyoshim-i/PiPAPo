@@ -17,11 +17,11 @@
 #include <stdint.h>
 
 #include "common/errno.h"
+#include "common/poll.h"  /* POLLIN, POLLOUT, POLLNVAL, struct pollfd */
+#include "kernel/common/config.h"
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
-#include "common/poll.h"  /* POLLIN, POLLOUT, POLLNVAL, struct pollfd */
 #include "kernel/core/proc/proc.h"
-#include "kernel/common/config.h"
 #include "kernel/core/syscall/syscall.h"
 
 /* Convert timespec to ticks.  Returns 0 for zero timeout. */

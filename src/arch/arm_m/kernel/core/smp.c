@@ -28,10 +28,10 @@
 
 #include <stdint.h>
 
-#include "kernel/core/arch.h"
-#include "kernel/common/ioregs.h"
 #include "kernel/common/config.h"
+#include "kernel/common/ioregs.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/arch.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/mpu.h" /* mpu_init */
 #include "kernel/core/mm/page.h"

@@ -12,9 +12,9 @@
 
 #include <string.h>
 
-#include "common/ptrace.h"
 #include "common/errno.h"
 #include "common/fcntl.h"
+#include "common/ptrace.h"
 #include "common/seek.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"

@@ -10,9 +10,10 @@
 #define PPAP_ARCH_RISCV_ARCH_H
 
 #include <stdint.h>
+
+#include "kernel/common/ioregs.h"
 #include "kernel/common/irq.h"
 #include "kernel/core/mm/mem_region.h"
-#include "kernel/common/ioregs.h"
 
 /* ── Context switch trigger ──────────────────────────────────────────────
  *

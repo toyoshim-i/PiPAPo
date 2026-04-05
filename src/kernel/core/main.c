@@ -7,19 +7,19 @@
  * — see src/target/target.h.
  */
 
+#include "common/errno.h"
+#include "kernel/common/mod/mod_vfs.h"
+#include "kernel/common/spinlock.h"
+#include "kernel/core/arch.h"
+#include "kernel/core/cpu/cpu.h"
+#include "kernel/core/cpu/smp.h"
+#include "kernel/core/exec/exec.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
-#include "target/target.h"
-#include "kernel/common/mod/mod_vfs.h"
-#include "kernel/core/arch.h"
-#include "kernel/core/cpu/cpu.h"
-#include "kernel/core/cpu/smp.h"
-#include "common/errno.h"
-#include "kernel/core/exec/exec.h"
-#include "kernel/common/spinlock.h"
 #include "kernel/core/subsys/subsys.h"
+#include "target/target.h"
 
 /* Linker-provided romfs image location in flash */
 extern const uint8_t __romfs_start[];

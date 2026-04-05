@@ -9,9 +9,9 @@
  * Write is not supported (read-only floppy UFS).
  */
 
+#include "common/errno.h"
 #include "kernel/common/ioregs.h"
 #include "kernel/vfs/driver/blkdev.h"
-#include "common/errno.h"
 
 #define FLOPPY_SEC       512u
 #define SECS_PER_TRACK   18u

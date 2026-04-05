@@ -14,6 +14,7 @@
  */
 
 #include <stdint.h>
+
 #include "kernel/vfs/driver/uart.h"
 
 /* ESP-IDF ROM console functions */

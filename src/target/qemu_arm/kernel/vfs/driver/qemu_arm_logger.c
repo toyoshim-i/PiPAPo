@@ -1,7 +1,7 @@
 /* qemu_arm_logger.c — VFS-side UART/logger for QEMU ARM */
 
-#include "kernel/vfs/klog.h"
 #include "kernel/vfs/driver/uart.h"
+#include "kernel/vfs/klog.h"
 
 void klog_init_logger(void) {
   uart_init();

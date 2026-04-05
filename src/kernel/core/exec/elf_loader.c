@@ -6,10 +6,10 @@
 
 #include <string.h>
 
-#include "kernel/core/arch.h"
-#include "kernel/core/exec/elf.h"
 #include "common/errno.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/arch.h"
+#include "kernel/core/exec/elf.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"

@@ -18,9 +18,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "kernel/vfs/driver/blkdev.h"
 #include "common/errno.h"
 #include "kernel/common/config.h"
+#include "kernel/vfs/driver/blkdev.h"
 #include "kernel/vfs/driver/spi.h"
 
 /* ── SD command indices ──────────────────────────────────────────────────── */

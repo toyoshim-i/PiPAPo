@@ -13,13 +13,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "target/target.h"
-#include "kernel/core/arch.h"
 #include "common/errno.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/arch.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
+#include "target/target.h"
 
 /* ── Timer driver ────────────────────────────────────────────────────── */
 

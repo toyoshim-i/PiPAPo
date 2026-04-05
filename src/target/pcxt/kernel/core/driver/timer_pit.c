@@ -6,8 +6,8 @@
  * handler so that BIOS floppy motor timeout and other services still work.
  */
 
-#include "kernel/common/ioregs.h"
 #include "kernel/common/core/seg.h"
+#include "kernel/common/ioregs.h"
 
 /* Defined in switch.S */
 extern void i16_timer_isr(void);

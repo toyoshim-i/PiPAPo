@@ -14,16 +14,16 @@
 #include <string.h>
 
 #include "common/dirent.h"
+#include "common/errno.h"
 #include "common/fcntl.h"
 #include "common/stat.h"
-#include "kernel/core/subsys/h68k_util.h"
-#include "common/errno.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/exec/exec.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
+#include "kernel/core/subsys/h68k_util.h"
 #include "kernel/core/syscall/syscall.h"
 
 #ifdef PPAP_DEBUG_LOG

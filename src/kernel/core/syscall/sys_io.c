@@ -12,10 +12,10 @@
 #include <stdint.h>
 
 #include "common/errno.h"
+#include "kernel/common/config.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
-#include "kernel/common/config.h"
 #include "kernel/core/syscall/syscall.h"
 
 #define TCGETS 0x5401u

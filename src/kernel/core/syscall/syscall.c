@@ -23,9 +23,9 @@
 #include <stdint.h>
 
 #include "common/errno.h"
-#include "kernel/core/proc/proc.h"
-#include "kernel/common/mod/mod_vfs.h"
 #include "common/ptrace.h"
+#include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/proc/proc.h"
 
 /* SIGCHLD — needed for clone() fast-path detection */
 #define SIGCHLD_NR 17

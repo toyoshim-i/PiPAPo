@@ -12,10 +12,10 @@
 
 #include <string.h>
 
-#include "common/fcntl.h"
-#include "kernel/core/cpu/ecpu_m68k.h"
 #include "common/errno.h"
+#include "common/fcntl.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/cpu/ecpu_m68k.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/subsys/h68k_util.h"

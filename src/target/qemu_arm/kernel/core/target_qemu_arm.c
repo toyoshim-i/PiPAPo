@@ -5,12 +5,12 @@
  * Uses a RAM-backed block device from an embedded FAT32 image.
  */
 
-#include "target/target.h"
-#include "kernel/vfs/driver/blkdev.h"
-#include "kernel/vfs/driver/ramblk.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
+#include "kernel/vfs/driver/blkdev.h"
+#include "kernel/vfs/driver/ramblk.h"
+#include "target/target.h"
 
 #ifdef PPAP_TESTS
 #include "ktest.h"

@@ -6,14 +6,14 @@
  * initialization, and subsystem setup are coordinated here.
  */
 
-#include "kernel/core/exec/exec.h"
-#include "kernel/core/cpu/ecpu_z80.h"
 #include "common/errno.h"
+#include "kernel/core/cpu/ecpu_z80.h"
+#include "kernel/core/exec/exec.h"
+#include "kernel/core/exec/loader.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/subsys/sos_bridge.h"
 #include "kernel/core/subsys/subsys.h"
-#include "kernel/core/exec/loader.h"
 #if defined(__m68k__)
 #include "kernel/common/ioregs.h"
 #endif

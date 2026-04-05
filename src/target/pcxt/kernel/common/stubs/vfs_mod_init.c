@@ -11,9 +11,9 @@
 
 #ifdef __ia16__
 
+#include "kernel/common/mod/module.h"
 #include "kernel/common/vfs/vfs_types.h"
 #include "kernel/core/mm/page.h"
-#include "kernel/common/mod/module.h"
 
 
 

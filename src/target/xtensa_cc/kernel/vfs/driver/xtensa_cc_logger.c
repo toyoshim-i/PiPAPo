@@ -1,9 +1,9 @@
 /* xtensa_cc_logger.c — VFS-side UART/logger for CardComputer */
 
-#include "kernel/vfs/klog.h"
-#include "kernel/vfs/driver/uart.h"
-#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/config.h"
+#include "kernel/common/mod/mod_vfs.h"
+#include "kernel/vfs/driver/uart.h"
+#include "kernel/vfs/klog.h"
 
 extern void sched_set_input_poll(int (*fn)(void), int tty_idx);
 

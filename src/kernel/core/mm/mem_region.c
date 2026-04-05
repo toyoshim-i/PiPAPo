@@ -5,8 +5,8 @@
 #include "kernel/core/mm/mem_region.h"
 
 #include "common/errno.h"
-#include "kernel/common/spinlock.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/common/spinlock.h"
 #include "kernel/core/mm/page.h"
 
 #if defined(__xtensa__)
