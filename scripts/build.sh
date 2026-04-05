@@ -88,6 +88,9 @@ fi
 "$SCRIPT_DIR/check_allocator_boundaries.sh"
 "$SCRIPT_DIR/check_module_boundaries.sh"
 "$SCRIPT_DIR/check_include_paths.sh"
+python3 "$SCRIPT_DIR/check_include_order.py"
+python3 "$SCRIPT_DIR/check_include_guards.py"
+python3 "$SCRIPT_DIR/check_own_header.py"
 
 # ── Determine source and build directories ──────────────────────────────────
 case "$TARGET" in
