@@ -40,14 +40,11 @@ Completed in two commits:
 
 ## Remaining work
 
-- **x68k target_late_init**: secondary logger + TTY backend still in
-  core, uses `mod_vfs.klog_set_logger()` and uart symbols
-- **pico1calc target_early_init**: PLL/SPI/LCD/fbcon init interleaved
-  with uart — secondary logger and TTY backend still in core
-- **Boot banner**: "PiPaPo booting..." messages moved from
-  target_early_init to after vfs_init; could be added to logger files
+- **vfs.h/ufs.h in core** (qemu_rv32, x68k): `target_mount_rootfs()`
+  calls `vfs_mount()` directly.  Not uart-related -- separate concern
+  (VFS mount API exposure to core targets).
 
 ## Verification
 
-All 9 targets build: qemu_arm, qemu_m68k, qemu_rv32, pico1, pico1calc,
-pico2, pico2rv, pcxt, xtensa_cc.  qemu_arm 24/24 user tests pass.
+All 9 targets build.  qemu_arm 24/24 user tests pass.
+pcxt uart_com.c/bios_con.c/pcxt_logger.c are VFS-only (no dual-compile).
