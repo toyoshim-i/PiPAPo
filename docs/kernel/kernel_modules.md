@@ -251,7 +251,6 @@ src/kernel/
       module.h          ← module system macros (MOD_FUNC etc.)
       mod_core.h/.inc   ← core module interface (20 functions)
       mod_vfs.h/.inc    ← VFS module interface (35 functions)
-      mod_core.c        ← core struct initializer (32-bit)
     core/               ← shared data-only headers
       mem_layout.h      ← memory class enums, proc_image_segment_t
       page_types.h      ← page_id_t, PAGE_SIZE, page_count, oom_count
@@ -263,6 +262,7 @@ src/kernel/
     config.h            ← build config, memory map constants
     spinlock.h          ← SMP spinlock / core_id()
   core/                 ← core module implementation
+    core.c              ← mod_core struct initializer (default)
   vfs/                  ← VFS module (VFS, fd, tty, pipe, all FS)
     driver/             ← device drivers (blkdev, uart, spi, i2c, lcd, ...)
 
@@ -271,10 +271,12 @@ src/arch/<arch>/kernel/
     irq.h               ← arch_irq_save/restore, arch_preempt_disable/enable
     ioregs.h            ← I/O register definitions (+ CSR defs on riscv/xtensa)
 
+src/target/pcxt/kernel/core/
+  core.c                ← mod_core struct (i16 override, VFS-side far-call stubs)
+
 src/target/pcxt/kernel/common/stubs/
   core_stubs.S          ← VFS-side caller stubs for core (auto-gen from .inc)
   core_entries.S        ← core-side target entry stubs (auto-gen from .inc)
-  core_mod_init.c       ← VFS-side mod_core struct (i16 only)
   vfs_stubs.S           ← core-side caller stubs for VFS (auto-gen from .inc)
   vfs_entries.S         ← VFS-side target entry stubs (auto-gen from .inc)
   vfs_header.S          ← VFS module header (entry point table)

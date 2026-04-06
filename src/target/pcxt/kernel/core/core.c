@@ -1,5 +1,5 @@
 /*
- * core_mod_init.c — VFS-side mod_core struct (i16 segment split)
+ * core.c — VFS-side mod_core struct (i16 segment split)
  *
  * On i16, the mod_core struct lives in the VFS module and points
  * to the caller-side stubs (core_stubs.S). The stubs do the far
@@ -7,8 +7,6 @@
  *
  * Linked into ppap_pcxt_vfs (VFS binary).
  */
-
-#ifdef __ia16__
 
 #include "kernel/common/core/mem_layout.h"  /* proc_image_segment_t, ppap_mem_class_t */
 #include "kernel/common/mod/module.h"
@@ -63,5 +61,3 @@ MOD_DEFINE_BEGIN(core)
 #include "kernel/common/mod/mod_core.inc"
 #undef MOD_CORE_ENTRY
 MOD_DEFINE_END()
-
-#endif /* __ia16__ */

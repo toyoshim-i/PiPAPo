@@ -20,8 +20,6 @@
  * Linked FIRST into ppap_pcxt_vfs so it appears at offset 0.
  */
 
-#ifdef __ia16__
-
   .code16
   .section .text.header, "ax"
 
@@ -38,5 +36,3 @@ vfs_module_header:
 #undef MOD_VFS_ENTRY
   /* DS=0 address of core_fptrs table (for core to patch) */
   .word core_fptrs
-
-#endif /* __ia16__ */

@@ -21,7 +21,7 @@ set(KERNEL_SOURCES
     ${PPAP_ROOT}/src/target/target_default.c
     ${PPAP_ROOT}/src/kernel/core/main.c
     ${PPAP_ROOT}/src/kernel/vfs/klog.c
-    ${PPAP_ROOT}/src/kernel/common/mod/mod_core.c
+    ${PPAP_ROOT}/src/kernel/core/core.c
     ${PPAP_ROOT}/src/kernel/core/mm/page.c
     ${PPAP_ROOT}/src/kernel/core/mm/kmem.c
     ${PPAP_ROOT}/src/kernel/core/mm/mem_region.c

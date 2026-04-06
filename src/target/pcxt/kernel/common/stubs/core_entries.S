@@ -16,8 +16,6 @@
  * Linked into ppap_pcxt (core binary).
  */
 
-#ifdef __ia16__
-
   .code16
   .section .text
 
@@ -75,5 +73,3 @@ saved_ip: .word 0
 #define MOD_CORE_ENTRY(name, idx)  CORE_TARGET_STUB name
 #include "kernel/common/mod/mod_core.inc"
 #undef MOD_CORE_ENTRY
-
-#endif /* __ia16__ */

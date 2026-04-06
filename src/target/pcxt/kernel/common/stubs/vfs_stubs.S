@@ -16,8 +16,6 @@
  * Linked into ppap_pcxt (core binary).
  */
 
-#ifdef __ia16__
-
   .code16
   .section .text
 
@@ -57,5 +55,3 @@ vfs_\name:
 #define MOD_VFS_ENTRY(name, idx)  VFS_CALLER_STUB name, idx
 #include "kernel/common/mod/mod_vfs.inc"
 #undef MOD_VFS_ENTRY
-
-#endif /* __ia16__ */

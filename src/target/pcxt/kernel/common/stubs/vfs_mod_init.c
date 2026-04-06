@@ -9,8 +9,6 @@
  * the real functions. This file is only for i16.
  */
 
-#ifdef __ia16__
-
 #include "kernel/common/mod/module.h"
 #include "kernel/common/vfs/vfs_types.h"
 #include "kernel/core/mm/page.h"
@@ -76,5 +74,3 @@ MOD_DEFINE_BEGIN(vfs)
 #include "kernel/common/mod/mod_vfs.inc"
 #undef MOD_VFS_ENTRY
 MOD_DEFINE_END()
-
-#endif /* __ia16__ */

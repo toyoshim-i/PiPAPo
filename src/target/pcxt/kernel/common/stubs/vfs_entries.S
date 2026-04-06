@@ -16,8 +16,6 @@
  * Linked into ppap_pcxt_vfs (VFS binary).
  */
 
-#ifdef __ia16__
-
   .code16
 
   .section .bss
@@ -87,5 +85,3 @@ vfs_\name\()_entry:
 #define MOD_VFS_ENTRY(name, idx)  VFS_TARGET_STUB name
 #include "kernel/common/mod/mod_vfs.inc"
 #undef MOD_VFS_ENTRY
-
-#endif /* __ia16__ */

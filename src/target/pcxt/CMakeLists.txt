@@ -289,7 +289,7 @@ set(ARCH_I16_SOURCES
 
 set(KERNEL_CORE_SOURCES
   ${PPAP_ROOT}/src/kernel/core/main.c
-  ${PPAP_ROOT}/src/kernel/common/mod/mod_core.c
+  ${PPAP_ROOT}/src/kernel/core/core.c
   ${PPAP_ROOT}/src/kernel/core/mm/page.c
   ${PPAP_ROOT}/src/kernel/core/mm/kmem.c
   ${PPAP_ROOT}/src/kernel/core/mm/mem_region.c
@@ -394,7 +394,7 @@ add_executable(ppap_pcxt_vfs
   # VFS-side stubs: entry stubs for VFS, caller stubs for core
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/vfs_entries.S
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/core_stubs.S
-  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/core_mod_init.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/core.c
 )
 
 target_include_directories(ppap_pcxt_vfs PRIVATE ${PPAP_INCLUDES})
