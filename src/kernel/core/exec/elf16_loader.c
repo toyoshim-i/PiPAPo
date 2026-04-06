@@ -75,7 +75,6 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
   (void)flags;
   (void)cpu_ops;
   (void)cpu_state;
-  (void)argv;
 
   if (phnum == 0) return -ENOEXEC;
   if (ehdr->e_phoff == 0) return -ENOEXEC;
@@ -160,8 +159,81 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
   uint16_t entry_ip = (uint16_t)ehdr->e_entry;
 
   /* User stack: SS=proc_seg, SP is segment-relative.
-   * Stack top = alloc_size (top of the allocated region within segment). */
+   * Stack top = alloc_size (top of the allocated region within segment).
+   * argc/argv are placed at the top, then HW/SW frames below them.
+   * After ISR restore pops both frames, SP points to argc. */
   uint16_t user_sp_top = (uint16_t)alloc_size;
+
+  /* ── Build argc/argv on user stack ────────────────────────────────────
+   * Layout (addresses grow upward, stack grows down):
+   *   [user_sp_top - args_size]  argc          ← SP after IRET
+   *   [+2]                       argv[0] ptr
+   *   [+4]                       argv[1] ptr
+   *   ...
+   *   [+2+argc*2]                NULL
+   *   [+4+argc*2]                "string0\0"
+   *   ...                        "stringN\0"
+   *   [user_sp_top]              (HW frame starts here)
+   */
+#define ARGV_MAX 16
+  int argc = 0;
+  while (argv && argv[argc]) {
+    if (argc >= ARGV_MAX) break;
+    argc++;
+  }
+
+  {
+    /* Measure total string bytes */
+    uint16_t str_total = 0;
+    for (int i = 0; i < argc; i++) str_total += (uint16_t)strlen(argv[i]) + 1;
+
+    /* Frame: argc(2) + argv[](argc*2) + NULL(2) + strings */
+    uint16_t frame_size = (uint16_t)(2 + (uint16_t)argc * 2 + 2 + str_total);
+    /* Align to 2 bytes */
+    frame_size = (frame_size + 1) & ~(uint16_t)1;
+
+    user_sp_top -= frame_size;
+
+    /* Write argc */
+    uint16_t pos = user_sp_top;
+    uint16_t argc16 = (uint16_t)argc;
+    mem_region_page_write(base_id + pos / PAGE_SIZE, pos % PAGE_SIZE, &argc16,
+                          2);
+    pos += 2;
+
+    /* argv pointers start here; strings start after argv[]+NULL */
+    uint16_t argv_pos = pos;
+    uint16_t str_pos =
+        (uint16_t)(pos + (uint16_t)argc * 2 + 2); /* after NULL */
+
+    for (int i = 0; i < argc; i++) {
+      /* Write argv[i] pointer (segment-relative offset of string) */
+      mem_region_page_write(base_id + argv_pos / PAGE_SIZE,
+                            argv_pos % PAGE_SIZE, &str_pos, 2);
+      argv_pos += 2;
+
+      /* Write string to user pages, handling page boundaries */
+      uint16_t slen = (uint16_t)strlen(argv[i]) + 1;
+      const uint8_t *src = (const uint8_t *)argv[i];
+      uint16_t rem = slen;
+      uint16_t dst = str_pos;
+      while (rem > 0) {
+        uint16_t pg_off = dst % PAGE_SIZE;
+        uint16_t chunk = PAGE_SIZE - pg_off;
+        if (chunk > rem) chunk = rem;
+        mem_region_page_write(base_id + dst / PAGE_SIZE, pg_off, src, chunk);
+        src += chunk;
+        dst += chunk;
+        rem -= chunk;
+      }
+      str_pos += slen;
+    }
+
+    /* Write NULL terminator for argv[] */
+    uint16_t null16 = 0;
+    mem_region_page_write(base_id + argv_pos / PAGE_SIZE, argv_pos % PAGE_SIZE,
+                          &null16, 2);
+  }
 
   /* Build the 24-byte frame on the user stack (proc_seg segment).
    * This is what the ISR restore path pops: GP regs + IRET frame.

@@ -573,14 +573,18 @@ void mm_page_write(page_id_t id, uint16_t off, const void *buf, uint16_t len) {
   uint16_t ofs = (uint16_t)(linear & 0x000Fu);
   uint16_t src = (uint16_t)(uintptr_t)buf;
   __asm__ volatile(
+      "push %%ds\n\t"
       "push %%es\n\t"
-      "mov  %0, %%es\n\t" /* ES = destination segment */
+      "mov  %%ss, %%ax\n\t"
+      "mov  %%ax, %%ds\n\t" /* DS = SS (source: kernel data) */
+      "mov  %0, %%es\n\t"   /* ES = destination segment */
       "cld\n\t"
       "rep movsb\n\t"
-      "pop  %%es"
+      "pop  %%es\n\t"
+      "pop  %%ds"
       :
       : "r"(seg), "S"(src), "D"(ofs), "c"(len)
-      : "memory", "cc");
+      : "ax", "memory", "cc");
 #else
   __builtin_memcpy((uint8_t *)page_id_linear(id) + off, buf, len);
 #endif
