@@ -19,8 +19,7 @@
 #include <stdint.h>
 
 #include "kernel/common/ioregs.h"
-#include "kernel/common/mod/mod_vfs.h" /* mod_vfs.tty_rx_notify */
-#include "kernel/common/spinlock.h"    /* SPIN_PROC */
+#include "kernel/common/spinlock.h" /* SPIN_PROC */
 #include "kernel/core/arch.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h" /* PAGE_SIZE */
@@ -98,22 +97,6 @@ void sched_tick(void) {
     current->ticks_remaining = PROC_DEFAULT_TICKS;
     arch_yield(); /* trigger PendSV (runs after SysTick exits) */
   }
-}
-
-/* ── Periodic polling callbacks (shared across architectures) ────────────────
- */
-
-/* Optional display flush callback, registered by target via
- * sched_set_display_poll(). */
-static void (*display_poll_fn)(void);
-
-void sched_set_display_poll(void (*fn)(void)) { display_poll_fn = fn; }
-
-void sched_display_poll(void) {
-  /* Notify VFS to check TTY input backends and wake blocked readers.
-   * Runs in thread context (idle loop) so slow I/O (I2C, BIOS) is safe. */
-  mod_vfs.notify(VFS_EVENT_INPUT_POLL);
-  if (display_poll_fn) display_poll_fn();
 }
 
 /* ── Timer tick handler (shared logic) ───────────────────────────────────────

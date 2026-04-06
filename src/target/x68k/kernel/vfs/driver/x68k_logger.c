@@ -40,7 +40,7 @@ void vfs_notify(int event) {
       klog_set_logger(KLOG_LOGGER_SECONDARY, uart_serial_putc, NULL);
       break;
     }
-    case VFS_EVENT_INPUT_POLL:
+    case VFS_EVENT_IDLE:
       /* Use direct HW register reads — NOT IOCS calls — because IOCS
        * is not reentrant and hangs when called from idle context. */
       if (uart_rx_avail_hw()) tty_rx_notify(TTY_DISPLAY);

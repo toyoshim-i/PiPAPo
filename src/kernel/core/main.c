@@ -167,7 +167,7 @@ void kmain(void) {
 
   /* Idle thread — wake on every interrupt, flush LCD if needed, sleep. */
   for (;;) {
-    sched_display_poll();
+    target_idle_poll();
 #if defined(__xtensa__)
     /* Semi-preemptive: timer ISR sets the flag, idle loop performs switch.
      * True preemptive switching (in interrupt return path) deferred to CC-4. */

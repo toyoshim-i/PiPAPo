@@ -115,6 +115,18 @@ int target_mount_rootfs(void);
 void target_enable_deferred_timer(void);
 
 /*
+ * target_idle_poll() — called from the idle thread after each hlt/wfi wake.
+ *
+ * Targets that need polled input (no UART RX IRQ) or deferred display
+ * flush override this to fire mod_vfs.notify(VFS_EVENT_IDLE).  The VFS
+ * handler checks TTY backends and wakes blocked readers.  Runs in thread
+ * context so slow I/O (I2C, BIOS, far calls) is safe.
+ *
+ * Default weak implementation is a no-op (targets with IRQ-driven input).
+ */
+void target_idle_poll(void);
+
+/*
  * Optional native debugger HW-breakpoint hooks.
  *
  * These are used by ptrace for native real-surface breakpoints on targets

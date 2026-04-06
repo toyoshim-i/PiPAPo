@@ -32,6 +32,10 @@ void target_late_init(void) {
   mod_vfs.notify(VFS_EVENT_LATE_INIT);
 }
 
+void target_idle_poll(void) {
+  mod_vfs.notify(VFS_EVENT_IDLE);
+}
+
 void target_post_mount(void) {
   /* Mount embedded UFS image as /mnt/ufs (musl-linked test binaries) */
   uint32_t ufsimg_size = (uint32_t)(__ufsimg_end - __ufsimg_start);

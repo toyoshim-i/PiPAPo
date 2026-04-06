@@ -16,7 +16,6 @@
 #include "kernel/vfs/procfs.h"
 #include "kernel/vfs/tty.h"
 
-extern void sched_set_display_poll(void (*fn)(void));
 
 /* ── LCD + keyboard TTY backend ─────────────────────────────────────────── */
 
@@ -172,7 +171,6 @@ void vfs_notify(int event) {
                         fbcon_flush_deferred);
         klogf("KLOG: output mirrored to LCD\n");
         tty_set_backend(TTY_DISPLAY, &fbcon_backend);
-        sched_set_display_poll(fbcon_poll_flush);
         klogf("TTY: backend switched to LCD+keyboard\n");
         devfs_set_backlight(bl_i2c_get, bl_i2c_set);
         bl_i2c_set(128);
@@ -200,6 +198,10 @@ void vfs_notify(int event) {
 #else
       klogf("SD: disabled (SPI0 hang under investigation)\n");
 #endif
+      break;
+    case VFS_EVENT_IDLE:
+      tty_poll_input();
+      fbcon_poll_flush();
       break;
   }
 }
