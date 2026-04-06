@@ -95,4 +95,12 @@ void sched_wakeup(void *channel);
  */
 uint32_t sched_get_ticks(void);
 
+/*
+ * Run idle-loop work: fires VFS_EVENT_IDLE (TTY input check +
+ * display flush) and calls target_idle_poll() for any target-specific
+ * work.  Called from the idle thread after each hlt/wfi wake.
+ * Must run in thread context — backends may do slow I/O.
+ */
+void sched_idle_poll(void);
+
 #endif /* PPAP_KERNEL_CORE_PROC_SCHED_H */

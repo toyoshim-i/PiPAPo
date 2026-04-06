@@ -159,10 +159,6 @@ void target_late_init(void) {
   mod_vfs.notify(VFS_EVENT_LATE_INIT);
 }
 
-void target_idle_poll(void) {
-  mod_vfs.notify(VFS_EVENT_IDLE);
-}
-
 int target_mount_rootfs(void) {
 #ifdef PPAP_HAS_BLKDEV
   /* Derive rootfs address and size directly instead of relying on the

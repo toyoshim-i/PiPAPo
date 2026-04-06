@@ -95,10 +95,6 @@ void target_late_init(void) {
   mod_vfs.notify(VFS_EVENT_LATE_INIT);
 }
 
-void target_idle_poll(void) {
-  mod_vfs.notify(VFS_EVENT_IDLE);
-}
-
 void target_post_mount(void) {
   /* User-space init (/sbin/init) is launched by main.c via execve() */
 }

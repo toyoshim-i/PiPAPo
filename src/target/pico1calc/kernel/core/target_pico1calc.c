@@ -27,10 +27,6 @@ void target_late_init(void) {
   mpu_init();
 }
 
-void target_idle_poll(void) {
-  mod_vfs.notify(VFS_EVENT_IDLE);
-}
-
 void target_post_mount(void) {
 #ifdef PPAP_TESTS
   ktest_run_all();

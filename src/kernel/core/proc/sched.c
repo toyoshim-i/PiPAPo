@@ -99,6 +99,21 @@ void sched_tick(void) {
   }
 }
 
+/* ── Idle-loop poll ──────────────────────────────────────────────────────────
+ *
+ * Called from main.c's idle loop after each hlt/wfi wake.
+ * Fires VFS_EVENT_IDLE so TTY backends can check input and wake blocked
+ * readers, then calls target_idle_poll() for target-specific work.
+ */
+
+#include "kernel/common/mod/mod_vfs.h"
+#include "target/target.h"
+
+void sched_idle_poll(void) {
+  mod_vfs.notify(VFS_EVENT_IDLE);
+  target_idle_poll();
+}
+
 /* ── Timer tick handler (shared logic) ───────────────────────────────────────
  */
 
