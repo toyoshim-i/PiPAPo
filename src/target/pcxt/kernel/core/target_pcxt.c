@@ -143,8 +143,6 @@ static void seg_init_modules(void) {
     uint16_t vfs_seg = info->mod[1].segment;
     seg_register(MOD_ID_VFS, vfs_seg);
     patch_vfs_fptrs(vfs_seg);
-
-    mod_vfs.klogf("SEG: VFS module loaded\n");
   }
 }
 
@@ -209,6 +207,8 @@ void target_early_init(void) {
   /* Register UART logger early so mm_init/proc_init messages are visible.
    * Far-call stubs are patched by seg_init_modules() above. */
   mod_vfs.notify(VFS_EVENT_MODULE_READY);
+  mod_vfs.klogf("SEG: core=%x vfs=%x\n",
+                seg_get(MOD_ID_CORE), seg_get(MOD_ID_VFS));
 }
 
 void target_late_init(void)
@@ -218,10 +218,6 @@ void target_late_init(void)
   mod_vfs.notify(VFS_EVENT_LATE_INIT);
 }
 
-void target_idle_poll(void)
-{
-  mod_vfs.notify(VFS_EVENT_IDLE);
-}
 
 int target_mount_rootfs(void)
 {
