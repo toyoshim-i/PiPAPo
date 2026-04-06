@@ -13,7 +13,6 @@
 #include "kernel/common/core/mem_layout.h"  /* proc_image_segment_t, ppap_mem_class_t */
 #include "kernel/common/mod/module.h"
 #include "kernel/core/mm/kmem.h"  /* kmem_pool_t */
-#include "kernel/vfs/driver/blkdev.h"  /* blkdev_t */
 
 /* Forward-declare the caller-side stubs from core_stubs.S. */
 void kmem_pool_init(kmem_pool_t *, void *, size_t, uint32_t);
@@ -30,8 +29,6 @@ void mem_region_page_free(page_id_t);
 uint32_t mem_region_page_linear(page_id_t);
 void mem_region_page_read(page_id_t, uint16_t, void *, uint16_t);
 void mem_region_page_write(page_id_t, uint16_t, const void *, uint16_t);
-int core_blkdev_read(blkdev_t *, void *, uint32_t, uint32_t);
-int core_blkdev_write(blkdev_t *, const void *, uint32_t, uint32_t);
 void sched_wakeup(void *);
 void sched_switch(void);
 uint32_t sched_get_ticks(void);
@@ -58,8 +55,6 @@ void svc_set_restart(void);
 #define core_sched_get_ticks     sched_get_ticks
 #define core_subsys_read_proc    subsys_read_proc
 #define core_svc_set_restart     svc_set_restart
-#define core_blkdev_read         core_blkdev_read
-#define core_blkdev_write        core_blkdev_write
 
 #include "kernel/common/mod/mod_core.h"
 

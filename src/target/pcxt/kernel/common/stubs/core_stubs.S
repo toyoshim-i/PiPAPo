@@ -55,11 +55,4 @@ core_fptrs:
 #include "kernel/common/mod/mod_core.inc"
 #undef MOD_CORE_ENTRY
 
-/* blkdev stubs need core_ prefix aliases (struct field is blkdev_read,
- * but the wrapper function in mod_core.c is core_blkdev_read) */
-  .global core_blkdev_read
-  .set core_blkdev_read, blkdev_read
-  .global core_blkdev_write
-  .set core_blkdev_write, blkdev_write
-
 #endif /* __ia16__ */

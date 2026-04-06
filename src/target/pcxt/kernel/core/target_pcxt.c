@@ -9,10 +9,7 @@
 #include "kernel/common/core/seg.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/driver/timer_pit.h"
-#include "kernel/vfs/driver/blkdev.h"
 #include "target/target.h"
-
-extern void floppy_blk_init(void);
 
 /* Page pool base: set from stage2's mod_info before mm_init(). */
 uint32_t i16_page_pool_base = 0x10000ul;  /* safe default */
@@ -74,9 +71,6 @@ extern uint16_t sched_switch_entry;
 extern uint16_t sched_get_ticks_entry;
 extern uint16_t subsys_read_proc_entry;
 extern uint16_t svc_set_restart_entry;
-extern uint16_t blkdev_read_entry;
-extern uint16_t blkdev_write_entry;
-
 static void patch_vfs_fptrs(uint16_t vfs_seg) {
   if (far_read16(vfs_seg, 0) != VFS_HDR_MAGIC) {
     mod_vfs.klogf("SEG: VFS header magic mismatch!\n");
@@ -102,26 +96,24 @@ static void patch_vfs_fptrs(uint16_t vfs_seg) {
 #define PATCH_CORE(idx, sym) \
   cfp[(idx)*2] = (uint16_t)(uintptr_t)&sym##_entry; \
   cfp[(idx)*2+1] = core_seg
-  PATCH_CORE( 0, blkdev_read);
-  PATCH_CORE( 1, blkdev_write);
-  PATCH_CORE( 2, kmem_alloc);
-  PATCH_CORE( 3, kmem_free);
-  PATCH_CORE( 4, kmem_free_count);
-  PATCH_CORE( 5, kmem_pool_init);
-  PATCH_CORE( 6, mem_region_alloc);
-  PATCH_CORE( 7, mem_region_free);
-  PATCH_CORE( 8, mem_region_free_bytes);
-  PATCH_CORE( 9, mem_region_page_alloc);
-  PATCH_CORE(10, mem_region_page_free);
-  PATCH_CORE(11, mem_region_page_linear);
-  PATCH_CORE(12, mem_region_page_read);
-  PATCH_CORE(13, mem_region_page_write);
-  PATCH_CORE(14, mem_region_total_bytes);
-  PATCH_CORE(15, sched_get_ticks);
-  PATCH_CORE(16, sched_wakeup);
-  PATCH_CORE(17, sched_switch);
-  PATCH_CORE(18, subsys_read_proc);
-  PATCH_CORE(19, svc_set_restart);
+  PATCH_CORE( 0, kmem_alloc);
+  PATCH_CORE( 1, kmem_free);
+  PATCH_CORE( 2, kmem_free_count);
+  PATCH_CORE( 3, kmem_pool_init);
+  PATCH_CORE( 4, mem_region_alloc);
+  PATCH_CORE( 5, mem_region_free);
+  PATCH_CORE( 6, mem_region_free_bytes);
+  PATCH_CORE( 7, mem_region_page_alloc);
+  PATCH_CORE( 8, mem_region_page_free);
+  PATCH_CORE( 9, mem_region_page_linear);
+  PATCH_CORE(10, mem_region_page_read);
+  PATCH_CORE(11, mem_region_page_write);
+  PATCH_CORE(12, mem_region_total_bytes);
+  PATCH_CORE(13, sched_get_ticks);
+  PATCH_CORE(14, sched_wakeup);
+  PATCH_CORE(15, sched_switch);
+  PATCH_CORE(16, subsys_read_proc);
+  PATCH_CORE(17, svc_set_restart);
 #undef PATCH_CORE
 }
 
@@ -221,15 +213,9 @@ void target_late_init(void)
 
 int target_mount_rootfs(void)
 {
-  blkdev_init();
-  floppy_blk_init();
-  blkdev_t *bd = blkdev_find("fd0");
-  if (!bd) {
-    mod_vfs.klogf("FLOPPY: fd0 not found\n");
-    return -1;
-  }
-  int rc = mod_vfs.mount_ufs("/", MNT_RDONLY, bd);
-  return rc;
+  /* blkdev + floppy init done in VFS (pcxt_logger.c VFS_EVENT_LATE_INIT).
+   * Pass device name — ufs_mount resolves it via blkdev_find. */
+  return mod_vfs.mount_ufs("/", MNT_RDONLY, "fd0");
 }
 
 void target_post_mount(void)

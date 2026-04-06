@@ -298,7 +298,6 @@ set(KERNEL_CORE_SOURCES
   ${PPAP_ROOT}/src/kernel/core/signal/signal.c
   ${PPAP_ROOT}/src/kernel/core/cpu/cpu.c
   ${PPAP_ROOT}/src/kernel/core/cpu/cpu_native.c
-  ${PPAP_ROOT}/src/kernel/vfs/driver/blkdev.c
   ${PPAP_ROOT}/src/kernel/core/exec/exec.c
   ${PPAP_ROOT}/src/kernel/core/exec/elf16_loader.c
   ${PPAP_ROOT}/src/kernel/core/exec/flat_loader.c
@@ -316,7 +315,6 @@ set(KERNEL_CORE_SOURCES
 
 set(TARGET_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_pcxt.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/floppy_blk.c
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/timer_pit.c
   # Core-side stubs: caller stubs for VFS, entry stubs for core
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/vfs_stubs.S
@@ -390,6 +388,9 @@ add_executable(ppap_pcxt_vfs
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/uart_com.c
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/bios_con.c
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/pcxt_logger.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/pcxt_blkdev.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/floppy_blk.c
+  ${PPAP_ROOT}/src/kernel/vfs/driver/blkdev.c
   # VFS-side stubs: entry stubs for VFS, caller stubs for core
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/vfs_entries.S
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/core_stubs.S

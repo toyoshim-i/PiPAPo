@@ -24,11 +24,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Forward declarations — full definitions in mm/, blkdev/, proc/ headers */
+/* Forward declarations — full definitions in mm/, proc/ headers */
 struct kmem_pool;
 typedef struct kmem_pool kmem_pool_t;
-struct blkdev;
-typedef struct blkdev blkdev_t;
 struct pcb;
 
 #include "kernel/common/core/mem_layout.h" /* ppap_mem_class_t, proc_image_segment_t,
@@ -39,30 +37,6 @@ struct pcb;
 MOD_DECLARE_BEGIN(core)
 
 /* Fields are sorted alphabetically to match mod_core.inc indices. */
-
-/*
- * blkdev_read — Read sectors from a block device.
- *
- *   dev     Block device handle.
- *   buf     Destination buffer.
- *   sector  Starting sector number.
- *   count   Number of sectors to read.
- *
- * Returns number of bytes read, or negative errno.
- */
-MOD_FUNC(core, int, blkdev_read, blkdev_t *, void *, uint32_t, uint32_t)
-
-/*
- * blkdev_write — Write sectors to a block device.
- *
- *   dev     Block device handle.
- *   buf     Source buffer.
- *   sector  Starting sector number.
- *   count   Number of sectors to write.
- *
- * Returns number of bytes written, or negative errno.
- */
-MOD_FUNC(core, int, blkdev_write, blkdev_t *, const void *, uint32_t, uint32_t)
 
 /*
  * kmem_alloc — Allocate one object from a slab pool in O(1).

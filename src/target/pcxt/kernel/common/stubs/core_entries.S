@@ -72,14 +72,6 @@ saved_ip: .word 0
   lret
 .endm
 
-/* blkdev wrappers in mod_core.c are named core_blkdev_read/write.
- * The .inc entry name is blkdev_read/write (matching the struct field).
- * Alias so the target stub can call the right function. */
-  .global blkdev_read
-  .set blkdev_read, core_blkdev_read
-  .global blkdev_write
-  .set blkdev_write, core_blkdev_write
-
 #define MOD_CORE_ENTRY(name, idx)  CORE_TARGET_STUB name
 #include "kernel/common/mod/mod_core.inc"
 #undef MOD_CORE_ENTRY

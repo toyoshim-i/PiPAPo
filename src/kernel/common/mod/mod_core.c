@@ -15,19 +15,6 @@
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/subsys/subsys.h"
 #include "kernel/core/syscall/syscall.h"
-#include "kernel/vfs/driver/blkdev.h"
-
-/* Cross-module blkdev wrappers — execute dev->read/write in core's CS.
- * NOT static: called by name from core_entries.S on i16. */
-int core_blkdev_read(blkdev_t *dev, void *buf, uint32_t sector,
-                     uint32_t count) {
-  return dev->read(dev, buf, sector, count);
-}
-
-int core_blkdev_write(blkdev_t *dev, const void *buf, uint32_t sector,
-                      uint32_t count) {
-  return dev->write(dev, buf, sector, count);
-}
 
 mod_core_t mod_core = {
     .kmem_pool_init = kmem_pool_init,
@@ -47,6 +34,4 @@ mod_core_t mod_core = {
     .sched_get_ticks = sched_get_ticks,
     .subsys_read_proc = subsys_read_proc,
     .svc_set_restart = svc_set_restart,
-    .blkdev_read = core_blkdev_read,
-    .blkdev_write = core_blkdev_write,
 };
