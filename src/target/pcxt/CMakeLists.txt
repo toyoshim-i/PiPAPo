@@ -144,10 +144,21 @@ add_custom_command(
   COMMENT "Compiling ia16 runtime.o"
 )
 
+add_custom_command(
+  OUTPUT ${PCXT_USER_BUILD_DIR}/uclib.o
+  COMMAND ${CMAKE_C_COMPILER} ${PCXT_USER_CFLAGS}
+    -ffunction-sections -fdata-sections -c
+    -o ${PCXT_USER_BUILD_DIR}/uclib.o ${PPAP_ROOT}/src/user/lib/uclib.c
+  DEPENDS ${PPAP_ROOT}/src/user/lib/uclib.c
+    ${PPAP_ROOT}/src/user/lib/uclib.h
+  COMMENT "Compiling ia16 uclib.o"
+)
+
 set(PCXT_CRT_OBJS
   ${PCXT_USER_BUILD_DIR}/crt0.o
   ${PCXT_USER_BUILD_DIR}/syscall.o
   ${PCXT_USER_BUILD_DIR}/runtime.o
+  ${PCXT_USER_BUILD_DIR}/uclib.o
 )
 
 function(pcxt_user_program name source)
@@ -446,13 +457,30 @@ add_custom_target(pcxt_memory_report ALL
 )
 
 # ==========================================================================
-# Target 5: ia16 user ELFs
+# Target 5: ia16 user ELFs (first-party src/user only)
 # ==========================================================================
 
-pcxt_user_program(hello ${PPAP_ROOT}/src/user/hello.c)
-pcxt_user_program(init ${PPAP_ROOT}/src/user/init.c)
-pcxt_user_program(push ${PPAP_ROOT}/src/user/push.c
-  EXTRA_SOURCES ${PPAP_ROOT}/src/user/push_line.c)
+set(PCXT_USER_APPS hello getty init pdb push cat ls ps df)
+
+foreach(_app ${PCXT_USER_APPS})
+  if(_app STREQUAL "push")
+    pcxt_user_program(push ${PPAP_ROOT}/src/user/push.c
+      EXTRA_SOURCES
+        ${PPAP_ROOT}/src/user/push_line.c)
+  elseif(_app STREQUAL "pdb")
+    pcxt_user_program(pdb ${PPAP_ROOT}/src/user/pdb/pdb.c
+      EXTRA_SOURCES
+        ${PPAP_ROOT}/src/user/pdb/pdb_util.c
+        ${PPAP_ROOT}/src/user/pdb/pdb_trace_util.c
+        ${PPAP_ROOT}/src/user/pdb/pdb_cmd.c
+        ${PPAP_ROOT}/src/user/pdb/pdb_regs.c
+        ${PPAP_ROOT}/src/user/pdb/pdb_target.c
+        ${PPAP_ROOT}/src/user/pdb/pdb_inspect.c
+        ${PPAP_ROOT}/src/user/pdb/pdb_break.c)
+  else()
+    pcxt_user_program(${_app} ${PPAP_ROOT}/src/user/${_app}.c)
+  endif()
+endforeach()
 
 if(PPAP_TESTS)
   pcxt_user_program(runtests ${PPAP_ROOT}/tests/user/runtests.c

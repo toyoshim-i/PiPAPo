@@ -80,15 +80,21 @@ fi
 # Install base /etc files
 cp "$PROJECT_DIR/src/etc/"* "$UFS_STAGING/etc/" 2>/dev/null || true
 
-# Include user programs if built
-if [[ -f "$USER_BUILD_DIR/hello.elf" ]]; then
-  cp "$USER_BUILD_DIR/hello.elf" "$UFS_STAGING/bin/hello"
-fi
-if [[ -f "$USER_BUILD_DIR/init.elf" ]]; then
-  cp "$USER_BUILD_DIR/init.elf" "$UFS_STAGING/sbin/init"
-fi
+# Include first-party user programs from src/user if built.
+# Keep init under /sbin and expose push as /bin/sh.
+USER_APPS=(hello getty init pdb push cat ls ps df)
+for app in "${USER_APPS[@]}"; do
+  elf="$USER_BUILD_DIR/$app.elf"
+  if [[ ! -f "$elf" ]]; then
+    continue
+  fi
+  if [[ "$app" == "init" ]]; then
+    cp "$elf" "$UFS_STAGING/sbin/init"
+  else
+    cp "$elf" "$UFS_STAGING/bin/$app"
+  fi
+done
 if [[ -f "$USER_BUILD_DIR/push.elf" ]]; then
-  cp "$USER_BUILD_DIR/push.elf" "$UFS_STAGING/bin/push"
   cp "$USER_BUILD_DIR/push.elf" "$UFS_STAGING/bin/sh"
 fi
 if [[ -f "$USER_BUILD_DIR/runtests.elf" ]]; then
