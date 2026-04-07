@@ -37,6 +37,7 @@
 
   .global i16_timer_isr
   .extern i16_timer_can_preempt
+  .extern i16_vfork_restore_frame
 
 i16_timer_isr:
   /* CPU has pushed FLAGS, CS, IP (6 bytes) onto current SS:SP.
@@ -145,6 +146,11 @@ i16_timer_isr:
   movw  %ax, i16_current_ksp
 
 .Lno_switch:
+  /* Restore vfork parent's saved GP+IRET frame to user stack.
+   * The parent may resume via timer ISR (without passing through trap.S),
+   * so restore must also run on this return path. */
+  call  i16_vfork_restore_frame
+
   /* Restore interrupted SS:SP */
   popw  %bp             /* user_SP */
   popw  %ax             /* user_SS */

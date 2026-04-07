@@ -865,6 +865,7 @@ The VFS header at offset 0 in the VFS segment contains a magic word
 | proc_alloc zeros kernel_stack_top | `memset` in `proc_alloc` zeroes PCB including `kernel_stack_top` | Re-assign `kernel_stack_top` in `proc_alloc` after memset |
 | vfork parent overwrites child AX | trap.S `.Lstore_ret` writes parent return value to shared user stack, overwriting child's AX=0 | Check `i16_switch_pending` and skip AX write |
 | elf16_loader overwrites active kstack | During execve, loader wrote new frame at `kernel_stack_top`, overwriting active C call frames | Store `exec_user_ss/sp` in PCB; trap.S builds frame after C returns |
+| vfork parent resumes through timer ISR with stale frame | Parent frame restore ran on trap return only; a timer-driven resume could `iret` from the child's rewritten shared user stack | Run `i16_vfork_restore_frame()` on the timer ISR return path too |
 
 ---
 
@@ -936,10 +937,11 @@ the parent's 24-byte GP+IRET resume frame on that shared user stack.
 - **Child return value**: `sys_vfork()` also patches the shared user frame's
   AX slot to `0`, so the child returns from `vfork()` as the child process.
 
-- **Parent restore**: when the parent is runnable again, trap return calls
-  `i16_vfork_restore_frame()` before the normal restore path.  That copies the
-  saved 24-byte frame back to `user_SS:user_SP`, after which the normal GP-pop
-  and `iret` sequence resumes the parent cleanly.
+- **Parent restore**: when the parent is runnable again, every user-resume path
+  must call `i16_vfork_restore_frame()` before the normal restore path.  On the
+  current i16 port that means both trap return and timer-ISR return.  The
+  helper copies the saved 24-byte frame back to `user_SS:user_SP`, after which
+  the normal GP-pop and `iret` sequence resumes the parent cleanly.
 
 - **`execve()` handoff**: `elf16_loader` records `exec_user_ss` and
   `exec_user_sp` in the PCB.  On the trap return path, `exec_pending`
@@ -947,8 +949,11 @@ the parent's 24-byte GP+IRET resume frame on that shared user stack.
   fields instead of trying to return through the old user frame.
 
 This design avoids a target-specific user-stack copy on i16 while still
-keeping the parent resume path correct.  It is also a useful reference for a
-possible future cross-target "`vfork()` without stack copy" cleanup.
+keeping the parent resume path correct.  The important implementation lesson is
+that saving the frame is only half the job: every kernel exit path that can
+resume the parent must restore it before the final `iret`.  That makes this a
+useful reference for a possible future cross-target "`vfork()` without stack
+copy" cleanup.
 
 #### R-1.2 Debug init post-startup failure (G-1)
 

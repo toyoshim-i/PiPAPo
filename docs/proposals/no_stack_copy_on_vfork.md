@@ -55,6 +55,36 @@ work correctly without allocating a separate child user stack.
 This is the first concrete proof inside PPAP that a "save minimal parent
 resume state, do not copy the whole user stack" approach is viable.
 
+## i16 Technical Detail
+
+The working i16 design is more specific than just "save a frame somewhere":
+
+- `sys_vfork()` saves the parent's 24-byte GP+IRET resume frame off the shared
+   user stack and patches the saved AX slot with the child PID
+- the child keeps using the shared user stack until `execve()` or `_exit()`
+- `execve()` is allowed to rebuild that shared user stack for the new image
+- when the parent becomes runnable again, the saved frame must be copied back
+   to `user_SS:user_SP` before any path returns the parent to user mode
+
+That last point turned out to be load-bearing.
+
+During PC/XT bring-up, the first implementation restored the saved parent
+frame on the syscall trap return path only.  That was not sufficient.  The
+parent can also be resumed by the timer ISR path after scheduling, and that
+path also ends in a user-mode `iret`.  If the timer return path skips the
+restore, it can `iret` from the child's rewritten shared user stack and pop a
+stale or corrupted `CS:IP`.
+
+So the actual invariant is:
+
+- every kernel exit path that can resume a blocked `vfork()` parent must run
+   the parent-frame restore before restoring user registers and executing the
+   final return instruction (`iret`, `rte`, equivalent trap return, etc.)
+
+This is useful guidance for other targets.  The right question is not only
+"what parent state must be saved?" but also "which exact kernel exit paths can
+return that parent to user mode, and do all of them restore the saved state?"
+
 ## Proposed Model
 
 ### Rule
@@ -99,7 +129,7 @@ This model is safe only if all of the following are true:
 2. The child is restricted to `execve()` or `_exit()` style behavior expected of `vfork()`.
 3. The architecture can identify exactly which parent resume state is at risk.
 4. The kernel has a safe place to store that parent state temporarily.
-5. The restore point is well-defined and runs before the parent returns to user mode.
+5. The restore point is well-defined and runs before the parent returns to user mode on every possible resume path.
 
 If a target cannot satisfy those conditions cleanly, it should keep its current
 stack-copy implementation.
@@ -115,6 +145,7 @@ stack-copy implementation.
 ## Risks
 
 - restoring the wrong frame or restoring at the wrong time can corrupt the parent
+- restoring the frame on one resume path but forgetting another can leave a latent bug that appears only when scheduling changes
 - some targets may have more than one vulnerable frame, not just one
 - signal delivery, syscall restart, and tracing can complicate the restore path
 - targets that mix kernel and user stack usage may need extra care
@@ -136,13 +167,16 @@ For each architecture:
 1. Identify where the parent's user-return state lives at `vfork()` time.
 2. Identify what the child will overwrite before `execve()` or `_exit()`.
 3. Determine whether saving just that state is sufficient.
-4. Verify that the parent cannot run until the restore is complete.
+4. Enumerate every kernel exit path that can resume the parent and verify all of them restore the saved state before returning to user mode.
 
 ### Phase 3: Convert one target at a time
 
 Good candidates are targets that currently copy a user stack only to protect
 the parent's return path, not because the kernel fundamentally requires a
 separate child stack object.
+
+For each conversion, treat "resume-path coverage" as a first-class checklist
+item, not an afterthought.
 
 ### Phase 4: Remove obsolete helpers
 
