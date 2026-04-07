@@ -18,6 +18,7 @@
 #include <stdint.h>
 
 #include "kernel/common/config.h"
+#include "kernel/common/core/page_types.h"
 
 /* ── Block device struct ─────────────────────────────────────────────────── */
 
@@ -26,16 +27,27 @@ typedef struct blkdev {
   uint32_t sector_count; /* total sectors on device */
   void *priv;            /* driver-private state */
 
-  /* Read `count` sectors starting at `sector` into `buf`.
-   * buf must be at least count × BLKDEV_SECTOR_SIZE bytes.
-   * Returns 0 on success, negative errno on failure. */
-  int (*read)(struct blkdev *dev, void *buf, uint32_t sector, uint32_t count);
+  /* Read sectors into page `page` at byte offset `off`.
+   *
+   * Single-page contract: the callee must NOT cross a page boundary.
+   * The caller guarantees `off + count*BLKDEV_SECTOR_SIZE <= PAGE_SIZE`
+   * and `count >= 1`.  The callee handles at most that many sectors
+   * and never advances `page` itself.
+   *
+   * Returns 0 on success, negative errno on failure.
+   * (Single-call short-completion is not used today; all callers pass
+   *  single-page-bounded ranges and treat 0 as "all sectors handled".)
+   */
+  int (*read)(struct blkdev *dev, page_id_t page, uint16_t off, uint32_t sector,
+              uint32_t count);
 
-  /* Write `count` sectors starting at `sector` from `buf`.
-   * buf must be at least count × BLKDEV_SECTOR_SIZE bytes.
+  /* Write sectors from page `page` at byte offset `off`.
+   *
+   * Same single-page contract as read().
+   *
    * Returns 0 on success, negative errno on failure. */
-  int (*write)(struct blkdev *dev, const void *buf, uint32_t sector,
-               uint32_t count);
+  int (*write)(struct blkdev *dev, page_id_t page, uint16_t off,
+               uint32_t sector, uint32_t count);
 } blkdev_t;
 
 /* ── API ─────────────────────────────────────────────────────────────────── */

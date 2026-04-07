@@ -11,6 +11,7 @@
 
 #include "common/errno.h"
 #include "kernel/common/ioregs.h"
+#include "kernel/common/mod/mod_core.h"
 #include "kernel/vfs/driver/blkdev.h"
 
 #define FLOPPY_SEC       512u
@@ -55,27 +56,32 @@ static int read_sector_bios(uint16_t lba, void *dest)
 
 /* ── Block device interface ───────────────────────────────────────────── */
 
-static int floppy_read(blkdev_t *dev, void *buf, uint32_t sector,
-                       uint32_t count)
+static int floppy_read(blkdev_t *dev, page_id_t page, uint16_t off,
+                       uint32_t sector, uint32_t count)
 {
   (void)dev;
-  uint8_t *p = (uint8_t *)buf;
+  /* BIOS INT 13h needs ES:BX with BX a 16-bit linear address.  All
+   * current callers pass kernel-owned buffers in the DS=0 segment
+   * (< 0x10000), so the linear address fits in 16 bits.  This is the
+   * R3 hardware-driver escape hatch — synthesise the linear address
+   * exactly at the BIOS call site. */
+  uint32_t linear = mod_core.mem_region_page_linear(page) + off;
 
   int rc = 0;
   for (uint32_t i = 0; i < count; i++) {
     uint16_t lba = UFS_FLOPPY_BASE + (uint16_t)(sector + i);
     if (lba >= FLOPPY_TOTAL) { rc = -EIO; break; }
-    rc = read_sector_bios(lba, p);
+    rc = read_sector_bios(lba, (void *)(uintptr_t)linear);
     if (rc < 0) break;
-    p += FLOPPY_SEC;
+    linear += FLOPPY_SEC;
   }
   return rc;
 }
 
-static int floppy_write(blkdev_t *dev, const void *buf, uint32_t sector,
-                        uint32_t count)
+static int floppy_write(blkdev_t *dev, page_id_t page, uint16_t off,
+                        uint32_t sector, uint32_t count)
 {
-  (void)dev; (void)buf; (void)sector; (void)count;
+  (void)dev; (void)page; (void)off; (void)sector; (void)count;
   return -EROFS; /* read-only */
 }
 

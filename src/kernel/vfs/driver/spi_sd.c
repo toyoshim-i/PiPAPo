@@ -20,6 +20,7 @@
 
 #include "common/errno.h"
 #include "kernel/common/config.h"
+#include "kernel/common/mod/mod_core.h"
 #include "kernel/vfs/driver/blkdev.h"
 #include "kernel/vfs/driver/spi.h"
 
@@ -196,32 +197,36 @@ static int sd_write_sector(uint32_t addr, const uint8_t *buf) {
 
 /* ── blkdev read/write wrappers ──────────────────────────────────────────── */
 
-static int sd_blk_read(struct blkdev *dev, void *buf, uint32_t sector,
-                       uint32_t count) {
+static int sd_blk_read(struct blkdev *dev, page_id_t page, uint16_t off,
+                       uint32_t sector, uint32_t count) {
   (void)dev;
-  uint8_t *p = (uint8_t *)buf;
+  /* Driver-private 512 B stack bounce: SPI xfer needs a linear
+   * pointer for hardware DMA/PIO; the page is then memcpy'd in. */
+  uint8_t buf[BLKDEV_SECTOR_SIZE];
 
   for (uint32_t i = 0; i < count; i++) {
     uint32_t raw_sector = sd_part_lba + sector + i;
     uint32_t addr = sd_sdhc ? raw_sector : raw_sector * BLKDEV_SECTOR_SIZE;
-    int rc = sd_read_sector(addr, p);
+    int rc = sd_read_sector(addr, buf);
     if (rc < 0) return rc;
-    p += BLKDEV_SECTOR_SIZE;
+    mod_core.mem_region_page_write(page, off, buf, BLKDEV_SECTOR_SIZE);
+    off += BLKDEV_SECTOR_SIZE;
   }
   return 0;
 }
 
-static int sd_blk_write(struct blkdev *dev, const void *buf, uint32_t sector,
-                        uint32_t count) {
+static int sd_blk_write(struct blkdev *dev, page_id_t page, uint16_t off,
+                        uint32_t sector, uint32_t count) {
   (void)dev;
-  const uint8_t *p = (const uint8_t *)buf;
+  uint8_t buf[BLKDEV_SECTOR_SIZE];
 
   for (uint32_t i = 0; i < count; i++) {
     uint32_t raw_sector = sd_part_lba + sector + i;
     uint32_t addr = sd_sdhc ? raw_sector : raw_sector * BLKDEV_SECTOR_SIZE;
-    int rc = sd_write_sector(addr, p);
+    mod_core.mem_region_page_read(page, off, buf, BLKDEV_SECTOR_SIZE);
+    int rc = sd_write_sector(addr, buf);
     if (rc < 0) return rc;
-    p += BLKDEV_SECTOR_SIZE;
+    off += BLKDEV_SECTOR_SIZE;
   }
   return 0;
 }

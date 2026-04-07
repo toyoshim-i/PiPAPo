@@ -123,15 +123,17 @@ MOD_FUNC(core, page_id_t, mem_region_page_alloc, void)
 MOD_FUNC(core, void, mem_region_page_free, page_id_t)
 
 /*
- * mem_region_page_linear — Return the linear address of a page.
+ * mem_region_page_linear — Return the 32-bit linear address of a page.
  *
  *   id  Page index.
  *
- * Returns the 32-bit linear address.  Needed by blkdev drivers that
- * require raw pointers for DMA.  New VFS code should use page_read/write
- * instead — see https://github.com/toyoshim-i/PiPAPo/issues/48
+ * Sanctioned API for arithmetic and address-range checks (see
+ * memory_management.md §9).  Use it for: brk/munmap arithmetic,
+ * stack-top computation, address-range containment checks, and
+ * driver hardware programming (BIOS/DMA register writes).
  *
- * TODO: remove once blkdev accepts page_id + offset natively.
+ * Do NOT cast the result to `void *` to feed another API — pass
+ * (page, off) through to the callee instead.
  */
 MOD_FUNC(core, uint32_t, mem_region_page_linear, page_id_t)
 

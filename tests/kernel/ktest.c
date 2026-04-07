@@ -10,8 +10,9 @@
  */
 
 #include "ktest.h"
-#include "kernel/vfs/klog.h"
+#include "kernel/common/mem_region_kbuf.h"
 #include "kernel/core/mm/mem_region.h"
+#include "kernel/vfs/klog.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
@@ -638,16 +639,22 @@ static void blkdev_integration_test(void)
         blkdev_t *bd = blkdev_find("mmcblk0");
         int ok = 0;
         if (bd) {
-            uint8_t wbuf[BLKDEV_SECTOR_SIZE];
-            uint8_t rbuf[BLKDEV_SECTOR_SIZE];
+            uint8_t wbuf[BLKDEV_SECTOR_SIZE]
+                __attribute__((aligned(BLKDEV_SECTOR_SIZE)));
+            uint8_t rbuf[BLKDEV_SECTOR_SIZE]
+                __attribute__((aligned(BLKDEV_SECTOR_SIZE)));
 
             /* Fill write buffer with a pattern */
             for (uint32_t i = 0; i < BLKDEV_SECTOR_SIZE; i++)
                 wbuf[i] = (uint8_t)(i & 0xFF);
 
             /* Write sector 1, then read it back */
-            int wrc = bd->write(bd, wbuf, 1, 1);
-            int rrc = bd->read(bd, rbuf, 1, 1);
+            page_id_t wpg, rpg;
+            uint16_t wpgoff, rpgoff;
+            mem_region_kbuf_to_page(wbuf, &wpg, &wpgoff);
+            mem_region_kbuf_to_page(rbuf, &rpg, &rpgoff);
+            int wrc = bd->write(bd, wpg, wpgoff, 1, 1);
+            int rrc = bd->read(bd, rpg, rpgoff, 1, 1);
 
             if (wrc == 0 && rrc == 0) {
                 ok = 1;
@@ -664,8 +671,12 @@ static void blkdev_integration_test(void)
         blkdev_t *bd = blkdev_find("mmcblk0");
         int ok = 0;
         if (bd) {
-            uint8_t rbuf[BLKDEV_SECTOR_SIZE];
-            int rrc = bd->read(bd, rbuf, 0, 1);
+            uint8_t rbuf[BLKDEV_SECTOR_SIZE]
+                __attribute__((aligned(BLKDEV_SECTOR_SIZE)));
+            page_id_t rpg;
+            uint16_t rpgoff;
+            mem_region_kbuf_to_page(rbuf, &rpg, &rpgoff);
+            int rrc = bd->read(bd, rpg, rpgoff, 0, 1);
             /* Sector 0 is either a FAT32 BPB (0xEB...) or test pattern (0xAA) */
             ok = (rrc == 0 && (rbuf[0] == 0xEB || rbuf[0] == 0xAA));
         }
@@ -892,8 +903,12 @@ static void loopback_integration_test(void)
         blkdev_t *bd = blkdev_find("loop0");
         int ok = 0;
         if (bd) {
-            uint8_t buf[BLKDEV_SECTOR_SIZE];
-            int rc = bd->read(bd, buf, 0, 1);
+            uint8_t buf[BLKDEV_SECTOR_SIZE]
+                __attribute__((aligned(BLKDEV_SECTOR_SIZE)));
+            page_id_t pg;
+            uint16_t pgoff;
+            mem_region_kbuf_to_page(buf, &pg, &pgoff);
+            int rc = bd->read(bd, pg, pgoff, 0, 1);
             if (rc == 0) {
                 ok = 1;
                 for (int i = 0; i < (int)BLKDEV_SECTOR_SIZE; i++) {
@@ -909,8 +924,12 @@ static void loopback_integration_test(void)
         blkdev_t *bd = blkdev_find("loop0");
         int ok = 0;
         if (bd) {
-            uint8_t buf[BLKDEV_SECTOR_SIZE];
-            int rc = bd->read(bd, buf, 3, 1);
+            uint8_t buf[BLKDEV_SECTOR_SIZE]
+                __attribute__((aligned(BLKDEV_SECTOR_SIZE)));
+            page_id_t pg;
+            uint16_t pgoff;
+            mem_region_kbuf_to_page(buf, &pg, &pgoff);
+            int rc = bd->read(bd, pg, pgoff, 3, 1);
             if (rc == 0) {
                 ok = 1;
                 for (int i = 0; i < (int)BLKDEV_SECTOR_SIZE; i++) {
@@ -926,8 +945,12 @@ static void loopback_integration_test(void)
         blkdev_t *bd = blkdev_find("loop0");
         int ok = 0;
         if (bd) {
-            uint8_t buf[BLKDEV_SECTOR_SIZE];
-            int rc = bd->read(bd, buf, 4, 1);
+            uint8_t buf[BLKDEV_SECTOR_SIZE]
+                __attribute__((aligned(BLKDEV_SECTOR_SIZE)));
+            page_id_t pg;
+            uint16_t pgoff;
+            mem_region_kbuf_to_page(buf, &pg, &pgoff);
+            int rc = bd->read(bd, pg, pgoff, 4, 1);
             ok = (rc == -EIO);
         }
         test_report("read sector 4 (out of range) → EIO", ok);
@@ -938,12 +961,20 @@ static void loopback_integration_test(void)
         blkdev_t *bd = blkdev_find("loop0");
         int ok = 0;
         if (bd) {
-            uint8_t wbuf[BLKDEV_SECTOR_SIZE];
+            uint8_t wbuf[BLKDEV_SECTOR_SIZE]
+                __attribute__((aligned(BLKDEV_SECTOR_SIZE)));
             __builtin_memset(wbuf, 0xAB, BLKDEV_SECTOR_SIZE);
-            int rc = bd->write(bd, wbuf, 0, 1);
+            page_id_t wpg;
+            uint16_t wpgoff;
+            mem_region_kbuf_to_page(wbuf, &wpg, &wpgoff);
+            int rc = bd->write(bd, wpg, wpgoff, 0, 1);
             if (rc == 0) {
-                uint8_t rbuf[BLKDEV_SECTOR_SIZE];
-                rc = bd->read(bd, rbuf, 0, 1);
+                uint8_t rbuf[BLKDEV_SECTOR_SIZE]
+                    __attribute__((aligned(BLKDEV_SECTOR_SIZE)));
+                page_id_t rpg;
+                uint16_t rpgoff;
+                mem_region_kbuf_to_page(rbuf, &rpg, &rpgoff);
+                rc = bd->read(bd, rpg, rpgoff, 0, 1);
                 if (rc == 0) {
                     ok = 1;
                     for (int i = 0; i < (int)BLKDEV_SECTOR_SIZE; i++) {

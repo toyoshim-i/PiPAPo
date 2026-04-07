@@ -18,7 +18,6 @@
 
 #include "common/errno.h"
 #include "kernel/common/mod/mod_vfs.h"
-#include "kernel/common/subtle/mem_helper.h"
 #include "kernel/vfs/driver/blkdev.h"
 
 /* ── Loopback device state ─────────────────────────────────────────────── */
@@ -37,8 +36,8 @@ static const char *loop_names[LOOP_MAX] = {"loop0", "loop1", "loop2"};
 
 /* ── Read / write handlers ─────────────────────────────────────────────── */
 
-static int loop_read(struct blkdev *dev, void *buf, uint32_t sector,
-                     uint32_t count) {
+static int loop_read(struct blkdev *dev, page_id_t page, uint16_t off,
+                     uint32_t sector, uint32_t count) {
   loop_dev_t *loop = (loop_dev_t *)dev->priv;
 
   if (!loop->active) return -ENODEV;
@@ -48,17 +47,16 @@ static int loop_read(struct blkdev *dev, void *buf, uint32_t sector,
 
   if (offset + nbytes > loop->file_size) return -EIO;
 
-  /* Read from the backing vnode via its filesystem's read op */
+  /* Read from the backing vnode via its filesystem's read op.
+   * The (page, off) pair came directly from our caller — no
+   * pointer fabrication needed. */
   vnode_t *vn = loop->backing;
-  page_id_t page;
-  uint16_t page_off;
-  if (mem_region_ptr_ref(buf, &page, &page_off) < 0) return -EFAULT;
-  long n = vn->mount->ops->read(vn, page, page_off, nbytes, offset);
+  long n = vn->mount->ops->read(vn, page, off, nbytes, offset);
   return (n == (long)nbytes) ? 0 : -EIO;
 }
 
-static int loop_write(struct blkdev *dev, const void *buf, uint32_t sector,
-                      uint32_t count) {
+static int loop_write(struct blkdev *dev, page_id_t page, uint16_t off,
+                      uint32_t sector, uint32_t count) {
   loop_dev_t *loop = (loop_dev_t *)dev->priv;
 
   if (!loop->active) return -ENODEV;
@@ -68,14 +66,10 @@ static int loop_write(struct blkdev *dev, const void *buf, uint32_t sector,
 
   if (offset + nbytes > loop->file_size) return -EIO;
 
-  /* Write to the backing vnode via its filesystem's write op */
   vnode_t *vn = loop->backing;
   if (!vn->mount->ops->write) return -EROFS;
 
-  page_id_t page;
-  uint16_t page_off;
-  if (mem_region_ptr_ref(buf, &page, &page_off) < 0) return -EFAULT;
-  long n = vn->mount->ops->write(vn, page, page_off, nbytes, offset);
+  long n = vn->mount->ops->write(vn, page, off, nbytes, offset);
   return (n == (long)nbytes) ? 0 : -EIO;
 }
 

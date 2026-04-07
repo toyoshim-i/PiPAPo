@@ -116,9 +116,12 @@ typedef struct {
 
   /* FAT cache: one sector of the FAT table */
   uint32_t
-      fat_cache_sector;   /* which FAT sector is cached (0xFFFFFFFF = none) */
-  uint8_t fat_cache[512]; /* cached FAT sector data            */
-  int fat_cache_dirty;    /* 1 if cache has unsaved modifications */
+      fat_cache_sector; /* which FAT sector is cached (0xFFFFFFFF = none) */
+  /* 512-aligned so it never straddles a page boundary — required by
+   * the blkdev single-page contract.  See mem_region_kbuf_to_page. */
+  uint8_t fat_cache[512]
+      __attribute__((aligned(512))); /* cached FAT sector data    */
+  int fat_cache_dirty;               /* 1 if cache has unsaved modifications */
 } vfat_sb_t;
 
 /* ── Helper macros ───────────────────────────────────────────────────────── */

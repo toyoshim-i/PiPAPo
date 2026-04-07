@@ -18,6 +18,7 @@
 
 #include "common/errno.h"
 #include "kernel/common/config.h"
+#include "kernel/common/mem_region_kbuf.h"
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/spinlock.h" /* SPIN_FS */
@@ -28,12 +29,16 @@
 /* ── Sector buffer (on stack or static) ─────────────────────────────────── */
 
 /* We use a static sector buffer to avoid 512-byte stack allocations.
- * Protected by SPIN_FS for dual-core safety — acquired at VFS entry points. */
-static uint8_t sector_buf[512];
+ * Protected by SPIN_FS for dual-core safety — acquired at VFS entry points.
+ * 512-aligned so it never straddles a page boundary (blkdev single-page
+ * contract). */
+static uint8_t sector_buf[512] __attribute__((aligned(512)));
 
 /* ── Superblock storage ─────────────────────────────────────────────────── */
 
-static vfat_sb_t vfat_sb;
+/* 512-aligned so the embedded fat_cache (also 512-aligned) lands on
+ * its required boundary in BSS. */
+static vfat_sb_t vfat_sb __attribute__((aligned(512)));
 
 /* ── String helpers (no libc) ───────────────────────────────────────────── */
 
@@ -67,11 +72,17 @@ static void str_copy(char *dst, const char *src, uint32_t max) {
 /* ── Block I/O helpers ──────────────────────────────────────────────────── */
 
 static int read_sector(vfat_sb_t *sb, uint32_t sector, void *buf) {
-  return sb->dev->read(sb->dev, buf, sector, 1);
+  page_id_t page;
+  uint16_t off;
+  mem_region_kbuf_to_page(buf, &page, &off);
+  return sb->dev->read(sb->dev, page, off, sector, 1);
 }
 
 static int write_sector(vfat_sb_t *sb, uint32_t sector, const void *buf) {
-  return sb->dev->write(sb->dev, buf, sector, 1);
+  page_id_t page;
+  uint16_t off;
+  mem_region_kbuf_to_page(buf, &page, &off);
+  return sb->dev->write(sb->dev, page, off, sector, 1);
 }
 
 /* ── FAT table access ───────────────────────────────────────────────────── */
@@ -294,7 +305,10 @@ static int vfat_mount(mount_entry_t *mnt, const void *dev_data) {
   if (!dev) return -EINVAL;
 
   /* Read sector 0 (BPB) */
-  int rc = dev->read(dev, sector_buf, 0, 1);
+  page_id_t bpb_page;
+  uint16_t bpb_off;
+  mem_region_kbuf_to_page(sector_buf, &bpb_page, &bpb_off);
+  int rc = dev->read(dev, bpb_page, bpb_off, 0, 1);
   if (rc < 0) return rc;
 
   fat32_bpb_t *bpb = (fat32_bpb_t *)sector_buf;

@@ -22,6 +22,7 @@
 
 #include "common/errno.h"
 #include "kernel/common/config.h"
+#include "kernel/common/mod/mod_core.h"
 #include "kernel/vfs/driver/blkdev.h"
 
 /* ── Overlay ────────────────────────────────────────────────────────────── */
@@ -41,51 +42,42 @@ static uint32_t rom_sectors;
 
 /* ── Read / write handlers ──────────────────────────────────────────────── */
 
-static int ramblk_read(struct blkdev *dev, void *buf, uint32_t sector,
-                       uint32_t count) {
+static int ramblk_read(struct blkdev *dev, page_id_t page, uint16_t off,
+                       uint32_t sector, uint32_t count) {
   (void)dev;
-  uint8_t *dst = (uint8_t *)buf;
 
   for (uint32_t s = sector; s < sector + count; s++) {
     if (s >= rom_sectors) return -EIO;
 
-    if (slot_map[s] != SLOT_CLEAN) {
-      /* Dirty: read from overlay */
-      uint32_t slot = slot_map[s];
-      __builtin_memcpy(dst, OVERLAY_BASE + slot * BLKDEV_SECTOR_SIZE,
-                       BLKDEV_SECTOR_SIZE);
-    } else {
-      /* Clean: read from ROM/RAM original */
-      __builtin_memcpy(dst, rom_base + (uint32_t)s * BLKDEV_SECTOR_SIZE,
-                       BLKDEV_SECTOR_SIZE);
-    }
-    dst += BLKDEV_SECTOR_SIZE;
+    const uint8_t *src =
+        (slot_map[s] != SLOT_CLEAN)
+            ? OVERLAY_BASE + (uint32_t)slot_map[s] * BLKDEV_SECTOR_SIZE
+            : rom_base + (uint32_t)s * BLKDEV_SECTOR_SIZE;
+    mod_core.mem_region_page_write(page, off, src, BLKDEV_SECTOR_SIZE);
+    off += BLKDEV_SECTOR_SIZE;
   }
   return 0;
 }
 
-static int ramblk_write(struct blkdev *dev, const void *buf, uint32_t sector,
-                        uint32_t count) {
+static int ramblk_write(struct blkdev *dev, page_id_t page, uint16_t off,
+                        uint32_t sector, uint32_t count) {
   (void)dev;
-  const uint8_t *src = (const uint8_t *)buf;
 
   for (uint32_t s = sector; s < sector + count; s++) {
     if (s >= rom_sectors) return -EIO;
 
+    uint32_t slot;
     if (slot_map[s] != SLOT_CLEAN) {
-      /* Already dirty: overwrite in place */
-      uint32_t slot = slot_map[s];
-      __builtin_memcpy(OVERLAY_BASE + slot * BLKDEV_SECTOR_SIZE, src,
-                       BLKDEV_SECTOR_SIZE);
+      slot = slot_map[s];
     } else {
-      /* First write to this sector: allocate overlay slot */
       if (dirty_count >= OVERLAY_CAP) return -ENOSPC;
-      uint32_t slot = dirty_count++;
+      slot = dirty_count++;
       slot_map[s] = (uint16_t)slot;
-      __builtin_memcpy(OVERLAY_BASE + slot * BLKDEV_SECTOR_SIZE, src,
-                       BLKDEV_SECTOR_SIZE);
     }
-    src += BLKDEV_SECTOR_SIZE;
+    mod_core.mem_region_page_read(page, off,
+                                  OVERLAY_BASE + slot * BLKDEV_SECTOR_SIZE,
+                                  BLKDEV_SECTOR_SIZE);
+    off += BLKDEV_SECTOR_SIZE;
   }
   return 0;
 }

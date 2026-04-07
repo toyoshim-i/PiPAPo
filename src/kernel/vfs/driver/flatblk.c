@@ -11,24 +11,27 @@
 #include <stdint.h>
 
 #include "common/errno.h"
+#include "kernel/common/mod/mod_core.h"
 #include "kernel/vfs/driver/blkdev.h"
 
 static const uint8_t *flat_base;
 static uint32_t flat_sectors;
 
-static int flatblk_read(struct blkdev *dev, void *buf, uint32_t sector,
-                        uint32_t count) {
+static int flatblk_read(struct blkdev *dev, page_id_t page, uint16_t off,
+                        uint32_t sector, uint32_t count) {
   (void)dev;
   if (sector + count > flat_sectors) return -EIO;
-  __builtin_memcpy(buf, flat_base + (uint32_t)sector * BLKDEV_SECTOR_SIZE,
-                   (uint32_t)count * BLKDEV_SECTOR_SIZE);
+  mod_core.mem_region_page_write(
+      page, off, flat_base + (uint32_t)sector * BLKDEV_SECTOR_SIZE,
+      (uint16_t)((uint32_t)count * BLKDEV_SECTOR_SIZE));
   return 0;
 }
 
-static int flatblk_write(struct blkdev *dev, const void *buf, uint32_t sector,
-                         uint32_t count) {
+static int flatblk_write(struct blkdev *dev, page_id_t page, uint16_t off,
+                         uint32_t sector, uint32_t count) {
   (void)dev;
-  (void)buf;
+  (void)page;
+  (void)off;
   (void)sector;
   (void)count;
   return -EIO; /* read-only */

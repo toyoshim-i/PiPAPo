@@ -24,6 +24,7 @@
 #include <stddef.h>
 
 #include "common/errno.h"
+#include "kernel/common/mem_region_kbuf.h"
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/spinlock.h" /* SPIN_FS */
@@ -58,13 +59,20 @@ static ufs_priv_t ufs_priv;
 /* ── Sector I/O buffer ────────────────────────────────────────────────── */
 /* Protected by SPIN_FS for dual-core safety — acquired at VFS entry points. */
 
-static uint8_t ufs_buf[BLKDEV_SECTOR_SIZE];
+/* Aligned so it never straddles a page boundary — the blkdev
+ * single-page contract requires that off + 512 <= PAGE_SIZE for the
+ * (page, off) pair derived via mem_region_kbuf_to_page. */
+static uint8_t ufs_buf[BLKDEV_SECTOR_SIZE]
+    __attribute__((aligned(BLKDEV_SECTOR_SIZE)));
 
 /* ── Block I/O helpers ─────────────────────────────────────────────── */
 
 /* Read one sector from the underlying block device into ufs_buf */
 static int ufs_read_sector(ufs_priv_t *priv, uint32_t abs_sector) {
-  return priv->dev->read(priv->dev, ufs_buf, abs_sector, 1);
+  page_id_t page;
+  uint16_t off;
+  mem_region_kbuf_to_page(ufs_buf, &page, &off);
+  return priv->dev->read(priv->dev, page, off, abs_sector, 1);
 }
 
 /* Read one sector within a UFS block into ufs_buf */
@@ -77,7 +85,10 @@ static int ufs_read_blk_sector(ufs_priv_t *priv, uint32_t block,
 
 /* Write ufs_buf to one sector on the underlying block device */
 static int ufs_write_sector(ufs_priv_t *priv, uint32_t abs_sector) {
-  return priv->dev->write(priv->dev, ufs_buf, abs_sector, 1);
+  page_id_t page;
+  uint16_t off;
+  mem_region_kbuf_to_page(ufs_buf, &page, &off);
+  return priv->dev->write(priv->dev, page, off, abs_sector, 1);
 }
 
 /* Write ufs_buf to one sector within a UFS block */
@@ -442,7 +453,10 @@ static int ufs_mount(mount_entry_t *mnt, const void *dev_data) {
   if (!dev) return -EINVAL;
 
   /* Read superblock (first sector of block 0) */
-  int rc = dev->read(dev, ufs_buf, 0, 1);
+  page_id_t sb_page;
+  uint16_t sb_off;
+  mem_region_kbuf_to_page(ufs_buf, &sb_page, &sb_off);
+  int rc = dev->read(dev, sb_page, sb_off, 0, 1);
   if (rc < 0) return rc;
 
   ufs_super_t *sb = (ufs_super_t *)ufs_buf;
