@@ -182,62 +182,173 @@ iterates `fd_map[]` calling `mod_vfs.fd_release(desc_id)`.
 
 ### i16 Segment Split (PC/XT)
 
-On i16, all modules share **DS=0** for data access.  Each module's
-code (.text) lives in its own segment (separate CS).  Cross-module
-calls use `lcall`/`lret` to switch CS; DS stays unchanged.
+On i16, all modules share a single **SS=0** kernel data segment for
+all data access.  Each module's code (.text) lives in its own code
+segment (separate CS).  Cross-module calls use `lcall`/`lret` to
+switch CS; SS stays at 0.
+
+#### Shared SS=0 data layout
+
+The first 64 KB of physical memory is the shared kernel data
+segment.  The layout below is enforced by
+[`pcxt_kernel.ld`](../../src/target/pcxt/kernel/core/pcxt_kernel.ld) and
+[`pcxt_vfs.ld`](../../src/target/pcxt/kernel/vfs/pcxt_vfs.ld).
 
 ```
-  Linear address space:
-  0x0000─0x0500   BIOS/DOS work area
-  0x0500─0x0600   mod_info_t (stage2 → kernel handoff)
-  0x0600─0x9FFF   Core code + BSS + stack (CS=0)
-  0xA000─0xBFFF   VFS data (.rodata + .data + .bss, DS=0)
-  0xC000─0x9EFFF  Page pool (user memory)
-  0x10000+        VFS code segment (CS=0x1000)
+  SS=0 linear address space (first 64 KB):
+  0x00000-0x004FF   IVT + BIOS data area (real-mode)
+  0x00500-0x005FF   mod_info_t handoff (stage2 → kernel, MOD_INFO_ADDR)
+  0x00600-0x09FFF   Core .text / .rodata / .data / .bss
+                    (.text is also runtime-copied to a far CS for
+                    code execution; data lives only here)
+  0x0A000-0x0DFFF   Reserved for VFS .rodata / .data / .bss
+  0x0E000-0x0FFFF   Per-process kernel stacks (PROC_MAX × 2 KB,
+                    currently 4 × 2 KB)
 ```
 
-**Two-level stub pattern:**
+Sanity checks in `pcxt_kernel.ld` enforce that core BSS does not
+overflow into the VFS reserved range, and `pcxt_vfs.ld` enforces
+that VFS data does not overflow into the kernel stack range.
+
+#### Far code segments (CS, runtime-assigned)
+
+Stage2 loads each module twice: the core .text is copied once into
+the SS=0 image at 0x0600 (so the linker can resolve all
+SS-relative data accesses) and again into a far code segment for
+execution.  VFS .text is loaded only into a far code segment.
+
+The actual far CS values are dynamic — stage2 chooses them based
+on image size and writes them into `mod_info_t`.  Typical layout
+for a current build:
+
+```
+  Far code segments (above SS=0 data):
+  CS=0x1000+        Core .text (far copy, ~34 KB → ends ~0x18FE7)
+  CS=0x1900+        VFS  .text (~33 KB → ends ~0x21000)
+  0x22000+          Page pool starts here (handed off via
+                    mod_info[2].segment, see target_pcxt.c)
+```
+
+The page pool base is **not** a fixed constant — it follows the
+VFS code segment and so depends on actual built sizes.  The boot
+log line `MM: pages 0x000XXXXX-...` shows the runtime base.
+
+#### Two-level far-call stub pattern
+
+Cross-module calls go through a pair of stubs: a caller-side stub
+in the caller's segment, and a target-side entry stub in the
+callee's segment.  Both directions exist:
+
+| Direction | Caller stub | Target entry stub |
+|---|---|---|
+| VFS → core | [`core_stubs.S`](../../src/target/pcxt/kernel/common/stubs/core_stubs.S) (linked into VFS) | [`core_entries.S`](../../src/target/pcxt/kernel/common/stubs/core_entries.S) (linked into core) |
+| core → VFS | [`vfs_stubs.S`](../../src/target/pcxt/kernel/common/stubs/vfs_stubs.S) (linked into core) | [`vfs_entries.S`](../../src/target/pcxt/kernel/common/stubs/vfs_entries.S) (linked into VFS) |
+
+Both directions share the same shape (showing core_stubs / core_entries):
 
 ```asm
-; Caller-side stub (in caller's segment):
-vfs_init:
-    pop  %ax                    ; near_ret_IP
-    push %cs                    ; save caller CS for lret
-    push %ax                    ; save near_ret_IP
-    ljmp *%ss:vfs_fptrs + 0    ; far jump to VFS entry
+; Caller-side stub (in caller's CS).  The compiler emits a near
+; call to this label via mod_core.<func> (a near function pointer
+; in the shared data segment).  The stub converts the near frame
+; into a far frame and ljmps to the entry stub.
+\name:
+    pop  %ax                          ; near_ret_IP
+    push %cs                          ; caller CS for the eventual lret
+    push %ax                          ; near_ret_IP
+    ljmp *%ss:core_fptrs + \idx*4    ; far jump to entry stub
 
-; Target-side stub (in VFS segment):
-vfs_init_entry:
+; Target-side entry stub (in callee's CS).
+\name\()_entry:
     cli
-    pop  %ax / pop  %bx         ; save far return frame
+    pop  %ax                          ; near_ret_IP from far frame
+    pop  %dx                          ; caller_CS from far frame
     mov  %ax, %ss:saved_ip
-    mov  %bx, %ss:saved_cs
+    mov  %dx, %ss:saved_cs
     sti
-    xor  %ax, %ax
-    mov  %ax, %ds               ; restore DS=0
-    call vfs_init               ; near call to real function
+    xor  %dx, %dx
+    mov  %dx, %ds                     ; restore DS=0 (DS is scratch)
+    call \name                        ; near call to real C function
     cli
+    xor  %dx, %dx
+    mov  %dx, %ds                     ; restore DS=0 again (callee may
+                                      ; have clobbered DS)
     push %ss:saved_cs
     push %ss:saved_ip
     sti
-    lret                        ; far return to caller
+    lret                              ; far return to caller
 ```
 
-**ia16-elf-gcc behaviour:**
-- The compiler uses **SS for all data access** (`%ss:` prefix).
-  DS is a scratch register.
-- SS must always = 0 (the shared data segment invariant).
-- Assembly stubs must use `%ss:` for any data access.
+**ABI notes embedded in the stub** (see asm comments for details):
 
-**Two-pass link for shared data:**
-Core is linked first.  `gen_core_exports.sh` extracts data/BSS
-symbol addresses into `core_exports.ld`.  VFS links with this
-symbol file so the linker resolves `proc_table`, `current_core`,
-etc. to correct DS=0 addresses.
+- **AX** holds the return value — the stub must not clobber AX
+  after the C function returns.
+- **BX, SI, DI, BP** are callee-saved — the stub must not use them
+  as scratch around the call.
+- **CX, DX** are caller-saved — DX is therefore the scratch register
+  the stub uses to shuffle the far-return frame and restore DS.
+- The stub uses **static** `saved_ip` / `saved_cs` words (not the
+  stack), so it is **not reentrant**.  Interrupts are disabled
+  around the save/restore to prevent a nested far call (e.g. from
+  a timer ISR) from overwriting the saved values.
+- **DS is scratch** in ia16 small model: the compiler uses SS for
+  all data access (`%ss:` prefix), DS is freely clobbered.  The
+  entry stub resets DS to 0 both before the call (in case the
+  caller left DS dirty) and after (in case the callee did).
+- **32-bit return values** travel in DX:AX.  The current entry
+  stub clobbers DX in the post-call DS restore — this is harmless
+  for callers whose return values fit in 16 bits, and harmless
+  today for `mem_region_page_linear` (the only 32-bit-return entry)
+  because all kernel-buffer pages have linear addresses below
+  64 KB.  If a future entry needs a true 32-bit return, the stub
+  needs to spill DX before the DS restore.
 
-**No `--unresolved-symbols=ignore-all`:** Both core and VFS link
-with strict symbol resolution.  Any cross-module boundary violation
-is a **compile-time error**.
+#### Patching the far-pointer tables
+
+Each direction has a far-pointer table (`core_fptrs` for VFS→core,
+`vfs_fptrs` for core→VFS).  Stage2 writes the modules' base
+segments into `mod_info_t`; `target_early_init()` reads it and
+calls `patch_vfs_fptrs()` ([target_pcxt.c](../../src/target/pcxt/kernel/core/target_pcxt.c))
+which:
+
+1. Reads the VFS module header at offset 0 in the VFS code segment
+   to find each VFS function's offset within VFS CS.
+2. Patches `vfs_fptrs[i] = (vfs_offset_i, vfs_seg)` so core's
+   ljmp through that table reaches the VFS entry stub.
+3. Patches `core_fptrs[i] = (&core_<name>_entry, core_seg)` (one
+   `PATCH_CORE` line per `mod_core.inc` entry, indices must
+   match) so VFS's ljmp through that table reaches the core entry
+   stub.
+
+**Index/order discipline:** the indices in `PATCH_CORE(idx, name)`
+must match the order in [`mod_core.inc`](../../src/kernel/common/mod/mod_core.inc).
+Adding or removing an entry requires renumbering both files.
+
+#### ia16-elf-gcc behaviour
+
+- The compiler uses **SS for all data access** (`%ss:` prefix on
+  every memory operand).  DS is a scratch register.
+- **SS must always = 0** in kernel C code.  This is the load-bearing
+  invariant that lets `(uintptr_t)&kernel_global` numerically equal
+  the absolute linear address of the global.
+- Boot ([`boot.S`](../../src/arch/i16/boot/boot.S)) sets SS=0.
+- Every IRQ / syscall entry path
+  ([`switch.S`](../../src/arch/i16/kernel/core/switch.S),
+  [`trap.S`](../../src/arch/i16/kernel/core/trap.S)) checks the
+  interrupted SS and switches to SS=0 before calling any C code.
+- Far-call stubs do not touch SS — they assume the invariant.
+- Assembly that needs to read kernel data must use the `%ss:`
+  prefix.
+
+#### Two-pass link for shared data
+
+Core is linked first at SS=0 addresses (0x0600+).
+[`gen_core_exports.sh`](../../scripts/gen_vfs_offsets.sh) extracts
+core data/BSS symbol addresses into `core_exports.ld`.  VFS links
+second with this symbol file so cross-module references like
+`proc_table`, `current_core`, and `mod_core` resolve to the same
+SS=0 addresses on both sides.  Both core and VFS link with strict
+symbol resolution — any cross-module boundary violation is a
+**compile-time error**.
 
 ### Directory Structure
 

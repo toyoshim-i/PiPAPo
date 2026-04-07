@@ -39,13 +39,22 @@ What is *not* clean today:
    `(page, off)` encoder used in nine straggler call sites that predate
    the §7 discipline. Each call site is a place where a `void *` enters or
    leaves the page-indexed world without going through `user_to_page`.
-3. `mem_region_page_linear()` is still in the `mod_core` vtable
+3. `mem_region_page_linear()` is documented in `mod_core` as a "subtle
+   workaround for blkdev DMA"
    ([`mod_core.inc:21`](../../src/kernel/common/mod/mod_core.inc),
-   [`mod_core.h:136`](../../src/kernel/common/mod/mod_core.h)) and is
-   documented as a "subtle workaround for blkdev DMA". The follow-up
-   tracked in [issue #48](https://github.com/toyoshim-i/PiPAPo/issues/48)
-   was supposed to convert blkdev to take `(page, off)` directly and let
-   the entry be removed.
+   [`mod_core.h:136`](../../src/kernel/common/mod/mod_core.h)). The
+   "subtle/blkdev-only" framing is wrong: an audit shows the function
+   has many *legitimate* callers in core for pure 32-bit arithmetic
+   (brk/munmap address matching, signal/exec stack-top computation,
+   subsys address reporting) — exactly the uses sanctioned by
+   [memory_management.md §9](../kernel/memory_management.md). Issue #48
+   is really about removing the **`void *` buffer** from `blkdev_t`,
+   not removing `mem_region_page_linear` itself. After this proposal
+   the entry stays in `mod_core` but its docstring is rewritten to
+   match §9, and the only true R3 violation —
+   [`vfs/devfs.c`](../../src/kernel/vfs/devfs.c) fabricating
+   `(void *)(linear + off)` to call nested driver callbacks — is
+   fixed in Phase 1.
 4. Several straggler call sites use a kernel-stack **bounce buffer** that
    adds an avoidable `memcpy` and (on i16) eats scarce kernel data segment
    space.
@@ -61,9 +70,14 @@ The phases below are not equal-weight. From highest to lowest:
 
 1. **Phase 1 — `blkdev` page-indexed signature.** This is the priority.
    It aligns the storage I/O path with the page/offset discipline that
-   already governs the VFS read/write path, and it is the prerequisite
-   for ever removing `mem_region_page_linear` from `mod_core`. Issue #48
-   has been pending since the blkdev relocation in commit `42a84ec`.
+   already governs the VFS read/write path. Issue #48 has been pending
+   since the blkdev relocation in commit `42a84ec`. Phase 1 also fixes
+   the one true R3 violation in [`vfs/devfs.c`](../../src/kernel/vfs/devfs.c),
+   which casts `linear + off` to `void *` to call nested driver
+   callbacks. **`mem_region_page_linear` itself stays in `mod_core`**;
+   its many legitimate arithmetic callers in `core/` are sanctioned by
+   [memory_management.md §9](../kernel/memory_management.md) and are
+   not in scope.
 
 2. **Phase 2 — `mem_helper.h` deletion.** Small, self-contained,
    gated on Phase 1. The single-page contract from Phase 1 makes the
@@ -136,13 +150,33 @@ The previous `mem_region_ptr_ref()` / `mem_helper.h` was overly general and
 let call sites avoid asking the harder design questions. Replacing it with an explicit
 kbuf-only inline helper *forces* those questions to be answered for non-metadata I/O.
 
-#### R3. `mem_region_page_linear()` is a hardware-driver-only escape hatch
+#### R3. `mem_region_page_linear()` returns `uint32_t`, never `void *`
 
-After this cleanup, `mem_region_page_linear` may be called only from
-`src/kernel/{core,vfs}/driver/` at the exact site of a BIOS call,
-DMA register write, or other hardware programming step. It is not part of
-the cross-module surface. If a driver moves into the VFS module, it
-becomes a target-private symbol of that module — not a `mod_*` entry.
+`mem_region_page_linear()` is the sanctioned API for obtaining the
+32-bit linear address of a page (see
+[memory_management.md §9](../kernel/memory_management.md)). It may
+be used freely for:
+
+- Address arithmetic and offsets (e.g. `brk` growth, stack-top
+  computation).
+- Address-range containment checks (e.g. `proc_page_backed_contains`,
+  `sys_munmap` lookup).
+- Reporting addresses to userspace or subsystem bridges.
+- Programming hardware (BIOS, DMA, memory-mapped registers) inside
+  drivers.
+
+What R3 forbids is the **`(void *)(mem_region_page_linear(id) + off)`
+cast pattern**: synthesising a `void *` from a linear address to feed
+some other API. On i16 the cast truncates above 64 KB and silently
+corrupts; on 32-bit it works but bypasses the page-indexed I/O
+discipline. The fix is always to pass `(page, off)` to the callee
+instead of fabricating a pointer.
+
+The only current offender in non-driver code is
+[`vfs/devfs.c`](../../src/kernel/vfs/devfs.c), where node read/write
+fabricate a `void *` to call nested driver callbacks. Phase 1 fixes
+this by changing the devfs-internal driver callback signature to take
+`(page, off)`.
 
 #### R4. Avoid bounce buffers
 
@@ -184,8 +218,9 @@ helper that requires a real cross-module call must justify itself
 against the alternative of **moving the file to the right module**
 (see [Future Work in kernel_modules.md](../kernel/kernel_modules.md)).
 
-This proposal **shrinks** the module surface by one entry
-(`mem_region_page_linear`) and adds zero new ones.
+This proposal keeps the `mod_core` surface unchanged (R3 was
+relaxed during the Phase 1 audit — see §1) and adds zero new
+entries.
 
 #### R6. Module-relocation over interface growth
 
@@ -251,16 +286,21 @@ inlines it locally with a `TODO(mem_region_wrapup Phase 5)` comment.
 That keeps R2 honest: there is no public temptation, the only
 remaining offenders are clearly marked.
 
-#### 3.3 `mem_region_page_linear` callers in non-driver code
+#### 3.3 `mem_region_page_linear` callers — audit results
 
-A separate `Grep mem_region_page_linear src/kernel/{vfs,core/exec,core/subsys}/`
-is required to enumerate. Every hit is by definition a violation of R3
-after this cleanup, and is fixable by either:
+Audited 2026-04-07. After R3 was relaxed (see §1 / §3 R3), the only
+true violation is the `(void *)(linear + off)` cast pattern. The
+audit found exactly one offender outside drivers:
 
-- routing the buffer through `mem_region_page_read/write` instead, or
-- moving the file to the appropriate driver module under `target/`.
+| File | Sites | Disposition |
+|---|---|---|
+| [`vfs/devfs.c:303,330,365,395`](../../src/kernel/vfs/devfs.c) | 4 | **Phase 1** — devfs driver callback signature changes to `(page, off)`; cast removed |
 
-The expected end state is **zero** matches in those subtrees.
+All other non-driver callers (`signal.c`, `sys_proc.c`, `sys_mem.c`,
+`proc.c`, `elf16_loader.c`, `elf_loader.c`, `human68k_bridge.c`,
+`i16_common.c`) use the function for legitimate `uint32_t`
+arithmetic per [memory_management.md §9](../kernel/memory_management.md)
+and remain unchanged.
 
 ---
 
@@ -271,6 +311,15 @@ later proposal. Each leaves the tree building and tested on qemu_arm +
 qemu_m68k + pcxt at minimum; floppy-using phases also test x68k.
 
 #### Phase 1 — Close issue #48 (`blkdev` page-indexed signature) — **PRIORITY**
+
+1.0. **Add `mem_region_kbuf_to_page` inline helper** in
+    `kernel/common/` (R2 kbuf escape hatch). This is a strictly
+    scoped `static inline` that converts a kernel-owned buffer
+    pointer (e.g. `ufs_buf`, `sector_buf`) to a `(page, off)` pair via
+    `mem_region_ptr_to_page`. It exists so file-system drivers can
+    call the new page-indexed `blkdev` API for metadata I/O without
+    reaching for `ptr_ref`. Allowed callers are documented in the
+    helper's header comment.
 
 1.1. Change `blkdev_t.read` and `blkdev_t.write` signatures from
     `(struct blkdev *, void *buf, uint32_t sector, uint32_t count)` to
@@ -285,14 +334,22 @@ qemu_m68k + pcxt at minimum; floppy-using phases also test x68k.
     or a negative errno. The callee never advances `page` itself —
     crossing a page boundary is the *caller's* responsibility.
 
-    The same rule applies to every `(page_id, off, count)`-shaped
-    callee introduced by this proposal (vnode read/write,
-    `mem_region_page_read/write`, blkdev read/write, the eCPU memory
-    model glue in Phase 3): single-page semantics, partial-completion
-    return value, no implicit page walking inside the leaf.
+    In Phase 1 the single-page contract applies **only** to the new
+    `blkdev_t.read/write`. `vfs_ops_t.read/write` keeps its existing
+    multi-page interface and the §3.1 cursor walks remain in place.
+    Converting `vfs_ops` to single-page (and the corresponding page
+    walk in `fd.c vfs_bridge_read/write`) is the load-bearing work of
+    Phase 2 — it's what eliminates the §3.1 cursor-helper callers and
+    lets `mem_helper.h` be deleted.
 
-    The **root caller** — the syscall dispatcher in core, the eCPU
-    bridge, or `fd_read/fd_write` itself — owns the loop. It computes
+    The Phase 1 **root caller** for blkdev is
+    [`vfs/devfs.c`](../../src/kernel/vfs/devfs.c) (devblk_read/write,
+    devloop_read_n/write_n) — it already walks a (page, off) cursor;
+    after Phase 1 it just stops casting to `void *`. For metadata I/O
+    in `ufs.c`/`vfat.c`/`fstab.c`, the buffer is a single static
+    kernel buffer (`ufs_buf`, `sector_buf`) with `count=1`, so the
+    single-page contract is satisfied trivially via
+    `mem_region_kbuf_to_page`. It computes
     `chunk = min(remaining, PAGE_SIZE - off)`, issues the call,
     advances `(page, off)` by the returned count, and repeats until
     `remaining == 0` or a short read terminates it. This is the same
@@ -319,13 +376,15 @@ qemu_m68k + pcxt at minimum; floppy-using phases also test x68k.
     `vfs_ops_t`), in the new `blkdev_t` definition, and in the Phase 4
     invariant block in `memory_management.md`.
 
-1.2. Update [`mod_core.h`](../../src/kernel/common/mod/mod_core.h)
-    `MOD_FUNC` declarations for `blkdev_read` / `blkdev_write`. Indices
-    in [`mod_core.inc`](../../src/kernel/common/mod/mod_core.inc) stay
-    the same; `core_stubs.S` / `core_entries.S` regenerate
-    automatically. Verify the new arg count fits the existing two-level
-    stub register marshaling (see
-    [`kernel_modules.md §i16 Segment Split`](../kernel/kernel_modules.md)).
+1.2. **No `mod_core` change.** Audited 2026-04-07: `mod_core.inc` has
+    no `blkdev_read` / `blkdev_write` entries. blkdev is a VFS-internal
+    interface — all backends and callers live in the VFS module
+    (including pcxt floppy_blk in `target/pcxt/kernel/vfs/driver/`),
+    so `dev->read/write` is a same-module function-pointer call with
+    no stub marshaling. The earlier
+    [`kernel_modules.md`](../kernel/kernel_modules.md) docs mentioning
+    `mod_core.blkdev_read/write` are stale and will be refreshed in
+    Phase 4.
 
 1.3. Update every `blkdev_t` implementation:
 
@@ -345,50 +404,39 @@ qemu_m68k + pcxt at minimum; floppy-using phases also test x68k.
     the new `mem_region_kbuf_to_page` inline helper introduced in
     `kernel/common/` to pass their kernel buffers to the `blkdev` API.
 
-1.5. Audit `mem_region_page_linear` callers globally. The expected end
-    state is:
+1.5. **Fix [`vfs/devfs.c`](../../src/kernel/vfs/devfs.c) — the only true
+    R3 violation.** The four call sites at lines 303/330/365/395 cast
+    `(void *)(mem_region_page_linear(page) + off)` to call nested
+    devfs node callbacks. Change the devfs-internal callback type to
+    `(page_id_t, uint16_t off, ..., size_t n)` and pass the pair
+    through unchanged. All four call sites lose the cast.
 
-- Zero hits in `src/kernel/vfs/`, `src/kernel/core/exec/`,
-  `src/kernel/core/subsys/`, `src/kernel/syscall/`.
-- Hits only in `src/kernel/{core,vfs}/driver/` and possibly
-  `src/arch/<arch>/` (MMU/MPU setup).
+1.6. **Update `mod_core` documentation** in
+    [`mod_core.h`](../../src/kernel/common/mod/mod_core.h) and
+    [`memory_management.md §3.4`](../kernel/memory_management.md): the
+    `mem_region_page_linear` entry is *not* a "subtle workaround". It
+    is the sanctioned API per §9 for arithmetic and address-range
+    checks. Phase 4 mechanically refreshes the rest of the docs; this
+    step just removes the apologetic footnote so the contract is
+    visible during the rest of Phase 1's work. **No vtable change**:
+    indices in `mod_core.inc` are untouched, no stub regeneration, no
+    `PATCH_CORE` renumbering.
 
-1.6. **Remove `mem_region_page_linear` from the `mod_core` vtable.**
-    Delete the entries from [`mod_core.h`](../../src/kernel/common/mod/mod_core.h)
-    and [`mod_core.inc`](../../src/kernel/common/mod/mod_core.inc).
-    Renumber subsequent entries. Driver code in `target/` calls
-    `mm_page_linear()` directly (no module boundary because target code
-    links against the core image). Net change: **`mod_core` shrinks
-    from 20 to 19 entries.**
+#### Phase 2 — Convert `vfs_ops` to single-page, then delete `mem_helper.h`
 
-If 1.6 is blocked because some target driver lives in the VFS module
-(e.g. pcxt floppy) and therefore *does* cross a module boundary to
-reach `mm_page_linear`, the resolution is **Option 1.6b**:
+Goal: eliminate the §3.1 cursor-helper callers by converting
+`vfs_ops_t.read/write` to the single-page contract, moving the page
+walk up to `fd.c vfs_bridge_read/write` (the root caller for the
+file-data path). Once the cursor helpers have no callers, delete
+`mem_helper.h` with no replacement.
 
-- **Option 1.6b**: relocate the driver back to a target-specific
-  position that lives on the core side of the boundary. Per R6, prefer
-  this over keeping the entry.
+Prerequisite: Phase 1 has landed (blkdev page-indexed signature).
 
-Based on an audit of the `pcxt` floppy driver: the driver currently casts
-its buffer to a `uint16_t` for the BIOS call, implicitly relying on the buffer
-living in the `DS=0` segment. With `(page, off)` args, it must start using
-`mem_region_page_linear` to synthesize the physical address. Because the driver
-currently lives in the VFS module, it would need to cross the module boundary.
-To resolve this and successfully remove the `mod_core` entry, we will proceed
-with Option 1.6b and relocate the hardware-specific floppy drivers out of
-`vfs/driver/` and back into `target/<arch>/kernel/...` (core-side).
-
-#### Phase 2 — Delete `mem_helper.h`
-
-Goal: remove the apologetic header without introducing any replacement
-file. Phase 1 already eliminated every cursor-helper caller by moving
-the page walk up to the root callers; Phase 2 just collects the
-remains.
-
-Prerequisite: Phase 1 has landed. All 14 cursor-math call sites in
-§3.1 have been simplified to single-page leaves, and the root callers
-(syscall dispatcher, `fd_read`/`fd_write`, eCPU bridge) drive the page
-walk inline with two lines of arithmetic each:
+2.0. Add the page-walk loop to
+    [`fd.c vfs_bridge_read`/`vfs_bridge_write`](../../src/kernel/vfs/fd.c)
+    so it issues one `vfs_ops.read/write` call per page chunk and
+    advances the cursor between calls. Inline arithmetic, no shared
+    helper:
 
 ```c
 uint16_t chunk = (PAGE_SIZE - off < remaining) ? (PAGE_SIZE - off)
@@ -399,16 +447,28 @@ page += (page_id_t)(pos / PAGE_SIZE);
 off   = (uint16_t)(pos % PAGE_SIZE);
 ```
 
-There are roughly 3–5 root-caller sites. Each gets the arithmetic
-inline next to a one-line comment naming the cursor it walks. **No
-shared helper, no shared symbol, no shared header.** The same rule
-that R2 applies to `ptr_ref` also applies here: small inline
-arithmetic at deliberate sites is preferable to a public utility that
-can be casually reached for.
+**No shared helper, no shared symbol, no shared header.** Same rule
+as R2 for `ptr_ref`: small inline arithmetic at deliberate sites is
+preferable to a public utility that can be casually reached for.
 
-2.1. Confirm zero remaining callers of `mem_region_page_chunk_len` and
-    `mem_region_page_advance` after Phase 1. If any leaf still walks a
-    cursor, it is a Phase 1 oversight — fix it before proceeding.
+2.1. Convert each `vfs_ops_t.read`/`write` leaf to single-page
+    semantics: handle at most `min(n, PAGE_SIZE - off)` bytes,
+    return the number actually handled, no internal cursor walk.
+    Sites: [`tmpfs.c`](../../src/kernel/vfs/tmpfs.c),
+    [`ufs.c`](../../src/kernel/vfs/ufs.c),
+    [`vfat.c`](../../src/kernel/vfs/vfat.c),
+    [`romfs.c`](../../src/kernel/vfs/romfs.c),
+    [`procfs.c`](../../src/kernel/vfs/procfs.c),
+    [`devfs.c`](../../src/kernel/vfs/devfs.c) (devfs has its own
+    inner devblk_/devloop_ cursor for raw block access — that
+    cursor stays, since blkdev is sector-grained and devfs is
+    where the page walk for raw block I/O lives). After 2.1,
+    `mem_region_page_chunk_len`/`page_advance` have only the devfs
+    inner-cursor caller left, which is converted to inline
+    arithmetic in 2.2.
+
+2.2. Inline the devfs cursor arithmetic and confirm zero remaining
+    callers of `mem_region_page_chunk_len` and `mem_region_page_advance`.
 
 2.2. The `ptr_ref` symbol is replaced with a strictly scoped inline helper
     (e.g., `mem_region_kbuf_to_page`) in `kernel/common/`. Each surviving caller
@@ -533,12 +593,12 @@ one segment-sized memcpy per loaded binary.
 
 | Phase | mod_core delta | mod_vfs delta | Bounces removed | Files moved |
 |---|---|---|---|---|
-| 1 — blkdev page-indexed | **−1** (`mem_region_page_linear`, conditional on 1.6) | 0 | 0 | possibly 1 (driver re-home, see 1.6) |
+| 1 — blkdev page-indexed + devfs cast fix | 0 | 0 | 0 | 0 |
 | 2 — `mem_helper.h` deletion | 0 | 0 | 0 | 0 |
 | 3 — subsys + h68k_emu | 0 | 0 | **4** (subsys×3, h68k_emu) | 0 |
 | 4 — docs/lint | 0 | 0 | 0 | 0 |
 | 5 — core loader (deferred) | 0 | 0 | 2 (exec×1, elf16_loader×1) | 0 |
-| **Net (this proposal)** | **−1** | **0** | **4** | **0–1** |
+| **Net (this proposal)** | **0** | **0** | **4** | **0** |
 
 Performance impact (Phase 3):
 
