@@ -1548,17 +1548,23 @@ long sys_vfork(uint32_t *frame) {
         current->image.data.base_page + (page_id_t)(rel / PAGE_SIZE);
     uint16_t frame_page_off = (uint16_t)(rel % PAGE_SIZE);
 
-    /* Save parent's 24B GP+IRET frame to parent's kernel stack.
+    /* Save parent's 24B GP+IRET frame into PCB-owned storage.
      * Patch the AX slot (offset 16) with child PID so the parent
-     * sees the correct vfork return value when the frame is restored. */
-    uint8_t saved_frame[24];
-    mem_region_page_read(frame_page, frame_page_off, saved_frame, 24);
+     * sees the correct vfork return value when the frame is restored.
+     *
+     * NOTE: an earlier version stored the saved frame at trap_ksp+2,
+     * which is the parent's kernel-stack TOP — i.e. four bytes ABOVE
+     * the saved (user_SP, user_SS) pair, OUTSIDE this slot.  With
+     * 2 KB-per-process kernel stacks at fixed bases (proc.c:60), that
+     * write spilled into the adjacent slot's stack region.  PCB
+     * storage avoids the geometry entirely. */
+    mem_region_page_read(frame_page, frame_page_off, current->vfork_saved_frame,
+                         24);
     uint16_t child_pid16 = (uint16_t)child->pid;
-    saved_frame[16] = (uint8_t)(child_pid16 & 0xFF);
-    saved_frame[17] = (uint8_t)(child_pid16 >> 8);
-    uint8_t *kstack_save = (uint8_t *)(uintptr_t)(trap_ksp + 2);
-    __builtin_memcpy(kstack_save, saved_frame, 24);
+    current->vfork_saved_frame[16] = (uint8_t)(child_pid16 & 0xFF);
+    current->vfork_saved_frame[17] = (uint8_t)(child_pid16 >> 8);
     current->vfork_frame_saved = 1;
+    (void)trap_ksp; /* still used above to read user_SS:user_SP */
 
     /* Build child's kernel stack: [user_SP, user_SS] */
     uint16_t child_ksp = child->kernel_stack_top;
