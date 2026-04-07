@@ -1,15 +1,29 @@
 /*
- * bios_con.c -- BIOS INT 10h text output for IBM PC
+ * bios_con.c -- direct VGA text-mode console for IBM PC
  *
- * Printable characters are written directly to VGA text memory so tty1
- * can translate a small subset of ANSI SGR escapes into on-screen
- * colors without relying on BIOS AH=09h quirks. Headless users should
- * use ttyS0, which already preserves raw ANSI.
+ * Writes glyphs straight to 0xB8000 and programs the CRTC cursor
+ * registers directly (ports 0x3D4/0x3D5). Avoids INT 10h entirely:
+ * SeaBIOS's optional serial console mirrors any AH=02h/06h/0Eh call
+ * to COM1, which would interleave with our own uart_putc() output and
+ * produce a duplicated blank line per real log line on ttyS0.
+ *
+ * Cursor row/col are tracked in software and seeded to (0,0); we own
+ * the screen from boot, so the kernel banner starts at the top.
  */
 
 #include "bios_con.h"
 
 #include <stdint.h>
+
+#include "kernel/common/ioregs.h"
+
+#define BIOS_VRAM_SEG  0xB800u
+#define BIOS_COLS      80u
+#define BIOS_ROWS      25u
+#define CRTC_INDEX     0x3D4u
+#define CRTC_DATA      0x3D5u
+#define CRTC_CURSOR_HI 0x0Eu
+#define CRTC_CURSOR_LO 0x0Fu
 
 enum bios_ansi_state {
   BIOS_ANSI_TEXT = 0,
@@ -25,6 +39,8 @@ static uint8_t bios_ansi_state;
 static uint8_t bios_param_count;
 static uint8_t bios_param_seen_digit;
 static uint16_t bios_params[4];
+static uint8_t bios_row;
+static uint8_t bios_col;
 
 static void bios_update_attr(void) {
   bios_attr = (uint8_t)((bios_bg << 4) | bios_fg | (bios_bold ? 0x08u : 0u));
@@ -37,90 +53,85 @@ static void bios_reset_attr(void) {
   bios_update_attr();
 }
 
-static void bios_teletype(char c) {
-  __asm__ volatile(
-    "push %%ds\n\t"
-    "push %%es\n\t"
-    "int $0x10\n\t"
-    "pop %%es\n\t"
-    "pop %%ds"
-    :
-    : "a"((unsigned short)(0x0E00u | (unsigned char)c)),
-      "b"((unsigned short)0x0007u)
-    : "cc", "memory"
-  );
-}
-
-static void bios_write_attr_char(char c) {
-  uint16_t cursor;
-  uint16_t pos;
-  uint16_t cell;
-  uint8_t glyph = (uint8_t)c;
-  uint8_t row;
-  uint8_t col;
-
-  __asm__ volatile(
-    "push %%ds\n\t"
-    "push %%es\n\t"
-    "int $0x10\n\t"
-    "pop %%es\n\t"
-    "pop %%ds"
-    : "=d"(cursor)
-    : "a"((unsigned short)0x0300u),
-      "b"((unsigned short)0x0000u)
-    : "cx", "cc", "memory"
-  );
-
-  col = (uint8_t)(cursor & 0x00FFu);
-  row = (uint8_t)(cursor >> 8);
-  pos = (uint16_t)(((uint16_t)row * 80u + (uint16_t)col) * 2u);
-  cell = (uint16_t)(((uint16_t)bios_attr << 8) | glyph);
-
+/* Write a single (attr<<8 | glyph) word to 0xB8000:offset. */
+static void bios_vram_poke(uint16_t offset, uint16_t cell) {
   __asm__ volatile(
     "push %%es\n\t"
-    "mov  $0xB800, %%bx\n\t"
     "mov  %%bx, %%es\n\t"
     "mov  %%ax, %%es:(%%di)\n\t"
     "pop %%es"
     :
-    : "a"(cell), "D"(pos)
-    : "bx", "memory"
+    : "a"(cell), "b"((unsigned short)BIOS_VRAM_SEG), "D"(offset)
+    : "memory"
   );
+}
 
-  col++;
-  if (col >= 80u) {
-    col = 0u;
-    row++;
-    if (row >= 25u) {
-      row = 24u;
-      __asm__ volatile(
-        "push %%ds\n\t"
-        "push %%es\n\t"
-        "int $0x10\n\t"
-        "pop %%es\n\t"
-        "pop %%ds"
-        :
-        : "a"((unsigned short)0x0601u),
-          "b"((unsigned short)(0x0000u | bios_attr)),
-          "c"((unsigned short)0x0000u),
-          "d"((unsigned short)0x184Fu)
-        : "cc", "memory"
-      );
+static uint16_t bios_vram_peek(uint16_t offset) {
+  uint16_t cell;
+  __asm__ volatile(
+    "push %%es\n\t"
+    "mov  %%bx, %%es\n\t"
+    "mov  %%es:(%%di), %%ax\n\t"
+    "pop %%es"
+    : "=a"(cell)
+    : "b"((unsigned short)BIOS_VRAM_SEG), "D"(offset)
+    : "memory"
+  );
+  return cell;
+}
+
+static void bios_sync_hw_cursor(void) {
+  uint16_t pos = (uint16_t)((uint16_t)bios_row * BIOS_COLS + bios_col);
+  outb(CRTC_INDEX, CRTC_CURSOR_HI);
+  outb(CRTC_DATA, (uint8_t)(pos >> 8));
+  outb(CRTC_INDEX, CRTC_CURSOR_LO);
+  outb(CRTC_DATA, (uint8_t)(pos & 0xFFu));
+}
+
+static void bios_scroll_one(void) {
+  /* Copy rows 1..24 up by one row, blank row 24. */
+  uint16_t blank = (uint16_t)(((uint16_t)bios_attr << 8) | (uint16_t)' ');
+  for (uint16_t i = 0; i < (BIOS_ROWS - 1u) * BIOS_COLS; i++) {
+    bios_vram_poke((uint16_t)(i * 2u),
+                   bios_vram_peek((uint16_t)((i + BIOS_COLS) * 2u)));
+  }
+  for (uint16_t i = (BIOS_ROWS - 1u) * BIOS_COLS; i < BIOS_ROWS * BIOS_COLS;
+       i++) {
+    bios_vram_poke((uint16_t)(i * 2u), blank);
+  }
+}
+
+static void bios_newline(void) {
+  bios_col = 0u;
+  if (bios_row + 1u >= BIOS_ROWS) {
+    bios_scroll_one();
+  } else {
+    bios_row++;
+  }
+  bios_sync_hw_cursor();
+}
+
+static void bios_carriage_return(void) {
+  bios_col = 0u;
+  bios_sync_hw_cursor();
+}
+
+static void bios_write_attr_char(char c) {
+  uint16_t pos = (uint16_t)(((uint16_t)bios_row * BIOS_COLS + bios_col) * 2u);
+  uint16_t cell = (uint16_t)(((uint16_t)bios_attr << 8) | (uint8_t)c);
+
+  bios_vram_poke(pos, cell);
+
+  bios_col++;
+  if (bios_col >= BIOS_COLS) {
+    bios_col = 0u;
+    if (bios_row + 1u >= BIOS_ROWS) {
+      bios_scroll_one();
+    } else {
+      bios_row++;
     }
   }
-
-  __asm__ volatile(
-    "push %%ds\n\t"
-    "push %%es\n\t"
-    "int $0x10\n\t"
-    "pop %%es\n\t"
-    "pop %%ds"
-    :
-    : "a"((unsigned short)0x0200u),
-      "b"((unsigned short)0x0000u),
-      "d"((unsigned short)(((unsigned short)row << 8) | col))
-    : "cc", "memory"
-  );
+  bios_sync_hw_cursor();
 }
 
 static void bios_ansi_apply_sgr(void) {
@@ -173,8 +184,13 @@ void bios_putc(char c)
         bios_ansi_state = BIOS_ANSI_ESC;
         return;
       }
-      if (ch < 0x20u || ch == 0x7Fu) {
-        bios_teletype(c);
+      if (ch == '\n') {
+        bios_newline();
+      } else if (ch == '\r') {
+        bios_carriage_return();
+      } else if (ch < 0x20u || ch == 0x7Fu) {
+        /* Drop other control chars rather than routing through INT 10h
+         * AH=0Eh, which SeaBIOS would mirror onto the serial console. */
       } else {
         bios_write_attr_char(c);
       }
