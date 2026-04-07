@@ -33,6 +33,15 @@
  * unit. */
 static volatile uint32_t tick_count = 0u;
 
+/* Shared cooperative-yield flag.  Used by every architecture whose arch.h
+ * pulls in arch_yield_default.h (m68k, i16, riscv, xtensa).  ARM Cortex-M
+ * yields via PendSV and never touches this variable. */
+/* Type is `unsigned int` so the storage width matches the platform word
+ * size: 16 bits on i16 (8086 real mode), 32 bits on m68k/riscv/arm/xtensa.
+ * This lets each architecture's timer/trap asm use its natural-width
+ * load/store/test instructions without padding mismatches. */
+volatile unsigned int switch_pending = 0u;
+
 /* ── Per-core CPU jiffy counters (for /proc/stat) ────────────────────────── */
 uint32_t cpu_user_ticks[2] = {0, 0};
 uint32_t cpu_system_ticks[2] = {0, 0};
@@ -109,9 +118,10 @@ void sched_tick(void) {
 #include "kernel/common/mod/mod_vfs.h"
 #include "target/target.h"
 
-void sched_idle_poll(void) {
+int sched_idle_poll(void) {
   mod_vfs.notify(VFS_EVENT_IDLE);
   target_idle_poll();
+  return arch_yield_consume();
 }
 
 /* ── Timer tick handler (shared logic) ───────────────────────────────────────
@@ -302,7 +312,7 @@ void sched_switch(void) {
   /* Xtensa has no PendSV.  Call the cooperative switch directly.
    * xtensa_do_yield() spills all windows, saves/restores SP via
    * the solicited-frame pattern, and returns to the new process. */
-  xtensa_switch_pending = 0;
+  switch_pending = 0;
   extern void xtensa_do_yield(void);
   xtensa_do_yield();
 #elif defined(__m68k__)

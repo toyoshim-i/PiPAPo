@@ -11,18 +11,13 @@
 
 #include <stdint.h>
 
+#include "kernel/common/arch_yield_default.h"
 #include "kernel/common/ioregs.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/syscall/syscall.h"
 #include "xtensa_api.h"
-
-/* Context switch pending flag.
- * Set by arch_yield() (via sched_tick or sched_switch).
- * Checked by switch.S / sched_switch to perform the switch.
- * Same pattern as riscv_switch_pending / m68k_switch_pending. */
-volatile uint32_t xtensa_switch_pending = 0;
 
 /* Timer ready flag — set by xtensa_timer_init().
  * arch_preempt_enable() checks this to avoid enabling the timer interrupt
@@ -198,9 +193,9 @@ static void xtensa_syscall_handler(XtExcFrame *frame) {
    *  - current process blocked (e.g. read() with no data)
    */
   /* Context switch via cooperative yield. */
-  if (xtensa_switch_pending ||
+  if (switch_pending ||
       (current && current->state != PROC_RUNNABLE && !current->is_idle)) {
-    xtensa_switch_pending = 0;
+    switch_pending = 0;
     sched_switch();
   }
 }

@@ -105,7 +105,7 @@ i16_timer_isr:
   /* Do not context-switch away from in-kernel work.  i16 currently
    * lacks a fully reentrant kernel preemption model, and switching
    * in the middle of BIOS/VFS/exec paths can corrupt in-flight state.
-   * Leave i16_switch_pending set so a later safe return path can
+   * Leave switch_pending set so a later safe return path can
    * perform the deferred switch.  The one exception is the idle
    * thread, where the timer tick is the normal path that hands off
    * from pid 0 to runnable user processes. */
@@ -118,12 +118,12 @@ i16_timer_isr:
   jz    .Lno_switch
 
   /* Check context switch flag */
-  movw  i16_switch_pending, %ax
+  movw  switch_pending, %ax
   testw %ax, %ax
   jz    .Lno_switch
 
   /* Clear the flag */
-  movw  $0, i16_switch_pending
+  movw  $0, switch_pending
 
   /* Save current kernel SP into current PCB (offset 0) */
   movw  current_core, %bx

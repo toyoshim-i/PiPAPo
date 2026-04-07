@@ -91,10 +91,10 @@ m68k_trace_handler:
     jsr     trace_m68k_trace_exception
     addq.l  #4,%sp
 
-    | If tracing requested a stop, sched_switch() set m68k_switch_pending.
-    tst.l   m68k_switch_pending
+    | If tracing requested a stop, sched_switch() set switch_pending.
+    tst.l   switch_pending
     beq.s   .Ltrace_no_switch
-    clr.l   m68k_switch_pending
+    clr.l   switch_pending
 
     | Store SP (SSP) and USP into current PCB
     move.l  current_core,%a0
@@ -135,11 +135,11 @@ m68k_timer_isr:
     jsr     m68k_timer_handler_c
 
     | Check if scheduler requested a context switch
-    tst.l   m68k_switch_pending
+    tst.l   switch_pending
     beq.s   .Lno_switch
 
     | ── Context switch ────────────────────────────────────────────────────
-    clr.l   m68k_switch_pending
+    clr.l   switch_pending
 
     | exec_pending: execve has set current->sp to the new process frame
     | and is about to return to trap.S .Lexec_restore.  Saving the kernel

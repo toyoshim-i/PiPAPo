@@ -22,9 +22,8 @@
  * For cooperative yield, ecall from M-mode triggers the switch directly.
  * ────────────────────────────────────────────────────────────────────────── */
 
-extern volatile uint32_t riscv_switch_pending;
-
-static inline void arch_yield(void) { riscv_switch_pending = 1; }
+/* Shared flag-based yield.  See kernel/common/arch_yield_default.h. */
+#include "kernel/common/arch_yield_default.h"
 
 /* ── CPU hints ────────────────────────────────────────────────────────── */
 

@@ -22,10 +22,10 @@
  * The timer ISR checks this flag and performs the switch if set.
  * ------------------------------------------------------------------- */
 
-extern volatile uint16_t i16_switch_pending;
 extern volatile uint16_t i16_current_ksp;
 
-static inline void arch_yield(void) { i16_switch_pending = 1; }
+/* Shared flag-based yield.  See kernel/common/arch_yield_default.h. */
+#include "kernel/common/arch_yield_default.h"
 
 /* -- CPU hints ---------------------------------------------------------- */
 

@@ -303,9 +303,9 @@ m68k_fline_handler:
 .Lfline_return:
     | Check for a pending context switch (e.g. ptrace subsys trace stop set
     | by arch_yield() inside trace_before_subsys).  Mirror the logic in trap.S.
-    tst.l   m68k_switch_pending
+    tst.l   switch_pending
     beq.s   .Lfline_rte
-    clr.l   m68k_switch_pending
+    clr.l   switch_pending
     move.l  current_core,%a0
     move.l  %sp,%a0@(PCB_SP_OFFSET)  | save current kernel SP
     move.l  %usp,%a1
@@ -334,9 +334,9 @@ m68k_trap15_handler:
     jsr     human68k_iocs_dispatch
     addq.l  #4,%sp                  | clean up 1 arg
     | Check for a pending context switch (same reason as .Lfline_return above)
-    tst.l   m68k_switch_pending
+    tst.l   switch_pending
     beq.s   .Ltrap15_rte
-    clr.l   m68k_switch_pending
+    clr.l   switch_pending
     move.l  current_core,%a0
     move.l  %sp,%a0@(PCB_SP_OFFSET)  | save current kernel SP
     move.l  %usp,%a1

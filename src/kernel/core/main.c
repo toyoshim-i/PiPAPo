@@ -165,20 +165,15 @@ void kmain(void) {
    * first timer preemption tick. */
   sched_switch();
 
-  /* Idle thread — wake on every interrupt, flush LCD if needed, sleep. */
+  /* Idle thread — wake on every interrupt, flush LCD if needed, sleep.
+   *
+   * sched_idle_poll() returns non-zero if any of the polled work raised
+   * an arch_yield() (e.g. tty_rx_notify woke a blocked reader on a
+   * polled-input target).  Honor it immediately so the wakeup does not
+   * have to wait for the next timer tick.  On Cortex-M PendSV self-pends
+   * via NVIC and arch_yield_consume() always returns 0. */
   for (;;) {
-    sched_idle_poll();
-#if defined(__xtensa__)
-    /* Semi-preemptive: timer ISR sets the flag, idle loop performs switch.
-     * True preemptive switching (in interrupt return path) deferred to CC-4. */
-    {
-      extern volatile uint32_t xtensa_switch_pending;
-      if (xtensa_switch_pending) {
-        xtensa_switch_pending = 0;
-        sched_switch();
-      }
-    }
-#endif
+    if (sched_idle_poll()) sched_switch();
     arch_wfi();
   }
 }

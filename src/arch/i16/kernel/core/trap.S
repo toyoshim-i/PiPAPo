@@ -161,13 +161,13 @@ i16_syscall_isr:
 
 .Lmaybe_switch:
   /* Check if a context switch was requested (e.g. by sys_waitpid) */
-  movw  i16_switch_pending, %ax
+  movw  switch_pending, %ax
   testw %ax, %ax
   jz    .Lafter_switch
   call  i16_trap_should_switch_now
   testw %ax, %ax
   jz    .Lafter_switch
-  movw  $0, i16_switch_pending
+  movw  $0, switch_pending
 
   movw  current_core, %bx
   movw  %sp, (%bx)

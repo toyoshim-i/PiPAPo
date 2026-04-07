@@ -100,7 +100,13 @@ uint32_t sched_get_ticks(void);
  * display flush) and calls target_idle_poll() for any target-specific
  * work.  Called from the idle thread after each hlt/wfi wake.
  * Must run in thread context — backends may do slow I/O.
+ *
+ * Returns non-zero if any of the polled work raised an arch_yield()
+ * (e.g. tty_rx_notify woke a blocked reader).  The idle loop must
+ * then call sched_switch() so the wakeup is honored without waiting
+ * for the next timer tick.  On Cortex-M this is always 0 because
+ * PendSV self-pends and runs on exception return.
  */
-void sched_idle_poll(void);
+int sched_idle_poll(void);
 
 #endif /* PPAP_KERNEL_CORE_PROC_SCHED_H */

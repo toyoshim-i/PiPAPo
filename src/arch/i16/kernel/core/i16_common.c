@@ -5,11 +5,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Context switch pending flag.
- * Set by arch_yield().  Checked by timer ISR in switch.S.
- * Same pattern as m68k_switch_pending / riscv_switch_pending. */
-volatile uint16_t i16_switch_pending = 0;
-
 /* Current process's kernel stack pointer.  ISR/syscall entry loads
  * SS:SP from SS=0:i16_current_ksp.  Updated on context switch and
  * at boot.  Avoids dereferencing current_core before SS=0 is set. */

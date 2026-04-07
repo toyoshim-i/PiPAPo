@@ -79,9 +79,9 @@ m68k_trap0_handler:
 
     | If a syscall requested scheduling (sched_switch), switch now
     | before returning to user mode.
-    tst.l   m68k_switch_pending
+    tst.l   switch_pending
     beq.s   .Lret_current
-    clr.l   m68k_switch_pending
+    clr.l   switch_pending
 
     | Save current SP/USP into PCB
     move.l  current_core,%a0
@@ -127,9 +127,9 @@ m68k_trap0_handler:
     move.l  %a1,%usp
 
     | execve can request an immediate stop/yield (e.g. ptrace exec-stop).
-    tst.l   m68k_switch_pending
+    tst.l   switch_pending
     beq.s   .Lexec_return
-    clr.l   m68k_switch_pending
+    clr.l   switch_pending
 
     move.l  current_core,%a0
     move.l  %sp,%a0@(PCB_SP_OFFSET)

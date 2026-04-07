@@ -247,8 +247,8 @@ _trap_entry:
     sw      t1, 32(sp)             # frame[0] = saved a0 at sp+32
 .Lno_restart:
 
-    # ── Check riscv_switch_pending ──────────────────────────────────
-    la      t0, riscv_switch_pending
+    # ── Check switch_pending ──────────────────────────────────
+    la      t0, switch_pending
     lw      t1, 0(t0)
     beqz    t1, .Ltrap_return
     sw      zero, 0(t0)
@@ -286,9 +286,9 @@ _trap_entry:
     call    riscv_timer_handler
 
     # ── Check if a context switch was requested ─────────────────────────
-    # sched_timer_tick → sched_tick → arch_yield sets riscv_switch_pending.
+    # sched_timer_tick → sched_tick → arch_yield sets switch_pending.
     # If set, perform the switch now (same pattern as m68k port).
-    la      t0, riscv_switch_pending
+    la      t0, switch_pending
     lw      t1, 0(t0)
     beqz    t1, .Ltrap_return   # no switch needed
     sw      zero, 0(t0)         # clear the flag

@@ -23,9 +23,8 @@
  * set a flag that the timer ISR checks after calling sched_timer_tick().
  * ────────────────────────────────────────────────────────────────────────── */
 
-extern volatile uint32_t xtensa_switch_pending;
-
-static inline void arch_yield(void) { xtensa_switch_pending = 1; }
+/* Shared flag-based yield.  See kernel/common/arch_yield_default.h. */
+#include "kernel/common/arch_yield_default.h"
 
 /* ── CPU hints ────────────────────────────────────────────────────────── */
 

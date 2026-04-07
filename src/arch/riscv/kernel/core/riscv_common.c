@@ -16,12 +16,6 @@
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
 
-/* Context switch pending flag.
- * Set by arch_yield() (via sched_tick or sched_switch).
- * Checked by timer ISR before mret to perform the switch.
- * Same pattern as m68k_switch_pending. */
-volatile uint32_t riscv_switch_pending = 0;
-
 /* SysTick-equivalent counter — incremented by timer ISR.
  * Used by the scheduler for time-slice accounting. */
 volatile uint32_t riscv_tick_count = 0;
@@ -174,15 +168,15 @@ void riscv_timer_handler(int from_user) {
   riscv_tick_count++;
 
   /* Drive scheduler time-slice accounting and preemption.
-   * sched_timer_tick → sched_tick → arch_yield → riscv_switch_pending=1.
-   * trap.S checks riscv_switch_pending on the return path. */
+   * sched_timer_tick → sched_tick → arch_yield → switch_pending=1.
+   * trap.S checks switch_pending on the return path. */
   sched_timer_tick(from_user);
 }
 
 /* ── Context switch ──────────────────────────────────────────────────────── */
 
 /*
- * riscv_do_switch — called from trap.S when riscv_switch_pending is set.
+ * riscv_do_switch — called from trap.S when switch_pending is set.
  *
  * Saves the current trap-frame SP into the current pcb, calls sched_next()
  * to pick the next process, and returns the new process's saved SP.

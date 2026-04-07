@@ -21,11 +21,9 @@
  * For cooperative yield, TRAP #1 triggers the context switch directly.
  * ────────────────────────────────────────────────────────────────────────── */
 
-/* Global flag: set to 1 when a context switch is needed.
- * Checked by timer ISR and syscall exit path. */
-extern volatile uint32_t m68k_switch_pending;
-
-static inline void arch_yield(void) { m68k_switch_pending = 1; }
+/* Shared flag-based yield: switch_pending is set to 1 by arch_yield() and
+ * checked by timer ISR / trap-return path (per-arch assembly). */
+#include "kernel/common/arch_yield_default.h"
 
 /* ── CPU hints ────────────────────────────────────────────────────────────
  *

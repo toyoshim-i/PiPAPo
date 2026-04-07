@@ -20,8 +20,17 @@
 /* ── Context switch trigger ─────────────────────────────────────────────────
  */
 
-/* Pend PendSV exception — triggers a context switch at the next opportunity. */
+/* Pend PendSV exception — triggers a context switch at the next opportunity.
+ * ARM Cortex-M does not use the shared switch_pending flag because PendSV
+ * self-pends via NVIC and runs as soon as exceptions return.  Define
+ * ARCH_HAS_YIELD before the include so the default is skipped. */
+#define ARCH_HAS_YIELD
 static inline void arch_yield(void) { SCB_ICSR |= PENDSVSET; }
+
+#define ARCH_HAS_YIELD_CONSUME
+static inline int arch_yield_consume(void) { return 0; }
+
+#include "kernel/common/arch_yield_default.h"
 
 /* ── CPU hints ──────────────────────────────────────────────────────────────
  */
