@@ -322,6 +322,24 @@ set(TARGET_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/vfs_mod_init.c
 )
 
+# .S stub files use the C preprocessor to expand the function index list
+# from kernel/common/mod/mod_*.inc.  CMake's automatic dependency scanner
+# does not track #include for .S files (no .S.d depfiles are generated),
+# so changes to the .inc would not trigger a rebuild on incremental
+# builds — we'd silently link OLD index slots against NEW C-side struct
+# layouts.  Declare the deps explicitly here.  See docs/notes/pcxt_crash.md.
+set_property(SOURCE
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/vfs_stubs.S
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/vfs_entries.S
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/vfs_header.S
+  APPEND PROPERTY OBJECT_DEPENDS
+  ${PPAP_ROOT}/src/kernel/common/mod/mod_vfs.inc)
+set_property(SOURCE
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/core_stubs.S
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/core_entries.S
+  APPEND PROPERTY OBJECT_DEPENDS
+  ${PPAP_ROOT}/src/kernel/common/mod/mod_core.inc)
+
 add_executable(ppap_pcxt
   ${ARCH_I16_SOURCES}
   ${KERNEL_CORE_SOURCES}
