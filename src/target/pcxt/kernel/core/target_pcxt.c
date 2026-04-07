@@ -140,25 +140,47 @@ static void seg_init_modules(void) {
 
 /* ── Target hooks ────────────────────────────────────────────────────────── */
 
-/* INT 0/6 debug trap — prints faulting CS:IP to COM1, then halts. */
-extern void int_debug_handler(void);
+/* INT 0/6 debug trap — prints "#DE CS:IP" or "#UD CS:IP" to COM1.
+ *
+ * Hardware-pushed frame on entry: IP, CS, FLAGS (top of stack first).
+ * After "push %bp; mov %sp, %bp" the layout is:
+ *   0(bp) saved BP
+ *   2(bp) IP   ← faulting IP
+ *   4(bp) CS   ← faulting CS
+ *   6(bp) FLAGS
+ *
+ * Two distinct entry points so we can tell INT 0 (#DE divide) from
+ * INT 6 (#UD invalid opcode).  Both fall through to the common dump.
+ */
+extern void int0_handler(void);
+extern void int6_handler(void);
 __asm__(
   ".code16\n"
-  "int_debug_handler:\n"
+  /* INT 0 — divide overflow */
+  "int0_handler:\n"
   "  push %bp\n"
   "  mov  %sp, %bp\n"
-  "  mov  4(%bp), %ax\n"     /* faulting IP */
-  "  mov  6(%bp), %dx\n"     /* faulting CS */
-  "  push %ax\n"
-  "  mov  %dx, %ax\n"
-  "  call 2f\n"
-  "  mov  $0x3A, %al\n"
+  "  mov  $0x44, %al\n"     /* 'D' */
+  "  jmp  int_debug_common\n"
+  /* INT 6 — invalid opcode */
+  "int6_handler:\n"
+  "  push %bp\n"
+  "  mov  %sp, %bp\n"
+  "  mov  $0x55, %al\n"     /* 'U' */
+  "int_debug_common:\n"
   "  mov  $0x03F8, %dx\n"
+  "  out  %al, %dx\n"        /* 'D' or 'U' */
+  "  mov  $0x45, %al\n"     /* 'E' */
   "  out  %al, %dx\n"
-  "  pop  %ax\n"
+  "  mov  $0x20, %al\n"     /* ' ' */
+  "  out  %al, %dx\n"
+  "  mov  4(%bp), %ax\n"     /* faulting CS */
+  "  call 2f\n"
+  "  mov  $0x3A, %al\n"     /* ':' */
+  "  out  %al, %dx\n"
+  "  mov  2(%bp), %ax\n"     /* faulting IP */
   "  call 2f\n"
   "  mov  $0x0D, %al\n"
-  "  mov  $0x03F8, %dx\n"
   "  out  %al, %dx\n"
   "  mov  $0x0A, %al\n"
   "  out  %al, %dx\n"
@@ -187,10 +209,9 @@ __asm__(
 
 static void install_int_debug(void) {
   volatile uint16_t *ivt = (volatile uint16_t *)0;
-  uint16_t off = (uint16_t)(uintptr_t)int_debug_handler;
   uint16_t cs = seg_get(MOD_ID_CORE);
-  ivt[0] = off; ivt[1] = cs;   /* INT 0 — divide overflow */
-  ivt[12] = off; ivt[13] = cs; /* INT 6 — invalid opcode  */
+  ivt[0]  = (uint16_t)(uintptr_t)int0_handler; ivt[1]  = cs; /* INT 0 #DE */
+  ivt[12] = (uint16_t)(uintptr_t)int6_handler; ivt[13] = cs; /* INT 6 #UD */
 }
 
 void target_early_init(void) {
