@@ -148,13 +148,7 @@ typedef struct pcb {
   /* ── vfork / waitpid ──────────────────────────────────────────────── */
   struct pcb *vfork_parent; /* non-NULL while child shares parent's space */
 #if defined(__ia16__)
-  uint8_t vfork_frame_saved;     /* 1 if vfork_saved_frame holds parent state */
-  uint8_t vfork_saved_frame[24]; /* parent's GP+IRET frame, saved at vfork
-                                  * time so the child overwriting the shared
-                                  * user stack does not destroy it.  PCB-owned
-                                  * (was on the parent's kernel stack, which
-                                  * spilled past the slot top into adjacent
-                                  * stacks). */
+  uint8_t vfork_frame_saved; /* 1 if 24B GP+IRET frame saved on kstack */
 #endif
   int exit_status;    /* set by _exit(), read by waitpid()          */
   uintptr_t got_base; /* r9 value (GOT SRAM address) for PIC       */
