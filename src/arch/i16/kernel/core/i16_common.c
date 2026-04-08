@@ -118,6 +118,9 @@ void i16_vfork_restore_frame(void) {
   page_id_t page = current->image.data.base_page + (page_id_t)(rel / PAGE_SIZE);
   uint16_t off = (uint16_t)(rel % PAGE_SIZE);
   mem_region_page_write(page, off, saved, 24);
+
+  /* Catch any kernel-stack overrun before we iret to user mode. */
+  proc_check_kstack_canary_panic();
 }
 
 /* ── i16 syscall dispatch (called from trap.S INT 30h handler) ─────────────
@@ -144,6 +147,9 @@ long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1, uint16_t a2,
   extern void syscall_dispatch(uint32_t * frame, uint32_t nr, uint32_t a4,
                                uint32_t a5);
   syscall_dispatch(frame, (uint32_t)nr, (uint32_t)a4, 0);
+
+  /* Catch any kernel-stack overrun before we return to trap.S. */
+  proc_check_kstack_canary_panic();
 
   /* syscall_dispatch stores result in frame[0] on ARM/m68k.
    * On i16 we return it to trap.S which puts it in saved AX. */

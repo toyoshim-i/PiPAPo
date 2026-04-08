@@ -49,6 +49,18 @@ static pid_t next_pid = 1;
 
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
+#if defined(__ia16__)
+/* Per-process kernel stack canary.  Word planted at the BOTTOM of each
+ * 2 KB slot — the first address an overflowing stack writes to.  Any
+ * mismatch is a kernel-stack overrun and is unrecoverable: panic. */
+#define I16_KSTACK_CANARY ((uint16_t)0xCA57u)
+#define I16_KSTACK_BASE(i) ((uint16_t)(0xE000u + (uint16_t)(i) * 2048u))
+
+static void i16_kstack_plant_canary(uint32_t i) {
+  *(volatile uint16_t *)(uintptr_t)I16_KSTACK_BASE(i) = I16_KSTACK_CANARY;
+}
+#endif
+
 void proc_init(void) {
   /* Zero all slots and mark them free */
   for (uint32_t i = 0u; i < PROC_MAX; i++) {
@@ -58,6 +70,7 @@ void proc_init(void) {
 #if defined(__ia16__)
     /* Per-process kernel stacks at 0xE000 + i*2048.  Top = base + 2048. */
     proc_table[i].kernel_stack_top = 0xE000u + (uint16_t)(i + 1u) * 2048u;
+    i16_kstack_plant_canary(i);
 #endif
     proc_table[i].clear_child_tid = user_page_ref_invalid();
     for (uint32_t j = 0; j < USER_PAGES_MAX; j++)
@@ -102,6 +115,29 @@ void proc_init(void) {
 #endif
 }
 
+#if defined(__ia16__)
+/* Walk every PCB slot and check that the kernel-stack canary at slot
+ * base is still intact.  Any mismatch is a kernel-stack overrun and
+ * is unrecoverable: panic with the offending slot, the current
+ * process's pid and comm, and the clobber value, then halt forever.
+ *
+ * Called from end-of-syscall and end-of-vfork-restore paths so a
+ * stack overrun is caught at the next kernel→user transition rather
+ * than corrupting subsequent state silently. */
+void proc_check_kstack_canary_panic(void) {
+  for (uint32_t i = 0u; i < PROC_MAX; i++) {
+    uint16_t got = *(volatile uint16_t *)(uintptr_t)I16_KSTACK_BASE(i);
+    if (got == I16_KSTACK_CANARY) continue;
+    pcb_t *cur = current;
+    mod_vfs.klogf(
+        "PANIC: kernel stack overrun  slot=%u base=%x got=%x  pid=%u comm=%s\n",
+        (unsigned)i, (unsigned)I16_KSTACK_BASE(i), (unsigned)got,
+        cur ? (unsigned)cur->pid : 0u, cur ? cur->comm : "(null)");
+    for (;;) arch_wfi();
+  }
+}
+#endif
+
 pcb_t *proc_alloc(void) {
   uint32_t saved = spin_lock_irqsave(SPIN_PROC);
   pcb_t *result = NULL;
@@ -114,6 +150,7 @@ pcb_t *proc_alloc(void) {
       proc_table[i].stack_page_id = PAGE_ID_INVALID;
 #if defined(__ia16__)
       proc_table[i].kernel_stack_top = 0xE000u + (uint16_t)(i + 1u) * 2048u;
+      i16_kstack_plant_canary(i);
 #endif
       proc_table[i].clear_child_tid = user_page_ref_invalid();
       for (uint32_t j = 0; j < USER_PAGES_MAX; j++)

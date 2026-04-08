@@ -28,6 +28,16 @@
  */
 void proc_init(void);
 
+#if defined(__ia16__)
+/* Verify the per-process kernel-stack canary at every slot's base.
+ * On mismatch, klogfs an unrecoverable kernel-stack overrun panic
+ * (slot index, base address, observed value, current pid+comm)
+ * and halts forever.  Called from end-of-syscall and end-of-vfork-
+ * restore paths so an overflow is caught at the next kernel→user
+ * transition. */
+void proc_check_kstack_canary_panic(void);
+#endif
+
 /*
  * Allocate a free PCB slot (slots 1..PROC_MAX-1).
  * Clears the slot, assigns a unique pid, and returns a pointer to it.
