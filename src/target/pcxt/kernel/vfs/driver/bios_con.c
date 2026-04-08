@@ -7,8 +7,9 @@
  * to COM1, which would interleave with our own uart_putc() output and
  * produce a duplicated blank line per real log line on ttyS0.
  *
- * Cursor row/col are tracked in software and seeded to (0,0); we own
- * the screen from boot, so the kernel banner starts at the top.
+ * Cursor row/col are tracked in software.  On first use we seed them
+ * from the CRTC hardware cursor, which stage1/stage2 leave at the line
+ * after their last BIOS print, so kernel output continues from there.
  */
 
 #include "bios_con.h"
@@ -41,6 +42,24 @@ static uint8_t bios_param_seen_digit;
 static uint16_t bios_params[4];
 static uint8_t bios_row;
 static uint8_t bios_col;
+static uint8_t bios_cursor_seeded;
+
+static uint8_t crtc_read(uint8_t idx) {
+  outb(CRTC_INDEX, idx);
+  return inb(CRTC_DATA);
+}
+
+static void bios_seed_cursor(void) {
+  if (bios_cursor_seeded) return;
+  bios_cursor_seeded = 1u;
+  uint16_t pos = (uint16_t)(((uint16_t)crtc_read(CRTC_CURSOR_HI) << 8) |
+                            (uint16_t)crtc_read(CRTC_CURSOR_LO));
+  uint16_t row = pos / BIOS_COLS;
+  uint16_t col = pos % BIOS_COLS;
+  if (row >= BIOS_ROWS) row = BIOS_ROWS - 1u;
+  bios_row = (uint8_t)row;
+  bios_col = (uint8_t)col;
+}
 
 static void bios_update_attr(void) {
   bios_attr = (uint8_t)((bios_bg << 4) | bios_fg | (bios_bold ? 0x08u : 0u));
@@ -177,6 +196,8 @@ static void bios_ansi_reset_parser(void) {
 void bios_putc(char c)
 {
   uint8_t ch = (uint8_t)c;
+
+  bios_seed_cursor();
 
   switch (bios_ansi_state) {
     case BIOS_ANSI_TEXT:

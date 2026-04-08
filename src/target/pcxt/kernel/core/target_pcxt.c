@@ -140,83 +140,446 @@ static void seg_init_modules(void) {
 
 /* ── Target hooks ────────────────────────────────────────────────────────── */
 
-/* INT 0/6 debug trap — prints "#DE CS:IP" or "#UD CS:IP" to COM1.
+/* ── Panic / unexpected interrupt dump ───────────────────────────────────── */
+
+/* Panic frame, written by the asm stubs and read by panic_dump_c.
+ * Lives in the core data segment.  All fields are uint16_t. */
+struct panic_frame {
+  uint16_t vec;
+  uint16_t ax, bx, cx, dx;
+  uint16_t si, di, bp;
+  uint16_t ds, es, ss, sp;
+  uint16_t ip, cs, flags;
+};
+extern struct panic_frame panic_frame;
+
+/* -- Panic output helpers (write to COM1 and VGA simultaneously) ----------- */
+
+static uint16_t panic_vga_pos;  /* byte offset within B800: */
+
+static void panic_com1_putc(char c) {
+  __asm__ volatile (
+    "mov $0x03F8, %%dx\n\t"
+    "out %%al, %%dx"
+    : : "a"(c) : "dx"
+  );
+}
+
+/* Scroll the VGA text screen up by one row (rows 1..24 → 0..23, blank 24). */
+static void panic_vga_scroll(void) {
+  __asm__ volatile (
+    "push %%es\n\t"
+    "push %%ds\n\t"
+    "mov  $0xB800, %%ax\n\t"
+    "mov  %%ax, %%es\n\t"
+    "mov  %%ax, %%ds\n\t"
+    "xor  %%di, %%di\n\t"
+    "mov  $160, %%si\n\t"
+    "mov  $1920, %%cx\n\t"      /* 24 rows × 80 cols */
+    "cld\n\t"
+    "rep movsw\n\t"
+    "mov  $0x0720, %%ax\n\t"    /* blank: light grey space */
+    "mov  $80, %%cx\n\t"
+    "rep stosw\n\t"
+    "pop  %%ds\n\t"
+    "pop  %%es"
+    : : : "ax", "cx", "si", "di", "memory"
+  );
+}
+
+static void panic_vga_advance_row(void) {
+  panic_vga_pos = (panic_vga_pos / 160u + 1u) * 160u;
+  if (panic_vga_pos >= 80u * 25u * 2u) {
+    panic_vga_scroll();
+    panic_vga_pos = 80u * 24u * 2u;  /* stay on last row */
+  }
+}
+
+static void panic_vga_putc(char c) {
+  if (c == '\r') { panic_vga_pos = (panic_vga_pos / 160u) * 160u; return; }
+  if (c == '\n') { panic_vga_advance_row(); return; }
+  __asm__ volatile (
+    "push %%es\n\t"
+    "mov  $0xB800, %%ax\n\t"
+    "mov  %%ax, %%es\n\t"
+    "mov  %1, %%di\n\t"
+    "mov  %0, %%al\n\t"
+    "mov  $0x07, %%ah\n\t"      /* light grey on black */
+    "stosw\n\t"
+    "pop  %%es"
+    : : "r"((uint8_t)c), "r"(panic_vga_pos)
+    : "ax", "di", "memory"
+  );
+  panic_vga_pos += 2;
+  /* If we ran past the end of a row mid-line, treat as auto-newline. */
+  if (panic_vga_pos >= 80u * 25u * 2u) {
+    panic_vga_scroll();
+    panic_vga_pos = 80u * 24u * 2u;
+  }
+}
+
+static void panic_putc(char c) { panic_com1_putc(c); panic_vga_putc(c); }
+
+static void panic_puts(const char *s) {
+  while (*s) panic_putc(*s++);
+}
+
+static void panic_hex4(uint8_t nyb) {
+  panic_putc((char)(nyb < 10 ? '0' + nyb : 'A' + nyb - 10));
+}
+
+static void panic_hex8(uint8_t v) {
+  panic_hex4((uint8_t)(v >> 4));
+  panic_hex4((uint8_t)(v & 0x0F));
+}
+
+static void panic_hex16(uint16_t v) {
+  panic_hex8((uint8_t)(v >> 8));
+  panic_hex8((uint8_t)(v & 0xFF));
+}
+
+/* Resume VGA writes right after the last non-blank row so the dump
+ * appears below the existing kernel console output.  Scans B800:
+ * bottom-up for the last row whose chars are not all spaces, then
+ * starts on the row after it. */
+static void panic_vga_init(void) {
+  int row;
+  for (row = 24; row >= 0; row--) {
+    uint8_t blank;
+    __asm__ volatile (
+      "push %%es\n\t"
+      "mov  $0xB800, %%ax\n\t"
+      "mov  %%ax, %%es\n\t"
+      "mov  %1, %%di\n\t"
+      "mov  $80, %%cx\n\t"
+      "mov  $1, %%al\n\t"     /* assume blank */
+      "1:\n\t"
+      "mov  %%es:(%%di), %%ah\n\t"
+      "cmp  $0x20, %%ah\n\t"
+      "je   2f\n\t"
+      "xor  %%al, %%al\n\t"   /* not blank */
+      "jmp  3f\n\t"
+      "2: add $2, %%di\n\t"
+      "loop 1b\n\t"
+      "3:\n\t"
+      "mov  %%al, %0\n\t"
+      "pop  %%es"
+      : "=r"(blank)
+      : "r"((uint16_t)(row * 160u))
+      : "ax", "cx", "di", "memory"
+    );
+    if (!blank) break;
+  }
+  /* row is the last non-blank row (or -1 if screen is entirely blank).
+   * Start the dump on the row after that (clamped to 24). */
+  int dump_row = row + 1;
+  if (dump_row > 24) dump_row = 24;
+  if (dump_row < 0)  dump_row = 0;
+  panic_vga_pos = (uint16_t)(dump_row * 160);
+}
+
+/* -- Register dump --------------------------------------------------------- */
+
+static void panic_field(const char *name, uint16_t val) {
+  panic_puts(name);
+  panic_hex16(val);
+}
+
+/* Print the register dump from panic_frame.  Both the unexpected-INT
+ * and warm-reboot paths use this so the format is identical. */
+static void panic_dump_regs(void) {
+  panic_field("CS:IP=", panic_frame.cs);
+  panic_putc(':'); panic_hex16(panic_frame.ip);
+  panic_field(" FLAGS=", panic_frame.flags);
+  panic_puts("\r\n");
+  panic_field("AX=", panic_frame.ax);
+  panic_field(" BX=", panic_frame.bx);
+  panic_field(" CX=", panic_frame.cx);
+  panic_field(" DX=", panic_frame.dx);
+  panic_puts("\r\n");
+  panic_field("SI=", panic_frame.si);
+  panic_field(" DI=", panic_frame.di);
+  panic_field(" BP=", panic_frame.bp);
+  panic_field(" SP=", panic_frame.sp);
+  panic_puts("\r\n");
+  panic_field("DS=", panic_frame.ds);
+  panic_field(" ES=", panic_frame.es);
+  panic_field(" SS=", panic_frame.ss);
+  panic_puts("\r\n");
+}
+
+extern void panic_dump_c(void);
+void panic_dump_c(void) {
+  panic_vga_init();
+  panic_puts("\r\nPANIC: unexpected INT ");
+  panic_hex8((uint8_t)panic_frame.vec);
+  panic_puts("\r\n");
+  panic_dump_regs();
+  for (;;) __asm__ volatile ("cli\n hlt");
+}
+
+/* -- Asm panic stubs ------------------------------------------------------- *
  *
- * Hardware-pushed frame on entry: IP, CS, FLAGS (top of stack first).
- * After "push %bp; mov %sp, %bp" the layout is:
- *   0(bp) saved BP
- *   2(bp) IP   ← faulting IP
- *   4(bp) CS   ← faulting CS
- *   6(bp) FLAGS
+ * Per-vector stub does:  movw $vec, %cs:panic_frame_vec ; jmp int_panic_common
+ * (8086 has no PUSH imm; mov-imm-to-mem avoids clobbering any register so we
+ *  can capture the full faulting register state in panic_common.)
  *
- * Two distinct entry points so we can tell INT 0 (#DE divide) from
- * INT 6 (#UD invalid opcode).  Both fall through to the common dump.
+ * panic_common saves all regs and segments to the panic_frame, then switches
+ * to a private panic stack in the core segment and calls panic_dump_c.
+ *
+ * Hardware-pushed frame on entry: IP, CS, FLAGS at SS:[SP], +2, +4.
+ *
+ * Vectors covered: 0,1,2,3,4,5,6,7 (CPU exceptions on 8086/286+) plus
+ * 0x18 (ROM BASIC) and 0x19 (BIOS bootstrap — catches stray reboots).
+ * Vectors NOT touched (must keep BIOS): 08h IRQ0 (chained), 09h IRQ1 kbd,
+ * 0Eh IRQ6 floppy, 10h-17h / 1Ah-1Fh BIOS services and parameter tables.
  */
-extern void int0_handler(void);
-extern void int6_handler(void);
+extern void int_panic_v00(void);
+extern void int_panic_v01(void);
+extern void int_panic_v02(void);
+extern void int_panic_v03(void);
+extern void int_panic_v04(void);
+extern void int_panic_v05(void);
+extern void int_panic_v06(void);
+extern void int_panic_v07(void);
+extern void int_panic_v18(void);
+extern void int_panic_v19(void);
 __asm__(
   ".code16\n"
-  /* INT 0 — divide overflow */
-  "int0_handler:\n"
-  "  push %bp\n"
-  "  mov  %sp, %bp\n"
-  "  mov  $0x44, %al\n"     /* 'D' */
-  "  jmp  int_debug_common\n"
-  /* INT 6 — invalid opcode */
-  "int6_handler:\n"
-  "  push %bp\n"
-  "  mov  %sp, %bp\n"
-  "  mov  $0x55, %al\n"     /* 'U' */
-  "int_debug_common:\n"
-  "  mov  $0x03F8, %dx\n"
-  "  out  %al, %dx\n"        /* 'D' or 'U' */
-  "  mov  $0x45, %al\n"     /* 'E' */
-  "  out  %al, %dx\n"
-  "  mov  $0x20, %al\n"     /* ' ' */
-  "  out  %al, %dx\n"
-  "  mov  4(%bp), %ax\n"     /* faulting CS */
-  "  call 2f\n"
-  "  mov  $0x3A, %al\n"     /* ':' */
-  "  out  %al, %dx\n"
-  "  mov  2(%bp), %ax\n"     /* faulting IP */
-  "  call 2f\n"
-  "  mov  $0x0D, %al\n"
-  "  out  %al, %dx\n"
-  "  mov  $0x0A, %al\n"
-  "  out  %al, %dx\n"
-  "  hlt\n"
-  "  jmp  .\n"
-  "2:\n"
-  "  push %cx\n"
-  "  mov  $4, %cx\n"
-  "3: rol  $1, %ax\n"
-  "  rol  $1, %ax\n"
-  "  rol  $1, %ax\n"
-  "  rol  $1, %ax\n"
+  ".globl panic_frame\n"
+  /* Each stub records the vector # in a CS-accessible scratch slot
+   * (no register clobber).  int_panic_common then copies it into
+   * panic_frame.vec via DS once DS has been re-pointed at the kernel
+   * data segment. */
+  "int_panic_v00: movw $0x00, %cs:panic_scratch_vec; jmp int_panic_common\n"
+  "int_panic_v01: movw $0x01, %cs:panic_scratch_vec; jmp int_panic_common\n"
+  "int_panic_v02: movw $0x02, %cs:panic_scratch_vec; jmp int_panic_common\n"
+  "int_panic_v03: movw $0x03, %cs:panic_scratch_vec; jmp int_panic_common\n"
+  "int_panic_v04: movw $0x04, %cs:panic_scratch_vec; jmp int_panic_common\n"
+  "int_panic_v05: movw $0x05, %cs:panic_scratch_vec; jmp int_panic_common\n"
+  "int_panic_v06: movw $0x06, %cs:panic_scratch_vec; jmp int_panic_common\n"
+  "int_panic_v07: movw $0x07, %cs:panic_scratch_vec; jmp int_panic_common\n"
+  "int_panic_v18: movw $0x18, %cs:panic_scratch_vec; jmp int_panic_common\n"
+  "int_panic_v19: movw $0x19, %cs:panic_scratch_vec; jmp int_panic_common\n"
+  "int_panic_common:\n"
+  "  cli\n"
+  /* Stash AX in a CS-accessible scratch slot so we can free up AX to
+   * load DS=0 (the kernel data segment) before touching panic_frame. */
+  "  mov %ax, %cs:panic_scratch_ax\n"
+  "  xor %ax, %ax\n"
+  "  mov %ax, %ds\n"
+  "  mov %cs:panic_scratch_ax, %ax\n"
+  /* Copy the stub-recorded vector # into panic_frame.vec via DS. */
   "  push %ax\n"
-  "  and  $0x0F, %al\n"
-  "  add  $0x30, %al\n"
-  "  cmp  $0x3A, %al\n"
-  "  jb   4f\n"
-  "  add  $0x07, %al\n"
-  "4: mov  $0x03F8, %dx\n"
-  "  out  %al, %dx\n"
-  "  pop  %ax\n"
-  "  loop 3b\n"
-  "  pop  %cx\n"
+  "  mov %cs:panic_scratch_vec, %ax\n"
+  "  mov %ax, panic_frame\n"
+  "  pop %ax\n"
+  /* Now save all GP regs to panic_frame via DS (default segment). */
+  "  mov %ax, panic_frame +  2\n"
+  "  mov %bx, panic_frame +  4\n"
+  "  mov %cx, panic_frame +  6\n"
+  "  mov %dx, panic_frame +  8\n"
+  "  mov %si, panic_frame + 10\n"
+  "  mov %di, panic_frame + 12\n"
+  "  mov %bp, panic_frame + 14\n"
+  /* Original DS was overwritten — recover it from the scratch we'll
+   * borrow next.  For now we report DS as 0 (the value we just set),
+   * which is the kernel DS regardless of the faulting context. */
+  "  mov %ds, %ax\n"
+  "  mov %ax, panic_frame + 16\n"
+  "  mov %es, %ax\n"
+  "  mov %ax, panic_frame + 18\n"
+  "  mov %ss, %ax\n"
+  "  mov %ax, panic_frame + 20\n"
+  "  mov %sp, panic_frame + 22\n"
+  /* Read IP/CS/FLAGS from the faulting stack (still SS:SP). */
+  "  mov %sp, %bp\n"
+  "  mov %ss:(%bp),  %ax\n"        /* IP */
+  "  mov %ax, panic_frame + 24\n"
+  "  mov %ss:2(%bp), %ax\n"        /* CS */
+  "  mov %ax, panic_frame + 26\n"
+  "  mov %ss:4(%bp), %ax\n"        /* FLAGS */
+  "  mov %ax, panic_frame + 28\n"
+  /* Switch to private panic stack: SS=0 (kernel DS) so [bp] still
+   * points at panic_frame area; SP at top of dedicated buffer. */
+  "  xor %ax, %ax\n"
+  "  mov %ax, %ss\n"
+  "  mov $panic_stack_top, %sp\n"
+  "  call panic_dump_c\n"
+  "1: cli\n"
+  "  hlt\n"
+  "  jmp 1b\n"
+
+  /* Scratch slots in .text (live in the far CS segment, reachable via
+   * %cs: when DS is unknown).  Used by panic stubs / int_panic_common
+   * to record vector # and free up AX without clobbering registers. */
+  "panic_scratch_ax:  .word 0\n"
+  "panic_scratch_vec: .word 0\n"
+
+  /* Entry-time register snapshot.  Filled by boot.S as the very first
+   * thing the kernel does, before any segreg is touched, so we capture
+   * the state the previous wild-jump / reboot left us in.  Lives in
+   * .text (CS-accessible) so the snapshot does not depend on DS. */
+  ".globl entry_ax\n"
+  ".globl entry_bx\n"
+  ".globl entry_cx\n"
+  ".globl entry_dx\n"
+  ".globl entry_si\n"
+  ".globl entry_di\n"
+  ".globl entry_bp\n"
+  ".globl entry_sp\n"
+  ".globl entry_ds\n"
+  ".globl entry_es\n"
+  ".globl entry_ss\n"
+  "entry_ax: .word 0\n"
+  "entry_bx: .word 0\n"
+  "entry_cx: .word 0\n"
+  "entry_dx: .word 0\n"
+  "entry_si: .word 0\n"
+  "entry_di: .word 0\n"
+  "entry_bp: .word 0\n"
+  "entry_sp: .word 0\n"
+  "entry_ds: .word 0\n"
+  "entry_es: .word 0\n"
+  "entry_ss: .word 0\n"
+
+  ".data\n"
+  "panic_frame:\n"
+  "  .word 0\n"   /* +0  vec   */
+  "  .word 0\n"   /* +2  ax    */
+  "  .word 0\n"   /* +4  bx    */
+  "  .word 0\n"   /* +6  cx    */
+  "  .word 0\n"   /* +8  dx    */
+  "  .word 0\n"   /* +10 si   */
+  "  .word 0\n"   /* +12 di   */
+  "  .word 0\n"   /* +14 bp   */
+  "  .word 0\n"   /* +16 ds   */
+  "  .word 0\n"   /* +18 es   */
+  "  .word 0\n"   /* +20 ss   */
+  "  .word 0\n"   /* +22 sp   */
+  "  .word 0\n"   /* +24 ip   */
+  "  .word 0\n"   /* +26 cs   */
+  "  .word 0\n"   /* +28 flags*/
+  "  .lcomm panic_stack, 256\n"
+  "panic_stack_top:\n"
+  ".text\n"
+);
+
+static void install_int_panic(void) {
+  volatile uint16_t *ivt = (volatile uint16_t *)0;
+  uint16_t cs = seg_get(MOD_ID_CORE);
+  static const struct { uint8_t vec; void (*fn)(void); } stubs[] = {
+    { 0x00, int_panic_v00 },
+    { 0x01, int_panic_v01 },
+    { 0x02, int_panic_v02 },
+    { 0x03, int_panic_v03 },
+    { 0x04, int_panic_v04 },
+    { 0x05, int_panic_v05 },
+    { 0x06, int_panic_v06 },
+    { 0x07, int_panic_v07 },
+    { 0x18, int_panic_v18 },
+    { 0x19, int_panic_v19 },
+  };
+  for (unsigned i = 0; i < sizeof(stubs)/sizeof(stubs[0]); i++) {
+    ivt[stubs[i].vec * 2 + 0] = (uint16_t)(uintptr_t)stubs[i].fn;
+    ivt[stubs[i].vec * 2 + 1] = cs;
+  }
+}
+
+/* ── Warm-reboot breadcrumb ──────────────────────────────────────────────── *
+ *
+ * Detects kernel re-entry without BIOS POST (wild jump / stray INT 19h /
+ * Ctrl-Alt-Del / etc.) which would otherwise bypass the PANIC stubs.
+ *
+ * Cookie at 0040:00F0 (BIOS intra-app comm area, 16 bytes, unused by BIOS
+ * and not touched by stage1/stage2).  BDA 0040:0072 is set to 0x1234 so
+ * any subsequent reset is taken as a warm boot, preserving the cookie.
+ */
+#define BREADCRUMB_OFF      0x00F0u
+#define BREADCRUMB_MAGIC    0xB00Bu
+#define BDA_RESET_FLAG_OFF  0x0072u
+#define BDA_RESET_WARM      0x1234u
+
+static uint16_t bda_read16(uint16_t off) {
+  uint16_t val;
+  __asm__ volatile (
+    "push %%es\n\t"
+    "xor  %%ax, %%ax\n\t"
+    "mov  $0x40, %%ah\n\t"
+    "mov  %%ax, %%es\n\t"
+    "mov  %%es:(%%bx), %0\n\t"
+    "pop  %%es"
+    : "=a"(val) : "b"(off) : "memory"
+  );
+  return val;
+}
+
+static void bda_write16(uint16_t off, uint16_t val) {
+  __asm__ volatile (
+    "push %%es\n\t"
+    "xor  %%cx, %%cx\n\t"
+    "mov  $0x40, %%ch\n\t"
+    "mov  %%cx, %%es\n\t"
+    "mov  %0, %%es:(%%bx)\n\t"
+    "pop  %%es"
+    : : "a"(val), "b"(off) : "cx", "memory"
+  );
+}
+
+/* Copy the entry-time register snapshot from CS-resident scratch slots
+ * (filled by boot.S before any segreg was touched) into panic_frame.
+ * Called from boot.S after BSS clear / DS setup, before kmain. */
+extern void copy_entry_snapshot(void);
+__asm__(
+  ".code16\n"
+  ".globl copy_entry_snapshot\n"
+  "copy_entry_snapshot:\n"
+  "  mov %cs:entry_ax, %ax\n"
+  "  mov %ax, panic_frame +  2\n"
+  "  mov %cs:entry_bx, %ax\n"
+  "  mov %ax, panic_frame +  4\n"
+  "  mov %cs:entry_cx, %ax\n"
+  "  mov %ax, panic_frame +  6\n"
+  "  mov %cs:entry_dx, %ax\n"
+  "  mov %ax, panic_frame +  8\n"
+  "  mov %cs:entry_si, %ax\n"
+  "  mov %ax, panic_frame + 10\n"
+  "  mov %cs:entry_di, %ax\n"
+  "  mov %ax, panic_frame + 12\n"
+  "  mov %cs:entry_bp, %ax\n"
+  "  mov %ax, panic_frame + 14\n"
+  "  mov %cs:entry_ds, %ax\n"
+  "  mov %ax, panic_frame + 16\n"
+  "  mov %cs:entry_es, %ax\n"
+  "  mov %ax, panic_frame + 18\n"
+  "  mov %cs:entry_ss, %ax\n"
+  "  mov %ax, panic_frame + 20\n"
+  "  mov %cs:entry_sp, %ax\n"
+  "  mov %ax, panic_frame + 22\n"
+  "  mov %cs, %ax\n"
+  "  mov %ax, panic_frame + 26\n"   /* CS = current core seg */
   "  ret\n"
 );
 
-static void install_int_debug(void) {
-  volatile uint16_t *ivt = (volatile uint16_t *)0;
-  uint16_t cs = seg_get(MOD_ID_CORE);
-  ivt[0]  = (uint16_t)(uintptr_t)int0_handler; ivt[1]  = cs; /* INT 0 #DE */
-  ivt[12] = (uint16_t)(uintptr_t)int6_handler; ivt[13] = cs; /* INT 6 #UD */
+static void check_warm_reboot(void) {
+  /* Disable interrupts for the entire dump path so a stray IRQ on a
+   * potentially-broken stack can't trigger a secondary fault. */
+  __asm__ volatile ("cli");
+  uint16_t magic = bda_read16(BREADCRUMB_OFF);
+  if (magic == BREADCRUMB_MAGIC) {
+    panic_vga_init();
+    panic_puts("\r\nPANIC: warm reboot (kernel re-entered without BIOS POST)\r\n");
+    panic_dump_regs();
+    for (;;) __asm__ volatile ("cli\n hlt");
+  }
+  bda_write16(BREADCRUMB_OFF, BREADCRUMB_MAGIC);
+  bda_write16(BDA_RESET_FLAG_OFF, BDA_RESET_WARM);
 }
 
 void target_early_init(void) {
+  check_warm_reboot();
   seg_init_modules();
-  install_int_debug();
+  install_int_panic();
   /* Register UART logger early so mm_init/proc_init messages are visible.
    * Far-call stubs are patched by seg_init_modules() above. */
   mod_vfs.notify(VFS_EVENT_MODULE_READY);
