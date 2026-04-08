@@ -683,6 +683,97 @@ the user page via `mem_region_page_write`.
 | Terminal | ioctl | page_read/write |
 | Info | uname | page_write from kernel stack |
 
+#### mmap and segment-bound allocation
+
+User-process memory on i16 is bounded by the tiny-model assumption
+`CS = DS = SS = ES = proc_seg`.  Any address a user process can
+reach via near pointers must be inside the 64 KB linear range
+`[proc_seg << 4 .. (proc_seg << 4) + 0x10000)`.  This affects every
+allocator that returns memory the user process is meant to access.
+
+**Current state (latent issue):**
+
+- `elf16_load_vnode` allocates ELF pages via
+  `mem_region_page_alloc_contiguous`, which scans the page pool
+  bottom-up and naturally clusters all pages of one process at the
+  same low end of the pool.  Reachable from the resulting `proc_seg`.
+- `sys_brk` calls `mem_region_alloc_at(target_addr)` with a specific
+  address right after the data end.  The address is the caller's,
+  so reachability is preserved.
+- The single-page allocator `mm_page_alloc()` / `page_alloc()` picks
+  the *highest* free page (top-down policy intended to leave low
+  contiguous space for ELF images).  **On i16 this returns pages
+  outside any user segment's reach** — e.g. with the page pool
+  spanning 0x22000-0x9EFFF, the first single-page alloc returns
+  ~0x9D000, which no user process at proc_seg ≤ 0x8E00 can address.
+- `sys_mmap2` is not exercised on pcxt today (no current user binary
+  uses anonymous mmap).  When it is, it calls
+  `mem_region_alloc(PPAP_MEM_RAM_DATA, PAGE_SIZE)` which routes
+  through `page_alloc()` and would return an unreachable page.
+- The kernel idle thread allocates a 1-page "thread 0 stack" at boot
+  via `mem_region_alloc(PPAP_MEM_RAM_STACK, PAGE_SIZE)` in
+  [`main.c`](../../src/kernel/core/main.c).  On i16 the kernel
+  stack is the static slot region instead, so the page is
+  allocated and stored in `proc_table[0].stack_page_id` but never
+  read.  Dead code on i16; consumes one unreachable page from the
+  top of the pool.
+
+**Recommended interim fix (segment-bound filter):**
+
+Keep the existing single-page allocator but add an i16-only filter
+that constrains the result to the current process's segment reach.
+Conceptually:
+
+```c
+page_id_t mm_page_alloc(void) {
+#if defined(__ia16__)
+  /* Compute the current process's segment ceiling.  Kernel-mode
+   * (no current user, image.data.base_page == PAGE_ID_INVALID)
+   * accepts any page; user-mode constrains to the segment's 64 KB. */
+  uint32_t seg_top = 0xFFFFFFFFu;
+  if (current && current->image.data.base_page != PAGE_ID_INVALID) {
+    uint32_t seg_base =
+        mm_page_linear(current->image.data.base_page) & 0xFFFF0u;
+    seg_top = seg_base + 0x10000u;
+  }
+  /* Pick the highest free page whose linear address is < seg_top. */
+  ...
+#else
+  /* existing top-down */
+#endif
+}
+```
+
+This is **functionally equivalent to a per-process 64 KB virtual
+allocator**: existing `sys_brk`, `sys_mmap2`, `sys_munmap` continue
+to work unchanged, but the pages they hand out are always inside
+the caller's segment.  No data structures change, no bookkeeping,
+no per-process partition tables.
+
+Sufficient as long as:
+- The page pool region above the kernel BSS is shared between
+  processes (current model).  Each process simply gets pages
+  from the bottom of the segment-reach window in alloc order.
+- No two simultaneously-running processes need to share a page in
+  each other's reach simultaneously (they don't — vfork is the only
+  case, and there the parent's pages are already inside the
+  parent's segment).
+
+**Long-term fix (per-process 64 KB partition):**
+
+See [`i16_segment_partition.md`](i16_segment_partition.md) for the
+fuller redesign that pre-reserves a fixed 64 KB partition per
+process slot.  That eliminates the segment-bound check entirely
+(every page a process owns is guaranteed reachable by construction)
+and simplifies vfork/execve significantly.  The interim fix above
+is the smaller, no-redesign variant that addresses the same bug
+class.
+
+Either way, the **i16 slot-0 dead allocation** in
+[`main.c`](../../src/kernel/core/main.c) at lines 71–79 should be
+removed regardless — it allocates a page that is never used and
+also happens to be unreachable from any user segment.
+
 ---
 
 ## Part II — Current Status
