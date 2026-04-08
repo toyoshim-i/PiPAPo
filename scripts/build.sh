@@ -90,14 +90,20 @@ if ! command -v python3 &>/dev/null; then
   echo "        Install it with: sudo apt install python3"
   exit 1
 fi
-"$SCRIPT_DIR/check_allocator_boundaries.sh"
-"$SCRIPT_DIR/check_module_boundaries.sh"
-"$SCRIPT_DIR/check_common_no_c.sh"
-"$SCRIPT_DIR/check_include_paths.sh"
-python3 "$SCRIPT_DIR/check_include_order.py"
-python3 "$SCRIPT_DIR/check_include_guards.py"
-python3 "$SCRIPT_DIR/check_own_header.py"
-"$SCRIPT_DIR/check_clang_format.sh"
+# Note: source-level checks (clang-format, include order, etc.) run *after*
+# the build so that syntax errors (e.g. missing braces) are surfaced by the
+# compiler first. Reformatting syntactically-broken sources rearranges code
+# in unintended ways.
+run_source_checks() {
+    "$SCRIPT_DIR/check_allocator_boundaries.sh"
+    "$SCRIPT_DIR/check_module_boundaries.sh"
+    "$SCRIPT_DIR/check_common_no_c.sh"
+    "$SCRIPT_DIR/check_include_paths.sh"
+    python3 "$SCRIPT_DIR/check_include_order.py"
+    python3 "$SCRIPT_DIR/check_include_guards.py"
+    python3 "$SCRIPT_DIR/check_own_header.py"
+    "$SCRIPT_DIR/check_clang_format.sh"
+}
 
 # ── Determine source and build directories ──────────────────────────────────
 case "$TARGET" in
@@ -446,6 +452,7 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     echo "[build] Building xtensa_cc via idf.py..."
     idf.py -B "$BUILD_DIR" build
     echo "[build] Built xtensa_cc"
+    run_source_checks
     exit 0
 fi
 
@@ -490,3 +497,5 @@ if [[ ! -f "$ELF" ]]; then
 fi
 
 echo "[build] Built $ELF"
+
+run_source_checks
