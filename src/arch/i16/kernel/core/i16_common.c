@@ -73,6 +73,7 @@ uint32_t *arch_build_initial_frame(uint32_t *sp_arg, void (*entry)(void)) {
  * kstack_sp: current kernel stack pointer (points to [user_SP, user_SS,
  *            24B saved frame]).
  * Returns the same kstack_sp (frame stays on kstack for pop). */
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
 
@@ -136,6 +137,14 @@ long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1, uint16_t a2,
                           uint16_t a3, uint16_t a4, uint16_t user_ds) {
   (void)user_ds;
 
+  /* Snapshot our own saved return IP (the word at 2(%bp), placed by
+   * the call from trap.S).  We re-read it before returning and panic
+   * if it has been overwritten — that's the case where a wild kernel
+   * write corrupted our stack frame and our `ret` would jump into
+   * garbage instead of back to i16_syscall_isr. */
+  uint16_t saved_ret;
+  __asm__ volatile("mov 2(%%bp), %0" : "=r"(saved_ret));
+
   /* The kernel's syscall_dispatch reads args from frame[0..3] and
    * writes the return value back to frame[0]. */
   uint32_t frame[4];
@@ -150,6 +159,18 @@ long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1, uint16_t a2,
 
   /* Catch any kernel-stack overrun before we return to trap.S. */
   proc_check_kstack_canary_panic();
+
+  uint16_t now_ret;
+  __asm__ volatile("mov 2(%%bp), %0" : "=r"(now_ret));
+  if (now_ret != saved_ret || now_ret == 0u) {
+    pcb_t *cur = current;
+    mod_vfs.klogf(
+        "PANIC: i16_syscall_dispatch return IP corrupted  "
+        "saved=%x now=%x  nr=%u  pid=%u comm=%s\n",
+        (unsigned)saved_ret, (unsigned)now_ret, (unsigned)nr,
+        cur ? (unsigned)cur->pid : 0u, cur ? cur->comm : "(null)");
+    for (;;) __asm__ volatile("cli\n hlt");
+  }
 
   /* syscall_dispatch stores result in frame[0] on ARM/m68k.
    * On i16 we return it to trap.S which puts it in saved AX. */
