@@ -44,21 +44,32 @@ static uint8_t bios_row;
 static uint8_t bios_col;
 static uint8_t bios_cursor_seeded;
 
-static uint8_t crtc_read(uint8_t idx) {
-  outb(CRTC_INDEX, idx);
-  return inb(CRTC_DATA);
-}
+static void bios_sync_hw_cursor(void);
 
+/* Seed software cursor from BDA 0040:0050 (page-0 cursor position).
+ * BIOS INT 10h AH=0Eh updates this BDA word as it prints, so it's the
+ * authoritative record of where stage1/stage2 left off.  The CRTC
+ * hardware register may lag and isn't a reliable source. */
 static void bios_seed_cursor(void) {
   if (bios_cursor_seeded) return;
   bios_cursor_seeded = 1u;
-  uint16_t pos = (uint16_t)(((uint16_t)crtc_read(CRTC_CURSOR_HI) << 8) |
-                            (uint16_t)crtc_read(CRTC_CURSOR_LO));
-  uint16_t row = pos / BIOS_COLS;
-  uint16_t col = pos % BIOS_COLS;
+  uint16_t pos;
+  __asm__ volatile (
+    "push %%es\n\t"
+    "mov  $0x0040, %%ax\n\t"    /* ES = 0x0040 (BDA segment) */
+    "mov  %%ax, %%es\n\t"
+    "mov  %%es:0x50, %0\n\t"    /* page-0 cursor: low=col, high=row */
+    "pop  %%es"
+    : "=r"(pos) : : "ax", "memory"
+  );
+  uint8_t col = (uint8_t)(pos & 0xFFu);
+  uint8_t row = (uint8_t)(pos >> 8);
   if (row >= BIOS_ROWS) row = BIOS_ROWS - 1u;
-  bios_row = (uint8_t)row;
-  bios_col = (uint8_t)col;
+  bios_row = row;
+  bios_col = col;
+  /* Sync our value to the CRTC hardware so the visible blink cursor
+   * matches where we will start writing. */
+  bios_sync_hw_cursor();
 }
 
 static void bios_update_attr(void) {

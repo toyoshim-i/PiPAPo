@@ -504,8 +504,7 @@ static uint16_t bda_read16(uint16_t off) {
   uint16_t val;
   __asm__ volatile (
     "push %%es\n\t"
-    "xor  %%ax, %%ax\n\t"
-    "mov  $0x40, %%ah\n\t"
+    "mov  $0x0040, %%ax\n\t"    /* ES = 0x0040 (BDA segment) */
     "mov  %%ax, %%es\n\t"
     "mov  %%es:(%%bx), %0\n\t"
     "pop  %%es"
@@ -517,12 +516,13 @@ static uint16_t bda_read16(uint16_t off) {
 static void bda_write16(uint16_t off, uint16_t val) {
   __asm__ volatile (
     "push %%es\n\t"
-    "xor  %%cx, %%cx\n\t"
-    "mov  $0x40, %%ch\n\t"
-    "mov  %%cx, %%es\n\t"
+    "push %%ax\n\t"
+    "mov  $0x0040, %%ax\n\t"    /* ES = 0x0040 (BDA segment) */
+    "mov  %%ax, %%es\n\t"
+    "pop  %%ax\n\t"
     "mov  %0, %%es:(%%bx)\n\t"
     "pop  %%es"
-    : : "a"(val), "b"(off) : "cx", "memory"
+    : : "a"(val), "b"(off) : "memory"
   );
 }
 

@@ -53,13 +53,12 @@ _start:
   /* Save boot drive number */
   movb  %dl, drive_no
 
-  /* Print "Pi" — stage1 portion of the progressive banner */
-  movb  $0x0E, %ah
+  /* Print "Pi" — stage1 portion of the progressive banner.
+   * print_char writes to both BIOS teletype (VGA) and COM1. */
   movb  $'P', %al
-  xorw  %bx, %bx
-  int   $0x10
+  call  print_char
   movb  $'i', %al
-  int   $0x10
+  call  print_char
 
   /* Load 8 sectors (stage2) from floppy sectors 1-8 to 0x0000:0xC000 */
   movw  $0xC000, %bx       /* ES:BX = destination */
@@ -77,13 +76,36 @@ _start:
   jmp   $0x0000, $0xC000
 
 .Ldisk_err:
-  movb  $0x0E, %ah
   movb  $'E', %al
-  xorw  %bx, %bx
-  int   $0x10
+  call  print_char
 .Lhalt:
   hlt
   jmp   .Lhalt
+
+/* Print AL to BIOS teletype (VGA) and COM1.  Preserves all registers. */
+print_char:
+  pushw %ax
+  pushw %bx
+  pushw %dx
+  movb  %al, %bl                /* stash char in BL */
+  /* COM1: poll LSR bit 5 (THRE) until ready */
+  movw  $0x03FD, %dx
+1:
+  inb   %dx, %al
+  testb $0x20, %al
+  jz    1b
+  movw  $0x03F8, %dx
+  movb  %bl, %al
+  outb  %al, %dx
+  /* BIOS teletype */
+  movb  $0x0E, %ah
+  movb  %bl, %al
+  xorw  %bx, %bx
+  int   $0x10
+  popw  %dx
+  popw  %bx
+  popw  %ax
+  ret
 
 drive_no:
   .byte 0

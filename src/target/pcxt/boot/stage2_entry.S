@@ -21,13 +21,12 @@ _start2:
   /* DL = boot drive number (passed by stage1) */
   movb  %dl, boot_drive
 
-  /* Print "PA" — stage2 portion of the progressive banner */
-  movb  $0x0E, %ah
+  /* Print "PA" — stage2 portion of the progressive banner.
+   * print_char writes to both BIOS teletype (VGA) and COM1. */
   movb  $'P', %al
-  xorw  %bx, %bx
-  int   $0x10
+  call  print_char
   movb  $'A', %al
-  int   $0x10
+  call  print_char
 
   call  stage2_main
 
@@ -35,6 +34,31 @@ _start2:
 .Lhalt:
   hlt
   jmp   .Lhalt
+
+/* Print AL to BIOS teletype (VGA) and COM1.  Preserves all registers.
+ * Exposed as global so stage2.c can call it via puts_bios. */
+  .global print_char
+print_char:
+  pushw %ax
+  pushw %bx
+  pushw %dx
+  movb  %al, %bl
+  movw  $0x03FD, %dx
+1:
+  inb   %dx, %al
+  testb $0x20, %al
+  jz    1b
+  movw  $0x03F8, %dx
+  movb  %bl, %al
+  outb  %al, %dx
+  movb  $0x0E, %ah
+  movb  %bl, %al
+  xorw  %bx, %bx
+  int   $0x10
+  popw  %dx
+  popw  %bx
+  popw  %ax
+  ret
 
   .global boot_drive
 boot_drive:

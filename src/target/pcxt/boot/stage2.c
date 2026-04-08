@@ -64,9 +64,12 @@ typedef struct {
 static uint16_t sb_itable_block;
 extern uint8_t boot_drive;
 
+/* print_char (in stage2_entry.S): writes to BIOS teletype (VGA) and COM1. */
+extern void print_char(void);
 static void putc_bios(char c)
 {
-  __asm__ volatile ("int $0x10" : : "a"((uint16_t)(0x0E00|(uint8_t)c)), "b"((uint16_t)0));
+  /* print_char takes the char in AL and preserves all regs. */
+  __asm__ volatile ("call print_char" : : "a"((uint16_t)(uint8_t)c) : "memory");
 }
 
 static void puts_bios(const char *s)
