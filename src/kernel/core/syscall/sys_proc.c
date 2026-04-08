@@ -1548,15 +1548,29 @@ long sys_vfork(uint32_t *frame) {
         current->image.data.base_page + (page_id_t)(rel / PAGE_SIZE);
     uint16_t frame_page_off = (uint16_t)(rel % PAGE_SIZE);
 
-    /* Save parent's 24B GP+IRET frame to parent's kernel stack.
-     * Patch the AX slot (offset 16) with child PID so the parent
-     * sees the correct vfork return value when the frame is restored. */
+    /* Save parent's 24B GP+IRET frame onto the parent's OWN kernel
+     * stack, *below* trap_ksp.  Patch the AX slot (offset 16) with
+     * child PID so the parent sees the correct vfork return value
+     * when the frame is restored.
+     *
+     * The earlier version wrote at (trap_ksp + 2), which is the
+     * parent's kernel-stack TOP — and because per-process kernel
+     * stacks are packed contiguously in the SS=0 region, that
+     * address aliased the BASE of the next slot (the vfork child's
+     * slot in the only path that reaches here).  The 24-byte memcpy
+     * then clobbered 24 bytes of the child slot's stack region.
+     *
+     * Writing BELOW trap_ksp keeps the save inside the parent's own
+     * slot.  At the current 1342-byte high-water mark on slot 1, the
+     * parent has > 1.5 KB of room beneath trap_ksp, so the saved
+     * frame fits comfortably without touching any other slot. */
     uint8_t saved_frame[24];
     mem_region_page_read(frame_page, frame_page_off, saved_frame, 24);
     uint16_t child_pid16 = (uint16_t)child->pid;
     saved_frame[16] = (uint8_t)(child_pid16 & 0xFF);
     saved_frame[17] = (uint8_t)(child_pid16 >> 8);
-    uint8_t *kstack_save = (uint8_t *)(uintptr_t)(trap_ksp + 2);
+    uint8_t *kstack_save =
+        (uint8_t *)(uintptr_t)((uint16_t)(uintptr_t)trap_ksp - 24u);
     __builtin_memcpy(kstack_save, saved_frame, 24);
     current->vfork_frame_saved = 1;
 

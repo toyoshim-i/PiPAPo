@@ -93,13 +93,20 @@ void i16_vfork_restore_frame(void) {
   if (!current || !current->vfork_frame_saved) return;
   current->vfork_frame_saved = 0;
 
-  /* Read user_SS:SP and saved frame from kernel stack.
-   * Layout: [user_SP 2B] [user_SS 2B] [saved 24B] */
+  /* Layout in the parent's kernel stack at vfork-yield time:
+   *
+   *   ksp - 24    ┌─ saved 24B GP+IRET frame (sys_vfork wrote)
+   *               │
+   *   ksp + 0     ├─ user_SP   (trap.S pushed at entry)
+   *   ksp + 2     └─ user_SS
+   *
+   * ksp == trap_ksp at the time of context switch — trap.S returned
+   * to after sys_vfork before saving SP into the PCB. */
   uint16_t ksp = (uint16_t)(uintptr_t)current->sp;
   uint16_t *kf = (uint16_t *)(uintptr_t)ksp;
   uint16_t user_sp = kf[0];
   uint16_t user_ss = kf[1];
-  uint8_t *saved = (uint8_t *)(uintptr_t)(ksp + 4);
+  uint8_t *saved = (uint8_t *)(uintptr_t)(ksp - 24u);
 
   /* AX slot (offset 16) in the saved frame already contains the
    * parent's vfork return value (child PID), patched by sys_vfork. */
