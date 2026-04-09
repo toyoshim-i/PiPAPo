@@ -1,8 +1,10 @@
 ## Kernel Stack Reduction on ia16
 
-> **Status**: Proposal.
-> Targets the removal of the temporary slot-2 skip workaround by reducing
-> worst-case ia16 kernel stack use below the real 2 KB per-process budget.
+> **Status**: In progress.
+> The slot-2 skip workaround has already been removed. `getdents` and the
+> loader-side `execve` reduction are landed; the remaining work is to shrink
+> the lookup-side `execve` path and any other residual hot spots below the
+> real 2 KB per-process budget.
 
 ### 1. Background
 
@@ -104,10 +106,10 @@ That keeps the failure surface and cleanup logic simple.
 
 The first reductions should target the most certain wins:
 
-1. `sys_getdents`
-2. `elf16_load_vnode`
-3. `sys_execve`
-4. `namei`
+1. `sys_getdents` (done)
+2. `elf16_load_vnode` / `elf16_load_from_headers` (done)
+3. `namei`
+4. `sys_execve`
 
 ### 4. Audited Call Chains
 
@@ -163,11 +165,18 @@ References:
 
 ### 5. Current Stack Use
 
-The numbers below come from the current ia16 object code where available, and
-from source-level struct sizes where the compiler frame alone is not enough to
-assign the cost to a specific local.
+The numbers below are split into:
+
+- the original audited peaks that motivated the work
+- the current post-landing numbers where reductions have already been merged
+
+Measured values come from the current ia16 object code where available. Source
+estimates are used only where the compiler frame alone is not enough to assign
+the cost to a specific local.
 
 #### 5.1 `getdents`
+
+Original audited state:
 
 | Function | Current frame | Notes |
 | --- | ---: | --- |
@@ -191,7 +200,23 @@ Estimated `getdents` peak:
 This already exceeds the 2 KB kernel-stack budget before any deeper path gets
 interesting.
 
+Current landed state:
+
+| Function | Current frame | Notes |
+| --- | ---: | --- |
+| `sys_getdents` | ~0 B local frame | No large local array remains. |
+| `vfs_fd_getdents` | 300 B | Small `struct dirent entries[4]` batch streamed to destination pages. |
+| `ufs_readdir` | ~140-160 B | unchanged |
+
+Current `getdents` peak:
+
+- about `440-460 B`
+
+This is comfortably below the 2 KB budget and is no longer the primary risk.
+
 #### 5.2 `execve`
+
+Original audited state:
 
 | Function | Current frame | Notes |
 | --- | ---: | --- |
@@ -222,6 +247,26 @@ Estimated load-side peak:
 This explains why `execve` is dangerous even though no single frame is as bad
 as `sys_getdents`.
 
+Current landed state:
+
+| Function | Current frame | Notes |
+| --- | ---: | --- |
+| `sys_execve` | 590 B | unchanged in landed commits |
+| `exec_execve` | 86 B | unchanged |
+| `vfs_lookup_flags` | 262 B | unchanged |
+| `lookup_walk_flags` | 462 B | unchanged |
+| `ufs_lookup` | ~130-150 B | unchanged |
+| `elf16_load_vnode` | 58 B | landed reduction |
+| `elf16_load_from_headers` | 140 B | landed reduction |
+
+Current estimated peaks:
+
+- lookup side: still about `1540 B`
+- load side: about `590 + 86 + 58 + 140 = 874 B`
+
+So the load-side `execve` pressure is largely solved. The remaining big target
+is the lookup side (`namei`), not the loader.
+
 ### 6. Expected Impact Per Optimization
 
 #### 6.1 Stream `getdents` directly to the destination pages
@@ -251,6 +296,10 @@ Reason:
   `write`
 - the remaining VFS-side batch can stay small and bounded
 
+Status:
+
+- landed
+
 #### 6.2 Move `elf16_load_vnode` ELF header scratch off-stack
 
 Current locals:
@@ -276,7 +325,13 @@ Reason:
 - the size is fixed
 - it is a natural typed bundle
 
-#### 6.3 Move `sys_execve` scratch bundle off-stack
+Status:
+
+- superseded by a smaller landed change
+- the final implementation reads one program header at a time instead of
+  allocating a separate `kmem` scratch bundle
+
+#### 6.3 Reduce the syscall-side `execve` peak
 
 Main locals:
 
@@ -286,7 +341,7 @@ Main locals:
 - `old_user[64]` = 64 B because `page_id_t` is 8-bit on ia16
 - `old_image` = about 132 B
 
-Expected savings:
+Original estimate:
 
 - about `582 B`
 
@@ -295,14 +350,28 @@ Expected new peaks:
 - lookup side: about `1540 - 582 = 958 B`
 - load side: about `1550 - 582 = 968 B`
 
+Current experiment result:
+
+- moving only the rollback snapshot (`old_user[]` + `old_image`) into one
+  temporary page reduced `sys_execve` from `590 B` to `526 B`
+- actual win: `64 B`
+
 Implementation preference:
 
-- use one typed `kmem` scratch object
+- do not prioritize the rollback snapshot alone
+- if `sys_execve` is revisited, target the remaining path/argv scratch as a
+  bundle or reconsider the whole lookup-side peak first
 
 Reason:
 
 - this is a structured bundle of metadata and small buffers
 - a per-call page would waste most of the page
+
+Status:
+
+- investigated
+- not landed
+- currently deprioritized behind `namei`
 
 #### 6.4 Move the `elf16_load_from_headers` zero buffer off-stack
 
@@ -373,6 +442,10 @@ Expected result:
 
 - `getdents` stops being an unconditional stack overflow
 
+Status:
+
+- done
+
 #### Phase 2: shrink the loader-side `execve` peak
 
 - move `elf16_load_vnode`'s `ehdr` + `phdrs[]` into one `kmem` scratch object
@@ -383,34 +456,48 @@ Expected result:
 - load-side `execve` peak drops from about `1550 B` to about `730-990 B`,
   depending on whether the zero buffer is folded into the same scratch object
 
-#### Phase 3: shrink the syscall-side `execve` peak
+Actual landed result:
 
-- move `sys_execve` locals into one `kmem` scratch object
+- `elf16_load_vnode`: `574 B -> 58 B`
+- `elf16_load_from_headers`: `300 B -> 140 B`
+- load-side `execve` peak: `~1550 B -> ~874 B`
 
-Expected result:
+Status:
 
-- both `execve` peaks drop by another `~582 B`
+- done
 
-#### Phase 4: shrink `namei`
+#### Phase 3: shrink `namei`
 
-- move `vfs_lookup_flags` + `lookup_walk_flags` path buffers into one
-  reusable scratch bundle
+- move `vfs_lookup_flags` + `lookup_walk_flags` path buffers into one reusable
+  scratch bundle or otherwise remove the duplicated large path arrays
 
 Expected result:
 
 - lookup-side `execve` peak drops into the sub-1 KB range with good margin
 
+Reason for priority:
+
+- the lookup side is now the dominant `execve` peak
+- the loader side is already below 1 KB
+- the attempted `sys_execve` snapshot-only reduction was much smaller than
+  expected
+
+#### Phase 4: revisit `sys_execve` only if needed
+
+- bundle the remaining path/argv scratch only if post-`namei` measurements
+  still show insufficient headroom
+
 ### 8. Suggested Scratch Shapes
 
 These are the intended shapes, not final APIs.
 
-#### 8.1 `getdents` page scratch
+#### 8.1 `getdents` direct page stream
 
-One page-backed scratch page:
+Landed design:
 
-- holds up to one page of `struct dirent` entries
-- reused only within the syscall
-- copied to userspace with the existing `sys_copy_to_user` path
+- syscall resolves the destination user buffer to `(page, off)`
+- `fd_getdents` writes small `struct dirent` batches directly into those pages
+- no syscall-local or page-backed bounce buffer remains
 
 #### 8.2 `execve_scratch`
 
@@ -460,7 +547,7 @@ The workaround is considered removable for good when:
 1. Should the scratch objects be global pools with a small fixed count, or
    per-subsystem static storage guarded by existing locks?
 2. Is it worth addressing `sys_uname` and the other medium-large path/sysinfo
-   frames in the same sweep, or only after re-measuring the post-Phase-3
+   frames in the same sweep, or only after re-measuring the post-`namei`
    high-water mark?
 3. Once the largest stack locals move out, should the kernel canary panic also
    report the current syscall number to speed future regressions?

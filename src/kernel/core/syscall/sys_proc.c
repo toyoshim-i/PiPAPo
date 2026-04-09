@@ -42,6 +42,15 @@
 extern volatile uint16_t i16_trap_frame_sp;
 #endif
 
+#define EXEC_SNAPSHOT_IMAGE_OFF 0u /* saved proc_image_t */
+#define EXEC_SNAPSHOT_USER_OFF \
+  ((uint16_t)sizeof(proc_image_t)) /* saved user_pages[] */
+#define EXEC_SNAPSHOT_TOTAL_BYTES \
+  (sizeof(proc_image_t) + USER_PAGES_MAX * sizeof(page_id_t))
+
+_Static_assert(EXEC_SNAPSHOT_TOTAL_BYTES <= PAGE_SIZE,
+               "execve snapshot must fit in one page");
+
 /* Release an image segment if it is OWNED (independently allocated).
  * Non-OWNED segments (XIP, sub-pointers into another allocation) are
  * just cleared.  On i16 the whole user segment is now owned by
@@ -60,6 +69,67 @@ static void image_release_owned_segments(proc_image_t *image) {
   image_segment_release_owned(&image->literal);
   image_segment_release_owned(&image->rodata);
   image_segment_release_owned(&image->data);
+}
+
+static int exec_snapshot_save(page_id_t *snapshot_page, const pcb_t *p) {
+  page_id_t page;
+
+  if (!snapshot_page || !p) return -(int)EINVAL;
+  page = mem_region_page_alloc();
+  if (page == PAGE_ID_INVALID) return -(int)ENOMEM;
+
+  mem_region_page_write(page, EXEC_SNAPSHOT_IMAGE_OFF, &p->image,
+                        sizeof(p->image));
+  mem_region_page_write(page, EXEC_SNAPSHOT_USER_OFF, p->user_pages,
+                        sizeof(p->user_pages));
+  *snapshot_page = page;
+  return 0;
+}
+
+static void exec_snapshot_restore(page_id_t snapshot_page, pcb_t *p) {
+  if (snapshot_page == PAGE_ID_INVALID || !p) return;
+  mem_region_page_read(snapshot_page, EXEC_SNAPSHOT_IMAGE_OFF, &p->image,
+                       sizeof(p->image));
+  mem_region_page_read(snapshot_page, EXEC_SNAPSHOT_USER_OFF, p->user_pages,
+                       sizeof(p->user_pages));
+}
+
+static void exec_snapshot_release_owned_segments(page_id_t snapshot_page) {
+  proc_image_t image;
+
+  if (snapshot_page == PAGE_ID_INVALID) return;
+  mem_region_page_read(snapshot_page, EXEC_SNAPSHOT_IMAGE_OFF, &image,
+                       sizeof(image));
+  image_release_owned_segments(&image);
+}
+
+static void exec_snapshot_release_tracked_pages(page_id_t snapshot_page) {
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
+    page_id_t page_id;
+
+    if (snapshot_page == PAGE_ID_INVALID) return;
+    mem_region_page_read(
+        snapshot_page,
+        (uint16_t)(EXEC_SNAPSHOT_USER_OFF + i * sizeof(page_id_t)), &page_id,
+        sizeof(page_id));
+    if (page_id != PAGE_ID_INVALID) mem_region_page_free(page_id);
+  }
+}
+
+static void exec_snapshot_release_private_tracked_pages(
+    page_id_t snapshot_page, const page_id_t shared[USER_PAGES_MAX]) {
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
+    page_id_t page_id;
+
+    if (snapshot_page == PAGE_ID_INVALID) return;
+    mem_region_page_read(
+        snapshot_page,
+        (uint16_t)(EXEC_SNAPSHOT_USER_OFF + i * sizeof(page_id_t)), &page_id,
+        sizeof(page_id));
+    if (page_id == PAGE_ID_INVALID) continue;
+    if (shared && shared[i] == page_id) continue;
+    mem_region_page_free(page_id);
+  }
 }
 
 static void proc_release_stack_page(void **page) {
@@ -1959,6 +2029,7 @@ long sys_execve(uintptr_t path_ptr, uintptr_t argv_ptr) {
   const char *argv_copy[EXEC_ARGV_MAX + 1];
   char argv_buf[EXEC_ARG_BYTES_MAX];
   const char *const *argv = NULL;
+  page_id_t exec_snapshot = PAGE_ID_INVALID;
   int rc = sys_copy_user_string(path, sizeof(path), path_ptr);
 
   if (rc < 0) return (long)rc;
@@ -1969,10 +2040,9 @@ long sys_execve(uintptr_t path_ptr, uintptr_t argv_ptr) {
 
   /* Save old pages to free after successful load */
   page_id_t old_stack_id = current->stack_page_id;
-  page_id_t old_user[USER_PAGES_MAX];
-  proc_image_t old_image = current->image;
   int owns_pages = (current->vfork_parent == NULL);
-  proc_copy_page_tracking_to_array(current, old_user);
+  rc = exec_snapshot_save(&exec_snapshot, current);
+  if (rc < 0) return (long)rc;
 #if defined(__m68k__)
   void *old_user_stack = current->user_stack_page;
 #endif
@@ -1992,11 +2062,11 @@ long sys_execve(uintptr_t path_ptr, uintptr_t argv_ptr) {
   if (err < 0) {
     /* Restore old pages on failure — fds are untouched (POSIX) */
     current->stack_page_id = old_stack_id;
-    proc_restore_page_tracking_from_array(current, old_user);
-    current->image = old_image;
+    exec_snapshot_restore(exec_snapshot, current);
 #if defined(__m68k__)
     current->user_stack_page = old_user_stack;
 #endif
+    mem_region_page_free(exec_snapshot);
     return (long)err;
   }
 
@@ -2029,22 +2099,23 @@ long sys_execve(uintptr_t path_ptr, uintptr_t argv_ptr) {
 
   /* Free old user pages only if we owned them */
   if (owns_pages) {
-    image_release_owned_segments(&old_image);
-    proc_release_tracked_pages_from_array(old_user);
+    exec_snapshot_release_owned_segments(exec_snapshot);
+    exec_snapshot_release_tracked_pages(exec_snapshot);
 #if defined(__m68k__)
     if (old_user_stack) proc_release_stack_page(&old_user_stack);
 #endif
   } else if (current->vfork_parent) {
     /* vfork child: free pages that were allocated specifically for
      * the child (e.g. user stack copy), not the shared parent pages. */
-    proc_release_private_tracked_pages_from_array(
-        old_user, current->vfork_parent->user_pages);
+    exec_snapshot_release_private_tracked_pages(
+        exec_snapshot, current->vfork_parent->user_pages);
 #if defined(__m68k__)
     if (old_user_stack &&
         old_user_stack != current->vfork_parent->user_stack_page)
       proc_release_stack_page(&old_user_stack);
 #endif
   }
+  mem_region_page_free(exec_snapshot);
 
   /* Unblock vfork parent — we have our own pages now */
   if (current->vfork_parent) {
