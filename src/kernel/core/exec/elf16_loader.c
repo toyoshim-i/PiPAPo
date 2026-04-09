@@ -31,6 +31,7 @@
 #define ELF16_MAX_SIZE (60u * 1024u) /* 60 KB max (leave room for stack) */
 #define ELF16_STACK_SIZE 2048u       /* 2 KB user stack */
 #define ELF16_MAX_PHDRS 16u
+#define ELF16_ZERO_CHUNK 64u
 
 /* ── Detection ─────────────────────────────────────────────────────────── */
 
@@ -70,6 +71,24 @@ static long elf16_read_near(vnode_t *vn, uint32_t off, void *buf,
   return mod_vfs.vnode_read(vn, page, page_off, len, off);
 }
 
+static int elf16_read_phdr(const elf32_ehdr_t *ehdr, const elf32_phdr_t *phdrs,
+                           vnode_t *vn, uint16_t index, elf32_phdr_t *out) {
+  if (!ehdr || !out || index >= ehdr->e_phnum) return -ENOEXEC;
+
+  if (phdrs != NULL) {
+    *out = phdrs[index];
+    return 0;
+  }
+
+  if (vn == NULL) return -ENOEXEC;
+
+  long nread = elf16_read_near(
+      vn, ehdr->e_phoff + (uint32_t)index * sizeof(*out), out, sizeof(*out));
+  if (nread < 0) return (int)nread;
+  if ((uint16_t)nread != sizeof(*out)) return -ENOEXEC;
+  return 0;
+}
+
 static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
                                    const elf32_phdr_t *phdrs, uint16_t phnum,
                                    const uint8_t *file_buf, vnode_t *vn,
@@ -87,9 +106,12 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
 
   /* First pass: find total memory footprint of PT_LOAD segments */
   uint32_t mem_end = 0;
+  elf32_phdr_t phdr;
   for (uint16_t i = 0; i < phnum; i++) {
-    if (phdrs[i].p_type != PT_LOAD) continue;
-    uint32_t seg_end = phdrs[i].p_vaddr + phdrs[i].p_memsz;
+    int rc = elf16_read_phdr(ehdr, phdrs, vn, i, &phdr);
+    if (rc < 0) return rc;
+    if (phdr.p_type != PT_LOAD) continue;
+    uint32_t seg_end = phdr.p_vaddr + phdr.p_memsz;
     if (seg_end > mem_end) mem_end = seg_end;
   }
 
@@ -109,7 +131,7 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
 
   /* Zero entire region via page-indexed writes */
   {
-    uint8_t zeros[256];
+    uint8_t zeros[ELF16_ZERO_CHUNK];
     memset(zeros, 0, sizeof(zeros));
     for (uint16_t pg = 0; pg < USER_SEG_PAGES; pg++) {
       for (uint16_t off = 0; off < PAGE_SIZE; off += sizeof(zeros))
@@ -119,18 +141,24 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
 
   /* Second pass: copy PT_LOAD segment data via mem_region_page_write */
   for (uint16_t i = 0; i < phnum; i++) {
-    if (phdrs[i].p_type != PT_LOAD) continue;
-    if (phdrs[i].p_filesz == 0) continue;
+    int rc = elf16_read_phdr(ehdr, phdrs, vn, i, &phdr);
+    if (rc < 0) {
+      for (uint16_t j = 0; j < USER_SEG_PAGES; j++)
+        mem_region_page_free(base_id + j);
+      return rc;
+    }
+    if (phdr.p_type != PT_LOAD) continue;
+    if (phdr.p_filesz == 0) continue;
 
-    if (phdrs[i].p_offset + phdrs[i].p_filesz > file_size) {
+    if (phdr.p_offset + phdr.p_filesz > file_size) {
       for (uint16_t j = 0; j < USER_SEG_PAGES; j++)
         mem_region_page_free(base_id + j);
       return -ENOEXEC;
     }
 
-    uint32_t vaddr = phdrs[i].p_vaddr;
-    uint32_t remaining = phdrs[i].p_filesz;
-    uint32_t src_off = phdrs[i].p_offset;
+    uint32_t vaddr = phdr.p_vaddr;
+    uint32_t remaining = phdr.p_filesz;
+    uint32_t src_off = phdr.p_offset;
 
     if (vaddr + remaining > USER_STACK_BASE) {
       for (uint16_t j = 0; j < USER_SEG_PAGES; j++)
@@ -347,7 +375,6 @@ int elf16_load_vnode(pcb_t *p, vnode_t *vn, uint32_t file_size,
                      const cpu_ops_t *cpu_ops, void *cpu_state,
                      const char *const *argv, uint32_t flags) {
   elf32_ehdr_t ehdr;
-  elf32_phdr_t phdrs[ELF16_MAX_PHDRS];
   uint16_t phnum;
   uint32_t phbytes;
   long nread;
@@ -368,11 +395,7 @@ int elf16_load_vnode(pcb_t *p, vnode_t *vn, uint32_t file_size,
   phbytes = (uint32_t)phnum * sizeof(elf32_phdr_t);
   if (ehdr.e_phoff + phbytes > file_size) return -ENOEXEC;
 
-  nread = elf16_read_near(vn, ehdr.e_phoff, phdrs, (uint16_t)phbytes);
-  if (nread < 0) return (int)nread;
-  if ((uint32_t)nread != phbytes) return -ENOEXEC;
-
-  return elf16_load_from_headers(p, &ehdr, phdrs, phnum, NULL, vn, file_size,
+  return elf16_load_from_headers(p, &ehdr, NULL, phnum, NULL, vn, file_size,
                                  cpu_ops, cpu_state, argv, flags);
 }
 
