@@ -21,30 +21,64 @@
 #define I16_USER_SEG_PAGES 16u
 #define I16_USER_STACK_PAGE (I16_USER_SEG_PAGES - 1u)
 
-static void sys_brk_zero_owned_range(page_id_t base_id, uintptr_t page0_base,
-                                     uintptr_t start, uintptr_t end) {
+static page_id_t i16_user_segment_base(const pcb_t *p) {
+  if (!p) return PAGE_ID_INVALID;
+  if (p->image.data.base_page != PAGE_ID_INVALID)
+    return p->image.data.base_page;
+  return proc_page_backed_base(p);
+}
+
+static uint16_t i16_user_page_count(uintptr_t end_off) {
+  if (end_off == 0u) return 0u;
+  return (uint16_t)((end_off + PAGE_SIZE - 1u) / PAGE_SIZE);
+}
+
+static void i16_user_zero_page(page_id_t page_id) {
   uint8_t zeros[256];
 
-  if (end <= start) return;
+  memset(zeros, 0, sizeof(zeros));
+  for (uint16_t off = 0; off < PAGE_SIZE; off += sizeof(zeros))
+    mem_region_page_write(page_id, off, zeros, sizeof(zeros));
+}
+
+static void sys_brk_zero_owned_range(page_id_t base_id, uintptr_t start_off,
+                                     uintptr_t end_off) {
+  uint8_t zeros[256];
+  uintptr_t pos = start_off;
+
+  if (end_off <= start_off) return;
 
   memset(zeros, 0, sizeof(zeros));
-  while (start < end) {
-    uintptr_t rel = start - page0_base;
+  while (pos < end_off) {
+    uintptr_t rel = pos;
     uint16_t pg_off = (uint16_t)(rel % PAGE_SIZE);
     uint16_t page_chunk = PAGE_SIZE - pg_off;
-    if (page_chunk > end - start) page_chunk = (uint16_t)(end - start);
+    if (page_chunk > end_off - pos) page_chunk = (uint16_t)(end_off - pos);
 
     while (page_chunk > 0) {
       uint16_t chunk = page_chunk;
       if (chunk > sizeof(zeros)) chunk = sizeof(zeros);
       mem_region_page_write(base_id + (page_id_t)(rel / PAGE_SIZE), pg_off,
                             zeros, chunk);
-      start += chunk;
+      pos += chunk;
       rel += chunk;
       pg_off += chunk;
       page_chunk -= chunk;
     }
   }
+}
+
+static int i16_mmap_range_is_free(const pcb_t *p, uint16_t start_page,
+                                  uint16_t num_pages, uint16_t brk_pages) {
+  uint16_t end_page = (uint16_t)(start_page + num_pages);
+
+  if (!p) return 0;
+  if (end_page > I16_USER_STACK_PAGE) return 0;
+  if (start_page < brk_pages) return 0;
+  for (uint16_t page = start_page; page < end_page; page++) {
+    if (p->user_pages[page] != PAGE_ID_INVALID) return 0;
+  }
+  return 1;
 }
 #endif
 
@@ -66,19 +100,33 @@ long sys_brk(long addr) {
     return (long)(current->brk_current); /* unchanged = failure */
 
 #if defined(__ia16__)
-  page_id_t page0_id = proc_page_backed_base(current);
-  if (page0_id == PAGE_ID_INVALID)
-    return (long)(current->brk_current); /* unchanged = failure */
-
-  uintptr_t page0_base = (uintptr_t)mem_region_page_linear(page0_id);
-  uintptr_t limit = page0_base + I16_USER_STACK_PAGE * PAGE_SIZE;
+  page_id_t base_id = i16_user_segment_base(current);
+  uint16_t old_pages;
+  uint16_t new_pages;
   uintptr_t old_top = current->brk_current;
 
-  if (new_brk > limit)
+  if (base_id == PAGE_ID_INVALID)
     return (long)(current->brk_current); /* unchanged = failure */
 
-  if (new_brk > old_top)
-    sys_brk_zero_owned_range(page0_id, page0_base, old_top, new_brk);
+  if (new_brk > (uintptr_t)I16_USER_STACK_PAGE * PAGE_SIZE)
+    return (long)(current->brk_current); /* unchanged = failure */
+
+  old_pages = i16_user_page_count(old_top);
+  new_pages = i16_user_page_count(new_brk);
+
+  if (new_pages > old_pages) {
+    for (uint16_t page = old_pages; page < new_pages; page++) {
+      if (current->user_pages[page] != PAGE_ID_INVALID)
+        return (long)(current->brk_current); /* collides with mmap/stack */
+    }
+    for (uint16_t page = old_pages; page < new_pages; page++)
+      current->user_pages[page] = base_id + (page_id_t)page;
+  } else if (new_pages < old_pages) {
+    for (uint16_t page = new_pages; page < old_pages; page++)
+      current->user_pages[page] = PAGE_ID_INVALID;
+  }
+
+  if (new_brk > old_top) sys_brk_zero_owned_range(base_id, old_top, new_brk);
 
   current->brk_current = new_brk;
   return (long)new_brk;
@@ -168,6 +216,52 @@ long sys_mmap2(uintptr_t addr, size_t len, uint32_t prot, uint32_t flags,
 
   uint32_t num_pages = (len + PAGE_SIZE - 1) / PAGE_SIZE;
 
+#if defined(__ia16__)
+  page_id_t base_id = i16_user_segment_base(current);
+  uint16_t brk_pages;
+
+  if (base_id == PAGE_ID_INVALID) return -(long)ENOMEM;
+  if (num_pages == 0 || num_pages > I16_USER_STACK_PAGE) return -(long)ENOMEM;
+
+  brk_pages = i16_user_page_count(current->brk_current);
+
+  if ((flags & MAP_FIXED) && addr != 0) {
+    uint16_t start_page;
+    uint16_t end_page;
+
+    if ((addr & (PAGE_SIZE - 1u)) != 0) return -(long)EINVAL;
+    start_page = (uint16_t)(addr / PAGE_SIZE);
+    end_page = (uint16_t)(start_page + num_pages);
+    if (end_page > I16_USER_STACK_PAGE) return -(long)ENOMEM;
+    if (!i16_mmap_range_is_free(current, start_page, (uint16_t)num_pages,
+                                brk_pages))
+      return -(long)ENOMEM;
+    for (uint16_t page = start_page; page < end_page; page++) {
+      i16_user_zero_page(base_id + (page_id_t)page);
+      current->user_pages[page] = base_id + (page_id_t)page;
+    }
+    return (long)((uintptr_t)start_page * PAGE_SIZE);
+  }
+
+  for (uint16_t start_page =
+           (uint16_t)(I16_USER_STACK_PAGE - (uint16_t)num_pages);
+       start_page >= brk_pages; start_page--) {
+    if (!i16_mmap_range_is_free(current, start_page, (uint16_t)num_pages,
+                                brk_pages)) {
+      if (start_page == 0u) break;
+      continue;
+    }
+    for (uint16_t page = start_page;
+         page < (uint16_t)(start_page + (uint16_t)num_pages); page++) {
+      i16_user_zero_page(base_id + (page_id_t)page);
+      current->user_pages[page] = base_id + (page_id_t)page;
+    }
+    return (long)((uintptr_t)start_page * PAGE_SIZE);
+  }
+
+  return -(long)ENOMEM;
+#else
+
   /* Find contiguous free slots in user_pages[] (top-down) */
   int slot = mmap_find_slots(current, num_pages);
   if (slot < 0) return -(long)ENOMEM;
@@ -200,6 +294,7 @@ long sys_mmap2(uintptr_t addr, size_t len, uint32_t prot, uint32_t flags,
       current->user_pages[(uint32_t)slot + i] = base_id + (page_id_t)i;
     return (long)((uintptr_t)region.base);
   }
+#endif
 }
 
 /* ── sys_munmap ───────────────────────────────────────────────────────────────
@@ -209,6 +304,26 @@ long sys_munmap(uintptr_t addr, size_t len) {
   if (addr == 0 || len == 0) return -(long)EINVAL;
 
   uint32_t num_pages = (len + PAGE_SIZE - 1) / PAGE_SIZE;
+
+#if defined(__ia16__)
+  uint16_t start_page;
+  uint16_t end_page;
+  uint16_t brk_pages = i16_user_page_count(current->brk_current);
+
+  if ((addr & (PAGE_SIZE - 1u)) != 0) return -(long)EINVAL;
+
+  start_page = (uint16_t)(addr / PAGE_SIZE);
+  end_page = (uint16_t)(start_page + num_pages);
+  if (end_page > I16_USER_STACK_PAGE) return -(long)EINVAL;
+  if (start_page < brk_pages) return -(long)EINVAL;
+
+  for (uint16_t page = start_page; page < end_page; page++) {
+    if (current->user_pages[page] == PAGE_ID_INVALID) return -(long)EINVAL;
+  }
+  for (uint16_t page = start_page; page < end_page; page++)
+    current->user_pages[page] = PAGE_ID_INVALID;
+  return 0;
+#else
 
   /* Find the matching page in user_pages[] by linear address */
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
@@ -232,4 +347,5 @@ long sys_munmap(uintptr_t addr, size_t len) {
                               PPAP_MEM_RAM_DATA, PROC_IMAGE_SEG_WRITABLE);
   mem_region_free(&region);
   return 0;
+#endif
 }

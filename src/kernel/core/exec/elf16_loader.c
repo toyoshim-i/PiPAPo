@@ -166,6 +166,7 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
   uint32_t base_linear = mem_region_page_linear(base_id);
   uint16_t proc_seg = (uint16_t)(base_linear >> 4);
   uint16_t entry_ip = (uint16_t)ehdr->e_entry;
+  uint16_t brk_pages = (uint16_t)((brk_base + PAGE_SIZE - 1u) / PAGE_SIZE);
 
   /* User stack: SS=proc_seg, SP is segment-relative.
    * Stack lives in the last page of the 64 KB segment. argc/argv are
@@ -300,18 +301,22 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
     p->sp = (uint32_t)(uintptr_t)kstack;
   }
 
-  /* Track pages by index — no pointer truncation. */
-  for (uint16_t i = 0; i < USER_SEG_PAGES; i++)
-    proc_track_page(p, i, base_id + i);
+  /* Track logical occupancy by segment page index:
+   *   - low pages up to brk_current belong to the image / heap window
+   *   - the last page is the user stack
+   * The whole 16-page segment is owned separately via image.data. */
+  for (uint16_t i = 0; i < brk_pages; i++) proc_track_page(p, i, base_id + i);
+  proc_track_page(p, USER_STACK_PAGE, base_id + USER_STACK_PAGE);
 
   p->image.text =
       proc_image_segment_make((void *)(uintptr_t)(uint16_t)base_linear, mem_end,
                               PPAP_MEM_RAM_TEXT, PROC_IMAGE_SEG_EXECUTABLE);
   p->image.text.base_page = base_id;
-  /* Data region: freed via proc_release_tracked_pages, not OWNED. */
+  /* The full 16-page user segment is owned here; user_pages[] only tracks
+   * which segment pages are logically in use. */
   p->image.data = proc_image_segment_make(
       (void *)(uintptr_t)(uint16_t)base_linear, USER_SEG_BYTES,
-      PPAP_MEM_RAM_DATA, PROC_IMAGE_SEG_WRITABLE);
+      PPAP_MEM_RAM_DATA, PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED);
   p->image.data.base_page = base_id;
   p->image.entry = (uintptr_t)entry_ip;
   p->brk_base = brk_base;

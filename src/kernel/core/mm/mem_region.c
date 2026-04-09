@@ -609,6 +609,7 @@ int mem_region_alloc_at(proc_image_segment_t *seg, ppap_mem_class_t mem_class,
 
 void mem_region_free(const proc_image_segment_t *seg) {
   uint32_t n_pages;
+  page_id_t base_id;
 
   if (!seg || !seg->base || seg->size == 0) return;
 
@@ -625,8 +626,14 @@ void mem_region_free(const proc_image_segment_t *seg) {
     case PPAP_MEM_RAM_STACK:
     case PPAP_MEM_DEVICE_DMA:
       n_pages = mem_region_page_count(seg->size);
-      for (uint32_t i = 0; i < n_pages; i++)
-        page_free((uint8_t *)seg->base + i * PAGE_SIZE);
+      base_id = seg->base_page;
+      if (base_id != PAGE_ID_INVALID) {
+        for (uint32_t i = 0; i < n_pages; i++)
+          mm_page_free(base_id + (page_id_t)i);
+      } else {
+        for (uint32_t i = 0; i < n_pages; i++)
+          page_free((uint8_t *)seg->base + i * PAGE_SIZE);
+      }
       return;
 
 #if defined(__xtensa__)
@@ -640,8 +647,14 @@ void mem_region_free(const proc_image_segment_t *seg) {
     case PPAP_MEM_RAM_DATA:
     case PPAP_MEM_RAM_TEXT:
       n_pages = mem_region_page_count(seg->size);
-      for (uint32_t i = 0; i < n_pages; i++)
-        page_free((uint8_t *)seg->base + i * PAGE_SIZE);
+      base_id = seg->base_page;
+      if (base_id != PAGE_ID_INVALID) {
+        for (uint32_t i = 0; i < n_pages; i++)
+          mm_page_free(base_id + (page_id_t)i);
+      } else {
+        for (uint32_t i = 0; i < n_pages; i++)
+          page_free((uint8_t *)seg->base + i * PAGE_SIZE);
+      }
       return;
 #endif
 

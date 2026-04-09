@@ -351,8 +351,15 @@ void proc_release_tracked_pages(pcb_t *p, uint32_t start_slot,
   if (end_slot > USER_PAGES_MAX) end_slot = USER_PAGES_MAX;
   for (uint32_t i = start_slot; i < end_slot; i++) {
     if (p->user_pages[i] == PAGE_ID_INVALID) continue;
+#if defined(__ia16__)
+    /* i16 owns one whole exec-time segment via image.data. user_pages[]
+     * is occupancy bookkeeping only, so clearing slots must not free the
+     * underlying page. */
+    p->user_pages[i] = PAGE_ID_INVALID;
+#else
     mem_region_free_tracked_page_id(p->user_pages[i]);
     p->user_pages[i] = PAGE_ID_INVALID;
+#endif
   }
 }
 
@@ -361,8 +368,12 @@ void proc_release_private_tracked_pages(pcb_t *p, const pcb_t *shared_owner) {
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
     if (p->user_pages[i] == PAGE_ID_INVALID) continue;
     if (p->user_pages[i] == shared_owner->user_pages[i]) continue;
+#if defined(__ia16__)
+    p->user_pages[i] = PAGE_ID_INVALID;
+#else
     mem_region_free_tracked_page_id(p->user_pages[i]);
     p->user_pages[i] = PAGE_ID_INVALID;
+#endif
   }
 }
 
@@ -370,7 +381,9 @@ void proc_release_tracked_pages_from_array(page_id_t pages[USER_PAGES_MAX]) {
   if (!pages) return;
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
     if (pages[i] == PAGE_ID_INVALID) continue;
+#if !defined(__ia16__)
     mem_region_free_tracked_page_id(pages[i]);
+#endif
   }
 }
 
@@ -380,7 +393,9 @@ void proc_release_private_tracked_pages_from_array(
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
     if (pages[i] == PAGE_ID_INVALID) continue;
     if (pages[i] == shared[i]) continue;
+#if !defined(__ia16__)
     mem_region_free_tracked_page_id(pages[i]);
+#endif
   }
 }
 

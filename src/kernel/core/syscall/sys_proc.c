@@ -44,8 +44,8 @@ extern volatile uint16_t i16_trap_frame_sp;
 
 /* Release an image segment if it is OWNED (independently allocated).
  * Non-OWNED segments (XIP, sub-pointers into another allocation) are
- * just cleared.  Data regions are no longer OWNED — they are freed via
- * proc_release_tracked_pages(), so no overlap check is needed. */
+ * just cleared.  On i16 the whole user segment is now owned by
+ * image.data, while user_pages[] only tracks logical occupancy. */
 static void image_segment_release_owned(proc_image_segment_t *seg) {
   if (!seg || !seg->base) return;
   if (seg->flags & PROC_IMAGE_SEG_OWNED) mem_region_free(seg);

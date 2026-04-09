@@ -1,6 +1,9 @@
 # i16 Per-Process 64 KB Segment Allocation
 
-> **Status**: Proposal.  Targets the kernel-stack overrun and shared-user-stack
+> **Status**: In progress.  Phases 1 through 3 are now in place in the
+> working tree; the remaining work is follow-up cleanup and later
+> proposals such as reclaiming the skipped PCB slot.  Targets the
+> kernel-stack overrun and shared-user-stack
 > bug class on `pcxt` exposed during the `mem_region` Phase 1 work
 > (commit `c113c49`, "store vfork saved frame below trap_ksp, not above").
 
@@ -141,8 +144,8 @@ API.  The necessary interface contract is:
    - `mem_region_page_linear(base_id)` derives `proc_seg`
    - `mem_region_page_read` / `mem_region_page_write` access the pages
      without requiring a near pointer
-   - `mem_region_free_tracked_page_id` or `mem_region_free` release the
-     segment on process teardown / failed `execve`
+   - `mem_region_free` releases the owned segment on process teardown /
+     failed `execve`
 
 3. Do **not** treat `void *` returned by the raw page allocator as a
    stable model for i16 user pages above 64 KB.  i16 code should
@@ -173,8 +176,9 @@ but change the allocation model:
 5. Load every PT_LOAD segment into the allocated pages with
    `mem_region_page_write`.
 6. Derive `proc_seg` from `mem_region_page_linear(base_id) >> 4`.
-7. Set `image.text.base_page`, `image.data.base_page`, and the tracked
-   `user_pages[]` entries from that real base page.
+7. Set `image.text.base_page` / `image.data.base_page` from that real
+   base page, and record logical occupancy in `user_pages[]` by segment
+   page index.
 8. Record `brk_base` / `brk_current` as the end of the loaded image,
    and reserve page 15 as non-heap stack space.
 
@@ -183,11 +187,11 @@ destroy the old image until the new one is fully loaded and its entry
 frame is ready.  For same-process re-exec, the old 16-page segment must
 therefore remain recoverable until loader I/O and stack setup succeed.
 
-With the current teardown / rollback code, Phase 2 should temporarily
-track the entire 16-page owned segment in `user_pages[]`, even though
-the logical heap / mmap occupancy is smaller.  That keeps ownership and
-freeing correct without adding new PCB metadata yet.  Phase 4 can split
-ownership from occupancy bookkeeping later.
+The resulting split is:
+
+- `image.data` owns the whole 16-page segment and frees it on teardown
+- `user_pages[]` records which segment pages are logically occupied by
+  image / brk / stack / mmap
 
 ### 3.4 User stack = last page of the segment
 
@@ -229,48 +233,40 @@ post-execve" bug class.  No bookkeeping needed.
 
 ### 3.6 `sys_brk`
 
-Only mostly deferred.  The safe sequencing is:
-
-- Land the 16-page exec-time loader first and make `/sbin/init` boot.
-- Add the **smallest i16-only compatibility path** so `sys_brk` treats
-  the already-owned segment pages as expandable heap space rather than
-  trying to allocate fresh global-pool pages.
-- Keep the broader `sys_brk` cleanup and shared cross-arch structure for
-  the later phase.
-
-That separation avoids mixing an address-space layout change with a
-heap-semantics change in one step.
-
-The eventual i16 rule for `sys_brk` is:
+The i16 rule for `sys_brk` is now:
 
 - page 15 is never heap
 - `brk` can only consume pages below page 15
 - any newly exposed page must correspond to `base_id + n` for the same
   exec-time base page
+- `brk` growth must fail if it would collide with an existing i16
+  `mmap` range
+
+This keeps `brk_base` / `brk_current` as segment-relative offsets while
+the kernel updates low segment-page occupancy in `user_pages[]`.
 
 ### 3.7 `sys_mmap2` / `sys_munmap`
 
-After the 16-page exec model is stable, `sys_mmap2` / `sys_munmap`
-should become in-segment bookkeeping only: no global search for a page
-outside the process segment.  The least disruptive implementation is to
-keep using `user_pages[]` as the occupancy map for i16:
+`sys_mmap2` / `sys_munmap` now become in-segment bookkeeping only:
+no global search for a page outside the process segment.  The current
+model keeps using `user_pages[]` as the occupancy map for i16, indexed
+by the **logical page number inside the 16-page segment**:
 
 ```c
 /* Conceptually:
- *   - low tracked slots = ELF image + brk-covered pages
- *   - high tracked slots = mmap-covered pages
- * but every page ID is derived from the exec-time base page, not from
- * an unrelated global allocation.
+ *   - slots 0..14 = image / brk / mmap occupancy for segment pages 0..14
+ *   - slot 15     = user stack page
+ * but every stored page ID is derived from the exec-time base page,
+ * not from an unrelated global allocation.
  */
 ```
 
 `sys_mmap2` finds a free range high in the segment (between
-`brk_current` and the user stack), records the corresponding logical
-page IDs in high `user_pages[]` slots, and returns the segment-relative
-address.  `sys_munmap` removes those entries.  Whether the kernel also
-materializes those pages lazily or eagerly is a later policy choice,
-but the address range must stay inside the already-established 16-page
-segment.
+`brk_current` and the user stack), records the corresponding page IDs
+in the matching logical slots, zeroes those pages for anonymous-mmap
+semantics, and returns the segment-relative address.  `sys_munmap`
+removes those occupancy entries without freeing the underlying segment,
+because the process still owns the full 16-page window.
 
 `MAP_FIXED` is implementable: check that the requested range
 fits and doesn't collide with existing regions or brk.
@@ -306,6 +302,8 @@ native i16 image.
 
 ### Phase 1 — Clarify and preserve the page-ID interface
 
+Status: landed in commit `65fca01`.
+
 - Do **not** add a new i16-only page allocator API.
 - Keep `page.h` and `mem_region.h` interfaces generic.
 - Ensure the loader path uses the existing page-ID-based contiguous
@@ -315,25 +313,33 @@ native i16 image.
 
 ### Phase 2 — `execve` allocates one 16-page segment
 
+Status: landed in commit `c23f122`.
+
 - `elf16_load_vnode` allocates exactly 16 contiguous pages with
   `mem_region_page_alloc_contiguous(16)`.
 - Derive `proc_seg` from that allocated base page.
 - Load the ELF into pages 0..14 and reserve page 15 as the user stack.
-- Track the whole 16-page owned segment in `user_pages[]` for now so
-  existing teardown / rollback paths still free the correct pages.
+- Establish the 16-page segment as one owned allocation; later phases
+  refine `user_pages[]` from whole-segment tracking into logical
+  occupancy bookkeeping.
 - Add the minimal i16-only `sys_brk` path needed to expose bytes inside
   the already-owned segment without allocating fresh pages elsewhere.
 - Preserve rollback semantics on loader failure.
 
 ### Phase 3 — sys_brk, sys_mmap2 simplification
 
+Status: complete in the current design.
+
 - Convert `sys_brk` to stay strictly inside the segment established by
   `execve`.
-- Implement `sys_mmap2` / `sys_munmap` as in-segment tracking, most
-  likely by reusing `user_pages[]` high slots.
+- Implement `sys_mmap2` / `sys_munmap` as in-segment tracking.
 - Remove i16-specific behavior in `sys_mem.c` that assumes a flat pool.
+- Keep `brk` / `mmap` occupancy in `user_pages[]` by logical segment
+  page index.
 
 ### Phase 4 — Drop i16 page tracking for user pages
+
+Status: largely folded into Phase 3.
 
 Do **not** drop i16 page tracking outright.  Instead:
 
@@ -351,6 +357,8 @@ Do **not** drop i16 page tracking outright.  Instead:
 
 ### Phase 5 — Reclaim the skipped PCB slot (separate proposal)
 
+Status: not started.
+
 Remove the current temporary i16 kernel-stack workaround that makes
 `proc_alloc()` skip one PCB slot.  Once that workaround is gone, the
 existing `PROC_MAX = 4` configuration yields 3 schedulable user
@@ -359,6 +367,8 @@ This is **not part of this proposal** — it's listed as a follow-up so
 the eventual benefit (3 user processes → pipes possible) is visible.
 
 ### Phase 6 — Possibly drop the pre-execve saved-frame dance
+
+Status: not started.
 
 If a future redesign chooses **vfork-as-real-fork** on i16 (a 64 KB
 memcpy at every vfork), the saved-frame mechanism in
