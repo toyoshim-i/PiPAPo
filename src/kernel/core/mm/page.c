@@ -60,18 +60,6 @@ static uint32_t i16_detect_ram(void) {
   __asm__ volatile("int $0x12" : "=a"(kb) : : "cc");
   return (uint32_t)kb * 1024u;
 }
-
-/* Fixed per-user-slot reservation for the i16 tiny-model process layout.
- * These pages are permanently withheld from the general allocator and are
- * intended for future per-process 64 KB partitions.  For Phase 1 we only
- * reserve the range from the allocator's free stack. */
-#define I16_USER_SLOT_BYTES (16u * PAGE_SIZE)
-#define I16_USER_SLOT_PAGES (I16_USER_SLOT_BYTES / PAGE_SIZE)
-#define I16_USER_SLOTS ((uint32_t)(PROC_MAX - 1u))
-
-static inline uint32_t i16_user_reserved_pages(void) {
-  return I16_USER_SLOTS * I16_USER_SLOT_PAGES;
-}
 #endif
 
 /* ── Internal helpers ───────────────────────────────────────────────────────
@@ -113,11 +101,6 @@ void mm_init(void) {
   uintptr_t bss_end = (uintptr_t)&__bss_end;
   uintptr_t stack_top = (uintptr_t)&__stack_top;
   uintptr_t kern_used = bss_end - SRAM_KERNEL_BASE;
-#if defined(__ia16__)
-  uint32_t i16_reserved_pages = 0u;
-  uint32_t i16_reserved_bytes = 0u;
-  uint32_t i16_reserved_base = (uint32_t)PAGE_POOL_BASE;
-#endif
 
   /* Detect available RAM and set runtime page_count.
    * On m68k: probe RAM via bus error catching (two-phase: 1MB then 4KB).
@@ -156,21 +139,8 @@ void mm_init(void) {
   {
     uint32_t ram_top = i16_detect_ram();
     if (ram_top > RAM_END) ram_top = RAM_END;
-    uint32_t pool_start = (uint32_t)PAGE_POOL_BASE;
-    uint32_t allocator_pool_base;
-    i16_reserved_pages = i16_user_reserved_pages();
-    i16_reserved_bytes = i16_reserved_pages * PAGE_SIZE;
-    allocator_pool_base = pool_start + i16_reserved_bytes;
-    if (allocator_pool_base >= ram_top) {
-      mod_vfs.klogf(
-          "MM: FATAL — i16 reserved user partitions exceed usable RAM"
-          "  base=%lx reserved=%lu KB top=%lx\n",
-          (unsigned long)pool_start,
-          (unsigned long)(i16_reserved_bytes / 1024u), (unsigned long)ram_top);
-      for (;;) __asm__ volatile("cli\n hlt");
-    }
-    if (ram_top > allocator_pool_base) {
-      page_count = (uint32_t)(ram_top - allocator_pool_base) / PAGE_SIZE;
+    if (ram_top > PAGE_POOL_BASE) {
+      page_count = (uint32_t)(ram_top - PAGE_POOL_BASE) / PAGE_SIZE;
       if (page_count > PAGE_COUNT_MAX) page_count = PAGE_COUNT_MAX;
     } else {
       page_count = 0;
@@ -220,17 +190,6 @@ void mm_init(void) {
                 (unsigned long)actual_base,
                 (unsigned long)(pool_base + page_count * PAGE_SIZE - 1u),
                 (unsigned long)(free_top * PAGE_SIZE / 1024u), free_top);
-#if defined(__ia16__)
-  if (i16_reserved_pages != 0u) {
-    mod_vfs.klogf(
-        "MM:   i16 user partitions %lx-%lx  %lu KB reserved"
-        " (%lu slots x 64 KB)\n",
-        (unsigned long)i16_reserved_base,
-        (unsigned long)(i16_reserved_base + i16_reserved_bytes - 1u),
-        (unsigned long)(i16_reserved_bytes / 1024u),
-        (unsigned long)I16_USER_SLOTS);
-  }
-#endif
 #if !defined(__m68k__) && !defined(__xtensa__) && !defined(__ia16__)
   mod_vfs.klogf("MM:   io_buf  %lx-%lx  %lu KB\n",
                 (unsigned long)SRAM_IOBUF_BASE,
@@ -380,8 +339,6 @@ void page_free(void *page) {
 uint32_t page_pool_base(void) {
 #if defined(__xtensa__)
   return (uint32_t)xtensa_pool_base;
-#elif defined(__ia16__)
-  return (uint32_t)PAGE_POOL_BASE + i16_user_reserved_pages() * PAGE_SIZE;
 #else
   return PAGE_POOL_BASE;
 #endif

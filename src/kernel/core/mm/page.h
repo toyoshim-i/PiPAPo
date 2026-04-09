@@ -45,9 +45,8 @@ void *page_alloc_at(void *addr);
 void page_free(void *page);
 
 /* Return the runtime page pool base linear address.  On Xtensa this is
- * dynamically allocated from ESP-IDF's heap; on i16 it may be advanced
- * above reserved low-memory partitions; on other targets it equals the
- * compile-time PAGE_POOL_BASE. */
+ * dynamically allocated from ESP-IDF's heap; on other targets it equals
+ * the compile-time PAGE_POOL_BASE. */
 uint32_t page_pool_base(void);
 
 /* Return the number of pages currently on the free stack. */
