@@ -22,13 +22,16 @@ This is memory-efficient but creates several structural problems:
 1. **Stack vs allocator interaction.**  The single-page allocator at
    [`page.c::page_alloc`](../../src/kernel/core/mm/page.c) picks the
    *highest-address* free page (top-down), to leave low contiguous
-   space for ELF images.  On i16 the page pool spans 0x22000-0x9EFFF
-   (500 KB), so a single-page allocation can return a page far above
-   the user process's segment-relative reach (`proc_seg << 4 + 64 KB
-   ≤ ~0x32000` for the first process).  The page is unreachable from
-   the user's segment registers.  Latent today (no current pcxt user
-   binary calls `mmap` or grows brk via the single-page path), but
-   it's a guaranteed bug as soon as anyone does.
+   space for ELF images.  On i16 the page pool base is computed at
+   boot (`PAGE_POOL_BASE`), and on current pcxt builds it typically
+   starts around `0x22000` and extends to conventional-RAM top.  A
+   single-page allocation can therefore return a page far above the
+   user process's segment-relative reach (`proc_seg << 4 + 64 KB` for
+   the first process is only around `0x32000`).  The page is
+   unreachable from the user's segment registers.  Latent today (no
+   current pcxt user binary calls `mmap` or grows brk via the
+   single-page path), but it's a guaranteed bug as soon as anyone
+   does.
 
 2. **Vfork-shared user stack.**  Vfork on i16 leaves the child sharing
    the parent's `proc_seg` until execve.  The kernel must save the
@@ -102,7 +105,7 @@ Non-goals:
 Add a static table indexed by user-process slot number:
 
 ```c
-/* In src/target/pcxt/kernel/core/proc_layout.c (new) */
+/* In src/kernel/core/mm/page.c (or a private mm helper, new) */
 
 #include "kernel/common/config.h"
 
@@ -114,40 +117,56 @@ Add a static table indexed by user-process slot number:
  * Each entry is a base linear address.  proc_seg = base >> 4.
  * Each partition is exactly 64 KB (16 pages × 4 KB).
  *
- * Layout (with PROC_MAX = 3, so 2 user slots):
- *   user slot 0 (PCB slot 1): 0x22000 .. 0x31FFF  (proc_seg = 0x2200)
- *   user slot 1 (PCB slot 2): 0x32000 .. 0x41FFF  (proc_seg = 0x3200)
+ * Layout (with current pcxt PROC_MAX = 4, so 3 user-slot entries):
+ *   user slot 0: PAGE_POOL_BASE + 0x00000 .. +0x0FFFF
+ *   user slot 1: PAGE_POOL_BASE + 0x10000 .. +0x1FFFF
+ *   user slot 2: PAGE_POOL_BASE + 0x20000 .. +0x2FFFF
  *
- * Total: 128 KB, well within the available conventional memory
- * (page pool currently has 500 KB).
+ * On a typical current boot where PAGE_POOL_BASE resolves to 0x22000,
+ * those become:
+ *   user slot 0: 0x22000 .. 0x31FFF  (proc_seg = 0x2200)
+ *   user slot 1: 0x32000 .. 0x41FFF  (proc_seg = 0x3200)
+ *   user slot 2: 0x42000 .. 0x51FFF  (proc_seg = 0x4200)
+ *
+ * Note: the current temporary i16 kernel-stack workaround still makes
+ * only two user PCBs schedulable today because proc_alloc() skips one
+ * PCB slot.  The partition table should still be defined from the
+ * configured slot count; reclaiming that skipped PCB slot is a
+ * separate follow-up.
  */
 #define I16_USER_SLOT_BYTES (16u * PAGE_SIZE)  /* 64 KB */
 #define I16_USER_SLOT_BASE_LINEAR(i) \
-  (0x22000u + (uint32_t)(i) * I16_USER_SLOT_BYTES)
+  ((uint32_t)PAGE_POOL_BASE + (uint32_t)(i) * I16_USER_SLOT_BYTES)
 
 #define I16_USER_SLOTS (PROC_MAX - 1u)  /* exclude pid 0 idle */
 ```
 
-These addresses align with paragraph (16-byte) boundaries, so they
-form valid `proc_seg` values: `0x2200`, `0x3200`.
+These addresses align with paragraph (16-byte) boundaries, so each
+base forms a valid `proc_seg`.
 
 ### 3.2 Page-pool reservation
 
 The kernel boot path reserves the user-partition region from the
-global page pool.  Current pcxt page pool starts at `0x22000`; the
-new layout reserves the first `I16_USER_SLOTS * 16` pages for user
-partitions and lets the page pool start above that:
+global page pool.  The new layout reserves the first
+`I16_USER_SLOTS * 16` pages starting at `PAGE_POOL_BASE` for user
+partitions and lets the remaining kernel page pool start above that:
 
 ```text
-0x22000-0x31FFF  user partition 0 (16 pages)  reserved
-0x32000-0x41FFF  user partition 1 (16 pages)  reserved
-0x42000-0x9EFFF  page pool (kernel use only)  ~372 KB
+PAGE_POOL_BASE + 0x00000 .. +0x0FFFF  user partition 0 (16 pages)
+PAGE_POOL_BASE + 0x10000 .. +0x1FFFF  user partition 1 (16 pages)
+PAGE_POOL_BASE + 0x20000 .. +0x2FFFF  user partition 2 (16 pages, if reserved)
+PAGE_POOL_BASE + 0x30000 .. RAM_END   kernel page pool (kernel use only)
 ```
 
-`mem_region_page_alloc` on i16 only operates above `0x42000`, so it
-can never return a page that's part of any user partition.  Kernel-
-side allocations (file scratch buffers, FS metadata pools, etc.)
-all come from this region.
+On a typical current boot (`PAGE_POOL_BASE = 0x22000`) that means the
+kernel-only pool begins around `0x52000` if all three configured user
+slots are reserved, or around `0x42000` if we intentionally reserve
+only the two currently schedulable user slots while the kernel-stack
+workaround remains in place.  Either way, `mem_region_page_alloc` on
+i16 must operate above the reserved user-partition region so it can
+never return a page that's part of any user partition.  Kernel-side
+allocations (file scratch buffers, FS metadata pools, etc.) all come
+from this remaining pool.
 
 ### 3.3 PCB additions
 
@@ -175,7 +194,7 @@ Each user PCB gains an `i16_user_slot` field that is set on
 
 `elf16_load_vnode` no longer allocates pages.  Instead, it:
 
-1. Reads `current->i16_user_slot` and computes the base linear
+1. Reads `p->i16_user_slot` and computes the base linear
    address and `proc_seg` from the table.
 2. Zeros the entire 64 KB partition.
 3. Loads the ELF PT_LOAD segments into the partition via
@@ -184,10 +203,15 @@ Each user PCB gains an `i16_user_slot` field that is set on
 4. Builds argc/argv at `user_sp_top = 0xFFE` (the top of the
    segment, leaving 2 bytes for alignment).
 5. Sets `image.data.base_page` and `image.entry`.
+6. Continues to populate `user_pages[]` for the initial image pages,
+   but now as **logical in-segment occupancy metadata**, not as a
+   record of physically allocated pages.
 
 `mem_region_page_alloc_contiguous` is no longer called from
 `elf16_load_vnode`.  No more `npages > 16` failure.  No more
-fragmentation risk.
+fragmentation risk.  Importantly, keeping `user_pages[]` populated for
+the loaded image preserves the current i16 user-copy and containment
+helpers, which still resolve user pointers via the first tracked page.
 
 Image-size limit becomes a hard 64 KB minus stack reservation,
 which matches the existing `ELF16_MAX_SIZE = 60 KB` constant.
@@ -219,7 +243,7 @@ long sys_brk(uintptr_t addr) {
   if (addr == 0) return current->brk_current;
   uint16_t new_brk = (uint16_t)addr;
   if (new_brk < current->brk_base) return current->brk_current;
-  if (new_brk >= current->mmap_low) return current->brk_current; /* OOM */
+  if (new_brk >= i16_mmap_floor(current)) return current->brk_current; /* OOM */
   current->brk_current = new_brk;
   return new_brk;
 }
@@ -233,20 +257,24 @@ brk has been "extended" to them.
 
 ### 3.7 sys_mmap2 / sys_munmap
 
-Becomes a per-process range tracker on the segment.  Track up to
-N regions in PCB (e.g. 4-8 entries):
+Becomes in-segment bookkeeping only: no physical allocation and no
+global free.  The least disruptive implementation is to keep using
+`user_pages[]` as the logical occupancy map for i16:
 
 ```c
-typedef struct {
-  uint16_t base;  /* segment-relative start */
-  uint16_t size;  /* bytes; 0 = unused */
-} i16_mmap_region_t;
+/* Conceptually:
+ *   - low tracked slots = ELF image + brk-covered pages
+ *   - high tracked slots = mmap-covered pages
+ * but every page ID is derived from the fixed slot base, not from a
+ * fresh allocation.
+ */
 ```
 
 `sys_mmap2` finds a free range high in the segment (between
-`brk_current` and the user stack), records it, returns the
-segment-relative address.  `sys_munmap` removes the entry.  No
-allocation, no free, no global state.
+`brk_current` and the user stack), records the corresponding logical
+page IDs in high `user_pages[]` slots, and returns the segment-relative
+address.  `sys_munmap` removes those logical entries.  No allocation,
+no free, no global state.
 
 `MAP_FIXED` is implementable: check that the requested range
 fits and doesn't collide with existing regions or brk.
@@ -257,10 +285,12 @@ Slot 0 (the kernel idle thread) has **no user partition** — it
 never enters user mode.  `i16_user_slot = 0xFF`.  It only uses its
 kernel stack slot.
 
-This means PROC_MAX = 3 gives **2 user slots**: enough for one
-parent + one child, but not enough for shells with pipes or
-backgrounded processes.  See §5 for the follow-up that releases
-slot 0 to allow PROC_MAX = 3 + idle, giving 3 user slots.
+With the current pcxt configuration (`PROC_MAX = 4`), the partition
+table naturally has **3 user-slot entries**.  Today only **2 user
+processes are effectively schedulable** because of the temporary i16
+kernel-stack workaround that leaves one PCB slot unused.  See §5 for
+the follow-up that removes that workaround and reclaims the skipped PCB
+slot; this proposal itself does not depend on changing pid 0.
 
 ---
 
@@ -269,19 +299,20 @@ slot 0 to allow PROC_MAX = 3 + idle, giving 3 user slots.
 | Region | Bytes | Notes |
 |---|---|---|
 | Core image (.text + .rodata + .data + .bss) at 0x0600..0x9FFF | ~37 KB | unchanged |
-| VFS data 0xA000..0xD7FF | ~14 KB | unchanged (after the kstack parameterization currently in WIP) |
-| Kernel stacks 0xD800..0xFBFF | 9 KB (3 × 3 KB) | unchanged |
+| VFS data at 0xA000..~0xBCE8 | ~7.4 KB | unchanged (matches current pcxt layout doc) |
+| Kernel stacks 0xE000..0xFFFF | 8 KB (4 × 2 KB) | unchanged |
 | Core .text far CS=0x1000+ | ~34 KB | unchanged |
 | VFS  .text far CS=0x1900+ | ~33 KB | unchanged |
-| User partition 0 (PCB slot 1) at 0x22000 | 64 KB | **new reservation** |
-| User partition 1 (PCB slot 2) at 0x32000 | 64 KB | **new reservation** |
-| Kernel-side page pool above 0x42000 | ~372 KB | shrinks from 500 KB |
+| User partitions starting at `PAGE_POOL_BASE` | 128-192 KB | **new reservation**, depending on whether we reserve 2 active slots immediately or all 3 configured user slots |
+| Kernel-side page pool above the reserved user region | ~300-372 KB on typical current boots | shrinks from ~500 KB |
 | BIOS / video at 0xA0000+ | n/a | unchanged |
 
-Net cost: **128 KB** of conventional memory moved from the
-general kernel page pool into static user-process partitions.
-The kernel page pool is still 372 KB after the change, far more
-than the kernel actually uses today.
+Net cost: **128 KB to 192 KB** of conventional memory moved from the
+general kernel page pool into static user-process partitions,
+depending on whether we reserve only the two currently schedulable
+user slots first or reserve the full `PROC_MAX - 1` table up front.
+On typical current pcxt boots, the remaining kernel page pool is
+still comfortably above 300 KB.
 
 ---
 
@@ -289,7 +320,8 @@ than the kernel actually uses today.
 
 ### Phase 1 — Static partition table (no behavioral change yet)
 
-- Add `proc_layout.c` with the partition table.
+- Add the i16 partition reservation helper in `page.c` (or a private
+  mm-internal helper) with the partition table.
 - Add `i16_user_slot` to PCB.
 - Add allocator for user slots in `proc_alloc` / `proc_free`.
 - Reserve user partitions from the page pool at boot.
@@ -297,36 +329,45 @@ than the kernel actually uses today.
 
 ### Phase 2 — execve uses pre-reserved partition
 
-- `elf16_load_vnode` consults `current->i16_user_slot` and uses
+- `elf16_load_vnode` consults `p->i16_user_slot` and uses
   the partition's pages instead of `mem_region_page_alloc_contiguous`.
 - Drop the `npages > 16` failure path.
-- Remove `proc_track_page` calls for ELF pages on i16 — pages are
-  permanently owned by the slot, not per-instance tracked.
+- Keep `proc_track_page` calls for ELF pages on i16, but reinterpret
+  them as logical occupancy tracking inside the fixed partition rather
+  than ownership of dynamically allocated physical pages.
 
 ### Phase 3 — sys_brk, sys_mmap2 simplification
 
 - Convert `sys_brk` to PCB-only state.
-- Implement `sys_mmap2` / `sys_munmap` as per-process range trackers.
+- Implement `sys_mmap2` / `sys_munmap` as in-segment logical tracking,
+  most likely by reusing `user_pages[]` high slots rather than
+  allocating/freeing physical pages.
 - Remove i16-specific guards in `sys_mem.c` that exist only because
   the current allocator is segment-unaware.
 
 ### Phase 4 — Drop i16 page tracking for user pages
 
-- `proc_track_page`, `proc_release_tracked_pages`,
-  `proc_release_private_tracked_pages` become no-ops on i16
-  (the partition stays allocated for the slot's lifetime).
-- vfork's `proc_release_private_tracked_pages_from_array` no longer
-  needed on i16 — execve doesn't free anything, just zeros and
-  reloads.
+Do **not** drop i16 page tracking outright.  Instead:
 
-### Phase 5 — Slot-0 release (separate proposal)
+- Keep `user_pages[]` as the logical map of which pages inside the
+  fixed partition are currently part of the loaded image, brk range,
+  or mmap range.
+- Make i16 release helpers clear bookkeeping only; they must stop
+  freeing physical pages, but they still need to maintain correct
+  metadata for user-copy helpers, procfs, ptrace containment checks,
+  and `sys_mmap2` slot management.
+- vfork's `proc_release_private_tracked_pages_from_array` can become
+  an i16 bookkeeping-only helper once execve no longer frees pages
+  from the global pool.
 
-Release the kernel idle thread's PCB slot after kmain finishes
-initialization, freeing slot 0 for a third user process.  Requires
-scheduler refactor to tolerate `current == NULL` in the idle loop
-or to fold idle behavior into pid 1 (init).  This is **not part of
-this proposal** — it's listed as a follow-up so the eventual
-benefit (3 user slots → pipes possible) is visible.
+### Phase 5 — Reclaim the skipped PCB slot (separate proposal)
+
+Remove the current temporary i16 kernel-stack workaround that makes
+`proc_alloc()` skip one PCB slot.  Once that workaround is gone, the
+existing `PROC_MAX = 4` configuration yields 3 schedulable user
+processes (pid 0 remains the idle/kernel thread, plus 3 user slots).
+This is **not part of this proposal** — it's listed as a follow-up so
+the eventual benefit (3 user processes → pipes possible) is visible.
 
 ### Phase 6 — Possibly drop the pre-execve saved-frame dance
 
@@ -410,10 +451,11 @@ Rejected: more complexity than just pre-reserving the segment.
    a kernel bounce buffer in DS=0.  Same constraint as today;
    not new.
 
-4. **Slot-0 release dependency**: Phases 1-4 of this proposal can
-   land without §5 (Slot-0 release), but the effective user-slot
-   count is then 2, not 3.  Pipes / job control require 3+.  We
-   should land this proposal first and §5 second.
+4. **Skipped-PCB-slot dependency**: Phases 1-4 of this proposal can
+   land without §5, but the effective schedulable user-process count
+   on current pcxt remains 2 until the temporary i16 kernel-stack
+   workaround is removed.  Pipes / job control require 3+.  We should
+   land this proposal first and the kstack follow-up second.
 
 ---
 
