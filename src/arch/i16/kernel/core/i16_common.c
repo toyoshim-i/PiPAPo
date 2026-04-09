@@ -125,6 +125,7 @@ void i16_vfork_restore_frame(void) {
   uint32_t rel = frame_linear - data_base;
   page_id_t page = current->image.data.base_page + (page_id_t)(rel / PAGE_SIZE);
   uint16_t off = (uint16_t)(rel % PAGE_SIZE);
+
   mem_region_page_write(page, off, saved, 24);
 
   /* Catch any kernel-stack overrun before we iret to user mode. */
@@ -175,11 +176,13 @@ long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1, uint16_t a2,
   __asm__ volatile("mov 8(%%bp), %0" : "=r"(now_ret));
   if (now_ret != saved_ret || now_ret == 0u) {
     pcb_t *cur = current;
+    extern pcb_t proc_table[];
+    unsigned slot = cur ? (unsigned)(cur - proc_table) : 0u;
     mod_vfs.klogf(
         "PANIC: i16_syscall_dispatch return IP corrupted  "
-        "saved=%x now=%x  nr=%u  pid=%u comm=%s\n",
+        "saved=%x now=%x  nr=%u  pid=%u slot=%u comm=%s\n",
         (unsigned)saved_ret, (unsigned)now_ret, (unsigned)nr,
-        cur ? (unsigned)cur->pid : 0u, cur ? cur->comm : "(null)");
+        cur ? (unsigned)cur->pid : 0u, slot, cur ? cur->comm : "(null)");
     for (;;) __asm__ volatile("cli\n hlt");
   }
 
