@@ -159,9 +159,10 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
   uint16_t entry_ip = (uint16_t)ehdr->e_entry;
 
   /* User stack: SS=proc_seg, SP is segment-relative.
-   * Stack top = alloc_size (top of the allocated region within segment).
-   * argc/argv are placed at the top, then HW/SW frames below them.
-   * After ISR restore pops both frames, SP points to argc. */
+   * Stack top = alloc_size (top of the loaded image reservation within
+   * the process segment). argc/argv are placed at the top, then HW/SW
+   * frames below them. After ISR restore pops both frames, SP points
+   * to argc. */
   uint16_t user_sp_top = (uint16_t)alloc_size;
 
   /* ── Build argc/argv on user stack ────────────────────────────────────

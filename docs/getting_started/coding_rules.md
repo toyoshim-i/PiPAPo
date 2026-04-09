@@ -118,6 +118,10 @@ Co-Authored-By: ...
 - Short, specific subject line.  Scope = subsystem/driver/target name
   (not `feat:`/`fix:`).
 - Body: why, behavior impact, verification.  72-column wrap.
+- Use a **real multi-line commit message**.  Do not put literal `\n`
+  escape sequences into the body; pass separate `-m` paragraphs or use
+  an editor / message file so the stored commit text contains actual
+  newlines.
 - One logical change per commit.
 
 ### Verification
@@ -143,6 +147,18 @@ Not verified by running tests (docs-only change)
 
 Add trailers at the end of the commit message for contributors who
 materially helped (code, design, debugging).
+
+If an agent materially helped, add an explicit trailer for that agent
+as well.  Agent contributors are encouraged to add their own names.
+Examples:
+
+```text
+Co-Authored-By: GPT-5.4 Codex
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+```
+
+When an agent materially contributed, prefer adding the appropriate
+`Co-Authored-By:` trailer by default rather than omitting it.
 
 ### Pre-commit checklist
 
