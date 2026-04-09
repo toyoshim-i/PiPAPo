@@ -65,9 +65,30 @@ static pid_t next_pid = 1;
 #define I16_KSTACK_CANARY ((uint16_t)0xCA57u)
 #define I16_KSTACK_GUARD ((uint16_t)0xCAFEu)
 #define I16_KSTACK_GUARD_BYTES 4u
-#define I16_KSTACK_BASE(i) ((uint16_t)(0xE000u + (uint16_t)(i) * 2048u))
+#define I16_KSTACK_TRUE_BASE(i) ((uint16_t)(0xE000u + (uint16_t)(i) * 2048u))
 #define I16_KSTACK_TRUE_TOP(i) \
   ((uint16_t)(0xE000u + (uint16_t)((i) + 1u) * 2048u))
+
+/* TODO(i16-kstack): TENTATIVE WORKAROUND — virtual 4 KB kernel stack
+ * for slot 3.  The 2 KB per-slot kernel stack is too small for the
+ * current syscall call chain (sys_execve + elf16_load + VFS far calls
+ * easily reach the canary).  As a tactical fix we leave slot 2
+ * unallocated (proc_alloc skips it) and treat slot 3's effective base
+ * as slot 2's true base (0xF000) instead of slot 3's own (0xF800),
+ * giving slot 3 a contiguous 4 KB virtual kstack.  This is NOT a
+ * proper solution — it just buys headroom while we work on:
+ *   - reducing per-syscall stack frames (sys_getdents = 2240 B alone,
+ *     sys_execve = 590 B, several path syscalls in the 380-400 B range)
+ *   - moving large locals (path buffers, dirent[], argv scratch) into
+ *     per-PCB scratch or static buffers
+ *   - revisiting the per-process kstack budget once the high-water
+ *     mark drops below 1 KB
+ * Remove this hack once those are done. */
+static inline uint16_t i16_kstack_base(uint32_t i) {
+  if (i == 3u) return I16_KSTACK_TRUE_BASE(2u);
+  return I16_KSTACK_TRUE_BASE(i);
+}
+#define I16_KSTACK_BASE(i) i16_kstack_base(i)
 
 static void i16_kstack_plant_canary(uint32_t i) {
   *(volatile uint16_t *)(uintptr_t)I16_KSTACK_BASE(i) = I16_KSTACK_CANARY;
@@ -84,10 +105,15 @@ void proc_init(void) {
     proc_table[i].state = PROC_FREE;
     proc_table[i].stack_page_id = PAGE_ID_INVALID;
 #if defined(__ia16__)
-    /* Per-process kernel stacks at 0xE000 + i*2048.  Top = base + 2048. */
-    proc_table[i].kernel_stack_top =
-        (uint16_t)(I16_KSTACK_TRUE_TOP(i) - I16_KSTACK_GUARD_BYTES);
-    i16_kstack_plant_canary(i);
+    /* TODO(i16-kstack): skip slot 2's canaries — see workaround note
+     * at I16_KSTACK_TRUE_BASE.  Slot 2 is unmanaged overflow space
+     * for slot 3, so planting canaries there would just be clobbered
+     * by the first slot-3 stack underflow into the region. */
+    if (i != 2u) {
+      proc_table[i].kernel_stack_top =
+          (uint16_t)(I16_KSTACK_TRUE_TOP(i) - I16_KSTACK_GUARD_BYTES);
+      i16_kstack_plant_canary(i);
+    }
 #endif
     proc_table[i].clear_child_tid = user_page_ref_invalid();
     for (uint32_t j = 0; j < USER_PAGES_MAX; j++)
@@ -143,6 +169,9 @@ void proc_init(void) {
  * than corrupting subsequent state silently. */
 void proc_check_kstack_canary_panic(void) {
   for (uint32_t i = 0u; i < PROC_MAX; i++) {
+    /* TODO(i16-kstack): slot 2 is unmanaged virtual overflow for
+     * slot 3 — no canary to check.  Remove with the workaround. */
+    if (i == 2u) continue;
     uint16_t base = I16_KSTACK_BASE(i);
     uint16_t top = I16_KSTACK_TRUE_TOP(i);
     uint16_t got_base = *(volatile uint16_t *)(uintptr_t)base;
@@ -167,8 +196,15 @@ pcb_t *proc_alloc(void) {
   uint32_t saved = spin_lock_irqsave(SPIN_PROC);
   pcb_t *result = NULL;
 
-  /* Scan slots 1..PROC_MAX-1; slot 0 belongs to the kernel thread */
+  /* Scan slots 1..PROC_MAX-1; slot 0 belongs to the kernel thread.
+   *
+   * TODO(i16-kstack): on i16, skip slot 2 — see the
+   * "TENTATIVE WORKAROUND" comment above I16_KSTACK_TRUE_BASE.  Slot
+   * 2 is left unallocated so slot 3 can use a 4 KB virtual kstack. */
   for (uint32_t i = 1u; i < PROC_MAX; i++) {
+#if defined(__ia16__)
+    if (i == 2u) continue;
+#endif
     if (proc_table[i].state == PROC_FREE) {
       __builtin_memset(&proc_table[i], 0, sizeof(pcb_t));
       proc_table[i].pid = next_pid++;
