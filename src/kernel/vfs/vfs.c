@@ -391,7 +391,7 @@ extern int vfs_fd_ioctl(int, uint32_t, void *);
 extern int vfs_fd_poll(int);
 extern long vfs_fd_lseek(int, long, int);
 extern int vfs_fd_fstat(int, void *);
-extern long vfs_fd_getdents(int, void *, size_t);
+extern long vfs_fd_getdents(int, page_id_t, uint16_t, size_t);
 extern long vfs_fd_getdents64(int, void *, long);
 extern int vfs_fd_fstatfs(int, void *);
 extern long vfs_fd_fcntl(int, int, long);

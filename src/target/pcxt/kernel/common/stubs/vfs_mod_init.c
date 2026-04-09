@@ -58,7 +58,7 @@ int  vfs_fd_ioctl(int, uint32_t, void *);
 int  vfs_fd_poll(int);
 long vfs_fd_lseek(int, long, int);
 int  vfs_fd_fstat(int, void *);
-long vfs_fd_getdents(int, void *, size_t);
+long vfs_fd_getdents(int, page_id_t, uint16_t, size_t);
 long vfs_fd_getdents64(int, void *, long);
 int  vfs_fd_fstatfs(int, void *);
 long vfs_fd_fcntl(int, int, long);

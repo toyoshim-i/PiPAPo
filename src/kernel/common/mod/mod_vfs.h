@@ -86,12 +86,13 @@ MOD_FUNC(vfs, int, fd_fstatfs, int, void *)
  * fd_getdents — Read directory entries (struct dirent format).
  *
  *   desc   Descriptor ID (must be a directory).
- *   buf    Output buffer.
+ *   page   Output buffer page.
+ *   off    Byte offset in the output page.
  *   count  Buffer size in bytes.
  *
  * Returns number of entries filled (0 = EOF), or negative errno.
  */
-MOD_FUNC(vfs, long, fd_getdents, int, void *, size_t)
+MOD_FUNC(vfs, long, fd_getdents, int, page_id_t, uint16_t, size_t)
 
 /*
  * fd_getdents64 — Read directory entries (Linux dirent64 format).

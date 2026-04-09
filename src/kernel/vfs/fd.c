@@ -296,8 +296,11 @@ int vfs_fd_fstat(int desc, void *buf) {
 /* Sentinel: directory fully read */
 #define GETDENTS_EOF 0xFFFFFFFFu
 
-long vfs_fd_getdents(int desc, void *buf, size_t count) {
-  if (desc < 0 || desc >= FILE_MAX || !buf) return -(long)EBADF;
+long vfs_fd_getdents(int desc, page_id_t page, uint16_t off, size_t count) {
+  struct dirent entries[4];
+
+  if (desc < 0 || desc >= FILE_MAX || page == PAGE_ID_INVALID)
+    return -(long)EBADF;
   struct file *f = &fd_pool[desc];
   if (!f->vnode || f->vnode->type != VNODE_DIR) return -(long)ENOTDIR;
   if (!f->vnode->mount || !f->vnode->mount->ops ||
@@ -309,13 +312,47 @@ long vfs_fd_getdents(int desc, void *buf, size_t count) {
   if (max_entries == 0) return -(long)EINVAL;
 
   uint32_t cookie = f->offset;
-  int n = f->vnode->mount->ops->readdir(f->vnode, (struct dirent *)buf,
-                                        max_entries, &cookie);
-  if (n > 0)
+  size_t total = 0;
+
+  while (total < max_entries) {
+    size_t want = max_entries - total;
+    if (want > (sizeof(entries) / sizeof(entries[0])))
+      want = sizeof(entries) / sizeof(entries[0]);
+
+    int n = f->vnode->mount->ops->readdir(f->vnode, entries, want, &cookie);
+    if (n < 0) {
+      if (total > 0) {
+        f->offset = (cookie == 0) ? GETDENTS_EOF : cookie;
+        return (long)total;
+      }
+      return (long)n;
+    }
+    if (n == 0) break;
+
+    size_t bytes = (size_t)n * sizeof(entries[0]);
+    size_t written = 0;
+    while (written < bytes) {
+      uint16_t chunk = (uint16_t)(PAGE_SIZE - off);
+      size_t remain = bytes - written;
+      uint32_t next;
+
+      if ((size_t)chunk > remain) chunk = (uint16_t)remain;
+      mod_core.mem_region_page_write(page, off,
+                                     (const uint8_t *)entries + written, chunk);
+      written += chunk;
+      next = (uint32_t)off + chunk;
+      page = (page_id_t)(page + (page_id_t)(next / PAGE_SIZE));
+      off = (uint16_t)(next % PAGE_SIZE);
+    }
+    total += (size_t)n;
+    if ((size_t)n < want) break;
+  }
+
+  if (total > 0)
     f->offset = (cookie == 0) ? GETDENTS_EOF : cookie;
-  else if (n == 0)
+  else
     f->offset = GETDENTS_EOF;
-  return (long)n;
+  return (long)total;
 }
 
 long vfs_fd_getdents64(int desc, void *buf, long count) {

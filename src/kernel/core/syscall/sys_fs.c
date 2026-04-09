@@ -115,19 +115,16 @@ long sys_fstat(long fd, uintptr_t buf_ptr) {
  */
 
 long sys_getdents(long fd, uintptr_t buf_ptr, size_t count) {
-  struct dirent entries[32];
-  size_t tmp_count = count;
+  user_page_ref_t ref;
   int rc;
 
   if (fd < 0 || (uint32_t)fd >= FD_MAX) return -(long)EBADF;
   if (buf_ptr == 0u) return -(long)EINVAL;
   int16_t desc = current->fd_map[(uint32_t)fd];
   if (desc == FD_DESC_NONE) return -(long)EBADF;
-  if (tmp_count > sizeof(entries)) tmp_count = sizeof(entries);
-  rc = (int)mod_vfs.fd_getdents(desc, entries, tmp_count);
-  if (rc <= 0) return (long)rc;
-  if (sys_copy_to_user(buf_ptr, entries, (size_t)rc * sizeof(entries[0])) < 0)
-    return -(long)EFAULT;
+  rc = proc_user_ptr_to_page_ref(current, buf_ptr, &ref);
+  if (rc < 0) return -(long)EFAULT;
+  rc = (int)mod_vfs.fd_getdents(desc, ref.page, ref.off, count);
   return (long)rc;
 }
 
