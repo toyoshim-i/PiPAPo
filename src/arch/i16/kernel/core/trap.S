@@ -72,15 +72,30 @@ i16_syscall_isr:
   movw  %ax, %ds
   movw  %ax, %es
 
-  /* Save the syscall frame pointer for sys_sigreturn */
+  /* Save the syscall frame pointer for sys_sigreturn.
+   * This points at the [user_SP, user_SS] slot — the same value the
+   * C side knows as i16_trap_frame_sp. */
   movw  %sp, i16_trap_frame_sp
+
+  /* Reserve a 24-byte slot above the C call chain for sys_vfork to
+   * stash the parent's GP+IRET frame.  The slot lives at
+   * [trap_ksp - 24, trap_ksp), which is [kernel_stack_top - 28,
+   * kernel_stack_top - 4).  All later C frames sit *below* this slot,
+   * so vfork's memcpy never collides with live frames.
+   *
+   * On the restore path, we addw $24,%sp before the popw user_SP /
+   * user_SS to skip past the slot.  i16_vfork_restore_frame copies the
+   * slot's contents back to the user stack when current is a vfork
+   * parent being resumed. */
+  subw  $24, %sp
 
   /* Build args for i16_syscall_dispatch(nr, a0, a1, a2, a3, a4, user_ds).
    * GP regs are on the interrupted stack at user_SS:user_SP.
-   * Read them via the saved pointers.  8086 can't use SP as base. */
+   * Read them via the saved pointers.  8086 can't use SP as base.
+   * After the subw above, [user_SP, user_SS] are at offsets 24, 26. */
   movw  %sp, %bp
-  movw  0(%bp), %bx     /* user_SP */
-  movw  2(%bp), %cx     /* user_SS */
+  movw  24(%bp), %bx    /* user_SP */
+  movw  26(%bp), %cx    /* user_SS */
 
   /* Set DS = user_SS to read the GP frame */
   movw  %cx, %ds
@@ -105,10 +120,12 @@ i16_syscall_isr:
   movw  %ax, %dx
 
   /* Store return value into the saved AX slot on the interrupted stack.
-   * Read user_SS:user_SP from kernel stack. */
+   * Read user_SS:user_SP from kernel stack.  After the addw $14 above
+   * the SP is back at the post-subw position, so [user_SP, user_SS]
+   * are still at offsets 24, 26 relative to BP. */
   movw  %sp, %bp
-  movw  0(%bp), %bx     /* user_SP */
-  movw  2(%bp), %cx     /* user_SS */
+  movw  24(%bp), %bx    /* user_SP */
+  movw  26(%bp), %cx    /* user_SS */
 
   /* execve replaced the process image: build kernel stack frame
    * from PCB's exec_user_ss/sp and switch to it. */
@@ -123,6 +140,7 @@ i16_syscall_isr:
   movw  4(%bx), %sp           /* SP = kernel_stack_top */
   pushw 6(%bx)                /* push exec_user_ss */
   pushw 8(%bx)                /* push exec_user_sp */
+  subw  $24, %sp              /* reserve vfork-save slot (see .Lkstack_ready) */
   jmp   .Lmaybe_switch
 
 .Lcheck_restart:
@@ -203,6 +221,9 @@ i16_syscall_isr:
   movw  %ax, %sp
 
 .Lrestore:
+  /* Skip the 24-byte vfork-save slot we reserved at trap entry. */
+  addw  $24, %sp
+
   /* Restore interrupted SS:SP */
   popw  %bp             /* user_SP */
   popw  %ax             /* user_SS */

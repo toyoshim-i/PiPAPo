@@ -60,6 +60,11 @@ uint32_t *arch_build_initial_frame(uint32_t *sp_arg, void (*entry)(void)) {
   *--sp = 0;       /* user_SS = 0 */
   *--sp = user_sp; /* user_SP = points to ES at top of GP frame */
 
+  /* Reserve 24-byte vfork-save slot — matches the trap.S/switch.S
+   * convention.  Restore paths always addw $24,%sp before popping
+   * user_SP/user_SS. */
+  sp -= 12;
+
   return (uint32_t *)(uintptr_t)sp;
 }
 
@@ -94,20 +99,22 @@ void i16_vfork_restore_frame(void) {
   if (!current || !current->vfork_frame_saved) return;
   current->vfork_frame_saved = 0;
 
-  /* Layout in the parent's kernel stack at vfork-yield time:
+  /* Layout at the top of the parent's kernel stack (anchored to
+   * kernel_stack_top by trap.S, independent of current SP):
    *
-   *   ksp - 24    ┌─ saved 24B GP+IRET frame (sys_vfork wrote)
-   *               │
-   *   ksp + 0     ├─ user_SP   (trap.S pushed at entry)
-   *   ksp + 2     └─ user_SS
-   *
-   * ksp == trap_ksp at the time of context switch — trap.S returned
-   * to after sys_vfork before saving SP into the PCB. */
-  uint16_t ksp = (uint16_t)(uintptr_t)current->sp;
-  uint16_t *kf = (uint16_t *)(uintptr_t)ksp;
-  uint16_t user_sp = kf[0];
-  uint16_t user_ss = kf[1];
-  uint8_t *saved = (uint8_t *)(uintptr_t)(ksp - 24u);
+   *   ktop - 2  ┐ user_SS  (pushed by trap.S i16_syscall_isr)
+   *   ktop - 4  ┘ user_SP
+   *   ktop - 28 ┐ saved 24-byte GP+IRET frame slot
+   *             │  (reserved by `subw $24,%sp` in trap.S, written by
+   *             │   sys_vfork; lives ABOVE the C call chain so the
+   *             │   compiler-managed frames never alias it)
+   *   ktop - 28 ┘
+   *   ...        C call chain frames live below ktop - 28 */
+  uint16_t ktop = current->kernel_stack_top;
+  uint16_t *frame_top = (uint16_t *)(uintptr_t)(uint16_t)(ktop - 4u);
+  uint16_t user_sp = frame_top[0];
+  uint16_t user_ss = frame_top[1];
+  uint8_t *saved = (uint8_t *)(uintptr_t)(uint16_t)(ktop - 28u);
 
   /* AX slot (offset 16) in the saved frame already contains the
    * parent's vfork return value (child PID), patched by sys_vfork. */

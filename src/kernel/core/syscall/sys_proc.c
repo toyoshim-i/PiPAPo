@@ -1574,12 +1574,14 @@ long sys_vfork(uint32_t *frame) {
     __builtin_memcpy(kstack_save, saved_frame, 24);
     current->vfork_frame_saved = 1;
 
-    /* Build child's kernel stack: [user_SP, user_SS] */
+    /* Build child's kernel stack: [user_SP, user_SS] at the top, then
+     * the 24-byte vfork-save slot reserved by the trap.S/switch.S
+     * convention.  child->sp points at the post-reserve position. */
     uint16_t child_ksp = child->kernel_stack_top;
     uint16_t *ckf = (uint16_t *)(uintptr_t)(child_ksp - 4);
     ckf[0] = parent_user_sp;
     ckf[1] = parent_user_ss;
-    child->sp = (uint32_t)(child_ksp - 4);
+    child->sp = (uint32_t)(uint16_t)(child_ksp - 4u - 24u);
 
     /* Patch AX=0 in shared user stack frame for child return */
     uint16_t zero = 0;
