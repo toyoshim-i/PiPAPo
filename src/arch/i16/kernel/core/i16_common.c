@@ -150,7 +150,11 @@ long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1, uint16_t a2,
    * write corrupted our stack frame and our `ret` would jump into
    * garbage instead of back to i16_syscall_isr. */
   uint16_t saved_ret;
-  __asm__ volatile("mov 2(%%bp), %0" : "=r"(saved_ret));
+  /* The compiler's prologue is `push si; push di; push es; push bp;
+   * mov sp, bp` so bp points at the saved-bp slot.  Skipping over
+   * three callee-saved words (si, di, es) gives us the return IP at
+   * 8(bp), not 2(bp). */
+  __asm__ volatile("mov 8(%%bp), %0" : "=r"(saved_ret));
 
   /* The kernel's syscall_dispatch reads args from frame[0..3] and
    * writes the return value back to frame[0]. */
@@ -168,7 +172,7 @@ long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1, uint16_t a2,
   proc_check_kstack_canary_panic();
 
   uint16_t now_ret;
-  __asm__ volatile("mov 2(%%bp), %0" : "=r"(now_ret));
+  __asm__ volatile("mov 8(%%bp), %0" : "=r"(now_ret));
   if (now_ret != saved_ret || now_ret == 0u) {
     pcb_t *cur = current;
     mod_vfs.klogf(
