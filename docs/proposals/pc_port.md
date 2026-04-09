@@ -705,19 +705,16 @@ allocator that returns memory the user process is meant to access.
   16-page segment.  They allocate and clear logical page ranges
   between `brk_current` and the user stack, rather than drawing fresh
   pages from the global pool.
+- The old i16-only pid-0 stack-page allocation in
+  [`main.c`](../../src/kernel/core/main.c) has been removed.  The idle
+  thread uses the fixed SS=0 kernel-stack slots, so consuming a page
+  from the pool there was unnecessary.
 - The single-page allocator `mm_page_alloc()` / `page_alloc()` picks
   the *highest* free page (top-down policy intended to leave low
   contiguous space for ELF images).  **On i16 this returns pages
   outside any user segment's reach** — e.g. with the page pool
   spanning 0x22000-0x9EFFF, the first single-page alloc returns
   ~0x9D000, which no user process at proc_seg ≤ 0x8E00 can address.
-- The kernel idle thread allocates a 1-page "thread 0 stack" at boot
-  via `mem_region_alloc(PPAP_MEM_RAM_STACK, PAGE_SIZE)` in
-  [`main.c`](../../src/kernel/core/main.c).  On i16 the kernel
-  stack is the static slot region instead, so the page is
-  allocated and stored in `proc_table[0].stack_page_id` but never
-  read.  Dead code on i16; consumes one unreachable page from the
-  top of the pool.
 
 **Landed direction (exec-time full segment allocation):**
 
@@ -737,15 +734,8 @@ keeps segment identity tied to the actual `execve` allocation.
 
 **Remaining work:**
 
-- The idle-thread dead allocation in [`main.c`](../../src/kernel/core/main.c)
-  should still be removed.
 - Later cleanup can simplify the now-redundant i16-specific comments
   and helper structure around the ownership-vs-occupancy split.
-
-The **i16 slot-0 dead allocation** in
-[`main.c`](../../src/kernel/core/main.c) at lines 71–79 should be
-removed regardless — it allocates a page that is never used and
-also happens to be unreachable from any user segment.
 
 ---
 

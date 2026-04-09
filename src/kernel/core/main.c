@@ -66,18 +66,6 @@ void kmain(void) {
   /* Target-specific late init: SD/ramblk, IRQ UART, MPU, Core 1 */
   target_late_init();
 
-  /* Pre-mount test: allocate thread 0 stack now (before VFS mount
-   * corrupts something on i16) */
-#ifdef __ia16__
-  {
-    proc_image_segment_t stack_region;
-    if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                         PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) == 0) {
-      proc_table[0].stack_page_id = mem_region_ptr_to_page(stack_region.base);
-    }
-  }
-#endif
-
   /* Bootstrap: mount root filesystem (needed to read /etc/fstab).
    * If an embedded romfs is present use it; otherwise delegate to the
    * target (e.g. x68k mounts a UFS ramdisk loaded by stage2). */
@@ -104,7 +92,8 @@ void kmain(void) {
   target_post_mount();
 
   /* Give the kernel init thread (thread 0) its own PSP stack page.
-   * On i16, this is done before mount (see above). */
+   * i16 uses the fixed SS=0 kernel stack slots instead, so no extra
+   * page-backed stack allocation is needed there. */
 #if !defined(__ia16__)
   {
     proc_image_segment_t stack_region;
@@ -115,10 +104,15 @@ void kmain(void) {
       proc_table[0].stack_page_id = PAGE_ID_INVALID;
   }
 #endif
+#if defined(__ia16__)
+  proc_table[0].stack_page_id = PAGE_ID_INVALID;
+#endif
+#if !defined(__ia16__)
   if (proc_table[0].stack_page_id == PAGE_ID_INVALID) {
     mod_vfs.klogf("PANIC: no page for thread 0 stack\n");
     for (;;) arch_wfi();
   }
+#endif
 
   /* Launch init as PID 1 (skipped when target_init_path() returns NULL,
    * e.g. m68k targets that don't have ELF user-mode binaries yet). */
