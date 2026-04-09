@@ -683,57 +683,81 @@ the user page via `mem_region_page_write`.
 | Terminal | ioctl | page_read/write |
 | Info | uname | page_write from kernel stack |
 
-#### mmap and segment-bound allocation
+#### i16 user memory model
 
-User-process memory on i16 is bounded by the tiny-model assumption
-`CS = DS = SS = ES = proc_seg`.  Any address a user process can
-reach via near pointers must be inside the 64 KB linear range
-`[proc_seg << 4 .. (proc_seg << 4) + 0x10000)`.  This affects every
-allocator that returns memory the user process is meant to access.
+User-process memory on i16 is bounded by the tiny-model invariant
+`CS = DS = SS = ES = proc_seg`. Any address a user process can reach
+via near pointers must therefore live inside the 64 KB linear range
+`[proc_seg << 4 .. (proc_seg << 4) + 0x10000)`. The kernel must treat
+that as the actual address-space boundary, not as a suggestion.
 
-**Current state:**
+**Current design:**
 
-- `elf16_load_vnode` allocates ELF pages via
-  `mem_region_page_alloc_contiguous(16)` and derives `proc_seg`
-  from the allocated base page.  The loader now treats that
-  16-page window as the whole i16 user segment: pages 0..14 for
-  image/heap/mmap space, page 15 for the user stack.
-- `sys_brk` on i16 now operates on segment-relative offsets and grows
-  only within that already-owned 16-page segment instead of
-  allocating new pages from the global pool.
-- `sys_mmap2` / `sys_munmap` on i16 now also stay inside that same
-  16-page segment.  They allocate and clear logical page ranges
-  between `brk_current` and the user stack, rather than drawing fresh
-  pages from the global pool.
+- `execve` allocates exactly 16 contiguous 4 KB pages with
+  `mem_region_page_alloc_contiguous(16)`.
+- `proc_seg` is derived from the real allocated base page:
+  `proc_seg = mem_region_page_linear(base_id) >> 4`.
+- That allocation defines the whole user segment:
+  - pages 0..14 are image / brk / mmap space
+  - page 15 is the fixed user stack page
+- The loader writes the ELF into pages 0..14 and builds argc/argv plus
+  the initial GP+IRET frame in page 15.
+- `exec_user_ss` and `exec_user_sp` are segment-relative values for the
+  first return-to-user path.
+
+**Ownership vs occupancy:**
+
+- `image.data` owns the full 16-page segment and is responsible for
+  freeing it on teardown or failed `execve`.
+- `user_pages[]` is i16 occupancy bookkeeping, indexed by logical
+  segment page number.
+- Low logical slots represent the loaded image and current brk-covered
+  pages.
+- The last logical slot represents the fixed stack page.
+- Additional mapped pages are represented by the matching logical page
+  indices inside the same segment.
+
+This split is important on i16 because a page may stop being part of
+the current brk or mmap range without ceasing to belong to the process's
+already-owned 16-page segment.
+
+**`brk` / `mmap` rules:**
+
+- `sys_brk` uses segment-relative offsets, not flat linear addresses.
+- `sys_brk` may only grow below page 15 and must fail on collision with
+  an existing mmap-covered page.
+- `sys_mmap2` / `sys_munmap` stay inside the already-owned segment and
+  update logical occupancy rather than allocating unrelated global pages.
+- Anonymous mmap pages are cleared before exposure to user space.
+- `MAP_FIXED` is only valid when the requested range fits inside the
+  segment and does not collide with brk or the stack page.
+
+**Why the generic single-page allocator is wrong for user memory on i16:**
+
+- `mm_page_alloc()` / `page_alloc()` intentionally pick high free pages
+  to preserve low contiguous runs for ELF images.
+- On i16, a high global page is often outside any current process
+  segment's reachable 64 KB window.
+- So user memory must be derived from the exec-time segment allocation,
+  not from arbitrary later page-pool picks.
+
+**Related vfork rule:**
+
+- Before `execve`, a `vfork` child still shares the parent's segment.
+- The kernel therefore saves the parent's GP+IRET resume frame on the
+  parent's own kernel stack and restores it before any kernel exit path
+  returns the parent to user mode.
+- After the child `execve`s, it receives its own fresh 16-page segment,
+  so post-exec isolation is enforced by the new `proc_seg`.
+
+**Current follow-up:**
+
 - The old i16-only pid-0 stack-page allocation in
-  [`main.c`](../../src/kernel/core/main.c) has been removed.  The idle
-  thread uses the fixed SS=0 kernel-stack slots, so consuming a page
-  from the pool there was unnecessary.
-- The single-page allocator `mm_page_alloc()` / `page_alloc()` picks
-  the *highest* free page (top-down policy intended to leave low
-  contiguous space for ELF images).  **On i16 this returns pages
-  outside any user segment's reach** — e.g. with the page pool
-  spanning 0x22000-0x9EFFF, the first single-page alloc returns
-  ~0x9D000, which no user process at proc_seg ≤ 0x8E00 can address.
-
-**Landed direction (exec-time full segment allocation):**
-
-The current implementation direction is the fuller one documented in
-[`i16_segment_partition.md`](i16_segment_partition.md):
-
-- `execve` allocates one contiguous 16-page segment per i16 process
-  image and derives `proc_seg` from that allocation.
-- The last page is reserved for the user stack.
-- `image.data` owns the full 16-page segment, while `user_pages[]`
-  tracks logical occupancy by segment page index.
-- `sys_brk` and `sys_mmap2` both operate inside that segment rather
-  than allocating fresh pages elsewhere.
-
-This avoids inventing a special page allocator policy for i16 and
-keeps segment identity tied to the actual `execve` allocation.
-
-**Remaining work:**
-
+  [`main.c`](../../src/kernel/core/main.c) has already been removed.
+- The main remaining i16 memory-adjacent follow-up is not in this area
+  but in process scheduling capacity: the temporary slot-2 kernel-stack
+  workaround still limits the current pcxt port to 2 schedulable user
+  processes instead of 3.
 - Later cleanup can simplify the now-redundant i16-specific comments
   and helper structure around the ownership-vs-occupancy split.
 
