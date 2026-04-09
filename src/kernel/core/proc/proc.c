@@ -50,14 +50,30 @@ static pid_t next_pid = 1;
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
 #if defined(__ia16__)
-/* Per-process kernel stack canary.  Word planted at the BOTTOM of each
- * 2 KB slot — the first address an overflowing stack writes to.  Any
- * mismatch is a kernel-stack overrun and is unrecoverable: panic. */
+/* Per-process kernel stack canaries.  Slots are 2 KB each, packed
+ * adjacent at 0xE000..0xFFFF.  Two sentinels per slot:
+ *
+ *   - BASE canary at slot's lowest address — detects this slot's own
+ *     SP underrunning past its base.
+ *   - TOP guard (4 bytes / 2 words) at slot's highest addresses, just
+ *     below true_top.  PCB.kernel_stack_top is set to (true_top - 4),
+ *     so the slot's own stack never reaches the guard region.  This
+ *     detects the case where the *adjacent higher* slot's SP
+ *     underflowed past its base and wrote into our top region — which
+ *     is invisible to a base-only canary because the writes never
+ *     reach our base. */
 #define I16_KSTACK_CANARY ((uint16_t)0xCA57u)
+#define I16_KSTACK_GUARD ((uint16_t)0xCAFEu)
+#define I16_KSTACK_GUARD_BYTES 4u
 #define I16_KSTACK_BASE(i) ((uint16_t)(0xE000u + (uint16_t)(i) * 2048u))
+#define I16_KSTACK_TRUE_TOP(i) \
+  ((uint16_t)(0xE000u + (uint16_t)((i) + 1u) * 2048u))
 
 static void i16_kstack_plant_canary(uint32_t i) {
   *(volatile uint16_t *)(uintptr_t)I16_KSTACK_BASE(i) = I16_KSTACK_CANARY;
+  uint16_t top = I16_KSTACK_TRUE_TOP(i);
+  *(volatile uint16_t *)(uintptr_t)(uint16_t)(top - 4u) = I16_KSTACK_GUARD;
+  *(volatile uint16_t *)(uintptr_t)(uint16_t)(top - 2u) = I16_KSTACK_GUARD;
 }
 #endif
 
@@ -69,7 +85,8 @@ void proc_init(void) {
     proc_table[i].stack_page_id = PAGE_ID_INVALID;
 #if defined(__ia16__)
     /* Per-process kernel stacks at 0xE000 + i*2048.  Top = base + 2048. */
-    proc_table[i].kernel_stack_top = 0xE000u + (uint16_t)(i + 1u) * 2048u;
+    proc_table[i].kernel_stack_top =
+        (uint16_t)(I16_KSTACK_TRUE_TOP(i) - I16_KSTACK_GUARD_BYTES);
     i16_kstack_plant_canary(i);
 #endif
     proc_table[i].clear_child_tid = user_page_ref_invalid();
@@ -126,13 +143,21 @@ void proc_init(void) {
  * than corrupting subsequent state silently. */
 void proc_check_kstack_canary_panic(void) {
   for (uint32_t i = 0u; i < PROC_MAX; i++) {
-    uint16_t got = *(volatile uint16_t *)(uintptr_t)I16_KSTACK_BASE(i);
-    if (got == I16_KSTACK_CANARY) continue;
+    uint16_t base = I16_KSTACK_BASE(i);
+    uint16_t top = I16_KSTACK_TRUE_TOP(i);
+    uint16_t got_base = *(volatile uint16_t *)(uintptr_t)base;
+    uint16_t got_g0 = *(volatile uint16_t *)(uintptr_t)(uint16_t)(top - 4u);
+    uint16_t got_g1 = *(volatile uint16_t *)(uintptr_t)(uint16_t)(top - 2u);
+    if (got_base == I16_KSTACK_CANARY && got_g0 == I16_KSTACK_GUARD &&
+        got_g1 == I16_KSTACK_GUARD)
+      continue;
     pcb_t *cur = current;
     mod_vfs.klogf(
-        "PANIC: kernel stack overrun  slot=%u base=%x got=%x  pid=%u comm=%s\n",
-        (unsigned)i, (unsigned)I16_KSTACK_BASE(i), (unsigned)got,
-        cur ? (unsigned)cur->pid : 0u, cur ? cur->comm : "(null)");
+        "PANIC: kernel stack overrun  slot=%u base=%x got_base=%x"
+        "  topG0=%x topG1=%x  pid=%u comm=%s\n",
+        (unsigned)i, (unsigned)base, (unsigned)got_base, (unsigned)got_g0,
+        (unsigned)got_g1, cur ? (unsigned)cur->pid : 0u,
+        cur ? cur->comm : "(null)");
     for (;;) arch_wfi();
   }
 }
@@ -149,7 +174,8 @@ pcb_t *proc_alloc(void) {
       proc_table[i].pid = next_pid++;
       proc_table[i].stack_page_id = PAGE_ID_INVALID;
 #if defined(__ia16__)
-      proc_table[i].kernel_stack_top = 0xE000u + (uint16_t)(i + 1u) * 2048u;
+      proc_table[i].kernel_stack_top =
+          (uint16_t)(I16_KSTACK_TRUE_TOP(i) - I16_KSTACK_GUARD_BYTES);
       i16_kstack_plant_canary(i);
 #endif
       proc_table[i].clear_child_tid = user_page_ref_invalid();
