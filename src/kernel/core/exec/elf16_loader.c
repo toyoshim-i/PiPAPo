@@ -24,6 +24,10 @@
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
 
+#define USER_SEG_PAGES 16u
+#define USER_STACK_PAGE (USER_SEG_PAGES - 1u)
+#define USER_STACK_BASE ((uint32_t)USER_STACK_PAGE * PAGE_SIZE)
+#define USER_SEG_BYTES ((uint32_t)USER_SEG_PAGES * PAGE_SIZE)
 #define ELF16_MAX_SIZE (60u * 1024u) /* 60 KB max (leave room for stack) */
 #define ELF16_STACK_SIZE 2048u       /* 2 KB user stack */
 #define ELF16_MAX_PHDRS 16u
@@ -90,26 +94,24 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
   }
 
   if (mem_end == 0) return -ENOEXEC;
-  if (mem_end > ELF16_MAX_SIZE) return -ENOMEM;
+  if (mem_end > USER_STACK_BASE) return -ENOMEM;
 
-  /* Round up to page boundary, add stack space */
-  uint32_t alloc_size =
-      ((mem_end + ELF16_STACK_SIZE + PAGE_SIZE - 1) / PAGE_SIZE) * PAGE_SIZE;
-  uint16_t npages = (uint16_t)(alloc_size / PAGE_SIZE);
+  /* Round the initial brk up to the loader's existing paragraph alignment. */
+  uint32_t brk_base = (mem_end + 15u) & ~15u;
+  if (brk_base > USER_STACK_BASE) return -ENOMEM;
 
   /* Allocate contiguous pages via page-indexed API.
    * mem_region_page_alloc_contiguous returns a page_id_t (index), not a
    * pointer — safe on i16 where near pointers can't address pages
    * above 64 KB.  mem_region_page_write copies data via segment:offset. */
-  if (npages > 16) return -ENOMEM;
-  page_id_t base_id = mem_region_page_alloc_contiguous(npages);
+  page_id_t base_id = mem_region_page_alloc_contiguous(USER_SEG_PAGES);
   if (base_id == PAGE_ID_INVALID) return -ENOMEM;
 
   /* Zero entire region via page-indexed writes */
   {
     uint8_t zeros[256];
     memset(zeros, 0, sizeof(zeros));
-    for (uint16_t pg = 0; pg < npages; pg++) {
+    for (uint16_t pg = 0; pg < USER_SEG_PAGES; pg++) {
       for (uint16_t off = 0; off < PAGE_SIZE; off += sizeof(zeros))
         mem_region_page_write(base_id + pg, off, zeros, sizeof(zeros));
     }
@@ -121,13 +123,20 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
     if (phdrs[i].p_filesz == 0) continue;
 
     if (phdrs[i].p_offset + phdrs[i].p_filesz > file_size) {
-      for (uint16_t j = 0; j < npages; j++) mem_region_page_free(base_id + j);
+      for (uint16_t j = 0; j < USER_SEG_PAGES; j++)
+        mem_region_page_free(base_id + j);
       return -ENOEXEC;
     }
 
     uint32_t vaddr = phdrs[i].p_vaddr;
     uint32_t remaining = phdrs[i].p_filesz;
     uint32_t src_off = phdrs[i].p_offset;
+
+    if (vaddr + remaining > USER_STACK_BASE) {
+      for (uint16_t j = 0; j < USER_SEG_PAGES; j++)
+        mem_region_page_free(base_id + j);
+      return -ENOMEM;
+    }
 
     while (remaining > 0) {
       uint16_t pg_idx = (uint16_t)(vaddr / PAGE_SIZE);
@@ -142,7 +151,7 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
         long nread =
             mod_vfs.vnode_read(vn, base_id + pg_idx, pg_off, chunk, src_off);
         if (nread < 0 || (uint16_t)nread != chunk) {
-          for (uint16_t j = 0; j < npages; j++)
+          for (uint16_t j = 0; j < USER_SEG_PAGES; j++)
             mem_region_page_free(base_id + j);
           return (nread < 0) ? (int)nread : -ENOEXEC;
         }
@@ -159,11 +168,10 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
   uint16_t entry_ip = (uint16_t)ehdr->e_entry;
 
   /* User stack: SS=proc_seg, SP is segment-relative.
-   * Stack top = alloc_size (top of the loaded image reservation within
-   * the process segment). argc/argv are placed at the top, then HW/SW
-   * frames below them. After ISR restore pops both frames, SP points
-   * to argc. */
-  uint16_t user_sp_top = (uint16_t)alloc_size;
+   * Stack lives in the last page of the 64 KB segment. argc/argv are
+   * placed near the top, then HW/SW frames below them. After ISR restore
+   * pops both frames, SP points to argc. */
+  uint32_t user_sp_top = USER_SEG_BYTES;
 
   /* ── Build argc/argv on user stack ────────────────────────────────────
    * Layout (addresses grow upward, stack grows down):
@@ -196,7 +204,7 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
     user_sp_top -= frame_size;
 
     /* Write argc */
-    uint16_t pos = user_sp_top;
+    uint16_t pos = (uint16_t)user_sp_top;
     uint16_t argc16 = (uint16_t)argc;
     mem_region_page_write(base_id + pos / PAGE_SIZE, pos % PAGE_SIZE, &argc16,
                           2);
@@ -256,7 +264,7 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
   sw_frame[8] = 0;        /* AX */
 
   /* Write hardware frame (6B) at top of user stack */
-  uint16_t hw_off_seg = user_sp_top - sizeof(hw_frame);
+  uint16_t hw_off_seg = (uint16_t)(user_sp_top - sizeof(hw_frame));
   uint32_t hw_pos = base_linear + hw_off_seg;
   uint16_t hw_pg = (uint16_t)((hw_pos - base_linear) / PAGE_SIZE);
   uint16_t hw_off = (uint16_t)((hw_pos - base_linear) % PAGE_SIZE);
@@ -293,7 +301,8 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
   }
 
   /* Track pages by index — no pointer truncation. */
-  for (uint16_t i = 0; i < npages; i++) proc_track_page(p, i, base_id + i);
+  for (uint16_t i = 0; i < USER_SEG_PAGES; i++)
+    proc_track_page(p, i, base_id + i);
 
   p->image.text =
       proc_image_segment_make((void *)(uintptr_t)(uint16_t)base_linear, mem_end,
@@ -301,10 +310,12 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
   p->image.text.base_page = base_id;
   /* Data region: freed via proc_release_tracked_pages, not OWNED. */
   p->image.data = proc_image_segment_make(
-      (void *)(uintptr_t)(uint16_t)base_linear, alloc_size, PPAP_MEM_RAM_DATA,
-      PROC_IMAGE_SEG_WRITABLE);
+      (void *)(uintptr_t)(uint16_t)base_linear, USER_SEG_BYTES,
+      PPAP_MEM_RAM_DATA, PROC_IMAGE_SEG_WRITABLE);
   p->image.data.base_page = base_id;
   p->image.entry = (uintptr_t)entry_ip;
+  p->brk_base = brk_base;
+  p->brk_current = brk_base;
   p->ticks_remaining = PROC_DEFAULT_TICKS;
 
   return 0;

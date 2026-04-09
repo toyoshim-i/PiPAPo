@@ -176,12 +176,18 @@ but change the allocation model:
 7. Set `image.text.base_page`, `image.data.base_page`, and the tracked
    `user_pages[]` entries from that real base page.
 8. Record `brk_base` / `brk_current` as the end of the loaded image,
-   but do **not** change `sys_brk` semantics yet.
+   and reserve page 15 as non-heap stack space.
 
 One important failure-path rule remains: successful `execve` must not
 destroy the old image until the new one is fully loaded and its entry
 frame is ready.  For same-process re-exec, the old 16-page segment must
 therefore remain recoverable until loader I/O and stack setup succeed.
+
+With the current teardown / rollback code, Phase 2 should temporarily
+track the entire 16-page owned segment in `user_pages[]`, even though
+the logical heap / mmap occupancy is smaller.  That keeps ownership and
+freeing correct without adding new PCB metadata yet.  Phase 4 can split
+ownership from occupancy bookkeeping later.
 
 ### 3.4 User stack = last page of the segment
 
@@ -223,11 +229,14 @@ post-execve" bug class.  No bookkeeping needed.
 
 ### 3.6 `sys_brk`
 
-Still deferred.  The safe sequencing is:
+Only mostly deferred.  The safe sequencing is:
 
 - Land the 16-page exec-time loader first and make `/sbin/init` boot.
-- Only then teach `sys_brk` to allocate or expose additional pages
-  inside the same 16-page segment, never outside it.
+- Add the **smallest i16-only compatibility path** so `sys_brk` treats
+  the already-owned segment pages as expandable heap space rather than
+  trying to allocate fresh global-pool pages.
+- Keep the broader `sys_brk` cleanup and shared cross-arch structure for
+  the later phase.
 
 That separation avoids mixing an address-space layout change with a
 heap-semantics change in one step.
@@ -310,8 +319,10 @@ native i16 image.
   `mem_region_page_alloc_contiguous(16)`.
 - Derive `proc_seg` from that allocated base page.
 - Load the ELF into pages 0..14 and reserve page 15 as the user stack.
-- Keep `user_pages[]` populated for those pages so existing i16
-  user-copy and containment helpers still work.
+- Track the whole 16-page owned segment in `user_pages[]` for now so
+  existing teardown / rollback paths still free the correct pages.
+- Add the minimal i16-only `sys_brk` path needed to expose bytes inside
+  the already-owned segment without allocating fresh pages elsewhere.
 - Preserve rollback semantics on loader failure.
 
 ### Phase 3 — sys_brk, sys_mmap2 simplification

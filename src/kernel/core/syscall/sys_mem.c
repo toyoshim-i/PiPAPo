@@ -17,6 +17,37 @@
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/syscall/syscall.h"
 
+#if defined(__ia16__)
+#define I16_USER_SEG_PAGES 16u
+#define I16_USER_STACK_PAGE (I16_USER_SEG_PAGES - 1u)
+
+static void sys_brk_zero_owned_range(page_id_t base_id, uintptr_t page0_base,
+                                     uintptr_t start, uintptr_t end) {
+  uint8_t zeros[256];
+
+  if (end <= start) return;
+
+  memset(zeros, 0, sizeof(zeros));
+  while (start < end) {
+    uintptr_t rel = start - page0_base;
+    uint16_t pg_off = (uint16_t)(rel % PAGE_SIZE);
+    uint16_t page_chunk = PAGE_SIZE - pg_off;
+    if (page_chunk > end - start) page_chunk = (uint16_t)(end - start);
+
+    while (page_chunk > 0) {
+      uint16_t chunk = page_chunk;
+      if (chunk > sizeof(zeros)) chunk = sizeof(zeros);
+      mem_region_page_write(base_id + (page_id_t)(rel / PAGE_SIZE), pg_off,
+                            zeros, chunk);
+      start += chunk;
+      rel += chunk;
+      pg_off += chunk;
+      page_chunk -= chunk;
+    }
+  }
+}
+#endif
+
 /* ── sys_brk ─────────────────────────────────────────────────────────────────
  */
 
@@ -34,6 +65,24 @@ long sys_brk(long addr) {
   if (new_brk < current->brk_base)
     return (long)(current->brk_current); /* unchanged = failure */
 
+#if defined(__ia16__)
+  page_id_t page0_id = proc_page_backed_base(current);
+  if (page0_id == PAGE_ID_INVALID)
+    return (long)(current->brk_current); /* unchanged = failure */
+
+  uintptr_t page0_base = (uintptr_t)mem_region_page_linear(page0_id);
+  uintptr_t limit = page0_base + I16_USER_STACK_PAGE * PAGE_SIZE;
+  uintptr_t old_top = current->brk_current;
+
+  if (new_brk > limit)
+    return (long)(current->brk_current); /* unchanged = failure */
+
+  if (new_brk > old_top)
+    sys_brk_zero_owned_range(page0_id, page0_base, old_top, new_brk);
+
+  current->brk_current = new_brk;
+  return (long)new_brk;
+#else
   /* Calculate old and new page counts from the tracked page-backed base.
    * The loader records the initial page-backed user image here, and
    * sys_brk appends heap pages contiguously after it. */
@@ -72,6 +121,7 @@ long sys_brk(long addr) {
 
   current->brk_current = new_brk;
   return (long)(new_brk);
+#endif
 }
 
 /* ── sys_mmap2 ────────────────────────────────────────────────────────────────
