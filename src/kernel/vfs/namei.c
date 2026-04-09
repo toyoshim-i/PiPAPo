@@ -66,6 +66,9 @@ static void namei_symlink_scratch_free(namei_symlink_scratch_t *scratch) {
  * Input:  path must start with '/'
  * Output: buf receives the normalized path (always starts with '/')
  *
+ * `path` and `buf` may alias. In-place normalization is supported as long
+ * as `bufsiz` describes the writable destination buffer.
+ *
  * Returns length of normalized path (≥ 1), or negative errno.
  *
  * Examples:
@@ -110,7 +113,7 @@ static int path_normalize(const char *path, char *buf, int bufsiz) {
 
     /* Append "/component" */
     buf[len++] = '/';
-    __builtin_memcpy(buf + len, start, (size_t)clen);
+    __builtin_memmove(buf + len, start, (size_t)clen);
     len += clen;
     buf[len] = '\0';
   }
@@ -375,9 +378,10 @@ int vfs_lookup(const char *path, vnode_t **result) {
 int vfs_lookup_flags(const char *path, vnode_t **result, int flags) {
   if (!path || !result) return -EINVAL;
 
-  /* Resolve relative paths against current->cwd */
-  const char *abs = path;
-  char abs_buf[VFS_PATH_MAX];
+  /* Resolve relative paths against current->cwd and normalize into one
+   * reusable buffer. Absolute paths stay on the non-aliasing path. */
+  char normalized[VFS_PATH_MAX];
+  int nlen;
 
   if (path[0] != '/') {
     const char *cwd = (current && current->cwd[0]) ? current->cwd : "/";
@@ -387,21 +391,22 @@ int vfs_lookup_flags(const char *path, vnode_t **result, int flags) {
     if (cwdlen == 1) {
       /* cwd is "/" → "/path" */
       if (1 + pathlen >= VFS_PATH_MAX) return -ENAMETOOLONG;
-      abs_buf[0] = '/';
-      memcpy(abs_buf + 1, path, (size_t)pathlen + 1);
+      normalized[0] = '/';
+      memcpy(normalized + 1, path, (size_t)pathlen + 1);
     } else {
       /* cwd is "/foo" → "/foo/path" */
       if (cwdlen + 1 + pathlen >= VFS_PATH_MAX) return -ENAMETOOLONG;
-      memcpy(abs_buf, cwd, (size_t)cwdlen);
-      abs_buf[cwdlen] = '/';
-      memcpy(abs_buf + cwdlen + 1, path, (size_t)pathlen + 1);
+      memcpy(normalized, cwd, (size_t)cwdlen);
+      normalized[cwdlen] = '/';
+      memcpy(normalized + cwdlen + 1, path, (size_t)pathlen + 1);
     }
-    abs = abs_buf;
+
+    /* Normalize the joined relative path in place. */
+    nlen = path_normalize(normalized, normalized, (int)sizeof(normalized));
+  } else {
+    nlen = path_normalize(path, normalized, (int)sizeof(normalized));
   }
 
-  /* Normalize the path (resolve . and .. lexically) */
-  char normalized[VFS_PATH_MAX];
-  int nlen = path_normalize(abs, normalized, (int)sizeof(normalized));
   if (nlen < 0) return nlen;
 
   return lookup_walk_flags(normalized, result, 0, flags);

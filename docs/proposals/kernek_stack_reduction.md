@@ -1,10 +1,10 @@
 ## Kernel Stack Reduction on ia16
 
 > **Status**: In progress.
-> The slot-2 skip workaround has already been removed. `getdents` and the
-> loader-side `execve` reduction are landed; the remaining work is to shrink
-> the lookup-side `execve` path and any other residual hot spots below the
-> real 2 KB per-process budget.
+> The slot-2 skip workaround has already been removed. `getdents`,
+> loader-side `execve`, and both `namei` reduction steps are landed. The
+> remaining work is to revisit `sys_execve` only if real pcxt/runtime stack
+> measurements still show insufficient margin.
 
 ### 1. Background
 
@@ -258,19 +258,21 @@ Current landed state:
 | --- | ---: | --- |
 | `sys_execve` | 590 B | unchanged in landed commits |
 | `exec_execve` | 86 B | unchanged |
-| `vfs_lookup_flags` | 262 B | unchanged |
-| `lookup_walk_flags` | 462 B | unchanged |
+| `vfs_lookup_flags` | 136 B | landed reduction |
+| `lookup_walk_flags` | 206 B | landed reduction |
 | `ufs_lookup` | ~130-150 B | unchanged |
 | `elf16_load_vnode` | 58 B | landed reduction |
 | `elf16_load_from_headers` | 140 B | landed reduction |
 
 Current estimated peaks:
 
-- lookup side: still about `1540 B`
+- lookup side: about `590 + 86 + 136 + 206 + 140 = 1158 B`
 - load side: about `590 + 86 + 58 + 140 = 874 B`
 
 So the load-side `execve` pressure is largely solved. The remaining big target
-is the lookup side (`namei`), not the loader.
+was the lookup side (`namei`), not the loader. With both `namei` steps landed,
+the next decision is whether the remaining `sys_execve` frame is worth further
+work.
 
 ### 6. Expected Impact Per Optimization
 
@@ -413,27 +415,41 @@ Current locals in `lookup_walk_flags`:
 
 - `resolved[128]`
 - `comp[64]`
-- `target[128]`
-- `norm[128]`
+- `target[128]` (moved off-stack in the landed first sub-step)
+- `norm[128]` (moved off-stack in the landed first sub-step)
 
 Expected savings:
 
 - `vfs_lookup_flags`: about `256 B`
-- `lookup_walk_flags`: about `448 B`
-- combined: about `704 B`
+- `lookup_walk_flags`: about `256 B` from the symlink-only scratch
+- combined full target: about `512 B`
 
 Expected new lookup-side peak:
 
-- about `1540 - 704 = 836 B`
+- about `1540 - 256 = 1284 B` after the landed first sub-step
+- about `1540 - 512 = 1028 B` after the remaining `vfs_lookup_flags` work
 
 Implementation preference:
 
-- use one typed `kmem` scratch object shared by the walk
+- first move the symlink-only scratch into a small typed `kmem` pool
+- then reduce `vfs_lookup_flags()` without assuming in-place
+  `path_normalize()` support
 
 Reason:
 
 - the buffers are metadata/path scratch
-- they fit naturally in one reusable bundle
+- the symlink branch was the highest-confidence isolated reduction
+
+Status:
+
+- both sub-steps landed
+- `lookup_walk_flags`: `462 B -> 206 B`
+- `vfs_lookup_flags`: `262 B -> 136 B`
+- lookup-side `execve` peak: `~1540 B -> ~1158 B`
+- the first landed step also required a pcxt-specific fix: the VFS module's
+  upper DS BSS (`0xC000..0xDFFF`) must be cleared in `target_early_init()`
+  because stage2 cannot clear that range while it still executes from
+  `0xC000`
 
 ### 7. Recommended Order
 
@@ -473,16 +489,36 @@ Status:
 
 #### Phase 3: shrink `namei`
 
-- move `vfs_lookup_flags` + `lookup_walk_flags` path buffers into one reusable
-  scratch bundle or otherwise remove the duplicated large path arrays
+Phase 3 is now split into two smaller steps.
 
-Expected result:
+Phase 3.1, landed:
 
-- lookup-side `execve` peak drops into the sub-1 KB range with good margin
+- move the symlink-only `target[]` + `norm[]` scratch in
+  `lookup_walk_flags()` into a small VFS-owned `kmem` pool
+- fix the underlying pcxt VFS-module BSS initialization hole that this
+  exposed by clearing the upper VFS DS window in `target_early_init()`
+
+Actual result:
+
+- `lookup_walk_flags`: `462 B -> 206 B`
+- lookup-side `execve` peak: `~1540 B -> ~1284 B`
+
+Phase 3.2, landed:
+
+- reduce `vfs_lookup_flags()` to one stack path buffer
+- keep absolute paths on the non-aliasing `path_normalize(path, normalized)`
+  path
+- keep the joined relative-path case on the in-place normalization path
+
+Actual result:
+
+- `vfs_lookup_flags`: `262 B -> 136 B`
+- lookup-side `execve` peak: `~1284 B -> ~1158 B`
+- `pcxt` boot still reaches `INIT: pid=1 loaded`
 
 Reason for priority:
 
-- the lookup side is now the dominant `execve` peak
+- the lookup side is still the dominant `execve` peak
 - the loader side is already below 1 KB
 - the attempted `sys_execve` snapshot-only reduction was much smaller than
   expected
@@ -524,17 +560,16 @@ One fixed typed object:
 
 #### 8.4 `namei_walk_scratch`
 
-One fixed typed object:
+Landed Phase 3.1 shape:
 
-- `char abs_buf[VFS_PATH_MAX]`
-- `char normalized[VFS_PATH_MAX]`
-- `char resolved[VFS_PATH_MAX]`
-- `char comp[VFS_NAME_MAX + 1]`
 - `char target[VFS_PATH_MAX]`
 - `char norm[VFS_PATH_MAX]`
 
-This bundle is large, so Phase 4 should only happen if Phases 1-3 still leave
-insufficient headroom or if other path syscalls remain close to the canary.
+Landed Phase 3.2 result:
+
+- `vfs_lookup_flags()` now uses one stack path buffer
+- absolute paths normalize into that buffer without aliasing the input
+- relative paths still reuse the same buffer after path joining
 
 ### 9. Acceptance Criteria
 
