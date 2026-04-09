@@ -55,6 +55,7 @@ void vfs_init(void) {
   /* Initialise the vnode slab pool */
   mod_core.kmem_pool_init(&vnode_pool, vnode_storage, sizeof(vnode_t),
                           VFS_VNODE_MAX);
+  vfs_namei_init();
 
   /* Block device registry + loopback subsystem */
 #ifdef PPAP_HAS_BLKDEV

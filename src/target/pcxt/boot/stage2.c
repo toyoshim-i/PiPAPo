@@ -32,6 +32,9 @@
 
 #define KERNEL_ADDR 0x0600u
 
+#define VFS_DATA_BASE        0xA000u
+#define VFS_DATA_STAGE2_SIZE 0x2000u  /* Safe while stage2 still lives at 0xC000 */
+
 #define UFS_MAGIC            0x55465331u
 #define UFS_INODE_SIZE       64u
 #define UFS_INODES_PER_BLOCK (UFS_BLOCK_SIZE / UFS_INODE_SIZE)
@@ -289,15 +292,18 @@ void stage2_main(void)
     vfs_size = load_file_far(vfs_ino, vfs_seg);
   }
 
-  /* VFS data: zero region then load .rodata+.data to DS:0xA000.
-   * Zeroing first ensures BSS (after loaded data) is clean. */
+  /* VFS data: zero the safe lower half, then load .rodata+.data.
+   * Stage2 itself runs at 0xC000, so it cannot clear the full
+   * 0xA000-0xDFFF VFS reservation without wiping itself. The kernel
+   * clears the upper half later in target_early_init(), before any
+   * VFS data above 0xC000 is used. */
   {
-    uint8_t *p = (uint8_t *)0xA000u;
-    for (uint16_t i = 0; i < 8192u; i++) p[i] = 0;
+    uint8_t *p = (uint8_t *)VFS_DATA_BASE;
+    for (uint16_t i = 0; i < VFS_DATA_STAGE2_SIZE; i++) p[i] = 0;
   }
   uint16_t vfs_data_ino = find_file(boot_ino, "kernel_vfs_data");
   if (vfs_data_ino) {
-    load_file(vfs_data_ino, (uint8_t *)0xA000u);
+    load_file(vfs_data_ino, (uint8_t *)VFS_DATA_BASE);
   }
 
   /* Compute page pool start: after last far segment, page-aligned */

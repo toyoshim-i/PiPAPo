@@ -76,7 +76,7 @@ Good candidates:
 
 - `sys_execve` scratch bundle (`path`, `argv_copy`, `argv_buf`, rollback state)
 - `elf16_load_vnode` header bundle (`ehdr`, `phdrs`)
-- `lookup_walk_flags` path scratch bundle
+- `lookup_walk_flags` symlink scratch bundle
 
 #### R2. Use a page-backed scratch page for large bulk buffers
 
@@ -110,6 +110,11 @@ The first reductions should target the most certain wins:
 2. `elf16_load_vnode` / `elf16_load_from_headers` (done)
 3. `namei`
 4. `sys_execve`
+
+The first `namei` sub-step is to move the symlink-only `target[]` and
+`norm[]` buffers into a small VFS-owned `kmem` pool. That keeps pathname
+scratch dereferenceable on ia16 and avoids introducing page-backed string
+helpers into the path walker.
 
 ### 4. Audited Call Chains
 

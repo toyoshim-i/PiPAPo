@@ -26,9 +26,34 @@
 #include <string.h>
 
 #include "common/errno.h"
-#include "kernel/common/core/proc_info.h" /* current->cwd for relative path resolution */
+#include "kernel/common/core/kmem_types.h"
+#include "kernel/common/core/proc_info.h" /* current->cwd for relative path
+                                             resolution */
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/vfs/vfs.h"
+
+typedef struct {
+  char target[VFS_PATH_MAX];
+  char norm[VFS_PATH_MAX];
+} namei_symlink_scratch_t;
+
+static namei_symlink_scratch_t namei_symlink_scratch_storage[VFS_SYMLOOP_MAX];
+static kmem_pool_t namei_symlink_scratch_pool;
+
+void vfs_namei_init(void) {
+  mod_core.kmem_pool_init(
+      &namei_symlink_scratch_pool, namei_symlink_scratch_storage,
+      sizeof(namei_symlink_scratch_storage[0]), VFS_SYMLOOP_MAX);
+}
+
+static namei_symlink_scratch_t *namei_symlink_scratch_alloc(void) {
+  return mod_core.kmem_alloc(&namei_symlink_scratch_pool);
+}
+
+static void namei_symlink_scratch_free(namei_symlink_scratch_t *scratch) {
+  if (!scratch) return;
+  mod_core.kmem_free(&namei_symlink_scratch_pool, scratch);
+}
 
 /* ── Path normalization ─────────────────────────────────────────────────────
  */
@@ -242,21 +267,33 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
         }
       }
 
-      char target[VFS_PATH_MAX];
+      namei_symlink_scratch_t *scratch = namei_symlink_scratch_alloc();
+      char *target;
+      char *norm;
+
+      if (!scratch) {
+        vfs_vnode_release(child);
+        return -ENOMEM;
+      }
+      target = scratch->target;
+      norm = scratch->norm;
 
       if (!child->mount || !child->mount->ops || !child->mount->ops->readlink) {
         vfs_vnode_release(child);
+        namei_symlink_scratch_free(scratch);
         return -EINVAL;
       }
       long tlen = child->mount->ops->readlink(child, target, VFS_PATH_MAX - 1);
       vfs_vnode_release(child);
-      if (tlen < 0) return (int)tlen;
+      if (tlen < 0) {
+        namei_symlink_scratch_free(scratch);
+        return (int)tlen;
+      }
       target[tlen] = '\0';
 
       /* Build the new path to resolve (reuse `target` via
        * intermediate `resolved` prefix for relative symlinks,
        * then normalize into `norm`). */
-      char norm[VFS_PATH_MAX];
       int nlen = 0;
 
       if (target[0] == '/') {
@@ -271,7 +308,10 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
         while (parent_len > 0 && resolved[parent_len - 1] != '/') parent_len--;
         if (parent_len == 0) parent_len = 1; /* root directory: "/" */
 
-        if (parent_len + (int)tlen >= VFS_PATH_MAX) return -ENAMETOOLONG;
+        if (parent_len + (int)tlen >= VFS_PATH_MAX) {
+          namei_symlink_scratch_free(scratch);
+          return -ENAMETOOLONG;
+        }
         /* Shift target right to make room for parent prefix */
         __builtin_memmove(target + parent_len, target, (size_t)tlen + 1);
         if (parent_len == 1 && rlen == 0) {
@@ -285,7 +325,10 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
       /* Append any remaining path components after the symlink */
       if (*p) {
         int rem_len = (int)__builtin_strlen(p);
-        if (nlen + 1 + rem_len >= VFS_PATH_MAX) return -ENAMETOOLONG;
+        if (nlen + 1 + rem_len >= VFS_PATH_MAX) {
+          namei_symlink_scratch_free(scratch);
+          return -ENAMETOOLONG;
+        }
         target[nlen++] = '/';
         __builtin_memcpy(target + nlen, p, (size_t)rem_len);
         nlen += rem_len;
@@ -294,10 +337,16 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
 
       /* Normalize (resolve any . / .. introduced by the target)
        * and recurse */
-      int norm_len = path_normalize(target, norm, (int)sizeof(norm));
-      if (norm_len < 0) return norm_len;
+      int norm_len = path_normalize(target, norm, VFS_PATH_MAX);
+      int lookup_err;
+      if (norm_len < 0) {
+        namei_symlink_scratch_free(scratch);
+        return norm_len;
+      }
 
-      return lookup_walk_flags(norm, result, symloop + 1, flags);
+      lookup_err = lookup_walk_flags(norm, result, symloop + 1, flags);
+      namei_symlink_scratch_free(scratch);
+      return lookup_err;
     }
 
     /* Regular file or directory — advance */

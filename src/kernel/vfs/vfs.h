@@ -17,6 +17,7 @@
 
 /* Internal function declarations — external callers use mod_vfs struct */
 void vfs_init(void);
+void vfs_namei_init(void);
 int vfs_mount(const char *path, const vfs_ops_t *ops, uint8_t flags,
               const void *dev_data);
 int vfs_umount(const char *path);

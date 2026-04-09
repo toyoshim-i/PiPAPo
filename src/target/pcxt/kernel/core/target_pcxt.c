@@ -14,6 +14,9 @@
 /* Page pool base: set from stage2's mod_info before mm_init(). */
 uint32_t i16_page_pool_base = 0x10000ul;  /* safe default */
 
+#define VFS_DATA_UPPER_BSS_BASE 0xC000u
+#define VFS_DATA_UPPER_BSS_SIZE 0x2000u
+
 /* Far pointer tables from the stub assembly files */
 extern uint16_t vfs_fptrs[];  /* in core: caller stubs for VFS */
 
@@ -576,9 +579,15 @@ static void check_warm_reboot(void) {
   bda_write16(BDA_RESET_FLAG_OFF, BDA_RESET_WARM);
 }
 
+static void clear_vfs_data_upper_bss(void) {
+  volatile uint8_t *p = (volatile uint8_t *)(uintptr_t)VFS_DATA_UPPER_BSS_BASE;
+  for (uint16_t i = 0; i < VFS_DATA_UPPER_BSS_SIZE; i++) p[i] = 0;
+}
+
 void target_early_init(void) {
   check_warm_reboot();
   seg_init_modules();
+  clear_vfs_data_upper_bss();
   install_int_panic();
   /* Register UART logger early so mm_init/proc_init messages are visible.
    * Far-call stubs are patched by seg_init_modules() above. */
