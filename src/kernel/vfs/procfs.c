@@ -31,6 +31,7 @@
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/subtle/mem_helper.h"
+#include "kernel/common/version.h"
 #include "kernel/vfs/devfs.h"
 #include "kernel/vfs/romfs.h"
 #include "kernel/vfs/tmpfs.h"
@@ -152,7 +153,8 @@ static int gen_meminfo(char *buf, int bufsiz) {
 /* ── /proc/version ──────────────────────────────────────────────────────────
  */
 
-static const char version_str[] = "PiPAPo v0.11.0 (armv6m)\n";
+static const char version_str[] =
+    PPAP_SYSNAME " version " PPAP_VERSION " (" PPAP_ARCH_NAME ")\n";
 
 static int gen_version(char *buf, int bufsiz) {
   int len = 0;

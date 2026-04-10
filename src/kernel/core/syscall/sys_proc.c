@@ -14,6 +14,7 @@
 #include "common/ptrace.h"
 #include "common/wait.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/common/version.h"
 #include "kernel/core/arch.h"
 #include "kernel/core/cpu/cpu.h"
 #include "kernel/core/cpu/ecpu_m68k.h"
@@ -2184,22 +2185,15 @@ static int sys_uname_copy_field(uintptr_t buf_ptr, uint16_t field_index,
 }
 
 long sys_uname(uintptr_t buf_ptr) {
-  const char *machine;
-
   if (buf_ptr == 0u) return -(long)EINVAL;
 
-#if defined(__m68k__)
-  machine = "m68k";
-#else
-  machine = "armv6m";
-#endif
-
-  if (sys_uname_copy_field(buf_ptr, 0u, "PiPAPo") < 0) return -(long)EFAULT;
+  if (sys_uname_copy_field(buf_ptr, 0u, PPAP_SYSNAME) < 0) return -(long)EFAULT;
   if (sys_uname_copy_field(buf_ptr, 1u, target_name()) < 0)
     return -(long)EFAULT;
-  if (sys_uname_copy_field(buf_ptr, 2u, "0.11.0") < 0) return -(long)EFAULT;
+  if (sys_uname_copy_field(buf_ptr, 2u, PPAP_VERSION) < 0) return -(long)EFAULT;
   if (sys_uname_copy_field(buf_ptr, 3u, "#1 PPAP") < 0) return -(long)EFAULT;
-  if (sys_uname_copy_field(buf_ptr, 4u, machine) < 0) return -(long)EFAULT;
+  if (sys_uname_copy_field(buf_ptr, 4u, PPAP_ARCH_NAME) < 0)
+    return -(long)EFAULT;
   if (sys_uname_copy_field(buf_ptr, 5u, NULL) < 0) return -(long)EFAULT;
   return 0;
 }
