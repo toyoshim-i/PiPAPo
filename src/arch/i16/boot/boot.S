@@ -39,8 +39,10 @@ _start:
   movw  %ax, %es
   movw  %ax, %ss
 
-  /* Boot stack = top of kernel_stack[0] (0xE000 + 1 KB - 4B guard) */
-  movw  $0xE3FC, %sp
+  /* Boot stack = top of kernel stack region (slot 7 top - 4B guard).
+   * 0xE380 + 128 (slot 0) + 7*1024 (slots 1-7) = 0x10000; SP=0xFFFC.
+   * After sched_start(), each process uses its own assigned stack. */
+  movw  $0xFFFC, %sp
 
   /* Zero BSS */
   movw  $__bss_start, %di

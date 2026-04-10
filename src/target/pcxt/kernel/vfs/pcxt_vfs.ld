@@ -2,16 +2,16 @@
  * pcxt_vfs.ld — VFS module linker script (shared DS=0)
  *
  * Code (.text, .rodata) starts at offset 0 in the VFS code segment.
- * Data (.rodata, .data, .bss) is placed in the 0xA000-0xFFFF shared DS=0
+ * Data (.rodata, .data, .bss) is placed in the 0xAC00-0xE37F shared DS=0
  * window owned by the first segment.
  *
- * The compiler generates DS-relative data access (e.g. mov ax,[0xA0xx]).
- * Since DS=0 at runtime, this correctly accesses linear 0xA0xx.
+ * The compiler generates DS-relative data access (e.g. mov ax,[0xACxx]).
+ * Since DS=0 at runtime, this correctly accesses linear 0xACxx.
  *
  * The VFS code binary is extracted with:
  *   objcopy -j .text -j .text.header -j .rodata -O binary → code
  * The VFS data binary is extracted with:
- *   objcopy -j .data -O binary → data (copied to DS:0xA000 at boot)
+ *   objcopy -j .data -O binary → data (copied to DS:0xAC00 at boot)
  * BSS is zeroed by the core at boot.
  */
 
@@ -35,7 +35,7 @@ SECTIONS
    * compiler generates DS-relative access for all data, including
    * string literals and const tables.
    * Must match the reservation in pcxt_kernel.ld */
-  . = 0xA000;
+  . = 0xAC00;
 
   __vfs_data_start = .;
   .rodata : {
@@ -54,8 +54,8 @@ SECTIONS
 
   __vfs_data_end = .;
 
-  ASSERT((__vfs_data_end <= 0xE000),
-         "ERROR: VFS DS=0 data overflows into kernel stack area (0xE000)")
+  ASSERT((__vfs_data_end <= 0xE380),
+         "ERROR: VFS DS=0 data overflows into kernel stack area (0xE380)")
 
   /DISCARD/ : {
     *(.comment)

@@ -295,7 +295,12 @@ void sched_start(void) {
 void sched_start(void) {
   /* i16: no PSP/MSP split, no PendSV priorities.
    * PIT timer ISR setup is done by target_late_init() → timer_init().
-   * Just enable interrupts to start the scheduler. */
+   *
+   * Re-plant kernel-stack canaries: during boot the init sequence
+   * ran on the boot stack (slot 7 region) and may have overwritten
+   * canaries in lower slots.  Now that boot is done, replant them
+   * before the first timer tick triggers canary checks. */
+  proc_plant_kstack_canaries();
   arch_irq_enable();
 }
 

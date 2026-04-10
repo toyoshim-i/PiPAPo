@@ -32,8 +32,8 @@
 
 #define KERNEL_ADDR 0x0600u
 
-#define VFS_DATA_BASE        0xA000u
-#define VFS_DATA_STAGE2_SIZE 0x2000u  /* Safe while stage2 still lives at 0xC000 */
+#define VFS_DATA_BASE        0xAC00u
+#define VFS_DATA_STAGE2_SIZE 0x1400u  /* 0xAC00+0x1400=0xC000: stop before stage2 */
 
 #define UFS_MAGIC            0x55465331u
 #define UFS_INODE_SIZE       64u
@@ -294,7 +294,7 @@ void stage2_main(void)
 
   /* VFS data: zero the safe lower half, then load .rodata+.data.
    * Stage2 itself runs at 0xC000, so it cannot clear the full
-   * 0xA000-0xDFFF VFS reservation without wiping itself. The kernel
+   * 0xAC00-0xDFFF VFS reservation without wiping itself. The kernel
    * clears the upper half later in target_early_init(), before any
    * VFS data above 0xC000 is used. */
   {

@@ -450,7 +450,7 @@ set_target_properties(ppap_pcxt_vfs PROPERTIES
 )
 
 # Extract VFS code (.text + .rodata) and data (.data) as separate binaries.
-# Code goes to VFS CS segment, data goes to DS:0xA000.
+# Code goes to VFS CS segment, data goes to DS:0xAC00.
 add_custom_command(TARGET ppap_pcxt_vfs POST_BUILD
   COMMAND ${CMAKE_OBJCOPY}
     -j .text -j .text.header

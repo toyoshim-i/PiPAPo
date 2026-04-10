@@ -196,7 +196,7 @@ separate far segment after the core copy.
 
 Each module's code must fit in 64 KB.  The DS=0 segment holds
 core text+rodata+data+BSS (~38 KB), VFS data (~7.4 KB), and
-4 × 1 KB per-process kernel stacks at 0xE000–0xEFFF.
+8 per-process kernel stacks (slot 0: 128B, slots 1-7: 1KB) at 0xE380–0xFFFF.
 
 A **segment manager** (`src/kernel/common/seg.h`/`seg.c`) in the core
 module tracks each module's code segment base at runtime.  Stage2 loads
@@ -776,7 +776,7 @@ already-owned 16-page segment.
 | P-4a | Module system | `MOD_DECLARE`/`MOD_DEFINE`, mod_vfs (12 fn), mod_core (16 fn), boundary enforcement |
 | P-4b | Segment split + floppy mount | Core (CS=0x0060) + VFS (CS=0x1000) + shared SS=0, far-call stubs, UFS root mounted |
 | P-5 (partial) | User-space exec | ELF16 load, exit, timer, preemptive scheduler, `user_to_page` conversion complete, signal delivery + fork/vfork scaffolding written |
-| R-1.1 | Per-process kernel stacks + SS fix | 4 × 1 KB stacks at 0xE000, double-load stage2 (DS:0x0600 + far CS=0x1000), ISR/syscall SS save/restore, split frame (GP on user stack, SS:SP on kernel stack), dynamic page pool |
+| R-1.1 | Per-process kernel stacks + SS fix | 8 stacks at 0xE380 (slot 0: 128B, slots 1-7: 1KB), double-load stage2 (DS:0x0600 + far CS=0x1000), ISR/syscall SS save/restore, split frame (GP on user stack, SS:SP on kernel stack), dynamic page pool |
 
 ### 9. File Layout
 
@@ -856,16 +856,16 @@ DS=0 (shared data/code addresses):
 0x00000-0x003FF  IVT (256 vectors × 4 bytes)
 0x00400-0x004FF  BIOS Data Area
 0x00500-0x005FF  mod_info_t (module load addresses, written by stage2)
-0x00600          Core .text + .rodata + .data + .bss (~34 KB)
-  ~0x9558        (free)
-0x0A000-0x0ECEE  VFS .data + .bss (~7.4 KB, loaded by stage2)
-  ~0x0EFFF       (free)
-0x0E000          kernel_stack[0] (1 KB, also boot stack)
+0x00600          Core .text + .rodata + .data + .bss (~41 KB)
+  ~0xA846        (free)
+0x0AC00-0x0D8BE  VFS .data + .bss (~10 KB, loaded by stage2)
+  ~0x0E37F       (free)
+0x0E380          kernel_stack[0] (128 B, idle loop only)
 0x0E400          kernel_stack[1] (1 KB)
 0x0E800          kernel_stack[2] (1 KB)
-0x0EC00          kernel_stack[3] (1 KB)
-0x0EFFF          End of kernel stacks
-  ~0x0FFFF       (free, 4 KB)
+  ...            kernel_stack[3-6] (1 KB each)
+0x0FC00          kernel_stack[7] (1 KB)
+0x0FFFF          End of kernel stacks
 
 Code segments (far copies, loaded by stage2):
 0x10600          Core .text copy (CS=0x1000, same offsets as DS=0)
@@ -879,26 +879,26 @@ Page pool (all far-pointer access via page_id_t):
 0xC0000-0xFFFFF  ROM / BIOS
 ```
 
-Per-process kernel stacks (4 × 1 KB) sit at the top of the DS=0
-segment.  Each process (PROC_MAX=4) gets its own kernel stack;
-ISR/syscall entry switches SS:SP to the current process's kernel
-stack.  boot.S uses `kernel_stack[0]` (SP=0xE3FC) as the initial
-boot stack.
+Per-process kernel stacks (PROC_MAX=8) sit at the top of the DS=0
+segment.  Slot 0 (idle kernel thread) gets 128 bytes; slots 1-7
+get 1 KB each.  ISR/syscall entry switches SS:SP to the current
+process's kernel stack.  boot.S uses SP=0xFFFC (slot 7 top) during
+init; `sched_start()` replants canaries after boot is done.
 
 ### 12. Size Constraint
 
-Core text + rodata + data + BSS must fit between 0x0600 and 0x9FFF
-(~38 KB usable).  VFS data at 0xA000 must end before 0xE000
+Core text + rodata + data + BSS must fit between 0x0600 and 0xABFF
+(~42 KB usable).  VFS data at 0xAC00 must end before 0xE380
 (kernel stacks).
 
 | Component | Size | DS=0 address |
 |-----------|------|-------------|
-| Core .text + .rodata | ~34 KB | 0x0600–~0x8B7C |
-| Core .data + .bss | ~2.8 KB | ~0x8B7C–~0x9558 |
-| VFS .data + .bss | ~7.4 KB | 0xA000–~0xBCE8 |
-| Kernel stacks | 4 KB (4 × 1 KB) | 0xE000–0xEFFF |
-| VFS .text | ~33 KB | (separate far CS) |
-| Page pool | ~504 KB | after code segments (far access) |
+| Core .text + .rodata | ~36 KB | 0x0600–~0x8C00 |
+| Core .data + .bss | ~5.3 KB | ~0x8C00–~0xA846 |
+| VFS .data + .bss | ~10 KB | 0xAC00–~0xD8BE |
+| Kernel stacks | 7.1 KB (128B + 7×1KB) | 0xE380–0xFFFF |
+| VFS .text | ~34 KB | (separate far CS) |
+| Page pool | ~500 KB | after code segments (far access) |
 
 ### 13. Far-Call Mechanism
 
@@ -963,9 +963,9 @@ data access hits the process segment.  The kernel runs with `SS=0`.
 
 **Implementation**:
 
-- **4 × 2 KB kernel stacks** at 0xE000–0xFFFF in DS=0.  `proc_init`
-  assigns `kernel_stack_top = 0xE000 + (slot+1)*2048` per process.
-  boot.S uses SP=0xE800 (kernel_stack[0] top).
+- **8 kernel stacks** at 0xE380–0xFFFF in DS=0.  Slot 0 (idle) gets
+  128 bytes; slots 1-7 get 1 KB each.  boot.S uses SP=0xFFFC
+  (slot 7 top); `sched_start()` replants canaries after boot.
 
 - **Double-load in stage2**: kernel binary loaded to DS:0x0600
   (data) and to far segment 0x1060 (code, CS=0x1000).  ia16-elf-ld

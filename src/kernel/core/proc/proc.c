@@ -65,11 +65,17 @@ static pid_t next_pid = 1;
 #define I16_KSTACK_CANARY ((uint16_t)0xCA57u)
 #define I16_KSTACK_GUARD ((uint16_t)0xCAFEu)
 #define I16_KSTACK_GUARD_BYTES 4u
-#define I16_KSTACK_SIZE 1024u
-#define I16_KSTACK_TRUE_BASE(i) \
-  ((uint16_t)(0xE000u + (uint16_t)(i) * I16_KSTACK_SIZE))
-#define I16_KSTACK_TRUE_TOP(i) \
-  ((uint16_t)(0xE000u + (uint16_t)((i) + 1u) * I16_KSTACK_SIZE))
+#define I16_KSTACK_REGION_BASE 0xE380u /* must match pcxt_kernel.ld */
+#define I16_KSTACK_SLOT0_SIZE 128u     /* idle loop only */
+#define I16_KSTACK_SIZE 1024u          /* slots 1-7 */
+#define I16_KSTACK_TRUE_BASE(i)                                           \
+  ((uint16_t)((i) == 0 ? I16_KSTACK_REGION_BASE                           \
+                       : I16_KSTACK_REGION_BASE + I16_KSTACK_SLOT0_SIZE + \
+                             (uint16_t)((i) - 1u) * I16_KSTACK_SIZE))
+#define I16_KSTACK_TRUE_TOP(i)                                            \
+  ((uint16_t)((i) == 0 ? I16_KSTACK_REGION_BASE + I16_KSTACK_SLOT0_SIZE   \
+                       : I16_KSTACK_REGION_BASE + I16_KSTACK_SLOT0_SIZE + \
+                             (uint16_t)(i) * I16_KSTACK_SIZE))
 
 #define I16_KSTACK_BASE(i) I16_KSTACK_TRUE_BASE(i)
 
@@ -92,7 +98,8 @@ void proc_init(void) {
 #if defined(__ia16__)
     proc_table[i].kernel_stack_top =
         (uint16_t)(I16_KSTACK_TRUE_TOP(i) - I16_KSTACK_GUARD_BYTES);
-    i16_kstack_plant_canary(i);
+    /* Canaries are planted later by proc_plant_kstack_canaries(), after
+     * the boot stack is no longer in use. */
 #endif
     proc_table[i].clear_child_tid = user_page_ref_invalid();
     for (uint32_t j = 0; j < USER_PAGES_MAX; j++)
@@ -120,6 +127,14 @@ void proc_init(void) {
       "  (pid 0 = kernel, pids 1-%u available)\n",
       (unsigned)PROC_MAX, (unsigned)(PROC_MAX - 1u));
 
+#if defined(__ia16__)
+  /* Plant canaries now.  During boot the boot stack (slot 7) is shared
+   * with the init sequence and may overwrite canaries in lower slots.
+   * proc_plant_kstack_canaries() is called again from sched_start()
+   * after the boot stack is no longer in use. */
+  for (uint32_t i = 0u; i < PROC_MAX; i++) i16_kstack_plant_canary(i);
+#endif
+
 #ifdef PPAP_TESTS
   /* Self-test: allocate a slot, verify it looks sane, then free it. */
   pcb_t *p = proc_alloc();
@@ -134,6 +149,12 @@ void proc_init(void) {
   next_pid = 1;
 
   mod_vfs.klogf("PROC: self-test %s\n", ok ? "PASSED" : "FAILED");
+#endif
+}
+
+void proc_plant_kstack_canaries(void) {
+#if defined(__ia16__)
+  for (uint32_t i = 0u; i < PROC_MAX; i++) i16_kstack_plant_canary(i);
 #endif
 }
 

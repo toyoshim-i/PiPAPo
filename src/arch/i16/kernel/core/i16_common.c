@@ -8,7 +8,7 @@
 /* Current process's kernel stack pointer.  ISR/syscall entry loads
  * SS:SP from SS=0:i16_current_ksp.  Updated on context switch and
  * at boot.  Avoids dereferencing current_core before SS=0 is set. */
-volatile uint16_t i16_current_ksp = 0xE3FC; /* kernel_stack[0] top */
+volatile uint16_t i16_current_ksp = 0xFFFC; /* boot stack top */
 
 /* Tick counter incremented by timer handler */
 volatile uint32_t i16_tick_count = 0;

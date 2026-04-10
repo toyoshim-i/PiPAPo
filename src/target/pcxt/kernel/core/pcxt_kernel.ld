@@ -8,8 +8,8 @@
  *                  .rodata (constants)
  *                  .data (core initialized globals)
  *                  .bss (core zero-initialized globals)
- *   0xA000-0xEFFF  Reserved for VFS module DS=0 data + bss
- *   0xF000-0xFFFF  Per-process kernel stacks (4 × 1 KB)
+ *   0xAC00-0xE37F  Reserved for VFS module DS=0 data + bss
+ *   0xE380-0xFFFF  Per-process kernel stacks (slot 0: 128B, slots 1-7: 1KB)
  *   0x10000+       __page_pool_start (free pages)
  *
  * Stage2 loads the kernel binary to DS:0x0600 (for data access via
@@ -18,7 +18,7 @@
  * the same offsets so near calls resolve correctly in both copies.
  *
  * VFS code lives in a separate segment (after core far copy).
- * VFS data lives at 0xA000 in this shared DS=0 space.
+ * VFS data lives at 0xAC00 in this shared DS=0 space.
  */
 
 OUTPUT_FORMAT("elf32-i386")
@@ -62,23 +62,25 @@ SECTIONS
   __stack_top = .;
 
   /* Reserved for VFS DS=0 data (must match pcxt_vfs.ld). */
-  . = 0xA000;
+  . = 0xAC00;
   __vfs_data_reserved = .;
 
-  /* Per-process kernel stacks: 4 × 1 KB at top of DS=0 segment.
-   * PROC_MAX=4, one stack per process slot.  kernel_stack[0]
-   * doubles as the boot stack (SP=0xE3FC in boot.S). */
-  . = 0xE000;
+  /* Per-process kernel stacks: slot 0 = 128B (idle loop only),
+   * slots 1-7 = 1 KB each.  Pushed to end of DS=0 so the saved
+   * 896 bytes from slot 0's reduction extends VFS data headroom.
+   * Boot uses SP=0xFFFC (slot 7 top); sched_start replants canaries
+   * after boot stack usage is done. */
+  . = 0xE380;
   __kstack_base = .;
-  . += 4096;  /* 4 × 1024 */
+  . += 7296;  /* 128 + 7 × 1024 = ends at 0x10000 */
 
   /* Page pool: free pages start outside the first segment */
   . = ALIGN(4096);
   __page_pool_start = .;
 
   /* Sanity checks */
-  ASSERT((__bss_end <= 0xA000),
-         "ERROR: Kernel BSS overflows into VFS reserved area (0xA000)")
+  ASSERT((__bss_end <= 0xAC00),
+         "ERROR: Kernel BSS overflows into VFS reserved area (0xAC00)")
   ASSERT((__page_pool_start <= 0x9FC00),
          "ERROR: Page pool starts beyond conventional memory (640 KB)")
 

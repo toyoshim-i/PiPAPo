@@ -28,6 +28,10 @@
  */
 void proc_init(void);
 
+/* Re-plant kernel-stack canaries.  Called from sched_start() after
+ * the boot stack is no longer in use (boot may overwrite canaries). */
+void proc_plant_kstack_canaries(void);
+
 #if defined(__ia16__)
 /* Verify the per-process kernel-stack canary at every slot's base.
  * On mismatch, klogfs an unrecoverable kernel-stack overrun panic
