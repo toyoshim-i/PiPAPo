@@ -39,8 +39,8 @@ _start:
   movw  %ax, %es
   movw  %ax, %ss
 
-  /* Boot stack = top of kernel_stack[0] (0xE000 + 2 KB) */
-  movw  $0xE800, %sp
+  /* Boot stack = top of kernel_stack[0] (0xE000 + 1 KB - 4B guard) */
+  movw  $0xE3FC, %sp
 
   /* Zero BSS */
   movw  $__bss_start, %di

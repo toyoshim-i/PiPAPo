@@ -65,15 +65,19 @@ static pid_t next_pid = 1;
 #define I16_KSTACK_CANARY ((uint16_t)0xCA57u)
 #define I16_KSTACK_GUARD ((uint16_t)0xCAFEu)
 #define I16_KSTACK_GUARD_BYTES 4u
-#define I16_KSTACK_TRUE_BASE(i) ((uint16_t)(0xE000u + (uint16_t)(i) * 2048u))
+#define I16_KSTACK_SIZE 1024u
+#define I16_KSTACK_TRUE_BASE(i) \
+  ((uint16_t)(0xE000u + (uint16_t)(i) * I16_KSTACK_SIZE))
 #define I16_KSTACK_TRUE_TOP(i) \
-  ((uint16_t)(0xE000u + (uint16_t)((i) + 1u) * 2048u))
+  ((uint16_t)(0xE000u + (uint16_t)((i) + 1u) * I16_KSTACK_SIZE))
 
 #define I16_KSTACK_BASE(i) I16_KSTACK_TRUE_BASE(i)
 
 static void i16_kstack_plant_canary(uint32_t i) {
-  *(volatile uint16_t *)(uintptr_t)I16_KSTACK_BASE(i) = I16_KSTACK_CANARY;
+  uint16_t base = I16_KSTACK_BASE(i);
   uint16_t top = I16_KSTACK_TRUE_TOP(i);
+
+  *(volatile uint16_t *)(uintptr_t)base = I16_KSTACK_CANARY;
   *(volatile uint16_t *)(uintptr_t)(uint16_t)(top - 4u) = I16_KSTACK_GUARD;
   *(volatile uint16_t *)(uintptr_t)(uint16_t)(top - 2u) = I16_KSTACK_GUARD;
 }

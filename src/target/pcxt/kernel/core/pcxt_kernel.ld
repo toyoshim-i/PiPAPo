@@ -65,14 +65,12 @@ SECTIONS
   . = 0xA000;
   __vfs_data_reserved = .;
 
-  /* Per-process kernel stacks: 4 × 2 KB at top of DS=0 segment.
-   * 1 KB is marginal — sys_execve + VFS far calls + floppy reads
-   * approach ~800 bytes; debug klogf calls push it over.
+  /* Per-process kernel stacks: 4 × 1 KB at top of DS=0 segment.
    * PROC_MAX=4, one stack per process slot.  kernel_stack[0]
-   * doubles as the boot stack (SP=0xE800 in boot.S). */
+   * doubles as the boot stack (SP=0xE3FC in boot.S). */
   . = 0xE000;
   __kstack_base = .;
-  . += 8192;  /* 4 × 2048 */
+  . += 4096;  /* 4 × 1024 */
 
   /* Page pool: free pages start outside the first segment */
   . = ALIGN(4096);
