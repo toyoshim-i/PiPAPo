@@ -2,9 +2,11 @@
 
 > **Status**: In progress.
 > The slot-2 skip workaround has already been removed. `getdents`,
-> loader-side `execve`, and both `namei` reduction steps are landed. The
-> remaining work is to revisit `sys_execve` only if real pcxt/runtime stack
-> measurements still show insufficient margin.
+> loader-side `execve`, and both `namei` reduction steps are landed. A
+> `sys_execve` reduction is now in review: the safe ia16 version uses shared
+> low-memory scratch and measures well, while a rejected page-backed attempt
+> proved that generic page-pool pointers are still unsafe for string scratch on
+> ia16.
 
 ### 1. Background
 
@@ -256,7 +258,7 @@ Current landed state:
 
 | Function | Current frame | Notes |
 | --- | ---: | --- |
-| `sys_execve` | 590 B | unchanged in landed commits |
+| `sys_execve` | 590 B | landed baseline before Phase 4 |
 | `exec_execve` | 86 B | unchanged |
 | `vfs_lookup_flags` | 136 B | landed reduction |
 | `lookup_walk_flags` | 206 B | landed reduction |
@@ -273,6 +275,21 @@ So the load-side `execve` pressure is largely solved. The remaining big target
 was the lookup side (`namei`), not the loader. With both `namei` steps landed,
 the next decision is whether the remaining `sys_execve` frame is worth further
 work.
+
+Current Phase 4 candidate:
+
+| Function | Current frame | Notes |
+| --- | ---: | --- |
+| `sys_execve` | 142 B | ia16-only shared low-memory scratch for `path`, `argv_copy`, and `argv_buf` |
+
+Candidate estimated peaks:
+
+- lookup side: about `142 + 86 + 136 + 206 + 140 = 710 B`
+- load side: about `142 + 86 + 58 + 140 = 426 B`
+
+This candidate materially improves kernel-stack headroom, but it consumes about
+392 B of shared DS=0 data and therefore needs review together with the core
+image budget.
 
 ### 6. Expected Impact Per Optimization
 
@@ -379,6 +396,21 @@ Status:
 - investigated
 - not landed
 - currently deprioritized behind `namei`
+
+Current follow-up candidate:
+
+- on ia16 only, move `path`, `argv_copy`, and `argv_buf` into one shared
+  low-memory scratch object
+- measured `sys_execve`: `590 B -> 142 B`
+
+Rejected approach:
+
+- a page-backed scratch object looked attractive on paper, but it caused
+  immediate pcxt boot corruption because the string scratch was then accessed
+  through generic page-pool pointers above 64 KB
+- this is the same segment-safety rule already established by the i16 memory
+  work: bulk page storage is fine through page APIs, but string-oriented C
+  code still needs dereferenceable low-memory pointers
 
 #### 6.4 Move the `elf16_load_from_headers` zero buffer off-stack
 

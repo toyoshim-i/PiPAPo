@@ -1997,6 +1997,19 @@ long sys_waitpid(long pid, long status_ptr, long options) {
 #define EXEC_ARG_BYTES_MAX 1024u
 #endif
 
+typedef struct {
+  char path[VFS_PATH_MAX];
+  const char *argv_copy[EXEC_ARGV_MAX + 1];
+  char argv_buf[EXEC_ARG_BYTES_MAX];
+} execve_scratch_t;
+
+#if defined(__ia16__)
+/* i16 syscalls run on a single core and cannot safely dereference generic
+ * page-pool pointers above 64 KB, so keep the execve argv/path scratch in the
+ * shared low-memory kernel data window instead of on the 2 KB kernel stack. */
+static execve_scratch_t i16_execve_scratch;
+#endif
+
 static int sys_execve_copy_user_argv(const char **argv_out, char *arg_buf,
                                      size_t arg_buf_size, uintptr_t argv_ptr) {
   size_t used = 0;
@@ -2025,18 +2038,21 @@ static int sys_execve_copy_user_argv(const char **argv_out, char *arg_buf,
 }
 
 long sys_execve(uintptr_t path_ptr, uintptr_t argv_ptr) {
-  char path[VFS_PATH_MAX];
-  const char *argv_copy[EXEC_ARGV_MAX + 1];
-  char argv_buf[EXEC_ARG_BYTES_MAX];
+#if defined(__ia16__)
+  execve_scratch_t *scratch = &i16_execve_scratch;
+#else
+  execve_scratch_t scratch_storage;
+  execve_scratch_t *scratch = &scratch_storage;
+#endif
   const char *const *argv = NULL;
   page_id_t exec_snapshot = PAGE_ID_INVALID;
-  int rc = sys_copy_user_string(path, sizeof(path), path_ptr);
+  int rc = sys_copy_user_string(scratch->path, sizeof(scratch->path), path_ptr);
 
   if (rc < 0) return (long)rc;
-  rc = sys_execve_copy_user_argv(argv_copy, argv_buf, sizeof(argv_buf),
-                                 argv_ptr);
+  rc = sys_execve_copy_user_argv(scratch->argv_copy, scratch->argv_buf,
+                                 sizeof(scratch->argv_buf), argv_ptr);
   if (rc < 0) return (long)rc;
-  if (argv_ptr != 0u) argv = argv_copy;
+  if (argv_ptr != 0u) argv = scratch->argv_copy;
 
   /* Save old pages to free after successful load */
   page_id_t old_stack_id = current->stack_page_id;
@@ -2058,7 +2074,7 @@ long sys_execve(uintptr_t path_ptr, uintptr_t argv_ptr) {
   /* Save old cpu_state so we can free it after successful exec */
   /* Load the new binary.  argv points into the old stack/data pages
    * which are still valid (detached from current but not yet freed). */
-  int err = exec_execve(current, path, argv);
+  int err = exec_execve(current, scratch->path, argv);
   if (err < 0) {
     /* Restore old pages on failure — fds are untouched (POSIX) */
     current->stack_page_id = old_stack_id;
