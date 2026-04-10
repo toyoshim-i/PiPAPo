@@ -175,7 +175,7 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
    * needs vfs_vnode_release() on cleanup.  Mount root vnodes are permanent
    * (owned by the mount entry), so we don't put them.
    */
-  char resolved[VFS_PATH_MAX]; /* absolute path built so far */
+  static char resolved[VFS_PATH_MAX]; /* absolute path built so far */
   int rlen = 0;
   resolved[0] = '\0';
 
@@ -379,8 +379,9 @@ int vfs_lookup_flags(const char *path, vnode_t **result, int flags) {
   if (!path || !result) return -EINVAL;
 
   /* Resolve relative paths against current->cwd and normalize into one
-   * reusable buffer. Absolute paths stay on the non-aliasing path. */
-  char normalized[VFS_PATH_MAX];
+   * reusable buffer. Absolute paths stay on the non-aliasing path.
+   * Static: single-threaded kernel; saves 128B of stack. */
+  static char normalized[VFS_PATH_MAX];
   int nlen;
 
   if (path[0] != '/') {
@@ -421,8 +422,9 @@ int vfs_lookup_parent(const char *path, vnode_t **parent, char *namebuf,
   if (!path || !parent || !namebuf || namebuf_size < 2) return -EINVAL;
   if (path[0] != '/') return -EINVAL;
 
-  /* Normalize the full path */
-  char normalized[VFS_PATH_MAX];
+  /* Normalize the full path.
+   * Static: single-threaded kernel; saves 128B of stack. */
+  static char normalized[VFS_PATH_MAX];
   int nlen = path_normalize(path, normalized, (int)sizeof(normalized));
   if (nlen < 0) return nlen;
 
@@ -445,8 +447,9 @@ int vfs_lookup_parent(const char *path, vnode_t **parent, char *namebuf,
   __builtin_memcpy(namebuf, name, (size_t)name_len);
   namebuf[name_len] = '\0';
 
-  /* Build parent path: everything up to last_slash, or "/" if at root */
-  char parent_path[VFS_PATH_MAX];
+  /* Build parent path: everything up to last_slash, or "/" if at root.
+   * Static: single-threaded kernel; saves 128B of stack. */
+  static char parent_path[VFS_PATH_MAX];
   if (last_slash == 0) {
     parent_path[0] = '/';
     parent_path[1] = '\0';
