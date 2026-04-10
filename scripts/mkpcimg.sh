@@ -58,13 +58,9 @@ fi
 USER_BUILD_DIR="$BUILD_DIR/user"
 UFS_STAGING="$BUILD_DIR/ufs_staging"
 rm -rf "$UFS_STAGING"
-mkdir -p "$UFS_STAGING/boot" "$UFS_STAGING/bin" "$UFS_STAGING/sbin" "$UFS_STAGING/etc"
-
-# Minimal fstab — no extra mounts needed for i16 testing
-cat > "$UFS_STAGING/etc/fstab" << 'FSTAB_EOF'
-# /etc/fstab — PC/XT (i16) minimal configuration
-# device    mountpoint    fstype    options
-FSTAB_EOF
+mkdir -p "$UFS_STAGING/boot" "$UFS_STAGING/bin" "$UFS_STAGING/sbin" \
+         "$UFS_STAGING/etc" "$UFS_STAGING/dev" "$UFS_STAGING/proc" \
+         "$UFS_STAGING/tmp"
 cp "$KERNEL" "$UFS_STAGING/boot/kernel"
 
 # Include VFS module if built (code + data as separate files)

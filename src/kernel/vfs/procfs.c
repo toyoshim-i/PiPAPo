@@ -34,9 +34,11 @@
 #include "kernel/vfs/devfs.h"
 #include "kernel/vfs/romfs.h"
 #include "kernel/vfs/tmpfs.h"
-#ifdef PPAP_HAS_BLKDEV
+#if defined(PPAP_HAS_BLKDEV)
 #include "kernel/vfs/ufs.h"
 #include "kernel/vfs/vfat.h"
+#elif defined(PPAP_HAS_UFS)
+#include "kernel/vfs/ufs.h"
 #endif
 
 /* ── Minimal integer-to-string formatter ────────────────────────────────────
@@ -240,6 +242,8 @@ static const char *ops_to_fstype(const vfs_ops_t *ops) {
   if (ops == &tmpfs_ops) return "tmpfs";
 #ifdef PPAP_HAS_BLKDEV
   if (ops == &vfat_ops) return "vfat";
+  if (ops == &ufs_ops) return "ufs";
+#elif defined(PPAP_HAS_UFS)
   if (ops == &ufs_ops) return "ufs";
 #endif
   return "unknown";

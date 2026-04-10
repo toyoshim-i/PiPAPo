@@ -80,13 +80,8 @@ void kmain(void) {
     mod_vfs.klogf("VFS: rootfs mount FAILED\n");
   }
 
-  /* Parse /etc/fstab and mount all entries.
-   * Skipped on i16 for now — UFS read returns corrupt data for
-   * fstab (likely a 16-bit pointer/size issue in the VFS read path).
-   * TODO: investigate and fix. */
-#if !defined(__ia16__)
+  /* Parse /etc/fstab and mount all entries. */
   mod_vfs.fstab_automount();
-#endif
 
   /* Kernel integration tests (no-op unless PPAP_TESTS=ON) */
   target_post_mount();
