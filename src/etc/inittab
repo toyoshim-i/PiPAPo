@@ -1,1 +1,2 @@
 ::respawn:/bin/sh
+ttyS0::respawn:/bin/getty ttyS0
