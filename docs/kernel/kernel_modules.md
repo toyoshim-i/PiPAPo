@@ -202,8 +202,8 @@ segment.  The layout below is enforced by
                     (.text is also runtime-copied to a far CS for
                     code execution; data lives only here)
   0x0A000-0x0DFFF   Reserved for VFS .rodata / .data / .bss
-  0x0E000-0x0FFFF   Per-process kernel stacks (PROC_MAX × 2 KB,
-                    currently 4 × 2 KB)
+  0x0E000-0x0EFFF   Per-process kernel stacks (PROC_MAX × 1 KB,
+                    currently 4 × 1 KB)
 ```
 
 Sanity checks in `pcxt_kernel.ld` enforce that core BSS does not

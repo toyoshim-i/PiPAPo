@@ -196,7 +196,7 @@ separate far segment after the core copy.
 
 Each module's code must fit in 64 KB.  The DS=0 segment holds
 core text+rodata+data+BSS (~38 KB), VFS data (~7.4 KB), and
-4 × 2 KB per-process kernel stacks at 0xE000–0xFFFF.
+4 × 1 KB per-process kernel stacks at 0xE000–0xEFFF.
 
 A **segment manager** (`src/kernel/common/seg.h`/`seg.c`) in the core
 module tracks each module's code segment base at runtime.  Stage2 loads
@@ -776,7 +776,7 @@ already-owned 16-page segment.
 | P-4a | Module system | `MOD_DECLARE`/`MOD_DEFINE`, mod_vfs (12 fn), mod_core (16 fn), boundary enforcement |
 | P-4b | Segment split + floppy mount | Core (CS=0x0060) + VFS (CS=0x1000) + shared SS=0, far-call stubs, UFS root mounted |
 | P-5 (partial) | User-space exec | ELF16 load, exit, timer, preemptive scheduler, `user_to_page` conversion complete, signal delivery + fork/vfork scaffolding written |
-| R-1.1 | Per-process kernel stacks + SS fix | 4 × 2 KB stacks at 0xE000, double-load stage2 (DS:0x0600 + far CS=0x1000), ISR/syscall SS save/restore, split frame (GP on user stack, SS:SP on kernel stack), dynamic page pool |
+| R-1.1 | Per-process kernel stacks + SS fix | 4 × 1 KB stacks at 0xE000, double-load stage2 (DS:0x0600 + far CS=0x1000), ISR/syscall SS save/restore, split frame (GP on user stack, SS:SP on kernel stack), dynamic page pool |
 
 ### 9. File Layout
 
@@ -784,7 +784,7 @@ already-owned 16-page segment.
 src/arch/i16/
   arch.h              — IRQ save/restore, i16_switch_pending, i16_current_ksp
   cpu.h               — inb/outb, PIC/PIT/UART register definitions
-  boot.S              — DS=ES=SS=0, BSS zero, SP=0xE800, → kmain()
+  boot.S              — DS=ES=SS=0, BSS zero, SP=0xE3FC, → kmain()
   switch.S            — INT 08h timer ISR, SS save/restore, context switch
   trap.S              — INT 30h syscall handler, SS save/restore
   i16_common.c        — arch_build_initial_frame(), i16_current_ksp, syscall ABI
@@ -860,11 +860,12 @@ DS=0 (shared data/code addresses):
   ~0x9558        (free)
 0x0A000-0x0ECEE  VFS .data + .bss (~7.4 KB, loaded by stage2)
   ~0x0EFFF       (free)
-0x0E000          kernel_stack[0] (2 KB, also boot stack)
-0x0E800          kernel_stack[1] (2 KB)
-0x0F000          kernel_stack[2] (2 KB)
-0x0F800          kernel_stack[3] (2 KB)
-0x0FFFF          End of first segment
+0x0E000          kernel_stack[0] (1 KB, also boot stack)
+0x0E400          kernel_stack[1] (1 KB)
+0x0E800          kernel_stack[2] (1 KB)
+0x0EC00          kernel_stack[3] (1 KB)
+0x0EFFF          End of kernel stacks
+  ~0x0FFFF       (free, 4 KB)
 
 Code segments (far copies, loaded by stage2):
 0x10600          Core .text copy (CS=0x1000, same offsets as DS=0)
@@ -878,10 +879,10 @@ Page pool (all far-pointer access via page_id_t):
 0xC0000-0xFFFFF  ROM / BIOS
 ```
 
-Per-process kernel stacks (4 × 2 KB) sit at the top of the DS=0
+Per-process kernel stacks (4 × 1 KB) sit at the top of the DS=0
 segment.  Each process (PROC_MAX=4) gets its own kernel stack;
 ISR/syscall entry switches SS:SP to the current process's kernel
-stack.  boot.S uses `kernel_stack[0]` (SP=0xE800) as the initial
+stack.  boot.S uses `kernel_stack[0]` (SP=0xE3FC) as the initial
 boot stack.
 
 ### 12. Size Constraint
@@ -895,7 +896,7 @@ Core text + rodata + data + BSS must fit between 0x0600 and 0x9FFF
 | Core .text + .rodata | ~34 KB | 0x0600–~0x8B7C |
 | Core .data + .bss | ~2.8 KB | ~0x8B7C–~0x9558 |
 | VFS .data + .bss | ~7.4 KB | 0xA000–~0xBCE8 |
-| Kernel stacks | 8 KB (4 × 2 KB) | 0xE000–0xFFFF |
+| Kernel stacks | 4 KB (4 × 1 KB) | 0xE000–0xEFFF |
 | VFS .text | ~33 KB | (separate far CS) |
 | Page pool | ~504 KB | after code segments (far access) |
 

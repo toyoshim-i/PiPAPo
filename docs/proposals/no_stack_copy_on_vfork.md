@@ -40,7 +40,7 @@ Once that frame is saved elsewhere, a full user-stack copy is unnecessary.
 The PC/XT i16 port now uses:
 
 - shared user stack during `vfork()`
-- a reserved 34-byte slot in the per-process kernel stack (fixed 2 KB slots)
+- a reserved 34-byte slot in the per-process kernel stack (fixed 1 KB slots)
    for the parent's saved GP+IRET frame (24B) and vfork stub frame (10B)
 - restore of that frame before the parent returns to user mode, on both the
    syscall and timer ISR return paths
