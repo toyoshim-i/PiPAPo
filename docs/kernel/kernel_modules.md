@@ -294,13 +294,9 @@ Both directions share the same shape (showing core_stubs / core_entries):
   all data access (`%ss:` prefix), DS is freely clobbered.  The
   entry stub resets DS to 0 both before the call (in case the
   caller left DS dirty) and after (in case the callee did).
-- **32-bit return values** travel in DX:AX.  The current entry
-  stub clobbers DX in the post-call DS restore — this is harmless
-  for callers whose return values fit in 16 bits, and harmless
-  today for `mem_region_page_linear` (the only 32-bit-return entry)
-  because all kernel-buffer pages have linear addresses below
-  64 KB.  If a future entry needs a true 32-bit return, the stub
-  needs to spill DX before the DS restore.
+- **32-bit return values** travel in DX:AX.  The entry stub
+  preserves DX across the post-call DS restore by using CX
+  (also caller-saved) as scratch for the `xor / mov DS` sequence.
 
 #### Patching the far-pointer tables
 
