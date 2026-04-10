@@ -132,7 +132,6 @@ long sys_getdents(long fd, uintptr_t buf_ptr, size_t count) {
  */
 
 long sys_getcwd(uintptr_t buf_ptr, size_t size) {
-  char out[VFS_PATH_MAX];
   size_t len;
 
   if (buf_ptr == 0u || size == 0) return -(long)EINVAL;
@@ -142,15 +141,12 @@ long sys_getcwd(uintptr_t buf_ptr, size_t size) {
 
   if (len == 0) {
     if (size < 2) return -(long)ERANGE;
-    out[0] = '/';
-    out[1] = '\0';
-    if (sys_copy_to_user(buf_ptr, out, 2) < 0) return -(long)EFAULT;
+    if (sys_copy_to_user(buf_ptr, "/", 2) < 0) return -(long)EFAULT;
     return 2;
   }
 
   if (len + 1 > size) return -(long)ERANGE;
-  __builtin_memcpy(out, cwd, len + 1);
-  if (sys_copy_to_user(buf_ptr, out, len + 1) < 0) return -(long)EFAULT;
+  if (sys_copy_to_user(buf_ptr, cwd, len + 1) < 0) return -(long)EFAULT;
   return (long)(len + 1);
 }
 

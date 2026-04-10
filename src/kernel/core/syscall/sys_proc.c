@@ -2174,45 +2174,36 @@ long sys_set_tid_address(uintptr_t tidptr) {
  */
 #define UTS_LEN 65
 
+static int sys_uname_copy_field(uintptr_t buf_ptr, uint16_t field_index,
+                                const char *value) {
+  char field[UTS_LEN];
+
+  __builtin_memset(field, 0, sizeof(field));
+  if (value) {
+    for (int i = 0; value[i] && i < UTS_LEN - 1; i++) field[i] = value[i];
+  }
+  return sys_copy_to_user(buf_ptr + (uintptr_t)(field_index * UTS_LEN), field,
+                          sizeof(field));
+}
+
 long sys_uname(uintptr_t buf_ptr) {
-  char out[UTS_LEN * 6];
-  char *p;
+  const char *machine;
 
   if (buf_ptr == 0u) return -(long)EINVAL;
 
-  p = out;
-  __builtin_memset(p, 0, sizeof(out));
-
-  /* sysname */
-  const char *s = "PiPAPo";
-  for (int i = 0; s[i] && i < UTS_LEN - 1; i++) p[i] = s[i];
-  p += UTS_LEN;
-
-  /* nodename — target-specific (e.g. "pico1", "pico1calc", "qemu_arm") */
-  s = target_name();
-  for (int i = 0; s[i] && i < UTS_LEN - 1; i++) p[i] = s[i];
-  p += UTS_LEN;
-
-  /* release */
-  s = "0.11.0";
-  for (int i = 0; s[i] && i < UTS_LEN - 1; i++) p[i] = s[i];
-  p += UTS_LEN;
-
-  /* version */
-  s = "#1 PPAP";
-  for (int i = 0; s[i] && i < UTS_LEN - 1; i++) p[i] = s[i];
-  p += UTS_LEN;
-
-  /* machine */
 #if defined(__m68k__)
-  s = "m68k";
+  machine = "m68k";
 #else
-  s = "armv6m";
+  machine = "armv6m";
 #endif
-  for (int i = 0; s[i] && i < UTS_LEN - 1; i++) p[i] = s[i];
-  /* p += UTS_LEN; — domainname follows but we leave it zeroed */
 
-  if (sys_copy_to_user(buf_ptr, out, sizeof(out)) < 0) return -(long)EFAULT;
+  if (sys_uname_copy_field(buf_ptr, 0u, "PiPAPo") < 0) return -(long)EFAULT;
+  if (sys_uname_copy_field(buf_ptr, 1u, target_name()) < 0)
+    return -(long)EFAULT;
+  if (sys_uname_copy_field(buf_ptr, 2u, "0.11.0") < 0) return -(long)EFAULT;
+  if (sys_uname_copy_field(buf_ptr, 3u, "#1 PPAP") < 0) return -(long)EFAULT;
+  if (sys_uname_copy_field(buf_ptr, 4u, machine) < 0) return -(long)EFAULT;
+  if (sys_uname_copy_field(buf_ptr, 5u, NULL) < 0) return -(long)EFAULT;
   return 0;
 }
 
