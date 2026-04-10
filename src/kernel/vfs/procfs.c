@@ -490,35 +490,27 @@ static int gen_pid_subsys(char *buf, int bufsiz, const pcb_t *p) {
 /* ── Inode numbering scheme ──────────────────────────────────────────────── */
 /*
  * Static nodes:  ino = 1 .. PROCFS_NODE_COUNT
- * PID dirs:      ino = 0x1000 + pid * 16
- * PID/stat:      ino = 0x1000 + pid * 16 + 1
- * PID/cmdline:   ino = 0x1000 + pid * 16 + 2
- * PID/subsys:    ino = 0x1000 + pid * 16 + 3
- * PID/termconv:  ino = 0x1000 + pid * 16 + 4
+ * PID dirs:      ino = 0x1000 + slot * 16
+ * PID/stat:      ino = 0x1000 + slot * 16 + 1
+ * PID/cmdline:   ino = 0x1000 + slot * 16 + 2
+ * PID/subsys:    ino = 0x1000 + slot * 16 + 3
+ * PID/termconv:  ino = 0x1000 + slot * 16 + 4
+ *
+ * Encodes the proc_table slot index (not pid) so that procfs_read can
+ * recover the slot from ino alone — no fs_priv encoding needed.
+ * This avoids packing data into void * fs_priv, which breaks on i16
+ * where uintptr_t is 16-bit and the full address range is valid.
  */
 #define PID_INO_BASE 0x1000u
 #define PID_INO_STRIDE 16u
-#define PID_INO(pid) (PID_INO_BASE + (uint32_t)(pid) * PID_INO_STRIDE)
+#define PID_SLOT_INO(slot) (PID_INO_BASE + (uint32_t)(slot) * PID_INO_STRIDE)
 
-/* ── fs_priv encoding for vnodes ─────────────────────────────────────────── */
-/*
- * We encode the node type into fs_priv so procfs_read knows what to generate.
- *   - Static nodes:  fs_priv = &procfs_nodes[i]
- *   - PID/stat:      fs_priv = (void*)(0x80000000 | (slot << 8) | 1)
- *   - PID/cmdline:   fs_priv = (void*)(0x80000000 | (slot << 8) | 2)
- *   - PID/subsys:    fs_priv = (void*)(0x80000000 | (slot << 8) | 3)
- *   - PID/termconv:  fs_priv = (void*)(0x80000000 | (slot << 8) | 4)
- */
-#define PRIV_PID_FLAG 0x80000000u
+/* ── PID sub-file constants ─────────────────────────────────────────────── */
+/* Encoded in the low bits of ino (ino % PID_INO_STRIDE). */
 #define PRIV_PID_STAT 1u
 #define PRIV_PID_CMDLINE 2u
 #define PRIV_PID_SUBSYS 3u
 #define PRIV_PID_TERMCONV 4u
-#define MAKE_PID_PRIV(slot, sub) \
-  ((void *)(uintptr_t)(PRIV_PID_FLAG | ((uint32_t)(slot) << 8) | (sub)))
-#define IS_PID_PRIV(priv) (((uintptr_t)(priv)) & PRIV_PID_FLAG)
-#define PID_PRIV_SLOT(priv) ((((uintptr_t)(priv)) >> 8) & 0xFFu)
-#define PID_PRIV_SUB(priv) (((uintptr_t)(priv)) & 0xFFu)
 
 /* ── procfs_mount ───────────────────────────────────────────────────────────
  */
@@ -556,7 +548,6 @@ static int procfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
         vn->ino = i + 1;
         vn->size = 0;
         vn->mount = dir->mount;
-        vn->fs_priv = (void *)&procfs_nodes[i];
         *result = vn;
         return 0;
       }
@@ -572,10 +563,9 @@ static int procfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
 
           vn->type = VNODE_DIR;
           vn->mode = S_IFDIR | 0555u;
-          vn->ino = PID_INO((uint32_t)pid);
+          vn->ino = PID_SLOT_INO(i);
           vn->size = 2; /* stat + cmdline */
           vn->mount = dir->mount;
-          vn->fs_priv = (void *)(uintptr_t)i; /* proc_table slot */
           *result = vn;
           return 0;
         }
@@ -587,20 +577,19 @@ static int procfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
 
   /* ── Per-PID directory lookup ──────────────────────────────────── */
   if (dir->ino >= PID_INO_BASE) {
-    uint32_t slot = (uint32_t)(uintptr_t)dir->fs_priv;
+    uint32_t slot = (dir->ino - PID_INO_BASE) / PID_INO_STRIDE;
     if (slot >= PROC_MAX || proc_table[slot].state == PROC_FREE) return -ENOENT;
 
-    uint32_t pid_ino = dir->ino;
+    uint32_t base_ino = PID_SLOT_INO(slot);
 
     if (str_eq(name, "stat")) {
       vnode_t *vn = mod_vfs.vnode_alloc();
       if (!vn) return -ENOMEM;
       vn->type = VNODE_FILE;
       vn->mode = S_IFREG | 0444u;
-      vn->ino = pid_ino + 1;
+      vn->ino = base_ino + PRIV_PID_STAT;
       vn->size = 0;
       vn->mount = dir->mount;
-      vn->fs_priv = MAKE_PID_PRIV(slot, PRIV_PID_STAT);
       *result = vn;
       return 0;
     }
@@ -610,10 +599,9 @@ static int procfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
       if (!vn) return -ENOMEM;
       vn->type = VNODE_FILE;
       vn->mode = S_IFREG | 0444u;
-      vn->ino = pid_ino + 2;
+      vn->ino = base_ino + PRIV_PID_CMDLINE;
       vn->size = 0;
       vn->mount = dir->mount;
-      vn->fs_priv = MAKE_PID_PRIV(slot, PRIV_PID_CMDLINE);
       *result = vn;
       return 0;
     }
@@ -623,10 +611,9 @@ static int procfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
       if (!vn) return -ENOMEM;
       vn->type = VNODE_FILE;
       vn->mode = S_IFREG | 0444u;
-      vn->ino = pid_ino + 3;
+      vn->ino = base_ino + PRIV_PID_SUBSYS;
       vn->size = 0;
       vn->mount = dir->mount;
-      vn->fs_priv = MAKE_PID_PRIV(slot, PRIV_PID_SUBSYS);
       *result = vn;
       return 0;
     }
@@ -640,10 +627,9 @@ static int procfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
         if (!vn) return -ENOMEM;
         vn->type = VNODE_FILE;
         vn->mode = S_IFREG | 0444u;
-        vn->ino = pid_ino + 4;
+        vn->ino = base_ino + PRIV_PID_TERMCONV;
         vn->size = 0;
         vn->mount = dir->mount;
-        vn->fs_priv = MAKE_PID_PRIV(slot, PRIV_PID_TERMCONV);
         *result = vn;
         return 0;
       }
@@ -666,10 +652,11 @@ static long procfs_read(vnode_t *vn, page_id_t page, uint16_t page_off,
   char tmp[512];
   int total;
 
-  if (IS_PID_PRIV(vn->fs_priv)) {
+  if (vn->ino >= PID_INO_BASE) {
     /* Per-PID file */
-    uint32_t slot = PID_PRIV_SLOT(vn->fs_priv);
-    uint32_t sub = PID_PRIV_SUB(vn->fs_priv);
+    uint32_t rel = vn->ino - PID_INO_BASE;
+    uint32_t slot = rel / PID_INO_STRIDE;
+    uint32_t sub = rel % PID_INO_STRIDE;
     if (slot >= PROC_MAX) return -(long)EIO;
     const pcb_t *p = &proc_table[slot];
     if (p->state == PROC_FREE) return 0; /* process exited */
@@ -689,11 +676,13 @@ static long procfs_read(vnode_t *vn, page_id_t page, uint16_t page_off,
 #endif
     else
       return -(long)EIO;
-  } else {
+  } else if (vn->ino >= 1 && vn->ino <= PROCFS_NODE_COUNT) {
     /* Static node */
-    const procfs_node_t *node = (const procfs_node_t *)vn->fs_priv;
-    if (!node || !node->generate) return -(long)EIO;
+    const procfs_node_t *node = &procfs_nodes[vn->ino - 1];
+    if (!node->generate) return -(long)EIO;
     total = node->generate(tmp, (int)sizeof(tmp));
+  } else {
+    return -(long)EIO;
   }
 
   if (total < 0) return -(long)EIO;
@@ -742,7 +731,7 @@ static int procfs_readdir(vnode_t *dir, struct dirent *entries,
     uint32_t pid_idx = (idx >= PROCFS_NODE_COUNT) ? idx - PROCFS_NODE_COUNT : 0;
     while (pid_idx < PROC_MAX && (size_t)count < max_entries) {
       if (proc_table[pid_idx].state != PROC_FREE) {
-        entries[count].d_ino = PID_INO((uint32_t)proc_table[pid_idx].pid);
+        entries[count].d_ino = PID_SLOT_INO(pid_idx);
         entries[count].d_type = DT_DIR;
         /* Convert PID to string */
         char pid_str[12];
@@ -764,7 +753,8 @@ static int procfs_readdir(vnode_t *dir, struct dirent *entries,
   if (dir->ino >= PID_INO_BASE) {
     uint32_t idx = *cookie;
     int count = 0;
-    uint32_t pid_ino = dir->ino;
+    uint32_t slot = (dir->ino - PID_INO_BASE) / PID_INO_STRIDE;
+    uint32_t base_ino = PID_SLOT_INO(slot);
 
     static const struct {
       const char *name;
@@ -778,7 +768,6 @@ static int procfs_readdir(vnode_t *dir, struct dirent *entries,
     };
     uint32_t nentries = sizeof(pid_entries) / sizeof(pid_entries[0]);
 
-    uint32_t slot = (uint32_t)(uintptr_t)dir->fs_priv;
     uint8_t tag = (slot < PROC_MAX) ? proc_table[slot].subsys : 0;
 #ifdef PPAP_HAS_SUBSYS
     int has_proc_read =
@@ -793,7 +782,7 @@ static int procfs_readdir(vnode_t *dir, struct dirent *entries,
         idx++;
         continue;
       }
-      entries[count].d_ino = pid_ino + pid_entries[idx].off;
+      entries[count].d_ino = base_ino + pid_entries[idx].off;
       entries[count].d_type = DT_REG;
       uint32_t nlen = str_len(pid_entries[idx].name);
       __builtin_memcpy(entries[count].d_name, pid_entries[idx].name, nlen);
