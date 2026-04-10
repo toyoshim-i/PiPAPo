@@ -53,10 +53,12 @@ vfs_\name\()_entry:
   cli
   /* Restore DS=0 before returning to core — VFS code uses DS
    * as a scratch register, and core expects DS=0.
-   * Use DX (caller-saved) to avoid clobbering AX (return value)
-   * or BX/SI/DI (callee-saved). */
-  xor  %dx, %dx
-  mov  %dx, %ds
+   * Save DX first: 32-bit return values travel in DX:AX.
+   * Use CX (also caller-saved) as scratch for the DS restore. */
+  push %dx
+  xor  %cx, %cx
+  mov  %cx, %ds
+  pop  %dx
   push %ss:vfs_saved_cs
   push %ss:vfs_saved_ip
   sti

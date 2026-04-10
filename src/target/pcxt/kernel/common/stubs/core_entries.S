@@ -60,10 +60,12 @@ saved_ip: .word 0
   call \name
   cli
   /* Restore DS=0 before returning — the callee may have clobbered DS.
-   * Use DX (caller-saved) to avoid clobbering AX (return value)
-   * or BX/SI/DI (callee-saved). */
-  xor  %dx, %dx
-  mov  %dx, %ds
+   * Save DX first: 32-bit return values travel in DX:AX.
+   * Use CX (also caller-saved) as scratch for the DS restore. */
+  push %dx
+  xor  %cx, %cx
+  mov  %cx, %ds
+  pop  %dx
   push %ss:saved_cs
   push %ss:saved_ip
   sti
