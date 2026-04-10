@@ -29,6 +29,7 @@
 
 #include "common/errno.h"                 /* ENOTTY, EINTR */
 #include "common/signal.h"                /* SIGINT */
+#include "common/termios.h"               /* struct termios, flag bits */
 #include "kernel/common/core/proc_info.h" /* proc_table, PROC_MAX, PROC_FREE */
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/vfs/driver/uart.h" /* uart_putc/getc/rx_avail for static init */
@@ -37,24 +38,13 @@
 #endif
 #include "kernel/vfs/file.h"
 
-/* ── Termios flag bits ───────────────────────────────────────────────────────
+/* ── Termios defaults not in common header ─────────────────────────────────
  */
-
-/* c_iflag */
-#define ICRNL 0x0100u /* map CR to NL on input */
-#define IXON 0x0400u  /* enable XON/XOFF output control */
-
-/* c_oflag */
-#define OPOST 0x0001u /* post-process output */
-#define ONLCR 0x0004u /* map NL to CR-NL on output */
 
 /* c_cflag */
 #define CFLAG_DEFAULT 0x00BFu /* CS8 | CREAD | HUPCL | B38400 */
 
 /* c_lflag */
-#define ISIG 0x0001u   /* enable signals (INTR, QUIT, etc.) */
-#define ICANON 0x0002u /* canonical (line) mode */
-#define ECHO 0x0008u   /* echo input characters */
 #define LFLAG_DEFAULT \
   0x8A3Bu /* ECHO|ECHOE|ECHOK|ICANON|ISIG|IEXTEN|ECHOCTL|ECHOKE */
 
@@ -73,32 +63,10 @@
 #define TTY_DEFAULT_ROWS 25
 #define TTY_DEFAULT_COLS 80
 
-/* ── c_cc array size ────────────────────────────────────────────────────────
- */
-
-#define NCCS 19 /* number of control characters (matches Linux ARM) */
-
 /* ── Per-instance TTY state ─────────────────────────────────────────────────
  */
 
 #define LINE_BUF_SIZE 128
-
-/* Minimal termios for musl compatibility (matches Linux ARM layout) */
-struct kernel_termios {
-  uint32_t c_iflag;
-  uint32_t c_oflag;
-  uint32_t c_cflag;
-  uint32_t c_lflag;
-  uint8_t c_line;
-  uint8_t c_cc[NCCS];
-};
-
-struct winsize {
-  uint16_t ws_row;
-  uint16_t ws_col;
-  uint16_t ws_xpixel;
-  uint16_t ws_ypixel;
-};
 
 typedef struct {
   /* I/O backend callbacks */
@@ -119,7 +87,7 @@ typedef struct {
   volatile uint8_t line_ready;
 
   /* Termios settings */
-  struct kernel_termios termios;
+  struct termios termios;
 
   /* Foreground process group (for job control) */
   int32_t fg_pgrp;
@@ -253,18 +221,12 @@ static int console_tty_idx = TTY_DISPLAY;
 static int console_tty_idx = TTY_SERIAL;
 #endif
 
-/* ── tty ioctl numbers ───────────────────────────────────────────────────────
+/* ── tty ioctl numbers (beyond common/termios.h) ────────────────────────────
  */
 
-#define TCGETS 0x5401u
-#define TCSETS 0x5402u
-#define TCSETSW 0x5403u
-#define TCSETSF 0x5404u
-#define TIOCGWINSZ 0x5413u
 #define TIOCSCTTY 0x540Eu
 #define TIOCGPGRP 0x540Fu
 #define TIOCSPGRP 0x5410u
-#define TIOCSWINSZ 0x5414u
 #define TIOCGSID 0x5429u
 
 /* ── Backend setup ───────────────────────────────────────────────────────────

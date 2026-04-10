@@ -12,38 +12,17 @@
 #include <stdint.h>
 
 #include "common/errno.h"
+#include "common/termios.h"
 #include "kernel/common/config.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/syscall/syscall.h"
 
-#define TCGETS 0x5401u
-#define TCSETS 0x5402u
-#define TCSETSW 0x5403u
-#define TCSETSF 0x5404u
 #define TIOCSCTTY 0x540Eu
 #define TIOCGPGRP 0x540Fu
 #define TIOCSPGRP 0x5410u
-#define TIOCGWINSZ 0x5413u
-#define TIOCSWINSZ 0x5414u
 #define TIOCGSID 0x5429u
-
-struct syscall_kernel_termios {
-  uint32_t c_iflag;
-  uint32_t c_oflag;
-  uint32_t c_cflag;
-  uint32_t c_lflag;
-  uint8_t c_line;
-  uint8_t c_cc[19];
-};
-
-struct syscall_winsize {
-  uint16_t ws_row;
-  uint16_t ws_col;
-  uint16_t ws_xpixel;
-  uint16_t ws_ypixel;
-};
 
 static void sys_io_advance_ref(user_page_ref_t *ref, size_t delta) {
   size_t pos = (size_t)ref->off + delta;
@@ -207,7 +186,7 @@ long sys_ioctl(long fd, long cmd, uintptr_t arg_ptr) {
 
   switch ((uint32_t)cmd) {
     case TCGETS: {
-      struct syscall_kernel_termios tio;
+      struct termios tio;
       int rc;
       if (arg_ptr == 0u) return -(long)EINVAL;
       rc = mod_vfs.fd_ioctl(desc, (uint32_t)cmd, &tio);
@@ -219,7 +198,7 @@ long sys_ioctl(long fd, long cmd, uintptr_t arg_ptr) {
     case TCSETS:
     case TCSETSW:
     case TCSETSF: {
-      struct syscall_kernel_termios tio;
+      struct termios tio;
       int rc;
       if (arg_ptr == 0u) return -(long)EINVAL;
       rc = sys_copy_from_user(&tio, arg_ptr, sizeof(tio));
@@ -227,7 +206,7 @@ long sys_ioctl(long fd, long cmd, uintptr_t arg_ptr) {
       return (long)mod_vfs.fd_ioctl(desc, (uint32_t)cmd, &tio);
     }
     case TIOCGWINSZ: {
-      struct syscall_winsize ws;
+      struct winsize ws;
       int rc;
       if (arg_ptr == 0u) return -(long)EINVAL;
       rc = mod_vfs.fd_ioctl(desc, (uint32_t)cmd, &ws);
@@ -237,7 +216,7 @@ long sys_ioctl(long fd, long cmd, uintptr_t arg_ptr) {
       return 0;
     }
     case TIOCSWINSZ: {
-      struct syscall_winsize ws;
+      struct winsize ws;
       int rc;
       if (arg_ptr == 0u) return -(long)EINVAL;
       rc = sys_copy_from_user(&ws, arg_ptr, sizeof(ws));

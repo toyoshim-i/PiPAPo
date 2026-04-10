@@ -324,8 +324,8 @@ ioctl:
   pushw %si
   pushw %di
   movw  4(%bp), %bx      /* fd */
-  movw  6(%bp), %cx      /* cmd (low 16 bits) */
-  movw  8(%bp), %dx      /* arg */
+  movw  6(%bp), %cx      /* cmd (low 16 bits, high is always 0) */
+  movw  10(%bp), %dx     /* arg (after 4-byte unsigned long cmd) */
   movw  $0x0107, %ax
   int   $0x30
   SYSCALL_RET

@@ -11,43 +11,7 @@
 #include "push.h"
 #include "syscall.h"
 
-/* ── Termios ─────────────────────────────────────────────────────────── */
-
-#define NCCS 19
-#define TCGETS 0x5401u
-#define TCSETS 0x5402u
-
-/* c_iflag */
-#define ICRNL 0x0100u
-#define IXON 0x0400u
-
-/* c_oflag */
-#define OPOST 0x0001u
-#define ONLCR 0x0004u
-
-/* c_lflag */
-#define ISIG 0x0001u
-#define ICANON 0x0002u
-#define ECHO_FLAG 0x0008u
-
-struct termios {
-  unsigned c_iflag;
-  unsigned c_oflag;
-  unsigned c_cflag;
-  unsigned c_lflag;
-  unsigned char c_line;
-  unsigned char c_cc[NCCS];
-};
-
-/* Terminal window size */
-#define TIOCGWINSZ 0x5413u
-
-struct winsize {
-  unsigned short ws_row;
-  unsigned short ws_col;
-  unsigned short ws_xpixel;
-  unsigned short ws_ypixel;
-};
+#include "common/termios.h"
 
 /* ── Signal numbers ──────────────────────────────────────────────────── */
 
@@ -105,7 +69,7 @@ static void term_raw(void) {
   /* Raw mode: no ICANON, no ECHO, keep ISIG for Ctrl-C,
    * keep OPOST|ONLCR for output \n → \r\n */
   t.c_iflag &= ~(ICRNL | IXON);
-  t.c_lflag &= ~(ICANON | ECHO_FLAG);
+  t.c_lflag &= ~(ICANON | ECHO);
   /* ISIG stays on so kernel delivers SIGINT on Ctrl-C */
 
   ioctl(0, TCSETS, &t);
