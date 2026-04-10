@@ -105,6 +105,12 @@ static void exec_snapshot_release_owned_segments(page_id_t snapshot_page) {
 }
 
 static void exec_snapshot_release_tracked_pages(page_id_t snapshot_page) {
+#if defined(__ia16__)
+  /* i16 owns one whole exec-time segment via image.data (OWNED).
+   * user_pages[] is occupancy bookkeeping only — the pages were already
+   * freed by exec_snapshot_release_owned_segments(). */
+  (void)snapshot_page;
+#else
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
     page_id_t page_id;
 
@@ -115,6 +121,7 @@ static void exec_snapshot_release_tracked_pages(page_id_t snapshot_page) {
         sizeof(page_id));
     if (page_id != PAGE_ID_INVALID) mem_region_page_free(page_id);
   }
+#endif
 }
 
 static void exec_snapshot_release_private_tracked_pages(
