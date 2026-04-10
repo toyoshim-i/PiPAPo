@@ -104,29 +104,29 @@ void i16_vfork_restore_frame(void) {
    *
    *   ktop - 2  ┐ user_SS  (pushed by trap.S i16_syscall_isr)
    *   ktop - 4  ┘ user_SP
-   *   ktop - 28 ┐ saved 24-byte GP+IRET frame slot
-   *             │  (reserved by `subw $24,%sp` in trap.S, written by
+   *   ktop - 38 ┐ saved 34-byte frame slot (24B GP+IRET + 10B stub)
+   *             │  (reserved by `subw $34,%sp` in trap.S, written by
    *             │   sys_vfork; lives ABOVE the C call chain so the
    *             │   compiler-managed frames never alias it)
-   *   ktop - 28 ┘
-   *   ...        C call chain frames live below ktop - 28 */
+   *   ktop - 38 ┘
+   *   ...        C call chain frames live below ktop - 38 */
   uint16_t ktop = current->kernel_stack_top;
   uint16_t *frame_top = (uint16_t *)(uintptr_t)(uint16_t)(ktop - 4u);
   uint16_t user_sp = frame_top[0];
   uint16_t user_ss = frame_top[1];
-  uint8_t *saved = (uint8_t *)(uintptr_t)(uint16_t)(ktop - 28u);
+  uint8_t *saved = (uint8_t *)(uintptr_t)(uint16_t)(ktop - 38u);
 
   /* AX slot (offset 16) in the saved frame already contains the
    * parent's vfork return value (child PID), patched by sys_vfork. */
 
-  /* Write 24 bytes back to user stack at user_SS:user_SP */
+  /* Write 34 bytes back to user stack at user_SS:user_SP */
   uint32_t frame_linear = (uint32_t)user_ss * 16 + user_sp;
   uint32_t data_base = mem_region_page_linear(current->image.data.base_page);
   uint32_t rel = frame_linear - data_base;
   page_id_t page = current->image.data.base_page + (page_id_t)(rel / PAGE_SIZE);
   uint16_t off = (uint16_t)(rel % PAGE_SIZE);
 
-  mem_region_page_write(page, off, saved, 24);
+  mem_region_page_write(page, off, saved, 34);
 
   /* Catch any kernel-stack overrun before we iret to user mode. */
   proc_check_kstack_canary_panic();

@@ -40,8 +40,8 @@ Once that frame is saved elsewhere, a full user-stack copy is unnecessary.
 The PC/XT i16 port now uses:
 
 - shared user stack during `vfork()`
-- a reserved 24-byte slot in the per-process kernel stack (fixed 2 KB slots)
-   for the parent's saved GP+IRET resume frame
+- a reserved 34-byte slot in the per-process kernel stack (fixed 2 KB slots)
+   for the parent's saved GP+IRET frame (24B) and vfork stub frame (10B)
 - restore of that frame before the parent returns to user mode, on both the
    syscall and timer ISR return paths
 
@@ -61,30 +61,66 @@ resume state, do not copy the whole user stack" approach is viable.
 
 The working i16 design is more specific than just "save a frame somewhere":
 
-- `sys_vfork()` saves the parent's 24-byte GP+IRET resume frame from the
-   shared user stack to the parent's own kernel stack, below `trap_ksp`.
+- `sys_vfork()` saves a 34-byte region from the parent's shared user stack
+   to the parent's own kernel stack, below `trap_ksp`.  The 34 bytes cover:
+   - 24 bytes: the GP+IRET frame (ES, DS, BP, DI, SI, DX, CX, BX, AX,
+     IP, CS, FLAGS) — popped by trap.S restore + `iret`
+   - 10 bytes: the vfork syscall stub's callee-saved registers and return
+     address (saved DI, SI, BX, BP + `call vfork` return IP) — popped by
+     `SYSCALL_RET` after `iret`
    The AX slot (offset 16) in the saved copy is patched with the child PID
    so the parent sees the correct return value when resumed.
 - the child keeps using the shared user stack until `execve()` or `_exit()`
 - `execve()` is allowed to rebuild that shared user stack for the new image
 - when the parent becomes runnable again, `i16_vfork_restore_frame()` copies
-   the saved 24 bytes back to `user_SS:user_SP` before any path returns the
+   the saved 34 bytes back to `user_SS:user_SP` before any path returns the
    parent to user mode
+
+### What must be saved (and why)
+
+The user stack at the time of the `int $0x30` in the vfork stub looks like:
+
+```
+  [user_SP+0 ]  ES DS BP DI SI DX CX BX AX IP CS FLAGS   ← 24B GP+IRET
+  [user_SP+24]  saved DI SI BX BP  (vfork stub pushw's)   ← 10B stub frame
+  [user_SP+34]  return address from `call vfork`
+  [user_SP+36]  parent's C caller frame (locals, saved regs)
+```
+
+The child returns from vfork with AX=0 and `SYSCALL_RET` pops the stub
+frame (bytes 24–33), returning to the parent's C caller.  From there, the
+child must call only `execve()` or `_exit()`.  Even a bare `execve(path,
+argv, envp)` call pushes 3 args + return address + syscall stub prologue
+onto the shared stack — overwriting the 10 bytes at `[user_SP+24..+33]`.
+
+The kernel therefore saves 34 bytes (not just 24):
+
+- **Lower side** `[user_SP+0..+23]` (24B): the GP+IRET frame.  The child's
+  `execve` syscall trap pushes a new GP+IRET frame here, overwriting the
+  parent's original values.
+- **Upper side** `[user_SP+24..+33]` (10B): the vfork stub's callee-saved
+  regs and return address.  The child's function calls unavoidably overwrite
+  this area too.
+
+The region above `[user_SP+34]` (the parent's C caller frame) is NOT saved.
+The child must not touch it — doing so violates POSIX vfork semantics.
+In particular, calling any function other than `execve()` or `_exit()` in
+the vfork child path is undefined behavior.
 
 ### Kernel stack layout
 
 Every kernel entry path (`trap.S` INT 30h handler and `switch.S` timer ISR)
-reserves a 24-byte slot at a fixed position in the kernel stack:
+reserves a 34-byte slot at a fixed position in the kernel stack:
 
 ```
   ktop - 2   user_SS   (pushed by entry code)
   ktop - 4   user_SP
-  ktop - 28  24-byte vfork-save slot  (subw $24, %sp)
+  ktop - 38  34-byte vfork-save slot  (subw $34, %sp)
   ...        C call chain frames below
 ```
 
 `sys_vfork()` writes the parent's saved frame into the slot at
-`[ktop - 28, ktop - 4)`.  The slot is wasted (24 bytes) on the common
+`[ktop - 38, ktop - 4)`.  The slot is wasted (34 bytes) on the common
 non-vfork path but keeps the layout uniform.
 
 ### AX return-value guard
@@ -106,7 +142,7 @@ stale or corrupted `CS:IP`.
 
 Both `trap.S` (line ~206) and `switch.S` (line ~161) now call
 `i16_vfork_restore_frame()` before the final `iret`.  The restore function
-checks `current->vfork_frame_saved`, and if set, copies the 24 bytes from the
+checks `current->vfork_frame_saved`, and if set, copies the 34 bytes from the
 kernel stack slot back to the user stack via `mem_region_page_write()`, then
 clears the flag.
 

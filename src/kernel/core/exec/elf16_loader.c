@@ -321,11 +321,11 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
     uint16_t *kstack = (uint16_t *)(uintptr_t)ksp;
     *--kstack = proc_seg; /* user_SS */
     *--kstack = user_sp;  /* user_SP */
-    /* Reserve 24-byte vfork-save slot (matches trap.S subw $24,%sp).
-     * The shared restore path always addw $24,%sp before popping
+    /* Reserve 34-byte vfork-save slot (matches trap.S subw $34,%sp).
+     * The shared restore path always addw $34,%sp before popping
      * user_SP/user_SS, so every saved kernel SP must point at the
      * post-reserve position. */
-    kstack -= 12;
+    kstack -= 17;
     p->sp = (uint32_t)(uintptr_t)kstack;
   }
 

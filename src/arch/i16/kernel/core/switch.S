@@ -76,13 +76,13 @@ i16_timer_isr:
   pushw %ax             /* user_SS */
   pushw %bp             /* user_SP (points to GP frame) */
 
-  /* Reserve a 24-byte vfork-save slot above the C call chain.
+  /* Reserve a 34-byte vfork-save slot above the C call chain.
    * Matches trap.S i16_syscall_isr — every entry that may end up as
    * a saved kernel SP for a suspended process uses the same layout,
-   * so the shared restore path can always `addw $24,%sp` to skip
+   * so the shared restore path can always `addw $34,%sp` to skip
    * past the slot before popping user_SP/user_SS.  Wasted on the
-   * common case where no vfork is in progress, but only 24 bytes. */
-  subw  $24, %sp
+   * common case where no vfork is in progress, but only 34 bytes. */
+  subw  $34, %sp
 
   /* Set DS = ES = 0 for kernel data access */
   xorw  %ax, %ax
@@ -91,10 +91,10 @@ i16_timer_isr:
 
   /* Call kernel timer tick handler.
    * user_SS is 0 when the timer interrupted kernel code and non-zero
-   * when it interrupted user mode.  After the 24-byte reserve above,
-   * user_SS lives at 26(%bp). */
+   * when it interrupted user mode.  After the 34-byte reserve above,
+   * user_SS lives at 36(%bp). */
   movw  %sp, %bp
-  movw  26(%bp), %ax
+  movw  36(%bp), %ax
   testw %ax, %ax
   jz    .Ltick_from_kernel
   movw  $1, %ax
@@ -120,7 +120,7 @@ i16_timer_isr:
    * thread, where the timer tick is the normal path that hands off
    * from pid 0 to runnable user processes. */
   movw  %sp, %bp
-  movw  26(%bp), %ax    /* user_SS at 26(%bp) after the 24-byte reserve */
+  movw  36(%bp), %ax    /* user_SS at 36(%bp) after the 34-byte reserve */
   pushw %ax
   call  i16_timer_can_preempt
   addw  $2, %sp
@@ -160,11 +160,11 @@ i16_timer_isr:
    * so restore must also run on this return path. */
   call  i16_vfork_restore_frame
 
-  /* Skip the 24-byte vfork-save slot reserved by trap.S syscall entry.
+  /* Skip the 34-byte vfork-save slot reserved by trap.S syscall entry.
    * Every saved kernel SP (for a process suspended via the syscall path)
    * points at the post-subw position; we adjust here so the popws read
    * the user_SP/user_SS slot at kernel_stack_top - 4. */
-  addw  $24, %sp
+  addw  $34, %sp
 
   /* Restore interrupted SS:SP */
   popw  %bp             /* user_SP */

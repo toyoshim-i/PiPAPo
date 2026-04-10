@@ -1196,13 +1196,21 @@ static int exec_simple(char **argv, int argc) {
     char *saved_argv0 = argv[0];
     argv[0] = resolved;
 
+    /* Apply redirections before vfork — the child must not call
+     * anything except execve/_exit on the shared user stack. */
+    int saved_fds[3];
+    if (nredirs > 0) save_fds(redirs, nredirs, saved_fds);
+
     pid_t pid = vfork();
     if (pid == 0) {
-      apply_redirects(redirs, nredirs);
       execve(resolved, argv, envp);
       _exit(127);
     }
     argv[0] = saved_argv0;
+
+    /* Restore parent's fds after vfork returns */
+    if (nredirs > 0) restore_fds(saved_fds);
+
     if (pid < 0) {
       err_msg(argv[0], "fork failed");
       return 1;

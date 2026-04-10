@@ -1618,40 +1618,37 @@ long sys_vfork(uint32_t *frame) {
         current->image.data.base_page + (page_id_t)(rel / PAGE_SIZE);
     uint16_t frame_page_off = (uint16_t)(rel % PAGE_SIZE);
 
-    /* Save parent's 24B GP+IRET frame onto the parent's OWN kernel
-     * stack, *below* trap_ksp.  Patch the AX slot (offset 16) with
-     * child PID so the parent sees the correct vfork return value
-     * when the frame is restored.
+    /* Save parent's 34B user frame onto the parent's OWN kernel
+     * stack, *below* trap_ksp.  The 34 bytes cover:
+     *   - 24B GP+IRET frame (ES..FLAGS, popped by trap.S restore)
+     *   - 10B vfork stub frame (saved DI, SI, BX, BP + return addr,
+     *     popped by SYSCALL_RET after iret)
      *
-     * The earlier version wrote at (trap_ksp + 2), which is the
-     * parent's kernel-stack TOP — and because per-process kernel
-     * stacks are packed contiguously in the SS=0 region, that
-     * address aliased the BASE of the next slot (the vfork child's
-     * slot in the only path that reaches here).  The 24-byte memcpy
-     * then clobbered 24 bytes of the child slot's stack region.
+     * The child's execve call inevitably pushes args and a return
+     * address onto the shared user stack, overwriting those 10 bytes
+     * above the GP+IRET frame.  Saving 34B covers the full region
+     * that the child cannot avoid clobbering.
      *
-     * Writing BELOW trap_ksp keeps the save inside the parent's own
-     * slot.  At the current 1342-byte high-water mark on slot 1, the
-     * parent has > 1.5 KB of room beneath trap_ksp, so the saved
-     * frame fits comfortably without touching any other slot. */
-    uint8_t saved_frame[24];
-    mem_region_page_read(frame_page, frame_page_off, saved_frame, 24);
+     * Patch the AX slot (offset 16) with child PID so the parent
+     * sees the correct vfork return value when the frame is restored. */
+    uint8_t saved_frame[34];
+    mem_region_page_read(frame_page, frame_page_off, saved_frame, 34);
     uint16_t child_pid16 = (uint16_t)child->pid;
     saved_frame[16] = (uint8_t)(child_pid16 & 0xFF);
     saved_frame[17] = (uint8_t)(child_pid16 >> 8);
     uint8_t *kstack_save =
-        (uint8_t *)(uintptr_t)((uint16_t)(uintptr_t)trap_ksp - 24u);
-    __builtin_memcpy(kstack_save, saved_frame, 24);
+        (uint8_t *)(uintptr_t)((uint16_t)(uintptr_t)trap_ksp - 34u);
+    __builtin_memcpy(kstack_save, saved_frame, 34);
     current->vfork_frame_saved = 1;
 
     /* Build child's kernel stack: [user_SP, user_SS] at the top, then
-     * the 24-byte vfork-save slot reserved by the trap.S/switch.S
+     * the 34-byte vfork-save slot reserved by the trap.S/switch.S
      * convention.  child->sp points at the post-reserve position. */
     uint16_t child_ksp = child->kernel_stack_top;
     uint16_t *ckf = (uint16_t *)(uintptr_t)(child_ksp - 4);
     ckf[0] = parent_user_sp;
     ckf[1] = parent_user_ss;
-    child->sp = (uint32_t)(uint16_t)(child_ksp - 4u - 24u);
+    child->sp = (uint32_t)(uint16_t)(child_ksp - 4u - 34u);
 
     /* Patch AX=0 in shared user stack frame for child return */
     uint16_t zero = 0;
