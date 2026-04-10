@@ -37,8 +37,9 @@ static int parse_stat(const char *buf, int *pid, char *comm, int commsz,
 
   *ppid = uc_atoi(p);
 
-  /* Advance to field 14 (utime): skip fields 5-13 (9 fields). */
-  int skip = 9;
+  /* Advance to field 14 (utime): p is at field 4 digits,
+   * skip 10 spaces (one after each of fields 4-13). */
+  int skip = 10;
   while (skip > 0 && *p) {
     if (*p == ' ') skip--;
     p++;
@@ -57,8 +58,9 @@ static int parse_stat(const char *buf, int *pid, char *comm, int commsz,
     p++;
   }
 
-  /* Advance to field 23 (vsize): skip fields 16-22 (7 fields). */
-  skip = 7;
+  /* Advance to field 23 (vsize): p is at the space before field 16,
+   * skip 8 spaces (one before each of fields 16-23). */
+  skip = 8;
   while (skip > 0 && *p) {
     if (*p == ' ') skip--;
     p++;
