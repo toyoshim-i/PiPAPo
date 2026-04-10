@@ -40,8 +40,10 @@ Once that frame is saved elsewhere, a full user-stack copy is unnecessary.
 The PC/XT i16 port now uses:
 
 - shared user stack during `vfork()`
-- per-process kernel stack storage for the parent's saved resume frame
-- restore of that frame before the parent returns to user mode
+- a reserved 24-byte slot in the per-process kernel stack (fixed 2 KB slots)
+   for the parent's saved GP+IRET resume frame
+- restore of that frame before the parent returns to user mode, on both the
+   syscall and timer ISR return paths
 
 That was enough to make:
 
@@ -59,14 +61,41 @@ resume state, do not copy the whole user stack" approach is viable.
 
 The working i16 design is more specific than just "save a frame somewhere":
 
-- `sys_vfork()` saves the parent's 24-byte GP+IRET resume frame off the shared
-   user stack and patches the saved AX slot with the child PID
+- `sys_vfork()` saves the parent's 24-byte GP+IRET resume frame from the
+   shared user stack to the parent's own kernel stack, below `trap_ksp`.
+   The AX slot (offset 16) in the saved copy is patched with the child PID
+   so the parent sees the correct return value when resumed.
 - the child keeps using the shared user stack until `execve()` or `_exit()`
 - `execve()` is allowed to rebuild that shared user stack for the new image
-- when the parent becomes runnable again, the saved frame must be copied back
-   to `user_SS:user_SP` before any path returns the parent to user mode
+- when the parent becomes runnable again, `i16_vfork_restore_frame()` copies
+   the saved 24 bytes back to `user_SS:user_SP` before any path returns the
+   parent to user mode
 
-That last point turned out to be load-bearing.
+### Kernel stack layout
+
+Every kernel entry path (`trap.S` INT 30h handler and `switch.S` timer ISR)
+reserves a 24-byte slot at a fixed position in the kernel stack:
+
+```
+  ktop - 2   user_SS   (pushed by entry code)
+  ktop - 4   user_SP
+  ktop - 28  24-byte vfork-save slot  (subw $24, %sp)
+  ...        C call chain frames below
+```
+
+`sys_vfork()` writes the parent's saved frame into the slot at
+`[ktop - 28, ktop - 4)`.  The slot is wasted (24 bytes) on the common
+non-vfork path but keeps the layout uniform.
+
+### AX return-value guard
+
+After the syscall handler returns, `trap.S` normally writes the return value
+into the saved AX slot on the user stack.  For a vfork parent whose child is
+still running on the shared user stack, that write would clobber the child's
+AX = 0.  `i16_trap_should_skip_ret_store()` checks `current->vfork_frame_saved`
+and skips the AX write in that case.
+
+### Two restore paths
 
 During PC/XT bring-up, the first implementation restored the saved parent
 frame on the syscall trap return path only.  That was not sufficient.  The
@@ -74,6 +103,12 @@ parent can also be resumed by the timer ISR path after scheduling, and that
 path also ends in a user-mode `iret`.  If the timer return path skips the
 restore, it can `iret` from the child's rewritten shared user stack and pop a
 stale or corrupted `CS:IP`.
+
+Both `trap.S` (line ~206) and `switch.S` (line ~161) now call
+`i16_vfork_restore_frame()` before the final `iret`.  The restore function
+checks `current->vfork_frame_saved`, and if set, copies the 24 bytes from the
+kernel stack slot back to the user stack via `mem_region_page_write()`, then
+clears the flag.
 
 So the actual invariant is:
 
