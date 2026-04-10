@@ -737,7 +737,7 @@ static int vfat_readdir(vnode_t *dir, struct dirent *entries,
   }
 
 done:
-  *cookie = target_idx + (uint32_t)count;
+  *cookie = entry_idx;
   return count;
 }
 

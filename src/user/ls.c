@@ -10,14 +10,10 @@
 
 #include "lib/uclib.h"
 
-#define TIOCGWINSZ 0x5413u
+#include "common/termios.h"
+
 #define NAME_MAX_STORE 1024 /* name storage pool */
 #define ENTRY_MAX 64        /* max entries per directory */
-
-struct winsize {
-  unsigned short ws_row;
-  unsigned short ws_col;
-};
 
 static int opt_long;
 static int opt_all;

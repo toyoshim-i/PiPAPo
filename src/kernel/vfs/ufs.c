@@ -742,7 +742,7 @@ static int ufs_readdir(vnode_t *dir, struct dirent *entries, size_t max_entries,
   }
 
 done:
-  *cookie = target + (uint32_t)count;
+  *cookie = entry_idx;
   return count;
 }
 
