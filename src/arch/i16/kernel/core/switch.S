@@ -128,22 +128,22 @@ i16_timer_isr:
   jz    .Lno_switch
 
   /* Check context switch flag */
-  movw  switch_pending, %ax
+  movw  %ss:switch_pending, %ax
   testw %ax, %ax
   jz    .Lno_switch
 
   /* Clear the flag */
-  movw  $0, switch_pending
+  movw  $0, %ss:switch_pending
 
   /* Save current kernel SP into current PCB (offset 0) */
-  movw  current_core, %bx
+  movw  %ss:current_core, %bx
   movw  %sp, (%bx)
 
   /* Pick next process */
   call  sched_next
 
   /* Update current_core[0] */
-  movw  %ax, current_core
+  movw  %ax, %ss:current_core
 
   /* Load new process's kernel SP */
   movw  %ax, %bx
@@ -152,7 +152,7 @@ i16_timer_isr:
   /* Update i16_current_ksp from new PCB.
    * kernel_stack_top is at PCB offset 4 (sp is uint32_t = 4 bytes). */
   movw  4(%bx), %ax
-  movw  %ax, i16_current_ksp
+  movw  %ax, %ss:i16_current_ksp
 
 .Lno_switch:
   /* Restore vfork parent's saved GP+IRET frame to user stack.

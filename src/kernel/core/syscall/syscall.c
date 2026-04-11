@@ -38,6 +38,12 @@ volatile int svc_restart[2] = {0, 0};
 volatile uint32_t svc_saved_a0[2] = {0, 0};
 volatile uint32_t svc_exc_return[2] = {0, 0};
 
+#if defined(__ia16__)
+static long ia16_sign_extend_arg(long value) {
+  return (long)(int32_t)(int16_t)(uint16_t)value;
+}
+#endif
+
 void svc_set_restart(void) {
   svc_restart[core_id()] = 1;
   current->svc_needs_restart = 1;
@@ -69,6 +75,30 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
   (void)a3;
   (void)a4;
   (void)a5; /* available for 4-6 arg syscalls */
+
+#if defined(__ia16__)
+  /* The ia16 user ABI passes syscall args in 16-bit registers.  Most args are
+   * pointers, sizes, or flags and should remain zero-extended, but signed
+   * process-control values such as waitpid(-1, ...) need explicit sign
+   * extension before the shared syscall layer interprets them as 32-bit long.
+   */
+  switch (nr) {
+    case SYS_EXIT:
+    case SYS_EXIT_GROUP:
+    case SYS_WAITPID:
+    case SYS_WAIT4:
+    case SYS_GETPGID:
+      a0 = ia16_sign_extend_arg(a0);
+      break;
+    case SYS_SETPGID:
+    case SYS_KILL:
+      a0 = ia16_sign_extend_arg(a0);
+      a1 = ia16_sign_extend_arg(a1);
+      break;
+    default:
+      break;
+  }
+#endif
 
   long ret;
 

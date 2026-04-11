@@ -32,6 +32,8 @@
   .code16
   .text
 
+  .equ PCB_SVC_NEEDS_RESTART_OFFSET, 452
+
   .global i16_syscall_isr
   .extern i16_trap_should_skip_ret_store
   .extern i16_trap_should_switch_now
@@ -75,7 +77,7 @@ i16_syscall_isr:
   /* Save the syscall frame pointer for sys_sigreturn.
    * This points at the [user_SP, user_SS] slot — the same value the
    * C side knows as i16_trap_frame_sp. */
-  movw  %sp, i16_trap_frame_sp
+  movw  %sp, %ss:i16_trap_frame_sp
 
   /* Reserve a 34-byte slot above the C call chain for sys_vfork to
    * stash the parent's GP+IRET frame (24B) plus the vfork stub's
@@ -132,11 +134,11 @@ i16_syscall_isr:
 
   /* execve replaced the process image: build kernel stack frame
    * from PCB's exec_user_ss/sp and switch to it. */
-  movw  exec_pending, %ax
+  movw  %ss:exec_pending, %ax
   testw %ax, %ax
   jz    .Lcheck_restart
-  movw  $0, exec_pending
-  movw  current_core, %bx
+  movw  $0, %ss:exec_pending
+  movw  %ss:current_core, %bx
   /* Build [user_SP, user_SS] at kernel_stack_top - 4.
    * PCB layout: sp(4B), kernel_stack_top(2B), exec_user_ss(2B),
    *             exec_user_sp(2B). Offsets: 4, 6, 8. */
@@ -148,16 +150,24 @@ i16_syscall_isr:
 
 .Lcheck_restart:
   /* Blocking syscalls rewind IP so INT 30h re-executes when resumed */
-  movw  svc_restart, %ax
-  testw %ax, %ax
-  jz    .Lstore_ret
-  movw  $0, svc_restart
+  pushw %bx
+  movw  %ss:current_core, %bx
+  xorw  %ax, %ax
+  movb  %ss:PCB_SVC_NEEDS_RESTART_OFFSET(%bx), %al
+  testb %al, %al
+  jz    .Lno_restart
+  movb  $0, %ss:PCB_SVC_NEEDS_RESTART_OFFSET(%bx)
+  movw  $0, %ss:svc_restart
+  popw  %bx
   /* Rewind IP on the interrupted stack: IP is at user_SP+18 */
   movw  %cx, %ds        /* DS = user_SS */
   subw  $2, 18(%bx)     /* IP -= 2 (back to INT 30h) */
   xorw  %ax, %ax
   movw  %ax, %ds        /* DS = 0 */
   jmp   .Lmaybe_switch
+
+.Lno_restart:
+  popw  %bx
 
 .Lstore_ret:
   /* Only skip the AX write for the vfork parent case where the child is
@@ -182,25 +192,25 @@ i16_syscall_isr:
 
 .Lmaybe_switch:
   /* Check if a context switch was requested (e.g. by sys_waitpid) */
-  movw  switch_pending, %ax
+  movw  %ss:switch_pending, %ax
   testw %ax, %ax
   jz    .Lafter_switch
   call  i16_trap_should_switch_now
   testw %ax, %ax
   jz    .Lafter_switch
-  movw  $0, switch_pending
+  movw  $0, %ss:switch_pending
 
-  movw  current_core, %bx
+  movw  %ss:current_core, %bx
   movw  %sp, (%bx)
 
   call  sched_next
-  movw  %ax, current_core
+  movw  %ax, %ss:current_core
   movw  %ax, %bx
   movw  (%bx), %sp
 
   /* Update i16_current_ksp from new PCB (offset 4) */
   movw  4(%bx), %ax
-  movw  %ax, i16_current_ksp
+  movw  %ax, %ss:i16_current_ksp
 
 .Lafter_switch:
   /* Restore vfork parent's saved GP+IRET frame to user stack.
@@ -209,10 +219,10 @@ i16_syscall_isr:
   call  i16_vfork_restore_frame
 
   /* sys_sigreturn may ask us to resume from an older saved frame */
-  movw  i16_sigreturn_restore_sp, %ax
+  movw  %ss:i16_sigreturn_restore_sp, %ax
   testw %ax, %ax
   jz    .Lcheck_signal
-  movw  $0, i16_sigreturn_restore_sp
+  movw  $0, %ss:i16_sigreturn_restore_sp
   movw  %ax, %sp
   jmp   .Lrestore
 
