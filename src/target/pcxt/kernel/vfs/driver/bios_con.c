@@ -259,6 +259,44 @@ void bios_putc(char c)
         if (bios_param_seen_digit || (unsigned)bios_param_count > 0u)
           bios_param_count++;
         bios_ansi_apply_sgr();
+      } else if (ch == 'H') {
+        /* CSI row;col H — cursor position (1-based, default 1;1) */
+        uint16_t row = bios_params[0];
+        uint16_t col = (bios_param_count >= 1u) ? bios_params[1] : 0u;
+        if (row > 0u) row--;
+        if (col > 0u) col--;
+        if (row >= BIOS_ROWS) row = BIOS_ROWS - 1u;
+        if (col >= BIOS_COLS) col = BIOS_COLS - 1u;
+        bios_row = (uint8_t)row;
+        bios_col = (uint8_t)col;
+        bios_sync_hw_cursor();
+      } else if (ch == 'J') {
+        uint16_t p = bios_params[0];
+        uint16_t blank =
+            (uint16_t)(((uint16_t)bios_attr << 8) | (uint16_t)' ');
+        if (p == 2u) {
+          /* CSI 2 J — erase entire display */
+          for (uint16_t i = 0; i < BIOS_ROWS * BIOS_COLS; i++)
+            bios_vram_poke((uint16_t)(i * 2u), blank);
+        } else if (p == 0u) {
+          /* CSI 0 J — erase from cursor to end of display */
+          uint16_t start =
+              (uint16_t)((uint16_t)bios_row * BIOS_COLS + bios_col);
+          for (uint16_t i = start; i < BIOS_ROWS * BIOS_COLS; i++)
+            bios_vram_poke((uint16_t)(i * 2u), blank);
+        }
+      } else if (ch == 'K') {
+        /* CSI 0 K — erase from cursor to end of line */
+        uint16_t p = bios_params[0];
+        if (p == 0u) {
+          uint16_t blank =
+              (uint16_t)(((uint16_t)bios_attr << 8) | (uint16_t)' ');
+          for (uint8_t c = bios_col; c < BIOS_COLS; c++) {
+            uint16_t pos =
+                (uint16_t)(((uint16_t)bios_row * BIOS_COLS + c) * 2u);
+            bios_vram_poke(pos, blank);
+          }
+        }
       }
       bios_ansi_reset_parser();
       return;
