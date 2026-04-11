@@ -1,9 +1,10 @@
 /*
  * stage2.c — PPAP IBM PC Stage 2: UFS kernel loader
  *
- * Stage2 runs at 0xC000 (loaded there by stage1).  Reads the UFS
- * filesystem on the floppy (sector 9+), finds /boot/kernel, loads it
- * directly to 0x0600 (its linked address), and jumps there.
+ * Stage2 runs at 0xC000 (loaded there by stage1).  Detects whether
+ * the boot device is a floppy (DL < 0x80) or hard disk (DL >= 0x80),
+ * queries disk geometry accordingly, finds the UFS partition, loads
+ * /boot/kernel, and jumps there.
  *
  * Memory layout while stage2 runs:
  *   0x0600-0x????  Kernel load area (directly at linked address)
@@ -18,13 +19,13 @@
 #include <stdint.h>
 
 #define FLOPPY_SEC       512u
-#define SECS_PER_TRACK   18u
-#define NUM_HEADS        2u
-#define SECS_PER_CYL     (SECS_PER_TRACK * NUM_HEADS)
-
-#define UFS_FLOPPY_BASE  9u
 #define UFS_BLOCK_SIZE   4096u
-#define UFS_FLOPPY_SECS  (UFS_BLOCK_SIZE / FLOPPY_SEC)
+#define UFS_SECS_PER_BLK (UFS_BLOCK_SIZE / FLOPPY_SEC)
+
+/* Disk geometry — set at boot from known floppy values or INT 13h query */
+static uint16_t secs_per_track;
+static uint16_t num_heads;
+static uint16_t ufs_base_sector;  /* absolute LBA of first UFS sector */
 
 /* Stage2 at 0xC000 (up to 4 KB), BUF/IBUF above it */
 #define BUF  ((uint8_t *)0xD000u)
@@ -84,10 +85,11 @@ static void puts_bios(const char *s)
 static void __attribute__((noinline)) read_sector_far(uint16_t lba,
     uint16_t seg, uint16_t off)
 {
-  uint16_t cyl  = lba / SECS_PER_CYL;
-  uint16_t rem  = lba % SECS_PER_CYL;
-  uint16_t head = rem / SECS_PER_TRACK;
-  uint16_t sec  = rem % SECS_PER_TRACK + 1;
+  uint16_t secs_per_cyl = secs_per_track * num_heads;
+  uint16_t cyl  = lba / secs_per_cyl;
+  uint16_t rem  = lba % secs_per_cyl;
+  uint16_t head = rem / secs_per_track;
+  uint16_t sec  = rem % secs_per_track + 1;
 
   __asm__ volatile (
     "push %%es\n\t"
@@ -112,9 +114,9 @@ static void __attribute__((noinline)) read_sector(uint16_t lba, void *dest)
 
 static void __attribute__((noinline)) read_ufs_block(uint16_t blk, void *dest)
 {
-  uint16_t lba = UFS_FLOPPY_BASE + blk * UFS_FLOPPY_SECS;
+  uint16_t lba = ufs_base_sector + blk * UFS_SECS_PER_BLK;
   uint8_t *p = (uint8_t *)dest;
-  for (uint16_t i = 0; i < UFS_FLOPPY_SECS; i++) {
+  for (uint16_t i = 0; i < UFS_SECS_PER_BLK; i++) {
     read_sector(lba + i, p);
     p += FLOPPY_SEC;
   }
@@ -145,8 +147,8 @@ static void __attribute__((noinline)) load_block_far(uint16_t blk,
     uint16_t seg, uint16_t *off, uint32_t *loaded, uint32_t size)
 {
   if (blk == 0) return;
-  uint16_t lba = UFS_FLOPPY_BASE + blk * UFS_FLOPPY_SECS;
-  for (uint16_t s = 0; s < UFS_FLOPPY_SECS && *loaded < size; s++) {
+  uint16_t lba = ufs_base_sector + blk * UFS_SECS_PER_BLK;
+  for (uint16_t s = 0; s < UFS_SECS_PER_BLK && *loaded < size; s++) {
     read_sector_far(lba + s, seg, *off);
     *off += FLOPPY_SEC;
     *loaded += FLOPPY_SEC;
@@ -251,9 +253,70 @@ typedef struct {
   } mod[MOD_MAX];
 } mod_info_t;
 
+/* ── Boot device detection ──────────────────────────────────────────── */
+
+/* Query CHS geometry via BIOS INT 13h AH=08h. */
+static void query_disk_geometry(void)
+{
+  uint16_t cx, dx;
+  __asm__ volatile (
+    "mov  $0x0800, %%ax\n\t"
+    "int  $0x13"
+    : "=c"(cx), "=d"(dx)
+    : "d"((uint16_t)boot_drive)
+    : "ax", "bx", "memory", "cc"
+  );
+  secs_per_track = cx & 0x3F;       /* CL bits 0-5 */
+  num_heads = (dx >> 8) + 1;        /* DH = max head (0-based) */
+}
+
+/* MBR partition entry (16 bytes at offset 446 in sector 0). */
+typedef struct {
+  uint8_t  status;
+  uint8_t  chs_first[3];
+  uint8_t  type;
+  uint8_t  chs_last[3];
+  uint32_t lba_start;
+  uint32_t lba_size;
+} __attribute__((packed)) mbr_part_t;
+
+#define MBR_PART_OFFSET 446u
+#define MBR_PART_COUNT  4u
+#define MBR_PART_TYPE   0xA9u  /* BSD UFS */
+#define MBR_SIG_OFFSET  510u
+
+/* Read sector 0 (MBR), scan for a partition with type MBR_PART_TYPE.
+ * Returns the partition's start LBA, or 0 on failure. */
+static uint16_t find_ufs_partition(void)
+{
+  read_sector(0, BUF);
+  /* Verify MBR signature */
+  if (BUF[MBR_SIG_OFFSET] != 0x55 || BUF[MBR_SIG_OFFSET + 1] != 0xAA)
+    return 0;
+  mbr_part_t *p = (mbr_part_t *)(BUF + MBR_PART_OFFSET);
+  for (uint16_t i = 0; i < MBR_PART_COUNT; i++) {
+    if (p[i].type == MBR_PART_TYPE)
+      return (uint16_t)p[i].lba_start;
+  }
+  return 0;
+}
+
 void stage2_main(void)
 {
   /* Banner continues: "PiPA" already on screen from stage1+stage2_entry */
+
+  /* Detect boot device and set geometry + UFS base sector */
+  if (boot_drive >= 0x80) {
+    /* HDD: query geometry and find UFS partition in MBR */
+    query_disk_geometry();
+    ufs_base_sector = find_ufs_partition();
+    if (!ufs_base_sector) { puts_bios("!MBR"); return; }
+  } else {
+    /* Floppy: known 1.44 MB geometry */
+    secs_per_track = 18;
+    num_heads = 2;
+    ufs_base_sector = 9;
+  }
 
   read_ufs_block(0, BUF);
   ufs_super_t *sb = (ufs_super_t *)BUF;
