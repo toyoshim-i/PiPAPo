@@ -67,7 +67,10 @@ static long elf16_read_near(vnode_t *vn, uint32_t off, void *buf,
   page_id_t page;
   uint16_t page_off;
 
-  if (mem_region_ptr_ref(buf, &page, &page_off) < 0) return -ENOMEM;
+  /* TODO(mem_region_wrapup Phase 5): inline ptr→page encoding */
+  uintptr_t addr = (uintptr_t)buf;
+  page = (page_id_t)(addr / PAGE_SIZE);
+  page_off = (uint16_t)(addr & (PAGE_SIZE - 1u));
   return mod_vfs.vnode_read(vn, page, page_off, len, off);
 }
 

@@ -23,8 +23,8 @@
 #include <stddef.h>
 
 #include "common/errno.h"
+#include "kernel/common/mem_region_kbuf.h"
 #include "kernel/common/mod/mod_core.h"
-#include "kernel/common/subtle/mem_helper.h"
 #include "kernel/vfs/devfs.h"
 #include "kernel/vfs/procfs.h"
 #include "kernel/vfs/romfs.h"
@@ -85,10 +85,7 @@ int fstab_parse(fstab_entry_t *entries, int max_entries) {
   char buf[512];
   page_id_t page;
   uint16_t page_off;
-  if (mem_region_ptr_ref(buf, &page, &page_off) < 0) {
-    mod_vfs.vnode_release(vn);
-    return -EFAULT;
-  }
+  mem_region_kbuf_to_page(buf, &page, &page_off);
   long n = mod_vfs.vnode_read(vn, page, page_off, sizeof(buf) - 1, 0);
   mod_vfs.vnode_release(vn);
   if (n <= 0) return 0;
