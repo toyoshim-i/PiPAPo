@@ -30,7 +30,21 @@ typedef struct {
     uint16_t segment;
     uint16_t size;
   } mod[MOD_MAX];
+  /* Boot device info */
+  uint8_t  boot_dev;        /* 0x00 = floppy, 0x80 = HDD */
+  uint8_t  reserved;
+  uint16_t ufs_base;        /* absolute LBA of first UFS sector */
+  uint16_t dev_spt;         /* sectors per track */
+  uint16_t dev_heads;       /* number of heads */
+  uint32_t dev_sectors;     /* UFS partition size in sectors */
 } mod_info_t;
+
+/* Boot device parameters — read from mod_info, used by bios_blk */
+uint8_t  i16_boot_drive;
+uint16_t i16_ufs_base_sector;
+uint16_t i16_dev_spt;
+uint16_t i16_dev_heads;
+uint32_t i16_dev_sectors;
 
 /*
  * VFS module header layout (at offset 0 of VFS binary):
@@ -127,6 +141,13 @@ static void seg_init_modules(void) {
   if (info->mod[2].segment) {
     i16_page_pool_base = (uint32_t)info->mod[2].segment << 4;
   }
+
+  /* Boot device parameters */
+  i16_boot_drive = info->boot_dev;
+  i16_ufs_base_sector = info->ufs_base;
+  i16_dev_spt = info->dev_spt;
+  i16_dev_heads = info->dev_heads;
+  i16_dev_sectors = info->dev_sectors;
 
   /* Module 0: core — already running in far CS, register segment */
   if (info->count >= 1) {
@@ -606,9 +627,10 @@ void target_late_init(void)
 
 int target_mount_rootfs(void)
 {
-  /* blkdev + floppy init done in VFS (pcxt_logger.c VFS_EVENT_LATE_INIT).
-   * Pass device name — ufs_mount resolves it via blkdev_find. */
-  return mod_vfs.mount_ufs("/", MNT_RDONLY, "fd0");
+  /* blkdev + bios_blk init done in VFS (pcxt_blkdev.c VFS_EVENT_LATE_INIT).
+   * Device name depends on boot drive: "fd0" for floppy, "hd0" for HDD. */
+  const char *dev = (i16_boot_drive >= 0x80) ? "hd0" : "fd0";
+  return mod_vfs.mount_ufs("/", MNT_RDONLY, dev);
 }
 
 void target_post_mount(void)

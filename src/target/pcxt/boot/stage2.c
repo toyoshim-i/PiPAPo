@@ -251,6 +251,13 @@ typedef struct {
     uint16_t segment;          /* paragraph address (linear >> 4) */
     uint16_t size;             /* size in bytes */
   } mod[MOD_MAX];
+  /* Boot device info (read by kernel target_pcxt.c) */
+  uint8_t  boot_dev;           /* 0x00 = floppy, 0x80 = HDD */
+  uint8_t  reserved;
+  uint16_t ufs_base;           /* absolute LBA of first UFS sector */
+  uint16_t dev_spt;            /* sectors per track */
+  uint16_t dev_heads;          /* number of heads */
+  uint32_t dev_sectors;        /* total partition sectors */
 } mod_info_t;
 
 /* ── Boot device detection ──────────────────────────────────────────── */
@@ -285,8 +292,11 @@ typedef struct {
 #define MBR_PART_TYPE   0xA9u  /* BSD UFS */
 #define MBR_SIG_OFFSET  510u
 
+static uint32_t ufs_partition_sectors;  /* saved from MBR scan */
+
 /* Read sector 0 (MBR), scan for a partition with type MBR_PART_TYPE.
- * Returns the partition's start LBA, or 0 on failure. */
+ * Returns the partition's start LBA, or 0 on failure.
+ * Also saves the partition size in ufs_partition_sectors. */
 static uint16_t find_ufs_partition(void)
 {
   read_sector(0, BUF);
@@ -295,8 +305,10 @@ static uint16_t find_ufs_partition(void)
     return 0;
   mbr_part_t *p = (mbr_part_t *)(BUF + MBR_PART_OFFSET);
   for (uint16_t i = 0; i < MBR_PART_COUNT; i++) {
-    if (p[i].type == MBR_PART_TYPE)
+    if (p[i].type == MBR_PART_TYPE) {
+      ufs_partition_sectors = p[i].lba_size;
       return (uint16_t)p[i].lba_start;
+    }
   }
   return 0;
 }
@@ -392,6 +404,16 @@ void stage2_main(void)
   /* Module 2 slot: page pool start (read by target_pcxt.c) */
   info->mod[2].segment = pool_seg;
   info->mod[2].size = 0;
+
+  /* Boot device parameters (read by bios_blk driver via target_pcxt.c) */
+  info->boot_dev = boot_drive;
+  info->reserved = 0;
+  info->ufs_base = ufs_base_sector;
+  info->dev_spt = secs_per_track;
+  info->dev_heads = num_heads;
+  info->dev_sectors = (boot_drive >= 0x80)
+      ? ufs_partition_sectors
+      : (uint32_t)(2880u - ufs_base_sector);
 
   /* Far-jump to core CS, IP=0x0600 (_start in boot.S).
    * Write far pointer to scratch area and use indirect ljmp. */

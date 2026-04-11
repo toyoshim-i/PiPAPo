@@ -8,9 +8,9 @@
  */
 
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/vfs/driver/bios_blk.h"
 #include "kernel/vfs/driver/bios_con.h"
 #include "kernel/vfs/driver/blkdev.h"
-#include "kernel/vfs/driver/floppy_blk.h"
 #include "kernel/vfs/klog.h"
 #include "kernel/vfs/tty.h"
 
@@ -139,7 +139,7 @@ void vfs_notify(int event) {
       break;
     case VFS_EVENT_LATE_INIT:
       blkdev_init();
-      floppy_blk_init();
+      bios_blk_init();
       break;
     case VFS_EVENT_IDLE:
       tty_poll_input();

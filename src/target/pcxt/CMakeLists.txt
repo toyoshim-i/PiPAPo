@@ -429,7 +429,7 @@ add_executable(ppap_pcxt_vfs
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/bios_con.c
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/pcxt_logger.c
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/pcxt_blkdev.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/floppy_blk.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/bios_blk.c
   ${PPAP_ROOT}/src/kernel/vfs/driver/blkdev.c
   # VFS-side stubs: entry stubs for VFS, caller stubs for core
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/vfs_entries.S
