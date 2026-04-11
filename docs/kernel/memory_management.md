@@ -146,11 +146,11 @@ All code outside `src/kernel/mm/` allocates through `mem_region_*`:
 ### 3.2 Page-Index Wrappers
 
 Code outside `mm/` accesses pages by index.  Most are exposed via
-`mod_core` for cross-module use.  `kernel/common/subtle/mem_helper.h`
-contains only `mem_region_ptr_ref` (used by four bridge callers) and
-is pending deletion in
-[mem_region_wrapup Phase 3](../proposals/mem_region_wrapup.md).
-Do not add new uses.
+`mod_core` for cross-module use.  For kernel-owned buffer conversion,
+use `mem_region_kbuf_to_page()` from `kernel/common/mem_region_kbuf.h`.
+`void *` → `(page, off)` conversion is **not** a general-purpose
+utility — only `user_to_page` (at the syscall dispatcher) and
+`kbuf_to_page` (for kernel metadata buffers) exist.
 
 | Function | Returns | i16-safe? | Use when |
 |---|---|---|---|

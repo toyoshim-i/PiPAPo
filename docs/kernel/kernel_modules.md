@@ -368,8 +368,6 @@ src/kernel/
       proc_info.h       ← pcb_t struct, proc_state_t, proc_table, current
       sched_info.h      ← cpu tick counters
       subsys_info.h     ← subsystem name constants
-    subtle/
-      mem_helper.h      ← ptr_ref only (pending deletion in mem_region_wrapup Phase 3)
     mem_region_kbuf.h   ← kernel-buffer → (page, off) inline helper
     config.h            ← build config, memory map constants
     spinlock.h          ← SMP spinlock / core_id()
@@ -441,10 +439,9 @@ No runtime module loading — simpler and sufficient.
 
 - **mod_signal** — signal delivery (currently direct calls)
 - **mod_subsys** — eCPU emulators + personality bridges
-- **blkdev page-indexed API** — refactor `blkdev_t.read/write` to
-  accept `(page_id_t, uint16_t off)` instead of `void *buf`,
-  eliminating the `mem_region_page_linear` workaround.
-  See [issue #48](https://github.com/toyoshim-i/PiPAPo/issues/48)
+- ~~**blkdev page-indexed API**~~ — done
+  ([issue #48](https://github.com/toyoshim-i/PiPAPo/issues/48),
+  mem_region_wrapup Phase 1).
 - **Source tree alignment** — restructure `src/kernel/` so each
   module's directory matches its boundary exactly (e.g. move
   `fd/`, `fs/` into `vfs/`; move `proc/`, `syscall/`, `mm/` into

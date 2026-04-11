@@ -1,8 +1,8 @@
 ## mem_region Wrap-Up: Deprecating `mem_helper.h` and Closing Issue #48
 
-> **Status**: Phase 1 complete. Phase 2 in progress. Targets the cleanup of
-> [`src/kernel/common/subtle/mem_helper.h`](../../src/kernel/common/subtle/mem_helper.h)
-> and the residual `mem_region_page_linear` callers in fs/exec/subsys.
+> **Status**: Phases 1–4 complete. `mem_helper.h` deleted, single-page
+> contract enforced, bounce buffers removed. Phase 5 (core loader
+> migration) is deferred to a separate proposal.
 
 ### 1. Background
 

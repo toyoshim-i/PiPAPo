@@ -55,6 +55,22 @@ if [[ -n "$vfs_violations" ]]; then
   rc=1
 fi
 
+# ── mem_region_ptr_ref must not exist (deleted in mem_region_wrapup) ─────────
+
+ptr_ref_violations="$(grep -rn 'mem_region_ptr_ref' \
+  "$PPAP_ROOT/src/kernel" \
+  --include='*.c' --include='*.h' \
+  2>/dev/null || true)"
+
+if [[ -n "$ptr_ref_violations" ]]; then
+  echo "MEM_REGION VIOLATION: mem_region_ptr_ref still in use"
+  echo "Use mem_region_kbuf_to_page for kernel buffers."
+  echo ""
+  echo "$ptr_ref_violations"
+  echo ""
+  rc=1
+fi
+
 if [[ $rc -eq 0 ]]; then
   echo "Module boundaries OK"
 fi
