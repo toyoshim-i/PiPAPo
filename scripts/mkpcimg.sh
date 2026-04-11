@@ -1,22 +1,30 @@
 #!/usr/bin/env bash
 # =============================================================================
-# mkpcimg.sh — Assemble PC/XT bootable floppy image
+# mkpcimg.sh — Assemble PC/XT bootable floppy and HDD images
 # =============================================================================
 #
-# Layout (1.44 MB, 2880 × 512-byte sectors):
-#   Sector 0          stage1 boot sector (512 B)
+# Floppy layout (1.44 MB, 2880 × 512-byte sectors):
+#   Sector 0          stage1 boot sector (512 B, BPB header)
 #   Sectors 1-8       stage2 UFS loader  (4 KB)
 #   Sectors 9+        UFS partition (contains /boot/kernel)
+#
+# HDD layout (16 MB, 32768 × 512-byte sectors):
+#   Sector 0          MBR boot sector (512 B, partition table)
+#   Sectors 1-8       stage2 UFS loader  (4 KB, same binary)
+#   Sectors 9+        UFS partition (type 0xA9, same content)
 #
 # Usage:
 #   ./scripts/mkpcimg.sh [build_dir]
 #
 # Expects build artifacts in the selected build directory:
-#   stage1.bin     — boot sector flat binary (512 B)
-#   stage2.bin     — stage2 flat binary (≤4 KB)
-#   ppap_pcxt.bin — kernel flat binary
+#   stage1.bin      — floppy boot sector flat binary (512 B)
+#   stage1_hdd.bin  — MBR boot sector flat binary (512 B)
+#   stage2.bin      — stage2 flat binary (≤4 KB)
+#   ppap_pcxt.bin   — kernel flat binary
 #
-# Output: build/pcxt/ppap_pcxt.img (1.44 MB floppy image)
+# Output:
+#   build/pcxt/ppap_pcxt.img       (1.44 MB floppy image)
+#   build/pcxt/ppap_pcxt_hdd.img   (16 MB HDD image)
 # =============================================================================
 
 set -euo pipefail
@@ -27,19 +35,27 @@ BUILD_DIR="${1:-$PROJECT_DIR/build/pcxt}"
 MKUFS="$PROJECT_DIR/tools/mkufs/mkufs"
 
 STAGE1="$BUILD_DIR/stage1.bin"
+STAGE1_HDD="$BUILD_DIR/stage1_hdd.bin"
 STAGE2="$BUILD_DIR/stage2.bin"
 KERNEL="$BUILD_DIR/ppap_pcxt.bin"
 IMG="$BUILD_DIR/ppap_pcxt.img"
+IMG_HDD="$BUILD_DIR/ppap_pcxt_hdd.img"
 
-# Floppy parameters
+# Common parameters
 SECTOR_SIZE=512
-FLOPPY_SECTORS=2880  # 1.44 MB
 STAGE2_SECTORS=8     # 4 KB for stage2
 UFS_START_SECTOR=9   # sector 0 = stage1, 1-8 = stage2
 
+# Floppy parameters
+FLOPPY_SECTORS=2880  # 1.44 MB
+
+# HDD parameters
+HDD_SIZE_MB=16
+HDD_SECTORS=$(( HDD_SIZE_MB * 1024 * 1024 / SECTOR_SIZE ))  # 32768
+
 # ── Verify inputs ──────────────────────────────────────────────────────────
 
-for f in "$STAGE1" "$STAGE2" "$KERNEL"; do
+for f in "$STAGE1" "$STAGE1_HDD" "$STAGE2" "$KERNEL"; do
   if [[ ! -f "$f" ]]; then
     echo "[mkpcimg] Error: $f not found" >&2
     exit 1
@@ -106,36 +122,82 @@ if [[ -f "$USER_BUILD_DIR/test_vfork.elf" ]]; then
   cp "$USER_BUILD_DIR/test_vfork.elf" "$UFS_STAGING/bin/test_vfork"
 fi
 
-# ── Create UFS image ─────────────────────────────────────────────────────
+# ── Pad stage2 ──────────────────────────────────────────────────────────
 
-# Available space for UFS: sectors 9..2879 = 2871 sectors × 512 = 1,470,072 B
-UFS_SIZE=$(( (FLOPPY_SECTORS - UFS_START_SECTOR) * SECTOR_SIZE ))
-UFS_IMG="$BUILD_DIR/ufs_boot.img"
-
-echo "[mkpcimg] Creating UFS image ($(( UFS_SIZE / 1024 )) KB)..."
-"$MKUFS" -s "$UFS_SIZE" -p "$UFS_STAGING" "$UFS_IMG"
-
-# ── Assemble floppy image ────────────────────────────────────────────────
-
-echo "[mkpcimg] Assembling floppy image..."
-
-# Start with empty 1.44 MB image
-dd if=/dev/zero of="$IMG" bs=$SECTOR_SIZE count=$FLOPPY_SECTORS 2>/dev/null
-
-# Write stage1 (sector 0)
-dd if="$STAGE1" of="$IMG" bs=$SECTOR_SIZE conv=notrunc 2>/dev/null
-
-# Write stage2 (sectors 1-8, padded to 4 KB)
 STAGE2_PAD="$BUILD_DIR/stage2_padded.bin"
 dd if=/dev/zero of="$STAGE2_PAD" bs=$SECTOR_SIZE count=$STAGE2_SECTORS 2>/dev/null
 dd if="$STAGE2" of="$STAGE2_PAD" bs=1 conv=notrunc 2>/dev/null
+
+# ── Create floppy UFS image ─────────────────────────────────────────────
+
+# Available space for UFS: sectors 9..2879 = 2871 sectors × 512 = 1,470,072 B
+UFS_FD_SIZE=$(( (FLOPPY_SECTORS - UFS_START_SECTOR) * SECTOR_SIZE ))
+UFS_FD_IMG="$BUILD_DIR/ufs_boot.img"
+
+echo "[mkpcimg] Creating floppy UFS image ($(( UFS_FD_SIZE / 1024 )) KB)..."
+"$MKUFS" -s "$UFS_FD_SIZE" -p "$UFS_STAGING" "$UFS_FD_IMG"
+
+# ── Assemble floppy image ───────────────────────────────────────────────
+
+echo "[mkpcimg] Assembling floppy image..."
+
+dd if=/dev/zero of="$IMG" bs=$SECTOR_SIZE count=$FLOPPY_SECTORS 2>/dev/null
+dd if="$STAGE1" of="$IMG" bs=$SECTOR_SIZE conv=notrunc 2>/dev/null
 dd if="$STAGE2_PAD" of="$IMG" bs=$SECTOR_SIZE seek=1 conv=notrunc 2>/dev/null
+dd if="$UFS_FD_IMG" of="$IMG" bs=$SECTOR_SIZE seek=$UFS_START_SECTOR conv=notrunc 2>/dev/null
 
-# Write UFS (sectors 9+)
-dd if="$UFS_IMG" of="$IMG" bs=$SECTOR_SIZE seek=$UFS_START_SECTOR conv=notrunc 2>/dev/null
-
-echo "[mkpcimg] Output: $IMG ($(wc -c < "$IMG") bytes)"
+echo "[mkpcimg] Floppy: $IMG ($(wc -c < "$IMG") bytes)"
 echo "[mkpcimg]   stage1: $(wc -c < "$STAGE1") bytes"
 echo "[mkpcimg]   stage2: $(wc -c < "$STAGE2") bytes"
 echo "[mkpcimg]   kernel: $(wc -c < "$KERNEL") bytes"
-echo "[mkpcimg]   UFS:    $(wc -c < "$UFS_IMG") bytes"
+echo "[mkpcimg]   UFS:    $(wc -c < "$UFS_FD_IMG") bytes"
+
+# ── Create HDD UFS image ────────────────────────────────────────────────
+
+UFS_HDD_SECTORS=$(( HDD_SECTORS - UFS_START_SECTOR ))
+UFS_HDD_SIZE=$(( UFS_HDD_SECTORS * SECTOR_SIZE ))
+UFS_HDD_IMG="$BUILD_DIR/ufs_hdd.img"
+
+echo "[mkpcimg] Creating HDD UFS image ($(( UFS_HDD_SIZE / 1024 )) KB)..."
+"$MKUFS" -s "$UFS_HDD_SIZE" -p "$UFS_STAGING" "$UFS_HDD_IMG"
+
+# ── Assemble HDD image ──────────────────────────────────────────────────
+
+echo "[mkpcimg] Assembling HDD image..."
+
+dd if=/dev/zero of="$IMG_HDD" bs=$SECTOR_SIZE count=$HDD_SECTORS 2>/dev/null
+
+# Write stage1_hdd (first 446 bytes of MBR)
+dd if="$STAGE1_HDD" of="$IMG_HDD" bs=1 count=446 conv=notrunc 2>/dev/null
+
+# Write MBR partition table (offset 446, 4 × 16-byte entries)
+# Entry 1: active, type=0xA9 (BSD UFS), start_lba=9, size=rest
+# CHS values use 0xFE for "use LBA" (common for small disks)
+PART_ENTRY="$BUILD_DIR/mbr_part.bin"
+python3 -c "
+import struct, sys
+# Partition entry 1: active, type 0xA9, start LBA 9, size $UFS_HDD_SECTORS
+entry = struct.pack('<BBBBBBBBII',
+    0x80,       # status: active
+    0xFE, 0xFF, 0xFF,  # CHS first (use LBA)
+    0xA9,       # type: BSD UFS
+    0xFE, 0xFF, 0xFF,  # CHS last (use LBA)
+    $UFS_START_SECTOR,  # start LBA
+    $UFS_HDD_SECTORS)   # size in sectors
+# Entries 2-4: empty
+entry += b'\x00' * 48
+# Boot signature
+entry += struct.pack('<H', 0xAA55)
+sys.stdout.buffer.write(entry)
+" > "$PART_ENTRY"
+dd if="$PART_ENTRY" of="$IMG_HDD" bs=1 seek=446 conv=notrunc 2>/dev/null
+
+# Write stage2 (sectors 1-8)
+dd if="$STAGE2_PAD" of="$IMG_HDD" bs=$SECTOR_SIZE seek=1 conv=notrunc 2>/dev/null
+
+# Write UFS (sectors 9+)
+dd if="$UFS_HDD_IMG" of="$IMG_HDD" bs=$SECTOR_SIZE seek=$UFS_START_SECTOR conv=notrunc 2>/dev/null
+
+echo "[mkpcimg] HDD: $IMG_HDD ($(wc -c < "$IMG_HDD") bytes)"
+echo "[mkpcimg]   stage1_hdd: $(wc -c < "$STAGE1_HDD") bytes"
+echo "[mkpcimg]   UFS:        $(wc -c < "$UFS_HDD_IMG") bytes"

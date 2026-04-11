@@ -93,6 +93,7 @@ DO_CLEAN=0
 DO_GDB=0
 DO_HOST=0
 DO_GUI=0
+DO_HDD=0
 DO_H68K_DEBUG=0
 OVERLAY=""
 FILTER=""
@@ -115,6 +116,7 @@ for arg in "$@"; do
         --gdb)      DO_GDB=1 ;;
         --host)     DO_HOST=1 ;;
         --gui)      DO_GUI=1 ;;
+        --hdd)      DO_HDD=1 ;;
         pico1|pico1calc|pico2|pico2rv|qemu_arm|qemu_rv32|qemu_m68k|x68k|xtensa_cc|pcxt) TARGET="$arg" ;;
         -*)         echo "Unknown option: $arg" >&2; exit 1 ;;
         *)
@@ -141,6 +143,7 @@ if [[ -z "$TARGET" ]]; then
     echo "  --gdb           Start QEMU with GDB server on :1234"
     echo "  --host          Run QEMU on host instead of Docker (with GUI)"
     echo "  --gui           Run Docker QEMU with X11-forwarded VGA window"
+    echo "  --hdd           Boot pcxt from HDD image instead of floppy"
     echo "  --filter=NAME   Run only matching tests"
     echo "  --overlay=DIR   Use overlay directory for romfs"
     exit 0
@@ -192,9 +195,13 @@ if [[ $DO_BUILD -eq 1 ]]; then
     if [[ -n "$TEMP_OVERLAY" ]]; then rm -rf "$TEMP_OVERLAY"; fi
 fi
 
-# ── PC/XT target (pcxt) — override ELF to floppy image ───────────────────
+# ── PC/XT target (pcxt) — override ELF to floppy or HDD image ──────────────
 if [[ "$TARGET" == "pcxt" ]]; then
-    ELF="$BUILD_DIR/ppap_pcxt.img"
+    if [[ $DO_HDD -eq 1 ]]; then
+        ELF="$BUILD_DIR/ppap_pcxt_hdd.img"
+    else
+        ELF="$BUILD_DIR/ppap_pcxt.img"
+    fi
 fi
 
 # ── ESP-IDF target (xtensa_cc) — flash via esptool in Docker ──────────────
@@ -409,19 +416,21 @@ elif [[ "$TARGET" == "qemu_rv32" ]]; then
     QEMU_ARGS=(-M virt -bios none -serial mon:stdio)
 elif [[ "$TARGET" == "pcxt" ]]; then
     QEMU_BIN="qemu-system-i386"
+    if [[ $DO_HDD -eq 1 ]]; then
+        PCXT_DRIVE="-drive file=$ELF,format=raw,if=ide"
+    else
+        PCXT_DRIVE="-drive file=$ELF,format=raw,if=floppy"
+    fi
     if [[ $DO_HOST -eq 1 ]]; then
         # --host: open graphical VGA window + serial on stdio
-        QEMU_ARGS=(-machine pc -cpu 486 -m 1M -serial mon:stdio
-                   -drive "file=$ELF,format=raw,if=floppy")
+        QEMU_ARGS=(-machine pc -cpu 486 -m 1M -serial mon:stdio $PCXT_DRIVE)
     elif [[ $DO_GUI -eq 1 ]]; then
         # --gui: X11 forwarded VGA window + serial on stdio
-        QEMU_ARGS=(-machine pc -cpu 486 -m 1M -serial mon:stdio
-                   -drive "file=$ELF,format=raw,if=floppy")
+        QEMU_ARGS=(-machine pc -cpu 486 -m 1M -serial mon:stdio $PCXT_DRIVE)
     else
         # Docker headless: keep serial on stdio for kernel logs and
         # user-space debugging over ttyS0.
-        QEMU_ARGS=(-machine pc -cpu 486 -m 1M -serial mon:stdio
-                   -drive "file=$ELF,format=raw,if=floppy")
+        QEMU_ARGS=(-machine pc -cpu 486 -m 1M -serial mon:stdio $PCXT_DRIVE)
     fi
     ELF=""  # already passed via -drive, clear so run_qemu doesn't add -kernel
 else
