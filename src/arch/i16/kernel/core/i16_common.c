@@ -60,10 +60,10 @@ uint32_t *arch_build_initial_frame(uint32_t *sp_arg, void (*entry)(void)) {
   *--sp = 0;       /* user_SS = 0 */
   *--sp = user_sp; /* user_SP = points to ES at top of GP frame */
 
-  /* Reserve 24-byte vfork-save slot — matches the trap.S/switch.S
-   * convention.  Restore paths always addw $24,%sp before popping
-   * user_SP/user_SS. */
-  sp -= 12;
+  /* Reserve 34-byte vfork-save slot — matches the trap.S/switch.S
+   * convention.  The shared restore paths always addw $34,%sp before
+   * popping user_SP/user_SS. */
+  sp -= 17;
 
   return (uint32_t *)(uintptr_t)sp;
 }
@@ -72,8 +72,8 @@ uint32_t *arch_build_initial_frame(uint32_t *sp_arg, void (*entry)(void)) {
  *
  * Called from trap.S before the restore path when the current process
  * is a vfork parent whose GP+IRET frame was saved on the kernel stack.
- * Copies the 24-byte saved frame back to the user stack so the parent
- * resumes with its original register state.
+ * Copies the saved 34-byte frame back to the user stack so the parent
+ * resumes with its original register state and vfork stub frame.
  *
  * kstack_sp: current kernel stack pointer (points to [user_SP, user_SS,
  *            24B saved frame]).
