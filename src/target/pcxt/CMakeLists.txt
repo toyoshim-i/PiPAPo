@@ -530,6 +530,14 @@ if(PPAP_TESTS)
     EXTRA_CFLAGS -I${PCXT_TEST_DIR})
   pcxt_user_program(test_vfork ${PPAP_ROOT}/tests/user/test_vfork.c
     EXTRA_CFLAGS -I${PCXT_TEST_DIR})
+  pcxt_user_program(test_fs ${PPAP_ROOT}/tests/user/test_fs.c
+    EXTRA_CFLAGS -I${PCXT_TEST_DIR})
+  pcxt_user_program(test_rw ${PPAP_ROOT}/tests/user/test_rw.c
+    EXTRA_CFLAGS -I${PCXT_TEST_DIR})
+  pcxt_user_program(test_tmpfs ${PPAP_ROOT}/tests/user/test_tmpfs.c
+    EXTRA_CFLAGS -I${PCXT_TEST_DIR})
+  pcxt_user_program(test_ufs ${PPAP_ROOT}/tests/user/test_ufs.c
+    EXTRA_CFLAGS -I${PCXT_TEST_DIR})
 endif()
 
 if(PPAP_TESTS_EXTENDED)

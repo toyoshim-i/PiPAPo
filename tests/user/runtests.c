@@ -248,6 +248,10 @@ int main(void)
     print("=== PPAP on-target test suite ===\n");
     record_test_simple("/bin/test_exec");
     record_test_simple("/bin/test_vfork");
+    record_test_simple("/bin/test_fs");
+    record_test_simple("/bin/test_rw");
+    record_test_simple("/bin/test_tmpfs");
+    record_test_simple("/bin/test_ufs");
 
     print("\n=== Results: ");
     print_int(g_total);
@@ -295,6 +299,7 @@ int main(void)
     tests[t++] = (test_entry_t){ "/bin/test_iov",        TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_stat",       TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_tmpfs",      TEST_ENABLED  };
+    tests[t++] = (test_entry_t){ "/bin/test_ufs",        TEST_DISABLED }; /* pcxt only (UFS root) */
     tests[t++] = (test_entry_t){ "/bin/test_float",      TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_signal_float", TEST_ENABLED };
 #if defined(__m68k__)
