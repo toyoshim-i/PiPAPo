@@ -332,6 +332,63 @@ static void draw_command_line(void) {
   erase_eol();
 }
 
+/* ── Draw help screen (MODE_HELP) ──────────────────────────────────────── */
+
+static const char *help_lines[] = {
+    "",
+    "  pi \xe2\x80\x94 PiPAPo Editor",
+    "",
+    "  NORMAL MODE",
+    "    h/j/k/l  or arrows   Move cursor",
+    "    0  $                  Begin / end of line",
+    "    w  b                  Next / previous word",
+    "    gg  G                 Top / bottom of file",
+    "    i                     Insert before cursor",
+    "    a                     Append after cursor",
+    "    o  O                  Open line below / above",
+    "    x                     Delete character",
+    "    dd                    Delete line",
+    "    u                     Undo last edit",
+    "    /pattern              Search forward",
+    "    n  N                  Next / previous match",
+    "    :w                    Save",
+    "    :q                    Quit  (:q! force)",
+    "    :wq                   Save and quit",
+    "    :e file               Open file",
+    "    :N                    Go to line N",
+    "    Esc                   Open menu",
+    "",
+    "  INSERT MODE",
+    "    Type to edit.  Esc returns to normal mode.",
+    "",
+    "  MENU MODE",
+    "    Arrow keys navigate.  Enter selects.  Esc closes.",
+    "",
+    "              Press any key to return",
+    (void *)0,
+};
+
+static void draw_help(void) {
+  int cr = content_rows();
+  for (int i = 0; i < cr; i++) {
+    term_cursor_to(i + 1, 0);
+    if (help_lines[i]) {
+      term_attr_reset();
+      if (i == 1) {
+        /* Title line: bold cyan */
+        term_attr_bold();
+        term_attr_fg(COL_CYAN);
+      } else if (i == 3 || i == 24 || i == 27) {
+        /* Section headers: bold */
+        term_attr_bold();
+      }
+      put_str(help_lines[i]);
+      term_attr_reset();
+    }
+    erase_eol();
+  }
+}
+
 /* ── Public: full screen refresh ───────────────────────────────────────── */
 
 void ui_set_status(const char *msg) {
@@ -348,6 +405,19 @@ void ui_refresh(void) {
   term_cursor_hide();
 
   draw_menu_bar();
+
+  if (E.mode == MODE_HELP) {
+    draw_help();
+    draw_status_bar();
+    term_cursor_to(E.rows - 1, 0);
+    term_attr_dim();
+    put_str(" Press any key to return");
+    erase_eol();
+    term_attr_reset();
+    term_cursor_show();
+    return;
+  }
+
   draw_content();
   draw_status_bar();
 

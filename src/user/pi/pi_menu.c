@@ -232,10 +232,10 @@ int menu_dispatch(int cat, int item) {
   if (cat == 4) {
     switch (item) {
     case 0: /* Keys */
-      ui_set_status("F1 help: not yet implemented");
-      break;
+      E.mode = MODE_HELP;
+      return 0;
     case 1: /* About */
-      ui_set_status("pi - PiPAPo Editor");
+      ui_set_status("pi - PiPAPo Editor for PPAP");
       break;
     }
     return 0;

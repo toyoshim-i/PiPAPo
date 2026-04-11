@@ -17,6 +17,7 @@ enum {
   MODE_INSERT,
   MODE_MENU,
   MODE_COMMAND,
+  MODE_HELP,
 };
 
 /* ── Key codes (returned by pi_read_key) ──────────────────────────────── */

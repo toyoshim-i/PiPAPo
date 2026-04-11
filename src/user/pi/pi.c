@@ -339,11 +339,13 @@ static void handle_normal(int key) {
 
   /* ── Mode switches ── */
   case 'i':
+    take_snapshot();
     E.mode = MODE_INSERT;
     gap_move(&E.buf, gap_pos_from_rc(&E.buf, E.cy, E.cx));
     break;
 
   case 'a': {
+    take_snapshot();
     E.mode = MODE_INSERT;
     int rlen = gap_row_len(&E.buf, E.cy);
     if (rlen > 0 && E.cx < rlen)
@@ -352,6 +354,7 @@ static void handle_normal(int key) {
   } break;
 
   case 'o': {
+    take_snapshot();
     E.mode = MODE_INSERT;
     int eol = gap_pos_from_rc(&E.buf, E.cy, gap_row_len(&E.buf, E.cy));
     gap_move(&E.buf, eol);
@@ -362,6 +365,7 @@ static void handle_normal(int key) {
   } break;
 
   case 'O': {
+    take_snapshot();
     E.mode = MODE_INSERT;
     int sol = gap_pos_from_rc(&E.buf, E.cy, 0);
     gap_move(&E.buf, sol);
@@ -391,7 +395,7 @@ static void handle_normal(int key) {
     break;
 
   case KEY_F1:
-    ui_set_status("F1 help: not yet implemented");
+    E.mode = MODE_HELP;
     break;
   }
 
@@ -562,9 +566,14 @@ static void handle_command(int key) {
       /* :w filename — save as */
       save_file(E.cmd + 2);
     } else if (E.cmd[0] == 'e' && E.cmd[1] == '!' && E.cmd_len == 2) {
-      /* :e! — discard and start new */
+      /* :e! — discard and reload (or new if no filename) */
+      char saved[256];
+      uc_strncpy(saved, E.filename, sizeof(saved));
       reset_buffer();
-      ui_set_status("(new file)");
+      if (saved[0])
+        load_file(saved);
+      else
+        ui_set_status("(new file)");
     } else if (E.cmd[0] == 'e' && E.cmd[1] == ' ' && E.cmd_len > 2) {
       /* :e filename — open file */
       if (E.dirty) {
@@ -632,6 +641,7 @@ int main(int argc, char *argv[]) {
     case MODE_INSERT:  handle_insert(key);  break;
     case MODE_MENU:    handle_menu(key);    break;
     case MODE_COMMAND: handle_command(key);  break;
+    case MODE_HELP:    E.mode = MODE_NORMAL; break;
     }
   }
 
