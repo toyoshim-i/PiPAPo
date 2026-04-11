@@ -43,14 +43,16 @@ void klog_set_logger(int id, klog_putc_fn putc, void (*flush)(void)) {
  * so it can drain the TX ring asynchronously.
  */
 
+static uint32_t klog_saved_irq;
+
 static inline void klog_lock(void) {
-  arch_preempt_disable();
+  klog_saved_irq = arch_irq_save();
   spin_lock(SPIN_UART);
 }
 
 static inline void klog_unlock(void) {
   spin_unlock(SPIN_UART);
-  arch_preempt_enable();
+  arch_irq_restore(klog_saved_irq);
 }
 
 /* ── Internal helpers (registered loggers) ──────────────────────────────── */
