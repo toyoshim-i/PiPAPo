@@ -70,7 +70,7 @@ endif()
 # --- User-space program lists ---
 
 # Application programs (sources in src/user/)
-set(USER_APPS hello getty init trace pdb push cat ls ps df top)
+set(USER_APPS hello getty init trace pdb push cat ls ps df top pi)
 # ttyctl is pico1calc-only (LCD terminal control)
 if(CMAKE_PROJECT_NAME STREQUAL "ppap_pico1calc")
     list(APPEND USER_APPS ttyctl)
@@ -90,6 +90,13 @@ set(PPAP_USER_EXTRA_SOURCES_pdb
 )
 set(PPAP_USER_EXTRA_SOURCES_push
     ${PPAP_ROOT}/src/user/push_line.c
+)
+set(PPAP_USER_MAIN_SOURCE_pi ${PPAP_ROOT}/src/user/pi/pi.c)
+set(PPAP_USER_EXTRA_SOURCES_pi
+    ${PPAP_ROOT}/src/user/pi/pi_buf.c
+    ${PPAP_ROOT}/src/user/pi/pi_term.c
+    ${PPAP_ROOT}/src/user/pi/pi_ui.c
+    ${PPAP_ROOT}/src/user/pi/pi_menu.c
 )
 
 # Test programs (sources in tests/user/)
