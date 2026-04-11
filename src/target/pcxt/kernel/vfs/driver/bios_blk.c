@@ -1,11 +1,9 @@
 /*
  * bios_blk.c — BIOS INT 13h block device driver for IBM PC
  *
- * Reads sectors via BIOS INT 13h.  Supports both floppy (DL < 0x80)
- * and hard disk (DL >= 0x80).  Geometry and UFS partition offset are
- * set from boot parameters passed by stage2 via mod_info.
- *
- * Write is not supported (read-only).
+ * Reads and writes sectors via BIOS INT 13h.  Supports both floppy
+ * (DL < 0x80) and hard disk (DL >= 0x80).  Geometry and UFS partition
+ * offset are set from boot parameters passed by stage2 via mod_info.
  */
 
 #include "common/errno.h"
@@ -22,9 +20,10 @@ extern uint16_t i16_dev_spt;
 extern uint16_t i16_dev_heads;
 extern uint32_t i16_dev_sectors;
 
-/* ── INT 13h sector read ──────────────────────────────────────────────── */
+/* ── INT 13h sector I/O ──────────────────────────────────────────────── */
 
-static int read_sector_bios(uint16_t lba, void *dest)
+/* INT 13h AH=02h (read) or AH=03h (write), one sector at `lba`. */
+static int bios_int13(uint16_t lba, void *buf, uint8_t ah_func)
 {
   uint16_t spt = i16_dev_spt;
   uint16_t secs_per_cyl = spt * i16_dev_heads;
@@ -32,23 +31,24 @@ static int read_sector_bios(uint16_t lba, void *dest)
   uint16_t rem  = lba % secs_per_cyl;
   uint16_t head = rem / spt;
   uint16_t sec  = rem % spt + 1;
+  uint16_t ax_in = (uint16_t)((uint16_t)ah_func << 8) | 0x01u;
   uint16_t err;
 
   __asm__ volatile (
     "push %%es\n\t"
-    "xor  %%ax, %%ax\n\t"
-    "mov  %%ax, %%es\n\t"
-    "mov  $0x0201, %%ax\n\t"
+    "xor  %%di, %%di\n\t"
+    "mov  %%di, %%es\n\t"
     "int  $0x13\n\t"
     "movb %%ah, %%al\n\t"
     "xorb %%ah, %%ah\n\t"
     "mov  %%ax, %0\n\t"
     "pop  %%es"
     : "=m"(err)
-    : "b"((uint16_t)(uintptr_t)dest),
+    : "a"(ax_in),
+      "b"((uint16_t)(uintptr_t)buf),
       "c"((uint16_t)((cyl << 8) | sec)),
       "d"((uint16_t)((head << 8) | i16_boot_drive))
-    : "ax", "memory", "cc"
+    : "di", "memory", "cc"
   );
 
   return err == 0 ? 0 : -EIO;
@@ -62,21 +62,28 @@ static int bios_blk_read(blkdev_t *dev, page_id_t page, uint16_t off,
   (void)dev;
   uint32_t linear = (uint32_t)page * PAGE_SIZE + off;
 
-  int rc = 0;
   for (uint32_t i = 0; i < count; i++) {
     uint16_t lba = i16_ufs_base_sector + (uint16_t)(sector + i);
-    rc = read_sector_bios(lba, (void *)(uintptr_t)linear);
-    if (rc < 0) break;
+    int rc = bios_int13(lba, (void *)(uintptr_t)linear, 0x02);
+    if (rc < 0) return rc;
     linear += SECTOR_SIZE;
   }
-  return rc;
+  return 0;
 }
 
 static int bios_blk_write(blkdev_t *dev, page_id_t page, uint16_t off,
-                          uint32_t sector, uint32_t count)
+                           uint32_t sector, uint32_t count)
 {
-  (void)dev; (void)page; (void)off; (void)sector; (void)count;
-  return -EROFS; /* read-only */
+  (void)dev;
+  uint32_t linear = (uint32_t)page * PAGE_SIZE + off;
+
+  for (uint32_t i = 0; i < count; i++) {
+    uint16_t lba = i16_ufs_base_sector + (uint16_t)(sector + i);
+    int rc = bios_int13(lba, (void *)(uintptr_t)linear, 0x03);
+    if (rc < 0) return rc;
+    linear += SECTOR_SIZE;
+  }
+  return 0;
 }
 
 /* ── Public API ───────────────────────────────────────────────────────── */
