@@ -260,6 +260,11 @@ void *uc_memcpy(void *dst, const void *src, int n) {
   return dst;
 }
 
+/* GCC emits memcpy for struct assignments — forward to uc_memcpy. */
+void *memcpy(void *dst, const void *src, unsigned int n) {
+  return uc_memcpy(dst, src, (int)n);
+}
+
 void *uc_memset(void *dst, int c, int n) {
   char *d = dst;
   for (int i = 0; i < n; i++) d[i] = (char)c;
