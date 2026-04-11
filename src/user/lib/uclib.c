@@ -260,10 +260,13 @@ void *uc_memcpy(void *dst, const void *src, int n) {
   return dst;
 }
 
-/* GCC emits memcpy for struct assignments — forward to uc_memcpy. */
+/* GCC emits memcpy for struct assignments on m68k (no libc linked).
+ * Other targets get memcpy from musl or their own CRT. */
+#if defined(__m68k__)
 void *memcpy(void *dst, const void *src, unsigned int n) {
   return uc_memcpy(dst, src, (int)n);
 }
+#endif
 
 void *uc_memset(void *dst, int c, int n) {
   char *d = dst;
