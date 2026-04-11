@@ -100,7 +100,7 @@ for function names and indices:
 
 ```
 src/kernel/common/mod/
-  mod_core.inc    ← 18 functions
+  mod_core.inc    ← 15 functions
   mod_vfs.inc     ← 39 functions
 ```
 
@@ -117,7 +117,7 @@ of sync.
 
 ### Modules
 
-#### mod_core (18 functions)
+#### mod_core (15 functions)
 
 Common services that all other modules depend on.
 
@@ -125,16 +125,9 @@ Common services that all other modules depend on.
 |-------|-----------|
 | Slab allocator | `kmem_alloc`, `kmem_free`, `kmem_free_count`, `kmem_pool_init` |
 | Region allocator | `mem_region_alloc`, `mem_region_free`, `mem_region_free_bytes`, `mem_region_total_bytes` |
-| Page-indexed memory | `mem_region_page_alloc`, `mem_region_page_free`, `mem_region_page_linear`, `mem_region_page_read`, `mem_region_page_write` |
+| Page-indexed memory | `mem_region_page_read`, `mem_region_page_write` |
 | Scheduler | `sched_get_ticks`, `sched_wakeup`, `sched_switch`, `svc_set_restart` |
 | Subsystem | `subsys_read_proc` |
-
-`mem_region_page_linear` is the sanctioned API for obtaining the
-32-bit linear address of a page for arithmetic, address-range checks,
-and hardware programming.  See
-[memory_management.md §9](memory_management.md).  Do **not** cast the
-result to `void *` to feed another API — pass `(page, off)` to the
-callee instead.
 
 **kmem vs mem_region:** `kmem` is a sub-page slab allocator for
 fixed-size kernel objects (vnodes, files).  `mem_region` is a

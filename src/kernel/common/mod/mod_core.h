@@ -109,35 +109,6 @@ MOD_FUNC(core, void, mem_region_free, const proc_image_segment_t *)
 MOD_FUNC(core, uint32_t, mem_region_free_bytes, ppap_mem_class_t)
 
 /*
- * mem_region_page_alloc — Allocate one page, return its index.
- *
- * Returns page_id_t (PAGE_ID_INVALID on OOM).  O(1).
- */
-MOD_FUNC(core, page_id_t, mem_region_page_alloc, void)
-
-/*
- * mem_region_page_free — Return a page to the pool by index.
- *
- *   id  Page index from mem_region_page_alloc.
- */
-MOD_FUNC(core, void, mem_region_page_free, page_id_t)
-
-/*
- * mem_region_page_linear — Return the 32-bit linear address of a page.
- *
- *   id  Page index.
- *
- * Sanctioned API for arithmetic and address-range checks (see
- * memory_management.md §9).  Use it for: brk/munmap arithmetic,
- * stack-top computation, address-range containment checks, and
- * driver hardware programming (BIOS/DMA register writes).
- *
- * Do NOT cast the result to `void *` to feed another API — pass
- * (page, off) through to the callee instead.
- */
-MOD_FUNC(core, uint32_t, mem_region_page_linear, page_id_t)
-
-/*
  * mem_region_page_read — Read bytes from a page at an offset.
  *
  *   id   Page index.

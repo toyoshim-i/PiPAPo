@@ -22,9 +22,6 @@ int mem_region_alloc(proc_image_segment_t *, ppap_mem_class_t,
 void mem_region_free(const proc_image_segment_t *);
 uint32_t mem_region_total_bytes(ppap_mem_class_t);
 uint32_t mem_region_free_bytes(ppap_mem_class_t);
-page_id_t mem_region_page_alloc(void);
-void mem_region_page_free(page_id_t);
-uint32_t mem_region_page_linear(page_id_t);
 void mem_region_page_read(page_id_t, uint16_t, void *, uint16_t);
 void mem_region_page_write(page_id_t, uint16_t, const void *, uint16_t);
 void sched_wakeup(void *);
@@ -43,9 +40,6 @@ void svc_set_restart(void);
 #define core_mem_region_free     mem_region_free
 #define core_mem_region_total_bytes mem_region_total_bytes
 #define core_mem_region_free_bytes mem_region_free_bytes
-#define core_mem_region_page_alloc  mem_region_page_alloc
-#define core_mem_region_page_free   mem_region_page_free
-#define core_mem_region_page_linear mem_region_page_linear
 #define core_mem_region_page_read   mem_region_page_read
 #define core_mem_region_page_write  mem_region_page_write
 #define core_sched_wakeup        sched_wakeup

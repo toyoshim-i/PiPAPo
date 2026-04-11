@@ -9,8 +9,8 @@
  */
 
 #include "common/errno.h"
+#include "kernel/common/core/page_types.h"
 #include "kernel/common/ioregs.h"
-#include "kernel/common/mod/mod_core.h"
 #include "kernel/vfs/driver/blkdev.h"
 
 #define SECTOR_SIZE 512u
@@ -60,7 +60,7 @@ static int bios_blk_read(blkdev_t *dev, page_id_t page, uint16_t off,
                          uint32_t sector, uint32_t count)
 {
   (void)dev;
-  uint32_t linear = mod_core.mem_region_page_linear(page) + off;
+  uint32_t linear = (uint32_t)page * PAGE_SIZE + off;
 
   int rc = 0;
   for (uint32_t i = 0; i < count; i++) {
