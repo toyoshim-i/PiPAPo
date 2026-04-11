@@ -228,7 +228,11 @@ i16_syscall_isr:
 
 .Lcheck_signal:
   /* User-signal delivery */
-  pushw %sp
+  /* 8086 PUSH SP pushes the decremented value, unlike later x86.
+   * Pass the pre-push stack pointer explicitly so signal_check() sees
+   * the real frame base on 8086/80186 as well as 286+. */
+  movw  %sp, %ax
+  pushw %ax
   call  signal_check
   addw  $2, %sp
   movw  %ax, %sp
