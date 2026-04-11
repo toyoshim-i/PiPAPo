@@ -24,7 +24,6 @@
 
 #include "common/errno.h"
 #include "kernel/common/mod/mod_core.h"
-#include "kernel/common/subtle/mem_helper.h"
 #include "kernel/vfs/driver/uart.h"
 
 /* ── Device node descriptor ──────────────────────────────────────────────── */
@@ -62,21 +61,14 @@ static long devzero_read(page_id_t page, uint16_t page_off, size_t n,
                          uint32_t off) {
   (void)off;
   static const uint8_t zero_chunk[32];
-  size_t remaining = n;
+  uint16_t written = 0;
 
-  while (remaining > 0) {
-    uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
-    uint16_t written = 0;
-
-    while (written < chunk) {
-      uint16_t zero_len = chunk - written;
-      if (zero_len > sizeof(zero_chunk)) zero_len = sizeof(zero_chunk);
-      mod_core.mem_region_page_write(page, (uint16_t)(page_off + written),
-                                     zero_chunk, zero_len);
-      written = (uint16_t)(written + zero_len);
-    }
-    remaining -= chunk;
-    mem_region_page_advance(&page, &page_off, chunk);
+  while (written < (uint16_t)n) {
+    uint16_t zero_len = (uint16_t)n - written;
+    if (zero_len > sizeof(zero_chunk)) zero_len = sizeof(zero_chunk);
+    mod_core.mem_region_page_write(page, (uint16_t)(page_off + written),
+                                   zero_chunk, zero_len);
+    written = (uint16_t)(written + zero_len);
   }
   return (long)n;
 }
@@ -94,7 +86,7 @@ static long devtty_read(page_id_t page, uint16_t page_off, size_t n,
     uint8_t ch = (uint8_t)c;
     mod_core.mem_region_page_write(page, page_off, &ch, 1);
     count++;
-    mem_region_page_advance(&page, &page_off, 1);
+    page_off++;
   }
   return (long)count;
 }
@@ -106,7 +98,7 @@ static long devtty_write(page_id_t page, uint16_t page_off, size_t n,
     uint8_t ch;
     mod_core.mem_region_page_read(page, page_off, &ch, 1);
     uart_putc((char)ch, NULL);
-    mem_region_page_advance(&page, &page_off, 1);
+    page_off++;
   }
   return (long)n;
 }
@@ -154,7 +146,7 @@ static long devrandom_read(page_id_t page, uint16_t page_off, size_t n,
   for (size_t i = 0; i < n; i++) {
     uint8_t ch = random_byte();
     mod_core.mem_region_page_write(page, page_off, &ch, 1);
-    mem_region_page_advance(&page, &page_off, 1);
+    page_off++;
   }
   return (long)n;
 }
@@ -186,16 +178,9 @@ static long devbacklight_read(page_id_t page, uint16_t page_off, size_t n,
   if (off >= (uint32_t)len) return 0;
   size_t remaining = (size_t)(len - (int)off);
   if (remaining > n) remaining = n;
-  size_t total = remaining;
-
-  while (remaining > 0) {
-    uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
-    mod_core.mem_region_page_write(page, page_off, tmp + off, chunk);
-    remaining -= chunk;
-    off += chunk;
-    mem_region_page_advance(&page, &page_off, chunk);
-  }
-  return (long)total;
+  mod_core.mem_region_page_write(page, page_off, tmp + off,
+                                 (uint16_t)remaining);
+  return (long)remaining;
 }
 
 /* Write: parse ASCII decimal 0–255, set brightness */
@@ -216,7 +201,7 @@ static long devbacklight_write(page_id_t page, uint16_t page_off, size_t n,
     } else {
       return -(long)EINVAL;
     }
-    mem_region_page_advance(&page, &page_off, 1);
+    page_off++;
   }
   if (!digits || val > 255) return -(long)EINVAL;
   if (bl_hw_set((uint8_t)val) < 0) return -(long)EIO;
@@ -237,16 +222,9 @@ static long devpower_read(page_id_t page, uint16_t page_off, size_t n,
   if (off >= (uint32_t)len) return 0;
   size_t remaining = (size_t)(len - (int)off);
   if (remaining > n) remaining = n;
-  size_t total = remaining;
-
-  while (remaining > 0) {
-    uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
-    mod_core.mem_region_page_write(page, page_off, msg + off, chunk);
-    remaining -= chunk;
-    off += chunk;
-    mem_region_page_advance(&page, &page_off, chunk);
-  }
-  return (long)total;
+  mod_core.mem_region_page_write(page, page_off, msg + off,
+                                 (uint16_t)remaining);
+  return (long)remaining;
 }
 
 /* Write "off" or "0" to power down */
@@ -256,18 +234,10 @@ static long devpower_write(page_id_t page, uint16_t page_off, size_t n,
   if (!power_hw_off) return -(long)ENODEV;
   uint8_t p0 = 0, p1 = 0, p2 = 0;
   if (n >= 1) mod_core.mem_region_page_read(page, page_off, &p0, 1);
-  if (n >= 2) {
-    page_id_t next_page = page;
-    uint16_t next_off = page_off;
-    mem_region_page_advance(&next_page, &next_off, 1);
-    mod_core.mem_region_page_read(next_page, next_off, &p1, 1);
-  }
-  if (n >= 3) {
-    page_id_t next_page = page;
-    uint16_t next_off = page_off;
-    mem_region_page_advance(&next_page, &next_off, 2);
-    mod_core.mem_region_page_read(next_page, next_off, &p2, 1);
-  }
+  if (n >= 2)
+    mod_core.mem_region_page_read(page, (uint16_t)(page_off + 1), &p1, 1);
+  if (n >= 3)
+    mod_core.mem_region_page_read(page, (uint16_t)(page_off + 2), &p2, 1);
   /* Accept "off", "off\n", "0", "0\n" */
   if ((n >= 3 && p0 == 'o' && p1 == 'f' && p2 == 'f') ||
       (n >= 1 && p0 == '0')) {
@@ -293,17 +263,9 @@ static long devblk_read(page_id_t page, uint16_t page_off, size_t n,
     return -(long)EINVAL;
 
   uint32_t sector = off / BLKDEV_SECTOR_SIZE;
-  size_t remaining = n;
-
-  while (remaining > 0) {
-    uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
-    uint32_t count = (uint32_t)chunk / BLKDEV_SECTOR_SIZE;
-    int rc = bd->read(bd, page, page_off, sector, count);
-    if (rc < 0) return (long)rc;
-    remaining -= chunk;
-    sector += count;
-    mem_region_page_advance(&page, &page_off, chunk);
-  }
+  uint32_t count = (uint32_t)n / BLKDEV_SECTOR_SIZE;
+  int rc = bd->read(bd, page, page_off, sector, count);
+  if (rc < 0) return (long)rc;
   return (long)n;
 }
 
@@ -317,17 +279,9 @@ static long devblk_write(page_id_t page, uint16_t page_off, size_t n,
     return -(long)EINVAL;
 
   uint32_t sector = off / BLKDEV_SECTOR_SIZE;
-  size_t remaining = n;
-
-  while (remaining > 0) {
-    uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
-    uint32_t count = (uint32_t)chunk / BLKDEV_SECTOR_SIZE;
-    int rc = bd->write(bd, page, page_off, sector, count);
-    if (rc < 0) return (long)rc;
-    remaining -= chunk;
-    sector += count;
-    mem_region_page_advance(&page, &page_off, chunk);
-  }
+  uint32_t count = (uint32_t)n / BLKDEV_SECTOR_SIZE;
+  int rc = bd->write(bd, page, page_off, sector, count);
+  if (rc < 0) return (long)rc;
   return (long)n;
 }
 
@@ -348,17 +302,9 @@ static long devloop_read_n(int idx, page_id_t page, uint16_t page_off, size_t n,
     return -(long)EINVAL;
 
   uint32_t sector = off / BLKDEV_SECTOR_SIZE;
-  size_t remaining = n;
-
-  while (remaining > 0) {
-    uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
-    uint32_t count = (uint32_t)chunk / BLKDEV_SECTOR_SIZE;
-    int rc = bd->read(bd, page, page_off, sector, count);
-    if (rc < 0) return (long)rc;
-    remaining -= chunk;
-    sector += count;
-    mem_region_page_advance(&page, &page_off, chunk);
-  }
+  uint32_t count = (uint32_t)n / BLKDEV_SECTOR_SIZE;
+  int rc = bd->read(bd, page, page_off, sector, count);
+  if (rc < 0) return (long)rc;
   return (long)n;
 }
 
@@ -375,17 +321,9 @@ static long devloop_write_n(int idx, page_id_t page, uint16_t page_off,
     return -(long)EINVAL;
 
   uint32_t sector = off / BLKDEV_SECTOR_SIZE;
-  size_t remaining = n;
-
-  while (remaining > 0) {
-    uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
-    uint32_t count = (uint32_t)chunk / BLKDEV_SECTOR_SIZE;
-    int rc = bd->write(bd, page, page_off, sector, count);
-    if (rc < 0) return (long)rc;
-    remaining -= chunk;
-    sector += count;
-    mem_region_page_advance(&page, &page_off, chunk);
-  }
+  uint32_t count = (uint32_t)n / BLKDEV_SECTOR_SIZE;
+  int rc = bd->write(bd, page, page_off, sector, count);
+  if (rc < 0) return (long)rc;
   return (long)n;
 }
 
