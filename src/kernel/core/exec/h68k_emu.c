@@ -107,39 +107,18 @@ static int h68k_emu_guest_path(m68k_state_t *cpu, uint32_t guest_addr,
 
 static long h68k_emu_write_guest_to_fd(m68k_state_t *cpu, int fd,
                                        uint32_t guest_addr, uint32_t len) {
-  uint8_t tmp[128];
-  uint32_t done = 0;
-
-  while (done < len) {
-    uint32_t chunk = len - done;
-    if (chunk > sizeof(tmp)) chunk = sizeof(tmp);
-    for (uint32_t i = 0; i < chunk; i++)
-      tmp[i] = m68k_read8(cpu, guest_addr + done + i);
-    long wr = h68k_emu_fd_write(fd, tmp, chunk);
-    if (wr < 0) return (done > 0) ? (long)done : wr;
-    done += (uint32_t)wr;
-    if ((uint32_t)wr < chunk) break;
-  }
-  return (long)done;
+  /* Guest memory is a flat host pointer into page-pool pages.
+   * Pass it directly to VFS via kbuf_to_page — no bounce buffer. */
+  uint32_t off = guest_addr & (cpu->mem_size - 1);
+  if (off + len > cpu->mem_size) len = cpu->mem_size - off;
+  return h68k_emu_fd_write(fd, &cpu->memory[off], len);
 }
 
 static long h68k_emu_read_fd_to_guest(m68k_state_t *cpu, int fd,
                                       uint32_t guest_addr, uint32_t len) {
-  uint8_t tmp[128];
-  uint32_t done = 0;
-
-  while (done < len) {
-    uint32_t chunk = len - done;
-    if (chunk > sizeof(tmp)) chunk = sizeof(tmp);
-    long rd = h68k_emu_fd_read(fd, tmp, chunk);
-    if (rd < 0) return (done > 0) ? (long)done : rd;
-    if (rd == 0) break;
-    for (uint32_t i = 0; i < (uint32_t)rd; i++)
-      m68k_write8(cpu, guest_addr + done + i, tmp[i]);
-    done += (uint32_t)rd;
-    if ((uint32_t)rd < chunk) break;
-  }
-  return (long)done;
+  uint32_t off = guest_addr & (cpu->mem_size - 1);
+  if (off + len > cpu->mem_size) len = cpu->mem_size - off;
+  return h68k_emu_fd_read(fd, &cpu->memory[off], len);
 }
 
 static uint32_t h68k_emu_malloc_avail(const h68k_emu_exec_state_t *st) {
