@@ -106,6 +106,53 @@ void reset_buffer(void) {
   E.filename[0] = '\0';
 }
 
+/* ── Undo snapshot ─────────────────────────────────────────────────────── */
+
+static void take_snapshot(void) {
+  gap_snapshot(&E.buf, &E.undo_snap, &E.undo_len);
+  E.undo_cx = E.cx;
+  E.undo_cy = E.cy;
+}
+
+/* ── Search helpers ────────────────────────────────────────────────────── */
+
+void search_next(void) {
+  if (E.search_len == 0) {
+    ui_set_status("No search term");
+    return;
+  }
+  int cur_pos = gap_pos_from_rc(&E.buf, E.cy, E.cx);
+  int pos = gap_search_fwd(&E.buf, E.search, E.search_len, cur_pos + 1);
+  /* Wrap around */
+  if (pos < 0)
+    pos = gap_search_fwd(&E.buf, E.search, E.search_len, 0);
+  if (pos >= 0) {
+    gap_rc_from_pos(&E.buf, pos, &E.cy, &E.cx);
+    ui_set_status("");
+  } else {
+    ui_set_status("Pattern not found");
+  }
+}
+
+void search_prev(void) {
+  if (E.search_len == 0) {
+    ui_set_status("No search term");
+    return;
+  }
+  int cur_pos = gap_pos_from_rc(&E.buf, E.cy, E.cx);
+  int pos = gap_search_bwd(&E.buf, E.search, E.search_len, cur_pos - 1);
+  /* Wrap around */
+  if (pos < 0)
+    pos = gap_search_bwd(&E.buf, E.search, E.search_len,
+                         gap_length(&E.buf) - 1);
+  if (pos >= 0) {
+    gap_rc_from_pos(&E.buf, pos, &E.cy, &E.cx);
+    ui_set_status("");
+  } else {
+    ui_set_status("Pattern not found");
+  }
+}
+
 /* ── Cursor helpers ────────────────────────────────────────────────────── */
 
 static void clamp_cx(void) {
@@ -142,6 +189,7 @@ static void handle_normal(int key) {
   if (E.pending_d) {
     E.pending_d = 0;
     if (key == 'd') {
+      take_snapshot();
       gap_move(&E.buf, gap_pos_from_rc(&E.buf, E.cy, 0));
       gap_delete_line(&E.buf);
       E.cx = 0;
@@ -256,6 +304,7 @@ static void handle_normal(int key) {
 
   /* ── Editing ── */
   case 'x':
+    take_snapshot();
     gap_move(&E.buf, gap_pos_from_rc(&E.buf, E.cy, E.cx));
     gap_delete_fwd(&E.buf);
     E.dirty = 1;
@@ -267,7 +316,25 @@ static void handle_normal(int key) {
     break;
 
   case 'u':
-    ui_set_status("Undo: not yet implemented");
+    if (E.undo_snap) {
+      gap_restore(&E.buf, E.undo_snap, E.undo_len);
+      E.cx = E.undo_cx;
+      E.cy = E.undo_cy;
+      E.dirty = 1;
+      E.undo_snap = (void *)0;
+      ui_set_status("Undone");
+    } else {
+      ui_set_status("Nothing to undo");
+    }
+    break;
+
+  /* ── Search ── */
+  case 'n':
+    search_next();
+    break;
+
+  case 'N':
+    search_prev();
     break;
 
   /* ── Mode switches ── */
@@ -475,10 +542,10 @@ static void handle_command(int key) {
     if (E.cmd_len == 0) {
       /* Empty — do nothing */
     } else if (E.cmd[0] == '/' && E.cmd_len > 1) {
-      /* Search — save term, will implement find in E-8 */
+      /* Search forward from cursor */
       uc_strncpy(E.search, E.cmd + 1, sizeof(E.search));
       E.search_len = E.cmd_len - 1;
-      ui_set_status("Search: not yet implemented");
+      search_next();
     } else if (E.cmd[0] == 'q' && E.cmd_len == 1) {
       if (E.dirty)
         ui_set_status("Unsaved changes — use :q! to force");

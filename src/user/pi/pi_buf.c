@@ -225,3 +225,72 @@ int gap_row_len(gap_buf_t *g, int row) {
   }
   return len;
 }
+
+/* ── Snapshot / restore (single-level undo) ────────────────────────────── */
+
+void gap_snapshot(gap_buf_t *g, char **snap, int *snap_len) {
+  int len = gap_length(g);
+  /* Allocate via brk — the snapshot sits above the gap buffer's data */
+  char *base = brk((void *)0);
+  char *end = brk(base + len);
+  if (!end) {
+    *snap = (void *)0;
+    *snap_len = 0;
+    return;
+  }
+  /* Copy text (skip the gap) */
+  for (int i = 0; i < len; i++)
+    base[i] = (char)gap_char_at(g, i);
+  *snap = base;
+  *snap_len = len;
+}
+
+void gap_restore(gap_buf_t *g, const char *snap, int snap_len) {
+  if (!snap)
+    return;
+  /* Reset gap to empty */
+  g->gap_start = 0;
+  g->gap_end = g->cap;
+  /* Re-insert snapshot text */
+  for (int i = 0; i < snap_len; i++)
+    gap_insert(g, snap[i]);
+  /* Move cursor to start */
+  gap_move(g, 0);
+}
+
+/* ── Search ────────────────────────────────────────────────────────────── */
+
+int gap_search_fwd(gap_buf_t *g, const char *needle, int needle_len,
+                   int start_pos) {
+  int text_len = gap_length(g);
+  for (int i = start_pos; i <= text_len - needle_len; i++) {
+    int match = 1;
+    for (int j = 0; j < needle_len; j++) {
+      if (gap_char_at(g, i + j) != needle[j]) {
+        match = 0;
+        break;
+      }
+    }
+    if (match)
+      return i;
+  }
+  return -1;
+}
+
+int gap_search_bwd(gap_buf_t *g, const char *needle, int needle_len,
+                   int start_pos) {
+  if (start_pos > gap_length(g) - needle_len)
+    start_pos = gap_length(g) - needle_len;
+  for (int i = start_pos; i >= 0; i--) {
+    int match = 1;
+    for (int j = 0; j < needle_len; j++) {
+      if (gap_char_at(g, i + j) != needle[j]) {
+        match = 0;
+        break;
+      }
+    }
+    if (match)
+      return i;
+  }
+  return -1;
+}

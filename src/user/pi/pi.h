@@ -72,6 +72,16 @@ void gap_rc_from_pos(gap_buf_t *g, int pos, int *row, int *col);
 /* Get row length (chars, not including newline) */
 int gap_row_len(gap_buf_t *g, int row);
 
+/* Single-level undo: snapshot and restore full buffer text */
+void gap_snapshot(gap_buf_t *g, char **snap, int *snap_len);
+void gap_restore(gap_buf_t *g, const char *snap, int snap_len);
+
+/* Search: return position of match, or -1 if not found */
+int gap_search_fwd(gap_buf_t *g, const char *needle, int needle_len,
+                   int start_pos);
+int gap_search_bwd(gap_buf_t *g, const char *needle, int needle_len,
+                   int start_pos);
+
 /* ── Menu ──────────────────────────────────────────────────────────────── */
 
 #define MENU_CAT_COUNT 5
@@ -165,6 +175,11 @@ enum {
 int save_file(const char *path);
 void reset_buffer(void);
 void load_file(const char *path);
+
+/* ── Search (pi.c) ─────────────────────────────────────────────────────── */
+
+void search_next(void);
+void search_prev(void);
 
 /* ── UI (pi_ui.c) ──────────────────────────────────────────────────────── */
 

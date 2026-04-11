@@ -174,7 +174,16 @@ int menu_dispatch(int cat, int item) {
       E.dirty = 1;
       break;
     case 6: /* Undo */
-      ui_set_status("Undo: not yet implemented");
+      if (E.undo_snap) {
+        gap_restore(&E.buf, E.undo_snap, E.undo_len);
+        E.cx = E.undo_cx;
+        E.cy = E.undo_cy;
+        E.dirty = 1;
+        E.undo_snap = (void *)0;
+        ui_set_status("Undone");
+      } else {
+        ui_set_status("Nothing to undo");
+      }
       break;
     }
     return 0;
@@ -182,7 +191,20 @@ int menu_dispatch(int cat, int item) {
 
   /* Search menu */
   if (cat == 2) {
-    ui_set_status("Search: not yet implemented");
+    switch (item) {
+    case 0: /* Find */
+      E.mode = MODE_COMMAND;
+      E.cmd[0] = '/';
+      E.cmd[1] = '\0';
+      E.cmd_len = 1;
+      return 0;
+    case 1: /* Next */
+      search_next();
+      break;
+    case 2: /* Prev */
+      search_prev();
+      break;
+    }
     return 0;
   }
 
