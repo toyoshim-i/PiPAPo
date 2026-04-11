@@ -26,7 +26,9 @@
 #ifndef PPAP_SYS_HZ
 #define PPAP_SYS_HZ 133000000u /* CPU frequency after PLL init (Hz)   */
 #endif
+#ifndef PPAP_TICK_HZ
 #define PPAP_TICK_HZ 100u /* SysTick ticks per second            */
+#endif
 
 /* ── Scheduler ─────────────────────────────────────────────────────────────
  * PROC_MAX           Maximum concurrent processes.  Each PCB lives in the
