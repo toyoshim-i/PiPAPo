@@ -115,8 +115,12 @@ static int path_normalize(const char *path, char *buf, int bufsiz) {
     buf[len++] = '/';
     __builtin_memmove(buf + len, start, (size_t)clen);
     len += clen;
-    buf[len] = '\0';
+    /* Do NOT write buf[len]='\0' here — when path==buf (in-place
+     * normalization) the NUL would clobber the '/' separator that
+     * p currently points at, truncating the remaining path. */
   }
+
+  buf[len] = '\0';
 
   /* Empty result means root */
   if (len == 0) {
