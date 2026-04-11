@@ -48,7 +48,7 @@ uint32_t mem_region_page_linear(page_id_t id);
 /* Return the page_id for an existing pointer (reverse lookup). */
 page_id_t mem_region_ptr_to_page(void *ptr);
 
-/* ptr_ref, page_chunk_len, page_advance are in mem_helper.h */
+/* ptr_ref is in mem_helper.h (Phase 3 bridge callers only) */
 
 /* Return a dereferenceable pointer (32-bit only, not available on i16). */
 #if !defined(__ia16__)

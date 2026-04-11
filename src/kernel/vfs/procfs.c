@@ -30,7 +30,6 @@
 #include "kernel/common/core/sched_info.h"
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
-#include "kernel/common/subtle/mem_helper.h"
 #include "kernel/common/version.h"
 #include "kernel/vfs/devfs.h"
 #include "kernel/vfs/romfs.h"

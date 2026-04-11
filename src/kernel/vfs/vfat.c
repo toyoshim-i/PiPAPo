@@ -22,7 +22,6 @@
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/spinlock.h" /* SPIN_FS */
-#include "kernel/common/subtle/mem_helper.h"
 #include "kernel/vfs/driver/blkdev.h"
 #include "kernel/vfs/vfat_format.h"
 

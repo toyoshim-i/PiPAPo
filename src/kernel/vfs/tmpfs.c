@@ -23,7 +23,6 @@
 #include "kernel/common/core/page_types.h"
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
-#include "kernel/common/subtle/mem_helper.h"
 
 /* ── Inode structure ──────────────────────────────────────────────────── */
 
