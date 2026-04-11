@@ -360,6 +360,16 @@ MOD_FUNC(vfs, void, notify, int)
 MOD_FUNC(vfs, int, path_normalize, const char *, char *, int)
 
 /*
+ * path_statfs — Get filesystem statistics for the mount containing a path.
+ *
+ *   path  Absolute pathname.
+ *   buf   Output struct kernel_statfs pointer.
+ *
+ * Returns 0 on success, negative errno on failure.
+ */
+MOD_FUNC(vfs, int, path_statfs, const char *, void *)
+
+/*
  * tty_rx_notify — Wake processes blocked on TTY read.
  *
  *   idx  TTY index (0=serial, 1=display).

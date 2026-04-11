@@ -294,7 +294,7 @@ statfs64:
   pushw %di
   movw  4(%bp), %bx
   movw  6(%bp), %cx
-  movw  8(%bp), %dx
+  movw  10(%bp), %dx
   movw  $0x0305, %ax
   int   $0x30
   SYSCALL_RET

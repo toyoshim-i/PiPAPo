@@ -24,6 +24,7 @@ int  vfs_lookup(const char *, vnode_t **);
 int  vfs_lookup_flags(const char *, vnode_t **, int);
 int  vfs_lookup_parent(const char *, vnode_t **, char *, int);
 int  vfs_path_normalize(const char *, char *, int);
+int  vfs_path_statfs(const char *, void *);
 mount_entry_t *vfs_mount_find(const char *, const char **);
 int  vfs_mount_ufs(const char *, uint8_t, const void *);
 vnode_t *vfs_vnode_alloc(void);

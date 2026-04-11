@@ -30,6 +30,7 @@ int vfs_lookup_parent(const char *path, vnode_t **parent, char *namebuf,
                       int namebuf_size);
 int vfs_path_normalize(const char *path, char *buf, int bufsiz);
 mount_entry_t *vfs_mount_find(const char *path, const char **remainder);
+int vfs_path_statfs(const char *path, void *buf);
 uint32_t vnode_free_count(void);
 
 #endif /* PPAP_KERNEL_VFS_VFS_H */

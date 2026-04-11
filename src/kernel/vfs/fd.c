@@ -21,6 +21,7 @@
 #include "kernel/vfs/devfs.h"
 #include "kernel/vfs/file.h"
 #include "kernel/vfs/tty.h"
+#include "kernel/vfs/vfs.h"
 
 /* ── System-wide file descriptor pool ────────────────────────────────────────
  */
@@ -406,6 +407,20 @@ int vfs_fd_fstatfs(int desc, void *buf) {
   struct kernel_statfs ksf;
   __builtin_memset(&ksf, 0, sizeof(ksf));
   if (mnt && mnt->ops && mnt->ops->statfs) mnt->ops->statfs(mnt, &ksf);
+  __builtin_memcpy(buf, &ksf, sizeof(ksf));
+  return 0;
+}
+
+int vfs_path_statfs(const char *path, void *buf) {
+  if (!path || !buf) return -EINVAL;
+
+  const char *remainder;
+  mount_entry_t *mnt = vfs_mount_find(path, &remainder);
+  if (!mnt) return -ENOENT;
+
+  struct kernel_statfs ksf;
+  __builtin_memset(&ksf, 0, sizeof(ksf));
+  if (mnt->ops && mnt->ops->statfs) mnt->ops->statfs(mnt, &ksf);
   __builtin_memcpy(buf, &ksf, sizeof(ksf));
   return 0;
 }

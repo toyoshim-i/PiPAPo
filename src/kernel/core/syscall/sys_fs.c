@@ -732,13 +732,9 @@ long sys_statfs64(uintptr_t path_ptr, long sz, uintptr_t buf_ptr) {
   if (rc < 0) return (long)rc;
   if (buf_ptr == 0u) return -(long)EINVAL;
 
-  const char *remainder;
-  mount_entry_t *mnt = mod_vfs.mount_find(path, &remainder);
-  if (!mnt) return -(long)ENOENT;
-
   struct kernel_statfs ksf;
-  __builtin_memset(&ksf, 0, sizeof(ksf));
-  if (mnt->ops && mnt->ops->statfs) mnt->ops->statfs(mnt, &ksf);
+  rc = mod_vfs.path_statfs(path, &ksf);
+  if (rc < 0) return (long)rc;
   rc = sys_copy_to_user(buf_ptr, &ksf, sizeof(ksf));
   if (rc < 0) return (long)rc;
   return 0;
