@@ -325,7 +325,7 @@ void stage2_main(void)
     if (!ufs_base_sector) { puts_bios("!MBR"); return; }
   } else {
     /* Floppy: known 1.44 MB geometry */
-    secs_per_track = 18;
+    secs_per_track = 9;
     num_heads = 2;
     ufs_base_sector = 9;
   }
@@ -413,7 +413,7 @@ void stage2_main(void)
   info->dev_heads = num_heads;
   info->dev_sectors = (boot_drive >= 0x80)
       ? ufs_partition_sectors
-      : (uint32_t)(2880u - ufs_base_sector);
+      : (uint32_t)(1440u - ufs_base_sector);
 
   /* Far-jump to core CS, IP=0x0600 (_start in boot.S).
    * Write far pointer to scratch area and use indirect ljmp. */

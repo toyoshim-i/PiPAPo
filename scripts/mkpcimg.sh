@@ -3,7 +3,7 @@
 # mkpcimg.sh — Assemble PC/XT bootable floppy and HDD images
 # =============================================================================
 #
-# Floppy layout (1.44 MB, 2880 × 512-byte sectors):
+# Floppy layout (720 KB, 1440 × 512-byte sectors):
 #   Sector 0          stage1 boot sector (512 B, BPB header)
 #   Sectors 1-8       stage2 UFS loader  (4 KB)
 #   Sectors 9+        UFS partition (contains /boot/kernel)
@@ -23,7 +23,7 @@
 #   ppap_pcxt.bin   — kernel flat binary
 #
 # Output:
-#   build/pcxt/ppap_pcxt.img       (1.44 MB floppy image)
+#   build/pcxt/ppap_pcxt.img       (720 KB floppy image)
 #   build/pcxt/ppap_pcxt_hdd.img   (16 MB HDD image)
 # =============================================================================
 
@@ -47,7 +47,7 @@ STAGE2_SECTORS=8     # 4 KB for stage2
 UFS_START_SECTOR=9   # sector 0 = stage1, 1-8 = stage2
 
 # Floppy parameters
-FLOPPY_SECTORS=2880  # 1.44 MB
+FLOPPY_SECTORS=1440  # 720 KB (3.5" DD, 80 cyl × 2 heads × 9 spt)
 
 # HDD parameters
 HDD_SIZE_MB=16
