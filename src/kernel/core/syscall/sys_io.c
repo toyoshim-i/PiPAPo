@@ -105,7 +105,22 @@ long sys_write(long fd, uintptr_t user_ptr, size_t n) {
 
   rc = proc_user_ptr_to_page_ref(current, user_ptr, &ref);
   if (rc < 0) return rc;
-  return mod_vfs.fd_write((int)desc, ref.page, ref.off, n);
+
+  /* Page-walk loop: issue one fd_write per page chunk so that the VFS
+   * layer never sees a request spanning a page boundary. */
+  size_t total = 0;
+  while (total < n) {
+    size_t remaining = n - total;
+    uint16_t chunk = (PAGE_SIZE - ref.off < remaining)
+                         ? (uint16_t)(PAGE_SIZE - ref.off)
+                         : (uint16_t)remaining;
+    long ret = mod_vfs.fd_write((int)desc, ref.page, ref.off, chunk);
+    if (ret <= 0) return total > 0 ? (long)total : ret;
+    total += (size_t)ret;
+    if ((size_t)ret < chunk) break; /* short write */
+    sys_io_advance_ref(&ref, (size_t)ret);
+  }
+  return (long)total;
 }
 
 long sys_read(long fd, uintptr_t user_ptr, size_t n) {
@@ -117,7 +132,22 @@ long sys_read(long fd, uintptr_t user_ptr, size_t n) {
 
   rc = proc_user_ptr_to_page_ref(current, user_ptr, &ref);
   if (rc < 0) return rc;
-  return mod_vfs.fd_read((int)desc, ref.page, ref.off, n);
+
+  /* Page-walk loop: issue one fd_read per page chunk so that the VFS
+   * layer never sees a request spanning a page boundary. */
+  size_t total = 0;
+  while (total < n) {
+    size_t remaining = n - total;
+    uint16_t chunk = (PAGE_SIZE - ref.off < remaining)
+                         ? (uint16_t)(PAGE_SIZE - ref.off)
+                         : (uint16_t)remaining;
+    long ret = mod_vfs.fd_read((int)desc, ref.page, ref.off, chunk);
+    if (ret <= 0) return total > 0 ? (long)total : ret;
+    total += (size_t)ret;
+    if ((size_t)ret < chunk) break; /* short read */
+    sys_io_advance_ref(&ref, (size_t)ret);
+  }
+  return (long)total;
 }
 
 /* ── sys_writev ───────────────────────────────────────────────────────────────

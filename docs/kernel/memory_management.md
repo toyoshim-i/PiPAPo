@@ -146,8 +146,10 @@ All code outside `src/kernel/mm/` allocates through `mem_region_*`:
 ### 3.2 Page-Index Wrappers
 
 Code outside `mm/` accesses pages by index.  Most are exposed via
-`mod_core` for cross-module use.  Inline cursor helpers live in
-`kernel/common/subtle/mem_helper.h` (legacy — do not add new uses).
+`mod_core` for cross-module use.  Inline cursor helpers in
+`kernel/common/subtle/mem_helper.h` are legacy and pending deletion
+(see [mem_region_wrapup Phase 2](../proposals/mem_region_wrapup.md)).
+Do not add new uses.
 
 | Function | Returns | i16-safe? | Use when |
 |---|---|---|---|
@@ -182,12 +184,15 @@ The `mod_core` vtable exposes page and region operations:
 | `mem_region_total_bytes` | `mem_region_total_bytes()` |
 | `mem_region_page_alloc` | `mem_region_page_alloc()` → `mm_page_alloc()` |
 | `mem_region_page_free` | `mem_region_page_free()` → `mm_page_free()` |
-| `mem_region_page_linear`\* | `mem_region_page_linear()` → `mm_page_linear()` |
+| `mem_region_page_linear` | `mem_region_page_linear()` → `mm_page_linear()` |
 | `mem_region_page_read` | `mem_region_page_read()` → `mm_page_read()` |
 | `mem_region_page_write` | `mem_region_page_write()` → `mm_page_write()` |
 
-\* `mem_region_page_linear` is a **subtle** workaround for blkdev DMA.
-New code should use `page_read/write`.  See [issue #48](https://github.com/toyoshim-i/PiPAPo/issues/48).
+`mem_region_page_linear` is the sanctioned API for obtaining the 32-bit
+linear address of a page (see §9).  Use it for address arithmetic,
+range checks, reporting addresses to userspace, and programming hardware.
+Do **not** cast the result to `void *` to feed another API — pass
+`(page, off)` to the callee instead.
 
 The i16 module loader patches these into cross-segment far-call
 entries so modules can allocate and access pages without linking

@@ -1,6 +1,6 @@
 ## mem_region Wrap-Up: Deprecating `mem_helper.h` and Closing Issue #48
 
-> **Status**: Proposal. Targets the cleanup of
+> **Status**: Phase 1 complete. Phase 2 in progress. Targets the cleanup of
 > [`src/kernel/common/subtle/mem_helper.h`](../../src/kernel/common/subtle/mem_helper.h)
 > and the residual `mem_region_page_linear` callers in fs/exec/subsys.
 
@@ -256,7 +256,7 @@ Under the Phase 1 single-page contract (see step 1.1), every leaf
 becomes single-page: it handles at most one chunk that does not cross
 a page boundary and returns the bytes actually handled. The cursor
 walk **moves out of the leaves and up to the root caller** (the
-syscall dispatcher / `fd_read`/`fd_write` / eCPU bridge). After
+syscall dispatcher in `sys_io.c` / eCPU bridge). After
 Phase 1 lands, all 14 sites in this table simplify: the inner cursor
 loop and the calls to `page_chunk_len` / `page_advance` are deleted
 together with the surrounding `while (remaining)`. The root caller
@@ -310,7 +310,20 @@ Phases land in numeric order **1 → 2 → 3 → 4**, with Phase 5 deferred to a
 later proposal. Each leaves the tree building and tested on qemu_arm +
 qemu_m68k + pcxt at minimum; floppy-using phases also test x68k.
 
-#### Phase 1 — Close issue #48 (`blkdev` page-indexed signature) — **PRIORITY**
+#### Phase 1 — Close issue #48 (`blkdev` page-indexed signature) — **COMPLETE**
+
+> All steps verified 2026-04-11 against the codebase:
+> - 1.0: `mem_region_kbuf_to_page` exists in
+>   [`kernel/common/mem_region_kbuf.h`](../../src/kernel/common/mem_region_kbuf.h).
+> - 1.1: `blkdev_t.read/write` takes `(page_id_t page, uint16_t off)` in
+>   [`vfs/driver/blkdev.h`](../../src/kernel/vfs/driver/blkdev.h).
+> - 1.2: Confirmed — `mod_core.inc` has 18 entries, none for blkdev.
+> - 1.3: loopback and pcxt floppy drivers use the page-indexed signature.
+> - 1.4: `ufs.c` and `vfat.c` use `mem_region_kbuf_to_page` for metadata I/O.
+> - 1.5: devfs callbacks already take `(page_id_t, uint16_t off)`;
+>   the `(void *)(linear + off)` R3 cast is gone.
+> - 1.6: `mod_core.h` docstring says "Sanctioned API for arithmetic and
+>   address-range checks", no longer "subtle workaround".
 
 1.0. **Add `mem_region_kbuf_to_page` inline helper** in
     `kernel/common/` (R2 kbuf escape hatch). This is a strictly
@@ -424,69 +437,126 @@ qemu_m68k + pcxt at minimum; floppy-using phases also test x68k.
 
 #### Phase 2 — Convert `vfs_ops` to single-page, then delete `mem_helper.h`
 
-Goal: eliminate the §3.1 cursor-helper callers by converting
-`vfs_ops_t.read/write` to the single-page contract, moving the page
-walk up to `fd.c vfs_bridge_read/write` (the root caller for the
-file-data path). Once the cursor helpers have no callers, delete
-`mem_helper.h` with no replacement.
+Goal: eliminate the §3.1 cursor-helper callers by enforcing the
+single-page contract at the syscall boundary. The page-walk loop
+lives in the **core syscall dispatcher**
+([`sys_io.c`](../../src/kernel/core/syscall/sys_io.c)), not in VFS.
+This means VFS never needs to know how to find the next page — it
+just clamps `n` to `PAGE_SIZE - off` and returns what fits. Once
+the cursor helpers have no callers, delete `mem_helper.h` with no
+replacement.
 
-Prerequisite: Phase 1 has landed (blkdev page-indexed signature).
+Prerequisite: Phase 1 has landed (blkdev page-indexed signature). ✓
 
-2.0. Add the page-walk loop to
-    [`fd.c vfs_bridge_read`/`vfs_bridge_write`](../../src/kernel/vfs/fd.c)
-    so it issues one `vfs_ops.read/write` call per page chunk and
-    advances the cursor between calls. Inline arithmetic, no shared
-    helper:
+2.0. **Add page-walk loop to `sys_read`/`sys_write` in
+    [`sys_io.c`](../../src/kernel/core/syscall/sys_io.c).**
+    The syscall dispatcher already resolves the user pointer to a
+    `user_page_ref_t` via `proc_user_ptr_to_page_ref`. Add a loop
+    around the existing `mod_vfs.fd_read/fd_write` call that issues
+    one VFS call per page chunk and advances the ref between calls
+    using the existing `sys_io_advance_ref` helper:
 
 ```c
-uint16_t chunk = (PAGE_SIZE - off < remaining) ? (PAGE_SIZE - off)
-                                               : (uint16_t)remaining;
-/* … call leaf with (page, off, chunk) … */
-size_t pos = (size_t)off + handled;
-page += (page_id_t)(pos / PAGE_SIZE);
-off   = (uint16_t)(pos % PAGE_SIZE);
+size_t total = 0;
+while (total < n) {
+  size_t remaining = n - total;
+  uint16_t chunk = (PAGE_SIZE - ref.off < remaining)
+                 ? (uint16_t)(PAGE_SIZE - ref.off) : (uint16_t)remaining;
+  long ret = mod_vfs.fd_read((int)desc, ref.page, ref.off, chunk);
+  if (ret <= 0) return total > 0 ? (long)total : ret;
+  total += (size_t)ret;
+  if ((size_t)ret < chunk) break; /* short read */
+  sys_io_advance_ref(&ref, (size_t)ret);
+}
+return (long)total;
 ```
 
-**No shared helper, no shared symbol, no shared header.** Same rule
-as R2 for `ptr_ref`: small inline arithmetic at deliberate sites is
-preferable to a public utility that can be casually reached for.
+    **Why core, not VFS:** the far-call cost per iteration is small
+    compared to the actual I/O. Keeping the loop in core means VFS
+    never needs page-advance arithmetic — it just handles what fits
+    in one page and returns. This also keeps the page-index knowledge
+    (how to find the next page) out of the VFS module entirely.
 
-2.1. Convert each `vfs_ops_t.read`/`write` leaf to single-page
-    semantics: handle at most `min(n, PAGE_SIZE - off)` bytes,
-    return the number actually handled, no internal cursor walk.
-    Sites: [`tmpfs.c`](../../src/kernel/vfs/tmpfs.c),
-    [`ufs.c`](../../src/kernel/vfs/ufs.c),
-    [`vfat.c`](../../src/kernel/vfs/vfat.c),
-    [`romfs.c`](../../src/kernel/vfs/romfs.c),
-    [`procfs.c`](../../src/kernel/vfs/procfs.c),
-    [`devfs.c`](../../src/kernel/vfs/devfs.c) (devfs has its own
-    inner devblk_/devloop_ cursor for raw block access — that
-    cursor stays, since blkdev is sector-grained and devfs is
-    where the page walk for raw block I/O lives). After 2.1,
-    `mem_region_page_chunk_len`/`page_advance` have only the devfs
-    inner-cursor caller left, which is converted to inline
-    arithmetic in 2.2.
+    Short-read semantics: if the leaf returns fewer bytes than
+    `chunk` (e.g. EOF mid-page), the loop breaks. This matches the
+    existing POSIX short-read contract.
 
-2.2. Inline the devfs cursor arithmetic and confirm zero remaining
-    callers of `mem_region_page_chunk_len` and `mem_region_page_advance`.
+    **Other callers:** `sys_writev`/`sys_readv` delegate to
+    `sys_write`/`sys_read`, so they inherit the page walk
+    automatically. The eCPU bridge callers (Phase 3) will need
+    their own page-walk loops when their signatures change.
 
-2.2. The `ptr_ref` symbol is replaced with a strictly scoped inline helper
-    (e.g., `mem_region_kbuf_to_page`) in `kernel/common/`. Each surviving caller
-    after Phase 1 and Phase 3 either:
+2.1. **Convert each FS leaf to single-page semantics.**
+    The caller (step 2.0) guarantees `off + n ≤ PAGE_SIZE`. Each
+    leaf handles at most `n` bytes within a single page and returns
+    the number actually handled. Per-leaf changes:
 
-    - is a Phase 5 deferral, in which case it inlines the encoding
-      locally with a `TODO(mem_region_wrapup Phase 5)` comment, or
-    - is legitimate metadata I/O (e.g., `vfs/fstab.c`, `ufs_buf`, `sector_buf`),
-      which will use the new inline helper.
+    **Simple leaves** (flat source data, cursor loop removed entirely):
 
-2.3. Delete [`src/kernel/common/subtle/mem_helper.h`](../../src/kernel/common/subtle/mem_helper.h).
-    Remove the `#include` from
-    [`mem_region.h`](../../src/kernel/core/mm/mem_region.h). If
-    `subtle/` becomes empty, remove the directory.
+    - [`tmpfs.c`](../../src/kernel/vfs/tmpfs.c) `tmpfs_read/write`:
+      Remove the `while (remaining)` loop and the
+      `chunk_len`/`advance` calls. Single
+      `mem_region_page_write(page, off, src, n)` for read,
+      `mem_region_page_read(page, off, dst, n)` for write. The
+      zero-fill inner loop in `tmpfs_read` (for sparse files) stays
+      but operates on a single chunk.
+    - [`romfs.c`](../../src/kernel/vfs/romfs.c) `romfs_read`: Remove
+      cursor loop. Single `page_write(page, off, src, n)`.
+    - [`procfs.c`](../../src/kernel/vfs/procfs.c) `procfs_read`:
+      Remove cursor loop. Single `page_write(page, off, src, n)`.
 
-2.4. Update [`memory_management.md §3.2`](../kernel/memory_management.md)
-    and [`kernel_modules.md` directory listing](../kernel/kernel_modules.md)
-    — remove the "(legacy)" framing and the `subtle/` entry.
+    **Block-structured leaves** (sector/cluster loop stays, page
+    cursor arithmetic simplified):
+
+    - [`ufs.c`](../../src/kernel/vfs/ufs.c) `ufs_read/write`: The
+      sector-walk loop is file-structure-driven (block map → sector
+      read → partial-sector copy) and stays. Under the single-page
+      contract, the memory cursor never crosses a page boundary, so
+      `mem_region_page_advance(&page, &page_off, avail)` becomes
+      `page_off += (uint16_t)avail` and
+      `mem_region_page_chunk_len(page_off, remaining)` is unnecessary
+      (`remaining` already fits within the page).
+    - [`vfat.c`](../../src/kernel/vfs/vfat.c) `vfat_read/write`:
+      Same treatment as ufs — cluster-chain and sector loops stay,
+      `page_advance` → `page_off +=`, `chunk_len` dropped.
+
+2.2. **Inline devfs cursor arithmetic.**
+    [`devfs.c`](../../src/kernel/vfs/devfs.c): `devblk_read/write`
+    and `devloop_read_n/write_n` are the raw block-device paths.
+    They walk sectors with a page cursor. Under the single-page
+    contract from the devfs `read/write` entry points, replace
+    `mem_region_page_advance` with `page_off += chunk` and drop
+    `mem_region_page_chunk_len`.
+
+    After this step, `mem_region_page_chunk_len` and
+    `mem_region_page_advance` have **zero callers**.
+
+2.3. **Replace remaining `ptr_ref` callers.**
+    `mem_region_kbuf_to_page` already exists from Phase 1
+    ([`kernel/common/mem_region_kbuf.h`](../../src/kernel/common/mem_region_kbuf.h)).
+    Each surviving `ptr_ref` caller is handled as follows:
+
+    | File | Action |
+    |---|---|
+    | [`vfs/fstab.c:88`](../../src/kernel/vfs/fstab.c) | Switch from `mem_region_ptr_ref` to `mem_region_kbuf_to_page` (legitimate kbuf under R4). |
+    | [`core/exec/exec.c:38,111`](../../src/kernel/core/exec/exec.c) | Inline the `ptr_ref` encoding locally with a `TODO(mem_region_wrapup Phase 5)` comment. Deferred — entangled with process lifecycle. |
+    | [`core/exec/elf16_loader.c:65`](../../src/kernel/core/exec/elf16_loader.c) | Same — inline encoding + TODO. Deferred. |
+
+    After this step, `mem_region_ptr_ref` has **zero callers**.
+
+2.4. **Delete `mem_helper.h`.**
+    Remove [`src/kernel/common/subtle/mem_helper.h`](../../src/kernel/common/subtle/mem_helper.h).
+    Remove the `#include` from all files that pull it in.
+    Remove the `subtle/` directory (now empty).
+
+2.5. **Update docs.**
+    - [`memory_management.md §3.2`](../kernel/memory_management.md):
+      remove "Inline cursor helpers live in
+      `kernel/common/subtle/mem_helper.h` (legacy)" sentence.
+    - [`kernel_modules.md` directory listing](../kernel/kernel_modules.md):
+      remove `subtle/` entry; correct mod_core function count from
+      20 to 18 (blkdev_read/write were removed in Phase 1; the docs
+      are stale).
 
 After Phase 2, no `mem_helper.h`, no `page_cursor.h`, no shared
 `ptr_ref` / cursor helper anywhere in the tree. The only places that

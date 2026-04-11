@@ -100,8 +100,8 @@ for function names and indices:
 
 ```
 src/kernel/common/mod/
-  mod_core.inc    ← 20 functions
-  mod_vfs.inc     ← 35 functions
+  mod_core.inc    ← 18 functions
+  mod_vfs.inc     ← 39 functions
 ```
 
 Both C headers (`_Static_assert`) and assembly stubs (`#include`)
@@ -117,7 +117,7 @@ of sync.
 
 ### Modules
 
-#### mod_core (20 functions)
+#### mod_core (18 functions)
 
 Common services that all other modules depend on.
 
@@ -125,14 +125,16 @@ Common services that all other modules depend on.
 |-------|-----------|
 | Slab allocator | `kmem_alloc`, `kmem_free`, `kmem_free_count`, `kmem_pool_init` |
 | Region allocator | `mem_region_alloc`, `mem_region_free`, `mem_region_free_bytes`, `mem_region_total_bytes` |
-| Page-indexed memory | `mem_region_page_alloc`, `mem_region_page_free`, `mem_region_page_linear`\*, `mem_region_page_read`, `mem_region_page_write` |
+| Page-indexed memory | `mem_region_page_alloc`, `mem_region_page_free`, `mem_region_page_linear`, `mem_region_page_read`, `mem_region_page_write` |
 | Scheduler | `sched_get_ticks`, `sched_wakeup`, `sched_switch`, `svc_set_restart` |
 | Subsystem | `subsys_read_proc` |
-| Block device I/O | `blkdev_read`, `blkdev_write` |
 
-\* `mem_region_page_linear` is a **subtle** workaround — it returns a
-raw linear address for blkdev DMA.  New VFS code should use
-`mem_region_page_read/write` instead.  See [issue #48](https://github.com/toyoshim-i/PiPAPo/issues/48).
+`mem_region_page_linear` is the sanctioned API for obtaining the
+32-bit linear address of a page for arithmetic, address-range checks,
+and hardware programming.  See
+[memory_management.md §9](memory_management.md).  Do **not** cast the
+result to `void *` to feed another API — pass `(page, off)` to the
+callee instead.
 
 **kmem vs mem_region:** `kmem` is a sub-page slab allocator for
 fixed-size kernel objects (vnodes, files).  `mem_region` is a
@@ -145,7 +147,7 @@ of a 4 KB page.
 internally set up segment:offset pairs for cross-segment access.
 On 32-bit, these are thin wrappers around memcpy.
 
-#### mod_vfs (35 functions)
+#### mod_vfs (39 functions)
 
 VFS layer, file descriptor pool, filesystem drivers, TTY.
 
@@ -153,8 +155,10 @@ VFS layer, file descriptor pool, filesystem drivers, TTY.
 |-------|-----------|
 | VFS core | `init`, `mount`, `umount`, `lookup`, `lookup_flags`, `lookup_parent`, `path_normalize` |
 | Mount helpers | `mount_by_fstype`, `mount_find`, `mount_romfs`, `mount_ufs` |
-| Vnode lifecycle | `vnode_alloc`, `vnode_acquire`, `vnode_release`, `vnode_read` |
+| Vnode lifecycle | `vnode_alloc`, `vnode_acquire`, `vnode_release`, `vnode_read`, `vnode_readlink`, `vnode_stat` |
 | File descriptor pool | `fd_acquire`, `fd_fcntl`, `fd_fstat`, `fd_fstatfs`, `fd_getdents`, `fd_getdents64`, `fd_get_priv`, `fd_ioctl`, `fd_lseek`, `fd_open`, `fd_pipe_create`, `fd_poll`, `fd_pool_init`, `fd_read`, `fd_release`, `fd_stdio_desc`, `fd_stdio_init`, `fd_write` |
+| Logging | `klogf` |
+| Notification | `notify` |
 | Init helpers | `fstab_automount`, `tty_rx_notify` |
 
 ### System-Wide File Descriptor Pool
@@ -356,8 +360,8 @@ src/kernel/
   common/
     mod/
       module.h          ← module system macros (MOD_FUNC etc.)
-      mod_core.h/.inc   ← core module interface (20 functions)
-      mod_vfs.h/.inc    ← VFS module interface (35 functions)
+      mod_core.h/.inc   ← core module interface (18 functions)
+      mod_vfs.h/.inc    ← VFS module interface (39 functions)
     core/               ← shared data-only headers
       mem_layout.h      ← memory class enums, proc_image_segment_t
       page_types.h      ← page_id_t, PAGE_SIZE, page_count, oom_count
@@ -365,7 +369,8 @@ src/kernel/
       sched_info.h      ← cpu tick counters
       subsys_info.h     ← subsystem name constants
     subtle/
-      mem_helper.h      ← legacy page-cursor inlines (do not add new uses)
+      mem_helper.h      ← legacy page-cursor inlines (pending deletion in mem_region_wrapup Phase 2)
+    mem_region_kbuf.h   ← kernel-buffer → (page, off) inline helper
     config.h            ← build config, memory map constants
     spinlock.h          ← SMP spinlock / core_id()
   core/                 ← core module implementation
