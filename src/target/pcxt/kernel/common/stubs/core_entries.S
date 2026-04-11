@@ -32,6 +32,11 @@ saved_ip: .word 0
  * disabled around the save/restore to prevent timer ISR from
  * making a nested far call that overwrites the saved values.
  *
+ * The caller's IF state is saved (pushf/popf via CX) and restored
+ * after each critical section, so syscall callers (IF=0) stay with
+ * interrupts disabled, while boot/normal callers (IF=1) get them
+ * re-enabled.
+ *
  * ia16 C ABI note:
  *   - AX carries the return value, so the stub must not clobber AX
  *     after the real C function returns.
@@ -46,29 +51,34 @@ saved_ip: .word 0
 .macro CORE_TARGET_STUB name
   .global \name\()_entry
 \name\()_entry:
+  pushf
+  pop  %cx                  /* CX = caller's flags (including IF) */
   cli
   pop  %ax
   pop  %dx
   mov  %ax, %ss:saved_ip
   mov  %dx, %ss:saved_cs
-  sti
+  push %cx
+  popf                      /* restore caller's IF state */
   /* Restore DS to core's data segment (SS=DS=0 for shared data).
    * VFS code uses DS as a scratch register, so DS may be garbage
    * when entering core via far call. */
   xor  %dx, %dx
   mov  %dx, %ds
   call \name
+  pushf
+  pop  %cx                  /* CX = current flags */
   cli
   /* Restore DS=0 before returning — the callee may have clobbered DS.
-   * Save DX first: 32-bit return values travel in DX:AX.
-   * Use CX (also caller-saved) as scratch for the DS restore. */
+   * Save DX first: 32-bit return values travel in DX:AX. */
   push %dx
-  xor  %cx, %cx
-  mov  %cx, %ds
+  xor  %dx, %dx
+  mov  %dx, %ds
   pop  %dx
   push %ss:saved_cs
   push %ss:saved_ip
-  sti
+  push %cx
+  popf                      /* restore IF state */
   lret
 .endm
 

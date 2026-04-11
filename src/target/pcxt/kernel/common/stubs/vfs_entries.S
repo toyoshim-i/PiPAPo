@@ -35,33 +35,43 @@ vfs_saved_ip: .word 0
  *   - DS is compiler scratch in ia16 small model; shared kernel data
  *     is addressed via SS, so the stub restores DS only for callers
  *     that expect the conventional DS=0 state on return.
+ *
+ * The caller's IF state is saved (pushf/popf via CX) and restored
+ * after each critical section, so syscall callers (IF=0) keep
+ * interrupts disabled, while boot/normal callers (IF=1) get them
+ * re-enabled.
  */
 .macro VFS_TARGET_STUB name
   .global vfs_\name\()_entry
 vfs_\name\()_entry:
+  pushf
+  pop  %cx                  /* CX = caller's flags (including IF) */
   cli
   pop  %ax
   pop  %dx
   mov  %ax, %ss:vfs_saved_ip
   mov  %dx, %ss:vfs_saved_cs
-  sti
+  push %cx
+  popf                      /* restore caller's IF state */
   /* Restore DS to shared data segment (SS=DS=0).
    * Core code may leave DS as scratch. */
   xor  %dx, %dx
   mov  %dx, %ds
   call vfs_\name
+  pushf
+  pop  %cx                  /* CX = current flags */
   cli
   /* Restore DS=0 before returning to core — VFS code uses DS
    * as a scratch register, and core expects DS=0.
-   * Save DX first: 32-bit return values travel in DX:AX.
-   * Use CX (also caller-saved) as scratch for the DS restore. */
+   * Save DX first: 32-bit return values travel in DX:AX. */
   push %dx
-  xor  %cx, %cx
-  mov  %cx, %ds
+  xor  %dx, %dx
+  mov  %dx, %ds
   pop  %dx
   push %ss:vfs_saved_cs
   push %ss:vfs_saved_ip
-  sti
+  push %cx
+  popf                      /* restore IF state */
   lret
 .endm
 
