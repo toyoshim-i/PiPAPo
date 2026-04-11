@@ -41,21 +41,28 @@ _start2:
 print_char:
   pushw %ax
   pushw %bx
+  pushw %cx
   pushw %dx
   movb  %al, %bl
   movw  $0x03FD, %dx
+  movw  $0xFFFF, %cx
 1:
   inb   %dx, %al
   testb $0x20, %al
-  jz    1b
+  jnz   2f
+  loop  1b
+  jmp   3f
+2:
   movw  $0x03F8, %dx
   movb  %bl, %al
   outb  %al, %dx
+3:
   movb  $0x0E, %ah
   movb  %bl, %al
   xorw  %bx, %bx
   int   $0x10
   popw  %dx
+  popw  %cx
   popw  %bx
   popw  %ax
   ret

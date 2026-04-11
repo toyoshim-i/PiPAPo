@@ -8,6 +8,8 @@
 #include "kernel/common/ioregs.h"
 #include "kernel/vfs/driver/uart.h"
 
+static uint8_t uart_connected = 1u;
+
 void uart_init(void)
 {
   /* Disable all interrupts */
@@ -26,26 +28,42 @@ void uart_init(void)
 
   /* DTR + RTS + OUT2 (OUT2 enables IRQs on PC hardware) */
   outb(COM1_MCR, 0x0B);
+  uart_connected = 1u;
 }
 
 int uart_putc(char c, void (*notify)(void))
 {
   (void)notify;
-  /* Poll until THR is empty */
-  while (!(inb(COM1_LSR) & LSR_THRE))
-    ;
-  outb(COM1_THR, c);
+  uint16_t timeout;
+
+  if (!uart_connected) return 1;
+
+  /* If COM1 stops responding, mark it disconnected and drop TX until
+   * receive activity proves a peer is back. */
+  for (timeout = 0xFFFFu; timeout != 0u; timeout--) {
+    if (inb(COM1_LSR) & LSR_THRE) {
+      outb(COM1_THR, c);
+      return 1;
+    }
+  }
+  uart_connected = 0u;
   return 1;
 }
 
 int uart_getc(void)
 {
-  if (inb(COM1_LSR) & LSR_DR)
+  if (inb(COM1_LSR) & LSR_DR) {
+    uart_connected = 1u;
     return inb(COM1_RBR);
+  }
   return -1;
 }
 
 int uart_rx_avail(void)
 {
-  return (inb(COM1_LSR) & LSR_DR) ? 1 : 0;
+  if (inb(COM1_LSR) & LSR_DR) {
+    uart_connected = 1u;
+    return 1;
+  }
+  return 0;
 }
