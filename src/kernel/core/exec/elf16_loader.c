@@ -67,7 +67,7 @@ static long elf16_read_near(vnode_t *vn, uint32_t off, void *buf,
   page_id_t page;
   uint16_t page_off;
 
-  /* TODO(mem_region_wrapup Phase 5): inline ptr→page encoding */
+  /* TODO: replace inline ptr→page with proper page-indexed loader */
   uintptr_t addr = (uintptr_t)buf;
   page = (page_id_t)(addr / PAGE_SIZE);
   page_off = (uint16_t)(addr & (PAGE_SIZE - 1u));

@@ -433,8 +433,7 @@ No runtime module loading — simpler and sufficient.
 - **mod_signal** — signal delivery (currently direct calls)
 - **mod_subsys** — eCPU emulators + personality bridges
 - ~~**blkdev page-indexed API**~~ — done
-  ([issue #48](https://github.com/toyoshim-i/PiPAPo/issues/48),
-  mem_region_wrapup Phase 1).
+  ([issue #48](https://github.com/toyoshim-i/PiPAPo/issues/48)).
 - **Source tree alignment** — restructure `src/kernel/` so each
   module's directory matches its boundary exactly (e.g. move
   `fd/`, `fs/` into `vfs/`; move `proc/`, `syscall/`, `mm/` into

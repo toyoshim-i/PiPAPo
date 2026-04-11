@@ -35,7 +35,7 @@ static long exec_vnode_read_near(vnode_t *vn, void *buf, uint16_t len,
   page_id_t page;
   uint16_t page_off;
 
-  /* TODO(mem_region_wrapup Phase 5): inline ptr→page encoding */
+  /* TODO: replace inline ptr→page with proper page-indexed loader */
   uintptr_t addr = (uintptr_t)buf;
   page = (page_id_t)(addr / PAGE_SIZE);
   page_off = (uint16_t)(addr & (PAGE_SIZE - 1u));
@@ -111,7 +111,7 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
 
     page_id_t page;
     uint16_t page_off;
-    /* TODO(mem_region_wrapup Phase 5): inline ptr→page encoding */
+    /* TODO: replace inline ptr→page with proper page-indexed loader */
     {
       uintptr_t addr = (uintptr_t)file_buf;
       page = (page_id_t)(addr / PAGE_SIZE);

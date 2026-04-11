@@ -1,8 +1,7 @@
 /*
  * mem_region_kbuf.h — Kernel-buffer → (page_id, off) conversion helper
  *
- * R2 escape hatch (see docs/proposals/mem_region_wrapup.md).  Strictly
- * scoped: this helper exists so that file-system drivers can pass
+ * Strictly scoped: this helper exists so that file-system drivers can pass
  * **kernel-owned** metadata buffers (e.g. ufs_buf, sector_buf, fstab
  * scratch) to the page-indexed blkdev API without re-introducing a
  * general-purpose `void *` → page_id encoder.

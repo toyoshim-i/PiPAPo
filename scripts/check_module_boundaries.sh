@@ -55,7 +55,7 @@ if [[ -n "$vfs_violations" ]]; then
   rc=1
 fi
 
-# ── mem_region_ptr_ref must not exist (deleted in mem_region_wrapup) ─────────
+# ── mem_region_ptr_ref must not exist ────────────────────────────────────────
 
 ptr_ref_violations="$(grep -rn 'mem_region_ptr_ref' \
   "$PPAP_ROOT/src/kernel" \
