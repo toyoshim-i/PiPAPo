@@ -422,6 +422,18 @@ all interrupt and exception handlers.
 `mem_region_alloc()` to a page index.  Returns `PAGE_ID_INVALID`
 if the pointer is not in the page pool.
 
+### Single-page I/O contract
+
+The VFS module never advances a `(page, off)` cursor across a page
+boundary.  When a syscall receives a user buffer spanning multiple
+pages, the **core syscall dispatcher** (`sys_io.c`) splits the request
+into per-page chunks and issues one `mod_vfs.fd_read/fd_write` call per
+chunk.  VFS `read`/`write` implementations may assume
+`off + n ≤ PAGE_SIZE`.
+
+This keeps page-advance arithmetic out of VFS entirely — file-system
+drivers handle at most one page's worth of data per call.
+
 ---
 
 ## 10. Architecture-Specific Notes

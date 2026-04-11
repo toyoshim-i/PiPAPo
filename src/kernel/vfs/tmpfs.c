@@ -155,29 +155,19 @@ static long tmpfs_read(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
   if (off >= ti->size) return 0;
   if (off + n > ti->size) n = ti->size - off;
 
-  size_t remaining = n;
-  uint32_t pos = off;
-  static const uint8_t zero_chunk[32];
+  if (ti->data) {
+    mod_core.mem_region_page_write(page, page_off, ti->data + off, (uint16_t)n);
+  } else {
+    static const uint8_t zero_chunk[32];
+    uint16_t zero_off = 0;
 
-  while (remaining > 0) {
-    uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
-
-    if (ti->data) {
-      mod_core.mem_region_page_write(page, page_off, ti->data + pos, chunk);
-    } else {
-      uint16_t zero_off = 0;
-
-      while (zero_off < chunk) {
-        uint16_t zero_len = chunk - zero_off;
-        if (zero_len > sizeof(zero_chunk)) zero_len = sizeof(zero_chunk);
-        mod_core.mem_region_page_write(page, (uint16_t)(page_off + zero_off),
-                                       zero_chunk, zero_len);
-        zero_off = (uint16_t)(zero_off + zero_len);
-      }
+    while (zero_off < (uint16_t)n) {
+      uint16_t zero_len = (uint16_t)n - zero_off;
+      if (zero_len > sizeof(zero_chunk)) zero_len = sizeof(zero_chunk);
+      mod_core.mem_region_page_write(page, (uint16_t)(page_off + zero_off),
+                                     zero_chunk, zero_len);
+      zero_off = (uint16_t)(zero_off + zero_len);
     }
-    pos += chunk;
-    remaining -= chunk;
-    mem_region_page_advance(&page, &page_off, chunk);
   }
 
   return (long)n;
@@ -209,17 +199,7 @@ static long tmpfs_write(vnode_t *vn, page_id_t page, uint16_t page_off,
     data_pages_used++;
   }
 
-  size_t remaining = n;
-  uint32_t pos = off;
-
-  while (remaining > 0) {
-    uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
-    if (chunk > PAGE_SIZE - pos) chunk = (uint16_t)(PAGE_SIZE - pos);
-    mod_core.mem_region_page_read(page, page_off, ti->data + pos, chunk);
-    pos += chunk;
-    remaining -= chunk;
-    mem_region_page_advance(&page, &page_off, chunk);
-  }
+  mod_core.mem_region_page_read(page, page_off, ti->data + off, (uint16_t)n);
 
   /* Extend file size if needed */
   if (off + (uint32_t)n > ti->size) {

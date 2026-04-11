@@ -691,16 +691,7 @@ static long procfs_read(vnode_t *vn, page_id_t page, uint16_t page_off,
   uint32_t avail = (uint32_t)total - off;
   if (n > avail) n = avail;
 
-  const char *src = tmp + off;
-  size_t remaining = n;
-
-  while (remaining > 0) {
-    uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
-    mod_core.mem_region_page_write(page, page_off, src, chunk);
-    src += chunk;
-    remaining -= chunk;
-    mem_region_page_advance(&page, &page_off, chunk);
-  }
+  mod_core.mem_region_page_write(page, page_off, tmp + off, (uint16_t)n);
   return (long)n;
 }
 

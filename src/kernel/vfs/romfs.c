@@ -152,16 +152,7 @@ static long romfs_read(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
   const romfs_entry_t *e = get_entry(base, vn->ino);
   const uint8_t *data = get_data(e);
 
-  const uint8_t *src = data + off;
-  size_t remaining = n;
-
-  while (remaining > 0) {
-    uint16_t chunk = mem_region_page_chunk_len(page_off, remaining);
-    mod_core.mem_region_page_write(page, page_off, src, chunk);
-    src += chunk;
-    remaining -= chunk;
-    mem_region_page_advance(&page, &page_off, chunk);
-  }
+  mod_core.mem_region_page_write(page, page_off, data + off, (uint16_t)n);
   return (long)n;
 }
 

@@ -577,7 +577,7 @@ static long ufs_read(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
 
     mod_core.mem_region_page_write(page, page_off, &ufs_buf[off_in_sec],
                                    (uint16_t)avail);
-    mem_region_page_advance(&page, &page_off, avail);
+    page_off += (uint16_t)avail;
     pos += avail;
     remaining -= avail;
   }
@@ -639,7 +639,7 @@ static long ufs_write(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
     rc = ufs_write_blk_sector(priv, phys, sec_in_blk);
     if (rc < 0) return (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
 
-    mem_region_page_advance(&page, &page_off, avail);
+    page_off += (uint16_t)avail;
     pos += avail;
     remaining -= avail;
   }

@@ -231,6 +231,30 @@ filesystem object belongs in `vfs/driver/`, not `core/driver/`. A
 driver that is purely a service to mod_core (klog backend, page-pool
 allocator backend) may stay in core.
 
+#### R7. Page-walk responsibility lives in core
+
+The VFS module never advances a `(page, off)` cursor across a page
+boundary. When a syscall receives a user buffer that spans multiple
+pages, the **core syscall dispatcher** (`sys_io.c`) splits it into
+per-page chunks and issues one `mod_vfs.fd_read/fd_write` call per
+chunk. VFS leaves may assume `off + n ≤ PAGE_SIZE` (single-page
+contract).
+
+Rationale:
+
+- **Simplicity in VFS:** file-system drivers handle at most one page's
+  worth of data per call. They never need `mem_region_page_advance` or
+  `mem_region_page_chunk_len` — those helpers become unnecessary.
+- **Module boundary clarity:** page-index knowledge (how to find the
+  next page given a page ID) stays in core where `mem_region` lives.
+  VFS does not need to know how pages are numbered or laid out.
+- **Acceptable cost:** the far-call overhead per iteration on i16 is
+  small compared to the actual I/O work (sector reads, cluster walks,
+  etc.).
+
+Other root callers (eCPU bridges, `sys_writev`/`sys_readv`) follow the
+same pattern: split by page in core before entering VFS.
+
 ---
 
 ### 3. Call-Site Survey
