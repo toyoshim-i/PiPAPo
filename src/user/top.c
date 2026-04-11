@@ -12,6 +12,27 @@
 #include "lib/uclib.h"
 #include "common/termios.h"
 
+/* ANSI color palette (htop-inspired) */
+static int use_color = 1;
+#define C(seq) (use_color ? (seq) : "")
+#define C_RST     C("\033[0m")
+#define C_BOLD    C("\033[1m")
+#define C_DIM     C("\033[2m")       /* not on VGA, but harmless */
+#define C_RED     C("\033[31m")
+#define C_GREEN   C("\033[32m")
+#define C_YELLOW  C("\033[33m")
+#define C_BLUE    C("\033[34m")
+#define C_MAGENTA C("\033[35m")
+#define C_CYAN    C("\033[36m")
+#define C_WHITE   C("\033[37m")
+#define C_BRED    C("\033[1;31m")
+#define C_BGREEN  C("\033[1;32m")
+#define C_BYELLOW C("\033[1;33m")
+#define C_BBLUE   C("\033[1;34m")
+#define C_BCYAN   C("\033[1;36m")
+#define C_BWHITE  C("\033[1;37m")
+#define C_REV     C("\033[7m")
+
 /* Maximum processes we track (matches kernel PROC_MAX) */
 #define MAX_PROCS 16
 
@@ -249,6 +270,7 @@ usage:
           "  -p  sort by PID\n"
           "  -t  sort by time\n"
           "  -n  refresh COUNT times then exit (0 = infinite)\n"
+          "  --no-color  disable color output\n"
           "Interactive keys:\n"
           "  c/P sort by CPU usage\n"
           "  m/M sort by memory\n"
@@ -268,6 +290,8 @@ usage:
     } else if (uc_strcmp(argv[i], "-n") == 0 && i + 1 < argc) {
       i++;
       uc_parse_u32(argv[i], (uint32_t *)&iterations);
+    } else if (uc_strcmp(argv[i], "--no-color") == 0) {
+      use_color = 0;
     } else {
       uc_puts("top: unknown option: ");
       uc_puts(argv[i]);
@@ -349,7 +373,11 @@ usage:
     sort_procs(procs, nprocs, mode);
 
     /* Header */
-    uc_puts("top - up ");
+    uc_puts(C_BCYAN);
+    uc_puts("top");
+    uc_puts(C_RST);
+    uc_puts(" - up ");
+    uc_puts(C_BWHITE);
     {
       uint32_t h = uptime_s / 3600;
       uint32_t m = (uptime_s % 3600) / 60;
@@ -358,59 +386,116 @@ usage:
       uc_snprintf(tbuf, (int)sizeof(tbuf), "%u:%02u:%02u", h, m, s);
       uc_puts(tbuf);
     }
+    uc_puts(C_RST);
     uc_puts(", ");
+    uc_puts(C_BWHITE);
     uc_putu((uint32_t)nprocs);
+    uc_puts(C_RST);
     uc_puts(" procs  [sort: ");
+    uc_puts(C_BYELLOW);
     uc_puts(sort_name(mode));
+    uc_puts(C_RST);
     uc_puts("]\033[K\n");
 
     /* Memory line */
+    uc_puts(C_BCYAN);
     uc_puts("Mem: ");
+    uc_puts(C_RST);
+    uc_puts(C_GREEN);
     uc_putu(mem_total);
-    uc_puts("K total, ");
+    uc_puts("K");
+    uc_puts(C_RST);
+    uc_puts(" total, ");
+    if (mem_total > 0 && mem_free * 100 / mem_total < 10)
+      uc_puts(C_BRED);
+    else
+      uc_puts(C_BGREEN);
     uc_putu(mem_free);
-    uc_puts("K free\033[K\n");
+    uc_puts("K");
+    uc_puts(C_RST);
+    uc_puts(" free\033[K\n");
 
     /* CPU line */
+    uc_puts(C_BCYAN);
+    uc_puts("%Cpu: ");
+    uc_puts(C_RST);
     if (dt > 0) {
       uint32_t us_pct10 = du * 1000 / dt;
       uint32_t sy_pct10 = ds * 1000 / dt;
       uint32_t id_pct10 = di * 1000 / dt;
-      char cpubuf[48];
-      uc_snprintf(cpubuf, (int)sizeof(cpubuf), "%%Cpu: %u.%u us, %u.%u sy, %u.%u id\n",
-                  us_pct10 / 10, us_pct10 % 10,
-                  sy_pct10 / 10, sy_pct10 % 10,
-                  id_pct10 / 10, id_pct10 % 10);
-      uc_puts(cpubuf);
+      char numbuf[8];
+      uc_puts(C_GREEN);
+      uc_snprintf(numbuf, (int)sizeof(numbuf), "%u.%u", us_pct10 / 10, us_pct10 % 10);
+      uc_puts(numbuf);
+      uc_puts(C_RST);
+      uc_puts(" us, ");
+      uc_puts(C_RED);
+      uc_snprintf(numbuf, (int)sizeof(numbuf), "%u.%u", sy_pct10 / 10, sy_pct10 % 10);
+      uc_puts(numbuf);
+      uc_puts(C_RST);
+      uc_puts(" sy, ");
+      uc_puts(C_CYAN);
+      uc_snprintf(numbuf, (int)sizeof(numbuf), "%u.%u", id_pct10 / 10, id_pct10 % 10);
+      uc_puts(numbuf);
+      uc_puts(C_RST);
+      uc_puts(" id");
     } else {
-      uc_puts("%Cpu: --\n");
+      uc_puts("--");
     }
+    uc_puts("\033[K\n");
 
     /* Process table header */
-    uc_puts("\n  PID  PPID S  %CPU  TIME    MEM COMMAND\n");
+    uc_puts(C_REV);
+    uc_puts(C_BOLD);
+    uc_puts("\n  PID  PPID S  %CPU  TIME    MEM COMMAND\033[K");
+    uc_puts(C_RST);
+    uc_putc('\n');
 
     /* Process rows */
     for (int i = 0; i < nprocs; i++) {
       int si = sort_idx[i];
+      uc_puts(C_CYAN);
       print_right((uint32_t)procs[si].pid, 5);
+      uc_puts(C_RST);
+      uc_puts(C_BLUE);
       print_right((uint32_t)procs[si].ppid, 6);
+      uc_puts(C_RST);
       uc_putc(' ');
-      uc_putc(procs[si].state);
+      {
+        char st = procs[si].state;
+        if (st == 'R') uc_puts(C_BGREEN);
+        else if (st == 'Z') uc_puts(C_BRED);
+        else if (st == 'I') uc_puts(C_BLUE);
+        else uc_puts(C_WHITE);
+        uc_putc(st);
+        uc_puts(C_RST);
+      }
       /* %CPU: cpu_delta / dt * 100, show as XX.X */
       if (dt > 0) {
         uint32_t pct10 = procs[si].cpu_delta * 1000 / dt;
+        if (pct10 >= 500) uc_puts(C_BRED);
+        else if (pct10 >= 200) uc_puts(C_BYELLOW);
+        else if (pct10 > 0) uc_puts(C_GREEN);
         char pctbuf[8];
         uc_snprintf(pctbuf, (int)sizeof(pctbuf), "%3u.%u", pct10 / 10,
                     pct10 % 10);
         uc_puts(pctbuf);
+        uc_puts(C_RST);
       } else {
         uc_puts("  --");
       }
       uc_putc(' ');
+      uc_puts(C_MAGENTA);
       print_time(procs[si].utime + procs[si].stime);
+      uc_puts(C_RST);
+      uc_puts(C_YELLOW);
       print_right(procs[si].vsz / 1024, 7);
-      uc_puts("K ");
+      uc_puts("K");
+      uc_puts(C_RST);
+      uc_putc(' ');
+      uc_puts(C_BWHITE);
       uc_puts(procs[si].comm);
+      uc_puts(C_RST);
       uc_puts("\033[K\n");
     }
 

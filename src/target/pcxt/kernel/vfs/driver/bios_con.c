@@ -36,6 +36,7 @@ static uint8_t bios_attr = 0x07u; /* light grey on black */
 static uint8_t bios_fg = 7u;
 static uint8_t bios_bg = 0u;
 static uint8_t bios_bold;
+static uint8_t bios_reverse;
 static uint8_t bios_ansi_state;
 static uint8_t bios_param_count;
 static uint8_t bios_param_seen_digit;
@@ -73,13 +74,16 @@ static void bios_seed_cursor(void) {
 }
 
 static void bios_update_attr(void) {
-  bios_attr = (uint8_t)((bios_bg << 4) | bios_fg | (bios_bold ? 0x08u : 0u));
+  uint8_t fg = bios_fg, bg = bios_bg;
+  if (bios_reverse) { fg = bios_bg; bg = bios_fg; }
+  bios_attr = (uint8_t)((bg << 4) | fg | (bios_bold ? 0x08u : 0u));
 }
 
 static void bios_reset_attr(void) {
   bios_fg = 7u;
   bios_bg = 0u;
   bios_bold = 0u;
+  bios_reverse = 0u;
   bios_update_attr();
 }
 
@@ -179,8 +183,18 @@ static void bios_ansi_apply_sgr(void) {
     } else if (p == 1u) {
       bios_bold = 1u;
       bios_update_attr();
+    } else if (p == 2u) {
+      /* dim — not supported on VGA, treat as no-bold */
+      bios_bold = 0u;
+      bios_update_attr();
+    } else if (p == 7u) {
+      bios_reverse = 1u;
+      bios_update_attr();
     } else if (p == 22u) {
       bios_bold = 0u;
+      bios_update_attr();
+    } else if (p == 27u) {
+      bios_reverse = 0u;
       bios_update_attr();
     } else if (p >= 30u && p <= 37u) {
       bios_fg = (uint8_t)(p - 30u);

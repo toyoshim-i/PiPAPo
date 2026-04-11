@@ -9,6 +9,23 @@
 
 #include "lib/uclib.h"
 
+/* ANSI color palette */
+static int use_color = 1;
+#define C(seq) (use_color ? (seq) : "")
+#define C_RST     C("\033[0m")
+#define C_BOLD    C("\033[1m")
+#define C_RED     C("\033[31m")
+#define C_GREEN   C("\033[32m")
+#define C_YELLOW  C("\033[33m")
+#define C_BLUE    C("\033[34m")
+#define C_MAGENTA C("\033[35m")
+#define C_CYAN    C("\033[36m")
+#define C_WHITE   C("\033[37m")
+#define C_BRED    C("\033[1;31m")
+#define C_BGREEN  C("\033[1;32m")
+#define C_BWHITE  C("\033[1;37m")
+#define C_REV     C("\033[7m")
+
 /* Parse fields from /proc/<pid>/stat (Linux 52-field format).
  * Extracts: pid(1), comm(2), state(3), ppid(4), utime(14), stime(15),
  *           vsize(23). */
@@ -101,15 +118,23 @@ static void print_time(uint32_t ticks) {
 }
 
 int main(int argc, char *argv[]) {
-  if (argc > 1 && uc_strcmp(argv[1], "--help") == 0) {
-    uc_puts(
-        "Usage: ps\n"
-        "List all processes.\n"
-        "Columns: PID, PPID, State, TIME, MEM, COMMAND\n");
-    return 0;
+  for (int i = 1; i < argc; i++) {
+    if (uc_strcmp(argv[i], "--help") == 0) {
+      uc_puts(
+          "Usage: ps [--no-color]\n"
+          "List all processes.\n"
+          "Columns: PID, PPID, State, TIME, MEM, COMMAND\n");
+      return 0;
+    } else if (uc_strcmp(argv[i], "--no-color") == 0) {
+      use_color = 0;
+    }
   }
 
-  uc_puts("  PID  PPID S  TIME    MEM COMMAND\n");
+  uc_puts(C_REV);
+  uc_puts(C_BOLD);
+  uc_puts("  PID  PPID S  TIME    MEM COMMAND");
+  uc_puts(C_RST);
+  uc_putc('\n');
 
   int dfd = open("/proc", O_RDONLY, 0);
   if (dfd < 0) return 1;
@@ -137,15 +162,31 @@ int main(int argc, char *argv[]) {
                    &stime, &vsz) < 0)
       continue;
 
+    uc_puts(C_CYAN);
     print_right((uint32_t)pid, 5);
+    uc_puts(C_RST);
+    uc_puts(C_BLUE);
     print_right((uint32_t)ppid, 6);
+    uc_puts(C_RST);
     uc_putc(' ');
+    if (state == 'R') uc_puts(C_BGREEN);
+    else if (state == 'Z') uc_puts(C_BRED);
+    else if (state == 'I') uc_puts(C_BLUE);
+    else uc_puts(C_WHITE);
     uc_putc(state);
+    uc_puts(C_RST);
     uc_putc(' ');
+    uc_puts(C_MAGENTA);
     print_time(utime + stime);
+    uc_puts(C_RST);
+    uc_puts(C_YELLOW);
     print_right(vsz / 1024, 7);
-    uc_puts("K ");
+    uc_puts("K");
+    uc_puts(C_RST);
+    uc_putc(' ');
+    uc_puts(C_BWHITE);
     uc_puts(comm);
+    uc_puts(C_RST);
     uc_putc('\n');
   }
 

@@ -686,6 +686,13 @@ static int render_prompt(const char *ps1, char *out, int out_size) {
         case '$':
           out[i++] = '$'; /* always $ (no root check) */
           break;
+        case 'e':
+          out[i++] = '\033'; /* ESC character for ANSI sequences */
+          break;
+        case '[':
+        case ']':
+          /* \[ and \] mark non-printing sequences (ignored for now) */
+          break;
         default:
           out[i++] = *p;
           break;

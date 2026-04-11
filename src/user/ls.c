@@ -19,6 +19,17 @@ static int opt_long;
 static int opt_all;
 static int opt_classify;
 static int term_cols;
+static int use_color = 1;
+#define C(seq) (use_color ? (seq) : "")
+#define C_RST     C("\033[0m")
+#define C_BOLD    C("\033[1m")
+#define C_CYAN    C("\033[36m")
+#define C_WHITE   C("\033[37m")
+#define C_BBLUE   C("\033[1;34m")
+#define C_BGREEN  C("\033[1;32m")
+#define C_BCYAN   C("\033[1;36m")
+#define C_BYELLOW C("\033[1;33m")
+#define C_BMAGENTA C("\033[1;35m")
 
 static void print_mode(uint32_t mode) {
   char buf[11];
@@ -66,13 +77,34 @@ static int stat_entry(const char *dir, const char *name, struct stat *st) {
   return stat(fullpath, st);
 }
 
+/* File type codes for coloring: 0=regular, 1=dir, 2=exe, 3=symlink, 4=device */
+static void color_for_type(uint8_t ftype) {
+  switch (ftype) {
+    case 1: uc_puts(C_BBLUE); break;
+    case 2: uc_puts(C_BGREEN); break;
+    case 3: uc_puts(C_BCYAN); break;
+    case 4: uc_puts(C_BYELLOW); break;
+  }
+}
+
+static uint8_t stat_to_type(const struct stat *st) {
+  if (S_ISDIR(st->st_mode)) return 1;
+  if (S_ISLNK(st->st_mode)) return 3;
+  if (S_ISCHR(st->st_mode)) return 4;
+  if (st->st_mode & 0111) return 2;
+  return 0;
+}
+
 static void print_name_classified(const char *name, const struct stat *st,
                                   int have_stat) {
+  uint8_t ftype = have_stat ? stat_to_type(st) : 0;
+  if (ftype) color_for_type(ftype);
   uc_puts(name);
+  if (ftype) uc_puts(C_RST);
   if (opt_classify && have_stat) {
-    if (S_ISDIR(st->st_mode))
+    if (ftype == 1)
       uc_putc('/');
-    else if (st->st_mode & 0111)
+    else if (ftype == 2)
       uc_putc('*');
   }
 }
@@ -93,14 +125,16 @@ static int ls_dir(const char *path) {
       if (!opt_all && de.d_name[0] == '.') continue;
 
       struct stat st;
-      int have_stat = 0;
-      if (opt_long || opt_classify)
-        have_stat = (stat_entry(path, de.d_name, &st) == 0);
+      int have_stat = (stat_entry(path, de.d_name, &st) == 0);
 
       if (opt_long && have_stat) {
+        uc_puts(C_CYAN);
         print_mode(st.st_mode);
+        uc_puts(C_RST);
         uc_putc(' ');
+        uc_puts(C_WHITE);
         print_size(st.st_size);
+        uc_puts(C_RST);
         uc_putc(' ');
       }
       print_name_classified(de.d_name, &st, have_stat);
@@ -114,6 +148,7 @@ static int ls_dir(const char *path) {
   static char name_pool[NAME_MAX_STORE];
   static uint16_t name_off[ENTRY_MAX]; /* offsets into name_pool */
   static uint8_t name_len[ENTRY_MAX];  /* display lengths */
+  static uint8_t name_type[ENTRY_MAX]; /* 0=file, 1=dir, 2=exe */
   int pool_used = 0;
   int count = 0;
   int max_len = 0;
@@ -124,13 +159,15 @@ static int ls_dir(const char *path) {
 
     int nlen = uc_strlen(de.d_name);
     char suffix = 0;
-    if (opt_classify) {
+    uint8_t ftype = 0;
+    {
       struct stat st;
       if (stat_entry(path, de.d_name, &st) == 0) {
-        if (S_ISDIR(st.st_mode))
-          suffix = '/';
-        else if (st.st_mode & 0111)
-          suffix = '*';
+        ftype = stat_to_type(&st);
+        if (opt_classify) {
+          if (ftype == 1) suffix = '/';
+          else if (ftype == 2) suffix = '*';
+        }
       }
     }
     int dlen = nlen + (suffix ? 1 : 0);
@@ -142,6 +179,7 @@ static int ls_dir(const char *path) {
     if (suffix) name_pool[pool_used++] = suffix;
     name_pool[pool_used++] = '\0';
     name_len[count] = (uint8_t)dlen;
+    name_type[count] = ftype;
     if (dlen > max_len) max_len = dlen;
     count++;
   }
@@ -154,7 +192,9 @@ static int ls_dir(const char *path) {
   if (ncols < 1) ncols = 1;
 
   for (int i = 0; i < count; i++) {
+    if (name_type[i]) color_for_type(name_type[i]);
     uc_puts(name_pool + name_off[i]);
+    if (name_type[i]) uc_puts(C_RST);
     if (ncols <= 1 || (i + 1) % ncols == 0 || i + 1 == count) {
       uc_putc('\n');
     } else {
@@ -176,11 +216,17 @@ int main(int argc, char *argv[]) {
   while (argi < argc && argv[argi][0] == '-') {
     if (uc_strcmp(argv[argi], "--help") == 0) {
       uc_puts(
-          "Usage: ls [-laF] [path ...]\n"
+          "Usage: ls [-laF] [--no-color] [path ...]\n"
           "  -l  Long format (mode, size, name)\n"
           "  -a  Include hidden entries (.*)\n"
-          "  -F  Append / for dirs, * for executables\n");
+          "  -F  Append / for dirs, * for executables\n"
+          "  --no-color  Disable color output\n");
       return 0;
+    }
+    if (uc_strcmp(argv[argi], "--no-color") == 0) {
+      use_color = 0;
+      argi++;
+      continue;
     }
     const char *p = argv[argi] + 1;
     while (*p) {
