@@ -16,6 +16,7 @@
 #include "common/fcntl.h"
 #include "common/ptrace.h"
 #include "common/seek.h"
+#include "kernel/common/mem_region_kbuf.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
@@ -28,19 +29,17 @@ static long cpm_fd_desc(long fd) {
   return current->fd_map[(uint32_t)fd];
 }
 
-static int cpm_page_ref(const void *buf, page_id_t *page, uint16_t *off) {
-  return (mem_region_ptr_ref(buf, page, off) < 0) ? -EFAULT : 0;
+static void cpm_page_ref(const void *buf, page_id_t *page, uint16_t *off) {
+  mem_region_kbuf_to_page(buf, page, off);
 }
 
 static long cpm_fd_read(long fd, void *buf, size_t n) {
   long desc = cpm_fd_desc(fd);
   page_id_t page;
   uint16_t off;
-  int rc;
 
   if (desc < 0) return desc;
-  rc = cpm_page_ref(buf, &page, &off);
-  if (rc < 0) return rc;
+  cpm_page_ref(buf, &page, &off);
   return mod_vfs.fd_read((int)desc, page, off, n);
 }
 
@@ -48,11 +47,9 @@ static long cpm_fd_write(long fd, const void *buf, size_t n) {
   long desc = cpm_fd_desc(fd);
   page_id_t page;
   uint16_t off;
-  int rc;
 
   if (desc < 0) return desc;
-  rc = cpm_page_ref(buf, &page, &off);
-  if (rc < 0) return rc;
+  cpm_page_ref(buf, &page, &off);
   return mod_vfs.fd_write((int)desc, page, off, n);
 }
 

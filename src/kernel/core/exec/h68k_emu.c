@@ -14,6 +14,7 @@
 
 #include "common/errno.h"
 #include "common/fcntl.h"
+#include "kernel/common/mem_region_kbuf.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/cpu/ecpu_m68k.h"
 #include "kernel/core/mm/mem_region.h"
@@ -39,19 +40,17 @@ static long h68k_emu_fd_desc(long fd) {
   return current->fd_map[(uint32_t)fd];
 }
 
-static int h68k_emu_page_ref(const void *buf, page_id_t *page, uint16_t *off) {
-  return (mem_region_ptr_ref(buf, page, off) < 0) ? -EFAULT : 0;
+static void h68k_emu_page_ref(const void *buf, page_id_t *page, uint16_t *off) {
+  mem_region_kbuf_to_page(buf, page, off);
 }
 
 static long h68k_emu_fd_read(long fd, void *buf, size_t n) {
   long desc = h68k_emu_fd_desc(fd);
   page_id_t page;
   uint16_t off;
-  int rc;
 
   if (desc < 0) return desc;
-  rc = h68k_emu_page_ref(buf, &page, &off);
-  if (rc < 0) return rc;
+  h68k_emu_page_ref(buf, &page, &off);
   return mod_vfs.fd_read((int)desc, page, off, n);
 }
 
@@ -59,11 +58,9 @@ static long h68k_emu_fd_write(long fd, const void *buf, size_t n) {
   long desc = h68k_emu_fd_desc(fd);
   page_id_t page;
   uint16_t off;
-  int rc;
 
   if (desc < 0) return desc;
-  rc = h68k_emu_page_ref(buf, &page, &off);
-  if (rc < 0) return rc;
+  h68k_emu_page_ref(buf, &page, &off);
   return mod_vfs.fd_write((int)desc, page, off, n);
 }
 
