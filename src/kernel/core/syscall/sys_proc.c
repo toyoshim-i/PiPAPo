@@ -1543,6 +1543,9 @@ long sys_exit(long status) {
     }
   }
 
+#ifdef KSTACK_USAGE_TRACK
+  proc_kstack_usage_report();
+#endif
   current->state = PROC_ZOMBIE;
 #if defined(__xtensa__)
   /* Xtensa: return to syscall handler and let it switch away based on

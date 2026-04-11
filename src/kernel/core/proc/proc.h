@@ -40,6 +40,11 @@ void proc_plant_kstack_canaries(void);
  * restore paths so an overflow is caught at the next kernel→user
  * transition. */
 void proc_check_kstack_canary_panic(void);
+#ifdef KSTACK_USAGE_TRACK
+void proc_kstack_paint(void);
+uint16_t proc_kstack_scan(void);
+void proc_kstack_usage_report(void);
+#endif
 #endif
 
 /*

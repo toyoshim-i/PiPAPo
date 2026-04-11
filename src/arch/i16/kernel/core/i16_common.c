@@ -167,7 +167,20 @@ long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1, uint16_t a2,
 
   extern void syscall_dispatch(uint32_t * frame, uint32_t nr, uint32_t a4,
                                uint32_t a5);
+#ifdef KSTACK_USAGE_TRACK
+  proc_kstack_paint();
+#endif
   syscall_dispatch(frame, (uint32_t)nr, (uint32_t)a4, 0);
+#ifdef KSTACK_USAGE_TRACK
+  {
+    /* scan returns new HWM (>0) or 0.  Print here, not inside scan —
+     * syscall frames are unwound so klogf's own stack usage is safe. */
+    uint16_t hwm = proc_kstack_scan();
+    if (hwm)
+      mod_vfs.klogf("KSTACK: slot hwm=%u/1018 nr=%u\n", (unsigned)hwm,
+                    (unsigned)nr);
+  }
+#endif
 
   /* Catch any kernel-stack overrun before we return to trap.S. */
   proc_check_kstack_canary_panic();
