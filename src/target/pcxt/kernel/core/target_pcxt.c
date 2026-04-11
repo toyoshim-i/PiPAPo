@@ -621,7 +621,7 @@ void target_late_init(void)
 
 int target_mount_rootfs(void)
 {
-  /* blkdev + bios_blk init done in VFS (pcxt_blkdev.c VFS_EVENT_LATE_INIT).
+  /* blkdev + bios_blk init done in VFS (pcxt_vfs_init.c VFS_EVENT_LATE_INIT).
    * Device name depends on boot drive: "fd0" for floppy, "hd0" for HDD. */
   const char *dev = (i16_boot_drive >= 0x80) ? "hd0" : "fd0";
   return mod_vfs.mount_ufs("/", MNT_RDONLY, dev);

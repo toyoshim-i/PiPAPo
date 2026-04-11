@@ -427,8 +427,8 @@ add_executable(ppap_pcxt_vfs
   ${KERNEL_VFS_SOURCES}
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/uart_com.c
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/bios_con.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/pcxt_logger.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/pcxt_blkdev.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/pcxt_logger.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/pcxt_vfs_init.c
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/bios_blk.c
   ${PPAP_ROOT}/src/kernel/vfs/driver/blkdev.c
   # VFS-side stubs: entry stubs for VFS, caller stubs for core
