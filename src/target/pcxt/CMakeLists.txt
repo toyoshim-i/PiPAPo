@@ -236,7 +236,8 @@ endfunction()
 add_executable(stage1
   ${CMAKE_CURRENT_SOURCE_DIR}/boot/stage1.S
 )
-target_compile_options(stage1 PRIVATE -march=i8086 -ffreestanding)
+target_compile_options(stage1 PRIVATE -march=i8086 -ffreestanding
+  -Wa,-I${CMAKE_CURRENT_SOURCE_DIR}/boot)
 target_link_options(stage1 PRIVATE
   -nostartfiles -nostdlib
   -T ${CMAKE_CURRENT_SOURCE_DIR}/boot/stage1.ld
@@ -248,6 +249,27 @@ add_custom_command(TARGET stage1 POST_BUILD
     $<TARGET_FILE:stage1>
     ${CMAKE_CURRENT_BINARY_DIR}/stage1.bin
   COMMENT "Creating stage1.bin (512 B boot sector)"
+)
+
+# Target 1b: stage1_hdd (MBR boot sector, 512 bytes)
+# ==========================================================================
+
+add_executable(stage1_hdd
+  ${CMAKE_CURRENT_SOURCE_DIR}/boot/stage1_hdd.S
+)
+target_compile_options(stage1_hdd PRIVATE -march=i8086 -ffreestanding
+  -Wa,-I${CMAKE_CURRENT_SOURCE_DIR}/boot)
+target_link_options(stage1_hdd PRIVATE
+  -nostartfiles -nostdlib
+  -T ${CMAKE_CURRENT_SOURCE_DIR}/boot/stage1.ld
+)
+set_target_properties(stage1_hdd PROPERTIES SUFFIX ".elf")
+
+add_custom_command(TARGET stage1_hdd POST_BUILD
+  COMMAND ${CMAKE_OBJCOPY} -O binary
+    $<TARGET_FILE:stage1_hdd>
+    ${CMAKE_CURRENT_BINARY_DIR}/stage1_hdd.bin
+  COMMENT "Creating stage1_hdd.bin (512 B MBR boot sector)"
 )
 
 # ==========================================================================
@@ -528,7 +550,7 @@ add_custom_target(pcxt_user_elfs DEPENDS ${PCXT_USER_ELFS})
 #   new: ppap_pcxt_img depends on both independently
 add_custom_target(ppap_pcxt_img ALL
   COMMAND ${PPAP_ROOT}/scripts/mkpcimg.sh ${CMAKE_CURRENT_BINARY_DIR}
-  DEPENDS ppap_pcxt ppap_pcxt_vfs stage1 stage2 pcxt_user_elfs
-  COMMENT "Assembling floppy image ppap_pcxt.img"
+  DEPENDS ppap_pcxt ppap_pcxt_vfs stage1 stage1_hdd stage2 pcxt_user_elfs
+  COMMENT "Assembling floppy and HDD images"
 )
-add_dependencies(ppap_pcxt_img ppap_pcxt ppap_pcxt_vfs stage1 stage2 pcxt_user_elfs)
+add_dependencies(ppap_pcxt_img ppap_pcxt ppap_pcxt_vfs stage1 stage1_hdd stage2 pcxt_user_elfs)
