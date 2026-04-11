@@ -160,6 +160,12 @@ enum {
   COL_WHITE,
 };
 
+/* ── File I/O (pi.c) ───────────────────────────────────────────────────── */
+
+int save_file(const char *path);
+void reset_buffer(void);
+void load_file(const char *path);
+
 /* ── UI (pi_ui.c) ──────────────────────────────────────────────────────── */
 
 void ui_refresh(void);

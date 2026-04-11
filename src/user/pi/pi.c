@@ -13,7 +13,7 @@ editor_t E;
 
 /* ── File loading ──────────────────────────────────────────────────────── */
 
-static void load_file(const char *path) {
+void load_file(const char *path) {
   int fd = open(path, O_RDONLY, 0);
   if (fd < 0) {
     /* New file — just set filename */
@@ -39,6 +39,71 @@ static void load_file(const char *path) {
   E.cx = 0;
   E.cy = 0;
   E.dirty = 0;
+}
+
+/* ── File saving ───────────────────────────────────────────────────────── */
+
+int save_file(const char *path) {
+  if (!path || !path[0]) {
+    ui_set_status("No filename");
+    return -1;
+  }
+
+  int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+  if (fd < 0) {
+    ui_set_status("Error: cannot open for writing");
+    return -1;
+  }
+
+  int len = gap_length(&E.buf);
+  char buf[512];
+  int written = 0;
+  int bi = 0;
+
+  for (int i = 0; i < len; i++) {
+    buf[bi++] = (char)gap_char_at(&E.buf, i);
+    if (bi == (int)sizeof(buf)) {
+      ssize_t n = write(fd, buf, bi);
+      if (n < 0) {
+        close(fd);
+        ui_set_status("Error: write failed");
+        return -1;
+      }
+      written += n;
+      bi = 0;
+    }
+  }
+  if (bi > 0) {
+    ssize_t n = write(fd, buf, bi);
+    if (n < 0) {
+      close(fd);
+      ui_set_status("Error: write failed");
+      return -1;
+    }
+    written += n;
+  }
+  close(fd);
+
+  uc_strncpy(E.filename, path, sizeof(E.filename));
+  E.dirty = 0;
+
+  char msg[80];
+  uc_snprintf(msg, sizeof(msg), "Written %d bytes", written);
+  ui_set_status(msg);
+  return 0;
+}
+
+/* Reset buffer for :e! (new) or :e file (open) */
+void reset_buffer(void) {
+  gap_move(&E.buf, 0);
+  /* Delete everything */
+  while (E.buf.gap_end < E.buf.cap)
+    E.buf.gap_end++;
+  E.cx = 0;
+  E.cy = 0;
+  E.scroll_row = 0;
+  E.dirty = 0;
+  E.filename[0] = '\0';
 }
 
 /* ── Cursor helpers ────────────────────────────────────────────────────── */
@@ -422,9 +487,25 @@ static void handle_command(int key) {
     } else if (E.cmd[0] == 'q' && E.cmd[1] == '!' && E.cmd_len == 2) {
       E.quit = 1;
     } else if (E.cmd[0] == 'w' && E.cmd[1] == 'q' && E.cmd_len == 2) {
-      ui_set_status("Save+Quit: not yet implemented");
+      if (save_file(E.filename) == 0)
+        E.quit = 1;
     } else if (E.cmd[0] == 'w' && E.cmd_len == 1) {
-      ui_set_status("Save: not yet implemented");
+      save_file(E.filename);
+    } else if (E.cmd[0] == 'w' && E.cmd[1] == ' ' && E.cmd_len > 2) {
+      /* :w filename — save as */
+      save_file(E.cmd + 2);
+    } else if (E.cmd[0] == 'e' && E.cmd[1] == '!' && E.cmd_len == 2) {
+      /* :e! — discard and start new */
+      reset_buffer();
+      ui_set_status("(new file)");
+    } else if (E.cmd[0] == 'e' && E.cmd[1] == ' ' && E.cmd_len > 2) {
+      /* :e filename — open file */
+      if (E.dirty) {
+        ui_set_status("Unsaved changes — use :e! to discard");
+      } else {
+        reset_buffer();
+        load_file(E.cmd + 2);
+      }
     } else {
       /* Try as line number */
       int line = uc_atoi(E.cmd);

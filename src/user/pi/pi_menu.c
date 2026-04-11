@@ -90,27 +90,39 @@ int menu_dispatch(int cat, int item) {
   if (cat == 0) {
     switch (item) {
     case 0: /* New */
-      ui_set_status("New: not yet implemented");
+      reset_buffer();
+      ui_set_status("(new file)");
       break;
     case 1: /* Open */
-      ui_set_status("Open: not yet implemented");
-      break;
+      /* Enter command mode with :e prefix */
+      E.mode = MODE_COMMAND;
+      E.cmd[0] = 'e';
+      E.cmd[1] = ' ';
+      E.cmd[2] = '\0';
+      E.cmd_len = 2;
+      return 0;
     case 2: /* Save */
-      ui_set_status("Save: not yet implemented");
+      save_file(E.filename);
       break;
     case 3: /* Save As */
-      ui_set_status("Save As: not yet implemented");
-      break;
+      /* Enter command mode with :w prefix */
+      E.mode = MODE_COMMAND;
+      E.cmd[0] = 'w';
+      E.cmd[1] = ' ';
+      E.cmd[2] = '\0';
+      E.cmd_len = 2;
+      return 0;
     case 4: /* Quit */
       if (E.dirty) {
-        ui_set_status("Unsaved changes — use :q! to force quit");
+        ui_set_status("Unsaved changes \xe2\x80\x94 use :q! to force quit");
         return 0;
       }
       return 1;
     case 5: /* Force Quit */
       return 1;
     case 6: /* Save+Quit */
-      ui_set_status("Save+Quit: not yet implemented");
+      if (save_file(E.filename) == 0)
+        return 1;
       break;
     }
     return 0;
