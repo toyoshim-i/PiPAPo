@@ -115,12 +115,13 @@ fi
 if [[ -f "$USER_BUILD_DIR/runtests_ext.elf" ]]; then
   cp "$USER_BUILD_DIR/runtests_ext.elf" "$UFS_STAGING/bin/runtests_ext"
 fi
-if [[ -f "$USER_BUILD_DIR/test_exec.elf" ]]; then
-  cp "$USER_BUILD_DIR/test_exec.elf" "$UFS_STAGING/bin/test_exec"
-fi
-if [[ -f "$USER_BUILD_DIR/test_vfork.elf" ]]; then
-  cp "$USER_BUILD_DIR/test_vfork.elf" "$UFS_STAGING/bin/test_vfork"
-fi
+TEST_BINS=(test_exec test_vfork test_fs test_rw test_tmpfs test_ufs)
+for tst in "${TEST_BINS[@]}"; do
+  if [[ -f "$USER_BUILD_DIR/$tst.elf" ]]; then
+    cp "$USER_BUILD_DIR/$tst.elf" "$UFS_STAGING/bin/$tst"
+  fi
+done
+
 
 # ── Pad stage2 ──────────────────────────────────────────────────────────
 

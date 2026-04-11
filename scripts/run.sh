@@ -498,6 +498,9 @@ if [[ $DO_TEST -eq 1 ]]; then
             TIMEOUT=90
         fi
     fi
+    if [[ "$TARGET" == "pcxt" && $TIMEOUT -lt 180 ]]; then
+        TIMEOUT=180
+    fi
     if [[ "$TARGET" == "qemu_m68k" && $RUN_SLOW -eq 1 && $TIMEOUT -lt 150 ]]; then
         TIMEOUT=150
     fi

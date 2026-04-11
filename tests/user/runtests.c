@@ -202,11 +202,12 @@ static void check_run_slow(void)
 static int g_total;
 static int g_passed;
 static int g_failed;
+static int g_skipped;
 
-static int run_test_simple(const char *path)
+static int run_test(const char *path)
 {
-  pid_t pid;
-  int status = 0;
+    pid_t pid;
+    int status = 0;
 
     print("RUN   ");
     print(path);
@@ -222,9 +223,17 @@ static int run_test_simple(const char *path)
     return (status >> 8) & 0xff;
 }
 
-static void record_test_simple(const char *path)
+static void record_test(const char *path, int flags)
 {
-    int code = run_test_simple(path);
+    if (flags == TEST_DISABLED) {
+        g_skipped++;
+        print("SKIP  ");
+        print(path);
+        print("  (disabled)\n");
+        return;
+    }
+
+    int code = run_test(path);
 
     g_total++;
 
@@ -244,14 +253,27 @@ int main(void)
     g_total = 0;
     g_passed = 0;
     g_failed = 0;
+    g_skipped = 0;
+
+    /* On pcxt, stdout is the VGA console (invisible to QEMU serial
+     * capture).  Redirect fd 1 to /dev/ttyS0 so test output appears
+     * on the serial port where the test runner can see it. */
+    {
+        int sfd = open("/dev/ttyS0", 1 /* O_WRONLY */, 0);
+        if (sfd >= 0) {
+            close(1);
+            dup(sfd);
+            close(sfd);
+        }
+    }
 
     print("=== PPAP on-target test suite ===\n");
-    record_test_simple("/bin/test_exec");
-    record_test_simple("/bin/test_vfork");
-    record_test_simple("/bin/test_fs");
-    record_test_simple("/bin/test_rw");
-    record_test_simple("/bin/test_tmpfs");
-    record_test_simple("/bin/test_ufs");
+    record_test("/bin/test_exec",  TEST_ENABLED);
+    record_test("/bin/test_vfork", TEST_ENABLED);
+    record_test("/bin/test_fs",    TEST_ENABLED);
+    record_test("/bin/test_rw",    TEST_ENABLED);
+    record_test("/bin/test_tmpfs", TEST_DISABLED);
+    record_test("/bin/test_ufs",   TEST_ENABLED);
 
     print("\n=== Results: ");
     print_int(g_total);
@@ -259,7 +281,9 @@ int main(void)
     print_int(g_passed);
     print(" passed, ");
     print_int(g_failed);
-    print(" failed, 0 skipped ===\n");
+    print(" failed, ");
+    print_int(g_skipped);
+    print(" skipped ===\n");
 
     if (g_failed == 0)
         print("ALL TESTS PASSED\n");

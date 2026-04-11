@@ -24,6 +24,9 @@ build process, and execution environment.
 # On-target tests (RISC-V, requires qemu-system-riscv32)
 ./scripts/run.sh --test qemu_rv32
 
+# On-target tests (PC/XT i16, requires qemu-system-i386)
+./scripts/run.sh --test pcxt
+
 # Extended on-target tests (ARM lane with extra user tests)
 ./scripts/run.sh --test-extended qemu_arm
 
@@ -244,7 +247,8 @@ overlay directory baked into romfs at build time (see
 | `test_time.c` | `nanosleep` behavior and error paths |
 | `test_iov.c` | `readv`, `writev` scatter/gather I/O |
 | `test_stat.c` | `stat`, `getdents` on romfs |
-| `test_tmpfs.c` | tmpfs create, write, read, unlink |
+| `test_tmpfs.c` | tmpfs create, write, read, unlink, multi-page I/O |
+| `test_ufs.c` | UFS write+read (pcxt only; disabled on romfs-root targets) |
 | `test_x68k.c` | Human68k subsystem (X-format `.x` execution) |
 | `test_cpm.c` | CP/M subsystem integration (`.COM` exec, BDOS bridge, signals, file I/O) |
 | `test_trace.c` | `ptrace` exec + PPAP syscall trace integration (ARM + m68k) |
@@ -405,12 +409,24 @@ exact marker `ALL TESTS PASSED`.
 - RISC-V default timeout: 60 seconds
 - m68k default timeout: 90 seconds
 - m68k with `--slow`: 150 seconds
+- pcxt default timeout: 180 seconds
 
 ```bash
 ./scripts/run.sh --test              # ARM (default)
 ./scripts/run.sh --test qemu_rv32    # RISC-V
 ./scripts/run.sh --test qemu_m68k    # m68k
+./scripts/run.sh --test pcxt         # PC/XT (i16)
 ```
+
+### pcxt notes
+
+On pcxt, the VGA console is invisible to the QEMU serial capture used
+by the test runner. The i16 `runtests` binary redirects stdout to
+`/dev/ttyS0` at startup so test output appears on the serial port.
+
+The i16 test path supports the same `TEST_ENABLED` / `TEST_DISABLED`
+flags as other architectures. `test_tmpfs` is disabled on i16 (4 KB
+buffer overflows the user stack).
 
 ### `run.sh --test-extended`
 
