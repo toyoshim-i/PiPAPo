@@ -79,17 +79,18 @@ The phases below are not equal-weight. From highest to lowest:
    [memory_management.md §9](../kernel/memory_management.md) and are
    not in scope.
 
-2. **Phase 2 — `mem_helper.h` deletion.** Small, self-contained,
-   gated on Phase 1. The single-page contract from Phase 1 makes the
-   cursor helpers caller-less, so Phase 2 simply removes them along
-   with `ptr_ref` and the `subtle/` directory. No replacement file,
-   no shared symbol.
+2. **Phase 2 — Single-page contract, cursor helper removal.**
+   Gated on Phase 1. Enforces single-page I/O at the syscall
+   boundary (page-walk loop in `sys_io.c`) and removes
+   `page_chunk_len` / `page_advance` from all VFS leaves.
+   `mem_helper.h` is stripped to `ptr_ref` only — four bridge
+   callers still need it.
 
-3. **Phase 3 — Bounce-buffer elimination in
-   `core/subsys/{human68k,sos,cpm}_bridge.c` and
-   `core/exec/h68k_emu.c`.** These run on every userspace I/O syscall on
-   m68k/x68k, so removing the per-call bounce is a measurable
-   performance + footprint win.
+3. **Phase 3 — Bridge conversion, `mem_helper.h` deletion.**
+   Converts bridge signatures from `void *` to `(page, off)`,
+   eliminating the last `ptr_ref` callers. Deletes `mem_helper.h`
+   and `subtle/`. Also removes per-call bounce buffers — a
+   measurable performance + footprint win on m68k/x68k.
 
 4. **Phase 4 — Documentation and lint.** Mechanical follow-up.
 
@@ -459,16 +460,17 @@ qemu_m68k + pcxt at minimum; floppy-using phases also test x68k.
     indices in `mod_core.inc` are untouched, no stub regeneration, no
     `PATCH_CORE` renumbering.
 
-#### Phase 2 — Convert `vfs_ops` to single-page, then delete `mem_helper.h`
+#### Phase 2 — Enforce single-page contract, remove cursor helpers from VFS
 
-Goal: eliminate the §3.1 cursor-helper callers by enforcing the
-single-page contract at the syscall boundary. The page-walk loop
-lives in the **core syscall dispatcher**
+Goal: eliminate the §3.1 cursor-helper callers (`page_chunk_len`,
+`page_advance`) by enforcing the single-page contract at the syscall
+boundary. The page-walk loop lives in the **core syscall dispatcher**
 ([`sys_io.c`](../../src/kernel/core/syscall/sys_io.c)), not in VFS.
 This means VFS never needs to know how to find the next page — it
-just clamps `n` to `PAGE_SIZE - off` and returns what fits. Once
-the cursor helpers have no callers, delete `mem_helper.h` with no
-replacement.
+just handles what fits in one page and returns.
+
+After Phase 2, `mem_helper.h` is stripped to `ptr_ref` only.
+The file is deleted in Phase 3 after the bridge callers are converted.
 
 Prerequisite: Phase 1 has landed (blkdev page-indexed signature). ✓
 
@@ -555,46 +557,51 @@ return (long)total;
     After this step, `mem_region_page_chunk_len` and
     `mem_region_page_advance` have **zero callers**.
 
-2.3. **Replace remaining `ptr_ref` callers.**
+2.3. **Replace `ptr_ref` callers in VFS.**
     `mem_region_kbuf_to_page` already exists from Phase 1
     ([`kernel/common/mem_region_kbuf.h`](../../src/kernel/common/mem_region_kbuf.h)).
-    Each surviving `ptr_ref` caller is handled as follows:
 
     | File | Action |
     |---|---|
     | [`vfs/fstab.c:88`](../../src/kernel/vfs/fstab.c) | Switch from `mem_region_ptr_ref` to `mem_region_kbuf_to_page` (legitimate kbuf under R4). |
+
+2.4. **Replace `ptr_ref` callers in core loaders.**
+
+    | File | Action |
+    |---|---|
     | [`core/exec/exec.c:38,111`](../../src/kernel/core/exec/exec.c) | Inline the `ptr_ref` encoding locally with a `TODO(mem_region_wrapup Phase 5)` comment. Deferred — entangled with process lifecycle. |
     | [`core/exec/elf16_loader.c:65`](../../src/kernel/core/exec/elf16_loader.c) | Same — inline encoding + TODO. Deferred. |
 
-    After this step, `mem_region_ptr_ref` has **zero callers**.
+2.5. **Strip `mem_helper.h` to `ptr_ref` only.**
+    Remove `page_chunk_len` and `page_advance` (zero callers after
+    steps 2.1–2.2). Remove the `#include` from all VFS files.
+    `mem_region.h` retains the include for the four bridge callers
+    (`human68k_bridge.c`, `sos_bridge.c`, `cpm_bridge.c`,
+    `h68k_emu.c`) that still use `ptr_ref`.
 
-2.4. **Delete `mem_helper.h`.**
-    Remove [`src/kernel/common/subtle/mem_helper.h`](../../src/kernel/common/subtle/mem_helper.h).
-    Remove the `#include` from all files that pull it in.
-    Remove the `subtle/` directory (now empty).
-
-2.5. **Update docs.**
+2.6. **Update docs.**
     - [`memory_management.md §3.2`](../kernel/memory_management.md):
-      remove "Inline cursor helpers live in
-      `kernel/common/subtle/mem_helper.h` (legacy)" sentence.
+      update `mem_helper.h` framing to "pending deletion".
     - [`kernel_modules.md` directory listing](../kernel/kernel_modules.md):
-      remove `subtle/` entry; correct mod_core function count from
-      20 to 18 (blkdev_read/write were removed in Phase 1; the docs
-      are stale).
+      correct mod_core function count from 20 to 18.
 
-After Phase 2, no `mem_helper.h`, no `page_cursor.h`, no shared
-`ptr_ref` / cursor helper anywhere in the tree. The only places that
-walk page cursors are the handful of root-caller loops, each with
-inline arithmetic. The only places that encode kernel pointers as
-`(page, off)` are `vfs/fstab.c` (R4-legitimate) and the Phase 5
-TODO sites in `core/exec/`. No `mod_*` entries added.
+After Phase 2, no `page_chunk_len`, no `page_advance`, no cursor
+walks in VFS leaves. `mem_helper.h` persists with `ptr_ref` only
+for the four bridge callers. Phase 3 converts the bridge signatures
+to `(page, off)`, eliminating the last `ptr_ref` callers, and then
+deletes `mem_helper.h` and `subtle/`.
 
-#### Phase 3 — Bounce-buffer elimination in subsys + h68k_emu
+#### Phase 3 — Bridge conversion, bounce-buffer elimination, delete `mem_helper.h`
 
 Sites: [`human68k_bridge.c`](../../src/kernel/core/subsys/human68k_bridge.c),
 [`sos_bridge.c`](../../src/kernel/core/subsys/sos_bridge.c),
 [`cpm_bridge.c`](../../src/kernel/core/subsys/cpm_bridge.c),
 [`h68k_emu.c`](../../src/kernel/core/exec/h68k_emu.c).
+
+These are the last four `mem_region_ptr_ref` callers. Converting
+their signatures to `(page, off)` eliminates `ptr_ref` entirely,
+allowing `mem_helper.h` and `subtle/` to be deleted as the final
+step.
 
 Each bridge today receives a `void *` from the eCPU memory model — but
 the eCPU memory model is itself running on a user page tracked in
@@ -624,6 +631,10 @@ Concretely:
 - 3.3. Verify on qemu_m68k (Human68k DOS test suite) and on x68k
   hardware-style tests if practical. Bridges run on every userspace
   I/O syscall in those subsystems, so any regression surfaces fast.
+- 3.4. **Delete `mem_helper.h` and `subtle/` directory.** After 3.1
+  converts the bridge signatures, `mem_region_ptr_ref` has zero
+  callers. Remove the file, remove the `#include` from
+  `mem_region.h`, and delete the `subtle/` directory.
 
 Whether the subsys directory should also relocate from `core/subsys/`
 into `vfs/subsys/` is a separate question that would shrink `mod_vfs`
@@ -688,8 +699,8 @@ one segment-sized memcpy per loaded binary.
 | Phase | mod_core delta | mod_vfs delta | Bounces removed | Files moved |
 |---|---|---|---|---|
 | 1 — blkdev page-indexed + devfs cast fix | 0 | 0 | 0 | 0 |
-| 2 — `mem_helper.h` deletion | 0 | 0 | 0 | 0 |
-| 3 — subsys + h68k_emu | 0 | 0 | **4** (subsys×3, h68k_emu) | 0 |
+| 2 — single-page contract, cursor helper removal | 0 | 0 | 0 | 0 |
+| 3 — bridge conversion + `mem_helper.h` deletion | 0 | 0 | **4** (subsys×3, h68k_emu) | 0 |
 | 4 — docs/lint | 0 | 0 | 0 | 0 |
 | 5 — core loader (deferred) | 0 | 0 | 2 (exec×1, elf16_loader×1) | 0 |
 | **Net (this proposal)** | **0** | **0** | **4** | **0** |
