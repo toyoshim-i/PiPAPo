@@ -284,6 +284,21 @@ getdents:
   int   $0x30
   SYSCALL_RET
 
+/* int statfs64(const char *path, long sz, struct statfs *buf); */
+  .global statfs64
+statfs64:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx
+  movw  6(%bp), %cx
+  movw  8(%bp), %dx
+  movw  $0x0305, %ax
+  int   $0x30
+  SYSCALL_RET
+
 /* void *brk(void *addr); */
   .global brk
 brk:

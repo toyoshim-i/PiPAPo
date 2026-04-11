@@ -356,6 +356,17 @@ getdents:
     DO_SYSCALL
     pop  {r7, pc}
 
+@ --- statfs64 (SYS_STATFS64 = 0x0305) ----------------------------------------
+@ int statfs64(const char *path, long sz, struct statfs *buf);
+.section .text.statfs64, "ax", %progbits
+.global statfs64
+.thumb_func
+statfs64:
+    push {r7, lr}
+    ldr  r7, =0x0305    @ SYS_STATFS64
+    DO_SYSCALL
+    pop  {r7, pc}
+
 @ --- mkdir (SYS_MKDIR = 0x0204) -----------------------------------------------
 @ int mkdir(const char *path, int mode);
 .section .text.mkdir, "ax", %progbits

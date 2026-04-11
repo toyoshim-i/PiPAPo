@@ -3,7 +3,7 @@
  *
  * Usage: df [-h]
  * -h: human-readable sizes (K, M).
- * Reads /proc/mounts and /proc/meminfo.
+ * Reads /proc/mounts and calls statfs64() per mount.
  */
 
 #include "lib/uclib.h"
@@ -34,25 +34,6 @@ static int read_file(const char *path, char *buf, int bufsz) {
   return (int)n;
 }
 
-static uint32_t parse_meminfo_kb(const char *buf, const char *key) {
-  int klen = uc_strlen(key);
-  const char *p = buf;
-  while (*p) {
-    if (uc_strncmp(p, key, klen) == 0) {
-      p += klen;
-      while (*p == ' ' || *p == ':') p++;
-      uint32_t v = 0;
-      while (*p >= '0' && *p <= '9') {
-        v = v * 10 + (uint32_t)(*p - '0');
-        p++;
-      }
-      return v;
-    }
-    while (*p && *p != '\n') p++;
-    if (*p) p++;
-  }
-  return 0;
-}
 
 static void print_right(uint32_t v, int width) {
   char tmp[12];
@@ -167,12 +148,6 @@ int main(int argc, char *argv[]) {
 
   char buf[512];
 
-  uint32_t mem_total = 0, mem_free = 0;
-  if (read_file("/proc/meminfo", buf, (int)sizeof(buf)) > 0) {
-    mem_total = parse_meminfo_kb(buf, "MemTotal");
-    mem_free = parse_meminfo_kb(buf, "MemFree");
-  }
-
   uc_puts(C_REV);
   uc_puts(C_BOLD);
   if (opt_human)
@@ -207,11 +182,15 @@ int main(int argc, char *argv[]) {
     while (*p && *p != '\n') p++;
     if (*p) p++;
 
-    if (uc_strcmp(fstype, "tmpfs") == 0) {
-      print_row(fstype, mem_total, mem_total - mem_free, mem_free, mount);
-    } else {
-      print_row(fstype, 0, 0, 0, mount);
+    struct statfs sf;
+    uint32_t total_kb = 0, free_kb = 0, used_kb = 0;
+    if (statfs64(mount, (long)sizeof(sf), &sf) == 0 && sf.f_bsize > 0) {
+      uint32_t bsize = sf.f_bsize;
+      total_kb = (uint32_t)(sf.f_blocks * bsize / 1024);
+      free_kb = (uint32_t)(sf.f_bavail * bsize / 1024);
+      used_kb = total_kb - free_kb;
     }
+    print_row(fstype, total_kb, used_kb, free_kb, mount);
   }
 
   return 0;

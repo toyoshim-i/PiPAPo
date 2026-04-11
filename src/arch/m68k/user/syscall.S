@@ -338,6 +338,19 @@ getdents:
     movem.l %sp@+, %d2-%d3
     rts
 
+| --- statfs64 (SYS_STATFS64 = 0x0305) ----------------------------------------
+| int statfs64(const char *path, long sz, struct statfs *buf);
+    .globl statfs64
+statfs64:
+    movem.l %d2-%d3, %sp@-      | save d2-d3 (8 bytes)
+    move.l  12(%sp), %d1        | path
+    move.l  16(%sp), %d2        | sz
+    move.l  20(%sp), %d3        | buf
+    move.l  #0x0305, %d0
+    trap    #0
+    movem.l %sp@+, %d2-%d3
+    rts
+
 | --- mkdir (SYS_MKDIR = 0x0204) -----------------------------------------------
 | int mkdir(const char *path, int mode);
     .globl mkdir

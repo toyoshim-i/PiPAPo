@@ -22,6 +22,7 @@
 #include "common/ptrace.h"
 #include "common/seek.h"
 #include "common/stat.h"
+#include "common/statfs.h"
 #include "common/wait.h"
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
@@ -187,6 +188,9 @@ static inline int stat(const char *path, struct stat *buf) {
 static inline int getdents(int fd, struct dirent *buf, size_t count) {
   return (int)ppap_xtensa_syscall3(0x0300, fd, (long)buf, (long)count);
 }
+static inline int statfs64(const char *path, long sz, struct statfs *buf) {
+  return (int)ppap_xtensa_syscall3(0x0305, (long)path, sz, (long)buf);
+}
 
 static inline void *brk(void *addr) {
   return (void *)ppap_xtensa_syscall1(0x0400, (long)addr);
@@ -253,6 +257,7 @@ int unlink(const char *path);
 int rmdir(const char *path);
 int stat(const char *path, struct stat *buf);
 int getdents(int fd, struct dirent *buf, size_t count);
+int statfs64(const char *path, long sz, struct statfs *buf);
 
 /* ── Memory management ──────────────────────────────────────────────── */
 
