@@ -56,9 +56,10 @@ CONFIG_UMOUNT=y
 CONFIG_DF=y
 
 # -- Editor -------------------------------------------------------------------
-CONFIG_VI=y
-CONFIG_FEATURE_VI_COLON=y
-CONFIG_FEATURE_VI_SEARCH=y
+# vi disabled — replaced by pi (PiPAPo Editor)
+# CONFIG_VI is not set
+# CONFIG_FEATURE_VI_COLON is not set
+# CONFIG_FEATURE_VI_SEARCH is not set
 
 # -- System -------------------------------------------------------------------
 CONFIG_UNAME=y

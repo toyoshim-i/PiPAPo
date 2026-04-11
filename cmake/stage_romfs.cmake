@@ -57,6 +57,9 @@ endforeach()
 # --- /bin/sh → push ---
 file(CREATE_LINK "push" "${STAGING}/bin/sh" SYMBOLIC)
 
+# --- /bin/vi → pi ---
+file(CREATE_LINK "pi" "${STAGING}/bin/vi" SYMBOLIC)
+
 # --- Install busybox (if available) ---
 if(BB_DIR AND EXISTS "${BB_DIR}/busybox")
     file(COPY "${BB_DIR}/busybox" DESTINATION "${STAGING}/bin")
