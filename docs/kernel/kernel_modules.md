@@ -369,7 +369,7 @@ src/kernel/
       sched_info.h      ← cpu tick counters
       subsys_info.h     ← subsystem name constants
     subtle/
-      mem_helper.h      ← legacy page-cursor inlines (pending deletion in mem_region_wrapup Phase 2)
+      mem_helper.h      ← ptr_ref only (pending deletion in mem_region_wrapup Phase 3)
     mem_region_kbuf.h   ← kernel-buffer → (page, off) inline helper
     config.h            ← build config, memory map constants
     spinlock.h          ← SMP spinlock / core_id()

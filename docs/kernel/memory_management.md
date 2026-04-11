@@ -146,9 +146,10 @@ All code outside `src/kernel/mm/` allocates through `mem_region_*`:
 ### 3.2 Page-Index Wrappers
 
 Code outside `mm/` accesses pages by index.  Most are exposed via
-`mod_core` for cross-module use.  Inline cursor helpers in
-`kernel/common/subtle/mem_helper.h` are legacy and pending deletion
-(see [mem_region_wrapup Phase 2](../proposals/mem_region_wrapup.md)).
+`mod_core` for cross-module use.  `kernel/common/subtle/mem_helper.h`
+contains only `mem_region_ptr_ref` (used by four bridge callers) and
+is pending deletion in
+[mem_region_wrapup Phase 3](../proposals/mem_region_wrapup.md).
 Do not add new uses.
 
 | Function | Returns | i16-safe? | Use when |
