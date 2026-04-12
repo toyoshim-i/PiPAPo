@@ -501,13 +501,20 @@ add_custom_target(pcxt_memory_report ALL
 # Target 5: ia16 user ELFs (first-party src/user only)
 # ==========================================================================
 
-set(PCXT_USER_APPS hello getty init pdb push cat ls ps df top)
+set(PCXT_USER_APPS hello getty init pdb push cat ls ps df top pi)
 
 foreach(_app ${PCXT_USER_APPS})
   if(_app STREQUAL "push")
     pcxt_user_program(push ${PPAP_ROOT}/src/user/push.c
       EXTRA_SOURCES
         ${PPAP_ROOT}/src/user/push_line.c)
+  elseif(_app STREQUAL "pi")
+    pcxt_user_program(pi ${PPAP_ROOT}/src/user/pi/pi.c
+      EXTRA_SOURCES
+        ${PPAP_ROOT}/src/user/pi/pi_buf.c
+        ${PPAP_ROOT}/src/user/pi/pi_term.c
+        ${PPAP_ROOT}/src/user/pi/pi_ui.c
+        ${PPAP_ROOT}/src/user/pi/pi_menu.c)
   elseif(_app STREQUAL "pdb")
     pcxt_user_program(pdb ${PPAP_ROOT}/src/user/pdb/pdb.c
       EXTRA_SOURCES
