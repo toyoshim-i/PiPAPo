@@ -468,7 +468,7 @@ target_link_libraries(ppap_pcxt_vfs PRIVATE gcc)
 
 set_target_properties(ppap_pcxt_vfs PROPERTIES
   SUFFIX ".elf"
-  LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/pcxt_vfs.ld"
+  LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/pcxt_vfs.ld;${CMAKE_CURRENT_BINARY_DIR}/core_exports.ld"
 )
 
 # Extract VFS code (.text + .rodata) and data (.data) as separate binaries.
