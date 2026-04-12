@@ -1088,8 +1088,6 @@ static void update_44bsd_summary(uint32_t ndir)
 static int build_44bsd_image(uint32_t size, uint32_t inode_override,
                              const char *populate_dir_path, int verbose)
 {
-    (void)inode_override;
-
     if (size < UFS44_CG_OFFSET + UFS_BLOCK_SIZE) {
         fprintf(stderr,
                 "mkufs: 44bsd image size must be at least %u bytes\n",
@@ -1108,12 +1106,31 @@ static int build_44bsd_image(uint32_t size, uint32_t inode_override,
 
     uint32_t fs_sblkno = UFS44_SB_OFFSET / UFS44_FRAG_SIZE;
     uint32_t fs_cblkno = UFS44_CG_OFFSET / UFS44_FRAG_SIZE;
-    uint32_t fs_iblkno = (UFS44_CG_OFFSET / UFS_BLOCK_SIZE + 1u) * UFS44_FRAGS_PER_BLK;
-    uint32_t fs_dblkno = fs_iblkno + UFS44_FRAGS_PER_BLK;
+    uint32_t fs_iblkno =
+        (UFS44_CG_OFFSET / UFS_BLOCK_SIZE + 1u) * UFS44_FRAGS_PER_BLK;
+
+    /* 44bsd inode sizing: honor -i; otherwise same default policy as legacy. */
+    uint32_t fs_ipg;
+    if (inode_override > 0) {
+        fs_ipg = inode_override;
+    } else {
+        fs_ipg = block_count / 4u; /* 1 inode / 16KB */
+        if (fs_ipg < 64u) fs_ipg = 64u;
+    }
+    if (fs_ipg > UFS_BLOCK_SIZE * 8u) fs_ipg = UFS_BLOCK_SIZE * 8u;
+
+    uint32_t inode_tbl_blocks =
+        (fs_ipg + (UFS_BLOCK_SIZE / UFS44_INODE_SIZE) - 1u)
+        / (UFS_BLOCK_SIZE / UFS44_INODE_SIZE);
+    uint32_t fs_dblkno = fs_iblkno + inode_tbl_blocks * UFS44_FRAGS_PER_BLK;
+
     uint32_t fs_size = block_count * UFS44_FRAGS_PER_BLK;
+    if (fs_dblkno >= fs_size) {
+        fprintf(stderr, "mkufs: 44bsd image too small for requested inode table\n");
+        return 1;
+    }
     uint32_t fs_dsize = fs_size - fs_dblkno;
     uint32_t num_data_blks = fs_dsize / UFS44_FRAGS_PER_BLK;
-    uint32_t fs_ipg = UFS_BLOCK_SIZE / 128u;
     uint32_t fs_fpg = fs_size;
     uint32_t fs_time = (uint32_t)time(NULL);
     uint32_t fs_state = UFS44_FSOK - fs_time;
@@ -1137,7 +1154,7 @@ static int build_44bsd_image(uint32_t size, uint32_t inode_override,
     uint32_t cg_nextfreeoff = align_up(cg_boff + cg_b_bytes, 4u);
 
     inode_count = fs_ipg;
-    inode_blocks = 1;
+    inode_blocks = inode_tbl_blocks;
     data_start = fs_dblkno;
     free_blocks_count = num_data_blks - used_data_blocks;
     free_inodes_count = inode_count - used_inodes;

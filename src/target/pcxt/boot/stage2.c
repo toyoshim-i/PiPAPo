@@ -22,6 +22,25 @@
 #define UFS_BLOCK_SIZE   4096u
 #define UFS_SECS_PER_BLK (UFS_BLOCK_SIZE / FLOPPY_SEC)
 
+#define UFS_MAGIC         0x00011954u
+#define UFS_ROOT_INO      2u
+#define UFS_DIRECT_BLOCKS 12u
+
+#define UFS_INODE_SIZE        128u
+#define UFS_INODES_PER_SECTOR 4u
+
+#define UFS_SB_SECTOR 16u
+
+/* 44BSD superblock byte offsets from SB start (byte 8192). */
+#define UFS_FS_IBLKNO_OFF 16u
+#define UFS_FS_BSIZE_OFF  48u
+#define UFS_FS_MAGIC_OFF   1372u
+
+/* Inode field offsets (ufs_inode_t, 128 bytes). */
+#define UFS_I_SIZE_OFF   8u
+#define UFS_I_DIRECT_OFF 40u
+#define UFS_I_IB_OFF     88u
+
 /* Disk geometry — set at boot from known floppy values or INT 13h query */
 static uint16_t secs_per_track;
 static uint16_t num_heads;
@@ -36,37 +55,23 @@ static uint16_t ufs_base_sector;  /* absolute LBA of first UFS sector */
 #define VFS_DATA_BASE        0xAC00u
 #define VFS_DATA_STAGE2_SIZE 0x1400u  /* 0xAC00+0x1400=0xC000: stop before stage2 */
 
-#define UFS_MAGIC            0x55465331u
-#define UFS_INODE_SIZE       64u
-#define UFS_INODES_PER_BLOCK (UFS_BLOCK_SIZE / UFS_INODE_SIZE)
-#define UFS_DIRENT_SIZE      32u
-#define UFS_DIRENTS_PER_BLOCK (UFS_BLOCK_SIZE / UFS_DIRENT_SIZE)
-#define UFS_NAME_MAX         27u
-#define UFS_ROOT_INO         1u
-#define UFS_DIRECT_BLOCKS    10u
-
-typedef struct {
-  uint32_t s_magic, s_block_size, s_block_count, s_inode_count;
-  uint32_t s_free_blocks, s_free_inodes;
-  uint32_t s_bmap_block, s_imap_block, s_itable_block, s_data_block;
-  uint32_t s_inode_blocks;
-  uint8_t  s_pad[84];
-} ufs_super_t;
-
-typedef struct {
-  uint16_t i_mode, i_nlink, i_uid, i_gid;
-  uint32_t i_size, i_mtime, i_ctime;
-  uint32_t i_direct[UFS_DIRECT_BLOCKS];
-  uint32_t i_indirect;
-} ufs_inode_t;
-
-typedef struct {
-  uint32_t d_ino;
-  char     d_name[UFS_NAME_MAX + 1];
-} ufs_dirent_t;
-
-static uint16_t sb_itable_block;
+static uint32_t sb_itable_sector;
 extern uint8_t boot_drive;
+
+static uint16_t rd16(const uint8_t *p) {
+  return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
+}
+
+static uint32_t rd32(const uint8_t *p) {
+  return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) |
+         ((uint32_t)p[3] << 24);
+}
+
+static uint16_t str_len16(const char *s) {
+  uint16_t n = 0;
+  while (s[n]) n++;
+  return n;
+}
 
 /* print_char (in stage2_entry.S): writes to BIOS teletype (VGA) and COM1. */
 extern void print_char(void);
@@ -112,9 +117,14 @@ static void __attribute__((noinline)) read_sector(uint16_t lba, void *dest)
   read_sector_far(lba, 0, (uint16_t)(uintptr_t)dest);
 }
 
-static void __attribute__((noinline)) read_ufs_block(uint16_t blk, void *dest)
+static void __attribute__((noinline)) read_ufs_sector(uint16_t sec, void *dest)
 {
-  uint16_t lba = ufs_base_sector + blk * UFS_SECS_PER_BLK;
+  read_sector((uint16_t)(ufs_base_sector + sec), dest);
+}
+
+static void __attribute__((noinline)) read_ufs_block(uint32_t frag, void *dest)
+{
+  uint16_t lba = (uint16_t)(ufs_base_sector + frag);
   uint8_t *p = (uint8_t *)dest;
   for (uint16_t i = 0; i < UFS_SECS_PER_BLK; i++) {
     read_sector(lba + i, p);
@@ -124,30 +134,42 @@ static void __attribute__((noinline)) read_ufs_block(uint16_t blk, void *dest)
 
 static uint16_t find_in_dir(const uint8_t *blk, const char *name)
 {
-  const ufs_dirent_t *d = (const ufs_dirent_t *)blk;
-  for (uint16_t i = 0; i < UFS_DIRENTS_PER_BLOCK; i++, d++) {
-    if (d->d_ino == 0) continue;
-    uint16_t j = 0;
-    while (j < UFS_NAME_MAX && d->d_name[j] == name[j] && name[j]) j++;
-    if (d->d_name[j] == name[j]) return (uint16_t)d->d_ino;
+  uint16_t target_len = str_len16(name);
+  for (uint16_t s = 0; s < UFS_SECS_PER_BLK; s++) {
+    const uint8_t *sec = blk + s * FLOPPY_SEC;
+    uint16_t off = 0;
+    while ((uint16_t)(off + 8u) <= FLOPPY_SEC) {
+      uint32_t ino = rd32(&sec[off + 0]);
+      uint16_t reclen = rd16(&sec[off + 4]);
+      uint8_t namlen = sec[off + 7];
+      if (reclen == 0) break;
+      if ((uint16_t)(off + reclen) > FLOPPY_SEC) break;
+      if (ino != 0 && namlen == target_len) {
+        const uint8_t *dn = &sec[off + 8];
+        uint16_t i = 0;
+        while (i < target_len && dn[i] == (uint8_t)name[i]) i++;
+        if (i == target_len) return (uint16_t)ino;
+      }
+      off = (uint16_t)(off + reclen);
+    }
   }
   return 0;
 }
 
-static void read_inode(uint16_t ino, ufs_inode_t *out)
+static void read_inode(uint16_t ino, uint8_t *out)
 {
-  uint16_t blk = sb_itable_block + ino / UFS_INODES_PER_BLOCK;
-  read_ufs_block(blk, BUF);
-  uint16_t off = (ino % UFS_INODES_PER_BLOCK) * UFS_INODE_SIZE;
+  uint16_t sec = (uint16_t)(sb_itable_sector + ino / UFS_INODES_PER_SECTOR);
+  read_ufs_sector(sec, BUF);
+  uint16_t off = (uint16_t)((ino % UFS_INODES_PER_SECTOR) * UFS_INODE_SIZE);
   uint8_t *s = BUF + off, *d = (uint8_t *)out;
   for (uint16_t i = 0; i < UFS_INODE_SIZE; i++) d[i] = s[i];
 }
 
-static void __attribute__((noinline)) load_block_far(uint16_t blk,
+static void __attribute__((noinline)) load_block_far(uint32_t frag,
     uint16_t seg, uint16_t *off, uint32_t *loaded, uint32_t size)
 {
-  if (blk == 0) return;
-  uint16_t lba = ufs_base_sector + blk * UFS_SECS_PER_BLK;
+  if (frag == 0) return;
+  uint16_t lba = (uint16_t)(ufs_base_sector + frag);
   for (uint16_t s = 0; s < UFS_SECS_PER_BLK && *loaded < size; s++) {
     read_sector_far(lba + s, seg, *off);
     *off += FLOPPY_SEC;
@@ -155,11 +177,11 @@ static void __attribute__((noinline)) load_block_far(uint16_t blk,
   }
 }
 
-static void __attribute__((noinline)) load_block(uint16_t blk,
+static void __attribute__((noinline)) load_block(uint32_t frag,
     uint8_t **dest, uint32_t *loaded, uint32_t size)
 {
   uint16_t off = (uint16_t)(uintptr_t)*dest;
-  load_block_far(blk, 0, &off, loaded, size);
+  load_block_far(frag, 0, &off, loaded, size);
   *dest = (uint8_t *)(uintptr_t)off;
 }
 
@@ -169,14 +191,14 @@ static void __attribute__((noinline)) load_block(uint16_t blk,
  */
 static uint16_t load_file_far(uint16_t ino, uint16_t seg)
 {
-  ufs_inode_t inode;
-  read_inode(ino, &inode);
+  uint8_t inode[UFS_INODE_SIZE];
+  read_inode(ino, inode);
 
-  uint32_t size = inode.i_size;
-  uint16_t direct[UFS_DIRECT_BLOCKS];
+  uint32_t size = rd32(&inode[UFS_I_SIZE_OFF]);
+  uint32_t direct[UFS_DIRECT_BLOCKS];
   for (uint16_t i = 0; i < UFS_DIRECT_BLOCKS; i++)
-    direct[i] = (uint16_t)inode.i_direct[i];
-  uint16_t indirect = (uint16_t)inode.i_indirect;
+    direct[i] = rd32(&inode[UFS_I_DIRECT_OFF + i * 4u]);
+  uint32_t indirect = rd32(&inode[UFS_I_IB_OFF]);
 
   uint16_t off = 0;
   uint32_t loaded = 0;
@@ -185,9 +207,8 @@ static uint16_t load_file_far(uint16_t ino, uint16_t seg)
 
   if (indirect && loaded < size) {
     read_ufs_block(indirect, IBUF);
-    uint32_t *ind = (uint32_t *)IBUF;
     for (uint16_t i = 0; i < UFS_BLOCK_SIZE / 4 && loaded < size; i++)
-      load_block_far((uint16_t)ind[i], seg, &off, &loaded, size);
+      load_block_far(rd32(&IBUF[i * 4u]), seg, &off, &loaded, size);
   }
 
   return (uint16_t)loaded;
@@ -196,14 +217,14 @@ static uint16_t load_file_far(uint16_t ino, uint16_t seg)
 /* Load a file to 0:dest (near, segment 0). */
 static uint16_t load_file(uint16_t ino, uint8_t *dest)
 {
-  ufs_inode_t inode;
-  read_inode(ino, &inode);
+  uint8_t inode[UFS_INODE_SIZE];
+  read_inode(ino, inode);
 
-  uint32_t size = inode.i_size;
-  uint16_t direct[UFS_DIRECT_BLOCKS];
+  uint32_t size = rd32(&inode[UFS_I_SIZE_OFF]);
+  uint32_t direct[UFS_DIRECT_BLOCKS];
   for (uint16_t i = 0; i < UFS_DIRECT_BLOCKS; i++)
-    direct[i] = (uint16_t)inode.i_direct[i];
-  uint16_t indirect = (uint16_t)inode.i_indirect;
+    direct[i] = rd32(&inode[UFS_I_DIRECT_OFF + i * 4u]);
+  uint32_t indirect = rd32(&inode[UFS_I_IB_OFF]);
 
   uint32_t loaded = 0;
   for (uint16_t i = 0; i < UFS_DIRECT_BLOCKS && loaded < size; i++)
@@ -211,9 +232,8 @@ static uint16_t load_file(uint16_t ino, uint8_t *dest)
 
   if (indirect && loaded < size) {
     read_ufs_block(indirect, IBUF);
-    uint32_t *ind = (uint32_t *)IBUF;
     for (uint16_t i = 0; i < UFS_BLOCK_SIZE / 4 && loaded < size; i++)
-      load_block((uint16_t)ind[i], &dest, &loaded, size);
+      load_block(rd32(&IBUF[i * 4u]), &dest, &loaded, size);
   }
 
   return (uint16_t)loaded;
@@ -226,11 +246,12 @@ static uint16_t load_file(uint16_t ino, uint8_t *dest)
  */
 static uint16_t find_file(uint16_t dir_ino, const char *name)
 {
-  ufs_inode_t inode;
-  read_inode(dir_ino, &inode);
+  uint8_t inode[UFS_INODE_SIZE];
+  read_inode(dir_ino, inode);
   for (uint16_t i = 0; i < UFS_DIRECT_BLOCKS; i++) {
-    if (!inode.i_direct[i]) break;
-    read_ufs_block((uint16_t)inode.i_direct[i], BUF);
+    uint32_t frag = rd32(&inode[UFS_I_DIRECT_OFF + i * 4u]);
+    if (!frag) break;
+    read_ufs_block(frag, BUF);
     uint16_t ino = find_in_dir(BUF, name);
     if (ino) return ino;
   }
@@ -330,10 +351,20 @@ void stage2_main(void)
     ufs_base_sector = 9;
   }
 
-  read_ufs_block(0, BUF);
-  ufs_super_t *sb = (ufs_super_t *)BUF;
-  if (sb->s_magic != UFS_MAGIC) { puts_bios("!UFS"); return; }
-  sb_itable_block = (uint16_t)sb->s_itable_block;
+  read_ufs_sector(UFS_SB_SECTOR, BUF);
+  if (rd32(&BUF[UFS_FS_BSIZE_OFF]) != UFS_BLOCK_SIZE) {
+    puts_bios("!UFS");
+    return;
+  }
+  sb_itable_sector = rd32(&BUF[UFS_FS_IBLKNO_OFF]);
+
+  /* Magic is at SB+1372, i.e. sector 18 offset 348. */
+  read_ufs_sector((uint16_t)(UFS_SB_SECTOR + UFS_FS_MAGIC_OFF / FLOPPY_SEC),
+                  BUF);
+  if (rd32(&BUF[UFS_FS_MAGIC_OFF % FLOPPY_SEC]) != UFS_MAGIC) {
+    puts_bios("!UFS");
+    return;
+  }
 
   /* Find /boot directory */
   uint16_t boot_ino = find_file(UFS_ROOT_INO, "boot");

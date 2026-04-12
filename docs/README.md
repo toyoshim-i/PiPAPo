@@ -33,6 +33,7 @@ This index is the entry point for project documentation.
   - [`kernel/memory_management.md`](kernel/memory_management.md)
   - [`kernel/syscall.md`](kernel/syscall.md)
   - [`kernel/filesystems.md`](kernel/filesystems.md)
+  - [`kernel/ufs.md`](kernel/ufs.md)
   - [`kernel/procfs.md`](kernel/procfs.md)
   - [`kernel/trace.md`](kernel/trace.md)
 

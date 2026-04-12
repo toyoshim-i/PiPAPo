@@ -61,15 +61,17 @@ SD card filesystem for PC/Mac interoperability.
 - Read/write support for files and directories
 - Mounted at `/mnt/sd` by fstab
 
-## UFS (`src/kernel/fs/ufs.c`)
+## UFS (`src/kernel/vfs/ufs.c`)
 
-Simplified UNIX filesystem for full POSIX semantics, stored as image files
-on the VFAT partition and mounted via loopback.
+UNIX-style filesystem driver with a 44BSD-compatible on-disk layout.
 
-- Superblock, inode table, block bitmap
-- 4 KB block size
+- UFS1-compatible superblock and inode layout
+- 4 KB block size / 512 B fragments
+- Variable-length BSD directory entries
 - Standard UNIX file types (regular, directory, symlink)
-- Mounted at `/usr`, `/home`, `/var` via fstab
+- Used for PPAP image files and boot media UFS partitions
+
+See [`ufs.md`](ufs.md) for layout details and invariants.
 
 ## Loopback Block Device (`src/kernel/blkdev/loop.c`)
 

@@ -33,7 +33,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="${1:-$PROJECT_DIR/build/pcxt}"
 MKUFS="$PROJECT_DIR/tools/mkufs/mkufs"
-MKUFS_FORMAT="${PPAP_MKUFS_FORMAT:-legacy}"
+# Stage2 now parses 44BSD UFS layout (SB at sector 16, variable dirents).
+# Keep PPAP_MKUFS_FORMAT override for explicit testing.
+MKUFS_FORMAT="${PPAP_MKUFS_FORMAT:-44bsd}"
 
 STAGE1="$BUILD_DIR/stage1.bin"
 STAGE1_HDD="$BUILD_DIR/stage1_hdd.bin"
@@ -49,10 +51,12 @@ UFS_START_SECTOR=9   # sector 0 = stage1, 1-8 = stage2
 
 # Floppy parameters
 FLOPPY_SECTORS=1440  # 720 KB (3.5" DD, 80 cyl × 2 heads × 9 spt)
+FLOPPY_INODES="${PPAP_PCXT_FLOPPY_INODES:-256}"
 
 # HDD parameters
 HDD_SIZE_MB=16
 HDD_SECTORS=$(( HDD_SIZE_MB * 1024 * 1024 / SECTOR_SIZE ))  # 32768
+HDD_INODES="${PPAP_PCXT_HDD_INODES:-1024}"
 
 # ── Verify inputs ──────────────────────────────────────────────────────────
 
@@ -141,7 +145,7 @@ UFS_FD_SIZE=$(( (FLOPPY_SECTORS - UFS_START_SECTOR) * SECTOR_SIZE ))
 UFS_FD_IMG="$BUILD_DIR/ufs_boot.img"
 
 echo "[mkpcimg] Creating floppy UFS image ($(( UFS_FD_SIZE / 1024 )) KB)..."
-"$MKUFS" -f "$MKUFS_FORMAT" -s "$UFS_FD_SIZE" -p "$UFS_STAGING" "$UFS_FD_IMG"
+"$MKUFS" -f "$MKUFS_FORMAT" -s "$UFS_FD_SIZE" -i "$FLOPPY_INODES" -p "$UFS_STAGING" "$UFS_FD_IMG"
 
 # ── Assemble floppy image ───────────────────────────────────────────────
 
@@ -165,7 +169,7 @@ UFS_HDD_SIZE=$(( UFS_HDD_SECTORS * SECTOR_SIZE ))
 UFS_HDD_IMG="$BUILD_DIR/ufs_hdd.img"
 
 echo "[mkpcimg] Creating HDD UFS image ($(( UFS_HDD_SIZE / 1024 )) KB)..."
-"$MKUFS" -f "$MKUFS_FORMAT" -s "$UFS_HDD_SIZE" -p "$UFS_STAGING" "$UFS_HDD_IMG"
+"$MKUFS" -f "$MKUFS_FORMAT" -s "$UFS_HDD_SIZE" -i "$HDD_INODES" -p "$UFS_STAGING" "$UFS_HDD_IMG"
 
 # ── Assemble HDD image ──────────────────────────────────────────────────
 
