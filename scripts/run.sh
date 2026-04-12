@@ -410,7 +410,8 @@ if [[ "$TARGET" == "qemu_m68k" ]]; then
     QEMU_ARGS=(-machine virt -cpu m68000)
 elif [[ "$TARGET" == "qemu_rv32" ]]; then
     QEMU_BIN="qemu-system-riscv32"
-    QEMU_ARGS=(-M virt -bios none -serial mon:stdio)
+    # Use stdio mux so serial input works and Ctrl-A X can quit QEMU.
+    QEMU_ARGS=(-M virt -bios none -nographic -serial mon:stdio)
 elif [[ "$TARGET" == "pcxt" ]]; then
     QEMU_BIN="qemu-system-i386"
     if [[ $DO_HDD -eq 1 ]]; then

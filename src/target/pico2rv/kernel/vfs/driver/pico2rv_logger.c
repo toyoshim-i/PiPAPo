@@ -5,6 +5,7 @@
 #include "kernel/vfs/driver/uart.h"
 #include "kernel/vfs/driver/uart_rp2350.h"
 #include "kernel/vfs/klog.h"
+#include "kernel/vfs/tty.h"
 
 void klog_init_logger(void) {
   uart_init();
@@ -25,6 +26,9 @@ void vfs_notify(int event) {
     case VFS_EVENT_LATE_INIT:
       while (uart_getc() >= 0)
         ; /* drain boot noise from RX ring */
+      break;
+    case VFS_EVENT_IDLE:
+      tty_poll_input();
       break;
   }
 }

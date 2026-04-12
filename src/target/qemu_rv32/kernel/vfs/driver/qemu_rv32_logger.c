@@ -4,6 +4,7 @@
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/vfs/driver/uart.h"
 #include "kernel/vfs/klog.h"
+#include "kernel/vfs/tty.h"
 
 void klog_init_logger(void) {
   uart_init();
@@ -16,5 +17,7 @@ void vfs_notify(int event) {
   if (event == VFS_EVENT_LATE_INIT) {
     while (uart_getc() >= 0)
       ; /* drain boot noise */
+  } else if (event == VFS_EVENT_IDLE) {
+    tty_poll_input();
   }
 }

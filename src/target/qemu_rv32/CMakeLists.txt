@@ -113,6 +113,7 @@ set_target_properties(ppap_qemu_rv32 PROPERTIES SUFFIX ".elf")
 
 # Romfs (exclude musl-linked tests — they go into UFS image below)
 ppap_generate_romfs(ppap_qemu_rv32
+    OVERLAY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/romfs
     EXCLUDE_APPS test_musl_child test_musl_fileio test_musl_dir test_musl_fmt)
 
 # ── UFS test image (musl-linked binaries too large for romfs) ──────────────
