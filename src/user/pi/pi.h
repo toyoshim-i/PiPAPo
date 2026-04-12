@@ -27,6 +27,7 @@ enum {
   KEY_ENTER = '\r',
   KEY_TAB = '\t',
   KEY_BACKSPACE = 127,
+  KEY_BS = 8,
   KEY_ESC = 0x100, /* distinct from raw 0x1b */
   KEY_UP,
   KEY_DOWN,

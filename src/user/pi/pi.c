@@ -415,6 +415,7 @@ static void handle_insert(int key) {
     clamp_cx();
     return;
 
+  case KEY_BS:
   case KEY_BACKSPACE:
     if (E.buf.gap_start > 0) {
       int c = E.buf.data[E.buf.gap_start - 1];
@@ -530,6 +531,7 @@ static void handle_command(int key) {
     E.cmd[0] = '\0';
     break;
 
+  case KEY_BS:
   case KEY_BACKSPACE:
     if (E.cmd_len > 0) {
       E.cmd_len--;
