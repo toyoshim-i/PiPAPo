@@ -6,10 +6,11 @@
  * image from a host directory tree.
  *
  * Usage:
- *   mkufs [-s SIZE] [-i INODES] [-v] [-p DIR] <output_file>
+ *   mkufs [-s SIZE] [-i INODES] [-f FORMAT] [-v] [-p DIR] <output_file>
  *
  *   -s SIZE   Image size (e.g., 64K, 1M, 64M).  Default: 64K.
  *   -i INODES Override inode count (default: block_count/4, min 64).
+ *   -f FORMAT Filesystem format: legacy | 44bsd. Default: legacy.
  *   -B        Write all multi-byte fields in big-endian (for M68K targets).
  *   -p DIR    Populate from host directory tree.
  *   -v        Verbose: print layout summary.
@@ -79,6 +80,29 @@ typedef struct {
 /* ── Endian helpers ──────────────────────────────────────────────────── */
 
 static int be_mode;  /* -B: write multi-byte fields big-endian (for M68K) */
+
+typedef enum {
+    UFS_FORMAT_LEGACY = 0,
+    UFS_FORMAT_44BSD = 1,
+} ufs_format_t;
+
+static ufs_format_t format_mode = UFS_FORMAT_LEGACY;
+
+static int parse_format(const char *s, ufs_format_t *out)
+{
+    if (strcmp(s, "legacy") == 0 ||
+        strcmp(s, "ppap") == 0 ||
+        strcmp(s, "ppap-legacy") == 0) {
+        *out = UFS_FORMAT_LEGACY;
+        return 0;
+    }
+    if (strcmp(s, "44bsd") == 0 ||
+        strcmp(s, "ufs1-44bsd") == 0) {
+        *out = UFS_FORMAT_44BSD;
+        return 0;
+    }
+    return -1;
+}
 
 static uint32_t w32(uint32_t v)
 {
@@ -410,6 +434,12 @@ int main(int argc, char *argv[])
             size = parse_size(argv[++i]);
         } else if (strcmp(argv[i], "-i") == 0 && i + 1 < argc) {
             inode_override = (uint32_t)strtoul(argv[++i], NULL, 0);
+        } else if (strcmp(argv[i], "-f") == 0 && i + 1 < argc) {
+            if (parse_format(argv[++i], &format_mode) < 0) {
+                fprintf(stderr, "mkufs: unsupported format '%s' (use legacy or 44bsd)\n",
+                        argv[i]);
+                return 1;
+            }
         } else if (strcmp(argv[i], "-B") == 0) {
             be_mode = 1;
         } else if (strcmp(argv[i], "-v") == 0) {
@@ -419,15 +449,21 @@ int main(int argc, char *argv[])
         } else if (argv[i][0] != '-') {
             output = argv[i];
         } else {
-            fprintf(stderr, "Usage: %s [-s SIZE] [-i INODES] [-B] [-v] [-p DIR] <output>\n",
+            fprintf(stderr, "Usage: %s [-s SIZE] [-i INODES] [-f FORMAT] [-B] [-v] [-p DIR] <output>\n",
                     argv[0]);
             return 1;
         }
     }
 
     if (!output) {
-        fprintf(stderr, "Usage: %s [-s SIZE] [-i INODES] [-B] [-v] [-p DIR] <output>\n",
+        fprintf(stderr, "Usage: %s [-s SIZE] [-i INODES] [-f FORMAT] [-B] [-v] [-p DIR] <output>\n",
                 argv[0]);
+        return 1;
+    }
+
+    if (format_mode == UFS_FORMAT_44BSD) {
+        fprintf(stderr,
+                "mkufs: format '44bsd' is not implemented yet; use -f legacy for trunk compatibility\n");
         return 1;
     }
 
