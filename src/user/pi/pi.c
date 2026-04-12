@@ -488,24 +488,28 @@ static void handle_menu(int key) {
     E.mode = MODE_NORMAL;
     break;
 
+  case 'h':
   case KEY_LEFT:
     E.menu_cat--;
     if (E.menu_cat < 0) E.menu_cat = MENU_CAT_COUNT - 1;
     E.menu_item = 0;
     break;
 
+  case 'l':
   case KEY_RIGHT:
     E.menu_cat++;
     if (E.menu_cat >= MENU_CAT_COUNT) E.menu_cat = 0;
     E.menu_item = 0;
     break;
 
+  case 'k':
   case KEY_UP:
     E.menu_item--;
     if (E.menu_item < 0)
       E.menu_item = pi_menus[E.menu_cat].count - 1;
     break;
 
+  case 'j':
   case KEY_DOWN:
     E.menu_item++;
     if (E.menu_item >= pi_menus[E.menu_cat].count)
