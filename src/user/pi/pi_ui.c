@@ -81,9 +81,9 @@ static int gutter_width(void) {
 
 static void draw_menu_bar(void) {
   term_cursor_to(0, 0);
-  term_attr_reverse();
-  term_attr_bg(COL_BLUE);
+  term_attr_bold();
   term_attr_fg(COL_WHITE);
+  term_attr_bg(COL_BLUE);
 
   int col = 0;
   for (int i = 0; i < MENU_CAT_COUNT; i++) {
@@ -103,9 +103,9 @@ static void draw_menu_bar(void) {
     col += uc_strlen(pi_menus[i].label);
     if (E.mode == MODE_MENU && E.menu_cat == i) {
       term_attr_reset();
-      term_attr_reverse();
-      term_attr_bg(COL_BLUE);
+      term_attr_bold();
       term_attr_fg(COL_WHITE);
+      term_attr_bg(COL_BLUE);
     }
   }
   /* Fill rest of line */
