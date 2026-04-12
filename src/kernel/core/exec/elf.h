@@ -228,6 +228,15 @@ int elf_find_got(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
                  elf_got_info_t *out, uint32_t file_size);
 
 /*
+ * elf_find_section — locate a named section in an ELF binary.
+ *
+ * Generic section lookup.  Fills `out` with offset/addr/size of the
+ * named section.  Returns 0 on success, 1 if not found.
+ */
+int elf_find_section(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
+                     const char *name, elf_got_info_t *out, uint32_t file_size);
+
+/*
  * elf_find_rel — locate the .rel.dyn section in an ELF binary.
  *
  * PIE binaries contain R_ARM_RELATIVE entries that tell the loader

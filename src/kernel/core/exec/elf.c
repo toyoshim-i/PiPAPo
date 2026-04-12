@@ -139,6 +139,36 @@ int elf_find_got(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
   return 1; /* no .got section */
 }
 
+int elf_find_section(const elf32_ehdr_t *ehdr, const uint8_t *file_base,
+                     const char *name, elf_got_info_t *out,
+                     uint32_t file_size) {
+  if (ehdr->e_shoff == 0 || ehdr->e_shnum == 0) return 1;
+  if (ehdr->e_shstrndx == 0 || ehdr->e_shstrndx >= ehdr->e_shnum) return 1;
+
+  uint32_t sh_end =
+      ehdr->e_shoff + (uint32_t)ehdr->e_shnum * sizeof(elf32_shdr_t);
+  if (sh_end < ehdr->e_shoff || sh_end > file_size) return 1;
+
+  const elf32_shdr_t *sh_table =
+      (const elf32_shdr_t *)(file_base + ehdr->e_shoff);
+
+  if (sh_table[ehdr->e_shstrndx].sh_offset >= file_size) return 1;
+
+  const char *strtab =
+      (const char *)(file_base + sh_table[ehdr->e_shstrndx].sh_offset);
+
+  for (uint16_t i = 0; i < ehdr->e_shnum; i++) {
+    const char *sname = strtab + sh_table[i].sh_name;
+    if (str_eq(sname, name)) {
+      out->offset = sh_table[i].sh_offset;
+      out->addr = sh_table[i].sh_addr;
+      out->size = sh_table[i].sh_size;
+      return 0;
+    }
+  }
+  return 1;
+}
+
 /* ── elf_find_rel ────────────────────────────────────────────────────────── */
 
 int elf_find_rel(const elf32_ehdr_t *ehdr, const uint8_t *file_base,

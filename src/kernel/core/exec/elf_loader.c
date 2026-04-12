@@ -311,6 +311,51 @@ static int elf_reloc_arch(const elf_reloc_ctx_t *ctx, elf_load_result_t *out) {
             val - ctx->data_seg->p_vaddr + (uint32_t)(uintptr_t)ctx->data_base);
     }
   }
+
+  /* Relocate .data section: pointer values in initialized global data.
+   * The .rodata vaddr provides a safe lower bound — string pointers and
+   * function pointers are >= rodata_start, while struct integer fields
+   * (col, count, separator) are small values well below it.
+   * Without explicit relocation entries (ET_EXEC has none), this heuristic
+   * distinguishes pointers from integers by checking whether the value
+   * falls within a known loadable section range. */
+  if (ctx->data_base) {
+    elf_got_info_t data_info = {0, 0, 0};
+    elf_got_info_t rodata_info = {0, 0, 0};
+    if (elf_find_section(ctx->ehdr, ctx->file_buf, ".data", &data_info,
+                         ctx->file_size) == 0 &&
+        data_info.size > 0) {
+      /* Find .rodata start as the safe minimum for text-pointer detection.
+       * If no .rodata, use text_end_va (no text relocation for .data). */
+      uint32_t text_min = ctx->text_end_va;
+      if (elf_find_section(ctx->ehdr, ctx->file_buf, ".rodata", &rodata_info,
+                           ctx->file_size) == 0)
+        text_min = rodata_info.addr;
+
+      uint32_t data_off = data_info.addr - ctx->data_seg->p_vaddr;
+      uint32_t data_sram = (uint32_t)(uintptr_t)ctx->data_base + data_off;
+      uint32_t n_words = data_info.size / 4;
+      uint32_t data_va = ctx->data_seg->p_vaddr;
+      uint32_t data_end = data_va + ctx->data_memsz;
+      for (uint32_t i = 0; i < n_words; i++) {
+        uint32_t word_addr = data_sram + i * 4;
+        /* Skip if inside GOT range (already relocated) */
+        if (got_info.size > 0 && word_addr >= out->got_sram_addr &&
+            word_addr < out->got_sram_addr + got_info.size)
+          continue;
+        uint32_t val = ctx->cpu_ops->read32(ctx->cpu_state, word_addr);
+        if (val == 0) continue;
+        if (val >= text_min && val < ctx->text_end_va)
+          ctx->cpu_ops->write32(ctx->cpu_state, word_addr,
+                                val + ctx->text_base);
+        else if (val >= data_va && val < data_end)
+          ctx->cpu_ops->write32(
+              ctx->cpu_state, word_addr,
+              val - data_va + (uint32_t)(uintptr_t)ctx->data_base);
+      }
+    }
+  }
+
   if (ctx->data_base &&
       apply_relocations(ctx->ehdr, ctx->file_buf, ctx->file_size, ctx->text_seg,
                         ctx->data_seg, ctx->data_base, ctx->text_base,
