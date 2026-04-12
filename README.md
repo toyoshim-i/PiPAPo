@@ -27,9 +27,9 @@ A portable UNIX-like micro OS for bare-metal microcontrollers and retro CPUs.
 | `pico2rv` | Raspberry Pi Pico 2 | RISC-V Hazard3 | RV32IMAC @ 150 MHz | 520 KB | Stable |
 | `qemu_rv32` | QEMU virt rv32 | RISC-V | RV32IMAC | 1 MB | Kernel 69/87, user partial |
 | `qemu_m68k` | QEMU virt m68k | Motorola 68000 | m68000 | Up to 16 MB | 19/19 tests |
-| `x68k` | XEiJ emulator | Motorola 68000 | m68000 @ 10 MHz | 2+ MB | Stable |
+| `x68k` | XEiJ emulator | Motorola 68000 | m68000 @ 10 MHz | 2+ MB | Boots to scheduler |
 | `xtensa_cc` | M5Stack CardComputer | Xtensa LX7 | ESP32-S3 @ 240 MHz | 512 KB | Boots, user-space WIP |
-| `pcxt` | QEMU / DOSBox-X | Intel 8086 | i8086 real mode | 640 KB | Boots to scheduler |
+| `pcxt` | QEMU / DOSBox-X | Intel 8086 | i8086 real mode | 640 KB | Almost stable |
 
 All targets share the same kernel source, syscall interface, VFS, and process model. Only drivers, boot sequences, linker scripts, and architecture-specific code (context switch, syscall trap) differ per target.
 
@@ -53,11 +53,11 @@ On i16 (PC/XT), the kernel is split into separate code-segment modules (core + V
 - **SD card disabled** — SD/VFAT support is tentatively disabled in the current build
 - **RISC-V trace tool** — vfork in the trace tool crashes (context switch issue); see [docs/targets/rv32.md](/docs/targets/rv32.md)
 - **Xtensa port WIP** — CardComputer (ESP32-S3) boots, romfs mounts, PID 1 loads; user-space write() output not yet visible; see [docs/targets/xtensa.md](/docs/targets/xtensa.md)
+- **X68000 port WIP** — boots to scheduler under XEiJ; user-space and Human68k subsystem still in progress
 
 ## Future Work
 
 - **Pi Zero Port** — ARM1176JZF-S with full MMU, SD card boot; see [docs/proposals/pizero_port.md](/docs/proposals/pizero_port.md)
-- **PC/XT Port** — i8086 kernel boots to scheduler with module system; user-space WIP; see [docs/proposals/pc_port.md](/docs/proposals/pc_port.md)
 - **MS-DOS Subsystem** — INT 21h translation layer for running DOS .COM/.EXE binaries; see [docs/proposals/msdos_subsystem.md](/docs/proposals/msdos_subsystem.md)
 - **i8086 eCPU** — software 8086 emulator for cross-architecture DOS binary execution; see [docs/proposals/i8086_ecpu.md](/docs/proposals/i8086_ecpu.md)
 - **GDB RSP Stub** — in-kernel GDB stub for source-level debugging over UART without a debug probe; see [docs/proposals/gdb_rsp_stub.md](/docs/proposals/gdb_rsp_stub.md)
@@ -98,6 +98,7 @@ Builds Docker images containing the cross-compiler, emulator, and build tools fo
 ### 2. Build
 
 ```sh
+./scripts/build.sh all                 # build all targets sequentially
 ./scripts/build.sh pico1calc           # build a single target
 ./scripts/build.sh --test qemu_arm     # build with tests enabled
 ./scripts/build.sh qemu_m68k           # build m68k QEMU target

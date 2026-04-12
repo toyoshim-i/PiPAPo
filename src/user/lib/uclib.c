@@ -260,13 +260,12 @@ void *uc_memcpy(void *dst, const void *src, int n) {
   return dst;
 }
 
-/* GCC emits memcpy for struct assignments on m68k (no libc linked).
- * Other targets get memcpy from musl or their own CRT. */
-#if defined(__m68k__)
+/* Freestanding user builds may emit memcpy for struct copies.
+ * Keep this symbol in shared uclib so all targets have one consistent provider.
+ * ia16 runtime.c intentionally does not define memcpy to avoid duplicate symbols. */
 void *memcpy(void *dst, const void *src, unsigned int n) {
   return uc_memcpy(dst, src, (int)n);
 }
-#endif
 
 void *uc_memset(void *dst, int c, int n) {
   char *d = dst;

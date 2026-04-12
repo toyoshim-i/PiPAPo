@@ -107,7 +107,7 @@ SECTIONS {
     .stack (NOLOAD) : {
         . = ALIGN(8);
         __stack_bottom = .;
-        . += 4K;
+        . += 3840;
         __stack_top = .;
     } > RAM_KERNEL
 

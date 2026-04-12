@@ -10,10 +10,13 @@
 ## 2. Build
 
 ```sh
+./scripts/build.sh all
 ./scripts/build.sh pico1calc
 ./scripts/build.sh --test qemu_arm
 ./scripts/build.sh qemu_m68k
 ./scripts/build.sh x68k
+./scripts/build.sh pico2rv
+./scripts/build.sh pcxt
 ```
 
 ## 3. Run / flash

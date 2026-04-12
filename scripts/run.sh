@@ -5,11 +5,14 @@
 #   ./scripts/run.sh [OPTIONS] [TARGET]
 #
 # TARGET is one of:
-#   pico1, pico1calc   — Flash to RP2040 via OpenOCD
-#   pico2              — Flash to RP2350 via OpenOCD
-#   qemu_arm (default) — Run under QEMU ARM
-#   qemu_m68k          — Run under QEMU m68k
-#   x68k               — Build floppy image and launch XEiJ emulator
+#   pico1, pico1calc        — Flash to RP2040 via OpenOCD
+#   pico2, pico2rv          — Flash to RP2350 via OpenOCD
+#   qemu_arm (default)      — Run under QEMU ARM
+#   qemu_rv32               — Run under QEMU RISC-V
+#   qemu_m68k               — Run under QEMU m68k
+#   x68k                    — Build floppy image and launch XEiJ emulator
+#   xtensa_cc               — Flash to ESP32-S3
+#   pcxt                    — Run under PC/XT emulator
 #
 # Options:
 #   --build             Build before running
@@ -23,22 +26,16 @@
 #   --overlay=<dir>     Extra overlay directory copied into romfs (implies --build)
 #   --h68k-debug        Enable kernel Human68k debug diagnostics (implies --build)
 #   --gdb               (QEMU only) Pause at reset, wait for GDB on :1234
+#   --hdd               (pcxt only) Boot from HDD image instead of floppy
 #   --m68k              Shorthand for TARGET=qemu_m68k (back-compat)
 #
 # Examples:
 #   ./scripts/run.sh                        # run qemu_arm (must be pre-built)
-#   ./scripts/run.sh --build                # build & run qemu_arm
-#   ./scripts/run.sh --build qemu_m68k      # build & run m68k
+#   ./scripts/run.sh --build qemu_m68k      # build & run a target
 #   ./scripts/run.sh --test                 # build ARM with tests, run & check
-#   ./scripts/run.sh --test qemu_m68k       # build m68k with tests, run & check
-#   ./scripts/run.sh --test-extended        # build ARM with extended tests, run & check
 #   ./scripts/run.sh --test --filter=pipe   # run only tests matching "pipe"
-#   ./scripts/run.sh --test --flaky         # also run flaky tests
-#   ./scripts/run.sh --test --slow          # also run slow tests
 #   ./scripts/run.sh --gdb                  # run existing ARM binary under GDB
-#   ./scripts/run.sh pico1calc              # flash pre-built pico1calc via OpenOCD
-#   ./scripts/run.sh --build pico1calc      # build & flash pico1calc
-#   ./scripts/run.sh --test pico1           # build with tests & flash pico1
+#   ./scripts/run.sh --build pico1          # build & flash to hardware
 #
 # Alternatively, without a debug adapter, hold BOOTSEL, plug in USB, then:
 #   cp build/pico1calc/ppap_pico1calc.uf2 /media/$USER/RPI-RP2/

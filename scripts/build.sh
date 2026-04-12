@@ -4,7 +4,11 @@
 # Usage:
 #   ./scripts/build.sh [OPTIONS] TARGET
 #
-# TARGET is one of: pico1, pico1calc, pico2, qemu_arm, qemu_m68k, x68k
+# TARGET is one of:
+#   all,
+#   pico1, pico1calc, pico2, pico2rv,
+#   qemu_arm, qemu_rv32, qemu_m68k,
+#   x68k, xtensa_cc, pcxt
 #
 # Options:
 #   --test              Enable PPAP_TESTS (kernel + userland test suite)
@@ -14,13 +18,10 @@
 #   --h68k-debug        Enable kernel Human68k debug diagnostics
 #
 # Examples:
-#   ./scripts/build.sh pico1              # build pico1
-#   ./scripts/build.sh pico1calc          # build pico1calc
-#   ./scripts/build.sh --test qemu_arm    # build qemu_arm with tests
-#   ./scripts/build.sh --test-extended qemu_arm  # build qemu_arm with extended tests
-#   ./scripts/build.sh --clean qemu_m68k  # clean rebuild m68k
-#   ./scripts/build.sh qemu_m68k          # build m68k QEMU target
-#   ./scripts/build.sh x68k               # build X68000 target (Phase X-1)
+#   ./scripts/build.sh all                # build all targets
+#   ./scripts/build.sh pico1              # build a specific target
+#   ./scripts/build.sh --test qemu_arm    # build with tests
+#   ./scripts/build.sh --clean qemu_m68k  # clean rebuild
 #   ./scripts/build.sh --overlay=~/my_x68k qemu_m68k  # add custom files to romfs
 
 set -euo pipefail
@@ -66,6 +67,12 @@ OVERLAY=""
 H68K_DEBUG=OFF
 TARGET=""
 
+VALID_TARGETS=(
+    pico1 pico1calc pico2 pico2rv
+    qemu_arm qemu_rv32 qemu_m68k
+    x68k xtensa_cc pcxt
+)
+
 for arg in "$@"; do
     case "$arg" in
         --test)       TESTS=ON ;;
@@ -81,6 +88,33 @@ done
 # Show usage if no target specified
 if [[ -z "$TARGET" ]]; then
     sed -n '2,/^$/{ s/^# //; s/^#$//; p }' "$0"
+    exit 0
+fi
+
+# Pseudo target: build all supported targets with current flags.
+if [[ "$TARGET" == "all" ]]; then
+    echo "[build] Building all targets: ${VALID_TARGETS[*]}"
+    BUILD_ARGS=()
+    if [[ "$TESTS_EXTENDED" == "ON" ]]; then
+        BUILD_ARGS+=(--test-extended)
+    elif [[ "$TESTS" == "ON" ]]; then
+        BUILD_ARGS+=(--test)
+    fi
+    if [[ $CLEAN -eq 1 ]]; then
+        BUILD_ARGS+=(--clean)
+    fi
+    if [[ -n "$OVERLAY" ]]; then
+        BUILD_ARGS+=("--overlay=$OVERLAY")
+    fi
+    if [[ "$H68K_DEBUG" == "ON" ]]; then
+        BUILD_ARGS+=(--h68k-debug)
+    fi
+
+    for t in "${VALID_TARGETS[@]}"; do
+        echo "[build] ===== target: $t ====="
+        "$0" "${BUILD_ARGS[@]}" "$t"
+    done
+    echo "[build] All targets built successfully"
     exit 0
 fi
 
@@ -129,7 +163,7 @@ case "$TARGET" in
         ;;
     *)
         echo "[build] Error: unknown target '$TARGET'"
-        echo "        Valid targets: pico1, pico1calc, pico2, pico2rv, qemu_arm, qemu_rv32, qemu_m68k, x68k, xtensa_cc, pcxt"
+        echo "        Valid targets: all, ${VALID_TARGETS[*]}"
         exit 1
         ;;
 esac
