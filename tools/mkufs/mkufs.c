@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <time.h>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -37,6 +38,127 @@
 #define UFS_DIRENTS_PER_BLOCK (UFS_BLOCK_SIZE / UFS_DIRENT_SIZE)
 #define UFS_NAME_MAX          27
 #define UFS_ROOT_INO           1
+
+#define UFS44_MAGIC           0x00011954u
+#define UFS44_BOOT_BYTES      8192u
+#define UFS44_SB_OFFSET       8192u
+#define UFS44_SB_SIZE         1536u
+#define UFS44_CG_OFFSET       16384u
+#define UFS44_POSTBLFMT       1u
+#define UFS44_FSOK            0x7c269d38u
+#define UFS44_FSCLEAN         0x01u
+#define UFS44_OPTTIME         0u
+
+#define UFS44_FS_SBLKNO_OFF       8u
+#define UFS44_FS_CBLKNO_OFF      12u
+#define UFS44_FS_IBLKNO_OFF      16u
+#define UFS44_FS_DBLKNO_OFF      20u
+#define UFS44_FS_TIME_OFF        32u
+#define UFS44_FS_SIZE_OFF        36u
+#define UFS44_FS_DSIZE_OFF       40u
+#define UFS44_FS_NCG_OFF         44u
+#define UFS44_FS_BSIZE_OFF       48u
+#define UFS44_FS_FSIZE_OFF       52u
+#define UFS44_FS_FRAG_OFF        56u
+#define UFS44_FS_MINFREE_OFF     60u
+#define UFS44_FS_ROTDELAY_OFF    64u
+#define UFS44_FS_RPS_OFF         68u
+#define UFS44_FS_BMASK_OFF       72u
+#define UFS44_FS_FMASK_OFF       76u
+#define UFS44_FS_BSHIFT_OFF      80u
+#define UFS44_FS_FSHIFT_OFF      84u
+#define UFS44_FS_MAXCONTIG_OFF   88u
+#define UFS44_FS_MAXBPG_OFF      92u
+#define UFS44_FS_FRAGSHIFT_OFF   96u
+#define UFS44_FS_FSBTODB_OFF    100u
+#define UFS44_FS_SBSIZE_OFF     104u
+#define UFS44_FS_CSMASK_OFF     108u
+#define UFS44_FS_CSSHIFT_OFF    112u
+#define UFS44_FS_NINDIR_OFF     116u
+#define UFS44_FS_INOPB_OFF      120u
+#define UFS44_FS_NSPF_OFF       124u
+#define UFS44_FS_OPTIM_OFF      128u
+#define UFS44_FS_INTERLEAVE_OFF 136u
+#define UFS44_FS_TRACKSKEW_OFF  140u
+#define UFS44_FS_ID0_OFF        144u
+#define UFS44_FS_ID1_OFF        148u
+#define UFS44_FS_CSADDR_OFF     152u
+#define UFS44_FS_CSSIZE_OFF     156u
+#define UFS44_FS_CGSIZE_OFF     160u
+#define UFS44_FS_NTRAK_OFF      164u
+#define UFS44_FS_NSECT_OFF      168u
+#define UFS44_FS_SPC_OFF        172u
+#define UFS44_FS_NCYL_OFF       176u
+#define UFS44_FS_CPG_OFF        180u
+#define UFS44_FS_IPG_OFF        184u
+#define UFS44_FS_FPG_OFF        188u
+#define UFS44_FS_CSTOTAL_NDIR_OFF   192u
+#define UFS44_FS_CSTOTAL_NBFREE_OFF 196u
+#define UFS44_FS_CSTOTAL_NIFREE_OFF 200u
+#define UFS44_FS_CSTOTAL_NFFREE_OFF 204u
+#define UFS44_FS_FMOD_OFF       208u
+#define UFS44_FS_CLEAN_OFF      209u
+#define UFS44_FS_RONLY_OFF      210u
+#define UFS44_FS_FLAGS_OFF      211u
+#define UFS44_FS_STATE_OFF     1352u
+#define UFS44_FS_POSTBLFMT_OFF 1356u
+#define UFS44_FS_NRPOS_OFF     1360u
+#define UFS44_FS_POSTBLOFF_OFF 1364u
+#define UFS44_FS_ROTBLOFF_OFF  1368u
+#define UFS44_FS_MAGIC_OFF     1372u
+
+#define UFS44_CG_LINK_OFF           0u
+#define UFS44_CG_MAGIC_OFF          4u
+#define UFS44_CG_TIME_OFF           8u
+#define UFS44_CG_CGX_OFF           12u
+#define UFS44_CG_NCYL_OFF          16u
+#define UFS44_CG_NIBLK_OFF         18u
+#define UFS44_CG_NDBLK_OFF         20u
+#define UFS44_CG_CS_NDIR_OFF       24u
+#define UFS44_CG_CS_NBFREE_OFF     28u
+#define UFS44_CG_CS_NIFREE_OFF     32u
+#define UFS44_CG_CS_NFFREE_OFF     36u
+#define UFS44_CG_ROTOR_OFF         40u
+#define UFS44_CG_FROTOR_OFF        44u
+#define UFS44_CG_IROTOR_OFF        48u
+#define UFS44_CG_FRSUM_OFF         52u
+#define UFS44_CG_BTOTOFF_OFF       84u
+#define UFS44_CG_BOFF_OFF          88u
+#define UFS44_CG_IUSEDOFF_OFF      92u
+#define UFS44_CG_FREEOFF_OFF       96u
+#define UFS44_CG_NEXTFREEOFF_OFF  100u
+#define UFS44_CG_CLUSTERSUMOFF_OFF 104u
+#define UFS44_CG_CLUSTEROFF_OFF   108u
+#define UFS44_CG_NCLUSTERBLKS_OFF 112u
+
+#define UFS44_CG_MAGIC            0x00090255u
+
+#define UFS44_ROOT_INO            2u
+#define UFS44_INODE_SIZE          128u
+#define UFS44_ROOT_MODE           0040755u
+
+#define UFS44_UI_MODE_OFF         0x00u
+#define UFS44_UI_NLINK_OFF        0x02u
+#define UFS44_UI_UID16_OFF        0x04u
+#define UFS44_UI_GID16_OFF        0x06u
+#define UFS44_UI_SIZE_OFF         0x08u
+#define UFS44_UI_ATIME_OFF        0x10u
+#define UFS44_UI_MTIME_OFF        0x18u
+#define UFS44_UI_CTIME_OFF        0x20u
+#define UFS44_UI_DB_OFF           0x28u
+#define UFS44_UI_IB_OFF           0x58u
+#define UFS44_UI_FLAGS_OFF        0x64u
+#define UFS44_UI_BLOCKS_OFF       0x68u
+#define UFS44_UI_GEN_OFF          0x6cu
+#define UFS44_UI_UID_OFF          0x70u
+#define UFS44_UI_GID_OFF          0x74u
+
+#define UFS44_DT_DIR              4u
+#define UFS44_DIRENT_INO_OFF      0u
+#define UFS44_DIRENT_RECLEN_OFF   4u
+#define UFS44_DIRENT_TYPE_OFF     6u
+#define UFS44_DIRENT_NAMLEN_OFF   7u
+#define UFS44_DIRENT_NAME_OFF     8u
 
 typedef struct {
     uint32_t s_magic;
@@ -104,6 +226,25 @@ static int parse_format(const char *s, ufs_format_t *out)
     return -1;
 }
 
+static const char *format_name(ufs_format_t format)
+{
+    switch (format) {
+    case UFS_FORMAT_LEGACY:
+        return "legacy";
+    case UFS_FORMAT_44BSD:
+        return "44bsd";
+    }
+    return "unknown";
+}
+
+static void print_usage(const char *argv0)
+{
+    fprintf(stderr,
+            "Usage: %s [-s SIZE] [-i INODES] [-f FORMAT] [-B] [-v] "
+            "[-p DIR] <output>\n",
+            argv0);
+}
+
 static uint32_t w32(uint32_t v)
 {
     if (!be_mode) return v;
@@ -115,6 +256,19 @@ static uint16_t w16(uint16_t v)
 {
     if (!be_mode) return v;
     return (uint16_t)(((v & 0xFFu) << 8) | ((v >> 8) & 0xFFu));
+}
+
+static uint64_t w64(uint64_t v)
+{
+    if (!be_mode) return v;
+    return ((v & 0x00000000000000FFull) << 56) |
+           ((v & 0x000000000000FF00ull) << 40) |
+           ((v & 0x0000000000FF0000ull) << 24) |
+           ((v & 0x00000000FF000000ull) << 8) |
+           ((v & 0x000000FF00000000ull) >> 8) |
+           ((v & 0x0000FF0000000000ull) >> 24) |
+           ((v & 0x00FF000000000000ull) >> 40) |
+           ((v & 0xFF00000000000000ull) >> 56);
 }
 
 /* ── Image buffer ────────────────────────────────────────────────────── */
@@ -137,6 +291,50 @@ static uint32_t free_inodes_count;
 static uint8_t *block_ptr(uint32_t blk)
 {
     return &img[blk * UFS_BLOCK_SIZE];
+}
+
+static void put8(uint32_t off, uint8_t val)
+{
+    img[off] = val;
+}
+
+static void put16(uint32_t off, uint16_t val)
+{
+    uint16_t raw = w16(val);
+    memcpy(&img[off], &raw, sizeof(raw));
+}
+
+static void put32(uint32_t off, uint32_t val)
+{
+    uint32_t raw = w32(val);
+    memcpy(&img[off], &raw, sizeof(raw));
+}
+
+static void put64(uint32_t off, uint64_t val)
+{
+    uint64_t raw = w64(val);
+    memcpy(&img[off], &raw, sizeof(raw));
+}
+
+static uint32_t align_up(uint32_t value, uint32_t align)
+{
+    return (value + align - 1u) & ~(align - 1u);
+}
+
+static void set_bit_le(uint32_t off, uint32_t bit)
+{
+    img[off + (bit >> 3)] |= (uint8_t)(1u << (bit & 7u));
+}
+
+static void put_dirent(uint32_t off, uint32_t ino, uint16_t reclen,
+                       uint8_t type, const char *name)
+{
+    size_t name_len = strlen(name);
+    put32(off + UFS44_DIRENT_INO_OFF, ino);
+    put16(off + UFS44_DIRENT_RECLEN_OFF, reclen);
+    put8(off + UFS44_DIRENT_TYPE_OFF, type);
+    put8(off + UFS44_DIRENT_NAMLEN_OFF, (uint8_t)name_len);
+    memcpy(&img[off + UFS44_DIRENT_NAME_OFF], name, name_len + 1u);
 }
 
 /* ── Bitmap operations ───────────────────────────────────────────────── */
@@ -419,54 +617,39 @@ static uint32_t parse_size(const char *s)
     return (uint32_t)val;
 }
 
-/* ── Main ────────────────────────────────────────────────────────────── */
-
-int main(int argc, char *argv[])
+static int write_output_file(const char *output)
 {
-    uint32_t size = 64 * 1024;  /* default 64K */
-    uint32_t inode_override = 0; /* 0 = use default formula */
-    int verbose = 0;
-    const char *populate_dir_path = NULL;
-    const char *output = NULL;
-
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-s") == 0 && i + 1 < argc) {
-            size = parse_size(argv[++i]);
-        } else if (strcmp(argv[i], "-i") == 0 && i + 1 < argc) {
-            inode_override = (uint32_t)strtoul(argv[++i], NULL, 0);
-        } else if (strcmp(argv[i], "-f") == 0 && i + 1 < argc) {
-            if (parse_format(argv[++i], &format_mode) < 0) {
-                fprintf(stderr, "mkufs: unsupported format '%s' (use legacy or 44bsd)\n",
-                        argv[i]);
-                return 1;
-            }
-        } else if (strcmp(argv[i], "-B") == 0) {
-            be_mode = 1;
-        } else if (strcmp(argv[i], "-v") == 0) {
-            verbose = 1;
-        } else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
-            populate_dir_path = argv[++i];
-        } else if (argv[i][0] != '-') {
-            output = argv[i];
-        } else {
-            fprintf(stderr, "Usage: %s [-s SIZE] [-i INODES] [-f FORMAT] [-B] [-v] [-p DIR] <output>\n",
-                    argv[0]);
-            return 1;
-        }
-    }
-
-    if (!output) {
-        fprintf(stderr, "Usage: %s [-s SIZE] [-i INODES] [-f FORMAT] [-B] [-v] [-p DIR] <output>\n",
-                argv[0]);
+    FILE *fp = fopen(output, "wb");
+    if (!fp) { perror(output); return 1; }
+    if (fwrite(img, 1, img_size, fp) != img_size) {
+        perror("fwrite");
+        fclose(fp);
         return 1;
     }
+    fclose(fp);
+    return 0;
+}
 
-    if (format_mode == UFS_FORMAT_44BSD) {
-        fprintf(stderr,
-                "mkufs: format '44bsd' is not implemented yet; use -f legacy for trunk compatibility\n");
-        return 1;
+static void print_summary(const char *output, int verbose)
+{
+    if (verbose) {
+        printf("mkufs: created %s\n", output);
+        printf("  format:       %s\n", format_name(format_mode));
+        printf("  size:         %u bytes (%u blocks)\n", img_size, block_count);
+        printf("  inodes:       %u (%u blocks)\n", inode_count, inode_blocks);
+        printf("  data start:   block %u\n", data_start);
+        printf("  free blocks:  %u / %u\n", free_blocks_count, block_count);
+        printf("  free inodes:  %u / %u\n", free_inodes_count, inode_count);
+    } else {
+        printf("mkufs: created %s (%s, %u KB, %u blocks, %u inodes)\n",
+               output, format_name(format_mode), img_size / 1024,
+               block_count, inode_count);
     }
+}
 
+static int build_legacy_image(uint32_t size, uint32_t inode_override,
+                              const char *populate_dir_path)
+{
     /* Ensure size is block-aligned and reasonable */
     if (size < UFS_BLOCK_SIZE * 8) {
         fprintf(stderr, "mkufs: image size must be at least %u bytes\n",
@@ -491,7 +674,8 @@ int main(int argc, char *argv[])
     }
     if (inode_count > UFS_BLOCK_SIZE * 8) inode_count = UFS_BLOCK_SIZE * 8;
 
-    inode_blocks = (inode_count + UFS_INODES_PER_BLOCK - 1) / UFS_INODES_PER_BLOCK;
+    inode_blocks =
+        (inode_count + UFS_INODES_PER_BLOCK - 1) / UFS_INODES_PER_BLOCK;
     data_start = 3 + inode_blocks;  /* super + bmap + imap + itable */
 
     if (data_start >= block_count) {
@@ -556,28 +740,270 @@ int main(int argc, char *argv[])
     sb->s_data_block   = w32(data_start);
     sb->s_inode_blocks = w32(inode_blocks);
 
-    /* Write output file */
-    FILE *fp = fopen(output, "wb");
-    if (!fp) { perror(output); return 1; }
-    if (fwrite(img, 1, img_size, fp) != img_size) {
-        perror("fwrite");
-        fclose(fp);
+    return 0;
+}
+
+static int build_44bsd_image(uint32_t size, uint32_t inode_override,
+                             const char *populate_dir_path, int verbose)
+{
+    (void)inode_override;
+
+    if (populate_dir_path) {
+        fprintf(stderr,
+                "mkufs: format '44bsd' image skeleton does not support "
+                "-p yet\n");
         return 1;
     }
-    fclose(fp);
-    free(img);
+
+    if (size < UFS44_CG_OFFSET + UFS_BLOCK_SIZE) {
+        fprintf(stderr,
+                "mkufs: 44bsd image size must be at least %u bytes\n",
+                UFS44_CG_OFFSET + UFS_BLOCK_SIZE);
+        return 1;
+    }
+    size &= ~(UFS_BLOCK_SIZE - 1);
+    img_size = size;
+
+    img = calloc(1, img_size);
+    if (!img) { perror("calloc"); return 1; }
+
+    block_count = img_size / UFS_BLOCK_SIZE;
+    next_free_block = 0;
+    next_free_inode = 0;
+
+    uint32_t fs_sblkno = UFS44_SB_OFFSET / UFS_BLOCK_SIZE;
+    uint32_t fs_cblkno = UFS44_CG_OFFSET / UFS_BLOCK_SIZE;
+    uint32_t fs_iblkno = fs_cblkno + 1;
+    uint32_t fs_dblkno = fs_iblkno + 1;
+    uint32_t fs_size = block_count;
+    uint32_t fs_dsize = fs_size > fs_dblkno ? fs_size - fs_dblkno : 0;
+    uint32_t fs_ipg = UFS_BLOCK_SIZE / 128u;
+    uint32_t fs_fpg = fs_size;
+    uint32_t fs_time = (uint32_t)time(NULL);
+    uint32_t fs_state = UFS44_FSOK - fs_time;
+    uint32_t fs_bmask = ~(UFS_BLOCK_SIZE - 1u);
+    uint32_t fs_fmask = ~(UFS_BLOCK_SIZE - 1u);
+    uint32_t used_inodes = 3;
+    uint32_t root_dir_blk = fs_dblkno;
+    uint32_t used_data_blocks = 1;
+
+    uint32_t cg_iusedoff = 168u;
+    uint32_t cg_iused_bytes = align_up((fs_ipg + 7u) >> 3, 4u);
+    uint32_t cg_freeoff = cg_iusedoff + cg_iused_bytes;
+    uint32_t cg_free_bytes = align_up((fs_dsize + 7u) >> 3, 4u);
+    uint32_t cg_clustersumoff = cg_freeoff + cg_free_bytes;
+    uint32_t cg_clustersum_bytes = 4u;
+    uint32_t cg_clusteroff = cg_clustersumoff + cg_clustersum_bytes;
+    uint32_t cg_cluster_bytes = align_up((fs_dsize + 7u) >> 3, 4u);
+    uint32_t cg_btotoff = cg_clusteroff + cg_cluster_bytes;
+    uint32_t cg_btot_bytes = 4u;
+    uint32_t cg_boff = cg_btotoff + cg_btot_bytes;
+    uint32_t cg_b_bytes = 2u;
+    uint32_t cg_nextfreeoff = align_up(cg_boff + cg_b_bytes, 4u);
+
+    inode_count = fs_ipg;
+    inode_blocks = 1;
+    data_start = fs_dblkno;
+    free_blocks_count = fs_dsize - used_data_blocks;
+    free_inodes_count = inode_count - used_inodes;
+
+    put32(UFS44_SB_OFFSET + UFS44_FS_SBLKNO_OFF, fs_sblkno);
+    put32(UFS44_SB_OFFSET + UFS44_FS_CBLKNO_OFF, fs_cblkno);
+    put32(UFS44_SB_OFFSET + UFS44_FS_IBLKNO_OFF, fs_iblkno);
+    put32(UFS44_SB_OFFSET + UFS44_FS_DBLKNO_OFF, fs_dblkno);
+    put32(UFS44_SB_OFFSET + UFS44_FS_TIME_OFF, fs_time);
+    put32(UFS44_SB_OFFSET + UFS44_FS_SIZE_OFF, fs_size);
+    put32(UFS44_SB_OFFSET + UFS44_FS_DSIZE_OFF, fs_dsize);
+    put32(UFS44_SB_OFFSET + UFS44_FS_NCG_OFF, 1);
+    put32(UFS44_SB_OFFSET + UFS44_FS_BSIZE_OFF, UFS_BLOCK_SIZE);
+    put32(UFS44_SB_OFFSET + UFS44_FS_FSIZE_OFF, UFS_BLOCK_SIZE);
+    put32(UFS44_SB_OFFSET + UFS44_FS_FRAG_OFF, 1);
+    put32(UFS44_SB_OFFSET + UFS44_FS_MINFREE_OFF, 0);
+    put32(UFS44_SB_OFFSET + UFS44_FS_ROTDELAY_OFF, 0);
+    put32(UFS44_SB_OFFSET + UFS44_FS_RPS_OFF, 60);
+    put32(UFS44_SB_OFFSET + UFS44_FS_BMASK_OFF, fs_bmask);
+    put32(UFS44_SB_OFFSET + UFS44_FS_FMASK_OFF, fs_fmask);
+    put32(UFS44_SB_OFFSET + UFS44_FS_BSHIFT_OFF, 12);
+    put32(UFS44_SB_OFFSET + UFS44_FS_FSHIFT_OFF, 12);
+    put32(UFS44_SB_OFFSET + UFS44_FS_MAXCONTIG_OFF, 1);
+    put32(UFS44_SB_OFFSET + UFS44_FS_MAXBPG_OFF, UFS_BLOCK_SIZE);
+    put32(UFS44_SB_OFFSET + UFS44_FS_FRAGSHIFT_OFF, 0);
+    put32(UFS44_SB_OFFSET + UFS44_FS_FSBTODB_OFF, 3);
+    put32(UFS44_SB_OFFSET + UFS44_FS_SBSIZE_OFF, UFS44_SB_SIZE);
+    put32(UFS44_SB_OFFSET + UFS44_FS_CSMASK_OFF, 0);
+    put32(UFS44_SB_OFFSET + UFS44_FS_CSSHIFT_OFF, 0);
+    put32(UFS44_SB_OFFSET + UFS44_FS_NINDIR_OFF, UFS_BLOCK_SIZE / 4u);
+    put32(UFS44_SB_OFFSET + UFS44_FS_INOPB_OFF, UFS_BLOCK_SIZE / 128u);
+    put32(UFS44_SB_OFFSET + UFS44_FS_NSPF_OFF, UFS_BLOCK_SIZE / 512u);
+    put32(UFS44_SB_OFFSET + UFS44_FS_OPTIM_OFF, UFS44_OPTTIME);
+    put32(UFS44_SB_OFFSET + UFS44_FS_INTERLEAVE_OFF, 1);
+    put32(UFS44_SB_OFFSET + UFS44_FS_TRACKSKEW_OFF, 0);
+    put32(UFS44_SB_OFFSET + UFS44_FS_ID0_OFF, fs_time);
+    put32(UFS44_SB_OFFSET + UFS44_FS_ID1_OFF, fs_time ^ 0x50504150u);
+    put32(UFS44_SB_OFFSET + UFS44_FS_CSADDR_OFF, 0);
+    put32(UFS44_SB_OFFSET + UFS44_FS_CSSIZE_OFF, 0);
+    put32(UFS44_SB_OFFSET + UFS44_FS_CGSIZE_OFF, UFS_BLOCK_SIZE);
+    put32(UFS44_SB_OFFSET + UFS44_FS_NTRAK_OFF, 1);
+    put32(UFS44_SB_OFFSET + UFS44_FS_NSECT_OFF, 1);
+    put32(UFS44_SB_OFFSET + UFS44_FS_SPC_OFF, 1);
+    put32(UFS44_SB_OFFSET + UFS44_FS_NCYL_OFF, 1);
+    put32(UFS44_SB_OFFSET + UFS44_FS_CPG_OFF, 1);
+    put32(UFS44_SB_OFFSET + UFS44_FS_IPG_OFF, fs_ipg);
+    put32(UFS44_SB_OFFSET + UFS44_FS_FPG_OFF, fs_fpg);
+    put32(UFS44_SB_OFFSET + UFS44_FS_CSTOTAL_NDIR_OFF, 1);
+    put32(UFS44_SB_OFFSET + UFS44_FS_CSTOTAL_NBFREE_OFF, free_blocks_count);
+    put32(UFS44_SB_OFFSET + UFS44_FS_CSTOTAL_NIFREE_OFF, free_inodes_count);
+    put32(UFS44_SB_OFFSET + UFS44_FS_CSTOTAL_NFFREE_OFF, 0);
+    put8(UFS44_SB_OFFSET + UFS44_FS_FMOD_OFF, 0);
+    put8(UFS44_SB_OFFSET + UFS44_FS_CLEAN_OFF, UFS44_FSCLEAN);
+    put8(UFS44_SB_OFFSET + UFS44_FS_RONLY_OFF, 0);
+    put8(UFS44_SB_OFFSET + UFS44_FS_FLAGS_OFF, 0);
+    put32(UFS44_SB_OFFSET + UFS44_FS_STATE_OFF, fs_state);
+    put32(UFS44_SB_OFFSET + UFS44_FS_POSTBLFMT_OFF, UFS44_POSTBLFMT);
+    put32(UFS44_SB_OFFSET + UFS44_FS_NRPOS_OFF, 1);
+    put32(UFS44_SB_OFFSET + UFS44_FS_POSTBLOFF_OFF, 0);
+    put32(UFS44_SB_OFFSET + UFS44_FS_ROTBLOFF_OFF, 0);
+    put32(UFS44_SB_OFFSET + UFS44_FS_MAGIC_OFF, UFS44_MAGIC);
+
+    put32(UFS44_CG_OFFSET + UFS44_CG_LINK_OFF, 0);
+    put32(UFS44_CG_OFFSET + UFS44_CG_MAGIC_OFF, UFS44_CG_MAGIC);
+    put32(UFS44_CG_OFFSET + UFS44_CG_TIME_OFF, fs_time);
+    put32(UFS44_CG_OFFSET + UFS44_CG_CGX_OFF, 0);
+    put16(UFS44_CG_OFFSET + UFS44_CG_NCYL_OFF, 1);
+    put16(UFS44_CG_OFFSET + UFS44_CG_NIBLK_OFF, inode_blocks);
+    put32(UFS44_CG_OFFSET + UFS44_CG_NDBLK_OFF, fs_dsize);
+    put32(UFS44_CG_OFFSET + UFS44_CG_CS_NDIR_OFF, 1);
+    put32(UFS44_CG_OFFSET + UFS44_CG_CS_NBFREE_OFF, free_blocks_count);
+    put32(UFS44_CG_OFFSET + UFS44_CG_CS_NIFREE_OFF, free_inodes_count);
+    put32(UFS44_CG_OFFSET + UFS44_CG_CS_NFFREE_OFF, 0);
+    put32(UFS44_CG_OFFSET + UFS44_CG_ROTOR_OFF, 0);
+    put32(UFS44_CG_OFFSET + UFS44_CG_FROTOR_OFF, 0);
+    put32(UFS44_CG_OFFSET + UFS44_CG_IROTOR_OFF, used_inodes);
+    put32(UFS44_CG_OFFSET + UFS44_CG_BTOTOFF_OFF, cg_btotoff);
+    put32(UFS44_CG_OFFSET + UFS44_CG_BOFF_OFF, cg_boff);
+    put32(UFS44_CG_OFFSET + UFS44_CG_IUSEDOFF_OFF, cg_iusedoff);
+    put32(UFS44_CG_OFFSET + UFS44_CG_FREEOFF_OFF, cg_freeoff);
+    put32(UFS44_CG_OFFSET + UFS44_CG_NEXTFREEOFF_OFF, cg_nextfreeoff);
+    put32(UFS44_CG_OFFSET + UFS44_CG_CLUSTERSUMOFF_OFF, cg_clustersumoff);
+    put32(UFS44_CG_OFFSET + UFS44_CG_CLUSTEROFF_OFF, cg_clusteroff);
+    put32(UFS44_CG_OFFSET + UFS44_CG_NCLUSTERBLKS_OFF, fs_dsize);
+
+    for (uint32_t ino = 0; ino < used_inodes; ino++)
+        set_bit_le(UFS44_CG_OFFSET + cg_iusedoff, ino);
+
+        for (uint32_t blk = used_data_blocks; blk < fs_dsize; blk++) {
+         set_bit_le(UFS44_CG_OFFSET + cg_freeoff, blk);
+         set_bit_le(UFS44_CG_OFFSET + cg_clusteroff, blk);
+        }
+
+    put32(UFS44_CG_OFFSET + cg_clustersumoff, 0);
+    put32(UFS44_CG_OFFSET + cg_btotoff, free_blocks_count);
+        put16(UFS44_CG_OFFSET + cg_boff, (uint16_t)free_blocks_count);
+
+        uint32_t inode_block_off = fs_iblkno * UFS_BLOCK_SIZE;
+        uint32_t root_inode_off = inode_block_off + UFS44_ROOT_INO * UFS44_INODE_SIZE;
+        put16(root_inode_off + UFS44_UI_MODE_OFF, UFS44_ROOT_MODE);
+        put16(root_inode_off + UFS44_UI_NLINK_OFF, 2);
+        put16(root_inode_off + UFS44_UI_UID16_OFF, 0);
+        put16(root_inode_off + UFS44_UI_GID16_OFF, 0);
+        put64(root_inode_off + UFS44_UI_SIZE_OFF, UFS_BLOCK_SIZE);
+        put32(root_inode_off + UFS44_UI_ATIME_OFF + 0u, fs_time);
+        put32(root_inode_off + UFS44_UI_ATIME_OFF + 4u, 0);
+        put32(root_inode_off + UFS44_UI_MTIME_OFF + 0u, fs_time);
+        put32(root_inode_off + UFS44_UI_MTIME_OFF + 4u, 0);
+        put32(root_inode_off + UFS44_UI_CTIME_OFF + 0u, fs_time);
+        put32(root_inode_off + UFS44_UI_CTIME_OFF + 4u, 0);
+        put32(root_inode_off + UFS44_UI_DB_OFF, root_dir_blk);
+        put32(root_inode_off + UFS44_UI_IB_OFF + 0u, 0);
+        put32(root_inode_off + UFS44_UI_IB_OFF + 4u, 0);
+        put32(root_inode_off + UFS44_UI_IB_OFF + 8u, 0);
+        put32(root_inode_off + UFS44_UI_FLAGS_OFF, 0);
+        put32(root_inode_off + UFS44_UI_BLOCKS_OFF, UFS_BLOCK_SIZE / 512u);
+        put32(root_inode_off + UFS44_UI_GEN_OFF, 0);
+        put32(root_inode_off + UFS44_UI_UID_OFF, 0);
+        put32(root_inode_off + UFS44_UI_GID_OFF, 0);
+
+        uint32_t root_dir_off = root_dir_blk * UFS_BLOCK_SIZE;
+        put_dirent(root_dir_off, UFS44_ROOT_INO, 12u, UFS44_DT_DIR, ".");
+        put_dirent(root_dir_off + 12u, UFS44_ROOT_INO,
+             (uint16_t)(UFS_BLOCK_SIZE - 12u), UFS44_DT_DIR, "..");
 
     if (verbose) {
-        printf("mkufs: created %s\n", output);
-        printf("  size:         %u bytes (%u blocks)\n", img_size, block_count);
-        printf("  inodes:       %u (%u blocks)\n", inode_count, inode_blocks);
-        printf("  data start:   block %u\n", data_start);
-        printf("  free blocks:  %u / %u\n", free_blocks_count, block_count);
-        printf("  free inodes:  %u / %u\n", free_inodes_count, inode_count);
-    } else {
-        printf("mkufs: created %s (%u KB, %u blocks, %u inodes)\n",
-               output, img_size / 1024, block_count, inode_count);
+        printf("mkufs: format 44bsd selected\n");
+        printf("  boot area:    %u bytes\n", UFS44_BOOT_BYTES);
+        printf("  superblock:   offset %u, size %u\n",
+               UFS44_SB_OFFSET, UFS44_SB_SIZE);
+        printf("  cg area:      offset %u, magic 0x%08x\n",
+               UFS44_CG_OFFSET, UFS44_CG_MAGIC);
+         printf("  inode area:   block %u (root inode %u written)\n",
+             fs_iblkno, UFS44_ROOT_INO);
+         printf("  data start:   block %u (root dir block %u reserved)\n",
+             fs_dblkno, root_dir_blk);
+         printf("  note:         skeleton only; general inode/data emission pending\n");
     }
+
+    return 0;
+}
+
+/* ── Main ────────────────────────────────────────────────────────────── */
+
+int main(int argc, char *argv[])
+{
+    uint32_t size = 64 * 1024;  /* default 64K */
+    uint32_t inode_override = 0; /* 0 = use default formula */
+    int verbose = 0;
+    const char *populate_dir_path = NULL;
+    const char *output = NULL;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-s") == 0 && i + 1 < argc) {
+            size = parse_size(argv[++i]);
+        } else if (strcmp(argv[i], "-i") == 0 && i + 1 < argc) {
+            inode_override = (uint32_t)strtoul(argv[++i], NULL, 0);
+        } else if (strcmp(argv[i], "-f") == 0 && i + 1 < argc) {
+            if (parse_format(argv[++i], &format_mode) < 0) {
+                fprintf(stderr, "mkufs: unsupported format '%s' (use legacy or 44bsd)\n",
+                        argv[i]);
+                return 1;
+            }
+        } else if (strcmp(argv[i], "-B") == 0) {
+            be_mode = 1;
+        } else if (strcmp(argv[i], "-v") == 0) {
+            verbose = 1;
+        } else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
+            populate_dir_path = argv[++i];
+        } else if (argv[i][0] != '-') {
+            output = argv[i];
+        } else {
+            print_usage(argv[0]);
+            return 1;
+        }
+    }
+
+    if (!output) {
+        print_usage(argv[0]);
+        return 1;
+    }
+
+    int rc;
+    switch (format_mode) {
+    case UFS_FORMAT_LEGACY:
+        rc = build_legacy_image(size, inode_override, populate_dir_path);
+        break;
+    case UFS_FORMAT_44BSD:
+        rc = build_44bsd_image(size, inode_override, populate_dir_path,
+                               verbose);
+        break;
+    }
+
+    if (rc != 0)
+        return 1;
+
+    if (write_output_file(output) != 0)
+        return 1;
+
+    print_summary(output, verbose);
+    free(img);
 
     return 0;
 }
