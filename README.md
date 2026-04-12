@@ -33,7 +33,7 @@ A portable UNIX-like micro OS for bare-metal microcontrollers and retro CPUs.
 
 All targets share the same kernel source, syscall interface, VFS, and process model. Only drivers, boot sequences, linker scripts, and architecture-specific code (context switch, syscall trap) differ per target.
 
-On i16 (PC/XT), the kernel is split into separate code-segment modules (core + VFS) with far-call stubs at the boundaries. See [docs/kernel/kernel_modules.md](/docs/kernel/kernel_modules.md) and [docs/proposals/pc_port.md](/docs/proposals/pc_port.md).
+On i16 (PC/XT), the kernel is split into separate code-segment modules (core + VFS) with far-call stubs at the boundaries. See [docs/kernel/kernel_modules.md](/docs/kernel/kernel_modules.md) and [docs/targets/ia16.md](/docs/targets/ia16.md).
 
 ## Features
 
@@ -175,4 +175,4 @@ See [docs/getting_started/debugging.md](/docs/getting_started/debugging.md) for 
 - **Motorola 68000** — [docs/targets/68000.md](/docs/targets/68000.md) — QEMU virt memory map, X68000 floppy boot
 - **RISC-V** — [docs/targets/rv32.md](/docs/targets/rv32.md) — RV32IMAC specifics, XIP limitations, known test failures
 - **Xtensa** — [docs/targets/xtensa.md](/docs/targets/xtensa.md) — ESP-IDF integration, IRAM/DRAM split, call0 ABI
-- **Intel 8086** — [docs/proposals/pc_port.md](/docs/proposals/pc_port.md) — real-mode segment split, UFS floppy boot, kernel module system
+- **Intel 8086** — [docs/targets/ia16.md](/docs/targets/ia16.md) — real-mode segment split, UFS floppy boot, kernel module system

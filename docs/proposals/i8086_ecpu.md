@@ -912,7 +912,7 @@ E-3 (control flow with INT support) at minimum.
 ## 16. Related Documentation
 
 - [docs/proposals/msdos_subsystem.md](msdos_subsystem.md) — MS-DOS subsystem (uses this eCPU)
-- [docs/proposals/pc_port.md](pc_port.md) — IBM PC native port (V30, no eCPU needed)
+- [docs/targets/ia16.md](../targets/ia16.md) — IBM PC native port (V30, no eCPU needed)
 - [docs/kernel/trace.md](../kernel/trace.md) — Trace and debug subsystem
 - `src/kernel/ecpu/ecpu.h` — Common eCPU interface
 - `src/kernel/ecpu/ecpu_z80.h` — Z80 eCPU (reference implementation)

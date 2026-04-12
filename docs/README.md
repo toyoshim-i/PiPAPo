@@ -37,7 +37,6 @@ This index is the entry point for project documentation.
   - [`kernel/trace.md`](kernel/trace.md)
 
 - Proposals
-  - [`proposals/pc_port.md`](proposals/pc_port.md) — IBM PC i8086 real-mode port
   - [`proposals/x68k_port.md`](proposals/x68k_port.md) — X68000 m68k port
   - [`proposals/pizero_port.md`](proposals/pizero_port.md) — Raspberry Pi Zero (future)
   - [`proposals/cardcomputer_port.md`](proposals/cardcomputer_port.md) — M5Stack CardComputer (Xtensa)
@@ -62,6 +61,7 @@ This index is the entry point for project documentation.
   - [`targets/arm_m.md`](targets/arm_m.md) — ARM Cortex-M (qemu_arm, pico1, pico1calc, pico2)
   - [`targets/rv32.md`](targets/rv32.md) — RISC-V RV32IMAC (qemu_rv32, pico2rv)
   - [`targets/68000.md`](targets/68000.md) — Motorola 68000 (qemu_m68k, x68k)
+  - [`targets/ia16.md`](targets/ia16.md) — Intel 8086 (pcxt)
   - [`targets/xtensa.md`](targets/xtensa.md) — Xtensa LX7 (xtensa_cc / M5Stack CardComputer)
 
 - Notes
