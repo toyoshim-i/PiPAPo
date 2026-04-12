@@ -161,6 +161,10 @@
 #define UFS44_DIRENT_NAMLEN_OFF   7u
 #define UFS44_DIRENT_NAME_OFF     8u
 
+#define UFS44_DT_REG              8u
+#define UFS44_DT_LNK             10u
+#define UFS44_NAME_MAX          255u
+
 typedef struct {
     uint32_t s_magic;
     uint32_t s_block_size;
@@ -293,6 +297,7 @@ static uint32_t ufs44_fs_dsize;
 static uint32_t ufs44_cg_iusedoff;
 static uint32_t ufs44_cg_freeoff;
 static uint32_t ufs44_cg_clusteroff;
+static uint32_t ufs44_dir_count;
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
 
@@ -433,6 +438,69 @@ static void init_44bsd_allocator_state(uint32_t fs_iblkno, uint32_t fs_dblkno,
     ufs44_cg_clusteroff = cg_clusteroff;
     next_free_inode = UFS44_FIRST_INO;
     next_free_block = 0;
+}
+
+static uint16_t get16(uint32_t off)
+{
+    uint16_t val;
+    memcpy(&val, &img[off], sizeof(val));
+    return w16(val);
+}
+
+static uint32_t dirent_min_reclen(uint8_t namlen)
+{
+    return align_up(8u + (uint32_t)namlen, 4u);
+}
+
+typedef struct {
+    uint32_t ino;
+    uint32_t direct[12];
+    uint32_t nblocks;
+    uint32_t tail_entry_off;  /* absolute img offset of last dirent */
+    uint16_t nlink;
+    uint32_t fs_time;
+} ufs44_dir_ctx_t;
+
+static void add_44bsd_dirent(ufs44_dir_ctx_t *ctx, uint32_t child_ino,
+                             uint8_t type, const char *name)
+{
+    uint8_t namlen = (uint8_t)strnlen(name, UFS44_NAME_MAX);
+    uint32_t new_min = dirent_min_reclen(namlen);
+
+    uint32_t tail = ctx->tail_entry_off;
+    uint8_t tail_namlen = img[tail + UFS44_DIRENT_NAMLEN_OFF];
+    uint32_t tail_min = dirent_min_reclen(tail_namlen);
+    uint32_t tail_reclen = get16(tail + UFS44_DIRENT_RECLEN_OFF);
+
+    if (tail_reclen >= tail_min + new_min) {
+        /* Split: shrink current tail, write new entry in freed space */
+        put16(tail + UFS44_DIRENT_RECLEN_OFF, (uint16_t)tail_min);
+        uint32_t new_off = tail + tail_min;
+        put_dirent(new_off, child_ino,
+                   (uint16_t)(tail_reclen - tail_min), type, name);
+        ctx->tail_entry_off = new_off;
+    } else {
+        /* Not enough room in current block — allocate a new one */
+        if (ctx->nblocks >= 12u) {
+            fprintf(stderr, "mkufs: 44bsd directory too large (> 12 blocks)\n");
+            exit(1);
+        }
+        uint32_t new_blk = alloc_44bsd_block();
+        memset(block_ptr(new_blk), 0, UFS_BLOCK_SIZE);
+        ctx->direct[ctx->nblocks++] = new_blk;
+        uint32_t new_off = new_blk * UFS_BLOCK_SIZE;
+        put_dirent(new_off, child_ino, (uint16_t)UFS_BLOCK_SIZE, type, name);
+        ctx->tail_entry_off = new_off;
+    }
+
+    /* Flush dir inode: update size and direct[] */
+    uint32_t inode_off = ufs44_inode_offset(ctx->ino);
+    put64(inode_off + UFS44_UI_SIZE_OFF,
+          (uint64_t)ctx->nblocks * UFS_BLOCK_SIZE);
+    for (uint32_t i = 0; i < 12u; i++)
+        put32(inode_off + UFS44_UI_DB_OFF + i * 4u, ctx->direct[i]);
+    put32(inode_off + UFS44_UI_BLOCKS_OFF,
+          ctx->nblocks * UFS_BLOCK_SIZE / 512u);
 }
 
 /* ── Bitmap operations ───────────────────────────────────────────────── */
@@ -841,17 +909,157 @@ static int build_legacy_image(uint32_t size, uint32_t inode_override,
     return 0;
 }
 
+static void populate_44bsd_dir(const char *host_path, ufs44_dir_ctx_t *ctx,
+                               uint32_t fs_time);
+
+static void populate_44bsd_entry(const char *host_path, const char *name,
+                                 ufs44_dir_ctx_t *parent_ctx, uint32_t fs_time)
+{
+    char path[4096];
+    snprintf(path, sizeof(path), "%s/%s", host_path, name);
+
+    struct stat st;
+    if (lstat(path, &st) < 0) {
+        perror(path);
+        return;
+    }
+
+    char short_name[UFS44_NAME_MAX + 1];
+    strncpy(short_name, name, UFS44_NAME_MAX);
+    short_name[UFS44_NAME_MAX] = '\0';
+
+    if (S_ISREG(st.st_mode)) {
+        uint32_t ino = alloc_44bsd_inode();
+        uint32_t direct[12] = {0};
+        uint32_t nblks = 0;
+        uint32_t fsize = 0;
+
+        if (st.st_size > 0) {
+            FILE *fp = fopen(path, "rb");
+            if (fp) {
+                uint8_t *data = malloc((size_t)st.st_size);
+                if (data) {
+                    size_t n = fread(data, 1, (size_t)st.st_size, fp);
+                    fsize = (uint32_t)n;
+                    nblks = (fsize + UFS_BLOCK_SIZE - 1u) / UFS_BLOCK_SIZE;
+                    if (nblks > 12u) {
+                        fprintf(stderr,
+                                "mkufs: %s: truncating to 12 blocks (48 KB)\n",
+                                path);
+                        nblks = 12u;
+                        fsize = 12u * UFS_BLOCK_SIZE;
+                    }
+                    for (uint32_t i = 0; i < nblks; i++) {
+                        uint32_t blk = alloc_44bsd_block();
+                        uint32_t off_in = i * UFS_BLOCK_SIZE;
+                        uint32_t chunk =
+                            (fsize - off_in > UFS_BLOCK_SIZE)
+                            ? UFS_BLOCK_SIZE : fsize - off_in;
+                        memset(block_ptr(blk), 0, UFS_BLOCK_SIZE);
+                        memcpy(block_ptr(blk), data + off_in, chunk);
+                        direct[i] = blk;
+                    }
+                    free(data);
+                }
+                fclose(fp);
+            }
+        }
+
+        write_44bsd_inode(ino,
+                          (uint16_t)(S_IFREG_ | (st.st_mode & 0777u)),
+                          1, fsize, direct,
+                          nblks * UFS_BLOCK_SIZE / 512u, fs_time);
+        add_44bsd_dirent(parent_ctx, ino, UFS44_DT_REG, short_name);
+
+    } else if (S_ISDIR(st.st_mode)) {
+        uint32_t ino = alloc_44bsd_inode();
+        uint32_t dir_blk = alloc_44bsd_block();
+        ufs44_dir_ctx_t ctx;
+        memset(&ctx, 0, sizeof(ctx));
+        ctx.ino = ino;
+        ctx.direct[0] = dir_blk;
+        ctx.nblocks = 1;
+        ctx.tail_entry_off = dir_blk * UFS_BLOCK_SIZE + 12u;
+        ctx.nlink = 2;
+        ctx.fs_time = fs_time;
+
+        write_44bsd_empty_dir_block(dir_blk, ino, parent_ctx->ino);
+        write_44bsd_inode(ino,
+                          (uint16_t)(S_IFDIR_ | (st.st_mode & 0777u)),
+                          2, UFS_BLOCK_SIZE, ctx.direct,
+                          UFS_BLOCK_SIZE / 512u, fs_time);
+        ufs44_dir_count++;
+        add_44bsd_dirent(parent_ctx, ino, UFS44_DT_DIR, short_name);
+
+        /* Bump parent nlink for the ".." back-link */
+        parent_ctx->nlink++;
+        put16(ufs44_inode_offset(parent_ctx->ino) + UFS44_UI_NLINK_OFF,
+              parent_ctx->nlink);
+
+        populate_44bsd_dir(path, &ctx, fs_time);
+
+        /* Write final nlink for the new dir (may have grown via sub-dirs) */
+        put16(ufs44_inode_offset(ino) + UFS44_UI_NLINK_OFF, ctx.nlink);
+
+    } else if (S_ISLNK(st.st_mode)) {
+        char target[UFS44_NAME_MAX + 1];
+        ssize_t len = readlink(path, target, sizeof(target) - 1);
+        if (len < 0) { perror(path); return; }
+        target[len] = '\0';
+
+        uint32_t ino = alloc_44bsd_inode();
+
+        if ((size_t)len <= 12u * sizeof(uint32_t)) {
+            /* Fast symlink: target stored inline in di_db, no disk block */
+            write_44bsd_inode(ino, (uint16_t)(S_IFLNK_ | 0777u), 1,
+                              (uint64_t)(uint32_t)len, NULL, 0u, fs_time);
+            /* Overwrite di_db with raw target bytes — no endian swap */
+            memcpy(&img[ufs44_inode_offset(ino) + UFS44_UI_DB_OFF],
+                   target, (size_t)len);
+        } else {
+            uint32_t blk = alloc_44bsd_block();
+            memset(block_ptr(blk), 0, UFS_BLOCK_SIZE);
+            memcpy(block_ptr(blk), target, (size_t)len);
+            uint32_t direct[12] = {0};
+            direct[0] = blk;
+            write_44bsd_inode(ino, (uint16_t)(S_IFLNK_ | 0777u), 1,
+                              (uint64_t)(uint32_t)len, direct,
+                              UFS_BLOCK_SIZE / 512u, fs_time);
+        }
+        add_44bsd_dirent(parent_ctx, ino, UFS44_DT_LNK, short_name);
+    }
+    /* Skip other file types (devices, sockets, FIFOs) */
+}
+
+static void populate_44bsd_dir(const char *host_path, ufs44_dir_ctx_t *ctx,
+                               uint32_t fs_time)
+{
+    DIR *dp = opendir(host_path);
+    if (!dp) { perror(host_path); return; }
+
+    struct dirent *de;
+    while ((de = readdir(dp)) != NULL) {
+        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
+            continue;
+        populate_44bsd_entry(host_path, de->d_name, ctx, fs_time);
+    }
+    closedir(dp);
+}
+
+static void update_44bsd_summary(uint32_t ndir)
+{
+    put32(UFS44_SB_OFFSET + UFS44_FS_CSTOTAL_NDIR_OFF, ndir);
+    put32(UFS44_SB_OFFSET + UFS44_FS_CSTOTAL_NBFREE_OFF, free_blocks_count);
+    put32(UFS44_SB_OFFSET + UFS44_FS_CSTOTAL_NIFREE_OFF, free_inodes_count);
+    put32(UFS44_CG_OFFSET + UFS44_CG_CS_NDIR_OFF, ndir);
+    put32(UFS44_CG_OFFSET + UFS44_CG_CS_NBFREE_OFF, free_blocks_count);
+    put32(UFS44_CG_OFFSET + UFS44_CG_CS_NIFREE_OFF, free_inodes_count);
+}
+
 static int build_44bsd_image(uint32_t size, uint32_t inode_override,
                              const char *populate_dir_path, int verbose)
 {
     (void)inode_override;
-
-    if (populate_dir_path) {
-        fprintf(stderr,
-                "mkufs: format '44bsd' image skeleton does not support "
-                "-p yet\n");
-        return 1;
-    }
 
     if (size < UFS44_CG_OFFSET + UFS_BLOCK_SIZE) {
         fprintf(stderr,
@@ -988,18 +1196,18 @@ static int build_44bsd_image(uint32_t size, uint32_t inode_override,
     for (uint32_t ino = 0; ino < used_inodes; ino++)
         set_bit_le(UFS44_CG_OFFSET + cg_iusedoff, ino);
 
-        for (uint32_t blk = used_data_blocks; blk < fs_dsize; blk++) {
-         set_bit_le(UFS44_CG_OFFSET + cg_freeoff, blk);
-         set_bit_le(UFS44_CG_OFFSET + cg_clusteroff, blk);
-        }
+    for (uint32_t blk = used_data_blocks; blk < fs_dsize; blk++) {
+        set_bit_le(UFS44_CG_OFFSET + cg_freeoff, blk);
+        set_bit_le(UFS44_CG_OFFSET + cg_clusteroff, blk);
+    }
 
     put32(UFS44_CG_OFFSET + cg_clustersumoff, 0);
     put32(UFS44_CG_OFFSET + cg_btotoff, free_blocks_count);
-        put16(UFS44_CG_OFFSET + cg_boff, (uint16_t)free_blocks_count);
+    put16(UFS44_CG_OFFSET + cg_boff, (uint16_t)free_blocks_count);
 
-        init_44bsd_allocator_state(fs_iblkno, fs_dblkno, fs_dsize, cg_iusedoff,
-                                   cg_freeoff, cg_clusteroff);
-        next_free_inode = UFS44_ROOT_INO + 1u;
+    init_44bsd_allocator_state(fs_iblkno, fs_dblkno, fs_dsize, cg_iusedoff,
+                               cg_freeoff, cg_clusteroff);
+    next_free_inode = UFS44_ROOT_INO + 1u;
         next_free_block = 1u;
 
         uint32_t root_dir_blk = fs_dblkno;
@@ -1009,6 +1217,25 @@ static int build_44bsd_image(uint32_t size, uint32_t inode_override,
                           root_direct, UFS_BLOCK_SIZE / 512u, fs_time);
         write_44bsd_empty_dir_block(root_dir_blk, UFS44_ROOT_INO, UFS44_ROOT_INO);
 
+    ufs44_dir_count = 1;
+
+    if (populate_dir_path) {
+        ufs44_dir_ctx_t root_ctx;
+        memset(&root_ctx, 0, sizeof(root_ctx));
+        root_ctx.ino = UFS44_ROOT_INO;
+        root_ctx.direct[0] = root_dir_blk;
+        root_ctx.nblocks = 1;
+        root_ctx.tail_entry_off = root_dir_blk * UFS_BLOCK_SIZE + 12u;
+        root_ctx.nlink = 2;
+        root_ctx.fs_time = fs_time;
+
+        populate_44bsd_dir(populate_dir_path, &root_ctx, fs_time);
+        put16(ufs44_inode_offset(UFS44_ROOT_INO) + UFS44_UI_NLINK_OFF,
+              root_ctx.nlink);
+    }
+
+    update_44bsd_summary(ufs44_dir_count);
+
     if (verbose) {
         printf("mkufs: format 44bsd selected\n");
         printf("  boot area:    %u bytes\n", UFS44_BOOT_BYTES);
@@ -1016,11 +1243,9 @@ static int build_44bsd_image(uint32_t size, uint32_t inode_override,
                UFS44_SB_OFFSET, UFS44_SB_SIZE);
         printf("  cg area:      offset %u, magic 0x%08x\n",
                UFS44_CG_OFFSET, UFS44_CG_MAGIC);
-         printf("  inode area:   block %u (root inode %u written)\n",
-             fs_iblkno, UFS44_ROOT_INO);
-         printf("  data start:   block %u (root dir block %u reserved)\n",
-             fs_dblkno, root_dir_blk);
-         printf("  note:         skeleton only; general inode/data emission pending\n");
+        printf("  inode area:   block %u (root inode %u written)\n",
+               fs_iblkno, UFS44_ROOT_INO);
+        printf("  data start:   block %u\n", fs_dblkno);
     }
 
     return 0;
