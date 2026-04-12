@@ -114,7 +114,7 @@ int menu_dispatch(int cat, int item) {
       return 0;
     case 4: /* Quit */
       if (E.dirty) {
-        ui_set_status("Unsaved changes \xe2\x80\x94 use :q! to force quit");
+        ui_set_status("Unsaved changes -- use :q! to force quit");
         return 0;
       }
       return 1;

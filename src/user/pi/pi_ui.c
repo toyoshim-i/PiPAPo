@@ -135,7 +135,7 @@ static void draw_content(void) {
       term_attr_fg(COL_CYAN);
       put_int_rj(file_row + 1, gw - 1);
       term_attr_reset();
-      put_char('\xb3'); /* '│' — use simple pipe if not supported */
+      put_char('|');
 
       /* Row content */
       int dummy;
@@ -184,24 +184,18 @@ static void draw_dropdown(void) {
   /* Top border */
   term_cursor_to(1, start_col);
   term_attr_reset();
-  put_str("\xe2\x94\x8c"); /* ┌ (UTF-8) — fallback to ASCII if needed */
+  put_char('+');
   for (int j = 0; j < box_w - 2; j++)
-    put_str("\xe2\x94\x80"); /* ─ */
-  put_str("\xe2\x94\x90"); /* ┐ */
+    put_char('-');
+  put_char('+');
 
   /* Items */
   for (int i = 0; i < cat->count; i++) {
     int screen_row = 2 + i;
-    if (cat->items[i].separator && i > 0) {
-      /* Separator line */
-      term_cursor_to(screen_row - 1 + 1, start_col);
-      /* Actually, separators are visual hints in the data but we draw
-       * items sequentially — just add a dim horizontal rule */
-    }
 
     term_cursor_to(screen_row, start_col);
     term_attr_reset();
-    put_str("\xe2\x94\x82"); /* │ */
+    put_char('|');
 
     /* Highlight selected item */
     if (i == E.menu_item) {
@@ -228,16 +222,16 @@ static void draw_dropdown(void) {
 
     term_attr_reset();
     put_char(' ');
-    put_str("\xe2\x94\x82"); /* │ */
+    put_char('|');
   }
 
   /* Bottom border */
   term_cursor_to(2 + cat->count, start_col);
   term_attr_reset();
-  put_str("\xe2\x94\x94"); /* └ */
+  put_char('+');
   for (int j = 0; j < box_w - 2; j++)
-    put_str("\xe2\x94\x80"); /* ─ */
-  put_str("\xe2\x94\x98"); /* ┘ */
+    put_char('-');
+  put_char('+');
 }
 
 /* ── Draw status bar (row rows-2) ──────────────────────────────────────── */
@@ -252,7 +246,7 @@ static void draw_status_bar(void) {
   else
     term_attr_fg(COL_GREEN);
 
-  /* Left side: "── pi: filename [+] ──── MODE ──" */
+  /* Left side: "-- pi: filename [+] -- MODE --" */
   put_str(" pi: ");
   if (E.filename[0])
     put_str(E.filename);
@@ -262,7 +256,7 @@ static void draw_status_bar(void) {
   if (E.dirty)
     put_str(" [+]");
 
-  put_str(" \xe2\x94\x80 "); /* ─ */
+  put_str(" - ");
 
   /* Mode */
   switch (E.mode) {
@@ -272,7 +266,7 @@ static void draw_status_bar(void) {
   case MODE_COMMAND: put_str("COMMAND"); break;
   }
 
-  put_str(" \xe2\x94\x80 "); /* ─ */
+  put_str(" - ");
 
   /* Cursor position */
   char pos_buf[24];
@@ -298,19 +292,16 @@ static void draw_hint_bar(void) {
 
   switch (E.mode) {
   case MODE_NORMAL:
-    put_str(" Esc Menu \xe2\x94\x82 i insert \xe2\x94\x82"
-            " :w save \xe2\x94\x82 :q quit \xe2\x94\x82 / search");
+    put_str(" Esc Menu | i insert | :w save | :q quit | / search");
     break;
   case MODE_INSERT:
-    put_str(" Esc normal \xe2\x94\x82 type to edit");
+    put_str(" Esc normal | type to edit");
     break;
   case MODE_MENU:
-    put_str(" \xe2\x86\x90\xe2\x86\x92 category \xe2\x94\x82"
-            " \xe2\x86\x91\xe2\x86\x93 select \xe2\x94\x82"
-            " Enter run \xe2\x94\x82 Esc close");
+    put_str(" <> category | ^v select | Enter run | Esc close");
     break;
   case MODE_COMMAND:
-    put_str(" Enter execute \xe2\x94\x82 Esc cancel");
+    put_str(" Enter execute | Esc cancel");
     break;
   }
 
@@ -336,7 +327,7 @@ static void draw_command_line(void) {
 
 static const char *help_lines[] = {
     "",
-    "  pi \xe2\x80\x94 PiPAPo Editor",
+    "  pi -- PiPAPo Editor",
     "",
     "  NORMAL MODE",
     "    h/j/k/l  or arrows   Move cursor",
