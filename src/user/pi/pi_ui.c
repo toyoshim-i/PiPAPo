@@ -270,7 +270,8 @@ static void draw_status_bar(void) {
 
   /* Cursor position */
   char pos_buf[24];
-  uc_snprintf(pos_buf, sizeof(pos_buf), "%d:%d", E.cy + 1, E.cx + 1);
+  uc_snprintf(pos_buf, sizeof(pos_buf), "%d:%d", (int32_t)(E.cy + 1),
+              (int32_t)(E.cx + 1));
   put_str(pos_buf);
 
   /* Status message (if any) */

@@ -88,7 +88,7 @@ int save_file(const char *path) {
   E.dirty = 0;
 
   char msg[80];
-  uc_snprintf(msg, sizeof(msg), "Written %d bytes", written);
+  uc_snprintf(msg, sizeof(msg), "Written %d bytes", (int32_t)written);
   ui_set_status(msg);
   return 0;
 }
