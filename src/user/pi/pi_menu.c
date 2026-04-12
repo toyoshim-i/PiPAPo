@@ -28,7 +28,7 @@ const menu_cat_t pi_menus[MENU_CAT_COUNT] = {
     {
         .label = "Edit",
         .col = 7,
-        .count = 8,
+        .count = 7,
         .items =
             {
                 {"Insert", "i", 0},
