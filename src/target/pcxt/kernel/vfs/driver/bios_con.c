@@ -30,6 +30,7 @@ enum bios_ansi_state {
   BIOS_ANSI_TEXT = 0,
   BIOS_ANSI_ESC,
   BIOS_ANSI_CSI,
+  BIOS_ANSI_CSI_PRIV, /* DEC private mode: \033[? */
 };
 
 static uint8_t bios_attr = 0x07u; /* light grey on black */
@@ -234,9 +235,14 @@ void bios_putc(char c)
         bios_newline();
       } else if (ch == '\r') {
         bios_carriage_return();
+      } else if (ch == '\b') {
+        /* Backspace: move cursor left one column */
+        if (bios_col > 0u) {
+          bios_col--;
+          bios_sync_hw_cursor();
+        }
       } else if (ch < 0x20u || ch == 0x7Fu) {
-        /* Drop other control chars rather than routing through INT 10h
-         * AH=0Eh, which SeaBIOS would mirror onto the serial console. */
+        /* Drop other control chars */
       } else {
         bios_write_attr_char(c);
       }
@@ -254,6 +260,11 @@ void bios_putc(char c)
       return;
 
     case BIOS_ANSI_CSI:
+      if (ch == '?') {
+        /* DEC private mode prefix — switch to private CSI parser */
+        bios_ansi_state = BIOS_ANSI_CSI_PRIV;
+        return;
+      }
       if (ch >= '0' && ch <= '9') {
         bios_param_seen_digit = 1u;
         if ((unsigned)bios_param_count >= 4u) return;
@@ -309,6 +320,34 @@ void bios_putc(char c)
             uint16_t pos =
                 (uint16_t)(((uint16_t)bios_row * BIOS_COLS + c) * 2u);
             bios_vram_poke(pos, blank);
+          }
+        }
+      }
+      bios_ansi_reset_parser();
+      return;
+
+    case BIOS_ANSI_CSI_PRIV:
+      /* DEC private mode: \033[?Nh or \033[?Nl */
+      if (ch >= '0' && ch <= '9') {
+        bios_param_seen_digit = 1u;
+        if ((unsigned)bios_param_count >= 4u) return;
+        bios_params[bios_param_count] =
+            (uint16_t)(bios_params[bios_param_count] * 10u +
+                       (uint16_t)(ch - '0'));
+        return;
+      }
+      if (ch == 'h' || ch == 'l') {
+        /* ?25h = show cursor, ?25l = hide cursor */
+        if (bios_params[0] == 25u) {
+          if (ch == 'l') {
+            /* Hide cursor: move CRTC cursor off-screen */
+            outb(CRTC_INDEX, CRTC_CURSOR_HI);
+            outb(CRTC_DATA, 0x07u);
+            outb(CRTC_INDEX, CRTC_CURSOR_LO);
+            outb(CRTC_DATA, 0xD0u);
+          } else {
+            /* Show cursor: restore to current position */
+            bios_sync_hw_cursor();
           }
         }
       }
