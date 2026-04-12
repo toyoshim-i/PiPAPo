@@ -269,6 +269,21 @@ chdir:
   int   $0x30
   SYSCALL_RET
 
+/* ssize_t readlink(const char *path, char *buf, size_t bufsiz); */
+  .global readlink
+readlink:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx
+  movw  6(%bp), %cx
+  movw  8(%bp), %dx
+  movw  $0x0208, %ax
+  int   $0x30
+  SYSCALL_RET
+
 /* int getdents(int fd, struct dirent *buf, size_t count); */
   .global getdents
 getdents:

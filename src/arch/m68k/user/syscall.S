@@ -275,6 +275,19 @@ chdir:
     trap    #0
     rts
 
+| --- readlink (SYS_READLINK = 0x0208) -----------------------------------------
+| ssize_t readlink(const char *path, char *buf, size_t bufsiz);
+    .globl readlink
+readlink:
+    movem.l %d2-%d3, %sp@-
+    move.l  12(%sp), %d1        | path
+    move.l  16(%sp), %d2        | buf
+    move.l  20(%sp), %d3        | bufsiz
+    move.l  #0x0208, %d0
+    trap    #0
+    movem.l %sp@+, %d2-%d3
+    rts
+
 | --- access (SYS_ACCESS = 0x0202) ---------------------------------------------
 | int access(const char *path, int mode);
     .globl access

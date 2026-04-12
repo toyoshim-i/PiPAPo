@@ -170,6 +170,10 @@ static inline int getcwd(char *buf, size_t size) {
 static inline int chdir(const char *path) {
   return (int)ppap_xtensa_syscall1(0x0207, (long)path);
 }
+static inline ssize_t readlink(const char *path, char *buf, size_t bufsiz) {
+  return (ssize_t)ppap_xtensa_syscall3(0x0208, (long)path, (long)buf,
+                                       (long)bufsiz);
+}
 static inline int access(const char *path, int mode) {
   return (int)ppap_xtensa_syscall2(0x0202, (long)path, mode);
 }
@@ -251,6 +255,7 @@ ssize_t readv(int fd, const struct iovec *iov, int iovcnt);
 int lseek(int fd, int offset, int whence);
 int getcwd(char *buf, size_t size);
 int chdir(const char *path);
+ssize_t readlink(const char *path, char *buf, size_t bufsiz);
 int access(const char *path, int mode);
 int mkdir(const char *path, int mode);
 int unlink(const char *path);

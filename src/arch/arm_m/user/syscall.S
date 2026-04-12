@@ -301,6 +301,17 @@ chdir:
     DO_SYSCALL
     pop  {r7, pc}
 
+@ --- readlink (SYS_READLINK = 0x0208) ---------------------------------------
+@ ssize_t readlink(const char *path, char *buf, size_t bufsiz);
+.section .text.readlink, "ax", %progbits
+.global readlink
+.thumb_func
+readlink:
+    push {r7, lr}
+    ldr  r7, =0x0208    @ SYS_READLINK
+    DO_SYSCALL
+    pop  {r7, pc}
+
 @ --- access (SYS_ACCESS = 0x0202) ---------------------------------------------
 @ int access(const char *path, int mode);
 .section .text.access, "ax", %progbits

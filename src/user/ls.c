@@ -30,6 +30,7 @@ static int use_color = 1;
 #define C_BCYAN   C("\033[1;36m")
 #define C_BYELLOW C("\033[1;33m")
 #define C_BMAGENTA C("\033[1;35m")
+#define C_DIM     C("\033[2m")
 
 static void print_mode(uint32_t mode) {
   char buf[11];
@@ -48,6 +49,10 @@ static void print_mode(uint32_t mode) {
   buf[9] = (mode & 01) ? 'x' : '-';
   buf[10] = '\0';
   uc_puts(buf);
+}
+
+static void print_symlink_mode(void) {
+  uc_puts("lrwxrwxrwx");
 }
 
 static void print_size(uint32_t size) {
@@ -75,6 +80,22 @@ static int stat_entry(const char *dir, const char *name, struct stat *st) {
   if (dlen > 0 && fullpath[dlen - 1] != '/') fullpath[dlen++] = '/';
   uc_strcpy(fullpath + dlen, name);
   return stat(fullpath, st);
+}
+
+static int readlink_entry(const char *dir, const char *name, char *buf,
+                          int bufsiz) {
+  char fullpath[128];
+  int dlen = uc_strlen(dir);
+  int nlen = uc_strlen(name);
+  if (dlen + 1 + nlen + 1 > (int)sizeof(fullpath)) return -1;
+  uc_strcpy(fullpath, dir);
+  if (dlen > 0 && fullpath[dlen - 1] != '/') fullpath[dlen++] = '/';
+  uc_strcpy(fullpath + dlen, name);
+  int n = (int)readlink(fullpath, buf, (size_t)(bufsiz - 1));
+  if (n < 0) return -1;
+  if (n >= bufsiz) n = bufsiz - 1;
+  buf[n] = '\0';
+  return n;
 }
 
 /* File type codes for coloring: 0=regular, 1=dir, 2=exe, 3=symlink, 4=device */
@@ -126,18 +147,42 @@ static int ls_dir(const char *path) {
 
       struct stat st;
       int have_stat = (stat_entry(path, de.d_name, &st) == 0);
+      char link_target[128];
+      int link_len = readlink_entry(path, de.d_name, link_target,
+                                    (int)sizeof(link_target));
+      int is_symlink = (link_len >= 0);
 
-      if (opt_long && have_stat) {
+      if (opt_long && (have_stat || is_symlink)) {
         uc_puts(C_CYAN);
-        print_mode(st.st_mode);
+        if (is_symlink)
+          print_symlink_mode();
+        else
+          print_mode(st.st_mode);
         uc_puts(C_RST);
         uc_putc(' ');
         uc_puts(C_WHITE);
-        print_size(st.st_size);
+        if (is_symlink)
+          print_size((uint32_t)link_len);
+        else
+          print_size(st.st_size);
         uc_puts(C_RST);
         uc_putc(' ');
       }
-      print_name_classified(de.d_name, &st, have_stat);
+      if (is_symlink) {
+        uc_puts(C_BCYAN);
+        uc_puts(de.d_name);
+        uc_puts(C_RST);
+      } else {
+        print_name_classified(de.d_name, &st, have_stat);
+      }
+      if (opt_long && is_symlink) {
+        uc_puts(C_DIM);
+        uc_puts(" -> ");
+        uc_puts(C_RST);
+        uc_puts(C_BMAGENTA);
+        uc_puts(link_target);
+        uc_puts(C_RST);
+      }
       uc_putc('\n');
     }
     close(fd);
@@ -160,13 +205,21 @@ static int ls_dir(const char *path) {
     int nlen = uc_strlen(de.d_name);
     char suffix = 0;
     uint8_t ftype = 0;
+    char link_target[128];
+    int is_symlink =
+        (readlink_entry(path, de.d_name, link_target, (int)sizeof(link_target)) >=
+         0);
     {
       struct stat st;
       if (stat_entry(path, de.d_name, &st) == 0) {
-        ftype = stat_to_type(&st);
+        if (is_symlink)
+          ftype = 3;
+        else
+          ftype = stat_to_type(&st);
         if (opt_classify) {
           if (ftype == 1) suffix = '/';
           else if (ftype == 2) suffix = '*';
+          else if (ftype == 3) suffix = '@';
         }
       }
     }
