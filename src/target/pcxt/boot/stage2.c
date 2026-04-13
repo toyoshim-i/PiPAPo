@@ -52,8 +52,8 @@ static uint16_t ufs_base_sector;  /* absolute LBA of first UFS sector */
 
 #define KERNEL_ADDR 0x0600u
 
-#define VFS_DATA_BASE        0xAC00u
-#define VFS_DATA_STAGE2_SIZE 0x1400u  /* 0xAC00+0x1400=0xC000: stop before stage2 */
+#define VFS_DATA_BASE        0xB400u
+#define VFS_DATA_STAGE2_SIZE 0x0C00u  /* 0xB400+0x0C00=0xC000: stop before stage2 */
 
 static uint32_t sb_itable_sector;
 extern uint8_t boot_drive;
@@ -400,7 +400,7 @@ void stage2_main(void)
 
   /* VFS data: zero the safe lower half, then load .rodata+.data.
    * Stage2 itself runs at 0xC000, so it cannot clear the full
-   * 0xAC00-0xDFFF VFS reservation without wiping itself. The kernel
+   * 0xB400-0xDFFF VFS reservation without wiping itself. The kernel
    * clears the upper half later in target_early_init(), before any
    * VFS data above 0xC000 is used. */
   {

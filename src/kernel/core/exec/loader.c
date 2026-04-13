@@ -18,6 +18,9 @@
 #ifdef PPAP_ENABLE_ECPU_M68K
 #include "kernel/core/exec/m68k_emu_loader.h"
 #endif
+#ifdef PPAP_ENABLE_MSDOS
+#include "kernel/core/exec/dos_com_loader.h"
+#endif
 #if defined(__ia16__)
 extern const loader_t elf16_loader;
 extern const loader_t flat_loader;
@@ -40,6 +43,9 @@ const loader_t* loader_registry[] = {
 #endif
 #if !defined(__ia16__)
     &elf_loader,
+#endif
+#ifdef PPAP_ENABLE_MSDOS
+    &dos_com_loader, /* DOS .COM before flat (extension match) */
 #endif
 #if defined(__ia16__)
     &elf16_loader, /* ELF before flat (ELF detection is stricter) */

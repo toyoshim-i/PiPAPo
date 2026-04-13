@@ -307,6 +307,7 @@ set(ARCH_I16_SOURCES
   ${PPAP_ROOT}/src/arch/i16/kernel/core/smp.c
   ${PPAP_ROOT}/src/arch/i16/kernel/core/string.c
   ${PPAP_ROOT}/src/arch/i16/kernel/core/seg.c
+  ${PPAP_ROOT}/src/arch/i16/kernel/core/dos_trap.S
 )
 
 set(KERNEL_CORE_SOURCES
@@ -334,6 +335,10 @@ set(KERNEL_CORE_SOURCES
   ${PPAP_ROOT}/src/kernel/core/syscall/sys_fs.c
   ${PPAP_ROOT}/src/target/target_default.c
 )
+
+if(PPAP_ENABLE_MSDOS)
+  list(APPEND KERNEL_CORE_SOURCES ${KERNEL_SUBSYS_MSDOS_SOURCES})
+endif()
 
 set(TARGET_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_pcxt.c
@@ -365,6 +370,8 @@ set_property(SOURCE
 add_executable(ppap_pcxt
   ${ARCH_I16_SOURCES}
   ${KERNEL_CORE_SOURCES}
+  ${PPAP_ROOT}/src/kernel/core/subsys/dos_bridge.c
+  ${PPAP_ROOT}/src/kernel/core/exec/dos_com_loader.c
   ${TARGET_SOURCES}
 )
 
@@ -373,7 +380,13 @@ target_include_directories(ppap_pcxt PRIVATE ${PPAP_INCLUDES})
 # free_stack[] uses page_id_t (16-bit index), not void*, so pages
 # beyond 64 KB are accessible.  ~150 pages typical (depends on
 # kernel size and VFS data reservation).
-target_compile_definitions(ppap_pcxt PRIVATE PAGE_COUNT_MAX=150u PPAP_HAS_BLKDEV=1 PPAP_TICK_HZ=18u)
+target_compile_definitions(ppap_pcxt PRIVATE
+  PAGE_COUNT_MAX=150u
+  PPAP_HAS_BLKDEV=1
+  PPAP_TICK_HZ=18u
+  PPAP_ENABLE_MSDOS=1
+  PPAP_HAS_SUBSYS=1
+)
 if(PPAP_TESTS)
   target_compile_definitions(ppap_pcxt PRIVATE PPAP_TESTS=1)
 endif()
@@ -438,7 +451,7 @@ add_executable(ppap_pcxt_vfs
 )
 
 target_include_directories(ppap_pcxt_vfs PRIVATE ${PPAP_INCLUDES})
-target_compile_definitions(ppap_pcxt_vfs PRIVATE PPAP_HAS_UFS=1 PPAP_TICK_HZ=18u)
+target_compile_definitions(ppap_pcxt_vfs PRIVATE PPAP_HAS_UFS=1 PPAP_TICK_HZ=18u PPAP_HAS_SUBSYS=1)
 target_compile_options(ppap_pcxt_vfs PRIVATE ${KERNEL_FLAGS})
 
 # Two-pass link: VFS needs core_exports.ld from core ELF.

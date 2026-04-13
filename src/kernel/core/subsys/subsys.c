@@ -24,6 +24,10 @@
 #include "kernel/core/subsys/sos_bridge.h"
 #endif
 
+#ifdef PPAP_ENABLE_MSDOS
+#include "kernel/core/subsys/dos_bridge.h"
+#endif
+
 /* Statically initialised name arrays — shared via subsys_info.h */
 const char *subsys_names[SUBSYS_MAX] = {
     [SUBSYS_PPAP] = "ppap",
@@ -35,6 +39,9 @@ const char *subsys_names[SUBSYS_MAX] = {
 #endif
 #ifdef PPAP_ENABLE_SOS
     [SUBSYS_SOS] = "sos",
+#endif
+#ifdef PPAP_ENABLE_MSDOS
+    [SUBSYS_MSDOS] = "msdos",
 #endif
 };
 
@@ -58,6 +65,9 @@ const subsys_ops_t *subsys_ops_table[SUBSYS_MAX] = {
 #endif
 #ifdef PPAP_ENABLE_SOS
     [SUBSYS_SOS] = &sos_subsys_ops,
+#endif
+#ifdef PPAP_ENABLE_MSDOS
+    [SUBSYS_MSDOS] = &msdos_subsys_ops,
 #endif
 };
 

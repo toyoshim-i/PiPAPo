@@ -18,8 +18,8 @@ VFS_ELF="$4"
 #   CS=????+         VFS  .text                      (64 KB segment)
 #
 CORE_BASE_HEX=0x0600
-CORE_DS0_LIMIT_HEX=0xAC00        # Core image must end before VFS data
-VFS_DATA_BASE_HEX=0xAC00
+CORE_DS0_LIMIT_HEX=0xB400        # Core image must end before VFS data
+VFS_DATA_BASE_HEX=0xB400
 VFS_DATA_LIMIT_HEX=0xE380        # VFS data must end before kernel stacks
 KSTACK_BASE_HEX=0xE380
 KSTACK_LIMIT_HEX=0x10000
@@ -62,13 +62,13 @@ vfs_data_end_hex="$(lookup_symbol "$VFS_ELF" "__vfs_data_end")"
 core_cs_used=$((0x$core_cs_end_hex - CORE_BASE_HEX))
 
 # Core total image (.text + .rodata + .data + .bss) in DS=0.  Must fit
-# between 0x0600 and 0xAC00 (the VFS data reservation starts at 0xAC00).
+# between 0x0600 and 0xB400 (the VFS data reservation starts at 0xB400).
 core_ds_used=$((0x$core_bss_end_hex - CORE_BASE_HEX))
 
 # VFS .text in its runtime far CS.  Must fit in 64 KB.
 vfs_cs_used=$((0x$vfs_code_end_hex))
 
-# VFS .rodata + .data + .bss in DS=0.  Must fit between 0xAC00 and 0xE380
+# VFS .rodata + .data + .bss in DS=0.  Must fit between 0xB400 and 0xE380
 # (the kernel stack reservation starts at 0xE000).
 vfs_ds_used=$((0x$vfs_data_end_hex - 0x$vfs_data_start_hex))
 
@@ -81,13 +81,13 @@ echo "=== PC/XT Segment Usage (vs. linker reservations) ==="
 printf "  core CS  (.text+.rodata):  %6d / %5d bytes (%s)   [CS 64 KB]\n" \
   "$core_cs_used" "$CS_SEGMENT_LIMIT" \
   "$(format_pct "$core_cs_used" "$CS_SEGMENT_LIMIT")"
-printf "  core image in DS=0:        %6d / %5d bytes (%s)   [0x0600..0xAC00]\n" \
+printf "  core image in DS=0:        %6d / %5d bytes (%s)   [0x0600..0xB400]\n" \
   "$core_ds_used" "$CORE_DS0_RESERVED" \
   "$(format_pct "$core_ds_used" "$CORE_DS0_RESERVED")"
 printf "  VFS  CS  (.text):          %6d / %5d bytes (%s)   [CS 64 KB]\n" \
   "$vfs_cs_used" "$CS_SEGMENT_LIMIT" \
   "$(format_pct "$vfs_cs_used" "$CS_SEGMENT_LIMIT")"
-printf "  VFS  data in DS=0:         %6d / %5d bytes (%s)   [0xAC00..0xE380]\n" \
+printf "  VFS  data in DS=0:         %6d / %5d bytes (%s)   [0xB400..0xE380]\n" \
   "$vfs_ds_used" "$VFS_DATA_RESERVED" \
   "$(format_pct "$vfs_ds_used" "$VFS_DATA_RESERVED")"
 printf "  kernel stacks (fixed):     %6d         bytes               [0xE380..0xFFFF]\n" \

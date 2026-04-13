@@ -13,6 +13,7 @@
 #define SUBSYS_HUMAN68K 1
 #define SUBSYS_CPM 2
 #define SUBSYS_SOS 3
+#define SUBSYS_MSDOS 4
 
 extern const char *subsys_names[SUBSYS_MAX];
 

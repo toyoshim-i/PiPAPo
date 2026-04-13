@@ -13,6 +13,10 @@
 extern void i16_timer_isr(void);
 /* Defined in trap.S */
 extern void i16_syscall_isr(void);
+#ifdef PPAP_ENABLE_MSDOS
+/* Defined in dos_trap.S */
+extern void i16_dos_isr(void);
+#endif
 
 /* Saved BIOS INT 08h handler — written by timer_init() before
  * installing our ISR and used by i16_bios_timer_chain().
@@ -102,6 +106,11 @@ void timer_init(void)
 
   /* Install syscall handler at INT 30h */
   set_ivt(0x30, i16_syscall_isr, core_cs);
+
+#ifdef PPAP_ENABLE_MSDOS
+  /* Install DOS INT 21h handler */
+  set_ivt(0x21, i16_dos_isr, core_cs);
+#endif
 
   /* Interrupts will be enabled by the caller */
 }
