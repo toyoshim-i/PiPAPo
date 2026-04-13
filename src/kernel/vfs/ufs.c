@@ -632,12 +632,17 @@ static long ufs_write(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
 
   ufs_priv_t *priv = (ufs_priv_t *)vn->fs_priv;
 
-  ufs_inode_t inode;
-  int rc = ufs_read_inode(priv, vn->ino, &inode);
-  if (rc < 0) return (long)rc;
+  ufs_inode_t *inode = vfs_scratch_alloc();
+  if (!inode) return -(long)ENOMEM;
+  int rc = ufs_read_inode(priv, vn->ino, inode);
+  if (rc < 0) {
+    vfs_scratch_free(inode);
+    return (long)rc;
+  }
 
   uint32_t remaining = (uint32_t)n;
   uint32_t pos = off;
+  long ret;
 
   while (remaining > 0) {
     uint32_t logical = pos / UFS_BLOCK_SIZE;
@@ -647,36 +652,51 @@ static long ufs_write(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
 
     /* Ensure the logical block is allocated */
     uint32_t phys;
-    rc = ufs_block_map(priv, &inode, logical, &phys);
-    if (rc < 0) return (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
+    rc = ufs_block_map(priv, inode, logical, &phys);
+    if (rc < 0) {
+      ret = (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
+      goto out;
+    }
 
     if (phys == 0) {
-      /* Allocate a new data block */
       rc = ufs_alloc_block(priv, &phys);
-      if (rc < 0) return (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
+      if (rc < 0) {
+        ret = (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
+        goto out;
+      }
       rc = ufs_zero_block(priv, phys);
-      if (rc < 0) return (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
-      rc = ufs_block_set(priv, &inode, logical, phys);
-      if (rc < 0) return (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
+      if (rc < 0) {
+        ret = (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
+        goto out;
+      }
+      rc = ufs_block_set(priv, inode, logical, phys);
+      if (rc < 0) {
+        ret = (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
+        goto out;
+      }
     }
 
     uint32_t avail = BLKDEV_SECTOR_SIZE - off_in_sec;
     if (avail > remaining) avail = remaining;
 
     if (off_in_sec != 0 || avail < BLKDEV_SECTOR_SIZE) {
-      /* Partial sector: read-modify-write */
       rc = ufs_read_sector(priv, phys + sec_in_blk);
-      if (rc < 0) return (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
+      if (rc < 0) {
+        ret = (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
+        goto out;
+      }
       mod_core.mem_region_page_read(page, page_off, &ufs_buf[off_in_sec],
                                     (uint16_t)avail);
     } else {
-      /* Full sector: write directly */
       mod_core.mem_region_page_read(page, page_off, ufs_buf,
                                     BLKDEV_SECTOR_SIZE);
     }
 
     rc = ufs_write_sector(priv, phys + sec_in_blk);
-    if (rc < 0) return (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
+    if (rc < 0) {
+      ret = (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
+      goto out;
+    }
 
     page_off += (uint16_t)avail;
     pos += avail;
@@ -685,18 +705,24 @@ static long ufs_write(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
 
   /* Update file size if extended */
   uint32_t end = off + (uint32_t)(n - remaining);
-  if ((uint64_t)end > inode.i_size) {
-    inode.i_size = end;
+  if ((uint64_t)end > inode->i_size) {
+    inode->i_size = end;
     vn->size = end;
   }
 
-  /* Write inode back and sync superblock */
-  rc = ufs_write_inode(priv, vn->ino, &inode);
-  if (rc < 0) return (long)rc;
+  rc = ufs_write_inode(priv, vn->ino, inode);
+  if (rc < 0) {
+    vfs_scratch_free(inode);
+    return (long)rc;
+  }
 
   ufs_sync_super(priv);
-
+  vfs_scratch_free(inode);
   return (long)(n - remaining);
+
+out:
+  vfs_scratch_free(inode);
+  return ret;
 }
 
 /* ── ufs_readdir ──────────────────────────────────────────────────────── */
@@ -705,25 +731,35 @@ static int ufs_readdir(vnode_t *dir, struct dirent *entries, size_t max_entries,
                        uint32_t *cookie) {
   ufs_priv_t *priv = (ufs_priv_t *)dir->fs_priv;
 
-  ufs_inode_t dir_inode;
-  int rc = ufs_read_inode(priv, dir->ino, &dir_inode);
-  if (rc < 0) return rc;
+  ufs_inode_t *dir_inode = vfs_scratch_alloc();
+  if (!dir_inode) return -ENOMEM;
+  int rc = ufs_read_inode(priv, dir->ino, dir_inode);
+  if (rc < 0) {
+    vfs_scratch_free(dir_inode);
+    return rc;
+  }
 
   uint32_t nblocks =
-      ((uint32_t)dir_inode.i_size + UFS_BLOCK_SIZE - 1) / UFS_BLOCK_SIZE;
+      ((uint32_t)dir_inode->i_size + UFS_BLOCK_SIZE - 1) / UFS_BLOCK_SIZE;
   uint32_t entry_idx = 0;
   uint32_t target = *cookie;
   int count = 0;
 
   for (uint32_t b = 0; b < nblocks; b++) {
     uint32_t phys;
-    rc = ufs_block_map(priv, &dir_inode, b, &phys);
-    if (rc < 0) return rc;
+    rc = ufs_block_map(priv, dir_inode, b, &phys);
+    if (rc < 0) {
+      vfs_scratch_free(dir_inode);
+      return rc;
+    }
     if (phys == 0) continue;
 
     for (uint32_t s = 0; s < UFS_FRAGS_PER_BLK; s++) {
       rc = ufs_read_sector(priv, phys + s);
-      if (rc < 0) return rc;
+      if (rc < 0) {
+        vfs_scratch_free(dir_inode);
+        return rc;
+      }
 
       uint32_t off = 0;
       while (off + sizeof(ufs_dirent_t) <= BLKDEV_SECTOR_SIZE) {
@@ -774,17 +810,18 @@ static int ufs_readdir(vnode_t *dir, struct dirent *entries, size_t max_entries,
             default: {
               /* Fallback: read child inode (clobbers ufs_buf) */
               uint32_t child_ino = de->d_ino;
-              ufs_inode_t child;
-              if (ufs_read_inode(priv, child_ino, &child) == 0) {
-                if (S_ISDIR(child.i_mode))
+              ufs_inode_t *child = vfs_scratch_alloc();
+              if (child && ufs_read_inode(priv, child_ino, child) == 0) {
+                if (S_ISDIR(child->i_mode))
                   entries[count].d_type = DT_DIR;
-                else if (S_ISLNK(child.i_mode))
+                else if (S_ISLNK(child->i_mode))
                   entries[count].d_type = DT_LNK;
                 else
                   entries[count].d_type = DT_REG;
               } else {
                 entries[count].d_type = DT_REG;
               }
+              vfs_scratch_free(child);
               /* Re-read directory sector (was clobbered) */
               rc = ufs_read_sector(priv, phys + s);
               if (rc < 0) goto done;
@@ -802,6 +839,7 @@ static int ufs_readdir(vnode_t *dir, struct dirent *entries, size_t max_entries,
   }
 
 done:
+  vfs_scratch_free(dir_inode);
   *cookie = entry_idx;
   return count;
 }
@@ -813,9 +851,13 @@ done:
  * found, extends the directory by one block.  Clobbers ufs_buf. */
 static int ufs_dir_add_entry(ufs_priv_t *priv, vnode_t *dir, const char *name,
                              uint32_t child_ino) {
-  ufs_inode_t dir_inode;
-  int rc = ufs_read_inode(priv, dir->ino, &dir_inode);
-  if (rc < 0) return rc;
+  ufs_inode_t *dir_inode = vfs_scratch_alloc();
+  if (!dir_inode) return -ENOMEM;
+  int rc = ufs_read_inode(priv, dir->ino, dir_inode);
+  if (rc < 0) {
+    vfs_scratch_free(dir_inode);
+    return rc;
+  }
 
   /* Compute name length and minimum record size for the new entry */
   uint8_t namlen = 0;
@@ -823,18 +865,24 @@ static int ufs_dir_add_entry(ufs_priv_t *priv, vnode_t *dir, const char *name,
   uint16_t new_min = UFS_DIRENT_MINREC(namlen);
 
   uint32_t nblocks =
-      ((uint32_t)dir_inode.i_size + UFS_BLOCK_SIZE - 1) / UFS_BLOCK_SIZE;
+      ((uint32_t)dir_inode->i_size + UFS_BLOCK_SIZE - 1) / UFS_BLOCK_SIZE;
 
   /* Scan existing sectors for a deleted or splittable slot */
   for (uint32_t b = 0; b < nblocks; b++) {
     uint32_t phys;
-    rc = ufs_block_map(priv, &dir_inode, b, &phys);
-    if (rc < 0) return rc;
+    rc = ufs_block_map(priv, dir_inode, b, &phys);
+    if (rc < 0) {
+      vfs_scratch_free(dir_inode);
+      return rc;
+    }
     if (phys == 0) continue;
 
     for (uint32_t s = 0; s < UFS_FRAGS_PER_BLK; s++) {
       rc = ufs_read_sector(priv, phys + s);
-      if (rc < 0) return rc;
+      if (rc < 0) {
+        vfs_scratch_free(dir_inode);
+        return rc;
+      }
 
       uint32_t off = 0;
       while (off + sizeof(ufs_dirent_t) <= BLKDEV_SECTOR_SIZE) {
@@ -848,6 +896,7 @@ static int ufs_dir_add_entry(ufs_priv_t *priv, vnode_t *dir, const char *name,
           de->d_namlen = namlen;
           char *dn = (char *)&ufs_buf[off + sizeof(ufs_dirent_t)];
           for (uint8_t i = 0; i < namlen; i++) dn[i] = name[i];
+          vfs_scratch_free(dir_inode);
           return ufs_write_sector(priv, phys + s);
         }
 
@@ -865,6 +914,7 @@ static int ufs_dir_add_entry(ufs_priv_t *priv, vnode_t *dir, const char *name,
             ne->d_namlen = namlen;
             char *dn = (char *)&ufs_buf[off + min_here + sizeof(ufs_dirent_t)];
             for (uint8_t i = 0; i < namlen; i++) dn[i] = name[i];
+            vfs_scratch_free(dir_inode);
             return ufs_write_sector(priv, phys + s);
           }
         }
@@ -877,10 +927,16 @@ static int ufs_dir_add_entry(ufs_priv_t *priv, vnode_t *dir, const char *name,
   /* No room — extend directory by one block */
   uint32_t new_frag;
   rc = ufs_alloc_block(priv, &new_frag);
-  if (rc < 0) return rc;
+  if (rc < 0) {
+    vfs_scratch_free(dir_inode);
+    return rc;
+  }
 
   rc = ufs_zero_block(priv, new_frag);
-  if (rc < 0) return rc;
+  if (rc < 0) {
+    vfs_scratch_free(dir_inode);
+    return rc;
+  }
 
   /* Sector 0: new entry with reclen=DIRBLK_SIZE (fills chunk) */
   __builtin_memset(ufs_buf, 0, BLKDEV_SECTOR_SIZE);
@@ -894,7 +950,10 @@ static int ufs_dir_add_entry(ufs_priv_t *priv, vnode_t *dir, const char *name,
     for (uint8_t i = 0; i < namlen; i++) dn[i] = name[i];
   }
   rc = ufs_write_sector(priv, new_frag);
-  if (rc < 0) return rc;
+  if (rc < 0) {
+    vfs_scratch_free(dir_inode);
+    return rc;
+  }
 
   /* Sectors 1-7: placeholder chunks (ino=0, reclen=512) */
   __builtin_memset(ufs_buf, 0, BLKDEV_SECTOR_SIZE);
@@ -903,18 +962,25 @@ static int ufs_dir_add_entry(ufs_priv_t *priv, vnode_t *dir, const char *name,
   ph->d_reclen = UFS_DIRBLK_SIZE;
   for (uint32_t s = 1; s < UFS_FRAGS_PER_BLK; s++) {
     rc = ufs_write_sector(priv, new_frag + s);
-    if (rc < 0) return rc;
+    if (rc < 0) {
+      vfs_scratch_free(dir_inode);
+      return rc;
+    }
   }
 
   /* Link new block into directory inode and update size */
-  rc = ufs_block_set(priv, &dir_inode, nblocks, new_frag);
+  rc = ufs_block_set(priv, dir_inode, nblocks, new_frag);
+  if (rc < 0) {
+    vfs_scratch_free(dir_inode);
+    return rc;
+  }
+
+  dir_inode->i_size += UFS_BLOCK_SIZE;
+  rc = ufs_write_inode(priv, dir->ino, dir_inode);
+  dir->size = (uint32_t)dir_inode->i_size;
+  vfs_scratch_free(dir_inode);
   if (rc < 0) return rc;
 
-  dir_inode.i_size += UFS_BLOCK_SIZE;
-  rc = ufs_write_inode(priv, dir->ino, &dir_inode);
-  if (rc < 0) return rc;
-
-  dir->size = (uint32_t)dir_inode.i_size;
   return 0;
 }
 
@@ -930,13 +996,18 @@ static int ufs_create(vnode_t *dir, const char *name, uint32_t mode,
   if (rc < 0) return rc;
 
   /* Initialize the inode */
-  ufs_inode_t inode;
-  __builtin_memset(&inode, 0, sizeof(inode));
-  inode.i_mode = (uint16_t)(S_IFREG | (mode & 0777u));
-  inode.i_nlink = 1;
+  ufs_inode_t *inode = vfs_scratch_alloc();
+  if (!inode) {
+    ufs_free_inode(priv, new_ino);
+    return -ENOMEM;
+  }
+  __builtin_memset(inode, 0, sizeof(*inode));
+  inode->i_mode = (uint16_t)(S_IFREG | (mode & 0777u));
+  inode->i_nlink = 1;
 
-  rc = ufs_write_inode(priv, new_ino, &inode);
+  rc = ufs_write_inode(priv, new_ino, inode);
   if (rc < 0) {
+    vfs_scratch_free(inode);
     ufs_free_inode(priv, new_ino);
     return rc;
   }
@@ -944,6 +1015,7 @@ static int ufs_create(vnode_t *dir, const char *name, uint32_t mode,
   /* Add entry to parent directory */
   rc = ufs_dir_add_entry(priv, dir, name, new_ino);
   if (rc < 0) {
+    vfs_scratch_free(inode);
     ufs_free_inode(priv, new_ino);
     return rc;
   }
@@ -951,7 +1023,8 @@ static int ufs_create(vnode_t *dir, const char *name, uint32_t mode,
   ufs_sync_super(priv);
 
   /* Allocate and return vnode */
-  vnode_t *vn = ufs_vnode_from_inode(dir->mount, new_ino, &inode);
+  vnode_t *vn = ufs_vnode_from_inode(dir->mount, new_ino, inode);
+  vfs_scratch_free(inode);
   if (!vn) return -ENOMEM;
 
   *result = vn;
@@ -964,25 +1037,35 @@ static int ufs_create(vnode_t *dir, const char *name, uint32_t mode,
  * number of the removed entry.  Clobbers ufs_buf. */
 static int ufs_dir_remove_entry(ufs_priv_t *priv, vnode_t *dir,
                                 const char *name, uint32_t *removed_ino) {
-  ufs_inode_t dir_inode;
-  int rc = ufs_read_inode(priv, dir->ino, &dir_inode);
-  if (rc < 0) return rc;
+  ufs_inode_t *dir_inode = vfs_scratch_alloc();
+  if (!dir_inode) return -ENOMEM;
+  int rc = ufs_read_inode(priv, dir->ino, dir_inode);
+  if (rc < 0) {
+    vfs_scratch_free(dir_inode);
+    return rc;
+  }
 
   uint8_t namlen = 0;
   while (name[namlen] && namlen < UFS_NAME_MAX) namlen++;
 
   uint32_t nblocks =
-      ((uint32_t)dir_inode.i_size + UFS_BLOCK_SIZE - 1) / UFS_BLOCK_SIZE;
+      ((uint32_t)dir_inode->i_size + UFS_BLOCK_SIZE - 1) / UFS_BLOCK_SIZE;
 
   for (uint32_t b = 0; b < nblocks; b++) {
     uint32_t phys;
-    rc = ufs_block_map(priv, &dir_inode, b, &phys);
-    if (rc < 0) return rc;
+    rc = ufs_block_map(priv, dir_inode, b, &phys);
+    if (rc < 0) {
+      vfs_scratch_free(dir_inode);
+      return rc;
+    }
     if (phys == 0) continue;
 
     for (uint32_t s = 0; s < UFS_FRAGS_PER_BLK; s++) {
       rc = ufs_read_sector(priv, phys + s);
-      if (rc < 0) return rc;
+      if (rc < 0) {
+        vfs_scratch_free(dir_inode);
+        return rc;
+      }
 
       uint32_t off = 0;
       while (off + sizeof(ufs_dirent_t) <= BLKDEV_SECTOR_SIZE) {
@@ -996,6 +1079,7 @@ static int ufs_dir_remove_entry(ufs_priv_t *priv, vnode_t *dir,
           if (i == namlen) {
             *removed_ino = de->d_ino;
             de->d_ino = 0;
+            vfs_scratch_free(dir_inode);
             return ufs_write_sector(priv, phys + s);
           }
         }
@@ -1003,6 +1087,7 @@ static int ufs_dir_remove_entry(ufs_priv_t *priv, vnode_t *dir,
       }
     }
   }
+  vfs_scratch_free(dir_inode);
   return -ENOENT;
 }
 
@@ -1011,22 +1096,32 @@ static int ufs_dir_remove_entry(ufs_priv_t *priv, vnode_t *dir,
 /* Check if a directory has no entries beyond "." and "..".
  * Returns 1 if empty, 0 if non-empty, negative on error. */
 static int ufs_dir_is_empty(ufs_priv_t *priv, uint32_t dir_ino) {
-  ufs_inode_t dir_inode;
-  int rc = ufs_read_inode(priv, dir_ino, &dir_inode);
-  if (rc < 0) return rc;
+  ufs_inode_t *dir_inode = vfs_scratch_alloc();
+  if (!dir_inode) return -ENOMEM;
+  int rc = ufs_read_inode(priv, dir_ino, dir_inode);
+  if (rc < 0) {
+    vfs_scratch_free(dir_inode);
+    return rc;
+  }
 
   uint32_t nblocks =
-      ((uint32_t)dir_inode.i_size + UFS_BLOCK_SIZE - 1) / UFS_BLOCK_SIZE;
+      ((uint32_t)dir_inode->i_size + UFS_BLOCK_SIZE - 1) / UFS_BLOCK_SIZE;
 
   for (uint32_t b = 0; b < nblocks; b++) {
     uint32_t phys;
-    rc = ufs_block_map(priv, &dir_inode, b, &phys);
-    if (rc < 0) return rc;
+    rc = ufs_block_map(priv, dir_inode, b, &phys);
+    if (rc < 0) {
+      vfs_scratch_free(dir_inode);
+      return rc;
+    }
     if (phys == 0) continue;
 
     for (uint32_t s = 0; s < UFS_FRAGS_PER_BLK; s++) {
       rc = ufs_read_sector(priv, phys + s);
-      if (rc < 0) return rc;
+      if (rc < 0) {
+        vfs_scratch_free(dir_inode);
+        return rc;
+      }
 
       uint32_t off = 0;
       while (off + sizeof(ufs_dirent_t) <= BLKDEV_SECTOR_SIZE) {
@@ -1048,10 +1143,12 @@ static int ufs_dir_is_empty(ufs_priv_t *priv, uint32_t dir_ino) {
           off += de->d_reclen;
           continue;
         }
+        vfs_scratch_free(dir_inode);
         return 0; /* non-empty */
       }
     }
   }
+  vfs_scratch_free(dir_inode);
   return 1; /* empty */
 }
 
@@ -1120,27 +1217,43 @@ static int ufs_mkdir(vnode_t *dir, const char *name, uint32_t mode) {
     }
   }
 
-  /* Initialize and write the new directory inode */
-  ufs_inode_t inode;
-  __builtin_memset(&inode, 0, sizeof(inode));
-  inode.i_mode = (uint16_t)(S_IFDIR | (mode & 0777u));
-  inode.i_nlink = 2; /* "." from self + entry from parent */
-  inode.i_size = UFS_BLOCK_SIZE;
-  inode.i_direct[0] = data_frag;
+  /* Initialize and write the new directory inode.  Reuse a single
+   * scratch buffer for both the new inode and the parent update. */
+  ufs_inode_t *inode = vfs_scratch_alloc();
+  if (!inode) {
+    ufs_free_block(priv, data_frag);
+    ufs_free_inode(priv, new_ino);
+    return -ENOMEM;
+  }
+  __builtin_memset(inode, 0, sizeof(*inode));
+  inode->i_mode = (uint16_t)(S_IFDIR | (mode & 0777u));
+  inode->i_nlink = 2; /* "." from self + entry from parent */
+  inode->i_size = UFS_BLOCK_SIZE;
+  inode->i_direct[0] = data_frag;
 
-  rc = ufs_write_inode(priv, new_ino, &inode);
-  if (rc < 0) return rc;
+  rc = ufs_write_inode(priv, new_ino, inode);
+  if (rc < 0) {
+    vfs_scratch_free(inode);
+    return rc;
+  }
 
   /* Add entry in parent directory */
   rc = ufs_dir_add_entry(priv, dir, name, new_ino);
-  if (rc < 0) return rc;
+  if (rc < 0) {
+    vfs_scratch_free(inode);
+    return rc;
+  }
 
-  /* Increment parent's nlink (for ".." backlink) */
-  ufs_inode_t parent_inode;
-  rc = ufs_read_inode(priv, dir->ino, &parent_inode);
-  if (rc < 0) return rc;
-  parent_inode.i_nlink++;
-  rc = ufs_write_inode(priv, dir->ino, &parent_inode);
+  /* Increment parent's nlink (for ".." backlink).
+   * Reuse the same scratch buffer — new inode data no longer needed. */
+  rc = ufs_read_inode(priv, dir->ino, inode);
+  if (rc < 0) {
+    vfs_scratch_free(inode);
+    return rc;
+  }
+  inode->i_nlink++;
+  rc = ufs_write_inode(priv, dir->ino, inode);
+  vfs_scratch_free(inode);
   if (rc < 0) return rc;
 
   ufs_sync_super(priv);
@@ -1154,62 +1267,61 @@ static int ufs_truncate(vnode_t *vn, uint32_t length) {
 
   ufs_priv_t *priv = (ufs_priv_t *)vn->fs_priv;
 
-  ufs_inode_t inode;
-  int rc = ufs_read_inode(priv, vn->ino, &inode);
-  if (rc < 0) return rc;
+  ufs_inode_t *inode = vfs_scratch_alloc();
+  if (!inode) return -ENOMEM;
+  int rc = ufs_read_inode(priv, vn->ino, inode);
+  if (rc < 0) {
+    vfs_scratch_free(inode);
+    return rc;
+  }
 
-  if ((uint64_t)length >= inode.i_size) {
+  if ((uint64_t)length >= inode->i_size) {
     /* Extend (or no change) — just update size */
-    inode.i_size = length;
+    inode->i_size = length;
   } else if (length == 0) {
     /* Truncate to zero — free all blocks */
     for (int i = 0; i < UFS_DIRECT_BLOCKS; i++) {
-      if (inode.i_direct[i] != 0) {
-        ufs_free_block(priv, inode.i_direct[i]);
-        inode.i_direct[i] = 0;
+      if (inode->i_direct[i] != 0) {
+        ufs_free_block(priv, inode->i_direct[i]);
+        inode->i_direct[i] = 0;
       }
     }
 
-    if (inode.i_ib[0] != 0) {
-      /* Free blocks pointed to by the indirect block. */
+    if (inode->i_ib[0] != 0) {
       for (uint32_t s = 0; s < UFS_FRAGS_PER_BLK; s++) {
-        rc = ufs_read_sector(priv, inode.i_ib[0] + s);
+        rc = ufs_read_sector(priv, inode->i_ib[0] + s);
         if (rc < 0) break;
         ufs_free_indirect_ptrs(priv, 0, BLKDEV_SECTOR_SIZE / sizeof(uint32_t));
       }
-      ufs_free_block(priv, inode.i_ib[0]);
-      inode.i_ib[0] = 0;
+      ufs_free_block(priv, inode->i_ib[0]);
+      inode->i_ib[0] = 0;
     }
-    inode.i_size = 0;
+    inode->i_size = 0;
   } else {
     /* General shrink: free blocks beyond the new length */
     uint32_t keep_blocks = (length + UFS_BLOCK_SIZE - 1) / UFS_BLOCK_SIZE;
 
-    /* Free direct blocks beyond keep_blocks */
     for (uint32_t i = keep_blocks; i < UFS_DIRECT_BLOCKS; i++) {
-      if (inode.i_direct[i] != 0) {
-        ufs_free_block(priv, inode.i_direct[i]);
-        inode.i_direct[i] = 0;
+      if (inode->i_direct[i] != 0) {
+        ufs_free_block(priv, inode->i_direct[i]);
+        inode->i_direct[i] = 0;
       }
     }
 
-    /* Free indirect entries beyond keep_blocks */
-    if (inode.i_ib[0] != 0 && keep_blocks <= UFS_DIRECT_BLOCKS) {
-      /* All indirect blocks should be freed */
+    if (inode->i_ib[0] != 0 && keep_blocks <= UFS_DIRECT_BLOCKS) {
       for (uint32_t s = 0; s < UFS_FRAGS_PER_BLK; s++) {
-        rc = ufs_read_sector(priv, inode.i_ib[0] + s);
+        rc = ufs_read_sector(priv, inode->i_ib[0] + s);
         if (rc < 0) break;
         ufs_free_indirect_ptrs(priv, 0, BLKDEV_SECTOR_SIZE / sizeof(uint32_t));
       }
-      ufs_free_block(priv, inode.i_ib[0]);
-      inode.i_ib[0] = 0;
-    } else if (inode.i_ib[0] != 0 && keep_blocks > UFS_DIRECT_BLOCKS) {
-      /* Free only indirect entries beyond keep_blocks */
+      ufs_free_block(priv, inode->i_ib[0]);
+      inode->i_ib[0] = 0;
+    } else if (inode->i_ib[0] != 0 && keep_blocks > UFS_DIRECT_BLOCKS) {
       uint32_t first_free_ind = keep_blocks - UFS_DIRECT_BLOCKS;
       uint32_t ptrs_per_sec = BLKDEV_SECTOR_SIZE / sizeof(uint32_t);
       for (uint32_t s = first_free_ind / ptrs_per_sec; s < UFS_FRAGS_PER_BLK;
            s++) {
-        rc = ufs_read_sector(priv, inode.i_ib[0] + s);
+        rc = ufs_read_sector(priv, inode->i_ib[0] + s);
         if (rc < 0) break;
         uint32_t start = (s == first_free_ind / ptrs_per_sec)
                              ? first_free_ind % ptrs_per_sec
@@ -1217,11 +1329,12 @@ static int ufs_truncate(vnode_t *vn, uint32_t length) {
         ufs_free_indirect_ptrs(priv, start, ptrs_per_sec);
       }
     }
-    inode.i_size = length;
+    inode->i_size = length;
   }
 
-  vn->size = (uint32_t)inode.i_size;
-  rc = ufs_write_inode(priv, vn->ino, &inode);
+  vn->size = (uint32_t)inode->i_size;
+  rc = ufs_write_inode(priv, vn->ino, inode);
+  vfs_scratch_free(inode);
   if (rc < 0) return rc;
 
   ufs_sync_super(priv);
@@ -1238,58 +1351,65 @@ static int ufs_unlink(vnode_t *dir, const char *name) {
   int rc = ufs_dir_remove_entry(priv, dir, name, &child_ino);
   if (rc < 0) return rc;
 
-  /* Read child inode */
-  ufs_inode_t child;
-  rc = ufs_read_inode(priv, child_ino, &child);
-  if (rc < 0) return rc;
+  /* Read child inode — use single scratch buffer, reused for parent */
+  ufs_inode_t *child = vfs_scratch_alloc();
+  if (!child) return -ENOMEM;
+  rc = ufs_read_inode(priv, child_ino, child);
+  if (rc < 0) {
+    vfs_scratch_free(child);
+    return rc;
+  }
 
   /* If directory: check it's empty, decrement parent nlink */
-  if (S_ISDIR(child.i_mode)) {
+  if (S_ISDIR(child->i_mode)) {
     int empty = ufs_dir_is_empty(priv, child_ino);
     if (empty <= 0) {
-      /* Not empty or error — re-add the entry (best effort) */
       ufs_dir_add_entry(priv, dir, name, child_ino);
+      vfs_scratch_free(child);
       return (empty == 0) ? -ENOTEMPTY : empty;
     }
 
-    /* Decrement parent's nlink (removing ".." backlink) */
-    ufs_inode_t parent;
-    rc = ufs_read_inode(priv, dir->ino, &parent);
-    if (rc == 0 && parent.i_nlink > 0) {
-      parent.i_nlink--;
-      ufs_write_inode(priv, dir->ino, &parent);
+    /* Decrement parent's nlink.  child is still needed below, so
+     * allocate a second scratch for the parent inode. */
+    ufs_inode_t *parent = vfs_scratch_alloc();
+    if (parent) {
+      rc = ufs_read_inode(priv, dir->ino, parent);
+      if (rc == 0 && parent->i_nlink > 0) {
+        parent->i_nlink--;
+        ufs_write_inode(priv, dir->ino, parent);
+      }
+      vfs_scratch_free(parent);
     }
   }
 
-  /* Decrement link count */
-  if (child.i_nlink > 0) child.i_nlink--;
+  if (child->i_nlink > 0) child->i_nlink--;
 
-  if (child.i_nlink == 0) {
-    /* Free all data blocks */
+  if (child->i_nlink == 0) {
     for (int i = 0; i < UFS_DIRECT_BLOCKS; i++) {
-      if (child.i_direct[i] != 0) {
-        ufs_free_block(priv, child.i_direct[i]);
-        child.i_direct[i] = 0;
+      if (child->i_direct[i] != 0) {
+        ufs_free_block(priv, child->i_direct[i]);
+        child->i_direct[i] = 0;
       }
     }
 
-    if (child.i_ib[0] != 0) {
+    if (child->i_ib[0] != 0) {
       for (uint32_t s = 0; s < UFS_FRAGS_PER_BLK; s++) {
-        rc = ufs_read_sector(priv, child.i_ib[0] + s);
+        rc = ufs_read_sector(priv, child->i_ib[0] + s);
         if (rc < 0) break;
         ufs_free_indirect_ptrs(priv, 0, BLKDEV_SECTOR_SIZE / sizeof(uint32_t));
       }
-      ufs_free_block(priv, child.i_ib[0]);
-      child.i_ib[0] = 0;
+      ufs_free_block(priv, child->i_ib[0]);
+      child->i_ib[0] = 0;
     }
 
-    child.i_size = 0;
-    ufs_write_inode(priv, child_ino, &child);
+    child->i_size = 0;
+    ufs_write_inode(priv, child_ino, child);
     ufs_free_inode(priv, child_ino);
   } else {
-    ufs_write_inode(priv, child_ino, &child);
+    ufs_write_inode(priv, child_ino, child);
   }
 
+  vfs_scratch_free(child);
   ufs_sync_super(priv);
   return 0;
 }
@@ -1299,14 +1419,19 @@ static int ufs_unlink(vnode_t *dir, const char *name) {
 static int ufs_stat(vnode_t *vn, struct stat *st) {
   ufs_priv_t *priv = (ufs_priv_t *)vn->fs_priv;
 
-  ufs_inode_t inode;
-  int rc = ufs_read_inode(priv, vn->ino, &inode);
-  if (rc < 0) return rc;
+  ufs_inode_t *inode = vfs_scratch_alloc();
+  if (!inode) return -ENOMEM;
+  int rc = ufs_read_inode(priv, vn->ino, inode);
+  if (rc < 0) {
+    vfs_scratch_free(inode);
+    return rc;
+  }
 
   st->st_ino = vn->ino;
-  st->st_mode = inode.i_mode;
-  st->st_nlink = inode.i_nlink;
-  st->st_size = (uint32_t)inode.i_size;
+  st->st_mode = inode->i_mode;
+  st->st_nlink = inode->i_nlink;
+  st->st_size = (uint32_t)inode->i_size;
+  vfs_scratch_free(inode);
   return 0;
 }
 
@@ -1317,24 +1442,31 @@ static long ufs_readlink(vnode_t *vn, char *buf, size_t bufsiz) {
 
   ufs_priv_t *priv = (ufs_priv_t *)vn->fs_priv;
 
-  ufs_inode_t inode;
-  int rc = ufs_read_inode(priv, vn->ino, &inode);
-  if (rc < 0) return (long)rc;
+  ufs_inode_t *inode = vfs_scratch_alloc();
+  if (!inode) return -(long)ENOMEM;
+  int rc = ufs_read_inode(priv, vn->ino, inode);
+  if (rc < 0) {
+    vfs_scratch_free(inode);
+    return (long)rc;
+  }
 
-  uint32_t len = (uint32_t)inode.i_size;
+  uint32_t len = (uint32_t)inode->i_size;
   if (len > (uint32_t)bufsiz) len = (uint32_t)bufsiz;
 
-  if (inode.i_size <= (uint64_t)UFS_FAST_SYMLINK_MAX) {
-    /* Fast symlink: data stored inline in i_direct[] */
+  if (inode->i_size <= (uint64_t)UFS_FAST_SYMLINK_MAX) {
     if (len > UFS_FAST_SYMLINK_MAX) len = UFS_FAST_SYMLINK_MAX;
-    __builtin_memcpy(buf, inode.i_direct, len);
+    __builtin_memcpy(buf, inode->i_direct, len);
+    vfs_scratch_free(inode);
     return (long)len;
   }
 
-  /* Regular symlink: data in first data block */
-  if (inode.i_direct[0] == 0) return -EIO;
+  if (inode->i_direct[0] == 0) {
+    vfs_scratch_free(inode);
+    return -EIO;
+  }
 
-  rc = ufs_read_sector(priv, inode.i_direct[0]);
+  rc = ufs_read_sector(priv, inode->i_direct[0]);
+  vfs_scratch_free(inode);
   if (rc < 0) return (long)rc;
 
   if (len > BLKDEV_SECTOR_SIZE) len = BLKDEV_SECTOR_SIZE;
