@@ -49,6 +49,7 @@ typedef struct {
   uint32_t free_inodes;   /* free inode count                            */
   uint32_t cg_freeoff;    /* byte offset of block free bitmap in CG      */
   uint32_t cg_iusedoff;   /* byte offset of inode used bitmap in CG      */
+  page_id_t scratch_page; /* out-of-segment page for large temporaries   */
 } ufs_priv_t;
 
 static ufs_priv_t ufs_priv;
@@ -90,6 +91,27 @@ static int ufs_write_sector(ufs_priv_t *priv, uint32_t abs_sector) {
   uint16_t off;
   mem_region_kbuf_to_page(ufs_buf, &page, &off);
   return priv->dev->write(priv->dev, page, off, abs_sector, 1);
+}
+
+static int ufs_free_block(ufs_priv_t *priv, uint32_t frag);
+
+/* ── Indirect block pointer freeing (via scratch page) ───────────────── */
+
+/* Free all non-zero block pointers in ufs_buf.  Copies ufs_buf to the
+ * out-of-segment scratch page first because ufs_free_block clobbers
+ * ufs_buf.  Saves 512 bytes of kernel stack per call site compared to
+ * the former `uint32_t saved[128]` stack array. */
+static void ufs_free_indirect_ptrs(ufs_priv_t *priv, uint32_t start,
+                                   uint32_t count) {
+  mod_core.mem_region_page_write(priv->scratch_page, 0, ufs_buf,
+                                 BLKDEV_SECTOR_SIZE);
+  for (uint32_t j = start; j < count; j++) {
+    uint32_t ptr;
+    mod_core.mem_region_page_read(priv->scratch_page,
+                                  (uint16_t)(j * sizeof(uint32_t)), &ptr,
+                                  sizeof(ptr));
+    if (ptr != 0) ufs_free_block(priv, ptr);
+  }
 }
 
 /* ── Inode I/O ────────────────────────────────────────────────────────── */
@@ -416,6 +438,17 @@ static int ufs_mount(mount_entry_t *mnt, const void *dev_data) {
   if (!dev) return -EINVAL;
 
   ufs_priv.dev = dev;
+
+  /* Allocate a scratch page for large temporaries (indirect block
+   * pointer arrays).  Lives outside the DS=0 segment on i16. */
+  {
+    proc_image_segment_t scratch_seg;
+    if (mod_core.mem_region_alloc(&scratch_seg, PPAP_MEM_RAM_DATA, PAGE_SIZE,
+                                  0) == 0)
+      ufs_priv.scratch_page = scratch_seg.base_page;
+    else
+      ufs_priv.scratch_page = PAGE_ID_INVALID;
+  }
 
   /* Read SB sector (sector 16) and extract layout parameters */
   int rc = ufs_read_sector(&ufs_priv, UFS_SB_SECTOR);
@@ -1142,11 +1175,7 @@ static int ufs_truncate(vnode_t *vn, uint32_t length) {
       for (uint32_t s = 0; s < UFS_FRAGS_PER_BLK; s++) {
         rc = ufs_read_sector(priv, inode.i_ib[0] + s);
         if (rc < 0) break;
-        uint32_t saved[BLKDEV_SECTOR_SIZE / sizeof(uint32_t)];
-        __builtin_memcpy(saved, ufs_buf, BLKDEV_SECTOR_SIZE);
-        for (uint32_t j = 0; j < BLKDEV_SECTOR_SIZE / sizeof(uint32_t); j++) {
-          if (saved[j] != 0) ufs_free_block(priv, saved[j]);
-        }
+        ufs_free_indirect_ptrs(priv, 0, BLKDEV_SECTOR_SIZE / sizeof(uint32_t));
       }
       ufs_free_block(priv, inode.i_ib[0]);
       inode.i_ib[0] = 0;
@@ -1170,11 +1199,7 @@ static int ufs_truncate(vnode_t *vn, uint32_t length) {
       for (uint32_t s = 0; s < UFS_FRAGS_PER_BLK; s++) {
         rc = ufs_read_sector(priv, inode.i_ib[0] + s);
         if (rc < 0) break;
-        uint32_t saved[BLKDEV_SECTOR_SIZE / sizeof(uint32_t)];
-        __builtin_memcpy(saved, ufs_buf, BLKDEV_SECTOR_SIZE);
-        for (uint32_t j = 0; j < BLKDEV_SECTOR_SIZE / sizeof(uint32_t); j++) {
-          if (saved[j] != 0) ufs_free_block(priv, saved[j]);
-        }
+        ufs_free_indirect_ptrs(priv, 0, BLKDEV_SECTOR_SIZE / sizeof(uint32_t));
       }
       ufs_free_block(priv, inode.i_ib[0]);
       inode.i_ib[0] = 0;
@@ -1186,14 +1211,10 @@ static int ufs_truncate(vnode_t *vn, uint32_t length) {
            s++) {
         rc = ufs_read_sector(priv, inode.i_ib[0] + s);
         if (rc < 0) break;
-        uint32_t saved[BLKDEV_SECTOR_SIZE / sizeof(uint32_t)];
-        __builtin_memcpy(saved, ufs_buf, BLKDEV_SECTOR_SIZE);
         uint32_t start = (s == first_free_ind / ptrs_per_sec)
                              ? first_free_ind % ptrs_per_sec
                              : 0;
-        for (uint32_t j = start; j < ptrs_per_sec; j++) {
-          if (saved[j] != 0) ufs_free_block(priv, saved[j]);
-        }
+        ufs_free_indirect_ptrs(priv, start, ptrs_per_sec);
       }
     }
     inode.i_size = length;
@@ -1256,11 +1277,7 @@ static int ufs_unlink(vnode_t *dir, const char *name) {
       for (uint32_t s = 0; s < UFS_FRAGS_PER_BLK; s++) {
         rc = ufs_read_sector(priv, child.i_ib[0] + s);
         if (rc < 0) break;
-        uint32_t saved[BLKDEV_SECTOR_SIZE / sizeof(uint32_t)];
-        __builtin_memcpy(saved, ufs_buf, BLKDEV_SECTOR_SIZE);
-        for (uint32_t j = 0; j < BLKDEV_SECTOR_SIZE / sizeof(uint32_t); j++) {
-          if (saved[j] != 0) ufs_free_block(priv, saved[j]);
-        }
+        ufs_free_indirect_ptrs(priv, 0, BLKDEV_SECTOR_SIZE / sizeof(uint32_t));
       }
       ufs_free_block(priv, child.i_ib[0]);
       child.i_ib[0] = 0;
