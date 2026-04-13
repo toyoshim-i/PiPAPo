@@ -36,6 +36,14 @@ mount_entry_t vfs_mount_table[VFS_MOUNT_MAX];
 static vnode_t vnode_storage[VFS_VNODE_MAX];
 static kmem_pool_t vnode_pool;
 
+/* VFS scratch buffer pool — shared across namei, fd, ufs for temporary
+ * path strings, inode structs, and name components.  8 × 128 B = 1 KB.
+ * Worst-case simultaneous: 5 namei + 1 fd + 2 ufs = 8. */
+#define VFS_SCRATCH_POOL_SIZE 8
+static uint8_t vfs_scratch_storage[VFS_SCRATCH_POOL_SIZE][VFS_PATH_MAX]
+    __attribute__((aligned(4)));
+static kmem_pool_t vfs_scratch_pool;
+
 /* Number of active mounts (for diagnostics). */
 static uint32_t mount_count;
 
@@ -55,7 +63,10 @@ void vfs_init(void) {
   /* Initialise the vnode slab pool */
   mod_core.kmem_pool_init(&vnode_pool, vnode_storage, sizeof(vnode_t),
                           VFS_VNODE_MAX);
-  vfs_namei_init();
+
+  /* Initialise the shared scratch buffer pool */
+  mod_core.kmem_pool_init(&vfs_scratch_pool, vfs_scratch_storage, VFS_PATH_MAX,
+                          VFS_SCRATCH_POOL_SIZE);
 
   /* Block device registry + loopback subsystem */
 #ifdef PPAP_HAS_BLKDEV
@@ -112,6 +123,15 @@ void vfs_vnode_release(vnode_t *vn) {
 
 uint32_t vnode_free_count(void) {
   return mod_core.kmem_free_count(&vnode_pool);
+}
+
+/* ── VFS scratch pool ────────────────────────────────────────────────────── */
+
+void *vfs_scratch_alloc(void) { return mod_core.kmem_alloc(&vfs_scratch_pool); }
+
+void vfs_scratch_free(void *buf) {
+  if (!buf) return;
+  mod_core.kmem_free(&vfs_scratch_pool, buf);
 }
 
 /* ── vfs_mount ──────────────────────────────────────────────────────────────

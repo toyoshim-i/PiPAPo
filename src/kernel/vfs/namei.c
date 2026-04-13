@@ -26,34 +26,9 @@
 #include <string.h>
 
 #include "common/errno.h"
-#include "kernel/common/core/kmem_types.h"
 #include "kernel/common/core/proc_info.h" /* current->cwd for relative path
                                              resolution */
-#include "kernel/common/mod/mod_core.h"
 #include "kernel/vfs/vfs.h"
-
-typedef struct {
-  char target[VFS_PATH_MAX];
-  char norm[VFS_PATH_MAX];
-} namei_symlink_scratch_t;
-
-static namei_symlink_scratch_t namei_symlink_scratch_storage[VFS_SYMLOOP_MAX];
-static kmem_pool_t namei_symlink_scratch_pool;
-
-void vfs_namei_init(void) {
-  mod_core.kmem_pool_init(
-      &namei_symlink_scratch_pool, namei_symlink_scratch_storage,
-      sizeof(namei_symlink_scratch_storage[0]), VFS_SYMLOOP_MAX);
-}
-
-static namei_symlink_scratch_t *namei_symlink_scratch_alloc(void) {
-  return mod_core.kmem_alloc(&namei_symlink_scratch_pool);
-}
-
-static void namei_symlink_scratch_free(namei_symlink_scratch_t *scratch) {
-  if (!scratch) return;
-  mod_core.kmem_free(&namei_symlink_scratch_pool, scratch);
-}
 
 /* ── Path normalization ─────────────────────────────────────────────────────
  */
@@ -152,19 +127,43 @@ static mount_entry_t *mount_at(const char *resolved) {
 /* ── Internal: walk a normalized path ───────────────────────────────────────
  */
 
-static int lookup_walk_flags(const char *normalized, vnode_t **result,
-                             int symloop, int flags) {
-  if (symloop >= VFS_SYMLOOP_MAX) return -ELOOP;
+static int lookup_walk_flags(const char *path_in, vnode_t **result,
+                             int symloop_in, int flags) {
+  const char *normalized = path_in;
+  int symloop = symloop_in;
+
+  /* Pool-allocated buffers for the walk.  Freed on every return path
+   * via WALK_RETURN.  Keeps large temporaries off the 1 KB kernel stack. */
+  char *resolved = vfs_scratch_alloc();
+  char *restart_path = vfs_scratch_alloc();
+  char *comp = vfs_scratch_alloc();
+  if (!resolved || !restart_path || !comp) {
+    vfs_scratch_free(comp);
+    vfs_scratch_free(restart_path);
+    vfs_scratch_free(resolved);
+    return -ENOMEM;
+  }
+
+#define WALK_RETURN(rc)             \
+  do {                              \
+    vfs_scratch_free(comp);         \
+    vfs_scratch_free(restart_path); \
+    vfs_scratch_free(resolved);     \
+    return (rc);                    \
+  } while (0)
+
+restart:
+  if (symloop >= VFS_SYMLOOP_MAX) WALK_RETURN(-ELOOP);
 
   /* Find the root mount */
   mount_entry_t *root_mnt = mount_at("/");
-  if (!root_mnt || !root_mnt->root) return -ENOENT;
+  if (!root_mnt || !root_mnt->root) WALK_RETURN(-ENOENT);
 
   /* Handle bare "/" */
   if (normalized[0] == '/' && normalized[1] == '\0') {
     vfs_vnode_acquire(root_mnt->root);
     *result = root_mnt->root;
-    return 0;
+    WALK_RETURN(0);
   }
 
   /*
@@ -179,7 +178,6 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
    * needs vfs_vnode_release() on cleanup.  Mount root vnodes are permanent
    * (owned by the mount entry), so we don't put them.
    */
-  static char resolved[VFS_PATH_MAX]; /* absolute path built so far */
   int rlen = 0;
   resolved[0] = '\0';
 
@@ -196,24 +194,23 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
     /* Current vnode must be a directory */
     if (cur->type != VNODE_DIR) {
       if (cur_from_lookup) vfs_vnode_release(cur);
-      return -ENOTDIR;
+      WALK_RETURN(-ENOTDIR);
     }
 
-    /* Extract the next path component */
-    char comp[VFS_NAME_MAX + 1];
+    /* Extract the next path component (comp is pool-allocated) */
     int i = 0;
     while (*p && *p != '/' && i < VFS_NAME_MAX) comp[i++] = *p++;
     if (*p && *p != '/') {
       /* Component exceeds VFS_NAME_MAX */
       if (cur_from_lookup) vfs_vnode_release(cur);
-      return -ENAMETOOLONG;
+      WALK_RETURN(-ENAMETOOLONG);
     }
     comp[i] = '\0';
 
     /* Build the resolved path: append "/component" */
     if (rlen + 1 + i >= VFS_PATH_MAX) {
       if (cur_from_lookup) vfs_vnode_release(cur);
-      return -ENAMETOOLONG;
+      WALK_RETURN(-ENAMETOOLONG);
     }
     resolved[rlen++] = '/';
     __builtin_memcpy(resolved + rlen, comp, (size_t)i);
@@ -244,14 +241,14 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
     mount_entry_t *cur_mnt = cur->mount ? cur->mount : root_mnt;
     if (!cur_mnt || !cur_mnt->ops || !cur_mnt->ops->lookup) {
       if (cur_from_lookup) vfs_vnode_release(cur);
-      return -ENOENT;
+      WALK_RETURN(-ENOENT);
     }
 
     vnode_t *child = NULL;
     int err = cur_mnt->ops->lookup(cur, comp, &child);
     if (err) {
       if (cur_from_lookup) vfs_vnode_release(cur);
-      return err;
+      WALK_RETURN(err);
     }
 
     /* Release the previous directory vnode (if we own it) */
@@ -260,7 +257,7 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
     /* ── Symlink handling ─────────────────────────────────────────
      * Read the link target, build a new absolute path (incorporating
      * any remaining components after the symlink), normalize, and
-     * recurse with incremented depth counter.
+     * restart the walk with incremented depth counter.
      */
     if (child->type == VNODE_SYMLINK) {
       /* NOFOLLOW: if this is the final component, return the
@@ -270,31 +267,32 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
         while (*trail == '/') trail++;
         if (*trail == '\0') {
           *result = child;
-          return 0;
+          WALK_RETURN(0);
         }
       }
 
-      namei_symlink_scratch_t *scratch = namei_symlink_scratch_alloc();
-      char *target;
-      char *norm;
+      char *target = vfs_scratch_alloc();
+      char *norm = vfs_scratch_alloc();
 
-      if (!scratch) {
+      if (!target || !norm) {
+        vfs_scratch_free(norm);
+        vfs_scratch_free(target);
         vfs_vnode_release(child);
-        return -ENOMEM;
+        WALK_RETURN(-ENOMEM);
       }
-      target = scratch->target;
-      norm = scratch->norm;
 
       if (!child->mount || !child->mount->ops || !child->mount->ops->readlink) {
         vfs_vnode_release(child);
-        namei_symlink_scratch_free(scratch);
-        return -EINVAL;
+        vfs_scratch_free(norm);
+        vfs_scratch_free(target);
+        WALK_RETURN(-EINVAL);
       }
       long tlen = child->mount->ops->readlink(child, target, VFS_PATH_MAX - 1);
       vfs_vnode_release(child);
       if (tlen < 0) {
-        namei_symlink_scratch_free(scratch);
-        return (int)tlen;
+        vfs_scratch_free(norm);
+        vfs_scratch_free(target);
+        WALK_RETURN((int)tlen);
       }
       target[tlen] = '\0';
 
@@ -316,8 +314,9 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
         if (parent_len == 0) parent_len = 1; /* root directory: "/" */
 
         if (parent_len + (int)tlen >= VFS_PATH_MAX) {
-          namei_symlink_scratch_free(scratch);
-          return -ENAMETOOLONG;
+          vfs_scratch_free(norm);
+          vfs_scratch_free(target);
+          WALK_RETURN(-ENAMETOOLONG);
         }
         /* Shift target right to make room for parent prefix */
         __builtin_memmove(target + parent_len, target, (size_t)tlen + 1);
@@ -333,8 +332,9 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
       if (*p) {
         int rem_len = (int)__builtin_strlen(p);
         if (nlen + 1 + rem_len >= VFS_PATH_MAX) {
-          namei_symlink_scratch_free(scratch);
-          return -ENAMETOOLONG;
+          vfs_scratch_free(norm);
+          vfs_scratch_free(target);
+          WALK_RETURN(-ENAMETOOLONG);
         }
         target[nlen++] = '/';
         __builtin_memcpy(target + nlen, p, (size_t)rem_len);
@@ -342,18 +342,22 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
       }
       target[nlen] = '\0';
 
-      /* Normalize (resolve any . / .. introduced by the target)
-       * and recurse */
+      /* Normalize (resolve any . / .. introduced by the target) */
       int norm_len = path_normalize(target, norm, VFS_PATH_MAX);
-      int lookup_err;
       if (norm_len < 0) {
-        namei_symlink_scratch_free(scratch);
-        return norm_len;
+        vfs_scratch_free(norm);
+        vfs_scratch_free(target);
+        WALK_RETURN(norm_len);
       }
 
-      lookup_err = lookup_walk_flags(norm, result, symloop + 1, flags);
-      namei_symlink_scratch_free(scratch);
-      return lookup_err;
+      /* Copy normalized path to restart buffer, free symlink
+       * buffers, and restart the walk iteratively. */
+      __builtin_memcpy(restart_path, norm, (size_t)norm_len + 1);
+      vfs_scratch_free(norm);
+      vfs_scratch_free(target);
+      normalized = restart_path;
+      symloop++;
+      goto restart;
     }
 
     /* Regular file or directory — advance */
@@ -369,7 +373,8 @@ static int lookup_walk_flags(const char *normalized, vnode_t **result,
   /* else: cur has refcnt = 1 from the last FS lookup — caller owns it */
 
   *result = cur;
-  return 0;
+  WALK_RETURN(0);
+#undef WALK_RETURN
 }
 
 /* ── Public API ─────────────────────────────────────────────────────────────
@@ -382,10 +387,9 @@ int vfs_lookup(const char *path, vnode_t **result) {
 int vfs_lookup_flags(const char *path, vnode_t **result, int flags) {
   if (!path || !result) return -EINVAL;
 
-  /* Resolve relative paths against current->cwd and normalize into one
-   * reusable buffer. Absolute paths stay on the non-aliasing path.
-   * Static: single-threaded kernel; saves 128B of stack. */
-  static char normalized[VFS_PATH_MAX];
+  /* Resolve relative paths against current->cwd and normalize. */
+  char *normalized = vfs_scratch_alloc();
+  if (!normalized) return -ENOMEM;
   int nlen;
 
   if (path[0] != '/') {
@@ -394,27 +398,35 @@ int vfs_lookup_flags(const char *path, vnode_t **result, int flags) {
     int pathlen = (int)strlen(path);
 
     if (cwdlen == 1) {
-      /* cwd is "/" → "/path" */
-      if (1 + pathlen >= VFS_PATH_MAX) return -ENAMETOOLONG;
+      if (1 + pathlen >= VFS_PATH_MAX) {
+        vfs_scratch_free(normalized);
+        return -ENAMETOOLONG;
+      }
       normalized[0] = '/';
       memcpy(normalized + 1, path, (size_t)pathlen + 1);
     } else {
-      /* cwd is "/foo" → "/foo/path" */
-      if (cwdlen + 1 + pathlen >= VFS_PATH_MAX) return -ENAMETOOLONG;
+      if (cwdlen + 1 + pathlen >= VFS_PATH_MAX) {
+        vfs_scratch_free(normalized);
+        return -ENAMETOOLONG;
+      }
       memcpy(normalized, cwd, (size_t)cwdlen);
       normalized[cwdlen] = '/';
       memcpy(normalized + cwdlen + 1, path, (size_t)pathlen + 1);
     }
 
-    /* Normalize the joined relative path in place. */
-    nlen = path_normalize(normalized, normalized, (int)sizeof(normalized));
+    nlen = path_normalize(normalized, normalized, VFS_PATH_MAX);
   } else {
-    nlen = path_normalize(path, normalized, (int)sizeof(normalized));
+    nlen = path_normalize(path, normalized, VFS_PATH_MAX);
   }
 
-  if (nlen < 0) return nlen;
+  if (nlen < 0) {
+    vfs_scratch_free(normalized);
+    return nlen;
+  }
 
-  return lookup_walk_flags(normalized, result, 0, flags);
+  int rc = lookup_walk_flags(normalized, result, 0, flags);
+  vfs_scratch_free(normalized);
+  return rc;
 }
 
 int vfs_path_normalize(const char *path, char *buf, int bufsiz) {
@@ -426,14 +438,20 @@ int vfs_lookup_parent(const char *path, vnode_t **parent, char *namebuf,
   if (!path || !parent || !namebuf || namebuf_size < 2) return -EINVAL;
   if (path[0] != '/') return -EINVAL;
 
-  /* Normalize the full path.
-   * Static: single-threaded kernel; saves 128B of stack. */
-  static char normalized[VFS_PATH_MAX];
-  int nlen = path_normalize(path, normalized, (int)sizeof(normalized));
-  if (nlen < 0) return nlen;
+  /* Normalize the full path. */
+  char *normalized = vfs_scratch_alloc();
+  if (!normalized) return -ENOMEM;
+  int nlen = path_normalize(path, normalized, VFS_PATH_MAX);
+  if (nlen < 0) {
+    vfs_scratch_free(normalized);
+    return nlen;
+  }
 
   /* Cannot get parent of "/" */
-  if (nlen == 1 && normalized[0] == '/') return -EINVAL;
+  if (nlen == 1 && normalized[0] == '/') {
+    vfs_scratch_free(normalized);
+    return -EINVAL;
+  }
 
   /* Split: find last '/' to separate parent path from final component */
   int last_slash = 0;
@@ -447,21 +465,23 @@ int vfs_lookup_parent(const char *path, vnode_t **parent, char *namebuf,
   /* Extract the final component name */
   const char *name = &normalized[last_slash + 1];
   int name_len = nlen - last_slash - 1;
-  if (name_len <= 0 || name_len >= namebuf_size) return -ENAMETOOLONG;
+  if (name_len <= 0 || name_len >= namebuf_size) {
+    vfs_scratch_free(normalized);
+    return -ENAMETOOLONG;
+  }
   __builtin_memcpy(namebuf, name, (size_t)name_len);
   namebuf[name_len] = '\0';
 
-  /* Build parent path: everything up to last_slash, or "/" if at root.
-   * Static: single-threaded kernel; saves 128B of stack. */
-  static char parent_path[VFS_PATH_MAX];
+  /* Build parent path in-place: truncate normalized at last_slash. */
   if (last_slash == 0) {
-    parent_path[0] = '/';
-    parent_path[1] = '\0';
+    normalized[0] = '/';
+    normalized[1] = '\0';
   } else {
-    __builtin_memcpy(parent_path, normalized, (size_t)last_slash);
-    parent_path[last_slash] = '\0';
+    normalized[last_slash] = '\0';
   }
 
   /* Look up the parent directory */
-  return lookup_walk_flags(parent_path, parent, 0, 0);
+  int rc = lookup_walk_flags(normalized, parent, 0, 0);
+  vfs_scratch_free(normalized);
+  return rc;
 }

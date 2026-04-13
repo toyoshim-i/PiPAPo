@@ -133,23 +133,31 @@ int vfs_fd_open(const char *path, int flags, int mode) {
   /* O_CREAT: if file doesn't exist, create it */
   if (err == -ENOENT && ((uint32_t)flags & O_CREAT)) {
     vnode_t *parent = NULL;
-    char namebuf[VFS_NAME_MAX + 1];
-    err = mod_vfs.lookup_parent(path, &parent, namebuf, (int)sizeof(namebuf));
-    if (err) return err;
+    char *namebuf = vfs_scratch_alloc();
+    if (!namebuf) return -ENOMEM;
+    err = mod_vfs.lookup_parent(path, &parent, namebuf, VFS_NAME_MAX + 1);
+    if (err) {
+      vfs_scratch_free(namebuf);
+      return err;
+    }
     if (parent->type != VNODE_DIR) {
       mod_vfs.vnode_release(parent);
+      vfs_scratch_free(namebuf);
       return -ENOTDIR;
     }
     if (!parent->mount || !parent->mount->ops || !parent->mount->ops->create) {
       mod_vfs.vnode_release(parent);
+      vfs_scratch_free(namebuf);
       return -ENOSYS;
     }
     if (parent->mount->flags & MNT_RDONLY) {
       mod_vfs.vnode_release(parent);
+      vfs_scratch_free(namebuf);
       return -EROFS;
     }
     err = parent->mount->ops->create(parent, namebuf, (uint32_t)mode, &vn);
     mod_vfs.vnode_release(parent);
+    vfs_scratch_free(namebuf);
     if (err) return err;
   } else if (err) {
     return err;

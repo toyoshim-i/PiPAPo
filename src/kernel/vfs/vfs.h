@@ -17,7 +17,6 @@
 
 /* Internal function declarations — external callers use mod_vfs struct */
 void vfs_init(void);
-void vfs_namei_init(void);
 int vfs_mount(const char *path, const vfs_ops_t *ops, uint8_t flags,
               const void *dev_data);
 int vfs_umount(const char *path);
@@ -32,5 +31,19 @@ int vfs_path_normalize(const char *path, char *buf, int bufsiz);
 mount_entry_t *vfs_mount_find(const char *path, const char **remainder);
 int vfs_path_statfs(const char *path, void *buf);
 uint32_t vnode_free_count(void);
+
+/* ── VFS scratch buffer pool ─────────────────────────────────────────────
+ *
+ * Shared pool of VFS_PATH_MAX-byte objects for temporary buffers used
+ * during syscall handling — path strings, inode structs (ufs_inode_t is
+ * exactly 128 B = VFS_PATH_MAX), name components, etc.
+ *
+ * Allocated from DS=0 BSS.  Saves kernel stack space by replacing
+ * large stack-local arrays.  Single-threaded kernel — no locking needed.
+ *
+ * Callers MUST free on every return path (including errors).
+ */
+void *vfs_scratch_alloc(void);
+void vfs_scratch_free(void *buf);
 
 #endif /* PPAP_KERNEL_VFS_VFS_H */
