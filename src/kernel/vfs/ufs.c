@@ -31,6 +31,7 @@
 #include "kernel/vfs/driver/blkdev.h"
 #include "kernel/vfs/klog.h"
 #include "kernel/vfs/ufs_format.h"
+#include "kernel/vfs/vfs.h"
 
 /* ── Constants ────────────────────────────────────────────────────────── */
 
@@ -462,27 +463,40 @@ static int ufs_mount(mount_entry_t *mnt, const void *dev_data) {
 static int ufs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
   ufs_priv_t *priv = (ufs_priv_t *)dir->fs_priv;
 
-  ufs_inode_t dir_inode;
-  int rc = ufs_read_inode(priv, dir->ino, &dir_inode);
-  if (rc < 0) return rc;
+  ufs_inode_t *dir_inode = vfs_scratch_alloc();
+  if (!dir_inode) return -ENOMEM;
+  int rc = ufs_read_inode(priv, dir->ino, dir_inode);
+  if (rc < 0) {
+    vfs_scratch_free(dir_inode);
+    return rc;
+  }
 
   /* Compute target name length */
   uint32_t namlen = 0;
   while (name[namlen]) namlen++;
-  if (namlen > UFS_NAME_MAX) return -ENOENT;
+  if (namlen > UFS_NAME_MAX) {
+    vfs_scratch_free(dir_inode);
+    return -ENOENT;
+  }
 
   uint32_t nblocks =
-      ((uint32_t)dir_inode.i_size + UFS_BLOCK_SIZE - 1) / UFS_BLOCK_SIZE;
+      ((uint32_t)dir_inode->i_size + UFS_BLOCK_SIZE - 1) / UFS_BLOCK_SIZE;
 
   for (uint32_t b = 0; b < nblocks; b++) {
     uint32_t phys;
-    rc = ufs_block_map(priv, &dir_inode, b, &phys);
-    if (rc < 0) return rc;
+    rc = ufs_block_map(priv, dir_inode, b, &phys);
+    if (rc < 0) {
+      vfs_scratch_free(dir_inode);
+      return rc;
+    }
     if (phys == 0) continue;
 
     for (uint32_t s = 0; s < UFS_FRAGS_PER_BLK; s++) {
       rc = ufs_read_sector(priv, phys + s);
-      if (rc < 0) return rc;
+      if (rc < 0) {
+        vfs_scratch_free(dir_inode);
+        return rc;
+      }
 
       uint32_t off = 0;
       while (off + sizeof(ufs_dirent_t) <= BLKDEV_SECTOR_SIZE) {
@@ -494,14 +508,18 @@ static int ufs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
           for (i = 0; i < namlen && dn[i] == name[i]; i++) {
           }
           if (i == namlen) {
-            /* Match — save ino, then read inode (clobbers ufs_buf) */
+            /* Match — reuse dir_inode buffer for child inode
+             * (dir_inode no longer needed for block_map) */
             uint32_t child_ino = de->d_ino;
-            ufs_inode_t child_inode;
-            rc = ufs_read_inode(priv, child_ino, &child_inode);
-            if (rc < 0) return rc;
+            rc = ufs_read_inode(priv, child_ino, dir_inode);
+            if (rc < 0) {
+              vfs_scratch_free(dir_inode);
+              return rc;
+            }
 
             vnode_t *vn =
-                ufs_vnode_from_inode(dir->mount, child_ino, &child_inode);
+                ufs_vnode_from_inode(dir->mount, child_ino, dir_inode);
+            vfs_scratch_free(dir_inode);
             if (!vn) return -ENOMEM;
 
             *result = vn;
@@ -513,6 +531,7 @@ static int ufs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
     }
   }
 
+  vfs_scratch_free(dir_inode);
   return -ENOENT;
 }
 
@@ -527,9 +546,13 @@ static long ufs_read(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
   if (off >= vn->size) return 0;
   if (off + n > vn->size) n = vn->size - off;
 
-  ufs_inode_t inode;
-  int rc = ufs_read_inode(priv, vn->ino, &inode);
-  if (rc < 0) return (long)rc;
+  ufs_inode_t *inode = vfs_scratch_alloc();
+  if (!inode) return -(long)ENOMEM;
+  int rc = ufs_read_inode(priv, vn->ino, inode);
+  if (rc < 0) {
+    vfs_scratch_free(inode);
+    return (long)rc;
+  }
 
   uint32_t remaining = (uint32_t)n;
   uint32_t pos = off;
@@ -541,12 +564,18 @@ static long ufs_read(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
     uint32_t off_in_sec = off_in_blk % BLKDEV_SECTOR_SIZE;
 
     uint32_t phys;
-    rc = ufs_block_map(priv, &inode, logical, &phys);
-    if (rc < 0) return (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
+    rc = ufs_block_map(priv, inode, logical, &phys);
+    if (rc < 0) {
+      vfs_scratch_free(inode);
+      return (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
+    }
     if (phys == 0) break; /* hole / unallocated block */
 
     rc = ufs_read_sector(priv, phys + sec_in_blk);
-    if (rc < 0) return (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
+    if (rc < 0) {
+      vfs_scratch_free(inode);
+      return (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
+    }
 
     uint32_t avail = BLKDEV_SECTOR_SIZE - off_in_sec;
     if (avail > remaining) avail = remaining;
@@ -558,6 +587,7 @@ static long ufs_read(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
     remaining -= avail;
   }
 
+  vfs_scratch_free(inode);
   return (long)(n - remaining);
 }
 
