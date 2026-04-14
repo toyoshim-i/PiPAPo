@@ -12,7 +12,7 @@
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/subsys/subsys.h"
 #ifdef PPAP_ENABLE_HUMAN68K
-#include "kernel/core/subsys/human68k_bridge.h"
+#include "kernel/core/subsys/human68k/human68k_bridge.h"
 #endif
 
 /* ── Crash handler ─────────────────────────────────────────────────────── *

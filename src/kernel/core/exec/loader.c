@@ -6,20 +6,20 @@
 
 #include "kernel/core/exec/elf_loader.h"
 #ifdef PPAP_ENABLE_CPM
-#include "kernel/core/exec/com_loader.h"
+#include "kernel/core/subsys/cpm/com_loader.h"
 #endif
 #ifdef PPAP_ENABLE_HUMAN68K
-#include "kernel/core/exec/r_loader.h"
-#include "kernel/core/exec/x_loader.h"
+#include "kernel/core/subsys/human68k/r_loader.h"
+#include "kernel/core/subsys/human68k/x_loader.h"
 #endif
 #ifdef PPAP_ENABLE_SOS
-#include "kernel/core/exec/sos_loader.h"
+#include "kernel/core/subsys/sos/sos_loader.h"
 #endif
 #ifdef PPAP_ENABLE_ECPU_M68K
-#include "kernel/core/exec/m68k_emu_loader.h"
+#include "kernel/core/subsys/ppap/m68k_emu_loader.h"
 #endif
 #ifdef PPAP_ENABLE_MSDOS
-#include "kernel/core/exec/dos_com_loader.h"
+#include "kernel/core/subsys/msdos/dos_com_loader.h"
 #endif
 #if defined(__ia16__)
 extern const loader_t elf16_loader;

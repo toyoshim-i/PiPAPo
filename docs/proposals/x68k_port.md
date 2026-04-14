@@ -51,8 +51,8 @@ Produce a bootable PPAP system on the Sharp X68000 that:
 | F-line (Human68k DOS) and TRAP #15 handlers | `src/arch/m68k/boot.S` | See 4.3 |
 | RAM size detection | `src/arch/m68k/probe_ram.S` | 100% (set `RAM_END=0xC00000`) |
 | 32-bit multiply/divide (no libgcc) | `src/arch/m68k/math.S` | 100% |
-| Human68k subsystem bridge | `src/kernel/subsys/human68k_bridge.c` | 100% |
-| X-format / R-format binary loader | `src/kernel/exec/exec_x68k.c` | 100% |
+| Human68k subsystem bridge | `src/kernel/core/subsys/human68k/human68k_bridge.c` | 100% |
+| X-format / R-format binary loader | `src/kernel/core/subsys/human68k/x_loader.c` | 100% |
 | UFS filesystem driver | `src/kernel/fs/ufs.c` | 100% |
 | VFS, tmpfs, procfs, devfs | `src/kernel/fs/`, `src/kernel/vfs/` | 100% |
 | m68k user-space toolchain | `ppap/m68k` Docker image | 100% |

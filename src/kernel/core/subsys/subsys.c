@@ -13,19 +13,19 @@
 
 /* Forward declarations — conditionally compiled based on CMake flags */
 #ifdef PPAP_ENABLE_HUMAN68K
-#include "kernel/core/subsys/human68k_bridge.h"
+#include "kernel/core/subsys/human68k/human68k_bridge.h"
 #endif
 
 #ifdef PPAP_ENABLE_CPM
-#include "kernel/core/subsys/cpm_bridge.h"
+#include "kernel/core/subsys/cpm/cpm_bridge.h"
 #endif
 
 #ifdef PPAP_ENABLE_SOS
-#include "kernel/core/subsys/sos_bridge.h"
+#include "kernel/core/subsys/sos/sos_bridge.h"
 #endif
 
 #ifdef PPAP_ENABLE_MSDOS
-#include "kernel/core/subsys/dos_bridge.h"
+#include "kernel/core/subsys/msdos/dos_bridge.h"
 #endif
 
 /* Statically initialised name arrays — shared via subsys_info.h */

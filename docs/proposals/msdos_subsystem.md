@@ -1,9 +1,5 @@
 # MS-DOS Subsystem Proposal
 
-> **Note**: File paths in this document may be outdated after the source tree
-> reorganization.  See [Source Tree Structure](../getting_started/source_tree.md)
-> for the current layout.
-
 An MS-DOS personality layer for PPAP, following the same pattern as the
 Human68k subsystem (`human68k_bridge.c`) and CP/M subsystem
 (`cpm_bridge.c`).  Translates DOS INT 21h calls and related interrupts
@@ -89,7 +85,7 @@ Kernel: exec detects .COM or MZ signature
   │
   │ subsys = SUBSYS_MSDOS
   ▼
-dos_loader.c
+dos_com_loader.c
   │ Allocates segment(s), builds PSP, loads binary
   │ Sets up i8086 eCPU state (or V30 segments for native)
   ▼
@@ -123,7 +119,7 @@ which calls the same `dos_bridge.c` functions.
 | Binary format | .COM (flat @ 0x0100) | .x/.r (relocatable) | .COM (flat @ 0x0100) + .EXE (MZ) |
 | Memory model | Flat 64 KB | Flat 24-bit | Segmented 20-bit (1 MB) |
 | Bridge file | `cpm_bridge.c` | `human68k_bridge.c` | `dos_bridge.c` |
-| Loader file | `cpm_loader.c` | `human68k_loader.c` | `dos_loader.c` |
+| Loader file | `cpm_host.c` | `human68k_host.c` | `dos_com_loader.c` |
 | Per-process state | `cpm_state_t` | `h68k_proc_t` | `dos_proc_t` |
 | Drive mapping | A: → `/a/` | A: → `/a/` | A: → `/a/` |
 
@@ -587,28 +583,26 @@ infrastructure:
 ## 8. New Files
 
 ```
-src/kernel/subsys/
+src/kernel/core/subsys/msdos/
   dos_bridge.c        — INT 21h dispatch and function implementations
   dos_bridge.h        — dos_proc_t, constants, public API
-  dos_loader.c        — .COM and .EXE (MZ) binary loading
-  dos_loader.h        — Loader API, MZ header struct
+  dos_com_loader.c    — .COM binary loading (loader_t registration)
+  dos_com_loader.h    — Loader API
 
-src/kernel/exec/
-  exec_dos.c          — exec path for .COM and .EXE detection and dispatch
+src/arch/i16/kernel/core/
+  dos_trap.S          — Native i16 INT 21h ISR (real-mode 8086)
 ```
 
 Changes to existing files:
 
 | File | Change |
 |------|--------|
-| `src/kernel/proc/proc.h` | Add `SUBSYS_MSDOS = 3` |
-| `src/kernel/subsys/subsys.c` | Register `msdos_subsys_ops` in slot 3 |
-| `src/kernel/exec/exec.c` | Add MZ/.COM detection in exec path |
-| `src/common/ptrace.h` | Add `PPAP_TRACE_ABI_DOS_INT21`, `PPAP_TRACE_REGSET_8086` |
-| `src/user/trace.c` | Add DOS INT 21h function name decoder |
-| `src/user/pdb_regs.c` | Add 8086 register names |
-| `src/user/pdb_trace_util.c` | Add DOS ABI name formatting |
-| `config.h` | Add `PPAP_ENABLE_MSDOS` build flag |
+| `src/kernel/common/core/subsys_info.h` | Add `SUBSYS_MSDOS = 4` (slot 3 taken by SOS) |
+| `src/kernel/core/subsys/subsys.c` | Register `msdos_subsys_ops` |
+| `src/kernel/core/exec/loader.c` | Include `dos_com_loader`, add to registry |
+| `cmake/kernel.cmake` | Add `KERNEL_SUBSYS_MSDOS_SOURCES` |
+| `src/target/pcxt/CMakeLists.txt` | Link MSDOS sources, define `PPAP_ENABLE_MSDOS=1` |
+| `src/target/pcxt/kernel/core/driver/timer_pit.c` | Install INT 21h vector → `i16_dos_isr` |
 
 ---
 
@@ -619,9 +613,9 @@ option(PPAP_ENABLE_MSDOS "Enable MS-DOS subsystem" OFF)
 
 if(PPAP_ENABLE_MSDOS)
     target_sources(ppap PRIVATE
-        src/kernel/subsys/dos_bridge.c
-        src/kernel/subsys/dos_loader.c
-        src/kernel/exec/exec_dos.c
+        src/kernel/core/subsys/msdos/dos_bridge.c
+        src/kernel/core/subsys/msdos/dos_com_loader.c
+        src/kernel/core/subsys/msdos/dos_com_loader.c
     )
     target_compile_definitions(ppap PRIVATE PPAP_ENABLE_MSDOS=1)
 endif()
@@ -638,7 +632,7 @@ unless building for a native V30/8086 target.
 
 **Goal**: "Hello, world" DOS .COM program runs and prints output.
 
-1. Implement `dos_loader.c` — .COM loading only.
+1. Implement `dos_com_loader.c` — .COM loading only.
 2. Implement `dos_bridge.c` — INT 21h AH=02h (putchar), AH=09h (print
    string), AH=4Ch (exit).
 3. Build PSP with minimal fields.

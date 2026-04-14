@@ -25,7 +25,7 @@
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/signal/signal.h"
-#include "kernel/core/subsys/ppap_m68k_bridge.h"
+#include "kernel/core/subsys/ppap/ppap_m68k_bridge.h"
 #include "kernel/core/subsys/subsys.h"
 #include "kernel/core/syscall/syscall.h"
 #include "target/target.h"

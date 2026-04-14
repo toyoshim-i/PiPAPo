@@ -255,7 +255,7 @@ process at a time.)
 │  │  - DMA buffer management                      │  │
 │  │  - Console I/O bridge                         │  │
 │  ├───────────────────────────────────────────────┤  │
-│  │  cpm_loader.c                                 │  │
+│  │  cpm_host.c                                 │  │
 │  │  - .COM file detection and loading            │  │
 │  │  - Zero page setup (JMP stubs, FCBs, cmdline) │  │
 │  │  - Default FCB parsing from argv              │  │
@@ -276,14 +276,14 @@ process at a time.)
 ```cmake
 if(ENABLE_SUBSYS_CPM)
     target_sources(ppap PRIVATE
-        src/kernel/ecpu/ecpu_z80.c
-        src/kernel/ecpu/ecpu_z80_cb.c
-        src/kernel/ecpu/ecpu_z80_ed.c
-        src/kernel/ecpu/ecpu_z80_ix.c
-        src/kernel/ecpu/ecpu_z80_iy.c
-        src/kernel/ecpu/ecpu_z80_alu.c
-        src/kernel/subsys/cpm_bridge.c
-        src/kernel/subsys/cpm_loader.c
+        src/kernel/core/cpu/ecpu_z80.c
+        src/kernel/core/cpu/ecpu_z80_cb.c
+        src/kernel/core/cpu/ecpu_z80_ed.c
+        src/kernel/core/cpu/ecpu_z80_ix.c
+        src/kernel/core/cpu/ecpu_z80_iy.c
+        src/kernel/core/cpu/ecpu_z80_alu.c
+        src/kernel/core/subsys/cpm/cpm_bridge.c
+        src/kernel/core/subsys/cpm/cpm_host.c
     )
     target_compile_definitions(ppap PRIVATE
         ENABLE_SUBSYS_CPM=1

@@ -125,7 +125,7 @@ User: /bin/sh
 Kernel: exec detects "_SOS" magic at offset 0
   │
   ▼
-exec_sos.c
+sos_loader.c
   │ Parses 18-byte header (load addr, exec addr, mode)
   │ Allocates 64 KB Z80 memory
   │ Sets up S-OS work area (1F40h–1F7Fh)
@@ -311,9 +311,9 @@ The trace ABI tag is `PPAP_TRACE_ABI_SOS` (defined in `ptrace.h`).
 
 | File | Purpose |
 |------|---------|
-| `src/kernel/subsys/sos_bridge.c` | Monitor call bridge (personality layer) |
-| `src/kernel/subsys/sos_bridge.h` | Header, SOS header parser, constants |
-| `src/kernel/subsys/exec_sos.c` | Binary loader + execution setup |
+| `src/kernel/core/subsys/sos/sos_bridge.c` | Monitor call bridge (personality layer) |
+| `src/kernel/core/subsys/sos/sos_bridge.h` | Header, SOS header parser, constants |
+| `src/kernel/core/subsys/sos/sos_loader.c` | Binary loader + execution setup |
 
 ## 10. Usage
 

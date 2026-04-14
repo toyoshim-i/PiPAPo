@@ -717,7 +717,7 @@ syntax output.
 ## 10. New Files
 
 ```
-src/kernel/ecpu/
+src/kernel/core/cpu/
   ecpu_i8086.c        — Main emulator loop, instruction decode/dispatch
   ecpu_i8086.h        — i8086_state_t, register IDs, inline helpers
   ecpu_i8086_alu.c    — ALU operations (add, sub, and, or, shifts, mul, div)
@@ -730,7 +730,7 @@ Changes to existing files:
 
 | File | Change |
 |------|--------|
-| `src/kernel/ecpu/ecpu.h` | `ECPU_ARCH_8086 = 3` already defined |
+| `src/kernel/core/cpu/ecpu.h` | `ECPU_ARCH_8086 = 3` already defined |
 | `src/common/ptrace.h` | Add `PPAP_TRACE_REGSET_8086 = 4` |
 | `src/user/pdb_regs.c` | Add 8086 register name table |
 | `src/user/pdb_trace_util.c` | Add 8086 regset name |
@@ -745,8 +745,8 @@ option(PPAP_ENABLE_ECPU_I8086 "Enable i8086 eCPU emulator" OFF)
 
 if(PPAP_ENABLE_ECPU_I8086)
     target_sources(ppap PRIVATE
-        src/kernel/ecpu/ecpu_i8086.c
-        src/kernel/ecpu/ecpu_i8086_alu.c
+        src/kernel/core/cpu/ecpu_i8086.c
+        src/kernel/core/cpu/ecpu_i8086_alu.c
     )
     target_compile_definitions(ppap PRIVATE PPAP_ENABLE_ECPU_I8086=1)
 endif()
@@ -914,6 +914,6 @@ E-3 (control flow with INT support) at minimum.
 - [docs/proposals/msdos_subsystem.md](msdos_subsystem.md) — MS-DOS subsystem (uses this eCPU)
 - [docs/targets/ia16.md](../targets/ia16.md) — IBM PC native port (V30, no eCPU needed)
 - [docs/kernel/trace.md](../kernel/trace.md) — Trace and debug subsystem
-- `src/kernel/ecpu/ecpu.h` — Common eCPU interface
-- `src/kernel/ecpu/ecpu_z80.h` — Z80 eCPU (reference implementation)
-- `src/kernel/ecpu/ecpu_m68k.h` — m68k eCPU (reference for complex CPU emulation)
+- `src/kernel/core/cpu/ecpu.h` — Common eCPU interface
+- `src/kernel/core/cpu/ecpu_z80.h` — Z80 eCPU (reference implementation)
+- `src/kernel/core/cpu/ecpu_m68k.h` — m68k eCPU (reference for complex CPU emulation)

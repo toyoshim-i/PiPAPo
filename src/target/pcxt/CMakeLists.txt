@@ -370,8 +370,8 @@ set_property(SOURCE
 add_executable(ppap_pcxt
   ${ARCH_I16_SOURCES}
   ${KERNEL_CORE_SOURCES}
-  ${PPAP_ROOT}/src/kernel/core/subsys/dos_bridge.c
-  ${PPAP_ROOT}/src/kernel/core/exec/dos_com_loader.c
+  ${PPAP_ROOT}/src/kernel/core/subsys/msdos/dos_bridge.c
+  ${PPAP_ROOT}/src/kernel/core/subsys/msdos/dos_com_loader.c
   ${TARGET_SOURCES}
 )
 

@@ -1,0 +1,12 @@
+/*
+ * m68k_emu_loader.h — m68k ELF binary loader for cross-arch emulation
+ */
+
+#ifndef PPAP_KERNEL_CORE_SUBSYS_PPAP_M68K_EMU_LOADER_H
+#define PPAP_KERNEL_CORE_SUBSYS_PPAP_M68K_EMU_LOADER_H
+
+#include "kernel/core/exec/loader.h"
+
+extern const loader_t m68k_emu_loader;
+
+#endif /* PPAP_KERNEL_CORE_SUBSYS_PPAP_M68K_EMU_LOADER_H */

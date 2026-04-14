@@ -416,7 +416,7 @@ support and warns on exit if unsupported APIs were called.
 
 Fully implemented and tested:
 - Z80 interpreter (shared with CP/M)
-- S-OS binary loader (`exec_sos.c`)
+- S-OS binary loader (`sos_loader.c`)
 - Monitor bridge with console I/O, file operations, screen APIs
 - `/subsys/sos/` directory in PATH for transparent execution
 
@@ -707,7 +707,7 @@ converted to `/`. Case handling follows the foreign OS convention
 
 **Phase B — CP/M Subsystem** ✅
 1. ✅ Z80 interpreter (85 host tests, Steps 1–7)
-2. ✅ CP/M memory map setup + .COM loader (`exec_cpm.c`)
+2. ✅ CP/M memory map setup + .COM loader (`com_loader.c`)
 3. ✅ BDOS console I/O bridge (functions 0–12)
 4. ✅ BDOS file operations (functions 15–36)
 5. ✅ Kernel integration + 13 userland tests

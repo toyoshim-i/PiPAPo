@@ -94,28 +94,28 @@ set(KERNEL_SHARED_SOURCES_BASE
 # ── Optional subsystem and eCPU sources ──────────────────────────────────────
 
 set(KERNEL_SUBSYS_HUMAN68K_SOURCES
-    ${_KS_ROOT}/src/kernel/core/subsys/h68k_util.c
-    ${_KS_ROOT}/src/kernel/core/subsys/human68k_bridge.c
-    ${_KS_ROOT}/src/kernel/core/subsys/human68k_loader.c
-    ${_KS_ROOT}/src/kernel/core/exec/x_loader.c
-    ${_KS_ROOT}/src/kernel/core/exec/r_loader.c
-    ${_KS_ROOT}/src/kernel/core/exec/h68k_emu.c
+    ${_KS_ROOT}/src/kernel/core/subsys/human68k/h68k_util.c
+    ${_KS_ROOT}/src/kernel/core/subsys/human68k/human68k_bridge.c
+    ${_KS_ROOT}/src/kernel/core/subsys/human68k/human68k_host.c
+    ${_KS_ROOT}/src/kernel/core/subsys/human68k/x_loader.c
+    ${_KS_ROOT}/src/kernel/core/subsys/human68k/r_loader.c
+    ${_KS_ROOT}/src/kernel/core/subsys/ppap/h68k_emu.c
 )
 
 set(KERNEL_SUBSYS_CPM_SOURCES
-    ${_KS_ROOT}/src/kernel/core/subsys/cpm_bridge.c
-    ${_KS_ROOT}/src/kernel/core/subsys/cpm_loader.c
-    ${_KS_ROOT}/src/kernel/core/exec/com_loader.c
+    ${_KS_ROOT}/src/kernel/core/subsys/cpm/cpm_bridge.c
+    ${_KS_ROOT}/src/kernel/core/subsys/cpm/cpm_host.c
+    ${_KS_ROOT}/src/kernel/core/subsys/cpm/com_loader.c
 )
 
 set(KERNEL_SUBSYS_SOS_SOURCES
-    ${_KS_ROOT}/src/kernel/core/subsys/sos_bridge.c
-    ${_KS_ROOT}/src/kernel/core/exec/sos_loader.c
+    ${_KS_ROOT}/src/kernel/core/subsys/sos/sos_bridge.c
+    ${_KS_ROOT}/src/kernel/core/subsys/sos/sos_loader.c
 )
 
 set(KERNEL_SUBSYS_MSDOS_SOURCES
-    ${_KS_ROOT}/src/kernel/core/subsys/dos_bridge.c
-    ${_KS_ROOT}/src/kernel/core/exec/dos_com_loader.c
+    ${_KS_ROOT}/src/kernel/core/subsys/msdos/dos_bridge.c
+    ${_KS_ROOT}/src/kernel/core/subsys/msdos/dos_com_loader.c
 )
 
 set(KERNEL_ECPU_Z80_SOURCES
@@ -126,8 +126,8 @@ set(KERNEL_ECPU_Z80_SOURCES
 set(KERNEL_ECPU_M68K_SOURCES
     ${_KS_ROOT}/src/kernel/core/cpu/ecpu_m68k.c
     ${_KS_ROOT}/src/kernel/core/cpu/ecpu_m68k_alu.c
-    ${_KS_ROOT}/src/kernel/core/exec/m68k_emu_loader.c
-    ${_KS_ROOT}/src/kernel/core/subsys/ppap_m68k_bridge.c
+    ${_KS_ROOT}/src/kernel/core/subsys/ppap/m68k_emu_loader.c
+    ${_KS_ROOT}/src/kernel/core/subsys/ppap/ppap_m68k_bridge.c
 )
 
 # ── Composite kernel sources (conditionally assembled) ───────────────────────

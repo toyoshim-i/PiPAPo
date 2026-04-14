@@ -373,7 +373,7 @@ the same bridge code to work for both native and eCPU paths (§9).
 │  │  Reads args from     │  Reads args from       │  │
 │  │  real user stack     │  emulated memory       │  │
 │  ├──────────────────────┴────────────────────────┤  │
-│  │  exec_x68k.c — X-format / R-format loader     │  │
+│  │  x_loader.c — X-format / R-format loader     │  │
 │  ├───────────────────────────────────────────────┤  │
 │  │  Memory abstraction interface                 │  │
 │  │  h68k_read/write_u8/u16/u32(ctx, addr)        │  │
@@ -1349,10 +1349,10 @@ int human68k_dos_call(h68k_ctx_t *ctx, uint16_t opcode, uint32_t usp) {
 - `page_max_contiguous()` for accurate free-space reporting
 
 **Files:**
-- `src/kernel/exec/exec_x68k.c` — X-format loader + PMB setup
+- `src/kernel/core/subsys/human68k/x_loader.c` — X-format loader + PMB setup
 - `src/arch/m68k/fline.S` / `src/arch/m68k/trap.S` — exception entry
-- `src/kernel/subsys/human68k_bridge.c` — DOS call bridge
-- `src/kernel/subsys/human68k_bridge.h` — per-process state
+- `src/kernel/core/subsys/human68k/human68k_bridge.c` — DOS call bridge
+- `src/kernel/core/subsys/human68k/human68k_bridge.h` — per-process state
 
 ### Phase 2 — Console I/O ✅
 

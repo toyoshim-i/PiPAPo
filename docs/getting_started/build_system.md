@@ -71,9 +71,10 @@ cmake --build build/qemu_arm
 
 With the default all-features-enabled build, all subsystems and eCPU cores are included in the kernel. Selectively disabling features can reduce kernel binary size:
 
-- **Human68k subsystem**: Removes human68k_bridge.c, h68k_util.c, exec_x68k.c (~100+ KB)
-- **CP/M subsystem**: Removes cpm_bridge.c, cpm_loader.c, exec_cpm.c (~80+ KB)
-- **m68k eCPU**: Removes ecpu_m68k.c, ecpu_m68k_alu.c, exec_m68k_emu.c, ppap_m68k_bridge.c (~150+ KB)
+- **Human68k subsystem**: Removes subsys/human68k/ (human68k_bridge.c, human68k_host.c, h68k_util.c, x_loader.c, r_loader.c) (~100+ KB)
+- **CP/M subsystem**: Removes subsys/cpm/ (cpm_bridge.c, cpm_host.c, com_loader.c) (~80+ KB)
+- **m68k eCPU**: Removes ecpu_m68k.c, ecpu_m68k_alu.c, subsys/ppap/ (m68k_emu_loader.c, h68k_emu.c, ppap_m68k_bridge.c) (~150+ KB)
+- **MS-DOS subsystem**: Removes subsys/msdos/ (dos_bridge.c, dos_com_loader.c) (pcxt only)
 - **Z80 eCPU**: Removes ecpu_z80.c, ecpu_z80_alu.c (~80+ KB)
 
 ## Technical Details
@@ -107,4 +108,4 @@ cmake -S src/target/mytarget -B build/mytarget -DPPAP_ENABLE_HUMAN68K=OFF
 
 ## Kernel Startup
 
-The `subsys_init()` function in `src/kernel/subsys/subsys.c` registers only the enabled subsystems at boot time. Attempting to execute binaries for disabled subsystems will result in an "unsupported executable format" error.
+The `subsys_init()` function in `src/kernel/core/subsys/subsys.c` registers only the enabled subsystems at boot time. Attempting to execute binaries for disabled subsystems will result in an "unsupported executable format" error.
