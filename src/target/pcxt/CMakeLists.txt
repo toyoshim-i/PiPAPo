@@ -580,7 +580,9 @@ add_custom_target(pcxt_user_elfs DEPENDS ${PCXT_USER_ELFS})
 #   old: ppap_pcxt -(POST_BUILD)-> needs VFS binary -(dep)-> ppap_pcxt
 #   new: ppap_pcxt_img depends on both independently
 add_custom_target(ppap_pcxt_img ALL
-  COMMAND ${PPAP_ROOT}/scripts/mkpcimg.sh ${CMAKE_CURRENT_BINARY_DIR}
+  COMMAND ${CMAKE_COMMAND} -E env
+    PPAP_EXTRA_OVERLAY=${PPAP_EXTRA_OVERLAY}
+    ${PPAP_ROOT}/scripts/mkpcimg.sh ${CMAKE_CURRENT_BINARY_DIR}
   DEPENDS ppap_pcxt ppap_pcxt_vfs stage1 stage1_hdd stage2 pcxt_user_elfs
   COMMENT "Assembling floppy and HDD images"
 )

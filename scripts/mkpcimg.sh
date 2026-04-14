@@ -131,6 +131,13 @@ for tst in "${TEST_BINS[@]}"; do
   fi
 done
 
+# Apply --overlay (via PPAP_EXTRA_OVERLAY env var) on top of the base
+# staging.  Files in the overlay shadow any identically-named base files.
+if [[ -n "${PPAP_EXTRA_OVERLAY:-}" && -d "$PPAP_EXTRA_OVERLAY" ]]; then
+  echo "[mkpcimg] Applying overlay: $PPAP_EXTRA_OVERLAY"
+  cp -r "$PPAP_EXTRA_OVERLAY/." "$UFS_STAGING/"
+fi
+
 
 # ── Pad stage2 ──────────────────────────────────────────────────────────
 
@@ -143,24 +150,45 @@ dd if="$STAGE2" of="$STAGE2_PAD" bs=1 conv=notrunc 2>/dev/null
 # Available space for UFS: sectors 9..2879 = 2871 sectors × 512 = 1,470,072 B
 UFS_FD_SIZE=$(( (FLOPPY_SECTORS - UFS_START_SECTOR) * SECTOR_SIZE ))
 UFS_FD_IMG="$BUILD_DIR/ufs_boot.img"
+FLOPPY_OK=1
 
-echo "[mkpcimg] Creating floppy UFS image ($(( UFS_FD_SIZE / 1024 )) KB)..."
-"$MKUFS" -f "$MKUFS_FORMAT" -s "$UFS_FD_SIZE" -i "$FLOPPY_INODES" -p "$UFS_STAGING" "$UFS_FD_IMG"
+# Check staging content size against the floppy UFS budget.  If the
+# payload exceeds the floppy capacity (e.g. with a large --overlay),
+# skip floppy generation gracefully — HDD still gets built below.
+STAGING_BYTES=$(du -sb "$UFS_STAGING" 2>/dev/null | awk '{print $1}')
+STAGING_BYTES=${STAGING_BYTES:-0}
+if (( STAGING_BYTES > UFS_FD_SIZE - 32768 )); then
+  echo "[mkpcimg] WARNING: staging content ($(( STAGING_BYTES / 1024 )) KB) exceeds floppy UFS budget ($(( UFS_FD_SIZE / 1024 )) KB); skipping floppy image"
+  FLOPPY_OK=0
+fi
+
+if (( FLOPPY_OK )); then
+  echo "[mkpcimg] Creating floppy UFS image ($(( UFS_FD_SIZE / 1024 )) KB)..."
+  if ! "$MKUFS" -f "$MKUFS_FORMAT" -s "$UFS_FD_SIZE" -i "$FLOPPY_INODES" -p "$UFS_STAGING" "$UFS_FD_IMG"; then
+    echo "[mkpcimg] WARNING: mkufs failed for floppy (payload too large?); skipping floppy image"
+    FLOPPY_OK=0
+  fi
+fi
 
 # ── Assemble floppy image ───────────────────────────────────────────────
 
-echo "[mkpcimg] Assembling floppy image..."
+if (( FLOPPY_OK )); then
+  echo "[mkpcimg] Assembling floppy image..."
 
-dd if=/dev/zero of="$IMG" bs=$SECTOR_SIZE count=$FLOPPY_SECTORS 2>/dev/null
-dd if="$STAGE1" of="$IMG" bs=$SECTOR_SIZE conv=notrunc 2>/dev/null
-dd if="$STAGE2_PAD" of="$IMG" bs=$SECTOR_SIZE seek=1 conv=notrunc 2>/dev/null
-dd if="$UFS_FD_IMG" of="$IMG" bs=$SECTOR_SIZE seek=$UFS_START_SECTOR conv=notrunc 2>/dev/null
+  dd if=/dev/zero of="$IMG" bs=$SECTOR_SIZE count=$FLOPPY_SECTORS 2>/dev/null
+  dd if="$STAGE1" of="$IMG" bs=$SECTOR_SIZE conv=notrunc 2>/dev/null
+  dd if="$STAGE2_PAD" of="$IMG" bs=$SECTOR_SIZE seek=1 conv=notrunc 2>/dev/null
+  dd if="$UFS_FD_IMG" of="$IMG" bs=$SECTOR_SIZE seek=$UFS_START_SECTOR conv=notrunc 2>/dev/null
 
-echo "[mkpcimg] Floppy: $IMG ($(wc -c < "$IMG") bytes)"
-echo "[mkpcimg]   stage1: $(wc -c < "$STAGE1") bytes"
-echo "[mkpcimg]   stage2: $(wc -c < "$STAGE2") bytes"
-echo "[mkpcimg]   kernel: $(wc -c < "$KERNEL") bytes"
-echo "[mkpcimg]   UFS:    $(wc -c < "$UFS_FD_IMG") bytes"
+  echo "[mkpcimg] Floppy: $IMG ($(wc -c < "$IMG") bytes)"
+  echo "[mkpcimg]   stage1: $(wc -c < "$STAGE1") bytes"
+  echo "[mkpcimg]   stage2: $(wc -c < "$STAGE2") bytes"
+  echo "[mkpcimg]   kernel: $(wc -c < "$KERNEL") bytes"
+  echo "[mkpcimg]   UFS:    $(wc -c < "$UFS_FD_IMG") bytes"
+else
+  # Remove any stale floppy image so a previous build doesn't get booted.
+  rm -f "$IMG" "$UFS_FD_IMG"
+fi
 
 # ── Create HDD UFS image ────────────────────────────────────────────────
 
