@@ -99,7 +99,7 @@ set(KERNEL_SUBSYS_HUMAN68K_SOURCES
     ${_KS_ROOT}/src/kernel/core/subsys/human68k/human68k_host.c
     ${_KS_ROOT}/src/kernel/core/subsys/human68k/x_loader.c
     ${_KS_ROOT}/src/kernel/core/subsys/human68k/r_loader.c
-    ${_KS_ROOT}/src/kernel/core/subsys/ppap/h68k_emu.c
+    ${_KS_ROOT}/src/kernel/core/subsys/human68k/h68k_emu.c
 )
 
 set(KERNEL_SUBSYS_CPM_SOURCES

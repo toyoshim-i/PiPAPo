@@ -19,7 +19,7 @@
 #include "kernel/core/mm/page.h"
 #include "kernel/core/subsys/subsys.h"
 #if !defined(__m68k__)
-#include "kernel/core/subsys/ppap/h68k_emu.h"
+#include "kernel/core/subsys/human68k/h68k_emu.h"
 #else
 #include "kernel/core/signal/signal.h"
 #include "kernel/core/subsys/human68k/human68k_host.h"

@@ -8,7 +8,7 @@
 
 #if !defined(__m68k__)
 
-#include "kernel/core/subsys/ppap/h68k_emu.h"
+#include "kernel/core/subsys/human68k/h68k_emu.h"
 
 #include <string.h>
 
