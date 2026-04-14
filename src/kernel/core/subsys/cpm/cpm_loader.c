@@ -1,5 +1,5 @@
 /*
- * com_loader.c — CP/M .COM binary format loader
+ * cpm_loader.c — CP/M .COM binary format loader
  *
  * Detects .COM files by extension and loads them into a Z80 emulator
  * instance for execution.  Memory allocation, Z80 initialization, and
@@ -9,7 +9,7 @@
  * See docs/subsystems/cpm.md §4 for the full design.
  */
 
-#include "kernel/core/subsys/cpm/com_loader.h"
+#include "kernel/core/subsys/cpm/cpm_loader.h"
 
 #include "common/errno.h"
 #include "kernel/core/cpu/ecpu_z80.h"
@@ -191,7 +191,7 @@ static int com_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
 /* ── Loader registration ───────────────────────────────────────────────── */
 
-const loader_t com_loader = {
+const loader_t cpm_loader = {
     .name = "com",
     .detect = com_detect,
     .load = com_load,

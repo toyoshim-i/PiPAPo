@@ -1,5 +1,5 @@
 /*
- * dos_com_loader.c --- MS-DOS .COM binary loader
+ * com_loader.c --- MS-DOS .COM binary loader
  *
  * Loads DOS .COM flat binaries into a 64 KB segment with a PSP at
  * offset 0x0000 and the program at 0x0100.  CS=DS=ES=SS=segment.
@@ -9,7 +9,7 @@
  * be used (not yet implemented).
  */
 
-#include "kernel/core/subsys/msdos/dos_com_loader.h"
+#include "kernel/core/subsys/msdos/com_loader.h"
 
 #include <string.h>
 
@@ -201,7 +201,7 @@ static int dos_com_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
 /* ── Loader registration ──────────────────────────────────────────────── */
 
-const loader_t dos_com_loader = {
+const loader_t com_loader = {
     .name = "dos_com",
     .detect = dos_com_detect,
     .load = dos_com_load,

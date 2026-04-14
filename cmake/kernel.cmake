@@ -105,7 +105,7 @@ set(KERNEL_SUBSYS_HUMAN68K_SOURCES
 set(KERNEL_SUBSYS_CPM_SOURCES
     ${_KS_ROOT}/src/kernel/core/subsys/cpm/cpm_bridge.c
     ${_KS_ROOT}/src/kernel/core/subsys/cpm/cpm_host.c
-    ${_KS_ROOT}/src/kernel/core/subsys/cpm/com_loader.c
+    ${_KS_ROOT}/src/kernel/core/subsys/cpm/cpm_loader.c
 )
 
 set(KERNEL_SUBSYS_SOS_SOURCES
@@ -115,7 +115,7 @@ set(KERNEL_SUBSYS_SOS_SOURCES
 
 set(KERNEL_SUBSYS_MSDOS_SOURCES
     ${_KS_ROOT}/src/kernel/core/subsys/msdos/dos_bridge.c
-    ${_KS_ROOT}/src/kernel/core/subsys/msdos/dos_com_loader.c
+    ${_KS_ROOT}/src/kernel/core/subsys/msdos/com_loader.c
 )
 
 set(KERNEL_ECPU_Z80_SOURCES

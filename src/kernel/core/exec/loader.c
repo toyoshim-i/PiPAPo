@@ -6,7 +6,7 @@
 
 #include "kernel/core/exec/elf_loader.h"
 #ifdef PPAP_ENABLE_CPM
-#include "kernel/core/subsys/cpm/com_loader.h"
+#include "kernel/core/subsys/cpm/cpm_loader.h"
 #endif
 #ifdef PPAP_ENABLE_HUMAN68K
 #include "kernel/core/subsys/human68k/r_loader.h"
@@ -19,7 +19,7 @@
 #include "kernel/core/subsys/ppap/m68k_emu_loader.h"
 #endif
 #ifdef PPAP_ENABLE_MSDOS
-#include "kernel/core/subsys/msdos/dos_com_loader.h"
+#include "kernel/core/subsys/msdos/com_loader.h"
 #endif
 #if defined(__ia16__)
 extern const loader_t elf16_loader;
@@ -29,7 +29,7 @@ extern const loader_t flat_loader;
 
 const loader_t* loader_registry[] = {
 #ifdef PPAP_ENABLE_CPM
-    &com_loader,
+    &cpm_loader,
 #endif
 #ifdef PPAP_ENABLE_HUMAN68K
     &x_loader,
@@ -45,7 +45,7 @@ const loader_t* loader_registry[] = {
     &elf_loader,
 #endif
 #ifdef PPAP_ENABLE_MSDOS
-    &dos_com_loader, /* DOS .COM before flat (extension match) */
+    &com_loader, /* DOS .COM before flat (extension match) */
 #endif
 #if defined(__ia16__)
     &elf16_loader, /* ELF before flat (ELF detection is stricter) */
