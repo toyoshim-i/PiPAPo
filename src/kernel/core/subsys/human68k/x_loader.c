@@ -19,7 +19,7 @@
 #include "kernel/core/mm/page.h"
 #include "kernel/core/subsys/subsys.h"
 #if !defined(__m68k__)
-#include "kernel/core/subsys/human68k/h68k_emu.h"
+#include "kernel/core/subsys/human68k/m68k_emu.h"
 #else
 #include "kernel/core/signal/signal.h"
 #include "kernel/core/subsys/human68k/human68k_host.h"
@@ -35,7 +35,7 @@
 #define X68K_HEADER_SIZE 64
 
 #if !defined(__m68k__)
-/* PMB size on native is in h68k_emu.h; define here for emulated path too */
+/* PMB size on native is in m68k_emu.h; define here for emulated path too */
 #else
 #define X68K_PMB_SIZE 0x100
 #endif
@@ -228,12 +228,12 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   uint32_t emu_mem_size = emu_mem_pages * PAGE_SIZE;
 
   uint8_t *emu_mem = mem_base;
-  h68k_emu_exec_state_t *st =
-      (h68k_emu_exec_state_t *)(mem_base + emu_mem_pages * PAGE_SIZE);
+  m68k_emu_exec_state_t *st =
+      (m68k_emu_exec_state_t *)(mem_base + emu_mem_pages * PAGE_SIZE);
   memset(st, 0, sizeof(*st));
   ecpu_m68k_ops.init((cpu_state_t *)&st->m68k, emu_mem, emu_mem_size);
   ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&st->m68k,
-                                 h68k_emu_trap_handler, st);
+                                 m68k_emu_trap_handler, st);
 
   /* PMB + text/data/bss at guest addresses 0x0000.. */
   memset(emu_mem, 0, emu_mem_size);
@@ -290,7 +290,7 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   p->image.entry = X68K_PMB_SIZE + entry_offset;
   p->subsys = SUBSYS_PPAP;
   p->subsys_data = st;
-  proc_setup_stack(p, h68k_emu_run_process, 0);
+  proc_setup_stack(p, m68k_emu_run_process, 0);
 
   (void)argv;
   return 0;
@@ -333,7 +333,7 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   uint8_t *text_dst = base + X68K_PMB_SIZE;
   const char *path = (argv && argv[0]) ? argv[0] : "";
 
-  x68k_setup_pmb(base, total_bytes, image_size, path);
+  human68k_setup_pmb(base, total_bytes, image_size, path);
 
   const uint8_t *text_src = file_buf + X68K_HEADER_SIZE;
   memcpy(text_dst, text_src, text_size);
@@ -372,10 +372,10 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   p->usp = (uint32_t)(uintptr_t)(base + total_bytes);
 #endif
 
-  x68k_setup_registers(p->sp, (uint32_t)(uintptr_t)base,
-                       (uint32_t)(uintptr_t)(base + total_bytes),
-                       (uint32_t)(uintptr_t)(base + 0x6C),
-                       (uint32_t)(uintptr_t)text_dst);
+  human68k_setup_registers(p->sp, (uint32_t)(uintptr_t)base,
+                           (uint32_t)(uintptr_t)(base + total_bytes),
+                           (uint32_t)(uintptr_t)(base + 0x6C),
+                           (uint32_t)(uintptr_t)text_dst);
 
   p->subsys = SUBSYS_HUMAN68K;
   {

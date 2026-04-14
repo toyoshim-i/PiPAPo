@@ -24,7 +24,7 @@
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
-#include "kernel/core/subsys/human68k/h68k_util.h"
+#include "kernel/core/subsys/human68k/human68k_util.h"
 #include "kernel/core/syscall/syscall.h"
 
 #ifdef PPAP_DEBUG_LOG
@@ -100,7 +100,7 @@ static inline void advance_pc(uint32_t *regs) {
  *   backslash      →  forward slash
  *
  * Returns length of translated path, or -1 on overflow.
- * Implementation in h68k_util.c.
+ * Implementation in human68k_util.c.
  */
 
 /* ── IOCS-level primitives ─────────────────────────────────────────────
@@ -505,14 +505,14 @@ static int dos_create(uint32_t *regs, uint32_t usp) {
   /* uint16_t attr = ustack_u16(usp, 4); — ignored (PPAP uses mode) */
   const char *src = (const char *)(uintptr_t)path_addr;
   char path[128];
-  if (h68k_translate_path(src, path, sizeof(path)) < 0) {
-    regs[0] = (uint32_t)h68k_errno(-ENAMETOOLONG);
+  if (human68k_translate_path(src, path, sizeof(path)) < 0) {
+    regs[0] = (uint32_t)human68k_errno(-ENAMETOOLONG);
     advance_pc(regs);
     return 2;
   }
   H68K_TRACE("_CREATE(%s)", path);
   long r = sys_open((uintptr_t)path, O_CREAT | O_TRUNC | O_WRONLY, 0644);
-  regs[0] = (uint32_t)h68k_errno(r);
+  regs[0] = (uint32_t)human68k_errno(r);
   advance_pc(regs);
   return 2;
 }
@@ -528,8 +528,8 @@ static int dos_open(uint32_t *regs, uint32_t usp) {
   uint16_t mode = ustack_u16(usp, 4);
   const char *src = (const char *)(uintptr_t)path_addr;
   char path[128];
-  if (h68k_translate_path(src, path, sizeof(path)) < 0) {
-    regs[0] = (uint32_t)h68k_errno(-ENAMETOOLONG);
+  if (human68k_translate_path(src, path, sizeof(path)) < 0) {
+    regs[0] = (uint32_t)human68k_errno(-ENAMETOOLONG);
     advance_pc(regs);
     return 2;
   }
@@ -547,7 +547,7 @@ static int dos_open(uint32_t *regs, uint32_t usp) {
       break;
   }
   long r = sys_open((uintptr_t)path, flags, 0644);
-  regs[0] = (uint32_t)h68k_errno(r);
+  regs[0] = (uint32_t)human68k_errno(r);
   advance_pc(regs);
   return 2;
 }
@@ -561,7 +561,7 @@ static int dos_close(uint32_t *regs, uint32_t usp) {
   int fd = (int)(int16_t)ustack_u16(usp, 0);
   H68K_TRACE("_CLOSE(%u)", (uint32_t)fd);
   long r = sys_close(fd);
-  regs[0] = (uint32_t)h68k_errno(r);
+  regs[0] = (uint32_t)human68k_errno(r);
   advance_pc(regs);
   return 2;
 }
@@ -577,7 +577,7 @@ static int dos_read(uint32_t *regs, uint32_t usp) {
   uint32_t len = ustack_u32(usp, 6);
   H68K_TRACE("_READ(%u, %x, %x)", (uint32_t)fd, buf_addr, len);
   long r = sys_read(fd, (uintptr_t)buf_addr, (size_t)len);
-  regs[0] = (uint32_t)h68k_errno(r);
+  regs[0] = (uint32_t)human68k_errno(r);
   advance_pc(regs);
   return 2;
 }
@@ -593,7 +593,7 @@ static int dos_write(uint32_t *regs, uint32_t usp) {
   uint32_t len = ustack_u32(usp, 6);
   H68K_TRACE("_WRITE(%u, %x, %x)", (uint32_t)fd, buf_addr, len);
   long r = sys_write(fd, (uintptr_t)buf_addr, (size_t)len);
-  regs[0] = (uint32_t)h68k_errno(r);
+  regs[0] = (uint32_t)human68k_errno(r);
   advance_pc(regs);
   return 2;
 }
@@ -607,14 +607,14 @@ static int dos_delete(uint32_t *regs, uint32_t usp) {
   uint32_t path_addr = ustack_u32(usp, 0);
   const char *src = (const char *)(uintptr_t)path_addr;
   char path[128];
-  if (h68k_translate_path(src, path, sizeof(path)) < 0) {
-    regs[0] = (uint32_t)h68k_errno(-ENAMETOOLONG);
+  if (human68k_translate_path(src, path, sizeof(path)) < 0) {
+    regs[0] = (uint32_t)human68k_errno(-ENAMETOOLONG);
     advance_pc(regs);
     return 2;
   }
   H68K_TRACE("_DELETE(%s)", path);
   long r = sys_unlink((uintptr_t)path);
-  regs[0] = (uint32_t)h68k_errno(r);
+  regs[0] = (uint32_t)human68k_errno(r);
   advance_pc(regs);
   return 2;
 }
@@ -632,7 +632,7 @@ static int dos_seek(uint32_t *regs, uint32_t usp) {
   H68K_TRACE("_SEEK(%u, %x, %u)", (uint32_t)fd, (uint32_t)offset,
              (uint32_t)whence);
   long r = sys_lseek(fd, offset, whence);
-  regs[0] = (uint32_t)h68k_errno(r);
+  regs[0] = (uint32_t)human68k_errno(r);
   advance_pc(regs);
   return 2;
 }
@@ -646,14 +646,14 @@ static int dos_chdir(uint32_t *regs, uint32_t usp) {
   uint32_t path_addr = ustack_u32(usp, 0);
   const char *src = (const char *)(uintptr_t)path_addr;
   char path[128];
-  if (h68k_translate_path(src, path, sizeof(path)) < 0) {
-    regs[0] = (uint32_t)h68k_errno(-ENAMETOOLONG);
+  if (human68k_translate_path(src, path, sizeof(path)) < 0) {
+    regs[0] = (uint32_t)human68k_errno(-ENAMETOOLONG);
     advance_pc(regs);
     return 2;
   }
   H68K_TRACE("_CHDIR(%s)", path);
   long r = sys_chdir((uintptr_t)path);
-  regs[0] = (uint32_t)h68k_errno(r);
+  regs[0] = (uint32_t)human68k_errno(r);
   advance_pc(regs);
   return 2;
 }
@@ -674,7 +674,7 @@ static int dos_curdir(uint32_t *regs, uint32_t usp) {
   char cwd[128];
   long r = sys_getcwd((uintptr_t)cwd, sizeof(cwd));
   if (r < 0) {
-    regs[0] = (uint32_t)h68k_errno(r);
+    regs[0] = (uint32_t)human68k_errno(r);
     advance_pc(regs);
     return 2;
   }
@@ -717,7 +717,7 @@ static int dos_dup(uint32_t *regs, uint32_t usp) {
   int fd = (int)(int16_t)ustack_u16(usp, 0);
   H68K_TRACE("_DUP(%d)", fd);
   long r = sys_dup((long)fd);
-  regs[0] = (uint32_t)h68k_errno(r);
+  regs[0] = (uint32_t)human68k_errno(r);
   advance_pc(regs);
   return 2;
 }
@@ -732,7 +732,7 @@ static int dos_dup2(uint32_t *regs, uint32_t usp) {
   int new_fd = (int)(int16_t)ustack_u16(usp, 2);
   H68K_TRACE("_DUP2(%d, %d)", old_fd, new_fd);
   long r = sys_dup2((long)old_fd, (long)new_fd);
-  regs[0] = (uint32_t)h68k_errno(r);
+  regs[0] = (uint32_t)human68k_errno(r);
   advance_pc(regs);
   return 2;
 }
@@ -749,11 +749,11 @@ static int dos_rename(uint32_t *regs, uint32_t usp) {
   const char *old_src = (const char *)(uintptr_t)old_addr;
   const char *new_src = (const char *)(uintptr_t)new_addr;
   char old_path[128], new_path[128];
-  h68k_translate_path(old_src, old_path, sizeof(old_path));
-  h68k_translate_path(new_src, new_path, sizeof(new_path));
+  human68k_translate_path(old_src, old_path, sizeof(old_path));
+  human68k_translate_path(new_src, new_path, sizeof(new_path));
   H68K_TRACE("_RENAME(%s, %s)", old_path, new_path);
   long r = sys_rename((uintptr_t)old_path, (uintptr_t)new_path);
-  regs[0] = (uint32_t)h68k_errno((int)r);
+  regs[0] = (uint32_t)human68k_errno((int)r);
   advance_pc(regs);
   return 2;
 }
@@ -1113,8 +1113,8 @@ static int dos_exec(uint32_t *regs, uint32_t usp) {
 
   const char *raw = (const char *)(uintptr_t)name_addr;
   char path[128];
-  if (h68k_translate_path(raw, path, sizeof(path)) < 0) {
-    regs[0] = (uint32_t)h68k_errno(-ENAMETOOLONG);
+  if (human68k_translate_path(raw, path, sizeof(path)) < 0) {
+    regs[0] = (uint32_t)human68k_errno(-ENAMETOOLONG);
     advance_pc(regs);
     return 2;
   }
@@ -1122,7 +1122,7 @@ static int dos_exec(uint32_t *regs, uint32_t usp) {
 
   if (mode != 0) {
     /* Only LOADEXEC is supported for now */
-    regs[0] = (uint32_t)h68k_errno(-ENOSYS);
+    regs[0] = (uint32_t)human68k_errno(-ENOSYS);
     advance_pc(regs);
     return 2;
   }
@@ -1130,7 +1130,7 @@ static int dos_exec(uint32_t *regs, uint32_t usp) {
   /* Allocate child process */
   pcb_t *child = proc_alloc();
   if (!child) {
-    regs[0] = (uint32_t)h68k_errno(-ENOMEM);
+    regs[0] = (uint32_t)human68k_errno(-ENOMEM);
     advance_pc(regs);
     return 2;
   }
@@ -1144,7 +1144,7 @@ static int dos_exec(uint32_t *regs, uint32_t usp) {
   if (err < 0) {
     /* execve failed — free the child */
     child->state = PROC_FREE;
-    regs[0] = (uint32_t)h68k_errno((long)err);
+    regs[0] = (uint32_t)human68k_errno((long)err);
     advance_pc(regs);
     return 2;
   }
@@ -1159,7 +1159,7 @@ static int dos_exec(uint32_t *regs, uint32_t usp) {
     if (wpid == 0) sched_switch();
   } while (wpid == 0);
 
-  regs[0] = (wpid > 0) ? 0 : (uint32_t)h68k_errno(wpid);
+  regs[0] = (wpid > 0) ? 0 : (uint32_t)human68k_errno(wpid);
   return 2;
 }
 
@@ -1342,14 +1342,14 @@ static int dos_mkdir(uint32_t *regs, uint32_t usp) {
   uint32_t path_addr = ustack_u32(usp, 0);
   const char *src = (const char *)(uintptr_t)path_addr;
   char path[128];
-  if (h68k_translate_path(src, path, sizeof(path)) < 0) {
-    regs[0] = (uint32_t)h68k_errno(-ENAMETOOLONG);
+  if (human68k_translate_path(src, path, sizeof(path)) < 0) {
+    regs[0] = (uint32_t)human68k_errno(-ENAMETOOLONG);
     advance_pc(regs);
     return 2;
   }
   H68K_TRACE("_MKDIR(%s)", path);
   long r = sys_mkdir((uintptr_t)path, 0755);
-  regs[0] = (uint32_t)h68k_errno(r);
+  regs[0] = (uint32_t)human68k_errno(r);
   advance_pc(regs);
   return 2;
 }
@@ -1363,14 +1363,14 @@ static int dos_rmdir(uint32_t *regs, uint32_t usp) {
   uint32_t path_addr = ustack_u32(usp, 0);
   const char *src = (const char *)(uintptr_t)path_addr;
   char path[128];
-  if (h68k_translate_path(src, path, sizeof(path)) < 0) {
-    regs[0] = (uint32_t)h68k_errno(-ENAMETOOLONG);
+  if (human68k_translate_path(src, path, sizeof(path)) < 0) {
+    regs[0] = (uint32_t)human68k_errno(-ENAMETOOLONG);
     advance_pc(regs);
     return 2;
   }
   H68K_TRACE("_RMDIR(%s)", path);
   long r = sys_rmdir((uintptr_t)path);
-  regs[0] = (uint32_t)h68k_errno(r);
+  regs[0] = (uint32_t)human68k_errno(r);
   advance_pc(regs);
   return 2;
 }
@@ -1387,8 +1387,8 @@ static int dos_chmod(uint32_t *regs, uint32_t usp) {
   uint32_t path_addr = ustack_u32(usp, 2);
   const char *src = (const char *)(uintptr_t)path_addr;
   char path[128];
-  if (h68k_translate_path(src, path, sizeof(path)) < 0) {
-    regs[0] = (uint32_t)h68k_errno(-ENAMETOOLONG);
+  if (human68k_translate_path(src, path, sizeof(path)) < 0) {
+    regs[0] = (uint32_t)human68k_errno(-ENAMETOOLONG);
     advance_pc(regs);
     return 2;
   }
@@ -1397,7 +1397,7 @@ static int dos_chmod(uint32_t *regs, uint32_t usp) {
   struct stat st;
   long r = sys_stat((uintptr_t)path, (uintptr_t)&st);
   if (r < 0) {
-    regs[0] = (uint32_t)h68k_errno(r);
+    regs[0] = (uint32_t)human68k_errno(r);
     advance_pc(regs);
     return 2;
   }
@@ -1562,8 +1562,8 @@ static int dos_files(uint32_t *regs, uint32_t usp) {
 
   const char *raw = (const char *)(uintptr_t)pathname_addr;
   char path[128];
-  if (h68k_translate_path(raw, path, sizeof(path)) < 0) {
-    regs[0] = (uint32_t)h68k_errno(-ENAMETOOLONG);
+  if (human68k_translate_path(raw, path, sizeof(path)) < 0) {
+    regs[0] = (uint32_t)human68k_errno(-ENAMETOOLONG);
     advance_pc(regs);
     return 2;
   }
@@ -1576,7 +1576,7 @@ static int dos_files(uint32_t *regs, uint32_t usp) {
   /* Open the directory */
   long fd = sys_open((uintptr_t)dir, O_RDONLY, 0);
   if (fd < 0) {
-    regs[0] = (uint32_t)h68k_errno(fd);
+    regs[0] = (uint32_t)human68k_errno(fd);
     advance_pc(regs);
     return 2;
   }

@@ -19,7 +19,7 @@
 #include "kernel/core/mm/page.h"
 #include "kernel/core/subsys/subsys.h"
 #if !defined(__m68k__)
-#include "kernel/core/subsys/human68k/h68k_emu.h"
+#include "kernel/core/subsys/human68k/m68k_emu.h"
 #else
 #include "kernel/core/signal/signal.h"
 #include "kernel/core/subsys/human68k/human68k_host.h"
@@ -122,13 +122,13 @@ static int r_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   uint32_t emu_mem_pages = (uint32_t)total_pages - 1u;
   uint32_t emu_mem_size = emu_mem_pages * PAGE_SIZE;
   uint8_t *emu_mem = mem_base;
-  h68k_emu_exec_state_t *st =
-      (h68k_emu_exec_state_t *)(mem_base + emu_mem_pages * PAGE_SIZE);
+  m68k_emu_exec_state_t *st =
+      (m68k_emu_exec_state_t *)(mem_base + emu_mem_pages * PAGE_SIZE);
 
   memset(st, 0, sizeof(*st));
   ecpu_m68k_ops.init((cpu_state_t *)&st->m68k, emu_mem, emu_mem_size);
   ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&st->m68k,
-                                 h68k_emu_trap_handler, st);
+                                 m68k_emu_trap_handler, st);
 
   memset(emu_mem, 0, emu_mem_size);
   {
@@ -165,7 +165,7 @@ static int r_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   p->image.entry = X68K_PMB_SIZE;
   p->subsys = SUBSYS_PPAP;
   p->subsys_data = st;
-  proc_setup_stack(p, h68k_emu_run_process, 0);
+  proc_setup_stack(p, m68k_emu_run_process, 0);
 
   (void)argv;
   return 0;
@@ -212,7 +212,7 @@ static int r_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     memset(image_dst + file_size, 0, total_bytes - X68K_PMB_SIZE - file_size);
 
   const char *path = (argv && argv[0]) ? argv[0] : "";
-  x68k_setup_pmb(base, total_bytes, file_size, path);
+  human68k_setup_pmb(base, total_bytes, file_size, path);
 
   /* Set up entry point (no relocation needed) */
   uint32_t entry = (uint32_t)(uintptr_t)image_dst;
@@ -226,10 +226,10 @@ static int r_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   p->usp = (uint32_t)(uintptr_t)(base + total_bytes);
 #endif
 
-  x68k_setup_registers(p->sp, (uint32_t)(uintptr_t)base,
-                       (uint32_t)(uintptr_t)(base + total_bytes),
-                       (uint32_t)(uintptr_t)(base + 0x6C),
-                       (uint32_t)(uintptr_t)image_dst);
+  human68k_setup_registers(p->sp, (uint32_t)(uintptr_t)base,
+                           (uint32_t)(uintptr_t)(base + total_bytes),
+                           (uint32_t)(uintptr_t)(base + 0x6C),
+                           (uint32_t)(uintptr_t)image_dst);
 
   p->subsys = SUBSYS_HUMAN68K;
   {

@@ -19,7 +19,7 @@
 /* ── PMB setup ─────────────────────────────────────────────────────────── */
 
 /*
- * x68k_setup_pmb — initialize Process Memory Block fields.
+ * human68k_setup_pmb — initialize Process Memory Block fields.
  *
  * Sets up the PMB structure (§4.4 MMB header + §4.5 PMB fields) at the
  * start of the allocated memory block.
@@ -30,8 +30,8 @@
  *   image_size  — size of loaded image (text + data + bss)
  *   path        — full path to executable (for copying to path field)
  */
-void x68k_setup_pmb(uint8_t *base, uint32_t total_bytes, uint32_t image_size,
-                    const char *path) {
+void human68k_setup_pmb(uint8_t *base, uint32_t total_bytes,
+                        uint32_t image_size, const char *path) {
   /* PMB offset: image starts at base+0x100 */
   uint32_t base_u = (uint32_t)(uintptr_t)base;
   uint32_t end_u = base_u + total_bytes;
@@ -79,7 +79,7 @@ void x68k_setup_pmb(uint8_t *base, uint32_t total_bytes, uint32_t image_size,
 /* ── Register patching ─────────────────────────────────────────────────── */
 
 /*
- * x68k_setup_registers — patch initial CPU registers in stack frame.
+ * human68k_setup_registers — patch initial CPU registers in stack frame.
  *
  * Sets up the software interrupt frame that proc_setup_stack() creates,
  * initializing the initial register values (A0–A4) according to the
@@ -92,8 +92,9 @@ void x68k_setup_pmb(uint8_t *base, uint32_t total_bytes, uint32_t image_size,
  *   cmdline_ptr — address of command line buffer
  *   entry_ptr   — entry point address (text base or image start)
  */
-void x68k_setup_registers(uint32_t sp, uint32_t pmb_base, uint32_t block_end,
-                          uint32_t cmdline_ptr, uint32_t entry_ptr) {
+void human68k_setup_registers(uint32_t sp, uint32_t pmb_base,
+                              uint32_t block_end, uint32_t cmdline_ptr,
+                              uint32_t entry_ptr) {
   /* Software frame (low → high from sp):
    *   [0..7]  d0–d7    [8..14] a0–a6    then SR(2)+PC(4)
    */

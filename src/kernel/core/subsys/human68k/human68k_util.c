@@ -1,14 +1,14 @@
 /*
- * h68k_util.c — Human68k path translation and error code mapping
+ * human68k_util.c — Human68k path translation and error code mapping
  */
 
-#include "kernel/core/subsys/human68k/h68k_util.h"
+#include "kernel/core/subsys/human68k/human68k_util.h"
 
 #include "common/errno.h"
 
 /* ── Path translation: Human68k → UNIX ─────────────────────────────── */
 
-int h68k_translate_path(const char *src, char *dst, int dstsize) {
+int human68k_translate_path(const char *src, char *dst, int dstsize) {
   int si = 0, di = 0;
 
   /* Drive letter: "X:" */
@@ -42,7 +42,7 @@ int h68k_translate_path(const char *src, char *dst, int dstsize) {
 
 /* ── Error code translation: PPAP errno → Human68k ─────────────────── */
 
-int32_t h68k_errno(long ppap_err) {
+int32_t human68k_errno(long ppap_err) {
   if (ppap_err >= 0) return (int32_t)ppap_err;
 
   switch ((int)(-ppap_err)) {
