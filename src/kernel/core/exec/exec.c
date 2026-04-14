@@ -142,7 +142,7 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
       }
       if (!cpu_ops) {
         rc = -(int)ENOEXEC;
-        break;
+        continue;
       }
 
       uint32_t exec_flags = (vn->xip_addr != NULL) ? EXEC_FLAG_XIP_SOURCE : 0;

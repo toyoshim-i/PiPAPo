@@ -206,8 +206,8 @@ void mm_init(void) {
     uint32_t a;
     uint32_t b;
   } test_obj_t;
-  static uint8_t test_mem[4 * sizeof(test_obj_t)];
-  static kmem_pool_t test_pool;
+  uint8_t test_mem[4 * sizeof(test_obj_t)];
+  kmem_pool_t test_pool;
   kmem_pool_init(&test_pool, test_mem, sizeof(test_obj_t), 4u);
 
   test_obj_t *o1 = kmem_alloc(&test_pool); /* 3 free */
