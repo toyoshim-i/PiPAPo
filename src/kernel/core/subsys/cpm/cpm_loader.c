@@ -29,7 +29,7 @@
 
 /* ── Detection ─────────────────────────────────────────────────────────── */
 
-static int com_detect(const uint8_t *file_buf, uint32_t file_size,
+static int cpm_detect(const uint8_t *file_buf, uint32_t file_size,
                       const char *path) {
   (void)file_buf;
 
@@ -87,7 +87,7 @@ static void cpm_set_drive_a_root(cpm_state_t *cpm, const char *path) {
 
 /* ── Loader ────────────────────────────────────────────────────────────── */
 
-static int com_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
+static int cpm_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
                     const cpu_ops_t *cpu_ops, void *cpu_state,
                     const char *const *argv, uint32_t flags) {
   (void)flags;
@@ -193,8 +193,8 @@ static int com_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
 const loader_t cpm_loader = {
     .name = "com",
-    .detect = com_detect,
-    .load = com_load,
+    .detect = cpm_detect,
+    .load = cpm_load,
     .required_arch_id = CPU_ARCH_Z80,
     .xip = 0,
 };

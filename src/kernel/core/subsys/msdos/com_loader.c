@@ -28,8 +28,8 @@
 
 /* ── Detection ─────────────────────────────────────────────────────────── */
 
-static int dos_com_detect(const uint8_t *file_buf, uint32_t file_size,
-                          const char *path) {
+static int com_detect(const uint8_t *file_buf, uint32_t file_size,
+                      const char *path) {
   (void)file_buf;
 
   if (file_size == 0 || file_size > COM_MAX_SIZE) return 0;
@@ -50,9 +50,9 @@ static int dos_com_detect(const uint8_t *file_buf, uint32_t file_size,
 
 /* ── Loading ───────────────────────────────────────────────────────────── */
 
-static int dos_com_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
-                        const cpu_ops_t *cpu_ops, void *cpu_state,
-                        const char *const *argv, uint32_t flags) {
+static int com_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
+                    const cpu_ops_t *cpu_ops, void *cpu_state,
+                    const char *const *argv, uint32_t flags) {
   (void)cpu_ops;
   (void)cpu_state;
   (void)flags;
@@ -203,8 +203,8 @@ static int dos_com_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
 const loader_t com_loader = {
     .name = "dos_com",
-    .detect = dos_com_detect,
-    .load = dos_com_load,
+    .detect = com_detect,
+    .load = com_load,
     .required_arch_id = CPU_ARCH_8086,
     .xip = 0,
 };
