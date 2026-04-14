@@ -274,6 +274,7 @@ int main(void)
     record_test("/bin/test_rw",    TEST_ENABLED);
     record_test("/bin/test_tmpfs", TEST_DISABLED);
     record_test("/bin/test_ufs",   TEST_ENABLED);
+    record_test("/bin/test_msdos", TEST_ENABLED);
 
     print("\n=== Results: ");
     print_int(g_total);
@@ -335,6 +336,7 @@ int main(void)
 #endif
     tests[t++] = (test_entry_t){ "/bin/test_cpm",        TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_sos",        TEST_ENABLED  };
+    tests[t++] = (test_entry_t){ "/bin/test_msdos",      TEST_DISABLED }; /* pcxt only */
     tests[t++] = (test_entry_t){ "/bin/test_zexdoc",     TEST_SLOW     };
     tests[t++] = (test_entry_t){ "/bin/test_zexall",     TEST_SLOW     };
     tests[t++] = (test_entry_t){ "/bin/test_musl",       TEST_ENABLED  };

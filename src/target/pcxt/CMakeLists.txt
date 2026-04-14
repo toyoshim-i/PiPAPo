@@ -558,6 +558,8 @@ if(PPAP_TESTS)
     EXTRA_CFLAGS -I${PCXT_TEST_DIR})
   pcxt_user_program(test_ufs ${PPAP_ROOT}/tests/user/test_ufs.c
     EXTRA_CFLAGS -I${PCXT_TEST_DIR})
+  pcxt_user_program(test_msdos ${PPAP_ROOT}/tests/user/test_msdos.c
+    EXTRA_CFLAGS -I${PCXT_TEST_DIR})
 endif()
 
 if(PPAP_TESTS_EXTENDED)
