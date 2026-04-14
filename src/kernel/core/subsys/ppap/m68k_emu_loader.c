@@ -2,8 +2,8 @@
  * m68k_emu_loader.c — m68k ELF binary loader for cross-arch emulation
  *
  * Detects m68k ELF binaries on non-m68k hosts, allocates emulated
- * memory, loads PT_LOAD segments, and sets up the eCPU-m68k state
- * for execution via the PPAP cross-arch personality.
+ * memory, initializes the m68k emulator, and delegates image loading
+ * (PT_LOAD segments, entry point, argc/argv stack) to ppap_m68k_host.c.
  */
 
 #include <string.h>
@@ -17,6 +17,7 @@
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/subsys/ppap/ppap_m68k_bridge.h"
+#include "kernel/core/subsys/ppap/ppap_m68k_host.h"
 #include "kernel/core/subsys/subsys.h"
 
 /* Preferred emulated memory size — the loader will try this first,
@@ -86,25 +87,12 @@ static int m68k_emu_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   (void)cpu_ops;
   (void)cpu_state;
 
-  const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)file_buf;
-
-  int argc = 0;
-  if (argv) {
-    while (argv[argc] != NULL) {
-      argc++;
-      if (argc > EXEC_ARGV_MAX) return -(int)E2BIG;
-    }
-  }
-  if (argc == 0) argc = 1;
-
   /* ── 1. Allocate emulated memory + state struct ────────────────────── */
   uint32_t state_pages =
       (sizeof(ppap_m68k_exec_state_t) + PAGE_SIZE - 1) / PAGE_SIZE;
   proc_image_segment_t data_region = {0};
   proc_image_segment_t stack_region = {0};
 
-  /* Try preferred size first, then halve until we fit or hit minimum.
-   * Reserve a few pages (4) for the process stack and kernel overhead. */
   uint32_t emu_mem_pages = M68K_EMU_MEM_PREFERRED / PAGE_SIZE;
   uint32_t min_emu_pages = M68K_EMU_MEM_MIN / PAGE_SIZE;
   int total_pages = m68k_emu_alloc_region(
@@ -129,98 +117,30 @@ static int m68k_emu_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   /* ── 3. Initialize m68k emulator ───────────────────────────────────── */
   memset(state, 0, sizeof(*state));
   ecpu_m68k_ops.init((cpu_state_t *)&state->m68k, emu_mem, emu_mem_size);
-
-  /* Set trap handler for PPAP syscall interception */
   ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&state->m68k,
                                  ppap_m68k_trap_handler, NULL);
 
-  /* ── 4. Load PT_LOAD segments into emulated memory ─────────────────── */
-  uint32_t phoff = be32_load(&ehdr->e_phoff);
-  uint16_t phnum = be16_load(&ehdr->e_phnum);
-  uint16_t phentsize = be16_load(&ehdr->e_phentsize);
-
-  for (uint16_t i = 0; i < phnum; i++) {
-    const uint8_t *ph = file_buf + phoff + i * phentsize;
-    uint32_t p_type = be32_load(ph + 0);
-    uint32_t p_offset = be32_load(ph + 4);
-    uint32_t p_vaddr = be32_load(ph + 8);
-    uint32_t p_filesz = be32_load(ph + 16);
-    uint32_t p_memsz = be32_load(ph + 20);
-
-    if (p_type != PT_LOAD) continue;
-
-    /* Bounds check */
-    if (p_vaddr + p_memsz > emu_mem_size) continue;
-    if (p_offset + p_filesz > file_size) continue;
-
-    /* Copy file data — already big-endian, m68k memory is big-endian */
-    if (p_filesz > 0) memcpy(emu_mem + p_vaddr, file_buf + p_offset, p_filesz);
-
-    /* Zero BSS */
-    if (p_memsz > p_filesz)
-      memset(emu_mem + p_vaddr + p_filesz, 0, p_memsz - p_filesz);
+  /* ── 4. Load ELF image (PT_LOAD segments + user stack) ─────────────── */
+  uint32_t entry = 0;
+  int rc = ppap_m68k_load_elf(&state->m68k, emu_mem, emu_mem_size, file_buf,
+                              file_size, argv, &entry);
+  if (rc < 0) {
+    mem_region_free(&stack_region);
+    mem_region_free(&data_region);
+    return rc;
   }
 
-  /* ── 5. Set entry point ────────────────────────────────────────────── */
-  uint32_t entry = be32_load(&ehdr->e_entry);
-  state->m68k.pc = entry;
   p->image.data = data_region;
   p->image.entry = entry;
 
-  /* ── 6. Set up user stack with argc/argv (big-endian) ──────────────── */
-  {
-    uint32_t sp = emu_mem_size;
-
-    /* Copy argument strings to stack */
-    uint32_t str_addrs[EXEC_ARGV_MAX];
-    if (argv && argv[0]) {
-      for (int i = argc - 1; i >= 0; i--) {
-        uint32_t len = (uint32_t)strlen(argv[i]) + 1;
-        sp -= len;
-        memcpy(emu_mem + sp, argv[i], len);
-        str_addrs[i] = sp;
-      }
-    } else {
-      /* Default: use path as argv[0] */
-      const char *path = "";
-      uint32_t len = (uint32_t)strlen(path) + 1;
-      sp -= len;
-      memcpy(emu_mem + sp, path, len);
-      str_addrs[0] = sp;
-    }
-
-    /* Align to 4 bytes */
-    sp &= ~3u;
-
-    /* envp[0] = NULL */
-    sp -= 4;
-    m68k_write32(&state->m68k, sp, 0);
-
-    /* argv[argc] = NULL */
-    sp -= 4;
-    m68k_write32(&state->m68k, sp, 0);
-
-    /* argv[argc-1..0] */
-    for (int i = argc - 1; i >= 0; i--) {
-      sp -= 4;
-      m68k_write32(&state->m68k, sp, str_addrs[i]);
-    }
-
-    /* argc */
-    sp -= 4;
-    m68k_write32(&state->m68k, sp, (uint32_t)argc);
-
-    state->m68k.a[7] = sp;
-  }
-
-  /* ── 7. Set supervisor mode for kernel execution ───────────────────── */
+  /* ── 5. Set supervisor mode for kernel execution ───────────────────── */
   state->m68k.sr = M68K_SR_S;
 
-  /* ── 8. Tag as PPAP process with eCPU m68k state ───────────────────── */
+  /* ── 6. Tag as PPAP process with eCPU m68k state ───────────────────── */
   p->subsys = SUBSYS_PPAP;
   p->subsys_data = state;
 
-  /* ── 9. Set kernel-mode entry point ────────────────────────────────── */
+  /* ── 7. Set kernel-mode entry point ────────────────────────────────── */
   proc_setup_stack(p, ppap_m68k_run_process, 0);
 
   return 0;
