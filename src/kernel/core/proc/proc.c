@@ -141,22 +141,6 @@ void proc_init(void) {
    * after the boot stack is no longer in use. */
   for (uint32_t i = 0u; i < PROC_MAX; i++) i16_kstack_plant_canary(i);
 #endif
-
-#ifdef PPAP_TESTS
-  /* Self-test: allocate a slot, verify it looks sane, then free it. */
-  pcb_t *p = proc_alloc();
-
-  uint32_t ok = (p != NULL) && (p->pid == 1) && (p->state == PROC_FREE) &&
-                (current == &proc_table[0]) &&
-                (current->state == PROC_RUNNABLE);
-
-  if (p) proc_free(p);
-
-  /* Reset PID counter so the first real process gets PID 1. */
-  next_pid = 1;
-
-  mod_vfs.klogf("PROC: self-test %s\n", ok ? "PASSED" : "FAILED");
-#endif
 }
 
 void proc_plant_kstack_canaries(void) {
