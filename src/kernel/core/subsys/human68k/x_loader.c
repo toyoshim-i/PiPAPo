@@ -66,11 +66,12 @@ _Static_assert(sizeof(x68k_header_t) == X68K_HEADER_SIZE,
 
 /* ── Detection ─────────────────────────────────────────────────────────── */
 
-static int x_detect(const uint8_t *file_buf, uint32_t file_size,
-                    const char *path) {
+static int x_detect(const uint8_t *header, uint32_t header_len,
+                    uint32_t file_size, const char *path) {
   (void)path;
   if (file_size < X68K_HEADER_SIZE) return 0;
-  return file_buf[0] == X68K_MAGIC_0 && file_buf[1] == X68K_MAGIC_1;
+  if (header_len < 2) return 0;
+  return header[0] == X68K_MAGIC_0 && header[1] == X68K_MAGIC_1;
 }
 
 /* ── Header validation ─────────────────────────────────────────────────── */

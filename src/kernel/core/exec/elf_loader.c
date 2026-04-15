@@ -14,11 +14,12 @@
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
 
-static int elf_detect(const uint8_t *file_buf, uint32_t file_size,
-                      const char *path) {
+static int elf_detect(const uint8_t *header, uint32_t header_len,
+                      uint32_t file_size, const char *path) {
   (void)path;
-  if (file_size < sizeof(elf32_ehdr_t)) return 0;
-  const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)file_buf;
+  (void)file_size;
+  if (header_len < sizeof(elf32_ehdr_t)) return 0;
+  const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)header;
   return elf_validate(ehdr) == 0;
 }
 

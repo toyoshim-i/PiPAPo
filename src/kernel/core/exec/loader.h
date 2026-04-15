@@ -17,11 +17,20 @@ typedef struct pcb pcb_t;
   (1u << 0) /* file buffer is XIP-capable (romfs) \
              */
 
+/* Maximum number of bytes exec.c pre-reads from the file start and hands to
+ * each loader's detect().  Large enough to cover every current magic check
+ * (ELF32 ehdr = 52 bytes, X68K header = 64 bytes). */
+#define LOADER_HEADER_MAX 64u
+
 typedef struct loader {
   const char* name;
 
   // Detect if the loader can handle this file.
-  int (*detect)(const uint8_t* file_buf, uint32_t file_size, const char* path);
+  // `header` points to the first min(file_size, LOADER_HEADER_MAX) bytes of
+  // the file (lives on the caller's kernel stack).  `header_len` is how many
+  // bytes are valid.  Loaders that match on extension ignore `header`.
+  int (*detect)(const uint8_t* header, uint32_t header_len, uint32_t file_size,
+                const char* path);
 
   // Load the binary.
   // This function is responsible for populating memory and setting the initial

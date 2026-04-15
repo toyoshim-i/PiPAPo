@@ -30,14 +30,16 @@
 
 /* ── Detection ─────────────────────────────────────────────────────────── */
 
-static int r_detect(const uint8_t *file_buf, uint32_t file_size,
-                    const char *path) {
+static int r_detect(const uint8_t *header, uint32_t header_len,
+                    uint32_t file_size, const char *path) {
   /* R-format has no magic — detect by ".r" or ".R" extension */
   if (file_size < 2) return 0;
 
   /* Must NOT be X-format (HU magic) or ELF */
-  if (file_buf[0] == 0x48 && file_buf[1] == 0x55) return 0;
-  if (file_buf[0] == 0x7F && file_buf[1] == 'E') return 0;
+  if (header_len >= 2) {
+    if (header[0] == 0x48 && header[1] == 0x55) return 0;
+    if (header[0] == 0x7F && header[1] == 'E') return 0;
+  }
 
   /* Check extension */
   const char *dot = NULL;

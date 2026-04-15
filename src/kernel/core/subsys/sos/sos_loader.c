@@ -22,19 +22,20 @@
 
 /* ── Detection ─────────────────────────────────────────────────────────── */
 
-static int sos_detect(const uint8_t *file_buf, uint32_t file_size,
-                      const char *path) {
+static int sos_detect(const uint8_t *header, uint32_t header_len,
+                      uint32_t file_size, const char *path) {
   (void)path;
 
   /* Must have at least the 18-byte _SOS header */
   if (file_size < SOS_HEADER_SIZE) return 0;
+  if (header_len < SOS_HEADER_SIZE) return 0;
 
   /* Check _SOS magic */
-  if (memcmp(file_buf, SOS_MAGIC, SOS_MAGIC_LEN) != 0) return 0;
+  if (memcmp(header, SOS_MAGIC, SOS_MAGIC_LEN) != 0) return 0;
 
   /* Validate header structure: spaces at +4, +7, +12 and LF at +17 */
-  if (file_buf[4] != ' ' || file_buf[7] != ' ' || file_buf[12] != ' ') return 0;
-  if (file_buf[17] != 0x0A) return 0;
+  if (header[4] != ' ' || header[7] != ' ' || header[12] != ' ') return 0;
+  if (header[17] != 0x0A) return 0;
 
   return 1;
 }

@@ -27,9 +27,8 @@
 
 /* ── Detection ─────────────────────────────────────────────────────────── */
 
-static int flat_detect(const uint8_t *buf, uint32_t size, const char *path) {
-  (void)buf;
-
+static int flat_detect(const uint8_t *header, uint32_t header_len,
+                       uint32_t file_size, const char *path) {
   /* Only on native i16 host */
   if (HOST_ARCH_ID != CPU_ARCH_8086) return 0;
 
@@ -45,9 +44,9 @@ static int flat_detect(const uint8_t *buf, uint32_t size, const char *path) {
   }
 
   /* Accept any small file that doesn't start with ELF or script magic */
-  if (size > 0 && size <= FLAT_MAX_SIZE) {
-    if (buf[0] == 0x7F && buf[1] == 'E') return 0; /* ELF */
-    if (buf[0] == '#' && buf[1] == '!') return 0;  /* script */
+  if (file_size > 0 && file_size <= FLAT_MAX_SIZE && header_len >= 2) {
+    if (header[0] == 0x7F && header[1] == 'E') return 0; /* ELF */
+    if (header[0] == '#' && header[1] == '!') return 0;  /* script */
     return 1;
   }
 

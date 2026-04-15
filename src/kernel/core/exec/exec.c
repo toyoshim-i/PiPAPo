@@ -21,27 +21,25 @@
 #include "kernel/core/signal/signal.h"
 
 #if defined(__ia16__)
-/*
- * On i16, local stack buffers live in the shared DS=0 low-memory window, so
- * we can safely use a tiny header buffer there for ELF probing.
- */
+/* elf16 is kept on its own streaming entrypoint until Phase 3.2 folds it
+ * into the common vnode-based loader contract (see
+ * docs/proposals/loader_revamp.md). */
 extern const loader_t elf16_loader;
 int elf16_load_vnode(pcb_t *p, vnode_t *vn, uint32_t file_size,
                      const cpu_ops_t *cpu_ops, void *cpu_state,
                      const char *const *argv, uint32_t flags);
-
-static long exec_vnode_read_near(vnode_t *vn, void *buf, uint16_t len,
-                                 uint32_t off) {
-  page_id_t page;
-  uint16_t page_off;
-
-  /* TODO: replace inline ptr→page with proper page-indexed loader */
-  uintptr_t addr = (uintptr_t)buf;
-  page = (page_id_t)(addr / PAGE_SIZE);
-  page_off = (uint16_t)(addr & (PAGE_SIZE - 1u));
-  return mod_vfs.vnode_read(vn, page, page_off, len, off);
-}
 #endif
+
+/* Read `len` bytes from the start of `vn` into `buf`.  Converts `buf` to a
+ * (page_id, page_off) pair so mod_vfs.vnode_read does not dereference `buf`
+ * on i16 where a 32-bit linear address would truncate to a near pointer.
+ */
+static long exec_read_from(vnode_t *vn, void *buf, uint32_t len) {
+  uintptr_t addr = (uintptr_t)buf;
+  page_id_t page = (page_id_t)(addr / PAGE_SIZE);
+  uint16_t page_off = (uint16_t)(addr & (PAGE_SIZE - 1u));
+  return mod_vfs.vnode_read(vn, page, page_off, len, 0);
+}
 
 /* ── execve ─────────────────────────────────────────────────────────── */
 
@@ -63,7 +61,7 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
     return -(int)ENOEXEC;
   }
 
-  /* ── 2. Read the file into memory (or use XIP address) ─────────────── */
+  /* ── 2. Read a header buffer for loader detect() ───────────────────── */
   proc_image_segment_t file_region = {0};
   uint8_t *file_buf = NULL;
   const uint8_t *file_base;
@@ -72,30 +70,37 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
   const loader_t *matched_loader = NULL;
   int rc = -(int)ENOEXEC;
 
-#if defined(__ia16__)
-  if (vn->xip_addr == NULL && file_size >= sizeof(elf32_ehdr_t)) {
-    elf32_ehdr_t ehdr;
-    long hdr_read = exec_vnode_read_near(vn, &ehdr, sizeof(ehdr), 0);
+  if (file_size == 0) {
+    mod_vfs.vnode_release(vn);
+    return -(int)ENOEXEC;
+  }
 
-    if (hdr_read == (long)sizeof(ehdr) &&
-        elf16_loader.detect((const uint8_t *)&ehdr, file_size, path)) {
-      rc = elf16_load_vnode(p, vn, file_size, &native_cpu_ops, NULL, argv, 0);
-      if (rc < 0) {
-        mod_vfs.vnode_release(vn);
-        return rc;
-      }
-      matched_loader = &elf16_loader;
-      goto exec_loaded;
+  uint8_t header[LOADER_HEADER_MAX];
+  uint32_t header_len =
+      file_size < LOADER_HEADER_MAX ? file_size : LOADER_HEADER_MAX;
+  long nread = exec_read_from(vn, header, header_len);
+  if (nread < 0 || (uint32_t)nread != header_len) {
+    mod_vfs.vnode_release(vn);
+    return (nread < 0) ? (int)nread : -(int)ENOEXEC;
+  }
+
+#if defined(__ia16__)
+  /* On i16 the staging buffer below truncates to a near pointer (Phase 3
+   * retargets loaders to stream via vnode_read).  Until then, elf16 uses
+   * its own vnode-based load entrypoint. */
+  if (vn->xip_addr == NULL &&
+      elf16_loader.detect(header, header_len, file_size, path)) {
+    rc = elf16_load_vnode(p, vn, file_size, &native_cpu_ops, NULL, argv, 0);
+    if (rc < 0) {
+      mod_vfs.vnode_release(vn);
+      return rc;
     }
+    matched_loader = &elf16_loader;
+    goto exec_loaded;
   }
 #endif
 
   if (vn->xip_addr == NULL) {
-    if (file_size == 0) {
-      mod_vfs.vnode_release(vn);
-      return -(int)ENOEXEC;
-    }
-
     if (mem_region_alloc(&file_region, PPAP_MEM_RAM_DATA, file_size,
                          PROC_IMAGE_SEG_WRITABLE) < 0) {
       mod_vfs.vnode_release(vn);
@@ -109,19 +114,11 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
       return -(int)ENOEXEC;
     }
 
-    page_id_t page;
-    uint16_t page_off;
-    /* TODO: replace inline ptr→page with proper page-indexed loader */
-    {
-      uintptr_t addr = (uintptr_t)file_buf;
-      page = (page_id_t)(addr / PAGE_SIZE);
-      page_off = (uint16_t)(addr & (PAGE_SIZE - 1u));
-    }
-    long nread = mod_vfs.vnode_read(vn, page, page_off, file_size, 0);
-    if (nread < 0 || (uint32_t)nread != file_size) {
+    long n = exec_read_from(vn, file_buf, file_size);
+    if (n < 0 || (uint32_t)n != file_size) {
       mem_region_free(&file_region);
       mod_vfs.vnode_release(vn);
-      return (nread < 0) ? (int)nread : -(int)ENOEXEC;
+      return (n < 0) ? (int)n : -(int)ENOEXEC;
     }
 
     file_base = file_buf;
@@ -131,7 +128,7 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
 
   /* ── 3. Iterate loader registry ────────────────────────────────────── */
   for (int i = 0; loader_registry[i] != NULL; i++) {
-    int det = loader_registry[i]->detect(file_base, file_size, path);
+    int det = loader_registry[i]->detect(header, header_len, file_size, path);
     if (det) {
       int arch = loader_registry[i]->required_arch_id;
       const cpu_ops_t *cpu_ops;

@@ -35,16 +35,18 @@
 
 /* ── Detection ─────────────────────────────────────────────────────────── */
 
-static int elf16_detect(const uint8_t *buf, uint32_t size, const char *path) {
+static int elf16_detect(const uint8_t *header, uint32_t header_len,
+                        uint32_t file_size, const char *path) {
   (void)path;
+  (void)file_size;
 
   /* Only on native i16 host */
   if (HOST_ARCH_ID != CPU_ARCH_8086) return 0;
 
   /* Need at least the ELF header */
-  if (size < sizeof(elf32_ehdr_t)) return 0;
+  if (header_len < sizeof(elf32_ehdr_t)) return 0;
 
-  const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)buf;
+  const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)header;
 
   /* Check ELF magic */
   if (ehdr->e_ident[EI_MAG0] != ELFMAG0 || ehdr->e_ident[EI_MAG1] != ELFMAG1 ||
@@ -387,7 +389,9 @@ int elf16_load_vnode(pcb_t *p, vnode_t *vn, uint32_t file_size,
   nread = elf16_read_near(vn, 0, &ehdr, sizeof(ehdr));
   if (nread < 0) return (int)nread;
   if ((uint16_t)nread != sizeof(ehdr)) return -ENOEXEC;
-  if (!elf16_detect((const uint8_t *)&ehdr, file_size, "")) return -ENOEXEC;
+  if (!elf16_detect((const uint8_t *)&ehdr, (uint32_t)sizeof(ehdr), file_size,
+                    ""))
+    return -ENOEXEC;
 
   if (ehdr.e_phoff == 0 || ehdr.e_phnum == 0) return -ENOEXEC;
   if (ehdr.e_phentsize != sizeof(elf32_phdr_t)) return -ENOEXEC;

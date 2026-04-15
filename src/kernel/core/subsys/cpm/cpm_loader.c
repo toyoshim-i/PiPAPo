@@ -29,9 +29,10 @@
 
 /* ── Detection ─────────────────────────────────────────────────────────── */
 
-static int cpm_detect(const uint8_t *file_buf, uint32_t file_size,
-                      const char *path) {
-  (void)file_buf;
+static int cpm_detect(const uint8_t *header, uint32_t header_len,
+                      uint32_t file_size, const char *path) {
+  (void)header;
+  (void)header_len;
 
   if (file_size > CPM_MAX_COM_SIZE || file_size == 0) return 0;
 

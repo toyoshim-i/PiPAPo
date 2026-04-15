@@ -23,9 +23,10 @@
 
 /* ── Detection ─────────────────────────────────────────────────────────── */
 
-static int com_detect(const uint8_t *file_buf, uint32_t file_size,
-                      const char *path) {
-  (void)file_buf;
+static int com_detect(const uint8_t *header, uint32_t header_len,
+                      uint32_t file_size, const char *path) {
+  (void)header;
+  (void)header_len;
 
   if (file_size == 0 || file_size > DOS_COM_MAX_SIZE) return 0;
 
