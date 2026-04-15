@@ -788,10 +788,51 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   return 0;
 }
 
+static int elf_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
+                       const cpu_ops_t *cpu_ops, void *cpu_state,
+                       const char *const *argv, uint32_t flags) {
+  (void)flags;
+
+  proc_image_segment_t staging = {0};
+  const uint8_t *file_buf;
+  uint32_t load_flags = 0;
+  int staging_used = 0;
+
+  if (vn->xip_addr != NULL) {
+    /* XIP source (romfs on ARM): execute in place from flash. */
+    file_buf = (const uint8_t *)vn->xip_addr;
+    load_flags = EXEC_FLAG_XIP_SOURCE;
+  } else {
+    /* Non-XIP: stage the file in RAM so the existing segment-walking
+     * code below can index it as a flat pointer.  elf_loader is never
+     * reached on i16 (elf16_loader wins detect first for CPU_ARCH_8086
+     * binaries), so the near-pointer truncation hazard does not apply. */
+    if (mem_region_alloc(&staging, PPAP_MEM_RAM_DATA, file_size,
+                         PROC_IMAGE_SEG_WRITABLE) < 0)
+      return -(int)ENOMEM;
+    uintptr_t addr = (uintptr_t)staging.base;
+    page_id_t page = (page_id_t)(addr / PAGE_SIZE);
+    uint16_t page_off = (uint16_t)(addr & (PAGE_SIZE - 1u));
+    long n = mod_vfs.vnode_read(vn, page, page_off, file_size, 0);
+    if (n < 0 || (uint32_t)n != file_size) {
+      mem_region_free(&staging);
+      return (n < 0) ? (int)n : -(int)ENOEXEC;
+    }
+    file_buf = (const uint8_t *)staging.base;
+    staging_used = 1;
+  }
+
+  int rc =
+      elf_load(p, file_buf, file_size, cpu_ops, cpu_state, argv, load_flags);
+
+  if (staging_used) mem_region_free(&staging);
+  return rc;
+}
+
 const loader_t elf_loader = {
     .name = "elf",
     .detect = elf_detect,
-    .load = elf_load,
+    .load_vn = elf_load_vn,
     .required_arch_id = 0,
     .xip = 1,
 };
