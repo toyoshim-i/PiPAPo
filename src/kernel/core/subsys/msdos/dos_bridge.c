@@ -42,11 +42,7 @@ static void msdos_on_init(struct pcb *p) {
   if (dos_data_page == PAGE_ID_INVALID) {
     dos_data_page = mem_region_page_alloc();
     if (dos_data_page == PAGE_ID_INVALID) return;
-    /* Zero the page */
-    uint8_t zeros[64];
-    __builtin_memset(zeros, 0, sizeof(zeros));
-    for (uint16_t off = 0; off < PAGE_SIZE; off += sizeof(zeros))
-      mem_region_page_write(dos_data_page, off, zeros, sizeof(zeros));
+    mem_region_page_zero(dos_data_page, 0, PAGE_SIZE);
   }
 
   dos_proc_t dos;

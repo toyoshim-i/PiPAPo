@@ -80,6 +80,7 @@ extern uint16_t mem_region_total_bytes_entry;
 extern uint16_t mem_region_free_bytes_entry;
 extern uint16_t mem_region_page_read_entry;
 extern uint16_t mem_region_page_write_entry;
+extern uint16_t mem_region_page_zero_entry;
 extern uint16_t sched_wakeup_entry;
 extern uint16_t sched_switch_entry;
 extern uint16_t sched_get_ticks_entry;
@@ -119,12 +120,13 @@ static void patch_vfs_fptrs(uint16_t vfs_seg) {
   PATCH_CORE( 6, mem_region_free_bytes);
   PATCH_CORE( 7, mem_region_page_read);
   PATCH_CORE( 8, mem_region_page_write);
-  PATCH_CORE( 9, mem_region_total_bytes);
-  PATCH_CORE(10, sched_get_ticks);
-  PATCH_CORE(11, sched_wakeup);
-  PATCH_CORE(12, sched_switch);
-  PATCH_CORE(13, subsys_read_proc);
-  PATCH_CORE(14, svc_set_restart);
+  PATCH_CORE( 9, mem_region_page_zero);
+  PATCH_CORE(10, mem_region_total_bytes);
+  PATCH_CORE(11, sched_get_ticks);
+  PATCH_CORE(12, sched_wakeup);
+  PATCH_CORE(13, sched_switch);
+  PATCH_CORE(14, subsys_read_proc);
+  PATCH_CORE(15, svc_set_restart);
 #undef PATCH_CORE
 }
 

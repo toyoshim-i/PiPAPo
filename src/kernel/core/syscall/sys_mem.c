@@ -34,37 +34,21 @@ static uint16_t i16_user_page_count(uintptr_t end_off) {
 }
 
 static void i16_user_zero_page(page_id_t page_id) {
-  uint8_t zeros[256];
-
-  memset(zeros, 0, sizeof(zeros));
-  for (uint16_t off = 0; off < PAGE_SIZE; off += sizeof(zeros))
-    mem_region_page_write(page_id, off, zeros, sizeof(zeros));
+  mem_region_page_zero(page_id, 0, PAGE_SIZE);
 }
 
 static void sys_brk_zero_owned_range(page_id_t base_id, uintptr_t start_off,
                                      uintptr_t end_off) {
-  uint8_t zeros[256];
   uintptr_t pos = start_off;
 
   if (end_off <= start_off) return;
 
-  memset(zeros, 0, sizeof(zeros));
   while (pos < end_off) {
-    uintptr_t rel = pos;
-    uint16_t pg_off = (uint16_t)(rel % PAGE_SIZE);
-    uint16_t page_chunk = PAGE_SIZE - pg_off;
-    if (page_chunk > end_off - pos) page_chunk = (uint16_t)(end_off - pos);
-
-    while (page_chunk > 0) {
-      uint16_t chunk = page_chunk;
-      if (chunk > sizeof(zeros)) chunk = sizeof(zeros);
-      mem_region_page_write(base_id + (page_id_t)(rel / PAGE_SIZE), pg_off,
-                            zeros, chunk);
-      pos += chunk;
-      rel += chunk;
-      pg_off += chunk;
-      page_chunk -= chunk;
-    }
+    uint16_t pg_off = (uint16_t)(pos % PAGE_SIZE);
+    uint16_t chunk = PAGE_SIZE - pg_off;
+    if (chunk > end_off - pos) chunk = (uint16_t)(end_off - pos);
+    mem_region_page_zero(base_id + (page_id_t)(pos / PAGE_SIZE), pg_off, chunk);
+    pos += chunk;
   }
 }
 

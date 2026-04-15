@@ -136,6 +136,18 @@ MOD_FUNC(core, void, mem_region_page_write, page_id_t, uint16_t, const void *,
          uint16_t)
 
 /*
+ * mem_region_page_zero — Write `len` zero bytes to a page at an offset.
+ *
+ *   id   Page index.
+ *   off  Byte offset within page (0..PAGE_SIZE-1).
+ *   len  Bytes to zero (0..65535).  Callers that need to zero more
+ *        should invoke once per page.
+ *
+ * Safe on all architectures including i16.
+ */
+MOD_FUNC(core, void, mem_region_page_zero, page_id_t, uint16_t, uint16_t)
+
+/*
  * mem_region_total_bytes — Query total capacity of a memory class.
  *
  *   mem_class  Memory type to query.

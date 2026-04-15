@@ -25,6 +25,7 @@ mod_core_t mod_core = {
     .mem_region_free_bytes = mem_region_free_bytes,
     .mem_region_page_read = mem_region_page_read,
     .mem_region_page_write = mem_region_page_write,
+    .mem_region_page_zero = mem_region_page_zero,
     .mem_region_total_bytes = mem_region_total_bytes,
     .sched_wakeup = sched_wakeup,
     .sched_switch = sched_switch,

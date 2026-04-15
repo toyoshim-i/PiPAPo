@@ -20,11 +20,8 @@
 /* ── Segment zeroing ──────────────────────────────────────────────────── */
 
 static void dos_zero_segment(page_id_t base_id) {
-  uint8_t zeros[64];
-  __builtin_memset(zeros, 0, sizeof(zeros));
   for (uint16_t pg = 0; pg < DOS_SEG_PAGES; pg++)
-    for (uint16_t off = 0; off < PAGE_SIZE; off += sizeof(zeros))
-      mem_region_page_write(base_id + pg, off, zeros, sizeof(zeros));
+    mem_region_page_zero(base_id + pg, 0, PAGE_SIZE);
 }
 
 /* ── PSP construction ─────────────────────────────────────────────────── */

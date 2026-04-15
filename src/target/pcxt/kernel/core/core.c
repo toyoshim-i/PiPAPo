@@ -24,6 +24,7 @@ uint32_t mem_region_total_bytes(ppap_mem_class_t);
 uint32_t mem_region_free_bytes(ppap_mem_class_t);
 void mem_region_page_read(page_id_t, uint16_t, void *, uint16_t);
 void mem_region_page_write(page_id_t, uint16_t, const void *, uint16_t);
+void mem_region_page_zero(page_id_t, uint16_t, uint16_t);
 void sched_wakeup(void *);
 void sched_switch(void);
 uint32_t sched_get_ticks(void);
@@ -42,6 +43,7 @@ void svc_set_restart(void);
 #define core_mem_region_free_bytes mem_region_free_bytes
 #define core_mem_region_page_read   mem_region_page_read
 #define core_mem_region_page_write  mem_region_page_write
+#define core_mem_region_page_zero   mem_region_page_zero
 #define core_sched_wakeup        sched_wakeup
 #define core_sched_switch        sched_switch
 #define core_sched_get_ticks     sched_get_ticks

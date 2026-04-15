@@ -31,7 +31,6 @@
 #define ELF16_MAX_SIZE (60u * 1024u) /* 60 KB max (leave room for stack) */
 #define ELF16_STACK_SIZE 2048u       /* 2 KB user stack */
 #define ELF16_MAX_PHDRS 16u
-#define ELF16_ZERO_CHUNK 64u
 
 /* ── Detection ─────────────────────────────────────────────────────────── */
 
@@ -135,14 +134,8 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
   if (base_id == PAGE_ID_INVALID) return -ENOMEM;
 
   /* Zero entire region via page-indexed writes */
-  {
-    uint8_t zeros[ELF16_ZERO_CHUNK];
-    memset(zeros, 0, sizeof(zeros));
-    for (uint16_t pg = 0; pg < USER_SEG_PAGES; pg++) {
-      for (uint16_t off = 0; off < PAGE_SIZE; off += sizeof(zeros))
-        mem_region_page_write(base_id + pg, off, zeros, sizeof(zeros));
-    }
-  }
+  for (uint16_t pg = 0; pg < USER_SEG_PAGES; pg++)
+    mem_region_page_zero(base_id + pg, 0, PAGE_SIZE);
 
   /* Second pass: copy PT_LOAD segment data via mem_region_page_write */
   for (uint16_t i = 0; i < phnum; i++) {

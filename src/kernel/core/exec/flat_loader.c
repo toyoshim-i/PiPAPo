@@ -78,17 +78,8 @@ static int flat_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
   }
 
   /* Zero the remaining stack area after the binary. */
-  if (file_size < PAGE_SIZE) {
-    uint8_t zeros[64];
-    __builtin_memset(zeros, 0, sizeof(zeros));
-    uint32_t off = file_size;
-    while (off < PAGE_SIZE) {
-      uint16_t chunk = (uint16_t)sizeof(zeros);
-      if (off + chunk > PAGE_SIZE) chunk = (uint16_t)(PAGE_SIZE - off);
-      mem_region_page_write(pid, (uint16_t)off, zeros, chunk);
-      off += chunk;
-    }
-  }
+  if (file_size < PAGE_SIZE)
+    mem_region_page_zero(pid, (uint16_t)file_size, PAGE_SIZE - file_size);
 
   if (proc_track_page(p, 0, pid) < 0) {
     mm_page_free(pid);

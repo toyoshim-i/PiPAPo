@@ -710,6 +710,10 @@ void mem_region_page_write(page_id_t id, uint16_t off, const void *buf,
   mm_page_write(id, off, buf, len);
 }
 
+void mem_region_page_zero(page_id_t id, uint16_t off, uint16_t len) {
+  mm_page_zero(id, off, len);
+}
+
 /* ── Capacity queries ──────────────────────────────────────────────── */
 
 uint32_t mem_region_total_bytes(ppap_mem_class_t mem_class) {

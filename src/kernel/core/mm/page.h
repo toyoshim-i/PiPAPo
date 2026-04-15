@@ -94,6 +94,9 @@ void mm_page_read(page_id_t id, uint16_t off, void *buf, uint16_t len);
 /* Write `len` bytes from `buf` to page `id` at byte offset `off`. */
 void mm_page_write(page_id_t id, uint16_t off, const void *buf, uint16_t len);
 
+/* Write `len` zero bytes to page `id` starting at byte offset `off`. */
+void mm_page_zero(page_id_t id, uint16_t off, uint16_t len);
+
 /* Return the linear base pointer of a page_id_t (32-bit only).
  * On i16 this is NOT available — use mm_page_read/write instead. */
 #if !defined(__ia16__)

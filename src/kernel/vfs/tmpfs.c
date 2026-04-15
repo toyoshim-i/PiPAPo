@@ -214,12 +214,7 @@ static long tmpfs_write(vnode_t *vn, page_id_t page, uint16_t page_off,
     /* Zero the freshly allocated page via the page-indexed API.  Direct
      * memset on data_region.base would write through a 16-bit-truncated
      * pointer on i16 and corrupt arbitrary low memory. */
-    {
-      uint8_t zeros[64];
-      __builtin_memset(zeros, 0, sizeof(zeros));
-      for (uint16_t z = 0; z < PAGE_SIZE; z = (uint16_t)(z + sizeof(zeros)))
-        mod_core.mem_region_page_write(ti->data_page, z, zeros, sizeof(zeros));
-    }
+    mod_core.mem_region_page_zero(ti->data_page, 0, PAGE_SIZE);
     data_pages_used++;
   }
 
