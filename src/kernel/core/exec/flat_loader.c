@@ -16,6 +16,7 @@
 #include <string.h>
 
 #include "common/errno.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/arch.h"
 #include "kernel/core/cpu/cpu.h"
 #include "kernel/core/exec/loader.h"
@@ -55,9 +56,9 @@ static int flat_detect(const uint8_t *header, uint32_t header_len,
 
 /* ── Loading ───────────────────────────────────────────────────────────── */
 
-static int flat_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
-                     const cpu_ops_t *cpu_ops, void *cpu_state,
-                     const char *const *argv, uint32_t flags) {
+static int flat_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
+                        const cpu_ops_t *cpu_ops, void *cpu_state,
+                        const char *const *argv, uint32_t flags) {
   (void)flags;
   (void)cpu_ops;
   (void)cpu_state;
@@ -65,34 +66,48 @@ static int flat_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
   if (file_size > FLAT_MAX_SIZE) return -ENOMEM;
 
-  proc_image_segment_t page_region = {0};
-
   /* Allocate one page for code + data + stack */
-  if (mem_region_alloc(&page_region, PPAP_MEM_RAM_DATA, PAGE_SIZE,
-                       PROC_IMAGE_SEG_WRITABLE) < 0) {
-    return -ENOMEM;
+  page_id_t pid = mm_page_alloc();
+  if (pid == PAGE_ID_INVALID) return -ENOMEM;
+
+  /* Stream the binary into the page; any tail is zeroed below. */
+  long nread = mod_vfs.vnode_read(vn, pid, 0, file_size, 0);
+  if (nread < 0 || (uint32_t)nread != file_size) {
+    mm_page_free(pid);
+    return (nread < 0) ? (int)nread : -ENOEXEC;
   }
-  void *page = page_region.base;
 
-  /* Copy binary to start of page */
-  memcpy(page, file_buf, file_size);
+  /* Zero the remaining stack area after the binary. */
+  if (file_size < PAGE_SIZE) {
+    uint8_t zeros[64];
+    __builtin_memset(zeros, 0, sizeof(zeros));
+    uint32_t off = file_size;
+    while (off < PAGE_SIZE) {
+      uint16_t chunk = (uint16_t)sizeof(zeros);
+      if (off + chunk > PAGE_SIZE) chunk = (uint16_t)(PAGE_SIZE - off);
+      mem_region_page_write(pid, (uint16_t)off, zeros, chunk);
+      off += chunk;
+    }
+  }
 
-  /* Zero remaining space (stack area) */
-  memset((uint8_t *)page + file_size, 0, PAGE_SIZE - file_size);
-
-  if (proc_track_page(p, 0, mem_region_ptr_to_page(page)) < 0) {
-    mem_region_free(&page_region);
+  if (proc_track_page(p, 0, pid) < 0) {
+    mm_page_free(pid);
     return -ENOMEM;
   }
 
   /* Entry point: start of page. Stack: top of page. */
+  uint32_t base_linear = mm_page_linear(pid);
+  void *page = (void *)(uintptr_t)base_linear;
   void (*entry)(void) = (void (*)(void))page;
   uintptr_t user_sp = (uintptr_t)page + PAGE_SIZE;
 
   proc_setup_stack(p, entry, user_sp);
   p->image.text = proc_image_segment_make(page, file_size, PPAP_MEM_RAM_TEXT,
                                           PROC_IMAGE_SEG_EXECUTABLE);
-  p->image.data = page_region;
+  p->image.text.base_page = pid;
+  p->image.data = proc_image_segment_make(page, PAGE_SIZE, PPAP_MEM_RAM_DATA,
+                                          PROC_IMAGE_SEG_WRITABLE);
+  p->image.data.base_page = pid;
   p->image.entry = (uintptr_t)page;
 
   return 0;
@@ -103,7 +118,6 @@ static int flat_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 const loader_t flat_loader = {
     .name = "flat",
     .detect = flat_detect,
-    .load = flat_load,
+    .load_vn = flat_load_vn,
     .required_arch_id = CPU_ARCH_8086,
-    .xip = 0,
 };
