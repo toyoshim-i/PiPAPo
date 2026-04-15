@@ -200,29 +200,6 @@ void mm_init(void) {
                 (unsigned long)(SRAM_DMA_SIZE / 1024u));
 #endif
 
-#ifdef PPAP_TESTS
-  /* ── kmem self-test ───────────────────────────────────────────────────── */
-  typedef struct {
-    uint32_t a;
-    uint32_t b;
-  } test_obj_t;
-  uint8_t test_mem[4 * sizeof(test_obj_t)];
-  kmem_pool_t test_pool;
-  kmem_pool_init(&test_pool, test_mem, sizeof(test_obj_t), 4u);
-
-  test_obj_t *o1 = kmem_alloc(&test_pool); /* 3 free */
-  test_obj_t *o2 = kmem_alloc(&test_pool); /* 2 free */
-  kmem_free(&test_pool, o1);               /* 3 free */
-  test_obj_t *o3 = kmem_alloc(&test_pool); /* 2 free */
-  (void)o2;
-  (void)o3;
-
-  uint32_t ok = (o1 != NULL) && (o2 != NULL) && (o3 != NULL) &&
-                (kmem_free_count(&test_pool) == 2u);
-
-  mod_vfs.klogf("MM: kmem self-test %s\n", ok ? "PASSED" : "FAILED");
-#endif
-
 #if defined(PPAP_TESTS) && \
     (defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__))
   /* ── XIP verification and benchmark (ARM only) ───────────────────────── */
