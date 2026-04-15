@@ -62,12 +62,8 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
   }
 
   /* ── 2. Read a header buffer for loader detect() ───────────────────── */
-  proc_image_segment_t file_region = {0};
-  uint8_t *file_buf = NULL;
-  const uint8_t *file_base;
   uint32_t file_size = vn->size;
   extern const loader_t *loader_registry[];
-  const loader_t *matched_loader = NULL;
   int rc = -(int)ENOEXEC;
 
   if (file_size == 0) {
@@ -85,9 +81,9 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
   }
 
 #if defined(__ia16__)
-  /* On i16 the staging buffer below truncates to a near pointer (Phase 3
-   * retargets loaders to stream via vnode_read).  Until then, elf16 uses
-   * its own vnode-based load entrypoint. */
+  /* On i16 the legacy staging-buffer path below truncates to a near
+   * pointer (Phase 3 retargets loaders to stream via vnode_read).  Until
+   * then, elf16 uses its own vnode-based load entrypoint. */
   if (vn->xip_addr == NULL &&
       elf16_loader.detect(header, header_len, file_size, path)) {
     rc = elf16_load_vnode(p, vn, file_size, &native_cpu_ops, NULL, argv, 0);
@@ -95,72 +91,80 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
       mod_vfs.vnode_release(vn);
       return rc;
     }
-    matched_loader = &elf16_loader;
     goto exec_loaded;
   }
 #endif
 
-  if (vn->xip_addr == NULL) {
-    if (mem_region_alloc(&file_region, PPAP_MEM_RAM_DATA, file_size,
-                         PROC_IMAGE_SEG_WRITABLE) < 0) {
-      mod_vfs.vnode_release(vn);
-      return -(int)ENOMEM;
-    }
-    file_buf = (uint8_t *)file_region.base;
-
-    if (!vn->mount || !vn->mount->ops || !vn->mount->ops->read) {
-      mem_region_free(&file_region);
-      mod_vfs.vnode_release(vn);
-      return -(int)ENOEXEC;
-    }
-
-    long n = exec_read_from(vn, file_buf, file_size);
-    if (n < 0 || (uint32_t)n != file_size) {
-      mem_region_free(&file_region);
-      mod_vfs.vnode_release(vn);
-      return (n < 0) ? (int)n : -(int)ENOEXEC;
-    }
-
-    file_base = file_buf;
-  } else {
-    file_base = (const uint8_t *)vn->xip_addr;
-  }
-
-  /* ── 3. Iterate loader registry ────────────────────────────────────── */
+  /* ── 3. Find a matching loader and resolve its CPU ops ─────────────── */
+  const loader_t *matched = NULL;
+  const cpu_ops_t *cpu_ops = NULL;
   for (int i = 0; loader_registry[i] != NULL; i++) {
-    int det = loader_registry[i]->detect(header, header_len, file_size, path);
-    if (det) {
-      int arch = loader_registry[i]->required_arch_id;
-      const cpu_ops_t *cpu_ops;
-      if (arch == 0 || arch == HOST_ARCH_ID) {
-        cpu_ops = &native_cpu_ops;
-      } else {
-        cpu_ops = cpu_ops_for_arch(arch);
-      }
-      if (!cpu_ops) {
-        rc = -(int)ENOEXEC;
-        continue;
-      }
-
-      uint32_t exec_flags = (vn->xip_addr != NULL) ? EXEC_FLAG_XIP_SOURCE : 0;
-      rc = loader_registry[i]->load(p, file_base, file_size, cpu_ops, NULL,
-                                    argv, exec_flags);
-      if (rc == 0) matched_loader = loader_registry[i];
-      break;
-    }
+    if (!loader_registry[i]->detect(header, header_len, file_size, path))
+      continue;
+    int arch = loader_registry[i]->required_arch_id;
+    cpu_ops = (arch == 0 || arch == HOST_ARCH_ID) ? &native_cpu_ops
+                                                  : cpu_ops_for_arch(arch);
+    if (!cpu_ops) continue;
+    matched = loader_registry[i];
+    break;
   }
-
-  if (!matched_loader) {
-    if (file_buf) mem_region_free(&file_region);
+  if (!matched) {
     mod_vfs.vnode_release(vn);
     return rc;
   }
 
+  /* ── 4. Dispatch.  load_vn streams from vn; legacy load() uses a
+   *       staging buffer (and is being retired loader-by-loader). ──── */
+  if (matched->load_vn) {
+    rc = matched->load_vn(p, vn, file_size, cpu_ops, NULL, argv, 0);
+    if (rc < 0) {
+      mod_vfs.vnode_release(vn);
+      return rc;
+    }
+  } else {
+    proc_image_segment_t file_region = {0};
+    uint8_t *file_buf = NULL;
+    const uint8_t *file_base;
+
+    if (vn->xip_addr == NULL) {
+      if (mem_region_alloc(&file_region, PPAP_MEM_RAM_DATA, file_size,
+                           PROC_IMAGE_SEG_WRITABLE) < 0) {
+        mod_vfs.vnode_release(vn);
+        return -(int)ENOMEM;
+      }
+      file_buf = (uint8_t *)file_region.base;
+
+      if (!vn->mount || !vn->mount->ops || !vn->mount->ops->read) {
+        mem_region_free(&file_region);
+        mod_vfs.vnode_release(vn);
+        return -(int)ENOEXEC;
+      }
+
+      long n = exec_read_from(vn, file_buf, file_size);
+      if (n < 0 || (uint32_t)n != file_size) {
+        mem_region_free(&file_region);
+        mod_vfs.vnode_release(vn);
+        return (n < 0) ? (int)n : -(int)ENOEXEC;
+      }
+
+      file_base = file_buf;
+    } else {
+      file_base = (const uint8_t *)vn->xip_addr;
+    }
+
+    uint32_t exec_flags = (vn->xip_addr != NULL) ? EXEC_FLAG_XIP_SOURCE : 0;
+    rc =
+        matched->load(p, file_base, file_size, cpu_ops, NULL, argv, exec_flags);
+    if (rc < 0) {
+      if (file_buf) mem_region_free(&file_region);
+      mod_vfs.vnode_release(vn);
+      return rc;
+    }
+    if (file_buf && !matched->xip) mem_region_free(&file_region);
+  }
+
 exec_loaded:
   __attribute__((unused));
-
-  /* ── 4. Free file buffer if the loader doesn't need it for XIP ───── */
-  if (file_buf && !matched_loader->xip) mem_region_free(&file_region);
 
   /* ── 5. Set process metadata ───────────────────────────────────────── */
   {
