@@ -27,13 +27,15 @@
 /* ── Inode structure ──────────────────────────────────────────────────── */
 
 typedef struct {
-  char name[TMPFS_NAME_MAX + 1]; /* filename (NUL-terminated)     */
-  uint8_t type;                  /* VNODE_FILE or VNODE_DIR         */
-  uint8_t active;                /* 1 = in use, 0 = free            */
-  uint32_t mode;                 /* S_IFREG|0644 or S_IFDIR|0755   */
-  uint32_t size;                 /* data bytes (files only)         */
-  uint32_t parent_ino;           /* inode index of parent directory */
-  uint8_t *data;                 /* page for file data, or NULL     */
+  char name[TMPFS_NAME_MAX + 1]; /* filename (NUL-terminated)             */
+  uint8_t type;                  /* VNODE_FILE or VNODE_DIR                 */
+  uint8_t active;                /* 1 = in use, 0 = free                    */
+  uint32_t mode;                 /* S_IFREG|0644 or S_IFDIR|0755           */
+  uint32_t size;                 /* data bytes (files only)                 */
+  uint32_t parent_ino;           /* inode index of parent directory         */
+  page_id_t data_page;           /* file data page id (PAGE_ID_INVALID = none)
+                                  * — page_id_t is i16-safe; storing a void *
+                                  * truncates above the 64 KB DS=0 window. */
 } tmpfs_inode_t;
 
 static tmpfs_inode_t inodes[TMPFS_INODE_MAX];
@@ -71,15 +73,16 @@ static int inode_alloc(void) {
 }
 
 static void inode_free(int ino) {
-  if (inodes[ino].data) {
+  if (inodes[ino].data_page != PAGE_ID_INVALID) {
     proc_image_segment_t data_region =
-        proc_image_segment_make(inodes[ino].data, PAGE_SIZE, PPAP_MEM_RAM_DATA,
+        proc_image_segment_make(NULL, PAGE_SIZE, PPAP_MEM_RAM_DATA,
                                 PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE);
+    data_region.base_page = inodes[ino].data_page;
     mod_core.mem_region_free(&data_region);
     data_pages_used--;
   }
   inodes[ino].active = 0;
-  inodes[ino].data = (uint8_t *)0;
+  inodes[ino].data_page = PAGE_ID_INVALID;
   inodes[ino].size = 0;
 }
 
@@ -91,7 +94,7 @@ static int tmpfs_mount(mount_entry_t *mnt, const void *dev_data) {
   /* Initialise all inodes */
   for (int i = 0; i < TMPFS_INODE_MAX; i++) {
     inodes[i].active = 0;
-    inodes[i].data = (uint8_t *)0;
+    inodes[i].data_page = PAGE_ID_INVALID;
   }
   data_pages_used = 0;
 
@@ -101,7 +104,7 @@ static int tmpfs_mount(mount_entry_t *mnt, const void *dev_data) {
   inodes[0].mode = S_IFDIR | 0755u;
   inodes[0].size = 0;
   inodes[0].parent_ino = 0;
-  inodes[0].data = (uint8_t *)0;
+  inodes[0].data_page = PAGE_ID_INVALID;
   inodes[0].name[0] = '\0';
 
   /* Allocate root vnode */
@@ -154,8 +157,21 @@ static long tmpfs_read(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
   if (off >= ti->size) return 0;
   if (off + n > ti->size) n = ti->size - off;
 
-  if (ti->data) {
-    mod_core.mem_region_page_write(page, page_off, ti->data + off, (uint16_t)n);
+  if (ti->data_page != PAGE_ID_INVALID) {
+    /* Page-to-page copy via a small kernel scratch buffer.  Going through
+     * a kernel buffer keeps this i16-safe — the data page may live above
+     * the 64 KB DS=0 window and is only reachable via mem_region_page_*. */
+    uint8_t buf[64];
+    uint16_t copied = 0;
+    while (copied < (uint16_t)n) {
+      uint16_t chunk = (uint16_t)n - copied;
+      if (chunk > sizeof(buf)) chunk = sizeof(buf);
+      mod_core.mem_region_page_read(ti->data_page, (uint16_t)(off + copied),
+                                    buf, chunk);
+      mod_core.mem_region_page_write(page, (uint16_t)(page_off + copied), buf,
+                                     chunk);
+      copied = (uint16_t)(copied + chunk);
+    }
   } else {
     static const uint8_t zero_chunk[32];
     uint16_t zero_off = 0;
@@ -185,7 +201,7 @@ static long tmpfs_write(vnode_t *vn, page_id_t page, uint16_t page_off,
   }
 
   /* Allocate data page on first write */
-  if (!ti->data) {
+  if (ti->data_page == PAGE_ID_INVALID) {
     proc_image_segment_t data_region;
 
     if (data_pages_used >= TMPFS_MAX_PAGES) return -(long)ENOSPC;
@@ -193,12 +209,35 @@ static long tmpfs_write(vnode_t *vn, page_id_t page, uint16_t page_off,
             &data_region, PPAP_MEM_RAM_DATA, PAGE_SIZE,
             PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) < 0)
       return -(long)ENOMEM;
-    ti->data = (uint8_t *)data_region.base;
-    __builtin_memset(ti->data, 0, PAGE_SIZE);
+    ti->data_page = data_region.base_page;
+
+    /* Zero the freshly allocated page via the page-indexed API.  Direct
+     * memset on data_region.base would write through a 16-bit-truncated
+     * pointer on i16 and corrupt arbitrary low memory. */
+    {
+      uint8_t zeros[64];
+      __builtin_memset(zeros, 0, sizeof(zeros));
+      for (uint16_t z = 0; z < PAGE_SIZE; z = (uint16_t)(z + sizeof(zeros)))
+        mod_core.mem_region_page_write(ti->data_page, z, zeros, sizeof(zeros));
+    }
     data_pages_used++;
   }
 
-  mod_core.mem_region_page_read(page, page_off, ti->data + off, (uint16_t)n);
+  /* Page-to-page copy from user (page) to tmpfs storage (ti->data_page)
+   * via a small kernel buffer — same i16 safety reasoning as in tmpfs_read. */
+  {
+    uint8_t buf[64];
+    uint16_t copied = 0;
+    while (copied < (uint16_t)n) {
+      uint16_t chunk = (uint16_t)n - copied;
+      if (chunk > sizeof(buf)) chunk = sizeof(buf);
+      mod_core.mem_region_page_read(page, (uint16_t)(page_off + copied), buf,
+                                    chunk);
+      mod_core.mem_region_page_write(ti->data_page, (uint16_t)(off + copied),
+                                     buf, chunk);
+      copied = (uint16_t)(copied + chunk);
+    }
+  }
 
   /* Extend file size if needed */
   if (off + (uint32_t)n > ti->size) {
@@ -266,7 +305,7 @@ static int tmpfs_create(vnode_t *dir, const char *name, uint32_t mode,
   ti->mode = S_IFREG | (mode & 0777u);
   ti->size = 0;
   ti->parent_ino = dir->ino;
-  ti->data = (uint8_t *)0;
+  ti->data_page = PAGE_ID_INVALID;
   str_copy(ti->name, name, TMPFS_NAME_MAX + 1);
 
   /* Return vnode for the new file */
@@ -304,7 +343,7 @@ static int tmpfs_mkdir(vnode_t *dir, const char *name, uint32_t mode) {
   ti->mode = S_IFDIR | (mode & 0777u);
   ti->size = 0;
   ti->parent_ino = dir->ino;
-  ti->data = (uint8_t *)0;
+  ti->data_page = PAGE_ID_INVALID;
   str_copy(ti->name, name, TMPFS_NAME_MAX + 1);
 
   return 0;
@@ -375,12 +414,13 @@ static int tmpfs_truncate(vnode_t *vn, uint32_t length) {
 
   if (ti->type == VNODE_DIR) return -EISDIR;
 
-  if (length == 0 && ti->data) {
+  if (length == 0 && ti->data_page != PAGE_ID_INVALID) {
     proc_image_segment_t data_region =
-        proc_image_segment_make(ti->data, PAGE_SIZE, PPAP_MEM_RAM_DATA,
+        proc_image_segment_make(NULL, PAGE_SIZE, PPAP_MEM_RAM_DATA,
                                 PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE);
+    data_region.base_page = ti->data_page;
     mod_core.mem_region_free(&data_region);
-    ti->data = (uint8_t *)0;
+    ti->data_page = PAGE_ID_INVALID;
     data_pages_used--;
   }
 
