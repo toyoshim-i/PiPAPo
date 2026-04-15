@@ -314,7 +314,34 @@ which:
 
 **Index/order discipline:** the indices in `PATCH_CORE(idx, name)`
 must match the order in [`mod_core.inc`](../../src/kernel/common/mod/mod_core.inc).
-Adding or removing an entry requires renumbering both files.
+Adding, removing, or reordering an entry requires a coordinated edit
+across **five** files — miss any one and either the build fails or,
+worse, VFS→core calls silently dispatch to the wrong entry at runtime:
+
+1. [`src/kernel/common/mod/mod_core.inc`](../../src/kernel/common/mod/mod_core.inc)
+   — add / renumber the `MOD_CORE_ENTRY(name, idx)` line and bump
+   `MOD_CORE_FUNC_COUNT`.  This is the single source of truth; the
+   stub generators in [`core_stubs.S`](../../src/target/pcxt/kernel/common/stubs/core_stubs.S)
+   and [`core_entries.S`](../../src/target/pcxt/kernel/common/stubs/core_entries.S)
+   pick up the new slot automatically.
+2. [`src/kernel/common/mod/mod_core.h`](../../src/kernel/common/mod/mod_core.h)
+   — add the `MOD_FUNC(core, ret, name, args...)` declaration at the
+   same position.  The struct-order `_Static_assert` fails to build
+   if the order drifts.
+3. [`src/kernel/core/core.c`](../../src/kernel/core/core.c) — wire the
+   new function pointer in the `mod_core` struct initializer (flat
+   arches).
+4. [`src/target/pcxt/kernel/core/core.c`](../../src/target/pcxt/kernel/core/core.c)
+   — add the forward declaration of the VFS-side caller stub and the
+   `core_<name>` alias macro (i16 far-call side).  Missing this gives
+   a compile error when `ppap_pcxt_vfs` builds.
+5. [`src/target/pcxt/kernel/core/target_pcxt.c`](../../src/target/pcxt/kernel/core/target_pcxt.c)
+   — add the matching `extern uint16_t <name>_entry;` declaration **and**
+   the `PATCH_CORE(idx, name)` line at the new slot, renumbering
+   entries after the insertion point.  This is the runtime-hazard one:
+   a stale index silently routes VFS→core calls to the wrong entry
+   point and manifests as invalid-opcode or memory-corruption panics
+   far from the real cause.
 
 #### ia16-elf-gcc behaviour
 
