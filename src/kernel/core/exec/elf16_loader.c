@@ -359,26 +359,9 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
   return 0;
 }
 
-static int elf16_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
-                      const cpu_ops_t *cpu_ops, void *cpu_state,
-                      const char *const *argv, uint32_t flags) {
-  const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)file_buf;
-
-  /* Validate program header table */
-  if (ehdr->e_phoff == 0 || ehdr->e_phnum == 0) return -ENOEXEC;
-  if (ehdr->e_phentsize != sizeof(elf32_phdr_t)) return -ENOEXEC;
-  if (ehdr->e_phnum > ELF16_MAX_PHDRS) return -ENOEXEC;
-  if (ehdr->e_phoff + ehdr->e_phnum * sizeof(elf32_phdr_t) > file_size)
-    return -ENOEXEC;
-
-  return elf16_load_from_headers(
-      p, ehdr, (const elf32_phdr_t *)(file_buf + ehdr->e_phoff), ehdr->e_phnum,
-      file_buf, NULL, file_size, cpu_ops, cpu_state, argv, flags);
-}
-
-int elf16_load_vnode(pcb_t *p, vnode_t *vn, uint32_t file_size,
-                     const cpu_ops_t *cpu_ops, void *cpu_state,
-                     const char *const *argv, uint32_t flags) {
+static int elf16_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
+                         const cpu_ops_t *cpu_ops, void *cpu_state,
+                         const char *const *argv, uint32_t flags) {
   elf32_ehdr_t ehdr;
   uint16_t phnum;
   uint32_t phbytes;
@@ -411,7 +394,6 @@ int elf16_load_vnode(pcb_t *p, vnode_t *vn, uint32_t file_size,
 const loader_t elf16_loader = {
     .name = "elf16",
     .detect = elf16_detect,
-    .load = elf16_load,
+    .load_vn = elf16_load_vn,
     .required_arch_id = CPU_ARCH_8086,
-    .xip = 0,
 };

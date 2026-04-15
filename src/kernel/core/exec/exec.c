@@ -20,16 +20,6 @@
 #include "kernel/core/mm/page.h"
 #include "kernel/core/signal/signal.h"
 
-#if defined(__ia16__)
-/* elf16 is kept on its own streaming entrypoint until Phase 3.2 folds it
- * into the common vnode-based loader contract (see
- * docs/proposals/loader_revamp.md). */
-extern const loader_t elf16_loader;
-int elf16_load_vnode(pcb_t *p, vnode_t *vn, uint32_t file_size,
-                     const cpu_ops_t *cpu_ops, void *cpu_state,
-                     const char *const *argv, uint32_t flags);
-#endif
-
 /* Read `len` bytes from the start of `vn` into `buf`.  Converts `buf` to a
  * (page_id, page_off) pair so mod_vfs.vnode_read does not dereference `buf`
  * on i16 where a 32-bit linear address would truncate to a near pointer.
@@ -79,21 +69,6 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
     mod_vfs.vnode_release(vn);
     return (nread < 0) ? (int)nread : -(int)ENOEXEC;
   }
-
-#if defined(__ia16__)
-  /* On i16 the legacy staging-buffer path below truncates to a near
-   * pointer (Phase 3 retargets loaders to stream via vnode_read).  Until
-   * then, elf16 uses its own vnode-based load entrypoint. */
-  if (vn->xip_addr == NULL &&
-      elf16_loader.detect(header, header_len, file_size, path)) {
-    rc = elf16_load_vnode(p, vn, file_size, &native_cpu_ops, NULL, argv, 0);
-    if (rc < 0) {
-      mod_vfs.vnode_release(vn);
-      return rc;
-    }
-    goto exec_loaded;
-  }
-#endif
 
   /* ── 3. Find a matching loader and resolve its CPU ops ─────────────── */
   const loader_t *matched = NULL;
@@ -162,9 +137,6 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
     }
     if (file_buf && !matched->xip) mem_region_free(&file_region);
   }
-
-exec_loaded:
-  __attribute__((unused));
 
   /* ── 5. Set process metadata ───────────────────────────────────────── */
   {
