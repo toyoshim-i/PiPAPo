@@ -119,6 +119,6 @@ static int com_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
 const loader_t com_loader = {
     .name = "dos_com",
     .detect = com_detect,
-    .load_vn = com_load_vn,
+    .load = com_load_vn,
     .required_arch_id = CPU_ARCH_8086,
 };

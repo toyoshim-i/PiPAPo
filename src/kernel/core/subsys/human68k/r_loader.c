@@ -274,6 +274,6 @@ static int r_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
 const loader_t r_loader = {
     .name = "r68k",
     .detect = r_detect,
-    .load_vn = r_load_vn,
+    .load = r_load_vn,
     .required_arch_id = CPU_ARCH_M68K,
 };

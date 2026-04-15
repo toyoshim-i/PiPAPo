@@ -832,7 +832,6 @@ static int elf_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
 const loader_t elf_loader = {
     .name = "elf",
     .detect = elf_detect,
-    .load_vn = elf_load_vn,
+    .load = elf_load_vn,
     .required_arch_id = 0,
-    .xip = 1,
 };

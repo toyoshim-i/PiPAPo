@@ -422,6 +422,6 @@ static int x_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
 const loader_t x_loader = {
     .name = "x68k",
     .detect = x_detect,
-    .load_vn = x_load_vn,
+    .load = x_load_vn,
     .required_arch_id = CPU_ARCH_M68K,
 };

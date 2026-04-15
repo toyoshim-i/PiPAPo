@@ -118,6 +118,6 @@ static int flat_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
 const loader_t flat_loader = {
     .name = "flat",
     .detect = flat_detect,
-    .load_vn = flat_load_vn,
+    .load = flat_load_vn,
     .required_arch_id = CPU_ARCH_8086,
 };

@@ -1,10 +1,10 @@
 /*
  * exec.c — execve coordinator for PPAP
  *
- * Reads the executable file from the VFS, iterates the loader registry
- * to find a matching binary format, and delegates loading to the
- * matched loader.  Post-load, sets process metadata (comm, cwd,
- * signals) and manages the file buffer lifecycle.
+ * Reads the executable file header for loader detection, iterates the
+ * loader registry to find a matching binary format, and delegates the
+ * actual binary load to the matched loader via its vnode-based load()
+ * entry point.  Post-load, sets process metadata (comm, cwd, signals).
  */
 
 #include "kernel/core/exec/exec.h"
@@ -14,9 +14,7 @@
 #include "common/errno.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/arch.h"
-#include "kernel/core/exec/elf.h"
 #include "kernel/core/exec/loader.h"
-#include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/signal/signal.h"
 
@@ -88,54 +86,11 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
     return rc;
   }
 
-  /* ── 4. Dispatch.  load_vn streams from vn; legacy load() uses a
-   *       staging buffer (and is being retired loader-by-loader). ──── */
-  if (matched->load_vn) {
-    rc = matched->load_vn(p, vn, file_size, cpu_ops, NULL, argv, 0);
-    if (rc < 0) {
-      mod_vfs.vnode_release(vn);
-      return rc;
-    }
-  } else {
-    proc_image_segment_t file_region = {0};
-    uint8_t *file_buf = NULL;
-    const uint8_t *file_base;
-
-    if (vn->xip_addr == NULL) {
-      if (mem_region_alloc(&file_region, PPAP_MEM_RAM_DATA, file_size,
-                           PROC_IMAGE_SEG_WRITABLE) < 0) {
-        mod_vfs.vnode_release(vn);
-        return -(int)ENOMEM;
-      }
-      file_buf = (uint8_t *)file_region.base;
-
-      if (!vn->mount || !vn->mount->ops || !vn->mount->ops->read) {
-        mem_region_free(&file_region);
-        mod_vfs.vnode_release(vn);
-        return -(int)ENOEXEC;
-      }
-
-      long n = exec_read_from(vn, file_buf, file_size);
-      if (n < 0 || (uint32_t)n != file_size) {
-        mem_region_free(&file_region);
-        mod_vfs.vnode_release(vn);
-        return (n < 0) ? (int)n : -(int)ENOEXEC;
-      }
-
-      file_base = file_buf;
-    } else {
-      file_base = (const uint8_t *)vn->xip_addr;
-    }
-
-    uint32_t exec_flags = (vn->xip_addr != NULL) ? EXEC_FLAG_XIP_SOURCE : 0;
-    rc =
-        matched->load(p, file_base, file_size, cpu_ops, NULL, argv, exec_flags);
-    if (rc < 0) {
-      if (file_buf) mem_region_free(&file_region);
-      mod_vfs.vnode_release(vn);
-      return rc;
-    }
-    if (file_buf && !matched->xip) mem_region_free(&file_region);
+  /* ── 4. Dispatch.  Every registered loader streams directly from vn. */
+  rc = matched->load(p, vn, file_size, cpu_ops, NULL, argv, 0);
+  if (rc < 0) {
+    mod_vfs.vnode_release(vn);
+    return rc;
   }
 
   /* ── 5. Set process metadata ───────────────────────────────────────── */

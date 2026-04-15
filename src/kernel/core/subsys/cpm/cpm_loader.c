@@ -220,6 +220,6 @@ static int cpm_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
 const loader_t cpm_loader = {
     .name = "com",
     .detect = cpm_detect,
-    .load_vn = cpm_load_vn,
+    .load = cpm_load_vn,
     .required_arch_id = CPU_ARCH_Z80,
 };

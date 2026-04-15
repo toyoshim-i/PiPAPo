@@ -178,6 +178,6 @@ static int m68k_emu_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
 const loader_t m68k_emu_loader = {
     .name = "m68k_emu",
     .detect = m68k_emu_detect,
-    .load_vn = m68k_emu_load_vn,
+    .load = m68k_emu_load_vn,
     .required_arch_id = CPU_ARCH_M68K,
 };
