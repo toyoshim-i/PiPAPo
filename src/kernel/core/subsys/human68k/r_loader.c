@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "common/errno.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/endian.h"
 #include "kernel/core/exec/exec.h"
 #include "kernel/core/exec/loader.h"
@@ -244,12 +245,35 @@ static int r_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 #endif
 }
 
+static int r_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
+                     const cpu_ops_t *cpu_ops, void *cpu_state,
+                     const char *const *argv, uint32_t flags) {
+  /* r_loader runs on m68k (native or emulated), so staging is safe. */
+  proc_image_segment_t staging = {0};
+  if (mem_region_alloc(&staging, PPAP_MEM_RAM_DATA, file_size,
+                       PROC_IMAGE_SEG_WRITABLE) < 0)
+    return -(int)ENOMEM;
+
+  uintptr_t addr = (uintptr_t)staging.base;
+  page_id_t page = (page_id_t)(addr / PAGE_SIZE);
+  uint16_t page_off = (uint16_t)(addr & (PAGE_SIZE - 1u));
+  long n = mod_vfs.vnode_read(vn, page, page_off, file_size, 0);
+  if (n < 0 || (uint32_t)n != file_size) {
+    mem_region_free(&staging);
+    return (n < 0) ? (int)n : -(int)ENOEXEC;
+  }
+
+  int rc = r_load(p, (const uint8_t *)staging.base, file_size, cpu_ops,
+                  cpu_state, argv, flags);
+  mem_region_free(&staging);
+  return rc;
+}
+
 /* ── Loader registration ───────────────────────────────────────────────── */
 
 const loader_t r_loader = {
     .name = "r68k",
     .detect = r_detect,
-    .load = r_load,
+    .load_vn = r_load_vn,
     .required_arch_id = CPU_ARCH_M68K,
-    .xip = 0,
 };
