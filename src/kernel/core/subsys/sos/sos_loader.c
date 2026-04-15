@@ -43,7 +43,7 @@ static int sos_detect(const uint8_t *header, uint32_t header_len,
 
 /* ── Loader ───────────────────────────────────────────────────────────── */
 
-static int sos_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
+static int sos_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
                     const cpu_ops_t *cpu_ops, void *cpu_state,
                     const char *const *argv, uint32_t flags) {
   (void)flags;
@@ -52,17 +52,37 @@ static int sos_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
   proc_image_segment_t data_region = {0};
   proc_image_segment_t stack_region = {0};
+  proc_image_segment_t staging = {0};
+
+  /* ── 0. Stage the .obj in RAM.  sos_loader runs the Z80 emulator on
+   *      m68k/RV/ARM (flat-pointer arches), so staging is safe. */
+  if (mem_region_alloc(&staging, PPAP_MEM_RAM_DATA, file_size,
+                       PROC_IMAGE_SEG_WRITABLE) < 0)
+    return -(int)ENOMEM;
+  {
+    uintptr_t addr = (uintptr_t)staging.base;
+    page_id_t page = (page_id_t)(addr / PAGE_SIZE);
+    uint16_t page_off = (uint16_t)(addr & (PAGE_SIZE - 1u));
+    long n = mod_vfs.vnode_read(vn, page, page_off, file_size, 0);
+    if (n < 0 || (uint32_t)n != file_size) {
+      mem_region_free(&staging);
+      return (n < 0) ? (int)n : -(int)ENOEXEC;
+    }
+  }
+  const uint8_t *file_buf = (const uint8_t *)staging.base;
 
   /* ── 1. Allocate Z80 memory (64KB) + state page ────────────────────── */
   if (mem_region_alloc(&data_region, PPAP_MEM_RAM_DATA,
                        (SOS_Z80_MEM_PAGES + 1u) * PAGE_SIZE,
                        PROC_IMAGE_SEG_WRITABLE) < 0) {
+    mem_region_free(&staging);
     return -(int)ENOMEM;
   }
 
   if (proc_track_page_range(p, 0, mem_region_ptr_to_page(data_region.base),
                             data_region.size / PAGE_SIZE) < 0) {
     mem_region_free(&data_region);
+    mem_region_free(&staging);
     return -(int)ENOMEM;
   }
 
@@ -74,6 +94,7 @@ static int sos_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
                        PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) < 0) {
     proc_release_tracked_pages(p, 0, SOS_Z80_MEM_PAGES + 1u);
+    mem_region_free(&staging);
     return -(int)ENOMEM;
   }
   p->stack_page_id = mem_region_ptr_to_page(stack_region.base);
@@ -91,6 +112,7 @@ static int sos_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   {
     const char *path = (argv && argv[0]) ? argv[0] : "";
     int rc = sos_load_obj(&state->z80, &state->sos, file_buf, file_size, path);
+    mem_region_free(&staging);
     if (rc < 0) {
       proc_release_tracked_pages(p, 0, SOS_Z80_MEM_PAGES + 1u);
       return rc;
@@ -134,36 +156,11 @@ static int sos_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   return 0;
 }
 
-static int sos_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
-                       const cpu_ops_t *cpu_ops, void *cpu_state,
-                       const char *const *argv, uint32_t flags) {
-  /* sos_loader uses the Z80 emulator on m68k/RV/ARM — all flat-pointer
-   * arches — so staging is safe. */
-  proc_image_segment_t staging = {0};
-  if (mem_region_alloc(&staging, PPAP_MEM_RAM_DATA, file_size,
-                       PROC_IMAGE_SEG_WRITABLE) < 0)
-    return -(int)ENOMEM;
-
-  uintptr_t addr = (uintptr_t)staging.base;
-  page_id_t page = (page_id_t)(addr / PAGE_SIZE);
-  uint16_t page_off = (uint16_t)(addr & (PAGE_SIZE - 1u));
-  long n = mod_vfs.vnode_read(vn, page, page_off, file_size, 0);
-  if (n < 0 || (uint32_t)n != file_size) {
-    mem_region_free(&staging);
-    return (n < 0) ? (int)n : -(int)ENOEXEC;
-  }
-
-  int rc = sos_load(p, (const uint8_t *)staging.base, file_size, cpu_ops,
-                    cpu_state, argv, flags);
-  mem_region_free(&staging);
-  return rc;
-}
-
 /* ── Loader registration ───────────────────────────────────────────────── */
 
 const loader_t sos_loader = {
     .name = "sos",
     .detect = sos_detect,
-    .load = sos_load_vn,
+    .load = sos_load,
     .required_arch_id = CPU_ARCH_Z80,
 };

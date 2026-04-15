@@ -166,16 +166,40 @@ static int x68k_alloc_largest_image_region(proc_image_segment_t *seg,
 
 /* ── Loader ────────────────────────────────────────────────────────────── */
 
-static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
+static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
                   const cpu_ops_t *cpu_ops, void *cpu_state,
                   const char *const *argv, uint32_t flags) {
   (void)flags;
   (void)cpu_ops;
   (void)cpu_state;
 
+  /* x_loader runs on m68k (native or via ecpu), a flat-pointer arch,
+   * so staging is safe.  Stream the binary into a RAM region and use
+   * it as a flat pointer for header parsing, segment copies, and
+   * relocation. */
+  proc_image_segment_t staging = {0};
+  int rc;
+  if (mem_region_alloc(&staging, PPAP_MEM_RAM_DATA, file_size,
+                       PROC_IMAGE_SEG_WRITABLE) < 0)
+    return -(int)ENOMEM;
+  {
+    uintptr_t addr = (uintptr_t)staging.base;
+    page_id_t page = (page_id_t)(addr / PAGE_SIZE);
+    uint16_t page_off = (uint16_t)(addr & (PAGE_SIZE - 1u));
+    long n = mod_vfs.vnode_read(vn, page, page_off, file_size, 0);
+    if (n < 0 || (uint32_t)n != file_size) {
+      rc = (n < 0) ? (int)n : -(int)ENOEXEC;
+      goto out;
+    }
+  }
+  const uint8_t *file_buf = (const uint8_t *)staging.base;
+
   const x68k_header_t *hdr = (const x68k_header_t *)file_buf;
   int err = x68k_validate(hdr, file_size);
-  if (err < 0) return err;
+  if (err < 0) {
+    rc = err;
+    goto out;
+  }
 
   uint32_t entry_offset = be32_load(&hdr->entry_offset);
   uint32_t text_size = be32_load(&hdr->text_size);
@@ -189,7 +213,8 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
   if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
                        PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) < 0) {
-    return -(int)ENOMEM;
+    rc = -(int)ENOMEM;
+    goto out;
   }
   p->stack_page_id = mem_region_ptr_to_page(stack_region.base);
   p->image.stack = stack_region;
@@ -203,7 +228,8 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     mem_region_free(&stack_region);
     p->stack_page_id = PAGE_ID_INVALID;
     p->image.stack = (proc_image_segment_t){0};
-    return -(int)ENOMEM;
+    rc = -(int)ENOMEM;
+    goto out;
   }
 
   uint32_t min_total_pages = min_pages + 1u; /* +1 page for emu state */
@@ -213,7 +239,8 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     mem_region_free(&stack_region);
     p->stack_page_id = PAGE_ID_INVALID;
     p->image.stack = (proc_image_segment_t){0};
-    return total_pages;
+    rc = total_pages;
+    goto out;
   }
 
   if (proc_track_page_range(p, 0, mem_region_ptr_to_page(image_region.base),
@@ -222,7 +249,8 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     mem_region_free(&stack_region);
     p->stack_page_id = PAGE_ID_INVALID;
     p->image.stack = (proc_image_segment_t){0};
-    return -(int)ENOMEM;
+    rc = -(int)ENOMEM;
+    goto out;
   }
 
   uint8_t *mem_base = (uint8_t *)image_region.base;
@@ -273,7 +301,8 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
       mem_region_free(&stack_region);
       p->stack_page_id = PAGE_ID_INVALID;
       p->image.stack = (proc_image_segment_t){0};
-      return err;
+      rc = err;
+      goto out;
     }
   }
 
@@ -295,7 +324,8 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   proc_setup_stack(p, m68k_emu_run_process, 0);
 
   (void)argv;
-  return 0;
+  rc = 0;
+  goto out;
 
 #else
   /* ── Native m68k path ──────────────────────────────────────────────── */
@@ -307,14 +337,16 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     mem_region_free(&stack_region);
     p->stack_page_id = PAGE_ID_INVALID;
     p->image.stack = (proc_image_segment_t){0};
-    return -(int)ENOMEM;
+    rc = -(int)ENOMEM;
+    goto out;
   }
   int n_pages = x68k_alloc_largest_image_region(&image_region, min_pages);
   if (n_pages < 0) {
     mem_region_free(&stack_region);
     p->stack_page_id = PAGE_ID_INVALID;
     p->image.stack = (proc_image_segment_t){0};
-    return n_pages;
+    rc = n_pages;
+    goto out;
   }
 
   if (proc_track_page_range(p, 0, mem_region_ptr_to_page(image_region.base),
@@ -323,7 +355,8 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
     mem_region_free(&stack_region);
     p->stack_page_id = PAGE_ID_INVALID;
     p->image.stack = (proc_image_segment_t){0};
-    return -(int)ENOMEM;
+    rc = -(int)ENOMEM;
+    goto out;
   }
 
   uint8_t *base = (uint8_t *)image_region.base;
@@ -358,7 +391,8 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
       mem_region_free(&stack_region);
       p->stack_page_id = PAGE_ID_INVALID;
       p->image.stack = (proc_image_segment_t){0};
-      return err;
+      rc = err;
+      goto out;
     }
   }
 
@@ -387,32 +421,10 @@ static int x_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 
   (void)argv;
   (void)file_size;
-  return 0;
+  rc = 0;
 #endif
-}
 
-static int x_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
-                     const cpu_ops_t *cpu_ops, void *cpu_state,
-                     const char *const *argv, uint32_t flags) {
-  /* x_loader runs on m68k (native or via ecpu), a flat-pointer arch,
-   * so staging is safe.  Stream the X-format binary into a RAM region
-   * and hand it to the unchanged x_load body as a flat pointer. */
-  proc_image_segment_t staging = {0};
-  if (mem_region_alloc(&staging, PPAP_MEM_RAM_DATA, file_size,
-                       PROC_IMAGE_SEG_WRITABLE) < 0)
-    return -(int)ENOMEM;
-
-  uintptr_t addr = (uintptr_t)staging.base;
-  page_id_t page = (page_id_t)(addr / PAGE_SIZE);
-  uint16_t page_off = (uint16_t)(addr & (PAGE_SIZE - 1u));
-  long n = mod_vfs.vnode_read(vn, page, page_off, file_size, 0);
-  if (n < 0 || (uint32_t)n != file_size) {
-    mem_region_free(&staging);
-    return (n < 0) ? (int)n : -(int)ENOEXEC;
-  }
-
-  int rc = x_load(p, (const uint8_t *)staging.base, file_size, cpu_ops,
-                  cpu_state, argv, flags);
+out:
   mem_region_free(&staging);
   return rc;
 }
@@ -422,6 +434,6 @@ static int x_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
 const loader_t x_loader = {
     .name = "x68k",
     .detect = x_detect,
-    .load = x_load_vn,
+    .load = x_load,
     .required_arch_id = CPU_ARCH_M68K,
 };

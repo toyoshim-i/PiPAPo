@@ -662,9 +662,10 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
   return 0;
 }
 
-static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
-                    const cpu_ops_t *cpu_ops, void *cpu_state,
-                    const char *const *argv, uint32_t flags) {
+static int elf_load_from_buffer(pcb_t *p, const uint8_t *file_buf,
+                                uint32_t file_size, const cpu_ops_t *cpu_ops,
+                                void *cpu_state, const char *const *argv,
+                                uint32_t flags) {
   /* Create CPU state if not provided by coordinator */
   int own_state = 0;
   if (!cpu_state) {
@@ -788,9 +789,9 @@ static int elf_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   return 0;
 }
 
-static int elf_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
-                       const cpu_ops_t *cpu_ops, void *cpu_state,
-                       const char *const *argv, uint32_t flags) {
+static int elf_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
+                    const cpu_ops_t *cpu_ops, void *cpu_state,
+                    const char *const *argv, uint32_t flags) {
   (void)flags;
 
   proc_image_segment_t staging = {0};
@@ -822,8 +823,8 @@ static int elf_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
     staging_used = 1;
   }
 
-  int rc =
-      elf_load(p, file_buf, file_size, cpu_ops, cpu_state, argv, load_flags);
+  int rc = elf_load_from_buffer(p, file_buf, file_size, cpu_ops, cpu_state,
+                                argv, load_flags);
 
   if (staging_used) mem_region_free(&staging);
   return rc;
@@ -832,6 +833,6 @@ static int elf_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
 const loader_t elf_loader = {
     .name = "elf",
     .detect = elf_detect,
-    .load = elf_load_vn,
+    .load = elf_load,
     .required_arch_id = 0,
 };

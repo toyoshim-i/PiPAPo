@@ -82,14 +82,32 @@ static int m68k_emu_alloc_region(proc_image_segment_t *seg,
 
 /* ── Loader ────────────────────────────────────────────────────────────── */
 
-static int m68k_emu_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
+static int m68k_emu_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
                          const cpu_ops_t *cpu_ops, void *cpu_state,
                          const char *const *argv, uint32_t flags) {
   (void)flags;
   (void)cpu_ops;
   (void)cpu_state;
 
-  /* ── 1. Allocate emulated memory + state struct ────────────────────── */
+  /* ── 1. Stage the ELF in RAM.  Emulated m68k runs on ARM/RV/Xtensa
+   *      only (all flat-pointer arches), so staging is safe. */
+  proc_image_segment_t staging = {0};
+  if (mem_region_alloc(&staging, PPAP_MEM_RAM_DATA, file_size,
+                       PROC_IMAGE_SEG_WRITABLE) < 0)
+    return -(int)ENOMEM;
+  {
+    uintptr_t addr = (uintptr_t)staging.base;
+    page_id_t page = (page_id_t)(addr / PAGE_SIZE);
+    uint16_t page_off = (uint16_t)(addr & (PAGE_SIZE - 1u));
+    long n = mod_vfs.vnode_read(vn, page, page_off, file_size, 0);
+    if (n < 0 || (uint32_t)n != file_size) {
+      mem_region_free(&staging);
+      return (n < 0) ? (int)n : -(int)ENOEXEC;
+    }
+  }
+  const uint8_t *file_buf = (const uint8_t *)staging.base;
+
+  /* ── 2. Allocate emulated memory + state struct ────────────────────── */
   uint32_t state_pages =
       (sizeof(ppap_m68k_exec_state_t) + PAGE_SIZE - 1) / PAGE_SIZE;
   proc_image_segment_t data_region = {0};
@@ -99,7 +117,10 @@ static int m68k_emu_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   uint32_t min_emu_pages = M68K_EMU_MEM_MIN / PAGE_SIZE;
   int total_pages = m68k_emu_alloc_region(
       &data_region, emu_mem_pages + state_pages, min_emu_pages + state_pages);
-  if (total_pages < 0) return total_pages;
+  if (total_pages < 0) {
+    mem_region_free(&staging);
+    return total_pages;
+  }
 
   emu_mem_pages = (uint32_t)total_pages - state_pages;
   uint32_t emu_mem_size = emu_mem_pages * PAGE_SIZE;
@@ -107,25 +128,27 @@ static int m68k_emu_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   ppap_m68k_exec_state_t *state =
       (ppap_m68k_exec_state_t *)(emu_mem + emu_mem_pages * PAGE_SIZE);
 
-  /* ── 2. Allocate stack page ────────────────────────────────────────── */
+  /* ── 3. Allocate stack page ────────────────────────────────────────── */
   if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
                        PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) < 0) {
     mem_region_free(&data_region);
+    mem_region_free(&staging);
     return -(int)ENOMEM;
   }
   p->stack_page_id = mem_region_ptr_to_page(stack_region.base);
   p->image.stack = stack_region;
 
-  /* ── 3. Initialize m68k emulator ───────────────────────────────────── */
+  /* ── 4. Initialize m68k emulator ───────────────────────────────────── */
   memset(state, 0, sizeof(*state));
   ecpu_m68k_ops.init((cpu_state_t *)&state->m68k, emu_mem, emu_mem_size);
   ecpu_m68k_ops.set_trap_handler((cpu_state_t *)&state->m68k,
                                  ppap_m68k_trap_handler, NULL);
 
-  /* ── 4. Load ELF image (PT_LOAD segments + user stack) ─────────────── */
+  /* ── 5. Load ELF image (PT_LOAD segments + user stack) ─────────────── */
   uint32_t entry = 0;
   int rc = ppap_m68k_load_elf(&state->m68k, emu_mem, emu_mem_size, file_buf,
                               file_size, argv, &entry);
+  mem_region_free(&staging);
   if (rc < 0) {
     mem_region_free(&stack_region);
     mem_region_free(&data_region);
@@ -135,42 +158,17 @@ static int m68k_emu_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
   p->image.data = data_region;
   p->image.entry = entry;
 
-  /* ── 5. Set supervisor mode for kernel execution ───────────────────── */
+  /* ── 6. Set supervisor mode for kernel execution ───────────────────── */
   state->m68k.sr = M68K_SR_S;
 
-  /* ── 6. Tag as PPAP process with eCPU m68k state ───────────────────── */
+  /* ── 7. Tag as PPAP process with eCPU m68k state ───────────────────── */
   p->subsys = SUBSYS_PPAP;
   p->subsys_data = state;
 
-  /* ── 7. Set kernel-mode entry point ────────────────────────────────── */
+  /* ── 8. Set kernel-mode entry point ────────────────────────────────── */
   proc_setup_stack(p, ppap_m68k_run_process, 0);
 
   return 0;
-}
-
-static int m68k_emu_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
-                            const cpu_ops_t *cpu_ops, void *cpu_state,
-                            const char *const *argv, uint32_t flags) {
-  /* Emulated m68k runs on ARM/RV/Xtensa (all flat-pointer arches), so
-   * staging is safe. */
-  proc_image_segment_t staging = {0};
-  if (mem_region_alloc(&staging, PPAP_MEM_RAM_DATA, file_size,
-                       PROC_IMAGE_SEG_WRITABLE) < 0)
-    return -(int)ENOMEM;
-
-  uintptr_t addr = (uintptr_t)staging.base;
-  page_id_t page = (page_id_t)(addr / PAGE_SIZE);
-  uint16_t page_off = (uint16_t)(addr & (PAGE_SIZE - 1u));
-  long n = mod_vfs.vnode_read(vn, page, page_off, file_size, 0);
-  if (n < 0 || (uint32_t)n != file_size) {
-    mem_region_free(&staging);
-    return (n < 0) ? (int)n : -(int)ENOEXEC;
-  }
-
-  int rc = m68k_emu_load(p, (const uint8_t *)staging.base, file_size, cpu_ops,
-                         cpu_state, argv, flags);
-  mem_region_free(&staging);
-  return rc;
 }
 
 /* ── Loader registration ───────────────────────────────────────────────── */
@@ -178,6 +176,6 @@ static int m68k_emu_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
 const loader_t m68k_emu_loader = {
     .name = "m68k_emu",
     .detect = m68k_emu_detect,
-    .load = m68k_emu_load_vn,
+    .load = m68k_emu_load,
     .required_arch_id = CPU_ARCH_M68K,
 };
