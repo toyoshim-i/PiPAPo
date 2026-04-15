@@ -13,6 +13,8 @@
 
 #include <string.h>
 
+#include "common/errno.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
 
 /* ── Segment zeroing ──────────────────────────────────────────────────── */
@@ -61,22 +63,17 @@ static void dos_build_psp(page_id_t base_id, uint16_t proc_seg,
   mem_region_page_write(base_id, 0x80, tail_buf, (uint16_t)(2 + tail_len));
 }
 
-/* ── Binary copy ──────────────────────────────────────────────────────── */
+/* ── Binary load ──────────────────────────────────────────────────────── */
 
-static void dos_copy_binary(page_id_t base_id, const uint8_t *file_buf,
-                            uint32_t file_size) {
-  const uint8_t *src = file_buf;
-  uint32_t rem = file_size;
-  uint16_t dst = 0x0100;
-  while (rem > 0) {
-    uint16_t pg_off = dst % PAGE_SIZE;
-    uint16_t chunk = PAGE_SIZE - pg_off;
-    if (chunk > rem) chunk = (uint16_t)rem;
-    mem_region_page_write(base_id + dst / PAGE_SIZE, pg_off, src, chunk);
-    src += chunk;
-    dst += chunk;
-    rem -= chunk;
-  }
+static int dos_load_binary(page_id_t base_id, vnode_t *vn, uint32_t file_size) {
+  /* vnode_read resolves (page, page_off) to a linear destination and
+   * services the read across page boundaries, so a single call covers
+   * the whole binary.  Destination is offset 0x0100 inside the DOS
+   * segment, which lives entirely in page `base_id`. */
+  long n = mod_vfs.vnode_read(vn, base_id, 0x0100, file_size, 0);
+  if (n < 0) return (int)n;
+  if ((uint32_t)n != file_size) return -(int)ENOEXEC;
+  return 0;
 }
 
 /* ── Initial user-mode frame ──────────────────────────────────────────── */
@@ -120,11 +117,13 @@ static uint16_t dos_build_user_frame(page_id_t base_id, uint16_t proc_seg) {
 
 /* ── Main entry point ─────────────────────────────────────────────────── */
 
-uint16_t dos_build_com_image(page_id_t base_id, uint16_t proc_seg,
-                             const uint8_t *file_buf, uint32_t file_size,
-                             const char *const *argv) {
+int dos_build_com_image(page_id_t base_id, uint16_t proc_seg, vnode_t *vn,
+                        uint32_t file_size, const char *const *argv,
+                        uint16_t *out_user_sp) {
   dos_zero_segment(base_id);
   dos_build_psp(base_id, proc_seg, argv);
-  dos_copy_binary(base_id, file_buf, file_size);
-  return dos_build_user_frame(base_id, proc_seg);
+  int rc = dos_load_binary(base_id, vn, file_size);
+  if (rc < 0) return rc;
+  *out_user_sp = dos_build_user_frame(base_id, proc_seg);
+  return 0;
 }

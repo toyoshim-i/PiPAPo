@@ -12,6 +12,7 @@
 
 #include "kernel/core/subsys/msdos/com_loader.h"
 
+#include "common/errno.h"
 #include "kernel/common/core/subsys_info.h"
 #include "kernel/core/cpu/cpu.h"
 #include "kernel/core/exec/loader.h"
@@ -46,25 +47,32 @@ static int com_detect(const uint8_t *header, uint32_t header_len,
 
 /* ── Loading ───────────────────────────────────────────────────────────── */
 
-static int com_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
-                    const cpu_ops_t *cpu_ops, void *cpu_state,
-                    const char *const *argv, uint32_t flags) {
+static int com_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
+                       const cpu_ops_t *cpu_ops, void *cpu_state,
+                       const char *const *argv, uint32_t flags) {
   (void)cpu_ops;
   (void)cpu_state;
   (void)flags;
 
-  if (file_size > DOS_COM_MAX_SIZE) return -1;
+  if (file_size > DOS_COM_MAX_SIZE) return -(int)ENOEXEC;
 
   /* 1. Allocate a 64 KB segment (16 contiguous pages) */
   page_id_t base_id = mem_region_page_alloc_contiguous(DOS_SEG_PAGES);
-  if (base_id == PAGE_ID_INVALID) return -1;
+  if (base_id == PAGE_ID_INVALID) return -(int)ENOMEM;
 
   uint32_t base_linear = mem_region_page_linear(base_id);
   uint16_t proc_seg = (uint16_t)(base_linear >> 4);
 
-  /* 2. Build the DOS memory image (PSP, binary, user frame) */
-  uint16_t user_sp =
-      dos_build_com_image(base_id, proc_seg, file_buf, file_size, argv);
+  /* 2. Stream the .COM binary into the DOS segment and build the
+   *    PSP + initial user frame. */
+  uint16_t user_sp;
+  int rc =
+      dos_build_com_image(base_id, proc_seg, vn, file_size, argv, &user_sp);
+  if (rc < 0) {
+    for (uint16_t i = 0; i < DOS_SEG_PAGES; i++)
+      mem_region_page_free(base_id + i);
+    return rc;
+  }
 
   /* 3. Tag as MS-DOS subsystem */
   p->subsys = SUBSYS_MSDOS;
@@ -111,7 +119,6 @@ static int com_load(pcb_t *p, const uint8_t *file_buf, uint32_t file_size,
 const loader_t com_loader = {
     .name = "dos_com",
     .detect = com_detect,
-    .load = com_load,
+    .load_vn = com_load_vn,
     .required_arch_id = CPU_ARCH_8086,
-    .xip = 0,
 };
