@@ -502,7 +502,7 @@ add_custom_command(TARGET ppap_pcxt_vfs POST_BUILD
 )
 
 add_custom_target(pcxt_memory_report ALL
-  COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/report_memory_usage.sh
+  COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/report_memory_usage.sh
     ${CMAKE_SIZE_UTIL}
     ${CMAKE_NM}
     ${CMAKE_CURRENT_BINARY_DIR}/ppap_pcxt.elf
