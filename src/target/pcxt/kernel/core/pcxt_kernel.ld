@@ -8,7 +8,7 @@
  *                  .rodata (constants)
  *                  .data (core initialized globals)
  *                  .bss (core zero-initialized globals)
- *   0xB400-0xE37F  Reserved for VFS module DS=0 data + bss
+ *   0xB600-0xE37F  Reserved for VFS module DS=0 data + bss
  *   0xE380-0xFFFF  Per-process kernel stacks (slot 0: 128B, slots 1-7: 1KB)
  *   0x10000+       __page_pool_start (free pages)
  *
@@ -18,7 +18,7 @@
  * the same offsets so near calls resolve correctly in both copies.
  *
  * VFS code lives in a separate segment (after core far copy).
- * VFS data lives at 0xB400 in this shared DS=0 space.
+ * VFS data lives at 0xB600 in this shared DS=0 space.
  */
 
 OUTPUT_FORMAT("elf32-i386")
@@ -65,7 +65,7 @@ SECTIONS
   __stack_top = .;
 
   /* Reserved for VFS DS=0 data (must match pcxt_vfs.ld). */
-  . = 0xB400;
+  . = 0xB600;
   __vfs_data_reserved = .;
 
   /* Per-process kernel stacks: slot 0 = 128B (idle loop only),
@@ -82,8 +82,8 @@ SECTIONS
   __page_pool_start = .;
 
   /* Sanity checks */
-  ASSERT((__bss_end <= 0xB400),
-         "ERROR: Kernel BSS overflows into VFS reserved area (0xB400)")
+  ASSERT((__bss_end <= 0xB600),
+         "ERROR: Kernel BSS overflows into VFS reserved area (0xB600)")
   ASSERT((__page_pool_start <= 0x9FC00),
          "ERROR: Page pool starts beyond conventional memory (640 KB)")
 

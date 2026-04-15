@@ -2,7 +2,7 @@
  * pcxt_vfs.ld — VFS module linker script (shared DS=0)
  *
  * Code (.text, .rodata) starts at offset 0 in the VFS code segment.
- * Data (.rodata, .data, .bss) is placed in the 0xB400-0xE37F shared DS=0
+ * Data (.rodata, .data, .bss) is placed in the 0xB600-0xE37F shared DS=0
  * window owned by the first segment.
  *
  * The compiler generates DS-relative data access (e.g. mov ax,[0xACxx]).
@@ -30,12 +30,12 @@ SECTIONS
 
   _code_end = .;
 
-  /* Data segment: at DS=0 address 0xB400.
+  /* Data segment: at DS=0 address 0xB600.
    * .rodata must also be here (not in code segment) because the
    * compiler generates DS-relative access for all data, including
    * string literals and const tables.
    * Must match the reservation in pcxt_kernel.ld */
-  . = 0xB400;
+  . = 0xB600;
 
   __vfs_data_start = .;
   .rodata : {
