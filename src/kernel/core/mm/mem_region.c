@@ -524,23 +524,31 @@ static int mem_region_alloc_page_backed(proc_image_segment_t *seg,
                                         ppap_mem_class_t mem_class,
                                         uint32_t size, uint32_t flags) {
   uint32_t n_pages;
-  void *base;
+  page_id_t pid;
 
   if (size == 0) {
     *seg = (proc_image_segment_t){0};
     return 0;
   }
 
+  /* Allocate via the page-indexed API so we get the page_id directly.
+   * On i16 the void * returned by page_alloc() is the linear address
+   * truncated to 16 bits, which makes mm_ptr_to_page() round-trip back
+   * to the wrong page id for any page above the first 64 KB.  Going
+   * through mm_page_alloc + mm_page_linear keeps base_page correct on
+   * every architecture and lets i16 callers safely reach pages outside
+   * the 64 KB DS=0 window via mem_region_page_read/write. */
   n_pages = mem_region_page_count(size);
   if (n_pages == 1) {
-    base = page_alloc();
+    pid = mm_page_alloc();
   } else {
-    base = page_alloc_contiguous(n_pages);
+    pid = mm_page_alloc_contiguous(n_pages);
   }
-  if (!base) return -(int)ENOMEM;
+  if (pid == PAGE_ID_INVALID) return -(int)ENOMEM;
 
+  void *base = (void *)(uintptr_t)mm_page_linear(pid);
   *seg = proc_image_segment_make(base, size, mem_class, flags);
-  seg->base_page = mm_ptr_to_page(base);
+  seg->base_page = pid;
   return 0;
 }
 
@@ -611,7 +619,11 @@ void mem_region_free(const proc_image_segment_t *seg) {
   uint32_t n_pages;
   page_id_t base_id;
 
-  if (!seg || !seg->base || seg->size == 0) return;
+  if (!seg || seg->size == 0) return;
+  /* Either a usable base pointer or a valid base_page is required.
+   * On i16, callers may set base_page only because seg->base would be
+   * a truncated pointer that the page-backed paths below ignore. */
+  if (!seg->base && seg->base_page == PAGE_ID_INVALID) return;
 
   switch (seg->mem_class) {
 #if defined(__xtensa__)
