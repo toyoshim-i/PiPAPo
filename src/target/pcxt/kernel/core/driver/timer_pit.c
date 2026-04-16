@@ -108,7 +108,9 @@ void timer_init(void)
   set_ivt(0x30, i16_syscall_isr, core_cs);
 
 #ifdef PPAP_ENABLE_MSDOS
-  /* Install DOS INT 21h handler */
+  /* Install DOS INT 20h (terminate) and INT 21h (function dispatch) */
+  extern void i16_dos_int20_isr(void);
+  set_ivt(0x20, i16_dos_int20_isr, core_cs);
   set_ivt(0x21, i16_dos_isr, core_cs);
 #endif
 
