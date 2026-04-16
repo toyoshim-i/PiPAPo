@@ -27,10 +27,14 @@ typedef struct dos_proc {
   void *ecpu_memory; /* eCPU: flat memory pointer (NULL for native) */
 } dos_proc_t;
 
+/* Layout matches the GP+IRET frame on the user stack at user_SP when
+ * an INT 21h enters dos_trap.S — i.e. the same order as i16_syscall_isr
+ * (INT 30h) pushes, so dos_trap.S can share the trap.S restore tail.
+ *   offset  0 .. 16   pushed by dos_trap.S   (ES..AX, 9 words)
+ *   offset 18 .. 22   pushed by CPU on INT   (IP, CS, FLAGS) */
 typedef struct dos_regs {
-  uint16_t ax, bx, cx, dx, si, di, bp;
-  uint16_t ds, es;
-  uint16_t flags;
+  uint16_t es, ds, bp, di, si, dx, cx, bx, ax;
+  uint16_t ip, cs, flags;
 } dos_regs_t;
 
 /* Global ops table for registration */
