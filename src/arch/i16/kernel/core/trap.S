@@ -35,6 +35,8 @@
   .equ PCB_SVC_NEEDS_RESTART_OFFSET, 452
 
   .global i16_syscall_isr
+  .global i16_trap_after_switch
+  .global i16_trap_maybe_switch
   .extern i16_trap_should_skip_ret_store
   .extern i16_trap_should_switch_now
 
@@ -191,6 +193,7 @@ i16_syscall_isr:
   movw  %ax, %ds        /* DS = 0 */
 
 .Lmaybe_switch:
+i16_trap_maybe_switch:
   /* Check if a context switch was requested (e.g. by sys_waitpid) */
   movw  %ss:switch_pending, %ax
   testw %ax, %ax
@@ -213,6 +216,7 @@ i16_syscall_isr:
   movw  %ax, %ss:i16_current_ksp
 
 .Lafter_switch:
+i16_trap_after_switch:
   /* Restore vfork parent's saved GP+IRET frame to user stack.
    * If current is a vfork parent whose frame was saved on the kernel
    * stack, this copies it back before the normal restore path. */

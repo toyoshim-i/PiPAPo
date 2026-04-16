@@ -1,47 +1,61 @@
 /*
  * dos_trap.S --- INT 21h DOS ISR for i8086 real mode
  *
- * Saves the interrupted registers in dos_regs_t layout on the user
- * stack, copies them to the kernel stack for the C dispatcher, and
- * copies modified values back after return.
+ * Uses the SAME stack layout as trap.S (INT 30h syscall):
+ *   User stack (pushed by CPU + ISR prologue, low-to-high at user_SP):
+ *     [+0 ] ES   [+2 ] DS  [+4 ] BP  [+6 ] DI  [+8 ] SI
+ *     [+10] DX   [+12] CX  [+14] BX  [+16] AX
+ *     [+18] IP   [+20] CS  [+22] FLAGS      (pushed by CPU on INT)
+ *   Kernel stack (at SP after prologue):
+ *     [+0 ..+33] 34-byte vfork-save slot  (reserved for uniformity)
+ *     [+34]      user_SP
+ *     [+36]      user_SS
  *
- * dos_regs_t layout (20 bytes, low-to-high on stack):
- *   [+0]  AX   [+2]  BX   [+4]  CX   [+6]  DX
- *   [+8]  SI   [+10] DI   [+12] BP   [+14] DS
- *   [+16] ES   [+18] FLAGS
+ * After dispatch we jump into trap.S's shared `i16_trap_maybe_switch`
+ * tail, which handles: deferred context switch (zombie/blocked via
+ * sys_exit), vfork parent-frame restore, sigreturn, signal delivery,
+ * user SS:SP restore and the final IRET.
+ *
+ * The dispatcher reads/writes a `dos_regs_t` whose layout matches the
+ * 24-byte GP+IRET frame at user_SP (see dos_bridge.h).  AX and FLAGS
+ * modifications propagate back to the caller via the IRET pop.
  */
 
   .code16
   .text
 
   .global i16_dos_isr
+  .global i16_dos_int20_isr
   .extern i16_dos_int21h_dispatch_native
   .extern i16_current_ksp
+  .extern i16_trap_maybe_switch
+
+/* INT 20h (Program Terminate) — convert to INT 21h AH=4Ch, exit code 0.
+ * Sets AX before falling through to i16_dos_isr so the dispatcher sees
+ * function 4Ch. */
+i16_dos_int20_isr:
+  movw  $0x4C00, %ax
+  /* fall through */
 
 i16_dos_isr:
   /* CPU pushed FLAGS, CS, IP onto current SS:SP.  IF=0. */
 
-  /* Capture current SP to access FLAGS in the IRET frame */
+  /* Save GP registers on the current stack in trap.S order */
+  pushw %ax
+  pushw %bx
+  pushw %cx
+  pushw %dx
+  pushw %si
+  pushw %di
+  pushw %bp
+  pushw %ds
+  pushw %es
+
+  /* Capture interrupted SS:SP */
+  movw  %ss, %ax
   movw  %sp, %bp
 
-  /* Save registers on the interrupted stack in dos_regs_t order
-   * (pushed in reverse so the struct reads naturally from low addr). */
-  pushw 4(%bp)        /* flags (copy from IRET frame) */
-  pushw %es
-  pushw %ds
-  pushw %bp
-  pushw %di
-  pushw %si
-  pushw %dx
-  pushw %cx
-  pushw %bx
-  pushw %ax
-
-  /* Capture user SS:SP.  SP now points at dos_regs_t on user stack. */
-  movw  %ss, %ax          /* ax = user_SS */
-  movw  %sp, %bp          /* bp = user_SP */
-
-  /* Switch to kernel stack if not already there */
+  /* Switch to kernel stack if we came from user mode */
   testw %ax, %ax
   jz    .Lkstack_ready
 
@@ -50,71 +64,63 @@ i16_dos_isr:
   movw  %ss:i16_current_ksp, %sp
 
 .Lkstack_ready:
-  /* Save user_SS:user_SP on kernel stack */
+  /* Push interrupted SS:SP onto kernel stack */
   pushw %ax               /* user_SS */
-  pushw %bp               /* user_SP */
+  pushw %bp               /* user_SP  — points at GP frame on user stack */
 
-  /* ── Copy dos_regs_t (20 bytes) from user stack to kernel stack ── */
-  subw  $20, %sp          /* make room on kernel stack */
-
-  movw  %ax, %ds          /* DS = user_SS (source segment) */
-  xorw  %ax, %ax
-  movw  %ax, %es          /* ES = 0 (kernel, destination segment) */
-
-  movw  %bp, %si          /* SI = user_SP (source offset) */
-  movw  %sp, %di          /* DI = kernel stack (dest offset) */
-  movw  $10, %cx          /* 10 words = 20 bytes */
-  cld
-  rep movsw
-
-  /* Restore DS = 0 for kernel */
+  /* DS = ES = 0 for kernel data access */
   xorw  %ax, %ax
   movw  %ax, %ds
+  movw  %ax, %es
 
-  /* ── Call C dispatcher ─────────────────────────────────────────── */
-  /* i16_dos_int21h_dispatch_native(dos_regs_t *regs)
-   * regs points to the kernel-stack copy at SP */
+  /* Reserve the 34-byte vfork-save slot above the C call chain so this
+   * entry path produces the same kernel-stack layout as trap.S /
+   * switch.S and can share their restore tail unchanged. */
+  subw  $34, %sp
+
+  /* Copy the 24-byte GP+IRET frame (ES..FLAGS) from user stack into
+   * a kernel-stack scratch buffer.  The dispatcher works on the copy
+   * so its regs->* stores do not require a user-segment override. */
+  movw  %sp, %bp
+  movw  36(%bp), %ax      /* user_SS (at kstack_top - 2) */
+  movw  34(%bp), %si      /* user_SP (at kstack_top - 4) */
+
+  subw  $24, %sp          /* scratch room for dos_regs_t copy */
+  movw  %sp, %di
+  movw  %ax, %ds          /* DS = user_SS (source) */
+  movw  $12, %cx          /* 12 words = 24 bytes */
+  cld
+  rep movsw
+  xorw  %ax, %ax
+  movw  %ax, %ds          /* DS back to 0 for kernel */
+
+  /* Call dispatcher: int i16_dos_int21h_dispatch_native(dos_regs_t *) */
   movw  %sp, %ax
   pushw %ax
   call  i16_dos_int21h_dispatch_native
   addw  $2, %sp
 
-  /* ── Copy modified dos_regs_t back to user stack ───────────────── */
+  /* Copy the (possibly modified) 24-byte frame back to the user stack. */
   movw  %sp, %bp
-  movw  22(%bp), %ax      /* user_SS (at SP+20+2) */
-  movw  20(%bp), %di      /* user_SP = dest offset */
-
-  movw  %ax, %es          /* ES = user_SS (destination segment) */
-  movw  %sp, %si          /* SI = kernel copy (source offset, DS=0) */
-  movw  $10, %cx
+  /* After the 24B scratch + 34B slot, user_SP is at offset 58, user_SS at 60. */
+  movw  60(%bp), %ax      /* user_SS */
+  movw  58(%bp), %di      /* user_SP */
+  movw  %ax, %es          /* ES = user_SS (destination) */
+  movw  %sp, %si
+  movw  $12, %cx
   cld
   rep movsw
+  xorw  %ax, %ax
+  movw  %ax, %es
 
-  /* Clean up kernel stack: drop the 20-byte copy */
-  addw  $20, %sp
+  /* Drop the 24-byte scratch; SP is now back at the post-vfork-reserve
+   * position expected by the shared restore tail. */
+  addw  $24, %sp
 
-  /* ── Restore user stack and return ─────────────────────────────── */
-  popw  %bp               /* user_SP */
-  popw  %ax               /* user_SS */
-
-  movw  %ax, %ss
-  movw  %bp, %sp
-
-  /* Pop modified registers from user stack (dos_regs_t order) */
-  popw  %ax
-  popw  %bx
-  popw  %cx
-  popw  %dx
-  popw  %si
-  popw  %di
-  popw  %bp
-  popw  %ds
-  popw  %es
-  popw  %bx               /* modified FLAGS */
-
-  /* Update FLAGS in the IRET frame (at SP+4).
-   * 8086 has no SP-relative addressing; use BP. */
-  movw  %sp, %bp
-  movw  %bx, 4(%bp)
-
-  iret
+  /* Jump into trap.S's shared tail.  It checks switch_pending (set by
+   * sys_exit's sched_switch on AH=4Ch terminate), does the context
+   * switch if needed, then unwinds through .Lafter_switch / .Lrestore
+   * and IRETs.  For the common "no state change" dispatch this is a
+   * straight fall-through; for the zombie case it selects another
+   * RUNNABLE process and returns via that process's saved frame. */
+  jmp   i16_trap_maybe_switch
