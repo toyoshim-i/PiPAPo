@@ -80,3 +80,20 @@ const char *target_name(void) { return "qemu_arm"; }
 uint32_t target_caps(void) {
   return 0; /* No SD, no SPI, no Core 1, no PL011 */
 }
+
+/*
+ * QEMU poweroff via ARM semihosting.
+ *
+ * angel_SWI 0x18 (SYS_EXIT_EXTENDED) tells QEMU to exit.
+ * The parameter block contains {reason, subcode}:
+ *   reason=0x20026 (ADP_Stopped_ApplicationExit), subcode=exit_code.
+ */
+void target_qemu_poweroff(uint8_t status) {
+  uint32_t params[2];
+  params[0] = 0x20026u; /* ADP_Stopped_ApplicationExit */
+  params[1] = (uint32_t)status;
+  register uint32_t r0 __asm__("r0") = 0x20u; /* SYS_EXIT_EXTENDED */
+  register uint32_t r1 __asm__("r1") = (uint32_t)params;
+  __asm__ volatile("bkpt 0xAB" : "+r"(r0) : "r"(r1) : "memory");
+  for (;;) __asm__ volatile("" ::: "memory");
+}

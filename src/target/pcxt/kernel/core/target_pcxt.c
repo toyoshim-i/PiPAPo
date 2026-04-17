@@ -17,6 +17,9 @@ uint32_t i16_page_pool_base = 0x10000ul;  /* safe default */
 #define VFS_DATA_UPPER_BSS_BASE 0xC000u
 #define VFS_DATA_UPPER_BSS_SIZE 0x2000u
 
+/* isa-debug-exit I/O port — requires QEMU -device isa-debug-exit */
+#define ISA_DEBUG_EXIT_PORT 0x0501u
+
 /* Far pointer tables from the stub assembly files */
 extern uint16_t vfs_fptrs[];  /* in core: caller stubs for VFS */
 
@@ -668,4 +671,17 @@ const char *target_name(void)
 uint32_t target_caps(void)
 {
   return TARGET_CAP_REALUART;
+}
+
+/*
+ * QEMU poweroff via isa-debug-exit device.
+ *
+ * Requires -device isa-debug-exit,iobase=0x501,iosize=2 on the QEMU
+ * command line.  QEMU exits with code (value << 1) | 1.
+ */
+void target_qemu_poweroff(uint8_t status) {
+  __asm__ volatile("outb %0, %1"
+                   :
+                   : "a"(status), "Nd"((uint16_t)ISA_DEBUG_EXIT_PORT));
+  for (;;) __asm__ volatile("cli\n hlt");
 }

@@ -17,6 +17,11 @@
 #include "ktest.h"
 #endif
 
+/* sifive_test device — built into QEMU virt rv32 */
+#define SIFIVE_TEST_BASE 0x100000u
+#define SIFIVE_TEST_PASS 0x5555u
+#define SIFIVE_TEST_FAIL 0x3333u
+
 /* Linker-provided UFS test image (from ufsimg_data.S) */
 extern const uint8_t __ufsimg_start[];
 extern const uint8_t __ufsimg_end[];
@@ -83,4 +88,16 @@ int target_debug_hwbp_set(uint32_t slot, uint32_t addr) {
 int target_debug_hwbp_clear(uint32_t slot) {
   (void)slot;
   return -1;
+}
+
+/*
+ * QEMU poweroff via sifive_test device.
+ *
+ * Writing 0x5555 triggers FINISHER_PASS (QEMU exits 0).
+ * Writing 0x3333 triggers FINISHER_FAIL (QEMU exits 1).
+ */
+void target_qemu_poweroff(uint8_t status) {
+  volatile uint32_t *test = (volatile uint32_t *)SIFIVE_TEST_BASE;
+  *test = status ? SIFIVE_TEST_FAIL : SIFIVE_TEST_PASS;
+  for (;;) __asm__ volatile("nop");
 }

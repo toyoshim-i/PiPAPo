@@ -21,6 +21,11 @@
 #include "kernel/core/proc/sched.h"
 #include "target/target.h"
 
+/* virt-ctrl device — built into QEMU m68k virt machine */
+#define VIRT_CTRL_BASE 0xFF001000u
+#define VIRT_CTRL_CMD 4u
+#define VIRT_CTRL_CMD_HALT 2u
+
 /* ── Timer driver ────────────────────────────────────────────────────── */
 
 /* Defined in drivers/timer_qemu_m68k.c */
@@ -114,6 +119,19 @@ const char *target_init_path(void) {
 const char *target_name(void) { return "qemu_m68k"; }
 
 uint32_t target_caps(void) { return 0; /* No SD, no SPI, no Core 1 */ }
+
+/*
+ * QEMU poweroff via virt-ctrl device.
+ *
+ * Writing VIRT_CTRL_CMD_HALT to the CMD register triggers poweroff.
+ */
+void target_qemu_poweroff(uint8_t status) {
+  (void)status;
+  volatile uint32_t *cmd =
+      (volatile uint32_t *)(VIRT_CTRL_BASE + VIRT_CTRL_CMD);
+  *cmd = VIRT_CTRL_CMD_HALT;
+  for (;;) __asm__ volatile("" ::: "memory");
+}
 
 /* Yield-test process — runs on its own stack, yields back to thread 0 */
 void yield_test_process(void) {
