@@ -505,6 +505,111 @@ static void test_rw_roundtrip(void)
     unlink("/tmp/RW.TXT");
 }
 
+/* -- Test 12: seek_delete.com --- AH=42h LSEEK + AH=41h DELETE ---------- */
+/*
+ * Create C:\SK.TXT, write "0123456789ABCDEF" (16 B), close.
+ * Re-open r/o, LSEEK SET +4 → expect AX=4, READ 4 B, REPE CMPSB "4567",
+ * close, DELETE, then OPEN again expecting error 2 (FILE_NOT_FOUND).
+ *
+ *   data    at 0x018A:  "0123456789ABCDEF"  (16 B)
+ *   exp     at 0x019A:  "4567"              (4 B)
+ *   buf     at 0x019E:  4-byte scratch
+ *   path    at 0x01A2:  "C:\\SK.TXT\\0"      (10 B)
+ */
+static const unsigned char seek_delete_com[] = {
+    /* 0x100: CREATE */
+    0xB4, 0x3C,                /* MOV AH, 3Ch */
+    0xB9, 0x00, 0x00,          /* MOV CX, 0   */
+    0xBA, 0xA2, 0x01,          /* MOV DX, 01A2h (path) */
+    0xCD, 0x21,                /* INT 21h     */
+    0x72, 0x79,                /* JC fail     */
+    0x89, 0xC3,                /* MOV BX, AX  */
+    /* 0x10E: WRITE 16 */
+    0xB4, 0x40,                /* MOV AH, 40h */
+    0xB9, 0x10, 0x00,          /* MOV CX, 16  */
+    0xBA, 0x8A, 0x01,          /* MOV DX, 018Ah (data) */
+    0xCD, 0x21,                /* INT 21h     */
+    0x72, 0x6B,                /* JC fail     */
+    0x3D, 0x10, 0x00,          /* CMP AX, 16  */
+    0x75, 0x66,                /* JNE fail    */
+    /* 0x11F: CLOSE */
+    0xB4, 0x3E,                /* MOV AH, 3Eh */
+    0xCD, 0x21,                /* INT 21h     */
+    0x72, 0x60,                /* JC fail     */
+    /* 0x125: OPEN RDONLY */
+    0xB8, 0x00, 0x3D,          /* MOV AX, 3D00h */
+    0xBA, 0xA2, 0x01,          /* MOV DX, path */
+    0xCD, 0x21,                /* INT 21h     */
+    0x72, 0x56,                /* JC fail     */
+    0x89, 0xC3,                /* MOV BX, AX  */
+    /* 0x131: LSEEK SET 4 */
+    0xB8, 0x00, 0x42,          /* MOV AX, 4200h (whence=0) */
+    0xB9, 0x00, 0x00,          /* MOV CX, 0   */
+    0xBA, 0x04, 0x00,          /* MOV DX, 4   */
+    0xCD, 0x21,                /* INT 21h     */
+    0x72, 0x47,                /* JC fail     */
+    0x3D, 0x04, 0x00,          /* CMP AX, 4   */
+    0x75, 0x42,                /* JNE fail    */
+    /* 0x143: READ 4 */
+    0xB4, 0x3F,                /* MOV AH, 3Fh */
+    0xB9, 0x04, 0x00,          /* MOV CX, 4   */
+    0xBA, 0x9E, 0x01,          /* MOV DX, 019Eh (buf) */
+    0xCD, 0x21,                /* INT 21h     */
+    0x72, 0x36,                /* JC fail     */
+    0x3D, 0x04, 0x00,          /* CMP AX, 4   */
+    0x75, 0x31,                /* JNE fail    */
+    /* 0x154: REPE CMPSB exp vs buf */
+    0xBE, 0x9A, 0x01,          /* MOV SI, 019Ah (exp) */
+    0xBF, 0x9E, 0x01,          /* MOV DI, 019Eh (buf) */
+    0xB9, 0x04, 0x00,          /* MOV CX, 4   */
+    0xFC,                      /* CLD         */
+    0xF3, 0xA6,                /* REPE CMPSB  */
+    0x75, 0x23,                /* JNE fail    */
+    /* 0x162: CLOSE */
+    0xB4, 0x3E,                /* MOV AH, 3Eh */
+    0xCD, 0x21,                /* INT 21h     */
+    0x72, 0x1D,                /* JC fail     */
+    /* 0x168: DELETE */
+    0xB4, 0x41,                /* MOV AH, 41h */
+    0xBA, 0xA2, 0x01,          /* MOV DX, path */
+    0xCD, 0x21,                /* INT 21h     */
+    0x72, 0x14,                /* JC fail     */
+    /* 0x171: OPEN expecting err 2 */
+    0xB8, 0x00, 0x3D,          /* MOV AX, 3D00h */
+    0xBA, 0xA2, 0x01,          /* MOV DX, path */
+    0xCD, 0x21,                /* INT 21h     */
+    0x73, 0x0A,                /* JNC fail (must fail) */
+    0x3D, 0x02, 0x00,          /* CMP AX, 2   */
+    0x75, 0x05,                /* JNE fail    */
+    /* 0x180: exit 0 */
+    0xB8, 0x00, 0x4C,          /* MOV AX, 4C00h */
+    0xCD, 0x21,                /* INT 21h     */
+    /* 0x185: fail → exit 1 */
+    0xB8, 0x01, 0x4C,          /* MOV AX, 4C01h */
+    0xCD, 0x21,                /* INT 21h     */
+    /* 0x18A: data */
+    '0', '1', '2', '3', '4', '5', '6', '7',
+    '8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
+    /* 0x19A: exp */
+    '4', '5', '6', '7',
+    /* 0x19E: buf */
+    0, 0, 0, 0,
+    /* 0x1A2: path */
+    'C', ':', '\\', 'S', 'K', '.', 'T', 'X', 'T', 0,
+};
+
+static void test_seek_delete(void)
+{
+    unlink("/tmp/SK.TXT");
+    WRITE_COM("/tmp/dos_sk.com", seek_delete_com);
+    int code = run_com("/tmp/dos_sk.com");
+    UT_ASSERT_EQ(code, 0);
+    /* DOS DELETE removed it; if it still exists the .COM should have
+     * exited 1 above. */
+    struct stat st;
+    UT_ASSERT(stat("/tmp/SK.TXT", &st) < 0, "SK.TXT removed by DOS DELETE");
+}
+
 /* -- main ----------------------------------------------------------------- */
 
 int main(void)
@@ -520,6 +625,7 @@ int main(void)
     test_double_close();
     test_invalid_drive();
     test_rw_roundtrip();
+    test_seek_delete();
 
     UT_SUMMARY("test_msdos");
 }

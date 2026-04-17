@@ -156,7 +156,9 @@ long sys_getdents(long fd, uintptr_t buf_ptr, size_t count);
 long sys_getcwd(uintptr_t buf_ptr, size_t size);
 long sys_chdir(uintptr_t path_ptr);
 long sys_mkdir(uintptr_t path_ptr, long mode);
-long sys_unlink(uintptr_t path_ptr);
+/* Unlink the file whose NUL-terminated path lives at (page, off).
+ * Same convention as sys_open.  sys_rmdir delegates to sys_unlink. */
+long sys_unlink(page_id_t page, uint16_t off);
 long sys_stat64(uintptr_t path_ptr, uintptr_t buf_ptr);
 long sys_fstat64(long fd, uintptr_t buf_ptr);
 long sys_lstat64(uintptr_t path_ptr, uintptr_t buf_ptr);
@@ -166,7 +168,7 @@ long sys_llseek(long fd, long off_hi, long off_lo, uintptr_t result_ptr,
 long sys_fcntl64(long fd, long cmd, long arg);
 long sys_access(uintptr_t path_ptr, long mode);
 long sys_readlink(uintptr_t path_ptr, uintptr_t buf_ptr, long bufsiz);
-long sys_rmdir(uintptr_t path_ptr);
+long sys_rmdir(page_id_t page, uint16_t off);
 long sys_rename(uintptr_t oldpath_ptr, uintptr_t newpath_ptr);
 long sys_umask(long mask);
 long sys_mount(uintptr_t source_ptr, uintptr_t target_ptr, uintptr_t fstype_ptr,

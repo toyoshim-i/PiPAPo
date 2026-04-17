@@ -463,6 +463,36 @@ static int dos_write(dos_proc_t *dos, dos_regs_t *regs) {
   return dos_rw_common(dos, regs, 1);
 }
 
+/* AH=41h DELETE — DS:DX = path. */
+static int dos_delete(dos_proc_t *dos, dos_regs_t *regs) {
+  int rc = dos_resolve_user_path(dos, regs->ds, regs->dx);
+  if (rc < 0) return rc;
+
+  long r = sys_unlink(dos_data_page, DOS_PATH_SCRATCH_OFF);
+  if (r < 0) return -dos_errno_to_dos((int)r);
+  return 0;
+}
+
+/* AH=42h LSEEK — BX=handle, AL=whence (0/1/2 → SET/CUR/END),
+ * CX:DX = signed 32-bit offset (CX high, DX low).  Returns DX:AX as
+ * the new absolute position. */
+static int dos_lseek(dos_proc_t *dos, dos_regs_t *regs) {
+  int handle = regs->bx;
+  int fd = dos_lookup_fd(dos, handle);
+  if (fd < 0) return fd;
+
+  int whence = regs->ax & 0x07;
+  if (whence > 2) return -DOS_ERR_INVALID_FUNCTION;
+
+  int32_t off = (int32_t)(((uint32_t)regs->cx << 16) | regs->dx);
+  long pos = sys_lseek(fd, off, whence);
+  if (pos < 0) return -dos_errno_to_dos((int)pos);
+
+  regs->ax = (uint16_t)(pos & 0xFFFF);
+  regs->dx = (uint16_t)((uint32_t)pos >> 16);
+  return 0;
+}
+
 int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
   uint8_t ah = regs->ax >> 8;
   int ret = 0;
@@ -512,6 +542,12 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
       break;
     case 0x40:
       ret = dos_write(dos, regs);
+      break;
+    case 0x41:
+      ret = dos_delete(dos, regs);
+      break;
+    case 0x42:
+      ret = dos_lseek(dos, regs);
       break;
     case 0x4C:
       ret = dos_terminate(dos, regs);

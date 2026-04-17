@@ -637,7 +637,12 @@ static int dos_delete(uint32_t *regs, uint32_t usp) {
     return 2;
   }
   H68K_TRACE("_DELETE(%s)", path);
-  long r = sys_unlink((uintptr_t)path);
+  user_page_ref_t ref;
+  long r;
+  if (proc_user_ptr_to_page_ref(current, (uintptr_t)path, &ref) < 0)
+    r = -EFAULT;
+  else
+    r = sys_unlink(ref.page, ref.off);
   regs[0] = (uint32_t)human68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -1393,7 +1398,12 @@ static int dos_rmdir(uint32_t *regs, uint32_t usp) {
     return 2;
   }
   H68K_TRACE("_RMDIR(%s)", path);
-  long r = sys_rmdir((uintptr_t)path);
+  user_page_ref_t ref;
+  long r;
+  if (proc_user_ptr_to_page_ref(current, (uintptr_t)path, &ref) < 0)
+    r = -EFAULT;
+  else
+    r = sys_rmdir(ref.page, ref.off);
   regs[0] = (uint32_t)human68k_errno(r);
   advance_pc(regs);
   return 2;

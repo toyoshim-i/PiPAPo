@@ -409,7 +409,10 @@ static int cpm_file_seek(int fd, int offset, int whence) {
 }
 
 static int cpm_file_delete(const char *path) {
-  return (int)sys_unlink((uintptr_t)path);
+  user_page_ref_t ref;
+  if (proc_user_ptr_to_page_ref(current, (uintptr_t)path, &ref) < 0)
+    return -EFAULT;
+  return (int)sys_unlink(ref.page, ref.off);
 }
 
 static int cpm_file_rename(const char *oldpath, const char *newpath) {

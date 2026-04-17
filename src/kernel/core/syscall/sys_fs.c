@@ -260,14 +260,22 @@ long sys_mkdir(uintptr_t path_ptr, long mode) {
 }
 
 /* ── sys_unlink ──────────────────────────────────────────────────────────────
+ *
+ * Same (page, off) convention as sys_open — see the comment there.
  */
 
-long sys_unlink(uintptr_t path_ptr) {
+long sys_unlink(page_id_t page, uint16_t off) {
   char path[VFS_PATH_MAX];
-  int rc = sys_copy_path(path, path_ptr);
-
-  if (rc < 0) return (long)rc;
-  return (long)mod_vfs.path_unlink(path);
+  user_page_ref_t ref = {.page = page, .off = off};
+  for (int i = 0; i < VFS_PATH_MAX; i++) {
+    mem_region_page_read(ref.page, ref.off, &path[i], 1);
+    if (path[i] == '\0') return (long)mod_vfs.path_unlink(path);
+    if (++ref.off >= PAGE_SIZE) {
+      ref.page++;
+      ref.off = 0;
+    }
+  }
+  return -(long)ENAMETOOLONG;
 }
 
 /* ── sys_rename ──────────────────────────────────────────────────────────────
@@ -562,7 +570,7 @@ long sys_readlink(uintptr_t path_ptr, uintptr_t buf_ptr, long bufsiz) {
 /* ── sys_rmdir ───────────────────────────────────────────────────────────────
  */
 
-long sys_rmdir(uintptr_t path_ptr) { return sys_unlink(path_ptr); }
+long sys_rmdir(page_id_t page, uint16_t off) { return sys_unlink(page, off); }
 
 /* ── sys_umask ───────────────────────────────────────────────────────────────
  */
