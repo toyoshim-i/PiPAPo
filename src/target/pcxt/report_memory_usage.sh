@@ -17,8 +17,7 @@ VFS_ELF="$4"
 #   CS=0x1000+       Core .text                      (64 KB segment)
 #   CS=????+         VFS  .text                      (64 KB segment)
 #
-# Core .text now lives only in CS (no DS=0 duplicate).  See
-# docs/proposals/pcxt_layout_split.md.
+# Core .text now lives only in CS (no DS=0 duplicate).
 #
 CORE_BASE_HEX=0x0600
 CORE_DS0_LIMIT_HEX=0xB600        # Core data must end before VFS data
