@@ -41,6 +41,7 @@ void kmain(void) {
     int err = mem_region_init();
     if (err < 0) {
       mod_vfs.klogf("PANIC: mem_region_init failed (%d)\n", err);
+      target_qemu_poweroff(1);
       for (;;) arch_wfi();
     }
   }
@@ -105,6 +106,7 @@ void kmain(void) {
 #if !defined(__ia16__)
   if (proc_table[0].stack_page_id == PAGE_ID_INVALID) {
     mod_vfs.klogf("PANIC: no page for thread 0 stack\n");
+    target_qemu_poweroff(1);
     for (;;) arch_wfi();
   }
 #endif
@@ -132,6 +134,7 @@ void kmain(void) {
         mod_vfs.klogf("PANIC: no init or shell (err=%lu)\n",
                       (unsigned long)(uint32_t)(-(int)exec_err));
         proc_free(init);
+        target_qemu_poweroff(1);
         for (;;) arch_wfi();
       }
     }

@@ -92,6 +92,7 @@ void trace_arm_hwbp_on_switch(const pcb_t *next);
 int trace_arm_hardfault_debug_stop(uint32_t *psp_frame);
 
 long sys_poweroff(void);
+void kernel_panic_halt(uint8_t status);
 
 /* sys_io.c */
 int sys_copy_from_user(void *dst, uintptr_t user_ptr, size_t len);

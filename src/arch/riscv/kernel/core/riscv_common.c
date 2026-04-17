@@ -15,6 +15,7 @@
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
+#include "kernel/core/syscall/syscall.h"
 
 /* SysTick-equivalent counter — incremented by timer ISR.
  * Used by the scheduler for time-slice accounting. */
@@ -48,6 +49,7 @@ void riscv_exception_handler(uint32_t mcause, uint32_t mepc, uint32_t mtval,
    * or backtrace walk), the nested trap must not restart output —
    * just spin so the first diagnostic remains visible. */
   if (exception_reentry_guard) {
+    kernel_panic_halt(1);
     for (;;) __asm__ volatile("nop");
   }
   exception_reentry_guard = 1;
@@ -85,6 +87,7 @@ void riscv_exception_handler(uint32_t mcause, uint32_t mepc, uint32_t mtval,
   /* Spin with NOP instead of WFI — WFI may gate the Hazard3 core clock,
    * making the debug module unresponsive.  A NOP loop keeps the core
    * running so OpenOCD can always halt and inspect crash state. */
+  kernel_panic_halt(1);
   for (;;) __asm__ volatile("nop");
 }
 

@@ -1416,6 +1416,8 @@ long sys_poweroff(void) {
   return 0;
 }
 
+void kernel_panic_halt(uint8_t status) { target_qemu_poweroff(status); }
+
 /* ── sys_exit ─────────────────────────────────────────────────────────────────
  */
 

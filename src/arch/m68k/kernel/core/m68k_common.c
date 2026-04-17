@@ -11,6 +11,7 @@
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/subsys/subsys.h"
+#include "kernel/core/syscall/syscall.h"
 #ifdef PPAP_ENABLE_HUMAN68K
 #include "kernel/core/subsys/human68k/human68k_bridge.h"
 #endif
@@ -150,6 +151,7 @@ int m68k_crash_handler(int fault_type, uint32_t *regs) {
   /* Kernel fault → unrecoverable */
   if (!p || p->pid == 0) {
     mod_vfs.klogf("  Kernel fault — halting.");
+    kernel_panic_halt(1);
     return 0;
   }
 

@@ -81,6 +81,7 @@ uint32_t *arch_build_initial_frame(uint32_t *sp_arg, void (*entry)(void)) {
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
+#include "kernel/core/syscall/syscall.h"
 
 int i16_timer_can_preempt(uint16_t interrupted_ss) {
   if (interrupted_ss != 0) return 1;
@@ -196,6 +197,7 @@ long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1, uint16_t a2,
         "saved=%x now=%x  nr=%u  pid=%u slot=%u comm=%s\n",
         (unsigned)saved_ret, (unsigned)now_ret, (unsigned)nr,
         cur ? (unsigned)cur->pid : 0u, slot, cur ? cur->comm : "(null)");
+    kernel_panic_halt(1);
     for (;;) __asm__ volatile("cli\n hlt");
   }
 

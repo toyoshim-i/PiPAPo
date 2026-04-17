@@ -338,6 +338,7 @@ void panic_dump_c(void) {
   panic_hex8((uint8_t)panic_frame.vec);
   panic_puts("\r\n");
   panic_dump_regs();
+  target_qemu_poweroff(1);
   for (;;) __asm__ volatile ("cli\n hlt");
 }
 
@@ -593,6 +594,7 @@ static void check_warm_reboot(void) {
     panic_vga_init();
     panic_puts("\r\nPANIC: warm reboot (kernel re-entered without BIOS POST)\r\n");
     panic_dump_regs();
+    target_qemu_poweroff(1);
     for (;;) __asm__ volatile ("cli\n hlt");
   }
   bda_write16(BREADCRUMB_OFF, BREADCRUMB_MAGIC);

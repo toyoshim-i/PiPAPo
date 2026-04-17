@@ -133,6 +133,7 @@ void kernel_hardfault_dump(uint32_t *msp_frame) {
     crash_putc(')');
   }
   crash_puts("\n  Halting.\n");
+  kernel_panic_halt(1);
 }
 
 /*
@@ -197,6 +198,7 @@ void arm_crash_handler(uint32_t *psp_frame, uint32_t *callee_regs) {
   /* Kernel fault: process 0 is the idle thread running on PSP. */
   if (!p || p->pid == 0) {
     mod_vfs.klogf("  Kernel fault — halting.\n");
+    kernel_panic_halt(1);
     while (1) __asm volatile("" ::: "memory");
   }
 
