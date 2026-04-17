@@ -93,6 +93,12 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
     return rc;
   }
 
+  /* Native and subsystem bridges consult the PCB's CPU access hooks after
+   * exec, so publish the resolved cpu_ops on success even for native loads.
+   * Native i16 memory helpers ignore cpu_state, so NULL is valid there. */
+  p->cpu_ops = cpu_ops;
+  p->cpu_state = NULL;
+
   /* ── 5. Set process metadata ───────────────────────────────────────── */
   {
     const char *base = path;

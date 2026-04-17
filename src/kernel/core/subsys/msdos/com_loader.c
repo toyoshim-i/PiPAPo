@@ -50,11 +50,12 @@ static int com_detect(const uint8_t *header, uint32_t header_len,
 static int com_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
                        const cpu_ops_t *cpu_ops, void *cpu_state,
                        const char *const *argv, uint32_t flags) {
-  (void)cpu_ops;
-  (void)cpu_state;
   (void)flags;
 
   if (file_size > DOS_COM_MAX_SIZE) return -(int)ENOEXEC;
+
+  p->cpu_ops = cpu_ops;
+  p->cpu_state = cpu_state;
 
   /* 1. Allocate a 64 KB segment (16 contiguous pages) */
   page_id_t base_id = mem_region_page_alloc_contiguous(DOS_SEG_PAGES);
