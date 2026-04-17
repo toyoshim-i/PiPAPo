@@ -201,10 +201,6 @@ int main(void)
     test_entry_t tests[34];
     int t = 0;
 
-    /* Tests not built for pcxt (ia16 tiny model) are marked DISABLED for
-     * __ia16__.  Other per-target ifdefs disable known failures awaiting
-     * a real fix. */
-
     tests[t++] = (test_entry_t){ "/bin/test_exec",
 #if defined(__riscv)
         TEST_DISABLED
