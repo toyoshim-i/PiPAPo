@@ -142,6 +142,12 @@ static void my_integration_test(void)
 3. After VFS mount, `target_post_mount()` calls `ktest_run_all()`
 4. All test suites run, printing `TEST: name ... PASS/FAIL` to UART
 5. After kernel tests, `target_init_path()` returns:
+
+**Note:** `qemu_rv32` has `ktest_run_all()` disabled — the blkdev/VFAT
+kernel tests expect a FAT32 ramblk image that rv32 does not embed, and
+the 18 test failures corrupt kernel state, crashing init startup.
+`pcxt` does not run kernel tests (no `ktest_run_all()` call in
+`target_post_mount()`).
    - `/bin/runtests` in normal test builds
    - `/bin/runtests_ext` in extended test builds
    (instead of `/sbin/init`), launching the user-space test runner
@@ -247,11 +253,15 @@ overlay directory baked into romfs at build time (see
 | `test_time.c` | `nanosleep` behavior and error paths |
 | `test_iov.c` | `readv`, `writev` scatter/gather I/O |
 | `test_stat.c` | `stat`, `getdents` on romfs |
-| `test_tmpfs.c` | tmpfs create, write, read, unlink, multi-page I/O |
+| `test_tmpfs.c` | tmpfs create, write, read, unlink, multi-page I/O (disabled on rv32) |
 | `test_ufs.c` | UFS write+read (pcxt only; disabled on romfs-root targets) |
+| `test_float.c` | FPU register preservation across context switch (disabled on m68k) |
+| `test_signal_float.c` | FPU register preservation across signal delivery (disabled on m68k, rv32) |
 | `test_x68k.c` | Human68k subsystem (X-format `.x` execution) |
-| `test_cpm.c` | CP/M subsystem integration (`.COM` exec, BDOS bridge, signals, file I/O) |
-| `test_trace.c` | `ptrace` exec + PPAP syscall trace integration (ARM + m68k) |
+| `test_cpm.c` | CP/M subsystem integration (`.COM` exec, BDOS bridge, signals, file I/O; disabled on rv32) |
+| `test_sos.c` | S-OS SWORD subsystem integration (disabled on rv32) |
+| `test_msdos.c` | MS-DOS subsystem integration (pcxt only; disabled on all other targets) |
+| `test_trace.c` | `ptrace` exec + PPAP syscall trace integration (FLAKY; run with `--flaky`) |
 | `test_pdb.c` | `pdb` scripted smoke and command coverage (`TEST_SLOW` on m68k; use `--slow`) |
 | `test_pdb_arm_disas.c` | ARM-only `pdb disas` smoke (built in `/bin/`, not in default `runtests`) |
 | `test_h68k_dos.c` | Human68k DOS bridge integration via R-format test binaries |
@@ -326,7 +336,7 @@ To add a new musl-linked test binary:
   shares the parent's address space. The child must immediately
   `execve` or `_exit` — do not modify parent data or trigger faults.
 
-### Known coverage gaps (as of 2026-03-23)
+### Known coverage gaps (as of 2026-04-17)
 
 Current user-space tests are a solid regression baseline, but subsystem
 coverage is not exhaustive yet.
@@ -366,19 +376,17 @@ coverage is not exhaustive yet.
   random-record variants, and several disk/attribute vector functions.
   CP/M test coverage is therefore good for bootstrapping and basic file I/O,
   but not yet complete for directory iteration and random-record compatibility.
-- **`qemu_rv32`: kernel 68/87 pass, user 10/22 pass (full suite runs).**
-  Kernel: 19 failures are mostly blkdev/VFAT/loopback/UFS (no SD card
-  on QEMU, same as ARM) plus `/proc/meminfo` format and fstab SD mount.
-  VFS, pipe, dup, brk, signal, tmpfs, blocking I/O, SMP, orphan, OOM,
-  and signal-stack suites all pass cleanly.
-  User: `test_fault` is `TEST_DISABLED` on RISC-V (fault handler does
-  not yet classify signals).  10 tests pass (vfork, pipe, fd, poll, id,
-  rw, iov, stat, tmpfs, float).  9 fail: `test_exec` (counter bug),
-  `test_elf` (2 arch checks), `test_brk` (address mismatch),
-  `test_signal` / `test_sleep_intr` / `test_signal_float` (signal
-  delivery), `test_orphan` (procfs), `test_fs` (reporting), `test_time`
-  (clock_gettime EINVAL).  `test_cpm` crashes (Z80 instruction fetch
-  fault) — last test in the suite, does not block others.
+- **`qemu_rv32`: kernel tests disabled, user 10/10 pass.**
+  Kernel tests are disabled because blkdev/VFAT tests expect a FAT32
+  ramblk that rv32 does not provide; the 18 failures corrupt state and
+  crash init startup.
+  User: 10 tests pass (vfork, pipe, fd, poll, id, rw, iov, stat,
+  float, musl).  11 are `TEST_DISABLED` on RISC-V: `test_exec` (counter
+  bug), `test_elf` (arch checks), `test_fault` (no signal classification),
+  `test_brk` (address mismatch), `test_signal` / `test_sleep_intr` /
+  `test_signal_float` / `test_orphan` (signal delivery), `test_fs`
+  (reporting), `test_time` (clock_gettime EINVAL), `test_cpm` (Z80
+  instruction fetch fault), `test_tmpfs` (crash), `test_sos` (crash).
 - **`pdb` scripted coverage is architecture-asymmetric.**
   `test_pdb` has 170/367 failures on m68k and is marked `TEST_DISABLED` there.
   On ARM it is `TEST_SLOW` (base runner) / `TEST_ENABLED` (extended runner).
@@ -405,11 +413,39 @@ coverage is not exhaustive yet.
 Builds with `PPAP_TESTS=ON`, runs under QEMU, and greps output for the
 exact marker `ALL TESTS PASSED`.
 
-- ARM default timeout: 60 seconds
-- RISC-V default timeout: 60 seconds
+**QEMU self-termination:** After printing the test summary, `runtests`
+calls `poweroff()` which invokes `SYS_POWEROFF` (0x0B00).  The kernel
+routes this to `target_qemu_poweroff()`, which writes to an
+architecture-specific QEMU exit device:
+
+| Target | Mechanism | Exit device |
+|--------|-----------|-------------|
+| `qemu_arm` | ARM semihosting `SYS_EXIT_EXTENDED` | bkpt 0xAB |
+| `qemu_m68k` | `virt-ctrl` MMIO halt | 0xFF009004 |
+| `qemu_rv32` | `sifive_test` MMIO | 0x100000 |
+| `pcxt` | `isa-debug-exit` I/O port | 0x501 |
+
+Kernel panics and unhandled faults also trigger the same exit path via
+`kernel_panic_halt(1)`, so QEMU exits immediately on fatal errors
+instead of spinning until the external timeout.
+
+The external `timeout` in `run.sh` remains as a safety net but should
+rarely fire.
+
+- ARM default timeout: 90 seconds
+- RISC-V default timeout: 90 seconds
 - m68k default timeout: 90 seconds
 - m68k with `--slow`: 150 seconds
 - pcxt default timeout: 180 seconds
+
+**Current test results (as of 2026-04-17):**
+
+| Target | Kernel tests | User tests | Total |
+|--------|-------------|------------|-------|
+| `qemu_arm` | 69 pass | 23/23 pass | All pass |
+| `qemu_m68k` | 69 pass | 23/23 pass | All pass |
+| `qemu_rv32` | Disabled (pre-existing blkdev crash) | 10/10 pass | User pass |
+| `pcxt` | N/A (no ktest) | 5/5 pass | All pass |
 
 ```bash
 ./scripts/run.sh --test              # ARM (default)
@@ -426,7 +462,8 @@ by the test runner. The i16 `runtests` binary redirects stdout to
 
 The i16 test path supports the same `TEST_ENABLED` / `TEST_DISABLED`
 flags as other architectures. `test_tmpfs` is disabled on i16 (4 KB
-buffer overflows the user stack).
+buffer overflows the user stack). `test_msdos` is disabled (INT 06
+invalid opcode crash, pre-existing).
 
 ### `run.sh --test-extended`
 
@@ -522,12 +559,17 @@ boot → kernel init → VFS mount → target_post_mount()
                             ├── test_x68k   (ENABLED on m68k, DISABLED on ARM)
                             ├── test_h68k_dos (ENABLED on m68k, DISABLED on ARM)
                             ├── test_cpm
-                            ├── test_trace
-                            └── test_pdb    (SLOW on m68k; run with --slow)
+                            ├── test_sos
+                            ├── test_musl
+                            ├── test_trace  (FLAKY; run with --flaky)
+                            └── test_pdb    (SLOW; run with --slow)
                                    │
                         "ALL TESTS PASSED"
                                    │
-                   run.sh --test checks exit
+                             poweroff()
+                         (SYS_POWEROFF → QEMU exits)
+                                   │
+                   run.sh --test checks output
 ```
 
 Extended lane (`--test-extended`) uses the same flow except
