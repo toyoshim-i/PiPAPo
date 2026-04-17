@@ -21,10 +21,11 @@
 
 /* ── Test flags ──────────────────────────────────────────────────────────── */
 
-#define TEST_ENABLED  0   /* run normally                                    */
-#define TEST_DISABLED 1   /* always skip (not yet ready / platform-specific) */
-#define TEST_FLAKY    2   /* skip by default; run with /etc/test_run_flaky   */
-#define TEST_SLOW     3   /* skip by default; run with /etc/test_run_slow    */
+#define TEST_ENABLED     0   /* run normally                                  */
+#define TEST_DISABLED    1   /* skip — broken / fix pending                   */
+#define TEST_FLAKY       2   /* skip by default; run with /etc/test_run_flaky */
+#define TEST_SLOW        3   /* skip by default; run with /etc/test_run_slow  */
+#define TEST_UNSUPPORTED 4   /* skip — feature not available here by design   */
 
 typedef struct { const char *path; int flags; } test_entry_t;
 
@@ -208,21 +209,23 @@ int main(void)
         TEST_ENABLED
 #endif
     };
-    /* test_elf unit-tests the ELF32 parser (elf.c); pcxt uses elf16_loader,
-     * so elf.c isn't part of the pcxt kernel — test is n/a on ia16. */
+    /* test_elf unit-tests the ELF32 parser; pcxt uses elf16_loader. */
     tests[t++] = (test_entry_t){ "/bin/test_elf",
-#if defined(__riscv) || defined(__ia16__)
+#if defined(__riscv)
         TEST_DISABLED
+#elif defined(__ia16__)
+        TEST_UNSUPPORTED
 #else
         TEST_ENABLED
 #endif
     };
     tests[t++] = (test_entry_t){ "/bin/test_vfork", TEST_ENABLED };
-    /* test_fault: ia16 routes CPU faults to kernel panic rather than
-     * SIGILL/SIGFPE delivery — enabling would crash the kernel. */
+    /* test_fault: 8086 has no clean ILL opcode; ia16 routes faults to panic. */
     tests[t++] = (test_entry_t){ "/bin/test_fault",
-#if defined(__riscv) || defined(__ia16__)
+#if defined(__riscv)
         TEST_DISABLED
+#elif defined(__ia16__)
+        TEST_UNSUPPORTED
 #else
         TEST_ENABLED
 #endif
@@ -294,48 +297,55 @@ int main(void)
         TEST_DISABLED
 #endif
     };
-    /* test_float: 8086 has no FPU; soft-float bloat doesn't fit the 64KB
-     * tiny-model user segment on ia16. */
+    /* test_float: 8086 has no FPU (ia16); m68k has no FPU save/restore
+     * in the context switch. */
     tests[t++] = (test_entry_t){ "/bin/test_float",
 #if defined(__m68k__) || defined(__ia16__)
-        TEST_DISABLED
+        TEST_UNSUPPORTED
 #else
         TEST_ENABLED
 #endif
     };
-    /* test_signal_float: same float story plus needs ia16 signal delivery. */
+    /* test_signal_float: same float story; rv32 issue is bug-pending. */
     tests[t++] = (test_entry_t){ "/bin/test_signal_float",
-#if defined(__m68k__) || defined(__riscv) || defined(__ia16__)
+#if defined(__m68k__) || defined(__ia16__)
+        TEST_UNSUPPORTED
+#elif defined(__riscv)
         TEST_DISABLED
 #else
         TEST_ENABLED
 #endif
     };
+    /* test_x68k / test_h68k_dos: m68k-native binaries / Human68k subsystem. */
     tests[t++] = (test_entry_t){ "/bin/test_x68k",
 #if defined(__m68k__)
         TEST_ENABLED
 #else
-        TEST_DISABLED
+        TEST_UNSUPPORTED
 #endif
     };
     tests[t++] = (test_entry_t){ "/bin/test_h68k_dos",
 #if defined(__m68k__)
         TEST_ENABLED
 #else
-        TEST_DISABLED
+        TEST_UNSUPPORTED
 #endif
     };
-    /* test_cpm / test_sos: CP/M and S-OS subsystems aren't built for pcxt. */
+    /* test_cpm / test_sos: subsystems not built for pcxt; rv32 has bugs. */
     tests[t++] = (test_entry_t){ "/bin/test_cpm",
-#if defined(__riscv) || defined(__ia16__)
+#if defined(__riscv)
         TEST_DISABLED
+#elif defined(__ia16__)
+        TEST_UNSUPPORTED
 #else
         TEST_ENABLED
 #endif
     };
     tests[t++] = (test_entry_t){ "/bin/test_sos",
-#if defined(__riscv) || defined(__ia16__)
+#if defined(__riscv)
         TEST_DISABLED
+#elif defined(__ia16__)
+        TEST_UNSUPPORTED
 #else
         TEST_ENABLED
 #endif
@@ -345,14 +355,14 @@ int main(void)
     /* test_zexdoc / test_zexall: Z80 eCPU subsystem not built for pcxt. */
     tests[t++] = (test_entry_t){ "/bin/test_zexdoc",
 #if defined(__ia16__)
-        TEST_DISABLED
+        TEST_UNSUPPORTED
 #else
         TEST_SLOW
 #endif
     };
     tests[t++] = (test_entry_t){ "/bin/test_zexall",
 #if defined(__ia16__)
-        TEST_DISABLED
+        TEST_UNSUPPORTED
 #else
         TEST_SLOW
 #endif
@@ -360,22 +370,25 @@ int main(void)
     /* test_musl: musl libc isn't ported to ia16. */
     tests[t++] = (test_entry_t){ "/bin/test_musl",
 #if defined(__ia16__)
-        TEST_DISABLED
+        TEST_UNSUPPORTED
 #else
         TEST_ENABLED
 #endif
     };
-    /* test_trace / test_pdb: ptrace regset/breakpoint paths are arm/m68k-specific. */
+    /* test_trace: ptrace regset/breakpoint paths are arm/m68k-specific on ia16. */
     tests[t++] = (test_entry_t){ "/bin/test_trace",
 #if defined(__ia16__)
-        TEST_DISABLED
+        TEST_UNSUPPORTED
 #else
         TEST_FLAKY
 #endif
     };
+    /* test_pdb: m68k 170/367 failing (bug); ia16 ptrace regset n/a. */
     tests[t++] = (test_entry_t){ "/bin/test_pdb",
-#if defined(__m68k__) || defined(__ia16__)
+#if defined(__m68k__)
         TEST_DISABLED
+#elif defined(__ia16__)
+        TEST_UNSUPPORTED
 #else
         TEST_SLOW
 #endif
@@ -399,7 +412,7 @@ int main(void)
         print("=== PPAP on-target test suite ===\n");
     }
 
-    int total = 0, passed = 0, failed = 0, skipped = 0;
+    int total = 0, passed = 0, failed = 0, skipped = 0, unsupported = 0;
 
     int i;
     for (i = 0; tests[i].path; i++) {
@@ -409,6 +422,12 @@ int main(void)
         if (!test_matches(path))
             continue;
 
+        if (flags == TEST_UNSUPPORTED) {
+            print_ts(); print("SKIP  "); print(path);
+            print("  (n/a)\n");
+            unsupported++;
+            continue;
+        }
         if (flags == TEST_DISABLED) {
             print_ts(); print("SKIP  "); print(path);
             print("  (disabled)\n");
@@ -463,10 +482,11 @@ int main(void)
     print("\n");
     print_ts();
     print("=== Results: ");
-    print_int(total);   print(" run, ");
-    print_int(passed);  print(" passed, ");
-    print_int(failed);  print(" failed, ");
-    print_int(skipped); print(" skipped ===\n");
+    print_int(total);       print(" run, ");
+    print_int(passed);      print(" passed, ");
+    print_int(failed);      print(" failed, ");
+    print_int(skipped);     print(" skipped, ");
+    print_int(unsupported); print(" n/a ===\n");
 
     if (failed == 0) {
         print_ts(); print("ALL TESTS PASSED\n");

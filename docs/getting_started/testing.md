@@ -204,15 +204,24 @@ only relocates GOT entries, not arbitrary data pointers.
 
 Each entry in the test list carries a flag:
 
-| Flag | Meaning |
-|------|---------|
-| `TEST_ENABLED` | Run normally |
-| `TEST_DISABLED` | Always skip (e.g. platform-specific tests) |
-| `TEST_FLAKY` | Skip by default; run when `/etc/test_run_flaky` exists |
-| `TEST_SLOW` | Skip by default; run when `/etc/test_run_slow` exists |
+| Flag | Meaning | Counted as |
+|------|---------|------------|
+| `TEST_ENABLED` | Run normally | run / passed / failed |
+| `TEST_DISABLED` | Skip — broken or fix pending | skipped |
+| `TEST_UNSUPPORTED` | Skip — feature not available on this target by design | n/a |
+| `TEST_FLAKY` | Skip by default; run when `/etc/test_run_flaky` exists | skipped |
+| `TEST_SLOW` | Skip by default; run when `/etc/test_run_slow` exists | skipped |
 
-Platform-specific tests (`test_x68k`, `test_h68k_dos`) are `TEST_DISABLED`
-on ARM and `TEST_ENABLED` on m68k via `#if defined(__m68k__)`.
+The `TEST_DISABLED` vs `TEST_UNSUPPORTED` split matters for triage:
+- `TEST_DISABLED` flags real pending work (e.g. ia16 needs a signal-delivery
+  trampoline; rv32 needs a brk fix). The summary's `skipped` count is the
+  to-do list.
+- `TEST_UNSUPPORTED` flags by-design gaps that won't be fixed (8086 has no
+  FPU; pcxt uses elf16 not elf.c; m68k-only binaries on non-m68k targets).
+  The `n/a` count is informational only.
+
+Platform-specific tests (`test_x68k`, `test_h68k_dos`) are `TEST_UNSUPPORTED`
+on non-m68k and `TEST_ENABLED` on m68k via `#if defined(__m68k__)`.
 
 **Runtime filter**
 
@@ -295,8 +304,20 @@ by the `PPAP_TESTS` CMake option. The build system:
    ```c
    tests[t++] = (test_entry_t){ "/bin/test_foo", TEST_ENABLED };
    ```
-   Use `TEST_DISABLED` for platform-specific tests or `TEST_FLAKY` for
-   tests that are known to be unreliable and should be skipped in CI.
+   For per-target gating, put the ifdef inside the struct initialiser:
+   ```c
+   tests[t++] = (test_entry_t){ "/bin/test_foo",
+   #if defined(__riscv)
+       TEST_DISABLED      /* fix pending */
+   #elif defined(__ia16__)
+       TEST_UNSUPPORTED   /* feature n/a here by design */
+   #else
+       TEST_ENABLED
+   #endif
+   };
+   ```
+   Use `TEST_FLAKY` for tests that are known to be unreliable and should
+   be skipped in CI.
 4. Build with `--test` and run
 
 ### Musl-linked tests
@@ -445,7 +466,7 @@ rarely fire.
 | `qemu_arm` | 69 pass | 23/23 pass | All pass |
 | `qemu_m68k` | 69 pass | 23/23 pass | All pass |
 | `qemu_rv32` | Disabled (pre-existing blkdev crash) | 10/10 pass | User pass |
-| `pcxt` | N/A (no ktest) | 5/5 pass | All pass |
+| `pcxt` | N/A (no ktest) | 15/15 pass | All pass |
 
 ```bash
 ./scripts/run.sh --test              # ARM (default)
@@ -457,13 +478,19 @@ rarely fire.
 ### pcxt notes
 
 On pcxt, the VGA console is invisible to the QEMU serial capture used
-by the test runner. The i16 `runtests` binary redirects stdout to
+by the test runner. The `runtests` binary redirects stdout to
 `/dev/ttyS0` at startup so test output appears on the serial port.
+(The redirect is unconditional — on other targets `/dev/ttyS0` open
+either succeeds harmlessly or fails and is skipped.)
 
-The i16 test path supports the same `TEST_ENABLED` / `TEST_DISABLED`
-flags as other architectures. `test_tmpfs` is disabled on i16 (4 KB
-buffer overflows the user stack). `test_msdos` is disabled (INT 06
-invalid opcode crash, pre-existing).
+The pcxt user suite runs 15 of the shared user tests today. The
+remaining entries fall into two buckets visible in the summary:
+- `skipped` (3): `test_signal` and `test_sleep_intr` need a kernel
+  signal-delivery trampoline for ia16 user-space (real fix pending);
+  `test_msdos` is under investigation.
+- `n/a` (13): tests that exercise features pcxt does not have by
+  design — no FPU, no Z80/CP/M/S-OS subsystems, no musl libc, ELF32
+  parser n/a (pcxt uses elf16), arch-specific ptrace regsets, etc.
 
 ### `run.sh --test-extended`
 
