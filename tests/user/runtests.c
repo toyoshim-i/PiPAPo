@@ -350,8 +350,14 @@ int main(void)
         TEST_ENABLED
 #endif
     };
-    /* test_msdos: pcxt-only (floppy/MSDOS subsystem); under investigation. */
-    tests[t++] = (test_entry_t){ "/bin/test_msdos", TEST_DISABLED };
+    /* test_msdos runs only where the floppy/MSDOS subsystem is wired up. */
+    tests[t++] = (test_entry_t){ "/bin/test_msdos",
+#if defined(__ia16__)
+        TEST_ENABLED
+#else
+        TEST_UNSUPPORTED
+#endif
+    };
     /* test_zexdoc / test_zexall: Z80 eCPU subsystem not built for pcxt. */
     tests[t++] = (test_entry_t){ "/bin/test_zexdoc",
 #if defined(__ia16__)

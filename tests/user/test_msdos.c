@@ -159,16 +159,16 @@ static void test_charout(void)
 /*
  * 8086 code (loaded at seg:0100):
  *   MOV AH, 09h    ; B4 09       — print string
- *   MOV DX, 010Bh  ; BA 0B 01    — offset of message (DS:010B)
+ *   MOV DX, 010Ch  ; BA 0C 01    — offset of message (DS:010C)
  *   INT 21h         ; CD 21
  *   MOV AX, 4C00h  ; B8 00 4C    — exit 0
  *   INT 21h         ; CD 21
- *   ; message at offset 0x0B from .COM start:
+ *   ; message at offset 0x0C from .COM start (12 bytes of code above):
  *   db "Hi", 0Dh, 0Ah, '$'
  */
 static const unsigned char hello_com[] = {
     0xB4, 0x09,             /* MOV AH, 09h       */
-    0xBA, 0x0B, 0x01,       /* MOV DX, 010Bh     */
+    0xBA, 0x0C, 0x01,       /* MOV DX, 010Ch     */
     0xCD, 0x21,             /* INT 21h           */
     0xB8, 0x00, 0x4C,       /* MOV AX, 4C00h     */
     0xCD, 0x21,             /* INT 21h           */
