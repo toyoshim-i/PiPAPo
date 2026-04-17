@@ -124,6 +124,17 @@ void target_enable_deferred_timer(void);
 void target_idle_poll(void);
 
 /*
+ * target_qemu_poweroff() — request QEMU to exit.
+ *
+ * Writes to an architecture-specific QEMU exit device (isa-debug-exit,
+ * sifive_test, semihosting, etc.).  status 0 = clean shutdown,
+ * status 1 = panic/fault.
+ *
+ * Default weak implementation is a no-op (hardware targets).
+ */
+void target_qemu_poweroff(uint8_t status);
+
+/*
  * Optional native debugger HW-breakpoint hooks.
  *
  * These are used by ptrace for native real-surface breakpoints on targets

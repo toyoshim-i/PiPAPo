@@ -383,6 +383,11 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
                       a4);
       break;
 
+    /* ── System control ──────────────────────────────────────────────────── */
+    case SYS_POWEROFF:
+      ret = sys_poweroff();
+      break;
+
     /* ── TLS: set/get_thread_area (m68k musl uses these for TLS) ──────── */
     case 0xF0A8: /* __NR_get_thread_area */
       ret = (long)current->tp_value;

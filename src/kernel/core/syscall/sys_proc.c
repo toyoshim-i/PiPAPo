@@ -1408,6 +1408,14 @@ long sys_ptrace(long req, long pid, uintptr_t addr, uintptr_t data_ptr) {
 
 #endif /* !__ia16__ (ptrace) */
 
+/* ── sys_poweroff ─────────────────────────────────────────────────────────────
+ */
+
+long sys_poweroff(void) {
+  target_qemu_poweroff(0);
+  return 0;
+}
+
 /* ── sys_exit ─────────────────────────────────────────────────────────────────
  */
 

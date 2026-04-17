@@ -115,6 +115,9 @@
 #define SYS_FUTEX 0x0A00
 #define SYS_GETCPU 0x0A01
 
+/* Group 0x0B: System control */
+#define SYS_POWEROFF 0x0B00
+
 /* AT_FDCWD: *at syscalls use this as dirfd for cwd-relative paths */
 #define AT_FDCWD (-100)
 

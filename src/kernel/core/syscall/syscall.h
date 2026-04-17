@@ -91,6 +91,8 @@ void trace_exec_stop(void);
 void trace_arm_hwbp_on_switch(const pcb_t *next);
 int trace_arm_hardfault_debug_stop(uint32_t *psp_frame);
 
+long sys_poweroff(void);
+
 /* sys_io.c */
 int sys_copy_from_user(void *dst, uintptr_t user_ptr, size_t len);
 int sys_copy_to_user(uintptr_t user_ptr, const void *src, size_t len);
