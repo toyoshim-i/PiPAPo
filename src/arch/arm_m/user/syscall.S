@@ -434,3 +434,14 @@ clock_gettime:
     ldr  r7, =0x0501    @ SYS_CLOCK_GETTIME32
     DO_SYSCALL
     pop  {r7, pc}
+
+@ --- poweroff (SYS_POWEROFF = 0x0B00) ----------------------------------------
+@ void poweroff(void);
+.section .text.poweroff, "ax", %progbits
+.global poweroff
+.thumb_func
+poweroff:
+    push {r7, lr}
+    ldr  r7, =0x0B00    @ SYS_POWEROFF
+    DO_SYSCALL
+    pop  {r7, pc}

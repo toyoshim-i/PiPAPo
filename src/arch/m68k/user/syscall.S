@@ -441,3 +441,11 @@ ppoll:
     trap    #0
     movem.l %sp@+, %d2-%d5
     rts
+
+| --- poweroff (SYS_POWEROFF = 0x0B00) ----------------------------------------
+| void poweroff(void);
+    .globl poweroff
+poweroff:
+    move.l  #0x0B00, %d0        | SYS_POWEROFF
+    trap    #0
+    rts

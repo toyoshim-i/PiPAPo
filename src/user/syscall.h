@@ -220,6 +220,8 @@ static inline int ppoll(struct pollfd *fds, int nfds, void *timeout,
   return (int)ppap_xtensa_syscall5(0x0701, (long)fds, nfds, (long)timeout,
                                    (long)sigmask, sigsetsize);
 }
+
+static inline void poweroff(void) { ppap_xtensa_syscall0(0x0B00); }
 #else
 /* ── Process management ──────────────────────────────────────────────── */
 
@@ -287,6 +289,10 @@ int clock_gettime(int clk_id, void *tp);
 
 int ppoll(struct pollfd *fds, int nfds, void *timeout, void *sigmask,
           int sigsetsize);
+
+/* ── System control ───────────────────────────────────────────────── */
+
+void poweroff(void);
 
 #endif /* __xtensa__ */
 

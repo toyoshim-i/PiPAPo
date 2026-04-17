@@ -349,5 +349,6 @@ int main(void)
         print_ts(); print("SOME TESTS FAILED\n");
     }
 
+    poweroff();
     return failed;
 }

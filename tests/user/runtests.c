@@ -291,6 +291,7 @@ int main(void)
     else
         print("SOME TESTS FAILED\n");
 
+    poweroff();
     return g_failed;
 }
 #else
@@ -477,6 +478,7 @@ int main(void)
         print_ts(); print("SOME TESTS FAILED\n");
     }
 
+    poweroff();
     return failed;
 }
 #endif

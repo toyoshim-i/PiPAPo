@@ -545,3 +545,15 @@ ptrace:
   movw  $0x000F, %ax
   int   $0x30
   SYSCALL_RET
+
+/* void poweroff(void); */
+  .global poweroff
+poweroff:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  $0x0B00, %ax
+  int   $0x30
+  SYSCALL_RET

@@ -79,3 +79,6 @@ SYSCALL_STUB clock_gettime, 0x0501
 # --- Poll ---
 # ppoll is a 5-arg syscall; a4 is already in place for RISC-V (no stack arg)
 SYSCALL_STUB ppoll,     0x0701
+
+# --- System control ---
+SYSCALL_STUB poweroff,  0x0B00
