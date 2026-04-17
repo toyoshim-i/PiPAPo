@@ -610,6 +610,49 @@ static void test_seek_delete(void)
     UT_ASSERT(stat("/tmp/SK.TXT", &st) < 0, "SK.TXT removed by DOS DELETE");
 }
 
+/* -- Test 13: bad_whence.com --- LSEEK with invalid whence → AX=1 ------- */
+/*
+ * Verifies the error-mapping path for bad arguments: open the
+ * already-staged file (or use stdin handle 0), call LSEEK with
+ * AL=5 (invalid whence ∉ {0,1,2}), expect CF=1 and AX=1
+ * (DOS_ERR_INVALID_FUNCTION).  Uses handle 0 (stdin) so no file
+ * setup is needed.
+ *
+ *   MOV BX, 0             ; BB 00 00       — handle 0
+ *   MOV AX, 4205h         ; B8 05 42        — LSEEK, AL=5 (bad whence)
+ *   MOV CX, 0             ; B9 00 00
+ *   MOV DX, 0             ; BA 00 00
+ *   INT 21h               ; CD 21
+ *   JNC fail              ; 73 07
+ *   CMP AX, 1             ; 3D 01 00
+ *   JNE fail              ; 75 02
+ *   JMP success           ; EB 05
+ * fail: MOV AX, 4C01h ; INT 21h
+ * success: MOV AX, 4C00h ; INT 21h
+ */
+static const unsigned char bad_whence_com[] = {
+    0xBB, 0x00, 0x00,           /* MOV BX, 0     */
+    0xB8, 0x05, 0x42,           /* MOV AX, 4205h */
+    0xB9, 0x00, 0x00,           /* MOV CX, 0     */
+    0xBA, 0x00, 0x00,           /* MOV DX, 0     */
+    0xCD, 0x21,                 /* INT 21h       */
+    0x73, 0x07,                 /* JNC fail      */
+    0x3D, 0x01, 0x00,           /* CMP AX, 1     */
+    0x75, 0x02,                 /* JNE fail      */
+    0xEB, 0x05,                 /* JMP success   */
+    0xB8, 0x01, 0x4C,           /* MOV AX, 4C01h */
+    0xCD, 0x21,
+    0xB8, 0x00, 0x4C,           /* MOV AX, 4C00h */
+    0xCD, 0x21,
+};
+
+static void test_bad_whence(void)
+{
+    WRITE_COM("/tmp/dos_bw.com", bad_whence_com);
+    int code = run_com("/tmp/dos_bw.com");
+    UT_ASSERT_EQ(code, 0);
+}
+
 /* -- main ----------------------------------------------------------------- */
 
 int main(void)
@@ -626,6 +669,7 @@ int main(void)
     test_invalid_drive();
     test_rw_roundtrip();
     test_seek_delete();
+    test_bad_whence();
 
     UT_SUMMARY("test_msdos");
 }

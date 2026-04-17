@@ -235,14 +235,17 @@ static int dos_errno_to_dos(int err) {
       return DOS_ERR_PATH_NOT_FOUND;
     case EMFILE:
       return DOS_ERR_TOO_MANY_OPEN;
+    case EPERM:
     case EACCES:
+    case EROFS:
+    case EISDIR:
       return DOS_ERR_ACCESS_DENIED;
     case EBADF:
       return DOS_ERR_INVALID_HANDLE;
+    case ENOMEM:
+      return DOS_ERR_INSUFFICIENT_MEMORY;
     case EEXIST:
       return DOS_ERR_FILE_EXISTS;
-    case EISDIR:
-      return DOS_ERR_ACCESS_DENIED;
     default:
       return DOS_ERR_INVALID_FUNCTION;
   }
@@ -553,14 +556,15 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
       ret = dos_terminate(dos, regs);
       break;
     default:
-      /* Unknown function: set CF and return error 1 (invalid function) */
-      regs->ax = 1;
-      regs->flags |= 0x0001; /* Carry flag */
-      return -1;
+      ret = -DOS_ERR_INVALID_FUNCTION;
+      break;
   }
 
+  /* Handlers return a negated DOS error code (DOS_ERR_*) on failure;
+   * dos_errno_to_dos has already done the errno→DOS translation by the
+   * time we get here. */
   if (ret < 0) {
-    regs->ax = (uint16_t)(-ret); /* Map errno to AX? Needs better mapping. */
+    regs->ax = (uint16_t)(-ret);
     regs->flags |= 0x0001;
   } else {
     regs->flags &= ~0x0001;
