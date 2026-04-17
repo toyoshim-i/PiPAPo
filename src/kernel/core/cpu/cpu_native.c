@@ -98,7 +98,7 @@ static uint8_t i16_far_read8(uint32_t addr) {
   uint8_t val;
   __asm__ volatile(
       "push %%ds\n\t"
-      "mov  %1, %%ds\n\t"
+      "mov  %3, %%ds\n\t" /* DS = seg (was %1 — that referenced ofs) */
       "lodsb\n\t"
       "pop  %%ds"
       : "=Ral"(val), "+S"(ofs)
