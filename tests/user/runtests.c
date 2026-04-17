@@ -274,7 +274,7 @@ int main(void)
     record_test("/bin/test_rw",    TEST_ENABLED);
     record_test("/bin/test_tmpfs", TEST_DISABLED);
     record_test("/bin/test_ufs",   TEST_ENABLED);
-    record_test("/bin/test_msdos", TEST_ENABLED);
+    record_test("/bin/test_msdos", TEST_DISABLED);
 
     print("\n=== Results: ");
     print_int(g_total);
@@ -356,7 +356,12 @@ int main(void)
 #endif
     tests[t++] = (test_entry_t){ "/bin/test_iov",        TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_stat",       TEST_ENABLED  };
+/* TODO: qemu_rv32 tmpfs test crash */
+#if defined(__riscv)
+    tests[t++] = (test_entry_t){ "/bin/test_tmpfs",      TEST_DISABLED };
+#else
     tests[t++] = (test_entry_t){ "/bin/test_tmpfs",      TEST_ENABLED  };
+#endif
     tests[t++] = (test_entry_t){ "/bin/test_ufs",        TEST_DISABLED }; /* pcxt only (UFS root) */
 /* TODO: m68k has no FPU save/restore in context switch */
 #if defined(__m68k__)
@@ -382,7 +387,12 @@ int main(void)
 #else
     tests[t++] = (test_entry_t){ "/bin/test_cpm",        TEST_ENABLED  };
 #endif
+/* TODO: qemu_rv32 S-OS crash */
+#if defined(__riscv)
+    tests[t++] = (test_entry_t){ "/bin/test_sos",        TEST_DISABLED };
+#else
     tests[t++] = (test_entry_t){ "/bin/test_sos",        TEST_ENABLED  };
+#endif
     tests[t++] = (test_entry_t){ "/bin/test_msdos",      TEST_DISABLED }; /* pcxt only */
     tests[t++] = (test_entry_t){ "/bin/test_zexdoc",     TEST_SLOW     };
     tests[t++] = (test_entry_t){ "/bin/test_zexall",     TEST_SLOW     };

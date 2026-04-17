@@ -22,7 +22,7 @@
 #include "target/target.h"
 
 /* virt-ctrl device — built into QEMU m68k virt machine */
-#define VIRT_CTRL_BASE 0xFF001000u
+#define VIRT_CTRL_BASE 0xFF009000u
 #define VIRT_CTRL_CMD 4u
 #define VIRT_CTRL_CMD_HALT 2u
 
