@@ -124,7 +124,9 @@ fi
 if [[ -f "$USER_BUILD_DIR/runtests_ext.elf" ]]; then
   cp "$USER_BUILD_DIR/runtests_ext.elf" "$UFS_STAGING/bin/runtests_ext"
 fi
-TEST_BINS=(test_exec test_vfork test_fs test_rw test_tmpfs test_ufs test_msdos)
+TEST_BINS=(test_exec test_vfork test_pipe test_brk test_fd test_signal test_poll
+           test_sleep_intr test_orphan test_id test_time test_iov test_stat
+           test_fs test_rw test_tmpfs test_ufs test_msdos)
 for tst in "${TEST_BINS[@]}"; do
   if [[ -f "$USER_BUILD_DIR/$tst.elf" ]]; then
     cp "$USER_BUILD_DIR/$tst.elf" "$UFS_STAGING/bin/$tst"

@@ -212,6 +212,8 @@ int main(void)
         TEST_ENABLED
 #endif
     };
+    /* test_elf unit-tests the ELF32 parser (elf.c); pcxt uses elf16_loader,
+     * so elf.c isn't part of the pcxt kernel — test is n/a on ia16. */
     tests[t++] = (test_entry_t){ "/bin/test_elf",
 #if defined(__riscv) || defined(__ia16__)
         TEST_DISABLED
@@ -220,6 +222,8 @@ int main(void)
 #endif
     };
     tests[t++] = (test_entry_t){ "/bin/test_vfork", TEST_ENABLED };
+    /* test_fault: ia16 routes CPU faults to kernel panic rather than
+     * SIGILL/SIGFPE delivery — enabling would crash the kernel. */
     tests[t++] = (test_entry_t){ "/bin/test_fault",
 #if defined(__riscv) || defined(__ia16__)
         TEST_DISABLED
@@ -227,27 +231,17 @@ int main(void)
         TEST_ENABLED
 #endif
     };
-    tests[t++] = (test_entry_t){ "/bin/test_pipe",
-#if defined(__ia16__)
-        TEST_DISABLED
-#else
-        TEST_ENABLED
-#endif
-    };
+    tests[t++] = (test_entry_t){ "/bin/test_pipe", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_brk",
-#if defined(__riscv) || defined(__ia16__)
+#if defined(__riscv)
         TEST_DISABLED
 #else
         TEST_ENABLED
 #endif
     };
-    tests[t++] = (test_entry_t){ "/bin/test_fd",
-#if defined(__ia16__)
-        TEST_DISABLED
-#else
-        TEST_ENABLED
-#endif
-    };
+    tests[t++] = (test_entry_t){ "/bin/test_fd", TEST_ENABLED };
+    /* test_signal: ia16 kernel accepts sys_kill/sys_sigaction but has no
+     * signal-delivery trampoline for user-space yet — handlers never run. */
     tests[t++] = (test_entry_t){ "/bin/test_signal",
 #if defined(__riscv) || defined(__ia16__)
         TEST_DISABLED
@@ -255,13 +249,8 @@ int main(void)
         TEST_ENABLED
 #endif
     };
-    tests[t++] = (test_entry_t){ "/bin/test_poll",
-#if defined(__ia16__)
-        TEST_DISABLED
-#else
-        TEST_ENABLED
-#endif
-    };
+    tests[t++] = (test_entry_t){ "/bin/test_poll", TEST_ENABLED };
+    /* test_sleep_intr: needs ia16 signal delivery (see test_signal). */
     tests[t++] = (test_entry_t){ "/bin/test_sleep_intr",
 #if defined(__riscv) || defined(__ia16__)
         TEST_DISABLED
@@ -270,19 +259,13 @@ int main(void)
 #endif
     };
     tests[t++] = (test_entry_t){ "/bin/test_orphan",
-#if defined(__riscv) || defined(__ia16__)
+#if defined(__riscv)
         TEST_DISABLED
 #else
         TEST_ENABLED
 #endif
     };
-    tests[t++] = (test_entry_t){ "/bin/test_id",
-#if defined(__ia16__)
-        TEST_DISABLED
-#else
-        TEST_ENABLED
-#endif
-    };
+    tests[t++] = (test_entry_t){ "/bin/test_id", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_fs",
 #if defined(__riscv)
         TEST_DISABLED
@@ -292,28 +275,16 @@ int main(void)
     };
     tests[t++] = (test_entry_t){ "/bin/test_rw", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_time",
-#if defined(__riscv) || defined(__ia16__)
+#if defined(__riscv)
         TEST_DISABLED
 #else
         TEST_ENABLED
 #endif
     };
-    tests[t++] = (test_entry_t){ "/bin/test_iov",
-#if defined(__ia16__)
-        TEST_DISABLED
-#else
-        TEST_ENABLED
-#endif
-    };
-    tests[t++] = (test_entry_t){ "/bin/test_stat",
-#if defined(__ia16__)
-        TEST_DISABLED
-#else
-        TEST_ENABLED
-#endif
-    };
+    tests[t++] = (test_entry_t){ "/bin/test_iov", TEST_ENABLED };
+    tests[t++] = (test_entry_t){ "/bin/test_stat", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_tmpfs",
-#if defined(__riscv) || defined(__ia16__)
+#if defined(__riscv)
         TEST_DISABLED
 #else
         TEST_ENABLED
@@ -327,6 +298,8 @@ int main(void)
         TEST_DISABLED
 #endif
     };
+    /* test_float: 8086 has no FPU; soft-float bloat doesn't fit the 64KB
+     * tiny-model user segment on ia16. */
     tests[t++] = (test_entry_t){ "/bin/test_float",
 #if defined(__m68k__) || defined(__ia16__)
         TEST_DISABLED
@@ -334,6 +307,7 @@ int main(void)
         TEST_ENABLED
 #endif
     };
+    /* test_signal_float: same float story plus needs ia16 signal delivery. */
     tests[t++] = (test_entry_t){ "/bin/test_signal_float",
 #if defined(__m68k__) || defined(__riscv) || defined(__ia16__)
         TEST_DISABLED
@@ -355,6 +329,7 @@ int main(void)
         TEST_DISABLED
 #endif
     };
+    /* test_cpm / test_sos: CP/M and S-OS subsystems aren't built for pcxt. */
     tests[t++] = (test_entry_t){ "/bin/test_cpm",
 #if defined(__riscv) || defined(__ia16__)
         TEST_DISABLED
@@ -371,6 +346,7 @@ int main(void)
     };
     /* test_msdos: pcxt-only (floppy/MSDOS subsystem); under investigation. */
     tests[t++] = (test_entry_t){ "/bin/test_msdos", TEST_DISABLED };
+    /* test_zexdoc / test_zexall: Z80 eCPU subsystem not built for pcxt. */
     tests[t++] = (test_entry_t){ "/bin/test_zexdoc",
 #if defined(__ia16__)
         TEST_DISABLED
@@ -385,6 +361,7 @@ int main(void)
         TEST_SLOW
 #endif
     };
+    /* test_musl: musl libc isn't ported to ia16. */
     tests[t++] = (test_entry_t){ "/bin/test_musl",
 #if defined(__ia16__)
         TEST_DISABLED
@@ -392,6 +369,7 @@ int main(void)
         TEST_ENABLED
 #endif
     };
+    /* test_trace / test_pdb: ptrace regset/breakpoint paths are arm/m68k-specific. */
     tests[t++] = (test_entry_t){ "/bin/test_trace",
 #if defined(__ia16__)
         TEST_DISABLED

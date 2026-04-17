@@ -551,6 +551,28 @@ if(PPAP_TESTS)
     EXTRA_CFLAGS -I${PCXT_TEST_DIR})
   pcxt_user_program(test_vfork ${PPAP_ROOT}/tests/user/test_vfork.c
     EXTRA_CFLAGS -I${PCXT_TEST_DIR})
+  pcxt_user_program(test_pipe ${PPAP_ROOT}/tests/user/test_pipe.c
+    EXTRA_CFLAGS -I${PCXT_TEST_DIR})
+  pcxt_user_program(test_brk ${PPAP_ROOT}/tests/user/test_brk.c
+    EXTRA_CFLAGS -I${PCXT_TEST_DIR})
+  pcxt_user_program(test_fd ${PPAP_ROOT}/tests/user/test_fd.c
+    EXTRA_CFLAGS -I${PCXT_TEST_DIR})
+  pcxt_user_program(test_signal ${PPAP_ROOT}/tests/user/test_signal.c
+    EXTRA_CFLAGS -I${PCXT_TEST_DIR})
+  pcxt_user_program(test_poll ${PPAP_ROOT}/tests/user/test_poll.c
+    EXTRA_CFLAGS -I${PCXT_TEST_DIR})
+  pcxt_user_program(test_sleep_intr ${PPAP_ROOT}/tests/user/test_sleep_intr.c
+    EXTRA_CFLAGS -I${PCXT_TEST_DIR})
+  pcxt_user_program(test_orphan ${PPAP_ROOT}/tests/user/test_orphan.c
+    EXTRA_CFLAGS -I${PCXT_TEST_DIR})
+  pcxt_user_program(test_id ${PPAP_ROOT}/tests/user/test_id.c
+    EXTRA_CFLAGS -I${PCXT_TEST_DIR})
+  pcxt_user_program(test_time ${PPAP_ROOT}/tests/user/test_time.c
+    EXTRA_CFLAGS -I${PCXT_TEST_DIR})
+  pcxt_user_program(test_iov ${PPAP_ROOT}/tests/user/test_iov.c
+    EXTRA_CFLAGS -I${PCXT_TEST_DIR})
+  pcxt_user_program(test_stat ${PPAP_ROOT}/tests/user/test_stat.c
+    EXTRA_CFLAGS -I${PCXT_TEST_DIR})
   pcxt_user_program(test_fs ${PPAP_ROOT}/tests/user/test_fs.c
     EXTRA_CFLAGS -I${PCXT_TEST_DIR})
   pcxt_user_program(test_rw ${PPAP_ROOT}/tests/user/test_rw.c
