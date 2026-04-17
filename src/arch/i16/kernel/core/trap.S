@@ -36,6 +36,7 @@
 
   .global i16_syscall_isr
   .global i16_trap_after_switch
+  .global i16_trap_finish_scratch_frame
   .global i16_trap_maybe_switch
   .extern i16_trap_should_skip_ret_store
   .extern i16_trap_should_switch_now
@@ -264,3 +265,39 @@ i16_trap_after_switch:
   popw  %ax             /* return value */
 
   iret
+
+/* Shared post-dispatch tail for subsystem trap entries that:
+ *   1. reserved the same 34-byte vfork-save slot as i16_syscall_isr
+ *   2. copied a 24-byte user GP+IRET frame onto the kernel stack
+ *   3. want the generic ia16 policy for "copy back only if this task
+ *      will resume its current user image; otherwise switch away"
+ *
+ * Entry contract:
+ *   SP -> 24-byte scratch copy of the user frame
+ *   [SP+58] = user_SP
+ *   [SP+60] = user_SS
+ *
+ * On return this drops the scratch frame and jumps into the shared
+ * trap tail, which handles deferred switching, vfork restore, signal
+ * delivery, SS:SP restore, and the final IRET.
+ */
+i16_trap_finish_scratch_frame:
+  call  i16_trap_should_switch_now
+  testw %ax, %ax
+  jnz   .Ldrop_scratch
+
+  /* Copy the (possibly modified) 24-byte frame back to user SS:SP. */
+  movw  %sp, %bp
+  movw  60(%bp), %ax      /* user_SS */
+  movw  58(%bp), %di      /* user_SP */
+  movw  %ax, %es          /* ES = user_SS (destination) */
+  movw  %sp, %si
+  movw  $12, %cx
+  cld
+  rep movsw
+  xorw  %ax, %ax
+  movw  %ax, %es
+
+.Ldrop_scratch:
+  addw  $24, %sp
+  jmp   i16_trap_maybe_switch

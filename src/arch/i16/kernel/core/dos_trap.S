@@ -11,10 +11,12 @@
  *     [+34]      user_SP
  *     [+36]      user_SS
  *
- * After dispatch we jump into trap.S's shared `i16_trap_maybe_switch`
- * tail, which handles: deferred context switch (zombie/blocked via
- * sys_exit), vfork parent-frame restore, sigreturn, signal delivery,
- * user SS:SP restore and the final IRET.
+ * After dispatch we jump into trap.S's shared post-dispatch tail,
+ * which decides whether the scratch frame should be copied back to
+ * user memory before continuing with the generic ia16 switch/restore
+ * path.  That tail handles: deferred context switch (zombie/blocked
+ * via sys_exit), vfork parent-frame restore, sigreturn, signal
+ * delivery, user SS:SP restore and the final IRET.
  *
  * The dispatcher reads/writes a `dos_regs_t` whose layout matches the
  * 24-byte GP+IRET frame at user_SP (see dos_bridge.h).  AX and FLAGS
@@ -28,7 +30,7 @@
   .global i16_dos_int20_isr
   .extern i16_dos_int21h_dispatch_native
   .extern i16_current_ksp
-  .extern i16_trap_maybe_switch
+  .extern i16_trap_finish_scratch_frame
 
 /* INT 20h (Program Terminate) — convert to INT 21h AH=4Ch, exit code 0.
  * Sets AX before falling through to i16_dos_isr so the dispatcher sees
@@ -100,27 +102,8 @@ i16_dos_isr:
   call  i16_dos_int21h_dispatch_native
   addw  $2, %sp
 
-  /* Copy the (possibly modified) 24-byte frame back to the user stack. */
-  movw  %sp, %bp
-  /* After the 24B scratch + 34B slot, user_SP is at offset 58, user_SS at 60. */
-  movw  60(%bp), %ax      /* user_SS */
-  movw  58(%bp), %di      /* user_SP */
-  movw  %ax, %es          /* ES = user_SS (destination) */
-  movw  %sp, %si
-  movw  $12, %cx
-  cld
-  rep movsw
-  xorw  %ax, %ax
-  movw  %ax, %es
-
-  /* Drop the 24-byte scratch; SP is now back at the post-vfork-reserve
-   * position expected by the shared restore tail. */
-  addw  $24, %sp
-
-  /* Jump into trap.S's shared tail.  It checks switch_pending (set by
-   * sys_exit's sched_switch on AH=4Ch terminate), does the context
-   * switch if needed, then unwinds through .Lafter_switch / .Lrestore
-   * and IRETs.  For the common "no state change" dispatch this is a
-   * straight fall-through; for the zombie case it selects another
-   * RUNNABLE process and returns via that process's saved frame. */
-  jmp   i16_trap_maybe_switch
+  /* Hand off to the shared ia16 post-dispatch tail.  It owns the
+   * generic policy of whether this scratch frame should be copied back
+   * to user memory or dropped because exec/exit/block changed the task
+   * state, then continues through the common switch/restore path. */
+  jmp   i16_trap_finish_scratch_frame
