@@ -53,16 +53,29 @@ static int run_com_capture(const char *path, char *buf, int bufsize)
     if (pipe(pipefd) < 0)
         return -1;
 
+    int saved_stdout = dup(1);
+    if (saved_stdout < 0) {
+        close(pipefd[0]);
+        close(pipefd[1]);
+        return -1;
+    }
+
+    if (dup2(pipefd[1], 1) < 0) {
+        close(saved_stdout);
+        close(pipefd[0]);
+        close(pipefd[1]);
+        return -1;
+    }
+    close(pipefd[1]);
+
     pid_t pid = vfork();
     if (pid == 0) {
-        close(pipefd[0]);
-        dup2(pipefd[1], 1);
-        close(pipefd[1]);
         execve(path, (void *)0, (void *)0);
         _exit(127);
     }
 
-    close(pipefd[1]);
+    dup2(saved_stdout, 1);
+    close(saved_stdout);
 
     int total = 0;
     while (total < bufsize - 1) {
