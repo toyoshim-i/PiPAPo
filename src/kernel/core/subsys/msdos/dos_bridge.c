@@ -75,12 +75,51 @@ const subsys_ops_t msdos_subsys_ops = {
     .on_proc_read = msdos_on_proc_read,
 };
 
+/* ── Single-byte fd I/O helpers ────────────────────────────────────────
+ *
+ * sys_read/sys_write resolve `user_ptr` through the per-arch user-pointer
+ * translator.  On flat-memory architectures, that lookup happily finds the
+ * page backing a kernel-stack address, so passing `&c` works.
+ *
+ * On ia16 the translator treats user_ptr strictly as a 16-bit offset within
+ * the user's segment (see arch_user_ptr_to_page in src/arch/i16/.../arch.h),
+ * so a kernel-stack pointer is misinterpreted as a user-segment offset and
+ * the I/O lands on whatever happens to live at that user offset.
+ *
+ * For the few INT 21h handlers that move single bytes between fd 0/1 and
+ * the kernel, stage the byte through a reserved slot in the .COM's PSP and
+ * let sys_write/sys_read translate that proper user-segment offset.  PSP
+ * bytes [0x60, 0x70) are unused by .COM convention. */
+#if defined(__ia16__)
+#define DOS_IO_SCRATCH_OFF 0x60u
+
+static long dos_io_putc(uint8_t c) {
+  page_id_t base = proc_page_backed_base(current);
+  if (base == PAGE_ID_INVALID) return -1;
+  mem_region_page_write(base, DOS_IO_SCRATCH_OFF, &c, 1);
+  return sys_write(1, DOS_IO_SCRATCH_OFF, 1);
+}
+
+static long dos_io_getc(uint8_t *out) {
+  page_id_t base = proc_page_backed_base(current);
+  if (base == PAGE_ID_INVALID) return -1;
+  long n = sys_read(0, DOS_IO_SCRATCH_OFF, 1);
+  if (n != 1) return n;
+  mem_region_page_read(base, DOS_IO_SCRATCH_OFF, out, 1);
+  return 1;
+}
+#else
+static long dos_io_putc(uint8_t c) { return sys_write(1, (uintptr_t)&c, 1); }
+
+static long dos_io_getc(uint8_t *out) { return sys_read(0, (uintptr_t)out, 1); }
+#endif
+
 /* ── INT 21h functions ─────────────────────────────────────────────── */
 
 static int dos_read_char(dos_proc_t *dos, dos_regs_t *regs, int echo) {
   uint8_t c;
-  if (sys_read(0, (uintptr_t)&c, 1) == 1) {
-    if (echo) sys_write(1, (uintptr_t)&c, 1);
+  if (dos_io_getc(&c) == 1) {
+    if (echo) dos_io_putc(c);
     regs->ax = (regs->ax & 0xFF00) | c;
     return 0;
   }
@@ -88,19 +127,17 @@ static int dos_read_char(dos_proc_t *dos, dos_regs_t *regs, int echo) {
 }
 
 static int dos_write_char(dos_proc_t *dos, dos_regs_t *regs) {
-  uint8_t c = regs->dx & 0xFF;
-  sys_write(1, (uintptr_t)&c, 1);
+  dos_io_putc((uint8_t)(regs->dx & 0xFF));
   return 0;
 }
 
 static int dos_print_string(dos_proc_t *dos, dos_regs_t *regs) {
-  char c;
   uint16_t off = regs->dx;
   for (;;) {
-    c = (char)current->cpu_ops->read8(dos->cpu_state,
-                                      dos_to_linear(regs->ds, off++));
+    uint8_t c = (uint8_t)current->cpu_ops->read8(
+        dos->cpu_state, dos_to_linear(regs->ds, off++));
     if (c == '$') break;
-    sys_write(1, (uintptr_t)&c, 1);
+    dos_io_putc(c);
   }
   return 0;
 }
@@ -114,9 +151,9 @@ static int dos_buffered_input(dos_proc_t *dos, dos_regs_t *regs) {
 
   for (actual_len = 0; actual_len < max_len - 1; actual_len++) {
     uint8_t c;
-    if (sys_read(0, (uintptr_t)&c, 1) != 1) break;
+    if (dos_io_getc(&c) != 1) break;
     if (c == '\r' || c == '\n') break;
-    sys_write(1, (uintptr_t)&c, 1);
+    dos_io_putc(c);
     current->cpu_ops->write8(dos->cpu_state,
                              dos_to_linear(seg, off + 2 + actual_len), c);
   }
@@ -124,8 +161,7 @@ static int dos_buffered_input(dos_proc_t *dos, dos_regs_t *regs) {
                            actual_len);
   current->cpu_ops->write8(dos->cpu_state,
                            dos_to_linear(seg, off + 2 + actual_len), '\r');
-  uint8_t cr = '\n';
-  sys_write(1, (uintptr_t)&cr, 1);
+  dos_io_putc('\n');
 
   return 0;
 }
