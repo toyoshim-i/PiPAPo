@@ -185,7 +185,10 @@ static int sos_char_ready(void) {
 }
 
 static int sos_file_open(const char *path, int flags) {
-  return (int)sys_open((uintptr_t)path, (long)flags, 0644);
+  user_page_ref_t ref;
+  if (proc_user_ptr_to_page_ref(current, (uintptr_t)path, &ref) < 0)
+    return -EFAULT;
+  return (int)sys_open(ref.page, ref.off, (long)flags, 0644);
 }
 
 static int sos_file_close(int fd) { return (int)sys_close((long)fd); }

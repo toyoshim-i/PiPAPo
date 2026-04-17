@@ -22,6 +22,7 @@ typedef struct pcb pcb_t;
 /* ── Syscall numbers (shared with user space) ────────────────────────────── */
 
 #include "common/syscall_nr.h"
+#include "kernel/common/core/page_types.h"
 
 /* ── Dispatch ────────────────────────────────────────────────────────────────
  */
@@ -98,8 +99,10 @@ void kernel_panic_halt(uint8_t status);
 int sys_copy_from_user(void *dst, uintptr_t user_ptr, size_t len);
 int sys_copy_to_user(uintptr_t user_ptr, const void *src, size_t len);
 int sys_copy_user_string(char *dst, size_t dst_size, uintptr_t user_ptr);
-long sys_read(long fd, uintptr_t user_ptr, size_t n);
-long sys_write(long fd, uintptr_t user_ptr, size_t n);
+/* Read/write `n` bytes starting at (page, off).  Callers with a user
+ * pointer translate via proc_user_ptr_to_page_ref before calling. */
+long sys_read(long fd, page_id_t page, uint16_t off, size_t n);
+long sys_write(long fd, page_id_t page, uint16_t off, size_t n);
 long sys_writev(long fd, uintptr_t iov, long iovcnt);
 long sys_readv(long fd, uintptr_t iov, long iovcnt);
 long sys_ioctl(long fd, long cmd, uintptr_t arg_ptr);
@@ -141,7 +144,10 @@ long sys_rt_sigreturn(void);
 struct stat;
 struct dirent;
 void fd_pool_init(void);
-long sys_open(uintptr_t path_ptr, long flags, long mode);
+/* Open the file whose NUL-terminated path lives at (page, off).
+ * Callers with a user pointer translate via proc_user_ptr_to_page_ref
+ * before calling. */
+long sys_open(page_id_t page, uint16_t off, long flags, long mode);
 long sys_close(long fd);
 long sys_lseek(long fd, long off, long whence);
 long sys_stat(uintptr_t path_ptr, uintptr_t buf_ptr);

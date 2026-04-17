@@ -37,15 +37,21 @@ static int total_pass;
 static int total_fail;
 
 static inline long ktest_sys_read(long fd, void *buf, size_t n) {
-    return sys_read(fd, (uintptr_t)buf, n);
+    user_page_ref_t ref;
+    if (proc_user_ptr_to_page_ref(current, (uintptr_t)buf, &ref) < 0) return -EFAULT;
+    return sys_read(fd, ref.page, ref.off, n);
 }
 
 static inline long ktest_sys_write(long fd, const void *buf, size_t n) {
-    return sys_write(fd, (uintptr_t)buf, n);
+    user_page_ref_t ref;
+    if (proc_user_ptr_to_page_ref(current, (uintptr_t)buf, &ref) < 0) return -EFAULT;
+    return sys_write(fd, ref.page, ref.off, n);
 }
 
 static inline long ktest_sys_open(const char *path, long flags, long mode) {
-    return sys_open((uintptr_t)path, flags, mode);
+    user_page_ref_t ref;
+    if (proc_user_ptr_to_page_ref(current, (uintptr_t)path, &ref) < 0) return -EFAULT;
+    return sys_open(ref.page, ref.off, flags, mode);
 }
 
 static inline long ktest_sys_stat(const char *path, struct stat *buf) {

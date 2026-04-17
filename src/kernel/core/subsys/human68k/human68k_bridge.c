@@ -488,7 +488,11 @@ static int dos_fputs(uint32_t *regs, uint32_t usp) {
   uint32_t len = 0;
   while (str[len]) len++;
 
-  if (len > 0) sys_write(fd, (uintptr_t)str, len);
+  if (len > 0) {
+    user_page_ref_t ref;
+    if (proc_user_ptr_to_page_ref(current, (uintptr_t)str, &ref) == 0)
+      sys_write(fd, ref.page, ref.off, len);
+  }
 
   regs[0] = 0;
   advance_pc(regs);
@@ -511,7 +515,12 @@ static int dos_create(uint32_t *regs, uint32_t usp) {
     return 2;
   }
   H68K_TRACE("_CREATE(%s)", path);
-  long r = sys_open((uintptr_t)path, O_CREAT | O_TRUNC | O_WRONLY, 0644);
+  user_page_ref_t ref;
+  long r;
+  if (proc_user_ptr_to_page_ref(current, (uintptr_t)path, &ref) < 0)
+    r = -EFAULT;
+  else
+    r = sys_open(ref.page, ref.off, O_CREAT | O_TRUNC | O_WRONLY, 0644);
   regs[0] = (uint32_t)human68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -546,7 +555,12 @@ static int dos_open(uint32_t *regs, uint32_t usp) {
       flags = O_RDWR;
       break;
   }
-  long r = sys_open((uintptr_t)path, flags, 0644);
+  user_page_ref_t ref;
+  long r;
+  if (proc_user_ptr_to_page_ref(current, (uintptr_t)path, &ref) < 0)
+    r = -EFAULT;
+  else
+    r = sys_open(ref.page, ref.off, flags, 0644);
   regs[0] = (uint32_t)human68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -576,7 +590,12 @@ static int dos_read(uint32_t *regs, uint32_t usp) {
   uint32_t buf_addr = ustack_u32(usp, 2);
   uint32_t len = ustack_u32(usp, 6);
   H68K_TRACE("_READ(%u, %x, %x)", (uint32_t)fd, buf_addr, len);
-  long r = sys_read(fd, (uintptr_t)buf_addr, (size_t)len);
+  user_page_ref_t ref;
+  long r;
+  if (proc_user_ptr_to_page_ref(current, (uintptr_t)buf_addr, &ref) < 0)
+    r = -EFAULT;
+  else
+    r = sys_read(fd, ref.page, ref.off, (size_t)len);
   regs[0] = (uint32_t)human68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -592,7 +611,12 @@ static int dos_write(uint32_t *regs, uint32_t usp) {
   uint32_t buf_addr = ustack_u32(usp, 2);
   uint32_t len = ustack_u32(usp, 6);
   H68K_TRACE("_WRITE(%u, %x, %x)", (uint32_t)fd, buf_addr, len);
-  long r = sys_write(fd, (uintptr_t)buf_addr, (size_t)len);
+  user_page_ref_t ref;
+  long r;
+  if (proc_user_ptr_to_page_ref(current, (uintptr_t)buf_addr, &ref) < 0)
+    r = -EFAULT;
+  else
+    r = sys_write(fd, ref.page, ref.off, (size_t)len);
   regs[0] = (uint32_t)human68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -1574,7 +1598,12 @@ static int dos_files(uint32_t *regs, uint32_t usp) {
   H68K_TRACE("_FILES: dir=%s pat=%s", dir, pattern);
 
   /* Open the directory */
-  long fd = sys_open((uintptr_t)dir, O_RDONLY, 0);
+  user_page_ref_t dref;
+  long fd;
+  if (proc_user_ptr_to_page_ref(current, (uintptr_t)dir, &dref) < 0)
+    fd = -EFAULT;
+  else
+    fd = sys_open(dref.page, dref.off, O_RDONLY, 0);
   if (fd < 0) {
     regs[0] = (uint32_t)human68k_errno(fd);
     advance_pc(regs);

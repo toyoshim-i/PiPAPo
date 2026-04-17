@@ -14,16 +14,25 @@
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/syscall/syscall.h"
 
-/* Offsets into the .COM's PSP that the bridge borrows as scratch.  DOS
- * convention leaves both slots unused for hosted programs. */
-#define DOS_IO_SCRATCH_OFF 0x60u   /* 1-byte I/O staging (fd 0/1)           */
-#define DOS_PATH_SCRATCH_OFF 0x80u /* 128-byte path staging (command tail) */
+/* Kernel-side scratch slots inside `dos_data_page` (allocated lazily in
+ * msdos_on_init).  Used for staging paths and single-byte I/O without
+ * borrowing user-segment memory.  Offsets sit comfortably above the
+ * dos_proc_t array — see the static_assert below. */
+#define DOS_IO_SCRATCH_OFF 0x800u   /* 1-byte staging for fd 0/1 byte I/O   */
+#define DOS_PATH_SCRATCH_OFF 0x810u /* 128-byte staging for resolved paths */
 #define DOS_PATH_SCRATCH_MAX 128u
+#define DOS_SCRATCH_END (DOS_PATH_SCRATCH_OFF + DOS_PATH_SCRATCH_MAX)
 
 #define DOS_FIRST_USER_HANDLE 5
 
-/* Dedicated page for dos_proc_t array to avoid BSS overflow in core segment. */
+/* Dedicated page for dos_proc_t array to avoid BSS overflow in core segment.
+ * Same page also hosts the DOS scratch area (paths + 1-byte I/O staging). */
 static page_id_t dos_data_page = PAGE_ID_INVALID;
+
+_Static_assert(sizeof(dos_proc_t) * PROC_MAX <= DOS_IO_SCRATCH_OFF,
+               "dos_proc_t array would overlap DOS scratch area");
+_Static_assert(DOS_SCRATCH_END <= PAGE_SIZE,
+               "DOS scratch area exceeds dos_data_page");
 
 static uint32_t dos_to_linear(uint16_t seg, uint16_t off) {
   return ((uint32_t)seg << 4) + off;
@@ -101,27 +110,21 @@ void dos_set_exec_dir(struct pcb *p, const char *exec_path) {
 
 /* ── Path resolution ────────────────────────────────────────────────── *
  *
- * Stage the translated PPAP path in the .COM's PSP command-tail slot
- * so the caller can hand DOS_PATH_SCRATCH_OFF straight to sys_open /
- * sys_unlink / ... as a user pointer — no bypass of the arch
- * user-pointer translator.
+ * Stage the translated PPAP path into a kmem-backed scratch slot
+ * (DOS_PATH_SCRATCH_OFF inside dos_data_page) and call sys_open with
+ * that (page, off) pair.  The user-pointer translator runs only
+ * at the syscall dispatcher boundary — kernel callers like this one
+ * supply a page reference directly and don't have to mimic a user
+ * pointer.
  *
  * Assembly happens in a single kernel-stack buffer (sized to the
  * scratch slot, 128 B) and is flushed in one mem_region_page_write
- * call.  Compared to byte-at-a-time writes into the user page, this
- * keeps code size small at the cost of a modest kstack footprint.
- *
- * TODO: drop the PSP staging once sys_open accepts (page_id, offset)
- * directly — the user-pointer translator step belongs in the syscall
- * dispatcher, not inside sys_open.  Then dos_resolve_user_path can
- * stage into a kmem-backed scratch page and pass it straight to
- * sys_open without touching the .COM's segment.  Same applies to
- * sys_unlink / sys_stat / etc. when D-2e and friends land. */
+ * call.  Compared to byte-at-a-time writes, this keeps code size
+ * small at the cost of a modest kstack footprint. */
 
 static int dos_resolve_user_path(dos_proc_t *dos, uint16_t in_seg,
                                  uint16_t in_off) {
-  page_id_t base = proc_page_backed_base(current);
-  if (base == PAGE_ID_INVALID) return -DOS_ERR_PATH_NOT_FOUND;
+  if (dos_data_page == PAGE_ID_INVALID) return -DOS_ERR_PATH_NOT_FOUND;
 
   uint8_t drive = dos->current_drive;
 
@@ -198,7 +201,8 @@ static int dos_resolve_user_path(dos_proc_t *dos, uint16_t in_seg,
   }
   buf[n] = '\0';
 
-  mem_region_page_write(base, DOS_PATH_SCRATCH_OFF, buf, (uint16_t)(n + 1));
+  mem_region_page_write(dos_data_page, DOS_PATH_SCRATCH_OFF, buf,
+                        (uint16_t)(n + 1));
   return 0;
 }
 
@@ -259,44 +263,24 @@ const subsys_ops_t msdos_subsys_ops = {
 
 /* ── Single-byte fd I/O helpers ────────────────────────────────────────
  *
- * sys_read/sys_write resolve `user_ptr` through the per-arch user-pointer
- * translator.  On flat-memory architectures, that lookup happily finds the
- * page backing a kernel-stack address, so passing `&c` works.
- *
- * On ia16 the translator treats user_ptr strictly as a 16-bit offset within
- * the user's segment (see arch_user_ptr_to_page in src/arch/i16/.../arch.h),
- * so a kernel-stack pointer is misinterpreted as a user-segment offset and
- * the I/O lands on whatever happens to live at that user offset.
- *
- * For the few INT 21h handlers that move single bytes between fd 0/1 and
- * the kernel, stage the byte through a reserved slot in the .COM's PSP and
- * let sys_write/sys_read translate that proper user-segment offset.  PSP
- * bytes [0x60, 0x70) are unused by .COM convention.
- *
- * TODO: collapse the ifdef once sys_read/sys_write accept (page_id, off)
- * directly (see also dos_resolve_user_path TODO above).  Both branches
- * could then share a single kmem-backed scratch byte. */
-#if defined(__ia16__)
+ * Stage single bytes through DOS_IO_SCRATCH_OFF in the kmem-backed
+ * dos_data_page and use sys_*_pf to hand the (page, off) pair to the
+ * VFS layer directly — no per-arch user-pointer translation.  Same
+ * single implementation works on ia16 and flat archs. */
+
 static long dos_io_putc(uint8_t c) {
-  page_id_t base = proc_page_backed_base(current);
-  if (base == PAGE_ID_INVALID) return -1;
-  mem_region_page_write(base, DOS_IO_SCRATCH_OFF, &c, 1);
-  return sys_write(1, DOS_IO_SCRATCH_OFF, 1);
+  if (dos_data_page == PAGE_ID_INVALID) return -1;
+  mem_region_page_write(dos_data_page, DOS_IO_SCRATCH_OFF, &c, 1);
+  return sys_write(1, dos_data_page, DOS_IO_SCRATCH_OFF, 1);
 }
 
 static long dos_io_getc(uint8_t *out) {
-  page_id_t base = proc_page_backed_base(current);
-  if (base == PAGE_ID_INVALID) return -1;
-  long n = sys_read(0, DOS_IO_SCRATCH_OFF, 1);
+  if (dos_data_page == PAGE_ID_INVALID) return -1;
+  long n = sys_read(0, dos_data_page, DOS_IO_SCRATCH_OFF, 1);
   if (n != 1) return n;
-  mem_region_page_read(base, DOS_IO_SCRATCH_OFF, out, 1);
+  mem_region_page_read(dos_data_page, DOS_IO_SCRATCH_OFF, out, 1);
   return 1;
 }
-#else
-static long dos_io_putc(uint8_t c) { return sys_write(1, (uintptr_t)&c, 1); }
-
-static long dos_io_getc(uint8_t *out) { return sys_read(0, (uintptr_t)out, 1); }
-#endif
 
 /* ── INT 21h functions ─────────────────────────────────────────────── */
 
@@ -393,7 +377,7 @@ static int dos_open_common(dos_proc_t *dos, dos_regs_t *regs, int flags) {
   int rc = dos_resolve_user_path(dos, regs->ds, regs->dx);
   if (rc < 0) return rc;
 
-  long fd = sys_open(DOS_PATH_SCRATCH_OFF, flags, 0644);
+  long fd = sys_open(dos_data_page, DOS_PATH_SCRATCH_OFF, flags, 0644);
   if (fd < 0) return -dos_errno_to_dos((int)fd);
 
   int h = dos_alloc_handle(dos, (int)fd);

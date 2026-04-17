@@ -96,15 +96,11 @@ static long sys_io_lookup_desc(long fd) {
   return current->fd_map[(uint32_t)fd];
 }
 
-long sys_write(long fd, uintptr_t user_ptr, size_t n) {
-  user_page_ref_t ref;
+long sys_write(long fd, page_id_t page, uint16_t off, size_t n) {
   long desc = sys_io_lookup_desc(fd);
-  int rc;
-
   if (desc < 0) return desc;
 
-  rc = proc_user_ptr_to_page_ref(current, user_ptr, &ref);
-  if (rc < 0) return rc;
+  user_page_ref_t ref = {.page = page, .off = off};
 
   /* Page-walk loop: issue one fd_write per page chunk so that the VFS
    * layer never sees a request spanning a page boundary. */
@@ -123,15 +119,11 @@ long sys_write(long fd, uintptr_t user_ptr, size_t n) {
   return (long)total;
 }
 
-long sys_read(long fd, uintptr_t user_ptr, size_t n) {
-  user_page_ref_t ref;
+long sys_read(long fd, page_id_t page, uint16_t off, size_t n) {
   long desc = sys_io_lookup_desc(fd);
-  int rc;
-
   if (desc < 0) return desc;
 
-  rc = proc_user_ptr_to_page_ref(current, user_ptr, &ref);
-  if (rc < 0) return rc;
+  user_page_ref_t ref = {.page = page, .off = off};
 
   /* Page-walk loop: issue one fd_read per page chunk so that the VFS
    * layer never sees a request spanning a page boundary. */
@@ -168,7 +160,15 @@ long sys_writev(long fd, uintptr_t iov_ptr, long iovcnt) {
 
     if (rc < 0) return total > 0 ? total : rc;
     if (iov.iov_len == 0) continue;
-    n = sys_write(fd, (uintptr_t)iov.iov_base, iov.iov_len);
+    {
+      user_page_ref_t bref;
+      if (proc_user_ptr_to_page_ref(current, (uintptr_t)iov.iov_base, &bref) <
+          0) {
+        n = -(long)EFAULT;
+      } else {
+        n = sys_write(fd, bref.page, bref.off, iov.iov_len);
+      }
+    }
     if (n < 0) {
       if (total > 0) return total;
       return n;
@@ -195,7 +195,15 @@ long sys_readv(long fd, uintptr_t iov_ptr, long iovcnt) {
 
     if (rc < 0) return total > 0 ? total : rc;
     if (iov.iov_len == 0) continue;
-    n = sys_read(fd, (uintptr_t)iov.iov_base, iov.iov_len);
+    {
+      user_page_ref_t bref;
+      if (proc_user_ptr_to_page_ref(current, (uintptr_t)iov.iov_base, &bref) <
+          0) {
+        n = -(long)EFAULT;
+      } else {
+        n = sys_read(fd, bref.page, bref.off, iov.iov_len);
+      }
+    }
     if (n < 0) {
       if (total > 0) return total;
       return n;

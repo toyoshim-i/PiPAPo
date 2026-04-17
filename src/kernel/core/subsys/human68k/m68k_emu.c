@@ -403,8 +403,16 @@ int m68k_emu_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
             cpu->d[0] = (uint32_t)human68k_errno(err);
             return CPU_TRAP_HANDLED;
           }
-          cpu->d[0] = (uint32_t)human68k_errno(
-              sys_open((uintptr_t)path, O_CREAT | O_TRUNC | O_WRONLY, 0644));
+          {
+            user_page_ref_t ref;
+            long r;
+            if (proc_user_ptr_to_page_ref(current, (uintptr_t)path, &ref) < 0)
+              r = -EFAULT;
+            else
+              r = sys_open(ref.page, ref.off, O_CREAT | O_TRUNC | O_WRONLY,
+                           0644);
+            cpu->d[0] = (uint32_t)human68k_errno(r);
+          }
           return CPU_TRAP_HANDLED;
         }
 
@@ -428,8 +436,15 @@ int m68k_emu_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
               flags = O_RDWR;
               break;
           }
-          cpu->d[0] =
-              (uint32_t)human68k_errno(sys_open((uintptr_t)path, flags, 0644));
+          {
+            user_page_ref_t ref;
+            long r;
+            if (proc_user_ptr_to_page_ref(current, (uintptr_t)path, &ref) < 0)
+              r = -EFAULT;
+            else
+              r = sys_open(ref.page, ref.off, flags, 0644);
+            cpu->d[0] = (uint32_t)human68k_errno(r);
+          }
           return CPU_TRAP_HANDLED;
         }
 

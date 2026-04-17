@@ -110,15 +110,37 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
     case SYS_EXIT_GROUP: /* single-threaded: exit_group = exit */
       ret = sys_exit(a0);
       break;
-    case SYS_READ:
-      ret = sys_read(a0, (uintptr_t)a1, (size_t)a2);
+    case SYS_READ: {
+      user_page_ref_t ref;
+      if (proc_user_ptr_to_page_ref(current, (uintptr_t)a1, &ref) < 0) {
+        ret = -(long)EFAULT;
+        break;
+      }
+      ret = sys_read(a0, ref.page, ref.off, (size_t)a2);
       break;
-    case SYS_WRITE:
-      ret = sys_write(a0, (uintptr_t)a1, (size_t)a2);
+    }
+    case SYS_WRITE: {
+      user_page_ref_t ref;
+      if (proc_user_ptr_to_page_ref(current, (uintptr_t)a1, &ref) < 0) {
+        ret = -(long)EFAULT;
+        break;
+      }
+      ret = sys_write(a0, ref.page, ref.off, (size_t)a2);
       break;
-    case SYS_OPEN:
-      ret = sys_open((uintptr_t)a0, a1, a2);
+    }
+    case SYS_OPEN: {
+      if (a0 == 0) {
+        ret = -(long)EINVAL;
+        break;
+      }
+      user_page_ref_t ref;
+      if (proc_user_ptr_to_page_ref(current, (uintptr_t)a0, &ref) < 0) {
+        ret = -(long)EINVAL;
+        break;
+      }
+      ret = sys_open(ref.page, ref.off, a1, a2);
       break;
+    }
     case SYS_CLOSE:
       ret = sys_close(a0);
       break;
@@ -320,10 +342,20 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
     case SYS_CLOCK_NANOSLEEP64:
       ret = sys_clock_nanosleep64(a0, a1, (uintptr_t)a2, (uintptr_t)a3);
       break;
-    case SYS_OPENAT:
+    case SYS_OPENAT: {
       /* AT_FDCWD fast-path: route to sys_open (path=a1, flags=a2, mode=a3) */
-      ret = sys_open((uintptr_t)a1, a2, a3);
+      if (a1 == 0) {
+        ret = -(long)EINVAL;
+        break;
+      }
+      user_page_ref_t ref;
+      if (proc_user_ptr_to_page_ref(current, (uintptr_t)a1, &ref) < 0) {
+        ret = -(long)EINVAL;
+        break;
+      }
+      ret = sys_open(ref.page, ref.off, a2, a3);
       break;
+    }
     case SYS_FSTATAT64:
       /* AT_FDCWD fast-path: dirfd ignored, route to stat64/lstat64 */
       ret = sys_stat64((uintptr_t)a1, (uintptr_t)a2);

@@ -15,6 +15,7 @@
 #include "common/errno.h"
 #include "kernel/common/config.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/syscall/syscall.h"
 
@@ -24,14 +25,24 @@ static int sys_copy_path(char *dst, uintptr_t path_ptr) {
 }
 
 /* ── sys_open ────────────────────────────────────────────────────────────────
- */
+ *
+ * Works on a (page, off) pair directly — does not depend on the
+ * per-arch user-pointer translator.  Callers whose argument arrived as
+ * a user pointer translate first via proc_user_ptr_to_page_ref. */
 
-long sys_open(uintptr_t path_ptr, long flags, long mode) {
+long sys_open(page_id_t page, uint16_t off, long flags, long mode) {
   char path[VFS_PATH_MAX];
-  int rc = sys_copy_path(path, path_ptr);
-
-  if (rc < 0) return (long)rc;
-
+  user_page_ref_t ref = {.page = page, .off = off};
+  for (int i = 0; i < VFS_PATH_MAX; i++) {
+    mem_region_page_read(ref.page, ref.off, &path[i], 1);
+    if (path[i] == '\0') goto loaded;
+    if (++ref.off >= PAGE_SIZE) {
+      ref.page++;
+      ref.off = 0;
+    }
+  }
+  return -(long)ENAMETOOLONG;
+loaded:;
   int desc = mod_vfs.fd_open(path, (int)flags, (int)mode);
   if (desc < 0) return (long)desc;
 
