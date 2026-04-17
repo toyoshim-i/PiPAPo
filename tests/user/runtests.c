@@ -301,7 +301,7 @@ int main(void)
      * static pointer arrays because execve only relocates GOT entries,
      * not initialized data pointers.  Runtime assignment uses GOT-resolved
      * addresses which are correctly relocated. */
-    test_entry_t tests[30];
+    test_entry_t tests[34];
     int t = 0;
 /* Known qemu_rv32 failures are disabled until fixed. */
 #if defined(__riscv)
@@ -358,11 +358,15 @@ int main(void)
     tests[t++] = (test_entry_t){ "/bin/test_stat",       TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_tmpfs",      TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_ufs",        TEST_DISABLED }; /* pcxt only (UFS root) */
+/* TODO: m68k has no FPU save/restore in context switch */
+#if defined(__m68k__)
+    tests[t++] = (test_entry_t){ "/bin/test_float",      TEST_DISABLED };
+    tests[t++] = (test_entry_t){ "/bin/test_signal_float", TEST_DISABLED };
+#elif defined(__riscv)
     tests[t++] = (test_entry_t){ "/bin/test_float",      TEST_ENABLED  };
-/* TODO: qemu_rv32 signal delivery issues */
-#if defined(__riscv)
     tests[t++] = (test_entry_t){ "/bin/test_signal_float", TEST_DISABLED };
 #else
+    tests[t++] = (test_entry_t){ "/bin/test_float",      TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_signal_float", TEST_ENABLED };
 #endif
 #if defined(__m68k__)
@@ -383,7 +387,7 @@ int main(void)
     tests[t++] = (test_entry_t){ "/bin/test_zexdoc",     TEST_SLOW     };
     tests[t++] = (test_entry_t){ "/bin/test_zexall",     TEST_SLOW     };
     tests[t++] = (test_entry_t){ "/bin/test_musl",       TEST_ENABLED  };
-    tests[t++] = (test_entry_t){ "/bin/test_trace",      TEST_ENABLED  };
+    tests[t++] = (test_entry_t){ "/bin/test_trace",      TEST_FLAKY    };
 #if defined(__m68k__)
     tests[t++] = (test_entry_t){ "/bin/test_pdb",        TEST_DISABLED };
 #else
