@@ -419,25 +419,22 @@ elif [[ "$TARGET" == "pcxt" ]]; then
     else
         PCXT_DRIVE="-drive file=$ELF,format=raw,if=floppy"
     fi
+    PCXT_POFF="-device isa-debug-exit,iobase=0x501,iosize=2"
     if [[ $DO_HOST -eq 1 ]]; then
         # --host: open graphical VGA window + serial on stdio
-        QEMU_ARGS=(-machine pc -cpu 486 -m 1M -serial mon:stdio $PCXT_DRIVE)
+        QEMU_ARGS=(-machine pc -cpu 486 -m 1M -serial mon:stdio $PCXT_DRIVE $PCXT_POFF)
     elif [[ $DO_GUI -eq 1 ]]; then
         # --gui: X11 forwarded VGA window + serial on stdio
-        QEMU_ARGS=(-machine pc -cpu 486 -m 1M -serial mon:stdio $PCXT_DRIVE)
+        QEMU_ARGS=(-machine pc -cpu 486 -m 1M -serial mon:stdio $PCXT_DRIVE $PCXT_POFF)
     else
         # Docker headless: keep serial on stdio for kernel logs and
         # user-space debugging over ttyS0.
-        QEMU_ARGS=(-machine pc -cpu 486 -m 1M -serial mon:stdio $PCXT_DRIVE)
+        QEMU_ARGS=(-machine pc -cpu 486 -m 1M -serial mon:stdio $PCXT_DRIVE $PCXT_POFF)
     fi
     ELF=""  # already passed via -drive, clear so run_qemu doesn't add -kernel
 else
     QEMU_BIN="qemu-system-arm"
-    QEMU_ARGS=(-M mps2-an500 -serial mon:stdio)
-    # Add -semihosting when the build uses the semihost UART driver
-    if grep -q "PPAP_SEMIHOST:BOOL=ON" "$BUILD_DIR/CMakeCache.txt" 2>/dev/null; then
-        QEMU_ARGS+=(-semihosting)
-    fi
+    QEMU_ARGS=(-M mps2-an500 -serial mon:stdio -semihosting)
 fi
 
 # Resolve Docker image — required unless --host is set
