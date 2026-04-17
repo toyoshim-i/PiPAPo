@@ -7,6 +7,20 @@ into PPAP syscalls, allowing DOS .COM and .EXE (MZ) binaries to run on
 any PPAP host architecture through the eCPU i8086 emulator or natively
 on a V30/8086 target.
 
+## Current status (2026-04-18)
+
+- Native ia16 path is the only one wired today: pcxt boots, INT 21h is
+  trapped through `dos_trap.S`, and `.COM` programs run on real-mode
+  8086 directly.  The i8086 eCPU path described below is not built yet.
+- Phase D-1 (.COM loader + minimal INT 21h) is complete.  `test_msdos`
+  passes 12/12 on pcxt: AH=02h, 09h, 30h, 4Ch are exercised end-to-end.
+- `SUBSYS_MSDOS = 4` is registered; `subsys.c` wires `msdos_subsys_ops`.
+- Implementation files landed under
+  `src/kernel/core/subsys/msdos/`: `dos_bridge.{c,h}`, `dos_host.{c,h}`
+  (PSP/binary load, was `dos_com_loader` in the original sketch),
+  `com_loader.{c,h}` (loader_t registration), and the trap entry
+  `src/arch/i16/kernel/core/dos_trap.S`.
+
 ---
 
 ## 1. Goals and Scope
@@ -300,31 +314,31 @@ commonly used functions.
 
 These cover enough to run simple DOS .COM utilities:
 
-| AH | Name | PPAP mapping |
-|----|------|-------------|
-| 01h | Read char with echo | `sys_read(0)` + `sys_write(1)` |
-| 02h | Write character | `sys_write(1)` |
-| 06h | Direct console I/O | `sys_read(0)` / `sys_write(1)` (non-blocking) |
-| 08h | Read char no echo | `sys_read(0)` |
-| 09h | Print string ($-term) | `sys_write(1)` until '$' |
-| 0Ah | Buffered input | Line-edit read into DS:DX buffer |
-| 0Bh | Check input status | `sys_poll(0)` or `sys_ioctl(FIONREAD)` |
-| 19h | Get current drive | Return `dos->current_drive` |
-| 25h | Set interrupt vector | Store in emulated IVT |
-| 2Ah | Get date | `sys_gettimeofday()` → year/month/day |
-| 2Ch | Get time | `sys_gettimeofday()` → hour/min/sec |
-| 30h | Get DOS version | Return 3.30 (static) |
-| 35h | Get interrupt vector | Read from emulated IVT |
-| 3Ch | Create file | `sys_open(path, O_CREAT\|O_TRUNC\|O_WRONLY)` |
-| 3Dh | Open file | `sys_open(path, mode)` |
-| 3Eh | Close file | `sys_close(handle)` |
-| 3Fh | Read file | `sys_read(handle, buf, count)` |
-| 40h | Write file | `sys_write(handle, buf, count)` |
-| 41h | Delete file | `sys_unlink(path)` |
-| 42h | Seek (LSEEK) | `sys_lseek(handle, offset, whence)` |
-| 43h | Get/set file attributes | Stub (return 0x20 archive) |
-| 47h | Get current directory | Return `dos->cwd[drive]` |
-| 4Ch | Terminate with code | `sys_exit(code)` |
+| AH | Name | PPAP mapping | Status |
+|----|------|-------------|--------|
+| 01h | Read char with echo | `sys_read(0)` + `sys_write(1)` | done |
+| 02h | Write character | `sys_write(1)` | done |
+| 06h | Direct console I/O | `sys_read(0)` / `sys_write(1)` (non-blocking) | TODO |
+| 08h | Read char no echo | `sys_read(0)` | done |
+| 09h | Print string ($-term) | `sys_write(1)` until '$' | done |
+| 0Ah | Buffered input | Line-edit read into DS:DX buffer | done |
+| 0Bh | Check input status | `sys_poll(0)` or `sys_ioctl(FIONREAD)` | stub |
+| 19h | Get current drive | Return `dos->current_drive` | done |
+| 25h | Set interrupt vector | Store in emulated IVT | TODO |
+| 2Ah | Get date | `sys_gettimeofday()` → year/month/day | stub (fixed date) |
+| 2Ch | Get time | `sys_gettimeofday()` → hour/min/sec | stub (fixed time) |
+| 30h | Get DOS version | Return 3.30 (static) | done |
+| 35h | Get interrupt vector | Read from emulated IVT | TODO |
+| 3Ch | Create file | `sys_open(path, O_CREAT\|O_TRUNC\|O_WRONLY)` | TODO |
+| 3Dh | Open file | `sys_open(path, mode)` | TODO |
+| 3Eh | Close file | `sys_close(handle)` | TODO |
+| 3Fh | Read file | `sys_read(handle, buf, count)` | TODO |
+| 40h | Write file | `sys_write(handle, buf, count)` | TODO |
+| 41h | Delete file | `sys_unlink(path)` | TODO |
+| 42h | Seek (LSEEK) | `sys_lseek(handle, offset, whence)` | TODO |
+| 43h | Get/set file attributes | Stub (return 0x20 archive) | TODO |
+| 47h | Get current directory | Return `dos->cwd[drive]` | TODO |
+| 4Ch | Terminate with code | `sys_exit(code)` | done |
 
 #### Phase 2 — File System Extensions (~15 functions)
 
@@ -417,23 +431,44 @@ typedef struct dos_proc {
 
 ### 4.4 Path Translation
 
-DOS paths use backslash separators and drive letters.  The bridge converts
-them to PPAP paths:
+DOS paths use backslash separators and drive letters.  The bridge
+converts them to PPAP paths.
+
+**Drive assignment.**  Rather than the generic `X: → /x/` scheme, PPAP
+uses a small fixed table so DOS programs land in meaningful PPAP
+directories without requiring target-specific mount config:
+
+| Drive | Mapping | Per-process? | Notes |
+|-------|---------|--------------|-------|
+| `C:`  | executable directory of the running .COM/.EXE | yes | set at exec time; mirrors how CP/M used `A:` |
+| `Z:`  | `/` (PPAP root) | no | stable escape hatch to the full FS |
+| others | unassigned | — | access returns DOS error 15 (invalid drive) |
+
+The default drive is `C:`.  `dos_proc_t` gains `exec_dir[]` (captured
+by the loader from `dirname(path)`) so `C:` can be resolved without a
+global table.
+
+**Resolution examples:**
 
 ```
-C:\GAMES\DOOM.EXE  →  /c/GAMES/DOOM.EXE
-A:HELLO.COM        →  /a/<cwd_A>/HELLO.COM
-HELLO.COM          →  /a/<cwd_current>/HELLO.COM (relative to current drive)
+C:\FOO\BAR.TXT       →  {exec_dir}/FOO/BAR.TXT
+C:BAR.TXT            →  {exec_dir}/{cwd[C]}/BAR.TXT
+Z:\etc\hostname      →  /etc/hostname
+Z:etc                →  /{cwd[Z]}/etc
+BAR.TXT              →  {current_drive_root}/{cwd[current]}/BAR.TXT
+\tmp\file            →  {current_drive_root}/tmp/file
 ```
 
-Rules:
+**Rules:**
 
-1. Drive letter `X:` maps to PPAP mount point `/x/` (lowercase).
-2. Backslashes become forward slashes.
-3. Relative paths are resolved against the per-drive CWD.
-4. DOS filenames are case-insensitive; the bridge does case-folding
-   lookup against the PPAP filesystem (try exact match first, then
-   case-insensitive scan).
+1. Backslashes become forward slashes.
+2. Absolute (leading `\` or `/`) vs relative is resolved against the
+   per-drive CWD.
+3. **Case-sensitive lookup for now.**  See §12.1 — case-folding is
+   deferred.  DOS programs that emit lowercase names will see PPAP
+   files as-is; programs that uppercase will need matching uppercase
+   files in the image.
+4. Unassigned drives return error 15 without touching the VFS.
 
 ```c
 int dos_resolve_path(dos_proc_t *dos, const char *dos_path,
@@ -582,12 +617,16 @@ infrastructure:
 
 ## 8. New Files
 
+Files actually landed:
+
 ```
 src/kernel/core/subsys/msdos/
   dos_bridge.c        — INT 21h dispatch and function implementations
   dos_bridge.h        — dos_proc_t, constants, public API
-  dos_com_loader.c    — .COM binary loading (loader_t registration)
-  dos_com_loader.h    — Loader API
+  dos_host.c          — PSP build, .COM image load, initial user frame
+  dos_host.h          — dos_build_com_image() interface
+  com_loader.c        — .COM detection and loader_t registration
+  com_loader.h        — Loader API
 
 src/arch/i16/kernel/core/
   dos_trap.S          — Native i16 INT 21h ISR (real-mode 8086)
@@ -599,7 +638,7 @@ Changes to existing files:
 |------|--------|
 | `src/kernel/common/core/subsys_info.h` | Add `SUBSYS_MSDOS = 4` (slot 3 taken by SOS) |
 | `src/kernel/core/subsys/subsys.c` | Register `msdos_subsys_ops` |
-| `src/kernel/core/exec/loader.c` | Include `dos_com_loader`, add to registry |
+| `src/kernel/core/exec/loader.c` | Include `com_loader`, add to registry |
 | `cmake/kernel.cmake` | Add `KERNEL_SUBSYS_MSDOS_SOURCES` |
 | `src/target/pcxt/CMakeLists.txt` | Link MSDOS sources, define `PPAP_ENABLE_MSDOS=1` |
 | `src/target/pcxt/kernel/core/driver/timer_pit.c` | Install INT 21h vector → `i16_dos_isr` |
@@ -614,8 +653,8 @@ option(PPAP_ENABLE_MSDOS "Enable MS-DOS subsystem" OFF)
 if(PPAP_ENABLE_MSDOS)
     target_sources(ppap PRIVATE
         src/kernel/core/subsys/msdos/dos_bridge.c
-        src/kernel/core/subsys/msdos/dos_com_loader.c
-        src/kernel/core/subsys/msdos/dos_com_loader.c
+        src/kernel/core/subsys/msdos/dos_host.c
+        src/kernel/core/subsys/msdos/com_loader.c
     )
     target_compile_definitions(ppap PRIVATE PPAP_ENABLE_MSDOS=1)
 endif()
@@ -628,29 +667,170 @@ unless building for a native V30/8086 target.
 
 ## 10. Implementation Phases
 
-### Phase D-1: .COM Loader and Minimal INT 21h
+### Phase D-1: .COM Loader and Minimal INT 21h — DONE (native ia16)
 
 **Goal**: "Hello, world" DOS .COM program runs and prints output.
 
-1. Implement `dos_com_loader.c` — .COM loading only.
-2. Implement `dos_bridge.c` — INT 21h AH=02h (putchar), AH=09h (print
-   string), AH=4Ch (exit).
-3. Build PSP with minimal fields.
-4. Test with a hand-assembled 3-line .COM program.
+1. ✓ `com_loader.c` + `dos_host.c` — .COM detection, segment alloc,
+   PSP build, image stream, initial user frame.
+2. ✓ `dos_bridge.c` — INT 21h dispatch covering AH=01h, 02h, 08h, 09h,
+   0Ah, 0Bh (stub), 19h, 2Ah/2Ch (stub), 30h, 4Ch.
+3. ✓ PSP with INT 20h, memory top, INT 21h+RETF entry, command tail.
+4. ✓ Hand-assembled .COM tests run: `tests/user/test_msdos.c` passes
+   12/12 sub-tests on pcxt (exit_zero, exit_code, charout, hello,
+   version).
 
-**Verification**: "Hello, world!" appears on PPAP console.
+**Verification done**: pcxt runs `test_msdos` end-to-end through
+vfork+execve+pipe capture, with serial output matching expectations.
 
 ### Phase D-2: File I/O
 
-**Goal**: DOS programs can read and write files.
+**Goal**: DOS programs can create, open, read, write, seek, close, and
+delete files via INT 21h AH=3Ch–42h on PPAP-backed storage, with the
+case-sensitive drive scheme from §4.4.
 
-1. INT 21h AH=3Ch–42h (create, open, close, read, write, seek).
-2. Path translation (drive letters, backslash conversion).
-3. Handle table management.
-4. Error code mapping.
+The phase is broken into four self-contained steps; each lands as its
+own commit with its own test additions in `test_msdos.c`.
 
-**Verification**: A DOS .COM program that reads a file and prints its
-contents works correctly.
+D-2a–c were originally split further, but path infra (a), handle
+table + CLOSE (b), and OPEN/CREATE (c) have no testable surface in
+isolation — the first user-visible INT 21h round-trip needs all three.
+They're combined into **D-2abc** below.
+
+#### D-2abc: Path infra + handle table + OPEN/CREATE/CLOSE
+
+**State changes in `dos_proc_t`:**
+
+```c
+char    exec_dir[DOS_PATH_MAX];   /* dirname() of the .COM/.EXE path */
+char    cwd_c[DOS_PATH_MAX];      /* CWD on drive C:, default ""    */
+char    cwd_z[DOS_PATH_MAX];      /* CWD on drive Z:, default ""    */
+uint8_t current_drive;            /* 'C'-'A' = 2 by default          */
+```
+
+`com_loader` populates `exec_dir` from `argv[0]` (which `exec.c`
+defaults to the `execve` path).  `msdos_on_init` zeros the CWDs and
+sets `current_drive = 2` (C:).
+
+**Path resolver:**
+
+```c
+int dos_resolve_path(dos_proc_t *dos, const char *dos_path,
+                     char *out, int out_size);
+```
+
+Implements the rules in §4.4 with case-sensitive matching.  Returns
+0 on success, `-DOS_ERR_INVALID_DRIVE` (15) for unassigned drives,
+`-DOS_ERR_PATH_NOT_FOUND` (3) for output buffer overflow.
+
+**Handle table:**
+
+```c
+static int dos_alloc_handle(dos_proc_t *dos, int fd) {
+  for (int h = 5; h < DOS_MAX_HANDLES; h++)
+    if (dos->handle_to_fd[h] < 0) { dos->handle_to_fd[h] = fd; return h; }
+  return -DOS_ERR_TOO_MANY_OPEN;  /* 4 */
+}
+static int dos_lookup_fd(dos_proc_t *dos, int handle) {
+  if (handle < 0 || handle >= DOS_MAX_HANDLES) return -DOS_ERR_INVALID_HANDLE;
+  int fd = dos->handle_to_fd[handle];
+  return fd < 0 ? -DOS_ERR_INVALID_HANDLE : fd;
+}
+```
+
+Handles 0–4 (stdin/stdout/stderr/aux/prn) are pre-opened in
+`msdos_on_init` and remain reserved for the life of the process.
+
+**AH=3Ch CREATE:**
+- DS:DX = path; CX = attribute (low byte: bit 0 RO, bit 1 hidden, bit 2 system, bit 5 archive — only RO honored for now via `mode 0444`, others ignored).
+- Maps to `sys_open(path, O_CREAT | O_TRUNC | O_WRONLY, mode)`.
+
+**AH=3Dh OPEN:**
+- DS:DX = path; AL access mode:
+  - low 3 bits: 0=O_RDONLY, 1=O_WRONLY, 2=O_RDWR, others → error 12 (invalid access).
+  - bits 4–6: sharing — ignored on PPAP.
+  - bit 7: inherit — ignored.
+- Maps to `sys_open(path, flags, 0)`.
+
+Both copy the DOS path out of the user segment (small kernel-stack
+buffer via `cpu_ops->read8` over `dos_to_linear(ds, dx)`), call
+`dos_resolve_path`, then `sys_open`.  On success allocate a handle and
+return it in AX.  On any error, set CF and AX from §4.5.
+
+**AH=3Eh CLOSE:**
+- handle 0–4: refuse (DOS allows but it's a foot-gun on PPAP — return 0 without touching the fd).
+- handle 5+: `sys_close(fd)`, set slot to -1.
+- invalid handle: error 6, CF=1.
+
+**Tests (added to `test_msdos.c`):**
+- `create_open_close`: `CREATE "C:\D2.TXT"` → handle ≥ 5 → `CLOSE` → `OPEN` same path for read → handle ≥ 5 → `CLOSE` → verify the host-visible file exists at `{exec_dir}/D2.TXT`.
+- `open_missing`: `OPEN` a non-existent path → AX=2, CF=1.
+- `bad_handle_close`: `CLOSE` handle 17 → AX=6, CF=1.
+- `double_close`: `CREATE` + `CLOSE` + `CLOSE` → second close → AX=6.
+- `invalid_drive`: `OPEN "Y:\FOO"` → AX=15, CF=1.
+
+#### D-2d: AH=3Fh READ / AH=40h WRITE
+
+`dos_read` (AH=3Fh):
+- BX = handle, CX = byte count, DS:DX = buffer (in the user segment).
+- `sys_read(fd, dx_offset, cx)` — DX is already a user-segment offset,
+  so it goes straight through `proc_user_ptr_to_page_ref`.  No PSP
+  staging needed (this is the natural buffer convention; D-1's
+  staging was only for kernel-side single-byte values).
+- Return: AX = bytes actually read.
+
+`dos_write` (AH=40h):
+- Same shape, calls `sys_write`.
+
+Both must cap CX at 0xFFFF (already 16-bit) and propagate short reads
+without an error (DOS treats 0-byte read as EOF, not error).
+
+**Test:** the round-trip — create+write "DOS_RW" + close + open + read
++ verify + close + delete.  Plus a "buffer near segment end" case
+(DS:DX = 0xFE00, count = 256) to exercise the page-walk loop.
+
+#### D-2e: AH=41h DELETE / AH=42h LSEEK
+
+`dos_delete` (AH=41h):
+- DS:DX = path → `sys_unlink`.  No handle involved.
+
+`dos_lseek` (AH=42h):
+- BX = handle, AL = whence (0/1/2 → SEEK_SET/CUR/END),
+  CX:DX = 32-bit offset (CX = high word, DX = low word).
+- `sys_lseek(fd, ((int32_t)cx << 16) | dx, whence)`.
+- Return: 32-bit new position split into DX:AX (DX = high, AX = low).
+
+The CX:DX → int32 packing and back is the only fiddly bit; isolate it
+in a helper to keep the dispatcher tidy.
+
+**Test:** write 16 bytes, seek to 4 from start, read 4, verify.  Seek
+to -2 from end, read, verify.  Seek with bad whence → AX=1 CF=1.
+
+#### D-2f: Error mapping pass
+
+Audit every D-2 handler against §4.5:
+- Negative `sys_*` returns become `(uint16_t)-rc → DOS errno` via a
+  small lookup function (ENOENT→2, ENOTDIR→3, EMFILE→4, EACCES→5,
+  EBADF→6, ENOMEM→8, EEXIST→80; default → 1 invalid function).
+- Set `regs->flags |= 0x0001` (CF) on error, clear on success.
+- Confirm `regs->ax` carries the DOS error code (not the raw negated
+  errno) on every error path.
+
+**Phase verification:**
+
+1. `test_msdos` grows by ~5 sub-tests covering the round-trip,
+   page-boundary buffer, seek, double-close, bad-handle, and
+   invalid-drive paths.
+2. All 16/16 PPAP tests on pcxt still pass; no regressions on
+   qemu_arm/m68k/rv32.
+
+**Out of scope for D-2** (move to D-4 or later):
+- AH=39h/3Ah/3Bh — mkdir/rmdir/chdir.
+- AH=44h IOCTL (any sub-function).
+- AH=45h/46h DUP / DUP2.
+- AH=4Eh/4Fh FindFirst / FindNext.
+- AH=56h RENAME (already in §4.2 Phase 2 table).
+- Inheritable-handle accounting in PSP[0x32] (deferred until EXEC in D-4).
 
 ### Phase D-3: .EXE Loading
 
@@ -745,11 +925,21 @@ static int test_dos(void) {
 
 ### 12.1 Case Sensitivity
 
-PPAP filesystems (tmpfs, UFS) are case-sensitive.  DOS is case-insensitive.
-The bridge must do case-folding directory lookups, which adds overhead.
-The recommended approach: DOS programs see uppercase filenames; the bridge
-uppercases all filenames during directory creation and does case-insensitive
-comparison during lookup.
+PPAP filesystems (tmpfs, UFS) are case-sensitive.  DOS is
+case-insensitive.  Supporting that properly needs case-folding
+directory lookups, which adds overhead and complicates the bridge.
+
+**Current policy (D-2 and earlier): case-sensitive lookup.**  The
+bridge passes DOS paths through `dos_resolve_path` with backslash→slash
+and drive-letter→mount substitution only.  No case folding.  DOS
+programs that emit lowercase names see PPAP files as-is; programs that
+uppercase (typical for .COM utilities) need matching uppercase files
+in the image.  Test programs stage their own files so this is fine for
+the regression suite.
+
+Case-folding lookup (uppercase-on-write + case-insensitive scan on
+read) is deferred; it will become necessary once we try to run real
+DOS applications that assume `FILE.TXT == file.txt`.
 
 ### 12.2 i8086 eCPU Performance
 
@@ -777,6 +967,29 @@ goals.
 The DOS subsystem does not include a COMMAND.COM equivalent.  Programs
 are launched from the PPAP shell.  A minimal COMMAND.COM with `.BAT`
 file support could be added as an extended goal.
+
+### 12.6 ia16 gotchas surfaced during D-1
+
+Two ia16-specific traps caught while bringing test_msdos up; future
+INT 21h handlers should keep them in mind.
+
+- **Kernel buffers cannot be passed straight to sys_read/sys_write.**
+  The user-pointer translator on ia16 (`arch_user_ptr_to_page`) treats
+  its `user_ptr` argument as a 16-bit segment-relative offset, not a
+  flat address.  A kernel-stack pointer fed in (e.g. `&local_byte`)
+  resolves to a random offset inside the user's segment — not the
+  byte we intended.  Single-byte INT 21h handlers must stage through
+  the .COM's PSP (the bridge uses `PSP[0x60]` as a 1-byte scratch slot
+  via `dos_io_putc/getc`) and then call `sys_write`/`sys_read` with
+  the *user-segment* offset.  Flat-memory targets are not affected.
+- **Don't trust the user-pushed DS for source/destination segments
+  unless the contract truly says DS:DX/DS:SI.**  ia16-elf-gcc treats
+  DS as a scratch register, so any ia16-compiled INT 21h caller can
+  arrive with arbitrary DS.  Hand-assembled .COMs follow the DOS
+  contract and set DS=PSP segment, so bridge handlers can use `regs->ds`
+  for the AH=09h/0Ah-style "DS:DX is the buffer" calls.  For internal
+  scratch staging from the kernel side, derive the proc segment from
+  the PCB (`proc_page_backed_base(current)`) instead.
 
 ---
 
