@@ -8,6 +8,7 @@
  *   sys_execve(path,argv) — replace process image with new ELF binary
  */
 
+#include <stddef.h>
 #include <string.h>
 
 #include "common/errno.h"
@@ -54,8 +55,8 @@ _Static_assert(EXEC_SNAPSHOT_TOTAL_BYTES <= PAGE_SIZE,
 
 /* Release an image segment if it is OWNED (independently allocated).
  * Non-OWNED segments (XIP, sub-pointers into another allocation) are
- * just cleared.  On i16 the whole user segment is now owned by
- * image.data, while user_pages[] only tracks logical occupancy. */
+ * just cleared.  In shared-stack exec models, image.data may own the
+ * full user segment while user_pages[] only tracks logical occupancy. */
 static void image_segment_release_owned(proc_image_segment_t *seg) {
   if (!seg || !seg->base) return;
   if (seg->flags & PROC_IMAGE_SEG_OWNED) mem_region_free(seg);
@@ -70,6 +71,73 @@ static void image_release_owned_segments(proc_image_t *image) {
   image_segment_release_owned(&image->literal);
   image_segment_release_owned(&image->rodata);
   image_segment_release_owned(&image->data);
+}
+
+static int image_segment_contains_page_id(const proc_image_segment_t *seg,
+                                          page_id_t page_id) {
+  uint32_t n_pages;
+
+  if (!seg || seg->size == 0) return 0;
+  if (!(seg->flags & PROC_IMAGE_SEG_OWNED)) return 0;
+  if (seg->base_page == PAGE_ID_INVALID) return 0;
+
+  n_pages = (seg->size + PAGE_SIZE - 1u) / PAGE_SIZE;
+  return page_id >= seg->base_page && page_id < seg->base_page + n_pages;
+}
+
+static int image_contains_owned_page_id(const proc_image_t *image,
+                                        page_id_t page_id) {
+  if (!image || page_id == PAGE_ID_INVALID) return 0;
+
+  return image_segment_contains_page_id(&image->text, page_id) ||
+         image_segment_contains_page_id(&image->staged_text, page_id) ||
+         image_segment_contains_page_id(&image->staged_rodata, page_id) ||
+         image_segment_contains_page_id(&image->literal, page_id) ||
+         image_segment_contains_page_id(&image->rodata, page_id) ||
+         image_segment_contains_page_id(&image->data, page_id);
+}
+
+static int exec_snapshot_segment_contains_page_id(page_id_t snapshot_page,
+                                                  uint16_t seg_off,
+                                                  page_id_t page_id) {
+  proc_image_segment_t seg;
+
+  if (snapshot_page == PAGE_ID_INVALID) return 0;
+  if (page_id == PAGE_ID_INVALID) return 0;
+  mem_region_page_read(snapshot_page, seg_off, &seg, sizeof(seg));
+  return image_segment_contains_page_id(&seg, page_id);
+}
+
+static int exec_snapshot_contains_owned_page_id(page_id_t snapshot_page,
+                                                page_id_t page_id) {
+  if (snapshot_page == PAGE_ID_INVALID) return 0;
+  if (page_id == PAGE_ID_INVALID) return 0;
+
+  return exec_snapshot_segment_contains_page_id(
+             snapshot_page, (uint16_t)offsetof(proc_image_t, text), page_id) ||
+         exec_snapshot_segment_contains_page_id(
+             snapshot_page, (uint16_t)offsetof(proc_image_t, staged_text),
+             page_id) ||
+         exec_snapshot_segment_contains_page_id(
+             snapshot_page, (uint16_t)offsetof(proc_image_t, staged_rodata),
+             page_id) ||
+         exec_snapshot_segment_contains_page_id(
+             snapshot_page, (uint16_t)offsetof(proc_image_t, literal),
+             page_id) ||
+         exec_snapshot_segment_contains_page_id(
+             snapshot_page, (uint16_t)offsetof(proc_image_t, rodata),
+             page_id) ||
+         exec_snapshot_segment_contains_page_id(
+             snapshot_page, (uint16_t)offsetof(proc_image_t, data), page_id);
+}
+
+static void proc_untrack_owned_segment_pages(pcb_t *p) {
+  if (!p) return;
+  for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
+    if (p->user_pages[i] == PAGE_ID_INVALID) continue;
+    if (image_contains_owned_page_id(&p->image, p->user_pages[i]))
+      p->user_pages[i] = PAGE_ID_INVALID;
+  }
 }
 
 static int exec_snapshot_save(page_id_t *snapshot_page, const pcb_t *p) {
@@ -105,37 +173,35 @@ static void exec_snapshot_release_owned_segments(page_id_t snapshot_page) {
 }
 
 static void exec_snapshot_release_tracked_pages(page_id_t snapshot_page) {
-#if defined(__ia16__)
-  /* i16 owns one whole exec-time segment via image.data (OWNED).
-   * user_pages[] is occupancy bookkeeping only — the pages were already
-   * freed by exec_snapshot_release_owned_segments(). */
-  (void)snapshot_page;
-#else
+  if (snapshot_page == PAGE_ID_INVALID) return;
+
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
     page_id_t page_id;
 
-    if (snapshot_page == PAGE_ID_INVALID) return;
     mem_region_page_read(
         snapshot_page,
         (uint16_t)(EXEC_SNAPSHOT_USER_OFF + i * sizeof(page_id_t)), &page_id,
         sizeof(page_id));
-    if (page_id != PAGE_ID_INVALID) mem_region_page_free(page_id);
+    if (page_id == PAGE_ID_INVALID) continue;
+    if (exec_snapshot_contains_owned_page_id(snapshot_page, page_id)) continue;
+    mem_region_page_free(page_id);
   }
-#endif
 }
 
 static void exec_snapshot_release_private_tracked_pages(
     page_id_t snapshot_page, const page_id_t shared[USER_PAGES_MAX]) {
+  if (snapshot_page == PAGE_ID_INVALID) return;
+
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
     page_id_t page_id;
 
-    if (snapshot_page == PAGE_ID_INVALID) return;
     mem_region_page_read(
         snapshot_page,
         (uint16_t)(EXEC_SNAPSHOT_USER_OFF + i * sizeof(page_id_t)), &page_id,
         sizeof(page_id));
     if (page_id == PAGE_ID_INVALID) continue;
     if (shared && shared[i] == page_id) continue;
+    if (exec_snapshot_contains_owned_page_id(snapshot_page, page_id)) continue;
     mem_region_page_free(page_id);
   }
 }
@@ -1480,6 +1546,7 @@ long sys_exit(long status) {
    * either this isn't a vfork child, or execve already replaced them) */
   if (!current->vfork_parent) {
     image_release_owned_segments(&current->image);
+    proc_untrack_owned_segment_pages(current);
 #if !defined(__ia16__)
     if (current->stack_page_id != PAGE_ID_INVALID &&
         proc_page_backed_contains(
