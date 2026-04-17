@@ -20,7 +20,8 @@
 #   stage1.bin      — floppy boot sector flat binary (512 B)
 #   stage1_hdd.bin  — MBR boot sector flat binary (512 B)
 #   stage2.bin      — stage2 flat binary (≤4 KB)
-#   ppap_pcxt.bin   — kernel flat binary
+#   ppap_pcxt_text.bin — kernel .text+.rodata flat binary
+#   ppap_pcxt_data.bin — kernel .data flat binary
 #
 # Output:
 #   build/pcxt/ppap_pcxt.img       (720 KB floppy image)
@@ -40,7 +41,8 @@ MKUFS_FORMAT="${PPAP_MKUFS_FORMAT:-44bsd}"
 STAGE1="$BUILD_DIR/stage1.bin"
 STAGE1_HDD="$BUILD_DIR/stage1_hdd.bin"
 STAGE2="$BUILD_DIR/stage2.bin"
-KERNEL="$BUILD_DIR/ppap_pcxt.bin"
+KERNEL_TEXT="$BUILD_DIR/ppap_pcxt_text.bin"
+KERNEL_DATA="$BUILD_DIR/ppap_pcxt_data.bin"
 IMG="$BUILD_DIR/ppap_pcxt.img"
 IMG_HDD="$BUILD_DIR/ppap_pcxt_hdd.img"
 
@@ -60,7 +62,7 @@ HDD_INODES="${PPAP_PCXT_HDD_INODES:-1024}"
 
 # ── Verify inputs ──────────────────────────────────────────────────────────
 
-for f in "$STAGE1" "$STAGE1_HDD" "$STAGE2" "$KERNEL"; do
+for f in "$STAGE1" "$STAGE1_HDD" "$STAGE2" "$KERNEL_TEXT" "$KERNEL_DATA"; do
   if [[ ! -f "$f" ]]; then
     echo "[mkpcimg] Error: $f not found" >&2
     exit 1
@@ -82,7 +84,8 @@ rm -rf "$UFS_STAGING"
 mkdir -p "$UFS_STAGING/boot" "$UFS_STAGING/bin" "$UFS_STAGING/sbin" \
          "$UFS_STAGING/etc" "$UFS_STAGING/dev" "$UFS_STAGING/proc" \
          "$UFS_STAGING/tmp"
-cp "$KERNEL" "$UFS_STAGING/boot/kernel"
+cp "$KERNEL_TEXT" "$UFS_STAGING/boot/kernel_text"
+cp "$KERNEL_DATA" "$UFS_STAGING/boot/kernel_data"
 
 # Include VFS module if built (code + data as separate files)
 VFS_BIN="$BUILD_DIR/ppap_pcxt_vfs.bin"

@@ -400,6 +400,8 @@ target_link_options(ppap_pcxt PRIVATE
   -T ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/pcxt_kernel.ld
   -nostartfiles
   -Wl,--gc-sections
+  # .text and .data have intentionally overlapping VMAs (CS vs DS at runtime).
+  -Wl,--no-check-sections
 )
 target_link_libraries(ppap_pcxt PRIVATE gcc)
 
@@ -410,9 +412,14 @@ set_target_properties(ppap_pcxt PROPERTIES
 
 add_custom_command(TARGET ppap_pcxt POST_BUILD
   COMMAND ${CMAKE_OBJCOPY} -O binary
+    --only-section=.text
     $<TARGET_FILE:ppap_pcxt>
-    ${CMAKE_CURRENT_BINARY_DIR}/ppap_pcxt.bin
-  COMMENT "Creating core module binary"
+    ${CMAKE_CURRENT_BINARY_DIR}/ppap_pcxt_text.bin
+  COMMAND ${CMAKE_OBJCOPY} -O binary
+    --only-section=.rodata --only-section=.data
+    $<TARGET_FILE:ppap_pcxt>
+    ${CMAKE_CURRENT_BINARY_DIR}/ppap_pcxt_data.bin
+  COMMENT "Creating core module binaries (text + data)"
 )
 
 # ==========================================================================

@@ -370,27 +370,23 @@ void stage2_main(void)
   uint16_t boot_ino = find_file(UFS_ROOT_INO, "boot");
   if (!boot_ino) { puts_bios("!boot"); return; }
 
-  /* Load /boot/kernel to DS:0x0600 (for data access via SS=0) */
-  uint16_t kernel_ino = find_file(boot_ino, "kernel");
-  if (!kernel_ino) { puts_bios("!kern"); return; }
-
-  uint16_t core_size = load_file(kernel_ino, (uint8_t *)KERNEL_ADDR);
-  if (!core_size) { puts_bios("!load"); return; }
-
-  /* Load same kernel binary to a far segment for code execution.
-   * Core CS = 0x1000.  Binary starts at file offset 0 = ELF 0x0600.
-   * Loading to segment 0x1060 places it at linear 0x10600, so
-   * CS:0x0600 = 0x1000:0x0600 = 0x10600 = correct _start address.
-   * Near calls to any ELF address X resolve to CS:X = 0x10000+X,
-   * which is where that byte was loaded. */
+  /* Load /boot/kernel_text to CS=0x1000:0x0000 (linear 0x10000).
+   * This is THE copy of .text+.rodata — no DS=0 duplicate. */
+  uint16_t kernel_text_ino = find_file(boot_ino, "kernel_text");
+  if (!kernel_text_ino) { puts_bios("!ktxt"); return; }
   uint16_t core_cs = 0x1000u;
-  uint16_t core_load_seg = core_cs + (KERNEL_ADDR >> 4); /* 0x1060 */
-  load_file_far(kernel_ino, core_load_seg);
+  uint16_t core_text_size = load_file_far(kernel_text_ino, core_cs);
+  if (!core_text_size) { puts_bios("!ltxt"); return; }
 
-  /* VFS code module: load after the core far copy, page-aligned.
-   * Core far copy occupies core_load_seg..core_load_seg+core_paras. */
-  uint16_t core_paras = (core_size + 15u) >> 4;
-  uint16_t vfs_seg = core_load_seg + core_paras;
+  /* Load /boot/kernel_data to DS=0:0x0600 (data + initialized globals). */
+  uint16_t kernel_data_ino = find_file(boot_ino, "kernel_data");
+  if (!kernel_data_ino) { puts_bios("!kdat"); return; }
+  uint16_t core_data_size = load_file(kernel_data_ino, (uint8_t *)KERNEL_ADDR);
+  if (!core_data_size) { puts_bios("!ldat"); return; }
+
+  /* VFS code module: load after the core far copy, page-aligned. */
+  uint16_t core_paras = (core_text_size + 15u) >> 4;
+  uint16_t vfs_seg = core_cs + core_paras;
   vfs_seg = (vfs_seg + 0xFFu) & ~0xFFu;  /* page-align (4 KB) */
   uint16_t vfs_ino = find_file(boot_ino, "kernel_vfs");
   uint16_t vfs_size = 0;
@@ -418,7 +414,7 @@ void stage2_main(void)
     uint16_t vfs_paras = (vfs_size + 15u) >> 4;
     pool_seg = (vfs_seg + vfs_paras + 0xFFu) & ~0xFFu;
   } else {
-    pool_seg = (core_load_seg + core_paras + 0xFFu) & ~0xFFu;
+    pool_seg = (core_cs + core_paras + 0xFFu) & ~0xFFu;
   }
 
   /* Write module info block for the kernel to read */
@@ -426,7 +422,7 @@ void stage2_main(void)
   info->count = vfs_size ? 2 : 1;
   /* Module 0: core code segment (CS=0x1000) */
   info->mod[0].segment = core_cs;
-  info->mod[0].size = core_size;
+  info->mod[0].size = core_text_size;
   /* Module 1: VFS */
   if (vfs_size) {
     info->mod[1].segment = vfs_seg;
@@ -446,11 +442,11 @@ void stage2_main(void)
       ? ufs_partition_sectors
       : (uint32_t)(1440u - ufs_base_sector);
 
-  /* Far-jump to core CS, IP=0x0600 (_start in boot.S).
+  /* Far-jump to core CS, IP=0x0000 (_start in boot.S, .text VMA base).
    * Write far pointer to scratch area and use indirect ljmp. */
   {
     uint16_t *fptr = (uint16_t *)0x0400u;
-    fptr[0] = KERNEL_ADDR;  /* IP = 0x0600 */
+    fptr[0] = 0x0000u;      /* IP = 0x0000 (.text starts at VMA 0) */
     fptr[1] = core_cs;      /* CS = 0x1000 */
     __asm__ volatile ("cli\n\t" "ljmp *0x0400");
   }
