@@ -10,6 +10,7 @@
  *     that substring are run.
  *   - Timestamps: every log line is prefixed with [T+S.CC] (elapsed seconds
  *     and centiseconds since the runner started; 10 ms resolution).
+ *     Disabled at runtime if clock_gettime is unavailable on the target.
  *   - Per-test elapsed time shown in PASS/FAIL lines.
  *
  * Sequentially vfork + execve each test binary, collect exit statuses.
@@ -36,15 +37,14 @@ static void print(const char *s)
     write(1, s, len);
 }
 
-#if !defined(__ia16__)
 static int slen(const char *s) { int n = 0; while (s[n]) n++; return n; }
-#endif
 
+/* Decimal print using only subtract+compare so no libgcc divide is required
+ * (works on ARM Cortex-M0+ kernels and the ia16 tiny model alike). */
 static void print_int(int v)
 {
-#if defined(__ia16__)
     unsigned int x;
-    char buf[6];
+    char buf[12];   /* enough for 32-bit unsigned */
     int n = 0;
 
     if (v < 0) {
@@ -56,11 +56,7 @@ static void print_int(int v)
 
     do {
         unsigned int q = 0;
-
-        while (x >= 10u) {
-            x -= 10u;
-            q++;
-        }
+        while (x >= 10u) { x -= 10u; q++; }
         buf[n++] = (char)('0' + x);
         x = q;
     } while (x > 0u);
@@ -69,26 +65,9 @@ static void print_int(int v)
         char c = buf[--n];
         write(1, &c, 1);
     }
-#else
-    if (v == 0) { write(1, "0", 1); return; }
-    static const long powers[] = {1000000000L,100000000L,10000000L,1000000L,
-                                  100000L,10000L,1000L,100L,10L,1L};
-    long rem = v;
-    int started = 0, p;
-    for (p = 0; p < 10; p++) {
-        int d = 0;
-        while (rem >= powers[p]) { rem -= powers[p]; d++; }
-        if (d || started) {
-            char c = '0' + d;
-            write(1, &c, 1);
-            started = 1;
-        }
-    }
-#endif
 }
 
-/* Print two-digit decimal 00-99 without division (M0+, no libgcc) */
-#if !defined(__ia16__)
+/* Print two-digit decimal 00-99 without division */
 static void print_dd(int v)
 {
     int tens = 0;
@@ -98,18 +77,17 @@ static void print_dd(int v)
     buf[1] = '0' + v;
     write(1, buf, 2);
 }
-#endif
 
-/* ── Timestamps ──────────────────────────────────────────────────────────── */
+/* ── Timestamps (runtime-disabled if clock_gettime is unavailable) ──────── */
 
-#if !defined(__ia16__)
 struct rt_ts { long tv_sec; long tv_nsec; };
 
 static struct rt_ts g_start;
+static int          g_ts_ok;     /* 1 if clock_gettime works on this target */
 
-static void get_time(struct rt_ts *ts)
+static int get_time(struct rt_ts *ts)
 {
-    clock_gettime(1 /* CLOCK_MONOTONIC */, ts);
+    return clock_gettime(1 /* CLOCK_MONOTONIC */, ts);
 }
 
 /* Convert tv_nsec (multiples of 10_000_000 on PPAP) to centiseconds 0-99 */
@@ -123,8 +101,9 @@ static int nsec_to_cs(long ns)
 /* Print "[T+S.CC] " prefix showing elapsed time since g_start */
 static void print_ts(void)
 {
+    if (!g_ts_ok) return;
     struct rt_ts now;
-    get_time(&now);
+    if (get_time(&now) < 0) return;
     long sec = now.tv_sec - g_start.tv_sec;
     long ns  = now.tv_nsec - g_start.tv_nsec;
     if (ns < 0) { sec--; ns += 1000000000L; }
@@ -138,6 +117,7 @@ static void print_ts(void)
 /* Print "S.CCs" elapsed between two timestamps */
 static void print_elapsed(const struct rt_ts *t0, const struct rt_ts *t1)
 {
+    if (!g_ts_ok) return;
     long sec = t1->tv_sec - t0->tv_sec;
     long ns  = t1->tv_nsec - t0->tv_nsec;
     if (ns < 0) { sec--; ns += 1000000000L; }
@@ -178,7 +158,7 @@ static int test_matches(const char *path)
     return 0;
 }
 
-/* ── Flaky opt-in ────────────────────────────────────────────────────────── */
+/* ── Flaky / slow opt-ins ────────────────────────────────────────────────── */
 
 static int g_run_flaky;
 static int g_run_slow;
@@ -194,107 +174,24 @@ static void check_run_slow(void)
     int fd = open("/etc/test_run_slow", O_RDONLY, 0);
     if (fd >= 0) { close(fd); g_run_slow = 1; }
 }
-#endif
+
+/* ── Stdout redirect ─────────────────────────────────────────────────────── */
+
+/* On pcxt the default fd 1 is the VGA console, invisible to QEMU's serial
+ * capture.  Redirect to /dev/ttyS0 if it can be opened.  Other targets
+ * already point fd 1 at the serial console; the redirect is a no-op there
+ * (re-binding fd 1 to the same underlying device). */
+static void redirect_stdout_to_serial(void)
+{
+    int sfd = open("/dev/ttyS0", 1 /* O_WRONLY */, 0);
+    if (sfd < 0) return;
+    close(1);
+    dup(sfd);
+    close(sfd);
+}
 
 /* ── Main ────────────────────────────────────────────────────────────────── */
 
-#if defined(__ia16__)
-static int g_total;
-static int g_passed;
-static int g_failed;
-static int g_skipped;
-
-static int run_test(const char *path)
-{
-    pid_t pid;
-    int status = 0;
-
-    print("RUN   ");
-    print(path);
-    print("\n");
-
-    pid = vfork();
-    if (pid == 0) {
-        execve(path, (void *)0, (void *)0);
-        _exit(127);
-    }
-
-    waitpid(pid, &status, 0);
-    return (status >> 8) & 0xff;
-}
-
-static void record_test(const char *path, int flags)
-{
-    if (flags == TEST_DISABLED) {
-        g_skipped++;
-        print("SKIP  ");
-        print(path);
-        print("  (disabled)\n");
-        return;
-    }
-
-    int code = run_test(path);
-
-    g_total++;
-
-    if (code == 0) {
-        g_passed++;
-        print("PASS  ");
-    } else {
-        g_failed++;
-        print("FAIL  ");
-    }
-    print(path);
-    print("\n");
-}
-
-int main(void)
-{
-    g_total = 0;
-    g_passed = 0;
-    g_failed = 0;
-    g_skipped = 0;
-
-    /* On pcxt, stdout is the VGA console (invisible to QEMU serial
-     * capture).  Redirect fd 1 to /dev/ttyS0 so test output appears
-     * on the serial port where the test runner can see it. */
-    {
-        int sfd = open("/dev/ttyS0", 1 /* O_WRONLY */, 0);
-        if (sfd >= 0) {
-            close(1);
-            dup(sfd);
-            close(sfd);
-        }
-    }
-
-    print("=== PPAP on-target test suite ===\n");
-    record_test("/bin/test_exec",  TEST_ENABLED);
-    record_test("/bin/test_vfork", TEST_ENABLED);
-    record_test("/bin/test_fs",    TEST_ENABLED);
-    record_test("/bin/test_rw",    TEST_ENABLED);
-    record_test("/bin/test_tmpfs", TEST_DISABLED);
-    record_test("/bin/test_ufs",   TEST_ENABLED);
-    record_test("/bin/test_msdos", TEST_DISABLED);
-
-    print("\n=== Results: ");
-    print_int(g_total);
-    print(" run, ");
-    print_int(g_passed);
-    print(" passed, ");
-    print_int(g_failed);
-    print(" failed, ");
-    print_int(g_skipped);
-    print(" skipped ===\n");
-
-    if (g_failed == 0)
-        print("ALL TESTS PASSED\n");
-    else
-        print("SOME TESTS FAILED\n");
-
-    poweroff();
-    return g_failed;
-}
-#else
 int main(void)
 {
     /* Initialize the test list at runtime — PIC binaries don't support
@@ -303,109 +200,218 @@ int main(void)
      * addresses which are correctly relocated. */
     test_entry_t tests[34];
     int t = 0;
-/* Known qemu_rv32 failures are disabled until fixed. */
+
+    /* Tests not built for pcxt (ia16 tiny model) are marked DISABLED for
+     * __ia16__.  Other per-target ifdefs disable known failures awaiting
+     * a real fix. */
+
+    tests[t++] = (test_entry_t){ "/bin/test_exec",
 #if defined(__riscv)
-    tests[t++] = (test_entry_t){ "/bin/test_exec",       TEST_DISABLED };
-    tests[t++] = (test_entry_t){ "/bin/test_elf",        TEST_DISABLED };
+        TEST_DISABLED
 #else
-    tests[t++] = (test_entry_t){ "/bin/test_exec",       TEST_ENABLED  };
-    tests[t++] = (test_entry_t){ "/bin/test_elf",        TEST_ENABLED  };
+        TEST_ENABLED
 #endif
-    tests[t++] = (test_entry_t){ "/bin/test_vfork",      TEST_ENABLED  };
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_elf",
+#if defined(__riscv) || defined(__ia16__)
+        TEST_DISABLED
+#else
+        TEST_ENABLED
+#endif
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_vfork", TEST_ENABLED };
+    tests[t++] = (test_entry_t){ "/bin/test_fault",
+#if defined(__riscv) || defined(__ia16__)
+        TEST_DISABLED
+#else
+        TEST_ENABLED
+#endif
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_pipe",
+#if defined(__ia16__)
+        TEST_DISABLED
+#else
+        TEST_ENABLED
+#endif
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_brk",
+#if defined(__riscv) || defined(__ia16__)
+        TEST_DISABLED
+#else
+        TEST_ENABLED
+#endif
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_fd",
+#if defined(__ia16__)
+        TEST_DISABLED
+#else
+        TEST_ENABLED
+#endif
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_signal",
+#if defined(__riscv) || defined(__ia16__)
+        TEST_DISABLED
+#else
+        TEST_ENABLED
+#endif
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_poll",
+#if defined(__ia16__)
+        TEST_DISABLED
+#else
+        TEST_ENABLED
+#endif
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_sleep_intr",
+#if defined(__riscv) || defined(__ia16__)
+        TEST_DISABLED
+#else
+        TEST_ENABLED
+#endif
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_orphan",
+#if defined(__riscv) || defined(__ia16__)
+        TEST_DISABLED
+#else
+        TEST_ENABLED
+#endif
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_id",
+#if defined(__ia16__)
+        TEST_DISABLED
+#else
+        TEST_ENABLED
+#endif
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_fs",
 #if defined(__riscv)
-    tests[t++] = (test_entry_t){ "/bin/test_fault",      TEST_DISABLED }; /* TODO: RISC-V fault handler */
+        TEST_DISABLED
 #else
-    tests[t++] = (test_entry_t){ "/bin/test_fault",      TEST_ENABLED  };
+        TEST_ENABLED
 #endif
-    tests[t++] = (test_entry_t){ "/bin/test_pipe",       TEST_ENABLED  };
-/* TODO: qemu_rv32 brk base address mismatch */
-#if defined(__riscv)
-    tests[t++] = (test_entry_t){ "/bin/test_brk",        TEST_DISABLED };
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_rw", TEST_ENABLED };
+    tests[t++] = (test_entry_t){ "/bin/test_time",
+#if defined(__riscv) || defined(__ia16__)
+        TEST_DISABLED
 #else
-    tests[t++] = (test_entry_t){ "/bin/test_brk",        TEST_ENABLED  };
+        TEST_ENABLED
 #endif
-    tests[t++] = (test_entry_t){ "/bin/test_fd",         TEST_ENABLED  };
-/* TODO: qemu_rv32 signal delivery issues */
-#if defined(__riscv)
-    tests[t++] = (test_entry_t){ "/bin/test_signal",     TEST_DISABLED };
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_iov",
+#if defined(__ia16__)
+        TEST_DISABLED
 #else
-    tests[t++] = (test_entry_t){ "/bin/test_signal",     TEST_ENABLED  };
+        TEST_ENABLED
 #endif
-    tests[t++] = (test_entry_t){ "/bin/test_poll",       TEST_ENABLED  };
-/* TODO: qemu_rv32 signal/wait semantics */
-#if defined(__riscv)
-    tests[t++] = (test_entry_t){ "/bin/test_sleep_intr", TEST_DISABLED };
-    tests[t++] = (test_entry_t){ "/bin/test_orphan",     TEST_DISABLED };
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_stat",
+#if defined(__ia16__)
+        TEST_DISABLED
 #else
-    tests[t++] = (test_entry_t){ "/bin/test_sleep_intr", TEST_ENABLED  };
-    tests[t++] = (test_entry_t){ "/bin/test_orphan",     TEST_ENABLED  };
+        TEST_ENABLED
 #endif
-    tests[t++] = (test_entry_t){ "/bin/test_id",         TEST_ENABLED  };
-/* TODO: qemu_rv32 fs result reporting mismatch */
-#if defined(__riscv)
-    tests[t++] = (test_entry_t){ "/bin/test_fs",         TEST_DISABLED };
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_tmpfs",
+#if defined(__riscv) || defined(__ia16__)
+        TEST_DISABLED
 #else
-    tests[t++] = (test_entry_t){ "/bin/test_fs",         TEST_ENABLED  };
+        TEST_ENABLED
 #endif
-    tests[t++] = (test_entry_t){ "/bin/test_rw",         TEST_ENABLED  };
-/* TODO: qemu_rv32 clock_gettime EINVAL path */
-#if defined(__riscv)
-    tests[t++] = (test_entry_t){ "/bin/test_time",       TEST_DISABLED };
+    };
+    /* test_ufs runs only where a UFS root is mounted (pcxt today). */
+    tests[t++] = (test_entry_t){ "/bin/test_ufs",
+#if defined(__ia16__)
+        TEST_ENABLED
 #else
-    tests[t++] = (test_entry_t){ "/bin/test_time",       TEST_ENABLED  };
+        TEST_DISABLED
 #endif
-    tests[t++] = (test_entry_t){ "/bin/test_iov",        TEST_ENABLED  };
-    tests[t++] = (test_entry_t){ "/bin/test_stat",       TEST_ENABLED  };
-/* TODO: qemu_rv32 tmpfs test crash */
-#if defined(__riscv)
-    tests[t++] = (test_entry_t){ "/bin/test_tmpfs",      TEST_DISABLED };
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_float",
+#if defined(__m68k__) || defined(__ia16__)
+        TEST_DISABLED
 #else
-    tests[t++] = (test_entry_t){ "/bin/test_tmpfs",      TEST_ENABLED  };
+        TEST_ENABLED
 #endif
-    tests[t++] = (test_entry_t){ "/bin/test_ufs",        TEST_DISABLED }; /* pcxt only (UFS root) */
-/* TODO: m68k has no FPU save/restore in context switch */
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_signal_float",
+#if defined(__m68k__) || defined(__riscv) || defined(__ia16__)
+        TEST_DISABLED
+#else
+        TEST_ENABLED
+#endif
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_x68k",
 #if defined(__m68k__)
-    tests[t++] = (test_entry_t){ "/bin/test_float",      TEST_DISABLED };
-    tests[t++] = (test_entry_t){ "/bin/test_signal_float", TEST_DISABLED };
-#elif defined(__riscv)
-    tests[t++] = (test_entry_t){ "/bin/test_float",      TEST_ENABLED  };
-    tests[t++] = (test_entry_t){ "/bin/test_signal_float", TEST_DISABLED };
+        TEST_ENABLED
 #else
-    tests[t++] = (test_entry_t){ "/bin/test_float",      TEST_ENABLED  };
-    tests[t++] = (test_entry_t){ "/bin/test_signal_float", TEST_ENABLED };
+        TEST_DISABLED
 #endif
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_h68k_dos",
 #if defined(__m68k__)
-    tests[t++] = (test_entry_t){ "/bin/test_x68k",       TEST_ENABLED  };
-    tests[t++] = (test_entry_t){ "/bin/test_h68k_dos",   TEST_ENABLED  };
+        TEST_ENABLED
 #else
-    tests[t++] = (test_entry_t){ "/bin/test_x68k",       TEST_DISABLED }; /* m68k only */
-    tests[t++] = (test_entry_t){ "/bin/test_h68k_dos",   TEST_DISABLED }; /* m68k only */
+        TEST_DISABLED
 #endif
-/* TODO: qemu_rv32 CP/M Z80 instruction fetch fault */
-#if defined(__riscv)
-    tests[t++] = (test_entry_t){ "/bin/test_cpm",        TEST_DISABLED };
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_cpm",
+#if defined(__riscv) || defined(__ia16__)
+        TEST_DISABLED
 #else
-    tests[t++] = (test_entry_t){ "/bin/test_cpm",        TEST_ENABLED  };
+        TEST_ENABLED
 #endif
-/* TODO: qemu_rv32 S-OS crash */
-#if defined(__riscv)
-    tests[t++] = (test_entry_t){ "/bin/test_sos",        TEST_DISABLED };
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_sos",
+#if defined(__riscv) || defined(__ia16__)
+        TEST_DISABLED
 #else
-    tests[t++] = (test_entry_t){ "/bin/test_sos",        TEST_ENABLED  };
+        TEST_ENABLED
 #endif
-    tests[t++] = (test_entry_t){ "/bin/test_msdos",      TEST_DISABLED }; /* pcxt only */
-    tests[t++] = (test_entry_t){ "/bin/test_zexdoc",     TEST_SLOW     };
-    tests[t++] = (test_entry_t){ "/bin/test_zexall",     TEST_SLOW     };
-    tests[t++] = (test_entry_t){ "/bin/test_musl",       TEST_ENABLED  };
-    tests[t++] = (test_entry_t){ "/bin/test_trace",      TEST_FLAKY    };
-#if defined(__m68k__)
-    tests[t++] = (test_entry_t){ "/bin/test_pdb",        TEST_DISABLED };
+    };
+    /* test_msdos: pcxt-only (floppy/MSDOS subsystem); under investigation. */
+    tests[t++] = (test_entry_t){ "/bin/test_msdos", TEST_DISABLED };
+    tests[t++] = (test_entry_t){ "/bin/test_zexdoc",
+#if defined(__ia16__)
+        TEST_DISABLED
 #else
-    tests[t++] = (test_entry_t){ "/bin/test_pdb",        TEST_SLOW     };
+        TEST_SLOW
 #endif
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_zexall",
+#if defined(__ia16__)
+        TEST_DISABLED
+#else
+        TEST_SLOW
+#endif
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_musl",
+#if defined(__ia16__)
+        TEST_DISABLED
+#else
+        TEST_ENABLED
+#endif
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_trace",
+#if defined(__ia16__)
+        TEST_DISABLED
+#else
+        TEST_FLAKY
+#endif
+    };
+    tests[t++] = (test_entry_t){ "/bin/test_pdb",
+#if defined(__m68k__) || defined(__ia16__)
+        TEST_DISABLED
+#else
+        TEST_SLOW
+#endif
+    };
+
     tests[t].path = (void *)0;
 
-    get_time(&g_start);
+    redirect_stdout_to_serial();
+
+    g_ts_ok = (get_time(&g_start) == 0);
     read_filter();
     check_run_flaky();
     check_run_slow();
@@ -469,12 +475,14 @@ int main(void)
         if (code != 0) {
             failed++;
             print_ts(); print("FAIL  "); print(path);
-            print("  (exit "); print_int(code); print(", ");
-            print_elapsed(&t_start, &t_end); print(")\n");
+            print("  (exit "); print_int(code);
+            if (g_ts_ok) { print(", "); print_elapsed(&t_start, &t_end); }
+            print(")\n");
         } else {
             passed++;
             print_ts(); print("PASS  "); print(path);
-            print("  ("); print_elapsed(&t_start, &t_end); print(")\n");
+            if (g_ts_ok) { print("  ("); print_elapsed(&t_start, &t_end); print(")"); }
+            print("\n");
         }
     }
 
@@ -495,4 +503,3 @@ int main(void)
     poweroff();
     return failed;
 }
-#endif
