@@ -428,6 +428,41 @@ static int dos_close_file(dos_proc_t *dos, dos_regs_t *regs) {
   return 0;
 }
 
+/* AH=3Fh READ / AH=40h WRITE — BX=handle, CX=count, DS:DX=buffer. */
+
+static int dos_rw_common(dos_proc_t *dos, dos_regs_t *regs, int is_write) {
+  int handle = regs->bx;
+  int fd = dos_lookup_fd(dos, handle);
+  if (fd < 0) return fd;
+
+  uint16_t count = regs->cx;
+  if (count == 0) {
+    regs->ax = 0;
+    return 0;
+  }
+
+  /* DS:DX is a user-segment offset; the translator already assumes the
+   * caller's segment.  .COM programs keep DS=proc_seg by convention,
+   * so passing regs->dx straight through is safe. */
+  user_page_ref_t ref;
+  if (proc_user_ptr_to_page_ref(current, regs->dx, &ref) < 0)
+    return -DOS_ERR_INVALID_ACCESS;
+
+  long n = is_write ? sys_write(fd, ref.page, ref.off, count)
+                    : sys_read(fd, ref.page, ref.off, count);
+  if (n < 0) return -dos_errno_to_dos((int)n);
+  regs->ax = (uint16_t)n;
+  return 0;
+}
+
+static int dos_read(dos_proc_t *dos, dos_regs_t *regs) {
+  return dos_rw_common(dos, regs, 0);
+}
+
+static int dos_write(dos_proc_t *dos, dos_regs_t *regs) {
+  return dos_rw_common(dos, regs, 1);
+}
+
 int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
   uint8_t ah = regs->ax >> 8;
   int ret = 0;
@@ -471,6 +506,12 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
       break;
     case 0x3E:
       ret = dos_close_file(dos, regs);
+      break;
+    case 0x3F:
+      ret = dos_read(dos, regs);
+      break;
+    case 0x40:
+      ret = dos_write(dos, regs);
       break;
     case 0x4C:
       ret = dos_terminate(dos, regs);

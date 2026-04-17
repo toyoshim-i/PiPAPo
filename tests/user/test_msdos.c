@@ -423,6 +423,88 @@ static void test_invalid_drive(void)
     UT_ASSERT_EQ(code, 0);
 }
 
+/* -- Test 11: rw_roundtrip.com --- AH=3Fh READ / AH=40h WRITE ----------- */
+/*
+ * 8086 code (loaded at seg:0100):
+ *   Create "C:\RW.TXT", write "DOS_RW" (6 bytes), close.
+ *   Re-open read-only, read back into a 6-byte buffer, compare, close.
+ *   Exit 0 on success, 1 on any step failure.
+ *
+ *   data    at 0x0160:  "DOS_RW"
+ *   buf     at 0x0166:  six-byte scratch
+ *   path    at 0x016C:  "C:\\RW.TXT\\0"
+ */
+static const unsigned char rw_roundtrip_com[] = {
+    /* 0x100: CREATE */
+    0xB4, 0x3C,                 /* MOV AH, 3Ch */
+    0xB9, 0x00, 0x00,           /* MOV CX, 0   */
+    0xBA, 0x6C, 0x01,           /* MOV DX, 016Ch */
+    0xCD, 0x21,                 /* INT 21h     */
+    0x72, 0x4F,                 /* JC fail     */
+    0x89, 0xC3,                 /* MOV BX, AX  */
+    /* 0x10E: WRITE */
+    0xB4, 0x40,                 /* MOV AH, 40h */
+    0xB9, 0x06, 0x00,           /* MOV CX, 6   */
+    0xBA, 0x60, 0x01,           /* MOV DX, 0160h */
+    0xCD, 0x21,                 /* INT 21h     */
+    0x72, 0x41,                 /* JC fail     */
+    0x3D, 0x06, 0x00,           /* CMP AX, 6   */
+    0x75, 0x3C,                 /* JNE fail    */
+    /* 0x11F: CLOSE */
+    0xB4, 0x3E,                 /* MOV AH, 3Eh */
+    0xCD, 0x21,                 /* INT 21h     */
+    0x72, 0x36,                 /* JC fail     */
+    /* 0x125: OPEN RDONLY */
+    0xB8, 0x00, 0x3D,           /* MOV AX, 3D00h */
+    0xBA, 0x6C, 0x01,           /* MOV DX, 016Ch */
+    0xCD, 0x21,                 /* INT 21h     */
+    0x72, 0x2C,                 /* JC fail     */
+    0x89, 0xC3,                 /* MOV BX, AX  */
+    /* 0x131: READ */
+    0xB4, 0x3F,                 /* MOV AH, 3Fh */
+    0xB9, 0x06, 0x00,           /* MOV CX, 6   */
+    0xBA, 0x66, 0x01,           /* MOV DX, 0166h */
+    0xCD, 0x21,                 /* INT 21h     */
+    0x72, 0x1E,                 /* JC fail     */
+    0x3D, 0x06, 0x00,           /* CMP AX, 6   */
+    0x75, 0x19,                 /* JNE fail    */
+    /* 0x142: REPE CMPSB — compare data vs buf */
+    0xBE, 0x60, 0x01,           /* MOV SI, 0160h */
+    0xBF, 0x66, 0x01,           /* MOV DI, 0166h */
+    0xB9, 0x06, 0x00,           /* MOV CX, 6   */
+    0xFC,                       /* CLD         */
+    0xF3, 0xA6,                 /* REPE CMPSB  */
+    0x75, 0x0B,                 /* JNE fail    */
+    /* 0x150: CLOSE */
+    0xB4, 0x3E,                 /* MOV AH, 3Eh */
+    0xCD, 0x21,                 /* INT 21h     */
+    0x72, 0x05,                 /* JC fail     */
+    /* 0x156: exit 0 */
+    0xB8, 0x00, 0x4C,           /* MOV AX, 4C00h */
+    0xCD, 0x21,                 /* INT 21h     */
+    /* 0x15B: fail → exit 1 */
+    0xB8, 0x01, 0x4C,           /* MOV AX, 4C01h */
+    0xCD, 0x21,                 /* INT 21h     */
+    /* 0x160: data */
+    'D', 'O', 'S', '_', 'R', 'W',
+    /* 0x166: read buffer (6 B scratch) */
+    0, 0, 0, 0, 0, 0,
+    /* 0x16C: path */
+    'C', ':', '\\', 'R', 'W', '.', 'T', 'X', 'T', 0,
+};
+
+static void test_rw_roundtrip(void)
+{
+    unlink("/tmp/RW.TXT");
+    WRITE_COM("/tmp/dos_rw.com", rw_roundtrip_com);
+    int code = run_com("/tmp/dos_rw.com");
+    UT_ASSERT_EQ(code, 0);
+    struct stat st;
+    UT_ASSERT_EQ(stat("/tmp/RW.TXT", &st), 0);
+    UT_ASSERT_EQ(st.st_size, 6);
+    unlink("/tmp/RW.TXT");
+}
+
 /* -- main ----------------------------------------------------------------- */
 
 int main(void)
@@ -437,6 +519,7 @@ int main(void)
     test_bad_handle_close();
     test_double_close();
     test_invalid_drive();
+    test_rw_roundtrip();
 
     UT_SUMMARY("test_msdos");
 }
