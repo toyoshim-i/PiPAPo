@@ -245,28 +245,7 @@ long sys_mkdir(uintptr_t path_ptr, long mode) {
   int rc = sys_copy_path(path, path_ptr);
 
   if (rc < 0) return (long)rc;
-
-  vnode_t *parent = NULL;
-  char namebuf[VFS_NAME_MAX + 1];
-  int err = mod_vfs.lookup_parent(path, &parent, namebuf, (int)sizeof(namebuf));
-  if (err) return (long)err;
-
-  if (parent->type != VNODE_DIR) {
-    mod_vfs.vnode_release(parent);
-    return -(long)ENOTDIR;
-  }
-  if (!parent->mount || !parent->mount->ops || !parent->mount->ops->mkdir) {
-    mod_vfs.vnode_release(parent);
-    return -(long)ENOSYS;
-  }
-  if (parent->mount->flags & MNT_RDONLY) {
-    mod_vfs.vnode_release(parent);
-    return -(long)EROFS;
-  }
-
-  err = parent->mount->ops->mkdir(parent, namebuf, (uint32_t)mode);
-  mod_vfs.vnode_release(parent);
-  return (long)err;
+  return (long)mod_vfs.path_mkdir(path, (uint32_t)mode);
 }
 
 /* ── sys_unlink ──────────────────────────────────────────────────────────────
@@ -277,28 +256,7 @@ long sys_unlink(uintptr_t path_ptr) {
   int rc = sys_copy_path(path, path_ptr);
 
   if (rc < 0) return (long)rc;
-
-  vnode_t *parent = NULL;
-  char namebuf[VFS_NAME_MAX + 1];
-  int err = mod_vfs.lookup_parent(path, &parent, namebuf, (int)sizeof(namebuf));
-  if (err) return (long)err;
-
-  if (parent->type != VNODE_DIR) {
-    mod_vfs.vnode_release(parent);
-    return -(long)ENOTDIR;
-  }
-  if (!parent->mount || !parent->mount->ops || !parent->mount->ops->unlink) {
-    mod_vfs.vnode_release(parent);
-    return -(long)ENOSYS;
-  }
-  if (parent->mount->flags & MNT_RDONLY) {
-    mod_vfs.vnode_release(parent);
-    return -(long)EROFS;
-  }
-
-  err = parent->mount->ops->unlink(parent, namebuf);
-  mod_vfs.vnode_release(parent);
-  return (long)err;
+  return (long)mod_vfs.path_unlink(path);
 }
 
 /* ── sys_rename ──────────────────────────────────────────────────────────────
@@ -312,42 +270,7 @@ long sys_rename(uintptr_t oldpath_ptr, uintptr_t newpath_ptr) {
   if (rc < 0) return (long)rc;
   rc = sys_copy_path(newpath, newpath_ptr);
   if (rc < 0) return (long)rc;
-
-  vnode_t *old_parent = NULL;
-  char old_name[VFS_NAME_MAX + 1];
-  int err = mod_vfs.lookup_parent(oldpath, &old_parent, old_name,
-                                  (int)sizeof(old_name));
-  if (err) return (long)err;
-
-  vnode_t *new_parent = NULL;
-  char new_name[VFS_NAME_MAX + 1];
-  err = mod_vfs.lookup_parent(newpath, &new_parent, new_name,
-                              (int)sizeof(new_name));
-  if (err) {
-    mod_vfs.vnode_release(old_parent);
-    return (long)err;
-  }
-
-  if (old_parent->type != VNODE_DIR || new_parent->type != VNODE_DIR) {
-    err = -(int)ENOTDIR;
-    goto out;
-  }
-  if (!old_parent->mount || old_parent->mount != new_parent->mount ||
-      !old_parent->mount->ops || !old_parent->mount->ops->rename) {
-    err = -(int)ENOSYS;
-    goto out;
-  }
-  if (old_parent->mount->flags & MNT_RDONLY) {
-    err = -(int)EROFS;
-    goto out;
-  }
-
-  err = old_parent->mount->ops->rename(old_parent, old_name, new_parent,
-                                       new_name);
-out:
-  mod_vfs.vnode_release(old_parent);
-  mod_vfs.vnode_release(new_parent);
-  return (long)err;
+  return (long)mod_vfs.path_rename(oldpath, newpath);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════

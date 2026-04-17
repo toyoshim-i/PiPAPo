@@ -27,9 +27,12 @@ int vfs_lookup(const char *path, vnode_t **result);
 int vfs_lookup_flags(const char *path, vnode_t **result, int flags);
 int vfs_lookup_parent(const char *path, vnode_t **parent, char *namebuf,
                       int namebuf_size);
+int vfs_path_mkdir(const char *path, uint32_t mode);
 int vfs_path_normalize(const char *path, char *buf, int bufsiz);
+int vfs_path_rename(const char *oldpath, const char *newpath);
 mount_entry_t *vfs_mount_find(const char *path, const char **remainder);
 int vfs_path_statfs(const char *path, void *buf);
+int vfs_path_unlink(const char *path);
 uint32_t vnode_free_count(void);
 
 /* ── VFS scratch buffer pool ─────────────────────────────────────────────

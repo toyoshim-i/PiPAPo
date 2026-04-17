@@ -348,6 +348,16 @@ MOD_FUNC(vfs, int, mount_ufs, const char *, uint8_t, const void *)
 MOD_FUNC(vfs, void, notify, int)
 
 /*
+ * path_mkdir — Create a directory by path inside the VFS code segment.
+ *
+ *   path  Pathname to create.
+ *   mode  Permission bits (0777 mask applied by FS as needed).
+ *
+ * Returns 0 on success, negative errno on failure.
+ */
+MOD_FUNC(vfs, int, path_mkdir, const char *, uint32_t)
+
+/*
  * path_normalize — Normalize a path (resolve ".", "..", collapse "//").
  *
  *   path    Input pathname (must be absolute).
@@ -360,6 +370,16 @@ MOD_FUNC(vfs, void, notify, int)
 MOD_FUNC(vfs, int, path_normalize, const char *, char *, int)
 
 /*
+ * path_rename — Rename or move a path inside the VFS code segment.
+ *
+ *   oldpath  Existing source pathname.
+ *   newpath  Destination pathname.
+ *
+ * Returns 0 on success, negative errno on failure.
+ */
+MOD_FUNC(vfs, int, path_rename, const char *, const char *)
+
+/*
  * path_statfs — Get filesystem statistics for the mount containing a path.
  *
  *   path  Absolute pathname.
@@ -368,6 +388,16 @@ MOD_FUNC(vfs, int, path_normalize, const char *, char *, int)
  * Returns 0 on success, negative errno on failure.
  */
 MOD_FUNC(vfs, int, path_statfs, const char *, void *)
+
+/*
+ * path_unlink — Remove a file or directory entry by path inside the VFS code
+ * segment.
+ *
+ *   path  Pathname to remove (must not be "/").
+ *
+ * Returns 0 on success, negative errno on failure.
+ */
+MOD_FUNC(vfs, int, path_unlink, const char *)
 
 /*
  * tty_rx_notify — Wake processes blocked on TTY read.

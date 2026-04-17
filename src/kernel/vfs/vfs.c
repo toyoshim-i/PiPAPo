@@ -433,6 +433,114 @@ void vfs_fstab_automount(void) {
   }
 }
 
+int vfs_path_mkdir(const char *path, uint32_t mode) {
+  vnode_t *parent = NULL;
+  char *namebuf = vfs_scratch_alloc();
+  int err;
+
+  if (!namebuf) return -ENOMEM;
+  err = vfs_lookup_parent(path, &parent, namebuf, VFS_NAME_MAX + 1);
+  if (err) {
+    vfs_scratch_free(namebuf);
+    return err;
+  }
+  if (parent->type != VNODE_DIR) {
+    vfs_vnode_release(parent);
+    vfs_scratch_free(namebuf);
+    return -ENOTDIR;
+  }
+  if (!parent->mount || !parent->mount->ops || !parent->mount->ops->mkdir) {
+    vfs_vnode_release(parent);
+    vfs_scratch_free(namebuf);
+    return -ENOSYS;
+  }
+  if (parent->mount->flags & MNT_RDONLY) {
+    vfs_vnode_release(parent);
+    vfs_scratch_free(namebuf);
+    return -EROFS;
+  }
+  err = parent->mount->ops->mkdir(parent, namebuf, mode);
+  vfs_vnode_release(parent);
+  vfs_scratch_free(namebuf);
+  return err;
+}
+
+int vfs_path_rename(const char *oldpath, const char *newpath) {
+  vnode_t *old_parent = NULL;
+  vnode_t *new_parent = NULL;
+  char *old_name = vfs_scratch_alloc();
+  char *new_name = vfs_scratch_alloc();
+  int err;
+
+  if (!old_name || !new_name) {
+    vfs_scratch_free(new_name);
+    vfs_scratch_free(old_name);
+    return -ENOMEM;
+  }
+
+  err = vfs_lookup_parent(oldpath, &old_parent, old_name, VFS_NAME_MAX + 1);
+  if (err) goto out;
+
+  err = vfs_lookup_parent(newpath, &new_parent, new_name, VFS_NAME_MAX + 1);
+  if (err) goto out;
+
+  if (old_parent->type != VNODE_DIR || new_parent->type != VNODE_DIR) {
+    err = -ENOTDIR;
+    goto out;
+  }
+  if (!old_parent->mount || old_parent->mount != new_parent->mount ||
+      !old_parent->mount->ops || !old_parent->mount->ops->rename) {
+    err = -ENOSYS;
+    goto out;
+  }
+  if (old_parent->mount->flags & MNT_RDONLY) {
+    err = -EROFS;
+    goto out;
+  }
+
+  err = old_parent->mount->ops->rename(old_parent, old_name, new_parent,
+                                       new_name);
+
+out:
+  if (old_parent) vfs_vnode_release(old_parent);
+  if (new_parent) vfs_vnode_release(new_parent);
+  vfs_scratch_free(new_name);
+  vfs_scratch_free(old_name);
+  return err;
+}
+
+int vfs_path_unlink(const char *path) {
+  vnode_t *parent = NULL;
+  char *namebuf = vfs_scratch_alloc();
+  int err;
+
+  if (!namebuf) return -ENOMEM;
+  err = vfs_lookup_parent(path, &parent, namebuf, VFS_NAME_MAX + 1);
+  if (err) {
+    vfs_scratch_free(namebuf);
+    return err;
+  }
+  if (parent->type != VNODE_DIR) {
+    vfs_vnode_release(parent);
+    vfs_scratch_free(namebuf);
+    return -ENOTDIR;
+  }
+  if (!parent->mount || !parent->mount->ops || !parent->mount->ops->unlink) {
+    vfs_vnode_release(parent);
+    vfs_scratch_free(namebuf);
+    return -ENOSYS;
+  }
+  if (parent->mount->flags & MNT_RDONLY) {
+    vfs_vnode_release(parent);
+    vfs_scratch_free(namebuf);
+    return -EROFS;
+  }
+  err = parent->mount->ops->unlink(parent, namebuf);
+  vfs_vnode_release(parent);
+  vfs_scratch_free(namebuf);
+  return err;
+}
+
 /* Cross-module wrapper: execute ops->read in VFS's code segment. */
 long vfs_vnode_read(vnode_t *vn, page_id_t page, uint16_t page_off,
                     uint32_t size, uint32_t off) {
