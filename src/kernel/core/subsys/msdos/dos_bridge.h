@@ -12,12 +12,25 @@
 #include "kernel/core/subsys/subsys.h"
 
 #define DOS_MAX_HANDLES 20
+#define DOS_PATH_MAX 64
+
+/* DOS error codes (AX on error, returned with CF=1). */
+#define DOS_ERR_INVALID_FUNCTION 1
+#define DOS_ERR_FILE_NOT_FOUND 2
+#define DOS_ERR_PATH_NOT_FOUND 3
+#define DOS_ERR_TOO_MANY_OPEN 4
+#define DOS_ERR_ACCESS_DENIED 5
+#define DOS_ERR_INVALID_HANDLE 6
+#define DOS_ERR_INSUFFICIENT_MEMORY 8
+#define DOS_ERR_INVALID_ACCESS 12
+#define DOS_ERR_INVALID_DRIVE 15
+#define DOS_ERR_FILE_EXISTS 80
 
 typedef struct dos_proc {
   /* Handle table: dos_handle -> ppap_fd (-1 = closed) */
   int handle_to_fd[DOS_MAX_HANDLES];
 
-  uint8_t current_drive; /* 0=A, 1=B, ... */
+  uint8_t current_drive; /* 0=A, 1=B, 2=C (default), 25=Z */
 
   /* PSP location */
   uint16_t psp_seg;
@@ -25,6 +38,13 @@ typedef struct dos_proc {
   /* Memory access context */
   void *cpu_state;   /* CPU state for memory access */
   void *ecpu_memory; /* eCPU: flat memory pointer (NULL for native) */
+
+  /* Path infrastructure (§4.4).  exec_dir is dirname() of the running
+   * .COM/.EXE path, captured at load time; C: resolves against it.
+   * cwd_c / cwd_z are relative directories within each drive, ""==root. */
+  char exec_dir[DOS_PATH_MAX];
+  char cwd_c[DOS_PATH_MAX];
+  char cwd_z[DOS_PATH_MAX];
 } dos_proc_t;
 
 /* Layout matches the GP+IRET frame on the user stack at user_SP when
@@ -45,5 +65,8 @@ dos_proc_t *dos_proc_alloc(struct pcb *p);
 
 /* Entry point from native/eCPU traps */
 int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs);
+
+/* Captured by com_loader from argv[0] after on_init. */
+void dos_set_exec_dir(struct pcb *p, const char *exec_path);
 
 #endif /* PPAP_KERNEL_CORE_SUBSYS_MSDOS_DOS_BRIDGE_H */

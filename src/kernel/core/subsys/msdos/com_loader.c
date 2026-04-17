@@ -82,6 +82,12 @@ static int com_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
     if (ops && ops->on_init) ops->on_init(p);
   }
 
+  /* Capture exec dir for C: resolution.  exec.c defaults argv[0] to the
+   * execve path, so it's reliable for the typical call site.  A user who
+   * passes an explicit argv[0] that isn't a real path gets "/" (safe
+   * fallback — C:\ then resolves against root). */
+  if (argv && argv[0]) dos_set_exec_dir(p, argv[0]);
+
   /* 4. Store user SS:SP in PCB and build kernel stack frame */
   p->exec_user_ss = proc_seg;
   p->exec_user_sp = user_sp;

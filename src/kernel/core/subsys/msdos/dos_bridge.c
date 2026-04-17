@@ -6,11 +6,21 @@
 
 #include <stddef.h>
 
+#include "common/errno.h"
+#include "common/fcntl.h"
 #include "kernel/common/core/proc_info.h"
 #include "kernel/core/cpu/cpu.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/syscall/syscall.h"
+
+/* Offsets into the .COM's PSP that the bridge borrows as scratch.  DOS
+ * convention leaves both slots unused for hosted programs. */
+#define DOS_IO_SCRATCH_OFF 0x60u   /* 1-byte I/O staging (fd 0/1)           */
+#define DOS_PATH_SCRATCH_OFF 0x80u /* 128-byte path staging (command tail) */
+#define DOS_PATH_SCRATCH_MAX 128u
+
+#define DOS_FIRST_USER_HANDLE 5
 
 /* Dedicated page for dos_proc_t array to avoid BSS overflow in core segment. */
 static page_id_t dos_data_page = PAGE_ID_INVALID;
@@ -55,12 +65,184 @@ static void msdos_on_init(struct pcb *p) {
   dos.handle_to_fd[3] = 2; /* stdaux -> stderr */
   dos.handle_to_fd[4] = 2; /* stdprn -> stderr */
   dos.cpu_state = p->cpu_state;
+  dos.current_drive = 2; /* C: — exec_dir of the running .COM */
 
   dos_put_proc(p, &dos);
   p->subsys_data = (void *)(uintptr_t)(p - proc_table); /* Store slot index */
 }
 
 static void msdos_on_exit(struct pcb *p) { p->subsys_data = NULL; }
+
+/* ── Exec-path capture ──────────────────────────────────────────────── */
+
+void dos_set_exec_dir(struct pcb *p, const char *exec_path) {
+  if (!p || !exec_path || dos_data_page == PAGE_ID_INVALID) return;
+
+  dos_proc_t dos;
+  dos_get_proc(p, &dos);
+
+  const char *slash = NULL;
+  for (const char *s = exec_path; *s; s++) {
+    if (*s == '/') slash = s;
+  }
+
+  int n = 0;
+  if (!slash || slash == exec_path) {
+    dos.exec_dir[n++] = '/';
+  } else {
+    int len = (int)(slash - exec_path);
+    if (len >= DOS_PATH_MAX) len = DOS_PATH_MAX - 1;
+    for (int i = 0; i < len; i++) dos.exec_dir[n++] = exec_path[i];
+  }
+  dos.exec_dir[n] = '\0';
+
+  dos_put_proc(p, &dos);
+}
+
+/* ── Path resolution ────────────────────────────────────────────────── *
+ *
+ * Stage the translated PPAP path in the .COM's PSP command-tail slot
+ * so the caller can hand DOS_PATH_SCRATCH_OFF straight to sys_open /
+ * sys_unlink / ... as a user pointer — no bypass of the arch
+ * user-pointer translator.
+ *
+ * Assembly happens in a single kernel-stack buffer (sized to the
+ * scratch slot, 128 B) and is flushed in one mem_region_page_write
+ * call.  Compared to byte-at-a-time writes into the user page, this
+ * keeps code size small at the cost of a modest kstack footprint.
+ *
+ * TODO: drop the PSP staging once sys_open accepts (page_id, offset)
+ * directly — the user-pointer translator step belongs in the syscall
+ * dispatcher, not inside sys_open.  Then dos_resolve_user_path can
+ * stage into a kmem-backed scratch page and pass it straight to
+ * sys_open without touching the .COM's segment.  Same applies to
+ * sys_unlink / sys_stat / etc. when D-2e and friends land. */
+
+static int dos_resolve_user_path(dos_proc_t *dos, uint16_t in_seg,
+                                 uint16_t in_off) {
+  page_id_t base = proc_page_backed_base(current);
+  if (base == PAGE_ID_INVALID) return -DOS_ERR_PATH_NOT_FOUND;
+
+  uint8_t drive = dos->current_drive;
+
+  /* Drive letter?  "X:" at the start, where X is a letter. */
+  uint8_t c0 = (uint8_t)current->cpu_ops->read8(dos->cpu_state,
+                                                dos_to_linear(in_seg, in_off));
+  if (c0 && c0 != '\\' && c0 != '/') {
+    uint8_t c1 = (uint8_t)current->cpu_ops->read8(
+        dos->cpu_state, dos_to_linear(in_seg, (uint16_t)(in_off + 1)));
+    if (c1 == ':') {
+      char d = (char)c0;
+      if (d >= 'a' && d <= 'z') d = (char)(d - ('a' - 'A'));
+      if (d == 'C')
+        drive = 2;
+      else if (d == 'Z')
+        drive = 25;
+      else
+        return -DOS_ERR_INVALID_DRIVE;
+      in_off += 2;
+    }
+  }
+
+  const char *root;
+  const char *cwd;
+  if (drive == 2) {
+    root = dos->exec_dir;
+    cwd = dos->cwd_c;
+  } else if (drive == 25) {
+    root = "/";
+    cwd = dos->cwd_z;
+  } else {
+    return -DOS_ERR_INVALID_DRIVE;
+  }
+
+  uint8_t peek = (uint8_t)current->cpu_ops->read8(
+      dos->cpu_state, dos_to_linear(in_seg, in_off));
+  int absolute = (peek == '/' || peek == '\\');
+  if (absolute) in_off++;
+
+  uint8_t buf[DOS_PATH_SCRATCH_MAX];
+  uint16_t n = 0;
+
+  /* Copy root, dropping a trailing '/' so we never emit '//'. */
+  for (int i = 0; root[i]; i++) {
+    if (root[i] == '/' && root[i + 1] == '\0') break;
+    if (n >= DOS_PATH_SCRATCH_MAX - 1) return -DOS_ERR_PATH_NOT_FOUND;
+    buf[n++] = (uint8_t)root[i];
+  }
+
+  if (!absolute && cwd[0]) {
+    if (n >= DOS_PATH_SCRATCH_MAX - 1) return -DOS_ERR_PATH_NOT_FOUND;
+    buf[n++] = '/';
+    for (int i = 0; cwd[i]; i++) {
+      if (n >= DOS_PATH_SCRATCH_MAX - 1) return -DOS_ERR_PATH_NOT_FOUND;
+      buf[n++] = (uint8_t)cwd[i];
+    }
+  }
+
+  peek = (uint8_t)current->cpu_ops->read8(dos->cpu_state,
+                                          dos_to_linear(in_seg, in_off));
+  if (peek) {
+    if (n >= DOS_PATH_SCRATCH_MAX - 1) return -DOS_ERR_PATH_NOT_FOUND;
+    buf[n++] = '/';
+    for (;;) {
+      uint8_t b = (uint8_t)current->cpu_ops->read8(
+          dos->cpu_state, dos_to_linear(in_seg, in_off++));
+      if (b == 0) break;
+      if (b == '\\') b = '/';
+      if (n >= DOS_PATH_SCRATCH_MAX - 1) return -DOS_ERR_PATH_NOT_FOUND;
+      buf[n++] = b;
+    }
+  } else if (n == 0) {
+    buf[n++] = '/';
+  }
+  buf[n] = '\0';
+
+  mem_region_page_write(base, DOS_PATH_SCRATCH_OFF, buf, (uint16_t)(n + 1));
+  return 0;
+}
+
+/* ── Handle table ───────────────────────────────────────────────────── */
+
+static int dos_alloc_handle(dos_proc_t *dos, int fd) {
+  for (int h = DOS_FIRST_USER_HANDLE; h < DOS_MAX_HANDLES; h++) {
+    if (dos->handle_to_fd[h] < 0) {
+      dos->handle_to_fd[h] = fd;
+      return h;
+    }
+  }
+  return -DOS_ERR_TOO_MANY_OPEN;
+}
+
+static int dos_lookup_fd(const dos_proc_t *dos, int handle) {
+  if (handle < 0 || handle >= DOS_MAX_HANDLES) return -DOS_ERR_INVALID_HANDLE;
+  int fd = dos->handle_to_fd[handle];
+  return (fd < 0) ? -DOS_ERR_INVALID_HANDLE : fd;
+}
+
+/* ── errno → DOS error ──────────────────────────────────────────────── */
+
+static int dos_errno_to_dos(int err) {
+  if (err < 0) err = -err;
+  switch (err) {
+    case ENOENT:
+      return DOS_ERR_FILE_NOT_FOUND;
+    case ENOTDIR:
+      return DOS_ERR_PATH_NOT_FOUND;
+    case EMFILE:
+      return DOS_ERR_TOO_MANY_OPEN;
+    case EACCES:
+      return DOS_ERR_ACCESS_DENIED;
+    case EBADF:
+      return DOS_ERR_INVALID_HANDLE;
+    case EEXIST:
+      return DOS_ERR_FILE_EXISTS;
+    case EISDIR:
+      return DOS_ERR_ACCESS_DENIED;
+    default:
+      return DOS_ERR_INVALID_FUNCTION;
+  }
+}
 
 static int msdos_on_proc_read(struct pcb *p, const char *name, char *buf,
                               int bufsiz) {
@@ -89,10 +271,12 @@ const subsys_ops_t msdos_subsys_ops = {
  * For the few INT 21h handlers that move single bytes between fd 0/1 and
  * the kernel, stage the byte through a reserved slot in the .COM's PSP and
  * let sys_write/sys_read translate that proper user-segment offset.  PSP
- * bytes [0x60, 0x70) are unused by .COM convention. */
+ * bytes [0x60, 0x70) are unused by .COM convention.
+ *
+ * TODO: collapse the ifdef once sys_read/sys_write accept (page_id, off)
+ * directly (see also dos_resolve_user_path TODO above).  Both branches
+ * could then share a single kmem-backed scratch byte. */
 #if defined(__ia16__)
-#define DOS_IO_SCRATCH_OFF 0x60u
-
 static long dos_io_putc(uint8_t c) {
   page_id_t base = proc_page_backed_base(current);
   if (base == PAGE_ID_INVALID) return -1;
@@ -205,6 +389,61 @@ static int dos_terminate(dos_proc_t *dos, dos_regs_t *regs) {
   return 0; /* Not reached */
 }
 
+static int dos_open_common(dos_proc_t *dos, dos_regs_t *regs, int flags) {
+  int rc = dos_resolve_user_path(dos, regs->ds, regs->dx);
+  if (rc < 0) return rc;
+
+  long fd = sys_open(DOS_PATH_SCRATCH_OFF, flags, 0644);
+  if (fd < 0) return -dos_errno_to_dos((int)fd);
+
+  int h = dos_alloc_handle(dos, (int)fd);
+  if (h < 0) {
+    sys_close(fd);
+    return h;
+  }
+  regs->ax = (uint16_t)h;
+  return 0;
+}
+
+static int dos_create(dos_proc_t *dos, dos_regs_t *regs) {
+  /* CX = attribute; only RO bit honored, others ignored for now. */
+  return dos_open_common(dos, regs, O_WRONLY | O_CREAT | O_TRUNC);
+}
+
+static int dos_open_file(dos_proc_t *dos, dos_regs_t *regs) {
+  int access = regs->ax & 0x07;
+  int flags;
+  switch (access) {
+    case 0:
+      flags = O_RDONLY;
+      break;
+    case 1:
+      flags = O_WRONLY;
+      break;
+    case 2:
+      flags = O_RDWR;
+      break;
+    default:
+      return -DOS_ERR_INVALID_ACCESS;
+  }
+  return dos_open_common(dos, regs, flags);
+}
+
+static int dos_close_file(dos_proc_t *dos, dos_regs_t *regs) {
+  int handle = regs->bx;
+  int fd = dos_lookup_fd(dos, handle);
+  if (fd < 0) return fd;
+
+  /* Refuse to close reserved standard handles — DOS permits it but it
+   * breaks subsequent INT 21h I/O.  Report success without touching fd. */
+  if (handle < DOS_FIRST_USER_HANDLE) return 0;
+
+  long rc = sys_close(fd);
+  dos->handle_to_fd[handle] = -1;
+  if (rc < 0) return -dos_errno_to_dos((int)rc);
+  return 0;
+}
+
 int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
   uint8_t ah = regs->ax >> 8;
   int ret = 0;
@@ -239,6 +478,15 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
       break;
     case 0x30:
       ret = dos_get_version(dos, regs);
+      break;
+    case 0x3C:
+      ret = dos_create(dos, regs);
+      break;
+    case 0x3D:
+      ret = dos_open_file(dos, regs);
+      break;
+    case 0x3E:
+      ret = dos_close_file(dos, regs);
       break;
     case 0x4C:
       ret = dos_terminate(dos, regs);
