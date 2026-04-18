@@ -63,8 +63,6 @@ static int exe_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
   page_id_t base_id = mem_region_page_alloc_largest_contiguous(
       DOS_SEG_PAGES, DOS_SEG_PAGES_MAX, &got_pages);
   if (base_id == PAGE_ID_INVALID) return -(int)ENOMEM;
-  mod_vfs.klogf("[msdos] exe_loader: got %u pages (cap %u)\n",
-                (unsigned)got_pages, (unsigned)DOS_SEG_PAGES_MAX);
 
   uint32_t base_linear = mem_region_page_linear(base_id);
   uint16_t proc_seg = (uint16_t)(base_linear >> 4);
@@ -87,7 +85,7 @@ static int exe_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
   /* 3. Validate header and compute image size.  dos_build_exe_image()
    *    repeats these checks; doing them here lets us reject before
    *    touching the run. */
-  if (hdr.header_size < 2) {
+  if (hdr.header_size < 2 || hdr.page_count == 0) {
     exe_free_run(base_id, got_pages);
     return -(int)ENOEXEC;
   }
@@ -110,10 +108,6 @@ static int exe_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
   uint32_t total_bytes = 0x100u + code_size + (uint32_t)hdr.min_alloc * 16u;
   uint32_t pages_needed = (total_bytes + PAGE_SIZE - 1) / PAGE_SIZE;
   if (pages_needed > got_pages) {
-    mod_vfs.klogf(
-        "[msdos] exe_loader: need %u pages, got %u (code=%u min_alloc=%u)\n",
-        (unsigned)pages_needed, (unsigned)got_pages, (unsigned)code_size,
-        (unsigned)hdr.min_alloc);
     exe_free_run(base_id, got_pages);
     return -(int)ENOMEM;
   }

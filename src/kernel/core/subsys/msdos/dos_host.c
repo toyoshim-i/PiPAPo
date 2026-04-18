@@ -240,6 +240,7 @@ int dos_build_exe_image(page_id_t base_id, uint16_t proc_seg,
   /* Size math from the header. */
   uint32_t header_bytes = (uint32_t)hdr->header_size * 16u;
   if (hdr->header_size < 2u) return -(int)ENOEXEC;
+  if (hdr->page_count == 0) return -(int)ENOEXEC;
   if (header_bytes > file_size) return -(int)ENOEXEC;
 
   uint32_t image_bytes = (uint32_t)hdr->page_count * 512u;

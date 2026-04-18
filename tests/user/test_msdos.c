@@ -1057,6 +1057,72 @@ static void test_exe_reloc_farjmp(void)
     UT_ASSERT_EQ(code, 42);
 }
 
+/* -- Test 20: multiseg.exe --- DS != CS != PSP via reloc, INT 21h AH=09h -- */
+/*
+ * Confirms the DOS bridge resolves DS:DX correctly when DS is neither
+ * the PSP segment nor the code segment.  The program relocates a 16-bit
+ * immediate to load_seg + 2, loads DS from it, then asks AH=09h to
+ * print a string at DS:0000.
+ *
+ *   load_seg:0000  B8 02 00        ; MOV AX, 0002h    (relocated)
+ *   load_seg:0003  8E D8            ; MOV DS, AX       (DS = load_seg+2)
+ *   load_seg:0005  B4 09            ; MOV AH, 09h
+ *   load_seg:0007  BA 00 00         ; MOV DX, 0
+ *   load_seg:000A  CD 21            ; INT 21h          (print DS:0 = msg)
+ *   load_seg:000C  B8 00 4C         ; MOV AX, 4C00h
+ *   load_seg:000F  CD 21            ; INT 21h          (exit 0)
+ *   load_seg:0020  "Multi!\r\n$"                       (9 bytes)
+ *
+ * msg sits at (load_seg+2):0 = load_seg:0x20 = image offset 0x20.  The
+ * relocation entry patches the imm16 at (seg=0):offset=1 from 0x0002 to
+ * 0x0002 + load_seg, so DS ends up pointing at the second paragraph of
+ * the image — distinct from PSP (proc_seg), load_seg, and the stack
+ * segment (init_ss+load_seg).
+ */
+static const unsigned char exe_multiseg_exe[] = {
+    /* MZ header (32 bytes) */
+    'M', 'Z',
+    0x49, 0x00,                     /* last_page_size = 73              */
+    0x01, 0x00,                     /* page_count = 1                   */
+    0x01, 0x00,                     /* reloc_count = 1                  */
+    0x02, 0x00,                     /* header_size = 2 para             */
+    0x20, 0x00,                     /* min_alloc                        */
+    0xFF, 0xFF,                     /* max_alloc                        */
+    0x10, 0x00,                     /* init_ss                          */
+    0x00, 0x01,                     /* init_sp                          */
+    0x00, 0x00,                     /* checksum                         */
+    0x00, 0x00,                     /* init_ip                          */
+    0x00, 0x00,                     /* init_cs                          */
+    0x1C, 0x00,                     /* reloc_offset                     */
+    0x00, 0x00,                     /* overlay                          */
+    /* Reloc entry: patch (seg=0):offset=1 — the imm16 of MOV AX */
+    0x01, 0x00, 0x00, 0x00,
+
+    /* Image at load_seg:0 (file offset 0x20) */
+    0xB8, 0x02, 0x00,               /* MOV AX, 0002h  (reloc target)    */
+    0x8E, 0xD8,                     /* MOV DS, AX                       */
+    0xB4, 0x09,                     /* MOV AH, 09h                      */
+    0xBA, 0x00, 0x00,               /* MOV DX, 0                        */
+    0xCD, 0x21,                     /* INT 21h                          */
+    0xB8, 0x00, 0x4C,               /* MOV AX, 4C00h                    */
+    0xCD, 0x21,                     /* INT 21h                          */
+    /* Pad image offset 0x11..0x1F to reach the msg at 0x20 */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    /* 0x20: msg */
+    'M', 'u', 'l', 't', 'i', '!', '\r', '\n', '$',
+};
+
+static void test_exe_multiseg_ds(void)
+{
+    WRITE_EXE("/tmp/dos_ms.exe", exe_multiseg_exe);
+    char buf[64];
+    int n = run_com_capture("/tmp/dos_ms.exe", buf, sizeof(buf));
+    UT_ASSERT(n >= 6, "multiseg.exe produced output");
+    UT_ASSERT(buf[0] == 'M' && buf[1] == 'u' && buf[2] == 'l' && buf[3] == 't' &&
+                  buf[4] == 'i' && buf[5] == '!',
+              "output is Multi!");
+}
+
 /* -- main ----------------------------------------------------------------- */
 
 int main(void)
@@ -1080,6 +1146,7 @@ int main(void)
     test_exe_exit_code();
     test_exe_hello();
     test_exe_reloc_farjmp();
+    test_exe_multiseg_ds();
 
     UT_SUMMARY("test_msdos");
 }
