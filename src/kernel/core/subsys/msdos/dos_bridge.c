@@ -21,7 +21,9 @@
 #define DOS_IO_SCRATCH_OFF 0x800u   /* 1-byte staging for fd 0/1 byte I/O   */
 #define DOS_PATH_SCRATCH_OFF 0x810u /* 128-byte staging for resolved paths */
 #define DOS_PATH_SCRATCH_MAX 128u
-#define DOS_SCRATCH_END (DOS_PATH_SCRATCH_OFF + DOS_PATH_SCRATCH_MAX)
+#define DOS_PATH_SCRATCH2_OFF \
+  (DOS_PATH_SCRATCH_OFF + DOS_PATH_SCRATCH_MAX) /* second slot for RENAME */
+#define DOS_SCRATCH_END (DOS_PATH_SCRATCH2_OFF + DOS_PATH_SCRATCH_MAX)
 
 #define DOS_FIRST_USER_HANDLE 5
 
@@ -496,6 +498,186 @@ static int dos_lseek(dos_proc_t *dos, dos_regs_t *regs) {
   return 0;
 }
 
+/* AH=39h MKDIR / AH=3Ah RMDIR — DS:DX = path. */
+static int dos_mkdir(dos_proc_t *dos, dos_regs_t *regs) {
+  int rc = dos_resolve_user_path(dos, regs->ds, regs->dx);
+  if (rc < 0) return rc;
+  long r = sys_mkdir(dos_data_page, DOS_PATH_SCRATCH_OFF, 0755);
+  if (r < 0) return -dos_errno_to_dos((int)r);
+  return 0;
+}
+
+static int dos_rmdir(dos_proc_t *dos, dos_regs_t *regs) {
+  int rc = dos_resolve_user_path(dos, regs->ds, regs->dx);
+  if (rc < 0) return rc;
+  long r = sys_rmdir(dos_data_page, DOS_PATH_SCRATCH_OFF);
+  if (r < 0) return -dos_errno_to_dos((int)r);
+  return 0;
+}
+
+/* AH=3Bh CHDIR — DS:DX = path.  DOS chdir is per-DOS-process state
+ * (per drive cwd_c / cwd_z), independent of the kernel's process cwd.
+ * Resolution rules from §4.4: drive letter selects cwd_c or cwd_z;
+ * absolute path replaces it, relative path appends. */
+static int dos_chdir(dos_proc_t *dos, dos_regs_t *regs) {
+  /* Read DOS path from user segment into a small kstack buffer.  The
+   * subsequent path-existence check happens via dos_resolve_user_path
+   * + a sys_open + sys_close round-trip; the resolved scratch path
+   * then mirrors what file ops will see, so chdir leaves the bridge
+   * in a self-consistent state. */
+  int rc = dos_resolve_user_path(dos, regs->ds, regs->dx);
+  if (rc < 0) return rc;
+
+  /* Verify the target exists and is a directory by opening it
+   * read-only.  If sys_open succeeds we close immediately. */
+  long fd = sys_open(dos_data_page, DOS_PATH_SCRATCH_OFF, O_RDONLY, 0);
+  if (fd < 0) return -dos_errno_to_dos((int)fd);
+  sys_close(fd);
+
+  /* Re-parse the DOS path to decide which drive's cwd to update.
+   * Read raw DOS path again into a kstack buffer (small, <= 64). */
+  uint8_t drive = dos->current_drive;
+  uint16_t in_off = regs->dx;
+  uint8_t c0 = (uint8_t)current->cpu_ops->read8(
+      dos->cpu_state, ((uint32_t)regs->ds << 4) + in_off);
+  if (c0 && c0 != '\\' && c0 != '/') {
+    uint8_t c1 = (uint8_t)current->cpu_ops->read8(
+        dos->cpu_state, ((uint32_t)regs->ds << 4) + in_off + 1);
+    if (c1 == ':') {
+      char d = (char)c0;
+      if (d >= 'a' && d <= 'z') d = (char)(d - ('a' - 'A'));
+      if (d == 'C')
+        drive = 2;
+      else if (d == 'Z')
+        drive = 25;
+      else
+        return -DOS_ERR_INVALID_DRIVE;
+      in_off += 2;
+    }
+  }
+
+  char *cwd_buf = (drive == 2) ? dos->cwd_c : dos->cwd_z;
+  if (drive != 2 && drive != 25) return -DOS_ERR_INVALID_DRIVE;
+
+  /* Copy the remaining DOS path (post-drive-letter) into cwd_buf,
+   * converting backslashes and skipping a leading separator. */
+  uint8_t peek = (uint8_t)current->cpu_ops->read8(
+      dos->cpu_state, ((uint32_t)regs->ds << 4) + in_off);
+  if (peek == '/' || peek == '\\') in_off++;
+
+  int n = 0;
+  for (;;) {
+    if (n >= DOS_PATH_MAX - 1) return -DOS_ERR_PATH_NOT_FOUND;
+    uint8_t b = (uint8_t)current->cpu_ops->read8(
+        dos->cpu_state, ((uint32_t)regs->ds << 4) + in_off++);
+    if (b == 0) break;
+    cwd_buf[n++] = (b == '\\') ? '/' : (char)b;
+  }
+  cwd_buf[n] = '\0';
+
+  /* Switch active drive too (DOS does this implicitly). */
+  dos->current_drive = drive;
+  return 0;
+}
+
+/* AH=47h GETCWD — DL = drive (1=A, 2=B, ..., 0=current),
+ * DS:SI = buffer (≥ 64 bytes per DOS spec; we cap by DOS_PATH_MAX).
+ * Writes ASCIIZ path *without* drive letter or leading slash. */
+static int dos_getcwd(dos_proc_t *dos, dos_regs_t *regs) {
+  uint8_t dl = (uint8_t)(regs->dx & 0xFF);
+  uint8_t drive = (dl == 0) ? dos->current_drive : (uint8_t)(dl - 1);
+  const char *cwd;
+  if (drive == 2)
+    cwd = dos->cwd_c;
+  else if (drive == 25)
+    cwd = dos->cwd_z;
+  else
+    return -DOS_ERR_INVALID_DRIVE;
+
+  /* Skip any leading '/' so the result is root-relative per DOS. */
+  while (*cwd == '/') cwd++;
+
+  /* Write ASCIIZ to user DS:SI byte-by-byte (fits in 64 bytes). */
+  uint16_t out = regs->si;
+  int n = 0;
+  for (; cwd[n]; n++) {
+    if (n >= DOS_PATH_MAX) return -DOS_ERR_PATH_NOT_FOUND;
+    current->cpu_ops->write8(
+        dos->cpu_state, ((uint32_t)regs->ds << 4) + out + n, (uint8_t)cwd[n]);
+  }
+  current->cpu_ops->write8(dos->cpu_state, ((uint32_t)regs->ds << 4) + out + n,
+                           0);
+  /* DOS spec: AX is preserved on success.  Some sources say AX=0100h
+   * — we leave it untouched to match common reference docs. */
+  return 0;
+}
+
+/* AH=45h DUP — BX = handle.  Returns AX = new handle. */
+static int dos_dup(dos_proc_t *dos, dos_regs_t *regs) {
+  int handle = regs->bx;
+  int fd = dos_lookup_fd(dos, handle);
+  if (fd < 0) return fd;
+
+  long newfd = sys_dup(fd);
+  if (newfd < 0) return -dos_errno_to_dos((int)newfd);
+
+  int h = dos_alloc_handle(dos, (int)newfd);
+  if (h < 0) {
+    sys_close(newfd);
+    return h;
+  }
+  regs->ax = (uint16_t)h;
+  return 0;
+}
+
+/* AH=46h DUP2 — BX = source handle, CX = target handle. */
+static int dos_dup2(dos_proc_t *dos, dos_regs_t *regs) {
+  int src_h = regs->bx;
+  int dst_h = regs->cx;
+  int src_fd = dos_lookup_fd(dos, src_h);
+  if (src_fd < 0) return src_fd;
+  if (dst_h < 0 || dst_h >= DOS_MAX_HANDLES) return -DOS_ERR_INVALID_HANDLE;
+
+  /* If destination DOS handle already maps to an fd, close the
+   * underlying fd first (DOS DUP2 closes the destination if open). */
+  int dst_fd_existing = dos->handle_to_fd[dst_h];
+  if (dst_fd_existing >= 0 && dst_h >= DOS_FIRST_USER_HANDLE)
+    sys_close(dst_fd_existing);
+
+  long newfd = sys_dup(src_fd);
+  if (newfd < 0) return -dos_errno_to_dos((int)newfd);
+  dos->handle_to_fd[dst_h] = (int)newfd;
+  return 0;
+}
+
+/* AH=56h RENAME — DS:DX = old path, ES:DI = new path. */
+static int dos_rename(dos_proc_t *dos, dos_regs_t *regs) {
+  /* Resolve old path into the primary scratch slot, then copy the
+   * resolved bytes into the secondary slot so the next resolve
+   * doesn't clobber them. */
+  int rc = dos_resolve_user_path(dos, regs->ds, regs->dx);
+  if (rc < 0) return rc;
+  uint8_t buf;
+  uint16_t i = 0;
+  for (; i < DOS_PATH_SCRATCH_MAX; i++) {
+    mem_region_page_read(dos_data_page, (uint16_t)(DOS_PATH_SCRATCH_OFF + i),
+                         &buf, 1);
+    mem_region_page_write(dos_data_page, (uint16_t)(DOS_PATH_SCRATCH2_OFF + i),
+                          &buf, 1);
+    if (buf == 0) break;
+  }
+  if (i >= DOS_PATH_SCRATCH_MAX) return -DOS_ERR_PATH_NOT_FOUND;
+
+  /* Resolve new path into the primary slot. */
+  rc = dos_resolve_user_path(dos, regs->es, regs->di);
+  if (rc < 0) return rc;
+
+  long r = sys_rename(dos_data_page, DOS_PATH_SCRATCH2_OFF, dos_data_page,
+                      DOS_PATH_SCRATCH_OFF);
+  if (r < 0) return -dos_errno_to_dos((int)r);
+  return 0;
+}
+
 int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
   uint8_t ah = regs->ax >> 8;
   int ret = 0;
@@ -531,6 +713,15 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
     case 0x30:
       ret = dos_get_version(dos, regs);
       break;
+    case 0x39:
+      ret = dos_mkdir(dos, regs);
+      break;
+    case 0x3A:
+      ret = dos_rmdir(dos, regs);
+      break;
+    case 0x3B:
+      ret = dos_chdir(dos, regs);
+      break;
     case 0x3C:
       ret = dos_create(dos, regs);
       break;
@@ -552,8 +743,20 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
     case 0x42:
       ret = dos_lseek(dos, regs);
       break;
+    case 0x45:
+      ret = dos_dup(dos, regs);
+      break;
+    case 0x46:
+      ret = dos_dup2(dos, regs);
+      break;
+    case 0x47:
+      ret = dos_getcwd(dos, regs);
+      break;
     case 0x4C:
       ret = dos_terminate(dos, regs);
+      break;
+    case 0x56:
+      ret = dos_rename(dos, regs);
       break;
     default:
       ret = -DOS_ERR_INVALID_FUNCTION;

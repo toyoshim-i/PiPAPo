@@ -12,14 +12,26 @@ on a V30/8086 target.
 - Native ia16 path is the only one wired today: pcxt boots, INT 21h is
   trapped through `dos_trap.S`, and `.COM` programs run on real-mode
   8086 directly.  The i8086 eCPU path described below is not built yet.
-- Phase D-1 (.COM loader + minimal INT 21h) is complete.  `test_msdos`
-  passes 12/12 on pcxt: AH=02h, 09h, 30h, 4Ch are exercised end-to-end.
+- Phases **D-1, D-2, and D-3** are complete.  `test_msdos` reports
+  43/43 sub-tests on pcxt covering exit, console I/O, version, OPEN /
+  CREATE / CLOSE, READ / WRITE, DELETE / LSEEK, MKDIR / RMDIR, DUP,
+  RENAME, plus error-path coverage (bad handle, bad whence, invalid
+  drive, missing file, double close).
+- INT 21h surface today: AH=01h, 02h, 08h, 09h, 0Ah, 0Bh (stub), 19h,
+  2Ah/2Ch (stubs — no RTC), 30h, 39h, 3Ah, 3Bh, 3Ch, 3Dh, 3Eh, 3Fh,
+  40h, 41h, 42h, 45h, 46h, 47h, 4Ch, 56h.
 - `SUBSYS_MSDOS = 4` is registered; `subsys.c` wires `msdos_subsys_ops`.
 - Implementation files landed under
   `src/kernel/core/subsys/msdos/`: `dos_bridge.{c,h}`, `dos_host.{c,h}`
   (PSP/binary load, was `dos_com_loader` in the original sketch),
   `com_loader.{c,h}` (loader_t registration), and the trap entry
   `src/arch/i16/kernel/core/dos_trap.S`.
+- All path-taking syscalls (`sys_open`, `sys_unlink`, `sys_mkdir`,
+  `sys_rename`, `sys_chdir`, `sys_stat`, …) take `(page_id_t, uint16_t)`
+  for each path argument.  The DOS bridge stages resolved paths into
+  a kmem-backed scratch slot inside `dos_data_page` and passes the
+  `(page, off)` pair straight to `sys_*` — no PSP staging, no
+  per-arch ifdef.
 
 ---
 
@@ -329,15 +341,15 @@ These cover enough to run simple DOS .COM utilities:
 | 2Ch | Get time | `sys_gettimeofday()` → hour/min/sec | stub (fixed time) |
 | 30h | Get DOS version | Return 3.30 (static) | done |
 | 35h | Get interrupt vector | Read from emulated IVT | TODO |
-| 3Ch | Create file | `sys_open(path, O_CREAT\|O_TRUNC\|O_WRONLY)` | TODO |
-| 3Dh | Open file | `sys_open(path, mode)` | TODO |
-| 3Eh | Close file | `sys_close(handle)` | TODO |
-| 3Fh | Read file | `sys_read(handle, buf, count)` | TODO |
-| 40h | Write file | `sys_write(handle, buf, count)` | TODO |
-| 41h | Delete file | `sys_unlink(path)` | TODO |
-| 42h | Seek (LSEEK) | `sys_lseek(handle, offset, whence)` | TODO |
+| 3Ch | Create file | `sys_open(path, O_CREAT\|O_TRUNC\|O_WRONLY)` | done |
+| 3Dh | Open file | `sys_open(path, mode)` | done |
+| 3Eh | Close file | `sys_close(handle)` | done |
+| 3Fh | Read file | `sys_read(handle, buf, count)` | done |
+| 40h | Write file | `sys_write(handle, buf, count)` | done |
+| 41h | Delete file | `sys_unlink(path)` | done |
+| 42h | Seek (LSEEK) | `sys_lseek(handle, offset, whence)` | done |
 | 43h | Get/set file attributes | Stub (return 0x20 archive) | TODO |
-| 47h | Get current directory | Return `dos->cwd[drive]` | TODO |
+| 47h | Get current directory | Return `dos->cwd[drive]` | done |
 | 4Ch | Terminate with code | `sys_exit(code)` | done |
 
 #### Phase 2 — File System Extensions (~15 functions)
@@ -830,9 +842,38 @@ Audit every D-2 handler against §4.5:
 - AH=45h/46h DUP / DUP2.
 - AH=4Eh/4Fh FindFirst / FindNext.
 - AH=56h RENAME (already in §4.2 Phase 2 table).
-- Inheritable-handle accounting in PSP[0x32] (deferred until EXEC in D-4).
+- Inheritable-handle accounting in PSP[0x32] (deferred until EXEC in D-5).
 
-### Phase D-3: .EXE Loading
+### Phase D-3: Directory + handle housekeeping — DONE
+
+**Goal**: Common DOS file/directory housekeeping calls work, so DOS
+programs can navigate, manipulate the filesystem, and reuse handles.
+
+1. ✓ AH=39h MKDIR / AH=3Ah RMDIR — `sys_mkdir` / `sys_rmdir` via
+   `dos_resolve_user_path` + kmem scratch.
+2. ✓ AH=3Bh CHDIR / AH=47h GETCWD — per-DOS-process state in
+   `dos_proc_t.cwd_c` / `cwd_z` (independent of the kernel cwd).
+   CHDIR verifies the target exists via a `sys_open` round-trip and
+   updates `current_drive`.
+3. ✓ AH=45h DUP / AH=46h DUP2 — wrap `sys_dup`.  DUP2 closes the
+   destination's underlying fd before installing the duplicate.
+4. ✓ AH=56h RENAME — uses both scratch slots
+   (`DOS_PATH_SCRATCH_OFF` and `DOS_PATH_SCRATCH2_OFF`) so both
+   resolved paths can be passed to `sys_rename`.
+
+**Verification**: `test_msdos` gains `test_mkdir_rmdir`, `test_dup_handle`,
+and `test_rename` (43/43 sub-tests on pcxt).
+
+**Out of scope for D-3** (kept for later phases):
+- AH=43h GET/SET attributes (need a stat-driven mode → DOS attribute
+  byte mapping).
+- AH=06h direct console I/O (needs non-blocking read semantics).
+- AH=4Eh/4Fh FindFirst / FindNext (DTA layout + 8.3 pattern matching).
+- AH=2Ah/2Ch real date/time (no RTC source; current stubs return
+  fixed values).
+- AH=25h/35h interrupt vector get/set (emulated IVT).
+
+### Phase D-4: .EXE Loading
 
 **Goal**: Multi-segment DOS .EXE programs run.
 
@@ -843,7 +884,7 @@ Audit every D-2 handler against §4.5:
 **Verification**: A simple .EXE program (compiled with OpenWatcom or
 ia16-elf-gcc) runs correctly.
 
-### Phase D-4: Memory and Process Management
+### Phase D-5: Memory and Process Management
 
 **Goal**: DOS programs can allocate memory and spawn child processes.
 
@@ -854,7 +895,7 @@ ia16-elf-gcc) runs correctly.
 **Verification**: A parent .COM launches a child .COM and retrieves its
 exit code.
 
-### Phase D-5: Console and Keyboard
+### Phase D-6: Console and Keyboard
 
 **Goal**: Interactive DOS programs work.
 
@@ -865,7 +906,7 @@ exit code.
 **Verification**: A simple DOS text editor or menu-driven program works
 interactively.
 
-### Phase D-6: FCB Operations and Compatibility
+### Phase D-7: FCB Operations and Compatibility
 
 **Goal**: DOS 1.x programs using FCBs work.
 
@@ -875,7 +916,7 @@ interactively.
 
 **Verification**: Classic DOS utilities (EDLIN, DEBUG) run.
 
-### Phase D-7: Trace Integration
+### Phase D-8: Trace Integration
 
 **Goal**: `trace --subsys` and `pdb` work with DOS programs.
 
@@ -999,11 +1040,12 @@ INT 21h handlers should keep them in mind.
 i8086 eCPU (docs/proposals/i8086_ecpu.md)
   └─→ D-1 (.COM + minimal INT 21h)
         └─→ D-2 (file I/O)
-              └─→ D-3 (.EXE loading)
-              └─→ D-4 (memory + process)
-              └─→ D-5 (console + keyboard)
-                    └─→ D-6 (FCB + compat)
-                          └─→ D-7 (trace integration)
+              └─→ D-3 (directory + handle housekeeping)
+                    └─→ D-4 (.EXE loading)
+                    └─→ D-5 (memory + process)
+                    └─→ D-6 (console + keyboard)
+                          └─→ D-7 (FCB + compat)
+                                └─→ D-8 (trace integration)
 ```
 
 The i8086 eCPU must be functional before any DOS subsystem work begins

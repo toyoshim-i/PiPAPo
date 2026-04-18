@@ -653,6 +653,241 @@ static void test_bad_whence(void)
     UT_ASSERT_EQ(code, 0);
 }
 
+/* -- Test 14: mkdir_rmdir.com --- AH=39h MKDIR + AH=3Ah RMDIR ----------- */
+/*
+ *   MOV AH, 39h     ; B4 39       — MKDIR
+ *   MOV DX, path    ; BA 1C 01
+ *   INT 21h         ; CD 21
+ *   JC fail
+ *   MOV AH, 3Ah     ; B4 3A       — RMDIR
+ *   MOV DX, path
+ *   INT 21h
+ *   JC fail
+ *   MOV AX, 4C00h   ; exit 0
+ *   INT 21h
+ * fail: MOV AX, 4C01h ; INT 21h
+ *   db "C:\D3DIR", 0  at 0x011C
+ */
+static const unsigned char mkdir_rmdir_com[] = {
+    0xB4, 0x39,                 /* MOV AH, 39h */
+    0xBA, 0x1C, 0x01,           /* MOV DX, 011Ch */
+    0xCD, 0x21,                 /* INT 21h */
+    0x72, 0x0E,                 /* JC fail */
+    0xB4, 0x3A,                 /* MOV AH, 3Ah */
+    0xBA, 0x1C, 0x01,           /* MOV DX, 011Ch */
+    0xCD, 0x21,                 /* INT 21h */
+    0x72, 0x05,                 /* JC fail */
+    0xB8, 0x00, 0x4C,           /* MOV AX, 4C00h */
+    0xCD, 0x21,
+    0xB8, 0x01, 0x4C,           /* MOV AX, 4C01h */
+    0xCD, 0x21,
+    'C', ':', '\\', 'D', '3', 'D', 'I', 'R', 0,
+};
+
+static void test_mkdir_rmdir(void)
+{
+    /* Make sure the dir doesn't exist beforehand. */
+    rmdir("/tmp/D3DIR");
+    WRITE_COM("/tmp/dos_md.com", mkdir_rmdir_com);
+    int code = run_com("/tmp/dos_md.com");
+    UT_ASSERT_EQ(code, 0);
+    /* RMDIR ran inside the .COM, so directory should be gone now. */
+    struct stat st;
+    UT_ASSERT(stat("/tmp/D3DIR", &st) < 0, "D3DIR removed by DOS RMDIR");
+}
+
+/* -- Test 15: dup_handle.com --- AH=45h DUP --------------------------- */
+/*
+ * Create a file, DUP the handle, write through the duped handle, then
+ * CLOSE the duped handle.  The .COM exits without explicitly closing
+ * the source handle — kernel cleanup releases it on exit.  Host-side
+ * verifies the resulting file has 2 bytes.
+ *
+ * Layout (recounted carefully):
+ *   0x100  CREATE        14   B4 3C; B9 00 00; BA pp pp; CD 21; 72 dd; 89 C3
+ *   0x10E  DUP            6   B4 45; CD 21; 72 dd
+ *   0x114  CMP/JB         5   3D 05 00; 72 dd        (handle ≥ 5)
+ *   0x119  MOV BX,AX      2   89 C3
+ *   0x11B  WRITE         17   B4 40; B9 02 00; BA dd dd; CD 21; 72 dd;
+ *                              3D 02 00; 75 dd
+ *   0x12C  CLOSE          6   B4 3E; CD 21; 72 dd
+ *   0x132  exit 0         5   B8 00 4C; CD 21
+ *   0x137  fail           5   B8 01 4C; CD 21
+ *   0x13C  data "ok"      2
+ *   0x13E  path           13  "C:\D3DUP.TXT" + NUL
+ *   end    0x14B = 75 bytes
+ *
+ * Fail target = 0x137; JC/JNE displacements:
+ *   0x10A → 0x137-0x10C = 0x2B
+ *   0x112 → 0x137-0x114 = 0x23
+ *   0x117 (JB) → 0x137-0x119 = 0x1E
+ *   0x125 → 0x137-0x127 = 0x10
+ *   0x12A (JNE) → 0x137-0x12C = 0x0B
+ *   0x130 → 0x137-0x132 = 0x05
+ */
+static const unsigned char dup_handle_com[] = {
+    /* 0x100: CREATE */
+    0xB4, 0x3C,                 /* MOV AH, 3Ch */
+    0xB9, 0x00, 0x00,           /* MOV CX, 0 */
+    0xBA, 0x3E, 0x01,           /* MOV DX, 013Eh (path) */
+    0xCD, 0x21,                 /* INT 21h */
+    0x72, 0x2B,                 /* JC fail */
+    0x89, 0xC3,                 /* MOV BX, AX (handle1) */
+    /* 0x10E: DUP */
+    0xB4, 0x45,                 /* MOV AH, 45h */
+    0xCD, 0x21,                 /* INT 21h */
+    0x72, 0x23,                 /* JC fail */
+    /* 0x114: CMP AX,5 ; JB fail (handle2 must be ≥5) */
+    0x3D, 0x05, 0x00,           /* CMP AX, 5 */
+    0x72, 0x1E,                 /* JB fail */
+    /* 0x119: MOV BX, AX */
+    0x89, 0xC3,                 /* MOV BX, AX */
+    /* 0x11B: WRITE */
+    0xB4, 0x40,                 /* MOV AH, 40h */
+    0xB9, 0x02, 0x00,           /* MOV CX, 2 */
+    0xBA, 0x3C, 0x01,           /* MOV DX, 013Ch (data) */
+    0xCD, 0x21,                 /* INT 21h */
+    0x72, 0x10,                 /* JC fail */
+    0x3D, 0x02, 0x00,           /* CMP AX, 2 */
+    0x75, 0x0B,                 /* JNE fail */
+    /* 0x12C: CLOSE handle2 */
+    0xB4, 0x3E,                 /* MOV AH, 3Eh */
+    0xCD, 0x21,                 /* INT 21h */
+    0x72, 0x05,                 /* JC fail */
+    /* 0x132: exit 0 */
+    0xB8, 0x00, 0x4C,
+    0xCD, 0x21,
+    /* 0x137: fail */
+    0xB8, 0x01, 0x4C,
+    0xCD, 0x21,
+    /* 0x13C: data */
+    'o', 'k',
+    /* 0x13E: path */
+    'C', ':', '\\', 'D', '3', 'D', 'U', 'P', '.', 'T', 'X', 'T', 0,
+};
+
+static void test_dup_handle(void)
+{
+    unlink("/tmp/D3DUP.TXT");
+    WRITE_COM("/tmp/dos_dp.com", dup_handle_com);
+    int code = run_com("/tmp/dos_dp.com");
+    UT_ASSERT_EQ(code, 0);
+    /* File should exist with the 2 bytes written via the duped handle. */
+    struct stat st;
+    UT_ASSERT_EQ(stat("/tmp/D3DUP.TXT", &st), 0);
+    UT_ASSERT_EQ(st.st_size, 2);
+    unlink("/tmp/D3DUP.TXT");
+}
+
+/* -- Test 16: rename.com --- AH=56h RENAME ------------------------------ */
+/*
+ *   CREATE "C:\OLD.TXT" → handle in BX
+ *   CLOSE
+ *   MOV AX, 5600h                — RENAME (no sub-function)
+ *   MOV DX, old_path             — DS:DX = old
+ *   PUSH ES ; PUSH DS ; POP ES   — DOS contract: ES:DI = new path; for
+ *                                  .COM with ES=DS we just leave ES alone
+ *                                  but set DI explicitly.
+ *   POP ES (skip — already proc_seg)
+ *   MOV DI, new_path
+ *   INT 21h
+ *   JC fail
+ *   OPEN "C:\NEW.TXT" → handle, CLOSE, DELETE
+ *   exit
+ *
+ * For tiny model .COMs ES = DS = SS already, so we just need to MOV DI.
+ * Layout (inside the segment):
+ *   0x100  CREATE              14
+ *   0x10E  CLOSE                6
+ *   0x114  RENAME (with MOV DI) 12  (B8 00 56; BA pp pp; BF qq qq; CD 21; 72 dd)
+ *           wait let me recount:
+ *           B8 00 56 (3) MOV AX, 5600h
+ *           BA 6F 01 (3) MOV DX, old
+ *           BF 78 01 (3) MOV DI, new
+ *           CD 21 (2)
+ *           72 dd (2)    JC fail
+ *           = 13 bytes
+ *   0x121  OPEN R/O           12 (B8 00 3D; BA qq qq; CD 21; JC; MOV BX,AX)
+ *   0x12D  CLOSE              6
+ *   0x133  DELETE             9 (B4 41; BA qq qq; CD 21; JC fail)
+ *   0x13C  exit 0             5
+ *   0x141  fail               5
+ *   0x146  old "C:\OLD.TXT" + NUL (11 bytes)
+ *   0x151  new "C:\NEW.TXT" + NUL (11 bytes)
+ *   end 0x15C = 92 bytes
+ *
+ * Wait — old and new offsets should be 0x146 and 0x151.
+ * Let me recompute:
+ *   0x100 + 14 = 0x10E (CREATE end)
+ *   0x10E + 6 = 0x114 (CLOSE end)
+ *   0x114 + 13 = 0x121 (RENAME end)
+ *   0x121 + 12 = 0x12D (OPEN end)
+ *   0x12D + 6 = 0x133 (CLOSE2 end)
+ *   0x133 + 9 = 0x13C (DELETE end)
+ *   0x13C + 5 = 0x141 (exit 0 end)
+ *   0x141 + 5 = 0x146 (fail end, data starts here)
+ *   0x146..0x150: "C:\OLD.TXT\0" (11 bytes)
+ *   0x151..0x15B: "C:\NEW.TXT\0" (11 bytes)
+ *   0x15C end (92 bytes total)
+ */
+static const unsigned char rename_com[] = {
+    /* 0x100: CREATE old */
+    0xB4, 0x3C,                 /* MOV AH, 3Ch */
+    0xB9, 0x00, 0x00,           /* MOV CX, 0 */
+    0xBA, 0x46, 0x01,           /* MOV DX, 0146h (old) */
+    0xCD, 0x21,                 /* INT 21h */
+    0x72, 0x35,                 /* JC fail (+0x35=53) */
+    0x89, 0xC3,                 /* MOV BX, AX */
+    /* 0x10E: CLOSE */
+    0xB4, 0x3E,                 /* MOV AH, 3Eh */
+    0xCD, 0x21,                 /* INT 21h */
+    0x72, 0x2F,                 /* JC fail (+47) */
+    /* 0x114: RENAME */
+    0xB8, 0x00, 0x56,           /* MOV AX, 5600h */
+    0xBA, 0x46, 0x01,           /* MOV DX, 0146h (old) */
+    0xBF, 0x51, 0x01,           /* MOV DI, 0151h (new) */
+    0xCD, 0x21,                 /* INT 21h */
+    0x72, 0x24,                 /* JC fail (+36) */
+    /* 0x121: OPEN R/O new */
+    0xB8, 0x00, 0x3D,           /* MOV AX, 3D00h */
+    0xBA, 0x51, 0x01,           /* MOV DX, 0151h (new) */
+    0xCD, 0x21,                 /* INT 21h */
+    0x72, 0x1A,                 /* JC fail (+26) */
+    0x89, 0xC3,                 /* MOV BX, AX */
+    /* 0x12D: CLOSE */
+    0xB4, 0x3E,
+    0xCD, 0x21,
+    0x72, 0x14,                 /* JC fail */
+    /* 0x133: DELETE new */
+    0xB4, 0x41,
+    0xBA, 0x51, 0x01,           /* MOV DX, 0151h (new) */
+    0xCD, 0x21,
+    0x72, 0x0B,                 /* JC fail */
+    /* 0x13C: exit 0 */
+    0xB8, 0x00, 0x4C,
+    0xCD, 0x21,
+    /* 0x141: fail */
+    0xB8, 0x01, 0x4C,
+    0xCD, 0x21,
+    /* 0x146: old */
+    'C', ':', '\\', 'O', 'L', 'D', '.', 'T', 'X', 'T', 0,
+    /* 0x151: new */
+    'C', ':', '\\', 'N', 'E', 'W', '.', 'T', 'X', 'T', 0,
+};
+
+static void test_rename(void)
+{
+    unlink("/tmp/OLD.TXT");
+    unlink("/tmp/NEW.TXT");
+    WRITE_COM("/tmp/dos_rn.com", rename_com);
+    int code = run_com("/tmp/dos_rn.com");
+    UT_ASSERT_EQ(code, 0);
+    /* The .COM deletes NEW.TXT itself; OLD.TXT should be gone after rename. */
+    struct stat st;
+    UT_ASSERT(stat("/tmp/OLD.TXT", &st) < 0, "OLD.TXT was renamed");
+    UT_ASSERT(stat("/tmp/NEW.TXT", &st) < 0, "NEW.TXT was deleted");
+}
+
 /* -- main ----------------------------------------------------------------- */
 
 int main(void)
@@ -670,6 +905,9 @@ int main(void)
     test_rw_roundtrip();
     test_seek_delete();
     test_bad_whence();
+    test_mkdir_rmdir();
+    test_dup_handle();
+    test_rename();
 
     UT_SUMMARY("test_msdos");
 }
