@@ -30,6 +30,11 @@ static int write_com(const char *path, const unsigned char *code, int size)
 #define WRITE_COM(path, code) \
     UT_ASSERT_EQ(write_com((path), (code), (int)sizeof(code)), 0)
 
+/* .EXE files use the same raw byte writer; WRITE_EXE is a readability
+ * alias so the reader can tell which format a test uses at a glance. */
+#define WRITE_EXE(path, code) \
+    UT_ASSERT_EQ(write_com((path), (code), (int)sizeof(code)), 0)
+
 /* -- Helper: exec a .COM and return exit code ----------------------------- */
 
 static int run_com(const char *path)
@@ -888,6 +893,119 @@ static void test_rename(void)
     UT_ASSERT(stat("/tmp/NEW.TXT", &st) < 0, "NEW.TXT was deleted");
 }
 
+/* -- Test 17: exe_exit.exe --- minimal MZ .EXE with exit code 42 --------- */
+/*
+ * Smallest possible zero-relocation .EXE: 32-byte MZ header + 5 bytes
+ * of code.  Verifies header parsing, image placement at load_seg:0,
+ * CS/IP=0/0 relative to load_seg, SS=0x10 (a separate stack segment).
+ *
+ * MZ header (28 bytes of info + 4 bytes pad = 32 = 2 paragraphs):
+ *   signature      MZ
+ *   last_page_size 37  (file_size mod 512)
+ *   page_count     1   (ceil(file_size/512))
+ *   reloc_count    0
+ *   header_size    2   paragraphs
+ *   min_alloc      0x20 paragraphs (512 B past image — covers the stack)
+ *   max_alloc      0xFFFF
+ *   init_ss        0x10  (SS = load_seg + 0x10, stack distinct from code)
+ *   init_sp        0x100
+ *   init_ip        0
+ *   init_cs        0
+ *
+ * Code at load_seg:0:
+ *   MOV AX, 4C2Ah       ; B8 2A 4C
+ *   INT 21h              ; CD 21
+ */
+static const unsigned char exe_exit42_exe[] = {
+    /* MZ header (32 bytes) */
+    'M', 'Z',                       /* 0x00: signature 'MZ'             */
+    0x25, 0x00,                     /* 0x02: last_page_size = 37        */
+    0x01, 0x00,                     /* 0x04: page_count = 1             */
+    0x00, 0x00,                     /* 0x06: reloc_count = 0            */
+    0x02, 0x00,                     /* 0x08: header_size = 2 para (32B) */
+    0x20, 0x00,                     /* 0x0A: min_alloc = 0x20 para      */
+    0xFF, 0xFF,                     /* 0x0C: max_alloc                  */
+    0x10, 0x00,                     /* 0x0E: init_ss = 0x10 (relative)  */
+    0x00, 0x01,                     /* 0x10: init_sp = 0x100            */
+    0x00, 0x00,                     /* 0x12: checksum                   */
+    0x00, 0x00,                     /* 0x14: init_ip = 0                */
+    0x00, 0x00,                     /* 0x16: init_cs = 0 (relative)     */
+    0x1C, 0x00,                     /* 0x18: reloc_offset = 0x1C        */
+    0x00, 0x00,                     /* 0x1A: overlay = 0                */
+    0x00, 0x00, 0x00, 0x00,         /*       pad to 32 bytes            */
+
+    /* Code at load_seg:0 */
+    0xB8, 0x2A, 0x4C,               /* MOV AX, 4C2Ah                    */
+    0xCD, 0x21,                     /* INT 21h                          */
+};
+
+static void test_exe_exit_code(void)
+{
+    WRITE_EXE("/tmp/dos_x42.exe", exe_exit42_exe);
+    int code = run_com("/tmp/dos_x42.exe");
+    UT_ASSERT_EQ(code, 42);
+}
+
+/* -- Test 18: hello.exe --- AH=09h via DS=CS reload (classic .EXE) ------- */
+/*
+ * Standard .EXE idiom: DS = ES = PSP seg on entry, so the program reloads
+ * DS from CS to point at its own image.  Proves that the DOS bridge
+ * resolves DS:DX through the whole proc-image range (not just the PSP
+ * segment), and that our initial frame leaves DS pointing at the PSP.
+ *
+ * Code at load_seg:0 (29 bytes total):
+ *   0x00  MOV AX, CS          ; 8C C8
+ *   0x02  MOV DS, AX          ; 8E D8
+ *   0x04  MOV AH, 09h         ; B4 09
+ *   0x06  MOV DX, 0010h       ; BA 10 00  (msg offset from DS=CS base)
+ *   0x09  INT 21h             ; CD 21
+ *   0x0B  MOV AX, 4C00h       ; B8 00 4C
+ *   0x0E  INT 21h             ; CD 21
+ *   0x10  "Hello EXE!\r\n$"    (13 bytes)
+ *
+ * file_size = 32 (header) + 29 (code+data) = 61 bytes → last_page_size=61.
+ */
+static const unsigned char exe_hello_exe[] = {
+    /* MZ header (32 bytes) */
+    'M', 'Z',
+    0x3D, 0x00,                     /* last_page_size = 61              */
+    0x01, 0x00,                     /* page_count = 1                   */
+    0x00, 0x00,                     /* reloc_count = 0                  */
+    0x02, 0x00,                     /* header_size = 2 para             */
+    0x20, 0x00,                     /* min_alloc = 0x20 para            */
+    0xFF, 0xFF,                     /* max_alloc                        */
+    0x10, 0x00,                     /* init_ss = 0x10                   */
+    0x00, 0x01,                     /* init_sp = 0x100                  */
+    0x00, 0x00,                     /* checksum                         */
+    0x00, 0x00,                     /* init_ip = 0                      */
+    0x00, 0x00,                     /* init_cs = 0                      */
+    0x1C, 0x00,                     /* reloc_offset                     */
+    0x00, 0x00,                     /* overlay                          */
+    0x00, 0x00, 0x00, 0x00,         /* pad                              */
+
+    /* Code at load_seg:0 */
+    0x8C, 0xC8,                     /* MOV AX, CS                       */
+    0x8E, 0xD8,                     /* MOV DS, AX                       */
+    0xB4, 0x09,                     /* MOV AH, 09h                      */
+    0xBA, 0x10, 0x00,               /* MOV DX, 0010h  (msg offset in DS)*/
+    0xCD, 0x21,                     /* INT 21h                          */
+    0xB8, 0x00, 0x4C,               /* MOV AX, 4C00h                    */
+    0xCD, 0x21,                     /* INT 21h                          */
+    /* 0x10: msg */
+    'H', 'e', 'l', 'l', 'o', ' ', 'E', 'X', 'E', '!',
+    '\r', '\n', '$',
+};
+
+static void test_exe_hello(void)
+{
+    WRITE_EXE("/tmp/dos_hi.exe", exe_hello_exe);
+    char buf[64];
+    int n = run_com_capture("/tmp/dos_hi.exe", buf, sizeof(buf));
+    UT_ASSERT(n >= 10, "hello.exe produced output");
+    UT_ASSERT(buf[0] == 'H' && buf[1] == 'e' && buf[2] == 'l',
+              "output starts with Hel");
+}
+
 /* -- main ----------------------------------------------------------------- */
 
 int main(void)
@@ -908,6 +1026,8 @@ int main(void)
     test_mkdir_rmdir();
     test_dup_handle();
     test_rename();
+    test_exe_exit_code();
+    test_exe_hello();
 
     UT_SUMMARY("test_msdos");
 }

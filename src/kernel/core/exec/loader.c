@@ -20,6 +20,7 @@
 #endif
 #ifdef PPAP_ENABLE_MSDOS
 #include "kernel/core/subsys/msdos/com_loader.h"
+#include "kernel/core/subsys/msdos/exe_loader.h"
 #endif
 #if defined(__ia16__)
 extern const loader_t elf16_loader;
@@ -45,6 +46,7 @@ const loader_t* loader_registry[] = {
     &elf_loader,
 #endif
 #ifdef PPAP_ENABLE_MSDOS
+    &exe_loader, /* DOS .EXE (MZ signature match) */
     &com_loader, /* DOS .COM before flat (extension match) */
 #endif
 #if defined(__ia16__)

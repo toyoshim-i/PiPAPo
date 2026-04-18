@@ -374,6 +374,7 @@ add_executable(ppap_pcxt
   ${PPAP_ROOT}/src/kernel/core/subsys/msdos/dos_bridge.c
   ${PPAP_ROOT}/src/kernel/core/subsys/msdos/dos_host.c
   ${PPAP_ROOT}/src/kernel/core/subsys/msdos/com_loader.c
+  ${PPAP_ROOT}/src/kernel/core/subsys/msdos/exe_loader.c
   ${TARGET_SOURCES}
 )
 

@@ -118,6 +118,7 @@ set(KERNEL_SUBSYS_MSDOS_SOURCES
     ${_KS_ROOT}/src/kernel/core/subsys/msdos/dos_bridge.c
     ${_KS_ROOT}/src/kernel/core/subsys/msdos/dos_host.c
     ${_KS_ROOT}/src/kernel/core/subsys/msdos/com_loader.c
+    ${_KS_ROOT}/src/kernel/core/subsys/msdos/exe_loader.c
 )
 
 set(KERNEL_ECPU_Z80_SOURCES
