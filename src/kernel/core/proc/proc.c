@@ -33,7 +33,7 @@ _Static_assert(
     "PCB_SP_OFFSET does not match offsetof(pcb_t, sp) — update proc.h");
 
 #if defined(__ia16__)
-#define PCB_SVC_NEEDS_RESTART_OFFSET 452u
+#define PCB_SVC_NEEDS_RESTART_OFFSET 516u
 _Static_assert(offsetof(pcb_t, svc_needs_restart) ==
                    PCB_SVC_NEEDS_RESTART_OFFSET,
                "PCB_SVC_NEEDS_RESTART_OFFSET must match trap.S");

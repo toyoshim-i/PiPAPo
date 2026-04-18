@@ -118,6 +118,7 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
 
   for (int i = 0; i < NSIG; i++) {
     if (p->sig_handlers[i] != SIG_IGN) p->sig_handlers[i] = SIG_DFL;
+    p->sig_restorers[i] = (sighandler_t)0;
   }
   p->sig_pending = 0;
   p->sig_blocked = 0;

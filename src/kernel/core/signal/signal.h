@@ -33,7 +33,7 @@ typedef void (*sighandler_t)(int);
 #if defined(__m68k__)
 void signal_check(uint32_t *regs);
 #elif defined(__ia16__)
-uint16_t *signal_check(uint16_t *regs);
+uint16_t signal_check(uint16_t user_sp, uint16_t user_ss);
 #else
 void signal_check(void);
 #endif
@@ -52,8 +52,11 @@ int signal_check_kernel(void);
 
 /* Trampoline in kernel .text — the signal handler returns here to ask the
  * kernel to restore the interrupted context.
- * ARM reaches it via bx lr, i16 via ret, and m68k keeps a stub because it
- * uses synchronous delivery. */
+ * ARM reaches it via bx lr; m68k keeps a stub because it uses synchronous
+ * delivery.  (ia16 uses a per-process trampoline planted in proc_seg by
+ * elf16_loader — see pcb.sigreturn_trampoline.) */
+#if !defined(__ia16__)
 extern void sigreturn_trampoline(void);
+#endif
 
 #endif /* PPAP_KERNEL_CORE_SIGNAL_SIGNAL_H */

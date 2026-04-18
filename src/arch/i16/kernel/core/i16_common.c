@@ -13,11 +13,8 @@ volatile uint16_t i16_current_ksp = 0xFFFC; /* boot stack top */
 /* Tick counter incremented by timer handler */
 volatile uint32_t i16_tick_count = 0;
 
-/* Current INT 30h saved-frame SP, captured by trap.S for sys_sigreturn. */
+/* Current INT 30h saved-frame SP, captured by trap.S for sys_rt_sigreturn. */
 volatile uint16_t i16_trap_frame_sp = 0;
-
-/* Non-zero when sys_sigreturn wants trap.S to restore a different frame. */
-volatile uint16_t i16_sigreturn_restore_sp = 0;
 
 /* -- Initial stack frame for new processes --------------------------------
  *

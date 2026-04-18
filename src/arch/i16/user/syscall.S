@@ -360,7 +360,27 @@ ioctl:
   int   $0x30
   SYSCALL_RET
 
-/* int sigaction(int sig, void *handler, void *old_handler); */
+/* User-space sigreturn trampoline.
+ *
+ * The kernel records the address of this symbol as sa_restorer when
+ * sigaction() installs a handler (see below), and uses it as the
+ * handler's near-return target when delivering a signal.  The handler's
+ * `ret` lands here and this stub issues SYS_RT_SIGRETURN to unwind the
+ * signal frame — same role as the sigreturn trampolines glibc/musl
+ * provide on Linux. */
+  .global _ppap_sigreturn_trampoline
+_ppap_sigreturn_trampoline:
+  addw  $2, %sp                 /* drop the sig arg the kernel planted */
+  movw  $0x0605, %ax            /* SYS_RT_SIGRETURN */
+  int   $0x30
+  hlt                            /* unreachable */
+
+/* int sigaction(int sig, void *handler, void *old_handler);
+ *
+ * Simplified PPAP wrapper.  Builds a kernel_sigaction on the user
+ * stack with sa_restorer = _ppap_sigreturn_trampoline and forwards to
+ * SYS_RT_SIGACTION.  old_handler is ignored — callers that need it
+ * should use rt_sigaction() and a full struct sigaction. */
   .global sigaction
 sigaction:
   pushw %bp
@@ -368,10 +388,47 @@ sigaction:
   pushw %bx
   pushw %si
   pushw %di
-  movw  4(%bp), %bx      /* sig */
-  movw  6(%bp), %cx      /* handler */
-  movw  8(%bp), %dx      /* old_handler */
-  movw  $0x0601, %ax
+
+  /* Push struct kernel_sigaction (20 B) in reverse-field order; the
+   * final SP points to act->handler. */
+  xorw  %ax, %ax
+  pushw %ax                     /* mask[1] high */
+  pushw %ax                     /* mask[1] low  */
+  pushw %ax                     /* mask[0] high */
+  pushw %ax                     /* mask[0] low  */
+  pushw %ax                     /* restorer high (ia16 near ptr) */
+  movw  $_ppap_sigreturn_trampoline, %cx
+  pushw %cx                     /* restorer low  */
+  pushw %ax                     /* flags high   */
+  pushw %ax                     /* flags low    */
+  pushw %ax                     /* handler high (ia16 near ptr) */
+  movw  6(%bp), %cx             /* handler arg */
+  pushw %cx                     /* handler low  */
+
+  movw  4(%bp), %bx             /* sig */
+  movw  %sp, %cx                /* &act */
+  xorw  %dx, %dx                /* oact = NULL (old_handler arg ignored) */
+  movw  $8, %si                 /* sigsetsize */
+  movw  $0x0603, %ax            /* SYS_RT_SIGACTION */
+  int   $0x30
+
+  addw  $20, %sp                /* drop struct */
+  SYSCALL_RET
+
+/* int rt_sigaction(int sig, const struct sigaction *act,
+ *                  struct sigaction *oact, int sigsetsize); */
+  .global rt_sigaction
+rt_sigaction:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx             /* sig */
+  movw  6(%bp), %cx             /* act */
+  movw  8(%bp), %dx             /* oact */
+  movw  10(%bp), %si            /* sigsetsize */
+  movw  $0x0603, %ax            /* SYS_RT_SIGACTION */
   int   $0x30
   SYSCALL_RET
 

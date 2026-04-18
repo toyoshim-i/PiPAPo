@@ -32,7 +32,7 @@
   .code16
   .text
 
-  .equ PCB_SVC_NEEDS_RESTART_OFFSET, 452
+  .equ PCB_SVC_NEEDS_RESTART_OFFSET, 516
 
   .global i16_syscall_isr
   .global i16_trap_after_switch
@@ -223,24 +223,20 @@ i16_trap_after_switch:
    * stack, this copies it back before the normal restore path. */
   call  i16_vfork_restore_frame
 
-  /* sys_sigreturn may ask us to resume from an older saved frame */
-  movw  %ss:i16_sigreturn_restore_sp, %ax
-  testw %ax, %ax
-  jz    .Lcheck_signal
-  movw  $0, %ss:i16_sigreturn_restore_sp
-  movw  %ax, %sp
-  jmp   .Lrestore
-
 .Lcheck_signal:
-  /* User-signal delivery */
-  /* 8086 PUSH SP pushes the decremented value, unlike later x86.
-   * Pass the pre-push stack pointer explicitly so signal_check() sees
-   * the real frame base on 8086/80186 as well as 286+. */
-  movw  %sp, %ax
-  pushw %ax
+  /* User-signal delivery.  signal_check(uint16_t user_sp, uint16_t user_ss)
+   * examines the kernel-stack [user_SP, user_SS] slot and, if a user
+   * handler is pending, plants a new 24B GP+IRET frame and a 6B trailer
+   * on the user stack and returns the new user_SP.  Otherwise it returns
+   * the unchanged user_SP.  The [user_SP, user_SS] slot is at offsets
+   * 34/36 from the current %sp (the 34B vfork-save slot reserved at
+   * trap entry sits below it). */
+  movw  %sp, %bp
+  pushw 36(%bp)
+  pushw 34(%bp)
   call  signal_check
-  addw  $2, %sp
-  movw  %ax, %sp
+  addw  $4, %sp
+  movw  %ax, 34(%bp)
 
 .Lrestore:
   /* Skip the 34-byte vfork-save slot we reserved at trap entry. */

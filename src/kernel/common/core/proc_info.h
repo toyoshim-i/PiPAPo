@@ -159,9 +159,13 @@ typedef struct pcb {
   uintptr_t brk_current; /* current break (grows upward)             */
 
   /* ── Signals ─────────────────────────────────────────────────────── */
-  sighandler_t sig_handlers[NSIG]; /* SIG_DFL(0) or SIG_IGN(1) or func */
-  uint32_t sig_pending;            /* bitmask of pending signals        */
-  uint32_t sig_blocked;            /* bitmask of blocked signals        */
+  sighandler_t sig_handlers[NSIG];  /* SIG_DFL(0) or SIG_IGN(1) or func */
+  sighandler_t sig_restorers[NSIG]; /* sa_restorer per handler, used as the
+                                       handler's return address by arches
+                                       that need a user-space trampoline
+                                       (ia16).  0 if unset. */
+  uint32_t sig_pending;             /* bitmask of pending signals        */
+  uint32_t sig_blocked;             /* bitmask of blocked signals        */
 
   /* ── Process identity / accounting (Phase 6 Step 14) ─────── */
   char comm[16];       /* command name (basename of exe)    */

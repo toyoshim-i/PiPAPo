@@ -4,21 +4,16 @@
  *   sys_kill(pid, sig)            — send signal to process
  *   sys_sigaction(sig, hdl, old)  — install/query signal handler
  *   sys_sigreturn()               — restore context after signal handler
- *   signal_check()                — called from SVC_Handler on return to user
- *   sigreturn_trampoline          — handler returns here (kernel .text)
+ *   signal_check()                — called on return to user mode
  *
  * Signal delivery model:
- *   signal_check() is called from SVC_Handler after syscall_dispatch()
- *   when the process is RUNNABLE.  It delivers one pending signal per
- *   syscall return:
+ *   signal_check() runs on the syscall return path (ARM / ia16) or is
+ *   driven by the trap handler that has a pointer to the saved register
+ *   frame (m68k).  It delivers one pending, non-blocked signal per
+ *   return:
  *     - SIG_IGN: clear pending bit, done
  *     - SIG_DFL: SIGCHLD ignored, all others terminate via sys_exit(128+sig)
- *     - User handler: push a new HW exception frame below PSP (the original
- *       frame becomes "sigframe"), set PSP to new frame.  On exception return
- *       the CPU pops the new frame and runs the handler.  The handler returns
- *       via bx lr to sigreturn_trampoline, which does SVC SYS_SIGRETURN.
- *       sys_sigreturn advances PSP by 32 so the CPU pops the sigframe
- *       (original context) on exception return.
+ *     - User handler: arch-specific — see the per-arch branches below.
  */
 
 #include "kernel/core/signal/signal.h"
@@ -97,10 +92,16 @@ int signal_check_kernel(void) {
  *       m68k_call_signal_handler (assembly thunk that sets a5 = GOT base).
  *       No sigreturn needed; sys_sigreturn / sys_rt_sigreturn return -ENOSYS.
  *
- * i16:  RTE-based real-mode delivery. trap.S passes the saved 24-byte INT
- *       frame to signal_check(), which can swap SP to a synthetic handler
- *       frame. The handler returns with `ret` into sigreturn_trampoline,
- *       which issues INT 30h SYS_RT_SIGRETURN.
+ * i16:  IRET-based real-mode delivery, sa_restorer style.  trap.S passes
+ *       (user_sp, user_ss) from the kernel-stack slot to signal_check(),
+ *       which plants a new GP+IRET frame plus a small trailer on the
+ *       user stack and returns the new user_sp.  The handler's near
+ *       `ret` lands on the per-handler sa_restorer address registered
+ *       via rt_sigaction (user-space libc/crt stub, e.g.
+ *       _ppap_sigreturn_trampoline); that stub issues INT 30h
+ *       SYS_RT_SIGRETURN, which restores the pre-signal user_sp in the
+ *       kernel slot.  See the frame-layout comment on the i16 branch
+ *       below.
  * ────────────────────────────────────────────────────────────────────────── */
 
 #if defined(__m68k__)
@@ -185,81 +186,128 @@ void signal_check(uint32_t *regs) {
 
 #elif defined(__ia16__)
 
-#define I16_SIGNAL_FRAME_WORDS 12u
-#define I16_SIGNAL_FRAME_BYTES (I16_SIGNAL_FRAME_WORDS * 2u)
-#define I16_SIGNAL_CALL_BYTES 4u /* ret IP + int arg */
-#define I16_SIGNAL_DELIVERY_BYTES \
-  (I16_SIGNAL_FRAME_BYTES + I16_SIGNAL_CALL_BYTES)
-#define I16_FRAME_AX 8u
-#define I16_FRAME_IP 9u
-#define I16_FRAME_CS 10u
+/*
+ * ia16 signal delivery — IRET-based, split-frame aware.
+ *
+ * Frame layout (all on the user stack, SS=proc_seg):
+ *
+ *   [new_user_SP + 0..17]   GP register frame  (ES, DS, BP, DI, SI, DX,
+ *                           CX, BX, AX — 9 words, popped by trap.S on
+ *                           the restore path)
+ *   [new_user_SP + 18..23]  IRET frame (IP=handler, CS=proc_seg,
+ *                           FLAGS=preserved from original)
+ *   [new_user_SP + 24..25]  return IP for handler's near `ret`  ──┐
+ *   [new_user_SP + 26..27]  signal number (handler's first arg)  │ trailer
+ *   [new_user_SP + 28..29]  saved pre-signal user_SP              ─┘
+ *
+ * The return IP is the per-handler sa_restorer recorded in
+ * current->sig_restorers[sig] by rt_sigaction.  User-space libc/crt
+ * supplies the trampoline body — typically `_ppap_sigreturn_trampoline`
+ * in src/arch/i16/user/syscall.S — which does
+ * `addw $2, %sp; movw $SYS_RT_SIGRETURN, %ax; int $0x30` and lands us
+ * in sys_rt_sigreturn with user_SP = new_user_SP + 4 (after trap.S's
+ * own 18-byte GP-register push).  sys_rt_sigreturn reads the saved
+ * pre-signal user_SP at new_user_SP + 28 and writes it back to the
+ * kernel-stack slot so the final IRET resumes at the original
+ * pre-signal context.
+ */
+
+#define I16_GP_FRAME_BYTES 18u  /* ES/DS/BP/DI/SI/DX/CX/BX/AX  (9 words) */
+#define I16_IRET_FRAME_BYTES 6u /* IP/CS/FLAGS                          */
+#define I16_FULL_FRAME_BYTES (I16_GP_FRAME_BYTES + I16_IRET_FRAME_BYTES)
+#define I16_SIG_TRAILER_BYTES 6u /* ret_ip + sig_arg + saved_user_sp      */
+#define I16_SIG_DELIVERY_BYTES (I16_FULL_FRAME_BYTES + I16_SIG_TRAILER_BYTES)
+
+#define I16_USER_SEG_PAGES 16u
+#define I16_USER_STACK_PAGE_BASE \
+  ((uint16_t)((I16_USER_SEG_PAGES - 1u) * PAGE_SIZE))
 
 extern volatile uint16_t i16_trap_frame_sp;
-extern volatile uint16_t i16_sigreturn_restore_sp;
 
-__attribute__((used, section(".text.sigreturn_trampoline"))) void
-__asm_sigreturn_trampoline(void);
-__asm(
-    ".section .text.sigreturn_trampoline,\"ax\",@progbits\n"
-    ".globl sigreturn_trampoline\n"
-    "sigreturn_trampoline:\n"
-    "    addw $2, %sp\n"
-    "    movw $0x0605, %ax\n"
-    "    int  $0x30\n"
-    "1:  jmp 1b\n"
-    ".previous\n");
-
-static uint16_t *signal_setup_frame_i16(uint16_t *frame, int sig,
-                                        sighandler_t handler) {
-  uintptr_t old_sp = (uintptr_t)frame;
-  uintptr_t new_sp = old_sp - I16_SIGNAL_DELIVERY_BYTES;
-  uint16_t *new_frame;
-  uint16_t *call_frame;
-  uintptr_t stack_base;
-
-  stack_base = mem_region_page_linear(current->stack_page_id);
-  if (new_sp < stack_base) return NULL;
-
-  new_frame = (uint16_t *)new_sp;
-  __builtin_memcpy(new_frame, frame, I16_SIGNAL_FRAME_BYTES);
-  new_frame[I16_FRAME_IP] = (uint16_t)(uintptr_t)handler;
-  new_frame[I16_FRAME_CS] = 0;
-
-  call_frame = (uint16_t *)(new_sp + I16_SIGNAL_FRAME_BYTES);
-  call_frame[0] = (uint16_t)(uintptr_t)sigreturn_trampoline;
-  call_frame[1] = (uint16_t)sig;
-  return new_frame;
-}
-
-uint16_t *signal_check(uint16_t *frame) {
+uint16_t signal_check(uint16_t user_sp, uint16_t user_ss) {
   uint32_t deliverable;
   int sig;
   sighandler_t handler;
-  uint16_t *new_frame;
+  uint16_t new_sp;
+  uint16_t trampoline;
+  uint16_t orig_flags;
 
-  if (!frame || current->state != PROC_RUNNABLE) return frame;
+  if (!current || current->state != PROC_RUNNABLE) return user_sp;
 
   deliverable = current->sig_pending & ~current->sig_blocked;
-  if (!deliverable) return frame;
+  if (!deliverable) return user_sp;
 
   sig = ctz32(deliverable);
   current->sig_pending &= ~(1u << sig);
 
   handler = current->sig_handlers[sig];
-  if (handler == SIG_IGN) return frame;
+  if (handler == SIG_IGN) return user_sp;
 
   if (handler == SIG_DFL) {
     signal_default_action(sig, NULL);
-    return frame;
+    return user_sp;
   }
 
-  new_frame = signal_setup_frame_i16(frame, sig, handler);
-  if (!new_frame) {
+  /* User handler — build a delivery frame below the current user_SP.
+   * The near-return target is the per-handler sa_restorer registered
+   * by rt_sigaction (user-space trampoline supplied by crt0/syscall.S
+   * via the _ppap_sigreturn_trampoline symbol).  Treat a missing
+   * restorer like stack overflow: we can't land anywhere sane after
+   * the handler returns. */
+  trampoline = (uint16_t)(uintptr_t)current->sig_restorers[sig];
+  if (trampoline == 0u) {
     sys_exit(128 + sig);
-    return frame;
+    return user_sp;
+  }
+  if (user_sp < (uint16_t)(I16_USER_STACK_PAGE_BASE + I16_SIG_DELIVERY_BYTES)) {
+    sys_exit(128 + sig);
+    return user_sp;
+  }
+  new_sp = (uint16_t)(user_sp - I16_SIG_DELIVERY_BYTES);
+
+  /* All user-stack reads/writes go through the portable sys_copy_*
+   * helpers.  On ia16 those resolve the 16-bit near pointer through
+   * current->image (proc_seg base + segment offset) and reach into
+   * page storage via mem_region_page_read/write — no arch-specific
+   * plumbing needed here. */
+
+  /* Preserve FLAGS from the original IRET frame so the handler runs
+   * with the same interrupt-enable state as the interrupted code. */
+  sys_copy_from_user(&orig_flags,
+                     (uintptr_t)(user_sp + I16_GP_FRAME_BYTES + 4u), 2);
+
+  {
+    uint16_t gp_words[9] = {
+        user_ss, /* ES */
+        user_ss, /* DS */
+        0,       /* BP */
+        0,       /* DI */
+        0,       /* SI */
+        0,       /* DX */
+        0,       /* CX */
+        0,       /* BX */
+        0,       /* AX */
+    };
+    sys_copy_to_user((uintptr_t)new_sp, gp_words, sizeof(gp_words));
+  }
+  {
+    uint16_t iret_words[3];
+    iret_words[0] = (uint16_t)(uintptr_t)handler; /* IP */
+    iret_words[1] = user_ss;                      /* CS = proc_seg */
+    iret_words[2] = orig_flags;                   /* FLAGS */
+    sys_copy_to_user((uintptr_t)(new_sp + I16_GP_FRAME_BYTES), iret_words,
+                     sizeof(iret_words));
+  }
+  {
+    uint16_t trailer[3];
+    trailer[0] = trampoline;    /* handler's near-ret target */
+    trailer[1] = (uint16_t)sig; /* handler's first argument  */
+    trailer[2] = user_sp;       /* saved pre-signal user_SP  */
+    sys_copy_to_user((uintptr_t)(new_sp + I16_FULL_FRAME_BYTES), trailer,
+                     sizeof(trailer));
   }
 
-  return new_frame;
+  return new_sp;
 }
 
 #elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
@@ -456,14 +504,34 @@ long sys_rt_sigreturn(void) { return -(long)ENOSYS; }
 
 #elif defined(__ia16__)
 
-long sys_sigreturn(void) {
+/*
+ * Unwind the sig-delivery frame the kernel planted below the original
+ * user_SP.  At entry, the kernel-stack slot holds the post-trap user_SP
+ * which sits I16_FULL_FRAME_BYTES (= 24) below the saved pre-signal
+ * user_SP trailer word written by signal_check:
+ *
+ *   [current user_SP + 24]  saved_orig_user_SP  ← read back here
+ *
+ * Overwriting the kernel slot is sufficient — trap.S's .Lrestore path
+ * will then IRET through the pre-signal IRET frame still sitting in
+ * place on the user stack.
+ */
+long sys_rt_sigreturn(void) {
+  uint16_t *slot;
+  uint16_t user_sp;
+  uint16_t saved_sp = 0;
+
   if (i16_trap_frame_sp == 0u) return -(long)EFAULT;
-  i16_sigreturn_restore_sp =
-      (uint16_t)(i16_trap_frame_sp + I16_SIGNAL_FRAME_BYTES);
+
+  slot = (uint16_t *)(uintptr_t)i16_trap_frame_sp;
+  user_sp = slot[0];
+
+  sys_copy_from_user(&saved_sp, (uintptr_t)(user_sp + I16_FULL_FRAME_BYTES), 2);
+  slot[0] = saved_sp;
   return 0;
 }
 
-long sys_rt_sigreturn(void) { return sys_sigreturn(); }
+long sys_sigreturn(void) { return sys_rt_sigreturn(); }
 
 #elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
 
@@ -548,7 +616,7 @@ long sys_rt_sigaction(long sig, uintptr_t act_ptr, uintptr_t oact_ptr,
   if (oact_ptr != 0u) {
     user_oact.handler = (uint32_t)(uintptr_t)current->sig_handlers[sig];
     user_oact.flags = 0;
-    user_oact.restorer = 0;
+    user_oact.restorer = (uint32_t)(uintptr_t)current->sig_restorers[sig];
     user_oact.mask[0] = 0;
     user_oact.mask[1] = 0;
     rc = sys_copy_to_user(oact_ptr, &user_oact, sizeof(user_oact));
@@ -560,6 +628,7 @@ long sys_rt_sigaction(long sig, uintptr_t act_ptr, uintptr_t oact_ptr,
     rc = sys_copy_from_user(&user_act, act_ptr, sizeof(user_act));
     if (rc < 0) return (long)rc;
     current->sig_handlers[sig] = (sighandler_t)(uintptr_t)user_act.handler;
+    current->sig_restorers[sig] = (sighandler_t)(uintptr_t)user_act.restorer;
     /* sa_flags and sa_mask are noted but not fully supported yet */
   }
 

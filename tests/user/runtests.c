@@ -239,17 +239,15 @@ int main(void)
 #endif
     };
     tests[t++] = (test_entry_t){ "/bin/test_fd", TEST_ENABLED };
-    /* test_signal: ia16 kernel accepts sys_kill/sys_sigaction but has no
-     * signal-delivery trampoline for user-space yet — handlers never run. */
     tests[t++] = (test_entry_t){ "/bin/test_signal",
-#if defined(__riscv) || defined(__ia16__)
+#if defined(__riscv)
         TEST_DISABLED
 #else
         TEST_ENABLED
 #endif
     };
     tests[t++] = (test_entry_t){ "/bin/test_poll", TEST_ENABLED };
-    /* test_sleep_intr: needs ia16 signal delivery (see test_signal). */
+    /* test_sleep_intr: nanosleep-interruption path is still open on ia16. */
     tests[t++] = (test_entry_t){ "/bin/test_sleep_intr",
 #if defined(__riscv) || defined(__ia16__)
         TEST_DISABLED
