@@ -691,6 +691,12 @@ page_id_t mem_region_page_alloc_contiguous(uint32_t n_pages) {
   return mm_page_alloc_contiguous(n_pages);
 }
 
+page_id_t mem_region_page_alloc_largest_contiguous(uint32_t min_pages,
+                                                   uint32_t max_pages,
+                                                   uint32_t *got_pages) {
+  return mm_page_alloc_largest_contiguous(min_pages, max_pages, got_pages);
+}
+
 void mem_region_page_free(page_id_t id) { mm_page_free(id); }
 
 uint32_t mem_region_page_linear(page_id_t id) { return mm_page_linear(id); }

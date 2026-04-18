@@ -370,6 +370,24 @@ page_id_t mm_page_alloc_contiguous(uint32_t n_pages) {
   return id;
 }
 
+page_id_t mm_page_alloc_largest_contiguous(uint32_t min_pages,
+                                           uint32_t max_pages,
+                                           uint32_t *got_pages) {
+  if (got_pages) *got_pages = 0;
+  if (min_pages == 0 || max_pages < min_pages || min_pages > 0xFFFFu)
+    return PAGE_ID_INVALID;
+  if (max_pages > 0xFFFFu) max_pages = 0xFFFFu;
+
+  uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
+  uint16_t got = 0;
+  page_id_t base =
+      page_alloc_largest((uint16_t)min_pages, (uint16_t)max_pages, &got);
+  page_trace_tail("alloc_largest", (unsigned)base, (unsigned)got);
+  spin_unlock_irqrestore(SPIN_PAGE, saved);
+  if (got_pages) *got_pages = got;
+  return base;
+}
+
 /* ── Page-indexed API ────────────────────────────────────────────────────── */
 
 page_id_t mm_page_alloc(void) {

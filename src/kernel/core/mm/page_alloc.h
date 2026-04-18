@@ -42,6 +42,14 @@ int page_alloc_add_range(page_id_t base, uint16_t n);
  * Returns the base page_id on success, PAGE_ID_INVALID on OOM. */
 page_id_t page_alloc_n(uint16_t n);
 
+/* Take the longest free run within [min_pages..max_pages] pages atomically.
+ * Reports the actual count via *got.  Returns PAGE_ID_INVALID if no run of
+ * at least min_pages exists.  Useful for callers like the .COM loader
+ * that want "as much contiguous memory as available, at least this
+ * much." */
+page_id_t page_alloc_largest(uint16_t min_pages, uint16_t max_pages,
+                             uint16_t *got);
+
 /* Grab a specific page by id.  Returns 0 on success, -1 if the page is not
  * currently in any free block. */
 int page_alloc_at_id(page_id_t id);

@@ -124,6 +124,31 @@ static void test_contig_alloc_first_fit_from_low(void) {
   expect_blocks(bases, pages, 3);
 }
 
+static void test_alloc_largest(void) {
+  page_alloc_reset();
+  page_alloc_add_range(0, 4);
+  page_alloc_add_range(10, 9);
+  page_alloc_add_range(25, 7);
+  uint16_t got = 0;
+  page_id_t base = page_alloc_largest(1, 100, &got);
+  ASSERT_EQ((long)base, 10);
+  ASSERT_EQ(got, 9);
+  /* Now largest remaining is the 7-page block. */
+  got = 99;
+  base = page_alloc_largest(5, 6, &got);
+  ASSERT_EQ((long)base, 25);
+  ASSERT_EQ(got, 6); /* capped at max */
+}
+
+static void test_alloc_largest_below_min(void) {
+  page_alloc_reset();
+  page_alloc_add_range(0, 3);
+  uint16_t got = 99;
+  page_id_t base = page_alloc_largest(5, 10, &got);
+  ASSERT_EQ((long)base, (long)PAGE_ID_INVALID);
+  ASSERT_EQ(got, 0);
+}
+
 static void test_alloc_at_middle_splits(void) {
   seed_single(10); /* [0..9] */
   ASSERT_EQ(page_alloc_at_id(4), 0);
@@ -248,6 +273,8 @@ int main(void) {
   RUN_TEST(test_single_alloc_picks_highest_block_back);
   RUN_TEST(test_brk_zone_not_overwritten_by_single_alloc);
   RUN_TEST(test_contig_alloc_first_fit_from_low);
+  RUN_TEST(test_alloc_largest);
+  RUN_TEST(test_alloc_largest_below_min);
   RUN_TEST(test_alloc_at_middle_splits);
   RUN_TEST(test_alloc_at_edges);
   RUN_TEST(test_alloc_at_not_free);

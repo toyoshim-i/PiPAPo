@@ -488,12 +488,24 @@ static int dos_rw_common(dos_proc_t *dos, dos_regs_t *regs, int is_write) {
     return 0;
   }
 
-  /* DS:DX is a user-segment offset; the translator already assumes the
-   * caller's segment.  .COM programs keep DS=proc_seg by convention,
-   * so passing regs->dx straight through is safe. */
+  /* DS:DX is a far real-mode pointer.  Compute its 20-bit flat address,
+   * then express it as (page, off) within the proc's contiguous image.
+   * The proc owns image.data.{base_page, size} as one allocation block;
+   * any access in [base_linear, base_linear+size) is in-range.  This
+   * replaces the old proc_user_ptr_to_page_ref call, which assumed the
+   * caller's offset is relative to the proc's implicit data segment —
+   * wrong whenever the app picks its own DS (e.g. zork1 holds file
+   * buffers in a separate paragraph of its conventional-memory window). */
   user_page_ref_t ref;
-  if (proc_user_ptr_to_page_ref(current, regs->dx, &ref) < 0)
+  page_id_t base = current->image.data.base_page;
+  uint32_t base_linear = mem_region_page_linear(base);
+  uint32_t flat = ((uint32_t)regs->ds << 4) + regs->dx;
+  if (flat < base_linear ||
+      flat + (uint32_t)count > base_linear + current->image.data.size)
     return -DOS_ERR_INVALID_ACCESS;
+  uint32_t off_in_proc = flat - base_linear;
+  ref.page = base + (page_id_t)(off_in_proc / PAGE_SIZE);
+  ref.off = (uint16_t)(off_in_proc % PAGE_SIZE);
 
   long n = is_write ? sys_write(fd, ref.page, ref.off, count)
                     : sys_read(fd, ref.page, ref.off, count);

@@ -19,21 +19,22 @@
 
 /* ── Segment zeroing ──────────────────────────────────────────────────── */
 
-static void dos_zero_segment(page_id_t base_id) {
-  for (uint16_t pg = 0; pg < DOS_SEG_PAGES; pg++)
-    mem_region_page_zero(base_id + pg, 0, PAGE_SIZE);
+static void dos_zero_segment(page_id_t base_id, uint32_t seg_pages) {
+  for (uint32_t pg = 0; pg < seg_pages; pg++)
+    mem_region_page_zero(base_id + (page_id_t)pg, 0, PAGE_SIZE);
 }
 
 /* ── PSP construction ─────────────────────────────────────────────────── */
 
 static void dos_build_psp(page_id_t base_id, uint16_t proc_seg,
-                          const char *const *argv) {
+                          uint32_t seg_pages, const char *const *argv) {
   /* PSP:0x00 — INT 20h (terminate) */
   uint16_t int20 = 0x20CD;
   mem_region_page_write(base_id, 0x00, &int20, 2);
 
-  /* PSP:0x02 — memory top (end of allocated segment) */
-  uint16_t mem_top = proc_seg + 0x1000;
+  /* PSP:0x02 — memory top: paragraph just past the last byte the proc
+   * owns.  PAGE_SIZE/16 paragraphs per page. */
+  uint16_t mem_top = (uint16_t)(proc_seg + seg_pages * (PAGE_SIZE / 16u));
   mem_region_page_write(base_id, 0x02, &mem_top, 2);
 
   /* PSP:0x50 — INT 21h + RETF (alternate DOS entry) */
@@ -114,11 +115,12 @@ static uint16_t dos_build_user_frame(page_id_t base_id, uint16_t proc_seg) {
 
 /* ── Main entry point ─────────────────────────────────────────────────── */
 
-int dos_build_com_image(page_id_t base_id, uint16_t proc_seg, vnode_t *vn,
-                        uint32_t file_size, const char *const *argv,
-                        uint16_t *out_user_sp) {
-  dos_zero_segment(base_id);
-  dos_build_psp(base_id, proc_seg, argv);
+int dos_build_com_image(page_id_t base_id, uint16_t proc_seg,
+                        uint32_t seg_pages, vnode_t *vn, uint32_t file_size,
+                        const char *const *argv, uint16_t *out_user_sp) {
+  if (seg_pages < DOS_SEG_PAGES) seg_pages = DOS_SEG_PAGES;
+  dos_zero_segment(base_id, seg_pages);
+  dos_build_psp(base_id, proc_seg, seg_pages, argv);
   int rc = dos_load_binary(base_id, vn, file_size);
   if (rc < 0) return rc;
   *out_user_sp = dos_build_user_frame(base_id, proc_seg);

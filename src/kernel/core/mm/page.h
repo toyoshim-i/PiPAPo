@@ -82,6 +82,13 @@ page_id_t mm_page_alloc(void);
  * (or PAGE_ID_INVALID). */
 page_id_t mm_page_alloc_contiguous(uint32_t n_pages);
 
+/* Allocate the longest free contiguous run within [min, max] pages and
+ * report the actual count via *got_pages.  Returns PAGE_ID_INVALID if no
+ * run of at least min_pages exists. */
+page_id_t mm_page_alloc_largest_contiguous(uint32_t min_pages,
+                                           uint32_t max_pages,
+                                           uint32_t *got_pages);
+
 /* Free one pool page by page_id_t. */
 void mm_page_free(page_id_t id);
 

@@ -57,8 +57,14 @@ static int com_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
   p->cpu_ops = cpu_ops;
   p->cpu_state = cpu_state;
 
-  /* 1. Allocate a 64 KB segment (16 contiguous pages) */
-  page_id_t base_id = mem_region_page_alloc_contiguous(DOS_SEG_PAGES);
+  /* 1. Allocate the largest contiguous run we can, at least DOS_SEG_PAGES
+   *    (one DOS segment, the spec floor) and at most DOS_SEG_PAGES_MAX.
+   *    Apps such as zork1 expect to address memory well above their own
+   *    image — real DOS gives a .COM all conventional RAM by default, so
+   *    we mimic that within whatever fragment the page pool can offer. */
+  uint32_t got_pages = 0;
+  page_id_t base_id = mem_region_page_alloc_largest_contiguous(
+      DOS_SEG_PAGES, DOS_SEG_PAGES_MAX, &got_pages);
   if (base_id == PAGE_ID_INVALID) return -(int)ENOMEM;
 
   uint32_t base_linear = mem_region_page_linear(base_id);
@@ -67,11 +73,11 @@ static int com_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
   /* 2. Stream the .COM binary into the DOS segment and build the
    *    PSP + initial user frame. */
   uint16_t user_sp;
-  int rc =
-      dos_build_com_image(base_id, proc_seg, vn, file_size, argv, &user_sp);
+  int rc = dos_build_com_image(base_id, proc_seg, got_pages, vn, file_size,
+                               argv, &user_sp);
   if (rc < 0) {
-    for (uint16_t i = 0; i < DOS_SEG_PAGES; i++)
-      mem_region_page_free(base_id + i);
+    for (uint32_t i = 0; i < got_pages; i++)
+      mem_region_page_free(base_id + (page_id_t)i);
     return rc;
   }
 
@@ -101,16 +107,24 @@ static int com_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
     p->sp = (uint32_t)(uintptr_t)kstack;
   }
 
-  /* 5. Track pages and set image metadata */
-  for (uint16_t i = 0; i < DOS_SEG_PAGES; i++)
-    proc_track_page(p, i, base_id + i);
+  /* 5. Track pages and set image metadata.
+   *
+   * user_pages[] is i16 mmap/brk occupancy bookkeeping, capped at
+   * I16_USER_SEG_PAGES (the first 64 KB).  Mark only those slots — the
+   * extra pages above the first segment are not visible to mmap/brk and
+   * are reached via image.data.{base_page,size} (see dos_bridge.c
+   * dos_rw_common bound check).  All allocated pages are still freed on
+   * exit because mem_region_free derives n_pages from image.data.size. */
+  uint16_t track_pages = (got_pages < DOS_SEG_PAGES) ? (uint16_t)got_pages
+                                                     : (uint16_t)DOS_SEG_PAGES;
+  for (uint16_t i = 0; i < track_pages; i++) proc_track_page(p, i, base_id + i);
 
   p->image.text = proc_image_segment_make(
       (void *)(uintptr_t)(uint16_t)base_linear, file_size + 0x100,
       PPAP_MEM_RAM_TEXT, PROC_IMAGE_SEG_EXECUTABLE);
   p->image.text.base_page = base_id;
   p->image.data = proc_image_segment_make(
-      (void *)(uintptr_t)(uint16_t)base_linear, DOS_SEG_BYTES,
+      (void *)(uintptr_t)(uint16_t)base_linear, got_pages * PAGE_SIZE,
       PPAP_MEM_RAM_DATA, PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED);
   p->image.data.base_page = base_id;
   p->image.entry = 0x0100;

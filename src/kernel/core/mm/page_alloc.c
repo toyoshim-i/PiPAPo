@@ -165,6 +165,29 @@ page_id_t page_alloc_n(uint16_t n) {
   return base;
 }
 
+page_id_t page_alloc_largest(uint16_t min_pages, uint16_t max_pages,
+                             uint16_t *got) {
+  if (got) *got = 0;
+  if (min_pages == 0 || max_pages < min_pages) return PAGE_ID_INVALID;
+
+  uint32_t best = BLOCK_NONE;
+  uint16_t best_size = 0;
+  for (uint32_t i = 0; i < free_block_count; i++) {
+    if (free_blocks[i].pages > best_size) {
+      best = i;
+      best_size = free_blocks[i].pages;
+    }
+  }
+  if (best == BLOCK_NONE || best_size < min_pages) return PAGE_ID_INVALID;
+
+  uint16_t take = (best_size > max_pages) ? max_pages : best_size;
+  page_id_t base = free_blocks[best].base;
+  block_take_front(best, take);
+  free_page_total -= take;
+  if (got) *got = take;
+  return base;
+}
+
 int page_alloc_at_id(page_id_t id) {
   uint32_t idx = block_find_containing(id);
   if (idx == BLOCK_NONE) return -1;

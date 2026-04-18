@@ -38,6 +38,13 @@ page_id_t mem_region_page_alloc(void);
  * (or PAGE_ID_INVALID). */
 page_id_t mem_region_page_alloc_contiguous(uint32_t n_pages);
 
+/* Allocate the longest available contiguous run within [min, max] pages and
+ * grab all of it atomically.  Reports the actual page count via *got.
+ * Returns PAGE_ID_INVALID if no free run of at least min pages exists. */
+page_id_t mem_region_page_alloc_largest_contiguous(uint32_t min_pages,
+                                                   uint32_t max_pages,
+                                                   uint32_t *got_pages);
+
 /* Free a page by page_id_t. */
 void mem_region_page_free(page_id_t id);
 

@@ -10,9 +10,19 @@
 #include "kernel/common/vfs/vfs_types.h"
 #include "kernel/core/mm/page.h"
 
-/* 64 KB DOS segment = 16 contiguous 4 KB pages */
+/* Minimum DOS segment = 64 KB = 16 contiguous 4 KB pages.  This is the
+ * floor every COM gets; the loader tries to grab as much contiguous RAM
+ * as is available up to DOS_SEG_PAGES_MAX so apps that walk into "their
+ * own" high memory (zork1, etc.) find it backed. */
 #define DOS_SEG_PAGES 16u
 #define DOS_SEG_BYTES ((uint32_t)DOS_SEG_PAGES * PAGE_SIZE)
+
+/* Cap for the largest contiguous run we'll grab for a COM.  Sized to fit
+ * ~all common DOS apps (zork1 needs ~20 pages = 80 KB) while leaving
+ * comfortable headroom for kernel/VFS allocations on the limited pcxt
+ * page pool (~120 pages total). */
+#define DOS_SEG_PAGES_MAX 32u
+
 /* Max .COM size: 64 KB - 256 (PSP) - 1 */
 #define DOS_COM_MAX_SIZE 0xFEFFu
 
@@ -32,8 +42,8 @@
  *
  * Returns 0 on success with *out_user_sp populated, or a negative errno.
  */
-int dos_build_com_image(page_id_t base_id, uint16_t proc_seg, vnode_t *vn,
-                        uint32_t file_size, const char *const *argv,
-                        uint16_t *out_user_sp);
+int dos_build_com_image(page_id_t base_id, uint16_t proc_seg,
+                        uint32_t seg_pages, vnode_t *vn, uint32_t file_size,
+                        const char *const *argv, uint16_t *out_user_sp);
 
 #endif /* PPAP_KERNEL_CORE_SUBSYS_MSDOS_DOS_HOST_H */
