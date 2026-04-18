@@ -67,6 +67,8 @@ OVERLAY=""
 H68K_DEBUG=OFF
 TARGET=""
 
+# Targets swept by "build.sh all" — device/emulator targets only.  `host` is
+# a developer tool (native build of select user-space apps), opt-in only.
 VALID_TARGETS=(
     pico1 pico1calc pico2 pico2rv
     qemu_arm qemu_rv32 qemu_m68k
@@ -160,6 +162,10 @@ case "$TARGET" in
     pcxt)
         SOURCE_DIR="$PROJECT_DIR/src/target/pcxt"
         BUILD_DIR="$PROJECT_DIR/build/pcxt"
+        ;;
+    host)
+        SOURCE_DIR="$PROJECT_DIR/src/target/host"
+        BUILD_DIR="$PROJECT_DIR/build/host"
         ;;
     *)
         echo "[build] Error: unknown target '$TARGET'"
@@ -497,6 +503,17 @@ if [[ -n "$OVERLAY" ]]; then
         exit 1
     }
     EXTRA_ARGS[0]="-DPPAP_EXTRA_OVERLAY=$OVERLAY"
+fi
+
+# ── Host build — native toolchain, no Docker ────────────────────────────────
+if [[ "$TARGET" == "host" ]]; then
+    echo "[build] Building host target (native)"
+    cmake -DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/cmake/toolchain_host.cmake" \
+          -S "$SOURCE_DIR" -B "$BUILD_DIR" >/dev/null
+    cmake --build "$BUILD_DIR" -- -j"$(nproc 2>/dev/null || echo 4)"
+    echo "[build] Host binaries in $BUILD_DIR"
+    run_source_checks
+    exit 0
 fi
 
 echo "[build] Building $CMAKE_TARGET (PPAP_TESTS=$TESTS, PPAP_TESTS_EXTENDED=$TESTS_EXTENDED)..."
