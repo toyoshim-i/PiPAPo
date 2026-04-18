@@ -1,2 +1,2 @@
-::respawn:/bin/sh
+::respawn:/bin/sh -l
 ttyS0::respawn:/bin/getty ttyS0

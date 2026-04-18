@@ -1796,21 +1796,37 @@ int main(int argc, char *argv[]) {
   char cwd[PATH_BUF];
   if (getcwd(cwd, sizeof(cwd)) > 0) env_set("PWD", cwd, 1);
 
-  /* Script mode: push script.sh [args...] */
-  if (argc > 1) {
-    shell_name = argv[1];
-    pos_params[0] = argv[1];
+  /* Login-shell mode is requested explicitly via "-l".  Callers that
+   * want /etc/profile sourced (init fallback, getty, inittab console
+   * entry) pass the flag; a plain "push" invocation does not. */
+  int login_shell = 0;
+  int first_script_arg = 1;
+  if (argc > 1 && argv[1] && argv[1][0] == '-' && argv[1][1] == 'l' &&
+      argv[1][2] == '\0') {
+    login_shell = 1;
+    first_script_arg = 2;
+  }
+
+  /* Script mode: push [-l] script.sh [args...] */
+  if (argc > first_script_arg) {
+    shell_name = argv[first_script_arg];
+    pos_params[0] = argv[first_script_arg];
     pos_param_count = 0;
-    for (int i = 2; i < argc && pos_param_count < POS_PARAM_MAX - 1; i++)
+    for (int i = first_script_arg + 1;
+         i < argc && pos_param_count < POS_PARAM_MAX - 1; i++)
       pos_params[++pos_param_count] = argv[i];
-    return run_file(argv[1]);
+    return run_file(argv[first_script_arg]);
   }
 
   /* Interactive mode with line editing (Phase 3) */
   {
-    /* Source /etc/profile if it exists */
-    struct stat st;
-    if (stat("/etc/profile", &st) == 0) run_file("/etc/profile");
+    /* Source /etc/profile only in login-shell mode.  Keeps push quiet
+     * when run as a plain command on a host whose /etc/profile is
+     * bash-syntactic, not push-syntactic. */
+    if (login_shell) {
+      struct stat st;
+      if (stat("/etc/profile", &st) == 0) run_file("/etc/profile");
+    }
 
     struct line_src ls;
     ls.fd = 0;

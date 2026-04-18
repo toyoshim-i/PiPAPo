@@ -93,8 +93,9 @@ int main(int argc, char *argv[]) {
   /* 1. Read /etc/inittab */
   int fd = open("/etc/inittab", 0, 0); /* O_RDONLY */
   if (fd < 0) {
-    puts_fd(2, "init: no inittab, exec /bin/sh\n");
-    char *sh_argv[] = {"/bin/sh", (char *)0};
+    puts_fd(2, "init: no inittab, exec /bin/sh -l\n");
+    /* "-l" asks push to act as a login shell and source /etc/profile. */
+    char *sh_argv[] = {"/bin/sh", "-l", (char *)0};
     char *sh_envp[] = {(char *)0};
     execve("/bin/sh", sh_argv, sh_envp);
     _exit(1);

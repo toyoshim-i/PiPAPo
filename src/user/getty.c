@@ -94,8 +94,8 @@ int main(int argc, char **argv) {
     puts_fd(1, "\n");
   }
 
-  /* 5. Exec shell */
-  char *sh_argv[] = {"-sh", (char *)0};
+  /* 5. Exec shell as a login shell. */
+  char *sh_argv[] = {"/bin/sh", "-l", (char *)0};
   char *sh_envp[] = {(char *)0};
   execve("/bin/sh", sh_argv, sh_envp);
 
