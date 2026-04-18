@@ -21,6 +21,13 @@
  * Used by the scheduler for time-slice accounting. */
 volatile uint32_t riscv_tick_count = 0;
 
+/* Pointer to the saved trap frame at the base of the current kernel
+ * trap stack frame, captured by trap.S in the ecall (syscall) path.
+ * sys_rt_sigreturn reads it to locate the mepc/mstatus/sp slots it
+ * needs to overwrite so the trap-exit mret lands in the pre-signal
+ * user context.  Zero outside a syscall trap. */
+volatile uint32_t rv32_trap_frame_sp = 0;
+
 /* core_id() is provided as static inline in spinlock.h (via proc.h).
  * Phase RV-6 (dual-core) will use SIO_CPUID for real core detection. */
 

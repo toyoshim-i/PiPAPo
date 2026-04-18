@@ -239,17 +239,11 @@ int main(void)
 #endif
     };
     tests[t++] = (test_entry_t){ "/bin/test_fd", TEST_ENABLED };
-    tests[t++] = (test_entry_t){ "/bin/test_signal",
-#if defined(__riscv)
-        TEST_DISABLED
-#else
-        TEST_ENABLED
-#endif
-    };
+    tests[t++] = (test_entry_t){ "/bin/test_signal", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_poll", TEST_ENABLED };
     /* test_sleep_intr: nanosleep-interruption path is still open on ia16. */
     tests[t++] = (test_entry_t){ "/bin/test_sleep_intr",
-#if defined(__riscv) || defined(__ia16__)
+#if defined(__ia16__)
         TEST_DISABLED
 #else
         TEST_ENABLED
@@ -304,7 +298,6 @@ int main(void)
         TEST_ENABLED
 #endif
     };
-    /* test_signal_float: same float story; rv32 issue is bug-pending. */
     tests[t++] = (test_entry_t){ "/bin/test_signal_float",
 #if defined(__m68k__) || defined(__ia16__)
         TEST_UNSUPPORTED

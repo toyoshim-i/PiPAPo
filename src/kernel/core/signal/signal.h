@@ -30,7 +30,7 @@ typedef void (*sighandler_t)(int);
  *       pointer that trap.S should restore from.
  * ARM:  takes no args — manipulates PSP directly.
  */
-#if defined(__m68k__)
+#if defined(__m68k__) || defined(__riscv)
 void signal_check(uint32_t *regs);
 #elif defined(__ia16__)
 uint16_t signal_check(uint16_t user_sp, uint16_t user_ss);

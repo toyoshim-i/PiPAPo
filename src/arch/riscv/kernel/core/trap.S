@@ -196,6 +196,13 @@ _trap_entry:
     addi    t0, t0, 4
     sw      t0, TF_MEPC(sp)
 
+    # Publish the trap-frame base for sys_rt_sigreturn to locate the
+    # mepc/mstatus/user_sp slots it needs to rewrite when unwinding a
+    # signal delivery.  Only the ecall path needs this — timer IRQs
+    # don't dispatch syscalls.
+    la      t0, rv32_trap_frame_sp
+    sw      sp, 0(t0)
+
     # Re-enable interrupts during syscall processing (same as ARM SVC)
     csrs    mstatus, 0x8            # set MIE
 
@@ -211,6 +218,12 @@ _trap_entry:
     call    syscall_dispatch
 
     # syscall_dispatch writes return value into frame[0] = saved a0.
+
+    # Deliver any pending user-handler signal before returning to user.
+    # signal_check rewrites this trap frame's (mepc, sp, a0, ra) so the
+    # trap-exit mret lands in the handler in user mode.
+    mv      a0, sp                  # regs = &trap_frame
+    call    signal_check
 
     # ── Check exec_pending (execve replaces the process image) ──────
     # After execve, the trap frame on the stack is stale — proc_setup_stack

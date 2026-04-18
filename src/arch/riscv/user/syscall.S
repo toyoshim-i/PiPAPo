@@ -40,9 +40,21 @@ SYSCALL_STUB waitpid,   0x0004
 SYSCALL_STUB setsid,    0x000B
 SYSCALL_STUB setpgid,   0x0009
 SYSCALL_STUB getpgid,   0x000A
-SYSCALL_STUB kill,       0x0600
-SYSCALL_STUB sigaction,  0x0601
+SYSCALL_STUB kill,          0x0600
+SYSCALL_STUB rt_sigaction,   0x0603
 SYSCALL_STUB ptrace,    0x000F
+
+# --- _ppap_sigreturn_trampoline -----------------------------------------
+# Recorded as sa_restorer when sigaction() installs a handler (see
+# sigaction.c).  Handler's `ret` jumps to ra == _ppap_sigreturn_trampoline;
+# this stub issues SYS_RT_SIGRETURN to unwind the delivery frame.  Same
+# role as the glibc/musl user-space sigreturn trampolines on Linux.
+.section .text._ppap_sigreturn_trampoline, "ax"
+.global _ppap_sigreturn_trampoline
+_ppap_sigreturn_trampoline:
+    li   a7, 0x0605       # SYS_RT_SIGRETURN
+    ecall
+    j    .                 # should never return
 
 # --- File I/O ---
 SYSCALL_STUB read,      0x0100
