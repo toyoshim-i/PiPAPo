@@ -129,10 +129,10 @@ int dos_build_com_image(page_id_t base_id, uint16_t proc_seg,
 
 /* ── EXE (MZ) image build ─────────────────────────────────────────────── */
 
-/* Write `len` bytes into the run at `off_from_base`, splitting on page
- * boundaries.  mem_region_page_write is single-page; the initial frame
- * for .EXE can live at any SS:SP inside the run so the write may cross
- * pages. */
+/* Read/write `len` bytes in the run at `off_from_base`, splitting on
+ * page boundaries.  mem_region_page_{read,write} are single-page; the
+ * initial .EXE frame and relocation word patches can live at any SS:SP
+ * or target offset inside the run, so access may cross pages. */
 static void dos_write_run_bytes(page_id_t base_id, uint32_t off_from_base,
                                 const void *buf, uint32_t len) {
   const uint8_t *src = (const uint8_t *)buf;
@@ -147,6 +147,88 @@ static void dos_write_run_bytes(page_id_t base_id, uint32_t off_from_base,
     off_from_base += chunk;
     len -= chunk;
   }
+}
+
+static void dos_read_run_bytes(page_id_t base_id, uint32_t off_from_base,
+                               void *buf, uint32_t len) {
+  uint8_t *dst = (uint8_t *)buf;
+  while (len > 0) {
+    uint32_t pg = off_from_base / PAGE_SIZE;
+    uint16_t pg_off = (uint16_t)(off_from_base % PAGE_SIZE);
+    uint32_t chunk = PAGE_SIZE - pg_off;
+    if (chunk > len) chunk = len;
+    mem_region_page_read(base_id + (page_id_t)pg, pg_off, dst, (uint16_t)chunk);
+    dst += chunk;
+    off_from_base += chunk;
+    len -= chunk;
+  }
+}
+
+/* MZ relocation: add load_seg to the word at (load_seg + seg):offset,
+ * where (seg, offset) is one 4-byte relocation entry.  Returns 0 on
+ * success, -ENOEXEC if the target word is outside the allocated run. */
+static int dos_apply_one_reloc(page_id_t base_id, uint16_t proc_seg,
+                               uint32_t seg_pages, uint16_t load_seg,
+                               uint16_t r_off, uint16_t r_seg) {
+  uint32_t target_flat = ((uint32_t)(r_seg + load_seg) << 4) + r_off;
+  uint32_t run_base = (uint32_t)proc_seg << 4;
+  uint32_t run_end = run_base + seg_pages * PAGE_SIZE;
+  if (target_flat < run_base || target_flat + 2u > run_end)
+    return -(int)ENOEXEC;
+
+  uint8_t word[2];
+  uint32_t off_from_base = target_flat - run_base;
+  dos_read_run_bytes(base_id, off_from_base, word, 2);
+  uint16_t val = (uint16_t)word[0] | ((uint16_t)word[1] << 8);
+  val = (uint16_t)(val + load_seg);
+  word[0] = (uint8_t)val;
+  word[1] = (uint8_t)(val >> 8);
+  dos_write_run_bytes(base_id, off_from_base, word, 2);
+  return 0;
+}
+
+/* Apply all MZ relocations.  Reloc entries are read from the file in
+ * batches into the PSP scratch area (base_id:0..0xFF), so this must
+ * run before dos_build_psp. */
+#define DOS_RELOC_BATCH 64u /* 64 * 4 = 256 bytes fits in PSP scratch */
+
+static int dos_apply_relocations(page_id_t base_id, uint16_t proc_seg,
+                                 uint32_t seg_pages, uint16_t load_seg,
+                                 vnode_t *vn, uint32_t file_size,
+                                 const mz_header_t *hdr) {
+  if (hdr->reloc_count == 0) return 0;
+
+  uint32_t table_bytes = (uint32_t)hdr->reloc_count * 4u;
+  if ((uint32_t)hdr->reloc_offset + table_bytes > file_size)
+    return -(int)ENOEXEC;
+
+  uint32_t remaining = hdr->reloc_count;
+  uint32_t file_off = hdr->reloc_offset;
+
+  while (remaining > 0) {
+    uint32_t batch =
+        (remaining > DOS_RELOC_BATCH) ? DOS_RELOC_BATCH : remaining;
+    uint32_t batch_bytes = batch * 4u;
+
+    long rn = mod_vfs.vnode_read(vn, base_id, 0, batch_bytes, file_off);
+    if (rn < 0) return (int)rn;
+    if ((uint32_t)rn != batch_bytes) return -(int)ENOEXEC;
+
+    for (uint32_t i = 0; i < batch; i++) {
+      uint8_t entry[4];
+      mem_region_page_read(base_id, (uint16_t)(i * 4u), entry, 4);
+      uint16_t r_off = (uint16_t)entry[0] | ((uint16_t)entry[1] << 8);
+      uint16_t r_seg = (uint16_t)entry[2] | ((uint16_t)entry[3] << 8);
+
+      int rc = dos_apply_one_reloc(base_id, proc_seg, seg_pages, load_seg,
+                                   r_off, r_seg);
+      if (rc < 0) return rc;
+    }
+
+    remaining -= batch;
+    file_off += batch_bytes;
+  }
+  return 0;
 }
 
 int dos_build_exe_image(page_id_t base_id, uint16_t proc_seg,
@@ -174,11 +256,12 @@ int dos_build_exe_image(page_id_t base_id, uint16_t proc_seg,
   uint32_t total_bytes = 0x100u + code_size + tail_para * 16u;
   if (total_bytes > seg_pages * PAGE_SIZE) return -(int)ENOMEM;
 
-  /* Zero the whole run, then PSP at proc_seg:0. */
+  /* Zero the whole run up front. */
   dos_zero_segment(base_id, seg_pages);
-  dos_build_psp(base_id, proc_seg, seg_pages, argv);
 
-  /* Stream the image payload into base_id:0x100. */
+  /* Stream the image payload into base_id:0x100.  PSP build is deferred
+   * until after relocations so the PSP scratch area can stage reloc
+   * entries without conflicting with the PSP contents. */
   if (code_size > 0) {
     long n = mod_vfs.vnode_read(vn, base_id, 0x100, code_size, header_bytes);
     if (n < 0) return (int)n;
@@ -187,6 +270,16 @@ int dos_build_exe_image(page_id_t base_id, uint16_t proc_seg,
 
   /* Resolve initial CS:IP / SS:SP against load_seg. */
   uint16_t load_seg = (uint16_t)(proc_seg + 0x10u);
+
+  /* Apply MZ relocations (each patches a 16-bit word by adding load_seg).
+   * Must run before dos_build_psp because the batch read uses base_id:0
+   * as scratch. */
+  int rr = dos_apply_relocations(base_id, proc_seg, seg_pages, load_seg, vn,
+                                 file_size, hdr);
+  if (rr < 0) return rr;
+
+  /* PSP at proc_seg:0 — writes over the reloc scratch area. */
+  dos_build_psp(base_id, proc_seg, seg_pages, argv);
   uint16_t user_cs = (uint16_t)(hdr->init_cs + load_seg);
   uint16_t user_ss = (uint16_t)(hdr->init_ss + load_seg);
   uint16_t user_ip = hdr->init_ip;

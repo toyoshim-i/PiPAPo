@@ -5,11 +5,9 @@
  * large enough for PSP + image + min_alloc, and delegates in-memory
  * setup to dos_build_exe_image() in dos_host.c.
  *
- * D-4a: zero-relocation .EXEs only.  Files with reloc_count > 0 are
- * rejected with ENOEXEC; relocation handling lands in D-4b.
- *
  * As with com_loader, the program runs directly on native i16; INT 21h
- * is trapped by dos_trap.S.
+ * is trapped by dos_trap.S.  Relocations (hdr.reloc_count > 0) are
+ * applied inside dos_build_exe_image by dos_apply_relocations.
  */
 
 #include "kernel/core/subsys/msdos/exe_loader.h"
@@ -86,15 +84,7 @@ static int exe_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
   mz_header_t hdr;
   mem_region_page_read(base_id, 0, &hdr, sizeof(hdr));
 
-  /* 3. D-4a: refuse files with relocations.  Will be lifted in D-4b. */
-  if (hdr.reloc_count != 0) {
-    mod_vfs.klogf("[msdos] exe_loader: reloc_count=%u not supported (D-4b)\n",
-                  (unsigned)hdr.reloc_count);
-    exe_free_run(base_id, got_pages);
-    return -(int)ENOEXEC;
-  }
-
-  /* 4. Validate header and compute image size.  dos_build_exe_image()
+  /* 3. Validate header and compute image size.  dos_build_exe_image()
    *    repeats these checks; doing them here lets us reject before
    *    touching the run. */
   if (hdr.header_size < 2) {
@@ -115,7 +105,7 @@ static int exe_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
   }
   uint32_t code_size = image_bytes - header_bytes;
 
-  /* 5. Check the allocation is big enough: PSP + code + min_alloc
+  /* 4. Check the allocation is big enough: PSP + code + min_alloc
    *    headroom, rounded up to whole pages. */
   uint32_t total_bytes = 0x100u + code_size + (uint32_t)hdr.min_alloc * 16u;
   uint32_t pages_needed = (total_bytes + PAGE_SIZE - 1) / PAGE_SIZE;
@@ -128,7 +118,7 @@ static int exe_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
     return -(int)ENOMEM;
   }
 
-  /* 6. Build the image (zero + PSP + image stream + initial frame). */
+  /* 5. Build the image (zero + stream + relocs + PSP + initial frame). */
   uint16_t user_ss;
   uint16_t user_sp;
   int rc = dos_build_exe_image(base_id, proc_seg, got_pages, vn, file_size,
@@ -138,7 +128,7 @@ static int exe_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
     return rc;
   }
 
-  /* 7. Tag as MS-DOS subsystem */
+  /* 6. Tag as MS-DOS subsystem */
   p->subsys = SUBSYS_MSDOS;
   {
     const subsys_ops_t *ops = subsys_ops_table[SUBSYS_MSDOS];
@@ -147,7 +137,7 @@ static int exe_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
 
   if (argv && argv[0]) dos_set_exec_dir(p, argv[0]);
 
-  /* 8. Kernel-stack frame that trap.S's restore tail will pop. */
+  /* 7. Kernel-stack frame that trap.S's restore tail will pop. */
   p->exec_user_ss = user_ss;
   p->exec_user_sp = user_sp;
   {
@@ -160,7 +150,7 @@ static int exe_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
     p->sp = (uint32_t)(uintptr_t)kstack;
   }
 
-  /* 9. Track pages and set image metadata.  See com_loader.c for the
+  /* 8. Track pages and set image metadata.  See com_loader.c for the
    *    rationale on tracking only the first DOS_SEG_PAGES: user_pages[]
    *    is brk/mmap bookkeeping for the first 64 KB segment; pages past
    *    that are reached via image.data.{base_page,size} and still freed

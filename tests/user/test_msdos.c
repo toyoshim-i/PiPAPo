@@ -1006,6 +1006,57 @@ static void test_exe_hello(void)
               "output starts with Hel");
 }
 
+/* -- Test 19: farjmp.exe --- MZ .EXE with 1 relocation (CS of JMP FAR) --- */
+/*
+ * Exercises the D-4b relocation path.  The file contains a JMP FAR
+ * instruction whose CS field is initially 0; a single relocation
+ * entry tells the loader to add load_seg to the word at (load_seg:3).
+ * After patching, the JMP goes to load_seg:0010 where the exit-42
+ * stub lives.  Without the patch, the JMP would target 0000:0010
+ * (inside the IVT) and the program would not exit with code 42.
+ *
+ * File layout (53 bytes, header_size=2 paragraphs):
+ *   0x00..0x1B  MZ fixed header (28 bytes)
+ *   0x1C..0x1F  one 4-byte relocation entry (offset=3, seg=0)
+ *   0x20..0x34  image (21 bytes):
+ *     load_seg:0000  EA 10 00 00 00    ; JMP FAR 0000:0010 (CS patched)
+ *     load_seg:0005  00 ... 00         ; 11 bytes padding
+ *     load_seg:0010  B8 2A 4C          ; MOV AX, 4C2Ah
+ *     load_seg:0013  CD 21             ; INT 21h
+ */
+static const unsigned char exe_farjmp_exe[] = {
+    /* MZ header (28 bytes of fields + 4 bytes reloc entry = 32) */
+    'M', 'Z',
+    0x35, 0x00,                     /* last_page_size = 53              */
+    0x01, 0x00,                     /* page_count = 1                   */
+    0x01, 0x00,                     /* reloc_count = 1                  */
+    0x02, 0x00,                     /* header_size = 2 para             */
+    0x20, 0x00,                     /* min_alloc = 0x20 para            */
+    0xFF, 0xFF,                     /* max_alloc                        */
+    0x10, 0x00,                     /* init_ss = 0x10                   */
+    0x00, 0x01,                     /* init_sp = 0x100                  */
+    0x00, 0x00,                     /* checksum                         */
+    0x00, 0x00,                     /* init_ip = 0                      */
+    0x00, 0x00,                     /* init_cs = 0                      */
+    0x1C, 0x00,                     /* reloc_offset = 0x1C              */
+    0x00, 0x00,                     /* overlay                          */
+    /* Reloc entry at 0x1C: patch word at (seg=0):offset=3 */
+    0x03, 0x00, 0x00, 0x00,
+
+    /* Image at load_seg:0 (file offset 0x20) */
+    0xEA, 0x10, 0x00, 0x00, 0x00,   /* JMP FAR 0000:0010 (CS relocated) */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,/* pad to load_seg:0010             */
+    0xB8, 0x2A, 0x4C,               /* MOV AX, 4C2Ah                    */
+    0xCD, 0x21,                     /* INT 21h                          */
+};
+
+static void test_exe_reloc_farjmp(void)
+{
+    WRITE_EXE("/tmp/dos_fj.exe", exe_farjmp_exe);
+    int code = run_com("/tmp/dos_fj.exe");
+    UT_ASSERT_EQ(code, 42);
+}
+
 /* -- main ----------------------------------------------------------------- */
 
 int main(void)
@@ -1028,6 +1079,7 @@ int main(void)
     test_rename();
     test_exe_exit_code();
     test_exe_hello();
+    test_exe_reloc_farjmp();
 
     UT_SUMMARY("test_msdos");
 }
