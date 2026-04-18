@@ -5,7 +5,7 @@ Bare-metal (no libc) user-space programs for PiPAPo.
 For the full developer guide — compiler flags, linking, memory layout,
 musl integration, and porting third-party apps — see:
 
-**[docs/getting_started/userland_dev_guide.md](/docs/getting_started/userland_dev_guide.md)**
+**[docs/user/userland_dev_guide.md](/docs/user/userland_dev_guide.md)**
 
 ## Directory Layout
 

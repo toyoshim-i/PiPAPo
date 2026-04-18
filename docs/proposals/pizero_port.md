@@ -814,7 +814,7 @@ virtual memory.
 ## 19. Related Documentation
 
 - [docs/kernel/overview.md](../kernel/overview.md) — PPAP kernel architecture
-- [docs/kernel/trace.md](../kernel/trace.md) — Trace and debug subsystem
+- [docs/user/trace.md](../user/trace.md) — Trace and debug subsystem
 - [docs/kernel/syscall.md](../kernel/syscall.md) — System call reference
 - [docs/proposals/pico2_port.md](pico2_port.md) — Pico 2 port (RP2350, same ARM family, no MMU)
 - [docs/proposals/x68k_port.md](x68k_port.md) — X68000 port (m68k, analogous porting effort)

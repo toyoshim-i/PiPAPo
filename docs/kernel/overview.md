@@ -253,10 +253,10 @@ The trampoline and signal frame layout are architecture-specific but the kernel-
 ## Related Documentation
 
 - [syscall.md](/docs/kernel/syscall.md) — System call reference
-- [trace.md](/docs/kernel/trace.md) — Trace and debug subsystem (ptrace API, /bin/trace, /bin/pdb)
+- [trace.md](/docs/user/trace.md) — Trace and debug subsystem (ptrace API, /bin/trace, /bin/pdb)
 - [procfs.md](/docs/kernel/procfs.md) — /proc filesystem
 - [filesystems.md](/docs/kernel/filesystems.md) — VFS and filesystem drivers
-- [userland_dev_guide.md](/docs/getting_started/userland_dev_guide.md) — User-space development
+- [userland_dev_guide.md](/docs/user/userland_dev_guide.md) — User-space development
 - [PicoCalc.md](/docs/reference/picocalc.md) — PicoCalc hardware reference
 - [PicoCalc-LCD.md](/docs/reference/picocalc_lcd.md) — LCD display driver
 - [targets/68000.md](/docs/targets/68000.md) — m68k target notes

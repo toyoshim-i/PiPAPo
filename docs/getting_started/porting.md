@@ -156,7 +156,7 @@ On m68k, .text is also in RAM, but the 16 MB QEMU target has ample space.
 
 ## Related Documentation
 
-- [userland_dev_guide.md](/docs/getting_started/userland_dev_guide.md) — User-space programming guide
+- [userland_dev_guide.md](/docs/user/userland_dev_guide.md) — User-space programming guide
 - [syscall.md](/docs/kernel/syscall.md) — System call reference
 - [kernel.md](/docs/kernel/overview.md) — Kernel internals (ELF loader, PIE model)
 - [archive/history/port-rogue.md](/docs/archive/history/port-rogue.md) — Rogue 5.4.4 porting details

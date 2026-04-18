@@ -22,10 +22,13 @@ This index is the entry point for project documentation.
   - [`getting_started/testing.md`](getting_started/testing.md)
   - [`getting_started/debugging.md`](getting_started/debugging.md)
   - [`getting_started/build_system.md`](getting_started/build_system.md)
-  - [`getting_started/push.md`](getting_started/push.md)
-  - [`getting_started/userland_dev_guide.md`](getting_started/userland_dev_guide.md)
   - [`getting_started/porting.md`](getting_started/porting.md)
   - [`getting_started/coding_rules.md`](getting_started/coding_rules.md)
+
+- User (end-user app and user-space references)
+  - [`user/push.md`](user/push.md) — push (PiPAPo μShell)
+  - [`user/userland_dev_guide.md`](user/userland_dev_guide.md) — Writing user-space programs
+  - [`user/trace.md`](user/trace.md) — Trace and debug subsystem (/bin/trace, /bin/pdb)
 
 - Kernel
   - [`kernel/overview.md`](kernel/overview.md)
@@ -35,7 +38,6 @@ This index is the entry point for project documentation.
   - [`kernel/filesystems.md`](kernel/filesystems.md)
   - [`kernel/ufs.md`](kernel/ufs.md)
   - [`kernel/procfs.md`](kernel/procfs.md)
-  - [`kernel/trace.md`](kernel/trace.md)
 
 - Proposals
   - [`proposals/x68k_port.md`](proposals/x68k_port.md) — X68000 m68k port

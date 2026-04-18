@@ -247,6 +247,6 @@ src/etc/profile          # default PS1 and PATH (sourced on interactive startup)
 
 - [Userland development guide](userland_dev_guide.md) — how to build user programs
 - [Syscall reference](../kernel/syscall.md) — syscalls used by push
-- [Build and run](build_and_run.md) — building and running PiPAPo
+- [Build and run](../getting_started/build_and_run.md) — building and running PiPAPo
 - [CP/M subsystem](../subsystems/cpm.md) — retro subsystem PATH search context
 - [Human68k subsystem](../subsystems/human68k.md) — retro subsystem PATH search context

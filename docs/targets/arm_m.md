@@ -749,5 +749,5 @@ openocd (RP fork)     — flash/debug for Pico 2 (RP2350 support)
 
 - [68000.md](/docs/targets/68000.md) — m68k target reference
 - [kernel overview](/docs/kernel/overview.md) — Kernel internals (boot, memory, scheduler, signals)
-- [userland dev guide](/docs/getting_started/userland_dev_guide.md) — Compiler flags, PIC model, ELF details
+- [userland dev guide](/docs/user/userland_dev_guide.md) — Compiler flags, PIC model, ELF details
 - [syscall.md](/docs/kernel/syscall.md) — Complete syscall reference (shared numbering)

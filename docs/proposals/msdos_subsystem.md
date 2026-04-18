@@ -1057,5 +1057,5 @@ The i8086 eCPU must be functional before any DOS subsystem work begins
 
 - [docs/proposals/i8086_ecpu.md](i8086_ecpu.md) — i8086 eCPU emulator
 - [docs/targets/ia16.md](../targets/ia16.md) — IBM PC target port (ia16)
-- [docs/kernel/trace.md](../kernel/trace.md) — Trace and debug subsystem
+- [docs/user/trace.md](../user/trace.md) — Trace and debug subsystem
 - [docs/kernel/syscall.md](../kernel/syscall.md) — System call reference

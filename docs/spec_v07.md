@@ -371,7 +371,7 @@ PiPAPo ships a native, purpose-built user space:
 
 | Program | Description |
 |---|---|
-| **push** | PiPAPo μShell — default `/bin/sh`, ~14 KB code, no malloc. See [push.md](/docs/getting_started/push.md) |
+| **push** | PiPAPo μShell — default `/bin/sh`, ~14 KB code, no malloc. See [push.md](/docs/user/push.md) |
 | **init** | PID 1 process. Reads `/etc/inittab`, spawns getty on each console |
 | **getty** | Serial/LCD login (with auto-login support) |
 | **ps** | Process listing via `/proc` |
@@ -597,7 +597,7 @@ busybox is developed with the assumption of a Linux kernel, and some applets dep
 | [filesystems.md](/docs/kernel/filesystems.md) | Kernel developers | VFS layer, romfs, VFAT, UFS, loopback, devfs, procfs, tmpfs |
 | [syscall.md](/docs/kernel/syscall.md) | All developers | Complete system call reference (shared across architectures) |
 | [procfs.md](/docs/kernel/procfs.md) | All developers | /proc filesystem file formats |
-| [userland_dev_guide.md](/docs/getting_started/userland_dev_guide.md) | User-space developers | Toolchain, compiler flags, linking (ARM and m68k) |
+| [userland_dev_guide.md](/docs/user/userland_dev_guide.md) | User-space developers | Toolchain, compiler flags, linking (ARM and m68k) |
 | [porting.md](/docs/getting_started/porting.md) | Application porters | Third-party porting pattern |
 | [PicoCalc.md](/docs/reference/picocalc.md) | Hardware developers | PicoCalc pinout, I2C keyboard protocol, SD card, serial debug |
 | [PicoCalc-LCD.md](/docs/reference/picocalc_lcd.md) | Driver developers | ST7365P LCD driver architecture, SPI protocol, VT100 emulator |
