@@ -50,14 +50,9 @@ void signal_check(void);
  */
 int signal_check_kernel(void);
 
-/* Legacy kernel-text sigreturn trampoline symbol, kept only for m68k
- * where synchronous signal delivery needs the symbol to satisfy the
- * linker but never executes it.  ARM and ia16 use sa_restorer-style
- * delivery: the handler's return target is the per-process sa_restorer
- * registered via rt_sigaction (user-space stub — see each arch's
- * src/arch/<arch>/user/syscall.S). */
-#if defined(__m68k__)
-extern void sigreturn_trampoline(void);
-#endif
+/* All arches now use sa_restorer-style delivery: the handler's return
+ * target is the per-process sa_restorer registered via rt_sigaction
+ * (user-space stub — see each arch's src/arch/<arch>/user/syscall.S).
+ * No kernel-owned trampoline symbol exists anymore. */
 
 #endif /* PPAP_KERNEL_CORE_SIGNAL_SIGNAL_H */

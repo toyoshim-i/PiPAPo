@@ -64,6 +64,10 @@ m68k_trap0_handler:
     move.l  %usp,%a1
     move.l  %a1,%a0@(PCB_USP_OFFSET)
 
+    | Publish the trap frame SSP pointer for sys_rt_sigreturn to locate
+    | the SR/PC slots it needs to overwrite when unwinding a signal.
+    move.l  %sp,m68k_trap_frame_sp
+
     | Pass pointer to saved register frame as argument.
     | m68k C ABI: first arg on stack.
     | Avoid `move.l %sp,%sp@-` — 68000 stores the decremented value,

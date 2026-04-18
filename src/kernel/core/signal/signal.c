@@ -85,76 +85,74 @@ int signal_check_kernel(void) {
 
 /* ── Architecture-specific signal delivery ─────────────────────────────────
  *
- * ARM:  RTE-based, sa_restorer style.  signal_setup_frame pushes a new
- *       HW exception frame below PSP with LR = current->sig_restorers[sig]
- *       (a user-space trampoline registered via rt_sigaction — see
- *       src/arch/arm_m/user/syscall.S).  The CPU unwinds the exception
- *       into the handler; the handler's `bx lr` lands on the restorer
- *       which issues SYS_RT_SIGRETURN, and sys_sigreturn advances PSP
- *       past the sig-delivery frame.
+ * All arches share the sa_restorer model: user-space libc/crt provides
+ * the sigreturn trampoline, the kernel records its address per handler
+ * via rt_sigaction, and signal_check uses it as the handler's return
+ * target.  Only the frame-building mechanics are arch-specific.
  *
- * m68k: Synchronous call — signal_check calls the handler directly via
- *       m68k_call_signal_handler (assembly thunk that sets a5 = GOT base).
- *       No sigreturn needed; sys_sigreturn / sys_rt_sigreturn return -ENOSYS.
+ * ARM:  RTE-based.  signal_setup_frame pushes a new HW exception frame
+ *       below PSP with LR = current->sig_restorers[sig].  The CPU unwinds
+ *       into the handler; `bx lr` lands on the restorer, which issues
+ *       SYS_RT_SIGRETURN.  sys_sigreturn advances PSP past the
+ *       sig-delivery frame.
  *
- * i16:  IRET-based real-mode delivery, sa_restorer style.  trap.S passes
- *       (user_sp, user_ss) from the kernel-stack slot to signal_check(),
- *       which plants a new GP+IRET frame plus a small trailer on the
- *       user stack and returns the new user_sp.  The handler's near
- *       `ret` lands on the per-handler sa_restorer (e.g.
- *       _ppap_sigreturn_trampoline in src/arch/i16/user/syscall.S);
- *       that stub issues INT 30h SYS_RT_SIGRETURN, which restores the
- *       pre-signal user_sp in the kernel slot.  See the frame-layout
- *       comment on the i16 branch below.
+ * m68k: RTE-based.  signal_check rewrites the (SR, PC) slot in the trap
+ *       frame so rte enters the handler in user mode, and plants a small
+ *       sig-arg + saved-context trailer below USP.  Handler's `rts`
+ *       lands on the restorer (which pops the sig arg slot and issues
+ *       SYS_RT_SIGRETURN).  sys_rt_sigreturn reads the saved (SR, PC,
+ *       USP) out of the trailer and rewrites the current trap frame so
+ *       the trap-exit rte resumes at the pre-signal user PC.
+ *
+ * i16:  IRET-based real-mode delivery.  trap.S passes (user_sp, user_ss)
+ *       from the kernel-stack slot to signal_check(), which plants a new
+ *       GP+IRET frame plus a small trailer on the user stack and returns
+ *       the new user_sp.  Handler's near `ret` lands on the restorer in
+ *       proc_seg; that stub issues INT 30h SYS_RT_SIGRETURN, which
+ *       restores the pre-signal user_sp in the kernel slot.  See the
+ *       frame-layout comment on the i16 branch below.
  * ────────────────────────────────────────────────────────────────────────── */
 
 #if defined(__m68k__)
 
 /*
- * m68k signal delivery — synchronous call model
+ * m68k signal delivery — RTE-based, sa_restorer style.
  *
- * On PPAP m68k, processes run in user mode with USP/SSP separation.
- * The ARM-style RTE-based signal delivery (push frame onto user stack,
- * modify exception frame, RTE to handler) is not used because the
- * m68000 lacks the full frame format needed for safe nested exceptions.
+ * Layout at TRAP #0 entry (set up by src/arch/m68k/kernel/core/trap.S):
  *
- * Instead, signal_check() calls the handler directly as a C function via
- * an assembly thunk that sets a5 = GOT base (required for PIC/-msep-data).
- * The SSP register frame is saved/restored around the handler call so the
- * original context is preserved.
+ *   [regs + 0 .. 56]   d0..d7, a0..a6    (60 B, restored by movem at exit)
+ *   [regs + 60]        SR                (2 B, popped by rte)
+ *   [regs + 62]        PC                (4 B, popped by rte)
  *
- * This is equivalent to the RTE model in terms of observable behavior:
- * the handler runs synchronously on syscall return, just like ARM.
+ * signal_check builds an 18-byte delivery frame below the current USP
+ * and rewrites the (SR, PC) slot in the trap frame so the rte at trap
+ * exit enters the handler in user mode:
+ *
+ *   [new_usp + 0]   sa_restorer        (4 B — handler's rts target)
+ *   [new_usp + 4]   sig                (4 B — handler's first stack arg)
+ *   [new_usp + 8]   saved_orig_usp     (4 B — consumed by sys_rt_sigreturn)
+ *   [new_usp + 12]  saved_orig_sr      (2 B)
+ *   [new_usp + 14]  saved_orig_pc      (4 B)
+ *
+ * The handler receives `sig` at 8(%a6) via the standard m68k C ABI (the
+ * 4-byte slot at [new_usp + 4] is the first stack-passed argument).  On
+ * return the handler does `rts`, popping the sa_restorer; the restorer
+ * discards the arg slot with `addq.l #4,%sp` and issues
+ * SYS_RT_SIGRETURN, which unwinds the delivery frame.
+ *
+ * No signal blocking is performed during the handler — matches the ARM
+ * and ia16 branches.
  */
 
-#define SIGFRAME_SIZE 66 /* d0-d7/a0-a6 (60) + SR (2) + PC (4) */
+#define M68K_TRAP_FRAME_SR_OFF 60u
+#define M68K_TRAP_FRAME_PC_OFF 62u
+#define M68K_SIG_DELIVERY_BYTES 18u
 
-/*
- * Trampoline stub — not used on m68k (synchronous delivery), but kept
- * so the linker doesn't complain about the extern declaration in signal.h.
- */
-__attribute__((used, section(".text.sigreturn_trampoline"))) void
-__asm_sigreturn_trampoline(void);
-__asm(
-    ".section .text.sigreturn_trampoline,\"ax\",@progbits\n"
-    ".globl sigreturn_trampoline\n"
-    "sigreturn_trampoline:\n"
-    "    rts\n"
-    ".previous\n");
+extern volatile uint32_t m68k_trap_frame_sp;
 
-/*
- * m68k_call_signal_handler — assembly thunk to call a PIC signal handler.
- *
- * Sets a5 = GOT base before calling the handler (required for -msep-data),
- * saves/restores the kernel's a5 around the call.
- *
- * Defined in signal_m68k.S.
- */
-extern void m68k_call_signal_handler(sighandler_t handler, int sig,
-                                     uint32_t got_base);
-
-/* ── signal_check ───────────────────────────────────────────────────────────
- */
+static inline void m68k_set_usp(uint32_t usp) {
+  __asm__ volatile("move.l %0, %%usp" ::"a"(usp));
+}
 
 void signal_check(uint32_t *regs) {
   uint32_t deliverable = current->sig_pending & ~current->sig_blocked;
@@ -164,28 +162,45 @@ void signal_check(uint32_t *regs) {
   current->sig_pending &= ~(1u << sig);
 
   sighandler_t handler = current->sig_handlers[sig];
-
   if (handler == SIG_IGN) return;
-
   if (handler == SIG_DFL) {
     signal_default_action(sig, regs);
     return;
   }
 
-  /* Save SSP register frame (restored after handler returns) */
-  uint8_t saved_frame[SIGFRAME_SIZE];
-  __builtin_memcpy(saved_frame, regs, SIGFRAME_SIZE);
+  uint32_t restorer = (uint32_t)(uintptr_t)current->sig_restorers[sig];
+  if (restorer == 0u) {
+    sys_exit(128 + sig);
+    return;
+  }
 
-  /* Block signal during handler to prevent infinite recursion */
-  uint32_t old_blocked = current->sig_blocked;
-  current->sig_blocked |= (1u << sig);
+  uint8_t *frame = (uint8_t *)regs;
+  uint16_t orig_sr;
+  uint32_t orig_pc;
+  uint32_t orig_usp = current->usp;
+  __builtin_memcpy(&orig_sr, frame + M68K_TRAP_FRAME_SR_OFF, 2);
+  __builtin_memcpy(&orig_pc, frame + M68K_TRAP_FRAME_PC_OFF, 4);
 
-  /* Call handler synchronously with correct GOT base */
-  m68k_call_signal_handler(handler, sig, current->got_base);
+  uint32_t new_usp = orig_usp - M68K_SIG_DELIVERY_BYTES;
+  uint32_t sig32 = (uint32_t)sig;
 
-  /* Restore SSP frame and signal mask */
-  __builtin_memcpy(regs, saved_frame, SIGFRAME_SIZE);
-  current->sig_blocked = old_blocked;
+  sys_copy_to_user((uintptr_t)(new_usp + 0u), &restorer, 4);
+  sys_copy_to_user((uintptr_t)(new_usp + 4u), &sig32, 4);
+  sys_copy_to_user((uintptr_t)(new_usp + 8u), &orig_usp, 4);
+  sys_copy_to_user((uintptr_t)(new_usp + 12u), &orig_sr, 2);
+  sys_copy_to_user((uintptr_t)(new_usp + 14u), &orig_pc, 4);
+
+  /* Rewrite the trap frame's (SR, PC) so rte enters the handler in user
+   * mode.  Preserve the original SR's CCR/IPL bits — they already have
+   * S=0 because the hw push captured the pre-trap user SR. */
+  uint32_t new_pc = (uint32_t)(uintptr_t)handler;
+  __builtin_memcpy(frame + M68K_TRAP_FRAME_SR_OFF, &orig_sr, 2);
+  __builtin_memcpy(frame + M68K_TRAP_FRAME_PC_OFF, &new_pc, 4);
+
+  /* Point the USP at the delivery frame so the handler's stack-passed
+   * `sig` argument is found at 8(%a6) / 4(%sp-at-entry). */
+  current->usp = new_usp;
+  m68k_set_usp(new_usp);
 }
 
 #elif defined(__ia16__)
@@ -495,10 +510,44 @@ long sys_sigaction(long sig, long handler, long old_ptr) {
 
 #if defined(__m68k__)
 
-/* m68k uses synchronous signal delivery — no sigreturn needed.
- * These stubs exist for the syscall dispatch table. */
-long sys_sigreturn(void) { return -(long)ENOSYS; }
-long sys_rt_sigreturn(void) { return -(long)ENOSYS; }
+/*
+ * Unwind the delivery frame planted by signal_check on the user stack.
+ *
+ * Entry conditions (after the handler's `rts` and the sa_restorer stub
+ * doing `addq.l #4,%sp` + `trap #0`):
+ *
+ *   current->usp  points at the saved-context trailer (orig_usp slot).
+ *   [usp + 0]  orig_usp
+ *   [usp + 4]  orig_sr
+ *   [usp + 6]  orig_pc
+ *
+ * Rewrite the current trap frame's (SR, PC) back to the pre-signal
+ * values so the trap-exit rte resumes at the interrupted user PC, and
+ * restore USP to where it was before delivery.
+ */
+long sys_rt_sigreturn(void) {
+  uint8_t *frame;
+  uintptr_t user_sp;
+  uint32_t orig_usp, orig_pc;
+  uint16_t orig_sr;
+
+  if (m68k_trap_frame_sp == 0u) return -(long)EFAULT;
+
+  user_sp = current->usp;
+  sys_copy_from_user(&orig_usp, user_sp + 0u, 4);
+  sys_copy_from_user(&orig_sr, user_sp + 4u, 2);
+  sys_copy_from_user(&orig_pc, user_sp + 6u, 4);
+
+  frame = (uint8_t *)(uintptr_t)m68k_trap_frame_sp;
+  __builtin_memcpy(frame + M68K_TRAP_FRAME_SR_OFF, &orig_sr, 2);
+  __builtin_memcpy(frame + M68K_TRAP_FRAME_PC_OFF, &orig_pc, 4);
+
+  current->usp = orig_usp;
+  m68k_set_usp(orig_usp);
+  return 0;
+}
+
+long sys_sigreturn(void) { return sys_rt_sigreturn(); }
 
 #elif defined(__ia16__)
 

@@ -199,17 +199,35 @@ setsid:
     trap    #0
     rts
 
-| --- sigaction (SYS_SIGACTION = 0x0601) ----------------------------------------
-| int sigaction(int sig, void *handler, void *old_handler);
-    .globl sigaction
-sigaction:
-    movem.l %d2-%d3, %sp@-      | save d2-d3 (8 bytes)
-    move.l  12(%sp), %d1        | sig
-    move.l  16(%sp), %d2        | handler
-    move.l  20(%sp), %d3        | old_handler
-    move.l  #0x0601, %d0
+| --- _ppap_sigreturn_trampoline ------------------------------------------------
+| Address is recorded as sa_restorer when sigaction() installs a handler
+| (see sigaction.c).  The kernel uses it as the handler's rts target; the
+| handler's `rts` lands here and this stub drops the leftover sig argument
+| slot before issuing SYS_RT_SIGRETURN — same role as the glibc/musl
+| user-space sigreturn trampolines on Linux.
+    .globl _ppap_sigreturn_trampoline
+_ppap_sigreturn_trampoline:
+    addq.l  #4, %sp              | discard the sig arg the kernel planted
+    move.l  #0x0605, %d0         | SYS_RT_SIGRETURN
     trap    #0
-    movem.l %sp@+, %d2-%d3
+0:  bra.s   0b                    | should never return
+
+| --- rt_sigaction (SYS_RT_SIGACTION = 0x0603) ---------------------------------
+| int rt_sigaction(int sig, const struct sigaction *act,
+|                  struct sigaction *oact, int sigsetsize);
+| The POSIX-style sigaction() wrapper lives in C (sigaction.c) so the
+| compiler can emit a GOT-relative reference for
+| &_ppap_sigreturn_trampoline that works with -msep-data at runtime.
+    .globl rt_sigaction
+rt_sigaction:
+    movem.l %d2-%d4, %sp@-       | save d2-d4 (12 bytes)
+    move.l  16(%sp), %d1         | sig
+    move.l  20(%sp), %d2         | act
+    move.l  24(%sp), %d3         | oact
+    move.l  28(%sp), %d4         | sigsetsize
+    move.l  #0x0603, %d0         | SYS_RT_SIGACTION
+    trap    #0
+    movem.l %sp@+, %d2-%d4
     rts
 
 | --- getppid (SYS_GETPPID = 0x0008) ---------------------------------------------

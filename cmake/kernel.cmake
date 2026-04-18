@@ -33,7 +33,6 @@ set(ARCH_M68K_SOURCES
     ${_KS_ROOT}/src/arch/m68k/kernel/core/switch.S
     ${_KS_ROOT}/src/arch/m68k/kernel/core/trap.S
     ${_KS_ROOT}/src/arch/m68k/kernel/core/math.S
-    ${_KS_ROOT}/src/arch/m68k/kernel/core/signal_m68k.S
     ${_KS_ROOT}/src/arch/m68k/kernel/core/smp.c
 )
 

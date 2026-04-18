@@ -16,6 +16,12 @@
 #include "kernel/core/subsys/human68k/human68k_bridge.h"
 #endif
 
+/* Pointer to the saved d0-d7/a0-a6/SR/PC frame at SSP, captured by
+ * trap.S at TRAP #0 entry.  sys_rt_sigreturn reads it to find the SR
+ * and PC it needs to overwrite so the RTE lands in the pre-signal
+ * user context.  Zero outside a syscall trap. */
+volatile uint32_t m68k_trap_frame_sp = 0;
+
 /* ── Crash handler ─────────────────────────────────────────────────────── *
  *
  * Called from boot.S fault handlers with:
