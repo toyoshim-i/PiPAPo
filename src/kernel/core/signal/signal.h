@@ -50,12 +50,13 @@ void signal_check(void);
  */
 int signal_check_kernel(void);
 
-/* Trampoline in kernel .text — the signal handler returns here to ask the
- * kernel to restore the interrupted context.
- * ARM reaches it via bx lr; m68k keeps a stub because it uses synchronous
- * delivery.  (ia16 uses a per-process trampoline planted in proc_seg by
- * elf16_loader — see pcb.sigreturn_trampoline.) */
-#if !defined(__ia16__)
+/* Legacy kernel-text sigreturn trampoline symbol, kept only for m68k
+ * where synchronous signal delivery needs the symbol to satisfy the
+ * linker but never executes it.  ARM and ia16 use sa_restorer-style
+ * delivery: the handler's return target is the per-process sa_restorer
+ * registered via rt_sigaction (user-space stub — see each arch's
+ * src/arch/<arch>/user/syscall.S). */
+#if defined(__m68k__)
 extern void sigreturn_trampoline(void);
 #endif
 

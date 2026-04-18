@@ -85,8 +85,13 @@ int signal_check_kernel(void) {
 
 /* ── Architecture-specific signal delivery ─────────────────────────────────
  *
- * ARM:  RTE-based — sigreturn_trampoline (naked ASM), signal_setup_frame
- *       (PSP manipulation), signal_check (delivers via HW exception frame).
+ * ARM:  RTE-based, sa_restorer style.  signal_setup_frame pushes a new
+ *       HW exception frame below PSP with LR = current->sig_restorers[sig]
+ *       (a user-space trampoline registered via rt_sigaction — see
+ *       src/arch/arm_m/user/syscall.S).  The CPU unwinds the exception
+ *       into the handler; the handler's `bx lr` lands on the restorer
+ *       which issues SYS_RT_SIGRETURN, and sys_sigreturn advances PSP
+ *       past the sig-delivery frame.
  *
  * m68k: Synchronous call — signal_check calls the handler directly via
  *       m68k_call_signal_handler (assembly thunk that sets a5 = GOT base).
@@ -96,12 +101,11 @@ int signal_check_kernel(void) {
  *       (user_sp, user_ss) from the kernel-stack slot to signal_check(),
  *       which plants a new GP+IRET frame plus a small trailer on the
  *       user stack and returns the new user_sp.  The handler's near
- *       `ret` lands on the per-handler sa_restorer address registered
- *       via rt_sigaction (user-space libc/crt stub, e.g.
- *       _ppap_sigreturn_trampoline); that stub issues INT 30h
- *       SYS_RT_SIGRETURN, which restores the pre-signal user_sp in the
- *       kernel slot.  See the frame-layout comment on the i16 branch
- *       below.
+ *       `ret` lands on the per-handler sa_restorer (e.g.
+ *       _ppap_sigreturn_trampoline in src/arch/i16/user/syscall.S);
+ *       that stub issues INT 30h SYS_RT_SIGRETURN, which restores the
+ *       pre-signal user_sp in the kernel slot.  See the frame-layout
+ *       comment on the i16 branch below.
  * ────────────────────────────────────────────────────────────────────────── */
 
 #if defined(__m68k__)
@@ -312,20 +316,6 @@ uint16_t signal_check(uint16_t user_sp, uint16_t user_ss) {
 
 #elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
 
-/*
- * Placed in kernel .text (flash XIP).  User-mode code can execute flash.
- * When the signal handler does bx lr, it lands here.
- * Uses SYS_RT_SIGRETURN (0x0605).
- */
-__attribute__((naked, used, section(".text.sigreturn_trampoline"))) void
-sigreturn_trampoline(void) {
-  __asm volatile(
-      "ldr  r7, =0x0605\n" /* SYS_RT_SIGRETURN */
-      "svc  0\n"
-      "b    .\n" /* should never reach */
-  );
-}
-
 /* ── signal_setup_frame ─────────────────────────────────────────────────────
  */
 /*
@@ -344,12 +334,20 @@ sigreturn_trampoline(void) {
  *   svc_exc_return forced to basic frame (bit 4 = 1).
  *
  * On exception return the CPU pops the new frame and runs the handler.
+ * The handler's `bx lr` reaches the per-process sa_restorer the user
+ * registered via rt_sigaction (typically _ppap_sigreturn_trampoline in
+ * src/arch/arm_m/user/syscall.S), which issues SYS_RT_SIGRETURN.
  * sys_sigreturn reverses this: skips the sigreturn SVC frame, reads the
  * saved EXC_RETURN, and restores PSP to the original HW frame.
  */
 static int signal_setup_frame(int sig, sighandler_t handler) {
   uint32_t psp;
+  uint32_t restorer;
   __asm volatile("mrs %0, psp" : "=r"(psp));
+
+  restorer = (uint32_t)(uintptr_t)current->sig_restorers[sig];
+  if (restorer == 0u)
+    return -1; /* no sa_restorer registered — cannot deliver safely */
 
 #if __ARM_ARCH >= 8
   /* 8-word basic frame + 2-word saved EXC_RETURN slot = 40 bytes */
@@ -371,7 +369,7 @@ static int signal_setup_frame(int sig, sighandler_t handler) {
   frame[2] = 0;             /* r2                  */
   frame[3] = 0;             /* r3                  */
   frame[4] = 0;             /* r12                 */
-  frame[5] = (uint32_t)(uintptr_t)sigreturn_trampoline; /* lr (Thumb bit set) */
+  frame[5] = restorer;      /* lr = sa_restorer (Thumb bit set by linker) */
   frame[6] = (uint32_t)(uintptr_t)handler & ~1u; /* pc (bit0 clear)     */
   frame[7] = 0x01000000u;                        /* xpsr (Thumb bit)    */
 

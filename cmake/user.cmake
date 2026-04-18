@@ -563,6 +563,24 @@ function(_ppap_build_user_programs)
         ${PPAP_SHARED_BUILD}/crt0.o ${PPAP_SHARED_BUILD}/syscall.o
         ${PPAP_SHARED_BUILD}/uclib.o)
 
+    # --- Optional arch-supplied sigaction() wrapper ---
+    # Arches using the sa_restorer signal-delivery model (ARM today;
+    # others migrating later) provide sigaction() in C so the compiler
+    # emits a PIC-correct reference to _ppap_sigreturn_trampoline.
+    if(EXISTS ${PPAP_ARCH_DIR}/sigaction.c)
+        add_custom_command(
+            OUTPUT ${PPAP_SHARED_BUILD}/sigaction.o
+            COMMAND ${PPAP_CC} ${PPAP_USER_CFLAGS}
+                    -ffunction-sections -fdata-sections
+                    -c -o ${PPAP_SHARED_BUILD}/sigaction.o
+                    ${PPAP_ARCH_DIR}/sigaction.c
+            DEPENDS ${PPAP_ARCH_DIR}/sigaction.c
+                    ${PPAP_ROOT}/src/user/syscall.h
+            COMMENT "Compiling sigaction.o (${PPAP_ARCH})"
+        )
+        list(APPEND PPAP_CRT_OBJS ${PPAP_SHARED_BUILD}/sigaction.o)
+    endif()
+
     # --- Application programs ---
     set(_all_elfs "")
     foreach(app ${USER_APPS})
