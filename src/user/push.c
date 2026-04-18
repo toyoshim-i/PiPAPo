@@ -1307,8 +1307,10 @@ static int exec_pipeline(char **toks, int ntoks, int *pos) {
     char resolved[PATH_BUF];
     resolved[0] = '\0';
     if (stages[i].argc > 0 &&
-        search_path(stages[i].argv[0], resolved, sizeof(resolved)) != 0)
+        search_path(stages[i].argv[0], resolved, sizeof(resolved)) != 0) {
+      err_msg(stages[i].argv[0], "not found");
       resolved[0] = '\0';
+    }
 
     pid_t pid = vfork();
     if (pid == 0) {
