@@ -19,8 +19,15 @@
 #define TOK_BUF_SIZE 384 /* expanded token buffer (vars can grow)  */
 #define TOKEN_MAX 64
 #define ARGV_MAX 32
+/* ENV_MAX and ENV_POOL_SIZE are overridable at build time so the host
+ * build can import a much larger inherited environ without silently
+ * dropping entries.  Defaults match the embedded targets. */
+#ifndef ENV_MAX
 #define ENV_MAX 64
+#endif
+#ifndef ENV_POOL_SIZE
 #define ENV_POOL_SIZE 1536
+#endif
 #define PIPE_MAX 4
 #define PATH_BUF 128
 #define REDIR_MAX 4
