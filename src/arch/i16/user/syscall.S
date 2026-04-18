@@ -383,8 +383,8 @@ kill:
   pushw %bx
   pushw %si
   pushw %di
-  movw  4(%bp), %bx      /* pid */
-  movw  6(%bp), %cx      /* sig */
+  movw  4(%bp), %bx      /* pid low 16 bits (pid_t is int32_t on ia16) */
+  movw  8(%bp), %cx      /* sig — 4 bytes above bp past the pid_t slot  */
   movw  $0x0600, %ax
   int   $0x30
   SYSCALL_RET
