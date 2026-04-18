@@ -202,42 +202,32 @@ int main(void)
     test_entry_t tests[34];
     int t = 0;
 
-    tests[t++] = (test_entry_t){ "/bin/test_exec",
-#if defined(__riscv)
-        TEST_DISABLED
-#else
-        TEST_ENABLED
-#endif
-    };
-    /* test_elf unit-tests the ELF32 parser; pcxt uses elf16_loader. */
+    tests[t++] = (test_entry_t){ "/bin/test_exec", TEST_ENABLED };
+    /* test_elf unit-tests the ELF32 parser; pcxt uses elf16_loader.
+     * rv32: the parser rejects the test inputs with -ENOEXEC at
+     * test_elf.c:78 and :134. */
     tests[t++] = (test_entry_t){ "/bin/test_elf",
-#if defined(__riscv)
-        TEST_DISABLED
-#elif defined(__ia16__)
+#if defined(__ia16__)
         TEST_UNSUPPORTED
+#elif defined(__riscv)
+        TEST_DISABLED
 #else
         TEST_ENABLED
 #endif
     };
     tests[t++] = (test_entry_t){ "/bin/test_vfork", TEST_ENABLED };
-    /* test_fault: 8086 has no clean ILL opcode; ia16 routes faults to panic. */
+    /* test_fault: ia16 routes faults to panic; rv32 kernel trap handler
+     * terminates the whole system on illegal-instruction instead of
+     * delivering SIGILL to the offending process. */
     tests[t++] = (test_entry_t){ "/bin/test_fault",
-#if defined(__riscv)
+#if defined(__ia16__) || defined(__riscv)
         TEST_DISABLED
-#elif defined(__ia16__)
-        TEST_UNSUPPORTED
 #else
         TEST_ENABLED
 #endif
     };
     tests[t++] = (test_entry_t){ "/bin/test_pipe", TEST_ENABLED };
-    tests[t++] = (test_entry_t){ "/bin/test_brk",
-#if defined(__riscv)
-        TEST_DISABLED
-#else
-        TEST_ENABLED
-#endif
-    };
+    tests[t++] = (test_entry_t){ "/bin/test_brk", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_fd", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_signal", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_poll", TEST_ENABLED };
@@ -249,6 +239,11 @@ int main(void)
         TEST_ENABLED
 #endif
     };
+    /* test_orphan: on rv32 the leak assertion at test_orphan.c:105
+     * fails (more than 12 KB user_pages still unaccounted for after
+     * orphans exit); the test process returns 0 anyway so the runner
+     * logs PASS, but the leaked memory then causes later tests to
+     * OOM. */
     tests[t++] = (test_entry_t){ "/bin/test_orphan",
 #if defined(__riscv)
         TEST_DISABLED
@@ -257,14 +252,10 @@ int main(void)
 #endif
     };
     tests[t++] = (test_entry_t){ "/bin/test_id", TEST_ENABLED };
-    tests[t++] = (test_entry_t){ "/bin/test_fs",
-#if defined(__riscv)
-        TEST_DISABLED
-#else
-        TEST_ENABLED
-#endif
-    };
+    tests[t++] = (test_entry_t){ "/bin/test_fs", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_rw", TEST_ENABLED };
+    /* test_time: rv32 clock_gettime returns -EINVAL for the clock_ids
+     * this test uses. */
     tests[t++] = (test_entry_t){ "/bin/test_time",
 #if defined(__riscv)
         TEST_DISABLED
@@ -274,6 +265,8 @@ int main(void)
     };
     tests[t++] = (test_entry_t){ "/bin/test_iov", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_stat", TEST_ENABLED };
+    /* test_tmpfs: on rv32 fails at test_tmpfs.c:115 (expected 0 got 121)
+     * and the summary prints garbage counter values. */
     tests[t++] = (test_entry_t){ "/bin/test_tmpfs",
 #if defined(__riscv)
         TEST_DISABLED
@@ -301,8 +294,6 @@ int main(void)
     tests[t++] = (test_entry_t){ "/bin/test_signal_float",
 #if defined(__m68k__) || defined(__ia16__)
         TEST_UNSUPPORTED
-#elif defined(__riscv)
-        TEST_DISABLED
 #else
         TEST_ENABLED
 #endif
@@ -322,21 +313,23 @@ int main(void)
         TEST_UNSUPPORTED
 #endif
     };
-    /* test_cpm / test_sos: subsystems not built for pcxt; rv32 has bugs. */
+    /* test_cpm / test_sos: subsystems not built for pcxt; on rv32 the
+     * Z80 eCPU path takes a load-access fault (mcause=5) early in
+     * execution and brings the whole kernel down. */
     tests[t++] = (test_entry_t){ "/bin/test_cpm",
-#if defined(__riscv)
-        TEST_DISABLED
-#elif defined(__ia16__)
+#if defined(__ia16__)
         TEST_UNSUPPORTED
+#elif defined(__riscv)
+        TEST_DISABLED
 #else
         TEST_ENABLED
 #endif
     };
     tests[t++] = (test_entry_t){ "/bin/test_sos",
-#if defined(__riscv)
-        TEST_DISABLED
-#elif defined(__ia16__)
+#if defined(__ia16__)
         TEST_UNSUPPORTED
+#elif defined(__riscv)
+        TEST_DISABLED
 #else
         TEST_ENABLED
 #endif

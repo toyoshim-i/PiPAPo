@@ -213,12 +213,12 @@ Each entry in the test list carries a flag:
 | `TEST_SLOW` | Skip by default; run when `/etc/test_run_slow` exists | skipped |
 
 The `TEST_DISABLED` vs `TEST_UNSUPPORTED` split matters for triage:
-- `TEST_DISABLED` flags real pending work (e.g. ia16 needs a signal-delivery
-  trampoline; rv32 needs a brk fix). The summary's `skipped` count is the
-  to-do list.
-- `TEST_UNSUPPORTED` flags by-design gaps that won't be fixed (8086 has no
-  FPU; pcxt uses elf16 not elf.c; m68k-only binaries on non-m68k targets).
-  The `n/a` count is informational only.
+- `TEST_DISABLED` flags real pending work (e.g. rv32's orphan-reaping
+  leak or rv32 `clock_gettime` returning -EINVAL for the test's
+  clock_ids). The summary's `skipped` count is the to-do list.
+- `TEST_UNSUPPORTED` flags by-design gaps that won't be fixed (8086 has
+  no FPU; pcxt uses elf16 not elf.c; m68k-only binaries on non-m68k
+  targets).  The `n/a` count is informational only.
 
 Platform-specific tests (`test_x68k`, `test_h68k_dos`) are `TEST_UNSUPPORTED`
 on non-m68k and `TEST_ENABLED` on m68k via `#if defined(__m68k__)`.
@@ -265,7 +265,7 @@ overlay directory baked into romfs at build time (see
 | `test_tmpfs.c` | tmpfs create, write, read, unlink, multi-page I/O (disabled on rv32) |
 | `test_ufs.c` | UFS write+read (pcxt only; disabled on romfs-root targets) |
 | `test_float.c` | FPU register preservation across context switch (disabled on m68k) |
-| `test_signal_float.c` | FPU register preservation across signal delivery (disabled on m68k, rv32) |
+| `test_signal_float.c` | FPU register preservation across signal delivery (disabled on m68k) |
 | `test_x68k.c` | Human68k subsystem (X-format `.x` execution) |
 | `test_cpm.c` | CP/M subsystem integration (`.COM` exec, BDOS bridge, signals, file I/O; disabled on rv32) |
 | `test_sos.c` | S-OS SWORD subsystem integration (disabled on rv32) |
@@ -357,7 +357,7 @@ To add a new musl-linked test binary:
   shares the parent's address space. The child must immediately
   `execve` or `_exit` — do not modify parent data or trigger faults.
 
-### Known coverage gaps (as of 2026-04-17)
+### Known coverage gaps (as of 2026-04-18)
 
 Current user-space tests are a solid regression baseline, but subsystem
 coverage is not exhaustive yet.
@@ -397,17 +397,22 @@ coverage is not exhaustive yet.
   random-record variants, and several disk/attribute vector functions.
   CP/M test coverage is therefore good for bootstrapping and basic file I/O,
   but not yet complete for directory iteration and random-record compatibility.
-- **`qemu_rv32`: kernel tests disabled, user 10/10 pass.**
+- **`qemu_rv32`: kernel tests disabled, user 16/16 pass.**
   Kernel tests are disabled because blkdev/VFAT tests expect a FAT32
   ramblk that rv32 does not provide; the 18 failures corrupt state and
   crash init startup.
-  User: 10 tests pass (vfork, pipe, fd, poll, id, rw, iov, stat,
-  float, musl).  11 are `TEST_DISABLED` on RISC-V: `test_exec` (counter
-  bug), `test_elf` (arch checks), `test_fault` (no signal classification),
-  `test_brk` (address mismatch), `test_signal` / `test_sleep_intr` /
-  `test_signal_float` / `test_orphan` (signal delivery), `test_fs`
-  (reporting), `test_time` (clock_gettime EINVAL), `test_cpm` (Z80
-  instruction fetch fault), `test_tmpfs` (crash), `test_sos` (crash).
+  User: 16 tests pass (vfork, pipe, fd, poll, id, rw, iov, stat, float,
+  musl, exec, brk, fs, signal, sleep_intr, signal_float).  Seven are
+  still `TEST_DISABLED` on RISC-V with per-test comments in
+  `tests/user/runtests.c`: `test_elf` (ELF parser rejects inputs with
+  -ENOEXEC), `test_fault` (kernel trap handler terminates the whole
+  system on illegal-instruction instead of delivering SIGILL),
+  `test_orphan` (leak-check assertion at line 105 fails — more than
+  12 KB of user_pages unaccounted for after orphans exit),
+  `test_time` (`clock_gettime` returns -EINVAL), `test_tmpfs` (line
+  115 errno mismatch with corrupted summary counters), `test_cpm` /
+  `test_sos` (Z80 eCPU path takes a load-access fault early and
+  brings the kernel down).
 - **`pdb` scripted coverage is architecture-asymmetric.**
   `test_pdb` has 170/367 failures on m68k and is marked `TEST_DISABLED` there.
   On ARM it is `TEST_SLOW` (base runner) / `TEST_ENABLED` (extended runner).
@@ -459,14 +464,14 @@ rarely fire.
 - m68k with `--slow`: 150 seconds
 - pcxt default timeout: 180 seconds
 
-**Current test results (as of 2026-04-17):**
+**Current test results (as of 2026-04-18):**
 
 | Target | Kernel tests | User tests | Total |
 |--------|-------------|------------|-------|
 | `qemu_arm` | 69 pass | 23/23 pass | All pass |
 | `qemu_m68k` | 69 pass | 23/23 pass | All pass |
-| `qemu_rv32` | Disabled (pre-existing blkdev crash) | 10/10 pass | User pass |
-| `pcxt` | N/A (no ktest) | 15/15 pass | All pass |
+| `qemu_rv32` | Disabled (pre-existing blkdev crash) | 16/16 pass | User pass |
+| `pcxt` | N/A (no ktest) | 17/17 pass | All pass |
 
 ```bash
 ./scripts/run.sh --test              # ARM (default)
@@ -483,14 +488,15 @@ by the test runner. The `runtests` binary redirects stdout to
 (The redirect is unconditional — on other targets `/dev/ttyS0` open
 either succeeds harmlessly or fails and is skipped.)
 
-The pcxt user suite runs 15 of the shared user tests today. The
+The pcxt user suite runs 17 of the shared user tests today. The
 remaining entries fall into two buckets visible in the summary:
-- `skipped` (3): `test_signal` and `test_sleep_intr` need a kernel
-  signal-delivery trampoline for ia16 user-space (real fix pending);
-  `test_msdos` is under investigation.
-- `n/a` (13): tests that exercise features pcxt does not have by
-  design — no FPU, no Z80/CP/M/S-OS subsystems, no musl libc, ELF32
-  parser n/a (pcxt uses elf16), arch-specific ptrace regsets, etc.
+- `skipped` (2): `test_sleep_intr` (nanosleep-interruption path not
+  implemented on ia16) and `test_fault` (ia16 routes CPU faults to
+  kernel panic).  Both are `TEST_DISABLED`, not `TEST_UNSUPPORTED` —
+  they can be lit up when the underlying features land.
+- `n/a` (12): tests that exercise features pcxt does not have — no
+  FPU, no Z80/CP/M/S-OS subsystems, no musl libc, ELF32 parser n/a
+  (pcxt uses elf16), arch-specific ptrace regsets, etc.
 
 ### `run.sh --test-extended`
 
