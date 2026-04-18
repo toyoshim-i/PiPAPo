@@ -27,6 +27,16 @@ add_executable(test_kmem
 target_include_directories(test_kmem PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME kmem COMMAND test_kmem)
 
+# ── test_page_alloc ────────────────────────────────────────────────────────
+# page_alloc.c is the pure allocator core — no locking, klogf, or hardware
+# probes.  Factored out of page.c so it can be unit-tested on the host.
+add_executable(test_page_alloc
+    ${SRC}/kernel/core/mm/page_alloc.c
+    test_page_alloc.c
+)
+target_include_directories(test_page_alloc PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME page_alloc COMMAND test_page_alloc)
+
 # ── test_h68k_path ──────────────────────────────────────────────────────────
 # Human68k path translation and error code mapping — compiles the real
 # h68k_util.c from kernel source.  Pure C, no stubs needed.

@@ -26,6 +26,7 @@
 
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/spinlock.h"
+#include "kernel/core/mm/page_alloc.h"
 
 /* ── Linker-provided symbols ────────────────────────────────────────────────
  */
@@ -41,13 +42,36 @@
 extern char __bss_end;
 extern char __stack_top;
 
-/* ── Free-stack state ───────────────────────────────────────────────────────
- */
+/* ── Allocator state ────────────────────────────────────────────────────────
+ *
+ * The actual free-list lives in page_alloc.c; this file wraps it with
+ * SPIN_PAGE, OOM/double-free klogf messages, and the memory-map print.
+ * The split also lets the pure allocator be unit-tested on the host
+ * (tests/host/test_page_alloc.c). */
+uint32_t page_count = 0u; /* runtime pool page count (set by mm_init)  */
+uint32_t oom_count = 0u;  /* number of page_alloc() failures */
 
-static page_id_t free_stack[PAGE_COUNT_MAX];
-static uint32_t free_top = 0u; /* index of next empty slot (0 = pool empty) */
-uint32_t page_count = 0u;      /* runtime pool page count (set by mm_init)  */
-uint32_t oom_count = 0u;       /* number of page_alloc() failures */
+/* Page alloc/free tracing — opt-in via `PPAP_PAGE_TRACE=1` at build time.
+ * Prints one line per allocator op with the resulting pool state, useful
+ * for diffing allocator policy changes against a known-good run.  Not
+ * wired to PPAP_TESTS because the trace itself runs inside SPIN_PAGE, so
+ * leaving it always-on for the test lane has turned out to interact
+ * poorly with early-boot ordering on some targets.
+ *
+ * Called with SPIN_PAGE held so the free/max-contig snapshot matches the
+ * op just done. */
+static void page_trace_tail(const char *op, unsigned id, unsigned arg) {
+#if defined(PPAP_PAGE_TRACE) && PPAP_PAGE_TRACE
+  unsigned free_total = (unsigned)page_alloc_free_total();
+  unsigned max_contig = (unsigned)page_alloc_max_contiguous();
+  mod_vfs.klogf("PAGE: %s id=%u arg=%u free=%u maxc=%u\n", op, id, arg,
+                free_total, max_contig);
+#else
+  (void)op;
+  (void)id;
+  (void)arg;
+#endif
+}
 
 #if defined(__m68k__)
 /* Assembly RAM probe — detects accessible RAM via bus error catching.
@@ -160,13 +184,31 @@ void mm_init(void) {
 #else
   pool_base = page_pool_base();
 #endif
-  /* Build the free stack using linear page numbers, not raw pointers. */
-  free_top = 0;
-  for (uint32_t i = 0u; i < page_count; i++) {
-    uint32_t paddr = (uint32_t)pool_base + i * PAGE_SIZE;
-    page_id_t pid = linear_page_id(paddr);
-    if (paddr < (uint32_t)stack_page_top) continue; /* overlaps kernel stack */
-    free_stack[free_top++] = pid;
+  /* Hand the runtime page inventory to the pure allocator core.  Walk
+   * pages in address order; when we hit a skipped-page boundary, flush
+   * the run-in-progress as one add_range() call.  The allocator expects
+   * ranges to be sorted ascending, which this loop trivially satisfies. */
+  page_alloc_reset();
+  {
+    page_id_t run_base = 0;
+    uint16_t run_len = 0;
+    uint32_t run_first = 0;
+    for (uint32_t i = 0u; i < page_count; i++) {
+      uint32_t paddr = (uint32_t)pool_base + i * PAGE_SIZE;
+      int skipped = (paddr < (uint32_t)stack_page_top);
+      if (!skipped) {
+        if (run_len == 0) {
+          run_base = linear_page_id(paddr);
+          run_first = i;
+        }
+        run_len++;
+      } else if (run_len > 0) {
+        page_alloc_add_range(run_base, run_len);
+        run_len = 0;
+      }
+      (void)run_first;
+    }
+    if (run_len > 0) page_alloc_add_range(run_base, run_len);
   }
 
   /* ── Boot-time memory map ─────────────────────────────────────────────── */
@@ -183,13 +225,12 @@ void mm_init(void) {
     mod_vfs.klogf("MM:     .data/.bss:  %lx B used\n",
                   (unsigned long)kern_used);
 
-  uint32_t actual_base = (free_top > 0)
-                             ? (uint32_t)page_id_linear(free_stack[0])
-                             : (uint32_t)pool_base;
+  uint32_t free_total = page_alloc_free_total();
   mod_vfs.klogf("MM:   pages   %lx-%lx %lu KB (%u x 4 KB, all free)\n",
-                (unsigned long)actual_base,
+                (unsigned long)pool_base,
                 (unsigned long)(pool_base + page_count * PAGE_SIZE - 1u),
-                (unsigned long)(free_top * PAGE_SIZE / 1024u), free_top);
+                (unsigned long)(free_total * PAGE_SIZE / 1024u),
+                (unsigned)free_total);
 #if !defined(__m68k__) && !defined(__xtensa__) && !defined(__ia16__)
   mod_vfs.klogf("MM:   io_buf  %lx-%lx  %lu KB\n",
                 (unsigned long)SRAM_IOBUF_BASE,
@@ -209,25 +250,15 @@ void mm_init(void) {
 
 void *page_alloc(void) {
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-  void *p = NULL;
-  if (free_top != 0u) {
-    /* Pick the highest-address free page.  Single-page allocations
-     * (stacks, scratch) cluster at the top of the pool, leaving the
-     * low end free for large contiguous allocations (ELF images).
-     * O(free_top) scan — negligible for pools ≤ 256 pages. */
-    uint32_t best = 0;
-    for (uint32_t i = 1; i < free_top; i++) {
-      if (free_stack[i] > free_stack[best]) best = i;
-    }
-    page_id_t id = free_stack[best];
-    free_stack[best] = free_stack[--free_top];
-    p = (void *)page_id_linear(id);
-  } else {
-    oom_count++;
-  }
+  page_id_t id = page_alloc_n(1);
+  if (id == PAGE_ID_INVALID) oom_count++;
+  page_trace_tail("alloc1", (unsigned)id, 1);
   spin_unlock_irqrestore(SPIN_PAGE, saved);
-  if (!p) mod_vfs.klogf("MM: OOM: page_alloc failed\n");
-  return p;
+  if (id == PAGE_ID_INVALID) {
+    mod_vfs.klogf("MM: OOM: page_alloc failed\n");
+    return NULL;
+  }
+  return (void *)page_id_linear(id);
 }
 
 void *page_alloc_at(void *addr) {
@@ -241,21 +272,11 @@ void *page_alloc_at(void *addr) {
   page_id_t target_id = linear_page_id(target);
 
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-  void *result = NULL;
-
-  /* Scan the free stack for the requested page */
-  for (uint32_t i = 0u; i < free_top; i++) {
-    if (free_stack[i] == target_id) {
-      /* Remove by swapping with the top element */
-      free_top--;
-      free_stack[i] = free_stack[free_top];
-      result = addr;
-      break;
-    }
-  }
-
+  int rc = page_alloc_at_id(target_id);
+  page_trace_tail(rc == 0 ? "alloc_at" : "alloc_at_FAIL", (unsigned)target_id,
+                  1);
   spin_unlock_irqrestore(SPIN_PAGE, saved);
-  return result;
+  return (rc == 0) ? addr : NULL;
 }
 
 /* ── Stack backtrace (RISC-V) ─────────────────────────────────────────────
@@ -288,29 +309,28 @@ static void stack_backtrace(void) {
 #endif
 
 void page_free(void *page) {
-  /* Rudimentary double-free / out-of-range guard */
   uintptr_t addr = (uintptr_t)page;
   uint32_t pb = page_pool_base();
   if (addr < pb || addr >= pb + page_count * PAGE_SIZE)
-    return; /* ignore bogus pointer rather than corrupt the stack */
+    return; /* ignore bogus pointer rather than corrupt the list */
 
   page_id_t id = linear_page_id(addr);
 
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-
-  /* Scan for double-free: O(free_top) ≈ O(51) at 133 MHz ≈ 1 µs */
-  for (uint32_t i = 0u; i < free_top; i++) {
-    if (free_stack[i] == id) {
-      spin_unlock_irqrestore(SPIN_PAGE, saved);
-      mod_vfs.klogf("MM: double-free @ %lx (ra=%lx)\n", (unsigned long)addr,
-                    (unsigned long)(uintptr_t)__builtin_return_address(0));
-      stack_backtrace();
-      return;
-    }
+  if (page_alloc_is_free(id)) {
+    spin_unlock_irqrestore(SPIN_PAGE, saved);
+    mod_vfs.klogf("MM: double-free @ %lx (ra=%lx)\n", (unsigned long)addr,
+                  (unsigned long)(uintptr_t)__builtin_return_address(0));
+    stack_backtrace();
+    return;
   }
-
-  if (free_top < page_count) free_stack[free_top++] = id;
+  int rc = page_alloc_free_range(id, 1);
+  page_trace_tail("free1", (unsigned)id, 1);
   spin_unlock_irqrestore(SPIN_PAGE, saved);
+  if (rc < 0) {
+    mod_vfs.klogf("MM: PANIC: free-list full, page %lx leaked\n",
+                  (unsigned long)addr);
+  }
 }
 
 uint32_t page_pool_base(void) {
@@ -323,173 +343,42 @@ uint32_t page_pool_base(void) {
 
 uint32_t page_free_count(void) {
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-  uint32_t count = free_top;
+  uint32_t count = page_alloc_free_total();
   spin_unlock_irqrestore(SPIN_PAGE, saved);
   return count;
 }
 
-/* ── Bitmap helpers for contiguous allocation ────────────────────────────── */
-
-/* Build a bitmap of free pages: bit i set = page i is free.
- * Must be called with SPIN_PAGE held. */
-static void build_free_bitmap(uint32_t *bmap, uint32_t n_words) {
-  for (uint32_t w = 0; w < n_words; w++) bmap[w] = 0;
-  for (uint32_t i = 0; i < free_top; i++) {
-    uint32_t idx;
-
-    if (!pool_page_id_to_index(free_stack[i], &idx)) continue;
-    bmap[idx / 32] |= (1u << (idx % 32));
-  }
-}
-
-static int bmap_test(const uint32_t *bmap, uint32_t idx) {
-  return (bmap[idx / 32] >> (idx % 32)) & 1;
-}
-
 uint32_t page_max_contiguous(void) {
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-  uint32_t n_words = (page_count + 31) / 32;
-  uint32_t bmap[n_words];
-  build_free_bitmap(bmap, n_words);
-
-  uint32_t best = 0, run = 0;
-  for (uint32_t i = 0; i < page_count; i++) {
-    if (bmap_test(bmap, i)) {
-      run++;
-      if (run > best) best = run;
-    } else {
-      run = 0;
-    }
-  }
-
+  uint32_t best = page_alloc_max_contiguous();
   spin_unlock_irqrestore(SPIN_PAGE, saved);
   return best;
 }
 
-/* Allocate n_pages contiguous pages.  Uses a bitmap scan to find a run,
- * then removes the pages from the free stack. O(page_count). */
 uint8_t *page_alloc_contiguous(uint32_t n_pages) {
-  if (n_pages == 0) return NULL;
-  if (n_pages == 1) return (uint8_t *)page_alloc();
-
-  uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-
-  /* Build bitmap of free pages */
-  uint32_t n_words = (page_count + 31) / 32;
-  uint32_t bmap[n_words];
-  build_free_bitmap(bmap, n_words);
-
-  /* Scan for a contiguous run of n_pages free pages */
-  uint32_t run_start = 0, run_len = 0;
-  uint32_t found_start = 0;
-  int found = 0;
-
-  for (uint32_t i = 0; i < page_count; i++) {
-    if (bmap_test(bmap, i)) {
-      if (run_len == 0) run_start = i;
-      run_len++;
-      if (run_len >= n_pages) {
-        found_start = run_start;
-        found = 1;
-        break;
-      }
-    } else {
-      run_len = 0;
-    }
-  }
-
-  if (!found) {
-    spin_unlock_irqrestore(SPIN_PAGE, saved);
-    return NULL;
-  }
-
-  /* Remove the found pages from the free stack by page index. */
-  page_id_t base_id = pool_base_page_id() + (page_id_t)found_start;
-  uint32_t new_top = 0;
-  for (uint32_t i = 0; i < free_top; i++) {
-    page_id_t pid = free_stack[i];
-    if (pid >= base_id && pid < base_id + n_pages) {
-      /* This page is being allocated — skip it */
-    } else {
-      free_stack[new_top++] = free_stack[i];
-    }
-  }
-  free_top = new_top;
-
-  uintptr_t base_addr = page_id_linear(base_id);
-  spin_unlock_irqrestore(SPIN_PAGE, saved);
-  return (uint8_t *)(uintptr_t)base_addr;
+  page_id_t id = mm_page_alloc_contiguous(n_pages);
+  if (id == PAGE_ID_INVALID) return NULL;
+  return (uint8_t *)(uintptr_t)page_id_linear(id);
 }
 
-/* Contiguous allocation returning base page_id_t (i16-safe). */
 page_id_t mm_page_alloc_contiguous(uint32_t n_pages) {
-  if (n_pages == 0) return PAGE_ID_INVALID;
-  /* Don't delegate to mm_page_alloc for n=1 — that picks the highest
-   * page, but contiguous allocation should prefer low addresses
-   * (needed on i16 where SS=0 limits SP to the first 64 KB). */
-
+  if (n_pages == 0 || n_pages > 0xFFFFu) return PAGE_ID_INVALID;
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-
-  uint32_t n_words = (page_count + 31) / 32;
-  uint32_t bmap[n_words];
-  build_free_bitmap(bmap, n_words);
-
-  uint32_t run_start = 0, run_len = 0;
-  uint32_t found_start = 0;
-  int found = 0;
-
-  for (uint32_t i = 0; i < page_count; i++) {
-    if (bmap_test(bmap, i)) {
-      if (run_len == 0) run_start = i;
-      run_len++;
-      if (run_len >= n_pages) {
-        found_start = run_start;
-        found = 1;
-        break;
-      }
-    } else {
-      run_len = 0;
-    }
-  }
-
-  if (!found) {
-    spin_unlock_irqrestore(SPIN_PAGE, saved);
-    return PAGE_ID_INVALID;
-  }
-
-  page_id_t base_id = pool_base_page_id() + (page_id_t)found_start;
-  uint32_t new_top = 0;
-  for (uint32_t i = 0; i < free_top; i++) {
-    page_id_t pid = free_stack[i];
-    if (pid >= base_id && pid < base_id + n_pages) {
-    } else {
-      free_stack[new_top++] = free_stack[i];
-    }
-  }
-  free_top = new_top;
-
+  page_id_t id = page_alloc_n((uint16_t)n_pages);
+  page_trace_tail("alloc_contig", (unsigned)id, (unsigned)n_pages);
   spin_unlock_irqrestore(SPIN_PAGE, saved);
-  return base_id;
+  return id;
 }
 
 /* ── Page-indexed API ────────────────────────────────────────────────────── */
 
 page_id_t mm_page_alloc(void) {
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-  if (free_top == 0u) {
-    oom_count++;
-    spin_unlock_irqrestore(SPIN_PAGE, saved);
-    mod_vfs.klogf("MM: OOM: page_alloc failed\n");
-    return PAGE_ID_INVALID;
-  }
-  /* Pick highest-index free page (same policy as page_alloc) */
-  uint32_t best = 0;
-  for (uint32_t i = 1; i < free_top; i++) {
-    if (free_stack[i] > free_stack[best]) best = i;
-  }
-  page_id_t id = free_stack[best];
-  free_stack[best] = free_stack[--free_top];
+  page_id_t id = page_alloc_n(1);
+  if (id == PAGE_ID_INVALID) oom_count++;
+  page_trace_tail("alloc1", (unsigned)id, 1);
   spin_unlock_irqrestore(SPIN_PAGE, saved);
+  if (id == PAGE_ID_INVALID) mod_vfs.klogf("MM: OOM: page_alloc failed\n");
   return id;
 }
 
@@ -501,16 +390,17 @@ uint32_t mm_page_linear(page_id_t id) {
 void mm_page_free(page_id_t id) {
   if (id == PAGE_ID_INVALID || !pool_page_id_to_index(id, NULL)) return;
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-  /* Double-free check */
-  for (uint32_t i = 0; i < free_top; i++) {
-    if (free_stack[i] == id) {
-      spin_unlock_irqrestore(SPIN_PAGE, saved);
-      mod_vfs.klogf("MM: double-free page %u\n", (unsigned)id);
-      return;
-    }
+  if (page_alloc_is_free(id)) {
+    spin_unlock_irqrestore(SPIN_PAGE, saved);
+    mod_vfs.klogf("MM: double-free page %u\n", (unsigned)id);
+    return;
   }
-  if (free_top < page_count) free_stack[free_top++] = id;
+  int rc = page_alloc_free_range(id, 1);
+  page_trace_tail("free1", (unsigned)id, 1);
   spin_unlock_irqrestore(SPIN_PAGE, saved);
+  if (rc < 0) {
+    mod_vfs.klogf("MM: PANIC: free-list full, page %u leaked\n", (unsigned)id);
+  }
 }
 
 void mm_page_read(page_id_t id, uint16_t off, void *buf, uint16_t len) {
