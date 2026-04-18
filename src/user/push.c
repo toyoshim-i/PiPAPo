@@ -1194,6 +1194,15 @@ static int exec_simple(char **argv, int argc) {
     return 127;
   }
 
+  /* search_path() returns names with '/' verbatim without checking that
+   * the file exists. Verify here so explicit paths (./foo, /bin/foo)
+   * get a proper "not found" error instead of a silent vfork failure. */
+  int has_slash = my_strchr(argv[0], '/') != NULL;
+  if (has_slash && access(resolved, X_OK) != 0) {
+    err_msg(argv[0], "not found");
+    return 127;
+  }
+
   char *envp[ENV_MAX + 1];
   build_envp(envp, ENV_MAX + 1);
 
@@ -1228,8 +1237,10 @@ static int exec_simple(char **argv, int argc) {
     int st = WIFEXITED(wstatus) ? (int)WEXITSTATUS(wstatus)
                                 : (128 + (int)WTERMSIG(wstatus));
 
-    /* If child exited 127 (execve failed), try next PATH candidate */
-    if (st == 127 && ntried < SKIP_MAX) {
+    /* If child exited 127 (execve failed), try next PATH candidate.
+     * Skip the retry for names containing '/' — search_path_skip()
+     * would just echo the same literal path back. */
+    if (st == 127 && !has_slash && ntried < SKIP_MAX) {
       my_strcpy(tried[ntried], resolved, PATH_BUF);
       ntried++;
       if (search_path_skip(argv[0], resolved, sizeof(resolved), tried,
