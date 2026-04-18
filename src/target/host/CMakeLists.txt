@@ -60,3 +60,10 @@ add_executable(push
     ${PPAP_ROOT}/src/user/push_line.c
     ${CMAKE_CURRENT_SOURCE_DIR}/posix_shim.c
 )
+# A host's inherited environ is far larger than the embedded 1.5 KB pool;
+# bump the cap so env_init doesn't silently drop entries (which in turn
+# would cause later `VAR=value` assignments to silently fail).
+target_compile_definitions(push PRIVATE
+    ENV_POOL_SIZE=16384
+    ENV_MAX=256
+)
