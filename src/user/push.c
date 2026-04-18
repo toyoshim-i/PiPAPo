@@ -1828,6 +1828,24 @@ int main(int argc, char *argv[]) {
       if (stat("/etc/profile", &st) == 0) run_file("/etc/profile");
     }
 
+    /* Source ~/.pushrc if it exists — user-level customisation, read
+     * on every interactive session (login or not).  Analogous to
+     * bash's ~/.bashrc.  Skipped silently when $HOME is unset. */
+    const char *home = env_get("HOME");
+    if (home && home[0]) {
+      char rc_path[PATH_BUF];
+      int n = 0;
+      while (home[n] && n < PATH_BUF - 9) {
+        rc_path[n] = home[n];
+        n++;
+      }
+      const char *tail = "/.pushrc";
+      for (int i = 0; tail[i] && n < PATH_BUF - 1; i++) rc_path[n++] = tail[i];
+      rc_path[n] = '\0';
+      struct stat st;
+      if (stat(rc_path, &st) == 0) run_file(rc_path);
+    }
+
     struct line_src ls;
     ls.fd = 0;
     ls.lines = 0;
