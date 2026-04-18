@@ -9,6 +9,7 @@
 #include "common/errno.h"
 #include "common/fcntl.h"
 #include "kernel/common/core/proc_info.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/cpu/cpu.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
@@ -340,9 +341,12 @@ static int dos_buffered_input(dos_proc_t *dos, dos_regs_t *regs) {
 }
 
 static int dos_check_input_status(dos_proc_t *dos, dos_regs_t *regs) {
-  /* Use sys_poll or a simplified check for now */
-  regs->ax = (regs->ax & 0xFF00) | 0xFF; /* Character available */
-  /* TODO: implement actual poll */
+  /* TODO: implement non-blocking poll on fd 0.  Currently lies "char
+   * available" which is harmless when the caller follows up with a
+   * blocking read, but can mislead apps that loop on the status. */
+  mod_vfs.klogf(
+      "[msdos] stub: AH=0Bh check_input_status (always reports ready)\n");
+  regs->ax = (regs->ax & 0xFF00) | 0xFF;
   return 0;
 }
 
@@ -352,17 +356,19 @@ static int dos_get_current_drive(dos_proc_t *dos, dos_regs_t *regs) {
 }
 
 static int dos_get_date(dos_proc_t *dos, dos_regs_t *regs) {
-  /* Simplified date: 2026-04-13 */
+  /* TODO: query a real RTC source.  Hardcoded 2026-04-13 (Mon). */
+  mod_vfs.klogf("[msdos] stub: AH=2Ah get_date (hardcoded 2026-04-13)\n");
   regs->cx = 2026;
-  regs->dx = 0x040D;                     /* DH=month, DL=day */
-  regs->ax = (regs->ax & 0xFF00) | 0x01; /* Monday */
+  regs->dx = 0x040D;
+  regs->ax = (regs->ax & 0xFF00) | 0x01;
   return 0;
 }
 
 static int dos_get_time(dos_proc_t *dos, dos_regs_t *regs) {
-  /* Simplified time: 12:00:00.00 */
-  regs->cx = 0x0C00; /* CH=hour, CL=minute */
-  regs->dx = 0x0000; /* DH=second, DL=1/100 sec */
+  /* TODO: query a real RTC source.  Hardcoded 12:00:00.00. */
+  mod_vfs.klogf("[msdos] stub: AH=2Ch get_time (hardcoded 12:00:00)\n");
+  regs->cx = 0x0C00;
+  regs->dx = 0x0000;
   return 0;
 }
 
@@ -759,6 +765,9 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
       ret = dos_rename(dos, regs);
       break;
     default:
+      mod_vfs.klogf("[msdos] unimpl INT 21h AH=%x AL=%x at CS:IP=%x:%x\n",
+                    (unsigned)(regs->ax >> 8), (unsigned)(regs->ax & 0xFF),
+                    (unsigned)regs->cs, (unsigned)regs->ip);
       ret = -DOS_ERR_INVALID_FUNCTION;
       break;
   }
