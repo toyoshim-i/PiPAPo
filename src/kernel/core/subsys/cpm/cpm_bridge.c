@@ -416,7 +416,11 @@ static int cpm_file_delete(const char *path) {
 }
 
 static int cpm_file_rename(const char *oldpath, const char *newpath) {
-  return (int)sys_rename((uintptr_t)oldpath, (uintptr_t)newpath);
+  user_page_ref_t oref, nref;
+  if (proc_user_ptr_to_page_ref(current, (uintptr_t)oldpath, &oref) < 0 ||
+      proc_user_ptr_to_page_ref(current, (uintptr_t)newpath, &nref) < 0)
+    return -EFAULT;
+  return (int)sys_rename(oref.page, oref.off, nref.page, nref.off);
 }
 
 /* Directory operations — stub for now (PPAP VFS doesn't have opendir yet) */

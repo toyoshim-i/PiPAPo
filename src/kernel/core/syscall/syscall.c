@@ -49,6 +49,28 @@ void svc_set_restart(void) {
   current->svc_needs_restart = 1;
 }
 
+/* Translate a user pointer into a (page, off) pair for path/buffer
+ * syscalls.  Centralises the per-arch translator step at the
+ * dispatcher boundary so each path syscall body works on (page, off)
+ * directly and doesn't depend on the user-pointer convention. */
+static int xlate_user_ptr(uintptr_t up, user_page_ref_t *ref) {
+  if (up == 0u) return -(long)EINVAL;
+  if (proc_user_ptr_to_page_ref(current, up, ref) < 0) return -(long)EFAULT;
+  return 0;
+}
+
+/* Variant that accepts NULL and returns it as (PAGE_ID_INVALID, 0).
+ * Used by sys_mount where source_ptr is documented as optional. */
+static int xlate_user_ptr_optional(uintptr_t up, user_page_ref_t *ref) {
+  if (up == 0u) {
+    ref->page = PAGE_ID_INVALID;
+    ref->off = 0;
+    return 0;
+  }
+  if (proc_user_ptr_to_page_ref(current, up, ref) < 0) return -(long)EFAULT;
+  return 0;
+}
+
 #if defined(__m68k__) || defined(__riscv)
 /* m68k and RISC-V have no MSP/PSP split — kernel runs on the process
  * stack page.  sys_execve cannot free the old stack while still
@@ -111,54 +133,44 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_exit(a0);
       break;
     case SYS_READ: {
-      user_page_ref_t ref;
-      if (proc_user_ptr_to_page_ref(current, (uintptr_t)a1, &ref) < 0) {
-        ret = -(long)EFAULT;
-        break;
-      }
-      ret = sys_read(a0, ref.page, ref.off, (size_t)a2);
-      break;
-    }
+      user_page_ref_t r;
+      if ((ret = xlate_user_ptr((uintptr_t)a1, &r)) != 0) break;
+      ret = sys_read(a0, r.page, r.off, (size_t)a2);
+    } break;
     case SYS_WRITE: {
-      user_page_ref_t ref;
-      if (proc_user_ptr_to_page_ref(current, (uintptr_t)a1, &ref) < 0) {
-        ret = -(long)EFAULT;
-        break;
-      }
-      ret = sys_write(a0, ref.page, ref.off, (size_t)a2);
-      break;
-    }
+      user_page_ref_t r;
+      if ((ret = xlate_user_ptr((uintptr_t)a1, &r)) != 0) break;
+      ret = sys_write(a0, r.page, r.off, (size_t)a2);
+    } break;
     case SYS_OPEN: {
-      if (a0 == 0) {
-        ret = -(long)EINVAL;
-        break;
-      }
-      user_page_ref_t ref;
-      if (proc_user_ptr_to_page_ref(current, (uintptr_t)a0, &ref) < 0) {
-        ret = -(long)EINVAL;
-        break;
-      }
-      ret = sys_open(ref.page, ref.off, a1, a2);
-      break;
-    }
+      user_page_ref_t r;
+      if ((ret = xlate_user_ptr((uintptr_t)a0, &r)) != 0) break;
+      ret = sys_open(r.page, r.off, a1, a2);
+    } break;
     case SYS_CLOSE:
       ret = sys_close(a0);
       break;
-    case SYS_EXECVE:
-      ret = sys_execve((uintptr_t)a0, (uintptr_t)a1);
-      break;
-    case SYS_CHDIR:
-      ret = sys_chdir((uintptr_t)a0);
-      break;
+    case SYS_EXECVE: {
+      user_page_ref_t r;
+      if ((ret = xlate_user_ptr((uintptr_t)a0, &r)) != 0) break;
+      ret = sys_execve(r.page, r.off, (uintptr_t)a1);
+    } break;
+    case SYS_CHDIR: {
+      user_page_ref_t r;
+      if ((ret = xlate_user_ptr((uintptr_t)a0, &r)) != 0) break;
+      ret = sys_chdir(r.page, r.off);
+    } break;
     case SYS_LSEEK:
       ret = sys_lseek(a0, a1, a2);
       break;
     case SYS_GETPID:
       ret = sys_getpid();
       break;
-    case SYS_STAT:
-      ret = sys_stat((uintptr_t)a0, (uintptr_t)a1);
-      break;
+    case SYS_STAT: {
+      user_page_ref_t r;
+      if ((ret = xlate_user_ptr((uintptr_t)a0, &r)) != 0) break;
+      ret = sys_stat(r.page, r.off, (uintptr_t)a1);
+    } break;
     case SYS_FSTAT:
       ret = sys_fstat(a0, (uintptr_t)a1);
       break;
@@ -196,20 +208,15 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_sigreturn();
       break;
     case SYS_UNLINK: {
-      if (a0 == 0) {
-        ret = -(long)EINVAL;
-        break;
-      }
-      user_page_ref_t ref;
-      if (proc_user_ptr_to_page_ref(current, (uintptr_t)a0, &ref) < 0) {
-        ret = -(long)EINVAL;
-        break;
-      }
-      ret = sys_unlink(ref.page, ref.off);
+      user_page_ref_t r;
+      if ((ret = xlate_user_ptr((uintptr_t)a0, &r)) != 0) break;
+      ret = sys_unlink(r.page, r.off);
     } break;
-    case SYS_MKDIR:
-      ret = sys_mkdir((uintptr_t)a0, a1);
-      break;
+    case SYS_MKDIR: {
+      user_page_ref_t r;
+      if ((ret = xlate_user_ptr((uintptr_t)a0, &r)) != 0) break;
+      ret = sys_mkdir(r.page, r.off, a1);
+    } break;
     case SYS_VFORK:
       ret = sys_vfork(frame);
       break;
@@ -261,15 +268,19 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
     case SYS_FCNTL:
       ret = sys_fcntl64(a0, a1, a2);
       break;
-    case SYS_STAT64:
-      ret = sys_stat64((uintptr_t)a0, (uintptr_t)a1);
-      break;
+    case SYS_STAT64: {
+      user_page_ref_t r;
+      if ((ret = xlate_user_ptr((uintptr_t)a0, &r)) != 0) break;
+      ret = sys_stat64(r.page, r.off, (uintptr_t)a1);
+    } break;
     case SYS_FSTAT64:
       ret = sys_fstat64(a0, (uintptr_t)a1);
       break;
-    case SYS_LSTAT64:
-      ret = sys_lstat64((uintptr_t)a0, (uintptr_t)a1);
-      break;
+    case SYS_LSTAT64: {
+      user_page_ref_t r;
+      if ((ret = xlate_user_ptr((uintptr_t)a0, &r)) != 0) break;
+      ret = sys_lstat64(r.page, r.off, (uintptr_t)a1);
+    } break;
     case SYS_GETDENTS64:
       ret = sys_getdents64(a0, (uintptr_t)a1, a2);
       break;
@@ -301,12 +312,16 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       break;
 
     /* ── P1: interactive shell ──────────────────────────────────────────── */
-    case SYS_ACCESS:
-      ret = sys_access((uintptr_t)a0, a1);
-      break;
-    case SYS_READLINK:
-      ret = sys_readlink((uintptr_t)a0, (uintptr_t)a1, a2);
-      break;
+    case SYS_ACCESS: {
+      user_page_ref_t r;
+      if ((ret = xlate_user_ptr((uintptr_t)a0, &r)) != 0) break;
+      ret = sys_access(r.page, r.off, a1);
+    } break;
+    case SYS_READLINK: {
+      user_page_ref_t r;
+      if ((ret = xlate_user_ptr((uintptr_t)a0, &r)) != 0) break;
+      ret = sys_readlink(r.page, r.off, (uintptr_t)a1, a2);
+    } break;
     case SYS_GETPPID:
       ret = (long)current->ppid;
       break;
@@ -340,16 +355,9 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_umask(a0);
       break;
     case SYS_RMDIR: {
-      if (a0 == 0) {
-        ret = -(long)EINVAL;
-        break;
-      }
-      user_page_ref_t ref;
-      if (proc_user_ptr_to_page_ref(current, (uintptr_t)a0, &ref) < 0) {
-        ret = -(long)EINVAL;
-        break;
-      }
-      ret = sys_rmdir(ref.page, ref.off);
+      user_page_ref_t r;
+      if ((ret = xlate_user_ptr((uintptr_t)a0, &r)) != 0) break;
+      ret = sys_rmdir(r.page, r.off);
     } break;
     case SYS_GETTIMEOFDAY:
       ret = sys_gettimeofday((uintptr_t)a0, (uintptr_t)a1);
@@ -362,22 +370,16 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       break;
     case SYS_OPENAT: {
       /* AT_FDCWD fast-path: route to sys_open (path=a1, flags=a2, mode=a3) */
-      if (a1 == 0) {
-        ret = -(long)EINVAL;
-        break;
-      }
-      user_page_ref_t ref;
-      if (proc_user_ptr_to_page_ref(current, (uintptr_t)a1, &ref) < 0) {
-        ret = -(long)EINVAL;
-        break;
-      }
-      ret = sys_open(ref.page, ref.off, a2, a3);
-      break;
-    }
-    case SYS_FSTATAT64:
-      /* AT_FDCWD fast-path: dirfd ignored, route to stat64/lstat64 */
-      ret = sys_stat64((uintptr_t)a1, (uintptr_t)a2);
-      break;
+      user_page_ref_t r;
+      if ((ret = xlate_user_ptr((uintptr_t)a1, &r)) != 0) break;
+      ret = sys_open(r.page, r.off, a2, a3);
+    } break;
+    case SYS_FSTATAT64: {
+      /* AT_FDCWD fast-path: dirfd ignored, route to stat64. */
+      user_page_ref_t r;
+      if ((ret = xlate_user_ptr((uintptr_t)a1, &r)) != 0) break;
+      ret = sys_stat64(r.page, r.off, (uintptr_t)a2);
+    } break;
     case SYS_MREMAP:
       ret = -(long)ENOMEM; /* force malloc to mmap new region */
       break;
@@ -389,9 +391,12 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
     case SYS_CHMOD:
       ret = 0; /* stub — no real permission model */
       break;
-    case SYS_RENAME:
-      ret = sys_rename((uintptr_t)a0, (uintptr_t)a1);
-      break;
+    case SYS_RENAME: {
+      user_page_ref_t ro, rn;
+      if ((ret = xlate_user_ptr((uintptr_t)a0, &ro)) != 0) break;
+      if ((ret = xlate_user_ptr((uintptr_t)a1, &rn)) != 0) break;
+      ret = sys_rename(ro.page, ro.off, rn.page, rn.off);
+    } break;
     case SYS_LCHOWN:
     case SYS_FCHOWN:
     case SYS_CHOWN:
@@ -410,16 +415,25 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
 
     /* ── P3: mount / umount / statfs ────────────────────────────────────────
      */
-    case SYS_MOUNT:
-      ret = sys_mount((uintptr_t)a0, (uintptr_t)a1, (uintptr_t)a2, a3,
+    case SYS_MOUNT: {
+      user_page_ref_t rs, rt, rf;
+      /* source is optional; target and fstype are required. */
+      if ((ret = xlate_user_ptr_optional((uintptr_t)a0, &rs)) != 0) break;
+      if ((ret = xlate_user_ptr((uintptr_t)a1, &rt)) != 0) break;
+      if ((ret = xlate_user_ptr((uintptr_t)a2, &rf)) != 0) break;
+      ret = sys_mount(rs.page, rs.off, rt.page, rt.off, rf.page, rf.off, a3,
                       (uintptr_t)a4);
-      break;
-    case SYS_UMOUNT2:
-      ret = sys_umount2((uintptr_t)a0, a1);
-      break;
-    case SYS_STATFS64:
-      ret = sys_statfs64((uintptr_t)a0, a1, (uintptr_t)a2);
-      break;
+    } break;
+    case SYS_UMOUNT2: {
+      user_page_ref_t r;
+      if ((ret = xlate_user_ptr((uintptr_t)a0, &r)) != 0) break;
+      ret = sys_umount2(r.page, r.off, a1);
+    } break;
+    case SYS_STATFS64: {
+      user_page_ref_t r;
+      if ((ret = xlate_user_ptr((uintptr_t)a0, &r)) != 0) break;
+      ret = sys_statfs64(r.page, r.off, a1, (uintptr_t)a2);
+    } break;
     case SYS_FSTATFS64:
       ret = sys_fstatfs64(a0, a1, (uintptr_t)a2);
       break;

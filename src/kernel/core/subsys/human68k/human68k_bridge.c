@@ -681,7 +681,12 @@ static int dos_chdir(uint32_t *regs, uint32_t usp) {
     return 2;
   }
   H68K_TRACE("_CHDIR(%s)", path);
-  long r = sys_chdir((uintptr_t)path);
+  user_page_ref_t ref;
+  long r;
+  if (proc_user_ptr_to_page_ref(current, (uintptr_t)path, &ref) < 0)
+    r = -EFAULT;
+  else
+    r = sys_chdir(ref.page, ref.off);
   regs[0] = (uint32_t)human68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -781,7 +786,13 @@ static int dos_rename(uint32_t *regs, uint32_t usp) {
   human68k_translate_path(old_src, old_path, sizeof(old_path));
   human68k_translate_path(new_src, new_path, sizeof(new_path));
   H68K_TRACE("_RENAME(%s, %s)", old_path, new_path);
-  long r = sys_rename((uintptr_t)old_path, (uintptr_t)new_path);
+  user_page_ref_t oref, nref;
+  long r;
+  if (proc_user_ptr_to_page_ref(current, (uintptr_t)old_path, &oref) < 0 ||
+      proc_user_ptr_to_page_ref(current, (uintptr_t)new_path, &nref) < 0)
+    r = -EFAULT;
+  else
+    r = sys_rename(oref.page, oref.off, nref.page, nref.off);
   regs[0] = (uint32_t)human68k_errno((int)r);
   advance_pc(regs);
   return 2;
@@ -1377,7 +1388,12 @@ static int dos_mkdir(uint32_t *regs, uint32_t usp) {
     return 2;
   }
   H68K_TRACE("_MKDIR(%s)", path);
-  long r = sys_mkdir((uintptr_t)path, 0755);
+  user_page_ref_t ref;
+  long r;
+  if (proc_user_ptr_to_page_ref(current, (uintptr_t)path, &ref) < 0)
+    r = -EFAULT;
+  else
+    r = sys_mkdir(ref.page, ref.off, 0755);
   regs[0] = (uint32_t)human68k_errno(r);
   advance_pc(regs);
   return 2;
@@ -1429,7 +1445,12 @@ static int dos_chmod(uint32_t *regs, uint32_t usp) {
   H68K_TRACE("_CHMOD(%x, %s)", (uint32_t)attr, path);
 
   struct stat st;
-  long r = sys_stat((uintptr_t)path, (uintptr_t)&st);
+  user_page_ref_t pref;
+  long r;
+  if (proc_user_ptr_to_page_ref(current, (uintptr_t)path, &pref) < 0)
+    r = -EFAULT;
+  else
+    r = sys_stat(pref.page, pref.off, (uintptr_t)&st);
   if (r < 0) {
     regs[0] = (uint32_t)human68k_errno(r);
     advance_pc(regs);
@@ -1529,7 +1550,10 @@ static void filbuf_fill(uint32_t filbuf, const char *dir_path,
     }
     fullpath[dlen + 1 + nlen] = '\0';
     struct stat st;
-    if (sys_stat((uintptr_t)fullpath, (uintptr_t)&st) == 0) fsize = st.st_size;
+    user_page_ref_t pref;
+    if (proc_user_ptr_to_page_ref(current, (uintptr_t)fullpath, &pref) == 0 &&
+        sys_stat(pref.page, pref.off, (uintptr_t)&st) == 0)
+      fsize = st.st_size;
   }
 
   fb[0x15] = attr;

@@ -55,7 +55,9 @@ static inline long ktest_sys_open(const char *path, long flags, long mode) {
 }
 
 static inline long ktest_sys_stat(const char *path, struct stat *buf) {
-    return sys_stat((uintptr_t)path, (uintptr_t)buf);
+    user_page_ref_t ref;
+    if (proc_user_ptr_to_page_ref(current, (uintptr_t)path, &ref) < 0) return -EFAULT;
+    return sys_stat(ref.page, ref.off, (uintptr_t)buf);
 }
 
 static inline long ktest_sys_getdents(long fd, struct dirent *buf, size_t count) {
@@ -71,11 +73,15 @@ static inline long ktest_sys_pipe(int *fds) {
 }
 
 static inline long ktest_sys_chdir(const char *path) {
-    return sys_chdir((uintptr_t)path);
+    user_page_ref_t ref;
+    if (proc_user_ptr_to_page_ref(current, (uintptr_t)path, &ref) < 0) return -EFAULT;
+    return sys_chdir(ref.page, ref.off);
 }
 
 static inline long ktest_sys_mkdir(const char *path, long mode) {
-    return sys_mkdir((uintptr_t)path, mode);
+    user_page_ref_t ref;
+    if (proc_user_ptr_to_page_ref(current, (uintptr_t)path, &ref) < 0) return -EFAULT;
+    return sys_mkdir(ref.page, ref.off, mode);
 }
 
 static inline long ktest_sys_unlink(const char *path) {

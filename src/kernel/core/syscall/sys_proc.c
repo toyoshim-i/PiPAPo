@@ -2122,7 +2122,7 @@ static int sys_execve_copy_user_argv(const char **argv_out, char *arg_buf,
   return -(long)E2BIG;
 }
 
-long sys_execve(uintptr_t path_ptr, uintptr_t argv_ptr) {
+long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr) {
 #if defined(__ia16__)
   execve_scratch_t *scratch = &i16_execve_scratch;
 #else
@@ -2131,9 +2131,21 @@ long sys_execve(uintptr_t path_ptr, uintptr_t argv_ptr) {
 #endif
   const char *const *argv = NULL;
   page_id_t exec_snapshot = PAGE_ID_INVALID;
-  int rc = sys_copy_user_string(scratch->path, sizeof(scratch->path), path_ptr);
-
-  if (rc < 0) return (long)rc;
+  /* Path arrived as (page, off); copy from the user segment via the
+   * page-based helper. */
+  user_page_ref_t pref = {.page = path_page, .off = path_off};
+  for (size_t i = 0; i < sizeof(scratch->path); i++) {
+    mem_region_page_read(pref.page, pref.off, &scratch->path[i], 1);
+    if (scratch->path[i] == '\0') goto path_loaded;
+    if (++pref.off >= PAGE_SIZE) {
+      pref.page++;
+      pref.off = 0;
+    }
+  }
+  scratch->path[sizeof(scratch->path) - 1] = '\0';
+  return -(long)ENAMETOOLONG;
+path_loaded:;
+  int rc = 0;
   rc = sys_execve_copy_user_argv(scratch->argv_copy, scratch->argv_buf,
                                  sizeof(scratch->argv_buf), argv_ptr);
   if (rc < 0) return (long)rc;

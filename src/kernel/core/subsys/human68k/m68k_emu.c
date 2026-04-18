@@ -366,8 +366,15 @@ int m68k_emu_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
             cpu->d[0] = (uint32_t)human68k_errno(err);
             return CPU_TRAP_HANDLED;
           }
-          cpu->d[0] =
-              (uint32_t)human68k_errno(sys_mkdir((uintptr_t)path, 0755));
+          {
+            user_page_ref_t ref;
+            long r;
+            if (proc_user_ptr_to_page_ref(current, (uintptr_t)path, &ref) < 0)
+              r = -EFAULT;
+            else
+              r = sys_mkdir(ref.page, ref.off, 0755);
+            cpu->d[0] = (uint32_t)human68k_errno(r);
+          }
           return CPU_TRAP_HANDLED;
         }
 
@@ -399,7 +406,15 @@ int m68k_emu_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
             cpu->d[0] = (uint32_t)human68k_errno(err);
             return CPU_TRAP_HANDLED;
           }
-          cpu->d[0] = (uint32_t)human68k_errno(sys_chdir((uintptr_t)path));
+          {
+            user_page_ref_t ref;
+            long r;
+            if (proc_user_ptr_to_page_ref(current, (uintptr_t)path, &ref) < 0)
+              r = -EFAULT;
+            else
+              r = sys_chdir(ref.page, ref.off);
+            cpu->d[0] = (uint32_t)human68k_errno(r);
+          }
           return CPU_TRAP_HANDLED;
         }
 
@@ -558,8 +573,18 @@ int m68k_emu_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
             cpu->d[0] = (uint32_t)human68k_errno(err);
             return CPU_TRAP_HANDLED;
           }
-          cpu->d[0] = (uint32_t)human68k_errno(
-              sys_rename((uintptr_t)old_path, (uintptr_t)new_path));
+          {
+            user_page_ref_t oref, nref;
+            long r;
+            if (proc_user_ptr_to_page_ref(current, (uintptr_t)old_path, &oref) <
+                    0 ||
+                proc_user_ptr_to_page_ref(current, (uintptr_t)new_path, &nref) <
+                    0)
+              r = -EFAULT;
+            else
+              r = sys_rename(oref.page, oref.off, nref.page, nref.off);
+            cpu->d[0] = (uint32_t)human68k_errno(r);
+          }
           return CPU_TRAP_HANDLED;
         }
 

@@ -67,7 +67,7 @@ void svc_set_restart(void);
 /* sys_proc.c */
 long sys_exit(long status);
 long sys_getpid(void);
-long sys_execve(uintptr_t path_ptr, uintptr_t argv_ptr);
+long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr);
 long sys_vfork(uint32_t *frame);
 long sys_waitpid(long pid, long status_ptr, long options);
 long sys_set_tid_address(uintptr_t tidptr);
@@ -144,37 +144,42 @@ long sys_rt_sigreturn(void);
 struct stat;
 struct dirent;
 void fd_pool_init(void);
-/* Open the file whose NUL-terminated path lives at (page, off).
- * Callers with a user pointer translate via proc_user_ptr_to_page_ref
- * before calling. */
 long sys_open(page_id_t page, uint16_t off, long flags, long mode);
 long sys_close(long fd);
 long sys_lseek(long fd, long off, long whence);
-long sys_stat(uintptr_t path_ptr, uintptr_t buf_ptr);
+/* Path-taking calls take (page_id_t, uint16_t) for each path argument
+ * (same convention as sys_open).  Buffer/struct args (e.g. stat
+ * result, readlink output) keep `uintptr_t` and route through
+ * sys_copy_to_user / sys_copy_from_user, where the user-pointer
+ * translator is centralized. */
+long sys_stat(page_id_t page, uint16_t off, uintptr_t buf_ptr);
 long sys_fstat(long fd, uintptr_t buf_ptr);
 long sys_getdents(long fd, uintptr_t buf_ptr, size_t count);
 long sys_getcwd(uintptr_t buf_ptr, size_t size);
-long sys_chdir(uintptr_t path_ptr);
-long sys_mkdir(uintptr_t path_ptr, long mode);
-/* Unlink the file whose NUL-terminated path lives at (page, off).
- * Same convention as sys_open.  sys_rmdir delegates to sys_unlink. */
+long sys_chdir(page_id_t page, uint16_t off);
+long sys_mkdir(page_id_t page, uint16_t off, long mode);
 long sys_unlink(page_id_t page, uint16_t off);
-long sys_stat64(uintptr_t path_ptr, uintptr_t buf_ptr);
+long sys_stat64(page_id_t page, uint16_t off, uintptr_t buf_ptr);
 long sys_fstat64(long fd, uintptr_t buf_ptr);
-long sys_lstat64(uintptr_t path_ptr, uintptr_t buf_ptr);
+long sys_lstat64(page_id_t page, uint16_t off, uintptr_t buf_ptr);
 long sys_getdents64(long fd, uintptr_t buf_ptr, long count);
 long sys_llseek(long fd, long off_hi, long off_lo, uintptr_t result_ptr,
                 long whence);
 long sys_fcntl64(long fd, long cmd, long arg);
-long sys_access(uintptr_t path_ptr, long mode);
-long sys_readlink(uintptr_t path_ptr, uintptr_t buf_ptr, long bufsiz);
+long sys_access(page_id_t page, uint16_t off, long mode);
+long sys_readlink(page_id_t page, uint16_t off, uintptr_t buf_ptr, long bufsiz);
 long sys_rmdir(page_id_t page, uint16_t off);
-long sys_rename(uintptr_t oldpath_ptr, uintptr_t newpath_ptr);
+long sys_rename(page_id_t old_page, uint16_t old_off, page_id_t new_page,
+                uint16_t new_off);
 long sys_umask(long mask);
-long sys_mount(uintptr_t source_ptr, uintptr_t target_ptr, uintptr_t fstype_ptr,
-               long flags, uintptr_t data_ptr);
-long sys_umount2(uintptr_t target_ptr, long flags);
-long sys_statfs64(uintptr_t path_ptr, long sz, uintptr_t buf_ptr);
+/* sys_mount source is optional — pass page_id = PAGE_ID_INVALID for
+ * "no source" (the dispatcher does this when user_ptr is NULL). */
+long sys_mount(page_id_t source_page, uint16_t source_off,
+               page_id_t target_page, uint16_t target_off,
+               page_id_t fstype_page, uint16_t fstype_off, long flags,
+               uintptr_t data_ptr);
+long sys_umount2(page_id_t page, uint16_t off, long flags);
+long sys_statfs64(page_id_t page, uint16_t off, long sz, uintptr_t buf_ptr);
 long sys_fstatfs64(long fd, long sz, uintptr_t buf_ptr);
 
 /* sys_poll.c */

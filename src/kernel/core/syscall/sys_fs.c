@@ -19,9 +19,21 @@
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/syscall/syscall.h"
 
-static int sys_copy_path(char *dst, uintptr_t path_ptr) {
-  if (path_ptr == 0u) return -(long)EINVAL;
-  return sys_copy_user_string(dst, VFS_PATH_MAX, path_ptr);
+/* Copy a NUL-terminated path out of (page, off) into a kernel buffer.
+ * Walks page boundaries.  All path-taking syscalls below use this. */
+static int sys_copy_path(char *dst, size_t dst_size, page_id_t page,
+                         uint16_t off) {
+  user_page_ref_t ref = {.page = page, .off = off};
+  for (size_t i = 0; i < dst_size; i++) {
+    mem_region_page_read(ref.page, ref.off, &dst[i], 1);
+    if (dst[i] == '\0') return 0;
+    if (++ref.off >= PAGE_SIZE) {
+      ref.page++;
+      ref.off = 0;
+    }
+  }
+  dst[dst_size - 1] = '\0';
+  return -(long)ENAMETOOLONG;
 }
 
 /* ── sys_open ────────────────────────────────────────────────────────────────
@@ -32,17 +44,8 @@ static int sys_copy_path(char *dst, uintptr_t path_ptr) {
 
 long sys_open(page_id_t page, uint16_t off, long flags, long mode) {
   char path[VFS_PATH_MAX];
-  user_page_ref_t ref = {.page = page, .off = off};
-  for (int i = 0; i < VFS_PATH_MAX; i++) {
-    mem_region_page_read(ref.page, ref.off, &path[i], 1);
-    if (path[i] == '\0') goto loaded;
-    if (++ref.off >= PAGE_SIZE) {
-      ref.page++;
-      ref.off = 0;
-    }
-  }
-  return -(long)ENAMETOOLONG;
-loaded:;
+  int rc = sys_copy_path(path, sizeof(path), page, off);
+  if (rc < 0) return (long)rc;
   int desc = mod_vfs.fd_open(path, (int)flags, (int)mode);
   if (desc < 0) return (long)desc;
 
@@ -84,10 +87,10 @@ long sys_lseek(long fd, long off, long whence) {
 /* ── sys_stat ────────────────────────────────────────────────────────────────
  */
 
-long sys_stat(uintptr_t path_ptr, uintptr_t buf_ptr) {
+long sys_stat(page_id_t page, uint16_t off, uintptr_t buf_ptr) {
   char path[VFS_PATH_MAX];
   struct stat st;
-  int rc = sys_copy_path(path, path_ptr);
+  int rc = sys_copy_path(path, sizeof(path), page, off);
 
   if (rc < 0) return (long)rc;
   if (buf_ptr == 0u) return -(long)EINVAL;
@@ -164,9 +167,9 @@ long sys_getcwd(uintptr_t buf_ptr, size_t size) {
 /* ── sys_chdir ───────────────────────────────────────────────────────────────
  */
 
-long sys_chdir(uintptr_t path_ptr) {
+long sys_chdir(page_id_t page, uint16_t off) {
   char path[VFS_PATH_MAX];
-  int rc = sys_copy_path(path, path_ptr);
+  int rc = sys_copy_path(path, sizeof(path), page, off);
   const char *target_path = path;
 
   if (rc < 0) return (long)rc;
@@ -251,10 +254,9 @@ long sys_dup2(long oldfd, long newfd) {
 /* ── sys_mkdir ───────────────────────────────────────────────────────────────
  */
 
-long sys_mkdir(uintptr_t path_ptr, long mode) {
+long sys_mkdir(page_id_t page, uint16_t off, long mode) {
   char path[VFS_PATH_MAX];
-  int rc = sys_copy_path(path, path_ptr);
-
+  int rc = sys_copy_path(path, sizeof(path), page, off);
   if (rc < 0) return (long)rc;
   return (long)mod_vfs.path_mkdir(path, (uint32_t)mode);
 }
@@ -266,28 +268,21 @@ long sys_mkdir(uintptr_t path_ptr, long mode) {
 
 long sys_unlink(page_id_t page, uint16_t off) {
   char path[VFS_PATH_MAX];
-  user_page_ref_t ref = {.page = page, .off = off};
-  for (int i = 0; i < VFS_PATH_MAX; i++) {
-    mem_region_page_read(ref.page, ref.off, &path[i], 1);
-    if (path[i] == '\0') return (long)mod_vfs.path_unlink(path);
-    if (++ref.off >= PAGE_SIZE) {
-      ref.page++;
-      ref.off = 0;
-    }
-  }
-  return -(long)ENAMETOOLONG;
+  int rc = sys_copy_path(path, sizeof(path), page, off);
+  if (rc < 0) return (long)rc;
+  return (long)mod_vfs.path_unlink(path);
 }
 
 /* ── sys_rename ──────────────────────────────────────────────────────────────
  */
 
-long sys_rename(uintptr_t oldpath_ptr, uintptr_t newpath_ptr) {
+long sys_rename(page_id_t old_page, uint16_t old_off, page_id_t new_page,
+                uint16_t new_off) {
   char oldpath[VFS_PATH_MAX];
   char newpath[VFS_PATH_MAX];
-  int rc = sys_copy_path(oldpath, oldpath_ptr);
-
+  int rc = sys_copy_path(oldpath, sizeof(oldpath), old_page, old_off);
   if (rc < 0) return (long)rc;
-  rc = sys_copy_path(newpath, newpath_ptr);
+  rc = sys_copy_path(newpath, sizeof(newpath), new_page, new_off);
   if (rc < 0) return (long)rc;
   return (long)mod_vfs.path_rename(oldpath, newpath);
 }
@@ -364,10 +359,10 @@ static void fill_stat64(const struct stat *src, void *buf) {
 /* ── sys_stat64 ──────────────────────────────────────────────────────────────
  */
 
-long sys_stat64(uintptr_t path_ptr, uintptr_t buf_ptr) {
+long sys_stat64(page_id_t page, uint16_t off, uintptr_t buf_ptr) {
   char path[VFS_PATH_MAX];
   uint8_t out[LINUX_STAT64_SIZE];
-  int rc = sys_copy_path(path, path_ptr);
+  int rc = sys_copy_path(path, sizeof(path), page, off);
 
   if (rc < 0) return (long)rc;
   if (buf_ptr == 0u) return -(long)EINVAL;
@@ -410,10 +405,10 @@ long sys_fstat64(long fd, uintptr_t buf_ptr) {
 /* ── sys_lstat64 ─────────────────────────────────────────────────────────────
  */
 
-long sys_lstat64(uintptr_t path_ptr, uintptr_t buf_ptr) {
+long sys_lstat64(page_id_t page, uint16_t off, uintptr_t buf_ptr) {
   char path[VFS_PATH_MAX];
   uint8_t out[LINUX_STAT64_SIZE];
-  int rc = sys_copy_path(path, path_ptr);
+  int rc = sys_copy_path(path, sizeof(path), page, off);
 
   if (rc < 0) return (long)rc;
   if (buf_ptr == 0u) return -(long)EINVAL;
@@ -513,9 +508,9 @@ long sys_fcntl64(long fd, long cmd, long arg) {
 /* ── sys_access ──────────────────────────────────────────────────────────────
  */
 
-long sys_access(uintptr_t path_ptr, long mode) {
+long sys_access(page_id_t page, uint16_t off, long mode) {
   char path[VFS_PATH_MAX];
-  int rc = sys_copy_path(path, path_ptr);
+  int rc = sys_copy_path(path, sizeof(path), page, off);
 
   (void)mode;
   if (rc < 0) return (long)rc;
@@ -531,10 +526,11 @@ long sys_access(uintptr_t path_ptr, long mode) {
 /* ── sys_readlink ────────────────────────────────────────────────────────────
  */
 
-long sys_readlink(uintptr_t path_ptr, uintptr_t buf_ptr, long bufsiz) {
+long sys_readlink(page_id_t page, uint16_t off, uintptr_t buf_ptr,
+                  long bufsiz) {
   char path[VFS_PATH_MAX];
   char out[VFS_PATH_MAX];
-  int rc = sys_copy_path(path, path_ptr);
+  int rc = sys_copy_path(path, sizeof(path), page, off);
 
   if (rc < 0) return (long)rc;
   if (buf_ptr == 0u || bufsiz <= 0) return -(long)EINVAL;
@@ -584,22 +580,26 @@ long sys_umask(long mask) {
 /* ── sys_mount ───────────────────────────────────────────────────────────────
  */
 
-long sys_mount(uintptr_t source_ptr, uintptr_t target_ptr, uintptr_t fstype_ptr,
-               long flags, uintptr_t data_ptr) {
+long sys_mount(page_id_t source_page, uint16_t source_off,
+               page_id_t target_page, uint16_t target_off,
+               page_id_t fstype_page, uint16_t fstype_off, long flags,
+               uintptr_t data_ptr) {
   char source[VFS_PATH_MAX];
   char target[VFS_PATH_MAX];
   char fstype[VFS_NAME_MAX + 1];
   const char *source_path = NULL;
   int rc;
 
-  if (source_ptr != 0u) {
-    rc = sys_copy_user_string(source, sizeof(source), source_ptr);
+  /* source is optional — dispatcher passes PAGE_ID_INVALID when the
+   * user pointer was NULL. */
+  if (source_page != PAGE_ID_INVALID) {
+    rc = sys_copy_path(source, sizeof(source), source_page, source_off);
     if (rc < 0) return (long)rc;
     source_path = source;
   }
-  rc = sys_copy_user_string(target, sizeof(target), target_ptr);
+  rc = sys_copy_path(target, sizeof(target), target_page, target_off);
   if (rc < 0) return (long)rc;
-  rc = sys_copy_user_string(fstype, sizeof(fstype), fstype_ptr);
+  rc = sys_copy_path(fstype, sizeof(fstype), fstype_page, fstype_off);
   if (rc < 0) return (long)rc;
   (void)data_ptr;
   return (long)mod_vfs.mount_by_fstype(source_path, target, fstype, flags);
@@ -650,9 +650,9 @@ long sys_pipe(uintptr_t fds_ptr) {
 /* ── sys_umount2 ────────────────────────────────────────────────────────────
  */
 
-long sys_umount2(uintptr_t target_ptr, long flags) {
+long sys_umount2(page_id_t page, uint16_t off, long flags) {
   char target[VFS_PATH_MAX];
-  int rc = sys_copy_path(target, target_ptr);
+  int rc = sys_copy_path(target, sizeof(target), page, off);
 
   (void)flags;
   if (rc < 0) return (long)rc;
@@ -666,10 +666,10 @@ long sys_umount2(uintptr_t target_ptr, long flags) {
 /* ── sys_statfs64 ───────────────────────────────────────────────────────────
  */
 
-long sys_statfs64(uintptr_t path_ptr, long sz, uintptr_t buf_ptr) {
+long sys_statfs64(page_id_t page, uint16_t off, long sz, uintptr_t buf_ptr) {
   char path[VFS_PATH_MAX];
   (void)sz;
-  int rc = sys_copy_path(path, path_ptr);
+  int rc = sys_copy_path(path, sizeof(path), page, off);
 
   if (rc < 0) return (long)rc;
   if (buf_ptr == 0u) return -(long)EINVAL;
