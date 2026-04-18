@@ -27,7 +27,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "common/errno.h"                 /* ENOTTY, EINTR */
+#include "common/errno.h"                 /* ENOTTY, EINTR, EAGAIN */
+#include "common/fcntl.h"                 /* O_NONBLOCK */
 #include "common/signal.h"                /* SIGINT */
 #include "common/termios.h"               /* struct termios, flag bits */
 #include "kernel/common/core/proc_info.h" /* proc_table, PROC_MAX, PROC_FREE */
@@ -335,12 +336,14 @@ block:
 /* ── tty_read: canonical (cooked) mode ───────────────────────────────────────
  */
 
-static long tty_read_canon(tty_dev_t *t, page_id_t page, uint16_t off,
-                           size_t n) {
+static long tty_read_canon(tty_dev_t *t, int nonblock, page_id_t page,
+                           uint16_t off, size_t n) {
   /* Drain all available characters from input */
   while (!t->line_ready) {
     int c = t->in();
     if (c < 0) {
+      /* No data — caller asked O_NONBLOCK?  Tell them to retry. */
+      if (nonblock) return -(long)EAGAIN;
       /* No data — check for pending signal before blocking */
       if (current->sig_pending & ~current->sig_blocked) return -(long)EINTR;
       /* Block via svc_restart: re-executes this syscall when woken */
@@ -453,10 +456,12 @@ static long tty_read_canon(tty_dev_t *t, page_id_t page, uint16_t off,
 /* ── tty_read: raw mode ──────────────────────────────────────────────────────
  */
 
-static long tty_read_raw(tty_dev_t *t, page_id_t page, uint16_t off, size_t n) {
+static long tty_read_raw(tty_dev_t *t, int nonblock, page_id_t page,
+                         uint16_t off, size_t n) {
   (void)n;
   int c = t->in();
   if (c < 0) {
+    if (nonblock) return -(long)EAGAIN;
     /* Check for pending signal before blocking */
     if (current->sig_pending & ~current->sig_blocked) return -(long)EINTR;
     /* Block via svc_restart */
@@ -499,7 +504,9 @@ static long tty_read_raw(tty_dev_t *t, page_id_t page, uint16_t off, size_t n) {
 static long tty_read(struct file *f, page_id_t page, uint16_t off, size_t n) {
   tty_dev_t *t = (tty_dev_t *)f->priv;
   if (!t) return -(long)ENODEV;
+  int nonblock = (f->flags & O_NONBLOCK) ? 1 : 0;
   if (!t->in) {
+    if (nonblock) return -(long)EAGAIN;
     /* No backend — block forever (process sleeps until killed) */
     current->wait_channel = t;
     current->state = PROC_BLOCKED;
@@ -510,9 +517,9 @@ static long tty_read(struct file *f, page_id_t page, uint16_t off, size_t n) {
   if (n == 0) return 0;
 
   if (t->termios.c_lflag & ICANON)
-    return tty_read_canon(t, page, off, n);
+    return tty_read_canon(t, nonblock, page, off, n);
   else
-    return tty_read_raw(t, page, off, n);
+    return tty_read_raw(t, nonblock, page, off, n);
 }
 
 /* ── tty_close ───────────────────────────────────────────────────────────────

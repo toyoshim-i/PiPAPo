@@ -340,6 +340,42 @@ static int dos_buffered_input(dos_proc_t *dos, dos_regs_t *regs) {
   return 0;
 }
 
+/* AH=06h — Direct Console I/O.
+ *   DL ≠ FFh: write DL to stdout, AL = DL.
+ *   DL = FFh: non-blocking read from stdin.  ZF=0 with AL=byte if a
+ *             character was available; ZF=1 with AL=0 otherwise.
+ *
+ * Implements the non-blocking read POSIX-style: flip O_NONBLOCK on
+ * fd 0 around a single sys_read so the underlying TTY returns
+ * -EAGAIN instead of blocking, then restore the original flags. */
+static int dos_direct_console_io(dos_proc_t *dos, dos_regs_t *regs) {
+  uint8_t dl = (uint8_t)(regs->dx & 0xFF);
+  if (dl != 0xFF) {
+    dos_io_putc(dl);
+    regs->ax = (regs->ax & 0xFF00) | dl;
+    return 0;
+  }
+
+  if (dos_data_page == PAGE_ID_INVALID) return -DOS_ERR_INVALID_FUNCTION;
+
+  long flags = sys_fcntl64(0, F_GETFL, 0);
+  if (flags < 0) flags = 0;
+  sys_fcntl64(0, F_SETFL, flags | O_NONBLOCK);
+  long n = sys_read(0, dos_data_page, DOS_IO_SCRATCH_OFF, 1);
+  sys_fcntl64(0, F_SETFL, flags);
+
+  if (n == 1) {
+    uint8_t c;
+    mem_region_page_read(dos_data_page, DOS_IO_SCRATCH_OFF, &c, 1);
+    regs->ax = (regs->ax & 0xFF00) | c;
+    regs->flags &= ~0x0040u; /* ZF = 0: char available */
+  } else {
+    regs->ax &= 0xFF00u;    /* AL = 0 */
+    regs->flags |= 0x0040u; /* ZF = 1: no char */
+  }
+  return 0;
+}
+
 static int dos_check_input_status(dos_proc_t *dos, dos_regs_t *regs) {
   /* TODO: implement non-blocking poll on fd 0.  Currently lies "char
    * available" which is harmless when the caller follows up with a
@@ -694,6 +730,9 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
       break;
     case 0x02:
       ret = dos_write_char(dos, regs);
+      break;
+    case 0x06:
+      ret = dos_direct_console_io(dos, regs);
       break;
     case 0x08:
       ret = dos_read_char(dos, regs, 0);
