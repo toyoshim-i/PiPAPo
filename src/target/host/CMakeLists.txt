@@ -31,7 +31,12 @@ include_directories(
 # they compile cleanly but glibc has different conventions (e.g. no
 # prototypes for "const char *" literals matching pointer args).
 add_compile_options(-Wall -Wno-unused-parameter -Wno-unused-function
-                    -Wno-unused-result)
+                    -Wno-unused-result
+                    # uclib re-implements memcpy/memset etc. with int
+                    # counts; libc's versions use size_t.  The linker
+                    # resolves to uclib's (our TU wins over libc), and
+                    # call sites use small counts, so this is fine.
+                    -Wno-builtin-declaration-mismatch)
 
 # Force-include the shadow syscall.h on every app translation unit so
 #   #include "syscall.h"
@@ -47,6 +52,12 @@ set(APP_SRCS
     ${PPAP_ROOT}/src/user/hello.c
     ${PPAP_ROOT}/src/user/push.c
     ${PPAP_ROOT}/src/user/push_line.c
+    ${PPAP_ROOT}/src/user/lib/uclib.c
+    ${PPAP_ROOT}/src/user/pi/pi.c
+    ${PPAP_ROOT}/src/user/pi/pi_buf.c
+    ${PPAP_ROOT}/src/user/pi/pi_menu.c
+    ${PPAP_ROOT}/src/user/pi/pi_term.c
+    ${PPAP_ROOT}/src/user/pi/pi_ui.c
 )
 set_source_files_properties(${APP_SRCS}
     PROPERTIES COMPILE_FLAGS "-include ${SHIM_H}")
@@ -66,4 +77,17 @@ add_executable(push
 target_compile_definitions(push PRIVATE
     ENV_POOL_SIZE=16384
     ENV_MAX=256
+)
+
+# pi: vi-like editor.  Uses the shim for brk, ioctl(TCGETS/TCSETS/
+# TIOCGWINSZ), ppoll(5-arg form).  No signal handler, so no sigaction
+# wrapper needed; no getdents, no getcwd.
+add_executable(pi
+    ${PPAP_ROOT}/src/user/pi/pi.c
+    ${PPAP_ROOT}/src/user/pi/pi_buf.c
+    ${PPAP_ROOT}/src/user/pi/pi_menu.c
+    ${PPAP_ROOT}/src/user/pi/pi_term.c
+    ${PPAP_ROOT}/src/user/pi/pi_ui.c
+    ${PPAP_ROOT}/src/user/lib/uclib.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/posix_shim.c
 )
