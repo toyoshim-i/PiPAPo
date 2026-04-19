@@ -998,6 +998,69 @@ static int dos_free_block(dos_proc_t *dos, dos_regs_t *regs) {
   return 0;
 }
 
+/* AH=52h Get DOS "List of Lists" (SYSVARS) pointer.
+ *
+ * Returns ES:BX pointing into a small fake SYSVARS region inside the
+ * proc's PSP.  The only field MEM-style chain walkers consistently
+ * read is the word at ES:[BX-2], which holds the segment of the first
+ * MCB in the chain.  For PPAP that's (proc_seg - 1), the paragraph
+ * holding the proc's main MCB header.
+ *
+ * The PSP "reserved" region at offset 0x3A..0x4F is unused by us, so
+ * we stash:
+ *   PSP[0x3E..0x3F]  first_mcb_seg = proc_seg - 1
+ *   PSP[0x40+]       (the SYSVARS body MEM doesn't read from us)
+ *
+ * Real SYSVARS is a much richer structure (NUL device, drive table,
+ * CDS, FCB tables, etc.).  We provide just enough for the chain-head
+ * field to be valid; programs that read deeper fields will see PSP
+ * bytes and may misbehave.  Acceptable for D-5a.4. */
+static int dos_get_sysvars(dos_proc_t *dos, dos_regs_t *regs) {
+  (void)dos;
+  page_id_t base_page = current->image.data.base_page;
+  uint32_t base_linear = mem_region_page_linear(base_page);
+  uint16_t proc_seg = dos_caller_psp(base_linear);
+  uint16_t first_mcb = (uint16_t)(proc_seg - 1u);
+
+  /* PSP starts at base_id:DOS_MCB_BYTES.  Write the first-MCB segment
+   * at PSP offset 0x3E (= base_id:0x4E). */
+  uint8_t bytes[2] = {(uint8_t)(first_mcb & 0xFF), (uint8_t)(first_mcb >> 8)};
+  mem_region_page_write(base_page, (uint16_t)(DOS_MCB_BYTES + 0x3Eu), bytes, 2);
+
+  regs->es = proc_seg;
+  regs->bx = 0x40;
+  return 0;
+}
+
+/* AH=58h Get/Set Memory Allocation Strategy / UMB link state.
+ *
+ *   AL=00  Get strategy:    AX = strategy (0=first fit, etc.)
+ *   AL=01  Set strategy:    BL = new strategy
+ *   AL=02  Get UMB link:    AL = 0 (UMBs not in chain) or 1 (linked)
+ *   AL=03  Set UMB link:    BL = 0/1
+ *
+ * PPAP has no UMBs and only first-fit allocation, so we report
+ * AX=0 / AL=0 for the get sub-functions and ignore the set
+ * sub-functions.  Writers (set sub-functions) succeed silently. */
+static int dos_get_set_alloc(dos_proc_t *dos, dos_regs_t *regs) {
+  (void)dos;
+  uint8_t al = (uint8_t)(regs->ax & 0xFFu);
+  switch (al) {
+    case 0x00: /* Get strategy */
+      regs->ax = 0;
+      return 0;
+    case 0x01: /* Set strategy */
+      return 0;
+    case 0x02: /* Get UMB link state */
+      regs->ax = 0;
+      return 0;
+    case 0x03: /* Set UMB link state */
+      return 0;
+    default:
+      return -DOS_ERR_INVALID_FUNCTION;
+  }
+}
+
 int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
   uint8_t ah = regs->ax >> 8;
   int ret = 0;
@@ -1087,8 +1150,14 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
     case 0x4C:
       ret = dos_terminate(dos, regs);
       break;
+    case 0x52:
+      ret = dos_get_sysvars(dos, regs);
+      break;
     case 0x56:
       ret = dos_rename(dos, regs);
+      break;
+    case 0x58:
+      ret = dos_get_set_alloc(dos, regs);
       break;
     default:
       mod_vfs.klogf("[msdos] unimpl INT 21h AH=%x AL=%x at CS:IP=%x:%x\n",

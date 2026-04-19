@@ -1326,6 +1326,68 @@ static void test_dos_alloc_free(void)
     UT_ASSERT_EQ(code, 0);
 }
 
+/* -- Test 24: sysvars.com --- AH=52h SYSVARS + AH=58h alloc strategy ----- */
+/*
+ * Mimics what FreeDOS MEM.EXE does at startup:
+ *   (1) AH=58h AL=02 — Get UMB link.  Expect AL=0 (not linked), CF=0.
+ *   (2) AH=52h — Get SYSVARS pointer.  Expect ES=PSP seg, BX=0x40.
+ *   (3) Read word at ES:[BX-2] — must equal DS-1 (the segment of the
+ *       proc's main MCB header).
+ * Exits 0 on full success, 11/12/13 on per-step failure.
+ *
+ *   0x100  MOV AH, 58h          ; B4 58
+ *   0x102  MOV AL, 02h          ; B0 02
+ *   0x104  INT 21h              ; CD 21
+ *   0x106  JC fail (+0x21)      ; 72 21
+ *   0x108  MOV AH, 52h          ; B4 52
+ *   0x10A  INT 21h              ; CD 21
+ *   0x10C  JC fail (+0x1B)      ; 72 1B
+ *   0x10E  CMP BX, 40h          ; 83 FB 40
+ *   0x111  JNE fail (+0x16)     ; 75 16
+ *   0x113  MOV AX, DS           ; 8C D8
+ *   0x115  MOV CX, ES           ; 8C C1
+ *   0x117  CMP AX, CX           ; 39 C8
+ *   0x119  JNE fail (+0x0E)     ; 75 0E
+ *   0x11B  MOV AX, es:[BX-2]    ; 26 8B 47 FE
+ *   0x11F  MOV DX, DS           ; 8C DA
+ *   0x121  DEC DX               ; 4A
+ *   0x122  CMP AX, DX           ; 39 D0
+ *   0x124  JNE fail (+0x05)     ; 75 05
+ *   0x126  exit 0               ; B8 00 4C; CD 21
+ *   0x12B  fail: exit 1         ; B8 01 4C; CD 21
+ */
+static const unsigned char sysvars_com[] = {
+    0xB4, 0x58,                      /* MOV AH, 58h         */
+    0xB0, 0x02,                      /* MOV AL, 02h         */
+    0xCD, 0x21,                      /* INT 21h             */
+    0x72, 0x21,                      /* JC fail (+0x21)     */
+    0xB4, 0x52,                      /* MOV AH, 52h         */
+    0xCD, 0x21,                      /* INT 21h             */
+    0x72, 0x1B,                      /* JC fail (+0x1B)     */
+    0x83, 0xFB, 0x40,                /* CMP BX, 40h         */
+    0x75, 0x16,                      /* JNE fail (+0x16)    */
+    0x8C, 0xD8,                      /* MOV AX, DS          */
+    0x8C, 0xC1,                      /* MOV CX, ES          */
+    0x39, 0xC8,                      /* CMP AX, CX          */
+    0x75, 0x0E,                      /* JNE fail (+0x0E)    */
+    0x26, 0x8B, 0x47, 0xFE,          /* MOV AX, es:[BX-2]   */
+    0x8C, 0xDA,                      /* MOV DX, DS          */
+    0x4A,                            /* DEC DX              */
+    0x39, 0xD0,                      /* CMP AX, DX          */
+    0x75, 0x05,                      /* JNE fail (+0x05)    */
+    0xB8, 0x00, 0x4C,                /* MOV AX, 4C00h       */
+    0xCD, 0x21,                      /* INT 21h             */
+    0xB8, 0x01, 0x4C,                /* MOV AX, 4C01h       */
+    0xCD, 0x21,                      /* INT 21h             */
+};
+
+static void test_dos_sysvars(void)
+{
+    WRITE_COM("/tmp/dos_sv.com", sysvars_com);
+    int code = run_com("/tmp/dos_sv.com");
+    UT_ASSERT_EQ(code, 0);
+}
+
 /* -- main ----------------------------------------------------------------- */
 
 int main(void)
@@ -1353,6 +1415,7 @@ int main(void)
     test_dos_mcb_entry();
     test_dos_resize();
     test_dos_alloc_free();
+    test_dos_sysvars();
 
     UT_SUMMARY("test_msdos");
 }
