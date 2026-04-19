@@ -960,8 +960,10 @@ static void populate_44bsd_entry(const char *host_path, const char *name,
     if (S_ISREG(st.st_mode)) {
         uint32_t ino = alloc_44bsd_inode();
         uint32_t direct[12] = {0};
+        uint32_t ib1 = 0;
         uint32_t nblks = 0;
         uint32_t fsize = 0;
+        uint32_t meta_blocks_512 = 0;
 
         if (st.st_size > 0) {
             FILE *fp = fopen(path, "rb");
@@ -971,12 +973,24 @@ static void populate_44bsd_entry(const char *host_path, const char *name,
                     size_t n = fread(data, 1, (size_t)st.st_size, fp);
                     fsize = (uint32_t)n;
                     nblks = (fsize + UFS_BLOCK_SIZE - 1u) / UFS_BLOCK_SIZE;
-                    if (nblks > 12u) {
+                    /* Single-indirect block holds UFS_BLOCK_SIZE/4 pointers
+                     * → 12 direct + 1024 indirect blocks = ~4 MB max. */
+                    uint32_t ind_per_block = UFS_BLOCK_SIZE / 4u;
+                    uint32_t max_nblks = 12u + ind_per_block;
+                    if (nblks > max_nblks) {
                         fprintf(stderr,
-                                "mkufs: %s: truncating to 12 blocks (48 KB)\n",
-                                path);
-                        nblks = 12u;
-                        fsize = 12u * UFS_BLOCK_SIZE;
+                                "mkufs: %s: file exceeds single-indirect "
+                                "capacity (%u > %u KB); truncating\n",
+                                path,
+                                fsize / 1024u,
+                                max_nblks * UFS_BLOCK_SIZE / 1024u);
+                        nblks = max_nblks;
+                        fsize = max_nblks * UFS_BLOCK_SIZE;
+                    }
+                    if (nblks > 12u) {
+                        ib1 = alloc_44bsd_block();
+                        memset(&img[ib1 * UFS44_FRAG_SIZE], 0, UFS_BLOCK_SIZE);
+                        meta_blocks_512 = UFS_BLOCK_SIZE / 512u;
                     }
                     for (uint32_t i = 0; i < nblks; i++) {
                         uint32_t blk = alloc_44bsd_block();
@@ -986,7 +1000,11 @@ static void populate_44bsd_entry(const char *host_path, const char *name,
                             ? UFS_BLOCK_SIZE : fsize - off_in;
                         memset(&img[blk * UFS44_FRAG_SIZE], 0, UFS_BLOCK_SIZE);
                         memcpy(&img[blk * UFS44_FRAG_SIZE], data + off_in, chunk);
-                        direct[i] = blk;
+                        if (i < 12u) {
+                            direct[i] = blk;
+                        } else {
+                            put32(ib1 * UFS44_FRAG_SIZE + (i - 12u) * 4u, blk);
+                        }
                     }
                     free(data);
                 }
@@ -997,7 +1015,11 @@ static void populate_44bsd_entry(const char *host_path, const char *name,
         write_44bsd_inode(ino,
                           (uint16_t)(S_IFREG_ | (st.st_mode & 0777u)),
                           1, fsize, direct,
-                          nblks * UFS_BLOCK_SIZE / 512u, fs_time);
+                          nblks * UFS_BLOCK_SIZE / 512u + meta_blocks_512,
+                          fs_time);
+        if (ib1) {
+            put32(ufs44_inode_offset(ino) + UFS44_UI_IB_OFF + 0u, ib1);
+        }
         add_44bsd_dirent(parent_ctx, ino, UFS44_DT_REG, short_name);
 
     } else if (S_ISDIR(st.st_mode)) {
