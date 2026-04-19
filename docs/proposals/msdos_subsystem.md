@@ -7,24 +7,29 @@ into PPAP syscalls, allowing DOS .COM and .EXE (MZ) binaries to run on
 any PPAP host architecture through the eCPU i8086 emulator or natively
 on a V30/8086 target.
 
-## Current status (2026-04-18)
+## Current status (2026-04-19)
 
 - Native ia16 path is the only one wired today: pcxt boots, INT 21h is
-  trapped through `dos_trap.S`, and `.COM` programs run on real-mode
-  8086 directly.  The i8086 eCPU path described below is not built yet.
-- Phases **D-1, D-2, and D-3** are complete.  `test_msdos` reports
-  43/43 sub-tests on pcxt covering exit, console I/O, version, OPEN /
-  CREATE / CLOSE, READ / WRITE, DELETE / LSEEK, MKDIR / RMDIR, DUP,
-  RENAME, plus error-path coverage (bad handle, bad whence, invalid
-  drive, missing file, double close).
-- INT 21h surface today: AH=01h, 02h, 08h, 09h, 0Ah, 0Bh (stub), 19h,
-  2Ah/2Ch (stubs — no RTC), 30h, 39h, 3Ah, 3Bh, 3Ch, 3Dh, 3Eh, 3Fh,
-  40h, 41h, 42h, 45h, 46h, 47h, 4Ch, 56h.
+  trapped through `dos_trap.S`, and `.COM` and `.EXE` programs run on
+  real-mode 8086 directly.  The i8086 eCPU path described below is not
+  built yet.
+- Phases **D-1, D-2, D-3, D-4 (a/b/c), and D-5a.1** are complete.
+  `test_msdos` reports 53/53 sub-tests on pcxt covering exit, console
+  I/O, version, OPEN / CREATE / CLOSE, READ / WRITE, DELETE / LSEEK,
+  MKDIR / RMDIR, DUP, RENAME, plus error-path coverage (bad handle,
+  bad whence, invalid drive, missing file, double close), MZ .EXE
+  loading (header parse, zero-reloc, single-reloc JMP FAR, multi-
+  segment DS reload), and the MCB-shifted run layout.
+- INT 21h surface today: AH=01h, 02h, 06h, 08h, 09h, 0Ah, 0Bh (stub),
+  19h, 2Ah/2Ch (stubs — no RTC), 30h, 39h, 3Ah, 3Bh, 3Ch, 3Dh, 3Eh,
+  3Fh, 40h, 41h, 42h, 45h, 46h, 47h, 4Ch, 56h.  Memory functions
+  (AH=48h/49h/4Ah) are still TBD (D-5a.2/3); the static MCB header is
+  in place so crt0s that walk the chain at entry find a valid block.
 - `SUBSYS_MSDOS = 4` is registered; `subsys.c` wires `msdos_subsys_ops`.
 - Implementation files landed under
   `src/kernel/core/subsys/msdos/`: `dos_bridge.{c,h}`, `dos_host.{c,h}`
-  (PSP/binary load, was `dos_com_loader` in the original sketch),
-  `com_loader.{c,h}` (loader_t registration), and the trap entry
+  (MCB + PSP build, image load, initial frame), `com_loader.{c,h}` and
+  `exe_loader.{c,h}` (loader_t registration), and the trap entry
   `src/arch/i16/kernel/core/dos_trap.S`.
 - All path-taking syscalls (`sys_open`, `sys_unlink`, `sys_mkdir`,
   `sys_rename`, `sys_chdir`, `sys_stat`, …) take `(page_id_t, uint16_t)`
@@ -153,11 +158,94 @@ which calls the same `dos_bridge.c` functions.
 
 ## 3. DOS Memory Model (Emulated)
 
-The i8086 eCPU provides 1 MB of flat memory internally.  Within that space,
-the DOS bridge manages segment allocation using a simplified MCB (Memory
-Control Block) scheme.
+The long-term spec below assumes a 1 MB flat memory provided by the i8086
+eCPU.  The current native ia16 implementation is more constrained and is
+documented first.
 
-### 3.1 Memory Map
+### 3.0 Current native ia16 layout
+
+Each DOS process owns one **contiguous run** of physical pages, picked at
+load time by `mem_region_page_alloc_largest_contiguous(DOS_SEG_PAGES,
+DOS_SEG_PAGES_MAX, …)`.  `DOS_SEG_PAGES = 17` (68 KB) is the floor —
+enough to hold a 16-byte MCB header plus a full 64 KB `proc_seg` window.
+`DOS_SEG_PAGES_MAX = 32` (128 KB) is the ceiling, sized to fit common
+DOS apps (e.g. zork1) while leaving headroom on the limited pcxt page
+pool (~120 pages total).
+
+Layout inside the run:
+
+```
+base_id:0000   ┌──────────────────────────────┐
+               │  MCB 'Z' (16 B = 1 paragraph)│  proc_seg - 1
+               │   sig=0x5A owner=proc_seg    │
+               │   size=run_paragraphs - 1    │
+proc_seg:0000  ├──────────────────────────────┤
+               │  PSP (256 B)                 │  proc_seg
+               │   00: INT 20h    02: mem_top │
+               │   50: INT 21h+RETF           │
+               │   80: command tail           │
+proc_seg:0100  ├──────────────────────────────┤
+               │  .COM image  -or-            │  load_seg = proc_seg + 0x10
+               │  .EXE image (after MZ hdr)   │  for .EXE
+               │                              │
+(SS:SP region) ├──────────────────────────────┤
+               │  Initial HW + SW frame       │
+               │   (matches trap.S restore)   │
+               │  Stack grows down            │
+end-of-run     └──────────────────────────────┘
+```
+
+Key invariants:
+
+- `base_linear = mem_region_page_linear(base_id)` is the start of the run.
+- `proc_seg = (base_linear >> 4) + 1` — the MCB occupies paragraph 0, so
+  PSP is one paragraph in.
+- For `.COM`: `CS = DS = ES = SS = proc_seg`, `IP = 0x100`, `SP = 0xFFFE`.
+  The full 64 KB `proc_seg:0000..proc_seg:FFFF` window is backed (this is
+  why the floor is 17 pages: 16 B MCB + 65 536 B window = 65 552 B, which
+  fits in 17 × 4 096 = 69 632 B).
+- For `.EXE`: `load_seg = proc_seg + 0x10`, `CS = init_cs + load_seg`,
+  `IP = init_ip`, `SS = init_ss + load_seg`, `SP = init_sp`,
+  `DS = ES = proc_seg`.  Multi-segment access is fine — the run extends
+  beyond the 64 KB `proc_seg` window up to 128 KB and any `(seg, off)`
+  inside it is reachable through the bridge's `dos_to_linear` /
+  `cpu_ops->read8/write8` path.
+- The whole run is owned via `image.data` with `PROC_IMAGE_SEG_OWNED`, so
+  it's freed in one shot by `image_release_owned_segments()` on exit.
+
+The bridge's INT 21h handlers that take a `DS:DX` user buffer (READ,
+WRITE, AH=09h string print, etc.) compute `flat = (DS << 4) + DX` and
+range-check against `[base_linear, base_linear + image.data.size)`, so
+DS can point anywhere inside the run — including the MCB paragraph
+itself, which is intentional so a crt0 can read the MCB at `DS-1:0`.
+
+#### MCB emulation status
+
+At load time, `dos_host.c` writes a single 'Z' MCB at paragraph 0 of the
+run via `dos_write_mcb(base_id, 0, 'Z', proc_seg, payload_para)`, where
+`payload_para = run_paragraphs - 1`.  `PSP[0x02] mem_top` is set
+consistently to `proc_seg + payload_para` so `(mem_top - proc_seg) ==
+size_in_MCB`, matching the contract a crt0 expects when it cross-checks
+those two fields.
+
+Runtime memory operations are not yet wired:
+
+- **AH=4Ah Resize** — pending (D-5a.2).  Will validate the MCB at `ES-1`,
+  split into `'M'(size=BX)` + `'Z'(owner=0, size=remainder)`.
+- **AH=48h Allocate / AH=49h Free** — pending (D-5a.3).  Will walk the
+  in-run MCB chain, allocating from the first free block that fits and
+  coalescing on free.
+
+Until those land, a crt0 that calls AH=48h/49h/4Ah gets DOS error 1
+("invalid function") — it should fall through gracefully, but some C
+runtimes treat this as fatal and exit silently.  Programs that walk the
+MCB chain at entry already work because the static header is correct.
+
+### 3.1 Memory Map (i8086 eCPU, long-term)
+
+The remainder of section 3 describes the long-term design for the eCPU
+path — a 1 MB simulated address space with a real DOS-style MCB chain.
+This is not built today; the native ia16 path in §3.0 is what runs.
 
 ```
 i8086 eCPU address space (1 MB)
@@ -873,27 +961,53 @@ and `test_rename` (43/43 sub-tests on pcxt).
   fixed values).
 - AH=25h/35h interrupt vector get/set (emulated IVT).
 
-### Phase D-4: .EXE Loading
+### Phase D-4: .EXE Loading — DONE
 
 **Goal**: Multi-segment DOS .EXE programs run.
 
-1. MZ header parsing and validation.
-2. Segment allocation and relocation.
-3. Multi-segment CS/SS setup.
+1. ✓ **D-4a** — MZ header parse + zero-relocation .EXE load.  Detects
+   MZ/ZM signature, reads the 28-byte header, allocates a contiguous
+   run sized for PSP + image + min_alloc, streams the image into
+   `(proc_seg+0x10):0`, builds initial HW+SW frame from `init_cs/ip`
+   and `init_ss/sp`.
+2. ✓ **D-4b** — Apply MZ relocations.  For each `(offset, seg)` entry
+   in the table, patch the 16-bit word at `(load_seg + seg):offset` by
+   adding `load_seg`.  Cross-page-safe via `dos_read/write_run_bytes`.
+3. ✓ **D-4c** — Header hardening (`page_count == 0`, `header_size < 2`)
+   plus a multi-segment DS test that proves the bridge resolves DS:DX
+   for any DS within the proc-image run.
 
-**Verification**: A simple .EXE program (compiled with OpenWatcom or
-ia16-elf-gcc) runs correctly.
+**Verification**: `test_msdos` 53/53 on pcxt (was 43/43 after D-3).
+Hand-assembled MZ blobs cover exit-code, hello-world, JMP-FAR with
+relocation, and DS != CS != PSP.
 
 ### Phase D-5: Memory and Process Management
 
-**Goal**: DOS programs can allocate memory and spawn child processes.
+Split into D-5a (memory) and D-5b (process) since the immediate need
+is for crt0s of real .EXE programs to find a valid MCB and resize their
+allocation; spawning child processes is independent.
 
-1. INT 21h AH=48h/49h/4Ah (memory allocation via MCB).
-2. INT 21h AH=4Bh (EXEC — load and execute child program).
-3. INT 21h AH=4Dh (get child return code).
+#### Phase D-5a: MCB chain and memory functions
 
-**Verification**: A parent .COM launches a child .COM and retrieves its
-exit code.
+1. ✓ **D-5a.1** — Run layout shifted by one paragraph so a 16-byte
+   MCB header sits at `proc_seg - 1` for every DOS process.  PSP and
+   image addresses are still proc-seg-relative (PSP:0 = proc_seg:0,
+   image at proc_seg:0x100 / load_seg:init_ip), but the in-run offsets
+   are now MCB-aware.  `DOS_SEG_PAGES` floor bumped 16 → 17 so a .COM
+   still gets the full 64 KB window past the MCB.  See §3.0 for the
+   layout in detail.
+2. **D-5a.2** — AH=4Ah Resize Block.  Validate the MCB at `(ES-1):0`,
+   split into `'M'(BX)` + `'Z'(remainder, owner=0)`.  On failure, set
+   CF, AX=8, BX=max-available.
+3. **D-5a.3** — AH=48h Allocate / AH=49h Free + chain coalescing.
+
+#### Phase D-5b: Process functions
+
+1. INT 21h AH=4Bh (EXEC — load and execute child program).
+2. INT 21h AH=4Dh (get child return code).
+
+**Verification**: A parent .COM/.EXE launches a child and retrieves
+its exit code.
 
 ### Phase D-6: Console and Keyboard
 
@@ -1037,19 +1151,22 @@ INT 21h handlers should keep them in mind.
 ## 13. Dependency Graph
 
 ```
-i8086 eCPU (docs/proposals/i8086_ecpu.md)
-  └─→ D-1 (.COM + minimal INT 21h)
-        └─→ D-2 (file I/O)
-              └─→ D-3 (directory + handle housekeeping)
-                    └─→ D-4 (.EXE loading)
-                    └─→ D-5 (memory + process)
+i8086 eCPU (docs/proposals/i8086_ecpu.md)        ← future, not on critical path
+  └─→ D-1 (.COM + minimal INT 21h)            ✓ done
+        └─→ D-2 (file I/O)                    ✓ done
+              └─→ D-3 (directory + handles)   ✓ done
+                    └─→ D-4 (.EXE loading)    ✓ done (a/b/c)
+                    └─→ D-5a (memory + MCB)   ▸ in progress
+                    │     └─→ D-5b (EXEC + wait)
                     └─→ D-6 (console + keyboard)
                           └─→ D-7 (FCB + compat)
                                 └─→ D-8 (trace integration)
 ```
 
-The i8086 eCPU must be functional before any DOS subsystem work begins
-(unless targeting native V30, where the eCPU is optional).
+The native ia16 path (current) does not need the i8086 eCPU at all —
+real-mode 8086 code runs on the host CPU, and INT 21h is trapped by
+`dos_trap.S`.  The eCPU is only required if/when we want DOS programs
+to run on ARM, m68k, RISC-V, or Xtensa hosts.
 
 ---
 

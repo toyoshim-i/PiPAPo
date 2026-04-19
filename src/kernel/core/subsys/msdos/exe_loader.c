@@ -65,7 +65,9 @@ static int exe_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
   if (base_id == PAGE_ID_INVALID) return -(int)ENOMEM;
 
   uint32_t base_linear = mem_region_page_linear(base_id);
-  uint16_t proc_seg = (uint16_t)(base_linear >> 4);
+  /* Paragraph 0 of the run holds the process's MCB; the PSP starts
+   * at paragraph 1 (= base_linear + DOS_MCB_BYTES). */
+  uint16_t proc_seg = (uint16_t)((base_linear >> 4) + 1u);
 
   /* 2. Read MZ header into base_id:0 as scratch, then copy out.  The
    *    PSP built below will overwrite this area. */
@@ -103,9 +105,10 @@ static int exe_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
   }
   uint32_t code_size = image_bytes - header_bytes;
 
-  /* 4. Check the allocation is big enough: PSP + code + min_alloc
+  /* 4. Check the allocation is big enough: MCB + PSP + code + min_alloc
    *    headroom, rounded up to whole pages. */
-  uint32_t total_bytes = 0x100u + code_size + (uint32_t)hdr.min_alloc * 16u;
+  uint32_t total_bytes =
+      DOS_MCB_BYTES + 0x100u + code_size + (uint32_t)hdr.min_alloc * 16u;
   uint32_t pages_needed = (total_bytes + PAGE_SIZE - 1) / PAGE_SIZE;
   if (pages_needed > got_pages) {
     exe_free_run(base_id, got_pages);
