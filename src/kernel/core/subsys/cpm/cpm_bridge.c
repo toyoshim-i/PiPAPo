@@ -20,6 +20,7 @@
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
+#include "kernel/core/signal/signal.h"
 
 /* ── ADM-3A → VT100 escape sequence translator ────────────────────────── */
 
@@ -33,6 +34,10 @@ static void cpm_page_ref(const void *buf, page_id_t *page, uint16_t *off) {
   mem_region_kbuf_to_page(buf, page, off);
 }
 
+/* CP/M has no signal concept — a signal interrupting a read/write
+ * should either terminate the process (via signal_check_kernel's
+ * default action) or be consumed silently.  Retry the syscall so the
+ * caller never sees -EINTR. */
 static long cpm_fd_read(long fd, void *buf, size_t n) {
   long desc = cpm_fd_desc(fd);
   page_id_t page;
@@ -40,7 +45,11 @@ static long cpm_fd_read(long fd, void *buf, size_t n) {
 
   if (desc < 0) return desc;
   cpm_page_ref(buf, &page, &off);
-  return mod_vfs.fd_read((int)desc, page, off, n);
+  for (;;) {
+    long r = mod_vfs.fd_read((int)desc, page, off, n);
+    if (r != -(long)EINTR) return r;
+    signal_check_kernel();
+  }
 }
 
 static long cpm_fd_write(long fd, const void *buf, size_t n) {
@@ -50,7 +59,11 @@ static long cpm_fd_write(long fd, const void *buf, size_t n) {
 
   if (desc < 0) return desc;
   cpm_page_ref(buf, &page, &off);
-  return mod_vfs.fd_write((int)desc, page, off, n);
+  for (;;) {
+    long r = mod_vfs.fd_write((int)desc, page, off, n);
+    if (r != -(long)EINTR) return r;
+    signal_check_kernel();
+  }
 }
 
 static int cpm_fd_poll(long fd) {
@@ -370,14 +383,12 @@ static void cpm_putchar(uint8_t ch) {
 
 static uint8_t cpm_getchar(void) {
   uint8_t ch = 0;
+  /* cpm_fd_read blocks until a byte arrives and retries EINTR itself,
+   * so rc is normally 1.  A non-positive rc (true EOF or fatal error on
+   * stdin) is pathological — loop so the CP/M emulator stays alive. */
   for (;;) {
     long rc = cpm_fd_read(0, &ch, 1);
     if (rc > 0) return ch;
-    /* tty_read() blocks by setting PROC_BLOCKED + sched_switch() and
-     * returns 0 when the task is resumed.  Kernel-mode callers do not
-     * get the user-space SVC restart path, so retry until a byte arrives
-     * or a pending signal takes the default action. */
-    signal_check_kernel();
   }
 }
 

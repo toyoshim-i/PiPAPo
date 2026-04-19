@@ -19,6 +19,7 @@
 #include "kernel/core/cpu/ecpu_m68k.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
+#include "kernel/core/signal/signal.h"
 #include "kernel/core/subsys/human68k/human68k_util.h"
 #include "kernel/core/syscall/syscall.h"
 
@@ -44,6 +45,7 @@ static void m68k_emu_page_ref(const void *buf, page_id_t *page, uint16_t *off) {
   mem_region_kbuf_to_page(buf, page, off);
 }
 
+/* Human68k has no signal concept; swallow -EINTR at the bridge. */
 static long m68k_emu_fd_read(long fd, void *buf, size_t n) {
   long desc = m68k_emu_fd_desc(fd);
   page_id_t page;
@@ -51,7 +53,11 @@ static long m68k_emu_fd_read(long fd, void *buf, size_t n) {
 
   if (desc < 0) return desc;
   m68k_emu_page_ref(buf, &page, &off);
-  return mod_vfs.fd_read((int)desc, page, off, n);
+  for (;;) {
+    long r = mod_vfs.fd_read((int)desc, page, off, n);
+    if (r != -(long)EINTR) return r;
+    signal_check_kernel();
+  }
 }
 
 static long m68k_emu_fd_write(long fd, const void *buf, size_t n) {
@@ -61,7 +67,11 @@ static long m68k_emu_fd_write(long fd, const void *buf, size_t n) {
 
   if (desc < 0) return desc;
   m68k_emu_page_ref(buf, &page, &off);
-  return mod_vfs.fd_write((int)desc, page, off, n);
+  for (;;) {
+    long r = mod_vfs.fd_write((int)desc, page, off, n);
+    if (r != -(long)EINTR) return r;
+    signal_check_kernel();
+  }
 }
 
 static void m68k_emu_putc(uint8_t ch) { m68k_emu_fd_write(1, &ch, 1); }
