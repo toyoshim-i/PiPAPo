@@ -74,14 +74,6 @@ void sched_timer_tick(int from_user);
 void sched_switch(void);
 
 /*
- * Put the current process to sleep for `ticks` SysTick ticks.
- * Marks current as PROC_SLEEPING and triggers PendSV so another RUNNABLE
- * process takes the CPU.  sched_tick() wakes the process when the tick
- * count reaches sleep_until.  Called from sys_nanosleep() (sys_time.c).
- */
-void sched_sleep(uint32_t ticks);
-
-/*
  * Wake all processes blocked on the given channel.
  * Scans proc_table for PROC_BLOCKED processes whose wait_channel matches,
  * sets them to PROC_RUNNABLE, and clears their wait_channel.

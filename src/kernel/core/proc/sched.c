@@ -30,9 +30,7 @@
 /* ── Tick counter ─────────────────────────────────────────────────────────────
  */
 
-/* Incremented by SysTick_Handler every tick.  Declared here (before sched_tick
- * and sched_sleep) so both functions can access it in the same translation
- * unit. */
+/* Incremented by SysTick_Handler every tick. */
 static volatile uint32_t tick_count = 0u;
 
 /* Shared cooperative-yield flag.  Used by every architecture whose arch.h
@@ -206,15 +204,4 @@ void sched_wakeup(void *channel) {
   /* Trigger context switch so woken process runs promptly.
    * PendSV has lowest priority — fires after the current ISR returns. */
   if (woke) arch_yield();
-}
-
-/* ── Sleep ────────────────────────────────────────────────────────────────────
- */
-
-void sched_sleep(uint32_t ticks) {
-  current->sleep_until = tick_count + ticks;
-  current->state = PROC_SLEEPING;
-  arch_sched_switch();
-  /* Execution resumes here after sched_tick() marks us RUNNABLE again
-   * and the context switch restores our context. */
 }
