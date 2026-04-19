@@ -26,6 +26,19 @@
 /* Shared flag-based yield.  See kernel/common/arch_yield_default.h. */
 #include "kernel/common/arch_yield_default.h"
 
+/* ── Scheduler startup hook ────────────────────────────────────────────────
+ *
+ * Called from the shared sched_start() before arch_irq_enable().
+ * Xtensa: no PSP/MSP split, no PendSV priorities.  Timer ISR setup is done
+ * by target_late_init() → xtensa_timer_init(), which runs BEFORE
+ * sched_start() and has already set INTENABLE to only the CCOMPARE0 bit.
+ * Clear pending interrupts but preserve INTENABLE. */
+void xtensa_trap_reassert(void);
+static inline void arch_sched_start_hook(void) {
+  xtensa_trap_reassert();
+  __asm__ volatile("wsr %0, intclear; rsync" ::"r"(0xFFFFFFFFu));
+}
+
 /* ── CPU hints ────────────────────────────────────────────────────────── */
 
 static inline void arch_wfi(void) { __asm__ volatile("waiti 0"); }

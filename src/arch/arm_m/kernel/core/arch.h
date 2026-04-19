@@ -13,6 +13,7 @@
 
 #include <stdint.h>
 
+#include "kernel/common/core/proc_info.h"
 #include "kernel/common/ioregs.h" /* SCB_ICSR, PENDSVSET */
 #include "kernel/common/irq.h"
 #include "kernel/core/mm/mem_region.h"
@@ -31,6 +32,45 @@ static inline void arch_yield(void) { SCB_ICSR |= PENDSVSET; }
 static inline int arch_yield_consume(void) { return 0; }
 
 #include "kernel/common/arch_yield_default.h"
+
+/* ── Scheduler startup hook ─────────────────────────────────────────────────
+ *
+ * Called from the shared sched_start() before arch_irq_enable().  Must be
+ * static inline: sched_start() switches Thread mode from MSP to PSP inside
+ * this body, and any real function call would force the compiler to emit
+ * a push/pop of LR that would straddle the stack switch (push on MSP, pop
+ * on PSP) and corrupt the return path.  The inline arithmetic on
+ * stack_page_id is deliberate for the same reason — mem_region_page_linear()
+ * is an extern call and cannot be used here.
+ * ────────────────────────────────────────────────────────────────────────── */
+static inline void arch_sched_start_hook(void) {
+  /* Set PendSV to lowest priority (0xFF) so it never preempts real IRQs.
+   * SHPR3[23:16] is the PendSV priority byte on Cortex-M0+. */
+  SCB_SHPR3 = (SCB_SHPR3 & ~PENDSV_PRIO_MASK) | PENDSV_PRIO_LOWEST;
+
+  /* Lower SVCall priority (0x80) so hardware interrupts (SysTick, UART)
+   * can preempt the SVC handler.  Without this, WFI inside blocking
+   * syscalls (e.g. tty_read) would never wake — no interrupt can preempt
+   * a handler at the default priority 0x00. */
+  SCB_SHPR2 = (SCB_SHPR2 & ~SVCALL_PRIO_MASK) | (0x80u << SVCALL_PRIO_SHIFT);
+
+  /* Switch Thread mode from MSP to PSP using Thread 0's dedicated stack. */
+  uint32_t psp_top =
+      (uint32_t)(proc_table[0].stack_page_id * PAGE_SIZE) + PAGE_SIZE;
+  __asm__ volatile(
+      "msr  psp, %0      \n" /* PSP = top of Thread 0's stack page */
+      "movs r0, #2       \n" /* CONTROL.SPSEL = 1 */
+      "msr  control, r0  \n"
+      "isb               \n" ::"r"(psp_top)
+      : "r0");
+
+  /* Configure SysTick: reload value, clear current count, start.
+   * SYSTICK_RELOAD is duplicated here rather than including sched.h, which
+   * would create an arch.h ↔ proc.h ↔ sched.h include cycle. */
+  SYST_RVR = (PPAP_SYS_HZ / PPAP_TICK_HZ - 1u);
+  SYST_CVR = 0u;
+  SYST_CSR = SYST_CSR_ENABLE | SYST_CSR_TICKINT | SYST_CSR_CLKSOURCE;
+}
 
 /* ── CPU hints ──────────────────────────────────────────────────────────────
  */

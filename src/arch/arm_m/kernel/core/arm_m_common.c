@@ -14,6 +14,7 @@
 
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/proc/proc.h"
+#include "kernel/core/proc/sched.h"
 #include "kernel/core/syscall/syscall.h"
 
 /* POSIX signal numbers */
@@ -212,6 +213,33 @@ void arm_crash_handler(uint32_t *psp_frame, uint32_t *callee_regs) {
    * In practice PendSV always tail-chains, so this PC is never reached. */
   extern void Default_Handler(void);
   psp_frame[6] = (uint32_t)Default_Handler | 1u; /* Thumb bit */
+}
+
+/* ── SysTick exception handler ──────────────────────────────────────────── *
+ *
+ * CPU tick accounting needs the EXC_RETURN value that the hardware places in
+ * LR on exception entry.  A normal C function's prologue clobbers LR, so we
+ * use a naked wrapper to capture it and pass it as the first argument.
+ *
+ * EXC_RETURN bit 3:  1 = return to Thread mode (user),
+ *                    0 = return to Handler mode (kernel).
+ *
+ * Note: ICSR.RETTOBASE (bit 11) is RAZ on ARMv6-M / Cortex-M0+, so we
+ * cannot use it for user-vs-kernel distinction. */
+
+__attribute__((used)) static void SysTick_Handler_c(uint32_t exc_return);
+
+__attribute__((naked)) void SysTick_Handler(void) {
+  __asm__ volatile(
+      "push {r0, lr}\n" /* 8-byte aligned; save EXC_RETURN for return */
+      "mov  r0, lr\n"   /* pass EXC_RETURN as first argument */
+      "bl   SysTick_Handler_c\n"
+      "pop  {r0, pc}\n" /* pop EXC_RETURN into PC → exception return */
+  );
+}
+
+static void SysTick_Handler_c(uint32_t exc_return) {
+  sched_timer_tick((exc_return & (1u << 3)) != 0);
 }
 
 /* ── Initial stack frame for new processes ──────────────────────────────── */

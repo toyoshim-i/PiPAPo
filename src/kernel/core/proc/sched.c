@@ -19,11 +19,13 @@
 #include <stdint.h>
 
 #include "kernel/common/ioregs.h"
+#include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/spinlock.h" /* SPIN_PROC */
 #include "kernel/core/arch.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h" /* PAGE_SIZE */
 #include "kernel/core/signal/signal.h"
+#include "target/target.h"
 
 /* ── Tick counter ─────────────────────────────────────────────────────────────
  */
@@ -115,9 +117,6 @@ void sched_tick(void) {
  * readers, then calls target_idle_poll() for target-specific work.
  */
 
-#include "kernel/common/mod/mod_vfs.h"
-#include "target/target.h"
-
 int sched_idle_poll(void) {
   mod_vfs.notify(VFS_EVENT_IDLE);
   target_idle_poll();
@@ -162,149 +161,20 @@ void sched_timer_tick(int from_user) {
   sched_tick();
 }
 
-/* ── Architecture-specific: timer ISR + scheduler startup ───────────────────
- */
-
-#if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
-
-/* ARM Cortex-M SysTick exception handler.
+/* ── Scheduler startup ──────────────────────────────────────────────────────
  *
- * CPU tick accounting needs the EXC_RETURN value that the hardware places in
- * LR on exception entry.  A normal C function's prologue clobbers LR, so we
- * use a naked wrapper to capture it and pass it as the first argument.
- *
- * EXC_RETURN bit 3:  1 = return to Thread mode (user),
- *                    0 = return to Handler mode (kernel).
- *
- * Note: ICSR.RETTOBASE (bit 11) is RAZ on ARMv6-M / Cortex-M0+, so we
- * cannot use it for user-vs-kernel distinction. */
-
-__attribute__((used)) static void SysTick_Handler_c(uint32_t exc_return);
-
-__attribute__((naked)) void SysTick_Handler(void) {
-  __asm__ volatile(
-      "push {r0, lr}\n" /* 8-byte aligned; save EXC_RETURN for return */
-      "mov  r0, lr\n"   /* pass EXC_RETURN as first argument */
-      "bl   SysTick_Handler_c\n"
-      "pop  {r0, pc}\n" /* pop EXC_RETURN into PC → exception return */
-  );
-}
-
-static void SysTick_Handler_c(uint32_t exc_return) {
-  sched_timer_tick((exc_return & (1u << 3)) != 0);
-}
-
-/* ── Scheduler startup (ARM) ────────────────────────────────────────────────
+ * Per-arch pre-IRQ setup lives in arch_sched_start_hook() (declared by
+ * each arch's arch.h as a static inline).  Inlining matters on ARM:
+ * sched_start() switches Thread mode MSP→PSP inside the hook, and any
+ * real function call would straddle the stack switch with a push/pop LR
+ * pair and corrupt the return path.  On other arches the hook has no
+ * such constraint but uses the same pattern for consistency.
  */
 
 void sched_start(void) {
-  /* Set PendSV to lowest priority (0xFF) so it never preempts real IRQs.
-   * SHPR3[23:16] is the PendSV priority byte on Cortex-M0+. */
-  SCB_SHPR3 = (SCB_SHPR3 & ~PENDSV_PRIO_MASK) | PENDSV_PRIO_LOWEST;
-
-  /* Lower SVCall priority (0x80) so hardware interrupts (SysTick, UART)
-   * can preempt the SVC handler.  Without this, WFI inside blocking
-   * syscalls (e.g. tty_read) would never wake — no interrupt can preempt
-   * a handler at the default priority 0x00. */
-  SCB_SHPR2 = (SCB_SHPR2 & ~SVCALL_PRIO_MASK) | (0x80u << SVCALL_PRIO_SHIFT);
-
-  /*
-   * Switch Thread mode from MSP to PSP using Thread 0's dedicated stack.
-   */
-  /* Inline page_id→ptr to avoid function call that would push registers
-   * to MSP.  After the MSP→PSP switch below, the function epilogue pops
-   * from PSP (different memory), so sched_start must not have a prologue
-   * that saves registers.  Keeping everything as simple loads avoids that. */
-  uint32_t psp_top =
-      (uint32_t)(proc_table[0].stack_page_id * PAGE_SIZE) + PAGE_SIZE;
-  __asm__ volatile(
-      "msr  psp, %0      \n" /* PSP = top of Thread 0's stack page */
-      "movs r0, #2       \n" /* CONTROL.SPSEL = 1 */
-      "msr  control, r0  \n"
-      "isb               \n" ::"r"(psp_top)
-      : "r0");
-
-  /* Configure SysTick: reload value, clear current count, start. */
-  SYST_RVR = SYSTICK_RELOAD;
-  SYST_CVR = 0u;
-  SYST_CSR = SYST_CSR_ENABLE | SYST_CSR_TICKINT | SYST_CSR_CLKSOURCE;
-
-  /* Enable interrupts — scheduler is now live. */
+  arch_sched_start_hook();
   arch_irq_enable();
 }
-
-#elif defined(__m68k__)
-
-/* ── Scheduler startup (m68k) ───────────────────────────────────────────────
- */
-
-/* M68K timer ISR and context switch are implemented in Phase C Steps 2-5.
- * sched_timer_tick() is called from the m68k timer ISR. */
-
-void sched_start(void) {
-  /* M68K: no PSP/MSP split, no PendSV priorities to set.
-   * Timer ISR setup is done by target_late_init().
-   * Just enable interrupts to start the scheduler. */
-  arch_irq_enable();
-}
-
-#elif defined(__riscv)
-
-/* ── Scheduler startup (RISC-V) ────────────────────────────────────────────
- */
-
-void sched_start(void) {
-  /* Set mscratch to pid 0's kernel stack top.  boot.S initialized it to
-   * __stack_top (linker stack), but now pid 0 has its own stack_page.
-   * Must be done before enabling interrupts. */
-  uint32_t ksp =
-      (uint32_t)(uintptr_t)mem_region_page_to_ptr(proc_table[0].stack_page_id) +
-      PAGE_SIZE;
-  proc_table[0].kernel_sp = ksp;
-  __asm__ volatile("csrw mscratch, %0" : : "r"(ksp));
-
-  /* Timer ISR setup is done by target_late_init() → riscv_timer_init(). */
-  arch_irq_enable();
-}
-
-#elif defined(__xtensa__)
-
-/* ── Scheduler startup (Xtensa) ────────────────────────────────────────────
- */
-
-void sched_start(void) {
-  extern void xtensa_trap_reassert(void);
-
-  /* Xtensa: no PSP/MSP split, no PendSV priorities.
-   * Timer ISR setup is done by target_late_init() → xtensa_timer_init(),
-   * which runs BEFORE sched_start().  xtensa_timer_init() already set
-   * INTENABLE to include only the CCOMPARE0 bit (bit 6).
-   *
-   * Clear pending interrupts but preserve INTENABLE — timer init has
-   * already configured it correctly. */
-  xtensa_trap_reassert();
-  __asm__ volatile("wsr %0, intclear; rsync" ::"r"(0xFFFFFFFFu));
-  arch_irq_enable();
-}
-
-#elif defined(__ia16__)
-
-/* ── Scheduler startup (i16 / 8086 real mode) ──────────────────────────────
- */
-
-void sched_start(void) {
-  /* i16: no PSP/MSP split, no PendSV priorities.
-   * PIT timer ISR setup is done by target_late_init() → timer_init().
-   *
-   * Re-plant kernel-stack canaries: during boot the init sequence
-   * ran on the boot stack (slot 7 region) and may have overwritten
-   * canaries in lower slots.  Now that boot is done, replant them
-   * before the first timer tick triggers canary checks. */
-  proc_plant_kstack_canaries();
-  arch_irq_enable();
-}
-
-#endif /* __ARM_ARCH / __m68k__ / __riscv / __xtensa__ / __ia16__ */
 
 /* ── Cooperative yield ───────────────────────────────────────────────────────
  */

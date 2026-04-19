@@ -25,6 +25,13 @@
  * checked by timer ISR / trap-return path (per-arch assembly). */
 #include "kernel/common/arch_yield_default.h"
 
+/* ── Scheduler startup hook ────────────────────────────────────────────────
+ *
+ * Called from the shared sched_start() before arch_irq_enable().
+ * m68k has no PSP/MSP split and no priority registers to tweak — timer
+ * ISR setup is done by target_late_init() — so the hook is a no-op. */
+static inline void arch_sched_start_hook(void) {}
+
 /* ── CPU hints ────────────────────────────────────────────────────────────
  *
  * 68000 STOP instruction halts the CPU until an interrupt occurs.

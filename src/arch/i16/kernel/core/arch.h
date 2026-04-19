@@ -27,6 +27,16 @@ extern volatile uint16_t i16_current_ksp;
 /* Shared flag-based yield.  See kernel/common/arch_yield_default.h. */
 #include "kernel/common/arch_yield_default.h"
 
+/* -- Scheduler startup hook ---------------------------------------------
+ *
+ * Called from the shared sched_start() before arch_irq_enable().
+ * Re-plant kernel-stack canaries: during boot the init sequence ran on
+ * the boot stack (slot 7 region) and may have overwritten canaries in
+ * lower slots.  Now that boot is done, replant them before the first
+ * timer tick triggers canary checks. */
+void proc_plant_kstack_canaries(void);
+static inline void arch_sched_start_hook(void) { proc_plant_kstack_canaries(); }
+
 /* -- CPU hints ---------------------------------------------------------- */
 
 static inline void arch_wfi(void) { __asm__ volatile("hlt"); }

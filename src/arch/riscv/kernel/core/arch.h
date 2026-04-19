@@ -25,6 +25,21 @@
 /* Shared flag-based yield.  See kernel/common/arch_yield_default.h. */
 #include "kernel/common/arch_yield_default.h"
 
+/* ── Scheduler startup hook ────────────────────────────────────────────────
+ *
+ * Called from the shared sched_start() before arch_irq_enable().
+ * Sets mscratch to pid 0's kernel stack top.  boot.S initialized it to
+ * __stack_top (linker stack), but now pid 0 has its own stack_page.
+ * Must be done before enabling interrupts. */
+#include "kernel/common/core/proc_info.h" /* proc_table */
+static inline void arch_sched_start_hook(void) {
+  uint32_t ksp =
+      (uint32_t)(uintptr_t)mem_region_page_to_ptr(proc_table[0].stack_page_id) +
+      PAGE_SIZE;
+  proc_table[0].kernel_sp = ksp;
+  __asm__ volatile("csrw mscratch, %0" : : "r"(ksp));
+}
+
 /* ── CPU hints ────────────────────────────────────────────────────────── */
 
 static inline void arch_wfi(void) { __asm__ volatile("wfi"); }
