@@ -310,7 +310,9 @@ Any future BIOS call sites follow the same pattern.
 - Phase F landed: DOS bridge retries on `-EINTR` in `dos_io_getc`,
   yields on `-EAGAIN` in `dos_direct_console_io`, yields in
   `dos_check_input_status`.
-- Phases G, H: pending.
+- Phase G landed: CP/M, Human68k (native + emulated), and S-OS bridges
+  retry on `-EINTR` in their fd_read/fd_write wrappers.
+- Phase H: pending.
 
 ## Open questions
 
