@@ -312,7 +312,10 @@ Any future BIOS call sites follow the same pattern.
   `dos_check_input_status`.
 - Phase G landed: CP/M, Human68k (native + emulated), and S-OS bridges
   retry on `-EINTR` in their fd_read/fd_write wrappers.
-- Phase H: pending.
+- Phase H done: qemu_arm / qemu_m68k / qemu_rv32 all pass (23/23, 23/23,
+  16/16); pico*/x68k targets build clean (pico* needed a layout bump
+  driven mostly by 138 unrelated commits, see `pico: grow
+  FLASH_KERNEL/RAM_KERNEL; sync docs`).
 
 ## Open questions
 
