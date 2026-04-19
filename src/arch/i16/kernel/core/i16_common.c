@@ -80,11 +80,6 @@ uint32_t *arch_build_initial_frame(uint32_t *sp_arg, void (*entry)(void)) {
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/syscall/syscall.h"
 
-int i16_timer_can_preempt(uint16_t interrupted_ss) {
-  if (interrupted_ss != 0) return 1;
-  return current && current->is_idle;
-}
-
 int i16_trap_should_skip_ret_store(void) {
   return current && current->vfork_frame_saved;
 }

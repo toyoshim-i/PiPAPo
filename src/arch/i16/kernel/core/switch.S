@@ -36,7 +36,6 @@
   .text
 
   .global i16_timer_isr
-  .extern i16_timer_can_preempt
   .extern i16_vfork_restore_frame
 
 i16_timer_isr:
@@ -112,22 +111,11 @@ i16_timer_isr:
    * motor timeout and sends EOI — we must NOT send EOI ourselves. */
   call  i16_bios_timer_chain
 
-  /* Do not context-switch away from in-kernel work.  i16 currently
-   * lacks a fully reentrant kernel preemption model, and switching
-   * in the middle of BIOS/VFS/exec paths can corrupt in-flight state.
-   * Leave switch_pending set so a later safe return path can
-   * perform the deferred switch.  The one exception is the idle
-   * thread, where the timer tick is the normal path that hands off
-   * from pid 0 to runnable user processes. */
-  movw  %sp, %bp
-  movw  36(%bp), %ax    /* user_SS at 36(%bp) after the 34-byte reserve */
-  pushw %ax
-  call  i16_timer_can_preempt
-  addw  $2, %sp
-  testw %ax, %ax
-  jz    .Lno_switch
-
-  /* Check context switch flag */
+  /* Preempt from any state.  The core↔VFS entry stubs are reentrant
+   * across context switch via per-PCB shadow of saved_cs/ip / vfs_saved_cs/ip
+   * (see the shadow-swap block below).  BIOS call sites that share state
+   * with the timer's INT 08h chain (INT 13h, INT 16h) mask IRQ 0 for the
+   * duration of the call, so the timer stays pending until they return. */
   movw  %ss:switch_pending, %ax
   testw %ax, %ax
   jz    .Lno_switch

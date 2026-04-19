@@ -79,11 +79,10 @@ a. **`sched_switch` on ia16 is flag-only, not synchronous.** `arch_yield()`
    `sched_switch` never reaches that boundary because…
 
 b. **…the timer ISR refuses to preempt kernel code.**
-   [i16_timer_can_preempt](../../src/arch/i16/kernel/core/i16_common.c#L83-L86)
-   returns 0 when the interrupted `SS` is 0 (unless the task is idle), per
-   the "no fully reentrant kernel preemption model" comment in
-   [switch.S:115-121](../../src/arch/i16/kernel/core/switch.S#L115-L121).
-   So the loop spins at 100% CPU forever.
+   Historically `i16_timer_can_preempt` returned 0 when the interrupted
+   `SS` was 0 (unless the task was idle), per the "no fully reentrant
+   kernel preemption model" comment in `switch.S`. So the loop spun at
+   100% CPU forever.  Addressed by §6 below.
 
 c. **Shared state in the core↔VFS far-call stubs.** `core_entries.S` and
    `vfs_entries.S` use static `saved_cs`/`saved_ip` globals to convert the
@@ -226,10 +225,9 @@ which was judged a worse cost.
 With §5 in place, the timer ISR can safely context-switch from any kernel
 state that does not hold hardware-level re-entrancy hazards. The stub
 globals are no longer a shared-state hazard (§5), and the VFS blocking
-sites already use per-process kernel stacks. Change
-[i16_timer_can_preempt](../../src/arch/i16/kernel/core/i16_common.c#L83-L86)
-to return 1 unconditionally and drop the comment about the missing
-preemption model.
+sites already use per-process kernel stacks. Delete `i16_timer_can_preempt`
+and its call site; the timer ISR checks `switch_pending` unconditionally
+and performs the switch if requested, regardless of interrupted SS.
 
 The remaining hazard is BIOS calls — the BIOS is a single pool of shared
 state, so a timer-driven switch mid-BIOS-call could strand another process
@@ -272,9 +270,11 @@ Any future BIOS call sites follow the same pattern.
    against four new per-PCB fields. IRQ-0 mask added to `bios_con.c`'s
    two INT 16h paths at the same time (cheap to bundle; §7).
 
-3. **Phase D — ia16 kernel preemption.** Flip `i16_timer_can_preempt` to
-   always return 1. Still pending validation — needs Phase A landed so
-   there's actually something to preempt into.
+3. **Phase D — ia16 kernel preemption.** Drop `i16_timer_can_preempt`
+   entirely; timer ISR always honours `switch_pending` regardless of
+   whether it fired from user or kernel. Safe because §5 made the stubs
+   reentrant and §7 keeps BIOS call sites off the preemption path via
+   IRQ-0 masking.
 
 4. **Phase E — user-space `-EINTR` handling.** Retry in
    [push_line.c](../../src/user/push_line.c). Audit
@@ -302,7 +302,9 @@ Any future BIOS call sites follow the same pattern.
 - Phase B+C landed: `i16: cooperative kernel-thread yield + reentrant
   entry stubs` (commit 9384d12). Includes the `bios_con.c` IRQ-0 mask
   originally scheduled for Phase D.
-- Phases A, D, E, F, G, H: pending.
+- Phase D landed: `i16_timer_can_preempt` removed; kernel code is now
+  fully preemptible.
+- Phases A, E, F, G, H: pending.
 
 ## Open questions
 
