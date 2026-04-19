@@ -11,6 +11,7 @@
 #include "push.h"
 #include "syscall.h"
 
+#include "common/errno.h"
 #include "common/termios.h"
 
 /* ── Signal numbers ──────────────────────────────────────────────────── */
@@ -753,6 +754,12 @@ int push_readline(const char *prompt, char *buf, int size) {
 
     char c;
     int n = read(0, &c, 1);
+    if (n < 0 && -n == EINTR) {
+      /* Interrupted by a signal (e.g. SIGINT).  The top-of-loop check
+       * picks up sigint_received on the next iteration; fall-through
+       * here would report false EOF. */
+      continue;
+    }
     if (n <= 0) {
       term_restore();
       return -1; /* EOF */

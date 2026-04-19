@@ -6,8 +6,10 @@
  *
  * Blocking: when the buffer is empty (reader) or full (writer), the
  * calling process is marked PROC_BLOCKED with wait_channel pointing at
- * the pipe_t.  The svc_restart mechanism (svc.S) causes the SVC to
- * re-execute with original arguments when the process is woken.
+ * the pipe_t.  pipe_read/pipe_write loop internally across sched_switch
+ * until data/space is available, a signal arrives, or O_NONBLOCK makes
+ * us return -EAGAIN.  No svc_restart IP-rewind is needed — the syscall
+ * completes with a real status in one call.
  *
  * Wake-up: pipe_write wakes blocked readers after adding data;
  * pipe_read wakes blocked writers after consuming data; pipe_close
@@ -18,6 +20,7 @@
 #include <string.h>
 
 #include "common/errno.h"
+#include "common/fcntl.h"
 #include "kernel/common/config.h"
 #include "kernel/common/core/proc_info.h"
 #include "kernel/common/mod/mod_core.h"
@@ -89,63 +92,59 @@ static void pipe_advance(page_id_t *page, uint16_t *off) {
 
 static long pipe_read(struct file *f, page_id_t page, uint16_t off, size_t n) {
   pipe_t *p = f->priv;
-  uint16_t avail = pipe_used(p);
+  int nonblock = (f->flags & O_NONBLOCK) ? 1 : 0;
 
-  if (avail > 0) {
-    /* Copy min(avail, n) bytes from ring buffer */
-    size_t count = (n < avail) ? n : avail;
-    for (size_t i = 0; i < count; i++) {
-      char ch = (char)p->buf[p->tail];
-
-      mod_core.mem_region_page_write(page, off, &ch, 1);
-      pipe_advance(&page, &off);
-      p->tail = (uint16_t)((p->tail + 1u) & PIPE_MASK);
+  /* Wait for data, then drain one batch.  Loop internally across
+   * sched_switch so the syscall returns a real status. */
+  for (;;) {
+    uint16_t avail = pipe_used(p);
+    if (avail > 0) {
+      size_t count = (n < avail) ? n : avail;
+      for (size_t i = 0; i < count; i++) {
+        char ch = (char)p->buf[p->tail];
+        mod_core.mem_region_page_write(page, off, &ch, 1);
+        pipe_advance(&page, &off);
+        p->tail = (uint16_t)((p->tail + 1u) & PIPE_MASK);
+      }
+      mod_core.sched_wakeup(p); /* wake blocked writers */
+      return (long)count;
     }
-    /* Wake any blocked writers — we freed space */
-    mod_core.sched_wakeup(p);
-    return (long)count;
+    if (p->writers == 0) return 0; /* EOF — no writers left */
+    if (nonblock) return -(long)EAGAIN;
+    if (current->sig_pending & ~current->sig_blocked) return -(long)EINTR;
+    current->wait_channel = p;
+    current->state = PROC_BLOCKED;
+    mod_core.sched_switch();
   }
-
-  /* Buffer empty */
-  if (p->writers == 0) return 0; /* EOF — no writers left */
-
-  /* Block: wait for data */
-  current->wait_channel = p;
-  current->state = PROC_BLOCKED;
-  mod_core.svc_set_restart();
-  mod_core.sched_switch();
-  return 0; /* ignored — SVC_Handler restores original frame[0] */
 }
 
 static long pipe_write(struct file *f, page_id_t page, uint16_t off, size_t n) {
   pipe_t *p = f->priv;
+  int nonblock = (f->flags & O_NONBLOCK) ? 1 : 0;
 
-  if (p->readers == 0) return -(long)EPIPE; /* broken pipe — no readers */
-
-  uint16_t space = pipe_space(p);
-
-  if (space > 0) {
-    /* Copy min(space, n) bytes into ring buffer */
-    size_t count = (n < space) ? n : space;
-    for (size_t i = 0; i < count; i++) {
-      uint8_t ch;
-
-      mod_core.mem_region_page_read(page, off, &ch, 1);
-      pipe_advance(&page, &off);
-      p->buf[p->head] = ch;
-      p->head = (uint16_t)((p->head + 1u) & PIPE_MASK);
+  /* Wait for space, then push one batch.  Loop internally across
+   * sched_switch so the syscall returns a real status. */
+  for (;;) {
+    if (p->readers == 0) return -(long)EPIPE; /* broken pipe */
+    uint16_t space = pipe_space(p);
+    if (space > 0) {
+      size_t count = (n < space) ? n : space;
+      for (size_t i = 0; i < count; i++) {
+        uint8_t ch;
+        mod_core.mem_region_page_read(page, off, &ch, 1);
+        pipe_advance(&page, &off);
+        p->buf[p->head] = ch;
+        p->head = (uint16_t)((p->head + 1u) & PIPE_MASK);
+      }
+      mod_core.sched_wakeup(p); /* wake blocked readers */
+      return (long)count;
     }
-    /* Wake any blocked readers — we added data */
-    mod_core.sched_wakeup(p);
-    return (long)count;
+    if (nonblock) return -(long)EAGAIN;
+    if (current->sig_pending & ~current->sig_blocked) return -(long)EINTR;
+    current->wait_channel = p;
+    current->state = PROC_BLOCKED;
+    mod_core.sched_switch();
   }
-
-  /* Buffer full — block: wait for space */
-  current->wait_channel = p;
-  current->state = PROC_BLOCKED;
-  mod_core.svc_set_restart();
-  mod_core.sched_switch();
-  return 0; /* ignored — SVC_Handler restores original frame[0] */
 }
 
 static int pipe_close(struct file *f) {

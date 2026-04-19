@@ -93,13 +93,11 @@ typedef struct {
   /* Session leader PID that owns this TTY (set by TIOCSCTTY) */
   pid_t session;
 
-  /* TX write progress — tracks partial writes across sleep/wake cycles.
-   * When SVC restart replays the original syscall args, we resume from
-   * tx_user_pos instead of re-sending already-enqueued bytes. */
-  page_id_t tx_page;  /* current write source page */
-  uint16_t tx_off;    /* current write source offset */
-  size_t tx_user_pos; /* bytes already enqueued */
-  size_t tx_user_len; /* total write length */
+  /* Stable address used as the wait_channel for blocked writers — the
+   * backend TX-ready callback calls sched_wakeup(&t->tx_page) to rouse
+   * us.  The address is all that matters; no write-progress state is
+   * kept here since tty_write loops internally across sched_switch(). */
+  page_id_t tx_page;
 } tty_dev_t;
 
 static int tty_uart_putc(char c, void (*notify)(void)) {
@@ -265,13 +263,13 @@ static void dev_send_signal(tty_dev_t *t, int sig) {
 }
 
 /* ── tty_write ───────────────────────────────────────────────────────────────
- * *
  *
  * Calls t->out(c, notify) per character.  If the backend returns 0 (full),
  * the TX-ready callback is registered atomically inside that same putc call.
- * We save progress and sleep (PROC_BLOCKED); the ISR fires the callback
- * which wakes us.  SVC restart replays the original syscall args; we resume
- * from tx_user_pos to avoid re-sending bytes already enqueued.
+ * We sleep (PROC_BLOCKED) on &t->tx_page; the ISR fires the callback which
+ * wakes us.  The whole write completes inside this function — we loop across
+ * sched_switch() and retry the put — so the syscall returns a real status
+ * (bytes written, -EAGAIN under O_NONBLOCK, or -EINTR on signal).
  */
 
 static long tty_write(struct file *f, page_id_t page, uint16_t off, size_t n) {
@@ -281,56 +279,41 @@ static long tty_write(struct file *f, page_id_t page, uint16_t off, size_t n) {
 
   int opost = (t->termios.c_oflag & OPOST) != 0;
   int onlcr = opost && (t->termios.c_oflag & ONLCR);
+  int nonblock = (f->flags & O_NONBLOCK) ? 1 : 0;
 
-  /* Resume tracking: if SVC restart replayed with the same args,
-   * pick up where we left off.  Otherwise start fresh. */
-  size_t pos;
-  if (t->tx_page == page && t->tx_off == off && t->tx_user_len == n)
-    pos = t->tx_user_pos;
-  else
-    pos = 0;
-
+  size_t pos = 0;
   page_id_t cur_page = page;
   uint16_t cur_off = off;
-  tty_advance(&cur_page, &cur_off, pos);
 
   while (pos < n) {
     char c;
-
     mod_core.mem_region_page_read(cur_page, cur_off, &c, 1);
+
     /* OPOST: expand \n → \r\n */
     if (onlcr && c == '\n') {
-      if (!t->out('\r', t->tx_wakeup)) goto block;
+      while (!t->out('\r', t->tx_wakeup)) {
+        if (nonblock) return pos > 0 ? (long)pos : -(long)EAGAIN;
+        if (current->sig_pending & ~current->sig_blocked)
+          return pos > 0 ? (long)pos : -(long)EINTR;
+        current->wait_channel = &t->tx_page;
+        current->state = PROC_BLOCKED;
+        mod_core.sched_switch();
+      }
     }
-    if (!t->out(c, t->tx_wakeup)) goto block;
+    while (!t->out(c, t->tx_wakeup)) {
+      if (nonblock) return pos > 0 ? (long)pos : -(long)EAGAIN;
+      if (current->sig_pending & ~current->sig_blocked)
+        return pos > 0 ? (long)pos : -(long)EINTR;
+      current->wait_channel = &t->tx_page;
+      current->state = PROC_BLOCKED;
+      mod_core.sched_switch();
+    }
     pos++;
     tty_advance(&cur_page, &cur_off, 1);
   }
 
-  /* All data written — clear resume state */
-  t->tx_user_len = 0;
   dev_echo_flush(t);
   return (long)n;
-
-block:
-  /* Backend full — callback already registered atomically by putc.
-   * Save progress and sleep. */
-  t->tx_page = page;
-  t->tx_off = off;
-  t->tx_user_pos = pos;
-  t->tx_user_len = n;
-
-  /* Check for pending signal before blocking */
-  if (current->sig_pending & ~current->sig_blocked) {
-    t->tx_user_len = 0;
-    return pos > 0 ? (long)pos : -(long)EINTR;
-  }
-
-  current->wait_channel = &t->tx_page;
-  current->state = PROC_BLOCKED;
-  mod_core.svc_set_restart();
-  mod_core.sched_switch();
-  return 0; /* ignored — SVC restores original args */
 }
 
 /* ── tty_read: canonical (cooked) mode ───────────────────────────────────────
@@ -346,12 +329,13 @@ static long tty_read_canon(tty_dev_t *t, int nonblock, page_id_t page,
       if (nonblock) return -(long)EAGAIN;
       /* No data — check for pending signal before blocking */
       if (current->sig_pending & ~current->sig_blocked) return -(long)EINTR;
-      /* Block via svc_restart: re-executes this syscall when woken */
+      /* Block and retry after wakeup.  We stay inside this function
+       * across the context switch, so the syscall completes with a
+       * real status when we eventually get data or a signal. */
       current->wait_channel = t;
       current->state = PROC_BLOCKED;
-      mod_core.svc_set_restart();
       mod_core.sched_switch();
-      return 0; /* ignored — SVC restores original args */
+      continue;
     }
 
     /* ICRNL: map CR to NL */
@@ -459,17 +443,20 @@ static long tty_read_canon(tty_dev_t *t, int nonblock, page_id_t page,
 static long tty_read_raw(tty_dev_t *t, int nonblock, page_id_t page,
                          uint16_t off, size_t n) {
   (void)n;
-  int c = t->in();
-  if (c < 0) {
+  int c;
+  /* Wait loop: block in sched_switch() and retry t->in() after each
+   * wakeup until we actually have a byte.  The syscall completes with
+   * a real status — no svc_set_restart + trap-IP-rewind dance — so
+   * kernel-side callers (DOS/CP/M/Human68k bridges) see the correct
+   * return value. */
+  for (;;) {
+    c = t->in();
+    if (c >= 0) break;
     if (nonblock) return -(long)EAGAIN;
-    /* Check for pending signal before blocking */
     if (current->sig_pending & ~current->sig_blocked) return -(long)EINTR;
-    /* Block via svc_restart */
     current->wait_channel = t;
     current->state = PROC_BLOCKED;
-    mod_core.svc_set_restart();
     mod_core.sched_switch();
-    return 0; /* ignored — SVC restores original args */
   }
 
   /* ICRNL: map CR to NL */
@@ -507,12 +494,14 @@ static long tty_read(struct file *f, page_id_t page, uint16_t off, size_t n) {
   int nonblock = (f->flags & O_NONBLOCK) ? 1 : 0;
   if (!t->in) {
     if (nonblock) return -(long)EAGAIN;
-    /* No backend — block forever (process sleeps until killed) */
-    current->wait_channel = t;
-    current->state = PROC_BLOCKED;
-    mod_core.svc_set_restart();
-    mod_core.sched_switch();
-    return 0;
+    /* No backend — block until signalled.  Loop across sched_switch()
+     * so the syscall completes with -EINTR rather than a phantom 0. */
+    for (;;) {
+      if (current->sig_pending & ~current->sig_blocked) return -(long)EINTR;
+      current->wait_channel = t;
+      current->state = PROC_BLOCKED;
+      mod_core.sched_switch();
+    }
   }
   if (n == 0) return 0;
 
