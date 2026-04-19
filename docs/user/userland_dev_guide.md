@@ -255,10 +255,10 @@ Note: addresses increase downward in this diagram (low addresses at top).
 
           SRAM (0x20000000)
 ┌──────────────────────────────────────┐
-│  Kernel .data + .bss     (≤16 KB)    │  0x20000000  RAM_KERNEL (20 KB)
+│  Kernel .data + .bss     (≤24 KB)    │  0x20000000  RAM_KERNEL (32 KB)
 │  Kernel stack (MSP)      (4 KB)      │              Supervisor stack
 ├──────────────────────────────────────┤
-│  Page pool                           │  0x20005000  RAM_PAGES (204 KB)
+│  Page pool                           │  0x20008000  RAM_PAGES (192 KB)
 │  ┌──────────────────────────────┐    │
 │  │  .got   (Global Offset Table)│    │  r9 = GOT base
 │  │  .data  (initialized data)   │    │  Copied from ELF at exec
@@ -290,13 +290,10 @@ Note: addresses increase downward in this diagram (low addresses at top).
 └──────────────────────────────────────┘  0x20042000  End of SRAM (264 KB)
 ```
 
-For `pico1calc`, the same model applies but the fixed SRAM split is:
-
-- `RAM_KERNEL`: `0x20000000`–`0x20005FFF` (24 KB)
-- `RAM_PAGES`: `0x20006000`–`0x20037FFF` (200 KB, 50 pages)
-
-This extra 4 KB of kernel SRAM leaves one fewer user page than `pico1`, but
-keeps the I/O and DMA regions unchanged.
+`pico1` and `pico1calc` share the same fixed SRAM split
+(`RAM_KERNEL` 32 KB, `RAM_PAGES` 192 KB = 48 pages).  `pico1calc` differs only
+in that its flash is 16 MB vs 2 MB, so the romfs region after the kernel is
+larger.
 
 **Key points:**
 

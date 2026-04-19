@@ -9,26 +9,26 @@
  *   0x10000000  +-----------------------+  <- FLASH_BOOT  (4 KB)
  *               | SDK boot2 (256 B)     |     QSPI init, enables XIP
  *               | stage1 extension      |     Sets VTOR, jumps to kernel
- *   0x10001000  +-----------------------+  <- FLASH_KERNEL (160 KB)
+ *   0x10001000  +-----------------------+  <- FLASH_KERNEL (192 KB)
  *               | Kernel .text/.rodata  |     Vector table at 0x10001000,
  *               | (vector table first)  |     then kernel code + data
- *   0x10029000  +-----------------------+  <- FLASH_ROMFS  (~1.9 MB remainder)
+ *   0x10031000  +-----------------------+  <- FLASH_ROMFS  (~1.8 MB remainder)
  *               | romfs image           |     Populated by mkromfs (Phase 2+)
  *               +-----------------------+
  *
- * SRAM layout: identical to pico1calc (264 KB total, 24KB kernel).
+ * SRAM layout (264 KB total, 32 KB kernel, 192 KB pages, 24 KB iobuf, 16 KB DMA).
  */
 
 MEMORY {
     /* External QSPI Flash — XIP mapped at 0x10000000
      * 2 MB total (vs 16 MB on PicoCalc) */
     FLASH_BOOT   (rx)  : ORIGIN = 0x10000000, LENGTH = 4K
-    FLASH_KERNEL (rx)  : ORIGIN = 0x10001000, LENGTH = 160K
-    FLASH_ROMFS  (r)   : ORIGIN = 0x10029000, LENGTH = 2M - 0x29000
+    FLASH_KERNEL (rx)  : ORIGIN = 0x10001000, LENGTH = 192K
+    FLASH_ROMFS  (r)   : ORIGIN = 0x10031000, LENGTH = 2M - 0x31000
 
-    /* On-chip SRAM — 264KB total (same layout as pico1calc) */
-    RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 24K
-    RAM_PAGES    (rwx) : ORIGIN = 0x20006000, LENGTH = 200K
+    /* On-chip SRAM — 264KB total */
+    RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 32K
+    RAM_PAGES    (rwx) : ORIGIN = 0x20008000, LENGTH = 192K
     RAM_IOBUF    (rw)  : ORIGIN = 0x20038000, LENGTH = 24K
     RAM_DMA      (rw)  : ORIGIN = 0x2003E000, LENGTH = 16K
 }
@@ -112,7 +112,7 @@ SECTIONS {
     } > RAM_KERNEL
 
     ASSERT((__stack_top <= ORIGIN(RAM_KERNEL) + LENGTH(RAM_KERNEL)),
-           "ERROR: Kernel data + bss + stack overflow RAM_KERNEL (24KB)")
+           "ERROR: Kernel data + bss + stack overflow RAM_KERNEL (32KB)")
 
     /* Flash usage: .text + .rodata (VMA) + .data + .ramfunc (LMA copies) */
     __flash_kernel_used = (LOADADDR(.ramfunc) + SIZEOF(.ramfunc)) - ORIGIN(FLASH_KERNEL);

@@ -21,8 +21,8 @@
  *   0x10000000  Boot area (16KB, reserved by UF2 bootloader):
  *               [0x10000000–0x100000FF]  Pico SDK boot2 (256 B, QSPI init)
  *               [0x10000100–0x10003FFF]  stage1.S + padding
- *   0x10004000  Kernel (96KB):           Vector table + .text + .rodata
- *   0x1001C000  romfs (~16MB remainder): Populated by mkromfs (Phase 2+)
+ *   0x10004000  Kernel (224KB):          Vector table + .text + .rodata
+ *   0x1003C000  romfs (~15.75MB rem.):   Populated by mkromfs (Phase 2+)
  *
  * =============================================================================
  * MEMORY REGIONS
@@ -34,10 +34,10 @@
  *               | SDK boot2 (256 B)     |     QSPI init, enables XIP
  *               | stage1 extension      |     Sets VTOR, jumps to kernel
  *               | (padding)             |     Reserved by UF2 bootloader
- *   0x10004000  +-----------------------+  <- FLASH_KERNEL (208 KB)
+ *   0x10004000  +-----------------------+  <- FLASH_KERNEL (224 KB)
  *               | Kernel .text/.rodata  |     Vector table at 0x10004000,
  *               | (vector table first)  |     then kernel code + data
- *   0x10038000  +-----------------------+  <- FLASH_ROMFS  (~16 MB remainder)
+ *   0x1003C000  +-----------------------+  <- FLASH_ROMFS  (~15.75 MB remainder)
  *               | romfs image           |     Populated by mkromfs (Phase 2+)
  *               +-----------------------+
  *
@@ -62,8 +62,8 @@ MEMORY {
      * SDK boot2 (256 B) + stage1 use only the first ~300 B; the rest
      * is padding that the UF2 loader preserves (its own code lives here). */
     FLASH_BOOT   (rx)  : ORIGIN = 0x10000000, LENGTH = 16K
-    FLASH_KERNEL (rx)  : ORIGIN = 0x10004000, LENGTH = 208K
-    FLASH_ROMFS  (r)   : ORIGIN = 0x10038000, LENGTH = 16M - 0x38000
+    FLASH_KERNEL (rx)  : ORIGIN = 0x10004000, LENGTH = 224K
+    FLASH_ROMFS  (r)   : ORIGIN = 0x1003C000, LENGTH = 16M - 0x3C000
 
     /* On-chip SRAM — 264KB total */
     RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 32K
@@ -215,7 +215,7 @@ SECTIONS {
         __stack_top = .;
     } > RAM_KERNEL
 
-    /* Sanity check: kernel data + bss + stack must fit in 24KB */
+    /* Sanity check: kernel data + bss + stack must fit in RAM_KERNEL */
         ASSERT((__stack_top <= ORIGIN(RAM_KERNEL) + LENGTH(RAM_KERNEL)),
             "ERROR: Kernel data + bss + stack overflow RAM_KERNEL (32KB)")
 

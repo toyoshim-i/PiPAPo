@@ -296,15 +296,15 @@ header are reserved for this (filled with `0xFF` = erased state).
 | Region | Address | Size | Contents |
 |--------|---------|------|----------|
 | FLASH_BOOT | 0x10000000 | 4 KB | boot2 (256 B) + stage1 |
-| FLASH_KERNEL | 0x10001000 | 160 KB | Vector table + kernel .text/.rodata |
-| FLASH_ROMFS | 0x10029000 | ~1.9 MB | romfs image |
+| FLASH_KERNEL | 0x10001000 | 192 KB | Vector table + kernel .text/.rodata |
+| FLASH_ROMFS | 0x10031000 | ~1.8 MB | romfs image |
 
 ### SRAM Layout
 
 | Region | Address | Size | Purpose |
 |--------|---------|------|---------|
-| RAM_KERNEL | 0x20000000 | 24 KB | .data, .bss, stack (4 KB) |
-| RAM_PAGES | 0x20006000 | 200 KB | Page pool (50 × 4 KB pages) |
+| RAM_KERNEL | 0x20000000 | 32 KB | .data, .bss, stack (4 KB) |
+| RAM_PAGES | 0x20008000 | 192 KB | Page pool (48 × 4 KB pages) |
 | RAM_IOBUF | 0x20038000 | 24 KB | SD DMA, FS cache |
 | RAM_DMA | 0x2003E000 | 16 KB | DMA/PIO/Core 1 stack/IRQ stack |
 
@@ -340,12 +340,12 @@ src/target/pico1/
 | Region | Address | Size | Contents |
 |--------|---------|------|----------|
 | FLASH_BOOT | 0x10000000 | 16 KB | boot2 + stage1 (reserved by UF2 loader) |
-| FLASH_KERNEL | 0x10004000 | 208 KB | Vector table + kernel .text/.rodata |
-| FLASH_ROMFS | 0x10038000 | ~16 MB | romfs image |
+| FLASH_KERNEL | 0x10004000 | 224 KB | Vector table + kernel .text/.rodata |
+| FLASH_ROMFS | 0x1003C000 | ~15.75 MB | romfs image |
 
 ### SRAM Layout
 
-Same as Pico 1 (264 KB total, 24 KB kernel, 200 KB pages, 24 KB iobuf, 16 KB
+Same as Pico 1 (264 KB total, 32 KB kernel, 192 KB pages, 24 KB iobuf, 16 KB
 DMA).
 
 ### Target Files
@@ -399,8 +399,8 @@ first 4 KB for a PICOBIN block.
 
 | Region | Address | Size | Purpose |
 |--------|---------|------|---------|
-| RAM_KERNEL | 0x20000000 | 24 KB | .data, .bss, stack (4 KB) |
-| RAM_PAGES | 0x20006000 | 464 KB | Page pool (116 × 4 KB pages) |
+| RAM_KERNEL | 0x20000000 | 32 KB | .data, .bss, stack (3.5 KB) |
+| RAM_PAGES | 0x20008000 | 456 KB | Page pool (114 × 4 KB pages) |
 | RAM_IOBUF | 0x2007A000 | 16 KB | FS cache |
 | RAM_DMA | 0x2007E000 | 8 KB | DMA buffers |
 

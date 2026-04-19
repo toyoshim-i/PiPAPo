@@ -81,12 +81,12 @@ Memory layout varies per target. Each target defines its own linker script and m
 
 ### ARM (RP2040) — SRAM (264 KB)
 
-`pico1` and `pico1calc` now use slightly different SRAM splits:
+`pico1` and `pico1calc` share the same SRAM split:
 
 | Target | Kernel data | Page pool | I/O buffer | DMA / Reserved |
 |---|---|---|---|---|
-| `pico1` | `0x20000000`, 20 KB | `0x20005000`, 204 KB (51 pages) | `0x20038000`, 24 KB | `0x2003E000`, 16 KB |
-| `pico1calc` | `0x20000000`, 24 KB | `0x20006000`, 200 KB (50 pages) | `0x20038000`, 24 KB | `0x2003E000`, 16 KB |
+| `pico1` | `0x20000000`, 32 KB | `0x20008000`, 192 KB (48 pages) | `0x20038000`, 24 KB | `0x2003E000`, 16 KB |
+| `pico1calc` | `0x20000000`, 32 KB | `0x20008000`, 192 KB (48 pages) | `0x20038000`, 24 KB | `0x2003E000`, 16 KB |
 
 Code and read-only data execute directly via XIP from flash — no SRAM copy needed.
 The romfs image follows the kernel in flash and is accessed via memory-mapped reads.

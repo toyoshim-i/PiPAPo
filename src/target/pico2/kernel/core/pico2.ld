@@ -19,7 +19,7 @@
  * the ENTRY_POINT item or vector table at offset 0 to enter the image.
  *
  * SRAM layout (520 KB total on RP2350):
- *   24 KB kernel, 464 KB pages (116 pages), 16 KB iobuf, 16 KB DMA
+ *   32 KB kernel, 456 KB pages (114 pages), 16 KB iobuf, 8 KB DMA
  */
 
 MEMORY {
@@ -30,8 +30,8 @@ MEMORY {
     FLASH_ROMFS  (r)   : ORIGIN = 0x10029000, LENGTH = 4M - 0x29000
 
     /* On-chip SRAM — 520KB total */
-    RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 24K
-    RAM_PAGES    (rwx) : ORIGIN = 0x20006000, LENGTH = 464K
+    RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 32K
+    RAM_PAGES    (rwx) : ORIGIN = 0x20008000, LENGTH = 456K
     RAM_IOBUF    (rw)  : ORIGIN = 0x2007A000, LENGTH = 16K
     RAM_DMA      (rw)  : ORIGIN = 0x2007E000, LENGTH = 8K
 }
@@ -116,7 +116,7 @@ SECTIONS {
     } > RAM_KERNEL
 
     ASSERT((__stack_top <= ORIGIN(RAM_KERNEL) + LENGTH(RAM_KERNEL)),
-           "ERROR: Kernel data + bss + stack overflow RAM_KERNEL (24KB)")
+           "ERROR: Kernel data + bss + stack overflow RAM_KERNEL (32KB)")
 
     __flash_kernel_used = (LOADADDR(.ramfunc) + SIZEOF(.ramfunc)) - ORIGIN(FLASH_KERNEL);
     __flash_kernel_free = LENGTH(FLASH_KERNEL) - __flash_kernel_used;

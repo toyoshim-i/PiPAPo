@@ -91,31 +91,28 @@ The external flash is partitioned as follows. The boot region size differs per t
 | Offset | Size | Contents |
 |---|---|---|
 | 0x00000000 | 4 KB | Boot2 (256 B QSPI init) + stage1 (VTOR redirect) |
-| 0x00001000 | 80 KB | Kernel code (.text, .rodata) — XIP execution |
-| 0x00015000 | ~1.9 MB | romfs image (/bin, /sbin, /etc file tree) — XIP execution |
+| 0x00001000 | 192 KB | Kernel code (.text, .rodata) — XIP execution |
+| 0x00031000 | ~1.8 MB | romfs image (/bin, /sbin, /etc file tree) — XIP execution |
 
 **pico1calc** (ClockworkPi PicoCalc — 16 MB flash):
 
 | Offset | Size | Contents |
 |---|---|---|
 | 0x00000000 | 16 KB | Boot2 (256 B QSPI init) + stage1 (reserved by UF2 bootloader) |
-| 0x00004000 | 96 KB | Kernel code (.text, .rodata) — XIP execution |
-| 0x0001C000 | ~16 MB | romfs image (/bin, /sbin, /etc file tree) — XIP execution |
+| 0x00004000 | 224 KB | Kernel code (.text, .rodata) — XIP execution |
+| 0x0003C000 | ~15.75 MB | romfs image (/bin, /sbin, /etc file tree) — XIP execution |
 
 ### 2.3 RAM Layout (ARM / RP2040)
 
-The 264 KB of on-chip SRAM is partitioned slightly differently by target:
+The 264 KB of on-chip SRAM is partitioned identically on `pico1` and
+`pico1calc`:
 
 | Target | Region | Address Range | Size | Purpose |
 |---|---|---|---|---|
-| `pico1` | Kernel Data | 0x20000000 – 0x20004FFF | 20 KB | Kernel BSS, stack, global data |
-| `pico1` | Page Pool | 0x20005000 – 0x20037FFF | 204 KB | User process pages (4 KB × 51 pages) |
-| `pico1` | I/O Buffer | 0x20038000 – 0x2003DFFF | 24 KB | SD card I/O, VFAT/UFS metadata cache |
-| `pico1` | DMA / Reserved | 0x2003E000 – 0x20041FFF | 16 KB | DMA, PIO, Core 1 stack, interrupt stack |
-| `pico1calc` | Kernel Data | 0x20000000 – 0x20005FFF | 24 KB | Kernel BSS, stack, global data |
-| `pico1calc` | Page Pool | 0x20006000 – 0x20037FFF | 200 KB | User process pages (4 KB × 50 pages) |
-| `pico1calc` | I/O Buffer | 0x20038000 – 0x2003DFFF | 24 KB | SD card I/O, VFAT/UFS metadata cache |
-| `pico1calc` | DMA / Reserved | 0x2003E000 – 0x20041FFF | 16 KB | DMA, PIO, Core 1 stack, interrupt stack |
+| `pico1` / `pico1calc` | Kernel Data | 0x20000000 – 0x20007FFF | 32 KB | Kernel BSS, stack, global data |
+| `pico1` / `pico1calc` | Page Pool | 0x20008000 – 0x20037FFF | 192 KB | User process pages (4 KB × 48 pages) |
+| `pico1` / `pico1calc` | I/O Buffer | 0x20038000 – 0x2003DFFF | 24 KB | SD card I/O, VFAT/UFS metadata cache |
+| `pico1` / `pico1calc` | DMA / Reserved | 0x2003E000 – 0x20041FFF | 16 KB | DMA, PIO, Core 1 stack, interrupt stack |
 
 Since the kernel's code (.text) and read-only data (.rodata) are executed via XIP from flash, only the data sections reside in SRAM.
 

@@ -13,15 +13,15 @@
  *   0x10000000  +-----------------------+  <- FLASH_BOOT  (4 KB)
  *               | stage1 code           |     Sets mtvec, jumps to kernel
  *               | picobin IMAGE_DEF     |     RP2350 boot ROM metadata
- *   0x10001000  +-----------------------+  <- FLASH_KERNEL (184 KB)
+ *   0x10001000  +-----------------------+  <- FLASH_KERNEL (208 KB)
  *               | Kernel .text/.rodata  |     _trap_vector at 0x10001000,
  *               | (trap vector first)   |     then kernel code + data
- *   0x1002F000  +-----------------------+  <- FLASH_ROMFS  (~3.8 MB remainder)
+ *   0x10035000  +-----------------------+  <- FLASH_ROMFS  (~3.8 MB remainder)
  *               | romfs image           |     Populated by mkromfs
  *               +-----------------------+
  *
  * SRAM layout (520 KB total on RP2350):
- *   24 KB kernel, 464 KB pages (116 pages), 16 KB iobuf, 8 KB DMA
+ *   32 KB kernel, 456 KB pages (114 pages), 16 KB iobuf, 8 KB DMA
  */
 
 ENTRY(_start)
@@ -30,12 +30,12 @@ MEMORY {
     /* External QSPI Flash — XIP mapped at 0x10000000
      * 4 MB total */
     FLASH_BOOT   (rx)  : ORIGIN = 0x10000000, LENGTH = 4K
-    FLASH_KERNEL (rx)  : ORIGIN = 0x10001000, LENGTH = 184K
-    FLASH_ROMFS  (r)   : ORIGIN = 0x1002F000, LENGTH = 4M - 0x2F000
+    FLASH_KERNEL (rx)  : ORIGIN = 0x10001000, LENGTH = 208K
+    FLASH_ROMFS  (r)   : ORIGIN = 0x10035000, LENGTH = 4M - 0x35000
 
     /* On-chip SRAM — 520KB total */
-    RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 24K
-    RAM_PAGES    (rwx) : ORIGIN = 0x20006000, LENGTH = 464K
+    RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 32K
+    RAM_PAGES    (rwx) : ORIGIN = 0x20008000, LENGTH = 456K
     RAM_IOBUF    (rw)  : ORIGIN = 0x2007A000, LENGTH = 16K
     RAM_DMA      (rw)  : ORIGIN = 0x2007E000, LENGTH = 8K
 }
@@ -130,7 +130,7 @@ SECTIONS {
     } > RAM_KERNEL
 
     ASSERT((__stack_top <= ORIGIN(RAM_KERNEL) + LENGTH(RAM_KERNEL)),
-           "ERROR: Kernel data + bss + stack overflow RAM_KERNEL (24KB)")
+           "ERROR: Kernel data + bss + stack overflow RAM_KERNEL (32KB)")
 
     __flash_kernel_used = (LOADADDR(.ramfunc) + SIZEOF(.ramfunc)) - ORIGIN(FLASH_KERNEL);
     __flash_kernel_free = LENGTH(FLASH_KERNEL) - __flash_kernel_used;

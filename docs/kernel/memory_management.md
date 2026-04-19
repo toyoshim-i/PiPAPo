@@ -12,8 +12,8 @@ tracks physical memory across the supported targets.
 Memory size is fixed at compile time.  The RP2040 has 264 KB of on-chip SRAM
 at `0x20000000`; no runtime probe is needed.  The exact split is target-specific:
 
-- `pico1` keeps the original 20 KB kernel region and 51-page pool
-- `pico1calc` reserves 24 KB for the kernel and uses a 50-page pool
+- `pico1` uses a 32 KB kernel region and a 48-page pool (192 KB)
+- `pico1calc` uses a 32 KB kernel region and a 48-page pool (192 KB)
 
 The remaining SRAM is reserved for kernel data, I/O buffers, and DMA.
 
@@ -52,14 +52,14 @@ Memory size is fixed at compile time per target:
 
 264 KB total SRAM at `0x20000000 – 0x20041FFF`:
 
-`pico1`:
+`pico1` and `pico1calc` share the same SRAM split:
 
 ```
 0x20000000  ┌────────────────────────────┐
-            │ Kernel region (20 KB)      │  .data, .bss, kernel globals
+            │ Kernel region (32 KB)      │  .data, .bss, kernel globals
             │                            │  Kernel stack (4 KB, MSP)
-0x20005000  ├────────────────────────────┤
-            │ Page pool (204 KB)         │  51 pages x 4 KB
+0x20008000  ├────────────────────────────┤
+            │ Page pool (192 KB)         │  48 pages x 4 KB
             │ User process data, heap,   │  Managed by page_alloc()
             │ stacks                     │
 0x20038000  ├────────────────────────────┤
@@ -69,40 +69,15 @@ Memory size is fixed at compile time per target:
 0x20042000  └────────────────────────────┘
 ```
 
-`pico1calc`:
-
-```
-0x20000000  ┌────────────────────────────┐
-            │ Kernel region (24 KB)      │  .data, .bss, kernel globals
-            │                            │  Kernel stack (4 KB, MSP)
-0x20006000  ├────────────────────────────┤
-            │ Page pool (200 KB)         │  50 pages x 4 KB
-            │ User process data, heap,   │  Managed by page_alloc()
-            │ stacks                     │
-0x20038000  ├────────────────────────────┤
-            │ I/O buffer (24 KB)         │  UART, SD card DMA buffers
-0x2003E000  ├────────────────────────────┤
-            │ DMA / Core 1 (16 KB)       │  Reserved for hardware use
-0x20042000  └────────────────────────────┘
-```
-
-Default constants (from `config.h`, as used by `pico1` and `qemu_arm`):
+ARM SRAM constants (from the target linker script, identical for `pico1` /
+`pico1calc` / `qemu_arm`):
 
 | Symbol             | Value        | Size    |
 |--------------------|--------------|---------|
-| `SRAM_KERNEL_BASE` | `0x20000000` | 20 KB   |
-| `PAGE_POOL_BASE`   | `0x20005000` | 204 KB  |
+| `SRAM_KERNEL_BASE` | `0x20000000` | 32 KB   |
+| `PAGE_POOL_BASE`   | `0x20008000` | 192 KB  |
 | `SRAM_IOBUF_BASE`  | `0x20038000` | 24 KB   |
 | `SRAM_DMA_BASE`    | `0x2003E000` | 16 KB   |
-
-`pico1calc` overrides the SRAM split in its target CMake configuration:
-
-| Symbol             | Value         | Size    |
-|--------------------|---------------|---------|
-| `SRAM_KERNEL_BASE` | `0x20000000`  | 24 KB   |
-| `PAGE_POOL_BASE`   | `0x20006000`  | 200 KB  |
-| `SRAM_IOBUF_BASE`  | `0x20038000`  | 24 KB   |
-| `SRAM_DMA_BASE`    | `0x2003E000`  | 16 KB   |
 
 ### 2.2 m68k (QEMU virt)
 
