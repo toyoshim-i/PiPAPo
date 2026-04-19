@@ -1233,6 +1233,99 @@ static void test_dos_resize(void)
     UT_ASSERT_EQ(code, 0);
 }
 
+/* -- Test 23: alloc.com --- AH=48h Allocate / AH=49h Free + coalesce ----- */
+/*
+ * End-to-end exercise of the in-run MCB chain:
+ *   (1) AH=4Ah BX=10h shrink the main block, creating a free 'Z' tail.
+ *   (2) AH=48h BX=10h allocate from that free tail; save AX in SI.
+ *   (3) AH=49h ES=SI free the allocation; forward-coalesce should
+ *       restore the free 'Z' tail to its pre-alloc size.
+ *   (4) AH=48h BX=10h re-allocate; AX should equal SI (proving the
+ *       free coalesced back into a single block).
+ *   (5) AH=48h BX=FFFFh — must fail with CF=1, AX=8 (the run is
+ *       smaller than 64 KB worth of paragraphs).
+ */
+/* Each potential failure exits with a unique non-zero code so we can
+ * identify which step tripped if the test fails:
+ *   11 = AH=4Ah shrink failed
+ *   12 = AH=48h alloc failed
+ *   13 = AH=49h free failed
+ *   14 = AH=48h re-alloc failed
+ *   15 = re-alloc returned a different segment (coalesce broken)
+ *   16 = AH=48h FFFFh succeeded (should have failed)
+ *   17 = AH=48h FFFFh failed with wrong AX (not 8)
+ *
+ * The shrink BX must be large enough that the new free MCB landing at
+ * proc_seg:(BX*16) does NOT overwrite any post-shrink code bytes.
+ * BX=0x100 puts the new MCB at proc_seg:0x1000, well past this 96-byte
+ * test program (code ends ~proc_seg:0x160).
+ */
+static const unsigned char alloc_com[] = {
+    /* 0x100: shrink */
+    0xB4, 0x4A,                      /* MOV AH, 4Ah                   */
+    0xBB, 0x00, 0x01,                /* MOV BX, 100h                  */
+    0xCD, 0x21,                      /* INT 21h                       */
+    0x72, 0x33,                      /* JC fail_shrink (+0x33→0x13C)  */
+    /* 0x109: alloc */
+    0xB4, 0x48,                      /* MOV AH, 48h                   */
+    0xBB, 0x10, 0x00,                /* MOV BX, 10h                   */
+    0xCD, 0x21,                      /* INT 21h                       */
+    0x72, 0x2F,                      /* JC fail_alloc (+0x2F→0x141)   */
+    0x89, 0xC6,                      /* MOV SI, AX  (save alloc seg)  */
+    /* 0x114: free */
+    0x8E, 0xC6,                      /* MOV ES, SI                    */
+    0xB4, 0x49,                      /* MOV AH, 49h                   */
+    0xCD, 0x21,                      /* INT 21h                       */
+    0x72, 0x2A,                      /* JC fail_free (+0x2A→0x146)    */
+    /* 0x11C: realloc */
+    0xB4, 0x48,                      /* MOV AH, 48h                   */
+    0xBB, 0x10, 0x00,                /* MOV BX, 10h                   */
+    0xCD, 0x21,                      /* INT 21h                       */
+    0x72, 0x26,                      /* JC fail_realloc (+0x26→0x14B) */
+    0x39, 0xF0,                      /* CMP AX, SI                    */
+    0x75, 0x27,                      /* JNE fail_cmp (+0x27→0x150)    */
+    /* 0x129: oversize */
+    0xB4, 0x48,                      /* MOV AH, 48h                   */
+    0xBB, 0xFF, 0xFF,                /* MOV BX, FFFFh                 */
+    0xCD, 0x21,                      /* INT 21h                       */
+    0x73, 0x23,                      /* JNC fail_oversize (+0x23→0x155) */
+    0x3D, 0x08, 0x00,                /* CMP AX, 8                     */
+    0x75, 0x23,                      /* JNE fail_ax (+0x23→0x15A)     */
+    /* 0x137: success exit 0 */
+    0xB8, 0x00, 0x4C,                /* MOV AX, 4C00h                 */
+    0xCD, 0x21,                      /* INT 21h                       */
+    /* 0x13C: fail_shrink (+0x47 from 0x109) → exit 11 */
+    0xB8, 0x0B, 0x4C,                /* MOV AX, 4C0Bh (exit 11)       */
+    0xCD, 0x21,                      /* INT 21h                       */
+    /* 0x141: fail_alloc → exit 12 */
+    0xB8, 0x0C, 0x4C,                /* MOV AX, 4C0Ch (exit 12)       */
+    0xCD, 0x21,                      /* INT 21h                       */
+    /* 0x146: fail_free → exit 13 */
+    0xB8, 0x0D, 0x4C,                /* MOV AX, 4C0Dh (exit 13)       */
+    0xCD, 0x21,                      /* INT 21h                       */
+    /* 0x14B: fail_realloc → exit 14 */
+    0xB8, 0x0E, 0x4C,                /* MOV AX, 4C0Eh (exit 14)       */
+    0xCD, 0x21,                      /* INT 21h                       */
+    /* 0x150: fail_cmp → exit 15 */
+    0xB8, 0x0F, 0x4C,                /* MOV AX, 4C0Fh (exit 15)       */
+    0xCD, 0x21,                      /* INT 21h                       */
+    /* 0x155: fail_oversize → exit 16 */
+    0xB8, 0x10, 0x4C,                /* MOV AX, 4C10h (exit 16)       */
+    0xCD, 0x21,                      /* INT 21h                       */
+    /* 0x15A: fail_oversize_ax → exit 17 */
+    0xB8, 0x11, 0x4C,                /* MOV AX, 4C11h (exit 17)       */
+    0xCD, 0x21,                      /* INT 21h                       */
+};
+
+static void test_dos_alloc_free(void)
+{
+    WRITE_COM("/tmp/dos_al.com", alloc_com);
+    int code = run_com("/tmp/dos_al.com");
+    /* Per-step exit codes:
+     *   11=shrink 12=alloc 13=free 14=realloc 15=cmp 16=oversize 17=ax */
+    UT_ASSERT_EQ(code, 0);
+}
+
 /* -- main ----------------------------------------------------------------- */
 
 int main(void)
@@ -1259,6 +1352,7 @@ int main(void)
     test_exe_multiseg_ds();
     test_dos_mcb_entry();
     test_dos_resize();
+    test_dos_alloc_free();
 
     UT_SUMMARY("test_msdos");
 }

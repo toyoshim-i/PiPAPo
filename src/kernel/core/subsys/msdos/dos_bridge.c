@@ -733,6 +733,60 @@ static int dos_rename(dos_proc_t *dos, dos_regs_t *regs) {
   return 0;
 }
 
+/* ── MCB chain primitives ──────────────────────────────────────────── */
+
+typedef struct dos_mcb_view {
+  uint8_t sig;
+  uint16_t owner;
+  uint16_t size;
+} dos_mcb_view_t;
+
+static void dos_mcb_read(page_id_t base_page, uint32_t off,
+                         dos_mcb_view_t *out) {
+  uint8_t hdr[5];
+  page_id_t pg = base_page + (page_id_t)(off / PAGE_SIZE);
+  uint16_t pgo = (uint16_t)(off % PAGE_SIZE);
+  mem_region_page_read(pg, pgo, hdr, 5);
+  out->sig = hdr[DOS_MCB_OFF_SIG];
+  out->owner = (uint16_t)hdr[DOS_MCB_OFF_OWNER] |
+               ((uint16_t)hdr[DOS_MCB_OFF_OWNER + 1] << 8);
+  out->size = (uint16_t)hdr[DOS_MCB_OFF_SIZE] |
+              ((uint16_t)hdr[DOS_MCB_OFF_SIZE + 1] << 8);
+}
+
+static void dos_mcb_write(page_id_t base_page, uint32_t off, uint8_t sig,
+                          uint16_t owner, uint16_t size) {
+  uint8_t b[DOS_MCB_BYTES];
+  __builtin_memset(b, 0, sizeof(b));
+  b[DOS_MCB_OFF_SIG] = sig;
+  b[DOS_MCB_OFF_OWNER] = (uint8_t)(owner & 0xFF);
+  b[DOS_MCB_OFF_OWNER + 1] = (uint8_t)(owner >> 8);
+  b[DOS_MCB_OFF_SIZE] = (uint8_t)(size & 0xFF);
+  b[DOS_MCB_OFF_SIZE + 1] = (uint8_t)(size >> 8);
+  page_id_t pg = base_page + (page_id_t)(off / PAGE_SIZE);
+  uint16_t pgo = (uint16_t)(off % PAGE_SIZE);
+  mem_region_page_write(pg, pgo, b, DOS_MCB_BYTES);
+}
+
+/* The PSP segment of the calling DOS process — also the owner stored
+ * in every MCB the process allocates. */
+static uint16_t dos_caller_psp(uint32_t base_linear) {
+  return (uint16_t)((base_linear >> 4) + 1u);
+}
+
+/* Resolve a DOS block segment to an MCB run-offset; validates that the
+ * MCB falls inside the proc image.  Returns 0 on success, negative DOS
+ * error otherwise. */
+static int dos_mcb_offset_for_seg(uint16_t seg, uint32_t base_linear,
+                                  uint32_t run_size, uint32_t *out_off) {
+  uint32_t mcb_flat = ((uint32_t)seg - 1u) << 4;
+  if (mcb_flat < base_linear ||
+      mcb_flat + DOS_MCB_BYTES > base_linear + run_size)
+    return -DOS_ERR_INSUFFICIENT_MEMORY;
+  *out_off = mcb_flat - base_linear;
+  return 0;
+}
+
 /* AH=4Ah Resize Memory Block.
  *
  *   ES = block segment (caller PSP for the main block; ES-1 = MCB seg)
@@ -741,10 +795,9 @@ static int dos_rename(dos_proc_t *dos, dos_regs_t *regs) {
  * On success: CF=0.  On failure: CF=1, AX=8 (insufficient memory),
  * BX = max paragraphs available for this block.
  *
- * D-5a.2 scope: only resizes a 'Z' block (no following block in the
- * chain).  This is the common crt0-at-startup case.  Once D-5a.3
- * lands AH=48h/49h, blocks may have sig 'M' with following free
- * blocks; that case will need chain-walk + coalesce. */
+ * Handles both 'Z' (chain end) and 'M' (mid-chain) blocks.  For 'M',
+ * the immediately-following block is consulted: if free, it can be
+ * absorbed for growth or partially split off when shrinking. */
 static int dos_resize_block(dos_proc_t *dos, dos_regs_t *regs) {
   (void)dos;
 
@@ -754,69 +807,194 @@ static int dos_resize_block(dos_proc_t *dos, dos_regs_t *regs) {
   page_id_t base_page = current->image.data.base_page;
   uint32_t base_linear = mem_region_page_linear(base_page);
   uint32_t run_size = current->image.data.size;
+  uint16_t caller_psp = dos_caller_psp(base_linear);
 
-  /* MCB sits one paragraph below the block segment. */
-  uint32_t mcb_flat = ((uint32_t)es - 1u) << 4;
-  if (mcb_flat < base_linear ||
-      mcb_flat + DOS_MCB_BYTES > base_linear + run_size) {
+  uint32_t mcb_off;
+  int rc = dos_mcb_offset_for_seg(es, base_linear, run_size, &mcb_off);
+  if (rc < 0) {
     regs->bx = 0;
-    return -DOS_ERR_INSUFFICIENT_MEMORY;
+    return rc;
   }
-  uint32_t mcb_off = mcb_flat - base_linear;
-  page_id_t mcb_pg = base_page + (page_id_t)(mcb_off / PAGE_SIZE);
-  uint16_t mcb_pgo = (uint16_t)(mcb_off % PAGE_SIZE);
 
-  uint8_t hdr[5];
-  mem_region_page_read(mcb_pg, mcb_pgo, hdr, 5);
-  uint8_t sig = hdr[0];
-  uint16_t owner = (uint16_t)hdr[1] | ((uint16_t)hdr[2] << 8);
-  uint16_t cur_size = (uint16_t)hdr[3] | ((uint16_t)hdr[4] << 8);
-
-  if ((sig != DOS_MCB_SIG_Z && sig != DOS_MCB_SIG_M) || owner != es) {
+  dos_mcb_view_t cur;
+  dos_mcb_read(base_page, mcb_off, &cur);
+  if ((cur.sig != DOS_MCB_SIG_M && cur.sig != DOS_MCB_SIG_Z) ||
+      cur.owner != caller_psp) {
     regs->bx = 0;
     return -DOS_ERR_INSUFFICIENT_MEMORY;
   }
 
-  /* D-5a.2 limitation: only handle 'Z' (last-in-chain) blocks.  An 'M'
-   * block needs chain-walk + coalesce; deferred to D-5a.3. */
-  if (sig != DOS_MCB_SIG_Z) {
-    regs->bx = cur_size;
+  /* Compute max_size and the sig that should follow our resized block. */
+  uint16_t max_size;
+  uint8_t after_sig;
+  int absorb_next = 0;
+  if (cur.sig == DOS_MCB_SIG_Z) {
+    /* Last in chain — payload always extends to run end, so cur.size
+     * is already the max. */
+    max_size = cur.size;
+    after_sig = DOS_MCB_SIG_Z;
+  } else {
+    uint32_t next_off = mcb_off + DOS_MCB_BYTES + (uint32_t)cur.size * 16u;
+    if (next_off >= run_size) {
+      /* Corrupt: 'M' but no next.  Fail safely. */
+      regs->bx = cur.size;
+      return -DOS_ERR_INSUFFICIENT_MEMORY;
+    }
+    dos_mcb_view_t next;
+    dos_mcb_read(base_page, next_off, &next);
+    if ((next.sig == DOS_MCB_SIG_M || next.sig == DOS_MCB_SIG_Z) &&
+        next.owner == 0) {
+      max_size = (uint16_t)(cur.size + 1u + next.size);
+      after_sig = next.sig;
+      absorb_next = 1;
+    } else {
+      max_size = cur.size;
+      /* Next is owned and stays in the chain; the new free block (if any)
+       * we insert below sits between us and that owned next, so it must
+       * be 'M' (more-follows). */
+      after_sig = DOS_MCB_SIG_M;
+    }
+  }
+
+  if (new_size > max_size) {
+    regs->bx = max_size;
+    return -DOS_ERR_INSUFFICIENT_MEMORY;
+  }
+  if (new_size == cur.size && !absorb_next) return 0;
+
+  uint16_t free_remainder = (uint16_t)(max_size - new_size);
+  uint8_t cur_new_sig;
+  if (free_remainder == 0) {
+    /* Consume everything available; current takes whatever after_sig
+     * said the structure past max would look like. */
+    cur_new_sig = after_sig;
+  } else {
+    /* Split off a new free block after the new payload. */
+    cur_new_sig = DOS_MCB_SIG_M;
+    uint32_t new_free_off = mcb_off + DOS_MCB_BYTES + (uint32_t)new_size * 16u;
+    uint16_t new_free_size = (uint16_t)(free_remainder - 1u);
+    dos_mcb_write(base_page, new_free_off, after_sig, 0, new_free_size);
+  }
+
+  dos_mcb_write(base_page, mcb_off, cur_new_sig, caller_psp, new_size);
+  return 0;
+}
+
+/* AH=48h Allocate Memory Block.
+ *
+ *   BX = paragraphs requested
+ *
+ * On success: AX = segment of allocated block, CF=0.
+ * On failure: AX=8, BX=largest free block paragraphs, CF=1.
+ *
+ * First-fit walk over the in-run MCB chain.  When a free block large
+ * enough is found, it is split into [allocated][free remainder]; on
+ * exact fit, the existing free block is simply marked owned. */
+static int dos_alloc_block(dos_proc_t *dos, dos_regs_t *regs) {
+  (void)dos;
+  uint16_t want = regs->bx;
+
+  page_id_t base_page = current->image.data.base_page;
+  uint32_t base_linear = mem_region_page_linear(base_page);
+  uint32_t run_size = current->image.data.size;
+  uint16_t caller_psp = dos_caller_psp(base_linear);
+
+  uint32_t off = 0;
+  uint16_t largest = 0;
+  uint32_t found_off = 0xFFFFFFFFu;
+  uint8_t found_sig = 0;
+  uint16_t found_size = 0;
+
+  while (off < run_size) {
+    dos_mcb_view_t m;
+    dos_mcb_read(base_page, off, &m);
+    if (m.sig != DOS_MCB_SIG_M && m.sig != DOS_MCB_SIG_Z) {
+      /* Corrupt chain. */
+      regs->bx = largest;
+      return -DOS_ERR_INSUFFICIENT_MEMORY;
+    }
+    if (m.owner == 0) {
+      if (m.size > largest) largest = m.size;
+      if (found_off == 0xFFFFFFFFu && m.size >= want) {
+        found_off = off;
+        found_sig = m.sig;
+        found_size = m.size;
+      }
+    }
+    if (m.sig == DOS_MCB_SIG_Z) break;
+    off += DOS_MCB_BYTES + (uint32_t)m.size * 16u;
+  }
+
+  if (found_off == 0xFFFFFFFFu) {
+    regs->bx = largest;
     return -DOS_ERR_INSUFFICIENT_MEMORY;
   }
 
-  /* Free tail extends from this block's payload start to the run end. */
-  uint32_t block_data_off = mcb_off + DOS_MCB_BYTES;
-  uint16_t avail_para = (uint16_t)((run_size - block_data_off) / 16u);
+  if (want == found_size) {
+    /* Exact fit — claim the existing block; sig unchanged. */
+    dos_mcb_write(base_page, found_off, found_sig, caller_psp, want);
+  } else {
+    /* Split: [alloc 'M'][remaining free, sig=found_sig]. */
+    uint32_t new_free_off = found_off + DOS_MCB_BYTES + (uint32_t)want * 16u;
+    uint16_t new_free_size = (uint16_t)(found_size - want - 1u);
+    dos_mcb_write(base_page, found_off, DOS_MCB_SIG_M, caller_psp, want);
+    dos_mcb_write(base_page, new_free_off, found_sig, 0, new_free_size);
+  }
 
-  if (new_size > avail_para) {
-    regs->bx = avail_para;
+  uint32_t alloc_flat = base_linear + found_off + DOS_MCB_BYTES;
+  regs->ax = (uint16_t)(alloc_flat >> 4);
+  return 0;
+}
+
+/* AH=49h Free Memory Block.
+ *
+ *   ES = block segment to free
+ *
+ * On success: CF=0.  On failure: CF=1, AX = DOS error.
+ *
+ * Marks the block free (owner=0) and forward-coalesces with the
+ * immediately-following block if it is also free.  Backward coalesce
+ * (merging into a preceding free block) is not done in D-5a.3 — it
+ * would require a chain walk from the head; deferred until a workload
+ * needs it. */
+static int dos_free_block(dos_proc_t *dos, dos_regs_t *regs) {
+  (void)dos;
+  uint16_t es = regs->es;
+
+  page_id_t base_page = current->image.data.base_page;
+  uint32_t base_linear = mem_region_page_linear(base_page);
+  uint32_t run_size = current->image.data.size;
+  uint16_t caller_psp = dos_caller_psp(base_linear);
+
+  uint32_t mcb_off;
+  int rc = dos_mcb_offset_for_seg(es, base_linear, run_size, &mcb_off);
+  if (rc < 0) return rc;
+
+  dos_mcb_view_t cur;
+  dos_mcb_read(base_page, mcb_off, &cur);
+  if ((cur.sig != DOS_MCB_SIG_M && cur.sig != DOS_MCB_SIG_Z) ||
+      cur.owner != caller_psp) {
     return -DOS_ERR_INSUFFICIENT_MEMORY;
   }
-  if (new_size == cur_size) return 0;
 
-  if (new_size < cur_size) {
-    /* Insert a new free 'Z' block immediately after the new payload.
-     * Tail size = original size minus new_size minus 1 paragraph for
-     * the new MCB header itself. */
-    uint32_t new_z_off = mcb_off + DOS_MCB_BYTES + (uint32_t)new_size * 16u;
-    uint16_t tail_size = (uint16_t)(cur_size - new_size - 1u);
-    uint8_t z[DOS_MCB_BYTES];
-    __builtin_memset(z, 0, sizeof(z));
-    z[DOS_MCB_OFF_SIG] = DOS_MCB_SIG_Z;
-    z[DOS_MCB_OFF_SIZE] = (uint8_t)(tail_size & 0xFF);
-    z[DOS_MCB_OFF_SIZE + 1] = (uint8_t)(tail_size >> 8);
-    page_id_t z_pg = base_page + (page_id_t)(new_z_off / PAGE_SIZE);
-    uint16_t z_pgo = (uint16_t)(new_z_off % PAGE_SIZE);
-    mem_region_page_write(z_pg, z_pgo, z, DOS_MCB_BYTES);
+  uint8_t new_sig = cur.sig;
+  uint16_t new_size = cur.size;
 
-    /* Original block becomes 'M' (more follows). */
-    hdr[0] = DOS_MCB_SIG_M;
+  /* Forward-coalesce with the immediately-following free block. */
+  if (cur.sig == DOS_MCB_SIG_M) {
+    uint32_t next_off = mcb_off + DOS_MCB_BYTES + (uint32_t)cur.size * 16u;
+    if (next_off < run_size) {
+      dos_mcb_view_t next;
+      dos_mcb_read(base_page, next_off, &next);
+      if ((next.sig == DOS_MCB_SIG_M || next.sig == DOS_MCB_SIG_Z) &&
+          next.owner == 0) {
+        new_size = (uint16_t)(new_size + 1u + next.size);
+        new_sig = next.sig;
+      }
+    }
   }
-  /* Grow: bump size in place; sig stays 'Z'. */
 
-  hdr[3] = (uint8_t)(new_size & 0xFF);
-  hdr[4] = (uint8_t)(new_size >> 8);
-  mem_region_page_write(mcb_pg, mcb_pgo, hdr, 5);
+  dos_mcb_write(base_page, mcb_off, new_sig, 0, new_size);
   return 0;
 }
 
@@ -896,6 +1074,12 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
       break;
     case 0x47:
       ret = dos_getcwd(dos, regs);
+      break;
+    case 0x48:
+      ret = dos_alloc_block(dos, regs);
+      break;
+    case 0x49:
+      ret = dos_free_block(dos, regs);
       break;
     case 0x4A:
       ret = dos_resize_block(dos, regs);
