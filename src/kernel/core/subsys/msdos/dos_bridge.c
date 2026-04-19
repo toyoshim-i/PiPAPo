@@ -13,6 +13,7 @@
 #include "kernel/core/cpu/cpu.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
+#include "kernel/core/proc/sched.h"
 #include "kernel/core/subsys/msdos/dos_host.h"
 #include "kernel/core/syscall/syscall.h"
 
@@ -283,10 +284,16 @@ static long dos_io_putc(uint8_t c) {
 
 static long dos_io_getc(uint8_t *out) {
   if (dos_data_page == PAGE_ID_INVALID) return -1;
-  long n = sys_read(0, dos_data_page, DOS_IO_SCRATCH_OFF, 1);
-  if (n != 1) return n;
-  mem_region_page_read(dos_data_page, DOS_IO_SCRATCH_OFF, out, 1);
-  return 1;
+  /* DOS has no concept of -EINTR; a signal arriving during a blocking
+   * console read just retries.  Any other negative status (e.g. EOF=0)
+   * is returned to the caller. */
+  for (;;) {
+    long n = sys_read(0, dos_data_page, DOS_IO_SCRATCH_OFF, 1);
+    if (n == -(long)EINTR) continue;
+    if (n != 1) return n;
+    mem_region_page_read(dos_data_page, DOS_IO_SCRATCH_OFF, out, 1);
+    return 1;
+  }
 }
 
 /* ── INT 21h functions ─────────────────────────────────────────────── */
@@ -348,7 +355,9 @@ static int dos_buffered_input(dos_proc_t *dos, dos_regs_t *regs) {
  *
  * Implements the non-blocking read POSIX-style: flip O_NONBLOCK on
  * fd 0 around a single sys_read so the underlying TTY returns
- * -EAGAIN instead of blocking, then restore the original flags. */
+ * -EAGAIN instead of blocking, then restore the original flags.
+ * On -EAGAIN we yield before returning "no char" so the typical
+ * poll-in-a-tight-loop DOS app doesn't starve the rest of the system. */
 static int dos_direct_console_io(dos_proc_t *dos, dos_regs_t *regs) {
   uint8_t dl = (uint8_t)(regs->dx & 0xFF);
   if (dl != 0xFF) {
@@ -371,6 +380,7 @@ static int dos_direct_console_io(dos_proc_t *dos, dos_regs_t *regs) {
     regs->ax = (regs->ax & 0xFF00) | c;
     regs->flags &= ~0x0040u; /* ZF = 0: char available */
   } else {
+    sched_switch();
     regs->ax &= 0xFF00u;    /* AL = 0 */
     regs->flags |= 0x0040u; /* ZF = 1: no char */
   }
@@ -378,11 +388,11 @@ static int dos_direct_console_io(dos_proc_t *dos, dos_regs_t *regs) {
 }
 
 static int dos_check_input_status(dos_proc_t *dos, dos_regs_t *regs) {
-  /* TODO: implement non-blocking poll on fd 0.  Currently lies "char
-   * available" which is harmless when the caller follows up with a
-   * blocking read, but can mislead apps that loop on the status. */
-  mod_vfs.klogf(
-      "[msdos] stub: AH=0Bh check_input_status (always reports ready)\n");
+  /* TODO: implement non-blocking poll on fd 0 via an in_avail VFS op.
+   * Currently lies "char available", which is harmless when the caller
+   * follows up with a blocking read but can mislead apps that loop on
+   * the status.  Yield first so such spin-loops don't starve the system. */
+  sched_switch();
   regs->ax = (regs->ax & 0xFF00) | 0xFF;
   return 0;
 }
@@ -394,7 +404,6 @@ static int dos_get_current_drive(dos_proc_t *dos, dos_regs_t *regs) {
 
 static int dos_get_date(dos_proc_t *dos, dos_regs_t *regs) {
   /* TODO: query a real RTC source.  Hardcoded 2026-04-13 (Mon). */
-  mod_vfs.klogf("[msdos] stub: AH=2Ah get_date (hardcoded 2026-04-13)\n");
   regs->cx = 2026;
   regs->dx = 0x040D;
   regs->ax = (regs->ax & 0xFF00) | 0x01;
@@ -403,7 +412,6 @@ static int dos_get_date(dos_proc_t *dos, dos_regs_t *regs) {
 
 static int dos_get_time(dos_proc_t *dos, dos_regs_t *regs) {
   /* TODO: query a real RTC source.  Hardcoded 12:00:00.00. */
-  mod_vfs.klogf("[msdos] stub: AH=2Ch get_time (hardcoded 12:00:00)\n");
   regs->cx = 0x0C00;
   regs->dx = 0x0000;
   return 0;
