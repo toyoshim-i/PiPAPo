@@ -304,7 +304,10 @@ Any future BIOS call sites follow the same pattern.
   originally scheduled for Phase D.
 - Phase D landed: `i16_timer_can_preempt` removed; kernel code is now
   fully preemptible.
-- Phases A, E, F, G, H: pending.
+- Phase A + E landed: VFS read/write loops across `sched_switch` and
+  returns `-EAGAIN`/`-EINTR`; `push_line` retries on `-EINTR`.  Fixes
+  the zork1 single-key-input bug on pcxt.
+- Phases F, G, H: pending.
 
 ## Open questions
 
