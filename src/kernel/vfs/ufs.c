@@ -114,6 +114,76 @@ static void ufs_free_indirect_ptrs(ufs_priv_t *priv, uint32_t start,
   }
 }
 
+/* Free the double-indirect tree rooted at ib2_frag, keeping only the first
+ * `keep` logical data blocks reachable through it.  If keep == 0 the outer
+ * block itself is also returned to the allocator (caller must zero
+ * inode->i_ib[1]).  The outer sector is cached at scratch_page[2048..] so it
+ * doesn't collide with ufs_free_indirect_ptrs which uses the [0..511] region.
+ */
+#define UFS_SCRATCH_OUTER_OFF 2048u
+static void ufs_free_double_indirect(ufs_priv_t *priv, uint32_t ib2_frag,
+                                     uint32_t keep) {
+  uint32_t ptrs_per_block = UFS_BLOCK_SIZE / sizeof(uint32_t);   /* 1024 */
+  uint32_t ptrs_per_sec = BLKDEV_SECTOR_SIZE / sizeof(uint32_t); /* 128 */
+  for (uint32_t s = 0; s < UFS_FRAGS_PER_BLK; s++) {
+    int rc = ufs_read_sector(priv, ib2_frag + s);
+    if (rc < 0) return;
+    mod_core.mem_region_page_write(priv->scratch_page, UFS_SCRATCH_OUTER_OFF,
+                                   ufs_buf, BLKDEV_SECTOR_SIZE);
+    int sector_dirty = 0;
+    for (uint32_t i = 0; i < ptrs_per_sec; i++) {
+      uint32_t outer_idx = s * ptrs_per_sec + i;
+      uint32_t block_start = outer_idx * ptrs_per_block;
+      uint32_t inner_frag;
+      mod_core.mem_region_page_read(
+          priv->scratch_page,
+          (uint16_t)(UFS_SCRATCH_OUTER_OFF + i * sizeof(uint32_t)), &inner_frag,
+          sizeof(inner_frag));
+      if (inner_frag == 0) continue;
+
+      if (block_start >= keep) {
+        /* Free the inner indirect block and everything under it. */
+        for (uint32_t is = 0; is < UFS_FRAGS_PER_BLK; is++) {
+          rc = ufs_read_sector(priv, inner_frag + is);
+          if (rc < 0) break;
+          ufs_free_indirect_ptrs(priv, 0, ptrs_per_sec);
+        }
+        ufs_free_block(priv, inner_frag);
+        /* Clear the outer slot so a later extend doesn't reuse a stale
+         * pointer to a recycled block. */
+        uint32_t zero = 0;
+        mod_core.mem_region_page_write(
+            priv->scratch_page,
+            (uint16_t)(UFS_SCRATCH_OUTER_OFF + i * sizeof(uint32_t)), &zero,
+            sizeof(zero));
+        sector_dirty = 1;
+      } else if (block_start + ptrs_per_block > keep) {
+        /* Partial free inside this inner indirect block. */
+        uint32_t keep_in_inner = keep - block_start;
+        uint32_t first_sec = keep_in_inner / ptrs_per_sec;
+        for (uint32_t is = first_sec; is < UFS_FRAGS_PER_BLK; is++) {
+          rc = ufs_read_sector(priv, inner_frag + is);
+          if (rc < 0) break;
+          uint32_t start_in_sec =
+              (is == first_sec) ? keep_in_inner % ptrs_per_sec : 0;
+          ufs_free_indirect_ptrs(priv, start_in_sec, ptrs_per_sec);
+        }
+        /* Inner block still in use; leave outer pointer intact. */
+      }
+      /* else: block_start + ptrs_per_block <= keep → keep fully. */
+    }
+    if (sector_dirty) {
+      mod_core.mem_region_page_read(priv->scratch_page, UFS_SCRATCH_OUTER_OFF,
+                                    ufs_buf, BLKDEV_SECTOR_SIZE);
+      rc = ufs_write_sector(priv, ib2_frag + s);
+      if (rc < 0) return;
+    }
+  }
+  if (keep == 0) {
+    ufs_free_block(priv, ib2_frag);
+  }
+}
+
 /* ── Inode I/O ────────────────────────────────────────────────────────── */
 
 /* Read an on-disk inode.  UFS1 inode = 128 bytes; 4 per 512-byte sector.
@@ -342,8 +412,8 @@ void ufs_alloc_selftest(int *out_pass, int *out_fail) {
 /* ── Block mapping ────────────────────────────────────────────────────── */
 
 /* Resolve a logical file block index to a physical fragment number.
- * Handles direct (blocks 0-11) and single indirect via i_ib[0].
- * Clobbers ufs_buf when reading the indirect block. */
+ * Handles direct (0..11), single-indirect via i_ib[0], and double-indirect
+ * via i_ib[1].  Clobbers ufs_buf when reading an indirect block. */
 static int ufs_block_map(ufs_priv_t *priv, const ufs_inode_t *inode,
                          uint32_t logical, uint32_t *phys_out) {
   if (logical < (uint32_t)UFS_DIRECT_BLOCKS) {
@@ -351,31 +421,53 @@ static int ufs_block_map(ufs_priv_t *priv, const ufs_inode_t *inode,
     return 0;
   }
 
+  uint32_t ptrs_per_block = UFS_BLOCK_SIZE / sizeof(uint32_t);   /* 1024 */
+  uint32_t ptrs_per_sec = BLKDEV_SECTOR_SIZE / sizeof(uint32_t); /* 128 */
   uint32_t ind_idx = logical - (uint32_t)UFS_DIRECT_BLOCKS;
-  if (ind_idx >= UFS_BLOCK_SIZE / sizeof(uint32_t))
-    return -EIO; /* beyond single-indirect range */
 
-  if (inode->i_ib[0] == 0) {
+  if (ind_idx < ptrs_per_block) {
+    /* Single-indirect */
+    if (inode->i_ib[0] == 0) {
+      *phys_out = 0;
+      return 0;
+    }
+    int rc = ufs_read_sector(priv, inode->i_ib[0] + ind_idx / ptrs_per_sec);
+    if (rc < 0) return rc;
+    *phys_out = ((uint32_t *)ufs_buf)[ind_idx % ptrs_per_sec];
+    return 0;
+  }
+
+  /* Double-indirect */
+  uint32_t di_idx = ind_idx - ptrs_per_block;
+  if (di_idx >= ptrs_per_block * ptrs_per_block)
+    return -EIO; /* beyond double-indirect range */
+
+  if (inode->i_ib[1] == 0) {
     *phys_out = 0;
     return 0;
   }
 
-  /* i_ib[0] is a fragment (= sector); read sector ind_idx/128 of that block */
-  uint32_t ptrs_per_sec = BLKDEV_SECTOR_SIZE / sizeof(uint32_t); /* 128 */
-  uint32_t sec = ind_idx / ptrs_per_sec;
-  uint32_t off = ind_idx % ptrs_per_sec;
+  uint32_t outer_idx = di_idx / ptrs_per_block;
+  uint32_t inner_idx = di_idx % ptrs_per_block;
 
-  int rc = ufs_read_sector(priv, inode->i_ib[0] + sec);
+  int rc = ufs_read_sector(priv, inode->i_ib[1] + outer_idx / ptrs_per_sec);
   if (rc < 0) return rc;
+  uint32_t inner_frag = ((uint32_t *)ufs_buf)[outer_idx % ptrs_per_sec];
+  if (inner_frag == 0) {
+    *phys_out = 0;
+    return 0;
+  }
 
-  *phys_out = ((uint32_t *)ufs_buf)[off];
+  rc = ufs_read_sector(priv, inner_frag + inner_idx / ptrs_per_sec);
+  if (rc < 0) return rc;
+  *phys_out = ((uint32_t *)ufs_buf)[inner_idx % ptrs_per_sec];
   return 0;
 }
 
 /* Set a logical block pointer in an inode (stores fragment number).
- * For direct (0-11): stores in i_direct[].
- * For indirect (12+): allocates i_ib[0] if needed, then writes pointer.
- * Caller must write the inode back.  Clobbers ufs_buf. */
+ * Direct (0..11) → i_direct[]; single-indirect via i_ib[0]; double-indirect
+ * via i_ib[1]; allocated on demand.  Caller writes the inode back.
+ * Clobbers ufs_buf. */
 static int ufs_block_set(ufs_priv_t *priv, ufs_inode_t *inode, uint32_t logical,
                          uint32_t phys) {
   if (logical < (uint32_t)UFS_DIRECT_BLOCKS) {
@@ -383,26 +475,68 @@ static int ufs_block_set(ufs_priv_t *priv, ufs_inode_t *inode, uint32_t logical,
     return 0;
   }
 
+  uint32_t ptrs_per_block = UFS_BLOCK_SIZE / sizeof(uint32_t);
+  uint32_t ptrs_per_sec = BLKDEV_SECTOR_SIZE / sizeof(uint32_t);
   uint32_t ind_idx = logical - (uint32_t)UFS_DIRECT_BLOCKS;
-  if (ind_idx >= UFS_BLOCK_SIZE / sizeof(uint32_t)) return -ENOSPC;
 
-  if (inode->i_ib[0] == 0) {
-    uint32_t ind_frag;
-    int rc = ufs_alloc_block(priv, &ind_frag);
+  if (ind_idx < ptrs_per_block) {
+    /* Single-indirect */
+    if (inode->i_ib[0] == 0) {
+      uint32_t ind_frag;
+      int rc = ufs_alloc_block(priv, &ind_frag);
+      if (rc < 0) return rc;
+      rc = ufs_zero_block(priv, ind_frag);
+      if (rc < 0) return rc;
+      inode->i_ib[0] = ind_frag;
+    }
+    uint32_t sec = ind_idx / ptrs_per_sec;
+    uint32_t off = ind_idx % ptrs_per_sec;
+    int rc = ufs_read_sector(priv, inode->i_ib[0] + sec);
     if (rc < 0) return rc;
-    rc = ufs_zero_block(priv, ind_frag);
-    if (rc < 0) return rc;
-    inode->i_ib[0] = ind_frag;
+    ((uint32_t *)ufs_buf)[off] = phys;
+    return ufs_write_sector(priv, inode->i_ib[0] + sec);
   }
 
-  uint32_t ptrs_per_sec = BLKDEV_SECTOR_SIZE / sizeof(uint32_t);
-  uint32_t sec = ind_idx / ptrs_per_sec;
-  uint32_t off = ind_idx % ptrs_per_sec;
+  /* Double-indirect */
+  uint32_t di_idx = ind_idx - ptrs_per_block;
+  if (di_idx >= ptrs_per_block * ptrs_per_block) return -ENOSPC;
 
-  int rc = ufs_read_sector(priv, inode->i_ib[0] + sec);
+  if (inode->i_ib[1] == 0) {
+    uint32_t ib2_frag;
+    int rc = ufs_alloc_block(priv, &ib2_frag);
+    if (rc < 0) return rc;
+    rc = ufs_zero_block(priv, ib2_frag);
+    if (rc < 0) return rc;
+    inode->i_ib[1] = ib2_frag;
+  }
+
+  uint32_t outer_idx = di_idx / ptrs_per_block;
+  uint32_t inner_idx = di_idx % ptrs_per_block;
+  uint32_t outer_sec = outer_idx / ptrs_per_sec;
+  uint32_t outer_off = outer_idx % ptrs_per_sec;
+
+  int rc = ufs_read_sector(priv, inode->i_ib[1] + outer_sec);
   if (rc < 0) return rc;
-  ((uint32_t *)ufs_buf)[off] = phys;
-  return ufs_write_sector(priv, inode->i_ib[0] + sec);
+  uint32_t inner_frag = ((uint32_t *)ufs_buf)[outer_off];
+  if (inner_frag == 0) {
+    rc = ufs_alloc_block(priv, &inner_frag);
+    if (rc < 0) return rc;
+    rc = ufs_zero_block(priv, inner_frag);
+    if (rc < 0) return rc;
+    /* ufs_alloc_block/ufs_zero_block clobber ufs_buf — re-read outer sector */
+    rc = ufs_read_sector(priv, inode->i_ib[1] + outer_sec);
+    if (rc < 0) return rc;
+    ((uint32_t *)ufs_buf)[outer_off] = inner_frag;
+    rc = ufs_write_sector(priv, inode->i_ib[1] + outer_sec);
+    if (rc < 0) return rc;
+  }
+
+  uint32_t inner_sec = inner_idx / ptrs_per_sec;
+  uint32_t inner_off = inner_idx % ptrs_per_sec;
+  rc = ufs_read_sector(priv, inner_frag + inner_sec);
+  if (rc < 0) return rc;
+  ((uint32_t *)ufs_buf)[inner_off] = phys;
+  return ufs_write_sector(priv, inner_frag + inner_sec);
 }
 
 /* ── vnode from inode ─────────────────────────────────────────────────── */
@@ -1296,10 +1430,16 @@ static int ufs_truncate(vnode_t *vn, uint32_t length) {
       ufs_free_block(priv, inode->i_ib[0]);
       inode->i_ib[0] = 0;
     }
+    if (inode->i_ib[1] != 0) {
+      ufs_free_double_indirect(priv, inode->i_ib[1], 0);
+      inode->i_ib[1] = 0;
+    }
     inode->i_size = 0;
   } else {
     /* General shrink: free blocks beyond the new length */
     uint32_t keep_blocks = (length + UFS_BLOCK_SIZE - 1) / UFS_BLOCK_SIZE;
+    uint32_t ptrs_per_block = UFS_BLOCK_SIZE / sizeof(uint32_t);
+    uint32_t sind_threshold = UFS_DIRECT_BLOCKS + ptrs_per_block;
 
     for (uint32_t i = keep_blocks; i < UFS_DIRECT_BLOCKS; i++) {
       if (inode->i_direct[i] != 0) {
@@ -1316,7 +1456,8 @@ static int ufs_truncate(vnode_t *vn, uint32_t length) {
       }
       ufs_free_block(priv, inode->i_ib[0]);
       inode->i_ib[0] = 0;
-    } else if (inode->i_ib[0] != 0 && keep_blocks > UFS_DIRECT_BLOCKS) {
+    } else if (inode->i_ib[0] != 0 && keep_blocks > UFS_DIRECT_BLOCKS &&
+               keep_blocks < sind_threshold) {
       uint32_t first_free_ind = keep_blocks - UFS_DIRECT_BLOCKS;
       uint32_t ptrs_per_sec = BLKDEV_SECTOR_SIZE / sizeof(uint32_t);
       for (uint32_t s = first_free_ind / ptrs_per_sec; s < UFS_FRAGS_PER_BLK;
@@ -1327,6 +1468,16 @@ static int ufs_truncate(vnode_t *vn, uint32_t length) {
                              ? first_free_ind % ptrs_per_sec
                              : 0;
         ufs_free_indirect_ptrs(priv, start, ptrs_per_sec);
+      }
+    }
+
+    if (inode->i_ib[1] != 0) {
+      if (keep_blocks <= sind_threshold) {
+        ufs_free_double_indirect(priv, inode->i_ib[1], 0);
+        inode->i_ib[1] = 0;
+      } else {
+        ufs_free_double_indirect(priv, inode->i_ib[1],
+                                 keep_blocks - sind_threshold);
       }
     }
     inode->i_size = length;
@@ -1400,6 +1551,10 @@ static int ufs_unlink(vnode_t *dir, const char *name) {
       }
       ufs_free_block(priv, child->i_ib[0]);
       child->i_ib[0] = 0;
+    }
+    if (child->i_ib[1] != 0) {
+      ufs_free_double_indirect(priv, child->i_ib[1], 0);
+      child->i_ib[1] = 0;
     }
 
     child->i_size = 0;
