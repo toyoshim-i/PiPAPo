@@ -13,6 +13,7 @@
 #include "kernel/core/cpu/cpu.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
+#include "kernel/core/subsys/msdos/dos_host.h"
 #include "kernel/core/syscall/syscall.h"
 
 /* Kernel-side scratch slots inside `dos_data_page` (allocated lazily in
@@ -732,6 +733,93 @@ static int dos_rename(dos_proc_t *dos, dos_regs_t *regs) {
   return 0;
 }
 
+/* AH=4Ah Resize Memory Block.
+ *
+ *   ES = block segment (caller PSP for the main block; ES-1 = MCB seg)
+ *   BX = new size in paragraphs
+ *
+ * On success: CF=0.  On failure: CF=1, AX=8 (insufficient memory),
+ * BX = max paragraphs available for this block.
+ *
+ * D-5a.2 scope: only resizes a 'Z' block (no following block in the
+ * chain).  This is the common crt0-at-startup case.  Once D-5a.3
+ * lands AH=48h/49h, blocks may have sig 'M' with following free
+ * blocks; that case will need chain-walk + coalesce. */
+static int dos_resize_block(dos_proc_t *dos, dos_regs_t *regs) {
+  (void)dos;
+
+  uint16_t es = regs->es;
+  uint16_t new_size = regs->bx;
+
+  page_id_t base_page = current->image.data.base_page;
+  uint32_t base_linear = mem_region_page_linear(base_page);
+  uint32_t run_size = current->image.data.size;
+
+  /* MCB sits one paragraph below the block segment. */
+  uint32_t mcb_flat = ((uint32_t)es - 1u) << 4;
+  if (mcb_flat < base_linear ||
+      mcb_flat + DOS_MCB_BYTES > base_linear + run_size) {
+    regs->bx = 0;
+    return -DOS_ERR_INSUFFICIENT_MEMORY;
+  }
+  uint32_t mcb_off = mcb_flat - base_linear;
+  page_id_t mcb_pg = base_page + (page_id_t)(mcb_off / PAGE_SIZE);
+  uint16_t mcb_pgo = (uint16_t)(mcb_off % PAGE_SIZE);
+
+  uint8_t hdr[5];
+  mem_region_page_read(mcb_pg, mcb_pgo, hdr, 5);
+  uint8_t sig = hdr[0];
+  uint16_t owner = (uint16_t)hdr[1] | ((uint16_t)hdr[2] << 8);
+  uint16_t cur_size = (uint16_t)hdr[3] | ((uint16_t)hdr[4] << 8);
+
+  if ((sig != DOS_MCB_SIG_Z && sig != DOS_MCB_SIG_M) || owner != es) {
+    regs->bx = 0;
+    return -DOS_ERR_INSUFFICIENT_MEMORY;
+  }
+
+  /* D-5a.2 limitation: only handle 'Z' (last-in-chain) blocks.  An 'M'
+   * block needs chain-walk + coalesce; deferred to D-5a.3. */
+  if (sig != DOS_MCB_SIG_Z) {
+    regs->bx = cur_size;
+    return -DOS_ERR_INSUFFICIENT_MEMORY;
+  }
+
+  /* Free tail extends from this block's payload start to the run end. */
+  uint32_t block_data_off = mcb_off + DOS_MCB_BYTES;
+  uint16_t avail_para = (uint16_t)((run_size - block_data_off) / 16u);
+
+  if (new_size > avail_para) {
+    regs->bx = avail_para;
+    return -DOS_ERR_INSUFFICIENT_MEMORY;
+  }
+  if (new_size == cur_size) return 0;
+
+  if (new_size < cur_size) {
+    /* Insert a new free 'Z' block immediately after the new payload.
+     * Tail size = original size minus new_size minus 1 paragraph for
+     * the new MCB header itself. */
+    uint32_t new_z_off = mcb_off + DOS_MCB_BYTES + (uint32_t)new_size * 16u;
+    uint16_t tail_size = (uint16_t)(cur_size - new_size - 1u);
+    uint8_t z[DOS_MCB_BYTES];
+    __builtin_memset(z, 0, sizeof(z));
+    z[DOS_MCB_OFF_SIG] = DOS_MCB_SIG_Z;
+    z[DOS_MCB_OFF_SIZE] = (uint8_t)(tail_size & 0xFF);
+    z[DOS_MCB_OFF_SIZE + 1] = (uint8_t)(tail_size >> 8);
+    page_id_t z_pg = base_page + (page_id_t)(new_z_off / PAGE_SIZE);
+    uint16_t z_pgo = (uint16_t)(new_z_off % PAGE_SIZE);
+    mem_region_page_write(z_pg, z_pgo, z, DOS_MCB_BYTES);
+
+    /* Original block becomes 'M' (more follows). */
+    hdr[0] = DOS_MCB_SIG_M;
+  }
+  /* Grow: bump size in place; sig stays 'Z'. */
+
+  hdr[3] = (uint8_t)(new_size & 0xFF);
+  hdr[4] = (uint8_t)(new_size >> 8);
+  mem_region_page_write(mcb_pg, mcb_pgo, hdr, 5);
+  return 0;
+}
+
 int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
   uint8_t ah = regs->ax >> 8;
   int ret = 0;
@@ -808,6 +896,9 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
       break;
     case 0x47:
       ret = dos_getcwd(dos, regs);
+      break;
+    case 0x4A:
+      ret = dos_resize_block(dos, regs);
       break;
     case 0x4C:
       ret = dos_terminate(dos, regs);

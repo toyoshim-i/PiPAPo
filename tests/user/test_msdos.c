@@ -1123,6 +1123,116 @@ static void test_exe_multiseg_ds(void)
               "output is Multi!");
 }
 
+/* -- Test 21: mcb_entry.com --- read MCB at (DS-1):0 at program entry --- */
+/*
+ * Verifies the static MCB header set up by D-5a.1: at process entry,
+ * the paragraph immediately before the PSP must hold a 'Z' (last-block)
+ * MCB whose owner equals the PSP segment and whose size is non-zero.
+ *
+ *   0x100  MOV AX, DS                ; 8C D8
+ *   0x102  DEC AX                    ; 48
+ *   0x103  MOV ES, AX                ; 8E C0
+ *   0x105  CMP byte ES:[0], 5Ah      ; 26 80 3E 00 00 5A   sig == 'Z'
+ *   0x10B  JNE fail
+ *   0x10D  MOV AX, DS                ; 8C D8
+ *   0x10F  CMP word ES:[1], AX       ; 26 39 06 01 00       owner == DS
+ *   0x114  JNE fail
+ *   0x116  MOV AX, word ES:[3]       ; 26 A1 03 00          size != 0
+ *   0x11A  TEST AX, AX
+ *   0x11C  JZ  fail
+ *   0x11E  exit 0                    ; B8 00 4C; CD 21
+ *   0x123  fail: exit 1              ; B8 01 4C; CD 21
+ */
+static const unsigned char mcb_entry_com[] = {
+    0x8C, 0xD8,                                /* MOV AX, DS         */
+    0x48,                                      /* DEC AX             */
+    0x8E, 0xC0,                                /* MOV ES, AX         */
+    0x26, 0x80, 0x3E, 0x00, 0x00, 0x5A,        /* CMP es:[0], 5Ah    */
+    0x75, 0x16,                                /* JNE fail (+0x16)   */
+    0x8C, 0xD8,                                /* MOV AX, DS         */
+    0x26, 0x39, 0x06, 0x01, 0x00,              /* CMP es:[1], AX     */
+    0x75, 0x0D,                                /* JNE fail (+0x0D)   */
+    0x26, 0xA1, 0x03, 0x00,                    /* MOV AX, es:[3]     */
+    0x85, 0xC0,                                /* TEST AX, AX        */
+    0x74, 0x05,                                /* JZ fail (+0x05)    */
+    0xB8, 0x00, 0x4C,                          /* MOV AX, 4C00h      */
+    0xCD, 0x21,                                /* INT 21h            */
+    0xB8, 0x01, 0x4C,                          /* MOV AX, 4C01h      */
+    0xCD, 0x21,                                /* INT 21h            */
+};
+
+static void test_dos_mcb_entry(void)
+{
+    WRITE_COM("/tmp/dos_mb.com", mcb_entry_com);
+    int code = run_com("/tmp/dos_mb.com");
+    UT_ASSERT_EQ(code, 0);
+}
+
+/* -- Test 22: resize.com --- AH=4Ah Resize Block ----------------------- */
+/*
+ * Three-phase test:
+ *   (1) AH=4Ah BX=FFFFh — must fail with CF=1, AX=8 (insufficient
+ *       memory).  Bridge also returns BX = max paragraphs available.
+ *   (2) AH=4Ah BX=10h — must succeed.  Block is now 16 paragraphs
+ *       (256 B); the rest of the run is converted into a free 'Z'
+ *       block immediately after.
+ *   (3) Re-read the MCB at (DS-1):0 and verify sig is now 'M'
+ *       (more-follows) and size is 0x10.
+ *
+ * In a .COM, ES = DS = PSP segment at entry, so AH=4Ah's ES contract
+ * is already satisfied without any setup.
+ *
+ *   0x100  MOV AH, 4Ah              ; B4 4A
+ *   0x102  MOV BX, FFFFh            ; BB FF FF
+ *   0x105  INT 21h                  ; CD 21
+ *   0x107  JNC fail (+0x29)         ; 73 29
+ *   0x109  CMP AX, 8                ; 3D 08 00
+ *   0x10C  JNE fail (+0x24)         ; 75 24
+ *   0x10E  MOV AH, 4Ah              ; B4 4A
+ *   0x110  MOV BX, 10h              ; BB 10 00
+ *   0x113  INT 21h                  ; CD 21
+ *   0x115  JC  fail (+0x1B)         ; 72 1B
+ *   0x117  MOV AX, DS               ; 8C D8
+ *   0x119  DEC AX                   ; 48
+ *   0x11A  MOV ES, AX               ; 8E C0
+ *   0x11C  CMP byte es:[0], 4Dh     ; 26 80 3E 00 00 4D
+ *   0x122  JNE fail (+0x0E)         ; 75 0E
+ *   0x124  CMP word es:[3], 10h     ; 26 81 3E 03 00 10 00
+ *   0x12B  JNE fail (+0x05)         ; 75 05
+ *   0x12D  exit 0
+ *   0x132  fail: exit 1
+ */
+static const unsigned char resize_com[] = {
+    0xB4, 0x4A,                                /* MOV AH, 4Ah        */
+    0xBB, 0xFF, 0xFF,                          /* MOV BX, FFFFh      */
+    0xCD, 0x21,                                /* INT 21h            */
+    0x73, 0x29,                                /* JNC fail (+0x29)   */
+    0x3D, 0x08, 0x00,                          /* CMP AX, 8          */
+    0x75, 0x24,                                /* JNE fail (+0x24)   */
+    0xB4, 0x4A,                                /* MOV AH, 4Ah        */
+    0xBB, 0x10, 0x00,                          /* MOV BX, 10h        */
+    0xCD, 0x21,                                /* INT 21h            */
+    0x72, 0x1B,                                /* JC fail (+0x1B)    */
+    0x8C, 0xD8,                                /* MOV AX, DS         */
+    0x48,                                      /* DEC AX             */
+    0x8E, 0xC0,                                /* MOV ES, AX         */
+    0x26, 0x80, 0x3E, 0x00, 0x00, 0x4D,        /* CMP es:[0], 4Dh    */
+    0x75, 0x0E,                                /* JNE fail (+0x0E)   */
+    0x26, 0x81, 0x3E, 0x03, 0x00, 0x10, 0x00,  /* CMP es:[3], 10h    */
+    0x75, 0x05,                                /* JNE fail (+0x05)   */
+    0xB8, 0x00, 0x4C,                          /* MOV AX, 4C00h      */
+    0xCD, 0x21,                                /* INT 21h            */
+    0xB8, 0x01, 0x4C,                          /* MOV AX, 4C01h      */
+    0xCD, 0x21,                                /* INT 21h            */
+};
+
+static void test_dos_resize(void)
+{
+    WRITE_COM("/tmp/dos_rz.com", resize_com);
+    int code = run_com("/tmp/dos_rz.com");
+    UT_ASSERT_EQ(code, 0);
+}
+
 /* -- main ----------------------------------------------------------------- */
 
 int main(void)
@@ -1147,6 +1257,8 @@ int main(void)
     test_exe_hello();
     test_exe_reloc_farjmp();
     test_exe_multiseg_ds();
+    test_dos_mcb_entry();
+    test_dos_resize();
 
     UT_SUMMARY("test_msdos");
 }
