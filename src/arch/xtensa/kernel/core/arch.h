@@ -23,8 +23,18 @@
  * set a flag that the timer ISR checks after calling sched_timer_tick().
  * ────────────────────────────────────────────────────────────────────────── */
 
-/* Shared flag-based yield.  See kernel/common/arch_yield_default.h. */
+/* Shared flag-based yield.  See kernel/common/arch_yield_default.h.
+ * Skip the default arch_sched_switch: Xtensa has no PendSV equivalent,
+ * so a thread-context switch needs to call xtensa_do_yield() directly
+ * rather than just setting the flag. */
+#define ARCH_HAS_SCHED_SWITCH
 #include "kernel/common/arch_yield_default.h"
+
+void xtensa_do_yield(void);
+static inline void arch_sched_switch(void) {
+  switch_pending = 0;
+  xtensa_do_yield();
+}
 
 /* ── Scheduler startup hook ────────────────────────────────────────────────
  *

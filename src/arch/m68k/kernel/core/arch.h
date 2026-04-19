@@ -21,6 +21,13 @@
  * For cooperative yield, TRAP #1 triggers the context switch directly.
  * ────────────────────────────────────────────────────────────────────────── */
 
+/* Immediate thread-context switch via TRAP #1 — m68k_trap1_handler does
+ * the context switch immediately.  arch_yield() only sets a flag, which
+ * is insufficient from thread context where no timer ISR is pending to
+ * check it. */
+#define ARCH_HAS_SCHED_SWITCH
+static inline void arch_sched_switch(void) { __asm__ volatile("trap #1"); }
+
 /* Shared flag-based yield: switch_pending is set to 1 by arch_yield() and
  * checked by timer ISR / trap-return path (per-arch assembly). */
 #include "kernel/common/arch_yield_default.h"

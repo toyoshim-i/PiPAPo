@@ -26,6 +26,17 @@ extern volatile unsigned int switch_pending;
 static inline void arch_yield(void) { switch_pending = 1; }
 #endif
 
+/* Immediate context switch from thread context.  Unlike arch_yield() —
+ * which is ISR-safe and merely sets switch_pending / pends PendSV — this
+ * must actually perform the switch on arches where the flag is not
+ * consumed until the next trap return.  Default = arch_yield(), correct
+ * for arches whose arch_yield() self-schedules (ARM PendSV).  Arches that
+ * need a direct trap-based switch (m68k/xtensa/ia16) define
+ * ARCH_HAS_SCHED_SWITCH and provide their own arch_sched_switch(). */
+#ifndef ARCH_HAS_SCHED_SWITCH
+static inline void arch_sched_switch(void) { arch_yield(); }
+#endif
+
 /* Idle-loop drain: returns 1 if a switch is pending and clears the flag.
  * The idle loop then calls sched_switch() so wakeups raised during
  * sched_idle_poll() (e.g. tty_rx_notify from a polled-input target)

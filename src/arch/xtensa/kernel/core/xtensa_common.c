@@ -11,10 +11,9 @@
 
 #include <stdint.h>
 
-#include "kernel/common/arch_yield_default.h"
 #include "kernel/common/ioregs.h"
 #include "kernel/common/mod/mod_vfs.h"
-#include "kernel/core/proc/proc.h"
+#include "kernel/core/proc/proc.h" /* arch.h: switch_pending, arch_sched_switch */
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/syscall/syscall.h"
 #include "xtensa_api.h"

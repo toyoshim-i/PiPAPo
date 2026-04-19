@@ -181,34 +181,12 @@ void sched_start(void) {
 
 /* On Xtensa, ESP-IDF's pthread library defines a non-weak sched_yield()
  * that conflicts with ours. Use a PPAP-specific scheduler API name
- * consistently on every target instead of carrying a target-local alias. */
-void sched_switch(void) {
-#if defined(__xtensa__)
-  /* Xtensa has no PendSV.  Call the cooperative switch directly.
-   * xtensa_do_yield() spills all windows, saves/restores SP via
-   * the solicited-frame pattern, and returns to the new process. */
-  switch_pending = 0;
-  extern void xtensa_do_yield(void);
-  xtensa_do_yield();
-#elif defined(__m68k__)
-  /* TRAP #1 enters m68k_trap1_handler which does the context switch
-   * immediately.  arch_yield() only sets a flag — insufficient from
-   * thread context where no timer ISR is pending to check it. */
-  __asm__ volatile("trap #1");
-#elif defined(__ia16__)
-  /* ia16 cooperative yield: saves current kernel SP in the shared
-   * save/restore format (matching i16_timer_isr / i16_syscall_isr)
-   * and returns into the next runnable process.  Needed because the
-   * default arch_yield() only sets switch_pending; on ia16 the actual
-   * context switch happens from the trap return path or the timer
-   * ISR, neither of which runs on a kernel-thread yield path. */
-  switch_pending = 0;
-  extern void i16_sched_yield(void);
-  i16_sched_yield();
-#else
-  arch_yield(); /* pend PendSV; fires at next instruction boundary */
-#endif
-}
+ * consistently on every target instead of carrying a target-local alias.
+ *
+ * arch_sched_switch() is ARM's arch_yield() (PendSV self-pend) by default,
+ * and a direct trap-based switch on m68k/xtensa/ia16 whose arch_yield()
+ * only sets a flag that nothing would consume from thread context. */
+void sched_switch(void) { arch_sched_switch(); }
 
 /* ── Channel-based wakeup ────────────────────────────────────────────────────
  */
@@ -236,11 +214,7 @@ void sched_wakeup(void *channel) {
 void sched_sleep(uint32_t ticks) {
   current->sleep_until = tick_count + ticks;
   current->state = PROC_SLEEPING;
-#if defined(__m68k__)
-  __asm__ volatile("trap #1"); /* immediate context switch */
-#else
-  arch_yield(); /* yield CPU; PendSV fires after caller returns */
-#endif
+  arch_sched_switch();
   /* Execution resumes here after sched_tick() marks us RUNNABLE again
    * and the context switch restores our context. */
 }
