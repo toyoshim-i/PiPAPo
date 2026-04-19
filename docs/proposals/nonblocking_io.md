@@ -307,7 +307,10 @@ Any future BIOS call sites follow the same pattern.
 - Phase A + E landed: VFS read/write loops across `sched_switch` and
   returns `-EAGAIN`/`-EINTR`; `push_line` retries on `-EINTR`.  Fixes
   the zork1 single-key-input bug on pcxt.
-- Phases F, G, H: pending.
+- Phase F landed: DOS bridge retries on `-EINTR` in `dos_io_getc`,
+  yields on `-EAGAIN` in `dos_direct_console_io`, yields in
+  `dos_check_input_status`.
+- Phases G, H: pending.
 
 ## Open questions
 
