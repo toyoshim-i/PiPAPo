@@ -383,6 +383,14 @@ static int bios_con_getc(void) {
   if (bios_esc_pos < bios_esc_len)
     return (unsigned char)bios_esc_buf[bios_esc_pos++];
 
+  /* BIOS INT 16h re-enables interrupts internally while reading the
+   * keyboard controller.  With kernel preemption enabled, masking IRQ 0
+   * at the PIC keeps the timer pending so we don't get context-switched
+   * away mid-BIOS-call and risk another process re-entering INT 16h on
+   * shared BIOS state.  Same pattern as bios_blk.c's INT 13h wrapper. */
+  uint8_t pic_mask = inb(PIC1_DATA);
+  outb(PIC1_DATA, pic_mask | 0x01u);
+
   /* BIOS INT 16h AH=01h: check if keystroke available (non-blocking) */
   unsigned short flags;
   unsigned short ax;
@@ -399,7 +407,10 @@ static int bios_con_getc(void) {
       : "=r"(flags), "=r"(ax)
       :
       : "ax", "cc", "memory");
-  if (flags & 0x0040u) return -1; /* ZF set = no key */
+  if (flags & 0x0040u) {
+    outb(PIC1_DATA, pic_mask);
+    return -1; /* ZF set = no key */
+  }
 
   /* BIOS INT 16h AH=00h: read the keystroke (consume it) */
   __asm__ volatile(
@@ -413,6 +424,8 @@ static int bios_con_getc(void) {
       : "=r"(ax)
       :
       : "ax", "cc", "memory");
+
+  outb(PIC1_DATA, pic_mask);
 
   unsigned char al = (unsigned char)(ax & 0xFFu);
   unsigned char ah = (unsigned char)(ax >> 8);

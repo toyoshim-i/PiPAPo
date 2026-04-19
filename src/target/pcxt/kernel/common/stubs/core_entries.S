@@ -20,8 +20,22 @@
   .section .text
 
   .section .bss
-saved_cs: .word 0
-saved_ip: .word 0
+  /* Static far-return save slots used by BOTH the core entry stubs
+   * (in this file) and the VFS entry stubs (in vfs_entries.S).  They
+   * live in core's .bss so core's switch.S can reach them via ordinary
+   * symbol addressing when it needs to swap them against per-PCB save
+   * fields on a cooperative yield or timer preemption (see
+   * i16_sched_yield and i16_timer_isr).  VFS's link pulls the addresses
+   * out of core_exports.ld, so `%ss:vfs_saved_cs` in VFS asm resolves
+   * to this same memory. */
+  .globl saved_cs
+  .globl saved_ip
+  .globl vfs_saved_cs
+  .globl vfs_saved_ip
+saved_cs:     .word 0
+saved_ip:     .word 0
+vfs_saved_cs: .word 0
+vfs_saved_ip: .word 0
 
   .section .text
 

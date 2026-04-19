@@ -139,6 +139,21 @@ i16_timer_isr:
   movw  %ss:current_core, %bx
   movw  %sp, (%bx)
 
+  /* Save the core/VFS entry-stub save globals into the outgoing PCB.
+   * The entry stubs (core_entries.S / vfs_entries.S) store the
+   * caller's far-return CS:IP in these globals between stub entry
+   * and the matching lret.  Shadowing them per-PCB on every switch
+   * makes the stubs reentrant across cooperative yield and timer
+   * preemption — stubs themselves are unchanged. */
+  movw  %ss:saved_cs,     %ax
+  movw  %ax, 10(%bx)           /* PCB.core_stub_saved_cs (offset 10) */
+  movw  %ss:saved_ip,     %ax
+  movw  %ax, 12(%bx)           /* PCB.core_stub_saved_ip (offset 12) */
+  movw  %ss:vfs_saved_cs, %ax
+  movw  %ax, 14(%bx)           /* PCB.vfs_stub_saved_cs  (offset 14) */
+  movw  %ss:vfs_saved_ip, %ax
+  movw  %ax, 16(%bx)           /* PCB.vfs_stub_saved_ip  (offset 16) */
+
   /* Pick next process */
   call  sched_next
 
@@ -148,6 +163,16 @@ i16_timer_isr:
   /* Load new process's kernel SP */
   movw  %ax, %bx
   movw  (%bx), %sp
+
+  /* Restore the new process's shadow copies of the stub-save globals. */
+  movw  10(%bx), %ax
+  movw  %ax, %ss:saved_cs
+  movw  12(%bx), %ax
+  movw  %ax, %ss:saved_ip
+  movw  14(%bx), %ax
+  movw  %ax, %ss:vfs_saved_cs
+  movw  16(%bx), %ax
+  movw  %ax, %ss:vfs_saved_ip
 
   /* Update i16_current_ksp from new PCB.
    * kernel_stack_top is at PCB offset 4 (sp is uint32_t = 4 bytes). */
@@ -188,3 +213,109 @@ i16_timer_isr:
   popw  %ax
 
   iret
+
+/* -----------------------------------------------------------------------------
+ * i16_sched_yield — cooperative context switch from kernel thread context.
+ *
+ * Called as a plain C function.  Saves the current kernel state in the same
+ * frame layout as i16_timer_isr / i16_syscall_isr (6-byte IRET frame + 18-byte
+ * GP save + 4-byte user_SS/SP slot + 34-byte vfork reserve) so the saved SP
+ * can be restored by the shared tail at i16_trap_after_switch without a
+ * per-frame format tag.
+ *
+ * No timer-ISR involvement: this is a synchronous yield, so we build the IRET
+ * frame by hand (pushfw + pushw %cs + pushw <return_ip>) instead of relying on
+ * INT to push it.  Interrupts are disabled across the SP save / sched_next /
+ * SP load critical section; IRET in the restore tail reloads FLAGS (including
+ * IF) from the saved frame, so the caller's IF state is preserved.
+ *
+ * cdecl caller expectations:
+ *   - BP, SI, DI, BX, DS, ES preserved (captured in the GP save frame).
+ *   - AX, CX, DX are caller-saved; we don't promise to preserve them.
+ * ---------------------------------------------------------------------------- */
+  .global i16_sched_yield
+i16_sched_yield:
+  /* The caller pushed our return IP.  Lift it out so the fake IRET frame
+   * we build below has it in the right slot. */
+  popw  %ax                 /* AX = caller return IP */
+
+  /* Build the fake IRET frame: FLAGS, CS, IP.  pushfw snapshots the caller's
+   * IF state before we disable interrupts. */
+  pushfw                    /* FLAGS (caller's) */
+  pushw %cs                 /* CS  = kernel CS */
+  pushw %ax                 /* IP  = caller return IP */
+
+  /* Enter critical section: no timer preemption while we swap PCB.sp. */
+  cli
+
+  /* Push GP registers in the same order as timer/syscall ISR.
+   * The saved AX value is our caller's return IP — harmless, AX is
+   * caller-saved in cdecl. */
+  pushw %ax
+  pushw %bx
+  pushw %cx
+  pushw %dx
+  pushw %si
+  pushw %di
+  pushw %bp
+  pushw %ds
+  pushw %es
+
+  /* user_SS = 0 (kernel), user_SP = SP right now (top of GP frame).
+   * For a kernel-originated yield, the restore tail's "pop GP, IRET"
+   * runs against this same kernel stack — the user_SP slot just tells
+   * it where the GP frame lives. */
+  movw  %sp, %bp
+  xorw  %ax, %ax
+  pushw %ax                 /* user_SS */
+  pushw %bp                 /* user_SP */
+
+  /* 34-byte vfork-save reserve — matches the other save paths. */
+  subw  $34, %sp
+
+  /* Kernel DS/ES for sched_next call (we pushed the caller's above). */
+  xorw  %ax, %ax
+  movw  %ax, %ds
+  movw  %ax, %es
+
+  /* Save our kernel SP into the current PCB (offset 0). */
+  movw  %ss:current_core, %bx
+  movw  %sp, (%bx)
+
+  /* Shadow the four entry-stub globals into the outgoing PCB — see
+   * the matching block in i16_timer_isr for the full rationale. */
+  movw  %ss:saved_cs,     %ax
+  movw  %ax, 10(%bx)
+  movw  %ss:saved_ip,     %ax
+  movw  %ax, 12(%bx)
+  movw  %ss:vfs_saved_cs, %ax
+  movw  %ax, 14(%bx)
+  movw  %ss:vfs_saved_ip, %ax
+  movw  %ax, 16(%bx)
+
+  /* Pick next runnable process. */
+  call  sched_next
+
+  /* current_core = next PCB; load its saved kernel SP and kstack_top. */
+  movw  %ax, %ss:current_core
+  movw  %ax, %bx
+  movw  (%bx), %sp
+
+  /* Restore the incoming PCB's stub-save shadow into the globals. */
+  movw  10(%bx), %ax
+  movw  %ax, %ss:saved_cs
+  movw  12(%bx), %ax
+  movw  %ax, %ss:saved_ip
+  movw  14(%bx), %ax
+  movw  %ax, %ss:vfs_saved_cs
+  movw  16(%bx), %ax
+  movw  %ax, %ss:vfs_saved_ip
+
+  movw  4(%bx), %ax
+  movw  %ax, %ss:i16_current_ksp
+
+  /* Hand off to the shared restore tail.  signal_check on the way
+   * out is gated on user_SS != 0, so kernel-mode frames saved by
+   * this yield path do not get a user-mode signal delivery frame
+   * planted onto the kernel stack. */
+  jmp   i16_trap_after_switch

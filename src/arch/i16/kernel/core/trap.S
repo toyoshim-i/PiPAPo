@@ -32,7 +32,7 @@
   .code16
   .text
 
-  .equ PCB_SVC_NEEDS_RESTART_OFFSET, 516
+  .equ PCB_SVC_NEEDS_RESTART_OFFSET, 524
 
   .global i16_syscall_isr
   .global i16_trap_after_switch
@@ -229,9 +229,17 @@ i16_trap_after_switch:
    * handler is pending, plants a new 24B GP+IRET frame and a 6B trailer
    * on the user stack and returns the new user_SP.  Otherwise it returns
    * the unchanged user_SP.  The [user_SP, user_SS] slot is at offsets
-   * 34/36 from the current %sp (the 34B vfork-save slot reserved at
-   * trap entry sits below it). */
+   * 34/36 from the current %sp.
+   *
+   * Skip entirely if user_SS == 0: frames saved by i16_sched_yield from
+   * kernel context have user_SS=0 and a "user_SP" that points into
+   * kernel stack.  Delivering a signal there would corrupt the kernel
+   * frame; the signal stays pending and is delivered on the next real
+   * user-mode trap return. */
   movw  %sp, %bp
+  movw  36(%bp), %ax
+  testw %ax, %ax
+  jz    .Lrestore
   pushw 36(%bp)
   pushw 34(%bp)
   call  signal_check

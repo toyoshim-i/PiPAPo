@@ -33,10 +33,34 @@ _Static_assert(
     "PCB_SP_OFFSET does not match offsetof(pcb_t, sp) — update proc.h");
 
 #if defined(__ia16__)
-#define PCB_SVC_NEEDS_RESTART_OFFSET 516u
+/* Shifted by 8 bytes when the 4 stub-save fields below were inserted at
+ * offsets 10-16.  Must match trap.S. */
+#define PCB_SVC_NEEDS_RESTART_OFFSET 524u
 _Static_assert(offsetof(pcb_t, svc_needs_restart) ==
                    PCB_SVC_NEEDS_RESTART_OFFSET,
                "PCB_SVC_NEEDS_RESTART_OFFSET must match trap.S");
+
+/* Offsets for the per-process shadow slots that i16_sched_yield /
+ * i16_timer_isr swap against the static `saved_cs / saved_ip /
+ * vfs_saved_cs / vfs_saved_ip` globals in core_entries.S.  Stored as
+ * a contiguous quad of uint16_t right after exec_user_sp, so a single
+ * short mov with a fixed displacement works from switch.S. */
+#define PCB_CORE_STUB_SAVED_CS_OFFSET 10u
+#define PCB_CORE_STUB_SAVED_IP_OFFSET 12u
+#define PCB_VFS_STUB_SAVED_CS_OFFSET 14u
+#define PCB_VFS_STUB_SAVED_IP_OFFSET 16u
+_Static_assert(offsetof(pcb_t, core_stub_saved_cs) ==
+                   PCB_CORE_STUB_SAVED_CS_OFFSET,
+               "PCB_CORE_STUB_SAVED_CS_OFFSET must match switch.S");
+_Static_assert(offsetof(pcb_t, core_stub_saved_ip) ==
+                   PCB_CORE_STUB_SAVED_IP_OFFSET,
+               "PCB_CORE_STUB_SAVED_IP_OFFSET must match switch.S");
+_Static_assert(offsetof(pcb_t, vfs_stub_saved_cs) ==
+                   PCB_VFS_STUB_SAVED_CS_OFFSET,
+               "PCB_VFS_STUB_SAVED_CS_OFFSET must match switch.S");
+_Static_assert(offsetof(pcb_t, vfs_stub_saved_ip) ==
+                   PCB_VFS_STUB_SAVED_IP_OFFSET,
+               "PCB_VFS_STUB_SAVED_IP_OFFSET must match switch.S");
 #endif
 
 /* ── Globals ─────────────────────────────────────────────────────────────── */

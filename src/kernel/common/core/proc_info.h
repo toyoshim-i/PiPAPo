@@ -116,6 +116,18 @@ typedef struct pcb {
   uint16_t kernel_stack_top; /* top of this process's 2 KB kernel stack   */
   uint16_t exec_user_ss;     /* new user SS after execve (set by loader)  */
   uint16_t exec_user_sp;     /* new user SP after execve (set by loader)  */
+  /* Per-process shadow of the core↔VFS entry-stub globals (saved_cs,
+   * saved_ip, vfs_saved_cs, vfs_saved_ip in core's .bss).  On every
+   * context switch i16_sched_yield / i16_timer_isr copy the current
+   * globals into the outgoing PCB's slots and reload them from the
+   * incoming PCB's slots.  Stubs themselves still use the globals —
+   * they're effectively per-process through this swap.  Offsets are
+   * asserted in proc.c and must match the mov-insn displacements
+   * used by switch.S. */
+  uint16_t core_stub_saved_cs;
+  uint16_t core_stub_saved_ip;
+  uint16_t vfs_stub_saved_cs;
+  uint16_t vfs_stub_saved_ip;
 #else
 #error "Unsupported architecture — define PCB register save area"
 #endif

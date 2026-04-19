@@ -325,6 +325,16 @@ void sched_switch(void) {
    * immediately.  arch_yield() only sets a flag — insufficient from
    * thread context where no timer ISR is pending to check it. */
   __asm__ volatile("trap #1");
+#elif defined(__ia16__)
+  /* ia16 cooperative yield: saves current kernel SP in the shared
+   * save/restore format (matching i16_timer_isr / i16_syscall_isr)
+   * and returns into the next runnable process.  Needed because the
+   * default arch_yield() only sets switch_pending; on ia16 the actual
+   * context switch happens from the trap return path or the timer
+   * ISR, neither of which runs on a kernel-thread yield path. */
+  switch_pending = 0;
+  extern void i16_sched_yield(void);
+  i16_sched_yield();
 #else
   arch_yield(); /* pend PendSV; fires at next instruction boundary */
 #endif

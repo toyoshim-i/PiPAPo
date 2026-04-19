@@ -18,9 +18,11 @@
 
   .code16
 
-  .section .bss
-vfs_saved_cs: .word 0
-vfs_saved_ip: .word 0
+  /* vfs_saved_cs / vfs_saved_ip live in core's .bss — see
+   * core_entries.S.  VFS's link resolves them via core_exports.ld,
+   * so the `%ss:vfs_saved_*` references below hit the same memory
+   * that core's switch.S swaps against the current PCB's stub-save
+   * fields on every context switch. */
 
   .section .text
 
