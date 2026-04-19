@@ -8,7 +8,7 @@
 #   Sectors 1-8       stage2 UFS loader  (4 KB)
 #   Sectors 9+        UFS partition (contains /boot/kernel)
 #
-# HDD layout (16 MB, 32768 × 512-byte sectors):
+# HDD layout (64 MB, 131072 × 512-byte sectors):
 #   Sector 0          MBR boot sector (512 B, partition table)
 #   Sectors 1-8       stage2 UFS loader  (4 KB, same binary)
 #   Sectors 9+        UFS partition (type 0xA9, same content)
@@ -25,7 +25,7 @@
 #
 # Output:
 #   build/pcxt/ppap_pcxt.img       (720 KB floppy image)
-#   build/pcxt/ppap_pcxt_hdd.img   (16 MB HDD image)
+#   build/pcxt/ppap_pcxt_hdd.img   (64 MB HDD image)
 # =============================================================================
 
 set -euo pipefail
@@ -56,8 +56,8 @@ FLOPPY_SECTORS=1440  # 720 KB (3.5" DD, 80 cyl × 2 heads × 9 spt)
 FLOPPY_INODES="${PPAP_PCXT_FLOPPY_INODES:-256}"
 
 # HDD parameters
-HDD_SIZE_MB=16
-HDD_SECTORS=$(( HDD_SIZE_MB * 1024 * 1024 / SECTOR_SIZE ))  # 32768
+HDD_SIZE_MB=64
+HDD_SECTORS=$(( HDD_SIZE_MB * 1024 * 1024 / SECTOR_SIZE ))  # 131072
 HDD_INODES="${PPAP_PCXT_HDD_INODES:-1024}"
 
 # ── Verify inputs ──────────────────────────────────────────────────────────
