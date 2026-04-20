@@ -76,7 +76,6 @@ static int r_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
                   const cpu_ops_t *cpu_ops, void *cpu_state,
                   const char *const *argv, const char *const *envp,
                   uint32_t flags) {
-  (void)envp;
   (void)flags;
   (void)cpu_ops;
   (void)cpu_state;
@@ -243,7 +242,25 @@ static int r_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
     memset(image_dst + file_size, 0, total_bytes - X68K_PMB_SIZE - file_size);
 
   const char *path = (argv && argv[0]) ? argv[0] : "";
-  human68k_setup_pmb(base, total_bytes, file_size, path);
+
+  /* Build env block (separate page, tracked for exit cleanup). */
+  page_id_t env_page = PAGE_ID_INVALID;
+  uint32_t env_addr = 0xFFFFFFFFu;
+  if (human68k_build_env(envp, &env_page, &env_addr) < 0) {
+    mem_region_free(&image_region);
+    mem_region_free(&stack_region);
+    p->stack_page_id = PAGE_ID_INVALID;
+    p->image.stack = (proc_image_segment_t){0};
+    return -(int)ENOMEM;
+  }
+  if (env_page != PAGE_ID_INVALID) {
+    if (proc_track_page(p, USER_PAGES_MAX - 1, env_page) < 0) {
+      mem_region_page_free(env_page);
+      env_addr = 0xFFFFFFFFu;
+    }
+  }
+
+  human68k_setup_pmb(base, total_bytes, file_size, path, env_addr);
 
   /* Set up entry point (no relocation needed) */
   uint32_t entry = (uint32_t)(uintptr_t)image_dst;
@@ -259,7 +276,7 @@ static int r_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
 
   human68k_setup_registers(p->sp, (uint32_t)(uintptr_t)base,
                            (uint32_t)(uintptr_t)(base + total_bytes),
-                           (uint32_t)(uintptr_t)(base + 0x6C),
+                           (uint32_t)(uintptr_t)(base + 0x6C), env_addr,
                            (uint32_t)(uintptr_t)image_dst);
 
   p->subsys = SUBSYS_HUMAN68K;
@@ -268,7 +285,6 @@ static int r_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
     if (ops && ops->on_init) ops->on_init(p);
   }
 
-  (void)argv;
   return 0;
 #endif
 }

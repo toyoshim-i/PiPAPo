@@ -12,9 +12,46 @@
 
 #include <string.h>
 
+#include "common/errno.h"
 #include "kernel/core/endian.h"
+#include "kernel/core/mm/mem_region.h"
 
-/* ── Memory layout utilities ────────────────────────────────────────────── */
+/* ── Env block ─────────────────────────────────────────────────────────── */
+
+int human68k_build_env(const char *const *envp, page_id_t *out_env_page,
+                       uint32_t *out_env_addr) {
+  if (!envp || !envp[0]) {
+    *out_env_page = PAGE_ID_INVALID;
+    *out_env_addr = 0xFFFFFFFFu;
+    return 0;
+  }
+
+  page_id_t pg = mem_region_page_alloc();
+  if (pg == PAGE_ID_INVALID) return -(int)ENOMEM;
+  uint8_t *p = (uint8_t *)mem_region_page_to_ptr(pg);
+  memset(p, 0, PAGE_SIZE);
+
+  /* Payload starts after the 4-byte BE size header.  Fit up to
+   * PAGE_SIZE - 4 bytes of entries + terminator. */
+  const uint32_t payload_max = PAGE_SIZE - 4u;
+  uint8_t *dst = p + 4;
+  uint32_t used = 0;
+
+  for (int i = 0; envp[i]; i++) {
+    size_t len = strlen(envp[i]) + 1u;
+    if (used + len + 1u > payload_max) break; /* reserve 1 B for terminator */
+    memcpy(dst + used, envp[i], len);
+    used += (uint32_t)len;
+  }
+  /* Final '\0' terminator — already zero from memset; count it. */
+  used += 1u;
+
+  be32_store(p, used);
+
+  *out_env_page = pg;
+  *out_env_addr = (uint32_t)(uintptr_t)p;
+  return 0;
+}
 
 /* ── PMB setup ─────────────────────────────────────────────────────────── */
 
@@ -31,7 +68,8 @@
  *   path        — full path to executable (for copying to path field)
  */
 void human68k_setup_pmb(uint8_t *base, uint32_t total_bytes,
-                        uint32_t image_size, const char *path) {
+                        uint32_t image_size, const char *path,
+                        uint32_t env_addr) {
   /* PMB offset: image starts at base+0x100 */
   uint32_t base_u = (uint32_t)(uintptr_t)base;
   uint32_t end_u = base_u + total_bytes;
@@ -45,8 +83,9 @@ void human68k_setup_pmb(uint8_t *base, uint32_t total_bytes,
   be32_store(base + 0x08, end_u);  /* block end + 1 */
   be32_store(base + 0x0C, 0);      /* next = 0 (last) */
 
-  /* PMB fields (0x10–0xFF) */
-  be32_store(base + 0x10, 0xFFFFFFFF); /* env = -1 (none) */
+  /* PMB fields (0x10–0xFF).  env_addr is 0xFFFFFFFF when no parent
+   * envp was supplied, matching Human68k's "no environment" marker. */
+  be32_store(base + 0x10, env_addr);
   /* 0x14: exit handler — filled when F-line bridge is ready */
   be32_store(base + 0x20, base_u + 0x6C); /* cmdline (empty LASCIIZ) */
   /* 0x24: file handle bitmap — stdin/stdout/stderr open */
@@ -94,7 +133,7 @@ void human68k_setup_pmb(uint8_t *base, uint32_t total_bytes,
  */
 void human68k_setup_registers(uint32_t sp, uint32_t pmb_base,
                               uint32_t block_end, uint32_t cmdline_ptr,
-                              uint32_t entry_ptr) {
+                              uint32_t env_addr, uint32_t entry_ptr) {
   /* Software frame (low → high from sp):
    *   [0..7]  d0–d7    [8..14] a0–a6    then SR(2)+PC(4)
    */
@@ -102,6 +141,6 @@ void human68k_setup_registers(uint32_t sp, uint32_t pmb_base,
   sw[8] = pmb_base;     /* a0 = PMB */
   sw[9] = block_end;    /* a1 = end + 1 */
   sw[10] = cmdline_ptr; /* a2 = cmdline */
-  sw[11] = 0xFFFFFFFF;  /* a3 = env (-1) */
+  sw[11] = env_addr;    /* a3 = env (0xFFFFFFFF when none) */
   sw[12] = entry_ptr;   /* a4 = entry point (text base or image start) */
 }
