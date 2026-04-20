@@ -68,6 +68,29 @@ Each phase lands as its own commit.  Early phases are ABI-only and
 leave runtime behaviour unchanged (envp propagated but discarded by
 loaders); later phases consume it.
 
+### Status (2026-04-21)
+
+All phases landed.  End-to-end: parent (push or test_env) calls
+`execve(path, argv, envp)` → kernel copies envp into `execve_scratch_t`
+→ loaders place envp on the initial user stack (POSIX layout, or
+convert to DOS env MCB / Human68k env block for personality guests)
+→ uclib crt0 sets `environ` → user code reads via `uc_getenv()`.
+
+| Phase | Commit | Summary |
+|---|---|---|
+| E-1 | `2e466d0` | `sys_execve` / `exec_execve` / `loader.load` gain `envp`; all arches pass-through |
+| E-2 | `8f59df8` | ELF loader emits envp on the initial user stack |
+| E-3 | `6024736` | ELF16 loader emits envp on the initial user stack |
+| E-4 | `5ae46f7` | `test_env.c` verifies env inheritance end-to-end |
+| E-5a | `a22f855` | MS-DOS env MCB populated from parent envp |
+| E-5b | `52149ac` | Human68k PMB[0x10] / A3 populated from parent envp |
+| E-6 | `814c7a4` | uclib `environ` / `uc_getenv`; every crt0 initialises it |
+| E-7 | this commit | expanded test_env sub-tests + syscall.md ABI note |
+
+Out of scope (deferred): `setenv` / `putenv` (need a growable env
+pool), `init` env seeding from `/etc/environment`, DOS extensions
+for Human68k program-path trailer.
+
 ### Phase E-1: Syscall ABI
 
 - `sys_execve` grows `envp_ptr` (user pointer to a NULL-terminated

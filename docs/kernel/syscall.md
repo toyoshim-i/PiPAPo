@@ -267,14 +267,28 @@ Replace the current process image with a new ELF binary.
 - Unblocks the vfork parent if applicable.
 - On success, never returns — the new program begins execution.
 
-`envp` is accepted but ignored (PPAP has no environment variable support).
+`envp` is a NULL-terminated array of `NAME=VALUE\0` strings.  Pass
+`NULL` for "no environment" — the child's `environ` is empty.  The
+kernel copies the strings into a per-process scratch buffer during
+`sys_execve`, so the parent's envp memory can be freed afterwards.
+The ELF and ELF16 loaders place envp on the child's initial user
+stack (standard POSIX layout:
+`argc, argv[0..], NULL, envp[0..], NULL, auxv`); each arch's crt0
+sets the uclib `environ` global and user code reads it via
+`uc_getenv()`.  See docs/proposals/env_inheritance.md.
+
+The MS-DOS and Human68k personality subsystems convert envp to their
+native formats (DOS env MCB; Human68k env block at `PMB[0x10]`).
+CP/M and SOS have no env concept and ignore envp.
 
 **vs POSIX/Linux:**
 - Only static PIE ELF binaries are supported (no dynamic linker, no `#!`
   scripts).
-- Environment variables are not passed to the new process.
-- `argv` is copied to user stack but the total size is limited by the 4 KB
-  stack page.
+- argv / envp byte budgets are tight on ia16 (see
+  `EXEC_ARGV_BYTES_MAX` / `EXEC_ENVP_BYTES_MAX` in config.h — pcxt
+  caps at 128 / 256 B).  Exceeding the budget returns `-E2BIG`.
+- Entry counts are capped at `EXEC_ARGV_MAX` (64) / `EXEC_ENVP_MAX`
+  (32) from exec.h.
 
 ---
 
