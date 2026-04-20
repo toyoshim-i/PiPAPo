@@ -1,5 +1,7 @@
 #include "pdb_util.h"
 
+#include "common/errno.h"
+
 #define PDB_SCRIPT_CMD_MAX 32
 #define PDB_SCRIPT_LINE_MAX 128
 #define PDB_SCRIPT_BUF_MAX 2048
@@ -24,6 +26,7 @@ int readline(char *buf, int size) {
   for (;;) {
     char c = 0;
     ssize_t rc = read(0, &c, 1);
+    if (rc < 0 && -rc == EINTR) continue;
     if (rc <= 0) return -1;
     if (c == '\r') continue;
     if (c == '\n') break;
@@ -100,6 +103,7 @@ int load_script_file(const char *path, char **script_cmds, int *script_count,
   for (;;) {
     char c = 0;
     int n = read(fd, &c, 1);
+    if (n < 0 && -n == EINTR) continue;
     if (n < 0) {
       put_err("pdb: failed to read script file: ");
       put_err(path);

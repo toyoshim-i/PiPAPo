@@ -7,6 +7,8 @@
 
 #include "pi.h"
 
+#include "common/errno.h"
+
 /* ── Raw mode ──────────────────────────────────────────────────────────── */
 
 static struct termios orig_termios;
@@ -56,10 +58,12 @@ void term_get_winsize(int *rows, int *cols) {
 
 static int read_byte(void) {
   unsigned char c;
-  ssize_t n = read(0, &c, 1);
-  if (n <= 0)
+  for (;;) {
+    ssize_t n = read(0, &c, 1);
+    if (n == 1) return c;
+    if (n < 0 && -n == EINTR) continue;
     return -1;
-  return c;
+  }
 }
 
 /* Try to read one more byte with a very short implicit timeout.

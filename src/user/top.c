@@ -10,6 +10,7 @@
  */
 
 #include "lib/uclib.h"
+#include "common/errno.h"
 #include "common/termios.h"
 
 /* ANSI color palette (htop-inspired) */
@@ -177,7 +178,10 @@ static void parse_cpu_stat(const char *buf, uint32_t *user, uint32_t *sys,
 static int read_file(const char *path, char *buf, int bufsz) {
   int fd = open(path, O_RDONLY, 0);
   if (fd < 0) return -1;
-  ssize_t n = read(fd, buf, (size_t)(bufsz - 1));
+  ssize_t n;
+  do {
+    n = read(fd, buf, (size_t)(bufsz - 1));
+  } while (n < 0 && -n == EINTR);
   close(fd);
   if (n <= 0) return -1;
   buf[n] = '\0';
@@ -515,7 +519,11 @@ usage:
       int r = ppoll(&pfd, 1, &ts, (void *)0, 0);
       if (r > 0) {
         char ch;
-        if (read(0, &ch, 1) == 1) {
+        ssize_t kn;
+        do {
+          kn = read(0, &ch, 1);
+        } while (kn < 0 && -kn == EINTR);
+        if (kn == 1) {
           if (ch == 'q' || ch == 'Q') break;
           if (ch == 'c' || ch == 'C' || ch == 'P') mode = SORT_CPU;
           if (ch == 'm' || ch == 'M') mode = SORT_MEM;

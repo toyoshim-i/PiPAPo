@@ -16,6 +16,8 @@
 
 #include "syscall.h"
 
+#include "common/errno.h"
+
 #define O_RDWR 2
 #define TIOCSCTTY 0x540Eu
 
@@ -88,6 +90,7 @@ int main(int argc, char **argv) {
     char c;
     for (;;) {
       ssize_t n = read(0, &c, 1);
+      if (n < 0 && -n == EINTR) continue;
       if (n <= 0) _exit(1);
       if (c == '\n' || c == '\r') break;
     }
