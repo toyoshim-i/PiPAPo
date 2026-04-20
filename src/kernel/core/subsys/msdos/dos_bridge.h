@@ -14,6 +14,11 @@
 #define DOS_MAX_HANDLES 20
 #define DOS_PATH_MAX 64
 
+/* Per-process cap on hooked IVT vectors (AH=25h).  Real programs hook
+ * well under a dozen; 4 keeps dos_proc_t small enough to fit PROC_MAX
+ * copies under DOS_IO_SCRATCH_OFF. */
+#define DOS_IVT_SAVE_MAX 4
+
 /* DOS error codes (AX on error, returned with CF=1). */
 #define DOS_ERR_INVALID_FUNCTION 1
 #define DOS_ERR_FILE_NOT_FOUND 2
@@ -45,6 +50,14 @@ typedef struct dos_proc {
   char exec_dir[DOS_PATH_MAX];
   char cwd_c[DOS_PATH_MAX];
   char cwd_z[DOS_PATH_MAX];
+
+  /* Saved real-IVT entries for per-process restoration at exit.  On
+   * first AH=25h write of each non-protected vector, the old IP:CS is
+   * captured here; msdos_on_exit walks this list and writes them back. */
+  uint8_t ivt_saved_vec[DOS_IVT_SAVE_MAX];
+  uint16_t ivt_saved_ip[DOS_IVT_SAVE_MAX];
+  uint16_t ivt_saved_cs[DOS_IVT_SAVE_MAX];
+  uint8_t ivt_saved_count;
 } dos_proc_t;
 
 /* Layout matches the GP+IRET frame on the user stack at user_SP when

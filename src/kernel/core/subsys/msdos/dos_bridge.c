@@ -21,8 +21,8 @@
  * msdos_on_init).  Used for staging paths and single-byte I/O without
  * borrowing user-segment memory.  Offsets sit comfortably above the
  * dos_proc_t array — see the static_assert below. */
-#define DOS_IO_SCRATCH_OFF 0x800u   /* 1-byte staging for fd 0/1 byte I/O   */
-#define DOS_PATH_SCRATCH_OFF 0x810u /* 128-byte staging for resolved paths */
+#define DOS_IO_SCRATCH_OFF 0xA00u   /* 1-byte staging for fd 0/1 byte I/O   */
+#define DOS_PATH_SCRATCH_OFF 0xA10u /* 128-byte staging for resolved paths */
 #define DOS_PATH_SCRATCH_MAX 128u
 #define DOS_PATH_SCRATCH2_OFF \
   (DOS_PATH_SCRATCH_OFF + DOS_PATH_SCRATCH_MAX) /* second slot for RENAME */
@@ -85,7 +85,22 @@ static void msdos_on_init(struct pcb *p) {
   p->subsys_data = (void *)(uintptr_t)(p - proc_table); /* Store slot index */
 }
 
-static void msdos_on_exit(struct pcb *p) { p->subsys_data = NULL; }
+/* Restore any real-IVT vectors that AH=25h overwrote while this process
+ * was running.  See dos_set_int_vector() for the capture side. */
+static void msdos_on_exit(struct pcb *p) {
+  if (dos_data_page != PAGE_ID_INVALID) {
+    dos_proc_t dos;
+    dos_get_proc(p, &dos);
+    for (int i = 0; i < dos.ivt_saved_count; i++) {
+      uint32_t addr = (uint32_t)dos.ivt_saved_vec[i] * 4;
+      p->cpu_ops->write16(dos.cpu_state, addr, dos.ivt_saved_ip[i]);
+      p->cpu_ops->write16(dos.cpu_state, addr + 2, dos.ivt_saved_cs[i]);
+    }
+    dos.ivt_saved_count = 0;
+    dos_put_proc(p, &dos);
+  }
+  p->subsys_data = NULL;
+}
 
 /* ── Exec-path capture ──────────────────────────────────────────────── */
 
@@ -427,6 +442,73 @@ static int dos_get_version(dos_proc_t *dos, dos_regs_t *regs) {
 static int dos_terminate(dos_proc_t *dos, dos_regs_t *regs) {
   sys_exit(regs->ax & 0xFF);
   return 0; /* Not reached */
+}
+
+/* Vectors the kernel uses for its own ISRs or panic stubs.  Writes from
+ * the guest are silently ignored so a misbehaving DOS program can't
+ * wedge the timer, DOS dispatcher, PPAP syscall, or CPU-fault panic
+ * path.  Reads still return whatever is in the real IVT. */
+static int dos_vec_is_protected(uint8_t vec) {
+  if (vec <= 0x08) return 1;                /* CPU exceptions + timer */
+  if (vec == 0x18 || vec == 0x19) return 1; /* ROM BASIC / bootstrap */
+  if (vec == 0x20 || vec == 0x21) return 1; /* DOS entry points */
+  if (vec == 0x30) return 1;                /* PPAP syscall */
+  return 0;
+}
+
+/* AH=35h Get Interrupt Vector.
+ *   AL = vector number.  Returns ES:BX = IP:CS from the IVT at 0:AL*4.
+ *
+ * Reads through cpu_ops so the native ia16 path hits the real IVT and
+ * the eCPU path (future) hits the emulated memory.  No CF change. */
+static int dos_get_int_vector(dos_proc_t *dos, dos_regs_t *regs) {
+  uint8_t vec = (uint8_t)(regs->ax & 0xFF);
+  uint32_t addr = (uint32_t)vec * 4;
+  regs->bx = current->cpu_ops->read16(dos->cpu_state, addr);
+  regs->es = current->cpu_ops->read16(dos->cpu_state, addr + 2);
+  return 0;
+}
+
+/* AH=25h Set Interrupt Vector.
+ *   AL = vector number, DS:DX = new IP:CS.
+ *
+ * First touch of a non-protected vector snapshots the previous IP:CS
+ * into dos_proc_t.ivt_saved_* so msdos_on_exit can restore it.  Further
+ * writes to the same vector skip the snapshot.  When the per-process
+ * save table is full, additional new-vector writes still go through but
+ * won't be restored — we warn once.  Writes to protected vectors are
+ * dropped. */
+static int dos_set_int_vector(dos_proc_t *dos, dos_regs_t *regs) {
+  uint8_t vec = (uint8_t)(regs->ax & 0xFF);
+  if (dos_vec_is_protected(vec)) {
+    mod_vfs.klogf("[msdos] AH=25h vec=%x protected (dropped)\n", (unsigned)vec);
+    return 0;
+  }
+
+  int seen = 0;
+  for (int i = 0; i < dos->ivt_saved_count; i++) {
+    if (dos->ivt_saved_vec[i] == vec) {
+      seen = 1;
+      break;
+    }
+  }
+  uint32_t addr = (uint32_t)vec * 4;
+  if (!seen) {
+    if (dos->ivt_saved_count < DOS_IVT_SAVE_MAX) {
+      uint8_t slot = dos->ivt_saved_count;
+      dos->ivt_saved_vec[slot] = vec;
+      dos->ivt_saved_ip[slot] = current->cpu_ops->read16(dos->cpu_state, addr);
+      dos->ivt_saved_cs[slot] =
+          current->cpu_ops->read16(dos->cpu_state, addr + 2);
+      dos->ivt_saved_count = (uint8_t)(slot + 1);
+    } else {
+      mod_vfs.klogf("[msdos] AH=25h vec=%x save table full (no restore)\n",
+                    (unsigned)vec);
+    }
+  }
+  current->cpu_ops->write16(dos->cpu_state, addr, regs->dx);
+  current->cpu_ops->write16(dos->cpu_state, addr + 2, regs->ds);
+  return 0;
 }
 
 static int dos_open_common(dos_proc_t *dos, dos_regs_t *regs, int flags) {
@@ -1065,6 +1147,8 @@ static int dos_get_set_alloc(dos_proc_t *dos, dos_regs_t *regs) {
     case 0x03: /* Set UMB link state */
       return 0;
     default:
+      mod_vfs.klogf("[msdos] unimpl INT 21h AH=58 AL=%x at CS:IP=%x:%x\n",
+                    (unsigned)al, (unsigned)regs->cs, (unsigned)regs->ip);
       return -DOS_ERR_INVALID_FUNCTION;
   }
 }
@@ -1098,6 +1182,9 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
     case 0x19:
       ret = dos_get_current_drive(dos, regs);
       break;
+    case 0x25:
+      ret = dos_set_int_vector(dos, regs);
+      break;
     case 0x2A:
       ret = dos_get_date(dos, regs);
       break;
@@ -1106,6 +1193,9 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
       break;
     case 0x30:
       ret = dos_get_version(dos, regs);
+      break;
+    case 0x35:
+      ret = dos_get_int_vector(dos, regs);
       break;
     case 0x39:
       ret = dos_mkdir(dos, regs);
@@ -1179,6 +1269,8 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
    * dos_errno_to_dos has already done the errno→DOS translation by the
    * time we get here. */
   if (ret < 0) {
+    mod_vfs.klogf("[msdos] INT 21h AH=%x err=%x at CS:IP=%x:%x\n", (unsigned)ah,
+                  (unsigned)-ret, (unsigned)regs->cs, (unsigned)regs->ip);
     regs->ax = (uint16_t)(-ret);
     regs->flags |= 0x0001;
   } else {
