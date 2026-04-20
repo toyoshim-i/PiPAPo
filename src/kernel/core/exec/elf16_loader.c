@@ -20,6 +20,7 @@
 #include "kernel/core/arch.h"
 #include "kernel/core/cpu/cpu.h"
 #include "kernel/core/exec/elf.h"
+#include "kernel/core/exec/exec.h"
 #include "kernel/core/exec/loader.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
@@ -98,7 +99,7 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
                                    const uint8_t *file_buf, vnode_t *vn,
                                    uint32_t file_size, const cpu_ops_t *cpu_ops,
                                    void *cpu_state, const char *const *argv,
-                                   uint32_t flags) {
+                                   const char *const *envp, uint32_t flags) {
   (void)flags;
   (void)cpu_ops;
   (void)cpu_state;
@@ -195,36 +196,40 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
   uint16_t brk_pages = (uint16_t)((brk_base + PAGE_SIZE - 1u) / PAGE_SIZE);
 
   /* User stack: SS=proc_seg, SP is segment-relative.
-   * Stack lives in the last page of the 64 KB segment. argc/argv are
-   * placed near the top, then HW/SW frames below them. After ISR restore
-   * pops both frames, SP points to argc. */
+   * Stack lives in the last page of the 64 KB segment. argc/argv/envp
+   * are placed near the top, then HW/SW frames below them.  After ISR
+   * restore pops both frames, SP points to argc. */
   uint32_t user_sp_top = USER_SEG_BYTES;
 
-  /* ── Build argc/argv on user stack ────────────────────────────────────
+  /* ── Build argc/argv/envp on user stack ───────────────────────────────
    * Layout (addresses grow upward, stack grows down):
    *   [user_sp_top - args_size]  argc          ← SP after IRET
-   *   [+2]                       argv[0] ptr
-   *   [+4]                       argv[1] ptr
-   *   ...
-   *   [+2+argc*2]                NULL
-   *   [+4+argc*2]                "string0\0"
-   *   ...                        "stringN\0"
+   *   [+2]                       argv[0..argc-1] (2 bytes each, near ptrs)
+   *   [+2+argc*2]                NULL            (argv terminator)
+   *   [+4+argc*2]                envp[0..envc-1] (2 bytes each)
+   *   [+4+(argc+envc)*2]         NULL            (envp terminator)
+   *   [+6+(argc+envc)*2]         argv strings, then envp strings
    *   [user_sp_top]              (HW frame starts here)
    */
-#define ARGV_MAX 16
   int argc = 0;
+  uint16_t str_total = 0;
   while (argv && argv[argc]) {
-    if (argc >= ARGV_MAX) break;
+    if (argc >= EXEC_ARGV_MAX) break;
+    str_total += (uint16_t)strlen(argv[argc]) + 1;
     argc++;
+  }
+  int envc = 0;
+  while (envp && envp[envc]) {
+    if (envc >= EXEC_ENVP_MAX) break;
+    str_total += (uint16_t)strlen(envp[envc]) + 1;
+    envc++;
   }
 
   {
-    /* Measure total string bytes */
-    uint16_t str_total = 0;
-    for (int i = 0; i < argc; i++) str_total += (uint16_t)strlen(argv[i]) + 1;
-
-    /* Frame: argc(2) + argv[](argc*2) + NULL(2) + strings */
-    uint16_t frame_size = (uint16_t)(2 + (uint16_t)argc * 2 + 2 + str_total);
+    /* Frame: argc(2) + argv[](argc*2) + NULL(2) + envp[](envc*2)
+     *        + NULL(2) + strings */
+    uint16_t frame_size = (uint16_t)(2u + (uint16_t)argc * 2u + 2u +
+                                     (uint16_t)envc * 2u + 2u + str_total);
     /* Align to 2 bytes */
     frame_size = (frame_size + 1) & ~(uint16_t)1;
 
@@ -235,20 +240,19 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
     uint16_t argc16 = (uint16_t)argc;
     mem_region_page_write(base_id + pos / PAGE_SIZE, pos % PAGE_SIZE, &argc16,
                           2);
-    pos += 2;
 
-    /* argv pointers start here; strings start after argv[]+NULL */
-    uint16_t argv_pos = pos;
+    /* Cursor through the pointer section; strings start immediately
+     * after both NULL terminators. */
+    uint16_t ptr_pos = (uint16_t)(pos + 2u);
     uint16_t str_pos =
-        (uint16_t)(pos + (uint16_t)argc * 2 + 2); /* after NULL */
+        (uint16_t)(ptr_pos + ((uint16_t)argc + (uint16_t)envc) * 2u + 4u);
+    uint16_t null16 = 0;
 
     for (int i = 0; i < argc; i++) {
-      /* Write argv[i] pointer (segment-relative offset of string) */
-      mem_region_page_write(base_id + argv_pos / PAGE_SIZE,
-                            argv_pos % PAGE_SIZE, &str_pos, 2);
-      argv_pos += 2;
+      mem_region_page_write(base_id + ptr_pos / PAGE_SIZE, ptr_pos % PAGE_SIZE,
+                            &str_pos, 2);
+      ptr_pos += 2;
 
-      /* Write string to user pages, handling page boundaries */
       uint16_t slen = (uint16_t)strlen(argv[i]) + 1;
       const uint8_t *src = (const uint8_t *)argv[i];
       uint16_t rem = slen;
@@ -264,10 +268,33 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
       }
       str_pos += slen;
     }
+    /* argv terminator */
+    mem_region_page_write(base_id + ptr_pos / PAGE_SIZE, ptr_pos % PAGE_SIZE,
+                          &null16, 2);
+    ptr_pos += 2;
 
-    /* Write NULL terminator for argv[] */
-    uint16_t null16 = 0;
-    mem_region_page_write(base_id + argv_pos / PAGE_SIZE, argv_pos % PAGE_SIZE,
+    for (int i = 0; i < envc; i++) {
+      mem_region_page_write(base_id + ptr_pos / PAGE_SIZE, ptr_pos % PAGE_SIZE,
+                            &str_pos, 2);
+      ptr_pos += 2;
+
+      uint16_t slen = (uint16_t)strlen(envp[i]) + 1;
+      const uint8_t *src = (const uint8_t *)envp[i];
+      uint16_t rem = slen;
+      uint16_t dst = str_pos;
+      while (rem > 0) {
+        uint16_t pg_off = dst % PAGE_SIZE;
+        uint16_t chunk = PAGE_SIZE - pg_off;
+        if (chunk > rem) chunk = rem;
+        mem_region_page_write(base_id + dst / PAGE_SIZE, pg_off, src, chunk);
+        src += chunk;
+        dst += chunk;
+        rem -= chunk;
+      }
+      str_pos += slen;
+    }
+    /* envp terminator */
+    mem_region_page_write(base_id + ptr_pos / PAGE_SIZE, ptr_pos % PAGE_SIZE,
                           &null16, 2);
   }
 
@@ -380,7 +407,7 @@ static int elf16_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
   if (ehdr.e_phoff + phbytes > file_size) return -ENOEXEC;
 
   return elf16_load_from_headers(p, &ehdr, NULL, phnum, NULL, vn, file_size,
-                                 cpu_ops, cpu_state, argv, flags);
+                                 cpu_ops, cpu_state, argv, envp, flags);
 }
 
 /* ── Loader registration ──────────────────────────────────────────────── */
