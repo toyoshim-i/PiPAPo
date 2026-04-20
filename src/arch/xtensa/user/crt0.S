@@ -21,6 +21,10 @@
 _start:
     l32i    a2, a1, 0           # a2 = argc
     addi    a3, a1, 4           # a3 = argv = &SP[1]
+    call0   _uclib_init_env     # set `environ` from argc/argv
+
+    l32i    a2, a1, 0           # reload argc/argv for main
+    addi    a3, a1, 4
     call0   main                # call0 ABI: main(argc, argv)
 
     # _exit(main's return value in a2)

@@ -22,6 +22,10 @@ _start:
     # Read argc and argv from stack (set up by kernel's execve)
     lw   a0, 0(sp)         # a0 = argc
     addi a1, sp, 4          # a1 = argv = &SP[1]
+    call _uclib_init_env   # set `environ` from argc/argv
+
+    lw   a0, 0(sp)         # reload argc/argv for main (caller-saved)
+    addi a1, sp, 4
     call main
 
     # _exit(main's return value in a0)

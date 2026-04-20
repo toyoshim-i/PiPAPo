@@ -31,15 +31,23 @@ _start:
   stosb
 
 .Lbss_done:
-  /* Stack on entry: [sp+0] = argc, [sp+2..] = argv[0..N], NULL, strings.
-   * Move SP past the argv data so main's stack frames cannot overwrite
-   * the live argv[] array.  Compute argc and argv pointer first, then
-   * reset SP to just below the argc slot. */
-  /* Stack: [sp+0] = argc, [sp+2] = argv[0], argv[1], ..., NULL
-   * Read without modifying the argv data above SP. */
+  /* Stack on entry: [sp+0] = argc, [sp+2..] = argv[0..N], NULL,
+   *                 envp[0..M], NULL, strings.
+   * Read argc/argv without modifying the area above SP, and leave the
+   * stack pointer untouched so _uclib_init_env can also see argc/argv. */
   movw  %sp, %bp
   movw  0(%bp), %ax     /* ax = argc */
   leaw  2(%bp), %bx     /* bx = &argv[0] */
+
+  /* _uclib_init_env(argc, argv) — sets the `environ` global. */
+  pushw %bx
+  pushw %ax
+  call  _uclib_init_env
+  addw  $4, %sp
+
+  /* Reload argc/argv from the initial stack and call main. */
+  movw  0(%bp), %ax
+  leaw  2(%bp), %bx
   pushw %bx             /* argv (grows below argc, safe) */
   pushw %ax             /* argc */
   call  main

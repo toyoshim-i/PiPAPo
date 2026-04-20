@@ -338,3 +338,31 @@ const char *uc_basename(const char *path) {
     if (*p == '/') last = p + 1;
   return last;
 }
+
+/* ── environment ───────────────────────────────────────────────────── *
+ *
+ * The kernel lays out argc, argv[], NULL, envp[], NULL on the initial
+ * user stack (see docs/proposals/env_inheritance.md).  _uclib_init_env
+ * is called from crt0 with argc/argv in the C-ABI argument registers;
+ * it stores &argv[argc+1] (the first envp entry) into the global
+ * `environ`.  uc_getenv walks that array. */
+
+char **environ = 0;
+
+void _uclib_init_env(int argc, char **argv) {
+  if (argc < 0 || !argv) {
+    environ = 0;
+    return;
+  }
+  environ = argv + argc + 1;
+}
+
+const char *uc_getenv(const char *name) {
+  if (!environ || !name) return 0;
+  int nlen = uc_strlen(name);
+  for (char **p = environ; *p; p++) {
+    const char *s = *p;
+    if (uc_strncmp(s, name, nlen) == 0 && s[nlen] == '=') return s + nlen + 1;
+  }
+  return 0;
+}

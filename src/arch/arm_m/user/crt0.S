@@ -31,6 +31,11 @@ _start:
     ldr  r0, [sp]          @ r0 = argc
     mov  r1, sp
     adds r1, #4            @ r1 = argv = &SP[1]
+    bl   _uclib_init_env   @ sets the `environ` global
+
+    ldr  r0, [sp]          @ reload argc/argv for main — caller-saved
+    mov  r1, sp
+    adds r1, #4
     bl   main
 
     @ _exit(main's return value in r0)

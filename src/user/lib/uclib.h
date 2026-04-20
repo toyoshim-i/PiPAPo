@@ -47,4 +47,19 @@ int uc_parse_u32(const char *s, uint32_t *out); /* 0 on success */
 /* --- path helpers --- */
 const char *uc_basename(const char *path);
 
+/* --- environment ---
+ *
+ * `environ` points at the NULL-terminated envp array the kernel placed
+ * on the initial user stack (right after argv's NULL terminator).  It
+ * is set by _uclib_init_env(), which crt0 calls before main().  Apps
+ * can read env variables via uc_getenv() without having to walk argv
+ * themselves.  Modifying environ or its strings is not supported — use
+ * a shell/builtin-level env table for that (push does). */
+extern char **environ;
+const char *uc_getenv(const char *name);
+
+/* Called from crt0 before main() — computes environ from argc/argv.
+ * Never call from application code. */
+void _uclib_init_env(int argc, char **argv);
+
 #endif /* PPAP_USER_LIB_UCLIB_H */

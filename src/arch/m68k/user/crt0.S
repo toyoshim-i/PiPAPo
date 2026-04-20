@@ -24,7 +24,15 @@ _start:
     move.l  (%sp), %d0          | d0 = argc
     lea     4(%sp), %a0         | a0 = argv = &SP[1]
 
-    | Push argv, argc as arguments (m68k C ABI: args on stack)
+    | Set the `environ` global before main (m68k C ABI: args on stack)
+    move.l  %a0, %sp@-          | push argv
+    move.l  %d0, %sp@-          | push argc
+    bsr     _uclib_init_env
+    addq.l  #8, %sp
+
+    | Reload argc/argv from the initial stack and call main
+    move.l  (%sp), %d0
+    lea     4(%sp), %a0
     move.l  %a0, %sp@-          | push argv
     move.l  %d0, %sp@-          | push argc
     bsr     main

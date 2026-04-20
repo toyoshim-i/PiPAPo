@@ -17,22 +17,18 @@
  */
 
 #include "common/errno.h"
+#include "lib/uclib.h"
 #include "utest.h"
 
 static int run_child(int argc, char *argv[]) {
-  char **envp = (char **)&argv[argc + 1];
-  for (int i = 0; envp[i]; i++) {
-    const char *s = envp[i];
-    const char key[] = "PPAP_ENV_TEST=";
-    int j = 0;
-    while (key[j] && s[j] == key[j]) j++;
-    if (key[j] == '\0') {
-      const char *val = s + j;
-      if (val[0] == 'o' && val[1] == 'k' && val[2] == '\0') return 0;
-      return 42;
-    }
-  }
-  return 41;
+  (void)argc;
+  (void)argv;
+  /* Prefer uc_getenv — exercises the libc path (environ set by crt0).
+   * If that works, we've also transitively verified the stack walk. */
+  const char *v = uc_getenv("PPAP_ENV_TEST");
+  if (!v) return 41;
+  if (v[0] == 'o' && v[1] == 'k' && v[2] == '\0') return 0;
+  return 42;
 }
 
 int main(int argc, char *argv[]) {
