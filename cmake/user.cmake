@@ -103,7 +103,7 @@ set(PPAP_USER_EXTRA_SOURCES_pi
 set(USER_TESTS
     test_exec test_elf test_vfork test_fault test_pipe test_brk
     test_fd test_signal test_poll test_sleep_intr test_orphan
-    test_id test_fs test_rw test_time test_iov test_stat test_tmpfs
+    test_id test_fs test_rw test_time test_iov test_stat test_tmpfs test_env
     test_float test_signal_float test_x68k test_h68k_dos test_cpm test_sos test_msdos test_zexdoc test_zexall test_trace test_pdb
     test_pdb_arm_disas trace_peek_target
     test_musl

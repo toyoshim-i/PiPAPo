@@ -586,6 +586,8 @@ if(PPAP_TESTS)
     EXTRA_CFLAGS -I${PCXT_TEST_DIR})
   pcxt_user_program(test_stat ${PPAP_ROOT}/tests/user/test_stat.c
     EXTRA_CFLAGS -I${PCXT_TEST_DIR})
+  pcxt_user_program(test_env ${PPAP_ROOT}/tests/user/test_env.c
+    EXTRA_CFLAGS -I${PCXT_TEST_DIR})
   pcxt_user_program(test_fs ${PPAP_ROOT}/tests/user/test_fs.c
     EXTRA_CFLAGS -I${PCXT_TEST_DIR})
   pcxt_user_program(test_rw ${PPAP_ROOT}/tests/user/test_rw.c

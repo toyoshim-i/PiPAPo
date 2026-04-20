@@ -199,7 +199,7 @@ int main(void)
      * static pointer arrays because execve only relocates GOT entries,
      * not initialized data pointers.  Runtime assignment uses GOT-resolved
      * addresses which are correctly relocated. */
-    test_entry_t tests[34];
+    test_entry_t tests[35];
     int t = 0;
 
     tests[t++] = (test_entry_t){ "/bin/test_exec", TEST_ENABLED };
@@ -265,6 +265,7 @@ int main(void)
     };
     tests[t++] = (test_entry_t){ "/bin/test_iov", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_stat", TEST_ENABLED };
+    tests[t++] = (test_entry_t){ "/bin/test_env", TEST_ENABLED };
     /* test_tmpfs: on rv32 fails at test_tmpfs.c:115 (expected 0 got 121)
      * and the summary prints garbage counter values. */
     tests[t++] = (test_entry_t){ "/bin/test_tmpfs",
