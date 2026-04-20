@@ -51,7 +51,6 @@ static int com_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
                        const cpu_ops_t *cpu_ops, void *cpu_state,
                        const char *const *argv, const char *const *envp,
                        uint32_t flags) {
-  (void)envp;
   (void)flags;
 
   if (file_size > DOS_COM_MAX_SIZE) return -(int)ENOEXEC;
@@ -78,7 +77,7 @@ static int com_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
    *    PSP + initial user frame. */
   uint16_t user_sp;
   int rc = dos_build_com_image(base_id, proc_seg, got_pages, vn, file_size,
-                               argv, &user_sp);
+                               argv, envp, &user_sp);
   if (rc < 0) {
     for (uint32_t i = 0; i < got_pages; i++)
       mem_region_page_free(base_id + (page_id_t)i);

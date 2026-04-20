@@ -62,7 +62,8 @@
  */
 int dos_build_com_image(page_id_t base_id, uint16_t proc_seg,
                         uint32_t seg_pages, vnode_t *vn, uint32_t file_size,
-                        const char *const *argv, uint16_t *out_user_sp);
+                        const char *const *argv, const char *const *envp,
+                        uint16_t *out_user_sp);
 
 /* MS-DOS .EXE (MZ) header, 28 bytes on disk, little-endian. */
 typedef struct mz_header {
@@ -106,6 +107,7 @@ typedef struct mz_header {
 int dos_build_exe_image(page_id_t base_id, uint16_t proc_seg,
                         uint32_t seg_pages, vnode_t *vn, uint32_t file_size,
                         const mz_header_t *hdr, const char *const *argv,
-                        uint16_t *out_user_ss, uint16_t *out_user_sp);
+                        const char *const *envp, uint16_t *out_user_ss,
+                        uint16_t *out_user_sp);
 
 #endif /* PPAP_KERNEL_CORE_SUBSYS_MSDOS_DOS_HOST_H */

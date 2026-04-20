@@ -102,21 +102,21 @@ static int dos_basename_upper(const char *path, char *out, int out_size) {
 }
 
 /* Build the environment block at the top of the run.  The block holds:
- *     \0               (empty environment — end-of-env terminator)
- *     \x01\x00         (DOS 3+ count of following strings)
- *     C:\<basename>\0  (DOS 3+ program-path string, from argv[0])
+ *     NAME=VALUE\0 ...  (inherited from parent via envp)
+ *     \0                (end-of-env terminator)
+ *     \x01\x00          (DOS 3+ count of following strings)
+ *     C:\<basename>\0   (DOS 3+ program-path string, from argv[0])
  *
- * The program-path trailer is legitimate: it's the execve path the loader
- * already knows.  No environment variables are synthesized — that would
- * require real env inheritance from the parent, which PPAP does not yet
- * provide (TODO: thread envp through sys_execve and the loaders, then
- * convert to DOS format here).
+ * When envp is NULL or empty, the entry section degenerates to a single
+ * '\0' and the block is just the DOS 3+ program-path trailer — what
+ * PPAP produces for first-line init-like exec paths that don't supply
+ * env.
  *
  * Also writes the env MCB header (sig 'Z') at the paragraph immediately
  * below env_seg.  Env size is sized exactly to the payload — no fixed
  * overhead.  Writes go directly to the run (no staging buffer): the run
  * was already zeroed by dos_zero_segment, so only the non-zero bytes
- * need to be set.
+ * need to be set (the inter-entry and trailing NULs stay as-is).
  *
  * Out-params:
  *   *out_env_seg  = segment for PSP[0x2C].
@@ -124,21 +124,28 @@ static int dos_basename_upper(const char *path, char *out, int out_size) {
  *                    (total_para - main_mcb(1) - env_mcb(1) - env_para). */
 static void dos_build_env(page_id_t base_id, uint16_t proc_seg,
                           uint32_t seg_pages, const char *const *argv,
-                          uint16_t *out_env_seg, uint16_t *out_main_para) {
+                          const char *const *envp, uint16_t *out_env_seg,
+                          uint16_t *out_main_para) {
   char name[DOS_BASENAME_MAX];
   int nlen = 0;
   if (argv && argv[0]) nlen = dos_basename_upper(argv[0], name, sizeof(name));
 
   /* Env payload (bytes):
-   *   1  empty-env terminator '\0'
-   *   2  count word 0x0001
-   *   3  "C:\\"
-   *   n  basename
-   *   1  trailing '\0'
-   * Always at least one paragraph so a valid env MCB exists even if
-   * argv[0] was missing (nlen == 0). */
-  uint16_t env_bytes = (uint16_t)(1u + 2u + 3u + (uint16_t)nlen + 1u);
-  uint16_t env_para = (uint16_t)((env_bytes + 15u) >> 4);
+   *   env_bytes = Σ (strlen(envp[i]) + 1)   (entries with NUL each)
+   *   1          end-of-env terminator '\0'
+   *   2          count word 0x0001
+   *   3          "C:\\"
+   *   nlen       basename
+   *   1          trailing '\0'
+   * Always at least one paragraph so a valid env MCB exists even when
+   * argv[0] is missing and envp is empty. */
+  uint16_t env_bytes = 0;
+  if (envp) {
+    for (int i = 0; envp[i]; i++) env_bytes += (uint16_t)strlen(envp[i]) + 1u;
+  }
+  uint16_t env_payload_bytes =
+      (uint16_t)(env_bytes + 1u + 2u + 3u + (uint16_t)nlen + 1u);
+  uint16_t env_para = (uint16_t)((env_payload_bytes + 15u) >> 4);
   if (env_para < 1u) env_para = 1u;
 
   uint32_t total_para = seg_pages * (PAGE_SIZE / 16u);
@@ -149,15 +156,28 @@ static void dos_build_env(page_id_t base_id, uint16_t proc_seg,
 
   dos_write_mcb(base_id, env_mcb_off, DOS_MCB_SIG_Z, proc_seg, env_para);
 
-  /* Offset 0 (empty-env terminator) stays zero from dos_zero_segment. */
+  /* Write each env entry (bytes; inter-entry and final NULs come from
+   * the pre-zero-fill). */
+  uint32_t pos = env_payload_off;
+  if (envp) {
+    for (int i = 0; envp[i]; i++) {
+      uint16_t slen = (uint16_t)strlen(envp[i]);
+      if (slen)
+        dos_write_run_bytes(base_id, pos, (const uint8_t *)envp[i],
+                            (uint32_t)slen);
+      pos += slen + 1u; /* +1 for inter-entry '\0' from zero-fill */
+    }
+  }
+  pos += 1u; /* end-of-env '\0' from zero-fill */
   uint8_t count[2] = {0x01, 0x00};
-  dos_write_run_bytes(base_id, env_payload_off + 1u, count, 2);
+  dos_write_run_bytes(base_id, pos, count, 2);
+  pos += 2u;
   uint8_t prefix[3] = {'C', ':', '\\'};
-  dos_write_run_bytes(base_id, env_payload_off + 3u, prefix, 3);
+  dos_write_run_bytes(base_id, pos, prefix, 3);
+  pos += 3u;
   if (nlen > 0)
-    dos_write_run_bytes(base_id, env_payload_off + 6u, (const uint8_t *)name,
-                        (uint32_t)nlen);
-  /* Trailing NUL stays zero from dos_zero_segment. */
+    dos_write_run_bytes(base_id, pos, (const uint8_t *)name, (uint32_t)nlen);
+  /* trailing '\0' from zero-fill */
 
   *out_env_seg = env_seg;
   *out_main_para = (uint16_t)(total_para - 2u - (uint32_t)env_para);
@@ -291,7 +311,8 @@ static uint16_t dos_build_user_frame(page_id_t base_id, uint32_t base_linear,
 
 int dos_build_com_image(page_id_t base_id, uint16_t proc_seg,
                         uint32_t seg_pages, vnode_t *vn, uint32_t file_size,
-                        const char *const *argv, uint16_t *out_user_sp) {
+                        const char *const *argv, const char *const *envp,
+                        uint16_t *out_user_sp) {
   if (seg_pages < DOS_SEG_PAGES) seg_pages = DOS_SEG_PAGES;
 
   uint32_t base_linear = mem_region_page_linear(base_id);
@@ -303,7 +324,7 @@ int dos_build_com_image(page_id_t base_id, uint16_t proc_seg,
    * signature (chain continues into env) and its matching payload. */
   uint16_t env_seg;
   uint16_t main_para;
-  dos_build_env(base_id, proc_seg, seg_pages, argv, &env_seg, &main_para);
+  dos_build_env(base_id, proc_seg, seg_pages, argv, envp, &env_seg, &main_para);
   dos_write_mcb(base_id, 0, DOS_MCB_SIG_M, proc_seg, main_para);
 
   dos_build_psp(base_id, proc_seg, argv, env_seg, main_para);
@@ -388,7 +409,8 @@ static int dos_apply_relocations(page_id_t base_id, uint32_t base_linear,
 int dos_build_exe_image(page_id_t base_id, uint16_t proc_seg,
                         uint32_t seg_pages, vnode_t *vn, uint32_t file_size,
                         const mz_header_t *hdr, const char *const *argv,
-                        uint16_t *out_user_ss, uint16_t *out_user_sp) {
+                        const char *const *envp, uint16_t *out_user_ss,
+                        uint16_t *out_user_sp) {
   if (seg_pages < DOS_SEG_PAGES) seg_pages = DOS_SEG_PAGES;
 
   uint32_t base_linear = mem_region_page_linear(base_id);
@@ -419,7 +441,7 @@ int dos_build_exe_image(page_id_t base_id, uint16_t proc_seg,
    * the first instruction. */
   uint16_t env_seg;
   uint16_t main_para;
-  dos_build_env(base_id, proc_seg, seg_pages, argv, &env_seg, &main_para);
+  dos_build_env(base_id, proc_seg, seg_pages, argv, envp, &env_seg, &main_para);
   dos_write_mcb(base_id, 0, DOS_MCB_SIG_M, proc_seg, main_para);
 
   /* Stream the image payload into proc_seg:0100 = base_id:0x110.  PSP
