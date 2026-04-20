@@ -275,7 +275,7 @@ The ELF and ELF16 loaders place envp on the child's initial user
 stack (standard POSIX layout:
 `argc, argv[0..], NULL, envp[0..], NULL, auxv`); each arch's crt0
 sets the uclib `environ` global and user code reads it via
-`uc_getenv()`.  See docs/proposals/env_inheritance.md.
+`uc_getenv()`.
 
 The MS-DOS and Human68k personality subsystems convert envp to their
 native formats (DOS env MCB; Human68k env block at `PMB[0x10]`).

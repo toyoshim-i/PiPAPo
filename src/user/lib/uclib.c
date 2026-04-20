@@ -342,10 +342,10 @@ const char *uc_basename(const char *path) {
 /* ── environment ───────────────────────────────────────────────────── *
  *
  * The kernel lays out argc, argv[], NULL, envp[], NULL on the initial
- * user stack (see docs/proposals/env_inheritance.md).  _uclib_init_env
- * is called from crt0 with argc/argv in the C-ABI argument registers;
- * it stores &argv[argc+1] (the first envp entry) into the global
- * `environ`.  uc_getenv walks that array. */
+ * user stack (standard POSIX layout, built by the ELF / ELF16 loaders).
+ * _uclib_init_env is called from crt0 with argc/argv in the C-ABI
+ * argument registers; it stores &argv[argc+1] (the first envp entry)
+ * into the global `environ`.  uc_getenv walks that array. */
 
 char **environ = 0;
 

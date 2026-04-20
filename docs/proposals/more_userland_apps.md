@@ -201,9 +201,9 @@ Rules:
   flash-resident on ARM XIP without any extra linker-script work.
 - Every applet that emits color accepts a `--no-color` long option
   that sets `use_color = 0`.  Matching an environment variable
-  (`NO_COLOR`) is a nice-to-have once `getenv` is wired (see
-  [env_inheritance.md](/docs/proposals/env_inheritance.md)) but not
-  required in the initial tiers.
+  (`NO_COLOR`) is a nice-to-have via `uc_getenv()` (see
+  [uclib.h](/src/user/lib/uclib.h)) but not required in the initial
+  tiers.
 - Escape sequences that degrade harmlessly on reduced-capability
   targets (e.g. `\033[2m` dim on PicoCalc VGA attr mapping) are
   acceptable — comment them as such, as `top.c` does.
