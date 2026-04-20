@@ -417,18 +417,61 @@ static int dos_get_current_drive(dos_proc_t *dos, dos_regs_t *regs) {
   return 0;
 }
 
+/* Convert Unix epoch days to (year, month [1-12], day [1-31]) and return
+ * day-of-week where 0 = Sunday (matching DOS AH=2Ah convention).  1970-
+ * 01-01 was a Thursday. */
+static void dos_days_to_ymd(uint32_t days, uint16_t *y, uint8_t *mo, uint8_t *d,
+                            uint8_t *dow) {
+  static const uint8_t dim_nl[12] = {31, 28, 31, 30, 31, 30,
+                                     31, 31, 30, 31, 30, 31};
+  static const uint8_t dim_l[12] = {31, 29, 31, 30, 31, 30,
+                                    31, 31, 30, 31, 30, 31};
+  *dow = (uint8_t)((days + 4u) % 7u); /* 1970-01-01 = Thu (4) */
+  uint16_t year = 1970;
+  for (;;) {
+    int leap = ((year % 4u) == 0 && (year % 100u) != 0) || (year % 400u) == 0;
+    uint16_t year_days = leap ? 366 : 365;
+    if (days < year_days) break;
+    days -= year_days;
+    year++;
+  }
+  int leap = ((year % 4u) == 0 && (year % 100u) != 0) || (year % 400u) == 0;
+  const uint8_t *dim = leap ? dim_l : dim_nl;
+  uint8_t month = 0;
+  while (days >= dim[month]) {
+    days -= dim[month];
+    month++;
+  }
+  *y = year;
+  *mo = (uint8_t)(month + 1u);
+  *d = (uint8_t)(days + 1u);
+}
+
 static int dos_get_date(dos_proc_t *dos, dos_regs_t *regs) {
-  /* TODO: query a real RTC source.  Hardcoded 2026-04-13 (Mon). */
-  regs->cx = 2026;
-  regs->dx = 0x040D;
-  regs->ax = (regs->ax & 0xFF00) | 0x01;
+  (void)dos;
+  uint32_t sec, frac;
+  sys_time_now(&sec, &frac);
+  uint32_t days = sec / 86400u;
+  uint16_t y;
+  uint8_t mo, d, dow;
+  dos_days_to_ymd(days, &y, &mo, &d, &dow);
+  regs->cx = y;
+  regs->dx = (uint16_t)(((uint16_t)mo << 8) | d);
+  regs->ax = (uint16_t)((regs->ax & 0xFF00u) | dow);
   return 0;
 }
 
 static int dos_get_time(dos_proc_t *dos, dos_regs_t *regs) {
-  /* TODO: query a real RTC source.  Hardcoded 12:00:00.00. */
-  regs->cx = 0x0C00;
-  regs->dx = 0x0000;
+  (void)dos;
+  uint32_t sec, frac;
+  sys_time_now(&sec, &frac);
+  uint32_t sub = (frac * 100u) / PPAP_TICK_HZ; /* hundredths of second */
+  uint32_t s_in_day = sec % 86400u;
+  uint32_t ss = s_in_day % 60u;
+  uint32_t mm = (s_in_day / 60u) % 60u;
+  uint32_t hh = (s_in_day / 3600u) % 24u;
+  regs->cx = (uint16_t)((hh << 8) | mm);
+  regs->dx = (uint16_t)((ss << 8) | sub);
   return 0;
 }
 

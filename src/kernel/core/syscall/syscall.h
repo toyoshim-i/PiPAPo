@@ -112,10 +112,16 @@ long sys_nanosleep(uintptr_t req_ptr, uintptr_t rem_ptr);
 long sys_clock_gettime32(long clk_id, uintptr_t tp_ptr);
 long sys_clock_gettime64(long clk_id, uintptr_t tp_ptr);
 long sys_gettimeofday(uintptr_t tv_ptr, uintptr_t tz_ptr);
+long sys_settimeofday(uintptr_t tv_ptr, uintptr_t tz_ptr);
 long sys_clock_nanosleep32(long clk, long flags, uintptr_t req_ptr,
                            uintptr_t rem_ptr);
 long sys_clock_nanosleep64(long clk, long flags, uintptr_t req_ptr,
                            uintptr_t rem_ptr);
+
+/* Kernel-side wallclock helper.  Returns current Unix time as
+ * (seconds, frac) where frac is [0, PPAP_TICK_HZ).  Single source of
+ * truth for all time syscalls and subsystem bridges (DOS AH=2Ah/2Ch). */
+void sys_time_now(uint32_t *sec_out, uint32_t *frac_ticks_out);
 
 /* fd/pipe.c */
 long sys_pipe(uintptr_t fds_ptr);

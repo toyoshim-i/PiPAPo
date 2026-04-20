@@ -362,6 +362,9 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
     case SYS_GETTIMEOFDAY:
       ret = sys_gettimeofday((uintptr_t)a0, (uintptr_t)a1);
       break;
+    case SYS_SETTIMEOFDAY:
+      ret = sys_settimeofday((uintptr_t)a0, (uintptr_t)a1);
+      break;
     case SYS_CLOCK_NANOSLEEP32:
       ret = sys_clock_nanosleep32(a0, a1, (uintptr_t)a2, (uintptr_t)a3);
       break;

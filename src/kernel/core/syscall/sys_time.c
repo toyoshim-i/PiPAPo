@@ -24,6 +24,19 @@ struct timespec {
 /* Nanoseconds per SysTick tick */
 #define NS_PER_TICK (1000000000u / PPAP_TICK_HZ)
 
+/* Kernel wallclock: seconds-since-epoch at tick 0.  Zero until
+ * set via sys_settimeofday (or a future RTC seed).  Current wallclock
+ * is time_boot_epoch + sched_get_ticks()/PPAP_TICK_HZ. */
+static uint32_t time_boot_epoch;
+
+void sys_time_now(uint32_t *sec_out, uint32_t *frac_ticks_out) {
+  uint32_t ticks = sched_get_ticks();
+  uint32_t sec = time_boot_epoch + ticks / PPAP_TICK_HZ;
+  uint32_t frac = ticks % PPAP_TICK_HZ;
+  if (sec_out) *sec_out = sec;
+  if (frac_ticks_out) *frac_ticks_out = frac;
+}
+
 static int timespec32_write_remaining(uintptr_t rem_ptr) {
   struct timespec rem;
   uint32_t now;
@@ -125,9 +138,8 @@ long sys_clock_gettime32(long clk_id, uintptr_t tp_ptr) {
   (void)clk_id;
   if (tp_ptr == 0u) return -(long)EINVAL;
 
-  uint32_t ticks = sched_get_ticks();
-  uint32_t sec = ticks / PPAP_TICK_HZ;
-  uint32_t frac = ticks % PPAP_TICK_HZ;
+  uint32_t sec, frac;
+  sys_time_now(&sec, &frac);
 
   ts[0] = (long)sec;
   ts[1] = (long)(frac * NS_PER_TICK);
@@ -147,9 +159,8 @@ long sys_clock_gettime64(long clk_id, uintptr_t tp_ptr) {
   (void)clk_id;
   if (tp_ptr == 0u) return -(long)EINVAL;
 
-  uint32_t ticks = sched_get_ticks();
-  uint32_t sec = ticks / PPAP_TICK_HZ;
-  uint32_t frac = ticks % PPAP_TICK_HZ;
+  uint32_t sec, frac;
+  sys_time_now(&sec, &frac);
 
   ts[0] = (int64_t)sec;
   ts[1] = (int64_t)(frac * NS_PER_TICK);
@@ -168,13 +179,32 @@ long sys_gettimeofday(uintptr_t tv_ptr, uintptr_t tz_ptr) {
   (void)tz_ptr;
   if (tv_ptr == 0u) return -(long)EINVAL;
 
-  uint32_t ticks = sched_get_ticks();
-  uint32_t sec = ticks / PPAP_TICK_HZ;
-  uint32_t frac = ticks % PPAP_TICK_HZ;
+  uint32_t sec, frac;
+  sys_time_now(&sec, &frac);
 
   tv[0] = (long)sec;
   tv[1] = (long)(frac * (1000000u / PPAP_TICK_HZ)); /* microseconds */
   if (sys_copy_to_user(tv_ptr, tv, sizeof(tv)) < 0) return -(long)EFAULT;
+  return 0;
+}
+
+/* ── sys_settimeofday ────────────────────────────────────────────────────── */
+/*
+ * Set the kernel wallclock.  tz_ptr is accepted for POSIX compatibility
+ * but ignored — PPAP has no timezone concept.
+ */
+long sys_settimeofday(uintptr_t tv_ptr, uintptr_t tz_ptr) {
+  long tv[2];
+
+  (void)tz_ptr;
+  if (tv_ptr == 0u) return -(long)EINVAL;
+  if (sys_copy_from_user(tv, tv_ptr, sizeof(tv)) < 0) return -(long)EFAULT;
+  if (tv[0] < 0) return -(long)EINVAL;
+
+  /* Pin wallclock: at the current tick, now == tv.sec.  Future reads
+   * add the tick delta since then. */
+  uint32_t ticks = sched_get_ticks();
+  time_boot_epoch = (uint32_t)tv[0] - ticks / PPAP_TICK_HZ;
   return 0;
 }
 
