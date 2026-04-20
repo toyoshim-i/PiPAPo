@@ -45,6 +45,24 @@
 #define FILE_MAX 32           /* max concurrent open struct file objs */
 #define FD_DESC_NONE (-1)     /* empty fd_map slot (no descriptor)    */
 
+/* ── execve scratch byte budgets ───────────────────────────────────────────
+ * Bytes reserved for argv and envp string payloads in the per-process
+ * execve scratch (`execve_scratch_t` in sys_proc.c).  Defaults are
+ * sized for 32-bit targets with generous stack / BSS.  Targets with a
+ * tighter budget (ia16 keeps this scratch in BSS) override via CMake
+ * `-DEXEC_ARGV_BYTES_MAX=… -DEXEC_ENVP_BYTES_MAX=…`.
+ *
+ * argv and envp are sized independently because argv is a handful of
+ * short tokens while envp carries more numerous / longer NAME=VALUE
+ * strings (see feedback memory on constant reuse).
+ * ────────────────────────────────────────────────────────────────────────── */
+#ifndef EXEC_ARGV_BYTES_MAX
+#define EXEC_ARGV_BYTES_MAX 1024u
+#endif
+#ifndef EXEC_ENVP_BYTES_MAX
+#define EXEC_ENVP_BYTES_MAX 4096u
+#endif
+
 /* ── UART ring buffers ─────────────────────────────────────────────────────
  * Sizes must be powers of two.
  *

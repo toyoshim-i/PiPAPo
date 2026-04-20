@@ -31,7 +31,8 @@ static long exec_read_from(vnode_t *vn, void *buf, uint32_t len) {
 
 /* ── execve ─────────────────────────────────────────────────────────── */
 
-int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
+int exec_execve(pcb_t *p, const char *path, const char *const *argv,
+                const char *const *envp) {
   vnode_t *vn = NULL;
   int err;
 
@@ -87,7 +88,7 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv) {
   }
 
   /* ── 4. Dispatch.  Every registered loader streams directly from vn. */
-  rc = matched->load(p, vn, file_size, cpu_ops, NULL, argv, 0);
+  rc = matched->load(p, vn, file_size, cpu_ops, NULL, argv, envp, 0);
   if (rc < 0) {
     mod_vfs.vnode_release(vn);
     return rc;

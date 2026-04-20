@@ -11,8 +11,14 @@
 
 #include "kernel/core/proc/proc.h"
 
-/* Maximum argv entries accepted by execve (excluding terminating NULL). */
+/* Maximum argv / envp entries accepted by execve (excluding terminating
+ * NULL).  The two caps are independent because argv and envp have
+ * different typical profiles: argv is a handful of short tokens, while
+ * envp carries more numerous (but still bounded) NAME=VALUE entries.
+ * Byte budgets are tuned per target inside sys_proc.c, but the entry
+ * counts are part of the userspace-visible contract and stay shared. */
 #define EXEC_ARGV_MAX 64
+#define EXEC_ENVP_MAX 32
 
 /*
  * execve — Load an ELF binary and set up a process to execute it.
@@ -22,10 +28,14 @@
  * and initialises the PCB's stack frame so PendSV can restore it.
  *
  * argv: NULL-terminated argument array.  If NULL, defaults to {path, NULL}.
+ * envp: NULL-terminated environment array.  NULL means no environment —
+ *       children see an empty env.  Loaders / subsystems may ignore envp
+ *       when the target personality has no env concept (CP/M, SOS).
  *
  * On success: returns 0.  The PCB is ready; caller sets state = RUNNABLE.
  * On failure: returns negative errno, PCB is unchanged.
  */
-int exec_execve(pcb_t *p, const char *path, const char *const *argv);
+int exec_execve(pcb_t *p, const char *path, const char *const *argv,
+                const char *const *envp);
 
 #endif /* PPAP_KERNEL_CORE_EXEC_EXEC_H */

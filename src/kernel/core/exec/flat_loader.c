@@ -58,7 +58,9 @@ static int flat_detect(const uint8_t *header, uint32_t header_len,
 
 static int flat_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
                         const cpu_ops_t *cpu_ops, void *cpu_state,
-                        const char *const *argv, uint32_t flags) {
+                        const char *const *argv, const char *const *envp,
+                        uint32_t flags) {
+  (void)envp;
   (void)flags;
   (void)cpu_ops;
   (void)cpu_state;

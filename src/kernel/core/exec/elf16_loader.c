@@ -354,7 +354,8 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
 
 static int elf16_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
                          const cpu_ops_t *cpu_ops, void *cpu_state,
-                         const char *const *argv, uint32_t flags) {
+                         const char *const *argv, const char *const *envp,
+                         uint32_t flags) {
   elf32_ehdr_t ehdr;
   uint16_t phnum;
   uint32_t phbytes;

@@ -91,7 +91,9 @@ static void cpm_set_drive_a_root(cpm_state_t *cpm, const char *path) {
 
 static int cpm_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
                        const cpu_ops_t *cpu_ops, void *cpu_state,
-                       const char *const *argv, uint32_t flags) {
+                       const char *const *argv, const char *const *envp,
+                       uint32_t flags) {
+  (void)envp;
   (void)flags;
   (void)cpu_ops;
   (void)cpu_state;

@@ -48,7 +48,9 @@ static void exe_free_run(page_id_t base_id, uint32_t got_pages) {
 
 static int exe_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
                        const cpu_ops_t *cpu_ops, void *cpu_state,
-                       const char *const *argv, uint32_t flags) {
+                       const char *const *argv, const char *const *envp,
+                       uint32_t flags) {
+  (void)envp;
   (void)flags;
 
   if (file_size < sizeof(mz_header_t)) return -(int)ENOEXEC;

@@ -389,6 +389,10 @@ target_compile_definitions(ppap_pcxt PRIVATE
   PPAP_TICK_HZ=18u
   PPAP_ENABLE_MSDOS=1
   PPAP_HAS_SUBSYS=1
+  # ia16 keeps the execve scratch in BSS; trim argv/envp budgets so the
+  # scratch fits without pushing other subsystems out.
+  EXEC_ARGV_BYTES_MAX=128u
+  EXEC_ENVP_BYTES_MAX=256u
 )
 if(PPAP_TESTS)
   target_compile_definitions(ppap_pcxt PRIVATE PPAP_TESTS=1)

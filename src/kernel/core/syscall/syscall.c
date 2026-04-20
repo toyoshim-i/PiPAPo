@@ -153,7 +153,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
     case SYS_EXECVE: {
       user_page_ref_t r;
       if ((ret = xlate_user_ptr((uintptr_t)a0, &r)) != 0) break;
-      ret = sys_execve(r.page, r.off, (uintptr_t)a1);
+      ret = sys_execve(r.page, r.off, (uintptr_t)a1, (uintptr_t)a2);
     } break;
     case SYS_CHDIR: {
       user_page_ref_t r;

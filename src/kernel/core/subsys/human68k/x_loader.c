@@ -168,7 +168,9 @@ static int x68k_alloc_largest_image_region(proc_image_segment_t *seg,
 
 static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
                   const cpu_ops_t *cpu_ops, void *cpu_state,
-                  const char *const *argv, uint32_t flags) {
+                  const char *const *argv, const char *const *envp,
+                  uint32_t flags) {
+  (void)envp;
   (void)flags;
   (void)cpu_ops;
   (void)cpu_state;

@@ -38,9 +38,14 @@ typedef struct loader {
   // Responsible for populating memory and setting the initial CPU state
   // (PC, SP, etc.) via the provided cpu_ops interface.  Should not modify
   // pcb_t beyond what's needed for loading.
+  //
+  // `argv` / `envp` are NULL-terminated arrays copied out of the parent's
+  // user memory by sys_execve; either may be NULL if the caller didn't
+  // supply one.  Loaders are free to ignore either (e.g. CP/M / SOS have
+  // no environment-variable concept).
   int (*load)(pcb_t* p, vnode_t* vn, uint32_t file_size,
               const cpu_ops_t* cpu_ops, void* cpu_state,
-              const char* const* argv, uint32_t flags);
+              const char* const* argv, const char* const* envp, uint32_t flags);
 
   // The required CPU architecture for this loader.
   int required_arch_id;

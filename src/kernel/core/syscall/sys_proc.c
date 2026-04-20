@@ -2076,16 +2076,21 @@ long sys_waitpid(long pid, long status_ptr, long options) {
  * On success: never returns — the new program starts executing.
  * On failure: returns negative errno.
  */
-#if defined(__ia16__)
-#define EXEC_ARG_BYTES_MAX 128u /* i16: 1 KB kernel stacks */
-#else
-#define EXEC_ARG_BYTES_MAX 1024u
-#endif
+/* Budgets for argv and envp are sized independently: argv tends to be
+ * a handful of short command-line tokens, while envp carries many
+ * longer NAME=VALUE entries (PATH, LD_LIBRARY_PATH, XDG_*, locale, …).
+ * Reusing a single cap would force a compromise that wastes space on
+ * one axis to accommodate the other.
+ *
+ * Defaults live in config.h; targets override via CMake (ia16 keeps
+ * the scratch in BSS and uses tighter values). */
 
 typedef struct {
   char path[VFS_PATH_MAX];
   const char *argv_copy[EXEC_ARGV_MAX + 1];
-  char argv_buf[EXEC_ARG_BYTES_MAX];
+  const char *envp_copy[EXEC_ENVP_MAX + 1];
+  char argv_buf[EXEC_ARGV_BYTES_MAX];
+  char envp_buf[EXEC_ENVP_BYTES_MAX];
 } execve_scratch_t;
 
 #if defined(__ia16__)
@@ -2095,34 +2100,43 @@ typedef struct {
 static execve_scratch_t i16_execve_scratch;
 #endif
 
-static int sys_execve_copy_user_argv(const char **argv_out, char *arg_buf,
-                                     size_t arg_buf_size, uintptr_t argv_ptr) {
+/* Copy a NULL-terminated array of user pointers (argv or envp) into
+ * `out` with backing strings packed into `buf`.  `max_count` is the cap
+ * the caller allocated for `out` (not counting the trailing NULL slot).
+ * Returns 0 on success (`out[i] == NULL` for some `i <= max_count`),
+ * -errno on overflow or copy failure. */
+static int sys_execve_copy_user_vec(const char **out, int max_count, char *buf,
+                                    size_t buf_size, uintptr_t user_ptr) {
   size_t used = 0;
 
-  if (argv_ptr == 0u) return 0;
+  if (user_ptr == 0u) {
+    out[0] = NULL;
+    return 0;
+  }
 
-  for (int i = 0; i < EXEC_ARGV_MAX; i++) {
-    uintptr_t arg_ptr;
+  for (int i = 0; i < max_count; i++) {
+    uintptr_t str_ptr;
     int rc = sys_copy_from_user(
-        &arg_ptr, argv_ptr + (uintptr_t)(i * sizeof(arg_ptr)), sizeof(arg_ptr));
+        &str_ptr, user_ptr + (uintptr_t)(i * sizeof(str_ptr)), sizeof(str_ptr));
     size_t len;
 
     if (rc < 0) return rc;
-    if (arg_ptr == 0u) {
-      argv_out[i] = NULL;
+    if (str_ptr == 0u) {
+      out[i] = NULL;
       return 0;
     }
-    rc = sys_copy_user_string(arg_buf + used, arg_buf_size - used, arg_ptr);
+    rc = sys_copy_user_string(buf + used, buf_size - used, str_ptr);
     if (rc < 0) return (rc == -(long)ENAMETOOLONG) ? -(long)E2BIG : rc;
-    argv_out[i] = arg_buf + used;
-    len = __builtin_strlen(argv_out[i]) + 1;
+    out[i] = buf + used;
+    len = __builtin_strlen(out[i]) + 1;
     used += len;
-    if (used >= arg_buf_size) return -(long)E2BIG;
+    if (used >= buf_size) return -(long)E2BIG;
   }
   return -(long)E2BIG;
 }
 
-long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr) {
+long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
+                uintptr_t envp_ptr) {
 #if defined(__ia16__)
   execve_scratch_t *scratch = &i16_execve_scratch;
 #else
@@ -2130,6 +2144,7 @@ long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr) {
   execve_scratch_t *scratch = &scratch_storage;
 #endif
   const char *const *argv = NULL;
+  const char *const *envp = NULL;
   page_id_t exec_snapshot = PAGE_ID_INVALID;
   /* Path arrived as (page, off); copy from the user segment via the
    * page-based helper. */
@@ -2146,10 +2161,16 @@ long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr) {
   return -(long)ENAMETOOLONG;
 path_loaded:;
   int rc = 0;
-  rc = sys_execve_copy_user_argv(scratch->argv_copy, scratch->argv_buf,
-                                 sizeof(scratch->argv_buf), argv_ptr);
+  rc = sys_execve_copy_user_vec(scratch->argv_copy, EXEC_ARGV_MAX,
+                                scratch->argv_buf, sizeof(scratch->argv_buf),
+                                argv_ptr);
   if (rc < 0) return (long)rc;
   if (argv_ptr != 0u) argv = scratch->argv_copy;
+  rc = sys_execve_copy_user_vec(scratch->envp_copy, EXEC_ENVP_MAX,
+                                scratch->envp_buf, sizeof(scratch->envp_buf),
+                                envp_ptr);
+  if (rc < 0) return (long)rc;
+  if (envp_ptr != 0u) envp = scratch->envp_copy;
 
   /* Save old pages to free after successful load */
   page_id_t old_stack_id = current->stack_page_id;
@@ -2171,7 +2192,7 @@ path_loaded:;
   /* Save old cpu_state so we can free it after successful exec */
   /* Load the new binary.  argv points into the old stack/data pages
    * which are still valid (detached from current but not yet freed). */
-  int err = exec_execve(current, scratch->path, argv);
+  int err = exec_execve(current, scratch->path, argv, envp);
   if (err < 0) {
     /* Restore old pages on failure — fds are untouched (POSIX) */
     current->stack_page_id = old_stack_id;

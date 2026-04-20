@@ -67,7 +67,8 @@ void svc_set_restart(void);
 /* sys_proc.c */
 long sys_exit(long status);
 long sys_getpid(void);
-long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr);
+long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
+                uintptr_t envp_ptr);
 long sys_vfork(uint32_t *frame);
 long sys_waitpid(long pid, long status_ptr, long options);
 long sys_set_tid_address(uintptr_t tidptr);
