@@ -21,8 +21,8 @@ CONFIG_NOMMU=y
 CONFIG_LFS=y
 
 # -- File operations ----------------------------------------------------------
-CONFIG_LS=y
-CONFIG_CAT=y
+# CONFIG_LS is not set (using native PPAP ls)
+# CONFIG_CAT is not set (using native PPAP cat)
 CONFIG_CP=y
 CONFIG_MV=y
 CONFIG_RM=y
@@ -32,7 +32,7 @@ CONFIG_LN=y
 CONFIG_CHMOD=y
 
 # -- Text processing ----------------------------------------------------------
-CONFIG_ECHO=y
+# CONFIG_ECHO is not set (push built-in)
 CONFIG_PRINTF=y
 CONFIG_GREP=y
 CONFIG_HEAD=y
@@ -44,7 +44,7 @@ CONFIG_SED=y
 # -- Process management -------------------------------------------------------
 CONFIG_KILL=y
 CONFIG_SLEEP=y
-CONFIG_PS=y
+# CONFIG_PS is not set (using native PPAP ps)
 # CONFIG_TOP is not set (using native PPAP top)
 # CONFIG_FEATURE_TOP_INTERACTIVE is not set
 # CONFIG_FEATURE_TOP_CPU_USAGE_PERCENTAGE is not set
@@ -53,7 +53,7 @@ CONFIG_PS=y
 # -- Filesystem utilities -----------------------------------------------------
 CONFIG_MOUNT=y
 CONFIG_UMOUNT=y
-CONFIG_DF=y
+# CONFIG_DF is not set (using native PPAP df)
 
 # -- Editor -------------------------------------------------------------------
 # vi disabled — replaced by pi (PiPAPo Editor)
