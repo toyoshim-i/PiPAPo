@@ -10,6 +10,7 @@
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/arch.h"
 #include "kernel/core/exec/elf.h"
+#include "kernel/core/exec/exec.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
@@ -665,7 +666,7 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
 static int elf_load_from_buffer(pcb_t *p, const uint8_t *file_buf,
                                 uint32_t file_size, const cpu_ops_t *cpu_ops,
                                 void *cpu_state, const char *const *argv,
-                                uint32_t flags) {
+                                const char *const *envp, uint32_t flags) {
   /* Create CPU state if not provided by coordinator */
   int own_state = 0;
   if (!cpu_state) {
@@ -694,60 +695,74 @@ static int elf_load_from_buffer(pcb_t *p, const uint8_t *file_buf,
   uint32_t sp = res.stack_top;
 
   int argc = 0;
+  uint32_t strings_bytes = 0;
   while (argv && argv[argc]) {
+    if (argc >= EXEC_ARGV_MAX) break;
+    strings_bytes += (uint32_t)strlen(argv[argc]) + 1u;
     argc++;
-    if (argc > 15) break;
+  }
+  int envc = 0;
+  while (envp && envp[envc]) {
+    if (envc >= EXEC_ENVP_MAX) break;
+    strings_bytes += (uint32_t)strlen(envp[envc]) + 1u;
+    envc++;
   }
 
-  uint32_t str_addrs[16];
-  for (int i = argc - 1; i >= 0; i--) {
-    uint32_t len = (uint32_t)strlen(argv[i]) + 1;
-    sp -= len;
-    memcpy((void *)(uintptr_t)sp, argv[i], len);
-    str_addrs[i] = sp;
-  }
-
-  /* Align sp after string copies: 4-byte for m68k, 8-byte for ARM/RISC-V.
-   * The extra pad on non-m68k ensures sp stays 8-byte aligned after
-   * pushing the fixed-size frame below (argc + argv[] + terminators +
-   * auxv = argc+7 words; pad an extra word if the count is odd). */
-  if (cpu_ops->arch_id == CPU_ARCH_M68K) {
-    sp &= ~3u;
-  } else {
-    sp &= ~7u;
-    if ((argc + 7) & 1) sp -= 4;
-  }
-
-  /* Build initial stack frame (grows downward).  Layout matches what
-   * crt0 / _start expects on entry:
+  /* Layout (grows up from argv_sp):
    *
-   *   sp -> argc
-   *         argv[0]  argv[1]  ...  argv[argc-1]
-   *         0        (argv terminator / NULL)
-   *         0        (envp terminator / NULL)
-   *         AT_PAGESZ  PAGE_SIZE   (ELF auxiliary vector)
-   *         AT_NULL    0           (aux terminator)
+   *   argv_sp -> argc
+   *              argv[0] .. argv[argc-1]
+   *              0                        (argv terminator)
+   *              envp[0] .. envp[envc-1]
+   *              0                        (envp terminator)
+   *              AT_PAGESZ  PAGE_SIZE
+   *              AT_NULL    0
+   *              [argv strings]           (then envp strings above)
+   *              [envp strings]
+   *   stack_top
    *
-   * Pushed in reverse order since the stack grows down. */
-  sp -= 4;
-  *(uint32_t *)(uintptr_t)sp = 0; /* AT_NULL value */
-  sp -= 4;
-  *(uint32_t *)(uintptr_t)sp = 0; /* AT_NULL tag */
-  sp -= 4;
-  *(uint32_t *)(uintptr_t)sp = PAGE_SIZE; /* AT_PAGESZ value */
-  sp -= 4;
-  *(uint32_t *)(uintptr_t)sp = 6; /* AT_PAGESZ tag */
-  sp -= 4;
-  *(uint32_t *)(uintptr_t)sp = 0; /* envp terminator */
-  sp -= 4;
-  *(uint32_t *)(uintptr_t)sp = 0; /* argv terminator */
-  for (int i = argc - 1; i >= 0; i--) {
-    sp -= 4;
-    *(uint32_t *)(uintptr_t)sp = str_addrs[i]; /* argv[i] */
+   * Fixed frame words: argc(1) + argv_term(1) + envp_term(1) + auxv(4)
+   * + argv_ptrs(argc) + envp_ptrs(envc) = argc + envc + 7.
+   *
+   * Computing argv_sp up front lets us write pointer slots in the
+   * frame as we copy each string, so no intermediate kernel arrays are
+   * needed.  Align to 8 bytes on non-m68k for the userland ABI. */
+  uint32_t frame_bytes = (uint32_t)(argc + envc + 7) * 4u;
+  argv_sp = sp - strings_bytes - frame_bytes;
+  if (cpu_ops->arch_id == CPU_ARCH_M68K)
+    argv_sp &= ~3u;
+  else
+    argv_sp &= ~7u;
+
+  uint32_t *frame = (uint32_t *)(uintptr_t)argv_sp;
+  uint32_t str_pos = argv_sp + frame_bytes; /* strings start here, grow up */
+
+  frame[0] = (uint32_t)argc;
+  for (int i = 0; i < argc; i++) {
+    uint32_t len = (uint32_t)strlen(argv[i]) + 1u;
+    memcpy((void *)(uintptr_t)str_pos, argv[i], len);
+    frame[1 + i] = str_pos;
+    str_pos += len;
   }
-  sp -= 4;
-  *(uint32_t *)(uintptr_t)sp = (uint32_t)argc; /* argc */
-  argv_sp = sp;
+  frame[1 + argc] = 0; /* argv terminator */
+
+  uint32_t envp_base = (uint32_t)(2 + argc);
+  for (int i = 0; i < envc; i++) {
+    uint32_t len = (uint32_t)strlen(envp[i]) + 1u;
+    memcpy((void *)(uintptr_t)str_pos, envp[i], len);
+    frame[envp_base + (uint32_t)i] = str_pos;
+    str_pos += len;
+  }
+  frame[envp_base + (uint32_t)envc] = 0; /* envp terminator */
+
+  /* auxv: AT_PAGESZ, AT_NULL */
+  uint32_t auxv_base = envp_base + (uint32_t)envc + 1u;
+  frame[auxv_base + 0] = 6; /* AT_PAGESZ tag */
+  frame[auxv_base + 1] = PAGE_SIZE;
+  frame[auxv_base + 2] = 0; /* AT_NULL tag */
+  frame[auxv_base + 3] = 0;
+
+  sp = argv_sp;
 
   if (cpu_ops->arch_id == CPU_ARCH_M68K) {
     extern volatile int exec_pending[2];
@@ -793,7 +808,6 @@ static int elf_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
                     const cpu_ops_t *cpu_ops, void *cpu_state,
                     const char *const *argv, const char *const *envp,
                     uint32_t flags) {
-  (void)envp;
   (void)flags;
 
   proc_image_segment_t staging = {0};
@@ -826,7 +840,7 @@ static int elf_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
   }
 
   int rc = elf_load_from_buffer(p, file_buf, file_size, cpu_ops, cpu_state,
-                                argv, load_flags);
+                                argv, envp, load_flags);
 
   if (staging_used) mem_region_free(&staging);
   return rc;
