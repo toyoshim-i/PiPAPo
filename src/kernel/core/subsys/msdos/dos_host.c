@@ -127,14 +127,31 @@ static void dos_build_psp(page_id_t base_id, uint16_t proc_seg,
 
 /* ── Binary load (.COM) ───────────────────────────────────────────────── */
 
+/* Stream `n` bytes from `vn` at `file_off` into the process run at byte
+ * offset `run_off` (from base_id:0), chunked into ≤PAGE_SIZE reads per
+ * the VFS contract (memory_management.md §9).  A single vnode_read with
+ * n > PAGE_SIZE would truncate via size_t on ia16. */
+static int dos_read_into_run(page_id_t base_id, uint32_t run_off, vnode_t *vn,
+                             uint32_t file_off, uint32_t n) {
+  while (n > 0) {
+    page_id_t pg = (page_id_t)(base_id + (page_id_t)(run_off / PAGE_SIZE));
+    uint16_t pg_off = (uint16_t)(run_off % PAGE_SIZE);
+    uint32_t chunk = PAGE_SIZE - pg_off;
+    if (chunk > n) chunk = n;
+    long r = mod_vfs.vnode_read(vn, pg, pg_off, chunk, file_off);
+    if (r < 0) return (int)r;
+    if ((uint32_t)r != chunk) return -(int)ENOEXEC;
+    run_off += chunk;
+    file_off += chunk;
+    n -= chunk;
+  }
+  return 0;
+}
+
 static int dos_load_binary(page_id_t base_id, vnode_t *vn, uint32_t file_size) {
   /* .COM image is loaded at proc_seg:0x0100, which is offset
    * (DOS_MCB_BYTES + 0x100) from the start of the run. */
-  long n = mod_vfs.vnode_read(vn, base_id, (uint16_t)(DOS_MCB_BYTES + 0x100u),
-                              file_size, 0);
-  if (n < 0) return (int)n;
-  if ((uint32_t)n != file_size) return -(int)ENOEXEC;
-  return 0;
+  return dos_read_into_run(base_id, DOS_MCB_BYTES + 0x100u, vn, 0, file_size);
 }
 
 /* ── Initial user-mode frame (.COM) ───────────────────────────────────── */
@@ -310,10 +327,9 @@ int dos_build_exe_image(page_id_t base_id, uint16_t proc_seg,
    * build is deferred until after relocations so the PSP scratch area
    * can stage reloc entries. */
   if (code_size > 0) {
-    long n = mod_vfs.vnode_read(vn, base_id, (uint16_t)(DOS_MCB_BYTES + 0x100u),
-                                code_size, header_bytes);
-    if (n < 0) return (int)n;
-    if ((uint32_t)n != code_size) return -(int)ENOEXEC;
+    int sr = dos_read_into_run(base_id, DOS_MCB_BYTES + 0x100u, vn,
+                               header_bytes, code_size);
+    if (sr < 0) return sr;
   }
 
   /* Resolve initial CS:IP / SS:SP against load_seg. */

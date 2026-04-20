@@ -1147,8 +1147,6 @@ static int dos_get_set_alloc(dos_proc_t *dos, dos_regs_t *regs) {
     case 0x03: /* Set UMB link state */
       return 0;
     default:
-      mod_vfs.klogf("[msdos] unimpl INT 21h AH=58 AL=%x at CS:IP=%x:%x\n",
-                    (unsigned)al, (unsigned)regs->cs, (unsigned)regs->ip);
       return -DOS_ERR_INVALID_FUNCTION;
   }
 }
@@ -1269,8 +1267,6 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
    * dos_errno_to_dos has already done the errno→DOS translation by the
    * time we get here. */
   if (ret < 0) {
-    mod_vfs.klogf("[msdos] INT 21h AH=%x err=%x at CS:IP=%x:%x\n", (unsigned)ah,
-                  (unsigned)-ret, (unsigned)regs->cs, (unsigned)regs->ip);
     regs->ax = (uint16_t)(-ret);
     regs->flags |= 0x0001;
   } else {
