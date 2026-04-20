@@ -56,13 +56,28 @@ pcb_t *sched_next(void) {
   uint32_t saved = spin_lock_irqsave(SPIN_PROC);
   uint32_t idx = (uint32_t)(current - proc_table); /* slot of current */
 
+  /* Idle is the last resort — skipping it here keeps a single busy
+   * process on-CPU instead of alternating with idle every tick. */
   pcb_t *result = current; /* default: keep running */
   for (uint32_t i = 1u; i < PROC_MAX; i++) {
     uint32_t next = (idx + i) % PROC_MAX;
+    if (proc_table[next].is_idle) continue;
     if (proc_table[next].state == PROC_RUNNABLE &&
         proc_table[next].running_on_core < 0) {
       result = &proc_table[next];
       break;
+    }
+  }
+
+  /* No non-idle candidate found.  If current is still runnable, stay on
+   * it; otherwise fall through to an available idle task. */
+  if (result == current && current->state != PROC_RUNNABLE) {
+    for (uint32_t i = 0u; i < PROC_MAX; i++) {
+      if (proc_table[i].is_idle && proc_table[i].state == PROC_RUNNABLE &&
+          proc_table[i].running_on_core < 0) {
+        result = &proc_table[i];
+        break;
+      }
     }
   }
 
