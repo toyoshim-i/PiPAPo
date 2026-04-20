@@ -482,6 +482,36 @@ static int dos_get_version(dos_proc_t *dos, dos_regs_t *regs) {
   return 0;
 }
 
+/* AH=37h (undocumented): Get/Set switchar / device availability.
+ *   AL=00h  Get switch char   → DL='/', AL=00
+ *   AL=01h  Set switch char   (ignored, return AL=00)
+ *   AL=02h  Get avail flag    → DL=00, AL=00
+ *   AL=03h  Set avail flag    (ignored, return AL=00)
+ *   others  AL=FFh (invalid)
+ * COMMAND.COM and several utilities poke this to discover the `/`
+ * option prefix.  We always report '/'. */
+static int dos_switchar(dos_proc_t *dos, dos_regs_t *regs) {
+  (void)dos;
+  uint8_t al = (uint8_t)(regs->ax & 0xFFu);
+  switch (al) {
+    case 0x00:
+      regs->dx = (uint16_t)((regs->dx & 0xFF00u) | '/');
+      regs->ax = regs->ax & 0xFF00u;
+      return 0;
+    case 0x01:
+    case 0x03:
+      regs->ax = regs->ax & 0xFF00u;
+      return 0;
+    case 0x02:
+      regs->dx = regs->dx & 0xFF00u;
+      regs->ax = regs->ax & 0xFF00u;
+      return 0;
+    default:
+      regs->ax = (uint16_t)((regs->ax & 0xFF00u) | 0xFFu);
+      return 0;
+  }
+}
+
 static int dos_terminate(dos_proc_t *dos, dos_regs_t *regs) {
   sys_exit(regs->ax & 0xFF);
   return 0; /* Not reached */
@@ -1208,7 +1238,8 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
     case 0x06:
       ret = dos_direct_console_io(dos, regs);
       break;
-    case 0x08:
+    case 0x07: /* Direct Console Input, no echo, no Ctrl-Break */
+    case 0x08: /* Read char, no echo, Ctrl-Break checked (not enforced) */
       ret = dos_read_char(dos, regs, 0);
       break;
     case 0x09:
@@ -1237,6 +1268,9 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
       break;
     case 0x35:
       ret = dos_get_int_vector(dos, regs);
+      break;
+    case 0x37:
+      ret = dos_switchar(dos, regs);
       break;
     case 0x39:
       ret = dos_mkdir(dos, regs);
