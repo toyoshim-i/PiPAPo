@@ -1125,29 +1125,37 @@ static void test_exe_multiseg_ds(void)
 
 /* -- Test 21: mcb_entry.com --- read MCB at (DS-1):0 at program entry --- */
 /*
- * Verifies the static MCB header set up by D-5a.1: at process entry,
- * the paragraph immediately before the PSP must hold a 'Z' (last-block)
- * MCB whose owner equals the PSP segment and whose size is non-zero.
+ * Verifies the static MCB header at process entry: the paragraph
+ * immediately before the PSP must hold a valid MCB ('M' mid-chain or
+ * 'Z' last-block) whose owner equals the PSP segment and whose size
+ * is non-zero.
  *
  *   0x100  MOV AX, DS                ; 8C D8
  *   0x102  DEC AX                    ; 48
  *   0x103  MOV ES, AX                ; 8E C0
- *   0x105  CMP byte ES:[0], 5Ah      ; 26 80 3E 00 00 5A   sig == 'Z'
- *   0x10B  JNE fail
- *   0x10D  MOV AX, DS                ; 8C D8
- *   0x10F  CMP word ES:[1], AX       ; 26 39 06 01 00       owner == DS
- *   0x114  JNE fail
- *   0x116  MOV AX, word ES:[3]       ; 26 A1 03 00          size != 0
- *   0x11A  TEST AX, AX
- *   0x11C  JZ  fail
- *   0x11E  exit 0                    ; B8 00 4C; CD 21
- *   0x123  fail: exit 1              ; B8 01 4C; CD 21
+ *   0x105  MOV AL, ES:[0]            ; 26 A0 00 00
+ *   0x109  CMP AL, 4Dh               ; 3C 4D            sig == 'M'?
+ *   0x10B  JE  check_owner           ; 74 02
+ *   0x10D  CMP AL, 5Ah               ; 3C 5A            sig == 'Z'?
+ *   0x10F  JNE fail                  ; 75 14
+ *   0x111  (check_owner)
+ *          MOV AX, DS                ; 8C D8
+ *   0x113  CMP word ES:[1], AX       ; 26 39 06 01 00       owner == DS
+ *   0x118  JNE fail                  ; 75 0B
+ *   0x11A  MOV AX, word ES:[3]       ; 26 A1 03 00          size != 0
+ *   0x11E  TEST AX, AX               ; 85 C0
+ *   0x120  JZ  fail                  ; 74 03
+ *   0x122  exit 0                    ; B8 00 4C; CD 21
+ *   0x127  fail: exit 1              ; B8 01 4C; CD 21
  */
 static const unsigned char mcb_entry_com[] = {
     0x8C, 0xD8,                                /* MOV AX, DS         */
     0x48,                                      /* DEC AX             */
     0x8E, 0xC0,                                /* MOV ES, AX         */
-    0x26, 0x80, 0x3E, 0x00, 0x00, 0x5A,        /* CMP es:[0], 5Ah    */
+    0x26, 0xA0, 0x00, 0x00,                    /* MOV AL, es:[0]     */
+    0x3C, 0x4D,                                /* CMP AL, 4Dh ('M')  */
+    0x74, 0x04,                                /* JE +4 (check_owner)*/
+    0x3C, 0x5A,                                /* CMP AL, 5Ah ('Z')  */
     0x75, 0x16,                                /* JNE fail (+0x16)   */
     0x8C, 0xD8,                                /* MOV AX, DS         */
     0x26, 0x39, 0x06, 0x01, 0x00,              /* CMP es:[1], AX     */
