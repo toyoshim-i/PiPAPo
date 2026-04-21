@@ -457,6 +457,18 @@ clock_gettime:
     move.l  %sp@+, %d2
     rts
 
+| --- settimeofday (SYS_SETTIMEOFDAY = 0x0506) ---------------------------------
+| int settimeofday(const struct timeval *tv, const void *tz);
+    .globl settimeofday
+settimeofday:
+    move.l  %d2, %sp@-
+    move.l  8(%sp), %d1         | tv
+    move.l  12(%sp), %d2        | tz
+    move.l  #0x0506, %d0
+    trap    #0
+    move.l  %sp@+, %d2
+    rts
+
 | --- vfork (SYS_VFORK = 0x0002) -----------------------------------------------
 | pid_t vfork(void);
     .globl vfork

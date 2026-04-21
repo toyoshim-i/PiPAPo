@@ -88,6 +88,7 @@ SYSCALL_STUB brk,       0x0400
 # --- Time ---
 SYSCALL_STUB nanosleep,     0x0500
 SYSCALL_STUB clock_gettime, 0x0501
+SYSCALL_STUB settimeofday, 0x0506
 
 # --- Poll ---
 # ppoll is a 5-arg syscall; a4 is already in place for RISC-V (no stack arg)

@@ -221,6 +221,9 @@ static inline int nanosleep(const void *req, void *rem) {
 static inline int clock_gettime(int clk_id, void *tp) {
   return (int)ppap_xtensa_syscall2(0x0501, clk_id, (long)tp);
 }
+static inline int settimeofday(const void *tv, const void *tz) {
+  return (int)ppap_xtensa_syscall2(0x0506, (long)tv, (long)tz);
+}
 
 static inline int ppoll(struct pollfd *fds, int nfds, void *timeout,
                         void *sigmask, int sigsetsize) {
@@ -308,6 +311,11 @@ int nanosleep(const void *req, void *rem);
 /* clock_gettime maps to SYS_CLOCK_GETTIME32 (0x0501).
  * tp must point to struct { long tv_sec; long tv_nsec; }. */
 int clock_gettime(int clk_id, void *tp);
+
+/* settimeofday maps to SYS_SETTIMEOFDAY (0x0506).
+ * tv must point to struct timeval { long tv_sec; long tv_usec; }.
+ * tz is accepted for POSIX compat and ignored by the kernel. */
+int settimeofday(const void *tv, const void *tz);
 
 /* ── Poll ──────────────────────────────────────────────────────────── */
 

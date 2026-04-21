@@ -358,6 +358,20 @@ clock_gettime:
   int   $0x30
   SYSCALL_RET
 
+/* int settimeofday(const struct timeval *tv, const void *tz); */
+  .global settimeofday
+settimeofday:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx      /* tv */
+  movw  6(%bp), %cx      /* tz (NULL in practice) */
+  movw  $0x0506, %ax
+  int   $0x30
+  SYSCALL_RET
+
 /* int ioctl(int fd, unsigned long cmd, void *arg); */
   .global ioctl
 ioctl:

@@ -476,6 +476,17 @@ clock_gettime:
     DO_SYSCALL
     pop  {r7, pc}
 
+@ --- settimeofday (SYS_SETTIMEOFDAY = 0x0506) --------------------------------
+@ int settimeofday(const struct timeval *tv, const void *tz);
+.section .text.settimeofday, "ax", %progbits
+.global settimeofday
+.thumb_func
+settimeofday:
+    push {r7, lr}
+    ldr  r7, =0x0506    @ SYS_SETTIMEOFDAY
+    DO_SYSCALL
+    pop  {r7, pc}
+
 @ --- poweroff (SYS_POWEROFF = 0x0B00) ----------------------------------------
 @ void poweroff(void);
 .section .text.poweroff, "ax", %progbits
