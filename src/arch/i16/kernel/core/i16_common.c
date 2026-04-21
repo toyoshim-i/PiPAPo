@@ -158,8 +158,6 @@ long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1, uint16_t a2,
   frame[2] = a2;
   frame[3] = a3;
 
-  extern void syscall_dispatch(uint32_t * frame, uint32_t nr, uint32_t a4,
-                               uint32_t a5);
 #ifdef KSTACK_USAGE_TRACK
   proc_kstack_paint();
 #endif
@@ -182,7 +180,6 @@ long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1, uint16_t a2,
   __asm__ volatile("mov 8(%%bp), %0" : "=r"(now_ret));
   if (now_ret != saved_ret || now_ret == 0u) {
     pcb_t *cur = current;
-    extern pcb_t proc_table[];
     unsigned slot = cur ? (unsigned)(cur - proc_table) : 0u;
     mod_vfs.klogf(
         "PANIC: i16_syscall_dispatch return IP corrupted  "
