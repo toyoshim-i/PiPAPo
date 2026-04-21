@@ -8,6 +8,7 @@
 
 #include <stdint.h>
 
+#include "kernel/common/ioregs.h" /* SR_USER */
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/subsys/subsys.h"
@@ -104,18 +105,12 @@ static int fault_signal(int fault_type) {
  * Returns: 1 = process killed, caller should reschedule
  *          0 = kernel fault, caller should halt
  */
-/* Defined in uart_x68k.c — inhibit TVRAM output to prevent double fault */
-#ifdef PPAP_X68K
-extern int uart_tvram_inhibit;
-#endif
-
 int m68k_crash_handler(int fault_type, uint32_t *regs) {
-#ifdef PPAP_X68K
-  /* Prevent klogf from calling IOCS _B_PUTC, which could double-fault
-   * if the crash occurred inside IOCS itself.  Output goes only to the
-   * serial mirror (_OUT232C). */
-  uart_tvram_inhibit = 1;
-#endif
+  /* Let target drivers switch to crash-safe output mode before any
+   * klogf call (e.g. X68000 disables IOCS TVRAM output so a crash
+   * originating inside IOCS doesn't double-fault on its way to the
+   * log).  Targets without a hook handle the event as a no-op. */
+  mod_vfs.notify(VFS_EVENT_CRASH_ENTER);
 
   uint16_t *exc = (uint16_t *)((uint8_t *)regs + 60);
   uint32_t pc, fault_addr = 0;
@@ -229,8 +224,6 @@ int m68k_fline_dispatch(uint32_t *regs, uint32_t usp) {
 }
 
 /* ── Initial stack frame for new processes ──────────────────────────────── */
-
-#include "kernel/common/ioregs.h" /* SR_USER */
 
 uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void)) {
   *--sp = (uint32_t)entry;              /* PC (4 bytes)            */

@@ -35,6 +35,11 @@
      * input polls, secondary logger, fbcon */
 #define VFS_EVENT_IDLE \
   5 /* from target_idle_poll(): idle loop iteration, thread context */
+#define VFS_EVENT_CRASH_ENTER                                \
+  6 /* from an arch crash handler before any klog output — \
+     * targets override vfs_notify() to switch drivers to a  \
+     * crash-safe mode (e.g. disable IOCS TVRAM on X68000 so \
+     * subsequent klogf calls don't double-fault). */
 
 /* Forward declaration for fd_stdio_init parameter */
 struct pcb;

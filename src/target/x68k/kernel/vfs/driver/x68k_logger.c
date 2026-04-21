@@ -2,6 +2,7 @@
 
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/vfs/driver/uart.h"
+#include "kernel/vfs/driver/uart_x68k.h"
 #include "kernel/vfs/klog.h"
 #include "kernel/vfs/tty.h"
 
@@ -45,6 +46,12 @@ void vfs_notify(int event) {
        * is not reentrant and hangs when called from idle context. */
       if (uart_rx_avail_hw()) tty_rx_notify(TTY_DISPLAY);
       if (uart_serial_rx_avail_hw()) tty_rx_notify(TTY_SERIAL);
+      break;
+    case VFS_EVENT_CRASH_ENTER:
+      /* arch/m68k crash handler will klogf next; stop IOCS TVRAM output
+       * so a crash originating inside IOCS itself can't double-fault.
+       * Log bytes still reach the _OUT232C serial mirror. */
+      uart_tvram_inhibit = 1;
       break;
   }
 }
