@@ -441,6 +441,17 @@ rmdir:
     DO_SYSCALL
     pop  {r7, pc}
 
+@ --- utimes (SYS_UTIMES = 0x0309) ---------------------------------------------
+@ int utimes(const char *path, const struct timeval times[2]);
+.section .text.utimes, "ax", %progbits
+.global utimes
+.thumb_func
+utimes:
+    push {r7, lr}
+    ldr  r7, =0x0309    @ SYS_UTIMES
+    DO_SYSCALL
+    pop  {r7, pc}
+
     .ltorg                 @ literal pool for new stubs
 
 @ --- nanosleep (SYS_NANOSLEEP = 0x0500) ---------------------------------------

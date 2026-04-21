@@ -45,15 +45,16 @@ MOD_VFS_ENTRY(path_normalize, 31)
 MOD_VFS_ENTRY(path_rename,    32)
 MOD_VFS_ENTRY(path_statfs,    33)
 MOD_VFS_ENTRY(path_unlink,    34)
-MOD_VFS_ENTRY(tty_rx_notify,  35)
-MOD_VFS_ENTRY(umount,         36)
-MOD_VFS_ENTRY(vnode_acquire,  37)
-MOD_VFS_ENTRY(vnode_alloc,    38)
-MOD_VFS_ENTRY(vnode_read,     39)
-MOD_VFS_ENTRY(vnode_readlink, 40)
-MOD_VFS_ENTRY(vnode_release,  41)
-MOD_VFS_ENTRY(vnode_stat,     42)
+MOD_VFS_ENTRY(path_utimes,    35)
+MOD_VFS_ENTRY(tty_rx_notify,  36)
+MOD_VFS_ENTRY(umount,         37)
+MOD_VFS_ENTRY(vnode_acquire,  38)
+MOD_VFS_ENTRY(vnode_alloc,    39)
+MOD_VFS_ENTRY(vnode_read,     40)
+MOD_VFS_ENTRY(vnode_readlink, 41)
+MOD_VFS_ENTRY(vnode_release,  42)
+MOD_VFS_ENTRY(vnode_stat,     43)
 
 #ifndef MOD_VFS_FUNC_COUNT
-#define MOD_VFS_FUNC_COUNT 43
+#define MOD_VFS_FUNC_COUNT 44
 #endif

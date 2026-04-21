@@ -561,6 +561,20 @@ rmdir:
   int   $0x30
   SYSCALL_RET
 
+/* int utimes(const char *path, const struct timeval times[2]); */
+  .global utimes
+utimes:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx      /* path */
+  movw  6(%bp), %cx      /* times[2] (or NULL) */
+  movw  $0x0309, %ax
+  int   $0x30
+  SYSCALL_RET
+
 /* pid_t setsid(void); */
   .global setsid
 setsid:

@@ -421,6 +421,18 @@ rmdir:
     trap    #0
     rts
 
+| --- utimes (SYS_UTIMES = 0x0309) ---------------------------------------------
+| int utimes(const char *path, const struct timeval times[2]);
+    .globl utimes
+utimes:
+    move.l  %d2, %sp@-
+    move.l  8(%sp), %d1         | path
+    move.l  12(%sp), %d2        | times
+    move.l  #0x0309, %d0
+    trap    #0
+    move.l  %sp@+, %d2
+    rts
+
 | --- nanosleep (SYS_NANOSLEEP = 0x0500) ----------------------------------------
 | int nanosleep(const void *req, void *rem);
     .globl nanosleep

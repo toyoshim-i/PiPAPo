@@ -80,6 +80,7 @@ SYSCALL_STUB chdir,     0x0207
 SYSCALL_STUB readlink,  0x0208
 SYSCALL_STUB getdents,  0x0300
 SYSCALL_STUB statfs64,  0x0305
+SYSCALL_STUB utimes,    0x0309
 
 # --- Memory ---
 SYSCALL_STUB brk,       0x0400

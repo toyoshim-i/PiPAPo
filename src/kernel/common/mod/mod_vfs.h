@@ -405,6 +405,20 @@ MOD_FUNC(vfs, int, path_statfs, const char *, void *)
 MOD_FUNC(vfs, int, path_unlink, const char *)
 
 /*
+ * path_utimes — Set atime/mtime on a file by path.
+ *
+ *   path   Pathname of the target file or directory.
+ *   atime  New access time (seconds since Unix epoch).
+ *   mtime  New modification time (seconds since Unix epoch).
+ *
+ * ctime is always set to "now" at the op level — callers cannot
+ * override it (standard POSIX semantics).  Returns 0 on success,
+ * -EROFS if the mount is read-only, -EPERM if the FS driver has no
+ * .utimes op, negative errno on other failures.
+ */
+MOD_FUNC(vfs, int, path_utimes, const char *, uint32_t, uint32_t)
+
+/*
  * tty_rx_notify — Wake processes blocked on TTY read.
  *
  *   idx  TTY index (0=serial, 1=display).

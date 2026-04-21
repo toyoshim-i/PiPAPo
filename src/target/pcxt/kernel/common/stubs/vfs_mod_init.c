@@ -28,6 +28,7 @@ int  vfs_path_normalize(const char *, char *, int);
 int  vfs_path_rename(const char *, const char *);
 int  vfs_path_statfs(const char *, void *);
 int  vfs_path_unlink(const char *);
+int  vfs_path_utimes(const char *, uint32_t, uint32_t);
 mount_entry_t *vfs_mount_find(const char *, const char **);
 int  vfs_mount_ufs(const char *, uint8_t, const void *);
 vnode_t *vfs_vnode_alloc(void);

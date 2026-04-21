@@ -287,6 +287,32 @@ long sys_rename(page_id_t old_page, uint16_t old_off, page_id_t new_page,
   return (long)mod_vfs.path_rename(oldpath, newpath);
 }
 
+/* ── sys_utimes ──────────────────────────────────────────────────────────────
+ *
+ * times_ptr points at `struct timeval[2]` = { atime, mtime } in user
+ * space.  Each `struct timeval` is { long tv_sec; long tv_usec; }.
+ * times_ptr == NULL means "stamp to now" — the common touch(1) case.
+ * Sub-second resolution is dropped.
+ */
+
+long sys_utimes(page_id_t page, uint16_t off, uintptr_t times_ptr) {
+  char path[VFS_PATH_MAX];
+  int rc = sys_copy_path(path, sizeof(path), page, off);
+  if (rc < 0) return (long)rc;
+
+  uint32_t atime, mtime;
+  if (times_ptr == 0u) {
+    atime = mtime = time_now_sec();
+  } else {
+    long tv[4]; /* tv[0,1] = atime (sec, usec); tv[2,3] = mtime (sec, usec) */
+    if (sys_copy_from_user(tv, times_ptr, sizeof(tv)) < 0) return -(long)EFAULT;
+    atime = (uint32_t)tv[0];
+    mtime = (uint32_t)tv[2];
+  }
+
+  return (long)mod_vfs.path_utimes(path, atime, mtime);
+}
+
 /* ══════════════════════════════════════════════════════════════════════════════
  * Linux-compatible syscalls (musl libc ABI)
  * ══════════════════════════════════════════════════════════════════════════════

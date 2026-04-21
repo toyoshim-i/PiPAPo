@@ -136,6 +136,10 @@ struct vfs_ops {
                 const char *new_name);
   int (*truncate)(vnode_t *vn, uint32_t length);
   int (*statfs)(mount_entry_t *mnt, struct kernel_statfs *buf);
+  /* utimes: set mtime/ctime/atime on a vnode, in seconds since epoch.
+   * Drivers that do not store times (romfs, devfs, procfs) set this to
+   * NULL; the VFS layer returns -EPERM for NULL ops. */
+  int (*utimes)(vnode_t *vn, uint32_t atime, uint32_t mtime);
 };
 
 /* ── mount_entry — one entry in the kernel mount table ──────────────────────

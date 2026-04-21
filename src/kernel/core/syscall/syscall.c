@@ -409,9 +409,11 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
     case SYS_GETCPU:
       ret = (long)core_id();
       break;
-    case SYS_UTIMES:
-      ret = 0; /* no RTC — timestamp update is no-op */
-      break;
+    case SYS_UTIMES: {
+      user_page_ref_t r;
+      if ((ret = xlate_user_ptr((uintptr_t)a0, &r)) != 0) break;
+      ret = sys_utimes(r.page, r.off, (uintptr_t)a1);
+    } break;
     case SYS_STATX:
       ret = -(long)ENOSYS; /* stat64 suffices */
       break;

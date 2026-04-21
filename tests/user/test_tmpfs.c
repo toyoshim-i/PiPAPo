@@ -224,5 +224,50 @@ int main(void)
         unlink("/tmp/test_mtime");
     }
 
+    /* 17. utimes: explicit timestamps land in mtime/atime; ctime = now. */
+    {
+        fd = open("/tmp/test_utimes", O_WRONLY | O_CREAT, 0644);
+        UT_ASSERT(fd >= 0, "create /tmp/test_utimes");
+        if (fd >= 0) close(fd);
+
+        /* struct timeval[2] = { atime, mtime } — use a fixed 2000-01-01
+         * epoch for mtime and 2005-01-01 for atime, both well above the
+         * 0-or-low value that ctime will show. */
+        long times[4] = {
+            1104537600L, 0L,  /* 2005-01-01 atime */
+             946684800L, 0L,  /* 2000-01-01 mtime */
+        };
+        ret = utimes("/tmp/test_utimes", times);
+        UT_ASSERT_EQ(ret, 0);
+
+        ret = stat("/tmp/test_utimes", &st);
+        UT_ASSERT_EQ(ret, 0);
+        UT_ASSERT_EQ((int)st.st_mtime, (int) 946684800);
+        UT_ASSERT_EQ((int)st.st_atime, (int)1104537600);
+        /* ctime is "now" from the kernel wallclock — must differ from
+         * the 2000 stamp we set for mtime.  (Modulo PPAP's 0-epoch boot
+         * time, ctime is seconds-since-boot ≪ 946684800). */
+        UT_ASSERT(st.st_ctime != st.st_mtime,
+                  "ctime not overridden by utimes");
+
+        /* NULL times = stamp to now.  New mtime must differ from the
+         * fixed 946684800 we just set. */
+        ret = utimes("/tmp/test_utimes", 0);
+        UT_ASSERT_EQ(ret, 0);
+        ret = stat("/tmp/test_utimes", &st);
+        UT_ASSERT_EQ(ret, 0);
+        UT_ASSERT((int)st.st_mtime != (int)946684800,
+                  "utimes(NULL) stamps now");
+
+        unlink("/tmp/test_utimes");
+    }
+
+    /* 18. utimes on a read-only FS returns EROFS.  The romfs root is
+     * mounted read-only, so /bin/sh (or any romfs entry) should fail. */
+    {
+        ret = utimes("/bin/ls", 0);
+        UT_ASSERT(ret < 0, "utimes on romfs returns error");
+    }
+
     UT_SUMMARY("test_tmpfs");
 }

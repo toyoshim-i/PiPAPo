@@ -182,6 +182,7 @@ long sys_readlink(page_id_t page, uint16_t off, uintptr_t buf_ptr, long bufsiz);
 long sys_rmdir(page_id_t page, uint16_t off);
 long sys_rename(page_id_t old_page, uint16_t old_off, page_id_t new_page,
                 uint16_t new_off);
+long sys_utimes(page_id_t page, uint16_t off, uintptr_t times_ptr);
 long sys_umask(long mask);
 /* sys_mount source is optional — pass page_id = PAGE_ID_INVALID for
  * "no source" (the dispatcher does this when user_ptr is NULL). */

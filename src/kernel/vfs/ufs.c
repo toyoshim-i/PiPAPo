@@ -1622,6 +1622,31 @@ static int ufs_unlink(vnode_t *dir, const char *name) {
   return 0;
 }
 
+/* ── ufs_utimes ───────────────────────────────────────────────────────── */
+
+static int ufs_utimes(vnode_t *vn, uint32_t atime, uint32_t mtime) {
+  ufs_priv_t *priv = (ufs_priv_t *)vn->fs_priv;
+
+  ufs_inode_t *inode = vfs_scratch_alloc();
+  if (!inode) return -ENOMEM;
+  int rc = ufs_read_inode(priv, vn->ino, inode);
+  if (rc < 0) {
+    vfs_scratch_free(inode);
+    return rc;
+  }
+
+  inode->i_atime = atime;
+  inode->i_mtime = mtime;
+  inode->i_ctime = mod_core.time_now_sec();
+
+  rc = ufs_write_inode(priv, vn->ino, inode);
+  vfs_scratch_free(inode);
+  if (rc < 0) return rc;
+
+  ufs_sync_super(priv);
+  return 0;
+}
+
 /* ── ufs_stat ─────────────────────────────────────────────────────────── */
 
 static int ufs_stat(vnode_t *vn, struct stat *st) {
@@ -1792,6 +1817,13 @@ static int ufs_truncate_locked(vnode_t *vn, uint32_t length) {
   return r;
 }
 
+static int ufs_utimes_locked(vnode_t *vn, uint32_t atime, uint32_t mtime) {
+  spin_lock(SPIN_FS);
+  int r = ufs_utimes(vn, atime, mtime);
+  spin_unlock(SPIN_FS);
+  return r;
+}
+
 static int ufs_statfs_locked(mount_entry_t *mnt, struct kernel_statfs *buf) {
   spin_lock(SPIN_FS);
   int r = ufs_statfs(mnt, buf);
@@ -1814,4 +1846,5 @@ const vfs_ops_t ufs_ops = {
     .unlink = ufs_unlink_locked,
     .truncate = ufs_truncate_locked,
     .statfs = ufs_statfs_locked,
+    .utimes = ufs_utimes_locked,
 };
