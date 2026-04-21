@@ -118,7 +118,7 @@ set(USER_MUSL_TESTS
 
 # Applets that link to busybox binary
 set(BB_APPLETS
-    chmod cp echo grep head hush kill ln mkdir mv
+    chmod cp grep head hush kill ln mkdir mv
     printf rm rmdir sed sleep sort tail uname wc
 )
 # Sbin applets — link to busybox via ../bin/busybox
