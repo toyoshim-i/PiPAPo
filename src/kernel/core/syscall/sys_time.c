@@ -7,19 +7,11 @@
 #include <stdint.h>
 
 #include "common/errno.h"
+#include "common/time.h"
 #include "kernel/common/config.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/syscall/syscall.h"
-
-/*
- * struct timespec — POSIX nanosecond-resolution time value.
- * Matches the layout used by musl libc on 32-bit ARM.
- */
-struct timespec {
-  long tv_sec;  /* seconds          */
-  long tv_nsec; /* nanoseconds [0, 999999999] */
-};
 
 /* Nanoseconds per SysTick tick */
 #define NS_PER_TICK (1000000000u / PPAP_TICK_HZ)

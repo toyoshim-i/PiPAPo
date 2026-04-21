@@ -2,13 +2,8 @@
  * test_time.c — Time syscalls: nanosleep basic behavior
  */
 
+#include "common/time.h"
 #include "utest.h"
-
-/* Minimal timespec for nanosleep */
-struct timespec {
-    long tv_sec;
-    long tv_nsec;
-};
 
 int main(void)
 {
