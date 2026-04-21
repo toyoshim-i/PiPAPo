@@ -27,7 +27,7 @@ CONFIG_CP=y
 CONFIG_MV=y
 CONFIG_RM=y
 # CONFIG_MKDIR is not set (using native PPAP mkdir)
-CONFIG_RMDIR=y
+# CONFIG_RMDIR is not set (using native PPAP rmdir)
 CONFIG_LN=y
 CONFIG_CHMOD=y
 

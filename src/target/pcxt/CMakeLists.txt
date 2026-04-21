@@ -280,6 +280,7 @@ add_executable(stage2
   ${CMAKE_CURRENT_SOURCE_DIR}/boot/stage2_entry.S
   ${CMAKE_CURRENT_SOURCE_DIR}/boot/stage2.c
 )
+target_include_directories(stage2 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_options(stage2 PRIVATE ${COMMON_FLAGS})
 target_link_options(stage2 PRIVATE
   -nostartfiles
@@ -528,7 +529,7 @@ add_custom_target(pcxt_memory_report ALL
 # Target 5: ia16 user ELFs (first-party src/user only)
 # ==========================================================================
 
-set(PCXT_USER_APPS hello getty init pdb push cat ls ps df top pi uname sleep mkdir reset)
+set(PCXT_USER_APPS hello getty init pdb push cat ls ps df top pi uname sleep mkdir reset rmdir)
 
 foreach(_app ${PCXT_USER_APPS})
   if(_app STREQUAL "push")
