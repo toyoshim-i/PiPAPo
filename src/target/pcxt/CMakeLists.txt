@@ -529,7 +529,7 @@ add_custom_target(pcxt_memory_report ALL
 # Target 5: ia16 user ELFs (first-party src/user only)
 # ==========================================================================
 
-set(PCXT_USER_APPS hello getty init pdb push cat ls ps df top pi uname sleep mkdir reset rmdir)
+set(PCXT_USER_APPS hello getty init pdb push cat ls ps df top pi uname sleep mkdir reset rmdir rm)
 
 foreach(_app ${PCXT_USER_APPS})
   if(_app STREQUAL "push")
