@@ -28,6 +28,9 @@
  *   _OUT232C   (d0=0x35, d1.b=char)  Output one character to RS-232C serial
  */
 
+#include "kernel/vfs/driver/uart_x68k.h"
+
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -105,7 +108,7 @@ static inline int iocs_b_keysns(void) {
  * flag makes uart_putc a no-op for TVRAM; klogf output goes only via the
  * serial mirror (_OUT232C).
  */
-int uart_tvram_inhibit;
+bool uart_tvram_inhibit;
 
 /* ── VT100 → X68000 IOCS escape sequence converter ─────────────────────── *
  *

@@ -6,12 +6,6 @@
 #include "kernel/vfs/klog.h"
 #include "kernel/vfs/tty.h"
 
-extern int uart_serial_putc(char c, void (*notify)(void));
-extern int uart_serial_getc(void);
-extern int uart_serial_rx_avail(void);
-extern int uart_rx_avail_hw(void);
-extern int uart_serial_rx_avail_hw(void);
-
 void klog_init_logger(void) {
   uart_init();
   klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
@@ -51,7 +45,7 @@ void vfs_notify(int event) {
       /* arch/m68k crash handler will klogf next; stop IOCS TVRAM output
        * so a crash originating inside IOCS itself can't double-fault.
        * Log bytes still reach the _OUT232C serial mirror. */
-      uart_tvram_inhibit = 1;
+      uart_tvram_inhibit = true;
       break;
   }
 }
