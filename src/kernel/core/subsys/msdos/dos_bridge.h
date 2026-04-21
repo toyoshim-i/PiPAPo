@@ -59,6 +59,14 @@ typedef struct dos_proc {
   uint16_t ivt_saved_cs[DOS_IVT_SAVE_MAX];
   uint8_t ivt_saved_count;
 
+  /* One-byte stdin pushback used by AH=0Bh (check input status).  AH=0Bh
+   * probes stdin non-blocking; if a byte arrived it is stashed here and
+   * the next AH=01h/06h/07h/08h/0Ah drains it before issuing a blocking
+   * read.  Without this, a truthful "no char available" report is
+   * impossible to pair with a subsequent blocking read. */
+  uint8_t stdin_pushback_valid;
+  uint8_t stdin_pushback_char;
+
   /* Termios snapshot taken at msdos_on_init and restored by msdos_on_exit.
    * DOS programs do their own echo / line editing and expect a raw
    * per-byte keyboard with CR on Enter, so we clear ICANON|ECHO|ICRNL

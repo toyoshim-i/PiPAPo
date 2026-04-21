@@ -358,11 +358,46 @@ static long dos_io_getc(uint8_t *out) {
   }
 }
 
+/* Non-blocking stdin probe used by AH=0Bh.  Returns 1 if a byte is
+ * available (either already stashed or just read) and leaves it
+ * stashed in dos->stdin_pushback_char for a later blocking-style read
+ * to drain.  Returns 0 if no byte is available. */
+static int dos_stdin_peek(dos_proc_t *dos) {
+  if (dos->stdin_pushback_valid) return 1;
+  if (dos_data_page == PAGE_ID_INVALID) return 0;
+
+  long flags = sys_fcntl64(0, F_GETFL, 0);
+  if (flags < 0) flags = 0;
+  sys_fcntl64(0, F_SETFL, flags | O_NONBLOCK);
+  long n = sys_read(0, dos_data_page, DOS_IO_SCRATCH_OFF, 1);
+  sys_fcntl64(0, F_SETFL, flags);
+
+  if (n == 1) {
+    uint8_t c;
+    mem_region_page_read(dos_data_page, DOS_IO_SCRATCH_OFF, &c, 1);
+    dos->stdin_pushback_char = c;
+    dos->stdin_pushback_valid = 1;
+    return 1;
+  }
+  return 0;
+}
+
+/* Drain-first blocking getc.  If AH=0Bh previously stashed a byte,
+ * consume it; otherwise fall back to dos_io_getc's blocking read. */
+static long dos_stdin_getc(dos_proc_t *dos, uint8_t *out) {
+  if (dos->stdin_pushback_valid) {
+    *out = dos->stdin_pushback_char;
+    dos->stdin_pushback_valid = 0;
+    return 1;
+  }
+  return dos_io_getc(out);
+}
+
 /* ── INT 21h functions ─────────────────────────────────────────────── */
 
 static int dos_read_char(dos_proc_t *dos, dos_regs_t *regs, int echo) {
   uint8_t c;
-  if (dos_io_getc(&c) == 1) {
+  if (dos_stdin_getc(dos, &c) == 1) {
     if (echo) dos_io_putc(c);
     regs->ax = (regs->ax & 0xFF00) | c;
     return 0;
@@ -395,7 +430,7 @@ static int dos_buffered_input(dos_proc_t *dos, dos_regs_t *regs) {
 
   for (actual_len = 0; actual_len < max_len - 1; actual_len++) {
     uint8_t c;
-    if (dos_io_getc(&c) != 1) break;
+    if (dos_stdin_getc(dos, &c) != 1) break;
     if (c == '\r' || c == '\n') break;
     dos_io_putc(c);
     current->cpu_ops->write8(dos->cpu_state,
@@ -428,17 +463,10 @@ static int dos_direct_console_io(dos_proc_t *dos, dos_regs_t *regs) {
     return 0;
   }
 
-  if (dos_data_page == PAGE_ID_INVALID) return -DOS_ERR_INVALID_FUNCTION;
-
-  long flags = sys_fcntl64(0, F_GETFL, 0);
-  if (flags < 0) flags = 0;
-  sys_fcntl64(0, F_SETFL, flags | O_NONBLOCK);
-  long n = sys_read(0, dos_data_page, DOS_IO_SCRATCH_OFF, 1);
-  sys_fcntl64(0, F_SETFL, flags);
-
-  if (n == 1) {
-    uint8_t c;
-    mem_region_page_read(dos_data_page, DOS_IO_SCRATCH_OFF, &c, 1);
+  if (dos_stdin_peek(dos)) {
+    /* Drain the stashed byte (from this peek or a prior AH=0Bh). */
+    uint8_t c = dos->stdin_pushback_char;
+    dos->stdin_pushback_valid = 0;
     regs->ax = (regs->ax & 0xFF00) | c;
     regs->flags &= ~0x0040u; /* ZF = 0: char available */
   } else {
@@ -450,12 +478,15 @@ static int dos_direct_console_io(dos_proc_t *dos, dos_regs_t *regs) {
 }
 
 static int dos_check_input_status(dos_proc_t *dos, dos_regs_t *regs) {
-  /* TODO: implement non-blocking poll on fd 0 via an in_avail VFS op.
-   * Currently lies "char available", which is harmless when the caller
-   * follows up with a blocking read but can mislead apps that loop on
-   * the status.  Yield first so such spin-loops don't starve the system. */
-  sched_switch();
-  regs->ax = (regs->ax & 0xFF00) | 0xFF;
+  /* AL=FFh iff a byte is actually available on stdin.  On "no char"
+   * yield so the typical poll-in-a-tight-loop DOS app doesn't starve
+   * the rest of the system. */
+  if (dos_stdin_peek(dos)) {
+    regs->ax = (regs->ax & 0xFF00) | 0xFF;
+  } else {
+    sched_switch();
+    regs->ax = regs->ax & 0xFF00;
+  }
   return 0;
 }
 
