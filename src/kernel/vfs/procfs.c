@@ -514,8 +514,15 @@ static int gen_pid_subsys(char *buf, int bufsiz, const pcb_t *p) {
 /* ── procfs_mount ───────────────────────────────────────────────────────────
  */
 
+/* Captured at mount so every procfs entry reports a consistent
+ * "created-at-boot" timestamp via .stat.  See the identical pattern
+ * in devfs_mount / devfs_stat. */
+static uint32_t procfs_mount_epoch;
+
 static int procfs_mount(mount_entry_t *mnt, const void *dev_data) {
   (void)dev_data;
+
+  procfs_mount_epoch = mod_core.time_now_sec();
 
   vnode_t *root = mod_vfs.vnode_alloc();
   if (!root) return -ENOMEM;
@@ -796,8 +803,8 @@ static int procfs_stat(vnode_t *vn, struct stat *st) {
   st->st_mode = vn->mode;
   st->st_nlink = 1;
   st->st_size = vn->size;
-  st->st_mtime = 0;
-  st->st_ctime = 0;
+  st->st_mtime = procfs_mount_epoch;
+  st->st_ctime = procfs_mount_epoch;
   st->st_atime = 0;
   return 0;
 }

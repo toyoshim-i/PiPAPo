@@ -397,8 +397,16 @@ static uint32_t str_len(const char *s) {
 /* ── devfs_mount ────────────────────────────────────────────────────────────
  */
 
+/* Captured at mount so every devfs entry reports a consistent
+ * "created-at-boot" timestamp via .stat.  Zero on targets that boot
+ * before the wallclock is seeded (which is every target today
+ * pre-T-4), and ticks forward only after sys_settimeofday. */
+static uint32_t devfs_mount_epoch;
+
 static int devfs_mount(mount_entry_t *mnt, const void *dev_data) {
   (void)dev_data;
+
+  devfs_mount_epoch = mod_core.time_now_sec();
 
   /* Allocate root vnode for /dev directory */
   vnode_t *root = mod_vfs.vnode_alloc();
@@ -503,8 +511,8 @@ static int devfs_stat(vnode_t *vn, struct stat *st) {
   st->st_mode = vn->mode;
   st->st_nlink = 1;
   st->st_size = vn->size;
-  st->st_mtime = 0;
-  st->st_ctime = 0;
+  st->st_mtime = devfs_mount_epoch;
+  st->st_ctime = devfs_mount_epoch;
   st->st_atime = 0;
   return 0;
 }
