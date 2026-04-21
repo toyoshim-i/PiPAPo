@@ -164,5 +164,37 @@ int main(void)
         unlink("/tmp/test_straddle");
     }
 
+    /* 15. Relative paths resolve against cwd for file-creation syscalls.
+     * Regression guard for a bug where vfs_lookup_parent rejected any
+     * non-absolute path with EINVAL while vfs_lookup_flags already
+     * handled cwd — so `mkdir /tmp/x` worked but `mkdir x` from /tmp
+     * did not.  Covers mkdir, rmdir, open(O_CREAT), unlink. */
+    {
+        ret = chdir("/tmp");
+        UT_ASSERT_EQ(ret, 0);
+
+        /* mkdir with a bare name lands under /tmp */
+        ret = mkdir("test_rel_dir", 0755);
+        UT_ASSERT_EQ(ret, 0);
+        ret = stat("/tmp/test_rel_dir", &st);
+        UT_ASSERT_EQ(ret, 0);
+        UT_ASSERT(S_ISDIR(st.st_mode), "relative mkdir created /tmp/test_rel_dir");
+        ret = rmdir("test_rel_dir");
+        UT_ASSERT_EQ(ret, 0);
+
+        /* open(O_CREAT) with a bare name lands under /tmp */
+        fd = open("test_rel_file", O_WRONLY | O_CREAT, 0644);
+        UT_ASSERT(fd >= 0, "relative open(O_CREAT)");
+        if (fd >= 0) close(fd);
+        ret = stat("/tmp/test_rel_file", &st);
+        UT_ASSERT_EQ(ret, 0);
+        UT_ASSERT(S_ISREG(st.st_mode), "relative creat made /tmp/test_rel_file");
+        ret = unlink("test_rel_file");
+        UT_ASSERT_EQ(ret, 0);
+
+        /* Leave cwd where other tests expect it. */
+        chdir("/");
+    }
+
     UT_SUMMARY("test_tmpfs");
 }
