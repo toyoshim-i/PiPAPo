@@ -14,8 +14,10 @@
 #ifndef PPAP_TARGET_PICO1CALC_KERNEL_COMMON_PICO1CALC_CAPS_H
 #define PPAP_TARGET_PICO1CALC_KERNEL_COMMON_PICO1CALC_CAPS_H
 
-/* Zero until VFS_EVENT_PLL_CHANGED completes; non-zero afterwards iff
+#include <stdbool.h>
+
+/* false until VFS_EVENT_PLL_CHANGED completes; true afterwards iff
  * the STM32 keyboard controller responded during kbd_init(). */
-extern int pico1calc_has_kbd;
+extern bool pico1calc_has_kbd;
 
 #endif /* PPAP_TARGET_PICO1CALC_KERNEL_COMMON_PICO1CALC_CAPS_H */

@@ -18,7 +18,7 @@
 #include "kernel/vfs/procfs.h"
 #include "kernel/vfs/tty.h"
 
-int pico1calc_has_kbd;
+bool pico1calc_has_kbd;
 
 /* ── LCD + keyboard TTY backend ─────────────────────────────────────────── */
 
