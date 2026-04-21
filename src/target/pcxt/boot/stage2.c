@@ -18,6 +18,7 @@
 
 #include <stdint.h>
 
+#include "boot/stage2_entry.h"
 #include "kernel/common/boot_params.h"
 
 #define FLOPPY_SEC       512u
@@ -58,7 +59,6 @@ static uint16_t ufs_base_sector;  /* absolute LBA of first UFS sector */
 #define VFS_DATA_STAGE2_SIZE 0x0A00u  /* 0xB600+0x0A00=0xC000: stop before stage2 */
 
 static uint32_t sb_itable_sector;
-extern uint8_t boot_drive;
 
 static uint16_t rd16(const uint8_t *p) {
   return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
@@ -75,8 +75,6 @@ static uint16_t str_len16(const char *s) {
   return n;
 }
 
-/* print_char (in stage2_entry.S): writes to BIOS teletype (VGA) and COM1. */
-extern void print_char(void);
 static void putc_bios(char c)
 {
   /* print_char takes the char in AL and preserves all regs. */
