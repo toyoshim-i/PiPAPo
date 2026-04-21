@@ -12,6 +12,7 @@
 
 #include "kernel/common/ioregs.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/linker.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
@@ -153,9 +154,6 @@ void riscv_timer_init(void) {
   csr_set(mstatus, MSTATUS_MIE);
 }
 
-/* Forward declaration — sched_timer_tick() is in kernel/proc/sched.c. */
-extern void sched_timer_tick(int from_user);
-
 /*
  * riscv_timer_handler — called from trap.S on timer interrupt (mcause = 7).
  *
@@ -222,7 +220,6 @@ uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void)) {
   sp -= 36; /* 36 words = 144 bytes = TRAP_FRAME_SIZE */
   for (int i = 0; i < 36; i++) sp[i] = 0u;
   /* gp (x3) at frame offset 1 */
-  extern char __global_pointer$[];
   sp[1] = (uint32_t)(uintptr_t)__global_pointer$;
   /* mepc: entry point — mret jumps here */
   sp[30] = (uint32_t)(uintptr_t)entry;
