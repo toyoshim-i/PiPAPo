@@ -18,6 +18,7 @@
 static int opt_long;
 static int opt_all;
 static int opt_classify;
+static int opt_recursive;
 static int term_cols;
 static int use_color = 1;
 #define C(seq) (use_color ? (seq) : "")
@@ -259,6 +260,44 @@ static int ls_dir(const char *path) {
   return 0;
 }
 
+/* List `path`, and with -R descend into each subdirectory with a
+ * "subpath:" header on a fresh line (GNU-style). */
+static int ls_walk(const char *path) {
+  int rc = ls_dir(path);
+  if (!opt_recursive) return rc;
+
+  int fd = open(path, O_RDONLY, 0);
+  if (fd < 0) return rc;
+  struct dirent de;
+  while (getdents(fd, &de, sizeof(de)) > 0) {
+    /* Skip "." and ".." */
+    if (de.d_name[0] == '.' &&
+        (de.d_name[1] == '\0' ||
+         (de.d_name[1] == '.' && de.d_name[2] == '\0')))
+      continue;
+    if (!opt_all && de.d_name[0] == '.') continue;
+
+    char child[128];
+    int dlen = uc_strlen(path);
+    int nlen = uc_strlen(de.d_name);
+    if (dlen + 1 + nlen + 1 > (int)sizeof(child)) continue;
+    uc_strcpy(child, path);
+    if (dlen > 0 && child[dlen - 1] != '/') child[dlen++] = '/';
+    uc_strcpy(child + dlen, de.d_name);
+
+    struct stat st;
+    if (stat(child, &st) != 0) continue;
+    if (!S_ISDIR(st.st_mode)) continue;
+
+    uc_putc('\n');
+    uc_puts(child);
+    uc_puts(":\n");
+    if (ls_walk(child)) rc = 1;
+  }
+  close(fd);
+  return rc;
+}
+
 int main(int argc, char *argv[]) {
   int argi = 1;
 
@@ -269,10 +308,11 @@ int main(int argc, char *argv[]) {
   while (argi < argc && argv[argi][0] == '-') {
     if (uc_strcmp(argv[argi], "--help") == 0) {
       uc_puts(
-          "Usage: ls [-laF] [--no-color] [path ...]\n"
+          "Usage: ls [-laFR] [--no-color] [path ...]\n"
           "  -l  Long format (mode, size, name)\n"
           "  -a  Include hidden entries (.*)\n"
           "  -F  Append / for dirs, * for executables\n"
+          "  -R  Recursively list subdirectories\n"
           "  --no-color  Disable color output\n");
       return 0;
     }
@@ -293,6 +333,9 @@ int main(int argc, char *argv[]) {
         case 'F':
           opt_classify = 1;
           break;
+        case 'R':
+          opt_recursive = 1;
+          break;
         default:
           uc_eputs("ls: unknown option: -");
           uc_putc(*p);
@@ -306,15 +349,15 @@ int main(int argc, char *argv[]) {
 
   int rc = 0;
   if (argi >= argc) {
-    rc = ls_dir(".");
+    rc = ls_walk(".");
   } else if (argi + 1 == argc) {
-    rc = ls_dir(argv[argi]);
+    rc = ls_walk(argv[argi]);
   } else {
     for (int i = argi; i < argc; i++) {
       if (i > argi) uc_putc('\n');
       uc_puts(argv[i]);
       uc_puts(":\n");
-      if (ls_dir(argv[i])) rc = 1;
+      if (ls_walk(argv[i])) rc = 1;
     }
   }
   return rc;
