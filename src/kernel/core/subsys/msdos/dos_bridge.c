@@ -8,6 +8,7 @@
 
 #include "common/errno.h"
 #include "common/fcntl.h"
+#include "common/termios.h"
 #include "kernel/common/core/proc_info.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/cpu/cpu.h"
@@ -62,6 +63,49 @@ static int msdos_on_crash(struct pcb *p, uint32_t *regs, uint16_t *exc,
 
 static int msdos_on_signal(struct pcb *p, int sig, uint32_t *regs) { return 0; }
 
+/* Switch the process's stdin TTY into a DOS-friendly raw mode: Enter
+ * delivered as CR (not LF), no kernel echo, no canonical line editing.
+ * The pre-change flags are stashed in `dos` so msdos_on_exit can
+ * restore them — matches the CP/M subsystem's pattern (cpm_bridge.c).
+ * If stdin isn't a TTY (e.g. pipe), fd_ioctl returns an error and we
+ * leave termios_saved=0 so on_exit skips the restore. */
+static void dos_tty_enter_raw(struct pcb *p, dos_proc_t *dos) {
+  int16_t desc = p->fd_map[0];
+  if (desc < 0) return;
+
+  struct termios tio;
+  int rc = mod_vfs.fd_ioctl(desc, TCGETS, &tio);
+  if (rc < 0) return;
+
+  dos->saved_c_iflag = tio.c_iflag;
+  dos->saved_c_oflag = tio.c_oflag;
+  dos->saved_c_cflag = tio.c_cflag;
+  dos->saved_c_lflag = tio.c_lflag;
+  dos->saved_c_line = tio.c_line;
+  __builtin_memcpy(dos->saved_c_cc, tio.c_cc, sizeof(dos->saved_c_cc));
+  dos->termios_saved = 1;
+
+  tio.c_iflag &= ~(uint32_t)ICRNL;
+  tio.c_lflag &= ~(uint32_t)(ICANON | ECHO);
+  mod_vfs.fd_ioctl(desc, TCSETS, &tio);
+}
+
+static void dos_tty_restore(struct pcb *p, dos_proc_t *dos) {
+  if (!dos->termios_saved) return;
+  int16_t desc = p->fd_map[0];
+  if (desc < 0) return;
+
+  struct termios tio;
+  tio.c_iflag = dos->saved_c_iflag;
+  tio.c_oflag = dos->saved_c_oflag;
+  tio.c_cflag = dos->saved_c_cflag;
+  tio.c_lflag = dos->saved_c_lflag;
+  tio.c_line = dos->saved_c_line;
+  __builtin_memcpy(tio.c_cc, dos->saved_c_cc, sizeof(tio.c_cc));
+  mod_vfs.fd_ioctl(desc, TCSETS, &tio);
+  dos->termios_saved = 0;
+}
+
 static void msdos_on_init(struct pcb *p) {
   if (dos_data_page == PAGE_ID_INVALID) {
     dos_data_page = mem_region_page_alloc();
@@ -81,6 +125,8 @@ static void msdos_on_init(struct pcb *p) {
   dos.cpu_state = p->cpu_state;
   dos.current_drive = 2; /* C: — exec_dir of the running .COM */
 
+  dos_tty_enter_raw(p, &dos);
+
   dos_put_proc(p, &dos);
   p->subsys_data = (void *)(uintptr_t)(p - proc_table); /* Store slot index */
 }
@@ -97,6 +143,7 @@ static void msdos_on_exit(struct pcb *p) {
       p->cpu_ops->write16(dos.cpu_state, addr + 2, dos.ivt_saved_cs[i]);
     }
     dos.ivt_saved_count = 0;
+    dos_tty_restore(p, &dos);
     dos_put_proc(p, &dos);
   }
   p->subsys_data = NULL;

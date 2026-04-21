@@ -58,6 +58,18 @@ typedef struct dos_proc {
   uint16_t ivt_saved_ip[DOS_IVT_SAVE_MAX];
   uint16_t ivt_saved_cs[DOS_IVT_SAVE_MAX];
   uint8_t ivt_saved_count;
+
+  /* Termios snapshot taken at msdos_on_init and restored by msdos_on_exit.
+   * DOS programs do their own echo / line editing and expect a raw
+   * per-byte keyboard with CR on Enter, so we clear ICANON|ECHO|ICRNL
+   * for the duration of the process.  Mirrors the CP/M bridge pattern. */
+  uint32_t saved_c_iflag;
+  uint32_t saved_c_oflag;
+  uint32_t saved_c_cflag;
+  uint32_t saved_c_lflag;
+  uint8_t saved_c_line;
+  uint8_t saved_c_cc[19];
+  uint8_t termios_saved;
 } dos_proc_t;
 
 /* Layout matches the GP+IRET frame on the user stack at user_SP when
