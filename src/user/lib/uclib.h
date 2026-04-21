@@ -47,6 +47,27 @@ int uc_parse_u32(const char *s, uint32_t *out); /* 0 on success */
 /* --- path helpers --- */
 const char *uc_basename(const char *path);
 
+/* --- calendar helpers ---
+ *
+ * Convert Unix epoch seconds (UTC) to broken-down time and format
+ * for display.  No locale, no timezone handling — everything is UTC.
+ * Suitable for `ls -l`, `date`, and similar.  Up to year 2106
+ * (uint32 seconds).
+ */
+struct uc_tm {
+  int year; /* full Gregorian year, e.g. 2026 */
+  int mon;  /* 1-12 */
+  int mday; /* 1-31 */
+  int hour; /* 0-23 */
+  int min;  /* 0-59 */
+  int sec;  /* 0-59 */
+};
+void uc_gmtime(uint32_t epoch, struct uc_tm *out);
+
+/* Write "YYYY-MM-DD HH:MM" (exactly 16 bytes, NUL-terminated at
+ * buf[16]) into buf.  Caller provides at least 17 bytes. */
+void uc_format_ymdhm(char buf[17], uint32_t epoch);
+
 /* --- environment ---
  *
  * `environ` points at the NULL-terminated envp array the kernel placed

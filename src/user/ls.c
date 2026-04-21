@@ -168,6 +168,19 @@ static int ls_dir(const char *path) {
           print_size(st.st_size);
         uc_puts(C_RST);
         uc_putc(' ');
+        /* mtime column — always present in long format.  Symlinks have
+         * no stat of their own, so borrow the link target's stat if we
+         * have it; otherwise the field is "--". */
+        if (have_stat) {
+          uc_puts(C_DIM);
+          char tbuf[17];
+          uc_format_ymdhm(tbuf, st.st_mtime);
+          uc_puts(tbuf);
+          uc_puts(C_RST);
+        } else {
+          uc_puts("                ");
+        }
+        uc_putc(' ');
       }
       if (is_symlink) {
         uc_puts(C_BCYAN);

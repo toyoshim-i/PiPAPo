@@ -339,6 +339,65 @@ const char *uc_basename(const char *path) {
   return last;
 }
 
+/* ── calendar helpers ──────────────────────────────────────────────── */
+
+void uc_gmtime(uint32_t epoch, struct uc_tm *out) {
+  out->sec = (int)(epoch % 60u);
+  epoch /= 60u;
+  out->min = (int)(epoch % 60u);
+  epoch /= 60u;
+  out->hour = (int)(epoch % 24u);
+  uint32_t days = epoch / 24u;
+
+  int year = 1970;
+  for (;;) {
+    int leap = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
+    uint32_t ydays = leap ? 366u : 365u;
+    if (days < ydays) break;
+    days -= ydays;
+    year++;
+  }
+  out->year = year;
+
+  static const uint8_t mdays[12] = {31, 28, 31, 30, 31, 30,
+                                    31, 31, 30, 31, 30, 31};
+  int leap = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
+  for (int m = 0; m < 12; m++) {
+    uint32_t md = mdays[m] + ((m == 1 && leap) ? 1u : 0u);
+    if (days < md) {
+      out->mon = m + 1;
+      out->mday = (int)days + 1;
+      return;
+    }
+    days -= md;
+  }
+  /* Unreachable: days always lands in one of the 12 months above. */
+  out->mon = 12;
+  out->mday = 31;
+}
+
+void uc_format_ymdhm(char buf[17], uint32_t epoch) {
+  struct uc_tm t;
+  uc_gmtime(epoch, &t);
+  buf[0] = (char)('0' + (t.year / 1000) % 10);
+  buf[1] = (char)('0' + (t.year / 100) % 10);
+  buf[2] = (char)('0' + (t.year / 10) % 10);
+  buf[3] = (char)('0' + t.year % 10);
+  buf[4] = '-';
+  buf[5] = (char)('0' + (t.mon / 10) % 10);
+  buf[6] = (char)('0' + t.mon % 10);
+  buf[7] = '-';
+  buf[8] = (char)('0' + (t.mday / 10) % 10);
+  buf[9] = (char)('0' + t.mday % 10);
+  buf[10] = ' ';
+  buf[11] = (char)('0' + (t.hour / 10) % 10);
+  buf[12] = (char)('0' + t.hour % 10);
+  buf[13] = ':';
+  buf[14] = (char)('0' + (t.min / 10) % 10);
+  buf[15] = (char)('0' + t.min % 10);
+  buf[16] = '\0';
+}
+
 /* ── environment ───────────────────────────────────────────────────── *
  *
  * The kernel lays out argc, argv[], NULL, envp[], NULL on the initial
