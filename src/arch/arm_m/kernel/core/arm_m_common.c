@@ -13,6 +13,7 @@
 #include <stdint.h>
 
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/boot.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/syscall/syscall.h"
@@ -102,7 +103,6 @@ static void crash_dec(uint32_t v) {
 }
 
 void kernel_hardfault_dump(uint32_t *msp_frame) {
-  extern uint32_t core_id(void);
   uint32_t pc = msp_frame[6];
   uint32_t lr = msp_frame[5];
 
@@ -211,7 +211,6 @@ void arm_crash_handler(uint32_t *psp_frame, uint32_t *callee_regs) {
    * return to the faulting instruction and re-fault in an infinite loop.
    * Point to Default_Handler (infinite WFE loop) as a safe landing pad.
    * In practice PendSV always tail-chains, so this PC is never reached. */
-  extern void Default_Handler(void);
   psp_frame[6] = (uint32_t)Default_Handler | 1u; /* Thumb bit */
 }
 
