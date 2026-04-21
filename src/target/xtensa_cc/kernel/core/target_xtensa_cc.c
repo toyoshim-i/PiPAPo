@@ -15,8 +15,12 @@
 #include <stdint.h>
 
 #include "kernel/common/ioregs.h"
+#include "kernel/common/irq.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/esp_hooks.h"
 #include "kernel/core/proc/sched.h"
+#include "kernel/core/timer.h"
+#include "kernel/core/trap.h"
 #include "sdkconfig.h"
 #include "target/target.h"
 #include "xtensa_cc.h"
@@ -50,7 +54,7 @@
  * We immediately call kmain() to hand control to the PPAP kernel.
  * ESP-IDF's FreeRTOS scheduler is NOT used — PPAP has its own scheduler.
  */
-extern void kmain(void);
+void kmain(void);
 
 void app_main(void)
 {
@@ -73,7 +77,6 @@ void target_early_init(void)
      * _xt_interrupt_table is an array of {handler, arg} pairs (8 bytes each).
      * The level-1 ISR dispatcher reads this table and calls the handler.
      * By writing directly, we bypass any API issues. */
-    extern void *_xt_interrupt_table[];
     _xt_interrupt_table[12 * 2 + 0] = (void *)systimer_noop_isr;
     _xt_interrupt_table[12 * 2 + 1] = (void *)0;
 
@@ -106,11 +109,9 @@ void target_early_init(void)
 void target_late_init(void)
 {
     /* CC-2: start CCOMPARE0 timer for scheduler tick. */
-    extern void xtensa_timer_init(void);
     xtensa_timer_init();
 
     /* CC-3: install syscall + exception handlers. */
-    extern void xtensa_trap_init(void);
     xtensa_trap_init();
 
     /* Register UART RX polling so the idle loop feeds input to TTY.
@@ -124,10 +125,6 @@ void target_late_init(void)
      * - PPAP must own timer and trap paths
      * - active interrupt mask must remain PPAP-owned */
     {
-        extern uint32_t port_xSchedulerRunning[];
-        extern volatile uint32_t xtensa_timer_ready;
-        extern volatile uint32_t xtensa_trap_ready;
-
         if (port_xSchedulerRunning[0] != 0u) {
             mod_vfs.klogf("XT-3.4: forcing FreeRTOS scheduler handoff off\n");
             port_xSchedulerRunning[0] = 0u;

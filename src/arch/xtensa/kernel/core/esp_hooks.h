@@ -19,6 +19,12 @@
  * writes directly into this table to override the defaults. */
 extern xt_exc_handler _xt_exception_table[];
 
+/* CPU-interrupt dispatcher table (xtensa_intr_asm.S).  Array of
+ * {handler, arg} void* pairs indexed by CPU interrupt number.  PPAP
+ * writes directly into this table to neutralise the FreeRTOS SYSTIMER
+ * tick ISR (CPU INT 12) that ESP-IDF left installed. */
+extern void *_xt_interrupt_table[];
+
 /* FreeRTOS per-core "scheduler running" flag.  _frxt_int_enter /
  * _frxt_int_exit consult it; clearing it disables FreeRTOS's interrupt-
  * level context switching so PPAP's scheduler owns all task switching. */
