@@ -6,17 +6,13 @@
  * handler so that BIOS floppy motor timeout and other services still work.
  */
 
+#ifdef PPAP_ENABLE_MSDOS
+#include "kernel/core/dos_trap.h"
+#endif
 #include "kernel/common/core/seg.h"
 #include "kernel/common/ioregs.h"
-
-/* Defined in switch.S */
-extern void i16_timer_isr(void);
-/* Defined in trap.S */
-extern void i16_syscall_isr(void);
-#ifdef PPAP_ENABLE_MSDOS
-/* Defined in dos_trap.S */
-extern void i16_dos_isr(void);
-#endif
+#include "kernel/core/switch.h"
+#include "kernel/core/trap.h"
 
 /* Saved BIOS INT 08h handler — written by timer_init() before
  * installing our ISR and used by i16_bios_timer_chain().
@@ -109,9 +105,17 @@ void timer_init(void)
 
 #ifdef PPAP_ENABLE_MSDOS
   /* Install DOS INT 20h (terminate) and INT 21h (function dispatch) */
-  extern void i16_dos_int20_isr(void);
   set_ivt(0x20, i16_dos_int20_isr, core_cs);
   set_ivt(0x21, i16_dos_isr, core_cs);
+
+  /* DOS-reserved vectors without defined handlers.  See dos_trap.S
+   * for each stub's return convention. */
+  set_ivt(0x23, i16_dos_int23_isr, core_cs);
+  set_ivt(0x24, i16_dos_int24_isr, core_cs);
+  set_ivt(0x27, i16_dos_int27_isr, core_cs);
+  set_ivt(0x29, i16_dos_int29_isr, core_cs);
+  set_ivt(0x2E, i16_dos_int2e_isr, core_cs);
+  set_ivt(0x2F, i16_dos_int2f_isr, core_cs);
 #endif
 
   /* Interrupts will be enabled by the caller */

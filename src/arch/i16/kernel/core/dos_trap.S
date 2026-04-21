@@ -107,3 +107,56 @@ i16_dos_isr:
    * to user memory or dropped because exec/exit/block changed the task
    * state, then continues through the common switch/restore path. */
   jmp   i16_trap_finish_scratch_frame
+
+/* -- Stubs for DOS-reserved vectors we don't implement ---------------- *
+ *
+ * INT 23h/24h/27h/29h/2Eh/2Fh are reserved by DOS for specific
+ * purposes but are not hooked elsewhere in PPAP.  Without these stubs
+ * the IVT slots retain whatever BIOS / stage2 last wrote, so a guest
+ * probing them reads an undefined CS:IP.  Each stub below replies per
+ * DOS spec:
+ *   23h  Ctrl-C handler                  — no-op return
+ *   24h  critical error handler          — AL=3 ("fail") + return
+ *   27h  terminate-and-stay-resident     — treat as AH=4Ch exit 0
+ *   29h  fast console output (DOS 2+)    — treat as AH=02h write-char
+ *   2Eh  reload transient COMMAND.COM    — no-op return
+ *   2Fh  multiplex                       — CF=1 ("not installed")
+ *
+ * CPU-pushed IRET frame (at entry SS:SP): [+0] IP, [+2] CS, [+4] FLAGS.
+ */
+
+  .global i16_dos_int23_isr     /* Ctrl-C handler: ignore */
+i16_dos_int23_isr:
+  iret
+
+  .global i16_dos_int24_isr     /* Critical error: return AL=3 (fail) */
+i16_dos_int24_isr:
+  movb  $3, %al
+  iret
+
+  .global i16_dos_int27_isr     /* TSR terminate: treat as AH=4Ch exit 0 */
+i16_dos_int27_isr:
+  movw  $0x4C00, %ax
+  jmp   i16_dos_isr
+
+  .global i16_dos_int29_isr     /* Fast console output: AL -> AH=02h/DL */
+i16_dos_int29_isr:
+  /* INT 29h passes the byte in AL and has no caller-preserved register
+   * contract beyond flags.  Convert to INT 21h AH=02h (write char) by
+   * loading DL = AL and AH = 02h, then fall into the shared i16 DOS
+   * dispatcher so the stdout path is identical to explicit AH=02h. */
+  movb  %al, %dl
+  movb  $0x02, %ah
+  jmp   i16_dos_isr
+
+  .global i16_dos_int2e_isr     /* Reload transient COMMAND.COM: ignore */
+i16_dos_int2e_isr:
+  iret
+
+  .global i16_dos_int2f_isr     /* Multiplex: set CF in IRET FLAGS */
+i16_dos_int2f_isr:
+  pushw %bp
+  movw  %sp, %bp
+  orw   $1, 6(%bp)              /* FLAGS at [bp+6]: +0 BP, +2 IP, +4 CS */
+  popw  %bp
+  iret
