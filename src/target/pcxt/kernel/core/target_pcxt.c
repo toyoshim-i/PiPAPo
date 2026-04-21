@@ -55,24 +55,15 @@ static uint16_t far_read16(uint16_t seg, uint16_t off) {
   return val;
 }
 
-/* Core entry point offsets (from core_entries.S, order matches mod_core.inc) */
-extern uint16_t kmem_pool_init_entry;
-extern uint16_t kmem_alloc_entry;
-extern uint16_t kmem_free_entry;
-extern uint16_t kmem_free_count_entry;
-extern uint16_t mem_region_alloc_entry;
-extern uint16_t mem_region_free_entry;
-extern uint16_t mem_region_total_bytes_entry;
-extern uint16_t mem_region_free_bytes_entry;
-extern uint16_t mem_region_page_read_entry;
-extern uint16_t mem_region_page_write_entry;
-extern uint16_t mem_region_page_zero_entry;
-extern uint16_t sched_wakeup_entry;
-extern uint16_t sched_switch_entry;
-extern uint16_t sched_get_ticks_entry;
-extern uint16_t subsys_read_proc_entry;
-extern uint16_t svc_set_restart_entry;
-extern uint16_t time_now_sec_entry;
+/* Forward-declare every far-call entry label core_entries.S emits.  We only
+ * ever take `&foo_entry` to populate the core_fptrs table, never invoke
+ * them from C — the declarations are function prototypes (not extern
+ * variables) so the list can be auto-generated from mod_core.inc and the
+ * compiler still catches accidental invocation. */
+#define MOD_CORE_ENTRY(name, idx) void name##_entry(void);
+#include "kernel/common/mod/mod_core.inc"
+#undef MOD_CORE_ENTRY
+
 static void patch_vfs_fptrs(uint16_t vfs_seg) {
   if (far_read16(vfs_seg, 0) != VFS_HDR_MAGIC) {
     mod_vfs.klogf("SEG: VFS header magic mismatch!\n");
