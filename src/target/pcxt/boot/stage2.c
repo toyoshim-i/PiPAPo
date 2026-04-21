@@ -18,6 +18,8 @@
 
 #include <stdint.h>
 
+#include "kernel/common/boot_params.h"
+
 #define FLOPPY_SEC       512u
 #define UFS_BLOCK_SIZE   4096u
 #define UFS_SECS_PER_BLK (UFS_BLOCK_SIZE / FLOPPY_SEC)
@@ -263,23 +265,8 @@ static uint16_t find_file(uint16_t dir_ino, const char *name)
  * The kernel reads this to find where each module was loaded
  * and initialize the segment manager.
  */
-#define MOD_INFO_ADDR  0x0500u  /* In the free gap 0x0500-0x05FF */
-#define MOD_MAX        4u
-
-typedef struct {
-  uint16_t count;              /* number of loaded modules */
-  struct {
-    uint16_t segment;          /* paragraph address (linear >> 4) */
-    uint16_t size;             /* size in bytes */
-  } mod[MOD_MAX];
-  /* Boot device info (read by kernel target_pcxt.c) */
-  uint8_t  boot_dev;           /* 0x00 = floppy, 0x80 = HDD */
-  uint8_t  reserved;
-  uint16_t ufs_base;           /* absolute LBA of first UFS sector */
-  uint16_t dev_spt;            /* sectors per track */
-  uint16_t dev_heads;          /* number of heads */
-  uint32_t dev_sectors;        /* total partition sectors */
-} mod_info_t;
+/* mod_info_t + MOD_INFO_ADDR / MOD_MAX come from
+ * kernel/common/boot_params.h */
 
 /* ── Boot device detection ──────────────────────────────────────────── */
 

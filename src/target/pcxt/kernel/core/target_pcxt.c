@@ -6,6 +6,7 @@
  * far pointer tables.  Chains BIOS INT 08h for floppy motor timeout.
  */
 
+#include "kernel/common/boot_params.h"
 #include "kernel/common/core/seg.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/driver/timer_pit.h"
@@ -23,27 +24,9 @@ uint32_t i16_page_pool_base = 0x10000ul;  /* safe default */
 /* Far pointer tables from the stub assembly files */
 extern uint16_t vfs_fptrs[];  /* in core: caller stubs for VFS */
 
-/* mod_info_t — boot protocol from stage2 (at 0x0500) */
-#define MOD_INFO_ADDR  0x0500u
-#define MOD_MAX        4u
-
-typedef struct {
-  uint16_t count;
-  struct {
-    uint16_t segment;
-    uint16_t size;
-  } mod[MOD_MAX];
-  /* Boot device info */
-  uint8_t  boot_dev;        /* 0x00 = floppy, 0x80 = HDD */
-  uint8_t  reserved;
-  uint16_t ufs_base;        /* absolute LBA of first UFS sector */
-  uint16_t dev_spt;         /* sectors per track */
-  uint16_t dev_heads;       /* number of heads */
-  uint32_t dev_sectors;     /* UFS partition size in sectors */
-} mod_info_t;
-
-/* Boot device parameters — read from mod_info, used by bios_blk */
-uint8_t  i16_boot_drive;
+/* Boot device parameters — read from mod_info, used by bios_blk.
+ * Declarations + mod_info_t layout live in kernel/common/boot_params.h. */
+uint8_t i16_boot_drive;
 uint16_t i16_ufs_base_sector;
 uint16_t i16_dev_spt;
 uint16_t i16_dev_heads;

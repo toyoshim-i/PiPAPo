@@ -7,18 +7,12 @@
  */
 
 #include "common/errno.h"
+#include "kernel/common/boot_params.h"
 #include "kernel/common/core/page_types.h"
 #include "kernel/common/ioregs.h"
 #include "kernel/vfs/driver/blkdev.h"
 
 #define SECTOR_SIZE 512u
-
-/* Boot device parameters — set by target_pcxt.c from mod_info */
-extern uint8_t  i16_boot_drive;
-extern uint16_t i16_ufs_base_sector;
-extern uint16_t i16_dev_spt;
-extern uint16_t i16_dev_heads;
-extern uint32_t i16_dev_sectors;
 
 /* ── INT 13h sector I/O ──────────────────────────────────────────────── */
 
