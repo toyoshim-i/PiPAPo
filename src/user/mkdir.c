@@ -33,7 +33,10 @@ static int parse_octal_mode(const char *s, int *out) {
   return 0;
 }
 
-/* -p: mkdir every prefix up to each slash, accepting EEXIST. */
+/* -p: stat each prefix; skip if it already exists, mkdir if not.
+ * Accepting EEXIST alone is not enough: on PPAP a writable mount
+ * (tmpfs at /tmp) can be rooted under a read-only mount (UFS root),
+ * so the kernel returns EROFS before ever reaching the child mount. */
 static int make_with_parents(char *path) {
   char *p = path;
   if (*p == '/') p++;
@@ -41,9 +44,13 @@ static int make_with_parents(char *path) {
     while (*p && *p != '/') p++;
     char saved = *p;
     *p = '\0';
-    int r = mkdir(path, opt_mode);
+    int r = 0;
+    if (access(path, 0) != 0) {
+      r = mkdir(path, opt_mode);
+      if (r < 0 && r == -(int)EEXIST) r = 0;
+    }
     *p = saved;
-    if (r < 0 && r != -(int)EEXIST) {
+    if (r < 0) {
       err_path(path);
       return 1;
     }
