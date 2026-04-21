@@ -3,6 +3,7 @@
 #include "common/errno.h"
 #include "kernel/common/config.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/common/pico1calc_caps.h"
 #include "kernel/vfs/devfs.h"
 #include "kernel/vfs/driver/fbcon.h"
 #include "kernel/vfs/driver/i2c.h"
@@ -10,12 +11,14 @@
 #include "kernel/vfs/driver/lcd_panel.h"
 #include "kernel/vfs/driver/spi.h"
 #include "kernel/vfs/driver/spi_lcd.h"
+#include "kernel/vfs/driver/spi_sd.h"
 #include "kernel/vfs/driver/uart.h"
 #include "kernel/vfs/driver/uart_rpico.h"
 #include "kernel/vfs/klog.h"
 #include "kernel/vfs/procfs.h"
 #include "kernel/vfs/tty.h"
 
+int pico1calc_has_kbd;
 
 /* ── LCD + keyboard TTY backend ─────────────────────────────────────────── */
 
@@ -150,7 +153,8 @@ void vfs_notify(int event) {
       i2c_init();
       klogf("I2C1: initialised at 10 kHz\n");
       kbd_init();
-      if (!kbd_present())
+      pico1calc_has_kbd = kbd_present();
+      if (!pico1calc_has_kbd)
         klogf("PicoCalc peripherals not detected "
               "(skipping LCD/fbcon)\n");
       break;
@@ -186,7 +190,6 @@ void vfs_notify(int event) {
        * the bootloader's boot2 reconfigures pin mux for QSPI. */
 #if 0
       {
-        extern int sd_init(void);
         int rc = sd_init();
         if (rc == 0)
           klogf("SD: card initialised, mmcblk0 registered\n");

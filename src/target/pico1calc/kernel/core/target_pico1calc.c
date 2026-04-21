@@ -6,6 +6,7 @@
  */
 
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/common/pico1calc_caps.h"
 #include "kernel/core/driver/clock.h"
 #include "kernel/core/mm/mpu.h"
 #include "kernel/core/pico1calc.h"
@@ -47,12 +48,10 @@ const char *target_init_path(void) {
 
 const char *target_name(void) { return "pico1calc"; }
 
-extern int kbd_present(void);
-
 uint32_t target_caps(void) {
   uint32_t caps =
       TARGET_CAP_SD | TARGET_CAP_SPI | TARGET_CAP_CORE1 | TARGET_CAP_REALUART;
-  if (kbd_present()) caps |= TARGET_CAP_DISPLAY | TARGET_CAP_KBD;
+  if (pico1calc_has_kbd) caps |= TARGET_CAP_DISPLAY | TARGET_CAP_KBD;
   return caps;
 }
 
