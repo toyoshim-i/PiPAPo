@@ -11,6 +11,7 @@
  *   0x03xx  FS extended   0x08xx  User/group
  *   0x04xx  Memory        0x09xx  Mount
  *                          0x0Axx  Misc
+ *                          0x0Bxx  System control
  */
 
 /* Group 0x00: Process lifecycle */
@@ -21,7 +22,6 @@
 #define __NR_waitpid		0x0004
 #define __NR_wait4		0x0005
 #define __NR_getpid		0x0006
-#define __NR_uname		0x0007
 #define __NR_getppid		0x0008
 #define __NR_setpgid		0x0009
 #define __NR_getpgid		0x000A
@@ -128,6 +128,9 @@
 #define __NR_futex		0x0A00
 #define __NR_futex_time64	0x0A00
 #define __NR_getcpu		0x0A01
+
+/* Group 0x0B: System control */
+#define __NR_uname		0x0B01
 
 /* ── Unimplemented syscalls (return -ENOSYS) ─────────────────────────────── */
 /* These are defined so musl compiles, but PPAP's kernel returns -ENOSYS. */

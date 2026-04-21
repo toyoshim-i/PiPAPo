@@ -143,6 +143,17 @@ getpid:
     DO_SYSCALL
     pop  {r7, pc}
 
+@ --- uname (SYS_UNAME = 0x0B01) -----------------------------------------------
+@ int uname(struct utsname *buf);
+.section .text.uname, "ax", %progbits
+.global uname
+.thumb_func
+uname:
+    push {r7, lr}
+    ldr  r7, =0x0B01    @ SYS_UNAME
+    DO_SYSCALL
+    pop  {r7, pc}
+
 @ --- brk (SYS_BRK = 0x0400) ---------------------------------------------------
 @ void *brk(void *addr);
 .section .text.brk, "ax", %progbits

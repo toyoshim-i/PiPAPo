@@ -127,6 +127,15 @@ getpid:
     trap    #0
     rts
 
+| --- uname (SYS_UNAME = 0x0B01) -----------------------------------------------
+| int uname(struct utsname *buf);
+    .globl uname
+uname:
+    move.l  4(%sp), %d1         | buf
+    move.l  #0x0B01, %d0        | SYS_UNAME
+    trap    #0
+    rts
+
 | --- kill (SYS_KILL = 0x0600) -------------------------------------------------
 | int kill(pid_t pid, int sig);
     .globl kill

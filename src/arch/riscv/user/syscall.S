@@ -94,3 +94,4 @@ SYSCALL_STUB ppoll,     0x0701
 
 # --- System control ---
 SYSCALL_STUB poweroff,  0x0B00
+SYSCALL_STUB uname,     0x0B01

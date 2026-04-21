@@ -62,7 +62,7 @@ CONFIG_UMOUNT=y
 # CONFIG_FEATURE_VI_SEARCH is not set
 
 # -- System -------------------------------------------------------------------
-CONFIG_UNAME=y
+# CONFIG_UNAME is not set (using native PPAP uname)
 
 # -- Shell (hush) -------------------------------------------------------------
 CONFIG_HUSH=y

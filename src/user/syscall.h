@@ -23,6 +23,7 @@
 #include "common/seek.h"
 #include "common/stat.h"
 #include "common/statfs.h"
+#include "common/utsname.h"
 #include "common/wait.h"
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
@@ -106,6 +107,9 @@ static inline __attribute__((always_inline, noreturn)) void _exit(int status) {
 }
 
 static inline pid_t getpid(void) { return (pid_t)ppap_xtensa_syscall0(0x0006); }
+static inline int uname(struct utsname *buf) {
+  return (int)ppap_xtensa_syscall1(0x0B01, (long)buf);
+}
 static inline pid_t getppid(void) {
   return (pid_t)ppap_xtensa_syscall0(0x0008);
 }
@@ -227,6 +231,7 @@ static inline void poweroff(void) { ppap_xtensa_syscall0(0x0B00); }
 
 void _exit(int status) __attribute__((noreturn));
 pid_t getpid(void);
+int uname(struct utsname *buf);
 pid_t getppid(void);
 pid_t vfork(void);
 int execve(const char *path, char *const argv[], char *const envp[]);

@@ -47,6 +47,19 @@ getpid:
   int   $0x30
   SYSCALL_RET
 
+/* int uname(struct utsname *buf); */
+  .global uname
+uname:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx
+  movw  $0x0B01, %ax
+  int   $0x30
+  SYSCALL_RET
+
 /* pid_t getppid(void); */
   .global getppid
 getppid:

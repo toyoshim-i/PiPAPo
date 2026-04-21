@@ -355,7 +355,7 @@ See [syscall.md](/docs/kernel/syscall.md) for the complete reference.
 | mmap2 | 0x0401 | Anonymous mappings only (allocated from page pool) |
 | munmap | 0x0402 | Free memory |
 | clock_gettime64 | 0x0504 | Get time |
-| uname | 0x0007 | System information (sysname=PiPAPo, machine=arch) |
+| uname | 0x0B01 | System information (sysname=PiPAPo, machine=arch) |
 | mount / umount2 | 0x0900/0x0901 | File system mount operations |
 
 ---

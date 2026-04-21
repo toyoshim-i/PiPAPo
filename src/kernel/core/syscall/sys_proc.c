@@ -13,6 +13,7 @@
 
 #include "common/errno.h"
 #include "common/ptrace.h"
+#include "common/utsname.h"
 #include "common/wait.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/version.h"
@@ -2286,11 +2287,9 @@ long sys_set_tid_address(uintptr_t tidptr) {
 /* ── sys_uname ────────────────────────────────────────────────────────────────
  */
 
-/*
- * struct utsname layout (65 bytes per field × 6 fields = 390 bytes).
- * Matches Linux/musl: each field is char[65].
- */
-#define UTS_LEN 65
+/* UTS_LEN and struct utsname layout come from common/utsname.h.
+ * sys_uname writes fields by offset (no struct-access) so the kernel
+ * doesn't need to instantiate the struct. */
 
 static int sys_uname_copy_field(uintptr_t buf_ptr, uint16_t field_index,
                                 const char *value) {

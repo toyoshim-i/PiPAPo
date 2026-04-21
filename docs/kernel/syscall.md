@@ -85,7 +85,6 @@ M-mode where the kernel handles the request.
 | 0x0004 | waitpid | `pid_t waitpid(pid_t pid, int *status, int options)` |
 | 0x0005 | wait4 | `pid_t wait4(pid_t pid, int *status, int options, struct rusage *ru)` |
 | 0x0006 | getpid | `pid_t getpid(void)` |
-| 0x0007 | uname | `int uname(struct utsname *buf)` |
 | 0x0008 | getppid | `pid_t getppid(void)` |
 | 0x0009 | setpgid | `int setpgid(pid_t pid, pid_t pgid)` |
 | 0x000A | getpgid | `pid_t getpgid(pid_t pid)` |
@@ -161,6 +160,7 @@ M-mode where the kernel handles the request.
 | 0x0901 | umount2 | `int umount2(const char *target, int flags)` |
 | 0x0A00 | futex / futex_time64 | `int futex(...)` — no-op, returns 0 |
 | 0x0A01 | getcpu | `int getcpu(unsigned *cpu, unsigned *node, void *unused)` |
+| 0x0B01 | uname | `int uname(struct utsname *buf)` |
 
 ### m68k-specific kernel syscalls
 
@@ -343,7 +343,9 @@ Store `tidptr` in the PCB for thread library use.  Returns the caller's PID.
 
 ---
 
-#### uname (0x0007)
+### System Control
+
+#### uname (0x0B01)
 
 ```c
 int uname(struct utsname *buf);

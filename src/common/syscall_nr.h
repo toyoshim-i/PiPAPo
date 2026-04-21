@@ -17,7 +17,6 @@
 #define SYS_WAITPID 0x0004
 #define SYS_WAIT4 0x0005
 #define SYS_GETPID 0x0006
-#define SYS_UNAME 0x0007
 #define SYS_GETPPID 0x0008
 #define SYS_SETPGID 0x0009
 #define SYS_GETPGID 0x000A
@@ -118,6 +117,7 @@
 
 /* Group 0x0B: System control */
 #define SYS_POWEROFF 0x0B00
+#define SYS_UNAME 0x0B01
 
 /* AT_FDCWD: *at syscalls use this as dirfd for cwd-relative paths */
 #define AT_FDCWD (-100)

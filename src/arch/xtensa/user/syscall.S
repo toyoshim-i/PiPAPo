@@ -37,6 +37,7 @@ _exit:
 
 # --- Process management ---
 SYSCALL_STUB getpid,    0x0006
+SYSCALL_STUB uname,     0x0B01
 SYSCALL_STUB getppid,   0x0008
 SYSCALL_STUB vfork,     0x0002
 SYSCALL_STUB execve,    0x0003
