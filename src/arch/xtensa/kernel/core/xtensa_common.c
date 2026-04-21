@@ -13,6 +13,7 @@
 
 #include "kernel/common/ioregs.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/esp_hooks.h"
 #include "kernel/core/proc/proc.h" /* arch.h: switch_pending, arch_sched_switch */
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/syscall/syscall.h"
@@ -62,9 +63,6 @@ static void xtensa_ill_handler(XtExcFrame *frame) {
 }
 
 static void xtensa_install_exception_handlers(void) {
-  extern xt_exc_handler xt_set_exception_handler(int n, xt_exc_handler f);
-  extern xt_exc_handler _xt_exception_table[];
-
   /* EXCCAUSE=0 (IllegalInstruction): combined ILL-as-syscall + fault */
   xt_set_exception_handler(0, xtensa_ill_handler);
   _xt_exception_table[0] = xtensa_ill_handler;
@@ -95,17 +93,11 @@ static void xtensa_timer_isr(void *arg) {
 }
 
 void xtensa_timer_init(void) {
-  typedef void (*xt_handler)(void *);
-  extern xt_handler xt_set_interrupt_handler(int n, xt_handler f, void *arg);
-
   /* Disable FreeRTOS's interrupt-level context switching.
    * _frxt_int_enter/_frxt_int_exit check this flag; when 0,
    * they skip TCB save/restore and ISR stack switch.
    * PPAP manages its own context switching. */
-  {
-    extern uint32_t port_xSchedulerRunning[];
-    port_xSchedulerRunning[0] = 0;
-  }
+  port_xSchedulerRunning[0] = 0;
 
   /* Set CCOMPARE0 for first tick */
   uint32_t cc;

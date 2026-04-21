@@ -15,11 +15,8 @@
 
 #include <stdint.h>
 
+#include "esp_rom_uart.h"
 #include "kernel/vfs/driver/uart.h"
-
-/* ESP-IDF ROM console functions */
-extern void esp_rom_uart_putc(char c);
-extern int esp_rom_uart_rx_one_char(unsigned char *c);
 
 /* One-character peek buffer.  ROM rx is destructive (no way to put a
  * character back), so uart_rx_avail() reads one char into this buffer
