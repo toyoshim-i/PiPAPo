@@ -380,6 +380,30 @@ restart:
 /* ── Public API ─────────────────────────────────────────────────────────────
  */
 
+/* Produce an absolute, normalized path: prepend current->cwd when the
+ * input is relative, then normalize in place.  Returns normalized length
+ * on success, -errno on failure. */
+static int absolutize(const char *path, char *out, int cap) {
+  if (path[0] != '/') {
+    const char *cwd = (current && current->cwd[0]) ? current->cwd : "/";
+    int cwdlen = (int)strlen(cwd);
+    int pathlen = (int)strlen(path);
+
+    if (cwdlen == 1) {
+      if (1 + pathlen >= cap) return -ENAMETOOLONG;
+      out[0] = '/';
+      memcpy(out + 1, path, (size_t)pathlen + 1);
+    } else {
+      if (cwdlen + 1 + pathlen >= cap) return -ENAMETOOLONG;
+      memcpy(out, cwd, (size_t)cwdlen);
+      out[cwdlen] = '/';
+      memcpy(out + cwdlen + 1, path, (size_t)pathlen + 1);
+    }
+    return path_normalize(out, out, cap);
+  }
+  return path_normalize(path, out, cap);
+}
+
 int vfs_lookup(const char *path, vnode_t **result) {
   return vfs_lookup_flags(path, result, 0);
 }
@@ -387,38 +411,10 @@ int vfs_lookup(const char *path, vnode_t **result) {
 int vfs_lookup_flags(const char *path, vnode_t **result, int flags) {
   if (!path || !result) return -EINVAL;
 
-  /* Resolve relative paths against current->cwd and normalize. */
   char *normalized = vfs_scratch_alloc();
   if (!normalized) return -ENOMEM;
-  int nlen;
 
-  if (path[0] != '/') {
-    const char *cwd = (current && current->cwd[0]) ? current->cwd : "/";
-    int cwdlen = (int)strlen(cwd);
-    int pathlen = (int)strlen(path);
-
-    if (cwdlen == 1) {
-      if (1 + pathlen >= VFS_PATH_MAX) {
-        vfs_scratch_free(normalized);
-        return -ENAMETOOLONG;
-      }
-      normalized[0] = '/';
-      memcpy(normalized + 1, path, (size_t)pathlen + 1);
-    } else {
-      if (cwdlen + 1 + pathlen >= VFS_PATH_MAX) {
-        vfs_scratch_free(normalized);
-        return -ENAMETOOLONG;
-      }
-      memcpy(normalized, cwd, (size_t)cwdlen);
-      normalized[cwdlen] = '/';
-      memcpy(normalized + cwdlen + 1, path, (size_t)pathlen + 1);
-    }
-
-    nlen = path_normalize(normalized, normalized, VFS_PATH_MAX);
-  } else {
-    nlen = path_normalize(path, normalized, VFS_PATH_MAX);
-  }
-
+  int nlen = absolutize(path, normalized, VFS_PATH_MAX);
   if (nlen < 0) {
     vfs_scratch_free(normalized);
     return nlen;
@@ -436,12 +432,11 @@ int vfs_path_normalize(const char *path, char *buf, int bufsiz) {
 int vfs_lookup_parent(const char *path, vnode_t **parent, char *namebuf,
                       int namebuf_size) {
   if (!path || !parent || !namebuf || namebuf_size < 2) return -EINVAL;
-  if (path[0] != '/') return -EINVAL;
 
-  /* Normalize the full path. */
+  /* Absolutize against cwd and normalize the full path. */
   char *normalized = vfs_scratch_alloc();
   if (!normalized) return -ENOMEM;
-  int nlen = path_normalize(path, normalized, VFS_PATH_MAX);
+  int nlen = absolutize(path, normalized, VFS_PATH_MAX);
   if (nlen < 0) {
     vfs_scratch_free(normalized);
     return nlen;
