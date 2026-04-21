@@ -280,6 +280,21 @@ void *brk(void *addr);
 int kill(pid_t pid, int sig);
 int sigaction(int sig, void *handler, void *old_handler);
 
+/* Sigaction internals.  The POSIX-style sigaction() wrapper lives in
+ * arch-specific user/sigaction.c; it builds a struct ppap_sigaction
+ * with sa_restorer pointing at _ppap_sigreturn_trampoline (defined in
+ * each arch's user/syscall.S) and forwards to rt_sigaction (also in
+ * user/syscall.S). */
+struct ppap_sigaction {
+  void (*sa_handler)(int);
+  unsigned long sa_flags;
+  void (*sa_restorer)(void);
+  unsigned long sa_mask[2];
+};
+void _ppap_sigreturn_trampoline(void);
+int rt_sigaction(int sig, const struct ppap_sigaction *act,
+                 struct ppap_sigaction *oact, int sigsetsize);
+
 /* ── Sleep ─────────────────────────────────────────────────────────── */
 
 int nanosleep(const void *req, void *rem);

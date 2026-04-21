@@ -14,17 +14,6 @@
 
 #include "user/syscall.h"
 
-struct ppap_sigaction {
-  void (*sa_handler)(int);
-  unsigned long sa_flags;
-  void (*sa_restorer)(void);
-  unsigned long sa_mask[2];
-};
-
-extern void _ppap_sigreturn_trampoline(void);
-extern int rt_sigaction(int sig, const struct ppap_sigaction *act,
-                        struct ppap_sigaction *oact, int sigsetsize);
-
 int sigaction(int sig, void *handler, void *old_handler) {
   struct ppap_sigaction act;
   (void)old_handler; /* callers that need it should use rt_sigaction() */
