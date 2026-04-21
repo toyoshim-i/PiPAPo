@@ -16,6 +16,7 @@
 #include "common/errno.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/arch.h"
+#include "kernel/core/driver/timer_qemu_m68k.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
@@ -25,11 +26,6 @@
 #define VIRT_CTRL_BASE 0xFF009000u
 #define VIRT_CTRL_CMD 4u
 #define VIRT_CTRL_CMD_HALT 2u
-
-/* ── Timer driver ────────────────────────────────────────────────────── */
-
-/* Defined in drivers/timer_qemu_m68k.c */
-extern void timer_init(void);
 
 /* ── TRAP #0 syscall dispatch ────────────────────────────────────────── *
  *

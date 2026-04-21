@@ -1,0 +1,10 @@
+/*
+ * timer_qemu_m68k.h -- QEMU m68k-virt timer driver API
+ */
+
+#ifndef PPAP_TARGET_QEMU_M68K_KERNEL_CORE_DRIVER_TIMER_QEMU_M68K_H
+#define PPAP_TARGET_QEMU_M68K_KERNEL_CORE_DRIVER_TIMER_QEMU_M68K_H
+
+void timer_init(void);
+
+#endif /* PPAP_TARGET_QEMU_M68K_KERNEL_CORE_DRIVER_TIMER_QEMU_M68K_H */

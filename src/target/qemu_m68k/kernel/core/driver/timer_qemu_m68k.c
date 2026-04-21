@@ -13,6 +13,8 @@
  * The timer ISR is in switch.S (m68k_timer_isr).
  */
 
+#include "kernel/core/driver/timer_qemu_m68k.h"
+
 #include <stdint.h>
 
 #include "kernel/common/mod/mod_vfs.h"
