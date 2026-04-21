@@ -63,10 +63,12 @@ Normative references for implementers:
 
 ## Current State
 
-### Native apps (13)
+### Native apps (20 + 1 target-specific)
 
 `init`, `getty`, `push` (+ `push_line`), `cat`, `ls`, `ps`, `df`,
-`top`, `pi`, `pdb`, `trace`, `ttyctl`, `hello`.
+`top`, `pi`, `pdb`, `trace`, `hello`, plus the Tier 1 additions:
+`uname`, `sleep`, `mkdir`, `reset`, `rmdir`, `rm`, `kill`.
+`ttyctl` is pico1calc-only.
 Source: [src/user/](/src/user/).  Build list: `USER_APPS` in
 [cmake/user.cmake](/cmake/user.cmake).
 
@@ -76,20 +78,16 @@ Source: [src/user/](/src/user/).  Build list: `USER_APPS` in
 `set`, `env`, `.` / `source`, `break`, `continue`, `shift`, `history`.
 Source: [src/user/push.c](/src/user/push.c) `is_builtin()`.
 
-### busybox applets (to be replaced, from
+### busybox applets (remaining, from
 [busybox_ppap.fragment](/third_party/patches/busybox/busybox_ppap.fragment))
 
-File ops: `cp`, `mv`, `rm`, `mkdir`, `rmdir`, `ln`, `chmod`,
-`mount`, `umount`.
-
+File ops: `cp`, `mv`, `ln`, `chmod`, `mount`, `umount`.
 Text: `grep`, `head`, `tail`, `wc`, `sort`, `sed`, `printf`.
-
-System: `kill`, `sleep`, `uname`.
-
-Shadowed by native already: `ls`, `cat`, `ps`, `df` (duplicated in
-busybox config — should be dropped as a first cleanup).
-
 Shell: `hush` / `sh` — out of scope (see Non-Goals).
+
+Shadowed-by-native applets (`ls`, `cat`, `ps`, `df`, `echo`) and the
+Tier 1 set (`uname`, `sleep`, `mkdir`, `rmdir`, `rm`, `kill`) have
+been removed from the fragment — see Step 0 / Tier 1 status below.
 
 ## Plan
 
@@ -100,36 +98,67 @@ order, but the whole tier should land (and the corresponding
 avoids the "naive replacement temporarily increases size" trap,
 because each tier cut from busybox actually shrinks the binary.
 
-### Step 0 — Preliminary cleanup
+### Step 0 — Preliminary cleanup (landed)
 
 - Drop `CONFIG_LS=y`, `CONFIG_CAT=y`, `CONFIG_PS=y`, `CONFIG_DF=y`,
   `CONFIG_ECHO=y` from
   [busybox_ppap.fragment](/third_party/patches/busybox/busybox_ppap.fragment)
   — already covered by native apps or push built-ins.
-- Rebuild romfs, verify size on pcxt and xtensa.  This is the
-  baseline before any new native applets land.
+- Follow-up: also drop `echo` from `BB_APPLETS` in
+  [cmake/user.cmake](/cmake/user.cmake) so the `/bin/echo → busybox`
+  symlink is not created in romfs.
 
-### Tier 1 — Trivial syscall wrappers
+Commits: `f798f61`, `7d3d0e2` (echo BB_APPLETS fixup).
+Initial busybox shrink: qemu_arm 185,528 → 161,508 B (−24 KB, −13%);
+qemu_m68k 259,120 → 227,780 B (−31 KB, −12%).
 
-Applets: `sleep`, `uname`, `mkdir`, `reset`, `rmdir`, `rm`, `kill`,
-`sync`.
+### Tier 1 — Trivial syscall wrappers (landed)
 
-Characteristics:
-- Each is ~50–100 LOC in a single `src/user/<app>.c`.
-- No external data structures; argv walk + one or two syscalls.
-- Good shakedown for the `uclib` helpers we need in later tiers
-  (`argv` iteration, simple error reporting, numeric parse for
-  `kill -SIG`).
+Applets landed: `uname`, `sleep`, `mkdir`, `reset`, `rmdir`, `rm`,
+`kill`.
 
-Note: `reset` has no busybox counterpart in the current fragment —
-it's a genuinely new applet, not a replacement.  It's in this tier
-because PPAP subsystems (Human68k, MS-DOS, CP/M, S-OS) rewrite
-termios/VT100 state to match their guest OS, and crashes leave the
-host tty confused.  `reset` restores POSIX defaults so an interactive
-shell is usable again.
+Deferred: `sync` — PPAP has no `SYS_SYNC` and no writeback cache to
+flush.  Add the applet only if a future kernel change introduces
+one.
 
-Shared helpers introduced: `uclib_perror`, `uclib_atoi`,
-`uclib_strtol`.
+Commits:
+
+- `5905cfb` — uname (with SYS_UNAME renumbering to 0x0B01)
+- `f54ba5b` — sleep (promoted `struct timespec` to `common/time.h`)
+- `6dc5ab1` — mkdir
+- `52ad3fe` — mkdir -p fix for mount-boundary EROFS
+- `dd14a40` — reset (net-new applet)
+- `bf7bd21` — rmdir
+- `a324271` — rm (with `-r` recursion)
+- `e18c65d` — kill
+
+`reset` has no busybox counterpart in the current fragment — it's a
+genuinely new applet, not a replacement.  It's in this tier because
+PPAP subsystems (Human68k, MS-DOS, CP/M, S-OS) rewrite termios/VT100
+state to match their guest OS, and crashes leave the host tty
+confused.  `reset` restores POSIX defaults so an interactive shell
+is usable again.
+
+Supporting kernel changes that came out of Tier 1 work:
+
+- `55f25df` — vfs: resolve relative paths in `vfs_lookup_parent`
+  (mkdir/rmdir/unlink/rename/creat now accept relative paths, matching
+  vfs_lookup_flags' existing behaviour).
+- `f0ff7c0` — tests: cover relative paths for file-creation syscalls
+  (test_tmpfs grew from 28 to 37 asserts).
+- `5b6eb78` — user: `ls -R` recursive listing, a small
+  dogfood-the-new-applets improvement.
+
+Cumulative busybox shrink through Tier 1:
+
+  qemu_arm  : 185,528 → 158,916 B  (−26,612 B, −14%)
+  qemu_m68k : 259,120 → 224,620 B  (−34,500 B, −13%)
+
+No shared `uclib` helpers were introduced — the existing
+`uc_puts`/`uc_eputs`/`uc_atoi`/`uc_snprintf`/`uc_strcmp`/
+`uc_parse_u32` surface covered Tier 1.  Future tiers may add
+`uc_perror_errno` / `uc_copy_fd` / `uc_getline` / `uc_vsnprintf` as
+needed.
 
 ### Tier 2 — File operations
 
@@ -244,10 +273,18 @@ build/link rules, then:
    [src/user/lib/uclib.h](/src/user/lib/uclib.h) only.
 2. Add to `USER_APPS` in
    [cmake/user.cmake](/cmake/user.cmake) (and the ttyctl-style
-   conditional list if it's platform-specific).
-3. Add `tests/user/test_<app>.c` with a golden-path case plus at
-   least one edge case.  Runs under `./scripts/run.sh --test
-   qemu_arm` and its m68k counterpart.
+   conditional list if it's platform-specific).  For pcxt, the
+   parallel install pipeline also needs entries in
+   [`src/target/pcxt/CMakeLists.txt::PCXT_USER_APPS`](/src/target/pcxt/CMakeLists.txt)
+   and [`scripts/mkpcimg.sh::USER_APPS`](/scripts/mkpcimg.sh) — three
+   lists in lockstep.
+3. For thin syscall wrappers, dedicated `tests/user/test_<app>.c`
+   is not required — the underlying syscalls already have direct
+   coverage in `test_fs`, `test_tmpfs`, etc., and vfork/exec plumbing
+   is not what needs re-testing.  Extend an existing test file if the
+   applet exercises a previously uncovered kernel path (e.g. the
+   relative-path regression added to `test_tmpfs` alongside Tier 1's
+   `vfs_lookup_parent` fix).
 4. Remove the corresponding `CONFIG_<APP>=y` from
    [busybox_ppap.fragment](/third_party/patches/busybox/busybox_ppap.fragment)
    once the native binary is in place.
@@ -256,15 +293,24 @@ build/link rules, then:
 
 ## Size budget
 
-Expected per-applet size (Path A, arm-none-eabi, `-Os`):
+Actual Tier 1 per-applet sizes (stripped, in the romfs):
 
-| Applet class | Typical text + data |
-|---|---|
-| Tier 1 trivial | 200–600 B |
-| Tier 2 file ops | 500 B – 2 KB |
-| Tier 3 text (incl. uclib printf) | 1–3 KB + 2 KB shared `uclib` |
-| Tier 4 grep/sort | 4–8 KB |
-| Tier 5 admin | 500 B – 2 KB |
+| Applet | qemu_arm | qemu_m68k | pcxt (.elf) |
+|---|---|---|---|
+| `uname` | 23,600 | 27,052 | 7,520 |
+| `sleep` | 21,440 | 26,200 | 7,240 |
+| `mkdir` | 23,180 | 27,252 | 7,616 |
+| `reset` | 21,256 | 25,352 | 6,996 |
+| `rmdir` | 22,204 | 26,328 | 7,252 |
+| `rm` | 24,956 | 28,680 | 7,844 |
+| `kill` | 27,296 | 31,256 | 9,156 |
+
+The ARM/m68k numbers include ELF overhead that the ia16 flat-binary
+loader strips, which is why pcxt is ~3× smaller per applet.  Tier 1
+shows that the initial size estimate (200–600 B) was way off; even
+a "trivial" applet drags in ~20 KB of `uclib` + crt0 + syscall stubs
+on ARM/m68k.  Expect Tier 2+ applets to grow less proportionally
+once the shared surface is amortised.
 
 Shared `uclib` code is linked once per binary (bare-metal, no
 multicall) — this is the main trade-off vs. busybox.  For the tightest
