@@ -111,7 +111,8 @@ because each tier cut from busybox actually shrinks the binary.
 
 ### Tier 1 — Trivial syscall wrappers
 
-Applets: `sleep`, `uname`, `mkdir`, `rmdir`, `rm`, `kill`, `sync`.
+Applets: `sleep`, `uname`, `mkdir`, `reset`, `rmdir`, `rm`, `kill`,
+`sync`.
 
 Characteristics:
 - Each is ~50–100 LOC in a single `src/user/<app>.c`.
@@ -119,6 +120,13 @@ Characteristics:
 - Good shakedown for the `uclib` helpers we need in later tiers
   (`argv` iteration, simple error reporting, numeric parse for
   `kill -SIG`).
+
+Note: `reset` has no busybox counterpart in the current fragment —
+it's a genuinely new applet, not a replacement.  It's in this tier
+because PPAP subsystems (Human68k, MS-DOS, CP/M, S-OS) rewrite
+termios/VT100 state to match their guest OS, and crashes leave the
+host tty confused.  `reset` restores POSIX defaults so an interactive
+shell is usable again.
 
 Shared helpers introduced: `uclib_perror`, `uclib_atoi`,
 `uclib_strtol`.
