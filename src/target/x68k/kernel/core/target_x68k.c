@@ -22,29 +22,28 @@
  *   - Kernel mounts it via flatblk ("ram0") as the initial root filesystem
  */
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "common/errno.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/arch.h"
+#include "kernel/core/boot.h"
+#include "kernel/core/driver/timer_x68k.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
-#include "target/target.h"
+#include "kernel/core/signal/signal.h"
+#include "kernel/core/syscall/syscall.h"
 #ifdef PPAP_HAS_BLKDEV
+// TODO: route flatblk_init / blkdev_find through mod_vfs — core-side
+// code including VFS module headers directly bypasses the module
+// bridge.  Needs matching MOD_FUNC entries in mod_vfs.h first.
 #include "kernel/vfs/driver/blkdev.h"
 #include "kernel/vfs/driver/flatblk.h"
 #endif
-#include <stddef.h>
-#include <stdint.h>
-
-/* ── Timer driver ────────────────────────────────────────────────────── */
-
-/* Defined in drivers/timer_x68k.c */
-extern void timer_init(void);
-
-/* Benign IRQ handler — silences unhandled hardware IRQs with a bare rte.
- * Defined in arch/m68k/irq.S (or similar). */
-extern void m68k_irq_ignore(void);
+#include "target/target.h"
 
 /* ── TRAP #0 syscall dispatch ────────────────────────────────────────── *
  *
@@ -61,9 +60,6 @@ extern void m68k_irq_ignore(void);
  *
  * Maps the m68k register frame onto the shared syscall_dispatch() API.
  * ────────────────────────────────────────────────────────────────────── */
-
-#include "kernel/core/signal/signal.h"
-#include "kernel/core/syscall/syscall.h"
 
 void m68k_syscall_entry(uint32_t *regs) {
   uint32_t nr = regs[0]; /* d0 = syscall number */

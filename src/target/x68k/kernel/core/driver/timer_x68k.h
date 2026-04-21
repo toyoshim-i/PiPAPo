@@ -1,0 +1,10 @@
+/*
+ * timer_x68k.h -- X68000 timer driver API
+ */
+
+#ifndef PPAP_TARGET_X68K_KERNEL_CORE_DRIVER_TIMER_X68K_H
+#define PPAP_TARGET_X68K_KERNEL_CORE_DRIVER_TIMER_X68K_H
+
+void timer_init(void);
+
+#endif /* PPAP_TARGET_X68K_KERNEL_CORE_DRIVER_TIMER_X68K_H */

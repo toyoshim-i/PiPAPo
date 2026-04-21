@@ -18,9 +18,12 @@
  * ISR.
  */
 
+#include "kernel/core/driver/timer_x68k.h"
+
 #include <stdint.h>
 
 #include "kernel/core/proc/sched.h"
+#include "kernel/core/switch.h"
 
 /* ── MFP register map ───────────────────────────────────────────────────── */
 
@@ -46,9 +49,6 @@
 
 /* Timer-C interrupt vector: VR(0x40) + source(5) = 0x45 = vector 69 */
 #define TC_VECTOR 69u
-
-/* m68k_timer_isr defined in src/arch/m68k/switch.S */
-extern void m68k_timer_isr(void);
 
 /* ── Public API ─────────────────────────────────────────────────────────── */
 
