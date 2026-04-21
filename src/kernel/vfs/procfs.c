@@ -796,6 +796,9 @@ static int procfs_stat(vnode_t *vn, struct stat *st) {
   st->st_mode = vn->mode;
   st->st_nlink = 1;
   st->st_size = vn->size;
+  st->st_mtime = 0;
+  st->st_ctime = 0;
+  st->st_atime = 0;
   return 0;
 }
 

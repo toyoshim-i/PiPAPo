@@ -1586,6 +1586,9 @@ static int ufs_stat(vnode_t *vn, struct stat *st) {
   st->st_mode = inode->i_mode;
   st->st_nlink = inode->i_nlink;
   st->st_size = (uint32_t)inode->i_size;
+  st->st_mtime = inode->i_mtime;
+  st->st_ctime = inode->i_ctime;
+  st->st_atime = inode->i_atime;
   vfs_scratch_free(inode);
   return 0;
 }
