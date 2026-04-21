@@ -42,7 +42,7 @@ CONFIG_SORT=y
 CONFIG_SED=y
 
 # -- Process management -------------------------------------------------------
-CONFIG_KILL=y
+# CONFIG_KILL is not set (using native PPAP kill)
 # CONFIG_SLEEP is not set (using native PPAP sleep)
 # CONFIG_PS is not set (using native PPAP ps)
 # CONFIG_TOP is not set (using native PPAP top)
