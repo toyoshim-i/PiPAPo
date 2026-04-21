@@ -142,7 +142,10 @@ static void seg_init_modules(void) {
 /* ── Panic / unexpected interrupt dump ───────────────────────────────────── */
 
 /* Panic frame, written by the asm stubs and read by panic_dump_c.
- * Lives in the core data segment.  All fields are uint16_t. */
+ * Lives in the core data segment.  All fields are uint16_t.  The C
+ * definition below replaces the old asm-side `.data ... panic_frame:
+ * .word 0 x15` reservation so target_pcxt.c does not need an extern
+ * to see a symbol that is defined (and only used) in this file. */
 struct panic_frame {
   uint16_t vec;
   uint16_t ax, bx, cx, dx;
@@ -150,7 +153,7 @@ struct panic_frame {
   uint16_t ds, es, ss, sp;
   uint16_t ip, cs, flags;
 };
-extern struct panic_frame panic_frame;
+struct panic_frame panic_frame;
 
 /* -- Panic output helpers (write to COM1 and VGA simultaneously) ----------- */
 
@@ -307,7 +310,6 @@ static void panic_dump_regs(void) {
   panic_puts("\r\n");
 }
 
-extern void panic_dump_c(void);
 void panic_dump_c(void) {
   panic_vga_init();
   panic_puts("\r\nPANIC: unexpected INT ");
@@ -334,19 +336,18 @@ void panic_dump_c(void) {
  * Vectors NOT touched (must keep BIOS): 08h IRQ0 (chained), 09h IRQ1 kbd,
  * 0Eh IRQ6 floppy, 10h-17h / 1Ah-1Fh BIOS services and parameter tables.
  */
-extern void int_panic_v00(void);
-extern void int_panic_v01(void);
-extern void int_panic_v02(void);
-extern void int_panic_v03(void);
-extern void int_panic_v04(void);
-extern void int_panic_v05(void);
-extern void int_panic_v06(void);
-extern void int_panic_v07(void);
-extern void int_panic_v18(void);
-extern void int_panic_v19(void);
+void int_panic_v00(void);
+void int_panic_v01(void);
+void int_panic_v02(void);
+void int_panic_v03(void);
+void int_panic_v04(void);
+void int_panic_v05(void);
+void int_panic_v06(void);
+void int_panic_v07(void);
+void int_panic_v18(void);
+void int_panic_v19(void);
 __asm__(
   ".code16\n"
-  ".globl panic_frame\n"
   /* Each stub records the vector # in a CS-accessible scratch slot
    * (no register clobber).  int_panic_common then copies it into
    * panic_frame.vec via DS once DS has been re-pointed at the kernel
@@ -444,22 +445,6 @@ __asm__(
   "entry_ss: .word 0\n"
 
   ".data\n"
-  "panic_frame:\n"
-  "  .word 0\n"   /* +0  vec   */
-  "  .word 0\n"   /* +2  ax    */
-  "  .word 0\n"   /* +4  bx    */
-  "  .word 0\n"   /* +6  cx    */
-  "  .word 0\n"   /* +8  dx    */
-  "  .word 0\n"   /* +10 si   */
-  "  .word 0\n"   /* +12 di   */
-  "  .word 0\n"   /* +14 bp   */
-  "  .word 0\n"   /* +16 ds   */
-  "  .word 0\n"   /* +18 es   */
-  "  .word 0\n"   /* +20 ss   */
-  "  .word 0\n"   /* +22 sp   */
-  "  .word 0\n"   /* +24 ip   */
-  "  .word 0\n"   /* +26 cs   */
-  "  .word 0\n"   /* +28 flags*/
   "  .lcomm panic_stack, 256\n"
   "panic_stack_top:\n"
   ".text\n"
@@ -529,7 +514,7 @@ static void bda_write16(uint16_t off, uint16_t val) {
 /* Copy the entry-time register snapshot from CS-resident scratch slots
  * (filled by boot.S before any segreg was touched) into panic_frame.
  * Called from boot.S after BSS clear / DS setup, before kmain. */
-extern void copy_entry_snapshot(void);
+void copy_entry_snapshot(void);
 __asm__(
   ".code16\n"
   ".globl copy_entry_snapshot\n"
@@ -592,6 +577,19 @@ void target_early_init(void) {
   mod_vfs.notify(VFS_EVENT_MODULE_READY);
   mod_vfs.klogf("SEG: core=%x vfs=%x\n",
                 seg_get(MOD_ID_CORE), seg_get(MOD_ID_VFS));
+
+  /* Seed the kernel wallclock from the CMOS RTC so file timestamps,
+   * date(1), and clock_gettime return real wall-clock values instead
+   * of seconds-since-boot.  On probe failure the clock stays at 0
+   * and the system degrades gracefully (everything stamped in 1970). */
+  uint32_t rtc_sec;
+  if (cmos_rtc_read_epoch(&rtc_sec) == 0) {
+    time_set_wallclock(rtc_sec);
+    mod_vfs.klogf("RTC: seeded wallclock from CMOS (epoch=%lu)\n",
+                  (unsigned long)rtc_sec);
+  } else {
+    mod_vfs.klogf("RTC: CMOS read failed; wallclock stays at epoch 0\n");
+  }
 }
 
 void target_late_init(void)
