@@ -517,6 +517,42 @@ static int dos_terminate(dos_proc_t *dos, dos_regs_t *regs) {
   return 0; /* Not reached */
 }
 
+/* AH=44h IOCTL.  Only AL=00h (Get Device Info) is implemented today.
+ *
+ * AH=44h AL=00h: return DX = device info word for BX = handle.
+ *   Handles 0..4 are pre-opened to console / serial; report them as
+ *   CON (the reply real DOS gives for the console handle).  Device-
+ *   info layout (Ralf Brown int list):
+ *     bit 15 = 1 : character device
+ *     bit  7 = 1 : character device (legacy-redundant)
+ *     bit  6 = 1 : "no EOF on input" (console semantics)
+ *     bit  4 = 1 : special device
+ *     bit  1 = 1 : stdout
+ *     bit  0 = 1 : stdin
+ *   0x80D3 marks the handle as CON (both stdin + stdout).
+ *
+ * Other AL values (set info, in/out status, changeable media, block-
+ * device queries) return "invalid function" until a caller actually
+ * needs them. */
+static int dos_ioctl(dos_proc_t *dos, dos_regs_t *regs) {
+  uint8_t al = (uint8_t)(regs->ax & 0xFFu);
+  if (al != 0x00) return -DOS_ERR_INVALID_FUNCTION;
+
+  uint16_t handle = regs->bx;
+  if (handle >= DOS_MAX_HANDLES || dos->handle_to_fd[handle] < 0)
+    return -DOS_ERR_INVALID_HANDLE;
+
+  uint16_t info;
+  if (handle <= 4) {
+    info = 0x80D3u; /* CON: char device, stdin + stdout, no EOF */
+  } else {
+    info = 0x0000u; /* regular file on drive A: per DOS convention */
+  }
+  regs->dx = info;
+  regs->ax = info;
+  return 0;
+}
+
 /* Vectors the kernel uses for its own ISRs or panic stubs.  Writes from
  * the guest are silently ignored so a misbehaving DOS program can't
  * wedge the timer, DOS dispatcher, PPAP syscall, or CPU-fault panic
@@ -1301,6 +1337,9 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
       break;
     case 0x42:
       ret = dos_lseek(dos, regs);
+      break;
+    case 0x44:
+      ret = dos_ioctl(dos, regs);
       break;
     case 0x45:
       ret = dos_dup(dos, regs);
