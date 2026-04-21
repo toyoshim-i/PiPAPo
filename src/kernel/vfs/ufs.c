@@ -844,6 +844,12 @@ static long ufs_write(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
     vn->size = end;
   }
 
+  {
+    uint32_t now = mod_core.time_now_sec();
+    inode->i_mtime = now;
+    inode->i_ctime = now;
+  }
+
   rc = ufs_write_inode(priv, vn->ino, inode);
   if (rc < 0) {
     vfs_scratch_free(inode);
@@ -1135,9 +1141,13 @@ static int ufs_create(vnode_t *dir, const char *name, uint32_t mode,
     ufs_free_inode(priv, new_ino);
     return -ENOMEM;
   }
+  uint32_t now = mod_core.time_now_sec();
   __builtin_memset(inode, 0, sizeof(*inode));
   inode->i_mode = (uint16_t)(S_IFREG | (mode & 0777u));
   inode->i_nlink = 1;
+  inode->i_mtime = now;
+  inode->i_ctime = now;
+  inode->i_atime = now;
 
   rc = ufs_write_inode(priv, new_ino, inode);
   if (rc < 0) {
@@ -1154,12 +1164,24 @@ static int ufs_create(vnode_t *dir, const char *name, uint32_t mode,
     return rc;
   }
 
-  ufs_sync_super(priv);
-
-  /* Allocate and return vnode */
+  /* Allocate the vnode while the scratch still has the new file's
+   * inode data — ufs_vnode_from_inode reads size/mode out of it. */
   vnode_t *vn = ufs_vnode_from_inode(dir->mount, new_ino, inode);
+  if (!vn) {
+    vfs_scratch_free(inode);
+    return -ENOMEM;
+  }
+
+  /* Stamp parent directory — its contents changed.  Reuses the scratch
+   * buffer now that the new-inode data has been consumed. */
+  if (ufs_read_inode(priv, dir->ino, inode) == 0) {
+    inode->i_mtime = now;
+    inode->i_ctime = now;
+    ufs_write_inode(priv, dir->ino, inode);
+  }
+
   vfs_scratch_free(inode);
-  if (!vn) return -ENOMEM;
+  ufs_sync_super(priv);
 
   *result = vn;
   return 0;
@@ -1359,11 +1381,15 @@ static int ufs_mkdir(vnode_t *dir, const char *name, uint32_t mode) {
     ufs_free_inode(priv, new_ino);
     return -ENOMEM;
   }
+  uint32_t now = mod_core.time_now_sec();
   __builtin_memset(inode, 0, sizeof(*inode));
   inode->i_mode = (uint16_t)(S_IFDIR | (mode & 0777u));
   inode->i_nlink = 2; /* "." from self + entry from parent */
   inode->i_size = UFS_BLOCK_SIZE;
   inode->i_direct[0] = data_frag;
+  inode->i_mtime = now;
+  inode->i_ctime = now;
+  inode->i_atime = now;
 
   rc = ufs_write_inode(priv, new_ino, inode);
   if (rc < 0) {
@@ -1378,7 +1404,7 @@ static int ufs_mkdir(vnode_t *dir, const char *name, uint32_t mode) {
     return rc;
   }
 
-  /* Increment parent's nlink (for ".." backlink).
+  /* Increment parent's nlink (for ".." backlink) and stamp mtime/ctime.
    * Reuse the same scratch buffer — new inode data no longer needed. */
   rc = ufs_read_inode(priv, dir->ino, inode);
   if (rc < 0) {
@@ -1386,6 +1412,8 @@ static int ufs_mkdir(vnode_t *dir, const char *name, uint32_t mode) {
     return rc;
   }
   inode->i_nlink++;
+  inode->i_mtime = now;
+  inode->i_ctime = now;
   rc = ufs_write_inode(priv, dir->ino, inode);
   vfs_scratch_free(inode);
   if (rc < 0) return rc;
@@ -1484,6 +1512,11 @@ static int ufs_truncate(vnode_t *vn, uint32_t length) {
   }
 
   vn->size = (uint32_t)inode->i_size;
+  {
+    uint32_t now = mod_core.time_now_sec();
+    inode->i_mtime = now;
+    inode->i_ctime = now;
+  }
   rc = ufs_write_inode(priv, vn->ino, inode);
   vfs_scratch_free(inode);
   if (rc < 0) return rc;
@@ -1496,6 +1529,7 @@ static int ufs_truncate(vnode_t *vn, uint32_t length) {
 
 static int ufs_unlink(vnode_t *dir, const char *name) {
   ufs_priv_t *priv = (ufs_priv_t *)dir->fs_priv;
+  uint32_t now = mod_core.time_now_sec();
 
   /* Remove directory entry and get the child inode number */
   uint32_t child_ino = 0;
@@ -1511,8 +1545,10 @@ static int ufs_unlink(vnode_t *dir, const char *name) {
     return rc;
   }
 
+  int child_was_dir = S_ISDIR(child->i_mode);
+
   /* If directory: check it's empty, decrement parent nlink */
-  if (S_ISDIR(child->i_mode)) {
+  if (child_was_dir) {
     int empty = ufs_dir_is_empty(priv, child_ino);
     if (empty <= 0) {
       ufs_dir_add_entry(priv, dir, name, child_ino);
@@ -1520,13 +1556,15 @@ static int ufs_unlink(vnode_t *dir, const char *name) {
       return (empty == 0) ? -ENOTEMPTY : empty;
     }
 
-    /* Decrement parent's nlink.  child is still needed below, so
-     * allocate a second scratch for the parent inode. */
+    /* Decrement parent's nlink and stamp mtime/ctime.  child is still
+     * needed below, so allocate a second scratch for the parent inode. */
     ufs_inode_t *parent = vfs_scratch_alloc();
     if (parent) {
       rc = ufs_read_inode(priv, dir->ino, parent);
       if (rc == 0 && parent->i_nlink > 0) {
         parent->i_nlink--;
+        parent->i_mtime = now;
+        parent->i_ctime = now;
         ufs_write_inode(priv, dir->ino, parent);
       }
       vfs_scratch_free(parent);
@@ -1565,6 +1603,21 @@ static int ufs_unlink(vnode_t *dir, const char *name) {
   }
 
   vfs_scratch_free(child);
+
+  /* For regular files, stamp parent now (dir case already did it while
+   * decrementing nlink above). */
+  if (!child_was_dir) {
+    ufs_inode_t *parent = vfs_scratch_alloc();
+    if (parent) {
+      if (ufs_read_inode(priv, dir->ino, parent) == 0) {
+        parent->i_mtime = now;
+        parent->i_ctime = now;
+        ufs_write_inode(priv, dir->ino, parent);
+      }
+      vfs_scratch_free(parent);
+    }
+  }
+
   ufs_sync_super(priv);
   return 0;
 }
