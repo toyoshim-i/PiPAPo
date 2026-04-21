@@ -31,6 +31,7 @@ enum bios_ansi_state {
   BIOS_ANSI_ESC,
   BIOS_ANSI_CSI,
   BIOS_ANSI_CSI_PRIV, /* DEC private mode: \033[? */
+  BIOS_ANSI_ESC_CSET, /* after ESC-( / ) / * / + / # — swallow 1 char */
 };
 
 static uint8_t bios_attr = 0x07u; /* light grey on black */
@@ -254,9 +255,32 @@ void bios_putc(char c)
         bios_param_count = 0u;
         bios_param_seen_digit = 0u;
         bios_params[0] = 0u;
+      } else if (ch == '(' || ch == ')' || ch == '*' || ch == '+' ||
+                 ch == '#') {
+        /* Two-byte charset / line-attr designators: swallow next byte. */
+        bios_ansi_state = BIOS_ANSI_ESC_CSET;
+      } else if (ch == 'c') {
+        /* RIS — Reset to Initial State: clear screen, reset attrs, home. */
+        bios_reset_attr();
+        {
+          uint16_t blank =
+              (uint16_t)(((uint16_t)bios_attr << 8) | (uint16_t)' ');
+          for (uint16_t i = 0; i < BIOS_ROWS * BIOS_COLS; i++)
+            bios_vram_poke((uint16_t)(i * 2u), blank);
+        }
+        bios_row = 0u;
+        bios_col = 0u;
+        bios_sync_hw_cursor();
+        bios_ansi_reset_parser();
       } else {
+        /* Unknown single-byte ESC sequence — drop it silently. */
         bios_ansi_reset_parser();
       }
+      return;
+
+    case BIOS_ANSI_ESC_CSET:
+      /* Swallow the designator byte (e.g. the 'B' of ESC-(-B). */
+      bios_ansi_reset_parser();
       return;
 
     case BIOS_ANSI_CSI:
