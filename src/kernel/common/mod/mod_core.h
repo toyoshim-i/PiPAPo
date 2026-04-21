@@ -205,6 +205,15 @@ MOD_FUNC(core, int, subsys_read_proc, int, struct pcb *, const char *, char *,
 
 MOD_FUNC(core, void, svc_set_restart, void)
 
+/*
+ * time_now_sec — Current Unix time in seconds, without fractional ticks.
+ *
+ * Returns time_boot_epoch + sched_get_ticks()/PPAP_TICK_HZ.  Used by
+ * VFS drivers to stamp mtime/ctime on create/write/unlink/rename.
+ * Returns 0 until sys_settimeofday (or a future RTC seed) is called.
+ */
+MOD_FUNC(core, uint32_t, time_now_sec, void)
+
 MOD_DECLARE_END(core)
 
 /* MOD_CORE_FUNC_COUNT is defined in mod_core.inc — the single source

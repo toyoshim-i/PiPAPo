@@ -72,6 +72,7 @@ extern uint16_t sched_switch_entry;
 extern uint16_t sched_get_ticks_entry;
 extern uint16_t subsys_read_proc_entry;
 extern uint16_t svc_set_restart_entry;
+extern uint16_t time_now_sec_entry;
 static void patch_vfs_fptrs(uint16_t vfs_seg) {
   if (far_read16(vfs_seg, 0) != VFS_HDR_MAGIC) {
     mod_vfs.klogf("SEG: VFS header magic mismatch!\n");
@@ -113,6 +114,7 @@ static void patch_vfs_fptrs(uint16_t vfs_seg) {
   PATCH_CORE(13, sched_switch);
   PATCH_CORE(14, subsys_read_proc);
   PATCH_CORE(15, svc_set_restart);
+  PATCH_CORE(16, time_now_sec);
 #undef PATCH_CORE
 }
 

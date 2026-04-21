@@ -36,6 +36,9 @@ typedef struct {
   page_id_t data_page;           /* file data page id (PAGE_ID_INVALID = none)
                                   * — page_id_t is i16-safe; storing a void *
                                   * truncates above the 64 KB DS=0 window. */
+  uint32_t mtime;                /* last modification time (epoch seconds) */
+  uint32_t ctime;                /* last status change time                */
+  uint32_t atime; /* last access time (0 — atime not tracked) */
 } tmpfs_inode_t;
 
 static tmpfs_inode_t inodes[TMPFS_INODE_MAX];
@@ -99,12 +102,16 @@ static int tmpfs_mount(mount_entry_t *mnt, const void *dev_data) {
   data_pages_used = 0;
 
   /* Create root directory (inode 0) */
+  uint32_t now = mod_core.time_now_sec();
   inodes[0].active = 1;
   inodes[0].type = VNODE_DIR;
   inodes[0].mode = S_IFDIR | 0755u;
   inodes[0].size = 0;
   inodes[0].parent_ino = 0;
   inodes[0].data_page = PAGE_ID_INVALID;
+  inodes[0].mtime = now;
+  inodes[0].ctime = now;
+  inodes[0].atime = now;
   inodes[0].name[0] = '\0';
 
   /* Allocate root vnode */
@@ -193,6 +200,9 @@ static long tmpfs_write(vnode_t *vn, page_id_t page, uint16_t page_off,
   if (vn->type == VNODE_DIR) return -(long)EISDIR;
 
   tmpfs_inode_t *ti = &inodes[vn->ino];
+  uint32_t now = mod_core.time_now_sec();
+  ti->mtime = now;
+  ti->ctime = now;
 
   /* Enforce per-file limit (one page) */
   if (off + n > TMPFS_FILE_MAX) {
@@ -279,9 +289,9 @@ static int tmpfs_stat(vnode_t *vn, struct stat *st) {
   st->st_mode = ti->mode;
   st->st_nlink = 1;
   st->st_size = ti->size;
-  st->st_mtime = 0;
-  st->st_ctime = 0;
-  st->st_atime = 0;
+  st->st_mtime = ti->mtime;
+  st->st_ctime = ti->ctime;
+  st->st_atime = ti->atime;
   return 0;
 }
 
@@ -297,6 +307,7 @@ static int tmpfs_create(vnode_t *dir, const char *name, uint32_t mode,
   int idx = inode_alloc();
   if (idx < 0) return -ENOSPC;
 
+  uint32_t now = mod_core.time_now_sec();
   tmpfs_inode_t *ti = &inodes[idx];
   ti->active = 1;
   ti->type = VNODE_FILE;
@@ -304,7 +315,14 @@ static int tmpfs_create(vnode_t *dir, const char *name, uint32_t mode,
   ti->size = 0;
   ti->parent_ino = dir->ino;
   ti->data_page = PAGE_ID_INVALID;
+  ti->mtime = now;
+  ti->ctime = now;
+  ti->atime = now;
   str_copy(ti->name, name, TMPFS_NAME_MAX + 1);
+
+  /* Parent directory's mtime/ctime bump — the directory's contents changed. */
+  inodes[dir->ino].mtime = now;
+  inodes[dir->ino].ctime = now;
 
   /* Return vnode for the new file */
   vnode_t *vn = mod_vfs.vnode_alloc();
@@ -335,6 +353,7 @@ static int tmpfs_mkdir(vnode_t *dir, const char *name, uint32_t mode) {
   int idx = inode_alloc();
   if (idx < 0) return -ENOSPC;
 
+  uint32_t now = mod_core.time_now_sec();
   tmpfs_inode_t *ti = &inodes[idx];
   ti->active = 1;
   ti->type = VNODE_DIR;
@@ -342,7 +361,13 @@ static int tmpfs_mkdir(vnode_t *dir, const char *name, uint32_t mode) {
   ti->size = 0;
   ti->parent_ino = dir->ino;
   ti->data_page = PAGE_ID_INVALID;
+  ti->mtime = now;
+  ti->ctime = now;
+  ti->atime = now;
   str_copy(ti->name, name, TMPFS_NAME_MAX + 1);
+
+  inodes[dir->ino].mtime = now;
+  inodes[dir->ino].ctime = now;
 
   return 0;
 }
@@ -363,6 +388,9 @@ static int tmpfs_unlink(vnode_t *dir, const char *name) {
     }
 
     inode_free(i);
+    uint32_t now = mod_core.time_now_sec();
+    inodes[dir->ino].mtime = now;
+    inodes[dir->ino].ctime = now;
     return 0;
   }
 
@@ -402,8 +430,17 @@ static int tmpfs_rename(vnode_t *old_dir, const char *old_name,
   }
 
   /* Move: update parent and name */
+  uint32_t now = mod_core.time_now_sec();
   inodes[src].parent_ino = new_dir->ino;
+  inodes[src].ctime = now;
   str_copy(inodes[src].name, new_name, TMPFS_NAME_MAX + 1);
+
+  inodes[old_dir->ino].mtime = now;
+  inodes[old_dir->ino].ctime = now;
+  if (new_dir->ino != old_dir->ino) {
+    inodes[new_dir->ino].mtime = now;
+    inodes[new_dir->ino].ctime = now;
+  }
   return 0;
 }
 
@@ -424,6 +461,9 @@ static int tmpfs_truncate(vnode_t *vn, uint32_t length) {
 
   ti->size = length;
   vn->size = length;
+  uint32_t now = mod_core.time_now_sec();
+  ti->mtime = now;
+  ti->ctime = now;
   return 0;
 }
 

@@ -196,5 +196,33 @@ int main(void)
         chdir("/");
     }
 
+    /* 16. tmpfs stamps mtime/ctime on create and write.  The kernel
+     * derives stat time from the same clock as clock_gettime(CLOCK_REALTIME),
+     * so a file's mtime must land between the readings taken on either side
+     * of the syscall that stamped it. */
+    {
+        long ts_before[2], ts_after[2];
+        clock_gettime(0 /* CLOCK_REALTIME */, ts_before);
+
+        fd = open("/tmp/test_mtime", O_WRONLY | O_CREAT, 0644);
+        UT_ASSERT(fd >= 0, "create /tmp/test_mtime");
+        if (fd >= 0) {
+            write(fd, "x", 1);
+            close(fd);
+        }
+
+        clock_gettime(0, ts_after);
+
+        ret = stat("/tmp/test_mtime", &st);
+        UT_ASSERT_EQ(ret, 0);
+        UT_ASSERT(st.st_mtime >= (unsigned long)ts_before[0],
+                  "mtime >= clock before write");
+        UT_ASSERT(st.st_mtime <= (unsigned long)ts_after[0],
+                  "mtime <= clock after write");
+        UT_ASSERT_EQ((int)st.st_mtime, (int)st.st_ctime);
+
+        unlink("/tmp/test_mtime");
+    }
+
     UT_SUMMARY("test_tmpfs");
 }

@@ -31,6 +31,7 @@ uint32_t sched_get_ticks(void);
 struct pcb;
 int subsys_read_proc(int, struct pcb *, const char *, char *, int);
 void svc_set_restart(void);
+uint32_t time_now_sec(void);
 
 /* MOD_IMPL(core, X) expands to .X = core_X — alias stubs */
 #define core_kmem_pool_init      kmem_pool_init
@@ -49,6 +50,7 @@ void svc_set_restart(void);
 #define core_sched_get_ticks     sched_get_ticks
 #define core_subsys_read_proc    subsys_read_proc
 #define core_svc_set_restart     svc_set_restart
+#define core_time_now_sec        time_now_sec
 
 #include "kernel/common/mod/mod_core.h"
 

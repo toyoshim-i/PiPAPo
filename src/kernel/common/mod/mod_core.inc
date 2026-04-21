@@ -25,7 +25,8 @@ MOD_CORE_ENTRY(sched_wakeup,           12)
 MOD_CORE_ENTRY(sched_switch,           13)
 MOD_CORE_ENTRY(subsys_read_proc,       14)
 MOD_CORE_ENTRY(svc_set_restart,        15)
+MOD_CORE_ENTRY(time_now_sec,           16)
 
 #ifndef MOD_CORE_FUNC_COUNT
-#define MOD_CORE_FUNC_COUNT 16
+#define MOD_CORE_FUNC_COUNT 17
 #endif

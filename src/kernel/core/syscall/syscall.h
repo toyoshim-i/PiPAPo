@@ -124,6 +124,10 @@ long sys_clock_nanosleep64(long clk, long flags, uintptr_t req_ptr,
  * truth for all time syscalls and subsystem bridges (DOS AH=2Ah/2Ch). */
 void sys_time_now(uint32_t *sec_out, uint32_t *frac_ticks_out);
 
+/* Seconds-only variant, exposed to VFS drivers via mod_core for file
+ * mtime/ctime stamping.  Equivalent to sys_time_now(&sec, NULL). */
+uint32_t time_now_sec(void);
+
 /* fd/pipe.c */
 long sys_pipe(uintptr_t fds_ptr);
 

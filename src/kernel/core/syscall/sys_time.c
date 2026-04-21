@@ -29,6 +29,10 @@ void sys_time_now(uint32_t *sec_out, uint32_t *frac_ticks_out) {
   if (frac_ticks_out) *frac_ticks_out = frac;
 }
 
+uint32_t time_now_sec(void) {
+  return time_boot_epoch + sched_get_ticks() / PPAP_TICK_HZ;
+}
+
 static int timespec32_write_remaining(uintptr_t rem_ptr) {
   struct timespec rem;
   uint32_t now;
