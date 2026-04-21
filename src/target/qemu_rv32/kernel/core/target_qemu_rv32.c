@@ -9,6 +9,12 @@
  */
 
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/timer.h"
+#include "kernel/core/ufsimg.h"
+// TODO: route flatblk_init / blkdev_find through mod_vfs — core-side code
+// including VFS module headers directly bypasses the module bridge.  Needs
+// matching MOD_FUNC entries in mod_vfs.h first (same cleanup pending in
+// target_x68k.c).
 #include "kernel/vfs/driver/blkdev.h"
 #include "kernel/vfs/driver/flatblk.h"
 #include "target/target.h"
@@ -21,12 +27,6 @@
 #define SIFIVE_TEST_BASE 0x100000u
 #define SIFIVE_TEST_PASS 0x5555u
 #define SIFIVE_TEST_FAIL 0x3333u
-
-/* Linker-provided UFS test image (from ufsimg_data.S) */
-extern const uint8_t __ufsimg_start[];
-extern const uint8_t __ufsimg_end[];
-
-extern void riscv_timer_init(void);
 
 void target_early_init(void) {
   /* Boot banner printed from klog_init_logger() (VFS side) */

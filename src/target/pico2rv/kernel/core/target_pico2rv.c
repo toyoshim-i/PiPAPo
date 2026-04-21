@@ -7,6 +7,7 @@
 
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/driver/clock.h"
+#include "kernel/core/timer.h"
 #include "pico2rv.h"
 #include "target/rpico.h"
 #include "target/target.h"
@@ -104,9 +105,6 @@ void target_early_init(void)
     mod_vfs.notify(VFS_EVENT_PLL_CHANGED);
     /* No SPI init — pico2rv has no SD card slot */
 }
-
-/* Timer init — defined in riscv_common.c */
-extern void riscv_timer_init(void);
 
 void target_late_init(void)
 {

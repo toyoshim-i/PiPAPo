@@ -6,8 +6,12 @@
  */
 
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/fatimg.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
+// TODO: route ramblk_init / BLKDEV_SECTOR_SIZE through mod_vfs — core-side
+// code including VFS module headers directly bypasses the module bridge.
+// Needs matching MOD_FUNC entries in mod_vfs.h first.
 #include "kernel/vfs/driver/blkdev.h"
 #include "kernel/vfs/driver/ramblk.h"
 #include "target/target.h"
@@ -15,10 +19,6 @@
 #ifdef PPAP_TESTS
 #include "ktest.h"
 #endif
-
-/* Linker-provided FAT32 test image (from fatimg_data.S) */
-extern const uint8_t __fatimg_start[];
-extern const uint8_t __fatimg_end[];
 
 void target_early_init(void) {
   /* Boot banner printed from klog_init_logger() (VFS side) */
