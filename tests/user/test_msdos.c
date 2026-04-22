@@ -1396,6 +1396,91 @@ static void test_dos_sysvars(void)
     UT_ASSERT_EQ(code, 0);
 }
 
+/* -- Test 25: find_first.com --- AH=4Eh/4Fh FindFirst/FindNext ---------- */
+/*
+ * Creates /tmp/D4FT1.TXT + /tmp/D4FT2.TXT, then runs a .COM that
+ * FindFirst's "D4FT*.TXT" (relative path → resolves to
+ * C:\D4FT*.TXT → /tmp/D4FT*.TXT), counts matches via FindNext, and
+ * exits with the match count.  FindFirst failure exits with 0xEE.
+ *
+ * Layout (42 bytes of code + 10-byte pattern + 128-byte DTA buffer):
+ *   0x100  BA 34 01              MOV DX, 0134h   (dta_buf offset)
+ *   0x103  B4 1A  CD 21          AH=1Ah INT 21h  (set DTA)
+ *   0x107  BA 2A 01              MOV DX, 012Ah   (pattern offset)
+ *   0x10A  B9 00 00              MOV CX, 0       (attribute mask)
+ *   0x10D  B4 4E  CD 21          AH=4Eh INT 21h  (FindFirst)
+ *   0x111  72 12                 JC fail (0x125)
+ *   0x113  BB 01 00              MOV BX, 1
+ *   0x116  B4 4F  CD 21          loop: AH=4Fh INT 21h  (FindNext)
+ *   0x11A  72 03                 JC done (0x11F)
+ *   0x11C  43                    INC BX
+ *   0x11D  EB F7                 JMP loop (-9)
+ *   0x11F  88 D8                 done: MOV AL, BL  (count)
+ *   0x121  B4 4C  CD 21          AH=4Ch INT 21h  (exit count)
+ *   0x125  B8 EE 4C  CD 21       fail: MOV AX,4CEEh INT 21h
+ *   0x12A  "D4FT*.TXT" + NUL     (10 bytes)
+ *   0x134  128-byte DTA buffer   (zeros)
+ */
+static const unsigned char find_first_com[] = {
+    /* 0x100: MOV DX, 0134h  (dta_buf) */
+    0xBA, 0x34, 0x01,
+    /* 0x103: MOV AH, 1Ah ; INT 21h  (Set DTA) */
+    0xB4, 0x1A, 0xCD, 0x21,
+    /* 0x107: MOV DX, 012Ah  (pattern) */
+    0xBA, 0x2A, 0x01,
+    /* 0x10A: MOV CX, 0  (attribute mask — ignored by PPAP) */
+    0xB9, 0x00, 0x00,
+    /* 0x10D: MOV AH, 4Eh ; INT 21h  (FindFirst) */
+    0xB4, 0x4E, 0xCD, 0x21,
+    /* 0x111: JC fail (+0x12) */
+    0x72, 0x12,
+    /* 0x113: MOV BX, 1 */
+    0xBB, 0x01, 0x00,
+    /* 0x116: loop: MOV AH, 4Fh ; INT 21h  (FindNext) */
+    0xB4, 0x4F, 0xCD, 0x21,
+    /* 0x11A: JC done (+0x03) */
+    0x72, 0x03,
+    /* 0x11C: INC BX */
+    0x43,
+    /* 0x11D: JMP loop (-9 = 0xF7) */
+    0xEB, 0xF7,
+    /* 0x11F: done: MOV AL, BL ; MOV AH, 4Ch ; INT 21h */
+    0x88, 0xD8,
+    0xB4, 0x4C, 0xCD, 0x21,
+    /* 0x125: fail: MOV AX, 4CEEh ; INT 21h */
+    0xB8, 0xEE, 0x4C, 0xCD, 0x21,
+    /* 0x12A: pattern "D4FT*.TXT\0" (10 bytes) */
+    'D', '4', 'F', 'T', '*', '.', 'T', 'X', 'T', 0,
+    /* 0x134: dta_buf (128 bytes of zero) */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+};
+
+static void test_find_first(void)
+{
+    unlink("/tmp/D4FT1.TXT");
+    unlink("/tmp/D4FT2.TXT");
+    int fd = open("/tmp/D4FT1.TXT", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    UT_ASSERT(fd >= 0, "create D4FT1.TXT");
+    close(fd);
+    fd = open("/tmp/D4FT2.TXT", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    UT_ASSERT(fd >= 0, "create D4FT2.TXT");
+    close(fd);
+
+    WRITE_COM("/tmp/dos_ff.com", find_first_com);
+    int code = run_com("/tmp/dos_ff.com");
+    UT_ASSERT_EQ(code, 2);
+
+    unlink("/tmp/D4FT1.TXT");
+    unlink("/tmp/D4FT2.TXT");
+}
+
 /* -- main ----------------------------------------------------------------- */
 
 int main(void)
@@ -1424,6 +1509,7 @@ int main(void)
     test_dos_resize();
     test_dos_alloc_free();
     test_dos_sysvars();
+    test_find_first();
 
     UT_SUMMARY("test_msdos");
 }
