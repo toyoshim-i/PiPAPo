@@ -33,6 +33,15 @@ uint32_t time_now_sec(void) {
   return time_boot_epoch + sched_get_ticks() / PPAP_TICK_HZ;
 }
 
+/* Seed the kernel wallclock — pins time_now_sec() to return `sec`
+ * at the current tick, so future reads add the tick delta on top.
+ * Used by sys_settimeofday (user-initiated) and by target init
+ * hooks that read an RTC on boot. */
+void time_set_wallclock(uint32_t sec) {
+  uint32_t ticks = sched_get_ticks();
+  time_boot_epoch = sec - ticks / PPAP_TICK_HZ;
+}
+
 static int timespec32_write_remaining(uintptr_t rem_ptr) {
   struct timespec rem;
   uint32_t now;
@@ -197,10 +206,7 @@ long sys_settimeofday(uintptr_t tv_ptr, uintptr_t tz_ptr) {
   if (sys_copy_from_user(tv, tv_ptr, sizeof(tv)) < 0) return -(long)EFAULT;
   if (tv[0] < 0) return -(long)EINVAL;
 
-  /* Pin wallclock: at the current tick, now == tv.sec.  Future reads
-   * add the tick delta since then. */
-  uint32_t ticks = sched_get_ticks();
-  time_boot_epoch = (uint32_t)tv[0] - ticks / PPAP_TICK_HZ;
+  time_set_wallclock((uint32_t)tv[0]);
   return 0;
 }
 

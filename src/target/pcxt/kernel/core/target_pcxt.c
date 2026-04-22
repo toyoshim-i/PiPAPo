@@ -9,7 +9,9 @@
 #include "kernel/common/boot_params.h"
 #include "kernel/common/core/seg.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/driver/rtc_cmos.h"
 #include "kernel/core/driver/timer_pit.h"
+#include "kernel/core/syscall/syscall.h"
 #include "target/target.h"
 
 /* Page pool base: set from stage2's mod_info before mm_init(). */
@@ -578,15 +580,15 @@ void target_early_init(void) {
   mod_vfs.klogf("SEG: core=%x vfs=%x\n",
                 seg_get(MOD_ID_CORE), seg_get(MOD_ID_VFS));
 
-  /* Seed the kernel wallclock from the CMOS RTC so file timestamps,
-   * date(1), and clock_gettime return real wall-clock values instead
-   * of seconds-since-boot.  On probe failure the clock stays at 0
-   * and the system degrades gracefully (everything stamped in 1970). */
+  /* Seed the kernel wallclock from the CMOS RTC.  After this, file
+   * timestamps and clock_gettime return real wall-clock time instead
+   * of seconds-since-boot.  On probe failure (no RTC, or every two
+   * sweeps disagree) the clock stays at 0 — same behaviour as targets
+   * that have no RTC at all. */
   uint32_t rtc_sec;
   if (cmos_rtc_read_epoch(&rtc_sec) == 0) {
     time_set_wallclock(rtc_sec);
-    mod_vfs.klogf("RTC: seeded wallclock from CMOS (epoch=%lu)\n",
-                  (unsigned long)rtc_sec);
+    mod_vfs.klogf("RTC: seeded wallclock from CMOS (epoch=%lx)\n", rtc_sec);
   } else {
     mod_vfs.klogf("RTC: CMOS read failed; wallclock stays at epoch 0\n");
   }

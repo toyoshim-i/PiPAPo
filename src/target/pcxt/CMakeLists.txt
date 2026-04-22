@@ -345,6 +345,7 @@ endif()
 set(TARGET_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_pcxt.c
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/timer_pit.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/rtc_cmos.c
   # Core-side stubs: caller stubs for VFS, entry stubs for core
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/vfs_stubs.S
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/core_entries.S

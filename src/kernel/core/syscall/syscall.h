@@ -128,6 +128,12 @@ void sys_time_now(uint32_t *sec_out, uint32_t *frac_ticks_out);
  * mtime/ctime stamping.  Equivalent to sys_time_now(&sec, NULL). */
 uint32_t time_now_sec(void);
 
+/* Seed the kernel wallclock from a target-side hook (e.g. pcxt CMOS
+ * RTC at boot).  Equivalent to sys_settimeofday({sec, 0}, NULL) but
+ * reachable from kernel code without going through the user-pointer
+ * copy-in path. */
+void time_set_wallclock(uint32_t sec);
+
 /* fd/pipe.c */
 long sys_pipe(uintptr_t fds_ptr);
 
