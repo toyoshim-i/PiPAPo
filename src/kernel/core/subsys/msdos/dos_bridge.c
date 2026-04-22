@@ -8,6 +8,7 @@
 
 #include "common/errno.h"
 #include "common/fcntl.h"
+#include "common/stat.h"
 #include "common/termios.h"
 #include "kernel/common/core/proc_info.h"
 #include "kernel/common/mod/mod_vfs.h"
@@ -593,6 +594,50 @@ static int dos_switchar(dos_proc_t *dos, dos_regs_t *regs) {
 static int dos_terminate(dos_proc_t *dos, dos_regs_t *regs) {
   sys_exit(regs->ax & 0xFF);
   return 0; /* Not reached */
+}
+
+/* AH=43h Get/Set File Attributes.
+ *   AL=00h  Get: returns CX = DOS attribute bits for the file at DS:DX.
+ *   AL=01h  Set: CX = attribute bits to apply.  PPAP's VFS does not
+ *           store read-only / hidden / system / archive, so set is a
+ *           silent no-op after the file-existence check; the caller
+ *           still sees CF=0 + CX reflecting the (unchanged) synthesised
+ *           attributes, matching what a readback-verifying app
+ *           expects.
+ * AL values other than 0 or 1 return DOS_ERR_INVALID_FUNCTION. */
+static int dos_get_set_attr(dos_proc_t *dos, dos_regs_t *regs) {
+  uint8_t sub = regs->ax & 0xFF;
+  if (sub != 0x00 && sub != 0x01) return -DOS_ERR_INVALID_FUNCTION;
+
+  int rc = dos_resolve_user_path(dos, regs->ds, regs->dx);
+  if (rc < 0) return rc;
+
+  /* Pull the resolved ASCIIZ path out of the kernel scratch slot so it
+   * can be handed to mod_vfs.lookup, which wants a C string pointer. */
+  char path[DOS_PATH_SCRATCH_MAX];
+  for (uint16_t i = 0; i < DOS_PATH_SCRATCH_MAX; i++) {
+    uint8_t b;
+    mem_region_page_read(dos_data_page, (uint16_t)(DOS_PATH_SCRATCH_OFF + i),
+                         &b, 1);
+    path[i] = (char)b;
+    if (!b) break;
+  }
+  path[DOS_PATH_SCRATCH_MAX - 1] = '\0';
+
+  vnode_t *vn = NULL;
+  int err = mod_vfs.lookup(path, &vn);
+  if (err) return -dos_errno_to_dos(err);
+
+  struct stat st;
+  err = mod_vfs.vnode_stat(vn, &st);
+  mod_vfs.vnode_release(vn);
+  if (err) return -dos_errno_to_dos(err);
+
+  /* VFS does not track DOS attribute bits; synthesise the minimum:
+   * DIRECTORY (0x10) for directories, ARCHIVE (0x20) for everything
+   * else.  Both GET and SET return the same synthesised value. */
+  regs->cx = S_ISDIR(st.st_mode) ? 0x0010u : 0x0020u;
+  return 0;
 }
 
 /* AH=44h IOCTL.  Only AL=00h (Get Device Info) is implemented today.
@@ -1415,6 +1460,9 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
       break;
     case 0x42:
       ret = dos_lseek(dos, regs);
+      break;
+    case 0x43:
+      ret = dos_get_set_attr(dos, regs);
       break;
     case 0x44:
       ret = dos_ioctl(dos, regs);

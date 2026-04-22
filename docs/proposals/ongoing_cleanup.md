@@ -64,10 +64,16 @@ either silences unimpl klogs or unlocks more DOS apps.
   builtin bails out when FindFirst returns "invalid function".
   Needs a DTA layout, 8.3 pattern matching, and an open-dir-handle
   per process.  Phase D-7 in `msdos_subsystem.md`.
-- **AH=71h (LFN) — proper "not installed" reply** — current fall-through
-  returns `AX=1 CF=1`.  DOS spec for LFN-not-installed is `AX=0x7100
-  CF=1`; some apps only recognize that form.  Can be handled in the
-  dispatcher's default branch as a special case.
+- **AH=71h (LFN) — do *not* reply "not installed"** — the obvious fix
+  (replace the AX=0x0001 CF=1 fall-through with AX=0x7100 CF=1) would
+  tell apps to fall back to the 8.3 short-name API.  PPAP's VFS has no
+  8.3 restriction, so that fallback hides the real filenames.  Instead,
+  after AH=4Eh/4Fh lands, implement an AH=71h subset that routes LFN
+  sub-functions (AL=3Bh chdir, AL=39h/3Ah mkdir/rmdir, AL=41h delete,
+  AL=43h attrs, AL=47h getcwd, AL=56h rename, AL=4Eh/4Fh find, AL=60h
+  truename, AL=6Ch extended open) to the existing handlers.  Leave the
+  current dispatcher default branch alone for now — noisy klog is
+  preferable to a misleading reply.
 
 ## 3. Header / include hygiene found while working
 
