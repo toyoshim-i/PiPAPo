@@ -47,6 +47,16 @@ int uc_parse_u32(const char *s, uint32_t *out); /* 0 on success */
 /* --- path helpers --- */
 const char *uc_basename(const char *path);
 
+/* --- file copy helper ---
+ *
+ * Read from src_fd, write to dst_fd, until EOF.  Returns total bytes
+ * copied (≥ 0) on success, -1 on any read / write error (errno-ish
+ * context is lost — callers that need detail should open-code the loop).
+ * Internally uses a stack-sized buffer so it's safe in small applets
+ * without heap.
+ */
+long uc_copy_fd(int src_fd, int dst_fd);
+
 /* --- calendar helpers ---
  *
  * Convert Unix epoch seconds (UTC) to broken-down time and format

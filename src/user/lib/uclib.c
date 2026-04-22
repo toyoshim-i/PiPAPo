@@ -339,6 +339,28 @@ const char *uc_basename(const char *path) {
   return last;
 }
 
+/* ── file copy helper ──────────────────────────────────────────────── */
+
+long uc_copy_fd(int src_fd, int dst_fd) {
+  /* 512 B matches a sector on UFS / vfat, which happens to be the
+   * smallest "natural" chunk all the FS drivers are tuned for.  On
+   * pcxt we also have a tight user stack, so keep it small. */
+  char buf[512];
+  long total = 0;
+  for (;;) {
+    ssize_t n = read(src_fd, buf, sizeof(buf));
+    if (n == 0) return total;
+    if (n < 0) return -1;
+    ssize_t w = 0;
+    while (w < n) {
+      ssize_t m = write(dst_fd, buf + w, (size_t)(n - w));
+      if (m <= 0) return -1;
+      w += m;
+    }
+    total += (long)n;
+  }
+}
+
 /* ── calendar helpers ──────────────────────────────────────────────── */
 
 void uc_gmtime(uint32_t epoch, struct uc_tm *out) {

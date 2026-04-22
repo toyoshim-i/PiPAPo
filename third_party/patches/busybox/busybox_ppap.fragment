@@ -23,7 +23,7 @@ CONFIG_LFS=y
 # -- File operations ----------------------------------------------------------
 # CONFIG_LS is not set (using native PPAP ls)
 # CONFIG_CAT is not set (using native PPAP cat)
-CONFIG_CP=y
+# CONFIG_CP is not set (using native PPAP cp)
 CONFIG_MV=y
 # CONFIG_RM is not set (using native PPAP rm)
 # CONFIG_MKDIR is not set (using native PPAP mkdir)
