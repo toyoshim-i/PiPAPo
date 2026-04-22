@@ -670,19 +670,47 @@ static int dos_find_split_scratch(uint8_t *pat_out, uint16_t pat_max) {
   return 0;
 }
 
+/* Pack Unix epoch seconds into the DOS date + time word format used
+ * in the DTA for AH=4Eh/4Fh.  Dates before 1980 (the DOS epoch) are
+ * clamped to zero — real DOS reports them the same way. */
+static void dos_pack_mtime(uint32_t mtime, uint16_t *dos_date,
+                           uint16_t *dos_time) {
+  uint32_t days = mtime / 86400u;
+  uint32_t s_in_day = mtime % 86400u;
+  uint16_t y;
+  uint8_t mo, d, dow;
+  dos_days_to_ymd(days, &y, &mo, &d, &dow);
+  if (y < 1980) {
+    *dos_date = 0;
+    *dos_time = 0;
+    return;
+  }
+  *dos_date = (uint16_t)(((y - 1980u) << 9) | ((uint32_t)mo << 5) | d);
+  uint32_t hh = s_in_day / 3600u;
+  uint32_t mm = (s_in_day / 60u) % 60u;
+  uint32_t ss = s_in_day % 60u;
+  *dos_time = (uint16_t)((hh << 11) | (mm << 5) | (ss >> 1));
+}
+
 /* Write the 128-byte DTA result frame for a matched entry.  PPAP's
  * filenames can exceed the DTA's 13-byte slot; truncate at 12 + null,
- * which is lossy for long names.  File size and date/time are left
- * zero for this MVP; a follow-up that stats each match and packs
- * st_mtime into DOS date/time can fill them in. */
-static void dos_find_fill_dta(dos_proc_t *dos, uint8_t attr, const char *name) {
+ * which is lossy for long names. */
+static void dos_find_fill_dta(dos_proc_t *dos, uint8_t attr, uint32_t size,
+                              uint16_t dos_date, uint16_t dos_time,
+                              const char *name) {
   uint32_t base = ((uint32_t)dos->dta_seg << 4) + dos->dta_off;
 
-  /* Reserved 0-20 + size 26-29 + time 22-23 + date 24-25: all zero. */
-  for (uint16_t i = 0; i < 30; i++) {
+  /* Reserved 0-20: zero. */
+  for (uint16_t i = 0; i < 21; i++) {
     current->cpu_ops->write8(dos->cpu_state, base + i, 0);
   }
   current->cpu_ops->write8(dos->cpu_state, base + 21, attr);
+  current->cpu_ops->write16(dos->cpu_state, base + 22, dos_time);
+  current->cpu_ops->write16(dos->cpu_state, base + 24, dos_date);
+  current->cpu_ops->write16(dos->cpu_state, base + 26,
+                            (uint16_t)(size & 0xFFFFu));
+  current->cpu_ops->write16(dos->cpu_state, base + 28,
+                            (uint16_t)((size >> 16) & 0xFFFFu));
 
   uint16_t n = 0;
   while (n < 12 && name[n]) {
@@ -693,6 +721,45 @@ static void dos_find_fill_dta(dos_proc_t *dos, uint8_t attr, const char *name) {
     current->cpu_ops->write8(dos->cpu_state, base + 30 + n, 0);
     n++;
   }
+}
+
+/* Stat the matched entry to fill in size + date/time.  dir path is
+ * still in DOS_PATH_SCRATCH_OFF from the split step and survives
+ * across scan calls as long as the app does not issue another DOS
+ * path operation between FindFirst and FindNext.  Best-effort: if
+ * composing the full path would overflow scratch, or the lookup /
+ * stat fails, the caller proceeds with size=0, date=0, time=0. */
+static int dos_stat_entry(const char *name, uint32_t *size_out,
+                          uint16_t *dos_date_out, uint16_t *dos_time_out) {
+  char full[DOS_PATH_SCRATCH_MAX];
+  uint16_t dir_len = 0;
+  for (; dir_len < DOS_PATH_SCRATCH_MAX; dir_len++) {
+    uint8_t b;
+    mem_region_page_read(dos_data_page,
+                         (uint16_t)(DOS_PATH_SCRATCH_OFF + dir_len), &b, 1);
+    if (!b) break;
+    full[dir_len] = (char)b;
+  }
+  uint16_t name_len = 0;
+  while (name[name_len]) name_len++;
+  int need_slash = (dir_len > 0 && !(dir_len == 1 && full[0] == '/'));
+  if ((uint16_t)(dir_len + (need_slash ? 1 : 0) + name_len + 1) >
+      (uint16_t)sizeof(full))
+    return -1;
+  uint16_t pos = dir_len;
+  if (need_slash) full[pos++] = '/';
+  for (uint16_t i = 0; i < name_len; i++) full[pos++] = name[i];
+  full[pos] = 0;
+
+  vnode_t *vn = NULL;
+  if (mod_vfs.lookup(full, &vn) != 0) return -1;
+  struct stat st;
+  int err = mod_vfs.vnode_stat(vn, &st);
+  mod_vfs.vnode_release(vn);
+  if (err) return -1;
+  *size_out = st.st_size;
+  dos_pack_mtime(st.st_mtime, dos_date_out, dos_time_out);
+  return 0;
 }
 
 /* Read the next matching dirent from dos->find_fd, fill DTA, and
@@ -728,7 +795,10 @@ static int dos_find_scan(dos_proc_t *dos) {
     if (!dos_glob_match(dos->find_pattern, d.d_name)) continue;
 
     uint8_t attr = (d.d_type == DT_DIR) ? 0x10u : 0x20u;
-    dos_find_fill_dta(dos, attr, d.d_name);
+    uint32_t size = 0;
+    uint16_t dos_date = 0, dos_time = 0;
+    (void)dos_stat_entry(d.d_name, &size, &dos_date, &dos_time);
+    dos_find_fill_dta(dos, attr, size, dos_date, dos_time, d.d_name);
     return 0;
   }
 }
