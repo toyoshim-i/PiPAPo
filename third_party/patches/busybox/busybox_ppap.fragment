@@ -28,7 +28,7 @@ CONFIG_LFS=y
 # CONFIG_RM is not set (using native PPAP rm)
 # CONFIG_MKDIR is not set (using native PPAP mkdir)
 # CONFIG_RMDIR is not set (using native PPAP rmdir)
-CONFIG_LN=y
+# CONFIG_LN is not set (using native PPAP ln; hard-link only, no -s)
 # CONFIG_CHMOD is not set (using native PPAP chmod)
 
 # -- Text processing ----------------------------------------------------------
