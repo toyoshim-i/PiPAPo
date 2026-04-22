@@ -78,6 +78,7 @@ SYSCALL_STUB rmdir,     0x0205
 SYSCALL_STUB unlink,    0x0206
 SYSCALL_STUB chdir,     0x0207
 SYSCALL_STUB readlink,  0x0208
+SYSCALL_STUB rename,    0x0209
 SYSCALL_STUB getdents,  0x0300
 SYSCALL_STUB statfs64,  0x0305
 SYSCALL_STUB utimes,    0x0309

@@ -441,6 +441,17 @@ rmdir:
     DO_SYSCALL
     pop  {r7, pc}
 
+@ --- rename (SYS_RENAME = 0x0209) --------------------------------------------
+@ int rename(const char *oldpath, const char *newpath);
+.section .text.rename, "ax", %progbits
+.global rename
+.thumb_func
+rename:
+    push {r7, lr}
+    ldr  r7, =0x0209    @ SYS_RENAME
+    DO_SYSCALL
+    pop  {r7, pc}
+
 @ --- utimes (SYS_UTIMES = 0x0309) ---------------------------------------------
 @ int utimes(const char *path, const struct timeval times[2]);
 .section .text.utimes, "ax", %progbits

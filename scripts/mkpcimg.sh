@@ -102,7 +102,7 @@ cp "$PROJECT_DIR/src/etc/"* "$UFS_STAGING/etc/" 2>/dev/null || true
 
 # Include first-party user programs from src/user if built.
 # Keep init under /sbin and expose push as /bin/sh.
-USER_APPS=(hello getty init pdb push cat ls ps df top pi uname sleep mkdir reset rmdir rm kill touch date cp)
+USER_APPS=(hello getty init pdb push cat ls ps df top pi uname sleep mkdir reset rmdir rm kill touch date cp mv)
 for app in "${USER_APPS[@]}"; do
   elf="$USER_BUILD_DIR/$app.elf"
   if [[ ! -f "$elf" ]]; then

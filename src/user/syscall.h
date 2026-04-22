@@ -190,6 +190,9 @@ static inline int unlink(const char *path) {
 static inline int rmdir(const char *path) {
   return (int)ppap_xtensa_syscall1(0x0205, (long)path);
 }
+static inline int rename(const char *oldpath, const char *newpath) {
+  return (int)ppap_xtensa_syscall2(0x0209, (long)oldpath, (long)newpath);
+}
 static inline int utimes(const char *path, const void *times) {
   return (int)ppap_xtensa_syscall2(0x0309, (long)path, (long)times);
 }
@@ -273,6 +276,7 @@ int access(const char *path, int mode);
 int mkdir(const char *path, int mode);
 int unlink(const char *path);
 int rmdir(const char *path);
+int rename(const char *oldpath, const char *newpath);
 int utimes(const char *path, const void *times);
 int stat(const char *path, struct stat *buf);
 int getdents(int fd, struct dirent *buf, size_t count);

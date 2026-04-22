@@ -433,6 +433,18 @@ utimes:
     move.l  %sp@+, %d2
     rts
 
+| --- rename (SYS_RENAME = 0x0209) ---------------------------------------------
+| int rename(const char *oldpath, const char *newpath);
+    .globl rename
+rename:
+    move.l  %d2, %sp@-
+    move.l  8(%sp), %d1         | oldpath
+    move.l  12(%sp), %d2        | newpath
+    move.l  #0x0209, %d0
+    trap    #0
+    move.l  %sp@+, %d2
+    rts
+
 | --- nanosleep (SYS_NANOSLEEP = 0x0500) ----------------------------------------
 | int nanosleep(const void *req, void *rem);
     .globl nanosleep
