@@ -603,6 +603,20 @@ rename:
   int   $0x30
   SYSCALL_RET
 
+/* int chmod(const char *path, int mode); */
+  .global chmod
+chmod:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx      /* path */
+  movw  6(%bp), %cx      /* mode */
+  movw  $0x020B, %ax
+  int   $0x30
+  SYSCALL_RET
+
 /* pid_t setsid(void); */
   .global setsid
 setsid:

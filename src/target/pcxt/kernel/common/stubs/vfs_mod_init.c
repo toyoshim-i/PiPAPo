@@ -23,6 +23,7 @@ int  vfs_umount(const char *);
 int  vfs_lookup(const char *, vnode_t **);
 int  vfs_lookup_flags(const char *, vnode_t **, int);
 int  vfs_lookup_parent(const char *, vnode_t **, char *, int);
+int  vfs_path_chmod(const char *, uint32_t);
 int  vfs_path_mkdir(const char *, uint32_t);
 int  vfs_path_normalize(const char *, char *, int);
 int  vfs_path_rename(const char *, const char *);

@@ -353,6 +353,18 @@ MOD_FUNC(vfs, int, mount_ufs, const char *, uint8_t, const void *)
 MOD_FUNC(vfs, void, notify, int)
 
 /*
+ * path_chmod — Replace the permission bits on a path.
+ *
+ *   path  Pathname of the target.
+ *   mode  New permission bits (low 12 bits honoured; file-type bits
+ *         preserved by the FS driver).
+ *
+ * Returns 0 on success, -EROFS on read-only mount, -EPERM when the FS
+ * has no .chmod op (romfs, devfs, procfs), negative errno otherwise.
+ */
+MOD_FUNC(vfs, int, path_chmod, const char *, uint32_t)
+
+/*
  * path_mkdir — Create a directory by path inside the VFS code segment.
  *
  *   path  Pathname to create.

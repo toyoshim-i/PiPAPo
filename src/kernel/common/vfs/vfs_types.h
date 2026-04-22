@@ -140,6 +140,10 @@ struct vfs_ops {
    * Drivers that do not store times (romfs, devfs, procfs) set this to
    * NULL; the VFS layer returns -EPERM for NULL ops. */
   int (*utimes)(vnode_t *vn, uint32_t atime, uint32_t mtime);
+  /* chmod: replace the permission bits (low 12 bits, 07777) on a vnode.
+   * The driver preserves the file-type bits (S_IFREG / S_IFDIR / ...).
+   * NULL on read-only / synthetic FS — VFS returns -EPERM. */
+  int (*chmod)(vnode_t *vn, uint32_t mode);
 };
 
 /* ── mount_entry — one entry in the kernel mount table ──────────────────────

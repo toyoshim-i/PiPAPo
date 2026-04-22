@@ -452,6 +452,17 @@ rename:
     DO_SYSCALL
     pop  {r7, pc}
 
+@ --- chmod (SYS_CHMOD = 0x020B) ----------------------------------------------
+@ int chmod(const char *path, int mode);
+.section .text.chmod, "ax", %progbits
+.global chmod
+.thumb_func
+chmod:
+    push {r7, lr}
+    ldr  r7, =0x020B    @ SYS_CHMOD
+    DO_SYSCALL
+    pop  {r7, pc}
+
 @ --- utimes (SYS_UTIMES = 0x0309) ---------------------------------------------
 @ int utimes(const char *path, const struct timeval times[2]);
 .section .text.utimes, "ax", %progbits

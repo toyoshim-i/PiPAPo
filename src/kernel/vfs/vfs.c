@@ -530,6 +530,27 @@ int vfs_path_utimes(const char *path, uint32_t atime, uint32_t mtime) {
   return err;
 }
 
+int vfs_path_chmod(const char *path, uint32_t mode) {
+  vnode_t *vn = NULL;
+  int err = vfs_lookup(path, &vn);
+  if (err) return err;
+  if (!vn->mount || !vn->mount->ops) {
+    vfs_vnode_release(vn);
+    return -ENOSYS;
+  }
+  if (vn->mount->flags & MNT_RDONLY) {
+    vfs_vnode_release(vn);
+    return -EROFS;
+  }
+  if (!vn->mount->ops->chmod) {
+    vfs_vnode_release(vn);
+    return -EPERM;
+  }
+  err = vn->mount->ops->chmod(vn, mode);
+  vfs_vnode_release(vn);
+  return err;
+}
+
 int vfs_path_unlink(const char *path) {
   vnode_t *parent = NULL;
   char *namebuf = vfs_scratch_alloc();

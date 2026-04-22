@@ -391,9 +391,11 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
     case SYS_MKNOD:
       ret = -(long)EPERM;
       break;
-    case SYS_CHMOD:
-      ret = 0; /* stub — no real permission model */
-      break;
+    case SYS_CHMOD: {
+      user_page_ref_t r;
+      if ((ret = xlate_user_ptr((uintptr_t)a0, &r)) != 0) break;
+      ret = sys_chmod(r.page, r.off, a1);
+    } break;
     case SYS_RENAME: {
       user_page_ref_t ro, rn;
       if ((ret = xlate_user_ptr((uintptr_t)a0, &ro)) != 0) break;

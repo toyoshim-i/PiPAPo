@@ -498,6 +498,14 @@ static int tmpfs_utimes(vnode_t *vn, uint32_t atime, uint32_t mtime) {
   return 0;
 }
 
+static int tmpfs_chmod(vnode_t *vn, uint32_t mode) {
+  tmpfs_inode_t *ti = &inodes[vn->ino];
+  ti->mode = (ti->mode & S_IFMT) | (mode & 07777u);
+  ti->ctime = mod_core.time_now_sec();
+  vn->mode = ti->mode;
+  return 0;
+}
+
 /* ── Operations table ─────────────────────────────────────────────────── */
 
 const vfs_ops_t tmpfs_ops = {
@@ -515,4 +523,5 @@ const vfs_ops_t tmpfs_ops = {
     .statfs = tmpfs_statfs,
     .rename = tmpfs_rename,
     .utimes = tmpfs_utimes,
+    .chmod = tmpfs_chmod,
 };

@@ -269,5 +269,34 @@ int main(void)
         UT_ASSERT(ret < 0, "utimes on romfs returns error");
     }
 
+    /* 19. chmod: replace permission bits, preserve file type, bump
+     * ctime.  Verifies the SYS_CHMOD un-stub. */
+    {
+        fd = open("/tmp/test_chmod", O_WRONLY | O_CREAT, 0644);
+        UT_ASSERT(fd >= 0, "create /tmp/test_chmod");
+        if (fd >= 0) close(fd);
+
+        ret = stat("/tmp/test_chmod", &st);
+        UT_ASSERT_EQ(ret, 0);
+        UT_ASSERT(S_ISREG(st.st_mode), "type before chmod is regular");
+        UT_ASSERT_EQ((int)(st.st_mode & 07777), 0644);
+
+        ret = chmod("/tmp/test_chmod", 0700);
+        UT_ASSERT_EQ(ret, 0);
+
+        ret = stat("/tmp/test_chmod", &st);
+        UT_ASSERT_EQ(ret, 0);
+        UT_ASSERT(S_ISREG(st.st_mode), "type after chmod still regular");
+        UT_ASSERT_EQ((int)(st.st_mode & 07777), 0700);
+
+        unlink("/tmp/test_chmod");
+    }
+
+    /* 20. chmod on a read-only FS returns EROFS / EPERM. */
+    {
+        ret = chmod("/bin/ls", 0700);
+        UT_ASSERT(ret < 0, "chmod on romfs returns error");
+    }
+
     UT_SUMMARY("test_tmpfs");
 }

@@ -287,6 +287,16 @@ long sys_rename(page_id_t old_page, uint16_t old_off, page_id_t new_page,
   return (long)mod_vfs.path_rename(oldpath, newpath);
 }
 
+/* ── sys_chmod ───────────────────────────────────────────────────────────────
+ */
+
+long sys_chmod(page_id_t page, uint16_t off, long mode) {
+  char path[VFS_PATH_MAX];
+  int rc = sys_copy_path(path, sizeof(path), page, off);
+  if (rc < 0) return (long)rc;
+  return (long)mod_vfs.path_chmod(path, (uint32_t)mode);
+}
+
 /* ── sys_utimes ──────────────────────────────────────────────────────────────
  *
  * times_ptr points at `struct timeval[2]` = { atime, mtime } in user
