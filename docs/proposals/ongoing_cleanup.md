@@ -5,7 +5,9 @@ Living list of cleanups surfaced during the
 debug session.  Items are roughly grouped by theme; strike through
 (or delete) entries as they land.
 
-Last session snapshot: 2026-04-22.
+Last session snapshot: 2026-04-22.  Section 1 (extern cleanup)
+fully landed.  Section 2 (MSDOS stubs) reduced to the two items
+below.  Section 3 (header / include hygiene) is opportunistic.
 
 ---
 
@@ -48,26 +50,78 @@ target-config header it queries.
 
 ## 2. MS-DOS subsystem stubs
 
-Discovered while debugging FreeCOM's `dir` command on pcxt.  None are
-strictly required for `command.com` to reach a prompt now, but each
-either silences unimpl klogs or unlocks more DOS apps.
+### 2.1 AH=44h AL=0Ch Generic Character Device Request — deferred
 
-- **AH=44h AL=0Ch Generic Character Device Request** — not wired.
-  Any meaningful reply depends on CH/CL category/minor sub-codes
-  (0x00 unknown, 0x01 COM, 0x03 CON, 0x05 LPT, …) which have
-  wildly different semantics.  Falls through to
-  DOS_ERR_INVALID_FUNCTION; FreeCOM handles that gracefully, so
-  adding it waits for a specific app that probes it.
-- **AH=71h (LFN) — implement an AH=71h subset** — with AH=4Eh/4Fh
-  now wired, the next step is an AH=71h dispatcher that routes LFN
-  sub-functions (AL=3Bh chdir, AL=39h/3Ah mkdir/rmdir, AL=41h delete,
-  AL=43h attrs, AL=47h getcwd, AL=56h rename, AL=4Eh/4Fh find, AL=60h
-  truename, AL=6Ch extended open) to the existing handlers.  PPAP's
-  VFS stores real long names; the SFN AH=4Eh/4Fh path truncates them
-  into the 13-byte DTA slot, so LFN is the right path for showing
-  full filenames.  Do NOT take the shortcut of replying AX=0x7100
-  CF=1 ("not installed") — that forces apps back to the short-name
-  API which hides the real names.
+Not wired.  AL=0Ch is an IOCTL meta-call that takes `BX=handle`,
+`CH=category` (0x00 unknown, 0x01 COM, 0x03 CON, 0x05 LPT, 0x48
+network, …) and `CL=minor function`, each (CH,CL) pair its own
+protocol with its own parameter block at `DS:DX`.  Implementing it
+means picking which (category, minor) pairs to support; each is a
+separate stub and no single default reply is meaningful.
+
+FreeCOM falls through `DOS_ERR_INVALID_FUNCTION` gracefully.  Pick
+this up when a specific DOS app surfaces a failure that traces to
+AL=0Ch.
+
+### 2.2 AH=71h LFN subset — plan
+
+**Why.**  PPAP's VFS stores real long filenames.  The SFN
+FindFirst path (AH=4Eh/4Fh) truncates them into the 13-byte DTA
+slot, which is lossy.  The DOS 7 / Win95 LFN API (entered via
+AH=71h, sub-function in AL) is the channel that surfaces long
+names intact.  Do NOT take the shortcut of replying AX=0x7100
+CF=1 ("not installed") — that forces LFN-aware apps back onto the
+short-name API and hides the real names they would otherwise
+fetch.
+
+**Why it isn't "just route to SFN handlers."**  Each LFN
+sub-function differs from its SFN counterpart in at least one of
+three ways:
+
+- **Register conventions** — AL=60h (TrueName) uses
+  `DS:SI = input` + `ES:DI = output`, unlike SFN variants that
+  use DS:DX only.  AL=A1h (FindClose) takes `BX = find handle`.
+- **Result buffer layout** — AL=4Eh under AH=71h writes a
+  ~318-byte `WIN32_FIND_DATA`-style struct at `ES:DI`, not the
+  128-byte DTA.  Long-name field is 260 bytes.
+- **Handle model** — LFN Find uses a numeric find handle in AX
+  with support for concurrent finds; SFN Find is DTA-state-based
+  with one-per-process semantics.
+
+**Phased rollout.**  Each phase is a self-contained commit / review
+unit.  Phases are ordered by value-for-effort; later phases can be
+skipped if no caller appears.
+
+Phase L1 — **Dispatcher + AL=60h TrueName.**  Add the `case 0x71`
+in `dos_int21h_dispatch`, a sub-dispatcher on AL, and the simplest
+handler (TrueName = path normalisation via the existing
+`dos_resolve_user_path` + copy-out through `cpu_ops->write8`).
+Establishes the register / buffer conventions and lets LFN-aware
+apps at least canonicalise paths.
+
+Phase L2 — **AL=4Eh / 4Fh / A1h LFN Find family.**  Adds a find-
+handle table to `dos_proc_t` (slot-based, small N), reuses the
+glob matcher and dirent reader from the SFN path, emits the full
+long name into the LFN result struct at `ES:DI`.  This is the
+phase that actually surfaces long filenames through DOS apps.
+
+Phase L3 — **AL=43h LFN attrs, AL=3Bh/41h/56h LFN
+chdir/delete/rename.**  Small wrappers over the existing SFN
+handlers once the LFN path-copy and result-copy primitives from L1
+are in.
+
+Phase L4 (optional) — **AL=6Ch Extended Open/Create.**  Combines
+AH=3Ch/3Dh semantics with extra open-mode flags.  Medium-sized
+handler; only worth building once a concrete caller appears.
+
+Phase L5 (optional) — **AL=39h/3Ah/47h LFN mkdir/rmdir/getcwd.**
+The remaining SFN-equivalent sub-functions.  Trivial wrappers;
+land together if a user surfaces them.
+
+**Out of scope for all phases:** AL=A6h LFN Get File Info By
+Handle, AL=A7h Convert File Time to/from DOS Time, AL=A8h Generate
+Short Name, AL=A9h Redirector queries.  None are required for
+typical DOS-on-PPAP use.
 
 ## 3. Header / include hygiene found while working
 
