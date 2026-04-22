@@ -834,6 +834,47 @@ static int dos_find_next(dos_proc_t *dos, dos_regs_t *regs) {
   return dos_find_scan(dos);
 }
 
+/* ── AH=71h LFN subset — Phase L1 (TrueName only) ──────────────────── */
+
+/* AL=60h LFN "TrueName" — DS:SI = source ASCIIZ, ES:DI = destination
+ * (up to 260 bytes).  CL = 00h short / 01h long / 02h canonical; PPAP
+ * has no SFN/LFN distinction so every CL returns the same canonical
+ * path.  Shape-wise we emit the VFS-form absolute path that
+ * dos_resolve_user_path produces (leading slash, forward slashes)
+ * rather than the DOS-form "C:\FOO\BAR" — apps that parse the reply
+ * for a drive letter will need to adapt until a later phase wraps
+ * the result. */
+static int dos_lfn_truename(dos_proc_t *dos, dos_regs_t *regs) {
+  int rc = dos_resolve_user_path(dos, regs->ds, regs->si);
+  if (rc < 0) return rc;
+
+  uint32_t dst_linear = ((uint32_t)regs->es << 4) + regs->di;
+  for (uint16_t i = 0; i < DOS_PATH_SCRATCH_MAX; i++) {
+    uint8_t b;
+    mem_region_page_read(dos_data_page, (uint16_t)(DOS_PATH_SCRATCH_OFF + i),
+                         &b, 1);
+    current->cpu_ops->write8(dos->cpu_state, dst_linear + i, b);
+    if (b == 0) return 0;
+  }
+  /* Resolved path exceeded scratch; emit terminator and fail. */
+  current->cpu_ops->write8(dos->cpu_state,
+                           dst_linear + DOS_PATH_SCRATCH_MAX - 1, 0);
+  return -DOS_ERR_PATH_NOT_FOUND;
+}
+
+/* AH=71h sub-dispatch on AL.  Unknown sub-functions return
+ * DOS_ERR_INVALID_FUNCTION — this is *not* the "LFN not installed"
+ * reply (AX=0x7100 CF=1) which we deliberately avoid, since this
+ * dispatcher implements at least one real LFN call. */
+static int dos_lfn_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
+  uint8_t al = (uint8_t)(regs->ax & 0xFFu);
+  switch (al) {
+    case 0x60:
+      return dos_lfn_truename(dos, regs);
+  }
+  return -DOS_ERR_INVALID_FUNCTION;
+}
+
 /* AH=37h (undocumented): Get/Set switchar / device availability.
  *   AL=00h  Get switch char   → DL='/', AL=00
  *   AL=01h  Set switch char   (ignored, return AL=00)
@@ -1821,6 +1862,9 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
       break;
     case 0x58:
       ret = dos_get_set_alloc(dos, regs);
+      break;
+    case 0x71:
+      ret = dos_lfn_dispatch(dos, regs);
       break;
     default:
       mod_vfs.klogf("[msdos] unimpl INT 21h AH=%x AL=%x at CS:IP=%x:%x\n",

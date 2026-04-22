@@ -92,12 +92,13 @@ three ways:
 unit.  Phases are ordered by value-for-effort; later phases can be
 skipped if no caller appears.
 
-Phase L1 — **Dispatcher + AL=60h TrueName.**  Add the `case 0x71`
-in `dos_int21h_dispatch`, a sub-dispatcher on AL, and the simplest
-handler (TrueName = path normalisation via the existing
-`dos_resolve_user_path` + copy-out through `cpu_ops->write8`).
-Establishes the register / buffer conventions and lets LFN-aware
-apps at least canonicalise paths.
+Phase L1 — **Dispatcher + AL=60h TrueName.**  Landed.  Adds the
+`case 0x71` in `dos_int21h_dispatch`, a sub-dispatcher on AL, and
+TrueName = path normalisation via the existing
+`dos_resolve_user_path` + copy-out through `cpu_ops->write8`.
+Output is the VFS-form absolute path (not DOS "C:\FOO"); apps that
+parse for a drive letter will need to wait for a later phase to
+wrap the result.
 
 Phase L2 — **AL=4Eh / 4Fh / A1h LFN Find family.**  Adds a find-
 handle table to `dos_proc_t` (slot-based, small N), reuses the
