@@ -402,6 +402,12 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       if ((ret = xlate_user_ptr((uintptr_t)a1, &rn)) != 0) break;
       ret = sys_rename(ro.page, ro.off, rn.page, rn.off);
     } break;
+    case SYS_LINK: {
+      user_page_ref_t ro, rn;
+      if ((ret = xlate_user_ptr((uintptr_t)a0, &ro)) != 0) break;
+      if ((ret = xlate_user_ptr((uintptr_t)a1, &rn)) != 0) break;
+      ret = sys_link(ro.page, ro.off, rn.page, rn.off);
+    } break;
     case SYS_LCHOWN:
     case SYS_FCHOWN:
     case SYS_CHOWN:

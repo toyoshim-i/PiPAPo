@@ -297,6 +297,20 @@ long sys_chmod(page_id_t page, uint16_t off, long mode) {
   return (long)mod_vfs.path_chmod(path, (uint32_t)mode);
 }
 
+/* ── sys_link ────────────────────────────────────────────────────────────────
+ */
+
+long sys_link(page_id_t old_page, uint16_t old_off, page_id_t new_page,
+              uint16_t new_off) {
+  char oldpath[VFS_PATH_MAX];
+  char newpath[VFS_PATH_MAX];
+  int rc = sys_copy_path(oldpath, sizeof(oldpath), old_page, old_off);
+  if (rc < 0) return (long)rc;
+  rc = sys_copy_path(newpath, sizeof(newpath), new_page, new_off);
+  if (rc < 0) return (long)rc;
+  return (long)mod_vfs.path_link(oldpath, newpath);
+}
+
 /* ── sys_utimes ──────────────────────────────────────────────────────────────
  *
  * times_ptr points at `struct timeval[2]` = { atime, mtime } in user

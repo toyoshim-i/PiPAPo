@@ -463,6 +463,17 @@ chmod:
     DO_SYSCALL
     pop  {r7, pc}
 
+@ --- link (SYS_LINK = 0x020E) ------------------------------------------------
+@ int link(const char *oldpath, const char *newpath);
+.section .text.link, "ax", %progbits
+.global link
+.thumb_func
+link:
+    push {r7, lr}
+    ldr  r7, =0x020E    @ SYS_LINK
+    DO_SYSCALL
+    pop  {r7, pc}
+
 @ --- utimes (SYS_UTIMES = 0x0309) ---------------------------------------------
 @ int utimes(const char *path, const struct timeval times[2]);
 .section .text.utimes, "ax", %progbits

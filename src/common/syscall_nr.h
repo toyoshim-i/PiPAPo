@@ -55,6 +55,7 @@
 #define SYS_CHMOD 0x020B
 #define SYS_OPENAT 0x020C
 #define SYS_FSTATAT64 0x020D
+#define SYS_LINK 0x020E
 
 /* Group 0x03: File system --- extended */
 #define SYS_GETDENTS 0x0300

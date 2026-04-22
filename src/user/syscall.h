@@ -196,6 +196,9 @@ static inline int rename(const char *oldpath, const char *newpath) {
 static inline int chmod(const char *path, int mode) {
   return (int)ppap_xtensa_syscall2(0x020B, (long)path, mode);
 }
+static inline int link(const char *oldpath, const char *newpath) {
+  return (int)ppap_xtensa_syscall2(0x020E, (long)oldpath, (long)newpath);
+}
 static inline int utimes(const char *path, const void *times) {
   return (int)ppap_xtensa_syscall2(0x0309, (long)path, (long)times);
 }
@@ -281,6 +284,7 @@ int unlink(const char *path);
 int rmdir(const char *path);
 int rename(const char *oldpath, const char *newpath);
 int chmod(const char *path, int mode);
+int link(const char *oldpath, const char *newpath);
 int utimes(const char *path, const void *times);
 int stat(const char *path, struct stat *buf);
 int getdents(int fd, struct dirent *buf, size_t count);

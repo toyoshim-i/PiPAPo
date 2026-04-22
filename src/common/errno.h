@@ -24,6 +24,7 @@
 #define EFAULT 14       /* Bad address                         */
 #define EBUSY 16        /* Device or resource busy             */
 #define EEXIST 17       /* File exists                         */
+#define EXDEV 18        /* Cross-device link                   */
 #define ENODEV 19       /* No such device                      */
 #define ENOTDIR 20      /* Not a directory                     */
 #define EISDIR 21       /* Is a directory                      */

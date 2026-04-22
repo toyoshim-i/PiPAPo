@@ -144,6 +144,14 @@ struct vfs_ops {
    * The driver preserves the file-type bits (S_IFREG / S_IFDIR / ...).
    * NULL on read-only / synthetic FS — VFS returns -EPERM. */
   int (*chmod)(vnode_t *vn, uint32_t mode);
+  /* link: create a new directory entry `new_name` in `new_parent`
+   * pointing to the same underlying inode as `target`.  Returns
+   * -EPERM for directories or unsupported inode types, -EEXIST if
+   * the name is taken, -EXDEV if target belongs to a different
+   * mount (caller should have checked, but the driver is the final
+   * word).  NULL on filesystems that don't support hard links
+   * (tmpfs, vfat, romfs, devfs, procfs) — VFS returns -EPERM. */
+  int (*link)(vnode_t *new_parent, const char *new_name, vnode_t *target);
 };
 
 /* ── mount_entry — one entry in the kernel mount table ──────────────────────

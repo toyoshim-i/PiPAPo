@@ -262,11 +262,13 @@ int main(void)
         unlink("/tmp/test_utimes");
     }
 
-    /* 18. utimes on a read-only FS returns EROFS.  The romfs root is
-     * mounted read-only, so /bin/sh (or any romfs entry) should fail. */
+    /* 18. utimes on a filesystem that doesn't store times returns an
+     * error.  /dev entries are served by devfs which has no .utimes
+     * op, so any devfs path exercises the -EPERM branch regardless
+     * of which target mounts what as rootfs. */
     {
-        ret = utimes("/bin/ls", 0);
-        UT_ASSERT(ret < 0, "utimes on romfs returns error");
+        ret = utimes("/dev/null", 0);
+        UT_ASSERT(ret < 0, "utimes on devfs returns error");
     }
 
     /* 19. chmod: replace permission bits, preserve file type, bump
@@ -292,10 +294,11 @@ int main(void)
         unlink("/tmp/test_chmod");
     }
 
-    /* 20. chmod on a read-only FS returns EROFS / EPERM. */
+    /* 20. chmod on a filesystem that has no permission model returns
+     * an error.  Same devfs reasoning as the utimes test above. */
     {
-        ret = chmod("/bin/ls", 0700);
-        UT_ASSERT(ret < 0, "chmod on romfs returns error");
+        ret = chmod("/dev/null", 0700);
+        UT_ASSERT(ret < 0, "chmod on devfs returns error");
     }
 
     UT_SUMMARY("test_tmpfs");

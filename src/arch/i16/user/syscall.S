@@ -617,6 +617,20 @@ chmod:
   int   $0x30
   SYSCALL_RET
 
+/* int link(const char *oldpath, const char *newpath); */
+  .global link
+link:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx      /* oldpath */
+  movw  6(%bp), %cx      /* newpath */
+  movw  $0x020E, %ax
+  int   $0x30
+  SYSCALL_RET
+
 /* pid_t setsid(void); */
   .global setsid
 setsid:

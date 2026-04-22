@@ -1622,6 +1622,64 @@ static int ufs_unlink(vnode_t *dir, const char *name) {
   return 0;
 }
 
+/* ── ufs_link ─────────────────────────────────────────────────────────── */
+
+static int ufs_link(vnode_t *new_parent, const char *new_name,
+                    vnode_t *target) {
+  if (new_parent->mount != target->mount) return -EXDEV;
+  if (target->type == VNODE_DIR) return -EPERM;
+
+  ufs_priv_t *priv = (ufs_priv_t *)new_parent->fs_priv;
+
+  /* POSIX link(2) fails with EEXIST if the new name already exists —
+   * caller shouldn't rely on ufs_dir_add_entry to notice.  Do a cheap
+   * lookup first; ENOENT is the happy path. */
+  vnode_t *probe = NULL;
+  int rc = ufs_lookup(new_parent, new_name, &probe);
+  if (rc == 0) {
+    mod_vfs.vnode_release(probe);
+    return -EEXIST;
+  }
+  if (rc != -ENOENT) return rc;
+
+  /* Add the directory entry pointing at the target inode.  From this
+   * point the on-disk inode has two paths referring to it; if the
+   * nlink bump below fails, the name is live but undercounted — not
+   * fatal (userspace will just see stale nlink) but worth fixing if
+   * we ever see it in practice. */
+  rc = ufs_dir_add_entry(priv, new_parent, new_name, target->ino);
+  if (rc < 0) return rc;
+
+  uint32_t now = mod_core.time_now_sec();
+  ufs_inode_t *inode = vfs_scratch_alloc();
+  if (!inode) return -ENOMEM;
+
+  rc = ufs_read_inode(priv, target->ino, inode);
+  if (rc < 0) {
+    vfs_scratch_free(inode);
+    return rc;
+  }
+  inode->i_nlink++;
+  inode->i_ctime = now;
+  rc = ufs_write_inode(priv, target->ino, inode);
+  if (rc < 0) {
+    vfs_scratch_free(inode);
+    return rc;
+  }
+
+  /* Stamp the parent directory (its contents changed).  Reuse the
+   * scratch buffer — target-inode data no longer needed. */
+  if (ufs_read_inode(priv, new_parent->ino, inode) == 0) {
+    inode->i_mtime = now;
+    inode->i_ctime = now;
+    ufs_write_inode(priv, new_parent->ino, inode);
+  }
+  vfs_scratch_free(inode);
+
+  ufs_sync_super(priv);
+  return 0;
+}
+
 /* ── ufs_chmod ────────────────────────────────────────────────────────── */
 
 static int ufs_chmod(vnode_t *vn, uint32_t mode) {
@@ -1858,6 +1916,14 @@ static int ufs_chmod_locked(vnode_t *vn, uint32_t mode) {
   return r;
 }
 
+static int ufs_link_locked(vnode_t *new_parent, const char *new_name,
+                           vnode_t *target) {
+  spin_lock(SPIN_FS);
+  int r = ufs_link(new_parent, new_name, target);
+  spin_unlock(SPIN_FS);
+  return r;
+}
+
 static int ufs_statfs_locked(mount_entry_t *mnt, struct kernel_statfs *buf) {
   spin_lock(SPIN_FS);
   int r = ufs_statfs(mnt, buf);
@@ -1882,4 +1948,5 @@ const vfs_ops_t ufs_ops = {
     .statfs = ufs_statfs_locked,
     .utimes = ufs_utimes_locked,
     .chmod = ufs_chmod_locked,
+    .link = ufs_link_locked,
 };

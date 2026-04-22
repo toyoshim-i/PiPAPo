@@ -365,6 +365,20 @@ MOD_FUNC(vfs, void, notify, int)
 MOD_FUNC(vfs, int, path_chmod, const char *, uint32_t)
 
 /*
+ * path_link — Create a hard link (new directory entry) pointing to
+ * an existing file.
+ *
+ *   oldpath  Existing file's path.
+ *   newpath  New path to create; must not already exist.
+ *
+ * Both paths must resolve to the same mount.  Returns 0 on success,
+ * -EXDEV across mounts, -EEXIST if newpath is taken, -EPERM if the
+ * FS driver doesn't support hard links (tmpfs, vfat, romfs, devfs,
+ * procfs) or if oldpath is a directory, -EROFS for read-only mounts.
+ */
+MOD_FUNC(vfs, int, path_link, const char *, const char *)
+
+/*
  * path_mkdir — Create a directory by path inside the VFS code segment.
  *
  *   path  Pathname to create.

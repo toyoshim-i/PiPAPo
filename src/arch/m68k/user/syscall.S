@@ -457,6 +457,18 @@ chmod:
     move.l  %sp@+, %d2
     rts
 
+| --- link (SYS_LINK = 0x020E) -------------------------------------------------
+| int link(const char *oldpath, const char *newpath);
+    .globl link
+link:
+    move.l  %d2, %sp@-
+    move.l  8(%sp), %d1         | oldpath
+    move.l  12(%sp), %d2        | newpath
+    move.l  #0x020E, %d0
+    trap    #0
+    move.l  %sp@+, %d2
+    rts
+
 | --- nanosleep (SYS_NANOSLEEP = 0x0500) ----------------------------------------
 | int nanosleep(const void *req, void *rem);
     .globl nanosleep

@@ -148,5 +148,58 @@ int main(void)
         unlink(path);
     }
 
+    /* Hard link: create A, link A → B, read through B, verify both
+     * resolve to the same inode (st_ino match), then unlink A and
+     * verify B is still readable (inode survives while nlink > 0). */
+    {
+        char apath[64], bpath[64];
+        make_path(apath, (int)sizeof(apath), "test_ufs_linkA");
+        make_path(bpath, (int)sizeof(bpath), "test_ufs_linkB");
+
+        int fd = open(apath, O_WRONLY | O_CREAT, 0644);
+        UT_ASSERT(fd >= 0, "create test_ufs_linkA");
+        if (fd >= 0) {
+            write(fd, "LINKED", 6);
+            close(fd);
+        }
+
+        int rc = link(apath, bpath);
+        UT_ASSERT_EQ(rc, 0);
+
+        struct stat sta, stb;
+        UT_ASSERT_EQ(stat(apath, &sta), 0);
+        UT_ASSERT_EQ(stat(bpath, &stb), 0);
+        UT_ASSERT_EQ((int)sta.st_ino, (int)stb.st_ino);
+        UT_ASSERT_EQ((int)stb.st_size, 6);
+
+        /* Unlink A; B must still resolve and still contain "LINKED". */
+        UT_ASSERT_EQ(unlink(apath), 0);
+        fd = open(bpath, O_RDONLY, 0);
+        UT_ASSERT(fd >= 0, "open B after unlinking A");
+        if (fd >= 0) {
+            char rbuf[8];
+            int i;
+            for (i = 0; i < 8; i++) rbuf[i] = 0;
+            ssize_t nr = read(fd, rbuf, 6);
+            UT_ASSERT_EQ(nr, 6);
+            UT_ASSERT(rbuf[0] == 'L' && rbuf[5] == 'D',
+                      "B readable after A unlinked");
+            close(fd);
+        }
+
+        /* Final cleanup. */
+        unlink(bpath);
+
+        /* Re-link fails with EEXIST when the destination exists. */
+        fd = open(apath, O_WRONLY | O_CREAT, 0644);
+        if (fd >= 0) close(fd);
+        fd = open(bpath, O_WRONLY | O_CREAT, 0644);
+        if (fd >= 0) close(fd);
+        rc = link(apath, bpath);
+        UT_ASSERT(rc < 0, "link fails when dest exists");
+        unlink(apath);
+        unlink(bpath);
+    }
+
     UT_SUMMARY("test_ufs");
 }

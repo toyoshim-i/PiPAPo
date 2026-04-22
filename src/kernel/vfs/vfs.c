@@ -551,6 +551,51 @@ int vfs_path_chmod(const char *path, uint32_t mode) {
   return err;
 }
 
+int vfs_path_link(const char *oldpath, const char *newpath) {
+  vnode_t *target = NULL;
+  int err = vfs_lookup(oldpath, &target);
+  if (err) return err;
+
+  vnode_t *new_parent = NULL;
+  char *new_name = vfs_scratch_alloc();
+  if (!new_name) {
+    vfs_vnode_release(target);
+    return -ENOMEM;
+  }
+  err = vfs_lookup_parent(newpath, &new_parent, new_name, VFS_NAME_MAX + 1);
+  if (err) {
+    vfs_scratch_free(new_name);
+    vfs_vnode_release(target);
+    return err;
+  }
+
+  if (new_parent->type != VNODE_DIR) {
+    err = -ENOTDIR;
+    goto out;
+  }
+  /* Hard links cannot cross mount boundaries — the second dirent and
+   * the target inode must live in the same filesystem. */
+  if (target->mount != new_parent->mount) {
+    err = -EXDEV;
+    goto out;
+  }
+  if (new_parent->mount->flags & MNT_RDONLY) {
+    err = -EROFS;
+    goto out;
+  }
+  if (!new_parent->mount->ops || !new_parent->mount->ops->link) {
+    err = -EPERM;
+    goto out;
+  }
+  err = new_parent->mount->ops->link(new_parent, new_name, target);
+
+out:
+  vfs_vnode_release(new_parent);
+  vfs_vnode_release(target);
+  vfs_scratch_free(new_name);
+  return err;
+}
+
 int vfs_path_unlink(const char *path) {
   vnode_t *parent = NULL;
   char *namebuf = vfs_scratch_alloc();
