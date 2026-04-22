@@ -1481,6 +1481,69 @@ static void test_find_first(void)
     unlink("/tmp/D4FT2.TXT");
 }
 
+/* -- Test 26: lfn_truename.com --- AH=71h AL=60h LFN TrueName ---------- */
+/*
+ * .COM passes DS:SI = "Z\0" to AH=71h AL=60h CL=00h and the VFS
+ * path resolver canonicalises it to "/tmp/Z" (drive C: is exec_dir
+ * = /tmp, cwd_c = "", so the relative "Z" becomes "/tmp/Z").  The
+ * test exits with output[0] on success (expected '/' == 0x2F == 47),
+ * or 0xEE on CF=1, or 0xEF if output[0] is NUL (resolver bug).
+ *
+ * Layout (31 bytes code + 2-byte src + 64-byte dst buffer):
+ *   0x100  BE 1F 01              MOV SI, 011Fh   (src offset)
+ *   0x103  BF 21 01              MOV DI, 0121h   (dst offset)
+ *   0x106  B8 60 71              MOV AX, 7160h   (AH=71h, AL=60h)
+ *   0x109  B1 00                 MOV CL, 00h     (canonical form)
+ *   0x10B  CD 21                 INT 21h
+ *   0x10D  72 0B                 JC fail (0x11A)
+ *   0x10F  A0 21 01              MOV AL, [0121h] (dst[0])
+ *   0x112  84 C0                 TEST AL, AL
+ *   0x114  74 04                 JZ null (0x11A-ish path)
+ *   0x116  B4 4C  CD 21          MOV AH, 4Ch ; INT 21h  (exit AL)
+ *   0x11A  B8 EE 4C  CD 21       fail: MOV AX,4CEEh INT 21h
+ *   0x11F  "Z" + NUL             (2 bytes)
+ *   0x121  64-byte dst buffer    (zeros)
+ */
+static const unsigned char lfn_truename_com[] = {
+    /* 0x100: MOV SI, 011Fh */
+    0xBE, 0x1F, 0x01,
+    /* 0x103: MOV DI, 0121h */
+    0xBF, 0x21, 0x01,
+    /* 0x106: MOV AX, 7160h */
+    0xB8, 0x60, 0x71,
+    /* 0x109: MOV CL, 00h */
+    0xB1, 0x00,
+    /* 0x10B: INT 21h */
+    0xCD, 0x21,
+    /* 0x10D: JC fail (+0x0B) */
+    0x72, 0x0B,
+    /* 0x10F: MOV AL, [0121h] */
+    0xA0, 0x21, 0x01,
+    /* 0x112: TEST AL, AL */
+    0x84, 0xC0,
+    /* 0x114: JZ fail (+0x04) */
+    0x74, 0x04,
+    /* 0x116: MOV AH, 4Ch ; INT 21h  (exit dst[0]) */
+    0xB4, 0x4C, 0xCD, 0x21,
+    /* 0x11A: fail: MOV AX, 4CEEh ; INT 21h */
+    0xB8, 0xEE, 0x4C, 0xCD, 0x21,
+    /* 0x11F: src "Z\0" */
+    'Z', 0,
+    /* 0x121: dst (64 bytes of zero) */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+};
+
+static void test_lfn_truename(void)
+{
+    WRITE_COM("/tmp/dos_tn.com", lfn_truename_com);
+    int code = run_com("/tmp/dos_tn.com");
+    /* Expected: first byte of canonical path is '/'. */
+    UT_ASSERT_EQ(code, (int)'/');
+}
+
 /* -- main ----------------------------------------------------------------- */
 
 int main(void)
@@ -1510,6 +1573,7 @@ int main(void)
     test_dos_alloc_free();
     test_dos_sysvars();
     test_find_first();
+    test_lfn_truename();
 
     UT_SUMMARY("test_msdos");
 }
