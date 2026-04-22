@@ -9,10 +9,17 @@ Last session snapshot: 2026-04-22.
 
 ---
 
-## 1. Layering violations (core ↔ VFS, arch ↔ target)
+## 1. Layering violations (core ↔ VFS, arch ↔ target) — low priority
 
-Flagged during the extern audit but parked because the fix is
-larger than moving a declaration to a header.
+Module-boundary enforcement is load-bearing only for the ia16
+pcxt target, where core and VFS ship as separate segments and any
+cross-module call must go through the `mod_*` far-call bridge.
+On every other arch the split is purely organisational — a
+core→VFS direct call links fine.  The items below therefore stay
+as documented TODO comments in code; **adding new `mod_vfs` /
+`mod_core` entries just to legalise them is explicitly out of
+scope**.  If an existing `mod_*` entry acquires a matching
+caller later, switch the relevant file over in passing.
 
 ### 1.1 `flatblk_init` / `blkdev_find` / `ramblk_init` in target core code
 
@@ -23,11 +30,9 @@ driver headers directly:
 - [`src/target/qemu_rv32/kernel/core/target_qemu_rv32.c`](../../src/target/qemu_rv32/kernel/core/target_qemu_rv32.c) (TODO added in `f5c9521`)
 - [`src/target/qemu_arm/kernel/core/target_qemu_arm.c`](../../src/target/qemu_arm/kernel/core/target_qemu_arm.c) (TODO added in `f5c9521`)
 
-Proper fix: add the needed functions (`flatblk_init`, `blkdev_find`,
-`ramblk_init`, `BLKDEV_SECTOR_SIZE`) as `MOD_FUNC` entries in
-`kernel/common/mod/mod_vfs.h`, update the five-file `mod_vfs.inc`
-sync (parallel of the existing `mod_core.inc` five-file sync), and
-update each target-core caller to go through `mod_vfs.*`.
+All three are non-ia16 targets, so the violation does not break a
+real module boundary today — the TODO comments are just a
+reminder should an ia16 port ever need these code paths.
 
 ### 1.2 `arch/arm_m` → `target/pico1calc` include
 
@@ -37,9 +42,9 @@ update each target-core caller to go through `mod_vfs.*`.
 
 Each `#include "target/pico1calc/kernel/core/pico1calc.h"` — an
 arch-level driver reaching into one specific target's internals.
-Same layering-violation class.  Needs either an abstraction in the
-arch driver or a generic target-config header the arch driver
-queries.
+ARM-only code path, same low-priority classification.  A proper
+fix would either abstract the arch driver or introduce a generic
+target-config header it queries.
 
 ## 2. MS-DOS subsystem stubs
 

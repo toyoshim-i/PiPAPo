@@ -11,10 +11,11 @@
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/timer.h"
 #include "kernel/core/ufsimg.h"
-// TODO: route flatblk_init / blkdev_find through mod_vfs — core-side code
-// including VFS module headers directly bypasses the module bridge.  Needs
-// matching MOD_FUNC entries in mod_vfs.h first (same cleanup pending in
-// target_x68k.c).
+// TODO: core-side code including VFS driver headers directly bypasses
+// the module bridge.  Non-ia16 target, so no link-time concern today;
+// switch to a mod_vfs.* path if one becomes available without having
+// to promote flatblk_init / blkdev_find into the mod_vfs vtable (same
+// cleanup pending in target_x68k.c).
 #include "kernel/vfs/driver/blkdev.h"
 #include "kernel/vfs/driver/flatblk.h"
 #include "target/target.h"

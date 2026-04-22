@@ -9,9 +9,12 @@
 #include "kernel/core/fatimg.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
-// TODO: route ramblk_init / BLKDEV_SECTOR_SIZE through mod_vfs — core-side
-// code including VFS module headers directly bypasses the module bridge.
-// Needs matching MOD_FUNC entries in mod_vfs.h first.
+// TODO: core-side code including VFS driver headers directly bypasses
+// the module bridge.  Non-ia16 target, so no link-time concern today.
+// BLKDEV_SECTOR_SIZE already lives in kernel/common/config.h and could
+// be pulled from there to drop blkdev.h; ramblk_init is VFS-only and
+// would need a mod_vfs entry (out of scope unless another caller
+// appears).
 #include "kernel/vfs/driver/blkdev.h"
 #include "kernel/vfs/driver/ramblk.h"
 #include "target/target.h"

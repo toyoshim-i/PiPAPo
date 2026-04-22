@@ -37,9 +37,10 @@
 #include "kernel/core/signal/signal.h"
 #include "kernel/core/syscall/syscall.h"
 #ifdef PPAP_HAS_BLKDEV
-// TODO: route flatblk_init / blkdev_find through mod_vfs — core-side
-// code including VFS module headers directly bypasses the module
-// bridge.  Needs matching MOD_FUNC entries in mod_vfs.h first.
+// TODO: core-side code including VFS driver headers directly bypasses
+// the module bridge.  Non-ia16 target, so no link-time concern today;
+// switch to a mod_vfs.* path if one becomes available without having
+// to promote flatblk_init / blkdev_find into the mod_vfs vtable.
 #include "kernel/vfs/driver/blkdev.h"
 #include "kernel/vfs/driver/flatblk.h"
 #endif

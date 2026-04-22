@@ -19,6 +19,10 @@
 #include "kernel/common/config.h"
 #include "kernel/common/spinlock.h"
 #include "kernel/vfs/driver/i2c.h"
+// TODO: the include below makes this arch-level driver target-specific.
+// Pin assignments should come from a generic target-config header or be
+// passed in via an init function so the driver can serve other
+// RP2040/RP2350 targets without forking.
 #include "target/pico1calc/kernel/core/pico1calc.h"
 #include "target/rpico.h"
 
