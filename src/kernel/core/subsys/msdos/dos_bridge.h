@@ -40,6 +40,16 @@ typedef struct dos_proc {
   /* PSP location */
   uint16_t psp_seg;
 
+  /* Disk Transfer Area.  Set by AH=1Ah, read by AH=2Fh and used by
+   * AH=4Eh/4Fh FindFirst/FindNext.  Defaults to PSP:0080 per DOS
+   * convention; PPAP's loader does not (yet) build a PSP, so the
+   * default is (0:0080) — apps that rely on the default without
+   * calling AH=1Ah first will write into the BDA.  FreeCOM and most
+   * real DOS programs set an explicit DTA before FindFirst, so the
+   * stale default rarely bites. */
+  uint16_t dta_seg;
+  uint16_t dta_off;
+
   /* Memory access context */
   void *cpu_state;   /* CPU state for memory access */
   void *ecpu_memory; /* eCPU: flat memory pointer (NULL for native) */

@@ -126,6 +126,11 @@ static void msdos_on_init(struct pcb *p) {
   dos.cpu_state = p->cpu_state;
   dos.current_drive = 2; /* C: — exec_dir of the running .COM */
 
+  /* Default DTA = PSP:0080 per DOS convention.  With psp_seg=0 that
+   * maps to linear 0x80 (BDA); AH=1Ah overrides it on first call. */
+  dos.dta_seg = 0;
+  dos.dta_off = 0x0080u;
+
   dos_tty_enter_raw(p, &dos);
 
   dos_put_proc(p, &dos);
@@ -558,6 +563,22 @@ static int dos_get_version(dos_proc_t *dos, dos_regs_t *regs) {
   regs->ax = 0x1E03; /* DOS 3.30 (AL=major, AH=minor) */
   regs->bx = 0x0000; /* Serial number */
   regs->cx = 0x0000;
+  return 0;
+}
+
+/* AH=1Ah Set Disk Transfer Address — DS:DX = new DTA.  Stored for
+ * AH=2Fh readback and for AH=4Eh/4Fh FindFirst/FindNext to write the
+ * 128-byte search result frame into. */
+static int dos_set_dta(dos_proc_t *dos, dos_regs_t *regs) {
+  dos->dta_seg = regs->ds;
+  dos->dta_off = regs->dx;
+  return 0;
+}
+
+/* AH=2Fh Get Disk Transfer Address — ES:BX = current DTA. */
+static int dos_get_dta(dos_proc_t *dos, dos_regs_t *regs) {
+  regs->es = dos->dta_seg;
+  regs->bx = dos->dta_off;
   return 0;
 }
 
@@ -1453,6 +1474,9 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
     case 0x19:
       ret = dos_get_current_drive(dos, regs);
       break;
+    case 0x1A:
+      ret = dos_set_dta(dos, regs);
+      break;
     case 0x25:
       ret = dos_set_int_vector(dos, regs);
       break;
@@ -1461,6 +1485,9 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
       break;
     case 0x2C:
       ret = dos_get_time(dos, regs);
+      break;
+    case 0x2F:
+      ret = dos_get_dta(dos, regs);
       break;
     case 0x30:
       ret = dos_get_version(dos, regs);
