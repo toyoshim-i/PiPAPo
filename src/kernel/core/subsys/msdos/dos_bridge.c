@@ -6,6 +6,7 @@
 
 #include <stddef.h>
 
+#include "common/dirent.h"
 #include "common/errno.h"
 #include "common/fcntl.h"
 #include "common/stat.h"
@@ -23,12 +24,18 @@
  * msdos_on_init).  Used for staging paths and single-byte I/O without
  * borrowing user-segment memory.  Offsets sit comfortably above the
  * dos_proc_t array — see the static_assert below. */
-#define DOS_IO_SCRATCH_OFF 0xA00u   /* 1-byte staging for fd 0/1 byte I/O   */
-#define DOS_PATH_SCRATCH_OFF 0xA10u /* 128-byte staging for resolved paths */
+/* dos_proc_t array starts at offset 0 and runs to DOS_IO_SCRATCH_OFF.
+ * Bumped to 0xB00 (from 0xA00) when FindFirst state widened the per-
+ * process struct beyond the previous 320-byte budget. */
+#define DOS_IO_SCRATCH_OFF 0xB00u   /* 1-byte staging for fd 0/1 byte I/O   */
+#define DOS_PATH_SCRATCH_OFF 0xB10u /* 128-byte staging for resolved paths */
 #define DOS_PATH_SCRATCH_MAX 128u
 #define DOS_PATH_SCRATCH2_OFF \
   (DOS_PATH_SCRATCH_OFF + DOS_PATH_SCRATCH_MAX) /* second slot for RENAME */
-#define DOS_SCRATCH_END (DOS_PATH_SCRATCH2_OFF + DOS_PATH_SCRATCH_MAX)
+#define DOS_DIRENT_SCRATCH_OFF \
+  (DOS_PATH_SCRATCH2_OFF +     \
+   DOS_PATH_SCRATCH_MAX) /* one struct dirent for AH=4Eh/4Fh scans */
+#define DOS_SCRATCH_END (DOS_DIRENT_SCRATCH_OFF + sizeof(struct dirent))
 
 #define DOS_FIRST_USER_HANDLE 5
 
@@ -130,6 +137,7 @@ static void msdos_on_init(struct pcb *p) {
    * maps to linear 0x80 (BDA); AH=1Ah overrides it on first call. */
   dos.dta_seg = 0;
   dos.dta_off = 0x0080u;
+  dos.find_fd = -1;
 
   dos_tty_enter_raw(p, &dos);
 
@@ -149,6 +157,10 @@ static void msdos_on_exit(struct pcb *p) {
       p->cpu_ops->write16(dos.cpu_state, addr + 2, dos.ivt_saved_cs[i]);
     }
     dos.ivt_saved_count = 0;
+    if (dos.find_fd >= 0) {
+      sys_close(dos.find_fd);
+      dos.find_fd = -1;
+    }
     dos_tty_restore(p, &dos);
     dos_put_proc(p, &dos);
   }
@@ -580,6 +592,176 @@ static int dos_get_dta(dos_proc_t *dos, dos_regs_t *regs) {
   regs->es = dos->dta_seg;
   regs->bx = dos->dta_off;
   return 0;
+}
+
+/* ── FindFirst / FindNext helpers ───────────────────────────────────── */
+
+static uint8_t dos_toupper8(uint8_t c) {
+  return (c >= 'a' && c <= 'z') ? (uint8_t)(c - ('a' - 'A')) : c;
+}
+
+/* DOS 8.3 glob matcher — `*` matches zero or more, `?` matches exactly
+ * one, comparison is case-insensitive.  Recursion depth is bounded by
+ * the pattern length (max 12), so the extra stack is tiny. */
+static int dos_glob_match(const uint8_t *pat, const char *name) {
+  while (*pat || *name) {
+    if (*pat == '*') {
+      pat++;
+      if (!*pat) return 1;
+      while (*name) {
+        if (dos_glob_match(pat, name)) return 1;
+        name++;
+      }
+      return 0;
+    }
+    if (!*pat) return 0;
+    if (*pat != '?' && *pat != dos_toupper8((uint8_t)*name)) return 0;
+    pat++;
+    name++;
+  }
+  return 1;
+}
+
+/* Split the path currently sitting in DOS_PATH_SCRATCH_OFF into a
+ * directory portion (left in the scratch, null-terminated at the last
+ * '/') and an uppercase pattern (copied into `pat_out`, bounded by
+ * pat_max).  Empty patterns and paths without a '/' fail with
+ * PATH_NOT_FOUND.  Root-level patterns like "/pat" leave "/" in the
+ * scratch so sys_open opens the root dir. */
+static int dos_find_split_scratch(uint8_t *pat_out, uint16_t pat_max) {
+  uint8_t buf[DOS_PATH_SCRATCH_MAX];
+  uint16_t path_len = 0;
+  for (uint16_t i = 0; i < DOS_PATH_SCRATCH_MAX; i++) {
+    mem_region_page_read(dos_data_page, (uint16_t)(DOS_PATH_SCRATCH_OFF + i),
+                         &buf[i], 1);
+    if (buf[i] == 0) {
+      path_len = i;
+      break;
+    }
+  }
+  if (path_len == 0) return -DOS_ERR_PATH_NOT_FOUND;
+
+  int slash_idx = -1;
+  for (uint16_t i = 0; i < path_len; i++) {
+    if (buf[i] == '/') slash_idx = (int)i;
+  }
+  if (slash_idx < 0) return -DOS_ERR_PATH_NOT_FOUND;
+
+  uint16_t pat_start = (uint16_t)(slash_idx + 1);
+  if (pat_start >= path_len) return -DOS_ERR_PATH_NOT_FOUND;
+  uint16_t p_i = 0;
+  for (uint16_t i = pat_start; i < path_len && p_i + 1 < pat_max; i++) {
+    pat_out[p_i++] = dos_toupper8(buf[i]);
+  }
+  pat_out[p_i] = 0;
+
+  /* Truncate the scratch path at the last '/' so sys_open opens the
+   * directory.  dir_len==0 means the match is at root — leave "/" in
+   * place so sys_open sees a non-empty path. */
+  uint16_t dir_len = (uint16_t)slash_idx;
+  uint8_t zero = 0;
+  if (dir_len == 0) {
+    mem_region_page_write(dos_data_page, (uint16_t)(DOS_PATH_SCRATCH_OFF + 1),
+                          &zero, 1);
+  } else {
+    mem_region_page_write(dos_data_page,
+                          (uint16_t)(DOS_PATH_SCRATCH_OFF + dir_len), &zero, 1);
+  }
+  return 0;
+}
+
+/* Write the 128-byte DTA result frame for a matched entry.  PPAP's
+ * filenames can exceed the DTA's 13-byte slot; truncate at 12 + null,
+ * which is lossy for long names.  File size and date/time are left
+ * zero for this MVP; a follow-up that stats each match and packs
+ * st_mtime into DOS date/time can fill them in. */
+static void dos_find_fill_dta(dos_proc_t *dos, uint8_t attr, const char *name) {
+  uint32_t base = ((uint32_t)dos->dta_seg << 4) + dos->dta_off;
+
+  /* Reserved 0-20 + size 26-29 + time 22-23 + date 24-25: all zero. */
+  for (uint16_t i = 0; i < 30; i++) {
+    current->cpu_ops->write8(dos->cpu_state, base + i, 0);
+  }
+  current->cpu_ops->write8(dos->cpu_state, base + 21, attr);
+
+  uint16_t n = 0;
+  while (n < 12 && name[n]) {
+    current->cpu_ops->write8(dos->cpu_state, base + 30 + n, (uint8_t)name[n]);
+    n++;
+  }
+  while (n < 13) {
+    current->cpu_ops->write8(dos->cpu_state, base + 30 + n, 0);
+    n++;
+  }
+}
+
+/* Read the next matching dirent from dos->find_fd, fill DTA, and
+ * return 0.  On EOF, close the fd and return -DOS_ERR_NO_MORE_FILES
+ * (FindFirst translates that to FILE_NOT_FOUND). */
+static int dos_find_scan(dos_proc_t *dos) {
+  if (dos->find_fd < 0) return -DOS_ERR_NO_MORE_FILES;
+  int16_t desc = current->fd_map[dos->find_fd];
+  if (desc < 0) {
+    dos->find_fd = -1;
+    return -DOS_ERR_NO_MORE_FILES;
+  }
+
+  for (;;) {
+    long n = mod_vfs.fd_getdents(desc, dos_data_page,
+                                 (uint16_t)DOS_DIRENT_SCRATCH_OFF,
+                                 sizeof(struct dirent));
+    if (n < 0) {
+      sys_close(dos->find_fd);
+      dos->find_fd = -1;
+      return -dos_errno_to_dos((int)n);
+    }
+    if (n == 0) {
+      sys_close(dos->find_fd);
+      dos->find_fd = -1;
+      return -DOS_ERR_NO_MORE_FILES;
+    }
+
+    struct dirent d;
+    mem_region_page_read(dos_data_page, (uint16_t)DOS_DIRENT_SCRATCH_OFF, &d,
+                         sizeof(d));
+
+    if (!dos_glob_match(dos->find_pattern, d.d_name)) continue;
+
+    uint8_t attr = (d.d_type == DT_DIR) ? 0x10u : 0x20u;
+    dos_find_fill_dta(dos, attr, d.d_name);
+    return 0;
+  }
+}
+
+/* AH=4Eh FindFirst — DS:DX = ASCIIZ search pattern, CX = attribute
+ * mask.  PPAP ignores CX for now and reports every matching entry
+ * with its own synthesised attribute (DIRECTORY or ARCHIVE). */
+static int dos_find_first(dos_proc_t *dos, dos_regs_t *regs) {
+  if (dos->find_fd >= 0) {
+    sys_close(dos->find_fd);
+    dos->find_fd = -1;
+  }
+
+  int rc = dos_resolve_user_path(dos, regs->ds, regs->dx);
+  if (rc < 0) return rc;
+
+  rc = dos_find_split_scratch(dos->find_pattern, sizeof(dos->find_pattern));
+  if (rc < 0) return rc;
+
+  long fd = sys_open(dos_data_page, DOS_PATH_SCRATCH_OFF, O_RDONLY, 0);
+  if (fd < 0) return -dos_errno_to_dos((int)fd);
+  dos->find_fd = (int)fd;
+
+  rc = dos_find_scan(dos);
+  if (rc == -DOS_ERR_NO_MORE_FILES) return -DOS_ERR_FILE_NOT_FOUND;
+  return rc;
+}
+
+/* AH=4Fh FindNext — resume the previously-started search.  Returns
+ * NO_MORE_FILES at end-of-directory, not FILE_NOT_FOUND. */
+static int dos_find_next(dos_proc_t *dos, dos_regs_t *regs) {
+  (void)regs;
+  return dos_find_scan(dos);
 }
 
 /* AH=37h (undocumented): Get/Set switchar / device availability.
@@ -1554,6 +1736,12 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
       break;
     case 0x4C:
       ret = dos_terminate(dos, regs);
+      break;
+    case 0x4E:
+      ret = dos_find_first(dos, regs);
+      break;
+    case 0x4F:
+      ret = dos_find_next(dos, regs);
       break;
     case 0x52:
       ret = dos_get_sysvars(dos, regs);

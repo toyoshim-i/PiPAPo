@@ -30,6 +30,7 @@
 #define DOS_ERR_INVALID_ACCESS 12
 #define DOS_ERR_INVALID_DRIVE 15
 #define DOS_ERR_FILE_EXISTS 80
+#define DOS_ERR_NO_MORE_FILES 18
 
 typedef struct dos_proc {
   /* Handle table: dos_handle -> ppap_fd (-1 = closed) */
@@ -49,6 +50,13 @@ typedef struct dos_proc {
    * stale default rarely bites. */
   uint16_t dta_seg;
   uint16_t dta_off;
+
+  /* FindFirst/FindNext state.  PPAP supports at most one concurrent
+   * find per process — apps that rely on DTA swapping to run nested
+   * finds will see stale results.  find_fd is sys_open()'d on AH=4Eh
+   * and closed at EOF, next AH=4Eh, or msdos_on_exit. */
+  int find_fd;              /* -1 = inactive */
+  uint8_t find_pattern[13]; /* uppercase 8.3 pattern with * / ? */
 
   /* Memory access context */
   void *cpu_state;   /* CPU state for memory access */
