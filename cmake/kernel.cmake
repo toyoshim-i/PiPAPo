@@ -87,6 +87,7 @@ set(KERNEL_SHARED_SOURCES_BASE
     ${_KS_ROOT}/src/kernel/core/exec/elf.c
     ${_KS_ROOT}/src/kernel/core/exec/loader.c
     ${_KS_ROOT}/src/kernel/core/exec/elf_loader.c
+    ${_KS_ROOT}/src/kernel/core/exec/exec_args.c
     ${_KS_ROOT}/src/kernel/core/exec/exec.c
     ${_KS_ROOT}/src/kernel/core/subsys/subsys.c
 )

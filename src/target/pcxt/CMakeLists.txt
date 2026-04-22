@@ -324,6 +324,7 @@ set(KERNEL_CORE_SOURCES
   ${PPAP_ROOT}/src/kernel/core/cpu/cpu.c
   ${PPAP_ROOT}/src/kernel/core/cpu/cpu_native.c
   ${PPAP_ROOT}/src/kernel/core/exec/exec.c
+  ${PPAP_ROOT}/src/kernel/core/exec/exec_args.c
   ${PPAP_ROOT}/src/kernel/core/exec/elf16_loader.c
   ${PPAP_ROOT}/src/kernel/core/exec/flat_loader.c
   ${PPAP_ROOT}/src/kernel/core/exec/loader.c
