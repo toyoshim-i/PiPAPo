@@ -211,7 +211,7 @@ int target_mount_rootfs(void) {
   flatblk_init("ram0", (const void *)(uintptr_t)addr, size);
   blkdev_t *bd = blkdev_find("ram0");
   if (!bd) return -1;
-  return mod_vfs.mount_ufs("/", MNT_RDONLY, bd);
+  return mod_vfs.mount_ufs("/", 0, bd);
 #else
   return -1;
 #endif

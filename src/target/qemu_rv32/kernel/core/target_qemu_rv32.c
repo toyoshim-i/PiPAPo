@@ -46,7 +46,7 @@ void target_post_mount(void) {
     if (rc >= 0) {
       blkdev_t *bd = blkdev_find("ram0");
       if (bd) {
-        rc = mod_vfs.mount_ufs("/mnt/ufs", MNT_RDONLY, bd);
+        rc = mod_vfs.mount_ufs("/mnt/ufs", 0, bd);
         if (rc == 0)
           mod_vfs.klogf("VFS: UFS mounted at /mnt/ufs (%lu KB)\n",
                 (unsigned long)(ufsimg_size / 1024));
