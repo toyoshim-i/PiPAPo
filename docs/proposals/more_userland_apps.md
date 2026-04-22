@@ -63,11 +63,12 @@ Normative references for implementers:
 
 ## Current State
 
-### Native apps (20 + 1 target-specific)
+### Native apps (25 + 1 target-specific)
 
 `init`, `getty`, `push` (+ `push_line`), `cat`, `ls`, `ps`, `df`,
-`top`, `pi`, `pdb`, `trace`, `hello`, plus the Tier 1 additions:
-`uname`, `sleep`, `mkdir`, `reset`, `rmdir`, `rm`, `kill`.
+`top`, `pi`, `pdb`, `trace`, `hello`, plus the Tier 1 additions
+(`uname`, `sleep`, `mkdir`, `reset`, `rmdir`, `rm`, `kill`) and
+the Tier 2 additions (`touch`, `date`, `cp`, `mv`, `chmod`, `ln`).
 `ttyctl` is pico1calc-only.
 Source: [src/user/](/src/user/).  Build list: `USER_APPS` in
 [cmake/user.cmake](/cmake/user.cmake).
@@ -81,13 +82,14 @@ Source: [src/user/push.c](/src/user/push.c) `is_builtin()`.
 ### busybox applets (remaining, from
 [busybox_ppap.fragment](/third_party/patches/busybox/busybox_ppap.fragment))
 
-File ops: `cp`, `mv`, `ln`, `chmod`, `mount`, `umount`.
+File ops: `mount`, `umount`.
 Text: `grep`, `head`, `tail`, `wc`, `sort`, `sed`, `printf`.
 Shell: `hush` / `sh` — out of scope (see Non-Goals).
 
-Shadowed-by-native applets (`ls`, `cat`, `ps`, `df`, `echo`) and the
-Tier 1 set (`uname`, `sleep`, `mkdir`, `rmdir`, `rm`, `kill`) have
-been removed from the fragment — see Step 0 / Tier 1 status below.
+Native-shadowed applets removed from the fragment: `ls`, `cat`,
+`ps`, `df`, `echo` (Step 0); `uname`, `sleep`, `mkdir`, `rmdir`,
+`rm`, `kill` (Tier 1); `cp`, `mv`, `chmod`, `ln` (Tier 2; `touch`
+and `date` landed via file_timestamps).
 
 ## Plan
 
@@ -160,19 +162,58 @@ No shared `uclib` helpers were introduced — the existing
 `uc_perror_errno` / `uc_copy_fd` / `uc_getline` / `uc_vsnprintf` as
 needed.
 
-### Tier 2 — File operations
+### Tier 2 — File operations (landed)
 
-Applets: `cp`, `mv`, `ln`, `chmod`, `touch`.
+Applets landed: `touch`, `cp`, `mv`, `chmod`, `ln`.
 
-Characteristics:
-- Need read-to-EOF / write-loop plumbing.  Shared in uclib.
-- `cp` and `mv` need directory traversal for `-r` / recursive moves;
-  start with single-file mode and defer `-r` to a follow-up.
-- `ln` is hard-link only until VFS grows symlink support in more
-  places; soft links stay busybox-backed (or noted).
+Restrictions deliberately kept in scope:
+- `cp` / `mv` are single-file only.  `-r` / recursive moves are
+  deferred — directory traversal wants a `uc_fts`-style helper that
+  none of the current applets need.
+- `ln` is hard-link only; `-s` is rejected with a pointer to busybox
+  because VFS symlink-write support only exists on a subset of
+  filesystems today.  Hard links work on UFS; every other FS driver
+  leaves `.link` NULL and VFS returns `-EPERM`.
+- `chmod` parses absolute-octal only (`755`, `0644`).  Symbolic
+  modes (`u+x` / `g-w` / `a=rx`) are not supported — use busybox
+  for those.
 
-Shared helpers introduced: `uclib_copy_fd`, minimal `getopt`-lite,
-`uclib_fprintf` (buffered stderr).
+Commits:
+
+- `ab722e9` — touch (landed with file_timestamps T-2)
+- `c28496d` — cp + `uc_copy_fd` helper
+- `1260f55` — mv (rename + cp-unlink fallback, new rename(2) user
+  wrapper on all five arches)
+- `43348a2` — vfs: un-stub SYS_CHMOD, add `.chmod` op, tmpfs + UFS
+  impls, user-space chmod(2) wrapper
+- `16c6def` — chmod applet (octal parser, no symbolic)
+- `eeadaa6` — target: flip `/` (pcxt, x68k) and `/mnt/ufs`
+  (qemu_rv32) to read-write so test_ufs actually runs
+- `540dfa7` — vfs: SYS_LINK + UFS `.link` impl + `vfs_path_link` +
+  user-space link(2) wrapper; test_ufs grew 11 hard-link asserts
+- `2c9f7d5` — ln applet (hard-link only)
+
+Supporting VFS additions that came out of Tier 2:
+
+- New VFS ops: `.chmod`, `.link`.  Both NULL-on-unsupported with
+  -EPERM bubbled up through `vfs_path_chmod` / `vfs_path_link`.
+- mod_vfs gained `path_chmod` (idx 30) and `path_link` (idx 31);
+  entry count up to 46.
+- `common/errno.h` gained `EXDEV` (18) for the cross-mount link
+  case.
+- `SYS_LINK` reserved at 0x020E; `SYS_CHMOD` un-stubbed from its
+  return-0 placeholder at 0x020B.
+- The RDONLY→RDWR flip earned real coverage: `test_ufs` now runs
+  on pcxt (17 asserts for create/write/append/unlink) plus 11 more
+  for hard links, total 28.
+
+Shared uclib addition: `uc_copy_fd(src_fd, dst_fd)` — the read-to-EOF /
+write-loop pattern that both cp and mv use.
+
+Cumulative busybox shrink through Tier 2:
+
+  qemu_arm  : 185,528 → 152,280 B  (−33,248 B, −18%)
+  qemu_m68k : 259,120 → 215,912 B  (−43,208 B, −17%)
 
 ### Tier 3 — Simple text utilities
 
