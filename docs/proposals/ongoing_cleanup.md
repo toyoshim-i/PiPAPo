@@ -56,9 +56,12 @@ either silences unimpl klogs or unlocks more DOS apps.
   Minimum-viable stub can stat the resolved path and return
   `0x20` (archive) / `0x10` (directory).  Documented in
   `docs/proposals/msdos_subsystem.md` Phase 1 TODO.
-- **AH=44h AL≠0** — today only `AL=00h` (Get Device Info) is wired.
-  Adding `AL=01h`, `06h`, `07h`, `08h`, `09h`, `0Bh`, `0Ch` covers
-  the rest of the subset FreeCOM probes at startup.
+- **AH=44h AL=0Ch Generic Character Device Request** — not wired.
+  Any meaningful reply depends on CH/CL category/minor sub-codes
+  (0x00 unknown, 0x01 COM, 0x03 CON, 0x05 LPT, …) which have
+  wildly different semantics.  Falls through to
+  DOS_ERR_INVALID_FUNCTION; FreeCOM handles that gracefully, so
+  adding it waits for a specific app that probes it.
 - **AH=4Eh / 4Fh FindFirst / FindNext** — blocks `dir` listing output
   from appearing; FreeCOM currently runs `dir` silently because the
   builtin bails out when FindFirst returns "invalid function".

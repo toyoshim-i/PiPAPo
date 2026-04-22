@@ -640,40 +640,80 @@ static int dos_get_set_attr(dos_proc_t *dos, dos_regs_t *regs) {
   return 0;
 }
 
-/* AH=44h IOCTL.  Only AL=00h (Get Device Info) is implemented today.
+/* AH=44h IOCTL sub-function dispatch.
  *
- * AH=44h AL=00h: return DX = device info word for BX = handle.
- *   Handles 0..4 are pre-opened to console / serial; report them as
- *   CON (the reply real DOS gives for the console handle).  Device-
- *   info layout (Ralf Brown int list):
- *     bit 15 = 1 : character device
- *     bit  7 = 1 : character device (legacy-redundant)
- *     bit  6 = 1 : "no EOF on input" (console semantics)
- *     bit  4 = 1 : special device
- *     bit  1 = 1 : stdout
- *     bit  0 = 1 : stdin
- *   0x80D3 marks the handle as CON (both stdin + stdout).
+ * AL=00h  Get Device Info — DX = device-info word for BX = handle.
+ *         Handles 0..4 (console / serial) report as CON (0x80D3):
+ *           bit 15 = 1 : character device
+ *           bit  7 = 1 : character device (legacy-redundant)
+ *           bit  6 = 1 : "no EOF on input" (console semantics)
+ *           bit  4 = 1 : special device
+ *           bit  1 = 1 : stdout
+ *           bit  0 = 1 : stdin
+ *         File handles report 0x0000 (disk file on current drive).
  *
- * Other AL values (set info, in/out status, changeable media, block-
- * device queries) return "invalid function" until a caller actually
- * needs them. */
+ * AL=01h  Set Device Info — accepted for open handles.  PPAP's handle
+ *         layer has no backing storage for DOS device-info bits
+ *         (binary mode, raw, etc.), so we discard them silently but
+ *         still succeed so apps that set+readback keep working.
+ *
+ * AL=06h  Get Input Status   — AL=0xFF for every open handle.
+ * AL=07h  Get Output Status  — AL=0xFF for every open handle.
+ *         Real DOS distinguishes console-ready vs file-at-EOF, but
+ *         for PPAP the subsequent READ/WRITE delivers exactly what
+ *         the backing fd produces, so a blanket "ready" is truthful.
+ *
+ * AL=08h  Check If Block Device Removable — AX=1 (fixed) for every
+ *         drive: PPAP's UFS storage is not ejectable.
+ * AL=09h  Check If Block Device Remote    — DX=0 (local) for every
+ *         drive.
+ * AL=0Bh  Set Sharing Retry Count         — accept and discard.
+ *         PPAP's VFS does not implement SHARE-style retries.
+ *
+ * Other AL values fall through to DOS_ERR_INVALID_FUNCTION. */
 static int dos_ioctl(dos_proc_t *dos, dos_regs_t *regs) {
   uint8_t al = (uint8_t)(regs->ax & 0xFFu);
-  if (al != 0x00) return -DOS_ERR_INVALID_FUNCTION;
 
-  uint16_t handle = regs->bx;
-  if (handle >= DOS_MAX_HANDLES || dos->handle_to_fd[handle] < 0)
-    return -DOS_ERR_INVALID_HANDLE;
+  switch (al) {
+    case 0x00: {
+      uint16_t handle = regs->bx;
+      if (handle >= DOS_MAX_HANDLES || dos->handle_to_fd[handle] < 0)
+        return -DOS_ERR_INVALID_HANDLE;
+      uint16_t info = (handle <= 4) ? 0x80D3u : 0x0000u;
+      regs->dx = info;
+      regs->ax = info;
+      return 0;
+    }
 
-  uint16_t info;
-  if (handle <= 4) {
-    info = 0x80D3u; /* CON: char device, stdin + stdout, no EOF */
-  } else {
-    info = 0x0000u; /* regular file on drive A: per DOS convention */
+    case 0x01: {
+      uint16_t handle = regs->bx;
+      if (handle >= DOS_MAX_HANDLES || dos->handle_to_fd[handle] < 0)
+        return -DOS_ERR_INVALID_HANDLE;
+      return 0;
+    }
+
+    case 0x06:
+    case 0x07: {
+      uint16_t handle = regs->bx;
+      if (handle >= DOS_MAX_HANDLES || dos->handle_to_fd[handle] < 0)
+        return -DOS_ERR_INVALID_HANDLE;
+      regs->ax = 0x00FFu;
+      return 0;
+    }
+
+    case 0x08:
+      regs->ax = 0x0001u;
+      return 0;
+
+    case 0x09:
+      regs->dx = 0x0000u;
+      return 0;
+
+    case 0x0B:
+      return 0;
   }
-  regs->dx = info;
-  regs->ax = info;
-  return 0;
+
+  return -DOS_ERR_INVALID_FUNCTION;
 }
 
 /* Vectors the kernel uses for its own ISRs or panic stubs.  Writes from
