@@ -29,7 +29,7 @@ CONFIG_LFS=y
 # CONFIG_MKDIR is not set (using native PPAP mkdir)
 # CONFIG_RMDIR is not set (using native PPAP rmdir)
 CONFIG_LN=y
-CONFIG_CHMOD=y
+# CONFIG_CHMOD is not set (using native PPAP chmod)
 
 # -- Text processing ----------------------------------------------------------
 # CONFIG_ECHO is not set (push built-in)
