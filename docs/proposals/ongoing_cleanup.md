@@ -52,31 +52,22 @@ Discovered while debugging FreeCOM's `dir` command on pcxt.  None are
 strictly required for `command.com` to reach a prompt now, but each
 either silences unimpl klogs or unlocks more DOS apps.
 
-- **AH=43h Get/Set File Attributes** — `AL=00h` (get) + `AL=01h` (set).
-  Minimum-viable stub can stat the resolved path and return
-  `0x20` (archive) / `0x10` (directory).  Documented in
-  `docs/proposals/msdos_subsystem.md` Phase 1 TODO.
 - **AH=44h AL=0Ch Generic Character Device Request** — not wired.
   Any meaningful reply depends on CH/CL category/minor sub-codes
   (0x00 unknown, 0x01 COM, 0x03 CON, 0x05 LPT, …) which have
   wildly different semantics.  Falls through to
   DOS_ERR_INVALID_FUNCTION; FreeCOM handles that gracefully, so
   adding it waits for a specific app that probes it.
-- **AH=4Eh / 4Fh FindFirst / FindNext** — blocks `dir` listing output
-  from appearing; FreeCOM currently runs `dir` silently because the
-  builtin bails out when FindFirst returns "invalid function".
-  Needs a DTA layout, 8.3 pattern matching, and an open-dir-handle
-  per process.  Phase D-7 in `msdos_subsystem.md`.
-- **AH=71h (LFN) — do *not* reply "not installed"** — the obvious fix
-  (replace the AX=0x0001 CF=1 fall-through with AX=0x7100 CF=1) would
-  tell apps to fall back to the 8.3 short-name API.  PPAP's VFS has no
-  8.3 restriction, so that fallback hides the real filenames.  Instead,
-  after AH=4Eh/4Fh lands, implement an AH=71h subset that routes LFN
+- **AH=71h (LFN) — implement an AH=71h subset** — with AH=4Eh/4Fh
+  now wired, the next step is an AH=71h dispatcher that routes LFN
   sub-functions (AL=3Bh chdir, AL=39h/3Ah mkdir/rmdir, AL=41h delete,
   AL=43h attrs, AL=47h getcwd, AL=56h rename, AL=4Eh/4Fh find, AL=60h
-  truename, AL=6Ch extended open) to the existing handlers.  Leave the
-  current dispatcher default branch alone for now — noisy klog is
-  preferable to a misleading reply.
+  truename, AL=6Ch extended open) to the existing handlers.  PPAP's
+  VFS stores real long names; the SFN AH=4Eh/4Fh path truncates them
+  into the 13-byte DTA slot, so LFN is the right path for showing
+  full filenames.  Do NOT take the shortcut of replying AX=0x7100
+  CF=1 ("not installed") — that forces apps back to the short-name
+  API which hides the real names.
 
 ## 3. Header / include hygiene found while working
 
@@ -101,3 +92,7 @@ editing the file.
   `5aa6260`).  Only remaining extern is `target_pcxt.c`'s
   `vfs_fptrs[]` — allowlisted in the guard because it's an
   asm-defined array with a single C writer.
+- **2026-04-22** — MSDOS AH=43h Get/Set File Attributes (`40b6ce7`),
+  AH=44h AL=01/06/07/08/09/0B (`9e51f12`), AH=1Ah/2Fh Set/Get DTA
+  (`de9b98e`), AH=4Eh/4Fh FindFirst/FindNext (`7e2e618` + stat-fill
+  in `61d168f`), and a covering test (`b3e7831`).
