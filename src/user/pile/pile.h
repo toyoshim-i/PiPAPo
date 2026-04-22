@@ -76,13 +76,20 @@ typedef struct {
 
 /* ── Global state ──────────────────────────────────────────────────────── */
 
-/* P1 has a single pane; the active_pane pointer indirection is in place
- * so the P2 two-pane expansion only needs to add a second instance. */
+/* Layout classification, set once at startup from pile_cols.  SIGWINCH
+ * re-detection is wired in P5. */
+enum {
+  PILE_LAYOUT_SINGLE,
+  PILE_LAYOUT_TWO,
+};
+
 extern pile_pane_t pile_pane_a;
-extern pile_pane_t *pile_active;
+extern pile_pane_t pile_pane_b;
+extern pile_pane_t *pile_active;  /* &pile_pane_a or &pile_pane_b */
 
 extern int pile_rows;     /* terminal rows from TIOCGWINSZ */
 extern int pile_cols;     /* terminal cols */
+extern int pile_layout;   /* PILE_LAYOUT_SINGLE | PILE_LAYOUT_TWO */
 extern int pile_quit;
 extern int pile_use_color;
 
@@ -115,5 +122,10 @@ int pile_pane_parent(pile_pane_t *pane);
 
 void pile_draw_all(void);
 void pile_draw_clear(void);
+
+/* Number of entry rows visible in a pane given the current terminal
+ * height and chrome layout.  Shared between drawing and key handling
+ * (PgUp / PgDn step size, scroll clamping). */
+int pile_draw_visible_rows(void);
 
 #endif /* PPAP_USER_PILE_H */

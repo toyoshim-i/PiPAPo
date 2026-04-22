@@ -15,10 +15,12 @@
 /* ── Global state ─────────────────────────────────────────────────────── */
 
 pile_pane_t pile_pane_a;
+pile_pane_t pile_pane_b;
 pile_pane_t *pile_active = &pile_pane_a;
 
 int pile_rows;
 int pile_cols;
+int pile_layout;
 int pile_quit;
 int pile_use_color = 1;
 
@@ -152,26 +154,22 @@ static void query_winsize(void) {
   }
 }
 
-/* Number of entry rows visible in the list area.  The layout reserves
- * one line for the path header, two for the stat strip, and one for
- * the key legend (4 lines of chrome in the single-pane layout). */
-static int visible_rows(void) {
-  int v = pile_rows - 4;
-  if (v < 1) v = 1;
-  return v;
-}
-
 /* ── Key dispatch ─────────────────────────────────────────────────────── */
 
 static void handle_key(int key) {
   pile_pane_t *p = pile_active;
-  int vrows = visible_rows();
+  int vrows = pile_draw_visible_rows();
 
   switch (key) {
     case PKEY_F10:
     case 'q':
     case 0x11:  /* Ctrl-Q */
       pile_quit = 1;
+      return;
+
+    case PKEY_TAB:
+      pile_active =
+          (pile_active == &pile_pane_a) ? &pile_pane_b : &pile_pane_a;
       return;
 
     case PKEY_UP:
@@ -242,9 +240,12 @@ int main(int argc, char *argv[]) {
     uc_eputs("pile: terminal too narrow (need >=40 cols)\n");
     return 1;
   }
+  pile_layout =
+      (pile_cols >= PILE_TWOPANE_COLS) ? PILE_LAYOUT_TWO : PILE_LAYOUT_SINGLE;
 
   pile_term_raw();
-  init_pane(pile_active, start);
+  init_pane(&pile_pane_a, start);
+  init_pane(&pile_pane_b, start);
 
   while (!pile_quit) {
     pile_draw_all();
