@@ -102,6 +102,7 @@ set(PPAP_USER_MAIN_SOURCE_pile ${PPAP_ROOT}/src/user/pile/pile.c)
 set(PPAP_USER_EXTRA_SOURCES_pile
     ${PPAP_ROOT}/src/user/pile/pile_pane.c
     ${PPAP_ROOT}/src/user/pile/pile_draw.c
+    ${PPAP_ROOT}/src/user/pile/pile_ops.c
 )
 
 # Test programs (sources in tests/user/)

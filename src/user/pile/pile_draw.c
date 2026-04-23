@@ -33,6 +33,8 @@
 #define C_HEADER   C("\033[1m")
 #define C_HEADER_OFF C("\033[2m")
 #define C_KEY      C("\033[1m")
+#define C_WARN     C("\033[33m")
+#define C_ERR      C("\033[31m")
 
 #define CHROME_ROWS 7
 
@@ -63,7 +65,7 @@ static void put_uint(int v) {
   emit(buf + pos);
 }
 
-static void cursor_to(int row, int col) {
+void pile_draw_cursor_to(int row, int col) {
   char *p = out_buf;
   *p++ = '\033';
   *p++ = '[';
@@ -79,8 +81,9 @@ static void cursor_to(int row, int col) {
   write(1, out_buf, (int)(p - out_buf));
 }
 
+void pile_draw_clear_to_eol(void) { emit("\033[K"); }
+
 static void clear_screen(void) { emit("\033[2J\033[H"); }
-static void clear_to_eol(void) { emit("\033[K"); }
 static void cursor_hide(void) { emit("\033[?25l"); }
 static void cursor_show(void) { emit("\033[?25h"); }
 static void attr_reset(void) { emit("\033[0m"); }
@@ -200,7 +203,7 @@ static char entry_suffix(const pile_entry_t *e) {
  * Active pane uses bold; inactive dims. */
 static void draw_pane_header(int row, int col, int width,
                              const pile_pane_t *pane, int is_active) {
-  cursor_to(row, col);
+  pile_draw_cursor_to(row, col);
   emit(is_active ? C_HEADER : C_HEADER_OFF);
   emit("-- ");
   int used = 3;
@@ -230,7 +233,7 @@ static void draw_pane_header(int row, int col, int width,
 static void draw_entry_row(int row, int col, int width,
                            const pile_pane_t *pane, int idx,
                            int is_cursor_active, int is_cursor_inactive) {
-  cursor_to(row, col);
+  pile_draw_cursor_to(row, col);
   if (idx < 0 || idx >= pane->count) {
     put_spaces(width);
     return;
@@ -276,7 +279,7 @@ static void draw_entry_row(int row, int col, int width,
  * whole pane otherwise). */
 static void draw_pane_footer(int row, int col, int width,
                              const pile_pane_t *pane) {
-  cursor_to(row, col);
+  pile_draw_cursor_to(row, col);
   emit(C_FRAME);
   put_spaces(2);
   put_uint(pane->cursor + (pane->count ? 1 : 0));
@@ -305,7 +308,7 @@ static void draw_pane_footer(int row, int col, int width,
   fmt_size_compact(sz, total);
   int slen = uc_strlen(sz);
   int total_col = col + width - 1 - slen;
-  cursor_to(row, total_col);
+  pile_draw_cursor_to(row, total_col);
   emit(C_FRAME);
   emit(sz);
   emit(C_RST);
@@ -316,7 +319,7 @@ static void draw_pane_footer(int row, int col, int width,
 static void draw_divider(int col, int first_row, int last_row) {
   emit(C_FRAME);
   for (int r = first_row; r <= last_row; r++) {
-    cursor_to(r, col);
+    pile_draw_cursor_to(r, col);
     uc_putc('|');
   }
   emit(C_RST);
@@ -325,7 +328,7 @@ static void draw_divider(int col, int first_row, int last_row) {
 /* ── Global strips ────────────────────────────────────────────────────── */
 
 static void draw_rule(int row) {
-  cursor_to(row, 0);
+  pile_draw_cursor_to(row, 0);
   emit(C_FRAME);
   for (int i = 0; i < pile_cols; i++) uc_putc('-');
   emit(C_RST);
@@ -334,14 +337,14 @@ static void draw_rule(int row) {
 static void draw_stat_strip(int row_path, int row_detail) {
   const pile_pane_t *pane = pile_active;
 
-  cursor_to(row_path, 0);
+  pile_draw_cursor_to(row_path, 0);
   if (pane->count == 0) {
     emit(C_FRAME);
     emit(" (empty directory)");
     emit(C_RST);
-    clear_to_eol();
-    cursor_to(row_detail, 0);
-    clear_to_eol();
+    pile_draw_clear_to_eol();
+    pile_draw_cursor_to(row_detail, 0);
+    pile_draw_clear_to_eol();
     return;
   }
 
@@ -356,10 +359,10 @@ static void draw_stat_strip(int row_path, int row_detail) {
   emit(entry_color(e));
   emit(e->name);
   emit(C_RST);
-  clear_to_eol();
+  pile_draw_clear_to_eol();
 
   /* Line 2: size + mode + mtime (if available) */
-  cursor_to(row_detail, 0);
+  pile_draw_cursor_to(row_detail, 0);
   uc_putc(' ');
   uc_putc(' ');
   char sbuf[10];
@@ -380,20 +383,30 @@ static void draw_stat_strip(int row_path, int row_detail) {
     emit(tbuf);
     emit(C_RST);
   }
-  clear_to_eol();
+  pile_draw_clear_to_eol();
+}
+
+static void draw_status(int row) {
+  pile_draw_cursor_to(row, 0);
+  uc_putc(' ');
+  emit(pile_status_is_error ? C_ERR : C_WARN);
+  emit(pile_status_msg);
+  emit(C_RST);
+  pile_draw_clear_to_eol();
 }
 
 static void draw_legend(int row) {
-  cursor_to(row, 0);
+  pile_draw_cursor_to(row, 0);
   uc_putc(' ');
   emit(C_KEY); emit("TAB");   emit(C_RST); emit(" switch  ");
-  emit(C_KEY); emit("ENTER"); emit(C_RST); emit(" open  ");
+  emit(C_KEY); emit("ENT");   emit(C_RST); emit(" open  ");
   emit(C_KEY); emit("SPC");   emit(C_RST); emit(" mark  ");
-  emit(C_KEY); emit("+/-/*"); emit(C_RST); emit(" glob  ");
+  emit(C_KEY); emit("F7");    emit(C_RST); emit(" mkdir  ");
+  emit(C_KEY); emit("F8");    emit(C_RST); emit(" del  ");
   emit(C_KEY); emit("BS");    emit(C_RST); emit(" parent  ");
   emit(C_KEY); emit("F10");   emit(C_RST); uc_putc('/');
   emit(C_KEY); emit("q");     emit(C_RST); emit(" quit");
-  clear_to_eol();
+  pile_draw_clear_to_eol();
 }
 
 /* ── Pane renderer ────────────────────────────────────────────────────── */
@@ -412,7 +425,7 @@ static void draw_pane(const pile_pane_t *pane, int col, int width,
   }
 
   /* Per-pane footer. */
-  cursor_to(1 + vrows, col);
+  pile_draw_cursor_to(1 + vrows, col);
   put_spaces(width);
   draw_pane_footer(1 + vrows, col, width, pane);
 }
@@ -438,16 +451,20 @@ void pile_draw_all(void) {
   draw_rule(1 + vrows + 1);
   draw_stat_strip(1 + vrows + 2, 1 + vrows + 3);
   draw_rule(1 + vrows + 4);
-  draw_legend(1 + vrows + 5);
+  if (pile_status_msg[0]) {
+    draw_status(1 + vrows + 5);
+  } else {
+    draw_legend(1 + vrows + 5);
+  }
 
   /* Park the cursor at the bottom-right so it doesn't blink in the list. */
-  cursor_to(pile_rows - 1, pile_cols - 1);
+  pile_draw_cursor_to(pile_rows - 1, pile_cols - 1);
   cursor_show();
 }
 
 void pile_draw_clear(void) {
   attr_reset();
   clear_screen();
-  cursor_to(0, 0);
+  pile_draw_cursor_to(0, 0);
   cursor_show();
 }

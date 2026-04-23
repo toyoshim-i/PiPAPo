@@ -135,4 +135,38 @@ void pile_draw_clear(void);
  * (PgUp / PgDn step size, scroll clamping). */
 int pile_draw_visible_rows(void);
 
+/* Low-level screen primitives, shared with prompt / status code. */
+void pile_draw_cursor_to(int row, int col);  /* 0-based */
+void pile_draw_clear_to_eol(void);
+
+/* ── Prompt (pile.c) ───────────────────────────────────────────────────── */
+
+/* Overlay a text prompt on the last screen row and read until ENTER or
+ * ESC.  Returns 0 on success (out filled, NUL-terminated), -1 on cancel.
+ * Caller is responsible for redrawing the legend afterwards (any
+ * subsequent pile_draw_all() handles this automatically). */
+int pile_prompt(const char *label, char *out, int outsize);
+
+/* ── Ops / status (pile_ops.c) ─────────────────────────────────────────── */
+
+/* Transient single-line status / error message, overlaid on the legend
+ * row by pile_draw_all() and auto-cleared by the main loop before the
+ * next handle_key() call. */
+extern char pile_status_msg[128];
+extern int pile_status_is_error;
+
+void pile_status_set(const char *msg, int is_error);
+void pile_status_set_errno(const char *prefix, int errcode);
+void pile_status_clear(void);
+
+/* Yes/no prompt on the last row.  Returns 1 on 'y' / 'Y', 0 otherwise
+ * (including ESC). */
+int pile_confirm(const char *prompt);
+
+/* File operation handlers.  Each updates the pane(s) and sets a status
+ * message on failure (and sometimes on success).  No return value — the
+ * pane state tells the caller what happened. */
+void pile_op_mkdir(pile_pane_t *pane);
+void pile_op_delete(pile_pane_t *pane);
+
 #endif /* PPAP_USER_PILE_H */

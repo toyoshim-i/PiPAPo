@@ -156,31 +156,14 @@ static void query_winsize(void) {
 
 /* ── Prompt ───────────────────────────────────────────────────────────── */
 
-/* Overlay an input prompt on the legend row and read until ENTER / ESC.
- * Returns 0 on success (out filled, NUL-terminated), -1 on ESC/cancel.
- * Backspace erases one char; other non-printable bytes are ignored.
- * pile_draw_all() is responsible for restoring the legend afterwards. */
-static int pile_prompt(const char *label, char *out, int outsize) {
-  int prompt_row = pile_rows - 1;
-  int label_len = uc_strlen(label);
+int pile_prompt(const char *label, char *out, int outsize) {
   int len = 0;
-
   for (;;) {
-    /* Render prompt line: <label><buf>_ */
-    char esc[32];
-    /* cursor to (prompt_row, 0) */
-    int pos = 0;
-    esc[pos++] = '\033'; esc[pos++] = '[';
-    int r = prompt_row + 1;
-    if (r >= 100) esc[pos++] = (char)('0' + r / 100);
-    if (r >= 10)  esc[pos++] = (char)('0' + (r / 10) % 10);
-    esc[pos++] = (char)('0' + r % 10);
-    esc[pos++] = ';'; esc[pos++] = '1'; esc[pos++] = 'H';
-    write(1, esc, pos);
-    write(1, "\033[K", 3);
-    write(1, label, label_len);
+    pile_draw_cursor_to(pile_rows - 1, 0);
+    pile_draw_clear_to_eol();
+    uc_puts(label);
     write(1, out, len);
-    write(1, "_", 1);
+    uc_putc('_');
 
     int k = pile_read_key();
     if (k == PKEY_NONE) continue;
@@ -263,6 +246,15 @@ static void handle_key(int key) {
       }
       return;
     }
+
+    case PKEY_F7:
+      pile_op_mkdir(p);
+      return;
+    case PKEY_F8:
+    case 'd':
+    case PKEY_DELETE:
+      pile_op_delete(p);
+      return;
   }
 }
 
@@ -312,6 +304,7 @@ int main(int argc, char *argv[]) {
     pile_draw_all();
     int k = pile_read_key();
     if (k == PKEY_NONE) continue;
+    pile_status_clear();
     handle_key(k);
   }
 
