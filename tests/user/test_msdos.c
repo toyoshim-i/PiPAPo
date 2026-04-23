@@ -1544,6 +1544,107 @@ static void test_lfn_truename(void)
     UT_ASSERT_EQ(code, (int)'/');
 }
 
+/* -- Test 27: lfn_find.com --- AH=71h AL=4Eh/A1h LFN FindFirst/Close --- */
+/*
+ * Host creates /tmp/D5LF1.TXT, .COM sets ES:DI to a 318-byte buffer
+ * in its own image, issues AH=71h AL=4Eh with pattern "D5LF*.TXT"
+ * (SI=1 DOS date/time format), verifies cFileName[] (offset 0x2C)
+ * starts with 'D', then closes via AH=71h AL=A1h.
+ *
+ *   0x100  BF 40 01              MOV DI, 0140h   (buf)
+ *   0x103  BA 36 01              MOV DX, 0136h   (pattern)
+ *   0x106  B9 00 00              MOV CX, 0       (attr mask)
+ *   0x109  BE 01 00              MOV SI, 1       (DOS date/time)
+ *   0x10C  B8 4E 71              MOV AX, 714Eh   (LFN FindFirst)
+ *   0x10F  CD 21                 INT 21h
+ *   0x111  72 14                 JC fail
+ *   0x113  89 C3                 MOV BX, AX      (save handle)
+ *   0x115  80 7D 2C 'D'          CMP [DI+0x2C], 'D'
+ *   0x119  75 11                 JNE fail2
+ *   0x11B  B8 A1 71              MOV AX, 71A1h   (LFN FindClose)
+ *   0x11E  CD 21                 INT 21h
+ *   0x120  72 0F                 JC fail3
+ *   0x122  B8 00 4C  CD 21       exit 0
+ *   0x127  B8 EE 4C  CD 21       fail: exit 0xEE
+ *   0x12C  B8 EF 4C  CD 21       fail2: exit 0xEF
+ *   0x131  B8 F0 4C  CD 21       fail3: exit 0xF0
+ *   0x136  "D5LF*.TXT" + NUL     (10 bytes)
+ *   0x140  318-byte WIN32_FIND_DATA buffer
+ */
+static const unsigned char lfn_find_com[] = {
+    /* 0x100: MOV DI, 0140h */
+    0xBF, 0x40, 0x01,
+    /* 0x103: MOV DX, 0136h */
+    0xBA, 0x36, 0x01,
+    /* 0x106: MOV CX, 0 (attr mask) */
+    0xB9, 0x00, 0x00,
+    /* 0x109: MOV SI, 1 (DOS time format) */
+    0xBE, 0x01, 0x00,
+    /* 0x10C: MOV AX, 714Eh */
+    0xB8, 0x4E, 0x71,
+    /* 0x10F: INT 21h */
+    0xCD, 0x21,
+    /* 0x111: JC fail (+0x14) */
+    0x72, 0x14,
+    /* 0x113: MOV BX, AX  (save find handle) */
+    0x89, 0xC3,
+    /* 0x115: CMP BYTE PTR [DI+0x2C], 'D' */
+    0x80, 0x7D, 0x2C, 'D',
+    /* 0x119: JNE fail2 (+0x11) */
+    0x75, 0x11,
+    /* 0x11B: MOV AX, 71A1h */
+    0xB8, 0xA1, 0x71,
+    /* 0x11E: INT 21h */
+    0xCD, 0x21,
+    /* 0x120: JC fail3 (+0x0F) */
+    0x72, 0x0F,
+    /* 0x122: MOV AX, 4C00h ; INT 21h  (exit 0) */
+    0xB8, 0x00, 0x4C, 0xCD, 0x21,
+    /* 0x127: fail: MOV AX, 4CEEh ; INT 21h */
+    0xB8, 0xEE, 0x4C, 0xCD, 0x21,
+    /* 0x12C: fail2: MOV AX, 4CEFh ; INT 21h */
+    0xB8, 0xEF, 0x4C, 0xCD, 0x21,
+    /* 0x131: fail3: MOV AX, 4CF0h ; INT 21h */
+    0xB8, 0xF0, 0x4C, 0xCD, 0x21,
+    /* 0x136: pattern "D5LF*.TXT\0" */
+    'D', '5', 'L', 'F', '*', '.', 'T', 'X', 'T', 0,
+    /* 0x140: 318-byte WIN32_FIND_DATA buffer (zeros) */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+};
+
+static void test_lfn_find(void)
+{
+    unlink("/tmp/D5LF1.TXT");
+    int fd = open("/tmp/D5LF1.TXT", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    UT_ASSERT(fd >= 0, "create D5LF1.TXT");
+    close(fd);
+
+    WRITE_COM("/tmp/dos_lf.com", lfn_find_com);
+    int code = run_com("/tmp/dos_lf.com");
+    UT_ASSERT_EQ(code, 0);
+
+    unlink("/tmp/D5LF1.TXT");
+}
+
 /* -- main ----------------------------------------------------------------- */
 
 int main(void)
@@ -1574,6 +1675,7 @@ int main(void)
     test_dos_sysvars();
     test_find_first();
     test_lfn_truename();
+    test_lfn_find();
 
     UT_SUMMARY("test_msdos");
 }
