@@ -154,6 +154,51 @@ static void query_winsize(void) {
   }
 }
 
+/* ── Prompt ───────────────────────────────────────────────────────────── */
+
+/* Overlay an input prompt on the legend row and read until ENTER / ESC.
+ * Returns 0 on success (out filled, NUL-terminated), -1 on ESC/cancel.
+ * Backspace erases one char; other non-printable bytes are ignored.
+ * pile_draw_all() is responsible for restoring the legend afterwards. */
+static int pile_prompt(const char *label, char *out, int outsize) {
+  int prompt_row = pile_rows - 1;
+  int label_len = uc_strlen(label);
+  int len = 0;
+
+  for (;;) {
+    /* Render prompt line: <label><buf>_ */
+    char esc[32];
+    /* cursor to (prompt_row, 0) */
+    int pos = 0;
+    esc[pos++] = '\033'; esc[pos++] = '[';
+    int r = prompt_row + 1;
+    if (r >= 100) esc[pos++] = (char)('0' + r / 100);
+    if (r >= 10)  esc[pos++] = (char)('0' + (r / 10) % 10);
+    esc[pos++] = (char)('0' + r % 10);
+    esc[pos++] = ';'; esc[pos++] = '1'; esc[pos++] = 'H';
+    write(1, esc, pos);
+    write(1, "\033[K", 3);
+    write(1, label, label_len);
+    write(1, out, len);
+    write(1, "_", 1);
+
+    int k = pile_read_key();
+    if (k == PKEY_NONE) continue;
+    if (k == PKEY_ESC) return -1;
+    if (k == PKEY_ENTER) {
+      out[len] = '\0';
+      return 0;
+    }
+    if (k == PKEY_BS || k == PKEY_BACKSPACE) {
+      if (len > 0) len--;
+      continue;
+    }
+    if (k >= 32 && k < 127 && len < outsize - 1) {
+      out[len++] = (char)k;
+    }
+  }
+}
+
 /* ── Key dispatch ─────────────────────────────────────────────────────── */
 
 static void handle_key(int key) {
@@ -202,6 +247,22 @@ static void handle_key(int key) {
     case PKEY_BACKSPACE:
       pile_pane_parent(p);
       return;
+
+    case ' ':
+      pile_pane_mark_toggle(p, vrows);
+      return;
+    case '*':
+      pile_pane_mark_invert(p);
+      return;
+    case '+':
+    case '-': {
+      char buf[64];
+      const char *label = (key == '+') ? "Mark pattern: " : "Unmark pattern: ";
+      if (pile_prompt(label, buf, (int)sizeof(buf)) == 0 && buf[0]) {
+        pile_pane_mark_glob(p, buf, key == '+');
+      }
+      return;
+    }
   }
 }
 

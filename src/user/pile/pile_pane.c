@@ -197,3 +197,74 @@ int pile_pane_parent(pile_pane_t *pane) {
   pile_pane_load(pane);
   return 1;
 }
+
+/* ── Marking ───────────────────────────────────────────────────────────── */
+
+/* Shell-style glob with '*' (0+ any) and '?' (1 any).  Anchored both
+ * ends.  Returns 1 on match, 0 otherwise. */
+static int match_glob(const char *pat, const char *name) {
+  while (*pat) {
+    if (*pat == '*') {
+      pat++;
+      if (!*pat) return 1;
+      while (*name) {
+        if (match_glob(pat, name)) return 1;
+        name++;
+      }
+      return 0;
+    }
+    if (!*name) return 0;
+    if (*pat != '?' && *pat != *name) return 0;
+    pat++;
+    name++;
+  }
+  return !*name;
+}
+
+/* ".." is never markable — it's a navigation anchor, not a file. */
+static int markable(const pile_entry_t *e) {
+  return !(e->name[0] == '.' && e->name[1] == '.' && e->name[2] == '\0');
+}
+
+void pile_pane_mark_toggle(pile_pane_t *pane, int vrows) {
+  if (pane->count == 0) return;
+  pile_entry_t *e = &pane->entries[pane->cursor];
+  if (markable(e)) e->flags ^= PILE_EFLAG_MARKED;
+  pile_pane_move(pane, +1, vrows);
+}
+
+void pile_pane_mark_invert(pile_pane_t *pane) {
+  for (int i = 0; i < pane->count; i++) {
+    pile_entry_t *e = &pane->entries[i];
+    if (markable(e)) e->flags ^= PILE_EFLAG_MARKED;
+  }
+}
+
+int pile_pane_mark_glob(pile_pane_t *pane, const char *pattern, int mark) {
+  int affected = 0;
+  for (int i = 0; i < pane->count; i++) {
+    pile_entry_t *e = &pane->entries[i];
+    if (!markable(e)) continue;
+    if (!match_glob(pattern, e->name)) continue;
+    if (mark) {
+      if (!(e->flags & PILE_EFLAG_MARKED)) {
+        e->flags |= PILE_EFLAG_MARKED;
+        affected++;
+      }
+    } else {
+      if (e->flags & PILE_EFLAG_MARKED) {
+        e->flags &= (uint8_t)~PILE_EFLAG_MARKED;
+        affected++;
+      }
+    }
+  }
+  return affected;
+}
+
+int pile_pane_sel_count(const pile_pane_t *pane) {
+  int n = 0;
+  for (int i = 0; i < pane->count; i++) {
+    if (pane->entries[i].flags & PILE_EFLAG_MARKED) n++;
+  }
+  return n;
+}

@@ -118,6 +118,13 @@ int pile_pane_enter(pile_pane_t *pane);
 /* Change into the parent directory (same effect as ENTER on ".."). */
 int pile_pane_parent(pile_pane_t *pane);
 
+/* Marking.  Mark state lives in pile_entry_t.flags under PILE_EFLAG_MARKED
+ * and is cleared implicitly by pile_pane_load() (fresh entry array). */
+void pile_pane_mark_toggle(pile_pane_t *pane, int vrows);
+void pile_pane_mark_invert(pile_pane_t *pane);
+int pile_pane_mark_glob(pile_pane_t *pane, const char *pattern, int mark);
+int pile_pane_sel_count(const pile_pane_t *pane);
+
 /* ── Drawing (pile_draw.c) ─────────────────────────────────────────────── */
 
 void pile_draw_all(void);

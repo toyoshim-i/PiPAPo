@@ -28,6 +28,7 @@
 #define C_DEV      C("\033[1;33m")
 #define C_CUR      C("\033[1;7m")
 #define C_CUR_OFF  C("\033[7m")
+#define C_MARK     C("\033[7m")
 #define C_FRAME    C("\033[2m")
 #define C_HEADER   C("\033[1m")
 #define C_HEADER_OFF C("\033[2m")
@@ -235,22 +236,27 @@ static void draw_entry_row(int row, int col, int width,
     return;
   }
   const pile_entry_t *e = &pane->entries[idx];
+  int is_marked = (e->flags & PILE_EFLAG_MARKED) != 0;
 
-  int is_cur = is_cursor_active || is_cursor_inactive;
+  /* Cursor wins over mark visually; both use reverse video and the
+   * gutter glyph disambiguates.  Color scopes the entire row so the
+   * whole line reads as highlighted. */
   if (is_cursor_active) emit(C_CUR);
   else if (is_cursor_inactive) emit(C_CUR_OFF);
+  else if (is_marked) emit(C_MARK);
 
-  uc_putc(' ');  /* gutter (reserved for mark glyph in P2b) */
+  uc_putc(is_marked ? '*' : ' ');
 
   /* name | suffix | space | 9-col size */
   int name_col = width - 1 - 1 - 1 - 9;
   if (name_col < 4) name_col = 4;
 
-  if (!is_cur) emit(entry_color(e));
+  int scoped = is_cursor_active || is_cursor_inactive || is_marked;
+  if (!scoped) emit(entry_color(e));
   int nlen = uc_strlen(e->name);
   int shown = nlen < name_col ? nlen : name_col;
   for (int i = 0; i < shown; i++) uc_putc(e->name[i]);
-  if (!is_cur) emit(C_RST);
+  if (!scoped) emit(C_RST);
 
   int pad = name_col - shown;
   put_spaces(pad);
@@ -261,11 +267,13 @@ static void draw_entry_row(int row, int col, int width,
   fmt_size(sbuf, e);
   emit(sbuf);
 
-  if (is_cur) emit(C_RST);
+  if (scoped) emit(C_RST);
 }
 
-/* Pane footer row: "  i/n      total" in compact form.  The marking
- * count (" X sel") lands in P2b. */
+/* Pane footer row: "  i/n  [N sel]                    total" where
+ * the sel count is omitted when nothing is marked.  Total is the sum
+ * of regular-file sizes (marked subset if any entries are marked;
+ * whole pane otherwise). */
 static void draw_pane_footer(int row, int col, int width,
                              const pile_pane_t *pane) {
   cursor_to(row, col);
@@ -276,19 +284,25 @@ static void draw_pane_footer(int row, int col, int width,
   put_uint(pane->count);
   if (pane->truncated) uc_putc('+');
 
+  int sel = pile_pane_sel_count(pane);
+  if (sel > 0) {
+    emit("  ");
+    emit(C_RST);
+    put_uint(sel);
+    emit(C_FRAME);
+    emit(" sel");
+  }
+  emit(C_RST);
+
   uint32_t total = 0;
   for (int i = 0; i < pane->count; i++) {
-    if (pane->entries[i].d_type == DT_REG) total += pane->entries[i].size;
+    const pile_entry_t *e = &pane->entries[i];
+    if (e->d_type != DT_REG) continue;
+    if (sel > 0 && !(e->flags & PILE_EFLAG_MARKED)) continue;
+    total += e->size;
   }
   char sz[8];
   fmt_size_compact(sz, total);
-
-  /* Right-align total to the pane's right edge (leave 1 col of gutter). */
-  int used_here = 2 + 1 + 1;  /* two leading spaces + "n/" counter approx */
-  (void)used_here;
-  /* Recompute used by writing what we know: simpler to just clear and
-   * place the total at a fixed offset from the pane's right edge. */
-  emit(C_RST);
   int slen = uc_strlen(sz);
   int total_col = col + width - 1 - slen;
   cursor_to(row, total_col);
@@ -374,6 +388,8 @@ static void draw_legend(int row) {
   uc_putc(' ');
   emit(C_KEY); emit("TAB");   emit(C_RST); emit(" switch  ");
   emit(C_KEY); emit("ENTER"); emit(C_RST); emit(" open  ");
+  emit(C_KEY); emit("SPC");   emit(C_RST); emit(" mark  ");
+  emit(C_KEY); emit("+/-/*"); emit(C_RST); emit(" glob  ");
   emit(C_KEY); emit("BS");    emit(C_RST); emit(" parent  ");
   emit(C_KEY); emit("F10");   emit(C_RST); uc_putc('/');
   emit(C_KEY); emit("q");     emit(C_RST); emit(" quit");
