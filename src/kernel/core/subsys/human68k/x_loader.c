@@ -15,6 +15,7 @@
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/endian.h"
 #include "kernel/core/exec/exec.h"
+#include "kernel/core/exec/exec_args.h"
 #include "kernel/core/exec/loader.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
@@ -168,8 +169,7 @@ static int x68k_alloc_largest_image_region(proc_image_segment_t *seg,
 
 static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
                   const cpu_ops_t *cpu_ops, void *cpu_state,
-                  const char *const *argv, const char *const *envp,
-                  uint32_t flags) {
+                  const exec_args_t *args, uint32_t flags) {
   (void)flags;
   (void)cpu_ops;
   (void)cpu_state;
@@ -324,7 +324,7 @@ static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
   p->subsys_data = st;
   proc_setup_stack(p, m68k_emu_run_process, 0);
 
-  (void)argv;
+  (void)args;
   rc = 0;
   goto out;
 
@@ -367,12 +367,13 @@ static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
   memset(base, 0, X68K_PMB_SIZE);
 
   uint8_t *text_dst = base + X68K_PMB_SIZE;
-  const char *path = (argv && argv[0]) ? argv[0] : "";
+  char path[VFS_PATH_MAX];
+  if (exec_args_path(args, path, sizeof(path)) < 0) path[0] = '\0';
 
   /* Build env block (separate page, tracked for exit cleanup). */
   page_id_t env_page = PAGE_ID_INVALID;
   uint32_t env_addr = 0xFFFFFFFFu;
-  if (human68k_build_env(envp, &env_page, &env_addr) < 0) {
+  if (human68k_build_env(args, &env_page, &env_addr) < 0) {
     proc_release_tracked_pages(p, 0, (uint32_t)n_pages);
     mem_region_free(&stack_region);
     p->stack_page_id = PAGE_ID_INVALID;

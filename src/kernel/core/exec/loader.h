@@ -12,6 +12,7 @@
 // Forward declaration of pcb_t and vnode_t
 typedef struct pcb pcb_t;
 typedef struct vnode vnode_t;
+typedef struct exec_args exec_args_t;
 
 /* Flag passed to loader internals that want to know whether their source
  * is XIP-capable (e.g. elf_load, which may execute text in place from
@@ -39,13 +40,15 @@ typedef struct loader {
   // (PC, SP, etc.) via the provided cpu_ops interface.  Should not modify
   // pcb_t beyond what's needed for loading.
   //
-  // `argv` / `envp` are NULL-terminated arrays copied out of the parent's
-  // user memory by sys_execve; either may be NULL if the caller didn't
-  // supply one.  Loaders are free to ignore either (e.g. CP/M / SOS have
-  // no environment-variable concept).
+  // `args` carries the (path, argv[], envp[]) triple captured by
+  // sys_execve in a data-region page.  Loaders read individual entries
+  // through the exec_args_* accessors (see exec_args.h).  argv may be
+  // empty (args->argc == 0) and envp may be empty (args->envc == 0); a
+  // loader may ignore envp when its target personality has no env
+  // concept (CP/M, SOS).
   int (*load)(pcb_t* p, vnode_t* vn, uint32_t file_size,
               const cpu_ops_t* cpu_ops, void* cpu_state,
-              const char* const* argv, const char* const* envp, uint32_t flags);
+              const exec_args_t* args, uint32_t flags);
 
   // The required CPU architecture for this loader.
   int required_arch_id;

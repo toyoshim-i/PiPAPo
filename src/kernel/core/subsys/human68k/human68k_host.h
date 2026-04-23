@@ -12,8 +12,11 @@
 
 #include "kernel/core/mm/page.h"
 
+struct exec_args;
+
 /*
- * human68k_build_env — allocate and populate an env block from envp.
+ * human68k_build_env — allocate and populate an env block from the
+ * execve args payload.
  *
  * On success, stores a freshly-allocated page's linear address in
  * *out_env_addr and its page_id in *out_env_page.  Layout:
@@ -24,15 +27,15 @@
  *     ...
  *     [\0]                  (empty-string terminator)
  *
- * If envp is NULL or empty, sets *out_env_addr = 0xFFFFFFFF and
- * *out_env_page = PAGE_ID_INVALID — equivalent to Human68k's "no env"
- * sentinel, matching a3 = -1 at process entry.
+ * If args is NULL or args->envc == 0, sets *out_env_addr = 0xFFFFFFFF
+ * and *out_env_page = PAGE_ID_INVALID — equivalent to Human68k's
+ * "no env" sentinel, matching a3 = -1 at process entry.
  *
  * Returns 0 on success, negative errno on allocation failure.  Callers
  * own the returned page and should proc_track_page() it so it's freed
  * on process exit.
  */
-int human68k_build_env(const char *const *envp, page_id_t *out_env_page,
+int human68k_build_env(const struct exec_args *args, page_id_t *out_env_page,
                        uint32_t *out_env_addr);
 
 /*

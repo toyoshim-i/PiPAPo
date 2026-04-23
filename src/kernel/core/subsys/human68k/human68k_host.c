@@ -14,13 +14,14 @@
 
 #include "common/errno.h"
 #include "kernel/core/endian.h"
+#include "kernel/core/exec/exec_args.h"
 #include "kernel/core/mm/mem_region.h"
 
 /* ── Env block ─────────────────────────────────────────────────────────── */
 
-int human68k_build_env(const char *const *envp, page_id_t *out_env_page,
+int human68k_build_env(const exec_args_t *args, page_id_t *out_env_page,
                        uint32_t *out_env_addr) {
-  if (!envp || !envp[0]) {
+  if (!args || args->envc == 0) {
     *out_env_page = PAGE_ID_INVALID;
     *out_env_addr = 0xFFFFFFFFu;
     return 0;
@@ -37,11 +38,11 @@ int human68k_build_env(const char *const *envp, page_id_t *out_env_page,
   uint8_t *dst = p + 4;
   uint32_t used = 0;
 
-  for (int i = 0; envp[i]; i++) {
-    size_t len = strlen(envp[i]) + 1u;
-    if (used + len + 1u > payload_max) break; /* reserve 1 B for terminator */
-    memcpy(dst + used, envp[i], len);
-    used += (uint32_t)len;
+  for (int i = 0; i < args->envc; i++) {
+    uint16_t len = exec_args_envp_len(args, i);
+    if (used + (uint32_t)len + 2u > payload_max) break; /* +1 NUL +1 final */
+    exec_args_envp_copy(args, i, (char *)(dst + used), (uint16_t)(len + 1u));
+    used += (uint32_t)len + 1u;
   }
   /* Final '\0' terminator — already zero from memset; count it. */
   used += 1u;

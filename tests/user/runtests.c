@@ -266,15 +266,7 @@ int main(void)
     tests[t++] = (test_entry_t){ "/bin/test_iov", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_stat", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_env", TEST_ENABLED };
-    /* test_tmpfs: on rv32 fails at test_tmpfs.c:115 (expected 0 got 121)
-     * and the summary prints garbage counter values. */
-    tests[t++] = (test_entry_t){ "/bin/test_tmpfs",
-#if defined(__riscv)
-        TEST_DISABLED
-#else
-        TEST_ENABLED
-#endif
-    };
+    tests[t++] = (test_entry_t){ "/bin/test_tmpfs", TEST_ENABLED };
     /* test_ufs runs only where a UFS root is mounted (pcxt today). */
     tests[t++] = (test_entry_t){ "/bin/test_ufs",
 #if defined(__ia16__)

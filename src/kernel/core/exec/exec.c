@@ -14,7 +14,9 @@
 #include "common/errno.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/arch.h"
+#include "kernel/core/exec/exec_args.h"
 #include "kernel/core/exec/loader.h"
+#include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/signal/signal.h"
 
@@ -31,15 +33,22 @@ static long exec_read_from(vnode_t *vn, void *buf, uint32_t len) {
 
 /* ── execve ─────────────────────────────────────────────────────────── */
 
-int exec_execve(pcb_t *p, const char *path, const char *const *argv,
-                const char *const *envp) {
+/* Maximum path length exec_execve will copy onto its kernel stack for
+ * mod_vfs.lookup.  Keeping this well under VFS_PATH_MAX (128) lets the
+ * exec call chain fit inside the ia16 1 KB per-process kernel stack.
+ * Paths longer than this still fit in the args page; they just fail
+ * lookup with ENAMETOOLONG up front. */
+#define EXEC_LOOKUP_PATH_MAX 64
+
+int exec_execve(pcb_t *p, const exec_args_t *args) {
   vnode_t *vn = NULL;
   int err;
 
-  const char *default_argv[2] = {path, NULL};
-  if (!argv || !argv[0]) {
-    argv = default_argv;
-  }
+  /* path is captured in the args page; pull it onto the kernel stack so
+   * the VFS layer can treat it as a near pointer. */
+  char path[EXEC_LOOKUP_PATH_MAX];
+  int plen = exec_args_path(args, path, sizeof(path));
+  if (plen < 0) return plen;
 
   /* ── 1. Look up the binary in the VFS ──────────────────────────────── */
   err = mod_vfs.lookup(path, &vn);
@@ -88,7 +97,7 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv,
   }
 
   /* ── 4. Dispatch.  Every registered loader streams directly from vn. */
-  rc = matched->load(p, vn, file_size, cpu_ops, NULL, argv, envp, 0);
+  rc = matched->load(p, vn, file_size, cpu_ops, NULL, args, 0);
   if (rc < 0) {
     mod_vfs.vnode_release(vn);
     return rc;
@@ -126,4 +135,38 @@ int exec_execve(pcb_t *p, const char *path, const char *const *argv,
 
   mod_vfs.vnode_release(vn);
   return 0;
+}
+
+int exec_execve_simple(pcb_t *p, const char *path) {
+  page_id_t args_page = mem_region_page_alloc();
+  if (args_page == PAGE_ID_INVALID) return -(int)ENOMEM;
+  exec_args_t args;
+  exec_args_init(&args, args_page);
+  int rc = exec_args_set_path(&args, path);
+  if (rc < 0) {
+    mem_region_page_free(args_page);
+    return rc;
+  }
+  /* argv[0] = path, copied intra-page (path slot → argv slot). */
+  page_id_t dst_page;
+  uint16_t dst_off;
+  uint16_t dst_max;
+  rc = exec_args_argv_begin(&args, &dst_page, &dst_off, &dst_max);
+  if (rc < 0) {
+    mem_region_page_free(args_page);
+    return rc;
+  }
+  int plen = exec_args_path_to_page(&args, dst_page, dst_off, dst_max);
+  if (plen < 0) {
+    mem_region_page_free(args_page);
+    return plen;
+  }
+  rc = exec_args_argv_commit(&args, (uint16_t)plen);
+  if (rc < 0) {
+    mem_region_page_free(args_page);
+    return rc;
+  }
+  rc = exec_execve(p, &args);
+  mem_region_page_free(args_page);
+  return rc;
 }

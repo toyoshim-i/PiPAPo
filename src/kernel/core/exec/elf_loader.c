@@ -11,6 +11,7 @@
 #include "kernel/core/arch.h"
 #include "kernel/core/exec/elf.h"
 #include "kernel/core/exec/exec.h"
+#include "kernel/core/exec/exec_args.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
@@ -665,8 +666,8 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
 
 static int elf_load_from_buffer(pcb_t *p, const uint8_t *file_buf,
                                 uint32_t file_size, const cpu_ops_t *cpu_ops,
-                                void *cpu_state, const char *const *argv,
-                                const char *const *envp, uint32_t flags) {
+                                void *cpu_state, const exec_args_t *args,
+                                uint32_t flags) {
   /* Create CPU state if not provided by coordinator */
   int own_state = 0;
   if (!cpu_state) {
@@ -694,19 +695,13 @@ static int elf_load_from_buffer(pcb_t *p, const uint8_t *file_buf,
   uint32_t argv_sp = 0;
   uint32_t sp = res.stack_top;
 
-  int argc = 0;
+  int argc = (int)args->argc;
+  int envc = (int)args->envc;
   uint32_t strings_bytes = 0;
-  while (argv && argv[argc]) {
-    if (argc >= EXEC_ARGV_MAX) break;
-    strings_bytes += (uint32_t)strlen(argv[argc]) + 1u;
-    argc++;
-  }
-  int envc = 0;
-  while (envp && envp[envc]) {
-    if (envc >= EXEC_ENVP_MAX) break;
-    strings_bytes += (uint32_t)strlen(envp[envc]) + 1u;
-    envc++;
-  }
+  for (int i = 0; i < argc; i++)
+    strings_bytes += (uint32_t)exec_args_argv_len(args, i) + 1u;
+  for (int i = 0; i < envc; i++)
+    strings_bytes += (uint32_t)exec_args_envp_len(args, i) + 1u;
 
   /* Layout (grows up from argv_sp):
    *
@@ -739,19 +734,21 @@ static int elf_load_from_buffer(pcb_t *p, const uint8_t *file_buf,
 
   frame[0] = (uint32_t)argc;
   for (int i = 0; i < argc; i++) {
-    uint32_t len = (uint32_t)strlen(argv[i]) + 1u;
-    memcpy((void *)(uintptr_t)str_pos, argv[i], len);
+    uint16_t len = exec_args_argv_len(args, i);
+    exec_args_argv_copy(args, i, (char *)(uintptr_t)str_pos,
+                        (uint16_t)(len + 1u));
     frame[1 + i] = str_pos;
-    str_pos += len;
+    str_pos += (uint32_t)len + 1u;
   }
   frame[1 + argc] = 0; /* argv terminator */
 
   uint32_t envp_base = (uint32_t)(2 + argc);
   for (int i = 0; i < envc; i++) {
-    uint32_t len = (uint32_t)strlen(envp[i]) + 1u;
-    memcpy((void *)(uintptr_t)str_pos, envp[i], len);
+    uint16_t len = exec_args_envp_len(args, i);
+    exec_args_envp_copy(args, i, (char *)(uintptr_t)str_pos,
+                        (uint16_t)(len + 1u));
     frame[envp_base + (uint32_t)i] = str_pos;
-    str_pos += len;
+    str_pos += (uint32_t)len + 1u;
   }
   frame[envp_base + (uint32_t)envc] = 0; /* envp terminator */
 
@@ -806,8 +803,7 @@ static int elf_load_from_buffer(pcb_t *p, const uint8_t *file_buf,
 
 static int elf_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
                     const cpu_ops_t *cpu_ops, void *cpu_state,
-                    const char *const *argv, const char *const *envp,
-                    uint32_t flags) {
+                    const exec_args_t *args, uint32_t flags) {
   (void)flags;
 
   proc_image_segment_t staging = {0};
@@ -840,7 +836,7 @@ static int elf_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
   }
 
   int rc = elf_load_from_buffer(p, file_buf, file_size, cpu_ops, cpu_state,
-                                argv, envp, load_flags);
+                                args, load_flags);
 
   if (staging_used) mem_region_free(&staging);
   return rc;

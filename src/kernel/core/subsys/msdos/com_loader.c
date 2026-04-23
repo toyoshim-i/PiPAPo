@@ -15,6 +15,7 @@
 #include "common/errno.h"
 #include "kernel/common/core/subsys_info.h"
 #include "kernel/core/cpu/cpu.h"
+#include "kernel/core/exec/exec_args.h"
 #include "kernel/core/exec/loader.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
@@ -49,8 +50,7 @@ static int com_detect(const uint8_t *header, uint32_t header_len,
 
 static int com_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
                        const cpu_ops_t *cpu_ops, void *cpu_state,
-                       const char *const *argv, const char *const *envp,
-                       uint32_t flags) {
+                       const exec_args_t *args, uint32_t flags) {
   (void)flags;
 
   if (file_size > DOS_COM_MAX_SIZE) return -(int)ENOEXEC;
@@ -77,7 +77,7 @@ static int com_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
    *    PSP + initial user frame. */
   uint16_t user_sp;
   int rc = dos_build_com_image(base_id, proc_seg, got_pages, vn, file_size,
-                               argv, envp, &user_sp);
+                               args, &user_sp);
   if (rc < 0) {
     for (uint32_t i = 0; i < got_pages; i++)
       mem_region_page_free(base_id + (page_id_t)i);
@@ -91,11 +91,11 @@ static int com_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
     if (ops && ops->on_init) ops->on_init(p);
   }
 
-  /* Capture exec dir for C: resolution.  exec.c defaults argv[0] to the
-   * execve path, so it's reliable for the typical call site.  A user who
-   * passes an explicit argv[0] that isn't a real path gets "/" (safe
+  /* Capture exec dir for C: resolution.  sys_execve defaults argv[0] to
+   * the execve path, so it's reliable for the typical call site.  A user
+   * who passes an explicit argv[0] that isn't a real path gets "/" (safe
    * fallback — C:\ then resolves against root). */
-  if (argv && argv[0]) dos_set_exec_dir(p, argv[0]);
+  dos_set_exec_dir(p, args);
 
   /* 4. Store user SS:SP in PCB and build kernel stack frame */
   p->exec_user_ss = proc_seg;

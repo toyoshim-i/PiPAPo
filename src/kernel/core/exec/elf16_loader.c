@@ -21,6 +21,7 @@
 #include "kernel/core/cpu/cpu.h"
 #include "kernel/core/exec/elf.h"
 #include "kernel/core/exec/exec.h"
+#include "kernel/core/exec/exec_args.h"
 #include "kernel/core/exec/loader.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
@@ -98,8 +99,8 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
                                    const elf32_phdr_t *phdrs, uint16_t phnum,
                                    const uint8_t *file_buf, vnode_t *vn,
                                    uint32_t file_size, const cpu_ops_t *cpu_ops,
-                                   void *cpu_state, const char *const *argv,
-                                   const char *const *envp, uint32_t flags) {
+                                   void *cpu_state, const exec_args_t *args,
+                                   uint32_t flags) {
   (void)flags;
   (void)cpu_ops;
   (void)cpu_state;
@@ -211,19 +212,13 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
    *   [+6+(argc+envc)*2]         argv strings, then envp strings
    *   [user_sp_top]              (HW frame starts here)
    */
-  int argc = 0;
+  int argc = (int)args->argc;
+  int envc = (int)args->envc;
   uint16_t str_total = 0;
-  while (argv && argv[argc]) {
-    if (argc >= EXEC_ARGV_MAX) break;
-    str_total += (uint16_t)strlen(argv[argc]) + 1;
-    argc++;
-  }
-  int envc = 0;
-  while (envp && envp[envc]) {
-    if (envc >= EXEC_ENVP_MAX) break;
-    str_total += (uint16_t)strlen(envp[envc]) + 1;
-    envc++;
-  }
+  for (int i = 0; i < argc; i++)
+    str_total += (uint16_t)(exec_args_argv_len(args, i) + 1u);
+  for (int i = 0; i < envc; i++)
+    str_total += (uint16_t)(exec_args_envp_len(args, i) + 1u);
 
   {
     /* Frame: argc(2) + argv[](argc*2) + NULL(2) + envp[](envc*2)
@@ -253,20 +248,15 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
                             &str_pos, 2);
       ptr_pos += 2;
 
-      uint16_t slen = (uint16_t)strlen(argv[i]) + 1;
-      const uint8_t *src = (const uint8_t *)argv[i];
-      uint16_t rem = slen;
-      uint16_t dst = str_pos;
-      while (rem > 0) {
-        uint16_t pg_off = dst % PAGE_SIZE;
-        uint16_t chunk = PAGE_SIZE - pg_off;
-        if (chunk > rem) chunk = rem;
-        mem_region_page_write(base_id + dst / PAGE_SIZE, pg_off, src, chunk);
-        src += chunk;
-        dst += chunk;
-        rem -= chunk;
-      }
-      str_pos += slen;
+      /* Stream the string byte-by-byte from the args page directly into
+       * the user segment, then write the NUL terminator.  No kernel
+       * staging buffer — see no_static_scratch feedback memory. */
+      uint16_t slen = exec_args_argv_len(args, i);
+      exec_args_argv_to_page(args, i, base_id, (uint32_t)str_pos);
+      uint16_t nul_pos = (uint16_t)(str_pos + slen);
+      mem_region_page_write(base_id + nul_pos / PAGE_SIZE, nul_pos % PAGE_SIZE,
+                            &null16, 1);
+      str_pos += (uint16_t)(slen + 1u);
     }
     /* argv terminator */
     mem_region_page_write(base_id + ptr_pos / PAGE_SIZE, ptr_pos % PAGE_SIZE,
@@ -278,20 +268,12 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
                             &str_pos, 2);
       ptr_pos += 2;
 
-      uint16_t slen = (uint16_t)strlen(envp[i]) + 1;
-      const uint8_t *src = (const uint8_t *)envp[i];
-      uint16_t rem = slen;
-      uint16_t dst = str_pos;
-      while (rem > 0) {
-        uint16_t pg_off = dst % PAGE_SIZE;
-        uint16_t chunk = PAGE_SIZE - pg_off;
-        if (chunk > rem) chunk = rem;
-        mem_region_page_write(base_id + dst / PAGE_SIZE, pg_off, src, chunk);
-        src += chunk;
-        dst += chunk;
-        rem -= chunk;
-      }
-      str_pos += slen;
+      uint16_t slen = exec_args_envp_len(args, i);
+      exec_args_envp_to_page(args, i, base_id, (uint32_t)str_pos);
+      uint16_t nul_pos = (uint16_t)(str_pos + slen);
+      mem_region_page_write(base_id + nul_pos / PAGE_SIZE, nul_pos % PAGE_SIZE,
+                            &null16, 1);
+      str_pos += (uint16_t)(slen + 1u);
     }
     /* envp terminator */
     mem_region_page_write(base_id + ptr_pos / PAGE_SIZE, ptr_pos % PAGE_SIZE,
@@ -381,8 +363,7 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
 
 static int elf16_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
                          const cpu_ops_t *cpu_ops, void *cpu_state,
-                         const char *const *argv, const char *const *envp,
-                         uint32_t flags) {
+                         const exec_args_t *args, uint32_t flags) {
   elf32_ehdr_t ehdr;
   uint16_t phnum;
   uint32_t phbytes;
@@ -407,7 +388,7 @@ static int elf16_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
   if (ehdr.e_phoff + phbytes > file_size) return -ENOEXEC;
 
   return elf16_load_from_headers(p, &ehdr, NULL, phnum, NULL, vn, file_size,
-                                 cpu_ops, cpu_state, argv, envp, flags);
+                                 cpu_ops, cpu_state, args, flags);
 }
 
 /* ── Loader registration ──────────────────────────────────────────────── */

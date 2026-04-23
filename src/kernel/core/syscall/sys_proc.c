@@ -22,6 +22,7 @@
 #include "kernel/core/cpu/ecpu_m68k.h"
 #include "kernel/core/cpu/ecpu_z80.h"
 #include "kernel/core/exec/exec.h"
+#include "kernel/core/exec/exec_args.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
@@ -2077,107 +2078,111 @@ long sys_waitpid(long pid, long status_ptr, long options) {
  * On success: never returns — the new program starts executing.
  * On failure: returns negative errno.
  */
-/* Budgets for argv and envp are sized independently: argv tends to be
- * a handful of short command-line tokens, while envp carries many
- * longer NAME=VALUE entries (PATH, LD_LIBRARY_PATH, XDG_*, locale, …).
- * Reusing a single cap would force a compromise that wastes space on
- * one axis to accommodate the other.
- *
- * Defaults live in config.h; targets override via CMake (ia16 keeps
- * the scratch in BSS and uses tighter values). */
-
-typedef struct {
-  char path[VFS_PATH_MAX];
-  const char *argv_copy[EXEC_ARGV_MAX + 1];
-  const char *envp_copy[EXEC_ENVP_MAX + 1];
-  char argv_buf[EXEC_ARGV_BYTES_MAX];
-  char envp_buf[EXEC_ENVP_BYTES_MAX];
-} execve_scratch_t;
-
-#if defined(__ia16__)
-/* i16 syscalls run on a single core and cannot safely dereference generic
- * page-pool pointers above 64 KB, so keep the execve argv/path scratch in the
- * shared low-memory kernel data window instead of on the 2 KB kernel stack. */
-static execve_scratch_t i16_execve_scratch;
-#endif
-
-/* Copy a NULL-terminated array of user pointers (argv or envp) into
- * `out` with backing strings packed into `buf`.  `max_count` is the cap
- * the caller allocated for `out` (not counting the trailing NULL slot).
- * Returns 0 on success (`out[i] == NULL` for some `i <= max_count`),
- * -errno on overflow or copy failure. */
-static int sys_execve_copy_user_vec(const char **out, int max_count, char *buf,
-                                    size_t buf_size, uintptr_t user_ptr) {
-  size_t used = 0;
-
-  if (user_ptr == 0u) {
-    out[0] = NULL;
-    return 0;
-  }
-
-  for (int i = 0; i < max_count; i++) {
+/* Walk a user-space NULL-terminated string vector (argv or envp), copying
+ * each string straight into the args page via sys_copy_user_string_to_page
+ * and committing it through the streaming exec_args_*_begin/commit pair.
+ * Returns 0 on success, -errno on user-fault, vector overflow, or
+ * insufficient args-page capacity. */
+static int sys_execve_copy_user_vec(exec_args_t *args, uintptr_t user_ptr,
+                                    int is_envp) {
+  if (user_ptr == 0u) return 0;
+  for (;;) {
     uintptr_t str_ptr;
-    int rc = sys_copy_from_user(
-        &str_ptr, user_ptr + (uintptr_t)(i * sizeof(str_ptr)), sizeof(str_ptr));
-    size_t len;
-
+    int rc = sys_copy_from_user(&str_ptr, user_ptr, sizeof(str_ptr));
     if (rc < 0) return rc;
-    if (str_ptr == 0u) {
-      out[i] = NULL;
-      return 0;
-    }
-    rc = sys_copy_user_string(buf + used, buf_size - used, str_ptr);
-    if (rc < 0) return (rc == -(long)ENAMETOOLONG) ? -(long)E2BIG : rc;
-    out[i] = buf + used;
-    len = __builtin_strlen(out[i]) + 1;
-    used += len;
-    if (used >= buf_size) return -(long)E2BIG;
+    if (str_ptr == 0u) return 0;
+    page_id_t dst_page;
+    uint16_t dst_off;
+    uint16_t avail;
+    rc = is_envp ? exec_args_envp_begin(args, &dst_page, &dst_off, &avail)
+                 : exec_args_argv_begin(args, &dst_page, &dst_off, &avail);
+    if (rc < 0) return rc;
+    int n = sys_copy_user_string_to_page(dst_page, dst_off, avail, str_ptr);
+    if (n < 0) return (n == -(long)ENAMETOOLONG) ? -(long)E2BIG : n;
+    rc = is_envp ? exec_args_envp_commit(args, (uint16_t)n)
+                 : exec_args_argv_commit(args, (uint16_t)n);
+    if (rc < 0) return rc;
+    user_ptr += sizeof(str_ptr);
   }
-  return -(long)E2BIG;
 }
 
 long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
                 uintptr_t envp_ptr) {
-#if defined(__ia16__)
-  execve_scratch_t *scratch = &i16_execve_scratch;
-#else
-  execve_scratch_t scratch_storage;
-  execve_scratch_t *scratch = &scratch_storage;
-#endif
-  const char *const *argv = NULL;
-  const char *const *envp = NULL;
+  exec_args_t args;
   page_id_t exec_snapshot = PAGE_ID_INVALID;
-  /* Path arrived as (page, off); copy from the user segment via the
-   * page-based helper. */
-  user_page_ref_t pref = {.page = path_page, .off = path_off};
-  for (size_t i = 0; i < sizeof(scratch->path); i++) {
-    mem_region_page_read(pref.page, pref.off, &scratch->path[i], 1);
-    if (scratch->path[i] == '\0') goto path_loaded;
-    if (++pref.off >= PAGE_SIZE) {
-      pref.page++;
-      pref.off = 0;
+
+  /* Allocate a single page from the data region for the captured
+   * (path, argv, envp) payload.  All access goes through
+   * mem_region_page_read/write, so the same code runs on 32-bit and ia16. */
+  page_id_t args_page = mem_region_page_alloc();
+  if (args_page == PAGE_ID_INVALID) return -(long)ENOMEM;
+  exec_args_init(&args, args_page);
+
+  /* Path: copy byte-by-byte from the user (page, off) reference into the
+   * args page's path slot. */
+  {
+    user_page_ref_t pref = {.page = path_page, .off = path_off};
+    uint16_t i;
+    for (i = 0; i < VFS_PATH_MAX; i++) {
+      uint8_t c;
+      mem_region_page_read(pref.page, pref.off, &c, 1);
+      mem_region_page_write(args_page, (uint16_t)(EXEC_ARGS_PATH_OFF + i), &c,
+                            1);
+      if (c == 0) break;
+      if (++pref.off >= PAGE_SIZE) {
+        pref.page++;
+        pref.off = 0;
+      }
+    }
+    if (i >= VFS_PATH_MAX) {
+      mem_region_page_free(args_page);
+      return -(long)ENAMETOOLONG;
     }
   }
-  scratch->path[sizeof(scratch->path) - 1] = '\0';
-  return -(long)ENAMETOOLONG;
-path_loaded:;
-  int rc = 0;
-  rc = sys_execve_copy_user_vec(scratch->argv_copy, EXEC_ARGV_MAX,
-                                scratch->argv_buf, sizeof(scratch->argv_buf),
-                                argv_ptr);
-  if (rc < 0) return (long)rc;
-  if (argv_ptr != 0u) argv = scratch->argv_copy;
-  rc = sys_execve_copy_user_vec(scratch->envp_copy, EXEC_ENVP_MAX,
-                                scratch->envp_buf, sizeof(scratch->envp_buf),
-                                envp_ptr);
-  if (rc < 0) return (long)rc;
-  if (envp_ptr != 0u) envp = scratch->envp_copy;
+
+  int rc = sys_execve_copy_user_vec(&args, argv_ptr, /*is_envp=*/0);
+  if (rc < 0) {
+    mem_region_page_free(args_page);
+    return (long)rc;
+  }
+  rc = sys_execve_copy_user_vec(&args, envp_ptr, /*is_envp=*/1);
+  if (rc < 0) {
+    mem_region_page_free(args_page);
+    return (long)rc;
+  }
+
+  /* Default-argv: if the caller passed argv == NULL or an empty vector,
+   * synthesize argv[0] = path via an intra-args-page copy (path slot →
+   * argv slot).  No kernel staging buffer needed. */
+  if (args.argc == 0) {
+    page_id_t dst_page;
+    uint16_t dst_off;
+    uint16_t dst_max;
+    rc = exec_args_argv_begin(&args, &dst_page, &dst_off, &dst_max);
+    if (rc < 0) {
+      mem_region_page_free(args_page);
+      return (long)rc;
+    }
+    int plen = exec_args_path_to_page(&args, dst_page, dst_off, dst_max);
+    if (plen < 0) {
+      mem_region_page_free(args_page);
+      return (long)plen;
+    }
+    rc = exec_args_argv_commit(&args, (uint16_t)plen);
+    if (rc < 0) {
+      mem_region_page_free(args_page);
+      return (long)rc;
+    }
+  }
 
   /* Save old pages to free after successful load */
   page_id_t old_stack_id = current->stack_page_id;
   int owns_pages = (current->vfork_parent == NULL);
   rc = exec_snapshot_save(&exec_snapshot, current);
-  if (rc < 0) return (long)rc;
+  if (rc < 0) {
+    mem_region_page_free(args_page);
+    return (long)rc;
+  }
 #if defined(__m68k__)
   void *old_user_stack = current->user_stack_page;
 #endif
@@ -2190,10 +2195,10 @@ path_loaded:;
   current->user_stack_page = NULL;
 #endif
 
-  /* Save old cpu_state so we can free it after successful exec */
-  /* Load the new binary.  argv points into the old stack/data pages
-   * which are still valid (detached from current but not yet freed). */
-  int err = exec_execve(current, scratch->path, argv, envp);
+  /* Save old cpu_state so we can free it after successful exec.  argv/envp
+   * live in the args page, which we keep allocated until exec_execve
+   * returns (loaders consume it inline). */
+  int err = exec_execve(current, &args);
   if (err < 0) {
     /* Restore old pages on failure — fds are untouched (POSIX) */
     current->stack_page_id = old_stack_id;
@@ -2202,8 +2207,12 @@ path_loaded:;
     current->user_stack_page = old_user_stack;
 #endif
     mem_region_page_free(exec_snapshot);
+    mem_region_page_free(args_page);
     return (long)err;
   }
+  /* exec_execve has consumed args; release the page before we wire up
+   * the rest of the new image. */
+  mem_region_page_free(args_page);
 
   /* POSIX: preserve open fds across execve (redirections, pipes).
    * Only install default tty stdio if fd 0/1/2 are not already open

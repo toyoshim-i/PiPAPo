@@ -14,21 +14,15 @@
 #include "kernel/core/endian.h"
 #include "kernel/core/exec/elf.h"
 #include "kernel/core/exec/exec.h"
+#include "kernel/core/exec/exec_args.h"
 
 int ppap_m68k_load_elf(m68k_state_t *cpu, uint8_t *emu_mem,
                        uint32_t emu_mem_size, const uint8_t *file_buf,
-                       uint32_t file_size, const char *const *argv,
+                       uint32_t file_size, const exec_args_t *args,
                        uint32_t *entry_out) {
   const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)file_buf;
 
-  /* Count argc */
-  int argc = 0;
-  if (argv) {
-    while (argv[argc] != NULL) {
-      argc++;
-      if (argc > EXEC_ARGV_MAX) return -(int)E2BIG;
-    }
-  }
+  int argc = args ? (int)args->argc : 0;
   if (argc == 0) argc = 1;
 
   /* ── Load PT_LOAD segments into emulated memory ────────────────────── */
@@ -68,19 +62,18 @@ int ppap_m68k_load_elf(m68k_state_t *cpu, uint8_t *emu_mem,
 
   /* Copy argument strings */
   uint32_t str_addrs[EXEC_ARGV_MAX];
-  if (argv && argv[0]) {
+  if (args && args->argc > 0) {
     for (int i = argc - 1; i >= 0; i--) {
-      uint32_t len = (uint32_t)strlen(argv[i]) + 1;
-      sp -= len;
-      memcpy(emu_mem + sp, argv[i], len);
+      uint16_t len = exec_args_argv_len(args, i);
+      sp -= (uint32_t)len + 1u;
+      exec_args_argv_copy(args, i, (char *)(emu_mem + sp),
+                          (uint16_t)(len + 1u));
       str_addrs[i] = sp;
     }
   } else {
     /* Default: empty argv[0] */
-    const char *path = "";
-    uint32_t len = (uint32_t)strlen(path) + 1;
-    sp -= len;
-    memcpy(emu_mem + sp, path, len);
+    sp -= 1u;
+    emu_mem[sp] = '\0';
     str_addrs[0] = sp;
   }
 

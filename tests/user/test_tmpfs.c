@@ -96,8 +96,9 @@ int main(void)
             close(fd);
         }
 
-        /* Read back in one call */
-        char rbuf[4096];
+        /* Read back in one call.  rbuf is static so it lives in BSS,
+         * not on the 4 KB user stack page. */
+        static char rbuf[4096];
         for (i = 0; i < (int)sizeof(rbuf); i++)
             rbuf[i] = 0;
 
@@ -125,7 +126,8 @@ int main(void)
      * falls in one page and part in the next. We force this by
      * using a gap variable to push buf to a known offset. */
     {
-        char gap[3900]; /* push buf near page boundary */
+        static char gap[3900]; /* push buf near page boundary; static keeps
+                                * it out of the 4 KB user stack page. */
         char buf[256];
         int i;
         gap[0] = 0; /* prevent optimizer from removing gap */

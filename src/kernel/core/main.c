@@ -125,10 +125,10 @@ void kmain(void) {
       /* init starts with empty env; children will inherit whatever init
        * (and any shell it spawns) chooses to export.  E-2 onward will
        * let the shell's env flow to execve'd children. */
-      int exec_err = exec_execve(init, init_path, NULL, NULL);
+      int exec_err = exec_execve_simple(init, init_path);
       if (exec_err < 0) {
         mod_vfs.klogf("INIT: %s failed, trying /bin/sh\n", init_path);
-        exec_err = exec_execve(init, "/bin/sh", NULL, NULL);
+        exec_err = exec_execve_simple(init, "/bin/sh");
       }
       if (exec_err == 0) {
         init->state = PROC_RUNNABLE;

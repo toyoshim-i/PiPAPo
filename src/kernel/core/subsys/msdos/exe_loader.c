@@ -16,6 +16,7 @@
 #include "kernel/common/core/subsys_info.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/cpu/cpu.h"
+#include "kernel/core/exec/exec_args.h"
 #include "kernel/core/exec/loader.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
@@ -48,8 +49,7 @@ static void exe_free_run(page_id_t base_id, uint32_t got_pages) {
 
 static int exe_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
                        const cpu_ops_t *cpu_ops, void *cpu_state,
-                       const char *const *argv, const char *const *envp,
-                       uint32_t flags) {
+                       const exec_args_t *args, uint32_t flags) {
   (void)flags;
 
   if (file_size < sizeof(mz_header_t)) return -(int)ENOEXEC;
@@ -120,7 +120,7 @@ static int exe_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
   uint16_t user_ss;
   uint16_t user_sp;
   int rc = dos_build_exe_image(base_id, proc_seg, got_pages, vn, file_size,
-                               &hdr, argv, envp, &user_ss, &user_sp);
+                               &hdr, args, &user_ss, &user_sp);
   if (rc < 0) {
     exe_free_run(base_id, got_pages);
     return rc;
@@ -133,7 +133,7 @@ static int exe_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
     if (ops && ops->on_init) ops->on_init(p);
   }
 
-  if (argv && argv[0]) dos_set_exec_dir(p, argv[0]);
+  dos_set_exec_dir(p, args);
 
   /* 7. Kernel-stack frame that trap.S's restore tail will pop. */
   p->exec_user_ss = user_ss;

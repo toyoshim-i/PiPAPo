@@ -10,6 +10,7 @@
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/cpu/ecpu_z80.h"
 #include "kernel/core/exec/exec.h"
+#include "kernel/core/exec/exec_args.h"
 #include "kernel/core/exec/loader.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
@@ -45,9 +46,7 @@ static int sos_detect(const uint8_t *header, uint32_t header_len,
 
 static int sos_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
                     const cpu_ops_t *cpu_ops, void *cpu_state,
-                    const char *const *argv, const char *const *envp,
-                    uint32_t flags) {
-  (void)envp;
+                    const exec_args_t *args, uint32_t flags) {
   (void)flags;
   (void)cpu_ops;
   (void)cpu_state;
@@ -112,7 +111,8 @@ static int sos_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
 
   /* ── 4. Build the S-OS memory image ─────────────────────────────────── */
   {
-    const char *path = (argv && argv[0]) ? argv[0] : "";
+    char path[VFS_PATH_MAX];
+    if (exec_args_path(args, path, sizeof(path)) < 0) path[0] = '\0';
     int rc = sos_load_obj(&state->z80, &state->sos, file_buf, file_size, path);
     mem_region_free(&staging);
     if (rc < 0) {

@@ -19,6 +19,7 @@
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/arch.h"
 #include "kernel/core/cpu/cpu.h"
+#include "kernel/core/exec/exec_args.h"
 #include "kernel/core/exec/loader.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
@@ -58,13 +59,11 @@ static int flat_detect(const uint8_t *header, uint32_t header_len,
 
 static int flat_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
                         const cpu_ops_t *cpu_ops, void *cpu_state,
-                        const char *const *argv, const char *const *envp,
-                        uint32_t flags) {
-  (void)envp;
+                        const exec_args_t *args, uint32_t flags) {
   (void)flags;
   (void)cpu_ops;
   (void)cpu_state;
-  (void)argv;
+  (void)args;
 
   if (file_size > FLAT_MAX_SIZE) return -ENOMEM;
 

@@ -118,6 +118,7 @@ dos_proc_t *dos_proc_alloc(struct pcb *p);
 int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs);
 
 /* Captured by com_loader from argv[0] after on_init. */
-void dos_set_exec_dir(struct pcb *p, const char *exec_path);
+struct exec_args;
+void dos_set_exec_dir(struct pcb *p, const struct exec_args *args);
 
 #endif /* PPAP_KERNEL_CORE_SUBSYS_MSDOS_DOS_BRIDGE_H */

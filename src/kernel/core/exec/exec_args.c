@@ -103,6 +103,61 @@ int exec_args_append_envp(exec_args_t *a, const char *str, uint16_t len) {
                           EXEC_ENVP_MAX, str, len);
 }
 
+static int exec_args_begin(page_id_t page, uint16_t table_off, uint16_t buf_off,
+                           uint16_t buf_size, uint8_t count,
+                           uint8_t max_entries, page_id_t *out_page,
+                           uint16_t *out_off, uint16_t *out_max_len) {
+  if (count >= max_entries) return -E2BIG;
+  uint16_t end = exec_args_read_off(page, table_off, count);
+  uint16_t used = (uint16_t)(end - buf_off);
+  if (used >= buf_size) return -E2BIG;
+  /* Reserve room for the NUL the commit step will write. */
+  uint16_t avail = (uint16_t)(buf_size - used - 1u);
+  *out_page = page;
+  *out_off = end;
+  *out_max_len = avail;
+  return 0;
+}
+
+static int exec_args_commit(page_id_t page, uint16_t table_off,
+                            uint16_t buf_off, uint16_t buf_size, uint8_t *count,
+                            uint16_t len) {
+  uint16_t end = exec_args_read_off(page, table_off, *count);
+  uint16_t used = (uint16_t)(end - buf_off);
+  if ((uint16_t)(buf_size - used) < (uint16_t)(len + 1u)) return -E2BIG;
+  uint8_t nul = 0;
+  mem_region_page_write(page, (uint16_t)(end + len), &nul, 1);
+  *count = (uint8_t)(*count + 1);
+  exec_args_write_off(page, table_off, *count, (uint16_t)(end + len + 1u));
+  return 0;
+}
+
+int exec_args_argv_begin(exec_args_t *a, page_id_t *out_page, uint16_t *out_off,
+                         uint16_t *out_max_len) {
+  return exec_args_begin(a->page, EXEC_ARGS_ARGV_TBL_OFF,
+                         EXEC_ARGS_ARGV_BUF_OFF, EXEC_ARGV_BYTES_MAX, a->argc,
+                         EXEC_ARGV_MAX, out_page, out_off, out_max_len);
+}
+
+int exec_args_argv_commit(exec_args_t *a, uint16_t len) {
+  return exec_args_commit(a->page, EXEC_ARGS_ARGV_TBL_OFF,
+                          EXEC_ARGS_ARGV_BUF_OFF, EXEC_ARGV_BYTES_MAX, &a->argc,
+                          len);
+}
+
+int exec_args_envp_begin(exec_args_t *a, page_id_t *out_page, uint16_t *out_off,
+                         uint16_t *out_max_len) {
+  return exec_args_begin(a->page, EXEC_ARGS_ENVP_TBL_OFF,
+                         EXEC_ARGS_ENVP_BUF_OFF, EXEC_ENVP_BYTES_MAX, a->envc,
+                         EXEC_ENVP_MAX, out_page, out_off, out_max_len);
+}
+
+int exec_args_envp_commit(exec_args_t *a, uint16_t len) {
+  return exec_args_commit(a->page, EXEC_ARGS_ENVP_TBL_OFF,
+                          EXEC_ARGS_ENVP_BUF_OFF, EXEC_ENVP_BYTES_MAX, &a->envc,
+                          len);
+}
+
 /* ── Reader ─────────────────────────────────────────────────────────── */
 
 int exec_args_path(const exec_args_t *a, char *out, uint16_t out_size) {
@@ -136,4 +191,73 @@ int exec_args_envp_copy(const exec_args_t *a, int idx, char *out,
                         uint16_t out_size) {
   return exec_args_copy(a->page, EXEC_ARGS_ENVP_TBL_OFF, a->envc, idx, out,
                         out_size);
+}
+
+static int exec_args_byte(page_id_t src_page, uint16_t table_off, int count,
+                          int idx, uint16_t byte_off, char *out) {
+  if (idx < 0 || idx >= count) return -1;
+  uint16_t start = exec_args_read_off(src_page, table_off, idx);
+  uint16_t next = exec_args_read_off(src_page, table_off, idx + 1);
+  uint16_t slen = (uint16_t)(next - start - 1u);
+  if (byte_off >= slen) return -1;
+  uint8_t c;
+  mem_region_page_read(src_page, (uint16_t)(start + byte_off), &c, 1);
+  *out = (char)c;
+  return 0;
+}
+
+int exec_args_argv_byte(const exec_args_t *a, int idx, uint16_t byte_off,
+                        char *out) {
+  return exec_args_byte(a->page, EXEC_ARGS_ARGV_TBL_OFF, a->argc, idx, byte_off,
+                        out);
+}
+
+int exec_args_envp_byte(const exec_args_t *a, int idx, uint16_t byte_off,
+                        char *out) {
+  return exec_args_byte(a->page, EXEC_ARGS_ENVP_TBL_OFF, a->envc, idx, byte_off,
+                        out);
+}
+
+static void exec_args_put_byte(page_id_t base_page, uint32_t off, uint8_t c) {
+  page_id_t pg = base_page + (page_id_t)(off / PAGE_SIZE);
+  uint16_t pg_off = (uint16_t)(off % PAGE_SIZE);
+  mem_region_page_write(pg, pg_off, &c, 1);
+}
+
+static int exec_args_to_page(page_id_t src_page, uint16_t table_off, int count,
+                             int idx, page_id_t base_page, uint32_t start_off) {
+  if (idx < 0 || idx >= count) return -1;
+  uint16_t start = exec_args_read_off(src_page, table_off, idx);
+  uint16_t next = exec_args_read_off(src_page, table_off, idx + 1);
+  uint16_t slen = (uint16_t)(next - start - 1u); /* exclude NUL */
+  for (uint16_t i = 0; i < slen; i++) {
+    uint8_t c;
+    mem_region_page_read(src_page, (uint16_t)(start + i), &c, 1);
+    exec_args_put_byte(base_page, start_off + i, c);
+  }
+  return (int)slen;
+}
+
+int exec_args_argv_to_page(const exec_args_t *a, int idx, page_id_t base_page,
+                           uint32_t start_off) {
+  return exec_args_to_page(a->page, EXEC_ARGS_ARGV_TBL_OFF, a->argc, idx,
+                           base_page, start_off);
+}
+
+int exec_args_envp_to_page(const exec_args_t *a, int idx, page_id_t base_page,
+                           uint32_t start_off) {
+  return exec_args_to_page(a->page, EXEC_ARGS_ENVP_TBL_OFF, a->envc, idx,
+                           base_page, start_off);
+}
+
+int exec_args_path_to_page(const exec_args_t *a, page_id_t base_page,
+                           uint32_t start_off, uint16_t dst_max) {
+  uint16_t limit = dst_max < VFS_PATH_MAX ? dst_max : (uint16_t)VFS_PATH_MAX;
+  for (uint16_t i = 0; i < limit; i++) {
+    uint8_t c;
+    mem_region_page_read(a->page, (uint16_t)(EXEC_ARGS_PATH_OFF + i), &c, 1);
+    if (c == 0) return (int)i;
+    exec_args_put_byte(base_page, start_off + i, c);
+  }
+  return -ENAMETOOLONG;
 }

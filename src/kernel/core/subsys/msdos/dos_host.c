@@ -18,6 +18,7 @@
 
 #include "common/errno.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/exec/exec_args.h"
 #include "kernel/core/mm/mem_region.h"
 
 /* ── Page-splitting run-byte helpers ──────────────────────────────────── */
@@ -83,19 +84,31 @@ static void dos_write_mcb(page_id_t base_id, uint32_t mcb_off_in_run,
 /* Max DOS 8.3 basename (12 chars) + NUL. */
 #define DOS_BASENAME_MAX 13
 
-/* Extract filename portion of argv[0] (after last '/'), uppercase it,
- * and copy into `out`.  Returns bytes written (not counting NUL).  The
- * output is clamped to out_size - 1; anything longer is truncated. */
-static int dos_basename_upper(const char *path, char *out, int out_size) {
-  const char *name = path;
-  for (const char *s = path; *s; s++)
-    if (*s == '/' || *s == '\\') name = s + 1;
+/* Extract filename portion of argv[0] (after last '/' or '\\'),
+ * uppercase it, and copy into `out`.  Streams the path byte-by-byte
+ * straight from the args page so no full-path stack buffer is needed
+ * (1 KB ia16 kernel stack is the binding constraint — see
+ * no_static_scratch feedback memory).  Returns bytes written
+ * (excluding NUL). */
+static int dos_argv0_basename_upper(const exec_args_t *args, char *out,
+                                    int out_size) {
+  out[0] = '\0';
+  if (args->argc == 0) return 0;
+  uint16_t plen = exec_args_argv_len(args, 0);
+  /* First pass: find the offset of the last '/' or '\\' within argv[0]. */
+  uint16_t base_idx = 0;
+  for (uint16_t i = 0; i < plen; i++) {
+    char c;
+    if (exec_args_argv_byte(args, 0, i, &c) < 0) break;
+    if (c == '/' || c == '\\') base_idx = (uint16_t)(i + 1u);
+  }
+  /* Second pass: copy basename, uppercase. */
   int n = 0;
-  while (name[n] && n < out_size - 1) {
-    char c = name[n];
+  for (uint16_t i = base_idx; i < plen && n < out_size - 1; i++) {
+    char c;
+    if (exec_args_argv_byte(args, 0, i, &c) < 0) break;
     if (c >= 'a' && c <= 'z') c = (char)(c - ('a' - 'A'));
-    out[n] = c;
-    n++;
+    out[n++] = c;
   }
   out[n] = '\0';
   return n;
@@ -123,15 +136,13 @@ static int dos_basename_upper(const char *path, char *out, int out_size) {
  *   *out_main_para = paragraphs available to the main MCB / mem_top
  *                    (total_para - main_mcb(1) - env_mcb(1) - env_para). */
 static void dos_build_env(page_id_t base_id, uint16_t proc_seg,
-                          uint32_t seg_pages, const char *const *argv,
-                          const char *const *envp, uint16_t *out_env_seg,
-                          uint16_t *out_main_para) {
+                          uint32_t seg_pages, const exec_args_t *args,
+                          uint16_t *out_env_seg, uint16_t *out_main_para) {
   char name[DOS_BASENAME_MAX];
-  int nlen = 0;
-  if (argv && argv[0]) nlen = dos_basename_upper(argv[0], name, sizeof(name));
+  int nlen = dos_argv0_basename_upper(args, name, sizeof(name));
 
   /* Env payload (bytes):
-   *   env_bytes = Σ (strlen(envp[i]) + 1)   (entries with NUL each)
+   *   env_bytes = Σ (envp[i] length + 1)     (entries with NUL each)
    *   1          end-of-env terminator '\0'
    *   2          count word 0x0001
    *   3          "C:\\"
@@ -140,9 +151,8 @@ static void dos_build_env(page_id_t base_id, uint16_t proc_seg,
    * Always at least one paragraph so a valid env MCB exists even when
    * argv[0] is missing and envp is empty. */
   uint16_t env_bytes = 0;
-  if (envp) {
-    for (int i = 0; envp[i]; i++) env_bytes += (uint16_t)strlen(envp[i]) + 1u;
-  }
+  for (int i = 0; i < (int)args->envc; i++)
+    env_bytes += (uint16_t)(exec_args_envp_len(args, i) + 1u);
   uint16_t env_payload_bytes =
       (uint16_t)(env_bytes + 1u + 2u + 3u + (uint16_t)nlen + 1u);
   uint16_t env_para = (uint16_t)((env_payload_bytes + 15u) >> 4);
@@ -156,17 +166,13 @@ static void dos_build_env(page_id_t base_id, uint16_t proc_seg,
 
   dos_write_mcb(base_id, env_mcb_off, DOS_MCB_SIG_Z, proc_seg, env_para);
 
-  /* Write each env entry (bytes; inter-entry and final NULs come from
-   * the pre-zero-fill). */
+  /* Write each env entry directly from args page → DOS run, no
+   * kernel staging buffer (see no_static_scratch feedback). */
   uint32_t pos = env_payload_off;
-  if (envp) {
-    for (int i = 0; envp[i]; i++) {
-      uint16_t slen = (uint16_t)strlen(envp[i]);
-      if (slen)
-        dos_write_run_bytes(base_id, pos, (const uint8_t *)envp[i],
-                            (uint32_t)slen);
-      pos += slen + 1u; /* +1 for inter-entry '\0' from zero-fill */
-    }
+  for (int i = 0; i < (int)args->envc; i++) {
+    uint16_t slen = exec_args_envp_len(args, i);
+    if (slen) exec_args_envp_to_page(args, i, base_id, pos);
+    pos += slen + 1u; /* +1 for inter-entry '\0' from zero-fill */
   }
   pos += 1u; /* end-of-env '\0' from zero-fill */
   uint8_t count[2] = {0x01, 0x00};
@@ -193,7 +199,7 @@ static void dos_build_env(page_id_t base_id, uint16_t proc_seg,
  * can wire PSP[0x2C] and set PSP[0x02] mem_top to the matching main
  * payload size. */
 static void dos_build_psp(page_id_t base_id, uint16_t proc_seg,
-                          const char *const *argv, uint16_t env_seg,
+                          const exec_args_t *args, uint16_t env_seg,
                           uint16_t main_para) {
   uint32_t psp_off = DOS_MCB_BYTES;
 
@@ -216,25 +222,33 @@ static void dos_build_psp(page_id_t base_id, uint16_t proc_seg,
   uint8_t dos_entry[3] = {0xCD, 0x21, 0xCB};
   dos_write_run_bytes(base_id, psp_off + 0x50, dos_entry, 3);
 
-  /* PSP:0x80 — command tail (length byte, args with leading space, CR) */
+  /* PSP:0x80 — command tail (length byte, args with leading space, CR).
+   * Stream argv[1..] byte-by-byte from the args page directly into the
+   * DOS run; the run was already zeroed, so we only write non-zero
+   * bytes.  Total tail capacity is 126 bytes (DOS PSP layout). */
   uint8_t tail_len = 0;
-  uint8_t tail_buf[128];
-  __builtin_memset(tail_buf, 0, sizeof(tail_buf));
-  if (argv && argv[0]) {
+  if (args->argc > 0) {
     int pos = 0;
-    for (int i = 1; argv[i] && pos < 126; i++) {
-      if (pos < 126) tail_buf[1 + pos++] = ' ';
-      int alen = (int)strlen(argv[i]);
-      if (pos + alen > 126) alen = 126 - pos;
-      memcpy(tail_buf + 1 + pos, argv[i], (uint16_t)alen);
+    for (int i = 1; i < (int)args->argc && pos < 126; i++) {
+      uint8_t sp = ' ';
+      dos_write_run_bytes(base_id, psp_off + 0x81 + (uint32_t)pos, &sp, 1);
+      pos++;
+      if (pos >= 126) break;
+      uint16_t alen = exec_args_argv_len(args, i);
+      if (pos + (int)alen > 126) alen = (uint16_t)(126 - pos);
+      for (uint16_t k = 0; k < alen; k++) {
+        char c;
+        if (exec_args_argv_byte(args, i, k, &c) < 0) break;
+        dos_write_run_bytes(base_id, psp_off + 0x81 + (uint32_t)(pos + k),
+                            (const uint8_t *)&c, 1);
+      }
       pos += alen;
     }
     tail_len = (uint8_t)pos;
-    tail_buf[1 + pos] = '\r';
+    uint8_t cr = '\r';
+    dos_write_run_bytes(base_id, psp_off + 0x81 + (uint32_t)pos, &cr, 1);
   }
-  tail_buf[0] = tail_len;
-  dos_write_run_bytes(base_id, psp_off + 0x80, tail_buf,
-                      (uint32_t)(2u + tail_len));
+  dos_write_run_bytes(base_id, psp_off + 0x80, &tail_len, 1);
 }
 
 /* ── Binary load (.COM) ───────────────────────────────────────────────── */
@@ -311,8 +325,7 @@ static uint16_t dos_build_user_frame(page_id_t base_id, uint32_t base_linear,
 
 int dos_build_com_image(page_id_t base_id, uint16_t proc_seg,
                         uint32_t seg_pages, vnode_t *vn, uint32_t file_size,
-                        const char *const *argv, const char *const *envp,
-                        uint16_t *out_user_sp) {
+                        const struct exec_args *args, uint16_t *out_user_sp) {
   if (seg_pages < DOS_SEG_PAGES) seg_pages = DOS_SEG_PAGES;
 
   uint32_t base_linear = mem_region_page_linear(base_id);
@@ -324,10 +337,10 @@ int dos_build_com_image(page_id_t base_id, uint16_t proc_seg,
    * signature (chain continues into env) and its matching payload. */
   uint16_t env_seg;
   uint16_t main_para;
-  dos_build_env(base_id, proc_seg, seg_pages, argv, envp, &env_seg, &main_para);
+  dos_build_env(base_id, proc_seg, seg_pages, args, &env_seg, &main_para);
   dos_write_mcb(base_id, 0, DOS_MCB_SIG_M, proc_seg, main_para);
 
-  dos_build_psp(base_id, proc_seg, argv, env_seg, main_para);
+  dos_build_psp(base_id, proc_seg, args, env_seg, main_para);
   int rc = dos_load_binary(base_id, vn, file_size);
   if (rc < 0) return rc;
   *out_user_sp = dos_build_user_frame(base_id, base_linear, proc_seg);
@@ -408,9 +421,8 @@ static int dos_apply_relocations(page_id_t base_id, uint32_t base_linear,
 
 int dos_build_exe_image(page_id_t base_id, uint16_t proc_seg,
                         uint32_t seg_pages, vnode_t *vn, uint32_t file_size,
-                        const mz_header_t *hdr, const char *const *argv,
-                        const char *const *envp, uint16_t *out_user_ss,
-                        uint16_t *out_user_sp) {
+                        const mz_header_t *hdr, const struct exec_args *args,
+                        uint16_t *out_user_ss, uint16_t *out_user_sp) {
   if (seg_pages < DOS_SEG_PAGES) seg_pages = DOS_SEG_PAGES;
 
   uint32_t base_linear = mem_region_page_linear(base_id);
@@ -441,7 +453,7 @@ int dos_build_exe_image(page_id_t base_id, uint16_t proc_seg,
    * the first instruction. */
   uint16_t env_seg;
   uint16_t main_para;
-  dos_build_env(base_id, proc_seg, seg_pages, argv, envp, &env_seg, &main_para);
+  dos_build_env(base_id, proc_seg, seg_pages, args, &env_seg, &main_para);
   dos_write_mcb(base_id, 0, DOS_MCB_SIG_M, proc_seg, main_para);
 
   /* Stream the image payload into proc_seg:0100 = base_id:0x110.  PSP
@@ -461,7 +473,7 @@ int dos_build_exe_image(page_id_t base_id, uint16_t proc_seg,
   if (rr < 0) return rr;
 
   /* PSP at proc_seg:0 — writes over the reloc scratch area. */
-  dos_build_psp(base_id, proc_seg, argv, env_seg, main_para);
+  dos_build_psp(base_id, proc_seg, args, env_seg, main_para);
   uint16_t user_cs = (uint16_t)(hdr->init_cs + load_seg);
   uint16_t user_ss = (uint16_t)(hdr->init_ss + load_seg);
   uint16_t user_ip = hdr->init_ip;

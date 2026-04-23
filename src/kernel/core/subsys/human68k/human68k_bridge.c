@@ -1192,9 +1192,9 @@ static int dos_exec(uint32_t *regs, uint32_t usp) {
   child->ppid = current->pid;
   child->subsys = current->subsys;
 
-  /* Load the executable.  envp=NULL for now; the Human68k bridge will
-   * parse the caller's provided env block in a later phase. */
-  int err = exec_execve(child, path, NULL, NULL);
+  /* Load the executable.  envp is empty for now; the Human68k bridge
+   * will parse the caller's provided env block in a later phase. */
+  int err = exec_execve_simple(child, path);
   if (err < 0) {
     /* execve failed — free the child */
     child->state = PROC_FREE;

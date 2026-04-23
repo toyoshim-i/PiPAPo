@@ -100,6 +100,13 @@ void kernel_panic_halt(uint8_t status);
 int sys_copy_from_user(void *dst, uintptr_t user_ptr, size_t len);
 int sys_copy_to_user(uintptr_t user_ptr, const void *src, size_t len);
 int sys_copy_user_string(char *dst, size_t dst_size, uintptr_t user_ptr);
+/* Copy a NUL-terminated string from user memory directly into a kernel
+ * page at (dst_page, dst_off).  At most `max_len` bytes are written
+ * (including the terminating NUL).  Returns the string length excluding
+ * NUL on success, -EFAULT on bad user pointer, or -ENAMETOOLONG if
+ * `max_len` is exhausted before NUL is reached. */
+int sys_copy_user_string_to_page(page_id_t dst_page, uint16_t dst_off,
+                                 uint16_t max_len, uintptr_t user_ptr);
 /* Read/write `n` bytes starting at (page, off).  Callers with a user
  * pointer translate via proc_user_ptr_to_page_ref before calling. */
 long sys_read(long fd, page_id_t page, uint16_t off, size_t n);

@@ -14,6 +14,7 @@
 #include "kernel/common/core/proc_info.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/cpu/cpu.h"
+#include "kernel/core/exec/exec_args.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
@@ -169,24 +170,34 @@ static void msdos_on_exit(struct pcb *p) {
 
 /* ── Exec-path capture ──────────────────────────────────────────────── */
 
-void dos_set_exec_dir(struct pcb *p, const char *exec_path) {
-  if (!p || !exec_path || dos_data_page == PAGE_ID_INVALID) return;
+void dos_set_exec_dir(struct pcb *p, const struct exec_args *args) {
+  if (!p || !args || dos_data_page == PAGE_ID_INVALID) return;
+  if (args->argc == 0) return;
 
   dos_proc_t dos;
   dos_get_proc(p, &dos);
 
-  const char *slash = NULL;
-  for (const char *s = exec_path; *s; s++) {
-    if (*s == '/') slash = s;
+  /* Find the offset of the last '/' in argv[0], scanning byte-by-byte
+   * out of the args page so no full-path stack buffer is needed. */
+  uint16_t plen = exec_args_argv_len(args, 0);
+  uint16_t slash = (uint16_t)0xFFFFu;
+  for (uint16_t i = 0; i < plen; i++) {
+    char c;
+    if (exec_args_argv_byte(args, 0, i, &c) < 0) break;
+    if (c == '/') slash = i;
   }
 
   int n = 0;
-  if (!slash || slash == exec_path) {
+  if (slash == 0xFFFFu || slash == 0) {
     dos.exec_dir[n++] = '/';
   } else {
-    int len = (int)(slash - exec_path);
+    int len = (int)slash;
     if (len >= DOS_PATH_MAX) len = DOS_PATH_MAX - 1;
-    for (int i = 0; i < len; i++) dos.exec_dir[n++] = exec_path[i];
+    for (int i = 0; i < len; i++) {
+      char c;
+      if (exec_args_argv_byte(args, 0, (uint16_t)i, &c) < 0) break;
+      dos.exec_dir[n++] = c;
+    }
   }
   dos.exec_dir[n] = '\0';
 

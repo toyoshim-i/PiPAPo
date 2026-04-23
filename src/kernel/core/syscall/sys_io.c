@@ -90,6 +90,22 @@ int sys_copy_user_string(char *dst, size_t dst_size, uintptr_t user_ptr) {
   return -(long)ENAMETOOLONG;
 }
 
+int sys_copy_user_string_to_page(page_id_t dst_page, uint16_t dst_off,
+                                 uint16_t max_len, uintptr_t user_ptr) {
+  user_page_ref_t ref;
+  int rc = proc_user_ptr_to_page_ref(current, user_ptr, &ref);
+  if (rc < 0) return rc;
+
+  for (uint16_t i = 0; i < max_len; i++) {
+    uint8_t c;
+    mem_region_page_read(ref.page, ref.off, &c, 1);
+    mem_region_page_write(dst_page, (uint16_t)(dst_off + i), &c, 1);
+    if (c == 0) return (int)i;
+    sys_io_advance_ref(&ref, 1);
+  }
+  return -(long)ENAMETOOLONG;
+}
+
 static long sys_io_lookup_desc(long fd) {
   if (fd < 0 || (uint32_t)fd >= FD_MAX) return -(long)EBADF;
   if (current->fd_map[(uint32_t)fd] == FD_DESC_NONE) return -(long)EBADF;

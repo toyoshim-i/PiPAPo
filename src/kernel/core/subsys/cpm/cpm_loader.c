@@ -15,6 +15,7 @@
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/cpu/ecpu_z80.h"
 #include "kernel/core/exec/exec.h"
+#include "kernel/core/exec/exec_args.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/subsys/cpm/cpm_bridge.h"
@@ -91,9 +92,7 @@ static void cpm_set_drive_a_root(cpm_state_t *cpm, const char *path) {
 
 static int cpm_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
                        const cpu_ops_t *cpu_ops, void *cpu_state,
-                       const char *const *argv, const char *const *envp,
-                       uint32_t flags) {
-  (void)envp;
+                       const exec_args_t *args, uint32_t flags) {
   (void)flags;
   (void)cpu_ops;
   (void)cpu_state;
@@ -158,24 +157,27 @@ static int cpm_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
   ecpu_z80_ops.set_trap_handler((cpu_state_t *)&state->z80, cpm_trap_handler,
                                 &state->cpm);
 
-  /* ── 4. Build command line from argv ───────────────────────────────── */
+  /* ── 4. Build command line from argv ───────────────────────────────
+   * cpm_loader runs only on 32-bit arches (Z80 emulator host); the
+   * 16 KB MSP easily accommodates a 128 B cmdline buffer here. */
   char cmdline[128];
   cmdline[0] = '\0';
-  if (argv && argv[0]) {
+  {
     int pos = 0;
-    for (int i = 1; argv[i] && pos < 126; i++) {
+    for (int i = 1; i < (int)args->argc && pos < 126; i++) {
       if (i > 1 && pos < 126) cmdline[pos++] = ' ';
-      size_t alen = strlen(argv[i]);
-      if (pos + (int)alen > 126) alen = 126 - pos;
-      memcpy(cmdline + pos, argv[i], alen);
+      uint16_t alen = exec_args_argv_len(args, i);
+      if (pos + (int)alen > 126) alen = (uint16_t)(126 - pos);
+      exec_args_argv_copy(args, i, cmdline + pos, (uint16_t)(alen + 1u));
       pos += (int)alen;
     }
     cmdline[pos] = '\0';
   }
 
   /* ── 5. Load .COM binary into Z80 memory ──────────────────────────── */
-  /* Extract path from argv[0] for drive_a_root */
-  const char *path = (argv && argv[0]) ? argv[0] : "";
+  /* Extract path from args for drive_a_root */
+  char path[VFS_PATH_MAX];
+  if (exec_args_path(args, path, sizeof(path)) < 0) path[0] = '\0';
   cpm_load_com(&state->z80, &state->cpm, file_buf, file_size, cmdline);
   mem_region_free(&staging);
   cpm_set_drive_a_root(&state->cpm, path);

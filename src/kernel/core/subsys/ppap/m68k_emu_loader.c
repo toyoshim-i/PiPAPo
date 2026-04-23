@@ -14,6 +14,7 @@
 #include "kernel/core/endian.h"
 #include "kernel/core/exec/elf.h"
 #include "kernel/core/exec/exec.h"
+#include "kernel/core/exec/exec_args.h"
 #include "kernel/core/exec/loader.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
@@ -84,9 +85,7 @@ static int m68k_emu_alloc_region(proc_image_segment_t *seg,
 
 static int m68k_emu_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
                          const cpu_ops_t *cpu_ops, void *cpu_state,
-                         const char *const *argv, const char *const *envp,
-                         uint32_t flags) {
-  (void)envp;
+                         const exec_args_t *args, uint32_t flags) {
   (void)flags;
   (void)cpu_ops;
   (void)cpu_state;
@@ -149,7 +148,7 @@ static int m68k_emu_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
   /* ── 5. Load ELF image (PT_LOAD segments + user stack) ─────────────── */
   uint32_t entry = 0;
   int rc = ppap_m68k_load_elf(&state->m68k, emu_mem, emu_mem_size, file_buf,
-                              file_size, argv, &entry);
+                              file_size, args, &entry);
   mem_region_free(&staging);
   if (rc < 0) {
     mem_region_free(&stack_region);
