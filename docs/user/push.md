@@ -24,6 +24,7 @@ Busybox hush is optionally available as `/bin/hush` for POSIX compatibility.
 | History depth   | 32 entries    | Packed circular buffer (1 KB pool)   |
 | Capture buffer  | 256 bytes     | `$(...)` output capture              |
 | Max pipeline    | 4 stages      | `a \| b \| c \| d`                  |
+| Token buffer    | 1024 bytes    | Shared by `$VAR` expansion + glob    |
 | Script buffer   | 2 KB          | Dynamic — allocated via brk() on first compound statement |
 
 ## Design Principles
@@ -212,6 +213,34 @@ Tab completion is context-aware:
   directories). Multiple matches insert the longest common prefix;
   pressing Tab again lists all candidates.
 
+### Glob Expansion
+
+Words containing unquoted `*` or `?` are expanded against the
+filesystem before the command is run.
+
+```sh
+ls *.com        # /bin/hello.com /bin/hush.com ...
+cat /etc/h??t*  # /etc/hostname
+```
+
+Supported metacharacters:
+
+- `*` — matches zero or more characters (except leading `.`)
+- `?` — matches exactly one character
+- Character classes (`[abc]`, `[a-z]`) are not supported.
+
+Quoting suppresses expansion: `"*.c"`, `'*.c'`, and `\*.c` are literal.
+
+Hidden files (names starting with `.`) match only when the pattern
+itself starts with `.` (matches bash's default).
+
+When the pattern does not match anything, the literal pattern is
+passed through unchanged — matching bash without `failglob`.
+
+Expansion overflow (too many matches, or matched names exceeding the
+shared token buffer) prints `push: argument list too long` and leaves
+`$?` = 1.
+
 ### Prompt
 
 Customizable via `$PS1`. Default: `PiPAPo:\w# ` (set in `/etc/profile`).
@@ -230,9 +259,10 @@ consecutive entries are suppressed. Not persisted to disk.
 
 ## Deliberately Omitted
 
-Job control, glob expansion, functions, `case`/`esac`, `for` loops,
-here-documents, arrays, arithmetic expansion, nested `$(...)`, aliases,
-tilde expansion, history persistence, multi-line continuation.
+Job control, functions, `case`/`esac`, `for` loops, here-documents,
+arrays, arithmetic expansion, nested `$(...)`, aliases, tilde
+expansion, history persistence, multi-line continuation, glob
+character classes (`[abc]`, `[a-z]`).
 
 ## File Layout
 

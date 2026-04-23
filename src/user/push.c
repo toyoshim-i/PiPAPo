@@ -16,7 +16,10 @@
 /* ── Configuration ───────────────────────────────────────────────────── */
 
 #define PUSH_LINE_MAX 256
-#define TOK_BUF_SIZE 384 /* expanded token buffer (vars can grow)  */
+/* Expanded-token buffer: holds all $VAR expansions *and* glob matches
+ * for a single input line.  Sized to match the kernel's default
+ * EXEC_ARGV_BYTES_MAX so any glob that fits here also fits execve. */
+#define TOK_BUF_SIZE 1024
 #define TOKEN_MAX 64
 #define ARGV_MAX 32
 /* ENV_MAX and ENV_POOL_SIZE are overridable at build time so the host
@@ -86,6 +89,14 @@ static int streq(const char *a, const char *b) {
     b++;
   }
   return *a == *b;
+}
+
+static int my_strcmp(const char *a, const char *b) {
+  while (*a && *a == *b) {
+    a++;
+    b++;
+  }
+  return (unsigned char)*a - (unsigned char)*b;
 }
 
 static char to_lower(char c) { return (c >= 'A' && c <= 'Z') ? c + 32 : c; }
@@ -428,6 +439,172 @@ static void expand_cmd_subst(const char **pp, char **outp, char *end) {
   for (int i = 0; i < cap_len && *outp < end; i++) *(*outp)++ = cap[i];
 }
 
+/* ── Glob expansion ──────────────────────────────────────────────────── */
+
+/*
+ * glob_match — simple `*` / `?` pattern match (no `[...]` classes).
+ * Recursive on `*`; depth is bounded by the number of `*` in the
+ * pattern (small in practice).
+ */
+static int glob_match(const char *pat, const char *name) {
+  while (*pat && *name) {
+    if (*pat == '*') {
+      while (*pat == '*') pat++;
+      if (!*pat) return 1;
+      while (*name) {
+        if (glob_match(pat, name)) return 1;
+        name++;
+      }
+      return 0;
+    }
+    if (*pat == '?' || *pat == *name) {
+      pat++;
+      name++;
+      continue;
+    }
+    return 0;
+  }
+  while (*pat == '*') pat++;
+  return !*pat && !*name;
+}
+
+/*
+ * Split a glob pattern into (dir, name_pattern).  Returns the offset
+ * where the name pattern starts within `pat`.  `dir_out` is populated
+ * with a NUL-terminated directory path (at most `dir_size` bytes
+ * including NUL); empty pattern → ".", leading-slash patterns preserve
+ * the '/'.
+ */
+static int glob_split_dir(const char *pat, char *dir_out, int dir_size) {
+  const char *last_slash = my_strrchr(pat, '/');
+  if (!last_slash) {
+    if (dir_size >= 2) {
+      dir_out[0] = '.';
+      dir_out[1] = '\0';
+    }
+    return 0;
+  }
+  int dlen = (int)(last_slash - pat);
+  if (dlen == 0) {
+    if (dir_size >= 2) {
+      dir_out[0] = '/';
+      dir_out[1] = '\0';
+    }
+  } else {
+    if (dlen >= dir_size) dlen = dir_size - 1;
+    for (int i = 0; i < dlen; i++) dir_out[i] = pat[i];
+    dir_out[dlen] = '\0';
+  }
+  return (int)(last_slash - pat) + 1;
+}
+
+/*
+ * Expand one glob pattern into buf/toks.  On entry, `*out_ptr` is the
+ * start of the pattern in buf (already NUL-terminated); `*n_ptr` includes
+ * this pattern token.  On success with matches, the pattern token is
+ * removed and one token per match is appended; with no matches the
+ * pattern stays as a literal (bash default).
+ *
+ * Returns 0 on success, -1 on buffer/slot overflow.
+ */
+static int expand_glob(char **out_ptr, char *end, char **toks, int *n_ptr,
+                       int max_toks) {
+  char pattern[PUSH_LINE_MAX];
+  const char *pat_src = toks[*n_ptr - 1];
+  int plen = 0;
+  while (pat_src[plen] && plen < (int)sizeof(pattern) - 1) {
+    pattern[plen] = pat_src[plen];
+    plen++;
+  }
+  pattern[plen] = '\0';
+
+  /* Rewind buf past the pattern and drop its token; we'll rewrite either
+   * expanded matches or the original pattern back into place. */
+  *out_ptr = toks[*n_ptr - 1];
+  (*n_ptr)--;
+
+  char dir[PATH_BUF];
+  int name_off = glob_split_dir(pattern, dir, sizeof(dir));
+  const char *name_pat = pattern + name_off;
+
+  int start_n = *n_ptr;
+  int fd = open(dir, O_RDONLY, 0);
+  if (fd >= 0) {
+    struct dirent de;
+    while (getdents(fd, &de, sizeof(de)) > 0) {
+      if (de.d_name[0] == 0) continue;
+      if (de.d_name[0] == '.' && name_pat[0] != '.') continue;
+      if (de.d_name[0] == '.' &&
+          (de.d_name[1] == 0 || (de.d_name[1] == '.' && de.d_name[2] == 0)))
+        continue;
+      if (!glob_match(name_pat, de.d_name)) continue;
+
+      if (*n_ptr >= max_toks) {
+        close(fd);
+        return -1;
+      }
+      char *entry = *out_ptr;
+      /* Write "dir/name\0" into buf (skip '/' when dir == "."). */
+      if (!(dir[0] == '.' && dir[1] == '\0')) {
+        for (int i = 0; dir[i]; i++) {
+          if (*out_ptr >= end) {
+            close(fd);
+            return -1;
+          }
+          *(*out_ptr)++ = dir[i];
+        }
+        if (!(dir[0] == '/' && dir[1] == '\0')) {
+          if (*out_ptr >= end) {
+            close(fd);
+            return -1;
+          }
+          *(*out_ptr)++ = '/';
+        }
+      }
+      for (int i = 0; de.d_name[i]; i++) {
+        if (*out_ptr >= end) {
+          close(fd);
+          return -1;
+        }
+        *(*out_ptr)++ = de.d_name[i];
+      }
+      if (*out_ptr >= end) {
+        close(fd);
+        return -1;
+      }
+      *(*out_ptr)++ = '\0';
+      toks[(*n_ptr)++] = entry;
+    }
+    close(fd);
+  }
+
+  /* Sort the new match tokens alphabetically (insertion sort — expected
+   * match counts are small). */
+  for (int i = start_n + 1; i < *n_ptr; i++) {
+    char *key = toks[i];
+    int j = i - 1;
+    while (j >= start_n && my_strcmp(toks[j], key) > 0) {
+      toks[j + 1] = toks[j];
+      j--;
+    }
+    toks[j + 1] = key;
+  }
+
+  if (*n_ptr > start_n) return 0;
+
+  /* No matches: restore the pattern as a literal token. */
+  if (*n_ptr >= max_toks) return -1;
+  char *entry = *out_ptr;
+  for (int i = 0; i < plen; i++) {
+    if (*out_ptr >= end) return -1;
+    *(*out_ptr)++ = pattern[i];
+  }
+  if (*out_ptr >= end) return -1;
+  *(*out_ptr)++ = '\0';
+  toks[(*n_ptr)++] = entry;
+  return 0;
+}
+
 /* ── Tokenizer ───────────────────────────────────────────────────────── */
 
 static int is_op_start(char c) {
@@ -524,8 +701,10 @@ static int tokenize(const char *input, char *buf, int buf_size, char **toks,
       continue;
     }
 
-    /* Word token */
+    /* Word token — track whether any unquoted `*` or `?` was emitted so
+     * we can trigger glob expansion after the word is complete. */
     toks[n] = out;
+    int has_glob = 0;
 
     while (*p && *p != ' ' && *p != '\t' && *p != '#') {
       if (is_op_start(*p)) break;
@@ -554,12 +733,21 @@ static int tokenize(const char *input, char *buf, int buf_size, char **toks,
       } else if (*p == '$') {
         expand_var(&p, &out, end);
       } else {
+        if (*p == '*' || *p == '?') has_glob = 1;
         EMIT(*p++);
       }
     }
 
-    *out++ = '\0';
+    if (out < end) *out++ = '\0';
     n++;
+
+    if (has_glob) {
+      if (expand_glob(&out, end, toks, &n, max_toks) < 0) {
+        puts_fd(2, "push: argument list too long\n");
+#undef EMIT
+        return -1;
+      }
+    }
   }
 
 #undef EMIT
@@ -1432,7 +1620,11 @@ static int execute_line(const char *line) {
   char buf[TOK_BUF_SIZE];
   char *toks[TOKEN_MAX];
   int ntoks = tokenize(line, buf, sizeof(buf), toks, TOKEN_MAX);
-  if (ntoks <= 0) return 0;
+  if (ntoks < 0) {
+    last_status = 1;
+    return 1;
+  }
+  if (ntoks == 0) return 0;
 
   int status = exec_list(toks, ntoks);
   last_status = status;

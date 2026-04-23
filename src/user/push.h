@@ -12,7 +12,7 @@
 #define PUSH_LINE_MAX 256   /* max input line length               */
 #define PUSH_HISTORY_MAX 32 /* history ring buffer depth           */
 #define PUSH_HIST_POOL 1024 /* packed history char pool             */
-#define PUSH_TOK_BUF 384    /* expanded token buffer               */
+#define PUSH_TOK_BUF 1024   /* expanded token buffer (tokens + globs) */
 #define PUSH_TOKEN_MAX 64   /* max tokens per line                 */
 #define PATH_BUF 128        /* max path length                     */
 
