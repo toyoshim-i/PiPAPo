@@ -723,14 +723,16 @@ static void dos_find_fill_dta(dos_proc_t *dos, uint8_t attr, uint32_t size,
   }
 }
 
-/* Stat the matched entry to fill in size + date/time.  dir path is
- * still in DOS_PATH_SCRATCH_OFF from the split step and survives
- * across scan calls as long as the app does not issue another DOS
- * path operation between FindFirst and FindNext.  Best-effort: if
- * composing the full path would overflow scratch, or the lookup /
- * stat fails, the caller proceeds with size=0, date=0, time=0. */
+/* Stat the matched entry and return raw size + Unix-epoch mtime.
+ * dir path is still in DOS_PATH_SCRATCH_OFF from the split step and
+ * survives across scan calls as long as the app does not issue
+ * another DOS path operation between FindFirst and FindNext.  Best-
+ * effort: if composing the full path would overflow scratch, or the
+ * lookup / stat fails, *size_out and *mtime_out stay whatever the
+ * caller initialised them to (usually zero).  Callers pack mtime
+ * into the DOS or WIN32 time format they need after the call. */
 static int dos_stat_entry(const char *name, uint32_t *size_out,
-                          uint16_t *dos_date_out, uint16_t *dos_time_out) {
+                          uint32_t *mtime_out) {
   char full[DOS_PATH_SCRATCH_MAX];
   uint16_t dir_len = 0;
   for (; dir_len < DOS_PATH_SCRATCH_MAX; dir_len++) {
@@ -758,7 +760,7 @@ static int dos_stat_entry(const char *name, uint32_t *size_out,
   mod_vfs.vnode_release(vn);
   if (err) return -1;
   *size_out = st.st_size;
-  dos_pack_mtime(st.st_mtime, dos_date_out, dos_time_out);
+  *mtime_out = st.st_mtime;
   return 0;
 }
 
@@ -796,8 +798,10 @@ static int dos_find_scan(dos_proc_t *dos) {
 
     uint8_t attr = (d.d_type == DT_DIR) ? 0x10u : 0x20u;
     uint32_t size = 0;
+    uint32_t mtime = 0;
+    (void)dos_stat_entry(d.d_name, &size, &mtime);
     uint16_t dos_date = 0, dos_time = 0;
-    (void)dos_stat_entry(d.d_name, &size, &dos_date, &dos_time);
+    if (mtime) dos_pack_mtime(mtime, &dos_date, &dos_time);
     dos_find_fill_dta(dos, attr, size, dos_date, dos_time, d.d_name);
     return 0;
   }
@@ -862,15 +866,180 @@ static int dos_lfn_truename(dos_proc_t *dos, dos_regs_t *regs) {
   return -DOS_ERR_PATH_NOT_FOUND;
 }
 
+/* Write the 318-byte WIN32_FIND_DATA result frame at ES:DI for an
+ * LFN FindFirst / FindNext match.  date_fmt selects the time
+ * encoding: 0 = Windows FILETIME (100-ns intervals since 1601-01-01),
+ * 1 = DOS date/time word pair packed into the low 4 bytes with the
+ * upper 4 bytes zero.  PPAP has no short-name alias so
+ * cAlternateFileName[] is emitted as a zero-terminated empty string.
+ * cFileName[] carries the full long name (up to 259 chars + NUL). */
+static void dos_find_fill_lfn(dos_proc_t *dos, uint16_t es, uint16_t di,
+                              uint8_t date_fmt, uint8_t dos_attr, uint32_t size,
+                              uint32_t mtime, const char *name) {
+  uint32_t base = ((uint32_t)es << 4) + di;
+
+  /* 0x00 dwFileAttributes.  FILE_ATTRIBUTE_DIRECTORY=0x10,
+   * FILE_ATTRIBUTE_ARCHIVE=0x20; happens to overlap DOS bits. */
+  uint32_t win_attr = (uint32_t)dos_attr;
+  for (int i = 0; i < 4; i++)
+    current->cpu_ops->write8(dos->cpu_state, base + i,
+                             (uint8_t)(win_attr >> (i * 8)));
+
+  /* Build the FILETIME field once and duplicate it for ctime / atime
+   * / mtime.  PPAP only tracks mtime so the three slots report the
+   * same instant. */
+  uint8_t ft[8] = {0};
+  if (date_fmt == 1) {
+    uint16_t dos_date = 0, dos_time = 0;
+    if (mtime) dos_pack_mtime(mtime, &dos_date, &dos_time);
+    ft[0] = (uint8_t)(dos_time & 0xFFu);
+    ft[1] = (uint8_t)(dos_time >> 8);
+    ft[2] = (uint8_t)(dos_date & 0xFFu);
+    ft[3] = (uint8_t)(dos_date >> 8);
+    /* upper 4 bytes zero (already) */
+  } else if (mtime) {
+    /* Windows FILETIME = 100-ns ticks since 1601-01-01.  Unix epoch
+     * is 1970-01-01; the offset is 11644473600 seconds. */
+    uint64_t unix_ns = ((uint64_t)mtime + 11644473600ULL) * 10000000ULL;
+    for (int i = 0; i < 8; i++) ft[i] = (uint8_t)(unix_ns >> (i * 8));
+  }
+  for (int slot = 0; slot < 3; slot++) {
+    uint32_t off = 4 + (uint32_t)slot * 8;
+    for (int i = 0; i < 8; i++)
+      current->cpu_ops->write8(dos->cpu_state, base + off + i, ft[i]);
+  }
+
+  /* 0x1C nFileSizeHigh (always zero — our sizes fit in 32-bit),
+   * 0x20 nFileSizeLow. */
+  for (int i = 0; i < 4; i++)
+    current->cpu_ops->write8(dos->cpu_state, base + 0x1C + i, 0);
+  for (int i = 0; i < 4; i++)
+    current->cpu_ops->write8(dos->cpu_state, base + 0x20 + i,
+                             (uint8_t)(size >> (i * 8)));
+
+  /* 0x24 dwReserved0, 0x28 dwReserved1 */
+  for (int i = 0; i < 8; i++)
+    current->cpu_ops->write8(dos->cpu_state, base + 0x24 + i, 0);
+
+  /* 0x2C cFileName[260] — full long name, NUL-terminated. */
+  uint16_t n = 0;
+  while (n < 259 && name[n]) {
+    current->cpu_ops->write8(dos->cpu_state, base + 0x2C + n, (uint8_t)name[n]);
+    n++;
+  }
+  while (n < 260) {
+    current->cpu_ops->write8(dos->cpu_state, base + 0x2C + n, 0);
+    n++;
+  }
+
+  /* 0x130 cAlternateFileName[14] — zeroed (no short-name alias). */
+  for (int i = 0; i < 14; i++)
+    current->cpu_ops->write8(dos->cpu_state, base + 0x130 + i, 0);
+}
+
+/* Read the next matching dirent from dos->find_fd and write a
+ * WIN32_FIND_DATA frame to regs->es:regs->di.  Returns 0 on match,
+ * -DOS_ERR_NO_MORE_FILES on EOF, other negative -DOS_ERR on I/O
+ * error.  Uses regs->si as the date_fmt selector (0 = FILETIME,
+ * 1 = DOS). */
+static int dos_lfn_find_scan(dos_proc_t *dos, dos_regs_t *regs) {
+  if (dos->find_fd < 0) return -DOS_ERR_NO_MORE_FILES;
+  int16_t desc = current->fd_map[dos->find_fd];
+  if (desc < 0) {
+    dos->find_fd = -1;
+    return -DOS_ERR_NO_MORE_FILES;
+  }
+
+  for (;;) {
+    long n = mod_vfs.fd_getdents(desc, dos_data_page,
+                                 (uint16_t)DOS_DIRENT_SCRATCH_OFF,
+                                 sizeof(struct dirent));
+    if (n < 0) {
+      sys_close(dos->find_fd);
+      dos->find_fd = -1;
+      return -dos_errno_to_dos((int)n);
+    }
+    if (n == 0) {
+      sys_close(dos->find_fd);
+      dos->find_fd = -1;
+      return -DOS_ERR_NO_MORE_FILES;
+    }
+
+    struct dirent d;
+    mem_region_page_read(dos_data_page, (uint16_t)DOS_DIRENT_SCRATCH_OFF, &d,
+                         sizeof(d));
+
+    if (!dos_glob_match(dos->find_pattern, d.d_name)) continue;
+
+    uint8_t attr = (d.d_type == DT_DIR) ? 0x10u : 0x20u;
+    uint32_t size = 0;
+    uint32_t mtime = 0;
+    (void)dos_stat_entry(d.d_name, &size, &mtime);
+    dos_find_fill_lfn(dos, regs->es, regs->di, (uint8_t)(regs->si & 0xFFu),
+                      attr, size, mtime, d.d_name);
+    return 0;
+  }
+}
+
+/* AH=71h AL=4Eh LFN FindFirst — DS:DX = pattern, ES:DI = 318-byte
+ * result buffer, CL/CH = attribute match masks (ignored today),
+ * SI = date format (0 FILETIME / 1 DOS).  Returns AX = find handle
+ * (always 1 since PPAP supports only a single concurrent find per
+ * process — multi-handle support deferred). */
+static int dos_lfn_find_first(dos_proc_t *dos, dos_regs_t *regs) {
+  if (dos->find_fd >= 0) {
+    sys_close(dos->find_fd);
+    dos->find_fd = -1;
+  }
+
+  int rc = dos_resolve_user_path(dos, regs->ds, regs->dx);
+  if (rc < 0) return rc;
+
+  rc = dos_find_split_scratch(dos->find_pattern, sizeof(dos->find_pattern));
+  if (rc < 0) return rc;
+
+  long fd = sys_open(dos_data_page, DOS_PATH_SCRATCH_OFF, O_RDONLY, 0);
+  if (fd < 0) return -dos_errno_to_dos((int)fd);
+  dos->find_fd = (int)fd;
+
+  rc = dos_lfn_find_scan(dos, regs);
+  if (rc == -DOS_ERR_NO_MORE_FILES) return -DOS_ERR_FILE_NOT_FOUND;
+  if (rc < 0) return rc;
+  regs->ax = 1; /* dummy find handle */
+  return 0;
+}
+
+/* AH=71h AL=4Fh LFN FindNext — BX = handle (ignored, single find),
+ * ES:DI = result buffer, SI = date format. */
+static int dos_lfn_find_next(dos_proc_t *dos, dos_regs_t *regs) {
+  return dos_lfn_find_scan(dos, regs);
+}
+
+/* AH=71h AL=A1h LFN FindClose — BX = handle (ignored). */
+static int dos_lfn_find_close(dos_proc_t *dos, dos_regs_t *regs) {
+  (void)regs;
+  if (dos->find_fd >= 0) {
+    sys_close(dos->find_fd);
+    dos->find_fd = -1;
+  }
+  return 0;
+}
+
 /* AH=71h sub-dispatch on AL.  Unknown sub-functions return
  * DOS_ERR_INVALID_FUNCTION — this is *not* the "LFN not installed"
  * reply (AX=0x7100 CF=1) which we deliberately avoid, since this
- * dispatcher implements at least one real LFN call. */
+ * dispatcher implements several real LFN calls. */
 static int dos_lfn_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
   uint8_t al = (uint8_t)(regs->ax & 0xFFu);
   switch (al) {
+    case 0x4E:
+      return dos_lfn_find_first(dos, regs);
+    case 0x4F:
+      return dos_lfn_find_next(dos, regs);
     case 0x60:
       return dos_lfn_truename(dos, regs);
+    case 0xA1:
+      return dos_lfn_find_close(dos, regs);
   }
   return -DOS_ERR_INVALID_FUNCTION;
 }

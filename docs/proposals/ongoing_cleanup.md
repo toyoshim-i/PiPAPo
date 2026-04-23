@@ -100,11 +100,15 @@ Output is the VFS-form absolute path (not DOS "C:\FOO"); apps that
 parse for a drive letter will need to wait for a later phase to
 wrap the result.
 
-Phase L2 — **AL=4Eh / 4Fh / A1h LFN Find family.**  Adds a find-
-handle table to `dos_proc_t` (slot-based, small N), reuses the
-glob matcher and dirent reader from the SFN path, emits the full
-long name into the LFN result struct at `ES:DI`.  This is the
-phase that actually surfaces long filenames through DOS apps.
+Phase L2 — **AL=4Eh / 4Fh / A1h LFN Find family.**  Landed.
+Reuses the SFN `find_fd` / `find_pattern` state (single concurrent
+find per process — no handle table yet; AL=4Eh always returns
+handle 1, AL=4Fh / A1h ignore `BX`).  Shares the glob matcher and
+dirent reader from the SFN path; adds `dos_find_fill_lfn` that
+writes a 318-byte `WIN32_FIND_DATA` frame at `ES:DI` with full
+long names and both SI=0 (FILETIME) + SI=1 (DOS date/time)
+formats.  Multiple-concurrent-find support (real handle table)
+deferred until a caller surfaces it.
 
 Phase L3 — **AL=43h LFN attrs, AL=3Bh/41h/56h LFN
 chdir/delete/rename.**  Small wrappers over the existing SFN
