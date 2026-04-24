@@ -81,6 +81,27 @@ static void bios_update_attr(void) {
   bios_attr = (uint8_t)((bg << 4) | fg | (bios_bold ? 0x08u : 0u));
 }
 
+/* Translate an ANSI SGR colour index (0..7) to the VGA 16-colour
+ * attribute palette.  ANSI encodes colour bits as B|G|R (blue is
+ * bit 2); the IBM CGA / VGA palette lays them out R|G|B (blue is
+ * bit 0), so the two disagree for everything with either R or B
+ * set.  Without this translation \033[34m (ANSI blue) would come
+ * out as VGA red (index 4) — see the pile polish session where
+ * user reported "red" for a blue-background hint. */
+static uint8_t bios_ansi_to_vga(unsigned a) {
+  static const uint8_t map[8] = {
+      0u,  /* black   */
+      4u,  /* red     */
+      2u,  /* green   */
+      6u,  /* yellow (brown on VGA)  */
+      1u,  /* blue    */
+      5u,  /* magenta */
+      3u,  /* cyan    */
+      7u,  /* white (light gray)     */
+  };
+  return map[a & 7u];
+}
+
 static void bios_reset_attr(void) {
   bios_fg = 7u;
   bios_bg = 0u;
@@ -199,13 +220,13 @@ static void bios_ansi_apply_sgr(void) {
       bios_reverse = 0u;
       bios_update_attr();
     } else if (p >= 30u && p <= 37u) {
-      bios_fg = (uint8_t)(p - 30u);
+      bios_fg = bios_ansi_to_vga(p - 30u);
       bios_update_attr();
     } else if (p == 39u) {
       bios_fg = 7u;
       bios_update_attr();
     } else if (p >= 40u && p <= 47u) {
-      bios_bg = (uint8_t)(p - 40u);
+      bios_bg = bios_ansi_to_vga(p - 40u);
       bios_update_attr();
     } else if (p == 49u) {
       bios_bg = 0u;
