@@ -227,6 +227,25 @@ int pile_prompt(const char *label, char *out, int outsize) {
 
 /* ── Key dispatch ─────────────────────────────────────────────────────── */
 
+/* Build the full path of the cursor entry in a heap buffer and hand
+ * it to pile_view_file.  Used by ENTER on a regular file, v, and V.
+ * Returns silently if the cursor isn't on a regular file, and posts
+ * a status message on OOM. */
+static void pile_view_cursor(pile_pane_t *p, int force_hex) {
+  if (p->count == 0) return;
+  const pile_entry_t *e = &p->entries[p->cursor];
+  if (e->d_type != DT_REG) return;
+  char *path = uc_malloc(PILE_PATH_MAX);
+  if (!path) {
+    pile_status_set("pile: out of heap", 1);
+    return;
+  }
+  if (pile_path_join(path, PILE_PATH_MAX, p->path, e->name) == 0) {
+    pile_view_file(path, force_hex);
+  }
+  uc_free(path);
+}
+
 static void handle_key(int key) {
   pile_pane_t *p = pile_active;
   int vrows = pile_draw_visible_rows();
@@ -274,7 +293,16 @@ static void handle_key(int key) {
       return;
 
     case PKEY_ENTER:
-      pile_pane_enter(p);
+      /* Directory: cd into it.  Regular file: open the viewer
+       * (auto-detect text vs hex).  Everything else: no-op. */
+      if (p->count > 0) {
+        const pile_entry_t *e = &p->entries[p->cursor];
+        if (e->d_type == DT_DIR) {
+          pile_pane_enter(p);
+        } else if (e->d_type == DT_REG) {
+          pile_view_cursor(p, 0);
+        }
+      }
       return;
     case PKEY_BS:
     case PKEY_BACKSPACE:
@@ -304,19 +332,7 @@ static void handle_key(int key) {
 
     case 'v':
     case 'V':
-      if (p->count > 0) {
-        const pile_entry_t *e = &p->entries[p->cursor];
-        if (e->d_type != DT_REG) return;
-        char *path = uc_malloc(PILE_PATH_MAX);
-        if (!path) {
-          pile_status_set("pile: out of heap", 1);
-          return;
-        }
-        if (pile_path_join(path, PILE_PATH_MAX, p->path, e->name) == 0) {
-          pile_view_file(path, key == 'V');
-        }
-        uc_free(path);
-      }
+      pile_view_cursor(p, key == 'V');
       return;
     case 'e':
       if (p->count > 0) {
