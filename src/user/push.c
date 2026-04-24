@@ -17,9 +17,16 @@
 
 #define PUSH_LINE_MAX 256
 /* Expanded-token buffer: holds all $VAR expansions *and* glob matches
- * for a single input line.  Sized to match the kernel's default
- * EXEC_ARGV_BYTES_MAX so any glob that fits here also fits execve. */
-#define TOK_BUF_SIZE 1024
+ * for a single input line.  Stack-allocated in execute_line(), and
+ * must fit alongside the rest of push's call chain in the 4 KB user
+ * stack page — exec_simple alone burns ~500 B (envp[65] + resolved +
+ * toks[]), and execute_line's own toks[64] adds another 256 B, so this
+ * has to stay modest.  Globs that exceed this surface as "argument
+ * list too long". */
+// TODO: lift buf out of the stack (file-scope static, push is single-instance)
+// so TOK_BUF_SIZE can grow back toward EXEC_ARGV_BYTES_MAX without crowding
+// the 4 KB user stack page.
+#define TOK_BUF_SIZE 384
 #define TOKEN_MAX 64
 #define ARGV_MAX 32
 /* ENV_MAX and ENV_POOL_SIZE are overridable at build time so the host
