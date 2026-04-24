@@ -24,6 +24,13 @@ int pile_layout;
 int pile_quit;
 int pile_use_color = 1;
 
+/* Backing pool for uc_malloc.  Ops borrow path / name / I/O buffers
+ * from here instead of the stack — see docs/proposals/pile.md
+ * Phase PS.  Sizing: batch copy needs ~730 B (targets + two paths +
+ * first_name + I/O buffer) plus uc_heap's 4 B/block overhead; 1 KB
+ * leaves headroom. */
+static char pile_heap_pool[1024];
+
 /* ── Terminal raw mode ────────────────────────────────────────────────── */
 
 static struct termios saved_tios;
@@ -316,6 +323,7 @@ int main(int argc, char *argv[]) {
   pile_layout =
       (pile_cols >= PILE_TWOPANE_COLS) ? PILE_LAYOUT_TWO : PILE_LAYOUT_SINGLE;
 
+  uc_heap_init(pile_heap_pool, sizeof(pile_heap_pool));
   pile_term_raw();
   init_pane(&pile_pane_a, start);
   init_pane(&pile_pane_b, start);
