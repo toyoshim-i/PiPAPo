@@ -50,10 +50,18 @@ void pile_term_raw(void) {
   t.c_lflag &= ~(ICANON | ECHO);
   ioctl(0, TCSETS, &t);
   raw_active = 1;
+
+  /* Disable autowrap (DECAWM off): writing to the last column of
+   * the last row sets a "pending wrap" latch on many VT emulators,
+   * and the next output scrolls the screen.  Pile positions its
+   * chrome by absolute row/col so wrap is never wanted anyway. */
+  write(1, "\033[?7l", 5);
 }
 
 void pile_term_restore(void) {
   if (raw_active) {
+    /* Re-enable autowrap for the outer shell. */
+    write(1, "\033[?7h", 5);
     ioctl(0, TCSETS, &saved_tios);
     raw_active = 0;
   }
@@ -114,23 +122,11 @@ int pile_read_key(void) {
           case '8': return PKEY_END;
         }
       }
-      if (c4 >= '0' && c4 <= '9') {
-        int c5 = read_byte();
-        if (c5 == '~') {
-          int code = (c3 - '0') * 10 + (c4 - '0');
-          switch (code) {
-            case 11: return PKEY_F1;
-            case 13: return PKEY_F3;
-            case 14: return PKEY_F4;
-            case 15: return PKEY_F5;
-            case 17: return PKEY_F6;
-            case 18: return PKEY_F7;
-            case 19: return PKEY_F8;
-            case 20: return PKEY_F9;
-            case 21: return PKEY_F10;
-          }
-        }
-      }
+      /* Two-digit tilde sequences (F-keys, extras) are swallowed but
+       * not decoded — pile's key bindings are letter-based so no
+       * downstream handler cares about them.  We still need to
+       * consume the full sequence so bytes don't leak to stdin. */
+      if (c4 >= '0' && c4 <= '9') read_byte();
     }
     return PKEY_NONE;
   }
@@ -138,9 +134,6 @@ int pile_read_key(void) {
   if (c2 == 'O') {
     int c3 = read_byte();
     switch (c3) {
-      case 'P': return PKEY_F1;
-      case 'R': return PKEY_F3;
-      case 'S': return PKEY_F4;
       case 'H': return PKEY_HOME;
       case 'F': return PKEY_END;
     }
@@ -239,7 +232,6 @@ static void handle_key(int key) {
   int vrows = pile_draw_visible_rows();
 
   switch (key) {
-    case PKEY_F10:
     case 'q':
     case 0x11:  /* Ctrl-Q */
       pile_quit = 1;
@@ -251,11 +243,9 @@ static void handle_key(int key) {
       return;
 
     case PKEY_UP:
-    case 'k':
       pile_pane_move(p, -1, vrows);
       return;
     case PKEY_DOWN:
-    case 'j':
       pile_pane_move(p, +1, vrows);
       return;
     case PKEY_PGUP:
@@ -265,11 +255,9 @@ static void handle_key(int key) {
       pile_pane_move(p, +vrows, vrows);
       return;
     case PKEY_HOME:
-    case 'g':
       pile_pane_home(p);
       return;
     case PKEY_END:
-    case 'G':
       pile_pane_end(p, vrows);
       return;
 
@@ -302,7 +290,6 @@ static void handle_key(int key) {
       return;
     }
 
-    case PKEY_F3:
     case 'v':
     case 'V':
       if (p->count > 0) {
@@ -319,7 +306,6 @@ static void handle_key(int key) {
         uc_free(path);
       }
       return;
-    case PKEY_F4:
     case 'e':
       if (p->count > 0) {
         const pile_entry_t *e = &p->entries[p->cursor];
@@ -340,18 +326,19 @@ static void handle_key(int key) {
       pile_spawn_shell();
       pile_refresh_panes(p);
       return;
-    case PKEY_F5:
+    case '?':
+      pile_show_help();
+      pile_read_key();  /* wait for any key to dismiss */
+      return;
     case 'c':
       pile_op_copy(p);
       return;
-    case PKEY_F6:
     case 'm':
       pile_op_move(p);
       return;
-    case PKEY_F7:
+    case 'k':
       pile_op_mkdir(p);
       return;
-    case PKEY_F8:
     case 'd':
     case PKEY_DELETE:
       pile_op_delete(p);

@@ -42,15 +42,6 @@ enum {
   PKEY_DELETE,
   PKEY_PGUP,
   PKEY_PGDN,
-  PKEY_F1,
-  PKEY_F3,
-  PKEY_F4,
-  PKEY_F5,
-  PKEY_F6,
-  PKEY_F7,
-  PKEY_F8,
-  PKEY_F9,
-  PKEY_F10,
 };
 
 /* ── Pane model ────────────────────────────────────────────────────────── */
@@ -137,6 +128,10 @@ int pile_pane_sel_count(const pile_pane_t *pane);
 
 void pile_draw_all(void);
 void pile_draw_clear(void);
+
+/* Paint the full-screen key-binding reference.  Caller should
+ * pile_read_key() to wait for dismissal. */
+void pile_show_help(void);
 
 /* Number of entry rows visible in a pane given the current terminal
  * height and chrome layout.  Shared between drawing and key handling

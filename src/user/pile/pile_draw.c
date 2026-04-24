@@ -3,19 +3,21 @@
  *
  * Design: docs/proposals/pile.md
  *
- * Chrome layout (identical for single-pane and two-pane modes, 7 rows):
+ * Chrome layout (identical for single-pane and two-pane modes, 6 rows):
  *   row 0                   pane header(s)
  *   rows 1..vrows           entry list
  *   row vrows + 1           per-pane footer (cursor/count, size total)
  *   row vrows + 2           horizontal rule
  *   row vrows + 3           stat strip line 1: full file path
  *   row vrows + 4           stat strip line 2: size / mode / mtime
- *   row vrows + 5           horizontal rule
- *   row vrows + 6           key legend
+ *   row vrows + 5           bottom bar: rule + "?: help" hint, or
+ *                           transient status overlay, or prompt line
  *
- * visible_rows = pile_rows - 7.  The vertical divider in two-pane mode
- * spans rows 0 .. vrows+1 (header through per-pane footer); the stat
- * strip and legend span the full width below it.
+ * visible_rows = pile_rows - 6.  The vertical divider in two-pane
+ * mode spans rows 0 .. vrows+1 (header through per-pane footer); the
+ * stat strip spans the full width below it.  The '?' key brings up
+ * a full-screen help overlay listing all key bindings; any key
+ * dismisses it.
  */
 
 #include "pile.h"
@@ -36,7 +38,7 @@
 #define C_WARN     C("\033[33m")
 #define C_ERR      C("\033[31m")
 
-#define CHROME_ROWS 7
+#define CHROME_ROWS 6
 
 /* ── Low-level ANSI helpers ───────────────────────────────────────────── */
 
@@ -395,21 +397,28 @@ static void draw_status(int row) {
   pile_draw_clear_to_eol();
 }
 
-static void draw_legend(int row) {
+/* Bottom bar: horizontal rule with a "?: help" hint flush-right.
+ * Always leaves the last column empty — writing to the bottom-right
+ * corner sets the pending-wrap latch on many VT emulators, and the
+ * next output then scrolls the screen by one row. */
+static void draw_bottom_bar(int row) {
   pile_draw_cursor_to(row, 0);
+  emit(C_FRAME);
+  int usable = pile_cols - 1;  /* reserve the last column */
+  if (usable < 11) {
+    for (int i = 0; i < usable; i++) uc_putc('-');
+    emit(C_RST);
+    return;
+  }
+  const int hint_width = 8;  /* " ?: help" */
+  int dashes = usable - hint_width;
+  for (int i = 0; i < dashes; i++) uc_putc('-');
   uc_putc(' ');
-  emit(C_KEY); emit("TAB");   emit(C_RST); emit(" switch  ");
-  emit(C_KEY); emit("SPC");   emit(C_RST); emit(" mark  ");
-  emit(C_KEY); emit("F3");    emit(C_RST); emit(" view  ");
-  emit(C_KEY); emit("F4");    emit(C_RST); emit(" edit  ");
-  emit(C_KEY); emit("F5");    emit(C_RST); emit(" copy  ");
-  emit(C_KEY); emit("F6");    emit(C_RST); emit(" move  ");
-  emit(C_KEY); emit("F7");    emit(C_RST); emit(" mkdir  ");
-  emit(C_KEY); emit("F8");    emit(C_RST); emit(" del  ");
-  emit(C_KEY); emit("!");     emit(C_RST); emit(" sh  ");
-  emit(C_KEY); emit("F10");   emit(C_RST); uc_putc('/');
-  emit(C_KEY); emit("q");     emit(C_RST); emit(" quit");
-  pile_draw_clear_to_eol();
+  emit(C_RST);
+  emit(C_KEY); uc_putc('?'); emit(C_RST);
+  emit(C_FRAME);
+  emit(": help");
+  emit(C_RST);
 }
 
 /* ── Pane renderer ────────────────────────────────────────────────────── */
@@ -453,15 +462,17 @@ void pile_draw_all(void) {
   /* Strips below the list area. */
   draw_rule(1 + vrows + 1);
   draw_stat_strip(1 + vrows + 2, 1 + vrows + 3);
-  draw_rule(1 + vrows + 4);
   if (pile_status_msg[0]) {
-    draw_status(1 + vrows + 5);
+    draw_status(1 + vrows + 4);
   } else {
-    draw_legend(1 + vrows + 5);
+    draw_bottom_bar(1 + vrows + 4);
   }
 
-  /* Park the cursor at the bottom-right so it doesn't blink in the list. */
-  pile_draw_cursor_to(pile_rows - 1, pile_cols - 1);
+  /* Park the cursor on the bottom bar away from the rightmost
+   * column.  Writing or positioning at (rows-1, cols-1) sets the
+   * "pending wrap" latch on many VT emulators; any subsequent
+   * output then scrolls the screen by one row. */
+  pile_draw_cursor_to(pile_rows - 1, 0);
   cursor_show();
 }
 
@@ -470,4 +481,82 @@ void pile_draw_clear(void) {
   clear_screen();
   pile_draw_cursor_to(0, 0);
   cursor_show();
+}
+
+/* ── Help overlay ─────────────────────────────────────────────────────── */
+
+/* Full-screen key-binding reference.  Caller is expected to
+ * pile_read_key() afterwards to wait for dismissal; the main loop's
+ * next iteration then repaints pile.
+ *
+ * Condensed into ~16 rows by grouping related bindings onto one
+ * line, so the help fits inside a 20-row terminal with no scroll. */
+void pile_show_help(void) {
+  cursor_hide();
+  clear_screen();
+
+  struct entry { const char *left; const char *right; };
+  static const struct entry body[] = {
+    /* { "", 0 } = blank spacer; right==0 = group header */
+    { "Navigation", 0 },
+    { "  arrows, PgUp/PgDn, Home/End", "scroll" },
+    { "  TAB",                         "switch active pane" },
+    { "  ENTER / BS",                  "open dir / parent dir" },
+    { "", 0 },
+    { "Marking", 0 },
+    { "  SPACE",                       "toggle mark on cursor" },
+    { "  + / -  *",                    "mark/unmark by glob, invert" },
+    { "", 0 },
+    { "Actions", 0 },
+    { "  v / V",                       "view (auto / force-hex)" },
+    { "  e",                           "edit (spawns /bin/pi)" },
+    { "  c / m / d",                   "copy / move / delete" },
+    { "  k",                           "mkdir" },
+    { "", 0 },
+    { "Other", 0 },
+    { "  !",                           "spawn /bin/sh" },
+    { "  q  (Ctrl-Q)",                 "quit" },
+  };
+  int n = (int)(sizeof(body) / sizeof(body[0]));
+
+  /* Title on row 0 */
+  pile_draw_cursor_to(0, 2);
+  emit(C_HEADER);
+  emit("pile -- key bindings");
+  emit(C_RST);
+
+  /* Body rows 2 .. pile_rows - 2 (inclusive).  The body->right=0
+   * entries are group headers (bold); empty left marks a spacer. */
+  int body_top = 2;
+  int body_bot = pile_rows - 2;  /* leave row pile_rows-1 for dismissal */
+  int row = body_top;
+  int pad_to = pile_cols >= 50 ? 32 : 22;
+  for (int i = 0; i < n && row <= body_bot; i++, row++) {
+    pile_draw_cursor_to(row, 0);
+    if (!body[i].left[0]) continue;  /* blank spacer */
+    if (!body[i].right) {
+      emit(C_KEY);
+      uc_putc(' ');
+      uc_puts(body[i].left);
+      emit(C_RST);
+    } else {
+      uc_puts(body[i].left);
+      int left_len = uc_strlen(body[i].left);
+      while (left_len < pad_to) { uc_putc(' '); left_len++; }
+      emit(C_FRAME);
+      uc_puts(body[i].right);
+      emit(C_RST);
+    }
+  }
+
+  /* Dismissal hint sits immediately after the body so there is no
+   * empty band between the two.  If body would overflow, fall back
+   * to pile_rows - 1 (overwriting the final body row). */
+  int dismiss_row = row;
+  if (dismiss_row > pile_rows - 1) dismiss_row = pile_rows - 1;
+  pile_draw_cursor_to(dismiss_row, 0);
+  emit(C_FRAME);
+  emit(" any key to dismiss ");
+  emit(C_RST);
+  pile_draw_clear_to_eol();
 }

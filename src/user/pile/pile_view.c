@@ -238,7 +238,9 @@ static void render(const char *path) {
 
   draw_rule(pile_rows - 2);
   draw_legend(pile_rows - 1);
-  pile_draw_cursor_to(pile_rows - 1, pile_cols - 1);
+  /* Don't park at the bottom-right corner — some terminals set a
+   * pending-wrap latch that scrolls the screen on the next write. */
+  pile_draw_cursor_to(pile_rows - 1, 0);
 }
 
 /* ── Text viewer (streaming) ──────────────────────────────────────────── */
@@ -434,7 +436,9 @@ static void render_text(const char *path) {
 
   draw_rule(pile_rows - 2);
   draw_text_legend(pile_rows - 1);
-  pile_draw_cursor_to(pile_rows - 1, pile_cols - 1);
+  /* Don't park at the bottom-right corner — some terminals set a
+   * pending-wrap latch that scrolls the screen on the next write. */
+  pile_draw_cursor_to(pile_rows - 1, 0);
 }
 
 /* ── :offset prompt ───────────────────────────────────────────────────── */
@@ -477,8 +481,6 @@ static void run_hex_loop(const char *path) {
     switch (k) {
       case 'q':
       case PKEY_ESC:
-      case PKEY_F10:
-      case PKEY_F3:
         return;
       case PKEY_UP:
       case 'k':
@@ -524,8 +526,6 @@ static void run_text_loop(const char *path) {
     switch (k) {
       case 'q':
       case PKEY_ESC:
-      case PKEY_F10:
-      case PKEY_F3:
         return;
       case PKEY_UP:
       case 'k':
