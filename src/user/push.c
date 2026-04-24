@@ -11,22 +11,18 @@
 
 #include "push.h"
 
+#include "lib/uclib.h"
 #include "syscall.h"
 
 /* ── Configuration ───────────────────────────────────────────────────── */
 
 #define PUSH_LINE_MAX 256
 /* Expanded-token buffer: holds all $VAR expansions *and* glob matches
- * for a single input line.  Stack-allocated in execute_line(), and
- * must fit alongside the rest of push's call chain in the 4 KB user
- * stack page — exec_simple alone burns ~500 B (envp[65] + resolved +
- * toks[]), and execute_line's own toks[64] adds another 256 B, so this
- * has to stay modest.  Globs that exceed this surface as "argument
- * list too long". */
-// TODO: lift buf out of the stack (file-scope static, push is single-instance)
-// so TOK_BUF_SIZE can grow back toward EXEC_ARGV_BYTES_MAX without crowding
-// the 4 KB user stack page.
-#define TOK_BUF_SIZE 384
+ * for a single input line.  Heap-allocated (uc_malloc) in execute_line()
+ * so the 4 KB user stack page doesn't have to carry it.  Matches the
+ * kernel's EXEC_ARGV_BYTES_MAX so any glob that fits here also fits
+ * execve. */
+#define TOK_BUF_SIZE 1024
 #define TOKEN_MAX 64
 #define ARGV_MAX 32
 /* ENV_MAX and ENV_POOL_SIZE are overridable at build time so the host
@@ -57,6 +53,16 @@ static int exec_from_source(struct line_src *ls);
 static int exec_lines(const char **lines, int nlines);
 
 /* ── Global state ────────────────────────────────────────────────────── */
+
+/* Backing pool for uc_malloc.  Holds the short-lived allocations
+ * that used to crowd push's 4 KB user stack: execute_line's token
+ * buffer (TOK_BUF_SIZE ≈ 1 KB), exec_if/exec_while's body_lines[128]
+ * pointer array (~512 B), and exec_pipeline's stages struct array
+ * (~550 B).  Sized to cover one level of recursion through the
+ * if/while-body → execute_line → pipeline chain with all three
+ * allocations live.  Deeper or bigger allocations surface as
+ * "out of memory" / "argument list too long". */
+static char push_heap_pool[3072];
 
 static int last_status;
 static int shell_pid;
@@ -1449,12 +1455,18 @@ static int exec_simple(char **argv, int argc) {
 /* ── Pipeline execution ──────────────────────────────────────────────── */
 
 static int exec_pipeline(char **toks, int ntoks, int *pos) {
-  struct {
+  struct stage {
     char *argv[ARGV_MAX + 1];
     int argc;
-  } stages[PIPE_MAX];
+  };
+  struct stage *stages = uc_malloc(PIPE_MAX * sizeof(*stages));
+  if (!stages) {
+    err_msg("pipe", "out of memory");
+    return 1;
+  }
   int nstages = 0;
   int depth = 0; /* [[ ]] nesting depth */
+  int status = 0;
 
   stages[0].argc = 0;
 
@@ -1477,6 +1489,7 @@ static int exec_pipeline(char **toks, int ntoks, int *pos) {
         nstages++;
         if (nstages >= PIPE_MAX) {
           err_msg("pipe", "too many stages");
+          uc_free(stages);
           return 1;
         }
         stages[nstages].argc = 0;
@@ -1494,7 +1507,11 @@ static int exec_pipeline(char **toks, int ntoks, int *pos) {
   for (int i = 0; i < stage_count; i++) stages[i].argv[stages[i].argc] = 0;
 
   /* Single command — no pipe overhead */
-  if (stage_count == 1) return exec_simple(stages[0].argv, stages[0].argc);
+  if (stage_count == 1) {
+    status = exec_simple(stages[0].argv, stages[0].argc);
+    uc_free(stages);
+    return status;
+  }
 
   /* Multi-stage pipeline */
   char *envp[ENV_MAX + 1];
@@ -1508,6 +1525,7 @@ static int exec_pipeline(char **toks, int ntoks, int *pos) {
     if (i < stage_count - 1) {
       if (pipe(pipefd) < 0) {
         err_msg("pipe", "failed");
+        uc_free(stages);
         return 1;
       }
     }
@@ -1549,7 +1567,6 @@ static int exec_pipeline(char **toks, int ntoks, int *pos) {
   }
 
   /* Wait for all children; report last stage's exit status */
-  int status = 0;
   for (int i = 0; i < stage_count; i++) {
     int wstatus;
     waitpid(pids[i], &wstatus, 0);
@@ -1557,6 +1574,7 @@ static int exec_pipeline(char **toks, int ntoks, int *pos) {
       status = WIFEXITED(wstatus) ? (int)WEXITSTATUS(wstatus)
                                   : (128 + (int)WTERMSIG(wstatus));
   }
+  uc_free(stages);
   return status;
 }
 
@@ -1624,17 +1642,27 @@ static int exec_list(char **toks, int ntoks) {
 /* ── Line execution ──────────────────────────────────────────────────── */
 
 static int execute_line(const char *line) {
-  char buf[TOK_BUF_SIZE];
-  char *toks[TOKEN_MAX];
-  int ntoks = tokenize(line, buf, sizeof(buf), toks, TOKEN_MAX);
-  if (ntoks < 0) {
+  char *buf = uc_malloc(TOK_BUF_SIZE);
+  if (!buf) {
+    puts_fd(2, "push: out of memory\n");
     last_status = 1;
     return 1;
   }
-  if (ntoks == 0) return 0;
+  char *toks[TOKEN_MAX];
+  int ntoks = tokenize(line, buf, TOK_BUF_SIZE, toks, TOKEN_MAX);
+  if (ntoks < 0) {
+    uc_free(buf);
+    last_status = 1;
+    return 1;
+  }
+  if (ntoks == 0) {
+    uc_free(buf);
+    return 0;
+  }
 
   int status = exec_list(toks, ntoks);
   last_status = status;
+  uc_free(buf);
   return status;
 }
 
@@ -1825,6 +1853,12 @@ static int exec_if(const char *if_line, struct line_src *ls) {
   int done = 0;
   int status = 0;
 
+  const char **body_lines = uc_malloc(128 * sizeof(*body_lines));
+  if (!body_lines) {
+    err_msg("if", "out of memory");
+    return 1;
+  }
+
   /* Evaluate initial "if" condition */
   char cond_buf[PUSH_LINE_MAX];
   extract_condition(if_line, 2, cond_buf, sizeof(cond_buf), "then");
@@ -1832,7 +1866,6 @@ static int exec_if(const char *if_line, struct line_src *ls) {
   last_status = status;
 
   const char *if_terms[] = {"elif", "else", "fi"};
-  const char *body_lines[128];
   char term[16], term_line[PUSH_LINE_MAX];
 
   int nbody = collect_body(ls, body_lines, 128, if_terms, 3, term, sizeof(term),
@@ -1875,6 +1908,7 @@ static int exec_if(const char *if_line, struct line_src *ls) {
   }
 
   compound_pool_used = save_pool;
+  uc_free(body_lines);
   return last_status;
 }
 
@@ -1886,11 +1920,16 @@ static int exec_while(const char *while_line, struct line_src *ls) {
   int save_pool = compound_pool_used;
   int status = 0;
 
+  const char **body_lines = uc_malloc(128 * sizeof(*body_lines));
+  if (!body_lines) {
+    err_msg("while", "out of memory");
+    return 1;
+  }
+
   char cond_buf[PUSH_LINE_MAX];
   extract_condition(while_line, 5, cond_buf, sizeof(cond_buf), "do");
 
   const char *done_terms[] = {"done"};
-  const char *body_lines[128];
   char term[16], term_line[PUSH_LINE_MAX];
 
   int nbody = collect_body(ls, body_lines, 128, done_terms, 1, term,
@@ -1913,6 +1952,7 @@ static int exec_while(const char *while_line, struct line_src *ls) {
   }
 
   compound_pool_used = save_pool;
+  uc_free(body_lines);
   return last_status;
 }
 
@@ -1993,6 +2033,7 @@ static int run_file(const char *path) {
 /* ── Main ────────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[]) {
+  uc_heap_init(push_heap_pool, sizeof(push_heap_pool));
   shell_pid = getpid();
   shell_name = argc > 0 ? argv[0] : "push";
 
