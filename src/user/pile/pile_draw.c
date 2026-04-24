@@ -28,12 +28,18 @@
 #define C_EXEC     C("\033[1;32m")
 #define C_LINK     C("\033[36m")
 #define C_DEV      C("\033[1;33m")
-#define C_CUR      C("\033[1;7m")
-#define C_CUR_OFF  C("\033[7m")
+/* Active pane shares a cyan-background look between its header and
+ * its cursor line — consistent "this is the active side" signal.
+ * Inactive cursor stays plain reverse (visible but clearly secondary);
+ * inactive header is dim.  C_MARK keeps plain reverse so a marked
+ * entry on the inactive pane is distinguishable from a cursored one
+ * by the leading '*' glyph we already emit. */
+#define C_CUR      C("\033[1;37;46m")  /* active: bold white on cyan */
+#define C_CUR_OFF  C("\033[7m")        /* inactive: plain reverse */
 #define C_MARK     C("\033[7m")
 #define C_FRAME    C("\033[2m")
-#define C_HEADER   C("\033[1m")
-#define C_HEADER_OFF C("\033[2m")
+#define C_HEADER   C("\033[1;37;46m")  /* active header: bold white on cyan */
+#define C_HEADER_OFF C("\033[2m")      /* inactive header: dim */
 #define C_KEY      C("\033[1m")
 #define C_WARN     C("\033[33m")
 #define C_ERR      C("\033[31m")
@@ -499,8 +505,10 @@ void pile_show_help(void) {
   static const struct entry body[] = {
     /* { "", 0 } = blank spacer; right==0 = group header */
     { "Navigation", 0 },
-    { "  arrows, PgUp/PgDn, Home/End", "scroll" },
+    { "  up / down  PgUp / PgDn",      "scroll" },
+    { "  Home / End",                  "top / bottom" },
     { "  TAB",                         "switch active pane" },
+    { "  left / right",                "pane switch / parent dir" },
     { "  ENTER / BS",                  "open dir / parent dir" },
     { "", 0 },
     { "Marking", 0 },

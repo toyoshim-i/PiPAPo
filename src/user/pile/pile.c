@@ -248,6 +248,18 @@ static void handle_key(int key) {
     case PKEY_DOWN:
       pile_pane_move(p, +1, vrows);
       return;
+    case PKEY_LEFT:
+      /* Spatial semantics: arrow pointing AWAY from the other pane
+       * goes up (parent dir), arrow pointing TOWARD it switches
+       * panes.  Left pane (pane_a) is "away" when left is pressed;
+       * right pane is "away" when right is pressed. */
+      if (pile_active == &pile_pane_a) pile_pane_parent(p);
+      else pile_active = &pile_pane_a;
+      return;
+    case PKEY_RIGHT:
+      if (pile_active == &pile_pane_a) pile_active = &pile_pane_b;
+      else pile_pane_parent(p);
+      return;
     case PKEY_PGUP:
       pile_pane_move(p, -vrows, vrows);
       return;
