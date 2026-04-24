@@ -1,11 +1,7 @@
 /*
  * pile_ops.c — File operation helpers and transient status line
  *
- * Design: docs/proposals/pile.md Phase P3
- *
- * P3a provides the status-message infrastructure, yes/no confirmation,
- * and the F7 (mkdir) / F8 (delete) ops.  F5 / F6 copy / move land in
- * P3b and P3c.
+ * User guide: docs/user/pile.md
  */
 
 #include "pile.h"

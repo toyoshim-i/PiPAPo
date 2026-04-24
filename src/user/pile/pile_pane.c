@@ -1,7 +1,7 @@
 /*
  * pile_pane.c — Directory reading, sorting, cursor navigation
  *
- * Design: docs/proposals/pile.md
+ * User guide: docs/user/pile.md
  */
 
 #include "pile.h"

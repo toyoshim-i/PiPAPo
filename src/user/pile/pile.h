@@ -1,7 +1,7 @@
 /*
  * pile.h — PiPAPo two-pane filer, shared types and declarations
  *
- * Design: docs/proposals/pile.md
+ * User guide: docs/user/pile.md
  */
 
 #ifndef PPAP_USER_PILE_H
@@ -20,7 +20,7 @@
 #define PILE_MAX_ENTRIES 128
 #define PILE_PATH_MAX    128
 
-/* Layout thresholds, see docs/proposals/pile.md "Layout adaptation". */
+/* Layout thresholds, see docs/user/pile.md "Layout". */
 #define PILE_MIN_COLS      40  /* below this, refuse to run */
 #define PILE_TWOPANE_COLS  70  /* ≥ this, use two panes */
 

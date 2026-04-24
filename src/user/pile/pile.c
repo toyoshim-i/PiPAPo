@@ -1,10 +1,7 @@
 /*
  * pile.c — PiPAPo two-pane filer, entry point and main loop
  *
- * Design: docs/proposals/pile.md
- *
- * P1 scope: single-pane listing, cursor navigation, ENTER on directory,
- * quit with F10 / q / Ctrl-Q.  No file operations, no viewer.
+ * User guide: docs/user/pile.md
  */
 
 #include "pile.h"
@@ -25,12 +22,12 @@ int pile_quit;
 int pile_use_color = 1;
 
 /* Backing pool for uc_malloc.  Ops borrow path / name / target / I/O
- * buffers from here instead of the stack — see docs/proposals/pile.md
- * Phase PS.  Sized for the worst case: pile_op_move has ~900 B of
- * allocations live when it calls refresh_panes, which itself pulls
- * ~220 B for a pane reload (dirent + path_buf + sort tmp + saved
- * prev_name in reload_keep_cursor).  Peak ≈ 1.1 KB; 1.5 KB leaves
- * comfortable headroom. */
+ * buffers from here instead of the stack.  Sized for the worst case:
+ * pile_op_move has ~900 B of allocations live when it calls
+ * refresh_panes, which itself pulls ~220 B for a pane reload
+ * (dirent + path_buf + sort tmp + saved prev_name in
+ * reload_keep_cursor).  Peak ≈ 1.1 KB; 1.5 KB leaves comfortable
+ * headroom. */
 static char pile_heap_pool[1536];
 
 /* ── Terminal raw mode ────────────────────────────────────────────────── */

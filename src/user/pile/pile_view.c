@@ -1,11 +1,7 @@
 /*
  * pile_view.c — Hex and text viewers for the pile filer
  *
- * Design: docs/proposals/pile.md Phase P4
- *
- * P4a lands the hex viewer and the shared open / keyboard loop.
- * Text viewer + auto-detection (sniff first 4 KB for > 95% printable)
- * land in P4b.
+ * User guide: docs/user/pile.md
  */
 
 #include "pile.h"

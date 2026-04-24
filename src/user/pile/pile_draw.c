@@ -1,7 +1,7 @@
 /*
  * pile_draw.c — VT100 rendering for the pile filer
  *
- * Design: docs/proposals/pile.md
+ * User guide: docs/user/pile.md
  *
  * Chrome layout (identical for single-pane and two-pane modes, 6 rows):
  *   row 0                   pane header(s)
