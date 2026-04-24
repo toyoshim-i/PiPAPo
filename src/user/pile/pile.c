@@ -197,6 +197,21 @@ static void query_winsize(void) {
   }
 }
 
+/* Ctrl-L: re-query the terminal geometry and repaint.  PPAP has no
+ * SIGWINCH source, so this is the only hook that picks up a geometry
+ * change (e.g. mode switch or a terminal emulator resize that
+ * happened while pile was asleep on read). */
+static void pile_redraw(void) {
+  query_winsize();
+  if (pile_cols < PILE_MIN_COLS) {
+    pile_status_set("pile: terminal too narrow", 1);
+    return;
+  }
+  pile_layout =
+      (pile_cols >= PILE_TWOPANE_COLS) ? PILE_LAYOUT_TWO : PILE_LAYOUT_SINGLE;
+  pile_draw_clear();
+}
+
 /* ── Prompt ───────────────────────────────────────────────────────────── */
 
 int pile_prompt(const char *label, char *out, int outsize) {
@@ -357,6 +372,29 @@ static void handle_key(int key) {
     case '?':
       pile_show_help();
       pile_read_key();  /* wait for any key to dismiss */
+      return;
+    case 0x0C:  /* Ctrl-L */
+      pile_redraw();
+      return;
+    case 's': {
+      p->sort_mode = (uint8_t)((p->sort_mode + 1) % PILE_SORT_COUNT);
+      pile_pane_resort(p);
+      /* Cursor index stays; what's under it likely changed.  Re-clamp
+       * scroll so the cursor is still visible. */
+      pile_pane_move(p, 0, vrows);
+      static const char *names[PILE_SORT_COUNT] = {"name", "size", "mtime"};
+      char *msg = uc_malloc(48);
+      if (msg) {
+        uc_snprintf(msg, 48, "sort: %s", names[p->sort_mode]);
+        pile_status_set(msg, 0);
+        uc_free(msg);
+      }
+      return;
+    }
+    case '.':
+      p->show_hidden = p->show_hidden ? 0 : 1;
+      pile_pane_load(p);
+      pile_status_set(p->show_hidden ? "hidden: shown" : "hidden: hidden", 0);
       return;
     case 'c':
       pile_op_copy(p);

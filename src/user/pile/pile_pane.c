@@ -28,19 +28,26 @@ int pile_path_join(char *out, int cap, const char *dir, const char *name) {
 
 /* ── Sort ──────────────────────────────────────────────────────────────── */
 
-/* Dirs first, then lexicographic by name.  ".." is pinned to the top so
- * navigation always sees it as entry 0 when present. */
-static int entry_cmp(const pile_entry_t *a, const pile_entry_t *b) {
+/* Dirs first, then by the active sort mode.  ".." is pinned to the top
+ * so navigation always sees it as entry 0 when present.  Ties fall
+ * through to lexicographic name order for stability. */
+static int entry_cmp(const pile_entry_t *a, const pile_entry_t *b,
+                     int sort_mode) {
   int a_is_dotdot = (a->name[0] == '.' && a->name[1] == '.' && a->name[2] == '\0');
   int b_is_dotdot = (b->name[0] == '.' && b->name[1] == '.' && b->name[2] == '\0');
   if (a_is_dotdot != b_is_dotdot) return b_is_dotdot - a_is_dotdot;
   int a_is_dir = (a->d_type == DT_DIR);
   int b_is_dir = (b->d_type == DT_DIR);
   if (a_is_dir != b_is_dir) return b_is_dir - a_is_dir;
+  if (sort_mode == PILE_SORT_SIZE) {
+    if (a->size != b->size) return (a->size > b->size) ? -1 : 1;
+  } else if (sort_mode == PILE_SORT_MTIME) {
+    if (a->mtime != b->mtime) return (a->mtime > b->mtime) ? -1 : 1;
+  }
   return uc_strcmp(a->name, b->name);
 }
 
-static void sort_entries(pile_entry_t *a, int n) {
+static void sort_entries(pile_entry_t *a, int n, int sort_mode) {
   /* Insertion sort: n ≤ PILE_MAX_ENTRIES, O(n²) is fine and keeps code
    * small.  The "hole" element is 76 B (pile_entry_t.name is a char
    * vector), so we borrow it from the heap instead of the stack —
@@ -51,7 +58,7 @@ static void sort_entries(pile_entry_t *a, int n) {
   for (int i = 1; i < n; i++) {
     *tmp = a[i];
     int j = i;
-    while (j > 0 && entry_cmp(&a[j - 1], tmp) > 0) {
+    while (j > 0 && entry_cmp(&a[j - 1], tmp, sort_mode) > 0) {
       a[j] = a[j - 1];
       j--;
     }
@@ -113,6 +120,10 @@ int pile_pane_load(pile_pane_t *pane) {
     if (n <= 0) break;
     /* Skip "." — we keep ".." for navigation. */
     if (de->d_name[0] == '.' && de->d_name[1] == '\0') continue;
+    /* Hide dotfiles unless the pane has show_hidden set.  ".." stays
+     * visible either way so the user can always navigate upward. */
+    if (!pane->show_hidden && de->d_name[0] == '.' &&
+        !(de->d_name[1] == '.' && de->d_name[2] == '\0')) continue;
     pile_entry_t *e = &pane->entries[pane->count++];
     int nlen = uc_strlen(de->d_name);
     if (nlen > (int)sizeof(e->name) - 1) nlen = (int)sizeof(e->name) - 1;
@@ -133,8 +144,12 @@ int pile_pane_load(pile_pane_t *pane) {
   uc_free(path_buf);
   uc_free(de);
 
-  sort_entries(pane->entries, pane->count);
+  sort_entries(pane->entries, pane->count, pane->sort_mode);
   return 0;
+}
+
+void pile_pane_resort(pile_pane_t *pane) {
+  sort_entries(pane->entries, pane->count, pane->sort_mode);
 }
 
 /* ── Cursor ────────────────────────────────────────────────────────────── */

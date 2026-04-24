@@ -60,6 +60,15 @@ typedef struct {
 #define PILE_EFLAG_MARKED    0x01
 #define PILE_EFLAG_STATFAIL  0x02
 
+/* Sort order.  Dirs always precede files regardless of mode — the mode
+ * only ranks entries within the "files" group.  NAME ranks dirs too. */
+enum {
+  PILE_SORT_NAME = 0,
+  PILE_SORT_SIZE,
+  PILE_SORT_MTIME,
+  PILE_SORT_COUNT,
+};
+
 typedef struct {
   char path[PILE_PATH_MAX];
   pile_entry_t entries[PILE_MAX_ENTRIES];
@@ -67,12 +76,15 @@ typedef struct {
   int cursor;    /* index into entries[] */
   int scroll;    /* first visible row */
   int truncated; /* 1 if more than PILE_MAX_ENTRIES entries in dir */
+  uint8_t sort_mode;   /* PILE_SORT_* */
+  uint8_t show_hidden; /* 1 = include dotfiles in listing */
 } pile_pane_t;
 
 /* ── Global state ──────────────────────────────────────────────────────── */
 
-/* Layout classification, set once at startup from pile_cols.  SIGWINCH
- * re-detection is wired in P5. */
+/* Layout classification, recomputed from pile_cols at startup and on
+ * Ctrl-L redraw.  PPAP terminals don't generate SIGWINCH (fixed VGA /
+ * framebuffer / serial geometry), so explicit redraw is the hook. */
 enum {
   PILE_LAYOUT_SINGLE,
   PILE_LAYOUT_TWO,
@@ -99,6 +111,12 @@ int pile_read_key(void);
 /* Load pane->entries from pane->path.  Resets cursor/scroll.  Returns 0
  * on success, -1 if the directory cannot be opened (leaves pane empty). */
 int pile_pane_load(pile_pane_t *pane);
+
+/* Re-sort pane->entries using pane->sort_mode, without re-reading the
+ * directory.  Cursor keeps its index (the entry under it will often
+ * move); caller should consider clamping if count changed, which
+ * resort does not do. */
+void pile_pane_resort(pile_pane_t *pane);
 
 /* Move cursor; clamps to [0, count-1] and adjusts scroll. */
 void pile_pane_move(pile_pane_t *pane, int delta, int visible_rows);

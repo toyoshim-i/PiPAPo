@@ -522,8 +522,11 @@ void pile_show_help(void) {
     { "  c / m / d",                   "copy / move / delete" },
     { "  k",                           "mkdir" },
     { "", 0 },
+    { "  s  /  .",                     "cycle sort / toggle hidden" },
+    { "", 0 },
     { "Other", 0 },
     { "  !",                           "spawn /bin/sh" },
+    { "  Ctrl-L",                      "redraw / re-query winsize" },
     { "  q  (Ctrl-Q)",                 "quit" },
   };
   int n = (int)(sizeof(body) / sizeof(body[0]));
