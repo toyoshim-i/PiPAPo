@@ -14,8 +14,13 @@
 
 #define VIEW_CHROME_ROWS 3   /* title + rule + legend */
 #define VIEW_READ_BUF    1024
-#define VIEW_TEXT_BUF    16384
-#define VIEW_DETECT_BYTES 4096
+/* Text buffer lives in BSS (static tbuf).  On the ia16 pcxt target
+ * the user segment is a single 64 KB block shared with the stack, so
+ * a larger BSS footprint directly squeezes stack headroom.  4 KB fits
+ * most config / script files; bigger files render truncated with a
+ * status message, and users can fall back to the hex viewer. */
+#define VIEW_TEXT_BUF    4096
+#define VIEW_DETECT_BYTES 2048
 
 #define V_C(seq) (pile_use_color ? (seq) : "")
 #define V_RST    V_C("\033[0m")
@@ -552,7 +557,7 @@ void pile_view_file(const char *path, int force_hex) {
   if (use_text) {
     text_load(fd, vsize);
     if (ttruncated) {
-      pile_status_set("pile: file truncated at 16 KB", 0);
+      pile_status_set("pile: file truncated at 4 KB", 0);
     }
   }
 
