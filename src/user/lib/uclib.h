@@ -93,4 +93,20 @@ const char *uc_getenv(const char *name);
  * Never call from application code. */
 void _uclib_init_env(int argc, char **argv);
 
+/* --- user-space heap (uc_heap.c) ---
+ *
+ * Best-fit allocator over a caller-supplied static pool with inline
+ * metadata.  Mirrors the page-allocator idiom: address-sorted free
+ * list, always-coalesced invariant on free.  4-byte per-allocation
+ * overhead; single pool per process.
+ *
+ * uc_heap_init   — seed the pool; idempotent (resets the heap).
+ * uc_malloc      — returns NULL on OOM, on size 0, or if size > 64 KB.
+ * uc_free        — NULL-safe; double-free is undefined behaviour.
+ *
+ * See docs/user/uc_malloc.md for the full design notes. */
+void uc_heap_init(void *pool, size_t size);
+void *uc_malloc(size_t size);
+void uc_free(void *ptr);
+
 #endif /* PPAP_USER_LIB_UCLIB_H */

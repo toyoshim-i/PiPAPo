@@ -411,6 +411,94 @@ keypress (full SIGWINCH wiring is Phase P5).
 Phases P1–P4 must land.  P5 is quality-of-life — skip entries
 can be dropped if size gets tight.
 
+### Phase PS — Stack safety and uclib heap
+
+Interleaved with (not after) P5: addresses the three design
+rules surfaced after the P4b crash debugging —
+
+1. Avoid allocating vectors on the stack.
+2. Avoid recursive calls whose stack growth is input-dependent.
+3. Avoid large static buffers for one-off use.
+
+pile's ia16 segment is 64 KB shared between text, rodata, data,
+bss, and stack.  The batch-op functions (`pile_op_copy` 846 B,
+`pile_op_move` 942 B, `pile_op_delete` 714 B) + `uc_copy_fd`
+(520 B on-stack I/O buffer) build up to ~1.5 KB of stack during
+a copy, against a nominal 2 KB user stack — already wasteful
+and fragile.
+
+#### PS1 — `uc_heap_init` / `uc_malloc` / `uc_free` in uclib
+
+Page-allocator-style allocator with inline metadata, targeting
+the caller-supplied static pool pattern:
+
+```c
+void uc_heap_init(void *pool, size_t size);
+void *uc_malloc(size_t size);
+void uc_free(void *ptr);
+```
+
+Design (mirrors `page_alloc.c` idioms):
+
+- **Inline metadata.**  4-byte header per block (`uint16_t size`
+  payload + `uint16_t flags` with bit 0 = free).  The flags
+  field gives natural 4-byte alignment of the payload on 32-bit
+  targets and leaves room for future poison / tag bits.
+- **Address-sorted doubly-linked free list.**  Free blocks hold
+  `next` / `prev` pointers in the payload area, reused as user
+  data once allocated (zero extra overhead for used blocks
+  beyond the 4-byte header).
+- **Best-fit** on `uc_malloc`; perfect-fit short-circuits.  Split
+  only when the remainder can hold a minimum free block
+  (header + free-node).
+- **Always-coalesced invariant.**  On `uc_free`, find insertion
+  point in the sorted list; coalesce with `list_prev` if
+  physically adjacent; coalesce with `list_next` if physically
+  adjacent; then insert / replace.  O(free_count) find,
+  O(1) coalesce.
+- 16-bit size field → 64 KB max per allocation (naturally fits
+  the ia16 segment).  API returns NULL on OOM or oversize.
+- Single pool per process; one `uc_heap_init` call at startup.
+- Unit tests in `tests/user/test_uc_heap.c` (host-side via the
+  existing host-test harness): init, alloc/free, split,
+  forward-coalesce, backward-coalesce, both-sides-coalesce,
+  fragmentation recovery.
+
+Detailed design migrates to [docs/user/uc_malloc.md](/docs/user/uc_malloc.md) once implementation lands.
+
+#### PS2 — pile heap bootstrap
+
+`static char pile_heap_pool[1024]` in `pile.c`; `uc_heap_init`
+at startup.  Migrate `pile_op_copy` / `pile_op_move` /
+`pile_op_delete` / `pile_op_mkdir` stack vectors to
+`uc_malloc` / `uc_free`:
+
+- `int targets[PILE_MAX_ENTRIES]` (256 B) → heap.
+- `char src_path[128]` / `char dst_path[128]` → heap.
+- `char first_name[64]` / `char new_name[64]` → heap.
+- `char full[192]` (mkdir) / `char name[64]` → heap.
+- Copy loop's I/O buffer: inline the read/write loop with a
+  256 B heap buffer instead of calling `uc_copy_fd`
+  (whose 512 B stack buffer is the other major stack user).
+
+Expected per-op stack frames drop from 700–940 B to ~100–150 B.
+
+#### PS3 — pane and handle_key migration
+
+Remaining stack vectors:
+
+- `fill_stat`'s `char full[PILE_PATH_MAX + 64]` (192 B).
+- `pile_pane_enter` / `pile_pane_parent`'s `char newpath[128]`.
+- `handle_key`'s F3 `char path[128]` and `+/-` `char buf[64]`.
+
+All move to `uc_malloc` / `uc_free` pairs.
+
+#### PS4 — `match_glob` iterative rewrite
+
+Convert the recursive glob matcher to a two-cursor loop with
+backtracking (standard pattern).  Removes the Rule 2 violation
+so no pathological glob can grow the stack unpredictably.
+
 ### Deletion
 
 After P5 lands (or after the proposal author decides P5 is
