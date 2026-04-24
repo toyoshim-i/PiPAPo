@@ -14,12 +14,6 @@
 
 #define VIEW_CHROME_ROWS 3   /* title + rule + legend */
 #define VIEW_READ_BUF    1024
-/* Text buffer lives in BSS (static tbuf).  On the ia16 pcxt target
- * the user segment is a single 64 KB block shared with the stack, so
- * a larger BSS footprint directly squeezes stack headroom.  4 KB fits
- * most config / script files; bigger files render truncated with a
- * status message, and users can fall back to the hex viewer. */
-#define VIEW_TEXT_BUF    4096
 #define VIEW_DETECT_BYTES 2048
 
 #define V_C(seq) (pile_use_color ? (seq) : "")
@@ -37,12 +31,10 @@ static int vrows_visible;
 static int vshow_ascii;          /* include ASCII gutter? */
 static uint8_t vbuf[VIEW_READ_BUF];
 
-/* Text viewer state.  tbuf holds the whole file content up to
- * VIEW_TEXT_BUF bytes; larger files are truncated with a flag set so
- * the status line can flag it. */
-static char tbuf[VIEW_TEXT_BUF];
-static int ttotal;
-static int ttruncated;
+/* Text viewer state.  No fixed-size content buffer — the viewer is
+ * streaming: each render lseeks to the start of the file, skips past
+ * tscroll lines, and reads / displays one screenful.  tlines is
+ * computed once at load time by scanning the whole file. */
 static int tlines;
 static int tscroll;              /* first visible line index */
 
@@ -249,33 +241,29 @@ static void render(const char *path) {
   pile_draw_cursor_to(pile_rows - 1, pile_cols - 1);
 }
 
-/* ── Text viewer ──────────────────────────────────────────────────────── */
+/* ── Text viewer (streaming) ──────────────────────────────────────────── */
 
-/* Count total lines in tbuf.  An incomplete final line (no trailing
- * newline) still counts.  An empty file reports 1 (for a lone empty
- * line) which makes scroll math trivial. */
-static int text_count_lines(void) {
+/* Scan the whole file once via the shared vbuf to count lines.  An
+ * incomplete final line (no trailing newline) still counts; an empty
+ * file reports 1 so scroll math stays trivial. */
+static int text_scan_lines(int fd) {
+  if (lseek(fd, 0, 0) < 0) return 1;
   int n = 1;
-  for (int i = 0; i < ttotal; i++) {
-    if (tbuf[i] == '\n' && i + 1 < ttotal) n++;
-  }
-  return n;
-}
-
-/* Read up to VIEW_TEXT_BUF bytes into tbuf; set ttruncated if the
- * file is larger.  Returns bytes read. */
-static int text_load(int fd, uint32_t size) {
-  ttotal = 0;
-  ttruncated = 0;
-  if (lseek(fd, 0, 0) < 0) return 0;
-  while (ttotal < VIEW_TEXT_BUF) {
-    int r = (int)read(fd, tbuf + ttotal, VIEW_TEXT_BUF - ttotal);
+  int last = 0;
+  int got_any = 0;
+  for (;;) {
+    int r = (int)read(fd, vbuf, sizeof(vbuf));
     if (r <= 0) break;
-    ttotal += r;
+    got_any = 1;
+    for (int i = 0; i < r; i++) {
+      last = vbuf[i];
+      if (last == '\n') n++;
+    }
   }
-  if ((uint32_t)ttotal < size) ttruncated = 1;
-  tlines = text_count_lines();
-  return ttotal;
+  if (!got_any) return 1;
+  /* A file ending with '\n' has N lines, not N+1. */
+  if (last == '\n' && n > 1) n--;
+  return n;
 }
 
 /* Sniff first VIEW_DETECT_BYTES bytes for >=95% printable ASCII +
@@ -339,7 +327,6 @@ static void draw_text_title(const char *path) {
     n /= 10;
   }
   vemit(numbuf + pos);
-  if (ttruncated) uc_putc('+');
   uc_putc(' ');
   vemit(V_RST);
   pile_draw_clear_to_eol();
@@ -357,57 +344,92 @@ static void draw_text_legend(int row) {
   pile_draw_clear_to_eol();
 }
 
-/* Render one line of text at (row, 0), starting at tbuf[off], until
- * \n or cols exhausted.  Advances and returns the new `off` past the
- * line's \n (if any).  Tabs expand to the next 8-column boundary;
- * non-printable bytes render as '.'. */
-static int render_text_line(int row, int off) {
-  pile_draw_cursor_to(row, 0);
-  int col = 0;
-  while (off < ttotal && tbuf[off] != '\n' && col < pile_cols) {
-    unsigned char c = (unsigned char)tbuf[off];
-    if (c == '\t') {
-      int spaces = 8 - (col % 8);
-      for (int j = 0; j < spaces && col < pile_cols; j++) {
-        uc_putc(' ');
-        col++;
-      }
-    } else if (c >= 32 && c < 127) {
-      uc_putc((char)c);
-      col++;
-    } else if (c == '\r') {
-      /* ignore bare CR, mostly for CRLF files */
-    } else {
-      uc_putc('.');
-      col++;
-    }
-    off++;
-  }
-  /* skip to the end of the current line (including long wrapped tail) */
-  while (off < ttotal && tbuf[off] != '\n') off++;
-  if (off < ttotal && tbuf[off] == '\n') off++;
-  pile_draw_clear_to_eol();
-  return off;
-}
-
+/* Streaming text renderer.  Re-reads the file on every render: no
+ * in-memory content buffer means no per-file size cap and no BSS
+ * footprint beyond the shared vbuf.  O(tscroll + vrows * pile_cols)
+ * per render; acceptable for interactive use on the tight ia16
+ * segment budget. */
 static void render_text(const char *path) {
   draw_text_title(path);
 
-  /* Walk tbuf to find the byte offset of line `tscroll`. */
-  int off = 0;
-  int line = 0;
-  while (line < tscroll && off < ttotal) {
-    if (tbuf[off] == '\n') line++;
-    off++;
+  if (lseek(vfd, 0, 0) < 0) {
+    pile_draw_cursor_to(1, 0);
+    pile_draw_clear_to_eol();
+    return;
   }
 
-  for (int i = 0; i < vrows_visible; i++) {
-    if (off >= ttotal) {
-      pile_draw_cursor_to(1 + i, 0);
+  /* vbuf is the shared chunked-read buffer.  buf_len == -1 signals
+   * "no more bytes" so the render loop can short-circuit remaining
+   * rows. */
+  int buf_pos = 0;
+  int buf_len = 0;
+
+  /* Skip past tscroll newlines. */
+  int skipped = 0;
+  while (skipped < tscroll) {
+    if (buf_pos >= buf_len) {
+      buf_len = (int)read(vfd, vbuf, sizeof(vbuf));
+      buf_pos = 0;
+      if (buf_len <= 0) break;
+    }
+    if (vbuf[buf_pos++] == '\n') skipped++;
+  }
+
+  /* Render one row at a time, reading one line from the chunk stream. */
+  int eof = (buf_len <= 0);
+  for (int row = 0; row < vrows_visible; row++) {
+    pile_draw_cursor_to(1 + row, 0);
+    if (eof) {
       pile_draw_clear_to_eol();
       continue;
     }
-    off = render_text_line(1 + i, off);
+    int col = 0;
+    int line_end = 0;
+    while (col < pile_cols && !line_end) {
+      if (buf_pos >= buf_len) {
+        buf_len = (int)read(vfd, vbuf, sizeof(vbuf));
+        buf_pos = 0;
+        if (buf_len <= 0) {
+          eof = 1;
+          line_end = 1;
+          break;
+        }
+      }
+      unsigned char c = vbuf[buf_pos++];
+      if (c == '\n') {
+        line_end = 1;
+        break;
+      }
+      if (c == '\t') {
+        int spaces = 8 - (col % 8);
+        for (int j = 0; j < spaces && col < pile_cols; j++) {
+          uc_putc(' ');
+          col++;
+        }
+      } else if (c == '\r') {
+        /* swallow bare CR so CRLF files read cleanly */
+      } else if (c >= 32 && c < 127) {
+        uc_putc((char)c);
+        col++;
+      } else {
+        uc_putc('.');
+        col++;
+      }
+    }
+    /* If the visible width was reached mid-line, drain the rest of
+     * the line so the next row starts at the next logical line. */
+    while (!line_end) {
+      if (buf_pos >= buf_len) {
+        buf_len = (int)read(vfd, vbuf, sizeof(vbuf));
+        buf_pos = 0;
+        if (buf_len <= 0) {
+          eof = 1;
+          break;
+        }
+      }
+      if (vbuf[buf_pos++] == '\n') line_end = 1;
+    }
+    pile_draw_clear_to_eol();
   }
 
   draw_rule(pile_rows - 2);
@@ -555,10 +577,7 @@ void pile_view_file(const char *path, int force_hex) {
 
   int use_text = !force_hex && looks_like_text(fd, vsize);
   if (use_text) {
-    text_load(fd, vsize);
-    if (ttruncated) {
-      pile_status_set("pile: file truncated at 4 KB", 0);
-    }
+    tlines = text_scan_lines(fd);
   }
 
   pile_draw_clear();
