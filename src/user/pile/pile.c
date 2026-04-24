@@ -24,12 +24,14 @@ int pile_layout;
 int pile_quit;
 int pile_use_color = 1;
 
-/* Backing pool for uc_malloc.  Ops borrow path / name / I/O buffers
- * from here instead of the stack — see docs/proposals/pile.md
- * Phase PS.  Sizing: batch copy needs ~730 B (targets + two paths +
- * first_name + I/O buffer) plus uc_heap's 4 B/block overhead; 1 KB
- * leaves headroom. */
-static char pile_heap_pool[1024];
+/* Backing pool for uc_malloc.  Ops borrow path / name / target / I/O
+ * buffers from here instead of the stack — see docs/proposals/pile.md
+ * Phase PS.  Sized for the worst case: pile_op_move has ~900 B of
+ * allocations live when it calls refresh_panes, which itself pulls
+ * ~220 B for a pane reload (dirent + path_buf + sort tmp + saved
+ * prev_name in reload_keep_cursor).  Peak ≈ 1.1 KB; 1.5 KB leaves
+ * comfortable headroom. */
+static char pile_heap_pool[1536];
 
 /* ── Terminal raw mode ────────────────────────────────────────────────── */
 
@@ -246,11 +248,16 @@ static void handle_key(int key) {
       return;
     case '+':
     case '-': {
-      char buf[64];
+      char *buf = uc_malloc(64);
+      if (!buf) {
+        pile_status_set("pile: out of heap", 1);
+        return;
+      }
       const char *label = (key == '+') ? "Mark pattern: " : "Unmark pattern: ";
-      if (pile_prompt(label, buf, (int)sizeof(buf)) == 0 && buf[0]) {
+      if (pile_prompt(label, buf, 64) == 0 && buf[0]) {
         pile_pane_mark_glob(p, buf, key == '+');
       }
+      uc_free(buf);
       return;
     }
 
@@ -260,10 +267,15 @@ static void handle_key(int key) {
       if (p->count > 0) {
         const pile_entry_t *e = &p->entries[p->cursor];
         if (e->d_type != DT_REG) return;
-        char path[PILE_PATH_MAX];
-        if (pile_path_join(path, (int)sizeof(path), p->path, e->name) == 0) {
+        char *path = uc_malloc(PILE_PATH_MAX);
+        if (!path) {
+          pile_status_set("pile: out of heap", 1);
+          return;
+        }
+        if (pile_path_join(path, PILE_PATH_MAX, p->path, e->name) == 0) {
           pile_view_file(path, key == 'V');
         }
+        uc_free(path);
       }
       return;
     case PKEY_F5:

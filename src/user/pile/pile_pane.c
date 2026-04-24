@@ -41,28 +41,37 @@ static int entry_cmp(const pile_entry_t *a, const pile_entry_t *b) {
 }
 
 static void sort_entries(pile_entry_t *a, int n) {
-  /* Insertion sort: n ≤ 256, O(n²) is fine and keeps code small. */
+  /* Insertion sort: n ≤ PILE_MAX_ENTRIES, O(n²) is fine and keeps code
+   * small.  The "hole" element is 76 B (pile_entry_t.name is a char
+   * vector), so we borrow it from the heap instead of the stack —
+   * Phase PS no-vector-on-stack rule. */
+  if (n < 2) return;
+  pile_entry_t *tmp = uc_malloc(sizeof(*tmp));
+  if (!tmp) return;  /* leave unsorted rather than crash */
   for (int i = 1; i < n; i++) {
-    pile_entry_t tmp = a[i];
+    *tmp = a[i];
     int j = i;
-    while (j > 0 && entry_cmp(&a[j - 1], &tmp) > 0) {
+    while (j > 0 && entry_cmp(&a[j - 1], tmp) > 0) {
       a[j] = a[j - 1];
       j--;
     }
-    a[j] = tmp;
+    a[j] = *tmp;
   }
+  uc_free(tmp);
 }
 
 /* ── Load ──────────────────────────────────────────────────────────────── */
 
-static void fill_stat(pile_entry_t *e, const char *dir) {
-  char full[PILE_PATH_MAX + 64];
-  if (pile_path_join(full, (int)sizeof(full), dir, e->name) != 0) {
+/* Fill e's size/mode/mtime/d_type by stat()-ing dir/e->name.  The
+ * caller owns the scratch path buffer so pile_pane_load doesn't pay
+ * a malloc/free round-trip per entry. */
+static void fill_stat(pile_entry_t *e, const char *dir, char *path_buf) {
+  if (pile_path_join(path_buf, PILE_PATH_MAX, dir, e->name) != 0) {
     e->flags |= PILE_EFLAG_STATFAIL;
     return;
   }
   struct stat st;
-  if (stat(full, &st) != 0) {
+  if (stat(path_buf, &st) != 0) {
     e->flags |= PILE_EFLAG_STATFAIL;
     return;
   }
@@ -87,29 +96,42 @@ int pile_pane_load(pile_pane_t *pane) {
   int fd = open(pane->path, O_RDONLY, 0);
   if (fd < 0) return -1;
 
-  struct dirent de;
+  /* struct dirent is 68 B (includes 64-byte name vector); path_buf is
+   * PILE_PATH_MAX (128 B).  Both sit on the heap so pile_pane_load's
+   * own stack frame stays lean — see Phase PS. */
+  struct dirent *de = uc_malloc(sizeof(struct dirent));
+  char *path_buf = uc_malloc(PILE_PATH_MAX);
+  if (!de || !path_buf) {
+    uc_free(path_buf);
+    uc_free(de);
+    close(fd);
+    return -1;
+  }
+
   while (pane->count < PILE_MAX_ENTRIES) {
-    int n = getdents(fd, &de, sizeof(de));
+    int n = getdents(fd, de, sizeof(struct dirent));
     if (n <= 0) break;
     /* Skip "." — we keep ".." for navigation. */
-    if (de.d_name[0] == '.' && de.d_name[1] == '\0') continue;
+    if (de->d_name[0] == '.' && de->d_name[1] == '\0') continue;
     pile_entry_t *e = &pane->entries[pane->count++];
-    int nlen = uc_strlen(de.d_name);
+    int nlen = uc_strlen(de->d_name);
     if (nlen > (int)sizeof(e->name) - 1) nlen = (int)sizeof(e->name) - 1;
-    uc_memcpy(e->name, de.d_name, nlen);
+    uc_memcpy(e->name, de->d_name, nlen);
     e->name[nlen] = '\0';
     e->size = 0;
     e->mtime = 0;
     e->mode = 0;
-    e->d_type = de.d_type;
+    e->d_type = de->d_type;
     e->flags = 0;
-    fill_stat(e, pane->path);
+    fill_stat(e, pane->path, path_buf);
   }
   /* Detect truncation: one more readable entry beyond our cap. */
   if (pane->count == PILE_MAX_ENTRIES) {
-    if (getdents(fd, &de, sizeof(de)) > 0) pane->truncated = 1;
+    if (getdents(fd, de, sizeof(struct dirent)) > 0) pane->truncated = 1;
   }
   close(fd);
+  uc_free(path_buf);
+  uc_free(de);
 
   sort_entries(pane->entries, pane->count);
   return 0;
@@ -181,21 +203,29 @@ int pile_pane_enter(pile_pane_t *pane) {
   pile_entry_t *e = &pane->entries[pane->cursor];
   if (e->d_type != DT_DIR) return 0;  /* file actions land in P3 */
 
-  char newpath[PILE_PATH_MAX];
-  if (path_descend(newpath, (int)sizeof(newpath), pane->path, e->name) != 0)
-    return 0;
-  uc_strcpy(pane->path, newpath);
-  pile_pane_load(pane);
-  return 1;
+  char *newpath = uc_malloc(PILE_PATH_MAX);
+  if (!newpath) return 0;
+  int rc = 0;
+  if (path_descend(newpath, PILE_PATH_MAX, pane->path, e->name) == 0) {
+    uc_strcpy(pane->path, newpath);
+    pile_pane_load(pane);
+    rc = 1;
+  }
+  uc_free(newpath);
+  return rc;
 }
 
 int pile_pane_parent(pile_pane_t *pane) {
-  char newpath[PILE_PATH_MAX];
-  if (path_descend(newpath, (int)sizeof(newpath), pane->path, "..") != 0)
-    return 0;
-  uc_strcpy(pane->path, newpath);
-  pile_pane_load(pane);
-  return 1;
+  char *newpath = uc_malloc(PILE_PATH_MAX);
+  if (!newpath) return 0;
+  int rc = 0;
+  if (path_descend(newpath, PILE_PATH_MAX, pane->path, "..") == 0) {
+    uc_strcpy(pane->path, newpath);
+    pile_pane_load(pane);
+    rc = 1;
+  }
+  uc_free(newpath);
+  return rc;
 }
 
 /* ── Marking ───────────────────────────────────────────────────────────── */

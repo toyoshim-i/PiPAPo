@@ -64,7 +64,11 @@ static const char *errstr(int err) {
 }
 
 void pile_status_set_errno(const char *prefix, int errcode) {
-  char buf[128];
+  char *buf = uc_malloc(128);
+  if (!buf) {
+    pile_status_set(errstr(errcode), 1);
+    return;
+  }
   int pos = 0;
   int plen = uc_strlen(prefix);
   if (plen > 60) plen = 60;
@@ -72,9 +76,10 @@ void pile_status_set_errno(const char *prefix, int errcode) {
   buf[pos++] = ':';
   buf[pos++] = ' ';
   const char *es = errstr(errcode);
-  while (*es && pos < (int)sizeof(buf) - 1) buf[pos++] = *es++;
+  while (*es && pos < 127) buf[pos++] = *es++;
   buf[pos] = '\0';
   pile_status_set(buf, 1);
+  uc_free(buf);
 }
 
 /* ── Yes/no prompt ────────────────────────────────────────────────────── */
@@ -93,24 +98,28 @@ int pile_confirm(const char *prompt) {
 /* ── Pane reload with cursor preservation ─────────────────────────────── */
 
 static void reload_keep_cursor(pile_pane_t *pane) {
-  char prev_name[64];
-  prev_name[0] = '\0';
-  int prev_idx = pane->cursor;
-  if (pane->count > 0 && pane->cursor < pane->count) {
-    uc_strcpy(prev_name, pane->entries[pane->cursor].name);
+  char *prev_name = uc_malloc(64);
+  if (prev_name) {
+    prev_name[0] = '\0';
+    if (pane->count > 0 && pane->cursor < pane->count) {
+      uc_strcpy(prev_name, pane->entries[pane->cursor].name);
+    }
   }
+  int prev_idx = pane->cursor;
   pile_pane_load(pane);
-  if (prev_name[0]) {
+  if (prev_name && prev_name[0]) {
     for (int i = 0; i < pane->count; i++) {
       if (uc_strcmp(pane->entries[i].name, prev_name) == 0) {
         pane->cursor = i;
         int vr = pile_draw_visible_rows();
         if (pane->cursor >= pane->scroll + vr)
           pane->scroll = pane->cursor - vr + 1;
+        uc_free(prev_name);
         return;
       }
     }
   }
+  uc_free(prev_name);
   if (prev_idx >= pane->count) prev_idx = pane->count - 1;
   if (prev_idx < 0) prev_idx = 0;
   pane->cursor = prev_idx;
