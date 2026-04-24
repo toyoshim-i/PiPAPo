@@ -1146,25 +1146,6 @@ static int dos_lfn_find_close(dos_proc_t *dos, dos_regs_t *regs) {
   return 0;
 }
 
-/* AH=71h sub-dispatch on AL.  Unknown sub-functions return
- * DOS_ERR_INVALID_FUNCTION — this is *not* the "LFN not installed"
- * reply (AX=0x7100 CF=1) which we deliberately avoid, since this
- * dispatcher implements several real LFN calls. */
-static int dos_lfn_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
-  uint8_t al = (uint8_t)(regs->ax & 0xFFu);
-  switch (al) {
-    case 0x4E:
-      return dos_lfn_find_first(dos, regs);
-    case 0x4F:
-      return dos_lfn_find_next(dos, regs);
-    case 0x60:
-      return dos_lfn_truename(dos, regs);
-    case 0xA1:
-      return dos_lfn_find_close(dos, regs);
-  }
-  return -DOS_ERR_INVALID_FUNCTION;
-}
-
 /* AH=37h (undocumented): Get/Set switchar / device availability.
  *   AL=00h  Get switch char   → DL='/', AL=00
  *   AL=01h  Set switch char   (ignored, return AL=00)
@@ -2046,6 +2027,51 @@ static int dos_get_set_alloc(dos_proc_t *dos, dos_regs_t *regs) {
     default:
       return -DOS_ERR_INVALID_FUNCTION;
   }
+}
+
+/* AH=71h AL=43h LFN Extended Get/Set File Attributes.  Uses BL as the
+ * sub-function selector (0=GET, 1=SET; values 2..0x0B for compressed
+ * size / timestamps / creation time are beyond the SFN handler's scope
+ * and fall through to INVALID_FUNCTION).  Otherwise identical to
+ * AH=43h — DS:DX = path, CX = attribute word.  We route to the SFN
+ * handler after copying BL into AL, then restore AX so the caller's
+ * AH=71h AL=43h marker survives. */
+static int dos_lfn_get_set_attr(dos_proc_t *dos, dos_regs_t *regs) {
+  uint16_t saved_ax = regs->ax;
+  regs->ax = (uint16_t)((saved_ax & 0xFF00u) | (regs->bx & 0xFFu));
+  int ret = dos_get_set_attr(dos, regs);
+  regs->ax = saved_ax;
+  return ret;
+}
+
+/* AH=71h sub-dispatch on AL.  Unknown sub-functions return
+ * DOS_ERR_INVALID_FUNCTION — this is *not* the "LFN not installed"
+ * reply (AX=0x7100 CF=1) which we deliberately avoid, since this
+ * dispatcher implements several real LFN calls. */
+static int dos_lfn_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
+  uint8_t al = (uint8_t)(regs->ax & 0xFFu);
+  switch (al) {
+    /* AL=3Bh/41h/56h: thin LFN aliases for the SFN handlers — same
+     * DS:DX (and ES:DI for rename) calling convention and the
+     * underlying VFS already accepts long names. */
+    case 0x3B:
+      return dos_chdir(dos, regs);
+    case 0x41:
+      return dos_delete(dos, regs);
+    case 0x43:
+      return dos_lfn_get_set_attr(dos, regs);
+    case 0x4E:
+      return dos_lfn_find_first(dos, regs);
+    case 0x4F:
+      return dos_lfn_find_next(dos, regs);
+    case 0x56:
+      return dos_rename(dos, regs);
+    case 0x60:
+      return dos_lfn_truename(dos, regs);
+    case 0xA1:
+      return dos_lfn_find_close(dos, regs);
+  }
+  return -DOS_ERR_INVALID_FUNCTION;
 }
 
 int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
