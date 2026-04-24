@@ -118,6 +118,10 @@ int pile_pane_enter(pile_pane_t *pane);
 /* Change into the parent directory (same effect as ENTER on ".."). */
 int pile_pane_parent(pile_pane_t *pane);
 
+/* Join `dir` and `name` into `out` with a single separator, at most
+ * cap-1 chars.  Returns 0 on success, -1 on overflow. */
+int pile_path_join(char *out, int cap, const char *dir, const char *name);
+
 /* Marking.  Mark state lives in pile_entry_t.flags under PILE_EFLAG_MARKED
  * and is cleared implicitly by pile_pane_load() (fresh entry array). */
 void pile_pane_mark_toggle(pile_pane_t *pane, int vrows);
@@ -170,5 +174,13 @@ void pile_op_mkdir(pile_pane_t *pane);
 void pile_op_delete(pile_pane_t *pane);
 void pile_op_copy(pile_pane_t *pane);
 void pile_op_move(pile_pane_t *pane);
+
+/* ── Viewer (pile_view.c) ──────────────────────────────────────────────── */
+
+/* Open `path` in the viewer.  force_hex != 0 forces the hex viewer;
+ * otherwise auto-detection (landing in P4b) picks text vs hex.  The
+ * viewer owns the screen until the user quits (q / ESC / F10) and
+ * returns here, expecting the caller to repaint via pile_draw_all(). */
+void pile_view_file(const char *path, int force_hex);
 
 #endif /* PPAP_USER_PILE_H */

@@ -335,11 +335,13 @@ Pane cap: **256 entries per pane**.  Larger directories display a
 the full directory via `readdir`.
 
 Binary size guidance (measured against [more_userland_apps.md §Size budget](/docs/proposals/more_userland_apps.md#size-budget)):
-a multi-file interactive app with viewer logic should land
-somewhere between `pi` (20 KB on pcxt) and `pdb` (33 KB).  Target
-is **≤25 KB stripped on pcxt**.  If we overshoot we cut the hex
-viewer first (keep text; hex goes behind `-DPILE_HEX` build flag),
-not the two-pane layout.
+the hard limit on pcxt is the i8086 64 KB segment (text + rodata
++ data + bss + stack), with the crt0 and uclib tax applied on top.
+A multi-file interactive app with viewer logic should land in
+the `pi` (20 KB) to `pdb` (33 KB) range on pcxt; anything under
+40 KB has comfortable headroom.  No explicit soft target — watch
+the per-phase growth and reach for cuts only if we approach the
+segment limit.
 
 ## Phased rollout
 

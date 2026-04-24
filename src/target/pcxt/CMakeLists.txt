@@ -546,7 +546,8 @@ foreach(_app ${PCXT_USER_APPS})
       EXTRA_SOURCES
         ${PPAP_ROOT}/src/user/pile/pile_pane.c
         ${PPAP_ROOT}/src/user/pile/pile_draw.c
-        ${PPAP_ROOT}/src/user/pile/pile_ops.c)
+        ${PPAP_ROOT}/src/user/pile/pile_ops.c
+        ${PPAP_ROOT}/src/user/pile/pile_view.c)
   elseif(_app STREQUAL "pdb")
     pcxt_user_program(pdb ${PPAP_ROOT}/src/user/pdb/pdb.c
       EXTRA_SOURCES

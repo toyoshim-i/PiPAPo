@@ -12,7 +12,7 @@
 
 /* Build dir/name in out, at most cap-1 chars, NUL-terminated.  Returns
  * 0 on success, -1 on overflow.  Normalises double slashes. */
-static int path_join(char *out, int cap, const char *dir, const char *name) {
+int pile_path_join(char *out, int cap, const char *dir, const char *name) {
   int dlen = uc_strlen(dir);
   int nlen = uc_strlen(name);
   int need = dlen + 1 + nlen + 1;
@@ -57,7 +57,7 @@ static void sort_entries(pile_entry_t *a, int n) {
 
 static void fill_stat(pile_entry_t *e, const char *dir) {
   char full[PILE_PATH_MAX + 64];
-  if (path_join(full, (int)sizeof(full), dir, e->name) != 0) {
+  if (pile_path_join(full, (int)sizeof(full), dir, e->name) != 0) {
     e->flags |= PILE_EFLAG_STATFAIL;
     return;
   }
@@ -173,7 +173,7 @@ static int path_descend(char *out, int cap, const char *base,
     out[end] = '\0';
     return 0;
   }
-  return path_join(out, cap, base, leaf);
+  return pile_path_join(out, cap, base, leaf);
 }
 
 int pile_pane_enter(pile_pane_t *pane) {

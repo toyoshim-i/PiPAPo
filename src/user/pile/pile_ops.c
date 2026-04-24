@@ -90,21 +90,6 @@ int pile_confirm(const char *prompt) {
   }
 }
 
-/* ── Path helpers ─────────────────────────────────────────────────────── */
-
-static int path_join(char *out, int cap, const char *dir, const char *name) {
-  int dlen = uc_strlen(dir);
-  int nlen = uc_strlen(name);
-  int need = dlen + (dlen > 0 && dir[dlen - 1] == '/' ? 0 : 1) + nlen + 1;
-  if (need > cap) return -1;
-  int pos = 0;
-  for (int i = 0; i < dlen; i++) out[pos++] = dir[i];
-  if (dlen == 0 || dir[dlen - 1] != '/') out[pos++] = '/';
-  for (int i = 0; i < nlen; i++) out[pos++] = name[i];
-  out[pos] = '\0';
-  return 0;
-}
-
 /* ── Pane reload with cursor preservation ─────────────────────────────── */
 
 static void reload_keep_cursor(pile_pane_t *pane) {
@@ -139,7 +124,7 @@ void pile_op_mkdir(pile_pane_t *pane) {
   if (!name[0]) return;
 
   char full[PILE_PATH_MAX];
-  if (path_join(full, (int)sizeof(full), pane->path, name) != 0) {
+  if (pile_path_join(full, (int)sizeof(full), pane->path, name) != 0) {
     pile_status_set("pile: path too long", 1);
     return;
   }
@@ -279,7 +264,7 @@ void pile_op_copy(pile_pane_t *pane) {
   if (n == 1) {
     const char *name = pane->entries[targets[0]].name;
     char dst_path[PILE_PATH_MAX];
-    if (path_join(dst_path, (int)sizeof(dst_path), dst_pane->path, name) != 0) {
+    if (pile_path_join(dst_path, (int)sizeof(dst_path), dst_pane->path, name) != 0) {
       pile_status_set("pile: path too long", 1);
       return;
     }
@@ -303,8 +288,8 @@ void pile_op_copy(pile_pane_t *pane) {
     const char *name = pane->entries[targets[i]].name;
     char src_path[PILE_PATH_MAX];
     char dst_path[PILE_PATH_MAX];
-    if (path_join(src_path, (int)sizeof(src_path), pane->path, name) != 0 ||
-        path_join(dst_path, (int)sizeof(dst_path), dst_pane->path, name) != 0) {
+    if (pile_path_join(src_path, (int)sizeof(src_path), pane->path, name) != 0 ||
+        pile_path_join(dst_path, (int)sizeof(dst_path), dst_pane->path, name) != 0) {
       fail++;
       continue;
     }
@@ -350,8 +335,8 @@ void pile_op_move(pile_pane_t *pane) {
 
     char src_path[PILE_PATH_MAX];
     char dst_path[PILE_PATH_MAX];
-    if (path_join(src_path, (int)sizeof(src_path), pane->path, name) != 0 ||
-        path_join(dst_path, (int)sizeof(dst_path), pane->path, new_name) != 0) {
+    if (pile_path_join(src_path, (int)sizeof(src_path), pane->path, name) != 0 ||
+        pile_path_join(dst_path, (int)sizeof(dst_path), pane->path, new_name) != 0) {
       pile_status_set("pile: path too long", 1);
       return;
     }
@@ -376,7 +361,7 @@ void pile_op_move(pile_pane_t *pane) {
   if (n == 1) {
     const char *name = pane->entries[targets[0]].name;
     char dst_path[PILE_PATH_MAX];
-    if (path_join(dst_path, (int)sizeof(dst_path), dst_pane->path, name) != 0) {
+    if (pile_path_join(dst_path, (int)sizeof(dst_path), dst_pane->path, name) != 0) {
       pile_status_set("pile: path too long", 1);
       return;
     }
@@ -400,8 +385,8 @@ void pile_op_move(pile_pane_t *pane) {
     const char *name = pane->entries[targets[i]].name;
     char src_path[PILE_PATH_MAX];
     char dst_path[PILE_PATH_MAX];
-    if (path_join(src_path, (int)sizeof(src_path), pane->path, name) != 0 ||
-        path_join(dst_path, (int)sizeof(dst_path), dst_pane->path, name) != 0) {
+    if (pile_path_join(src_path, (int)sizeof(src_path), pane->path, name) != 0 ||
+        pile_path_join(dst_path, (int)sizeof(dst_path), dst_pane->path, name) != 0) {
       fail++;
       continue;
     }
@@ -463,7 +448,7 @@ void pile_op_delete(pile_pane_t *pane) {
   int last_err = 0;
   for (int i = 0; i < n; i++) {
     char full[PILE_PATH_MAX];
-    if (path_join(full, (int)sizeof(full), pane->path,
+    if (pile_path_join(full, (int)sizeof(full), pane->path,
                   pane->entries[targets[i]].name) != 0) {
       fail++;
       continue;

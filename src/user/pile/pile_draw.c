@@ -400,6 +400,7 @@ static void draw_legend(int row) {
   uc_putc(' ');
   emit(C_KEY); emit("TAB");   emit(C_RST); emit(" switch  ");
   emit(C_KEY); emit("SPC");   emit(C_RST); emit(" mark  ");
+  emit(C_KEY); emit("F3");    emit(C_RST); emit(" view  ");
   emit(C_KEY); emit("F5");    emit(C_RST); emit(" copy  ");
   emit(C_KEY); emit("F6");    emit(C_RST); emit(" move  ");
   emit(C_KEY); emit("F7");    emit(C_RST); emit(" mkdir  ");
