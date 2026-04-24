@@ -12,6 +12,10 @@
 
 #include "common/errno.h"
 
+/* Forward declarations for helpers defined later in the file. */
+static void jump_to_name(pile_pane_t *pane, const char *name);
+static void refresh_panes(pile_pane_t *src);
+
 /* ── Status line ──────────────────────────────────────────────────────── */
 
 char pile_status_msg[128];
@@ -144,17 +148,8 @@ void pile_op_mkdir(pile_pane_t *pane) {
     pile_status_set_errno("mkdir", rc);
     return;
   }
-  /* Reload and try to land the cursor on the new entry. */
-  pile_pane_load(pane);
-  for (int i = 0; i < pane->count; i++) {
-    if (uc_strcmp(pane->entries[i].name, name) == 0) {
-      pane->cursor = i;
-      int vr = pile_draw_visible_rows();
-      if (pane->cursor >= pane->scroll + vr)
-        pane->scroll = pane->cursor - vr + 1;
-      break;
-    }
-  }
+  refresh_panes(pane);
+  jump_to_name(pane, name);
 }
 
 /* ── F8: delete ───────────────────────────────────────────────────────── */
@@ -184,32 +179,38 @@ static int collect_targets(const pile_pane_t *pane, int *idx_out, int cap,
   return n;
 }
 
-/* Single-operand helper for F5 / F6.  Returns:
- *   0  — *idx_out set; proceed with single-file op
- *  -1  — refuse (batch; P3c territory)
- *  -2  — refuse (directory; P3 defers recursion)
- *  -3  — refuse (nothing to operate on) */
-static int single_operand(const pile_pane_t *pane, int *idx_out) {
-  int targets[PILE_MAX_ENTRIES];
-  int has_dir = 0;
-  int n = collect_targets(pane, targets, PILE_MAX_ENTRIES, &has_dir);
-  if (n == 0) return -3;
-  if (n > 1) return -1;
-  if (has_dir) return -2;
-  *idx_out = targets[0];
-  return 0;
+static pile_pane_t *other_pane(const pile_pane_t *p) {
+  return (p == &pile_pane_a) ? &pile_pane_b : &pile_pane_a;
 }
 
-static void status_single_reason(int code) {
-  switch (code) {
-    case -1: pile_status_set("pile: batch not yet supported", 1); return;
-    case -2: pile_status_set("pile: directories not supported", 1); return;
-    case -3: return;  /* silent */
+/* Jump `pane`'s cursor to the entry named `name` if present; scroll
+ * to keep it on screen.  No-op if the name is absent. */
+static void jump_to_name(pile_pane_t *pane, const char *name) {
+  for (int i = 0; i < pane->count; i++) {
+    if (uc_strcmp(pane->entries[i].name, name) == 0) {
+      pane->cursor = i;
+      int vr = pile_draw_visible_rows();
+      if (pane->cursor >= pane->scroll + vr)
+        pane->scroll = pane->cursor - vr + 1;
+      return;
+    }
   }
 }
 
-static pile_pane_t *other_pane(const pile_pane_t *p) {
-  return (p == &pile_pane_a) ? &pile_pane_b : &pile_pane_a;
+/* Refresh both panes after any op, preserving cursor on the source
+ * pane and plain-reloading the other (the caller can jump_to_name it
+ * after this if it wants to land the cursor on a specific entry). */
+static void refresh_panes(pile_pane_t *src) {
+  reload_keep_cursor(src);
+  pile_pane_t *other = other_pane(src);
+  int vr = pile_draw_visible_rows();
+  int old_cursor = other->cursor;
+  pile_pane_load(other);
+  if (old_cursor >= other->count) old_cursor = other->count - 1;
+  if (old_cursor < 0) old_cursor = 0;
+  other->cursor = old_cursor;
+  if (other->cursor >= other->scroll + vr)
+    other->scroll = other->cursor - vr + 1;
 }
 
 static int paths_equal(const char *a, const char *b) {
@@ -241,125 +242,195 @@ static int copy_file(const char *src_path, const char *dst_path) {
   return 0;
 }
 
-void pile_op_copy(pile_pane_t *pane) {
-  int idx;
-  int rc = single_operand(pane, &idx);
-  if (rc < 0) {
-    status_single_reason(rc);
-    return;
-  }
-
-  pile_pane_t *dst_pane = other_pane(pane);
-  const char *name = pane->entries[idx].name;
-
-  char src_path[PILE_PATH_MAX];
-  char dst_path[PILE_PATH_MAX];
-  if (path_join(src_path, (int)sizeof(src_path), pane->path, name) != 0 ||
-      path_join(dst_path, (int)sizeof(dst_path), dst_pane->path, name) != 0) {
-    pile_status_set("pile: path too long", 1);
-    return;
-  }
-  if (paths_equal(src_path, dst_path)) {
-    pile_status_set("pile: source and destination are the same", 1);
-    return;
-  }
-
-  if (file_exists(dst_path)) {
-    char q[96];
-    uc_snprintf(q, (int)sizeof(q), "Overwrite %s? [y/N]: ", name);
-    if (!pile_confirm(q)) return;
-  }
-
-  int cr = copy_file(src_path, dst_path);
-  if (cr < 0) {
-    pile_status_set_errno("copy", cr);
-    return;
-  }
-  pile_pane_load(dst_pane);
-  /* Leave the source pane's cursor put; jump the dest pane's cursor
-   * to the newly-copied entry if it shows up in the listing. */
-  for (int i = 0; i < dst_pane->count; i++) {
-    if (uc_strcmp(dst_pane->entries[i].name, name) == 0) {
-      dst_pane->cursor = i;
-      int vr = pile_draw_visible_rows();
-      if (dst_pane->cursor >= dst_pane->scroll + vr)
-        dst_pane->scroll = dst_pane->cursor - vr + 1;
-      break;
-    }
+/* Summarise the result of a batch into a status message.  For n == 1
+ * a single success is silent; batch success is reported. */
+static void report_batch(const char *verb, const char *verb_past, int n,
+                         int ok, int fail, int last_err) {
+  if (fail) {
+    char buf[96];
+    uc_snprintf(buf, (int)sizeof(buf), "%s: %u ok, %u failed (%s)", verb,
+                (unsigned)ok, (unsigned)fail, errstr(last_err));
+    pile_status_set(buf, 1);
+  } else if (n > 1) {
+    char buf[64];
+    uc_snprintf(buf, (int)sizeof(buf), "%s %u files", verb_past, (unsigned)ok);
+    pile_status_set(buf, 0);
   }
 }
 
-void pile_op_move(pile_pane_t *pane) {
-  int idx;
-  int rc = single_operand(pane, &idx);
-  if (rc < 0) {
-    status_single_reason(rc);
+void pile_op_copy(pile_pane_t *pane) {
+  int targets[PILE_MAX_ENTRIES];
+  int has_dir = 0;
+  int n = collect_targets(pane, targets, PILE_MAX_ENTRIES, &has_dir);
+  if (n == 0) return;
+  if (has_dir) {
+    pile_status_set("pile: directories not supported", 1);
     return;
   }
 
   pile_pane_t *dst_pane = other_pane(pane);
-  const char *name = pane->entries[idx].name;
-
-  /* Same-dir move is a rename — prompt for the new name. */
-  int same_dir = paths_equal(pane->path, dst_pane->path);
-  char new_name[64];
-  if (same_dir) {
-    if (pile_prompt("Rename to: ", new_name, (int)sizeof(new_name)) != 0)
-      return;
-    if (!new_name[0]) return;
-  } else {
-    uc_strcpy(new_name, name);
-  }
-
-  char src_path[PILE_PATH_MAX];
-  char dst_path[PILE_PATH_MAX];
-  if (path_join(src_path, (int)sizeof(src_path), pane->path, name) != 0 ||
-      path_join(dst_path, (int)sizeof(dst_path), dst_pane->path,
-                new_name) != 0) {
-    pile_status_set("pile: path too long", 1);
-    return;
-  }
-  if (paths_equal(src_path, dst_path)) {
+  if (paths_equal(pane->path, dst_pane->path)) {
     pile_status_set("pile: source and destination are the same", 1);
     return;
   }
 
-  if (file_exists(dst_path)) {
+  /* Pre-op confirmation: per-file overwrite prompt for n == 1, single
+   * batch prompt for n > 1. */
+  if (n == 1) {
+    const char *name = pane->entries[targets[0]].name;
+    char dst_path[PILE_PATH_MAX];
+    if (path_join(dst_path, (int)sizeof(dst_path), dst_pane->path, name) != 0) {
+      pile_status_set("pile: path too long", 1);
+      return;
+    }
+    if (file_exists(dst_path)) {
+      char q[96];
+      uc_snprintf(q, (int)sizeof(q), "Overwrite %s? [y/N]: ", name);
+      if (!pile_confirm(q)) return;
+    }
+  } else {
     char q[96];
-    uc_snprintf(q, (int)sizeof(q), "Overwrite %s? [y/N]: ", new_name);
+    uc_snprintf(q, (int)sizeof(q), "Copy %u files to %s? [y/N]: ",
+                (unsigned)n, dst_pane->path);
     if (!pile_confirm(q)) return;
   }
 
-  int rn = rename(src_path, dst_path);
-  if (rn < 0 && -rn == EXDEV) {
-    /* Cross-FS fallback: copy + unlink source. */
+  char first_name[64];
+  uc_strcpy(first_name, pane->entries[targets[0]].name);
+
+  int ok = 0, fail = 0, last_err = 0;
+  for (int i = 0; i < n; i++) {
+    const char *name = pane->entries[targets[i]].name;
+    char src_path[PILE_PATH_MAX];
+    char dst_path[PILE_PATH_MAX];
+    if (path_join(src_path, (int)sizeof(src_path), pane->path, name) != 0 ||
+        path_join(dst_path, (int)sizeof(dst_path), dst_pane->path, name) != 0) {
+      fail++;
+      continue;
+    }
     int cr = copy_file(src_path, dst_path);
     if (cr < 0) {
-      pile_status_set_errno("move", cr);
-      return;
+      fail++;
+      last_err = cr;
+    } else {
+      ok++;
     }
-    int ur = unlink(src_path);
-    if (ur < 0) {
-      /* Copy succeeded but source couldn't be removed — leave both
-       * copies in place and flag the failure so the user can clean
-       * up manually. */
-      pile_status_set_errno("move: dest copied but source left", ur);
-    }
-  } else if (rn < 0) {
-    pile_status_set_errno("move", rn);
+  }
+  report_batch("copy", "copied", n, ok, fail, last_err);
+
+  refresh_panes(pane);
+  jump_to_name(dst_pane, first_name);
+}
+
+void pile_op_move(pile_pane_t *pane) {
+  int targets[PILE_MAX_ENTRIES];
+  int has_dir = 0;
+  int n = collect_targets(pane, targets, PILE_MAX_ENTRIES, &has_dir);
+  if (n == 0) return;
+  if (has_dir) {
+    pile_status_set("pile: directories not supported", 1);
     return;
   }
-  reload_keep_cursor(pane);
-  pile_pane_load(dst_pane);
-  for (int i = 0; i < dst_pane->count; i++) {
-    if (uc_strcmp(dst_pane->entries[i].name, new_name) == 0) {
-      dst_pane->cursor = i;
-      int vr = pile_draw_visible_rows();
-      if (dst_pane->cursor >= dst_pane->scroll + vr)
-        dst_pane->scroll = dst_pane->cursor - vr + 1;
-      break;
+
+  pile_pane_t *dst_pane = other_pane(pane);
+  int same_dir = paths_equal(pane->path, dst_pane->path);
+
+  /* Same-directory move is a rename — only sensible for a single
+   * operand, since each batch entry would need its own new name. */
+  if (same_dir) {
+    if (n > 1) {
+      pile_status_set("pile: batch rename not supported", 1);
+      return;
+    }
+    const char *name = pane->entries[targets[0]].name;
+    char new_name[64];
+    if (pile_prompt("Rename to: ", new_name, (int)sizeof(new_name)) != 0)
+      return;
+    if (!new_name[0]) return;
+
+    char src_path[PILE_PATH_MAX];
+    char dst_path[PILE_PATH_MAX];
+    if (path_join(src_path, (int)sizeof(src_path), pane->path, name) != 0 ||
+        path_join(dst_path, (int)sizeof(dst_path), pane->path, new_name) != 0) {
+      pile_status_set("pile: path too long", 1);
+      return;
+    }
+    if (paths_equal(src_path, dst_path)) return;
+    if (file_exists(dst_path)) {
+      char q[96];
+      uc_snprintf(q, (int)sizeof(q), "Overwrite %s? [y/N]: ", new_name);
+      if (!pile_confirm(q)) return;
+    }
+    int rn = rename(src_path, dst_path);
+    if (rn < 0) {
+      pile_status_set_errno("rename", rn);
+      return;
+    }
+    refresh_panes(pane);
+    jump_to_name(pane, new_name);
+    return;
+  }
+
+  /* Cross-directory move — single-file overwrite prompt, or a single
+   * batch prompt. */
+  if (n == 1) {
+    const char *name = pane->entries[targets[0]].name;
+    char dst_path[PILE_PATH_MAX];
+    if (path_join(dst_path, (int)sizeof(dst_path), dst_pane->path, name) != 0) {
+      pile_status_set("pile: path too long", 1);
+      return;
+    }
+    if (file_exists(dst_path)) {
+      char q[96];
+      uc_snprintf(q, (int)sizeof(q), "Overwrite %s? [y/N]: ", name);
+      if (!pile_confirm(q)) return;
+    }
+  } else {
+    char q[96];
+    uc_snprintf(q, (int)sizeof(q), "Move %u files to %s? [y/N]: ",
+                (unsigned)n, dst_pane->path);
+    if (!pile_confirm(q)) return;
+  }
+
+  char first_name[64];
+  uc_strcpy(first_name, pane->entries[targets[0]].name);
+
+  int ok = 0, fail = 0, last_err = 0;
+  for (int i = 0; i < n; i++) {
+    const char *name = pane->entries[targets[i]].name;
+    char src_path[PILE_PATH_MAX];
+    char dst_path[PILE_PATH_MAX];
+    if (path_join(src_path, (int)sizeof(src_path), pane->path, name) != 0 ||
+        path_join(dst_path, (int)sizeof(dst_path), dst_pane->path, name) != 0) {
+      fail++;
+      continue;
+    }
+    int rn = rename(src_path, dst_path);
+    if (rn < 0 && -rn == EXDEV) {
+      int cr = copy_file(src_path, dst_path);
+      if (cr < 0) {
+        fail++;
+        last_err = cr;
+        continue;
+      }
+      int ur = unlink(src_path);
+      if (ur < 0) {
+        fail++;
+        last_err = ur;
+        continue;
+      }
+      ok++;
+    } else if (rn < 0) {
+      fail++;
+      last_err = rn;
+    } else {
+      ok++;
     }
   }
+  report_batch("move", "moved", n, ok, fail, last_err);
+
+  refresh_panes(pane);
+  jump_to_name(dst_pane, first_name);
 }
 
 void pile_op_delete(pile_pane_t *pane) {
@@ -415,5 +486,5 @@ void pile_op_delete(pile_pane_t *pane) {
     uc_snprintf(buf, (int)sizeof(buf), "deleted %d files", ok);
     pile_status_set(buf, 0);
   }
-  reload_keep_cursor(pane);
+  refresh_panes(pane);
 }
