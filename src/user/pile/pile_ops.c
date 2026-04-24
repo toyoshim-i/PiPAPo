@@ -204,6 +204,8 @@ static void jump_to_name(pile_pane_t *pane, const char *name) {
 /* Refresh both panes after any op, preserving cursor on the source
  * pane and plain-reloading the other (the caller can jump_to_name it
  * after this if it wants to land the cursor on a specific entry). */
+void pile_refresh_panes(pile_pane_t *src) { refresh_panes(src); }
+
 static void refresh_panes(pile_pane_t *src) {
   reload_keep_cursor(src);
   pile_pane_t *other = other_pane(src);

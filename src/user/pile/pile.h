@@ -179,6 +179,11 @@ void pile_op_delete(pile_pane_t *pane);
 void pile_op_copy(pile_pane_t *pane);
 void pile_op_move(pile_pane_t *pane);
 
+/* Reload both panes after a filesystem-modifying op (e.g. after an
+ * external editor or shell spawn).  Preserves cursor on the source
+ * pane where possible. */
+void pile_refresh_panes(pile_pane_t *src);
+
 /* ── Viewer (pile_view.c) ──────────────────────────────────────────────── */
 
 /* Open `path` in the viewer.  force_hex != 0 forces the hex viewer;

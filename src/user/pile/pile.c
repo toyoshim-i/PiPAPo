@@ -150,6 +150,47 @@ int pile_read_key(void) {
   return PKEY_NONE;
 }
 
+/* ── External process spawn ───────────────────────────────────────────── */
+
+/* Restore cooked terminal + normal screen, vfork/execve the target,
+ * wait for it, then re-enter raw mode.  Caller is expected to
+ * pile_draw_all() afterwards (the main loop does this naturally). */
+static void pile_spawn_external(const char *path, char *const argv[]) {
+  pile_term_restore();
+  pile_draw_clear();
+
+  pid_t pid = vfork();
+  if (pid == 0) {
+    execve(path, argv, environ);
+    _exit(127);
+  }
+  int status = 0;
+  if (pid > 0) waitpid(pid, &status, 0);
+
+  pile_term_raw();
+
+  if (pid < 0) {
+    pile_status_set("pile: vfork failed", 1);
+  } else if (WIFEXITED(status) && WEXITSTATUS(status) == 127) {
+    char *msg = uc_malloc(64);
+    if (msg) {
+      uc_snprintf(msg, 64, "pile: exec %s failed", path);
+      pile_status_set(msg, 1);
+      uc_free(msg);
+    }
+  }
+}
+
+static void pile_spawn_edit(const char *path) {
+  char *argv[] = {"pi", (char *)path, 0};
+  pile_spawn_external("/bin/pi", argv);
+}
+
+static void pile_spawn_shell(void) {
+  char *argv[] = {"sh", 0};
+  pile_spawn_external("/bin/sh", argv);
+}
+
 /* ── Winsize and layout ───────────────────────────────────────────────── */
 
 static void query_winsize(void) {
@@ -277,6 +318,27 @@ static void handle_key(int key) {
         }
         uc_free(path);
       }
+      return;
+    case PKEY_F4:
+    case 'e':
+      if (p->count > 0) {
+        const pile_entry_t *e = &p->entries[p->cursor];
+        if (e->d_type != DT_REG) return;
+        char *path = uc_malloc(PILE_PATH_MAX);
+        if (!path) {
+          pile_status_set("pile: out of heap", 1);
+          return;
+        }
+        if (pile_path_join(path, PILE_PATH_MAX, p->path, e->name) == 0) {
+          pile_spawn_edit(path);
+          pile_refresh_panes(p);
+        }
+        uc_free(path);
+      }
+      return;
+    case '!':
+      pile_spawn_shell();
+      pile_refresh_panes(p);
       return;
     case PKEY_F5:
     case 'c':
