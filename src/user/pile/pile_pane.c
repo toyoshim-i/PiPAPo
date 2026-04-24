@@ -231,24 +231,34 @@ int pile_pane_parent(pile_pane_t *pane) {
 /* ── Marking ───────────────────────────────────────────────────────────── */
 
 /* Shell-style glob with '*' (0+ any) and '?' (1 any).  Anchored both
- * ends.  Returns 1 on match, 0 otherwise. */
+ * ends.  Returns 1 on match, 0 otherwise.
+ *
+ * Iterative two-cursor algorithm with mismatch backtrack: on '*',
+ * remember the cursor positions; on a later mismatch, advance the
+ * name cursor one char past that saved position and retry the tail.
+ * Avoids the stack growth a recursive implementation would incur for
+ * patterns with many '*' — Phase PS Rule 2. */
 static int match_glob(const char *pat, const char *name) {
-  while (*pat) {
+  const char *star_pat = 0;
+  const char *star_name = 0;
+  while (*name) {
     if (*pat == '*') {
+      star_pat = ++pat;
+      star_name = name;
+      if (!*pat) return 1;  /* trailing '*' matches anything */
+    } else if (*pat == '?' || *pat == *name) {
       pat++;
-      if (!*pat) return 1;
-      while (*name) {
-        if (match_glob(pat, name)) return 1;
-        name++;
-      }
+      name++;
+    } else if (star_pat) {
+      pat = star_pat;
+      name = ++star_name;
+    } else {
       return 0;
     }
-    if (!*name) return 0;
-    if (*pat != '?' && *pat != *name) return 0;
-    pat++;
-    name++;
   }
-  return !*name;
+  /* Name consumed; pattern must be exhausted or only '*'s remain. */
+  while (*pat == '*') pat++;
+  return !*pat;
 }
 
 /* ".." is never markable — it's a navigation anchor, not a file. */
