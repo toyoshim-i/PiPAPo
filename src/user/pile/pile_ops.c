@@ -184,6 +184,184 @@ static int collect_targets(const pile_pane_t *pane, int *idx_out, int cap,
   return n;
 }
 
+/* Single-operand helper for F5 / F6.  Returns:
+ *   0  — *idx_out set; proceed with single-file op
+ *  -1  — refuse (batch; P3c territory)
+ *  -2  — refuse (directory; P3 defers recursion)
+ *  -3  — refuse (nothing to operate on) */
+static int single_operand(const pile_pane_t *pane, int *idx_out) {
+  int targets[PILE_MAX_ENTRIES];
+  int has_dir = 0;
+  int n = collect_targets(pane, targets, PILE_MAX_ENTRIES, &has_dir);
+  if (n == 0) return -3;
+  if (n > 1) return -1;
+  if (has_dir) return -2;
+  *idx_out = targets[0];
+  return 0;
+}
+
+static void status_single_reason(int code) {
+  switch (code) {
+    case -1: pile_status_set("pile: batch not yet supported", 1); return;
+    case -2: pile_status_set("pile: directories not supported", 1); return;
+    case -3: return;  /* silent */
+  }
+}
+
+static pile_pane_t *other_pane(const pile_pane_t *p) {
+  return (p == &pile_pane_a) ? &pile_pane_b : &pile_pane_a;
+}
+
+static int paths_equal(const char *a, const char *b) {
+  return uc_strcmp(a, b) == 0;
+}
+
+static int file_exists(const char *path) {
+  struct stat st;
+  return stat(path, &st) == 0;
+}
+
+/* Stream-copy src_path → dst_path.  Returns 0 on success, negative
+ * errno on failure.  Truncates dst. */
+static int copy_file(const char *src_path, const char *dst_path) {
+  int src_fd = open(src_path, O_RDONLY, 0);
+  if (src_fd < 0) return src_fd;
+  int dst_fd = open(dst_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+  if (dst_fd < 0) {
+    close(src_fd);
+    return dst_fd;
+  }
+  long n = uc_copy_fd(src_fd, dst_fd);
+  close(src_fd);
+  close(dst_fd);
+  if (n < 0) {
+    unlink(dst_path);
+    return -EIO;
+  }
+  return 0;
+}
+
+void pile_op_copy(pile_pane_t *pane) {
+  int idx;
+  int rc = single_operand(pane, &idx);
+  if (rc < 0) {
+    status_single_reason(rc);
+    return;
+  }
+
+  pile_pane_t *dst_pane = other_pane(pane);
+  const char *name = pane->entries[idx].name;
+
+  char src_path[PILE_PATH_MAX];
+  char dst_path[PILE_PATH_MAX];
+  if (path_join(src_path, (int)sizeof(src_path), pane->path, name) != 0 ||
+      path_join(dst_path, (int)sizeof(dst_path), dst_pane->path, name) != 0) {
+    pile_status_set("pile: path too long", 1);
+    return;
+  }
+  if (paths_equal(src_path, dst_path)) {
+    pile_status_set("pile: source and destination are the same", 1);
+    return;
+  }
+
+  if (file_exists(dst_path)) {
+    char q[96];
+    uc_snprintf(q, (int)sizeof(q), "Overwrite %s? [y/N]: ", name);
+    if (!pile_confirm(q)) return;
+  }
+
+  int cr = copy_file(src_path, dst_path);
+  if (cr < 0) {
+    pile_status_set_errno("copy", cr);
+    return;
+  }
+  pile_pane_load(dst_pane);
+  /* Leave the source pane's cursor put; jump the dest pane's cursor
+   * to the newly-copied entry if it shows up in the listing. */
+  for (int i = 0; i < dst_pane->count; i++) {
+    if (uc_strcmp(dst_pane->entries[i].name, name) == 0) {
+      dst_pane->cursor = i;
+      int vr = pile_draw_visible_rows();
+      if (dst_pane->cursor >= dst_pane->scroll + vr)
+        dst_pane->scroll = dst_pane->cursor - vr + 1;
+      break;
+    }
+  }
+}
+
+void pile_op_move(pile_pane_t *pane) {
+  int idx;
+  int rc = single_operand(pane, &idx);
+  if (rc < 0) {
+    status_single_reason(rc);
+    return;
+  }
+
+  pile_pane_t *dst_pane = other_pane(pane);
+  const char *name = pane->entries[idx].name;
+
+  /* Same-dir move is a rename — prompt for the new name. */
+  int same_dir = paths_equal(pane->path, dst_pane->path);
+  char new_name[64];
+  if (same_dir) {
+    if (pile_prompt("Rename to: ", new_name, (int)sizeof(new_name)) != 0)
+      return;
+    if (!new_name[0]) return;
+  } else {
+    uc_strcpy(new_name, name);
+  }
+
+  char src_path[PILE_PATH_MAX];
+  char dst_path[PILE_PATH_MAX];
+  if (path_join(src_path, (int)sizeof(src_path), pane->path, name) != 0 ||
+      path_join(dst_path, (int)sizeof(dst_path), dst_pane->path,
+                new_name) != 0) {
+    pile_status_set("pile: path too long", 1);
+    return;
+  }
+  if (paths_equal(src_path, dst_path)) {
+    pile_status_set("pile: source and destination are the same", 1);
+    return;
+  }
+
+  if (file_exists(dst_path)) {
+    char q[96];
+    uc_snprintf(q, (int)sizeof(q), "Overwrite %s? [y/N]: ", new_name);
+    if (!pile_confirm(q)) return;
+  }
+
+  int rn = rename(src_path, dst_path);
+  if (rn < 0 && -rn == EXDEV) {
+    /* Cross-FS fallback: copy + unlink source. */
+    int cr = copy_file(src_path, dst_path);
+    if (cr < 0) {
+      pile_status_set_errno("move", cr);
+      return;
+    }
+    int ur = unlink(src_path);
+    if (ur < 0) {
+      /* Copy succeeded but source couldn't be removed — leave both
+       * copies in place and flag the failure so the user can clean
+       * up manually. */
+      pile_status_set_errno("move: dest copied but source left", ur);
+    }
+  } else if (rn < 0) {
+    pile_status_set_errno("move", rn);
+    return;
+  }
+  reload_keep_cursor(pane);
+  pile_pane_load(dst_pane);
+  for (int i = 0; i < dst_pane->count; i++) {
+    if (uc_strcmp(dst_pane->entries[i].name, new_name) == 0) {
+      dst_pane->cursor = i;
+      int vr = pile_draw_visible_rows();
+      if (dst_pane->cursor >= dst_pane->scroll + vr)
+        dst_pane->scroll = dst_pane->cursor - vr + 1;
+      break;
+    }
+  }
+}
+
 void pile_op_delete(pile_pane_t *pane) {
   int targets[PILE_MAX_ENTRIES];
   int has_dir = 0;

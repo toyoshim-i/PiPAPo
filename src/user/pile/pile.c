@@ -247,6 +247,14 @@ static void handle_key(int key) {
       return;
     }
 
+    case PKEY_F5:
+    case 'c':
+      pile_op_copy(p);
+      return;
+    case PKEY_F6:
+    case 'm':
+      pile_op_move(p);
+      return;
     case PKEY_F7:
       pile_op_mkdir(p);
       return;

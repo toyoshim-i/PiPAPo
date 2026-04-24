@@ -399,11 +399,11 @@ static void draw_legend(int row) {
   pile_draw_cursor_to(row, 0);
   uc_putc(' ');
   emit(C_KEY); emit("TAB");   emit(C_RST); emit(" switch  ");
-  emit(C_KEY); emit("ENT");   emit(C_RST); emit(" open  ");
   emit(C_KEY); emit("SPC");   emit(C_RST); emit(" mark  ");
+  emit(C_KEY); emit("F5");    emit(C_RST); emit(" copy  ");
+  emit(C_KEY); emit("F6");    emit(C_RST); emit(" move  ");
   emit(C_KEY); emit("F7");    emit(C_RST); emit(" mkdir  ");
   emit(C_KEY); emit("F8");    emit(C_RST); emit(" del  ");
-  emit(C_KEY); emit("BS");    emit(C_RST); emit(" parent  ");
   emit(C_KEY); emit("F10");   emit(C_RST); uc_putc('/');
   emit(C_KEY); emit("q");     emit(C_RST); emit(" quit");
   pile_draw_clear_to_eol();

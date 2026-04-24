@@ -168,5 +168,7 @@ int pile_confirm(const char *prompt);
  * pane state tells the caller what happened. */
 void pile_op_mkdir(pile_pane_t *pane);
 void pile_op_delete(pile_pane_t *pane);
+void pile_op_copy(pile_pane_t *pane);
+void pile_op_move(pile_pane_t *pane);
 
 #endif /* PPAP_USER_PILE_H */
