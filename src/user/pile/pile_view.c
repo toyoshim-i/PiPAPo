@@ -14,6 +14,8 @@
 
 #define VIEW_CHROME_ROWS 3   /* title + rule + legend */
 #define VIEW_READ_BUF    1024
+#define VIEW_TEXT_BUF    16384
+#define VIEW_DETECT_BYTES 4096
 
 #define V_C(seq) (pile_use_color ? (seq) : "")
 #define V_RST    V_C("\033[0m")
@@ -29,6 +31,15 @@ static int voff_width;           /* 4, 6, or 8 hex digits */
 static int vrows_visible;
 static int vshow_ascii;          /* include ASCII gutter? */
 static uint8_t vbuf[VIEW_READ_BUF];
+
+/* Text viewer state.  tbuf holds the whole file content up to
+ * VIEW_TEXT_BUF bytes; larger files are truncated with a flag set so
+ * the status line can flag it. */
+static char tbuf[VIEW_TEXT_BUF];
+static int ttotal;
+static int ttruncated;
+static int tlines;
+static int tscroll;              /* first visible line index */
 
 /* ── Small utilities (write-style, not printf-like) ───────────────────── */
 
@@ -233,6 +244,172 @@ static void render(const char *path) {
   pile_draw_cursor_to(pile_rows - 1, pile_cols - 1);
 }
 
+/* ── Text viewer ──────────────────────────────────────────────────────── */
+
+/* Count total lines in tbuf.  An incomplete final line (no trailing
+ * newline) still counts.  An empty file reports 1 (for a lone empty
+ * line) which makes scroll math trivial. */
+static int text_count_lines(void) {
+  int n = 1;
+  for (int i = 0; i < ttotal; i++) {
+    if (tbuf[i] == '\n' && i + 1 < ttotal) n++;
+  }
+  return n;
+}
+
+/* Read up to VIEW_TEXT_BUF bytes into tbuf; set ttruncated if the
+ * file is larger.  Returns bytes read. */
+static int text_load(int fd, uint32_t size) {
+  ttotal = 0;
+  ttruncated = 0;
+  if (lseek(fd, 0, 0) < 0) return 0;
+  while (ttotal < VIEW_TEXT_BUF) {
+    int r = (int)read(fd, tbuf + ttotal, VIEW_TEXT_BUF - ttotal);
+    if (r <= 0) break;
+    ttotal += r;
+  }
+  if ((uint32_t)ttotal < size) ttruncated = 1;
+  tlines = text_count_lines();
+  return ttotal;
+}
+
+/* Sniff first VIEW_DETECT_BYTES bytes for >=95% printable ASCII +
+ * \t / \n / \r.  Empty files count as text. */
+static int looks_like_text(int fd, uint32_t size) {
+  if (size == 0) return 1;
+  if (lseek(fd, 0, 0) < 0) return 0;
+  uint32_t want = size < VIEW_DETECT_BYTES ? size : VIEW_DETECT_BYTES;
+  int total = 0;
+  int printable = 0;
+  while ((uint32_t)total < want) {
+    int r = (int)read(fd, vbuf, sizeof(vbuf));
+    if (r <= 0) break;
+    uint32_t take = (uint32_t)r;
+    if ((uint32_t)total + take > want) take = want - (uint32_t)total;
+    for (uint32_t i = 0; i < take; i++) {
+      uint8_t b = vbuf[i];
+      if ((b >= 32 && b < 127) || b == '\t' || b == '\n' || b == '\r')
+        printable++;
+    }
+    total += (int)take;
+    if ((uint32_t)r > take) break;
+  }
+  if (total == 0) return 1;
+  return (printable * 100) / total >= 95;
+}
+
+static void draw_text_title(const char *path) {
+  pile_draw_cursor_to(0, 0);
+  vemit(V_HEADER);
+  vemit("-- ");
+  const char *b = basename_of(path);
+  int blen = uc_strlen(b);
+  int max_b = pile_cols / 2;
+  if (max_b < 4) max_b = 4;
+  int shown = blen < max_b ? blen : max_b;
+  for (int i = 0; i < shown; i++) uc_putc(b[i]);
+  if (blen > shown) uc_putc('~');
+  vemit(V_RST);
+
+  vemit(V_FRAME);
+  vemit("  line ");
+  /* Cheap put_uint. */
+  char numbuf[12];
+  int pos = (int)sizeof(numbuf);
+  numbuf[--pos] = '\0';
+  int n = tscroll + 1;
+  if (n == 0) numbuf[--pos] = '0';
+  while (n > 0 && pos > 0) {
+    numbuf[--pos] = (char)('0' + n % 10);
+    n /= 10;
+  }
+  vemit(numbuf + pos);
+  uc_putc('/');
+  pos = (int)sizeof(numbuf);
+  numbuf[--pos] = '\0';
+  n = tlines;
+  if (n == 0) numbuf[--pos] = '0';
+  while (n > 0 && pos > 0) {
+    numbuf[--pos] = (char)('0' + n % 10);
+    n /= 10;
+  }
+  vemit(numbuf + pos);
+  if (ttruncated) uc_putc('+');
+  uc_putc(' ');
+  vemit(V_RST);
+  pile_draw_clear_to_eol();
+}
+
+static void draw_text_legend(int row) {
+  pile_draw_cursor_to(row, 0);
+  uc_putc(' ');
+  vemit(V_KEY); vemit("PgUp"); vemit(V_RST); uc_putc('/');
+  vemit(V_KEY); vemit("PgDn"); vemit(V_RST); vemit(" page  ");
+  vemit(V_KEY); vemit("g");    vemit(V_RST); uc_putc('/');
+  vemit(V_KEY); vemit("G");    vemit(V_RST); vemit(" start/end  ");
+  vemit(V_KEY); vemit("V");    vemit(V_RST); vemit(" hex  ");
+  vemit(V_KEY); vemit("q");    vemit(V_RST); vemit(" quit");
+  pile_draw_clear_to_eol();
+}
+
+/* Render one line of text at (row, 0), starting at tbuf[off], until
+ * \n or cols exhausted.  Advances and returns the new `off` past the
+ * line's \n (if any).  Tabs expand to the next 8-column boundary;
+ * non-printable bytes render as '.'. */
+static int render_text_line(int row, int off) {
+  pile_draw_cursor_to(row, 0);
+  int col = 0;
+  while (off < ttotal && tbuf[off] != '\n' && col < pile_cols) {
+    unsigned char c = (unsigned char)tbuf[off];
+    if (c == '\t') {
+      int spaces = 8 - (col % 8);
+      for (int j = 0; j < spaces && col < pile_cols; j++) {
+        uc_putc(' ');
+        col++;
+      }
+    } else if (c >= 32 && c < 127) {
+      uc_putc((char)c);
+      col++;
+    } else if (c == '\r') {
+      /* ignore bare CR, mostly for CRLF files */
+    } else {
+      uc_putc('.');
+      col++;
+    }
+    off++;
+  }
+  /* skip to the end of the current line (including long wrapped tail) */
+  while (off < ttotal && tbuf[off] != '\n') off++;
+  if (off < ttotal && tbuf[off] == '\n') off++;
+  pile_draw_clear_to_eol();
+  return off;
+}
+
+static void render_text(const char *path) {
+  draw_text_title(path);
+
+  /* Walk tbuf to find the byte offset of line `tscroll`. */
+  int off = 0;
+  int line = 0;
+  while (line < tscroll && off < ttotal) {
+    if (tbuf[off] == '\n') line++;
+    off++;
+  }
+
+  for (int i = 0; i < vrows_visible; i++) {
+    if (off >= ttotal) {
+      pile_draw_cursor_to(1 + i, 0);
+      pile_draw_clear_to_eol();
+      continue;
+    }
+    off = render_text_line(1 + i, off);
+  }
+
+  draw_rule(pile_rows - 2);
+  draw_text_legend(pile_rows - 1);
+  pile_draw_cursor_to(pile_rows - 1, pile_cols - 1);
+}
+
 /* ── :offset prompt ───────────────────────────────────────────────────── */
 
 static int goto_prompt(void) {
@@ -257,29 +434,11 @@ static int goto_prompt(void) {
   return 1;
 }
 
-/* ── Entry point ──────────────────────────────────────────────────────── */
+/* ── Hex mode loop ────────────────────────────────────────────────────── */
 
-void pile_view_file(const char *path, int force_hex) {
-  (void)force_hex;  /* P4a: always hex; auto-detect lands in P4b */
-
-  int fd = open(path, O_RDONLY, 0);
-  if (fd < 0) {
-    pile_status_set_errno("view", fd);
-    return;
-  }
-  struct stat st;
-  if (stat(path, &st) != 0) {
-    close(fd);
-    pile_status_set("view: stat failed", 1);
-    return;
-  }
-  vfd = fd;
-  vsize = (uint32_t)st.st_size;
-  voff = 0;
-  compute_layout();
-
-  pile_draw_clear();  /* wipe filer chrome before taking over the screen */
-
+/* Returns 1 if the user pressed V (toggle to hex) from text mode, or
+ * any "quit" key to exit the viewer entirely. */
+static void run_hex_loop(const char *path) {
   for (;;) {
     render(path);
     int k = pile_read_key();
@@ -293,7 +452,7 @@ void pile_view_file(const char *path, int force_hex) {
       case PKEY_ESC:
       case PKEY_F10:
       case PKEY_F3:
-        goto done;
+        return;
       case PKEY_UP:
       case 'k':
         if (voff >= (uint32_t)step) voff -= (uint32_t)step;
@@ -324,8 +483,87 @@ void pile_view_file(const char *path, int force_hex) {
     }
     clamp_offset();
   }
+}
 
-done:
+static void run_text_loop(const char *path) {
+  for (;;) {
+    render_text(path);
+    int k = pile_read_key();
+    if (k == PKEY_NONE) continue;
+
+    int last_scroll = tlines - vrows_visible;
+    if (last_scroll < 0) last_scroll = 0;
+
+    switch (k) {
+      case 'q':
+      case PKEY_ESC:
+      case PKEY_F10:
+      case PKEY_F3:
+        return;
+      case PKEY_UP:
+      case 'k':
+        if (tscroll > 0) tscroll--;
+        break;
+      case PKEY_DOWN:
+      case 'j':
+        if (tscroll < last_scroll) tscroll++;
+        break;
+      case PKEY_PGUP:
+        tscroll -= vrows_visible;
+        if (tscroll < 0) tscroll = 0;
+        break;
+      case PKEY_PGDN:
+        tscroll += vrows_visible;
+        if (tscroll > last_scroll) tscroll = last_scroll;
+        break;
+      case PKEY_HOME:
+      case 'g':
+        tscroll = 0;
+        break;
+      case PKEY_END:
+      case 'G':
+        tscroll = last_scroll;
+        break;
+    }
+  }
+}
+
+/* ── Entry point ──────────────────────────────────────────────────────── */
+
+void pile_view_file(const char *path, int force_hex) {
+  int fd = open(path, O_RDONLY, 0);
+  if (fd < 0) {
+    pile_status_set_errno("view", fd);
+    return;
+  }
+  struct stat st;
+  if (stat(path, &st) != 0) {
+    close(fd);
+    pile_status_set("view: stat failed", 1);
+    return;
+  }
+  vfd = fd;
+  vsize = (uint32_t)st.st_size;
+  voff = 0;
+  tscroll = 0;
+  compute_layout();
+
+  int use_text = !force_hex && looks_like_text(fd, vsize);
+  if (use_text) {
+    text_load(fd, vsize);
+    if (ttruncated) {
+      pile_status_set("pile: file truncated at 16 KB", 0);
+    }
+  }
+
+  pile_draw_clear();
+
+  if (use_text) {
+    run_text_loop(path);
+  } else {
+    run_hex_loop(path);
+  }
+
   close(vfd);
   vfd = -1;
   pile_draw_clear();

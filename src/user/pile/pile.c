@@ -249,12 +249,13 @@ static void handle_key(int key) {
 
     case PKEY_F3:
     case 'v':
+    case 'V':
       if (p->count > 0) {
         const pile_entry_t *e = &p->entries[p->cursor];
         if (e->d_type != DT_REG) return;
         char path[PILE_PATH_MAX];
         if (pile_path_join(path, (int)sizeof(path), p->path, e->name) == 0) {
-          pile_view_file(path, 0);
+          pile_view_file(path, key == 'V');
         }
       }
       return;

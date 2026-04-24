@@ -13,7 +13,11 @@
 
 /* ── Limits ────────────────────────────────────────────────────────────── */
 
-#define PILE_MAX_ENTRIES 256
+/* 128 entries per pane keeps the pile_pane_t BSS footprint manageable
+ * on the ia16 64 KB-segment target — two panes × 128 × 76 B ≈ 19 KB,
+ * versus ~39 KB at 256.  Directories with more entries are handled via
+ * the "truncated" indicator in the pane footer. */
+#define PILE_MAX_ENTRIES 128
 #define PILE_PATH_MAX    128
 
 /* Layout thresholds, see docs/proposals/pile.md "Layout adaptation". */
