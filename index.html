@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>pipapo // the wired</title>
+<link rel="stylesheet" href="v86/xterm.css">
+<style>
+  :root {
+    --bg: #100c0a;
+    --ink: #f2ebe0;
+    --dim: #a39b90;
+    --rust: #e64a2b;
+    --amber: #ffb347;
+    --scan: rgba(255, 120, 80, 0.035);
+  }
+  * { box-sizing: border-box; }
+  html { scrollbar-color: var(--rust) transparent; scrollbar-width: thin; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink);
+               font-family: "JetBrains Mono", "Menlo", "Consolas", monospace;
+               min-height: 100vh; }
+  body { position: relative; overflow-x: hidden; }
+
+  /* WebKit scrollbars — thin, rust-glow thumb, no arrows */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: rgba(230, 74, 43, 0.04);
+                              border-left: 1px solid rgba(230, 74, 43, 0.15); }
+  ::-webkit-scrollbar-thumb {
+    background: linear-gradient(to bottom,
+                rgba(230, 74, 43, 0.85),
+                rgba(255, 179, 71, 0.7));
+    border: 1px solid rgba(16, 12, 10, 0.9);
+    box-shadow: 0 0 6px rgba(230, 74, 43, 0.5);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(to bottom, var(--rust), var(--amber));
+    box-shadow: 0 0 10px rgba(230, 74, 43, 0.9);
+  }
+  ::-webkit-scrollbar-corner { background: transparent; }
+  /* Drop the default arrow buttons on platforms that show them */
+  ::-webkit-scrollbar-button { display: none; }
+
+  /* CRT scanline overlay */
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent 0, transparent 2px,
+      var(--scan) 2px, var(--scan) 3px
+    );
+    mix-blend-mode: screen;
+  }
+  /* Faint vignette */
+  body::after {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 9998;
+    background: radial-gradient(ellipse at center, transparent 70%, rgba(0,0,0,0.3) 100%);
+  }
+
+  /* Masthead */
+  header {
+    padding: 28px 32px 20px; border-bottom: 1px solid #1c1816;
+    display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: end;
+  }
+  .title { font-size: 32px; letter-spacing: 0.5em; text-transform: lowercase;
+           font-weight: 400; color: var(--ink); margin: 0;
+           text-shadow: 0 0 20px rgba(230, 74, 43, 0.6),
+                        0 0 4px rgba(255, 179, 71, 0.3),
+                        -1px 0 0 rgba(230, 74, 43, 0.55),
+                         1px 0 0 rgba(90, 230, 255, 0.35);
+           animation: crt-flicker 4.2s infinite steps(1, end); }
+  @keyframes crt-flicker {
+    0%, 97%, 100% { opacity: 1; }
+    97.5% { opacity: 0.82; }
+    98%   { opacity: 1; }
+    98.5% { opacity: 0.7; }
+    99%   { opacity: 1; }
+  }
+  .title .dot { color: var(--rust); }
+  .sub { font-size: 11px; letter-spacing: 0.25em; text-transform: uppercase;
+         color: var(--dim); margin: 6px 0 0; }
+  .tag { font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
+         color: var(--amber); text-align: right; line-height: 1.8; }
+  .tag .rust { color: var(--rust); }
+
+  /* Rule with label */
+  .rule { display: flex; align-items: center; gap: 12px; padding: 0 32px;
+          margin: 18px 0 0; font-size: 10px; letter-spacing: 0.35em;
+          text-transform: uppercase; color: var(--dim); }
+  .rule hr { flex: 1; border: 0; border-top: 1px solid #1c1816; margin: 0; }
+
+  /* Panes grid */
+  .stage { padding: 20px 32px 32px; display: grid;
+           grid-template-columns: auto auto; gap: 28px; align-items: start; }
+
+  .pane { position: relative; padding: 14px; }
+  .pane > .corner { position: absolute; width: 12px; height: 12px;
+                    border: 2px solid var(--rust); opacity: 1;
+                    box-shadow: 0 0 6px rgba(230, 74, 43, 0.5); }
+  .pane > .corner.tl { top: 0; left: 0; border-right: 0; border-bottom: 0; }
+  .pane > .corner.tr { top: 0; right: 0; border-left: 0; border-bottom: 0; }
+  .pane > .corner.bl { bottom: 0; left: 0; border-right: 0; border-top: 0; }
+  .pane > .corner.br { bottom: 0; right: 0; border-left: 0; border-top: 0; }
+  .pane-head { display: flex; justify-content: space-between; align-items: baseline;
+               margin-bottom: 10px; font-size: 10px; letter-spacing: 0.3em;
+               text-transform: uppercase; }
+  .pane-head .key   { color: var(--rust); }
+  .pane-head .meta  { color: var(--dim); }
+
+  /* Shared CRT tube: slightly rounded rim, inner curvature vignette, and
+     a slowly-rolling horizontal scanline streak.  Tiny radius + no
+     overflow-clip keeps VGA's rightmost/bottom rows visible. */
+  .crt { position: relative; display: inline-block; background: #000;
+         border-radius: 3px; isolation: isolate; }
+  .crt::before {  /* curvature vignette */
+    content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 2;
+    background: radial-gradient(ellipse at center,
+                                transparent 60%, rgba(0,0,0,0.55) 100%);
+  }
+
+  /* VGA CRT — primary tube: thick red rim + hot outer bloom.  Outer
+     box is sized to match the serial tube exactly; padding is chosen
+     so v86's 640×400 native text-mode output centers inside. */
+  #screen_container { width: 720px; height: 460px; padding: 10px 20px;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow:
+        0 0 0 2px rgba(160, 44, 24, 0.9),
+        0 0 18px rgba(160, 44, 24, 0.55),
+        0 0 72px rgba(160, 44, 24, 0.3),
+        0 0 14px rgba(255, 179, 71, 0.18) inset;
+      filter: brightness(1.4) contrast(1.1); }
+  #screen_container > div { background: #000; line-height: 16px;
+                            font-family: monospace; color: #f2ebe0; }
+  /* Per-glyph phosphor bloom lives on the spans — cheap, no filter chain */
+  #screen_container > div span { text-shadow:
+                                   0 0 2px currentColor,
+                                   0 0 5px currentColor,
+                                   0 0 10px rgba(255, 160, 90, 0.5); }
+  #screen_container canvas { display: block; }
+
+  /* Invisible overlay that captures taps on the VGA tube and opens the
+     on-screen keyboard on mobile.  v86's KeyboardAdapter whitelists any
+     element with class "phone_keyboard", so keydown/input events from
+     this textarea are routed to the emulated PS/2 controller without
+     any glue code here. */
+  .phone_keyboard { position: absolute; inset: 0; z-index: 4;
+                    opacity: 0; border: 0; outline: none; resize: none;
+                    background: transparent; color: transparent;
+                    caret-color: transparent; padding: 0; margin: 0;
+                    font: inherit; }
+
+  /* Serial CRT — green-phosphor tube: softer rim, phosphor glyph bloom.
+     Same outer box as the VGA tube; 640×400 inner area for xterm. */
+  /* Serial tube: xterm renders to a canvas, so per-glyph text-shadow
+     isn't available — use a single drop-shadow to keep phosphor glow
+     (trade one filter op for visible bloom). */
+  #serial_container { width: 720px; height: 460px; padding: 10px 20px;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow:
+        0 0 0 1px rgba(60, 160, 85, 0.55),
+        0 0 16px rgba(60, 160, 85, 0.35),
+        0 0 48px rgba(60, 160, 85, 0.2);
+      filter: sepia(1) hue-rotate(70deg) saturate(1.6) brightness(0.92)
+              drop-shadow(0 0 4px rgba(120, 255, 160, 0.55)); }
+  #serial_container .xterm { padding: 0; }
+
+  /* Footer status strip */
+  .strip { display: flex; justify-content: space-between; align-items: center;
+           padding: 10px 32px; border-top: 1px solid #1c1816;
+           font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase;
+           color: var(--dim); position: sticky; bottom: 0;
+           background: linear-gradient(to top, var(--bg), rgba(10,8,7,0.85)); }
+  .strip .left { display: flex; gap: 24px; align-items: center; }
+  .strip .dot-live { width: 6px; height: 6px; border-radius: 50%;
+                     background: var(--rust); display: inline-block;
+                     box-shadow: 0 0 8px var(--rust);
+                     animation: blink 1.8s steps(2, end) infinite; }
+  @keyframes blink { 50% { opacity: 0.15; } }
+  .strip .link a { color: var(--amber); text-decoration: none;
+                   border-bottom: 1px dotted currentColor; }
+  .strip .link a:hover { color: var(--rust); }
+
+  @media (max-width: 1500px) {
+    .stage { grid-template-columns: 1fr; }
+    #serial_container, #screen_container { width: 100%; max-width: 720px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1 class="title">pipapo<span class="dot">.</span></h1>
+    <p class="sub">// micro-os // pc/xt port // rendered on the wired</p>
+  </div>
+  <div class="tag">
+    protocol 7 — layer 01<br>
+    <span class="rust">present day.</span> present time.
+  </div>
+</header>
+
+<div class="rule"><span>// navi</span><hr><span>status: online</span></div>
+
+<div class="stage">
+  <div class="pane">
+    <span class="corner tl"></span><span class="corner tr"></span>
+    <span class="corner bl"></span><span class="corner br"></span>
+    <div class="pane-head">
+      <span class="key">&gt; crt.display</span>
+      <span class="meta">vga.text · 80×25</span>
+    </div>
+    <div id="screen_container" class="crt">
+      <div style="white-space: pre; font: 14px monospace;"></div>
+      <canvas style="display: none;"></canvas>
+      <textarea class="phone_keyboard" rows="1"
+                autocomplete="off" autocapitalize="off" autocorrect="off"
+                spellcheck="false" aria-label="vga keyboard input"></textarea>
+    </div>
+  </div>
+
+  <div class="pane">
+    <span class="corner tl"></span><span class="corner tr"></span>
+    <span class="corner bl"></span><span class="corner br"></span>
+    <div class="pane-head">
+      <span class="key">&gt; serial experiments link</span>
+      <span class="meta">com1 · 9600 8n1 · vt100</span>
+    </div>
+    <div id="serial_container" class="crt"></div>
+  </div>
+</div>
+
+<div class="strip">
+  <div class="left">
+    <span><span class="dot-live"></span>&nbsp;&nbsp;signal acquired</span>
+    <span id="status">bootstrapping…</span>
+  </div>
+  <div class="link">
+    <a href="https://github.com/toyoshim-i/PiPAPo">toyoshim-i/pipapo</a>
+    &nbsp;&middot;&nbsp;
+    <a href="https://github.com/copy/v86">copy/v86</a>
+  </div>
+</div>
+
+<script src="v86/xterm.js"></script>
+<script>
+  /* Inject the font we want before v86 constructs its Terminal so
+     xterm measures cell width/height correctly at open() time — post-
+     open fontSize changes don't always trigger .xterm to re-layout. */
+  const _Terminal = window.Terminal;
+  window.Terminal = function(opts) {
+    return new _Terminal(Object.assign({}, opts, {
+      fontSize: 14,
+      fontFamily: 'Menlo, Consolas, "Courier New", monospace',
+      lineHeight: 1.0,
+    }));
+  };
+</script>
+<script src="v86/libv86.js"></script>
+<script>
+  const status = document.getElementById("status");
+  const emulator = new V86({
+    wasm_path: "v86/v86.wasm",
+    memory_size: 16 * 1024 * 1024,
+    vga_memory_size: 2 * 1024 * 1024,
+    screen_container: document.getElementById("screen_container"),
+    serial_container_xtermjs: document.getElementById("serial_container"),
+    bios:     { url: "v86/seabios.bin" },
+    vga_bios: { url: "v86/vgabios.bin" },
+    hda: {
+      url: "ppap_pcxt_hdd.img",
+      size: 64 * 1024 * 1024,
+      async: true,
+    },
+    boot_order: 0x132,
+    autostart: true,
+  });
+  emulator.add_listener("emulator-ready", () => {
+    status.textContent = "navi online";
+  });
+  emulator.add_listener("download-progress", (e) => {
+    if (e.file_name) status.textContent = "fetching " + e.file_name + "…";
+  });
+</script>
+</body>
+</html>
