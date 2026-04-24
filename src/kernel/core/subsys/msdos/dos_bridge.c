@@ -22,21 +22,34 @@
 #include "kernel/core/syscall/syscall.h"
 
 /* Kernel-side scratch slots inside `dos_data_page` (allocated lazily in
- * msdos_on_init).  Used for staging paths and single-byte I/O without
- * borrowing user-segment memory.  Offsets sit comfortably above the
- * dos_proc_t array — see the static_assert below. */
-/* dos_proc_t array starts at offset 0 and runs to DOS_IO_SCRATCH_OFF.
- * Bumped to 0xB00 (from 0xA00) when FindFirst state widened the per-
- * process struct beyond the previous 320-byte budget. */
-#define DOS_IO_SCRATCH_OFF 0xB00u   /* 1-byte staging for fd 0/1 byte I/O   */
-#define DOS_PATH_SCRATCH_OFF 0xB10u /* 128-byte staging for resolved paths */
+ * msdos_on_init).  Layout:
+ *   0x0000..DOS_IO_SCRATCH_OFF     dos_proc_t[PROC_MAX]    (hot, stack-copied)
+ *   DOS_IO_SCRATCH_OFF            1-byte staging for fd 0/1 byte I/O
+ *   DOS_PATH_SCRATCH_OFF          128-byte staging for resolved paths
+ *   DOS_PATH_SCRATCH2_OFF         second 128-byte slot for RENAME
+ *   DOS_DIRENT_SCRATCH_OFF        one struct dirent for AH=4Eh/4Fh scans
+ *   DOS_STAT_FULL_OFF             128-byte full-path buffer for dos_stat_entry
+ *   DOS_COLD_OFF..DOS_SCRATCH_END dos_proc_cold_t[PROC_MAX] (cold, page-only)
+ *
+ * DOS_IO_SCRATCH_OFF is sized to fit the hot dos_proc_t array with a
+ * little headroom; shrinking the struct (by moving paths / termios to
+ * cold) lets the cold array fit in a single PAGE_SIZE page. */
+#define DOS_IO_SCRATCH_OFF 0x280u /* ≥ sizeof(dos_proc_t) * PROC_MAX */
+#define DOS_PATH_SCRATCH_OFF (DOS_IO_SCRATCH_OFF + 16u)
 #define DOS_PATH_SCRATCH_MAX 128u
-#define DOS_PATH_SCRATCH2_OFF \
-  (DOS_PATH_SCRATCH_OFF + DOS_PATH_SCRATCH_MAX) /* second slot for RENAME */
-#define DOS_DIRENT_SCRATCH_OFF \
-  (DOS_PATH_SCRATCH2_OFF +     \
-   DOS_PATH_SCRATCH_MAX) /* one struct dirent for AH=4Eh/4Fh scans */
-#define DOS_SCRATCH_END (DOS_DIRENT_SCRATCH_OFF + sizeof(struct dirent))
+#define DOS_PATH_SCRATCH2_OFF (DOS_PATH_SCRATCH_OFF + DOS_PATH_SCRATCH_MAX)
+#define DOS_DIRENT_SCRATCH_OFF (DOS_PATH_SCRATCH2_OFF + DOS_PATH_SCRATCH_MAX)
+#define DOS_STAT_FULL_OFF (DOS_DIRENT_SCRATCH_OFF + sizeof(struct dirent))
+#define DOS_STAT_FULL_MAX DOS_PATH_SCRATCH_MAX
+#define DOS_COLD_OFF (DOS_STAT_FULL_OFF + DOS_STAT_FULL_MAX)
+#define DOS_PATHS_OFF (DOS_COLD_OFF + sizeof(dos_proc_cold_t) * PROC_MAX)
+#define DOS_SCRATCH_END (DOS_PATHS_OFF + sizeof(dos_proc_paths_t) * PROC_MAX)
+
+/* Field offsets inside the per-proc paths slot (used by callers that
+ * access one path field via byte-level page I/O). */
+#define DOS_EXEC_DIR_FIELD_OFF offsetof(dos_proc_paths_t, exec_dir)
+#define DOS_CWD_C_FIELD_OFF offsetof(dos_proc_paths_t, cwd_c)
+#define DOS_CWD_Z_FIELD_OFF offsetof(dos_proc_paths_t, cwd_z)
 
 #define DOS_FIRST_USER_HANDLE 5
 
@@ -65,6 +78,51 @@ static void dos_put_proc(struct pcb *p, const dos_proc_t *in) {
                         in, sizeof(dos_proc_t));
 }
 
+/* Read / write the per-process dos_proc_cold_t slot directly on
+ * dos_data_page.  Cold state (IVT saves, termios snapshot) is not
+ * copied to the kernel stack — msdos_on_init / msdos_on_exit and
+ * AH=25h are the only callers, all outside the deep VFS-lookup
+ * chain. */
+static void dos_get_cold(struct pcb *p, dos_proc_cold_t *out) {
+  uint32_t slot = (uint32_t)(p - proc_table);
+  mem_region_page_read(
+      dos_data_page, (uint16_t)(DOS_COLD_OFF + slot * sizeof(dos_proc_cold_t)),
+      out, sizeof(dos_proc_cold_t));
+}
+
+static void dos_put_cold(struct pcb *p, const dos_proc_cold_t *in) {
+  uint32_t slot = (uint32_t)(p - proc_table);
+  mem_region_page_write(
+      dos_data_page, (uint16_t)(DOS_COLD_OFF + slot * sizeof(dos_proc_cold_t)),
+      in, sizeof(dos_proc_cold_t));
+}
+
+/* Single-byte accessors for dos_data_page — used by path-building and
+ * directory-scan helpers that work a byte at a time.  Keeping the
+ * scratch in the page instead of on the kernel stack saves the
+ * 128-byte local buffers those helpers used to carry. */
+static void dos_scratch_putb(uint16_t off, uint8_t b) {
+  mem_region_page_write(dos_data_page, off, &b, 1);
+}
+
+static uint8_t dos_scratch_getb(uint16_t off) {
+  uint8_t b;
+  mem_region_page_read(dos_data_page, off, &b, 1);
+  return b;
+}
+
+/* Byte offset of process `p`'s cold slot in dos_data_page. */
+static uint16_t dos_cold_base(struct pcb *p) {
+  uint32_t slot = (uint32_t)(p - proc_table);
+  return (uint16_t)(DOS_COLD_OFF + slot * sizeof(dos_proc_cold_t));
+}
+
+/* Byte offset of process `p`'s paths slot in dos_data_page. */
+static uint16_t dos_paths_base(struct pcb *p) {
+  uint32_t slot = (uint32_t)(p - proc_table);
+  return (uint16_t)(DOS_PATHS_OFF + slot * sizeof(dos_proc_paths_t));
+}
+
 static int msdos_on_crash(struct pcb *p, uint32_t *regs, uint16_t *exc,
                           int is_group0) {
   return 0;
@@ -74,11 +132,17 @@ static int msdos_on_signal(struct pcb *p, int sig, uint32_t *regs) { return 0; }
 
 /* Switch the process's stdin TTY into a DOS-friendly raw mode: Enter
  * delivered as CR (not LF), no kernel echo, no canonical line editing.
- * The pre-change flags are stashed in `dos` so msdos_on_exit can
- * restore them — matches the CP/M subsystem's pattern (cpm_bridge.c).
- * If stdin isn't a TTY (e.g. pipe), fd_ioctl returns an error and we
- * leave termios_saved=0 so on_exit skips the restore. */
-static void dos_tty_enter_raw(struct pcb *p, dos_proc_t *dos) {
+ * The pre-change flags are stashed in the cold per-proc slot so
+ * msdos_on_exit can restore them — matches the CP/M subsystem's
+ * pattern (cpm_bridge.c).  If stdin isn't a TTY (e.g. pipe), fd_ioctl
+ * returns an error and we leave termios_saved=0 so on_exit skips the
+ * restore.
+ *
+ * noinline: this function allocates dos_proc_cold_t on its frame,
+ * and without the attribute gets inlined into msdos_on_init whose
+ * own dos_proc_t + dos_proc_cold_t locals end up sharing the same
+ * stack frame — wasting ~60 B that the exec-time stack can't afford. */
+__attribute__((noinline)) static void dos_tty_enter_raw(struct pcb *p) {
   int16_t desc = p->fd_map[0];
   if (desc < 0) return;
 
@@ -86,33 +150,39 @@ static void dos_tty_enter_raw(struct pcb *p, dos_proc_t *dos) {
   int rc = mod_vfs.fd_ioctl(desc, TCGETS, &tio);
   if (rc < 0) return;
 
-  dos->saved_c_iflag = tio.c_iflag;
-  dos->saved_c_oflag = tio.c_oflag;
-  dos->saved_c_cflag = tio.c_cflag;
-  dos->saved_c_lflag = tio.c_lflag;
-  dos->saved_c_line = tio.c_line;
-  __builtin_memcpy(dos->saved_c_cc, tio.c_cc, sizeof(dos->saved_c_cc));
-  dos->termios_saved = 1;
+  dos_proc_cold_t cold;
+  dos_get_cold(p, &cold);
+  cold.saved_c_iflag = tio.c_iflag;
+  cold.saved_c_oflag = tio.c_oflag;
+  cold.saved_c_cflag = tio.c_cflag;
+  cold.saved_c_lflag = tio.c_lflag;
+  cold.saved_c_line = tio.c_line;
+  __builtin_memcpy(cold.saved_c_cc, tio.c_cc, sizeof(cold.saved_c_cc));
+  cold.termios_saved = 1;
+  dos_put_cold(p, &cold);
 
   tio.c_iflag &= ~(uint32_t)ICRNL;
   tio.c_lflag &= ~(uint32_t)(ICANON | ECHO);
   mod_vfs.fd_ioctl(desc, TCSETS, &tio);
 }
 
-static void dos_tty_restore(struct pcb *p, dos_proc_t *dos) {
-  if (!dos->termios_saved) return;
+__attribute__((noinline)) static void dos_tty_restore(struct pcb *p) {
+  dos_proc_cold_t cold;
+  dos_get_cold(p, &cold);
+  if (!cold.termios_saved) return;
   int16_t desc = p->fd_map[0];
   if (desc < 0) return;
 
   struct termios tio;
-  tio.c_iflag = dos->saved_c_iflag;
-  tio.c_oflag = dos->saved_c_oflag;
-  tio.c_cflag = dos->saved_c_cflag;
-  tio.c_lflag = dos->saved_c_lflag;
-  tio.c_line = dos->saved_c_line;
-  __builtin_memcpy(tio.c_cc, dos->saved_c_cc, sizeof(tio.c_cc));
+  tio.c_iflag = cold.saved_c_iflag;
+  tio.c_oflag = cold.saved_c_oflag;
+  tio.c_cflag = cold.saved_c_cflag;
+  tio.c_lflag = cold.saved_c_lflag;
+  tio.c_line = cold.saved_c_line;
+  __builtin_memcpy(tio.c_cc, cold.saved_c_cc, sizeof(tio.c_cc));
   mod_vfs.fd_ioctl(desc, TCSETS, &tio);
-  dos->termios_saved = 0;
+  cold.termios_saved = 0;
+  dos_put_cold(p, &cold);
 }
 
 static void msdos_on_init(struct pcb *p) {
@@ -140,9 +210,19 @@ static void msdos_on_init(struct pcb *p) {
   dos.dta_off = 0x0080u;
   dos.find_fd = -1;
 
-  dos_tty_enter_raw(p, &dos);
-
   dos_put_proc(p, &dos);
+  /* Zero the paths slot (exec_dir / cwd_c / cwd_z) so a stale prior
+   * DOS tenant doesn't leak in.  dos_set_exec_dir overwrites
+   * exec_dir right after this for C:, cwd_* start empty. */
+  mem_region_page_zero(dos_data_page, dos_paths_base(p),
+                       (uint16_t)sizeof(dos_proc_paths_t));
+  /* Zero the cold slot (IVT saves / termios snapshot). */
+  dos_proc_cold_t cold;
+  __builtin_memset(&cold, 0, sizeof(cold));
+  dos_put_cold(p, &cold);
+
+  dos_tty_enter_raw(p);
+
   p->subsys_data = (void *)(uintptr_t)(p - proc_table); /* Store slot index */
 }
 
@@ -152,18 +232,21 @@ static void msdos_on_exit(struct pcb *p) {
   if (dos_data_page != PAGE_ID_INVALID) {
     dos_proc_t dos;
     dos_get_proc(p, &dos);
-    for (int i = 0; i < dos.ivt_saved_count; i++) {
-      uint32_t addr = (uint32_t)dos.ivt_saved_vec[i] * 4;
-      p->cpu_ops->write16(dos.cpu_state, addr, dos.ivt_saved_ip[i]);
-      p->cpu_ops->write16(dos.cpu_state, addr + 2, dos.ivt_saved_cs[i]);
+    dos_proc_cold_t cold;
+    dos_get_cold(p, &cold);
+    for (int i = 0; i < cold.ivt_saved_count; i++) {
+      uint32_t addr = (uint32_t)cold.ivt_saved_vec[i] * 4;
+      p->cpu_ops->write16(dos.cpu_state, addr, cold.ivt_saved_ip[i]);
+      p->cpu_ops->write16(dos.cpu_state, addr + 2, cold.ivt_saved_cs[i]);
     }
-    dos.ivt_saved_count = 0;
+    cold.ivt_saved_count = 0;
+    dos_put_cold(p, &cold);
     if (dos.find_fd >= 0) {
       sys_close(dos.find_fd);
       dos.find_fd = -1;
     }
-    dos_tty_restore(p, &dos);
     dos_put_proc(p, &dos);
+    dos_tty_restore(p);
   }
   p->subsys_data = NULL;
 }
@@ -173,9 +256,6 @@ static void msdos_on_exit(struct pcb *p) {
 void dos_set_exec_dir(struct pcb *p, const struct exec_args *args) {
   if (!p || !args || dos_data_page == PAGE_ID_INVALID) return;
   if (args->argc == 0) return;
-
-  dos_proc_t dos;
-  dos_get_proc(p, &dos);
 
   /* Find the offset of the last '/' in argv[0], scanning byte-by-byte
    * out of the args page so no full-path stack buffer is needed. */
@@ -187,21 +267,23 @@ void dos_set_exec_dir(struct pcb *p, const struct exec_args *args) {
     if (c == '/') slash = i;
   }
 
+  /* Write exec_dir byte-by-byte into the cold slot on dos_data_page. */
+  uint16_t base = (uint16_t)(dos_paths_base(p) + DOS_EXEC_DIR_FIELD_OFF);
   int n = 0;
   if (slash == 0xFFFFu || slash == 0) {
-    dos.exec_dir[n++] = '/';
+    dos_scratch_putb((uint16_t)(base + n), '/');
+    n++;
   } else {
     int len = (int)slash;
     if (len >= DOS_PATH_MAX) len = DOS_PATH_MAX - 1;
     for (int i = 0; i < len; i++) {
       char c;
       if (exec_args_argv_byte(args, 0, (uint16_t)i, &c) < 0) break;
-      dos.exec_dir[n++] = c;
+      dos_scratch_putb((uint16_t)(base + n), (uint8_t)c);
+      n++;
     }
   }
-  dos.exec_dir[n] = '\0';
-
-  dos_put_proc(p, &dos);
+  dos_scratch_putb((uint16_t)(base + n), 0);
 }
 
 /* ── Path resolution ────────────────────────────────────────────────── *
@@ -213,10 +295,9 @@ void dos_set_exec_dir(struct pcb *p, const struct exec_args *args) {
  * supply a page reference directly and don't have to mimic a user
  * pointer.
  *
- * Assembly happens in a single kernel-stack buffer (sized to the
- * scratch slot, 128 B) and is flushed in one mem_region_page_write
- * call.  Compared to byte-at-a-time writes, this keeps code size
- * small at the cost of a modest kstack footprint. */
+ * Bytes are streamed directly into DOS_PATH_SCRATCH_OFF via
+ * dos_scratch_putb — no intermediate stack buffer, so the kernel-stack
+ * footprint stays tiny. */
 
 static int dos_resolve_user_path(dos_proc_t *dos, uint16_t in_seg,
                                  uint16_t in_off) {
@@ -243,14 +324,12 @@ static int dos_resolve_user_path(dos_proc_t *dos, uint16_t in_seg,
     }
   }
 
-  const char *root;
-  const char *cwd;
+  uint16_t paths_base = dos_paths_base(current);
+  uint16_t cwd_off;
   if (drive == 2) {
-    root = dos->exec_dir;
-    cwd = dos->cwd_c;
+    cwd_off = (uint16_t)(paths_base + DOS_CWD_C_FIELD_OFF);
   } else if (drive == 25) {
-    root = "/";
-    cwd = dos->cwd_z;
+    cwd_off = (uint16_t)(paths_base + DOS_CWD_Z_FIELD_OFF);
   } else {
     return -DOS_ERR_INVALID_DRIVE;
   }
@@ -260,22 +339,41 @@ static int dos_resolve_user_path(dos_proc_t *dos, uint16_t in_seg,
   int absolute = (peek == '/' || peek == '\\');
   if (absolute) in_off++;
 
-  uint8_t buf[DOS_PATH_SCRATCH_MAX];
   uint16_t n = 0;
 
-  /* Copy root, dropping a trailing '/' so we never emit '//'. */
-  for (int i = 0; root[i]; i++) {
-    if (root[i] == '/' && root[i + 1] == '\0') break;
-    if (n >= DOS_PATH_SCRATCH_MAX - 1) return -DOS_ERR_PATH_NOT_FOUND;
-    buf[n++] = (uint8_t)root[i];
+  /* Copy root, dropping a trailing '/' so we never emit '//'.  For
+   * drive 2 the root is exec_dir from the paths slot; for drive 25
+   * the root is the literal "/" which we skip here — the n==0
+   * fallback later supplies the leading slash. */
+  if (drive == 2) {
+    uint16_t root_off = (uint16_t)(paths_base + DOS_EXEC_DIR_FIELD_OFF);
+    uint16_t root_len = 0;
+    for (; root_len < DOS_PATH_MAX; root_len++) {
+      if (dos_scratch_getb((uint16_t)(root_off + root_len)) == 0) break;
+    }
+    if (root_len > 0 &&
+        dos_scratch_getb((uint16_t)(root_off + root_len - 1)) == '/') {
+      root_len--;
+    }
+    for (uint16_t i = 0; i < root_len; i++) {
+      if (n >= DOS_PATH_SCRATCH_MAX - 1) return -DOS_ERR_PATH_NOT_FOUND;
+      dos_scratch_putb((uint16_t)(DOS_PATH_SCRATCH_OFF + n),
+                       dos_scratch_getb((uint16_t)(root_off + i)));
+      n++;
+    }
   }
 
-  if (!absolute && cwd[0]) {
+  /* Copy cwd from the cold slot (relative path only). */
+  if (!absolute && dos_scratch_getb(cwd_off) != 0) {
     if (n >= DOS_PATH_SCRATCH_MAX - 1) return -DOS_ERR_PATH_NOT_FOUND;
-    buf[n++] = '/';
-    for (int i = 0; cwd[i]; i++) {
+    dos_scratch_putb((uint16_t)(DOS_PATH_SCRATCH_OFF + n), '/');
+    n++;
+    for (uint16_t i = 0; i < DOS_PATH_MAX; i++) {
+      uint8_t b = dos_scratch_getb((uint16_t)(cwd_off + i));
+      if (b == 0) break;
       if (n >= DOS_PATH_SCRATCH_MAX - 1) return -DOS_ERR_PATH_NOT_FOUND;
-      buf[n++] = (uint8_t)cwd[i];
+      dos_scratch_putb((uint16_t)(DOS_PATH_SCRATCH_OFF + n), b);
+      n++;
     }
   }
 
@@ -283,22 +381,22 @@ static int dos_resolve_user_path(dos_proc_t *dos, uint16_t in_seg,
                                           dos_to_linear(in_seg, in_off));
   if (peek) {
     if (n >= DOS_PATH_SCRATCH_MAX - 1) return -DOS_ERR_PATH_NOT_FOUND;
-    buf[n++] = '/';
+    dos_scratch_putb((uint16_t)(DOS_PATH_SCRATCH_OFF + n), '/');
+    n++;
     for (;;) {
       uint8_t b = (uint8_t)current->cpu_ops->read8(
           dos->cpu_state, dos_to_linear(in_seg, in_off++));
       if (b == 0) break;
       if (b == '\\') b = '/';
       if (n >= DOS_PATH_SCRATCH_MAX - 1) return -DOS_ERR_PATH_NOT_FOUND;
-      buf[n++] = b;
+      dos_scratch_putb((uint16_t)(DOS_PATH_SCRATCH_OFF + n), b);
+      n++;
     }
   } else if (n == 0) {
-    buf[n++] = '/';
+    dos_scratch_putb((uint16_t)DOS_PATH_SCRATCH_OFF, '/');
+    n++;
   }
-  buf[n] = '\0';
-
-  mem_region_page_write(dos_data_page, DOS_PATH_SCRATCH_OFF, buf,
-                        (uint16_t)(n + 1));
+  dos_scratch_putb((uint16_t)(DOS_PATH_SCRATCH_OFF + n), 0);
   return 0;
 }
 
@@ -640,29 +738,27 @@ static int dos_glob_match(const uint8_t *pat, const char *name) {
  * PATH_NOT_FOUND.  Root-level patterns like "/pat" leave "/" in the
  * scratch so sys_open opens the root dir. */
 static int dos_find_split_scratch(uint8_t *pat_out, uint16_t pat_max) {
-  uint8_t buf[DOS_PATH_SCRATCH_MAX];
+  /* First pass: scan the page for NUL and track the last '/' index. */
   uint16_t path_len = 0;
+  int slash_idx = -1;
   for (uint16_t i = 0; i < DOS_PATH_SCRATCH_MAX; i++) {
-    mem_region_page_read(dos_data_page, (uint16_t)(DOS_PATH_SCRATCH_OFF + i),
-                         &buf[i], 1);
-    if (buf[i] == 0) {
+    uint8_t b = dos_scratch_getb((uint16_t)(DOS_PATH_SCRATCH_OFF + i));
+    if (b == 0) {
       path_len = i;
       break;
     }
+    if (b == '/') slash_idx = (int)i;
   }
-  if (path_len == 0) return -DOS_ERR_PATH_NOT_FOUND;
-
-  int slash_idx = -1;
-  for (uint16_t i = 0; i < path_len; i++) {
-    if (buf[i] == '/') slash_idx = (int)i;
-  }
-  if (slash_idx < 0) return -DOS_ERR_PATH_NOT_FOUND;
+  if (path_len == 0 || slash_idx < 0) return -DOS_ERR_PATH_NOT_FOUND;
 
   uint16_t pat_start = (uint16_t)(slash_idx + 1);
   if (pat_start >= path_len) return -DOS_ERR_PATH_NOT_FOUND;
+
+  /* Second pass: copy the pattern out, uppercasing in flight. */
   uint16_t p_i = 0;
   for (uint16_t i = pat_start; i < path_len && p_i + 1 < pat_max; i++) {
-    pat_out[p_i++] = dos_toupper8(buf[i]);
+    uint8_t b = dos_scratch_getb((uint16_t)(DOS_PATH_SCRATCH_OFF + i));
+    pat_out[p_i++] = dos_toupper8(b);
   }
   pat_out[p_i] = 0;
 
@@ -670,14 +766,10 @@ static int dos_find_split_scratch(uint8_t *pat_out, uint16_t pat_max) {
    * directory.  dir_len==0 means the match is at root — leave "/" in
    * place so sys_open sees a non-empty path. */
   uint16_t dir_len = (uint16_t)slash_idx;
-  uint8_t zero = 0;
-  if (dir_len == 0) {
-    mem_region_page_write(dos_data_page, (uint16_t)(DOS_PATH_SCRATCH_OFF + 1),
-                          &zero, 1);
-  } else {
-    mem_region_page_write(dos_data_page,
-                          (uint16_t)(DOS_PATH_SCRATCH_OFF + dir_len), &zero, 1);
-  }
+  uint16_t term_off = (dir_len == 0)
+                          ? (uint16_t)(DOS_PATH_SCRATCH_OFF + 1)
+                          : (uint16_t)(DOS_PATH_SCRATCH_OFF + dir_len);
+  dos_scratch_putb(term_off, 0);
   return 0;
 }
 
@@ -744,28 +836,46 @@ static void dos_find_fill_dta(dos_proc_t *dos, uint8_t attr, uint32_t size,
  * into the DOS or WIN32 time format they need after the call. */
 static int dos_stat_entry(const char *name, uint32_t *size_out,
                           uint32_t *mtime_out) {
-  char full[DOS_PATH_SCRATCH_MAX];
+  /* Compose "<dir>/<name>" in the scratch page at DOS_STAT_FULL_OFF —
+   * no stack buffer.  The dir prefix is already sitting at
+   * DOS_PATH_SCRATCH_OFF from the preceding split step, so we stream
+   * it byte-by-byte into DOS_STAT_FULL_OFF and track its length and
+   * first byte in passing. */
   uint16_t dir_len = 0;
-  for (; dir_len < DOS_PATH_SCRATCH_MAX; dir_len++) {
-    uint8_t b;
-    mem_region_page_read(dos_data_page,
-                         (uint16_t)(DOS_PATH_SCRATCH_OFF + dir_len), &b, 1);
+  uint8_t first = 0;
+  for (; dir_len < DOS_STAT_FULL_MAX; dir_len++) {
+    uint8_t b = dos_scratch_getb((uint16_t)(DOS_PATH_SCRATCH_OFF + dir_len));
     if (!b) break;
-    full[dir_len] = (char)b;
+    if (dir_len == 0) first = b;
+    dos_scratch_putb((uint16_t)(DOS_STAT_FULL_OFF + dir_len), b);
   }
   uint16_t name_len = 0;
   while (name[name_len]) name_len++;
-  int need_slash = (dir_len > 0 && !(dir_len == 1 && full[0] == '/'));
+  int need_slash = (dir_len > 0 && !(dir_len == 1 && first == '/'));
   if ((uint16_t)(dir_len + (need_slash ? 1 : 0) + name_len + 1) >
-      (uint16_t)sizeof(full))
+      (uint16_t)DOS_STAT_FULL_MAX)
     return -1;
   uint16_t pos = dir_len;
-  if (need_slash) full[pos++] = '/';
-  for (uint16_t i = 0; i < name_len; i++) full[pos++] = name[i];
-  full[pos] = 0;
+  if (need_slash) {
+    dos_scratch_putb((uint16_t)(DOS_STAT_FULL_OFF + pos), '/');
+    pos++;
+  }
+  for (uint16_t i = 0; i < name_len; i++) {
+    dos_scratch_putb((uint16_t)(DOS_STAT_FULL_OFF + pos), (uint8_t)name[i]);
+    pos++;
+  }
+  dos_scratch_putb((uint16_t)(DOS_STAT_FULL_OFF + pos), 0);
 
+  /* Hand the page-backed path to mod_vfs.lookup as a near pointer.
+   * dos_data_page is allocated from the kernel data region, so its
+   * linear address doubles as a valid DS-relative pointer (the only
+   * VFS lookup variant accepts a C string — a future lookup_pf would
+   * remove this narrow cast). */
   vnode_t *vn = NULL;
-  if (mod_vfs.lookup(full, &vn) != 0) return -1;
+  const char *path =
+      (const char *)(uintptr_t)(mem_region_page_linear(dos_data_page) +
+                                (uint32_t)DOS_STAT_FULL_OFF);
+  if (mod_vfs.lookup(path, &vn) != 0) return -1;
   struct stat st;
   int err = mod_vfs.vnode_stat(vn, &st);
   mod_vfs.vnode_release(vn);
@@ -1239,34 +1349,44 @@ static int dos_get_int_vector(dos_proc_t *dos, dos_regs_t *regs) {
  *   AL = vector number, DS:DX = new IP:CS.
  *
  * First touch of a non-protected vector snapshots the previous IP:CS
- * into dos_proc_t.ivt_saved_* so msdos_on_exit can restore it.  Further
- * writes to the same vector skip the snapshot.  When the per-process
- * save table is full, additional new-vector writes still go through but
+ * into the cold slot so msdos_on_exit can restore it.  Further writes
+ * to the same vector skip the snapshot.  When the per-process save
+ * table is full, additional new-vector writes still go through but
  * won't be restored — we warn once.  Writes to protected vectors are
- * dropped. */
-static int dos_set_int_vector(dos_proc_t *dos, dos_regs_t *regs) {
+ * dropped.
+ *
+ * noinline: this handler allocates dos_proc_cold_t on its frame, and
+ * without the attribute it gets inlined into dos_int21h_dispatch's
+ * giant switch — accumulating ~60 B into the dispatch frame that's
+ * live on every INT 21h, not just AH=25h.  Keep the cold-path cost
+ * off the hot-path stack. */
+__attribute__((noinline)) static int dos_set_int_vector(dos_proc_t *dos,
+                                                        dos_regs_t *regs) {
   uint8_t vec = (uint8_t)(regs->ax & 0xFF);
   if (dos_vec_is_protected(vec)) {
     mod_vfs.klogf("[msdos] AH=25h vec=%x protected (dropped)\n", (unsigned)vec);
     return 0;
   }
 
+  dos_proc_cold_t cold;
+  dos_get_cold(current, &cold);
   int seen = 0;
-  for (int i = 0; i < dos->ivt_saved_count; i++) {
-    if (dos->ivt_saved_vec[i] == vec) {
+  for (int i = 0; i < cold.ivt_saved_count; i++) {
+    if (cold.ivt_saved_vec[i] == vec) {
       seen = 1;
       break;
     }
   }
   uint32_t addr = (uint32_t)vec * 4;
   if (!seen) {
-    if (dos->ivt_saved_count < DOS_IVT_SAVE_MAX) {
-      uint8_t slot = dos->ivt_saved_count;
-      dos->ivt_saved_vec[slot] = vec;
-      dos->ivt_saved_ip[slot] = current->cpu_ops->read16(dos->cpu_state, addr);
-      dos->ivt_saved_cs[slot] =
+    if (cold.ivt_saved_count < DOS_IVT_SAVE_MAX) {
+      uint8_t slot = cold.ivt_saved_count;
+      cold.ivt_saved_vec[slot] = vec;
+      cold.ivt_saved_ip[slot] = current->cpu_ops->read16(dos->cpu_state, addr);
+      cold.ivt_saved_cs[slot] =
           current->cpu_ops->read16(dos->cpu_state, addr + 2);
-      dos->ivt_saved_count = (uint8_t)(slot + 1);
+      cold.ivt_saved_count = (uint8_t)(slot + 1);
+      dos_put_cold(current, &cold);
     } else {
       mod_vfs.klogf("[msdos] AH=25h vec=%x save table full (no restore)\n",
                     (unsigned)vec);
@@ -1467,11 +1587,17 @@ static int dos_chdir(dos_proc_t *dos, dos_regs_t *regs) {
     }
   }
 
-  char *cwd_buf = (drive == 2) ? dos->cwd_c : dos->cwd_z;
-  if (drive != 2 && drive != 25) return -DOS_ERR_INVALID_DRIVE;
+  uint16_t cwd_off;
+  if (drive == 2)
+    cwd_off = (uint16_t)(dos_paths_base(current) + DOS_CWD_C_FIELD_OFF);
+  else if (drive == 25)
+    cwd_off = (uint16_t)(dos_paths_base(current) + DOS_CWD_Z_FIELD_OFF);
+  else
+    return -DOS_ERR_INVALID_DRIVE;
 
-  /* Copy the remaining DOS path (post-drive-letter) into cwd_buf,
-   * converting backslashes and skipping a leading separator. */
+  /* Copy the remaining DOS path (post-drive-letter) into the cwd slot
+   * on dos_data_page, converting backslashes and skipping a leading
+   * separator. */
   uint8_t peek = (uint8_t)current->cpu_ops->read8(
       dos->cpu_state, ((uint32_t)regs->ds << 4) + in_off);
   if (peek == '/' || peek == '\\') in_off++;
@@ -1482,9 +1608,10 @@ static int dos_chdir(dos_proc_t *dos, dos_regs_t *regs) {
     uint8_t b = (uint8_t)current->cpu_ops->read8(
         dos->cpu_state, ((uint32_t)regs->ds << 4) + in_off++);
     if (b == 0) break;
-    cwd_buf[n++] = (b == '\\') ? '/' : (char)b;
+    dos_scratch_putb((uint16_t)(cwd_off + n), (b == '\\') ? '/' : b);
+    n++;
   }
-  cwd_buf[n] = '\0';
+  dos_scratch_putb((uint16_t)(cwd_off + n), 0);
 
   /* Switch active drive too (DOS does this implicitly). */
   dos->current_drive = drive;
@@ -1497,27 +1624,31 @@ static int dos_chdir(dos_proc_t *dos, dos_regs_t *regs) {
 static int dos_getcwd(dos_proc_t *dos, dos_regs_t *regs) {
   uint8_t dl = (uint8_t)(regs->dx & 0xFF);
   uint8_t drive = (dl == 0) ? dos->current_drive : (uint8_t)(dl - 1);
-  const char *cwd;
+  uint16_t cwd_off;
   if (drive == 2)
-    cwd = dos->cwd_c;
+    cwd_off = (uint16_t)(dos_paths_base(current) + DOS_CWD_C_FIELD_OFF);
   else if (drive == 25)
-    cwd = dos->cwd_z;
+    cwd_off = (uint16_t)(dos_paths_base(current) + DOS_CWD_Z_FIELD_OFF);
   else
     return -DOS_ERR_INVALID_DRIVE;
 
   /* Skip any leading '/' so the result is root-relative per DOS. */
-  while (*cwd == '/') cwd++;
+  uint16_t idx = 0;
+  while (idx < DOS_PATH_MAX &&
+         dos_scratch_getb((uint16_t)(cwd_off + idx)) == '/') {
+    idx++;
+  }
 
   /* Write ASCIIZ to user DS:SI byte-by-byte (fits in 64 bytes). */
   uint16_t out = regs->si;
   int n = 0;
-  for (; cwd[n]; n++) {
+  for (;; n++) {
     if (n >= DOS_PATH_MAX) return -DOS_ERR_PATH_NOT_FOUND;
-    current->cpu_ops->write8(
-        dos->cpu_state, ((uint32_t)regs->ds << 4) + out + n, (uint8_t)cwd[n]);
+    uint8_t b = dos_scratch_getb((uint16_t)(cwd_off + idx + n));
+    current->cpu_ops->write8(dos->cpu_state,
+                             ((uint32_t)regs->ds << 4) + out + n, b);
+    if (b == 0) break;
   }
-  current->cpu_ops->write8(dos->cpu_state, ((uint32_t)regs->ds << 4) + out + n,
-                           0);
   /* DOS spec: AX is preserved on success.  Some sources say AX=0100h
    * — we leave it untouched to match common reference docs. */
   return 0;

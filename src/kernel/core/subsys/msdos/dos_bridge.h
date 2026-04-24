@@ -62,13 +62,20 @@ typedef struct dos_proc {
   void *cpu_state;   /* CPU state for memory access */
   void *ecpu_memory; /* eCPU: flat memory pointer (NULL for native) */
 
-  /* Path infrastructure (§4.4).  exec_dir is dirname() of the running
-   * .COM/.EXE path, captured at load time; C: resolves against it.
-   * cwd_c / cwd_z are relative directories within each drive, ""==root. */
-  char exec_dir[DOS_PATH_MAX];
-  char cwd_c[DOS_PATH_MAX];
-  char cwd_z[DOS_PATH_MAX];
+  /* One-byte stdin pushback used by AH=0Bh (check input status).  AH=0Bh
+   * probes stdin non-blocking; if a byte arrived it is stashed here and
+   * the next AH=01h/06h/07h/08h/0Ah drains it before issuing a blocking
+   * read.  Without this, a truthful "no char available" report is
+   * impossible to pair with a subsequent blocking read. */
+  uint8_t stdin_pushback_valid;
+  uint8_t stdin_pushback_char;
+} dos_proc_t;
 
+/* Cold per-process state held in dos_data_page but not copied to the
+ * kernel stack during INT 21h dispatch.  These fields are only touched
+ * at exec / exit boundaries and by AH=25h (Set Int Vector), none of
+ * which is on the deep VFS-lookup stack chain. */
+typedef struct dos_proc_cold {
   /* Saved real-IVT entries for per-process restoration at exit.  On
    * first AH=25h write of each non-protected vector, the old IP:CS is
    * captured here; msdos_on_exit walks this list and writes them back. */
@@ -77,18 +84,11 @@ typedef struct dos_proc {
   uint16_t ivt_saved_cs[DOS_IVT_SAVE_MAX];
   uint8_t ivt_saved_count;
 
-  /* One-byte stdin pushback used by AH=0Bh (check input status).  AH=0Bh
-   * probes stdin non-blocking; if a byte arrived it is stashed here and
-   * the next AH=01h/06h/07h/08h/0Ah drains it before issuing a blocking
-   * read.  Without this, a truthful "no char available" report is
-   * impossible to pair with a subsequent blocking read. */
-  uint8_t stdin_pushback_valid;
-  uint8_t stdin_pushback_char;
-
-  /* Termios snapshot taken at msdos_on_init and restored by msdos_on_exit.
-   * DOS programs do their own echo / line editing and expect a raw
-   * per-byte keyboard with CR on Enter, so we clear ICANON|ECHO|ICRNL
-   * for the duration of the process.  Mirrors the CP/M bridge pattern. */
+  /* Termios snapshot taken at msdos_on_init and restored by
+   * msdos_on_exit.  DOS programs do their own echo / line editing and
+   * expect a raw per-byte keyboard with CR on Enter, so we clear
+   * ICANON|ECHO|ICRNL for the duration of the process.  Mirrors the
+   * CP/M bridge pattern. */
   uint32_t saved_c_iflag;
   uint32_t saved_c_oflag;
   uint32_t saved_c_cflag;
@@ -96,7 +96,19 @@ typedef struct dos_proc {
   uint8_t saved_c_line;
   uint8_t saved_c_cc[19];
   uint8_t termios_saved;
-} dos_proc_t;
+} dos_proc_cold_t;
+
+/* Per-process path state (§4.4).  Kept in a dedicated per-slot area
+ * of dos_data_page instead of in dos_proc_t or dos_proc_cold_t so
+ * neither struct grows large — accessors stream bytes to / from the
+ * page directly.  exec_dir is dirname() of the running .COM/.EXE,
+ * captured at load time; C: resolves against it.  cwd_c / cwd_z are
+ * relative directories within each drive, ""==root. */
+typedef struct dos_proc_paths {
+  char exec_dir[DOS_PATH_MAX];
+  char cwd_c[DOS_PATH_MAX];
+  char cwd_z[DOS_PATH_MAX];
+} dos_proc_paths_t;
 
 /* Layout matches the GP+IRET frame on the user stack at user_SP when
  * an INT 21h enters dos_trap.S — i.e. the same order as i16_syscall_isr
