@@ -429,42 +429,11 @@ and fragile.
 
 #### PS1 — `uc_heap_init` / `uc_malloc` / `uc_free` in uclib
 
-Page-allocator-style allocator with inline metadata, targeting
-the caller-supplied static pool pattern:
-
-```c
-void uc_heap_init(void *pool, size_t size);
-void *uc_malloc(size_t size);
-void uc_free(void *ptr);
-```
-
-Design (mirrors `page_alloc.c` idioms):
-
-- **Inline metadata.**  4-byte header per block (`uint16_t size`
-  payload + `uint16_t flags` with bit 0 = free).  The flags
-  field gives natural 4-byte alignment of the payload on 32-bit
-  targets and leaves room for future poison / tag bits.
-- **Address-sorted doubly-linked free list.**  Free blocks hold
-  `next` / `prev` pointers in the payload area, reused as user
-  data once allocated (zero extra overhead for used blocks
-  beyond the 4-byte header).
-- **Best-fit** on `uc_malloc`; perfect-fit short-circuits.  Split
-  only when the remainder can hold a minimum free block
-  (header + free-node).
-- **Always-coalesced invariant.**  On `uc_free`, find insertion
-  point in the sorted list; coalesce with `list_prev` if
-  physically adjacent; coalesce with `list_next` if physically
-  adjacent; then insert / replace.  O(free_count) find,
-  O(1) coalesce.
-- 16-bit size field → 64 KB max per allocation (naturally fits
-  the ia16 segment).  API returns NULL on OOM or oversize.
-- Single pool per process; one `uc_heap_init` call at startup.
-- Unit tests in `tests/user/test_uc_heap.c` (host-side via the
-  existing host-test harness): init, alloc/free, split,
-  forward-coalesce, backward-coalesce, both-sides-coalesce,
-  fragmentation recovery.
-
-Detailed design migrates to [docs/user/uc_malloc.md](/docs/user/uc_malloc.md) once implementation lands.
+Page-allocator-style best-fit allocator with inline metadata,
+operating on a caller-supplied static pool.  Full design notes
+and API reference live in [docs/user/uc_malloc.md](/docs/user/uc_malloc.md);
+host tests in [tests/host/test_uc_heap.c](/tests/host/test_uc_heap.c)
+(6540 assertions, runs as part of `./scripts/test.sh`).
 
 #### PS2 — pile heap bootstrap
 
