@@ -377,8 +377,11 @@ static void render_text(const char *path) {
     if (vbuf[buf_pos++] == '\n') skipped++;
   }
 
-  /* Render one row at a time, reading one line from the chunk stream. */
-  int eof = (buf_len <= 0);
+  /* Render one row at a time, reading one line from the chunk stream.
+   * Only conclude EOF here if the skip loop actually tried to read
+   * (tscroll > 0) and came up short; when tscroll == 0 the buffer is
+   * still virgin and the inner loop's own read will determine EOF. */
+  int eof = (tscroll > 0 && buf_len <= 0);
   for (int row = 0; row < vrows_visible; row++) {
     pile_draw_cursor_to(1 + row, 0);
     if (eof) {
