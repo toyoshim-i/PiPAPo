@@ -1954,6 +1954,102 @@ static void test_lfn_xopen_open(void)
     unlink("/tmp/L4XOO.TXT");
 }
 
+/* -- Test 35: lfn_mkrm.com --- AH=71h AL=39h MKDIR + AL=3Ah RMDIR ------ */
+/*
+ * Wrappers around AH=39h / AH=3Ah.  .COM creates "C:\\L5DIR" then
+ * removes it and exits 0 on success.  Host verifies the directory is
+ * gone afterward (RMDIR ran inside the .COM).
+ *
+ *   0x100  B8 39 71           MOV AX, 7139h
+ *   0x103  BA 1F 01           MOV DX, 011Fh
+ *   0x106  CD 21              INT 21h
+ *   0x108  72 0F              JC fail
+ *   0x10A  B8 3A 71           MOV AX, 713Ah
+ *   0x10D  BA 1F 01           MOV DX, 011Fh
+ *   0x110  CD 21              INT 21h
+ *   0x112  72 05              JC fail
+ *   0x114  B8 00 4C  CD 21    exit 0
+ *   0x119  B8 EE 4C  CD 21    fail: exit 0xEE
+ *   0x11E  90                 NOP pad
+ *   0x11F  "C:\\L5DIR" + NUL  (9 bytes)
+ */
+static const unsigned char lfn_mkrm_com[] = {
+    0xB8, 0x39, 0x71,           /* MOV AX, 7139h */
+    0xBA, 0x1F, 0x01,           /* MOV DX, 011Fh */
+    0xCD, 0x21,
+    0x72, 0x0F,                 /* JC fail (+0x0F) */
+    0xB8, 0x3A, 0x71,           /* MOV AX, 713Ah */
+    0xBA, 0x1F, 0x01,           /* MOV DX, 011Fh */
+    0xCD, 0x21,
+    0x72, 0x05,                 /* JC fail (+5)  */
+    0xB8, 0x00, 0x4C,           /* exit 0        */
+    0xCD, 0x21,
+    0xB8, 0xEE, 0x4C,           /* fail: exit 0xEE */
+    0xCD, 0x21,
+    0x90,                       /* pad           */
+    'C', ':', '\\', 'L', '5', 'D', 'I', 'R', 0,
+};
+
+static void test_lfn_mkrm(void)
+{
+    rmdir("/tmp/L5DIR");
+    WRITE_COM("/tmp/dos_lm.com", lfn_mkrm_com);
+    int code = run_com("/tmp/dos_lm.com");
+    UT_ASSERT_EQ(code, 0);
+
+    struct stat st;
+    UT_ASSERT(stat("/tmp/L5DIR", &st) < 0, "L5DIR removed by LFN rmdir");
+}
+
+/* -- Test 36: lfn_getcwd.com --- AH=71h AL=47h GETCWD ------------------ */
+/*
+ * Wrapper around AH=47h.  DL=0 selects the current drive (C:); the
+ * fresh exec process has cwd_c="" so dos_getcwd writes a single NUL
+ * to the user buffer.  .COM exits 0 if buf[0]==0, 0xEF if non-zero,
+ * 0xEE on CF=1.
+ *
+ *   0x100  B2 00              MOV DL, 0       (current drive)
+ *   0x102  BE 22 01           MOV SI, 0122h   (output buffer)
+ *   0x105  B8 47 71           MOV AX, 7147h
+ *   0x108  CD 21              INT 21h
+ *   0x10A  72 0C              JC fail (-> 0x118)
+ *   0x10C  A0 22 01           MOV AL, [0122h]
+ *   0x10F  84 C0              TEST AL, AL
+ *   0x111  75 0A              JNZ nonzero (-> 0x11D)
+ *   0x113  B8 00 4C  CD 21    exit 0
+ *   0x118  B8 EE 4C  CD 21    fail: exit 0xEE
+ *   0x11D  B8 EF 4C  CD 21    nonzero: exit 0xEF
+ *   0x122  64-byte zero buffer
+ */
+static const unsigned char lfn_getcwd_com[] = {
+    0xB2, 0x00,                 /* MOV DL, 0     */
+    0xBE, 0x22, 0x01,           /* MOV SI, 0122h */
+    0xB8, 0x47, 0x71,           /* MOV AX, 7147h */
+    0xCD, 0x21,
+    0x72, 0x0C,                 /* JC fail (+0x0C) */
+    0xA0, 0x22, 0x01,           /* MOV AL, [0122h] */
+    0x84, 0xC0,                 /* TEST AL, AL   */
+    0x75, 0x0A,                 /* JNZ nonzero (+0x0A) */
+    0xB8, 0x00, 0x4C,           /* exit 0        */
+    0xCD, 0x21,
+    0xB8, 0xEE, 0x4C,           /* fail: exit 0xEE */
+    0xCD, 0x21,
+    0xB8, 0xEF, 0x4C,           /* nonzero: exit 0xEF */
+    0xCD, 0x21,
+    /* 0x122: 64 zero bytes */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+};
+
+static void test_lfn_getcwd(void)
+{
+    WRITE_COM("/tmp/dos_lw.com", lfn_getcwd_com);
+    int code = run_com("/tmp/dos_lw.com");
+    UT_ASSERT_EQ(code, 0);
+}
+
 /* -- main ----------------------------------------------------------------- */
 
 int main(void)
@@ -1992,6 +2088,8 @@ int main(void)
     test_lfn_xopen_create();
     test_lfn_xopen_trunc();
     test_lfn_xopen_open();
+    test_lfn_mkrm();
+    test_lfn_getcwd();
 
     UT_SUMMARY("test_msdos");
 }
