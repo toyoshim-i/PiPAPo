@@ -2050,6 +2050,75 @@ static void test_lfn_getcwd(void)
     UT_ASSERT_EQ(code, 0);
 }
 
+/* -- Test 37: find_size.com --- AH=4Eh DTA size field is correct ------- */
+/*
+ * Regression test for dos_stat_entry: prior versions handed
+ * mod_vfs.lookup a near-pointer cast of (page_linear + offset) which
+ * silently dereferenced unrelated memory.  Lookup returned spurious
+ * success and vnode_stat happily reported the size of whatever
+ * vnode the wrong path resolved to — meaning AH=4Eh's DTA size word
+ * was effectively garbage.  None of the existing find tests checked
+ * sizes (D4FT/D5LF were both empty), so the bug went unnoticed.
+ *
+ * Host pre-creates /tmp/SZTST.TXT with 16 bytes.  .COM sets DTA,
+ * FindFirsts "SZTST.TXT", reads the size low-word at DTA+26, and
+ * exits 0 iff size == 16, 0xEE on CF=1, 0xEF on size mismatch.
+ *
+ *   0x100  BA 34 01           MOV DX, 0134h    (DTA addr)
+ *   0x103  B4 1A  CD 21       AH=1Ah INT 21h   (Set DTA)
+ *   0x107  BA 2A 01           MOV DX, 012Ah    (pattern)
+ *   0x10A  B9 00 00           MOV CX, 0        (attr mask)
+ *   0x10D  B4 4E  CD 21       AH=4Eh INT 21h   (FindFirst)
+ *   0x111  72 0D              JC fail (-> 0x120)
+ *   0x113  A1 4E 01           MOV AX, [014Eh]  (DTA+26 size_lo)
+ *   0x116  3D 10 00           CMP AX, 16
+ *   0x119  75 0A              JNE bad (-> 0x125)
+ *   0x11B  B8 00 4C  CD 21    exit 0
+ *   0x120  B8 EE 4C  CD 21    fail: exit 0xEE
+ *   0x125  B8 EF 4C  CD 21    bad:  exit 0xEF
+ *   0x12A  "SZTST.TXT" + NUL  (10 bytes)
+ *   0x134  DTA buffer         (128 bytes)
+ */
+static const unsigned char find_size_com[] = {
+    0xBA, 0x34, 0x01,           /* MOV DX, 0134h */
+    0xB4, 0x1A, 0xCD, 0x21,     /* AH=1Ah INT 21h */
+    0xBA, 0x2A, 0x01,           /* MOV DX, 012Ah */
+    0xB9, 0x00, 0x00,           /* MOV CX, 0     */
+    0xB4, 0x4E, 0xCD, 0x21,     /* AH=4Eh INT 21h */
+    0x72, 0x0D,                 /* JC fail (+0x0D) */
+    0xA1, 0x4E, 0x01,           /* MOV AX, [014Eh] (size_lo) */
+    0x3D, 0x10, 0x00,           /* CMP AX, 16    */
+    0x75, 0x0A,                 /* JNE bad (+0x0A) */
+    0xB8, 0x00, 0x4C, 0xCD, 0x21, /* exit 0 */
+    0xB8, 0xEE, 0x4C, 0xCD, 0x21, /* fail: exit 0xEE */
+    0xB8, 0xEF, 0x4C, 0xCD, 0x21, /* bad: exit 0xEF */
+    'S', 'Z', 'T', 'S', 'T', '.', 'T', 'X', 'T', 0,
+    /* 0x134: 128-byte DTA buffer */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+};
+
+static void test_find_size(void)
+{
+    unlink("/tmp/SZTST.TXT");
+    int fd = open("/tmp/SZTST.TXT", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    UT_ASSERT(fd >= 0, "create SZTST.TXT");
+    UT_ASSERT_EQ(write(fd, "0123456789ABCDEF", 16), 16);
+    close(fd);
+
+    WRITE_COM("/tmp/dos_fs.com", find_size_com);
+    int code = run_com("/tmp/dos_fs.com");
+    UT_ASSERT_EQ(code, 0);
+
+    unlink("/tmp/SZTST.TXT");
+}
+
 /* -- main ----------------------------------------------------------------- */
 
 int main(void)
@@ -2090,6 +2159,7 @@ int main(void)
     test_lfn_xopen_open();
     test_lfn_mkrm();
     test_lfn_getcwd();
+    test_find_size();
 
     UT_SUMMARY("test_msdos");
 }
