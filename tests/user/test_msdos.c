@@ -1645,6 +1645,185 @@ static void test_lfn_find(void)
     unlink("/tmp/D5LF1.TXT");
 }
 
+/* -- Test 28: lfn_get_attr.com --- AH=71h AL=43h BL=00h GET attrs ------- */
+/*
+ * AH=71h AL=43h is the LFN GetSet wrapper around AH=43h.  BL selects
+ * sub-function (00=GET, 01=SET) and DS:DX = ASCIIZ path.  The .COM
+ * issues GET against C:\L3ATR.TXT (host-created, regular file) and
+ * exits with CL — the low byte of the synthesised attribute word.
+ * For a regular file the bridge returns 0x0020 (ARCHIVE), so success
+ * is exit code 0x20 (32).  Any failure path exits 0xEE.
+ *
+ *   0x100  B3 00              MOV BL, 0       (GET sub-function)
+ *   0x102  B8 43 71           MOV AX, 7143h   (LFN AL=43h)
+ *   0x105  BA 18 01           MOV DX, 0118h   (path)
+ *   0x108  CD 21              INT 21h
+ *   0x10A  72 06              JC fail
+ *   0x10C  88 C8              MOV AL, CL      (low attr byte)
+ *   0x10E  B4 4C              MOV AH, 4Ch
+ *   0x110  CD 21              INT 21h         (exit AL)
+ *   0x112  B8 EE 4C  CD 21    fail: exit 0xEE
+ *   0x117  90                 NOP (pad)
+ *   0x118  "C:\\L3ATR.TXT" + NUL (13 bytes)
+ */
+static const unsigned char lfn_get_attr_com[] = {
+    0xB3, 0x00,                 /* MOV BL, 0     */
+    0xB8, 0x43, 0x71,           /* MOV AX, 7143h */
+    0xBA, 0x18, 0x01,           /* MOV DX, 0118h */
+    0xCD, 0x21,                 /* INT 21h       */
+    0x72, 0x06,                 /* JC fail (+6)  */
+    0x88, 0xC8,                 /* MOV AL, CL    */
+    0xB4, 0x4C,                 /* MOV AH, 4Ch   */
+    0xCD, 0x21,                 /* INT 21h       */
+    0xB8, 0xEE, 0x4C,           /* fail: MOV AX, 4CEEh */
+    0xCD, 0x21,
+    0x90,                       /* pad to 0x118  */
+    'C', ':', '\\', 'L', '3', 'A', 'T', 'R', '.', 'T', 'X', 'T', 0,
+};
+
+static void test_lfn_get_attr(void)
+{
+    unlink("/tmp/L3ATR.TXT");
+    int fd = open("/tmp/L3ATR.TXT", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    UT_ASSERT(fd >= 0, "create L3ATR.TXT");
+    close(fd);
+
+    WRITE_COM("/tmp/dos_la.com", lfn_get_attr_com);
+    int code = run_com("/tmp/dos_la.com");
+    /* Synthesised ARCHIVE bit for regular files. */
+    UT_ASSERT_EQ(code, 0x20);
+
+    unlink("/tmp/L3ATR.TXT");
+}
+
+/* -- Test 29: lfn_chdir.com --- AH=71h AL=3Bh CHDIR --------------------- */
+/*
+ * Wrapper around AH=3Bh.  Host pre-creates /tmp/L3DIR; the .COM
+ * issues AH=71h AL=3Bh DS:DX="C:\\L3DIR" and exits 0 on success or
+ * 0xEE on CF=1.
+ *
+ *   0x100  B8 3B 71           MOV AX, 713Bh
+ *   0x103  BA 14 01           MOV DX, 0114h
+ *   0x106  CD 21              INT 21h
+ *   0x108  72 05              JC fail
+ *   0x10A  B8 00 4C  CD 21    exit 0
+ *   0x10F  B8 EE 4C  CD 21    fail: exit 0xEE
+ *   0x114  "C:\\L3DIR" + NUL  (9 bytes)
+ */
+static const unsigned char lfn_chdir_com[] = {
+    0xB8, 0x3B, 0x71,           /* MOV AX, 713Bh */
+    0xBA, 0x14, 0x01,           /* MOV DX, 0114h */
+    0xCD, 0x21,                 /* INT 21h       */
+    0x72, 0x05,                 /* JC fail (+5)  */
+    0xB8, 0x00, 0x4C,           /* MOV AX, 4C00h */
+    0xCD, 0x21,
+    0xB8, 0xEE, 0x4C,           /* fail: MOV AX, 4CEEh */
+    0xCD, 0x21,
+    'C', ':', '\\', 'L', '3', 'D', 'I', 'R', 0,
+};
+
+static void test_lfn_chdir(void)
+{
+    rmdir("/tmp/L3DIR");
+    UT_ASSERT_EQ(mkdir("/tmp/L3DIR", 0755), 0);
+
+    WRITE_COM("/tmp/dos_lc.com", lfn_chdir_com);
+    int code = run_com("/tmp/dos_lc.com");
+    UT_ASSERT_EQ(code, 0);
+
+    rmdir("/tmp/L3DIR");
+}
+
+/* -- Test 30: lfn_delete.com --- AH=71h AL=41h DELETE ------------------- */
+/*
+ * Wrapper around AH=41h.  Host pre-creates /tmp/L3DEL.TXT; the .COM
+ * deletes "C:\\L3DEL.TXT" and exits 0 on success.  Host then verifies
+ * the file is gone.
+ *
+ *   0x100  B8 41 71           MOV AX, 7141h
+ *   0x103  BA 14 01           MOV DX, 0114h
+ *   0x106  CD 21              INT 21h
+ *   0x108  72 05              JC fail
+ *   0x10A  B8 00 4C  CD 21    exit 0
+ *   0x10F  B8 EE 4C  CD 21    fail: exit 0xEE
+ *   0x114  "C:\\L3DEL.TXT" + NUL (13 bytes)
+ */
+static const unsigned char lfn_delete_com[] = {
+    0xB8, 0x41, 0x71,           /* MOV AX, 7141h */
+    0xBA, 0x14, 0x01,           /* MOV DX, 0114h */
+    0xCD, 0x21,                 /* INT 21h       */
+    0x72, 0x05,                 /* JC fail (+5)  */
+    0xB8, 0x00, 0x4C,           /* MOV AX, 4C00h */
+    0xCD, 0x21,
+    0xB8, 0xEE, 0x4C,           /* fail: MOV AX, 4CEEh */
+    0xCD, 0x21,
+    'C', ':', '\\', 'L', '3', 'D', 'E', 'L', '.', 'T', 'X', 'T', 0,
+};
+
+static void test_lfn_delete(void)
+{
+    unlink("/tmp/L3DEL.TXT");
+    int fd = open("/tmp/L3DEL.TXT", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    UT_ASSERT(fd >= 0, "create L3DEL.TXT");
+    close(fd);
+
+    WRITE_COM("/tmp/dos_ld.com", lfn_delete_com);
+    int code = run_com("/tmp/dos_ld.com");
+    UT_ASSERT_EQ(code, 0);
+
+    struct stat st;
+    UT_ASSERT(stat("/tmp/L3DEL.TXT", &st) < 0, "L3DEL.TXT removed by LFN delete");
+}
+
+/* -- Test 31: lfn_rename.com --- AH=71h AL=56h RENAME ------------------- */
+/*
+ * Wrapper around AH=56h.  Host pre-creates /tmp/L3OLD.TXT; .COM
+ * renames "C:\\L3OLD.TXT" → "C:\\L3NEW.TXT" via DS:DX/ES:DI and exits
+ * 0 on success.  Host then verifies OLD is gone and NEW exists, and
+ * cleans up NEW.
+ *
+ *   0x100  B8 56 71           MOV AX, 7156h
+ *   0x103  BA 17 01           MOV DX, 0117h   (old)
+ *   0x106  BF 24 01           MOV DI, 0124h   (new)
+ *   0x109  CD 21              INT 21h
+ *   0x10B  72 05              JC fail
+ *   0x10D  B8 00 4C  CD 21    exit 0
+ *   0x112  B8 EE 4C  CD 21    fail: exit 0xEE
+ *   0x117  "C:\\L3OLD.TXT" + NUL (13 bytes)
+ *   0x124  "C:\\L3NEW.TXT" + NUL (13 bytes)
+ */
+static const unsigned char lfn_rename_com[] = {
+    0xB8, 0x56, 0x71,           /* MOV AX, 7156h */
+    0xBA, 0x17, 0x01,           /* MOV DX, 0117h */
+    0xBF, 0x24, 0x01,           /* MOV DI, 0124h */
+    0xCD, 0x21,                 /* INT 21h       */
+    0x72, 0x05,                 /* JC fail (+5)  */
+    0xB8, 0x00, 0x4C,           /* MOV AX, 4C00h */
+    0xCD, 0x21,
+    0xB8, 0xEE, 0x4C,           /* fail: MOV AX, 4CEEh */
+    0xCD, 0x21,
+    'C', ':', '\\', 'L', '3', 'O', 'L', 'D', '.', 'T', 'X', 'T', 0,
+    'C', ':', '\\', 'L', '3', 'N', 'E', 'W', '.', 'T', 'X', 'T', 0,
+};
+
+static void test_lfn_rename(void)
+{
+    unlink("/tmp/L3OLD.TXT");
+    unlink("/tmp/L3NEW.TXT");
+    int fd = open("/tmp/L3OLD.TXT", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    UT_ASSERT(fd >= 0, "create L3OLD.TXT");
+    close(fd);
+
+    WRITE_COM("/tmp/dos_lr.com", lfn_rename_com);
+    int code = run_com("/tmp/dos_lr.com");
+    UT_ASSERT_EQ(code, 0);
+
+    struct stat st;
+    UT_ASSERT(stat("/tmp/L3OLD.TXT", &st) < 0, "L3OLD.TXT was renamed");
+    UT_ASSERT(stat("/tmp/L3NEW.TXT", &st) == 0, "L3NEW.TXT exists");
+    unlink("/tmp/L3NEW.TXT");
+}
+
 /* -- main ----------------------------------------------------------------- */
 
 int main(void)
@@ -1676,6 +1855,10 @@ int main(void)
     test_find_first();
     test_lfn_truename();
     test_lfn_find();
+    test_lfn_get_attr();
+    test_lfn_chdir();
+    test_lfn_delete();
+    test_lfn_rename();
 
     UT_SUMMARY("test_msdos");
 }
