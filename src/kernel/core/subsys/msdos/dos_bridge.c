@@ -833,9 +833,13 @@ static void dos_find_fill_dta(dos_proc_t *dos, uint8_t attr, uint32_t size,
  * effort: if composing the full path would overflow scratch, or the
  * lookup / stat fails, *size_out and *mtime_out stay whatever the
  * caller initialised them to (usually zero).  Callers pack mtime
- * into the DOS or WIN32 time format they need after the call. */
-static int dos_stat_entry(const char *name, uint32_t *size_out,
-                          uint32_t *mtime_out) {
+ * into the DOS or WIN32 time format they need after the call.
+ *
+ * noinline keeps the 128-byte path stack copy out of the find-scan
+ * caller's frame on every dirent. */
+static int __attribute__((noinline)) dos_stat_entry(const char *name,
+                                                    uint32_t *size_out,
+                                                    uint32_t *mtime_out) {
   /* Compose "<dir>/<name>" in the scratch page at DOS_STAT_FULL_OFF —
    * no stack buffer.  The dir prefix is already sitting at
    * DOS_PATH_SCRATCH_OFF from the preceding split step, so we stream
@@ -866,15 +870,21 @@ static int dos_stat_entry(const char *name, uint32_t *size_out,
   }
   dos_scratch_putb((uint16_t)(DOS_STAT_FULL_OFF + pos), 0);
 
-  /* Hand the page-backed path to mod_vfs.lookup as a near pointer.
-   * dos_data_page is allocated from the kernel data region, so its
-   * linear address doubles as a valid DS-relative pointer (the only
-   * VFS lookup variant accepts a C string — a future lookup_pf would
-   * remove this narrow cast). */
+  /* mod_vfs.lookup needs a C string; copy the page-backed path into a
+   * stack buffer.  The earlier "near pointer at linear addr" trick
+   * silently passed garbage — lookup happily resolved unrelated
+   * memory and returned spurious success, masking missing files. */
+  char path[DOS_STAT_FULL_MAX];
+  for (uint16_t i = 0; i < DOS_STAT_FULL_MAX; i++) {
+    uint8_t b;
+    mem_region_page_read(dos_data_page, (uint16_t)(DOS_STAT_FULL_OFF + i), &b,
+                         1);
+    path[i] = (char)b;
+    if (!b) break;
+  }
+  path[DOS_STAT_FULL_MAX - 1] = '\0';
+
   vnode_t *vn = NULL;
-  const char *path =
-      (const char *)(uintptr_t)(mem_region_page_linear(dos_data_page) +
-                                (uint32_t)DOS_STAT_FULL_OFF);
   if (mod_vfs.lookup(path, &vn) != 0) return -1;
   struct stat st;
   int err = mod_vfs.vnode_stat(vn, &st);
