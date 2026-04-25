@@ -1824,6 +1824,136 @@ static void test_lfn_rename(void)
     unlink("/tmp/L3NEW.TXT");
 }
 
+/* -- Test 32: lfn_xopen_create.com --- AH=71h AL=6Ch DX=0x12 (create) -- */
+/*
+ * Extended Open with action=0x12 (open-or-truncate, create-if-missing)
+ * on a non-existing file.  Expect CF=0 and CX=2 (created).  The .COM
+ * exits with CL so the host sees exit code 2 on success or 0xEE on
+ * CF=1.  Host then verifies the file was actually created.
+ *
+ *   0x100  BB 02 00           MOV BX, 2          (RW)
+ *   0x103  B9 00 00           MOV CX, 0          (no attrs)
+ *   0x106  BA 12 00           MOV DX, 0012h      (action)
+ *   0x109  BE 1E 01           MOV SI, 011Eh      (path)
+ *   0x10C  B8 6C 71           MOV AX, 716Ch
+ *   0x10F  CD 21              INT 21h
+ *   0x111  72 06              JC fail
+ *   0x113  88 C8              MOV AL, CL         (action_taken)
+ *   0x115  B4 4C              MOV AH, 4Ch
+ *   0x117  CD 21              INT 21h            (exit AL)
+ *   0x119  B8 EE 4C  CD 21    fail: exit 0xEE
+ *   0x11E  "C:\\L4XOC.TXT" + NUL (13 bytes)
+ */
+static const unsigned char lfn_xopen_create_com[] = {
+    0xBB, 0x02, 0x00,           /* MOV BX, 2     */
+    0xB9, 0x00, 0x00,           /* MOV CX, 0     */
+    0xBA, 0x12, 0x00,           /* MOV DX, 12h   */
+    0xBE, 0x1E, 0x01,           /* MOV SI, 011Eh */
+    0xB8, 0x6C, 0x71,           /* MOV AX, 716Ch */
+    0xCD, 0x21,
+    0x72, 0x06,                 /* JC fail (+6)  */
+    0x88, 0xC8,                 /* MOV AL, CL    */
+    0xB4, 0x4C,                 /* MOV AH, 4Ch   */
+    0xCD, 0x21,
+    0xB8, 0xEE, 0x4C,           /* fail: exit 0xEE */
+    0xCD, 0x21,
+    'C', ':', '\\', 'L', '4', 'X', 'O', 'C', '.', 'T', 'X', 'T', 0,
+};
+
+static void test_lfn_xopen_create(void)
+{
+    unlink("/tmp/L4XOC.TXT");
+    WRITE_COM("/tmp/dos_xc.com", lfn_xopen_create_com);
+    int code = run_com("/tmp/dos_xc.com");
+    UT_ASSERT_EQ(code, 2);
+
+    struct stat st;
+    UT_ASSERT(stat("/tmp/L4XOC.TXT", &st) == 0, "L4XOC.TXT created by xopen");
+    unlink("/tmp/L4XOC.TXT");
+}
+
+/* -- Test 33: lfn_xopen_trunc.com --- AH=71h AL=6Ch DX=0x12 (trunc) ---- */
+/*
+ * Same .COM shape as create test but on a file the host pre-populated
+ * with 8 bytes.  Action=0x12 means "truncate if exists, create if
+ * not"; here it truncates and CX=3 is returned.  Host verifies the
+ * file is now zero-length.
+ */
+static const unsigned char lfn_xopen_trunc_com[] = {
+    0xBB, 0x02, 0x00,           /* MOV BX, 2     */
+    0xB9, 0x00, 0x00,           /* MOV CX, 0     */
+    0xBA, 0x12, 0x00,           /* MOV DX, 12h   */
+    0xBE, 0x1E, 0x01,           /* MOV SI, 011Eh */
+    0xB8, 0x6C, 0x71,           /* MOV AX, 716Ch */
+    0xCD, 0x21,
+    0x72, 0x06,                 /* JC fail (+6)  */
+    0x88, 0xC8,                 /* MOV AL, CL    */
+    0xB4, 0x4C,                 /* MOV AH, 4Ch   */
+    0xCD, 0x21,
+    0xB8, 0xEE, 0x4C,           /* fail: exit 0xEE */
+    0xCD, 0x21,
+    'C', ':', '\\', 'L', '4', 'X', 'O', 'T', '.', 'T', 'X', 'T', 0,
+};
+
+static void test_lfn_xopen_trunc(void)
+{
+    unlink("/tmp/L4XOT.TXT");
+    int fd = open("/tmp/L4XOT.TXT", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    UT_ASSERT(fd >= 0, "create L4XOT.TXT");
+    UT_ASSERT_EQ(write(fd, "deadbeef", 8), 8);
+    close(fd);
+
+    WRITE_COM("/tmp/dos_xt.com", lfn_xopen_trunc_com);
+    int code = run_com("/tmp/dos_xt.com");
+    UT_ASSERT_EQ(code, 3);
+
+    struct stat st;
+    UT_ASSERT(stat("/tmp/L4XOT.TXT", &st) == 0, "L4XOT.TXT still exists");
+    UT_ASSERT_EQ((int)st.st_size, 0);
+    unlink("/tmp/L4XOT.TXT");
+}
+
+/* -- Test 34: lfn_xopen_open.com --- AH=71h AL=6Ch DX=0x01 (open) ------ */
+/*
+ * Action=0x01 (open existing only, fail if missing) on a pre-existing
+ * file.  Expect CX=1 (opened); host verifies file is unchanged.
+ * BX=0 selects read-only access, sufficient for the open-existing
+ * code path which must not need O_TRUNC or O_CREAT.
+ */
+static const unsigned char lfn_xopen_open_com[] = {
+    0xBB, 0x00, 0x00,           /* MOV BX, 0     (read) */
+    0xB9, 0x00, 0x00,           /* MOV CX, 0     */
+    0xBA, 0x01, 0x00,           /* MOV DX, 01h   */
+    0xBE, 0x1E, 0x01,           /* MOV SI, 011Eh */
+    0xB8, 0x6C, 0x71,           /* MOV AX, 716Ch */
+    0xCD, 0x21,
+    0x72, 0x06,                 /* JC fail (+6)  */
+    0x88, 0xC8,                 /* MOV AL, CL    */
+    0xB4, 0x4C,                 /* MOV AH, 4Ch   */
+    0xCD, 0x21,
+    0xB8, 0xEE, 0x4C,           /* fail: exit 0xEE */
+    0xCD, 0x21,
+    'C', ':', '\\', 'L', '4', 'X', 'O', 'O', '.', 'T', 'X', 'T', 0,
+};
+
+static void test_lfn_xopen_open(void)
+{
+    unlink("/tmp/L4XOO.TXT");
+    int fd = open("/tmp/L4XOO.TXT", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    UT_ASSERT(fd >= 0, "create L4XOO.TXT");
+    UT_ASSERT_EQ(write(fd, "keep", 4), 4);
+    close(fd);
+
+    WRITE_COM("/tmp/dos_xo.com", lfn_xopen_open_com);
+    int code = run_com("/tmp/dos_xo.com");
+    UT_ASSERT_EQ(code, 1);
+
+    struct stat st;
+    UT_ASSERT(stat("/tmp/L4XOO.TXT", &st) == 0, "L4XOO.TXT still exists");
+    UT_ASSERT_EQ((int)st.st_size, 4);
+    unlink("/tmp/L4XOO.TXT");
+}
+
 /* -- main ----------------------------------------------------------------- */
 
 int main(void)
@@ -1859,6 +1989,9 @@ int main(void)
     test_lfn_chdir();
     test_lfn_delete();
     test_lfn_rename();
+    test_lfn_xopen_create();
+    test_lfn_xopen_trunc();
+    test_lfn_xopen_open();
 
     UT_SUMMARY("test_msdos");
 }
