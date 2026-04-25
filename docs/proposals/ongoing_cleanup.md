@@ -124,9 +124,10 @@ taken (1=opened, 2=created, 3=truncated).  CX-attribute and DI
 (alias hint) ignored; sharing/inheritance bits in BX accepted and
 discarded.
 
-Phase L5 (optional) — **AL=39h/3Ah/47h LFN mkdir/rmdir/getcwd.**
-The remaining SFN-equivalent sub-functions.  Trivial wrappers;
-land together if a user surfaces them.
+Phase L5 — **AL=39h/3Ah/47h LFN mkdir/rmdir/getcwd.**  Landed.
+Three direct routes in dos_lfn_dispatch — register conventions
+match SFN exactly (DS:DX path; DL drive + DS:SI buffer for AL=47h)
+so no shim function is needed.
 
 **Out of scope for all phases:** AL=A6h LFN Get File Info By
 Handle, AL=A7h Convert File Time to/from DOS Time, AL=A8h Generate

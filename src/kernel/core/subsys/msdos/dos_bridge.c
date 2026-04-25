@@ -2145,15 +2145,22 @@ static int __attribute__((noinline)) dos_lfn_extended_open(dos_proc_t *dos,
 static int dos_lfn_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
   uint8_t al = (uint8_t)(regs->ax & 0xFFu);
   switch (al) {
-    /* AL=3Bh/41h/56h: thin LFN aliases for the SFN handlers — same
-     * DS:DX (and ES:DI for rename) calling convention and the
-     * underlying VFS already accepts long names. */
+    /* AL=39h/3Ah/3Bh/41h/47h/56h: thin LFN aliases for the SFN
+     * handlers — identical register conventions (DS:DX path, DL drive
+     * for AL=47h, ES:DI dest for rename) and the underlying VFS already
+     * accepts long names. */
+    case 0x39:
+      return dos_mkdir(dos, regs);
+    case 0x3A:
+      return dos_rmdir(dos, regs);
     case 0x3B:
       return dos_chdir(dos, regs);
     case 0x41:
       return dos_delete(dos, regs);
     case 0x43:
       return dos_lfn_get_set_attr(dos, regs);
+    case 0x47:
+      return dos_getcwd(dos, regs);
     case 0x4E:
       return dos_lfn_find_first(dos, regs);
     case 0x4F:
