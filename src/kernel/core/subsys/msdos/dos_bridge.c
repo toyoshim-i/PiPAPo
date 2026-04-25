@@ -2044,6 +2044,100 @@ static int dos_lfn_get_set_attr(dos_proc_t *dos, dos_regs_t *regs) {
   return ret;
 }
 
+/* AH=71h AL=6Ch LFN Extended Open/Create.
+ *
+ * Inputs:
+ *   BX     = open mode.  Low 3 bits = access (0=R, 1=W, 2=RW).  Sharing
+ *            (bits 4-6), inheritance (bit 7), critical-error (bit 13)
+ *            and commit-on-write (bit 14) are accepted and discarded —
+ *            PPAP's VFS does not implement DOS share modes.
+ *   CX     = create attribute word — ignored (VFS does not store DOS
+ *            attribute bits; see dos_get_set_attr).
+ *   DX     = action code.  Low nibble (if file exists): 0=fail, 1=open,
+ *            2=truncate.  High nibble (if file does not exist):
+ *            0=fail, 1=create.
+ *   DS:SI  = ASCIIZ filename.  NOTE: SI, not DX — distinct from
+ *            AH=3Ch/3Dh.
+ *   DI     = alias hint, ignored.
+ *
+ * Outputs (CF=0):
+ *   AX = file handle, CX = action taken (1=opened existing,
+ *   2=created new, 3=truncated existing).
+ *
+ * PPAP fcntl has no O_EXCL, so the "fail if exists" and "fail if not
+ * exists" cases need a pre-lookup to enforce the constraint and to
+ * compute the right CX action-taken value.  The lookup needs a C
+ * string, so we copy the resolved path out of dos_data_page into a
+ * 128-byte stack buffer (mirrors dos_get_set_attr).  noinline keeps
+ * that buffer off the dispatcher's frame on every INT 21h. */
+static int __attribute__((noinline)) dos_lfn_extended_open(dos_proc_t *dos,
+                                                           dos_regs_t *regs) {
+  int access = regs->bx & 0x07;
+  int flags;
+  switch (access) {
+    case 0:
+      flags = O_RDONLY;
+      break;
+    case 1:
+      flags = O_WRONLY;
+      break;
+    case 2:
+      flags = O_RDWR;
+      break;
+    default:
+      return -DOS_ERR_INVALID_ACCESS;
+  }
+
+  uint8_t if_exists = (uint8_t)(regs->dx & 0x0F);
+  uint8_t if_not_exists = (uint8_t)((regs->dx >> 4) & 0x0F);
+  if (if_exists > 2 || if_not_exists > 1) return -DOS_ERR_INVALID_FUNCTION;
+  if (if_exists == 0 && if_not_exists == 0) return -DOS_ERR_INVALID_FUNCTION;
+
+  int rc = dos_resolve_user_path(dos, regs->ds, regs->si);
+  if (rc < 0) return rc;
+
+  char path[DOS_PATH_SCRATCH_MAX];
+  for (uint16_t i = 0; i < DOS_PATH_SCRATCH_MAX; i++) {
+    uint8_t b;
+    mem_region_page_read(dos_data_page, (uint16_t)(DOS_PATH_SCRATCH_OFF + i),
+                         &b, 1);
+    path[i] = (char)b;
+    if (!b) break;
+  }
+  path[DOS_PATH_SCRATCH_MAX - 1] = '\0';
+
+  vnode_t *vn = NULL;
+  int exists = (mod_vfs.lookup(path, &vn) == 0);
+  if (vn) mod_vfs.vnode_release(vn);
+
+  uint16_t action_taken;
+  if (exists) {
+    if (if_exists == 0) return -DOS_ERR_FILE_EXISTS;
+    if (if_exists == 2) {
+      flags |= O_TRUNC;
+      action_taken = 3;
+    } else {
+      action_taken = 1;
+    }
+  } else {
+    if (if_not_exists == 0) return -DOS_ERR_FILE_NOT_FOUND;
+    flags |= O_CREAT;
+    action_taken = 2;
+  }
+
+  long fd = sys_open(dos_data_page, DOS_PATH_SCRATCH_OFF, flags, 0644);
+  if (fd < 0) return -dos_errno_to_dos((int)fd);
+
+  int h = dos_alloc_handle(dos, (int)fd);
+  if (h < 0) {
+    sys_close(fd);
+    return h;
+  }
+  regs->ax = (uint16_t)h;
+  regs->cx = action_taken;
+  return 0;
+}
+
 /* AH=71h sub-dispatch on AL.  Unknown sub-functions return
  * DOS_ERR_INVALID_FUNCTION — this is *not* the "LFN not installed"
  * reply (AX=0x7100 CF=1) which we deliberately avoid, since this
@@ -2068,6 +2162,8 @@ static int dos_lfn_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
       return dos_rename(dos, regs);
     case 0x60:
       return dos_lfn_truename(dos, regs);
+    case 0x6C:
+      return dos_lfn_extended_open(dos, regs);
     case 0xA1:
       return dos_lfn_find_close(dos, regs);
   }

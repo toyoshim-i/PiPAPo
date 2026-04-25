@@ -115,9 +115,14 @@ chdir/delete/rename.**  Small wrappers over the existing SFN
 handlers once the LFN path-copy and result-copy primitives from L1
 are in.
 
-Phase L4 (optional) — **AL=6Ch Extended Open/Create.**  Combines
-AH=3Ch/3Dh semantics with extra open-mode flags.  Medium-sized
-handler; only worth building once a concrete caller appears.
+Phase L4 — **AL=6Ch Extended Open/Create.**  Landed.  BX (low 3 bits
+= access), DX action code (low nibble: if-exists 0/1/2 fail/open/
+truncate; high nibble: if-not-exists 0/1 fail/create), DS:SI = path
+(note SI, not DX).  Pre-`mod_vfs.lookup` enforces "must (not) exist"
+constraints (PPAP fcntl has no O_EXCL) and computes CX = action
+taken (1=opened, 2=created, 3=truncated).  CX-attribute and DI
+(alias hint) ignored; sharing/inheritance bits in BX accepted and
+discarded.
 
 Phase L5 (optional) — **AL=39h/3Ah/47h LFN mkdir/rmdir/getcwd.**
 The remaining SFN-equivalent sub-functions.  Trivial wrappers;
