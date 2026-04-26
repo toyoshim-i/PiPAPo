@@ -50,18 +50,20 @@ target-config header it queries.
 
 ## 2. MS-DOS subsystem stubs
 
-### 2.1 AH=44h AL=0Ch Generic Character Device Request — deferred
+### 2.1 AH=44h AL=0Ch Generic Character Device Request — explicit stub
 
-Not wired.  AL=0Ch is an IOCTL meta-call that takes `BX=handle`,
-`CH=category` (0x00 unknown, 0x01 COM, 0x03 CON, 0x05 LPT, 0x48
-network, …) and `CL=minor function`, each (CH,CL) pair its own
-protocol with its own parameter block at `DS:DX`.  Implementing it
-means picking which (category, minor) pairs to support; each is a
-separate stub and no single default reply is meaningful.
+Landed as an explicit `case 0x0C` in `dos_ioctl` returning
+`DOS_ERR_INVALID_FUNCTION` plus a `DOS_DBG`-gated klogf naming the
+(CH=category, CL=minor) pair so a failing app can be traced.
 
-FreeCOM falls through `DOS_ERR_INVALID_FUNCTION` gracefully.  Pick
-this up when a specific DOS app surfaces a failure that traces to
-AL=0Ch.
+The same commit introduced `DOS_DBG`: an envp-driven gate
+(`DBG_MSDOS=` with a non-empty, non-"0" value enables it) that also
+silences the existing AH=25h vector-protected/save-table-full and
+INT 21h unimpl-AH messages.  Off by default — DOS apps probe a wide
+AH/AL surface and the noise drowns legitimate output.
+
+A real (CH,CL) implementation is still gated on a specific app
+surfacing a failure; pick it up then.
 
 ### 2.2 AH=71h LFN subset — plan
 

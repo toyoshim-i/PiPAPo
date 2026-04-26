@@ -134,6 +134,7 @@ static int exe_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
   }
 
   dos_set_exec_dir(p, args);
+  dos_apply_dbg_env(p, args);
 
   /* 7. Kernel-stack frame that trap.S's restore tail will pop. */
   p->exec_user_ss = user_ss;

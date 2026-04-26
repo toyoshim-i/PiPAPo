@@ -96,6 +96,7 @@ static int com_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
    * who passes an explicit argv[0] that isn't a real path gets "/" (safe
    * fallback — C:\ then resolves against root). */
   dos_set_exec_dir(p, args);
+  dos_apply_dbg_env(p, args);
 
   /* 4. Store user SS:SP in PCB and build kernel stack frame */
   p->exec_user_ss = proc_seg;

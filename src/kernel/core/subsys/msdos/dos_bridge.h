@@ -129,8 +129,13 @@ dos_proc_t *dos_proc_alloc(struct pcb *p);
 /* Entry point from native/eCPU traps */
 int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs);
 
-/* Captured by com_loader from argv[0] after on_init. */
+/* Captured by com_loader / exe_loader from argv[0] after on_init. */
 struct exec_args;
 void dos_set_exec_dir(struct pcb *p, const struct exec_args *args);
+
+/* Scan envp for DBG_MSDOS=<v> and toggle the verbose-unimpl logging
+ * gate.  Called by com_loader / exe_loader after on_init alongside
+ * dos_set_exec_dir. */
+void dos_apply_dbg_env(struct pcb *p, const struct exec_args *args);
 
 #endif /* PPAP_KERNEL_CORE_SUBSYS_MSDOS_DOS_BRIDGE_H */

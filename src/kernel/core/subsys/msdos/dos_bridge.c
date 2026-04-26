@@ -53,6 +53,23 @@
 
 #define DOS_FIRST_USER_HANDLE 5
 
+/* Verbose unimpl/diagnostic logging from the MS-DOS bridge.  Off by
+ * default — DOS apps probe a wide AH/AL surface and the noise drowns
+ * legitimate output.  Enabled when an exec'd process has DBG_MSDOS=
+ * with a non-empty, non-"0" value in its envp; disabled otherwise.
+ * Single global since the typical "I'm debugging this app" workflow
+ * runs one DOS process at a time. */
+static int dos_dbg_enabled = 0;
+
+#define DOS_DBG(...)                                 \
+  do {                                               \
+    if (dos_dbg_enabled) mod_vfs.klogf(__VA_ARGS__); \
+  } while (0)
+
+/* Envp key the DBG_MSDOS scan looks for. */
+static const char DOS_DBG_KEY[] = "DBG_MSDOS=";
+#define DOS_DBG_KEY_LEN ((uint16_t)(sizeof(DOS_DBG_KEY) - 1))
+
 /* Dedicated page for dos_proc_t array to avoid BSS overflow in core segment.
  * Same page also hosts the DOS scratch area (paths + 1-byte I/O staging). */
 static page_id_t dos_data_page = PAGE_ID_INVALID;
@@ -284,6 +301,34 @@ void dos_set_exec_dir(struct pcb *p, const struct exec_args *args) {
     }
   }
   dos_scratch_putb((uint16_t)(base + n), 0);
+}
+
+void dos_apply_dbg_env(struct pcb *p, const struct exec_args *args) {
+  /* Re-evaluate dos_dbg_enabled from this exec's envp.  DBG_MSDOS=
+   * with a non-empty, non-"0" value enables verbose unimpl logging for
+   * the lifetime of this DOS process (and any successor exec also
+   * resets it from its own envp). */
+  (void)p;
+  if (!args) return;
+  dos_dbg_enabled = 0;
+  for (int i = 0; i < args->envc; i++) {
+    uint16_t elen = exec_args_envp_len(args, i);
+    if (elen < DOS_DBG_KEY_LEN) continue;
+    int match = 1;
+    for (uint16_t j = 0; j < DOS_DBG_KEY_LEN; j++) {
+      char c;
+      if (exec_args_envp_byte(args, i, j, &c) < 0 || c != DOS_DBG_KEY[j]) {
+        match = 0;
+        break;
+      }
+    }
+    if (!match) continue;
+    char v0 = 0;
+    if (elen > DOS_DBG_KEY_LEN)
+      (void)exec_args_envp_byte(args, i, DOS_DBG_KEY_LEN, &v0);
+    if (v0 != 0 && v0 != '0') dos_dbg_enabled = 1;
+    break;
+  }
 }
 
 /* ── Path resolution ────────────────────────────────────────────────── *
@@ -1264,6 +1309,9 @@ static int dos_get_set_attr(dos_proc_t *dos, dos_regs_t *regs) {
  *         drive.
  * AL=0Bh  Set Sharing Retry Count         — accept and discard.
  *         PPAP's VFS does not implement SHARE-style retries.
+ * AL=0Ch  Generic Character Device Request — explicit not-implemented.
+ *         Each (CH=category, CL=minor) pair has its own protocol;
+ *         no meaningful default reply.  Logged via DOS_DBG.
  *
  * Other AL values fall through to DOS_ERR_INVALID_FUNCTION. */
 static int dos_ioctl(dos_proc_t *dos, dos_regs_t *regs) {
@@ -1306,6 +1354,16 @@ static int dos_ioctl(dos_proc_t *dos, dos_regs_t *regs) {
 
     case 0x0B:
       return 0;
+
+    case 0x0C:
+      /* Generic Character Device IOCTL — (CH=category, CL=minor)
+       * pairs each define their own protocol with a parameter block at
+       * DS:DX.  No single default reply is meaningful.  Pick this up
+       * when a specific app surfaces a failure that traces here. */
+      DOS_DBG("[msdos] unimpl AH=44h AL=0Ch CH=%x CL=%x BX=%x\n",
+              (unsigned)((regs->cx >> 8) & 0xFFu), (unsigned)(regs->cx & 0xFFu),
+              (unsigned)regs->bx);
+      return -DOS_ERR_INVALID_FUNCTION;
   }
 
   return -DOS_ERR_INVALID_FUNCTION;
@@ -1355,7 +1413,7 @@ __attribute__((noinline)) static int dos_set_int_vector(dos_proc_t *dos,
                                                         dos_regs_t *regs) {
   uint8_t vec = (uint8_t)(regs->ax & 0xFF);
   if (dos_vec_is_protected(vec)) {
-    mod_vfs.klogf("[msdos] AH=25h vec=%x protected (dropped)\n", (unsigned)vec);
+    DOS_DBG("[msdos] AH=25h vec=%x protected (dropped)\n", (unsigned)vec);
     return 0;
   }
 
@@ -1379,8 +1437,8 @@ __attribute__((noinline)) static int dos_set_int_vector(dos_proc_t *dos,
       cold.ivt_saved_count = (uint8_t)(slot + 1);
       dos_put_cold(current, &cold);
     } else {
-      mod_vfs.klogf("[msdos] AH=25h vec=%x save table full (no restore)\n",
-                    (unsigned)vec);
+      DOS_DBG("[msdos] AH=25h vec=%x save table full (no restore)\n",
+              (unsigned)vec);
     }
   }
   current->cpu_ops->write16(dos->cpu_state, addr, regs->dx);
@@ -2317,9 +2375,9 @@ int dos_int21h_dispatch(dos_proc_t *dos, dos_regs_t *regs) {
       ret = dos_lfn_dispatch(dos, regs);
       break;
     default:
-      mod_vfs.klogf("[msdos] unimpl INT 21h AH=%x AL=%x at CS:IP=%x:%x\n",
-                    (unsigned)(regs->ax >> 8), (unsigned)(regs->ax & 0xFF),
-                    (unsigned)regs->cs, (unsigned)regs->ip);
+      DOS_DBG("[msdos] unimpl INT 21h AH=%x AL=%x at CS:IP=%x:%x\n",
+              (unsigned)(regs->ax >> 8), (unsigned)(regs->ax & 0xFF),
+              (unsigned)regs->cs, (unsigned)regs->ip);
       ret = -DOS_ERR_INVALID_FUNCTION;
       break;
   }
