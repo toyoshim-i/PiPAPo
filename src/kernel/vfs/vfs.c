@@ -628,23 +628,29 @@ int vfs_path_unlink(const char *path) {
   return err;
 }
 
-/* Cross-module wrapper: execute ops->read in VFS's code segment. */
+/* Cross-module wrappers: execute ops->{read,stat,readlink} in VFS's
+ * code segment.  The consolidated NULL check covers two real cases —
+ * a bad vnode (would map to ENOENT/EINVAL) and the FS not
+ * implementing the op (ENOSYS).  In practice the latter dominates
+ * (tmpfs has no readlink, romfs no write, etc.), so ENOSYS is the
+ * honest single errno; splitting the check per branch is tracked as
+ * the null-object refactor in docs/proposals/refactoring.md (R-5). */
 long vfs_vnode_read(vnode_t *vn, page_id_t page, uint16_t page_off,
                     uint32_t size, uint32_t off) {
   if (!vn || !vn->mount || !vn->mount->ops || !vn->mount->ops->read)
-    return -2; /* ENOENT */
+    return -(long)ENOSYS;
   return vn->mount->ops->read(vn, page, page_off, size, off);
 }
 
 int vfs_vnode_stat(vnode_t *vn, void *st) {
   if (!vn || !st || !vn->mount || !vn->mount->ops || !vn->mount->ops->stat)
-    return -2; /* ENOENT / unsupported */
+    return -(int)ENOSYS;
   return vn->mount->ops->stat(vn, st);
 }
 
 long vfs_vnode_readlink(vnode_t *vn, char *buf, size_t bufsiz) {
   if (!vn || !buf || !vn->mount || !vn->mount->ops || !vn->mount->ops->readlink)
-    return -2; /* ENOENT / unsupported */
+    return -(long)ENOSYS;
   return vn->mount->ops->readlink(vn, buf, bufsiz);
 }
 
