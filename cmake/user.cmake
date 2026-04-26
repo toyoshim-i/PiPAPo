@@ -842,6 +842,8 @@ function(ppap_generate_romfs target)
                 -D "BB_SBIN_APPLETS=${_bb_sbin_escaped}"
                 -D "ROGUE=${_rogue_path}"
                 -D "ETC_DIR=${PPAP_ROOT}/src/etc"
+                -D "STRIP=${PPAP_STRIP}"
+                -D "STRIP_FLAGS=--strip-unneeded"
                 ${_overlay_args}
                 ${_exclude_args}
                 -P ${PPAP_ROOT}/cmake/stage_romfs.cmake

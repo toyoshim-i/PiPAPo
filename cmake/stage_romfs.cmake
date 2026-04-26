@@ -36,6 +36,11 @@ file(MAKE_DIRECTORY
 if(DEFINED EXCLUDE_APPS)
     string(REPLACE ":" ";" EXCLUDE_APPS "${EXCLUDE_APPS}")
 endif()
+# Strip the staged ELFs (debug info + unneeded symbols) so the romfs
+# stays compact in flash.  build/<arch>/<app>.elf is left untouched
+# to preserve symbols for local tooling (xtensa_xip_report, nm, etc.).
+# STRIP_FLAGS comes from PPAP_STRIP_FLAGS (--strip-unneeded by default,
+# which is safe for PPAP's PIC user binaries — they have no .rel.dyn).
 foreach(elf IN LISTS USER_ELFS)
     get_filename_component(name "${elf}" NAME_WE)
     list(FIND EXCLUDE_APPS "${name}" _excl_idx)
@@ -43,16 +48,24 @@ foreach(elf IN LISTS USER_ELFS)
         continue()
     endif()
     if(name STREQUAL "init")
-        file(COPY "${elf}" DESTINATION "${STAGING}/sbin")
-        file(RENAME "${STAGING}/sbin/${name}.elf" "${STAGING}/sbin/${name}")
+        set(_dest "${STAGING}/sbin/${name}")
     elseif(name STREQUAL "ttyctl")
-        file(COPY "${elf}" DESTINATION "${STAGING}/usr/bin")
-        file(RENAME "${STAGING}/usr/bin/${name}.elf" "${STAGING}/usr/bin/${name}")
+        set(_dest "${STAGING}/usr/bin/${name}")
     else()
-        file(COPY "${elf}" DESTINATION "${STAGING}/bin")
-        file(RENAME "${STAGING}/bin/${name}.elf" "${STAGING}/bin/${name}")
+        set(_dest "${STAGING}/bin/${name}")
+    endif()
+    file(COPY "${elf}" DESTINATION "${STAGING}/.tmp")
+    file(RENAME "${STAGING}/.tmp/${name}.elf" "${_dest}")
+    if(STRIP)
+        execute_process(COMMAND "${STRIP}" ${STRIP_FLAGS} "${_dest}"
+            RESULT_VARIABLE _strip_rc
+            OUTPUT_QUIET ERROR_QUIET)
+        if(NOT _strip_rc EQUAL 0)
+            message(WARNING "stage_romfs: strip ${name} failed (rc=${_strip_rc})")
+        endif()
     endif()
 endforeach()
+file(REMOVE_RECURSE "${STAGING}/.tmp")
 
 # --- /bin/sh → push ---
 file(CREATE_LINK "push" "${STAGING}/bin/sh" SYMBOLIC)
