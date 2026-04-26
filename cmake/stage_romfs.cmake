@@ -23,6 +23,7 @@ file(MAKE_DIRECTORY
     "${STAGING}/sbin"
     "${STAGING}/etc"
     "${STAGING}/dev"
+    "${STAGING}/home"
     "${STAGING}/proc"
     "${STAGING}/tmp"
     "${STAGING}/usr/bin"

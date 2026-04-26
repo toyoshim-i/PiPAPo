@@ -2077,12 +2077,22 @@ int main(int argc, char *argv[]) {
 
   /* Interactive mode with line editing (Phase 3) */
   {
-    /* Source /etc/profile only in login-shell mode.  Keeps push quiet
-     * when run as a plain command on a host whose /etc/profile is
-     * bash-syntactic, not push-syntactic. */
+    /* Login-shell startup sequence (matches POSIX login(8) intent —
+     * PPAP's getty doesn't do these steps before exec'ing the shell,
+     * so the login shell handles them instead):
+     *   1. Source /etc/profile (PATH, HOME, PS1, TERM, ...).
+     *   2. chdir($HOME) so prompts and ~/.pushrc resolve correctly.
+     *   3. Source ~/.pushrc (handled in the next block, runs for all
+     *      interactive sessions). */
     if (login_shell) {
       struct stat st;
       if (stat("/etc/profile", &st) == 0) run_file("/etc/profile");
+
+      const char *home = env_get("HOME");
+      if (home && home[0] && chdir(home) == 0) {
+        char cwd[PATH_BUF];
+        if (getcwd(cwd, sizeof(cwd)) > 0) env_set("PWD", cwd, 1);
+      }
     }
 
     /* Source ~/.pushrc if it exists — user-level customisation, read

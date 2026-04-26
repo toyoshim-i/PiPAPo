@@ -1,5 +1,0 @@
-export PATH=/bin:/sbin:/usr/bin:/subsys/cpm:/subsys/human68k:/subsys/msdos:/subsys/sos
-export PATHEXT=".COM;.EXE;.OBJ;.X;.R"
-export HOME=/root
-export PS1='\e[1;31mP\e[1;33mi\e[1;32mP\e[1;36mA\e[1;34mP\e[1;35mo\e[0m:\e[1;34m\w\e[0m \e[1;37m#\e[0m '
-export TERM=vt100
