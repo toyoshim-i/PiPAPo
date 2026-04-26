@@ -13,17 +13,14 @@
 
 /* ── Helpers ───────────────────────────────────────────────────────────── */
 
-static void put_char(char c) { write(1, &c, 1); }
-
-static void put_str(const char *s) {
-  int n = 0;
-  while (s[n]) n++;
-  write(1, s, n);
-}
-
+/* Length-bounded write: uc_puts requires NUL termination, so this stays
+ * local for the one caller that emits a slice of the row buffer. */
 static void put_nstr(const char *s, int len) { write(1, s, len); }
 
-/* Write integer (up to 5 digits, right-justified in `width` chars) */
+/* Write integer (up to 5 digits, right-justified in `width` chars).
+ * uc_vsnprintf does not accept runtime widths (no "%*d"), and the
+ * compile-time width here depends on the live gutter size, so the
+ * formatting stays open-coded. */
 static void put_int_rj(int val, int width) {
   char tmp[8];
   int i = 0;
@@ -35,16 +32,12 @@ static void put_int_rj(int val, int width) {
       val /= 10;
     }
   }
-  /* Pad with spaces */
-  for (int j = i; j < width; j++)
-    put_char(' ');
-  /* Print digits in reverse */
-  for (int j = i - 1; j >= 0; j--)
-    put_char(tmp[j]);
+  for (int j = i; j < width; j++) uc_putc(' ');
+  for (int j = i - 1; j >= 0; j--) uc_putc(tmp[j]);
 }
 
 /* Erase to end of line */
-static void erase_eol(void) { put_str("\033[K"); }
+static void erase_eol(void) { uc_puts("\033[K"); }
 
 /* ── Scroll adjustment ─────────────────────────────────────────────────── */
 
@@ -89,7 +82,7 @@ static void draw_menu_bar(void) {
   for (int i = 0; i < MENU_CAT_COUNT; i++) {
     /* Pad to menu position */
     while (col < pi_menus[i].col) {
-      put_char(' ');
+      uc_putc(' ');
       col++;
     }
     /* Highlight selected category in menu mode */
@@ -99,7 +92,7 @@ static void draw_menu_bar(void) {
       term_attr_bg(COL_WHITE);
       term_attr_fg(COL_BLACK);
     }
-    put_str(pi_menus[i].label);
+    uc_puts(pi_menus[i].label);
     col += uc_strlen(pi_menus[i].label);
     if (E.mode == MODE_MENU && E.menu_cat == i) {
       term_attr_reset();
@@ -110,7 +103,7 @@ static void draw_menu_bar(void) {
   }
   /* Fill rest of line */
   while (col < E.cols) {
-    put_char(' ');
+    uc_putc(' ');
     col++;
   }
   term_attr_reset();
@@ -135,7 +128,7 @@ static void draw_content(void) {
       term_attr_fg(COL_CYAN);
       put_int_rj(file_row + 1, gw - 1);
       term_attr_reset();
-      put_char('|');
+      uc_putc('|');
 
       /* Row content */
       int dummy;
@@ -150,7 +143,7 @@ static void draw_content(void) {
       /* Tilde line (dim blue) */
       term_attr_dim();
       term_attr_fg(COL_BLUE);
-      put_char('~');
+      uc_putc('~');
       term_attr_reset();
       erase_eol();
     }
@@ -184,10 +177,10 @@ static void draw_dropdown(void) {
   /* Top border */
   term_cursor_to(1, start_col);
   term_attr_reset();
-  put_char('+');
+  uc_putc('+');
   for (int j = 0; j < box_w - 2; j++)
-    put_char('-');
-  put_char('+');
+    uc_putc('-');
+  uc_putc('+');
 
   /* Items */
   for (int i = 0; i < cat->count; i++) {
@@ -195,7 +188,7 @@ static void draw_dropdown(void) {
 
     term_cursor_to(screen_row, start_col);
     term_attr_reset();
-    put_char('|');
+    uc_putc('|');
 
     /* Highlight selected item */
     if (i == E.menu_item) {
@@ -203,35 +196,35 @@ static void draw_dropdown(void) {
       term_attr_bold();
     }
 
-    put_char(' ');
-    put_str(cat->items[i].label);
+    uc_putc(' ');
+    uc_puts(cat->items[i].label);
 
     /* Right-align shortcut */
     int label_len = uc_strlen(cat->items[i].label);
     int sc_len = uc_strlen(cat->items[i].shortcut);
     int pad = box_w - 4 - label_len - sc_len;
     for (int j = 0; j < pad; j++)
-      put_char(' ');
+      uc_putc(' ');
 
     if (sc_len > 0) {
       if (i != E.menu_item) {
         term_attr_dim();
       }
-      put_str(cat->items[i].shortcut);
+      uc_puts(cat->items[i].shortcut);
     }
 
     term_attr_reset();
-    put_char(' ');
-    put_char('|');
+    uc_putc(' ');
+    uc_putc('|');
   }
 
   /* Bottom border */
   term_cursor_to(2 + cat->count, start_col);
   term_attr_reset();
-  put_char('+');
+  uc_putc('+');
   for (int j = 0; j < box_w - 2; j++)
-    put_char('-');
-  put_char('+');
+    uc_putc('-');
+  uc_putc('+');
 }
 
 /* ── Draw status bar (row rows-2) ──────────────────────────────────────── */
@@ -247,37 +240,34 @@ static void draw_status_bar(void) {
     term_attr_fg(COL_GREEN);
 
   /* Left side: "-- pi: filename [+] -- MODE --" */
-  put_str(" pi: ");
+  uc_puts(" pi: ");
   if (E.filename[0])
-    put_str(E.filename);
+    uc_puts(E.filename);
   else
-    put_str("[new]");
+    uc_puts("[new]");
 
   if (E.dirty)
-    put_str(" [+]");
+    uc_puts(" [+]");
 
-  put_str(" - ");
+  uc_puts(" - ");
 
   /* Mode */
   switch (E.mode) {
-  case MODE_NORMAL:  put_str("NORMAL");  break;
-  case MODE_INSERT:  put_str("INSERT");  break;
-  case MODE_MENU:    put_str("MENU");    break;
-  case MODE_COMMAND: put_str("COMMAND"); break;
+  case MODE_NORMAL:  uc_puts("NORMAL");  break;
+  case MODE_INSERT:  uc_puts("INSERT");  break;
+  case MODE_MENU:    uc_puts("MENU");    break;
+  case MODE_COMMAND: uc_puts("COMMAND"); break;
   }
 
-  put_str(" - ");
+  uc_puts(" - ");
 
   /* Cursor position */
-  char pos_buf[24];
-  uc_snprintf(pos_buf, sizeof(pos_buf), "%d:%d", (int32_t)(E.cy + 1),
-              (int32_t)(E.cx + 1));
-  put_str(pos_buf);
+  uc_printf("%d:%d", (int32_t)(E.cy + 1), (int32_t)(E.cx + 1));
 
   /* Status message (if any) */
   if (E.status[0]) {
-    put_str(" | ");
-    put_str(E.status);
+    uc_puts(" | ");
+    uc_puts(E.status);
   }
 
   /* Fill rest */
@@ -293,16 +283,16 @@ static void draw_hint_bar(void) {
 
   switch (E.mode) {
   case MODE_NORMAL:
-    put_str(" Esc Menu | i insert | :w save | :q quit | / search");
+    uc_puts(" Esc Menu | i insert | :w save | :q quit | / search");
     break;
   case MODE_INSERT:
-    put_str(" Esc normal | type to edit");
+    uc_puts(" Esc normal | type to edit");
     break;
   case MODE_MENU:
-    put_str(" <> category | ^v select | Enter run | Esc close");
+    uc_puts(" <> category | ^v select | Enter run | Esc close");
     break;
   case MODE_COMMAND:
-    put_str(" Enter execute | Esc cancel");
+    uc_puts(" Enter execute | Esc cancel");
     break;
   }
 
@@ -318,7 +308,7 @@ static void draw_command_line(void) {
 
   term_cursor_to(E.rows - 1, 0);
   term_attr_reset();
-  put_char(':');
+  uc_putc(':');
   if (E.cmd_len > 0)
     put_nstr(E.cmd, E.cmd_len);
   erase_eol();
@@ -374,7 +364,7 @@ static void draw_help(void) {
         /* Section headers: bold */
         term_attr_bold();
       }
-      put_str(help_lines[i]);
+      uc_puts(help_lines[i]);
       term_attr_reset();
     }
     erase_eol();
@@ -403,7 +393,7 @@ void ui_refresh(void) {
     draw_status_bar();
     term_cursor_to(E.rows - 1, 0);
     term_attr_dim();
-    put_str(" Press any key to return");
+    uc_puts(" Press any key to return");
     erase_eol();
     term_attr_reset();
     term_cursor_show();
