@@ -2047,13 +2047,19 @@ int main(int argc, char *argv[]) {
   char cwd[PATH_BUF];
   if (getcwd(cwd, sizeof(cwd)) > 0) env_set("PWD", cwd, 1);
 
-  /* Login-shell mode is requested explicitly via "-l".  Callers that
-   * want /etc/profile sourced (init fallback, getty, inittab console
-   * entry) pass the flag; a plain "push" invocation does not. */
+  /* Login-shell mode triggers /etc/profile sourcing.  Two conventions
+   * are accepted, matching what real shells (bash, dash) do:
+   *   1. argv[0] starts with '-' — BSD/SysV convention used by
+   *      getty / login (e.g. arm_m's asm getty execs `{"-sh", NULL}`).
+   *   2. "-l" appears as argv[1] — init's no-inittab fallback and
+   *      getty.c on archs without an asm getty (which exec
+   *      `{"/bin/sh", "-l", NULL}`). */
   int login_shell = 0;
   int first_script_arg = 1;
-  if (argc > 1 && argv[1] && argv[1][0] == '-' && argv[1][1] == 'l' &&
-      argv[1][2] == '\0') {
+  if (argv[0] && argv[0][0] == '-') {
+    login_shell = 1;
+  } else if (argc > 1 && argv[1] && argv[1][0] == '-' && argv[1][1] == 'l' &&
+             argv[1][2] == '\0') {
     login_shell = 1;
     first_script_arg = 2;
   }
