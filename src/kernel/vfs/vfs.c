@@ -634,7 +634,7 @@ int vfs_path_unlink(const char *path) {
  * implementing the op (ENOSYS).  In practice the latter dominates
  * (tmpfs has no readlink, romfs no write, etc.), so ENOSYS is the
  * honest single errno; splitting the check per branch is tracked as
- * the null-object refactor in docs/proposals/refactoring.md (R-5). */
+ * the null-object refactor in docs/proposals/ongoing_cleanup.md §7. */
 long vfs_vnode_read(vnode_t *vn, page_id_t page, uint16_t page_off,
                     uint32_t size, uint32_t off) {
   if (!vn || !vn->mount || !vn->mount->ops || !vn->mount->ops->read)
