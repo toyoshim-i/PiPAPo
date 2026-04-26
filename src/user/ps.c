@@ -112,9 +112,7 @@ static void print_time(uint32_t ticks) {
   uint32_t secs = ticks / 100;
   uint32_t mins = secs / 60;
   secs %= 60;
-  char buf[8];
-  uc_snprintf(buf, (int)sizeof(buf), "%2u:%02u", mins, secs);
-  uc_puts(buf);
+  uc_printf("%2u:%02u", mins, secs);
 }
 
 int main(int argc, char *argv[]) {

@@ -20,11 +20,7 @@ static int cat_fd(int fd) {
 
   while ((n = read(fd, buf, sizeof(buf))) > 0) {
     for (ssize_t i = 0; i < n; i++) {
-      if (opt_number && at_bol) {
-        char tmp[12];
-        uc_snprintf(tmp, (int)sizeof(tmp), "%6d\t", ++line_nr);
-        uc_puts(tmp);
-      }
+      if (opt_number && at_bol) uc_printf("%6d\t", ++line_nr);
       if (buf[i] == '\n') {
         if (opt_show_ends) uc_putc('$');
         uc_putc('\n');

@@ -56,10 +56,7 @@ static int wc_fd(int fd, wc_count_t *out) {
 }
 
 static void print_field(uint32_t v, int *first) {
-  char tmp[12];
-  if (!*first) uc_putc(' ');
-  uc_snprintf(tmp, (int)sizeof(tmp), "%7u", v);
-  uc_puts(tmp);
+  uc_printf(*first ? "%7u" : " %7u", v);
   *first = 0;
 }
 

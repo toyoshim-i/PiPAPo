@@ -244,9 +244,7 @@ static void print_time(uint32_t ticks) {
   uint32_t secs = ticks / 100;
   uint32_t mins = secs / 60;
   secs %= 60;
-  char buf[8];
-  uc_snprintf(buf, (int)sizeof(buf), "%2u:%02u", mins, secs);
-  uc_puts(buf);
+  uc_printf("%2u:%02u", mins, secs);
 }
 
 static const char *sort_name(enum sort_mode m) {
@@ -386,9 +384,7 @@ usage:
       uint32_t h = uptime_s / 3600;
       uint32_t m = (uptime_s % 3600) / 60;
       uint32_t s = uptime_s % 60;
-      char tbuf[16];
-      uc_snprintf(tbuf, (int)sizeof(tbuf), "%u:%02u:%02u", h, m, s);
-      uc_puts(tbuf);
+      uc_printf("%u:%02u:%02u", h, m, s);
     }
     uc_puts(C_RST);
     uc_puts(", ");
@@ -427,20 +423,16 @@ usage:
       uint32_t us_pct10 = du * 1000 / dt;
       uint32_t sy_pct10 = ds * 1000 / dt;
       uint32_t id_pct10 = di * 1000 / dt;
-      char numbuf[8];
       uc_puts(C_GREEN);
-      uc_snprintf(numbuf, (int)sizeof(numbuf), "%u.%u", us_pct10 / 10, us_pct10 % 10);
-      uc_puts(numbuf);
+      uc_printf("%u.%u", us_pct10 / 10, us_pct10 % 10);
       uc_puts(C_RST);
       uc_puts(" us, ");
       uc_puts(C_RED);
-      uc_snprintf(numbuf, (int)sizeof(numbuf), "%u.%u", sy_pct10 / 10, sy_pct10 % 10);
-      uc_puts(numbuf);
+      uc_printf("%u.%u", sy_pct10 / 10, sy_pct10 % 10);
       uc_puts(C_RST);
       uc_puts(" sy, ");
       uc_puts(C_CYAN);
-      uc_snprintf(numbuf, (int)sizeof(numbuf), "%u.%u", id_pct10 / 10, id_pct10 % 10);
-      uc_puts(numbuf);
+      uc_printf("%u.%u", id_pct10 / 10, id_pct10 % 10);
       uc_puts(C_RST);
       uc_puts(" id");
     } else {
@@ -480,10 +472,7 @@ usage:
         if (pct10 >= 500) uc_puts(C_BRED);
         else if (pct10 >= 200) uc_puts(C_BYELLOW);
         else if (pct10 > 0) uc_puts(C_GREEN);
-        char pctbuf[8];
-        uc_snprintf(pctbuf, (int)sizeof(pctbuf), "%3u.%u", pct10 / 10,
-                    pct10 % 10);
-        uc_puts(pctbuf);
+        uc_printf("%3u.%u", pct10 / 10, pct10 % 10);
         uc_puts(C_RST);
       } else {
         uc_puts("  --");

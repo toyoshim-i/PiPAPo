@@ -70,12 +70,7 @@ static int parse_sig(const char *s, int *out) {
 
 static void list_signals(void) {
   for (int i = 0; i < nsigs; i++) {
-    char tmp[8];
-    uc_snprintf(tmp, (int)sizeof(tmp), "%2d) ", sigs[i].num);
-    uc_puts(tmp);
-    uc_puts("SIG");
-    uc_puts(sigs[i].name);
-    uc_putc('\n');
+    uc_printf("%2d) SIG%s\n", sigs[i].num, sigs[i].name);
   }
 }
 
