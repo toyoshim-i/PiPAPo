@@ -10,6 +10,8 @@
 #ifndef PPAP_USER_LIB_UCLIB_H
 #define PPAP_USER_LIB_UCLIB_H
 
+#include <stdarg.h>
+
 #include "syscall.h"
 
 /* --- formatted output (fd-based) --- */
@@ -25,6 +27,14 @@ void uc_putx8(uint32_t v);    /* "0x" + 2 hex digits */
 /* snprintf-like: returns bytes written (excl. NUL), truncates safely.
  * Supported: %s %d %u %x %c %%, width/zero-pad for %d/%u/%x. */
 int uc_snprintf(char *buf, int size, const char *fmt, ...);
+int uc_vsnprintf(char *buf, int size, const char *fmt, va_list ap);
+
+/* printf-like wrappers: format into a 256-byte stack buffer and write
+ * the result to stdout / stderr.  Same supported specifiers as
+ * uc_snprintf.  Output exceeding 255 bytes is silently truncated; for
+ * larger outputs use uc_snprintf with your own buffer + uc_puts. */
+void uc_printf(const char *fmt, ...);
+void uc_eprintf(const char *fmt, ...);
 
 /* --- string operations --- */
 int uc_strlen(const char *s);

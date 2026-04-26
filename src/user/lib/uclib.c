@@ -127,13 +127,11 @@ static void sn_hex(char *buf, int size, int *pos, uint32_t v, int width,
   for (int i = n - 1; i >= 0; i--) sn_emit(buf, size, pos, tmp[i]);
 }
 
-int uc_snprintf(char *buf, int size, const char *fmt, ...) {
-  va_list ap;
+int uc_vsnprintf(char *buf, int size, const char *fmt, va_list ap) {
   int pos = 0;
 
   if (size <= 0) return 0;
 
-  va_start(ap, fmt);
   while (*fmt) {
     if (*fmt != '%') {
       sn_emit(buf, size, &pos, *fmt++);
@@ -189,14 +187,45 @@ int uc_snprintf(char *buf, int size, const char *fmt, ...) {
     fmt++;
   }
 done:
-  va_end(ap);
-
   /* NUL-terminate; pos may exceed size-1 (reports would-have-written). */
   if (pos < size)
     buf[pos] = '\0';
   else
     buf[size - 1] = '\0';
   return pos;
+}
+
+int uc_snprintf(char *buf, int size, const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  int n = uc_vsnprintf(buf, size, fmt, ap);
+  va_end(ap);
+  return n;
+}
+
+/* Internal helper for uc_printf / uc_eprintf — formats into a 256-byte
+ * stack buffer and writes the result to `fd`.  Output exceeding 255
+ * bytes is silently truncated; callers that need more should
+ * uc_snprintf into their own buffer and uc_puts. */
+static void uc_fdprintf(int fd, const char *fmt, va_list ap) {
+  char buf[256];
+  int n = uc_vsnprintf(buf, (int)sizeof(buf), fmt, ap);
+  if (n > (int)sizeof(buf) - 1) n = (int)sizeof(buf) - 1;
+  if (n > 0) write(fd, buf, (size_t)n);
+}
+
+void uc_printf(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  uc_fdprintf(1, fmt, ap);
+  va_end(ap);
+}
+
+void uc_eprintf(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  uc_fdprintf(2, fmt, ap);
+  va_end(ap);
 }
 
 /* ── string operations ─────────────────────────────────────────────── */
