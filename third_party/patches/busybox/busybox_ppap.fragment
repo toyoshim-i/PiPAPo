@@ -36,7 +36,7 @@ CONFIG_LFS=y
 CONFIG_PRINTF=y
 CONFIG_GREP=y
 # CONFIG_HEAD is not set (using native PPAP head)
-CONFIG_TAIL=y
+# CONFIG_TAIL is not set (using native PPAP tail; stdin not yet supported)
 # CONFIG_WC is not set (using native PPAP wc)
 CONFIG_SORT=y
 CONFIG_SED=y
