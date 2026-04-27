@@ -8,6 +8,13 @@
 #include "kernel/vfs/tty.h"
 
 void klog_init_logger(void) {
+  /* Idempotent: vfs_notify(WILL_PLL_CHANGE) calls this before clock_init_pll()
+   * to enable XOSC, and vfs_init() also calls it later.  uart_init() runs
+   * clock_switch_to_xosc() which would knock clk_sys back from PLL to XOSC
+   * if invoked twice. */
+  static int initialized;
+  if (initialized) return;
+  initialized = 1;
   uart_init();
   klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
   klogf("PiPaPo booting... [pico2rv]\n");
@@ -16,8 +23,12 @@ void klog_init_logger(void) {
 void vfs_notify(int event) {
   switch (event) {
     case VFS_EVENT_WILL_PLL_CHANGE:
-      /* On Hazard3, UART_FR.BUSY can remain set spuriously and hang boot
-       * if we spin on uart_tx_drain() before the first write.  Skip. */
+      /* uart_init() inside klog_init_logger() enables XOSC, which
+       * clock_init_pll() needs as its PLL reference.  Run it before
+       * draining TX so the PLL transition has a stable XOSC.
+       * On Hazard3, UART_FR.BUSY can remain set spuriously and hang boot
+       * if we spin on uart_tx_drain() before the first write — skip drain. */
+      klog_init_logger();
       break;
     case VFS_EVENT_PLL_CHANGED:
       uart_reinit_pll();

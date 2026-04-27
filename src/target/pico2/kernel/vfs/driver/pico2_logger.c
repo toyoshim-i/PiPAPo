@@ -7,6 +7,13 @@
 #include "kernel/vfs/klog.h"
 
 void klog_init_logger(void) {
+  /* Idempotent: vfs_notify(WILL_PLL_CHANGE) calls this before clock_init_pll()
+   * to enable XOSC, and vfs_init() also calls it later.  uart_init() runs
+   * clock_switch_to_xosc() which would knock clk_sys back from PLL to XOSC
+   * if invoked twice. */
+  static int initialized;
+  if (initialized) return;
+  initialized = 1;
 #ifndef PPAP_SEMIHOST
   uart_init();
 #endif
@@ -20,6 +27,10 @@ void klog_init_logger(void) {
 void vfs_notify(int event) {
   switch (event) {
     case VFS_EVENT_WILL_PLL_CHANGE:
+      /* uart_init() inside klog_init_logger() enables XOSC, which
+       * clock_init_pll() needs as its PLL reference.  Run it before
+       * draining TX so the PLL transition has a stable XOSC. */
+      klog_init_logger();
 #ifndef PPAP_SEMIHOST
       uart_tx_drain();
 #endif
