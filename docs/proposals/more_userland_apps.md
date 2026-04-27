@@ -2,19 +2,18 @@
 
 ## Summary
 
-PPAP currently ships a minimal set of native user-space programs
-(`init`, `getty`, `push`, `cat`, `ls`, `ps`, `df`, `top`, `pi`, `pdb`,
-`trace`, `ttyctl`, `hello`) and leans on busybox for the remaining
-~25 common utilities.  This proposal plans the gradual replacement of
-busybox-supplied applets with PPAP-native equivalents, written against
-the bare-metal Path A toolchain (raw syscall stubs, no libc), and
-layered on a growing [src/user/lib/uclib](/src/user/lib/) of shared
-helpers.
+PPAP shipped with a minimal native user-space and leaned on busybox
+for ~25 utilities.  This proposal plans the gradual replacement of
+busybox-supplied applets with native equivalents, written against
+the bare-metal Path A toolchain (raw syscall stubs, no libc), layered
+on a growing [src/user/lib/uclib](/src/user/lib/) of shared helpers.
 
 The goal is not to eliminate busybox immediately — it stays as the
-fallback for anything we have not reimplemented — but to shrink our
-reliance on it tier by tier, and to have a coherent plan for the order
-in which we do so.
+fallback for anything not yet reimplemented — but to shrink reliance
+on it tier by tier.
+
+Step 0 and Tiers 1–3 have landed (see git history).  Tiers 4 and 5
+remain.
 
 Normative references for implementers:
 
@@ -41,10 +40,6 @@ Normative references for implementers:
   fewer reason we must keep building musl + busybox for new targets.
   This matters most for the i8086 / Xtensa ports, where neither is
   straightforward.
-- **No orphan duplication.**  We already have native `cat`, `ls`,
-  `ps`, `df`, `top` shadowing busybox entries.  The current state is
-  inconsistent (some replaced, some not) — this proposal makes the
-  direction explicit.
 
 ## Non-Goals
 
@@ -61,172 +56,59 @@ Normative references for implementers:
   portable across ARM / m68k / RISC-V / Xtensa / i8086 via the shared
   syscall ABI.  No target-specific forks.
 
-## Current State
+## Current State (post-Tier 3)
 
-### Native apps (25 + 1 target-specific)
+### Native apps
 
-`init`, `getty`, `push` (+ `push_line`), `cat`, `ls`, `ps`, `df`,
-`top`, `pi`, `pdb`, `trace`, `hello`, plus the Tier 1 additions
-(`uname`, `sleep`, `mkdir`, `reset`, `rmdir`, `rm`, `kill`) and
-the Tier 2 additions (`touch`, `date`, `cp`, `mv`, `chmod`, `ln`).
-`ttyctl` is pico1calc-only.
+Bootstrap and dev tools: `init`, `getty`, `push` (+ `push_line`),
+`pdb`, `trace`, `hello`, `ttyctl` (pico1calc only).
+
+TUI: `pi`, `pile`, `calc`, `top`.
+
+Coreutils: `cat`, `ls`, `ps`, `df`, `uname`, `sleep`, `mkdir`,
+`reset`, `rmdir`, `rm`, `kill`, `touch`, `date`, `cp`, `mv`, `chmod`,
+`ln`, `wc`, `head`, `tail`, `printf`, `basename`, `dirname`, `yes`,
+`cut`, `tr`.
+
 Source: [src/user/](/src/user/).  Build list: `USER_APPS` in
 [cmake/user.cmake](/cmake/user.cmake).
 
 ### push built-ins (no external binary needed)
 
 `exit`, `true`, `false`, `cd`, `pwd`, `echo`, `export`, `unset`,
-`set`, `env`, `.` / `source`, `break`, `continue`, `shift`, `history`.
-Source: [src/user/push.c](/src/user/push.c) `is_builtin()`.
+`set`, `env`, `.` / `source`, `break`, `continue`, `shift`,
+`history`.  Source: [src/user/push.c](/src/user/push.c)
+`is_builtin()`.
 
-### busybox applets (remaining, from
-[busybox_ppap.fragment](/third_party/patches/busybox/busybox_ppap.fragment))
+### Remaining busybox applets
 
+Text: `grep`, `sort`, `sed`.
 File ops: `mount`, `umount`.
-Text: `grep`, `head`, `tail`, `wc`, `sort`, `sed`, `printf`.
 Shell: `hush` / `sh` — out of scope (see Non-Goals).
 
-Native-shadowed applets removed from the fragment: `ls`, `cat`,
-`ps`, `df`, `echo` (Step 0); `uname`, `sleep`, `mkdir`, `rmdir`,
-`rm`, `kill` (Tier 1); `cp`, `mv`, `chmod`, `ln` (Tier 2; `touch`
-and `date` landed via file_timestamps).
+### uclib surface
+
+Output: `uc_puts`, `uc_eputs`, `uc_putc`, `uc_putu`, `uc_puti`,
+`uc_putx{8,16,32}`, `uc_snprintf`, `uc_vsnprintf`, `uc_printf`,
+`uc_eprintf`.
+Strings/memory: `uc_strlen`, `uc_strcmp`, `uc_strncmp`, `uc_strcpy`,
+`uc_strncpy`, `uc_strchr`, `uc_strrchr`, `uc_memcpy`, `uc_memset`,
+`uc_memcmp`.
+Numeric: `uc_atoi`, `uc_parse_u32`.
+Path: `uc_basename`.
+File: `uc_copy_fd`.
+Calendar: `uc_gmtime`, `uc_format_ymdhm`.
+Environment: `environ`, `uc_getenv`, `_uclib_init_env`.
+Heap: `uc_heap_init`, `uc_malloc`, `uc_free`
+(see [docs/user/uc_malloc.md](/docs/user/uc_malloc.md)).
 
 ## Plan
 
-Replacement is organised in tiers of rising complexity.  Each tier is
-a separate rollout; within a tier, applets can be implemented in any
-order, but the whole tier should land (and the corresponding
-`CONFIG_*=y` entries be removed from busybox) before moving on.  This
-avoids the "naive replacement temporarily increases size" trap,
-because each tier cut from busybox actually shrinks the binary.
-
-### Step 0 — Preliminary cleanup (landed)
-
-- Drop `CONFIG_LS=y`, `CONFIG_CAT=y`, `CONFIG_PS=y`, `CONFIG_DF=y`,
-  `CONFIG_ECHO=y` from
-  [busybox_ppap.fragment](/third_party/patches/busybox/busybox_ppap.fragment)
-  — already covered by native apps or push built-ins.
-- Follow-up: also drop `echo` from `BB_APPLETS` in
-  [cmake/user.cmake](/cmake/user.cmake) so the `/bin/echo → busybox`
-  symlink is not created in romfs.
-
-Commits: `f798f61`, `7d3d0e2` (echo BB_APPLETS fixup).
-Initial busybox shrink: qemu_arm 185,528 → 161,508 B (−24 KB, −13%);
-qemu_m68k 259,120 → 227,780 B (−31 KB, −12%).
-
-### Tier 1 — Trivial syscall wrappers (landed)
-
-Applets landed: `uname`, `sleep`, `mkdir`, `reset`, `rmdir`, `rm`,
-`kill`.
-
-Deferred: `sync` — PPAP has no `SYS_SYNC` and no writeback cache to
-flush.  Add the applet only if a future kernel change introduces
-one.
-
-Commits:
-
-- `5905cfb` — uname (with SYS_UNAME renumbering to 0x0B01)
-- `f54ba5b` — sleep (promoted `struct timespec` to `common/time.h`)
-- `6dc5ab1` — mkdir
-- `52ad3fe` — mkdir -p fix for mount-boundary EROFS
-- `dd14a40` — reset (net-new applet)
-- `bf7bd21` — rmdir
-- `a324271` — rm (with `-r` recursion)
-- `e18c65d` — kill
-
-`reset` has no busybox counterpart in the current fragment — it's a
-genuinely new applet, not a replacement.  It's in this tier because
-PPAP subsystems (Human68k, MS-DOS, CP/M, S-OS) rewrite termios/VT100
-state to match their guest OS, and crashes leave the host tty
-confused.  `reset` restores POSIX defaults so an interactive shell
-is usable again.
-
-Supporting kernel changes that came out of Tier 1 work:
-
-- `55f25df` — vfs: resolve relative paths in `vfs_lookup_parent`
-  (mkdir/rmdir/unlink/rename/creat now accept relative paths, matching
-  vfs_lookup_flags' existing behaviour).
-- `f0ff7c0` — tests: cover relative paths for file-creation syscalls
-  (test_tmpfs grew from 28 to 37 asserts).
-- `5b6eb78` — user: `ls -R` recursive listing, a small
-  dogfood-the-new-applets improvement.
-
-Cumulative busybox shrink through Tier 1:
-
-  qemu_arm  : 185,528 → 158,916 B  (−26,612 B, −14%)
-  qemu_m68k : 259,120 → 224,620 B  (−34,500 B, −13%)
-
-No shared `uclib` helpers were introduced — the existing
-`uc_puts`/`uc_eputs`/`uc_atoi`/`uc_snprintf`/`uc_strcmp`/
-`uc_parse_u32` surface covered Tier 1.  Future tiers may add
-`uc_perror_errno` / `uc_copy_fd` / `uc_getline` / `uc_vsnprintf` as
-needed.
-
-### Tier 2 — File operations (landed)
-
-Applets landed: `touch`, `cp`, `mv`, `chmod`, `ln`.
-
-Restrictions deliberately kept in scope:
-- `cp` / `mv` are single-file only.  `-r` / recursive moves are
-  deferred — directory traversal wants a `uc_fts`-style helper that
-  none of the current applets need.
-- `ln` is hard-link only; `-s` is rejected with a pointer to busybox
-  because VFS symlink-write support only exists on a subset of
-  filesystems today.  Hard links work on UFS; every other FS driver
-  leaves `.link` NULL and VFS returns `-EPERM`.
-- `chmod` parses absolute-octal only (`755`, `0644`).  Symbolic
-  modes (`u+x` / `g-w` / `a=rx`) are not supported — use busybox
-  for those.
-
-Commits:
-
-- `ab722e9` — touch (landed with file_timestamps T-2)
-- `c28496d` — cp + `uc_copy_fd` helper
-- `1260f55` — mv (rename + cp-unlink fallback, new rename(2) user
-  wrapper on all five arches)
-- `43348a2` — vfs: un-stub SYS_CHMOD, add `.chmod` op, tmpfs + UFS
-  impls, user-space chmod(2) wrapper
-- `16c6def` — chmod applet (octal parser, no symbolic)
-- `eeadaa6` — target: flip `/` (pcxt, x68k) and `/mnt/ufs`
-  (qemu_rv32) to read-write so test_ufs actually runs
-- `540dfa7` — vfs: SYS_LINK + UFS `.link` impl + `vfs_path_link` +
-  user-space link(2) wrapper; test_ufs grew 11 hard-link asserts
-- `2c9f7d5` — ln applet (hard-link only)
-
-Supporting VFS additions that came out of Tier 2:
-
-- New VFS ops: `.chmod`, `.link`.  Both NULL-on-unsupported with
-  -EPERM bubbled up through `vfs_path_chmod` / `vfs_path_link`.
-- mod_vfs gained `path_chmod` (idx 30) and `path_link` (idx 31);
-  entry count up to 46.
-- `common/errno.h` gained `EXDEV` (18) for the cross-mount link
-  case.
-- `SYS_LINK` reserved at 0x020E; `SYS_CHMOD` un-stubbed from its
-  return-0 placeholder at 0x020B.
-- The RDONLY→RDWR flip earned real coverage: `test_ufs` now runs
-  on pcxt (17 asserts for create/write/append/unlink) plus 11 more
-  for hard links, total 28.
-
-Shared uclib addition: `uc_copy_fd(src_fd, dst_fd)` — the read-to-EOF /
-write-loop pattern that both cp and mv use.
-
-Cumulative busybox shrink through Tier 2:
-
-  qemu_arm  : 185,528 → 152,280 B  (−33,248 B, −18%)
-  qemu_m68k : 259,120 → 215,912 B  (−43,208 B, −17%)
-
-### Tier 3 — Simple text utilities
-
-Applets: `head`, `tail`, `wc`, `printf`, `tr`, `cut`, `yes`,
-`basename`, `dirname`.
-
-Characteristics:
-- Line-oriented processing on top of uclib buffered I/O.
-- `printf` implies a proper format-string parser — promote the
-  minimal `uclib_printf` we will have written by this point into a
-  real `uclib_vsnprintf`.
-
-Shared helpers introduced: `uclib_getline`, `uclib_vsnprintf`.
+Replacement is organised in tiers.  Within a tier, applets can be
+implemented in any order, but the whole tier should land (and the
+corresponding `CONFIG_*=y` entries be removed from busybox) before
+moving on.  Each tier cut from busybox actually shrinks the binary,
+avoiding the "naive replacement temporarily increases size" trap.
 
 ### Tier 4 — Heavy text utilities
 
@@ -239,18 +121,41 @@ busybox covers it well; only reimplement if we have a specific need.
 Characteristics:
 - `grep` and `sort` are where native apps start to push against the
   128 KB data budget.  Streaming / chunked algorithms required.
+- `sort` likely wants a `uc_malloc`-backed line index for its
+  in-memory phase.
+- `grep` may benefit from a small regex helper in uclib (or its own
+  hand-rolled BRE walker — both are reasonable).
 
 ### Tier 5 — System and admin
 
-Applets: `mount`, `umount`, `dmesg`, `date`, `free`.
+Applets: `mount`, `umount`, `dmesg`, `free`.
 
 Characteristics:
 - `mount` / `umount` must match whatever syscall surface the VFS
   actually exposes today — verify before implementing.  Likely a
   thin wrapper.
 - `dmesg`, `free` read from procfs.
-- `date` needs clock_gettime + the calendar-conversion helpers we
-  already have for `ls -l` / `ps`.
+- `date` is already native (landed with Tier 2); not in this tier.
+
+## Open follow-ups (kernel / uclib gaps surfaced by earlier tiers)
+
+- **SIGPIPE / -EPIPE on write to closed pipe.**  Surfaced by
+  `yes | head -n N`: when head exits, yes blocks indefinitely in
+  `write()` instead of receiving SIGPIPE or -EPIPE.  Affects every
+  infinite-producer pipeline.  `tests/user/test_pipe.c` covers the
+  EOF-on-read case but not the EPIPE-on-write case.  Filing as a
+  kernel issue.
+- **`tail` stdin / non-seekable input.**  Currently file-only because
+  the implementation walks backward via `lseek`.  Pipe support needs
+  either a `uc_getline` helper or a `uc_malloc` ring buffer.
+- **`uc_getline`.**  Was anticipated in the original Tier 3 plan but
+  not actually needed — every Tier 3 applet got by with a chunked
+  read loop or `lseek`.  Add when a future applet genuinely benefits.
+- **push pipe builtin handling.**  `echo foo | wc` reports
+  `push: echo: not found` because push exec's external commands for
+  pipe stages instead of running its `echo` builtin.  Test scripts
+  must use `printf` (the native applet) or single-quoted `cat << EOF`
+  redirection.  Worth either fixing in push or documenting clearly.
 
 ## Output style: colorful VT100 by default
 
@@ -280,8 +185,7 @@ Rules:
 - Every applet that emits color accepts a `--no-color` long option
   that sets `use_color = 0`.  Matching an environment variable
   (`NO_COLOR`) is a nice-to-have via `uc_getenv()` (see
-  [uclib.h](/src/user/lib/uclib.h)) but not required in the initial
-  tiers.
+  [uclib.h](/src/user/lib/uclib.h)) but not required.
 - Escape sequences that degrade harmlessly on reduced-capability
   targets (e.g. `\033[2m` dim on PicoCalc VGA attr mapping) are
   acceptable — comment them as such, as `top.c` does.
@@ -319,64 +223,38 @@ build/link rules, then:
    [`src/target/pcxt/CMakeLists.txt::PCXT_USER_APPS`](/src/target/pcxt/CMakeLists.txt)
    and [`scripts/mkpcimg.sh::USER_APPS`](/scripts/mkpcimg.sh) — three
    lists in lockstep.
-3. For thin syscall wrappers, dedicated `tests/user/test_<app>.c`
+3. If the applet replaces a busybox-shipped utility, **also** remove
+   the corresponding entry from `BB_APPLETS` in `cmake/user.cmake`
+   (otherwise the busybox `/bin/<app>` symlink shadows the native
+   binary in romfs) **and** drop the `CONFIG_<APP>=y` from
+   [busybox_ppap.fragment](/third_party/patches/busybox/busybox_ppap.fragment).
+   Three lists in lockstep here too.
+4. For thin syscall wrappers, dedicated `tests/user/test_<app>.c`
    is not required — the underlying syscalls already have direct
    coverage in `test_fs`, `test_tmpfs`, etc., and vfork/exec plumbing
    is not what needs re-testing.  Extend an existing test file if the
-   applet exercises a previously uncovered kernel path (e.g. the
-   relative-path regression added to `test_tmpfs` alongside Tier 1's
-   `vfs_lookup_parent` fix).
-4. Remove the corresponding `CONFIG_<APP>=y` from
-   [busybox_ppap.fragment](/third_party/patches/busybox/busybox_ppap.fragment)
-   once the native binary is in place.
-5. Verify romfs size on pcxt (tightest budget) and xtensa; rerun
-   `./scripts/run.sh --test` on ARM and m68k.
-
-## Size budget
-
-Actual Tier 1 per-applet sizes (stripped, in the romfs):
-
-| Applet | qemu_arm | qemu_m68k | pcxt (.elf) |
-|---|---|---|---|
-| `uname` | 23,600 | 27,052 | 7,520 |
-| `sleep` | 21,440 | 26,200 | 7,240 |
-| `mkdir` | 23,180 | 27,252 | 7,616 |
-| `reset` | 21,256 | 25,352 | 6,996 |
-| `rmdir` | 22,204 | 26,328 | 7,252 |
-| `rm` | 24,956 | 28,680 | 7,844 |
-| `kill` | 27,296 | 31,256 | 9,156 |
-
-The ARM/m68k numbers include ELF overhead that the ia16 flat-binary
-loader strips, which is why pcxt is ~3× smaller per applet.  Tier 1
-shows that the initial size estimate (200–600 B) was way off; even
-a "trivial" applet drags in ~20 KB of `uclib` + crt0 + syscall stubs
-on ARM/m68k.  Expect Tier 2+ applets to grow less proportionally
-once the shared surface is amortised.
-
-Shared `uclib` code is linked once per binary (bare-metal, no
-multicall) — this is the main trade-off vs. busybox.  For the tightest
-targets we may eventually want a native "multicall" wrapper (one
-binary, multiple `main`s dispatched by `argv[0]`), but that is
-deferred until we have measurements showing busybox outcompetes the
-native set on size.
+   applet exercises a previously uncovered kernel path.
+5. Verify romfs size on pcxt (tightest budget) and xtensa; smoke-test
+   in QEMU shell on ARM and m68k.
 
 ## Open Questions
 
-- **Multicall or not.**  Keep applets as individual ELFs (simpler,
-  easier to `exec`, no argv[0] dispatch), or introduce a PPAP native
-  multicall binary once Tier 3 lands?  Decide after Tier 2 with real
-  size numbers.
-- **When to drop busybox entirely.**  Once Tiers 1–3 land, is the
-  remaining busybox surface (`grep`/`sort`/`sed`/`hush`) small enough
-  that it still earns its place?  Revisit at that milestone.
-- **PicoCalc-only utilities.**  Some future apps (frame buffer demos,
-  keyboard test) will be target-specific.  Those live under
+- **Multicall or not.**  All landed Tier-1/2/3 applets came in at
+  5–10 KB stripped (see romfs).  Multicall isn't compelling at this
+  scale; stay with individual ELFs unless Tier 4 (`grep`, `sort`)
+  tips the trade-off.
+- **When to drop busybox entirely.**  Once Tier 4 lands the only
+  remaining busybox applets are `sed`, `mount`, `umount`, and `hush`.
+  Decide whether the multi-MB musl + busybox build still earns its
+  place at that milestone.
+- **PicoCalc-only utilities.**  Some future apps (frame buffer
+  demos, keyboard test) will be target-specific.  Those live under
   `src/target/<target>/user/` rather than `src/user/` and are out of
   scope here.
 
 ## Verification
 
-Each tier's rollout commits include `./scripts/run.sh --test qemu_arm`
-and `qemu_m68k` output (pass counts).  Size regression is measured
-via `./scripts/build.sh pcxt` romfs output, compared against the
-pre-Step-0 baseline.
+Each tier's rollout commits include native-shell smoke tests on
+qemu_arm and qemu_m68k against host tool output.  Romfs size is
+measured at the `romfs_<target>.bin` artifact, compared against the
+pre-Step-0 baseline (kept in git history if a delta is needed).
