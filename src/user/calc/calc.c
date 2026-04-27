@@ -10,7 +10,7 @@
  *   60..79     : minimum view with wider value field
  *   >= 80      : tape pane on the right
  *
- * See docs/proposals/calc.md for the full design.
+ * User-facing documentation: docs/user/calc.md.
  */
 
 #include "calc.h"

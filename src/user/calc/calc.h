@@ -3,7 +3,7 @@
  *
  * Physical-calc state machine (single accumulator + pending op),
  * integer-only, with width-aware two's-complement masking and base
- * switching across DEC / HEX / OCT / BIN.  See docs/proposals/calc.md.
+ * switching across DEC / HEX / OCT / BIN.  See docs/user/calc.md.
  *
  * Layered:
  *   calc_state.c    state machine + ops

@@ -27,6 +27,7 @@ This index is the entry point for project documentation.
 
 - User (end-user app and user-space references)
   - [`user/push.md`](user/push.md) — push (PiPAPo μShell)
+  - [`user/calc.md`](user/calc.md) — calc (programmer's calculator)
   - [`user/userland_dev_guide.md`](user/userland_dev_guide.md) — Writing user-space programs
   - [`user/trace.md`](user/trace.md) — Trace and debug subsystem (/bin/trace, /bin/pdb)
 
