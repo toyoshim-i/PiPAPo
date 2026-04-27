@@ -81,6 +81,33 @@ add_executable(test_ecpu_m68k
 target_include_directories(test_ecpu_m68k PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME ecpu_m68k COMMAND test_ecpu_m68k)
 
+# ── test_calc_state / test_calc_render / test_calc_segdisp ────────────────
+# The calc engine, renderer, and segdisp are pure C with no syscall
+# dependencies — they compile directly on the host.
+add_executable(test_calc_state
+    ${SRC}/user/calc/calc_state.c
+    test_calc_state.c
+)
+target_include_directories(test_calc_state PRIVATE ${SRC}/user ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME calc_state COMMAND test_calc_state)
+
+add_executable(test_calc_render
+    ${SRC}/user/calc/calc_render.c
+    ${SRC}/user/calc/calc_state.c
+    test_calc_render.c
+)
+target_include_directories(test_calc_render PRIVATE ${SRC}/user ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME calc_render COMMAND test_calc_render)
+
+add_executable(test_calc_segdisp
+    ${SRC}/user/calc/calc_segdisp.c
+    ${SRC}/user/calc/calc_render.c
+    ${SRC}/user/calc/calc_state.c
+    test_calc_segdisp.c
+)
+target_include_directories(test_calc_segdisp PRIVATE ${SRC}/user ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME calc_segdisp COMMAND test_calc_segdisp)
+
 # ── test_zexall ──────────────────────────────────────────────────────────
 # ZEXALL — Z80 instruction exerciser (all flags including undocumented F3/F5).
 # Superset of ZEXDOC: tests documented + undocumented flag behaviour (~4 min).
