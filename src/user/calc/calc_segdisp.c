@@ -64,9 +64,46 @@ static int glyph_index(char c) {
 
 /* ── Width calculations for fit decisions ───────────────────────────────── */
 
+/* Grouping in 7-seg: between every group of digits, insert a 1-col-wide
+ * separator cell (',' for DEC at the bottom row, '_' for HEX/OCT at the
+ * middle row).  Mirrors the grouping used by calc_render_grouped — same
+ * group size and "remaining count is multiple of group size" rule. */
+static int seg_group_size(calc_base_t base) {
+  switch (base) {
+  case CALC_BASE_DEC: return 3;
+  case CALC_BASE_HEX: return 4;
+  case CALC_BASE_OCT: return 3;
+  case CALC_BASE_BIN: return 4;   /* not used — BIN renders LED-dot row */
+  }
+  return 3;
+}
+
+/* Number of grouping separators inserted into a `len`-digit number. */
+static int seg_separator_count(int len, int group_size) {
+  if (len <= group_size) return 0;
+  return (len - 1) / group_size;
+}
+
+/* Returns nonzero if a separator should appear *before* digit index `i`. */
+static int seg_sep_before(int i, int total, int group_size) {
+  return (i > 0) && ((total - i) % group_size == 0);
+}
+
+/* Char drawn in the separator cell, by row.  Row 0 / 1 / 2 = top / mid /
+ * bot of the 7-seg glyph.  DEC uses a low comma, HEX/OCT use a mid bar. */
+static char seg_sep_char(calc_base_t base, int row) {
+  if (base == CALC_BASE_DEC) {
+    return (row == 2) ? ',' : ' ';
+  }
+  /* HEX, OCT — middle-bar separator looks closer to the underscore the
+   * plain-text grouped form uses. */
+  return (row == 1) ? '_' : ' ';
+}
+
 static int seg_total_width(const calc_value_str_t *v) {
   int n = v->len + (v->negative ? 1 : 0);
-  return n * SEG_GLYPH_W;  /* digits abut, no inter-digit gap */
+  int seps = seg_separator_count(v->len, seg_group_size(v->base));
+  return n * SEG_GLYPH_W + seps;  /* digits abut; +1 col per separator */
 }
 
 /* LED-dot width for BIN: one cell per bit + one space between every group
@@ -124,8 +161,9 @@ static void render_plain(const calc_value_str_t *v, int max_cols,
 
 static void render_seg(const calc_value_str_t *v, int max_cols,
                        calc_disp_t *out) {
-  int total_digits = v->len + (v->negative ? 1 : 0);
-  int content_w = total_digits * SEG_GLYPH_W;
+  int gs = seg_group_size(v->base);
+  int seps = seg_separator_count(v->len, gs);
+  int content_w = (v->len + (v->negative ? 1 : 0)) * SEG_GLYPH_W + seps;
   if (max_cols >= CALC_DISP_MAX_LINE)
     max_cols = CALC_DISP_MAX_LINE - 1;
   if (content_w > max_cols)
@@ -139,6 +177,10 @@ static void render_seg(const calc_value_str_t *v, int max_cols,
       for (int c = 0; c < SEG_GLYPH_W; c++) p[wpos++] = g[c];
     }
     for (int i = 0; i < v->len; i++) {
+      /* Insert grouping separator before this digit, if applicable. */
+      if (seg_sep_before(i, v->len, gs) && wpos < content_w) {
+        p[wpos++] = seg_sep_char(v->base, row);
+      }
       if (wpos + SEG_GLYPH_W > content_w)
         break;
       const char *g = SEG_GLYPH[glyph_index(v->digits[i])][row];

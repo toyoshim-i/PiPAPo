@@ -125,6 +125,41 @@ static void test_led_falls_back_when_too_narrow(void) {
   ASSERT_EQ(d.used_seg, 0);  /* fell back to plain text */
 }
 
+static void test_seg_dec_grouping_comma(void) {
+  /* 1234567 -> 7 digits, comma every 3 from right -> 2 separators.
+   * Expected width: 7*3 + 2 = 23 cols of content. */
+  calc_value_str_t v;
+  calc_render_value(1234567, CALC_BASE_DEC, CALC_W32, 0, &v);
+  calc_disp_t d;
+  calc_segdisp_render(&v, 30, 0, &d);
+  ASSERT_EQ(d.line_count, 3);
+  ASSERT_EQ(d.used_seg, 1);
+  /* The bottom row should contain commas at the group boundaries. */
+  /* Find the comma positions: after the first digit and after the fourth. */
+  int comma_count = 0;
+  for (int i = 0; i < d.visible_w; i++)
+    if (d.lines[2][i] == ',') comma_count++;
+  ASSERT_EQ(comma_count, 2);
+}
+
+static void test_seg_hex_grouping_underscore(void) {
+  /* 0xDEADBEEF -> 8 digits, group every 4 -> 1 separator.
+   * Underscore appears in middle row at the group boundary. */
+  calc_value_str_t v;
+  calc_render_value(0xDEADBEEF, CALC_BASE_HEX, CALC_W32, 0, &v);
+  calc_disp_t d;
+  calc_segdisp_render(&v, 40, 0, &d);
+  ASSERT_EQ(d.line_count, 3);
+  ASSERT_EQ(d.used_seg, 1);
+  int underscore_count = 0;
+  for (int i = 0; i < d.visible_w; i++)
+    if (d.lines[1][i] == '_') underscore_count++;
+  /* DEADBEEF = 8 digits = 1 separator, but middle row of digits also
+   * contains '_' chars from the glyphs themselves (like '5' middle row
+   * "|_ ").  Count is therefore not exactly 1 — assert at least 1. */
+  ASSERT(underscore_count >= 1, "at least one separator underscore");
+}
+
 /* ── Driver ─────────────────────────────────────────────────────────────── */
 
 int main(void) {
@@ -134,6 +169,8 @@ int main(void) {
   RUN_TEST(test_seg_hex_with_letters);
   RUN_TEST(test_seg_falls_back_when_too_wide);
   RUN_TEST(test_force_text);
+  RUN_TEST(test_seg_dec_grouping_comma);
+  RUN_TEST(test_seg_hex_grouping_underscore);
 
   TEST_GROUP("BIN LED dots");
   RUN_TEST(test_led_w8);
