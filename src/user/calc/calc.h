@@ -59,6 +59,7 @@ typedef struct {
   int64_t      display;   /* value being shown / typed                       */
   int64_t      accum;     /* left operand of pending op                      */
   int64_t      ans;       /* last committed result                           */
+  int64_t      mem;       /* memory register (M+, M-, MR, MC, MS)            */
   calc_op_t    pending;
   int          entry;     /* nonzero while user is typing into display       */
   calc_base_t  base;
@@ -98,6 +99,13 @@ void calc_input_backspace(calc_state_t *s);
 void calc_set_base(calc_state_t *s, calc_base_t b);
 void calc_cycle_width(calc_state_t *s);   /* 8 -> 16 -> 32 -> 64 -> 8 */
 void calc_toggle_sign(calc_state_t *s);
+
+/* Memory register ops.  All apply width masking so mem stays in range. */
+void calc_mem_clear(calc_state_t *s);     /* MC: mem = 0 */
+void calc_mem_recall(calc_state_t *s);    /* MR: display = mem; ends entry */
+void calc_mem_add(calc_state_t *s);       /* M+: mem += display, masked */
+void calc_mem_sub(calc_state_t *s);       /* M-: mem -= display, masked */
+void calc_mem_store(calc_state_t *s);     /* MS: mem = display */
 
 /* Apply mask for `width` to `v` and return the result as an unsigned value
  * suitable for digit rendering.  Top-bit handling for signed display is the

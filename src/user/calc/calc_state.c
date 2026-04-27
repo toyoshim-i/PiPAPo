@@ -56,6 +56,7 @@ void calc_init(calc_state_t *s) {
   s->display = 0;
   s->accum   = 0;
   s->ans     = 0;
+  s->mem     = 0;
   s->pending = CALC_OP_NONE;
   s->entry   = 0;
   s->base    = CALC_BASE_DEC;
@@ -261,4 +262,30 @@ void calc_cycle_width(calc_state_t *s) {
 
 void calc_toggle_sign(calc_state_t *s) {
   s->sign = !s->sign;
+}
+
+void calc_mem_clear(calc_state_t *s) {
+  s->mem = 0;
+}
+
+void calc_mem_recall(calc_state_t *s) {
+  s->display = mask64(s->mem, s->width);
+  s->entry = 0;
+  s->err = CALC_ERR_NONE;
+}
+
+void calc_mem_add(calc_state_t *s) {
+  uint64_t a = calc_mask(s->mem, s->width);
+  uint64_t b = calc_mask(s->display, s->width);
+  s->mem = mask64((int64_t)(a + b), s->width);
+}
+
+void calc_mem_sub(calc_state_t *s) {
+  uint64_t a = calc_mask(s->mem, s->width);
+  uint64_t b = calc_mask(s->display, s->width);
+  s->mem = mask64((int64_t)(a - b), s->width);
+}
+
+void calc_mem_store(calc_state_t *s) {
+  s->mem = mask64(s->display, s->width);
 }

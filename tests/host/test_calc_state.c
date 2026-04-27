@@ -295,6 +295,67 @@ static void test_signed_div_w8(void) {
   ASSERT_EQ((unsigned long)s.display & 0xFF, 0xFDu);
 }
 
+/* ── Memory register tests ─────────────────────────────────────────────── */
+
+static void test_mem_initial_zero(void) {
+  calc_state_t s;
+  calc_init(&s);
+  ASSERT_EQ(s.mem, 0);
+}
+
+static void test_mem_store_and_recall(void) {
+  calc_state_t s;
+  calc_init(&s);
+  enter_digits(&s, "42");
+  calc_mem_store(&s);
+  ASSERT_EQ(s.mem, 42);
+  calc_input_all_clear(&s);
+  ASSERT_EQ(s.display, 0);
+  calc_mem_recall(&s);
+  ASSERT_EQ(s.display, 42);
+  ASSERT_EQ(s.mem, 42);  /* recall does not consume */
+}
+
+static void test_mem_add_sub(void) {
+  calc_state_t s;
+  calc_init(&s);
+  enter_digits(&s, "10");
+  calc_mem_add(&s);          /* mem = 10 */
+  ASSERT_EQ(s.mem, 10);
+  calc_input_clear_entry(&s);
+  enter_digits(&s, "3");
+  calc_mem_add(&s);          /* mem = 13 */
+  ASSERT_EQ(s.mem, 13);
+  calc_input_clear_entry(&s);
+  enter_digits(&s, "5");
+  calc_mem_sub(&s);          /* mem = 8 */
+  ASSERT_EQ(s.mem, 8);
+}
+
+static void test_mem_clear(void) {
+  calc_state_t s;
+  calc_init(&s);
+  enter_digits(&s, "99");
+  calc_mem_store(&s);
+  ASSERT_EQ(s.mem, 99);
+  calc_mem_clear(&s);
+  ASSERT_EQ(s.mem, 0);
+}
+
+static void test_mem_width_mask(void) {
+  /* width=8: mem = 200; M+ with display=200 -> mem wraps to 144 */
+  calc_state_t s;
+  calc_init(&s);
+  s.width = CALC_W8;
+  enter_digits(&s, "200");
+  calc_mem_add(&s);          /* mem = 200 */
+  ASSERT_EQ(s.mem, 200);
+  calc_input_clear_entry(&s);
+  enter_digits(&s, "200");
+  calc_mem_add(&s);          /* (200 + 200) & 0xFF = 144 */
+  ASSERT_EQ((unsigned long)s.mem & 0xFFu, 144u);
+}
+
 /* ── Driver ─────────────────────────────────────────────────────────────── */
 
 int main(void) {
@@ -328,6 +389,13 @@ int main(void) {
   RUN_TEST(test_ac_clears_all_but_prefs);
   RUN_TEST(test_width_cycle);
   RUN_TEST(test_width_down_masks_value);
+
+  TEST_GROUP("memory register");
+  RUN_TEST(test_mem_initial_zero);
+  RUN_TEST(test_mem_store_and_recall);
+  RUN_TEST(test_mem_add_sub);
+  RUN_TEST(test_mem_clear);
+  RUN_TEST(test_mem_width_mask);
 
   TEST_SUMMARY();
 }
