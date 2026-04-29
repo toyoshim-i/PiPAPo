@@ -182,8 +182,7 @@ void vfs_notify(int event) {
           klogf("LCD: ST7365P initialised (320x320 RGB565)\n");
         fbcon_init();
         klogf("FBCON: text console initialised (40x20)\n");
-        klog_set_logger(KLOG_LOGGER_SECONDARY, fbcon_putc,
-                        fbcon_flush_deferred);
+        klog_set_logger(KLOG_LOGGER_SECONDARY, fbcon_putc, fbcon_flush);
         klogf("KLOG: output mirrored to LCD\n");
         tty_set_backend(TTY_DISPLAY, &fbcon_backend);
         klogf("TTY: backend switched to LCD+keyboard\n");
