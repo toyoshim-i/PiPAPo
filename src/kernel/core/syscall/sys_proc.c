@@ -1834,22 +1834,12 @@ long sys_vfork(uint32_t *frame) {
   /* ARM: Set child's r0 = 0 (child sees vfork return 0) */
   child_frame[0] = 0;
 
-  /* Build SW callee-saved frame below the HW frame.
-   * r9 = GOT base so PIC addressing works after PendSV restore.
-   *
-   * ARMv8-M (Cortex-M33): SW frame is 9 words (r4-r11 + EXC_RETURN).
-   * EXC_RETURN bit 4 = 1 (no FPU frame) — child starts with clean FPU.
-   * ARMv6-M (Cortex-M0+): SW frame is 8 words (r4-r11). */
-#if __ARM_ARCH >= 8
+  /* Phase 4 prep: 9-word SW frame on every Cortex-M variant
+   * (r4-r11 + EXC_RETURN at sw[8]).  Child r9 = parent's GOT base. */
   uint32_t *sw = child_frame - 9;
   memset(sw, 0, 9 * sizeof(uint32_t));
   sw[5] = current->got_base; /* r9 = GOT SRAM address for PIC */
-  sw[8] = 0xFFFFFFFDu;       /* EXC_RETURN: Thread/PSP, no FPU frame */
-#else
-  uint32_t *sw = child_frame - 8;
-  memset(sw, 0, 8 * sizeof(uint32_t));
-  sw[5] = current->got_base; /* r9 = GOT SRAM address for PIC */
-#endif
+  sw[8] = 0xFFFFFFFDu;       /* EXC_RETURN: Thread/PSP basic frame */
 
   child->sp = (uint32_t)(uintptr_t)sw;
 

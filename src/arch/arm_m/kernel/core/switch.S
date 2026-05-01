@@ -160,9 +160,10 @@ PendSV_Handler:
     @ ── Save outgoing context ──────────────────────────────────────────
     mrs  r0, psp              @ r0 = outgoing process stack pointer (PSP)
 
-    @ Make room for r4–r11 (8 × 4 = 32 bytes) below the exception frame.
-    @ ARMv6-M only has STMIA (increment after), so we adjust SP first.
-    subs r0, r0, #32
+    @ Make room for r4–r11 + EXC_RETURN (9 × 4 = 36 bytes) below the
+    @ exception frame.  ARMv6-M only has STMIA (increment after), so
+    @ we adjust SP first.
+    subs r0, r0, #36
     stmia r0!, {r4-r7}        @ save r4–r7;  r0 now points past r7
 
     @ r8–r11 cannot appear directly in STMIA on ARMv6-M; move via r4–r7.
@@ -172,7 +173,12 @@ PendSV_Handler:
     mov  r7, r11
     stmia r0!, {r4-r7}        @ save r8–r11 (as r4–r7); r0 points past r11
 
+    @ Save EXC_RETURN at sw[8] (Phase 4 prep).
+    mov  r4, lr
+    str  r4, [r0]             @ store EXC_RETURN; r0 unchanged
+
     @ Rewind r0 to the bottom of the saved context (= new saved PSP).
+    @ r0 currently points at sw[8]; subtract 32 to reach sw[0].
     subs r0, r0, #32
 
     @ ── Compute &current_core[core_id] ──────────────────────────────────
@@ -198,8 +204,9 @@ PendSV_Handler:
 #endif
 
     @ ── Call C scheduler to select next process ────────────────────────
-    @ Preserve &current_core[core_id] (r2) and EXC_RETURN (lr) across calls.
-    push {r2, lr}
+    @ Preserve &current_core[core_id] (r2).  Outgoing EXC_RETURN was
+    @ saved into the SW frame above; r3 is just push-alignment padding.
+    push {r2, r3}
     bl   sched_next           @ r0 = next pcb_t*
 
     @ ── Update MPU region 2 for incoming process stack ─────────────────
@@ -215,11 +222,10 @@ PendSV_Handler:
     bl   trace_arm_hwbp_on_switch
     pop  {r0, r1}             @ restore next pointer
 
-    pop  {r2, r3}             @ r2 = &current_core[core_id], r3 = EXC_RETURN
+    pop  {r2, r3}             @ r2 = &current_core[core_id]; r3 discarded
 
-    @ Update current_core[core_id] and restore EXC_RETURN.
+    @ Update current_core[core_id].
     str  r0, [r2]             @ current_core[core_id] = next PCB
-    mov  lr, r3               @ restore EXC_RETURN
 
     @ ── Phase 3: restore incoming MSP from next->kernel_sp ─────────────
     @ See M33 path above for rationale.
@@ -233,11 +239,19 @@ PendSV_Handler:
 
     ldmia r0!, {r4-r7}        @ restore r4–r7; r0 advances to r8 area
     push {r4-r7}              @ preserve real r4–r7 on MSP; use r4–r7 as temps
-    ldmia r0!, {r4-r7}        @ load saved r8–r11 into r4–r7; r0 → exc frame
+    ldmia r0!, {r4-r7}        @ load saved r8–r11 into r4–r7; r0 → lr slot
     mov  r8,  r4
     mov  r9,  r5
     mov  r10, r6
     mov  r11, r7
+
+    @ Load EXC_RETURN BEFORE popping the real r4–r7 — `ldr r4, [r0]`
+    @ clobbers r4, so we must consume it (into lr) before the pop
+    @ restores r4 to its incoming-process value.
+    ldr  r4, [r0]             @ r4 = sw[8] = EXC_RETURN
+    mov  lr, r4
+    adds r0, r0, #4           @ r0 → HW exception frame base
+
     pop  {r4-r7}              @ recover the real r4–r7
 
     msr  psp, r0              @ PSP = base of incoming exception frame

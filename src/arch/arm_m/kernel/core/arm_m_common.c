@@ -264,17 +264,16 @@ uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void)) {
   *--sp = 0u;                    /* r2                          */
   *--sp = 0u;                    /* r1                          */
   *--sp = 0u;                    /* r0                          */
-  /* Software callee-saved frame (loaded by PendSV) */
-#if __ARM_ARCH >= 8
-  *--sp = EXC_RETURN_THREAD_PSP; /* EXC_RETURN (no FPU frame)   */
-#endif
-  *--sp = 0u; /* r11 */
-  *--sp = 0u; /* r10 */
-  *--sp = 0u; /* r9  */
-  *--sp = 0u; /* r8  */
-  *--sp = 0u; /* r7  */
-  *--sp = 0u; /* r6  */
-  *--sp = 0u; /* r5  */
-  *--sp = 0u; /* r4 — pcb_t.sp points here */
+  /* Software callee-saved frame (loaded by PendSV).  EXC_RETURN is
+   * saved here on every Cortex-M variant (Phase 4 prep). */
+  *--sp = EXC_RETURN_THREAD_PSP; /* EXC_RETURN                  */
+  *--sp = 0u;                    /* r11 */
+  *--sp = 0u;                    /* r10 */
+  *--sp = 0u;                    /* r9  */
+  *--sp = 0u;                    /* r8  */
+  *--sp = 0u;                    /* r7  */
+  *--sp = 0u;                    /* r6  */
+  *--sp = 0u;                    /* r5  */
+  *--sp = 0u;                    /* r4 — pcb_t.sp points here */
   return sp;
 }

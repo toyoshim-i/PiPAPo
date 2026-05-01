@@ -248,9 +248,8 @@ SVC_Handler:
     add   sp, sp, #24         @ skip all 6 stacked words
     bx    lr                  @ EXC_RETURN from new process → exception return
 #else
-    @ ARMv6-M: SW frame is {r4-r11} (8 words).
+    @ ARMv6-M: SW frame is {r4-r11, EXC_RETURN} (9 words; Phase 4 prep).
     ldr   r0, [r0, #PCB_SP_OFFSET]   @ r0 = current->sp (SW frame base)
-    @ Restore r4-r11 from the SW frame (same code as PendSV_Handler)
     ldmia r0!, {r4-r7}       @ restore r4-r7; r0 advances to r8 area
     push  {r4-r7}             @ preserve real r4-r7 on MSP
     ldmia r0!, {r4-r7}       @ load saved r8-r11 into r4-r7
@@ -259,9 +258,10 @@ SVC_Handler:
     mov   r10, r6
     mov   r11, r7
     pop   {r4-r7}             @ recover real r4-r7
+    adds  r0, r0, #4          @ skip the SW frame's EXC_RETURN slot
 
     @ Set PSP to the new HW exception frame
-    msr   psp, r0             @ PSP = SW frame + 32 = HW frame base
+    msr   psp, r0             @ PSP = SW frame + 36 = HW frame base
 
     @ Return from exception — skip saved {r3,r4,r5,r6,r7} on MSP since we
     @ just loaded the correct r4-r11 from the new process image.  Only pop lr→pc.
