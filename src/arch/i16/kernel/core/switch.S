@@ -163,7 +163,7 @@ i16_timer_isr:
   movw  %ax, %ss:vfs_saved_ip
 
   /* Update i16_current_ksp from new PCB.
-   * kernel_stack_top is at PCB offset 4 (sp is uint32_t = 4 bytes). */
+   * kernel_sp is at PCB offset 4 (sp is uint32_t = 4 bytes). */
   movw  4(%bx), %ax
   movw  %ax, %ss:i16_current_ksp
 
@@ -176,7 +176,7 @@ i16_timer_isr:
   /* Skip the 34-byte vfork-save slot reserved by trap.S syscall entry.
    * Every saved kernel SP (for a process suspended via the syscall path)
    * points at the post-subw position; we adjust here so the popws read
-   * the user_SP/user_SS slot at kernel_stack_top - 4. */
+   * the user_SP/user_SS slot at kernel_sp - 4. */
   addw  $34, %sp
 
   /* Restore interrupted SS:SP */

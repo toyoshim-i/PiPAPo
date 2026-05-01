@@ -88,7 +88,7 @@ i16_syscall_isr:
    * execve call inevitably pushes args onto the shared user stack,
    * overwriting those 10 bytes above the GP+IRET frame.
    *
-   * The slot lives at [kernel_stack_top - 38, kernel_stack_top - 4).
+   * The slot lives at [kernel_sp - 38, kernel_sp - 4).
    * All later C frames sit *below* this slot.
    *
    * On the restore path, we addw $34,%sp before the popw user_SP /
@@ -142,10 +142,10 @@ i16_syscall_isr:
   jz    .Lcheck_restart
   movw  $0, %ss:exec_pending
   movw  %ss:current_core, %bx
-  /* Build [user_SP, user_SS] at kernel_stack_top - 4.
-   * PCB layout: sp(4B), kernel_stack_top(2B), exec_user_ss(2B),
+  /* Build [user_SP, user_SS] at kernel_sp - 4.
+   * PCB layout: sp(4B), kernel_sp(2B), exec_user_ss(2B),
    *             exec_user_sp(2B). Offsets: 4, 6, 8. */
-  movw  4(%bx), %sp           /* SP = kernel_stack_top */
+  movw  4(%bx), %sp           /* SP = kernel_sp */
   pushw 6(%bx)                /* push exec_user_ss */
   pushw 8(%bx)                /* push exec_user_sp */
   subw  $34, %sp              /* reserve vfork-save slot (see .Lkstack_ready) */

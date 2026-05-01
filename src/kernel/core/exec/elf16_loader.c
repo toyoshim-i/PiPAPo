@@ -324,7 +324,7 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
   p->exec_user_ss = proc_seg;
   p->exec_user_sp = user_sp;
   {
-    uint16_t ksp = p->kernel_stack_top;
+    uint16_t ksp = p->kernel_sp;
     uint16_t *kstack = (uint16_t *)(uintptr_t)ksp;
     *--kstack = proc_seg; /* user_SS */
     *--kstack = user_sp;  /* user_SP */

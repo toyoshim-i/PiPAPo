@@ -102,7 +102,7 @@ static int com_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
   p->exec_user_ss = proc_seg;
   p->exec_user_sp = user_sp;
   {
-    uint16_t ksp = p->kernel_stack_top;
+    uint16_t ksp = p->kernel_sp;
     uint16_t *kstack = (uint16_t *)(uintptr_t)ksp;
     *--kstack = proc_seg; /* user_SS */
     *--kstack = user_sp;  /* user_SP */

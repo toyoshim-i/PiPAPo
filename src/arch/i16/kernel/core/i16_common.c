@@ -93,7 +93,7 @@ void i16_vfork_restore_frame(void) {
   current->vfork_frame_saved = 0;
 
   /* Layout at the top of the parent's kernel stack (anchored to
-   * kernel_stack_top by trap.S, independent of current SP):
+   * kernel_sp by trap.S, independent of current SP):
    *
    *   ktop - 2  ┐ user_SS  (pushed by trap.S i16_syscall_isr)
    *   ktop - 4  ┘ user_SP
@@ -103,7 +103,7 @@ void i16_vfork_restore_frame(void) {
    *             │   compiler-managed frames never alias it)
    *   ktop - 38 ┘
    *   ...        C call chain frames live below ktop - 38 */
-  uint16_t ktop = current->kernel_stack_top;
+  uint16_t ktop = current->kernel_sp;
   uint16_t *frame_top = (uint16_t *)(uintptr_t)(uint16_t)(ktop - 4u);
   uint16_t user_sp = frame_top[0];
   uint16_t user_ss = frame_top[1];

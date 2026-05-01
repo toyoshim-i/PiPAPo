@@ -112,10 +112,10 @@ typedef struct pcb {
 #elif defined(__xtensa__)
   uint32_t sp; /* saved stack pointer     (offset 0)       */
 #elif defined(__ia16__)
-  uint32_t sp;               /* saved kernel-stack SP (offset 0)          */
-  uint16_t kernel_stack_top; /* top of this process's 2 KB kernel stack   */
-  uint16_t exec_user_ss;     /* new user SS after execve (set by loader)  */
-  uint16_t exec_user_sp;     /* new user SP after execve (set by loader)  */
+  uint32_t sp;           /* saved kernel-stack SP (offset 0)          */
+  uint16_t kernel_sp;    /* top of this process's 2 KB kernel stack   */
+  uint16_t exec_user_ss; /* new user SS after execve (set by loader)  */
+  uint16_t exec_user_sp; /* new user SP after execve (set by loader)  */
   /* Per-process shadow of the core↔VFS entry-stub globals (saved_cs,
    * saved_ip, vfs_saved_cs, vfs_saved_ip in core's .bss).  On every
    * context switch i16_sched_yield / i16_timer_isr copy the current

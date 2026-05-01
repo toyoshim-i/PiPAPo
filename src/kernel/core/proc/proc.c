@@ -87,7 +87,7 @@ static pid_t next_pid = 1;
  *   - BASE canary at slot's lowest address — detects this slot's own
  *     SP underrunning past its base.
  *   - TOP guard (4 bytes / 2 words) at slot's highest addresses, just
- *     below true_top.  PCB.kernel_stack_top is set to (true_top - 4),
+ *     below true_top.  PCB.kernel_sp is set to (true_top - 4),
  *     so the slot's own stack never reaches the guard region.  This
  *     detects the case where the *adjacent higher* slot's SP
  *     underflowed past its base and wrote into our top region — which
@@ -127,7 +127,7 @@ void proc_init(void) {
     proc_table[i].state = PROC_FREE;
     proc_table[i].stack_page_id = PAGE_ID_INVALID;
 #if defined(__ia16__)
-    proc_table[i].kernel_stack_top =
+    proc_table[i].kernel_sp =
         (uint16_t)(I16_KSTACK_TRUE_TOP(i) - I16_KSTACK_GUARD_BYTES);
     /* Canaries are planted later by proc_plant_kstack_canaries(), after
      * the boot stack is no longer in use. */
@@ -206,11 +206,11 @@ void proc_check_kstack_canary_panic(void) {
 #define I16_KSTACK_PAINT ((uint16_t)0xA55Au)
 static uint16_t kstack_hwm[PROC_MAX]; /* high-water mark per slot (bytes) */
 
-/* Derive slot index from kernel_stack_top in the current PCB.
+/* Derive slot index from kernel_sp in the current PCB.
  * Avoids ptr subtraction (which emits a 16-bit div and can INT 0). */
 static uint16_t kstack_slot(void) {
   if (!current) return PROC_MAX;
-  uint16_t ktop = current->kernel_stack_top;
+  uint16_t ktop = current->kernel_sp;
   /* slot 0: ktop == REGION_BASE + SLOT0_SIZE - GUARD_BYTES */
   if (ktop == (uint16_t)(I16_KSTACK_REGION_BASE + I16_KSTACK_SLOT0_SIZE -
                          I16_KSTACK_GUARD_BYTES))
@@ -279,7 +279,7 @@ pcb_t *proc_alloc(void) {
       proc_table[i].pid = next_pid++;
       proc_table[i].stack_page_id = PAGE_ID_INVALID;
 #if defined(__ia16__)
-      proc_table[i].kernel_stack_top =
+      proc_table[i].kernel_sp =
           (uint16_t)(I16_KSTACK_TRUE_TOP(i) - I16_KSTACK_GUARD_BYTES);
       i16_kstack_plant_canary(i);
 #endif
