@@ -38,11 +38,20 @@
 @
 @ All per-core state (exec_pending, svc_restart, svc_saved_a0, current_core)
 @ is indexed by core_id via the core_id_reg indirect pointer.
+@
+@ Phase 2 of docs/proposals/arm_kernel_stack_change.md adds a per-process
+@ kernel-stack swap: after the initial push we stash the post-push MSP at
+@ (current->kernel_sp - 4) and switch MSP to that slot.  The handler body
+@ (syscall_dispatch + checks + signal_check) runs on the per-process kernel
+@ stack.  Before any exit path that touches the original push frame
+@ (.Lnormal_return's pop, .Lexec_restore's add sp, signal frame fixup at
+@ [sp,#20]) we swap MSP back to the OLD MSP loaded from the stash slot.
 @ =============================================================================
 
-.equ PCB_SP_OFFSET,    32      @ offsetof(pcb_t, sp) — see proc.h
-.equ PCB_STATE_OFFSET, 48      @ offsetof(pcb_t, state) — r4..r11(32)+sp(4)+kernel_sp(4)+pid(4)+ppid(4)
-.equ PROC_RUNNABLE,     1
+.equ PCB_SP_OFFSET,        32  @ offsetof(pcb_t, sp) — see proc.h
+.equ PCB_KERNEL_SP_OFFSET, 36  @ offsetof(pcb_t, kernel_sp)
+.equ PCB_STATE_OFFSET,     48  @ offsetof(pcb_t, state)
+.equ PROC_RUNNABLE,         1
 
 .syntax unified
 #if __ARM_ARCH >= 8
@@ -86,10 +95,32 @@ SVC_Handler:
     str   r2, [r3]             @ svc_saved_a0[core_id] = original a0
 
     @ --- Build argument registers for syscall_dispatch(frame, nr, a4, a5) ---
+    @ Reads from [sp, #N] must happen BEFORE the MSP swap below — they
+    @ access the pushed frame on the OLD MSP.
     mrs   r0, psp              @ r0 = frame
     ldr   r1, [sp, #16]       @ r1 = saved r7 = syscall number
     ldr   r2, [sp, #4]        @ r2 = saved r4 = 5th arg
     ldr   r3, [sp, #8]        @ r3 = saved r5 = 6th arg
+
+    @ --- Swap MSP to current->kernel_sp (Phase 2) ---
+    @ r0-r3 hold dispatch args; r6 holds core_byte_offset.  r4-r5 are
+    @ scratch (their saved values live on the OLD MSP push frame and are
+    @ restored by the matching pop at .Lnormal_return).
+    @
+    @ Gated on PPAP_ARM_KSTACK_REGION because targets without the
+    @ linker-reserved region (pico*) have kernel_sp == 0 — switching MSP
+    @ to ~0xFFFFFFFC would fault on first SVC.  Phase 5 of the proposal
+    @ enables the region on those targets and removes this gate.
+#ifdef PPAP_ARM_KSTACK_REGION
+    ldr   r4, =current_core
+    adds  r4, r4, r6
+    ldr   r4, [r4]                          @ r4 = current PCB
+    ldr   r4, [r4, #PCB_KERNEL_SP_OFFSET]   @ r4 = current->kernel_sp
+    mrs   r5, msp                           @ r5 = OLD MSP (post-push)
+    subs  r4, #4                            @ reserve slot for OLD MSP
+    str   r5, [r4]                          @ stash OLD MSP at [kernel_sp-4]
+    msr   msp, r4                           @ MSP = kernel_sp - 4
+#endif
 
     @ --- Dispatch ---
     bl    syscall_dispatch     @ writes return value into frame[0] (stacked r0)
@@ -143,6 +174,16 @@ SVC_Handler:
     @ the adjusted context.  When rescheduled, SVC re-executes.
 
 .Lnormal_return:
+    @ --- Swap MSP back to OLD MSP (Phase 2) ---
+    @ MSP currently points at per-process kernel stack; the saved OLD MSP
+    @ lives at [sp+0] (we stashed it there on entry).  Restore it before
+    @ touching the original push frame.
+#ifdef PPAP_ARM_KSTACK_REGION
+    mrs   r0, msp
+    ldr   r0, [r0]
+    msr   msp, r0
+#endif
+
     @ --- Normal return from exception ---
 #if __ARM_ARCH >= 8
     @ Restore potentially-modified EXC_RETURN (signal delivery may have
@@ -158,6 +199,15 @@ SVC_Handler:
     @ If PendSV pending, it tail-chains immediately.
 
 .Lexec_restore:
+    @ --- Swap MSP back to OLD MSP (Phase 2) ---
+    @ Same as .Lnormal_return: the body below pops/skips the original
+    @ push frame on the OLD MSP.
+#ifdef PPAP_ARM_KSTACK_REGION
+    mrs   r1, msp
+    ldr   r1, [r1]
+    msr   msp, r1
+#endif
+
     @ --- sys_execve: full context restore from new process image ---
     @ r0 = &exec_pending[core_id] (from check above)
     @ Clear the flag
