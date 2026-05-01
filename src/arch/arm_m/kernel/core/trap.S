@@ -107,19 +107,26 @@ SVC_Handler:
     @ scratch (their saved values live on the OLD MSP push frame and are
     @ restored by the matching pop at .Lnormal_return).
     @
+    @ The OLD MSP is stashed in the per-core global svc_saved_msp[]
+    @ rather than at [kernel_sp-4] so the stash never collides with the
+    @ SVC entry push frame — important once Phase 3 makes MSP at SVC
+    @ entry equal kernel_sp, in which case [kernel_sp-4] would land on
+    @ the saved lr (EXC_RETURN) inside that push frame.
+    @
     @ Gated on PPAP_ARM_KSTACK_REGION because targets without the
     @ linker-reserved region (pico*) have kernel_sp == 0 — switching MSP
-    @ to ~0xFFFFFFFC would fault on first SVC.  Phase 5 of the proposal
-    @ enables the region on those targets and removes this gate.
+    @ there would fault on first SVC.  Phase 5 of the proposal enables
+    @ the region on those targets and removes this gate.
 #ifdef PPAP_ARM_KSTACK_REGION
+    mrs   r4, msp                           @ r4 = OLD MSP (post-push)
+    ldr   r5, =svc_saved_msp
+    adds  r5, r5, r6
+    str   r4, [r5]                          @ svc_saved_msp[core_id] = OLD MSP
     ldr   r4, =current_core
     adds  r4, r4, r6
     ldr   r4, [r4]                          @ r4 = current PCB
     ldr   r4, [r4, #PCB_KERNEL_SP_OFFSET]   @ r4 = current->kernel_sp
-    mrs   r5, msp                           @ r5 = OLD MSP (post-push)
-    subs  r4, #4                            @ reserve slot for OLD MSP
-    str   r5, [r4]                          @ stash OLD MSP at [kernel_sp-4]
-    msr   msp, r4                           @ MSP = kernel_sp - 4
+    msr   msp, r4                           @ MSP = kernel_sp
 #endif
 
     @ --- Dispatch ---
@@ -175,11 +182,11 @@ SVC_Handler:
 
 .Lnormal_return:
     @ --- Swap MSP back to OLD MSP (Phase 2) ---
-    @ MSP currently points at per-process kernel stack; the saved OLD MSP
-    @ lives at [sp+0] (we stashed it there on entry).  Restore it before
-    @ touching the original push frame.
+    @ Restore from the per-core svc_saved_msp slot before touching the
+    @ original push frame on the OLD MSP.
 #ifdef PPAP_ARM_KSTACK_REGION
-    mrs   r0, msp
+    ldr   r0, =svc_saved_msp
+    adds  r0, r0, r6
     ldr   r0, [r0]
     msr   msp, r0
 #endif
@@ -203,7 +210,8 @@ SVC_Handler:
     @ Same as .Lnormal_return: the body below pops/skips the original
     @ push frame on the OLD MSP.
 #ifdef PPAP_ARM_KSTACK_REGION
-    mrs   r1, msp
+    ldr   r1, =svc_saved_msp
+    adds  r1, r1, r6
     ldr   r1, [r1]
     msr   msp, r1
 #endif

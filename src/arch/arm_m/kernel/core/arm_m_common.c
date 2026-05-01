@@ -18,6 +18,15 @@
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/syscall/syscall.h"
 
+/* svc_saved_msp[core_id]: scratch slot for the OLD MSP value across
+ * the SVC body's per-process kernel-stack swap (trap.S Phase 2).
+ * Stored in a per-core global rather than in the kernel-stack slot so
+ * the stash never collides with the SVC entry push frame, regardless
+ * of where kernel_sp points (relevant once Phase 3 makes MSP at SVC
+ * entry equal kernel_sp).  Declared in syscall.h alongside the other
+ * svc_* per-core slots, but defined here because it is ARM-only. */
+volatile uint32_t svc_saved_msp[2] = {0, 0};
+
 /* POSIX signal numbers */
 #define SIGILL 4
 #define SIGBUS 7
