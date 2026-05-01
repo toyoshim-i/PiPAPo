@@ -107,11 +107,15 @@ SVC_Handler:
     @ scratch (their saved values live on the OLD MSP push frame and are
     @ restored by the matching pop at .Lnormal_return).
     @
-    @ The OLD MSP is stashed in the per-core global svc_saved_msp[]
-    @ rather than at [kernel_sp-4] so the stash never collides with the
-    @ SVC entry push frame — important once Phase 3 makes MSP at SVC
-    @ entry equal kernel_sp, in which case [kernel_sp-4] would land on
-    @ the saved lr (EXC_RETURN) inside that push frame.
+    @ The OLD MSP is stashed unconditionally into svc_saved_msp[] so the
+    @ unswap at .Lnormal_return is symmetric.  The actual MSP move only
+    @ happens when MSP is OUTSIDE the per-process kernel slot (i.e. above
+    @ kernel_sp, in the boot stack) — this is the case for the very first
+    @ SVC after boot before any PendSV cycle has set MSP into the slot.
+    @ Once Phase 3 starts maintaining MSP = kernel_sp on PendSV exit, the
+    @ post-push MSP is below kernel_sp and the swap is a no-op (avoiding
+    @ the overlap with the entry push frame that would happen if we
+    @ raised MSP back to kernel_sp).
     @
     @ Gated on PPAP_ARM_KSTACK_REGION because targets without the
     @ linker-reserved region (pico*) have kernel_sp == 0 — switching MSP
@@ -122,11 +126,14 @@ SVC_Handler:
     ldr   r5, =svc_saved_msp
     adds  r5, r5, r6
     str   r4, [r5]                          @ svc_saved_msp[core_id] = OLD MSP
-    ldr   r4, =current_core
-    adds  r4, r4, r6
-    ldr   r4, [r4]                          @ r4 = current PCB
-    ldr   r4, [r4, #PCB_KERNEL_SP_OFFSET]   @ r4 = current->kernel_sp
-    msr   msp, r4                           @ MSP = kernel_sp
+    ldr   r5, =current_core
+    adds  r5, r5, r6
+    ldr   r5, [r5]                          @ r5 = current PCB
+    ldr   r5, [r5, #PCB_KERNEL_SP_OFFSET]   @ r5 = current->kernel_sp
+    cmp   r4, r5
+    bls   1f                                @ MSP <= kernel_sp → already in slot
+    msr   msp, r5                           @ MSP = kernel_sp (was outside slot)
+1:
 #endif
 
     @ --- Dispatch ---
