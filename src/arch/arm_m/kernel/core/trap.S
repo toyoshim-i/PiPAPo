@@ -72,19 +72,6 @@ SVC_Handler:
     push  {r3, r4, r5, r6, r7, lr}
     @ Stack: [sp+0]=pad, [sp+4]=r4, [sp+8]=r5, [sp+12]=r6, [sp+16]=r7, [sp+20]=lr
 
-    @ --- Mask IRQs for the duration of the syscall body ---
-    @ Aligns ARM with the other ports (m68k TRAP, riscv ECALL, ia16 INT,
-    @ xtensa) which all run their kernel-mode trap body with interrupts
-    @ disabled by hardware on entry.  On Cortex-M PRIMASK is not part of
-    @ the HW exception frame, so we set it explicitly and clear it at
-    @ exit.  This guarantees no IRQ (SysTick, UART, PendSV, …) preempts
-    @ the SVC body — kernel-stack usage inside the SVC stays bounded
-    @ instead of accumulating nested handler frames on the per-process
-    @ kernel slot.  PRIMASK is automatically cleared by the HW exception
-    @ return ONLY when returning to a context whose stacked xPSR has
-    @ IPSR=0; we cannot rely on that, so we use cpsie i below.
-    cpsid i
-
     @ --- Compute core_byte_offset into r6 (preserved across C calls) ---
     @ Indirect pointer: core_id_reg → SIO_CPUID (RP2040) or zero (QEMU).
     ldr   r6, =core_id_reg
@@ -220,9 +207,8 @@ SVC_Handler:
     ldr   r0, [r0]
     str   r0, [sp, #20]       @ update stacked lr (= EXC_RETURN)
 #endif
-    @ Re-enable IRQs.  PendSV (already pended by sched_switch when this
-    @ syscall blocked) tail-chains immediately on the bx-lr return below.
-    cpsie i
+    @ PendSV (already pended by sched_switch when this syscall blocked)
+    @ tail-chains immediately on the bx-lr return below.
     pop   {r3, r4, r5, r6, r7, pc}
     @ Restore callee-saved r4, r5, r6, r7 (r3 is padding).
     @ pc = EXC_RETURN → exception return to Thread mode.
@@ -262,7 +248,6 @@ SVC_Handler:
     @ Return from exception — skip saved {r3,r4,r5,r6,r7,lr} on MSP.
     @ Use lr (EXC_RETURN from new process) instead of the stacked one.
     add   sp, sp, #24         @ skip all 6 stacked words
-    cpsie i                    @ unmask before returning to user
     bx    lr                  @ EXC_RETURN from new process → exception return
 #else
     @ ARMv6-M: SW frame is {r4-r11, EXC_RETURN} (9 words; Phase 4 prep).
@@ -283,7 +268,6 @@ SVC_Handler:
     @ Return from exception — skip saved {r3,r4,r5,r6,r7} on MSP since we
     @ just loaded the correct r4-r11 from the new process image.  Only pop lr→pc.
     add   sp, sp, #20         @ skip stacked r3, r4, r5, r6, r7
-    cpsie i                    @ unmask before returning to user
     pop   {pc}                @ pc = EXC_RETURN → exception return
 #endif
 
