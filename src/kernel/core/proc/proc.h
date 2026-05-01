@@ -14,6 +14,7 @@
 #include "kernel/common/core/proc_info.h"
 #include "kernel/core/arch.h"
 #include "kernel/core/mm/page.h"
+#include "kernel/core/proc/kstack.h"
 
 /* ── API ──────────────────────────────────────────────────────────────────────
  */
@@ -28,23 +29,10 @@
  */
 void proc_init(void);
 
-/* Re-plant kernel-stack canaries.  Called from sched_start() after
- * the boot stack is no longer in use (boot may overwrite canaries). */
-void proc_plant_kstack_canaries(void);
-
-#if defined(__ia16__)
-/* Verify the per-process kernel-stack canary at every slot's base.
- * On mismatch, klogfs an unrecoverable kernel-stack overrun panic
- * (slot index, base address, observed value, current pid+comm)
- * and halts forever.  Called from end-of-syscall and end-of-vfork-
- * restore paths so an overflow is caught at the next kernel→user
- * transition. */
-void proc_check_kstack_canary_panic(void);
-#ifdef KSTACK_USAGE_TRACK
+#if defined(__ia16__) && defined(KSTACK_USAGE_TRACK)
 void proc_kstack_paint(void);
 uint16_t proc_kstack_scan(void);
 void proc_kstack_usage_report(void);
-#endif
 #endif
 
 /*

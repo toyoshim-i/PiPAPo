@@ -97,6 +97,7 @@ typedef struct pcb {
   uint32_t r4, r5, r6, r7;   /* callee-saved low registers  (offsets 0-15)  */
   uint32_t r8, r9, r10, r11; /* callee-saved high registers (offsets 16-31) */
   uint32_t sp;               /* saved PSP                   (offset 32)     */
+  uint32_t kernel_sp;        /* per-proc MSP (kernel stack) (offset 36)     */
 #elif defined(__m68k__)
   uint32_t d2, d3, d4, d5, d6, d7; /* callee-saved data regs  (offsets 0-23) */
   uint32_t a2, a3, a4, a5, a6; /* callee-saved addr regs  (offsets 24-43)  */
@@ -113,7 +114,7 @@ typedef struct pcb {
   uint32_t sp; /* saved stack pointer     (offset 0)       */
 #elif defined(__ia16__)
   uint32_t sp;           /* saved kernel-stack SP (offset 0)          */
-  uint16_t kernel_sp;    /* top of this process's 2 KB kernel stack   */
+  uint16_t kernel_sp;    /* top of this process's kernel stack slot   */
   uint16_t exec_user_ss; /* new user SS after execve (set by loader)  */
   uint16_t exec_user_sp; /* new user SP after execve (set by loader)  */
   /* Per-process shadow of the core↔VFS entry-stub globals (saved_cs,

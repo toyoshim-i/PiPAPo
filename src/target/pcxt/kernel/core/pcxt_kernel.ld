@@ -78,9 +78,11 @@ SECTIONS
 
   /* Per-process kernel stacks: slot 0 = 128B (idle loop only),
    * slots 1-7 = 1 KB each.  Boot uses SP=0xFFFC (slot 7 top);
-   * sched_start replants canaries after boot stack usage is done. */
+   * sched_start replants canaries after boot stack usage is done.
+   * __kstack_region_base is the symbol read by the shared
+   * proc_kstack_init_slot() impl. */
   . = 0xE380;
-  __kstack_base = .;
+  __kstack_region_base = .;
   . += 7296;  /* 128 + 7 × 1024 = ends at 0x10000 */
 
   /* Page pool: free pages start outside the first segment */

@@ -116,6 +116,21 @@ SECTIONS {
 
 
     /* ------------------------------------------------------------------
+     * Per-process kernel stacks (ARM Cortex-M port: docs/proposals/
+     * arm_kernel_stack_change.md).  Slot 0 = 128 B (idle), slots 1..7
+     * = 1 KB each.  Total 128 + 7 × 1024 = 7296 bytes.  Must match
+     * PROC_KSTACK_IDLE_SIZE / PROC_KSTACK_SIZE / PROC_MAX in
+     * src/kernel/common/config.h.
+     * ------------------------------------------------------------------ */
+    .kstack (NOLOAD) : {
+        . = ALIGN(8);
+        __kstack_region_base = .;
+        . += 7296;
+        __kstack_region_end = .;
+    } > RAM
+
+
+    /* ------------------------------------------------------------------
      * Stack — 16 KB (generous for QEMU; RAM is plentiful)
      * ------------------------------------------------------------------ */
     .stack (NOLOAD) : {

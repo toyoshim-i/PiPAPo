@@ -41,7 +41,7 @@
 @ =============================================================================
 
 .equ PCB_SP_OFFSET,    32      @ offsetof(pcb_t, sp) — see proc.h
-.equ PCB_STATE_OFFSET, 44      @ offsetof(pcb_t, state) — r4..r11(32)+sp(4)+pid(4)+ppid(4)
+.equ PCB_STATE_OFFSET, 48      @ offsetof(pcb_t, state) — r4..r11(32)+sp(4)+kernel_sp(4)+pid(4)+ppid(4)
 .equ PROC_RUNNABLE,     1
 
 .syntax unified

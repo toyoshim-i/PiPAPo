@@ -45,6 +45,49 @@
 #define FILE_MAX 32           /* max concurrent open struct file objs */
 #define FD_DESC_NONE (-1)     /* empty fd_map slot (no descriptor)    */
 
+/* ── Per-process kernel stack ─────────────────────────────────────────────
+ * Arches that own a per-process kernel stack carve a fixed region into
+ * one slot per PCB.  Slot 0 is the idle thread (small budget); slots
+ * 1..PROC_MAX-1 are user procs (full budget).  Total carved bytes are
+ * PROC_KSTACK_IDLE_SIZE + (PROC_MAX-1) * PROC_KSTACK_SIZE.
+ *
+ * Currently consumed by ia16 (its own I16_KSTACK_* constants) and ARM
+ * Cortex-M (this proposal).  Defaults below match ia16's mature numbers.
+ * ────────────────────────────────────────────────────────────────────────── */
+#ifndef PROC_KSTACK_SIZE
+#define PROC_KSTACK_SIZE 1024u /* per-proc kernel stack (slots 1+)     */
+#endif
+#ifndef PROC_KSTACK_IDLE_SIZE
+#define PROC_KSTACK_IDLE_SIZE 128u /* slot 0 (idle loop only)          */
+#endif
+/* PROC_HAS_FIXED_REGION_KSTACK: opt-in flag selecting the
+ * linker-reserved fixed-region per-process kernel stack mechanism
+ * implemented in kstack.c.  Targets must also reserve
+ * __kstack_region_base in the linker script and provide a kernel_sp
+ * field in the arch's PCB.  The kstack.c functions are weak; per-arch
+ * overlays in src/arch/<arch>/kernel/core/kstack.c may strong-override
+ * any individual function (e.g. just init_slot) without touching the
+ * other three. */
+#if defined(__ia16__)
+#define PROC_HAS_FIXED_REGION_KSTACK 1
+#elif (defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)) && \
+    defined(PPAP_ARM_KSTACK_REGION)
+#define PROC_HAS_FIXED_REGION_KSTACK 1
+#endif
+
+#ifndef PROC_KSTACK_GUARD_BYTES
+/* Reserved bytes at the top of every slot for the overflow sentinel
+ * planted by proc_kstack_plant_canary().  Subtracted from the slot's
+ * true top when initialising kernel_sp so the active stack never
+ * overwrites the guard.  4 B (one uint32_t) is enough to detect
+ * adjacent-slot underflow. */
+#ifdef PROC_HAS_FIXED_REGION_KSTACK
+#define PROC_KSTACK_GUARD_BYTES 4u
+#else
+#define PROC_KSTACK_GUARD_BYTES 0u
+#endif
+#endif
+
 /* ── execve args byte budgets ──────────────────────────────────────────────
  * Bytes reserved for argv and envp string payloads in the per-execve
  * args payload (`exec_args_t` — one 4 KB page from the data region).

@@ -330,6 +330,7 @@ set(KERNEL_CORE_SOURCES
   ${PPAP_ROOT}/src/kernel/core/mm/kmem.c
   ${PPAP_ROOT}/src/kernel/core/mm/mem_region.c
   ${PPAP_ROOT}/src/kernel/core/proc/proc.c
+  ${PPAP_ROOT}/src/kernel/core/proc/kstack.c
   ${PPAP_ROOT}/src/kernel/core/proc/sched.c
   ${PPAP_ROOT}/src/kernel/core/signal/signal.c
   ${PPAP_ROOT}/src/kernel/core/cpu/cpu.c

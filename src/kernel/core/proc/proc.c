@@ -20,7 +20,8 @@
 #include "kernel/common/spinlock.h" /* SPIN_PROC */
 #include "kernel/core/arch.h"       /* arch_build_initial_frame */
 #include "kernel/core/mm/mem_region.h"
-#include "kernel/core/mm/page.h"    /* PAGE_SIZE — for proc_setup_stack */
+#include "kernel/core/mm/page.h" /* PAGE_SIZE — for proc_setup_stack */
+#include "kernel/core/proc/kstack.h"
 #include "kernel/core/proc/sched.h" /* sched_get_ticks — for start_time */
 
 /* Default file creation mask (octal 022 → owner rw, group/other r) */
@@ -31,6 +32,18 @@
 _Static_assert(
     offsetof(pcb_t, sp) == PCB_SP_OFFSET,
     "PCB_SP_OFFSET does not match offsetof(pcb_t, sp) — update proc.h");
+
+#if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
+/* trap.S/switch.S read `kernel_sp` and `state` directly via baked-in
+ * offsets.  Catch any struct shift before it silently miscompiles the
+ * signal/sched paths. */
+#define PCB_KERNEL_SP_OFFSET 36u
+_Static_assert(offsetof(pcb_t, kernel_sp) == PCB_KERNEL_SP_OFFSET,
+               "PCB_KERNEL_SP_OFFSET must match trap.S/switch.S");
+#define PCB_STATE_OFFSET 48u
+_Static_assert(offsetof(pcb_t, state) == PCB_STATE_OFFSET,
+               "PCB_STATE_OFFSET must match trap.S");
+#endif
 
 #if defined(__ia16__)
 /* Shifted by 8 bytes when the 4 stub-save fields below were inserted at
@@ -80,21 +93,11 @@ static pid_t next_pid = 1;
 
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
-#if defined(__ia16__)
-/* Per-process kernel stack canaries.  Slots are 2 KB each, packed
- * adjacent at 0xE000..0xFFFF.  Two sentinels per slot:
- *
- *   - BASE canary at slot's lowest address — detects this slot's own
- *     SP underrunning past its base.
- *   - TOP guard (4 bytes / 2 words) at slot's highest addresses, just
- *     below true_top.  PCB.kernel_sp is set to (true_top - 4),
- *     so the slot's own stack never reaches the guard region.  This
- *     detects the case where the *adjacent higher* slot's SP
- *     underflowed past its base and wrote into our top region — which
- *     is invisible to a base-only canary because the writes never
- *     reach our base. */
-#define I16_KSTACK_CANARY ((uint16_t)0xCA57u)
-#define I16_KSTACK_GUARD ((uint16_t)0xCAFEu)
+#if defined(__ia16__) && defined(KSTACK_USAGE_TRACK)
+/* I16_KSTACK_* slot-geometry macros — only retained for the
+ * KSTACK_USAGE_TRACK paint/scan/report code below.  The plant +
+ * check mechanism that used to share them now lives in
+ * src/kernel/core/proc/kstack.c. */
 #define I16_KSTACK_GUARD_BYTES 4u
 #define I16_KSTACK_REGION_BASE 0xE380u /* must match pcxt_kernel.ld */
 #define I16_KSTACK_SLOT0_SIZE 128u     /* idle loop only */
@@ -109,15 +112,6 @@ static pid_t next_pid = 1;
                              (uint16_t)(i) * I16_KSTACK_SIZE))
 
 #define I16_KSTACK_BASE(i) I16_KSTACK_TRUE_BASE(i)
-
-static void i16_kstack_plant_canary(uint32_t i) {
-  uint16_t base = I16_KSTACK_BASE(i);
-  uint16_t top = I16_KSTACK_TRUE_TOP(i);
-
-  *(volatile uint16_t *)(uintptr_t)base = I16_KSTACK_CANARY;
-  *(volatile uint16_t *)(uintptr_t)(uint16_t)(top - 4u) = I16_KSTACK_GUARD;
-  *(volatile uint16_t *)(uintptr_t)(uint16_t)(top - 2u) = I16_KSTACK_GUARD;
-}
 #endif
 
 void proc_init(void) {
@@ -126,12 +120,10 @@ void proc_init(void) {
     __builtin_memset(&proc_table[i], 0, sizeof(pcb_t));
     proc_table[i].state = PROC_FREE;
     proc_table[i].stack_page_id = PAGE_ID_INVALID;
-#if defined(__ia16__)
-    proc_table[i].kernel_sp =
-        (uint16_t)(I16_KSTACK_TRUE_TOP(i) - I16_KSTACK_GUARD_BYTES);
-    /* Canaries are planted later by proc_plant_kstack_canaries(), after
-     * the boot stack is no longer in use. */
-#endif
+    proc_kstack_init_slot(&proc_table[i], i);
+    /* Canaries (where applicable) are planted later by
+     * proc_plant_kstack_canaries(), after the boot stack is no longer
+     * in use. */
     proc_table[i].clear_child_tid = user_page_ref_invalid();
     for (uint32_t j = 0; j < USER_PAGES_MAX; j++)
       proc_table[i].user_pages[j] = PAGE_ID_INVALID;
@@ -158,51 +150,14 @@ void proc_init(void) {
       "  (pid 0 = kernel, pids 1-%u available)\n",
       (unsigned)PROC_MAX, (unsigned)(PROC_MAX - 1u));
 
-#if defined(__ia16__)
-  /* Plant canaries now.  During boot the boot stack (slot 7) is shared
-   * with the init sequence and may overwrite canaries in lower slots.
-   * proc_plant_kstack_canaries() is called again from sched_start()
-   * after the boot stack is no longer in use. */
-  for (uint32_t i = 0u; i < PROC_MAX; i++) i16_kstack_plant_canary(i);
-#endif
+  /* Plant canaries now.  On ia16 the boot stack lives in slot 7 and may
+   * overwrite canaries in lower slots, so proc_plant_kstack_canaries()
+   * is called again from arch_sched_start_hook after the boot stack
+   * goes unused.  No-op on arches without the fixed-region kstack. */
+  proc_plant_kstack_canaries();
 }
 
-void proc_plant_kstack_canaries(void) {
-#if defined(__ia16__)
-  for (uint32_t i = 0u; i < PROC_MAX; i++) i16_kstack_plant_canary(i);
-#endif
-}
-
-#if defined(__ia16__)
-/* Walk every PCB slot and check that the kernel-stack canary at slot
- * base is still intact.  Any mismatch is a kernel-stack overrun and
- * is unrecoverable: panic with the offending slot, the current
- * process's pid and comm, and the clobber value, then halt forever.
- *
- * Called from end-of-syscall and end-of-vfork-restore paths so a
- * stack overrun is caught at the next kernel→user transition rather
- * than corrupting subsequent state silently. */
-void proc_check_kstack_canary_panic(void) {
-  for (uint32_t i = 0u; i < PROC_MAX; i++) {
-    uint16_t base = I16_KSTACK_BASE(i);
-    uint16_t top = I16_KSTACK_TRUE_TOP(i);
-    uint16_t got_base = *(volatile uint16_t *)(uintptr_t)base;
-    uint16_t got_g0 = *(volatile uint16_t *)(uintptr_t)(uint16_t)(top - 4u);
-    uint16_t got_g1 = *(volatile uint16_t *)(uintptr_t)(uint16_t)(top - 2u);
-    if (got_base == I16_KSTACK_CANARY && got_g0 == I16_KSTACK_GUARD &&
-        got_g1 == I16_KSTACK_GUARD)
-      continue;
-    pcb_t *cur = current;
-    mod_vfs.klogf(
-        "PANIC: kernel stack overrun  slot=%u base=%x got_base=%x"
-        "  topG0=%x topG1=%x  pid=%u comm=%s\n",
-        (unsigned)i, (unsigned)base, (unsigned)got_base, (unsigned)got_g0,
-        (unsigned)got_g1, cur ? (unsigned)cur->pid : 0u,
-        cur ? cur->comm : "(null)");
-    for (;;) arch_wfi();
-  }
-}
-#ifdef KSTACK_USAGE_TRACK
+#if defined(__ia16__) && defined(KSTACK_USAGE_TRACK)
 #define I16_KSTACK_PAINT ((uint16_t)0xA55Au)
 static uint16_t kstack_hwm[PROC_MAX]; /* high-water mark per slot (bytes) */
 
@@ -265,8 +220,7 @@ void proc_kstack_usage_report(void) {
                   (unsigned)kstack_hwm[i], (unsigned)cap);
   }
 }
-#endif /* KSTACK_USAGE_TRACK */
-#endif
+#endif /* __ia16__ && KSTACK_USAGE_TRACK */
 
 pcb_t *proc_alloc(void) {
   uint32_t saved = spin_lock_irqsave(SPIN_PROC);
@@ -278,11 +232,8 @@ pcb_t *proc_alloc(void) {
       __builtin_memset(&proc_table[i], 0, sizeof(pcb_t));
       proc_table[i].pid = next_pid++;
       proc_table[i].stack_page_id = PAGE_ID_INVALID;
-#if defined(__ia16__)
-      proc_table[i].kernel_sp =
-          (uint16_t)(I16_KSTACK_TRUE_TOP(i) - I16_KSTACK_GUARD_BYTES);
-      i16_kstack_plant_canary(i);
-#endif
+      proc_kstack_init_slot(&proc_table[i], i);
+      proc_kstack_plant_canary(i);
       proc_table[i].clear_child_tid = user_page_ref_invalid();
       for (uint32_t j = 0; j < USER_PAGES_MAX; j++)
         proc_table[i].user_pages[j] = PAGE_ID_INVALID;
