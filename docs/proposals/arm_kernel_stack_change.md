@@ -1,6 +1,13 @@
 # ARM Per-Process Kernel Stack
 
-**Status:** proposed.
+**Status:** partially implemented; completion requires a different switch
+primitive.  The per-process kernel-stack infrastructure has landed in the
+current unpushed series, but the original activation step, "raise PendSV above
+SVC", is known to crash and is no longer considered viable.  The latest
+committed revision also has a hardware-visible regression: a booted shell does
+not accept keyboard input, so the current tip is not shippable even though
+`qemu_arm` tests pass.
+
 **Target arches:** arm_m (Cortex-M0+ on RP2040, Cortex-M33 on RP2350).
 **Motivation:** unblock pico1calc TTY/blocking-syscall hang; align ARM with the
 other arches that already have per-process kernel stacks.
@@ -26,21 +33,28 @@ which is why pico1calc deadlocks during `push` reading from `/dev/tty1`.
 
 | Arch       | Kernel stack       | Yield from kernel   | Notes |
 |------------|--------------------|---------------------|-------|
-| arm_m      | shared MSP         | pend PendSV (no-op from SVC) | This proposal |
+| arm_m      | per-proc kernel stack partly landed; activation incomplete | pend PendSV (no-op from SVC) | Needs synchronous kernel switch |
 | riscv      | per-proc `kernel_sp` (PCB +52) | lazy alloc, trap-based switch | reference impl |
 | ia16/pcxt  | per-proc `kernel_stack_top` (PCB +4) | trap-based switch | reference impl |
 | m68k       | per-proc kernel SSP | `TRAP #1`           | reference impl |
 | xtensa     | per-proc kernel sp  | windowed save/restore | reference impl |
 
-ARM is the lone outlier with a shared MSP for all kernel-mode work and no
-synchronous-yield-from-kernel primitive.
+ARM remains the outlier because, even with the per-process kernel-stack
+groundwork partly landed, it still lacks a synchronous-yield-from-kernel
+primitive.
 
 ## 3. Design
 
 Give ARM each process its own kernel stack, mirroring the other arches.  This
-makes the SVC handler's stack state proc-local, which lets PendSV (raised to a
-priority numerically lower than SVC) preempt and switch — saving and restoring
-the per-proc kernel stack pointer as part of the context save area.
+makes the SVC handler's stack state proc-local, which is still necessary for
+blocking in the middle of a syscall: the kernel must be able to park the
+current C call chain, locals, and already-performed side effects, then resume
+that exact continuation later.
+
+The original plan used that stack to let PendSV preempt SVC.  That path has
+failed in testing.  The remaining completion work is to add a synchronous
+kernel-context switch that runs at the `sched_switch()` call site while already
+inside the kernel/SVC body, without relying on PendSV preempting SVC.
 
 ### 3.1 PCB additions
 
@@ -142,8 +156,8 @@ msr   msp, r3                      @ swap MSP to per-proc kernel stack
 
 Concretely: SVC handler runs on `current->kernel_sp` for its body; the OLD
 MSP value lives in a one-word slot at the bottom of the old kernel stack
-frame.  Because we now own the kernel stack, PendSV can safely save/restore
-all of MSP/PSP/r4-r11 as part of the context.
+frame.  This isolates each process's in-flight kernel call chain, but by
+itself it does not make PendSV-preempts-SVC safe.
 
 ### 3.4 PendSV: save/restore per-proc kernel SP
 
@@ -164,39 +178,47 @@ msr  msp, r4
 The HW PSP frame still drives Thread-mode resumption.  The new piece is the
 MSP swap so the next proc's SVC stack (if any was suspended) is restored.
 
-### 3.5 Make PendSV preempt SVC
+### 3.5 Rejected: make PendSV preempt SVC
 
-Once kernel stacks are per-proc, raising PendSV priority above SVC is safe.
-In `arch_sched_start_hook`:
+This was the original Phase 4 and it is known broken.
 
-```c
-SCB_SHPR3 = (SCB_SHPR3 & ~PENDSV_PRIO_MASK) | (0x40u << PENDSV_PRIO_SHIFT);
-SCB_SHPR2 = (SCB_SHPR2 & ~SVCALL_PRIO_MASK) | (0x80u << SVCALL_PRIO_SHIFT);
+Changing PendSV priority from `0xFF` to `0x40` so it can preempt SVC at `0x80`
+reproducibly crashes `runtests` during startup.  The failure happens even after
+IRQ masking was added around the SVC body, so the crash is not explained by
+ordinary IRQ nesting.  See `docs/notes/arm_phase4_status.md`,
+`docs/notes/arm_phase4_debug.md`, and `docs/notes/arm_handoff.md`.
+
+Do not implement this step.  It may still be useful as a debugging case, but
+it is not the completion path for this proposal.
+
+### 3.6 Required: synchronous kernel-context switch
+
+`arch_sched_switch()` must become a true mid-kernel switch when called from an
+SVC/syscall body:
+
+```text
+arch_sched_switch():
+    save the current kernel continuation on current->kernel_sp
+    save the user PSP/trap-frame pointer in current->sp
+    choose sched_next()
+    restore next->kernel_sp and next->sp
+    resume the next saved kernel continuation, or first-enter its user frame
 ```
 
-PendSV at 0x40 < SVC at 0x80 → PendSV preempts SVC.  When a blocking syscall
-inside SVC pends PendSV via `arch_sched_switch`, PendSV fires immediately,
-saves current's MSP+regs, switches to next proc, resumes that proc's
-suspended kernel context (or freshly enters its SVC for the first time).
+The important contract is stronger than "schedule soon": when
+`mod_core.sched_switch()` returns to its caller, the current process must have
+already been off-CPU and later resumed.  This preserves blocking syscalls with
+multiple wait points or irreversible side effects.  Restart/replay is still
+valid for syscalls deliberately written that way, but it is not a substitute
+for this primitive.
 
-### 3.6 `arch_sched_switch` becomes a real switch
-
-`src/arch/arm_m/kernel/core/arch.h`:
-
-```c
-static inline void arch_sched_switch(void) {
-  SCB_ICSR = SCB_ICSR_PENDSVSET;   /* pend PendSV (now preempts SVC) */
-  __asm__ volatile("dsb\n isb" ::: "memory");
-}
-```
-
-The DSB/ISB ensures PendSV fires before we return to the caller.  After this
-function returns, we are guaranteed to be back on the same proc *after* the
-context switch round-trip.
+PendSV can remain the asynchronous timer/user-preemption mechanism while this
+is developed.  It must stay at the lowest priority and must not be required to
+preempt SVC.
 
 ## 4. Effect on Existing Code
 
-After Stage 1 lands:
+After the synchronous switch work lands:
 
 - `tty_read_canon` / `tty_read_raw` / `tty_write` / `pipe_read` / `pipe_write`
   internal-loop pattern works on ARM as written.  No more spinning in SVC.
@@ -217,7 +239,7 @@ Develop and validate against `qemu_arm` (Cortex-M3 on mps2-an500) before
 flashing pico1calc:
 
 1. `./scripts/build.sh --test qemu_arm` — kernel test suite must remain
-   24/24 green throughout.
+   24/24 green throughout, but this is not sufficient by itself.
 2. Add an integration test that exercises the SVC-blocking-yield path:
    one process reads `/dev/ttyS0` with no data; another process is
    `RUNNABLE` and must be scheduled while the first blocks.  Verify the
@@ -225,6 +247,9 @@ flashing pico1calc:
 3. `./scripts/build.sh --test qemu_arm` with KSTACK_USAGE_TRACK enabled
    to validate kernel stack budget per proc.
 4. Once green on QEMU, flash pico1calc and confirm:
+   - A freshly booted shell accepts keyboard input.  This is a current
+     regression at the latest committed revision and must be fixed before the
+     branch is considered healthy.
    - `push` on tty1 blocks correctly (no busy-spin).
    - Idle runs, fbcon flush keeps LCD updating.
    - I2C kbd polling fills the ring.
@@ -254,14 +279,17 @@ flashing pico1calc:
   somewhere reachable on exit; doing this with only the small Cortex-M0+
   ISA window requires careful register juggling.  Pre-write the asm and
   review before integration.
-- **First-time entry to a new proc.**  When PendSV switches to a proc that
-  has never run, `kernel_sp` was set up by `proc_setup_stack` but the
-  proc has no suspended SVC frame.  PendSV needs to detect "fresh" vs
-  "resumed-in-SVC" and choose the exception-return path.  The PSP-only
-  case (HW frame on PSP, Thread-mode resume) handles this; document it
-  explicitly in switch.S comments.
-- **Core 1.**  Same swap logic on Core 1's PendSV.  Verify SMP boot still
-  works after the change.
+- **Direct switch frame shape.**  The new synchronous switch must distinguish
+  two incoming cases: a process suspended inside a kernel continuation, and a
+  process whose next resume is a normal exception return to user mode.  The
+  frame layout must make that distinction explicit instead of inferring it from
+  a PendSV-only path.
+- **Booted-shell keyboard regression.**  The current committed revision passes
+  qemu tests but does not accept keyboard input at the booted shell.  This is a
+  release blocker and likely overlaps the original pico1calc motivation:
+  qemu-only verification cannot prove this work complete.
+- **Core 1.**  The same kernel-stack and switch-continuation rules must hold
+  on Core 1.  Verify SMP boot still works after the change.
 - **GDB/debug.**  Per-proc MSP changes how stack unwinding works in GDB.
   May need to update OpenOCD-side scripts or debug docs.
 
@@ -269,13 +297,16 @@ flashing pico1calc:
 
 | # | Change                                                              | Verify |
 |---|---------------------------------------------------------------------|--------|
-| 1 | Add `kernel_sp` to ARM PCB block; allocate kernel stack page in `proc_setup_stack` (gated). | qemu_arm builds, all tests pass, no behavioral change yet (kernel still uses shared MSP). |
+| 1 | Add `kernel_sp` to ARM PCB block; allocate kernel stack page in `proc_setup_stack` (gated). | qemu_arm builds, all tests pass, no behavioral change yet. |
 | 2 | SVC entry/exit: swap MSP to/from `current->kernel_sp`.              | qemu_arm builds + tests; sanity-check stack usage stays bounded. |
 | 3 | PendSV: save/restore `kernel_sp`.                                   | qemu_arm tests including `test_signal`, `test_sleep_intr`. |
-| 4 | Raise PendSV priority above SVC; convert `arch_sched_switch` to true synchronous yield. | qemu_arm tests + new blocking-yield integration test. |
-| 5 | Remove `wait.h` helpers and any temporary `svc_set_restart` calls; revert tty/pipe blocking paths to clean internal-loop. | qemu_arm + pico1calc hardware test. |
+| 4 | Add ARM synchronous kernel-context switch for `sched_switch()` from inside SVC.  Keep PendSV low-priority for timer/user preemption. | qemu_arm tests + new blocking-yield integration test. |
+| 5 | Fix/verify booted-shell keyboard input on pico1calc-class hardware. | Hardware boot: shell accepts input; idle polling and wakeup path observed. |
+| 6 | Remove `wait.h` helpers and any temporary `svc_set_restart` calls; revert tty/pipe blocking paths to clean internal-loop. | qemu_arm + pico1calc hardware test. |
 
-Each phase is a separate commit; bisectable, individually buildable.
+Each phase should be a separate commit and bisectable before this branch is
+pushed.  The current unpushed history is known to contain broken intermediate
+commits; see `docs/notes/arm_handoff.md`.
 
 ## 9. References
 
