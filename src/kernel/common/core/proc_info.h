@@ -98,6 +98,8 @@ typedef struct pcb {
   uint32_t r8, r9, r10, r11; /* callee-saved high registers (offsets 16-31) */
   uint32_t sp;               /* saved PSP                   (offset 32)     */
   uint32_t kernel_sp;        /* per-proc MSP (kernel stack) (offset 36)     */
+  uint32_t svc_msp;          /* original SVC entry MSP      (offset 40)     */
+  uint8_t kernel_context;    /* 1 = suspended inside kernel continuation    */
 #elif defined(__m68k__)
   uint32_t d2, d3, d4, d5, d6, d7; /* callee-saved data regs  (offsets 0-23) */
   uint32_t a2, a3, a4, a5, a6; /* callee-saved addr regs  (offsets 24-43)  */

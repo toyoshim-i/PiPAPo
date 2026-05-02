@@ -50,7 +50,8 @@
 
 .equ PCB_SP_OFFSET,        32  @ offsetof(pcb_t, sp) — see proc.h
 .equ PCB_KERNEL_SP_OFFSET, 36  @ offsetof(pcb_t, kernel_sp)
-.equ PCB_STATE_OFFSET,     48  @ offsetof(pcb_t, state)
+.equ PCB_SVC_MSP_OFFSET,   40  @ offsetof(pcb_t, svc_msp)
+.equ PCB_STATE_OFFSET,     56  @ offsetof(pcb_t, state)
 .equ PROC_RUNNABLE,         1
 
 .syntax unified
@@ -107,7 +108,7 @@ SVC_Handler:
     @ scratch (their saved values live on the OLD MSP push frame and are
     @ restored by the matching pop at .Lnormal_return).
     @
-    @ The OLD MSP is stashed unconditionally into svc_saved_msp[] so the
+    @ The OLD MSP is stashed unconditionally into current->svc_msp so the
     @ unswap at .Lnormal_return is symmetric.  The actual MSP move only
     @ happens when MSP is OUTSIDE the per-process kernel slot (i.e. above
     @ kernel_sp, in the boot stack) — this is the case for the very first
@@ -123,12 +124,10 @@ SVC_Handler:
     @ the region on those targets and removes this gate.
 #ifdef PPAP_ARM_KSTACK_REGION
     mrs   r4, msp                           @ r4 = OLD MSP (post-push)
-    ldr   r5, =svc_saved_msp
-    adds  r5, r5, r6
-    str   r4, [r5]                          @ svc_saved_msp[core_id] = OLD MSP
     ldr   r5, =current_core
     adds  r5, r5, r6
     ldr   r5, [r5]                          @ r5 = current PCB
+    str   r4, [r5, #PCB_SVC_MSP_OFFSET]     @ current->svc_msp = OLD MSP
     ldr   r5, [r5, #PCB_KERNEL_SP_OFFSET]   @ r5 = current->kernel_sp
     cmp   r4, r5
     bls   1f                                @ MSP <= kernel_sp → already in slot
@@ -189,12 +188,13 @@ SVC_Handler:
 
 .Lnormal_return:
     @ --- Swap MSP back to OLD MSP (Phase 2) ---
-    @ Restore from the per-core svc_saved_msp slot before touching the
+    @ Restore from current->svc_msp before touching the
     @ original push frame on the OLD MSP.
 #ifdef PPAP_ARM_KSTACK_REGION
-    ldr   r0, =svc_saved_msp
+    ldr   r0, =current_core
     adds  r0, r0, r6
     ldr   r0, [r0]
+    ldr   r0, [r0, #PCB_SVC_MSP_OFFSET]
     msr   msp, r0
 #endif
 
@@ -219,9 +219,10 @@ SVC_Handler:
     @ Same as .Lnormal_return: the body below pops/skips the original
     @ push frame on the OLD MSP.
 #ifdef PPAP_ARM_KSTACK_REGION
-    ldr   r1, =svc_saved_msp
+    ldr   r1, =current_core
     adds  r1, r1, r6
     ldr   r1, [r1]
+    ldr   r1, [r1, #PCB_SVC_MSP_OFFSET]
     msr   msp, r1
 #endif
 

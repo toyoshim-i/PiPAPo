@@ -42,7 +42,14 @@ target_include_directories(ppap_qemu_arm PRIVATE
     ${PPAP_ROOT}/src/target/qemu_arm
 )
 
-target_compile_definitions(ppap_qemu_arm PRIVATE PPAP_QEMU=1 PPAP_HAS_BLKDEV=1 PPAP_HAS_PROCFS=1 PPAP_ARM_KSTACK_REGION=1)
+target_compile_definitions(ppap_qemu_arm PRIVATE
+    PPAP_QEMU=1
+    PPAP_HAS_BLKDEV=1
+    PPAP_HAS_PROCFS=1
+    PPAP_ARM_KSTACK_REGION=1
+    # TODO: reduce this after CP/M/deep subsystem paths are stack-optimized.
+    PROC_KSTACK_SIZE=2048u
+)
 
 target_link_options(ppap_qemu_arm PRIVATE
     -T ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/qemu.ld

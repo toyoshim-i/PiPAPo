@@ -27,6 +27,19 @@
  * svc_* per-core slots, but defined here because it is ARM-only. */
 volatile uint32_t svc_saved_msp[2] = {0, 0};
 
+void arm_mark_kernel_context(pcb_t *p) { p->kernel_context = 1; }
+
+int arm_take_kernel_context(pcb_t *p) {
+  int has_context = p->kernel_context != 0;
+  p->kernel_context = 0;
+  return has_context;
+}
+
+int arm_can_kernel_sched_switch(void) {
+  return current && current->state == PROC_BLOCKED &&
+         svc_restart[core_id()] == 0;
+}
+
 /* POSIX signal numbers */
 #define SIGILL 4
 #define SIGBUS 7

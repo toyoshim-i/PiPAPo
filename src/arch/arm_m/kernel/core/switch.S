@@ -67,6 +67,173 @@
 .section .text.pendsv, "ax", %progbits
 .align 2
 .thumb_func
+.global arm_kernel_sched_switch
+arm_kernel_sched_switch:
+    cpsid i
+
+#if __ARM_ARCH >= 8
+    @ Save the in-flight kernel continuation on the current MSP.
+    stmdb sp!, {r4-r11, lr}
+
+    @ Compute &current_core[core_id].
+    ldr  r1, =core_id_reg
+    ldr  r1, [r1]
+    ldr  r1, [r1]
+    lsls r1, r1, #2
+    ldr  r2, =current_core
+    adds r2, r2, r1
+
+    @ Save current MSP + PSP into the outgoing PCB and mark it as a
+    @ kernel continuation rather than a normal Thread/PSP frame.
+    ldr  r3, [r2]
+    mrs  r0, msp
+    str  r0, [r3, #PCB_KERNEL_SP_OFFSET]
+    mrs  r0, psp
+    str  r0, [r3, #PCB_SP_OFFSET]
+    mov  r0, r3
+    bl   arm_mark_kernel_context
+
+    @ Pick and prepare the incoming process while still on the outgoing
+    @ kernel stack.  These temporary call frames are intentionally discarded.
+    bl   sched_next
+    mov  r4, r0
+    bl   mpu_switch
+    mov  r0, r4
+    bl   trace_arm_hwbp_on_switch
+
+    @ Recompute &current_core[core_id] after the C calls and publish next.
+    ldr  r1, =core_id_reg
+    ldr  r1, [r1]
+    ldr  r1, [r1]
+    lsls r1, r1, #2
+    ldr  r2, =current_core
+    adds r2, r2, r1
+    str  r4, [r2]
+
+    mov  r0, r4
+    bl   arm_take_kernel_context
+    cmp  r0, #0
+    bne  .Larm_kernel_restore_kernel_v8
+
+    @ Incoming process resumes via a normal exception return to Thread/PSP.
+    ldr  r0, [r4, #PCB_KERNEL_SP_OFFSET]
+    msr  msp, r0
+    ldr  r0, [r4, #PCB_SP_OFFSET]
+    ldmia r0!, {r4-r11, lr}
+    tst  lr, #0x10
+    it   eq
+    vldmiaeq r0!, {s16-s31}
+    msr  psp, r0
+    cpsie i
+    bx   lr
+
+.Larm_kernel_restore_kernel_v8:
+    ldr  r0, [r4, #PCB_SP_OFFSET]
+    msr  psp, r0
+    ldr  r0, [r4, #PCB_KERNEL_SP_OFFSET]
+    msr  msp, r0
+    ldmia sp!, {r4-r11, lr}
+    cpsie i
+    bx   lr
+#else
+    @ Save the in-flight kernel continuation on the current MSP.
+    sub  sp, #36
+    mov  r0, sp
+    stmia r0!, {r4-r7}
+    mov  r4, r8
+    mov  r5, r9
+    mov  r6, r10
+    mov  r7, r11
+    stmia r0!, {r4-r7}
+    mov  r4, lr
+    str  r4, [r0]
+
+    @ Compute &current_core[core_id].
+    ldr  r1, =core_id_reg
+    ldr  r1, [r1]
+    ldr  r1, [r1]
+    lsls r1, r1, #2
+    ldr  r2, =current_core
+    adds r2, r2, r1
+
+    @ Save current MSP + PSP into the outgoing PCB and mark it as a
+    @ kernel continuation rather than a normal Thread/PSP frame.
+    ldr  r3, [r2]
+    mov  r0, sp
+    str  r0, [r3, #PCB_KERNEL_SP_OFFSET]
+    mrs  r0, psp
+    str  r0, [r3, #PCB_SP_OFFSET]
+    mov  r0, r3
+    bl   arm_mark_kernel_context
+
+    @ Pick and prepare the incoming process while still on the outgoing
+    @ kernel stack.  These temporary call frames are intentionally discarded.
+    bl   sched_next
+    mov  r4, r0
+    bl   mpu_switch
+    mov  r0, r4
+    bl   trace_arm_hwbp_on_switch
+
+    @ Recompute &current_core[core_id] after the C calls and publish next.
+    ldr  r1, =core_id_reg
+    ldr  r1, [r1]
+    ldr  r1, [r1]
+    lsls r1, r1, #2
+    ldr  r2, =current_core
+    adds r2, r2, r1
+    str  r4, [r2]
+
+    mov  r0, r4
+    bl   arm_take_kernel_context
+    cmp  r0, #0
+    bne  .Larm_kernel_restore_kernel_v6
+
+    @ Incoming process resumes via a normal exception return to Thread/PSP.
+    ldr  r0, [r4, #PCB_KERNEL_SP_OFFSET]
+    msr  msp, r0
+    ldr  r0, [r4, #PCB_SP_OFFSET]
+    ldmia r0!, {r4-r7}
+    push {r4-r7}
+    ldmia r0!, {r4-r7}
+    mov  r8,  r4
+    mov  r9,  r5
+    mov  r10, r6
+    mov  r11, r7
+    ldr  r4, [r0]
+    mov  lr, r4
+    adds r0, r0, #4
+    pop  {r4-r7}
+    msr  psp, r0
+    cpsie i
+    bx   lr
+
+.Larm_kernel_restore_kernel_v6:
+    ldr  r0, [r4, #PCB_SP_OFFSET]
+    msr  psp, r0
+    ldr  r0, [r4, #PCB_KERNEL_SP_OFFSET]
+    msr  msp, r0
+    mov  r0, sp
+    mov  r1, r0
+    adds r1, #16
+    ldmia r1!, {r4-r7}
+    mov  r8,  r4
+    mov  r9,  r5
+    mov  r10, r6
+    mov  r11, r7
+    ldr  r4, [r1]
+    mov  lr, r4
+    mov  r1, r0
+    ldmia r1!, {r4-r7}
+    adds r0, r0, #36
+    msr  msp, r0
+    cpsie i
+    bx   lr
+#endif
+
+    .ltorg
+
+.align 2
+.thumb_func
 .global PendSV_Handler
 PendSV_Handler:
 
@@ -128,6 +295,12 @@ PendSV_Handler:
 
     @ Update current_core[core_id].
     str  r0, [r2]             @ current_core[core_id] = next PCB
+
+    mov  r4, r0
+    bl   arm_take_kernel_context
+    cmp  r0, #0
+    bne  .Larm_kernel_restore_kernel_v8
+    mov  r0, r4
 
     @ ── Phase 3: restore incoming MSP from next->kernel_sp ─────────────
     @ After exception return the CPU resumes Thread mode on PSP, but MSP
@@ -226,6 +399,12 @@ PendSV_Handler:
 
     @ Update current_core[core_id].
     str  r0, [r2]             @ current_core[core_id] = next PCB
+
+    mov  r4, r0
+    bl   arm_take_kernel_context
+    cmp  r0, #0
+    bne  .Larm_kernel_restore_kernel_v6
+    mov  r0, r4
 
     @ ── Phase 3: restore incoming MSP from next->kernel_sp ─────────────
     @ See M33 path above for rationale.
