@@ -403,7 +403,7 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
         -ffreestanding -nostdlib -Os -fPIC -Wl,--emit-relocs \
         -I$USER_DIR -I$PROJECT_DIR/src \
         $USER_ARCH_DIR/crt0.S $USER_ARCH_DIR/syscall.S \
-        $USER_DIR/lib/uclib.c"
+        $USER_DIR/lib/uclib.c $USER_DIR/lib/uc_heap.c"
     XTENSA_RAM_USER_FLAGS="$XTENSA_USER_COMMON_FLAGS \
         -T $USER_ARCH_DIR/user.ld"
     XTENSA_XIP_USER_FLAGS="$XTENSA_USER_COMMON_FLAGS \
