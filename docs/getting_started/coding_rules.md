@@ -81,7 +81,7 @@ Page-index conversions:
 - `mem_region_page_read/write(id, off, buf, len)` -- safe on all
   targets including i16.
 
-See [Memory Management](../kernel/memory_management.md) section 9.
+See [Memory Management](../kernel/memory.md) section 9.
 
 Run `./scripts/check_allocator_boundaries.sh` before committing
 allocator-related work.

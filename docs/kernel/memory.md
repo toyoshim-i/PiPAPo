@@ -536,7 +536,7 @@ uses a software swap via `mscratch` to achieve the same separation.
 
 ## 12. Related Documentation
 
-- [Kernel Module System](kernel_modules.md) -- module boundary
+- [Kernel Module System](modules.md) -- module boundary
   and `mem_region` as the public allocation API
 - [Intel 8086 Target](../targets/ia16.md) -- i16-specific memory
   model (S5)

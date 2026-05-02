@@ -116,9 +116,9 @@ SECTIONS {
 
 
     /* ------------------------------------------------------------------
-     * Per-process kernel stacks (ARM Cortex-M port: docs/proposals/
-     * arm_kernel_stack_change.md).  Slot 0 = 128 B (idle), slots 1..7
-     * = 2 KB each.  Total 128 + 7 × 2048 = 14464 bytes.  Must match
+     * Per-process kernel stacks (ARM Cortex-M; see
+     * docs/kernel/stack.md).  Slot 0 = 128 B (idle), slots
+     * 1..7 = 2 KB each.  Total 128 + 7 * 2048 = 14464 bytes.  Must match
      * PROC_KSTACK_IDLE_SIZE / PROC_KSTACK_SIZE / PROC_MAX in
      * src/kernel/common/config.h.
      * ------------------------------------------------------------------ */

@@ -135,6 +135,9 @@ Each process has:
 - Signal state (pending mask, handlers)
 - Process group and session IDs
 
+Kernel stack layout and switch mechanics are architecture-specific; see
+[`stack.md`](stack.md).
+
 ### vfork + exec
 
 No MMU means no Copy-on-Write fork. Instead:
@@ -165,11 +168,14 @@ Preemptive round-robin:
 
 ### Context Switch — Per-Architecture
 
-**ARM (Thumb):** SysTick fires every 10 ms (reload = SystemCoreClock/100 - 1). SysTick handler pends PendSV (lowest priority) for lazy context switch. `PendSV_Handler` (`src/kernel/proc/switch.S`) saves r4-r11 + LR to current PCB, loads next.
+The per-architecture switch paths, including synchronous blocking from inside
+syscalls, are documented in [`context_switch.md`](context_switch.md).
+
+**ARM (Thumb):** SysTick fires every 10 ms (reload = SystemCoreClock/100 - 1). SysTick handler pends PendSV (lowest priority) for async preemption. Blocked non-restart syscalls in Handler mode use `arm_kernel_sched_switch()` directly.
 
 **m68k:** A periodic timer interrupt directly calls the context switch routine, which saves/restores d2-d7/a2-a6 and the stack pointer.
 
-**RISC-V:** Timer interrupt (mtimecmp) fires every 10 ms. The handler sets `riscv_switch_pending`; after the ISR, trap.S calls `riscv_do_switch()` to swap the full 144-byte trap frame via the PCB's `sp` field and updates `mscratch` for the new process's kernel stack.
+**RISC-V:** Timer interrupt (mtimecmp) fires every 10 ms. The handler sets `switch_pending`; after the ISR, trap.S calls `riscv_do_switch()` to swap the full 144-byte trap frame via the PCB's `sp` field and updates `mscratch` for the new process's kernel stack.
 
 ### Dual-Core (RP2040 only)
 
@@ -212,7 +218,7 @@ The m68k QEMU target does not currently have memory protection. All code runs in
 User processes run in U-mode; the kernel runs in M-mode.  A single PMP entry
 covers the full address range with RWX access, allowing U-mode code to access
 all memory.  The kernel/user stack split uses `mscratch` to swap stack
-pointers on trap entry/exit (see [memory_management.md](/docs/kernel/memory_management.md) §11.3).
+pointers on trap entry/exit (see [memory.md](/docs/kernel/memory.md) §11.3).
 
 ## System Call Interface
 

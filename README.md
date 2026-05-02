@@ -33,7 +33,7 @@ A portable UNIX-like micro OS for bare-metal microcontrollers and retro CPUs.
 
 All targets share the same kernel source, syscall interface, VFS, and process model. Only drivers, boot sequences, linker scripts, and architecture-specific code (context switch, syscall trap) differ per target.
 
-On i16 (PC/XT), the kernel is split into separate code-segment modules (core + VFS) with far-call stubs at the boundaries. See [docs/kernel/kernel_modules.md](/docs/kernel/kernel_modules.md) and [docs/targets/ia16.md](/docs/targets/ia16.md).
+On i16 (PC/XT), the kernel is split into separate code-segment modules (core + VFS) with far-call stubs at the boundaries. See [docs/kernel/modules.md](/docs/kernel/modules.md) and [docs/targets/ia16.md](/docs/targets/ia16.md).
 
 ## Features
 

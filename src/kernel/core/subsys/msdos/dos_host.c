@@ -255,7 +255,7 @@ static void dos_build_psp(page_id_t base_id, uint16_t proc_seg,
 
 /* Stream `n` bytes from `vn` at `file_off` into the process run at byte
  * offset `run_off` (from base_id:0), chunked into ≤PAGE_SIZE reads per
- * the VFS contract (memory_management.md §9).  A single vnode_read with
+ * the VFS contract (memory.md §9).  A single vnode_read with
  * n > PAGE_SIZE would truncate via size_t on ia16. */
 static int dos_read_into_run(page_id_t base_id, uint32_t run_off, vnode_t *vn,
                              uint32_t file_off, uint32_t n) {

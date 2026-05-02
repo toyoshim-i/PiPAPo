@@ -559,7 +559,7 @@ reaches parity, then delete.
 - `docs/proposals/i8086_ecpu.md` — 8086 software emulator (becomes a
   vCPU backend under this plan).
 - `docs/proposals/v30_support.md` — V30 8080 mode (implemented by P-5).
-- `docs/kernel/kernel_modules.md` — current core/VFS module split.
+- `docs/kernel/modules.md` — current core/VFS module split.
 - `docs/subsystems/cpm.md`, `docs/subsystems/sos.md` — current
   subsystem behavior to preserve.
 - `src/kernel/core/cpu/cpu.h` — existing `cpu_ops_t` interface that

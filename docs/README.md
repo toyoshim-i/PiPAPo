@@ -21,7 +21,6 @@ This index is the entry point for project documentation.
   - [`getting_started/build_and_run.md`](getting_started/build_and_run.md)
   - [`getting_started/testing.md`](getting_started/testing.md)
   - [`getting_started/debugging.md`](getting_started/debugging.md)
-  - [`getting_started/build_system.md`](getting_started/build_system.md)
   - [`getting_started/porting.md`](getting_started/porting.md)
   - [`getting_started/coding_rules.md`](getting_started/coding_rules.md)
 
@@ -33,8 +32,10 @@ This index is the entry point for project documentation.
 
 - Kernel
   - [`kernel/overview.md`](kernel/overview.md)
-  - [`kernel/kernel_modules.md`](kernel/kernel_modules.md) — Module system (mod_core, mod_vfs)
-  - [`kernel/memory_management.md`](kernel/memory_management.md)
+  - [`kernel/modules.md`](kernel/modules.md) — Module system (mod_core, mod_vfs)
+  - [`kernel/context_switch.md`](kernel/context_switch.md) — Per-architecture context switching
+  - [`kernel/stack.md`](kernel/stack.md) — Per-architecture kernel stack mechanics
+  - [`kernel/memory.md`](kernel/memory.md)
   - [`kernel/syscall.md`](kernel/syscall.md)
   - [`kernel/filesystems.md`](kernel/filesystems.md)
   - [`kernel/ufs.md`](kernel/ufs.md)
@@ -45,6 +46,7 @@ This index is the entry point for project documentation.
   - [`proposals/pizero_port.md`](proposals/pizero_port.md) — Raspberry Pi Zero (future)
   - [`proposals/cardcomputer_port.md`](proposals/cardcomputer_port.md) — M5Stack CardComputer (Xtensa)
   - [`proposals/msdos_subsystem.md`](proposals/msdos_subsystem.md) — MS-DOS personality subsystem
+  - [`proposals/context_switch_cleanup.md`](proposals/context_switch_cleanup.md) — Context-switch and kernel-stack cleanup
   - [`proposals/i8086_ecpu.md`](proposals/i8086_ecpu.md) — i8086 eCPU emulator
   - [`proposals/gdb_rsp_stub.md`](proposals/gdb_rsp_stub.md) — GDB Remote Serial Protocol stub
 
