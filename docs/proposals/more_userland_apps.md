@@ -128,14 +128,22 @@ Characteristics:
 
 ### Tier 5 — System and admin
 
-Applets: `mount`, `umount`, `dmesg`, `free`.
+Applets: `mount`, `umount`, `free`.
 
 Characteristics:
-- `mount` / `umount` must match whatever syscall surface the VFS
-  actually exposes today — verify before implementing.  Likely a
-  thin wrapper.
-- `dmesg`, `free` read from procfs.
+- `free` reads `/proc/meminfo` (already exposes MemTotal / MemFree /
+  PageSize / DataMax / OomCount) — pure user-space.
+- `mount` / `umount`: listing mounts is a `/proc/mounts` read, but
+  the act of mounting / unmounting needs new user-space wrappers for
+  `SYS_MOUNT` (0x0900) and `SYS_UMOUNT2` (0x0901) added across all
+  five arch syscall.S files (the kernel side already exists).
 - `date` is already native (landed with Tier 2); not in this tier.
+
+Dropped: `dmesg`.  PPAP has no klog ring buffer today and adding one
+costs RAM on every target — for a feature whose live use case (boot
+diagnostics) is already covered by the immediate UART / console
+output during boot.  Reintroduce only if a concrete need for
+post-hoc log inspection emerges.
 
 ## Open follow-ups (kernel / uclib gaps surfaced by earlier tiers)
 
