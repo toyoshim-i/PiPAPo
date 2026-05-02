@@ -97,6 +97,11 @@ SYSCALL_STUB settimeofday, 0x0506
 # ppoll is a 5-arg syscall; a4 is already in place for RISC-V (no stack arg)
 SYSCALL_STUB ppoll,     0x0701
 
+# --- Mount / umount ---
+# mount is also 5-arg; same — a0-a4 already in place.
+SYSCALL_STUB mount,     0x0900
+SYSCALL_STUB umount2,   0x0901
+
 # --- System control ---
 SYSCALL_STUB poweroff,  0x0B00
 SYSCALL_STUB uname,     0x0B01

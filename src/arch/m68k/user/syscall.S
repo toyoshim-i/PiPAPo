@@ -529,6 +529,34 @@ ppoll:
     movem.l %sp@+, %d2-%d5
     rts
 
+| --- mount (SYS_MOUNT = 0x0900) -----------------------------------------------
+| int mount(const char *src, const char *tgt, const char *fstype,
+|           long flags, const void *data);
+    .globl mount
+mount:
+    movem.l %d2-%d5, %sp@-      | save d2-d5 (16 bytes)
+    move.l  20(%sp), %d1        | src
+    move.l  24(%sp), %d2        | tgt
+    move.l  28(%sp), %d3        | fstype
+    move.l  32(%sp), %d4        | flags
+    move.l  36(%sp), %d5        | data
+    move.l  #0x0900, %d0        | SYS_MOUNT
+    trap    #0
+    movem.l %sp@+, %d2-%d5
+    rts
+
+| --- umount2 (SYS_UMOUNT2 = 0x0901) -------------------------------------------
+| int umount2(const char *tgt, long flags);
+    .globl umount2
+umount2:
+    move.l  %d2, %sp@-
+    move.l  8(%sp), %d1         | tgt
+    move.l  12(%sp), %d2        | flags
+    move.l  #0x0901, %d0        | SYS_UMOUNT2
+    trap    #0
+    move.l  %sp@+, %d2
+    rts
+
 | --- poweroff (SYS_POWEROFF = 0x0B00) ----------------------------------------
 | void poweroff(void);
     .globl poweroff

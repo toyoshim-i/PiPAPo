@@ -697,3 +697,39 @@ poweroff:
   movw  $0x0B00, %ax
   int   $0x30
   SYSCALL_RET
+
+/* int mount(const char *src, const char *tgt, const char *fstype,
+ *           long flags, const void *data);
+ * Note: `flags` is a 32-bit long.  We pass only the low 16 bits — the
+ * kernel zero-extends to uint32_t, and PPAP only honours MS_RDONLY=1
+ * today, so this is a non-issue in practice. */
+  .global mount
+mount:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx      /* src */
+  movw  6(%bp), %cx      /* tgt */
+  movw  8(%bp), %dx      /* fstype */
+  movw  10(%bp), %si     /* flags low half (high half at 12(%bp) ignored) */
+  movw  14(%bp), %di     /* data */
+  movw  $0x0900, %ax
+  int   $0x30
+  SYSCALL_RET
+
+/* int umount2(const char *tgt, long flags);
+ * Same long-arg note as mount above. */
+  .global umount2
+umount2:
+  pushw %bp
+  movw  %sp, %bp
+  pushw %bx
+  pushw %si
+  pushw %di
+  movw  4(%bp), %bx      /* tgt */
+  movw  6(%bp), %cx      /* flags low half */
+  movw  $0x0901, %ax
+  int   $0x30
+  SYSCALL_RET

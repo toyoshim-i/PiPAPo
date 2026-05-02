@@ -51,8 +51,8 @@ CONFIG_SED=y
 # CONFIG_FEATURE_TOP_CPU_GLOBAL_PERCENTS is not set
 
 # -- Filesystem utilities -----------------------------------------------------
-CONFIG_MOUNT=y
-CONFIG_UMOUNT=y
+# CONFIG_MOUNT is not set (using native PPAP mount)
+# CONFIG_UMOUNT is not set (using native PPAP umount)
 # CONFIG_DF is not set (using native PPAP df)
 
 # -- Editor -------------------------------------------------------------------

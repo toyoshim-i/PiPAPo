@@ -87,3 +87,7 @@ SYSCALL_STUB settimeofday, 0x0506
 
 # --- Poll ---
 SYSCALL_STUB ppoll,     0x0701
+
+# --- Mount / umount ---
+SYSCALL_STUB mount,     0x0900
+SYSCALL_STUB umount2,   0x0901

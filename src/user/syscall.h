@@ -18,6 +18,7 @@
 #include "common/dirent.h"
 #include "common/fcntl.h"
 #include "common/iovec.h"
+#include "common/mount.h"
 #include "common/poll.h"
 #include "common/ptrace.h"
 #include "common/seek.h"
@@ -211,6 +212,14 @@ static inline int getdents(int fd, struct dirent *buf, size_t count) {
 static inline int statfs64(const char *path, long sz, struct statfs *buf) {
   return (int)ppap_xtensa_syscall3(0x0305, (long)path, sz, (long)buf);
 }
+static inline int mount(const char *src, const char *tgt, const char *fstype,
+                        long flags, const void *data) {
+  return (int)ppap_xtensa_syscall5(0x0900, (long)src, (long)tgt, (long)fstype,
+                                   flags, (long)data);
+}
+static inline int umount2(const char *tgt, long flags) {
+  return (int)ppap_xtensa_syscall2(0x0901, (long)tgt, flags);
+}
 
 static inline void *brk(void *addr) {
   return (void *)ppap_xtensa_syscall1(0x0400, (long)addr);
@@ -289,6 +298,9 @@ int utimes(const char *path, const void *times);
 int stat(const char *path, struct stat *buf);
 int getdents(int fd, struct dirent *buf, size_t count);
 int statfs64(const char *path, long sz, struct statfs *buf);
+int mount(const char *src, const char *tgt, const char *fstype, long flags,
+          const void *data);
+int umount2(const char *tgt, long flags);
 
 /* ── Memory management ──────────────────────────────────────────────── */
 

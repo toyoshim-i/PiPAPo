@@ -487,6 +487,35 @@ utimes:
 
     .ltorg                 @ literal pool for new stubs
 
+@ --- mount (SYS_MOUNT = 0x0900) -----------------------------------------------
+@ int mount(const char *src, const char *tgt, const char *fstype,
+@           long flags, const void *data);
+@ 5-arg syscall: arg5 (data) goes in r4 from the stack.
+.section .text.mount, "ax", %progbits
+.global mount
+.thumb_func
+mount:
+    push {r4, r7, lr}
+    ldr  r4, [sp, #12]    @ 5th arg from stack (above saved r4,r7,lr)
+    ldr  r7, =0x0900      @ SYS_MOUNT
+    DO_SYSCALL
+    pop  {r4, r7, pc}
+
+    .ltorg
+
+@ --- umount2 (SYS_UMOUNT2 = 0x0901) -------------------------------------------
+@ int umount2(const char *tgt, long flags);
+.section .text.umount2, "ax", %progbits
+.global umount2
+.thumb_func
+umount2:
+    push {r7, lr}
+    ldr  r7, =0x0901      @ SYS_UMOUNT2
+    DO_SYSCALL
+    pop  {r7, pc}
+
+    .ltorg
+
 @ --- nanosleep (SYS_NANOSLEEP = 0x0500) ---------------------------------------
 @ int nanosleep(const void *req, void *rem);
 .section .text.nanosleep, "ax", %progbits
