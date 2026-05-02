@@ -70,6 +70,7 @@ SYSCALL_STUB mkdir,     0x0204
 SYSCALL_STUB rmdir,     0x0205
 SYSCALL_STUB unlink,    0x0206
 SYSCALL_STUB chdir,     0x0207
+SYSCALL_STUB readlink,  0x0208
 SYSCALL_STUB rename,    0x0209
 SYSCALL_STUB chmod,     0x020B
 SYSCALL_STUB link,      0x020E
@@ -91,3 +92,6 @@ SYSCALL_STUB ppoll,     0x0701
 # --- Mount / umount ---
 SYSCALL_STUB mount,     0x0900
 SYSCALL_STUB umount2,   0x0901
+
+# --- System control ---
+SYSCALL_STUB poweroff,  0x0B00
