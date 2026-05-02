@@ -56,9 +56,12 @@ target_include_directories(ppap_pico1calc PRIVATE
 target_compile_definitions(ppap_pico1calc PRIVATE
     PPAP_HAS_BLKDEV=1
     PPAP_HAS_PROCFS=1
-    SRAM_KERNEL_SIZE=32768u
-    PAGE_POOL_BASE=0x20008000u
-    PAGE_COUNT_MAX=48u
+    PPAP_ARM_KSTACK_REGION=1
+    # TODO: reduce this after CP/M/deep subsystem paths are stack-optimized.
+    PROC_KSTACK_SIZE=2048u
+    SRAM_KERNEL_SIZE=49152u
+    PAGE_POOL_BASE=0x2000C000u
+    PAGE_COUNT_MAX=44u
 )
 target_link_libraries(ppap_pico1calc pico_base_headers hardware_regs)
 target_sources(ppap_pico1calc PRIVATE $<TARGET_OBJECTS:bs2_default_library>)

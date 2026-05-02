@@ -43,10 +43,10 @@
  *
  * SRAM layout (total 264KB):
  *
- *   0x20000000  +-----------------------+  <- RAM_KERNEL  (32KB)
+ *   0x20000000  +-----------------------+  <- RAM_KERNEL  (48KB)
  *               | Kernel .data/.bss     |     Kernel globals, initial stack
- *               | Stack (grows down)    |
- *   0x20008000  +-----------------------+  <- RAM_PAGES   (192KB)
+ *               | Kstacks + boot stack  |
+ *   0x2000C000  +-----------------------+  <- RAM_PAGES   (176KB)
  *               | Page pool             |     User process pages (Phase 1+)
  *   0x20038000  +-----------------------+  <- RAM_IOBUF   (24KB)
  *               | I/O buffer            |     SD card DMA, FS metadata cache
@@ -66,8 +66,8 @@ MEMORY {
     FLASH_ROMFS  (r)   : ORIGIN = 0x1003C000, LENGTH = 16M - 0x3C000
 
     /* On-chip SRAM — 264KB total */
-    RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 32K
-    RAM_PAGES    (rwx) : ORIGIN = 0x20008000, LENGTH = 192K
+    RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 48K
+    RAM_PAGES    (rwx) : ORIGIN = 0x2000C000, LENGTH = 176K
     RAM_IOBUF    (rw)  : ORIGIN = 0x20038000, LENGTH = 24K
     RAM_DMA      (rw)  : ORIGIN = 0x2003E000, LENGTH = 16K
 }
@@ -205,6 +205,20 @@ SECTIONS {
 
 
     /* ------------------------------------------------------------------
+     * Per-process kernel stacks.  Slot 0 = 128 B (idle), slots 1..7
+     * = 2 KB each.  Total 128 + 7 × 2048 = 14464 bytes.  Must match
+     * PROC_KSTACK_IDLE_SIZE / PROC_KSTACK_SIZE / PROC_MAX in
+     * src/kernel/common/config.h and pico1calc's compile definitions.
+     * ------------------------------------------------------------------ */
+    .kstack (NOLOAD) : {
+        . = ALIGN(8);
+        __kstack_region_base = .;
+        . += 14464;
+        __kstack_region_end = .;
+    } > RAM_KERNEL
+
+
+    /* ------------------------------------------------------------------
      * Kernel stack — 4KB, grows downward from __stack_top.
      * __stack_top is loaded into SP by the vector table entry.
      * ------------------------------------------------------------------ */
@@ -215,9 +229,9 @@ SECTIONS {
         __stack_top = .;
     } > RAM_KERNEL
 
-    /* Sanity check: kernel data + bss + stack must fit in RAM_KERNEL */
+    /* Sanity check: kernel data + bss + kstacks + stack must fit in RAM_KERNEL */
         ASSERT((__stack_top <= ORIGIN(RAM_KERNEL) + LENGTH(RAM_KERNEL)),
-            "ERROR: Kernel data + bss + stack overflow RAM_KERNEL (32KB)")
+            "ERROR: Kernel data + bss + kstacks + stack overflow RAM_KERNEL (48KB)")
 
     __flash_kernel_used = (LOADADDR(.ramfunc) + SIZEOF(.ramfunc)) - ORIGIN(FLASH_KERNEL);
     __flash_kernel_free = LENGTH(FLASH_KERNEL) - __flash_kernel_used;
@@ -227,7 +241,7 @@ SECTIONS {
 
     /* ------------------------------------------------------------------
      * Page pool — managed by the memory manager (Phase 1+).
-     * 50 pages × 4KB = 200KB.  Symbols exposed for kernel use.
+     * 44 pages × 4KB = 176KB.  Symbols exposed for kernel use.
      * ------------------------------------------------------------------ */
     .page_pool (NOLOAD) : {
         __page_pool_start = .;
