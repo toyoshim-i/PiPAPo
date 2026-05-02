@@ -57,11 +57,13 @@ __a_barrier_dummy:
 .hidden __a_gettp_dummy
 .type __a_gettp_dummy,%function
 __a_gettp_dummy:
+	mov r1, r9
 	ldr r0, 1f
+	ldr r0, [r1, r0]
 	ldr r0, [r0]
 2:	bx lr
 	.align 2
-1:	.word __ppap_tp
+1:	.word __ppap_tp(GOT)
 
 /* ------------------------------------------------------------------ */
 /* Function-pointer dispatch table (in .data so __set_thread_area can */

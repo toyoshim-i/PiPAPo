@@ -18,7 +18,7 @@ __pycache__/
 docs/private/
 
 # Local overlays
-overlay*
+/overlay*
 
 # ESP-IDF managed components
 src/target/xtensa_cc/managed_components/

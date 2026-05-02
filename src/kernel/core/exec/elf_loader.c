@@ -32,7 +32,16 @@ typedef struct {
   uint32_t stack_top;
   uint32_t got_sram_addr;
   uint32_t load_base; /* effective base for gp (= data_base - data_va) */
+  uint32_t phdr_addr;
+  uint32_t phent;
+  uint32_t phnum;
 } elf_load_result_t;
+
+#define PPAP_AT_NULL 0u
+#define PPAP_AT_PHDR 3u
+#define PPAP_AT_PHENT 4u
+#define PPAP_AT_PHNUM 5u
+#define PPAP_AT_PAGESZ 6u
 
 typedef enum {
   ELF_TEXT_XIP,  /* Execute text in-place from file buffer */
@@ -530,6 +539,10 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
     out->entry |= (e_entry & 1u);
   }
   p->image.entry = out->entry;
+  if (text_mode == ELF_TEXT_XIP)
+    out->phdr_addr = (uint32_t)(uintptr_t)(file_buf + ehdr->e_phoff);
+  out->phent = ehdr->e_phentsize;
+  out->phnum = ehdr->e_phnum;
 
   /* --- 4. Data segment: always SRAM ---
    * When the linker produces multiple writable PT_LOAD segments (e.g.
@@ -710,19 +723,22 @@ static int elf_load_from_buffer(pcb_t *p, const uint8_t *file_buf,
    *              0                        (argv terminator)
    *              envp[0] .. envp[envc-1]
    *              0                        (envp terminator)
+   *              AT_PHDR    runtime program-header address
+   *              AT_PHENT   sizeof(Elf32_Phdr)
+   *              AT_PHNUM   program-header count
    *              AT_PAGESZ  PAGE_SIZE
    *              AT_NULL    0
    *              [argv strings]           (then envp strings above)
    *              [envp strings]
    *   stack_top
    *
-   * Fixed frame words: argc(1) + argv_term(1) + envp_term(1) + auxv(4)
-   * + argv_ptrs(argc) + envp_ptrs(envc) = argc + envc + 7.
+   * Fixed frame words: argc(1) + argv_term(1) + envp_term(1) + auxv(10)
+   * + argv_ptrs(argc) + envp_ptrs(envc) = argc + envc + 13.
    *
    * Computing argv_sp up front lets us write pointer slots in the
    * frame as we copy each string, so no intermediate kernel arrays are
    * needed.  Align to 8 bytes on non-m68k for the userland ABI. */
-  uint32_t frame_bytes = (uint32_t)(argc + envc + 7) * 4u;
+  uint32_t frame_bytes = (uint32_t)(argc + envc + 13) * 4u;
   argv_sp = sp - strings_bytes - frame_bytes;
   if (cpu_ops->arch_id == CPU_ARCH_M68K)
     argv_sp &= ~3u;
@@ -752,12 +768,18 @@ static int elf_load_from_buffer(pcb_t *p, const uint8_t *file_buf,
   }
   frame[envp_base + (uint32_t)envc] = 0; /* envp terminator */
 
-  /* auxv: AT_PAGESZ, AT_NULL */
+  /* auxv: enough for musl static TLS setup, then AT_NULL */
   uint32_t auxv_base = envp_base + (uint32_t)envc + 1u;
-  frame[auxv_base + 0] = 6; /* AT_PAGESZ tag */
-  frame[auxv_base + 1] = PAGE_SIZE;
-  frame[auxv_base + 2] = 0; /* AT_NULL tag */
-  frame[auxv_base + 3] = 0;
+  frame[auxv_base + 0] = PPAP_AT_PHDR;
+  frame[auxv_base + 1] = res.phdr_addr;
+  frame[auxv_base + 2] = PPAP_AT_PHENT;
+  frame[auxv_base + 3] = res.phent;
+  frame[auxv_base + 4] = PPAP_AT_PHNUM;
+  frame[auxv_base + 5] = res.phnum;
+  frame[auxv_base + 6] = PPAP_AT_PAGESZ;
+  frame[auxv_base + 7] = PAGE_SIZE;
+  frame[auxv_base + 8] = PPAP_AT_NULL;
+  frame[auxv_base + 9] = 0;
 
   sp = argv_sp;
 

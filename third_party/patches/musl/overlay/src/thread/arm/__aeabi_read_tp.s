@@ -11,8 +11,10 @@
 .global __aeabi_read_tp
 .type __aeabi_read_tp,%function
 __aeabi_read_tp:
+	mov r1, r9
 	ldr r0, 1f
+	ldr r0, [r1, r0]
 	ldr r0, [r0]
 	bx lr
 	.align 2
-1:	.word __ppap_tp
+1:	.word __ppap_tp(GOT)
