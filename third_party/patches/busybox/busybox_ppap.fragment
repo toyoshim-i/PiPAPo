@@ -38,7 +38,7 @@ CONFIG_LFS=y
 # CONFIG_HEAD is not set (using native PPAP head)
 # CONFIG_TAIL is not set (using native PPAP tail; stdin not yet supported)
 # CONFIG_WC is not set (using native PPAP wc)
-CONFIG_SORT=y
+# CONFIG_SORT is not set (using native PPAP sort)
 CONFIG_SED=y
 
 # -- Process management -------------------------------------------------------

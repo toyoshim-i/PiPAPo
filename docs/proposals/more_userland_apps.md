@@ -110,23 +110,23 @@ corresponding `CONFIG_*=y` entries be removed from busybox) before
 moving on.  Each tier cut from busybox actually shrinks the binary,
 avoiding the "naive replacement temporarily increases size" trap.
 
-### Tier 4 — Heavy text utilities
+### Tier 4 — Heavy text utilities (complete)
 
-Applets: ~~`grep`~~ (fixed-string match landed; regex deferred),
-`sort` (line buffer + merge for >RAM input).
+~~`grep`~~ (fixed-string match) and ~~`sort`~~ (in-memory) both landed.
+Tier 4 done; the only busybox text utility left is `sed`.
 
-Deferred: `sed`, regex support for `grep` (BRE/ERE).  A full `sed`
-implementation is substantial and busybox covers it well; only
-reimplement if we have a specific need.  Same for grep regex —
-fixed-string covers the common case and busybox provides regex
-fallback via /bin/sh.
+Deferred: `sed`, regex support for `grep` (BRE/ERE), external-merge
+sort for >RAM input.  Full `sed` is substantial and busybox covers it
+well.  Same for grep regex — fixed-string covers the common case.
+Sort merge would require a temp-file phase that we don't need yet.
 
-Characteristics:
-- `grep` (done): fixed-string match with `-n -i -v -c -q -h -H -F`,
-  multi-file + stdin, 1 KB line buffer (longer lines silently
-  truncated for matching).  ~7 KB stripped per arch.
-- `sort` likely wants a `uc_malloc`-backed line index for its
-  in-memory phase.
+What landed:
+- `grep`: fixed-string match with `-n -i -v -c -q -h -H -F`, multi-file
+  + stdin, 1 KB line buffer (longer lines silently truncated for
+  matching).  ~7 KB stripped per arch.
+- `sort`: `-r -n -u -f`, multi-file + stdin, in-memory only.
+  4 KB `uc_malloc` heap pool, growing input buffer + `line_t` index.
+  Insertion sort (small-N inputs only).  ~6.5 KB stripped per arch.
 
 ### Tier 5 — System and admin
 
@@ -166,6 +166,13 @@ post-hoc log inspection emerges.
   pipe stages instead of running its `echo` builtin.  Test scripts
   must use `printf` (the native applet) or single-quoted `cat << EOF`
   redirection.  Worth either fixing in push or documenting clearly.
+- **`ls` colorizes when stdout is a pipe.**  `ls /bin | sort` produces
+  visually-unsorted output because every symlink entry is wrapped in
+  `ESC[1;36m` … `ESC[0m`, and `sort` (correctly) sorts by raw bytes —
+  ESC sorts before all letters, so all colored entries float to the
+  top.  POSIX `ls` only colorizes when stdout is a TTY; PPAP's `ls`
+  should follow that convention (test with `isatty` / fallback flag).
+  Surfaced while smoke-testing native `sort`.
 
 ## Output style: colorful VT100 by default
 
