@@ -112,19 +112,21 @@ avoiding the "naive replacement temporarily increases size" trap.
 
 ### Tier 4 — Heavy text utilities
 
-Applets: `grep` (fixed string first, then basic regex), `sort` (line
-buffer + merge for >RAM input).
+Applets: ~~`grep`~~ (fixed-string match landed; regex deferred),
+`sort` (line buffer + merge for >RAM input).
 
-Deferred: `sed`.  A full `sed` implementation is substantial and
-busybox covers it well; only reimplement if we have a specific need.
+Deferred: `sed`, regex support for `grep` (BRE/ERE).  A full `sed`
+implementation is substantial and busybox covers it well; only
+reimplement if we have a specific need.  Same for grep regex —
+fixed-string covers the common case and busybox provides regex
+fallback via /bin/sh.
 
 Characteristics:
-- `grep` and `sort` are where native apps start to push against the
-  128 KB data budget.  Streaming / chunked algorithms required.
+- `grep` (done): fixed-string match with `-n -i -v -c -q -h -H -F`,
+  multi-file + stdin, 1 KB line buffer (longer lines silently
+  truncated for matching).  ~7 KB stripped per arch.
 - `sort` likely wants a `uc_malloc`-backed line index for its
   in-memory phase.
-- `grep` may benefit from a small regex helper in uclib (or its own
-  hand-rolled BRE walker — both are reasonable).
 
 ### Tier 5 — System and admin
 

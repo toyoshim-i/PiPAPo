@@ -70,7 +70,7 @@ endif()
 # --- User-space program lists ---
 
 # Application programs (sources in src/user/)
-set(USER_APPS hello getty init trace pdb push cat ls ps df top pi pile calc uname sleep mkdir reset rmdir rm kill touch date cp mv chmod ln wc head tail printf basename dirname yes cut tr free mount umount)
+set(USER_APPS hello getty init trace pdb push cat ls ps df top pi pile calc uname sleep mkdir reset rmdir rm kill touch date cp mv chmod ln wc head tail printf basename dirname yes cut tr free mount umount grep)
 # ttyctl is pico1calc-only (LCD terminal control)
 if(CMAKE_PROJECT_NAME STREQUAL "ppap_pico1calc")
     list(APPEND USER_APPS ttyctl)
@@ -131,7 +131,7 @@ set(USER_MUSL_TESTS
 
 # Applets that link to busybox binary
 set(BB_APPLETS
-    grep hush
+    hush
     sed sort
 )
 # Sbin applets — link to busybox via ../bin/busybox
