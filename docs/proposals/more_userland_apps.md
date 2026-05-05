@@ -112,13 +112,12 @@ avoiding the "naive replacement temporarily increases size" trap.
 
 ### Tier 4 — Heavy text utilities (complete)
 
-~~`grep`~~ (fixed-string match) and ~~`sort`~~ (in-memory) both landed.
-Tier 4 done; the only busybox text utility left is `sed`.
+~~`grep`~~, ~~`sort`~~, ~~`sed`~~ all landed.  Tier 4 done.
 
-Deferred: `sed`, regex support for `grep` (BRE/ERE), external-merge
-sort for >RAM input.  Full `sed` is substantial and busybox covers it
-well.  Same for grep regex — fixed-string covers the common case.
-Sort merge would require a temp-file phase that we don't need yet.
+Deferred: regex support for `grep` (BRE/ERE), external-merge sort for
+>RAM input, `sed` hold space + branch commands.  Fixed-string `grep`
+covers the common case; native `sed` already handles BRE so users who
+want regex search can do `sed -n '/pat/p'`.
 
 What landed:
 - `grep`: fixed-string match with `-n -i -v -c -q -h -H -F`, multi-file
@@ -127,6 +126,12 @@ What landed:
 - `sort`: `-r -n -u -f`, multi-file + stdin, in-memory only.
   4 KB `uc_malloc` heap pool, growing input buffer + `line_t` index.
   Insertion sort (small-N inputs only).  ~6.5 KB stripped per arch.
+- `sed`: `-n -e -f`, commands `s/// d p = q n N`, addresses (line
+  number, `$`, `/RE/`, range), full BRE (`. * ^ $ [...] \(\) \1..\9`)
+  with backrefs and `&` in replacements.  Limits: 32 commands, 16
+  regexes, 4 KB pattern space.  ~10 KB stripped (ARM) / ~17 KB (m68k).
+  Hold space (`h H g G x`), labels/branches (`: b t`), and
+  insert/append/change (`i a c`) deferred.
 
 ### Tier 5 — System and admin
 

@@ -1,9 +1,9 @@
 # PicoPiAndPortable — busybox config fragment
 # Applied on top of allnoconfig via build_busybox.sh
 #
-# Single busybox binary containing all applets plus hush shell.
-# The default /bin/sh is PPAP's own push shell; hush is available
-# as /bin/hush for bash-compatible scripting.
+# Single busybox binary built only for the few applets PPAP hasn't
+# replaced natively yet (sed today).  The default /bin/sh is PPAP's
+# own push shell.
 #
 # Key design choices:
 #   - NOMMU mode (no fork, vfork-only)
@@ -39,7 +39,7 @@ CONFIG_LFS=y
 # CONFIG_TAIL is not set (using native PPAP tail; stdin not yet supported)
 # CONFIG_WC is not set (using native PPAP wc)
 # CONFIG_SORT is not set (using native PPAP sort)
-CONFIG_SED=y
+# CONFIG_SED is not set (using native PPAP sed)
 
 # -- Process management -------------------------------------------------------
 # CONFIG_KILL is not set (using native PPAP kill)
@@ -64,18 +64,9 @@ CONFIG_SED=y
 # -- System -------------------------------------------------------------------
 # CONFIG_UNAME is not set (using native PPAP uname)
 
-# -- Shell (hush) -------------------------------------------------------------
-CONFIG_HUSH=y
-CONFIG_SH_IS_HUSH=y
-CONFIG_HUSH_BASH_COMPAT=y
-CONFIG_HUSH_HELP=y
-CONFIG_HUSH_INTERACTIVE=y
-CONFIG_HUSH_EXPORT=y
-CONFIG_HUSH_READONLY=y
-CONFIG_HUSH_TICK=y
-CONFIG_HUSH_IF=y
-CONFIG_HUSH_LOOPS=y
-CONFIG_HUSH_CASE=y
-CONFIG_HUSH_FUNCTIONS=y
-CONFIG_HUSH_LOCAL=y
+# -- Shell --------------------------------------------------------------------
+# hush dropped — PPAP's `push` is /bin/sh.  No system script needed bash
+# compatibility, and shipping two shells doubled the binary footprint.
+# CONFIG_HUSH is not set
+# CONFIG_SH_IS_HUSH is not set
 
