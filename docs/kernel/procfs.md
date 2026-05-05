@@ -129,7 +129,7 @@ Only processes that are not in `PROC_FREE` state are listed.
 ### `/proc/<pid>/stat`
 
 Process status in Linux 52-field format (one line). This is the format expected
-by the native `ps` utility (and optionally busybox `ps`/`top`).
+by the native `ps` and `top` utilities.
 
 ```
 1 (init) S 0 1 1 0 -1 4194304 0 0 0 0 45 67 0 0 20 0 1 0 100 8192 2 0 0 ...

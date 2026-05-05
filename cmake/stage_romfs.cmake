@@ -6,9 +6,6 @@
 #   STAGING       — output staging directory
 #   PROJECT_ROOT  — project root for src/common headers
 #   USER_ELFS     — semicolon-separated list of user ELF paths
-#   BB_DIR        — busybox build directory
-#   BB_APPLETS    — semicolon-separated list of busybox applets
-#   BB_SBIN_APPLETS  — semicolon-separated list of sbin applets
 #   ROGUE         — path to rogue binary
 #   ETC_DIR       — base /etc directory
 #
@@ -73,17 +70,6 @@ file(CREATE_LINK "push" "${STAGING}/bin/sh" SYMBOLIC)
 
 # --- /bin/vi → pi ---
 file(CREATE_LINK "pi" "${STAGING}/bin/vi" SYMBOLIC)
-
-# --- Install busybox (if available) ---
-if(BB_DIR AND EXISTS "${BB_DIR}/busybox")
-    file(COPY "${BB_DIR}/busybox" DESTINATION "${STAGING}/bin")
-    foreach(a IN LISTS BB_APPLETS)
-        file(CREATE_LINK "busybox" "${STAGING}/bin/${a}" SYMBOLIC)
-    endforeach()
-    foreach(a IN LISTS BB_SBIN_APPLETS)
-        file(CREATE_LINK "../bin/busybox" "${STAGING}/sbin/${a}" SYMBOLIC)
-    endforeach()
-endif()
 
 # --- Install rogue (if available) ---
 if(ROGUE AND EXISTS "${ROGUE}")

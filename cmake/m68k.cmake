@@ -9,11 +9,11 @@
 
 include_guard(GLOBAL)
 
-# Shared build directory for userland artifacts (musl, busybox, etc.).
-# All m68k targets share one build to avoid redundant musl/busybox rebuilds.
+# Shared build directory for userland artifacts (musl, rogue, etc.).
+# All m68k targets share one build to avoid redundant musl/rogue rebuilds.
 set(PPAP_SHARED_BUILD "${PPAP_ROOT}/build/m68k")
 
-# Userland build config (musl, busybox, romfs pipeline)
+# Userland build config (musl, rogue, romfs pipeline)
 # Must be included before kernel.cmake to define PPAP_ENABLE_* options
 include(${CMAKE_CURRENT_LIST_DIR}/user.cmake)
 

@@ -51,11 +51,10 @@ Reference implementation: `src/user/` directory.
 ### Path B: musl libc
 
 Link against musl libc for full POSIX C library support (`printf`,
-`malloc`, `fopen`, etc.). This is what busybox and Rogue use and is the
-recommended path for non-trivial applications.
+`malloc`, `fopen`, etc.). This is what Rogue uses and is the
+recommended path for ports of existing UNIX applications.
 
-Reference implementations:
-- `third_party/build_busybox.sh` — busybox (multicall binary)
+Reference implementation:
 - `third_party/build_rogue.sh` — Rogue 5.4.4 (standalone build script, minimal curses shim)
 
 ## 3. Toolchain Requirements
@@ -514,7 +513,7 @@ kernel binary. The romfs filesystem is read-only.
 The romfs image is assembled at build time from two sources:
 
 - **`src/etc/`** — config file templates (fstab, passwd, inittab, …)
-- **`build/<arch>/romfs/`** — built binaries (busybox, rogue, user programs)
+- **`build/<arch>/romfs/`** — built binaries (rogue, user programs)
 
 Per-target staging merges these into `build/<arch>/romfs_<target>/`.
 

@@ -8,8 +8,6 @@ It is a minimal, purpose-built shell that runs without malloc, targets
 PiPAPo's multi-subsystem architecture (CP/M, Human68k, SOS, etc.) — notably
 case-insensitive PATH search for retro subsystem compatibility.
 
-Busybox hush is optionally available as `/bin/hush` for POSIX compatibility.
-
 ## Resource Budget
 
 | Resource        | Limit         | Notes                                |
@@ -46,7 +44,7 @@ PiPAPo:/# echo hello
 hello
 PiPAPo:/# cd /bin
 PiPAPo:/bin# ls
-hello  push  hush  ps  cat  ...
+hello  push  ps  cat  grep  sed  ...
 PiPAPo:/bin# cd
 PiPAPo:/#
 ```
@@ -219,7 +217,7 @@ Words containing unquoted `*` or `?` are expanded against the
 filesystem before the command is run.
 
 ```sh
-ls *.com        # /bin/hello.com /bin/hush.com ...
+ls *.com        # /bin/hello.com /bin/sample.com ...
 cat /etc/h??t*  # /etc/hostname
 ```
 

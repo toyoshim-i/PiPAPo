@@ -49,8 +49,8 @@ ESP32-S3) has its own GCC build because the ISA is configurable per chip
 
 ### User-space (planned)
 
-- musl libc cross-compiled for Xtensa Call0 ABI
-- busybox port for shell and utilities
+- musl libc cross-compiled for Xtensa Call0 ABI (for Rogue and similar ports)
+- Native PPAP utilities and push shell already arch-portable
 
 ---
 
@@ -473,7 +473,7 @@ on vfork) has `pc=0, ps=0` — completely zeroed.
 - **PMS (memory protection):** user/kernel separation via ESP32-S3's
   Permission Management System.
 - **Dual-core:** Core 1 launch is stubbed.
-- **musl/busybox:** only bare-metal user binaries; no libc.
+- **musl libc:** not yet ported to Xtensa; only bare-metal user binaries run.
 - **Test suite:** no automated testing yet (no QEMU target; hardware only).
 
 ### XT-1 alignment
@@ -970,7 +970,7 @@ userland without destabilizing the port.
   approach without depending on direct romfs XIP.
 - Add musl support only after the process ABI, loader, and signal/restart
   behavior are stable.
-- Defer busybox until libc, process startup, and TTY behavior are reliable.
+- Defer Rogue (and any other musl-linked port) until libc, process startup, and TTY behavior are reliable.
 - Treat userland growth as a validation stage for the port, not as the means
   to discover basic scheduler or memory bugs.
 

@@ -2,11 +2,11 @@
 #
 # Included by cmake/arm_m.cmake and cmake/m68k.cmake.
 # Expects PPAP_SHARED_BUILD to be set before inclusion (the directory
-# where arch-shared artifacts like musl, busybox, rogue, user ELFs live).
+# where arch-shared artifacts like musl, rogue, user ELFs live).
 #
 # At include time, automatically registers build commands for:
-#   - musl libc, busybox, rogue (third-party)
-#   - User-space programs and busybox applet lists
+#   - musl libc, rogue (third-party)
+#   - User-space programs
 #   - mkromfs host tool
 #
 # Sets PPAP_USER_ELFS — list of user ELF paths for romfs generation.
@@ -126,14 +126,6 @@ set(USER_TESTS
 # Musl-linked test programs (sources in tests/user/, linked against musl libc)
 set(USER_MUSL_TESTS
     test_musl_child test_musl_fileio test_musl_dir test_musl_fmt)
-
-# --- Busybox applet lists ---
-
-# Applets that link to busybox binary
-set(BB_APPLETS
-)
-# Sbin applets — link to busybox via ../bin/busybox
-set(BB_SBIN_APPLETS)
 
 # =============================================================================
 # Arch-specific variables
@@ -274,7 +266,6 @@ endif()
 
 # Derived paths (shared artifacts in PPAP_SHARED_BUILD)
 set(PPAP_MUSL_LIBC  ${PPAP_MUSL_SYSROOT}/lib/libc.a)
-set(PPAP_BB_DIR     ${PPAP_SHARED_BUILD}/busybox)
 set(PPAP_ROGUE_DIR  ${PPAP_SHARED_BUILD}/rogue)
 
 # --- User program compile/link flags (cmake lists) ---
@@ -307,7 +298,7 @@ set(PPAP_APP_CFLAGS_STR
     "${PPAP_TARGET_FLAGS_STR} -Os -nostdinc -isystem ${PPAP_MUSL_SYSROOT}/include -isystem ${PPAP_GCC_INCLUDE} ${PPAP_PIC_FLAGS_STR} -ffunction-sections -fdata-sections ${_PIE_FLAG}")
 
 # =============================================================================
-# Generate specs file (used by busybox/rogue linking)
+# Generate specs file (used by rogue and musl-linked test apps)
 # =============================================================================
 file(WRITE ${PPAP_SPECS_FILE}
 "*startfile:
@@ -423,13 +414,13 @@ endfunction()
 # ppap_musl_test_program(name source)
 #
 # Creates custom commands to compile and link a user-space ELF against musl
-# libc (using the specs file and busybox linker script).  Used for test
+# libc (using the specs file and musl linker script).  Used for test
 # binaries that need to exercise musl code paths (e.g. double-free on exit).
 function(ppap_musl_test_program name source)
     set(_elf ${PPAP_SHARED_BUILD}/${name}.elf)
     set(_obj ${PPAP_SHARED_BUILD}/${name}.o)
 
-    # Compile with musl headers (same flags as busybox/rogue apps)
+    # Compile with musl headers (same flags as rogue)
     set(_musl_cflags
         ${PPAP_TARGET_FLAGS} -Os -nostdinc
         -isystem ${PPAP_MUSL_SYSROOT}/include
@@ -674,22 +665,6 @@ function(_ppap_add_musl)
     add_custom_target(musl_libc DEPENDS ${PPAP_MUSL_LIBC})
 endfunction()
 
-# _ppap_add_busybox()  [internal]
-# Registers a custom command to build busybox.
-# Output: ${PPAP_BB_DIR}/busybox
-function(_ppap_add_busybox)
-    add_custom_command(
-        OUTPUT ${PPAP_BB_DIR}/busybox
-        COMMAND ${CMAKE_COMMAND} -E env "PPAP_CONFIG=${PPAP_CONFIG_FILE}"
-                ${PPAP_ROOT}/third_party/build_busybox.sh
-        DEPENDS ${PPAP_ROOT}/third_party/build_busybox.sh
-                ${PPAP_ROOT}/third_party/patches/busybox/busybox_ppap.fragment
-                ${PPAP_BUSYBOX_LD}
-                ${PPAP_MUSL_LIBC}
-        COMMENT "Building busybox (${PPAP_ARCH_LABEL})"
-    )
-endfunction()
-
 # _ppap_add_rogue()  [internal]
 # Registers a custom command to build rogue.
 # Output: ${PPAP_ROGUE_DIR}/rogue
@@ -827,8 +802,6 @@ function(ppap_generate_romfs target)
 
     # CMake list separator for -D arguments
     string(REPLACE ";" "\\;" _user_elfs_escaped "${PPAP_USER_ELFS}")
-    string(REPLACE ";" "\\;" _bb_applets_escaped "${BB_APPLETS}")
-    string(REPLACE ";" "\\;" _bb_sbin_escaped "${BB_SBIN_APPLETS}")
     set(_exclude_args "")
     if(ARG_EXCLUDE_APPS)
         string(REPLACE ";" ":" _exclude_colon "${ARG_EXCLUDE_APPS}")
@@ -841,9 +814,6 @@ function(ppap_generate_romfs target)
                 -D "STAGING=${_romfs_staging}"
                 -D "PROJECT_ROOT=${PPAP_ROOT}"
                 -D "USER_ELFS=${_user_elfs_escaped}"
-                -D "BB_DIR=${PPAP_BB_DIR}"
-                -D "BB_APPLETS=${_bb_applets_escaped}"
-                -D "BB_SBIN_APPLETS=${_bb_sbin_escaped}"
                 -D "ROGUE=${_rogue_path}"
                 -D "ETC_DIR=${PPAP_ROOT}/src/etc"
                 -D "STRIP=${PPAP_STRIP}"
@@ -857,7 +827,6 @@ function(ppap_generate_romfs target)
                 ${_romfs_staging} ${_romfs_bin}
         DEPENDS ${PPAP_SHARED_BUILD}/mkromfs
                 ${PPAP_USER_ELFS}
-                ${PPAP_BB_DIR}/busybox
                 ${_rogue_dep}
                 ${PPAP_ROOT}/src/etc/fstab
                 ${PPAP_ROOT}/src/etc/inittab
@@ -979,7 +948,6 @@ endfunction()
 # =============================================================================
 
 _ppap_add_musl()
-_ppap_add_busybox()
 _ppap_add_rogue()
 _ppap_build_user_programs()
 _ppap_build_m68k_cross_programs()

@@ -9,7 +9,7 @@ Internal design reference for kernel developers.
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  User Space                                             │
-│  push shell, native utils, busybox, rogue, user programs│
+│  push shell, ~50 native utils, rogue, user programs     │
 │  musl libc (static) — or bare-metal syscall stubs       │
 ├────────────────────────┬────────────────────────────────┤
 │  Syscall Interface     │  Signal Delivery               │

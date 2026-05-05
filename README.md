@@ -10,7 +10,7 @@ A portable UNIX-like micro OS for bare-metal microcontrollers and retro CPUs.
 ## Goals
 
 - POSIX-subset system call interface — same syscall numbers across all architectures
-- Native **push** shell and core utilities (ps, ls, cat, df); optional **busybox** for extended applets
+- Native **push** shell and POSIX-flavoured core utilities (~50 applets, all written from scratch — no busybox)
 - Run **Rogue 5.4.4** (classic dungeon crawler) via a minimal VT100 curses shim
 - Root file system on flash/ROM as **romfs**; SD card as **VFAT (FAT32)** with **UFS** loopback images
 - Multiple target architectures and boards from a shared kernel codebase
@@ -39,7 +39,7 @@ On i16 (PC/XT), the kernel is split into separate code-segment modules (core + V
 
 - **Kernel** — preemptive scheduler, vfork/exec, signals, pipes, memory protection
 - **File systems** — romfs, VFAT (SD card), UFS (loopback images), devfs, procfs, tmpfs
-- **User space** — push shell, native utilities (ps, ls, cat, df, getty, pdb), musl libc, optional busybox, Rogue 5.4.4
+- **User space** — push shell, native utilities (ps, ls, cat, df, grep, sed, sort, getty, pdb, …), musl libc (for Rogue), Rogue 5.4.4
 - **5 architectures** — ARM Cortex-M, RISC-V (RV32IMAC), Motorola 68000, Xtensa LX7, Intel 8086
 - **eCPU emulators** — Z80 and m68k software interpreters enable cross-architecture binary execution (CP/M .COM, Human68k .X/.R, S-OS .OBJ)
 - **Subsystems** — Human68k, CP/M, S-OS SWORD — run retro OS binaries via syscall bridge
@@ -74,7 +74,7 @@ PPAP/
   src/            Kernel, arch overlays, target overlays, user programs
   tests/          Kernel integration tests, host unit tests, user-space tests
   tools/          Host tools (mkromfs, mkufs, mkfatimg, font converters)
-  third_party/    git submodules (pico-sdk, musl, busybox, rogue, esp-idf)
+  third_party/    git submodules (pico-sdk, musl, rogue, esp-idf)
   scripts/        setup.sh, build.sh, run.sh, test.sh, pre-build checks
   docs/           Design spec, kernel internals, target notes, proposals
 ```

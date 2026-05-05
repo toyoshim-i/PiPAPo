@@ -388,8 +388,7 @@ big-endian).  It contains the complete root filesystem:
 
 ```
 /sbin/init              First userland process
-/bin/sh -> busybox      Shell (symlink to BusyBox)
-/bin/busybox            BusyBox multi-call binary
+/bin/sh -> push         Shell (symlink to PPAP push)
 /bin/runtests           On-target test runner
 /bin/test_*             Test binaries
 /etc/profile            Shell profile (TERM=dumb, PS1, PATH)
@@ -690,10 +689,11 @@ the serial mirror (`_OUT232C`).
 
 ### 8.4 TERM=dumb for Shell Startup
 
-BusyBox hush's `ask_terminal()` sends ESC[6n (cursor position query)
-before `/etc/profile` is sourced.  Since the X68000 IOCS cannot respond
-to this query, it causes garbage bytes on screen.  The init process sets
-`TERM=dumb` in the default environment to suppress this behaviour.
+Some shells (historically hush, but kept as a precaution for any future
+musl-linked shell) probe terminal capabilities by sending ESC[6n
+(cursor position query) before `/etc/profile` is sourced.  The X68000
+IOCS cannot respond to this query, so init sets `TERM=dumb` in the
+default environment to suppress any such probe.
 
 ---
 

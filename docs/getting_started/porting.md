@@ -83,32 +83,6 @@ Key structs that must match musl's expectations:
 - `struct stat` — Linux-compatible layout
 - `struct dirent64` — variable-length with `d_ino`, `d_off`, `d_reclen`, `d_type`, `d_name`
 
-## busybox
-
-Built via `third_party/build_busybox.sh` with a custom defconfig.
-
-### Configuration
-
-Two fragment files in `third_party/patches/busybox/`:
-- `busybox_sh.fragment` — hush shell + init (CONFIG_HUSH=y)
-- `busybox_ppap.fragment` — applet selection, static linking, musl sysroot
-
-### Build Approach
-
-1. Start from `allnoconfig`
-2. Apply fragments via `scripts/kconfig/merge_config.sh`
-3. Cross-compile with musl sysroot (per architecture)
-4. Link with `-pie` and custom linker script
-5. Strip → install to romfs
-
-### Split Binaries (ARM)
-
-To reduce per-process SRAM footprint (GOT entries), busybox is optionally
-split into separate binaries:
-- `init` — PID 1 only (80 GOT entries, minimal SRAM)
-- `sh` — hush shell + applets (260 GOT entries)
-- Full busybox — all applets (784 GOT entries)
-
 ## Rogue 5.4.4
 
 Example port demonstrating the full pattern.

@@ -712,8 +712,8 @@ m68k porting effort.
 
 ### Phase E — User Space
 
-1. Port musl libc for armv6 (musl supports armv6 out of the box)
-2. Build busybox for armv6 (static, musl)
+1. Port musl libc for armv6 (needed only for ports like Rogue)
+2. Cross-build the existing PPAP native userland for armv6
 3. Interactive shell on QEMU
 4. Framebuffer console via GPU mailbox (HDMI output)
 
@@ -755,7 +755,7 @@ m68k porting effort.
 | BCM2835 undocumented quirks | Stalled bringup | Reference Linux, Circle OS, and RPi bare-metal projects |
 | USB driver complexity | No keyboard on real hardware | Use UART console first; USB is a Phase F stretch goal |
 | GPU mailbox protocol | No HDMI output | Reference `raspberrypi/firmware` wiki; UART console as fallback |
-| Scope creep (full Linux clone) | Never finishes | Keep PPAP philosophy: POSIX subset, busybox, correctness first |
+| Scope creep (full Linux clone) | Never finishes | Keep PPAP philosophy: POSIX subset, native utilities, correctness first |
 
 ---
 
@@ -801,7 +801,7 @@ A (arch abstraction — split arm_m / arm_a)
   └─→ B (QEMU bringup — boot, UART, exceptions)
         └─→ C (MMU — page tables, TLB, fault handler)
               └─→ D (process model — fork COW, exec, mmap)
-                    └─→ E (user space — musl, busybox, shell)
+                    └─→ E (user space — native utils + musl for Rogue)
                           └─→ F (Pi Zero hardware — SD, HDMI, USB)
 ```
 
