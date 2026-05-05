@@ -273,7 +273,8 @@ set(PPAP_USER_CFLAGS
     ${PPAP_TARGET_FLAGS}
     -ffreestanding -nostdlib -Os -g -Wall
     ${PPAP_PIC_FLAGS}
-    -I${PPAP_ARCH_DIR} -I${PPAP_ROOT}/src/user -I${PPAP_ROOT}/src)
+    -I${PPAP_ARCH_DIR} -I${PPAP_ROOT}/src/user -I${PPAP_ROOT}/src
+    -isystem ${PPAP_ROOT}/src/user/include)
 
 set(PPAP_USER_ASFLAGS ${PPAP_TARGET_FLAGS})
 
