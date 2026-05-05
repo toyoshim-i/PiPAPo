@@ -177,16 +177,17 @@ independent and can be done in any order after M2.
 
 ### M3 — Standard library gaps (lightweight)
 
-- `errno` storage: `src/user/lib/errno.c` defines `int errno;`.
-  Syscall wrappers stay returning `-errno`-style negatives for now;
-  M3 only declares the variable and the canonical names from
-  `<errno.h>` (`EINVAL`, `ENOENT`, …).  An optional pass converts
-  the wrappers to set `errno` and return `-1`, gated on whether
-  Rogue actually needs it (it does for `fopen` errors).
 - Add: `strtol`, `strtoul`, `qsort`, `bsearch`, `abs`, `labs`,
   `memmove`, `strstr`, `strspn`, `strcspn`, `strpbrk`, `strdup`.
-- Full `<ctype.h>` (probably as `static inline` or a 256-byte table).
-- Estimated +500 LOC.
+- Full `<ctype.h>` (`static inline` per entry).
+- `<errno.h>` continues to provide the error-code macros only.
+  The `errno` variable is **not** added in M3 — adding storage
+  with no setter would only hide bugs.  It lands together with
+  the syscall-wrapper conversion (set `errno`, return `-1` /
+  `NULL`) when the first consumer that actually needs it appears
+  (Rogue's `fopen` failure path in M6, or earlier if a port
+  surfaces the need).
+- Estimated +400 LOC.
 
 ### M4 — `<stdio.h>` FILE streams
 

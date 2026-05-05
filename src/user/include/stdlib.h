@@ -1,9 +1,9 @@
 /*
- * <stdlib.h> — general utilities (allocation, conversions, environment).
+ * <stdlib.h> — general utilities (allocation, conversions, environment,
+ * sorting / searching).
  *
- * POSIX subset; implementations live in src/user/lib/stdlib.c.
- * Numeric conversion (strtol, strtoul), sorting (qsort), and the
- * remaining standard surface will be added in a later milestone.
+ * POSIX subset; allocator entries live in src/user/lib/alloc.c, the
+ * rest in src/user/lib/stdlib.c.
  *
  * The malloc allocator must be seeded with a caller-owned static
  * pool via uc_heap_init() (declared in <lib/uclib.h>) before the
@@ -19,6 +19,17 @@ void *malloc(size_t size);
 void free(void *ptr);
 
 int atoi(const char *s);
+long strtol(const char *nptr, char **endptr, int base);
+unsigned long strtoul(const char *nptr, char **endptr, int base);
+
+int abs(int x);
+long labs(long x);
+
+void qsort(void *base, size_t nmemb, size_t size,
+           int (*compar)(const void *, const void *));
+void *bsearch(const void *key, const void *base, size_t nmemb, size_t size,
+              int (*compar)(const void *, const void *));
+
 char *getenv(const char *name);
 
 #endif /* _STDLIB_H */

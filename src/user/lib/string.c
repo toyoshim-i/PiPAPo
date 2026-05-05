@@ -9,6 +9,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 size_t strlen(const char *s) {
@@ -59,6 +60,47 @@ char *strrchr(const char *s, int c) {
     if (*s == (char)c) last = s;
   if (c == 0) return (char *)s;
   return (char *)last;
+}
+
+char *strstr(const char *haystack, const char *needle) {
+  size_t nlen = strlen(needle);
+  if (nlen == 0) return (char *)haystack;
+  size_t hlen = strlen(haystack);
+  if (hlen < nlen) return (void *)0;
+  for (size_t i = 0; i <= hlen - nlen; i++) {
+    if (memcmp(haystack + i, needle, nlen) == 0) return (char *)haystack + i;
+  }
+  return (void *)0;
+}
+
+size_t strspn(const char *s, const char *accept) {
+  size_t n = 0;
+  for (; s[n]; n++) {
+    if (!strchr(accept, (unsigned char)s[n])) break;
+  }
+  return n;
+}
+
+size_t strcspn(const char *s, const char *reject) {
+  size_t n = 0;
+  for (; s[n]; n++) {
+    if (strchr(reject, (unsigned char)s[n])) break;
+  }
+  return n;
+}
+
+char *strpbrk(const char *s, const char *accept) {
+  for (; *s; s++) {
+    if (strchr(accept, (unsigned char)*s)) return (char *)s;
+  }
+  return (void *)0;
+}
+
+char *strdup(const char *s) {
+  size_t n = strlen(s) + 1;
+  char *p = malloc(n);
+  if (p) memcpy(p, s, n);
+  return p;
 }
 
 void *memcpy(void *dst, const void *src, size_t n) {
