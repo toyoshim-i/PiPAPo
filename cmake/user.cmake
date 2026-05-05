@@ -119,7 +119,7 @@ set(USER_TESTS
     test_id test_fs test_rw test_time test_iov test_stat test_tmpfs test_env
     test_float test_signal_float test_x68k test_h68k_dos test_cpm test_sos test_msdos test_zexdoc test_zexall test_trace test_pdb
     test_pdb_arm_disas trace_peek_target
-    test_musl
+    test_musl test_libc
     runtests runtests_ext
 )
 
@@ -552,7 +552,7 @@ function(_ppap_build_user_programs)
         DEPENDS ${PPAP_ARCH_DIR}/syscall.S
         COMMENT "Assembling syscall.o (${PPAP_ARCH})"
     )
-    set(_libc_units string stdio stdlib alloc file util)
+    set(_libc_units string stdio stdlib alloc file time util)
     set(_libc_objs)
     foreach(_unit ${_libc_units})
         set(_obj ${PPAP_SHARED_BUILD}/libc_${_unit}.o)
@@ -588,6 +588,21 @@ function(_ppap_build_user_programs)
             COMMENT "Compiling sigaction.o (${PPAP_ARCH})"
         )
         list(APPEND PPAP_CRT_OBJS ${PPAP_SHARED_BUILD}/sigaction.o)
+    endif()
+
+    # --- Optional arch-supplied setjmp / longjmp ---
+    # ARM, m68k, RISC-V provide setjmp.S; targets that don't (xtensa,
+    # i16) skip it — apps that use <setjmp.h> won't link there.
+    if(EXISTS ${PPAP_ARCH_DIR}/setjmp.S)
+        add_custom_command(
+            OUTPUT ${PPAP_SHARED_BUILD}/setjmp.o
+            COMMAND ${PPAP_CC} ${PPAP_USER_ASFLAGS} -c
+                    -o ${PPAP_SHARED_BUILD}/setjmp.o
+                    ${PPAP_ARCH_DIR}/setjmp.S
+            DEPENDS ${PPAP_ARCH_DIR}/setjmp.S
+            COMMENT "Assembling setjmp.o (${PPAP_ARCH})"
+        )
+        list(APPEND PPAP_CRT_OBJS ${PPAP_SHARED_BUILD}/setjmp.o)
     endif()
 
     # --- Application programs ---

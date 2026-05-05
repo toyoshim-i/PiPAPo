@@ -10,6 +10,7 @@
 
 #include "push.h"
 #include "syscall.h"
+#include <signal.h>
 
 #include "common/errno.h"
 #include "common/termios.h"
@@ -726,7 +727,7 @@ int push_readline(const char *prompt, char *buf, int size) {
 
   /* Install SIGINT handler */
   sigint_received = 0;
-  sigaction(SIGINT, (void *)(uintptr_t)sigint_handler, 0);
+  signal(SIGINT, sigint_handler);
 
   /* Enter raw mode */
   term_raw();

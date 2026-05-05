@@ -11,6 +11,7 @@
  * scope); the kernel integration test covers signal-matching logic directly.
  */
 
+#include <signal.h>
 #include "utest.h"
 
 static volatile int sig_flag = 0;
@@ -50,7 +51,7 @@ int main(void)
     /* 3. Signal self-delivery — install handler, signal self, check flag */
     {
         sig_flag = 0;
-        sigaction(10 /* SIGUSR1 */, (void *)usr1_handler, (void *)0);
+        signal(10 /* SIGUSR1 */, usr1_handler);
         kill(getpid(), 10);
         UT_ASSERT(sig_flag == 1, "SIGUSR1 handler should run");
     }

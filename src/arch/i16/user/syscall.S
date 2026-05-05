@@ -402,14 +402,15 @@ _ppap_sigreturn_trampoline:
   int   $0x30
   hlt                            /* unreachable */
 
-/* int sigaction(int sig, void *handler, void *old_handler);
+/* sighandler_t signal(int sig, sighandler_t handler);
  *
- * Simplified PPAP wrapper.  Builds a kernel_sigaction on the user
- * stack with sa_restorer = _ppap_sigreturn_trampoline and forwards to
- * SYS_RT_SIGACTION.  old_handler is ignored — callers that need it
- * should use rt_sigaction() and a full struct sigaction. */
-  .global sigaction
-sigaction:
+ * Builds a kernel_sigaction on the user stack with
+ * sa_restorer = _ppap_sigreturn_trampoline and forwards to
+ * SYS_RT_SIGACTION.  Returns the syscall result, not the previous
+ * handler — POSIX signal() callers that don't inspect the return
+ * value (the common case) work fine. */
+  .global signal
+signal:
   pushw %bp
   movw  %sp, %bp
   pushw %bx

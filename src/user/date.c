@@ -16,6 +16,8 @@
 
 #include "lib/uclib.h"
 
+#include <time.h>
+
 static int use_color = 1;
 #define C(seq) (use_color ? (seq) : "")
 #define C_RST   C("\033[0m")
@@ -45,33 +47,34 @@ static void print_now(void) {
     fputs("date: clock_gettime failed\n", stderr);
     _exit(1);
   }
-  struct uc_tm t;
-  uc_gmtime((uint32_t)ts[0], &t);
+  time_t epoch = (time_t)ts[0];
+  struct tm t;
+  gmtime_r(&epoch, &t);
 
   fputs(C_BOLD, stdout);
-  put_4digit((unsigned)t.year);
+  put_4digit((unsigned)(t.tm_year + 1900));
   fputs(C_RST, stdout);
   fputs(C_DIM, stdout);
   putchar('-');
   fputs(C_RST, stdout);
-  put_2digit((unsigned)t.mon);
+  put_2digit((unsigned)(t.tm_mon + 1));
   fputs(C_DIM, stdout);
   putchar('-');
   fputs(C_RST, stdout);
-  put_2digit((unsigned)t.mday);
+  put_2digit((unsigned)t.tm_mday);
   putchar(' ');
   fputs(C_CYAN, stdout);
-  put_2digit((unsigned)t.hour);
+  put_2digit((unsigned)t.tm_hour);
   fputs(C_DIM, stdout);
   putchar(':');
   fputs(C_RST, stdout);
   fputs(C_CYAN, stdout);
-  put_2digit((unsigned)t.min);
+  put_2digit((unsigned)t.tm_min);
   fputs(C_DIM, stdout);
   putchar(':');
   fputs(C_RST, stdout);
   fputs(C_CYAN, stdout);
-  put_2digit((unsigned)t.sec);
+  put_2digit((unsigned)t.tm_sec);
   fputs(C_RST, stdout);
   fputs(C_DIM, stdout);
   fputs(" UTC", stdout);

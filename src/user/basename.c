@@ -14,10 +14,6 @@
  *   basename "/a/b"    -> "b"
  *   basename "foo.txt" .txt -> "foo"
  *   basename "foo" foo -> "foo"   (suffix == whole base, no strip)
- *
- * uc_basename in uclib intentionally implements only the simple
- * "scan for last '/'" form for callers that pass clean paths; this
- * applet has its own POSIX-correct walker.
  */
 
 #include "lib/uclib.h"

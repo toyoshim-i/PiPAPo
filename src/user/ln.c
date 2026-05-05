@@ -59,7 +59,8 @@ int main(int argc, char *argv[]) {
     linkname = argv[argi++];
   } else {
     /* Default to target's basename in cwd. */
-    linkname = uc_basename(target);
+    const char *slash = strrchr(target, '/');
+    linkname = slash ? slash + 1 : target;
   }
 
   if (argi != argc) {

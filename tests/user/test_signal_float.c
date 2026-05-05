@@ -10,6 +10,7 @@
  * operations use soft-float library calls and don't touch FPU registers.
  */
 
+#include <signal.h>
 #include "utest.h"
 
 /* Minimal timespec for nanosleep */
@@ -51,7 +52,7 @@ int main(void)
     volatile float y = 2.72f;
     volatile float sum = x + y;
 
-    sigaction(10 /* SIGUSR1 */, (void *)float_handler, (void *)0);
+    signal(10 /* SIGUSR1 */, float_handler);
     kill(getpid(), 10);
 
     UT_ASSERT(sig_count == 1, "handler called once");

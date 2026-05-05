@@ -46,7 +46,7 @@ SYSCALL_STUB setsid,    0x000B
 SYSCALL_STUB setpgid,   0x0009
 SYSCALL_STUB getpgid,   0x000A
 SYSCALL_STUB kill,      0x0600
-SYSCALL_STUB sigaction, 0x0601
+SYSCALL_STUB signal,    0x0601
 SYSCALL_STUB ptrace,    0x000F
 
 # --- File I/O ---

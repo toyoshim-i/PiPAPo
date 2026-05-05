@@ -90,10 +90,9 @@ void *brk(void *addr);
 /* ── Signals ───────────────────────────────────────────────────────── */
 
 int kill(pid_t pid, int sig);
-int sigaction(int sig, void *handler, void *old_handler);
 
-/* Sigaction internals.  The POSIX-style sigaction() wrapper lives in
- * arch-specific user/sigaction.c; it builds a struct ppap_sigaction
+/* signal() (POSIX) is declared in <signal.h>; it lives in
+ * arch-specific user/sigaction.c which builds a struct ppap_sigaction
  * with sa_restorer pointing at _ppap_sigreturn_trampoline (defined in
  * each arch's user/syscall.S) and forwards to rt_sigaction (also in
  * user/syscall.S). */

@@ -22,6 +22,8 @@
 
 #include "pile.h"
 
+#include <time.h>
+
 #define C(seq) (pile_use_color ? (seq) : "")
 #define C_RST      C("\033[0m")
 #define C_DIR      C("\033[1;34m")
@@ -349,7 +351,10 @@ static void draw_stat_strip(int row_path, int row_detail) {
   if (e->mtime) {
     fputs("  ", stdout);
     char tbuf[17];
-    uc_format_ymdhm(tbuf, e->mtime);
+    time_t epoch = (time_t)e->mtime;
+    struct tm tm;
+    gmtime_r(&epoch, &tm);
+    strftime(tbuf, sizeof(tbuf), "%Y-%m-%d %H:%M", &tm);
     fputs(C_FRAME, stdout);
     fputs(tbuf, stdout);
     fputs(C_RST, stdout);

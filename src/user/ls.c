@@ -10,6 +10,8 @@
 
 #include "lib/uclib.h"
 
+#include <time.h>
+
 #include "common/termios.h"
 
 #define NAME_MAX_STORE 1024 /* name storage pool */
@@ -174,7 +176,10 @@ static int ls_dir(const char *path) {
         if (have_stat) {
           fputs(C_DIM, stdout);
           char tbuf[17];
-          uc_format_ymdhm(tbuf, st.st_mtime);
+          time_t epoch = (time_t)st.st_mtime;
+          struct tm tm;
+          gmtime_r(&epoch, &tm);
+          strftime(tbuf, sizeof(tbuf), "%Y-%m-%d %H:%M", &tm);
           fputs(tbuf, stdout);
           fputs(C_RST, stdout);
         } else {

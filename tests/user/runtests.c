@@ -358,6 +358,16 @@ int main(void)
         TEST_ENABLED
 #endif
     };
+    /* test_libc: PPAP libc surface (snprintf, strtol, qsort, FILE,
+     * strftime, setjmp).  setjmp.S is provided on arm / m68k / riscv
+     * only. */
+    tests[t++] = (test_entry_t){ "/bin/test_libc",
+#if defined(__ia16__) || defined(__xtensa__)
+        TEST_UNSUPPORTED
+#else
+        TEST_ENABLED
+#endif
+    };
     /* test_trace: ptrace regset/breakpoint paths are arm/m68k-specific on ia16. */
     tests[t++] = (test_entry_t){ "/bin/test_trace",
 #if defined(__ia16__)
