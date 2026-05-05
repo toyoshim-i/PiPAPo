@@ -13,8 +13,8 @@
 /* Build dir/name in out, at most cap-1 chars, NUL-terminated.  Returns
  * 0 on success, -1 on overflow.  Normalises double slashes. */
 int pile_path_join(char *out, int cap, const char *dir, const char *name) {
-  int dlen = uc_strlen(dir);
-  int nlen = uc_strlen(name);
+  int dlen = strlen(dir);
+  int nlen = strlen(name);
   int need = dlen + 1 + nlen + 1;
   if (dlen > 0 && dir[dlen - 1] == '/') need--;  /* already has slash */
   if (need > cap) return -1;
@@ -44,7 +44,7 @@ static int entry_cmp(const pile_entry_t *a, const pile_entry_t *b,
   } else if (sort_mode == PILE_SORT_MTIME) {
     if (a->mtime != b->mtime) return (a->mtime > b->mtime) ? -1 : 1;
   }
-  return uc_strcmp(a->name, b->name);
+  return strcmp(a->name, b->name);
 }
 
 static void sort_entries(pile_entry_t *a, int n, int sort_mode) {
@@ -53,7 +53,7 @@ static void sort_entries(pile_entry_t *a, int n, int sort_mode) {
    * vector), so we borrow it from the heap instead of the stack —
    * Phase PS no-vector-on-stack rule. */
   if (n < 2) return;
-  pile_entry_t *tmp = uc_malloc(sizeof(*tmp));
+  pile_entry_t *tmp = malloc(sizeof(*tmp));
   if (!tmp) return;  /* leave unsorted rather than crash */
   for (int i = 1; i < n; i++) {
     *tmp = a[i];
@@ -64,7 +64,7 @@ static void sort_entries(pile_entry_t *a, int n, int sort_mode) {
     }
     a[j] = *tmp;
   }
-  uc_free(tmp);
+  free(tmp);
 }
 
 /* ── Load ──────────────────────────────────────────────────────────────── */
@@ -106,11 +106,11 @@ int pile_pane_load(pile_pane_t *pane) {
   /* struct dirent is 68 B (includes 64-byte name vector); path_buf is
    * PILE_PATH_MAX (128 B).  Both sit on the heap so pile_pane_load's
    * own stack frame stays lean — see Phase PS. */
-  struct dirent *de = uc_malloc(sizeof(struct dirent));
-  char *path_buf = uc_malloc(PILE_PATH_MAX);
+  struct dirent *de = malloc(sizeof(struct dirent));
+  char *path_buf = malloc(PILE_PATH_MAX);
   if (!de || !path_buf) {
-    uc_free(path_buf);
-    uc_free(de);
+    free(path_buf);
+    free(de);
     close(fd);
     return -1;
   }
@@ -125,9 +125,9 @@ int pile_pane_load(pile_pane_t *pane) {
     if (!pane->show_hidden && de->d_name[0] == '.' &&
         !(de->d_name[1] == '.' && de->d_name[2] == '\0')) continue;
     pile_entry_t *e = &pane->entries[pane->count++];
-    int nlen = uc_strlen(de->d_name);
+    int nlen = strlen(de->d_name);
     if (nlen > (int)sizeof(e->name) - 1) nlen = (int)sizeof(e->name) - 1;
-    uc_memcpy(e->name, de->d_name, nlen);
+    memcpy(e->name, de->d_name, nlen);
     e->name[nlen] = '\0';
     e->size = 0;
     e->mtime = 0;
@@ -141,8 +141,8 @@ int pile_pane_load(pile_pane_t *pane) {
     if (getdents(fd, de, sizeof(struct dirent)) > 0) pane->truncated = 1;
   }
   close(fd);
-  uc_free(path_buf);
-  uc_free(de);
+  free(path_buf);
+  free(de);
 
   sort_entries(pane->entries, pane->count, pane->sort_mode);
   return 0;
@@ -188,7 +188,7 @@ void pile_pane_end(pile_pane_t *pane, int vrows) {
 static int path_descend(char *out, int cap, const char *base,
                         const char *leaf) {
   if (leaf[0] == '.' && leaf[1] == '.' && leaf[2] == '\0') {
-    int blen = uc_strlen(base);
+    int blen = strlen(base);
     /* At root: stay at root. */
     if (blen <= 1) {
       if (cap < 2) return -1;
@@ -218,28 +218,28 @@ int pile_pane_enter(pile_pane_t *pane) {
   pile_entry_t *e = &pane->entries[pane->cursor];
   if (e->d_type != DT_DIR) return 0;  /* file actions land in P3 */
 
-  char *newpath = uc_malloc(PILE_PATH_MAX);
+  char *newpath = malloc(PILE_PATH_MAX);
   if (!newpath) return 0;
   int rc = 0;
   if (path_descend(newpath, PILE_PATH_MAX, pane->path, e->name) == 0) {
-    uc_strcpy(pane->path, newpath);
+    strcpy(pane->path, newpath);
     pile_pane_load(pane);
     rc = 1;
   }
-  uc_free(newpath);
+  free(newpath);
   return rc;
 }
 
 int pile_pane_parent(pile_pane_t *pane) {
-  char *newpath = uc_malloc(PILE_PATH_MAX);
+  char *newpath = malloc(PILE_PATH_MAX);
   if (!newpath) return 0;
   int rc = 0;
   if (path_descend(newpath, PILE_PATH_MAX, pane->path, "..") == 0) {
-    uc_strcpy(pane->path, newpath);
+    strcpy(pane->path, newpath);
     pile_pane_load(pane);
     rc = 1;
   }
-  uc_free(newpath);
+  free(newpath);
   return rc;
 }
 

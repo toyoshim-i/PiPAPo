@@ -1,4 +1,4 @@
-# uc_malloc — Userland heap allocator
+# malloc — Userland heap allocator
 
 Small best-fit allocator in uclib, operating over a caller-supplied
 static pool.  Designed for PPAP user processes on targets with tight
@@ -6,8 +6,8 @@ memory budgets (the ia16 pcxt port shares a single 64 KB segment
 between text, data, bss, and stack, so stack vectors are expensive
 and a compact heap buys a lot of room back).
 
-> See also: [src/user/lib/uc_heap.c](/src/user/lib/uc_heap.c),
-> [tests/host/test_uc_heap.c](/tests/host/test_uc_heap.c).
+> See also: [src/user/lib/alloc.c](/src/user/lib/alloc.c),
+> [tests/host/test_alloc.c](/tests/host/test_alloc.c).
 > Inspired by the kernel's [page_alloc](/src/kernel/core/mm/page_alloc.c)
 > policy (address-sorted free list, best-fit, always-coalesced on
 > free) but with metadata stored inline in the pool rather than in
@@ -20,18 +20,18 @@ and a compact heap buys a lot of room back).
 #include "lib/uclib.h"
 
 void  uc_heap_init(void *pool, size_t size);
-void *uc_malloc(size_t size);
-void  uc_free(void *ptr);
+void *malloc(size_t size);
+void  free(void *ptr);
 ```
 
 - `uc_heap_init(pool, size)` — seed the heap over the caller's
   storage.  Idempotent: a second call resets the free list and
   re-seeds the whole pool (caller must have freed all live
   allocations first).
-- `uc_malloc(size)` — returns a pointer to `size` bytes of usable
+- `malloc(size)` — returns a pointer to `size` bytes of usable
   memory, or `NULL` on OOM, on `size == 0`, or when the request
   exceeds the 16-bit internal size field (> 0xFFFC bytes).
-- `uc_free(ptr)` — NULL-safe; double-free is undefined behaviour.
+- `free(ptr)` — NULL-safe; double-free is undefined behaviour.
 
 Only one pool per process.  The allocator has no global storage
 beyond a single free-list head pointer.
@@ -44,10 +44,10 @@ static char my_heap_pool[1024];
 int main(int argc, char *argv[]) {
   uc_heap_init(my_heap_pool, sizeof(my_heap_pool));
 
-  char *buf = uc_malloc(128);
+  char *buf = malloc(128);
   if (!buf) { /* handle OOM */ }
   /* ... use buf ... */
-  uc_free(buf);
+  free(buf);
 
   return 0;
 }
@@ -91,11 +91,11 @@ zero overhead beyond the 4-byte header**.
 ### Invariants (mirrored from `page_alloc`)
 
 - The free list is sorted by address, ascending.
-- No two free blocks are physically adjacent — every `uc_free`
+- No two free blocks are physically adjacent — every `free`
   eagerly merges with any adjacent free neighbor.
 - `hdr.size > 0` on every block (no zero-size blocks).
 
-### `uc_malloc(n)` — best-fit
+### `malloc(n)` — best-fit
 
 1. Round `n` up to the machine word and to the minimum free-block
    payload size.
@@ -112,7 +112,7 @@ zero overhead beyond the 4-byte header**.
    block from the free list.
 6. Clear the free flag and return `(char *)block + sizeof(hdr)`.
 
-### `uc_free(ptr)` — always-coalesce
+### `free(ptr)` — always-coalesce
 
 1. Header is at `ptr - 4`.  Mark free.
 2. Find the insertion point in the address-sorted free list
@@ -141,7 +141,7 @@ trick `page_alloc` uses with its run table.
   / 16 B (64-bit) free-node payload.  Requests smaller than the
   free-node minimum are rounded up so a freed block can always
   rejoin the free list.
-- **Best-fit walk** is O(free_block_count) per `uc_malloc`.  For
+- **Best-fit walk** is O(free_block_count) per `malloc`.  For
   small pools (hundreds of bytes, a dozen or so live blocks) this
   is trivial.
 - **Single process, single thread.**  The allocator has no locking
@@ -149,7 +149,7 @@ trick `page_alloc` uses with its run table.
 
 ## When to use (and when not)
 
-Use `uc_malloc` when:
+Use `malloc` when:
 
 - You have variable-size transient buffers whose lifetime is a
   single function / operation.
@@ -174,7 +174,7 @@ Prefer something else when:
 
 ## Testing
 
-`tests/host/test_uc_heap.c` exercises the allocator on the host
+`tests/host/test_alloc.c` exercises the allocator on the host
 with no stubs (the implementation has no hardware or syscall
 dependencies).  Covers:
 

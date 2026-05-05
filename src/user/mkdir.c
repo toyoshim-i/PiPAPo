@@ -72,19 +72,19 @@ int main(int argc, char *argv[]) {
   int argi = 1;
 
   while (argi < argc && argv[argi][0] == '-' && argv[argi][1] != '\0') {
-    if (uc_strcmp(argv[argi], "--help") == 0) {
+    if (strcmp(argv[argi], "--help") == 0) {
       uc_puts(
           "Usage: mkdir [-p] [-m MODE] DIR...\n"
           "  -p       Create parent directories as needed\n"
           "  -m MODE  Set mode (octal, default 0755)\n");
       return 0;
     }
-    if (uc_strcmp(argv[argi], "-p") == 0) {
+    if (strcmp(argv[argi], "-p") == 0) {
       opt_p = 1;
       argi++;
       continue;
     }
-    if (uc_strcmp(argv[argi], "-m") == 0) {
+    if (strcmp(argv[argi], "-m") == 0) {
       if (argi + 1 >= argc) {
         uc_eputs("mkdir: option -m requires an argument\n");
         return 1;

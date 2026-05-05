@@ -58,7 +58,7 @@ static int prev_count;
 
 static int parse_stat(const char *buf, struct proc_info *p) {
   const char *s = buf;
-  p->pid = uc_atoi(s);
+  p->pid = atoi(s);
   while (*s && *s != '(') s++;
   if (!*s) return -1;
   s++;
@@ -73,7 +73,7 @@ static int parse_stat(const char *buf, struct proc_info *p) {
   while (*s == ' ') s++;
   p->state = *s++;
   while (*s == ' ') s++;
-  p->ppid = uc_atoi(s);
+  p->ppid = atoi(s);
 
   /* skip to field 14 (utime): currently at field 4 digits, skip 10 spaces */
   int skip = 10;
@@ -236,7 +236,7 @@ static void print_right(uint32_t v, int width) {
     }
   }
   int len = (int)sizeof(buf) - 1 - pos;
-  for (int i = len; i < width; i++) uc_putc(' ');
+  for (int i = len; i < width; i++) putchar(' ');
   uc_puts(&buf[pos]);
 }
 
@@ -244,7 +244,7 @@ static void print_time(uint32_t ticks) {
   uint32_t secs = ticks / 100;
   uint32_t mins = secs / 60;
   secs %= 60;
-  uc_printf("%2u:%02u", mins, secs);
+  printf("%2u:%02u", mins, secs);
 }
 
 static const char *sort_name(enum sort_mode m) {
@@ -262,7 +262,7 @@ int main(int argc, char *argv[]) {
   int iterations = 0; /* 0 = infinite */
 
   for (int i = 1; i < argc; i++) {
-    if (uc_strcmp(argv[i], "--help") == 0) {
+    if (strcmp(argv[i], "--help") == 0) {
 usage:
       uc_puts(
           "Usage: top [-c|-m|-p|-t] [-n COUNT]\n"
@@ -281,23 +281,23 @@ usage:
           "  o/O cycle sort field\n"
           "  q   quit\n");
       return 0;
-    } else if (uc_strcmp(argv[i], "-c") == 0) {
+    } else if (strcmp(argv[i], "-c") == 0) {
       mode = SORT_CPU;
-    } else if (uc_strcmp(argv[i], "-m") == 0) {
+    } else if (strcmp(argv[i], "-m") == 0) {
       mode = SORT_MEM;
-    } else if (uc_strcmp(argv[i], "-p") == 0) {
+    } else if (strcmp(argv[i], "-p") == 0) {
       mode = SORT_PID;
-    } else if (uc_strcmp(argv[i], "-t") == 0) {
+    } else if (strcmp(argv[i], "-t") == 0) {
       mode = SORT_TIME;
-    } else if (uc_strcmp(argv[i], "-n") == 0 && i + 1 < argc) {
+    } else if (strcmp(argv[i], "-n") == 0 && i + 1 < argc) {
       i++;
       uc_parse_u32(argv[i], (uint32_t *)&iterations);
-    } else if (uc_strcmp(argv[i], "--no-color") == 0) {
+    } else if (strcmp(argv[i], "--no-color") == 0) {
       use_color = 0;
     } else {
       uc_puts("top: unknown option: ");
       uc_puts(argv[i]);
-      uc_putc('\n');
+      putchar('\n');
       goto usage;
     }
   }
@@ -323,7 +323,7 @@ usage:
     /* Read uptime */
     uint32_t uptime_s = 0;
     if (read_file("/proc/uptime", buf, (int)sizeof(buf)) > 0)
-      uptime_s = (uint32_t)uc_atoi(buf);
+      uptime_s = (uint32_t)atoi(buf);
 
     /* Read meminfo */
     uint32_t mem_total = 0, mem_free = 0;
@@ -355,7 +355,7 @@ usage:
       while (getdents(dfd, &de, sizeof(de)) > 0 && nprocs < MAX_PROCS) {
         if (de.d_name[0] < '1' || de.d_name[0] > '9') continue;
         char path[32];
-        uc_snprintf(path, (int)sizeof(path), "/proc/%s/stat", de.d_name);
+        snprintf(path, (int)sizeof(path), "/proc/%s/stat", de.d_name);
         if (read_file(path, buf, (int)sizeof(buf)) < 0) continue;
         if (parse_stat(buf, &procs[nprocs]) < 0) continue;
 
@@ -384,7 +384,7 @@ usage:
       uint32_t h = uptime_s / 3600;
       uint32_t m = (uptime_s % 3600) / 60;
       uint32_t s = uptime_s % 60;
-      uc_printf("%u:%02u:%02u", h, m, s);
+      printf("%u:%02u:%02u", h, m, s);
     }
     uc_puts(C_RST);
     uc_puts(", ");
@@ -424,15 +424,15 @@ usage:
       uint32_t sy_pct10 = ds * 1000 / dt;
       uint32_t id_pct10 = di * 1000 / dt;
       uc_puts(C_GREEN);
-      uc_printf("%u.%u", us_pct10 / 10, us_pct10 % 10);
+      printf("%u.%u", us_pct10 / 10, us_pct10 % 10);
       uc_puts(C_RST);
       uc_puts(" us, ");
       uc_puts(C_RED);
-      uc_printf("%u.%u", sy_pct10 / 10, sy_pct10 % 10);
+      printf("%u.%u", sy_pct10 / 10, sy_pct10 % 10);
       uc_puts(C_RST);
       uc_puts(" sy, ");
       uc_puts(C_CYAN);
-      uc_printf("%u.%u", id_pct10 / 10, id_pct10 % 10);
+      printf("%u.%u", id_pct10 / 10, id_pct10 % 10);
       uc_puts(C_RST);
       uc_puts(" id");
     } else {
@@ -445,7 +445,7 @@ usage:
     uc_puts(C_BOLD);
     uc_puts("\n  PID  PPID S  %CPU  TIME    MEM COMMAND\033[K");
     uc_puts(C_RST);
-    uc_putc('\n');
+    putchar('\n');
 
     /* Process rows */
     for (int i = 0; i < nprocs; i++) {
@@ -456,14 +456,14 @@ usage:
       uc_puts(C_BLUE);
       print_right((uint32_t)procs[si].ppid, 6);
       uc_puts(C_RST);
-      uc_putc(' ');
+      putchar(' ');
       {
         char st = procs[si].state;
         if (st == 'R') uc_puts(C_BGREEN);
         else if (st == 'Z') uc_puts(C_BRED);
         else if (st == 'I') uc_puts(C_BLUE);
         else uc_puts(C_WHITE);
-        uc_putc(st);
+        putchar(st);
         uc_puts(C_RST);
       }
       /* %CPU: cpu_delta / dt * 100, show as XX.X */
@@ -472,12 +472,12 @@ usage:
         if (pct10 >= 500) uc_puts(C_BRED);
         else if (pct10 >= 200) uc_puts(C_BYELLOW);
         else if (pct10 > 0) uc_puts(C_GREEN);
-        uc_printf("%3u.%u", pct10 / 10, pct10 % 10);
+        printf("%3u.%u", pct10 / 10, pct10 % 10);
         uc_puts(C_RST);
       } else {
         uc_puts("  --");
       }
-      uc_putc(' ');
+      putchar(' ');
       uc_puts(C_MAGENTA);
       print_time(procs[si].utime + procs[si].stime);
       uc_puts(C_RST);
@@ -485,7 +485,7 @@ usage:
       print_right(procs[si].vsz / 1024, 7);
       uc_puts("K");
       uc_puts(C_RST);
-      uc_putc(' ');
+      putchar(' ');
       uc_puts(C_BWHITE);
       uc_puts(procs[si].comm);
       uc_puts(C_RST);

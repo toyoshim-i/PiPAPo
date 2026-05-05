@@ -7,7 +7,7 @@
  * Multiple files print "==> name <==" headers separated by blank lines.
  *
  * v1: file-only.  Uses lseek to walk backward from EOF — no large buffer.
- * Stdin support is deferred until we add either uc_getline or a uc_malloc
+ * Stdin support is deferred until we add either uc_getline or a malloc
  * ring buffer.
  */
 
@@ -84,7 +84,7 @@ static int tail_file(int fd) {
 
 static int parse_flag(int argc, char *argv[], int argi) {
   const char *a = argv[argi];
-  if (uc_strcmp(a, "--help") == 0) {
+  if (strcmp(a, "--help") == 0) {
     uc_puts(
         "Usage: tail [-n N | -c N] file ...\n"
         "  -n N  Print last N lines (default 10)\n"
@@ -92,7 +92,7 @@ static int parse_flag(int argc, char *argv[], int argi) {
         "Stdin not yet supported.\n");
     return 0;
   }
-  if (uc_strcmp(a, "--") == 0) return 1;
+  if (strcmp(a, "--") == 0) return 1;
   if (a[1] != 'n' && a[1] != 'c') {
     uc_eputs("tail: unknown option: ");
     uc_eputs(a);
@@ -108,7 +108,7 @@ static int parse_flag(int argc, char *argv[], int argi) {
   } else {
     if (argi + 1 >= argc) {
       uc_eputs("tail: -");
-      uc_putc(a[1]);
+      putchar(a[1]);
       uc_eputs(" requires a count\n");
       return -1;
     }
@@ -130,11 +130,11 @@ int main(int argc, char *argv[]) {
   int argi = 1;
 
   while (argi < argc && argv[argi][0] == '-' &&
-         uc_strcmp(argv[argi], "-") != 0) {
+         strcmp(argv[argi], "-") != 0) {
     int consumed = parse_flag(argc, argv, argi);
     if (consumed < 0) return 1;
     if (consumed == 0) return 0;
-    if (uc_strcmp(argv[argi], "--") == 0) {
+    if (strcmp(argv[argi], "--") == 0) {
       argi += consumed;
       break;
     }
@@ -151,7 +151,7 @@ int main(int argc, char *argv[]) {
   int first = 1;
 
   for (int i = argi; i < argc; i++) {
-    if (uc_strcmp(argv[i], "-") == 0) {
+    if (strcmp(argv[i], "-") == 0) {
       uc_eputs("tail: '-' (stdin) not yet supported\n");
       rc = 1;
       continue;
@@ -165,7 +165,7 @@ int main(int argc, char *argv[]) {
       continue;
     }
     if (multi) {
-      if (!first) uc_putc('\n');
+      if (!first) putchar('\n');
       uc_puts("==> ");
       uc_puts(argv[i]);
       uc_puts(" <==\n");

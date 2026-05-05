@@ -61,17 +61,17 @@ static void list_mounts(void) {
     if (found < 4) continue;
 
     uc_puts(C_BCYAN);
-    for (int i = 0; i < flen[0]; i++) uc_putc(fields[0][i]);
+    for (int i = 0; i < flen[0]; i++) putchar(fields[0][i]);
     uc_puts(C_RST);
     uc_puts(" on ");
     uc_puts(C_BWHITE);
-    for (int i = 0; i < flen[1]; i++) uc_putc(fields[1][i]);
+    for (int i = 0; i < flen[1]; i++) putchar(fields[1][i]);
     uc_puts(C_RST);
     uc_puts(" type ");
-    for (int i = 0; i < flen[2]; i++) uc_putc(fields[2][i]);
+    for (int i = 0; i < flen[2]; i++) putchar(fields[2][i]);
     uc_puts(" (");
     uc_puts(C_DIM);
-    for (int i = 0; i < flen[3]; i++) uc_putc(fields[3][i]);
+    for (int i = 0; i < flen[3]; i++) putchar(fields[3][i]);
     uc_puts(C_RST);
     uc_puts(")\n");
   }
@@ -97,21 +97,21 @@ int main(int argc, char *argv[]) {
   /* Two-pass: first pull -t/-r/--no-color, then collect positional args. */
   while (argi < argc) {
     const char *a = argv[argi];
-    if (uc_strcmp(a, "--help") == 0) {
+    if (strcmp(a, "--help") == 0) {
       usage();
       return 0;
     }
-    if (uc_strcmp(a, "--no-color") == 0) {
+    if (strcmp(a, "--no-color") == 0) {
       use_color = 0;
       argi++;
       continue;
     }
-    if (uc_strcmp(a, "-r") == 0) {
+    if (strcmp(a, "-r") == 0) {
       flags |= MS_RDONLY;
       argi++;
       continue;
     }
-    if (uc_strcmp(a, "-t") == 0) {
+    if (strcmp(a, "-t") == 0) {
       if (argi + 1 >= argc) {
         uc_eputs("mount: -t requires a filesystem type\n");
         return 1;

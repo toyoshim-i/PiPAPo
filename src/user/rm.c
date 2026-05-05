@@ -99,7 +99,7 @@ int main(int argc, char *argv[]) {
   int argi = 1;
 
   while (argi < argc && argv[argi][0] == '-' && argv[argi][1] != '\0') {
-    if (uc_strcmp(argv[argi], "--help") == 0) {
+    if (strcmp(argv[argi], "--help") == 0) {
       uc_puts(
           "Usage: rm [-rRf] FILE...\n"
           "  -r, -R  Recursively remove directories\n"
@@ -118,7 +118,7 @@ int main(int argc, char *argv[]) {
           break;
         default:
           uc_eputs("rm: unknown option: -");
-          uc_putc(*p);
+          putchar(*p);
           uc_eputs("\n");
           return 1;
       }

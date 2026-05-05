@@ -60,13 +60,13 @@ static const char *errstr(int err) {
 }
 
 void pile_status_set_errno(const char *prefix, int errcode) {
-  char *buf = uc_malloc(128);
+  char *buf = malloc(128);
   if (!buf) {
     pile_status_set(errstr(errcode), 1);
     return;
   }
   int pos = 0;
-  int plen = uc_strlen(prefix);
+  int plen = strlen(prefix);
   if (plen > 60) plen = 60;
   for (int i = 0; i < plen; i++) buf[pos++] = prefix[i];
   buf[pos++] = ':';
@@ -75,7 +75,7 @@ void pile_status_set_errno(const char *prefix, int errcode) {
   while (*es && pos < 127) buf[pos++] = *es++;
   buf[pos] = '\0';
   pile_status_set(buf, 1);
-  uc_free(buf);
+  free(buf);
 }
 
 /* ── Yes/no prompt ────────────────────────────────────────────────────── */
@@ -94,28 +94,28 @@ int pile_confirm(const char *prompt) {
 /* ── Pane reload with cursor preservation ─────────────────────────────── */
 
 static void reload_keep_cursor(pile_pane_t *pane) {
-  char *prev_name = uc_malloc(64);
+  char *prev_name = malloc(64);
   if (prev_name) {
     prev_name[0] = '\0';
     if (pane->count > 0 && pane->cursor < pane->count) {
-      uc_strcpy(prev_name, pane->entries[pane->cursor].name);
+      strcpy(prev_name, pane->entries[pane->cursor].name);
     }
   }
   int prev_idx = pane->cursor;
   pile_pane_load(pane);
   if (prev_name && prev_name[0]) {
     for (int i = 0; i < pane->count; i++) {
-      if (uc_strcmp(pane->entries[i].name, prev_name) == 0) {
+      if (strcmp(pane->entries[i].name, prev_name) == 0) {
         pane->cursor = i;
         int vr = pile_draw_visible_rows();
         if (pane->cursor >= pane->scroll + vr)
           pane->scroll = pane->cursor - vr + 1;
-        uc_free(prev_name);
+        free(prev_name);
         return;
       }
     }
   }
-  uc_free(prev_name);
+  free(prev_name);
   if (prev_idx >= pane->count) prev_idx = pane->count - 1;
   if (prev_idx < 0) prev_idx = 0;
   pane->cursor = prev_idx;
@@ -124,8 +124,8 @@ static void reload_keep_cursor(pile_pane_t *pane) {
 /* ── F7: mkdir ────────────────────────────────────────────────────────── */
 
 void pile_op_mkdir(pile_pane_t *pane) {
-  char *name = uc_malloc(64);
-  char *full = uc_malloc(PILE_PATH_MAX);
+  char *name = malloc(64);
+  char *full = malloc(PILE_PATH_MAX);
   if (!name || !full) {
     pile_status_set("pile: out of heap", 1);
     goto cleanup;
@@ -146,8 +146,8 @@ void pile_op_mkdir(pile_pane_t *pane) {
   jump_to_name(pane, name);
 
 cleanup:
-  uc_free(full);
-  uc_free(name);
+  free(full);
+  free(name);
 }
 
 /* ── F8: delete ───────────────────────────────────────────────────────── */
@@ -187,7 +187,7 @@ static pile_pane_t *other_pane(const pile_pane_t *p) {
  * to keep it on screen.  No-op if the name is absent. */
 static void jump_to_name(pile_pane_t *pane, const char *name) {
   for (int i = 0; i < pane->count; i++) {
-    if (uc_strcmp(pane->entries[i].name, name) == 0) {
+    if (strcmp(pane->entries[i].name, name) == 0) {
       pane->cursor = i;
       int vr = pile_draw_visible_rows();
       if (pane->cursor >= pane->scroll + vr)
@@ -216,7 +216,7 @@ static void refresh_panes(pile_pane_t *src) {
 }
 
 static int paths_equal(const char *a, const char *b) {
-  return uc_strcmp(a, b) == 0;
+  return strcmp(a, b) == 0;
 }
 
 static int file_exists(const char *path) {
@@ -262,26 +262,26 @@ static int copy_file(const char *src_path, const char *dst_path,
 static void report_batch(const char *verb, const char *verb_past, int n,
                          int ok, int fail, int last_err) {
   if (!fail && n <= 1) return;
-  char *buf = uc_malloc(96);
+  char *buf = malloc(96);
   if (!buf) return;  /* silent drop on OOM — op still succeeded */
   if (fail) {
-    uc_snprintf(buf, 96, "%s: %u ok, %u failed (%s)", verb,
+    snprintf(buf, 96, "%s: %u ok, %u failed (%s)", verb,
                 (unsigned)ok, (unsigned)fail, errstr(last_err));
     pile_status_set(buf, 1);
   } else {
-    uc_snprintf(buf, 96, "%s %u files", verb_past, (unsigned)ok);
+    snprintf(buf, 96, "%s %u files", verb_past, (unsigned)ok);
     pile_status_set(buf, 0);
   }
-  uc_free(buf);
+  free(buf);
 }
 
 void pile_op_copy(pile_pane_t *pane) {
-  uint8_t *targets = uc_malloc(PILE_MAX_ENTRIES);
-  char *src_path = uc_malloc(PILE_PATH_MAX);
-  char *dst_path = uc_malloc(PILE_PATH_MAX);
-  char *first_name = uc_malloc(64);
-  char *buf = uc_malloc(96);
-  uint8_t *io_buf = uc_malloc(256);
+  uint8_t *targets = malloc(PILE_MAX_ENTRIES);
+  char *src_path = malloc(PILE_PATH_MAX);
+  char *dst_path = malloc(PILE_PATH_MAX);
+  char *first_name = malloc(64);
+  char *buf = malloc(96);
+  uint8_t *io_buf = malloc(256);
   if (!targets || !src_path || !dst_path || !first_name || !buf || !io_buf) {
     pile_status_set("pile: out of heap", 1);
     goto cleanup;
@@ -310,16 +310,16 @@ void pile_op_copy(pile_pane_t *pane) {
       goto cleanup;
     }
     if (file_exists(dst_path)) {
-      uc_snprintf(buf, 96, "Overwrite %s? [y/N]: ", name);
+      snprintf(buf, 96, "Overwrite %s? [y/N]: ", name);
       if (!pile_confirm(buf)) goto cleanup;
     }
   } else {
-    uc_snprintf(buf, 96, "Copy %u files to %s? [y/N]: ",
+    snprintf(buf, 96, "Copy %u files to %s? [y/N]: ",
                 (unsigned)n, dst_pane->path);
     if (!pile_confirm(buf)) goto cleanup;
   }
 
-  uc_strcpy(first_name, pane->entries[targets[0]].name);
+  strcpy(first_name, pane->entries[targets[0]].name);
 
   int ok = 0, fail = 0, last_err = 0;
   for (int i = 0; i < n; i++) {
@@ -343,22 +343,22 @@ void pile_op_copy(pile_pane_t *pane) {
   jump_to_name(other_pane(pane), first_name);
 
 cleanup:
-  uc_free(io_buf);
-  uc_free(buf);
-  uc_free(first_name);
-  uc_free(dst_path);
-  uc_free(src_path);
-  uc_free(targets);
+  free(io_buf);
+  free(buf);
+  free(first_name);
+  free(dst_path);
+  free(src_path);
+  free(targets);
 }
 
 void pile_op_move(pile_pane_t *pane) {
-  uint8_t *targets = uc_malloc(PILE_MAX_ENTRIES);
-  char *src_path = uc_malloc(PILE_PATH_MAX);
-  char *dst_path = uc_malloc(PILE_PATH_MAX);
-  char *first_name = uc_malloc(64);
-  char *new_name = uc_malloc(64);
-  char *buf = uc_malloc(96);
-  uint8_t *io_buf = uc_malloc(256);
+  uint8_t *targets = malloc(PILE_MAX_ENTRIES);
+  char *src_path = malloc(PILE_PATH_MAX);
+  char *dst_path = malloc(PILE_PATH_MAX);
+  char *first_name = malloc(64);
+  char *new_name = malloc(64);
+  char *buf = malloc(96);
+  uint8_t *io_buf = malloc(256);
   if (!targets || !src_path || !dst_path || !first_name || !new_name ||
       !buf || !io_buf) {
     pile_status_set("pile: out of heap", 1);
@@ -394,7 +394,7 @@ void pile_op_move(pile_pane_t *pane) {
     }
     if (paths_equal(src_path, dst_path)) goto cleanup;
     if (file_exists(dst_path)) {
-      uc_snprintf(buf, 96, "Overwrite %s? [y/N]: ", new_name);
+      snprintf(buf, 96, "Overwrite %s? [y/N]: ", new_name);
       if (!pile_confirm(buf)) goto cleanup;
     }
     int rn = rename(src_path, dst_path);
@@ -416,16 +416,16 @@ void pile_op_move(pile_pane_t *pane) {
       goto cleanup;
     }
     if (file_exists(dst_path)) {
-      uc_snprintf(buf, 96, "Overwrite %s? [y/N]: ", name);
+      snprintf(buf, 96, "Overwrite %s? [y/N]: ", name);
       if (!pile_confirm(buf)) goto cleanup;
     }
   } else {
-    uc_snprintf(buf, 96, "Move %u files to %s? [y/N]: ",
+    snprintf(buf, 96, "Move %u files to %s? [y/N]: ",
                 (unsigned)n, dst_pane->path);
     if (!pile_confirm(buf)) goto cleanup;
   }
 
-  uc_strcpy(first_name, pane->entries[targets[0]].name);
+  strcpy(first_name, pane->entries[targets[0]].name);
 
   int ok = 0, fail = 0, last_err = 0;
   for (int i = 0; i < n; i++) {
@@ -463,19 +463,19 @@ void pile_op_move(pile_pane_t *pane) {
   jump_to_name(other_pane(pane), first_name);
 
 cleanup:
-  uc_free(io_buf);
-  uc_free(buf);
-  uc_free(new_name);
-  uc_free(first_name);
-  uc_free(dst_path);
-  uc_free(src_path);
-  uc_free(targets);
+  free(io_buf);
+  free(buf);
+  free(new_name);
+  free(first_name);
+  free(dst_path);
+  free(src_path);
+  free(targets);
 }
 
 void pile_op_delete(pile_pane_t *pane) {
-  uint8_t *targets = uc_malloc(PILE_MAX_ENTRIES);
-  char *full = uc_malloc(PILE_PATH_MAX);
-  char *buf = uc_malloc(96);
+  uint8_t *targets = malloc(PILE_MAX_ENTRIES);
+  char *full = malloc(PILE_PATH_MAX);
+  char *buf = malloc(96);
   if (!targets || !full || !buf) {
     pile_status_set("pile: out of heap", 1);
     goto cleanup;
@@ -499,7 +499,7 @@ void pile_op_delete(pile_pane_t *pane) {
     while (*suf && pos < 95) buf[pos++] = *suf++;
     buf[pos] = '\0';
   } else {
-    uc_snprintf(buf, 96, "Delete %d files? [y/N]: ", n);
+    snprintf(buf, 96, "Delete %d files? [y/N]: ", n);
   }
   if (!pile_confirm(buf)) goto cleanup;
 
@@ -520,17 +520,17 @@ void pile_op_delete(pile_pane_t *pane) {
     }
   }
   if (fail) {
-    uc_snprintf(buf, 96,
+    snprintf(buf, 96,
                 "delete: %d ok, %d failed (%s)", ok, fail, errstr(last_err));
     pile_status_set(buf, 1);
   } else if (ok > 1) {
-    uc_snprintf(buf, 96, "deleted %d files", ok);
+    snprintf(buf, 96, "deleted %d files", ok);
     pile_status_set(buf, 0);
   }
   refresh_panes(pane);
 
 cleanup:
-  uc_free(buf);
-  uc_free(full);
-  uc_free(targets);
+  free(buf);
+  free(full);
+  free(targets);
 }

@@ -52,23 +52,23 @@ static void print_now(void) {
   put_4digit((unsigned)t.year);
   uc_puts(C_RST);
   uc_puts(C_DIM);
-  uc_putc('-');
+  putchar('-');
   uc_puts(C_RST);
   put_2digit((unsigned)t.mon);
   uc_puts(C_DIM);
-  uc_putc('-');
+  putchar('-');
   uc_puts(C_RST);
   put_2digit((unsigned)t.mday);
-  uc_putc(' ');
+  putchar(' ');
   uc_puts(C_CYAN);
   put_2digit((unsigned)t.hour);
   uc_puts(C_DIM);
-  uc_putc(':');
+  putchar(':');
   uc_puts(C_RST);
   uc_puts(C_CYAN);
   put_2digit((unsigned)t.min);
   uc_puts(C_DIM);
-  uc_putc(':');
+  putchar(':');
   uc_puts(C_RST);
   uc_puts(C_CYAN);
   put_2digit((unsigned)t.sec);
@@ -76,7 +76,7 @@ static void print_now(void) {
   uc_puts(C_DIM);
   uc_puts(" UTC");
   uc_puts(C_RST);
-  uc_putc('\n');
+  putchar('\n');
 }
 
 static int set_time(const char *s) {
@@ -97,7 +97,7 @@ int main(int argc, char *argv[]) {
   int argi = 1;
 
   while (argi < argc && argv[argi][0] == '-' && argv[argi][1] != '\0') {
-    if (uc_strcmp(argv[argi], "--help") == 0) {
+    if (strcmp(argv[argi], "--help") == 0) {
       uc_puts(
           "Usage: date [--no-color]\n"
           "       date -s EPOCH_SECONDS\n"
@@ -105,12 +105,12 @@ int main(int argc, char *argv[]) {
           "  -s      Set clock to EPOCH_SECONDS (plain decimal)\n");
       return 0;
     }
-    if (uc_strcmp(argv[argi], "--no-color") == 0) {
+    if (strcmp(argv[argi], "--no-color") == 0) {
       use_color = 0;
       argi++;
       continue;
     }
-    if (uc_strcmp(argv[argi], "-s") == 0) {
+    if (strcmp(argv[argi], "-s") == 0) {
       if (argi + 1 >= argc) {
         uc_eputs("date: -s needs an argument\n");
         return 1;

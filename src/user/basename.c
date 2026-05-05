@@ -23,7 +23,7 @@
 #include "lib/uclib.h"
 
 int main(int argc, char *argv[]) {
-  if (argc < 2 || argc > 3 || uc_strcmp(argv[1], "--help") == 0) {
+  if (argc < 2 || argc > 3 || strcmp(argv[1], "--help") == 0) {
     uc_eputs("Usage: basename PATH [SUFFIX]\n");
     return (argc < 2 || argc > 3) ? 1 : 0;
   }
@@ -33,17 +33,17 @@ int main(int argc, char *argv[]) {
 
   if (!path[0]) {
     uc_puts(".");
-    uc_putc('\n');
+    putchar('\n');
     return 0;
   }
 
-  int len = uc_strlen(path);
+  int len = strlen(path);
   while (len > 1 && path[len - 1] == '/') len--;
 
   /* String of nothing but slashes collapsed to the leading '/'. */
   if (len == 1 && path[0] == '/') {
     uc_puts("/");
-    uc_putc('\n');
+    putchar('\n');
     return 0;
   }
 
@@ -57,7 +57,7 @@ int main(int argc, char *argv[]) {
   int base_len = len - start;
 
   if (suffix && suffix[0]) {
-    int slen = uc_strlen(suffix);
+    int slen = strlen(suffix);
     if (base_len > slen) {
       int match = 1;
       for (int i = 0; i < slen; i++) {
@@ -70,7 +70,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  for (int i = 0; i < base_len; i++) uc_putc(path[start + i]);
-  uc_putc('\n');
+  for (int i = 0; i < base_len; i++) putchar(path[start + i]);
+  putchar('\n');
   return 0;
 }

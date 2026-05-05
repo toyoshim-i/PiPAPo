@@ -17,12 +17,12 @@ void load_file(const char *path) {
   int fd = open(path, O_RDONLY, 0);
   if (fd < 0) {
     /* New file — just set filename */
-    uc_strncpy(E.filename, path, sizeof(E.filename));
+    strncpy(E.filename, path, sizeof(E.filename));
     ui_set_status("(new file)");
     return;
   }
 
-  uc_strncpy(E.filename, path, sizeof(E.filename));
+  strncpy(E.filename, path, sizeof(E.filename));
 
   char buf[512];
   for (;;) {
@@ -84,11 +84,11 @@ int save_file(const char *path) {
   }
   close(fd);
 
-  uc_strncpy(E.filename, path, sizeof(E.filename));
+  strncpy(E.filename, path, sizeof(E.filename));
   E.dirty = 0;
 
   char msg[80];
-  uc_snprintf(msg, sizeof(msg), "Written %d bytes", (int32_t)written);
+  snprintf(msg, sizeof(msg), "Written %d bytes", (int32_t)written);
   ui_set_status(msg);
   return 0;
 }
@@ -553,7 +553,7 @@ static void handle_command(int key) {
       /* Empty — do nothing */
     } else if (E.cmd[0] == '/' && E.cmd_len > 1) {
       /* Search forward from cursor */
-      uc_strncpy(E.search, E.cmd + 1, sizeof(E.search));
+      strncpy(E.search, E.cmd + 1, sizeof(E.search));
       E.search_len = E.cmd_len - 1;
       search_next();
     } else if (E.cmd[0] == 'q' && E.cmd_len == 1) {
@@ -574,7 +574,7 @@ static void handle_command(int key) {
     } else if (E.cmd[0] == 'e' && E.cmd[1] == '!' && E.cmd_len == 2) {
       /* :e! — discard and reload (or new if no filename) */
       char saved[256];
-      uc_strncpy(saved, E.filename, sizeof(saved));
+      strncpy(saved, E.filename, sizeof(saved));
       reset_buffer();
       if (saved[0])
         load_file(saved);
@@ -590,7 +590,7 @@ static void handle_command(int key) {
       }
     } else {
       /* Try as line number */
-      int line = uc_atoi(E.cmd);
+      int line = atoi(E.cmd);
       if (line > 0) {
         E.cy = line - 1;
         int total = gap_line_count(&E.buf);

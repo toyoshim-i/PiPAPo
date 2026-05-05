@@ -13,7 +13,7 @@
 #include "lib/uclib.h"
 
 int main(int argc, char *argv[]) {
-  if (argc >= 2 && uc_strcmp(argv[1], "--help") == 0) {
+  if (argc >= 2 && strcmp(argv[1], "--help") == 0) {
     uc_puts(
         "Usage: yes [STRING ...]\n"
         "  Repeatedly output STRING (default \"y\") until killed.\n");

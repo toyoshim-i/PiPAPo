@@ -42,10 +42,10 @@ static int read_file(const char *path, char *buf, int bufsz) {
 /* Find the first line beginning with `key:` and parse the next
  * decimal number.  Returns -1 if not found. */
 static int32_t lookup_u32(const char *buf, const char *key) {
-  int klen = uc_strlen(key);
+  int klen = strlen(key);
   const char *p = buf;
   while (*p) {
-    if (uc_strncmp(p, key, klen) == 0 && p[klen] == ':') {
+    if (strncmp(p, key, klen) == 0 && p[klen] == ':') {
       p += klen + 1;
       while (*p == ' ' || *p == '\t') p++;
       uint32_t v = 0;
@@ -75,7 +75,7 @@ static void print_right(uint32_t v, int width) {
     }
   }
   int len = (int)sizeof(tmp) - 1 - pos;
-  for (int i = len; i < width; i++) uc_putc(' ');
+  for (int i = len; i < width; i++) putchar(' ');
   uc_puts(&tmp[pos]);
 }
 
@@ -85,12 +85,12 @@ static void print_human(uint32_t kb, int width) {
   if (kb >= 1024) {
     uint32_t mb = kb / 1024;
     uint32_t frac = (kb % 1024) * 10 / 1024;
-    uc_snprintf(buf, (int)sizeof(buf), "%u.%uM", mb, frac);
+    snprintf(buf, (int)sizeof(buf), "%u.%uM", mb, frac);
   } else {
-    uc_snprintf(buf, (int)sizeof(buf), "%uK", kb);
+    snprintf(buf, (int)sizeof(buf), "%uK", kb);
   }
-  int len = uc_strlen(buf);
-  for (int i = len; i < width; i++) uc_putc(' ');
+  int len = strlen(buf);
+  for (int i = len; i < width; i++) putchar(' ');
   uc_puts(buf);
 }
 
@@ -103,7 +103,7 @@ static void print_val(uint32_t kb, int width) {
 
 int main(int argc, char *argv[]) {
   for (int i = 1; i < argc; i++) {
-    if (uc_strcmp(argv[i], "--help") == 0) {
+    if (strcmp(argv[i], "--help") == 0) {
       uc_puts(
           "Usage: free [-h] [--no-color]\n"
           "  -h          Human-readable sizes (K, M)\n"
@@ -111,11 +111,11 @@ int main(int argc, char *argv[]) {
           "Shows kernel memory usage from /proc/meminfo.\n");
       return 0;
     }
-    if (uc_strcmp(argv[i], "--no-color") == 0) {
+    if (strcmp(argv[i], "--no-color") == 0) {
       use_color = 0;
       continue;
     }
-    if (uc_strcmp(argv[i], "-h") == 0) {
+    if (strcmp(argv[i], "-h") == 0) {
       opt_human = 1;
       continue;
     }
@@ -148,7 +148,7 @@ int main(int argc, char *argv[]) {
   uc_puts(C_BOLD);
   uc_puts("            total      used      free");
   uc_puts(C_RST);
-  uc_putc('\n');
+  putchar('\n');
 
   /* Mem row */
   uc_puts(C_BCYAN);
@@ -169,7 +169,7 @@ int main(int argc, char *argv[]) {
   else uc_puts(C_BGREEN);
   print_val((uint32_t)free_kb, 10);
   uc_puts(C_RST);
-  uc_putc('\n');
+  putchar('\n');
 
   /* Auxiliary line — page allocator state. */
   if (pagesize > 0 || datamax > 0 || oomcount >= 0) {
@@ -179,7 +179,7 @@ int main(int argc, char *argv[]) {
     if (pagesize > 0) {
       uc_puts(" size=");
       print_right((uint32_t)pagesize, 1);
-      uc_putc('B');
+      putchar('B');
     }
     if (datamax > 0) {
       uc_puts(" data_max=");
@@ -192,7 +192,7 @@ int main(int argc, char *argv[]) {
       print_right((uint32_t)oomcount, 1);
       if (oomcount > 0) uc_puts(C_RST);
     }
-    uc_putc('\n');
+    putchar('\n');
   }
 
   return 0;

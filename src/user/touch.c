@@ -55,7 +55,7 @@ int main(int argc, char *argv[]) {
   int no_create = 0;
 
   while (argi < argc && argv[argi][0] == '-' && argv[argi][1] != '\0') {
-    if (uc_strcmp(argv[argi], "--help") == 0) {
+    if (strcmp(argv[argi], "--help") == 0) {
       uc_puts(
           "Usage: touch [-c] [-a] [-m] file...\n"
           "  -c  Do not create files that don't exist\n"
@@ -76,7 +76,7 @@ int main(int argc, char *argv[]) {
           break;
         default:
           uc_eputs("touch: unknown option: -");
-          uc_putc(*p);
+          putchar(*p);
           uc_eputs("\n");
           return 1;
       }

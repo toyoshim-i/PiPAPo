@@ -107,7 +107,7 @@ static void clamp_offset(void) {
 /* ── Rendering ────────────────────────────────────────────────────────── */
 
 static const char *basename_of(const char *path) {
-  const char *slash = uc_strrchr(path, '/');
+  const char *slash = strrchr(path, '/');
   return slash ? slash + 1 : path;
 }
 
@@ -116,12 +116,12 @@ static void draw_title(const char *path) {
   vemit(V_HEADER);
   vemit("-- ");
   const char *b = basename_of(path);
-  int blen = uc_strlen(b);
+  int blen = strlen(b);
   int max_b = pile_cols / 2;
   if (max_b < 4) max_b = 4;
   int shown = blen < max_b ? blen : max_b;
-  for (int i = 0; i < shown; i++) uc_putc(b[i]);
-  if (blen > shown) uc_putc('~');
+  for (int i = 0; i < shown; i++) putchar(b[i]);
+  if (blen > shown) putchar('~');
   vemit(V_RST);
 
   vemit(V_FRAME);
@@ -141,37 +141,37 @@ static void draw_hex_row(int row, uint32_t offset, const uint8_t *data,
   vemit(V_FRAME);
   vput_hex(offset, voff_width);
   vemit(V_RST);
-  uc_putc(' ');
-  uc_putc(' ');
+  putchar(' ');
+  putchar(' ');
 
   int half = vbytes_per_row / 2;
   for (int i = 0; i < vbytes_per_row; i++) {
-    if (i == half) uc_putc(' ');
+    if (i == half) putchar(' ');
     if (i < len) {
       vput_hex(data[i], 2);
     } else {
-      uc_putc(' ');
-      uc_putc(' ');
+      putchar(' ');
+      putchar(' ');
     }
-    if (i + 1 < vbytes_per_row) uc_putc(' ');
+    if (i + 1 < vbytes_per_row) putchar(' ');
   }
 
   if (vshow_ascii) {
-    uc_putc(' ');
-    uc_putc(' ');
+    putchar(' ');
+    putchar(' ');
     vemit(V_FRAME);
-    uc_putc('|');
+    putchar('|');
     vemit(V_RST);
     for (int i = 0; i < vbytes_per_row; i++) {
       if (i < len) {
         uint8_t b = data[i];
-        uc_putc((b >= 32 && b < 127) ? (char)b : '.');
+        putchar((b >= 32 && b < 127) ? (char)b : '.');
       } else {
-        uc_putc(' ');
+        putchar(' ');
       }
     }
     vemit(V_FRAME);
-    uc_putc('|');
+    putchar('|');
     vemit(V_RST);
   }
 
@@ -181,16 +181,16 @@ static void draw_hex_row(int row, uint32_t offset, const uint8_t *data,
 static void draw_rule(int row) {
   pile_draw_cursor_to(row, 0);
   vemit(V_FRAME);
-  for (int i = 0; i < pile_cols; i++) uc_putc('-');
+  for (int i = 0; i < pile_cols; i++) putchar('-');
   vemit(V_RST);
 }
 
 static void draw_legend(int row) {
   pile_draw_cursor_to(row, 0);
-  uc_putc(' ');
-  vemit(V_KEY); vemit("PgUp"); vemit(V_RST); uc_putc('/');
+  putchar(' ');
+  vemit(V_KEY); vemit("PgUp"); vemit(V_RST); putchar('/');
   vemit(V_KEY); vemit("PgDn"); vemit(V_RST); vemit(" page  ");
-  vemit(V_KEY); vemit("g");    vemit(V_RST); uc_putc('/');
+  vemit(V_KEY); vemit("g");    vemit(V_RST); putchar('/');
   vemit(V_KEY); vemit("G");    vemit(V_RST); vemit(" start/end  ");
   vemit(V_KEY); vemit(":");    vemit(V_RST); vemit(" goto  ");
   vemit(V_KEY); vemit("q");    vemit(V_RST); vemit(" quit");
@@ -294,12 +294,12 @@ static void draw_text_title(const char *path) {
   vemit(V_HEADER);
   vemit("-- ");
   const char *b = basename_of(path);
-  int blen = uc_strlen(b);
+  int blen = strlen(b);
   int max_b = pile_cols / 2;
   if (max_b < 4) max_b = 4;
   int shown = blen < max_b ? blen : max_b;
-  for (int i = 0; i < shown; i++) uc_putc(b[i]);
-  if (blen > shown) uc_putc('~');
+  for (int i = 0; i < shown; i++) putchar(b[i]);
+  if (blen > shown) putchar('~');
   vemit(V_RST);
 
   vemit(V_FRAME);
@@ -315,7 +315,7 @@ static void draw_text_title(const char *path) {
     n /= 10;
   }
   vemit(numbuf + pos);
-  uc_putc('/');
+  putchar('/');
   pos = (int)sizeof(numbuf);
   numbuf[--pos] = '\0';
   n = tlines;
@@ -325,17 +325,17 @@ static void draw_text_title(const char *path) {
     n /= 10;
   }
   vemit(numbuf + pos);
-  uc_putc(' ');
+  putchar(' ');
   vemit(V_RST);
   pile_draw_clear_to_eol();
 }
 
 static void draw_text_legend(int row) {
   pile_draw_cursor_to(row, 0);
-  uc_putc(' ');
-  vemit(V_KEY); vemit("PgUp"); vemit(V_RST); uc_putc('/');
+  putchar(' ');
+  vemit(V_KEY); vemit("PgUp"); vemit(V_RST); putchar('/');
   vemit(V_KEY); vemit("PgDn"); vemit(V_RST); vemit(" page  ");
-  vemit(V_KEY); vemit("g");    vemit(V_RST); uc_putc('/');
+  vemit(V_KEY); vemit("g");    vemit(V_RST); putchar('/');
   vemit(V_KEY); vemit("G");    vemit(V_RST); vemit(" start/end  ");
   vemit(V_KEY); vemit("V");    vemit(V_RST); vemit(" hex  ");
   vemit(V_KEY); vemit("q");    vemit(V_RST); vemit(" quit");
@@ -404,16 +404,16 @@ static void render_text(const char *path) {
       if (c == '\t') {
         int spaces = 8 - (col % 8);
         for (int j = 0; j < spaces && col < pile_cols; j++) {
-          uc_putc(' ');
+          putchar(' ');
           col++;
         }
       } else if (c == '\r') {
         /* swallow bare CR so CRLF files read cleanly */
       } else if (c >= 32 && c < 127) {
-        uc_putc((char)c);
+        putchar((char)c);
         col++;
       } else {
-        uc_putc('.');
+        putchar('.');
         col++;
       }
     }

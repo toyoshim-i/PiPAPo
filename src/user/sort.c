@@ -71,7 +71,7 @@ static int compare_strings(const char *a, int alen, const char *b, int blen) {
       if (ca != cb) return ca - cb;
     }
   } else {
-    int c = uc_memcmp(a, b, n);
+    int c = memcmp(a, b, n);
     if (c != 0) return c;
   }
   return alen - blen;
@@ -104,23 +104,23 @@ static void sort_lines(line_t *arr, int n) {
   }
 }
 
-/* Append `n` bytes from `src` to *buf (uc_malloc'd, *cap bytes), growing
+/* Append `n` bytes from `src` to *buf (malloc'd, *cap bytes), growing
  * by doubling.  Returns 0 on success, -1 on OOM. */
 static int append_bytes(char **buf, int *len, int *cap, const char *src,
                         int n) {
   if (*len + n > *cap) {
     int new_cap = *cap ? *cap * 2 : 256;
     while (new_cap < *len + n) new_cap *= 2;
-    char *nb = uc_malloc((size_t)new_cap);
+    char *nb = malloc((size_t)new_cap);
     if (!nb) return -1;
     if (*buf) {
-      uc_memcpy(nb, *buf, *len);
-      uc_free(*buf);
+      memcpy(nb, *buf, *len);
+      free(*buf);
     }
     *buf = nb;
     *cap = new_cap;
   }
-  uc_memcpy(*buf + *len, src, n);
+  memcpy(*buf + *len, src, n);
   *len += n;
   return 0;
 }
@@ -141,12 +141,12 @@ int main(int argc, char *argv[]) {
 
   int argi = 1;
   while (argi < argc && argv[argi][0] == '-' && argv[argi][1] != '\0' &&
-         uc_strcmp(argv[argi], "-") != 0) {
-    if (uc_strcmp(argv[argi], "--") == 0) {
+         strcmp(argv[argi], "-") != 0) {
+    if (strcmp(argv[argi], "--") == 0) {
       argi++;
       break;
     }
-    if (uc_strcmp(argv[argi], "--help") == 0) {
+    if (strcmp(argv[argi], "--help") == 0) {
       uc_puts(
           "Usage: sort [-rnuf] [file ...]\n"
           "  -r  Reverse output order\n"
@@ -165,7 +165,7 @@ int main(int argc, char *argv[]) {
         case 'f': flags |= F_F; break;
         default:
           uc_eputs("sort: unknown option: -");
-          uc_putc(*p);
+          putchar(*p);
           uc_eputs("\n");
           return 1;
       }
@@ -193,7 +193,7 @@ int main(int argc, char *argv[]) {
     for (int i = argi; i < argc; i++) {
       int fd;
       const char *name = argv[i];
-      if (uc_strcmp(name, "-") == 0) {
+      if (strcmp(name, "-") == 0) {
         fd = 0;
       } else {
         fd = open(name, O_RDONLY, 0);
@@ -227,7 +227,7 @@ int main(int argc, char *argv[]) {
 
   if (nlines == 0) return 0;
 
-  line_t *lines = uc_malloc((size_t)nlines * sizeof(line_t));
+  line_t *lines = malloc((size_t)nlines * sizeof(line_t));
   if (!lines) {
     uc_eputs("sort: out of memory\n");
     return 1;
@@ -264,12 +264,12 @@ int main(int argc, char *argv[]) {
       }
     }
     write(1, lines[i].text, (size_t)lines[i].len);
-    uc_putc('\n');
+    putchar('\n');
     prev = lines[i].text;
     prev_len = lines[i].len;
   }
 
-  uc_free(lines);
-  uc_free(buf);
+  free(lines);
+  free(buf);
   return 0;
 }

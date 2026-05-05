@@ -51,13 +51,13 @@ int main(int argc, char *argv[]) {
   int argi = 1;
 
   while (argi < argc && argv[argi][0] == '-' && argv[argi][1] != '\0') {
-    if (uc_strcmp(argv[argi], "--help") == 0) {
+    if (strcmp(argv[argi], "--help") == 0) {
       uc_puts(
           "Usage: rmdir [-p] DIR...\n"
           "  -p  Also remove empty parent directories\n");
       return 0;
     }
-    if (uc_strcmp(argv[argi], "-p") == 0) {
+    if (strcmp(argv[argi], "-p") == 0) {
       opt_p = 1;
       argi++;
       continue;

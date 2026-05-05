@@ -6,7 +6,7 @@
 /* Output helpers — thin redirects to uclib. */
 #define put_str uc_puts
 #define put_err uc_eputs
-#define put_chr uc_putc
+#define put_chr putchar
 #define put_u32 uc_putu
 #define put_i32 uc_puti
 #define put_hex32 uc_putx32
@@ -14,7 +14,7 @@
 #define put_hex8 uc_putx8
 
 static inline int streq(const char *a, const char *b) {
-  return uc_strcmp(a, b) == 0;
+  return strcmp(a, b) == 0;
 }
 
 /* pdb-specific helpers */

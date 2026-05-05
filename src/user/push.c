@@ -18,7 +18,7 @@
 
 #define PUSH_LINE_MAX 256
 /* Expanded-token buffer: holds all $VAR expansions *and* glob matches
- * for a single input line.  Heap-allocated (uc_malloc) in execute_line()
+ * for a single input line.  Heap-allocated (malloc) in execute_line()
  * so the 4 KB user stack page doesn't have to carry it.  Matches the
  * kernel's EXEC_ARGV_BYTES_MAX so any glob that fits here also fits
  * execve. */
@@ -54,7 +54,7 @@ static int exec_lines(const char **lines, int nlines);
 
 /* ── Global state ────────────────────────────────────────────────────── */
 
-/* Backing pool for uc_malloc.  Holds the short-lived allocations
+/* Backing pool for malloc.  Holds the short-lived allocations
  * that used to crowd push's 4 KB user stack: execute_line's token
  * buffer (TOK_BUF_SIZE ≈ 1 KB), exec_if/exec_while's body_lines[128]
  * pointer array (~512 B), and exec_pipeline's stages struct array
@@ -1459,7 +1459,7 @@ static int exec_pipeline(char **toks, int ntoks, int *pos) {
     char *argv[ARGV_MAX + 1];
     int argc;
   };
-  struct stage *stages = uc_malloc(PIPE_MAX * sizeof(*stages));
+  struct stage *stages = malloc(PIPE_MAX * sizeof(*stages));
   if (!stages) {
     err_msg("pipe", "out of memory");
     return 1;
@@ -1489,7 +1489,7 @@ static int exec_pipeline(char **toks, int ntoks, int *pos) {
         nstages++;
         if (nstages >= PIPE_MAX) {
           err_msg("pipe", "too many stages");
-          uc_free(stages);
+          free(stages);
           return 1;
         }
         stages[nstages].argc = 0;
@@ -1509,7 +1509,7 @@ static int exec_pipeline(char **toks, int ntoks, int *pos) {
   /* Single command — no pipe overhead */
   if (stage_count == 1) {
     status = exec_simple(stages[0].argv, stages[0].argc);
-    uc_free(stages);
+    free(stages);
     return status;
   }
 
@@ -1525,7 +1525,7 @@ static int exec_pipeline(char **toks, int ntoks, int *pos) {
     if (i < stage_count - 1) {
       if (pipe(pipefd) < 0) {
         err_msg("pipe", "failed");
-        uc_free(stages);
+        free(stages);
         return 1;
       }
     }
@@ -1574,7 +1574,7 @@ static int exec_pipeline(char **toks, int ntoks, int *pos) {
       status = WIFEXITED(wstatus) ? (int)WEXITSTATUS(wstatus)
                                   : (128 + (int)WTERMSIG(wstatus));
   }
-  uc_free(stages);
+  free(stages);
   return status;
 }
 
@@ -1642,7 +1642,7 @@ static int exec_list(char **toks, int ntoks) {
 /* ── Line execution ──────────────────────────────────────────────────── */
 
 static int execute_line(const char *line) {
-  char *buf = uc_malloc(TOK_BUF_SIZE);
+  char *buf = malloc(TOK_BUF_SIZE);
   if (!buf) {
     puts_fd(2, "push: out of memory\n");
     last_status = 1;
@@ -1651,18 +1651,18 @@ static int execute_line(const char *line) {
   char *toks[TOKEN_MAX];
   int ntoks = tokenize(line, buf, TOK_BUF_SIZE, toks, TOKEN_MAX);
   if (ntoks < 0) {
-    uc_free(buf);
+    free(buf);
     last_status = 1;
     return 1;
   }
   if (ntoks == 0) {
-    uc_free(buf);
+    free(buf);
     return 0;
   }
 
   int status = exec_list(toks, ntoks);
   last_status = status;
-  uc_free(buf);
+  free(buf);
   return status;
 }
 
@@ -1853,7 +1853,7 @@ static int exec_if(const char *if_line, struct line_src *ls) {
   int done = 0;
   int status = 0;
 
-  const char **body_lines = uc_malloc(128 * sizeof(*body_lines));
+  const char **body_lines = malloc(128 * sizeof(*body_lines));
   if (!body_lines) {
     err_msg("if", "out of memory");
     return 1;
@@ -1908,7 +1908,7 @@ static int exec_if(const char *if_line, struct line_src *ls) {
   }
 
   compound_pool_used = save_pool;
-  uc_free(body_lines);
+  free(body_lines);
   return last_status;
 }
 
@@ -1920,7 +1920,7 @@ static int exec_while(const char *while_line, struct line_src *ls) {
   int save_pool = compound_pool_used;
   int status = 0;
 
-  const char **body_lines = uc_malloc(128 * sizeof(*body_lines));
+  const char **body_lines = malloc(128 * sizeof(*body_lines));
   if (!body_lines) {
     err_msg("while", "out of memory");
     return 1;
@@ -1952,7 +1952,7 @@ static int exec_while(const char *while_line, struct line_src *ls) {
   }
 
   compound_pool_used = save_pool;
-  uc_free(body_lines);
+  free(body_lines);
   return last_status;
 }
 

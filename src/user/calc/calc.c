@@ -26,7 +26,7 @@ static int raw_active;
 static void term_raw(void) {
   struct termios t;
   ioctl(0, TCGETS, &t);
-  uc_memcpy(&orig_termios, &t, sizeof(t));
+  memcpy(&orig_termios, &t, sizeof(t));
   /* Disable canonical input, echo, CR-NL translation, software flow.
    * Keep ISIG (Ctrl-C still works) and OPOST (\n -> \r\n on output). */
   t.c_iflag &= ~(ICRNL | IXON);
@@ -64,7 +64,7 @@ static int read_key(void) {
 }
 
 static void emit(const char *s) {
-  int n = uc_strlen(s);
+  int n = strlen(s);
   write(1, s, n);
 }
 
@@ -73,10 +73,10 @@ static void emit_str(const char *s, int n) {
 }
 
 static void cursor_to(int row, int col) {  /* 0-based */
-  /* uc_snprintf reads %d as int32_t — pass 32-bit ints to keep varargs
+  /* snprintf reads %d as int32_t — pass 32-bit ints to keep varargs
    * aligned on ia16 (where the default `int` is 16-bit). */
   char buf[32];
-  int n = uc_snprintf(buf, sizeof(buf), "\033[%d;%dH",
+  int n = snprintf(buf, sizeof(buf), "\033[%d;%dH",
                       (int32_t)(row + 1), (int32_t)(col + 1));
   emit_str(buf, n);
 }
@@ -124,7 +124,7 @@ static void tape_clear(void) {
 }
 
 static void tape_push(const char *s) {
-  uc_strncpy(tape_lines[tape_head], s, TAPE_LINE - 1);
+  strncpy(tape_lines[tape_head], s, TAPE_LINE - 1);
   tape_lines[tape_head][TAPE_LINE - 1] = '\0';
   tape_head = (tape_head + 1) % TAPE_SIZE;
   if (tape_count < TAPE_SIZE) tape_count++;
@@ -341,14 +341,14 @@ static void draw_status(const calc_state_t *s, const layout_t *L,
   attr_reset();
   attr_cyan();
   char buf[96];
-  int n = uc_snprintf(buf, sizeof(buf), "%s  W=%u  %s",
+  int n = snprintf(buf, sizeof(buf), "%s  W=%u  %s",
                       base_label(s->base), (uint32_t)s->width,
                       s->sign ? "signed" : "unsigned");
   if (n > L->main_inner_w) n = L->main_inner_w;
   emit_str(buf, n);
   int used = n;
   if (s->pending != CALC_OP_NONE && used + 14 <= L->main_inner_w) {
-    n = uc_snprintf(buf, sizeof(buf), "  [pending %s]", op_str(s->pending));
+    n = snprintf(buf, sizeof(buf), "  [pending %s]", op_str(s->pending));
     if (n > L->main_inner_w - used) n = L->main_inner_w - used;
     emit_str(buf, n);
     used += n;
@@ -422,7 +422,7 @@ static void emit_hint(const char *label) {
   write(1, c, 1);
   attr_reset();
   attr_dim();
-  int rest = uc_strlen(label + 1);
+  int rest = strlen(label + 1);
   int max_rest = HINT_W - 1;
   if (rest > max_rest) rest = max_rest;
   if (rest > 0) emit_str(label + 1, rest);
@@ -473,7 +473,7 @@ static void draw_tape_inline(const layout_t *L) {
   emit("tape: ");
   const char *latest = tape_get(0);
   if (*latest) {
-    int n = uc_strlen(latest);
+    int n = strlen(latest);
     int budget = L->main_inner_w - 6;
     if (n > budget) n = budget;
     if (n > 0) emit_str(latest, n);
@@ -492,7 +492,7 @@ static void draw_tape_pane(const layout_t *L) {
   for (int i = 0; i < max_lines; i++) {
     cursor_tape(L, L->r_top + 2 + i, 0);
     const char *t = tape_get(i);
-    int n = uc_strlen(t);
+    int n = strlen(t);
     if (n > L->tape_inner_w) n = L->tape_inner_w;
     if (n > 0) emit_str(t, n);
   }
@@ -535,7 +535,7 @@ static void draw_help(const layout_t *L) {
   if (n > avail) n = avail;
   for (int i = 0; i < n; i++) {
     cursor_main(L->r_disp + i, 0);
-    int len = uc_strlen(HELP_LINES[i]);
+    int len = strlen(HELP_LINES[i]);
     if (len > L->main_inner_w) len = L->main_inner_w;
     if (len > 0) emit_str(HELP_LINES[i], len);
   }
@@ -589,9 +589,9 @@ static void log_op(const calc_state_t *s, calc_op_t op,
   calc_render_grouped(&v, result, sizeof(result));
 
   if (op == CALC_OP_NONE) {
-    uc_snprintf(buf, sizeof(buf), "= %s", result);
+    snprintf(buf, sizeof(buf), "= %s", result);
   } else {
-    uc_snprintf(buf, sizeof(buf), "%s %s = %s",
+    snprintf(buf, sizeof(buf), "%s %s = %s",
                 op_str(op), operand, result);
   }
   tape_push(buf);
@@ -604,7 +604,7 @@ static void log_seed(const calc_state_t *s, int64_t value) {
   char text[32];
   calc_render_value(value, s->base, s->width, s->sign, &v);
   calc_render_grouped(&v, text, sizeof(text));
-  uc_snprintf(buf, sizeof(buf), "  %s", text);
+  snprintf(buf, sizeof(buf), "  %s", text);
   tape_push(buf);
 }
 

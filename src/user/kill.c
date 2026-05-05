@@ -60,7 +60,7 @@ static int parse_sig(const char *s, int *out) {
   const char *name = s;
   if (name[0] == 'S' && name[1] == 'I' && name[2] == 'G') name += 3;
   for (int i = 0; i < nsigs; i++) {
-    if (uc_strcmp(sigs[i].name, name) == 0) {
+    if (strcmp(sigs[i].name, name) == 0) {
       *out = sigs[i].num;
       return 0;
     }
@@ -70,7 +70,7 @@ static int parse_sig(const char *s, int *out) {
 
 static void list_signals(void) {
   for (int i = 0; i < nsigs; i++) {
-    uc_printf("%2d) SIG%s\n", sigs[i].num, sigs[i].name);
+    printf("%2d) SIG%s\n", sigs[i].num, sigs[i].name);
   }
 }
 
@@ -78,20 +78,20 @@ int main(int argc, char *argv[]) {
   int sig = SIGTERM;
   int argi = 1;
 
-  if (argi < argc && uc_strcmp(argv[argi], "--help") == 0) {
+  if (argi < argc && strcmp(argv[argi], "--help") == 0) {
     uc_puts(
         "Usage: kill [-SIG] PID...\n"
         "       kill -l\n");
     return 0;
   }
 
-  if (argi < argc && uc_strcmp(argv[argi], "-l") == 0) {
+  if (argi < argc && strcmp(argv[argi], "-l") == 0) {
     list_signals();
     return 0;
   }
 
   /* -s SIG form */
-  if (argi < argc && uc_strcmp(argv[argi], "-s") == 0) {
+  if (argi < argc && strcmp(argv[argi], "-s") == 0) {
     if (argi + 1 >= argc) {
       uc_eputs("kill: option -s requires an argument\n");
       return 1;

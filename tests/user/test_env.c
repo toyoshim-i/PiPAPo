@@ -6,9 +6,9 @@
  * dispatches on argv[1] to a specific verification routine.
  *
  * Sub-tests:
- *   "ok"      — envp = {"PPAP_ENV_TEST=ok", NULL}.  Child uc_getenv
+ *   "ok"      — envp = {"PPAP_ENV_TEST=ok", NULL}.  Child getenv
  *                must return "ok".
- *   "none"    — envp = NULL.  Child uc_getenv must return NULL and
+ *   "none"    — envp = NULL.  Child getenv must return NULL and
  *                environ must be non-NULL but point at an empty list.
  *   "multi"   — envp = {"PPAP_A=a", "PPAP_B=bb", "PPAP_C=ccc", NULL}.
  *                Each lookup must return its specific value; an
@@ -30,7 +30,7 @@
 #define CHILD_FAIL_ENVIRON_NULL 44 /* environ global never set */
 
 static int check_ok(void) {
-  const char *v = uc_getenv("PPAP_ENV_TEST");
+  const char *v = getenv("PPAP_ENV_TEST");
   if (!v) return CHILD_FAIL_MISSING;
   if (v[0] != 'o' || v[1] != 'k' || v[2] != '\0') return CHILD_FAIL_WRONG_VALUE;
   return 0;
@@ -39,7 +39,7 @@ static int check_ok(void) {
 static int check_none(void) {
   if (environ == 0) return CHILD_FAIL_ENVIRON_NULL;
   if (environ[0] != 0) return CHILD_FAIL_UNEXPECTED;
-  if (uc_getenv("PPAP_ENV_TEST") != 0) return CHILD_FAIL_UNEXPECTED;
+  if (getenv("PPAP_ENV_TEST") != 0) return CHILD_FAIL_UNEXPECTED;
   return 0;
 }
 
@@ -52,13 +52,13 @@ static int str_eq(const char *a, const char *b) {
 }
 
 static int check_multi(void) {
-  const char *a = uc_getenv("PPAP_A");
-  const char *b = uc_getenv("PPAP_B");
-  const char *c = uc_getenv("PPAP_C");
+  const char *a = getenv("PPAP_A");
+  const char *b = getenv("PPAP_B");
+  const char *c = getenv("PPAP_C");
   if (!a || !b || !c) return CHILD_FAIL_MISSING;
   if (!str_eq(a, "a") || !str_eq(b, "bb") || !str_eq(c, "ccc"))
     return CHILD_FAIL_WRONG_VALUE;
-  if (uc_getenv("PPAP_MISSING") != 0) return CHILD_FAIL_UNEXPECTED;
+  if (getenv("PPAP_MISSING") != 0) return CHILD_FAIL_UNEXPECTED;
   return 0;
 }
 

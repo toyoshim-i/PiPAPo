@@ -1,9 +1,13 @@
 /*
  * <stdlib.h> — general utilities (allocation, conversions, environment).
  *
- * Declarations only at this stage; implementations are not yet wired
- * in.  Numeric conversion (strtol), sorting (qsort), and the rest of
- * the standard surface will be added later.
+ * POSIX subset; implementations live in src/user/lib/stdlib.c.
+ * Numeric conversion (strtol, strtoul), sorting (qsort), and the
+ * remaining standard surface will be added in a later milestone.
+ *
+ * The malloc allocator must be seeded with a caller-owned static
+ * pool via uc_heap_init() (declared in <lib/uclib.h>) before the
+ * first malloc call.
  */
 
 #ifndef _STDLIB_H
@@ -16,7 +20,5 @@ void free(void *ptr);
 
 int atoi(const char *s);
 char *getenv(const char *name);
-
-void exit(int status) __attribute__((noreturn));
 
 #endif /* _STDLIB_H */

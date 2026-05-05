@@ -137,7 +137,7 @@ static int last_line_seen;    /* set when input source signals EOF */
 static char *pool_strndup(const char *s, int n) {
   if (pool_used + n + 1 > POOL_SIZE) return NULL;
   char *out = pool + pool_used;
-  uc_memcpy(out, s, n);
+  memcpy(out, s, n);
   out[n] = '\0';
   pool_used += n + 1;
   return out;
@@ -160,7 +160,7 @@ static void class_set(uint8_t *bm, int b) { bm[b >> 3] |= (uint8_t)(1u << (b & 7
 static int compile_class(regex_t *re, const char **p) {
   if (re->n_classes >= 8) return -1;
   uint8_t *bm = re->classes[re->n_classes];
-  uc_memset(bm, 0, 32);
+  memset(bm, 0, 32);
   int negate = 0;
   if (**p == '^') {
     negate = 1;
@@ -315,7 +315,7 @@ static int atom_match_one(const regex_t *re, int pc, const char *s, int sp,
       if (caps[g].start < 0 || caps[g].end < 0) return -1;
       int n = caps[g].end - caps[g].start;
       if (sp + n > slen) return -1;
-      if (uc_memcmp(s + sp, s + caps[g].start, n) != 0) return -1;
+      if (memcmp(s + sp, s + caps[g].start, n) != 0) return -1;
       return sp + n;
     }
     default:
@@ -605,7 +605,7 @@ static int do_subst(command_t *c, const char *src, int slen, char *out,
     /* Copy literal up to start. */
     int pre = start - si;
     if (oi + pre > out_max) return -1;
-    uc_memcpy(out + oi, src + si, pre);
+    memcpy(out + oi, src + si, pre);
     oi += pre;
 
     int do_sub = 1;
@@ -621,7 +621,7 @@ static int do_subst(command_t *c, const char *src, int slen, char *out,
         if (*r == '&') {
           int n = end - start;
           if (oi + n > out_max) return -1;
-          uc_memcpy(out + oi, src + start, n);
+          memcpy(out + oi, src + start, n);
           oi += n;
         } else if (*r == '\\' && r[1]) {
           char nc = *(++r);
@@ -630,7 +630,7 @@ static int do_subst(command_t *c, const char *src, int slen, char *out,
             if (g < MAX_GROUPS && caps[g].start >= 0 && caps[g].end >= 0) {
               int n = caps[g].end - caps[g].start;
               if (oi + n > out_max) return -1;
-              uc_memcpy(out + oi, src + caps[g].start, n);
+              memcpy(out + oi, src + caps[g].start, n);
               oi += n;
             }
           } else if (nc == 'n') {
@@ -660,7 +660,7 @@ static int do_subst(command_t *c, const char *src, int slen, char *out,
       /* Skip past match without substituting. */
       int n = end - start;
       if (oi + n > out_max) return -1;
-      uc_memcpy(out + oi, src + start, n);
+      memcpy(out + oi, src + start, n);
       oi += n;
       si = end;
       if (start == end) {
@@ -676,7 +676,7 @@ static int do_subst(command_t *c, const char *src, int slen, char *out,
       /* Single substitution mode: copy rest verbatim. */
       int rest = slen - si;
       if (oi + rest > out_max) return -1;
-      uc_memcpy(out + oi, src + si, rest);
+      memcpy(out + oi, src + si, rest);
       oi += rest;
       si = slen;
       break;
@@ -685,7 +685,7 @@ static int do_subst(command_t *c, const char *src, int slen, char *out,
   /* Copy any tail. */
   int tail = slen - si;
   if (oi + tail > out_max) return -1;
-  uc_memcpy(out + oi, src + si, tail);
+  memcpy(out + oi, src + si, tail);
   oi += tail;
   *out_len = oi;
   return subs;
@@ -752,7 +752,7 @@ static char tmp_space[PATTERN_SPACE_SIZE];
 
 static void emit_line(const char *s, int n) {
   if (n > 0) write(1, s, (size_t)n);
-  uc_putc('\n');
+  putchar('\n');
 }
 
 /* Returns 0 on normal completion, 1 if 'q' triggered quit. */
@@ -787,7 +787,7 @@ static int process_fd(int fd) {
           emit_line(pspace, plen);
           break;
         case CMD_EQ:
-          uc_printf("%u\n", (unsigned)lineno);
+          printf("%u\n", (unsigned)lineno);
           break;
         case CMD_Q:
           quit = 1;
@@ -831,7 +831,7 @@ static int process_fd(int fd) {
             return 1;
           }
           if (subs > 0) {
-            uc_memcpy(pspace, tmp_space, olen);
+            memcpy(pspace, tmp_space, olen);
             plen = olen;
             if (c->s_print) emit_line(pspace, plen);
           }
@@ -882,11 +882,11 @@ int main(int argc, char *argv[]) {
   int script_seen = 0;
   int argi = 1;
   while (argi < argc && argv[argi][0] == '-' && argv[argi][1] != '\0') {
-    if (uc_strcmp(argv[argi], "--") == 0) {
+    if (strcmp(argv[argi], "--") == 0) {
       argi++;
       break;
     }
-    if (uc_strcmp(argv[argi], "--help") == 0) {
+    if (strcmp(argv[argi], "--help") == 0) {
       uc_puts(
           "Usage: sed [-n] [-e SCRIPT]... [-f SCRIPTFILE]... [SCRIPT] "
           "[file ...]\n"
@@ -958,7 +958,7 @@ int main(int argc, char *argv[]) {
   } else {
     for (int i = argi; i < argc; i++) {
       int fd;
-      if (uc_strcmp(argv[i], "-") == 0) {
+      if (strcmp(argv[i], "-") == 0) {
         fd = 0;
       } else {
         fd = open(argv[i], O_RDONLY, 0);

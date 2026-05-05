@@ -32,13 +32,13 @@ int main(int argc, char *argv[]) {
   int force = 0;
 
   while (argi < argc && argv[argi][0] == '-' && argv[argi][1] != '\0') {
-    if (uc_strcmp(argv[argi], "--help") == 0) {
+    if (strcmp(argv[argi], "--help") == 0) {
       uc_puts(
           "Usage: cp [-f] [--no-color] SOURCE DEST\n"
           "  -f  Truncate DEST if it exists (default: fail if DEST exists)\n");
       return 0;
     }
-    if (uc_strcmp(argv[argi], "--no-color") == 0) {
+    if (strcmp(argv[argi], "--no-color") == 0) {
       use_color = 0;
       argi++;
       continue;
@@ -51,7 +51,7 @@ int main(int argc, char *argv[]) {
           break;
         default:
           uc_eputs("cp: unknown option: -");
-          uc_putc(*p);
+          putchar(*p);
           uc_eputs("\n");
           return 1;
       }

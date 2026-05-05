@@ -49,7 +49,7 @@
 /* ── Low-level ANSI helpers ───────────────────────────────────────────── */
 
 void pile_draw_cursor_to(int row, int col) {
-  uc_printf("\033[%d;%dH", (int32_t)(row + 1), (int32_t)(col + 1));
+  printf("\033[%d;%dH", (int32_t)(row + 1), (int32_t)(col + 1));
 }
 
 void pile_draw_clear_to_eol(void) { uc_puts("\033[K"); }
@@ -60,7 +60,7 @@ static void cursor_show(void) { uc_puts("\033[?25h"); }
 static void attr_reset(void) { uc_puts("\033[0m"); }
 
 static void put_spaces(int n) {
-  for (int i = 0; i < n; i++) uc_putc(' ');
+  for (int i = 0; i < n; i++) putchar(' ');
 }
 
 /* ── Public helpers ───────────────────────────────────────────────────── */
@@ -120,7 +120,7 @@ static void fmt_size_compact(char buf[8], uint32_t v) {
     v /= 10;
   }
   int dlen = (int)sizeof(digits) - 1 - dpos;
-  int slen = uc_strlen(suffix);
+  int slen = strlen(suffix);
   int pad = 7 - dlen - slen;
   if (pad < 0) pad = 0;
   int out = 0;
@@ -178,26 +178,26 @@ static void draw_pane_header(int row, int col, int width,
   uc_puts(is_active ? C_HEADER : C_HEADER_OFF);
   uc_puts("-- ");
   int used = 3;
-  int plen = uc_strlen(pane->path);
+  int plen = strlen(pane->path);
   int max_path = width - 5;
   if (max_path < 4) max_path = 4;
   if (plen > max_path) {
     /* Truncate the head of the path — keep the tail visible. */
-    uc_putc('~');
+    putchar('~');
     used++;
     const char *tail = pane->path + (plen - (max_path - 1));
     int tail_len = max_path - 1;
-    for (int i = 0; i < tail_len; i++) uc_putc(tail[i]);
+    for (int i = 0; i < tail_len; i++) putchar(tail[i]);
     used += tail_len;
   } else {
     uc_puts(pane->path);
     used += plen;
   }
-  uc_putc(' ');
+  putchar(' ');
   used++;
   uc_puts(C_RST);
   uc_puts(C_FRAME);
-  while (used < width) { uc_putc('-'); used++; }
+  while (used < width) { putchar('-'); used++; }
   uc_puts(C_RST);
 }
 
@@ -219,7 +219,7 @@ static void draw_entry_row(int row, int col, int width,
   else if (is_cursor_inactive) uc_puts(C_CUR_OFF);
   else if (is_marked) uc_puts(C_MARK);
 
-  uc_putc(is_marked ? '*' : ' ');
+  putchar(is_marked ? '*' : ' ');
 
   /* name | suffix | space | 9-col size */
   int name_col = width - 1 - 1 - 1 - 9;
@@ -227,15 +227,15 @@ static void draw_entry_row(int row, int col, int width,
 
   int scoped = is_cursor_active || is_cursor_inactive || is_marked;
   if (!scoped) uc_puts(entry_color(e));
-  int nlen = uc_strlen(e->name);
+  int nlen = strlen(e->name);
   int shown = nlen < name_col ? nlen : name_col;
-  for (int i = 0; i < shown; i++) uc_putc(e->name[i]);
+  for (int i = 0; i < shown; i++) putchar(e->name[i]);
   if (!scoped) uc_puts(C_RST);
 
   int pad = name_col - shown;
   put_spaces(pad);
-  uc_putc(entry_suffix(e));
-  uc_putc(' ');
+  putchar(entry_suffix(e));
+  putchar(' ');
 
   char sbuf[10];
   fmt_size(sbuf, e);
@@ -253,16 +253,16 @@ static void draw_pane_footer(int row, int col, int width,
   pile_draw_cursor_to(row, col);
   uc_puts(C_FRAME);
   put_spaces(2);
-  uc_printf("%u", (uint32_t)(pane->cursor + (pane->count ? 1 : 0)));
-  uc_putc('/');
-  uc_printf("%u", (uint32_t)(pane->count));
-  if (pane->truncated) uc_putc('+');
+  printf("%u", (uint32_t)(pane->cursor + (pane->count ? 1 : 0)));
+  putchar('/');
+  printf("%u", (uint32_t)(pane->count));
+  if (pane->truncated) putchar('+');
 
   int sel = pile_pane_sel_count(pane);
   if (sel > 0) {
     uc_puts("  ");
     uc_puts(C_RST);
-    uc_printf("%u", (uint32_t)(sel));
+    printf("%u", (uint32_t)(sel));
     uc_puts(C_FRAME);
     uc_puts(" sel");
   }
@@ -277,7 +277,7 @@ static void draw_pane_footer(int row, int col, int width,
   }
   char sz[8];
   fmt_size_compact(sz, total);
-  int slen = uc_strlen(sz);
+  int slen = strlen(sz);
   int total_col = col + width - 1 - slen;
   pile_draw_cursor_to(row, total_col);
   uc_puts(C_FRAME);
@@ -291,7 +291,7 @@ static void draw_divider(int col, int first_row, int last_row) {
   uc_puts(C_FRAME);
   for (int r = first_row; r <= last_row; r++) {
     pile_draw_cursor_to(r, col);
-    uc_putc('|');
+    putchar('|');
   }
   uc_puts(C_RST);
 }
@@ -301,7 +301,7 @@ static void draw_divider(int col, int first_row, int last_row) {
 static void draw_rule(int row) {
   pile_draw_cursor_to(row, 0);
   uc_puts(C_FRAME);
-  for (int i = 0; i < pile_cols; i++) uc_putc('-');
+  for (int i = 0; i < pile_cols; i++) putchar('-');
   uc_puts(C_RST);
 }
 
@@ -322,11 +322,11 @@ static void draw_stat_strip(int row_path, int row_detail) {
   const pile_entry_t *e = &pane->entries[pane->cursor];
 
   /* Line 1: leading "  " + pane path + "/" + name */
-  uc_putc(' ');
-  uc_putc(' ');
+  putchar(' ');
+  putchar(' ');
   uc_puts(pane->path);
-  int plen = uc_strlen(pane->path);
-  if (plen == 0 || pane->path[plen - 1] != '/') uc_putc('/');
+  int plen = strlen(pane->path);
+  if (plen == 0 || pane->path[plen - 1] != '/') putchar('/');
   uc_puts(entry_color(e));
   uc_puts(e->name);
   uc_puts(C_RST);
@@ -334,8 +334,8 @@ static void draw_stat_strip(int row_path, int row_detail) {
 
   /* Line 2: size + mode + mtime (if available) */
   pile_draw_cursor_to(row_detail, 0);
-  uc_putc(' ');
-  uc_putc(' ');
+  putchar(' ');
+  putchar(' ');
   char sbuf[10];
   fmt_size(sbuf, e);
   /* trim leading spaces from the right-justified size */
@@ -359,7 +359,7 @@ static void draw_stat_strip(int row_path, int row_detail) {
 
 static void draw_status(int row) {
   pile_draw_cursor_to(row, 0);
-  uc_putc(' ');
+  putchar(' ');
   uc_puts(pile_status_is_error ? C_ERR : C_WARN);
   uc_puts(pile_status_msg);
   uc_puts(C_RST);
@@ -375,16 +375,16 @@ static void draw_bottom_bar(int row) {
   uc_puts(C_FRAME);
   int usable = pile_cols - 1;  /* reserve the last column */
   if (usable < 11) {
-    for (int i = 0; i < usable; i++) uc_putc('-');
+    for (int i = 0; i < usable; i++) putchar('-');
     uc_puts(C_RST);
     return;
   }
   const int hint_width = 8;  /* " ?: help" */
   int dashes = usable - hint_width;
-  for (int i = 0; i < dashes; i++) uc_putc('-');
-  uc_putc(' ');
+  for (int i = 0; i < dashes; i++) putchar('-');
+  putchar(' ');
   uc_puts(C_RST);
-  uc_puts(C_KEY); uc_putc('?'); uc_puts(C_RST);
+  uc_puts(C_KEY); putchar('?'); uc_puts(C_RST);
   uc_puts(C_FRAME);
   uc_puts(": help");
   uc_puts(C_RST);
@@ -511,13 +511,13 @@ void pile_show_help(void) {
     if (!body[i].left[0]) continue;  /* blank spacer */
     if (!body[i].right) {
       uc_puts(C_KEY);
-      uc_putc(' ');
+      putchar(' ');
       uc_puts(body[i].left);
       uc_puts(C_RST);
     } else {
       uc_puts(body[i].left);
-      int left_len = uc_strlen(body[i].left);
-      while (left_len < pad_to) { uc_putc(' '); left_len++; }
+      int left_len = strlen(body[i].left);
+      while (left_len < pad_to) { putchar(' '); left_len++; }
       uc_puts(C_FRAME);
       uc_puts(body[i].right);
       uc_puts(C_RST);

@@ -1,63 +1,53 @@
 /*
- * uclib.h — micro C library for PPAP user space
+ * uclib.h — PPAP user-space extensions over the POSIX-flavoured libc.
  *
- * Tiny, freestanding utility library.  No heap, no global state.
- * All functions are reentrant.  Build with -ffunction-sections
- * -fdata-sections and link with --gc-sections so unused functions
- * are stripped at zero cost.
+ * For the POSIX subset (strlen, memcpy, malloc, printf, snprintf, …)
+ * include <string.h>, <stdlib.h>, <stdio.h> directly.  This header
+ * keeps only the PPAP-specific helpers that have no POSIX equivalent
+ * yet — the surviving `uc_` symbols.  The `uc_` prefix is a deliberate
+ * TODO marker: each entry is slated to migrate to a standard name once
+ * the matching POSIX surface lands.
+ *
+ * Build with -ffunction-sections -fdata-sections so each function
+ * lands in its own ELF section.  Link with --gc-sections to strip
+ * anything the app doesn't reference.
  */
 
 #ifndef PPAP_USER_LIB_UCLIB_H
 #define PPAP_USER_LIB_UCLIB_H
 
 #include <stdarg.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "syscall.h"
 
-/* --- formatted output (fd-based) --- */
-void uc_puts(const char *s);  /* NUL-terminated string to stdout */
-void uc_eputs(const char *s); /* NUL-terminated string to stderr */
-void uc_putc(char c);         /* single char to stdout */
-void uc_putu(uint32_t v);     /* decimal unsigned */
-void uc_puti(int32_t v);      /* decimal signed */
-void uc_putx32(uint32_t v);   /* "0x" + 8 hex digits */
-void uc_putx16(uint32_t v);   /* "0x" + 4 hex digits */
-void uc_putx8(uint32_t v);    /* "0x" + 2 hex digits */
-
-/* snprintf-like: returns bytes written (excl. NUL), truncates safely.
- * Supported: %s %d %u %x %c %%, width/zero-pad for %d/%u/%x. */
-int uc_snprintf(char *buf, int size, const char *fmt, ...);
-int uc_vsnprintf(char *buf, int size, const char *fmt, va_list ap);
-
-/* printf-like wrappers: format into a 256-byte stack buffer and write
- * the result to stdout / stderr.  Same supported specifiers as
- * uc_snprintf.  Output exceeding 255 bytes is silently truncated; for
- * larger outputs use uc_snprintf with your own buffer + uc_puts. */
-void uc_printf(const char *fmt, ...);
+/* ── stdout / stderr stopgaps ─────────────────────────────────────────
+ *
+ * Replaced by POSIX puts / fputs(s, stderr) / fputc(c, stderr) /
+ * fprintf(stderr, …) once <stdio.h> grows FILE streams.
+ */
+void uc_puts(const char *s);  /* stdout, no auto-newline */
+void uc_eputs(const char *s); /* stderr, no auto-newline */
 void uc_eprintf(const char *fmt, ...);
 
-/* --- string operations --- */
-int uc_strlen(const char *s);
-int uc_strcmp(const char *a, const char *b);
-int uc_strncmp(const char *a, const char *b, int n);
-char *uc_strcpy(char *dst, const char *src);
-char *uc_strncpy(char *dst, const char *src, int n);
-char *uc_strchr(const char *s, int c);
-char *uc_strrchr(const char *s, int c);
+/* ── Unbuffered numeric output (re-evaluate when printf is mature) ── */
+void uc_putu(uint32_t v);   /* decimal unsigned */
+void uc_puti(int32_t v);    /* decimal signed */
+void uc_putx32(uint32_t v); /* "0x" + 8 hex digits */
+void uc_putx16(uint32_t v); /* "0x" + 4 hex digits */
+void uc_putx8(uint32_t v);  /* "0x" + 2 hex digits */
 
-/* --- memory operations --- */
-void *uc_memcpy(void *dst, const void *src, int n);
-void *uc_memset(void *dst, int c, int n);
-int uc_memcmp(const void *a, const void *b, int n);
-
-/* --- numeric parsing --- */
-int uc_atoi(const char *s);
+/* ── Numeric parsing (will fold into strtoul-based replacement) ───── */
 int uc_parse_u32(const char *s, uint32_t *out); /* 0 on success */
 
-/* --- path helpers --- */
+/* ── Path (future <libgen.h>) ─────────────────────────────────────── */
 const char *uc_basename(const char *path);
 
-/* --- file copy helper ---
+/* ── File copy helper ─────────────────────────────────────────────── *
  *
  * Read from src_fd, write to dst_fd, until EOF.  Returns total bytes
  * copied (≥ 0) on success, -1 on any read / write error (errno-ish
@@ -67,12 +57,13 @@ const char *uc_basename(const char *path);
  */
 long uc_copy_fd(int src_fd, int dst_fd);
 
-/* --- calendar helpers ---
+/* ── Calendar (future <time.h>) ────────────────────────────────────── *
  *
  * Convert Unix epoch seconds (UTC) to broken-down time and format
  * for display.  No locale, no timezone handling — everything is UTC.
  * Suitable for `ls -l`, `date`, and similar.  Up to year 2106
- * (uint32 seconds).
+ * (uint32 seconds).  POSIX gmtime / struct tm / strftime will replace
+ * these once <time.h> grows the full surface.
  */
 struct uc_tm {
   int year; /* full Gregorian year, e.g. 2026 */
@@ -88,35 +79,26 @@ void uc_gmtime(uint32_t epoch, struct uc_tm *out);
  * buf[16]) into buf.  Caller provides at least 17 bytes. */
 void uc_format_ymdhm(char buf[17], uint32_t epoch);
 
-/* --- environment ---
+/* ── Environment ──────────────────────────────────────────────────── *
  *
  * `environ` points at the NULL-terminated envp array the kernel placed
  * on the initial user stack (right after argv's NULL terminator).  It
  * is set by _uclib_init_env(), which crt0 calls before main().  Apps
- * can read env variables via uc_getenv() without having to walk argv
- * themselves.  Modifying environ or its strings is not supported — use
- * a shell/builtin-level env table for that (push does). */
+ * read env variables via getenv() (declared in <stdlib.h>) without
+ * having to walk argv themselves.
+ */
 extern char **environ;
-const char *uc_getenv(const char *name);
 
 /* Called from crt0 before main() — computes environ from argc/argv.
  * Never call from application code. */
 void _uclib_init_env(int argc, char **argv);
 
-/* --- user-space heap (uc_heap.c) ---
+/* ── User-space heap pool seeding ─────────────────────────────────── *
  *
- * Best-fit allocator over a caller-supplied static pool with inline
- * metadata.  Mirrors the page-allocator idiom: address-sorted free
- * list, always-coalesced invariant on free.  4-byte per-allocation
- * overhead; single pool per process.
- *
- * uc_heap_init   — seed the pool; idempotent (resets the heap).
- * uc_malloc      — returns NULL on OOM, on size 0, or if size > 64 KB.
- * uc_free        — NULL-safe; double-free is undefined behaviour.
- *
- * See docs/user/uc_malloc.md for the full design notes. */
+ * malloc / free are declared in <stdlib.h>.  Each process must seed
+ * the allocator's pool before first malloc; uc_heap_init takes a
+ * caller-owned static buffer.  See docs/user/malloc.md.
+ */
 void uc_heap_init(void *pool, size_t size);
-void *uc_malloc(size_t size);
-void uc_free(void *ptr);
 
 #endif /* PPAP_USER_LIB_UCLIB_H */

@@ -25,7 +25,7 @@ int main(int argc, char *argv[]) {
   int argi = 1;
 
   while (argi < argc && argv[argi][0] == '-' && argv[argi][1] != '\0') {
-    if (uc_strcmp(argv[argi], "--help") == 0) {
+    if (strcmp(argv[argi], "--help") == 0) {
       uc_puts(
           "Usage: ln [--no-color] TARGET [LINK_NAME]\n"
           "  Create a hard link LINK_NAME pointing at TARGET.\n"
@@ -33,12 +33,12 @@ int main(int argc, char *argv[]) {
           "  Symbolic links (-s) are not supported — use busybox ln.\n");
       return 0;
     }
-    if (uc_strcmp(argv[argi], "--no-color") == 0) {
+    if (strcmp(argv[argi], "--no-color") == 0) {
       use_color = 0;
       argi++;
       continue;
     }
-    if (uc_strcmp(argv[argi], "-s") == 0) {
+    if (strcmp(argv[argi], "-s") == 0) {
       uc_eputs("ln: -s (symbolic link) not supported; use busybox ln\n");
       return 1;
     }

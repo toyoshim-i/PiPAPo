@@ -20,7 +20,7 @@
 #define F_A (F_S | F_N | F_R | F_V | F_M)
 
 static void print_field(const char *field, int *first) {
-  if (!*first) uc_putc(' ');
+  if (!*first) putchar(' ');
   uc_puts(field);
   *first = 0;
 }
@@ -30,7 +30,7 @@ int main(int argc, char *argv[]) {
 
   for (int argi = 1; argi < argc; argi++) {
     const char *a = argv[argi];
-    if (uc_strcmp(a, "--help") == 0) {
+    if (strcmp(a, "--help") == 0) {
       uc_puts(
           "Usage: uname [-asnrvm]\n"
           "  -s  Kernel name (default)\n"
@@ -57,7 +57,7 @@ int main(int argc, char *argv[]) {
         case 'm': flags |= F_M; break;
         default:
           uc_eputs("uname: unknown option: -");
-          uc_putc(*p);
+          putchar(*p);
           uc_eputs("\n");
           return 1;
       }
@@ -78,6 +78,6 @@ int main(int argc, char *argv[]) {
   if (flags & F_R) print_field(u.release, &first);
   if (flags & F_V) print_field(u.version, &first);
   if (flags & F_M) print_field(u.machine, &first);
-  uc_putc('\n');
+  putchar('\n');
   return 0;
 }

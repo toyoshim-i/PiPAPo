@@ -552,29 +552,25 @@ function(_ppap_build_user_programs)
         DEPENDS ${PPAP_ARCH_DIR}/syscall.S
         COMMENT "Assembling syscall.o (${PPAP_ARCH})"
     )
-    add_custom_command(
-        OUTPUT ${PPAP_SHARED_BUILD}/uclib.o
-        COMMAND ${PPAP_CC} ${PPAP_USER_CFLAGS}
-                -ffunction-sections -fdata-sections
-                -c -o ${PPAP_SHARED_BUILD}/uclib.o
-                ${PPAP_ROOT}/src/user/lib/uclib.c
-        DEPENDS ${PPAP_ROOT}/src/user/lib/uclib.c
-                ${PPAP_ROOT}/src/user/lib/uclib.h
-        COMMENT "Compiling uclib.o (${PPAP_ARCH})"
-    )
-    add_custom_command(
-        OUTPUT ${PPAP_SHARED_BUILD}/uc_heap.o
-        COMMAND ${PPAP_CC} ${PPAP_USER_CFLAGS}
-                -ffunction-sections -fdata-sections
-                -c -o ${PPAP_SHARED_BUILD}/uc_heap.o
-                ${PPAP_ROOT}/src/user/lib/uc_heap.c
-        DEPENDS ${PPAP_ROOT}/src/user/lib/uc_heap.c
-                ${PPAP_ROOT}/src/user/lib/uclib.h
-        COMMENT "Compiling uc_heap.o (${PPAP_ARCH})"
-    )
+    set(_libc_units string stdio stdlib alloc util)
+    set(_libc_objs)
+    foreach(_unit ${_libc_units})
+        set(_obj ${PPAP_SHARED_BUILD}/libc_${_unit}.o)
+        add_custom_command(
+            OUTPUT ${_obj}
+            COMMAND ${PPAP_CC} ${PPAP_USER_CFLAGS}
+                    -ffunction-sections -fdata-sections
+                    -c -o ${_obj}
+                    ${PPAP_ROOT}/src/user/lib/${_unit}.c
+            DEPENDS ${PPAP_ROOT}/src/user/lib/${_unit}.c
+                    ${PPAP_ROOT}/src/user/lib/uclib.h
+            COMMENT "Compiling libc_${_unit}.o (${PPAP_ARCH})"
+        )
+        list(APPEND _libc_objs ${_obj})
+    endforeach()
     set(PPAP_CRT_OBJS
         ${PPAP_SHARED_BUILD}/crt0.o ${PPAP_SHARED_BUILD}/syscall.o
-        ${PPAP_SHARED_BUILD}/uclib.o ${PPAP_SHARED_BUILD}/uc_heap.o)
+        ${_libc_objs})
 
     # --- Optional arch-supplied sigaction() wrapper ---
     # Arches using the sa_restorer signal-delivery model (ARM today;

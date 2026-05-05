@@ -60,7 +60,7 @@ static int line_matches(const char *line, int len) {
     char first = pattern[0];
     for (int i = 0; i <= last; i++) {
       if (line[i] != first) continue;
-      if (uc_memcmp(line + i, pattern, pattern_len) == 0) return 1;
+      if (memcmp(line + i, pattern, pattern_len) == 0) return 1;
     }
   }
   return 0;
@@ -91,11 +91,11 @@ static int grep_fd(int fd, const char *name, int print_name,
           if (!(flags & (F_C | F_Q))) {
             if (print_name) {
               uc_puts(name);
-              uc_putc(':');
+              putchar(':');
             }
-            if (flags & F_N) uc_printf("%u:", (unsigned)lineno);
+            if (flags & F_N) printf("%u:", (unsigned)lineno);
             write(1, line, (size_t)line_len);
-            uc_putc('\n');
+            putchar('\n');
           }
         }
         line_len = 0;
@@ -114,11 +114,11 @@ static int grep_fd(int fd, const char *name, int print_name,
       if (!(flags & (F_C | F_Q))) {
         if (print_name) {
           uc_puts(name);
-          uc_putc(':');
+          putchar(':');
         }
-        if (flags & F_N) uc_printf("%u:", (unsigned)lineno);
+        if (flags & F_N) printf("%u:", (unsigned)lineno);
         write(1, line, (size_t)line_len);
-        uc_putc('\n');
+        putchar('\n');
       }
     }
   }
@@ -128,9 +128,9 @@ static int grep_fd(int fd, const char *name, int print_name,
 static int parse_options(int argc, char *argv[]) {
   int argi = 1;
   while (argi < argc && argv[argi][0] == '-' && argv[argi][1] != '\0' &&
-         uc_strcmp(argv[argi], "-") != 0) {
-    if (uc_strcmp(argv[argi], "--") == 0) return argi + 1;
-    if (uc_strcmp(argv[argi], "--help") == 0) {
+         strcmp(argv[argi], "-") != 0) {
+    if (strcmp(argv[argi], "--") == 0) return argi + 1;
+    if (strcmp(argv[argi], "--help") == 0) {
       uc_puts(
           "Usage: grep [-nivcqhHF] PATTERN [file ...]\n"
           "  -n  Prefix each line with line number\n"
@@ -157,7 +157,7 @@ static int parse_options(int argc, char *argv[]) {
         case 'F': break;
         default:
           uc_eputs("grep: unknown option: -");
-          uc_putc(*p);
+          putchar(*p);
           uc_eputs("\n");
           return -1;
       }
@@ -178,7 +178,7 @@ int main(int argc, char *argv[]) {
     return 2;
   }
   pattern = argv[argi++];
-  pattern_len = uc_strlen(pattern);
+  pattern_len = strlen(pattern);
 
   int any_matched = 0;
   int rc = 0;
@@ -196,13 +196,13 @@ int main(int argc, char *argv[]) {
   if (nfiles == 0) {
     uint32_t count;
     if (grep_fd(0, "(stdin)", print_name, &count)) rc = 2;
-    if (flags & F_C) uc_printf("%u\n", (unsigned)count);
+    if (flags & F_C) printf("%u\n", (unsigned)count);
     if (count > 0) any_matched = 1;
   } else {
     for (int i = argi; i < argc; i++) {
       int fd;
       const char *name = argv[i];
-      if (uc_strcmp(name, "-") == 0) {
+      if (strcmp(name, "-") == 0) {
         fd = 0;
       } else {
         fd = open(name, O_RDONLY, 0);
@@ -219,9 +219,9 @@ int main(int argc, char *argv[]) {
       if (flags & F_C) {
         if (print_name) {
           uc_puts(name);
-          uc_putc(':');
+          putchar(':');
         }
-        uc_printf("%u\n", (unsigned)count);
+        printf("%u\n", (unsigned)count);
       }
       if (count > 0) any_matched = 1;
       if (fd != 0) close(fd);

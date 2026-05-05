@@ -104,6 +104,7 @@ set(PCXT_USER_CFLAGS
   -Wno-unused-parameter
   -I${PPAP_ROOT}/src
   -I${PCXT_USER_DIR}
+  -isystem ${PPAP_ROOT}/src/user/include
 )
 
 set(PCXT_USER_ASFLAGS
@@ -136,40 +137,26 @@ add_custom_command(
   COMMENT "Assembling ia16 syscall.o"
 )
 
-add_custom_command(
-  OUTPUT ${PCXT_USER_BUILD_DIR}/runtime.o
-  COMMAND ${CMAKE_C_COMPILER} ${PCXT_USER_CFLAGS} -c
-          -o ${PCXT_USER_BUILD_DIR}/runtime.o ${PCXT_USER_ARCH_DIR}/runtime.c
-  DEPENDS ${PCXT_USER_ARCH_DIR}/runtime.c
-  COMMENT "Compiling ia16 runtime.o"
-)
-
-add_custom_command(
-  OUTPUT ${PCXT_USER_BUILD_DIR}/uclib.o
-  COMMAND ${CMAKE_C_COMPILER} ${PCXT_USER_CFLAGS}
-    -ffunction-sections -fdata-sections -c
-    -o ${PCXT_USER_BUILD_DIR}/uclib.o ${PPAP_ROOT}/src/user/lib/uclib.c
-  DEPENDS ${PPAP_ROOT}/src/user/lib/uclib.c
-    ${PPAP_ROOT}/src/user/lib/uclib.h
-  COMMENT "Compiling ia16 uclib.o"
-)
-
-add_custom_command(
-  OUTPUT ${PCXT_USER_BUILD_DIR}/uc_heap.o
-  COMMAND ${CMAKE_C_COMPILER} ${PCXT_USER_CFLAGS}
-    -ffunction-sections -fdata-sections -c
-    -o ${PCXT_USER_BUILD_DIR}/uc_heap.o ${PPAP_ROOT}/src/user/lib/uc_heap.c
-  DEPENDS ${PPAP_ROOT}/src/user/lib/uc_heap.c
-    ${PPAP_ROOT}/src/user/lib/uclib.h
-  COMMENT "Compiling ia16 uc_heap.o"
-)
+set(_pcxt_libc_units string stdio stdlib alloc util)
+set(_pcxt_libc_objs)
+foreach(_unit ${_pcxt_libc_units})
+  set(_obj ${PCXT_USER_BUILD_DIR}/libc_${_unit}.o)
+  add_custom_command(
+    OUTPUT ${_obj}
+    COMMAND ${CMAKE_C_COMPILER} ${PCXT_USER_CFLAGS}
+      -ffunction-sections -fdata-sections -c
+      -o ${_obj} ${PPAP_ROOT}/src/user/lib/${_unit}.c
+    DEPENDS ${PPAP_ROOT}/src/user/lib/${_unit}.c
+      ${PPAP_ROOT}/src/user/lib/uclib.h
+    COMMENT "Compiling ia16 libc_${_unit}.o"
+  )
+  list(APPEND _pcxt_libc_objs ${_obj})
+endforeach()
 
 set(PCXT_CRT_OBJS
   ${PCXT_USER_BUILD_DIR}/crt0.o
   ${PCXT_USER_BUILD_DIR}/syscall.o
-  ${PCXT_USER_BUILD_DIR}/runtime.o
-  ${PCXT_USER_BUILD_DIR}/uclib.o
-  ${PCXT_USER_BUILD_DIR}/uc_heap.o
+  ${_pcxt_libc_objs}
 )
 
 function(pcxt_user_program name source)

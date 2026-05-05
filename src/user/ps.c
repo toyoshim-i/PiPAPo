@@ -34,7 +34,7 @@ static int parse_stat(const char *buf, int *pid, char *comm, int commsz,
                       uint32_t *vsz) {
   const char *p = buf;
 
-  *pid = uc_atoi(p);
+  *pid = atoi(p);
   while (*p && *p != '(') p++;
   if (!*p) return -1;
   p++;
@@ -52,7 +52,7 @@ static int parse_stat(const char *buf, int *pid, char *comm, int commsz,
   *state = *p++;
   while (*p == ' ') p++;
 
-  *ppid = uc_atoi(p);
+  *ppid = atoi(p);
 
   /* Advance to field 14 (utime): p is at field 4 digits,
    * skip 10 spaces (one after each of fields 4-13). */
@@ -103,7 +103,7 @@ static void print_right(uint32_t v, int width) {
     }
   }
   int len = (int)sizeof(buf) - 1 - pos;
-  for (int i = len; i < width; i++) uc_putc(' ');
+  for (int i = len; i < width; i++) putchar(' ');
   uc_puts(&buf[pos]);
 }
 
@@ -112,18 +112,18 @@ static void print_time(uint32_t ticks) {
   uint32_t secs = ticks / 100;
   uint32_t mins = secs / 60;
   secs %= 60;
-  uc_printf("%2u:%02u", mins, secs);
+  printf("%2u:%02u", mins, secs);
 }
 
 int main(int argc, char *argv[]) {
   for (int i = 1; i < argc; i++) {
-    if (uc_strcmp(argv[i], "--help") == 0) {
+    if (strcmp(argv[i], "--help") == 0) {
       uc_puts(
           "Usage: ps [--no-color]\n"
           "List all processes.\n"
           "Columns: PID, PPID, State, TIME, MEM, COMMAND\n");
       return 0;
-    } else if (uc_strcmp(argv[i], "--no-color") == 0) {
+    } else if (strcmp(argv[i], "--no-color") == 0) {
       use_color = 0;
     }
   }
@@ -132,7 +132,7 @@ int main(int argc, char *argv[]) {
   uc_puts(C_BOLD);
   uc_puts("  PID  PPID S  TIME    MEM COMMAND");
   uc_puts(C_RST);
-  uc_putc('\n');
+  putchar('\n');
 
   int dfd = open("/proc", O_RDONLY, 0);
   if (dfd < 0) return 1;
@@ -142,7 +142,7 @@ int main(int argc, char *argv[]) {
     if (de.d_name[0] < '1' || de.d_name[0] > '9') continue;
 
     char path[32];
-    uc_snprintf(path, (int)sizeof(path), "/proc/%s/stat", de.d_name);
+    snprintf(path, (int)sizeof(path), "/proc/%s/stat", de.d_name);
 
     int fd = open(path, O_RDONLY, 0);
     if (fd < 0) continue;
@@ -166,14 +166,14 @@ int main(int argc, char *argv[]) {
     uc_puts(C_BLUE);
     print_right((uint32_t)ppid, 6);
     uc_puts(C_RST);
-    uc_putc(' ');
+    putchar(' ');
     if (state == 'R') uc_puts(C_BGREEN);
     else if (state == 'Z') uc_puts(C_BRED);
     else if (state == 'I') uc_puts(C_BLUE);
     else uc_puts(C_WHITE);
-    uc_putc(state);
+    putchar(state);
     uc_puts(C_RST);
-    uc_putc(' ');
+    putchar(' ');
     uc_puts(C_MAGENTA);
     print_time(utime + stime);
     uc_puts(C_RST);
@@ -181,11 +181,11 @@ int main(int argc, char *argv[]) {
     print_right(vsz / 1024, 7);
     uc_puts("K");
     uc_puts(C_RST);
-    uc_putc(' ');
+    putchar(' ');
     uc_puts(C_BWHITE);
     uc_puts(comm);
     uc_puts(C_RST);
-    uc_putc('\n');
+    putchar('\n');
   }
 
   close(dfd);

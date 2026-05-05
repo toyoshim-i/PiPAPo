@@ -56,7 +56,7 @@ static int wc_fd(int fd, wc_count_t *out) {
 }
 
 static void print_field(uint32_t v, int *first) {
-  uc_printf(*first ? "%7u" : " %7u", v);
+  printf(*first ? "%7u" : " %7u", v);
   *first = 0;
 }
 
@@ -66,18 +66,18 @@ static void print_counts(const wc_count_t *c, const char *name) {
   if (flags & F_W) print_field(c->words, &first);
   if (flags & F_C) print_field(c->bytes, &first);
   if (name) {
-    uc_putc(' ');
+    putchar(' ');
     uc_puts(name);
   }
-  uc_putc('\n');
+  putchar('\n');
 }
 
 int main(int argc, char *argv[]) {
   int argi = 1;
 
   while (argi < argc && argv[argi][0] == '-' &&
-         uc_strcmp(argv[argi], "-") != 0) {
-    if (uc_strcmp(argv[argi], "--help") == 0) {
+         strcmp(argv[argi], "-") != 0) {
+    if (strcmp(argv[argi], "--help") == 0) {
       uc_puts(
           "Usage: wc [-lwc] [file ...]\n"
           "  -l  Count newlines\n"
@@ -95,7 +95,7 @@ int main(int argc, char *argv[]) {
         case 'c': flags |= F_C; break;
         default:
           uc_eputs("wc: unknown option: -");
-          uc_putc(*p);
+          putchar(*p);
           uc_eputs("\n");
           return 1;
       }
@@ -119,7 +119,7 @@ int main(int argc, char *argv[]) {
 
   for (int i = argi; i < argc; i++) {
     int fd;
-    if (uc_strcmp(argv[i], "-") == 0) {
+    if (strcmp(argv[i], "-") == 0) {
       fd = 0;
     } else {
       fd = open(argv[i], O_RDONLY, 0);

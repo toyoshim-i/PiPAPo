@@ -38,14 +38,14 @@ int main(int argc, char *argv[]) {
   int argi = 1;
 
   while (argi < argc && argv[argi][0] == '-' && argv[argi][1] != '\0') {
-    if (uc_strcmp(argv[argi], "--help") == 0) {
+    if (strcmp(argv[argi], "--help") == 0) {
       uc_puts(
           "Usage: chmod [--no-color] OCTAL-MODE FILE...\n"
           "  OCTAL-MODE is a 3- or 4-digit octal number (e.g. 755, 0644).\n"
           "  Symbolic modes (u+x, etc.) are not supported.\n");
       return 0;
     }
-    if (uc_strcmp(argv[argi], "--no-color") == 0) {
+    if (strcmp(argv[argi], "--no-color") == 0) {
       use_color = 0;
       argi++;
       continue;

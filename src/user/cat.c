@@ -20,13 +20,13 @@ static int cat_fd(int fd) {
 
   while ((n = read(fd, buf, sizeof(buf))) > 0) {
     for (ssize_t i = 0; i < n; i++) {
-      if (opt_number && at_bol) uc_printf("%6d\t", ++line_nr);
+      if (opt_number && at_bol) printf("%6d\t", ++line_nr);
       if (buf[i] == '\n') {
-        if (opt_show_ends) uc_putc('$');
-        uc_putc('\n');
+        if (opt_show_ends) putchar('$');
+        putchar('\n');
         at_bol = 1;
       } else {
-        uc_putc(buf[i]);
+        putchar(buf[i]);
         at_bol = 0;
       }
     }
@@ -38,8 +38,8 @@ int main(int argc, char *argv[]) {
   int argi = 1;
 
   while (argi < argc && argv[argi][0] == '-' &&
-         uc_strcmp(argv[argi], "-") != 0) {
-    if (uc_strcmp(argv[argi], "--help") == 0) {
+         strcmp(argv[argi], "-") != 0) {
+    if (strcmp(argv[argi], "--help") == 0) {
       uc_puts(
           "Usage: cat [-nE] [file ...]\n"
           "  -n  Number output lines\n"
@@ -58,7 +58,7 @@ int main(int argc, char *argv[]) {
           break;
         default:
           uc_eputs("cat: unknown option: -");
-          uc_putc(*p);
+          putchar(*p);
           uc_eputs("\n");
           return 1;
       }
@@ -72,7 +72,7 @@ int main(int argc, char *argv[]) {
   int rc = 0;
   for (int i = argi; i < argc; i++) {
     int fd;
-    if (uc_strcmp(argv[i], "-") == 0) {
+    if (strcmp(argv[i], "-") == 0) {
       fd = 0;
     } else {
       fd = open(argv[i], O_RDONLY, 0);

@@ -18,7 +18,7 @@
 #include "lib/uclib.h"
 
 int main(int argc, char *argv[]) {
-  if (argc != 2 || uc_strcmp(argv[1], "--help") == 0) {
+  if (argc != 2 || strcmp(argv[1], "--help") == 0) {
     uc_eputs("Usage: dirname PATH\n");
     return (argc != 2) ? 1 : 0;
   }
@@ -27,11 +27,11 @@ int main(int argc, char *argv[]) {
 
   if (!path[0]) {
     uc_puts(".");
-    uc_putc('\n');
+    putchar('\n');
     return 0;
   }
 
-  int len = uc_strlen(path);
+  int len = strlen(path);
   while (len > 1 && path[len - 1] == '/') len--;
 
   int last_slash = -1;
@@ -45,7 +45,7 @@ int main(int argc, char *argv[]) {
   /* Bare basename (no slash at all) -> ".". */
   if (last_slash < 0) {
     uc_puts(".");
-    uc_putc('\n');
+    putchar('\n');
     return 0;
   }
 
@@ -56,11 +56,11 @@ int main(int argc, char *argv[]) {
   /* Only the leading '/' survived -> root. */
   if (dir_len == 0) {
     uc_puts("/");
-    uc_putc('\n');
+    putchar('\n');
     return 0;
   }
 
-  for (int i = 0; i < dir_len; i++) uc_putc(path[i]);
-  uc_putc('\n');
+  for (int i = 0; i < dir_len; i++) putchar(path[i]);
+  putchar('\n');
   return 0;
 }

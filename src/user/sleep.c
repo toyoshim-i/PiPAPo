@@ -13,7 +13,7 @@
 int main(int argc, char *argv[]) {
   int argi = 1;
 
-  if (argi < argc && uc_strcmp(argv[argi], "--help") == 0) {
+  if (argi < argc && strcmp(argv[argi], "--help") == 0) {
     uc_puts("Usage: sleep SECONDS\n");
     return 0;
   }

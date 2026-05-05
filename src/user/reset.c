@@ -24,7 +24,7 @@
 #include "lib/uclib.h"
 
 int main(int argc, char *argv[]) {
-  if (argc > 1 && uc_strcmp(argv[1], "--help") == 0) {
+  if (argc > 1 && strcmp(argv[1], "--help") == 0) {
     uc_puts(
         "Usage: reset\n"
         "Restore terminal to sane defaults (termios + VT100 state).\n");

@@ -18,7 +18,7 @@
 static void put_nstr(const char *s, int len) { write(1, s, len); }
 
 /* Write integer (up to 5 digits, right-justified in `width` chars).
- * uc_vsnprintf does not accept runtime widths (no "%*d"), and the
+ * vsnprintf does not accept runtime widths (no "%*d"), and the
  * compile-time width here depends on the live gutter size, so the
  * formatting stays open-coded. */
 static void put_int_rj(int val, int width) {
@@ -32,8 +32,8 @@ static void put_int_rj(int val, int width) {
       val /= 10;
     }
   }
-  for (int j = i; j < width; j++) uc_putc(' ');
-  for (int j = i - 1; j >= 0; j--) uc_putc(tmp[j]);
+  for (int j = i; j < width; j++) putchar(' ');
+  for (int j = i - 1; j >= 0; j--) putchar(tmp[j]);
 }
 
 /* Erase to end of line */
@@ -82,7 +82,7 @@ static void draw_menu_bar(void) {
   for (int i = 0; i < MENU_CAT_COUNT; i++) {
     /* Pad to menu position */
     while (col < pi_menus[i].col) {
-      uc_putc(' ');
+      putchar(' ');
       col++;
     }
     /* Highlight selected category in menu mode */
@@ -93,7 +93,7 @@ static void draw_menu_bar(void) {
       term_attr_fg(COL_BLACK);
     }
     uc_puts(pi_menus[i].label);
-    col += uc_strlen(pi_menus[i].label);
+    col += strlen(pi_menus[i].label);
     if (E.mode == MODE_MENU && E.menu_cat == i) {
       term_attr_reset();
       term_attr_bold();
@@ -103,7 +103,7 @@ static void draw_menu_bar(void) {
   }
   /* Fill rest of line */
   while (col < E.cols) {
-    uc_putc(' ');
+    putchar(' ');
     col++;
   }
   term_attr_reset();
@@ -128,7 +128,7 @@ static void draw_content(void) {
       term_attr_fg(COL_CYAN);
       put_int_rj(file_row + 1, gw - 1);
       term_attr_reset();
-      uc_putc('|');
+      putchar('|');
 
       /* Row content */
       int dummy;
@@ -143,7 +143,7 @@ static void draw_content(void) {
       /* Tilde line (dim blue) */
       term_attr_dim();
       term_attr_fg(COL_BLUE);
-      uc_putc('~');
+      putchar('~');
       term_attr_reset();
       erase_eol();
     }
@@ -162,9 +162,9 @@ static void draw_dropdown(void) {
   /* Compute dropdown width: max(label + shortcut + padding) */
   int max_w = 0;
   for (int i = 0; i < cat->count; i++) {
-    int w = uc_strlen(cat->items[i].label);
+    int w = strlen(cat->items[i].label);
     if (cat->items[i].shortcut[0])
-      w += 2 + uc_strlen(cat->items[i].shortcut); /* "  shortcut" */
+      w += 2 + strlen(cat->items[i].shortcut); /* "  shortcut" */
     if (w > max_w) max_w = w;
   }
   int box_w = max_w + 4; /* 2 padding each side */
@@ -177,10 +177,10 @@ static void draw_dropdown(void) {
   /* Top border */
   term_cursor_to(1, start_col);
   term_attr_reset();
-  uc_putc('+');
+  putchar('+');
   for (int j = 0; j < box_w - 2; j++)
-    uc_putc('-');
-  uc_putc('+');
+    putchar('-');
+  putchar('+');
 
   /* Items */
   for (int i = 0; i < cat->count; i++) {
@@ -188,7 +188,7 @@ static void draw_dropdown(void) {
 
     term_cursor_to(screen_row, start_col);
     term_attr_reset();
-    uc_putc('|');
+    putchar('|');
 
     /* Highlight selected item */
     if (i == E.menu_item) {
@@ -196,15 +196,15 @@ static void draw_dropdown(void) {
       term_attr_bold();
     }
 
-    uc_putc(' ');
+    putchar(' ');
     uc_puts(cat->items[i].label);
 
     /* Right-align shortcut */
-    int label_len = uc_strlen(cat->items[i].label);
-    int sc_len = uc_strlen(cat->items[i].shortcut);
+    int label_len = strlen(cat->items[i].label);
+    int sc_len = strlen(cat->items[i].shortcut);
     int pad = box_w - 4 - label_len - sc_len;
     for (int j = 0; j < pad; j++)
-      uc_putc(' ');
+      putchar(' ');
 
     if (sc_len > 0) {
       if (i != E.menu_item) {
@@ -214,17 +214,17 @@ static void draw_dropdown(void) {
     }
 
     term_attr_reset();
-    uc_putc(' ');
-    uc_putc('|');
+    putchar(' ');
+    putchar('|');
   }
 
   /* Bottom border */
   term_cursor_to(2 + cat->count, start_col);
   term_attr_reset();
-  uc_putc('+');
+  putchar('+');
   for (int j = 0; j < box_w - 2; j++)
-    uc_putc('-');
-  uc_putc('+');
+    putchar('-');
+  putchar('+');
 }
 
 /* ── Draw status bar (row rows-2) ──────────────────────────────────────── */
@@ -262,7 +262,7 @@ static void draw_status_bar(void) {
   uc_puts(" - ");
 
   /* Cursor position */
-  uc_printf("%d:%d", (int32_t)(E.cy + 1), (int32_t)(E.cx + 1));
+  printf("%d:%d", (int32_t)(E.cy + 1), (int32_t)(E.cx + 1));
 
   /* Status message (if any) */
   if (E.status[0]) {
@@ -308,7 +308,7 @@ static void draw_command_line(void) {
 
   term_cursor_to(E.rows - 1, 0);
   term_attr_reset();
-  uc_putc(':');
+  putchar(':');
   if (E.cmd_len > 0)
     put_nstr(E.cmd, E.cmd_len);
   erase_eol();

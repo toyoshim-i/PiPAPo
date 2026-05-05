@@ -36,22 +36,22 @@ static inline int bm_get(const bitmap_t b, unsigned char c) {
  * number of chars appended, or -1 if NAME is unknown. */
 static int append_class(const char *name, char *out, bitmap_t bm) {
   int added = 0;
-  if (uc_strcmp(name, "alpha") == 0) {
+  if (strcmp(name, "alpha") == 0) {
     for (int c = 'A'; c <= 'Z'; c++) { out[added++] = c; bm_set(bm, c); }
     for (int c = 'a'; c <= 'z'; c++) { out[added++] = c; bm_set(bm, c); }
-  } else if (uc_strcmp(name, "digit") == 0) {
+  } else if (strcmp(name, "digit") == 0) {
     for (int c = '0'; c <= '9'; c++) { out[added++] = c; bm_set(bm, c); }
-  } else if (uc_strcmp(name, "upper") == 0) {
+  } else if (strcmp(name, "upper") == 0) {
     for (int c = 'A'; c <= 'Z'; c++) { out[added++] = c; bm_set(bm, c); }
-  } else if (uc_strcmp(name, "lower") == 0) {
+  } else if (strcmp(name, "lower") == 0) {
     for (int c = 'a'; c <= 'z'; c++) { out[added++] = c; bm_set(bm, c); }
-  } else if (uc_strcmp(name, "space") == 0) {
+  } else if (strcmp(name, "space") == 0) {
     const char *spc = " \t\n\r\v\f";
     for (const char *p = spc; *p; p++) {
       out[added++] = *p;
       bm_set(bm, (unsigned char)*p);
     }
-  } else if (uc_strcmp(name, "alnum") == 0) {
+  } else if (strcmp(name, "alnum") == 0) {
     for (int c = '0'; c <= '9'; c++) { out[added++] = c; bm_set(bm, c); }
     for (int c = 'A'; c <= 'Z'; c++) { out[added++] = c; bm_set(bm, c); }
     for (int c = 'a'; c <= 'z'; c++) { out[added++] = c; bm_set(bm, c); }
@@ -122,11 +122,11 @@ int main(int argc, char *argv[]) {
   int delete_mode = 0;
   int argi = 1;
 
-  if (argi < argc && uc_strcmp(argv[argi], "--help") == 0) {
+  if (argi < argc && strcmp(argv[argi], "--help") == 0) {
     usage();
     return 0;
   }
-  if (argi < argc && uc_strcmp(argv[argi], "-d") == 0) {
+  if (argi < argc && strcmp(argv[argi], "-d") == 0) {
     delete_mode = 1;
     argi++;
   }
@@ -138,8 +138,8 @@ int main(int argc, char *argv[]) {
 
   char set1_chars[256], set2_chars[256];
   bitmap_t set1_in, set2_in;
-  uc_memset(set1_in, 0, sizeof(set1_in));
-  uc_memset(set2_in, 0, sizeof(set2_in));
+  memset(set1_in, 0, sizeof(set1_in));
+  memset(set2_in, 0, sizeof(set2_in));
 
   int n1 = parse_set(argv[argi], set1_chars, set1_in);
   if (n1 < 0 || n1 == 0) {

@@ -2,14 +2,14 @@
 #include "lib/uclib.h"
 
 #define put_str uc_puts
-#define put_chr uc_putc
+#define put_chr putchar
 #define put_u32 uc_putu
 #define put_hex32 uc_putx32
 #define put_hex16 uc_putx16
 
-static void put_nl(void) { uc_putc('\n'); }
+static void put_nl(void) { putchar('\n'); }
 
-static int streq(const char *a, const char *b) { return uc_strcmp(a, b) == 0; }
+static int streq(const char *a, const char *b) { return strcmp(a, b) == 0; }
 
 static const char *event_name(uint32_t event) {
   switch (event) {

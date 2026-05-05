@@ -88,9 +88,9 @@ static int parse_list(const char *s) {
 
 static void cut_chars(const char *buf, int n) {
   for (int i = 0; i < n; i++) {
-    if (is_set(i + 1)) uc_putc(buf[i]);
+    if (is_set(i + 1)) putchar(buf[i]);
   }
-  uc_putc('\n');
+  putchar('\n');
 }
 
 static void cut_fields(const char *buf, int n) {
@@ -103,7 +103,7 @@ static void cut_fields(const char *buf, int n) {
   }
   if (!has_delim) {
     if (n > 0) write(1, buf, n);
-    uc_putc('\n');
+    putchar('\n');
     return;
   }
 
@@ -113,7 +113,7 @@ static void cut_fields(const char *buf, int n) {
   for (int i = 0; i <= n; i++) {
     if (i == n || buf[i] == delim) {
       if (is_set(field)) {
-        if (!first) uc_putc(delim);
+        if (!first) putchar(delim);
         if (i > start) write(1, buf + start, i - start);
         first = 0;
       }
@@ -121,7 +121,7 @@ static void cut_fields(const char *buf, int n) {
       field++;
     }
   }
-  uc_putc('\n');
+  putchar('\n');
 }
 
 static int process_fd(int fd, enum cut_mode mode) {
@@ -164,13 +164,13 @@ int main(int argc, char *argv[]) {
   int argi = 1;
 
   while (argi < argc && argv[argi][0] == '-' &&
-         uc_strcmp(argv[argi], "-") != 0) {
+         strcmp(argv[argi], "-") != 0) {
     const char *a = argv[argi];
-    if (uc_strcmp(a, "--help") == 0) {
+    if (strcmp(a, "--help") == 0) {
       usage();
       return 0;
     }
-    if (uc_strcmp(a, "--") == 0) {
+    if (strcmp(a, "--") == 0) {
       argi++;
       break;
     }
@@ -186,7 +186,7 @@ int main(int argc, char *argv[]) {
       if (!arg) {
         if (argi + 1 >= argc) {
           uc_eputs("cut: -");
-          uc_putc(opt);
+          putchar(opt);
           uc_eputs(" requires an argument\n");
           return 1;
         }
@@ -251,7 +251,7 @@ int main(int argc, char *argv[]) {
   int rc = 0;
   for (int i = argi; i < argc; i++) {
     int fd;
-    if (uc_strcmp(argv[i], "-") == 0) {
+    if (strcmp(argv[i], "-") == 0) {
       fd = 0;
     } else {
       fd = open(argv[i], O_RDONLY, 0);

@@ -210,5 +210,5 @@ Intentional scope choices for the current release:
 
 - [docs/user/push.md](push.md) — PiPAPo μShell; `!` from pile
   spawns a push session.
-- [docs/user/uc_malloc.md](uc_malloc.md) — the userland heap that
+- [docs/user/malloc.md](malloc.md) — the userland heap that
   backs pile's per-op scratch buffers.

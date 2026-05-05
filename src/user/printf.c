@@ -16,9 +16,9 @@
  * Octal/hex backslash escapes (\NNN, \xHH) and busybox's %b extension
  * are not implemented — use busybox if you need them.
  *
- * The applet has its own format walker rather than reusing uc_vsnprintf
+ * The applet has its own format walker rather than reusing vsnprintf
  * because POSIX printf takes string args and converts each one
- * lazily, while uc_vsnprintf operates on a typed va_list.
+ * lazily, while vsnprintf operates on a typed va_list.
  */
 
 #include "lib/uclib.h"
@@ -46,11 +46,11 @@ static int parse_long(const char *s, long *out) {
 }
 
 static void emit_pad(int n, char c) {
-  for (int i = 0; i < n; i++) uc_putc(c);
+  for (int i = 0; i < n; i++) putchar(c);
 }
 
 static void emit_str(const char *s, int width, int left_align) {
-  int len = uc_strlen(s);
+  int len = strlen(s);
   if (!left_align && width > len) emit_pad(width - len, ' ');
   uc_puts(s);
   if (left_align && width > len) emit_pad(width - len, ' ');
@@ -61,21 +61,21 @@ static void emit_str(const char *s, int width, int left_align) {
 static void emit_int(long v, int width, int zero, int left_align) {
   char digits[16];
   uint32_t u = (v < 0) ? (uint32_t)(-v) : (uint32_t)v;
-  uc_snprintf(digits, (int)sizeof(digits), "%u", u);
-  int dlen = uc_strlen(digits);
+  snprintf(digits, (int)sizeof(digits), "%u", u);
+  int dlen = strlen(digits);
   int total = dlen + (v < 0 ? 1 : 0);
 
   if (zero && !left_align) {
-    if (v < 0) uc_putc('-');
+    if (v < 0) putchar('-');
     if (width > total) emit_pad(width - total, '0');
     uc_puts(digits);
   } else if (left_align) {
-    if (v < 0) uc_putc('-');
+    if (v < 0) putchar('-');
     uc_puts(digits);
     if (width > total) emit_pad(width - total, ' ');
   } else {
     if (width > total) emit_pad(width - total, ' ');
-    if (v < 0) uc_putc('-');
+    if (v < 0) putchar('-');
     uc_puts(digits);
   }
 }
@@ -99,15 +99,15 @@ static void emit_uint(uint32_t v, char conv, int width, int zero,
     for (; i < n; i++) buf[i] = tmp[n - 1 - i];
     buf[i] = '\0';
   } else {
-    /* %u and %x supported by uc_snprintf; %X handled by upper-casing. */
-    uc_snprintf(buf, (int)sizeof(buf), (conv == 'u') ? "%u" : "%x", v);
+    /* %u and %x supported by snprintf; %X handled by upper-casing. */
+    snprintf(buf, (int)sizeof(buf), (conv == 'u') ? "%u" : "%x", v);
     if (conv == 'X') {
       for (int i = 0; buf[i]; i++) {
         if (buf[i] >= 'a' && buf[i] <= 'f') buf[i] = (char)(buf[i] - 32);
       }
     }
   }
-  int len = uc_strlen(buf);
+  int len = strlen(buf);
   char pad = (zero && !left_align) ? '0' : ' ';
   if (!left_align && width > len) emit_pad(width - len, pad);
   uc_puts(buf);
@@ -119,16 +119,16 @@ static void emit_uint(uint32_t v, char conv, int width, int zero,
  * the next byte is unknown — caller should output '\\' literally. */
 static int do_backslash(char c) {
   switch (c) {
-    case 'n': uc_putc('\n'); return 1;
-    case 't': uc_putc('\t'); return 1;
-    case 'r': uc_putc('\r'); return 1;
-    case '\\': uc_putc('\\'); return 1;
-    case 'a': uc_putc('\a'); return 1;
-    case 'b': uc_putc('\b'); return 1;
-    case 'f': uc_putc('\f'); return 1;
-    case 'v': uc_putc('\v'); return 1;
-    case '0': uc_putc('\0'); return 1;
-    case '"': uc_putc('"'); return 1;
+    case 'n': putchar('\n'); return 1;
+    case 't': putchar('\t'); return 1;
+    case 'r': putchar('\r'); return 1;
+    case '\\': putchar('\\'); return 1;
+    case 'a': putchar('\a'); return 1;
+    case 'b': putchar('\b'); return 1;
+    case 'f': putchar('\f'); return 1;
+    case 'v': putchar('\v'); return 1;
+    case '0': putchar('\0'); return 1;
+    case '"': putchar('"'); return 1;
     default:  return 0;
   }
 }
@@ -145,7 +145,7 @@ static int run_format(const char *fmt, char **args, int args_left,
     if (*p == '\\' && p[1]) {
       int n = do_backslash(p[1]);
       if (n == 0) {
-        uc_putc('\\');
+        putchar('\\');
         p++;
       } else {
         p += 1 + n;
@@ -153,7 +153,7 @@ static int run_format(const char *fmt, char **args, int args_left,
       continue;
     }
     if (*p != '%') {
-      uc_putc(*p++);
+      putchar(*p++);
       continue;
     }
     p++; /* skip '%' */
@@ -179,7 +179,7 @@ static int run_format(const char *fmt, char **args, int args_left,
     p++;
 
     if (conv == '%') {
-      uc_putc('%');
+      putchar('%');
       continue;
     }
     *had_spec = 1;
@@ -191,7 +191,7 @@ static int run_format(const char *fmt, char **args, int args_left,
         emit_str(arg, width, left_align);
         break;
       case 'c':
-        if (*arg) uc_putc(*arg);
+        if (*arg) putchar(*arg);
         break;
       case 'd':
       case 'i': {
@@ -210,8 +210,8 @@ static int run_format(const char *fmt, char **args, int args_left,
         break;
       }
       default:
-        uc_putc('%');
-        uc_putc(conv);
+        putchar('%');
+        putchar(conv);
         break;
     }
   }
@@ -219,7 +219,7 @@ static int run_format(const char *fmt, char **args, int args_left,
 }
 
 int main(int argc, char *argv[]) {
-  if (argc < 2 || uc_strcmp(argv[1], "--help") == 0) {
+  if (argc < 2 || strcmp(argv[1], "--help") == 0) {
     uc_eputs(
         "Usage: printf FORMAT [ARG ...]\n"
         "  Specifiers: %s %d %i %u %x %X %o %c %%\n"

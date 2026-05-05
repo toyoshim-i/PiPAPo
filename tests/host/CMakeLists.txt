@@ -27,16 +27,16 @@ add_executable(test_kmem
 target_include_directories(test_kmem PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME kmem COMMAND test_kmem)
 
-# ── test_uc_heap ──────────────────────────────────────────────────────────
-# uc_heap.c operates purely on caller-supplied memory — no syscalls,
+# ── test_alloc ────────────────────────────────────────────────────────────
+# alloc.c operates purely on caller-supplied memory — no syscalls,
 # no arch dependencies — so it compiles cleanly on the host.
-add_executable(test_uc_heap
-    ${SRC}/user/lib/uc_heap.c
-    test_uc_heap.c
+add_executable(test_alloc
+    ${SRC}/user/lib/alloc.c
+    test_alloc.c
 )
-target_include_directories(test_uc_heap PRIVATE
+target_include_directories(test_alloc PRIVATE
     ${SRC} ${SRC}/user ${CMAKE_CURRENT_SOURCE_DIR})
-add_test(NAME uc_heap COMMAND test_uc_heap)
+add_test(NAME alloc COMMAND test_alloc)
 
 # ── test_page_alloc ────────────────────────────────────────────────────────
 # page_alloc.c is the pure allocator core — no locking, klogf, or hardware

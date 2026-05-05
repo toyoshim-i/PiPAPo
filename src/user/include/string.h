@@ -1,8 +1,8 @@
 /*
  * <string.h> — string and memory operations.
  *
- * Declarations only at this stage; implementations are not yet wired
- * in.  Linking against any of these symbols will currently fail.
+ * POSIX subset; implementations live in src/user/lib/string.c.
+ * Optional surface (strstr, strdup, …) will be added later.
  */
 
 #ifndef _STRING_H

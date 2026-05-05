@@ -11,7 +11,7 @@
 #include "lib/uclib.h"
 
 int main(int argc, char *argv[]) {
-  if (argc != 2 || uc_strcmp(argv[1], "--help") == 0) {
+  if (argc != 2 || strcmp(argv[1], "--help") == 0) {
     uc_eputs("Usage: umount TARGET\n");
     return (argc != 2) ? 1 : 0;
   }

@@ -21,7 +21,7 @@ int pile_layout;
 int pile_quit;
 int pile_use_color = 1;
 
-/* Backing pool for uc_malloc.  Ops borrow path / name / target / I/O
+/* Backing pool for malloc.  Ops borrow path / name / target / I/O
  * buffers from here instead of the stack.  Sized for the worst case:
  * pile_op_move has ~900 B of allocations live when it calls
  * refresh_panes, which itself pulls ~220 B for a pane reload
@@ -162,11 +162,11 @@ static void pile_spawn_external(const char *path, char *const argv[]) {
   if (pid < 0) {
     pile_status_set("pile: vfork failed", 1);
   } else if (WIFEXITED(status) && WEXITSTATUS(status) == 127) {
-    char *msg = uc_malloc(64);
+    char *msg = malloc(64);
     if (msg) {
-      uc_snprintf(msg, 64, "pile: exec %s failed", path);
+      snprintf(msg, 64, "pile: exec %s failed", path);
       pile_status_set(msg, 1);
-      uc_free(msg);
+      free(msg);
     }
   }
 }
@@ -218,7 +218,7 @@ int pile_prompt(const char *label, char *out, int outsize) {
     pile_draw_clear_to_eol();
     uc_puts(label);
     write(1, out, len);
-    uc_putc('_');
+    putchar('_');
 
     int k = pile_read_key();
     if (k == PKEY_NONE) continue;
@@ -247,7 +247,7 @@ static void pile_view_cursor(pile_pane_t *p, int force_hex) {
   if (p->count == 0) return;
   const pile_entry_t *e = &p->entries[p->cursor];
   if (e->d_type != DT_REG) return;
-  char *path = uc_malloc(PILE_PATH_MAX);
+  char *path = malloc(PILE_PATH_MAX);
   if (!path) {
     pile_status_set("pile: out of heap", 1);
     return;
@@ -255,7 +255,7 @@ static void pile_view_cursor(pile_pane_t *p, int force_hex) {
   if (pile_path_join(path, PILE_PATH_MAX, p->path, e->name) == 0) {
     pile_view_file(path, force_hex);
   }
-  uc_free(path);
+  free(path);
 }
 
 static void handle_key(int key) {
@@ -329,7 +329,7 @@ static void handle_key(int key) {
       return;
     case '+':
     case '-': {
-      char *buf = uc_malloc(64);
+      char *buf = malloc(64);
       if (!buf) {
         pile_status_set("pile: out of heap", 1);
         return;
@@ -338,7 +338,7 @@ static void handle_key(int key) {
       if (pile_prompt(label, buf, 64) == 0 && buf[0]) {
         pile_pane_mark_glob(p, buf, key == '+');
       }
-      uc_free(buf);
+      free(buf);
       return;
     }
 
@@ -350,7 +350,7 @@ static void handle_key(int key) {
       if (p->count > 0) {
         const pile_entry_t *e = &p->entries[p->cursor];
         if (e->d_type != DT_REG) return;
-        char *path = uc_malloc(PILE_PATH_MAX);
+        char *path = malloc(PILE_PATH_MAX);
         if (!path) {
           pile_status_set("pile: out of heap", 1);
           return;
@@ -359,7 +359,7 @@ static void handle_key(int key) {
           pile_spawn_edit(path);
           pile_refresh_panes(p);
         }
-        uc_free(path);
+        free(path);
       }
       return;
     case '!':
@@ -380,11 +380,11 @@ static void handle_key(int key) {
        * scroll so the cursor is still visible. */
       pile_pane_move(p, 0, vrows);
       static const char *names[PILE_SORT_COUNT] = {"name", "size", "mtime"};
-      char *msg = uc_malloc(48);
+      char *msg = malloc(48);
       if (msg) {
-        uc_snprintf(msg, 48, "sort: %s", names[p->sort_mode]);
+        snprintf(msg, 48, "sort: %s", names[p->sort_mode]);
         pile_status_set(msg, 0);
-        uc_free(msg);
+        free(msg);
       }
       return;
     }
@@ -412,9 +412,9 @@ static void handle_key(int key) {
 /* ── Entry ────────────────────────────────────────────────────────────── */
 
 static void init_pane(pile_pane_t *p, const char *start) {
-  int n = uc_strlen(start);
+  int n = strlen(start);
   if (n >= PILE_PATH_MAX) n = PILE_PATH_MAX - 1;
-  uc_memcpy(p->path, start, n);
+  memcpy(p->path, start, n);
   p->path[n] = '\0';
   pile_pane_load(p);
 }
@@ -422,9 +422,9 @@ static void init_pane(pile_pane_t *p, const char *start) {
 int main(int argc, char *argv[]) {
   const char *start = ".";
   for (int i = 1; i < argc; i++) {
-    if (uc_strcmp(argv[i], "--no-color") == 0) {
+    if (strcmp(argv[i], "--no-color") == 0) {
       pile_use_color = 0;
-    } else if (uc_strcmp(argv[i], "--help") == 0) {
+    } else if (strcmp(argv[i], "--help") == 0) {
       uc_puts(
           "Usage: pile [--no-color] [path]\n"
           "  Two-pane filer.  F10 / q quits.\n");

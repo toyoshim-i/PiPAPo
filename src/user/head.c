@@ -48,7 +48,7 @@ static int head_fd(int fd) {
  * number of argv slots consumed (1 or 2), or -1 on error. */
 static int parse_flag(int argc, char *argv[], int argi) {
   const char *a = argv[argi];
-  if (uc_strcmp(a, "--help") == 0) {
+  if (strcmp(a, "--help") == 0) {
     uc_puts(
         "Usage: head [-n N | -c N] [file ...]\n"
         "  -n N  Print first N lines (default 10)\n"
@@ -56,7 +56,7 @@ static int parse_flag(int argc, char *argv[], int argi) {
         "  -     Read from stdin\n");
     return 0;
   }
-  if (uc_strcmp(a, "--") == 0) return 1;
+  if (strcmp(a, "--") == 0) return 1;
   if (a[1] != 'n' && a[1] != 'c') {
     uc_eputs("head: unknown option: ");
     uc_eputs(a);
@@ -72,7 +72,7 @@ static int parse_flag(int argc, char *argv[], int argi) {
   } else {
     if (argi + 1 >= argc) {
       uc_eputs("head: -");
-      uc_putc(a[1]);
+      putchar(a[1]);
       uc_eputs(" requires a count\n");
       return -1;
     }
@@ -94,11 +94,11 @@ int main(int argc, char *argv[]) {
   int argi = 1;
 
   while (argi < argc && argv[argi][0] == '-' &&
-         uc_strcmp(argv[argi], "-") != 0) {
+         strcmp(argv[argi], "-") != 0) {
     int consumed = parse_flag(argc, argv, argi);
     if (consumed < 0) return 1;
     if (consumed == 0) return 0;
-    if (uc_strcmp(argv[argi], "--") == 0) {
+    if (strcmp(argv[argi], "--") == 0) {
       argi += consumed;
       break;
     }
@@ -113,7 +113,7 @@ int main(int argc, char *argv[]) {
 
   for (int i = argi; i < argc; i++) {
     int fd;
-    if (uc_strcmp(argv[i], "-") == 0) {
+    if (strcmp(argv[i], "-") == 0) {
       fd = 0;
     } else {
       fd = open(argv[i], O_RDONLY, 0);
@@ -126,7 +126,7 @@ int main(int argc, char *argv[]) {
       }
     }
     if (multi) {
-      if (!first) uc_putc('\n');
+      if (!first) putchar('\n');
       uc_puts("==> ");
       uc_puts(argv[i]);
       uc_puts(" <==\n");

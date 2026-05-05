@@ -1,41 +1,27 @@
 /*
- * uc_heap.c — User-space best-fit allocator with inline metadata.
+ * alloc.c — user-space heap allocator.
  *
- * Design: an address-sorted doubly-linked free list over a caller-
- * supplied static pool, mirroring the policy of the kernel page
- * allocator (page_alloc.c) — best-fit on malloc, always-coalesced
- * invariant on free — but with metadata embedded in the pool
- * instead of an external array.
+ * Best-fit address-sorted free list with inline 4-byte block headers.
+ * Mirrors the kernel page allocator's always-coalesced invariant.
  *
- * Every block carries a 4-byte header (uint16_t size, uint16_t flags).
- * Free blocks additionally use the first bytes of their payload as
- * `next` / `prev` list pointers; those bytes become user data once
- * the block is allocated, so the overhead for live allocations is
- * exactly the 4-byte header.
+ * malloc / free follow standard semantics; uc_heap_init seeds the
+ * allocator with a caller-owned static pool (no syscall, idempotent).
  *
- * Caller owns the pool memory.  One heap per process; uc_heap_init
- * is idempotent (a second call wipes the heap state and re-seeds
- * the pool — caller is responsible for no-live-allocations at that
- * point).
+ * Self-contained — no other PPAP libc TU is needed to link this.
+ * tests/host/test_uc_heap.c exercises the allocator directly on the
+ * host without stubs.
  */
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 
-/* Declarations must match lib/uclib.h.  Declared here directly so
- * uc_heap.c stays host-testable without pulling the full uclib.h
- * (which drags in syscall.h -> common/wait.h, incompatible with
- * the host's <stdlib.h>). */
 void uc_heap_init(void *pool, size_t size);
-void *uc_malloc(size_t size);
-void uc_free(void *ptr);
-
-/* ── Layout ─────────────────────────────────────────────────────────────── */
 
 #define UC_FLAG_FREE 0x0001u
 
 typedef struct uc_block {
-  uint16_t size;  /* payload bytes excluding this header */
+  uint16_t size; /* payload bytes excluding this header */
   uint16_t flags;
 } uc_block_t;
 
@@ -62,11 +48,7 @@ typedef struct uc_free {
  * remainder keep the remainder as part of the allocation instead. */
 #define UC_MIN_FREE_PAYLOAD UC_ALIGN_UP(UC_FREE_PAYLOAD)
 
-/* ── State ──────────────────────────────────────────────────────────────── */
-
 static uc_free_t *uc_heap_head;
-
-/* ── Helpers ────────────────────────────────────────────────────────────── */
 
 static uc_block_t *block_next_physical(uc_block_t *b) {
   return (uc_block_t *)((char *)b + sizeof(uc_block_t) + b->size);
@@ -80,17 +62,20 @@ static void free_list_insert_after(uc_free_t *prev, uc_free_t *node,
                                    uc_free_t *next) {
   node->prev = prev;
   node->next = next;
-  if (prev) prev->next = node; else uc_heap_head = node;
+  if (prev)
+    prev->next = node;
+  else
+    uc_heap_head = node;
   if (next) next->prev = node;
 }
 
 static void free_list_remove(uc_free_t *node) {
-  if (node->prev) node->prev->next = node->next;
-  else uc_heap_head = node->next;
+  if (node->prev)
+    node->prev->next = node->next;
+  else
+    uc_heap_head = node->next;
   if (node->next) node->next->prev = node->prev;
 }
-
-/* ── Public API ─────────────────────────────────────────────────────────── */
 
 void uc_heap_init(void *pool, size_t size) {
   uc_heap_head = 0;
@@ -109,9 +94,9 @@ void uc_heap_init(void *pool, size_t size) {
   uc_heap_head = b;
 }
 
-void *uc_malloc(size_t size) {
+void *malloc(size_t size) {
   if (!uc_heap_head || size == 0) return 0;
-  if (size > 0xFFFCu) return 0;  /* leave room for the sizeof(uc_free_t) check */
+  if (size > 0xFFFCu) return 0; /* leave room for the sizeof(uc_free_t) check */
 
   size_t want = UC_ALIGN_UP(size);
   if (want < UC_MIN_FREE_PAYLOAD) want = UC_MIN_FREE_PAYLOAD;
@@ -142,8 +127,10 @@ void *uc_malloc(size_t size) {
      * used immediately; the list must stay address-sorted). */
     split->prev = best->prev;
     split->next = best->next;
-    if (best->prev) best->prev->next = split;
-    else uc_heap_head = split;
+    if (best->prev)
+      best->prev->next = split;
+    else
+      uc_heap_head = split;
     if (best->next) best->next->prev = split;
   } else {
     free_list_remove(best);
@@ -153,7 +140,7 @@ void *uc_malloc(size_t size) {
   return (char *)best + sizeof(uc_block_t);
 }
 
-void uc_free(void *ptr) {
+void free(void *ptr) {
   if (!ptr) return;
   uc_free_t *b = (uc_free_t *)((char *)ptr - sizeof(uc_block_t));
   b->hdr.flags = UC_FLAG_FREE;
@@ -170,7 +157,7 @@ void uc_free(void *ptr) {
   if (prev && blocks_adjacent(&prev->hdr, &b->hdr)) {
     prev->hdr.size =
         (uint16_t)(prev->hdr.size + sizeof(uc_block_t) + b->hdr.size);
-    b = prev;  /* b now refers to the merged block; already in list */
+    b = prev; /* b now refers to the merged block; already in list */
   } else {
     free_list_insert_after(prev, b, next);
   }

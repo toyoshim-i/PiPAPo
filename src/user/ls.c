@@ -74,24 +74,24 @@ static void print_size(uint32_t size) {
 
 static int stat_entry(const char *dir, const char *name, struct stat *st) {
   char fullpath[128];
-  int dlen = uc_strlen(dir);
-  int nlen = uc_strlen(name);
+  int dlen = strlen(dir);
+  int nlen = strlen(name);
   if (dlen + 1 + nlen + 1 > (int)sizeof(fullpath)) return -1;
-  uc_strcpy(fullpath, dir);
+  strcpy(fullpath, dir);
   if (dlen > 0 && fullpath[dlen - 1] != '/') fullpath[dlen++] = '/';
-  uc_strcpy(fullpath + dlen, name);
+  strcpy(fullpath + dlen, name);
   return stat(fullpath, st);
 }
 
 static int readlink_entry(const char *dir, const char *name, char *buf,
                           int bufsiz) {
   char fullpath[128];
-  int dlen = uc_strlen(dir);
-  int nlen = uc_strlen(name);
+  int dlen = strlen(dir);
+  int nlen = strlen(name);
   if (dlen + 1 + nlen + 1 > (int)sizeof(fullpath)) return -1;
-  uc_strcpy(fullpath, dir);
+  strcpy(fullpath, dir);
   if (dlen > 0 && fullpath[dlen - 1] != '/') fullpath[dlen++] = '/';
-  uc_strcpy(fullpath + dlen, name);
+  strcpy(fullpath + dlen, name);
   int n = (int)readlink(fullpath, buf, (size_t)(bufsiz - 1));
   if (n < 0) return -1;
   if (n >= bufsiz) n = bufsiz - 1;
@@ -125,9 +125,9 @@ static void print_name_classified(const char *name, const struct stat *st,
   if (ftype) uc_puts(C_RST);
   if (opt_classify && have_stat) {
     if (ftype == 1)
-      uc_putc('/');
+      putchar('/');
     else if (ftype == 2)
-      uc_putc('*');
+      putchar('*');
   }
 }
 
@@ -160,14 +160,14 @@ static int ls_dir(const char *path) {
         else
           print_mode(st.st_mode);
         uc_puts(C_RST);
-        uc_putc(' ');
+        putchar(' ');
         uc_puts(C_WHITE);
         if (is_symlink)
           print_size((uint32_t)link_len);
         else
           print_size(st.st_size);
         uc_puts(C_RST);
-        uc_putc(' ');
+        putchar(' ');
         /* mtime column — always present in long format.  Symlinks have
          * no stat of their own, so borrow the link target's stat if we
          * have it; otherwise the field is "--". */
@@ -180,7 +180,7 @@ static int ls_dir(const char *path) {
         } else {
           uc_puts("                ");
         }
-        uc_putc(' ');
+        putchar(' ');
       }
       if (is_symlink) {
         uc_puts(C_BCYAN);
@@ -197,7 +197,7 @@ static int ls_dir(const char *path) {
         uc_puts(link_target);
         uc_puts(C_RST);
       }
-      uc_putc('\n');
+      putchar('\n');
     }
     close(fd);
     return 0;
@@ -216,7 +216,7 @@ static int ls_dir(const char *path) {
   while (getdents(fd, &de, sizeof(de)) > 0 && count < ENTRY_MAX) {
     if (!opt_all && de.d_name[0] == '.') continue;
 
-    int nlen = uc_strlen(de.d_name);
+    int nlen = strlen(de.d_name);
     char suffix = 0;
     uint8_t ftype = 0;
     char link_target[128];
@@ -241,7 +241,7 @@ static int ls_dir(const char *path) {
 
     if (pool_used + dlen + 1 > NAME_MAX_STORE) break;
     name_off[count] = (uint16_t)pool_used;
-    uc_memcpy(name_pool + pool_used, de.d_name, nlen);
+    memcpy(name_pool + pool_used, de.d_name, nlen);
     pool_used += nlen;
     if (suffix) name_pool[pool_used++] = suffix;
     name_pool[pool_used++] = '\0';
@@ -263,10 +263,10 @@ static int ls_dir(const char *path) {
     uc_puts(name_pool + name_off[i]);
     if (name_type[i]) uc_puts(C_RST);
     if (ncols <= 1 || (i + 1) % ncols == 0 || i + 1 == count) {
-      uc_putc('\n');
+      putchar('\n');
     } else {
       int pad = col_width - name_len[i];
-      for (int j = 0; j < pad; j++) uc_putc(' ');
+      for (int j = 0; j < pad; j++) putchar(' ');
     }
   }
 
@@ -291,18 +291,18 @@ static int ls_walk(const char *path) {
     if (!opt_all && de.d_name[0] == '.') continue;
 
     char child[128];
-    int dlen = uc_strlen(path);
-    int nlen = uc_strlen(de.d_name);
+    int dlen = strlen(path);
+    int nlen = strlen(de.d_name);
     if (dlen + 1 + nlen + 1 > (int)sizeof(child)) continue;
-    uc_strcpy(child, path);
+    strcpy(child, path);
     if (dlen > 0 && child[dlen - 1] != '/') child[dlen++] = '/';
-    uc_strcpy(child + dlen, de.d_name);
+    strcpy(child + dlen, de.d_name);
 
     struct stat st;
     if (stat(child, &st) != 0) continue;
     if (!S_ISDIR(st.st_mode)) continue;
 
-    uc_putc('\n');
+    putchar('\n');
     uc_puts(child);
     uc_puts(":\n");
     if (ls_walk(child)) rc = 1;
@@ -319,7 +319,7 @@ int main(int argc, char *argv[]) {
   if (ioctl(1, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) term_cols = ws.ws_col;
 
   while (argi < argc && argv[argi][0] == '-') {
-    if (uc_strcmp(argv[argi], "--help") == 0) {
+    if (strcmp(argv[argi], "--help") == 0) {
       uc_puts(
           "Usage: ls [-laFR] [--no-color] [path ...]\n"
           "  -l  Long format (mode, size, name)\n"
@@ -329,7 +329,7 @@ int main(int argc, char *argv[]) {
           "  --no-color  Disable color output\n");
       return 0;
     }
-    if (uc_strcmp(argv[argi], "--no-color") == 0) {
+    if (strcmp(argv[argi], "--no-color") == 0) {
       use_color = 0;
       argi++;
       continue;
@@ -351,7 +351,7 @@ int main(int argc, char *argv[]) {
           break;
         default:
           uc_eputs("ls: unknown option: -");
-          uc_putc(*p);
+          putchar(*p);
           uc_eputs("\n");
           return 1;
       }
@@ -367,7 +367,7 @@ int main(int argc, char *argv[]) {
     rc = ls_walk(argv[argi]);
   } else {
     for (int i = argi; i < argc; i++) {
-      if (i > argi) uc_putc('\n');
+      if (i > argi) putchar('\n');
       uc_puts(argv[i]);
       uc_puts(":\n");
       if (ls_walk(argv[i])) rc = 1;
