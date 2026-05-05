@@ -14,9 +14,9 @@
 
 int main(int argc, char *argv[]) {
   if (argc >= 2 && strcmp(argv[1], "--help") == 0) {
-    uc_puts(
+    fputs(
         "Usage: yes [STRING ...]\n"
-        "  Repeatedly output STRING (default \"y\") until killed.\n");
+        "  Repeatedly output STRING (default \"y\") until killed.\n", stdout);
     return 0;
   }
 

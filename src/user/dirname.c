@@ -19,14 +19,14 @@
 
 int main(int argc, char *argv[]) {
   if (argc != 2 || strcmp(argv[1], "--help") == 0) {
-    uc_eputs("Usage: dirname PATH\n");
+    fputs("Usage: dirname PATH\n", stderr);
     return (argc != 2) ? 1 : 0;
   }
 
   const char *path = argv[1];
 
   if (!path[0]) {
-    uc_puts(".");
+    fputs(".", stdout);
     putchar('\n');
     return 0;
   }
@@ -44,7 +44,7 @@ int main(int argc, char *argv[]) {
 
   /* Bare basename (no slash at all) -> ".". */
   if (last_slash < 0) {
-    uc_puts(".");
+    fputs(".", stdout);
     putchar('\n');
     return 0;
   }
@@ -55,7 +55,7 @@ int main(int argc, char *argv[]) {
 
   /* Only the leading '/' survived -> root. */
   if (dir_len == 0) {
-    uc_puts("/");
+    fputs("/", stdout);
     putchar('\n');
     return 0;
   }

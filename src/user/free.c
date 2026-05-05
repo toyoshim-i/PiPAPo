@@ -76,7 +76,7 @@ static void print_right(uint32_t v, int width) {
   }
   int len = (int)sizeof(tmp) - 1 - pos;
   for (int i = len; i < width; i++) putchar(' ');
-  uc_puts(&tmp[pos]);
+  fputs(&tmp[pos], stdout);
 }
 
 /* Human-readable size given a value in KB. */
@@ -91,7 +91,7 @@ static void print_human(uint32_t kb, int width) {
   }
   int len = strlen(buf);
   for (int i = len; i < width; i++) putchar(' ');
-  uc_puts(buf);
+  fputs(buf, stdout);
 }
 
 static void print_val(uint32_t kb, int width) {
@@ -104,11 +104,11 @@ static void print_val(uint32_t kb, int width) {
 int main(int argc, char *argv[]) {
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "--help") == 0) {
-      uc_puts(
+      fputs(
           "Usage: free [-h] [--no-color]\n"
           "  -h          Human-readable sizes (K, M)\n"
           "  --no-color  Disable color output\n"
-          "Shows kernel memory usage from /proc/meminfo.\n");
+          "Shows kernel memory usage from /proc/meminfo.\n", stdout);
       return 0;
     }
     if (strcmp(argv[i], "--no-color") == 0) {
@@ -119,15 +119,15 @@ int main(int argc, char *argv[]) {
       opt_human = 1;
       continue;
     }
-    uc_eputs("free: unknown argument: ");
-    uc_eputs(argv[i]);
-    uc_eputs("\n");
+    fputs("free: unknown argument: ", stderr);
+    fputs(argv[i], stderr);
+    fputs("\n", stderr);
     return 1;
   }
 
   char buf[512];
   if (read_file("/proc/meminfo", buf, (int)sizeof(buf)) < 0) {
-    uc_eputs("free: cannot read /proc/meminfo\n");
+    fputs("free: cannot read /proc/meminfo\n", stderr);
     return 1;
   }
 
@@ -138,59 +138,59 @@ int main(int argc, char *argv[]) {
   int32_t oomcount  = lookup_u32(buf, "OomCount");
 
   if (total_kb < 0 || free_kb < 0) {
-    uc_eputs("free: /proc/meminfo missing required fields\n");
+    fputs("free: /proc/meminfo missing required fields\n", stderr);
     return 1;
   }
   uint32_t used_kb = (uint32_t)total_kb - (uint32_t)free_kb;
 
   /* Header */
-  uc_puts(C_REV);
-  uc_puts(C_BOLD);
-  uc_puts("            total      used      free");
-  uc_puts(C_RST);
+  fputs(C_REV, stdout);
+  fputs(C_BOLD, stdout);
+  fputs("            total      used      free", stdout);
+  fputs(C_RST, stdout);
   putchar('\n');
 
   /* Mem row */
-  uc_puts(C_BCYAN);
-  uc_puts("Mem:    ");
-  uc_puts(C_RST);
-  uc_puts(C_WHITE);
+  fputs(C_BCYAN, stdout);
+  fputs("Mem:    ", stdout);
+  fputs(C_RST, stdout);
+  fputs(C_WHITE, stdout);
   print_val((uint32_t)total_kb, 9);
-  uc_puts(C_RST);
-  uc_puts(C_YELLOW);
+  fputs(C_RST, stdout);
+  fputs(C_YELLOW, stdout);
   print_val(used_kb, 10);
-  uc_puts(C_RST);
+  fputs(C_RST, stdout);
   /* Free colored by headroom: red if <10% free, yellow <25%, green otherwise. */
   uint32_t free_pct = (total_kb > 0)
       ? (uint32_t)((free_kb * 100u) / (uint32_t)total_kb)
       : 0;
-  if (free_pct < 10) uc_puts(C_BRED);
-  else if (free_pct < 25) uc_puts(C_BYELLOW);
-  else uc_puts(C_BGREEN);
+  if (free_pct < 10) fputs(C_BRED, stdout);
+  else if (free_pct < 25) fputs(C_BYELLOW, stdout);
+  else fputs(C_BGREEN, stdout);
   print_val((uint32_t)free_kb, 10);
-  uc_puts(C_RST);
+  fputs(C_RST, stdout);
   putchar('\n');
 
   /* Auxiliary line — page allocator state. */
   if (pagesize > 0 || datamax > 0 || oomcount >= 0) {
-    uc_puts(C_BWHITE);
-    uc_puts("Page: ");
-    uc_puts(C_RST);
+    fputs(C_BWHITE, stdout);
+    fputs("Page: ", stdout);
+    fputs(C_RST, stdout);
     if (pagesize > 0) {
-      uc_puts(" size=");
+      fputs(" size=", stdout);
       print_right((uint32_t)pagesize, 1);
       putchar('B');
     }
     if (datamax > 0) {
-      uc_puts(" data_max=");
+      fputs(" data_max=", stdout);
       print_right((uint32_t)datamax, 1);
-      uc_puts("KB");
+      fputs("KB", stdout);
     }
     if (oomcount >= 0) {
-      uc_puts(" oom=");
-      if (oomcount > 0) uc_puts(C_BRED);
+      fputs(" oom=", stdout);
+      if (oomcount > 0) fputs(C_BRED, stdout);
       print_right((uint32_t)oomcount, 1);
-      if (oomcount > 0) uc_puts(C_RST);
+      if (oomcount > 0) fputs(C_RST, stdout);
     }
     putchar('\n');
   }

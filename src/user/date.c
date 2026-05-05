@@ -42,52 +42,52 @@ static void put_4digit(unsigned v) {
 static void print_now(void) {
   long ts[2];
   if (clock_gettime(0 /* CLOCK_REALTIME */, ts) != 0) {
-    uc_eputs("date: clock_gettime failed\n");
+    fputs("date: clock_gettime failed\n", stderr);
     _exit(1);
   }
   struct uc_tm t;
   uc_gmtime((uint32_t)ts[0], &t);
 
-  uc_puts(C_BOLD);
+  fputs(C_BOLD, stdout);
   put_4digit((unsigned)t.year);
-  uc_puts(C_RST);
-  uc_puts(C_DIM);
+  fputs(C_RST, stdout);
+  fputs(C_DIM, stdout);
   putchar('-');
-  uc_puts(C_RST);
+  fputs(C_RST, stdout);
   put_2digit((unsigned)t.mon);
-  uc_puts(C_DIM);
+  fputs(C_DIM, stdout);
   putchar('-');
-  uc_puts(C_RST);
+  fputs(C_RST, stdout);
   put_2digit((unsigned)t.mday);
   putchar(' ');
-  uc_puts(C_CYAN);
+  fputs(C_CYAN, stdout);
   put_2digit((unsigned)t.hour);
-  uc_puts(C_DIM);
+  fputs(C_DIM, stdout);
   putchar(':');
-  uc_puts(C_RST);
-  uc_puts(C_CYAN);
+  fputs(C_RST, stdout);
+  fputs(C_CYAN, stdout);
   put_2digit((unsigned)t.min);
-  uc_puts(C_DIM);
+  fputs(C_DIM, stdout);
   putchar(':');
-  uc_puts(C_RST);
-  uc_puts(C_CYAN);
+  fputs(C_RST, stdout);
+  fputs(C_CYAN, stdout);
   put_2digit((unsigned)t.sec);
-  uc_puts(C_RST);
-  uc_puts(C_DIM);
-  uc_puts(" UTC");
-  uc_puts(C_RST);
+  fputs(C_RST, stdout);
+  fputs(C_DIM, stdout);
+  fputs(" UTC", stdout);
+  fputs(C_RST, stdout);
   putchar('\n');
 }
 
 static int set_time(const char *s) {
   uint32_t epoch;
   if (uc_parse_u32(s, &epoch) != 0) {
-    uc_eputs("date: -s argument must be a positive decimal integer\n");
+    fputs("date: -s argument must be a positive decimal integer\n", stderr);
     return 1;
   }
   long tv[2] = {(long)epoch, 0};
   if (settimeofday(tv, 0) != 0) {
-    uc_eputs("date: settimeofday failed\n");
+    fputs("date: settimeofday failed\n", stderr);
     return 1;
   }
   return 0;
@@ -98,11 +98,11 @@ int main(int argc, char *argv[]) {
 
   while (argi < argc && argv[argi][0] == '-' && argv[argi][1] != '\0') {
     if (strcmp(argv[argi], "--help") == 0) {
-      uc_puts(
+      fputs(
           "Usage: date [--no-color]\n"
           "       date -s EPOCH_SECONDS\n"
           "  No arg  Print current UTC time\n"
-          "  -s      Set clock to EPOCH_SECONDS (plain decimal)\n");
+          "  -s      Set clock to EPOCH_SECONDS (plain decimal)\n", stdout);
       return 0;
     }
     if (strcmp(argv[argi], "--no-color") == 0) {
@@ -112,21 +112,21 @@ int main(int argc, char *argv[]) {
     }
     if (strcmp(argv[argi], "-s") == 0) {
       if (argi + 1 >= argc) {
-        uc_eputs("date: -s needs an argument\n");
+        fputs("date: -s needs an argument\n", stderr);
         return 1;
       }
       return set_time(argv[argi + 1]);
     }
-    uc_eputs("date: unknown option: ");
-    uc_eputs(argv[argi]);
-    uc_eputs("\n");
+    fputs("date: unknown option: ", stderr);
+    fputs(argv[argi], stderr);
+    fputs("\n", stderr);
     return 1;
   }
 
   if (argi != argc) {
-    uc_eputs("date: unexpected argument: ");
-    uc_eputs(argv[argi]);
-    uc_eputs("\n");
+    fputs("date: unexpected argument: ", stderr);
+    fputs(argv[argi], stderr);
+    fputs("\n", stderr);
     return 1;
   }
 

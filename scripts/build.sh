@@ -404,7 +404,8 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
         -I$USER_DIR -I$PROJECT_DIR/src -isystem $USER_DIR/include \
         $USER_ARCH_DIR/crt0.S $USER_ARCH_DIR/syscall.S \
         $USER_DIR/lib/string.c $USER_DIR/lib/stdio.c \
-        $USER_DIR/lib/stdlib.c $USER_DIR/lib/alloc.c $USER_DIR/lib/util.c"
+        $USER_DIR/lib/stdlib.c $USER_DIR/lib/alloc.c \
+        $USER_DIR/lib/file.c $USER_DIR/lib/util.c"
     XTENSA_RAM_USER_FLAGS="$XTENSA_USER_COMMON_FLAGS \
         -T $USER_ARCH_DIR/user.ld"
     XTENSA_XIP_USER_FLAGS="$XTENSA_USER_COMMON_FLAGS \

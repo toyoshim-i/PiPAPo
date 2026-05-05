@@ -67,7 +67,7 @@ static int find_tail_offset(int fd, int size, uint32_t lines) {
 static int tail_file(int fd) {
   int size = lseek(fd, 0, SEEK_END);
   if (size < 0) {
-    uc_eputs("tail: lseek failed (non-seekable input)\n");
+    fputs("tail: lseek failed (non-seekable input)\n", stderr);
     return 1;
   }
   if (size == 0) return 0;
@@ -85,18 +85,18 @@ static int tail_file(int fd) {
 static int parse_flag(int argc, char *argv[], int argi) {
   const char *a = argv[argi];
   if (strcmp(a, "--help") == 0) {
-    uc_puts(
+    fputs(
         "Usage: tail [-n N | -c N] file ...\n"
         "  -n N  Print last N lines (default 10)\n"
         "  -c N  Print last N bytes\n"
-        "Stdin not yet supported.\n");
+        "Stdin not yet supported.\n", stdout);
     return 0;
   }
   if (strcmp(a, "--") == 0) return 1;
   if (a[1] != 'n' && a[1] != 'c') {
-    uc_eputs("tail: unknown option: ");
-    uc_eputs(a);
-    uc_eputs("\n");
+    fputs("tail: unknown option: ", stderr);
+    fputs(a, stderr);
+    fputs("\n", stderr);
     return -1;
   }
   byte_mode = (a[1] == 'c');
@@ -107,9 +107,9 @@ static int parse_flag(int argc, char *argv[], int argi) {
     consumed = 1;
   } else {
     if (argi + 1 >= argc) {
-      uc_eputs("tail: -");
+      fputs("tail: -", stderr);
       putchar(a[1]);
-      uc_eputs(" requires a count\n");
+      fputs(" requires a count\n", stderr);
       return -1;
     }
     num = argv[argi + 1];
@@ -117,9 +117,9 @@ static int parse_flag(int argc, char *argv[], int argi) {
   }
   uint32_t v;
   if (uc_parse_u32(num, &v) != 0) {
-    uc_eputs("tail: invalid count: ");
-    uc_eputs(num);
-    uc_eputs("\n");
+    fputs("tail: invalid count: ", stderr);
+    fputs(num, stderr);
+    fputs("\n", stderr);
     return -1;
   }
   limit = v;
@@ -142,7 +142,7 @@ int main(int argc, char *argv[]) {
   }
 
   if (argi >= argc) {
-    uc_eputs("tail: stdin not yet supported\n");
+    fputs("tail: stdin not yet supported\n", stderr);
     return 1;
   }
 
@@ -152,23 +152,23 @@ int main(int argc, char *argv[]) {
 
   for (int i = argi; i < argc; i++) {
     if (strcmp(argv[i], "-") == 0) {
-      uc_eputs("tail: '-' (stdin) not yet supported\n");
+      fputs("tail: '-' (stdin) not yet supported\n", stderr);
       rc = 1;
       continue;
     }
     int fd = open(argv[i], O_RDONLY, 0);
     if (fd < 0) {
-      uc_eputs("tail: ");
-      uc_eputs(argv[i]);
-      uc_eputs(": No such file or directory\n");
+      fputs("tail: ", stderr);
+      fputs(argv[i], stderr);
+      fputs(": No such file or directory\n", stderr);
       rc = 1;
       continue;
     }
     if (multi) {
       if (!first) putchar('\n');
-      uc_puts("==> ");
-      uc_puts(argv[i]);
-      uc_puts(" <==\n");
+      fputs("==> ", stdout);
+      fputs(argv[i], stdout);
+      fputs(" <==\n", stdout);
       first = 0;
     }
     if (tail_file(fd)) rc = 1;

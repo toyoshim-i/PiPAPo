@@ -23,12 +23,12 @@ static int use_color = 1;
 #define C_RED C("\033[31m")
 
 static void die(const char *prefix, const char *path) {
-  uc_eputs(C_RED);
-  uc_eputs("mv: ");
-  uc_eputs(C_RST);
-  uc_eputs(prefix);
-  uc_eputs(path);
-  uc_eputs("\n");
+  fputs(C_RED, stderr);
+  fputs("mv: ", stderr);
+  fputs(C_RST, stderr);
+  fputs(prefix, stderr);
+  fputs(path, stderr);
+  fputs("\n", stderr);
   _exit(1);
 }
 
@@ -67,9 +67,9 @@ int main(int argc, char *argv[]) {
 
   while (argi < argc && argv[argi][0] == '-' && argv[argi][1] != '\0') {
     if (strcmp(argv[argi], "--help") == 0) {
-      uc_puts(
+      fputs(
           "Usage: mv [--no-color] SOURCE DEST\n"
-          "  Moves SOURCE to DEST (overwriting DEST if it exists).\n");
+          "  Moves SOURCE to DEST (overwriting DEST if it exists).\n", stdout);
       return 0;
     }
     if (strcmp(argv[argi], "--no-color") == 0) {
@@ -77,14 +77,14 @@ int main(int argc, char *argv[]) {
       argi++;
       continue;
     }
-    uc_eputs("mv: unknown option: ");
-    uc_eputs(argv[argi]);
-    uc_eputs("\n");
+    fputs("mv: unknown option: ", stderr);
+    fputs(argv[argi], stderr);
+    fputs("\n", stderr);
     return 1;
   }
 
   if (argi + 2 != argc) {
-    uc_eputs("mv: expected SOURCE and DEST\n");
+    fputs("mv: expected SOURCE and DEST\n", stderr);
     return 1;
   }
 

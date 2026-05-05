@@ -112,10 +112,10 @@ static int parse_set(const char *s, char *out_chars, bitmap_t bm) {
 }
 
 static void usage(void) {
-  uc_eputs(
+  fputs(
       "Usage: tr SET1 SET2\n"
       "       tr -d SET1\n"
-      "Reads stdin, writes stdout.\n");
+      "Reads stdin, writes stdout.\n", stderr);
 }
 
 int main(int argc, char *argv[]) {
@@ -143,7 +143,7 @@ int main(int argc, char *argv[]) {
 
   int n1 = parse_set(argv[argi], set1_chars, set1_in);
   if (n1 < 0 || n1 == 0) {
-    uc_eputs("tr: invalid or empty SET1\n");
+    fputs("tr: invalid or empty SET1\n", stderr);
     return 1;
   }
 
@@ -151,11 +151,11 @@ int main(int argc, char *argv[]) {
   if (!delete_mode) {
     n2 = parse_set(argv[argi + 1], set2_chars, set2_in);
     if (n2 < 0) {
-      uc_eputs("tr: invalid SET2\n");
+      fputs("tr: invalid SET2\n", stderr);
       return 1;
     }
     if (n2 == 0) {
-      uc_eputs("tr: SET2 cannot be empty (without -d)\n");
+      fputs("tr: SET2 cannot be empty (without -d)\n", stderr);
       return 1;
     }
   }

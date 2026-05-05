@@ -12,11 +12,11 @@
 
 int main(int argc, char *argv[]) {
   if (argc != 2 || strcmp(argv[1], "--help") == 0) {
-    uc_eputs("Usage: umount TARGET\n");
+    fputs("Usage: umount TARGET\n", stderr);
     return (argc != 2) ? 1 : 0;
   }
   if (umount2(argv[1], 0) < 0) {
-    uc_eputs("umount: failed (target not mounted, busy, or invalid)\n");
+    fputs("umount: failed (target not mounted, busy, or invalid)\n", stderr);
     return 1;
   }
   return 0;

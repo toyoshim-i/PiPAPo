@@ -552,7 +552,7 @@ function(_ppap_build_user_programs)
         DEPENDS ${PPAP_ARCH_DIR}/syscall.S
         COMMENT "Assembling syscall.o (${PPAP_ARCH})"
     )
-    set(_libc_units string stdio stdlib alloc util)
+    set(_libc_units string stdio stdlib alloc file util)
     set(_libc_objs)
     foreach(_unit ${_libc_units})
         set(_obj ${PPAP_SHARED_BUILD}/libc_${_unit}.o)

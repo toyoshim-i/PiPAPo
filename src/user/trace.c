@@ -1,11 +1,11 @@
 #include "common/syscall_nr.h"
 #include "lib/uclib.h"
 
-#define put_str uc_puts
+#define put_str(s) fputs((s), stdout)
 #define put_chr putchar
-#define put_u32 uc_putu
-#define put_hex32 uc_putx32
-#define put_hex16 uc_putx16
+#define put_u32(v) printf("%u", (unsigned)(v))
+#define put_hex32(v) printf("0x%08x", (unsigned)(v))
+#define put_hex16(v) printf("0x%04x", (unsigned)(v))
 
 static void put_nl(void) { putchar('\n'); }
 

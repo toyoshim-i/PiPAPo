@@ -90,7 +90,7 @@ static int grep_fd(int fd, const char *name, int print_name,
           (*count)++;
           if (!(flags & (F_C | F_Q))) {
             if (print_name) {
-              uc_puts(name);
+              fputs(name, stdout);
               putchar(':');
             }
             if (flags & F_N) printf("%u:", (unsigned)lineno);
@@ -113,7 +113,7 @@ static int grep_fd(int fd, const char *name, int print_name,
       (*count)++;
       if (!(flags & (F_C | F_Q))) {
         if (print_name) {
-          uc_puts(name);
+          fputs(name, stdout);
           putchar(':');
         }
         if (flags & F_N) printf("%u:", (unsigned)lineno);
@@ -131,7 +131,7 @@ static int parse_options(int argc, char *argv[]) {
          strcmp(argv[argi], "-") != 0) {
     if (strcmp(argv[argi], "--") == 0) return argi + 1;
     if (strcmp(argv[argi], "--help") == 0) {
-      uc_puts(
+      fputs(
           "Usage: grep [-nivcqhHF] PATTERN [file ...]\n"
           "  -n  Prefix each line with line number\n"
           "  -i  Case-insensitive match\n"
@@ -141,7 +141,7 @@ static int parse_options(int argc, char *argv[]) {
           "  -h  Never print filename prefix\n"
           "  -H  Always print filename prefix\n"
           "  -F  Fixed string (default; accepted for compat)\n"
-          "  -   Read from stdin\n");
+          "  -   Read from stdin\n", stdout);
       return -2;
     }
     const char *p = argv[argi] + 1;
@@ -156,9 +156,9 @@ static int parse_options(int argc, char *argv[]) {
         case 'H': flags |= F_BIGH; break;
         case 'F': break;
         default:
-          uc_eputs("grep: unknown option: -");
+          fputs("grep: unknown option: -", stderr);
           putchar(*p);
-          uc_eputs("\n");
+          fputs("\n", stderr);
           return -1;
       }
       p++;
@@ -174,7 +174,7 @@ int main(int argc, char *argv[]) {
   if (argi == -2) return 0;
 
   if (argi >= argc) {
-    uc_eputs("grep: missing pattern\n");
+    fputs("grep: missing pattern\n", stderr);
     return 2;
   }
   pattern = argv[argi++];
@@ -207,9 +207,9 @@ int main(int argc, char *argv[]) {
       } else {
         fd = open(name, O_RDONLY, 0);
         if (fd < 0) {
-          uc_eputs("grep: ");
-          uc_eputs(name);
-          uc_eputs(": No such file or directory\n");
+          fputs("grep: ", stderr);
+          fputs(name, stderr);
+          fputs(": No such file or directory\n", stderr);
           rc = 2;
           continue;
         }
@@ -218,7 +218,7 @@ int main(int argc, char *argv[]) {
       if (grep_fd(fd, name, print_name, &count)) rc = 2;
       if (flags & F_C) {
         if (print_name) {
-          uc_puts(name);
+          fputs(name, stdout);
           putchar(':');
         }
         printf("%u\n", (unsigned)count);

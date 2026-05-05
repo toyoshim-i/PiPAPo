@@ -13,7 +13,7 @@
 
 /* ── Helpers ───────────────────────────────────────────────────────────── */
 
-/* Length-bounded write: uc_puts requires NUL termination, so this stays
+/* Length-bounded write: fputs requires NUL termination, so this stays
  * local for the one caller that emits a slice of the row buffer. */
 static void put_nstr(const char *s, int len) { write(1, s, len); }
 
@@ -37,7 +37,7 @@ static void put_int_rj(int val, int width) {
 }
 
 /* Erase to end of line */
-static void erase_eol(void) { uc_puts("\033[K"); }
+static void erase_eol(void) { fputs("\033[K", stdout); }
 
 /* ── Scroll adjustment ─────────────────────────────────────────────────── */
 
@@ -92,7 +92,7 @@ static void draw_menu_bar(void) {
       term_attr_bg(COL_WHITE);
       term_attr_fg(COL_BLACK);
     }
-    uc_puts(pi_menus[i].label);
+    fputs(pi_menus[i].label, stdout);
     col += strlen(pi_menus[i].label);
     if (E.mode == MODE_MENU && E.menu_cat == i) {
       term_attr_reset();
@@ -197,7 +197,7 @@ static void draw_dropdown(void) {
     }
 
     putchar(' ');
-    uc_puts(cat->items[i].label);
+    fputs(cat->items[i].label, stdout);
 
     /* Right-align shortcut */
     int label_len = strlen(cat->items[i].label);
@@ -210,7 +210,7 @@ static void draw_dropdown(void) {
       if (i != E.menu_item) {
         term_attr_dim();
       }
-      uc_puts(cat->items[i].shortcut);
+      fputs(cat->items[i].shortcut, stdout);
     }
 
     term_attr_reset();
@@ -240,34 +240,34 @@ static void draw_status_bar(void) {
     term_attr_fg(COL_GREEN);
 
   /* Left side: "-- pi: filename [+] -- MODE --" */
-  uc_puts(" pi: ");
+  fputs(" pi: ", stdout);
   if (E.filename[0])
-    uc_puts(E.filename);
+    fputs(E.filename, stdout);
   else
-    uc_puts("[new]");
+    fputs("[new]", stdout);
 
   if (E.dirty)
-    uc_puts(" [+]");
+    fputs(" [+]", stdout);
 
-  uc_puts(" - ");
+  fputs(" - ", stdout);
 
   /* Mode */
   switch (E.mode) {
-  case MODE_NORMAL:  uc_puts("NORMAL");  break;
-  case MODE_INSERT:  uc_puts("INSERT");  break;
-  case MODE_MENU:    uc_puts("MENU");    break;
-  case MODE_COMMAND: uc_puts("COMMAND"); break;
+  case MODE_NORMAL:  fputs("NORMAL", stdout);  break;
+  case MODE_INSERT:  fputs("INSERT", stdout);  break;
+  case MODE_MENU:    fputs("MENU", stdout);    break;
+  case MODE_COMMAND: fputs("COMMAND", stdout); break;
   }
 
-  uc_puts(" - ");
+  fputs(" - ", stdout);
 
   /* Cursor position */
   printf("%d:%d", (int32_t)(E.cy + 1), (int32_t)(E.cx + 1));
 
   /* Status message (if any) */
   if (E.status[0]) {
-    uc_puts(" | ");
-    uc_puts(E.status);
+    fputs(" | ", stdout);
+    fputs(E.status, stdout);
   }
 
   /* Fill rest */
@@ -283,16 +283,16 @@ static void draw_hint_bar(void) {
 
   switch (E.mode) {
   case MODE_NORMAL:
-    uc_puts(" Esc Menu | i insert | :w save | :q quit | / search");
+    fputs(" Esc Menu | i insert | :w save | :q quit | / search", stdout);
     break;
   case MODE_INSERT:
-    uc_puts(" Esc normal | type to edit");
+    fputs(" Esc normal | type to edit", stdout);
     break;
   case MODE_MENU:
-    uc_puts(" <> category | ^v select | Enter run | Esc close");
+    fputs(" <> category | ^v select | Enter run | Esc close", stdout);
     break;
   case MODE_COMMAND:
-    uc_puts(" Enter execute | Esc cancel");
+    fputs(" Enter execute | Esc cancel", stdout);
     break;
   }
 
@@ -364,7 +364,7 @@ static void draw_help(void) {
         /* Section headers: bold */
         term_attr_bold();
       }
-      uc_puts(help_lines[i]);
+      fputs(help_lines[i], stdout);
       term_attr_reset();
     }
     erase_eol();
@@ -393,7 +393,7 @@ void ui_refresh(void) {
     draw_status_bar();
     term_cursor_to(E.rows - 1, 0);
     term_attr_dim();
-    uc_puts(" Press any key to return");
+    fputs(" Press any key to return", stdout);
     erase_eol();
     term_attr_reset();
     term_cursor_show();

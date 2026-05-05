@@ -49,7 +49,7 @@ static void print_right(uint32_t v, int width) {
   }
   int len = (int)sizeof(tmp) - 1 - pos;
   for (int i = len; i < width; i++) putchar(' ');
-  uc_puts(&tmp[pos]);
+  fputs(&tmp[pos], stdout);
 }
 
 /* Print a human-readable size (KB input). */
@@ -64,7 +64,7 @@ static void print_human(uint32_t kb, int width) {
   }
   int len = strlen(buf);
   for (int i = len; i < width; i++) putchar(' ');
-  uc_puts(buf);
+  fputs(buf, stdout);
 }
 
 static void print_val(uint32_t kb, int width) {
@@ -76,39 +76,39 @@ static void print_val(uint32_t kb, int width) {
 
 static void print_row(const char *fs, uint32_t total, uint32_t used,
                       uint32_t free_kb, const char *mount) {
-  uc_puts(C_BCYAN);
+  fputs(C_BCYAN, stdout);
   int flen = strlen(fs);
-  uc_puts(fs);
-  uc_puts(C_RST);
+  fputs(fs, stdout);
+  fputs(C_RST, stdout);
   for (int i = flen; i < 12; i++) putchar(' ');
 
-  uc_puts(C_WHITE);
+  fputs(C_WHITE, stdout);
   print_val(total, 8);
-  uc_puts(C_RST);
-  uc_puts(C_YELLOW);
+  fputs(C_RST, stdout);
+  fputs(C_YELLOW, stdout);
   print_val(used, 8);
-  uc_puts(C_RST);
-  uc_puts(C_GREEN);
+  fputs(C_RST, stdout);
+  fputs(C_GREEN, stdout);
   print_val(free_kb, 8);
-  uc_puts(C_RST);
+  fputs(C_RST, stdout);
 
   /* Use% — gradient: green <50%, yellow 50-89%, red >=90% */
   if (total > 0) {
     uint32_t pct = (used * 100 + total / 2) / total;
-    if (pct >= 90) uc_puts(C_BRED);
-    else if (pct >= 50) uc_puts(C_BYELLOW);
-    else uc_puts(C_BGREEN);
+    if (pct >= 90) fputs(C_BRED, stdout);
+    else if (pct >= 50) fputs(C_BYELLOW, stdout);
+    else fputs(C_BGREEN, stdout);
     print_right(pct, 5);
     putchar('%');
-    uc_puts(C_RST);
+    fputs(C_RST, stdout);
   } else {
-    uc_puts("    - ");
+    fputs("    - ", stdout);
   }
 
-  uc_puts("  ");
-  uc_puts(C_BWHITE);
-  uc_puts(mount);
-  uc_puts(C_RST);
+  fputs("  ", stdout);
+  fputs(C_BWHITE, stdout);
+  fputs(mount, stdout);
+  fputs(C_RST, stdout);
   putchar('\n');
 }
 
@@ -117,11 +117,11 @@ int main(int argc, char *argv[]) {
 
   while (argi < argc && argv[argi][0] == '-') {
     if (strcmp(argv[argi], "--help") == 0) {
-      uc_puts(
+      fputs(
           "Usage: df [-h] [--no-color]\n"
           "  -h  Human-readable sizes (K, M)\n"
           "  --no-color  Disable color output\n"
-          "Shows filesystem usage from /proc/mounts.\n");
+          "Shows filesystem usage from /proc/mounts.\n", stdout);
       return 0;
     }
     if (strcmp(argv[argi], "--no-color") == 0) {
@@ -136,9 +136,9 @@ int main(int argc, char *argv[]) {
           opt_human = 1;
           break;
         default:
-          uc_eputs("df: unknown option: -");
+          fputs("df: unknown option: -", stderr);
           putchar(*p);
-          uc_eputs("\n");
+          fputs("\n", stderr);
           return 1;
       }
       p++;
@@ -148,13 +148,13 @@ int main(int argc, char *argv[]) {
 
   char buf[512];
 
-  uc_puts(C_REV);
-  uc_puts(C_BOLD);
+  fputs(C_REV, stdout);
+  fputs(C_BOLD, stdout);
   if (opt_human)
-    uc_puts("Filesystem    Total    Used    Free Use%  Mounted on");
+    fputs("Filesystem    Total    Used    Free Use%  Mounted on", stdout);
   else
-    uc_puts("Filesystem   Total(K) Used(K)  Free(K) Use%  Mounted on");
-  uc_puts(C_RST);
+    fputs("Filesystem   Total(K) Used(K)  Free(K) Use%  Mounted on", stdout);
+  fputs(C_RST, stdout);
   putchar('\n');
 
   if (read_file("/proc/mounts", buf, (int)sizeof(buf)) <= 0) return 1;

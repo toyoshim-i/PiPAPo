@@ -216,7 +216,7 @@ int pile_prompt(const char *label, char *out, int outsize) {
   for (;;) {
     pile_draw_cursor_to(pile_rows - 1, 0);
     pile_draw_clear_to_eol();
-    uc_puts(label);
+    fputs(label, stdout);
     write(1, out, len);
     putchar('_');
 
@@ -425,23 +425,23 @@ int main(int argc, char *argv[]) {
     if (strcmp(argv[i], "--no-color") == 0) {
       pile_use_color = 0;
     } else if (strcmp(argv[i], "--help") == 0) {
-      uc_puts(
+      fputs(
           "Usage: pile [--no-color] [path]\n"
-          "  Two-pane filer.  F10 / q quits.\n");
+          "  Two-pane filer.  F10 / q quits.\n", stdout);
       return 0;
     } else if (argv[i][0] != '-') {
       start = argv[i];
     } else {
-      uc_eputs("pile: unknown option: ");
-      uc_eputs(argv[i]);
-      uc_eputs("\n");
+      fputs("pile: unknown option: ", stderr);
+      fputs(argv[i], stderr);
+      fputs("\n", stderr);
       return 1;
     }
   }
 
   query_winsize();
   if (pile_cols < PILE_MIN_COLS) {
-    uc_eputs("pile: terminal too narrow (need >=40 cols)\n");
+    fputs("pile: terminal too narrow (need >=40 cols)\n", stderr);
     return 1;
   }
   pile_layout =

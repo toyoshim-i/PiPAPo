@@ -21,7 +21,7 @@
 
 static void print_field(const char *field, int *first) {
   if (!*first) putchar(' ');
-  uc_puts(field);
+  fputs(field, stdout);
   *first = 0;
 }
 
@@ -31,20 +31,20 @@ int main(int argc, char *argv[]) {
   for (int argi = 1; argi < argc; argi++) {
     const char *a = argv[argi];
     if (strcmp(a, "--help") == 0) {
-      uc_puts(
+      fputs(
           "Usage: uname [-asnrvm]\n"
           "  -s  Kernel name (default)\n"
           "  -n  Node (host) name\n"
           "  -r  Kernel release\n"
           "  -v  Kernel version\n"
           "  -m  Machine (architecture) name\n"
-          "  -a  All of the above\n");
+          "  -a  All of the above\n", stdout);
       return 0;
     }
     if (a[0] != '-' || a[1] == '\0') {
-      uc_eputs("uname: unknown argument: ");
-      uc_eputs(a);
-      uc_eputs("\n");
+      fputs("uname: unknown argument: ", stderr);
+      fputs(a, stderr);
+      fputs("\n", stderr);
       return 1;
     }
     for (const char *p = a + 1; *p; p++) {
@@ -56,9 +56,9 @@ int main(int argc, char *argv[]) {
         case 'v': flags |= F_V; break;
         case 'm': flags |= F_M; break;
         default:
-          uc_eputs("uname: unknown option: -");
+          fputs("uname: unknown option: -", stderr);
           putchar(*p);
-          uc_eputs("\n");
+          fputs("\n", stderr);
           return 1;
       }
     }
@@ -68,7 +68,7 @@ int main(int argc, char *argv[]) {
 
   struct utsname u;
   if (uname(&u) < 0) {
-    uc_eputs("uname: syscall failed\n");
+    fputs("uname: syscall failed\n", stderr);
     return 1;
   }
 

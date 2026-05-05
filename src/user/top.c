@@ -237,7 +237,7 @@ static void print_right(uint32_t v, int width) {
   }
   int len = (int)sizeof(buf) - 1 - pos;
   for (int i = len; i < width; i++) putchar(' ');
-  uc_puts(&buf[pos]);
+  fputs(&buf[pos], stdout);
 }
 
 static void print_time(uint32_t ticks) {
@@ -264,7 +264,7 @@ int main(int argc, char *argv[]) {
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "--help") == 0) {
 usage:
-      uc_puts(
+      fputs(
           "Usage: top [-c|-m|-p|-t] [-n COUNT]\n"
           "Options:\n"
           "  -c  sort by CPU usage (default)\n"
@@ -279,7 +279,7 @@ usage:
           "  p/N sort by PID\n"
           "  t/T sort by time\n"
           "  o/O cycle sort field\n"
-          "  q   quit\n");
+          "  q   quit\n", stdout);
       return 0;
     } else if (strcmp(argv[i], "-c") == 0) {
       mode = SORT_CPU;
@@ -295,8 +295,8 @@ usage:
     } else if (strcmp(argv[i], "--no-color") == 0) {
       use_color = 0;
     } else {
-      uc_puts("top: unknown option: ");
-      uc_puts(argv[i]);
+      fputs("top: unknown option: ", stdout);
+      fputs(argv[i], stdout);
       putchar('\n');
       goto usage;
     }
@@ -317,8 +317,8 @@ usage:
 
   for (;;) {
     if (first)
-      uc_puts("\033[2J"); /* clear screen on first display */
-    uc_puts("\033[H");    /* cursor to 0,0 */
+      fputs("\033[2J", stdout); /* clear screen on first display */
+    fputs("\033[H", stdout);    /* cursor to 0,0 */
 
     /* Read uptime */
     uint32_t uptime_s = 0;
@@ -375,125 +375,125 @@ usage:
     sort_procs(procs, nprocs, mode);
 
     /* Header */
-    uc_puts(C_BCYAN);
-    uc_puts("top");
-    uc_puts(C_RST);
-    uc_puts(" - up ");
-    uc_puts(C_BWHITE);
+    fputs(C_BCYAN, stdout);
+    fputs("top", stdout);
+    fputs(C_RST, stdout);
+    fputs(" - up ", stdout);
+    fputs(C_BWHITE, stdout);
     {
       uint32_t h = uptime_s / 3600;
       uint32_t m = (uptime_s % 3600) / 60;
       uint32_t s = uptime_s % 60;
       printf("%u:%02u:%02u", h, m, s);
     }
-    uc_puts(C_RST);
-    uc_puts(", ");
-    uc_puts(C_BWHITE);
-    uc_putu((uint32_t)nprocs);
-    uc_puts(C_RST);
-    uc_puts(" procs  [sort: ");
-    uc_puts(C_BYELLOW);
-    uc_puts(sort_name(mode));
-    uc_puts(C_RST);
-    uc_puts("]\033[K\n");
+    fputs(C_RST, stdout);
+    fputs(", ", stdout);
+    fputs(C_BWHITE, stdout);
+    printf("%u", (uint32_t)nprocs);
+    fputs(C_RST, stdout);
+    fputs(" procs  [sort: ", stdout);
+    fputs(C_BYELLOW, stdout);
+    fputs(sort_name(mode), stdout);
+    fputs(C_RST, stdout);
+    fputs("]\033[K\n", stdout);
 
     /* Memory line */
-    uc_puts(C_BCYAN);
-    uc_puts("Mem: ");
-    uc_puts(C_RST);
-    uc_puts(C_GREEN);
-    uc_putu(mem_total);
-    uc_puts("K");
-    uc_puts(C_RST);
-    uc_puts(" total, ");
+    fputs(C_BCYAN, stdout);
+    fputs("Mem: ", stdout);
+    fputs(C_RST, stdout);
+    fputs(C_GREEN, stdout);
+    printf("%u", mem_total);
+    fputs("K", stdout);
+    fputs(C_RST, stdout);
+    fputs(" total, ", stdout);
     if (mem_total > 0 && mem_free * 100 / mem_total < 10)
-      uc_puts(C_BRED);
+      fputs(C_BRED, stdout);
     else
-      uc_puts(C_BGREEN);
-    uc_putu(mem_free);
-    uc_puts("K");
-    uc_puts(C_RST);
-    uc_puts(" free\033[K\n");
+      fputs(C_BGREEN, stdout);
+    printf("%u", mem_free);
+    fputs("K", stdout);
+    fputs(C_RST, stdout);
+    fputs(" free\033[K\n", stdout);
 
     /* CPU line */
-    uc_puts(C_BCYAN);
-    uc_puts("%Cpu: ");
-    uc_puts(C_RST);
+    fputs(C_BCYAN, stdout);
+    fputs("%Cpu: ", stdout);
+    fputs(C_RST, stdout);
     if (dt > 0) {
       uint32_t us_pct10 = du * 1000 / dt;
       uint32_t sy_pct10 = ds * 1000 / dt;
       uint32_t id_pct10 = di * 1000 / dt;
-      uc_puts(C_GREEN);
+      fputs(C_GREEN, stdout);
       printf("%u.%u", us_pct10 / 10, us_pct10 % 10);
-      uc_puts(C_RST);
-      uc_puts(" us, ");
-      uc_puts(C_RED);
+      fputs(C_RST, stdout);
+      fputs(" us, ", stdout);
+      fputs(C_RED, stdout);
       printf("%u.%u", sy_pct10 / 10, sy_pct10 % 10);
-      uc_puts(C_RST);
-      uc_puts(" sy, ");
-      uc_puts(C_CYAN);
+      fputs(C_RST, stdout);
+      fputs(" sy, ", stdout);
+      fputs(C_CYAN, stdout);
       printf("%u.%u", id_pct10 / 10, id_pct10 % 10);
-      uc_puts(C_RST);
-      uc_puts(" id");
+      fputs(C_RST, stdout);
+      fputs(" id", stdout);
     } else {
-      uc_puts("--");
+      fputs("--", stdout);
     }
-    uc_puts("\033[K\n");
+    fputs("\033[K\n", stdout);
 
     /* Process table header */
-    uc_puts(C_REV);
-    uc_puts(C_BOLD);
-    uc_puts("\n  PID  PPID S  %CPU  TIME    MEM COMMAND\033[K");
-    uc_puts(C_RST);
+    fputs(C_REV, stdout);
+    fputs(C_BOLD, stdout);
+    fputs("\n  PID  PPID S  %CPU  TIME    MEM COMMAND\033[K", stdout);
+    fputs(C_RST, stdout);
     putchar('\n');
 
     /* Process rows */
     for (int i = 0; i < nprocs; i++) {
       int si = sort_idx[i];
-      uc_puts(C_CYAN);
+      fputs(C_CYAN, stdout);
       print_right((uint32_t)procs[si].pid, 5);
-      uc_puts(C_RST);
-      uc_puts(C_BLUE);
+      fputs(C_RST, stdout);
+      fputs(C_BLUE, stdout);
       print_right((uint32_t)procs[si].ppid, 6);
-      uc_puts(C_RST);
+      fputs(C_RST, stdout);
       putchar(' ');
       {
         char st = procs[si].state;
-        if (st == 'R') uc_puts(C_BGREEN);
-        else if (st == 'Z') uc_puts(C_BRED);
-        else if (st == 'I') uc_puts(C_BLUE);
-        else uc_puts(C_WHITE);
+        if (st == 'R') fputs(C_BGREEN, stdout);
+        else if (st == 'Z') fputs(C_BRED, stdout);
+        else if (st == 'I') fputs(C_BLUE, stdout);
+        else fputs(C_WHITE, stdout);
         putchar(st);
-        uc_puts(C_RST);
+        fputs(C_RST, stdout);
       }
       /* %CPU: cpu_delta / dt * 100, show as XX.X */
       if (dt > 0) {
         uint32_t pct10 = procs[si].cpu_delta * 1000 / dt;
-        if (pct10 >= 500) uc_puts(C_BRED);
-        else if (pct10 >= 200) uc_puts(C_BYELLOW);
-        else if (pct10 > 0) uc_puts(C_GREEN);
+        if (pct10 >= 500) fputs(C_BRED, stdout);
+        else if (pct10 >= 200) fputs(C_BYELLOW, stdout);
+        else if (pct10 > 0) fputs(C_GREEN, stdout);
         printf("%3u.%u", pct10 / 10, pct10 % 10);
-        uc_puts(C_RST);
+        fputs(C_RST, stdout);
       } else {
-        uc_puts("  --");
+        fputs("  --", stdout);
       }
       putchar(' ');
-      uc_puts(C_MAGENTA);
+      fputs(C_MAGENTA, stdout);
       print_time(procs[si].utime + procs[si].stime);
-      uc_puts(C_RST);
-      uc_puts(C_YELLOW);
+      fputs(C_RST, stdout);
+      fputs(C_YELLOW, stdout);
       print_right(procs[si].vsz / 1024, 7);
-      uc_puts("K");
-      uc_puts(C_RST);
+      fputs("K", stdout);
+      fputs(C_RST, stdout);
       putchar(' ');
-      uc_puts(C_BWHITE);
-      uc_puts(procs[si].comm);
-      uc_puts(C_RST);
-      uc_puts("\033[K\n");
+      fputs(C_BWHITE, stdout);
+      fputs(procs[si].comm, stdout);
+      fputs(C_RST, stdout);
+      fputs("\033[K\n", stdout);
     }
 
     /* Clear any stale lines below (ESC[J = erase from cursor to end) */
-    uc_puts("\033[J");
+    fputs("\033[J", stdout);
 
     count++;
     if (iterations > 0 && count >= iterations) break;

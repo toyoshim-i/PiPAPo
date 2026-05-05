@@ -26,11 +26,11 @@ int main(int argc, char *argv[]) {
 
   while (argi < argc && argv[argi][0] == '-' && argv[argi][1] != '\0') {
     if (strcmp(argv[argi], "--help") == 0) {
-      uc_puts(
+      fputs(
           "Usage: ln [--no-color] TARGET [LINK_NAME]\n"
           "  Create a hard link LINK_NAME pointing at TARGET.\n"
           "  If LINK_NAME is omitted, use TARGET's basename in the cwd.\n"
-          "  Symbolic links (-s) are not supported — use busybox ln.\n");
+          "  Symbolic links (-s) are not supported — use busybox ln.\n", stdout);
       return 0;
     }
     if (strcmp(argv[argi], "--no-color") == 0) {
@@ -39,17 +39,17 @@ int main(int argc, char *argv[]) {
       continue;
     }
     if (strcmp(argv[argi], "-s") == 0) {
-      uc_eputs("ln: -s (symbolic link) not supported; use busybox ln\n");
+      fputs("ln: -s (symbolic link) not supported; use busybox ln\n", stderr);
       return 1;
     }
-    uc_eputs("ln: unknown option: ");
-    uc_eputs(argv[argi]);
-    uc_eputs("\n");
+    fputs("ln: unknown option: ", stderr);
+    fputs(argv[argi], stderr);
+    fputs("\n", stderr);
     return 1;
   }
 
   if (argi >= argc) {
-    uc_eputs("ln: missing TARGET\n");
+    fputs("ln: missing TARGET\n", stderr);
     return 1;
   }
 
@@ -63,18 +63,18 @@ int main(int argc, char *argv[]) {
   }
 
   if (argi != argc) {
-    uc_eputs("ln: too many operands\n");
+    fputs("ln: too many operands\n", stderr);
     return 1;
   }
 
   if (link(target, linkname) < 0) {
-    uc_eputs(C_RED);
-    uc_eputs("ln: cannot create link: ");
-    uc_eputs(C_RST);
-    uc_eputs(linkname);
-    uc_eputs(" -> ");
-    uc_eputs(target);
-    uc_eputs("\n");
+    fputs(C_RED, stderr);
+    fputs("ln: cannot create link: ", stderr);
+    fputs(C_RST, stderr);
+    fputs(linkname, stderr);
+    fputs(" -> ", stderr);
+    fputs(target, stderr);
+    fputs("\n", stderr);
     return 1;
   }
   return 0;

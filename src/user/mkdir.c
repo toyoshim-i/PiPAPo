@@ -16,9 +16,9 @@ static int opt_p;
 static int opt_mode = 0755;
 
 static void err_path(const char *path) {
-  uc_eputs("mkdir: cannot create directory: ");
-  uc_eputs(path);
-  uc_eputs("\n");
+  fputs("mkdir: cannot create directory: ", stderr);
+  fputs(path, stderr);
+  fputs("\n", stderr);
 }
 
 static int parse_octal_mode(const char *s, int *out) {
@@ -73,10 +73,10 @@ int main(int argc, char *argv[]) {
 
   while (argi < argc && argv[argi][0] == '-' && argv[argi][1] != '\0') {
     if (strcmp(argv[argi], "--help") == 0) {
-      uc_puts(
+      fputs(
           "Usage: mkdir [-p] [-m MODE] DIR...\n"
           "  -p       Create parent directories as needed\n"
-          "  -m MODE  Set mode (octal, default 0755)\n");
+          "  -m MODE  Set mode (octal, default 0755)\n", stdout);
       return 0;
     }
     if (strcmp(argv[argi], "-p") == 0) {
@@ -86,26 +86,26 @@ int main(int argc, char *argv[]) {
     }
     if (strcmp(argv[argi], "-m") == 0) {
       if (argi + 1 >= argc) {
-        uc_eputs("mkdir: option -m requires an argument\n");
+        fputs("mkdir: option -m requires an argument\n", stderr);
         return 1;
       }
       if (parse_octal_mode(argv[argi + 1], &opt_mode) < 0) {
-        uc_eputs("mkdir: invalid mode: ");
-        uc_eputs(argv[argi + 1]);
-        uc_eputs("\n");
+        fputs("mkdir: invalid mode: ", stderr);
+        fputs(argv[argi + 1], stderr);
+        fputs("\n", stderr);
         return 1;
       }
       argi += 2;
       continue;
     }
-    uc_eputs("mkdir: unknown option: ");
-    uc_eputs(argv[argi]);
-    uc_eputs("\n");
+    fputs("mkdir: unknown option: ", stderr);
+    fputs(argv[argi], stderr);
+    fputs("\n", stderr);
     return 1;
   }
 
   if (argi >= argc) {
-    uc_eputs("mkdir: missing operand\n");
+    fputs("mkdir: missing operand\n", stderr);
     return 1;
   }
 

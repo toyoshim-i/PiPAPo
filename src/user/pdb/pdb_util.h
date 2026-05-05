@@ -3,15 +3,15 @@
 
 #include "lib/uclib.h"
 
-/* Output helpers — thin redirects to uclib. */
-#define put_str uc_puts
-#define put_err uc_eputs
+/* Output helpers — thin redirects to <stdio.h>. */
+#define put_str(s) fputs((s), stdout)
+#define put_err(s) fputs((s), stderr)
 #define put_chr putchar
-#define put_u32 uc_putu
-#define put_i32 uc_puti
-#define put_hex32 uc_putx32
-#define put_hex16 uc_putx16
-#define put_hex8 uc_putx8
+#define put_u32(v) printf("%u", (unsigned)(v))
+#define put_i32(v) printf("%d", (int)(v))
+#define put_hex32(v) printf("0x%08x", (unsigned)(v))
+#define put_hex16(v) printf("0x%04x", (unsigned)(v))
+#define put_hex8(v) printf("0x%02x", (unsigned)(v))
 
 static inline int streq(const char *a, const char *b) {
   return strcmp(a, b) == 0;

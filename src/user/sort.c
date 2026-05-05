@@ -147,13 +147,13 @@ int main(int argc, char *argv[]) {
       break;
     }
     if (strcmp(argv[argi], "--help") == 0) {
-      uc_puts(
+      fputs(
           "Usage: sort [-rnuf] [file ...]\n"
           "  -r  Reverse output order\n"
           "  -n  Numeric compare (leading integer)\n"
           "  -u  Drop adjacent duplicates\n"
           "  -f  Fold case for compare\n"
-          "  -   Read from stdin\n");
+          "  -   Read from stdin\n", stdout);
       return 0;
     }
     const char *p = argv[argi] + 1;
@@ -164,9 +164,9 @@ int main(int argc, char *argv[]) {
         case 'u': flags |= F_U; break;
         case 'f': flags |= F_F; break;
         default:
-          uc_eputs("sort: unknown option: -");
+          fputs("sort: unknown option: -", stderr);
           putchar(*p);
-          uc_eputs("\n");
+          fputs("\n", stderr);
           return 1;
       }
       p++;
@@ -182,11 +182,11 @@ int main(int argc, char *argv[]) {
   if (argi >= argc) {
     int rc = slurp_fd(0, &buf, &buf_len, &buf_cap);
     if (rc == -1) {
-      uc_eputs("sort: read error on stdin\n");
+      fputs("sort: read error on stdin\n", stderr);
       return 1;
     }
     if (rc == -2) {
-      uc_eputs("sort: out of memory\n");
+      fputs("sort: out of memory\n", stderr);
       return 1;
     }
   } else {
@@ -198,20 +198,20 @@ int main(int argc, char *argv[]) {
       } else {
         fd = open(name, O_RDONLY, 0);
         if (fd < 0) {
-          uc_eputs("sort: ");
-          uc_eputs(name);
-          uc_eputs(": No such file or directory\n");
+          fputs("sort: ", stderr);
+          fputs(name, stderr);
+          fputs(": No such file or directory\n", stderr);
           return 1;
         }
       }
       int rc = slurp_fd(fd, &buf, &buf_len, &buf_cap);
       if (fd != 0) close(fd);
       if (rc == -1) {
-        uc_eputs("sort: read error\n");
+        fputs("sort: read error\n", stderr);
         return 1;
       }
       if (rc == -2) {
-        uc_eputs("sort: out of memory\n");
+        fputs("sort: out of memory\n", stderr);
         return 1;
       }
     }
@@ -229,7 +229,7 @@ int main(int argc, char *argv[]) {
 
   line_t *lines = malloc((size_t)nlines * sizeof(line_t));
   if (!lines) {
-    uc_eputs("sort: out of memory\n");
+    fputs("sort: out of memory\n", stderr);
     return 1;
   }
 

@@ -79,9 +79,9 @@ int main(int argc, char *argv[]) {
   int argi = 1;
 
   if (argi < argc && strcmp(argv[argi], "--help") == 0) {
-    uc_puts(
+    fputs(
         "Usage: kill [-SIG] PID...\n"
-        "       kill -l\n");
+        "       kill -l\n", stdout);
     return 0;
   }
 
@@ -93,29 +93,29 @@ int main(int argc, char *argv[]) {
   /* -s SIG form */
   if (argi < argc && strcmp(argv[argi], "-s") == 0) {
     if (argi + 1 >= argc) {
-      uc_eputs("kill: option -s requires an argument\n");
+      fputs("kill: option -s requires an argument\n", stderr);
       return 1;
     }
     if (parse_sig(argv[argi + 1], &sig) < 0) {
-      uc_eputs("kill: invalid signal: ");
-      uc_eputs(argv[argi + 1]);
-      uc_eputs("\n");
+      fputs("kill: invalid signal: ", stderr);
+      fputs(argv[argi + 1], stderr);
+      fputs("\n", stderr);
       return 1;
     }
     argi += 2;
   } else if (argi < argc && argv[argi][0] == '-' && argv[argi][1] != '\0') {
     /* -SIG form (e.g. -9, -KILL, -SIGKILL) */
     if (parse_sig(argv[argi] + 1, &sig) < 0) {
-      uc_eputs("kill: invalid signal: ");
-      uc_eputs(argv[argi]);
-      uc_eputs("\n");
+      fputs("kill: invalid signal: ", stderr);
+      fputs(argv[argi], stderr);
+      fputs("\n", stderr);
       return 1;
     }
     argi++;
   }
 
   if (argi >= argc) {
-    uc_eputs("kill: missing operand\n");
+    fputs("kill: missing operand\n", stderr);
     return 1;
   }
 
@@ -123,16 +123,16 @@ int main(int argc, char *argv[]) {
   for (int i = argi; i < argc; i++) {
     int pid;
     if (parse_signed(argv[i], &pid) < 0) {
-      uc_eputs("kill: invalid pid: ");
-      uc_eputs(argv[i]);
-      uc_eputs("\n");
+      fputs("kill: invalid pid: ", stderr);
+      fputs(argv[i], stderr);
+      fputs("\n", stderr);
       rc = 1;
       continue;
     }
     if (kill((pid_t)pid, sig) < 0) {
-      uc_eputs("kill: (");
-      uc_eputs(argv[i]);
-      uc_eputs(") - no such process\n");
+      fputs("kill: (", stderr);
+      fputs(argv[i], stderr);
+      fputs(") - no such process\n", stderr);
       rc = 1;
     }
   }

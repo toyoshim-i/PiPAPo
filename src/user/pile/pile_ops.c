@@ -83,7 +83,7 @@ void pile_status_set_errno(const char *prefix, int errcode) {
 int pile_confirm(const char *prompt) {
   pile_draw_cursor_to(pile_rows - 1, 0);
   pile_draw_clear_to_eol();
-  uc_puts(prompt);
+  fputs(prompt, stdout);
   for (;;) {
     int k = pile_read_key();
     if (k == PKEY_NONE) continue;

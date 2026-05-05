@@ -807,7 +807,7 @@ static int process_fd(int fd) {
         }
         case CMD_N_UPPER: {
           if (plen + 1 >= PATTERN_SPACE_SIZE) {
-            uc_eputs("sed: pattern space overflow on N\n");
+            fputs("sed: pattern space overflow on N\n", stderr);
             return 1;
           }
           pspace[plen++] = '\n';
@@ -827,7 +827,7 @@ static int process_fd(int fd) {
           int subs = do_subst(c, pspace, plen, tmp_space,
                               PATTERN_SPACE_SIZE, &olen);
           if (subs < 0) {
-            uc_eputs("sed: pattern space overflow on s\n");
+            fputs("sed: pattern space overflow on s\n", stderr);
             return 1;
           }
           if (subs > 0) {
@@ -855,9 +855,9 @@ static int append_script_text(const char *text) {
 static int append_script_file(const char *path) {
   int fd = open(path, O_RDONLY, 0);
   if (fd < 0) {
-    uc_eputs("sed: cannot open script: ");
-    uc_eputs(path);
-    uc_eputs("\n");
+    fputs("sed: cannot open script: ", stderr);
+    fputs(path, stderr);
+    fputs("\n", stderr);
     return -1;
   }
   if (pool_used >= POOL_SIZE) {
@@ -887,14 +887,14 @@ int main(int argc, char *argv[]) {
       break;
     }
     if (strcmp(argv[argi], "--help") == 0) {
-      uc_puts(
+      fputs(
           "Usage: sed [-n] [-e SCRIPT]... [-f SCRIPTFILE]... [SCRIPT] "
           "[file ...]\n"
           "  -n  Suppress default print\n"
           "  -e  Append SCRIPT to the program\n"
           "  -f  Read SCRIPT from file\n"
           "Commands: s/RE/REPL/[gN p], d, p, =, q, n, N, # comment.\n"
-          "BRE only: . * ^ $ [...] \\(...\\) \\1..\\9\n");
+          "BRE only: . * ^ $ [...] \\(...\\) \\1..\\9\n", stdout);
       return 0;
     }
     const char *p = argv[argi] + 1;
@@ -910,11 +910,11 @@ int main(int argc, char *argv[]) {
       } else if (argi + 1 < argc) {
         script = argv[++argi];
       } else {
-        uc_eputs("sed: -e needs an argument\n");
+        fputs("sed: -e needs an argument\n", stderr);
         return 1;
       }
       if (append_script_text(script) < 0) {
-        uc_eputs("sed: bad script\n");
+        fputs("sed: bad script\n", stderr);
         return 1;
       }
       script_seen = 1;
@@ -928,7 +928,7 @@ int main(int argc, char *argv[]) {
       } else if (argi + 1 < argc) {
         path = argv[++argi];
       } else {
-        uc_eputs("sed: -f needs an argument\n");
+        fputs("sed: -f needs an argument\n", stderr);
         return 1;
       }
       if (append_script_file(path) < 0) return 1;
@@ -936,18 +936,18 @@ int main(int argc, char *argv[]) {
       argi++;
       continue;
     }
-    uc_eputs("sed: unknown option: ");
-    uc_eputs(argv[argi]);
-    uc_eputs("\n");
+    fputs("sed: unknown option: ", stderr);
+    fputs(argv[argi], stderr);
+    fputs("\n", stderr);
     return 1;
   }
   if (!script_seen) {
     if (argi >= argc) {
-      uc_eputs("sed: missing script\n");
+      fputs("sed: missing script\n", stderr);
       return 1;
     }
     if (append_script_text(argv[argi++]) < 0) {
-      uc_eputs("sed: bad script\n");
+      fputs("sed: bad script\n", stderr);
       return 1;
     }
   }
@@ -963,9 +963,9 @@ int main(int argc, char *argv[]) {
       } else {
         fd = open(argv[i], O_RDONLY, 0);
         if (fd < 0) {
-          uc_eputs("sed: ");
-          uc_eputs(argv[i]);
-          uc_eputs(": No such file or directory\n");
+          fputs("sed: ", stderr);
+          fputs(argv[i], stderr);
+          fputs(": No such file or directory\n", stderr);
           return 1;
         }
       }

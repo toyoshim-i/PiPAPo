@@ -40,11 +40,11 @@ int main(int argc, char *argv[]) {
   while (argi < argc && argv[argi][0] == '-' &&
          strcmp(argv[argi], "-") != 0) {
     if (strcmp(argv[argi], "--help") == 0) {
-      uc_puts(
+      fputs(
           "Usage: cat [-nE] [file ...]\n"
           "  -n  Number output lines\n"
           "  -E  Show $ at end of each line\n"
-          "  -   Read from stdin\n");
+          "  -   Read from stdin\n", stdout);
       return 0;
     }
     const char *p = argv[argi] + 1;
@@ -57,9 +57,9 @@ int main(int argc, char *argv[]) {
           opt_show_ends = 1;
           break;
         default:
-          uc_eputs("cat: unknown option: -");
+          fputs("cat: unknown option: -", stderr);
           putchar(*p);
-          uc_eputs("\n");
+          fputs("\n", stderr);
           return 1;
       }
       p++;
@@ -77,9 +77,9 @@ int main(int argc, char *argv[]) {
     } else {
       fd = open(argv[i], O_RDONLY, 0);
       if (fd < 0) {
-        uc_eputs("cat: ");
-        uc_eputs(argv[i]);
-        uc_eputs(": No such file or directory\n");
+        fputs("cat: ", stderr);
+        fputs(argv[i], stderr);
+        fputs(": No such file or directory\n", stderr);
         rc = 1;
         continue;
       }

@@ -25,22 +25,6 @@
 
 #include "syscall.h"
 
-/* ── stdout / stderr stopgaps ─────────────────────────────────────────
- *
- * Replaced by POSIX puts / fputs(s, stderr) / fputc(c, stderr) /
- * fprintf(stderr, …) once <stdio.h> grows FILE streams.
- */
-void uc_puts(const char *s);  /* stdout, no auto-newline */
-void uc_eputs(const char *s); /* stderr, no auto-newline */
-void uc_eprintf(const char *fmt, ...);
-
-/* ── Unbuffered numeric output (re-evaluate when printf is mature) ── */
-void uc_putu(uint32_t v);   /* decimal unsigned */
-void uc_puti(int32_t v);    /* decimal signed */
-void uc_putx32(uint32_t v); /* "0x" + 8 hex digits */
-void uc_putx16(uint32_t v); /* "0x" + 4 hex digits */
-void uc_putx8(uint32_t v);  /* "0x" + 2 hex digits */
-
 /* ── Numeric parsing (will fold into strtoul-based replacement) ───── */
 int uc_parse_u32(const char *s, uint32_t *out); /* 0 on success */
 

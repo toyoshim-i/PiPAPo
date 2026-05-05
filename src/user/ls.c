@@ -49,11 +49,11 @@ static void print_mode(uint32_t mode) {
   buf[8] = (mode & 02) ? 'w' : '-';
   buf[9] = (mode & 01) ? 'x' : '-';
   buf[10] = '\0';
-  uc_puts(buf);
+  fputs(buf, stdout);
 }
 
 static void print_symlink_mode(void) {
-  uc_puts("lrwxrwxrwx");
+  fputs("lrwxrwxrwx", stdout);
 }
 
 static void print_size(uint32_t size) {
@@ -69,7 +69,7 @@ static void print_size(uint32_t size) {
     }
   }
   while (pos > 0) buf[--pos] = ' ';
-  uc_puts(buf);
+  fputs(buf, stdout);
 }
 
 static int stat_entry(const char *dir, const char *name, struct stat *st) {
@@ -102,10 +102,10 @@ static int readlink_entry(const char *dir, const char *name, char *buf,
 /* File type codes for coloring: 0=regular, 1=dir, 2=exe, 3=symlink, 4=device */
 static void color_for_type(uint8_t ftype) {
   switch (ftype) {
-    case 1: uc_puts(C_BBLUE); break;
-    case 2: uc_puts(C_BGREEN); break;
-    case 3: uc_puts(C_BCYAN); break;
-    case 4: uc_puts(C_BYELLOW); break;
+    case 1: fputs(C_BBLUE, stdout); break;
+    case 2: fputs(C_BGREEN, stdout); break;
+    case 3: fputs(C_BCYAN, stdout); break;
+    case 4: fputs(C_BYELLOW, stdout); break;
   }
 }
 
@@ -121,8 +121,8 @@ static void print_name_classified(const char *name, const struct stat *st,
                                   int have_stat) {
   uint8_t ftype = have_stat ? stat_to_type(st) : 0;
   if (ftype) color_for_type(ftype);
-  uc_puts(name);
-  if (ftype) uc_puts(C_RST);
+  fputs(name, stdout);
+  if (ftype) fputs(C_RST, stdout);
   if (opt_classify && have_stat) {
     if (ftype == 1)
       putchar('/');
@@ -134,9 +134,9 @@ static void print_name_classified(const char *name, const struct stat *st,
 static int ls_dir(const char *path) {
   int fd = open(path, O_RDONLY, 0);
   if (fd < 0) {
-    uc_eputs("ls: cannot open ");
-    uc_eputs(path);
-    uc_eputs("\n");
+    fputs("ls: cannot open ", stderr);
+    fputs(path, stderr);
+    fputs("\n", stderr);
     return 1;
   }
 
@@ -154,48 +154,48 @@ static int ls_dir(const char *path) {
       int is_symlink = (link_len >= 0);
 
       if (opt_long && (have_stat || is_symlink)) {
-        uc_puts(C_CYAN);
+        fputs(C_CYAN, stdout);
         if (is_symlink)
           print_symlink_mode();
         else
           print_mode(st.st_mode);
-        uc_puts(C_RST);
+        fputs(C_RST, stdout);
         putchar(' ');
-        uc_puts(C_WHITE);
+        fputs(C_WHITE, stdout);
         if (is_symlink)
           print_size((uint32_t)link_len);
         else
           print_size(st.st_size);
-        uc_puts(C_RST);
+        fputs(C_RST, stdout);
         putchar(' ');
         /* mtime column — always present in long format.  Symlinks have
          * no stat of their own, so borrow the link target's stat if we
          * have it; otherwise the field is "--". */
         if (have_stat) {
-          uc_puts(C_DIM);
+          fputs(C_DIM, stdout);
           char tbuf[17];
           uc_format_ymdhm(tbuf, st.st_mtime);
-          uc_puts(tbuf);
-          uc_puts(C_RST);
+          fputs(tbuf, stdout);
+          fputs(C_RST, stdout);
         } else {
-          uc_puts("                ");
+          fputs("                ", stdout);
         }
         putchar(' ');
       }
       if (is_symlink) {
-        uc_puts(C_BCYAN);
-        uc_puts(de.d_name);
-        uc_puts(C_RST);
+        fputs(C_BCYAN, stdout);
+        fputs(de.d_name, stdout);
+        fputs(C_RST, stdout);
       } else {
         print_name_classified(de.d_name, &st, have_stat);
       }
       if (opt_long && is_symlink) {
-        uc_puts(C_DIM);
-        uc_puts(" -> ");
-        uc_puts(C_RST);
-        uc_puts(C_BMAGENTA);
-        uc_puts(link_target);
-        uc_puts(C_RST);
+        fputs(C_DIM, stdout);
+        fputs(" -> ", stdout);
+        fputs(C_RST, stdout);
+        fputs(C_BMAGENTA, stdout);
+        fputs(link_target, stdout);
+        fputs(C_RST, stdout);
       }
       putchar('\n');
     }
@@ -260,8 +260,8 @@ static int ls_dir(const char *path) {
 
   for (int i = 0; i < count; i++) {
     if (name_type[i]) color_for_type(name_type[i]);
-    uc_puts(name_pool + name_off[i]);
-    if (name_type[i]) uc_puts(C_RST);
+    fputs(name_pool + name_off[i], stdout);
+    if (name_type[i]) fputs(C_RST, stdout);
     if (ncols <= 1 || (i + 1) % ncols == 0 || i + 1 == count) {
       putchar('\n');
     } else {
@@ -303,8 +303,8 @@ static int ls_walk(const char *path) {
     if (!S_ISDIR(st.st_mode)) continue;
 
     putchar('\n');
-    uc_puts(child);
-    uc_puts(":\n");
+    fputs(child, stdout);
+    fputs(":\n", stdout);
     if (ls_walk(child)) rc = 1;
   }
   close(fd);
@@ -320,13 +320,13 @@ int main(int argc, char *argv[]) {
 
   while (argi < argc && argv[argi][0] == '-') {
     if (strcmp(argv[argi], "--help") == 0) {
-      uc_puts(
+      fputs(
           "Usage: ls [-laFR] [--no-color] [path ...]\n"
           "  -l  Long format (mode, size, name)\n"
           "  -a  Include hidden entries (.*)\n"
           "  -F  Append / for dirs, * for executables\n"
           "  -R  Recursively list subdirectories\n"
-          "  --no-color  Disable color output\n");
+          "  --no-color  Disable color output\n", stdout);
       return 0;
     }
     if (strcmp(argv[argi], "--no-color") == 0) {
@@ -350,9 +350,9 @@ int main(int argc, char *argv[]) {
           opt_recursive = 1;
           break;
         default:
-          uc_eputs("ls: unknown option: -");
+          fputs("ls: unknown option: -", stderr);
           putchar(*p);
-          uc_eputs("\n");
+          fputs("\n", stderr);
           return 1;
       }
       p++;
@@ -368,8 +368,8 @@ int main(int argc, char *argv[]) {
   } else {
     for (int i = argi; i < argc; i++) {
       if (i > argi) putchar('\n');
-      uc_puts(argv[i]);
-      uc_puts(":\n");
+      fputs(argv[i], stdout);
+      fputs(":\n", stdout);
       if (ls_walk(argv[i])) rc = 1;
     }
   }

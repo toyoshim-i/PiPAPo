@@ -39,10 +39,10 @@ int main(int argc, char *argv[]) {
 
   while (argi < argc && argv[argi][0] == '-' && argv[argi][1] != '\0') {
     if (strcmp(argv[argi], "--help") == 0) {
-      uc_puts(
+      fputs(
           "Usage: chmod [--no-color] OCTAL-MODE FILE...\n"
           "  OCTAL-MODE is a 3- or 4-digit octal number (e.g. 755, 0644).\n"
-          "  Symbolic modes (u+x, etc.) are not supported.\n");
+          "  Symbolic modes (u+x, etc.) are not supported.\n", stdout);
       return 0;
     }
     if (strcmp(argv[argi], "--no-color") == 0) {
@@ -53,41 +53,41 @@ int main(int argc, char *argv[]) {
     /* A leading "-" that is NOT a known flag — but starts with a digit
      * — would mean "-0644" style (negative?), which POSIX chmod
      * doesn't support either.  Treat as unknown flag. */
-    uc_eputs("chmod: unknown option: ");
-    uc_eputs(argv[argi]);
-    uc_eputs("\n");
+    fputs("chmod: unknown option: ", stderr);
+    fputs(argv[argi], stderr);
+    fputs("\n", stderr);
     return 1;
   }
 
   if (argi >= argc) {
-    uc_eputs("chmod: missing mode argument\n");
+    fputs("chmod: missing mode argument\n", stderr);
     return 1;
   }
   const char *mode_str = argv[argi++];
 
   uint32_t mode;
   if (parse_octal(mode_str, &mode) != 0) {
-    uc_eputs(C_RED);
-    uc_eputs("chmod: invalid mode: ");
-    uc_eputs(C_RST);
-    uc_eputs(mode_str);
-    uc_eputs(" (must be 3- or 4-digit octal, 0..7777)\n");
+    fputs(C_RED, stderr);
+    fputs("chmod: invalid mode: ", stderr);
+    fputs(C_RST, stderr);
+    fputs(mode_str, stderr);
+    fputs(" (must be 3- or 4-digit octal, 0..7777)\n", stderr);
     return 1;
   }
 
   if (argi >= argc) {
-    uc_eputs("chmod: missing file operand\n");
+    fputs("chmod: missing file operand\n", stderr);
     return 1;
   }
 
   int rc = 0;
   for (; argi < argc; argi++) {
     if (chmod(argv[argi], (int)mode) < 0) {
-      uc_eputs(C_RED);
-      uc_eputs("chmod: cannot change mode: ");
-      uc_eputs(C_RST);
-      uc_eputs(argv[argi]);
-      uc_eputs("\n");
+      fputs(C_RED, stderr);
+      fputs("chmod: cannot change mode: ", stderr);
+      fputs(C_RST, stderr);
+      fputs(argv[argi], stderr);
+      fputs("\n", stderr);
       rc = 1;
     }
   }

@@ -25,9 +25,9 @@
 
 int main(int argc, char *argv[]) {
   if (argc > 1 && strcmp(argv[1], "--help") == 0) {
-    uc_puts(
+    fputs(
         "Usage: reset\n"
-        "Restore terminal to sane defaults (termios + VT100 state).\n");
+        "Restore terminal to sane defaults (termios + VT100 state).\n", stdout);
     return 0;
   }
 

@@ -14,21 +14,21 @@ int main(int argc, char *argv[]) {
   int argi = 1;
 
   if (argi < argc && strcmp(argv[argi], "--help") == 0) {
-    uc_puts("Usage: sleep SECONDS\n");
+    fputs("Usage: sleep SECONDS\n", stdout);
     return 0;
   }
 
   if (argi >= argc) {
-    uc_eputs("sleep: missing operand\n");
+    fputs("sleep: missing operand\n", stderr);
     return 1;
   }
 
   const char *s = argv[argi];
   uint32_t secs;
   if (uc_parse_u32(s, &secs) < 0) {
-    uc_eputs("sleep: invalid time interval: ");
-    uc_eputs(s);
-    uc_eputs("\n");
+    fputs("sleep: invalid time interval: ", stderr);
+    fputs(s, stderr);
+    fputs("\n", stderr);
     return 1;
   }
 

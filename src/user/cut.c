@@ -150,12 +150,12 @@ static int process_fd(int fd, enum cut_mode mode) {
 }
 
 static void usage(void) {
-  uc_eputs(
+  fputs(
       "Usage: cut -f LIST [-d DELIM] [file ...]\n"
       "       cut -c LIST [file ...]\n"
       "       cut -b LIST [file ...]\n"
       "  LIST: N | N-M | N- | -M, comma-separated\n"
-      "  -d:   field delimiter (default TAB)\n");
+      "  -d:   field delimiter (default TAB)\n", stderr);
 }
 
 int main(int argc, char *argv[]) {
@@ -185,9 +185,9 @@ int main(int argc, char *argv[]) {
     if (opt == 'f' || opt == 'c' || opt == 'b' || opt == 'd') {
       if (!arg) {
         if (argi + 1 >= argc) {
-          uc_eputs("cut: -");
+          fputs("cut: -", stderr);
           putchar(opt);
-          uc_eputs(" requires an argument\n");
+          fputs(" requires an argument\n", stderr);
           return 1;
         }
         arg = argv[argi + 1];
@@ -197,7 +197,7 @@ int main(int argc, char *argv[]) {
     switch (opt) {
       case 'f':
         if (mode != MODE_NONE) {
-          uc_eputs("cut: only one of -f, -c, -b allowed\n");
+          fputs("cut: only one of -f, -c, -b allowed\n", stderr);
           return 1;
         }
         mode = MODE_FIELDS;
@@ -205,7 +205,7 @@ int main(int argc, char *argv[]) {
         break;
       case 'c':
         if (mode != MODE_NONE) {
-          uc_eputs("cut: only one of -f, -c, -b allowed\n");
+          fputs("cut: only one of -f, -c, -b allowed\n", stderr);
           return 1;
         }
         mode = MODE_CHARS;
@@ -213,7 +213,7 @@ int main(int argc, char *argv[]) {
         break;
       case 'b':
         if (mode != MODE_NONE) {
-          uc_eputs("cut: only one of -f, -c, -b allowed\n");
+          fputs("cut: only one of -f, -c, -b allowed\n", stderr);
           return 1;
         }
         mode = MODE_BYTES;
@@ -221,15 +221,15 @@ int main(int argc, char *argv[]) {
         break;
       case 'd':
         if (!arg[0] || arg[1]) {
-          uc_eputs("cut: -d takes a single character\n");
+          fputs("cut: -d takes a single character\n", stderr);
           return 1;
         }
         delim = arg[0];
         break;
       default:
-        uc_eputs("cut: unknown option: ");
-        uc_eputs(a);
-        uc_eputs("\n");
+        fputs("cut: unknown option: ", stderr);
+        fputs(a, stderr);
+        fputs("\n", stderr);
         return 1;
     }
     argi += consumed;
@@ -240,9 +240,9 @@ int main(int argc, char *argv[]) {
     return 1;
   }
   if (parse_list(list) < 0) {
-    uc_eputs("cut: invalid LIST: ");
-    uc_eputs(list);
-    uc_eputs("\n");
+    fputs("cut: invalid LIST: ", stderr);
+    fputs(list, stderr);
+    fputs("\n", stderr);
     return 1;
   }
 
@@ -256,9 +256,9 @@ int main(int argc, char *argv[]) {
     } else {
       fd = open(argv[i], O_RDONLY, 0);
       if (fd < 0) {
-        uc_eputs("cut: ");
-        uc_eputs(argv[i]);
-        uc_eputs(": No such file or directory\n");
+        fputs("cut: ", stderr);
+        fputs(argv[i], stderr);
+        fputs(": No such file or directory\n", stderr);
         rc = 1;
         continue;
       }

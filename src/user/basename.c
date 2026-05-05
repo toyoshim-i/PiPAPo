@@ -24,7 +24,7 @@
 
 int main(int argc, char *argv[]) {
   if (argc < 2 || argc > 3 || strcmp(argv[1], "--help") == 0) {
-    uc_eputs("Usage: basename PATH [SUFFIX]\n");
+    fputs("Usage: basename PATH [SUFFIX]\n", stderr);
     return (argc < 2 || argc > 3) ? 1 : 0;
   }
 
@@ -32,7 +32,7 @@ int main(int argc, char *argv[]) {
   const char *suffix = (argc == 3) ? argv[2] : 0;
 
   if (!path[0]) {
-    uc_puts(".");
+    fputs(".", stdout);
     putchar('\n');
     return 0;
   }
@@ -42,7 +42,7 @@ int main(int argc, char *argv[]) {
 
   /* String of nothing but slashes collapsed to the leading '/'. */
   if (len == 1 && path[0] == '/') {
-    uc_puts("/");
+    fputs("/", stdout);
     putchar('\n');
     return 0;
   }

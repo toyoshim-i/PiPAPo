@@ -19,11 +19,11 @@
 #include "lib/uclib.h"
 
 static void print_err(const char *msg, const char *path) {
-  uc_eputs("touch: ");
-  uc_eputs(msg);
-  uc_eputs(": ");
-  uc_eputs(path);
-  uc_eputs("\n");
+  fputs("touch: ", stderr);
+  fputs(msg, stderr);
+  fputs(": ", stderr);
+  fputs(path, stderr);
+  fputs("\n", stderr);
 }
 
 static int touch_one(const char *path, int no_create) {
@@ -56,12 +56,12 @@ int main(int argc, char *argv[]) {
 
   while (argi < argc && argv[argi][0] == '-' && argv[argi][1] != '\0') {
     if (strcmp(argv[argi], "--help") == 0) {
-      uc_puts(
+      fputs(
           "Usage: touch [-c] [-a] [-m] file...\n"
           "  -c  Do not create files that don't exist\n"
           "  -a  Accepted for POSIX compat (no effect — atime and\n"
           "      mtime are stamped together)\n"
-          "  -m  Same as -a\n");
+          "  -m  Same as -a\n", stdout);
       return 0;
     }
     const char *p = argv[argi] + 1;
@@ -75,9 +75,9 @@ int main(int argc, char *argv[]) {
           /* accepted for compat */
           break;
         default:
-          uc_eputs("touch: unknown option: -");
+          fputs("touch: unknown option: -", stderr);
           putchar(*p);
-          uc_eputs("\n");
+          fputs("\n", stderr);
           return 1;
       }
       p++;
@@ -86,7 +86,7 @@ int main(int argc, char *argv[]) {
   }
 
   if (argi >= argc) {
-    uc_eputs("touch: missing file operand\n");
+    fputs("touch: missing file operand\n", stderr);
     return 1;
   }
 

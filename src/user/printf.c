@@ -52,7 +52,7 @@ static void emit_pad(int n, char c) {
 static void emit_str(const char *s, int width, int left_align) {
   int len = strlen(s);
   if (!left_align && width > len) emit_pad(width - len, ' ');
-  uc_puts(s);
+  fputs(s, stdout);
   if (left_align && width > len) emit_pad(width - len, ' ');
 }
 
@@ -68,15 +68,15 @@ static void emit_int(long v, int width, int zero, int left_align) {
   if (zero && !left_align) {
     if (v < 0) putchar('-');
     if (width > total) emit_pad(width - total, '0');
-    uc_puts(digits);
+    fputs(digits, stdout);
   } else if (left_align) {
     if (v < 0) putchar('-');
-    uc_puts(digits);
+    fputs(digits, stdout);
     if (width > total) emit_pad(width - total, ' ');
   } else {
     if (width > total) emit_pad(width - total, ' ');
     if (v < 0) putchar('-');
-    uc_puts(digits);
+    fputs(digits, stdout);
   }
 }
 
@@ -110,7 +110,7 @@ static void emit_uint(uint32_t v, char conv, int width, int zero,
   int len = strlen(buf);
   char pad = (zero && !left_align) ? '0' : ' ';
   if (!left_align && width > len) emit_pad(width - len, pad);
-  uc_puts(buf);
+  fputs(buf, stdout);
   if (left_align && width > len) emit_pad(width - len, ' ');
 }
 
@@ -220,11 +220,11 @@ static int run_format(const char *fmt, char **args, int args_left,
 
 int main(int argc, char *argv[]) {
   if (argc < 2 || strcmp(argv[1], "--help") == 0) {
-    uc_eputs(
+    fputs(
         "Usage: printf FORMAT [ARG ...]\n"
         "  Specifiers: %s %d %i %u %x %X %o %c %%\n"
         "  Flags: - 0    Width: integer    Precision: parsed, ignored\n"
-        "  Escapes: \\n \\t \\r \\\\ \\\" \\a \\b \\f \\v \\0\n");
+        "  Escapes: \\n \\t \\r \\\\ \\\" \\a \\b \\f \\v \\0\n", stderr);
     return (argc < 2) ? 1 : 0;
   }
 

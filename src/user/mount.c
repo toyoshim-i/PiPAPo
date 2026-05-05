@@ -38,7 +38,7 @@ static void list_mounts(void) {
   char buf[1024];
   int n = read_file("/proc/mounts", buf, (int)sizeof(buf));
   if (n < 0) {
-    uc_eputs("mount: cannot read /proc/mounts\n");
+    fputs("mount: cannot read /proc/mounts\n", stderr);
     return;
   }
   const char *p = buf;
@@ -60,31 +60,31 @@ static void list_mounts(void) {
 
     if (found < 4) continue;
 
-    uc_puts(C_BCYAN);
+    fputs(C_BCYAN, stdout);
     for (int i = 0; i < flen[0]; i++) putchar(fields[0][i]);
-    uc_puts(C_RST);
-    uc_puts(" on ");
-    uc_puts(C_BWHITE);
+    fputs(C_RST, stdout);
+    fputs(" on ", stdout);
+    fputs(C_BWHITE, stdout);
     for (int i = 0; i < flen[1]; i++) putchar(fields[1][i]);
-    uc_puts(C_RST);
-    uc_puts(" type ");
+    fputs(C_RST, stdout);
+    fputs(" type ", stdout);
     for (int i = 0; i < flen[2]; i++) putchar(fields[2][i]);
-    uc_puts(" (");
-    uc_puts(C_DIM);
+    fputs(" (", stdout);
+    fputs(C_DIM, stdout);
     for (int i = 0; i < flen[3]; i++) putchar(fields[3][i]);
-    uc_puts(C_RST);
-    uc_puts(")\n");
+    fputs(C_RST, stdout);
+    fputs(")\n", stdout);
   }
 }
 
 static void usage(void) {
-  uc_eputs(
+  fputs(
       "Usage: mount\n"
       "       mount -t TYPE [SRC] TARGET [-r]\n"
       "  -t TYPE     filesystem type (procfs / devfs / tmpfs / vfat / "
       "ufs / romfs)\n"
       "  -r          read-only mount\n"
-      "  --no-color  disable color output\n");
+      "  --no-color  disable color output\n", stderr);
 }
 
 int main(int argc, char *argv[]) {
@@ -113,7 +113,7 @@ int main(int argc, char *argv[]) {
     }
     if (strcmp(a, "-t") == 0) {
       if (argi + 1 >= argc) {
-        uc_eputs("mount: -t requires a filesystem type\n");
+        fputs("mount: -t requires a filesystem type\n", stderr);
         return 1;
       }
       fstype = argv[argi + 1];
@@ -127,9 +127,9 @@ int main(int argc, char *argv[]) {
     } else if (!tgt) {
       tgt = a;
     } else {
-      uc_eputs("mount: unexpected argument: ");
-      uc_eputs(a);
-      uc_eputs("\n");
+      fputs("mount: unexpected argument: ", stderr);
+      fputs(a, stderr);
+      fputs("\n", stderr);
       return 1;
     }
     argi++;
@@ -148,13 +148,13 @@ int main(int argc, char *argv[]) {
   }
 
   if (!fstype || !tgt) {
-    uc_eputs("mount: -t TYPE and TARGET are required\n");
+    fputs("mount: -t TYPE and TARGET are required\n", stderr);
     return 1;
   }
 
   if (mount(src, tgt, fstype, flags, 0) < 0) {
-    uc_eputs("mount: failed (check fstype, target dir exists, source if "
-             "required)\n");
+    fputs("mount: failed (check fstype, target dir exists, source if "
+             "required)\n", stderr);
     return 1;
   }
   return 0;

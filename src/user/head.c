@@ -49,18 +49,18 @@ static int head_fd(int fd) {
 static int parse_flag(int argc, char *argv[], int argi) {
   const char *a = argv[argi];
   if (strcmp(a, "--help") == 0) {
-    uc_puts(
+    fputs(
         "Usage: head [-n N | -c N] [file ...]\n"
         "  -n N  Print first N lines (default 10)\n"
         "  -c N  Print first N bytes\n"
-        "  -     Read from stdin\n");
+        "  -     Read from stdin\n", stdout);
     return 0;
   }
   if (strcmp(a, "--") == 0) return 1;
   if (a[1] != 'n' && a[1] != 'c') {
-    uc_eputs("head: unknown option: ");
-    uc_eputs(a);
-    uc_eputs("\n");
+    fputs("head: unknown option: ", stderr);
+    fputs(a, stderr);
+    fputs("\n", stderr);
     return -1;
   }
   byte_mode = (a[1] == 'c');
@@ -71,9 +71,9 @@ static int parse_flag(int argc, char *argv[], int argi) {
     consumed = 1;
   } else {
     if (argi + 1 >= argc) {
-      uc_eputs("head: -");
+      fputs("head: -", stderr);
       putchar(a[1]);
-      uc_eputs(" requires a count\n");
+      fputs(" requires a count\n", stderr);
       return -1;
     }
     num = argv[argi + 1];
@@ -81,9 +81,9 @@ static int parse_flag(int argc, char *argv[], int argi) {
   }
   uint32_t v;
   if (uc_parse_u32(num, &v) != 0) {
-    uc_eputs("head: invalid count: ");
-    uc_eputs(num);
-    uc_eputs("\n");
+    fputs("head: invalid count: ", stderr);
+    fputs(num, stderr);
+    fputs("\n", stderr);
     return -1;
   }
   limit = v;
@@ -118,18 +118,18 @@ int main(int argc, char *argv[]) {
     } else {
       fd = open(argv[i], O_RDONLY, 0);
       if (fd < 0) {
-        uc_eputs("head: ");
-        uc_eputs(argv[i]);
-        uc_eputs(": No such file or directory\n");
+        fputs("head: ", stderr);
+        fputs(argv[i], stderr);
+        fputs(": No such file or directory\n", stderr);
         rc = 1;
         continue;
       }
     }
     if (multi) {
       if (!first) putchar('\n');
-      uc_puts("==> ");
-      uc_puts(argv[i]);
-      uc_puts(" <==\n");
+      fputs("==> ", stdout);
+      fputs(argv[i], stdout);
+      fputs(" <==\n", stdout);
       first = 0;
     }
     if (head_fd(fd)) rc = 1;

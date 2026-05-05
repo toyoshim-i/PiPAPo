@@ -1,93 +1,28 @@
 /*
- * stdio.c — formatted I/O.
+ * stdio.c — formatted-output engine.
  *
- * POSIX-named subset:
- *   putchar, snprintf, vsnprintf, printf
+ *   snprintf / vsnprintf  buffer-only formatting (no FILE involvement)
+ *   printf / vprintf      → vfprintf(stdout, …)
+ *   fprintf / vfprintf    formatted FILE-stream output
+ *   putchar               → fputc(c, stdout)
  *
- * PPAP-specific stopgaps that survive until FILE streams arrive
- * (kept under the `uc_` prefix as a TODO marker):
- *   uc_puts            stdout, no auto-newline
- *   uc_eputs / uc_eprintf  stderr-targeted
- *   uc_putu / uc_puti / uc_putx{8,16,32}  unbuffered numeric output
+ * Supported conversions: %s %d %u %x %c %% with optional zero-pad and
+ * width.  Not yet: %f %e %g %p %o, length modifiers (l, h), precision,
+ * left-justify, sign flags.
+ *
+ * The FILE-stream surface (fopen, fread, fwrite, fputs, …) lives in
+ * file.c.
  */
 
 #include "lib/uclib.h"
 #include "syscall.h"
 
 #include <stdarg.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 
-/* ── Unbuffered numeric output (PPAP extensions) ──────────────────────── */
-
-void uc_puts(const char *s) {
-  size_t n = 0;
-  while (s[n]) n++;
-  write(1, s, n);
-}
-
-void uc_eputs(const char *s) {
-  size_t n = 0;
-  while (s[n]) n++;
-  write(2, s, n);
-}
-
-int putchar(int c) {
-  unsigned char ch = (unsigned char)c;
-  write(1, &ch, 1);
-  return ch;
-}
-
-void uc_putu(uint32_t v) {
-  static const uint32_t pw[] = {1000000000u, 100000000u, 10000000u, 1000000u,
-                                100000u,     10000u,     1000u,     100u,
-                                10u,         1u};
-  int started = 0;
-
-  if (v == 0) {
-    putchar('0');
-    return;
-  }
-  for (int i = 0; i < 10; i++) {
-    uint32_t d = 0;
-    while (v >= pw[i]) {
-      v -= pw[i];
-      d++;
-    }
-    if (d || started) {
-      putchar((int)('0' + d));
-      started = 1;
-    }
-  }
-}
-
-void uc_puti(int32_t v) {
-  if (v < 0) {
-    putchar('-');
-    uc_putu((uint32_t)(-v));
-    return;
-  }
-  uc_putu((uint32_t)v);
-}
-
 static const char hex_digits[] = "0123456789abcdef";
-
-void uc_putx32(uint32_t v) {
-  uc_puts("0x");
-  for (int s = 28; s >= 0; s -= 4) putchar(hex_digits[(v >> s) & 0xf]);
-}
-
-void uc_putx16(uint32_t v) {
-  uc_puts("0x");
-  for (int s = 12; s >= 0; s -= 4) putchar(hex_digits[(v >> s) & 0xf]);
-}
-
-void uc_putx8(uint32_t v) {
-  uc_puts("0x");
-  putchar(hex_digits[(v >> 4) & 0xf]);
-  putchar(hex_digits[v & 0xf]);
-}
-
-/* ── snprintf engine ───────────────────────────────────────────────── */
 
 /* Emit one char into buf if space remains. */
 static void sn_emit(char *buf, size_t size, size_t *pos, char c) {
@@ -214,28 +149,41 @@ int snprintf(char *buf, size_t size, const char *fmt, ...) {
   return n;
 }
 
-/* Internal helper for printf / uc_eprintf — formats into a 256-byte
- * stack buffer and writes the result to `fd`.  Output exceeding 255
- * bytes is silently truncated; callers that need more should
- * snprintf into their own buffer and write directly. */
-static void fdprintf(int fd, const char *fmt, va_list ap) {
-  char buf[256];
-  int n = vsnprintf(buf, sizeof(buf), fmt, ap);
-  if (n > (int)sizeof(buf) - 1) n = (int)sizeof(buf) - 1;
-  if (n > 0) write(fd, buf, (size_t)n);
+/* ── FILE-routed formatted output ─────────────────────────────────── *
+ *
+ * Format into a stack scratch buffer, then push through fwrite so any
+ * caller-installed buffering on the stream is honoured.  Output that
+ * exceeds the scratch is silently truncated; callers that need more
+ * should snprintf into their own buffer + fwrite.
+ */
+
+int vfprintf(FILE *fp, const char *fmt, va_list ap) {
+  char scratch[256];
+  int n = vsnprintf(scratch, sizeof(scratch), fmt, ap);
+  if (n > (int)sizeof(scratch) - 1) n = (int)sizeof(scratch) - 1;
+  if (n <= 0) return 0;
+  if (fwrite(scratch, 1, (size_t)n, fp) != (size_t)n) return -1;
+  return n;
 }
+
+int fprintf(FILE *fp, const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  int n = vfprintf(fp, fmt, ap);
+  va_end(ap);
+  return n;
+}
+
+int vprintf(const char *fmt, va_list ap) { return vfprintf(stdout, fmt, ap); }
 
 int printf(const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-  fdprintf(1, fmt, ap);
+  int n = vfprintf(stdout, fmt, ap);
   va_end(ap);
-  return 0; /* TODO M4: return actual byte count */
+  return n;
 }
 
-void uc_eprintf(const char *fmt, ...) {
-  va_list ap;
-  va_start(ap, fmt);
-  fdprintf(2, fmt, ap);
-  va_end(ap);
-}
+/* putchar — equivalent to fputc(c, stdout) per POSIX.  fputc handles
+ * any buffering the caller may have installed on stdout. */
+int putchar(int c) { return fputc(c, stdout); }

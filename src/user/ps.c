@@ -104,7 +104,7 @@ static void print_right(uint32_t v, int width) {
   }
   int len = (int)sizeof(buf) - 1 - pos;
   for (int i = len; i < width; i++) putchar(' ');
-  uc_puts(&buf[pos]);
+  fputs(&buf[pos], stdout);
 }
 
 /* Format ticks as MM:SS (100 ticks/sec). */
@@ -118,20 +118,20 @@ static void print_time(uint32_t ticks) {
 int main(int argc, char *argv[]) {
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "--help") == 0) {
-      uc_puts(
+      fputs(
           "Usage: ps [--no-color]\n"
           "List all processes.\n"
-          "Columns: PID, PPID, State, TIME, MEM, COMMAND\n");
+          "Columns: PID, PPID, State, TIME, MEM, COMMAND\n", stdout);
       return 0;
     } else if (strcmp(argv[i], "--no-color") == 0) {
       use_color = 0;
     }
   }
 
-  uc_puts(C_REV);
-  uc_puts(C_BOLD);
-  uc_puts("  PID  PPID S  TIME    MEM COMMAND");
-  uc_puts(C_RST);
+  fputs(C_REV, stdout);
+  fputs(C_BOLD, stdout);
+  fputs("  PID  PPID S  TIME    MEM COMMAND", stdout);
+  fputs(C_RST, stdout);
   putchar('\n');
 
   int dfd = open("/proc", O_RDONLY, 0);
@@ -160,31 +160,31 @@ int main(int argc, char *argv[]) {
                    &stime, &vsz) < 0)
       continue;
 
-    uc_puts(C_CYAN);
+    fputs(C_CYAN, stdout);
     print_right((uint32_t)pid, 5);
-    uc_puts(C_RST);
-    uc_puts(C_BLUE);
+    fputs(C_RST, stdout);
+    fputs(C_BLUE, stdout);
     print_right((uint32_t)ppid, 6);
-    uc_puts(C_RST);
+    fputs(C_RST, stdout);
     putchar(' ');
-    if (state == 'R') uc_puts(C_BGREEN);
-    else if (state == 'Z') uc_puts(C_BRED);
-    else if (state == 'I') uc_puts(C_BLUE);
-    else uc_puts(C_WHITE);
+    if (state == 'R') fputs(C_BGREEN, stdout);
+    else if (state == 'Z') fputs(C_BRED, stdout);
+    else if (state == 'I') fputs(C_BLUE, stdout);
+    else fputs(C_WHITE, stdout);
     putchar(state);
-    uc_puts(C_RST);
+    fputs(C_RST, stdout);
     putchar(' ');
-    uc_puts(C_MAGENTA);
+    fputs(C_MAGENTA, stdout);
     print_time(utime + stime);
-    uc_puts(C_RST);
-    uc_puts(C_YELLOW);
+    fputs(C_RST, stdout);
+    fputs(C_YELLOW, stdout);
     print_right(vsz / 1024, 7);
-    uc_puts("K");
-    uc_puts(C_RST);
+    fputs("K", stdout);
+    fputs(C_RST, stdout);
     putchar(' ');
-    uc_puts(C_BWHITE);
-    uc_puts(comm);
-    uc_puts(C_RST);
+    fputs(C_BWHITE, stdout);
+    fputs(comm, stdout);
+    fputs(C_RST, stdout);
     putchar('\n');
   }
 

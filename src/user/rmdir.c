@@ -14,9 +14,9 @@
 static int opt_p;
 
 static void err_path(const char *path) {
-  uc_eputs("rmdir: failed to remove '");
-  uc_eputs(path);
-  uc_eputs("'\n");
+  fputs("rmdir: failed to remove '", stderr);
+  fputs(path, stderr);
+  fputs("'\n", stderr);
 }
 
 /* Truncate path at the last '/' (writes '\0' in place).  Returns 1 if
@@ -52,9 +52,9 @@ int main(int argc, char *argv[]) {
 
   while (argi < argc && argv[argi][0] == '-' && argv[argi][1] != '\0') {
     if (strcmp(argv[argi], "--help") == 0) {
-      uc_puts(
+      fputs(
           "Usage: rmdir [-p] DIR...\n"
-          "  -p  Also remove empty parent directories\n");
+          "  -p  Also remove empty parent directories\n", stdout);
       return 0;
     }
     if (strcmp(argv[argi], "-p") == 0) {
@@ -62,14 +62,14 @@ int main(int argc, char *argv[]) {
       argi++;
       continue;
     }
-    uc_eputs("rmdir: unknown option: ");
-    uc_eputs(argv[argi]);
-    uc_eputs("\n");
+    fputs("rmdir: unknown option: ", stderr);
+    fputs(argv[argi], stderr);
+    fputs("\n", stderr);
     return 1;
   }
 
   if (argi >= argc) {
-    uc_eputs("rmdir: missing operand\n");
+    fputs("rmdir: missing operand\n", stderr);
     return 1;
   }
 

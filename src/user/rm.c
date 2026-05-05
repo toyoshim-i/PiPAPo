@@ -24,9 +24,9 @@ static int opt_r;
 
 static void err_path(const char *path) {
   if (opt_f) return;
-  uc_eputs("rm: cannot remove '");
-  uc_eputs(path);
-  uc_eputs("'\n");
+  fputs("rm: cannot remove '", stderr);
+  fputs(path, stderr);
+  fputs("'\n", stderr);
 }
 
 static int path_join(char *dst, const char *dir, const char *name) {
@@ -58,7 +58,7 @@ static int remove_dir_contents(const char *path) {
       continue;
     char child[RM_PATH_MAX];
     if (path_join(child, path, de.d_name) < 0) {
-      uc_eputs("rm: path too long\n");
+      fputs("rm: path too long\n", stderr);
       err = 1;
       continue;
     }
@@ -76,9 +76,9 @@ static int remove_any(const char *path) {
   }
   if (S_ISDIR(st.st_mode)) {
     if (!opt_r) {
-      uc_eputs("rm: ");
-      uc_eputs(path);
-      uc_eputs(": is a directory\n");
+      fputs("rm: ", stderr);
+      fputs(path, stderr);
+      fputs(": is a directory\n", stderr);
       return 1;
     }
     int rc = remove_dir_contents(path);
@@ -100,10 +100,10 @@ int main(int argc, char *argv[]) {
 
   while (argi < argc && argv[argi][0] == '-' && argv[argi][1] != '\0') {
     if (strcmp(argv[argi], "--help") == 0) {
-      uc_puts(
+      fputs(
           "Usage: rm [-rRf] FILE...\n"
           "  -r, -R  Recursively remove directories\n"
-          "  -f      Ignore nonexistent files\n");
+          "  -f      Ignore nonexistent files\n", stdout);
       return 0;
     }
     const char *p = argv[argi] + 1;
@@ -117,9 +117,9 @@ int main(int argc, char *argv[]) {
           opt_f = 1;
           break;
         default:
-          uc_eputs("rm: unknown option: -");
+          fputs("rm: unknown option: -", stderr);
           putchar(*p);
-          uc_eputs("\n");
+          fputs("\n", stderr);
           return 1;
       }
       p++;
@@ -129,7 +129,7 @@ int main(int argc, char *argv[]) {
 
   if (argi >= argc) {
     if (opt_f) return 0;
-    uc_eputs("rm: missing operand\n");
+    fputs("rm: missing operand\n", stderr);
     return 1;
   }
 

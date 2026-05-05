@@ -67,7 +67,7 @@ static void print_counts(const wc_count_t *c, const char *name) {
   if (flags & F_C) print_field(c->bytes, &first);
   if (name) {
     putchar(' ');
-    uc_puts(name);
+    fputs(name, stdout);
   }
   putchar('\n');
 }
@@ -78,13 +78,13 @@ int main(int argc, char *argv[]) {
   while (argi < argc && argv[argi][0] == '-' &&
          strcmp(argv[argi], "-") != 0) {
     if (strcmp(argv[argi], "--help") == 0) {
-      uc_puts(
+      fputs(
           "Usage: wc [-lwc] [file ...]\n"
           "  -l  Count newlines\n"
           "  -w  Count words\n"
           "  -c  Count bytes\n"
           "  -   Read from stdin\n"
-          "Default with no flags: -lwc\n");
+          "Default with no flags: -lwc\n", stdout);
       return 0;
     }
     const char *p = argv[argi] + 1;
@@ -94,9 +94,9 @@ int main(int argc, char *argv[]) {
         case 'w': flags |= F_W; break;
         case 'c': flags |= F_C; break;
         default:
-          uc_eputs("wc: unknown option: -");
+          fputs("wc: unknown option: -", stderr);
           putchar(*p);
-          uc_eputs("\n");
+          fputs("\n", stderr);
           return 1;
       }
       p++;
@@ -124,9 +124,9 @@ int main(int argc, char *argv[]) {
     } else {
       fd = open(argv[i], O_RDONLY, 0);
       if (fd < 0) {
-        uc_eputs("wc: ");
-        uc_eputs(argv[i]);
-        uc_eputs(": No such file or directory\n");
+        fputs("wc: ", stderr);
+        fputs(argv[i], stderr);
+        fputs(": No such file or directory\n", stderr);
         rc = 1;
         continue;
       }
