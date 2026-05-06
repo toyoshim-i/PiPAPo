@@ -67,12 +67,21 @@ int setvbuf(FILE *fp, char *buf, int mode, size_t size);
 /* ── Character / formatted output ─────────────────────────────────── */
 
 int putchar(int c);
+int puts(const char *s);
 
 int snprintf(char *buf, size_t size, const char *fmt, ...);
 int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap);
+int sprintf(char *buf, const char *fmt, ...);
+int vsprintf(char *buf, const char *fmt, va_list ap);
 int printf(const char *fmt, ...);
 int vprintf(const char *fmt, va_list ap);
 int fprintf(FILE *fp, const char *fmt, ...);
 int vfprintf(FILE *fp, const char *fmt, va_list ap);
+
+int sscanf(const char *str, const char *fmt, ...);
+int vsscanf(const char *str, const char *fmt, va_list ap);
+
+void perror(const char *s);
+void setbuf(FILE *fp, char *buf);
 
 #endif /* _STDIO_H */

@@ -16,6 +16,7 @@
 #include <stddef.h>
 
 void *malloc(size_t size);
+void *calloc(size_t nmemb, size_t size);
 void free(void *ptr);
 
 int atoi(const char *s);
@@ -31,5 +32,10 @@ void *bsearch(const void *key, const void *base, size_t nmemb, size_t size,
               int (*compar)(const void *, const void *));
 
 char *getenv(const char *name);
+
+void abort(void) __attribute__((noreturn));
+#define RAND_MAX 0x7fffffff
+int rand(void);
+void srand(unsigned int seed);
 
 #endif /* _STDLIB_H */

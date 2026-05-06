@@ -14,6 +14,7 @@
 #include "utest.h"
 
 #include <ctype.h>
+#include <errno.h>
 #include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -137,6 +138,48 @@ int main(void) {
     longjmp(env, 0);
   }
   UT_ASSERT_EQ(rc, 1);
+
+  /* ── M6 additions: calloc / strcat / strncat / sprintf / strerror / */
+  /*    perror / sscanf / rand / errno indirection                    */
+  int *zeros = calloc(8, sizeof(int));
+  UT_ASSERT(zeros != 0, "calloc returns ptr");
+  UT_ASSERT_EQ(zeros[0], 0);
+  UT_ASSERT_EQ(zeros[7], 0);
+  free(zeros);
+
+  char cat[16] = "foo";
+  strcat(cat, "bar");
+  UT_ASSERT(strcmp(cat, "foobar") == 0, "strcat");
+  strncat(cat, "BAZQUX", 3);
+  UT_ASSERT(strcmp(cat, "foobarBAZ") == 0, "strncat");
+
+  char sp[32];
+  sprintf(sp, "%s=%d", "answer", 42);
+  UT_ASSERT(strcmp(sp, "answer=42") == 0, "sprintf");
+
+  const char *msg = strerror(EINVAL);
+  UT_ASSERT(msg && msg[0], "strerror returns string");
+
+  /* errno + __errno_location plumbing. */
+  errno = EAGAIN;
+  UT_ASSERT_EQ(*__errno_location(), EAGAIN);
+  errno = 0;
+
+  /* sscanf — basic %d / %s / %x / %u. */
+  int a, b;
+  char w[32];
+  int matched = sscanf("42 hello 0xff", "%d %s %x", &a, w, &b);
+  UT_ASSERT_EQ(matched, 3);
+  UT_ASSERT_EQ(a, 42);
+  UT_ASSERT(strcmp(w, "hello") == 0, "sscanf %s");
+  UT_ASSERT_EQ(b, 0xff);
+
+  /* rand reproducibility under fixed seed. */
+  srand(1);
+  int r1 = rand();
+  srand(1);
+  int r2 = rand();
+  UT_ASSERT_EQ(r1, r2);
 
   UT_SUMMARY("test_libc");
 }

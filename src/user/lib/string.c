@@ -7,6 +7,7 @@
  * time.
  */
 
+#include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -101,6 +102,53 @@ char *strdup(const char *s) {
   char *p = malloc(n);
   if (p) memcpy(p, s, n);
   return p;
+}
+
+char *strcat(char *dst, const char *src) {
+  char *p = dst + strlen(dst);
+  while ((*p++ = *src++))
+    ;
+  return dst;
+}
+
+char *strncat(char *dst, const char *src, size_t n) {
+  char *p = dst + strlen(dst);
+  size_t i = 0;
+  while (i < n && src[i]) {
+    p[i] = src[i];
+    i++;
+  }
+  p[i] = '\0';
+  return dst;
+}
+
+/* strerror — minimal table for the error codes PPAP actually exposes.
+ * Anything outside the table renders as "Unknown error". */
+char *strerror(int err) {
+  switch (err) {
+    case 0: return "Success";
+    case EPERM: return "Operation not permitted";
+    case ENOENT: return "No such file or directory";
+    case ESRCH: return "No such process";
+    case EINTR: return "Interrupted system call";
+    case EIO: return "Input/output error";
+    case E2BIG: return "Argument list too long";
+    case ENOEXEC: return "Exec format error";
+    case EBADF: return "Bad file descriptor";
+    case ECHILD: return "No child processes";
+    case EAGAIN: return "Resource temporarily unavailable";
+    case ENOMEM: return "Cannot allocate memory";
+    case EACCES: return "Permission denied";
+    case EFAULT: return "Bad address";
+    case EBUSY: return "Device or resource busy";
+    case EEXIST: return "File exists";
+    case EXDEV: return "Invalid cross-device link";
+    case ENODEV: return "No such device";
+    case ENOTDIR: return "Not a directory";
+    case EISDIR: return "Is a directory";
+    case EINVAL: return "Invalid argument";
+    default: return "Unknown error";
+  }
 }
 
 void *memcpy(void *dst, const void *src, size_t n) {

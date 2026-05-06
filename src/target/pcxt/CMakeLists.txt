@@ -137,7 +137,7 @@ add_custom_command(
   COMMENT "Assembling ia16 syscall.o"
 )
 
-set(_pcxt_libc_units string stdio stdlib alloc file time util)
+set(_pcxt_libc_units string stdio stdlib alloc file time errno signal util)
 set(_pcxt_libc_objs)
 foreach(_unit ${_pcxt_libc_units})
   set(_obj ${PCXT_USER_BUILD_DIR}/libc_${_unit}.o)

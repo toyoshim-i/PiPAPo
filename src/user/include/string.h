@@ -21,6 +21,9 @@ size_t strspn(const char *s, const char *accept);
 size_t strcspn(const char *s, const char *reject);
 char *strpbrk(const char *s, const char *accept);
 char *strdup(const char *s);
+char *strcat(char *dst, const char *src);
+char *strncat(char *dst, const char *src, size_t n);
+char *strerror(int err);
 
 void *memcpy(void *dst, const void *src, size_t n);
 void *memmove(void *dst, const void *src, size_t n);

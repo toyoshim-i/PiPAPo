@@ -1,9 +1,10 @@
 /*
  * stdlib.c — general utilities (numeric conversions, sorting / searching,
- * environment).
+ * environment, allocation helpers, RNG, abort).
  *
  * POSIX-named subset:
- *   atoi, strtol, strtoul, abs, labs, qsort, bsearch, getenv
+ *   atoi, strtol, strtoul, abs, labs, qsort, bsearch, getenv,
+ *   calloc, abort, rand, srand
  *
  * Plus the `environ` global and the crt0 hook _uclib_init_env that
  * walks the auxv-style argv tail to find envp.
@@ -15,7 +16,9 @@
 #include "lib/uclib.h"
 
 #include <ctype.h>
+#include <signal.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -149,6 +152,45 @@ void *bsearch(const void *key, const void *base, size_t nmemb, size_t size,
       lo = mid + 1;
   }
   return (void *)0;
+}
+
+/* ── calloc ────────────────────────────────────────────────────────── */
+
+void *calloc(size_t nmemb, size_t size) {
+  if (size != 0 && nmemb > (size_t)-1 / size) return (void *)0;
+  size_t total = nmemb * size;
+  void *p = malloc(total);
+  if (p) memset(p, 0, total);
+  return p;
+}
+
+/* ── abort ─────────────────────────────────────────────────────────── *
+ *
+ * POSIX: send SIGABRT, then if it returns, _exit with non-zero.  PPAP
+ * has signal but no default-disposition machinery for SIGABRT yet —
+ * the kill ensures any caller-installed handler runs, and the _exit
+ * fallback handles the typical "no handler installed" case.
+ */
+void abort(void) {
+  raise(SIGABRT);
+  _exit(127);
+}
+
+/* ── srand / rand ──────────────────────────────────────────────────── *
+ *
+ * Park-Miller minimal-standard LCG.  Period 2^31 - 2; not great for
+ * cryptography but adequate for game RNG and shuffle-the-list use.
+ */
+
+static uint32_t rng_state = 1u;
+
+void srand(unsigned int seed) {
+  rng_state = seed ? seed : 1u;
+}
+
+int rand(void) {
+  rng_state = (uint32_t)(((uint64_t)rng_state * 48271u) % 0x7fffffffu);
+  return (int)rng_state;
 }
 
 /* The kernel lays out argc, argv[], NULL, envp[], NULL on the initial
