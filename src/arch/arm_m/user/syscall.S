@@ -386,6 +386,17 @@ stat:
     DO_SYSCALL
     pop  {r7, pc}
 
+@ --- lstat (SYS_LSTAT64 = 0x0304) --------------------------------------------
+@ int lstat(const char *path, struct stat *buf);
+.section .text.lstat, "ax", %progbits
+.global lstat
+.thumb_func
+lstat:
+    push {r7, lr}
+    ldr  r7, =0x0304    @ SYS_LSTAT64
+    DO_SYSCALL
+    pop  {r7, pc}
+
 @ --- getdents (SYS_GETDENTS = 0x0300) -----------------------------------------
 @ int getdents(int fd, struct dirent *buf, size_t count);
 .section .text.getdents, "ax", %progbits

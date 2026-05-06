@@ -34,6 +34,18 @@
 #define ISIG 0x0001u   /* enable signals (INTR, QUIT, etc.) */
 #define ICANON 0x0002u /* canonical (line) mode */
 #define ECHO 0x0008u   /* echo input characters */
+#define IEXTEN 0x8000u /* enable extended input processing */
+
+/* ── tcsetattr() actions ───────────────────────────────────────────────── */
+
+#define TCSANOW 0    /* change attributes immediately */
+#define TCSADRAIN 1  /* drain output, then change */
+#define TCSAFLUSH 2  /* flush input + drain output, then change */
+
+/* ── c_cc indices ──────────────────────────────────────────────────────── */
+
+#define VMIN 6
+#define VTIME 5
 
 /* ── Control character count ───────────────────────────────────────────── */
 

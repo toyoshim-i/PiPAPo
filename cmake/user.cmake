@@ -346,6 +346,14 @@ PPAP_EPIC_LINK_PRE=\"${PPAP_MUSL_SYSROOT}/lib/crt1.o ${PPAP_MUSL_SYSROOT}/lib/cr
 PPAP_EPIC_LINK_POST=\"-L${PPAP_MUSL_SYSROOT}/lib -lc ${PPAP_LIBGCC} ${PPAP_MUSL_SYSROOT}/lib/crtn.o\"
 PPAP_EPIC_LINK_FLAGS=\"-fuse-ld=${PPAP_LLD} -nostdlib -Wl,--pie -Wl,--strip-debug -Wl,--gc-sections -Wl,--allow-multiple-definition\"
 PPAP_EPIC_LD=\"${PPAP_ROOT}/third_party/patches/musl/libc_riscv_epic.ld\"
+
+# Paths needed by third-party builders that link against PPAP libc.
+PPAP_ROOT=\"${PPAP_ROOT}\"
+PPAP_SHARED_BUILD=\"${PPAP_SHARED_BUILD}\"
+PPAP_USER_LD=\"${PPAP_USER_LD}\"
+PPAP_LIBGCC=\"${PPAP_LIBGCC}\"
+PPAP_LIBC_UNITS=\"string stdio stdlib alloc file time errno signal util\"
+PPAP_ARCH_DIR=\"${PPAP_ARCH_DIR}\"
 ")
 
 # =============================================================================
@@ -683,14 +691,30 @@ endfunction()
 function(_ppap_add_rogue)
     file(GLOB _rogue_patches ${PPAP_ROOT}/third_party/patches/rogue/*)
 
+    # build_rogue.sh links against the regular PPAP CRT + libc objects
+    # under PPAP_SHARED_BUILD; depend on the same set so cmake builds
+    # them first.
+    set(_rogue_libc_deps
+        ${PPAP_SHARED_BUILD}/crt0.o
+        ${PPAP_SHARED_BUILD}/syscall.o)
+    foreach(_unit IN ITEMS string stdio stdlib alloc file time errno signal util)
+        list(APPEND _rogue_libc_deps ${PPAP_SHARED_BUILD}/libc_${_unit}.o)
+    endforeach()
+    if(EXISTS ${PPAP_ARCH_DIR}/sigaction.c)
+        list(APPEND _rogue_libc_deps ${PPAP_SHARED_BUILD}/sigaction.o)
+    endif()
+    if(EXISTS ${PPAP_ARCH_DIR}/setjmp.S)
+        list(APPEND _rogue_libc_deps ${PPAP_SHARED_BUILD}/setjmp.o)
+    endif()
+
     add_custom_command(
         OUTPUT ${PPAP_ROGUE_DIR}/rogue
         COMMAND ${CMAKE_COMMAND} -E env "PPAP_CONFIG=${PPAP_CONFIG_FILE}"
                 ${PPAP_ROOT}/third_party/build_rogue.sh
         DEPENDS ${PPAP_ROOT}/third_party/build_rogue.sh
                 ${_rogue_patches}
-                ${PPAP_BUSYBOX_LD}
-                ${PPAP_MUSL_LIBC}
+                ${PPAP_USER_LD}
+                ${_rogue_libc_deps}
         COMMENT "Building rogue (${PPAP_ARCH_LABEL})"
     )
 endfunction()

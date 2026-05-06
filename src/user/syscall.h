@@ -77,6 +77,7 @@ int chmod(const char *path, int mode);
 int link(const char *oldpath, const char *newpath);
 int utimes(const char *path, const void *times);
 int stat(const char *path, struct stat *buf);
+int lstat(const char *path, struct stat *buf);
 int getdents(int fd, struct dirent *buf, size_t count);
 int statfs64(const char *path, long sz, struct statfs *buf);
 int mount(const char *src, const char *tgt, const char *fstype, long flags,

@@ -26,6 +26,11 @@ extern FILE *stderr;
 #define EOF (-1)
 #endif
 
+/* Default I/O buffer size for fopen-d streams.  Match what file.c uses. */
+#ifndef BUFSIZ
+#define BUFSIZ 512
+#endif
+
 /* setvbuf modes. */
 #define _IOFBF 0 /* fully buffered */
 #define _IOLBF 1 /* line buffered */

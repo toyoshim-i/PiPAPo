@@ -365,6 +365,18 @@ stat:
     move.l  %sp@+, %d2
     rts
 
+| --- lstat (SYS_LSTAT64 = 0x0304) --------------------------------------------
+| int lstat(const char *path, struct stat *buf);
+    .globl lstat
+lstat:
+    move.l  %d2, %sp@-
+    move.l  8(%sp), %d1         | path
+    move.l  12(%sp), %d2        | buf
+    move.l  #0x0304, %d0
+    trap    #0
+    move.l  %sp@+, %d2
+    rts
+
 | --- getdents (SYS_GETDENTS = 0x0300) -----------------------------------------
 | int getdents(int fd, struct dirent *buf, size_t count);
     .globl getdents

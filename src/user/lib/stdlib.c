@@ -176,6 +176,11 @@ void abort(void) {
   _exit(127);
 }
 
+/* exit() — run atexit hooks and flush stdio, then _exit.  PPAP has
+ * neither atexit registration nor a list of open FILE* yet, so this
+ * collapses to _exit() until those land. */
+void exit(int status) { _exit(status); }
+
 /* ── srand / rand ──────────────────────────────────────────────────── *
  *
  * Park-Miller minimal-standard LCG.  Period 2^31 - 2; not great for

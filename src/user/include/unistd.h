@@ -16,9 +16,11 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <sys/types.h>
 
-typedef int32_t ssize_t;
-typedef int32_t pid_t;
+#define STDIN_FILENO 0
+#define STDOUT_FILENO 1
+#define STDERR_FILENO 2
 
 ssize_t read(int fd, void *buf, size_t n);
 ssize_t write(int fd, const void *buf, size_t n);
@@ -41,6 +43,23 @@ pid_t getppid(void);
 pid_t setsid(void);
 int setpgid(pid_t pid, pid_t pgid);
 pid_t getpgid(pid_t pid);
+
+uid_t getuid(void);
+uid_t geteuid(void);
+gid_t getgid(void);
+gid_t getegid(void);
+
+unsigned sleep(unsigned seconds);
+
+pid_t fork(void);
+pid_t vfork(void);
+int execl(const char *path, const char *arg0, ...);
+int execve(const char *path, char *const argv[], char *const envp[]);
+
+int chmod(const char *path, int mode);
+int ioctl(int fd, unsigned long cmd, void *arg);
+
+char *getpass(const char *prompt);
 
 void _exit(int status) __attribute__((noreturn));
 

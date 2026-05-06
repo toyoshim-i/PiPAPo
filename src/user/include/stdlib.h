@@ -34,6 +34,9 @@ void *bsearch(const void *key, const void *base, size_t nmemb, size_t size,
 char *getenv(const char *name);
 
 void abort(void) __attribute__((noreturn));
+void exit(int status) __attribute__((noreturn));
+#define EXIT_SUCCESS 0
+#define EXIT_FAILURE 1
 #define RAND_MAX 0x7fffffff
 int rand(void);
 void srand(unsigned int seed);

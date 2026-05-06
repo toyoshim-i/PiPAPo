@@ -40,4 +40,7 @@ static inline int tolower(int c) {
   return isupper(c) ? c + ('a' - 'A') : c;
 }
 
+/* toascii — XSI extension; simply masks to 7 bits. */
+static inline int toascii(int c) { return c & 0x7f; }
+
 #endif /* _CTYPE_H */

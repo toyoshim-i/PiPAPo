@@ -71,6 +71,7 @@ SYSCALL_STUB lseek,     0x010B
 
 # --- File system ---
 SYSCALL_STUB stat,      0x0200
+SYSCALL_STUB lstat,     0x0304
 SYSCALL_STUB access,    0x0202
 SYSCALL_STUB getcwd,    0x0203
 SYSCALL_STUB mkdir,     0x0204

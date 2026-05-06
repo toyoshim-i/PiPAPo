@@ -1,89 +1,53 @@
 #!/bin/bash
-# Build Rogue 5.4.4 for PiPAPo
+# Build Rogue 5.4.4 for PiPAPo, linked against PPAP's own libc.
 #
-# Cross-compiles rogue against musl libc with a minimal curses shim.
-# xcrypt.c is excluded (71 KB BSS for DES tables, only used by disabled
-# wizard mode); a stub xcrypt() is provided in the curses shim.
+# Cross-compiles rogue + the curses shim with the PPAP libc headers and
+# objects (no musl).  CRT and libc TUs come pre-built from the cmake
+# user-program pipeline ($PPAP_SHARED_BUILD/{crt0,syscall,libc_*}.o).
 #
-# Normally invoked from cmake via user.cmake (PPAP_CONFIG set).
-# Standalone: ./third_party/build_rogue.sh [--m68k] [--clean]
-#
-# Prerequisites:
-#   - Cross compiler (arm-none-eabi-gcc or m68k-elf-gcc)
-#   - musl sysroot already built (run build_musl.sh first)
+# Always invoked from cmake (cmake/user.cmake → _ppap_add_rogue) with
+# PPAP_CONFIG pointing at the generated target-config script.  All
+# toolchain / target settings come from there — there is no standalone
+# fallback path.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROGUE_SRC="$SCRIPT_DIR/rogue"
 PATCHES_DIR="$SCRIPT_DIR/patches/rogue"
-CONFIGS_DIR="$SCRIPT_DIR/patches/busybox"
 
 # --- Parse flags ---
 CLEAN=false
 for arg in "$@"; do
     case "$arg" in
-        --m68k) PPAP_ARCH=m68k ;;
         --clean) CLEAN=true ;;
         *) echo "Unknown option: $arg" >&2; exit 1 ;;
     esac
 done
 
-# --- Source cmake-generated config if available ---
-if [[ -n "${PPAP_CONFIG:-}" && -f "$PPAP_CONFIG" ]]; then
-    source "$PPAP_CONFIG"
-elif [[ -z "${PPAP_ARCH:-}" ]]; then
-    PPAP_ARCH=arm
+# --- Source cmake-generated config (required) ---
+if [[ -z "${PPAP_CONFIG:-}" || ! -f "$PPAP_CONFIG" ]]; then
+    echo "ERROR: PPAP_CONFIG not set or missing." >&2
+    echo "  build_rogue.sh must be invoked from cmake.  Run:" >&2
+    echo "  ./scripts/build.sh <target>" >&2
+    exit 1
 fi
+source "$PPAP_CONFIG"
 
-# --- Derive variables from PPAP_ARCH (fallback for standalone use) ---
-if [[ -z "${PPAP_CC:-}" ]]; then
-    if [[ "$PPAP_ARCH" == "m68k" ]]; then
-        PPAP_CC="m68k-elf-gcc"
-        PPAP_STRIP="m68k-elf-strip"
-        PPAP_SIZE_CMD="m68k-elf-size"
-        PPAP_TARGET_FLAGS="-m68000"
-        PPAP_PIC_FLAGS="-msep-data"
-        PPAP_MUSL_SYSROOT="$PROJECT_ROOT/build/m68k/musl-sysroot"
-        PPAP_SPECS_FILE="$PROJECT_ROOT/build/m68k/musl-m68k.specs"
-        PPAP_BUSYBOX_LD="$SCRIPT_DIR/patches/musl/libc_m68k.ld"
-        PPAP_GCC_INCLUDE="$($PPAP_CC -print-file-name=include)"
-        PPAP_GCC_LIBDIR="$(dirname "$($PPAP_CC -m68000 -print-libgcc-file-name)")"
-        PPAP_ARCH_LABEL="m68k (68000)"
-    else
-        PPAP_CC=arm-none-eabi-gcc
-        PPAP_STRIP=arm-none-eabi-strip
-        PPAP_SIZE_CMD=arm-none-eabi-size
-        PPAP_TARGET_FLAGS="-mthumb -mcpu=cortex-m0plus -march=armv6s-m -mfloat-abi=soft"
-        PPAP_PIC_FLAGS="-fPIC -msingle-pic-base -mpic-register=r9 -mno-pic-data-is-text-relative"
-        PPAP_MUSL_SYSROOT="$PROJECT_ROOT/build/arm_m/musl-sysroot"
-        PPAP_SPECS_FILE="$PROJECT_ROOT/build/arm_m/musl-arm.specs"
-        PPAP_BUSYBOX_LD="$SCRIPT_DIR/patches/musl/libc_arm_m.ld"
-        PPAP_GCC_INCLUDE="$(arm-none-eabi-gcc -print-file-name=include)"
-        PPAP_GCC_LIBDIR="$(dirname "$(arm-none-eabi-gcc -mthumb -mcpu=cortex-m0plus -print-libgcc-file-name)")"
-        PPAP_ARCH_LABEL="armv6m-thumb (Cortex-M0+)"
-    fi
-fi
+ROGUE_OUT="$PPAP_SHARED_BUILD/rogue"
 
-# Derive ROGUE_OUT from PPAP_MUSL_SYSROOT (correct shared build dir).
-if [[ -n "${PPAP_MUSL_SYSROOT:-}" ]]; then
-    ROGUE_OUT="$(dirname "$PPAP_MUSL_SYSROOT")/rogue"
-else
-    ROGUE_OUT="$PROJECT_ROOT/build/${PPAP_ARCH/#arm/arm_m}/rogue"
-fi
-
-# Build CFLAGS
-CFLAGS="$PPAP_TARGET_FLAGS -Os"
-# Our curses shim / config.h / pwd.h override system headers (must come first)
-CFLAGS="$CFLAGS -nostdinc -isystem $PATCHES_DIR -isystem $PPAP_MUSL_SYSROOT/include -isystem $PPAP_GCC_INCLUDE"
-# PIC for PPAP's XIP model
+# Build CFLAGS — match the regular PPAP user-app build (freestanding,
+# no libc), with PPAP libc headers + the rogue-specific shim/config
+# overrides ahead of everything else.
+CFLAGS="$PPAP_TARGET_FLAGS -Os -ffreestanding -nostdlib"
+CFLAGS="$CFLAGS -nostdinc"
+CFLAGS="$CFLAGS -isystem $PATCHES_DIR"            # config.h, curses.h, pwd.h, rogue.h
+CFLAGS="$CFLAGS -isystem $PPAP_ROOT/src/user/include"
+CFLAGS="$CFLAGS -isystem $PPAP_GCC_INCLUDE"
+CFLAGS="$CFLAGS -I $PPAP_ROOT/src/user -I $PPAP_ROOT/src"
 CFLAGS="$CFLAGS $PPAP_PIC_FLAGS"
-# Dead-code stripping
 CFLAGS="$CFLAGS -ffunction-sections -fdata-sections"
-# Rogue uses autoconf-style HAVE_CONFIG_H
 CFLAGS="$CFLAGS -DHAVE_CONFIG_H"
-# Suppress upstream warnings we can't fix
 CFLAGS="$CFLAGS -Wall -Wno-bool-operation -Wno-misleading-indentation -Wno-unused-variable -std=gnu11"
 
 # Rogue source files (all .c except xcrypt.c)
@@ -116,41 +80,37 @@ if ! command -v "$PPAP_CC" &>/dev/null; then
     exit 1
 fi
 
-if [[ ! -f "$PPAP_MUSL_SYSROOT/lib/libc.a" ]]; then
-    echo "ERROR: musl sysroot not found at $PPAP_MUSL_SYSROOT" >&2
-    echo "  Run: ./third_party/build_musl.sh${PPAP_ARCH:+ --$PPAP_ARCH}" >&2
-    exit 1
-fi
-
 if [[ ! -f "$ROGUE_SRC/main.c" ]]; then
     echo "ERROR: rogue submodule not initialised." >&2
     echo "  Run: git submodule update --init third_party/rogue" >&2
     exit 1
 fi
 
-# --- Generate musl specs file (if not already present from cmake) ---
-if [[ ! -f "$PPAP_SPECS_FILE" ]]; then
-    echo "rogue [$PPAP_ARCH]: generating musl specs file..."
-    mkdir -p "$(dirname "$PPAP_SPECS_FILE")"
-    cat > "$PPAP_SPECS_FILE" <<SPECS
-*startfile:
-$PPAP_MUSL_SYSROOT/lib/crt1.o $PPAP_MUSL_SYSROOT/lib/crti.o
+# Build CRT object list — these come from the regular cmake user-program
+# pipeline.  Standalone callers must run cmake first to produce them.
+CRT_OBJS=(
+    "$PPAP_SHARED_BUILD/crt0.o"
+    "$PPAP_SHARED_BUILD/syscall.o"
+)
+for unit in $PPAP_LIBC_UNITS; do
+    CRT_OBJS+=("$PPAP_SHARED_BUILD/libc_${unit}.o")
+done
+# Optional arch overlays.
+[[ -f "$PPAP_SHARED_BUILD/sigaction.o" ]] && CRT_OBJS+=("$PPAP_SHARED_BUILD/sigaction.o")
+[[ -f "$PPAP_SHARED_BUILD/setjmp.o" ]]    && CRT_OBJS+=("$PPAP_SHARED_BUILD/setjmp.o")
 
-*endfile:
-$PPAP_MUSL_SYSROOT/lib/crtn.o
-
-*lib:
-$PPAP_MUSL_SYSROOT/lib/libc.a
-
-*libgcc:
-$PPAP_GCC_LIBDIR/libgcc.a
-SPECS
-fi
+for o in "${CRT_OBJS[@]}"; do
+    if [[ ! -f "$o" ]]; then
+        echo "ERROR: missing $o" >&2
+        echo "  Run cmake configure + ./scripts/build.sh first." >&2
+        exit 1
+    fi
+done
 
 mkdir -p "$ROGUE_OUT/obj"
 
 # --- Compile rogue sources ---
-echo "rogue [$PPAP_ARCH]: compiling (musl, $PPAP_ARCH_LABEL)..."
+echo "rogue [$PPAP_ARCH]: compiling ($PPAP_ARCH_LABEL, PPAP libc)..."
 OBJS=()
 for src in "${ROGUE_SRCS[@]}"; do
     obj="$ROGUE_OUT/obj/${src%.c}.o"
@@ -164,38 +124,37 @@ $PPAP_CC $CFLAGS -c "$PATCHES_DIR/curses.c" -o "$ROGUE_OUT/obj/curses.o"
 OBJS+=("$ROGUE_OUT/obj/curses.o")
 
 # --- Link ---
-# Use -specs= to provide musl CRT/libc/libgcc (do NOT use -nostdlib,
-# which overrides specs startfile/endfile).  -pie emits relocations
-# for exec.c to patch at load time.
 echo "rogue [$PPAP_ARCH]: linking..."
-LINK_FLAGS="$PPAP_TARGET_FLAGS"
+LINK_FLAGS="$PPAP_TARGET_FLAGS -nostdlib"
+if [[ -n "${PPAP_PIE_FLAG:-}" ]]; then
+    LINK_FLAGS="$LINK_FLAGS $PPAP_PIE_FLAG"
+fi
+if [[ "$PPAP_ARCH" == "riscv" && -z "${PPAP_PIE_FLAG:-}" ]]; then
+    LINK_FLAGS="$LINK_FLAGS -Wl,--emit-relocs -Wl,--no-relax"
+fi
+
 if [[ "${PPAP_RISCV_EPIC:-}" == "ON" ]]; then
-    # ePIC clang + lld (link flags from user.cmake)
-    $PPAP_CC $LINK_FLAGS $PPAP_EPIC_LINK_FLAGS \
-        -T "$PPAP_EPIC_LD" \
-        $PPAP_EPIC_LINK_PRE \
+    # ePIC clang + lld: same approach as the regular user-program path,
+    # but linking PPAP libc objects + libgcc instead of musl.
+    $PPAP_CC $LINK_FLAGS \
+        -fuse-ld="$PPAP_LLD" -Wl,--strip-debug -Wl,--gc-sections \
+        -T "$PPAP_USER_LD" \
+        "${CRT_OBJS[@]}" \
         "${OBJS[@]}" \
-        $PPAP_EPIC_LINK_POST \
+        "$PPAP_LIBGCC" \
         -o "$ROGUE_OUT/rogue.elf"
 else
-    if [[ -n "${PPAP_PIE_FLAG:-}" ]]; then
-        LINK_FLAGS="$LINK_FLAGS $PPAP_PIE_FLAG"
-    elif [[ "$PPAP_ARCH" != "riscv" ]]; then
-        LINK_FLAGS="$LINK_FLAGS -pie"
-    fi
-    if [[ "$PPAP_ARCH" == "riscv" && -z "${PPAP_PIE_FLAG:-}" ]]; then
-        LINK_FLAGS="$LINK_FLAGS -Wl,--emit-relocs -Wl,--no-relax"
-    fi
     $PPAP_CC $LINK_FLAGS \
-        -specs="$PPAP_SPECS_FILE" \
-        -T "$PPAP_BUSYBOX_LD" \
-        -Wl,--gc-sections \
+        -T "$PPAP_USER_LD" \
+        -Wl,--gc-sections -Wl,--build-id=none \
+        "${CRT_OBJS[@]}" \
         "${OBJS[@]}" \
+        "$PPAP_LIBGCC" \
         -o "$ROGUE_OUT/rogue.elf"
 fi
 
 # --- Strip ---
-$PPAP_STRIP $PPAP_STRIP_FLAGS -o "$ROGUE_OUT/rogue" "$ROGUE_OUT/rogue.elf"
+$PPAP_STRIP ${PPAP_STRIP_FLAGS:---strip-unneeded} -o "$ROGUE_OUT/rogue" "$ROGUE_OUT/rogue.elf"
 
 # --- Summary ---
 echo ""
