@@ -36,6 +36,19 @@ source "$PPAP_CONFIG"
 
 ROGUE_OUT="$PPAP_SHARED_BUILD/rogue"
 
+rogue_dep_is_newer() {
+    local output="$1"
+    local dep
+
+    shift
+    for dep in "$@"; do
+        if [[ -e "$dep" && "$dep" -nt "$output" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 # Build CFLAGS — match the regular PPAP user-app build (freestanding,
 # no libc), with PPAP libc headers + the rogue-specific shim/config
 # overrides ahead of everything else.
@@ -64,13 +77,6 @@ if $CLEAN; then
     echo "rogue [$PPAP_ARCH]: cleaning build artifacts..."
     rm -rf "$ROGUE_OUT"
     echo "rogue [$PPAP_ARCH]: clean done."
-    exit 0
-fi
-
-# --- Skip if already built ---
-if [[ -f "$ROGUE_OUT/rogue" ]]; then
-    echo "rogue [$PPAP_ARCH]: already exists at $ROGUE_OUT/rogue — skipping."
-    echo "rogue [$PPAP_ARCH]: run '$0 --clean' to force rebuild."
     exit 0
 fi
 
@@ -107,15 +113,44 @@ for o in "${CRT_OBJS[@]}"; do
     fi
 done
 
+BUILD_DEPS=(
+    "$0"
+    "$PPAP_CONFIG"
+    "$PPAP_USER_LD"
+    "$PATCHES_DIR/curses.c"
+    "${CRT_OBJS[@]}"
+)
+
+for src in "${ROGUE_SRCS[@]}"; do
+    BUILD_DEPS+=("$ROGUE_SRC/$src")
+    if [[ -f "$PATCHES_DIR/$src" ]]; then
+        BUILD_DEPS+=("$PATCHES_DIR/$src")
+    fi
+done
+
+while IFS= read -r patch_file; do
+    BUILD_DEPS+=("$patch_file")
+done < <(find "$PATCHES_DIR" -maxdepth 1 -type f \( -name '*.h' -o -name '*.inc' \) | sort)
+
+# --- Skip if already built and still up to date ---
+if [[ -f "$ROGUE_OUT/rogue" ]] && ! rogue_dep_is_newer "$ROGUE_OUT/rogue" "${BUILD_DEPS[@]}"; then
+    echo "rogue [$PPAP_ARCH]: already up to date at $ROGUE_OUT/rogue — skipping."
+    exit 0
+fi
+
 mkdir -p "$ROGUE_OUT/obj"
 
 # --- Compile rogue sources ---
 echo "rogue [$PPAP_ARCH]: compiling ($PPAP_ARCH_LABEL, PPAP libc)..."
 OBJS=()
 for src in "${ROGUE_SRCS[@]}"; do
+    src_path="$ROGUE_SRC/$src"
+    if [[ -f "$PATCHES_DIR/$src" ]]; then
+        src_path="$PATCHES_DIR/$src"
+    fi
     obj="$ROGUE_OUT/obj/${src%.c}.o"
     OBJS+=("$obj")
-    $PPAP_CC $CFLAGS -c "$ROGUE_SRC/$src" -o "$obj"
+    $PPAP_CC $CFLAGS -c "$src_path" -o "$obj"
 done
 
 # Compile curses shim

@@ -33,7 +33,7 @@ option(PPAP_TESTS_EXTENDED "Use extended test init runner" OFF)
 option(PPAP_SEMIHOST "Use ARM semihosting for serial I/O" OFF)
 
 # User-space binaries use hardware FPU with softfp ABI (compatible with
-# soft-float musl/busybox — float args still passed in integer regs).
+# soft-float user code — float args still passed in integer regs).
 set(PPAP_ARM_HARDFLOAT ON)
 
 include(${PPAP_ROOT}/cmake/arm_m.cmake)

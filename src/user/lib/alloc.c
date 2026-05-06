@@ -4,18 +4,16 @@
  * Best-fit address-sorted free list with inline 4-byte block headers.
  * Mirrors the kernel page allocator's always-coalesced invariant.
  *
- * malloc / free follow standard semantics; uc_heap_init seeds the
- * allocator with a caller-owned static pool (no syscall, idempotent).
- *
- * Self-contained — no other PPAP libc TU is needed to link this.
- * tests/host/test_uc_heap.c exercises the allocator directly on the
- * host without stubs.
+ * malloc / free follow standard semantics. uc_heap_init can still seed
+ * the allocator with a caller-owned static pool, but unseeded processes
+ * lazily acquire their heap from brk() and grow it on demand.
  */
 
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 
+void *brk(void *addr);
 void uc_heap_init(void *pool, size_t size);
 
 #define UC_FLAG_FREE 0x0001u
@@ -49,6 +47,10 @@ typedef struct uc_free {
 #define UC_MIN_FREE_PAYLOAD UC_ALIGN_UP(UC_FREE_PAYLOAD)
 
 static uc_free_t *uc_heap_head;
+static int uc_heap_initialized;
+
+#define UC_HEAP_GROW_CHUNK (16u * 1024u)
+#define UC_BLOCK_MAX_PAYLOAD 0xFFFFu
 
 static uc_block_t *block_next_physical(uc_block_t *b) {
   return (uc_block_t *)((char *)b + sizeof(uc_block_t) + b->size);
@@ -77,7 +79,44 @@ static void free_list_remove(uc_free_t *node) {
   if (node->next) node->next->prev = node->prev;
 }
 
+static int uc_heap_extend(size_t want) {
+  size_t grow;
+  void *cur;
+  void *next;
+  uc_free_t *block;
+
+  if (want > UC_BLOCK_MAX_PAYLOAD) return 0;
+
+  grow = want + sizeof(uc_block_t);
+  if (grow < sizeof(uc_block_t) + UC_MIN_FREE_PAYLOAD)
+    grow = sizeof(uc_block_t) + UC_MIN_FREE_PAYLOAD;
+  if (grow < UC_HEAP_GROW_CHUNK) grow = UC_HEAP_GROW_CHUNK;
+  if (grow > sizeof(uc_block_t) + UC_BLOCK_MAX_PAYLOAD)
+    grow = sizeof(uc_block_t) + UC_BLOCK_MAX_PAYLOAD;
+
+  cur = brk(0);
+  if (!cur) return 0;
+
+  next = brk((char *)cur + grow);
+  if (next != (char *)cur + grow) return 0;
+
+  block = (uc_free_t *)cur;
+  block->hdr.size = (uint16_t)(grow - sizeof(uc_block_t));
+  block->hdr.flags = UC_FLAG_FREE;
+  block->next = 0;
+  block->prev = 0;
+
+  if (!uc_heap_head) {
+    uc_heap_head = block;
+    return 1;
+  }
+
+  free((char *)block + sizeof(uc_block_t));
+  return 1;
+}
+
 void uc_heap_init(void *pool, size_t size) {
+  uc_heap_initialized = 1;
   uc_heap_head = 0;
   if (!pool) return;
 
@@ -95,12 +134,16 @@ void uc_heap_init(void *pool, size_t size) {
 }
 
 void *malloc(size_t size) {
-  if (!uc_heap_head || size == 0) return 0;
+  if (size == 0) return 0;
   if (size > 0xFFFCu) return 0; /* leave room for the sizeof(uc_free_t) check */
 
   size_t want = UC_ALIGN_UP(size);
   if (want < UC_MIN_FREE_PAYLOAD) want = UC_MIN_FREE_PAYLOAD;
   if (want > 0xFFFCu) return 0;
+
+  if (!uc_heap_head) {
+    if (uc_heap_initialized || !uc_heap_extend(want)) return 0;
+  }
 
   /* Best-fit scan.  Short-circuit on perfect match. */
   uc_free_t *best = 0;
@@ -111,7 +154,17 @@ void *malloc(size_t size) {
       if (f->hdr.size == want) break;
     }
   }
-  if (!best) return 0;
+  if (!best) {
+    if (uc_heap_initialized || !uc_heap_extend(want)) return 0;
+    for (uc_free_t *f = uc_heap_head; f; f = f->next) {
+      if (f->hdr.size < want) continue;
+      if (!best || f->hdr.size < best->hdr.size) {
+        best = f;
+        if (f->hdr.size == want) break;
+      }
+    }
+    if (!best) return 0;
+  }
 
   /* Split only if the remainder can stand as its own free block
    * (header + UC_MIN_FREE_PAYLOAD).  Otherwise absorb the extra. */

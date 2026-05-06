@@ -9,10 +9,10 @@
 
 include_guard(GLOBAL)
 
-# Shared build directory for userland artifacts (musl, rogue, etc.).
+# Shared build directory for userland artifacts (rogue, etc.).
 set(PPAP_SHARED_BUILD "${PPAP_ROOT}/build/riscv")
 
-# Userland build config (musl, rogue, romfs pipeline)
+# Userland build config (rogue, romfs pipeline)
 # Must be included before kernel.cmake to define PPAP_ENABLE_* options
 include(${CMAKE_CURRENT_LIST_DIR}/user.cmake)
 

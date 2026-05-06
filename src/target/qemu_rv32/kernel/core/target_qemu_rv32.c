@@ -3,21 +3,10 @@
  *
  * QEMU virt: NS16550A UART, CLINT timer, no SD/SPI/display.
  * Used for CI testing and debugging the RISC-V port without hardware.
- *
- * Block device: embedded UFS image (flatblk) for musl-linked test binaries
- * that are too large for romfs.
  */
 
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/timer.h"
-#include "kernel/core/ufsimg.h"
-// TODO: core-side code including VFS driver headers directly bypasses
-// the module bridge.  Non-ia16 target, so no link-time concern today;
-// switch to a mod_vfs.* path if one becomes available without having
-// to promote flatblk_init / blkdev_find into the mod_vfs vtable (same
-// cleanup pending in target_x68k.c).
-#include "kernel/vfs/driver/blkdev.h"
-#include "kernel/vfs/driver/flatblk.h"
 #include "target/target.h"
 
 #ifdef PPAP_TESTS
@@ -39,23 +28,8 @@ void target_late_init(void) {
 }
 
 void target_post_mount(void) {
-  /* Mount embedded UFS image as /mnt/ufs (musl-linked test binaries) */
-  uint32_t ufsimg_size = (uint32_t)(__ufsimg_end - __ufsimg_start);
-  if (ufsimg_size >= 512) {
-    int rc = flatblk_init("ram0", __ufsimg_start, ufsimg_size);
-    if (rc >= 0) {
-      blkdev_t *bd = blkdev_find("ram0");
-      if (bd) {
-        rc = mod_vfs.mount_ufs("/mnt/ufs", 0, bd);
-        if (rc == 0)
-          mod_vfs.klogf("VFS: UFS mounted at /mnt/ufs (%lu KB)\n",
-                (unsigned long)(ufsimg_size / 1024));
-        else
-          mod_vfs.klogf("VFS: UFS mount failed (%lu)\n", (unsigned long)(uint32_t)(-rc));
-      }
-    }
-  }
-  /* TODO: kernel tests crash rv32 (blkdev tests expect FAT32 ramblk) */
+  /* No additional mounts on this target.
+   * TODO: kernel tests crash rv32 (blkdev tests expect FAT32 ramblk) */
 }
 
 const char *target_init_path(void) {

@@ -184,6 +184,7 @@ _trap_entry:
     csrr    a2, mtval               # mtval
     lw      a3, 24(sp)              # saved s0/fp from trap frame
     lw      a4, TF_USER_SP(sp)     # saved user sp (0 if from kernel)
+    lw      a5, 4(sp)               # saved x3/gp from trap frame
     call    riscv_exception_handler
     j       Default_Handler
 

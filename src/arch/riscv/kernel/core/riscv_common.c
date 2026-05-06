@@ -48,7 +48,8 @@ volatile uint32_t rv32_trap_frame_sp = 0;
 static volatile int exception_reentry_guard;
 
 void riscv_exception_handler(uint32_t mcause, uint32_t mepc, uint32_t mtval,
-                             uint32_t saved_fp, uint32_t saved_sp) {
+                             uint32_t saved_fp, uint32_t saved_sp,
+                             uint32_t saved_gp) {
   /* Disable all interrupts to prevent further traps */
   csr_clear(mstatus, MSTATUS_MIE);
   csr_clear(mie, MIE_MTIE);
@@ -74,15 +75,35 @@ void riscv_exception_handler(uint32_t mcause, uint32_t mepc, uint32_t mtval,
   CRASH_LOG[2] = mepc;
   CRASH_LOG[3] = mtval;
 
-  mod_vfs.klogf("  pid=%lu fp=%lx\n",
+  mod_vfs.klogf("  pid=%lu fp=%lx gp=%lx\n",
                 (unsigned long)(current ? (uint32_t)current->pid : 0xFFFFFFFFu),
-                (unsigned long)saved_fp);
+                (unsigned long)saved_fp, (unsigned long)saved_gp);
+  if (current && current->image.text.base) {
+    uintptr_t text_base = (uintptr_t)current->image.text.base;
+    unsigned long off = (mepc >= (uint32_t)text_base)
+                            ? (unsigned long)(mepc - (uint32_t)text_base)
+                            : 0ul;
+    mod_vfs.klogf("  user_text_base=%lx mepc_off=%lx\n",
+                  (unsigned long)text_base, off);
+  }
+  if (current) {
+    uintptr_t text_base = (uintptr_t)current->image.text.base;
+    uintptr_t data_base = (uintptr_t)current->image.data.base;
+    unsigned long text_off = 0;
+    if (text_base && mepc >= text_base)
+      text_off = (unsigned long)(mepc - text_base);
+    mod_vfs.klogf("  text=%lx data=%lx mepc_off=%lx\n",
+                  (unsigned long)text_base, (unsigned long)data_base, text_off);
+  }
 
   /* Walk the frame pointer chain from the faulting context.
    * Each frame: [fp-4] = ra, [fp-8] = prev fp.
    * Requires -fno-omit-frame-pointer. */
   mod_vfs.klogf("  backtrace:\n");
   uintptr_t fp = saved_fp;
+  if (fp < 0x80000000u || (fp & 3u)) {
+    mod_vfs.klogf("    <invalid frame pointer: %lx>\n", (unsigned long)fp);
+  }
   for (uint32_t depth = 0; depth < 16 && fp >= 0x80000000u; depth++) {
     uintptr_t ra = *(uintptr_t *)(fp - 4);
     uintptr_t prev_fp = *(uintptr_t *)(fp - 8);

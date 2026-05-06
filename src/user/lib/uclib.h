@@ -54,9 +54,9 @@ void _uclib_init_env(int argc, char **argv);
 
 /* ── User-space heap pool seeding ─────────────────────────────────── *
  *
- * malloc / free are declared in <stdlib.h>.  Each process must seed
- * the allocator's pool before first malloc; uc_heap_init takes a
- * caller-owned static buffer.  See docs/user/malloc.md.
+ * malloc / free are declared in <stdlib.h>. uc_heap_init keeps the
+ * allocator on a caller-owned arena; the brk()-backed heap is used
+ * only if no setup call was made.
  */
 void uc_heap_init(void *pool, size_t size);
 

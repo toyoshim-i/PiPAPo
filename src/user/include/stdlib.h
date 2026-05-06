@@ -5,9 +5,9 @@
  * POSIX subset; allocator entries live in src/user/lib/alloc.c, the
  * rest in src/user/lib/stdlib.c.
  *
- * The malloc allocator must be seeded with a caller-owned static
- * pool via uc_heap_init() (declared in <lib/uclib.h>) before the
- * first malloc call.
+ * malloc lazily acquires heap space from brk() only if the process did
+ * not call uc_heap_init(). Applications that pre-seed a caller-owned
+ * arena with uc_heap_init() keep the fixed-pool behavior.
  */
 
 #ifndef _STDLIB_H

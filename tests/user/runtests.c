@@ -350,14 +350,6 @@ int main(void)
         TEST_SLOW
 #endif
     };
-    /* test_musl: musl libc isn't ported to ia16. */
-    tests[t++] = (test_entry_t){ "/bin/test_musl",
-#if defined(__ia16__)
-        TEST_UNSUPPORTED
-#else
-        TEST_ENABLED
-#endif
-    };
     /* test_libc: PPAP libc surface (snprintf, strtol, qsort, FILE,
      * strftime, setjmp).  setjmp.S is provided on arm / m68k / riscv
      * only. */

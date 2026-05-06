@@ -2,10 +2,10 @@
 #
 # Included by cmake/arm_m.cmake and cmake/m68k.cmake.
 # Expects PPAP_SHARED_BUILD to be set before inclusion (the directory
-# where arch-shared artifacts like musl, rogue, user ELFs live).
+# where arch-shared artifacts like rogue, user ELFs live).
 #
 # At include time, automatically registers build commands for:
-#   - musl libc, rogue (third-party)
+#   - rogue (third-party)
 #   - User-space programs
 #   - mkromfs host tool
 #
@@ -17,7 +17,6 @@
 # Also provides:
 #   - PPAP_* variables for arch-specific compiler/linker configuration
 #   - Generated ppap-target-config.sh for shell build scripts
-#   - Generated specs file for musl-linked binaries
 
 include_guard(GLOBAL)
 
@@ -119,13 +118,9 @@ set(USER_TESTS
     test_id test_fs test_rw test_time test_iov test_stat test_tmpfs test_env
     test_float test_signal_float test_x68k test_h68k_dos test_cpm test_sos test_msdos test_zexdoc test_zexall test_trace test_pdb
     test_pdb_arm_disas trace_peek_target
-    test_musl test_libc
+    test_libc
     runtests runtests_ext
 )
-
-# Musl-linked test programs (sources in tests/user/, linked against musl libc)
-set(USER_MUSL_TESTS
-    test_musl_child test_musl_fileio test_musl_dir test_musl_fmt)
 
 # =============================================================================
 # Arch-specific variables
@@ -146,13 +141,9 @@ if(PPAP_ARCH STREQUAL "m68k")
     set(PPAP_SIZE_CMD      ${PPAP_M68K_TC}/bin/m68k-elf-size)
     set(PPAP_ARCH_DIR      ${PPAP_ROOT}/src/arch/m68k/user)
     set(PPAP_TARGET_FLAGS  -m68000)
-    set(PPAP_PIC_FLAGS     -msep-data)
+    set(PPAP_PIC_FLAGS     -fPIC -msep-data)
     set(PPAP_USER_LD       ${PPAP_ARCH_DIR}/user.ld)
     set(PPAP_R68K_LD       ${PPAP_M68K_R68K_LD})
-    set(PPAP_BUSYBOX_LD    ${PPAP_ROOT}/third_party/patches/musl/libc_m68k.ld)
-    set(PPAP_MUSL_SYSROOT  ${PPAP_SHARED_BUILD}/musl-sysroot)
-    set(PPAP_MUSL_TARGET   m68k-elf)
-    set(PPAP_SPECS_FILE    ${PPAP_SHARED_BUILD}/musl-m68k.specs)
     set(PPAP_BB_ARCH       m68k)
     set(PPAP_ARCH_LABEL    "m68k (68000)")
 
@@ -189,7 +180,6 @@ elseif(PPAP_ARCH STREQUAL "riscv")
     set(PPAP_STRIP         ${_epic_bin_dir}/llvm-strip)
     set(PPAP_OBJCOPY       ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-objcopy)
     set(PPAP_SIZE_CMD      ${PPAP_RISCV_ELF_TC}/bin/riscv32-unknown-elf-size)
-    set(PPAP_MUSL_TARGET   riscv32)
     set(PPAP_RISCV_PIE     ON)
     set(PPAP_RISCV_EPIC    ON)
     message(STATUS "RISC-V: using ePIC clang (${_epic_bin_dir}/clang)")
@@ -198,9 +188,6 @@ elseif(PPAP_ARCH STREQUAL "riscv")
     set(PPAP_TARGET_FLAGS  --target=riscv32 -march=rv32imac -mabi=ilp32)
     set(PPAP_PIC_FLAGS     -fepic)
     set(PPAP_USER_LD       ${PPAP_ARCH_DIR}/user.ld)
-    set(PPAP_BUSYBOX_LD    ${PPAP_ROOT}/third_party/patches/musl/libc_riscv.ld)
-    set(PPAP_MUSL_SYSROOT  ${PPAP_SHARED_BUILD}/musl-sysroot)
-    set(PPAP_SPECS_FILE    ${PPAP_SHARED_BUILD}/musl-riscv.specs)
     set(PPAP_BB_ARCH       riscv32)
     set(PPAP_ARCH_LABEL    "rv32imac (Hazard3)")
 
@@ -239,7 +226,7 @@ else()
     set(PPAP_SIZE_CMD      arm-none-eabi-size)
     set(PPAP_ARCH_DIR      ${PPAP_ROOT}/src/arch/arm_m/user)
     if(PPAP_ARM_HARDFLOAT)
-        # Cortex-M33 with hardware FPU (softfp ABI — compatible with soft-float musl)
+        # Cortex-M33 with hardware FPU (softfp ABI)
         set(PPAP_TARGET_FLAGS  -mthumb -mcpu=cortex-m33 -mfloat-abi=softfp -mfpu=fpv5-sp-d16)
         set(PPAP_ARCH_LABEL    "armv8m-thumb (Cortex-M33, FPU)")
     else()
@@ -249,10 +236,6 @@ else()
     set(PPAP_PIC_FLAGS     -fPIC -msingle-pic-base -mpic-register=r9
                            -mno-pic-data-is-text-relative)
     set(PPAP_USER_LD       ${PPAP_ARCH_DIR}/user.ld)
-    set(PPAP_BUSYBOX_LD    ${PPAP_ROOT}/third_party/patches/musl/libc_arm_m.ld)
-    set(PPAP_MUSL_SYSROOT  ${PPAP_SHARED_BUILD}/musl-sysroot)
-    set(PPAP_MUSL_TARGET   arm-none-eabi)
-    set(PPAP_SPECS_FILE    ${PPAP_SHARED_BUILD}/musl-arm.specs)
     set(PPAP_BB_ARCH       arm)
 
     execute_process(COMMAND arm-none-eabi-gcc -print-file-name=include
@@ -265,7 +248,6 @@ else()
 endif()
 
 # Derived paths (shared artifacts in PPAP_SHARED_BUILD)
-set(PPAP_MUSL_LIBC  ${PPAP_MUSL_SYSROOT}/lib/libc.a)
 set(PPAP_ROGUE_DIR  ${PPAP_SHARED_BUILD}/rogue)
 
 # --- User program compile/link flags (cmake lists) ---
@@ -292,28 +274,11 @@ endif()
 # --- String versions for shell config ---
 string(JOIN " " PPAP_TARGET_FLAGS_STR ${PPAP_TARGET_FLAGS})
 string(JOIN " " PPAP_PIC_FLAGS_STR    ${PPAP_PIC_FLAGS})
-set(PPAP_MUSL_CFLAGS_STR
-    "${PPAP_TARGET_FLAGS_STR} -Os -g ${PPAP_PIC_FLAGS_STR} -ffunction-sections -fdata-sections")
-set(_PIE_FLAG "-pie")
-set(PPAP_APP_CFLAGS_STR
-    "${PPAP_TARGET_FLAGS_STR} -Os -nostdinc -isystem ${PPAP_MUSL_SYSROOT}/include -isystem ${PPAP_GCC_INCLUDE} ${PPAP_PIC_FLAGS_STR} -ffunction-sections -fdata-sections ${_PIE_FLAG}")
-
-# =============================================================================
-# Generate specs file (used by rogue and musl-linked test apps)
-# =============================================================================
-file(WRITE ${PPAP_SPECS_FILE}
-"*startfile:
-${PPAP_MUSL_SYSROOT}/lib/crt1.o ${PPAP_MUSL_SYSROOT}/lib/crti.o
-
-*endfile:
-${PPAP_MUSL_SYSROOT}/lib/crtn.o
-
-*lib:
-${PPAP_MUSL_SYSROOT}/lib/libc.a
-
-*libgcc:
-${PPAP_GCC_LIBDIR}/libgcc.a
-")
+if(PPAP_ARCH STREQUAL "riscv")
+    set(_PIE_FLAG "-Wl,--pie")
+else()
+    set(_PIE_FLAG "-pie")
+endif()
 
 # =============================================================================
 # Generate shell config for build scripts
@@ -329,25 +294,15 @@ PPAP_STRIP_FLAGS=\"--strip-unneeded\"
 PPAP_SIZE_CMD=\"${PPAP_SIZE_CMD}\"
 PPAP_TARGET_FLAGS=\"${PPAP_TARGET_FLAGS_STR}\"
 PPAP_PIC_FLAGS=\"${PPAP_PIC_FLAGS_STR}\"
-PPAP_MUSL_SYSROOT=\"${PPAP_MUSL_SYSROOT}\"
-PPAP_MUSL_TARGET=\"${PPAP_MUSL_TARGET}\"
-PPAP_MUSL_CFLAGS=\"${PPAP_MUSL_CFLAGS_STR}\"
-PPAP_APP_CFLAGS=\"${PPAP_APP_CFLAGS_STR}\"
 PPAP_GCC_INCLUDE=\"${PPAP_GCC_INCLUDE}\"
 PPAP_GCC_LIBDIR=\"${PPAP_GCC_LIBDIR}\"
-PPAP_SPECS_FILE=\"${PPAP_SPECS_FILE}\"
-PPAP_BUSYBOX_LD=\"${PPAP_BUSYBOX_LD}\"
 PPAP_BB_ARCH=\"${PPAP_BB_ARCH}\"
 PPAP_ARCH_LABEL=\"${PPAP_ARCH_LABEL}\"
 PPAP_PIE_FLAG=\"${_PIE_FLAG}\"
 PPAP_LLD=\"${PPAP_LLD}\"
 PPAP_RISCV_EPIC=\"${PPAP_RISCV_EPIC}\"
-PPAP_EPIC_LINK_PRE=\"${PPAP_MUSL_SYSROOT}/lib/crt1.o ${PPAP_MUSL_SYSROOT}/lib/crti.o\"
-PPAP_EPIC_LINK_POST=\"-L${PPAP_MUSL_SYSROOT}/lib -lc ${PPAP_LIBGCC} ${PPAP_MUSL_SYSROOT}/lib/crtn.o\"
-PPAP_EPIC_LINK_FLAGS=\"-fuse-ld=${PPAP_LLD} -nostdlib -Wl,--pie -Wl,--strip-debug -Wl,--gc-sections -Wl,--allow-multiple-definition\"
-PPAP_EPIC_LD=\"${PPAP_ROOT}/third_party/patches/musl/libc_riscv_epic.ld\"
 
-# Paths needed by third-party builders that link against PPAP libc.
+# Paths used by third-party builders that link against PPAP libc.
 PPAP_ROOT=\"${PPAP_ROOT}\"
 PPAP_SHARED_BUILD=\"${PPAP_SHARED_BUILD}\"
 PPAP_USER_LD=\"${PPAP_USER_LD}\"
@@ -417,63 +372,6 @@ function(ppap_user_program name source)
                 -o ${_elf} ${_link_objs} ${PPAP_LIBGCC}
         DEPENDS ${_link_objs} ${PPAP_USER_LD} ${PPAP_LIBGCC}
         COMMENT "Linking ${name}.elf (${PPAP_ARCH})"
-    )
-endfunction()
-
-# ppap_musl_test_program(name source)
-#
-# Creates custom commands to compile and link a user-space ELF against musl
-# libc (using the specs file and musl linker script).  Used for test
-# binaries that need to exercise musl code paths (e.g. double-free on exit).
-function(ppap_musl_test_program name source)
-    set(_elf ${PPAP_SHARED_BUILD}/${name}.elf)
-    set(_obj ${PPAP_SHARED_BUILD}/${name}.o)
-
-    # Compile with musl headers (same flags as rogue)
-    set(_musl_cflags
-        ${PPAP_TARGET_FLAGS} -Os -nostdinc
-        -isystem ${PPAP_MUSL_SYSROOT}/include
-        -isystem ${PPAP_GCC_INCLUDE}
-        ${PPAP_PIC_FLAGS}
-        -ffunction-sections -fdata-sections)
-    if(_PIE_FLAG)
-        list(APPEND _musl_cflags ${_PIE_FLAG})
-    endif()
-    add_custom_command(
-        OUTPUT ${_obj}
-        COMMAND ${PPAP_CC} ${_musl_cflags}
-                -c -o ${_obj} ${source}
-        DEPENDS ${source} ${PPAP_MUSL_LIBC}
-        COMMENT "Compiling ${name}.o (musl, ${PPAP_ARCH})"
-    )
-
-    # Link with musl's crt + libc
-    if(PPAP_RISCV_EPIC)
-        # ePIC clang + lld: explicit CRT and library paths (no specs file)
-        set(_musl_ldflags
-            -fuse-ld=${PPAP_LLD} -nostdlib -pie
-            -T ${PPAP_ROOT}/third_party/patches/musl/libc_riscv_epic.ld
-            -Wl,--gc-sections -Wl,--build-id=none -Wl,--strip-debug
-            -Wl,--allow-multiple-definition
-            ${PPAP_MUSL_SYSROOT}/lib/crt1.o ${PPAP_MUSL_SYSROOT}/lib/crti.o
-            -L${PPAP_MUSL_SYSROOT}/lib -lc -L${PPAP_GCC_LIBDIR} -lgcc
-            ${PPAP_MUSL_SYSROOT}/lib/crtn.o)
-    else()
-        set(_musl_ldflags
-            -specs=${PPAP_SPECS_FILE}
-            -T ${PPAP_BUSYBOX_LD}
-            -Wl,--gc-sections -Wl,--build-id=none
-            $<$<STREQUAL:${PPAP_ARCH},riscv>:-Wl$<COMMA>--no-relax>)
-        if(_PIE_FLAG)
-            list(APPEND _musl_ldflags ${_PIE_FLAG})
-        endif()
-    endif()
-    add_custom_command(
-        OUTPUT ${_elf}
-        COMMAND ${PPAP_CC} ${PPAP_TARGET_FLAGS} ${_musl_ldflags}
-                -o ${_elf} ${_obj}
-        DEPENDS ${_obj} ${PPAP_MUSL_LIBC}
-        COMMENT "Linking ${name}.elf (musl, ${PPAP_ARCH})"
     )
 endfunction()
 
@@ -637,14 +535,6 @@ function(_ppap_build_user_programs)
         endforeach()
     endif()
 
-    # --- Musl-linked test programs ---
-    if(PPAP_TESTS)
-        foreach(tst ${USER_MUSL_TESTS})
-            ppap_musl_test_program(${tst} ${_tests_dir}/${tst}.c)
-            list(APPEND _all_elfs ${PPAP_SHARED_BUILD}/${tst}.elf)
-        endforeach()
-    endif()
-
     # --- R68K user tests (Human68k DOS call tests) ---
     # Requires m68k cross-compiler; skip when not available (e.g. Docker
     # containers that only have the target arch's toolchain).
@@ -663,27 +553,6 @@ endfunction()
 # =============================================================================
 # Third-party build targets
 # =============================================================================
-
-# _ppap_add_musl()  [internal]
-# Registers a custom command to build musl libc.
-# Output: ${PPAP_MUSL_LIBC}
-function(_ppap_add_musl)
-    file(GLOB_RECURSE _musl_overlay
-        ${PPAP_ROOT}/third_party/patches/musl/overlay/*)
-
-    add_custom_command(
-        OUTPUT ${PPAP_MUSL_LIBC}
-        COMMAND ${CMAKE_COMMAND} -E env "PPAP_CONFIG=${PPAP_CONFIG_FILE}"
-                ${PPAP_ROOT}/third_party/build_musl.sh
-        DEPENDS ${PPAP_ROOT}/third_party/build_musl.sh
-                ${_musl_overlay}
-        COMMENT "Building musl libc (${PPAP_ARCH_LABEL})"
-    )
-    # Wrap in a custom target so parallel jobs share a single musl build.
-    # Without this, multiple targets depending on ${PPAP_MUSL_LIBC} can
-    # each trigger the custom command concurrently, causing ar corruption.
-    add_custom_target(musl_libc DEPENDS ${PPAP_MUSL_LIBC})
-endfunction()
 
 # _ppap_add_rogue()  [internal]
 # Registers a custom command to build rogue.
@@ -879,7 +748,6 @@ function(ppap_generate_romfs target)
         PROPERTIES OBJECT_DEPENDS ${_romfs_bin})
 
     add_custom_target(romfs_image_${target} DEPENDS ${_romfs_bin})
-    add_dependencies(romfs_image_${target} musl_libc)
     add_dependencies(${target} romfs_image_${target})
     target_sources(${target} PRIVATE ${_romfs_asm})
 endfunction()
@@ -983,7 +851,6 @@ endfunction()
 # only this file — all targets pick it up.
 # =============================================================================
 
-_ppap_add_musl()
 _ppap_add_rogue()
 _ppap_build_user_programs()
 _ppap_build_m68k_cross_programs()

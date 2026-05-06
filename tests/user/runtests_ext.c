@@ -248,7 +248,6 @@ int main(void)
     tests[t++] = (test_entry_t){ "/bin/test_sos",          TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_zexdoc",       TEST_SLOW     };
     tests[t++] = (test_entry_t){ "/bin/test_zexall",       TEST_SLOW     };
-    tests[t++] = (test_entry_t){ "/bin/test_musl",         TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_trace",        TEST_ENABLED  };
 #if defined(__m68k__)
     tests[t++] = (test_entry_t){ "/bin/test_pdb",          TEST_DISABLED };

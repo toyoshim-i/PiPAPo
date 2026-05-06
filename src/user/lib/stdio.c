@@ -35,6 +35,8 @@ static void sn_emit(char *buf, size_t size, size_t *pos, char c) {
 
 /* Emit a NUL-terminated string. */
 static void sn_str(char *buf, size_t size, size_t *pos, const char *s) {
+  uintptr_t addr = (uintptr_t)s;
+  if (!s || addr < 0x1000u) s = "(null)";
   while (*s) sn_emit(buf, size, pos, *s++);
 }
 
