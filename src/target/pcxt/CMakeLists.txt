@@ -162,6 +162,13 @@ set(PCXT_CRT_OBJS
 function(pcxt_user_program name source)
   cmake_parse_arguments(ARG "" "OUTPUT_NAME" "EXTRA_CFLAGS;EXTRA_SOURCES" ${ARGN})
 
+  # Auto-pull multi-source pieces from cmake/user_apps.cmake when the caller
+  # didn't pass EXTRA_SOURCES explicitly.
+  set(_extra_var "PPAP_USER_EXTRA_SOURCES_${name}")
+  if(DEFINED ${_extra_var} AND NOT ARG_EXTRA_SOURCES)
+    set(ARG_EXTRA_SOURCES ${${_extra_var}})
+  endif()
+
   if(ARG_OUTPUT_NAME)
     set(_out_name ${ARG_OUTPUT_NAME})
   else()
@@ -526,43 +533,18 @@ add_custom_target(pcxt_memory_report ALL
 # Target 5: ia16 user ELFs (first-party src/user only)
 # ==========================================================================
 
-set(PCXT_USER_APPS hello getty init pdb push cat ls ps df top pi pile calc uname sleep mkdir reset rmdir rm kill touch date cp mv chmod ln)
+include(${PPAP_ROOT}/cmake/user_apps.cmake)
 
-foreach(_app ${PCXT_USER_APPS})
-  if(_app STREQUAL "push")
-    pcxt_user_program(push ${PPAP_ROOT}/src/user/push.c
-      EXTRA_SOURCES
-        ${PPAP_ROOT}/src/user/push_line.c)
-  elseif(_app STREQUAL "pi")
-    pcxt_user_program(pi ${PPAP_ROOT}/src/user/pi/pi.c
-      EXTRA_SOURCES
-        ${PPAP_ROOT}/src/user/pi/pi_buf.c
-        ${PPAP_ROOT}/src/user/pi/pi_term.c
-        ${PPAP_ROOT}/src/user/pi/pi_ui.c
-        ${PPAP_ROOT}/src/user/pi/pi_menu.c)
-  elseif(_app STREQUAL "pile")
-    pcxt_user_program(pile ${PPAP_ROOT}/src/user/pile/pile.c
-      EXTRA_SOURCES
-        ${PPAP_ROOT}/src/user/pile/pile_pane.c
-        ${PPAP_ROOT}/src/user/pile/pile_draw.c
-        ${PPAP_ROOT}/src/user/pile/pile_ops.c
-        ${PPAP_ROOT}/src/user/pile/pile_view.c)
-  elseif(_app STREQUAL "calc")
-    pcxt_user_program(calc ${PPAP_ROOT}/src/user/calc/calc.c
-      EXTRA_SOURCES
-        ${PPAP_ROOT}/src/user/calc/calc_state.c
-        ${PPAP_ROOT}/src/user/calc/calc_render.c
-        ${PPAP_ROOT}/src/user/calc/calc_segdisp.c)
-  elseif(_app STREQUAL "pdb")
-    pcxt_user_program(pdb ${PPAP_ROOT}/src/user/pdb/pdb.c
-      EXTRA_SOURCES
-        ${PPAP_ROOT}/src/user/pdb/pdb_util.c
-        ${PPAP_ROOT}/src/user/pdb/pdb_trace_util.c
-        ${PPAP_ROOT}/src/user/pdb/pdb_cmd.c
-        ${PPAP_ROOT}/src/user/pdb/pdb_regs.c
-        ${PPAP_ROOT}/src/user/pdb/pdb_target.c
-        ${PPAP_ROOT}/src/user/pdb/pdb_inspect.c
-        ${PPAP_ROOT}/src/user/pdb/pdb_break.c)
+# Apps not yet buildable on ia16 (ia16-elf-gcc, 64 KB code+data segment).
+# Add a brief reason after each entry.
+set(USER_APPS_PCXT_SKIP "")
+
+foreach(_app ${USER_APPS})
+  if(_app IN_LIST USER_APPS_PCXT_SKIP)
+    continue()
+  endif()
+  if(DEFINED PPAP_USER_MAIN_SOURCE_${_app})
+    pcxt_user_program(${_app} ${PPAP_USER_MAIN_SOURCE_${_app}})
   else()
     pcxt_user_program(${_app} ${PPAP_ROOT}/src/user/${_app}.c)
   endif()

@@ -19,7 +19,7 @@ static int byte_mode;
 static int head_fd(int fd) {
   char buf[256];
   uint32_t emitted = 0;
-  ssize_t n;
+  ssize_t n = 0;
 
   while (emitted < limit && (n = read(fd, buf, sizeof(buf))) > 0) {
     ssize_t take = n;

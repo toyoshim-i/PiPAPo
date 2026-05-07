@@ -673,10 +673,10 @@ static void usage(void) {
 }
 
 int main(int argc, char *argv[]) {
-  int dump_regs = 0;
+  volatile int dump_regs = 0;
   int mode_seen = 0;
   uint32_t mode = 0;
-  int cmd = 1;
+  volatile int cmd = 1;
 
   while (cmd < argc && argv[cmd][0] == '-') {
     if (streq(argv[cmd], "--ppap")) {

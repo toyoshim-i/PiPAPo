@@ -67,49 +67,7 @@ else()
 endif()
 
 # --- User-space program lists ---
-
-# Application programs (sources in src/user/)
-set(USER_APPS hello getty init trace pdb push cat ls ps df top pi pile calc uname sleep mkdir reset rmdir rm kill touch date cp mv chmod ln wc head tail printf basename dirname yes cut tr free mount umount grep sort sed)
-# ttyctl is pico1calc-only (LCD terminal control)
-if(CMAKE_PROJECT_NAME STREQUAL "ppap_pico1calc")
-    list(APPEND USER_APPS ttyctl)
-endif()
-# Install destinations: init -> sbin, ttyctl -> usr/bin, others -> bin
-
-# Optional per-app extra sources (for multi-file user programs).
-set(PPAP_USER_MAIN_SOURCE_pdb ${PPAP_ROOT}/src/user/pdb/pdb.c)
-set(PPAP_USER_EXTRA_SOURCES_pdb
-    ${PPAP_ROOT}/src/user/pdb/pdb_util.c
-    ${PPAP_ROOT}/src/user/pdb/pdb_trace_util.c
-    ${PPAP_ROOT}/src/user/pdb/pdb_cmd.c
-    ${PPAP_ROOT}/src/user/pdb/pdb_regs.c
-    ${PPAP_ROOT}/src/user/pdb/pdb_target.c
-    ${PPAP_ROOT}/src/user/pdb/pdb_inspect.c
-    ${PPAP_ROOT}/src/user/pdb/pdb_break.c
-)
-set(PPAP_USER_EXTRA_SOURCES_push
-    ${PPAP_ROOT}/src/user/push_line.c
-)
-set(PPAP_USER_MAIN_SOURCE_pi ${PPAP_ROOT}/src/user/pi/pi.c)
-set(PPAP_USER_EXTRA_SOURCES_pi
-    ${PPAP_ROOT}/src/user/pi/pi_buf.c
-    ${PPAP_ROOT}/src/user/pi/pi_term.c
-    ${PPAP_ROOT}/src/user/pi/pi_ui.c
-    ${PPAP_ROOT}/src/user/pi/pi_menu.c
-)
-set(PPAP_USER_MAIN_SOURCE_pile ${PPAP_ROOT}/src/user/pile/pile.c)
-set(PPAP_USER_EXTRA_SOURCES_pile
-    ${PPAP_ROOT}/src/user/pile/pile_pane.c
-    ${PPAP_ROOT}/src/user/pile/pile_draw.c
-    ${PPAP_ROOT}/src/user/pile/pile_ops.c
-    ${PPAP_ROOT}/src/user/pile/pile_view.c
-)
-set(PPAP_USER_MAIN_SOURCE_calc ${PPAP_ROOT}/src/user/calc/calc.c)
-set(PPAP_USER_EXTRA_SOURCES_calc
-    ${PPAP_ROOT}/src/user/calc/calc_state.c
-    ${PPAP_ROOT}/src/user/calc/calc_render.c
-    ${PPAP_ROOT}/src/user/calc/calc_segdisp.c
-)
+include(${CMAKE_CURRENT_LIST_DIR}/user_apps.cmake)
 
 # Test programs (sources in tests/user/)
 set(USER_TESTS

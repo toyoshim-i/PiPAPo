@@ -100,41 +100,25 @@ fi
 # Install base /etc files
 cp "$PROJECT_DIR/src/etc/"* "$UFS_STAGING/etc/" 2>/dev/null || true
 
-# Include first-party user programs from src/user if built.
-# Keep init under /sbin and expose push as /bin/sh.
-USER_APPS=(hello getty init pdb push cat ls ps df top pi pile calc uname sleep mkdir reset rmdir rm kill touch date cp mv chmod ln)
-for app in "${USER_APPS[@]}"; do
-  elf="$USER_BUILD_DIR/$app.elf"
-  if [[ ! -f "$elf" ]]; then
-    continue
-  fi
-  if [[ "$app" == "init" ]]; then
-    cp "$elf" "$UFS_STAGING/sbin/init"
-  else
-    cp "$elf" "$UFS_STAGING/bin/$app"
-  fi
+# Install every ELF the pcxt user-build produced.  CMake (driven by
+# cmake/user_apps.cmake + USER_APPS_PCXT_SKIP in src/target/pcxt/CMakeLists.txt)
+# decides which apps get built; mkpcimg.sh just stages whatever showed up.
+# Keep init under /sbin and expose push as /bin/sh + pi as /bin/vi.
+shopt -s nullglob
+for elf in "$USER_BUILD_DIR"/*.elf; do
+  app=$(basename "$elf" .elf)
+  case "$app" in
+    init) cp "$elf" "$UFS_STAGING/sbin/init" ;;
+    *)    cp "$elf" "$UFS_STAGING/bin/$app" ;;
+  esac
 done
-if [[ -f "$USER_BUILD_DIR/push.elf" ]]; then
-  cp "$USER_BUILD_DIR/push.elf" "$UFS_STAGING/bin/sh"
+shopt -u nullglob
+if [[ -f "$UFS_STAGING/bin/push" ]]; then
+  cp "$UFS_STAGING/bin/push" "$UFS_STAGING/bin/sh"
 fi
-# /bin/vi → pi symlink
 if [[ -f "$UFS_STAGING/bin/pi" ]]; then
   ln -sf pi "$UFS_STAGING/bin/vi"
 fi
-if [[ -f "$USER_BUILD_DIR/runtests.elf" ]]; then
-  cp "$USER_BUILD_DIR/runtests.elf" "$UFS_STAGING/bin/runtests"
-fi
-if [[ -f "$USER_BUILD_DIR/runtests_ext.elf" ]]; then
-  cp "$USER_BUILD_DIR/runtests_ext.elf" "$UFS_STAGING/bin/runtests_ext"
-fi
-TEST_BINS=(test_exec test_vfork test_pipe test_brk test_fd test_signal test_poll
-           test_sleep_intr test_orphan test_id test_time test_iov test_stat
-           test_env test_fs test_rw test_tmpfs test_ufs test_msdos)
-for tst in "${TEST_BINS[@]}"; do
-  if [[ -f "$USER_BUILD_DIR/$tst.elf" ]]; then
-    cp "$USER_BUILD_DIR/$tst.elf" "$UFS_STAGING/bin/$tst"
-  fi
-done
 
 # Apply --overlay (via PPAP_EXTRA_OVERLAY env var) on top of the base
 # staging.  Files in the overlay shadow any identically-named base files.
