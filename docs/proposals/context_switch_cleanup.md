@@ -85,9 +85,9 @@ mechanism, not a way to preempt active SVC execution.
      `i16_ctx_switch`
    - extract/rename Xtensa helper glue as `xtensa_ctx_switch` if it improves
      readability
-6. Add a blocking-yield test that proves one process can block inside a
-   syscall loop while another runnable process executes before the blocked
-   syscall returns.
+6. Keep the userland blocking-pipe regression test as coverage for one
+   process blocking inside a syscall while another runnable process executes
+   before the blocked syscall returns.
 7. Document the context-switch contract for new architectures in
    `docs/getting_started/porting.md`.
 
@@ -129,6 +129,10 @@ Current state:
 - `arm_kernel_sched_switch()` saves the in-flight MSP continuation, marks
   `pcb_t.kernel_context`, switches to the next process, and restores either a
   suspended kernel continuation or a normal user/PSP context.
+- ARM comments now explicitly separate PendSV async preemption,
+  restart-style replay, and synchronous SVC continuation switching.
+- `tests/user/test_pipe.c` includes an empty-pipe blocking case that passes on
+  `qemu_arm`, `qemu_m68k`, `qemu_rv32`, and `pcxt --hdd`.
 
 Plan:
 
@@ -138,7 +142,7 @@ Plan:
    continuation switch contract, not as a special-case workaround.
 3. Keep `svc_msp` ARM-local unless another architecture needs an equivalent
    native interrupt-stack restore slot.
-4. Use the common fixed-region `KSTACK_USAGE_TRACK` helper to measure ARM
+4. Keep using the common fixed-region `KSTACK_USAGE_TRACK` helper to measure ARM
    kernel-stack high-water marks when the optional build flag is enabled.
 5. After measurement, shrink the 2 KB user-process slots only if
    CP/M, VFS, TTY, and subsystem paths leave a safe margin.

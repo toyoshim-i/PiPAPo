@@ -21,7 +21,7 @@
 /* ── Context switch trigger ─────────────────────────────────────────────────
  */
 
-/* Pend PendSV exception — triggers a context switch at the next opportunity.
+/* Pend PendSV exception for async preemption or restart-style blocking.
  * ARM Cortex-M does not use the shared switch_pending flag because PendSV
  * self-pends via NVIC and runs as soon as exceptions return.  Define
  * ARCH_HAS_YIELD before the include so the default is skipped. */
@@ -31,6 +31,12 @@ static inline void arch_yield(void) { SCB_ICSR |= PENDSVSET; }
 #define ARCH_HAS_SCHED_SWITCH
 void arm_kernel_sched_switch(void);
 int arm_can_kernel_sched_switch(void);
+/* sched_switch() has two ARM meanings:
+ * - a blocked non-restart SVC continuation switches immediately by saving the
+ *   live MSP call chain in arm_kernel_sched_switch();
+ * - async preemption and restart-style blocking pend PendSV and switch after
+ *   exception return.
+ */
 static inline void arch_sched_switch(void) {
   uint32_t ipsr;
   __asm__ volatile("mrs %0, ipsr" : "=r"(ipsr));

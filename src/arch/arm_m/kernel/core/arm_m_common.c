@@ -1,9 +1,10 @@
 /*
- * arm_m_common.c — ARM Cortex-M0+ fault handling
+ * arm_m_common.c — ARM Cortex-M shared handlers
  *
  * Provides:
+ *   - SVC continuation-switch bookkeeping
  *   - HardFault crash handler: prints register dump, kills faulting user
- * process
+ *     process
  *
  * On Cortex-M0+, all faults (undefined instruction, bus error, alignment, etc.)
  * escalate to HardFault.  We inspect the faulting instruction to determine
@@ -23,6 +24,9 @@
  * svc_* per-core slots for compatibility with older assembly references. */
 volatile uint32_t svc_saved_msp[2] = {0, 0};
 
+/* arm_kernel_sched_switch() stores a blocked SVC call chain on MSP and marks
+ * the PCB so the next switch restores it as a kernel continuation instead of
+ * returning through a normal Thread/PSP exception frame. */
 void arm_mark_kernel_context(pcb_t *p) { p->kernel_context = 1; }
 
 int arm_take_kernel_context(pcb_t *p) {
@@ -31,6 +35,9 @@ int arm_take_kernel_context(pcb_t *p) {
   return has_context;
 }
 
+/* Restart-style waits replay the syscall from the SVC boundary, so they use
+ * PendSV after exception return.  Only non-restart blocked syscalls need the
+ * direct MSP continuation switch. */
 int arm_can_kernel_sched_switch(void) {
   return current && current->state == PROC_BLOCKED &&
          svc_restart[core_id()] == 0;

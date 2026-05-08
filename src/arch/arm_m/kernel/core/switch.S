@@ -1,10 +1,17 @@
 @ =============================================================================
-@ switch.S — Cortex-M Context Switch (PendSV_Handler)
+@ switch.S — Cortex-M context switching
 @ =============================================================================
 @
-@ PendSV is triggered by SysTick_Handler (via ICSR.PENDSVSET) every time a
-@ process's time-slice expires.  It runs at the lowest priority so it never
-@ preempts a real interrupt handler.
+@ ARM has two switch paths:
+@
+@   - PendSV_Handler: asynchronous preemption and restart-style syscall
+@     blocking.  PendSV is pended by SysTick or arch_yield(), runs at the
+@     lowest priority, and must not preempt active SVC execution.
+@
+@   - arm_kernel_sched_switch: synchronous continuation blocking from an SVC
+@     syscall that is already running on the current process's kernel stack.
+@     It saves the live MSP call chain and resumes only when that same
+@     process is scheduled again.
 @
 @ The hardware exception entry automatically saves the "hardware frame"
 @ {r0, r1, r2, r3, r12, lr, pc, xpsr} onto PSP (when Thread mode was using
@@ -42,12 +49,12 @@
 @ PCB_SP_OFFSET: byte offset of the `sp` field inside pcb_t.
 @ MUST match offsetof(pcb_t, sp); verified by _Static_assert in proc.c.
 @
-@ PendSV saves/restores kernel_sp.  At PendSV entry, MSP is wherever the
-@ outgoing process's handler chain landed, typically inside its per-process
-@ kernel-stack slot.  Saving that MSP into kernel_sp preserves the slot's
-@ high-water position; restoring next->kernel_sp before exception return
-@ places MSP back into the incoming process's slot, so subsequent IRQ or SVC
-@ entry runs on that slot rather than the shared boot stack.
+@ Both paths save/restore kernel_sp.  At switch entry, MSP is wherever the
+@ outgoing handler or SVC continuation landed, typically inside the current
+@ process's kernel-stack slot.  Saving that MSP into kernel_sp preserves the
+@ slot's live top; restoring next->kernel_sp places MSP back into the incoming
+@ process's slot, so subsequent IRQ or SVC entry runs on that slot rather than
+@ the shared boot stack.
 @ =============================================================================
 
 .equ PCB_SP_OFFSET,        32  @ offsetof(pcb_t, sp) — see proc.h
@@ -67,6 +74,9 @@
 .thumb_func
 .global arm_kernel_sched_switch
 arm_kernel_sched_switch:
+    @ Synchronous switch for a blocked SVC continuation.  This is not an
+    @ exception return path: the caller is already running on MSP inside the
+    @ current process's kernel stack, and expects to resume after this call.
     cpsid i
 
 #if __ARM_ARCH >= 8
@@ -234,6 +244,9 @@ arm_kernel_sched_switch:
 .thumb_func
 .global PendSV_Handler
 PendSV_Handler:
+    @ Asynchronous exception-return switch.  The interrupted Thread context
+    @ lives on PSP; PendSV saves the software frame, picks the next process,
+    @ and returns through that process's exception frame.
 
 #if __ARM_ARCH >= 8
     @ ══════════════════════════════════════════════════════════════════════
