@@ -29,12 +29,6 @@
  */
 void proc_init(void);
 
-#if defined(__ia16__) && defined(KSTACK_USAGE_TRACK)
-void proc_kstack_paint(void);
-uint16_t proc_kstack_scan(void);
-void proc_kstack_usage_report(void);
-#endif
-
 /*
  * Allocate a free PCB slot (slots 1..PROC_MAX-1).
  * Clears the slot, assigns a unique pid, and returns a pointer to it.

@@ -168,8 +168,8 @@ long i16_syscall_dispatch(uint16_t nr, uint16_t a0, uint16_t a1, uint16_t a2,
      * syscall frames are unwound so klogf's own stack usage is safe. */
     uint16_t hwm = proc_kstack_scan();
     if (hwm)
-      mod_vfs.klogf("KSTACK: slot hwm=%u/1018 nr=%u\n", (unsigned)hwm,
-                    (unsigned)nr);
+      mod_vfs.klogf("KSTACK: slot hwm=%u/%u nr=%u\n", (unsigned)hwm,
+                    (unsigned)proc_kstack_capacity(), (unsigned)nr);
   }
 #endif
 

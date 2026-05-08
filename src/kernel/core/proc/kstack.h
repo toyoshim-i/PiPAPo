@@ -29,6 +29,13 @@ extern char __kstack_region_base[];
 void proc_kstack_init_slot(pcb_t *p, uint32_t slot_idx);
 void proc_kstack_plant_canary(uint32_t slot_idx);
 
+#ifdef KSTACK_USAGE_TRACK
+void proc_kstack_paint(void);
+uint16_t proc_kstack_scan(void);
+uint16_t proc_kstack_capacity(void);
+void proc_kstack_usage_report(void);
+#endif
+
 /* Re-plant every slot's canary.  Called from sched_start() on arches
  * where the boot stack may have overwritten canaries planted in
  * proc_init() (ia16). */

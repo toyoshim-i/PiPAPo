@@ -99,8 +99,9 @@ The restore path is shared across timer, syscall, and cooperative yield:
 restore `SS:SP`, pop the saved general registers from the interrupted stack,
 and `iret`.
 
-`KSTACK_USAGE_TRACK` is ia16-only today.  It paints unused stack space and
-reports high-water marks to keep the 1 KB budget honest.
+`KSTACK_USAGE_TRACK` is implemented by the common fixed-region kstack helper.
+ia16 and ARM syscall paths can paint unused stack space and report high-water
+marks while keeping the feature compile-time optional.
 
 ## m68k
 

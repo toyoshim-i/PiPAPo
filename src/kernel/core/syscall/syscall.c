@@ -44,6 +44,11 @@ static long ia16_sign_extend_arg(long value) {
 }
 #endif
 
+#if defined(KSTACK_USAGE_TRACK) && \
+    (defined(__arm__) || defined(__thumb__) || defined(__ARM_ARCH))
+#define SYSCALL_TRACK_KSTACK 1
+#endif
+
 void svc_set_restart(void) {
   svc_restart[core_id()] = 1;
   current->svc_needs_restart = 1;
@@ -124,7 +129,16 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
 
   long ret;
 
-  if (trace_before_syscall(frame, nr, a4, a5)) return;
+#ifdef SYSCALL_TRACK_KSTACK
+  proc_kstack_paint();
+#endif
+
+  if (trace_before_syscall(frame, nr, a4, a5)) {
+#ifdef SYSCALL_TRACK_KSTACK
+    (void)proc_kstack_scan();
+#endif
+    return;
+  }
 
   switch (nr) {
     /* ── Existing syscalls (Phase 1-3) ──────────────────────────────────── */
@@ -480,5 +494,13 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
   }
 
   trace_after_syscall(frame, nr, a4, a5, ret);
+#ifdef SYSCALL_TRACK_KSTACK
+  {
+    uint16_t hwm = proc_kstack_scan();
+    if (hwm)
+      mod_vfs.klogf("KSTACK: slot hwm=%u/%u nr=%u\n", (unsigned)hwm,
+                    (unsigned)proc_kstack_capacity(), (unsigned)nr);
+  }
+#endif
   frame[0] = (uint32_t)ret; /* write return value into stacked r0 */
 }

@@ -96,27 +96,6 @@ static pid_t next_pid = 1;
 
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
-#if defined(__ia16__) && defined(KSTACK_USAGE_TRACK)
-/* I16_KSTACK_* slot-geometry macros — only retained for the
- * KSTACK_USAGE_TRACK paint/scan/report code below.  The plant +
- * check mechanism that used to share them now lives in
- * src/kernel/core/proc/kstack.c. */
-#define I16_KSTACK_GUARD_BYTES 4u
-#define I16_KSTACK_REGION_BASE 0xE380u /* must match pcxt_kernel.ld */
-#define I16_KSTACK_SLOT0_SIZE 128u     /* idle loop only */
-#define I16_KSTACK_SIZE 1024u          /* slots 1-7 */
-#define I16_KSTACK_TRUE_BASE(i)                                           \
-  ((uint16_t)((i) == 0 ? I16_KSTACK_REGION_BASE                           \
-                       : I16_KSTACK_REGION_BASE + I16_KSTACK_SLOT0_SIZE + \
-                             (uint16_t)((i) - 1u) * I16_KSTACK_SIZE))
-#define I16_KSTACK_TRUE_TOP(i)                                            \
-  ((uint16_t)((i) == 0 ? I16_KSTACK_REGION_BASE + I16_KSTACK_SLOT0_SIZE   \
-                       : I16_KSTACK_REGION_BASE + I16_KSTACK_SLOT0_SIZE + \
-                             (uint16_t)(i) * I16_KSTACK_SIZE))
-
-#define I16_KSTACK_BASE(i) I16_KSTACK_TRUE_BASE(i)
-#endif
-
 void proc_init(void) {
   /* Zero all slots and mark them free */
   for (uint32_t i = 0u; i < PROC_MAX; i++) {
@@ -159,71 +138,6 @@ void proc_init(void) {
    * goes unused.  No-op on arches without the fixed-region kstack. */
   proc_plant_kstack_canaries();
 }
-
-#if defined(__ia16__) && defined(KSTACK_USAGE_TRACK)
-#define I16_KSTACK_PAINT ((uint16_t)0xA55Au)
-static uint16_t kstack_hwm[PROC_MAX]; /* high-water mark per slot (bytes) */
-
-/* Derive slot index from kernel_sp in the current PCB.
- * Avoids ptr subtraction (which emits a 16-bit div and can INT 0). */
-static uint16_t kstack_slot(void) {
-  if (!current) return PROC_MAX;
-  uint16_t ktop = current->kernel_sp;
-  /* slot 0: ktop == REGION_BASE + SLOT0_SIZE - GUARD_BYTES */
-  if (ktop == (uint16_t)(I16_KSTACK_REGION_BASE + I16_KSTACK_SLOT0_SIZE -
-                         I16_KSTACK_GUARD_BYTES))
-    return 0;
-  /* slots 1-7: ktop = REGION_BASE + SLOT0_SIZE + i*SIZE - GUARD_BYTES */
-  uint16_t off = (uint16_t)(ktop + I16_KSTACK_GUARD_BYTES -
-                            I16_KSTACK_REGION_BASE - I16_KSTACK_SLOT0_SIZE);
-  /* Divide by I16_KSTACK_SIZE (1024) = shift right 10 */
-  uint16_t slot = off >> 10;
-  return (slot < PROC_MAX) ? slot : PROC_MAX;
-}
-
-void proc_kstack_paint(void) {
-  uint16_t slot = kstack_slot();
-  if (slot >= PROC_MAX) return;
-  uint16_t base = (uint16_t)(I16_KSTACK_BASE(slot) + 2u); /* skip canary */
-  uint16_t sp;
-  __asm__ volatile("movw %%sp, %0" : "=r"(sp));
-  /* 48-byte headroom: this function's own frame (callee-saved regs +
-   * locals) sits between SP and SP+frame_size.  16 was too small —
-   * ia16-elf-gcc may push bp+si+di+es plus locals ≈ 20-30B. */
-  volatile uint16_t *p = (volatile uint16_t *)(uintptr_t)base;
-  volatile uint16_t *end = (volatile uint16_t *)(uintptr_t)(uint16_t)(sp - 48u);
-  if (end <= p) return; /* stack already too deep to paint safely */
-  while (p < end) *p++ = I16_KSTACK_PAINT;
-}
-
-/* Returns measured usage, or 0 if no new high-water mark. */
-uint16_t proc_kstack_scan(void) {
-  uint16_t slot = kstack_slot();
-  if (slot >= PROC_MAX) return 0;
-  uint16_t base = (uint16_t)(I16_KSTACK_BASE(slot) + 2u);
-  uint16_t top = (uint16_t)(I16_KSTACK_TRUE_TOP(slot) - I16_KSTACK_GUARD_BYTES);
-  volatile uint16_t *p = (volatile uint16_t *)(uintptr_t)base;
-  volatile uint16_t *t = (volatile uint16_t *)(uintptr_t)top;
-  while (p < t && *p == I16_KSTACK_PAINT) p++;
-  uint16_t used = (uint16_t)(top - (uint16_t)(uintptr_t)p);
-  if (used > kstack_hwm[slot]) {
-    kstack_hwm[slot] = used;
-    return used;
-  }
-  return 0;
-}
-
-void proc_kstack_usage_report(void) {
-  for (uint16_t i = 0u; i < PROC_MAX; i++) {
-    uint16_t cap =
-        (i == 0u)
-            ? (uint16_t)(I16_KSTACK_SLOT0_SIZE - 2u - I16_KSTACK_GUARD_BYTES)
-            : (uint16_t)(I16_KSTACK_SIZE - 2u - I16_KSTACK_GUARD_BYTES);
-    mod_vfs.klogf("KSTACK: slot=%u  hwm=%u/%u bytes\n", (unsigned)i,
-                  (unsigned)kstack_hwm[i], (unsigned)cap);
-  }
-}
-#endif /* __ia16__ && KSTACK_USAGE_TRACK */
 
 pcb_t *proc_alloc(void) {
   uint32_t saved = spin_lock_irqsave(SPIN_PROC);

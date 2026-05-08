@@ -105,8 +105,8 @@ measurement-driven sizing.
 3. Treat architectures that use a native interrupt stack as having two stack
    roles: an interrupt stack for short handlers and a process kernel stack for
    continuations.
-4. Add ARM kernel-stack high-water tracking equivalent to ia16
-   `KSTACK_USAGE_TRACK`.
+4. Use the optional common fixed-region `KSTACK_USAGE_TRACK` helper on ARM
+   when measuring kernel-stack high-water marks.
 5. Measure pico1calc stack usage with CP/M and other deep subsystem paths.
 6. Shrink pico1calc `PROC_KSTACK_SIZE` from 2 KB only if measurements show a
    safe margin.
@@ -138,8 +138,8 @@ Plan:
    continuation switch contract, not as a special-case workaround.
 3. Keep `svc_msp` ARM-local unless another architecture needs an equivalent
    native interrupt-stack restore slot.
-4. Add high-water tracking for ARM fixed slots, modeled after ia16
-   `KSTACK_USAGE_TRACK`.
+4. Use the common fixed-region `KSTACK_USAGE_TRACK` helper to measure ARM
+   kernel-stack high-water marks when the optional build flag is enabled.
 5. After measurement, shrink the 2 KB user-process slots only if
    CP/M, VFS, TTY, and subsystem paths leave a safe margin.
 
