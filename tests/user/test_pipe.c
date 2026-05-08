@@ -5,10 +5,92 @@
  * may be exhausted after many test processes.
  */
 
+#include "common/time.h"
 #include "utest.h"
 
-int main(void)
-{
+#define CHILD_OK 0
+#define CHILD_BAD_ARGS 11
+#define CHILD_READY_WRITE_FAIL 12
+#define CHILD_READ_COUNT_FAIL 13
+#define CHILD_DATA_FAIL 14
+#define CHILD_MARKER_FAIL 15
+
+static int streq(const char *a, const char *b) {
+    while (*a && *b && *a == *b) {
+        a++;
+        b++;
+    }
+    return *a == *b;
+}
+
+static int parse_fd(const char *s) {
+    int v = 0;
+    if (!s || !*s) return -1;
+    while (*s) {
+        if (*s < '0' || *s > '9') return -1;
+        v = v * 10 + (*s - '0');
+        s++;
+    }
+    return v;
+}
+
+static void fd_to_arg(int fd, char out[4]) {
+    if (fd >= 100) {
+        out[0] = '0';
+        out[1] = 0;
+    } else if (fd >= 10) {
+        out[0] = (char)('0' + fd / 10);
+        out[1] = (char)('0' + fd % 10);
+        out[2] = 0;
+    } else {
+        out[0] = (char)('0' + fd);
+        out[1] = 0;
+    }
+}
+
+static int pipe_reader_child(int argc, char **argv) {
+    if (argc < 6) return CHILD_BAD_ARGS;
+
+    int data_r = parse_fd(argv[2]);
+    int data_w = parse_fd(argv[3]);
+    int ready_r = parse_fd(argv[4]);
+    int ready_w = parse_fd(argv[5]);
+    if (data_r < 0 || data_w < 0 || ready_r < 0 || ready_w < 0)
+        return CHILD_BAD_ARGS;
+
+    close(data_w);
+    close(ready_r);
+
+    volatile uint32_t marker = 0x13579BDFu;
+    char ready = 'R';
+    if (write(ready_w, &ready, 1) != 1) return CHILD_READY_WRITE_FAIL;
+    close(ready_w);
+
+    char buf[8];
+    for (int i = 0; i < 8; i++) buf[i] = 0;
+    ssize_t n = read(data_r, buf, sizeof(buf));
+    close(data_r);
+
+    if (n != 6) return CHILD_READ_COUNT_FAIL;
+    for (int i = 0; i < 6; i++) {
+        if (buf[i] != "BLOCK!"[i]) return CHILD_DATA_FAIL;
+    }
+    if (marker != 0x13579BDFu) return CHILD_MARKER_FAIL;
+
+    return CHILD_OK;
+}
+
+static void short_sleep(void) {
+    struct timespec ts;
+    ts.tv_sec = 0;
+    ts.tv_nsec = 1000000;
+    nanosleep(&ts, (void *)0);
+}
+
+int main(int argc, char **argv) {
+    if (argc > 1 && streq(argv[1], "--pipe-reader"))
+        return pipe_reader_child(argc, argv);
+
     /* 1. Basic pipe write+read */
     int fds[2];
     fds[0] = fds[1] = -1;
@@ -77,6 +159,58 @@ int main(void)
         ssize_t n3 = read(fds3[0], buf3, 4);
         UT_ASSERT_EQ(n3, 0);       /* should return EOF */
         close(fds3[0]);
+    }
+
+    /* 4. Empty-pipe read blocks in the child, then resumes after write. */
+    {
+        int data[2];
+        int ready[2];
+        data[0] = data[1] = ready[0] = ready[1] = -1;
+        ret = pipe(data);
+        if (ret != 0) {
+            UT_SUMMARY("test_pipe");
+        }
+        ret = pipe(ready);
+        if (ret != 0) {
+            close(data[0]);
+            close(data[1]);
+            UT_SUMMARY("test_pipe");
+        }
+
+        char data_r_arg[4], data_w_arg[4], ready_r_arg[4], ready_w_arg[4];
+        fd_to_arg(data[0], data_r_arg);
+        fd_to_arg(data[1], data_w_arg);
+        fd_to_arg(ready[0], ready_r_arg);
+        fd_to_arg(ready[1], ready_w_arg);
+        char *child_argv[] = {
+            (char *)"/bin/test_pipe", (char *)"--pipe-reader",
+            data_r_arg, data_w_arg, ready_r_arg, ready_w_arg, (char *)0};
+
+        pid_t pid = vfork();
+        if (pid == 0) {
+            execve("/bin/test_pipe", child_argv, (void *)0);
+            _exit(127);
+        }
+
+        close(data[0]);
+        close(ready[1]);
+
+        char ready_ch = 0;
+        ssize_t rn = read(ready[0], &ready_ch, 1);
+        UT_ASSERT_EQ(rn, 1);
+        UT_ASSERT(ready_ch == 'R', "blocking reader reached read path");
+        close(ready[0]);
+
+        short_sleep();
+
+        ssize_t wn = write(data[1], "BLOCK!", 6);
+        UT_ASSERT_EQ(wn, 6);
+        close(data[1]);
+
+        int status = 0;
+        UT_ASSERT_EQ(waitpid(pid, &status, 0), pid);
+        UT_ASSERT(WIFEXITED(status), "blocking reader exited normally");
+        UT_ASSERT_EQ(WEXITSTATUS(status), CHILD_OK);
     }
 
     UT_SUMMARY("test_pipe");
