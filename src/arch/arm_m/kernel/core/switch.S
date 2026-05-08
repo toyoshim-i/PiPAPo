@@ -42,13 +42,12 @@
 @ PCB_SP_OFFSET: byte offset of the `sp` field inside pcb_t.
 @ MUST match offsetof(pcb_t, sp); verified by _Static_assert in proc.c.
 @
-@ Targets with PPAP_ARM_KSTACK_REGION save/restore kernel_sp here.  At
-@ PendSV entry, MSP is wherever the outgoing process's handler chain landed,
-@ typically inside its per-process kernel-stack slot.  Saving that MSP into
-@ kernel_sp preserves the slot's high-water position; restoring
-@ next->kernel_sp before exception return places MSP back into the incoming
-@ process's slot, so subsequent IRQ or SVC entry runs on that slot rather
-@ than the shared boot stack.
+@ PendSV saves/restores kernel_sp.  At PendSV entry, MSP is wherever the
+@ outgoing process's handler chain landed, typically inside its per-process
+@ kernel-stack slot.  Saving that MSP into kernel_sp preserves the slot's
+@ high-water position; restoring next->kernel_sp before exception return
+@ places MSP back into the incoming process's slot, so subsequent IRQ or SVC
+@ entry runs on that slot rather than the shared boot stack.
 @ =============================================================================
 
 .equ PCB_SP_OFFSET,        32  @ offsetof(pcb_t, sp) — see proc.h
@@ -268,10 +267,8 @@ PendSV_Handler:
     @ ── Save outgoing MSP into current->kernel_sp ──────────────────────
     @ The MSP value here is wherever the handler chain (SysTick → PendSV
     @ tail-chain typically) landed inside the outgoing proc's kernel slot.
-#ifdef PPAP_ARM_KSTACK_REGION
     mrs  r4, msp
     str  r4, [r3, #PCB_KERNEL_SP_OFFSET]
-#endif
 
     @ ── Call C scheduler to select next process ────────────────────────
     @ Preserve &current_core[core_id] (r2) and core_byte_offset (r1).
@@ -304,10 +301,8 @@ PendSV_Handler:
     @ After exception return the CPU resumes Thread mode on PSP, but MSP
     @ stays at whatever we set here — so any subsequent IRQ or SVC for
     @ the incoming process runs on its own kernel-stack slot.
-#ifdef PPAP_ARM_KSTACK_REGION
     ldr  r4, [r0, #PCB_KERNEL_SP_OFFSET]
     msr  msp, r4
-#endif
 
     @ ── Restore incoming context ───────────────────────────────────────
     ldr  r0, [r0, #PCB_SP_OFFSET]  @ r0 = next->sp
@@ -369,10 +364,8 @@ PendSV_Handler:
     @ ── Save outgoing MSP into current->kernel_sp ──────────────────────
     @ See M33 path above for rationale.  r4-r7 are scratch (saved on
     @ PSP via the stmia above).
-#ifdef PPAP_ARM_KSTACK_REGION
     mrs  r4, msp
     str  r4, [r3, #PCB_KERNEL_SP_OFFSET]
-#endif
 
     @ ── Call C scheduler to select next process ────────────────────────
     @ Preserve &current_core[core_id] (r2).  Outgoing EXC_RETURN was
@@ -406,10 +399,8 @@ PendSV_Handler:
 
     @ ── Restore incoming MSP from next->kernel_sp ──────────────────────
     @ See M33 path above for rationale.
-#ifdef PPAP_ARM_KSTACK_REGION
     ldr  r4, [r0, #PCB_KERNEL_SP_OFFSET]
     msr  msp, r4
-#endif
 
     @ ── Restore incoming context ───────────────────────────────────────
     ldr  r0, [r0, #PCB_SP_OFFSET]  @ r0 = next->sp (bottom of saved context)

@@ -16,7 +16,8 @@
  *               | romfs image           |     Populated by mkromfs (Phase 2+)
  *               +-----------------------+
  *
- * SRAM layout (264 KB total, 32 KB kernel, 192 KB pages, 24 KB iobuf, 16 KB DMA).
+ * SRAM layout:
+ *   48 KB kernel, 176 KB pages, 24 KB iobuf, 16 KB DMA.
  */
 
 MEMORY {
@@ -27,8 +28,8 @@ MEMORY {
     FLASH_ROMFS  (r)   : ORIGIN = 0x10031000, LENGTH = 2M - 0x31000
 
     /* On-chip SRAM — 264KB total */
-    RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 32K
-    RAM_PAGES    (rwx) : ORIGIN = 0x20008000, LENGTH = 192K
+    RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 48K
+    RAM_PAGES    (rwx) : ORIGIN = 0x2000C000, LENGTH = 176K
     RAM_IOBUF    (rw)  : ORIGIN = 0x20038000, LENGTH = 24K
     RAM_DMA      (rw)  : ORIGIN = 0x2003E000, LENGTH = 16K
 }
@@ -104,6 +105,17 @@ SECTIONS {
         __bss_end = .;
     } > RAM_KERNEL
 
+    /* Per-process kernel stacks.  Slot 0 = 128 B (idle), slots 1..7
+     * = 2 KB each.  Total 128 + 7 * 2048 = 14464 bytes.  Must match
+     * PROC_KSTACK_IDLE_SIZE / PROC_KSTACK_SIZE / PROC_MAX in
+     * src/kernel/common/config.h and pico1's compile definitions. */
+    .kstack (NOLOAD) : {
+        . = ALIGN(8);
+        __kstack_region_base = .;
+        . += 14464;
+        __kstack_region_end = .;
+    } > RAM_KERNEL
+
     .stack (NOLOAD) : {
         . = ALIGN(8);
         __stack_bottom = .;
@@ -112,7 +124,7 @@ SECTIONS {
     } > RAM_KERNEL
 
     ASSERT((__stack_top <= ORIGIN(RAM_KERNEL) + LENGTH(RAM_KERNEL)),
-           "ERROR: Kernel data + bss + stack overflow RAM_KERNEL (32KB)")
+           "ERROR: RAM_KERNEL overflow")
 
     /* Flash usage: .text + .rodata (VMA) + .data + .ramfunc (LMA copies) */
     __flash_kernel_used = (LOADADDR(.ramfunc) + SIZEOF(.ramfunc)) - ORIGIN(FLASH_KERNEL);

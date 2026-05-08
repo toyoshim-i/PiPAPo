@@ -19,7 +19,7 @@
  * the ENTRY_POINT item or vector table at offset 0 to enter the image.
  *
  * SRAM layout (520 KB total on RP2350):
- *   32 KB kernel, 456 KB pages (114 pages), 16 KB iobuf, 8 KB DMA
+ *   48 KB kernel, 440 KB pages (110 pages), 16 KB iobuf, 8 KB DMA
  */
 
 MEMORY {
@@ -30,8 +30,8 @@ MEMORY {
     FLASH_ROMFS  (r)   : ORIGIN = 0x10029000, LENGTH = 4M - 0x29000
 
     /* On-chip SRAM — 520KB total */
-    RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 32K
-    RAM_PAGES    (rwx) : ORIGIN = 0x20008000, LENGTH = 456K
+    RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 48K
+    RAM_PAGES    (rwx) : ORIGIN = 0x2000C000, LENGTH = 440K
     RAM_IOBUF    (rw)  : ORIGIN = 0x2007A000, LENGTH = 16K
     RAM_DMA      (rw)  : ORIGIN = 0x2007E000, LENGTH = 8K
 }
@@ -108,6 +108,17 @@ SECTIONS {
         __bss_end = .;
     } > RAM_KERNEL
 
+    /* Per-process kernel stacks.  Slot 0 = 128 B (idle), slots 1..7
+     * = 2 KB each.  Total 128 + 7 * 2048 = 14464 bytes.  Must match
+     * PROC_KSTACK_IDLE_SIZE / PROC_KSTACK_SIZE / PROC_MAX in
+     * src/kernel/common/config.h and pico2's compile definitions. */
+    .kstack (NOLOAD) : {
+        . = ALIGN(8);
+        __kstack_region_base = .;
+        . += 14464;
+        __kstack_region_end = .;
+    } > RAM_KERNEL
+
     .stack (NOLOAD) : {
         . = ALIGN(8);
         __stack_bottom = .;
@@ -116,7 +127,7 @@ SECTIONS {
     } > RAM_KERNEL
 
     ASSERT((__stack_top <= ORIGIN(RAM_KERNEL) + LENGTH(RAM_KERNEL)),
-           "ERROR: Kernel data + bss + stack overflow RAM_KERNEL (32KB)")
+           "ERROR: RAM_KERNEL overflow")
 
     __flash_kernel_used = (LOADADDR(.ramfunc) + SIZEOF(.ramfunc)) - ORIGIN(FLASH_KERNEL);
     __flash_kernel_free = LENGTH(FLASH_KERNEL) - __flash_kernel_used;

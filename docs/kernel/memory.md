@@ -10,10 +10,12 @@ tracks physical memory across the supported targets.
 ### ARM (RP2040 / QEMU mps2-an500)
 
 Memory size is fixed at compile time.  The RP2040 has 264 KB of on-chip SRAM
-at `0x20000000`; no runtime probe is needed.  The exact split is target-specific:
+at `0x20000000`; no runtime probe is needed.  The exact split is
+target-specific:
 
-- `pico1` uses a 32 KB kernel region and a 48-page pool (192 KB)
-- `pico1calc` uses a 32 KB kernel region and a 48-page pool (192 KB)
+- `pico1` uses a 48 KB kernel region and a 44-page pool (176 KB)
+- `pico1calc` uses a 48 KB kernel region and a 44-page pool (176 KB)
+- `pico2` uses a 48 KB kernel region and a 110-page pool (440 KB)
 
 The remaining SRAM is reserved for kernel data, I/O buffers, and DMA.
 
@@ -56,10 +58,10 @@ Memory size is fixed at compile time per target:
 
 ```
 0x20000000  ┌────────────────────────────┐
-            │ Kernel region (32 KB)      │  .data, .bss, kernel globals
-            │                            │  Kernel stack (4 KB, MSP)
-0x20008000  ├────────────────────────────┤
-            │ Page pool (192 KB)         │  48 pages x 4 KB
+            │ Kernel region (48 KB)      │  .data, .bss, kernel globals
+            │                            │  fixed MSP slots + boot stack
+0x2000C000  ├────────────────────────────┤
+            │ Page pool (176 KB)         │  44 pages x 4 KB
             │ User process data, heap,   │  Managed by page_alloc()
             │ stacks                     │
 0x20038000  ├────────────────────────────┤
@@ -69,13 +71,13 @@ Memory size is fixed at compile time per target:
 0x20042000  └────────────────────────────┘
 ```
 
-ARM SRAM constants (from the target linker script, identical for `pico1` /
-`pico1calc` / `qemu_arm`):
+ARM RP2040 SRAM constants (from the target linker script, identical for
+`pico1` / `pico1calc`):
 
 | Symbol             | Value        | Size    |
 |--------------------|--------------|---------|
-| `SRAM_KERNEL_BASE` | `0x20000000` | 32 KB   |
-| `PAGE_POOL_BASE`   | `0x20008000` | 192 KB  |
+| `SRAM_KERNEL_BASE` | `0x20000000` | 48 KB   |
+| `PAGE_POOL_BASE`   | `0x2000C000` | 176 KB  |
 | `SRAM_IOBUF_BASE`  | `0x20038000` | 24 KB   |
 | `SRAM_DMA_BASE`    | `0x2003E000` | 16 KB   |
 

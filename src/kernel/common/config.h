@@ -60,18 +60,14 @@
 #ifndef PROC_KSTACK_IDLE_SIZE
 #define PROC_KSTACK_IDLE_SIZE 128u /* slot 0 (idle loop only)          */
 #endif
-/* PROC_HAS_FIXED_REGION_KSTACK: opt-in flag selecting the
- * linker-reserved fixed-region per-process kernel stack mechanism
- * implemented in kstack.c.  Targets must also reserve
- * __kstack_region_base in the linker script and provide a kernel_sp
- * field in the arch's PCB.  The kstack.c functions are weak; per-arch
- * overlays in src/arch/<arch>/kernel/core/kstack.c may strong-override
- * any individual function (e.g. just init_slot) without touching the
- * other three. */
-#if defined(__ia16__)
-#define PROC_HAS_FIXED_REGION_KSTACK 1
-#elif (defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)) && \
-    defined(PPAP_ARM_KSTACK_REGION)
+/* PROC_HAS_FIXED_REGION_KSTACK selects the linker-reserved fixed-region
+ * per-process kernel stack mechanism implemented in kstack.c.  Targets
+ * must reserve __kstack_region_base in the linker script and provide a
+ * kernel_sp field in the arch's PCB.  The kstack.c functions are weak;
+ * per-arch overlays in src/arch/<arch>/kernel/core/kstack.c may
+ * strong-override any individual function without touching the others. */
+#if defined(__ia16__) || defined(__ARM_ARCH) || defined(__arm__) || \
+    defined(__thumb__)
 #define PROC_HAS_FIXED_REGION_KSTACK 1
 #endif
 

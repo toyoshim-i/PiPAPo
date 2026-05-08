@@ -303,8 +303,8 @@ header are reserved for this (filled with `0xFF` = erased state).
 
 | Region | Address | Size | Purpose |
 |--------|---------|------|---------|
-| RAM_KERNEL | 0x20000000 | 32 KB | .data, .bss, stack (4 KB) |
-| RAM_PAGES | 0x20008000 | 192 KB | Page pool (48 × 4 KB pages) |
+| RAM_KERNEL | 0x20000000 | 48 KB | .data, .bss, fixed MSP slots, stack |
+| RAM_PAGES | 0x2000C000 | 176 KB | Page pool (44 × 4 KB pages) |
 | RAM_IOBUF | 0x20038000 | 24 KB | SD DMA, FS cache |
 | RAM_DMA | 0x2003E000 | 16 KB | DMA/PIO/Core 1 stack/IRQ stack |
 
@@ -345,7 +345,7 @@ src/target/pico1/
 
 ### SRAM Layout
 
-Same as Pico 1 (264 KB total, 32 KB kernel, 192 KB pages, 24 KB iobuf, 16 KB
+Same as Pico 1 (264 KB total, 48 KB kernel, 176 KB pages, 24 KB iobuf, 16 KB
 DMA).
 
 ### Target Files
@@ -399,8 +399,8 @@ first 4 KB for a PICOBIN block.
 
 | Region | Address | Size | Purpose |
 |--------|---------|------|---------|
-| RAM_KERNEL | 0x20000000 | 32 KB | .data, .bss, stack (3.5 KB) |
-| RAM_PAGES | 0x20008000 | 456 KB | Page pool (114 × 4 KB pages) |
+| RAM_KERNEL | 0x20000000 | 48 KB | .data, .bss, fixed MSP slots, stack |
+| RAM_PAGES | 0x2000C000 | 440 KB | Page pool (110 × 4 KB pages) |
 | RAM_IOBUF | 0x2007A000 | 16 KB | FS cache |
 | RAM_DMA | 0x2007E000 | 8 KB | DMA buffers |
 

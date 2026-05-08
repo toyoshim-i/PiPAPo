@@ -58,7 +58,7 @@ that loops across multiple waits uses continuation blocking instead.
 
 ARM uses PendSV for asynchronous preemption.  PendSV stays at the lowest
 priority and must not preempt SVC.  SVC runs with the process's per-process
-MSP when `PPAP_ARM_KSTACK_REGION` is enabled; see [`stack.md`](stack.md).
+MSP; see [`stack.md`](stack.md).
 
 When `sched_switch()` is called inside Handler mode and the current process is
 `PROC_BLOCKED` without `svc_restart`, `arch_sched_switch()` calls

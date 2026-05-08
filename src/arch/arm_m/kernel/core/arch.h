@@ -34,16 +34,11 @@ int arm_can_kernel_sched_switch(void);
 static inline void arch_sched_switch(void) {
   uint32_t ipsr;
   __asm__ volatile("mrs %0, ipsr" : "=r"(ipsr));
-#ifdef PPAP_ARM_KSTACK_REGION
   if (ipsr != 0u && arm_can_kernel_sched_switch()) {
     arm_kernel_sched_switch();
   } else {
     arch_yield();
   }
-#else
-  (void)ipsr;
-  arch_yield();
-#endif
 }
 
 #define ARCH_HAS_YIELD_CONSUME
