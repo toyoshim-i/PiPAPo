@@ -51,8 +51,8 @@
  * 1..PROC_MAX-1 are user procs (full budget).  Total carved bytes are
  * PROC_KSTACK_IDLE_SIZE + (PROC_MAX-1) * PROC_KSTACK_SIZE.
  *
- * Currently consumed by ia16 (its own I16_KSTACK_* constants) and ARM
- * Cortex-M (this proposal).  Defaults below match ia16's mature numbers.
+ * Currently consumed by ia16, ARM Cortex-M, and RISC-V.  Defaults below
+ * match ia16's mature numbers; targets may override them.
  * ────────────────────────────────────────────────────────────────────────── */
 #ifndef PROC_KSTACK_SIZE
 #define PROC_KSTACK_SIZE 1024u /* per-proc kernel stack (slots 1+)     */
@@ -66,8 +66,8 @@
  * kernel_sp field in the arch's PCB.  The kstack.c functions are weak;
  * per-arch overlays in src/arch/<arch>/kernel/core/kstack.c may
  * strong-override any individual function without touching the others. */
-#if defined(__ia16__) || defined(__ARM_ARCH) || defined(__arm__) || \
-    defined(__thumb__)
+#if defined(__ia16__) || defined(__riscv) || defined(__ARM_ARCH) || \
+    defined(__arm__) || defined(__thumb__)
 #define PROC_HAS_FIXED_REGION_KSTACK 1
 #endif
 

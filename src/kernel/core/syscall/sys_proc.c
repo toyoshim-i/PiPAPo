@@ -1798,16 +1798,19 @@ long sys_vfork(uint32_t *frame) {
     }
   }
 #elif defined(__riscv)
-  /* RISC-V: The ecall trap frame (36 words) is on the child's kernel
-   * stack (copied from parent's kernel stack).  child_frame points to
-   * saved a0 in the trap frame (sp + 32).
+  /* RISC-V: The ecall trap frame (36 words) lives on the parent's fixed
+   * kernel stack.  Copy that frame into the child's fixed kstack slot and
+   * patch the child's saved a0 to 0.
    *
-   * Set child's a0 = 0 (vfork return value for child). */
+   * frame points to saved a0 in the parent's trap frame (trap_base + 32). */
+  uint32_t *parent_tf = frame - 8; /* trap frame base */
+  uint32_t *child_tf =
+      (uint32_t *)(uintptr_t)(child->kernel_sp - 36u * sizeof(uint32_t));
+  memcpy(child_tf, parent_tf, 36u * sizeof(uint32_t));
+  child_frame = child_tf + 8;
   child_frame[0] = 0;
 
-  /* child->sp = trap frame base on the child's kernel stack */
-  child->sp = (uint32_t)(uintptr_t)(child_frame - 8);
-  child->kernel_sp = (uint32_t)(uintptr_t)stack + PAGE_SIZE;
+  child->sp = (uint32_t)(uintptr_t)child_tf;
 
   /* RISC-V mscratch split: the child must have its own user stack copy. */
   {
@@ -2211,10 +2214,13 @@ long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
       current->fd_map[1] == FD_DESC_NONE && current->fd_map[2] == FD_DESC_NONE)
     mod_vfs.fd_stdio_init(current);
 
-    /* Free old kernel stack page.
-     * m68k / RISC-V: kernel runs on stack_page.  sys_execve returns
-     * through the old kernel stack before trap.S switches to the new
-     * one via exec_pending.  Defer the free until after the switch.
+    /* Free old stack page.
+     * m68k: kernel runs on stack_page.  sys_execve returns through the old
+     * kernel stack before trap.S switches to the new one via exec_pending.
+     * Defer the free until after the switch.
+     * RISC-V: kernel runs on the fixed kstack region, but trap.S still uses
+     * exec_pending to install the fresh trap frame before releasing the old
+     * stack_page_id page.
      * ARM: kernel runs on MSP (separate), so PSP stack can be freed
      * immediately. */
 #if defined(__m68k__) || defined(__riscv)

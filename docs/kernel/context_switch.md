@@ -103,9 +103,9 @@ handles syscalls or interrupts.
 
 When `switch_pending` is set, trap return calls `riscv_ctx_switch(current_sp)`.
 The helper saves the outgoing trap-frame SP in `current->sp`, selects the next
-process, updates `current_core`, ensures the incoming `kernel_sp` is
-available, and returns the incoming trap-frame SP.  The assembly reloads
-`mscratch` from the incoming `kernel_sp` before `mret`.
+process, updates `current_core`, and returns the incoming trap-frame SP.
+`kernel_sp` is initialized by the common fixed-region kstack helper, and the
+assembly reloads `mscratch` from the incoming `kernel_sp` before `mret`.
 
 ## Xtensa
 

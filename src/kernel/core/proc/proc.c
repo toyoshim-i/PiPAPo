@@ -358,15 +358,14 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp) {
 
 #if !defined(__ia16__)
 #if defined(__riscv)
-    /* RISC-V mscratch split: kernel frame on stack_page, user_sp in TF_USER_SP
-     */
-    sp = (uint32_t *)(stack_base + PAGE_SIZE);
+    /* RISC-V mscratch split: kernel frame on fixed kstack slot, user_sp in
+     * TF_USER_SP. */
+    sp = (uint32_t *)(uintptr_t)p->kernel_sp;
     sp = arch_build_initial_frame(sp, entry);
     /* TF_USER_SP at word offset 32 (byte offset 128) */
     sp[32] = user_sp ? (uint32_t)user_sp
                      : (uint32_t)(uintptr_t)stack_base + PAGE_SIZE;
     p->sp = (uint32_t)(uintptr_t)sp;
-    p->kernel_sp = (uint32_t)(uintptr_t)stack_base + PAGE_SIZE;
 #elif defined(__m68k__)
     sp = (uint32_t *)(stack_base + PAGE_SIZE);
     sp = arch_build_initial_frame(sp, entry);

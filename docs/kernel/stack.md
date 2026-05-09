@@ -42,7 +42,7 @@ The common defaults are:
 | `arm_m` | Fixed region per process, MSP kernel stack | `sp` = PSP/user context, `kernel_sp` = MSP, `svc_msp` = SVC entry MSP, `kernel_context` distinguishes suspended kernel continuations | PendSV for async preemption; direct `arm_kernel_sched_switch()` for blocked non-restart syscalls inside SVC |
 | `ia16` | Fixed region per process, SS=0 kernel stack | `sp` = saved kernel-stack SP, `kernel_sp` = slot top, plus entry-stub shadows | Timer INT 08h and `i16_ctx_switch()` save `SS:SP` on the kernel stack and restore through a shared IRET tail |
 | `m68k` | Per-process supervisor stack from the process stack page | `sp` = SSP, `usp` = user stack pointer | TRAP/timer paths save full frames on SSP, call `sched_next()`, then restore incoming SSP/USP |
-| `riscv` | Per-process kernel stack at the top of the process stack page | `sp` = trap-frame SP, `kernel_sp` = `mscratch` kernel-stack top | Trap entry swaps `sp` with `mscratch`; `riscv_ctx_switch()` swaps trap-frame SPs and refreshes `mscratch` |
+| `riscv` | Fixed region per process, `mscratch` kernel stack | `sp` = trap-frame SP, `kernel_sp` = `mscratch` kernel-stack top | Trap entry swaps `sp` with `mscratch`; `riscv_ctx_switch()` swaps trap-frame SPs and trap return refreshes `mscratch` |
 | `xtensa` | One process stack carries user and kernel/switch frames | `sp` = solicited switch frame | `xtensa_do_yield()` spills register windows, saves SP, calls `sched_next()`, and restores the incoming solicited frame |
 
 ## ARM Cortex-M
@@ -121,16 +121,24 @@ instead of waiting for a later interrupt to consume `switch_pending`.
 
 RISC-V uses `mscratch` as the current process's kernel-stack top.  Trap entry
 starts with `csrrw sp, mscratch, sp`, which swaps the user SP into `mscratch`
-and moves execution onto the process's kernel stack.  The trap frame then
-saves the full register set and the original user SP.
+and moves execution onto the process's fixed kernel-stack slot.  The trap
+frame then saves the full register set and the original user SP.
 
 `pcb_t.sp` points at the saved trap frame.  `pcb_t.kernel_sp` is the kernel
-stack top loaded back into `mscratch` when that process becomes current.
+stack top loaded back into `mscratch` when that process becomes current.  The
+common fixed-region helper initializes `kernel_sp` from `__kstack_region_base`
+instead of deriving it from `stack_page_id`.
+
 `riscv_ctx_switch(current_sp)` saves the outgoing trap-frame SP, calls
-`sched_next()`, makes the selected process current, ensures `kernel_sp` is
-initialized from the process stack page if necessary, and returns the incoming
+`sched_next()`, makes the selected process current, and returns the incoming
 trap-frame SP.  Trap return refreshes `mscratch` from the incoming
 `kernel_sp`.
+
+RISC-V targets currently use 4 KB user-process slots:
+
+```cmake
+PROC_KSTACK_SIZE=4096u
+```
 
 ## Xtensa
 

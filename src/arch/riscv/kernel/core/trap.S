@@ -229,8 +229,8 @@ _trap_entry:
     call    signal_check
 
     # ── Check exec_pending (execve replaces the process image) ──────
-    # After execve, the trap frame on the stack is stale — proc_setup_stack
-    # already built a fresh frame at p->sp.  Reload SP from current->sp.
+    # After execve, this trap frame is stale — proc_setup_stack already built
+    # a fresh frame at p->sp.  Reload SP from current->sp.
     la      t0, exec_pending
     lw      t1, 0(t0)
     beqz    t1, .Lno_exec
@@ -240,7 +240,7 @@ _trap_entry:
     lw      sp, 48(t0)             # sp = current->sp (PCB_SP_OFFSET=48)
     lw      t1, 52(t0)             # t1 = current->kernel_sp
     csrw    mscratch, t1           # update mscratch for new kernel stack
-    # Now on the NEW stack — safe to free the old stack page.
+    # Now using the new trap frame — safe to release the deferred old page.
     call    exec_free_old_stack
     j       .Ltrap_return
 .Lno_exec:

@@ -75,13 +75,16 @@ Done:
 - ARM-M comments distinguish PendSV async preemption, restart-style replay,
   and synchronous SVC continuation switching.
 - The common fixed-region kstack helper owns canaries and optional
-  `KSTACK_USAGE_TRACK` high-water tracking for ARM-M and ia16.
+  `KSTACK_USAGE_TRACK` high-water tracking for ARM-M, ia16, and RISC-V.
 - The userland empty-pipe blocking test covers continuation blocking without
   adding test-only kernel code.  It passes on `qemu_arm`, `qemu_m68k`,
   `qemu_rv32`, and `pcxt --hdd`.
 - RISC-V `sched_switch()` now uses a machine-mode `ecall`, so a blocking
   syscall suspends at the call site on the process kernel stack instead of
   waiting for a later trap return.
+- RISC-V now uses fixed per-process kernel-stack slots on `qemu_rv32` and
+  `pico2rv`; `mscratch` is loaded from `pcb_t.kernel_sp` rather than lazily
+  deriving the kernel stack from `stack_page_id`.
 - Kernel-stack-use reduction for deep subsystem paths is deferred in
   [`kernel_stack_use.md`](kernel_stack_use.md), because userland subsystem
   work may obsolete much of that path.
@@ -130,10 +133,10 @@ stay behavior-preserving unless a subtask explicitly calls for
 measurement-driven sizing.
 
 1. DONE: prefer a common fixed-region helper for per-process kernel stacks
-   where it fits the target memory map.  ARM-M and ia16 use it today.
-2. REMAINING: decide whether RISC-V should keep its lazy `kernel_sp`
-   initialization from the process stack page or move to the fixed-region
-   helper used by ia16 and ARM targets.
+   where it fits the target memory map.  ARM-M, ia16, and RISC-V use it today.
+2. DONE: move RISC-V away from lazy `kernel_sp` initialization from the
+   process stack page.  `qemu_rv32` and `pico2rv` now reserve fixed kstack
+   regions and initialize slots through `proc_kstack_init_slot`.
 3. DONE: treat architectures that use a native interrupt stack as having two
    stack roles: an interrupt stack for short handlers and a process kernel
    stack for continuations.
@@ -244,11 +247,12 @@ Plan:
 Current state:
 
 - RISC-V trap entry swaps `sp` with `mscratch`, saves a 144-byte trap frame on
-  the process kernel stack, and returns through `mret`.
+  the process's fixed kernel-stack slot, and returns through `mret`.
 - `pcb_t.sp` stores the saved trap-frame SP.  `pcb_t.kernel_sp` stores the
   kernel-stack top loaded into `mscratch`.
 - `riscv_ctx_switch(current_sp)` swaps trap-frame SPs through `sched_next()`
-  and refreshes `kernel_sp` lazily when needed.
+  and relies on `pcb_t.kernel_sp` already being initialized by the common
+  fixed-region helper.
 - Timer preemption is correct because the trap path consumes
   `switch_pending` before returning.
 - Cooperative `sched_switch()` executes a machine-mode `ecall`.  The M-mode
@@ -258,6 +262,10 @@ Current state:
 - User trap entry restores `mscratch` to the process kernel-stack top after
   saving the original user `sp`, so nested M-mode traps during syscall
   execution do not borrow the user stack.
+- `qemu_rv32` reserves the fixed kstack region between `.bss` and the boot
+  stack.  `pico2rv` reserves a dedicated 32 KB SRAM window before the page
+  pool.  Both targets keep 4 KB user-process slots for the current RISC-V stack
+  budget.
 
 Plan:
 
@@ -269,10 +277,8 @@ Plan:
 4. DONE: choose an M-mode trap dedicated to cooperative kernel yield; this
    shares the same restore path as timer and syscall-return switches.
 5. DONE: rename the shared RISC-V switch helper to `riscv_ctx_switch()`.
-6. REMAINING: replace lazy `kernel_sp` initialization with common
-   `proc_kstack_init_slot` only if a fixed region is chosen for RISC-V targets.
-   Otherwise document the current page-backed kernel-stack initialization as
-   the accepted model.
+6. DONE: replace lazy `kernel_sp` initialization with the common
+   `proc_kstack_init_slot` fixed-region model on RISC-V targets.
 7. DONE: keep the blocking-yield userland test as coverage; it passes on
    `qemu_rv32` after the M-mode `ecall` switch path.
 

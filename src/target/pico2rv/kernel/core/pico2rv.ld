@@ -21,7 +21,7 @@
  *               +-----------------------+
  *
  * SRAM layout (520 KB total on RP2350):
- *   32 KB kernel, 456 KB pages (114 pages), 16 KB iobuf, 8 KB DMA
+ *   32 KB kernel, 32 KB fixed kstacks, 424 KB pages, 16 KB iobuf, 8 KB DMA
  */
 
 ENTRY(_start)
@@ -35,7 +35,8 @@ MEMORY {
 
     /* On-chip SRAM — 520KB total */
     RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 32K
-    RAM_PAGES    (rwx) : ORIGIN = 0x20008000, LENGTH = 456K
+    RAM_KSTACK   (rw)  : ORIGIN = 0x20008000, LENGTH = 32K
+    RAM_PAGES    (rwx) : ORIGIN = 0x20010000, LENGTH = 424K
     RAM_IOBUF    (rw)  : ORIGIN = 0x2007A000, LENGTH = 16K
     RAM_DMA      (rw)  : ORIGIN = 0x2007E000, LENGTH = 8K
 }
@@ -131,6 +132,20 @@ SECTIONS {
 
     ASSERT((__stack_top <= ORIGIN(RAM_KERNEL) + LENGTH(RAM_KERNEL)),
            "ERROR: Kernel data + bss + stack overflow RAM_KERNEL (32KB)")
+
+    /* Per-process kernel stacks.  Slot 0 = 128 B (idle), slots 1..7
+     * = 4 KB each.  Total 128 + 7 * 4096 = 28800 bytes.  Must match
+     * PROC_KSTACK_IDLE_SIZE / PROC_KSTACK_SIZE / PROC_MAX in
+     * src/kernel/common/config.h and this target's compile definitions. */
+    .kstack (NOLOAD) : {
+        . = ALIGN(8);
+        __kstack_region_base = .;
+        . += 28800;
+        __kstack_region_end = .;
+    } > RAM_KSTACK
+
+    ASSERT((__kstack_region_end <= ORIGIN(RAM_KSTACK) + LENGTH(RAM_KSTACK)),
+           "ERROR: RISC-V fixed kstacks overflow RAM_KSTACK")
 
     __flash_kernel_used = (LOADADDR(.ramfunc) + SIZEOF(.ramfunc)) - ORIGIN(FLASH_KERNEL);
     __flash_kernel_free = LENGTH(FLASH_KERNEL) - __flash_kernel_used;

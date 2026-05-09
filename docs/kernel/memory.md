@@ -240,11 +240,15 @@ Each process owns:
   on demand by `sys_brk()`.
 - **mmap pages** — `user_pages[]` high slots (top-down), allocated by
   `sys_mmap2()` for anonymous mappings.
-- **Kernel stack page** — `stack_page_id`, one 4 KB page.  On ARM this is
-  the PSP stack; on m68k the per-process SSP stack; on RISC-V the
-  mscratch-based kernel stack.
+- **Process stack page** — `stack_page_id`, one 4 KB page.  On ARM this is
+  the PSP stack; on m68k the per-process SSP stack.  On RISC-V, kernel
+  continuations use the fixed kstack region instead; `stack_page_id` remains
+  the process stack allocation tracked outside `user_pages[]`.
 - **User stack page** (m68k and RISC-V) — `user_stack_page` (m68k) or a
   dedicated page in `user_pages[]` (RISC-V), one 4 KB page.
+- **Fixed kernel-stack slot** (ARM, ia16, and RISC-V) — a per-process slot in
+  the target linker script's `__kstack_region_base` region, initialized into
+  `pcb_t.kernel_sp`.
 
 All pages come from the same global page pool.
 
@@ -254,7 +258,7 @@ All pages come from the same global page pool.
 sys_exit:
   1. image_release_owned_segments()  <- frees OWNED text/staged segments
   2. proc_release_tracked_pages()    <- frees user_pages[] (data, brk, mmap)
-  3. free stack_page_id              <- kernel stack
+  3. free stack_page_id              <- process stack page
 ```
 
 No duplicate-tracking, no overlap check.  Each page has exactly one
@@ -266,10 +270,11 @@ owner.
 
 When `execve()` loads an ELF binary (`src/kernel/exec/exec.c`):
 
-1. **Pre-allocate the kernel stack page** — `mem_region_alloc()` returns one
+1. **Pre-allocate the process stack page** — `mem_region_alloc()` returns one
    page.  This is done first to prevent the LIFO free-stack from interfering
    with contiguous allocation below.  On m68k and RISC-V, a separate user
-   stack page is also allocated here.
+   stack page is also allocated here.  On RISC-V, the kernel trap frame is
+   built on the fixed kstack slot instead of this page.
 
 2. **Allocate contiguous data pages** — `mem_region_alloc()` scans the page
    pool from the bottom and allocates N adjacent pages for the data segment
@@ -294,8 +299,9 @@ When `execve()` loads an ELF binary (`src/kernel/exec/exec.c`):
    ```
 
 7. **Build the initial stack frame** — `proc_setup_stack()` writes a synthetic
-   exception frame onto the kernel stack page so that the first context switch
-   enters the process at the ELF entry point.
+   exception frame onto the architecture's saved-context stack so that the
+   first context switch enters the process at the ELF entry point.  For
+   RISC-V this is the fixed kstack slot.
 
 ---
 
@@ -355,7 +361,7 @@ top-down to avoid collision with brk growth).
 - On m68k, the user stack (USP) is a single pre-allocated page, separate
   from the kernel stack.
 - On RISC-V, the user stack is a dedicated page in `user_pages[]`, separate
-  from the kernel stack (swapped via `mscratch` on trap entry/exit).
+  from the fixed kernel-stack slot swapped via `mscratch` on trap entry/exit.
 
 There are no guard pages and no automatic stack expansion.  If a process
 overflows its stack:
@@ -368,8 +374,9 @@ overflows its stack:
   silently corrupts adjacent memory (same as m68k).
 
 The kernel stack (MSP on ARM, SSP on m68k, mscratch-based on RISC-V) is also
-fixed-size: 4 KB on ARM, 16 KB on m68k, 4 KB on RISC-V.  It is shared by
-all interrupt and exception handlers.
+fixed-size: 4 KB on ARM, 16 KB on m68k, 4 KB on RISC-V.  On ARM and RISC-V it
+comes from a fixed per-process kstack region; on m68k it is page-backed SSP
+storage.
 
 ---
 
@@ -499,7 +506,7 @@ implements a software kernel/user stack split using the `mscratch` CSR:
 | Context                | Stack Pointer  | Notes                              |
 |------------------------|----------------|------------------------------------|
 | User process (U-mode)  | user sp        | Per-process, in `user_pages[]`     |
-| Trap entry             | kernel sp      | `csrrw sp, mscratch, sp` swaps     |
+| Trap entry             | fixed kstack   | `csrrw sp, mscratch, sp` swaps     |
 | ecall (syscall)        | kernel sp      | User sp saved in trap frame        |
 | Timer interrupt         | kernel sp      | Same swap mechanism                |
 | Context switch         | kernel sp      | Swaps PCB `sp` + updates mscratch  |
@@ -509,7 +516,7 @@ On trap entry:
 2. Check `mstatus.MPP`: if 0 (U-mode), the swap was correct; if 3 (M-mode),
    it was a nested trap — undo the swap.
 3. Save all 31 registers + mepc + mstatus + user_sp into a 144-byte trap
-   frame on the kernel stack.
+   frame on the fixed per-process kstack slot.
 
 On trap return:
 1. If `TF_USER_SP ≠ 0`: returning to U-mode — restore user sp to mscratch,

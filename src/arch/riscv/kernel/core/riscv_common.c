@@ -13,7 +13,6 @@
 #include "kernel/common/ioregs.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/linker.h"
-#include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/syscall/syscall.h"
@@ -226,14 +225,6 @@ uint32_t riscv_ctx_switch(uint32_t current_sp) {
   /* Pick the next runnable process */
   pcb_t *next = sched_next();
   current_core[core_id()] = next;
-
-  /* Ensure kernel_sp is set (may be 0 for pid 0 if sched_start ran
-   * before the field was initialized, or for processes that were
-   * created before the mscratch split was in place). */
-  if (!next->kernel_sp && next->stack_page_id != PAGE_ID_INVALID)
-    next->kernel_sp =
-        (uint32_t)(uintptr_t)mem_region_page_to_ptr(next->stack_page_id) +
-        PAGE_SIZE;
 
   return next->sp;
 }
