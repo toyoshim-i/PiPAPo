@@ -49,7 +49,7 @@ that loops across multiple waits uses continuation blocking instead.
 | Arch | Async preemption | `sched_switch()` from kernel context | Trap-return switch |
 |------|------------------|--------------------------------------|--------------------|
 | `arm_m` | SysTick pends PendSV | Direct `arm_kernel_sched_switch()` for blocked non-restart syscalls in Handler mode; otherwise PendSV | PendSV tail-chain after SVC/IRQ return |
-| `ia16` | PIT INT 08h checks `switch_pending` | Direct `i16_sched_yield()` builds the same frame shape as interrupt/syscall paths | `i16_trap_after_switch` restores via the shared IRET tail |
+| `ia16` | PIT INT 08h checks `switch_pending` | Direct `i16_ctx_switch()` builds the same frame shape as interrupt/syscall paths | `i16_trap_after_switch` restores via the shared IRET tail |
 | `m68k` | Timer/trap return checks `switch_pending` | TRAP #1 switches immediately through `m68k_trap1_handler` | TRAP/timer assembly saves SSP/USP, calls `sched_next()`, restores incoming SSP/USP |
 | `riscv` | Timer interrupt sets `switch_pending` | Machine-mode `ecall` switches immediately through `riscv_ctx_switch()` | `riscv_ctx_switch(current_sp)` swaps trap-frame SPs and refreshes `mscratch` |
 | `xtensa` | Timer ISR sets `switch_pending` | Direct `xtensa_do_yield()` spills register windows and switches solicited frames | Syscall/fault handlers call `sched_switch()` before returning through `rfe` |
@@ -78,7 +78,7 @@ yield paths all build a compatible frame shape: saved interrupted `SS:SP`,
 general registers on the interrupted stack, and a kernel-stack frame saved in
 `pcb_t.sp`.
 
-`i16_sched_yield()` is called directly from `arch_sched_switch()`.  It builds
+`i16_ctx_switch()` is called directly from `arch_sched_switch()`.  It builds
 a synthetic IRET-compatible frame for a kernel-originated yield, saves the
 current kernel SP and entry-stub shadows into the outgoing PCB, calls
 `sched_next()`, restores the incoming PCB state, and jumps to the same restore

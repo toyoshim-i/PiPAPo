@@ -203,7 +203,7 @@ i16_timer_isr:
   iret
 
 /* -----------------------------------------------------------------------------
- * i16_sched_yield — cooperative context switch from kernel thread context.
+ * i16_ctx_switch — cooperative context switch from kernel thread context.
  *
  * Called as a plain C function.  Saves the current kernel state in the same
  * frame layout as i16_timer_isr / i16_syscall_isr (6-byte IRET frame + 18-byte
@@ -221,8 +221,8 @@ i16_timer_isr:
  *   - BP, SI, DI, BX, DS, ES preserved (captured in the GP save frame).
  *   - AX, CX, DX are caller-saved; we don't promise to preserve them.
  * ---------------------------------------------------------------------------- */
-  .global i16_sched_yield
-i16_sched_yield:
+  .global i16_ctx_switch
+i16_ctx_switch:
   /* The caller pushed our return IP.  Lift it out so the fake IRET frame
    * we build below has it in the right slot. */
   popw  %ax                 /* AX = caller return IP */

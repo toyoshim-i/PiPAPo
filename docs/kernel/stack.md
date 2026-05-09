@@ -40,7 +40,7 @@ The common defaults are:
 | Arch | Kernel stack owner | Saved PCB fields | Switch mechanism |
 |------|--------------------|------------------|------------------|
 | `arm_m` | Fixed region per process, MSP kernel stack | `sp` = PSP/user context, `kernel_sp` = MSP, `svc_msp` = SVC entry MSP, `kernel_context` distinguishes suspended kernel continuations | PendSV for async preemption; direct `arm_kernel_sched_switch()` for blocked non-restart syscalls inside SVC |
-| `ia16` | Fixed region per process, SS=0 kernel stack | `sp` = saved kernel-stack SP, `kernel_sp` = slot top, plus entry-stub shadows | Timer INT 08h and `i16_sched_yield()` save `SS:SP` on the kernel stack and restore through a shared IRET tail |
+| `ia16` | Fixed region per process, SS=0 kernel stack | `sp` = saved kernel-stack SP, `kernel_sp` = slot top, plus entry-stub shadows | Timer INT 08h and `i16_ctx_switch()` save `SS:SP` on the kernel stack and restore through a shared IRET tail |
 | `m68k` | Per-process supervisor stack from the process stack page | `sp` = SSP, `usp` = user stack pointer | TRAP/timer paths save full frames on SSP, call `sched_next()`, then restore incoming SSP/USP |
 | `riscv` | Per-process kernel stack at the top of the process stack page | `sp` = trap-frame SP, `kernel_sp` = `mscratch` kernel-stack top | Trap entry swaps `sp` with `mscratch`; `riscv_ctx_switch()` swaps trap-frame SPs and refreshes `mscratch` |
 | `xtensa` | One process stack carries user and kernel/switch frames | `sp` = solicited switch frame | `xtensa_do_yield()` spills register windows, saves SP, calls `sched_next()`, and restores the incoming solicited frame |

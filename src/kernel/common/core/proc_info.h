@@ -121,7 +121,7 @@ typedef struct pcb {
   uint16_t exec_user_sp; /* new user SP after execve (set by loader)  */
   /* Per-process shadow of the core↔VFS entry-stub globals (saved_cs,
    * saved_ip, vfs_saved_cs, vfs_saved_ip in core's .bss).  On every
-   * context switch i16_sched_yield / i16_timer_isr copy the current
+   * context switch i16_ctx_switch / i16_timer_isr copy the current
    * globals into the outgoing PCB's slots and reload them from the
    * incoming PCB's slots.  Stubs themselves still use the globals —
    * they're effectively per-process through this swap.  Offsets are

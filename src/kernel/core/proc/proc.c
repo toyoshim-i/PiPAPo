@@ -56,7 +56,7 @@ _Static_assert(offsetof(pcb_t, syscall_needs_restart) ==
                    PCB_SVC_NEEDS_RESTART_OFFSET,
                "PCB_SVC_NEEDS_RESTART_OFFSET must match trap.S");
 
-/* Offsets for the per-process shadow slots that i16_sched_yield /
+/* Offsets for the per-process shadow slots that i16_ctx_switch /
  * i16_timer_isr swap against the static `saved_cs / saved_ip /
  * vfs_saved_cs / vfs_saved_ip` globals in core_entries.S.  Stored as
  * a contiguous quad of uint16_t right after exec_user_sp, so a single

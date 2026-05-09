@@ -26,16 +26,16 @@ extern volatile uint16_t i16_current_ksp;
 
 /* Shared flag-based yield.  See kernel/common/arch_yield_default.h.
  * Skip the default arch_sched_switch: ia16 has no PendSV equivalent,
- * so a thread-context switch needs i16_sched_yield() directly rather
+ * so a thread-context switch needs i16_ctx_switch() directly rather
  * than just setting the flag (nothing would consume it until the next
  * timer tick). */
 #define ARCH_HAS_SCHED_SWITCH
 #include "kernel/common/arch_yield_default.h"
 
-void i16_sched_yield(void);
+void i16_ctx_switch(void);
 static inline void arch_sched_switch(void) {
   switch_pending = 0;
-  i16_sched_yield();
+  i16_ctx_switch();
 }
 
 /* -- Scheduler startup hook ---------------------------------------------

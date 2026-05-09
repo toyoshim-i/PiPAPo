@@ -25,7 +25,7 @@
    * live in core's .bss so core's switch.S can reach them via ordinary
    * symbol addressing when it needs to swap them against per-PCB save
    * fields on a cooperative yield or timer preemption (see
-   * i16_sched_yield and i16_timer_isr).  VFS's link pulls the addresses
+   * i16_ctx_switch and i16_timer_isr).  VFS's link pulls the addresses
    * out of core_exports.ld, so `%ss:vfs_saved_cs` in VFS asm resolves
    * to this same memory. */
   .globl saved_cs

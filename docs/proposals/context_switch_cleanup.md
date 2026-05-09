@@ -90,7 +90,6 @@ Remaining:
 
 - Xtensa needs an explicit decision: accept the current solicited-frame stack
   as its kernel-continuation equivalent, or add a separate kernel stack.
-- Shared restart symbols still use ARM-flavored `svc_*` names.
 - Optional naming cleanup remains for arch switch helpers (`*_ctx_switch`).
 - New-port documentation still needs the context-switch contract.
 - ARM stack-size reduction is deferred until measurements are useful after, or
@@ -115,8 +114,7 @@ Remaining:
 5. REMAINING: normalize context-switch helper names where useful:
    - RISC-V already uses `riscv_ctx_switch`
    - m68k switch paths now share `m68k_ctx_switch`
-   - decide whether `i16_sched_yield` should stay public or become
-     `i16_ctx_switch`
+   - ia16 now uses `i16_ctx_switch`
    - extract/rename Xtensa helper glue as `xtensa_ctx_switch` if it improves
      readability
 6. DONE: keep the userland blocking-pipe test as coverage for one process
@@ -193,20 +191,18 @@ Current state:
 - Timer, syscall, and cooperative yield paths all build a compatible frame:
   interrupted `SS:SP`, saved GP registers, a synthetic or hardware IRET frame,
   and the 34-byte vfork-save reserve.
-- `i16_sched_yield()` is a true synchronous yield.  It builds a synthetic
+- `i16_ctx_switch()` is a true synchronous yield.  It builds a synthetic
   IRET-compatible frame and restores through `i16_trap_after_switch`.
 - Context switches also shadow the core/VFS far-call entry-stub globals into
   the PCB, making the stubs effectively per-process while suspended.
-- Restart is partly per-process through `pcb_t.syscall_needs_restart`, but shared
-  symbol names still expose the ARM-flavored `svc_*` vocabulary.
+- Restart is partly per-process through `pcb_t.syscall_needs_restart`, and the
+  shared restart symbols now use syscall-oriented names.
 
 Plan:
 
 1. Keep the 1 KB user-process kernel-stack size during this cleanup.
 2. Preserve the single restore tail and the vfork-save frame convention.
-3. Rename `i16_sched_yield()` only after deciding the shared helper naming
-   scheme; a good target is `i16_ctx_switch()` if all arch helpers use
-   `<arch>_ctx_switch`.
+3. DONE: rename the synchronous cooperative helper to `i16_ctx_switch()`.
 4. Keep the far-call stub shadow swap as an ia16 implementation detail.
 5. Include ia16 in the blocking-yield test because it exercises the deepest
    combination of kernel continuation, VFS module calls, and real-mode stacks.

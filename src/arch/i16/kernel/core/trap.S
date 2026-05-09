@@ -231,7 +231,7 @@ i16_trap_after_switch:
    * the unchanged user_SP.  The [user_SP, user_SS] slot is at offsets
    * 34/36 from the current %sp.
    *
-   * Skip entirely if user_SS == 0: frames saved by i16_sched_yield from
+   * Skip entirely if user_SS == 0: frames saved by i16_ctx_switch from
    * kernel context have user_SS=0 and a "user_SP" that points into
    * kernel stack.  Delivering a signal there would corrupt the kernel
    * frame; the signal stays pending and is delivered on the next real
