@@ -2219,12 +2219,10 @@ long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
      * m68k: kernel runs on stack_page.  sys_execve returns through the old
      * kernel stack before trap.S switches to the new one via exec_pending.
      * Defer the free until after the switch.
-     * RISC-V: kernel runs on the fixed kstack region and no longer allocates
-     * stack_page_id for native ELF processes; exec_free_old_stack is still
-     * called from trap.S and becomes a no-op when old_stack_id is invalid.
+     * RISC-V: native ELF processes no longer allocate stack_page_id.
      * ARM: kernel runs on MSP (separate), so PSP stack can be freed
      * immediately. */
-#if defined(__m68k__) || defined(__riscv)
+#if defined(__m68k__)
   extern volatile void *exec_old_stack;
   exec_old_stack = (old_stack_id != PAGE_ID_INVALID)
                        ? mem_region_page_to_ptr(old_stack_id)
