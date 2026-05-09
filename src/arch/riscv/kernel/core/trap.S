@@ -108,6 +108,8 @@ _trap_entry:
     addi    sp, sp, -TRAP_FRAME_SIZE
     csrr    t0, mscratch
     sw      t0, TF_USER_SP(sp)     # save user sp
+    addi    t0, sp, TRAP_FRAME_SIZE
+    csrw    mscratch, t0           # keep nested M-mode traps on kstack top
     j       .Lsave_regs
 
 .Lfrom_kernel:
@@ -175,7 +177,7 @@ _trap_entry:
     li      t1, 8                   # EXC_ECALL_U
     beq     t0, t1, .Lecall
     li      t1, 11                  # EXC_ECALL_M
-    beq     t0, t1, .Lecall
+    beq     t0, t1, .Lecall_m
 
     # Not an ecall — fatal exception.
     csrc    mstatus, 0x8            # clear MIE
@@ -273,6 +275,26 @@ _trap_entry:
     la      t0, current_core
     lw      t0, 0(t0)
     lw      t1, 52(t0)             # current->kernel_sp
+    csrw    mscratch, t1
+    j       .Ltrap_return
+
+.Lecall_m:
+    # ── Cooperative kernel-context switch via machine-mode ecall ───────
+    # arch_sched_switch() executes ecall while already in M-mode.  The
+    # trap frame we just saved sits above the live kernel C call chain, so
+    # storing SP in current->sp suspends execution exactly at the call site.
+    lw      t0, TF_MEPC(sp)
+    addi    t0, t0, 4
+    sw      t0, TF_MEPC(sp)
+
+    csrc    mstatus, 0x8            # keep the switch non-reentrant
+    mv      a0, sp
+    call    riscv_do_switch
+    mv      sp, a0
+    # Update mscratch for the incoming process's kernel stack top.
+    la      t0, current_core
+    lw      t0, 0(t0)
+    lw      t1, 52(t0)              # current->kernel_sp
     csrw    mscratch, t1
     j       .Ltrap_return
 

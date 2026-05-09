@@ -65,30 +65,64 @@ use an explicit kernel-continuation switch path such as
 `arm_kernel_sched_switch()`.  PendSV must remain an asynchronous preemption
 mechanism, not a way to preempt active SVC execution.
 
+## Progress Summary
+
+Done:
+
+- ARM-M uses fixed per-process kernel-stack slots on every ARM target.
+- ARM-M has an explicit synchronous continuation switch,
+  `arm_kernel_sched_switch()`, for blocked non-restart syscalls in SVC.
+- ARM-M comments distinguish PendSV async preemption, restart-style replay,
+  and synchronous SVC continuation switching.
+- The common fixed-region kstack helper owns canaries and optional
+  `KSTACK_USAGE_TRACK` high-water tracking for ARM-M and ia16.
+- The userland empty-pipe blocking test covers continuation blocking without
+  adding test-only kernel code.  It passes on `qemu_arm`, `qemu_m68k`,
+  `qemu_rv32`, and `pcxt --hdd`.
+- RISC-V `sched_switch()` now uses a machine-mode `ecall`, so a blocking
+  syscall suspends at the call site on the process kernel stack instead of
+  waiting for a later trap return.
+- Kernel-stack-use reduction for deep subsystem paths is deferred in
+  [`kernel_stack_use.md`](kernel_stack_use.md), because userland subsystem
+  work may obsolete much of that path.
+
+Remaining:
+
+- Xtensa needs an explicit decision: accept the current solicited-frame stack
+  as its kernel-continuation equivalent, or add a separate kernel stack.
+- Shared restart symbols still use ARM-flavored `svc_*` names.
+- Optional naming cleanup remains for arch switch helpers (`*_ctx_switch`).
+- New-port documentation still needs the context-switch contract.
+- ARM stack-size reduction is deferred until measurements are useful after, or
+  independent of, userland subsystem migration.
+
 ## Context Switch Work
 
-1. Audit each architecture against the target contract above and document the
-   exact saved-frame shape.
-2. Move architectures toward an explicit per-process kernel-continuation model
-   where they do not already have one.
-3. Rename shared restart symbols from ARM-flavored `svc_*` names to syscall
-   names:
+1. DONE: audit ARM-M, ia16, m68k, RISC-V, and Xtensa against the target
+   contract in this proposal and the stack/context-switch docs.
+2. PARTIAL: move architectures toward an explicit per-process
+   kernel-continuation model where they do not already have one.  RISC-V now
+   uses a machine-mode `ecall` continuation switch; Xtensa still needs a design
+   decision.
+3. REMAINING: rename shared restart symbols from ARM-flavored `svc_*` names to
+   syscall names:
    - `svc_restart[]` -> `syscall_restart[]`
    - `svc_saved_a0[]` -> `syscall_saved_arg0[]`
    - `svc_set_restart()` -> `syscall_set_restart()`
    - `mod_core.svc_set_restart` -> `mod_core.syscall_set_restart`
-4. Keep ARM-only names for ARM-only state, such as `svc_exc_return[]`.
-5. Normalize context-switch helper names where useful:
+4. REMAINING: keep ARM-only names for ARM-only state, such as
+   `svc_exc_return[]`.
+5. REMAINING: normalize context-switch helper names where useful:
    - `riscv_do_switch` -> `riscv_ctx_switch`
    - extract m68k inline switch bodies behind `m68k_ctx_switch`
    - decide whether `i16_sched_yield` should stay public or become
      `i16_ctx_switch`
    - extract/rename Xtensa helper glue as `xtensa_ctx_switch` if it improves
      readability
-6. Keep the userland blocking-pipe regression test as coverage for one
-   process blocking inside a syscall while another runnable process executes
-   before the blocked syscall returns.
-7. Document the context-switch contract for new architectures in
+6. DONE: keep the userland blocking-pipe test as coverage for one process
+   blocking inside a syscall while another runnable process executes before
+   the blocked syscall returns.
+7. REMAINING: document the context-switch contract for new architectures in
    `docs/getting_started/porting.md`.
 
 ## Kernel Stack Work
@@ -97,19 +131,20 @@ The stack items support the single continuation-blocking model.  They should
 stay behavior-preserving unless a subtask explicitly calls for
 measurement-driven sizing.
 
-1. Prefer a common fixed-region helper for per-process kernel stacks where it
-   fits the target memory map.
-2. Decide whether RISC-V should keep its lazy `kernel_sp` initialization from
-   the process stack page or move to the fixed-region helper used by ia16 and
-   ARM targets.
-3. Treat architectures that use a native interrupt stack as having two stack
-   roles: an interrupt stack for short handlers and a process kernel stack for
-   continuations.
-4. Use the optional common fixed-region `KSTACK_USAGE_TRACK` helper on ARM
-   when measuring kernel-stack high-water marks.
-5. Measure pico1calc stack usage with CP/M and other deep subsystem paths.
-6. Shrink pico1calc `PROC_KSTACK_SIZE` from 2 KB only if measurements show a
-   safe margin.
+1. DONE: prefer a common fixed-region helper for per-process kernel stacks
+   where it fits the target memory map.  ARM-M and ia16 use it today.
+2. REMAINING: decide whether RISC-V should keep its lazy `kernel_sp`
+   initialization from the process stack page or move to the fixed-region
+   helper used by ia16 and ARM targets.
+3. DONE: treat architectures that use a native interrupt stack as having two
+   stack roles: an interrupt stack for short handlers and a process kernel
+   stack for continuations.
+4. DONE: use the optional common fixed-region `KSTACK_USAGE_TRACK` helper on
+   ARM when measuring kernel-stack high-water marks.
+5. DEFERRED: measure pico1calc stack usage with CP/M and other deep subsystem
+   paths.  See [`kernel_stack_use.md`](kernel_stack_use.md).
+6. DEFERRED: shrink pico1calc `PROC_KSTACK_SIZE` from 2 KB only if
+   measurements show a safe margin.
 
 ## Architecture Notes
 
@@ -220,29 +255,31 @@ Current state:
   and refreshes `kernel_sp` lazily when needed.
 - Timer preemption is correct because the trap path consumes
   `switch_pending` before returning.
-- Cooperative `sched_switch()` currently uses the default
-  `arch_sched_switch()`, which only sets `switch_pending`.  That does not
-  suspend a blocking syscall at the call site, so it does not satisfy the
-  continuation-blocking contract.
+- Cooperative `sched_switch()` executes a machine-mode `ecall`.  The M-mode
+  trap frame sits on the live process kernel stack above the blocked kernel
+  call chain, so `riscv_do_switch()` can save `pcb_t.sp` and later resume at
+  the instruction after `sched_switch()`.
+- User trap entry restores `mscratch` to the process kernel-stack top after
+  saving the original user `sp`, so nested M-mode traps during syscall
+  execution do not borrow the user stack.
 
 Plan:
 
-1. Add a real RISC-V `ARCH_HAS_SCHED_SWITCH` path.
-2. Implement a synchronous kernel-context switch that saves the current
-   callee-saved kernel continuation and returns only after the same process is
-   scheduled again.
-3. Reuse `pcb_t.kernel_sp` and `mscratch`; do not add a native interrupt stack
-   unless measurement shows a need.
-4. Decide whether the synchronous path should be a software helper called from
-   C or an M-mode trap dedicated to cooperative kernel yield.  Choose the
-   smaller frame-format risk.
-5. Rename `riscv_do_switch()` to `riscv_ctx_switch()` once the synchronous
-   path and trap-return switch path share a clear naming scheme.
-6. Replace lazy `kernel_sp` initialization with common `proc_kstack_init_slot`
-   only if a fixed region is chosen for RISC-V targets.  Otherwise document the
-   current page-backed kernel-stack initialization as the accepted model.
-7. Add the blocking-yield test before and after this work; RISC-V should be
-   the architecture that proves the test catches flag-only cooperative yields.
+1. DONE: add a real RISC-V `ARCH_HAS_SCHED_SWITCH` path.
+2. DONE: use the M-mode trap frame as the synchronous kernel-continuation
+   frame, avoiding a second RISC-V-specific saved-frame format.
+3. DONE: reuse `pcb_t.kernel_sp` and `mscratch`; do not add a native interrupt
+   stack unless measurement shows a need.
+4. DONE: choose an M-mode trap dedicated to cooperative kernel yield; this
+   shares the same restore path as timer and syscall-return switches.
+5. REMAINING: rename `riscv_do_switch()` to `riscv_ctx_switch()` once the
+   synchronous path and trap-return switch path share a clear naming scheme.
+6. REMAINING: replace lazy `kernel_sp` initialization with common
+   `proc_kstack_init_slot` only if a fixed region is chosen for RISC-V targets.
+   Otherwise document the current page-backed kernel-stack initialization as
+   the accepted model.
+7. DONE: keep the blocking-yield userland test as coverage; it passes on
+   `qemu_rv32` after the M-mode `ecall` switch path.
 
 ### `xtensa`
 

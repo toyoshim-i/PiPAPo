@@ -17,10 +17,16 @@
 
 /* ── Context switch trigger ──────────────────────────────────────────────
  *
- * RISC-V has no PendSV equivalent.  We use the m68k pattern: set a flag
- * that the timer ISR checks after calling sched_timer_tick().
- * For cooperative yield, ecall from M-mode triggers the switch directly.
+ * RISC-V has no PendSV equivalent.  arch_yield() uses the shared
+ * switch_pending flag for interrupt-return preemption, while
+ * sched_switch() executes a machine-mode ecall so the trap frame captures
+ * the live kernel call chain and resumes it when the process runs again.
  * ────────────────────────────────────────────────────────────────────────── */
+
+#define ARCH_HAS_SCHED_SWITCH
+static inline void arch_sched_switch(void) {
+  __asm__ volatile("ecall" ::: "memory");
+}
 
 /* Shared flag-based yield.  See kernel/common/arch_yield_default.h. */
 #include "kernel/common/arch_yield_default.h"

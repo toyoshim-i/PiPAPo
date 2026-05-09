@@ -2,7 +2,7 @@
  * riscv_common.c — Shared RISC-V architecture state and timer
  *
  * Provides:
- *   - Context switch pending flag (checked by timer ISR)
+ *   - Context switch pending flag (checked by trap return)
  *   - Core ID accessor (single-core for now)
  *   - RP2350 RISC-V timer init and interrupt handler
  *   - Context switch helper (riscv_do_switch)
@@ -205,10 +205,13 @@ void riscv_timer_handler(int from_user) {
 /* ── Context switch ──────────────────────────────────────────────────────── */
 
 /*
- * riscv_do_switch — called from trap.S when switch_pending is set.
+ * riscv_do_switch — called from trap.S when a context switch is due.
  *
  * Saves the current trap-frame SP into the current pcb, calls sched_next()
- * to pick the next process, and returns the new process's saved SP.
+ * to pick the next process, and returns the new process's saved SP.  The
+ * frame may be a user trap frame or a machine-mode `sched_switch()` trap
+ * frame that resumes an in-kernel continuation.
+ *
  * trap.S then restores registers from the new SP's trap frame and mrets
  * into the new process.
  *
