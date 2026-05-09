@@ -97,7 +97,6 @@ Remaining:
 - Xtensa needs an explicit decision: accept the current solicited-frame stack
   as its kernel-continuation equivalent, or add a separate kernel stack.
 - Optional naming cleanup remains for arch switch helpers (`*_ctx_switch`).
-- New-port documentation still needs the context-switch contract.
 - ARM stack-size reduction is deferred until measurements are useful after, or
   independent of, userland subsystem migration.
 
@@ -126,7 +125,7 @@ Remaining:
 6. DONE: keep the userland blocking-pipe test as coverage for one process
    blocking inside a syscall while another runnable process executes before
    the blocked syscall returns.
-7. REMAINING: document the context-switch contract for new architectures in
+7. DONE: document the context-switch contract for new architectures in
    `docs/getting_started/porting.md`.
 
 ## Kernel Stack Work

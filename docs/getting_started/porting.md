@@ -44,6 +44,41 @@ Constraints vary by architecture. The common limits are:
 | PIC model | `-fPIC -msingle-pic-base -mpic-register=r9` | `-fPIC -msep-data` |
 | Compiler | `arm-none-eabi-gcc` | `m68k-elf-gcc` |
 
+## Architecture Porting Contract
+
+New CPU ports must satisfy the kernel continuation contract before they can run
+general userland reliably.  PPAP allows a process to block while it is already
+inside the kernel, so `sched_switch()` must preserve both the user resume point
+and the in-flight kernel call chain that called it.
+
+An architecture port must provide:
+
+1. A per-process kernel stack, or an equivalent saved kernel-continuation
+   frame.
+2. A saved context pointer in `pcb_t.sp`.
+3. A saved `pcb_t.kernel_sp` value when the architecture has a separate live
+   kernel-stack top.
+4. An `arch_sched_switch()` path that performs a real cooperative switch for
+   blocking kernel code, not only a deferred preemption request.
+5. A trap or return path that can restore either a normal user context or a
+   suspended kernel continuation.
+
+Native interrupt stacks are allowed as an optimization, but they are not the
+continuation mechanism by themselves.  Timer, device, and fault handlers may
+run on a hardware-preferred stack, while blocking syscalls and kernel waits must
+still suspend on the process continuation stack or equivalent saved frame.
+
+The shared kernel should not depend on whether the architecture uses hardware
+stack switching, `mscratch`, USP/SSP, register windows, or real-mode far-call
+frames.  Keep those details behind the architecture switch and trap helpers.
+Restartable syscalls are also separate from continuation blocking: only
+explicitly replay-safe syscalls should use the restart path.
+
+See [`../kernel/context_switch.md`](../kernel/context_switch.md),
+[`../kernel/stack.md`](../kernel/stack.md), and
+[`../proposals/context_switch_cleanup.md`](../proposals/context_switch_cleanup.md)
+for the current architecture-by-architecture model.
+
 ## Compiler Flags
 
 ### ARM
