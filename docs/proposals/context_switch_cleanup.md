@@ -113,7 +113,7 @@ Remaining:
 4. REMAINING: keep ARM-only names for ARM-only state, such as
    `svc_exc_return[]`.
 5. REMAINING: normalize context-switch helper names where useful:
-   - `riscv_do_switch` -> `riscv_ctx_switch`
+   - RISC-V already uses `riscv_ctx_switch`
    - extract m68k inline switch bodies behind `m68k_ctx_switch`
    - decide whether `i16_sched_yield` should stay public or become
      `i16_ctx_switch`
@@ -251,13 +251,13 @@ Current state:
   the process kernel stack, and returns through `mret`.
 - `pcb_t.sp` stores the saved trap-frame SP.  `pcb_t.kernel_sp` stores the
   kernel-stack top loaded into `mscratch`.
-- `riscv_do_switch(current_sp)` swaps trap-frame SPs through `sched_next()`
+- `riscv_ctx_switch(current_sp)` swaps trap-frame SPs through `sched_next()`
   and refreshes `kernel_sp` lazily when needed.
 - Timer preemption is correct because the trap path consumes
   `switch_pending` before returning.
 - Cooperative `sched_switch()` executes a machine-mode `ecall`.  The M-mode
   trap frame sits on the live process kernel stack above the blocked kernel
-  call chain, so `riscv_do_switch()` can save `pcb_t.sp` and later resume at
+  call chain, so `riscv_ctx_switch()` can save `pcb_t.sp` and later resume at
   the instruction after `sched_switch()`.
 - User trap entry restores `mscratch` to the process kernel-stack top after
   saving the original user `sp`, so nested M-mode traps during syscall
@@ -272,8 +272,7 @@ Plan:
    stack unless measurement shows a need.
 4. DONE: choose an M-mode trap dedicated to cooperative kernel yield; this
    shares the same restore path as timer and syscall-return switches.
-5. REMAINING: rename `riscv_do_switch()` to `riscv_ctx_switch()` once the
-   synchronous path and trap-return switch path share a clear naming scheme.
+5. DONE: rename the shared RISC-V switch helper to `riscv_ctx_switch()`.
 6. REMAINING: replace lazy `kernel_sp` initialization with common
    `proc_kstack_init_slot` only if a fixed region is chosen for RISC-V targets.
    Otherwise document the current page-backed kernel-stack initialization as

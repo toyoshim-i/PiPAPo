@@ -269,7 +269,7 @@ _trap_entry:
     beqz    t1, .Ltrap_return
     sw      zero, 0(t0)
     mv      a0, sp
-    call    riscv_do_switch
+    call    riscv_ctx_switch
     mv      sp, a0
     # Update mscratch for the new process
     la      t0, current_core
@@ -289,7 +289,7 @@ _trap_entry:
 
     csrc    mstatus, 0x8            # keep the switch non-reentrant
     mv      a0, sp
-    call    riscv_do_switch
+    call    riscv_ctx_switch
     mv      sp, a0
     # Update mscratch for the incoming process's kernel stack top.
     la      t0, current_core
@@ -335,7 +335,7 @@ _trap_entry:
     # For now, the full trap frame is already on the stack; just swap SP
     # through the pcb_t.sp field via a C helper.
     mv      a0, sp              # pass current SP (top of trap frame)
-    call    riscv_do_switch     # returns new SP in a0
+    call    riscv_ctx_switch     # returns new SP in a0
     mv      sp, a0              # switch to new process's kernel stack
     # Update mscratch for the new process
     la      t0, current_core

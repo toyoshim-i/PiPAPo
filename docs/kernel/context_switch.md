@@ -51,7 +51,7 @@ that loops across multiple waits uses continuation blocking instead.
 | `arm_m` | SysTick pends PendSV | Direct `arm_kernel_sched_switch()` for blocked non-restart syscalls in Handler mode; otherwise PendSV | PendSV tail-chain after SVC/IRQ return |
 | `ia16` | PIT INT 08h checks `switch_pending` | Direct `i16_sched_yield()` builds the same frame shape as interrupt/syscall paths | `i16_trap_after_switch` restores via the shared IRET tail |
 | `m68k` | Timer/trap return checks `switch_pending` | TRAP #1 switches immediately through `m68k_trap1_handler` | TRAP/timer assembly saves SSP/USP, calls `sched_next()`, restores incoming SSP/USP |
-| `riscv` | Timer interrupt sets `switch_pending` | Default `arch_sched_switch()` sets `switch_pending`; the trap path consumes it | `riscv_do_switch(current_sp)` swaps trap-frame SPs and refreshes `mscratch` |
+| `riscv` | Timer interrupt sets `switch_pending` | Machine-mode `ecall` switches immediately through `riscv_ctx_switch()` | `riscv_ctx_switch(current_sp)` swaps trap-frame SPs and refreshes `mscratch` |
 | `xtensa` | Timer ISR sets `switch_pending` | Direct `xtensa_do_yield()` spills register windows and switches solicited frames | Syscall/fault handlers call `sched_switch()` before returning through `rfe` |
 
 ## ARM Cortex-M
@@ -101,7 +101,7 @@ RISC-V uses a trap-frame switch.  Trap entry swaps `sp` with `mscratch` to get
 onto the current process's kernel stack, saves the full trap frame, and then
 handles syscalls or interrupts.
 
-When `switch_pending` is set, trap return calls `riscv_do_switch(current_sp)`.
+When `switch_pending` is set, trap return calls `riscv_ctx_switch(current_sp)`.
 The helper saves the outgoing trap-frame SP in `current->sp`, selects the next
 process, updates `current_core`, ensures the incoming `kernel_sp` is
 available, and returns the incoming trap-frame SP.  The assembly reloads

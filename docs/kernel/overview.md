@@ -175,7 +175,7 @@ syscalls, are documented in [`context_switch.md`](context_switch.md).
 
 **m68k:** A periodic timer interrupt directly calls the context switch routine, which saves/restores d2-d7/a2-a6 and the stack pointer.
 
-**RISC-V:** Timer interrupt (mtimecmp) fires every 10 ms. The handler sets `switch_pending`; after the ISR, trap.S calls `riscv_do_switch()` to swap the full 144-byte trap frame via the PCB's `sp` field and updates `mscratch` for the new process's kernel stack.
+**RISC-V:** Timer interrupt (mtimecmp) fires every 10 ms. The handler sets `switch_pending`; after the ISR, trap.S calls `riscv_ctx_switch()` to swap the full 144-byte trap frame via the PCB's `sp` field and updates `mscratch` for the new process's kernel stack.
 
 ### Dual-Core (RP2040 only)
 

@@ -5,7 +5,7 @@
  *   - Context switch pending flag (checked by trap return)
  *   - Core ID accessor (single-core for now)
  *   - RP2350 RISC-V timer init and interrupt handler
- *   - Context switch helper (riscv_do_switch)
+ *   - Context switch helper (riscv_ctx_switch)
  */
 
 #include <stdint.h>
@@ -205,7 +205,7 @@ void riscv_timer_handler(int from_user) {
 /* ── Context switch ──────────────────────────────────────────────────────── */
 
 /*
- * riscv_do_switch — called from trap.S when a context switch is due.
+ * riscv_ctx_switch — called from trap.S when a context switch is due.
  *
  * Saves the current trap-frame SP into the current pcb, calls sched_next()
  * to pick the next process, and returns the new process's saved SP.  The
@@ -219,7 +219,7 @@ void riscv_timer_handler(int from_user) {
  * is already saved in the trap frame by _trap_entry; we just swap the SP
  * pointer through the pcb.
  */
-uint32_t riscv_do_switch(uint32_t current_sp) {
+uint32_t riscv_ctx_switch(uint32_t current_sp) {
   /* Save current SP (pointing to the trap frame) into the current pcb */
   if (current) current->sp = current_sp;
 
